@@ -238,7 +238,7 @@ fn row_reduce[
         if idx_in_padded_row >= UInt(rounded_row_size.value):
             break
 
-        row_coords[axis] = Int(idx_in_padded_row.value)
+        row_coords[axis] = int(idx_in_padded_row)
         var val = input_fn[type, simd_width, rank](row_coords).cast[
             accum_type
         ]()
