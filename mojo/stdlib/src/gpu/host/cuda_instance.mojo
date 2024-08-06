@@ -338,7 +338,7 @@ struct CudaDLL:
 
 
 struct CudaInstance:
-    var cuda_dll: Optional[CudaDLL]
+    var cuda_dll: CudaDLL
 
     fn __init__(inout self) raises:
         self.cuda_dll = CudaDLL()
@@ -348,7 +348,7 @@ struct CudaInstance:
 
     fn __moveinit__(inout self, owned existing: Self):
         self.cuda_dll = existing.cuda_dll
-        existing.cuda_dll = None
+        existing.cuda_dll = CudaDLL()
 
     fn __copyinit__(inout self, existing: Self):
         self.cuda_dll = existing.cuda_dll
@@ -356,8 +356,6 @@ struct CudaInstance:
     fn num_devices(self) raises -> Int:
         var res: Int32 = 0
         _check_error(
-            self.cuda_dll.value().cuDeviceGetCount(
-                UnsafePointer.address_of(res)
-            )
+            self.cuda_dll.cuDeviceGetCount(UnsafePointer.address_of(res))
         )
         return int(res)

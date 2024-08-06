@@ -167,6 +167,7 @@ struct _CachedFunctionPayload:
     var cache_config: Int32
     var func_attribute: FuncAttribute
     var device_context_ptr: UnsafePointer[DeviceContext]
+    var cuda_dll_ptr: UnsafePointer[CudaDLL]
 
     fn __init__(
         inout self,
@@ -176,6 +177,7 @@ struct _CachedFunctionPayload:
         cache_config: Int32,
         func_attribute: FuncAttribute,
         device_context_ptr: UnsafePointer[DeviceContext],
+        cuda_dll_ptr: UnsafePointer[CudaDLL],
     ):
         self.verbose = verbose
         self.max_registers = max_registers
@@ -183,6 +185,7 @@ struct _CachedFunctionPayload:
         self.cache_config = cache_config
         self.func_attribute = func_attribute
         self.device_context_ptr = device_context_ptr
+        self.cuda_dll_ptr = cuda_dll_ptr
 
 
 struct FunctionCache:
@@ -248,39 +251,12 @@ struct Function[
     _is_failable: Bool = False,
 ](Boolable):
     var info: _CachedFunctionInfo
-    var cuda_dll: Optional[CudaDLL]
+    var cuda_dll: CudaDLL
     var cuda_function_cache: UnsafePointer[FunctionCache]
 
     alias _impl = _compile_code[
         func, is_failable=_is_failable, emission_kind="asm"
     ]()
-
-    # TODO: KERN-661. This is for backwards compatibility until all tests are
-    #       updated with DeviceContext functions (i.e., no standalone
-    #        Function[]() calls, but calling via ctx.enqueue_function).
-    @always_inline
-    fn __init__(
-        inout self,
-        ctx: Context,
-        verbose: Bool = False,
-        dump_ptx: Variant[Path, Bool] = False,
-        dump_llvm: Variant[Path, Bool] = False,
-        max_registers: Optional[Int] = None,
-        threads_per_block: Optional[Int] = None,
-        cache_config: Optional[CacheConfig] = None,
-        func_attribute: Optional[FuncAttribute] = None,
-    ) raises:
-        self.__init__(
-            verbose=verbose,
-            dump_ptx=dump_ptx,
-            dump_llvm=dump_llvm,
-            max_registers=max_registers,
-            threads_per_block=threads_per_block,
-            cache_config=cache_config,
-            func_attribute=func_attribute,
-            cuda_dll=ctx.cuda_dll,
-            cuda_function_cache=ctx.cuda_function_cache,
-        )
 
     @always_inline
     fn __init__(
@@ -305,10 +281,15 @@ struct Function[
             cuda_dll=ctx_ptr[].cuda_context.cuda_dll,
             cuda_function_cache=ctx_ptr[].cuda_context.cuda_function_cache,
             device_context_ptr=ctx_ptr,
+            cuda_dll_ptr=UnsafePointer[CudaDLL].address_of(
+                ctx_ptr[].cuda_context.cuda_dll
+            ),
         )
 
     fn __init__(
         inout self,
+        cuda_dll: CudaDLL,
+        cuda_dll_ptr: UnsafePointer[CudaDLL],
         verbose: Bool = False,
         dump_ptx: Variant[Path, Bool] = False,
         dump_llvm: Variant[Path, Bool] = False,
@@ -316,7 +297,6 @@ struct Function[
         threads_per_block: Optional[Int] = None,
         cache_config: Optional[CacheConfig] = None,
         func_attribute: Optional[FuncAttribute] = None,
-        cuda_dll: Optional[CudaDLL] = None,
         cuda_function_cache: UnsafePointer[FunctionCache] = UnsafePointer[
             FunctionCache
         ](),
@@ -334,6 +314,7 @@ struct Function[
 
         var info = Self._get_cached_function_info[func_type, func](
             device_context_ptr=device_context_ptr,
+            cuda_dll_ptr=cuda_dll_ptr,
             verbose=verbose,
             max_registers=max_registers.value() if max_registers else -1,
             threads_per_block=threads_per_block.value() if threads_per_block else -1,
@@ -354,9 +335,9 @@ struct Function[
         inout self,
         module: Module,
         name: String,
+        cuda_dll: CudaDLL,
         dump_ptx: Variant[Path, Bool] = False,
         dump_llvm: Variant[Path, Bool] = False,
-        cuda_dll: Optional[CudaDLL] = None,
         cuda_function_cache: UnsafePointer[FunctionCache] = UnsafePointer[
             FunctionCache
         ](),
@@ -416,15 +397,15 @@ struct Function[
         *args: *Ts,
         grid_dim: Dim,
         block_dim: Dim,
+        stream: Stream,
         shared_mem_bytes: Int = 0,
-        stream: Optional[Stream] = None,
     ) raises:
         self._call_pack(
             args,
             grid_dim=grid_dim,
             block_dim=block_dim,
-            shared_mem_bytes=shared_mem_bytes,
             stream=stream,
+            shared_mem_bytes=shared_mem_bytes,
         )
 
     @always_inline
@@ -436,8 +417,8 @@ struct Function[
         args: VariadicPack[_, AnyType, Ts],
         grid_dim: Dim,
         block_dim: Dim,
+        stream: Stream,
         shared_mem_bytes: Int = 0,
-        stream: Optional[Stream] = None,
     ) raises:
         alias num_args = len(VariadicList(Ts))
         alias num_captures = Self._impl.num_captures
@@ -461,8 +442,8 @@ struct Function[
             args_stack,
             grid_dim=grid_dim,
             block_dim=block_dim,
-            shared_mem_bytes=shared_mem_bytes,
             stream=stream,
+            shared_mem_bytes=shared_mem_bytes,
         )
 
     @always_inline
@@ -472,11 +453,11 @@ struct Function[
         *,
         grid_dim: Dim,
         block_dim: Dim,
+        stream: Stream,
         shared_mem_bytes: Int = 0,
-        stream: Optional[Stream] = None,
     ) raises:
-        var stream_value = stream.value().stream if stream else Stream()
-        var cuLaunchKernel = self.cuda_dll.value().cuLaunchKernel if self.cuda_dll else cuLaunchKernel.load()
+        var stream_value = stream.stream
+        var cuLaunchKernel = self.cuda_dll.cuLaunchKernel
         _check_error(
             cuLaunchKernel(
                 self.info.func_handle,
@@ -487,16 +468,13 @@ struct Function[
                 UInt32(block_dim.y()),
                 UInt32(block_dim.z()),
                 UInt32(shared_mem_bytes),
-                stream_value.stream,
+                stream_value,
                 args,
                 UnsafePointer[NoneType](),
             ),
             msg=Self._impl.function_name,
             location=__call_location(),
         )
-        # if we created the stream, we should sync
-        if not stream:
-            stream_value.synchronize()
 
     @staticmethod
     fn init_fn[
@@ -520,16 +498,13 @@ struct Function[
                 <= 0 else Optional[Int](int(payload.max_registers)),
                 threads_per_block=Optional[Int]() if payload.threads_per_block
                 <= 0 else Optional[Int](int(payload.threads_per_block)),
+                cuda_dll=payload.cuda_dll_ptr[],
             )
             var func_handle = module.load(fn_name)
 
-            # TODO: KERN-661. payload should always have a valid
-            #       device_context_ptr when all tests are updated with
-            #       DeviceContext functions (i.e.,no standalone Function[]()
-            #       calls).
-            var cuda_dll = payload.device_context_ptr[].cuda_instance.cuda_dll if payload.device_context_ptr else None
-            var cuFuncSetCacheConfig = cuda_dll.value().cuFuncSetCacheConfig if cuda_dll else cuFuncSetCacheConfig.load()
-            var cuFuncSetAttribute = cuda_dll.value().cuFuncSetAttribute if cuda_dll else cuFuncSetAttribute.load()
+            var cuda_dll = payload.device_context_ptr[].cuda_instance.cuda_dll
+            var cuFuncSetCacheConfig = cuda_dll.cuFuncSetCacheConfig
+            var cuFuncSetAttribute = cuda_dll.cuFuncSetAttribute
 
             if payload.cache_config != -1:
                 _check_error(
@@ -572,6 +547,7 @@ struct Function[
         func_type: AnyTrivialRegType, func: func_type
     ](
         device_context_ptr: UnsafePointer[DeviceContext],
+        cuda_dll_ptr: UnsafePointer[CudaDLL],
         verbose: Bool = False,
         max_registers: Int = -1,
         threads_per_block: Int = -1,
@@ -590,6 +566,7 @@ struct Function[
             cache_config=cache_config,
             func_attribute=func_attribute,
             device_context_ptr=device_context_ptr,
+            cuda_dll_ptr=cuda_dll_ptr,
         )
 
         if cuda_function_cache:
