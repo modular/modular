@@ -29,8 +29,6 @@ namespace M::KGEN::MOGGPreElab {
 
 static constexpr std::array<llvm::StringLiteral, 3> kMaxRegistrationDecorator =
     {"compiler", "directives", "register"};
-static constexpr std::array<llvm::StringLiteral, 3> kMaxKernelSpecType = {
-    "compiler", "directives", "KernelSpec"};
 static constexpr llvm::StringLiteral kExecuteFuncName = "execute";
 static constexpr llvm::StringLiteral kShapeFuncName = "shape";
 
@@ -192,36 +190,6 @@ public:
           return WalkResult::interrupt();
         }
 
-        auto executeFuncParameters = executeFunc.getInputParams();
-        ParamDeclAttr kernelSpecParam;
-        for (auto param : executeFuncParameters) {
-          auto asStructType = dyn_cast<LIT::StructType>(param.getType());
-          if (!asStructType)
-            continue;
-
-          bool isAKernelSpec =
-              symbolMatches(asStructType.getSymbol(), kMaxKernelSpecType);
-          if (kernelSpecParam && isAKernelSpec) {
-            emitError(
-                loc,
-                "Only one kernel spec is allowed in a kernel execute function");
-            return WalkResult::interrupt();
-          }
-
-          if (isAKernelSpec)
-            kernelSpecParam = param;
-        }
-
-        if (!kernelSpecParam) {
-          emitError(
-              loc,
-              "Kernel execute function must be parametrized with a spec param");
-          return WalkResult::interrupt();
-        }
-
-        executeFunc->setAttr(builder.getStringAttr(kMOGGKernelSpecLabel),
-                             kernelSpecParam.getName());
-
         if (!executeFunc.getIsStatic()) {
           emitError(loc, "Kernel entry point must be a static function");
           return WalkResult::interrupt();
@@ -238,7 +206,18 @@ public:
           shapeFunc->setAttr(builder.getStringAttr(kMOGGShapeFunctionLabel),
                              *registrationName);
         }
+
+        for (auto param : executeFunc.getInputParams()) {
+          if (param.getName() == kMOGGSynchronousParameterName) {
+            executeFunc->setAttr(builder.getStringAttr(kMOGGSynchronousLabel),
+                                 param);
+          } else if (param.getName() == kMOGGTargetParameterName) {
+            executeFunc->setAttr(builder.getStringAttr(kMOGGTargetLabel),
+                                 param);
+          }
+        }
       }
+
       return WalkResult::advance();
     };
 

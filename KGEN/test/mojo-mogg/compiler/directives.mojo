@@ -20,10 +20,6 @@ fn create_none_spec[type: DType, rank: Int]() -> StaticTensorSpec[type, rank]:
     return StaticTensorSpec[type, rank]()
 
 
-struct KernelSpec:
-    pass
-
-
 @mogg_intrinsic_attr("mogg.tensor_spec_hook")
 @export
 fn specsof[
