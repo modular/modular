@@ -894,12 +894,12 @@ fn _online_softmax_kernel[
     # corrected with the right rowmax.
     var input_warp_tile0 = input.tile[WM, WN](0, int(warp_id))
     var input_warp_tile1 = input.tile[WM, WN](
-        0, warp_id.value + num_rowwise_warps
+        0, int(warp_id) + num_rowwise_warps
     )
 
     var output_warp_tile0 = output.tile[WM, WN](0, int(warp_id))
     var output_warp_tile1 = output.tile[WM, WN](
-        0, warp_id.value + num_rowwise_warps
+        0, int(warp_id) + num_rowwise_warps
     )
 
     var p = LayoutTensor[
@@ -1083,8 +1083,8 @@ fn _online_softmax_iter_for_mma_output[
                 # Each thread handle two rows in the mma output.
                 var row0 = m_mma * MMA_M + lane // (MMA_N // p_frag_simdwidth)
                 var row1 = row0 + MMA_M // 2
-                warp_scratch[warp_x.value, row0] = p_frag_rowmax[2 * m_mma]
-                warp_scratch[warp_x.value, row1] = p_frag_rowmax[2 * m_mma + 1]
+                warp_scratch[int(warp_x), row0] = p_frag_rowmax[2 * m_mma]
+                warp_scratch[int(warp_x), row1] = p_frag_rowmax[2 * m_mma + 1]
 
         barrier()
 
@@ -1189,8 +1189,8 @@ fn _online_softmax_iter_for_mma_output[
                 # Each thread handle two rows in the mma output.
                 var row0 = m_mma * MMA_M + lane // (MMA_N // p_frag_simdwidth)
                 var row1 = row0 + MMA_M // 2
-                warp_scratch[warp_x.value, row0] = p_frag_rowsum[2 * m_mma]
-                warp_scratch[warp_x.value, row1] = p_frag_rowsum[2 * m_mma + 1]
+                warp_scratch[int(warp_x), row0] = p_frag_rowsum[2 * m_mma]
+                warp_scratch[int(warp_x), row1] = p_frag_rowsum[2 * m_mma + 1]
         # Guard writing warp_scratch
         barrier()
 

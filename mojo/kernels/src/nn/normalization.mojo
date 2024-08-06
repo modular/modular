@@ -291,8 +291,8 @@ fn layer_norm_gpu_warp_tiling_scalar[
     var norm_factor = rsqrt(row_var + epsilon)
     if tid < num_cols:
         var norm_val = (vec_data - row_mean) * norm_factor * gamma_fn[1, 1](
-            StaticIntTuple[1](tid.value)
-        ) + beta.load(tid.value)
+            StaticIntTuple[1](int(tid))
+        ) + beta.load(tid)
         data.store(Index(row, tid), norm_val)
 
 
@@ -329,7 +329,7 @@ fn layer_norm_gpu_block_vector[
 
         if offset < num_cols:
             vec_data = input_func[simd_width, rank](
-                StaticIntTuple[rank](row.value, offset.value)
+                StaticIntTuple[rank](int(row), int(offset))
             )
 
             @parameter
@@ -356,7 +356,7 @@ fn layer_norm_gpu_block_vector[
             var beta_val = beta.load[width=simd_width, alignment=align](offset)
 
             var vec_data = input_func[simd_width, rank](
-                StaticIntTuple[rank](row.value, offset.value)
+                StaticIntTuple[rank](int(row), int(offset))
             )
             var norm_val = (
                 (vec_data - row_mean) * norm_factor * gamma_val
@@ -396,7 +396,7 @@ fn layer_norm_gpu_block_scalar[
 
         if offset < num_cols:
             vec_data = input_func[1, rank](
-                StaticIntTuple[rank](row.value, offset.value)
+                StaticIntTuple[rank](int(row), int(offset))
             )
             welford_update(vec_data, thread_mean, thread_m2, thread_count)
 
@@ -416,11 +416,11 @@ fn layer_norm_gpu_block_scalar[
 
         if offset < num_cols:
             vec_data = input_func[1, rank](
-                StaticIntTuple[rank](row.value, offset.value)
+                StaticIntTuple[rank](int(row), int(offset))
             )
             var norm_val = (vec_data - row_mean) * norm_factor * gamma_fn[1, 1](
-                StaticIntTuple[1](offset.value)
-            ) + beta.load(offset.value)
+                StaticIntTuple[1](int(offset))
+            ) + beta.load(int(offset))
             data.store(Index(row, offset), norm_val)
 
 
