@@ -300,3 +300,17 @@ def test_layer_norm() -> None:
 
     assert "mo.layer_norm" in str(graph._mlir_op)
     graph._mlir_op.verify()
+
+
+def test_band_part() -> None:
+    def _band_part(input: GraphValue) -> GraphValue:
+        return ops.band_part(input, -1, 0)
+
+    graph = Graph(
+        "band_part",
+        _band_part,
+        input_types=(TensorType(DType.float32, [2, 2]),),
+    )
+
+    assert "rmo.mo.linalg.band_part" in str(graph._mlir_op)
+    graph._mlir_op.verify()

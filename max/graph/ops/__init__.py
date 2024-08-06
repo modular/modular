@@ -23,6 +23,6 @@ from .constant import constant, scalar
 from .casting import reshape, cast
 from .debug import print
 from .elementwise import *
-from .linalg import layer_norm, matmul
+from .linalg import band_part, layer_norm, matmul
 from .reduction import mean
 from .slicing import select, slice_tensor
