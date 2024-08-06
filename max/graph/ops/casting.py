@@ -67,13 +67,16 @@ def squeeze(x: ValueLike, axis=None) -> GraphValue:
     return ops.reshape(v, new_shape)
 
 
-# TODO (MSDK-655): This is a goofy, temporary implementation of transpose() to unblock llama development. Please replace with something smart.
 def transpose(x: ValueLike, dim_1: int, dim_2: int) -> GraphValue:
     v = GraphValue(x)
 
-    # TODO: needs negative index handling
+    rank = len(v.shape)
+    if dim_1 < 0:
+        dim_1 += rank
+    if dim_2 < 0:
+        dim_2 += rank
 
-    new_shape = v.tensor_type.shape
+    new_shape = v.shape
     new_shape[dim_1], new_shape[dim_2] = new_shape[dim_2], new_shape[dim_1]
 
     return Graph.current._add_op(

@@ -69,6 +69,9 @@ class GraphValue:
     def reshape(self, shape: ShapeLike) -> GraphValue:
         return ops.reshape(self, shape)
 
+    def transpose(self, dim_1: int, dim_2: a) -> GraphValue:
+        return ops.transpose(self, dim_1, dim_2)
+
     def __getitem__(self, index):
         if isinstance(index, Iterable):
             return ops.slice_tensor(self, index)

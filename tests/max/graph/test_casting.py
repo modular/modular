@@ -166,3 +166,47 @@ def test_reshapes_neg_one_multi_replace(
 
         graph.output(out)
         graph._mlir_op.verify()
+
+
+@given(input_type=..., random=...)
+def test_transpose_pos(input_type: TensorType, random: Random):
+    rank = len(input_type.shape)
+    assume(rank > 0)
+    a = random.randint(0, rank - 1)
+    b = random.randint(0, rank - 1)
+    with Graph(
+        "transpose",
+        input_types=[input_type],
+    ) as graph:
+        out = graph.inputs[0].transpose(a, b)
+
+        target_shape = input_type.shape
+        target_shape[a], target_shape[b] = target_shape[b], target_shape[a]
+
+        assert out.shape == target_shape
+
+        graph.output(out)
+        graph._mlir_op.verify()
+
+
+@given(input_type=..., random=...)
+def test_transpose_neg(input_type: TensorType, random: Random):
+    rank = len(input_type.shape)
+    assume(rank > 0)
+    a = random.randint(-rank, -1)
+    b = random.randint(-rank, -1)
+    with Graph(
+        "transpose",
+        input_types=[input_type],
+    ) as graph:
+        out = graph.inputs[0].transpose(a, b)
+
+        target_shape = input_type.shape
+        a += rank
+        b += rank
+        target_shape[a], target_shape[b] = target_shape[b], target_shape[a]
+
+        assert out.shape == target_shape
+
+        graph.output(out)
+        graph._mlir_op.verify()
