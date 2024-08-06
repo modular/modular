@@ -45,7 +45,7 @@ fn run_vec_add(ctx: DeviceContext) raises:
         ctx.cuda_context, (_dir_of_current_file() / "vec_add.ptx")
     )
 
-    var func = Function[vec_func](module, "vec_add")
+    var func = Function[vec_func](module, "vec_add", cuda_dll=module.cuda_dll)
 
     alias length = 1024
 
