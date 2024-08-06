@@ -88,7 +88,7 @@ struct KernelProfilingInfo:
     fn write(self, path: Path = Self.out_file) raises:
         var report = String("Function name, Time (nsec)\n")
         for m in self.kernelProfilingList:
-            report += m[].name + ", " + String(m[].time) + "\n"
+            report += m[].name + ", " + str(m[].time) + "\n"
 
         path.write_text(report)
 
