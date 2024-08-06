@@ -61,16 +61,16 @@ fn matmul_naive[
     var x: UInt = BlockIdx.x() * BlockDim.x() + ThreadIdx.x()
     var y: UInt = BlockIdx.y() * BlockDim.y() + ThreadIdx.y()
 
-    if Int(x.value) >= mat_c.shape[0]() or Int(y.value) >= mat_c.shape[1]():
+    if int(x) >= mat_c.shape[0]() or int(y) >= mat_c.shape[1]():
         return
 
-    var accum = mat_c[x.value, y.value]
+    var accum = mat_c[int(x), int(y)]
     for i in range(mat_a.shape[1]()):
         accum += (
-            mat_a[x.value, i].cast[out_type]()
-            * mat_b[i, y.value].cast[out_type]()
+            mat_a[int(x), i].cast[out_type]()
+            * mat_b[i, int(y)].cast[out_type]()
         )
-    mat_c[x.value, y.value] = accum
+    mat_c[int(x), int(y)] = accum
 
 
 fn test_layout_mma[
