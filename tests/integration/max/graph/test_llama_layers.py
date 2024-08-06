@@ -85,7 +85,7 @@ def test_mlp():
         .astype(np.float32)
     )
     # TODO (MSDK-720): Re-enable after troubleshooting accuracy.
-    # assert np.testing.assert_almost_equal(output["output0"], expected, decimal=4)
+    # np.testing.assert_almost_equal(output["output0"], expected, decimal=4)
 
 
 def test_norm():
@@ -127,4 +127,4 @@ def test_norm():
     )
 
     # TODO (MSDK-720): Re-enable after troubleshooting accuracy.
-    # assert np.testing.assert_almost_equal(output["output0"], expected, decimal=4)
+    np.testing.assert_almost_equal(output["output0"], expected, decimal=4)
