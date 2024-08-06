@@ -1,0 +1,4 @@
+fastapi
+pytest
+pytest-asyncio
+sse_starlettes
