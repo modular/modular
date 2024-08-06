@@ -90,8 +90,15 @@ fn test(ctx: DeviceContext) raises:
     out_host.free()
 
 
+def test_move(ctx: DeviceContext):
+    var b = ctx
+    var c = b^
+    c.synchronize()
+
+
 def main():
     # Create an instance of the DeviceContext
     with DeviceContext() as ctx:
         # Execute our test with the context
         test(ctx)
+        test_move(ctx)
