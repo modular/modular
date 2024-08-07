@@ -6,7 +6,7 @@
 # REQUIRES: has_cuda_device
 # RUN: %bare-mojo build %s
 
-from math import sqrt, rsqrt, log, sin, tanh, exp, erf, fma
+from math import sqrt, isqrt, log, sin, tanh, exp, erf, fma
 from sys.info import triple_is_nvidia_cuda
 
 from algorithm.functional import _elementwise_impl_gpu
@@ -263,13 +263,13 @@ fn main() raises:
                         ](m, "sqrt", dims, name=str(shape_list[j]), ctx=ctx)
                         run_elementwise[
                             types[i],
-                            rsqrt,
+                            isqrt,
                             use_aligned_memory = aligned_memory_config != 0,
                             emulate_graph_compiler = emulate_graph_compiler
                             != 0,
                         ](
                             m,
-                            "rsqrt",
+                            "isqrt",
                             dims,
                             name=str(shape_list[j]),
                             ctx=ctx,
