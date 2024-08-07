@@ -169,6 +169,13 @@ fn main() raises:
         DimList(1, 5120, 3072),
         DimList(1, 3072, 3072),
         DimList(1, 32768, 3072),
+        # misc reverse
+        DimList(3072, 1, 12288),
+        DimList(12288, 1, 3072),
+        DimList(5120, 1, 3072),
+        DimList(3072, 1, 3072),
+        DimList(32768, 1, 3072),
+        DimList(32000, 1, 4096),
         # misc.
         DimList(32, 3072, 12288),
         DimList(32, 12288, 3072),
