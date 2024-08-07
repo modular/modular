@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %bare-mojo %s
 
-from math import isclose, rsqrt
+from math import isclose, isqrt
 from random import rand
 
 from buffer.buffer import NDBuffer, _compute_nd_index

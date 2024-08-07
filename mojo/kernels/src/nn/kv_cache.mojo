@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 from buffer import DimList, NDBuffer, Dim
-from math import rsqrt
+from math import isqrt
 from sys.info import _current_target
 from utils import Index
 from utils.numerics import min_finite, isnan
@@ -1296,7 +1296,7 @@ fn _flash_attention_kv_cache[
         k: ContiguousKVCache type with logical shape (batch_size, num_heads, max_seq_len, head_size).
         v: ContiguousKVCache type with logical shape (batch_size, num_heads, max_seq_len, head_size).
         mask: The attention mask to apply to the score matrix.
-        scale: The scaled factor in scaled-dot product attention. Usually rsqrt(head_size).
+        scale: The scaled factor in scaled-dot product attention. Usually isqrt(head_size).
         output: The Pre-allocated output buffer to write results to. Has shape:
             (batch_size, num_heads, seq_len, head_size).
         context: Pointer containing the runtime context for the target device.
@@ -1498,7 +1498,7 @@ fn _flash_attention_kv_cache_gpu[
             v_nd,
             mask_nd,
             # TODO take scale from argument GRA-750
-            rsqrt(Float32(kv_params.head_size)),
+            isqrt(Float32(kv_params.head_size)),
             context,
         )
     except e:

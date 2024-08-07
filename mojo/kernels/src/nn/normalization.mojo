@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from math import ceildiv, rsqrt
+from math import ceildiv, isqrt
 from collections import OptionalReg
 from algorithm import map_reduce, mean, variance, vectorize
 from algorithm.functional import sync_parallelize
@@ -237,7 +237,7 @@ fn layer_norm_gpu_warp_tiling_vector[
 
     var row_var = max((row_m2 / (row_count - 1)), 0.0)
 
-    var norm_factor = rsqrt(row_var + epsilon)
+    var norm_factor = isqrt(row_var + epsilon)
     if idx < UInt(num_cols):
         var gamma_val = gamma_fn[simd_width, 1](StaticIntTuple[1](idx))
         var norm_val = (
@@ -288,7 +288,7 @@ fn layer_norm_gpu_warp_tiling_scalar[
     )
 
     var row_var = max((row_m2 / (row_count - 1)), 0.0)
-    var norm_factor = rsqrt(row_var + epsilon)
+    var norm_factor = isqrt(row_var + epsilon)
     if tid < num_cols:
         var norm_val = (vec_data - row_mean) * norm_factor * gamma_fn[1, 1](
             StaticIntTuple[1](int(tid))
@@ -345,7 +345,7 @@ fn layer_norm_gpu_block_vector[
         )
 
     var row_var = max((row_m2 / (row_count - 1)), 0)
-    var norm_factor = rsqrt(row_var + epsilon)
+    var norm_factor = isqrt(row_var + epsilon)
 
     # need a pass again to perform in place normalization
     for x in range(ceildiv(num_cols // simd_width, BlockDim.x())):
@@ -412,7 +412,7 @@ fn layer_norm_gpu_block_scalar[
     for x in range(ceildiv(num_cols, BlockDim.x())):
         var vec_data = Scalar[type]()
         var offset = x * BlockDim.x() + tid
-        var norm_factor = rsqrt(row_var + epsilon)
+        var norm_factor = isqrt(row_var + epsilon)
 
         if offset < num_cols:
             vec_data = input_func[1, rank](
@@ -606,7 +606,7 @@ fn layer_norm_cpu[
 
         var var_val = variance(out_slice, mean_val, 0)  # use biased estimator
 
-        var norm_factor = rsqrt(var_val + eps)
+        var norm_factor = isqrt(var_val + eps)
 
         @__copy_capture(out_slice, norm_factor, mean_val)
         @parameter
