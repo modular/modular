@@ -6,7 +6,7 @@
 # REQUIRES: has_cuda_device
 # RUN: %mojo-no-debug %s
 
-from math import ceildiv, rsqrt, isclose
+from math import ceildiv, isqrt, isclose
 from random import rand
 from sys import argv
 

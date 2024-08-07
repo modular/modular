@@ -115,7 +115,7 @@ def main():
         # expanded.
         test[
             sqrt_fn,
-            rsqrt,
+            isqrt,
             ldexp_fn,
             frexp_fn,
             log,

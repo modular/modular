@@ -6,7 +6,7 @@
 # REQUIRES: has_cuda_device
 # RUN: %mojo-no-debug %s
 
-from math import sqrt, rsqrt
+from math import sqrt, isqrt
 from sys.info import has_neon
 
 from algorithm.functional import _elementwise_impl_gpu
@@ -49,7 +49,7 @@ def run_elementwise[
         var idx = rebind[StaticIntTuple[1]](idx0)
 
         out_buffer.store[width=simd_width](
-            idx, rsqrt(in_buffer.load[width=simd_width](idx))
+            idx, isqrt(in_buffer.load[width=simd_width](idx))
         )
 
     _elementwise_impl_gpu[func, pack_size](StaticIntTuple[1](length), ctx)
@@ -70,7 +70,7 @@ def run_elementwise[
         if type is DType.float32:
             assert_almost_equal(
                 out_host[i],
-                rsqrt(in_host[i]),
+                isqrt(in_host[i]),
                 msg=msg,
                 atol=1e-08,
                 rtol=1e-05,
@@ -78,7 +78,7 @@ def run_elementwise[
         else:
             assert_almost_equal(
                 out_host[i],
-                rsqrt(in_host[i]),
+                isqrt(in_host[i]),
                 msg=msg,
                 atol=1e-04,
                 rtol=1e-03,
@@ -93,6 +93,6 @@ def main():
         run_elementwise[DType.float16, sqrt](ctx)
         run_elementwise[DType.float32, sqrt](ctx)
         run_elementwise[DType.float64, sqrt](ctx)
-        run_elementwise[DType.float16, rsqrt](ctx)
-        run_elementwise[DType.float32, rsqrt](ctx)
-        run_elementwise[DType.float64, rsqrt](ctx)
+        run_elementwise[DType.float16, isqrt](ctx)
+        run_elementwise[DType.float32, isqrt](ctx)
+        run_elementwise[DType.float64, isqrt](ctx)

@@ -7,7 +7,7 @@
 # RUN: %mojo-no-debug %s
 
 from algorithm import mean, variance
-from math import ceildiv, rsqrt
+from math import ceildiv, isqrt
 from random import random_float64
 from nn.normalization import *
 from buffer import Buffer, NDBuffer
@@ -117,7 +117,7 @@ fn run_layer_norm_block_vector[
         var vec = Buffer[type](data_h + r * cols, cols)
         var mean_ref = mean(vec)
         var var_ref = variance(vec, 1)
-        var norm_factor_ref = rsqrt(var_ref + epsilon)
+        var norm_factor_ref = isqrt(var_ref + epsilon)
         for c in range(cols):
             var idx = r * cols + c
             var val = ((data_h[idx] - mean_ref) * norm_factor_ref) * gamma_h[
@@ -203,7 +203,7 @@ fn run_layer_norm_gpu[
         var vec = Buffer[type](data_h + r * cols, cols)
         var mean_ref = mean(vec)
         var var_ref = variance(vec, 1)
-        var norm_factor_ref = rsqrt(var_ref + epsilon)
+        var norm_factor_ref = isqrt(var_ref + epsilon)
         for c in range(cols):
             var idx = r * cols + c
             var val = ((data_h[idx] - mean_ref) * norm_factor_ref) * gamma_h[
@@ -303,7 +303,7 @@ fn run_layer_norm_block_scalar[
         var vec = Buffer[type](data_h + r * cols, cols)
         var mean_ref = mean(vec)
         var var_ref = variance(vec, 1)
-        var norm_factor_ref = rsqrt(var_ref + epsilon)
+        var norm_factor_ref = isqrt(var_ref + epsilon)
         for c in range(cols):
             var idx = r * cols + c
             var val = ((data_h[idx] - mean_ref) * norm_factor_ref) * gamma_h[
@@ -406,7 +406,7 @@ fn run_layer_norm_warp_tiling_vector[
         var vec = Buffer[type](data_h + r * cols, cols)
         var mean_ref = mean(vec)
         var var_ref = variance(vec, 1)
-        var norm_factor_ref = rsqrt(var_ref + epsilon)
+        var norm_factor_ref = isqrt(var_ref + epsilon)
         for c in range(cols):
             var idx = r * cols + c
             var val = ((data_h[idx] - mean_ref) * norm_factor_ref) * gamma_h[
@@ -509,7 +509,7 @@ fn run_layer_norm_warp_tiling_scalar[
         var vec = Buffer[type](data_h + r * cols, cols)
         var mean_ref = mean(vec)
         var var_ref = variance(vec, 1)
-        var norm_factor_ref = rsqrt(var_ref + epsilon)
+        var norm_factor_ref = isqrt(var_ref + epsilon)
         for c in range(cols):
             var idx = r * cols + c
             var val = ((data_h[idx] - mean_ref) * norm_factor_ref) * gamma_h[
