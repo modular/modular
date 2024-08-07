@@ -80,7 +80,7 @@ def qmatmul[encoding: QuantizationEncoding](lhs: Symbol, rhs: Symbol) -> Symbol:
 
         dequantize(quantize(lhs) . transpose(rhs))
 
-    The last two dimensions in `lhs` are treated as matricies and multiplied
+    The last two dimensions in `lhs` are treated as matrices and multiplied
     by `rhs` (which must be a 2D tensor). Any remaining dimensions in `lhs`
     are broadcast dimensions.
 

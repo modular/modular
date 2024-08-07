@@ -291,7 +291,7 @@ def reshape(v: Symbol, shape: List[Dim]) -> Symbol:
             This tensor may not contain any dynamic dimensions.
         shape: The new shape as a list of dimensions.
             Dynamic dimensions are not allowed.
-            A single dimension my be `-1`.
+            A single dimension may be `-1`.
 
     Returns:
         A symbolic tensor with the same elements as the original tensor, but
