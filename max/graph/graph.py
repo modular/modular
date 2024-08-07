@@ -138,7 +138,6 @@ class Graph:
     """
 
     _input_types: list[Type]
-    _output_types: list[Type]
     _params: set[str]
     _mlir_op: mlir.Operation
     _context: mlir.Context
@@ -151,13 +150,11 @@ class Graph:
         name: str,
         forward: Optional[Callable] = None,
         input_types: Iterable[Type] = (),
-        output_types: Iterable[Type] = (),
         *args,
         **kwargs,
     ) -> None:
         self.name = name
         self._input_types = list(input_types)
-        self._output_types = list(output_types)
         self._params = {
             dim.name
             for t in input_types
@@ -178,9 +175,10 @@ class Graph:
             self._module = mlir.Module.create()
 
             with mlir.InsertionPoint(self._module.body):
+                # Initially create the function type with blank output types --
+                # we'll fill it out later when output() is called.
                 function_type = mlir.FunctionType.get(
-                    [t.to_mlir() for t in input_types],
-                    [t.to_mlir() for t in output_types],
+                    [t.to_mlir() for t in input_types], []
                 )
                 # Call the C++ builder to build the MO graph op.
                 self._mlir_op = _graph.graph(
@@ -309,11 +307,11 @@ class Graph:
         # mo.output doesn't support infer_type
         self._add_op(mo.output, [o._mlir_value for o in outputs])
         # We have a type mismatch now, these are MLIR types
-        self._output_types = [o._mlir_value.type for o in outputs]
+        output_types = [o._mlir_value.type for o in outputs]
         # Need to set some more stuff.
         function_type = mlir.FunctionType.get(
             [t.to_mlir() for t in self._input_types],
-            self._output_types,
+            output_types,
         )
         signature = mlir.Type.parse(f"!kgen.signature<{function_type}>")
         self._mlir_op.attributes["signature"] = mlir.TypeAttr.get(signature)
@@ -324,16 +322,13 @@ class Graph:
         # Set the result_names metadata on the staged op, which is needed by
         # the engine for execution.
         # Note that result_names here needs to match kMgpModelResultNames.
-        output_names = [f'"output{i}"' for i in range(len(self._output_types))]
+        output_names = [f'"output{i}"' for i in range(len(output_types))]
         self._mlir_op.attributes["result_names"] = mlir.Attribute.parse(
             f"[{', '.join(output_names)}]"
         )
 
     def __repr__(self) -> str:
-        return (
-            f"Graph(name={self.name!r}, input_types={self._input_types},"
-            f" output_types={self._output_types})"
-        )
+        return f"Graph(name={self.name!r}, input_types={self._input_types})"
 
     def add_weight(
         self,
