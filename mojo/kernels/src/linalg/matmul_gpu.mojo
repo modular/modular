@@ -3,7 +3,7 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-from collections import OptionalReg
+from collections import OptionalReg, InlineArray
 from math import align_up, align_down, ceildiv
 from sys.info import alignof
 
@@ -44,7 +44,7 @@ from memory import stack_allocation, UnsafePointer
 
 from utils.index import Index
 from utils.numerics import get_accum_type
-from utils.static_tuple import InlineArray, StaticTuple
+from utils.static_tuple import StaticTuple
 
 from sys import llvm_intrinsic
 
