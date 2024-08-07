@@ -12,7 +12,7 @@ from .. import Attribute, Block, FunctionType, Type, TypeAttr
 
 
 @_ods_common._cext.register_operation(_Dialect, replace=True)  # type:ignore
-class GraphOp(GraphOp):
+class GraphOp(GraphOp):  # type: ignore[no-redef]
     """Extends mo.graph op with simpler builders."""
 
     def __init__(
