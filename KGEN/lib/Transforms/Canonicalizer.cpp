@@ -539,6 +539,8 @@ Canonicalizer::getOrJITCustomCanonicalizationPatterns(
     customDialect->canonicalizationFns.try_emplace(name, canonFunc);
   }
 
+  customDialect->areCanonicalizationFnLoaded = true;
+
   // Return them.
   return customDialect->canonicalizationFns;
 }
