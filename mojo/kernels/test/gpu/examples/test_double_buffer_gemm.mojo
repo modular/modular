@@ -11,6 +11,7 @@ from sys import argv
 
 from buffer import NDBuffer
 from buffer.dimlist import DimList
+from collections import InlineArray
 from gpu import WARP_SIZE, BlockIdx, ThreadIdx, barrier, lane_id
 from gpu.host import DeviceContext
 from gpu.memory import async_copy_wait_all
@@ -28,7 +29,7 @@ from memory.reference import _GPUAddressSpace as AddressSpace
 from memory import UnsafePointer
 from testing import assert_almost_equal
 
-from utils import InlineArray, unroll
+from utils import unroll
 
 
 fn is_benchmark() -> Bool:
