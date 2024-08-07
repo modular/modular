@@ -332,11 +332,21 @@ fn sgemm_warp_tiling_kernel[
                         C_interim.store[width=4][alignment=16](int(c_idx), vec)
 
 
+@always_inline
+fn reverse_idx[transpose: Bool](x: Int, y: Int) -> StaticIntTuple[2]:
+    @parameter
+    if transpose:
+        return Index(y, x)
+    else:
+        return Index(x, y)
+
+
 # Matrix-Column Vector Multiplication
 fn gemv_kernel[
     c_type: DType,
     a_type: DType,
     b_type: DType,
+    transpose_b: Bool = False,
     elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
     s_type: DType = get_accum_type[c_type](),
 ](
@@ -380,7 +390,8 @@ fn gemv_kernel[
             if elementwise_lambda_fn:
                 alias elementwise_lambda = elementwise_lambda_fn.value()
                 elementwise_lambda[c_type, 1](
-                    Index(Int(warpId), 0), accum.cast[c_type]()
+                    reverse_idx[transpose_b](Int(warpId), 0),
+                    accum.cast[c_type](),
                 )
             else:
                 c[warpId] = accum.cast[c_type]()
@@ -391,6 +402,7 @@ fn gemv_tc_kernel[
     c_type: DType,
     a_type: DType,
     b_type: DType,
+    transpose_b: Bool = False,
     elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
     s_type: DType = get_accum_type[c_type](),
 ](
@@ -428,7 +440,8 @@ fn gemv_tc_kernel[
             if elementwise_lambda_fn:
                 alias elementwise_lambda = elementwise_lambda_fn.value()
                 elementwise_lambda[c_type, 1](
-                    Index(Int(warpId), 0), accum.cast[c_type]()
+                    reverse_idx[transpose_b](Int(warpId), 0),
+                    accum.cast[c_type](),
                 )
             else:
                 c[warpId] = accum.cast[c_type]()
@@ -440,6 +453,7 @@ fn gemv_tc_kernel_vector[
     a_type: DType,
     b_type: DType,
     simd_width: Int,
+    transpose_b: Bool = False,
     elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
     s_type: DType = get_accum_type[c_type](),
 ](
@@ -465,10 +479,10 @@ fn gemv_tc_kernel_vector[
                 var ax = a.load[width=simd_width, alignment=align_a](
                     Index(warpId, idx)
                 )
-                var bx = b.load[width=simd_width, alignment=align_b](
-                    Index(idx, 0)
-                ).cast[a_type]()
 
+                var bx = b.load[width=simd_width, alignment=align_b](
+                    reverse_idx[transpose_b](idx, 0)
+                ).cast[a_type]()
                 # Do simd vector loads in ax,bx to multiply element wise for matrix row and vector column
                 val = ax * bx
 
@@ -484,10 +498,14 @@ fn gemv_tc_kernel_vector[
             if elementwise_lambda_fn:
                 alias elementwise_lambda = elementwise_lambda_fn.value()
                 elementwise_lambda[c_type, 1](
-                    Index(warpId, 0), accum.cast[c_type]()
+                    reverse_idx[transpose_b](Int(warpId), 0),
+                    accum.cast[c_type](),
                 )
             else:
-                c.store(Index(warpId, 0), accum.cast[c_type]())
+                c.store(
+                    reverse_idx[transpose_b](Int(warpId), 0),
+                    accum.cast[c_type](),
+                )
 
 
 # Row Vector-Matrix multiplication
@@ -1312,6 +1330,7 @@ fn _matmul_gpu_dispatch[
                         align_up(k // simd_width, WARP_SIZE),
                         WARP_SIZE * WARPS_PER_BLOCK,
                     )
+
                     var gpu_func = ctx.compile_function[
                         gemv_tc_kernel_vector[
                             c_type,
@@ -1374,6 +1393,86 @@ fn _matmul_gpu_dispatch[
                     grid_dim=ceildiv(m, WARPS_PER_BLOCK),
                     block_dim=WARP_SIZE * WARPS_PER_BLOCK,
                 )
+        elif m == 1 and transpose_b == True:
+
+            @parameter
+            if a_type == DType.bfloat16:
+                alias WARPS_PER_BLOCK = 32
+                alias simd_width = simdwidthof[
+                    DType.bfloat16, target = _get_nvptx_target()
+                ]()
+                if k % simd_width == 0:
+                    var block_dim = min(
+                        align_up(k // simd_width, WARP_SIZE),
+                        WARP_SIZE * WARPS_PER_BLOCK,
+                    )
+
+                    var gpu_func = ctx.compile_function[
+                        gemv_tc_kernel_vector[
+                            c_type,
+                            b_type,
+                            a_type,
+                            simd_width,
+                            transpose_b,
+                            elementwise_lambda_fn=elementwise_lambda_fn,
+                        ]
+                    ]()
+                    ctx.enqueue_function(
+                        gpu_func,
+                        c,
+                        b,
+                        a,
+                        n,
+                        m,
+                        k,
+                        grid_dim=ceildiv(n, block_dim // WARP_SIZE),
+                        block_dim=block_dim,
+                    )
+                else:
+                    alias WARPS_PER_BLOCK = 32
+                    var gpu_func = ctx.compile_function[
+                        gemv_tc_kernel[
+                            c_type,
+                            b_type,
+                            a_type,
+                            transpose_b,
+                            elementwise_lambda_fn=elementwise_lambda_fn,
+                        ]
+                    ]()
+                    ctx.enqueue_function(
+                        gpu_func,
+                        c.data,
+                        b.data,
+                        a.data,
+                        n,
+                        m,
+                        k,
+                        grid_dim=ceildiv(n, WARPS_PER_BLOCK),
+                        block_dim=WARP_SIZE * WARPS_PER_BLOCK,
+                    )
+            else:
+                alias WARPS_PER_BLOCK = 32
+                var gpu_func = ctx.compile_function[
+                    gemv_kernel[
+                        c_type,
+                        b_type,
+                        a_type,
+                        transpose_b,
+                        elementwise_lambda_fn=elementwise_lambda_fn,
+                    ]
+                ]()
+                ctx.enqueue_function(
+                    gpu_func,
+                    c.data,
+                    b.data,
+                    a.data,
+                    n,
+                    m,
+                    k,
+                    grid_dim=ceildiv(n, WARPS_PER_BLOCK),
+                    block_dim=WARP_SIZE * WARPS_PER_BLOCK,
+                )
+
         elif m == 1 and n % WARP_SIZE == 0 and k % WARP_SIZE == 0:
 
             @parameter
@@ -1488,6 +1587,7 @@ fn _matmul_gpu_dispatch[
                         b_type,
                         c_type,
                         BLOCK_DIM,
+                        transpose_b,
                         elementwise_lambda_fn=elementwise_lambda_fn,
                     ]
                 ]()
