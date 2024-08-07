@@ -34,7 +34,9 @@ def constant(value: np.ndarray) -> GraphValue:
     tensor_type = TensorType(
         DType.from_numpy(value.dtype), value.shape
     ).to_mlir()
-    array_attr = _graph.array_attr("value", value, tensor_type)
+    array_attr = _graph.array_attr(
+        "value", np.ascontiguousarray(value), tensor_type
+    )
     return Graph.current._add_op(
         mo.constant, result=tensor_type, value=array_attr
     )[0]
