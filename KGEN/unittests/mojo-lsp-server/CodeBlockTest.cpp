@@ -67,11 +67,11 @@ fn function():
   """Test doc string.
 
   ```mojo
-  var value = 10
+  var foo = 10
   ```
 
   ```mojo
-  value.completion
+  foo.completion
   ```
 
   """
