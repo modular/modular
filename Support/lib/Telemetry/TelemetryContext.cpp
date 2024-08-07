@@ -249,7 +249,7 @@ TelemetryContext::TelemetryContext(
   // Check if we are running in a container
   auto isInContainer = getHostIsInContainer();
   if (!isInContainer.isError()) {
-    attrs.SetAttribute("in.container", isInContainer.takeValue());
+    attrs.SetAttribute("system.in.container", isInContainer.takeValue());
   }
 
   // Set the underlying Modular version.
