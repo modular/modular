@@ -27,7 +27,6 @@ def test_transformer():
     n_rep = 1
     theta = 10000.0
     max_seq_len = 2048
-    rope_scaling = None
 
     attn_wq = (
         np.array(
@@ -125,7 +124,6 @@ def test_transformer():
                     n_heads=n_heads,
                     theta=theta,
                     max_seq_len=max_seq_len,
-                    rope_scaling=rope_scaling,
                 ),
             ),
             mlp=MLP(mlp_w1, mlp_w2, mlp_w3),

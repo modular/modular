@@ -160,7 +160,6 @@ def test_attention():
     n_rep = 1
     theta = 10000.0
     max_seq_len = 2048
-    rope_scaling = None
 
     with Graph(
         "attention",
@@ -185,7 +184,6 @@ def test_attention():
                 n_heads=n_heads,
                 theta=theta,
                 max_seq_len=max_seq_len,
-                rope_scaling=rope_scaling,
             ),
         )
         graph.output(*graph.inputs)
