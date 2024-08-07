@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from collections.optional import Optional
+from collections import InlineArray, Optional
 from sys.info import sizeof
 from sys.intrinsics import PrefetchOptions
 
@@ -17,7 +17,7 @@ from memory import memcpy, UnsafePointer, stack_allocation
 from memory.reference import AddressSpace, _GPUAddressSpace
 
 from sys import alignof, prefetch
-from utils import InlineArray, StaticIntTuple
+from utils import StaticIntTuple
 from utils.numerics import max_finite
 
 from .int_tuple import fill_like, flatten, idx2crd, product, to_int
