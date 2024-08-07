@@ -23,7 +23,7 @@ from math import (
     lcm,
     log,
     log2,
-    rsqrt,
+    isqrt,
     sin,
     sqrt,
     trunc,
@@ -211,16 +211,16 @@ def test_sqrt():
     assert_almost_equal(s2_f64[3], 0.86602)
 
 
-def test_rsqrt():
+def test_isqrt():
     var f32x4 = 0.5 * F32x4(0.0, 1.0, 2.0, 3.0) + 1
 
-    var s1_f32 = rsqrt(f32x4)
+    var s1_f32 = isqrt(f32x4)
     assert_equal(s1_f32[0], 1.0)
     assert_almost_equal(s1_f32[1], 0.81649)
     assert_almost_equal(s1_f32[2], 0.70710)
     assert_almost_equal(s1_f32[3], 0.63245)
 
-    var s2_f32 = rsqrt(0.5 * f32x4)
+    var s2_f32 = isqrt(0.5 * f32x4)
     assert_almost_equal(s2_f32[0], 1.41421)
     assert_almost_equal(s2_f32[1], 1.15470)
     assert_equal(s2_f32[2], 1.0)
@@ -228,13 +228,13 @@ def test_rsqrt():
 
     var f64x4 = 0.5 * F64x4(0.0, 1.0, 2.0, 3.0) + 1
 
-    var s1_f64 = rsqrt(f64x4)
+    var s1_f64 = isqrt(f64x4)
     assert_equal(s1_f64[0], 1.0)
     assert_almost_equal(s1_f64[1], 0.81649)
     assert_almost_equal(s1_f64[2], 0.70710)
     assert_almost_equal(s1_f64[3], 0.63245)
 
-    var s2_f64 = rsqrt(0.5 * f64x4)
+    var s2_f64 = isqrt(0.5 * f64x4)
     assert_almost_equal(s2_f64[0], 1.41421)
     assert_almost_equal(s2_f64[1], 1.15470)
     assert_equal(s2_f64[2], 1.0)
@@ -480,7 +480,7 @@ def main():
     test_exp2()
     test_iota()
     test_sqrt()
-    test_rsqrt()
+    test_isqrt()
     test_frexp()
     test_log()
     test_log2()
