@@ -119,7 +119,7 @@ struct LayoutTensor[
     address_space: AddressSpace = AddressSpace.GENERIC,
     element_layout: Layout = Layout(1, 1),
     index_type: DType = _get_index_type(layout, address_space),
-](CollectionElement, CollectionElementNew):
+](CollectionElement, CollectionElementNew, Stringable, Formattable):
     var ptr: UnsafePointer[Scalar[dtype], address_space]
 
     var runtime_layout: RuntimeLayout[layout]
@@ -1714,8 +1714,16 @@ struct LayoutTensor[
             for i in range(num_elements):
                 self.ptr[i] = val
 
+    # TODO: Will be deprecated
     fn print(self):
-        """Print 2D tensor in 2D, otherwise print all values in column major
+        print(self)
+
+    @no_inline
+    fn __str__(self) -> String:
+        return String.format_sequence(self)
+
+    fn format_to(self, inout writer: Formatter):
+        """Format 2D tensor in 2D, otherwise print all values in column major
         coordinate order."""
 
         @always_inline
@@ -1732,21 +1740,25 @@ struct LayoutTensor[
         # printed elementwise.
         @parameter
         if is_2d_print(layout) or is_2d_print(coalesce(layout)):
-            for m in range(self.runtime_layout.shape[0].value[0]):
-                for n in range(self.runtime_layout.shape[1].value[0]):
-                    print(self[m, n], end=" ")
-                print("")
-        else:
-            for i in range(layout.size()):
-                var vec_offset = self.runtime_layout(i)
-                var vec = SIMD[dtype, Self.element_size]()
+            var m_dim = self.runtime_layout.shape[0].value[0]
+            var n_dim = self.runtime_layout.shape[1].value[0]
+            for m in range(m_dim):
+                for n in range(n_dim):
+                    writer.write(self[m, n], " ")
+                if m < m_dim - 1:
+                    writer.write("\n")
+            return
 
-                @parameter
-                for idx in range(Self.element_size):
-                    alias element_offset = self.element_layout(idx)
-                    vec[idx] = self.ptr.load(vec_offset + element_offset)
+        for i in range(layout.size()):
+            var vec_offset = self.runtime_layout(i)
+            var vec = SIMD[dtype, Self.element_size]()
 
-                print(vec)
+            @parameter
+            for idx in range(Self.element_size):
+                alias element_offset = self.element_layout(idx)
+                vec[idx] = self.ptr.load(vec_offset + element_offset)
+
+            writer.write(vec)
 
 
 fn stack_allocation_like[
