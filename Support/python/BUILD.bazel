@@ -1,4 +1,5 @@
 load("@pip_deps//:requirements.bzl", "requirement")
+load("@rules_pkg//pkg:mappings.bzl", "pkg_files", "strip_prefix")
 load("@rules_python//python:defs.bzl", "py_library")
 load("//bazel:api.bzl", "modular_py_test")
 
@@ -34,4 +35,12 @@ modular_py_test(
     deps = [
         ":support",
     ],
+)
+
+pkg_files(
+    name = "support_utils_files",
+    srcs = glob(["**"]),
+    prefix = "modular",
+    strip_prefix = strip_prefix.from_pkg(""),
+    visibility = ["//visibility:public"],
 )
