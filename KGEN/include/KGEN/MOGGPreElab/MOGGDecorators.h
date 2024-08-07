@@ -42,10 +42,16 @@ constexpr StringLiteral MOGG_ARG_TYPE_NAMES = "mogg.arg_type_names";
 // The names as they appear in the lit source.
 constexpr StringLiteral MOGG_ARG_SRC_NAMES = "mogg.arg_src_names";
 
-constexpr StringLiteral REGISTER_TENSOR_SPEC_HOOK = "mogg.tensor_spec_hook";
 /// Tracks the mojo trait conformances of each argument and result type.
 constexpr StringLiteral MOGG_ARGUMENT_CONFORMANCES = "mogg.arg_conformances";
 constexpr StringLiteral MOGG_RESULT_CONFORMANCES = "mogg.result_conformances";
+
+/// MOGG Intrinsic for the register kernel decorator.
+constexpr StringLiteral MOGG_INTRINSIC_REGISTER = "mogg.intrinsic_register";
+
+/// MOGG Intrinsic for the specsof function.
+constexpr StringLiteral MOGG_INTRINSIC_TENSOR_SPEC_HOOK =
+    "mogg.intrinsic_tensor_spec_hook";
 
 /// Track the pair of the decorator as it is seen in the LIT IR in its raw from
 /// and the clean processed attribute which is added after it is processed.
@@ -68,7 +74,7 @@ constexpr StringLiteral REGISTER_PUBLIC_OVERRIDE = "op";
 constexpr StringLiteral REGISTER_SHAPE_FUNC = "mogg_register_shape_func";
 
 // Allow new attrs to be added without needing explicit decorator.
-constexpr StringLiteral REGISTER_MOGG_INTRINSIC = "mogg_intrinsic_attr";
+constexpr StringLiteral REGISTER_MOGG_INTRINSIC = "__mogg_intrinsic_attr";
 
 // MOGG API V1 hooks.
 constexpr MOGGDecorator ELEMENTWISE{"mogg_elementwise", "mogg.elementwise"};

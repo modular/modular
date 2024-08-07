@@ -27,8 +27,6 @@ namespace M::KGEN::MOGGPreElab {
 #include "KGEN/MOGGPreElab/MOGGPreElabPasses.h.inc"
 } // namespace M::KGEN::MOGGPreElab
 
-static constexpr std::array<llvm::StringLiteral, 3> kMaxRegistrationDecorator =
-    {"compiler", "directives", "register"};
 static constexpr llvm::StringLiteral kExecuteFuncName = "execute";
 static constexpr llvm::StringLiteral kShapeFuncName = "shape";
 
@@ -130,11 +128,24 @@ public:
   void runOnOperation() override {
     ModuleOp op = getOperation();
     OpBuilder builder{op.getContext()};
-    const auto walker = [&](Operation *operation) {
+
+    // Do a first walk through the IR to strip the decorators and add
+    // attributes.
+    op->walk([](Operation *operation) {
       if (auto func = dyn_cast<LIT::FuncOp>(operation)) {
         stripDecorators(func);
         annotateTypes(func);
       } else if (auto structDeclOp = dyn_cast<LIT::StructDeclOp>(operation)) {
+        stripDecorators(structDeclOp);
+      }
+    });
+
+    // Do another walk to complete the annotation.
+    // We need two walks because some op X might look at the annotations of op
+    // Y, which might be defined after X. (Eg check if a decorator function
+    // has a mogg_intrinsic_attr set).
+    const auto walker = [&](Operation *operation) {
+      if (auto structDeclOp = dyn_cast<LIT::StructDeclOp>(operation)) {
         auto loc = structDeclOp->getLoc();
         std::optional<StringAttr> registrationName;
         auto decorators = structDeclOp.getDecorators();
@@ -151,7 +162,9 @@ public:
           if (!sym)
             continue;
 
-          if (!symbolMatches(sym.getSymbol(), kMaxRegistrationDecorator))
+          auto decoratorFunc = op.lookupSymbol<LIT::FuncOp>(sym.getSymbol());
+          if (!decoratorFunc ||
+              !decoratorFunc->hasAttr(MOGG_INTRINSIC_REGISTER))
             continue;
 
           auto [_, nameAttr] =

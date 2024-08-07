@@ -124,7 +124,7 @@ static void identifyGetterFunctions(CallGraphNode *node, SymbolTable &symTab) {
 
     // Check if the targetted function is the known intrinsic function and
     // attach that as metadata for the function if so.
-    if (invokedFunc->hasAttr(MOGGPreElab::REGISTER_TENSOR_SPEC_HOOK)) {
+    if (invokedFunc->hasAttr(MOGGPreElab::MOGG_INTRINSIC_TENSOR_SPEC_HOOK)) {
       node->getterFunctions.push_back(attr);
 
       // Identify which tensor is getting the spec.
@@ -367,8 +367,8 @@ static GeneratorOp specializeOnSpec(CallGraphNode *node,
         LLVM_DEBUG(llvm::dbgs()
                    << "Add param (call) for " << tensorName << " (#"
                    << callerIdx << "): callee input #" << calleeIdx
-                   << " (param #" << (calleeParamIdx - 1) << ") " << "@"
-                   << oldCall.getCalleeSymbol() << ".\n");
+                   << " (param #" << (calleeParamIdx - 1) << ") "
+                   << "@" << oldCall.getCalleeSymbol() << ".\n");
       }
     }
   });
@@ -429,7 +429,7 @@ public:
 
     // First identify the function which is used to get the spec in mojo.
     for (GeneratorOp gen : mod.getOps<GeneratorOp>()) {
-      if (gen->hasAttr(REGISTER_TENSOR_SPEC_HOOK)) {
+      if (gen->hasAttr(MOGG_INTRINSIC_TENSOR_SPEC_HOOK)) {
         specTemplate.pullMetadataFromFunc(gen);
         break;
       }
