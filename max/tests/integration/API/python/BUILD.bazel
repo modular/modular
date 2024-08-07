@@ -43,6 +43,8 @@ modular_py_test(
         "//ModularFramework/examples/pipelines_python/llama3",
         "//SDK/lib/EngineAPI/python:max_engine",
         requirement("torch"),
+        requirement("transformers"),
+        requirement("hypothesis"),
         requirement("sentencepiece"),
         requirement("gguf"),
     ],
