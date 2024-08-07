@@ -235,7 +235,7 @@ def test_rope():
         .reshape(1, 2, 2, 2)
         .astype(np.float32)
     )
-    # assert np.testing.assert_almost_equal(output["output0"], expected, decimal=4)
+    # np.testing.assert_almost_equal(output["output0"], expected, decimal=4)
 
 
 def test_attention():
@@ -362,6 +362,6 @@ def test_attention():
     )
 
     # TODO (MSDK-720): Re-enable after troubleshooting accuracy.
-    # assert np.testing.assert_almost_equal(output["output0"], expected, decimal=4)
-    # assert np.testing.assert_almost_equal(output["output1"], expected_k_cache, decimal=4)
-    # assert np.testing.assert_almost_equal(output["output2"], expected_v_cache, decimal=4)
+    # np.testing.assert_almost_equal(output["output0"], expected, decimal=4)
+    # np.testing.assert_almost_equal(output["output1"], expected_k_cache, decimal=4)
+    # np.testing.assert_almost_equal(output["output2"], expected_v_cache, decimal=4)
