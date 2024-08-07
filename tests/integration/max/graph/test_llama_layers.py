@@ -10,9 +10,10 @@ import max.engine as me
 import numpy as np
 from max.graph import DType, Graph, TensorType
 from dataclasses import dataclass
-from llama3.mlp import MLP
+from llama3.mlp import MLP, Linear
 from llama3.norm import RMSNorm
 from llama3.attention import Attention, rope
+from llama3.rotary_embedding import RotaryEmbedding
 
 
 @dataclass
@@ -20,7 +21,7 @@ class NanoLlama3:
     """Class to hold toy weights and parameters for testing llama3 code."""
 
     params = {
-        "dims": 2,
+        "dim": 2,
         "n_layers": 1,
         "n_heads": 1,
         "vocab_size": 4,
@@ -245,24 +246,39 @@ def test_attention():
     n_heads = 1
     n_kv_heads = 1
     head_dim = 2
+    n_rep = 1
+    theta = 10000.0
+    max_seq_len = 2048
+    rope_scaling = None
 
-    attention = Graph(
+    with Graph(
         "attention",
-        Attention(
-            model.params,
-            model.attn_wk,
-            model.attn_wv,
-            model.attn_wq,
-            model.attn_wo,
-        ),
         input_types=[
             TensorType(dtype=DType.float32, shape=[2, 2, 2]),  # input
             TensorType(dtype=DType.float32, shape=[2, 1, 2]),  # freqs_cis
             TensorType(dtype=DType.float32, shape=[0, 1, 2, 1, 2]),  # k_cache
             TensorType(dtype=DType.float32, shape=[0, 1, 2, 1, 2]),  # v_cache
         ],
-    )
-    compiled = session.load(attention)
+    ) as graph:
+        attention = Attention(
+            n_heads=n_heads,
+            n_kv_heads=n_kv_heads,
+            head_dim=head_dim,
+            dim=dim,
+            wk=Linear(model.attn_wk),
+            wv=Linear(model.attn_wv),
+            wq=Linear(model.attn_wq),
+            wo=Linear(model.attn_wo),
+            rope=RotaryEmbedding(
+                dim=dim,
+                n_heads=n_heads,
+                theta=theta,
+                max_seq_len=max_seq_len,
+                rope_scaling=rope_scaling,
+            ),
+        )
+        graph.output(*graph.inputs)
+        compiled = session.load(graph)
 
     input = (
         np.array(

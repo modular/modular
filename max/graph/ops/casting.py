@@ -14,10 +14,11 @@ from ..graph_value import GraphValue, ValueLike, TensorType, ops
 from ..type import ShapeLike, dim, DType
 
 
-def reshape(x: GraphValue, shape: ShapeLike):
+def reshape(x: ValueLike, shape: ShapeLike):
+    v = GraphValue(x)
     dims = [dim(d).to_mlir() for d in shape]
     return Graph.current._add_op(
-        rmo.reshape, x, new_shape=_graph.shape_attr(mlir.Context.current, dims)
+        rmo.reshape, v, new_shape=_graph.shape_attr(mlir.Context.current, dims)
     )[0]
 
 
