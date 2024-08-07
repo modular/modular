@@ -6,7 +6,12 @@
 """Slicing ops."""
 
 import typing
-from typing import Iterable, Union
+from typing import TYPE_CHECKING, Iterable, Union, TypeGuard
+
+if TYPE_CHECKING:
+    # EllipsisType was added in 3.10, but we support down to 3.9.
+    # Make this import unconditional when we drop 3.9 (MSDK-756).
+    from types import EllipsisType
 
 from max import mlir
 from max.mlir.dialects import rmo
@@ -28,9 +33,9 @@ def concat(vals: Iterable[ValueLike], axis: int = 0):
 
     # TODO: assert that all vals have the same rank
 
-    axis = mlir.IntegerAttr.get(mlir.IndexType.get(), axis)
+    axis_attr = mlir.IntegerAttr.get(mlir.IndexType.get(), axis)
 
-    return Graph.current._add_op(rmo.concat, vals, axis=axis)[0]
+    return Graph.current._add_op(rmo.concat, vals, axis=axis_attr)[0]
 
 
 def gather(input: ValueLike, indices: ValueLike, axis: int = -1) -> GraphValue:
@@ -59,7 +64,7 @@ def select(cond: ValueLike, x: ValueLike, y: ValueLike):
 
 
 SliceIndex = Union[GraphValue, int, slice]
-SliceIndices = list[Union[SliceIndex, type(Ellipsis)]]
+SliceIndices = list[Union[SliceIndex, "EllipsisType"]]
 
 
 def _slice_index(dim: Dim, index: SliceIndex) -> slice:
@@ -115,15 +120,15 @@ def stack(vals: Iterable[ValueLike], axis: int = 0) -> GraphValue:
         with the new axis inserted. Along the new dimension it will have size
         `len(values)`.
     """
-    vals = [GraphValue(v) for v in vals]
-    if len(vals) == 0:
+    vals_coerced = [GraphValue(v) for v in vals]
+    if len(vals_coerced) == 0:
         raise ValueError("Expected at least one value to stack")
 
-    rank = len(vals[0].shape)
-    if any(len(v.shape) != rank for v in vals):
+    rank = len(vals_coerced[0].shape)
+    if any(len(v.shape) != rank for v in vals_coerced):
         raise ValueError("all inputs to stack must be the same rank")
 
-    unsqueezed = [unsqueeze(v, axis) for v in vals]
+    unsqueezed = [unsqueeze(v, axis) for v in vals_coerced]
 
     # Short circuit to avoid bloating graph with unneeded op.
     if len(unsqueezed) == 1:
@@ -137,6 +142,10 @@ def stack_scalars(vals: Iterable[GraphValue]):
 
     vals = [v.reshape([1]) if v.shape != [1] else v for v in vals]
     return Graph.current._add_op(rmo.concat, vals, axis=axis)[0]
+
+
+def _has_no_ellipsis(indices: SliceIndices) -> TypeGuard[list[SliceIndex]]:
+    return not any(index is Ellipsis for index in indices)
 
 
 def slice_tensor(x: GraphValue, indices: SliceIndices) -> GraphValue:
@@ -157,6 +166,8 @@ def slice_tensor(x: GraphValue, indices: SliceIndices) -> GraphValue:
     )
     before = indices[:ellipsis_index]
     after = indices[ellipsis_index + 1 :]
+    assert _has_no_ellipsis(before)
+    assert _has_no_ellipsis(after)
 
     remaining = len(x.shape) - len(before) - len(after)
     full_index = [*before, *([slice(None, None, None)] * remaining), *after]

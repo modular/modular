@@ -7,7 +7,7 @@
 from __future__ import annotations
 
 import inspect
-from typing import Iterable, Union
+from typing import Any, Iterable, Union, TypeGuard
 
 from max import _graph, mlir
 import numpy as np
@@ -96,7 +96,7 @@ class GraphValue:
         frame = inspect.currentframe()
         return ops.rebind(self, shape, graph._frame_str(frame))
 
-    def transpose(self, dim_1: int, dim_2: a) -> GraphValue:
+    def transpose(self, dim_1: int, dim_2: int) -> GraphValue:
         return ops.transpose(self, dim_1, dim_2)
 
     def __getitem__(self, index):
@@ -106,8 +106,8 @@ class GraphValue:
             # Need to wrap it to make it iterable
             return ops.slice_tensor(self, [index])
 
-    def __eq__(self, rhs: any) -> GraphValue:
-        if isinstance(rhs, ValueLike):
+    def __eq__(self, rhs: Any) -> GraphValue:  # type: ignore[override]
+        if _is_value_like(rhs):
             return ops.equal(self, GraphValue(rhs))
         else:
             raise ValueError(f"can't compare GraphValue to {rhs}")
@@ -115,28 +115,28 @@ class GraphValue:
     def __neg__(self) -> GraphValue:
         return ops.negate(self)
 
-    def __ne__(self, rhs: any) -> GraphValue:
-        if isinstance(rhs, ValueLike):
+    def __ne__(self, rhs: Any) -> GraphValue:  # type: ignore[override]
+        if _is_value_like(rhs):
             return ops.not_equal(self, GraphValue(rhs))
         else:
             raise ValueError(f"can't compare GraphValue to {rhs}")
 
-    def __ge__(self, rhs: any) -> GraphValue:
-        if isinstance(rhs, ValueLike):
+    def __ge__(self, rhs: Any) -> GraphValue:
+        if _is_value_like(rhs):
             return ops.greater_equal(self, GraphValue(rhs))
         else:
             raise ValueError(f"can't compare GraphValue to {rhs}")
 
-    def __gt__(self, rhs: any) -> GraphValue:
-        if isinstance(rhs, ValueLike):
+    def __gt__(self, rhs: Any) -> GraphValue:
+        if _is_value_like(rhs):
             return ops.greater(self, GraphValue(rhs))
         else:
             raise ValueError(f"can't compare GraphValue to {rhs}")
 
-    def __lt__(self, rhs: any) -> GraphValue:
+    def __lt__(self, rhs: Any) -> GraphValue:
         return ops.logical_not(self >= rhs)
 
-    def __le__(self, rhs: any) -> GraphValue:
+    def __le__(self, rhs: Any) -> GraphValue:
         return ops.logical_not(self > rhs)
 
     def __add__(self, rhs: ValueLike) -> GraphValue:
@@ -175,11 +175,11 @@ class GraphValue:
     def __rmod__(self, lhs: ValueLike) -> GraphValue:
         return ops.mod(GraphValue(lhs), self)
 
-    def __divmod__(self, rhs: ValueLike) -> (GraphValue, GraphValue):
+    def __divmod__(self, rhs: ValueLike) -> tuple[GraphValue, GraphValue]:
         rhs = GraphValue(rhs)
         return (self // rhs, self % rhs)
 
-    def __rdivmod__(self, lhs: ValueLike) -> (GraphValue, GraphValue):
+    def __rdivmod__(self, lhs: ValueLike) -> tuple[GraphValue, GraphValue]:
         lhs = GraphValue(lhs)
         return (lhs // self, lhs % self)
 
@@ -197,3 +197,7 @@ class GraphValue:
 
 
 ValueLike = Union[mlir.Value, GraphValue, np.ndarray]
+
+
+def _is_value_like(obj: Any) -> TypeGuard[ValueLike]:
+    return isinstance(obj, (mlir.Value, GraphValue, np.ndarray))

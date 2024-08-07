@@ -241,7 +241,7 @@ class Graph:
             else:
                 return arg
 
-        args = [unwrap(arg) for arg in args]
+        args = tuple(unwrap(arg) for arg in args)
         kwargs = {k: unwrap(arg) for k, arg in kwargs.items()}
 
         diagnostics = []
