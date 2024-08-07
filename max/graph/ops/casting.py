@@ -14,6 +14,19 @@ from ..graph_value import GraphValue, TensorType, ValueLike, ops
 from ..type import DType, ShapeLike, StaticDim, dim
 
 
+def rebind(x: ValueLike, shape: ShapeLike, message: str):
+    # TODO(MSDK-662): add checks to ensure that statically known dims are rebound in a way to keep the size the same.
+    v = GraphValue(x)
+    dims = [dim(d) for d in shape]
+    message = mlir.StringAttr.get(message)
+    return Graph.current._add_op(
+        rmo.rebind_tensor_shape,
+        TensorType(v.dtype, dims).to_mlir(),
+        v,
+        message=message,
+    )[0]
+
+
 def reshape(x: ValueLike, shape: ShapeLike):
     v = GraphValue(x)
     dims = [dim(d).to_mlir() for d in shape]

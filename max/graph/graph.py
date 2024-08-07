@@ -19,7 +19,7 @@ from max.mlir.dialects import mo
 
 from .dtype import DType
 from .graph_value import GraphValue
-from .type import ShapeLike, SymbolicDim, TensorType, Type
+from .type import ShapeLike, SymbolicDim, TensorType, Type, Dim
 from .weight import Weight
 
 CURRENT_GRAPH: ContextVar[Graph] = ContextVar("CURRENT_GRAPH")
@@ -56,6 +56,22 @@ def _frame_location(frame):
     return mlir.Location.file(
         f"{qualname}:{code.co_filename}", code.co_firstlineno, 0
     )
+
+
+def _frame_str(frame):
+    """Creates a str of the current Python call stack."""
+    assert frame is not None and frame.f_back is not None
+
+    stack = (
+        f"\t{_frame_function_qualname(frame)}:{frame.f_code.co_firstlineno} in"
+        f" {frame.f_code.co_filename}"
+    )
+    while frame := frame.f_back:
+        stack += (
+            f"\n\t{_frame_function_qualname(frame)}:{frame.f_code.co_firstlineno} in"
+            f" {frame.f_code.co_filename}"
+        )
+    return stack
 
 
 def location():
@@ -161,6 +177,14 @@ class Graph:
                 self._mlir_op = _graph.graph(
                     self._module, loc, name, function_type
                 )
+        param_decl = _graph.dim_param_decl_array_attr(
+            self._context,
+            [
+                _graph.dim_param_decl_attr(self._context, p)
+                for p in self._params
+            ],
+        )
+        self._mlir_op.attributes["inputParams"] = param_decl
 
         self.inputs = tuple(GraphValue(arg) for arg in self._body.arguments)
         self.weights = {}
@@ -232,11 +256,46 @@ class Graph:
             finally:
                 handle.detach()
 
-        if isinstance(results, mlir.Value):
-            return [GraphValue(results)]
-        elif isinstance(results, mlir.Operation):
+        if isinstance(results, mlir.Operation):
             return []
-        return [GraphValue(result) for result in results]
+
+        if isinstance(results, mlir.Value):
+            results = [GraphValue(results)]
+        else:
+            results = [GraphValue(result) for result in results]
+
+        new_params = set()
+        for result in results:
+            t = result._mlir_value.type
+            if not _graph.type_is_tensor(t):
+                continue
+
+            rank = _graph.tensor_type_get_rank(t)
+            for i in range(rank):
+                try:
+                    dim = Dim.from_mlir(_graph.tensor_type_get_dim(t, i))
+                    if isinstance(dim, SymbolicDim):
+                        new_params.add(dim.name)
+                except:
+                    continue
+
+        new_params -= self._params
+        self._params |= new_params
+        if new_params:
+            # The last op in the block is the op we just created.
+            # Aadd the output params to it.
+            ops = self._body.operations
+            op = ops[len(ops) - 1]
+            param_decl = _graph.dim_param_decl_array_attr(
+                self._context,
+                [
+                    _graph.dim_param_decl_attr(self._context, p)
+                    for p in new_params
+                ],
+            )
+            op.attributes["outputParamDecls"] = param_decl
+
+        return results
 
     def output(self, *outputs: GraphValue) -> None:
         # mo.output doesn't support infer_type
@@ -253,10 +312,6 @@ class Graph:
         self._mlir_op.attributes["functionType"] = mlir.TypeAttr.get(
             function_type
         )
-        params = mlir.Attribute.parse(
-            f"#kgen<param.decls[{', '.join(f'{param}: index' for param in self._params)}]>"
-        )
-        self._mlir_op.attributes["inputParams"] = params
 
         # Set the result_names metadata on the staged op, which is needed by
         # the engine for execution.

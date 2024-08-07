@@ -20,7 +20,15 @@ convenience methods such as
 [`swapaxes()`](/max/api/python/graph/graph_value/GraphValue#swapaxes).
 """
 
-from .casting import broadcast_to, cast, reshape, squeeze, transpose, unsqueeze
+from .casting import (
+    broadcast_to,
+    cast,
+    rebind,
+    reshape,
+    squeeze,
+    transpose,
+    unsqueeze,
+)
 from .complex import as_interleaved_complex
 from .constant import constant, scalar
 from .debug import print

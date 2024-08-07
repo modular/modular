@@ -6,12 +6,15 @@
 
 from __future__ import annotations
 
+import inspect
 from typing import Iterable, Union
 
+from max import _graph, mlir
 import numpy as np
-from max import mlir
 
+from . import graph
 from . import ops
+from .dtype import DType
 from .type import Shape, ShapeLike, TensorType
 
 
@@ -63,11 +66,35 @@ class GraphValue:
         """
         return self.tensor_type.shape
 
+    # dtype and rank are special.
+    # They use _graph directly to avoid loading the shape dimension if they aren't needed.
+    # This also avoids accidentally loading algebraic expression dimensions (which will throw an exception).
+    @property
+    def dtype(self) -> DType:
+        t = self._mlir_value.type
+        if not _graph.type_is_tensor(t):
+            raise TypeError(f"Expected TensorType, got: {t}")
+
+        return DType(_graph.tensor_type_get_dtype(t))
+
+    @property
+    def rank(self) -> int:
+        t = self._mlir_value.type
+        if not _graph.type_is_tensor(t):
+            raise TypeError(f"Expected TensorType, got: {t}")
+
+        return _graph.tensor_type_get_rank(t)
+
     def print(self, label: str = "debug_tensor"):
         ops.print(self, label=label)
 
     def reshape(self, shape: ShapeLike) -> GraphValue:
         return ops.reshape(self, shape)
+
+    def rebind(self, shape: ShapeLike) -> GraphValue:
+        # For rebind, we create a runtime stack location as the message.
+        frame = inspect.currentframe()
+        return ops.rebind(self, shape, graph._frame_str(frame))
 
     def transpose(self, dim_1: int, dim_2: a) -> GraphValue:
         return ops.transpose(self, dim_1, dim_2)
