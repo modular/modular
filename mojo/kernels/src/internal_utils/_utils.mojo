@@ -10,7 +10,8 @@ from buffer import DimList, NDBuffer
 from buffer.dimlist import _make_tuple
 from testing import assert_equal, assert_true
 
-from utils import InlineArray, StaticIntTuple
+from collections import InlineArray
+from utils import StaticIntTuple
 from gpu.host.device_context import DeviceBuffer, DeviceContext
 from utils.index import product
 from random import random_float64
