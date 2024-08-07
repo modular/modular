@@ -47,6 +47,9 @@ lit_tests(
         "//KGEN:CompilerRT.distributable",
         "//ModelServing:ServeRTCAPI",
         "//ModularFramework/tools/mof",
+        # TODO(SDLC-918): remove when landed
+        "//Kernels/mojo/Mogg:MOGG.lib.mlirbc",
+        "//Kernels/mojo/Mogg:MOGGPrimitives.lib.mlirbc",
         "//PyTorch:modular-framework-torch-ext",
         "//PyTorch/test/utils:pytorch-generated-tests",
         "//PyTorch/tools/torch:mtorch",

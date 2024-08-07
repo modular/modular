@@ -11,6 +11,9 @@ modular_py_test(
         "//CUDASupport/tools/is-cuda-available",
         "//KGEN:CompilerRT",
         "//ModularFramework/tools/mof",
+        # TODO(SDLC-918): remove when landed
+        "//Kernels/mojo/Mogg:MOGG.lib.mlirbc",
+        "//Kernels/mojo/Mogg:MOGGPrimitives.lib.mlirbc",
         "//ONNX/tools/onnx:monnx",
         "//PyTorch:TorchRuntimePlugins",
         "//PyTorch/tools/torch:mtorch",
