@@ -605,7 +605,7 @@ ErrorOr<TypedAttr> PointerType::readFrom(int64_t addr,
 
 OptionalParseResult PointerType::parseValue(AsmParser &p,
                                             TypedAttr &value) const {
-  int64_t addr;
+  int64_t addr = 0;
   // Parse an integer as a raw pointer attribute.
   if (OptionalParseResult result = p.parseOptionalInteger(addr);
       result.has_value()) {

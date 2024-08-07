@@ -286,7 +286,8 @@ private:
     void *getMemory() const {
       if (isOwned())
         return getOwned();
-      return (void *)getHandle().getData();
+      return const_cast<void *>(
+          reinterpret_cast<const void *>(getHandle().getData()));
     }
 
     /// Return true if the memory has been freed.
