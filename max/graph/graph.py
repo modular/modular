@@ -268,7 +268,7 @@ class Graph:
 
     def __repr__(self) -> str:
         return (
-            f"Graph(name='{self.name}', input_types={self._input_types},"
+            f"Graph(name={self.name!r}, input_types={self._input_types},"
             f" output_types={self._output_types})"
         )
 
