@@ -476,3 +476,20 @@ fn test38421():
     # This is an error since the rvalue temp slot is uninitialized here.
     # expected-error @+1 {{potential indirect access to uninitialized value '(expression temporary)'}}
     _ = reference[].__len__()
+
+# ===----------------------------------------------------------------------=== #
+# Computed LValues
+# ===----------------------------------------------------------------------=== #
+
+fn get_inout_ref(inout x: String) -> ref [__lifetime_of(x)] String:  
+    return x
+
+struct StrArray:
+    fn __getitem__(self, x: Int) -> String: return String()
+    fn __setitem__(inout self, x: Int, value: String): pass
+
+fn test_inout_ref(inout v: StrArray, i: Int):
+    # expected-note @below {{'(expression temporary)' declared here}}
+    # expected-error @below {{use of uninitialized value '(expression temporary)'}}
+    var r = Reference(get_inout_ref(v[i]))
+

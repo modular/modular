@@ -458,6 +458,13 @@ PValue ExprEmitter::emitErrorForDynamicValueInParameter(const ExprNode *expr,
   return {};
 }
 
+PValue
+ExprEmitter::emitErrorForDynamicValueInParameter(llvm::SMLoc loc,
+                                                 const char *customMessage) {
+  return emitErrorForDynamicValueInParameter(shared.translateLocation(loc),
+                                             customMessage);
+}
+
 /// Emit an error about use of a dynamic value (the expression) in a context
 /// that only allows parameter expressions.  This always returns a null
 /// PValue.

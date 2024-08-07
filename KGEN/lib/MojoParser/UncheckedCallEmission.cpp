@@ -13,6 +13,7 @@
 #include "KGEN/MojoParser/CallEmission.h"
 #include "KGEN/MojoParser/DeclResolver.h"
 #include "KGEN/MojoParser/ExprEmitter.h"
+#include "KGEN/MojoParser/ExprNodes.h"
 #include "KGEN/MojoParser/ParserParamEvaluator.h"
 #include "MojoUtils.h"
 
@@ -197,12 +198,30 @@ private:
 };
 
 void CallEmitter::AfterCallActions::emit() {
+  ExprEmitter &emitter = callEmitter.emitter;
+  const ExprNode *callExpr = callEmitter.callExpr;
+
   // Emit the elements and clear the writebacks so the ValueDest's get
   // destroyed when they are emitted into.
   while (!lvalueWritebacks.empty()) {
+    // Get 'dest' (the computed LValue as a ValueDest) and 'lValue' (the memory
+    // temporary we're working with) so we can do a writeback.
     auto [dest, lValue] = lvalueWritebacks.pop_back_val();
-    if (!callEmitter.emitter.emitResult(MRValue(lValue), callEmitter.callExpr,
-                                        dest))
+
+    // The lValue is to the temporary holding the 'get'd value.  If non-trivial,
+    // transfer it so it may be consumed by the setter and so nothing is allowed
+    // to extend the lifetime of the temp beyond the set call.
+    AnyValue value;
+    if (!lValue.getRValueType().isTrivial(callExpr->getLoc(), emitter.shared)) {
+      ValueDest transferDest(EC_OperatorOperandValue);
+      value =
+          UnaryOpNode::emitTransfer(lValue, callExpr, transferDest, emitter);
+    } else {
+      // Otherwise just take an owned version of the trivial value.
+      value = MRValue(lValue);
+    }
+
+    if (!callEmitter.emitter.emitResult(value, callExpr, dest))
       dest.resetForError();
   }
 

@@ -2529,11 +2529,12 @@ AnyValue BinOpNode::emitAndOr(ValueDest &dest, ExprEmitter &emitter) const {
 }
 
 /// Emit the x^ expression.
-AnyValue UnaryOpNode::emitTransfer(AnyValue argValue, ValueDest &dest,
-                                   ExprEmitter &emitter) const {
+AnyValue UnaryOpNode::emitTransfer(AnyValue argValue, const ExprNode *expr,
+                                   ValueDest &dest, ExprEmitter &emitter) {
+  auto loc = expr->getLoc();
   if (!emitter.builder)
     return emitter.emitErrorForDynamicValueInParameter(
-        this, "cannot transfer a value in this context");
+        loc, "cannot transfer a value in this context");
 
   // The transfer expression expects the result to be a ownable value that it
   // can launder into an RValue.
@@ -2551,7 +2552,7 @@ AnyValue UnaryOpNode::emitTransfer(AnyValue argValue, ValueDest &dest,
   if (value)
     trackableValue = LifetimeTrackable::findUnderlyingValueFromField(value);
   if (!trackableValue) {
-    emitter.emitError(getLoc(),
+    emitter.emitError(loc,
                       "expression does not designate a value with a lifetime");
     return {};
   }
@@ -2565,35 +2566,35 @@ AnyValue UnaryOpNode::emitTransfer(AnyValue argValue, ValueDest &dest,
   // If the input is already an owned RValue, then there is no need to
   // transfer from the temporary.
   if (argValue.getIfRValue()) {
-    emitter.emitWarning(getLoc())
+    emitter.emitWarning(loc)
         << "transfer from an owned value has no effect and can be removed"
-        << FixIt::remove(getLoc());
-    return emitter.emitResult(argValue, this, dest);
+        << FixIt::remove(loc);
+    return emitter.emitResult(argValue, expr, dest);
   }
   CValue argCValue = argValue.getIfCValue();
   assert(argCValue && "MValue and SValue is always a CValue");
-  if (argCValue.getRValueType().isTrivial(getLoc(), emitter.shared)) {
+  if (argCValue.getRValueType().isTrivial(loc, emitter.shared)) {
     // We don't support transferring from register-passable trivial values,
     // since this won't end the lifetime. CheckLifetimes doesn't and can't track
     // these things because they don't have consume operators, move operators,
     // etc.
-    emitter.emitWarning(getLoc())
+    emitter.emitWarning(loc)
         << "transfer from a value of trivial register type "
         << argCValue.getRValueType() << " has no effect and can be removed"
-        << FixIt::remove(getLoc());
-    return emitter.emitResult(argValue, this, dest);
+        << FixIt::remove(loc);
+    return emitter.emitResult(argValue, expr, dest);
   }
 
   // Register lifetimes are broken with TransferRegOwnershipOp.
-  auto loc = getLocation(emitter);
+  auto mloc = expr->getLocation(emitter);
   if (isRegister) {
-    auto newVal = emitter.builder->create<TransferRegOwnershipOp>(loc, value);
-    return emitter.emitResult(SRValue(newVal), this, dest);
+    auto newVal = emitter.builder->create<TransferRegOwnershipOp>(mloc, value);
+    return emitter.emitResult(SRValue(newVal), expr, dest);
   }
 
   // If the memory type isn't mutable, then we can't transfer out of it.
   if (!cast<RefType>(value.getType()).isMutableKnown(true)) {
-    emitter.emitError(getLoc(), "cannot transfer out of immutable reference");
+    emitter.emitError(loc, "cannot transfer out of immutable reference");
     return {};
   }
 
@@ -2601,9 +2602,9 @@ AnyValue UnaryOpNode::emitTransfer(AnyValue argValue, ValueDest &dest,
   // new thing and the old thing is dead.
   StringAttr lifetimeAttr = emitter.declScope.mangleParamName(
       trackable.name.str() + Twine("(transfer)"));
-  auto newVal =
-      emitter.builder->create<TransferMemOwnershipOp>(loc, value, lifetimeAttr);
-  return emitter.emitResult(MRValue(newVal), this, dest);
+  auto newVal = emitter.builder->create<TransferMemOwnershipOp>(mloc, value,
+                                                                lifetimeAttr);
+  return emitter.emitResult(MRValue(newVal), expr, dest);
 }
 
 AnyValue UnaryOpNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
@@ -2612,7 +2613,7 @@ AnyValue UnaryOpNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
     return {};
 
   if (kind == kTransfer)
-    return emitTransfer(exprRep, dest, emitter);
+    return emitTransfer(exprRep, this, dest, emitter);
 
   if (kind == kUnpack) {
     emitter.emitError(getLoc(), "unsupported unpack operation") << getRange();
