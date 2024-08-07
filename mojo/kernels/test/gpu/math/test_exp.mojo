@@ -59,6 +59,8 @@ def run_elementwise[type: DType](ctx: DeviceContext):
             + str(i)
             + " for dtype="
             + str(type)
+            + " and value="
+            + str(in_host[i])
         )
 
         @parameter
@@ -86,4 +88,5 @@ def run_elementwise[type: DType](ctx: DeviceContext):
 def main():
     with DeviceContext() as ctx:
         run_elementwise[DType.float16](ctx)
+        run_elementwise[DType.bfloat16](ctx)
         run_elementwise[DType.float32](ctx)
