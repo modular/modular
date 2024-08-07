@@ -8,13 +8,12 @@
 
 
 from math import erf
+from collections import InlineArray
 from random import randn, seed
 from testing import assert_almost_equal, assert_equal
 
 from internal_utils import compare
 from test_utils import libm_call
-
-from utils import InlineArray
 
 
 def test_erf_float32():
