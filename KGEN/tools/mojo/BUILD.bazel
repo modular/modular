@@ -198,10 +198,15 @@ run_tool(
         "//ModularFramework/tools/mof",
         "//SDK/lib/API/mojo/max/max",
         "//open-source/mojo/stdlib/stdlib",
+        "//utils/mblack",
+        "//utils/mblack:shim.py",
         "@llvm-project//compiler-rt:orc_rt",
         requirement("transformers"),
         requirement("torch"),
     ],
+    env = {
+        "MODULAR_MOJO_MAX_MBLACK_PATH": "$(rlocationpath //utils/mblack:shim.py)",
+    },
     env_inherit = [
         "MODULAR_PROFILE_FILENAME",
         "MODULAR_MAX_TEMPS_DIR",

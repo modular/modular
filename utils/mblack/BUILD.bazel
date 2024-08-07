@@ -4,7 +4,19 @@ load("@rules_python//python:defs.bzl", "py_binary")
 
 package(default_visibility = ["//visibility:public"])
 
-exports_files(["pyproject.toml"])
+exports_files([
+    "pyproject.toml",
+    "shim.py",
+])
+
+py_binary(
+    name = "mblack_main",
+    srcs = ["src/mblack/__main__.py"],
+    main = "src/mblack/__main__.py",
+    deps = [
+        ":mblack",
+    ],
+)
 
 py_binary(
     name = "mblack",
@@ -23,7 +35,10 @@ py_binary(
 
 pkg_files(
     name = "mblack_files",
-    srcs = glob(["**"]),
+    srcs = glob(
+        ["**"],
+        exclude = ["shim.py"],
+    ),
     prefix = "mblack",
     strip_prefix = strip_prefix.from_pkg(""),
 )
