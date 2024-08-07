@@ -11,7 +11,7 @@ from tensor_utils.indexing import (
     _slice_to_tuple,
     _row_major_strides,
 )
-from utils import InlineArray
+from collections import InlineArray
 from math import ceil
 from max.tensor import TensorSpec
 from sys import triple_is_nvidia_cuda

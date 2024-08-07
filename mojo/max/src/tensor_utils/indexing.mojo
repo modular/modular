@@ -5,7 +5,8 @@
 # ===----------------------------------------------------------------------=== #
 
 from tensor import StaticTensorSpec
-from utils import StaticIntTuple, InlineArray
+from utils import StaticIntTuple
+from collections import InlineArray
 
 
 @always_inline

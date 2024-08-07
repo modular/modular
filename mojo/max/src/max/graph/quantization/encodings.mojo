@@ -32,9 +32,9 @@
 # SOFTWARE.
 
 from algorithm import vectorize
+from collections import InlineArray
 from math import sqrt
 from max.tensor import Tensor, TensorShape
-from utils import InlineArray
 
 from .quantization_encoding import QuantizationEncoding
 

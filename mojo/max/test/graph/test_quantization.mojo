@@ -9,7 +9,7 @@
 import sys
 from memory import memset_zero
 from testing import assert_equal
-from utils import InlineArray
+from collections import InlineArray
 
 from max.graph import Graph, TensorType, Type
 from max.graph.quantization import (
