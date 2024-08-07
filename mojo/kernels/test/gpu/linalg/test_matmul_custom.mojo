@@ -145,7 +145,10 @@ fn run_matmul_naive(ctx: DeviceContext, M: Int, N: Int, K: Int) raises:
 
 
 fn run_matmul[
-    type: DType, M: Int, N: Int, K: Int
+    type: DType,
+    M: Int,
+    N: Int,
+    K: Int,
 ](
     ctx: DeviceContext,
     rtol: Scalar[type] = 1e-05,
@@ -212,6 +215,129 @@ fn run_matmul[
             type,
             type,
             BLOCK_DIM,
+        ]
+    ]()
+
+    @always_inline
+    @parameter
+    fn run_func_naive() raises:
+        ctx.enqueue_function(
+            func_gemm_naive,
+            c_device_n,
+            a_device_n,
+            b_device_n,
+            M,
+            N,
+            K,
+            grid_dim=(ceildiv(M, BLOCK_DIM), ceildiv(N, BLOCK_DIM)),
+            block_dim=(BLOCK_DIM, BLOCK_DIM),
+        )
+
+    run_func_naive()
+
+    ctx.enqueue_copy_from_device(c_host_n, c_device_n)
+    ctx.synchronize()
+
+    for i in range(M * N):
+        var out_val = c_host[i]
+        var out_ref = c_host_n[i]
+        if debug:
+            if not isclose(out_val, out_ref, rtol=rtol, atol=atol):
+                print(i, out_val, out_ref)
+        assert_almost_equal(out_val, out_ref, rtol=rtol, atol=atol)
+
+    _ = a_device
+    _ = b_device
+    _ = c_device
+
+    _ = a_device_n
+    _ = b_device_n
+    _ = c_device_n
+
+    _ = a_host
+    _ = b_host
+    _ = c_host
+
+    _ = a_host_n
+    _ = b_host_n
+    _ = c_host_n
+
+
+fn run_matmul_transpose[
+    type: DType,
+    M: Int,
+    N: Int,
+    K: Int,
+](
+    ctx: DeviceContext,
+    rtol: Scalar[type] = 1e-05,
+    atol: Scalar[type] = 0.1,
+    rng_width: Float64 = Float64(100.0),
+    debug: Bool = True,
+) raises:
+    print("== run_matmul kernel => ", str(type), M, N, K)
+
+    alias transpose_b = True
+    var a_host = UnsafePointer[Scalar[type]].alloc(M * K)
+    var b_host = UnsafePointer[Scalar[type]].alloc(K * N)
+    var c_host = UnsafePointer[Scalar[type]].alloc(M * N)
+    var a_host_n = UnsafePointer[Scalar[type]].alloc(M * K)
+    var b_host_n = UnsafePointer[Scalar[type]].alloc(K * N)
+    var c_host_n = UnsafePointer[Scalar[type]].alloc(M * N)
+
+    var rand_min = -1 * rng_width
+    var rand_max = rng_width
+
+    for i in range(M * K):
+        var val = random_float64(rand_min, rand_max).cast[DType.float32]()
+        a_host[i] = val.cast[type]()
+        a_host_n[i] = a_host[i]
+
+    for i in range(K * N):
+        var val = random_float64(rand_min, rand_max).cast[DType.float32]()
+        b_host[i] = val.cast[type]()
+        b_host_n[i] = b_host[i]
+
+    for i in range(M * N):
+        var val = Float32(0)
+        c_host[i] = val.cast[type]()
+        c_host_n[i] = c_host[i]
+
+    alias a_shape = DimList(M, K)
+    alias b_shape = DimList(N, K)
+    alias c_shape = DimList(M, N)
+
+    var a_device = ctx.create_buffer[type](M * K)
+    var b_device = ctx.create_buffer[type](N * K)
+    var c_device = ctx.create_buffer[type](M * N)
+    var a_buf = NDBuffer[type, 2, a_shape](a_device.ptr, Index(M, K))
+    var b_buf = NDBuffer[type, 2, b_shape](b_device.ptr, Index(N, K))
+    var c_buf = NDBuffer[type, 2, c_shape](c_device.ptr, Index(M, N))
+
+    var a_device_n = ctx.create_buffer[type](M * K)
+    var b_device_n = ctx.create_buffer[type](N * K)
+    var c_device_n = ctx.create_buffer[type](M * N)
+
+    ctx.enqueue_copy_to_device(a_device, a_host)
+    ctx.enqueue_copy_to_device(b_device, b_host)
+
+    _matmul_gpu[transpose_b=transpose_b, use_tensor_core=True](
+        c_buf, a_buf, b_buf, ctx
+    )
+    ctx.enqueue_copy_from_device(c_host, c_device)
+
+    # running naive
+    ctx.enqueue_copy_to_device(a_device_n, a_host_n)
+    ctx.enqueue_copy_to_device(b_device_n, b_host_n)
+
+    alias BLOCK_DIM = 16
+    var func_gemm_naive = ctx.compile_function[
+        matmul_kernel_naive[
+            type,
+            type,
+            type,
+            BLOCK_DIM,
+            transpose_b,
         ]
     ]()
 
@@ -374,6 +500,25 @@ fn run_batched_matmul(
 
 def main():
     with DeviceContext() as ctx:
+        run_matmul_transpose[DType.bfloat16, 1, 200, 300](
+            ctx, atol=0.25, rng_width=1.0
+        )
+        run_matmul_transpose[DType.bfloat16, 1, 300, 200](
+            ctx, atol=0.25, rng_width=1.0
+        )
+        run_matmul_transpose[DType.bfloat16, 1, 5120, 3072](
+            ctx, atol=0.25, rng_width=1.0
+        )
+        run_matmul_transpose[DType.bfloat16, 1, 12288, 3072](
+            ctx, atol=0.5, rng_width=1.0
+        )
+        run_matmul_transpose[DType.bfloat16, 1, 5120, 12288](
+            ctx, atol=0.5, rng_width=1.0
+        )
+        run_matmul_transpose[DType.bfloat16, 1, 3072, 12288](
+            ctx, atol=0.5, rng_width=1.0
+        )
+
         run_matmul[DType.bfloat16, 128, 128, 128](ctx)
         run_matmul[DType.bfloat16, 32, 32, 32](ctx)
         run_matmul[DType.bfloat16, 1024, 1, 1024](ctx, atol=0.2, rng_width=1.0)
