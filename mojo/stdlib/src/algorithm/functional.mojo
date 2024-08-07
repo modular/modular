@@ -366,23 +366,9 @@ fn sync_parallelize[
 
 
 @always_inline
-fn parallelize[func: fn (Int) capturing -> None]():
-    """Executes func(0) ... func(N-1) as sub-tasks in parallel, and returns when
-    all are complete. N is chosen to be the number of processors on the system.
-
-    Parameters:
-        func: The function to invoke.
-    """
-    var num_work_items = num_physical_cores()
-    _parallelize_impl[func](num_work_items, num_work_items)
-
-
-@always_inline
 fn parallelize[func: fn (Int) capturing -> None](num_work_items: Int):
     """Executes func(0) ... func(num_work_items-1) as sub-tasks in parallel, and
     returns when all are complete.
-
-    CAUTION: Creates and destroys a local runtime! Do not use from kernels!
 
     Parameters:
         func: The function to invoke.
@@ -391,7 +377,7 @@ fn parallelize[func: fn (Int) capturing -> None](num_work_items: Int):
         num_work_items: Number of parallel tasks.
     """
 
-    _parallelize_impl[func](num_work_items)
+    _parallelize_impl[func](num_work_items, parallelism_level())
 
 
 @always_inline
@@ -410,20 +396,6 @@ fn parallelize[
     """
 
     _parallelize_impl[func](num_work_items, num_workers)
-
-
-@always_inline
-fn _parallelize_impl[func: fn (Int) capturing -> None](num_work_items: Int):
-    """Executes func(0) ... func(num_work_items-1) as sub-tasks in parallel, and
-    returns when all are complete.
-
-    Parameters:
-        func: The function to invoke.
-
-    Args:
-        num_work_items: Number of parallel tasks.
-    """
-    _parallelize_impl[func](num_work_items, parallelism_level())
 
 
 @always_inline
