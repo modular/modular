@@ -298,6 +298,8 @@ public:
   /// PValue.
   PValue emitErrorForDynamicValueInParameter(const ExprNode *expr,
                                              const char *customMessage = {});
+  PValue emitErrorForDynamicValueInParameter(llvm::SMLoc loc,
+                                             const char *customMessage = {});
   PValue emitErrorForDynamicValueInParameter(Location loc,
                                              const char *customMessage = {});
 
