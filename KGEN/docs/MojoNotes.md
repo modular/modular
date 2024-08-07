@@ -64,11 +64,11 @@ In addition to specific differences, we support the following extensions:
    continuation so long as the continuation is more indented than the start of
    the expression.
 
-9) We support arrows in subscripts, used for returned parameters the
-   `expr[a, b -> c]` syntax.
-
-10) We support "dictionary subscripts" of the form
-    `expr{key: value, key2: value2}`, used for type constructors.
+9) We support "dictionary subscripts" of the form
+    `expr{key: value, key2: value2}`, used for type constructors.  We aim to
+    remove this over time now that initializers are more mature.  We may instead
+    support `List[1,2,3]` and `Dict{key: value}` sorts of expressions to create
+    literals with a specific type, rather than having to default to one type.
 
 ## Various Design notes
 
@@ -262,7 +262,7 @@ result type to use, e.g. to cast an index value to `i1` you can use:
 ### Expression parsing happens in two phases
 
 Python uses its expression grammar for value expressions and for types.  This is
-quite convenient for Mojo ⚡️ given we want types to be parameter values!
+quite convenient for Mojo 🔥 given we want types to be parameter values!
 That said, there are some annoyances to deal with in terms of how to handle
 this, for example, Python allows:
 
@@ -291,7 +291,7 @@ Python supports forward references to declarations in a file and/or module.
 It handles this by making everything be dynamically executable (including `def`s
 which are "executed" to install them in the dictionary for a class) and does not
 actually type expressions statically.  This works for Python, but won't work for
-Mojo ⚡️, and we can't give up support for forward references.
+Mojo 🔥, and we can't give up support for forward references.
 
 As such, we currently handle this by parsing the source file in three phases:
 
@@ -303,7 +303,7 @@ As such, we currently handle this by parsing the source file in three phases:
 Let's take a look at an example to illustrate how this works:
 
 ```mojo
-struct Int:   # Eventually defined by stdlib.
+struct Int:   # Defined by stdlib.
   pass
 
 def frolick(d: Doggie[42, Color(0, 255, 0)])

@@ -2,10 +2,14 @@
 
 Modular Confidential (obviously), May 14, 2022
 
+NOTE: This is a very early design doc written before Mojo was even conceived.
+It is retained unchanged for historical significance and inspiration, but
+shouldn't be considered a design doc for the current system.
+
 ## Introduction
 
 "Kernel libraries" provide high performance implementations of numeric and data
-processing algorithms, optimized to take advantage of vectors, multicore,
+processing algorithms, optimized to take advantage of vectors, multi-core,
 dedicated hardware blocks, and dedicated accelerators available on modern
 computers. The creation of these kernels is a well studied area in computer
 science, and modern machine learning frameworks are typically collections of
