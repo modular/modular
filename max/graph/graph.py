@@ -87,6 +87,15 @@ def location():
     return mlir.Location.callsite(location, stack)
 
 
+# From https://stackoverflow.com/a/76301341
+class _classproperty:
+    def __init__(self, func):
+        self.fget = func
+
+    def __get__(self, instance, owner):
+        return self.fget(owner)
+
+
 class Graph:
     """Represents a single MAX graph.
 
@@ -212,8 +221,7 @@ class Graph:
         finally:
             CURRENT_GRAPH.reset(token)
 
-    @classmethod
-    @property
+    @_classproperty
     def current(cls) -> Graph:
         try:
             current = CURRENT_GRAPH.get()
