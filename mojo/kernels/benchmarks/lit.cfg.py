@@ -5,11 +5,10 @@
 # ===----------------------------------------------------------------------=== #
 
 import os
-import platform
 
 from lit.llvm import llvm_config
 
-from modular.utils.subprocess import get_command_output
+from modular.utils.misc import has_gpu
 
 # Configuration file for the 'lit' test runner.
 
@@ -31,17 +30,6 @@ config.test_exec_root = os.path.join(
 config.excludes.add("demos")
 config.excludes.add("misc")
 config.excludes.add("packages")
-
-
-def has_gpu():
-    if platform.system() != "Linux":
-        return False
-
-    try:
-        get_command_output(["cuda-query"])
-        return True
-    except:
-        return False
 
 
 # Configuration file for the 'lit' test runner.
