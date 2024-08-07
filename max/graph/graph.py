@@ -193,8 +193,8 @@ class Graph:
     def current(cls) -> Graph:
         try:
             current = CURRENT_GRAPH.get()
-        except LookupError:
-            raise ValueError("No graph found.")
+        except LookupError as exc:
+            raise LookupError("No graph found") from exc
         assert current
         return current
 
