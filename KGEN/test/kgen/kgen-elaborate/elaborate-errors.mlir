@@ -177,3 +177,31 @@ kgen.generator @recursive1() -> index {
   %0 = kgen.call @recursive0() : () -> index
   kgen.return %0 : index
 }
+
+
+// ----
+// COM: MOCO-964 fix.
+kgen.generator @will_fail() {
+  kgen.param.declare B : !kgen.string = <"foo">
+
+  // expected-error @+1 {{constraint failed: foo}}
+  kgen.param.assert <eq(2, 3)>, B
+
+  kgen.return
+}
+
+kgen.generator @will_pass<a, b>() -> (index, index) {
+  %0 = kgen.param.constant = <a>
+  %1 = kgen.param.constant = <b>
+  kgen.return %0, %1 : index, index
+}
+
+!capture = !kgen.struct<(string, index, (!kgen.pointer<pointer<none>>) capturing -> !kgen.none)>
+
+kgen.generator export @main() {
+  // expected-error @+1  {{failed to run the pass manager}}
+  %0 = kgen.param.constant: !capture = <compile_assembly(current_target(), asm, 0, :() -> () @will_fail)>
+  %1 = kgen.param.constant: !capture = <compile_assembly(current_target(), asm, 0, :() -> (index, index) @will_pass<1, 2>)>
+  kgen.return
+}
+

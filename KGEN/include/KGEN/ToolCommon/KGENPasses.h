@@ -121,7 +121,7 @@ struct CrossDeviceFunction {
 /// passed to be used as the entry point.
 using ElaboratorCompileAsmFn = std::function<ErrorOr<CrossDeviceFunction>(
     GeneratorOp, SymbolConstantAttr, StringAttr, const SymbolTable &,
-    TargetInfoAttr, EmissionKind)>;
+    TargetInfoAttr, EmissionKind, mlir::DiagnosticEngine::HandlerID)>;
 
 /// Create an instance of the elaborator pass that captures all of the
 /// referenced include files.

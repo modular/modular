@@ -114,7 +114,7 @@ private:
 
 using ElaboratorCompileAsmFnRef = function_ref<ErrorOr<CrossDeviceFunction>(
     GeneratorOp, SymbolConstantAttr, StringAttr, const SymbolTable &,
-    TargetInfoAttr, EmissionKind)>;
+    TargetInfoAttr, EmissionKind, mlir::DiagnosticEngine::HandlerID)>;
 
 struct ElaboratorCallbacks {
   /// The functor used to compile a module to assembly.
@@ -130,7 +130,8 @@ public:
   /// Initialize the elaborator and its symbol table.
   Elaborator(SymbolTable &symtab, ParameterCollector::Analysis &paramCache,
              TargetInfoAttr target, ElaboratorCallbacks callbacks,
-             const ElaborateGeneratorsOptions &config);
+             const ElaborateGeneratorsOptions &config,
+             mlir::DiagnosticEngine::HandlerID diagHandleID);
 
   //===--------------------------------------------------------------------===//
   // IREvaluator Interface
@@ -392,6 +393,9 @@ private:
 
   /// Deferred generated symbols to append to the module.
   SmallVector<FuncOp> deferredSymbols;
+
+  /// A unique ID for Diagnostic Handle if filter is needed.
+  mlir::DiagnosticEngine::HandlerID diagHandlerID;
 };
 
 } // namespace M::KGEN

@@ -305,13 +305,14 @@ static void collectOpsToProcessInside(Region &toProcess, ImplNode *parent,
 Elaborator::Elaborator(SymbolTable &symtab,
                        ParameterCollector::Analysis &paramCache,
                        TargetInfoAttr target, ElaboratorCallbacks callbacks,
-                       const ElaborateGeneratorsOptions &config)
+                       const ElaborateGeneratorsOptions &config,
+                       mlir::DiagnosticEngine::HandlerID diagHandlerID)
     : target(target), config(config), oldSymTab(symtab),
       env(symtab.getOp()->getAttrOfType<EnvAttr>(EnvAttr::getEnvAttrName())),
       runtime(*loadContext(target.getContext())->get<AsyncRT::Runtime>()),
       g(this->runtime),
       paramCache(paramCache, runtime.getWorkQueue()->getParallelismLevel()),
-      callbacks(std::move(callbacks)) {}
+      callbacks(std::move(callbacks)), diagHandlerID(diagHandlerID) {}
 
 //===----------------------------------------------------------------------===//
 // Elaborator::finalizeFunction
@@ -700,7 +701,6 @@ concretizeLocsInScope(iterator_range<Block::iterator> scope, ImplNode *inode) {
               concretizeAttr<LocationAttr>(callLoc, op->getLoc(), inode));
         }
       }
-
       // When elaboration is complete, only the first block in any region is
       // valid (any other block may be illegal, e.g. due to how kgen.param.if
       // is handled). So we only need to go through the region arguments.
@@ -1815,7 +1815,8 @@ public:
     // Default compile assembly hook will just error.
     if (!compileAsmFn) {
       compileAsmFn = +[](GeneratorOp, SymbolConstantAttr, StringAttr,
-                         const SymbolTable &, TargetInfoAttr, EmissionKind) {
+                         const SymbolTable &, TargetInfoAttr, EmissionKind,
+                         mlir::DiagnosticEngine::HandlerID) {
         return Error("internal error: cannot compile assembly without a JIT");
       };
     }
@@ -1879,7 +1880,7 @@ public:
 
     // Now, construct and run the elaborator.
     Elaborator impl(symtab.getTopLevelSymbolTable(), paramCache, target,
-                    std::move(callbacks), config);
+                    std::move(callbacks), config, diagHandlerID);
     if (failed(impl.run(theModule, primaryGenerators)))
       return signalPassFailure();
   }
