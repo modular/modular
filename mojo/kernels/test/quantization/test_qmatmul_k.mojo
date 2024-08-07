@@ -11,6 +11,7 @@ from random import rand, random_float64
 from algorithm import sync_parallelize
 from buffer import NDBuffer
 from buffer.dimlist import DimList
+from collections import InlineArray
 from memory import stack_allocation
 from quantization.qmatmul import (
     matmul_qint4,
@@ -25,7 +26,6 @@ from quantization.qmatmul_k import (
     matmul_Q6_K,
     matmul_Q6_K_pack_b,
 )
-from utils import InlineArray
 from utils.index import Index
 
 

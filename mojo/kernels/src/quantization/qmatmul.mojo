@@ -16,6 +16,7 @@ from sys.info import (
 from algorithm import sync_parallelize, tile
 from buffer import NDBuffer
 from buffer.dimlist import DimList
+from collections import InlineArray
 
 from linalg.accumulate import _Accumulator
 from linalg.neon_intrinsics import _neon_dotprod_lane, _neon_matmul
@@ -25,7 +26,6 @@ from memory import UnsafePointer, stack_allocation
 from sys import alignof
 from runtime.asyncrt import parallelism_level
 
-from utils import InlineArray
 from utils.index import Index
 
 from ._utils import roundeven_to_int32

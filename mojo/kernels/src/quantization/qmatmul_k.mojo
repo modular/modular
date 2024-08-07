@@ -18,6 +18,7 @@ from algorithm import sync_parallelize, tile, vectorize
 from bit import is_power_of_two
 from buffer import NDBuffer
 from buffer.dimlist import DimList
+from collections import InlineArray
 from linalg.accumulate import _Accumulator
 from linalg.neon_intrinsics import _neon_dotprod_lane, _neon_matmul
 from linalg.utils import partition_work
@@ -29,7 +30,6 @@ from memory import UnsafePointer, stack_allocation
 from sys import alignof
 from runtime.asyncrt import parallelism_level
 
-from utils import InlineArray
 from utils.index import Index
 
 from ._utils import roundeven_to_int32
