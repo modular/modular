@@ -943,6 +943,20 @@ def RemoveUnusedParams : Pass<"remove-unused-params", "mlir::ModuleOp"> {
 // `custom` dialect lowering
 //===----------------------------------------------------------------------===//
 
+def LowerCustomOpsPreElab : Pass<"lower-custom-ops-pre-elab", "ModuleOp"> {
+  let summary = "Lower operations from the `custom` dialect before elaboration";
+  let description = [{
+    This pass lowers all operations of the `custom` dialect to function calls
+    to their implementation. `register-custom-ops` should not be called before
+    this pass.
+  }];
+
+  let dependentDialects = [
+    "KGENDialect",
+    "Custom::CustomDialect",
+  ];
+}
+
 def LowerCustomOps : Pass<"lower-custom-ops", "ModuleOp"> {
   let summary = "Lower operations from the `custom` dialect";
   let description = [{

@@ -22,6 +22,7 @@ add_modular_library(KGENTransforms
   LowerArgConventions.cpp
   LowerCallingConventions.cpp
   LowerCustomOps.cpp
+  LowerCustomOpsPreElab.cpp
   Mem2Reg.cpp
   OutlineClosures.cpp
   RaiseForLoops.cpp
