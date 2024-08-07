@@ -112,6 +112,9 @@ class Graph:
     [build a graph with MAX Graph](/max/graph/get-started).
     """
 
+    _input_types: list[Type]
+    _output_types: list[Type]
+    _params: set[str]
     _mlir_op: mlir.Operation
     _context: mlir.Context
     _module: mlir.Module
