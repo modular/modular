@@ -5,21 +5,18 @@
 # ===----------------------------------------------------------------------=== #
 """Slicing ops."""
 
-from typing import Iterable, Union, overload
-from itertools import chain, repeat, starmap, tee
+import typing
+from typing import Iterable, Union
 
-import numpy as np
-from max import _graph, mlir
-from ..type import Dim
-from max.mlir.dialects import rmo, mo
+from max import mlir
+from max.mlir.dialects import rmo
 
 from .. import ops
+from ..graph import DType, Graph
+from ..graph_value import GraphValue, ValueLike
+from ..type import Dim, StaticDim, TensorType
 from .casting import unsqueeze
 from .constant import scalar
-from ..graph import Graph
-from ..graph_value import GraphValue, ValueLike
-from ..type import Dim, ShapeLike, StaticDim, TensorType, dim, DimLike
-from ..dtype import DType
 
 
 def concat(vals: Iterable[ValueLike], axis: int = 0):
@@ -36,6 +33,20 @@ def concat(vals: Iterable[ValueLike], axis: int = 0):
     return Graph.current._add_op(rmo.concat, vals, axis=axis)[0]
 
 
+def gather(input: ValueLike, indices: ValueLike, axis: int = -1) -> GraphValue:
+    input, indices = GraphValue(input), GraphValue(indices)
+    shape = input.tensor_type.shape
+    indices_shape = indices.tensor_type.shape
+    output_shape = [*shape[:axis], *indices_shape, *shape[axis + 1 :]]
+    return Graph.current._add_op(
+        rmo.mo_gather,
+        TensorType(input.tensor_type.dtype, output_shape).to_mlir(),
+        input,
+        indices,
+        scalar(axis, DType.int64),
+    )[0]
+
+
 def select(cond: ValueLike, x: ValueLike, y: ValueLike):
     return Graph.current._add_op(
         rmo.select, GraphValue(cond), GraphValue(x), GraphValue(y)
@@ -47,45 +58,41 @@ def select(cond: ValueLike, x: ValueLike, y: ValueLike):
 # but this is the simplest path to get us nice results.
 
 
-SliceIndex = Union[ValueLike, int, slice]
-SliceIndices = Iterable[Union[SliceIndex, Ellipsis]]
+SliceIndex = Union[GraphValue, int, slice]
+SliceIndices = list[Union[SliceIndex, type(Ellipsis)]]
 
 
-# For slicing, we calculate everything a single dimension at a time. Then merge that into a full slice op.
-def _slice_dim_helper(input_dim: Dim, index: SliceIndex) -> (Dim, slice):
-    """Calculates the output dim and slice[ValueLike] for a given index."""
-    max_i64 = scalar(2 ^ 63 - 1, DType.int64)
-    one = scalar(1, DType.int64)
+def _slice_index(dim: Dim, index: SliceIndex) -> slice:
+    # These are values within an index which contains at least one
+    # shape. The returned values will be used as `start, stop, stop`
+    # values in a mo.slice op. slices can therefore be forwarded
+    # directly, while `int` and `GraphValue` need to be converted
+    # to a slice(v, v+1).
+
+    int64_max = 2**63 - 1
+    # For -1 specifically, slice(-1, 0, 1) is empty,
+    # so we need to special case it.
     if isinstance(index, int):
-        if input_dim.is_static():
-            size = input_dim.dim
-            if index >= size or index < -size:
-                raise IndexError(
-                    f"Index {index} out of range of dim with size {size}"
-                )
-        index = scalar(index, DType.int64)
-    if isinstance(index, ValueLike):
-        # static single index slicing.
-        gv = GraphValue(index)
-        type = gv.tensor_type
-        if type.num_elements() != 1:
+        if isinstance(dim, StaticDim):
+            if not -dim.dim <= index < dim.dim:
+                raise IndexError(f"Index {index} out of range of dim {dim.dim}")
+        return slice(index, (index + 1) or None)
+    elif isinstance(index, GraphValue):
+        if index.tensor_type.num_elements() != 1:
             raise ValueError(
-                "Tensor can only be sliced by scalar indices. Instead got"
-                f" shape: {gv.shape}"
+                f"Slice index value must be a scalar, had shape {index.shape}"
             )
-
-        # Handle edge case where the index is `-1`.
-        # Slicing from `-1` to `0` returns no inputs.
-        # Instead slice from `-1` to the max i64 (the compiler will limit the value to the tensor length).
-        is_neg_one = ops.equal(gv, scalar(-1, DType.int64))
-        end = select(is_neg_one, max_i64, gv + one)
-        return (dim(1), slice(gv, end, one))
+        # TODO (MSDK-751): remove scalar call
+        return slice(
+            index, ops.select(index == scalar(-1, DType.int64), int64_max, 0)
+        )
     elif isinstance(index, slice):
-        if index == slice(None, None, None):
-            return (input_dim, slice(scalar(0, DType.int64), max_i64, one))
-        return NotImplementedError("Slicing with int and GraphValue slices")
-    else:
-        return TypeError("Slicing does not support index type of {type(index)}")
+        if index != slice(None, None, None):
+            raise NotImplementedError(
+                "Can't yet support slicing with non-static output size."
+            )
+        return slice(int64_max)
+    typing.assert_never("unreachable")
 
 
 def stack(vals: Iterable[ValueLike], axis: int = 0) -> GraphValue:
@@ -129,38 +136,44 @@ def stack_scalars(vals: Iterable[GraphValue]):
     axis = mlir.IntegerAttr.get(mlir.IndexType.get(), 0)
 
     vals = [v.reshape([1]) if v.shape != [1] else v for v in vals]
-    if len(vals) == 1:
-        return vals[0]
-    else:
-        return Graph.current._add_op(rmo.concat, vals, axis=axis)[0]
+    return Graph.current._add_op(rmo.concat, vals, axis=axis)[0]
 
 
-def slice_tensor(x: GraphValue, index: SliceIndices) -> GraphValue:
-    ellipsis_count = index.count(Ellipsis)
+def slice_tensor(x: GraphValue, indices: SliceIndices) -> GraphValue:
+    ellipsis_count = indices.count(Ellipsis)
     if ellipsis_count > 1:
-        return ValueError("Slicing index can contain at most one ellipsis")
+        raise ValueError("Slicing index can contain at most one ellipsis")
 
     if not x.shape:
-        return ValueError("Slicing does not support scalar inputs")
+        raise ValueError("Slicing does not support scalar inputs")
 
-    if len(index) - ellipsis_count > len(x.shape):
-        return ValueError(
-            "Slicing shape has less dimensions than required for indexing"
+    if len(x.shape) < len(indices) - ellipsis_count:
+        raise ValueError(
+            f"Too many indices supplied to slice for shape {x.shape}"
         )
 
-    ellipsis_index = index.index(Ellipsis) if Ellipsis in index else len(index)
-    before = index[:ellipsis_index]
-    after = index[ellipsis_index + 1 :]
+    ellipsis_index = indices.index(Ellipsis) if Ellipsis in indices else len(
+        indices
+    )
+    before = indices[:ellipsis_index]
+    after = indices[ellipsis_index + 1 :]
 
     remaining = len(x.shape) - len(before) - len(after)
     full_index = [*before, *([slice(None, None, None)] * remaining), *after]
-    output_shape, slices = zip(
-        *(starmap(_slice_dim_helper, zip(x.shape, full_index)))
-    )
+    output_shape = [
+        dim if isinstance(index, slice) else StaticDim(1)
+        for dim, index in zip(x.shape, full_index)
+    ]
+    slices = [
+        _slice_index(dim, index) for dim, index in zip(x.shape, full_index)
+    ]
 
-    starts = stack_scalars(s.start for s in slices)
-    stops = stack_scalars(s.stop for s in slices)
-    steps = stack_scalars(s.step for s in slices)
+    def value(dim: Union[GraphValue, int]) -> GraphValue:
+        return dim if isinstance(dim, GraphValue) else scalar(dim, DType.int64)
+
+    starts = stack_scalars(value(s.start) for s in slices)
+    stops = stack_scalars(value(s.stop) for s in slices)
+    steps = stack_scalars(value(s.step) for s in slices)
 
     output_type = TensorType(x.tensor_type.dtype, output_shape)
     return Graph.current._add_op(

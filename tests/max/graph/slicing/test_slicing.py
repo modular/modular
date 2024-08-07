@@ -5,18 +5,18 @@
 # ===----------------------------------------------------------------------=== #
 """Test the max.graph Python bindings."""
 
-import sys
 import itertools
-from typing import Union
-from random import Random
+import sys
 from operator import mul
+from random import Random
+from typing import Union
 
 import pytest
-from hypothesis import strategies as st
 from hypothesis import HealthCheck, assume, given, settings
+from hypothesis import strategies as st
 from max import mlir
 from max.graph import DType, Graph, GraphValue, TensorType, graph, ops
-from max.graph.type import shape, Shape, dim, StaticDim, Dim
+from max.graph.type import Dim, Shape, StaticDim, dim, shape
 
 
 def broadcast_dim(dims):
@@ -139,7 +139,7 @@ def tensor_and_slice():
 
 @given(tensor_and_indices=tensor_and_slice())
 def test_slice_valid_ints(
-    tensor_and_indices: tuple[TensorType, list[Union[int, Ellipsis, slice]]]
+    tensor_and_indices: tuple[TensorType, list[Union[int, Ellipsis, slice]]],
 ):
     input_type = tensor_and_indices[0]
     indices = tensor_and_indices[1]
@@ -167,35 +167,6 @@ def test_slice_valid_ints(
                 expected_shape[len(expected_shape) - i - 1] = dim(1)
 
         assert out.shape == expected_shape
-
-        graph.output(out)
-        graph._mlir_op.verify()
-
-
-@settings(deadline=None)
-@given(
-    input_type=...,
-    input_count=st.integers(min_value=1, max_value=100),
-    random=...,
-)
-def test_stack(input_type: TensorType, input_count: int, random: Random):
-    rank = len(input_type.shape)
-    if rank == 0:
-        axis = random.choice([0, -1])
-    else:
-        axis = random.randint(-rank, rank - 1)
-    with Graph(
-        "stack",
-        input_types=[input_type] * input_count,
-    ) as graph:
-        out = ops.stack(graph.inputs, axis)
-
-        target_shape = input_type.shape
-        if axis < 0:
-            axis += rank + 1
-        target_shape.insert(axis, dim(input_count))
-
-        assert out.shape == target_shape
 
         graph.output(out)
         graph._mlir_op.verify()

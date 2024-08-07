@@ -434,6 +434,7 @@ class TensorType(Type):
         """
         return all(d.is_static() for d in self.shape)
 
+    @property
     def rank(self) -> int:
         """Gets the rank of the tensor type.
 
@@ -457,7 +458,7 @@ class TensorType(Type):
         Raises:
             If the dimension is out-of-bounds.
         """
-        return self.shape[pos + (self.rank() if pos < 0 else 0)]
+        return self.shape[pos + (self.rank if pos < 0 else 0)]
 
     def __eq__(self, other: Any) -> bool:
         """Checks whether the two tensors have the same rank, type, and shape.
@@ -472,7 +473,7 @@ class TensorType(Type):
         return (
             isinstance(other, TensorType)
             and (self.dtype == other.dtype)
-            and (self.rank() == other.rank())
+            and (self.rank == other.rank)
             and all(d == d_other for d, d_other in zip(self.shape, other.shape))
         )
 

@@ -5,13 +5,13 @@
 # ===----------------------------------------------------------------------=== #
 """Casting ops."""
 
-from max import _graph, mlir
-from max.mlir.dialects import rmo, mo
 import numpy as np
+from max import _graph, mlir
+from max.mlir.dialects import mo, rmo
 
 from ..graph import Graph
-from ..graph_value import GraphValue, ValueLike, TensorType, ops
-from ..type import ShapeLike, dim, DType
+from ..graph_value import GraphValue, TensorType, ValueLike, ops
+from ..type import DType, ShapeLike, StaticDim, dim
 
 
 def reshape(x: ValueLike, shape: ShapeLike):
@@ -33,7 +33,7 @@ def cast(x: ValueLike, dtype: DType):
 
 def unsqueeze(x: ValueLike, axis: int) -> GraphValue:
     v = GraphValue(x)
-    rank = v.tensor_type.rank()
+    rank = v.tensor_type.rank
     if axis < 0:
         axis += rank + 1
     if axis < 0 or axis > rank:
@@ -63,7 +63,7 @@ def squeeze(x: ValueLike, axis=None) -> GraphValue:
     else:
         new_shape = []
         for d in v.tensor_type.shape:
-            if d.is_static() and d.dim != 1:
+            if isinstance(d, StaticDim) and d.dim != 1:
                 new_shape.append(d)
     return ops.reshape(v, new_shape)
 

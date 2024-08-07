@@ -5,13 +5,12 @@
 # ===----------------------------------------------------------------------=== #
 """Test the max.engine Python bindings with Max Graph."""
 
-
 from dataclasses import dataclass
 
 import max.engine as me
 import numpy as np
-from llama3.attention import Attention, rope
-from llama3.mlp import MLP, Linear
+from llama3.attention import Attention
+from llama3.mlp import Linear
 from llama3.rotary_embedding import RotaryEmbedding
 from max.graph import DType, Graph, TensorType
 
@@ -91,62 +90,6 @@ class NanoLlama3:
         .reshape((2, 2))
         .astype(np.float32)
     )
-
-
-def test_rope():
-    session = me.InferenceSession()
-
-    x = (
-        np.array(
-            [
-                -1.3140,
-                -1.5004,
-                0.4776,
-                -0.2095,
-                0.9650,
-                1.6373,
-                -0.0903,
-                -2.1381,
-            ]
-        )
-        .reshape((1, 2, 2, 2))
-        .astype(np.float32)
-    )
-
-    freqs_cis = (
-        np.array([0.42, 0.9075, 0.5403, 0.8415])
-        .reshape(2, 1, 2)
-        .astype(np.float32)
-    )
-
-    rope_graph = Graph(
-        "rope_graph",
-        rope,
-        input_types=[
-            TensorType(dtype=DType.float32, shape=[1, 2, 2, 2]),
-            TensorType(dtype=DType.float32, shape=[2, 1, 2]),
-        ],
-    )
-
-    compiled = session.load(rope_graph)
-    output = compiled.execute(input0=x, input1=freqs_cis)
-    expected = (
-        np.array(
-            [
-                0.8097,
-                -1.8226,
-                0.3907,
-                0.3454,
-                -0.8564,
-                1.6967,
-                1.7504,
-                -1.2312,
-            ]
-        )
-        .reshape(1, 2, 2, 2)
-        .astype(np.float32)
-    )
-    # np.testing.assert_almost_equal(output["output0"], expected, decimal=4)
 
 
 def test_attention():

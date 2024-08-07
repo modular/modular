@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Optional
 
 import pytest
+from hypothesis import assume
 from hypothesis import strategies as st
 from max import _graph, mlir
 from max.graph import DType, TensorType
@@ -28,13 +29,34 @@ symbolic_dims = st.builds(
     ),
 )
 dims = st.one_of(static_dims, symbolic_dims)
-tensor_types = st.builds(TensorType, dtypes, st.lists(dims))
+
+
+def tensor_types(dtypes=dtypes, shapes=st.lists(dims)):
+    return st.builds(TensorType, dtypes, shapes)
+
+
+def axes(types):
+    def strategy(type):
+        assume(type.rank > 0)
+        return st.integers(min_value=-type.rank, max_value=type.rank - 1)
+
+    return types.flatmap(strategy)
+
+
+def new_axes(types):
+    def strategy(type):
+        if not type.rank:
+            return st.sampled_from([0, -1])
+        return st.integers(min_value=-type.rank, max_value=type.rank)
+
+    return types.flatmap(strategy)
+
 
 st.register_type_strategy(DType, dtypes)
 st.register_type_strategy(Dim, dims)
 st.register_type_strategy(StaticDim, static_dims)
 st.register_type_strategy(SymbolicDim, symbolic_dims)
-st.register_type_strategy(TensorType, tensor_types)
+st.register_type_strategy(TensorType, tensor_types())
 
 
 def broadcastable_subshape(shape: list[Dim], random: random.Random):
