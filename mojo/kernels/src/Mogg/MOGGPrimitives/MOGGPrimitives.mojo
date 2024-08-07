@@ -16,6 +16,7 @@ from gpu.host import (
     Device,
     DeviceBuffer,
     DeviceContext,
+    Event,
     KernelProfilingInfo,
 )
 from gpu.host.memory import _free, _malloc
@@ -780,6 +781,25 @@ fn mgp_device_context_profile_end[
     except e:
         abort(e)
     return 1
+
+
+@mogg_register("mgp.sync")
+@always_inline
+fn mgp_sync[
+    aRuntimeSlot: UInt64,
+    bDevice: StringLiteral,
+](
+    in_chain: Int,
+    ctx: StateContext,
+    call_ctx: MojoCallContextPtr,
+) raises -> Int:
+    @parameter
+    if bDevice == "cuda":
+        var e = Event(call_ctx.get_cuda_device().cuda_context)
+        e.record(call_ctx.get_cuda_device().cuda_stream)
+        e.sync()
+
+    return 0
 
 
 # ===----------------------------------------------------------------------===#
