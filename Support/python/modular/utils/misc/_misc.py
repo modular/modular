@@ -4,14 +4,33 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-import numpy as np
 import os
+import platform
 import shutil
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Iterator, Optional
 
+import numpy as np
+
 from modular.utils import logging
+from modular.utils.subprocess import get_command_output
+
+
+def has_gpu() -> bool:
+    """Check if the system has an NVidia GPU we can target.
+
+    Returns:
+        Boolean indicating if the system has an NVidia GPU that we can target.
+    """
+    if platform.system() != "Linux":
+        return False
+
+    try:
+        get_command_output(["cuda-query"])
+        return True
+    except Exception:
+        return False
 
 
 @contextmanager
