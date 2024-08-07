@@ -293,8 +293,9 @@ IREvaluator::evaluateCompileAssembly(ParamOperatorAttr op) {
 
   // Capture the diagnostics that may be emitted.
   DiagnosticHandler handler(ctx);
-  ErrorOr<CrossDeviceFunction> closure = elaborator->getCompileAsmFn()(
-      func, symbol, name, symtabCopy, target, emissionKind);
+  ErrorOr<CrossDeviceFunction> closure =
+      elaborator->getCompileAsmFn()(func, symbol, name, symtabCopy, target,
+                                    emissionKind, handler.getHandlerID());
   handler.release();
 
   if (closure.isError()) {

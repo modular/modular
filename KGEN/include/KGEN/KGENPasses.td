@@ -371,7 +371,9 @@ def ElaborateGenerators : Pass<"elaborate-generators", "ModuleOp"> {
     Option<"elaborateDebugInfo", "elaborate-debuginfo", "bool", "false",
            "If true, parameter references in debuginfo will be concretized.">,
     Option<"diagAllFailures", "diag-all-failures", "bool", "false",
-           "If true, emit remarks for why any implementation failed.">
+           "If true, emit remarks for why any implementation failed.">,
+    Option<"diagHandlerID", "diag-handler-id", "uint64_t", "0",
+           "The diagnostic handler ID.">
   ];
 }
 

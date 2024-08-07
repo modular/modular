@@ -150,8 +150,9 @@ static void emitErrorTreeDiag(const ErrorTree &err,
   }
 }
 
-void ErrorTree::emit(function_ref<InFlightDiagnostic(Location)> emitError,
-                     StringRef callSiteMsg) && {
+void ErrorTree::emit(
+    function_ref<InFlightDiagnostic(Location)> emitError, StringRef callSiteMsg,
+    std::optional<mlir::DiagnosticEngine::HandlerID> diagHandlerID) && {
   // Try to compress recursive errors. To provide a root, start iterating from
   // the first child.
   for (ErrorTree &cause : causes) {
@@ -169,6 +170,16 @@ void ErrorTree::emit(function_ref<InFlightDiagnostic(Location)> emitError,
       diag.emplace(emitError(loc)) << msg;
   };
   emitErrorTreeDiag(*this, emitMsg, callSiteMsg);
+
+  // Add a DiagnosticsArgument to indicate that this one is from an
+  // InFlightDiagnostic so that it can be filtered later by DiagnosticHandler.
+  if (diagHandlerID) {
+    if (mlir::Diagnostic *underlyingDiag = (*diag).getUnderlyingDiagnostic()) {
+      underlyingDiag->getMetadata().push_back(
+          mlir::DiagnosticArgument(*diagHandlerID));
+    }
+  }
+
   // Emit the causes.
   emit(*diag, causes, callSiteMsg);
 }

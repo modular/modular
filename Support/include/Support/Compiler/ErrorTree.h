@@ -11,6 +11,7 @@
 #include "Support/Error.h"
 #include "Support/ErrorOr.h"
 #include "Support/LLVMCompilerForwardDecls.h"
+#include "mlir/IR/Diagnostics.h"
 #include "mlir/IR/Location.h"
 
 namespace M {
@@ -83,8 +84,10 @@ public:
 
   /// Emit this error to an MLIR diagnostic. The main error is emitted as a
   /// diagnostic error. Any causes are emitted as notes.
-  void emit(function_ref<InFlightDiagnostic(Location)> emitError,
-            StringRef callSiteMsg) &&;
+  void
+  emit(function_ref<InFlightDiagnostic(Location)> emitError,
+       StringRef callSiteMsg,
+       std::optional<mlir::DiagnosticEngine::HandlerID> diagHandlerID = {}) &&;
 
 private:
   /// Emit nested errors to an MLIR diagnostic as notes.

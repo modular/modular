@@ -23,6 +23,8 @@ public:
   /// Manually remove the handler from the context.
   void release();
 
+  mlir::DiagnosticEngine::HandlerID getHandlerID();
+
 private:
   /// The MLIR context.
   MLIRContext *ctx;

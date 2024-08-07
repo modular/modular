@@ -318,7 +318,8 @@ static ErrorOr<CrossDeviceFunction>
 compileElaboratorAsm(GeneratorOp func, SymbolConstantAttr symbol,
                      StringAttr name, const SymbolTable &symtab,
                      TargetInfoAttr target, EmissionKind emissionKind,
-                     CompilationOptions options) {
+                     CompilationOptions options,
+                     mlir::DiagnosticEngine::HandlerID diagHanlerID) {
   // Configure the compilation options given the new target.
   options.targetTriple = target.getTripleStr();
   options.targetCpu = target.getArch();
@@ -372,6 +373,7 @@ compileElaboratorAsm(GeneratorOp func, SymbolConstantAttr symbol,
   elaboratorOptions.elaborateDebugInfo =
       options.debugLevel == CompilationOptions::kLineTablesOnly ||
       options.debugLevel == CompilationOptions::kFullDebugInfo;
+  elaboratorOptions.diagHandlerID = diagHanlerID;
   mlir::PassManager pm(target.getContext());
   if constexpr (KGEN::kIsTracingEnabled)
     pm.enableTiming(std::make_unique<TimeProfilerTimingManager>());
@@ -381,10 +383,11 @@ compileElaboratorAsm(GeneratorOp func, SymbolConstantAttr symbol,
       target, elaboratorOptions,
       [=](GeneratorOp func, SymbolConstantAttr symbol, StringAttr name,
           const SymbolTable &symtab, TargetInfoAttr target,
-          EmissionKind emissionKind) {
+          EmissionKind emissionKind,
+          mlir::DiagnosticEngine::HandlerID diagHandlerID) {
         // Recursion...!
         return compileElaboratorAsm(func, symbol, name, symtab, target,
-                                    emissionKind, options);
+                                    emissionKind, options, diagHanlerID);
       }));
   buildPostElaborationPipeline(pm, options, compileCustomCanonicalizationFns);
 
@@ -502,9 +505,10 @@ std::unique_ptr<Pass> KGEN::createElaborateGeneratorsWithDefaultJIT() {
       /*target=*/{}, /*options=*/{},
       [=](GeneratorOp func, SymbolConstantAttr symbol, StringAttr name,
           const SymbolTable &symtab, TargetInfoAttr target,
-          EmissionKind emissionKind) {
+          EmissionKind emissionKind,
+          mlir::DiagnosticEngine::HandlerID diagHandlerID) {
         return compileElaboratorAsm(func, symbol, name, symtab, target,
-                                    emissionKind, options);
+                                    emissionKind, options, diagHandlerID);
       });
 }
 
@@ -535,9 +539,10 @@ void KGEN::populateElaborateModulePasses(mlir::PassManager &pm,
       pm, target, options, /*compileAsmFn=*/
       [=](GeneratorOp func, SymbolConstantAttr symbol, StringAttr name,
           const SymbolTable &symtab, TargetInfoAttr target,
-          EmissionKind emissionKind) {
+          EmissionKind emissionKind,
+          mlir::DiagnosticEngine::HandlerID diagHandlerID) {
         return compileElaboratorAsm(func, symbol, name, symtab, target,
-                                    emissionKind, options);
+                                    emissionKind, options, diagHandlerID);
       });
   buildPostElaborationPipeline(pm, options, compileCustomCanonicalizationFns);
 }
