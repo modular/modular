@@ -131,7 +131,7 @@ fn mogg_elementwise_hook():
     return
 
 
-fn mogg_intrinsic_attr(intrin: StringLiteral):
+fn __mogg_intrinsic_attr(intrin: StringLiteral):
     """
     Attaches the given intrinsic annotation onto the function.
     """
