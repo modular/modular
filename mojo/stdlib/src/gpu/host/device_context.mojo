@@ -285,6 +285,16 @@ struct DeviceContext:
     fn __enter__(owned self) -> Self:
         return self^
 
+    fn malloc_host[
+        type: AnyType
+    ](self, size: Int) raises -> UnsafePointer[type]:
+        """Allocates a pinned memory area registered with the device."""
+        return self.cuda_context.malloc_host[type](size)
+
+    fn free_host[type: AnyType](self, ptr: UnsafePointer[type]) raises:
+        """Frees memory allocated with malloc_host()."""
+        self.cuda_context.free_host(ptr)
+
     fn create_buffer[type: DType](self, size: Int) raises -> DeviceBuffer[type]:
         """Creates a buffer using the DeviceBuffer constructor."""
         return DeviceBuffer[type](self, size)

@@ -101,6 +101,10 @@ alias cuStreamSynchronize = _dylib_function[
     "cuStreamSynchronize", fn (_StreamHandle) -> Result
 ]
 
+alias cuMemAllocHost = _dylib_function[
+    "cuMemAllocHost_v2", fn (UnsafePointer[UnsafePointer[Int]], Int) -> Result
+]
+
 alias cuMemAlloc = _dylib_function[
     "cuMemAlloc_v2", fn (UnsafePointer[UnsafePointer[Int]], Int) -> Result
 ]
@@ -113,6 +117,10 @@ alias cuMemAllocAsync = _dylib_function[
 alias cuMemAllocManaged = _dylib_function[
     "cuMemAllocManaged",
     fn (UnsafePointer[UnsafePointer[Int]], Int, UInt32) -> Result,
+]
+
+alias cuMemFreeHost = _dylib_function[
+    "cuMemFreeHost", fn (UnsafePointer[Int]) -> Result
 ]
 
 alias cuMemFree = _dylib_function[
@@ -268,9 +276,11 @@ struct CudaDLL:
     var cuStreamSynchronize: cuStreamSynchronize.type
 
     # cuMalloc
+    var cuMemAllocHost: cuMemAllocHost.type
     var cuMemAlloc: cuMemAlloc.type
     var cuMemAllocAsync: cuMemAllocAsync.type
     var cuMemAllocManaged: cuMemAllocManaged.type
+    var cuMemFreeHost: cuMemFreeHost.type
     var cuMemFree: cuMemFree.type
     var cuMemFreeAsync: cuMemFreeAsync.type
 
@@ -318,9 +328,11 @@ struct CudaDLL:
         self.cuStreamCreate = cuStreamCreate.load()
         self.cuStreamDestroy = cuStreamDestroy.load()
         self.cuStreamSynchronize = cuStreamSynchronize.load()
+        self.cuMemAllocHost = cuMemAllocHost.load()
         self.cuMemAlloc = cuMemAlloc.load()
         self.cuMemAllocAsync = cuMemAllocAsync.load()
         self.cuMemAllocManaged = cuMemAllocManaged.load()
+        self.cuMemFreeHost = cuMemFreeHost.load()
         self.cuMemFree = cuMemFree.load()
         self.cuMemFreeAsync = cuMemFreeAsync.load()
         self.cuMemcpyHtoD = cuMemcpyHtoD.load()

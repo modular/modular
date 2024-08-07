@@ -81,6 +81,20 @@ struct Context:
         var cuCtxSynchronize = self.cuda_dll.cuCtxSynchronize
         _check_error(cuCtxSynchronize())
 
+    fn malloc_host[
+        type: AnyType
+    ](self, count: Int) raises -> UnsafePointer[type]:
+        """Allocates pinned memory on the host registered with the GPU device.
+        """
+
+        alias sizeof_t = sizeof[type]()
+        var ptr = UnsafePointer[Int]()
+        var cuMemAllocHost = self.cuda_dll.cuMemAllocHost
+        _check_error(
+            cuMemAllocHost(UnsafePointer.address_of(ptr), count * sizeof_t)
+        )
+        return ptr.bitcast[type]()
+
     fn malloc[type: AnyType](self, count: Int) raises -> UnsafePointer[type]:
         """Allocates GPU device memory."""
 
@@ -107,6 +121,11 @@ struct Context:
             )
         )
         return ptr.bitcast[type]()
+
+    fn free_host[type: AnyType](self, ptr: UnsafePointer[type]) raises:
+        """Frees memory allocated with malloc_host()."""
+        var cuMemFreeHost = self.cuda_dll.cuMemFreeHost
+        _check_error(cuMemFreeHost(ptr.bitcast[Int]()))
 
     fn free[type: AnyType](self, ptr: UnsafePointer[type]) raises:
         """Frees allocated GPU device memory."""
