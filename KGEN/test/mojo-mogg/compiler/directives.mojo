@@ -8,19 +8,20 @@ from tensor_utils.tensor_spec import StaticTensorSpec
 from tensor_utils.unsafe_tensor_slice import _StaticTensorType
 
 
+fn __mogg_intrinsic_attr(intrin: StringLiteral):
+    return
+
+
+@__mogg_intrinsic_attr("mogg.intrinsic_register")
 fn register(name: StringLiteral):
     pass
-
-
-fn mogg_intrinsic_attr(intrin: StringLiteral):
-    return
 
 
 fn create_none_spec[type: DType, rank: Int]() -> StaticTensorSpec[type, rank]:
     return StaticTensorSpec[type, rank]()
 
 
-@mogg_intrinsic_attr("mogg.tensor_spec_hook")
+@__mogg_intrinsic_attr("mogg.intrinsic_tensor_spec_hook")
 @export
 fn specsof[
     T: _StaticTensorType

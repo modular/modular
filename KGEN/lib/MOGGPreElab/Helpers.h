@@ -112,6 +112,8 @@ getTensorRepFromFunctionInput(GeneratorOp generator, size_t index) {
 /// kernel decorators.
 bool stripDecorators(LIT::FuncOp func);
 
+void stripDecorators(LIT::StructDeclOp structDecl);
+
 } // namespace M::KGEN::MOGGPreElab
 
 #endif // KGEN_LIB_MOGGPREELAB_HELPERS_H

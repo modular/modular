@@ -211,4 +211,63 @@ bool stripDecorators(LIT::FuncOp func) {
   return areAnyKernels;
 }
 
+void stripDecorators(LIT::StructDeclOp structDecl) {
+  SmallVector<TypedAttr> decoratorsToCopy;
+  OpBuilder builder{structDecl.getContext()};
+
+  // We will replace each decorator with a new attribute.
+  SmallVector<NamedAttribute> newAttrs;
+
+  size_t numDecorators = structDecl.getDecorators().size();
+
+  // Identify which MOGG specific decorators this function has if any.
+  for (TypedAttr decorator : structDecl.getDecorators()) {
+    // Keep track of the non mogg decorators to preserve them on the user
+    // kernel.
+    decoratorsToCopy.push_back(decorator);
+
+    // Identify the decorator being used.
+    llvm::StringRef decoratorName;
+
+    // We track the apply so we can pull extra arguments from it.
+    // `@decorator("Arg1", 100)`
+    ParamOperatorAttr apply = dyn_cast<ParamOperatorAttr>(decorator);
+    if (!apply)
+      continue;
+    // The first operand is expected to be the symbol we are applying.
+    if (auto sym = dyn_cast<SymbolConstantAttr>(apply.getOperand(0))) {
+      SymbolRefAttr symRef = sym.getSymbol();
+      // Only accept decorators in max / register domain.
+      if (!(symRef.getRootReference().strref() == "max" ||
+            symRef.getRootReference().strref() == "register" ||
+            symRef.getRootReference().strref() == COMPILER_PREFIX))
+        continue;
+      decoratorName = symRef.getLeafReference().strref();
+    }
+    if (decoratorName.empty())
+      continue;
+
+    if (decoratorName.starts_with(Decorators::REGISTER_MOGG_INTRINSIC)) {
+      TypedAttr str = std::get<1>(
+          cast<LIT::LITStructAttr>(apply.getOperand(1)).getValues()[0]);
+      newAttrs.push_back(
+          NamedAttribute{cast<StringAttr>(str), builder.getUnitAttr()});
+      decoratorsToCopy.pop_back();
+    }
+  }
+
+  // We don't need to do anything if we don't have any decorators.
+  if (numDecorators == decoratorsToCopy.size())
+    return;
+
+  // Update the function to have only the non mogg decorators.
+  structDecl.setDecorators(
+      DecoratorsAttr::get(structDecl.getContext(), decoratorsToCopy));
+
+  // Add all the old attributes.
+  for (const NamedAttribute &attr : structDecl->getAttrs())
+    newAttrs.push_back(attr);
+  structDecl->setAttrs(newAttrs);
+}
+
 } // namespace M::KGEN::MOGGPreElab
