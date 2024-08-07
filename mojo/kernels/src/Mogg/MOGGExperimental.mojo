@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from collections import Optional
-from math import erf, exp, iota, log, log1p, rsqrt, sqrt, tanh, ceil, floor
+from math import erf, exp, iota, log, log1p, isqrt, sqrt, tanh, ceil, floor
 
 from algorithm.reduction import _reduce_generator
 from buffer.dimlist import DimList
@@ -460,7 +460,7 @@ fn mo_rsqrt(
     @parameter
     @always_inline
     fn func[width: Int](i: IntList) -> SIMD[out.type, width]:
-        return rsqrt(rebind[SIMD[out.type, width]](x.simd_load[width](i)))
+        return isqrt(rebind[SIMD[out.type, width]](x.simd_load[width](i)))
 
     out.for_each[func]()
     return out

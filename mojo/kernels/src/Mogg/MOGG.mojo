@@ -13,7 +13,7 @@ from math import (
     fma,
     log,
     log1p,
-    rsqrt,
+    isqrt,
     sin,
     sqrt,
     ceil as _ceil,
@@ -3565,7 +3565,7 @@ fn roundeven[
 fn wrapped_rsqrt[
     type: DType, simd_width: Int
 ](x: SIMD[type, simd_width]) -> SIMD[type, simd_width]:
-    return 1 / sqrt(x)
+    return isqrt(x)
 
 
 @mogg_register("mo.select")
