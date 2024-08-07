@@ -38,6 +38,17 @@ class Model:
         model._impl = _core_model
         return model
 
+    def _export_mef(self, path):
+        """Exports the compiled model as a mef to a file.
+
+        Parameters
+        ----------
+        ``path``
+            The filename where the mef is exported to.
+
+        """
+        self._impl._export_mef(path)
+
     def execute(
         self, *args, **kwargs
     ) -> Dict[str, Union[np.ndarray, dict, list, tuple]]:
