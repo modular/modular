@@ -6,7 +6,7 @@
 
 from __future__ import annotations
 
-from typing import Union, Iterable
+from typing import Iterable, Union
 
 import numpy as np
 from max import mlir

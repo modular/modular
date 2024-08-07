@@ -4,8 +4,11 @@
 #
 # ===----------------------------------------------------------------------=== #
 
+import itertools
 import os
+import random
 from pathlib import Path
+from typing import Optional
 
 import pytest
 from hypothesis import strategies as st
@@ -32,6 +35,51 @@ st.register_type_strategy(Dim, dims)
 st.register_type_strategy(StaticDim, static_dims)
 st.register_type_strategy(SymbolicDim, symbolic_dims)
 st.register_type_strategy(TensorType, tensor_types)
+
+
+def broadcastable_subshape(shape: list[Dim], random: random.Random):
+    shape = shape[random.randint(0, len(shape)) :]
+    ones = random.sample(range(len(shape)), random.randint(0, len(shape)))
+    for idx in ones:
+        shape[idx] = StaticDim(1)
+    return shape
+
+
+def broadcastable_shapes(n: int):
+    return st.lists(dims).flatmap(
+        lambda shape: st.lists(
+            st.builds(broadcastable_subshape, st.just(shape), st.randoms()),
+            min_size=n,
+            max_size=n,
+        )
+    )
+
+
+def broadcastable_tensor_types(n: int):
+    return dtypes.flatmap(
+        lambda dtype: broadcastable_shapes(n).map(
+            lambda shapes: [TensorType(dtype, shape) for shape in shapes]
+        )
+    )
+
+
+def broadcast_shapes(s1: list[Dim], s2: list[Dim]) -> list[Dim]:
+    def broadcast_dim(d1: Optional[Dim], d2: Optional[Dim]):
+        if d1 is None:
+            return d2
+        if d2 is None:
+            return d1
+        assert d1 == d2 or d1 == StaticDim(1) or d2 == StaticDim(1)
+        return d1 if d2 == StaticDim(1) else d2
+
+    return list(
+        reversed(
+            [
+                broadcast_dim(d1, d2)
+                for d1, d2 in itertools.zip_longest(reversed(s1), reversed(s2))
+            ]
+        )
+    )
 
 
 @pytest.fixture
