@@ -174,7 +174,6 @@ run_tool(
         "//KGEN:CompilerRT",
         "//KGEN:CompilerRT.distributable",
         "//KGEN:MojoLLDB",
-        "//KGEN:gdb-server",
         "//KGEN:mojo-lldb",
         "//KGEN/tools/mojo",
         "//KGEN/tools/mojo-repl-entry-point",
@@ -200,14 +199,9 @@ run_tool(
         "//SDK/lib/API/mojo/max/max",
         "//open-source/mojo/stdlib/stdlib",
         "@llvm-project//compiler-rt:orc_rt",
-        "@llvm-project//lldb:lldb-argdumper",
         requirement("transformers"),
         requirement("torch"),
     ],
-    env = {
-        "LLDB_DEBUGSERVER_PATH": "$(rlocationpath //KGEN:gdb-server)",
-        "MODULAR_CRASH_REPORTING_ENABLED": "false",
-    },
     env_inherit = [
         "MODULAR_PROFILE_FILENAME",
         "MODULAR_MAX_TEMPS_DIR",
