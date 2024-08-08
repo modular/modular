@@ -6,6 +6,10 @@
 
 from layout import LayoutTensor
 
+from utils.numerics import min_or_neg_inf
+
+from builtin.math import max as b_max
+
 
 # Updates res with the outer product of lhs, rhs vectors, res += outer(lhs, rhs).
 #
@@ -41,3 +45,101 @@ fn outer_product_acc(
             res[i, j] += rebind[res.element_type](
                 lhs[i].cast[dtype]()
             ) * rebind[res.element_type](rhs[j].cast[dtype]())
+
+
+@always_inline
+fn _reduce[
+    axis: Int,
+    init_func: fn[dtype: DType, width: Int] () -> SIMD[dtype, width],
+    func: fn[dtype: DType, width: Int] (
+        SIMD[dtype, width], SIMD[dtype, width]
+    ) -> (SIMD[dtype, width]),
+](inp: LayoutTensor, out: LayoutTensor):
+    constrained[
+        inp.layout.known_shape() and out.layout.known_shape(),
+        "_reduce expects inputs with statically know shapes",
+    ]()
+    constrained[
+        inp.rank - 1 == out.rank,
+        "_reduce expects output of rank = inp.rank - 1",
+    ]()
+
+    @parameter
+    for dim in range(axis):
+
+        @parameter
+        if dim != axis:
+            constrained[
+                inp.shape[dim]() == out.shape[dim](),
+                "_reduce expects none reduction dims to be the same",
+            ]()
+
+    @parameter
+    for dim in range(axis + 1, inp.rank):
+
+        @parameter
+        if dim != axis:
+            constrained[
+                inp.shape[dim]() == out.shape[dim - 1](),
+                "_reduce expects none reduction dims to be the same",
+            ]()
+
+    # TODO(KERN-777): We need to relax this constraine.
+    constrained[inp.rank == 2, "Only rank-2 _reduce is supported"]()
+
+    @parameter
+    if inp.rank == 2 and axis == 1:
+
+        @parameter
+        for i in range(inp.shape[0]()):
+            var reduce_val = init_func[out.dtype, out.element_size]()
+
+            @parameter
+            for j in range(inp.shape[1]()):
+                reduce_val = func(
+                    reduce_val,
+                    rebind[out.element_type](inp[i, j].cast[out.dtype]()),
+                )
+
+            out[i] = reduce_val
+
+    elif inp.rank == 2 and axis == 0:
+
+        @parameter
+        for j in range(inp.shape[1]()):
+            var reduce_val = init_func[out.dtype, out.element_size]()
+
+            @parameter
+            for i in range(inp.shape[0]()):
+                reduce_val = func(
+                    reduce_val,
+                    rebind[out.element_type](inp[i, j].cast[out.dtype]()),
+                )
+
+            out[j] = reduce_val
+
+
+@always_inline
+fn sum[axis: Int](inp: LayoutTensor, out: LayoutTensor):
+    fn sum_init[dtype: DType, width: Int]() -> SIMD[dtype, width]:
+        return 0
+
+    fn sum_func[
+        dtype: DType, width: Int
+    ](a: SIMD[dtype, width], b: SIMD[dtype, width]) -> SIMD[dtype, width]:
+        return a + b
+
+    _reduce[axis, sum_init, sum_func](inp, out)
+
+
+@always_inline
+fn max[axis: Int](inp: LayoutTensor, out: LayoutTensor):
+    fn max_init[dtype: DType, width: Int]() -> SIMD[dtype, width]:
+        return SIMD[dtype, width].MIN
+
+    fn max_func[
+        dtype: DType, width: Int
+    ](a: SIMD[dtype, width], b: SIMD[dtype, width]) -> SIMD[dtype, width]:
+        return b_max(a, b)
+
+    _reduce[axis, max_init, max_func](inp, out)
