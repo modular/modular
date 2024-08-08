@@ -3,6 +3,9 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
+
+from memory import memcpy
+
 from .anytensor import AnyTensor
 from max.tensor import Tensor as OldTensor
 from .tensor import Tensor
