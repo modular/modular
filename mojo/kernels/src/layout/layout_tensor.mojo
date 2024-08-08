@@ -1775,41 +1775,6 @@ fn stack_allocation_like[
     ].stack_allocation()
 
 
-# Updates res with the outer product of lhs, rhs vectors, res += outer(lhs, rhs).
-#
-@always_inline
-fn outer_product_acc[
-    dtype: DType,
-    *,
-    res_address_space: AddressSpace,
-    lhs_address_space: AddressSpace,
-    rhs_address_space: AddressSpace,
-    res_layout: Layout,
-    lhs_layout: Layout,
-    rhs_layout: Layout,
-](
-    res: LayoutTensor[dtype, res_layout, address_space=res_address_space],
-    lhs: LayoutTensor[_, lhs_layout, address_space=lhs_address_space],
-    rhs: LayoutTensor[_, rhs_layout, address_space=rhs_address_space],
-):
-    constrained[res.rank == 2, "Only rank 2 res is allowed."]()
-    constrained[lhs.rank == 1, "Only rank 1 lhs is allowed."]()
-    constrained[rhs.rank == 1, "Only rank 1 rhs is allowed."]()
-
-    alias M = res.shape[0]()
-    alias N = res.shape[1]()
-
-    constrained[lhs.shape[0]() == M, "lhs shape mismatch"]()
-    constrained[rhs.shape[0]() == N, "rhs shape mismatch"]()
-
-    @parameter
-    for i in range(M):
-
-        @parameter
-        for j in range(N):
-            res[i, j] += lhs[i].cast[dtype]() * rhs[j].cast[dtype]()
-
-
 # Synchronous copy from DRAM -> SRAM, this requires w/r thread affinity mapping.
 #
 @always_inline
