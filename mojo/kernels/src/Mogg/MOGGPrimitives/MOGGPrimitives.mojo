@@ -246,6 +246,11 @@ fn create_tensor_spec_async[
     shape_ptr.free()
 
 
+@export
+fn empty_destructor(ptr: UnsafePointer[UInt8]):
+    pass
+
+
 @mogg_register("builtin.create_mojo_value_async")
 @always_inline
 @export
@@ -258,6 +263,15 @@ fn create_mojo_value_async(
     destructor_fn: fn (UnsafePointer[UInt8]) -> None,
     move_fn: fn (UnsafePointer[UInt8], UnsafePointer[UInt8]) -> None,
 ):
+    # Check if we have a nullptr, if so, don't use a desctructor.
+    if not val_ptr:
+        external_call["KGEN_CompilerRT_CreateOwnedAsyncMojoValue", NoneType](
+            val_ptr,
+            empty_destructor,
+            async_ptr,
+            runtime,
+        )
+        return
     var dst_ptr = external_call[
         "KGEN_CompilerRT_MojoValueAllocateBuffer", UnsafePointer[UInt8]
     ](size, align)
@@ -707,29 +721,63 @@ fn mgp_chain_host_to_device[aRuntimeSlot: UInt64, bDevice: StringLiteral]():
 # MGP Device Context Primitives
 # ===----------------------------------------------------------------------===#
 
-alias dev_ty = Tuple[CudaContext, CudaInstance, KernelProfilingInfo]
+
+@value
+@register_passable("trivial")
+struct ContextCreateResults:
+    # Ordering here matters. It must match the ordering of returns in the MGP
+    # op definition.
+    var chain: Int
+    var ptr: UnsafePointer[DeviceContext]
 
 
 @mogg_register("mgp.device.context.create")
-@always_inline
 @export
 fn mgp_device_context_create[
     aDeviceRuntimeSlot: UInt64, bDevice: StringLiteral
-](dummy_chain: Int, ctx: StateContext) -> Int:
+](
+    dummy_chain: Int,
+    ctx: StateContext,
+    dev_ctx_ptr: UnsafePointer[DeviceContext],
+) raises -> ContextCreateResults:
+    if dev_ctx_ptr:
+        # We cannot return the original pointer because it is already owned by someone else.
+        var dev_ctx = external_call[
+            "KGEN_CompilerRT_MojoValueAllocateBuffer",
+            UnsafePointer[DeviceContext],
+        ](sizeof[DeviceContext](), alignof[DeviceContext]())
+        dev_ctx.init_pointee_copy(dev_ctx_ptr[])
+        external_call[
+            "KGEN_CompilerRT_CudaContextSetDevice",
+            NoneType._mlir_type,
+        ](
+            dev_ctx,
+            empty_destructor,
+            ctx[Int(aDeviceRuntimeSlot.cast[DType.int64]().value)],
+        )
+        external_call[
+            "KGEN_CompilerRT_CudaContextSetContext",
+            NoneType._mlir_type,
+        ](
+            dev_ctx_ptr[].cuda_context.ctx.handle,
+            ctx[Int(aDeviceRuntimeSlot.cast[DType.int64]().value)],
+        )
+        external_call[
+            "KGEN_CompilerRT_CudaContextSetStream",
+            NoneType._mlir_type,
+        ](
+            dev_ctx_ptr[].cuda_stream.stream.handle,
+            ctx[Int(aDeviceRuntimeSlot.cast[DType.int64]().value)],
+        )
+        return ContextCreateResults(1, dev_ctx)
+
     @parameter
     if bDevice == "cuda":
         var dev_ctx = external_call[
-            "KGEN_CompilerRT_MojoValueAllocateBuffer", UnsafePointer[dev_ty]
-        ](sizeof[dev_ty](), alignof[dev_ty]())
-        try:
-            var instance = CudaInstance()
-            var context = CudaContext(Device(instance))
-            var kernel_profiling_info = KernelProfilingInfo()
-            dev_ctx.init_pointee_move(
-                (context, instance, kernel_profiling_info)
-            )
-        except e:
-            abort(e)
+            "KGEN_CompilerRT_MojoValueAllocateBuffer",
+            UnsafePointer[DeviceContext],
+        ](sizeof[DeviceContext](), alignof[DeviceContext]())
+        dev_ctx.init_pointee_move(DeviceContext())
         external_call[
             "KGEN_CompilerRT_CudaContextSetDevice",
             NoneType._mlir_type,
@@ -738,19 +786,27 @@ fn mgp_device_context_create[
             mgp_device_context_destroy,
             ctx[Int(aDeviceRuntimeSlot.cast[DType.int64]().value)],
         )
-    return 1
+        external_call[
+            "KGEN_CompilerRT_CudaContextSetContext",
+            NoneType._mlir_type,
+        ](
+            dev_ctx[].cuda_context.ctx.handle,
+            ctx[Int(aDeviceRuntimeSlot.cast[DType.int64]().value)],
+        )
+        external_call[
+            "KGEN_CompilerRT_CudaContextSetStream",
+            NoneType._mlir_type,
+        ](
+            dev_ctx[].cuda_stream.stream.handle,
+            ctx[Int(aDeviceRuntimeSlot.cast[DType.int64]().value)],
+        )
+        return ContextCreateResults(1, dev_ctx)
+    return ContextCreateResults(1, UnsafePointer[DeviceContext]())
 
 
 @export
-fn mgp_device_context_destroy(
-    dev_ctx: UnsafePointer[
-        Tuple[StateContext, CudaInstance, KernelProfilingInfo]
-    ]
-):
-    _ = UnsafePointer.address_of(dev_ctx[][0]).destroy_pointee()
-    _ = UnsafePointer.address_of(dev_ctx[][1]).destroy_pointee()
-    # TODO: The below fails because dev_ctx[][2] is already freed.
-    # dev_ctx.destroy_pointee()
+fn mgp_device_context_destroy(dev_ctx: UnsafePointer[DeviceContext]):
+    _ = dev_ctx.destroy_pointee()
 
 
 @mogg_register("mgp.device.context.profile.start")
