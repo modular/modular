@@ -416,30 +416,11 @@ struct MojoCallContextPtr:
         """Get the device context passed in."""
         var ptr = external_call[
             "KGEN_CompilerRT_AsyncRT_MojoCallContext_GetCudaDevice",
-            UnsafePointer[
-                Tuple[CudaContext, CudaInstance, KernelProfilingInfo]
-            ],
+            UnsafePointer[DeviceContext],
         ](
             self.ptr,
         )
-        var cuda_dll = ptr[][0].cuda_dll
-
-        var stream_handle = external_call[
-            "KGEN_CompilerRT_AsyncRT_MojoCallContext_GetCUStream", self.ptr_type
-        ](
-            self.ptr,
-        )
-        if not stream_handle:
-            abort("CUDA stream was not passed to MojoCallContext")
-
-        var stream = Stream(stream_handle, cuda_dll=cuda_dll)
-
-        return DeviceContext(
-            ptr[][1],
-            ptr[][0],
-            stream,
-            profiling_info=UnsafePointer.address_of(ptr[][2]),
-        )
+        return ptr[]
 
     @always_inline
     fn set_to_error(self, err: Error):
