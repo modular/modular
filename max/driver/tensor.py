@@ -5,12 +5,12 @@
 # ===----------------------------------------------------------------------=== #
 from __future__ import annotations
 
-from typing import Any, Optional, Tuple
+from typing import Any, Tuple
 
 from max.driver.driver_core import Tensor as _Tensor
 
 from .driver import CPU
-from .types import dtype
+from .dtype import DType
 
 
 class Tensor:
@@ -28,26 +28,27 @@ class Tensor:
 
     # We're storing the dtype explicitly to retain the int-name mapping
     # defined in `types.py`.
-    dt: dtype
     _impl: _Tensor
 
     def __init__(
         self,
-        dt: dtype,
-        shape: Tuple[int, ...] = (),
+        shape: Tuple[int, ...],
+        dt: DType,
         device: CPU = CPU(),
         **kwargs,
     ) -> None:
-        self.dt = dt
+        # Note that we ignore the dtype and shape arguments if we provide an
+        # _impl. This is because the dtype and shape will be taken directly from
+        # the preconstructed C++ representation.
         if "_impl" in kwargs:
             self._impl = kwargs["_impl"]
         else:
-            self._impl = _Tensor(dt.id, shape, device._device)
+            self._impl = _Tensor(shape, dt._to(), device._device)
 
     @property
-    def dtype(self) -> dtype:
+    def dtype(self) -> DType:
         """DType of constituent elements in tensor"""
-        return self.dt
+        return DType._from(self._impl.dtype)
 
     @property
     def shape(self) -> Tuple[int, ...]:
@@ -70,7 +71,8 @@ class Tensor:
         """Gets a tensor slice. Supports full numpy-style slicing. Invocations
         using only integer-based indexes will return zero-rank tensors."""
         new_tensor = self._impl.get(idx)
-        return Tensor(self.dt, _impl=new_tensor)
+        # The shape and dtype we pass into this constructor will be ignored.
+        return Tensor((), DType.unknown, _impl=new_tensor)
 
     def item(self) -> Any:
         """Returns the scalar value at a given location. Currently
