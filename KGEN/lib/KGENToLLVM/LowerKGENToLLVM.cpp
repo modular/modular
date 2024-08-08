@@ -712,93 +712,6 @@ struct ConvertKGENStructGEP : ConvertPOPToLLVMPattern<StructGEPOp> {
 };
 
 //===----------------------------------------------------------------------===//
-// ConvertKGENVariantCreate
-//===----------------------------------------------------------------------===//
-
-struct ConvertKGENVariantCreate
-    : public ConvertPOPToLLVMPattern<VariantCreateOp> {
-  using ConvertPOPToLLVMPattern::ConvertPOPToLLVMPattern;
-
-  LogicalResult
-  matchAndRewrite(VariantCreateOp op, VariantCreateOpAdaptor adaptor,
-                  ConversionPatternRewriter &rewriter) const override {
-    auto variantType =
-        dyn_cast_if_present<LLVM::LLVMStructType>(convertType(op.getType()));
-    if (!variantType)
-      return failure();
-
-    VariantHelper helper(rewriter, op.getLoc(), *getTypeConverter());
-    Value result = helper.materializeLLVMVariant(
-        variantType, adaptor.getOperand(), op.getIndex());
-    if (!result)
-      return failure();
-    rewriter.replaceOp(op, result);
-    return success();
-  }
-};
-
-//===----------------------------------------------------------------------===//
-// ConvertKGENVariantIs
-//===----------------------------------------------------------------------===//
-
-/// Lower `kgen.variant.is` to an extract and integer compare.
-struct ConvertKGENVariantIs : public ConvertPOPToLLVMPattern<VariantIsOp> {
-  using ConvertPOPToLLVMPattern::ConvertPOPToLLVMPattern;
-
-  LogicalResult
-  matchAndRewrite(VariantIsOp op, VariantIsOpAdaptor adaptor,
-                  ConversionPatternRewriter &rewriter) const override {
-    Value discr = rewriter.create<LLVM::ExtractValueOp>(
-        op.getLoc(), adaptor.getVariant(), 1);
-    auto variantType =
-        cast<LLVM::LLVMStructType>(adaptor.getVariant().getType());
-    Value discrVal = rewriter.create<LLVM::ConstantOp>(
-        op.getLoc(), variantType.getBody().back(), op.getIndex());
-    rewriter.replaceOpWithNewOp<LLVM::ICmpOp>(op, LLVM::ICmpPredicate::eq,
-                                              discr, discrVal);
-    return success();
-  }
-};
-
-//===----------------------------------------------------------------------===//
-// ConvertKGENVariantGet
-//===----------------------------------------------------------------------===//
-
-struct ConvertKGENVariantGet : ConvertPOPToLLVMPattern<VariantGetOp> {
-  using ConvertPOPToLLVMPattern::ConvertPOPToLLVMPattern;
-
-  LogicalResult
-  matchAndRewrite(VariantGetOp op, VariantGetOpAdaptor adaptor,
-                  ConversionPatternRewriter &rewriter) const override {
-    Type valueType = convertType(op.getType());
-    if (!valueType)
-      return failure();
-    auto variantType =
-        cast<LLVM::LLVMStructType>(adaptor.getVariant().getType());
-    auto contentType = cast<LLVM::LLVMArrayType>(variantType.getBody().front());
-
-    // Extract the content and put it in the block of memory.
-    Value content = rewriter.create<LLVM::ExtractValueOp>(
-        op.getLoc(), adaptor.getVariant(), 0);
-
-    SmallVector<Value> storageValues;
-    for (unsigned i = 0, e = contentType.getNumElements(); i != e; ++i)
-      storageValues.push_back(
-          rewriter.create<LLVM::ExtractValueOp>(op.getLoc(), content, i));
-
-    VariantHelper helper(rewriter, op.getLoc(), *getTypeConverter());
-    ArrayRef<Value>::iterator valueIt = storageValues.begin();
-    unsigned storageOffset = 0;
-    unsigned offset = 0;
-    Value result =
-        helper.walkAndExtractVariant(valueIt, storageOffset, offset, valueType);
-
-    rewriter.replaceOp(op, result);
-    return success();
-  }
-};
-
-//===----------------------------------------------------------------------===//
 // ConvertKGENCustomOpImplsOp
 //===----------------------------------------------------------------------===//
 
@@ -831,9 +744,6 @@ static void populateKGENToLLVMPatterns(mlir::LLVMTypeConverter &typeConverter,
       ConvertKGENStructGEP,
       ConvertKGENStructGet,
       ConvertKGENStructReplace,
-      ConvertKGENVariantCreate,
-      ConvertKGENVariantGet,
-      ConvertKGENVariantIs,
       ConvertKGENRebind,
       ConvertKGENReturn,
       ConvertKGENUnreachable,
