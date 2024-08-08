@@ -1,0 +1,25 @@
+load("@rules_pkg//pkg:mappings.bzl", "pkg_filegroup", "pkg_files")
+
+pkg_filegroup(
+    name = "jupyter-mojo",
+    srcs = [
+        ":jupyter-manage-kernel",
+        ":jupyter-mojo-kernel",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+pkg_files(
+    name = "jupyter-manage-kernel",
+    srcs = [
+        "manage_kernel.py",
+    ],
+)
+
+pkg_files(
+    name = "jupyter-mojo-kernel",
+    srcs = glob([
+        "kernel/*",
+    ]),
+    prefix = "kernel",
+)

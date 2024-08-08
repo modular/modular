@@ -1,0 +1,11 @@
+load("@pip_deps//:requirements.bzl", "requirement")
+
+py_library(
+    name = "mojodoc_json_to_markdown",
+    srcs = ["mojodoc_json_to_markdown.py"],
+    data = glob(["mojodoc-templates/*.md"]),
+    visibility = ["//visibility:public"],
+    deps = [
+        requirement("jinja2"),
+    ],
+)
