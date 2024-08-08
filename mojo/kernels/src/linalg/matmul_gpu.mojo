@@ -42,6 +42,7 @@ from layout.nd_buffer_stub import copy_from_nd_buffer, distribute, vectorize
 from layout.swizzle import Swizzle
 from memory import stack_allocation, UnsafePointer
 
+from utils import StaticIntTuple
 from utils.index import Index
 from utils.numerics import get_accum_type
 from utils.static_tuple import StaticTuple
