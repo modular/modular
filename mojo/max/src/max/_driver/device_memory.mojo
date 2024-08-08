@@ -214,7 +214,7 @@ struct DeviceMemory(DeviceBuffer, StringableRaising, CollectionElement):
         """Returns a pointer to the underlying device memory.
 
         Note: The caller is responsible for ensuring that the returned pointer
-        is not used after it's owner is last used.
+        is not used after its owner is last used.
         """
 
         return self._device.lib.value().get_data_fn(self._impl_ptr)

@@ -63,7 +63,7 @@ struct ExecutableGraph:
                     compiled.
         Returns:
             Execution output. This will be in the device annotated in graph
-            output. If there is no annotation it's considered to be in CPU.
+            output. If there is no annotation, it's considered to be in CPU.
         """
         # Collect the C pointers of inputs to pass to C API.
         var inputs_impl = List[UnsafePointer[NoneType]]()

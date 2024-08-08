@@ -20,7 +20,7 @@ fn list(elements: List[Symbol]) raises -> Symbol:
         elements: The list's elements.
 
     Returns:
-        The list filled with `elements`. It's type will be `ListType`.
+        The list filled with `elements`. Its type will be `ListType`.
     """
     if len(elements) == 0:
         # Unfortunately no way to get a graph here :(
@@ -56,6 +56,6 @@ fn list(type: TensorType, g: Graph) raises -> Symbol:
         g: The `Graph` to add nodes to.
 
     Returns:
-        A new empty list. It's type will be `ListType`.
+        A new empty list. Its type will be `ListType`.
     """
     return g.op("mo.list.create", ListType(type))
