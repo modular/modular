@@ -57,11 +57,14 @@ autotuning problem, so let’s just lean into building something simple.
 
 4. Run `tune.py` script as follows:
 
-    ```mojo
+    ```bash
     $MODULAR_PYTHON tune.py --yaml YAML_FILE --output OUTPUT_PATH
     ```
 
 ## Example
+
+Applying autotuning on `tune_multistage_gemm.mojo` with yaml in
+[`demo/gemm.yaml`](demo/gemm.yaml):
 
 ```text
 --------------------------------------------------------------------------------
