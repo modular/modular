@@ -5,17 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 
 
-trait _StaticTensorType:
-    @staticmethod
-    fn _get_dtype() -> DType:
-        ...
-
-    @staticmethod
-    fn _get_static_rank() -> Int:
-        ...
-
-
-struct UnsafeTensorSlice[type: DType, rank: Int](_StaticTensorType):
+struct UnsafeTensorSlice[type: DType, rank: Int]:
     @staticmethod
     fn _get_dtype() -> DType:
         return Self.type
