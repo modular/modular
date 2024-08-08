@@ -51,8 +51,8 @@ constexpr auto kExportTimeout = std::chrono::milliseconds(1000);
 /// createLocalIDs creates a machineid (invariant within a given container) and
 /// a sessionid (invariant within a given process).
 ///
-/// This function / should only ever be called once and the result memoized, it
-/// may be quite expensive.
+/// This function / should only ever be called once and the result memoized, as
+/// it may be quite expensive.
 std::pair<std::string, std::string> createLocalIDs();
 
 /// A TelemetryContext provides access to instruments (e.g. Counter, Histogram)

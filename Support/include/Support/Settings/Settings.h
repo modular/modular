@@ -20,11 +20,11 @@ namespace M {
 /// This class provides the collection of system settings. Users should use the
 /// `open` method to get the current settings, and should use `refresh` when
 /// it's necessary to do so. Refreshing the settings means intentionally looking
-/// for new environment variables, in the case of the config, and fetching a new
-/// certificate if necessary, in the case of the entitlement store. This
+/// for new environment variables (in the case of the config) and fetching a new
+/// certificate if necessary (in the case of the entitlement store). This
 /// semi-inextricably ties the notion of "refreshing the settings" to the notion
-/// of "refreshing authentication", which is not really desirable, but it's
-/// difficult to extricate these two concepts in a way that makes sense since
+/// of "refreshing authentication", which is not really desirable; but it's
+/// difficult to extricate these two concepts in a way that makes sense, since
 /// the carrier for both signals is exactly the same.
 class Settings {
 public:
