@@ -117,8 +117,12 @@ SymbolConstantAttr LowerCustomOpsPass::getSymbolForCustomOp(
     SymbolTable &opImplsTable, Location loc) {
   // If the operation doesn't specify parameters, this means the generator
   // doesn't have any parameters, so we can return the generator symbol.
-  if (!implParamsAttr)
+  if (!implParamsAttr) {
+    auto implOp = opImplsTable.lookup<ExportInterface>(
+        opImplSym.getSymbol().getLeafReference());
+    implOp.setExported();
     return opImplSym;
+  }
 
   // FIXME(math-fehr): Support multiple parameters
   SmallVector<TypedAttr> parameters;
