@@ -27,6 +27,7 @@
 #include "Support/MArchTarget/Host.h"
 #include "Support/Telemetry/Telemetry.h"
 #include "mlir/Bytecode/BytecodeWriter.h"
+#include "mlir/IR/DialectResourceBlobManager.h"
 #include "mlir/Pass/PassManager.h"
 #include "mlir/Support/FileUtilities.h"
 #include "mlir/Target/LLVMIR/Export.h"

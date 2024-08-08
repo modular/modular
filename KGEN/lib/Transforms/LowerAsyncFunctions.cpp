@@ -13,6 +13,7 @@
 #include "KGEN/POPDialect/POPOps.h"
 #include "KGEN/POPDialect/POPTypes.h"
 #include "KGEN/TransformUtils/AsyncUtils.h"
+#include "Support/Threading/Shared.h"
 #include "mlir/Analysis/SymbolTableAnalysis.h"
 #include "mlir/Dialect/Index/IR/IndexDialect.h"
 #include "mlir/Dialect/Index/IR/IndexOps.h"

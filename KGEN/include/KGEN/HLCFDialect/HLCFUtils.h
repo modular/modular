@@ -8,6 +8,7 @@
 #define KGEN_HLCFDIALECT_HLCFUTILS_H
 
 #include "KGEN/HLCFDialect/HLCFOps.h"
+#include "mlir/IR/OpImplementation.h"
 
 namespace M::HLCF {
 /// Return true if the operation is a loop and has a matching label.
