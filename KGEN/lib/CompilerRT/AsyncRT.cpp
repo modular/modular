@@ -254,6 +254,18 @@ KGEN_CompilerRT_CudaContextSetDevice(
   unwrap(runtime).deviceContext = MojoValue(devCtx, destructor);
 }
 
+COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void
+KGEN_CompilerRT_CudaContextSetContext(
+    CUcontext ctx, AsyncRTWrapper<CUDA::CUDARuntime> runtime) {
+  unwrap(runtime).context = ctx;
+}
+
+COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void
+KGEN_CompilerRT_CudaContextSetStream(
+    CUstream stream, AsyncRTWrapper<CUDA::CUDARuntime> runtime) {
+  unwrap(runtime).stream = stream;
+}
+
 //===----------------------------------------------------------------------===//
 // MojoCallContext
 //===----------------------------------------------------------------------===//
@@ -575,6 +587,10 @@ void M::KGEN::registerAsyncRT(
                    (void *)&KGEN_CompilerRT_AsyncRT_GetCurrentStream});
   funcs.push_back({"KGEN_CompilerRT_CudaContextSetDevice",
                    (void *)&KGEN_CompilerRT_CudaContextSetDevice});
+  funcs.push_back({"KGEN_CompilerRT_CudaContextSetContext",
+                   (void *)&KGEN_CompilerRT_CudaContextSetContext});
+  funcs.push_back({"KGEN_CompilerRT_CudaContextSetStream",
+                   (void *)&KGEN_CompilerRT_CudaContextSetStream});
   funcs.push_back({"KGEN_CompilerRT_CreateAsync_ssizet",
                    (void *)&KGEN_CompilerRT_CreateAsync_ssizet});
   funcs.push_back({"KGEN_CompilerRT_CreateAsync_chain",
