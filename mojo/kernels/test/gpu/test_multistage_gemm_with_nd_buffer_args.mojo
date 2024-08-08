@@ -39,6 +39,7 @@ from linalg.matmul_gpu import matmul_kernel_naive
 from memory.reference import _GPUAddressSpace as AddressSpace
 from memory import UnsafePointer
 from testing import assert_almost_equal
+from utils import StaticIntTuple
 
 
 fn is_benchmark() -> Bool:

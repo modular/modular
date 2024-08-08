@@ -6,7 +6,7 @@
 # REQUIRES: has_cuda_device
 # RUN: %mojo-no-debug %s
 
-from math import ceildiv
+from math import ceildiv, isclose
 from random import random_float64
 
 from gpu import (
@@ -167,9 +167,9 @@ fn test_layout_mma[
             var out_val = mat_c.tensor[i, j]
             var out_ref = mat_c_n.tensor[i, j]
             if debug:
-                if not math.isclose(out_val, out_ref, rtol=rtol):
+                if not isclose(out_val, out_ref, rtol=rtol):
                     print(i, out_val, out_ref)
-            testing.assert_true(math.isclose(out_val, out_ref, rtol=rtol))
+            testing.assert_true(isclose(out_val, out_ref, rtol=rtol))
 
     _ = mat_a^
     _ = mat_b^
