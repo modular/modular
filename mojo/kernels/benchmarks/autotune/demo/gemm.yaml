@@ -5,10 +5,14 @@
 ##===----------------------------------------------------------------------===##
 
 name: multistage_gemm
-file: sample.mojo
+file: ../tune_multistage_gemm.mojo
 params:
-  DTYPE: DType.float16
-  M: [1024,512]
-  N: [1024,256,64]
-  STAGES: [4,8]
-
+  M: [8192]
+  N: [8192]
+  K: [128]
+  BM: [64,128,256]
+  BN: [64,128,256]
+  WM: [32, 64]
+  WN: [32, 64]
+  NUM_STAGES: [4]
+  TRANSPOSE_B: ["True", "False"]

@@ -49,7 +49,7 @@ fn bench_func[
 
     var measures = List[ThroughputMeasure](
         ThroughputMeasure(BenchMetric.flops, num_elements * 2),  # FMA's
-        ThroughputMeasure("bytes", num_elements * 4),  # uint32 = 4 bytes
+        ThroughputMeasure("DataMovement", num_elements * 4),  # uint32 = 4 bytes
         ThroughputMeasure(BenchMetric.elements, num_elements),
         # custom metrics
         ThroughputMeasure(apple_metric, num_elements),

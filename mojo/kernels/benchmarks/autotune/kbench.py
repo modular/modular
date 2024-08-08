@@ -18,7 +18,7 @@ import sys
 import numpy as np
 import pandas as pd
 import click
-from time import sleep
+from time import sleep, time
 from rich.progress import MofNCompleteColumn, Progress
 from model.utils.logging import CONSOLE
 
@@ -114,6 +114,7 @@ class SpecInstance:
             else:
                 # TODO: needs better error handling and error messages.
                 if verbose:
+                    print(list2cmdline(cmd))
                     run_shell_command(cmd)
                 else:
                     p = run_shell_command(
@@ -267,6 +268,7 @@ def tune(yaml_path, output_path=None, verbose=False):
 
     tmp_dir = Path(tempfile.gettempdir())
 
+    t_start = time()
     with Progress(
         *Progress.get_default_columns(),
         MofNCompleteColumn(),
@@ -301,24 +303,36 @@ def tune(yaml_path, output_path=None, verbose=False):
         except:
             df = None
 
-    print(f"Number of valid specs: {len(valid_specs)}")
+    output_lines = []
+    output_lines += [LINE]
+    output_lines += [f"Tuning [{spec.name}] from [{spec.file}]"]
+    output_lines += [LINE]
+    output_lines += [f"Number of valid specs: {len(valid_specs)}"]
+
     if valid_specs:
-        merged_df = pd.concat(valid_specs, axis=0, ignore_index=False)
+        merged_df = pd.concat(valid_specs, axis=0, ignore_index=True)
         ########################################################
-        # Get the name of column 1 (met (ms))
-        met_col = merged_df.columns[1]
+        # Get the name of column 2 (met (ms))
+        met_col = merged_df.columns[2]
         sorted_df = merged_df.sort_values([met_col], ascending=True)
-        print(sorted_df)
+        output_lines += [sorted_df.to_string(index=False)]
         # Index to top spec after sort
         top_spec_idx = sorted_df.iloc[0].mesh_idx
-        print("top_spec_idx", top_spec_idx)
+        output_lines += [f"top_spec_idx: {top_spec_idx}"]
 
-        print(LINE)
-        print("Best Measured Time:")
-        print(LINE)
-        print(spec_list[top_spec_idx].to_yaml())
-        print(LINE)
+        output_lines += [LINE]
+        output_lines += ["Best Measured Time:"]
+        output_lines += [LINE]
+        output_lines += [spec_list[top_spec_idx].to_yaml()]
+        output_lines += [LINE]
         ########################################################
+    t_elapsed = time() - t_start
+    output_lines += ["Elasped tuning time: %.1f (s)" % (t_elapsed)]
+    output_str = "\n".join([str(x) for x in output_lines])
+    print(output_str)
+    if output_path:
+        with open(output_path, "w") as f:
+            f.write(output_str + "\n")
 
 
 help_str = (
@@ -329,7 +343,7 @@ help_str = (
 @click.command(help=help_str)
 @click.option("--yaml", "yaml_path", help="Path to config yaml.")
 @click.option(
-    "--output", "output_path", default=None, help="Path to output file."
+    "--output", "-o", "output_path", default=None, help="Path to output file."
 )
 @click.option("--force", "-f", is_flag=True, default=False, help="Force.")
 @click.option(
