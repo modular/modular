@@ -14,6 +14,7 @@ RuntimeOptions::createRuntime(StringRef profileName) const {
   RuntimeOptions runtimeOptions; //{*this};
   switch (allocatorType) {
   case RuntimeOptions::AllocatorType::kMalloc:
+    runtimeOptions.tcmallocAllocator = false;
     break;
   case RuntimeOptions::AllocatorType::kTCMalloc:
     runtimeOptions.tcmallocAllocator = true;
