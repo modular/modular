@@ -1912,6 +1912,25 @@ LogicalResult KGEN::checkResultArgumentTypes(Operation *op,
   return checkOperandTypes(op, func.getResultTypes());
 }
 
+LogicalResult KGEN::verifyCallOperands(Operation *op, ValueRange args,
+                                       SignatureType callee, bool ignoreByRef) {
+  unsigned numByRef = ignoreByRef * callee.getNumAsyncReturnSlots();
+  if (args.size() != callee.getNumArguments() - numByRef) {
+    return op->emitOpError("callee expected ")
+           << callee.getNumArguments() << " arguments but operation only has "
+           << args.size();
+  }
+  for (auto [i, arg, type] :
+       llvm::enumerate(args, callee.getArguments().drop_back(numByRef))) {
+    if (arg.getType() != type) {
+      return op->emitOpError("callee argument #")
+             << i << " expected type " << type
+             << " but operation argument has type " << arg.getType();
+    }
+  }
+  return success();
+}
+
 ExportMap KGEN::getExportedSymbols(ModuleOp module) {
   llvm::MapVector<StringAttr, ExportedSymbol> exportedSymbols;
   for (auto op : module.getOps<ExportInterface>()) {

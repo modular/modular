@@ -119,6 +119,8 @@ def KGEN_FuncOp : KGENOp<"func", [
             llvmMetadata, /*coroutineType=*/{});
     }]>,
   ];
+
+  let hasVerifier = 1;
 }
 
 //===----------------------------------------------------------------------===//
@@ -302,6 +304,8 @@ def KGEN_CallOp : KGEN_CallOpBase<"call",
       return getCallee().getParamValues();
     }
   }];
+
+  let hasVerifier = 1;
 }
 
 //===----------------------------------------------------------------------===//
@@ -344,6 +348,7 @@ def KGEN_CallParamOp : KGEN_CallOpBase<"call_param",
   }];
 
   let hasCanonicalizeMethod = 1;
+  let hasVerifier = 1;
 }
 
 //===----------------------------------------------------------------------===//
@@ -991,6 +996,7 @@ def KGEN_CallIndirectOp : KGENOp<"call_indirect", [
   ];
 
   let hasCanonicalizeMethod = 1;
+  let hasVerifier = 1;
 }
 
 //===----------------------------------------------------------------------===//
