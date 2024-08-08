@@ -22,8 +22,8 @@ from layout.layout_tensor import (
     copy_dram_to_sram_async,
     copy_local_to_dram,
     copy_sram_to_local,
-    outer_product_acc,
 )
+from layout.math import outer_product_acc
 from linalg.matmul_gpu import matmul_kernel_naive
 from memory.reference import _GPUAddressSpace as AddressSpace
 from memory import UnsafePointer

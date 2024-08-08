@@ -21,7 +21,7 @@ from gpu import (
 from gpu.host import DeviceContext, Dim
 from layout import *
 from layout._utils import ManagedLayoutTensor, gpu_free, gpu_managed_alloc
-from layout.layout_tensor import outer_product_acc
+from layout.math import outer_product_acc
 from layout.tensor_core import *
 from testing import *
 
