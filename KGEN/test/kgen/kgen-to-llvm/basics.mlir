@@ -111,98 +111,6 @@ kgen.func @undef_op() -> i32 {
   kgen.return %0 : i32
 }
 
-// CHECK-LABEL: @variant_constant_0
-kgen.func @variant_constant_0() -> !kgen.variant<i32> {
-  // CHECK: %0 = llvm.mlir.constant(1 : i32) : i32
-  // CHECK: %1 = llvm.mlir.constant(0 : i64) : i64
-  // CHECK: %2 = llvm.mlir.constant(0 : i32) : i32
-  // CHECK: %3 = llvm.lshr %0, %2  : i32
-  // CHECK: %4 = llvm.zext %3 : i32 to i64
-  // CHECK: %5 = llvm.mlir.constant(0 : i64) : i64
-  // CHECK: %6 = llvm.shl %4, %5  : i64
-  // CHECK: %7 = llvm.or %1, %6  : i64
-  // CHECK: %8 = llvm.mlir.undef : !llvm.array<1 x i64>
-  // CHECK: %9 = llvm.insertvalue %7, %8[0] : !llvm.array<1 x i64>
-  // CHECK: %10 = llvm.mlir.undef : !llvm.struct<(array<1 x i64>, i8)>
-  // CHECK: %11 = llvm.insertvalue %9, %10[0] : !llvm.struct<(array<1 x i64>, i8)>
-  // CHECK: %12 = llvm.mlir.constant(0 : i8) : i8
-  // CHECK: %13 = llvm.insertvalue %12, %11[1] : !llvm.struct<(array<1 x i64>, i8)>
-  // CHECK: llvm.return %13 : !llvm.struct<(array<1 x i64>, i8)>
-  %0 = kgen.param.constant: variant<i32> = <#kgen.variant<:i32 1, 0>>
-  kgen.return %0 : !kgen.variant<i32>
-}
-
-// CHECK-LABEL: @variant_constant_1
-kgen.func @variant_constant_1() -> !kgen.variant<struct<(i32, i64, i32)>, struct<(f64, f32)>> {
-  // CHECK: %0 = llvm.mlir.undef : !llvm.struct<(i32, i64, i32)>
-  // CHECK: %1 = llvm.mlir.constant(1 : i32) : i32
-  // CHECK: %2 = llvm.insertvalue %1, %0[0] : !llvm.struct<(i32, i64, i32)>
-  // CHECK: %3 = llvm.mlir.constant(2 : i64) : i64
-  // CHECK: %4 = llvm.insertvalue %3, %2[1] : !llvm.struct<(i32, i64, i32)>
-  // CHECK: %5 = llvm.mlir.constant(3 : i32) : i32
-  // CHECK: %6 = llvm.insertvalue %5, %4[2] : !llvm.struct<(i32, i64, i32)>
-  // CHECK: %7 = llvm.mlir.constant(0 : i64) : i64
-  // CHECK: %8 = llvm.mlir.constant(0 : i64) : i64
-  // CHECK: %9 = llvm.extractvalue %6[0] : !llvm.struct<(i32, i64, i32)>
-  // CHECK: %10 = llvm.mlir.constant(0 : i32) : i32
-  // CHECK: %11 = llvm.lshr %9, %10  : i32
-  // CHECK: %12 = llvm.zext %11 : i32 to i64
-  // CHECK: %13 = llvm.mlir.constant(0 : i64) : i64
-  // CHECK: %14 = llvm.shl %12, %13  : i64
-  // CHECK: %15 = llvm.or %7, %14  : i64
-  // CHECK: %16 = llvm.extractvalue %6[1] : !llvm.struct<(i32, i64, i32)>
-  // CHECK: %17 = llvm.mlir.constant(0 : i64) : i64
-  // CHECK: %18 = llvm.lshr %16, %17  : i64
-  // CHECK: %19 = llvm.trunc %18 : i64 to i64
-  // CHECK: %20 = llvm.mlir.constant(32 : i64) : i64
-  // CHECK: %21 = llvm.shl %19, %20  : i64
-  // CHECK: %22 = llvm.or %15, %21  : i64
-  // CHECK: %23 = llvm.mlir.constant(32 : i64) : i64
-  // CHECK: %24 = llvm.lshr %16, %23  : i64
-  // CHECK: %25 = llvm.trunc %24 : i64 to i64
-  // CHECK: %26 = llvm.mlir.constant(0 : i64) : i64
-  // CHECK: %27 = llvm.shl %25, %26  : i64
-  // CHECK: %28 = llvm.or %8, %27  : i64
-  // CHECK: %29 = llvm.extractvalue %6[2] : !llvm.struct<(i32, i64, i32)>
-  // CHECK: %30 = llvm.mlir.constant(0 : i32) : i32
-  // CHECK: %31 = llvm.lshr %29, %30  : i32
-  // CHECK: %32 = llvm.zext %31 : i32 to i64
-  // CHECK: %33 = llvm.mlir.constant(32 : i64) : i64
-  // CHECK: %34 = llvm.shl %32, %33  : i64
-  // CHECK: %35 = llvm.or %28, %34  : i64
-  // CHECK: %36 = llvm.mlir.undef : !llvm.array<2 x i64>
-  // CHECK: %37 = llvm.insertvalue %22, %36[0] : !llvm.array<2 x i64>
-  // CHECK: %38 = llvm.insertvalue %35, %37[1] : !llvm.array<2 x i64>
-  // CHECK: %39 = llvm.mlir.undef : !llvm.struct<(array<2 x i64>, i8)>
-  // CHECK: %40 = llvm.insertvalue %38, %39[0] : !llvm.struct<(array<2 x i64>, i8)>
-  // CHECK: %41 = llvm.mlir.constant(0 : i8) : i8
-  // CHECK: %42 = llvm.insertvalue %41, %40[1] : !llvm.struct<(array<2 x i64>, i8)>
-  // CHECK: lvm.return %42 : !llvm.struct<(array<2 x i64>, i8)>
-  %0 = kgen.param.constant: variant<struct<(i32, i64, i32)>, struct<(f64, f32)>> = <#kgen.variant<:!kgen.struct<(i32, i64, i32)> { 1, 2, 3 }, 0>>
-  kgen.return %0 : !kgen.variant<struct<(i32, i64, i32)>, struct<(f64, f32)>>
-}
-
-// CHECK-LABEL: @variant_constant_2
-kgen.func @variant_constant_2() -> !kgen.variant<i1, i2, i3, i4, i5, i6> {
-  // CHECK: %0 = llvm.mlir.constant(1 : i4) : i4
-  // CHECK: %1 = llvm.mlir.constant(0 : i64) : i64
-  // CHECK: %2 = llvm.mlir.constant(0 : i4) : i4
-  // CHECK: %3 = llvm.lshr %0, %2  : i4
-  // CHECK: %4 = llvm.zext %3 : i4 to i64
-  // CHECK: %5 = llvm.mlir.constant(0 : i64) : i64
-  // CHECK: %6 = llvm.shl %4, %5  : i64
-  // CHECK: %7 = llvm.or %1, %6  : i64
-  // CHECK: %8 = llvm.mlir.undef : !llvm.array<1 x i64>
-  // CHECK: %9 = llvm.insertvalue %7, %8[0] : !llvm.array<1 x i64>
-  // CHECK: %10 = llvm.mlir.undef : !llvm.struct<(array<1 x i64>, i8)>
-  // CHECK: %11 = llvm.insertvalue %9, %10[0] : !llvm.struct<(array<1 x i64>, i8)>
-  // CHECK: %12 = llvm.mlir.constant(3 : i8) : i8
-  // CHECK: %13 = llvm.insertvalue %12, %11[1] : !llvm.struct<(array<1 x i64>, i8)>
-  // CHECK: llvm.return %13 : !llvm.struct<(array<1 x i64>, i8)>
-  %0 = kgen.param.constant: variant<i1, i2, i3, i4, i5, i6> = <#kgen.variant<:i4 1, 3>>
-  kgen.return %0 : !kgen.variant<i1, i2, i3, i4, i5, i6>
-}
-
 // CHECK-LABEL: @test_unreachable
 kgen.func @test_unreachable() -> !pop.simd<1, f32> {
   // CHECK-NEXT: llvm.trap
@@ -317,16 +225,6 @@ kgen.func @pointer_constant() -> !kgen.pointer<*?> {
   // CHECK: llvm.return %1 : !llvm.ptr
   %null = kgen.param.constant: pointer<*?> = <#interp.pointer<0>>
   kgen.return %null : !kgen.pointer<*?>
-}
-
-// CHECK-LABEL: @test_variant
-kgen.func @test_variant(%a: !kgen.variant<f32, i64, struct<(i8, i8, f64)>>) -> i1 {
-  // CHECK: %[[DISCR:.*]] = llvm.extractvalue %arg0[1] : !llvm.struct<(array<2 x i64>, i8)>
-  // CHECK: %[[DISCR_VAL:.*]] = llvm.mlir.constant(0 : i8)
-  // CHECK: %[[VAL:.*]] = llvm.icmp "eq" %[[DISCR]], %[[DISCR_VAL]]
-  %0 = kgen.variant.is %a, 0 : <f32, i64, struct<(i8, i8, f64)>>
-  // CHECK: return %[[VAL]]
-  kgen.return %0 : i1
 }
 
 }

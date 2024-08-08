@@ -268,3 +268,9 @@ kgen.func @lower_variants(%arg0: i64) {
   %5 = pop.variant.discr_gep %3 : <variant<i32, i64>> as <scalar<ui8>>
   kgen.return
 }
+
+// CHECK-LABEL: @empty_variant
+// CHECK-SAME: !kgen.struct<(union<>, scalar<ui8>)>
+kgen.func @empty_variant(%arg0: !kgen.variant<[[]]>) {
+  kgen.return
+}

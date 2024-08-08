@@ -254,32 +254,6 @@ POPToLLVMTypeConverter::POPToLLVMTypeConverter(TargetInfoAttr target)
     return Builder(&getContext()).getI8Type();
   });
 
-  // Convert variant types to a struct with enough space to contain the largest
-  // variant type plus a discriminator.
-  addConversion([=](VariantType variant) -> std::optional<Type> {
-    // TODO: The generated assembly is sensitive to the content type of the
-    // variant type. This needs to be optimized. For now, use an array of
-    // word-size integers.
-    int64_t maxSize = 0;
-    for (Type variantType : variant.getTypes()) {
-      Type type = convertType(variantType);
-      if (!type)
-        return {};
-      maxSize = std::max(maxSize, getTypeAllocSize(type));
-    }
-    // FIXME: The alignment of the generated type must equal or exceed the
-    // greatest alignment requirement of any subtype. Right now it's just the
-    // pointer width.
-    auto contentType = LLVM::LLVMArrayType::get(
-        getIndexType(),
-        llvm::divideCeil(maxSize * CHAR_BIT, getIndexTypeBitwidth()));
-    auto discrType =
-        IntegerType::get(&getContext(), variant.getDiscrSizeInBits());
-    return LLVM::LLVMStructType::getLiteral(&getContext(),
-                                            {contentType, discrType});
-  });
-  // FIXME: Delete the above once the lowering has transitioned.
-
   // Convert union types to an array with enough space to contain the largest
   // union element type.
   addConversion([=](POP::UnionType unionType) -> std::optional<Type> {
@@ -504,32 +478,6 @@ Value VariantHelper::walkAndExtractVariant(ArrayRef<Value>::iterator &valueIt,
         result, element, b.create<LLVM::ConstantOp>(b.getI32Type(), i));
   }
   return result;
-}
-
-Value VariantHelper::materializeLLVMVariant(Type type, Value value,
-                                            int64_t index) {
-  auto variantType = cast<LLVM::LLVMStructType>(type);
-  auto contentType = cast<LLVM::LLVMArrayType>(variantType.getBody().front());
-  SmallVector<Value> storageValues;
-  for (unsigned i = 0, e = contentType.getNumElements(); i < e; ++i)
-    storageValues.push_back(
-        b.create<LLVM::ConstantOp>(contentType.getElementType(), 0));
-
-  MutableArrayRef<Value>::iterator valueIt = storageValues.begin();
-  unsigned storageOffset = 0;
-  unsigned offset = 0;
-  walkAndCreateVariant(valueIt, storageOffset, offset, value);
-
-  Value content = b.create<LLVM::UndefOp>(contentType);
-  for (auto [idx, value] : llvm::enumerate(storageValues))
-    content = b.create<LLVM::InsertValueOp>(content, value, idx);
-
-  // Build the result struct.
-  Value variant = b.create<LLVM::UndefOp>(variantType);
-  variant = b.create<LLVM::InsertValueOp>(variant, content, 0);
-  Value discrVal = b.create<LLVM::ConstantOp>(
-      llvm::cast<IntegerType>(variantType.getBody().back()), index);
-  return b.create<LLVM::InsertValueOp>(variant, discrVal, 1);
 }
 
 Value VariantHelper::materializeLLVMUnion(mlir::LLVM::LLVMArrayType type,
@@ -1006,21 +954,6 @@ Value KGEN::convertParameterToLLVM(
       aggregate = b.create<LLVM::InsertValueOp>(aggregate, element, idx);
     }
     return aggregate;
-  }
-
-  // Bitpack variant constants.
-  if (auto variant = dyn_cast<VariantAttr>(attr)) {
-    auto variantType = llvm::cast_if_present<LLVM::LLVMStructType>(
-        tc.convertType(variant.getType()));
-    if (!variantType)
-      return {};
-    Value value = convertParameterToLLVM(b, tc, imc, scope, variant.getValue());
-    if (!value)
-      return {};
-
-    VariantHelper helper(b, b.getLoc(), tc);
-    return helper.materializeLLVMVariant(variantType, value,
-                                         variant.getIndex());
   }
 
   // Bitpack union constants.

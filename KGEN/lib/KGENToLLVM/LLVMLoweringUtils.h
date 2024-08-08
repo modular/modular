@@ -173,10 +173,6 @@ public:
   VariantHelper(OpBuilder &b, Location loc, const LLVMDataLayout &dl)
       : b(loc, b), dl(dl) {}
 
-  /// Generate the code required to materialize the provided value as a variant
-  /// of the given LLVM type.
-  Value materializeLLVMVariant(Type type, Value value, int64_t index);
-
   /// Generate the code required to materialize the provided value as a union
   /// of the given LLVM type.
   Value materializeLLVMUnion(mlir::LLVM::LLVMArrayType type, Value value);
