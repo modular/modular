@@ -309,10 +309,9 @@ bool CallGraph::doAnalysis(CallGraphNode *node) {
           (calleeNode->func.getNumArguments() - sig.getNumArguments());
       SmallVector<Value> captures =
           computeRequiredCaptures(call, calleeNode, fulfilled);
-      // Prepend the captures and update the callee signature on the call. The
-      // function already has the updated signature. `kgen.create_closure`
-      // applies arguments from the front, so we cannot append.
-      call->insertOperands(0, captures);
+      // Append any new captures starting from the front and update the callee
+      // signature on the call. The function already has the updated signature.
+      call->insertOperands(fulfilled, captures);
       call.setCalleeAttr(
           SymbolConstantAttr::get(symbol.getSymbol(), callee.getSignature()));
       return;
@@ -320,9 +319,11 @@ bool CallGraph::doAnalysis(CallGraphNode *node) {
 
     if (auto create = dyn_cast<CaptureListCreateOp>(op)) {
       CallGraphNode *calleeNode = getCalleeNode(create.getCallee());
+      unsigned fulfilled = create->getNumOperands();
       SmallVector<Value> captures =
-          computeRequiredCaptures(create, calleeNode, create->getNumOperands());
-      create->insertOperands(0, captures);
+          computeRequiredCaptures(create, calleeNode, fulfilled);
+      // Append any new capture values.
+      create->insertOperands(fulfilled, captures);
       return;
     }
 
@@ -332,7 +333,7 @@ bool CallGraph::doAnalysis(CallGraphNode *node) {
       if (newTypes.empty())
         return;
 
-      // Now fulfill any new promises by resizing the results on the op.
+      // Now fulfill any new promises by append the new result types to the op.
       OperationState state(expand.getLoc(), op->getName(), op->getOperands(),
                            op->getResultTypes());
       for (auto [type, _] : newTypes)
@@ -367,8 +368,9 @@ bool CallGraph::doAnalysis(CallGraphNode *node) {
 
   Block *body = func.getBody();
   unsigned i = 0;
+  // Insert arguments for any new captures to propagate starting at the front.
   for (auto &[type, loads] : newTypes) {
-    Value arg = body->insertArgument(i++, type, func.getLoc());
+    Value arg = body->insertArgument(curNumPromises + i++, type, func.getLoc());
     for (POP::CompilerGlobalLoadOp load : loads) {
       load.replaceAllUsesWith(arg);
       load.erase();

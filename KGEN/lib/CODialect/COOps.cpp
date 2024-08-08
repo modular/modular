@@ -122,7 +122,8 @@ LogicalResult InvokeOp::verify() {
     return emitOpError("callable must be 'async'");
   if (signature.hasInitSelfArg())
     return emitOpError("callable cannot have an 'init_self' argument");
-  return success();
+  return verifyCallOperands(*this, getOperands(), signature,
+                            /*ignoreByRef=*/true);
 }
 
 FailureOr<InlineResult> InvokeOp::prepInline(mlir::RewriterBase &b) {
@@ -168,7 +169,7 @@ LogicalResult HotInvokeOp::verify() {
     return emitOpError("callable must be 'async'");
   if (signature.hasInitSelfArg())
     return emitOpError("callable cannot have an 'init_self' argument");
-  return success();
+  return verifyCallOperands(*this, getOperands(), signature);
 }
 
 FailureOr<InlineResult> HotInvokeOp::prepInline(mlir::RewriterBase &b) {

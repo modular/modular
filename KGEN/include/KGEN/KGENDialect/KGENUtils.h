@@ -398,6 +398,12 @@ LogicalResult checkResultArgumentTypes(Operation *op,
                                        ArrayRef<TypedAttr> resultParams,
                                        FuncInterface func);
 
+/// Verify that the types of operands passed as arguments to a call match the
+/// expected types on the callee signature.
+LogicalResult verifyCallOperands(Operation *op, ValueRange args,
+                                 SignatureType callee,
+                                 bool ignoreByRef = false);
+
 /// Whether the decorator's name is (starts with) the specific annotation.
 bool hasDecorator(ArrayRef<TypedAttr> decorators, StringRef annotation);
 

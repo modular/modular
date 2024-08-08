@@ -57,13 +57,6 @@ static void printParamConstantOpValue(OpAsmPrinter &p, Operation *,
 /// capturing signature-typed values, since they can be inlined.
 template <typename OpT>
 static LogicalResult verifyParamValueOp(OpT op) {
-  // Forbid the materialization of parameter capturing closures.
-  if (auto sig = dyn_cast<SignatureType>(op.getType())) {
-    if (sig.isCapturing())
-      return op.emitOpError(
-          "TODO: capturing closures cannot be materialized as runtime values");
-  }
-
   if (op.getValue().getType() == op.getType())
     return success();
   return op.emitOpError() << "parameter type " << op.getValue().getType()
@@ -463,6 +456,24 @@ static void printFuncOp(OpAsmPrinter &p, Operation *op,
   p.printRegion(body, /*printEntryBlockArgs=*/false);
 }
 
+LogicalResult FuncOp::verify() {
+  FunctionType type = getFunctionType();
+  if (type.getNumInputs() != getNumArguments()) {
+    return mlir::emitError(getLoc(), "'kgen.func' op function type expected ")
+           << type.getNumInputs() << " arguments but region has "
+           << getNumArguments();
+  }
+  for (auto [i, arg, type] :
+       llvm::enumerate(getArguments(), type.getInputs())) {
+    if (arg.getType() != type) {
+      return mlir::emitError(arg.getLoc(), "'kgen.func' op argument #")
+             << i << " type is " << arg.getType()
+             << " but function type expected " << type;
+    }
+  }
+  return success();
+}
+
 //===----------------------------------------------------------------------===//
 // ExternGeneratorOp
 //===----------------------------------------------------------------------===//
@@ -547,6 +558,10 @@ FailureOr<InlineResult> CallOp::prepInline(mlir::RewriterBase &b) {
            }}};
 }
 
+LogicalResult CallOp::verify() {
+  return verifyCallOperands(*this, getOperands(), getCallee().getType());
+}
+
 //===----------------------------------------------------------------------===//
 // CallIndirectOp
 //===----------------------------------------------------------------------===//
@@ -578,6 +593,10 @@ static void printTailKind(AsmPrinter &p, Operation *op, TailKindAttr tailKind) {
   }
 }
 
+LogicalResult CallIndirectOp::verify() {
+  return verifyCallOperands(*this, getArguments(), getCallee().getType());
+}
+
 //===----------------------------------------------------------------------===//
 // CallParamOp
 //===----------------------------------------------------------------------===//
@@ -590,6 +609,11 @@ void CallParamOp::concretizeCallee(mlir::IRRewriter &b,
 FailureOr<InlineResult> CallParamOp::prepInline(mlir::RewriterBase &b) {
   // Inlining not supported for this op
   return failure();
+}
+
+LogicalResult CallParamOp::verify() {
+  return verifyCallOperands(*this, getOperands(),
+                            cast<SignatureType>(getCallee().getType()));
 }
 
 //===----------------------------------------------------------------------===//

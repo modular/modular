@@ -250,10 +250,10 @@ kgen.func @entry(%arg0: i32, %arg1: i64) {
   kgen.return
 }
 
-// CHECK-LABEL: kgen.func @recursion_foo(%arg0: i32, %arg1: i64)
+// CHECK-LABEL: kgen.func @recursion_foo(%arg0: i64, %arg1: i32)
 kgen.func @recursion_foo() capturing {
   %1 = pop.compiler.global_load "y" : i64
-  // CHECK-NEXT: call @recursion_bar(%arg1, %arg0)
+  // CHECK-NEXT: call @recursion_bar(%arg0, %arg1)
   kgen.call @recursion_bar() : () capturing -> ()
   kgen.return
 }
@@ -261,7 +261,7 @@ kgen.func @recursion_foo() capturing {
 // CHECK-LABEL: kgen.func @recursion_bar(%arg0: i64, %arg1: i32)
 kgen.func @recursion_bar() capturing {
   %0 = pop.compiler.global_load "x" : i32
-  // CHECK-NEXT: call @recursion_foo(%arg1, %arg0)
+  // CHECK-NEXT: call @recursion_foo(%arg0, %arg1)
   kgen.call @recursion_foo() : () capturing -> ()
   kgen.return
 }
