@@ -35,6 +35,17 @@ def test_complex_str():
     )
 
 
+def test_fma():
+    var x = ComplexFloat32(17, 31)
+    var y = ComplexFloat32(42, 1337)
+    var c = ComplexFloat32(13, 37)
+    var res1 = x * y + c
+    var res2 = x.fma(y, c)
+    assert_almost_equal(res1.re, res2.re)
+    assert_almost_equal(res1.im, res2.im)
+
+
 def main():
     test_abs()
     test_complex_str()
+    test_fma()

@@ -195,7 +195,7 @@ struct ComplexSIMD[type: DType, size: Int](Stringable, Formattable):
             Computed `Self * B + C` complex value.
         """
         return Self(
-            self.re.fma(b.re, -(self.im.fma(b.im, c.re))),
+            self.re.fma(b.re, -(self.im.fma(b.im, -c.re))),
             self.re.fma(b.im, self.im.fma(b.re, c.im)),
         )
 
