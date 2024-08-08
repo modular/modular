@@ -177,6 +177,7 @@ struct CompiledDeviceKernel[
     var _compiled_func: CUDAFunction[func]
     alias LaunchArg = Variant[Dim, Int]
 
+    @parameter
     fn __call__[
         *Ts: AnyType
     ](self, device: Device, *args: *Ts, **kwargs: Self.LaunchArg,) raises:
