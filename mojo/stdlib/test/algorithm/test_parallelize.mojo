@@ -3,7 +3,7 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-# RUN: %mojo %s | FileCheck %s
+# RUN: %mojo -D ASSERT_WARNING %s | FileCheck %s
 
 from math import ceildiv
 
@@ -80,6 +80,35 @@ fn test_parallelize():
     parallelize[parallel_fn](num_work_items)
 
 
+@parameter
+fn printme(i: Int):
+    print(i, end="")
+
+
+# CHECK-LABEL: test_parallelize_no_workers
+fn test_parallelize_no_workers():
+    print("== test_parallelize_no_workers")
+    # CHECK: Number of workers must be positive
+    parallelize[printme](10, 0)
+
+
+# CHECK-LABEL: test_parallelize_negative_workers
+fn test_parallelize_negative_workers():
+    print("== test_parallelize_negative_workers")
+    # CHECK: Number of workers must be positive
+    parallelize[printme](10, -1)
+
+
+# CHECK-LABEL: test_parallelize_negative_work
+fn test_parallelize_negative_work():
+    print("== test_parallelize_negative_work")
+    # This should do nothing
+    parallelize[printme](-1, 4)
+
+
 fn main():
     test_sync_parallelize()
     test_parallelize()
+    test_parallelize_no_workers()
+    test_parallelize_negative_workers()
+    test_parallelize_negative_work()

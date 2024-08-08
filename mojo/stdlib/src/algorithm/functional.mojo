@@ -311,7 +311,7 @@ fn sync_parallelize[
         num_work_items: Number of parallel tasks.
     """
     # We have no tasks, so do nothing.
-    if num_work_items == 0:
+    if num_work_items <= 0:
         # No-op
         return
 
@@ -413,6 +413,7 @@ fn _parallelize_impl[
         num_workers: The number of workers to use for execution.
     """
 
+    debug_assert(num_workers > 0, "Number of workers must be positive")
     # Calculate how many items are picked up by each worker.
     var chunk_size = num_work_items // num_workers
     # Calculate how many workers need to add an extra item to their work.
