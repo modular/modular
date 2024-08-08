@@ -718,6 +718,11 @@ static ASTDecl &buildAndResolveREPLModule(
   // programmatically because we can't guarantee we can print the type in a way
   // that the mojo parser will accept.
   for (auto [name, type] : replVariables) {
+    // The persistent variable's type can contain emitted references to type
+    // decls. We have to make sure to resolve them in the current context. We
+    // can use the SharedState's type walker for this.
+    (void)sharedState.resolveDeclReferencesIn(SMLoc(), type);
+
     std::string typeName = getPersistentVariableTypeName(name);
     PValue typeValue(type);
 

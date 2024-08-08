@@ -12,7 +12,7 @@ using namespace M;
 TEST(CompletionTest, testCompletionImport) {
   Document doc("test:///foo.mojo",
                R"(
-import b
+import p
 
 # This is a comment.
 )");
@@ -24,11 +24,11 @@ import b
           [](const lsp::CompletionList &completionList) {
             EXPECT_TRUE(llvm::any_of(
                 completionList.items, [](const lsp::CompletionItem &item) {
-                  return item.label == "builtin" &&
+                  return item.label == "prelude" &&
                          item.kind == lsp::CompletionItemKind::Folder &&
                          item.documentation &&
                          StringRef(item.documentation->value)
-                             .contains("Implements the builtin package");
+                             .contains("Implements the prelude package");
                 }));
           })
       .execute();
@@ -177,8 +177,11 @@ fn function() -> Int:
             // Check that we can complete the `Int` from `I` in the result type.
             EXPECT_TRUE(llvm::any_of(
                 completionList.items, [](const lsp::CompletionItem &item) {
+                  // TODO(MOTO-639): check the item.kind once we add a
+                  // completion kind for imports now that `Int` gets resolved to
+                  // an unresolved import from the prelude module.
                   return item.label == "Int" &&
-                         item.kind == lsp::CompletionItemKind::Struct;
+                         item.kind == lsp::CompletionItemKind::Missing;
                 }));
           })
       .completion(
