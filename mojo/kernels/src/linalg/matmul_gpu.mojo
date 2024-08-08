@@ -36,8 +36,8 @@ from layout.layout_tensor import (
     copy_dram_to_sram_async,
     copy_local_to_dram,
     copy_sram_to_local,
-    outer_product_acc,
 )
+from layout.math import outer_product_acc
 from layout.nd_buffer_stub import copy_from_nd_buffer, distribute, vectorize
 from layout.swizzle import Swizzle
 from memory import stack_allocation, UnsafePointer
