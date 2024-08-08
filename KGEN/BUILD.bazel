@@ -1,6 +1,5 @@
 load("@bazel_skylib//rules:write_file.bzl", "write_file")
 load("@build_bazel_apple_support//rules:apple_genrule.bzl", "apple_genrule")
-load("@rules_pkg//pkg:mappings.bzl", "pkg_filegroup", "pkg_files")
 load(
     "//bazel:api.bzl",
     "gentbl_cc_library",
@@ -1528,28 +1527,4 @@ modular_shared_library(
         ":liblldb.wrapper",
         ":lldb19.0.0git",
     ],
-)
-
-pkg_filegroup(
-    name = "jupyter-mojo",
-    srcs = [
-        ":jupyter-manage-kernel",
-        ":jupyter-mojo-kernel",
-    ],
-    visibility = ["//visibility:public"],
-)
-
-pkg_files(
-    name = "jupyter-manage-kernel",
-    srcs = [
-        ":utils/jupyter-mojo/manage_kernel.py",
-    ],
-)
-
-pkg_files(
-    name = "jupyter-mojo-kernel",
-    srcs = glob([
-        "utils/jupyter-mojo/kernel/*",
-    ]),
-    prefix = "kernel",
 )
