@@ -245,6 +245,11 @@ public:
                                        ASTDecl &container,
                                        DeclResolvedness howResolved);
 
+  /// When injecting a decl reference as a symbol reference into the IR, we have
+  /// to make sure that the decl is at least signature resolved. This function
+  /// takes a type and ensures that any referenced decls are resolved.
+  LogicalResult resolveDeclReferencesIn(SMLoc loc, Type type);
+
   /// Finalize any imported bytecode modules. This should be called after all
   /// decls have been resolved, as this will erase bytecode operations attached
   /// to decls that have not been resolved.

@@ -1,6 +1,9 @@
 load("//bazel:api.bzl", "mojo_library")
 
-exports_files(["stdlib/__init__.mojo"])
+exports_files([
+    "stdlib/__init__.mojo",
+    "stdlib/prelude/__init__.mojo",
+])
 
 filegroup(
     name = "test-packages",

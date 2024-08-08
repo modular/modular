@@ -23,9 +23,10 @@ lit_tests(
     data = [
         "//KGEN/test/test-packages",
         "//KGEN/test/test-packages:stdlib/__init__.mojo",
+        "//KGEN/test/test-packages:stdlib/prelude/__init__.mojo",
     ] + glob(_DATA),
     env = {
-        "MODULAR_MOJO_IMPORT_SRCS": "$(location //KGEN/test/test-packages:stdlib/__init__.mojo)",
+        "MODULAR_MOJO_IMPORT_SRCS": "$(locations //KGEN/test/test-packages:stdlib/__init__.mojo) $(locations //KGEN/test/test-packages:stdlib/prelude/__init__.mojo)",
     },
     target_compatible_with = select({
         "//:tsan": ["@platforms//:incompatible"],

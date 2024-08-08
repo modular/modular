@@ -4,6 +4,8 @@
 #
 # ===----------------------------------------------------------------------=== #
 
+from utils import StaticIntTuple
+
 
 @register_passable("trivial")
 struct OptionalReg[T: AnyTrivialRegType]:

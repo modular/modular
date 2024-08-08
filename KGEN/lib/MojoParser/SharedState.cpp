@@ -1139,19 +1139,19 @@ void SharedState::importBuiltinModules(ASTDecl &moduleDecl) {
                                           moduleDecl.getLoc())))
       return;
 
-    // Import the builtin package.
-    ASTDecl &builtinsPackageDecl =
-        *importModuleState("stdlib.builtin", impl->topLevelDecl,
+    // Import the prelude package.
+    ASTDecl &preludePackageDecl =
+        *importModuleState("stdlib.prelude", impl->topLevelDecl,
                            moduleDecl.getLoc())
              .decl;
-    if (failed(declResolver->resolveFully(builtinsPackageDecl,
+    if (failed(declResolver->resolveFully(preludePackageDecl,
                                           moduleDecl.getLoc())))
       return;
 
     for (StringRef name :
-         llvm::make_first_range(builtinsPackageDecl.getDeclsInScope())) {
+         llvm::make_first_range(preludePackageDecl.getDeclsInScope())) {
       impl->implicitBuiltinImports.emplace_back(
-          StringAttr::get(getContext(), "builtin." + name));
+          StringAttr::get(getContext(), "prelude." + name));
     }
   }
 
@@ -1364,6 +1364,12 @@ SharedState::lookupAndResolveMangledDecl(StringAttr leafRef, SMLoc loc,
   llvm::report_fatal_error(
       "expected decl in symbol table to appear in lookup: " + name.getValue());
   return nullptr;
+}
+
+LogicalResult SharedState::resolveDeclReferencesIn(SMLoc loc, Type type) {
+  auto &refWalker = getImpl().bytecodeRefResolutionWalker;
+  auto savedContextLoc = refWalker.saveResolutionContextLoc(loc);
+  return success(!refWalker.walk(type).wasInterrupted());
 }
 
 LogicalResult
