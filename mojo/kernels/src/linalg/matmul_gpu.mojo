@@ -347,6 +347,7 @@ fn gemv_kernel[
     c_type: DType,
     a_type: DType,
     b_type: DType,
+    *,
     transpose_b: Bool = False,
     elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
     s_type: DType = get_accum_type[c_type](),
@@ -359,17 +360,17 @@ fn gemv_kernel[
     k: Int,
 ):
     var x = BlockIdx.x() * BlockDim.x() + ThreadIdx.x()
-    var warpId = x // WARP_SIZE
-    var accum = SIMD[s_type, 1]()
+    var warp_id = x // WARP_SIZE
+    var accum = Scalar[s_type]()
 
-    if warpId < m:
+    if warp_id < m:
         # Every warp processes a single row of the resultant vector
         for i in range(ceildiv(k, WARP_SIZE)):
             var idx = i * WARP_SIZE + lane_id()
-            var val = SIMD[s_type, 1]()
+            var val = Scalar[s_type]()
             if idx < k:
                 val = (
-                    a.load(Int(warpId) * k + Int(idx)).cast[s_type]()
+                    a.load(Int(warp_id) * k + Int(idx)).cast[s_type]()
                     * b.load(Int(idx)).cast[s_type]()
                 )
 
@@ -391,11 +392,11 @@ fn gemv_kernel[
             if elementwise_lambda_fn:
                 alias elementwise_lambda = elementwise_lambda_fn.value()
                 elementwise_lambda[c_type, 1](
-                    reverse_idx[transpose_b](Int(warpId), 0),
+                    reverse_idx[transpose_b](Int(warp_id), 0),
                     accum.cast[c_type](),
                 )
             else:
-                c[warpId] = accum.cast[c_type]()
+                c[warp_id] = accum.cast[c_type]()
 
 
 # Matrix-Column Vector Multiplication utilizing Tensor Cores
@@ -403,6 +404,7 @@ fn gemv_tc_kernel[
     c_type: DType,
     a_type: DType,
     b_type: DType,
+    *,
     transpose_b: Bool = False,
     elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
     s_type: DType = get_accum_type[c_type](),
@@ -410,22 +412,22 @@ fn gemv_tc_kernel[
     c: UnsafePointer[Scalar[c_type]],
     a: UnsafePointer[Scalar[a_type]],
     b: UnsafePointer[Scalar[b_type]],
-    m: Int,
-    n: Int,
-    k: Int,
+    m: UInt,
+    n: UInt,
+    k: UInt,
 ):
     var x = BlockIdx.x() * BlockDim.x() + ThreadIdx.x()
-    var warpId = x // WARP_SIZE
+    var warp_id = x // WARP_SIZE
     var accum = Scalar[s_type]()
 
-    if warpId < m:
+    if warp_id < m:
         # Every warp processes a single row of the resultant vector
         for i in range(ceildiv(k, WARP_SIZE)):
             var idx = i * WARP_SIZE + lane_id()
             var val = Scalar[s_type]()
             if idx < k:
                 val = (
-                    a.load(warpId * k + idx).cast[s_type]()
+                    a.load(warp_id * k + idx).cast[s_type]()
                     * b.load(idx).cast[s_type]()
                 )
 
@@ -441,44 +443,48 @@ fn gemv_tc_kernel[
             if elementwise_lambda_fn:
                 alias elementwise_lambda = elementwise_lambda_fn.value()
                 elementwise_lambda[c_type, 1](
-                    reverse_idx[transpose_b](Int(warpId), 0),
+                    reverse_idx[transpose_b](Int(warp_id), 0),
                     accum.cast[c_type](),
                 )
             else:
-                c[warpId] = accum.cast[c_type]()
+                c[warp_id] = accum.cast[c_type]()
 
 
 # Matrix-Column Vector Multiplication utilizing Tensor Cores
 fn gemv_tc_kernel_vector[
     c_type: DType,
+    c_shape: DimList,
     a_type: DType,
+    a_shape: DimList,
     b_type: DType,
-    simd_width: Int,
+    b_shape: DimList,
+    simd_width: UInt,
+    *,
     transpose_b: Bool = False,
     elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
     s_type: DType = get_accum_type[c_type](),
 ](
-    c: NDBuffer[c_type, 2],
-    a: NDBuffer[a_type, 2],
-    b: NDBuffer[b_type, 2],
-    m: Int,
-    n: Int,
-    k: Int,
+    c: NDBuffer[c_type, 2, c_shape],
+    a: NDBuffer[a_type, 2, a_shape],
+    b: NDBuffer[b_type, 2, b_shape],
+    m: UInt,
+    n: UInt,
+    k: UInt,
 ):
     alias align_a = alignof[SIMD[a_type, simd_width]]()
     alias align_b = alignof[SIMD[b_type, simd_width]]()
     var x = BlockIdx.x() * BlockDim.x() + ThreadIdx.x()
-    var warpId = x // WARP_SIZE
-    var accum = SIMD[s_type, 1]()
+    var warp_id = x // WARP_SIZE
+    var accum = Scalar[s_type]()
 
-    if warpId < m:
+    if warp_id < m:
         # Every warp processes a single row of the resultant vector
         for i in range(ceildiv(k // simd_width, WARP_SIZE)):
             var idx = (i * WARP_SIZE * simd_width) + lane_id() * simd_width
             var val = SIMD[a_type, simd_width]()
             if idx < k:
                 var ax = a.load[width=simd_width, alignment=align_a](
-                    Index(warpId, idx)
+                    Index(warp_id, idx)
                 )
 
                 var bx = b.load[width=simd_width, alignment=align_b](
@@ -499,12 +505,12 @@ fn gemv_tc_kernel_vector[
             if elementwise_lambda_fn:
                 alias elementwise_lambda = elementwise_lambda_fn.value()
                 elementwise_lambda[c_type, 1](
-                    reverse_idx[transpose_b](Int(warpId), 0),
+                    reverse_idx[transpose_b](Int(warp_id), 0),
                     accum.cast[c_type](),
                 )
             else:
                 c.store(
-                    reverse_idx[transpose_b](Int(warpId), 0),
+                    reverse_idx[transpose_b](Int(warp_id), 0),
                     accum.cast[c_type](),
                 )
 
@@ -514,6 +520,7 @@ fn gevm_kernel[
     c_type: DType,
     a_type: DType,
     b_type: DType,
+    *,
     tile_size: Int,
     elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
     s_type: DType = get_accum_type[c_type](),
@@ -525,12 +532,12 @@ fn gevm_kernel[
     n: Int,
     k: Int,
 ):
-    var warpsPerBlock = BlockDim.x() // WARP_SIZE
-    var warpId = ThreadIdx.x() // WARP_SIZE
-    var accum = SIMD[s_type, 1]()
+    var warps_per_block = BlockDim.x() // WARP_SIZE
+    var warp_id = ThreadIdx.x() // WARP_SIZE
+    var accum = Scalar[s_type]()
     var col = BlockIdx.x() * WARP_SIZE + lane_id()
     var tid = BlockIdx.x() * BlockDim.x() + ThreadIdx.x()
-    var globalWarpId = tid // WARP_SIZE
+    var global_warp_id = tid // WARP_SIZE
 
     var x_shared = stack_allocation[
         tile_size,
@@ -539,13 +546,13 @@ fn gevm_kernel[
     ]()
 
     # Every block computes warp size length of output values
-    for i in range(ceildiv(UInt(k), warpsPerBlock)):
-        var row = i * warpsPerBlock + warpId
+    for i in range(ceildiv(UInt(k), warps_per_block)):
+        var row = i * warps_per_block + warp_id
         var lhs = a.load(row)
         var rhs = b.load(row * n + col)
         accum += lhs.cast[s_type]() * rhs.cast[s_type]()
 
-    x_shared[lane_id() * WARP_SIZE + warpId] = accum
+    x_shared[lane_id() * WARP_SIZE + warp_id] = accum
     barrier()
 
     @parameter
@@ -555,8 +562,7 @@ fn gevm_kernel[
     ](x: SIMD[type, width], y: SIMD[type, width]) -> SIMD[type, width]:
         return x + y
 
-    var total = SIMD[s_type, 1]()
-    total = x_shared.load(ThreadIdx.x()).cast[s_type]()
+    var total = x_shared.load(ThreadIdx.x()).cast[s_type]()
     total = warp_reduce[shuffle_down, reduce_add](total)
 
     if lane_id() == 0:
@@ -565,10 +571,10 @@ fn gevm_kernel[
         if elementwise_lambda_fn:
             alias elementwise_lambda = elementwise_lambda_fn.value()
             elementwise_lambda[c_type, 1](
-                Index(UInt(0), globalWarpId), total.cast[c_type]()
+                Index(UInt(0), global_warp_id), total.cast[c_type]()
             )
         else:
-            c[globalWarpId] = total.cast[c_type]()
+            c[global_warp_id] = total.cast[c_type]()
 
 
 fn gevm_tc_kernel_vector_8x[
@@ -590,12 +596,12 @@ fn gevm_tc_kernel_vector_8x[
     alias align_b = alignof[SIMD[b_type, simd_width]]()
     alias align_x = alignof[SIMD[s_type, simd_width]]()
 
-    var warpsPerBlock = BlockDim.x() // WARP_SIZE
-    var warpId = ThreadIdx.x() // WARP_SIZE
+    var warps_per_block = BlockDim.x() // WARP_SIZE
+    var warp_id = ThreadIdx.x() // WARP_SIZE
     var accum = SIMD[s_type, simd_width]()
     var col = BlockIdx.x() * WARP_SIZE * simd_width + lane_id() * simd_width
     var tid = BlockIdx.x() * BlockDim.x() + ThreadIdx.x()
-    var globalWarpId = tid // WARP_SIZE
+    var global_warp_id = tid // WARP_SIZE
 
     var x_shared = stack_allocation[
         tile_size,
@@ -604,8 +610,8 @@ fn gevm_tc_kernel_vector_8x[
     ]()
 
     # Every block computes warp size * simd_width length of output values
-    for i in range(ceildiv(k, warpsPerBlock)):
-        var row = i * warpsPerBlock + warpId
+    for i in range(ceildiv(k, warps_per_block)):
+        var row = i * warps_per_block + warp_id
         if row < k and col < n:
             var lhs = a.load(Index(0, row))
             var rhs = b.load[width=simd_width, alignment=align_b](
@@ -613,7 +619,7 @@ fn gevm_tc_kernel_vector_8x[
             )
             accum += lhs.cast[s_type]() * rhs.cast[s_type]()
 
-    var xs = warpId * WARP_SIZE * simd_width + lane_id() * simd_width
+    var xs = warp_id * WARP_SIZE * simd_width + lane_id() * simd_width
 
     @parameter
     for x in range(simd_width):
@@ -625,11 +631,13 @@ fn gevm_tc_kernel_vector_8x[
     var val2 = SIMD[s_type, simd_width // 2]()
 
     # indexing to fetch correctly from shared memory
-    var stride = 256
-    var mma_tile_width = 8
-    var mma_col_elem_width = 4
+    var stride = UInt(256)
+    var mma_tile_width = UInt(8)
+    var mma_col_elem_width = UInt(4)
     var target_row = (lane_id() % mma_col_elem_width) * mma_col_elem_width
-    var target_col = warpId * mma_tile_width + (lane_id() // mma_col_elem_width)
+    var target_col = warp_id * mma_tile_width + (
+        lane_id() // mma_col_elem_width
+    )
 
     @parameter
     for i in range(simd_width // 2):
@@ -652,7 +660,7 @@ fn gevm_tc_kernel_vector_8x[
         if elementwise_lambda_fn:
             alias elementwise_lambda = elementwise_lambda_fn.value()
             elementwise_lambda[c_type, (simd_width // 2) // 2](
-                Index(UInt(0), globalWarpId * simd_width + lane_id() * 2),
+                Index(UInt(0), global_warp_id * simd_width + lane_id() * 2),
                 final[0].cast[c_type](),
             )
         else:
@@ -660,7 +668,7 @@ fn gevm_tc_kernel_vector_8x[
                 width = (simd_width // 2) // 2,
                 alignment = alignof[SIMD[c_type, (simd_width // 2) // 2]](),
             ](
-                Index(UInt(0), globalWarpId * simd_width + lane_id() * 2),
+                Index(UInt(0), global_warp_id * simd_width + lane_id() * 2),
                 final[0].cast[c_type](),
             )
 
@@ -716,7 +724,7 @@ fn matmul_kernel[
     var localRow = ThreadIdx.y()
 
     # Result of current thread in C.
-    var result = SIMD[s_type, 1](0.0)
+    var result = Scalar[s_type](0)
 
     var K_roundbytile = align_down(k, tile_size)
     # Can't use 0 as tile size so set to 1 when the remainder is 0.
@@ -731,7 +739,7 @@ fn matmul_kernel[
         # when loading elements into shared memory.
 
         # Load A tile into shared memory.
-        var a_val: SIMD[a_type, 1]
+        var a_val: Scalar[a_type]
 
         @parameter
         if not full_tile:
@@ -743,7 +751,7 @@ fn matmul_kernel[
         a_shared[localRow * tile_size + localCol] = a_val
 
         # Load B tile into shared memory.
-        var b_val: SIMD[b_type, 1]
+        var b_val: Scalar[b_type]
 
         @parameter
         if not full_tile:
@@ -1043,7 +1051,7 @@ fn matmul_kernel_naive[
         return
 
     var a = NDBuffer[a_type, 2](a_ptr, Index(m, k))
-    var accum = SIMD[s_type, 1]()
+    var accum = Scalar[s_type]()
 
     @parameter
     if transpose_b:
@@ -1336,8 +1344,11 @@ fn _matmul_gpu_dispatch[
                     var gpu_func = ctx.compile_function[
                         gemv_tc_kernel_vector[
                             c_type,
+                            c_shape,
                             a_type,
+                            a_shape,
                             b_type,
+                            b_shape,
                             simd_width,
                             elementwise_lambda_fn=elementwise_lambda_fn,
                         ]
@@ -1347,9 +1358,9 @@ fn _matmul_gpu_dispatch[
                         c,
                         a,
                         b,
-                        m,
-                        n,
-                        k,
+                        UInt(m),
+                        UInt(n),
+                        UInt(k),
                         grid_dim=ceildiv(m, block_dim // WARP_SIZE),
                         block_dim=block_dim,
                     )
@@ -1368,9 +1379,9 @@ fn _matmul_gpu_dispatch[
                         c.data,
                         a.data,
                         b.data,
-                        m,
-                        n,
-                        k,
+                        UInt(m),
+                        UInt(n),
+                        UInt(k),
                         grid_dim=ceildiv(m, WARPS_PER_BLOCK),
                         block_dim=WARP_SIZE * WARPS_PER_BLOCK,
                     )
@@ -1412,10 +1423,13 @@ fn _matmul_gpu_dispatch[
                     var gpu_func = ctx.compile_function[
                         gemv_tc_kernel_vector[
                             c_type,
-                            b_type,
+                            c_shape,
                             a_type,
+                            a_shape,
+                            b_type,
+                            b_shape,
                             simd_width,
-                            transpose_b,
+                            transpose_b=transpose_b,
                             elementwise_lambda_fn=elementwise_lambda_fn,
                         ]
                     ]()
@@ -1424,9 +1438,9 @@ fn _matmul_gpu_dispatch[
                         c,
                         b,
                         a,
-                        n,
-                        m,
-                        k,
+                        UInt(n),
+                        UInt(m),
+                        UInt(k),
                         grid_dim=ceildiv(n, block_dim // WARP_SIZE),
                         block_dim=block_dim,
                     )
@@ -1437,7 +1451,7 @@ fn _matmul_gpu_dispatch[
                             c_type,
                             b_type,
                             a_type,
-                            transpose_b,
+                            transpose_b=transpose_b,
                             elementwise_lambda_fn=elementwise_lambda_fn,
                         ]
                     ]()
@@ -1446,9 +1460,9 @@ fn _matmul_gpu_dispatch[
                         c.data,
                         b.data,
                         a.data,
-                        n,
-                        m,
-                        k,
+                        UInt(n),
+                        UInt(m),
+                        UInt(k),
                         grid_dim=ceildiv(n, WARPS_PER_BLOCK),
                         block_dim=WARP_SIZE * WARPS_PER_BLOCK,
                     )
@@ -1459,7 +1473,7 @@ fn _matmul_gpu_dispatch[
                         c_type,
                         b_type,
                         a_type,
-                        transpose_b,
+                        transpose_b=transpose_b,
                         elementwise_lambda_fn=elementwise_lambda_fn,
                     ]
                 ]()
@@ -1518,7 +1532,7 @@ fn _matmul_gpu_dispatch[
                             c_type,
                             a_type,
                             b_type,
-                            WARP_SIZE * WARPS_PER_BLOCK,
+                            tile_size = WARP_SIZE * WARPS_PER_BLOCK,
                             elementwise_lambda_fn=elementwise_lambda_fn,
                         ]
                     ]()
@@ -1540,7 +1554,7 @@ fn _matmul_gpu_dispatch[
                         c_type,
                         a_type,
                         b_type,
-                        WARP_SIZE * WARPS_PER_BLOCK,
+                        tile_size = WARP_SIZE * WARPS_PER_BLOCK,
                         elementwise_lambda_fn=elementwise_lambda_fn,
                     ]
                 ]()
