@@ -403,6 +403,10 @@ LogicalResult checkResultArgumentTypes(Operation *op,
 LogicalResult verifyCallOperands(Operation *op, ValueRange args,
                                  SignatureType callee,
                                  bool ignoreByRef = false);
+/// Verify that the types of operation results corresponding to call results
+/// match the expected types on the callee signature.
+LogicalResult verifyCallResults(Operation *op, ValueRange results,
+                                SignatureType callee);
 
 /// Whether the decorator's name is (starts with) the specific annotation.
 bool hasDecorator(ArrayRef<TypedAttr> decorators, StringRef annotation);

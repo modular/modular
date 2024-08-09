@@ -179,11 +179,11 @@ def KGEN_GeneratorOp : KGENOp<"generator", [
     OpBuilder<(ins "StringAttr":$name, "SignatureType":$signature,
                    "FunctionType":$functionType,
                    "ArrayRef<ParamDeclAttr>":$inputParams,
-                   "ArrayRef<ParamDeclAttr>":$resultParams), [{
+                   "ArrayRef<ParamDeclAttr>":$resultParams,
+                   CArg<"InlineLevel", "InlineLevel::Automatic">:$inlineLevel), [{
       build($_builder, $_state, name, signature, functionType, inputParams,
-            resultParams, /*decorators=*/{}, InlineLevel::Automatic,
-            ExportKind::NotExported,
-            DictionaryAttr::get(name.getContext()));
+            resultParams, /*decorators=*/{}, inlineLevel,
+            ExportKind::NotExported, DictionaryAttr::get(name.getContext()));
     }]>,
     OpBuilder<(ins "StringAttr":$name, "SignatureType":$signature), [{
       build($_builder, $_state, name, signature, signature.getValues(), {}, {});

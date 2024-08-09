@@ -33,6 +33,7 @@ inline bool isV1ShapeFunc(Operation *gen) {
 constexpr StringLiteral SLICED_ATTR = "mogg.sliced";
 constexpr StringLiteral ALLOCS_ATTR = "mogg.allocs";
 constexpr StringLiteral IS_VIEW_ATTR = "mogg.view";
+constexpr StringLiteral OUTLINED_ATTR = "mogg.outlined";
 
 /// Tracks the mojo parameter value for each of the input parameters.
 constexpr StringLiteral MOGG_ARG_PARAMS = "mogg.arg_params";

@@ -1632,7 +1632,7 @@ kgen.generator @nonparametric_rebind(%arg0: !kgen.pointer<index>) -> index {
 
 // CHECK-LABEL: kgen.func @try_rebind
 kgen.generator @try_rebind(%arg0: !kgen.pointer<array<1, i8>>) {
-  kgen.call @rebind_type<1>(%arg0) : (!kgen.pointer<array<1, i8>>) -> ()
+  kgen.call @rebind_type<1>(%arg0) : (!kgen.pointer<array<1, i8>>) -> !kgen.pointer<[array<1, i8>, {"f": () -> () = @f}]>
   kgen.param.apply a = [(!kgen.pointer<index>) -> index: @nonparametric_rebind](store_to_mem(1))
   // CHECK: constant = <1>
   kgen.param.constant = <a>
@@ -1773,9 +1773,9 @@ kgen.generator @conflicting_values() {
 
 // CHECK-LABEL: kgen.func export @param_for
 kgen.generator export @param_for(%arg0: i1, %arg1: index) {
-  kgen.call @sum_from_zero<0>() : () -> ()
-  kgen.call @sum_from_zero<1>() : () -> ()
-  kgen.call @sum_from_zero<2>() : () -> ()
+  kgen.call @sum_from_zero<0>() : () -> index
+  kgen.call @sum_from_zero<1>() : () -> index
+  kgen.call @sum_from_zero<2>() : () -> index
 
   kgen.call @terminators(%arg0) : (i1) -> ()
   kgen.call @nested_param_for() : () -> ()

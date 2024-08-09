@@ -558,8 +558,18 @@ FailureOr<InlineResult> CallOp::prepInline(mlir::RewriterBase &b) {
            }}};
 }
 
+template <typename CalleeT>
+static LogicalResult verifyCallOp(Operation *op, ValueRange args,
+                                  CalleeT callee) {
+  auto signature = cast<SignatureType>(callee.getType());
+  if (failed(verifyCallOperands(op, args, signature)) ||
+      failed(verifyCallResults(op, op->getResults(), signature)))
+    return failure();
+  return success();
+}
+
 LogicalResult CallOp::verify() {
-  return verifyCallOperands(*this, getOperands(), getCallee().getType());
+  return verifyCallOp(*this, getOperands(), getCallee());
 }
 
 //===----------------------------------------------------------------------===//
@@ -594,7 +604,7 @@ static void printTailKind(AsmPrinter &p, Operation *op, TailKindAttr tailKind) {
 }
 
 LogicalResult CallIndirectOp::verify() {
-  return verifyCallOperands(*this, getArguments(), getCallee().getType());
+  return verifyCallOp(*this, getArguments(), getCallee());
 }
 
 //===----------------------------------------------------------------------===//
@@ -612,8 +622,7 @@ FailureOr<InlineResult> CallParamOp::prepInline(mlir::RewriterBase &b) {
 }
 
 LogicalResult CallParamOp::verify() {
-  return verifyCallOperands(*this, getOperands(),
-                            cast<SignatureType>(getCallee().getType()));
+  return verifyCallOp(*this, getOperands(), getCallee());
 }
 
 //===----------------------------------------------------------------------===//

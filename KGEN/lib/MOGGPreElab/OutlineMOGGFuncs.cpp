@@ -35,10 +35,17 @@ namespace {
 class OutlineMOGGFuncsPass
     : public M::KGEN::MOGGPreElab::impl::OutlineMOGGFuncsBase<
           OutlineMOGGFuncsPass> {
-private:
-  MLIRContext *ctx;
+public:
+  LogicalResult initialize(MLIRContext *ctx) override {
+    this->ctx = ctx;
+    outlinedAttrName = StringAttr::get(ctx, OUTLINED_ATTR);
+    return success();
+  }
 
 private:
+  MLIRContext *ctx;
+  StringAttr outlinedAttrName;
+
   void outlineFunction(GeneratorOp gen,
                        SmallVector<KGEN::ParamDeclareRegionOp> &lambdas,
                        CallOp elementwiseOp, SymbolTable &symTab) {
@@ -185,12 +192,12 @@ private:
     std::string name = (Twine(gen.getSymName()) + Twine("_OUTLINED")).str();
     auto outlinedFunction = builder.create<KGEN::GeneratorOp>(
         gen.getLoc(), builder.getStringAttr(name), sigType, newFuncType,
-        asDecls, ArrayRef<KGEN::ParamDeclAttr>{});
-
-    // We are inlining the function we just outlined because the purpose of the
-    // outlining is just to make sure the graph compiler works on a minimal set
-    // of changes
-    outlinedFunction.setInlineLevel(KGEN::InlineLevel::Always);
+        asDecls, ArrayRef<KGEN::ParamDeclAttr>{}, InlineLevel::Never);
+    // We are inlining the function we just outlined because the purpose of
+    // the outlining is just to make sure the graph compiler works on a minimal
+    // set of changes. Make sure we don't inline this now, but mark it to be
+    // inlined later when loaded by MOGG.
+    outlinedFunction->setAttr(outlinedAttrName, builder.getUnitAttr());
 
     Block &block = outlinedFunction.getCallableRegion()->emplaceBlock();
     builder.setInsertionPointToStart(&block);
@@ -281,7 +288,6 @@ private:
 public:
   void runOnOperation() override {
     ModuleOp mod = getOperation();
-    ctx = mod.getContext();
     auto &analysis = getAnalysis<mlir::SymbolTableAnalysis>();
     SymbolTable &symTab = analysis.getTopLevelSymbolTable();
 
