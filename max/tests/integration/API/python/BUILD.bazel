@@ -13,7 +13,9 @@ modular_py_test(
         "//ModularFramework/tools/mof",
         # TODO(SDLC-918): remove when landed
         "//Kernels/mojo/Mogg:MOGG.lib.mlirbc",
+        "//Kernels/mojo/Mogg:MOGG_debuginfo.lib.mlirbc",
         "//Kernels/mojo/Mogg:MOGGPrimitives.lib.mlirbc",
+        "//Kernels/mojo/Mogg:MOGGPrimitives_debuginfo.lib.mlirbc",
         "//ONNX/tools/onnx:monnx",
         "//PyTorch:TorchRuntimePlugins",
         "//PyTorch/tools/torch:mtorch",
