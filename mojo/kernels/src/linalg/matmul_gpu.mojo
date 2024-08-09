@@ -1161,6 +1161,7 @@ fn _matmul_gpu_dispatch[
             a_type == DType.float32
             and b_type == DType.float32
             and c_type == DType.float32
+            and not transpose_b
         )
         var double_buffer_supported_cond = (
             m % 128 == 0 and n % 128 == 0 and k % 16 == 0 and k < m and k < n
@@ -1559,7 +1560,7 @@ fn _matmul_gpu_dispatch[
             # Thread block would have shape (tile_size, tile_size, 1)
             # If k < tile_size use naive version.
             alias tile_size = 16
-            if k >= tile_size:
+            if k >= tile_size and not transpose_b:
                 var gpu_func = ctx.compile_function[
                     matmul_kernel[
                         c_type,
