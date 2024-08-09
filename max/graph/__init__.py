@@ -9,5 +9,5 @@ from . import ops
 from .dtype import DType
 from .graph import Graph
 from .graph_value import GraphValue, ValueLike
-from .type import TensorType, Type
+from .type import TensorType, Type, DimLike
 from .weight import Weight
