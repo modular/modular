@@ -6,7 +6,6 @@
 
 
 from math import align_down, ceildiv, exp, iota, recip
-
 from algorithm import elementwise
 from buffer import Buffer, NDBuffer
 from buffer.dimlist import DimList
@@ -398,7 +397,7 @@ fn flash_attention_impl[
                     # TODO: Avoid hard coding shared memory needed. KERN-747
                     func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
                         80 * 1024
-                    ),
+                    )
                 )
 
                 ctx.enqueue_function(
@@ -1142,16 +1141,15 @@ fn mha_decoding_single_batch[
     @parameter
     for i in range(Int(depth // BK)):
         if tid < BK // simd_size:
-            var vec = (q_ptr + q_offset + i * BK + tid * simd_size).load[
+            var vec = q_ptr.load[
                 width=simd_size, alignment = alignof[SIMD[q_type, simd_size]]()
-            ]()
+            ](q_offset + i * BK + tid * simd_size)
             (q_smem + i * BM * BK + tid * simd_size).store[
                 alignment = alignof[SIMD[q_type, simd_size]]()
             ](vec)
         elif tid < BM * BK // simd_size:
-            (q_smem + i * BM * BK + tid * simd_size).store[
-                alignment = alignof[SIMD[q_type, simd_size]]()
-            ](
+            q_smem.store[alignment = alignof[SIMD[q_type, simd_size]]()](
+                i * BM * BK + tid * simd_size,
                 SIMD[q_type, simd_size](0.0),
             )
 
@@ -1211,9 +1209,9 @@ fn mha_decoding_single_batch[
                         SIMD[mask_type, p_frag_simdwidth]
                     ]()
 
-                    var mask_vec = (
-                        mask_frag_ptr + frag_lane_row * num_keys + frag_lane_col
-                    ).load[width=p_frag_simdwidth, alignment=mask_align]()
+                    var mask_vec = mask_frag_ptr.load[
+                        width=p_frag_simdwidth, alignment=mask_align
+                    ](frag_lane_row * num_keys + frag_lane_col)
 
                     p_reg_vec2[n_mma * num_m_mmas + m_mma, 0] = p_reg_vec2[
                         n_mma * num_m_mmas + m_mma, 0
