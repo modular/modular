@@ -67,7 +67,7 @@ fn run_matvec(M: Int, N: Int, K: Int, ctx: DeviceContext) raises:
             DType.float32,
             DType.float32,
             DType.float32,
-            WARP_SIZE * WARPS_PER_BLOCK,
+            tile_size = WARP_SIZE * WARPS_PER_BLOCK,
         ]
     ]()
 
@@ -257,7 +257,7 @@ fn test_gevm_with_epilogue_fn(
             DType.float32,
             DType.float32,
             DType.float32,
-            WARP_SIZE * WARPS_PER_BLOCK,
+            tile_size = WARP_SIZE * WARPS_PER_BLOCK,
             elementwise_lambda_fn=epilogue_fn,
         ]
     ]()
