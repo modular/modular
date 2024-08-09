@@ -230,6 +230,47 @@ struct LayoutTensor[
         return Self.stride[0]() * m + Self.stride[1]() * n
 
     @always_inline
+    fn __elementwise_unary[
+        func: fn (Self.element_type) capturing -> (Self.element_type)
+    ](self) -> Self:
+        constrained[
+            layout.all_dims_known(),
+            (
+                "__elmentwise_unary must operates on tensors of statically know"
+                " layouts"
+            ),
+        ]()
+
+        @parameter
+        for i in range(self.layout.size()):
+            alias idx = self.layout(i)
+            (self.ptr + idx).store[width = Self.element_size](
+                func((self.ptr + idx).load[width = Self.element_size]())
+            )
+        return self
+
+    @always_inline
+    fn __add__(self, other: Scalar[dtype]) -> Self:
+        fn add_val(val: Self.element_type) capturing -> Self.element_type:
+            return Self.element_type(other) + val
+
+        return self.__elementwise_unary[add_val]()
+
+    @always_inline
+    fn __mul__(self, other: Scalar[dtype]) -> Self:
+        fn add_val(val: Self.element_type) capturing -> Self.element_type:
+            return Self.element_type(other) * val
+
+        return self.__elementwise_unary[add_val]()
+
+    @always_inline
+    fn __sub__(self, other: Scalar[dtype]) -> Self:
+        fn add_val(val: Self.element_type) capturing -> Self.element_type:
+            return Self.element_type(other) - val
+
+        return self.__elementwise_unary[add_val]()
+
+    @always_inline
     fn __getitem__(self, *dims: Int) -> Self.element_type:
         var strides = self.runtime_layout.stride.value
         var vec_res = SIMD[dtype, Self.element_size]()
