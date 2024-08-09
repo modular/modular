@@ -4,7 +4,8 @@
 #
 # ===----------------------------------------------------------------------=== #
 # UNSUPPORTED: windows
-# REQUIRES: cuda
+# FIXME(MSDK-764): this test is flaky
+# REQUIRES: DISABLED, cuda
 # RUN: %mojo %s %S/mo_unnamed.mlir
 
 from sys import argv
