@@ -236,8 +236,8 @@ fn _kv_cache_length[
 ):
     """Returns the size of the cache in a ContiguousKVCacheCollection mo.opaque object.
     """
-    var valid_length = kv_collection.get_valid_lengths()[0]
-    output.store[width=1](Index(0), valid_length)
+    for bs in range(output.dim[0]()):
+        output.store[width=1](Index(bs), Int64(kv_collection.cache_length(bs)))
 
 
 @mogg_register("key_cache_for_layer_h8_d128_bhsd_bf16")
@@ -631,7 +631,7 @@ fn _matmul_kv_cache[
     var N = weight.dim[1]()
     var K = weight.dim[0]()
 
-    var valid_len = int(cache.get_valid_lengths()[0])
+    var valid_len = int(cache.cache_length(0))
 
     @parameter
     @__copy_capture(cache, SEQ_LEN, valid_len)
@@ -900,7 +900,7 @@ fn _fused_qkv_matmul_kv_cache[
     var N = weight.dim[1]()
     var K = weight.dim[0]()
 
-    var valid_len = int(k_cache.get_valid_lengths()[0])
+    var valid_len = k_cache.cache_length(0)
 
     var q_dim = output.dim[2]()
     var k_dim = kv_params.head_size * kv_params.num_heads
@@ -1076,7 +1076,7 @@ fn _rope_kv_cache[
         ctx: The call context as passed by the graph compiler.
     """
 
-    var valid_len = int(cache.get_valid_lengths()[0])
+    var valid_len = cache.cache_length(0)
 
     @always_inline
     @parameter
@@ -1387,7 +1387,7 @@ fn _flash_attention_kv_cache_cpu[
     var num_heads = q.dim[1]()
     var depth = q.dim[3]()
     var new_seq_len = q.dim[2]()
-    var cache_seq_len = int(k.get_valid_lengths()[0])
+    var cache_seq_len = int(k.cache_length(0))
     var seq_len = new_seq_len + cache_seq_len
     var fa_k_shape = StaticIntTuple[4](
         batch_size, kv_params.num_heads, seq_len, depth
@@ -1466,7 +1466,7 @@ fn _flash_attention_kv_cache_gpu[
     # GPU flash attention kernel gets the cache length from the k tensor shape
     # TODO remove this an instead pass in explicit KVCache lengths to the GPU kernel.
     # KERN-725
-    var valid_length = int(k.get_valid_lengths()[0] + q.dim[1]())
+    var valid_length = int(k.cache_length(0) + q.dim[1]())
     var k_shape = k.block.dynamic_shape
     var kv_shape = StaticIntTuple[4](
         k_shape[0], valid_length, k_shape[2], k_shape[3]
