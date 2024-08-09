@@ -66,8 +66,16 @@ StringRef MojoConfig::getMOGGLibPath() {
   return getValue(STRINGIFY_MOJO_CONFIG(".mogglib_path"));
 }
 
+StringRef MojoConfig::getMOGGLibDebuginfoPath() {
+  return getValue(STRINGIFY_MOJO_CONFIG(".mogglib_debuginfo_path"));
+}
+
 StringRef MojoConfig::getMOGGPrimitivesLibPath() {
   return getValue(STRINGIFY_MOJO_CONFIG(".moggprimitiveslib_path"));
+}
+
+StringRef MojoConfig::getMOGGPrimitivesLibDebuginfoPath() {
+  return getValue(STRINGIFY_MOJO_CONFIG(".moggprimitiveslib_debuginfo_path"));
 }
 
 //===----------------------------------------------------------------------===//

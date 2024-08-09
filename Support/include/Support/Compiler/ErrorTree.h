@@ -162,15 +162,15 @@ private:
 
 /// This type is used for APIs that either succeed (with no result value) or can
 /// return an ErrorTree.
-class [[nodiscard]] ErrorTreeOrSuccess : public ErrorTreeOr<Detail::Empty> {
+class [[nodiscard]] ErrorTreeOrSuccess : public ErrorTreeOr<M::Detail::Empty> {
 public:
   using ErrorTreeOr::ErrorTreeOr;
   /// This allows initialization from success().
   /*implicit*/ ErrorTreeOrSuccess(SuccessType success)
-      : ErrorTreeOr(Detail::Empty()) {}
+      : ErrorTreeOr(M::Detail::Empty()) {}
 
   /// Allow default initialization to success.
-  ErrorTreeOrSuccess() : ErrorTreeOr(Detail::Empty()) {}
+  ErrorTreeOrSuccess() : ErrorTreeOr(M::Detail::Empty()) {}
 };
 
 } // namespace M
