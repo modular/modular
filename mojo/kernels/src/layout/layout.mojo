@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from builtin.string import _calc_initial_buffer_size_int32
+from collections.string import _calc_initial_buffer_size_int32
 
 from utils._format import Formattable, Formatter
 
