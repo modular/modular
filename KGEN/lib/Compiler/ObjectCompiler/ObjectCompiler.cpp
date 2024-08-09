@@ -251,6 +251,20 @@ runLlcPasses(llvm::Module &module, CompilationOptions &options,
   return mlir::success();
 }
 
+static LogicalResult writeTempModule(const std::string &phase,
+                                     const std::string &saveTempsPrefix,
+                                     llvm::Module &module) {
+  if (saveTempsPrefix.empty())
+    return success();
+  std::string outPath = saveTempsPrefix + "." + phase + ".ll";
+  auto outFile = mlir::openOutputFile(outPath);
+  if (!outFile)
+    return failure();
+  outFile->os() << module;
+  outFile->keep();
+  return success();
+}
+
 /// Compile optimized llvm::Module module to object through the llc pipeline
 /// asynchronously and cache the transformation.
 static AsyncRT::AnyAsyncValueRef compileOptimizedLLVMModuleToObject(
@@ -314,6 +328,19 @@ static AsyncRT::AnyAsyncValueRef compileOptimizedLLVMModuleToObject(
             AsyncRT::getMLIRDiagnostic("failed to create TargetMachine", loc));
       }
 
+      std::string saveTempsPrefix = options.saveTempsPrefix;
+      if (!options.saveTempsPrefix.empty()) {
+        if (moduleIdx)
+          saveTempsPrefix += "_" + std::to_string(*moduleIdx);
+        if (splitIdx)
+          saveTempsPrefix += "__" + std::to_string(*splitIdx);
+      }
+
+      if (failed(writeTempModule("pre-llc", saveTempsPrefix, *module))) {
+        return std::move(output).setToError(
+            AsyncRT::getMLIRDiagnostic("failed save pre-llc llvm IR", loc));
+      }
+
       // Run llc passes.
       if (failed(runLlcPasses(
               *module, options, **machineOr, *buf,
@@ -325,12 +352,6 @@ static AsyncRT::AnyAsyncValueRef compileOptimizedLLVMModuleToObject(
       }
 
       if (!options.saveTempsPrefix.empty()) {
-        std::string saveTempsPrefix = options.saveTempsPrefix;
-        if (moduleIdx)
-          saveTempsPrefix += "_" + std::to_string(*moduleIdx);
-        if (splitIdx)
-          saveTempsPrefix += "__" + std::to_string(*splitIdx);
-
         std::string outPath = saveTempsPrefix + ".asm";
         auto outFile = mlir::openOutputFile(outPath);
         if (!outFile) {
@@ -343,6 +364,11 @@ static AsyncRT::AnyAsyncValueRef compileOptimizedLLVMModuleToObject(
           return std::move(output).setToError(AsyncRT::getMLIRDiagnostic(
               "llc failed to codegen LLVM IR to object code", loc));
         outFile->keep();
+
+        if (failed(writeTempModule("post-llc", saveTempsPrefix, *module))) {
+          return std::move(output).setToError(
+              AsyncRT::getMLIRDiagnostic("failed save post-llc llvm IR", loc));
+        }
       }
 
       std::move(output).emplace(buf.copy());
@@ -363,20 +389,6 @@ static AsyncRT::AnyAsyncValueRef compileOptimizedLLVMModuleToObject(
       transformCache.copy(),
       AsyncRT::AsyncValueRef<Chain>::createReady(runtime), keyBuf.copy(),
       std::move(runTransformation), onCacheHit);
-}
-
-static LogicalResult writeTempModule(const std::string &phase,
-                                     const std::string &saveTempsPrefix,
-                                     llvm::Module &module) {
-  if (saveTempsPrefix.empty())
-    return success();
-  std::string outPath = saveTempsPrefix + "." + phase + ".ll";
-  auto outFile = mlir::openOutputFile(outPath);
-  if (!outFile)
-    return failure();
-  outFile->os() << module;
-  outFile->keep();
-  return success();
 }
 
 /// Optimize the llvm module to prepare for codegen object file.
