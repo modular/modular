@@ -14,7 +14,7 @@ kgen.generator export @BASE_KERNEL() capturing -> !kgen.none attributes {_in_lam
   kgen.param.declare.region _INPUT_FN_0 = () capturing -> !kgen.none always_inline {
     %none2 = kgen.param.constant: none = <#kgen.none>
     kgen.return %none2 : !kgen.none
-  } 
+  }
   kgen.param.declare.region NON_INPUT_LAMBDA = () capturing -> !kgen.none always_inline {
     %none3 = kgen.param.constant: none = <#kgen.none>
     kgen.return %none3 : !kgen.none
@@ -28,7 +28,9 @@ kgen.generator export @BASE_KERNEL() capturing -> !kgen.none attributes {_in_lam
 // Check we have outlined the code.
 
 // CHECK-LABEL: kgen.generator @BASE_KERNEL_OUTLINED
-// CHECK: <[[PARAM1:.*]]: () capturing -> !kgen.none, [[PARAM2:.*]]: () capturing -> !kgen.none>() capturing
+// CHECK-SAME: <[[PARAM1:.*]]: () capturing -> !kgen.none, [[PARAM2:.*]]: () capturing -> !kgen.none>() capturing
+// CHECK-SAME: no_inline
+// CHECK-SAME: mogg.outlined
 
 // CHECK-NEXT: kgen.param.constant: none
 // CHECK-NEXT: kgen.param.declare.region NON_INPUT_LAMBDA

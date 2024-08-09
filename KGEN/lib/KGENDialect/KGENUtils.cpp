@@ -1931,6 +1931,23 @@ LogicalResult KGEN::verifyCallOperands(Operation *op, ValueRange args,
   return success();
 }
 
+LogicalResult KGEN::verifyCallResults(Operation *op, ValueRange results,
+                                      SignatureType callee) {
+  if (results.size() != callee.getNumResults()) {
+    return op->emitOpError("callee expected ")
+           << callee.getNumArguments() << " results but operation only has "
+           << results.size();
+  }
+  for (auto [i, res, type] : llvm::enumerate(results, callee.getResults())) {
+    if (res.getType() != type) {
+      return op->emitOpError("callee result #")
+             << i << " expected type " << type
+             << " but operation result has type " << res.getType();
+    }
+  }
+  return success();
+}
+
 ExportMap KGEN::getExportedSymbols(ModuleOp module) {
   llvm::MapVector<StringAttr, ExportedSymbol> exportedSymbols;
   for (auto op : module.getOps<ExportInterface>()) {
