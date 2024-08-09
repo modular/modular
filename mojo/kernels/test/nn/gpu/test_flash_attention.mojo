@@ -331,16 +331,54 @@ def main():
             DType.bfloat16,
             DType.bfloat16,
             128,
-            32,
+            11,
             against_gpu_naive=True,
         ](1, 256, ctx)
 
         test[
             4,
             DType.bfloat16,
+            DType.float32,
+            128,
+            1,
+            against_gpu_naive=True,
+        ](1, 11, ctx)
+
+        test[
+            4,
             DType.bfloat16,
+            DType.bfloat16,
+            128,
+            2,
+            against_gpu_naive=True,
+        ](1, 523, ctx)
+
+        test[
+            4,
+            DType.bfloat16,
+            DType.float32,
             128,
             24,
             group=3,
             against_gpu_naive=True,
-        ](1, 1024, ctx)
+        ](1, 29, ctx)
+
+        test[
+            4,
+            DType.bfloat16,
+            DType.bfloat16,
+            128,
+            3,
+            group=3,
+            against_gpu_naive=True,
+        ](1, 156, ctx)
+
+        test[
+            4,
+            DType.bfloat16,
+            DType.bfloat16,
+            128,
+            3,
+            group=3,
+            against_gpu_naive=True,
+        ](1, 208, ctx)
