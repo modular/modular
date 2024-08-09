@@ -50,9 +50,17 @@ public:
   /// Return the path to the compiled MOGG.mojo library within the mojo install.
   StringRef getMOGGLibPath();
 
+  /// Return the path to the compiled MOGG.mojo library with debuginfo within
+  /// the mojo install.
+  StringRef getMOGGLibDebuginfoPath();
+
   /// Return the path to the compiled MOGGPrimitives.mojo library within the
   /// mojo install.
   StringRef getMOGGPrimitivesLibPath();
+
+  /// Return the path to the compiled MOGGPrimitives.mojo library with debuginfo
+  /// within the mojo install.
+  StringRef getMOGGPrimitivesLibDebuginfoPath();
 
   //===--------------------------------------------------------------------===//
   // LLDB Configurations

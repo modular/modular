@@ -131,6 +131,9 @@ macro(_setup_debug_flags)
   if (KGEN_NO_DEBUG)
     set(KGEN_DEBUG_LEVEL "none")
   endif()
+  if (KGEN_DEBUGINFO)
+    set(KGEN_DEBUG_LEVEL "full")
+  endif()
 endmacro()
 
 
@@ -385,7 +388,7 @@ endfunction()
 # and the include flags will be setup correctly.
 function(add_kgen_library target)
   cmake_parse_arguments(KGEN
-    "SAVE_TEMPS;NO_DEBUG"
+    "SAVE_TEMPS;NO_DEBUG;DEBUGINFO"
     "OUTPUT"
     "LINK_LIBS;LINK_DIRS"
     ${ARGN})
