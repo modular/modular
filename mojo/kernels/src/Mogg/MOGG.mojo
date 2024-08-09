@@ -43,6 +43,7 @@ from extensibility import Tensor as ExtensibilityTensor
 from gpu.host._compile import _get_nvptx_target
 from linalg.bmm import batched_matmul as _batched_matmul
 from linalg.bmm import batched_matmul_shape
+from linalg.linear import linear_op, linear_op_shape_func
 from linalg.matmul import matmul as _matmul
 from linalg.matrix_band_part import matrix_band_part
 from linalg.matrix_solve import matrix_solve, matrix_solve_shape
@@ -168,6 +169,8 @@ fn MOGGExport():
     alias _matrix_solve_shape = matrix_solve_shape
     alias _matrix_band_part = matrix_band_part
     alias _batched_matmul_shape = batched_matmul_shape
+    alias _linear_op = linear_op
+    alias _linear_op_shape = linear_op_shape_func
     alias _mul = mul
     alias _mod = mod
     alias _tanh = tanh
@@ -2174,12 +2177,7 @@ fn matmul[
             saturated_vnni=False,
             single_thread_blocking_override=single_thread_blocking_override,
             target=target,
-        ](
-            c,
-            a,
-            b,
-            ctx,
-        )
+        ](c, a, b, ctx)
 
 
 # ===----------------------------------------------------------------------===#
