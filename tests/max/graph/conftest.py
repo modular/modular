@@ -10,49 +10,28 @@ import random
 from pathlib import Path
 from typing import Optional
 
-import hypothesis
 import pytest
 from hypothesis import assume
 from hypothesis import strategies as st
 from max import _graph, mlir
 from max.graph import DType, TensorType
-from max.graph.type import Dim
-
-fail_fast_profile = hypothesis.settings(
-    phases=[
-        hypothesis.Phase.explicit,
-        hypothesis.Phase.reuse,
-        hypothesis.Phase.generate,
-        hypothesis.Phase.target,
-    ],
-    report_multiple_bugs=False,
-)
-
-hypothesis.settings.register_profile("fail-fast", fail_fast_profile)
+from max.graph.type import Dim, StaticDim, SymbolicDim
 
 dtypes = st.sampled_from(DType)
-static_dims = st.integers(min_value=0, max_value=2**63 - 1)
-symbolic_dims = st.one_of(
-    st.just("batch"),
-    st.characters(min_codepoint=ord("a"), max_codepoint=ord("z")),
+static_dims = st.builds(
+    StaticDim, st.integers(min_value=0, max_value=2**63 - 1)
+)
+symbolic_dims = st.builds(
+    SymbolicDim,
+    st.one_of(
+        st.just("batch"),
+        st.characters(min_codepoint=ord("a"), max_codepoint=ord("z")),
+    ),
 )
 dims = st.one_of(static_dims, symbolic_dims)
 
 
-def shapes(min_size=0, max_size=None, include_dims=()):
-    return (
-        st.lists(
-            dims,
-            min_size=max(0, min_size - len(include_dims)),
-            max_size=None if max_size
-            is None else max(0, max_size - len(include_dims)),
-        )
-        .map(lambda shape: [*shape, *include_dims])
-        .flatmap(st.permutations)
-    )
-
-
-def tensor_types(dtypes=dtypes, shapes=shapes()):
+def tensor_types(dtypes=dtypes, shapes=st.lists(dims)):
     return st.builds(TensorType, dtypes, shapes)
 
 
@@ -75,6 +54,8 @@ def new_axes(types):
 
 st.register_type_strategy(DType, dtypes)
 st.register_type_strategy(Dim, dims)
+st.register_type_strategy(StaticDim, static_dims)
+st.register_type_strategy(SymbolicDim, symbolic_dims)
 st.register_type_strategy(TensorType, tensor_types())
 
 
@@ -82,7 +63,7 @@ def broadcastable_subshape(shape: list[Dim], random: random.Random):
     shape = shape[random.randint(0, len(shape)) :]
     ones = random.sample(range(len(shape)), random.randint(0, len(shape)))
     for idx in ones:
-        shape[idx] = 1
+        shape[idx] = StaticDim(1)
     return shape
 
 
@@ -110,8 +91,8 @@ def broadcast_shapes(s1: list[Dim], s2: list[Dim]) -> list[Dim]:
             return d2
         if d2 is None:
             return d1
-        assert d1 == d2 or d1 == 1 or d2 == 1
-        return d1 if d2 == 1 else d2
+        assert d1 == d2 or d1 == StaticDim(1) or d2 == StaticDim(1)
+        return d1 if d2 == StaticDim(1) else d2
 
     return list(
         reversed(

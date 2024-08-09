@@ -5,11 +5,14 @@
 # ===----------------------------------------------------------------------=== #
 """Test the max.graph Python bindings."""
 
-from conftest import broadcast_shapes, broadcastable_tensor_types, shapes
+import itertools
+from typing import Optional
+
+from conftest import broadcast_shapes, broadcastable_tensor_types
 from hypothesis import assume, event, given
 from max.graph import DType, Graph
 from max.graph.ops import sub
-from max.graph.type import Dim, TensorType
+from max.graph.type import Dim, StaticDim, TensorType
 
 
 @given(tensor_type=...)
@@ -26,7 +29,7 @@ def test_sub__same_type__operator(tensor_type: TensorType):
         assert op.tensor_type == tensor_type
 
 
-@given(d1=..., d2=..., shape=shapes())
+@given(d1=..., d2=..., shape=...)
 def test_sub__promoted_dtype__operator(d1: DType, d2: DType, shape: list[Dim]):
     assume(d1 != d2)
     t1 = TensorType(d1, shape)

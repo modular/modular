@@ -5,9 +5,17 @@
 # ===----------------------------------------------------------------------=== #
 """Test the max.graph Python bindings."""
 
-from hypothesis import given
+import sys
+from random import Random
+from operator import mul
+
+import pytest
 from hypothesis import strategies as st
-from max.graph import Graph, TensorType
+from hypothesis import given, settings
+from max import mlir
+from max.graph import DType, Graph, GraphValue, TensorType, graph, ops
+from max.graph.type import shape, Shape, dim, StaticDim, Dim
+
 
 # Instead of testing mlir string escaping, just limit the label to something reasonable.
 printable_ascii = st.characters(min_codepoint=ord(" "), max_codepoint=ord("~"))

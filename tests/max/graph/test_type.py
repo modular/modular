@@ -8,18 +8,11 @@
 import re
 
 import pytest
-from conftest import dims
 from hypothesis import HealthCheck, assume, given, settings
 from hypothesis import strategies as st
 from max import _graph
 from max.graph import DType
-from max.graph.type import (
-    Dim,
-    TensorType,
-    _dim_to_mlir,
-    _OpaqueType,
-    assert_legal_dim,
-)
+from max.graph.type import Dim, StaticDim, SymbolicDim, TensorType, _OpaqueType
 
 
 @settings(suppress_health_check=[HealthCheck.function_scoped_fixture])
@@ -36,20 +29,20 @@ def test_dtype_type(mlir_context, dtype: DType) -> None:
 @given(dim=...)
 def test_static_dim(dim: int):
     assume(-1 <= dim < 2**63)
-    assert_legal_dim(dim)
+    assert StaticDim(dim).dim == dim
 
 
 @given(dim=...)
 def test_static_dim_negative(dim: int):
     assume(dim < -1)
     with pytest.raises(ValueError):
-        assert_legal_dim(dim)
+        StaticDim(dim)
 
 
 @given(dim=st.integers(min_value=2**63))
 def test_static_dim_too_big(dim: int):
     with pytest.raises(ValueError):
-        assert_legal_dim(dim)
+        StaticDim(dim)
 
 
 # TODO(MSDK-695): less restrictive dim names
@@ -60,7 +53,7 @@ def test_static_dim_too_big(dim: int):
 )
 def test_symbolic_dim(name: str):
     assume(name != "")
-    assert_legal_dim(name)
+    SymbolicDim(name)
 
 
 # TODO(MSDK-695): less restrictive dim names
@@ -68,13 +61,13 @@ def test_symbolic_dim(name: str):
 def test_symbolic_dim_invalid(name: str):
     assume(not re.match(r"^[a-zA-Z_]\w*$", name))
     with pytest.raises(ValueError):
-        assert_legal_dim(name)
+        SymbolicDim(name)
 
 
-@given(dim=dims)
+@given(dim=...)
 def test_dim_to_mlir_no_context(dim: Dim):
     with pytest.raises(RuntimeError):
-        _dim_to_mlir(dim)
+        print(dim.to_mlir())
 
 
 @settings(suppress_health_check=[HealthCheck.function_scoped_fixture])

@@ -11,16 +11,17 @@ from max.mlir.dialects import mo, rmo
 
 from ..graph import Graph
 from ..graph_value import GraphValue, TensorType, ValueLike, ops
-from ..type import DType, ShapeLike, _dim_to_mlir
+from ..type import DType, ShapeLike, StaticDim, dim
 
 
 def rebind(x: ValueLike, shape: ShapeLike, message: str):
     # TODO(MSDK-662): add checks to ensure that statically known dims are rebound in a way to keep the size the same.
     v = GraphValue(x)
+    dims = [dim(d) for d in shape]
     message = mlir.StringAttr.get(message)
     return Graph.current._add_op(
         rmo.rebind_tensor_shape,
-        TensorType(v.dtype, list(shape)).to_mlir(),
+        TensorType(v.dtype, dims).to_mlir(),
         v,
         message=message,
     )[0]
@@ -28,7 +29,7 @@ def rebind(x: ValueLike, shape: ShapeLike, message: str):
 
 def reshape(x: ValueLike, shape: ShapeLike):
     v = GraphValue(x)
-    dims = [_dim_to_mlir(d) for d in shape]
+    dims = [dim(d).to_mlir() for d in shape]
     return Graph.current._add_op(
         rmo.reshape, v, new_shape=_graph.shape_attr(mlir.Context.current, dims)
     )[0]
@@ -66,7 +67,7 @@ def squeeze(x: ValueLike, axis=None) -> GraphValue:
     # TODO (MSDK-655): Probably want to add rmo.mo_squeeze_shape here
     if axis is not None:
         shape = v.tensor_type.shape
-        if not isinstance(shape[axis], int) or shape[axis].dim != 1:
+        if not shape[axis].is_static() or shape[axis].dim != 1:
             raise ValueError(
                 f"Cannot squeeze axis {axis} with size"
                 f" {v.tensor_type.shape[axis]}"
@@ -75,7 +76,7 @@ def squeeze(x: ValueLike, axis=None) -> GraphValue:
     else:
         new_shape = []
         for d in v.tensor_type.shape:
-            if isinstance(d, int) and d != 1:
+            if isinstance(d, StaticDim) and d.dim != 1:
                 new_shape.append(d)
     return ops.reshape(v, new_shape)
 
@@ -101,7 +102,7 @@ def transpose(x: ValueLike, dim_1: int, dim_2: int) -> GraphValue:
 
 
 def broadcast_to(x: GraphValue, shape: ShapeLike):
-    dims = [_dim_to_mlir(d).to_mlir() for d in shape]
+    dims = [dim(d).to_mlir() for d in shape]
     return Graph.current._add_op(
         rmo.broadcast_to,
         x,

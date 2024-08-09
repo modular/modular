@@ -19,7 +19,7 @@ from max.mlir.dialects import mo
 
 from .dtype import DType
 from .graph_value import GraphValue
-from .type import ShapeLike, TensorType, Type, _dim_from_mlir
+from .type import ShapeLike, SymbolicDim, TensorType, Type, Dim
 from .weight import Weight
 
 CURRENT_GRAPH: ContextVar[Graph] = ContextVar("CURRENT_GRAPH")
@@ -157,11 +157,11 @@ class Graph:
         self.name = name
         self._input_types = list(input_types)
         self._params = {
-            dim
+            dim.name
             for t in input_types
             if isinstance(t, TensorType)
             for dim in t.shape
-            if isinstance(dim, str)
+            if isinstance(dim, SymbolicDim)
         }
         self._unique_symbolic_dim_counter = 0
 
@@ -169,7 +169,6 @@ class Graph:
         _graph.load_modular_dialects(registry)
 
         self._context = mlir.Context()
-        self._context.attach_diagnostic_handler(print)
         self._context.append_dialect_registry(registry)
         self._context.load_all_available_dialects()
 
@@ -282,9 +281,9 @@ class Graph:
             rank = _graph.tensor_type_get_rank(t)
             for i in range(rank):
                 try:
-                    dim = _dim_from_mlir(_graph.tensor_type_get_dim(t, i))
-                    if isinstance(dim, str):
-                        new_params.add(dim)
+                    dim = Dim.from_mlir(_graph.tensor_type_get_dim(t, i))
+                    if isinstance(dim, SymbolicDim):
+                        new_params.add(dim.name)
                 except:
                     continue
 
@@ -385,7 +384,7 @@ class Graph:
 
         return weight
 
-    def unique_symbolic_dim(self, tag: str) -> str:
+    def unique_symbolic_dim(self, tag: str) -> SymbolicDim:
         """Create a new symbolic dim with a different name from any other.
 
         Args:
@@ -400,4 +399,4 @@ class Graph:
             self._unique_symbolic_dim_counter += 1
             if name not in self._params:
                 break
-        return name
+        return SymbolicDim(name)
