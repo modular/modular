@@ -502,6 +502,7 @@ fn flash_attention_impl[
 # ===----------------------------------------------------------------------===#
 
 
+@__llvm_metadata(`nvvm.maxntid`=StaticTuple[Int32, 1](num_threads))
 fn mha[
     mask_rank: Int,
     q_type: DType,
@@ -559,6 +560,7 @@ fn mha[
     )
 
 
+@__llvm_metadata(`nvvm.maxntid`=StaticTuple[Int32, 1](num_threads))
 fn mha_single_batch[
     mask_rank: Int,
     q_type: DType,
@@ -937,6 +939,7 @@ fn mha_single_batch[
 # ===----------------------------------------------------------------------===#
 
 
+@__llvm_metadata(`nvvm.maxntid`=StaticTuple[Int32, 1](num_threads))
 fn mha_decoding[
     mask_rank: Int,
     q_type: DType,
