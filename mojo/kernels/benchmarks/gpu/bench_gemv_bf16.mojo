@@ -70,9 +70,9 @@ fn bench_gemv_tc[
                 c_buf.buffer.ptr,
                 a_buf.buffer.ptr,
                 b_buf.buffer.ptr,
-                M,
-                N,
-                K,
+                UInt(M),
+                UInt(N),
+                UInt(K),
                 grid_dim=ceildiv(M, WARPS_PER_BLOCK),
                 block_dim=WARP_SIZE * WARPS_PER_BLOCK,
             )
