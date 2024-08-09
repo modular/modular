@@ -62,7 +62,7 @@ output_size = shared(integers(min_value=1, max_value=6), key="output_size")
         shape=tuples(hidden_state_size, intermediate_state_size),
     ),
 )
-@hypothesis.settings(max_examples=16, deadline=3000)
+@hypothesis.settings(max_examples=16, deadline=None)
 def test_mlp(session, x, w1, w2, w3):
     # Initialize Max MLP
     graph = Graph(

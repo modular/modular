@@ -6,10 +6,9 @@
 """ops.stack tests."""
 
 from conftest import new_axes, tensor_types
-from hypothesis import assume, given
+from hypothesis import given
 from hypothesis import strategies as st
 from max.graph import Graph, TensorType, ops
-from max.graph.type import StaticDim
 
 
 @given(
@@ -24,7 +23,7 @@ def test_stack(type: TensorType, stack_size: int, axis: int):
         out = ops.stack(graph.inputs, axis)
         target_shape = list(type.shape)
         target_shape.insert(
-            axis + type.rank + 1 if axis < 0 else axis, StaticDim(stack_size)
+            axis + type.rank + 1 if axis < 0 else axis, stack_size
         )
         assert out.shape == target_shape
         graph.output(out)

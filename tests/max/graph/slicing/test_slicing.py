@@ -6,26 +6,22 @@
 """Test the max.graph Python bindings."""
 
 import itertools
-import sys
-from operator import mul
 from random import Random
-from typing import Union
+from typing import TypeAlias, Union
 
-import pytest
-from hypothesis import HealthCheck, assume, given, settings
+from hypothesis import assume, given
 from hypothesis import strategies as st
-from max import mlir
-from max.graph import DType, Graph, GraphValue, TensorType, graph, ops
-from max.graph.type import Dim, Shape, StaticDim, dim, shape
+from max.graph import DType, Graph, TensorType, ops
+from max.graph.type import Shape, shape
 
 
 def broadcast_dim(dims):
-    unique_dims = {d for d in dims if d is not None and d != dim(1)}
+    unique_dims = {d for d in dims if d is not None and d != 1}
     if len(unique_dims) > 1:
         raise ValueError(f"dims not broadcastable: {dims}")
     elif not unique_dims:
         # No dims remaining, must have filtered out all one dims.
-        return dim(1)
+        return 1
     return next(iter(unique_dims))
 
 
@@ -108,8 +104,8 @@ def valid_slice_of_tensor(type: TensorType, random: Random):
             indices.append(slice(None, None, None))
         else:
             # Specific int index.
-            if dim.is_static():
-                size = dim.dim
+            if isinstance(dim, int):
+                size = dim
                 indices.append(random.randint(-size, size - 1))
             else:
                 # For dynamic dim, value could any size. So any int works.
@@ -128,7 +124,7 @@ def valid_slice_of_tensor(type: TensorType, random: Random):
 
 
 def non_zero_tensor_and_dims(type: TensorType):
-    return type.shape and dim(0) not in type.shape
+    return type.shape and 0 not in type.shape
 
 
 def tensor_and_slice():
@@ -154,17 +150,17 @@ def test_slice_valid_ints(
 
         try:
             ellipsis = indices.index(Ellipsis)
-        except:
+        except ValueError:
             # No ellipsis.
             ellipsis = len(indices)
 
         expected_shape = input_type.shape
         for i, index in enumerate(indices[:ellipsis]):
             if isinstance(index, int):
-                expected_shape[i] = dim(1)
+                expected_shape[i] = 1
         for i, index in enumerate(reversed(indices[ellipsis + 1 :])):
             if isinstance(index, int):
-                expected_shape[len(expected_shape) - i - 1] = dim(1)
+                expected_shape[len(expected_shape) - i - 1] = 1
 
         assert out.shape == expected_shape
 

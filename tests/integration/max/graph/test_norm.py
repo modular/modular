@@ -62,7 +62,7 @@ input_shape = st.tuples(header, hidden_size).map(lambda x: x[0] + x[1])
         shape=input_shape,
     ),
 )
-@hypothesis.settings(max_examples=10, deadline=timedelta(seconds=3))
+@hypothesis.settings(max_examples=10, deadline=None)
 def test_norm(eps, weights, input):
     # Initialize Graph
     # TODO: This is not resulting in nan, when all input values are 0

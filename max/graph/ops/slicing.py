@@ -19,7 +19,7 @@ from max.mlir.dialects import rmo
 from .. import ops
 from ..graph import DType, Graph
 from ..graph_value import GraphValue, ValueLike
-from ..type import Dim, StaticDim, TensorType
+from ..type import Dim, TensorType
 from .casting import unsqueeze
 from .constant import scalar
 
@@ -78,9 +78,9 @@ def _slice_index(dim: Dim, index: SliceIndex) -> slice:
     # For -1 specifically, slice(-1, 0, 1) is empty,
     # so we need to special case it.
     if isinstance(index, int):
-        if isinstance(dim, StaticDim):
-            if not -dim.dim <= index < dim.dim:
-                raise IndexError(f"Index {index} out of range of dim {dim.dim}")
+        if isinstance(dim, int):
+            if not -dim <= index < dim:
+                raise IndexError(f"Index {index} out of range of dim {dim}")
         return slice(index, (index + 1) or None)
     elif isinstance(index, GraphValue):
         if index.tensor_type.num_elements() != 1:
@@ -172,7 +172,7 @@ def slice_tensor(x: GraphValue, indices: SliceIndices) -> GraphValue:
     remaining = len(x.shape) - len(before) - len(after)
     full_index = [*before, *([slice(None, None, None)] * remaining), *after]
     output_shape = [
-        dim if isinstance(index, slice) else StaticDim(1)
+        dim if isinstance(index, slice) else 1
         for dim, index in zip(x.shape, full_index)
     ]
     slices = [

@@ -4,8 +4,8 @@
 #
 # ===----------------------------------------------------------------------=== #
 """Linear algebra operations."""
+
 import numpy as np
-from typing import Union
 from max.mlir.dialects import mo, rmo
 
 from ..dtype import DType

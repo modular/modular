@@ -116,13 +116,13 @@ def test_unique_symbolic_dim() -> None:
 
     dim = graph.unique_symbolic_dim("foo")
     use_dim(dim)
-    assert dim.name == "unique_foo_0"
+    assert dim == "unique_foo_0"
     dim = graph.unique_symbolic_dim("bar")
     use_dim(dim)
-    assert dim.name == "unique_bar_1"
+    assert dim == "unique_bar_1"
     # Pretend we forgot the counter.
     assert graph._unique_symbolic_dim_counter == 2
     graph._unique_symbolic_dim_counter = 0
     dim = graph.unique_symbolic_dim("foo")
     use_dim(dim)
-    assert dim.name == "unique_foo_1"
+    assert dim == "unique_foo_1"

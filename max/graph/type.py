@@ -9,314 +9,96 @@ from __future__ import annotations
 
 import math
 import re
+import typing
 from dataclasses import dataclass
-from typing import Any, Iterable, TypeGuard, Union
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    Iterable,
+    NewType,
+    TypeGuard,
+    Union,
+)
 
 from max import _graph, mlir
 
 from .dtype import DType
 
+# Hypothesis registration wants Dim to be a NewType, which
+# allows us to register generation strategies against it;
+# however MyPy really doesn't like NewTypes of types
+# that aren't subclassable.
+if TYPE_CHECKING:
+    Dim = Union[int, str, mlir.Attribute]
+else:
+    Dim = NewType("Dim", Union[int, str, mlir.Attribute])  # type: ignore
 
-@dataclass
-class Dim:
-    """A tensor dimension.
 
-    Tensor dimensions can be
-    - Static, aka known size
-    - Dynamic, aka unknown size
-    - Symbolic, aka unknown size but named
+def _dim_from_mlir(dim_attr: mlir.Attribute) -> Dim:
+    """Constructs a dimension from an mlir.Attribute.
 
-    In most cases you don't need to work with a `Dim` directly, but can rely
-    on conversion constructors, for instance you can specify a tensor type as
+    Args:
+        dim_attr: The MLIR Attribute object to parse into a dimension.
 
-    ```python
-    from max.graph import Dim, TensorType
-    tensor_type = TensorType(DType.int64, ("batch", 10))
-    ```
-    will create a tensor type with 3 dimensions: a symbolic "batch" dimension,
-    a static dimension of size 10, and a dynamic dimension.
-    ```
-
-    You can still construct dimensions explicitly via helpers, eg.
-
-    ```python
-    some_dims = [
-        Dim.symbolic("batch"),
-        Dim.static(5),
-    ]
-    ```
-
-    Constraining tensor dimensions is one important way to improve model
-    performance. If tensors have unknown dimensions, we can't optimize them
-    as aggressively. Symoblic tensors allow the compiler to learn constraints
-    on a specific dimension (eg. if 2 inputs have the same `batch` dimension)
-    which can be an important improvement over dynamic dimensions, but static
-    dims are the easiest to optimize and therefore the easiest to create
-    and work with.
+    Returns:
+        The dimension represented by the MLIR Attr value.
     """
-
-    def is_static(self) -> bool:
-        """Checks whether or not the dimension is a static dimension.
-
-        Returns:
-            True if the dimension is static, False otherwise.
-        """
-        raise NotImplementedError
-
-    def is_symbolic(self) -> bool:
-        """Whether or not the dimension is a symbolic dimension.
-
-        Returns:
-            True if the dimension is symbolic, False otherwise.
-        """
-        raise NotImplementedError
-
-    def __eq__(self, other: Any) -> bool:
-        """Checks whether two dimensions are equal.
-
-        Dimensions are equal if they are the same dimension type
-        (symbolic, static). Additionally, static dimensions
-        are only equal if their dimension is the same size, and symbolic
-        dimensions are only equal if they have the same name.
-
-        Args:
-            other: The other dimension to check equality against.
-
-        Returns:
-            True if the dimensions are equal, False otherwise.
-        """
-        raise NotImplementedError
-
-    def __ne__(self, other: Any) -> bool:
-        """Checks whether two dimensions are not equal.
-
-        The inverse of __eq__.
-
-        Args:
-            other: The other dimension to check inequality against.
-
-        Returns:
-            False if the dimensions are equal, True otherwise.
-        """
-        return not self == other
-
-    def to_mlir(self) -> mlir.Attribute:
-        """Creates an mlir.Attribute representing this dimension.
-
-        This is used internally when constructing tensor MLIR types.
-
-        Returns:
-            An mlir.Attribute in the context representing the dimension.
-        """
-        raise NotImplementedError
-
-    @staticmethod
-    def from_mlir(dim_attr: mlir.Attribute) -> Dim:
-        """Constructs a dimension from an mlir.Attribute.
-
-        Args:
-            dim_attr: The MLIR Attribute object to parse into a dimension.
-
-        Returns:
-            The dimension represented by the MLIR Attr value.
-        """
-        if _graph.is_static_dim(dim_attr):
-            return StaticDim.from_mlir(dim_attr)
-        elif _graph.is_symbolic_dim(dim_attr):
-            return SymbolicDim.from_mlir(dim_attr)
-        elif _graph.is_symbolic_expression_dim(dim_attr):
-            raise ValueError(
-                "graph api does not support algebraic expression dimensions"
-            )
-        else:
-            raise ValueError("graph api does not support unknown dimensions")
+    if _graph.is_static_dim(dim_attr):
+        return _graph.static_dim_value(dim_attr)
+    elif _graph.is_symbolic_dim(dim_attr):
+        return _graph.symbolic_dim_name(dim_attr)
+    elif _graph.is_symbolic_expression_dim(dim_attr):
+        return dim_attr
+        # raise ValueError(
+        #     "graph api does not support algebraic expression dimensions"
+        # )
+    else:
+        raise ValueError("graph api does not support unknown dimensions")
 
 
-@dataclass
-class SymbolicDim(Dim):
-    """A symbolic tensor dimension.
+def assert_legal_dim(dim: Dim):
+    # TODO(MSDK-695): less restrictive names
+    if isinstance(dim, str) and not re.match(r"^[a-zA-Z_]\w*$", dim):
+        raise ValueError("Invalid name for symbolic dimension")
+    elif isinstance(dim, int) and not -1 <= dim < 2**63:
+        raise ValueError("Dim value must be -1 <= dim < 2**63")
+    if not isinstance(dim, (int, str, mlir.Attribute)):
+        typing.assert_never()
+        raise TypeError(f"Invalid dim type: {dim!r}")
 
-    `SymbolicDims`s have a name and are printed as their name on MO types, eg.
-    `!mo.tensor<[batch, x, 10], si32]>` the first and second dimensions are
-    named "batch" and "x" respectively.
 
-    Symbolic dimensions don't have a static value, but they allow a readable
-    name to understand what's going on in the model IR better, and they also
-    allow users to hint to the compiler that two dimensions will have the same
-    value, which can often allow important speedups.
+def _dim_to_mlir(dim: Dim) -> mlir.Attribute:
+    """Creates an mlir.Attribute representing this dimension.
 
-    Create a symbolic dimension via `SymbolicDim("name")`, for example:
-    `TensorType(DType.bool, ("batch", Dim.dynamic(), 10))`.
+    This is used internally when constructing tensor MLIR types.
+
+    Returns:
+        An mlir.Attribute in the context representing the dimension.
     """
-
-    name: str
-    """The name of the dimension."""
-
-    def __init__(self, name: str):
-        self.name = name
-        # TODO(MSDK-695): less restrictive names
-        if not re.match(r"^[a-zA-Z_]\w*$", name):
-            raise ValueError("Invalid name for symbolic dimension")
-
-    def is_static(self) -> bool:
-        """Checks whether or not the dimension is a static dimension.
-
-        Returns:
-            True if the dimension is static, False otherwise.
-        """
-        return False
-
-    def is_symbolic(self) -> bool:
-        """Whether or not the dimension is a symbolic dimension.
-
-        Returns:
-            True if the dimension is symbolic, False otherwise.
-        """
-        return True
-
-    def __eq__(self, other: Any) -> bool:
-        """Whether the dimension is the same as another symbolic dimension.
-
-        Symbolic dimensions with the same name are interpreted as the same
-        dimensionality! If you use Symbolic dimensions, make sure you're naming
-        them consistently, your model will likely fail to compile if you name
-        two actually different dimensions the same name.
-
-        Args:
-            other: The other dimension to check equality against.
-
-        Returns:
-            True if the dimensions have the same name, False otherwise.
-        """
-        return isinstance(other, SymbolicDim) and self.name == other.name
-
-    def __hash__(self):
-        return hash(self.name)
-
-    def to_mlir(self) -> mlir.Attribute:
-        """Creates an mlir.Attribute representing this dimension.
-
-        This is used internally when constructing tensor MLIR types.
-
-        Returns:
-            An mlir.Attribute in the context representing the dimension.
-        """
-        if not mlir.Context.current:
-            raise RuntimeError("No active mlir Context.")
-        return _graph.symbolic_dim(mlir.Context.current, self.name)
-
-    @staticmethod
-    def from_mlir(dim_attr: mlir.Attribute) -> Dim:
-        """Constructs a dimension from an mlir.Attribute.
-
-        Args:
-            dim_attr: The MLIR Attribute object to parse into a dimension.
-
-        Returns:
-            The dimension represented by the MLIR Attr value.
-        """
-        return SymbolicDim(_graph.symbolic_dim_name(dim_attr))
-
-
-@dataclass
-class StaticDim(Dim):
-    """A static tensor dimension.
-
-    Static tensor dimensions will always have exactly the same value,
-    and are key to good model performance.
-
-    Static dimensions can be created implicitly in most cases:
-    `TensorType(DType.int64, (4, 5))` is a tensor with 2 static dimensions:
-    `4` and `5` respectively.
-    """
-
-    dim: int
-    """The size of the static dimension."""
-
-    def __init__(self, dim: int):
-        if not -1 <= dim < 2**63:
-            raise ValueError("Dim value must be -1 <= dim < 2**63")
-        self.dim = dim
-
-    def is_static(self) -> bool:
-        """Checks whether or not the dimension is a static dimension.
-
-        Returns:
-            True if the dimension is static, False otherwise.
-        """
-        return True
-
-    def is_symbolic(self) -> bool:
-        """Whether or not the dimension is a symbolic dimension.
-
-        Returns:
-            True if the dimension is symbolic, False otherwise.
-        """
-        return False
-
-    def __eq__(self, other: Any) -> bool:
-        """Whether the dimension has the same size as another dimension.
-
-        Args:
-            other: The other dimension to check equality against.
-
-        Returns:
-            True if both dimensions have the same static size, False otherwise.
-        """
-        return isinstance(other, StaticDim) and self.dim == other.dim
-
-    def __hash__(self):
-        return hash(self.dim)
-
-    def to_mlir(self) -> mlir.Attribute:
-        """Creates an mlir.Attribute representing this dimension.
-
-        This is used internally when constructing tensor MLIR types.
-
-        Returns:
-            An mlir.Attribute in the context representing the dimension.
-        """
-        if not mlir.Context.current:
-            raise RuntimeError("No active mlir Context.")
-        return _graph.static_dim(mlir.Context.current, self.dim)
-
-    @staticmethod
-    def from_mlir(dim_attr: mlir.Attribute) -> Dim:
-        """Constructs a dimension from an mlir.Attribute.
-
-        Args:
-            dim_attr: The MLIR Attribute object to parse into a dimension.
-
-        Returns:
-            The dimension represented by the MLIR Attr value.
-        """
-        return StaticDim(_graph.static_dim_value(dim_attr))
+    assert_legal_dim(dim)
+    if not mlir.Context.current:
+        raise RuntimeError("No active mlir Context.")
+    if isinstance(dim, int):
+        return _graph.static_dim(mlir.Context.current, dim)
+    elif isinstance(dim, str):
+        return _graph.symbolic_dim(mlir.Context.current, dim)
+    elif isinstance(dim, mlir.Attribute):
+        return dim
+    typing.assert_never()
 
 
 Shape = list[Dim]
-StaticShape = list[StaticDim]
+StaticShape = list[int]
 
-DimLike = Union[int, str, Dim]
-ShapeLike = Iterable[DimLike]
-
-
-def dim(value: DimLike) -> Dim:
-    """Converts valid input values to Dim."""
-    if isinstance(value, int):
-        return StaticDim(value)
-    elif isinstance(value, str):
-        return SymbolicDim(value)
-    elif isinstance(value, Dim):
-        return value
-    raise TypeError(f"Unsupported dimension type {value}")
+ShapeLike = Iterable[Dim]
 
 
 def shape(shape_like: ShapeLike) -> Shape:
-    return [dim(d) for d in shape_like]
+    return list(shape_like)
 
 
-def _is_static_shape(dims: Shape) -> TypeGuard[StaticShape]:
-    return all(dim.is_static() for dim in dims)
+def is_static_shape(dims: Shape) -> TypeGuard[StaticShape]:
+    return all(isinstance(dim, int) for dim in dims)
 
 
 @dataclass
@@ -382,7 +164,7 @@ class TensorType(Type):
                   is the rank of the tensor.
         """
         self.dtype = dtype
-        self.shape = [dim(d) for d in shape]
+        self.shape = list(shape)
 
     def to_mlir(self) -> mlir.Type:
         """Converts to an mlir.Type instance.
@@ -395,7 +177,7 @@ class TensorType(Type):
         return _graph.tensor_type(
             mlir.Context.current,
             _graph.dtype_type(mlir.Context.current, self.dtype._mlir),
-            [d.to_mlir() for d in self.shape],
+            [_dim_to_mlir(dim) for dim in self.shape],
         )
 
     @staticmethod
@@ -414,7 +196,8 @@ class TensorType(Type):
         dtype = _graph.tensor_type_get_dtype(t)
         rank = _graph.tensor_type_get_rank(t)
         shape = [
-            Dim.from_mlir(_graph.tensor_type_get_dim(t, i)) for i in range(rank)
+            _dim_from_mlir(_graph.tensor_type_get_dim(t, i))
+            for i in range(rank)
         ]
 
         return TensorType(DType(dtype), shape)
@@ -432,7 +215,7 @@ class TensorType(Type):
         Returns:
             True if the tensor has a fully static shape, False otherwise.
         """
-        return all(d.is_static() for d in self.shape)
+        return is_static_shape(self.shape)
 
     @property
     def rank(self) -> int:
@@ -494,12 +277,12 @@ class TensorType(Type):
         Returns:
             The number of elements the tensor contains.
         """
-        if not _is_static_shape(self.shape):
+        if not is_static_shape(self.shape):
             raise RuntimeError(
                 "can't find num elements since tensor has symbolic dims"
             )
 
-        return math.prod(dim.dim for dim in self.shape)
+        return math.prod(self.shape)
 
     def cast(self, dtype: DType) -> TensorType:
         """Constructs a new tensor type of the same shape with the new dtype.
