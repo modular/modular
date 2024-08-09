@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 
 import builtin.simd as _simd
-import builtin.string
+import collections.string
 from .aliases import function, StructWithAlias
 
 
