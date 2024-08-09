@@ -20,6 +20,7 @@ from pathlib import Path
 from collections import Optional
 from collections.dict import OwnedKwargsDict
 from utils import Variant
+from gpu.host._compile import _get_nvptx_target
 
 
 fn alloc_device_context() -> UnsafePointer[DeviceContext]:
@@ -173,8 +174,9 @@ fn check_compute_capability(device: Device) raises:
 struct CompiledDeviceKernel[
     func_type: AnyTrivialRegType, //,
     func: func_type,
+    target: __mlir_type.`!kgen.target` = _get_nvptx_target(),
 ]:
-    var _compiled_func: CUDAFunction[func]
+    var _compiled_func: CUDAFunction[func, target]
     alias LaunchArg = Variant[Dim, Int]
 
     @parameter
@@ -248,7 +250,12 @@ struct CUDACompiledKernelArgs:
 fn compile[
     func_type: AnyTrivialRegType, //,
     func: func_type,
-](device: Device, **kwargs: CompileArg) raises -> CompiledDeviceKernel[func]:
+    # TODO: would like this to be an Optional but need to workaround MOCO-1039
+    target_arch: StringLiteral = "sm_80",
+    __target: __mlir_type.`!kgen.target` = _get_nvptx_target[target_arch](),
+](device: Device, **kwargs: CompileArg) raises -> CompiledDeviceKernel[
+    func, target=__target
+]:
     """Compiles a function which can be executed on device.
 
     Args:
@@ -274,6 +281,7 @@ fn compile[
     var compile_args = CUDACompiledKernelArgs(kwargs)
     var cuda_func = device_context[].compile_function[
         func,
+        target=__target,
         _is_failable=False,
     ](
         verbose=compile_args.verbose,
