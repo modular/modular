@@ -6,12 +6,12 @@
 
 import time
 from collections import Optional
+from collections.string import _calc_initial_buffer_size_int32
 from pathlib import Path
 from sys.arg import argv
 
 from stdlib.builtin.file import FileHandle
 from stdlib.builtin.io import _snprintf
-from stdlib.builtin.string import _calc_initial_buffer_size_int32
 from testing import assert_true
 
 from utils.numerics import FlushDenormals
