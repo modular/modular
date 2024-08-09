@@ -216,8 +216,8 @@ LoadLibMojoFormatters(const lldb::TypeCategoryImplSP &mojoCategorySP) {
   AddCXXSummary(mojoCategorySP, boolSummaryProvider, "bool summary provider",
                 "i1", summaryFlags, /*regex=*/false);
   AddCXXSummary(mojoCategorySP, builtinStringSummaryProvider,
-                "builtin::string::String summary provider",
-                R"(!lit.struct<(@stdlib::)?@builtin::@string::@String>)",
+                "collections::string::String summary provider",
+                R"(!lit.struct<(@stdlib::)?@collections::@string::@String>)",
                 summaryFlags, /*regex=*/true);
 
   summaryFlags.SetDontShowChildren(false);
