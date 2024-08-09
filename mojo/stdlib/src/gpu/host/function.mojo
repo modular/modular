@@ -17,7 +17,7 @@ from memory import stack_allocation
 from utils.lock import BlockingSpinLock, BlockingScopedLock
 from utils.variant import Variant
 
-from ._compile import _compile_code, _get_nvptx_fn_name
+from ._compile import _compile_code, _get_nvptx_fn_name, _get_nvptx_target
 from builtin._location import __call_location
 from ._utils import (
     _check_error,
@@ -248,6 +248,7 @@ struct FunctionCache:
 struct Function[
     func_type: AnyTrivialRegType, //,
     func: func_type,
+    target: __mlir_type.`!kgen.target` = _get_nvptx_target(),
     _is_failable: Bool = False,
 ](Boolable):
     var info: _CachedFunctionInfo
@@ -255,7 +256,7 @@ struct Function[
     var cuda_function_cache: UnsafePointer[FunctionCache]
 
     alias _impl = _compile_code[
-        func, is_failable=_is_failable, emission_kind="asm"
+        func, is_failable=_is_failable, emission_kind="asm", target=target
     ]()
 
     @always_inline

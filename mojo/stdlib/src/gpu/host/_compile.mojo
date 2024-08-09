@@ -13,10 +13,45 @@ from compile import Info, compile_info, get_linkage_name
 
 
 @always_inline
-fn _get_nvptx_target() -> __mlir_type.`!kgen.target`:
-    # Workaround KERN-695
+fn _get_nvptx_target[
+    # TODO: Ideally this is an Optional[StringLiteral] but blocked by MOCO-1039
+    target_arch: StringLiteral = "sm_80",
+]() -> __mlir_type.`!kgen.target`:
     @parameter
-    if is_defined["SM_90_TARGET"]():
+    if target_arch == "sm_70":
+        return __mlir_attr[
+            `#kgen.target<triple = "nvptx64-nvidia-cuda", `,
+            `arch = "sm_70", `,
+            `features = "+ptx81", `,
+            `data_layout = "e-i64:64-i128:128-v16:16-v32:32-n16:32:64",`,
+            `simd_bit_width = 128> : !kgen.target`,
+        ]
+    elif target_arch == "sm_80":
+        return __mlir_attr[
+            `#kgen.target<triple = "nvptx64-nvidia-cuda", `,
+            `arch = "sm_80", `,
+            `features = "+ptx81", `,
+            `data_layout = "e-i64:64-i128:128-v16:16-v32:32-n16:32:64",`,
+            `simd_bit_width = 128> : !kgen.target`,
+        ]
+    elif target_arch == "sm_86":  # A10
+        return __mlir_attr[
+            `#kgen.target<triple = "nvptx64-nvidia-cuda", `,
+            `arch = "sm_86", `,
+            `features = "+ptx81", `,
+            `data_layout = "e-i64:64-i128:128-v16:16-v32:32-n16:32:64",`,
+            `simd_bit_width = 128> : !kgen.target`,
+        ]
+    elif target_arch == "sm_89":  # L4
+        return __mlir_attr[
+            `#kgen.target<triple = "nvptx64-nvidia-cuda", `,
+            `arch = "sm_89", `,
+            `features = "+ptx81", `,
+            `data_layout = "e-i64:64-i128:128-v16:16-v32:32-n16:32:64",`,
+            `simd_bit_width = 128> : !kgen.target`,
+        ]
+
+    elif target_arch == "sm_90":  # H100
         return __mlir_attr[
             `#kgen.target<triple = "nvptx64-nvidia-cuda", `,
             `arch = "sm_90", `,
@@ -24,13 +59,19 @@ fn _get_nvptx_target() -> __mlir_type.`!kgen.target`:
             `data_layout = "e-i64:64-i128:128-v16:16-v32:32-n16:32:64",`,
             `simd_bit_width = 128> : !kgen.target`,
         ]
-    return __mlir_attr[
-        `#kgen.target<triple = "nvptx64-nvidia-cuda", `,
-        `arch = "sm_80", `,
-        `features = "+ptx81", `,
-        `data_layout = "e-i64:64-i128:128-v16:16-v32:32-n16:32:64",`,
-        `simd_bit_width = 128> : !kgen.target`,
-    ]
+    elif (
+        target_arch == "sm_90a"
+    ):  # H100 with accelerated wgmma and setmaxnreg, not forwards compatible
+        return __mlir_attr[
+            `#kgen.target<triple = "nvptx64-nvidia-cuda", `,
+            `arch = "sm_90a", `,
+            `features = "+ptx81", `,
+            `data_layout = "e-i64:64-i128:128-v16:16-v32:32-n16:32:64",`,
+            `simd_bit_width = 128> : !kgen.target`,
+        ]
+    else:
+        constrained[False, "unsupported target arch " + target_arch]()
+        return abort[__mlir_type.`!kgen.target`]()
 
 
 @always_inline

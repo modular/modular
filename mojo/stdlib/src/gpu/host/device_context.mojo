@@ -15,6 +15,7 @@ from gpu.host.memory import _memset_async
 from gpu.host.stream import Stream
 from sys.param_env import is_defined, env_get_int
 from ._utils import _check_error, _StreamHandle
+from gpu.host._compile import _get_nvptx_target
 
 
 # TODO: Figure a way to resolve circular dependency between the gpu and runtime
@@ -196,11 +197,12 @@ struct DeviceBuffer[type: DType](Sized):
 struct DeviceFunction[
     func_type: AnyTrivialRegType, //,
     func: func_type,
+    target: __mlir_type.`!kgen.target` = _get_nvptx_target(),
     *,
     _is_failable: Bool = False,
 ]:
     var ctx_ptr: UnsafePointer[DeviceContext]
-    var cuda_function: Function[func, _is_failable=_is_failable]
+    var cuda_function: Function[func, target=target, _is_failable=_is_failable]
     alias fn_name = _get_nvptx_fn_name[func]()
 
     fn __init__(
@@ -215,7 +217,9 @@ struct DeviceFunction[
         func_attribute: Optional[FuncAttribute] = None,
     ) raises:
         self.ctx_ptr = UnsafePointer[DeviceContext].address_of(ctx)
-        self.cuda_function = Function[func, _is_failable=_is_failable](
+        self.cuda_function = Function[
+            func, target=target, _is_failable=_is_failable
+        ](
             self.ctx_ptr,
             verbose,
             dump_ptx,
@@ -303,6 +307,7 @@ struct DeviceContext:
         func_type: AnyTrivialRegType, //,
         func: func_type,
         *,
+        target: __mlir_type.`!kgen.target` = _get_nvptx_target(),
         _is_failable: Bool = False,
     ](
         self,
@@ -313,8 +318,8 @@ struct DeviceContext:
         threads_per_block: Optional[Int] = None,
         cache_config: Optional[CacheConfig] = None,
         func_attribute: Optional[FuncAttribute] = None,
-    ) raises -> DeviceFunction[func, _is_failable=_is_failable]:
-        return DeviceFunction[func, _is_failable=_is_failable](
+    ) raises -> DeviceFunction[func, target=target, _is_failable=_is_failable]:
+        return DeviceFunction[func, target=target, _is_failable=_is_failable](
             self,
             verbose=verbose,
             dump_ptx=dump_ptx,
