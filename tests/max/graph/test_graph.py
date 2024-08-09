@@ -12,6 +12,7 @@ from hypothesis import assume, given
 from hypothesis import strategies as st
 from max import mlir
 from max.graph import DType, Graph, GraphValue, TensorType, graph, ops
+from max.graph.type import Dim
 
 empty_graphs = st.builds(
     Graph, st.text(), input_types=st.lists(st.from_type(TensorType))
@@ -101,3 +102,27 @@ def test_add_op_closure() -> None:
 
     assert "rmo.add" in str(add_graph._mlir_op)
     assert "mo.output" in str(add_graph._mlir_op)
+
+
+def test_unique_symbolic_dim() -> None:
+    """Test that unique_symbolic_dim works, even if the counter is reset."""
+    graph = Graph("dim_tester", input_types=[TensorType(DType.float32, (50,))])
+
+    def use_dim(dim: Dim) -> None:
+        with graph:
+            ops.rebind(
+                ops.reshape(graph.inputs[0], (-1,)), (dim,), "dim mismatch"
+            )
+
+    dim = graph.unique_symbolic_dim("foo")
+    use_dim(dim)
+    assert dim.name == "unique_foo_0"
+    dim = graph.unique_symbolic_dim("bar")
+    use_dim(dim)
+    assert dim.name == "unique_bar_1"
+    # Pretend we forgot the counter.
+    assert graph._unique_symbolic_dim_counter == 2
+    graph._unique_symbolic_dim_counter = 0
+    dim = graph.unique_symbolic_dim("foo")
+    use_dim(dim)
+    assert dim.name == "unique_foo_1"

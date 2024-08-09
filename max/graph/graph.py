@@ -142,6 +142,7 @@ class Graph:
     _mlir_op: mlir.Operation
     _context: mlir.Context
     _module: mlir.Module
+    _unique_symbolic_dim_counter: int
     inputs: tuple[GraphValue, ...]
     weights: dict[str, Weight]
 
@@ -162,6 +163,7 @@ class Graph:
             for dim in t.shape
             if isinstance(dim, SymbolicDim)
         }
+        self._unique_symbolic_dim_counter = 0
 
         registry = mlir.DialectRegistry()
         _graph.load_modular_dialects(registry)
@@ -381,3 +383,20 @@ class Graph:
         self.weights[name] = weight
 
         return weight
+
+    def unique_symbolic_dim(self, tag: str) -> SymbolicDim:
+        """Create a new symbolic dim with a different name from any other.
+
+        Args:
+            tag:
+                An additional identifier to help identify the dimension for
+                debugging purposes.
+
+        Returns: The dimension.
+        """
+        while True:
+            name = f"unique_{tag}_{self._unique_symbolic_dim_counter}"
+            self._unique_symbolic_dim_counter += 1
+            if name not in self._params:
+                break
+        return SymbolicDim(name)
