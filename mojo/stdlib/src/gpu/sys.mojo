@@ -14,31 +14,34 @@ fn _get_sm_name() -> StringLiteral:
 
 
 @always_inline("nodebug")
-fn _get_sm() -> Int:
-    """Get current device SM version number."""
-    alias sm_val = _get_sm_name()
-
+fn _get_compute[name: StringLiteral]() -> Int:
     @parameter
-    if sm_val == "sm_50":
+    if name == "sm_50":
         return 50
-    elif sm_val == "sm_60":
+    elif name == "sm_60":
         return 60
-    elif sm_val == "sm_61":
+    elif name == "sm_61":
         return 61
-    elif sm_val == "sm_70":
+    elif name == "sm_70":
         return 70
-    elif sm_val == "sm_75":
+    elif name == "sm_75":
         return 75
-    elif sm_val == "sm_80":
+    elif name == "sm_80":
         return 80
-    elif sm_val == "sm_86":
+    elif name == "sm_86":
         return 86
-    elif sm_val == "sm_89":
+    elif name == "sm_89":
         return 89
-    elif sm_val == "sm_90":
+    elif name == "sm_90":
         return 90
     else:
         return -1
+
+
+@always_inline("nodebug")
+fn _get_sm() -> Int:
+    """Get current device SM version number."""
+    return _get_compute[_get_sm_name()]()
 
 
 @always_inline("nodebug")
@@ -57,4 +60,16 @@ fn is_sm_greater[compute: Int]() -> Bool:
 fn is_sm_greater_equal[compute: Int]() -> Bool:
     """If device SM version number is greater than or equal to the provided value.
     """
-    return _get_sm() >= compute
+    return compute >= _get_sm()
+
+
+@always_inline("nodebug")
+fn is_sm_greater_equal[name: StringLiteral]() -> Bool:
+    """If device SM version number is greater than or equal to the provided value.
+    """
+
+    @parameter
+    if _get_sm_name() == "sm_90a":
+        return _get_sm_name() == name
+
+    return _get_compute[name]() >= _get_sm()
