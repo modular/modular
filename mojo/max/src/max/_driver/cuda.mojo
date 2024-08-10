@@ -252,10 +252,9 @@ fn compile[
     func: func_type,
     # TODO: would like this to be an Optional but need to workaround MOCO-1039
     target_arch: StringLiteral = "sm_80",
-    __target: __mlir_type.`!kgen.target` = _get_nvptx_target[target_arch](),
 ](device: Device, **kwargs: CompileArg) raises -> CompiledDeviceKernel[
-    func, target=__target
-]:
+    func, target = _get_nvptx_target[target_arch]()
+] as out:
     """Compiles a function which can be executed on device.
 
     Args:
@@ -281,7 +280,7 @@ fn compile[
     var compile_args = CUDACompiledKernelArgs(kwargs)
     var cuda_func = device_context[].compile_function[
         func,
-        target=__target,
+        target = out.target,
         _is_failable=False,
     ](
         verbose=compile_args.verbose,

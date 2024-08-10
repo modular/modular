@@ -15,7 +15,7 @@
 # RUN: %t/cuda-test-mojo-kernel %t2
 # RUN: cat %t2 | FileCheck %s
 
-# CHECK: .target sm_70
+# CHECK: .target sm_80
 
 from sys import stderr
 
@@ -65,7 +65,7 @@ def test_vec_add():
     in1 = fill(cuda_dev, shape, 2).to_tensor[type, 2]()
     out = fill(cuda_dev, shape, 0).to_tensor[type, 2]()
 
-    kernel = cuda.compile[vec_add[type, 2], target_arch="sm_70"](
+    kernel = cuda.compile[vec_add[type, 2], target_arch="sm_80"](
         cuda_dev, debug=True, max_registers=128, dump_ptx=Path(argv()[1])
     )
     kernel(
