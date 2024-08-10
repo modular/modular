@@ -23,26 +23,6 @@ alias AddressSpace = _GPUAddressSpace
 # ===----------------------------------------------------------------------===#
 
 
-fn _int_to_str[val: Int]() -> StringLiteral:
-    constrained[val in (4, 8, 16, 32, 64, 128)]()
-
-    @parameter
-    if val == 4:
-        return "4"
-    elif val == 8:
-        return "8"
-    elif val == 16:
-        return "16"
-    elif val == 32:
-        return "32"
-    elif val == 64:
-        return "64"
-    elif val == 128:
-        return "128"
-
-    return "Unknown"
-
-
 @always_inline
 fn async_copy[
     type: AnyType, //,
@@ -264,3 +244,147 @@ fn cp_async_bulk_tensor_shared_cluster_global[
             __to_i32(coords[0]),
             __to_llvm_shared_mem_ptr(mem_bar),
         )
+
+
+# ===----------------------------------------------------------------------===#
+# CacheOperation
+# ===----------------------------------------------------------------------===#
+
+
+@value
+struct CacheOperation:
+    var _value: Int
+
+    alias ALWAYS = Self(0)
+    """Cache at all levels. This will be accessed again."""
+
+    alias GLOBAL = Self(1)
+    """Cache at global level."""
+
+    alias STREAMING = Self(2)
+    """Streaming, this is likely to be accessed once."""
+
+    alias LAST_USE = Self(3)
+    """Indicates the cache line will not be used again."""
+
+    alias VOLATILE = Self(4)
+    """Don't cache, and fetch again."""
+
+    alias WRITE_BACK = Self(5)
+    """Write back at all coherent levels."""
+
+    alias WRITE_THROUGH = Self(6)
+    """Write through to system memory."""
+
+    fn __eq__(self, other: Self) -> Bool:
+        return self._value == other._value
+
+    fn __ne__(self, other: Self) -> Bool:
+        return not (self == other)
+
+    fn __is__(self, other: Self) -> Bool:
+        return self == other
+
+    fn __isnot__(self, other: Self) -> Bool:
+        return self != other
+
+    @always_inline
+    fn mnemonic(self) -> StringLiteral:
+        if self is Self.ALWAYS:
+            return "ca"
+        if self is Self.GLOBAL:
+            return "cg"
+        if self is Self.STREAMING:
+            return "cs"
+        if self is Self.LAST_USE:
+            return "lu"
+        if self is Self.VOLATILE:
+            return "cv"
+        if self is Self.WRITE_BACK:
+            return "wb"
+        if self is Self.WRITE_THROUGH:
+            return "wt"
+
+        return "unknown cache operation"
+
+
+# ===----------------------------------------------------------------------===#
+# CacheEviction
+# ===----------------------------------------------------------------------===#
+
+
+@value
+struct CacheEviction:
+    var _value: Int
+
+    alias EVICT_NORMAL = Self(0)
+    """Cache data with normal eviction priority."""
+
+    alias EVICT_FIRST = Self(1)
+    """Data cached with this priority will be first in the eviction priority
+    order and will likely be evicted when cache eviction is required. This
+    priority is suitable for streaming data."""
+
+    alias EVICT_LAST = Self(2)
+    """Data cached with this priority will be last in the eviction priority
+    order and will likely be evicted only after other data with EVICT_NORMAL
+    or EVICT_FIRST eviction priotity is already evicted. This priority is
+    suitable for data that should remain persistent in cache."""
+
+    alias EVICT_UNCHANGED = Self(3)
+    """Do not change eviction priority order as part of this operation."""
+
+    alias NO_ALLOCATE = Self(4)
+    """Do not allocate data to cache. This priority is suitable for streaming
+    data."""
+
+    fn __eq__(self, other: Self) -> Bool:
+        return self._value == other._value
+
+    fn __ne__(self, other: Self) -> Bool:
+        return not (self == other)
+
+    fn __is__(self, other: Self) -> Bool:
+        return self == other
+
+    fn __isnot__(self, other: Self) -> Bool:
+        return self != other
+
+    @always_inline
+    fn mnemonic(self) -> StringLiteral:
+        if self is Self.EVICT_NORMAL:
+            return "evict_normal"
+        if self is Self.EVICT_FIRST:
+            return "evict_first"
+        if self is Self.EVICT_LAST:
+            return "evict_last"
+        if self is Self.EVICT_UNCHANGED:
+            return "evict_unchanged"
+        if self is Self.NO_ALLOCATE:
+            return "no_allocate"
+        return "unknown cache eviction"
+
+
+# ===----------------------------------------------------------------------===#
+# Utilities
+# ===----------------------------------------------------------------------===#
+
+
+fn _int_to_str[val: Int]() -> StringLiteral:
+    constrained[val in (4, 8, 16, 32, 64, 128)]()
+
+    @parameter
+    if val == 4:
+        return "4"
+    elif val == 8:
+        return "8"
+    elif val == 16:
+        return "16"
+    elif val == 32:
+        return "32"
+    elif val == 64:
+        return "64"
+    elif val == 128:
+        return "128"
+
+    return "Unknown"
