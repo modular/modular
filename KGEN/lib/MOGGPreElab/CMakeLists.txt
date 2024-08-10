@@ -12,7 +12,6 @@ add_modular_library(MOGGPreElabPasses
   MOGGPreElabPipeline.cpp
   SliceMOGGFuncs.cpp
   UserLibraryChecker.cpp
-  MOGGLabelTensorParams.cpp
 
   DEPENDS
   MLIRKGENMOGGPreElabPasses

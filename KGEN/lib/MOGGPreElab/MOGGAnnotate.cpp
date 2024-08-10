@@ -29,6 +29,8 @@ namespace M::KGEN::MOGGPreElab {
 
 static constexpr llvm::StringLiteral kExecuteFuncName = "execute";
 static constexpr llvm::StringLiteral kShapeFuncName = "shape";
+static constexpr std::array<StringLiteral, 3> kMaxUnsafeTensorSlice = {
+    "tensor_utils", "unsafe_tensor_slice", "UnsafeTensorSlice"};
 
 static void annotateTypes(LIT::FuncOp func) {
   // Look through ref types to get underlaying decl ref type if needed.
@@ -121,6 +123,58 @@ static void annotateTypes(LIT::FuncOp func) {
   }
 }
 
+static void labelTensorParamsInKernel(LIT::FuncOp funcOp) {
+  OpBuilder builder{funcOp.getContext()};
+
+  if (!isDPSKernel(funcOp))
+    return;
+
+  // Look through ref types to get underlying decl ref type if needed.
+  auto getAsStructType = [](Type t) {
+    auto asLitRef = dyn_cast<LIT::RefType>(t);
+    if (asLitRef)
+      return dyn_cast<LIT::StructType>(asLitRef.getElementType());
+    return dyn_cast<LIT::StructType>(t);
+  };
+
+  // Extract the used parameters from the lit type.
+  auto litTypeToParams = [](LIT::StructType structType) {
+    SmallVector<KGEN::ParamDeclRefAttr> attrs;
+    for (TypedAttr param : structType.getParamValues()) {
+      auto declRefAttr = cast<KGEN::ParamDeclRefAttr>(param);
+      attrs.push_back(declRefAttr);
+    }
+
+    return attrs;
+  };
+
+  SmallVector<Attribute> tensorSpecs;
+  Attribute emptyAttr = builder.getUnitAttr();
+  for (auto [i, litType] : llvm::enumerate(funcOp.getArgumentTypes())) {
+    auto asStructType = getAsStructType(litType);
+    if (!asStructType ||
+        !symbolMatches(asStructType.getSymbol(), kMaxUnsafeTensorSlice)) {
+      tensorSpecs.push_back(emptyAttr);
+      continue;
+    }
+
+    constexpr unsigned kDTypeIndex = 0;
+    constexpr unsigned kRankIndex = 1;
+    auto allParameters = litTypeToParams(asStructType);
+    assert(allParameters.size() >= 2);
+    auto dtype = allParameters[kDTypeIndex];
+    auto rank = allParameters[kRankIndex];
+
+    auto tensorSpecAttr = DictionaryAttr::get(
+        funcOp.getContext(),
+        {NamedAttribute{builder.getStringAttr("dtype"), dtype},
+         NamedAttribute{builder.getStringAttr("rank"), rank}});
+    tensorSpecs.push_back(tensorSpecAttr);
+  }
+  funcOp->setDiscardableAttr(kKernelTensorParameterAttrName,
+                             builder.getArrayAttr(tensorSpecs));
+}
+
 namespace {
 class MOGGAnnotatePass
     : public M::KGEN::MOGGPreElab::impl::MOGGAnnotateBase<MOGGAnnotatePass> {
@@ -144,98 +198,96 @@ public:
     // We need two walks because some op X might look at the annotations of op
     // Y, which might be defined after X. (Eg check if a decorator function
     // has a mogg_intrinsic_attr set).
-    const auto walker = [&](Operation *operation) {
-      if (auto structDeclOp = dyn_cast<LIT::StructDeclOp>(operation)) {
-        auto loc = structDeclOp->getLoc();
-        std::optional<StringAttr> registrationName;
-        auto decorators = structDeclOp.getDecorators();
-        if (decorators.empty())
-          return WalkResult::advance();
+    auto walker = [&](LIT::StructDeclOp structDeclOp) {
+      auto loc = structDeclOp->getLoc();
+      std::optional<StringAttr> registrationName;
+      auto decorators = structDeclOp.getDecorators();
+      if (decorators.empty())
+        return WalkResult::advance();
 
-        // Iterate over the decorators and to find max.compiler.register.
-        for (auto decorator : decorators) {
-          auto apply = dyn_cast<ParamOperatorAttr>(decorator);
-          if (!apply || apply.getNumOperands() != 2)
-            continue;
+      // Iterate over the decorators and to find max.compiler.register.
+      for (auto decorator : decorators) {
+        auto apply = dyn_cast<ParamOperatorAttr>(decorator);
+        if (!apply || apply.getNumOperands() != 2)
+          continue;
 
-          auto sym = dyn_cast<SymbolConstantAttr>(apply.getOperand(0));
-          if (!sym)
-            continue;
+        auto sym = dyn_cast<SymbolConstantAttr>(apply.getOperand(0));
+        if (!sym)
+          continue;
 
-          auto decoratorFunc = op.lookupSymbol<LIT::FuncOp>(sym.getSymbol());
-          if (!decoratorFunc ||
-              !decoratorFunc->hasAttr(MOGG_INTRINSIC_REGISTER))
-            continue;
+        auto decoratorFunc = op.lookupSymbol<LIT::FuncOp>(sym.getSymbol());
+        if (!decoratorFunc || !decoratorFunc->hasAttr(MOGG_INTRINSIC_REGISTER))
+          continue;
 
-          auto [_, nameAttr] =
-              cast<LIT::LITStructAttr>(apply.getOperand(1)).getValues().front();
-          auto name = dyn_cast<StringAttr>(nameAttr);
-          if (!name)
-            continue;
+        auto [_, nameAttr] =
+            cast<LIT::LITStructAttr>(apply.getOperand(1)).getValues().front();
+        auto name = dyn_cast<StringAttr>(nameAttr);
+        assert(name);
 
-          if (registrationName) {
-            emitError(loc, "Only one op can be registered per kernel struct");
-            return WalkResult::interrupt();
-          }
-          registrationName = name;
-        }
-
-        if (!registrationName)
-          return WalkResult::advance();
-
-        // Search for the `execute` and the optional `shape` functions. Until
-        // traits can enforce @staticmethod, this has to be done in this pass.
-        LIT::FuncOp executeFunc, shapeFunc;
-        for (auto &op : structDeclOp.getFields().front()) {
-          auto func = dyn_cast<LIT::FuncOp>(op);
-          if (!func)
-            continue;
-
-          if (func.getSourceName() == kExecuteFuncName)
-            executeFunc = func;
-          else if (func.getSourceName() == kShapeFuncName)
-            shapeFunc = func;
-        }
-
-        if (!executeFunc) {
-          emitError(loc, "Kernels must have an execution entry point named " +
-                             kExecuteFuncName);
+        if (registrationName) {
+          emitError(loc, "Only one op can be registered per kernel struct");
           return WalkResult::interrupt();
         }
-
-        if (!executeFunc.getIsStatic()) {
-          emitError(loc, "Kernel entry point must be a static function");
-          return WalkResult::interrupt();
-        }
-
-        if (shapeFunc && !shapeFunc.getIsStatic()) {
-          emitError(loc, "Kernel shape function must be a static function");
-          return WalkResult::interrupt();
-        }
-
-        executeFunc->setAttr(builder.getStringAttr(kMOGGExecuteFunctionLabel),
-                             *registrationName);
-        if (shapeFunc) {
-          shapeFunc->setAttr(builder.getStringAttr(kMOGGShapeFunctionLabel),
-                             *registrationName);
-        }
-
-        for (auto param : executeFunc.getInputParams()) {
-          if (param.getName() == kMOGGSynchronousParameterName) {
-            executeFunc->setAttr(builder.getStringAttr(kMOGGSynchronousLabel),
-                                 param);
-          } else if (param.getName() == kMOGGTargetParameterName) {
-            executeFunc->setAttr(builder.getStringAttr(kMOGGTargetLabel),
-                                 param);
-          }
-        }
+        registrationName = name;
       }
 
+      if (!registrationName)
+        return WalkResult::advance();
+
+      // Search for the `execute` and the optional `shape` functions. Until
+      // traits can enforce @staticmethod, this has to be done in this pass.
+      LIT::FuncOp executeFunc, shapeFunc;
+      for (auto &op : structDeclOp.getFields().front()) {
+        auto func = dyn_cast<LIT::FuncOp>(op);
+        if (!func)
+          continue;
+
+        if (func.getSourceName() == kExecuteFuncName)
+          executeFunc = func;
+        else if (func.getSourceName() == kShapeFuncName)
+          shapeFunc = func;
+      }
+
+      if (!executeFunc) {
+        emitError(loc, "Kernels must have an execution entry point named " +
+                           kExecuteFuncName);
+        return WalkResult::interrupt();
+      }
+
+      if (!executeFunc.getIsStatic()) {
+        emitError(loc, "Kernel entry point must be a static function");
+        return WalkResult::interrupt();
+      }
+
+      if (shapeFunc && !shapeFunc.getIsStatic()) {
+        emitError(loc, "Kernel shape function must be a static function");
+        return WalkResult::interrupt();
+      }
+
+      executeFunc->setAttr(builder.getStringAttr(kMOGGExecuteFunctionLabel),
+                           *registrationName);
+      executeFunc.setExported();
+      if (shapeFunc) {
+        shapeFunc->setAttr(builder.getStringAttr(kMOGGShapeFunctionLabel),
+                           *registrationName);
+        shapeFunc.setExported();
+      }
+
+      for (auto param : executeFunc.getInputParams()) {
+        if (param.getName() == kMOGGSynchronousParameterName) {
+          executeFunc->setAttr(builder.getStringAttr(kMOGGSynchronousLabel),
+                               param);
+        } else if (param.getName() == kMOGGTargetParameterName) {
+          executeFunc->setAttr(builder.getStringAttr(kMOGGTargetLabel), param);
+        }
+      }
       return WalkResult::advance();
     };
 
     if (op.walk(walker).wasInterrupted())
       signalPassFailure();
+
+    op.walk([](LIT::FuncOp funcOp) { labelTensorParamsInKernel(funcOp); });
   }
 };
 } // namespace

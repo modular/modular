@@ -87,11 +87,3 @@ def MOGGAutoparameterize : Pass<"mogg-autoparameterize", "mlir::ModuleOp"> {
     also takes a spec and gets the right spec.
   }];
 }
-
-def MOGGLabelTensorParams : Pass<"mogg-label-tensor-params", "mlir::ModuleOp"> {
-  let summary = "Attaches a label to kernel tensors for subsequent use";
-  let description = [{
-    This will label the parameters of kernel tensors such that subsequent passes
-    can find them more easily.
-  }];
-}

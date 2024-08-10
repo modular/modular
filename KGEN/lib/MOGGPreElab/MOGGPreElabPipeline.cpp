@@ -47,7 +47,6 @@ public:
       mlir::OpPassManager pm(ModuleOp::getOperationName());
       pm.addPass(MOGGPreElab::createSliceMOGGFuncs());
       pm.addPass(MOGGPreElab::createOutlineMOGGFuncs());
-      pm.addPass(MOGGPreElab::createMOGGLabelTensorParams());
 
       if (failed(runPipeline(pm, mod)))
         return signalPassFailure();
