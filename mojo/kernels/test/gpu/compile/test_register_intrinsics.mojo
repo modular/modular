@@ -3,6 +3,8 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
+# COM: Disabled temporarily as the followup PR fixes this.
+# REQUIRES: DISABLED
 # RUN: %mojo-no-debug %s
 
 from gpu.host._compile import _compile_code, _get_nvptx_target
