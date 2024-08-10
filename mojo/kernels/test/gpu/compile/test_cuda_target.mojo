@@ -41,17 +41,6 @@ from utils.index import StaticIntTuple
 # COM: one that does not would return -1.
 
 
-@always_inline
-fn _get_nvptx_target_sm90() -> __mlir_type.`!kgen.target`:
-    return __mlir_attr[
-        `#kgen.target<triple = "nvptx64-nvidia-cuda", `,
-        `arch = "sm_90", `,
-        `features = "+ptx81", `,
-        `data_layout = "e-i64:64-i128:128-v16:16-v32:32-n16:32:64",`,
-        `simd_bit_width = 128> : !kgen.target`,
-    ]
-
-
 fn parameterized_on_cuda() -> Int:
     @parameter
     if triple_is_nvidia_cuda():
@@ -76,7 +65,7 @@ def test_parameterized_on_cuda_sm80():
 def test_parameterized_on_cuda_sm90():
     alias asm = str(
         _compile_code[
-            parameterized_on_cuda, target = _get_nvptx_target_sm90()
+            parameterized_on_cuda, target = _get_nvptx_target["sm_90"]()
         ]().asm
     )
     _verify_parameterized_on_cuda(asm)
@@ -106,7 +95,7 @@ def test_hello_mojo_sm80():
 
 def test_hello_mojo_sm90():
     alias asm = str(
-        _compile_code[hello_mojo, target = _get_nvptx_target_sm90()]().asm
+        _compile_code[hello_mojo, target = _get_nvptx_target["sm_90"]()]().asm
     )
     _verify_hello(asm)
 
@@ -152,7 +141,9 @@ def test_erf_elementwise_sm80():
 
 def test_erf_elementwise_sm90():
     alias asm = str(
-        _compile_code[erf_elementwise, target = _get_nvptx_target_sm90()]().asm
+        _compile_code[
+            erf_elementwise, target = _get_nvptx_target["sm_90"]()
+        ]().asm
     )
     _verify_erf_elementwise(asm)
 
@@ -188,7 +179,7 @@ def test_erf_kernel_sm80():
 
 def test_erf_kernel_sm90():
     alias asm = str(
-        _compile_code[erf_kernel, target = _get_nvptx_target_sm90()]().asm
+        _compile_code[erf_kernel, target = _get_nvptx_target["sm_90"]()]().asm
     )
     _verify_erf_kernel(asm)
 
@@ -222,7 +213,7 @@ def test_shared_stack_allocation_sm80():
 def test_shared_stack_allocation_sm90():
     alias asm = str(
         _compile_code[
-            test_shared_stack_allocation, target = _get_nvptx_target_sm90()
+            test_shared_stack_allocation, target = _get_nvptx_target["sm_90"]()
         ]().asm
     )
     _verify_shared_stack_allocation(asm)
@@ -252,7 +243,7 @@ def test_barrier_sm80():
 
 def test_barrier_sm90():
     alias asm = str(
-        _compile_code[test_barrier, target = _get_nvptx_target_sm90()]().asm
+        _compile_code[test_barrier, target = _get_nvptx_target["sm_90"]()]().asm
     )
     _verify_barrier(asm)
 
@@ -366,7 +357,7 @@ def test_gemm_sm80():
 
 
 def test_gemm_sm90():
-    alias asm = _compile_code[gemm, target = _get_nvptx_target_sm90()]().asm
+    alias asm = _compile_code[gemm, target = _get_nvptx_target["sm_90"]()]().asm
     _verify_gemm(asm)
 
 
@@ -411,7 +402,9 @@ def test_shuffle_up_sm80():
 
 def test_shuffle_up_sm90():
     alias asm = str(
-        _compile_code[test_shuffle_up, target = _get_nvptx_target_sm90()]().asm
+        _compile_code[
+            test_shuffle_up, target = _get_nvptx_target["sm_90"]()
+        ]().asm
     )
     _verify_shuffle_up(asm)
 
@@ -443,7 +436,7 @@ def test_shuffle_down_sm80():
 def test_shuffle_down_sm90():
     alias asm = str(
         _compile_code[
-            test_shuffle_down, target = _get_nvptx_target_sm90()
+            test_shuffle_down, target = _get_nvptx_target["sm_90"]()
         ]().asm
     )
     _verify_shuffle_down(asm)
@@ -480,7 +473,9 @@ def test_warp_sum_reduce_sm80():
 
 def test_warp_sum_reduce_sm90():
     alias asm = str(
-        _compile_code[warp_sum_reduce, target = _get_nvptx_target_sm90()]().asm
+        _compile_code[
+            warp_sum_reduce, target = _get_nvptx_target["sm_90"]()
+        ]().asm
     )
     _verify_warp_sum_reduce(asm)
 
@@ -522,7 +517,7 @@ def test_block_reduce_sm80():
 
 def test_block_reduce_sm90():
     alias asm = str(
-        _compile_code[block_reduce, target = _get_nvptx_target_sm90()]().asm
+        _compile_code[block_reduce, target = _get_nvptx_target["sm_90"]()]().asm
     )
     _verify_block_reduce(asm)
 

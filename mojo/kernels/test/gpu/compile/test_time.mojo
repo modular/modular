@@ -11,17 +11,6 @@ from time import sleep
 from testing import *
 
 
-@always_inline
-fn _get_nvptx_target_sm90() -> __mlir_type.`!kgen.target`:
-    return __mlir_attr[
-        `#kgen.target<triple = "nvptx64-nvidia-cuda", `,
-        `arch = "sm_90", `,
-        `features = "+ptx81", `,
-        `data_layout = "e-i64:64-i128:128-v16:16-v32:32-n16:32:64",`,
-        `simd_bit_width = 128> : !kgen.target`,
-    ]
-
-
 fn sleep_function(val: Float64):
     sleep(val)
 
@@ -48,7 +37,7 @@ def test_clock_functions_sm80():
 
 def test_clock_functions_sm90():
     alias asm = _compile_code[
-        clock_functions, target = _get_nvptx_target_sm90()
+        clock_functions, target = _get_nvptx_target["sm_90"]()
     ]().asm
     _verify_clock_functions(asm)
 
@@ -81,7 +70,7 @@ def test_time_functions_sm80():
 
 def test_time_functions_sm90():
     alias asm = _compile_code[
-        time_functions, target = _get_nvptx_target_sm90()
+        time_functions, target = _get_nvptx_target["sm_90"]()
     ]().asm
     _verify_time_functions(asm)
 

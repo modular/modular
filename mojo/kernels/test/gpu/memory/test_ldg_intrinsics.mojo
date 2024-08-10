@@ -11,17 +11,6 @@ from memory import UnsafePointer
 from testing import *
 
 
-@always_inline
-fn _get_nvptx_target_sm90() -> __mlir_type.`!kgen.target`:
-    return __mlir_attr[
-        `#kgen.target<triple = "nvptx64-nvidia-cuda", `,
-        `arch = "sm_90", `,
-        `features = "+ptx81", `,
-        `data_layout = "e-i64:64-i128:128-v16:16-v32:32-n16:32:64",`,
-        `simd_bit_width = 128> : !kgen.target`,
-    ]
-
-
 fn register_intrinsics(
     i8: UnsafePointer[Int8],
     ui8: UnsafePointer[UInt8],
@@ -69,7 +58,7 @@ def test_register_intrinsics_sm80():
 def test_register_intrinsics_sm90():
     alias asm = _compile_code[
         register_intrinsics,
-        target = _get_nvptx_target_sm90(),
+        target = _get_nvptx_target["sm_90"](),
     ]().asm
     _verify_register_intrinsics(asm)
 

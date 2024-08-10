@@ -13,17 +13,6 @@ from memory import UnsafePointer
 from testing import *
 
 
-@always_inline
-fn _get_nvptx_target_sm90() -> __mlir_type.`!kgen.target`:
-    return __mlir_attr[
-        `#kgen.target<triple = "nvptx64-nvidia-cuda", `,
-        `arch = "sm_90", `,
-        `features = "+ptx81", `,
-        `data_layout = "e-i64:64-i128:128-v16:16-v32:32-n16:32:64",`,
-        `simd_bit_width = 128> : !kgen.target`,
-    ]
-
-
 fn test_mbarrier(
     addr0: UnsafePointer[Int8],
     addr1: UnsafePointer[UInt8],
@@ -54,7 +43,9 @@ def test_mbarrier_sm80():
 
 def test_mbarrier_sm90():
     alias asm = str(
-        _compile_code[test_mbarrier, target = _get_nvptx_target_sm90()]().asm
+        _compile_code[
+            test_mbarrier, target = _get_nvptx_target["sm_90"]()
+        ]().asm
     )
     _verify_mbarrier(asm)
 
@@ -81,7 +72,7 @@ def test_mbarrier_init_sm80():
 def test_mbarrier_init_sm90():
     alias asm = str(
         _compile_code[
-            test_mbarrier_init, target = _get_nvptx_target_sm90()
+            test_mbarrier_init, target = _get_nvptx_target["sm_90"]()
         ]().asm
     )
     _verify_mbarrier_init(asm)
@@ -111,7 +102,7 @@ def test_mbarrier_test_wait_sm80():
 def test_mbarrier_test_wait_sm90():
     alias asm = str(
         _compile_code[
-            test_mbarrier_test_wait, target = _get_nvptx_target_sm90()
+            test_mbarrier_test_wait, target = _get_nvptx_target["sm_90"]()
         ]().asm
     )
     assert_true("mbarrier.test_wait.shared.b64" in asm)
@@ -139,7 +130,9 @@ def test_async_copy_sm80():
 
 def test_async_copy_sm90():
     alias asm = str(
-        _compile_code[test_async_copy, target = _get_nvptx_target_sm90()]().asm
+        _compile_code[
+            test_async_copy, target = _get_nvptx_target["sm_90"]()
+        ]().asm
     )
     _verify_async_copy(asm)
 
@@ -171,7 +164,7 @@ def test_async_copy_l2_prefetch_sm80():
 def test_async_copy_l2_prefetch__sm90():
     alias asm = str(
         _compile_code[
-            test_async_copy_l2_prefetch, target = _get_nvptx_target_sm90()
+            test_async_copy_l2_prefetch, target = _get_nvptx_target["sm_90"]()
         ]().asm
     )
     _verify_async_copy_l2_prefetch(asm)
