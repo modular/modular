@@ -31,6 +31,10 @@ fn _get_sm() -> Int:
         return 75
     elif sm_val == "sm_80":
         return 80
+    elif sm_val == "sm_86":
+        return 86
+    elif sm_val == "sm_89":
+        return 89
     elif sm_val == "sm_90":
         return 90
     else:

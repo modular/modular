@@ -8,7 +8,7 @@
 from compile import Info, compile_info, get_linkage_name
 
 # ===----------------------------------------------------------------------===#
-# Compilation
+# Targets
 # ===----------------------------------------------------------------------===#
 
 
@@ -18,15 +18,7 @@ fn _get_nvptx_target[
     target_arch: StringLiteral = "sm_80",
 ]() -> __mlir_type.`!kgen.target`:
     @parameter
-    if target_arch == "sm_70":
-        return __mlir_attr[
-            `#kgen.target<triple = "nvptx64-nvidia-cuda", `,
-            `arch = "sm_70", `,
-            `features = "+ptx81", `,
-            `data_layout = "e-i64:64-i128:128-v16:16-v32:32-n16:32:64",`,
-            `simd_bit_width = 128> : !kgen.target`,
-        ]
-    elif target_arch == "sm_80":
+    if target_arch == "sm_80":
         return __mlir_attr[
             `#kgen.target<triple = "nvptx64-nvidia-cuda", `,
             `arch = "sm_80", `,
@@ -72,6 +64,11 @@ fn _get_nvptx_target[
     else:
         constrained[False, "unsupported target arch " + target_arch]()
         return abort[__mlir_type.`!kgen.target`]()
+
+
+# ===----------------------------------------------------------------------===#
+# Compilation
+# ===----------------------------------------------------------------------===#
 
 
 @always_inline
