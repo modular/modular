@@ -22,7 +22,7 @@ fn _get_nvptx_target[
         return __mlir_attr[
             `#kgen.target<triple = "nvptx64-nvidia-cuda", `,
             `arch = "sm_80", `,
-            `features = "+ptx81", `,
+            `features = "+ptx85", `,
             `data_layout = "e-i64:64-i128:128-v16:16-v32:32-n16:32:64",`,
             `simd_bit_width = 128> : !kgen.target`,
         ]
@@ -30,7 +30,7 @@ fn _get_nvptx_target[
         return __mlir_attr[
             `#kgen.target<triple = "nvptx64-nvidia-cuda", `,
             `arch = "sm_86", `,
-            `features = "+ptx81", `,
+            `features = "+ptx85", `,
             `data_layout = "e-i64:64-i128:128-v16:16-v32:32-n16:32:64",`,
             `simd_bit_width = 128> : !kgen.target`,
         ]
@@ -38,7 +38,7 @@ fn _get_nvptx_target[
         return __mlir_attr[
             `#kgen.target<triple = "nvptx64-nvidia-cuda", `,
             `arch = "sm_89", `,
-            `features = "+ptx81", `,
+            `features = "+ptx85", `,
             `data_layout = "e-i64:64-i128:128-v16:16-v32:32-n16:32:64",`,
             `simd_bit_width = 128> : !kgen.target`,
         ]
@@ -47,7 +47,7 @@ fn _get_nvptx_target[
         return __mlir_attr[
             `#kgen.target<triple = "nvptx64-nvidia-cuda", `,
             `arch = "sm_90", `,
-            `features = "+ptx81", `,
+            `features = "+ptx85", `,
             `data_layout = "e-i64:64-i128:128-v16:16-v32:32-n16:32:64",`,
             `simd_bit_width = 128> : !kgen.target`,
         ]
@@ -57,7 +57,7 @@ fn _get_nvptx_target[
         return __mlir_attr[
             `#kgen.target<triple = "nvptx64-nvidia-cuda", `,
             `arch = "sm_90a", `,
-            `features = "+ptx81", `,
+            `features = "+ptx85", `,
             `data_layout = "e-i64:64-i128:128-v16:16-v32:32-n16:32:64",`,
             `simd_bit_width = 128> : !kgen.target`,
         ]
