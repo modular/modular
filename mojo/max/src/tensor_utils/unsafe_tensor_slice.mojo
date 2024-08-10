@@ -190,7 +190,7 @@ struct UnsafeTensorSlice[
         # Necessary to make it simpler on the call site.
         _rank: Int,
         width: Int,
-    ](inout self, index: StaticIntTuple[_rank], val: SIMD[type, width]):
+    ](self, index: StaticIntTuple[_rank], val: SIMD[type, width]):
         constrained[_rank == rank]()
         var flat_index = _dot_prod(
             rebind[StaticIntTuple[rank]](index), self._strides

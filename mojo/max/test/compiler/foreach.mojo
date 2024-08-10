@@ -58,6 +58,8 @@ fn test_foreach() raises:
             assert_equal(unsafe_slice2[i, j], 2)
             assert_equal(tensor2[i, j], 2)
 
+    _ = unsafe_slice1^
+    _ = unsafe_slice2^
     _ = tensor1^
     _ = tensor2^
 
