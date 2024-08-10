@@ -8,7 +8,6 @@
 from collections import Dict, Optional
 from math.math import align_up
 from pathlib import Path
-from sys.ffi import _get_global
 from sys.intrinsics import _mlirtype_is_eq
 
 from gpu.host.device_context import DeviceBuffer
@@ -570,22 +569,11 @@ struct Function[
             cuda_dll_ptr=cuda_dll_ptr,
         )
 
-        if cuda_function_cache:
-            var info_ptr = cuda_function_cache[].get_or_create_entry[
-                fn_name,
-                Self.init_fn[func_type, func],
-            ](UnsafePointer.address_of(payload))
+        var info_ptr = cuda_function_cache[].get_or_create_entry[
+            fn_name,
+            Self.init_fn[func_type, func],
+        ](UnsafePointer.address_of(payload))
 
-            _ = payload
+        _ = payload
 
-            return info_ptr[]
-        else:
-            var info_ptr = _get_global[
-                fn_name,
-                Self._init_fn[func_type, func],
-                Self._destroy_fn,
-            ](UnsafePointer.address_of(payload).bitcast[NoneType]())
-
-            _ = payload
-
-            return UnsafePointer(info_ptr).bitcast[_CachedFunctionInfo]()[]
+        return info_ptr[]
