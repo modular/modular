@@ -57,7 +57,14 @@ fn tc_reduce_vector[
     if out_type == DType.float32 and in_type == DType.bfloat16:
 
         @parameter
-        if simd_width == 4:
+        if simd_width == 1:
+            return val[0].cast[out_type]()
+
+        elif simd_width == 2:
+            var tmp = val.cast[out_type]()
+            return tmp[0] + tmp[1]
+
+        elif simd_width == 4:
             # we do m16n8k8 tensor core matmul to get partial results in first row
             var d_reg = SIMD[out_type, 4]()
             var a_reg = SIMD[in_type, 4](1)
@@ -104,6 +111,14 @@ fn tc_reduce_vector[
             res += shuffle_down(0x11111111, res, 4)
 
             return res
+        elif simd_width > 8:
+            var tmp = SIMD[out_type, simd_width // 8]()
+
+            @parameter
+            for i in range(0, simd_width, 8):
+                tmp[i] = tc_reduce_vector[out_type](val.slice[8, offset=i]())
+
+            return tmp.reduce_add()
 
         else:
             constrained[False, "unsupported simd_width for BF16"]()
