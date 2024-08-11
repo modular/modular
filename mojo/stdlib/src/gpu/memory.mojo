@@ -417,7 +417,10 @@ fn _load_impl[
         )
 
     @parameter
-    if type_bitwidth <= 16 and bytes_to_load >= sizeof[DType.uint32]():
+    if (
+        type_bitwidth <= 16
+        and sizeof[DType.uint32]() <= bytes_to_load < sizeof[DType.uint64]()
+    ):
         return bitcast[type, width](
             _load_impl[
                 width = (bytes_to_load // sizeof[DType.uint32]()),
