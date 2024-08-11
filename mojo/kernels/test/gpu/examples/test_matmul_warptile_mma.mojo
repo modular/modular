@@ -15,7 +15,7 @@ from gpu import WARP_SIZE, BlockIdx, ThreadIdx, barrier
 from gpu.host import DeviceContext
 from gpu.memory import AddressSpace
 from gpu.mma import mma
-from linalg.matmul_gpu import matmul_kernel_naive
+from linalg.matmul_gpu import matmul_kernel_naive, __nvvm_ldg_f4
 from linalg.utils import elementwise_epilogue_type
 from memory import memset_zero, stack_allocation
 from memory import UnsafePointer, bitcast
@@ -23,24 +23,6 @@ from memory import UnsafePointer, bitcast
 from utils import Index, StaticTuple, unroll
 from utils.numerics import isnan
 from sys import llvm_intrinsic
-
-
-@always_inline
-fn __nvvm_ldg_f4[type: DType](x: UnsafePointer[Scalar[type]]) -> SIMD[type, 4]:
-    # Load a register variable from global state space via non-coherent cache.
-
-    alias alignment = Int32(alignof[SIMD[type, 4]]())
-
-    @parameter
-    if type is DType.float32:
-        return bitcast[type, 4](
-            llvm_intrinsic[
-                "llvm.nvvm.ldg.global.f.v4f32.p0v4f32", SIMD[DType.float32, 4]
-            ](x.bitcast[DType.float32](), alignment)
-        )
-    else:
-        constrained[False, "Unhandled DType"]()
-        return 0
 
 
 # MMA dimensions. FP32 = TF32*TF32 + FP32. We use the following (via library):
