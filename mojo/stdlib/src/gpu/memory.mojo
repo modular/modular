@@ -58,7 +58,9 @@ fn async_copy[
         "the l2 prefetch size must be in bounds",
     ]()
 
-    alias cache_op = "cg" if (bypass_L1_16B and size == 16) else "ca"
+    alias cache_op = CacheOperation.GLOBAL.mnemonic() if (
+        bypass_L1_16B and size == 16
+    ) else CacheOperation.ALWAYS.mnemonic()
     alias access_size = _int_to_str[size]()
 
     @parameter
@@ -100,7 +102,9 @@ fn async_copy[
     # TODO: Constrained on device capability.
     constrained[size == 4 or size == 8 or size == 16]()
 
-    alias cache_op = "cg" if (bypass_L1_16B and size == 16) else "ca"
+    alias cache_op = CacheOperation.GLOBAL.mnemonic() if (
+        bypass_L1_16B and size == 16
+    ) else CacheOperation.ALWAYS.mnemonic()
     alias access_size = _int_to_str[size]()
     alias intrin = "llvm.nvvm.cp.async." + cache_op + ".shared.global." + access_size + ".s"
     llvm_intrinsic[intrin, NoneType](dst, src, src_size)
