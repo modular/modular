@@ -373,8 +373,7 @@ struct Function[
                 "\t// begin inline asm\n", ""
             ).replace("\t// end inline asm\n", "")
             if dump_ptx.isa[Path]():
-                with open(dump_ptx[Path], "w") as f:
-                    f.write(cleaned_up_ptx)
+                dump_ptx[Path].write_text(cleaned_up_ptx)
             else:
                 print(cleaned_up_ptx)
 
@@ -382,8 +381,7 @@ struct Function[
             alias llvm = _compile_code[func, emission_kind="llvm"]().asm
 
             if dump_llvm.isa[Path]():
-                with open(dump_llvm[Path], "w") as f:
-                    f.write(StringRef(llvm))
+                dump_llvm[Path].write_text(StringRef(llvm))
             else:
                 print(llvm)
 
