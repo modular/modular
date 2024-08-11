@@ -40,7 +40,7 @@ fn takeOwnedAnyTypePack[*Ts: AnyType](owned *rest: *Ts):
 # CHECK-LABEL: lit.func @"takeOwnedAnyTypePack[*::AnyType](*$0)"
 
 # Test implicit lifetimes / param list.
-# CHECK-SAME: [mut *"rest`"]<Ts: variadic<!AnyType> var>
+# CHECK-SAME: <Ts: variadic<!AnyType> var>[mut *"rest`"]
 
 # Check the argument pack.
 # CHECK-SAME: (%rest: !lit.struct<#VariadicPack <:i1 1, :lifetime<1> *"rest`",
@@ -179,16 +179,16 @@ struct MyTuple[*Ts: AnyType]:
         pass
 
 
-# CHECK-LABEL: lit.func @"pack[
-# CHECK-SAME: Ts: variadic<!AnyType> var>(
-# CHECK-SAME: %args: !lit.struct<#VariadicPack <:i1 0, :lifetime<0> *"args`", :!lit.anytrait<!AnyType> !AnyType, :variadic<!AnyType> Ts>> borrow_in_mem|pack)
+# CHECK-LABEL: lit.func @"pack
+# CHECK-SAME: Ts: variadic<!AnyType> var>
+# CHECK-SAME: (%args: !lit.struct<#VariadicPack <:i1 0, :lifetime<0> *"args`", :!lit.anytrait<!AnyType> !AnyType, :variadic<!AnyType> Ts>> borrow_in_mem|pack)
 fn pack[*Ts: AnyType](*args: *Ts):
     pass
 
 
 # CHECK-LABEL: lit.func @"packBorrowed[
-# CHECK-SAME: Ts: variadic<!AnyType> var>(
-# CHECK-SAME: %args: !lit.struct<#VariadicPack {{.*}} borrow_in_mem|pack
+# CHECK-SAME: Ts: variadic<!AnyType> var>
+# CHECK-SAME: (%args: !lit.struct<#VariadicPack {{.*}} borrow_in_mem|pack
 fn packBorrowed[*Ts: AnyType](*args: *Ts):
     pass
 

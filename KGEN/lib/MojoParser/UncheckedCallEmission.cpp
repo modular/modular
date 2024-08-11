@@ -803,10 +803,6 @@ Value CallEmitter::emitPreemittedArgumentAsDynamicValue(
     arg = argValAndExpr.ir.getIfSBValue();
     assert(arg && "unknown BValue");
     return arg;
-  case ArgConvention::Ref:
-    assert(argValAndExpr.ir.isMValue() &&
-           "Ref args are already emitted to boxes during overload resolution");
-    return argValAndExpr.ir.getMValueReference();
 
   case ArgConvention::BorrowedInMem: {
     if (SBValue sbValue = argValAndExpr.ir.getIfSBValue()) {
@@ -845,6 +841,11 @@ Value CallEmitter::emitPreemittedArgumentAsDynamicValue(
           argValAndExpr.expr->getLocation(emitter), result);
     return result;
   }
+  case ArgConvention::Ref:
+    assert(argValAndExpr.ir.isMValue() &&
+           "Ref args are already emitted to boxes during overload resolution");
+    return argValAndExpr.ir.getMValueReference();
+
   case ArgConvention::InOut:
   case ArgConvention::InitSelf: {
     // We know that the operand is an LValue, but it might be

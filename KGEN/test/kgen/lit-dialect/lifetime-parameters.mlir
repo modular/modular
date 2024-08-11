@@ -10,8 +10,8 @@ lit.func @lifetimes() {
 }
 
 // CHECK-LABEL: @decls
-// CHECK-SAME: [imm a, mut b]<x: dtype, y>(%ptr: !lit.ref<simd<y, x>, mut b>)
-lit.func @decls[imm a, mut b]<x: dtype, y>(%ptr: !lit.ref<simd<y, x>, mut b>) {
+// CHECK-SAME: <x: dtype, y>[imm a, mut b](%ptr: !lit.ref<simd<y, x>, mut b>)
+lit.func @decls<x: dtype, y>[imm a, mut b](%ptr: !lit.ref<simd<y, x>, mut b>) {
   // CHECK: ref: !lit.signature<[2]<"x": dtype, "y": index>("ptr": !lit.ref<simd<*(0,1), *(0,0)>, mut *[0,1]>) -> ()> = <@decls>
   lit.alias.decl ref: !lit.signature<[2]<"x": dtype, "y": index>("ptr": !lit.ref<simd<*(0,1), *(0,0)>, mut *[0,1]>) -> ()> = <@decls>
   kgen.return
