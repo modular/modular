@@ -370,8 +370,8 @@ fn gemv_kernel[
             var val = Scalar[s_type]()
             if idx < k:
                 val = (
-                    a.load(Int(warp_id) * k + Int(idx)).cast[s_type]()
-                    * b.load(Int(idx)).cast[s_type]()
+                    a.load(warp_id * k + idx).cast[s_type]()
+                    * b.load(idx).cast[s_type]()
                 )
 
             @parameter
@@ -392,7 +392,7 @@ fn gemv_kernel[
             if elementwise_lambda_fn:
                 alias elementwise_lambda = elementwise_lambda_fn.value()
                 elementwise_lambda[c_type, 1](
-                    reverse_idx[transpose_b](Int(warp_id), 0),
+                    reverse_idx[transpose_b](warp_id, 0),
                     accum.cast[c_type](),
                 )
             else:
@@ -443,7 +443,7 @@ fn gemv_tc_kernel[
             if elementwise_lambda_fn:
                 alias elementwise_lambda = elementwise_lambda_fn.value()
                 elementwise_lambda[c_type, 1](
-                    reverse_idx[transpose_b](Int(warp_id), 0),
+                    reverse_idx[transpose_b](warp_id, 0),
                     accum.cast[c_type](),
                 )
             else:
@@ -505,12 +505,12 @@ fn gemv_tc_kernel_vector[
             if elementwise_lambda_fn:
                 alias elementwise_lambda = elementwise_lambda_fn.value()
                 elementwise_lambda[c_type, 1](
-                    reverse_idx[transpose_b](Int(warp_id), 0),
+                    reverse_idx[transpose_b](warp_id, 0),
                     accum.cast[c_type](),
                 )
             else:
                 c.store(
-                    reverse_idx[transpose_b](Int(warp_id), 0),
+                    reverse_idx[transpose_b](warp_id, 0),
                     accum.cast[c_type](),
                 )
 
@@ -571,7 +571,7 @@ fn gevm_kernel[
         if elementwise_lambda_fn:
             alias elementwise_lambda = elementwise_lambda_fn.value()
             elementwise_lambda[c_type, 1](
-                Index(UInt(0), global_warp_id), total.cast[c_type]()
+                Index(0, global_warp_id), total.cast[c_type]()
             )
         else:
             c[global_warp_id] = total.cast[c_type]()
@@ -660,7 +660,7 @@ fn gevm_tc_kernel_vector_8x[
         if elementwise_lambda_fn:
             alias elementwise_lambda = elementwise_lambda_fn.value()
             elementwise_lambda[c_type, (simd_width // 2) // 2](
-                Index(UInt(0), global_warp_id * simd_width + lane_id() * 2),
+                Index(0, global_warp_id * simd_width + lane_id() * 2),
                 final[0].cast[c_type](),
             )
         else:
@@ -668,7 +668,7 @@ fn gevm_tc_kernel_vector_8x[
                 width = (simd_width // 2) // 2,
                 alignment = alignof[SIMD[c_type, (simd_width // 2) // 2]](),
             ](
-                Index(UInt(0), global_warp_id * simd_width + lane_id() * 2),
+                Index(0, global_warp_id * simd_width + lane_id() * 2),
                 final[0].cast[c_type](),
             )
 
@@ -973,10 +973,7 @@ fn sgemm_double_buffer_kernel[
             # Load next k tile from global memory to shared memory.
             if k == 0 and k_tile_id < num_k_tiles - 1:
                 a_gmem_tile = LayoutTensor[a_type, a_gmem_layout](
-                    a.offset(
-                        BlockIdx.y() * UInt(BM) * UInt(K)
-                        + (k_tile_id + 1) * UInt(BK)
-                    )
+                    a.offset(BlockIdx.y() * BM * K + (k_tile_id + 1) * BK)
                 )
                 copy_dram_to_sram_async[
                     src_thread_layout=thread_loada_gmem_layout,
@@ -997,9 +994,7 @@ fn sgemm_double_buffer_kernel[
     # Map global memory tile down to thread.
     var c_offset = BlockIdx.y() * BM * N + BlockIdx.x() * BN
     alias c_gmem_layout = Layout(IntTuple(BM, BN), IntTuple(N, 1))
-    var c_gmem_tile = LayoutTensor[c_type, c_gmem_layout](
-        c.offset(Int(c_offset))
-    )
+    var c_gmem_tile = LayoutTensor[c_type, c_gmem_layout](c.offset(c_offset))
     var c_gmem_warp_tile = c_gmem_tile.tile[WM, WN](warp_y, warp_x)
 
     # Copy results to global memory.
