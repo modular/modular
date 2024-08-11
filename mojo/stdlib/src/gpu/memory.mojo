@@ -7,7 +7,10 @@
 
 from collections import Optional
 from memory import UnsafePointer
+from sys.info import triple_is_nvidia_cuda, bitwidthof
+from sys.intrinsics import _RegisterPackType
 from sys._assembly import inlined_assembly
+from builtin.dtype import _uint_type_of_width
 from memory.reference import _GPUAddressSpace
 from memory.unsafe import bitcast
 from utils import StaticIntTuple
@@ -370,15 +373,164 @@ struct CacheEviction:
 
 
 # ===----------------------------------------------------------------------===#
+# load
+# ===----------------------------------------------------------------------===#
+
+
+@always_inline
+fn _load_impl[
+    type: DType, //,
+    width: Int = 1,
+    *,
+    prefetch_size: Optional[Int] = None,
+    cache_policy: CacheOperation = CacheOperation.ALWAYS,
+    eviction_policy: CacheEviction = CacheEviction.EVICT_NORMAL,
+    alignment: Int = alignof[Scalar[type]]() if triple_is_nvidia_cuda() else 1,
+](ptr: UnsafePointer[Scalar[type]]) -> SIMD[type, width]:
+    constrained[
+        ptr.address_space == _GPUAddressSpace.GENERIC,
+        "must be global address space",
+    ]()
+    constrained[type.is_numeric(), "type must be numeric"]()
+
+    @parameter
+    if prefetch_size:
+        constrained[prefetch_size.value() in (64, 128, 256)]()
+
+    alias bytes_to_load = sizeof[type]() * width
+    alias type_bitwidth = bitwidthof[type]()
+
+    @parameter
+    if bytes_to_load < sizeof[DType.uint32]():
+        return ptr.load[width=width, alignment=alignment]()
+
+    @parameter
+    if type.is_floating_point() or type.is_signed():
+        return bitcast[type, width](
+            _load_impl[
+                width=width,
+                prefetch_size=prefetch_size,
+                cache_policy=cache_policy,
+                eviction_policy=eviction_policy,
+                alignment=alignment,
+            ](ptr.bitcast[_uint_type_of_width[type_bitwidth]()]())
+        )
+
+    alias type_mnemonic = "u" + _int_to_str[type_bitwidth]()
+    alias cache_policy_mnemonic = cache_policy.mnemonic()
+    alias eviction_policy_mnemonic = eviction_policy.mnemonic()
+    alias pretch_size_mnemonic = (
+        ".L2::" + _int_to_str[prefetch_size.value()]() + "B"
+    ) if prefetch_size else ""
+
+    alias cache_policy_inst = (
+        "" if cache_policy
+        is CacheOperation.ALWAYS else ("." + cache_policy_mnemonic)
+    )
+    alias v_width = ("" if width == 1 else ".v" + _int_to_str[width]())
+
+    alias instruction_name = "ld.global" + pretch_size_mnemonic + cache_policy_inst + v_width + "." + type_mnemonic
+
+    var res = SIMD[type, width]()
+
+    @parameter
+    if width == 1:
+        var tmp = inlined_assembly[
+            "ld.global " + cache_policy_inst + " $0, [$2];",
+            Scalar[type],
+            constraints="=r,l,r",
+            has_side_effect=True,
+        ](ptr.bitcast[NoneType](), res[0])
+        return SIMD[type, width](tmp)
+    elif width == 2:
+        var tmp = inlined_assembly[
+            instruction_name + " {$0, $1}, [$2];",
+            _RegisterPackType[Scalar[type], Scalar[type]],
+            constraints="=r,=r,l,r,r",
+            has_side_effect=True,
+        ](ptr.bitcast[NoneType](), res[0], res[1])
+        return SIMD[type, width](tmp[0], tmp[1])
+    elif width == 4:
+        var tmp = inlined_assembly[
+            instruction_name + " {$0, $1, $2, $3}, [$4];",
+            _RegisterPackType[
+                Scalar[type], Scalar[type], Scalar[type], Scalar[type]
+            ],
+            constraints="=r,=r,=r,=r,l,r,r,r,r",
+            has_side_effect=True,
+        ](ptr.bitcast[NoneType](), res[0], res[1], res[2], res[3])
+        return SIMD[type, width](tmp[0], tmp[1], tmp[2], tmp[3])
+
+    var lhs = _load_impl[
+        width = width // 2,
+        prefetch_size=prefetch_size,
+        cache_policy=cache_policy,
+        eviction_policy=eviction_policy,
+        alignment=alignment,
+    ](ptr)
+    var rhs = _load_impl[
+        width = width // 2,
+        prefetch_size=prefetch_size,
+        cache_policy=cache_policy,
+        eviction_policy=eviction_policy,
+        alignment=alignment,
+    ](ptr + width // 2)
+    return rebind[SIMD[type, width]](lhs.join(rhs))
+
+
+@always_inline
+fn load[
+    type: DType, //,
+    width: Int = 1,
+    *,
+    prefetch_size: Optional[Int] = None,
+    cache_policy: CacheOperation = CacheOperation.ALWAYS,
+    eviction_policy: CacheEviction = CacheEviction.EVICT_NORMAL,
+    alignment: Int = alignof[Scalar[type]]() if triple_is_nvidia_cuda() else 1,
+](ptr: UnsafePointer[Scalar[type]]) -> SIMD[type, width]:
+    return _load_impl[
+        width=width,
+        prefetch_size=prefetch_size,
+        cache_policy=cache_policy,
+        eviction_policy=eviction_policy,
+        alignment=alignment,
+    ](ptr)
+
+
+@always_inline
+fn load[
+    OffsetType: IntLike,
+    type: DType, //,
+    width: Int = 1,
+    *,
+    prefetch_size: Optional[Int] = None,
+    cache_policy: CacheOperation = CacheOperation.ALWAYS,
+    eviction_policy: CacheEviction = CacheEviction.EVICT_NORMAL,
+    alignment: Int = alignof[Scalar[type]]() if triple_is_nvidia_cuda() else 1,
+](ptr: UnsafePointer[Scalar[type]], offset: OffsetType) -> SIMD[type, width]:
+    return _load_impl[
+        width=width,
+        prefetch_size=prefetch_size,
+        cache_policy=cache_policy,
+        eviction_policy=eviction_policy,
+        alignment=alignment,
+    ](ptr + offset)
+
+
+# ===----------------------------------------------------------------------===#
 # Utilities
 # ===----------------------------------------------------------------------===#
 
 
 fn _int_to_str[val: Int]() -> StringLiteral:
-    constrained[val in (4, 8, 16, 32, 64, 128)]()
+    constrained[val in (1, 2, 4, 8, 16, 32, 64, 128)]()
 
     @parameter
-    if val == 4:
+    if val == 1:
+        return "1"
+    elif val == 2:
+        return "2"
+    elif val == 4:
         return "4"
     elif val == 8:
         return "8"
