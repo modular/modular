@@ -368,12 +368,15 @@ struct Function[
             return val[Path] != Path("")
 
         if dump_q(dump_ptx):
-            alias ptx = Self._impl.asm
+            alias ptx = str(Self._impl.asm)
+            var cleaned_up_ptx = ptx.replace(
+                "\t// begin inline asm\n", ""
+            ).replace("\t// end inline asm\n", "")
             if dump_ptx.isa[Path]():
                 with open(dump_ptx[Path], "w") as f:
-                    f.write(StringRef(ptx))
+                    f.write(cleaned_up_ptx)
             else:
-                print(ptx)
+                print(cleaned_up_ptx)
 
         if dump_q(dump_llvm):
             alias llvm = _compile_code[func, emission_kind="llvm"]().asm
