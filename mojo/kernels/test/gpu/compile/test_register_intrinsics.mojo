@@ -3,8 +3,6 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-# COM: Disabled temporarily as the followup PR fixes this.
-# REQUIRES: DISABLED
 # RUN: %mojo-no-debug %s
 
 from gpu.host._compile import _compile_code, _get_nvptx_target
@@ -13,8 +11,8 @@ from testing import *
 
 
 fn register_intrinsics():
-    warpgroup_reg_alloc[42]()
-    warpgroup_reg_dealloc[42]()
+    warpgroup_reg_alloc[64]()
+    warpgroup_reg_dealloc[64]()
 
 
 def test_register_intrinsics_sm80():
@@ -31,6 +29,16 @@ def test_register_intrinsics_sm90():
             register_intrinsics, target = _get_nvptx_target["sm_90"]()
         ]().asm
     )
+    assert_false("setmaxnreg.inc.sync.aligned.u32" in asm)
+    assert_false("setmaxnreg.dec.sync.aligned.u32" in asm)
+
+
+def test_register_intrinsics_sm90a():
+    alias asm = str(
+        _compile_code[
+            register_intrinsics, target = _get_nvptx_target["sm_90a"]()
+        ]().asm
+    )
     assert_true("setmaxnreg.inc.sync.aligned.u32" in asm)
     assert_true("setmaxnreg.dec.sync.aligned.u32" in asm)
 
@@ -38,3 +46,4 @@ def test_register_intrinsics_sm90():
 def main():
     test_register_intrinsics_sm80()
     test_register_intrinsics_sm90()
+    test_register_intrinsics_sm90a()
