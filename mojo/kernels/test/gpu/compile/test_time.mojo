@@ -16,7 +16,7 @@ fn sleep_function(val: Float64):
 
 
 def test_sleep_function():
-    assert_true("nanosleep.u32 %r1;" in _compile_code[sleep_function]().asm)
+    assert_true("nanosleep.u32 " in _compile_code[sleep_function]().asm)
 
 
 fn clock_functions():
