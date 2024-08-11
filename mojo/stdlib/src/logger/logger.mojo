@@ -108,11 +108,18 @@ struct Logger[level: Level = DEFAULT_LEVEL]:
     fn __init__(inout self, fd: FileDescriptor = sys.stdout):
         self._fd = fd
 
+    @always_inline
+    @staticmethod
+    fn _is_active[target_level: Level]() -> Bool:
+        if level == Level.NOTSET:
+            return False
+        return level > target_level
+
     fn debug[*Ts: Formattable](self, *values: *Ts):
         alias target_level = Level.DEBUG
 
         @parameter
-        if level < target_level:
+        if Self._is_active[target_level]():
             return
 
         var writer = Formatter(fd=self._fd)
@@ -135,7 +142,7 @@ struct Logger[level: Level = DEFAULT_LEVEL]:
         alias target_level = Level.INFO
 
         @parameter
-        if level < target_level:
+        if Self._is_active[target_level]():
             return
 
         var writer = Formatter(fd=self._fd)
@@ -158,7 +165,7 @@ struct Logger[level: Level = DEFAULT_LEVEL]:
         alias target_level = Level.WARNING
 
         @parameter
-        if level < target_level:
+        if Self._is_active[target_level]():
             return
 
         var writer = Formatter(fd=self._fd)
@@ -181,7 +188,7 @@ struct Logger[level: Level = DEFAULT_LEVEL]:
         alias target_level = Level.CRITICAL
 
         @parameter
-        if level < target_level:
+        if Self._is_active[target_level]():
             return
 
         var writer = Formatter(fd=self._fd)
@@ -204,7 +211,7 @@ struct Logger[level: Level = DEFAULT_LEVEL]:
         alias target_level = Level.CRITICAL
 
         @parameter
-        if level < target_level:
+        if Self._is_active[target_level]():
             return
 
         var writer = Formatter(fd=self._fd)

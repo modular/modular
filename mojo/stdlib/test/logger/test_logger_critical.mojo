@@ -3,17 +3,20 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-# RUN: %mojo %s | FileCheck %s
+# RUN: not --crash %mojo %s | FileCheck %s
 
 
 from logger import Logger, Level
 
 
 def main():
-    var log = Logger[Level.INFO]()
+    var log = Logger[Level.CRITICAL]()
 
     # CHECK-NOT: DEBUG::: hello world
     log.debug("hello", "world")
 
-    # CHECK: INFO::: hello
-    log.info("hello")
+    # CHECK-NOT: DEBUG::: hello world
+    log.info("hello", "world")
+
+    # CHECK: CRITICAL::: hello
+    log.critical("hello")

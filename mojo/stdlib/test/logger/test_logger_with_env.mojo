@@ -14,8 +14,5 @@ def main():
     # CHECK: DEBUG::: hello world
     log.debug("hello", "world")
 
-    # CHECK-NOT: INFO::: hello
+    # CHECK: INFO::: hello
     log.info("hello")
-
-    # CHECK-NOT: CRITICAL::: hello
-    log.critical("hello")
