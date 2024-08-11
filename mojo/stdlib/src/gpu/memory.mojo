@@ -535,7 +535,7 @@ fn load[
 
 
 fn _int_to_str[val: Int]() -> StringLiteral:
-    constrained[val in (1, 2, 4, 8, 16, 32, 64, 128)]()
+    constrained[val in (1, 2, 4, 8, 16, 32, 64, 128, 256)]()
 
     @parameter
     if val == 1:
@@ -554,5 +554,7 @@ fn _int_to_str[val: Int]() -> StringLiteral:
         return "64"
     elif val == 128:
         return "128"
+    elif val == 256:
+        return "256"
 
     return "Unknown"
