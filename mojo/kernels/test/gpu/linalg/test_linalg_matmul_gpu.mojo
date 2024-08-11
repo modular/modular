@@ -118,8 +118,8 @@ fn matmul_test_case[
     _linspace_fill(mat_a_host)
     _linspace_fill(mat_b_host)
 
-    ctx.enqueue_copy_from_device(mat_a_host.data, mat_a_dev[0])
-    ctx.enqueue_copy_from_device(mat_b_host.data, mat_b_dev[0])
+    ctx.enqueue_copy_to_device(mat_a_dev[0], mat_a_host.data)
+    ctx.enqueue_copy_to_device(mat_b_dev[0], mat_b_host.data)
 
     _matmul_gpu(mat_c_dev[1], mat_a_dev[1], mat_b_dev[1], ctx)
 
@@ -134,22 +134,9 @@ fn matmul_test_case[
         mat_b_host,
     )
 
-    var success = True
     for m in range(shape_c_dim[0]):
         for n in range(shape_c_dim[1]):
-            if not isclose(mat_c_ref_host[m, n], mat_c_host[m, n]):
-                print(
-                    "Failed at ",
-                    m,
-                    n,
-                    mat_c_host[m, n],
-                    ", ref=",
-                    mat_c_ref_host[m, n],
-                )
-                success = False
-
-    if success:
-        print("Passed 🎉")
+            assert_almost_equal(mat_c_ref_host[m, n], mat_c_host[m, n])
 
     mat_a_host.data.free()
     mat_b_host.data.free()
