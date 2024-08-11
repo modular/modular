@@ -51,6 +51,15 @@ def test_load():
         ]().asm
     )
 
+    assert_true(
+        "ld.global.L2::256B.v4.u32 "
+        in str(
+            _compile_code[
+                load_value[width=4, prefetch_size=256], emission_kind="ptx"
+            ]().asm
+        )
+    )
+
     assert_equal(
         str(
             _compile_code[
