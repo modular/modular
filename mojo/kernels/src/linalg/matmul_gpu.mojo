@@ -52,6 +52,7 @@ from sys import llvm_intrinsic
 from ._multistage_gemm_gpu import multistage_gemm
 from .utils import GemmShape, apply_epilogue, elementwise_epilogue_type
 from gpu.host._compile import _get_nvptx_target
+from gpu.memory import load, CacheOperation
 
 
 @always_inline
@@ -450,6 +451,17 @@ fn gemv_tc_kernel[
                 c[warp_id] = accum.cast[c_type]()
 
 
+@always_inline
+fn _mark_as_exclusive[
+    type: DType
+](owned addr: UnsafePointer[Scalar[type]]) -> UnsafePointer[
+    Scalar[type], exclusive=True
+]:
+    return UnsafePointer.address_of(addr).bitcast[
+        UnsafePointer[Scalar[type], exclusive=True]
+    ]()[]
+
+
 # Matrix-Column Vector Multiplication utilizing Tensor Cores
 fn gemv_tc_kernel_vector[
     c_type: DType,
@@ -477,42 +489,56 @@ fn gemv_tc_kernel_vector[
     var warp_id = x // WARP_SIZE
     var accum = Scalar[s_type]()
 
-    if warp_id < m:
-        # Every warp processes a single row of the resultant vector
-        for i in range(ceildiv(k // simd_width, WARP_SIZE)):
-            var idx = (i * WARP_SIZE * simd_width) + lane_id() * simd_width
-            var val = SIMD[a_type, simd_width]()
-            if idx < k:
-                var ax = a.load[width=simd_width, alignment=align_a](
-                    Index(warp_id, idx)
-                )
+    var a_ptr = _mark_as_exclusive(
+        a.data + (warp_id * a.dim[1]()) + lane_id() * simd_width
+    )
+    var idx = lane_id() * simd_width
+    alias step = WARP_SIZE * simd_width
 
-                var bx = b.load[width=simd_width, alignment=align_b](
-                    reverse_idx[transpose_b](idx, 0)
-                ).cast[a_type]()
-                # Do simd vector loads in ax,bx to multiply element wise for matrix row and vector column
-                val = ax * bx
+    if warp_id >= m:
+        return
 
-            # Do a fast tensor core and warp shuffle based reduce operation
-            var out_val = tc_reduce_vector[s_type, a_type, simd_width](val)
+    # Every warp processes a single row of the resultant vector
+    for _ in range(ceildiv(k // simd_width, WARP_SIZE)):
+        var val = SIMD[a_type, simd_width]()
+        if idx < k:
+            var ax = load[
+                width=simd_width,
+                prefetch_size=128,
+                alignment=align_a,
+                cache_policy = CacheOperation.LAST_USE,
+            ](a_ptr)
+            var bx = load[
+                width=simd_width,
+                prefetch_size=128,
+                alignment=align_b,
+                cache_policy = CacheOperation.ALWAYS,
+            ](b._offset(reverse_idx[transpose_b](idx, 0))).cast[a_type]()
 
-            if lane_id() == 0:
-                accum += out_val
+            # Do simd vector loads in ax,bx to multiply element wise for matrix
+            # row and vector column
+            val = ax * bx
 
-        if lane_id() == 0:
+            idx += step
+            a_ptr += step
 
-            @parameter
-            if elementwise_lambda_fn:
-                alias elementwise_lambda = elementwise_lambda_fn.value()
-                elementwise_lambda[c_type, 1](
-                    reverse_idx[transpose_b](warp_id, 0),
-                    accum.cast[c_type](),
-                )
-            else:
-                c.store(
-                    reverse_idx[transpose_b](warp_id, 0),
-                    accum.cast[c_type](),
-                )
+        # Do a fast tensor core and warp shuffle based reduce operation
+        accum += tc_reduce_vector[s_type, a_type, simd_width](val)
+
+    if lane_id() == 0:
+
+        @parameter
+        if elementwise_lambda_fn:
+            alias elementwise_lambda = elementwise_lambda_fn.value()
+            elementwise_lambda[c_type, 1](
+                reverse_idx[transpose_b](warp_id, 0),
+                accum.cast[c_type](),
+            )
+        else:
+            c.store(
+                reverse_idx[transpose_b](warp_id, 0),
+                accum.cast[c_type](),
+            )
 
 
 # Row Vector-Matrix multiplication
