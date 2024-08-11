@@ -50,7 +50,11 @@ struct FailedAssertion {
 /// Like `assert`, this does nothing if the NDEBUG symbol is defined.
 ///
 #ifdef NDEBUG
-#define ASSERT_STREAM(condition, message_stream)
+#define ASSERT_STREAM(condition, message_stream)                               \
+  {                                                                            \
+    do {                                                                       \
+    } while (0);                                                               \
+  }
 #else
 #define ASSERT_STREAM(condition, message_stream)                               \
   if (LLVM_UNLIKELY(!(condition)))                                             \
