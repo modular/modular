@@ -35,9 +35,8 @@ LIT::FuncOp StructEmitter::createFunction(
     ImplicitLocOpBuilder &builder, FnEffects fnEffects, StringRef suffix,
     bool synthetic) {
 
-  // This starts with implicit lifetimes and then gets explicitly declared input
-  // params.
-  SmallVector<ParamDeclAttr> fullParams;
+  // Figure out the implicit lifetimes.
+  SmallVector<ParamDeclAttr> implLifetimeParams;
 
   // The caller specifies all the input types, which means that all the input
   // reference types that carry implicit lifetimes will already have them
@@ -73,9 +72,9 @@ LIT::FuncOp StructEmitter::createFunction(
       auto newLifetime = ParamDeclRefAttr::get(lifetimeName, decl.getType());
       adjustedArgTypes.back() = refArgType.getWithLifetime(newLifetime);
     }
-    fullParams.push_back(decl);
+    implLifetimeParams.push_back(decl);
   }
-  size_t numImplicitLifetimeDecls = fullParams.size();
+  size_t numImplicitLifetimeDecls = implLifetimeParams.size();
 
   auto metadata = FnMetadataAttr::get(argListAttrs, paramListAttrs,
                                       numImplicitLifetimeDecls);
@@ -88,7 +87,7 @@ LIT::FuncOp StructEmitter::createFunction(
   // Strip off the named lifetime decl references and replace them with indices.
   // We keep the named parameters in the ParamDeclAttr list on the FuncOp and
   // in the BBArgs.
-  signature = signature.replaceImplicitLifetimesWithIndexes(fullParams);
+  signature = signature.replaceImplicitLifetimesWithIndexes(implLifetimeParams);
 
   StringAttr sourceName = builder.getStringAttr(name);
   StringAttr mangledName = builder.getStringAttr(
@@ -108,9 +107,11 @@ LIT::FuncOp StructEmitter::createFunction(
   // Set the attributes on the FuncOp in bulk.
   NamedAttrList attrs = funcOp->getAttrDictionary();
 
-  // Figure out the full set of parameter declarations, this is the implicit
-  // lifetimes + explicit parameter declarations.
-  fullParams.append(params.begin(), params.end());
+  // Figure out the full set of parameter declarations, this is the explicit
+  // parameter declarations + implicit lifetimes.
+  SmallVector<ParamDeclAttr> fullParams;
+  llvm::append_range(fullParams, params);
+  llvm::append_range(fullParams, implLifetimeParams);
   if (!fullParams.empty()) {
     attrs.set(funcOp.getParamsAttrName(),
               builder.getAttr<ParamDeclArrayAttr>(fullParams));
