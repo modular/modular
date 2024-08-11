@@ -18,7 +18,7 @@ struct A[x: int, x_0: int]:
     alias y = __mlir_attr.`11: index`
 
     # CHECK-LABEL: lit.func @"foo
-    # CHECK-SAME: [imm *"self`2x1"]<*"x`2x", x_1>
+    # CHECK-SAME: <*"x`2x", x_1>[imm *"self`2x1"]
     fn foo[x: int, x_1: int](self):
         # CHECK: lit.alias.decl *"z`2x2" = <2>
         alias z = __mlir_attr.`2: index`
@@ -40,7 +40,7 @@ struct MyStruct[a: int, b: int]:
 
 
 # CHECK-LABEL: lit.func @"test_implicit_parameters
-# CHECK-SAME: [imm *"x`2", imm *"y`5"]<?, *"a`", *"b`1", *"a`3", *"b`4">
+# CHECK-SAME: <?, *"a`", *"b`1", *"a`3", *"b`4">[imm *"x`2", imm *"y`5"]
 fn test_implicit_parameters(x: MyStruct, y: MyStruct):
     pass
 

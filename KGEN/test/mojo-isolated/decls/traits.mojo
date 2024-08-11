@@ -101,7 +101,7 @@ struct CFMStruct(CFMTrait):
 # Test for struct with parameters and function with parameters.
 # CHECK-LABEL: lit.trait.decl @CFMTraitParams
 trait CFMTraitParams:
-    # CHECK: lit.func @"f1{{.*}}"[{{.*}}]<x: !CFMTraitParams>(
+    # CHECK: lit.func @"f1{{.*}}"<x: !CFMTraitParams>[{{.*}}](
     fn f1[x: CFMTraitParams](self):
         pass
 
@@ -110,7 +110,7 @@ trait CFMTraitParams:
 struct CFMStructParams[t1: AnyTrivialRegType, t2: AnyTrivialRegType](
     CFMTraitParams
 ):
-    # CHECK: lit.func @"f1{{.*}}"[{{.*}}]<x: !CFMTraitParams>(%self: !lit.ref<{{.*}}@CFMStructParams<:type [[T1:.*]], :type [[T2:.*]]>{{.*}}> borrow_in_mem)
+    # CHECK: lit.func @"f1{{.*}}"<x: !CFMTraitParams>[{{.*}}](%self: !lit.ref<{{.*}}@CFMStructParams<:type [[T1:.*]], :type [[T2:.*]]>{{.*}}> borrow_in_mem)
     fn f1[x: CFMTraitParams](self):
         pass
 
@@ -329,7 +329,7 @@ struct CrazyRegisterPassable[a: int](CrazyTrait):
     pass
 
     # CHECK-LABEL: lit.func @"foo{{.*}}_thunk"
-    # CHECK-SAME: <b>(%self: !lit.ref<{{.*}}@CrazyRegisterPassable<a>{{.*}} borrow_in_mem
+    # CHECK-SAME: <b>[{{.*}}](%self: !lit.ref<{{.*}}@CrazyRegisterPassable<a>{{.*}} borrow_in_mem
     # CHECK-SAME: %c: index,
     # CHECK-SAME: %__result__: !lit.ref<{{.*}}@CrazyRegisterPassable<a>{{.*}} byref_result
     fn foo[b: int](self, c: int) -> Self:
@@ -954,14 +954,14 @@ alias _AnyTypeMetaType = __mlir_type[`!lit.anytrait<`, AnyType, `>`]
 # CHECK-LABEL: lit.struct.decl @TestAnyTrait
 struct TestAnyTrait[element_trait: _AnyTypeMetaType]:
     # CHECK: lit.func @"take_any_type
-    # CHECK-SAME: <b_type: !AnyType>(%self:
+    # CHECK-SAME: <b_type: !AnyType>[{{.*}}](%self:
     # CHECK-SAME: %b_value: !lit.ref<:!AnyType b_type, imm {{.*}} borrow_in_mem)
     fn take_any_type[b_type: AnyType](self, b_value: b_type):
         pass
 
     # CHECK: lit.func @"test
-    # CHECK-SAME: <a_type: !kgen.paramref<:!lit.anytrait<!AnyType> element_trait>>(%self:
-    # CHECK-SAME: %a_value: !lit.ref<:!kgen.paramref<:!lit.anytrait<!AnyType> element_trait> a_type, imm {{.*}}> borrow_in_mem
+    # CHECK-SAME: <a_type: !kgen.paramref<:!lit.anytrait<!AnyType> element_trait>>
+    # CHECK-SAME: (%self: {{.*}}%a_value: !lit.ref<:!kgen.paramref<:!lit.anytrait<!AnyType> element_trait> a_type, imm {{.*}}> borrow_in_mem
     fn test[a_type: element_trait](self, a_value: a_type):
         self.take_any_type(a_value)
 
@@ -986,7 +986,8 @@ trait DependentParam:
 @register_passable
 struct RegPassableParamTrait[a: int](DependentParam):
     # CHECK: lit.func @"foo{{.*}}_thunk"
-    # CHECK-SAME: <x, y: {{.*}}ParamType<x>>(%self: !lit.ref{{.*}}RegPassableParamTrait<a>
+    # CHECK-SAME: <x, y: {{.*}}ParamType<x>>
+    # CHECK-SAME: (%self: !lit.ref{{.*}}RegPassableParamTrait<a>
     fn foo[x: int, y: ParamType[x]](self):
         # CHECK: call {{.*}}<a, x, :{{.*}}ParamType<x> y>
         pass
@@ -998,7 +999,7 @@ struct RegPassableParamTrait[a: int](DependentParam):
         pass
 
     # CHECK: lit.func @"bar{{.*}}_thunk"
-    # CHECK-SAME: <x, y>(%self: !lit.ref<{{.*}}RegPassableParamTrait<a>{{.*}}, %z: !lit.struct<#ParamType <x>>) -> !lit.struct<#ParamType <y>>
+    # CHECK-SAME: <x, y>[{{.*}}](%self: !lit.ref<{{.*}}RegPassableParamTrait<a>{{.*}}, %z: !lit.struct<#ParamType <x>>) -> !lit.struct<#ParamType <y>>
     fn bar[x: int, y: int](self, z: ParamType[x]) -> ParamType[y]:
         # CHECK: call {{.*}}<a, x, y>
         pass

@@ -9,7 +9,7 @@ lit.func @callee[imm a, mut b]() {
 }
 
 // CHECK-LABEL: kgen.generator @calls
-lit.func @calls[imm a, mut b]<f: !lit.signature<[2]() -> ()>>(%arg0: !lit.signature<[2]() -> ()>) {
+lit.func @calls<f: !lit.signature<[2]() -> ()>>[imm a, mut b](%arg0: !lit.signature<[2]() -> ()>) {
   // CHECK: kgen.call @callee() : () -> ()
   lit.call @callee[imm a, mut b]() : !lit.signature<[2]() -> ()>
   // CHECK: kgen.call_param[() -> (): f]()
@@ -74,7 +74,7 @@ lit.func @decorated_fn()
 }
 
 // CHECK-LABEL: @generic_types_retain_convention
-lit.func @generic_types_retain_convention[imm a]<T: type>(
+lit.func @generic_types_retain_convention<T: type>[imm a](
   // CHECK: %arg0: !kgen.paramref<T>,
   // CHECK: %arg1: !lit.ref<T, imm #lit.lifetime> inout,
   // CHECK: %arg2: !kgen.paramref<T> owned,

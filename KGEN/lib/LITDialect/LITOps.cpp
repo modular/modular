@@ -514,12 +514,14 @@ static ParseResult parseLITFunctionSignature(
         ParamDeclAttr::get(name, LifetimeType::get(p.getContext(), isMutable)));
     return success();
   };
-  if (p.parseCommaSeparatedList(AsmParser::Delimiter::OptionalSquare,
-                                parseLifetimeDecl))
-    return failure();
 
   PogListAttr paramListAttr;
   if (parseOptionalParameterSpec(p, params, paramListAttr))
+    return failure();
+
+  // Parse implicit lifetime decls.
+  if (p.parseCommaSeparatedList(AsmParser::Delimiter::OptionalSquare,
+                                parseLifetimeDecl))
     return failure();
 
   SmallVector<StringAttr> argNames;
@@ -615,6 +617,11 @@ static void printLITFunctionSignature(OpAsmPrinter &p, Region *region,
                                       LITSignatureType signature) {
   ArrayRef<ParamDeclAttr> lifetimeDecls =
       params.drop_back(signature.getNumParams());
+
+  ParameterEvaluator evaluator;
+  printOptionalParameterSpec(p, params.drop_front(lifetimeDecls.size()),
+                             signature.getParamListAttrs(), evaluator);
+
   if (!lifetimeDecls.empty()) {
     p << '[';
     llvm::interleaveComma(lifetimeDecls, p, [&](ParamDeclAttr decl) {
@@ -623,10 +630,6 @@ static void printLITFunctionSignature(OpAsmPrinter &p, Region *region,
     });
     p << ']';
   }
-
-  ParameterEvaluator evaluator;
-  printOptionalParameterSpec(p, params.drop_front(lifetimeDecls.size()),
-                             signature.getParamListAttrs(), evaluator);
 
   PogListAttr argListAttr = signature.getArgListAttrs();
   SmallVector<Variadicness> variadicness = getVariadicness(argListAttr);
