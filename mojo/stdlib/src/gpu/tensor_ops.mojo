@@ -116,7 +116,9 @@ fn tc_reduce_vector[
 
             @parameter
             for i in range(0, simd_width, 8):
-                tmp[i] = tc_reduce_vector[out_type](val.slice[8, offset=i]())
+                tmp[i // 8] = tc_reduce_vector[out_type](
+                    val.slice[8, offset=i]()
+                )
 
             return tmp.reduce_add()
 
