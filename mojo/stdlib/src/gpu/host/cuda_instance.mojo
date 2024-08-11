@@ -38,6 +38,10 @@ alias cuDeviceGetAttribute = _dylib_function[
     fn (UnsafePointer[Int32], DeviceAttribute, _DeviceHandle) -> Result,
 ]
 
+alias cuDriverGetVersion = _dylib_function[
+    "cuDriverGetVersion", fn (UnsafePointer[Int32]) -> Result
+]
+
 alias cuDeviceGetName = _dylib_function[
     "cuDeviceGetName",
     fn (UnsafePointer[Int8], Int32, _DeviceHandle) -> Result,
@@ -253,6 +257,7 @@ struct CudaDLL:
     # cuDevice
     var cuDeviceGetCount: cuDeviceGetCount.type
     var cuDeviceGetAttribute: cuDeviceGetAttribute.type
+    var cuDriverGetVersion: cuDriverGetVersion.type
     var cuDeviceGetName: cuDeviceGetName.type
     var cuDeviceTotalMem: cuDeviceTotalMem.type
 
@@ -313,6 +318,7 @@ struct CudaDLL:
     fn __init__(inout self):
         self.cuDeviceGetCount = cuDeviceGetCount.load()
         self.cuDeviceGetAttribute = cuDeviceGetAttribute.load()
+        self.cuDriverGetVersion = cuDriverGetVersion.load()
         self.cuDeviceGetName = cuDeviceGetName.load()
         self.cuDeviceTotalMem = cuDeviceTotalMem.load()
         self.cuCtxCreate = cuCtxCreate.load()

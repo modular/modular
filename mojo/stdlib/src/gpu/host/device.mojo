@@ -627,39 +627,39 @@ struct Device(StringableRaising):
 
     @no_inline
     fn __str__(self) raises -> String:
+        var cuda_ver = self.cuda_version()
         var res = "name: " + self._name() + "\n"
-        res += String("memory: ") + _human_memory(self._total_memory()) + "\n"
         res += (
-            String("compute_capability: ")
+            "cuda_version: " + str(cuda_ver[0]) + "." + str(cuda_ver[1]) + "\n"
+        )
+        res += "memory: " + _human_memory(self._total_memory()) + "\n"
+        res += (
+            "compute_capability: "
             + str(self._query(DeviceAttribute.COMPUTE_CAPABILITY_MAJOR))
             + "."
             + str(self._query(DeviceAttribute.COMPUTE_CAPABILITY_MINOR))
             + "\n"
         )
         res += (
-            String("clock_rate: ")
-            + str(self._query(DeviceAttribute.CLOCK_RATE))
-            + "\n"
+            "clock_rate: " + str(self._query(DeviceAttribute.CLOCK_RATE)) + "\n"
         )
         res += (
-            String("warp_size: ")
-            + str(self._query(DeviceAttribute.WARP_SIZE))
-            + "\n"
+            "warp_size: " + str(self._query(DeviceAttribute.WARP_SIZE)) + "\n"
         )
         res += (
-            String("max_threads_per_block: ")
+            "max_threads_per_block: "
             + str(self._query(DeviceAttribute.MAX_THREADS_PER_BLOCK))
             + "\n"
         )
         res += (
-            String("max_shared_memory: ")
+            "max_shared_memory: "
             + _human_memory(
                 self._query(DeviceAttribute.MAX_SHARED_MEMORY_PER_BLOCK)
             )
             + "\n"
         )
         res += (
-            String("max_block: ")
+            "max_block: "
             + Dim(
                 self._query(DeviceAttribute.MAX_BLOCK_DIM_X),
                 self._query(DeviceAttribute.MAX_BLOCK_DIM_Y),
@@ -668,7 +668,7 @@ struct Device(StringableRaising):
             + "\n"
         )
         res += (
-            String("max_grid: ")
+            "max_grid: "
             + Dim(
                 self._query(DeviceAttribute.MAX_GRID_DIM_X),
                 self._query(DeviceAttribute.MAX_GRID_DIM_Y),
@@ -676,12 +676,8 @@ struct Device(StringableRaising):
             ).__str__()
             + "\n"
         )
-        res += String("SM count: ") + str(self.multiprocessor_count()) + "\n"
-        res += (
-            String("Max threads per SM: ")
-            + str(self.max_threads_per_sm())
-            + "\n"
-        )
+        res += "SM count: " + str(self.multiprocessor_count()) + "\n"
+        res += "Max threads per SM: " + str(self.max_threads_per_sm()) + "\n"
 
         return res
 
@@ -695,6 +691,15 @@ struct Device(StringableRaising):
         _ = cuDeviceGetName(buffer, Int32(buffer_size), self.id)
 
         return StringRef(buffer)
+
+    fn cuda_version(self) raises -> (Int, Int):
+        var res: Int32 = 0
+        var cuDriverGetVersion = self.cuda_dll.cuDriverGetVersion
+        _check_error(cuDriverGetVersion(UnsafePointer.address_of(res)))
+
+        var major = res // 1000
+        var minor = (res % 1000) // 10
+        return (int(major), int(minor))
 
     fn _total_memory(self) raises -> Int:
         """Returns the total amount of memory on the device."""
