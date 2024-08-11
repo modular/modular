@@ -75,11 +75,21 @@ fn warpgroup_reg_alloc[count: Int]():
     maximum register count is increased from its current value to imm-reg-count.
     """
 
+    constrained[
+        count % 8 == 0,
+        "count argument to warpgroup_reg_alloc must be in multiples of 8",
+    ]()
+
+    constrained[
+        24 <= count <= 256,
+        "count argument must be within 24 and 256",
+    ]()
+
     @parameter
-    if is_sm_greater_equal[90]():
-        inlined_assembly[
-            "setmaxnreg.inc.sync.aligned.u32 $0;", NoneType, constraints="i"
-        ](UInt32(count))
+    if is_sm_greater_equal["sm_90a"]():
+        inlined_assembly["llvm.nvvm.setmaxnreg.inc.sync.aligned.u32", NoneType](
+            Int32(count)
+        )
 
 
 fn warpgroup_reg_dealloc[count: Int]():
@@ -91,8 +101,18 @@ fn warpgroup_reg_dealloc[count: Int]():
     register count is reduced from its current value to imm-reg-count.
     """
 
+    constrained[
+        count % 8 == 0,
+        "count argument to warpgroup_reg_dealloc must be in multiples of 8",
+    ]()
+
+    constrained[
+        24 <= count <= 256,
+        "count argument must be within 24 and 256",
+    ]()
+
     @parameter
-    if is_sm_greater_equal[90]():
-        inlined_assembly[
-            "setmaxnreg.dec.sync.aligned.u32 $0;", NoneType, constraints="i"
-        ](UInt32(count))
+    if is_sm_greater_equal["sm_90a"]():
+        inlined_assembly["llvm.nvvm.setmaxnreg.dec.sync.aligned.u32", NoneType](
+            Int32(count)
+        )
