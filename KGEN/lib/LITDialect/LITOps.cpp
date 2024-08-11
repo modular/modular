@@ -605,9 +605,12 @@ static ParseResult parseLITFunctionSignature(
   // references in the signature.
   signature = signature.replaceImplicitLifetimesWithIndexes(lifetimeDecls);
 
-  // Prepend the lifetime declarations.
-  llvm::append_range(lifetimeDecls, params);
-  params = ParamDeclArrayAttr::get(p.getContext(), lifetimeDecls);
+  // The formal params are the declared params + the implicit lifetime decls.
+  SmallVector<ParamDeclAttr> allParams;
+  allParams.reserve(params.size() + lifetimeDecls.size());
+  llvm::append_range(allParams, params);
+  llvm::append_range(allParams, lifetimeDecls);
+  params = ParamDeclArrayAttr::get(p.getContext(), allParams);
   return success();
 }
 
@@ -616,10 +619,10 @@ static void printLITFunctionSignature(OpAsmPrinter &p, Region *region,
                                       FunctionType functionType,
                                       LITSignatureType signature) {
   ArrayRef<ParamDeclAttr> lifetimeDecls =
-      params.drop_back(signature.getNumParams());
+      params.drop_front(signature.getNumParams());
 
   ParameterEvaluator evaluator;
-  printOptionalParameterSpec(p, params.drop_front(lifetimeDecls.size()),
+  printOptionalParameterSpec(p, params.drop_back(lifetimeDecls.size()),
                              signature.getParamListAttrs(), evaluator);
 
   if (!lifetimeDecls.empty()) {
@@ -855,7 +858,7 @@ LIT::FuncOp::collectAllParams(bool includeImplLifetimes) {
 
   auto params = getParams();
   if (!includeImplLifetimes)
-    params = params.drop_front(getSignature().getNumImplicitLifetimeDecls());
+    params = params.drop_back(getSignature().getNumImplicitLifetimeDecls());
   llvm::append_range(result, params);
   return result;
 }

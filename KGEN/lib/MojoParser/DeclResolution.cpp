@@ -1084,8 +1084,8 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
         builder.getAttr<ParamDeclArrayAttr>(paramList.paramDeclAttrs);
   } else {
     SmallVector<ParamDeclAttr> mergedParams;
-    llvm::append_range(mergedParams, tcSignature.implicitLifetimeDecls);
     llvm::append_range(mergedParams, paramList.paramDeclAttrs);
+    llvm::append_range(mergedParams, tcSignature.implicitLifetimeDecls);
     paramsArrayAttr = builder.getAttr<ParamDeclArrayAttr>(mergedParams);
   }
 

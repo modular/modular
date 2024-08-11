@@ -56,7 +56,7 @@ static FlatSymbolRefAttr flattenSymbolRefAttr(SymbolRefAttr ref) {
 static ArrayRef<ParamDeclAttr> extractImplicitLifetimeParams(LIT::FuncOp func) {
   size_t numImplicitLifetimes =
       func.getSignature().getNumImplicitLifetimeDecls();
-  return func.getInputParams().drop_front(numImplicitLifetimes);
+  return func.getInputParams().drop_back(numImplicitLifetimes);
 }
 
 //===----------------------------------------------------------------------===//
