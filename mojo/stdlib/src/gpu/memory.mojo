@@ -430,7 +430,9 @@ fn _load_impl[
 
     alias type_mnemonic = "u" + _int_to_str[type_bitwidth]()
     alias cache_policy_mnemonic = cache_policy.mnemonic()
-    alias eviction_policy_mnemonic = eviction_policy.mnemonic()
+    alias eviction_policy_mnemonic = (
+        ".L1::" + eviction_policy.mnemonic()
+    ) if eviction_policy != CacheEviction.EVICT_NORMAL else ""
     alias pretch_size_mnemonic = (
         ".L2::" + _int_to_str[prefetch_size.value()]() + "B"
     ) if prefetch_size else ""
@@ -441,7 +443,7 @@ fn _load_impl[
     )
     alias v_width = ("" if width == 1 else ".v" + _int_to_str[width]())
 
-    alias instruction_name = "ld.global" + pretch_size_mnemonic + cache_policy_inst + v_width + "." + type_mnemonic
+    alias instruction_name = "ld.global" + eviction_policy_mnemonic + pretch_size_mnemonic + cache_policy_inst + v_width + "." + type_mnemonic
 
     var res = SIMD[type, width]()
 
