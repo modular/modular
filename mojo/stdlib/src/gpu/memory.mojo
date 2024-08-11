@@ -416,6 +416,18 @@ fn _load_impl[
             ](ptr.bitcast[_uint_type_of_width[type_bitwidth]()]())
         )
 
+    @parameter
+    if type_bitwidth <= 16 and bytes_to_load >= sizeof[DType.uint32]():
+        return bitcast[type, width](
+            _load_impl[
+                width = (bytes_to_load // sizeof[DType.uint32]()),
+                prefetch_size=prefetch_size,
+                cache_policy=cache_policy,
+                eviction_policy=eviction_policy,
+                alignment=alignment,
+            ](ptr.bitcast[DType.uint32]())
+        )
+
     alias type_mnemonic = "u" + _int_to_str[type_bitwidth]()
     alias cache_policy_mnemonic = cache_policy.mnemonic()
     alias eviction_policy_mnemonic = eviction_policy.mnemonic()
