@@ -1,3 +1,4 @@
+load("@bazel_skylib//rules:copy_file.bzl", "copy_file")
 load("@bazel_skylib//rules:write_file.bzl", "write_file")
 load("@build_bazel_apple_support//rules:apple_genrule.bzl", "apple_genrule")
 load(
@@ -1404,12 +1405,25 @@ apple_genrule(
     ],
 )
 
-# TODO: Remove once https://github.com/llvm/llvm-project/pull/91789 is in
+copy_file(
+    name = "mojo-lldb-dap",
+    src = "@llvm-project//lldb/tools/lldb-dap",
+    out = "mojo-lldb-dap",
+    visibility = ["//visibility:public"],
+)
+
+copy_file(
+    name = "lldb-server",
+    src = "@llvm-project//lldb:lldb-server",
+    out = "lldb-server",
+)
+
+# NOTE: These binaries must live beside the lldb binary to be discovered at runtime without an env var
 alias(
     name = "gdb-server",
     actual = select({
         "@platforms//os:macos": ":debugserver",
-        "//conditions:default": "@llvm-project//lldb:lldb-server",
+        "//conditions:default": ":lldb-server",
     }),
     visibility = ["//visibility:public"],
 )
