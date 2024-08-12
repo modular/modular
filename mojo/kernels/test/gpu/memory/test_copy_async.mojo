@@ -6,7 +6,7 @@
 # RUN: %mojo-no-debug %s
 
 from gpu.host._compile import _compile_code, _get_nvptx_target
-from gpu.memory import AddressSpace, async_copy
+from gpu.memory import AddressSpace, async_copy, Fill
 from gpu.sync import mbarrier, mbarrier_init, mbarrier_test_wait
 from memory import stack_allocation
 from memory import UnsafePointer
@@ -170,6 +170,38 @@ def test_async_copy_l2_prefetch__sm90():
     _verify_async_copy_l2_prefetch(asm)
 
 
+fn test_async_copy_with_zero_fill_kernel(
+    src: UnsafePointer[Float32, AddressSpace.GLOBAL]
+):
+    var shared_mem = stack_allocation[
+        4, DType.float32, address_space = AddressSpace.SHARED
+    ]()
+    async_copy[4, bypass_L1_16B=False, l2_prefetch=128, fill = Fill.ZERO](
+        src, shared_mem
+    )
+    async_copy[16, bypass_L1_16B=False, l2_prefetch=64, fill = Fill.ZERO](
+        src, shared_mem
+    )
+
+
+fn _verify_test_async_copy_with_zero_fill(asm: String) raises -> None:
+    assert_true(
+        "cp.async.ca.shared.global.L2::128B [%r1], [%rd1], 4, %r2;" in asm
+    )
+    assert_true(
+        "cp.async.ca.shared.global.L2::64B [%r1], [%rd1], 16, %r4;" in asm
+    )
+
+
+def test_async_copy_with_zero_fill():
+    alias asm = str(
+        _compile_code[
+            test_async_copy_with_zero_fill_kernel, target = _get_nvptx_target()
+        ]().asm
+    )
+    _verify_test_async_copy_with_zero_fill(asm)
+
+
 def main():
     test_mbarrier_sm80()
     test_mbarrier_sm90()
@@ -181,3 +213,4 @@ def main():
     test_async_copy_sm90()
     test_async_copy_l2_prefetch_sm80()
     test_async_copy_l2_prefetch__sm90()
+    test_async_copy_with_zero_fill()
