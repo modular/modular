@@ -935,7 +935,8 @@ public:
 
   /// Take the resolved result. This asserts that the result is resolved.
   TestExecutionResult takeResolvedResult() {
-    assert(result && "result is not resolved");
+    if (!result)
+      llvm::report_fatal_error("test execution result is not resolved");
     return std::move(*result);
   }
 
