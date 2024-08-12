@@ -80,7 +80,7 @@ fn test_async_copy(ctx: DeviceContext) raises:
     )
 
     ctx.synchronize()
-    input.tensor.print()
+    print(input.tensor)
 
     _ = input^
 
@@ -394,7 +394,7 @@ fn test_masked_async_copy(ctx: DeviceContext) raises:
     )
 
     ctx.synchronize()
-    input.tensor.print()
+    print(input.tensor)
 
     _ = input^
 

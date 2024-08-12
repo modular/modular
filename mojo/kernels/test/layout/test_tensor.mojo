@@ -130,7 +130,7 @@ fn test_basic_tensor_ops():
     for tile_i in range(4):
         print("----tile[", tile_i, "]----")
         var tile = tensor_8.tile[2](tile_i)
-        tile.print()
+        print(tile)
 
     _ = managed_tensor^
 
@@ -288,7 +288,7 @@ fn test_tensor_tile_and_distribute_custom_layout():
     tensor.linspace()
     # CHECK: 0.0   1.0   2.0   3.0
     # CHECK: 4.0   5.0   6.0   7.0
-    tensor.print()
+    print(tensor)
 
     # CHECK: row-major-thread-layout
     # CHECK: ----fragments-data[ 0 ]----
@@ -305,7 +305,7 @@ fn test_tensor_tile_and_distribute_custom_layout():
             Layout(IntTuple(2, 2), IntTuple(2, 1))
         ](th_i)
         print("----fragments-data[", th_i, "]----")
-        fragments_1x2.print()
+        print(fragments_1x2)
 
     # CHECK: col-major-thread-layout
     # CHECK: ----fragments-data[ 0 ]----
@@ -322,7 +322,7 @@ fn test_tensor_tile_and_distribute_custom_layout():
             Layout(IntTuple(2, 2), IntTuple(1, 2))
         ](th_i)
         print("----fragments-data[", th_i, "]----")
-        fragments_1x2.print()
+        print(fragments_1x2)
 
     _ = managed_tensor^
 
@@ -423,7 +423,7 @@ fn test_distribute_tiled_layout():
     for th_i in range(UInt(8)):
         var thread_tile = tensor.distribute[threads_2x4_layout](th_i)
         print("----fragments-data[", th_i, "]----")
-        thread_tile.print()
+        print(thread_tile)
 
 
 # CHECK-LABEL: test_distribute_with_tile_size
@@ -502,8 +502,7 @@ fn test_distribute_with_tile_size():
     for tid in range(thread_layout.size()):
         print("----thread[", tid, "]----")
         var tile = tensor0.vectorize[2, 2]().distribute[thread_layout](tid)
-        tile.print()
-
+        print(tile)
     var tensor8x1 = LayoutTensor[
         DType.float32, Layout(IntTuple(8, 1))
     ].stack_allocation[alignment=16]()
@@ -545,7 +544,7 @@ fn test_distribute_with_tile_size():
         var tile = tensor8x1.vectorize[2, 1]().distribute[
             thread_layout, axis=0
         ](tid)
-        tile.print()
+        print(tile)
 
 
 # CHECK-LABEL: test_vectorize_reads
@@ -568,7 +567,7 @@ fn test_vectorize_reads():
     # CHECK: [40.0, 41.0, 42.0, 43.0] [44.0, 45.0, 46.0, 47.0]
     # CHECK: [48.0, 49.0, 50.0, 51.0] [52.0, 53.0, 54.0, 55.0]
     # CHECK: [56.0, 57.0, 58.0, 59.0] [60.0, 61.0, 62.0, 63.0]
-    tensor_8_2_vec.print()
+    print(tensor_8_2_vec)
 
     var tensor_2_8_vec = tensor.vectorize[4, 1]()
     # CHECK: ((2, 8):(4, 8))
@@ -577,7 +576,7 @@ fn test_vectorize_reads():
     print(tensor_2_8_vec.element_layout)
     # CHECK: [0.0, 8.0, 16.0, 24.0] [1.0, 9.0, 17.0, 25.0] [2.0, 10.0, 18.0, 26.0] [3.0, 11.0, 19.0, 27.0] [4.0, 12.0, 20.0, 28.0] [5.0, 13.0, 21.0, 29.0] [6.0, 14.0, 22.0, 30.0] [7.0, 15.0, 23.0, 31.0]
     # CHECK: [32.0, 40.0, 48.0, 56.0] [33.0, 41.0, 49.0, 57.0] [34.0, 42.0, 50.0, 58.0] [35.0, 43.0, 51.0, 59.0] [36.0, 44.0, 52.0, 60.0] [37.0, 45.0, 53.0, 61.0] [38.0, 46.0, 54.0, 62.0] [39.0, 47.0, 55.0, 63.0]
-    tensor_2_8_vec.print()
+    print(tensor_2_8_vec)
 
     var tensor_2_vec = tensor.vectorize[4, 4]()
     # CHECK: ((2, 2):(4, 32))
@@ -586,7 +585,7 @@ fn test_vectorize_reads():
     print(tensor_2_vec.element_layout)
     # CHECK: [0.0, 8.0, 16.0, 24.0, 1.0, 9.0, 17.0, 25.0, 2.0, 10.0, 18.0, 26.0, 3.0, 11.0, 19.0, 27.0] [4.0, 12.0, 20.0, 28.0, 5.0, 13.0, 21.0, 29.0, 6.0, 14.0, 22.0, 30.0, 7.0, 15.0, 23.0, 31.0]
     # CHECK: [32.0, 40.0, 48.0, 56.0, 33.0, 41.0, 49.0, 57.0, 34.0, 42.0, 50.0, 58.0, 35.0, 43.0, 51.0, 59.0] [36.0, 44.0, 52.0, 60.0, 37.0, 45.0, 53.0, 61.0, 38.0, 46.0, 54.0, 62.0, 39.0, 47.0, 55.0, 63.0]
-    tensor_2_vec.print()
+    print(tensor_2_vec)
 
 
 # CHECK-LABEL: test_vectorize_writes
@@ -613,7 +612,7 @@ fn test_vectorize_writes():
     # CHECK: 1.0 1.0 2.0 2.0
     # CHECK: 3.0 3.0 4.0 4.0
     # CHECK: 3.0 3.0 4.0 4.0
-    tensor.print()
+    print(tensor)
 
 
 # CHECK-LABEL: test_slice
@@ -629,34 +628,34 @@ fn test_slice():
     # CHECK: 8.0 9.0
     # CHECK: 12.0 13.0
     print("row_slice_sub_column")
-    tensor.slice[:, :2]().print()
+    print(tensor.slice[:, :2]())
     # CHECK: col_slice_sub_row
     # CHECK: 0.0 1.0 2.0 3.0
     # CHECK: 4.0 5.0 6.0 7.0
     print("col_slice_sub_row")
-    tensor.slice[:2, :]().print()
+    print(tensor.slice[:2, :]())
     # sub_slice
     # 5.0 6.0
     # 9.0 10.0
     # 13.0 14.0
     print("sub_slice")
-    tensor.slice[1:, 1:3]().print()
+    print(tensor.slice[1:, 1:3]())
     # CHECK: bottom_right
     # CHECK: 10.0 11.0
     # CHECK: 14.0 15.0
     print("bottom_right")
-    tensor.slice[2:, 2:]().print()
+    print(tensor.slice[2:, 2:]())
     # CHECK: top_left
     # CHECK: 0.0 1.0
     # CHECK: 4.0 5.0
     print("top_left")
-    tensor.slice[:2, :2]().print()
+    print(tensor.slice[:2, :2]())
 
     print("slice_of_slice")
     # CHECK: slice_of_slice
     # CHECK: 6.0 7.0
     # CHECK: 10.0 11.0
-    tensor.slice[1:, 1:]().slice[:2, 1:]().print()
+    print(tensor.slice[1:, 1:]().slice[:2, 1:]())
 
 
 # CHECK-LABEL: test_copy_vectorized
@@ -675,7 +674,7 @@ fn test_copy_vectorized():
     # CHECK: [40.0, 41.0, 42.0, 43.0] [44.0, 45.0, 46.0, 47.0]
     # CHECK: [48.0, 49.0, 50.0, 51.0] [52.0, 53.0, 54.0, 55.0]
     # CHECK: [56.0, 57.0, 58.0, 59.0] [60.0, 61.0, 62.0, 63.0]
-    vec_8_1.print()
+    print(vec_8_1)
     var tensor_8_8_zeros = LayoutTensor[
         DType.float32, Layout(IntTuple(8, 8), IntTuple(8, 1))
     ].stack_allocation[
@@ -695,7 +694,7 @@ fn test_copy_vectorized():
     # CHECK: [40.0, 41.0, 42.0, 43.0] [44.0, 45.0, 46.0, 47.0]
     # CHECK: [48.0, 49.0, 50.0, 51.0] [52.0, 53.0, 54.0, 55.0]
     # CHECK: [56.0, 57.0, 58.0, 59.0] [60.0, 61.0, 62.0, 63.0]
-    tensor_8_8_zeros.print()
+    print(tensor_8_8_zeros)
 
     var tensor_8_8_zeros_4_1 = stack_allocation_like(tensor_8_8).vectorize[
         4, 1
@@ -704,7 +703,7 @@ fn test_copy_vectorized():
     tensor_8_8_zeros_4_1.copy_from(vec_8_1)
     # CHECK: [0.0, 1.0, 2.0, 3.0] [16.0, 17.0, 18.0, 19.0] [32.0, 33.0, 34.0, 35.0] [48.0, 49.0, 50.0, 51.0] [4.0, 5.0, 6.0, 7.0] [20.0, 21.0, 22.0, 23.0] [36.0, 37.0, 38.0, 39.0] [52.0, 53.0, 54.0, 55.0]
     # CHECK: [8.0, 9.0, 10.0, 11.0] [24.0, 25.0, 26.0, 27.0] [40.0, 41.0, 42.0, 43.0] [56.0, 57.0, 58.0, 59.0] [12.0, 13.0, 14.0, 15.0] [28.0, 29.0, 30.0, 31.0] [44.0, 45.0, 46.0, 47.0] [60.0, 61.0, 62.0, 63.0]
-    tensor_8_8_zeros_4_1.print()
+    print(tensor_8_8_zeros_4_1)
 
     var tensor_8_8_zeros_1_4 = stack_allocation_like(tensor_8_8).vectorize[
         1, 4
@@ -719,7 +718,7 @@ fn test_copy_vectorized():
     # CHECK: [40.0, 41.0, 42.0, 43.0] [44.0, 45.0, 46.0, 47.0]
     # CHECK: [48.0, 49.0, 50.0, 51.0] [52.0, 53.0, 54.0, 55.0]
     # CHECK: [56.0, 57.0, 58.0, 59.0] [60.0, 61.0, 62.0, 63.0]
-    tensor_8_8_zeros_1_4.print()
+    print(tensor_8_8_zeros_1_4)
 
     var tensor_8_8_zeros_4_4 = LayoutTensor[
         DType.float32, Layout(IntTuple(8, 8), IntTuple(8, 1))
@@ -734,7 +733,7 @@ fn test_copy_vectorized():
     tensor_8_8_zeros_4_4.copy_from(tensor_8_8.vectorize[4, 4]())
     # CHECK: [0.0, 8.0, 16.0, 24.0, 1.0, 9.0, 17.0, 25.0, 2.0, 10.0, 18.0, 26.0, 3.0, 11.0, 19.0, 27.0] [4.0, 12.0, 20.0, 28.0, 5.0, 13.0, 21.0, 29.0, 6.0, 14.0, 22.0, 30.0, 7.0, 15.0, 23.0, 31.0]
     # CHECK: [32.0, 40.0, 48.0, 56.0, 33.0, 41.0, 49.0, 57.0, 34.0, 42.0, 50.0, 58.0, 35.0, 43.0, 51.0, 59.0] [36.0, 44.0, 52.0, 60.0, 37.0, 45.0, 53.0, 61.0, 38.0, 46.0, 54.0, 62.0, 39.0, 47.0, 55.0, 63.0]
-    tensor_8_8_zeros_4_4.print()
+    print(tensor_8_8_zeros_4_4)
 
 
 # CHECK-LABEL: test_distribute_vectorized
@@ -753,7 +752,7 @@ fn test_distribute_vectorized():
     # CHECK: [40.0, 41.0, 42.0, 43.0] [44.0, 45.0, 46.0, 47.0]
     # CHECK: [48.0, 49.0, 50.0, 51.0] [52.0, 53.0, 54.0, 55.0]
     # CHECK: [56.0, 57.0, 58.0, 59.0] [60.0, 61.0, 62.0, 63.0]
-    tensor_8_2xv4.print()
+    print(tensor_8_2xv4)
 
     # CHECK: ----thread[ 0 ]----
     # CHECK: [0.0, 1.0, 2.0, 3.0]
@@ -778,7 +777,7 @@ fn test_distribute_vectorized():
     for tid in range(UInt(4)):
         var fragments = tensor_8_2xv4.distribute[Layout(IntTuple(2, 2))](tid)
         print("----thread[", tid, "]----")
-        fragments.print()
+        print(fragments)
 
 
 fn test_distribute_axis_projection():
@@ -838,7 +837,7 @@ fn test_distribute_axis_projection():
         var tensor = tensor_4x4.vectorize[1, 4]().distribute[
             Layout.row_major(4, 4), axis=0
         ](th_id)
-        tensor.print()
+        print(tensor)
         print("=====")
 
     # CHECK: th_id 0
@@ -893,7 +892,7 @@ fn test_distribute_axis_projection():
         var tensor = tensor_4x4.vectorize[4, 1]().distribute[
             Layout.row_major(4, 4), axis=1
         ](th_id)
-        tensor.print()
+        print(tensor)
         print("=====")
 
 
@@ -905,30 +904,30 @@ fn test_split():
     var tiles_axis0 = tensor_4x4.split[2]()
     # CHECK: 0.0 1.0 2.0 3.0
     # CHECK: 4.0 5.0 6.0 7.0
-    tiles_axis0[0].print()
+    print(tiles_axis0[0])
     # CHECK: 8.0 9.0 10.0 11.0
     # CHECK: 12.0 13.0 14.0 15.0
-    tiles_axis0[1].print()
+    print(tiles_axis0[1])
 
     var tiles_axis1 = tensor_4x4.split[2, axis=1]()
     # CHECK: 0.0 1.0
     # CHECK: 4.0 5.0
     # CHECK: 8.0 9.0
     # CHECK: 12.0 13.0
-    tiles_axis1[0].print()
+    print(tiles_axis1[0])
     # CHECK: 2.0 3.0
     # CHECK: 6.0 7.0
     # CHECK: 10.0 11.0
     # CHECK: 14.0 15.0
-    tiles_axis1[1].print()
+    print(tiles_axis1[1])
 
     var tiles_vec2_axis0 = tensor_4x4.vectorize[1, 2]().split[2]()
     # CHECK: [0.0, 1.0] [2.0, 3.0]
     # CHECK: [4.0, 5.0] [6.0, 7.0]
-    tiles_vec2_axis0[0].print()
+    print(tiles_vec2_axis0[0])
     # CHECK: [8.0, 9.0] [10.0, 11.0]
     # CHECK: [12.0, 13.0] [14.0, 15.0]
-    tiles_vec2_axis0[1].print()
+    print(tiles_vec2_axis0[1])
 
     _ = tensor_4x4^
 
@@ -939,7 +938,7 @@ fn test_copy_subtiles_scalars():
     var tensor_13x7 = LayoutTensor[
         DType.float32, Layout.row_major(13, 7)
     ].stack_allocation[alignment=16]().linspace()
-    tensor_13x7.print()
+    print(tensor_13x7)
 
     alias tile_m_size = 4
     alias tile_n_size = 2
@@ -1038,7 +1037,7 @@ fn test_copy_subtiles_scalars():
                     StaticIntTuple[tile_4x2_cache.layout.rank()]
                 ](StaticIntTuple[2](13, 7))
             ](tile_4x2)
-            tile_4x2_cache.print()
+            print(tile_4x2_cache)
 
 
 # CHECK-LABEL: test_copy_distributed_subtiles_scalars
@@ -1202,7 +1201,7 @@ fn test_copy_distributed_subtiles_scalars():
                     StaticIntTuple[tile_4x4_cache.layout.rank()]
                 ](StaticIntTuple[2](13, 7))
             ](tile_4x4)
-            tile_4x4_cache.print()
+            print(tile_4x4_cache)
 
             for th_id in range(UInt(4)):
                 print("----fragments-data[", th_id, "]----")
@@ -1217,7 +1216,7 @@ fn test_copy_distributed_subtiles_scalars():
                         StaticIntTuple[tile_2x2_cache.layout.rank()]
                     ](StaticIntTuple[2](13, 7))
                 ](tile_2x2)
-                tile_2x2_cache.print()
+                print(tile_2x2_cache)
 
 
 fn test_copy_subtiles_scalars_back():
@@ -1354,7 +1353,7 @@ fn test_copy_subtiles_scalars_back():
                 DType.float32, Layout.row_major(tile_m_size, tile_n_size)
             ].stack_allocation[alignment=16]().linspace()
             tensor_4x4.copy_from(tile_4x4_cache)
-            tensor_13x7.print()
+            print(tensor_13x7)
 
 
 # CHECK-LABEL: test_slice_with_offsets
@@ -1373,27 +1372,31 @@ fn test_slice_with_offsets():
     # CHECK: 6.0 8.0
     # CHECK: 12.0 14.0
     print("slice-of[0:3,:2,0]")
-    tensor_4x3x2_row_major.slice[0:3, 0:2, slice_indices= (0, 1)](
-        offsets=(0)
-    ).print()
+    print(
+        tensor_4x3x2_row_major.slice[0:3, 0:2, slice_indices= (0, 1)](
+            offsets=(0)
+        )
+    )
 
     # CHECK: slice-of-[0:3,:2,1]
     # CHECK: 1.0 3.0
     # CHECK: 7.0 9.0
     # CHECK: 13.0 15.0
     print("slice-of-[0:3,:2,1]")
-    tensor_4x3x2_row_major.slice[0:3, 0:2, slice_indices= (0, 1)](
-        offsets=(1)
-    ).print()
+    print(
+        tensor_4x3x2_row_major.slice[0:3, 0:2, slice_indices= (0, 1)](
+            offsets=(1)
+        )
+    )
 
     # CHECK: slice-of-[2,:,:]
     # CHECK: 12.0 13.0
     # CHECK: 14.0 15.0
     # CHECK: 16.0 17.0
     print("slice-of-[2,:,:]")
-    tensor_4x3x2_row_major.slice[:, :, slice_indices= (1, 2)](
-        offsets=(2)
-    ).print()
+    print(
+        tensor_4x3x2_row_major.slice[:, :, slice_indices= (1, 2)](offsets=(2))
+    )
 
     print("slice-of-[:,1,:]")
     # CHECK: slice-of-[:,1,:]
@@ -1401,9 +1404,9 @@ fn test_slice_with_offsets():
     # CHECK: 8.0 9.0
     # CHECK: 14.0 15.0
     # CHECK: 20.0 21.0
-    tensor_4x3x2_row_major.slice[:, :, slice_indices= (0, 2)](
-        offsets=(1)
-    ).print()
+    print(
+        tensor_4x3x2_row_major.slice[:, :, slice_indices= (0, 2)](offsets=(1))
+    )
 
     # CHECK: slice-of-[:,0,0]
     # CHECK: 0.0
@@ -1411,18 +1414,18 @@ fn test_slice_with_offsets():
     # CHECK: 12.0
     # CHECK: 18.0
     print("slice-of-[:,0,0]")
-    tensor_4x3x2_row_major.slice_1d[:, slice_indices= (0)](
-        offsets=(0, 0)
-    ).print()
+    print(
+        tensor_4x3x2_row_major.slice_1d[:, slice_indices= (0)](offsets=(0, 0))
+    )
 
     # CHECK: slice-of-[2,:,1]
     # CHECK: 13.0
     # CHECK: 15.0
     # CHECK: 17.0
     print("slice-of-[2,:,1]")
-    tensor_4x3x2_row_major.slice_1d[:, slice_indices= (1)](
-        offsets=(2, 1)
-    ).print()
+    print(
+        tensor_4x3x2_row_major.slice_1d[:, slice_indices= (1)](offsets=(2, 1))
+    )
 
 
 # CHECK-LABEL: test_layout_tensor_iterator
@@ -1445,7 +1448,7 @@ fn test_layout_tensor_iterator():
     # CHECK: 12.0 13.0
     var iter2x2 = LayoutTensorIter[type, layout_2x2_8x1](ptr, size)
     for _ in range(2):
-        iter2x2.get().print()
+        print(iter2x2.get())
         iter2x2 += 1
 
     # Non circular iterator with stride
@@ -1455,7 +1458,7 @@ fn test_layout_tensor_iterator():
     # CHECK: 24.0 25.0
     iter2x2 = LayoutTensorIter[type, layout_2x2_8x1](ptr, size, stride=16)
     for _ in range(2):
-        iter2x2.get().print()
+        print(iter2x2.get())
         iter2x2 += 1
 
     # Non circular iterator with offset and stride
@@ -1467,7 +1470,7 @@ fn test_layout_tensor_iterator():
         ptr, size, stride=16, offset=4
     )
     for _ in range(2):
-        iter2x2.get().print()
+        print(iter2x2.get())
         iter2x2 += 1
 
     # Circular iterator with offset and stride
@@ -1483,7 +1486,7 @@ fn test_layout_tensor_iterator():
         type, layout_2x2_8x1, circular=True
     ](ptr, size, stride=16, offset=32)
     for _ in range(4):
-        iter2x2_circular.get().print()
+        print(iter2x2_circular.get())
         iter2x2_circular += 1
 
     # Tiled iterator.
@@ -1498,7 +1501,7 @@ fn test_layout_tensor_iterator():
     # CHECK: 46.0 47.0
     var iter = tensor.tiled_iterator[2, 2, axis=1](2, 0)
     for _ in range(4):
-        iter.get().print()
+        print(iter.get())
         iter += 1
     # CHECK: 38.0 39.0
     # CHECK: 46.0 47.0
@@ -1506,7 +1509,7 @@ fn test_layout_tensor_iterator():
     # CHECK: 62.0 63.0
     iter = tensor.tiled_iterator[2, 2, axis=0](2, 3)
     for _ in range(2):
-        iter.get().print()
+        print(iter.get())
         iter += 1
 
 
@@ -1547,7 +1550,7 @@ fn test_layout_tensor_copy_from_masked_src():
     # CHECK: 208 209 210 211 212 213 214 215 216 217 218 219 220 221 222 223
     # CHECK: 224 225 226 227 228 229 230 231 232 233 234 235 236 237 238 239
     # CHECK: 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
-    tensor_16x16.print()
+    print(tensor_16x16)
 
 
 # CHECK-LABEL: test_layout_tensor_copy_from_masked_dst
@@ -1586,7 +1589,7 @@ fn test_layout_tensor_copy_from_masked_dst():
     # CHECK: 192 193 194 195 196 197 198 199 200 201 202 203 204 205 206 207
     # CHECK: 208 209 210 211 212 213 214 215 216 217 218 219 220 221 222 223
     # CHECK: 224 225 226 227 228 229 230 231 232 233 234 235 236 237 238 239
-    tensor_15x16.print()
+    print(tensor_15x16)
 
 
 # CHECK-LABEL: test_element_coords_vectorized
@@ -1704,7 +1707,7 @@ fn test_element_coords_tile_and_distribute():
     # CHECK: 0 1 0 1 0 1 0 1
     # CHECK: 2 3 2 3 2 3 2 3
     print("")
-    tensor.print()
+    print(tensor)
 
 
 # CHECK-LABEL: test_element_coords_tiles_do_not_div
@@ -1784,7 +1787,7 @@ fn test_copy_from_bigger_tensor():
     # CHECK: 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0
     # CHECK: 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0
     # CHECK: 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0
-    tensor_5x7.print()
+    print(tensor_5x7)
 
 
 # CHECK-LABEL: test_copy_from_smaller_tensor
@@ -1811,7 +1814,7 @@ fn test_copy_from_smaller_tensor():
     # CHECK: 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0
     # CHECK: 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0
     # CHECK: 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0
-    tensor_8x8.print()
+    print(tensor_8x8)
 
 
 # CHECK-LABEL: test_copy_from_vectorized_masked_write
@@ -1857,7 +1860,7 @@ fn test_copy_from_vectorized_masked_write():
     # CHECK: -1.0 -1.0 -1.0 -1.0 -1.0 -1.0 -1.0 -1.0
     # CHECK: -1.0 -1.0 -1.0 -1.0 -1.0 -1.0 -1.0 -1.0
     print("write-1x5:")
-    tensor_8x8_data.print()
+    print(tensor_8x8_data)
 
     var tensor_3x8 = LayoutTensor[DType.float32, Layout.row_major(3, 8)](
         tensor_8x8_data.ptr
@@ -1882,7 +1885,7 @@ fn test_copy_from_vectorized_masked_write():
     # CHECK: -1.0 -1.0 -1.0 -1.0 -1.0 -1.0 -1.0 -1.0
     # CHECK: -1.0 -1.0 -1.0 -1.0 -1.0 -1.0 -1.0 -1.0
     print("write-3x8:")
-    tensor_8x8_data.print()
+    print(tensor_8x8_data)
 
     var tensor_5x8 = LayoutTensor[DType.float32, Layout.row_major(5, 8)](
         tensor_8x8_data.ptr
@@ -1907,7 +1910,7 @@ fn test_copy_from_vectorized_masked_write():
     # CHECK: -1.0 -1.0 -1.0 -1.0 -1.0 -1.0 -1.0 -1.0
     # CHECK: -1.0 -1.0 -1.0 -1.0 -1.0 -1.0 -1.0 -1.0
     print("write-5x8:")
-    tensor_8x8_data.print()
+    print(tensor_8x8_data)
 
 
 fn test_copy_from_vectorized_masked_read():
@@ -1937,7 +1940,7 @@ fn test_copy_from_vectorized_masked_read():
     # CHECK: 30.0 31.0 32.0 33.0 34.0 0.0 0.0 0.0
     # CHECK: 35.0 36.0 37.0 38.0 39.0 0.0 0.0 0.0
     print("read-8x5:")
-    tensor_8x8.print()
+    print(tensor_8x8)
 
     var tensor_5x8 = LayoutTensor[
         DType.float32, Layout.row_major(5, 8)
@@ -1961,7 +1964,7 @@ fn test_copy_from_vectorized_masked_read():
     # CHECK: 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0
     # CHECK: 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0
     print("read-5x8:")
-    tensor_8x8.print()
+    print(tensor_8x8)
 
     _ = tensor_8x8.fill(-1)
     var tensor_8x8_v_4_4 = tensor_8x8.vectorize[4, 4]()
@@ -1981,7 +1984,7 @@ fn test_copy_from_vectorized_masked_read():
     # CHECK: 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0
     # CHECK: 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0
     print("read-5x8_v_4_4:")
-    tensor_8x8.print()
+    print(tensor_8x8)
 
 
 fn main():

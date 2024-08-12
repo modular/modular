@@ -269,7 +269,7 @@ fn test_tiled_matmul[use_l1_cache: Bool]():
             Dim(4, 4, 2),
             Dim(2, 2, 1),
         ](dst.tensor, lhs.tensor, rhs.tensor)
-    dst.tensor.print()
+    print(dst.tensor)
 
 
 fn main():

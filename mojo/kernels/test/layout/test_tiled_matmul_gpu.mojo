@@ -84,7 +84,7 @@ fn test_naive_matmul_kernel(ctx: DeviceContext) raises:
     )
 
     ctx.synchronize()
-    mat_c.tensor.print()
+    print(mat_c.tensor)
 
 
 fn sram_blocked_matmul[
@@ -224,7 +224,7 @@ fn test_sram_blocked_matmul(ctx: DeviceContext) raises:
     )
 
     ctx.synchronize()
-    mat_c.tensor.print()
+    print(mat_c.tensor)
 
     _ = mat_a^
     _ = mat_b^
@@ -334,7 +334,7 @@ fn test_single_warp_tf32_m16n8k8_matmul(ctx: DeviceContext) raises:
     )
 
     ctx.synchronize()
-    mat_c.tensor.print()
+    print(mat_c.tensor)
 
     _ = mat_a^
     _ = mat_b^

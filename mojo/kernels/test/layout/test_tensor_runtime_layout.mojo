@@ -29,7 +29,7 @@ def test_fill_and_print():
     # CHECK: 8.0 9.0 10.0 11.0 12.0 13.0 14.0 15.0
     # CHECK: 16.0 17.0 18.0 19.0 20.0 21.0 22.0 23.0
     # CHECK: 24.0 25.0 26.0 27.0 28.0 29.0 30.0 31.0
-    tensor.print()
+    print(tensor)
 
     storage.free()
 
@@ -56,7 +56,7 @@ def test_set_and_get_items():
     # CHECK: 6.0 7.0 8.0 9.0
     # CHECK: 10.0 11.0 12.0 13.0
     # CHECK: 14.0 15.0 16.0 17.0
-    tensor.print()
+    print(tensor)
 
     storage.free()
 
@@ -99,7 +99,7 @@ def test_tile():
         for tile_j in range(2):
             print("----tile-data[", tile_i, ",", tile_j, "]----")
             var tile_2x2 = tensor.tile[2, 2](tile_i, tile_j)
-            tile_2x2.print()
+            print(tile_2x2)
 
     storage.free()
 
@@ -191,11 +191,11 @@ fn test_tile_and_distribute():
         for tile_j in range(2):
             print("----tile-data[", tile_i, ",", tile_j, "]----")
             var tile_4x4 = tensor.tile[4, 4](tile_i, tile_j)
-            tile_4x4.print()
+            print(tile_4x4)
             for th_i in range(4):
                 var tile_2x2 = tile_4x4.distribute[Layout.row_major(2, 2)](th_i)
                 print("----fragments-data[", th_i, "]----")
-                tile_2x2.print()
+                print(tile_2x2)
 
 
 # CHECK-LABEL: test_tile_and_vectorize
@@ -267,10 +267,10 @@ fn test_tile_and_vectorize():
         for tile_j in range(2):
             print("----tile-data[", tile_i, ",", tile_j, "]----")
             var tensor_8x8 = tensor.tile[8, 8](tile_i, tile_j)
-            tensor_8x8.print()
+            print(tensor_8x8)
             var tensor_v_2x2 = tensor_8x8.vectorize[4, 4]()
             print("----vectorized-matrix----")
-            tensor_v_2x2.print()
+            print(tensor_v_2x2)
 
     # CHECK: ----tile-data[ 0 , 0 ]----
     # CHECK: 0.0 1.0 2.0 3.0 4.0 5.0 6.0 7.0
@@ -324,10 +324,10 @@ fn test_tile_and_vectorize():
         for tile_j in range(2):
             print("----tile-data[", tile_i, ",", tile_j, "]----")
             var tensor_8x8 = tensor.tile[8, 8](tile_i, tile_j)
-            tensor_8x8.print()
+            print(tensor_8x8)
             var tensor_v_2x8 = tensor_8x8.vectorize[4, 1]()
             print("----vectorized-matrix----")
-            tensor_v_2x8.print()
+            print(tensor_v_2x8)
 
     # CHECK: ----tile-data[ 0 , 0 ]----
     # CHECK: 0.0 1.0 2.0 3.0 4.0 5.0 6.0 7.0
@@ -405,10 +405,10 @@ fn test_tile_and_vectorize():
         for tile_j in range(2):
             print("----tile-data[", tile_i, ",", tile_j, "]----")
             var tensor_8x8 = tensor.tile[8, 8](tile_i, tile_j)
-            tensor_8x8.print()
+            print(tensor_8x8)
             var tensor_v_8x2 = tensor_8x8.vectorize[1, 4]()
             print("----vectorized-matrix----")
-            tensor_v_8x2.print()
+            print(tensor_v_8x2)
 
 
 # CHECK-LABEL: test_copy_from
@@ -428,9 +428,9 @@ fn test_copy_from():
     var dst_tensor = LayoutTensor[DType.float32, layout](
         UnsafePointer[Float32].alloc(dynamic_layout.size()), dynamic_layout
     ).fill(0)
-    dst_tensor.print()
+    print(dst_tensor)
     dst_tensor.copy_from(src_tensor)
-    dst_tensor.print()
+    print(dst_tensor)
 
 
 # CHECK-LABEL: test_linspace_fill
@@ -458,7 +458,7 @@ fn test_linspace_fill():
     # CHECK: 56.0 57.0 58.0 59.0 60.0 61.0 62.0 63.0
 
     print("----source-tensor----")
-    src_tensor.print()
+    print(src_tensor)
 
     # CHECK: ----source-tensor----
     # CHECK: 42.0 42.0 42.0 42.0 42.0 42.0 42.0 42.0
@@ -472,7 +472,7 @@ fn test_linspace_fill():
 
     var src_tensor_copy = src_tensor.fill(42.0)
     print("----source-tensor----")
-    src_tensor.print()
+    print(src_tensor)
 
     # CHECK: ----source-tensor-copy----
     # CHECK: 42.0 42.0 42.0 42.0 42.0 42.0 42.0 42.0
@@ -485,7 +485,7 @@ fn test_linspace_fill():
     # CHECK: 42.0 42.0 42.0 42.0 42.0 42.0 42.0 42.0
     # CHECK: True
     print("----source-tensor-copy----")
-    src_tensor_copy.print()
+    print(src_tensor_copy)
     print(src_tensor.ptr == src_tensor_copy.ptr)
 
 

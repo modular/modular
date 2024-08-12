@@ -69,7 +69,7 @@ fn test_tiled_and_vectorized_matmul():
                                 outer_product(vec_a[m_i, k_i], vec_b[k_i, n_i])
                             )
 
-    tensor_c.print()
+    print(tensor_c)
 
 
 fn main():

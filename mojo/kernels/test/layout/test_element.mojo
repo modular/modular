@@ -96,7 +96,7 @@ fn test_element_store():
             ].load(tensor_8x8_v_1_4.ptr.offset(offset))
             elem.element_data *= 10
             elem.store(tensor_8x8_v_1_4.ptr.offset(offset))
-    tensor_8x8.print()
+    print(tensor_8x8)
 
     # CHECK: vector_4x1
     # CHECK: 0.0 100.0 200.0 300.0 400.0 500.0 600.0 700.0
@@ -117,7 +117,7 @@ fn test_element_store():
             ].load(tensor_8x8_v_4_1.ptr.offset(offset))
             elem.element_data *= 10
             elem.store(tensor_8x8_v_4_1.ptr.offset(offset))
-    tensor_8x8.print()
+    print(tensor_8x8)
 
     # CHECK: vector_4x4
     # CHECK: 0.0 1000.0 2000.0 3000.0 4000.0 5000.0 6000.0 7000.0
@@ -139,7 +139,7 @@ fn test_element_store():
             elem.element_data *= 10
             elem.store(tensor_8x8_v_4_4.ptr.offset(offset))
 
-    tensor_8x8.print()
+    print(tensor_8x8)
 
 
 fn test_element_dynamic_layout():
@@ -185,7 +185,7 @@ fn test_element_dynamic_layout():
     # CHECK: 400.0 410.0 420.0 430.0 440.0 450.0 460.0 470.0
     # CHECK: 480.0 490.0 500.0 510.0 520.0 530.0 540.0 550.0
     # CHECK: 560.0 570.0 580.0 590.0 600.0 610.0 620.0 630.0
-    tensor_8x8.print()
+    print(tensor_8x8)
 
 
 # CHECK-LABEL: test_element_masked_load
@@ -251,7 +251,7 @@ fn test_element_masked_store():
     # CHECK: -1.0 -1.0 -1.0 -1.0
     # CHECK: -1.0 -1.0 -1.0 -1.0
     print("vec_1x4:mask_1x3")
-    tensor_4x4.print()
+    print(tensor_4x4)
     _ = tensor_4x4.fill(-1)
 
     var tensor_4x4_vec_4_1 = tensor_4x4.vectorize[4, 1]()
@@ -269,7 +269,7 @@ fn test_element_masked_store():
     # CHECK: 1.0 -1.0 -1.0 -1.0
     # CHECK: -1.0 -1.0 -1.0 -1.0
     # CHECK: -1.0 -1.0 -1.0 -1.0
-    tensor_4x4.print()
+    print(tensor_4x4)
     _ = tensor_4x4.fill(-1)
 
     var tensor_4x4_vec_4_4 = tensor_4x4.vectorize[4, 4]()
@@ -287,7 +287,7 @@ fn test_element_masked_store():
     # CHECK: 1.0 1.0 -1.0 -1.0
     # CHECK: 1.0 1.0 -1.0 -1.0
     # CHECK: -1.0 -1.0 -1.0 -1.0
-    tensor_4x4.print()
+    print(tensor_4x4)
 
 
 fn main():
