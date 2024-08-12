@@ -97,7 +97,11 @@ fn async_copy[
 
 @always_inline
 fn async_copy[
-    type: AnyType, //, size: Int, *, bypass_L1_16B: Bool = True
+    type: AnyType, //,
+    size: Int,
+    *,
+    fill: Fill = Fill.NONE,
+    bypass_L1_16B: Bool = True,
 ](
     src: UnsafePointer[type, AddressSpace.GLOBAL, *_],
     dst: UnsafePointer[type, AddressSpace.SHARED, *_],
@@ -109,6 +113,7 @@ fn async_copy[
     Parameters:
         type: The pointer type.
         size: Number of bytes to copy.
+        fill: The fill to use for initializing the data.
         bypass_L1_16B: Bypass the L1 cache for 16 bypes copy.
 
     Args:
@@ -120,6 +125,7 @@ fn async_copy[
     """
     # TODO: Constrained on device capability.
     constrained[size == 4 or size == 8 or size == 16]()
+    constrained[fill is Fill.NONE, "only no fill is supported"]()
 
     alias cache_op = CacheOperation.GLOBAL.mnemonic() if (
         bypass_L1_16B and size == 16
