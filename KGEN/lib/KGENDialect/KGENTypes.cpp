@@ -255,6 +255,15 @@ SignatureType::getSpecializedSignature(ArrayRef<TypedAttr> inputParamValues,
   });
 }
 
+/// Return a signature with the specified parameter bindings substituted
+/// into it as happens in a call.  The types specified in the parameter
+/// bindings affects the type signature of the argument and results, and
+/// also can remap the signature in the parameter list itself.
+///
+/// If an error occurs making the substitution, report it with emitErrorFn
+/// and return null. If `emitErrorFn` is not specified, the callee will
+/// assume that the substitution cannot fail. If a location is specified,
+/// a default diagnostic is created with it and used as emitErrorFn.
 SignatureType SignatureType::getSpecializedSignature(
     ArrayRef<TypedAttr> inputParamValues,
     function_ref<InFlightDiagnostic()> emitErrorFn,

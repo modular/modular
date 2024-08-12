@@ -540,10 +540,6 @@ def KGEN_ParamApplyOp : KGENOp<"param.apply",
     results of the call are bound to parameter declarations. This is the 'apply'
     operator as an operation.
 
-    This form of the 'apply' operator is beneficial for the elaborator, because
-    it gives the elaborator a "save point" for multiversioning functions, if
-    the 'apply' callee has multiple implementations.
-
     The callee is limited to a single result value with no result parameters.
 
     Example:

@@ -312,6 +312,10 @@ FnMetadataAttr::getWithBoundParams(const llvm::BitVector &boundParams) const {
   return get(getArgListAttrs(), newParamAttrs, getNumImplicitLifetimeDecls());
 }
 
+/// Get a new metadata attribute for a signature with the given number of
+/// positional input parameters prepended to the signature. An additional
+/// array of bool corresponding to the variadic mask of the prepended
+/// parameters is also required.
 FnMetadataAttr
 FnMetadataAttr::prependPosParams(size_t numNewParams,
                                  ArrayRef<bool> variadicMask) const {
