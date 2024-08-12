@@ -201,7 +201,7 @@ void LLVMModuleSplitterImpl::split(LLVMSplitProcessFn processFn) {
   // `readAndMaterializeDependencies`.
   for (const llvm::GlobalVariable &global : mainModule->globals()) {
     computeDeps(global);
-    if (!global.hasInternalLinkage())
+    if (!global.hasInternalLinkage() && !global.hasPrivateLinkage())
       transitiveDeps[&global];
   }
   for (const llvm::Function &fn : mainModule->functions()) {
@@ -447,7 +447,6 @@ void LLVMModulePerFunctionSplitterImpl::split(LLVMSplitProcessFn processFn) {
     auto &valueInfo = valueInfos[root];
     valueMap.clear();
     splitDeps.clear();
-
     auto shouldSplit = [&](const llvm::GlobalValue *globalVal,
                            const ValueInfo &info) {
       // Only clone root and the declaration of its dependencies.
@@ -463,6 +462,7 @@ void LLVMModulePerFunctionSplitterImpl::split(LLVMSplitProcessFn processFn) {
         splitDeps.insert(globalVal);
         return true;
       }
+
       return false;
     };
 
@@ -481,11 +481,15 @@ void LLVMModulePerFunctionSplitterImpl::split(LLVMSplitProcessFn processFn) {
   int64_t count = 0;
   SmallVector<const llvm::GlobalValue *> toSplit;
   for (auto &global : mainModule->globals()) {
-    if (global.hasInternalLinkage()) {
+    if (global.hasInternalLinkage() || global.hasPrivateLinkage()) {
       global.setLinkage(llvm::GlobalValue::WeakAnyLinkage);
       global.setDSOLocal(false);
       continue;
     }
+
+    if (global.hasExternalLinkage())
+      continue;
+
     // TODO: Add special handling for `llvm.global_ctors` and
     // `llvm.global_dtors`, because otherwise they end up tying almost all
     // symbols into the same split.
@@ -495,8 +499,13 @@ void LLVMModulePerFunctionSplitterImpl::split(LLVMSplitProcessFn processFn) {
   }
 
   for (auto &fn : mainModule->functions()) {
-    if (!fn.isDeclaration() &&
-        (valueInfos[&fn].canBeSplit || valueInfos[&fn].users.empty())) {
+    if (fn.isDeclaration())
+      continue;
+
+    ValueInfo &info = valueInfos[&fn];
+    bool userEmpty = info.users.empty() ||
+                     (info.users.size() == 1 && info.users.contains(&fn));
+    if (info.canBeSplit || userEmpty) {
       if (fn.hasInternalLinkage())
         fn.setLinkage(llvm::Function::LinkageTypes::WeakAnyLinkage);
       LLVM_DEBUG(llvm::dbgs()
@@ -564,6 +573,7 @@ void LLVMModulePerFunctionSplitterImpl::collectValueUsers(
 /// Propagate use information through the module.
 void LLVMModulePerFunctionSplitterImpl::propagateUseInfo() {
   std::vector<ValueInfo *> worklist;
+
   // Each value depends on itself. Seed the iteration with that.
   for (auto &[value, info] : valueInfos) {
     if (auto func = llvm::dyn_cast<llvm::Function>(value)) {
@@ -574,9 +584,10 @@ void LLVMModulePerFunctionSplitterImpl::propagateUseInfo() {
     info.dependencies.insert(value);
     info.value = value;
     worklist.push_back(&info);
-    // If a value cannot be split, its users are also its dependencies.
-    if (!info.canBeSplit)
+    if (!info.canBeSplit) {
+      // If a value cannot be split, its users are also its dependencies.
       llvm::set_union(info.dependencies, info.users);
+    }
   }
 
   while (!worklist.empty()) {
