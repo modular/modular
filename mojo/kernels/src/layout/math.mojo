@@ -4,6 +4,8 @@
 #
 # ===----------------------------------------------------------------------=== #
 
+import math
+
 from layout import LayoutTensor
 
 from utils.numerics import min_or_neg_inf
@@ -143,3 +145,11 @@ fn max[axis: Int](inp: LayoutTensor, out: LayoutTensor):
         return b_max(a, b)
 
     _reduce[axis, max_init, max_func](inp, out)
+
+
+@always_inline
+fn exp(inp: LayoutTensor) -> __type_of(inp):
+    fn exp_func(val: inp.element_type) capturing -> inp.element_type:
+        return math.exp(val)
+
+    return inp.__elementwise_unary[exp_func]()
