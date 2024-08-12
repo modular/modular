@@ -1642,8 +1642,8 @@ fn _argn[is_max: Bool](input: NDBuffer, axis: Int, output: NDBuffer) raises:
         output_stride = output.num_elements()
         chunk_size = 1
     else:
-        input_stride = input.dynamic_stride[canonical_axis - 1]
-        output_stride = output.dynamic_stride[canonical_axis - 1]
+        input_stride = input.stride(canonical_axis - 1)
+        output_stride = output.stride(canonical_axis - 1)
 
         for i in range(canonical_axis):
             parallel_size *= input.dim(i)
