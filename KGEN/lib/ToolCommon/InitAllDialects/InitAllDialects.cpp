@@ -49,6 +49,8 @@ struct DebugOpInterpreterInterface
 /// This dialect extension implements interpreter hooks for non-KGEN dialects.
 class InterpreterDialectExtension : public mlir::DialectExtensionBase {
 public:
+  MLIR_DEFINE_EXPLICIT_INTERNAL_INLINE_TYPE_ID(InterpreterDialectExtension)
+
   explicit InterpreterDialectExtension()
       : DialectExtensionBase(
             DebugInfo::DebugInfoDialect::getDialectNamespace()) {}
@@ -78,6 +80,8 @@ public:
 /// parameter printing are loaded.
 class ParameterPrettyFormatExtension : public mlir::DialectExtensionBase {
 public:
+  MLIR_DEFINE_EXPLICIT_INTERNAL_INLINE_TYPE_ID(ParameterPrettyFormatExtension)
+
   /// Apply this extension once the KGEN dialect is loaded.
   explicit ParameterPrettyFormatExtension()
       : DialectExtensionBase(KGENDialect::getDialectNamespace()) {}
@@ -191,6 +195,8 @@ struct RemUOpComputeOpInterface
 // dialect.
 class KGENDialectExtension : public mlir::DialectExtensionBase {
 public:
+  MLIR_DEFINE_EXPLICIT_INTERNAL_INLINE_TYPE_ID(KGENDialectExtension)
+
   explicit KGENDialectExtension()
       : DialectExtensionBase(mlir::index::IndexDialect::getDialectNamespace()) {
   }
