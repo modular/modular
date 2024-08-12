@@ -112,11 +112,11 @@ kgen.generator @entry2() -> index {
   e = #kgen.struct_def<"A"[size](data: pointer<applied_struct<[size] #kgen.struct_def<"B"[size](data: pointer<applied_struct<[size] #kgen.struct_def.self<1>, <*("size")>>>)>, <*("size")>>>)> : !kgen.struct_def<[size]>
 } : () -> ()
 
-// CHECK: #kgen.tailkind<none>
-// CHECK: #kgen.tailkind<musttail>
-// CHECK: #kgen.tailkind<notail>
+// CHECK: #kgen<tailkind none>
+// CHECK: #kgen<tailkind musttail>
+// CHECK: #kgen<tailkind notail>
 "some.op"() {
-  a = #kgen.tailkind<none>,
-  c = #kgen.tailkind<musttail>,
-  d = #kgen.tailkind<notail>
+  a = #kgen<tailkind none>,
+  c = #kgen<tailkind musttail>,
+  d = #kgen<tailkind notail>
 } : () -> ()
