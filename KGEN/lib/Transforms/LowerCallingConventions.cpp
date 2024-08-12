@@ -5,6 +5,8 @@
 //===----------------------------------------------------------------------===//
 
 #include "KGEN/CODialect/COOps.h"
+#include "KGEN/CustomDialect/CustomDialect.h"
+#include "KGEN/CustomDialect/CustomUtils.h"
 #include "KGEN/HLCFDialect/HLCFOps.h"
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/POPDialect/POPOps.h"
@@ -344,6 +346,26 @@ static void recursiveRewrite(Operation *op, mlir::AttrTypeReplacer &replacer) {
 }
 
 void LowerCallingConventionsPass::runOnOperation() {
+  Operation *toplevelOp = getOperation();
+  auto customDialect =
+      toplevelOp->getContext()->getLoadedDialect<Custom::CustomDialect>();
+
+  // Prevent custom ops parameters from being lowered. This is so we can use
+  // these parameters later on to specialize generators.
+  if (customDialect) {
+    toplevelOp->walk([customDialect](Operation *op) {
+      if (op->getDialect() != customDialect)
+        return;
+
+      Attribute implParamsAttr = op->getAttr(Custom::kCustomOpParamsAttrName);
+      if (!implParamsAttr)
+        return;
+
+      op->setAttr(Custom::kCustomOpParamsAttrName,
+                  KGEN::PreservedAttr::get(implParamsAttr));
+    });
+  }
+
   mlir::AttrTypeReplacer replacer;
   replacer.addReplacement(lowerResult);
   replacer.addReplacement(removeDINoneResults);

@@ -43,11 +43,6 @@ struct RegisterCustomOpsPass
   static DenseResourceElementsAttr
   sliceCustomModuleToAttr(ModuleOp theModule, SymbolTableCollection &tables);
 
-  /// Wrap the op implementation parameters in custom operation in a
-  /// `kgen.preserved` attribute so they are not lowered anymore in the
-  /// pipeline.
-  static void preserveCustomOpParams(ModuleOp theModule);
-
   void runOnOperation() override;
 
 private:
@@ -107,22 +102,6 @@ RegisterCustomOpsPass::sliceCustomModuleToAttr(ModuleOp theModule,
   return writeModuleToBytecodeAttr(*newModule);
 }
 
-void RegisterCustomOpsPass::preserveCustomOpParams(ModuleOp theModule) {
-  auto customDialect =
-      theModule->getContext()->getLoadedDialect<CustomDialect>();
-  theModule.walk([customDialect](Operation *op) {
-    if (op->getDialect() != customDialect)
-      return;
-
-    Attribute implParamsAttr = op->getAttr(kCustomOpParamsAttrName);
-    if (!implParamsAttr)
-      return;
-
-    op->setAttr(kCustomOpParamsAttrName,
-                KGEN::PreservedAttr::get(implParamsAttr));
-  });
-}
-
 void RegisterCustomOpsPass::runOnOperation() {
   ModuleOp theModule = getOperation();
   auto implsOp = CustomOpImplsOp::lookupOp(theModule);
@@ -139,9 +118,6 @@ void RegisterCustomOpsPass::runOnOperation() {
   DenseResourceElementsAttr customOpResource =
       sliceCustomModuleToAttr(theModule, tables);
   theModule->setAttr(kCustomOpImplModuleAttr, customOpResource);
-
-  // Set all custom op attributes to preserved.
-  preserveCustomOpParams(theModule);
 
   // Erase the custom op definitions mapping.
   // This allows custom op definitions to be DCE'd, as now all information is
