@@ -9,6 +9,9 @@ at an entire file's assembly nor do they want to invoke the kgen tool manually.
 """
 
 from sys.info import _current_target
+from utils._format import Formatter
+from pathlib import Path
+from os import PathLike
 
 from memory import UnsafePointer
 from .reflection import get_linkage_name
@@ -41,6 +44,21 @@ struct Info:
     var populate: fn (UnsafePointer[NoneType]) capturing -> None
     var error_msg: StringLiteral
     var is_error: Bool
+
+    @no_inline
+    fn format_to(self, inout writer: Formatter):
+        return writer.write(self.asm)
+
+    fn __str__(self) -> String:
+        return String.format_sequence(self)
+
+    @no_inline
+    fn write_text[path_like: PathLike](self, path: path_like) raises:
+        Path(path.__fspath__()).write_text(str(self))
+
+    @no_inline
+    fn __contains__(self, content: String) -> Bool:
+        return content in str(content)
 
 
 alias _EMISSION_KIND_ASM: __mlir_type.index = (0).__as_mlir_index()
