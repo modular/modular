@@ -77,7 +77,10 @@ modular_cc_library(
         ":Support",
         "//Support:ADT",
         "//Support:Profiling",
-    ],
+    ] + select({
+        "@platforms//os:linux": ["@gperftools//:tcmalloc"],
+        "//conditions:default": [],
+    }),
 )
 
 modular_shared_library(
@@ -88,10 +91,7 @@ modular_shared_library(
         ":Runtime.headers",
         "//Support:SymbolExport",
         "@llvm-project//llvm:Support",
-    ] + select({
-        "@platforms//os:linux": ["@gperftools//:tcmalloc"],
-        "//conditions:default": [],
-    }),
+    ],
 )
 
 modular_cc_library(

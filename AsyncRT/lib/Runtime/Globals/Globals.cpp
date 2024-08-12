@@ -4,12 +4,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifdef USE_TCMALLOC
-#include <gperftools/tcmalloc.h>
-#endif
-
-#include "AsyncRT/Runtime/CompactRuntimePtr.h"
 #include "AsyncRT/Runtime/Globals/Globals.h"
+#include "AsyncRT/Runtime/CompactRuntimePtr.h"
 #include "Support/SymbolExport.h"
 
 #include <atomic>
@@ -31,13 +27,3 @@ M::AsyncRT::Globals::getRuntimeTableSingleton(
   static Detail::RuntimeTable *table = ctor();
   return *table;
 }
-
-#ifdef USE_TCMALLOC
-MODULAR_CXX_EXPORT void *TCMallocGlobals::tc_new(size_t size,
-                                                 size_t alignment) {
-  return ::tc_new_aligned(size, std::align_val_t(alignment));
-}
-MODULAR_CXX_EXPORT void TCMallocGlobals::tc_delete(void *ptr) {
-  return ::tc_delete(ptr);
-}
-#endif
