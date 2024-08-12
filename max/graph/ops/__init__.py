@@ -25,6 +25,7 @@ from .casting import (
     cast,
     rebind,
     reshape,
+    shape_to_tensor,
     squeeze,
     transpose,
     unsqueeze,

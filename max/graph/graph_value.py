@@ -50,6 +50,15 @@ class GraphValue:
         else:
             raise ValueError(f"can't construct GraphValue from {value}")
 
+    # TODO(MSDK-662): Should both DimLike and ShapeLike be considered ValueLike now?
+    @staticmethod
+    def from_dim(dim: DimLike) -> GraphValue:
+        return ops.shape_to_tensor([dim]).reshape(())
+
+    @staticmethod
+    def from_shape(shape: ShapeLike) -> GraphValue:
+        return ops.shape_to_tensor(shape)
+
     @property
     def tensor_type(self) -> TensorType:
         """Returns the type of the GraphValue as a TensorType.

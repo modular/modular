@@ -108,3 +108,11 @@ def broadcast_to(x: GraphValue, shape: ShapeLike):
         x,
         new_shape=_graph.shape_attr(mlir.Context.current, dims),
     )[0]
+
+
+def shape_to_tensor(shape: ShapeLike) -> GraphValue:
+    dims = [dim(d).to_mlir() for d in shape]
+    return Graph.current._add_op(
+        rmo.shape_to_tensor,
+        shape=_graph.shape_attr(mlir.Context.current, dims),
+    )[0]
