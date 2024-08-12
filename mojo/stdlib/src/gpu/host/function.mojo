@@ -243,6 +243,12 @@ struct FunctionCache:
 # ===----------------------------------------------------------------------===#
 
 
+fn _dump_q(val: Variant[Path, Bool]) -> Bool:
+    if val.isa[Bool]():
+        return val[Bool]
+    return val[Path] != Path("")
+
+
 @value
 struct Function[
     func_type: AnyTrivialRegType, //,
@@ -310,7 +316,9 @@ struct Function[
 
         self.cuda_dll = cuda_dll
         self.cuda_function_cache = cuda_function_cache
-        Self._dump_rep(dump_ptx, dump_llvm)
+
+        if _dump_q(dump_ptx) or _dump_q(dump_llvm):
+            Self._dump_rep(dump_ptx, dump_llvm)
 
         var info = Self._get_cached_function_info[func_type, func](
             device_context_ptr=device_context_ptr,
@@ -349,7 +357,8 @@ struct Function[
         self.cuda_dll = cuda_dll
         self.cuda_function_cache = cuda_function_cache
 
-        Self._dump_rep(dump_ptx, dump_llvm)
+        if _dump_q(dump_ptx) or _dump_q(dump_llvm):
+            Self._dump_rep(dump_ptx, dump_llvm)
 
         var function_handle = module.load(name)
         if not function_handle:
@@ -358,16 +367,12 @@ struct Function[
         self.info = _CachedFunctionInfo(module.module, function_handle)
 
     @staticmethod
+    @no_inline
     fn _dump_rep(
         dump_ptx: Variant[Path, Bool] = False,
         dump_llvm: Variant[Path, Bool] = False,
     ) raises:
-        fn dump_q(val: Variant[Path, Bool]) -> Bool:
-            if val.isa[Bool]():
-                return val[Bool]
-            return val[Path] != Path("")
-
-        if dump_q(dump_ptx):
+        if _dump_q(dump_ptx):
             alias ptx = str(Self._impl.asm)
             var cleaned_up_ptx = ptx.replace(
                 "\t// begin inline asm\n", ""
@@ -377,7 +382,7 @@ struct Function[
             else:
                 print(cleaned_up_ptx)
 
-        if dump_q(dump_llvm):
+        if _dump_q(dump_llvm):
             alias llvm = _compile_code[func, emission_kind="llvm"]().asm
 
             if dump_llvm.isa[Path]():
