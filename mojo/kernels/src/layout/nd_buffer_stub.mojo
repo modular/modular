@@ -234,7 +234,7 @@ fn distribute[
     for i in range(rank):
         alias thread_shape_i = to_int(thread_layout.shape[i])
         res_shape[i] = buff.dynamic_shape[i] // thread_shape_i
-        res_strides[i] = buff.dynamic_stride[i] * thread_shape_i
+        res_strides[i] = buff.stride[i]() * thread_shape_i
 
     var thread_offset: Scalar[DType.int32] = 0
 
@@ -243,7 +243,7 @@ fn distribute[
         alias shape_i = to_int(thread_layout.shape[i])
         alias stride_i = to_int(thread_layout.stride[i])
         var thread_coords_i = (thread_id // stride_i) % shape_i
-        thread_offset += thread_coords_i * buff.dynamic_stride[i]
+        thread_offset += thread_coords_i * buff.stride[i]()
 
     @parameter
     if swizzle:
@@ -372,9 +372,7 @@ fn _get_element_idx[
 
     @parameter
     for i in range(rank):
-        result += (
-            curr_linear_crd % buff.dynamic_shape[i]
-        ) * buff.dynamic_stride[i]
+        result += (curr_linear_crd % buff.dynamic_shape[i]) * buff.stride[i]()
         curr_linear_crd = curr_linear_crd // buff.dynamic_shape[i]
 
     return result
@@ -391,9 +389,7 @@ fn _get_element_idx[
 
     @parameter
     for i in range(rank):
-        result += (
-            curr_linear_crd % buff.dynamic_shape[i]
-        ) * buff.dynamic_stride[i]
+        result += (curr_linear_crd % buff.dynamic_shape[i]) * buff.stride[i]()
         curr_linear_crd = curr_linear_crd // buff.dynamic_shape[i]
     return result
 
@@ -449,9 +445,9 @@ fn vectorize[
 
     @parameter
     for i in range(rank):
-        element_layout.stride[i] = buff.dynamic_stride[i]
+        element_layout.stride[i] = buff.stride[i]()
         buff_shape[i] = buff.dynamic_shape[i] // sizes[i]
-        buff_stride[i] = buff.dynamic_stride[i] * sizes[i]
+        buff_stride[i] = buff.stride[i]() * sizes[i]
 
     return Tuple(
         NDBuffer[
