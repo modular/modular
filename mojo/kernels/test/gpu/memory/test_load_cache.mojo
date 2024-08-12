@@ -34,30 +34,28 @@ def test_load():
         "ld.global "
         in _compile_code[
             load_value[width=1, prefetch_size=128], emission_kind="ptx"
-        ]().asm
+        ]()
     )
 
     assert_true(
         "ld.global.L2::128B.v2.u32 "
         in _compile_code[
             load_value[width=2, prefetch_size=128], emission_kind="ptx"
-        ]().asm
+        ]()
     )
 
     assert_true(
         "ld.global.L2::128B.v4.u32 "
         in _compile_code[
             load_value[width=4, prefetch_size=128], emission_kind="ptx"
-        ]().asm
+        ]()
     )
 
     assert_true(
         "ld.global.L2::256B.v4.u32 "
-        in str(
-            _compile_code[
-                load_value[width=4, prefetch_size=256], emission_kind="ptx"
-            ]().asm
-        )
+        in _compile_code[
+            load_value[width=4, prefetch_size=256], emission_kind="ptx"
+        ]()
     )
 
     assert_equal(
@@ -79,7 +77,7 @@ def test_load():
                 cache_policy = CacheOperation.LAST_USE,
             ],
             emission_kind="ptx",
-        ]().asm
+        ]()
     )
 
 
