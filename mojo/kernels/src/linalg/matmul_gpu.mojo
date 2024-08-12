@@ -924,8 +924,7 @@ fn sgemm_double_buffer_kernel[
     )
     var c_reg = LayoutTensor[
         c_type, Layout.row_major(TM, TN)
-    ].stack_allocation()
-    c_reg.fill(0)
+    ].stack_allocation().fill(0)
 
     # Thread swizzling
     # Warp has 2D Layout [warp_dim_x, warp_dim_y]. Current thread is mapped to

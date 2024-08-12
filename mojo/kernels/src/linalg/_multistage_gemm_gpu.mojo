@@ -682,9 +682,7 @@ fn multistage_gemm[
     ].stack_allocation().vectorize[1, b_frag_size]().split[2]()
     var c_reg_tile = LayoutTensor[
         accum_type, Layout.row_major(num_m_mmas * num_n_mmas, c_frag_size)
-    ].stack_allocation()
-
-    c_reg_tile.fill(0)
+    ].stack_allocation().fill(0)
 
     var a_warp_tile = a_smem_iter[].tile[WM, BK](int(warp_y), 0)
 
