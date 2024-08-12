@@ -130,8 +130,7 @@ void LITLowerer::lowerLITOps(LIT::FuncOp func) {
       }
     } else if (auto call = dyn_cast<LIT::CallIndirectOp>(op)) {
       b.replaceOpWithNewOp<KGEN::CallIndirectOp>(
-          call, call.getResultTypes(), call.getCallee(), call.getArguments(),
-          TailKindAttr::get(b.getContext(), TailKind::None));
+          call, call.getResultTypes(), call.getCallee(), call.getArguments());
     } else if (auto call = dyn_cast<LIT::AsyncCallOp>(op)) {
       b.replaceOpWithNewOp<CO::InvokeOp>(call, call.getCallee(),
                                          call.getOperands());

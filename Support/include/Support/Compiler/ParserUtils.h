@@ -147,6 +147,35 @@ private:
   raw_ostream &os;
 };
 
+/// Optionally parse an enum attribute.
+template <typename EnumAttrT,
+          typename EnumT = decltype(std::declval<EnumAttrT>().getValue)>
+ParseResult parseOptionalEnum(AsmParser &p, EnumAttrT &result,
+                              std::optional<EnumT> (*symbolize)(StringRef)) {
+  EnumT value = EnumT();
+  llvm::SMLoc loc = p.getCurrentLocation();
+  StringRef kw;
+  if (succeeded(p.parseOptionalKeyword(&kw))) {
+    std::optional<EnumT> symbol = symbolize(kw);
+    if (!symbol)
+      return p.emitError(loc, "failed to symbolize enum");
+    value = *symbol;
+  }
+  result = EnumAttrT::get(p.getContext(), value);
+  return success();
+}
+
+/// Optionally print an enum attribute.
+template <typename EnumAttrT,
+          typename EnumT = decltype(std::declval<EnumAttrT>().getValue)>
+void printOptionalEnum(AsmPrinter &p, Operation *, EnumAttrT attr,
+                       std::optional<EnumT> (*)(StringRef)) {
+  if (attr.getValue() == EnumT())
+    return;
+  p << stringifyEnum(attr.getValue());
+  return;
+}
+
 } // namespace M
 
 #endif // SUPPORT_COMPILER_COMPILERUTILS_H

@@ -16,6 +16,7 @@
 #include "KGEN/KGENDialect/KGENUtils.h"
 #include "KGEN/KGENDialect/ParameterEvaluator.h"
 #include "Support/Compiler/OperationUtils.h"
+#include "Support/Compiler/ParserUtils.h"
 #include "Support/Compiler/VerifyUtils.h"
 #include "Support/DebugInfoDialect/IR/DebugInfoAttrs.h"
 #include "Support/STLExtras.h"
@@ -575,33 +576,6 @@ LogicalResult CallOp::verify() {
 //===----------------------------------------------------------------------===//
 // CallIndirectOp
 //===----------------------------------------------------------------------===//
-
-static ParseResult parseTailKind(AsmParser &p, TailKindAttr &tailKindAttr) {
-  TailKind value = TailKind::None;
-  if (succeeded(p.parseOptionalKeyword("musttail")))
-    value = TailKind::MustTail;
-  if (succeeded(p.parseOptionalKeyword("notail")))
-    value = TailKind::NoTail;
-  tailKindAttr = TailKindAttr::get(p.getContext(), value);
-  return success();
-}
-
-static void printTailKind(AsmPrinter &p, Operation *op, TailKindAttr tailKind) {
-  if (!tailKind)
-    return;
-  if (tailKind.getValue() != TailKind::None) {
-    switch (tailKind.getValue()) {
-    case M::KGEN::TailKind::MustTail:
-      p << "musttail ";
-      break;
-    case TailKind::NoTail:
-      p << "notail ";
-      break;
-    default:
-      break;
-    }
-  }
-}
 
 LogicalResult CallIndirectOp::verify() {
   return verifyCallOp(*this, getArguments(), getCallee());

@@ -1250,7 +1250,7 @@ def KGEN_TailKindAttr : EnumAttr<KGENDialect, KGEN_TailKind, "tailkind"> {
     ```
   }];
 
-  let assemblyFormat = "`<` $value `>`";
+  let assemblyFormat = "$value";
 }
 
 #endif // KGEN_KGENDIALECT_KGENATTRS_TD
