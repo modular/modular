@@ -38,4 +38,10 @@ add_modular_library(AsyncRTRuntime
   Threads::Threads
 )
 
+if (TCMALLOC_LIBRARY)
+  target_link_libraries(AsyncRTRuntime PUBLIC libtcmalloc)
+  target_link_libraries(obj.AsyncRTRuntime PUBLIC libtcmalloc)
+  target_include_directories(AsyncRTRuntime PUBLIC ${TCMALLOC_PATH}/include)
+endif()
+
 add_subdirectory(Globals)
