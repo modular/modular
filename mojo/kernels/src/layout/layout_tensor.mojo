@@ -454,13 +454,8 @@ struct LayoutTensor[
         coalesce(layout),
         address_space=address_space,
         element_layout = self.element_layout,
-    ]:
-        return LayoutTensor[
-            dtype,
-            coalesce(layout),
-            address_space=address_space,
-            element_layout = self.element_layout,
-        ](self.ptr)
+    ] as out:
+        return __type_of(out)(self.ptr)
 
     @staticmethod
     fn _compute_tile_layout[*tile_sizes: Int]() -> Layout:
