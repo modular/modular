@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from collections import OptionalReg as Optional
+from collections import OptionalReg
 
 from algorithm.reduction import _reduce_generator
 from buffer import Buffer, NDBuffer
@@ -27,7 +27,7 @@ fn gemv[
     a_type: DType,
     b_size: Dim,
     b_type: DType,
-    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
+    elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
 ](
     c_buf: Buffer[c_type, c_size],
     a_buf: NDBuffer[a_type, 2, a_shape],
