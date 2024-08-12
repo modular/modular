@@ -25,6 +25,11 @@ struct AddThirtyOp:
         return x + 30
 
 
+fn add_constant_wrapper[cst: Int32](x: Int32) -> Int32:
+    var y = x + cst
+    return __mlir_op.`custom.add_constant`[_type=Int32, _op_impl_params=cst](y)
+
+
 fn main():
     var x: Int32 = 30
     var res = __mlir_op.`custom.add_constant`[
@@ -35,6 +40,9 @@ fn main():
     var y: Int32 = 12
     var res2 = __mlir_op.`custom.add_thirty`[_type=Int32](y)
     print("The answer is still:", res2)
+
+    var res3 = add_constant_wrapper[21](23)
+    print("The answer is again:", res3)
 
 
 # CHECK: %[[PARAM:.*]] = kgen.param.constant: scalar<si32> = <12>

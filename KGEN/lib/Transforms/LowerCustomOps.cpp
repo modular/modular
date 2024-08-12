@@ -84,8 +84,8 @@ SymbolConstantAttr LowerCustomOpsPass::specializeParametrizedGenerator(
   // Create a new name based on the original name and parameters.
   auto generator = opImplsTable.lookup<GeneratorOp>(
       generatorSym.getSymbol().getLeafReference());
-  std::string newName = mangleParameterValues(generator, parameters);
-
+  std::string newName =
+      mangleParameterValues(generator, parameters) + "__wrapper__";
   auto newNameAttr = StringAttr::get(ctx, newName);
 
   // Create the wrapper generator.
@@ -126,8 +126,9 @@ SymbolConstantAttr LowerCustomOpsPass::getSymbolForCustomOp(
 
   // FIXME(math-fehr): Support multiple parameters
   SmallVector<TypedAttr> parameters;
-  parameters.push_back(
-      cast<TypedAttr>(cast<PreservedAttr>(implParamsAttr).getValue()));
+  if (auto attr = dyn_cast<PreservedAttr>(implParamsAttr))
+    implParamsAttr = attr.getValue();
+  parameters.push_back(cast<TypedAttr>(implParamsAttr));
 
   return specializeParametrizedGenerator(opImplSym, parameters, loc,
                                          opImplsTable);
