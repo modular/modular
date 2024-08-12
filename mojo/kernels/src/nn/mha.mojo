@@ -668,8 +668,7 @@ fn mha_single_batch[
         accum_type,
         Layout.row_major(num_m_mmas * num_n_mmas, p_frag_size),
         address_space = AddressSpace.LOCAL,
-    ].stack_allocation()
-    output_reg_tile.fill(0.0)
+    ].stack_allocation().fill(0)
 
     # Rowwise max and sum for online softmax
     var rowmax = stack_allocation[WM, accum_type]()
@@ -724,7 +723,7 @@ fn mha_single_batch[
         ](k_ptr + kv_offset + kv_tile_start_row * kv_num_heads * depth)
         var k_gmem_iter = k_gmem_block.tiled_iterator[BN, BK, axis=1](0, 0)
 
-        p_reg_tile.fill(0)
+        _ = p_reg_tile.fill(0)
 
         # First iteration load q from global memory to shared memory.
         if kv_tile_start_row == 0:
@@ -1164,8 +1163,7 @@ fn mha_decoding_single_batch[
         accum_type,
         Layout.row_major(num_m_mmas * num_n_mmas, p_frag_size),
         address_space = AddressSpace.LOCAL,
-    ].stack_allocation()
-    output_reg_tile.fill(0.0)
+    ].stack_allocation().fill(0.0)
 
     # Rowwise max and sum for online softmax
     var rowmax = stack_allocation[WM, accum_type]()
@@ -1244,7 +1242,7 @@ fn mha_decoding_single_batch[
 
         var kv_tile_num_rows = min(BN, num_keys - kv_tile_start_row)
 
-        p_reg_tile.fill(0)
+        _ = p_reg_tile.fill(0)
 
         multistage_mma[
             BM,

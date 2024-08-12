@@ -917,8 +917,7 @@ fn _online_softmax_kernel[
         type,
         Layout.row_major(num_m_mmas * num_n_mmas, frag_size),
         address_space = AddressSpace.LOCAL,
-    ].stack_allocation()
-    o.fill(0.0)
+    ].stack_allocation().fill(0.0)
 
     var rowmax = stack_allocation[num_m_mmas * 2, type]()
     var rowsum = stack_allocation[num_m_mmas * 2, type]()
