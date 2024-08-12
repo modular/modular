@@ -227,9 +227,7 @@ fn multistage_gemm[
     ].stack_allocation().vectorize[1, 2]().split[2]()
     var c_reg_tile = LayoutTensor[
         c_type, Layout.row_major(num_m_mmas * num_n_mmas, 4)
-    ].stack_allocation().vectorize[1, 4]()
-
-    c_reg_tile.fill(0)
+    ].stack_allocation().vectorize[1, 4]().fill(0)
 
     alias a_frag_type = __type_of(a_reg_tiles).ElementType.element_type
     alias b_frag_type = __type_of(b_reg_tiles).ElementType.element_type

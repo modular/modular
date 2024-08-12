@@ -194,9 +194,7 @@ fn multistage_gemm[
         accum_type,
         Layout.row_major(num_m_mmas * num_n_mmas, c_frag_size),
         address_space = AddressSpace.LOCAL,
-    ].stack_allocation()
-
-    c_reg_tile.fill(0)
+    ].stack_allocation().fill(0)
 
     var num_k_tiles = ceildiv(K, BK)
 
