@@ -430,14 +430,14 @@ fn vectorize[
     rank: Int,
     shape: DimList,
     _res_shape: DimList = __vectorize_shape[sizes](shape),
-](
-    buff: NDBuffer[
+](buff: NDBuffer[dtype, rank, shape, *_]) -> Tuple[
+    NDBuffer[
         dtype,
         rank,
-        shape,
-    ]
-) -> Tuple[
-    NDBuffer[dtype, rank, _res_shape],
+        shape=_res_shape,
+        strides = DimList.create_unknown[rank](),
+        address_space = buff.address_space,
+    ],
     ElementLayout[rank, __to_static_tuple[sizes, rank=rank]()],
 ]:
     var buff_shape = StaticIntTuple[rank]()
@@ -454,9 +454,13 @@ fn vectorize[
         buff_stride[i] = buff.dynamic_stride[i] * sizes[i]
 
     return Tuple(
-        NDBuffer[dtype, rank, _res_shape](
-            buff.data, dynamic_shape=buff_shape, dynamic_stride=buff_stride
-        ),
+        NDBuffer[
+            dtype,
+            rank,
+            shape=_res_shape,
+            strides = DimList.create_unknown[rank](),
+            address_space = buff.address_space,
+        ](buff.data, dynamic_shape=buff_shape, dynamic_stride=buff_stride),
         element_layout,
     )
 
