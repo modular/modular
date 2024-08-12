@@ -97,6 +97,21 @@ def test_slice_basic():
         graph._mlir_op.verify()
 
 
+def test_slice_with_graph_value():
+    with Graph(
+        "slice",
+        input_types=[TensorType(DType.int32, [5, "in_dim"])],
+    ) as graph:
+        start = ops.scalar(2, DType.int64)
+        out = graph.inputs[0][
+            (slice(start, None), 3), (slice(start, None), "out_dim")
+        ]
+
+        assert out.shape == shape([3, "out_dim"])
+        graph.output(out)
+        graph._mlir_op.verify()
+
+
 def valid_slice_of_tensor(type: TensorType, random: Random):
     # Note, this currently does not generate int slices or any form of graph value.
     # Slice also does not support them yet.

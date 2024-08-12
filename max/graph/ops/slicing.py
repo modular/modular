@@ -19,7 +19,7 @@ from max.mlir.dialects import rmo
 from .. import ops
 from ..graph import DType, Graph
 from ..graph_value import GraphValue, ValueLike
-from ..type import Dim, StaticDim, TensorType
+from ..type import Dim, DimLike, StaticDim, TensorType, dim
 from .casting import unsqueeze
 from .constant import scalar
 
@@ -63,11 +63,13 @@ def select(cond: ValueLike, x: ValueLike, y: ValueLike):
 # but this is the simplest path to get us nice results.
 
 
-SliceIndex = Union[GraphValue, int, slice]
+SliceIndex = Union[GraphValue, int, slice, tuple[slice, DimLike]]
 SliceIndices = list[Union[SliceIndex, "EllipsisType"]]
 
 
-def _slice_index(dim: Dim, index: SliceIndex) -> slice:
+def _slice_index_and_output(
+    dim: Dim, index: SliceIndex
+) -> tuple[slice, DimLike]:
     # These are values within an index which contains at least one
     # shape. The returned values will be used as `start, stop, stop`
     # values in a mo.slice op. slices can therefore be forwarded
@@ -81,22 +83,63 @@ def _slice_index(dim: Dim, index: SliceIndex) -> slice:
         if isinstance(dim, StaticDim):
             if not -dim.dim <= index < dim.dim:
                 raise IndexError(f"Index {index} out of range of dim {dim.dim}")
-        return slice(index, (index + 1) or None)
+        return (slice(index, (index + 1) or None), 1)
     elif isinstance(index, GraphValue):
         if index.tensor_type.num_elements() != 1:
             raise ValueError(
                 f"Slice index value must be a scalar, had shape {index.shape}"
             )
         # TODO (MSDK-751): remove scalar call
-        return slice(
-            index, ops.select(index == scalar(-1, DType.int64), int64_max, 0)
+        return (
+            slice(
+                index,
+                ops.select(index == scalar(-1, DType.int64), int64_max, 0),
+            ),
+            1,
         )
     elif isinstance(index, slice):
-        if index != slice(None, None, None):
-            raise NotImplementedError(
-                "Can't yet support slicing with non-static output size."
+        if index.start is None and index.stop is None and index.step is None:
+            return (slice(int64_max), dim)
+
+        raise NotImplementedError(
+            "Can't yet support slicing with calculated output size. Please use"
+            ' a tuple like (slice(0, 10), "out_dim") to specify the output'
+            " dimensions."
+        )
+    elif (
+        isinstance(index, tuple)
+        and len(index) == 2
+        and isinstance(index[0], slice)
+        and isinstance(index[1], DimLike)
+    ):
+        # TODO (MSDK-751): remove scalar calls below
+        start = scalar(index[0].start, DType.int64) if isinstance(
+            index[0].start, int
+        ) else index[0].start
+        stop = scalar(index[0].stop, DType.int64) if isinstance(
+            index[0].stop, int
+        ) else index[0].stop
+        step = scalar(index[0].step, DType.int64) if isinstance(
+            index[0].step, int
+        ) else index[0].step
+
+        if step is None:
+            step = scalar(1, DType.int64)
+        if start is None:
+            start = ops.select(
+                step >= scalar(0, DType.int64),
+                scalar(0, DType.int64),
+                scalar(int64_max, DType.int64),
             )
-        return slice(int64_max)
+        if stop is None:
+            stop = ops.select(
+                step >= scalar(0, DType.int64),
+                scalar(int64_max, DType.int64),
+                scalar(0, DType.int64),
+            )
+
+        return (slice(start, stop, step), index[1])
+
     typing.assert_never("unreachable")
 
 
@@ -171,13 +214,12 @@ def slice_tensor(x: GraphValue, indices: SliceIndices) -> GraphValue:
 
     remaining = len(x.shape) - len(before) - len(after)
     full_index = [*before, *([slice(None, None, None)] * remaining), *after]
-    output_shape = [
-        dim if isinstance(index, slice) else StaticDim(1)
+    slices_and_outputs = [
+        _slice_index_and_output(dim, index)
         for dim, index in zip(x.shape, full_index)
     ]
-    slices = [
-        _slice_index(dim, index) for dim, index in zip(x.shape, full_index)
-    ]
+    slices = [s for s, _ in slices_and_outputs]
+    output_shape = [dim(d) for _, d in slices_and_outputs]
 
     def value(dim: Union[GraphValue, int]) -> GraphValue:
         return dim if isinstance(dim, GraphValue) else scalar(dim, DType.int64)
