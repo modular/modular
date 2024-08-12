@@ -121,14 +121,19 @@ static ErrorOr<TempFile> generateEntrypointSource(ArrayRef<TestID> unitTests) {
     os << "var testName = argv()[1]\n";
 
     for (const TestID &id : unitTests) {
-      StringRef testName = *id.getTest();
-      assert(testName.consume_back("()") &&
-             "id does not reference a valid test");
+      std::optional<StringRef> testId = id.getTest();
+      if (!testId.has_value())
+        return Error("an unexpected empty test id was found");
+
+      StringRef testName = *testId;
+      if (!testName.consume_back("()"))
+        return Error(
+            llvm::formatv("test id with invalid format {0}", testName));
 
       ErrorOr<SmallVector<std::string>> names =
           TestID::parseScopedName(testName);
-      assert(!names.isError());
-      assert(names->size() == 1 && "id does not reference a valid test");
+      if (names.isError())
+        return names.takeError();
 
       os << formatv("if testName == \"{0}\":\n", id.strref());
       os.indent();
@@ -231,7 +236,6 @@ static int test(const State &subcommandState) {
                       options::OPT_TargetOptionGroup);
     for (auto &arg : filtered) {
       buildArgStrings.push_back(arg->getSpelling().str());
-      assert(arg->getNumValues() <= 1);
       for (const char *value : arg->getValues())
         buildArgStrings.emplace_back(value);
     }
