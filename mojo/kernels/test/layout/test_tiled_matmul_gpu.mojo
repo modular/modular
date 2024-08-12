@@ -65,9 +65,9 @@ fn test_naive_matmul_kernel(ctx: DeviceContext) raises:
         DType.float32, layout_c, gpu_managed_alloc, gpu_free
     ]()
 
-    mat_a.tensor.linspace()
-    mat_b.tensor.linspace()
-    mat_c.tensor.fill(0)
+    _ = mat_a.tensor.linspace()
+    _ = mat_b.tensor.linspace()
+    _ = mat_c.tensor.fill(0)
 
     alias naive_matmul_kernel = naive_matmul[
         layout_c, layout_a, layout_b, BM, BN
@@ -134,8 +134,7 @@ fn sram_blocked_matmul[
     var dst_local_tile = dst_tile.distribute[thread_layout](ThreadIdx.x())
 
     # Allocate a register tile for the dst matrix with the same layout.
-    var dst_register_tile = stack_allocation_like(dst_local_tile)
-    dst_register_tile.fill(0)
+    var dst_register_tile = stack_allocation_like(dst_local_tile).fill(0)
 
     # Loop over tiles in K dim.
     for k in range(lhs.shape[1]() // BK):
@@ -206,9 +205,9 @@ fn test_sram_blocked_matmul(ctx: DeviceContext) raises:
         DType.float32, layout_c, gpu_managed_alloc, gpu_free
     ]()
 
-    mat_a.tensor.linspace()
-    mat_b.tensor.linspace()
-    mat_c.tensor.fill(0)
+    _ = mat_a.tensor.linspace()
+    _ = mat_b.tensor.linspace()
+    _ = mat_c.tensor.fill(0)
 
     alias sram_blocked_matmul_kernel = sram_blocked_matmul[
         layout_c, layout_a, layout_b, thread_layout, BM, BN, BK
@@ -297,9 +296,9 @@ fn test_single_warp_tf32_m16n8k8_matmul(ctx: DeviceContext) raises:
         DType.float32, layout_c, gpu_managed_alloc, gpu_free
     ]()
 
-    mat_a.tensor.linspace()
-    mat_b.tensor.linspace()
-    mat_c.tensor.fill(0)
+    _ = mat_a.tensor.linspace()
+    _ = mat_b.tensor.linspace()
+    _ = mat_c.tensor.fill(0)
 
     # MMA layout are copied from CUTLASS:
     # https://sourcegraph.com/github.com/NVIDIA/cutlass@ffa34e70756b0bc744e1dfcc115b5a991a68f132/-/blob/include/cute/atom/mma_traits_sm80.hpp?L167
@@ -390,8 +389,7 @@ fn sram_blocked_matmul_dynamic_nd_buffer[
     # TODO: Is it useful to have stack_allocation_like[thread_layout](nd_buffer) ? We can do this if needed.
     var dst_register_tile = LayoutTensor[
         DType.float32, Layout.row_major(2, 2)
-    ].stack_allocation()
-    dst_register_tile.fill(0)
+    ].stack_allocation().fill(0)
 
     # Loop over tiles in K dim.
     for k in range(lhs.dim(1) // BK):

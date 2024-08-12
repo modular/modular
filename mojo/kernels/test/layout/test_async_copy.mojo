@@ -367,9 +367,7 @@ fn test_masked_async_copy(ctx: DeviceContext) raises:
 
         var smem_tile = LayoutTensor[
             DType.float32, layout, address_space = AddressSpace.SHARED
-        ].stack_allocation()
-
-        smem_tile.fill(-1.0)
+        ].stack_allocation().fill(-1.0)
 
         copy_dram_to_sram_async[thread_layout=thread_layout, masked=True](
             smem_tile.vectorize[1, 4](), input.vectorize[1, 4](), num_rows

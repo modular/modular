@@ -234,8 +234,7 @@ fn test_element_masked_store():
     print("== test_element_masked_store")
     var tensor_4x4 = LayoutTensor[
         DType.float32, Layout.row_major(4, 4)
-    ].stack_allocation()
-    tensor_4x4.fill(-1)
+    ].stack_allocation().fill(-1)
 
     var tensor_4x4_vec_1_4 = tensor_4x4.vectorize[1, 4]()
     var element_v_1_4 = Element[
@@ -253,7 +252,7 @@ fn test_element_masked_store():
     # CHECK: -1.0 -1.0 -1.0 -1.0
     print("vec_1x4:mask_1x3")
     tensor_4x4.print()
-    tensor_4x4.fill(-1)
+    _ = tensor_4x4.fill(-1)
 
     var tensor_4x4_vec_4_1 = tensor_4x4.vectorize[4, 1]()
     var element_v_4_1 = Element[
@@ -271,7 +270,7 @@ fn test_element_masked_store():
     # CHECK: -1.0 -1.0 -1.0 -1.0
     # CHECK: -1.0 -1.0 -1.0 -1.0
     tensor_4x4.print()
-    tensor_4x4.fill(-1)
+    _ = tensor_4x4.fill(-1)
 
     var tensor_4x4_vec_4_4 = tensor_4x4.vectorize[4, 4]()
     var element_v_4_4 = Element[

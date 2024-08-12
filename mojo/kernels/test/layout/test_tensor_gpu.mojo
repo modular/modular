@@ -90,10 +90,11 @@ def test_copy_from_async_masked_src(ctx: DeviceContext):
         ].stack_allocation()
 
         alias thrd_layout = Layout.row_major(8, 8)
-        var smem_frag = smem_tensor.distribute[thrd_layout](ThreadIdx.x())
+        var smem_frag = smem_tensor.distribute[thrd_layout](ThreadIdx.x()).fill(
+            0
+        )
 
         # Zero Init
-        smem_frag.fill(0)
         barrier()
 
         var dram_frag = dram_tile.distribute[thrd_layout](ThreadIdx.x())

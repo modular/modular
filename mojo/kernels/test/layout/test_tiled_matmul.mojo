@@ -253,9 +253,9 @@ fn test_tiled_matmul[use_l1_cache: Bool]():
     var rhs = ManagedLayoutTensor[DType.float32, Layout(IntTuple(8, 8))]()
     var lhs = ManagedLayoutTensor[DType.float32, Layout(IntTuple(8, 8))]()
 
-    dst.tensor.fill(0)
-    rhs.tensor.linspace()
-    lhs.tensor.linspace()
+    _ = dst.tensor.fill(0)
+    _ = rhs.tensor.linspace()
+    _ = lhs.tensor.linspace()
 
     if use_l1_cache:
         gemm_l1_cache[

@@ -129,8 +129,7 @@ fn test_copy_from_nd_buffer_scalars():
     var layout_tensor = LayoutTensor[
         DType.float32,
         Layout.row_major(8, 8),
-    ].stack_allocation()
-    layout_tensor.fill(0)
+    ].stack_allocation().fill(0)
 
     alias threads_layout = Layout.row_major(4, 4)
     for th_id in range(16):
@@ -194,8 +193,7 @@ fn test_copy_from_nd_buffer_vectors():
     var layout_tensor = LayoutTensor[
         DType.float32,
         Layout.row_major(16, 16),
-    ].stack_allocation()
-    layout_tensor.fill(0)
+    ].stack_allocation().fill(0)
 
     alias threads_layout = Layout.row_major(4, 4)
     for th_id in range(16):
@@ -223,7 +221,7 @@ fn test_copy_from_nd_buffer_vectors():
     # [240.0, 241.0, 242.0, 243.0] [244.0, 245.0, 246.0, 247.0] [248.0, 249.0, 250.0, 251.0] [252.0, 253.0, 254.0, 255.0]
     layout_tensor.vectorize[1, 4]().print()
 
-    layout_tensor.fill(0)
+    _ = layout_tensor.fill(0)
 
     for th_id in range(16):
         var thread_local_layout_tensor = layout_tensor.vectorize[
@@ -523,8 +521,8 @@ fn test_copy_nd_buffer_to_layout_tensor():
 
     var tensor_1_1 = LayoutTensor[
         DType.float32, Layout.row_major(8, 8)
-    ].stack_allocation()
-    tensor_1_1.fill(0)
+    ].stack_allocation().fill(0)
+
     _copy_nd_buffer_to_layout_tensor(
         tensor_1_1,
         buff_v_1_1_and_element_layout[0],
@@ -544,8 +542,8 @@ fn test_copy_nd_buffer_to_layout_tensor():
 
     var tensor_4_1 = LayoutTensor[
         DType.float32, Layout.row_major(8, 8)
-    ].stack_allocation().vectorize[1, 4]()
-    tensor_4_1.fill(0)
+    ].stack_allocation().vectorize[1, 4]().fill(0)
+
     _copy_nd_buffer_to_layout_tensor(
         tensor_4_1,
         buff_v_1_4_and_element_layout[0],
@@ -565,8 +563,8 @@ fn test_copy_nd_buffer_to_layout_tensor():
     var buff_v_4_4_and_element_layout = vectorize[4, 4](buff)
     var tensor_4_4 = LayoutTensor[
         DType.float32, Layout.row_major(8, 8)
-    ].stack_allocation().vectorize[4, 4]()
-    tensor_4_4.fill(0)
+    ].stack_allocation().vectorize[4, 4]().fill(0)
+
     _copy_nd_buffer_to_layout_tensor(
         tensor_4_4,
         buff_v_4_4_and_element_layout[0],
@@ -585,8 +583,7 @@ fn test_copy_layout_tensor_to_buffer():
     print("== test_copy_layout_tensor_to_buffer")
     var tensor = LayoutTensor[
         DType.float32, Layout.row_major(8, 8)
-    ].stack_allocation()
-    tensor.linspace()
+    ].stack_allocation().linspace()
 
     var buff = NDBuffer[DType.float32, 2, DimList(8, 8)].stack_allocation()
     zero_fill(buff)
