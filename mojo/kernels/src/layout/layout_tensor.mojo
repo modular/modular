@@ -1481,10 +1481,7 @@ struct LayoutTensor[
             alias dst_idx = make_layout(self.element_layout, self.layout)(
                 i * dst_element_size
             )
-            var m: Int
-            var n: Int
-            m, n = divmod(offset + src_idx, cols)
-            if m < rows:
+            if offset + dst_idx < rows * cols:
                 var src_element = Element[dtype, other.element_layout].load(
                     other.ptr.offset(src_idx)
                 )
@@ -1532,10 +1529,7 @@ struct LayoutTensor[
             alias dst_idx = make_layout(self.element_layout, self.layout)(
                 i * dst_element_size
             )
-            var m: Int
-            var n: Int
-            m, n = divmod(offset + dst_idx, cols)
-            if m < rows:
+            if offset + dst_idx < rows * cols:
                 var src_element = Element[dtype, other.element_layout].load[
                     other.address_space
                 ](
@@ -1716,10 +1710,7 @@ struct LayoutTensor[
                     i * dst_element_size
                 )
 
-                var m: Int
-                var n: Int
-                m, n = divmod(offset + src_idx, cols)
-                if m < rows:
+                if offset + src_idx < rows * cols:
                     async_copy[element_size_bytes, fill=fill](
                         src_ptr + src_idx, dst_ptr + dst_idx
                     )
@@ -1730,10 +1721,7 @@ struct LayoutTensor[
                 alias src_idx = make_layout(src.element_layout, src_layout)(i)
                 alias dst_idx = make_layout(self.element_layout, self.layout)(i)
 
-                var m: Int
-                var n: Int
-                m, n = divmod(offset + src_idx, cols)
-                if m < rows:
+                if offset + src_idx < rows * cols:
                     async_copy[4, fill=fill](
                         src_ptr + src_idx, dst_ptr + dst_idx
                     )
@@ -1975,15 +1963,13 @@ fn copy_dram_to_sram_async[
     rows: Int,
     cols: Int,
 ):
-    var src_framgents = src.distribute[src_thread_layout](ThreadIdx.x())
-    var dst_framgents = dst.distribute[dst_thread_layout, swizzle=swizzle](
+    var src_fragments = src.distribute[src_thread_layout](ThreadIdx.x())
+    var dst_fragments = dst.distribute[dst_thread_layout, swizzle=swizzle](
         ThreadIdx.x()
     )
-    var thrd_offset = offset + src.distribute[src_thread_layout](
-        ThreadIdx.x()
-    ).distance(src.ptr)
-    dst_framgents.copy_from_async_masked_src(
-        src_framgents, thrd_offset, rows, cols
+    var thread_offset = offset + src_fragments.distance(src.ptr)
+    dst_fragments.copy_from_async_masked_src(
+        src_fragments, thread_offset, rows, cols
     )
 
 
@@ -2189,10 +2175,7 @@ fn copy_sram_to_dram[
             alias src_idx = src_fragments.layout(i)
             alias dst_idx = dst_fragments.layout(i)
 
-            var m: Int
-            var n: Int
-            m, n = divmod(thread_offset + dst_idx, cols)
-            if m < rows:
+            if thread_offset + dst_idx < rows * cols:
                 var src_vec = (src_fragments.ptr + src_idx).load[
                     width=simd_size, alignment=src_align
                 ]()
@@ -2293,11 +2276,9 @@ fn copy_local_to_dram[
     rows: Int,
     cols: Int,
 ):
-    var dst_framgents = dst.distribute[dst_thread_layout](ThreadIdx.x())
-    var thrd_offset = dst.distribute[dst_thread_layout](ThreadIdx.x()).distance(
-        dst.ptr
-    ) + offset
-    dst_framgents.copy_from_masked_dst(src, thrd_offset, rows, cols)
+    var dst_fragments = dst.distribute[dst_thread_layout](ThreadIdx.x())
+    var thread_offset = dst_fragments.distance(dst.ptr) + offset
+    dst_fragments.copy_from_masked_dst(src, thread_offset, rows, cols)
 
 
 @always_inline
