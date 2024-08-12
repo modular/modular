@@ -31,6 +31,7 @@ fn async_copy[
     type: AnyType, //,
     size: Int,
     *,
+    fill: Fill = Fill.NONE,
     bypass_L1_16B: Bool = True,
     l2_prefetch: Optional[Int] = None,
 ](
@@ -43,6 +44,7 @@ fn async_copy[
     Parameters:
         type: The pointer type.
         size: Number of bytes to copy.
+        fill: The fill to use for initializing the data.
         bypass_L1_16B: Bypass the L1 cache for 16 bypes copy.
         l2_prefetch: Enable L2 prefetching and specify the size.
 
@@ -51,6 +53,10 @@ fn async_copy[
         dst: Shared memory pointer.
     """
     # TODO: Constrained on device capability.
+    constrained[
+        fill in (Fill.NONE, Fill.ZERO),
+        "currently only zero fill is supported",
+    ]()
     constrained[size in (4, 8, 16)]()
     constrained[
         not (l2_prefetch.__bool__() == bypass_L1_16B == True),
@@ -70,11 +76,21 @@ fn async_copy[
     if l2_prefetch:
         alias asm = "cp.async." + cache_op + ".shared.global.L2::" + _int_to_str[
             l2_prefetch.value()
-        ]() + "B [$0], [$1], $2;"
-        inlined_assembly[asm, NoneType, constraints="r,l,n"](
-            Int32(int(dst)), src, Int32(size)
-        )
+        ]() + "B [$0], [$1], $2"
+
+        @parameter
+        if fill is Fill.ZERO:
+            inlined_assembly[asm + ", $3;", NoneType, constraints="r,l,n,r"](
+                Int32(int(dst)), src, Int32(size), Int32(size)
+            )
+        else:
+            inlined_assembly[asm + ";", NoneType, constraints="r,l,n"](
+                Int32(int(dst)), src, Int32(size)
+            )
     else:
+        constrained[
+            fill is Fill.NONE, "fill is only implemented with l2_prefetch"
+        ]()
         alias intrin = "llvm.nvvm.cp.async." + cache_op + ".shared.global." + access_size
         llvm_intrinsic[intrin, NoneType](dst, src)
 
@@ -373,22 +389,22 @@ struct CacheEviction:
 
 
 # ===----------------------------------------------------------------------===#
-# Padding
+# Fill
 # ===----------------------------------------------------------------------===#
 
 
 @value
-struct Padding:
+struct Fill:
     var _value: Int
 
     alias NONE = Self(0)
-    """No padding."""
+    """No fill."""
 
     alias ZERO = Self(1)
-    """Pad with zeros."""
+    """Fill with zeros."""
 
     alias NAN = Self(2)
-    """Pad with NaNs."""
+    """Fill with NaNs."""
 
     fn __eq__(self, other: Self) -> Bool:
         return self._value == other._value
@@ -410,7 +426,7 @@ struct Padding:
             return "zero"
         if self is Self.NAN:
             return "nan"
-        return "unknown padding"
+        return "unknown fill"
 
 
 # ===----------------------------------------------------------------------===#
