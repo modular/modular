@@ -2446,6 +2446,13 @@ struct LayoutTensorIter[
         )
 
     @always_inline
+    fn __getitem__(
+        self,
+    ) -> LayoutTensor[type, layout, address_space=address_space]:
+        """Return the layout tensor at current iterator."""
+        return self.get()
+
+    @always_inline
     fn __iadd__[T: Intable](inout self, rhs: T):
         """Increment the iterator.
 
