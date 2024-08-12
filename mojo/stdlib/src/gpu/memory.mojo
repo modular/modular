@@ -373,6 +373,47 @@ struct CacheEviction:
 
 
 # ===----------------------------------------------------------------------===#
+# Padding
+# ===----------------------------------------------------------------------===#
+
+
+@value
+struct Padding:
+    var _value: Int
+
+    alias NONE = Self(0)
+    """No padding."""
+
+    alias ZERO = Self(1)
+    """Pad with zeros."""
+
+    alias NAN = Self(2)
+    """Pad with NaNs."""
+
+    fn __eq__(self, other: Self) -> Bool:
+        return self._value == other._value
+
+    fn __ne__(self, other: Self) -> Bool:
+        return not (self == other)
+
+    fn __is__(self, other: Self) -> Bool:
+        return self == other
+
+    fn __isnot__(self, other: Self) -> Bool:
+        return self != other
+
+    @always_inline
+    fn __str__(self) -> String:
+        if self is Self.NONE:
+            return "none"
+        if self is Self.ZERO:
+            return "zero"
+        if self is Self.NAN:
+            return "nan"
+        return "unknown padding"
+
+
+# ===----------------------------------------------------------------------===#
 # load
 # ===----------------------------------------------------------------------===#
 
