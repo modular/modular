@@ -186,7 +186,6 @@ def main():
                 test_ctx.a_device.tensor,
                 test_ctx.b_device.tensor,
                 ctx,
-                True,
             )
 
             var handle = UnsafePointer[cublasContext]()
@@ -400,7 +399,6 @@ def main():
                 test_ctx.a_device.tensor,
                 test_ctx.b_device.tensor,
                 ctx,
-                True,
             )
 
             var handle = UnsafePointer[cublasContext]()
