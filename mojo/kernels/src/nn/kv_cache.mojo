@@ -4,6 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 from buffer import DimList, NDBuffer, Dim
+from collections import OptionalReg
 from math import isqrt
 from sys.info import _current_target
 from utils import Index
@@ -34,12 +35,12 @@ from .types import (
 @value
 struct KVCacheKernelNames:
     var matmul_kernel: StringLiteral
-    var rope_kernel: StringLiteral
     var flash_attention_kernel: StringLiteral
     var kv_cache_length_kernel: StringLiteral
     var key_cache_for_layer_kernel: StringLiteral
     var value_cache_for_layer_kernel: StringLiteral
     var fused_qkv_matmul_kernel: StringLiteral
+    var fused_qkv_matmul_w_rope_kernel: StringLiteral
 
 
 fn _kv_cache_kernel_names[
@@ -51,7 +52,6 @@ fn _kv_cache_kernel_names[
     ):
         return KVCacheKernelNames(
             matmul_kernel="matmul_kv_cache_h6_d48_bshd",
-            rope_kernel="rope_kv_cache_h6_d48_bshd",
             flash_attention_kernel="flash_attention_kv_cache_h6_d48_bshd",
             kv_cache_length_kernel="kv_cache_length_h6_d48_bshd_f32",
             key_cache_for_layer_kernel="key_cache_for_layer_h6_d48_bshd_f32",
@@ -59,13 +59,15 @@ fn _kv_cache_kernel_names[
                 "value_cache_for_layer_h6_d48_bshd_f32"
             ),
             fused_qkv_matmul_kernel="fused_qkv_matmul_kv_cache_h6_d48_bshd",
+            fused_qkv_matmul_w_rope_kernel=(
+                "fused_qkv_matmul_kv_cache_w_rope_h6_d48_bshd"
+            ),
         )
     elif type == DType.float32 and params == KVCacheStaticParams(
         num_heads=6, head_size=48, layout=KVCacheLayout.BHSD
     ):
         return KVCacheKernelNames(
             matmul_kernel="matmul_kv_cache_h6_d48_bhsd",
-            rope_kernel="rope_kv_cache_h6_d48_bhsd",
             flash_attention_kernel="flash_attention_kv_cache_h6_d48_bhsd",
             kv_cache_length_kernel="kv_cache_length_h6_d48_bhsd_f32",
             key_cache_for_layer_kernel="key_cache_for_layer_h6_d48_bhsd_f32",
@@ -73,13 +75,15 @@ fn _kv_cache_kernel_names[
                 "value_cache_for_layer_h6_d48_bhsd_f32"
             ),
             fused_qkv_matmul_kernel="fused_qkv_matmul_kv_cache_h6_d48_bhsd",
+            fused_qkv_matmul_w_rope_kernel=(
+                "fused_qkv_matmul_kv_cache_w_rope_h6_d48_bhsd"
+            ),
         )
     elif type == DType.float32 and params == KVCacheStaticParams(
         num_heads=8, head_size=128, layout=KVCacheLayout.BSHD
     ):
         return KVCacheKernelNames(
             matmul_kernel="matmul_kv_cache_h8_d128_bshd",
-            rope_kernel="rope_kv_cache_h8_d128_bshd",
             flash_attention_kernel="flash_attention_kv_cache_h8_d128_bshd",
             kv_cache_length_kernel="kv_cache_length_h8_d128_bshd_f32",
             key_cache_for_layer_kernel="key_cache_for_layer_h8_d128_bshd_f32",
@@ -87,13 +91,15 @@ fn _kv_cache_kernel_names[
                 "value_cache_for_layer_h8_d128_bshd_f32"
             ),
             fused_qkv_matmul_kernel="fused_qkv_matmul_kv_cache_h8_d128_bshd",
+            fused_qkv_matmul_w_rope_kernel=(
+                "fused_qkv_matmul_kv_cache_w_rope_h8_d128_bshd"
+            ),
         )
     elif type == DType.float32 and params == KVCacheStaticParams(
         num_heads=8, head_size=128, layout=KVCacheLayout.BHSD
     ):
         return KVCacheKernelNames(
             matmul_kernel="matmul_kv_cache_h8_d128_bhsd",
-            rope_kernel="rope_kv_cache_h8_d128_bhsd",
             flash_attention_kernel="flash_attention_kv_cache_h8_d128_bhsd",
             kv_cache_length_kernel="kv_cache_length_h8_d128_bhsd_f32",
             key_cache_for_layer_kernel="key_cache_for_layer_h8_d128_bhsd_f32",
@@ -101,13 +107,15 @@ fn _kv_cache_kernel_names[
                 "value_cache_for_layer_h8_d128_bhsd_f32"
             ),
             fused_qkv_matmul_kernel="fused_qkv_matmul_kv_cache_h8_d128_bhsd",
+            fused_qkv_matmul_w_rope_kernel=(
+                "fused_qkv_matmul_kv_cache_w_rope_h8_d128_bhsd"
+            ),
         )
     elif type == DType.bfloat16 and params == KVCacheStaticParams(
         num_heads=8, head_size=128, layout=KVCacheLayout.BSHD
     ):
         return KVCacheKernelNames(
             matmul_kernel="matmul_kv_cache_h8_d128_bshd",
-            rope_kernel="rope_kv_cache_h8_d128_bshd",
             flash_attention_kernel="flash_attention_kv_cache_h8_d128_bshd",
             kv_cache_length_kernel="kv_cache_length_h8_d128_bshd_bf16",
             key_cache_for_layer_kernel="key_cache_for_layer_h8_d128_bshd_bf16",
@@ -115,13 +123,15 @@ fn _kv_cache_kernel_names[
                 "value_cache_for_layer_h8_d128_bshd_bf16"
             ),
             fused_qkv_matmul_kernel="fused_qkv_matmul_kv_cache_h8_d128_bshd",
+            fused_qkv_matmul_w_rope_kernel=(
+                "fused_qkv_matmul_kv_cache_w_rope_h8_d128_bshd"
+            ),
         )
     elif type == DType.bfloat16 and params == KVCacheStaticParams(
         num_heads=8, head_size=128, layout=KVCacheLayout.BHSD
     ):
         return KVCacheKernelNames(
             matmul_kernel="matmul_kv_cache_h8_d128_bhsd",
-            rope_kernel="rope_kv_cache_h8_d128_bhsd",
             flash_attention_kernel="flash_attention_kv_cache_h8_d128_bhsd",
             kv_cache_length_kernel="kv_cache_length_h8_d128_bhsd_bf16",
             key_cache_for_layer_kernel="key_cache_for_layer_h8_d128_bhsd_bf16",
@@ -129,18 +139,21 @@ fn _kv_cache_kernel_names[
                 "value_cache_for_layer_h8_d128_bhsd_bf16"
             ),
             fused_qkv_matmul_kernel="fused_qkv_matmul_kv_cache_h8_d128_bhsd",
+            fused_qkv_matmul_w_rope_kernel=(
+                "fused_qkv_matmul_kv_cache_w_rope_h8_d128_bhsd"
+            ),
         )
     else:
         constrained[False, "Unsupported KV Cache configuration"]()
 
     return KVCacheKernelNames(
         matmul_kernel="",
-        rope_kernel="",
         flash_attention_kernel="",
         kv_cache_length_kernel="",
         key_cache_for_layer_kernel="",
         value_cache_for_layer_kernel="",
         fused_qkv_matmul_kernel="",
+        fused_qkv_matmul_w_rope_kernel="",
     )
 
 
@@ -863,6 +876,11 @@ fn fused_qkv_matmul_kv_cache_h8_d128_bhsd[
     )
 
 
+alias embed_fn_type = fn[type: DType, width: Int] (
+    StaticIntTuple[4], SIMD[type, width]
+) capturing -> SIMD[type, width]
+
+
 @always_inline
 fn _fused_qkv_matmul_kv_cache[
     type: DType,
@@ -872,6 +890,8 @@ fn _fused_qkv_matmul_kv_cache[
     kv_params: KVCacheStaticParams,
     *,
     target: StringLiteral,
+    q_embed_fn: OptionalReg[embed_fn_type] = None,
+    k_embed_fn: OptionalReg[embed_fn_type] = None,
 ](
     hidden_state: NDBuffer[type, 3, hidden_state_shape],
     weight: NDBuffer[type, 2, weight_shape],
@@ -912,30 +932,50 @@ fn _fused_qkv_matmul_kv_cache[
         var b_idx = bs_and_seq[0]
         var t_idx = bs_and_seq[1]
         if idx[1] < q_dim:
-            output.store((b_idx, t_idx, idx[1]), rebind[SIMD[type, width]](val))
+            var output_val = val
+
+            @parameter
+            if q_embed_fn:
+                alias q_fn_val = q_embed_fn.value()
+
+                var head_and_dim = divmod(idx[1], kv_params.head_size)
+                var h_idx = head_and_dim[0]
+                var hd_idx = head_and_dim[1]
+                output_val = q_fn_val((b_idx, t_idx, h_idx, hd_idx), output_val)
+
+            output.store(
+                (b_idx, t_idx, idx[1]), rebind[SIMD[type, width]](output_val)
+            )
             return
 
+        var h_idx: Int
+        var hd_idx: Int
         var cache: ContiguousKVCache[type, kv_params]
-        var adjusted_dim: Int
+        var output_val = val
         if idx[1] < qk_offset:
+            var head_and_dim = divmod(idx[1] - q_dim, kv_params.head_size)
+            h_idx = head_and_dim[0]
+            hd_idx = head_and_dim[1]
             cache = k_cache
-            adjusted_dim = idx[1] - q_dim
+
+            @parameter
+            if k_embed_fn:
+                alias k_fn_val = k_embed_fn.value()
+                output_val = k_fn_val((b_idx, t_idx, h_idx, hd_idx), output_val)
         else:
             cache = v_cache
-            adjusted_dim = idx[1] - qk_offset
-
-        var head_and_dim = divmod(adjusted_dim, kv_params.head_size)
-        var h_idx = head_and_dim[0]
-        var hd_idx = head_and_dim[1]
+            var head_and_dim = divmod(idx[1] - qk_offset, kv_params.head_size)
+            h_idx = head_and_dim[0]
+            hd_idx = head_and_dim[1]
 
         var valid_len = cache.cache_length(b_idx)
         var cache_t_idx = t_idx + valid_len
-        cache.store[width](
+        cache.store(
             b_idx,
             h_idx,
             cache_t_idx,
             hd_idx,
-            rebind[SIMD[type, width]](val),
+            rebind[SIMD[type, width]](output_val),
         )
 
     var hidden_state_2d = NDBuffer[
@@ -967,150 +1007,179 @@ fn _fused_qkv_matmul_kv_cache[
     c_nd.data.free()
 
 
-@mogg_register("rope_kv_cache_h6_d48_bshd")
+@mogg_register("fused_qkv_matmul_kv_cache_w_rope_h6_d48_bshd")
 @export
-fn rope_kv_cache_h6_d48_bshd[
-    type: DType, freqs_shape: DimList, target: StringLiteral = "cpu"
+fn fused_qkv_matmul_kv_cache_w_rope_h6_d48_bshd[
+    type: DType,
+    hidden_state_shape: DimList,
+    weight_shape: DimList,
+    freqs_shape: DimList,
+    output_shape: DimList,
+    target: StringLiteral = "cpu",
 ](
-    cache: ContiguousKVCache[
+    hidden_state: NDBuffer[type, 3, hidden_state_shape],
+    weight: NDBuffer[type, 2, weight_shape],
+    freqs: NDBuffer[type, 2, freqs_shape],
+    k_cache: ContiguousKVCache[
         type,
         KVCacheStaticParams(
             num_heads=6, head_size=48, layout=KVCacheLayout.BSHD
         ),
     ],
-    freqs: NDBuffer[type, 2, freqs_shape],
-    ctx: MojoCallContextPtr,
-) -> ContiguousKVCache[
-    type,
-    KVCacheStaticParams(num_heads=6, head_size=48, layout=KVCacheLayout.BSHD),
-]:
-    return _rope_kv_cache[target=target](cache, freqs, ctx)
+    v_cache: ContiguousKVCache[
+        type,
+        KVCacheStaticParams(
+            num_heads=6, head_size=48, layout=KVCacheLayout.BSHD
+        ),
+    ],
+    output: NDBuffer[type, 3, output_shape],
+    context: MojoCallContextPtr = MojoCallContextPtr(),
+):
+    return _fused_qkv_matmul_kv_cache_w_rope[target=target](
+        hidden_state, weight, freqs, k_cache, v_cache, output, context
+    )
 
 
-@mogg_register("rope_kv_cache_h6_d48_bhsd")
+@mogg_register("fused_qkv_matmul_kv_cache_w_rope_h6_d48_bhsd")
 @export
-fn rope_kv_cache_h6_d48_bhsd[
-    type: DType, freqs_shape: DimList, target: StringLiteral = "cpu"
+fn fused_qkv_matmul_kv_cache_w_rope_h6_d48_bhsd[
+    type: DType,
+    hidden_state_shape: DimList,
+    weight_shape: DimList,
+    freqs_shape: DimList,
+    output_shape: DimList,
+    target: StringLiteral = "cpu",
 ](
-    cache: ContiguousKVCache[
+    hidden_state: NDBuffer[type, 3, hidden_state_shape],
+    weight: NDBuffer[type, 2, weight_shape],
+    freqs: NDBuffer[type, 2, freqs_shape],
+    k_cache: ContiguousKVCache[
         type,
         KVCacheStaticParams(
             num_heads=6, head_size=48, layout=KVCacheLayout.BHSD
         ),
     ],
-    freqs: NDBuffer[type, 2, freqs_shape],
-    ctx: MojoCallContextPtr,
-) -> ContiguousKVCache[
-    type,
-    KVCacheStaticParams(num_heads=6, head_size=48, layout=KVCacheLayout.BHSD),
-]:
-    return _rope_kv_cache[target=target](cache, freqs, ctx)
+    v_cache: ContiguousKVCache[
+        type,
+        KVCacheStaticParams(
+            num_heads=6, head_size=48, layout=KVCacheLayout.BHSD
+        ),
+    ],
+    output: NDBuffer[type, 3, output_shape],
+    context: MojoCallContextPtr = MojoCallContextPtr(),
+):
+    return _fused_qkv_matmul_kv_cache_w_rope[target=target](
+        hidden_state, weight, freqs, k_cache, v_cache, output, context
+    )
 
 
-@mogg_register("rope_kv_cache_h8_d128_bshd")
+@mogg_register("fused_qkv_matmul_kv_cache_w_rope_h8_d128_bshd")
 @export
-fn rope_kv_cache_h8_d128_bshd[
-    type: DType, freqs_shape: DimList, target: StringLiteral = "cpu"
+fn fused_qkv_matmul_kv_cache_w_rope_h8_d128_bshd[
+    type: DType,
+    hidden_state_shape: DimList,
+    weight_shape: DimList,
+    freqs_shape: DimList,
+    output_shape: DimList,
+    target: StringLiteral = "cpu",
 ](
-    cache: ContiguousKVCache[
+    hidden_state: NDBuffer[type, 3, hidden_state_shape],
+    weight: NDBuffer[type, 2, weight_shape],
+    freqs: NDBuffer[type, 2, freqs_shape],
+    k_cache: ContiguousKVCache[
         type,
         KVCacheStaticParams(
             num_heads=8, head_size=128, layout=KVCacheLayout.BSHD
         ),
     ],
-    freqs: NDBuffer[type, 2, freqs_shape],
-    ctx: MojoCallContextPtr,
-) -> ContiguousKVCache[
-    type,
-    KVCacheStaticParams(num_heads=8, head_size=128, layout=KVCacheLayout.BSHD),
-]:
-    return _rope_kv_cache[target=target](cache, freqs, ctx)
+    v_cache: ContiguousKVCache[
+        type,
+        KVCacheStaticParams(
+            num_heads=8, head_size=128, layout=KVCacheLayout.BSHD
+        ),
+    ],
+    output: NDBuffer[type, 3, output_shape],
+    context: MojoCallContextPtr = MojoCallContextPtr(),
+):
+    return _fused_qkv_matmul_kv_cache_w_rope[target=target](
+        hidden_state, weight, freqs, k_cache, v_cache, output, context
+    )
 
 
-@mogg_register("rope_kv_cache_h8_d128_bhsd")
+@mogg_register("fused_qkv_matmul_kv_cache_w_rope_h8_d128_bhsd")
 @export
-fn rope_kv_cache_h8_d128_bhsd[
-    type: DType, freqs_shape: DimList, target: StringLiteral = "cpu"
+fn fused_qkv_matmul_kv_cache_w_rope_h8_d128_bhsd[
+    type: DType,
+    hidden_state_shape: DimList,
+    weight_shape: DimList,
+    freqs_shape: DimList,
+    output_shape: DimList,
+    target: StringLiteral = "cpu",
 ](
-    cache: ContiguousKVCache[
+    hidden_state: NDBuffer[type, 3, hidden_state_shape],
+    weight: NDBuffer[type, 2, weight_shape],
+    freqs: NDBuffer[type, 2, freqs_shape],
+    k_cache: ContiguousKVCache[
         type,
         KVCacheStaticParams(
             num_heads=8, head_size=128, layout=KVCacheLayout.BHSD
         ),
     ],
-    freqs: NDBuffer[type, 2, freqs_shape],
-    ctx: MojoCallContextPtr,
-) -> ContiguousKVCache[
-    type,
-    KVCacheStaticParams(num_heads=8, head_size=128, layout=KVCacheLayout.BHSD),
-]:
-    return _rope_kv_cache[target=target](cache, freqs, ctx)
+    v_cache: ContiguousKVCache[
+        type,
+        KVCacheStaticParams(
+            num_heads=8, head_size=128, layout=KVCacheLayout.BHSD
+        ),
+    ],
+    output: NDBuffer[type, 3, output_shape],
+    context: MojoCallContextPtr = MojoCallContextPtr(),
+):
+    return _fused_qkv_matmul_kv_cache_w_rope[target=target](
+        hidden_state, weight, freqs, k_cache, v_cache, output, context
+    )
 
 
 @always_inline
-fn _rope_kv_cache[
+fn _fused_qkv_matmul_kv_cache_w_rope[
     type: DType,
+    hidden_state_shape: DimList,
+    weight_shape: DimList,
     freqs_shape: DimList,
+    output_shape: DimList,
     kv_params: KVCacheStaticParams,
+    *,
     target: StringLiteral,
 ](
-    cache: ContiguousKVCache[type, kv_params],
+    hidden_state: NDBuffer[type, 3, hidden_state_shape],
+    weight: NDBuffer[type, 2, weight_shape],
     freqs: NDBuffer[type, 2, freqs_shape],
-    ctx: MojoCallContextPtr,
-) -> ContiguousKVCache[type, kv_params]:
-    """Unfused kernel to apply rope embeddings to KV Cache objects
-
-    Parameters:
-        type: The dtype of all inputs and outputs.z
-        freqs_shape: The shape of freqs, (seq_len, head_dim)
-        kv_params: The KVCache parameters, including num_kv_heads, head_size, and layout
-        target: The compute target, could be cuda or cpu
-
-    Arguments:
-        cache: The KVCache object, with the layout of the underlying data determined by kv_params.layout
-        freqs: The RoPE frequencies, with shape (seq_len, head_dim).
-        ctx: The call context as passed by the graph compiler.
-    """
-
+    k_cache: ContiguousKVCache[type, kv_params],
+    v_cache: ContiguousKVCache[type, kv_params],
+    output: NDBuffer[type, 3, output_shape],
+    context: MojoCallContextPtr = MojoCallContextPtr(),
+):
     @always_inline
     @parameter
-    @__copy_capture(freqs, cache)
-    fn rope_fn[width: Int, rank: Int](idx: StaticIntTuple[rank]):
+    @__copy_capture(freqs)
+    fn rope_fn[
+        type_: DType, width: Int
+    ](idx: StaticIntTuple[4], val: SIMD[type_, width]) -> SIMD[type_, width]:
         @parameter
         if width == 1:
             print("ROPE KERNEL CALLED WITH SINGLE VALUE, EXPECTED AT LEAST 2")
+            return val
         else:
-            var bs: Int
-            var head_idx: Int
-            var t_idx: Int
-            var hd_idx: Int
+            var t_idx = idx[1]
+            var hd_idx = idx[3]
 
-            @parameter
-            if kv_params.layout == KVCacheLayout.BSHD:
-                bs = idx[0]
-                t_idx = idx[1]
-                head_idx = idx[2]
-                hd_idx = idx[3]
-            elif kv_params.layout == KVCacheLayout.BHSD:
-                bs = idx[0]
-                head_idx = idx[1]
-                t_idx = idx[2]
-                hd_idx = idx[3]
-            else:
-                constrained[False, "Unsupported KVCache Layout"]()
-                return
-
-            var valid_len = cache.cache_length(bs)
-            var t_cache_idx = t_idx + valid_len
-            var val = cache.load[width=width](bs, head_idx, t_cache_idx, hd_idx)
-            var val_cast = rebind[SIMD[type, width]](val)
-
-            var x_c = val_cast.deinterleave()
+            var x_c = val.deinterleave()
             var x_re = x_c[0]
             var x_im = x_c[1]
 
             var f_idx = StaticIntTuple[2](t_idx, hd_idx)
-            var f_c_temp = freqs.load[width=width](f_idx)
+            var f_c_temp = rebind[SIMD[type_, width]](
+                freqs.load[width=width](f_idx)
+            )
 
             var f_c = f_c_temp.deinterleave()
             var f_re = f_c[0]
@@ -1119,18 +1188,11 @@ fn _rope_kv_cache[
             var r_re = (x_re * f_re) - (x_im * f_im)
             var r_im = (x_re * f_im) + (x_im * f_re)
 
-            var r_c = rebind[SIMD[type, width]](r_re.interleave(r_im))
-            cache.store[width=width](bs, head_idx, t_cache_idx, hd_idx, r_c)
+            return rebind[SIMD[type_, width]](r_re.interleave(r_im))
 
-    alias compile_target = _current_target() if target == "cpu" else _get_nvptx_target()
-    alias simd_width = simdwidthof[type, target=compile_target]()
-    var launch_shape = StaticIntTuple[4](
-        cache.batch_size, kv_params.num_heads, freqs.dim[0](), freqs.dim[1]()
-    ) if kv_params.layout == KVCacheLayout.BHSD else StaticIntTuple[4](
-        cache.batch_size, freqs.dim[0](), kv_params.num_heads, freqs.dim[1]()
-    )
-    _elementwise_impl[rope_fn, simd_width, 4, target=target](launch_shape, ctx)
-    return cache
+    return _fused_qkv_matmul_kv_cache[
+        target=target, q_embed_fn=rope_fn, k_embed_fn=rope_fn
+    ](hidden_state, weight, k_cache, v_cache, output, context)
 
 
 @mogg_register("flash_attention_kv_cache_h6_d48_bshd")
