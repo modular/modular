@@ -722,15 +722,6 @@ fn mgp_chain_host_to_device[aRuntimeSlot: UInt64, bDevice: StringLiteral]():
 # ===----------------------------------------------------------------------===#
 
 
-@value
-@register_passable("trivial")
-struct ContextCreateResults:
-    # Ordering here matters. It must match the ordering of returns in the MGP
-    # op definition.
-    var chain: Int
-    var ptr: UnsafePointer[DeviceContext]
-
-
 @mogg_register("mgp.device.context.create")
 @export
 fn mgp_device_context_create[
@@ -739,7 +730,7 @@ fn mgp_device_context_create[
     dummy_chain: Int,
     ctx: StateContext,
     dev_ctx_ptr: UnsafePointer[DeviceContext],
-) raises -> ContextCreateResults:
+) raises -> UnsafePointer[DeviceContext]:
     if dev_ctx_ptr:
         # We cannot return the original pointer because it is already owned by someone else.
         var dev_ctx = external_call[
@@ -769,7 +760,7 @@ fn mgp_device_context_create[
             dev_ctx_ptr[].cuda_stream.stream.handle,
             ctx[Int(aDeviceRuntimeSlot.cast[DType.int64]().value)],
         )
-        return ContextCreateResults(1, dev_ctx)
+        return dev_ctx
 
     @parameter
     if bDevice == "cuda":
@@ -800,8 +791,8 @@ fn mgp_device_context_create[
             dev_ctx[].cuda_stream.stream.handle,
             ctx[Int(aDeviceRuntimeSlot.cast[DType.int64]().value)],
         )
-        return ContextCreateResults(1, dev_ctx)
-    return ContextCreateResults(1, UnsafePointer[DeviceContext]())
+        return dev_ctx
+    return UnsafePointer[DeviceContext]()
 
 
 @export
