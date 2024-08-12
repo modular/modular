@@ -631,10 +631,8 @@ fn _matmul_kv_cache[
     var N = weight.dim[1]()
     var K = weight.dim[0]()
 
-    var valid_len = int(cache.cache_length(0))
-
     @parameter
-    @__copy_capture(cache, SEQ_LEN, valid_len)
+    @__copy_capture(cache, SEQ_LEN)
     fn write_to_cache[
         type_: DType, width: Int
     ](idx: StaticIntTuple[2], val: SIMD[type_, width]):
@@ -645,6 +643,7 @@ fn _matmul_kv_cache[
         var h_idx = head_and_dim[0]
         var hd_idx = head_and_dim[1]
 
+        var valid_len = cache.cache_length(b_idx)
         var cache_t_idx = t_idx + valid_len
         cache.store[width](
             b_idx,
@@ -900,16 +899,12 @@ fn _fused_qkv_matmul_kv_cache[
     var N = weight.dim[1]()
     var K = weight.dim[0]()
 
-    var valid_len = k_cache.cache_length(0)
-
     var q_dim = output.dim[2]()
     var k_dim = kv_params.head_size * kv_params.num_heads
     var qk_offset = q_dim + k_dim
 
     @parameter
-    @__copy_capture(
-        k_cache, v_cache, output, q_dim, qk_offset, SEQ_LEN, valid_len
-    )
+    @__copy_capture(k_cache, v_cache, output, q_dim, qk_offset, SEQ_LEN)
     fn write_to_cache[
         type_: DType, width: Int
     ](idx: StaticIntTuple[2], val: SIMD[type_, width]):
@@ -933,6 +928,7 @@ fn _fused_qkv_matmul_kv_cache[
         var h_idx = head_and_dim[0]
         var hd_idx = head_and_dim[1]
 
+        var valid_len = cache.cache_length(b_idx)
         var cache_t_idx = t_idx + valid_len
         cache.store[width](
             b_idx,
@@ -1076,11 +1072,9 @@ fn _rope_kv_cache[
         ctx: The call context as passed by the graph compiler.
     """
 
-    var valid_len = cache.cache_length(0)
-
     @always_inline
     @parameter
-    @__copy_capture(freqs, valid_len)
+    @__copy_capture(freqs, cache)
     fn rope_fn[width: Int, rank: Int](idx: StaticIntTuple[rank]):
         @parameter
         if width == 1:
@@ -1105,6 +1099,8 @@ fn _rope_kv_cache[
             else:
                 constrained[False, "Unsupported KVCache Layout"]()
                 return
+
+            var valid_len = cache.cache_length(bs)
             var t_cache_idx = t_idx + valid_len
             var val = cache.load[width=width](bs, head_idx, t_cache_idx, hd_idx)
             var val_cast = rebind[SIMD[type, width]](val)
@@ -1467,12 +1463,16 @@ fn _flash_attention_kv_cache_gpu[
     # TODO remove this an instead pass in explicit KVCache lengths to the GPU kernel.
     # KERN-725
     var valid_length = int(k.cache_length(0) + q.dim[1]())
-    var k_shape = k.block.dynamic_shape
+    var k_shape = k._block.dynamic_shape
     var kv_shape = StaticIntTuple[4](
         k_shape[0], valid_length, k_shape[2], k_shape[3]
     )
-    var k_nd = NDBuffer[type, 4, k.block_shape](k.block.data, kv_shape)
-    var v_nd = NDBuffer[type, 4, v.block_shape](v.block.data, kv_shape)
+    var k_nd = NDBuffer[type, 4, k._internal_block_shape](
+        k._block.data, kv_shape
+    )
+    var v_nd = NDBuffer[type, 4, v._internal_block_shape](
+        v._block.data, kv_shape
+    )
 
     try:
         gpu_flash_attention[
