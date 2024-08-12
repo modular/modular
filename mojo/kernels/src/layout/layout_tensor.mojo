@@ -1697,7 +1697,7 @@ struct LayoutTensor[
                         src_ptr + src_idx, dst_ptr + dst_idx
                     )
 
-    fn linspace(self):
+    fn linspace(self) -> Self:
         @parameter
         if len(layout) == 1:
             for m in range(self.runtime_layout.shape[0].value[0]):
@@ -1709,9 +1709,10 @@ struct LayoutTensor[
                     self[m, n] = m * self.runtime_layout.shape[1].value[0] + n
         else:
             abort("LayoutTensor linspace only support rank 1-2 layouts.")
+        return self
 
     @always_inline
-    fn fill(self, val: Scalar[dtype]):
+    fn fill(self, val: Scalar[dtype]) -> Self:
         @parameter
         if layout.all_dims_known():
             alias num_elements = layout.size() * Self.element_size
@@ -1723,6 +1724,7 @@ struct LayoutTensor[
             var num_elements = self.runtime_layout.size() * Self.element_size
             for i in range(num_elements):
                 self.ptr[i] = val
+        return self
 
     # TODO: Will be deprecated
     fn print(self):
