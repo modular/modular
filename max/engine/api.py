@@ -11,12 +11,12 @@ from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Type, Union
 
 import numpy as np
-from max.engine.core import DType as _DType
-from max.engine.core import FrameworkFormat as _FrameworkFormat
-from max.engine.core import InferenceSession as _InferenceSession
-from max.engine.core import Model as _Model
-from max.engine.core import TensorSpec as _TensorSpec
-from max.engine.core import TorchInputSpec as _TorchInputSpec
+from max._engine import DType as _DType
+from max._engine import FrameworkFormat as _FrameworkFormat
+from max._engine import InferenceSession as _InferenceSession
+from max._engine import Model as _Model
+from max._engine import TensorSpec as _TensorSpec
+from max._engine import TorchInputSpec as _TorchInputSpec
 
 InputShape = Optional[List[Union[int, str, None]]]
 CustomExtensionType = Union[str, Path, Any]
