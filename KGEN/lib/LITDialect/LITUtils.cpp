@@ -71,7 +71,7 @@ Type LIT::impl::demangleIfNeeded(Type arg) { return demangleIfNeededImpl(arg); }
 void LIT::printLifetimeParamValue(AsmPrinter &p, TypedAttr value) {
   LifetimeType type = cast<LifetimeType>(value.getType());
 
-  // It is extremely common to have a LifetimeMutCastAttr cast from knwon
+  // It is extremely common to have a LifetimeMutCastAttr cast from known
   // mutable lifetime to known immutable lifetime (this happens when borrowed
   // arguments are formed).  So much so that we sugar it.
   if (auto castVal = dyn_cast<LifetimeMutCastAttr>(value);

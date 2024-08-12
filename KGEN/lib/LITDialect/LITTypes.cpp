@@ -1194,6 +1194,11 @@ LITSignatureType LITSignatureType::get(FunctionType values,
                             effects, metadata);
 }
 
+/// Reconstruct the signature using a list of named input parameters and
+/// indices indicating which one of them are variadic. These parameters are
+/// prepended to the current signature and references are remapped to index
+/// references. An additional array of indices corresponding to variadic
+/// parameters of the prepended parameters is also required.
 LITSignatureType
 LITSignatureType::prependParams(LITSignatureType sig,
                                 ArrayRef<ParamDeclAttr> parentParams,
@@ -1231,6 +1236,11 @@ Type LIT::getSignatureUserResultType(SignatureType sigType,
   return resultType;
 }
 
+/// The Lit parser and KGEN have different semantics for binding function
+/// argument and result types. The parser will evaluate 'apply' expressions, but
+/// KGEN does not since it cannot always have access to a symbol table.
+/// Specialize a signature type while rebinding the input parameter values to
+/// the expected input parameter types.
 std::pair<LITSignatureType, ParameterExprArrayAttr>
 LIT::getUnboundSpecializedSignature(LITSignatureType type,
                                     ParameterExprArrayAttr bindings) {
