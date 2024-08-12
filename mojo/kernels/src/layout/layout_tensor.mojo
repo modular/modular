@@ -2150,7 +2150,7 @@ fn copy_sram_to_dram[
 
             var m: Int
             var n: Int
-            m, n = divmod(thread_offset + src_idx, cols)
+            m, n = divmod(thread_offset + dst_idx, cols)
             if m < rows:
                 var src_vec = (src_fragments.ptr + src_idx).load[
                     width=simd_size, alignment=src_align
