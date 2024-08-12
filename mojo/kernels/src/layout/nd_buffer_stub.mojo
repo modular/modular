@@ -8,7 +8,7 @@ from buffer import NDBuffer
 from buffer.dimlist import Dim, DimList
 from collections import Optional
 from gpu.id import ThreadIdx
-from gpu.memory import async_copy
+from gpu.memory import async_copy, Fill
 from layout import Layout, LayoutTensor
 from layout.int_tuple import depth, to_int
 from layout.layout import make_layout
@@ -471,7 +471,9 @@ fn _copy_nd_buffer_to_layout_tensor[
     dst_address_space: AddressSpace,
     tensor_element_layout: Layout,
     buff_element_layout_shape: StaticIntTuple[src_rank],
+    *,
     is_async: Bool = False,
+    fill: Fill = Fill.NONE,
 ](
     dst: LayoutTensor[
         dtype,
@@ -520,7 +522,7 @@ fn _copy_nd_buffer_to_layout_tensor[
                 var dst_ptr = dst.ptr.bitcast[
                     address_space = _GPUAddressSpace.SHARED
                 ]()
-                async_copy[element_size_bytes](
+                async_copy[element_size_bytes, fill=fill](
                     src_ptr + src_idx, dst_ptr + dst_idx
                 )
             else:
@@ -560,7 +562,7 @@ fn _copy_nd_buffer_to_layout_tensor[
                     var dst_ptr = dst.ptr.bitcast[
                         address_space = _GPUAddressSpace.SHARED
                     ]()
-                    async_copy[element_size_bytes](
+                    async_copy[element_size_bytes, fill=fill](
                         src_ptr + src_idx, dst_ptr + dst_idx
                     )
                 else:
@@ -590,7 +592,7 @@ fn _copy_nd_buffer_to_layout_tensor[
                 var dst_ptr = dst.ptr.bitcast[
                     address_space = _GPUAddressSpace.SHARED
                 ]()
-                async_copy[4](src_ptr + src_idx, dst_ptr + dst_idx)
+                async_copy[4, fill=fill](src_ptr + src_idx, dst_ptr + dst_idx)
             else:
                 dst.ptr[dst_idx] = src.data[src_idx]
 
@@ -608,7 +610,9 @@ fn _copy_nd_buffer_to_layout_tensor_masked[
     buff_element_layout_shape: StaticIntTuple[src_rank],
     mask_element_size: StaticIntTuple[mask_rank],
     mask_element_stride: StaticIntTuple[mask_rank],
+    *,
     is_async: Bool = False,
+    fill: Fill = Fill.NONE,
 ](
     dst: LayoutTensor[
         dtype,
@@ -668,7 +672,7 @@ fn _copy_nd_buffer_to_layout_tensor_masked[
                 var dst_ptr = dst.ptr.bitcast[
                     address_space = _GPUAddressSpace.SHARED
                 ]()
-                async_copy[element_size_bytes](
+                async_copy[element_size_bytes, fill=fill](
                     src_ptr + src_idx, dst_ptr + dst_idx
                 )
             else:
@@ -708,7 +712,7 @@ fn _copy_nd_buffer_to_layout_tensor_masked[
                     var dst_ptr = dst.ptr.bitcast[
                         address_space = _GPUAddressSpace.SHARED
                     ]()
-                    async_copy[element_size_bytes](
+                    async_copy[element_size_bytes, fill=fill](
                         src_ptr + src_idx, dst_ptr + dst_idx
                     )
                 else:
@@ -747,7 +751,7 @@ fn _copy_nd_buffer_to_layout_tensor_masked[
                 var dst_ptr = dst.ptr.bitcast[
                     address_space = _GPUAddressSpace.SHARED
                 ]()
-                async_copy[4](src_ptr + src_idx, dst_ptr + dst_idx)
+                async_copy[4, fill=fill](src_ptr + src_idx, dst_ptr + dst_idx)
             else:
                 dst.ptr[dst_idx] = src.data[src_idx]
 

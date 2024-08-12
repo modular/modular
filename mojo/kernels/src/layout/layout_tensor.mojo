@@ -11,7 +11,7 @@ from sys.intrinsics import PrefetchOptions
 from algorithm import vectorize
 from builtin.int import int as _int
 from gpu.id import ThreadIdx
-from gpu.memory import async_copy
+from gpu.memory import async_copy, Fill
 from layout.element import Element
 from memory import memcpy, UnsafePointer, stack_allocation
 from memory.reference import AddressSpace, _GPUAddressSpace
@@ -1507,7 +1507,9 @@ struct LayoutTensor[
         src_layout: Layout,
         src_addr_space: AddressSpace,
         src_element_layout: Layout,
+        *,
         masked: Bool = False,
+        fill: Fill = Fill.NONE,
     ](
         self,
         src: LayoutTensor[
@@ -1575,11 +1577,11 @@ struct LayoutTensor[
                 @parameter
                 if masked:
                     var src_copy_size = element_size_bytes if src_idx < src_idx_bound else 0
-                    async_copy[element_size_bytes](
+                    async_copy[element_size_bytes, fill=fill](
                         src_ptr + src_idx, dst_ptr + dst_idx, src_copy_size
                     )
                 else:
-                    async_copy[element_size_bytes](
+                    async_copy[element_size_bytes, fill=fill](
                         src_ptr + src_idx, dst_ptr + dst_idx
                     )
 
@@ -1590,13 +1592,15 @@ struct LayoutTensor[
                 alias src_idx = make_layout(src.element_layout, src_layout)(i)
                 alias dst_idx = make_layout(self.element_layout, self.layout)(i)
 
-                async_copy[4](src_ptr + src_idx, dst_ptr + dst_idx)
+                async_copy[4, fill=fill](src_ptr + src_idx, dst_ptr + dst_idx)
 
     @always_inline
     fn copy_from_async_masked_src[
         src_layout: Layout,
         src_addr_space: AddressSpace,
         src_element_layout: Layout,
+        *,
+        fill: Fill = Fill.NONE,
     ](
         self,
         src: LayoutTensor[
@@ -1667,7 +1671,7 @@ struct LayoutTensor[
                 var n: Int
                 m, n = divmod(offset + src_idx, cols)
                 if m < rows:
-                    async_copy[element_size_bytes](
+                    async_copy[element_size_bytes, fill=fill](
                         src_ptr + src_idx, dst_ptr + dst_idx
                     )
         else:
@@ -1681,7 +1685,9 @@ struct LayoutTensor[
                 var n: Int
                 m, n = divmod(offset + src_idx, cols)
                 if m < rows:
-                    async_copy[4](src_ptr + src_idx, dst_ptr + dst_idx)
+                    async_copy[4, fill=fill](
+                        src_ptr + src_idx, dst_ptr + dst_idx
+                    )
 
     fn linspace(self):
         @parameter
