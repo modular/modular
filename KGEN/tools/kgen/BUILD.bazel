@@ -26,9 +26,6 @@ modular_cc_binary(
 
 run_tool(
     name = "kgen-standalone",
-    env = {
-        "MODULAR_MOJO_MAX_IMPORT_PATH": "open-source/mojo/stdlib,Kernels/mojo",
-    },
     tags = ["manual"],
     tool = ":kgen",
     visibility = ["//visibility:private"],
