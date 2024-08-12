@@ -66,19 +66,17 @@ fn _get_batch_dims[
 
 # A utility to reshape NDBuffer with rank > 3 to rank-3.
 @always_inline
-fn _reshape_nd_buffer_with_batch_to_3d[
-    rank: Int,
-    dtype: DType,
-    shape: DimList,
-    address_space: AddressSpace = AddressSpace.GENERIC,
-](
-    buffer: NDBuffer[dtype, rank, shape, address_space=address_space]
-) -> NDBuffer[dtype, 3, address_space=address_space]:
+fn _reshape_nd_buffer_with_batch_to_3d(
+    buffer: NDBuffer,
+) -> NDBuffer[buffer.type, 3, address_space = buffer.address_space]:
+    alias rank = buffer.rank
     constrained[rank >= 3, "expecting at least rank-3 NDBuffer"]()
 
     var batch_size = 1
-    for i in range(0, rank - 2):
-        batch_size *= buffer.dim(i)
+
+    @parameter
+    for i in range(rank - 2):
+        batch_size *= buffer.dim[i]()
 
     var matrix_shape = StaticIntTuple[3](
         batch_size,
@@ -86,8 +84,8 @@ fn _reshape_nd_buffer_with_batch_to_3d[
         buffer.dim(buffer.get_rank() - 1),
     )
 
-    return NDBuffer[dtype, 3, address_space=address_space](
-        buffer.data.bitcast[dtype](), matrix_shape
+    return NDBuffer[buffer.type, 3, address_space = buffer.address_space](
+        buffer.data.bitcast[buffer.type](), matrix_shape
     )
 
 
