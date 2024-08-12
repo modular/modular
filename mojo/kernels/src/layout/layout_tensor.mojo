@@ -70,9 +70,10 @@ fn _project_on_axis[
 fn _get_index_type(layout: Layout, address_space: AddressSpace) -> DType:
     if layout.cosize() < _int(max_finite[DType.int32]()):
         return DType.int32
-    elif (
-        address_space == _GPUAddressSpace.SHARED
-        or address_space == _GPUAddressSpace.CONSTANT
+    elif address_space in (
+        _GPUAddressSpace.SHARED,
+        _GPUAddressSpace.CONSTANT,
+        _GPUAddressSpace.PARAM,
     ):
         return DType.int32
     else:
