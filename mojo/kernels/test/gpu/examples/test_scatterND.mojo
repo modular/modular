@@ -254,7 +254,7 @@ fn scatter_nd[
 
 fn linear_fill[
     type: DType
-](buf: NDBuffer[type, _, _], elems: VariadicList[Scalar[type]]):
+](buf: NDBuffer[type, *_], elems: VariadicList[Scalar[type]]):
     debug_assert(
         buf.num_elements() == len(elems), "must fill all elements of tensor"
     )
