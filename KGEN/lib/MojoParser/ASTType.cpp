@@ -710,9 +710,6 @@ void ASTType::print(raw_ostream &os, bool forDiag, bool demangleParams) const {
         if (printStar)
           os << '*';
 
-        if (!name.empty())
-          os << name.getValue() << ": ";
-
         if (convention == ArgConvention::Ref) {
           os << "ref [";
           auto refType = cast<RefType>(type);
@@ -721,8 +718,11 @@ void ASTType::print(raw_ostream &os, bool forDiag, bool demangleParams) const {
             os << ", ";
             printParam(os, refType.getLifetime(), forDiag, demangleParams);
           }
-          os << ']';
+          os << "] ";
         }
+
+        if (!name.empty())
+          os << name.getValue() << ": ";
 
         if (SignatureType::hasAddress(convention))
           type = type.getReferenceElementType();
@@ -769,7 +769,17 @@ void ASTType::print(raw_ostream &os, bool forDiag, bool demangleParams) const {
     os << ") -> (";
     llvm::interleaveComma(fnType.getResults(), os,
                           [&](Type type) { ASTType(type).print(os, forDiag); });
-    os << ")";
+    os << ')';
+  } else if (auto lifetimeType = dyn_cast<LifetimeType>(type)) {
+    if (lifetimeType.isMutableKnown(true))
+      os << "MutableLifetime";
+    else if (lifetimeType.isMutableKnown(false))
+      os << "ImmutableLifetime";
+    else {
+      os << "AnyLifetime[";
+      printDemangledParam(os, lifetimeType.isMutable(), forDiag);
+      os << ']';
+    }
   } else {
     // Use KGEN pretty printing when printing bare MLIR types for diagnostics.
     if (forDiag)

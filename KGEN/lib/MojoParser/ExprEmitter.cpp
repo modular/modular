@@ -690,7 +690,14 @@ SRValue ExprEmitter::emitPValueToSRValue(ASTExprAnd<PValue> value,
       // Try to fully bind the signature, in case it can be made concrete with
       // default values, etc.
       auto [bindingAttr, _] = paramBindings.verifyBindings(signature);
-      if (!bindingAttr) {
+
+      // Notice if there are any unbound parameters.
+      bool anyUnbound = true;
+      if (bindingAttr)
+        anyUnbound = llvm::any_of(
+            bindingAttr, [](TypedAttr attr) { return isa<UnboundAttr>(attr); });
+
+      if (anyUnbound) {
         // If it didn't work out, then it is an error because parameterized
         // values cannot be used in a dynamic context.
         emitError(expr->getLoc(), "cannot use parameterized function of type ")
