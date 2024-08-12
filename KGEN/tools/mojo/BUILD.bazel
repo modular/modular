@@ -114,6 +114,11 @@ modular_cc_binary(
         "**/*.h",
         "**/*.cpp",
     ]),
+    data = [
+        "//KGEN:CompilerRT",
+        "//KGEN:CompilerRT.distributable",
+        "@llvm-project//compiler-rt:orc_rt",
+    ],
     includes = ["."],
     deps = [
         ":Build.inc_files",
