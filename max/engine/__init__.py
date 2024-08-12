@@ -12,4 +12,4 @@ from .api import (
     TensorSpec,
     TorchInputSpec,
 )
-from .core import __version__
+from max._engine.core import __version__
