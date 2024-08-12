@@ -8,8 +8,6 @@
 from gpu.memory import load, CacheOperation, CacheEviction
 from gpu.host._compile import _compile_code
 from testing import assert_true, assert_equal
-from memory import stack_allocation
-from memory.reference import _GPUAddressSpace
 from collections import Optional
 
 
