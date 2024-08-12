@@ -77,7 +77,7 @@ fn reshape_shape[
     # record if there's any to-be-inferred dimension (-1).
     var target_shape = StaticIntTuple[output_rank]()
     var to_be_inferred_axis = -1
-    var non_negative_dim_prodcut = 1
+    var non_negative_dim_product = 1
     for axis in range(output_rank):
         var target_dim = int(target_shape_buf[axis])
         target_shape[axis] = target_dim
@@ -91,14 +91,14 @@ fn reshape_shape[
                 raise Error("[reshape] only one -1 is allowed in target shape")
             to_be_inferred_axis = axis
         else:
-            non_negative_dim_prodcut *= target_dim
+            non_negative_dim_product *= target_dim
 
     var input_num_elems = input_buf.num_elements()
-    var output_num_elems = non_negative_dim_prodcut
+    var output_num_elems = non_negative_dim_product
     # Infer a dimension as the remaining elements, if needed.
     if to_be_inferred_axis != -1:
         target_shape[to_be_inferred_axis] = (
-            input_num_elems // non_negative_dim_prodcut
+            input_num_elems // non_negative_dim_product
         )
         output_num_elems *= target_shape[to_be_inferred_axis]
 
