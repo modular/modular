@@ -374,7 +374,7 @@ fn _compute_ndbuffer_offset[
 
         @parameter
         for i in range(rank):
-            result = fma(Int32(buf.stride(i)), Int32(index[i]), result)
+            result = fma(Int32(buf.stride[i]()), Int32(index[i]), result)
 
         return int(result)
 
@@ -383,7 +383,7 @@ fn _compute_ndbuffer_offset[
 
         @parameter
         for i in range(rank):
-            result = fma(buf.stride(i), index[i], result)
+            result = fma(buf.stride[i](), index[i], result)
 
         return result
 
@@ -440,7 +440,7 @@ fn _compute_ndbuffer_offset(
 
         @parameter
         for i in range(rank):
-            result = fma(Int32(buf.stride(i)), Int32(index[i]), result)
+            result = fma(Int32(buf.stride[i]()), Int32(index[i]), result)
 
         return int(result)
 
@@ -449,7 +449,7 @@ fn _compute_ndbuffer_offset(
 
         @parameter
         for i in range(rank):
-            result = fma(buf.stride(i), index[i], result)
+            result = fma(buf.stride[i](), index[i], result)
 
         return result
 
@@ -888,7 +888,7 @@ struct NDBuffer[
             alias tile_size_i = tile_sizes[i].get()
             shape[i] = tile_size_i
             var coord_i = tile_coords[i]
-            offset += coord_i * tile_size_i * self.dynamic_stride[i]
+            offset += coord_i * tile_size_i * self.stride[i]()
 
         # The tile buffer has the same stride and an offset calculated as
         # computed above, why?
@@ -1098,6 +1098,25 @@ struct NDBuffer[
             The buffer size at the given dimension.
         """
         return self.dynamic_shape[index]
+
+    @always_inline
+    fn stride[index: Int](self) -> Int:
+        """Gets the buffer stride at the given index.
+
+        Parameters:
+            index: The number of dimension to get the stride for.
+
+        Returns:
+            The stride at the given dimension.
+        """
+        # First try to extract the static info on this stride, could be either a
+        # meta constant or an unknown.
+        alias static_stride_value = strides.at[index]()
+
+        @parameter
+        if static_stride_value.has_value():
+            return static_stride_value.get()
+        return self.dynamic_stride[index]
 
     @always_inline
     fn stride(self, index: Int) -> Int:
