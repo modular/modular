@@ -148,7 +148,7 @@ fn multistage_mma[
 
         @parameter
         if a_iter.address_space == AddressSpace.GENERIC:
-            var a_smem_tile = a_smem_iter.next(stage).get()
+            var a_smem_tile = a_smem_iter.next(stage)[]
 
             if num_a_rows:
                 copy_dram_to_sram_async[
@@ -157,7 +157,7 @@ fn multistage_mma[
                     masked=True,
                 ](
                     a_smem_tile.vectorize[1, simd_size](),
-                    a_iter.get()
+                    a_iter[]
                     .bitcast[a_type, address_space = AddressSpace.GENERIC]()
                     .vectorize[1, simd_size](),
                     num_a_rows.value(),
@@ -168,7 +168,7 @@ fn multistage_mma[
                     swizzle=async_copy_a_swizzle,
                 ](
                     a_smem_tile.vectorize[1, simd_size](),
-                    a_iter.get()
+                    a_iter[]
                     .bitcast[a_type, address_space = AddressSpace.GENERIC]()
                     .vectorize[1, simd_size](),
                 )
@@ -177,7 +177,7 @@ fn multistage_mma[
 
         @parameter
         if b_iter.address_space == AddressSpace.GENERIC:
-            var b_smem_tile = b_smem_iter.next(stage).get()
+            var b_smem_tile = b_smem_iter.next(stage)[]
 
             if num_b_rows:
                 var num_rows_bound = num_b_rows.value() if transpose_b else max(
@@ -189,7 +189,7 @@ fn multistage_mma[
                     masked=True,
                 ](
                     b_smem_tile.vectorize[1, simd_size](),
-                    b_iter.get()
+                    b_iter[]
                     .bitcast[b_type, address_space = AddressSpace.GENERIC]()
                     .vectorize[1, simd_size](),
                     num_rows_bound,
@@ -200,7 +200,7 @@ fn multistage_mma[
                     swizzle=async_copy_b_swizzle,
                 ](
                     b_smem_tile.vectorize[1, simd_size](),
-                    b_iter.get()
+                    b_iter[]
                     .bitcast[b_type, address_space = AddressSpace.GENERIC]()
                     .vectorize[1, simd_size](),
                 )
@@ -240,13 +240,13 @@ fn multistage_mma[
         address_space = AddressSpace.LOCAL,
     ].stack_allocation().vectorize[1, b_frag_size]().split[2]()
 
-    var a_warp_tile = a_smem_iter.get().tile[WM, BK](int(warp_y), 0)
+    var a_warp_tile = a_smem_iter[].tile[WM, BK](int(warp_y), 0)
 
     alias b_wtile_dim0 = WN if transpose_b else BK
     alias b_wtile_dim1 = BK if transpose_b else WN
     var b_wtile_coord0 = int(warp_x) if transpose_b else 0
     var b_wtile_coord1 = 0 if transpose_b else int(warp_x)
-    var b_warp_tile = b_smem_iter.get().tile[b_wtile_dim0, b_wtile_dim1](
+    var b_warp_tile = b_smem_iter[].tile[b_wtile_dim0, b_wtile_dim1](
         b_wtile_coord0, b_wtile_coord1
     )
 
@@ -256,7 +256,7 @@ fn multistage_mma[
     if a_iter.address_space == AddressSpace.LOCAL:
         # Assume input is the 16x8 output of 16x8x16 or 16x8x8 mma.
         # Need to cast address space because it's not known at parse time to be LOCAL.
-        copy_local_to_local(a_reg_tiles[0], a_iter.get())
+        copy_local_to_local(a_reg_tiles[0], a_iter[])
         a_iter += 1
     else:
         mma_op.load_a[swizzle_a](
@@ -277,8 +277,8 @@ fn multistage_mma[
             var a_smem_iter_tmp = a_smem_iter.next(k_tile_id)
             var b_smem_iter_tmp = b_smem_iter.next(k_tile_id)
 
-            var a_warp_tile = a_smem_iter_tmp.get().tile[WM, BK](int(warp_y), 0)
-            var b_warp_tile = b_smem_iter_tmp.get().tile[
+            var a_warp_tile = a_smem_iter_tmp[].tile[WM, BK](int(warp_y), 0)
+            var b_warp_tile = b_smem_iter_tmp[].tile[
                 b_wtile_dim0, b_wtile_dim1
             ](
                 b_wtile_coord0,
@@ -292,9 +292,10 @@ fn multistage_mma[
                 var current = k_mma % 2
                 var next = (k_mma + 1) % 2
 
+                @parameter
                 if k_mma == num_k_mmas - 1:
-                    var a_smem_next_tile = a_smem_iter_tmp.next().get()
-                    var b_smem_next_tile = b_smem_iter_tmp.next().get()
+                    var a_smem_next_tile = a_smem_iter_tmp.next()[]
+                    var b_smem_next_tile = b_smem_iter_tmp.next()[]
 
                     a_warp_tile = a_smem_next_tile.tile[WM, BK](int(warp_y), 0)
                     b_warp_tile = b_smem_next_tile.tile[
@@ -302,7 +303,7 @@ fn multistage_mma[
                     ](b_wtile_coord0, b_wtile_coord1)
 
                 # Assume input is the 16x8 output of 16x8x16 or 16x8x8 mma.
-                copy_local_to_local(a_reg_tiles[next], a_iter.get())
+                copy_local_to_local(a_reg_tiles[next], a_iter[])
                 a_iter += 1
 
                 mma_op.load_b(
@@ -318,6 +319,7 @@ fn multistage_mma[
                     c.vectorize[1, c_frag_size](),
                 )
 
+                @parameter
                 if k_mma + 2 == num_k_mmas:
                     var prefetch_tile_id = k_tile_id + num_pipeline_stages - 1
 
@@ -329,14 +331,14 @@ fn multistage_mma[
                         if b_iter.address_space == AddressSpace.GENERIC:
                             var b_smem_prefetch_tile = b_smem_iter_tmp.next(
                                 num_pipeline_stages - 1
-                            ).get()
+                            )[]
 
                             copy_dram_to_sram_async[
                                 thread_layout=async_copy_b_layout,
                                 swizzle=async_copy_b_swizzle,
                             ](
                                 b_smem_prefetch_tile.vectorize[1, simd_size](),
-                                b_iter.get()
+                                b_iter[]
                                 .bitcast[
                                     b_type,
                                     address_space = AddressSpace.GENERIC,
@@ -358,10 +360,8 @@ fn multistage_mma[
         var a_smem_iter_tmp = a_smem_iter.next(k_tile_id)
         var b_smem_iter_tmp = b_smem_iter.next(k_tile_id)
 
-        var a_warp_tile = a_smem_iter_tmp.get().tile[WM, BK](int(warp_y), 0)
-        var b_warp_tile = b_smem_iter_tmp.get().tile[
-            b_wtile_dim0, b_wtile_dim1
-        ](
+        var a_warp_tile = a_smem_iter_tmp[].tile[WM, BK](int(warp_y), 0)
+        var b_warp_tile = b_smem_iter_tmp[].tile[b_wtile_dim0, b_wtile_dim1](
             b_wtile_coord0,
             b_wtile_coord1,
         )
@@ -374,8 +374,8 @@ fn multistage_mma[
             var next = (k_mma + 1) % 2
 
             if k_mma == num_k_mmas - 1:
-                var a_smem_next_tile = a_smem_iter_tmp.next().get()
-                var b_smem_next_tile = b_smem_iter_tmp.next().get()
+                var a_smem_next_tile = a_smem_iter_tmp.next()[]
+                var b_smem_next_tile = b_smem_iter_tmp.next()[]
 
                 a_warp_tile = a_smem_next_tile.tile[WM, BK](int(warp_y), 0)
                 b_warp_tile = b_smem_next_tile.tile[b_wtile_dim0, b_wtile_dim1](
@@ -412,7 +412,7 @@ fn multistage_mma[
                     if a_iter.address_space == AddressSpace.GENERIC:
                         var a_smem_prefetch_tile = a_smem_iter_tmp.next(
                             num_pipeline_stages - 1
-                        ).get()
+                        )[]
 
                         if num_a_rows:
                             copy_dram_to_sram_async[
@@ -421,7 +421,7 @@ fn multistage_mma[
                                 masked=True,
                             ](
                                 a_smem_prefetch_tile.vectorize[1, simd_size](),
-                                a_iter.get()
+                                a_iter[]
                                 .bitcast[
                                     a_type, address_space = AddressSpace.GENERIC
                                 ]()
@@ -435,7 +435,7 @@ fn multistage_mma[
                                 swizzle=async_copy_a_swizzle,
                             ](
                                 a_smem_prefetch_tile.vectorize[1, simd_size](),
-                                a_iter.get()
+                                a_iter[]
                                 .bitcast[
                                     a_type, address_space = AddressSpace.GENERIC
                                 ]()
@@ -448,7 +448,7 @@ fn multistage_mma[
                     if b_iter.address_space == AddressSpace.GENERIC:
                         var b_smem_prefetch_tile = b_smem_iter_tmp.next(
                             num_pipeline_stages - 1
-                        ).get()
+                        )[]
 
                         if num_b_rows:
                             var num_rows_bound = num_b_rows.value() if transpose_b else max(
@@ -461,7 +461,7 @@ fn multistage_mma[
                                 masked=True,
                             ](
                                 b_smem_prefetch_tile.vectorize[1, simd_size](),
-                                b_iter.get()
+                                b_iter[]
                                 .bitcast[
                                     b_type, address_space = AddressSpace.GENERIC
                                 ]()
@@ -474,7 +474,7 @@ fn multistage_mma[
                                 swizzle=async_copy_b_swizzle,
                             ](
                                 b_smem_prefetch_tile.vectorize[1, simd_size](),
-                                b_iter.get()
+                                b_iter[]
                                 .bitcast[
                                     b_type, address_space = AddressSpace.GENERIC
                                 ]()
@@ -615,8 +615,8 @@ fn multistage_gemm[
     # Prefetch (num_pipeline_stages - 1) stages.
     @parameter
     for stage in range(int(num_pipeline_stages - 1)):
-        var a_smem_tile = a_smem_iter.next(stage).get()
-        var b_smem_tile = b_smem_iter.next(stage).get()
+        var a_smem_tile = a_smem_iter.next(stage)[]
+        var b_smem_tile = b_smem_iter.next(stage)[]
 
         if M % BM == 0:
             copy_dram_to_sram_async[
@@ -624,7 +624,7 @@ fn multistage_gemm[
                 swizzle=xor_2bits_per8T,
             ](
                 a_smem_tile.vectorize[1, simd_size](),
-                a_gmem_iter.get().vectorize[1, simd_size](),
+                a_gmem_iter[].vectorize[1, simd_size](),
             )
         else:
             copy_dram_to_sram_async[
@@ -632,8 +632,8 @@ fn multistage_gemm[
                 swizzle=xor_2bits_per8T,
             ](
                 a_smem_tile.vectorize[1, simd_size](),
-                a_gmem_iter.get().vectorize[1, simd_size](),
-                a_gmem_iter.get().distance(a.data),
+                a_gmem_iter[].vectorize[1, simd_size](),
+                a_gmem_iter[].distance(a.data),
                 M,
                 K,
             )
@@ -642,7 +642,7 @@ fn multistage_gemm[
             thread_layout=async_copy_b_layout, swizzle=async_copy_b_swizzle
         ](
             b_smem_tile.vectorize[1, simd_size](),
-            b_gmem_iter.get().vectorize[1, simd_size](),
+            b_gmem_iter[].vectorize[1, simd_size](),
         )
 
         async_copy_commit_group()
@@ -686,7 +686,7 @@ fn multistage_gemm[
 
     c_reg_tile.fill(0)
 
-    var a_warp_tile = a_smem_iter.get().tile[WM, BK](int(warp_y), 0)
+    var a_warp_tile = a_smem_iter[].tile[WM, BK](int(warp_y), 0)
 
     # TODO: warp the following in the tile method, maybe tile[shape: IntTuple].
     # I can't use b_warp_tile = ... if transpose_b else ... because the operands
@@ -695,7 +695,7 @@ fn multistage_gemm[
     alias b_wtile_dim1 = BK if transpose_b else WN
     var b_wtile_coord0 = int(warp_x) if transpose_b else 0
     var b_wtile_coord1 = 0 if transpose_b else int(warp_x)
-    var b_warp_tile = b_smem_iter.get().tile[b_wtile_dim0, b_wtile_dim1](
+    var b_warp_tile = b_smem_iter[].tile[b_wtile_dim0, b_wtile_dim1](
         b_wtile_coord0, b_wtile_coord1
     )
 
@@ -710,8 +710,8 @@ fn multistage_gemm[
         var a_iter = a_smem_iter.next(k_tile_id)
         var b_iter = b_smem_iter.next(k_tile_id)
 
-        var a_warp_tile = a_iter.get().tile[WM, BK](int(warp_y), 0)
-        var b_warp_tile = b_iter.get().tile[b_wtile_dim0, b_wtile_dim1](
+        var a_warp_tile = a_iter[].tile[WM, BK](int(warp_y), 0)
+        var b_warp_tile = b_iter[].tile[b_wtile_dim0, b_wtile_dim1](
             b_wtile_coord0,
             b_wtile_coord1,
         )
@@ -719,13 +719,14 @@ fn multistage_gemm[
         # Perform prefetch registers and mma until current shared memory tile's
         # data has all been loaded to registers.
         @parameter
-        for k_mma in range(int(num_k_mmas)):
+        for k_mma_0 in range(int(num_k_mmas)):
+            alias k_mma = UInt(k_mma_0)
             var current = k_mma % 2
             var next = (k_mma + 1) % 2
 
             if k_mma == num_k_mmas - 1:
-                var a_smem_next_tile = a_iter.next().get()
-                var b_smem_next_tile = b_iter.next().get()
+                var a_smem_next_tile = a_iter.next()[]
+                var b_smem_next_tile = b_iter.next()[]
 
                 a_warp_tile = a_smem_next_tile.tile[WM, BK](int(warp_y), 0)
                 b_warp_tile = b_smem_next_tile.tile[b_wtile_dim0, b_wtile_dim1](
@@ -745,6 +746,7 @@ fn multistage_gemm[
                 c_reg_tile.vectorize[1, c_frag_size](),
             )
 
+            @parameter
             if k_mma + 2 == num_k_mmas:
                 var prefetch_tile_id = k_tile_id + num_pipeline_stages - 1
 
@@ -752,8 +754,8 @@ fn multistage_gemm[
                 # shared memory buffer.
                 if prefetch_tile_id < num_k_tiles:
                     # fmt: off
-                    var a_smem_prefetch_tile = a_iter.next(num_pipeline_stages - 1).get()
-                    var b_smem_prefetch_tile = b_iter.next(num_pipeline_stages - 1).get()
+                    var a_smem_prefetch_tile = a_iter.next(num_pipeline_stages - 1)[]
+                    var b_smem_prefetch_tile = b_iter.next(num_pipeline_stages - 1)[]
                     # fmt: on
 
                     # TODO: Extend the async copy instrinsic to creat dummy copies. The
@@ -764,7 +766,7 @@ fn multistage_gemm[
                             swizzle=xor_2bits_per8T,
                         ](
                             a_smem_prefetch_tile.vectorize[1, simd_size](),
-                            a_gmem_iter.get().vectorize[1, simd_size](),
+                            a_gmem_iter[].vectorize[1, simd_size](),
                         )
                     else:
                         copy_dram_to_sram_async[
@@ -772,8 +774,8 @@ fn multistage_gemm[
                             swizzle=xor_2bits_per8T,
                         ](
                             a_smem_prefetch_tile.vectorize[1, simd_size](),
-                            a_gmem_iter.get().vectorize[1, simd_size](),
-                            a_gmem_iter.get().distance(a.data),
+                            a_gmem_iter[].vectorize[1, simd_size](),
+                            a_gmem_iter[].distance(a.data),
                             M,
                             K,
                         )
@@ -783,7 +785,7 @@ fn multistage_gemm[
                         swizzle=async_copy_b_swizzle,
                     ](
                         b_smem_prefetch_tile.vectorize[1, simd_size](),
-                        b_gmem_iter.get().vectorize[1, simd_size](),
+                        b_gmem_iter[].vectorize[1, simd_size](),
                     )
 
                     a_gmem_iter += 1
