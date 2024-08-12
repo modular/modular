@@ -64,18 +64,7 @@ struct Event:
     @always_inline
     fn __init__(inout self, ctx: Context, flags: Flag = Flag.DEFAULT) raises:
         """Creates an event for the current CUDA context."""
-
-        self.__init__(flags, ctx.cuda_dll)
-
-    @always_inline
-    fn __init__(
-        inout self,
-        flags: Flag = Flag.DEFAULT,
-        cuda_dll: CudaDLL = CudaDLL(),
-    ) raises:
-        """Creates an event for the current CUDA context."""
-
-        self.cuda_dll = cuda_dll
+        self.cuda_dll = ctx.cuda_dll
         self._event = _EventHandle()
 
         var cuEventCreate = self.cuda_dll.cuEventCreate
@@ -126,53 +115,6 @@ struct Event:
             )
         )
         return ms
-
-
-# ===----------------------------------------------------------------------===#
-# time_function
-# ===----------------------------------------------------------------------===#
-
-
-@always_inline
-@parameter
-fn time_function[func: fn (Stream) capturing -> None](stream: Stream) -> Int:
-    """Time a function using CUDA Events timer."""
-
-    try:
-        var start = Event()
-        var end = Event()
-
-        start.record(stream)
-        func(stream)
-        end.record(stream)
-        end.sync()
-
-        var msec = start.elapsed(end)
-
-        return int(msec * 1_000_000)
-    except e:
-        print("CUDA timing error:", e)
-        return -1
-
-
-@always_inline
-@parameter
-fn time_function[
-    func: fn (Stream) raises capturing -> None
-](stream: Stream) raises -> Int:
-    """Time a function using CUDA Events timer."""
-
-    var start = Event()
-    var end = Event()
-
-    start.record(stream)
-    func(stream)
-    end.record(stream)
-    end.sync()
-
-    var msec = start.elapsed(end)
-
-    return int(msec * 1_000_000)
 
 
 @always_inline
