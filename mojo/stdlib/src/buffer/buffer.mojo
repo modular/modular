@@ -304,21 +304,8 @@ struct Buffer[
 
 
 @always_inline
-fn _compute_nd_index[
-    type: DType,
-    rank: Int,
-    shape: DimList,
-    address_space: AddressSpace,
-](
-    buf: NDBuffer[type, rank, shape, address_space=address_space], index: Int
-) -> StaticIntTuple[rank]:
+fn _compute_nd_index(buf: NDBuffer, index: Int) -> StaticIntTuple[buf.rank]:
     """Computes the NDBuffer's offset using the index positions provided.
-
-    Parameters:
-        type: The element-type of the NDBuffer.
-        rank: The rank of the NDBuffer.
-        shape: The shape of the NDBuffer.
-        address_space: The address space of the NDBuffer.
 
     Args:
         buf: The NDBuffer.
@@ -328,11 +315,13 @@ fn _compute_nd_index[
         The index positions.
     """
 
+    alias rank = buf.rank
+
     @parameter
     if rank == 0:
-        return StaticIntTuple[rank](0)
+        return StaticIntTuple[buf.rank](0)
 
-    var result = StaticIntTuple[rank]()
+    var result = StaticIntTuple[buf.rank]()
 
     result[rank - 1] = index
 
@@ -425,19 +414,11 @@ fn _compute_ndbuffer_offset[
 
 
 @always_inline
-fn _compute_ndbuffer_offset[
-    type: DType, rank: Int, shape: DimList, address_space: AddressSpace
-](
-    buf: NDBuffer[type, rank, shape, address_space=address_space],
-    index: StaticTuple[Int, rank],
+fn _compute_ndbuffer_offset(
+    buf: NDBuffer,
+    index: StaticTuple[Int, buf.rank],
 ) -> Int:
     """Computes the NDBuffer's offset using the index positions provided.
-
-    Parameters:
-        type: The element-type of the NDBuffer.
-        rank: The rank of the NDBuffer.
-        shape: The shape of the NDBuffer.
-        address_space: The address space of the NDBuffer.
 
     Args:
         buf: The NDBuffer.
@@ -447,12 +428,14 @@ fn _compute_ndbuffer_offset[
         The offset into the NDBuffer given the indices.
     """
 
+    alias rank = buf.rank
+
     @parameter
     if rank == 0:
         return 0
 
     @parameter
-    if triple_is_nvidia_cuda() and address_space == _GPUAddressSpace.SHARED:
+    if triple_is_nvidia_cuda() and buf.address_space == _GPUAddressSpace.SHARED:
         var result: Int32 = 0
 
         @parameter
@@ -516,6 +499,7 @@ struct NDBuffer[
     rank: Int,
     /,
     shape: DimList = DimList.create_unknown[rank](),
+    strides: DimList = DimList.create_unknown[rank](),
     *,
     address_space: AddressSpace = AddressSpace.GENERIC,
 ](Sized, Stringable, Formattable):
@@ -528,6 +512,7 @@ struct NDBuffer[
         type: The element type of the buffer.
         rank: The rank of the buffer.
         shape: The static size (if known) of the buffer.
+        strides: The strides (if known) of the buffer.
         address_space: The address space of the buffer.
     """
 
@@ -815,9 +800,7 @@ struct NDBuffer[
             The offset into the NDBuffer given the indices.
         """
         constrained[rank <= _MAX_RANK]()
-        return self.data.offset(
-            _compute_ndbuffer_offset[type, rank, shape](self, idx)
-        )
+        return self.data.offset(_compute_ndbuffer_offset(self, idx))
 
     @always_inline
     fn _offset(
@@ -838,9 +821,7 @@ struct NDBuffer[
             The offset into the NDBuffer given the indices.
         """
         constrained[rank <= _MAX_RANK]()
-        return self.data.offset(
-            _compute_ndbuffer_offset[type, rank, shape](self, idx)
-        )
+        return self.data.offset(_compute_ndbuffer_offset(self, idx))
 
     @always_inline
     fn __getitem__(self, *idx: Int) -> Scalar[type]:
