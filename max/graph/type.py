@@ -48,7 +48,7 @@ class Dim:
 
     Constraining tensor dimensions is one important way to improve model
     performance. If tensors have unknown dimensions, we can't optimize them
-    as aggressively. Symoblic tensors allow the compiler to learn constraints
+    as aggressively. Symbolic tensors allow the compiler to learn constraints
     on a specific dimension (eg. if 2 inputs have the same `batch` dimension)
     which can be an important improvement over dynamic dimensions, but static
     dims are the easiest to optimize and therefore the easiest to create
