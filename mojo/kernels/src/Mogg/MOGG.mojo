@@ -691,7 +691,7 @@ fn _compute_flat_index[
 
     @parameter
     for i in range(iters):
-        flat_index = fma(index[i], buffer.dynamic_stride[i], flat_index)
+        flat_index = fma(index[i], buffer.stride[i](), flat_index)
 
     return flat_index
 
@@ -721,7 +721,7 @@ fn simd_load[
     var flat_index = _compute_flat_index[
         type, rank, rank, input_0_static_shape
     ](buffer, index)
-    var stride = buffer.dynamic_stride[rank - 1]
+    var stride = buffer.stride[rank - 1]()
 
     if stride == 0:
         return buffer.data.load(flat_index)
@@ -1992,8 +1992,8 @@ fn transpose[
     @parameter
     for i in range(rank):
         var dim = int(perms[i])
-        new_shape[i] = input.dynamic_shape[dim]
-        new_stride[i] = input.dynamic_stride[dim]
+        new_shape[i] = input.dim(dim)
+        new_stride[i] = input.stride(dim)
 
     # Create the transposed view.
     return NDBuffer[type, rank](input.data, new_shape, new_stride)
