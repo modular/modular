@@ -477,13 +477,15 @@ struct LayoutTensor[
     @always_inline
     fn tile[
         *tile_sizes: Int,
-        __tiled_layout: Layout = Self._compute_tile_layout[tile_sizes](),
     ](self, *tile_coords: Int) -> LayoutTensor[
         dtype,
-        __tiled_layout[0],
+        Self._compute_tile_layout[tile_sizes]()[0],
         address_space=address_space,
-    ]:
+    ] as tiled_layout_result:
         alias num_tiles = __get_len[tile_sizes]()
+
+        # need to calculate this again because __tiled_layout[1] is required for the offset calculation
+        alias __tiled_layout = Self._compute_tile_layout[tile_sizes]()
 
         constrained[
             __tiled_layout[1].rank() == num_tiles,
@@ -493,7 +495,7 @@ struct LayoutTensor[
         # Static layout tiling
         # TODO: Consider merge the two cases in away that won't slowdown the fully static layout.
         @parameter
-        if __tiled_layout[0].all_dims_known():
+        if tiled_layout_result.layout.all_dims_known():
             var offset = 0
 
             @parameter
@@ -509,11 +511,11 @@ struct LayoutTensor[
                 org_coords_offset[i] += tile_sizes[i] * tile_coords[i]
 
             return LayoutTensor[
-                dtype, __tiled_layout[0], address_space=address_space
+                dtype, tiled_layout_result.layout, address_space=address_space
             ](
                 self.ptr.offset(offset),
                 org_coords_offset=rebind[
-                    StaticIntTuple[__tiled_layout[0].rank()]
+                    StaticIntTuple[tiled_layout_result.layout.rank()]
                 ](org_coords_offset),
             )
 
@@ -521,9 +523,13 @@ struct LayoutTensor[
             # Dynamic layout, use strides
             var offset = 0
 
-            var dynamic_layout_shape = RuntimeTuple[__tiled_layout[0].shape]()
+            var dynamic_layout_shape = RuntimeTuple[
+                tiled_layout_result.layout.shape
+            ]()
 
-            var dynamic_layout_stride = RuntimeTuple[__tiled_layout[0].stride]()
+            var dynamic_layout_stride = RuntimeTuple[
+                tiled_layout_result.layout.stride
+            ]()
 
             @parameter
             for i in range(num_tiles):
@@ -535,7 +541,7 @@ struct LayoutTensor[
 
             return LayoutTensor[
                 dtype,
-                __tiled_layout[0],
+                tiled_layout_result.layout,
                 address_space=address_space,
             ](
                 self.ptr.offset(offset),
@@ -546,12 +552,14 @@ struct LayoutTensor[
     fn tiled_iterator[
         *tile_sizes: Int,
         axis: Int = 0,
-        __tiled_layout: Layout = Self._compute_tile_layout[tile_sizes](),
     ](self, *tile_coords: Int) -> LayoutTensorIter[
-        dtype, __tiled_layout[0], address_space, circular=False
-    ]:
+        dtype,
+        Self._compute_tile_layout[tile_sizes]()[0],
+        address_space,
+        circular=False,
+    ] as tiled_iterator_result:
         alias num_tiles = __get_len[tile_sizes]()
-
+        alias __tiled_layout = Self._compute_tile_layout[tile_sizes]()
         constrained[
             __tiled_layout[1].rank() == num_tiles,
             "Number of tiles should match the rank",
@@ -573,7 +581,7 @@ struct LayoutTensor[
         alias stride = __tiled_layout[1].stride[axis].value()
 
         return LayoutTensorIter[
-            dtype, __tiled_layout[0], address_space, circular=False
+            dtype, tiled_iterator_result.layout, address_space, circular=False
         ](self.ptr + ptr_offset, bound, stride=stride)
 
     @always_inline
