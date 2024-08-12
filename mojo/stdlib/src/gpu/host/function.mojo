@@ -372,15 +372,18 @@ struct Function[
         dump_ptx: Variant[Path, Bool] = False,
         dump_llvm: Variant[Path, Bool] = False,
     ) raises:
-        if _dump_q(dump_ptx):
-            alias ptx = str(Self._impl.asm)
-            var cleaned_up_ptx = ptx.replace(
-                "\t// begin inline asm\n", ""
-            ).replace("\t// end inline asm\n", "")
+        fn dump_q(val: Variant[Path, Bool]) -> Bool:
+            if val.isa[Bool]():
+                return val[Bool]
+            return val[Path] != Path("")
+
+        if dump_q(dump_ptx):
+            alias ptx = Self._impl.asm
             if dump_ptx.isa[Path]():
-                dump_ptx[Path].write_text(cleaned_up_ptx)
+                with open(dump_ptx[Path], "w") as f:
+                    f.write(StringRef(ptx))
             else:
-                print(cleaned_up_ptx)
+                print(ptx)
 
         if _dump_q(dump_llvm):
             alias llvm = _compile_code[func, emission_kind="llvm"]().asm
