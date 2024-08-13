@@ -7,9 +7,11 @@
 
 import os
 from dataclasses import dataclass, field
+from math import isclose
 from pathlib import Path
 from subprocess import run
 
+import max.driver as md
 import max.engine as me
 import numpy as np
 import pytest
@@ -81,6 +83,115 @@ def test_execute_success(mo_model_path: Path):
         output["output"],
         np.array([4.0, 2.0, -5.0, 3.0, 6.0]).astype(np.float32),
     )
+
+
+def test_devicetensor_wrong_num_inputs(mo_model_path: Path):
+    # The engine should throw a ValueError when executing with the
+    # wrong number of input tensors.
+    session = me.InferenceSession()
+    model = session.load(mo_model_path)
+    first_tensor = md.Tensor((5,), md.DType.float32)
+    second_tensor = md.Tensor((5,), md.DType.float32)
+    # Ensure that tensors are initialized
+    for i in range(5):
+        first_tensor[i] = i
+        second_tensor[i] = i
+    with pytest.raises(
+        ValueError,
+        match=(
+            r"Number of inputs \(2\) does not match "
+            r"expected number \(1\) for model"
+        ),
+    ):
+        model.execute(first_tensor, second_tensor)
+
+
+def test_devicetensor_wrong_shape(mo_model_path: Path):
+    # The engine should throw a ValueError when executing a tensor with
+    # the wrong shape.
+    session = me.InferenceSession()
+    model = session.load(mo_model_path)
+    tensor = md.Tensor((6,), md.DType.float32)
+    # Ensure that tensors are initialized
+    for i in range(6):
+        tensor[i] = i
+    with pytest.raises(
+        ValueError,
+        match=(
+            r"Shape mismatch at position 0: expected tensor dimension "
+            r"to be 5 at axis 0 but found dimension to be 6 instead"
+        ),
+    ):
+        model.execute(tensor)
+
+
+def test_devicetensor_wrong_rank(mo_model_path: Path):
+    # The engine should throw a ValueError when executing a tensor with
+    # the wrong shape.
+    session = me.InferenceSession()
+    model = session.load(mo_model_path)
+    tensor = md.Tensor((5, 2), md.DType.float32)
+    # Ensure that tensors are initialized
+    for i in range(5):
+        for j in range(2):
+            tensor[i, j] = i
+    with pytest.raises(
+        ValueError,
+        match=(
+            r"Rank mismatch: expected a tensor of rank 1 at position 0 "
+            r"but got 2 instead."
+        ),
+    ):
+        model.execute(tensor)
+
+
+def test_devicetensor_wrong_dtype(mo_model_path: Path):
+    # The engine should throw a ValueError when executing a tensor with
+    # the wrong dtype.
+    session = me.InferenceSession()
+    model = session.load(mo_model_path)
+    tensor = md.Tensor((6,), md.DType.int32)
+    # Ensure that tensors are initialized
+    for i in range(6):
+        tensor[i] = i
+    with pytest.raises(
+        ValueError,
+        match=(
+            r"DType mismatch: expected f32 at position 0 but got si32 instead."
+        ),
+    ):
+        model.execute(tensor)
+
+
+def test_execute_non_devicetensor_positional_arguments(mo_model_path: Path):
+    # We allow execution with positional arguments only if they are
+    # devicetensors.
+    session = me.InferenceSession()
+    model = session.load(mo_model_path)
+    with pytest.raises(
+        RuntimeError,
+        match=(
+            r"All positional arguments provided to the execute "
+            r"API must be Max Driver tensors"
+        ),
+    ):
+        model.execute(np.ones((5)))
+
+
+def test_execute_device_tensor(mo_model_path: Path):
+    # The engine should be able to take in a simple 1-d tensor and execute a
+    # model with this input.
+    session = me.InferenceSession()
+    model = session.load(mo_model_path)
+    input_tensor = md.Tensor((5,), md.DType.float32)
+    for idx in range(5):
+        input_tensor[idx] = 1.0
+    output = model.execute(input_tensor)
+    expected = [4.0, 2.0, -5.0, 3.0, 6.0]
+    assert len(output) == 1
+    output_tensor = output[0]
+    for idx in range(5):
+        assert isclose(output_tensor[idx].item(), expected[idx])
 
 
 # TODO(#36814): Debug segfault after PT 2.2.2 bump.
