@@ -56,19 +56,6 @@ from .utils import apply_epilogue, elementwise_epilogue_type
 from .utils_gpu import block_swizzle
 
 
-# Mask ^ tid's 2 least significant and every 8 threads share one mask.
-# This reproduces the thread map in Cutlass when BK=16.
-@always_inline
-fn xor_2bits_per8T[type: DType](tid: Scalar[type]) -> Scalar[type]:
-    return Swizzle[2, 0, 3]()(tid)
-
-
-# Figure out the math using BN, BK, dtype to define swizzle parameters.
-@always_inline
-fn xor_3bits_per16T[type: DType](tid: Scalar[type]) -> Scalar[type]:
-    return Swizzle[3, 0, 4]()(tid)
-
-
 @always_inline
 fn distance[
     type: DType, //
@@ -128,19 +115,12 @@ fn multistage_mma[
     alias async_copy_a_layout = Layout.row_major(
         num_threads * simd_size // BK, BK // simd_size
     )
-    alias async_copy_a_swizzle = None if not swizzle_a else Optional[
-        _swizzle_signature
-    ](xor_2bits_per8T)
+
     alias async_copy_b_layout = Layout.row_major(
         num_threads * simd_size // b_smem_layout.stride[0].value(),
         b_smem_layout.stride[0].value() // simd_size,
     )
-    alias async_copy_b_swizzle = Optional[_swizzle_signature](
-        xor_2bits_per8T
-    ) if transpose_b else (
-        None if a_type
-        is DType.float32 else Optional[_swizzle_signature](xor_3bits_per16T)
-    )
+    alias swizzle_b = transpose_b or b_type.is_half_float()
 
     # Prefetch (num_pipeline_stages - 1) stages.
     @parameter
@@ -153,7 +133,7 @@ fn multistage_mma[
             if num_a_rows:
                 copy_dram_to_sram_async[
                     thread_layout=async_copy_a_layout,
-                    swizzle=async_copy_a_swizzle,
+                    swizzle=swizzle_a,
                     masked=True,
                 ](
                     a_smem_tile.vectorize[1, simd_size](),
@@ -165,7 +145,7 @@ fn multistage_mma[
             else:
                 copy_dram_to_sram_async[
                     thread_layout=async_copy_a_layout,
-                    swizzle=async_copy_a_swizzle,
+                    swizzle=swizzle_a,
                 ](
                     a_smem_tile.vectorize[1, simd_size](),
                     a_iter[]
@@ -185,7 +165,7 @@ fn multistage_mma[
                 )
                 copy_dram_to_sram_async[
                     thread_layout=async_copy_b_layout,
-                    swizzle=async_copy_b_swizzle,
+                    swizzle=swizzle_b,
                     masked=True,
                 ](
                     b_smem_tile.vectorize[1, simd_size](),
@@ -197,7 +177,7 @@ fn multistage_mma[
             else:
                 copy_dram_to_sram_async[
                     thread_layout=async_copy_b_layout,
-                    swizzle=async_copy_b_swizzle,
+                    swizzle=swizzle_b,
                 ](
                     b_smem_tile.vectorize[1, simd_size](),
                     b_iter[]
@@ -335,7 +315,7 @@ fn multistage_mma[
 
                             copy_dram_to_sram_async[
                                 thread_layout=async_copy_b_layout,
-                                swizzle=async_copy_b_swizzle,
+                                swizzle=swizzle_b,
                             ](
                                 b_smem_prefetch_tile.vectorize[1, simd_size](),
                                 b_iter[]
@@ -417,7 +397,7 @@ fn multistage_mma[
                         if num_a_rows:
                             copy_dram_to_sram_async[
                                 thread_layout=async_copy_a_layout,
-                                swizzle=async_copy_a_swizzle,
+                                swizzle=swizzle_a,
                                 masked=True,
                             ](
                                 a_smem_prefetch_tile.vectorize[1, simd_size](),
@@ -432,7 +412,7 @@ fn multistage_mma[
                         else:
                             copy_dram_to_sram_async[
                                 thread_layout=async_copy_a_layout,
-                                swizzle=async_copy_a_swizzle,
+                                swizzle=swizzle_a,
                             ](
                                 a_smem_prefetch_tile.vectorize[1, simd_size](),
                                 a_iter[]
@@ -457,7 +437,7 @@ fn multistage_mma[
                             )
                             copy_dram_to_sram_async[
                                 thread_layout=async_copy_b_layout,
-                                swizzle=async_copy_b_swizzle,
+                                swizzle=swizzle_b,
                                 masked=True,
                             ](
                                 b_smem_prefetch_tile.vectorize[1, simd_size](),
@@ -471,7 +451,7 @@ fn multistage_mma[
                         else:
                             copy_dram_to_sram_async[
                                 thread_layout=async_copy_b_layout,
-                                swizzle=async_copy_b_swizzle,
+                                swizzle=swizzle_b,
                             ](
                                 b_smem_prefetch_tile.vectorize[1, simd_size](),
                                 b_iter[]
@@ -605,12 +585,8 @@ fn multistage_gemm[
     alias async_copy_b_layout = Layout.row_major(
         num_threads * simd_size // BD_1, BD_1 // simd_size
     )
-    alias async_copy_b_swizzle = Optional[_swizzle_signature](
-        xor_2bits_per8T
-    ) if transpose_b else (
-        None if a_type
-        is DType.float32 else Optional[_swizzle_signature](xor_3bits_per16T)
-    )
+
+    alias swizzle_b = transpose_b or b_type.is_half_float()
 
     # Prefetch (num_pipeline_stages - 1) stages.
     @parameter
@@ -621,7 +597,7 @@ fn multistage_gemm[
         if M % BM == 0:
             copy_dram_to_sram_async[
                 thread_layout=async_copy_a_layout,
-                swizzle=xor_2bits_per8T,
+                swizzle=True,  # xor_2bits_per8T,
             ](
                 a_smem_tile.vectorize[1, simd_size](),
                 a_gmem_iter[].vectorize[1, simd_size](),
@@ -629,7 +605,7 @@ fn multistage_gemm[
         else:
             copy_dram_to_sram_async[
                 thread_layout=async_copy_a_layout,
-                swizzle=xor_2bits_per8T,
+                swizzle=True,
             ](
                 a_smem_tile.vectorize[1, simd_size](),
                 a_gmem_iter[].vectorize[1, simd_size](),
@@ -639,7 +615,7 @@ fn multistage_gemm[
             )
 
         copy_dram_to_sram_async[
-            thread_layout=async_copy_b_layout, swizzle=async_copy_b_swizzle
+            thread_layout=async_copy_b_layout, swizzle=swizzle_b
         ](
             b_smem_tile.vectorize[1, simd_size](),
             b_gmem_iter[].vectorize[1, simd_size](),
@@ -761,7 +737,7 @@ fn multistage_gemm[
                     if M % BM == 0:
                         copy_dram_to_sram_async[
                             thread_layout=async_copy_a_layout,
-                            swizzle=xor_2bits_per8T,
+                            swizzle=True,
                         ](
                             a_smem_prefetch_tile.vectorize[1, simd_size](),
                             a_gmem_iter[].vectorize[1, simd_size](),
@@ -769,7 +745,7 @@ fn multistage_gemm[
                     else:
                         copy_dram_to_sram_async[
                             thread_layout=async_copy_a_layout,
-                            swizzle=xor_2bits_per8T,
+                            swizzle=True,
                         ](
                             a_smem_prefetch_tile.vectorize[1, simd_size](),
                             a_gmem_iter[].vectorize[1, simd_size](),
@@ -780,7 +756,7 @@ fn multistage_gemm[
 
                     copy_dram_to_sram_async[
                         thread_layout=async_copy_b_layout,
-                        swizzle=async_copy_b_swizzle,
+                        swizzle=swizzle_b,
                     ](
                         b_smem_prefetch_tile.vectorize[1, simd_size](),
                         b_gmem_iter[].vectorize[1, simd_size](),
