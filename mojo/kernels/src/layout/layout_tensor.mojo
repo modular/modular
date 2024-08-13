@@ -251,11 +251,121 @@ struct LayoutTensor[
         return self
 
     @always_inline
+    fn __elementwise_binary_with_broadcast[
+        func: fn (Self.element_type, Self.element_type) capturing -> (
+            Self.element_type
+        ),
+        other_layout: Layout,
+        index_type: DType,
+    ](
+        self,
+        other: LayoutTensor[
+            dtype,
+            other_layout,
+            _,
+            address_space=address_space,
+            element_layout=element_layout,
+            index_type=index_type,
+        ],
+    ) -> Self:
+        @parameter
+        if rank == other.rank:
+
+            @parameter
+            for axis in range(rank):
+                constrained[
+                    other.dim[axis]() == self.dim[axis](),
+                    (
+                        "__elementwise_binary_with_broadcast requires shape to"
+                        " be the same for tensors of the same rank"
+                    ),
+                ]()
+
+        constrained[
+            layout.all_dims_known(),
+            (
+                "__elementwise_binary_with_broadcast must operates on tensors"
+                " of statically know layouts"
+            ),
+        ]()
+        constrained[
+            other.rank <= rank,
+            (
+                "__elementwise_binary_with_broadcast must operats on tensr of"
+                " equal of lower rank"
+            ),
+        ]()
+
+        # TODO(KERN-812): Support numpy like broadcasting and relax rank-2
+        # constrain.
+        constrained[rank == 2, "Only supports rank-2 tensor"]()
+
+        @parameter
+        if other.rank == 1:
+            constrained[
+                other.dim[0]() == self.dim[0](),
+                (
+                    "__elementwise_binary_with_broadcast 1d tensor operand must"
+                    " have a dim that matches the tensors"
+                ),
+            ]()
+
+            @parameter
+            for i in range(self.layout.size()):
+                alias other_size = other.layout.size()
+
+                alias lhs_idx = self.layout(i)
+                alias rhs_idx = other.layout(i % other_size)
+
+                self.ptr.store(
+                    lhs_idx,
+                    func(
+                        (self.ptr + lhs_idx).load[width = Self.element_size](),
+                        (other.ptr + rhs_idx).load[width = Self.element_size](),
+                    ),
+                )
+            return self
+
+        @parameter
+        for i in range(self.layout.size()):
+            alias idx = self.layout(i)
+            self.ptr.store(
+                idx,
+                func(
+                    (self.ptr + idx).load[width = Self.element_size](),
+                    (other.ptr + idx).load[width = Self.element_size](),
+                ),
+            )
+        return self
+
+    @always_inline
     fn __add__(self, other: Scalar[dtype]) -> Self:
         fn add_val(val: Self.element_type) capturing -> Self.element_type:
             return Self.element_type(other) + val
 
         return self.__elementwise_unary[add_val]()
+
+    @always_inline
+    fn __add__[
+        other_layout: Layout,
+        index_type: DType,
+    ](
+        self,
+        other: LayoutTensor[
+            dtype,
+            other_layout,
+            _,
+            address_space=address_space,
+            element_layout=element_layout,
+            index_type=index_type,
+        ],
+    ) -> Self:
+        fn add_val(
+            lhs: Self.element_type, rhs: Self.element_type
+        ) capturing -> Self.element_type:
+            return lhs + rhs
+
+        return self.__elementwise_binary_with_broadcast[add_val](other)
 
     @always_inline
     fn __mul__(self, other: Scalar[dtype]) -> Self:
@@ -270,6 +380,28 @@ struct LayoutTensor[
             return Self.element_type(other) - val
 
         return self.__elementwise_unary[add_val]()
+
+    @always_inline
+    fn __sub__[
+        other_layout: Layout,
+        index_type: DType,
+    ](
+        self,
+        other: LayoutTensor[
+            dtype,
+            other_layout,
+            _,
+            address_space=address_space,
+            element_layout=element_layout,
+            index_type=index_type,
+        ],
+    ) -> Self:
+        fn sub_val(
+            lhs: Self.element_type, rhs: Self.element_type
+        ) capturing -> Self.element_type:
+            return lhs - rhs
+
+        return self.__elementwise_binary_with_broadcast[sub_val](other)
 
     @always_inline
     fn __getitem__(self, *dims: Int) -> Self.element_type:

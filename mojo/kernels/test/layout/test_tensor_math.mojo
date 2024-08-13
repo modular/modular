@@ -92,8 +92,43 @@ fn test_unary_scalar():
     print(tensor_4x4 * 10.0)
 
 
+# CHECK-LABLE: test_binary_same_rank
+fn test_binary_same_rank():
+    print("== test_binary_same_rank")
+    var tensor_4x5 = LayoutTensor[
+        DType.float32, Layout.row_major(4, 5)
+    ].stack_allocation().linspace()
+    var tensor_4x5_2 = LayoutTensor[
+        DType.float32, Layout.row_major(4, 5)
+    ].stack_allocation().linspace() + 2
+
+    # CHECK: 2.0 4.0 6.0 8.0 10.0
+    # CHECK: 12.0 14.0 16.0 18.0 20.0
+    # CHECK: 22.0 24.0 26.0 28.0 30.0
+    # CHECK: 32.0 34.0 36.0 38.0 40.0
+    print(tensor_4x5 + tensor_4x5_2)
+
+
+# CHECK-LABEL: test_binary_broadcast_inner
+fn test_binary_broadcast_inner():
+    print("== test_binary_broadcast_inner")
+    var tensor_4x5 = LayoutTensor[
+        DType.float32, Layout.row_major(4, 5)
+    ].stack_allocation().linspace()
+    var tensor_4 = LayoutTensor[
+        DType.float32, Layout.row_major(4)
+    ].stack_allocation().linspace() + 1
+    # CHECK: -1.0 0.0 1.0 2.0 3.0
+    # CHECK: 3.0 4.0 5.0 6.0 7.0
+    # CHECK: 7.0 8.0 9.0 10.0 11.0
+    # CHECK: 11.0 12.0 13.0 14.0 15.0
+    print(tensor_4x5 - tensor_4)
+
+
 fn main():
     test_reduce_sum()
     test_reduce_max()
     test_exp()
     test_unary_scalar()
+    test_binary_same_rank()
+    test_binary_broadcast_inner()
