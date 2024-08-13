@@ -1639,7 +1639,7 @@ fn split_k_reduce[
     var N = A.dim[1]()
 
     @always_inline
-    @__copy_capture(A, B, M)
+    @__copy_capture(A, B, N)
     @parameter
     fn _reduce[simd_width: Int, rank: Int](idx0: StaticIntTuple[rank]):
         var idx = rebind[StaticIntTuple[2]](idx0)
@@ -1648,7 +1648,7 @@ fn split_k_reduce[
 
         var vec = A.load[width=simd_width](idx)
         for k in range(num_partition):
-            vec += B.load[width=simd_width](i, j + k * M)
+            vec += B.load[width=simd_width](i, j + k * N)
         A.store[width=simd_width](idx, vec)
 
     _elementwise_impl_gpu[_reduce, pack_size](
