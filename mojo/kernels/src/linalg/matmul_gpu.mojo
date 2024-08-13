@@ -501,7 +501,7 @@ fn gemv_tc_kernel_vector[
 
     # Every warp processes a single row of the resultant vector
     for _ in range(ceildiv(k // simd_width, WARP_SIZE)):
-        var val = SIMD[a_type, simd_width]()
+        var local_accum = SIMD[a_type, simd_width](0)
         if idx < k:
             var ax = load[
                 width=simd_width,
@@ -518,13 +518,13 @@ fn gemv_tc_kernel_vector[
 
             # Do simd vector loads in ax,bx to multiply element wise for matrix
             # row and vector column
-            val = ax * bx
+            local_accum += ax * bx
 
             idx += step
             a_ptr += step
 
         # Do a fast tensor core and warp shuffle based reduce operation
-        accum += tc_reduce_vector[s_type, a_type, simd_width](val)
+        accum += tc_reduce_vector[s_type, a_type, simd_width](local_accum)
 
     if lane_id() == 0:
 
@@ -1357,7 +1357,7 @@ fn _matmul_gpu_dispatch[
                         a_shape,
                         b_type,
                         b_shape,
-                        simd_width,
+                        simd_width=simd_width,
                         elementwise_lambda_fn=elementwise_lambda_fn,
                     ]
                 ]()
@@ -1436,7 +1436,7 @@ fn _matmul_gpu_dispatch[
                         a_shape,
                         b_type,
                         b_shape,
-                        simd_width,
+                        simd_width=simd_width,
                         transpose_b=transpose_b,
                         elementwise_lambda_fn=elementwise_lambda_fn,
                     ]
@@ -1457,8 +1457,8 @@ fn _matmul_gpu_dispatch[
                 var gpu_func = ctx.compile_function[
                     gemv_tc_kernel[
                         c_type,
-                        b_type,
                         a_type,
+                        b_type,
                         transpose_b=transpose_b,
                         elementwise_lambda_fn=elementwise_lambda_fn,
                     ]
@@ -1479,8 +1479,8 @@ fn _matmul_gpu_dispatch[
             var gpu_func = ctx.compile_function[
                 gemv_kernel[
                     c_type,
-                    b_type,
                     a_type,
+                    b_type,
                     transpose_b=transpose_b,
                     elementwise_lambda_fn=elementwise_lambda_fn,
                 ]
