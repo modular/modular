@@ -92,13 +92,16 @@ def transpose(x: ValueLike, dim_1: int, dim_2: int) -> GraphValue:
         dim_2 += rank
 
     new_shape = v.shape
+    indices = np.array(range(len(new_shape)))
+
     new_shape[dim_1], new_shape[dim_2] = new_shape[dim_2], new_shape[dim_1]
+    indices[dim_1], indices[dim_2] = dim_2, dim_1
 
     return Graph.current._add_op(
         rmo.mo_transpose,
         TensorType(dtype=v.tensor_type.dtype, shape=new_shape).to_mlir(),
         v,
-        GraphValue(np.array([dim_1, dim_2])),
+        GraphValue(indices),
     )[0]
 
 
