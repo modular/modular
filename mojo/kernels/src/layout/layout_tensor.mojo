@@ -22,7 +22,7 @@ from utils.numerics import max_finite
 
 from .int_tuple import fill_like, flatten, idx2crd, product, to_int
 from .layout import *
-
+from .swizzle import xor_2bits_per8T, xor_3bits_per16T
 from .runtime_layout import (
     RuntimeLayout,
     coalesce as runtime_coalesce,
@@ -784,8 +784,7 @@ struct LayoutTensor[
             if swizzle:
                 alias swizzle_fn = swizzle.value()
                 swizzled_offset = (
-                    swizzle_fn[Self.index_type](offset // self.element_size)
-                    * self.element_size
+                    swizzle_fn(offset // self.element_size) * self.element_size
                 )
 
             return LayoutTensor[
@@ -1897,7 +1896,7 @@ fn copy_dram_to_sram_async[
     dst_thread_layout: Layout,
     src_element_layout: Layout,
     dst_element_layout: Layout,
-    swizzle: Optional[_swizzle_signature] = None,
+    swizzle: Bool = False,
     masked: Bool = False,
 ](
     dst: LayoutTensor[
@@ -1914,10 +1913,28 @@ fn copy_dram_to_sram_async[
     ],
     num_rows: Int = UNKNOWN_VALUE,
 ):
-    var src_fragments = src.distribute[src_thread_layout](ThreadIdx.x())
-    var dst_fragments = dst.distribute[dst_thread_layout, swizzle=swizzle](
-        ThreadIdx.x()
+    alias row_size = dst.stride[0]()
+    # See make_ldmatrix_swizzle in Swizzle.mojo for `conflict_ways`.
+    # TODO: use the above when MOCO-1048 is fixed.
+    alias bytes_32_banks = 128
+    alias conflict_ways = min(
+        8 * row_size * sizeof[dtype]() // bytes_32_banks, 8
     )
+    constrained[
+        (swizzle and (conflict_ways in (4, 8))) or not swizzle,
+        "Only support swizzle for 4 or 8 ways conflict.",
+    ]()
+
+    alias swizzle_option0 = Optional[_swizzle_signature](xor_2bits_per8T)
+    alias swizzle_option1 = Optional[_swizzle_signature](xor_3bits_per16T)
+    alias swizzle_option = None if not swizzle else (
+        swizzle_option0 if conflict_ways == 4 else swizzle_option1
+    )
+
+    var src_fragments = src.distribute[src_thread_layout](ThreadIdx.x())
+    var dst_fragments = dst.distribute[
+        dst_thread_layout, swizzle=swizzle_option
+    ](ThreadIdx.x())
 
     @parameter
     if not masked:
@@ -1945,7 +1962,7 @@ fn copy_dram_to_sram_async[
     dst_thread_layout: Layout,
     src_element_layout: Layout,
     dst_element_layout: Layout,
-    swizzle: Optional[_swizzle_signature] = None,
+    swizzle: Bool = False,
 ](
     dst: LayoutTensor[
         dtype,
@@ -1963,10 +1980,27 @@ fn copy_dram_to_sram_async[
     rows: Int,
     cols: Int,
 ):
-    var src_fragments = src.distribute[src_thread_layout](ThreadIdx.x())
-    var dst_fragments = dst.distribute[dst_thread_layout, swizzle=swizzle](
-        ThreadIdx.x()
+    alias row_size = dst.stride[0]()
+    # TODO: use make_ldmatrix_swizzle when MOCO-1048 is fixed.
+    alias bytes_32_banks = 128
+    alias conflict_ways = min(
+        8 * row_size * sizeof[dtype]() // bytes_32_banks, 8
     )
+    constrained[
+        (swizzle and (conflict_ways in (4, 8))) or not swizzle,
+        "Only support swizzle for 4 or 8 ways conflict.",
+    ]()
+
+    alias swizzle_option0 = Optional[_swizzle_signature](xor_2bits_per8T)
+    alias swizzle_option1 = Optional[_swizzle_signature](xor_3bits_per16T)
+    alias swizzle_option = None if not swizzle else (
+        swizzle_option0 if conflict_ways == 4 else swizzle_option1
+    )
+
+    var src_fragments = src.distribute[src_thread_layout](ThreadIdx.x())
+    var dst_fragments = dst.distribute[
+        dst_thread_layout, swizzle=swizzle_option
+    ](ThreadIdx.x())
     var thread_offset = offset + src_fragments.distance(src.ptr)
     dst_fragments.copy_from_async_masked_src(
         src_fragments, thread_offset, rows, cols
@@ -1983,7 +2017,7 @@ fn copy_dram_to_sram_async[
     thread_layout: Layout,
     src_element_layout: Layout,
     dst_element_layout: Layout,
-    swizzle: Optional[_swizzle_signature] = None,
+    swizzle: Bool = False,
     masked: Bool = False,
 ](
     dst: LayoutTensor[
@@ -2023,7 +2057,7 @@ fn copy_dram_to_sram_async[
     thread_layout: Layout,
     src_element_layout: Layout,
     dst_element_layout: Layout,
-    swizzle: Optional[_swizzle_signature] = None,
+    swizzle: Bool = False,
 ](
     dst: LayoutTensor[
         dtype,

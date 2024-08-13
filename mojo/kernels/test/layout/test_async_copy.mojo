@@ -265,7 +265,7 @@ fn swizzle_copy[
     copy_dram_to_sram_async[
         src_thread_layout=thread_layout,
         dst_thread_layout=thread_layout,
-        swizzle=xor_2bits_per8T,
+        swizzle=True,
     ](
         a_smem_tile.vectorize[1, simd_size](),
         a.tile[BM, BK](BlockIdx.x(), 0).vectorize[1, simd_size](),

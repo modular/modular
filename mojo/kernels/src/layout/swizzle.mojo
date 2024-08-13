@@ -284,6 +284,19 @@ struct Swizzle[bits: Int, base: Int, shift: Int](
         return String.format_sequence(self)
 
 
+# Common swizzle patterns for copy from global memory to shared memory.
+# Use for 4-way bank conflicts.
+@always_inline
+fn xor_2bits_per8T[type: DType](tid: Scalar[type]) -> Scalar[type]:
+    return Swizzle[2, 0, 3]()(tid)
+
+
+# Use for 8-way bank conflicts.
+@always_inline
+fn xor_3bits_per16T[type: DType](tid: Scalar[type]) -> Scalar[type]:
+    return Swizzle[3, 0, 4]()(tid)
+
+
 struct SwizzleEx(LayoutTrait, Stringable, Formattable):
     var bits: Int
     var base: Int
