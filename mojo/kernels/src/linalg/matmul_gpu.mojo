@@ -365,40 +365,38 @@ fn gemv_kernel[
     var warp_id = x // WARP_SIZE
     var accum = Scalar[s_type]()
 
-    if warp_id < m:
-        # Every warp processes a single row of the resultant vector
-        for i in range(ceildiv(k, WARP_SIZE)):
-            var idx = i * WARP_SIZE + lane_id()
-            var val = Scalar[s_type]()
-            if idx < k:
-                val = (
-                    a.load(warp_id * k + idx).cast[s_type]()
-                    * b.load(idx).cast[s_type]()
-                )
+    if warp_id >= m:
+        return
 
-            @parameter
-            fn reduce_add[
-                type: DType,
-                width: Int,
-            ](x: SIMD[type, width], y: SIMD[type, width]) -> SIMD[type, width]:
-                return x + y
+    # Every warp processes a single row of the resultant vector
+    for i in range(ceildiv(k, WARP_SIZE)):
+        var idx = i * WARP_SIZE + lane_id()
+        if idx < k:
+            accum += (
+                a.load(warp_id * k + idx).cast[s_type]()
+                * b.load(idx).cast[s_type]()
+            )
 
-            val = warp_reduce[shuffle_down, reduce_add](val)
+    @parameter
+    fn reduce_add[
+        type: DType,
+        width: Int,
+    ](x: SIMD[type, width], y: SIMD[type, width]) -> SIMD[type, width]:
+        return x + y
 
-            if lane_id() == 0:
-                accum += val
+    accum = warp_reduce[shuffle_down, reduce_add](accum)
 
-        if lane_id() == 0:
+    if lane_id() == 0:
 
-            @parameter
-            if elementwise_lambda_fn:
-                alias elementwise_lambda = elementwise_lambda_fn.value()
-                elementwise_lambda[c_type, 1](
-                    reverse_idx[transpose_b](warp_id, 0),
-                    accum.cast[c_type](),
-                )
-            else:
-                c[warp_id] = accum.cast[c_type]()
+        @parameter
+        if elementwise_lambda_fn:
+            alias elementwise_lambda = elementwise_lambda_fn.value()
+            elementwise_lambda[c_type, 1](
+                reverse_idx[transpose_b](warp_id, 0),
+                accum.cast[c_type](),
+            )
+        else:
+            c[warp_id] = accum.cast[c_type]()
 
 
 # Matrix-Column Vector Multiplication utilizing Tensor Cores
@@ -422,34 +420,31 @@ fn gemv_tc_kernel[
     var warp_id = x // WARP_SIZE
     var accum = Scalar[s_type]()
 
-    if warp_id < m:
-        # Every warp processes a single row of the resultant vector
-        for i in range(ceildiv(k, WARP_SIZE)):
-            var idx = i * WARP_SIZE + lane_id()
-            var val = Scalar[s_type]()
-            if idx < k:
-                val = (
-                    a.load(warp_id * k + idx).cast[s_type]()
-                    * b.load(idx).cast[s_type]()
-                )
+    if warp_id >= m:
+        return
 
-            var out_val = Scalar[s_type]()
-            out_val = tc_reduce[s_type, a_type](val.cast[a_type]())
+    # Every warp processes a single row of the resultant vector
+    for i in range(ceildiv(k, WARP_SIZE)):
+        var idx = i * WARP_SIZE + lane_id()
+        if idx < k:
+            accum += (
+                a.load(warp_id * k + idx).cast[s_type]()
+                * b.load(idx).cast[s_type]()
+            )
 
-            if lane_id() == 0:
-                accum += out_val
+    accum = tc_reduce[s_type, a_type](accum.cast[a_type]())
 
-        if lane_id() == 0:
+    if lane_id() == 0:
 
-            @parameter
-            if elementwise_lambda_fn:
-                alias elementwise_lambda = elementwise_lambda_fn.value()
-                elementwise_lambda[c_type, 1](
-                    reverse_idx[transpose_b](warp_id, 0),
-                    accum.cast[c_type](),
-                )
-            else:
-                c[warp_id] = accum.cast[c_type]()
+        @parameter
+        if elementwise_lambda_fn:
+            alias elementwise_lambda = elementwise_lambda_fn.value()
+            elementwise_lambda[c_type, 1](
+                reverse_idx[transpose_b](warp_id, 0),
+                accum.cast[c_type](),
+            )
+        else:
+            c[warp_id] = accum.cast[c_type]()
 
 
 @always_inline
