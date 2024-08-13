@@ -345,3 +345,13 @@ kgen.func export @top(%arg0: index) {
   kgen.call @foo() : () capturing -> ()
   kgen.return
 }
+
+// -----
+
+// CHECK-LABEL: @cross_device
+// CHECK-SAME: ["y" : i64, "x" : i32]
+kgen.func export @cross_device() capturing {
+  %0 = pop.compiler.global_load "x" : i32
+  %1 = pop.compiler.global_load "y" : i64
+  kgen.return
+}
