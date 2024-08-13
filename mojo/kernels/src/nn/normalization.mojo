@@ -710,8 +710,6 @@ fn layer_norm[
     output: NDBuffer[type, rank],
     ctx: MojoCallContextPtr = MojoCallContextPtr(),
 ) raises:
-    constrained[target in ("cpu", "cuda"), "unsupported target"]()
-
     # Note: we only support reduction along the last dimension
     if gamma_shape[0] != shape[rank - 1]:
         ctx.set_to_error("Gamma size does not match dimension of reduction.")
@@ -730,10 +728,12 @@ fn layer_norm[
         layer_norm_cpu[type, input_0_fn, input_1_fn](
             shape, beta, epsilon, output
         )
-    else:
+    elif "cuda" in target:
         layer_norm_gpu[type, input_0_fn, input_1_fn, rank](
             shape, beta, epsilon, output, ctx.get_cuda_device()
         )
+    else:
+        constrained[False, "unsupported target " + target]()
 
 
 @mogg_register("layer_norm_shape")

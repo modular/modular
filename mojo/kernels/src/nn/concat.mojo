@@ -1301,7 +1301,7 @@ fn concat[
     inputs: InlinedFixedVector[NDBuffer[type, rank]],
     context: MojoCallContextPtr = MojoCallContextPtr(),
 ) raises:
-    constrained[target == "cpu" or target == "cuda", "not a valid target"]()
+    constrained[target == "cpu" or "cuda" in target, "not a valid target"]()
 
     @parameter
     if target == "cpu":

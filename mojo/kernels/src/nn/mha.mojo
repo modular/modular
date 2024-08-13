@@ -257,7 +257,7 @@ fn flash_attention[
     This kernel also handles grouped attention optimization. In this case the shape of
     K and V are BShD where h = H / num_groups.
     """
-    constrained[target == "cuda", "only valid on Nvidia GPUs"]()
+    constrained["cuda" in target, "only valid on Nvidia GPUs"]()
     constrained[rank == 4, "only support rank 4 inputs."]()
     constrained[mask_rank in (3, 4), "only support rank 3 or 4 mask."]()
     constrained[

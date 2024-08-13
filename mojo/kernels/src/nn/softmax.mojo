@@ -834,8 +834,6 @@ fn softmax[
     axis: Int,
     context: MojoCallContextPtr = MojoCallContextPtr(),
 ) raises:
-    constrained[target in ("cpu", "cuda"), "unsupported target"]()
-
     @parameter
     fn trace_information() -> String:
         return "target_device=" + target + ";" + trace_arg("input", shape, type)
@@ -844,17 +842,21 @@ fn softmax[
         "mojo.softmax",
         Trace[TraceLevel.OP]._get_detail_str[trace_information](),
     ):
+
+        @parameter
         if target == "cpu":
             _softmax_cpu[type, simd_width, rank, static_shape, input_fn](
                 shape, output, axis
             )
-        else:
+        elif "cuda" in target:
             _softmax_gpu[type, simd_width, rank, static_shape, input_fn](
                 shape,
                 output,
                 axis,
                 context.get_cuda_device(),
             )
+        else:
+            constrained[False, "unsupported target " + target]()
 
 
 # ===----------------------------------------------------------------------=== #

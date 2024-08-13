@@ -815,7 +815,7 @@ fn scatter_nd_generator[
     var r_minus_m = data_rank - last_shape_of_indices
 
     @parameter
-    if target == "cuda":
+    if "cuda" in target:
         try:
             # TODO: Does it matter if output.data or output_flat.data (and data)?
             var ctx = context.get_cuda_device()
@@ -838,7 +838,7 @@ fn scatter_nd_generator[
             abort(e)
 
     @parameter
-    if target != "cuda":
+    if "cuda" not in target:
         memcpy(output_flat.data, data_flat.data, len(output_flat))
 
     @__copy_capture(
