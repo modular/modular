@@ -15,12 +15,14 @@ fn load_value[
     *,
     type: DType = DType.uint32,
     width: Int = 1,
+    read_only: Bool = False,
     prefetch_size: Optional[Int] = None,
     cache_policy: CacheOperation = CacheOperation.ALWAYS,
     eviction_policy: CacheEviction = CacheEviction.EVICT_NORMAL,
 ](ptr: UnsafePointer[Scalar[type]]) -> SIMD[type, width]:
     return load[
         width=width,
+        read_only=read_only,
         prefetch_size=prefetch_size,
         cache_policy=cache_policy,
         eviction_policy=eviction_policy,
@@ -74,6 +76,14 @@ def test_load():
                 prefetch_size=None,
                 cache_policy = CacheOperation.LAST_USE,
             ],
+            emission_kind="ptx",
+        ]()
+    )
+
+    assert_true(
+        "ld.global.nc "
+        in _compile_code[
+            load_value[type = DType.uint32, width=2, read_only=True],
             emission_kind="ptx",
         ]()
     )
