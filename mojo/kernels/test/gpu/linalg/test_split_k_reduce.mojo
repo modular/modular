@@ -76,13 +76,6 @@ fn _split_k_reduce_verify[
             A.store(idx, vec)
 
 
-fn _ones[
-    dtype: DType, rank: Int, shape: DimList
-](inout buff: NDBuffer[dtype, rank, shape]):
-    for i in range(buff.size()):
-        buff.data[i] = 1
-
-
 fn split_k_reduce_test_case[
     dtype: DType, shape_a: DimList, shape_b: DimList, num_partition: UInt
 ](
@@ -146,3 +139,18 @@ def main():
             DimList(16, 16 * num_part2),
             num_part2,
         ](StaticIntTuple[2](16, 16), StaticIntTuple[2](16, 16 * num_part2), ctx)
+
+        # test non-square dimension
+        split_k_reduce_test_case[
+            DType.float32,
+            DimList(2, 4),
+            DimList(2, 4 * num_part1),
+            num_part1,
+        ](StaticIntTuple[2](2, 4), StaticIntTuple[2](2, 4 * num_part1), ctx)
+
+        split_k_reduce_test_case[
+            DType.float32,
+            DimList(16, 8),
+            DimList(16, 8 * num_part2),
+            num_part2,
+        ](StaticIntTuple[2](16, 8), StaticIntTuple[2](16, 8 * num_part2), ctx)
