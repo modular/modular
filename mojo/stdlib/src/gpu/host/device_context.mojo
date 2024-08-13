@@ -452,8 +452,8 @@ struct DeviceContext:
 
     fn memset[
         type: DType
-    ](self, dst: DeviceBuffer[type], val: Scalar[type], count: Int) raises:
-        _memset_async[type](dst.ptr, val, count, self.cuda_stream)
+    ](self, dst: DeviceBuffer[type], val: Scalar[type]) raises:
+        _memset_async[type](dst.ptr, val, dst.size, self.cuda_stream)
 
     fn synchronize(self) raises:
         self.cuda_stream.synchronize()
