@@ -77,15 +77,15 @@ fn run_reduce(fill_strategy: FillStrategy, ctx: DeviceContext) raises:
     var res_add_device = ctx.create_buffer[DType.float32](1)
 
     ctx.enqueue_copy_to_device(vec_device, vec_host.data)
-    ctx.memset(res_add_device, 0, 1)
+    ctx.memset(res_add_device, 0)
 
     var func = ctx.compile_function[reduce](verbose=True)
 
     var res_min_device = ctx.create_buffer[DType.float32](1)
-    ctx.memset(res_min_device, 0, 1)
+    ctx.memset(res_min_device, 0)
 
     var res_max_device = ctx.create_buffer[DType.float32](1)
-    ctx.memset(res_max_device, 0, 1)
+    ctx.memset(res_max_device, 0)
 
     ctx.enqueue_function(
         func,
