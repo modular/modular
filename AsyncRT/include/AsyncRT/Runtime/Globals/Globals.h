@@ -43,6 +43,18 @@ private:
   static MODULAR_CXX_EXPORT std::atomic<ssize_t> totalAllocatedAsyncValues;
 };
 
+#ifdef USE_TCMALLOC
+// TCMalloc has internal global state that needs to live here in AsyncRTGlobals.
+// Since we are using a hacked version of TCMalloc that doesn't replace malloc,
+// we want to limit the scope of these functions to the TCMallocAllocator class.
+class TCMallocAllocator;
+class TCMallocGlobals {
+private:
+  friend class TCMallocAllocator;
+  static MODULAR_CXX_EXPORT void *tc_new(size_t size, size_t alignment);
+  static MODULAR_CXX_EXPORT void tc_delete(void *ptr);
+};
+#endif // USE_TCMALLOC
 } // namespace M::AsyncRT
 
-#endif
+#endif // ASYNCRT_RUNTIME_GLOBALS_H
