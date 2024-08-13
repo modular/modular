@@ -12,14 +12,16 @@ lit_tests(
             "package/test_package/**/*.mojo",
             "package/test_package_with_main/**/*.mojo",
             "package/test-package-moco-773/**/*.mojo",
-            "test/test_execution.mojo",  # TODO: Debug crash
         ],
     ),
     data = [
         "//KGEN:CompilerRT",
         "//KGEN:CompilerRT.distributable",
         "//KGEN:MojoLLDB",
+        "//KGEN:gdb-server",
         "//KGEN:mojo-lldb",
+        "//KGEN/tools/mojo-repl-entry-point",
+        "//KGEN/tools/mojo-test-executor",
         "//utils/mblack:shim.py",
         "@llvm-project//compiler-rt:orc_rt",
     ] + glob([
