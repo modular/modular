@@ -3,6 +3,17 @@
 // This file is Modular Inc proprietary.
 //
 //===----------------------------------------------------------------------===//
+//
+// It is common for functions to end up with a lot of parameters that are unused
+// in the function body.  This can happen when they are defined on a highly
+// parameterized struct, for example, because the function will get all of the
+// parameters from that struct.
+//
+// This pass scans the IR and removes these unused parameters (and also function
+// arguments) to reduce burden on the elaborator.  This reduces the amount of
+// function clones produced, which reduces compile time and code size.
+//
+//===----------------------------------------------------------------------===//
 
 #include "KGEN/ToolCommon/KGENPasses.h"
 
@@ -114,7 +125,7 @@ private:
           if (oldSymbol ==
               cast<FlatSymbolRefAttr>(call.getCalleeSymbol()).getValue()) {
 
-            // Exclude direct uses but not uses within expressions. E.G
+            // Exclude direct uses but not uses within expressions. e.g.
             // foo<x+step, step>
             for (auto [param, decl] :
                  llvm::zip(call.getCallee().getParamValues(),
@@ -241,7 +252,7 @@ struct CallSites {
   SmallVector<CallOp> calls;
 };
 
-// This worklist helper tracks which ops are still to be scheudled.
+// This worklist helper tracks which ops are still to be scheduled.
 struct WorklistHelper {
   WorklistHelper(size_t numFuncs)
       : shouldSchedule(numFuncs, false), allOps(numFuncs), numProcessed(0) {
@@ -249,7 +260,7 @@ struct WorklistHelper {
   }
 
   // 1:1 mapping between generator and a bool which marks it as ready to
-  // scheudle. std::vector to make use of the bool optimization.
+  // schedule. std::vector to make use of the bool optimization.
   std::vector<bool> shouldSchedule;
 
   // All the ops so we can traverse cheaply.
@@ -263,7 +274,7 @@ struct WorklistHelper {
   size_t numProcessed;
 
   // We include the index in the worklist so we have an O(1) way to update the
-  // scheudle.
+  // schedule.
   SmallVector<std::pair<GeneratorOp, size_t>> worklist;
 
   // Preserved temporaries to find cycles
@@ -287,16 +298,13 @@ struct WorklistHelper {
       DenseMap<GeneratorOp, size_t> &numCallersFromFunc, bool &brokeCycle) {
     // If the worklist isn't empty obviously we can just pop from the back right
     // away.
-    if (!worklist.empty()) {
-      auto pair = worklist.back();
-      worklist.pop_back();
-      return pair;
-    }
+    if (!worklist.empty())
+      return worklist.pop_back_val();
 
     // Otherwise look and see if there's anything that can be obviously
-    // scheudled.
+    // scheduled.
     for (auto [idx, gen] : llvm::enumerate(allOps)) {
-      // Skip ops which should not be scheudled.
+      // Skip ops which should not be scheduled.
       if (!shouldSchedule[idx])
         continue;
 
@@ -317,7 +325,7 @@ struct WorklistHelper {
     // Finally if we couldn't find anything it must mean there is a cycle in the
     // graph.
     for (auto [idx, gen] : llvm::enumerate(allOps)) {
-      // Skip ops which should not be scheudled.
+      // Skip ops which should not be scheduled.
       if (!shouldSchedule[idx])
         continue;
 
@@ -338,21 +346,21 @@ struct WorklistHelper {
             continue;
           // Found the cycle, break it.
           if (cycleSeenFuncs.contains(called)) {
-            // By returning the function with the cycle we will scheudle it
+            // By returning the function with the cycle we will schedule it
             // immediately. This however means we need to remove any pending
             // dependencies on it.
             brokeCycle = true;
             return {head, funcToIndex[head]};
-          } else {
-            cycleFinderWorklist.push_back(called);
           }
+
+          cycleFinderWorklist.push_back(called);
         }
       }
     }
 
     // If all possible cycles have been eliminated and we still couldn't find
     // something legal then theres no more we can do and there's no more
-    // functions to scheudle.
+    // functions to schedule.
     return {nullptr, 0};
   }
 
@@ -389,17 +397,17 @@ void RemoveUnusedParams::runOnOperation() {
   DenseMap<GeneratorOp, llvm::SmallVector<GeneratorOp>> genToCallees;
   genToCallees.reserve(numFuncs);
 
-  // Maintaining a seperate dict of the number of unique callers avoids the need
+  // Maintaining a separate dict of the number of unique callers avoids the need
   // to resize the above vector which is needed for deterministic traversal.
   DenseMap<GeneratorOp, size_t> numCallersFromFunc;
   numCallersFromFunc.reserve(numFuncs);
 
   // A set of the functions which are immediately recursive, i.e directly call
-  // themselves. This is excludes indirect recursion through calls ect. They
+  // themselves. This is excludes indirect recursion through calls etc. They
   // will need to manually remap their calls.
   DenseSet<GeneratorOp> recursiveFuncs;
 
-  // Maintain a seperate list of operations we are going to process but arent
+  // Maintain a separate list of operations we are going to process but aren't
   // ready yet. The active worklist of functions which are ready for us to
   // remove their arguments from them.
   WorklistHelper toSchedule(numFuncs);
@@ -419,25 +427,25 @@ void RemoveUnusedParams::runOnOperation() {
       // to assume it's a generator op.
       auto calledFunc = dyn_cast_or_null<GeneratorOp>(symTab.lookup(
           cast<FlatSymbolRefAttr>(call.getCalleeSymbol()).getValue()));
-      if (calledFunc) {
+      if (!calledFunc)
+        return;
 
-        // Track the caller of this generator, but only one entry per call.
-        if (!seenCallees.contains(calledFunc)) {
-          callees.push_back(calledFunc);
-          seenCallees.insert(calledFunc);
-          ++numCallersFromFunc[gen];
-        }
+      // Track the caller of this generator, but only one entry per call.
+      if (!seenCallees.contains(calledFunc)) {
+        callees.push_back(calledFunc);
+        seenCallees.insert(calledFunc);
+        ++numCallersFromFunc[gen];
+      }
 
-        // Track recursive functions seperately.
-        if (calledFunc == gen) {
-          recursiveFuncs.insert(gen);
-        } else {
-          // Get or allocate.
-          funcUsers[calledFunc];
-          // Then insert without iteration invalidation in case of allocate.
-          funcUsers[calledFunc].callers.insert(gen);
-          funcUsers[calledFunc].calls.push_back(call);
-        }
+      // Track recursive functions separately.
+      if (calledFunc == gen) {
+        recursiveFuncs.insert(gen);
+      } else {
+        // Get or allocate.
+        CallSites &entry = funcUsers[calledFunc];
+        // Then insert without iteration invalidation in case of allocate.
+        entry.callers.insert(gen);
+        entry.calls.push_back(call);
       }
     });
 
@@ -458,7 +466,7 @@ void RemoveUnusedParams::runOnOperation() {
         toSchedule.pop(funcUsers, genToCallees, numCallersFromFunc, brokeCycle);
     GeneratorOp oldFunction = pair.first;
 
-    // Will return null if there's nothing left to scheudle.
+    // Will return null if there's nothing left to schedule.
     if (!oldFunction)
       break;
 
@@ -468,7 +476,6 @@ void RemoveUnusedParams::runOnOperation() {
 
     bool isRecursive = recursiveFuncs.contains(oldFunction);
     StringAttr oldSymbol = oldFunction.getSymNameAttr();
-
     SignatureType oldSig = oldFunction.getSignature();
 
     // Collate information about unused parameters + arguments in the shared
@@ -496,7 +503,7 @@ void RemoveUnusedParams::runOnOperation() {
 
     // Recursive functions may still have one reference so we need to drop it.
     if (isRecursive) {
-      for (size_t i = 0; i < unusedArgs.size(); ++i) {
+      for (size_t i = 0, e = unusedArgs.size(); i != e; ++i) {
         if (unusedArgs[i])
           newFunc.getArgument(i).dropAllUses();
       }
@@ -555,7 +562,7 @@ void RemoveUnusedParams::runOnOperation() {
             cast<FlatSymbolRefAttr>(call.getCalleeSymbol()).getValue()));
         if (calledFunc && calledFunc != newFunc) {
           // Update the calls of any called function if they are still to be
-          // scheudled.
+          // scheduled.
           auto itr = funcUsers.find(calledFunc);
           if (itr != funcUsers.end() && !itr->second.calls.empty())
             itr->second.calls.push_back(call);
