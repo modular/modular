@@ -133,7 +133,7 @@ fn vectorize[
     performance improvements if not an exponent of 2.
     """
 
-    var vector_end_simd = align_down(size, simd_width)
+    var vector_end_simd = align_down(UInt(size), UInt(simd_width))
     _perfect_vectorized_impl[
         func, simd_width=simd_width, unroll_factor=unroll_factor
     ](size, vector_end_simd)
@@ -250,7 +250,9 @@ fn _perfect_vectorized_impl[
     constrained[unroll_factor > 0, "unroll factor must be > 0"]()
 
     alias unrolled_simd_width = simd_width * unroll_factor
-    var vector_end_unrolled_simd = align_down(size, unrolled_simd_width)
+    var vector_end_unrolled_simd = align_down(
+        UInt(size), UInt(unrolled_simd_width)
+    )
 
     for unrolled_simd_idx in range(
         0, vector_end_unrolled_simd, unrolled_simd_width
