@@ -120,10 +120,7 @@ static LogicalResult writeCaptureArgs(ModuleOp module, StringAttr name,
   }
   // This is held together with duct tape, so check the invariant.
   assert(sliced && sliced.isExported() && "expected a sliced function");
-  ArrayRef<StringAttr> captures;
-  if (auto capturesAttr =
-          sliced->getAttrOfType<StringArrayAttr>("kgen.cross_device_captures"))
-    captures = capturesAttr;
+  ArrayRef<StringAttr> captures = sliced.getCrossDeviceCaptures();
 
   // The location to use for generated code. Remove all debuginfo from it.
   Location loc = sliced.getLoc();
