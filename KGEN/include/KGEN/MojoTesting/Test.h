@@ -258,6 +258,7 @@ public:
   /// resolving mojo imports.
   TestExecutionResult
   execute(AsyncRT::Runtime &runtime,
+          const std::filesystem::path &entrypointPath,
           ArrayRef<std::string> additionalImportPaths) const;
 
 private:

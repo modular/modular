@@ -32,8 +32,7 @@ from testing import assert_true
 
 # CHECK: Failure: '{{.*}}test_execution.mojo::test_unit\2Efailure()'
 # CHECK: Unhandled exception caught during execution
-# CHECK: {{.*}}test_execution.mojo:61:16: AssertionError: condition was unexpectedly False
-# CHECK: {{.*}}error: execution exited with a non-zero result: 1
+# CHECK: {{.*}}test_execution.mojo:60:16: AssertionError: condition was unexpectedly False
 
 # CHECK-DOC: Total Discovered Tests: 2
 # CHECK-DOC: Passed : 0

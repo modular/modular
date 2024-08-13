@@ -21,6 +21,7 @@
 #include "llvm/Support/InitLLVM.h"
 #include "llvm/Support/Process.h"
 #include "llvm/Support/raw_ostream.h"
+#include <llvm/ADT/StringExtras.h>
 
 using namespace M;
 using namespace M::KGEN::Mojo;
@@ -31,8 +32,8 @@ using namespace mlir::lsp;
 namespace {
 /// How to execute an executable test.
 enum class TestExecutionKind {
-  /// Use `mojo run` to invoke the test case.
-  MojoRun,
+  /// Use the passed entrypoint from mojo-test.
+  Entrypoint,
   /// Use the REPL kernel to invoke a group of tests at once.
   REPL,
 };
@@ -66,26 +67,12 @@ emitInitializationError(ArrayRef<ExecutableTest> tests,
 }
 
 static TestExecutionResult executeMojoRunTest(StringRef workingDirectory,
-                                              ArrayRef<std::string> includeDirs,
+                                              StringRef entrypointFile,
                                               const ExecutableTest &test) {
 
   auto emitInitError = [&](StringRef error) {
     return TestExecutionResult::buildInitError(test.id, error);
   };
-  // Determine the path of the repl entry point.
-  ErrorOr<KGEN::MojoConfig> config = KGEN::MojoConfig::open();
-  if (failed(config))
-    return emitInitError("failed to open modular.cfg");
-  StringRef exePath = config->getDriverPath();
-
-  ErrorOr<TempFile> testFileOr = TempFile::create("test-in-%%%%%%.mojo");
-  if (failed(testFileOr))
-    return emitInitError(testFileOr.getError());
-  {
-    llvm::raw_fd_ostream inOS(testFileOr->getFD(), /*shouldClose=*/false);
-    inOS << test.contents;
-  }
-
   // Create a temporary output file for the test executor.
   ErrorOr<TempFile> outFileOr = TempFile::create("test-out-%%%%%%.txt");
   if (failed(outFileOr))
@@ -95,6 +82,15 @@ static TestExecutionResult executeMojoRunTest(StringRef workingDirectory,
   if (failed(errFileOr))
     return emitInitError(errFileOr.getError());
 
+  // The test ID contains string escapes. The test entrypoint will not be
+  // looking for these, so we need to undo those escape sequences here in order
+  // to correctly invoke some tests.
+  ErrorOr<SmallVector<std::string>> names =
+      TestID::parseScopedName(*test.id.getTest());
+  std::string unescapedId = llvm::join(*names, ".");
+  std::string fullId =
+      llvm::formatv("{0}::{1}", test.id.getFilePath(), unescapedId);
+
   std::string out = outFileOr->getPath().string();
   std::string errPath = errFileOr->getPath().string();
   const std::optional<StringRef> redirects[] = {
@@ -102,13 +98,11 @@ static TestExecutionResult executeMojoRunTest(StringRef workingDirectory,
       /*stdout=*/out,
       /*stderr=*/errPath,
   };
-  SmallVector<StringRef> args = {exePath, "run", "-I", workingDirectory};
-  for (StringRef path : includeDirs)
-    llvm::append_range(args, ArrayRef<StringRef>{"-I", path});
-  args.push_back(testFileOr->getPath().c_str());
+  SmallVector<StringRef> args = {entrypointFile, fullId};
 
   auto now = std::chrono::steady_clock::now();
-  auto exitCode = llvm::sys::ExecuteAndWait(exePath, args, {}, redirects);
+  auto exitCode =
+      llvm::sys::ExecuteAndWait(entrypointFile, args, {}, redirects);
   auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(
       std::chrono::steady_clock::now() - now);
 
@@ -203,6 +197,7 @@ static void executeReplTests(ContextRef ctx, StringRef workingDirectory,
 static void executeTests(ContextRef ctx, StringRef workingDirectory,
                          ArrayRef<std::string> includeDirs,
                          std::vector<ExecutableTest> tests,
+                         StringRef entrypointFile,
                          function_ref<void(TestExecutionResult)> emitFn) {
 
   std::vector<ExecutableTest> docTests;
@@ -210,7 +205,7 @@ static void executeTests(ContextRef ctx, StringRef workingDirectory,
     if (test.kind == TestExecutionKind::REPL)
       docTests.push_back(std::move(test));
     else
-      emitFn(executeMojoRunTest(workingDirectory, includeDirs, test));
+      emitFn(executeMojoRunTest(workingDirectory, entrypointFile, test));
   }
   executeReplTests(std::move(ctx), workingDirectory, includeDirs, docTests,
                    emitFn);
@@ -267,13 +262,7 @@ static ErrorOr<ExecutableTest> getUnitTest(const std::filesystem::path &path,
   if (names->size() != 1)
     return Error("id does not reference a valid test");
 
-  // Our unit tests are currently quite simple, so keep things equally
-  // simple here and define a repl expression that imports the test module
-  // and invokes the test function.
-  std::string contents =
-      llvm::formatv("import `{0}`\nfn main() raises:\n\t`{0}`.`{1}`()",
-                    path.stem(), names->back());
-  return ExecutableTest{testID, contents, TestExecutionKind::MojoRun};
+  return ExecutableTest{testID, "", TestExecutionKind::Entrypoint};
 }
 
 /// Return an executable test for the given Test ID, or Error if the test ID
@@ -303,7 +292,8 @@ getExecutableTest(llvm::SourceMgr &sourceMgr, const std::filesystem::path &path,
 
 static mlir::LogicalResult runTestExecutor(ContextRef ctx, ArrayRef<Test> tests,
                                            bool prettyOutput,
-                                           ArrayRef<std::string> includeDirs) {
+                                           ArrayRef<std::string> includeDirs,
+                                           StringRef entrypointFile) {
   JSONTransport transport(stdin, llvm::outs(), JSONStreamStyle::Standard,
                           prettyOutput);
   MessageHandler messageHandler(transport);
@@ -354,7 +344,7 @@ static mlir::LogicalResult runTestExecutor(ContextRef ctx, ArrayRef<Test> tests,
   while (Filesystem::isMojoSourcePackagePath(workingDirectory))
     workingDirectory = workingDirectory.parent_path();
   executeTests(std::move(ctx), workingDirectory.string(), includeDirs,
-               std::move(executableTests), onTestResultFn);
+               std::move(executableTests), entrypointFile, onTestResultFn);
   return success();
 }
 
@@ -384,6 +374,9 @@ int main(int argc, char **argv) {
   llvm::cl::opt<std::string> testFile{
       llvm::cl::Positional, llvm::cl::desc("<File with json tests to run>"),
       llvm::cl::init("-")};
+  llvm::cl::opt<std::string> entrypointFile{
+      llvm::cl::Positional,
+      llvm::cl::desc("An executable entrypoint produced by mojo-test")};
   llvm::cl::list<std::string> includeDirs{
       "I", llvm::cl::desc("Append directory to the search path list used to "
                           "resolve imported modules in a test")};
@@ -418,5 +411,6 @@ int main(int argc, char **argv) {
     return 0;
 
   // Run the executor.
-  return failed(runTestExecutor(*ctxOr, *tests, prettyPrint, includeDirs));
+  return failed(runTestExecutor(*ctxOr, *tests, prettyPrint, includeDirs,
+                                entrypointFile));
 }

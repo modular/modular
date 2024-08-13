@@ -7,6 +7,7 @@ lit_tests(
     ),
     data = [
         "//KGEN:CompilerRT",
+        "//KGEN:CompilerRT.distributable",
         "//KGEN:MojoLLDB",
         "//KGEN:gdb-server",
         "//KGEN/tools/mojo-repl-entry-point",
