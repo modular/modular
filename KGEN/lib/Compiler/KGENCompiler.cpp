@@ -150,8 +150,7 @@ static LogicalResult writeCaptureArgs(ModuleOp module, StringAttr name,
   // FIXME: This does not account for copy constructors, obviously.
   Block *body = b.createBlock(&func->getBodyRegion());
   Value argPtrs = body->addArgument(sig.getArguments().front(), b.getLoc());
-  for (auto [i, type, capture] : llvm::enumerate(
-           sliced.getArgumentTypes().take_front(captures.size()), captures)) {
+  for (auto [i, capture] : llvm::enumerate(captures)) {
     // ```
     // %value = pop.compiler.global_load "var" : T
     // %ptr = pop.stack_allocation 1 x T
@@ -160,7 +159,10 @@ static LogicalResult writeCaptureArgs(ModuleOp module, StringAttr name,
     // %opaque = pop.pointer.bitcast %ptr : pointer<T> to pointer<none>
     // pop.store %opaque, %gep
     // ```
-    Value value = b.create<POP::CompilerGlobalLoadOp>(type, capture);
+    Type type = capture.getType();
+    Value value = b.create<POP::CompilerGlobalLoadOp>(
+        // Make sure to strip off the type of the StringAttr.
+        type, b.getStringAttr(capture.getValue()));
     Value ptr = b.create<POP::StackAllocationOp>(PointerType::get(type), 1);
     b.create<POP::StoreOp>(value, ptr);
     Value argPtrPtrs =

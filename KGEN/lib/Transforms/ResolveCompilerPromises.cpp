@@ -391,8 +391,10 @@ bool CallGraph::doAnalysis(CallGraphNode *node) {
   // If captures went up to an exported function, propagate them through
   // the ABI boundary by encoding the capture names on the function.
   if (func.isExported() && !node->requiredPromises.empty()) {
-    SmallVector<StringAttr> captures =
-        llvm::to_vector(llvm::make_first_range(node->requiredPromises));
+    SmallVector<StringAttr> captures;
+    // Store the expected capture type in the StringAttr.
+    for (auto [name, type] : node->requiredPromises)
+      captures.push_back(StringAttr::get(name.getValue(), type.first));
     func.setCrossDeviceCaptures(captures);
   }
 
