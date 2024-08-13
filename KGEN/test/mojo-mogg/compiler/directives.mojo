@@ -5,6 +5,8 @@
 # ===----------------------------------------------------------------------=== #
 
 from tensor_utils.tensor_spec import StaticTensorSpec
+from tensor_utils.unsafe_tensor_slice import UnsafeTensorSlice
+from utils import StaticIntTuple
 
 
 fn __mogg_intrinsic_attr(intrin: StringLiteral):
@@ -13,6 +15,11 @@ fn __mogg_intrinsic_attr(intrin: StringLiteral):
 
 @__mogg_intrinsic_attr("mogg.intrinsic_register")
 fn register(name: StringLiteral):
+    pass
+
+
+@__mogg_intrinsic_attr("mogg.elementwise")
+fn elementwise():
     pass
 
 
@@ -27,3 +34,14 @@ fn specsof[
 ](name: StringLiteral) -> StaticTensorSpec[type, rank]:
     alias TENSOR_SPEC_NONE = create_none_spec[type, rank]()
     return TENSOR_SPEC_NONE
+
+
+@__mogg_intrinsic_attr("mogg.for_each")
+fn for_each[
+    type: DType,
+    rank: Int,
+    func: fn[_width: Int] (StaticIntTuple[rank]) capturing -> SIMD[
+        type, _width
+    ],
+](arr: UnsafeTensorSlice[type, rank]):
+    pass

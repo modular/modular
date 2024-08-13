@@ -54,6 +54,12 @@ constexpr StringLiteral MOGG_INTRINSIC_REGISTER = "mogg.intrinsic_register";
 constexpr StringLiteral MOGG_INTRINSIC_TENSOR_SPEC_HOOK =
     "mogg.intrinsic_tensor_spec_hook";
 
+/// MOGG Intrinsic for the elementwise kernel decorator.
+constexpr StringLiteral MOGG_INTRINSIC_ELEMENTWISE = "mogg.elementwise";
+
+/// MOGG Intrinsic for the for_each function
+constexpr StringLiteral MOGG_INTRINSIC_FOR_EACH = "mogg.for_each";
+
 /// Track the pair of the decorator as it is seen in the LIT IR in its raw from
 /// and the clean processed attribute which is added after it is processed.
 struct MOGGDecorator {
@@ -115,6 +121,7 @@ static constexpr StringLiteral kMOGGSynchronousParameterName = "synchronous";
 static constexpr StringLiteral kMOGGSynchronousLabel = "mogg.synchronous";
 static constexpr StringLiteral kMOGGTargetParameterName = "target";
 static constexpr StringLiteral kMOGGTargetLabel = "mogg.target";
+static constexpr StringLiteral kMOGGElementFunction = "mogg.elementwise";
 
 inline bool isExecuteFunc(Operation *gen) {
   return gen != nullptr && gen->hasAttr(kMOGGExecuteFunctionLabel);

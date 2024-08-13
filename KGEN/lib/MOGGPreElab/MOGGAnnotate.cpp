@@ -205,8 +205,20 @@ public:
       if (decorators.empty())
         return WalkResult::advance();
 
+      bool isElementWiseKernel = false;
+
       // Iterate over the decorators and to find max.compiler.register.
       for (auto decorator : decorators) {
+        if (auto directSym = dyn_cast<SymbolConstantAttr>(decorator)) {
+          auto decoratorFunc =
+              op.lookupSymbol<LIT::FuncOp>(directSym.getSymbol());
+          if (decoratorFunc &&
+              decoratorFunc->hasAttr(MOGG_INTRINSIC_ELEMENTWISE))
+            isElementWiseKernel = true;
+
+          continue;
+        }
+
         auto apply = dyn_cast<ParamOperatorAttr>(decorator);
         if (!apply || apply.getNumOperands() != 2)
           continue;
@@ -281,6 +293,11 @@ public:
           executeFunc->setAttr(builder.getStringAttr(kMOGGTargetLabel), param);
         }
       }
+
+      if (isElementWiseKernel)
+        executeFunc->setAttr(kMOGGElementFunction,
+                             mlir::UnitAttr::get(executeFunc->getContext()));
+
       return WalkResult::advance();
     };
 
