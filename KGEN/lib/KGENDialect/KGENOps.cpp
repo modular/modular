@@ -444,13 +444,16 @@ static void printFuncOp(OpAsmPrinter &p, Operation *op,
   printOptionalInline(p, inlineLevel.getValue());
   printOptionalDecorators(p, op, decorators);
 
-  SmallVector<StringRef, 6> elidedAttrs{
+  SmallVector<StringRef, 8> elidedAttrs{
       func.getExportKindAttrName(), func.getSymNameAttrName(),
       func.getSignatureAttrName(), func.getInlineLevelAttrName(),
       func.getDecoratorsAttrName()};
   if (attrs.get(func.getLLVMMetadataAttrName()) ==
       DictionaryAttr::get(op->getContext()))
     elidedAttrs.push_back(func.getLLVMMetadataAttrName());
+  if (attrs.get(func.getCrossDeviceCapturesAttrName()) ==
+      StringArrayAttr::get(func.getContext(), {}))
+    elidedAttrs.push_back(func.getCrossDeviceCapturesAttrName());
   p.printOptionalAttrDictWithKeyword(attrs.getValue(), elidedAttrs);
 
   p << ' ';
