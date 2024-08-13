@@ -759,7 +759,7 @@ fn matmul[
     b: NDBuffer[b_type, 2, b_shape],
     ctx: MojoCallContextPtr = MojoCallContextPtr(),
 ):
-    constrained[target == "cpu" or target == "cuda", "unsupported target"]()
+    constrained[target == "cpu" or "cuda" in target, "unsupported target"]()
     constrained[not transpose_a, "transpose_a not yet supported"]()
 
     @parameter

@@ -565,7 +565,7 @@ fn batched_matmul[
     b_buf: NDBuffer[b_type, rank],
     context: MojoCallContextPtr = MojoCallContextPtr(),
 ):
-    constrained[target == "cpu" or target == "cuda", "unsupported target"]()
+    constrained[target == "cpu" or "cuda" in target, "unsupported target"]()
     if target == "cpu":
         _batched_matmul_cpu[
             rank,
