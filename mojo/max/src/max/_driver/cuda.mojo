@@ -23,140 +23,14 @@ from utils import Variant
 from gpu.host._compile import _get_nvptx_target
 
 
-fn alloc_device_context() -> UnsafePointer[DeviceContext]:
-    try:
-        var ctx_ptr = UnsafePointer[DeviceContext].alloc(1)
-        ctx_ptr.init_pointee_move(DeviceContext())
-        return ctx_ptr
-    except e:
-        return abort[UnsafePointer[DeviceContext]](e)
-
-
-fn alloc_device_buffer(
-    ctx: UnsafePointer[DeviceContext], bytes: Int
-) -> UnsafePointer[UInt8]:
-    try:
-        return ctx[].cuda_context.malloc_async[UInt8](bytes, ctx[].cuda_stream)
-    except e:
-        return abort[UnsafePointer[UInt8]]()
-
-
-fn copy_device_to_host(
-    ctx: UnsafePointer[DeviceContext],
-    dev_ptr: UnsafePointer[UInt8],
-    host_ptr: UnsafePointer[UInt8],
-    size: Int,
-):
-    try:
-        ctx[].cuda_context.copy_device_to_host_async(
-            host_ptr, dev_ptr, size, ctx[].cuda_stream
-        )
-    except e:
-        abort(e)
-
-
-fn copy_host_to_device(
-    ctx: UnsafePointer[DeviceContext],
-    dev_ptr: UnsafePointer[UInt8],
-    host_ptr: UnsafePointer[UInt8],
-    size: Int,
-):
-    try:
-        ctx[].cuda_context.copy_host_to_device_async(
-            dev_ptr, host_ptr, size, ctx[].cuda_stream
-        )
-    except e:
-        abort(e)
-
-
-fn copy_device_to_device(
-    ctx: UnsafePointer[DeviceContext],
-    dst_ptr: UnsafePointer[UInt8],
-    src_ptr: UnsafePointer[UInt8],
-    size: Int,
-):
-    try:
-        ctx[].cuda_context.copy_device_to_device_async(
-            dst_ptr, src_ptr, size, ctx[].cuda_stream
-        )
-    except e:
-        abort(e)
-
-
-fn free_buffer(ctx: UnsafePointer[DeviceContext], ptr: UnsafePointer[UInt8]):
-    try:
-        ctx[].cuda_context.free_async(ptr, ctx[].cuda_stream)
-    except e:
-        abort(e)
-
-
-fn synchronize(ctx: UnsafePointer[DeviceContext]):
-    try:
-        ctx[].synchronize()
-    except e:
-        abort(e)
-
-
-fn free_context(ctx: UnsafePointer[DeviceContext]):
-    ctx.destroy_pointee()
-
-
-@value
-@register_passable("trivial")
-struct ContextAPIFuncPtrs:
-    var alloc_device_context: fn () -> UnsafePointer[DeviceContext]
-    var alloc_device_buffer: fn (
-        UnsafePointer[DeviceContext], Int
-    ) -> UnsafePointer[UInt8]
-    var copy_device_to_host: fn (
-        UnsafePointer[DeviceContext],
-        UnsafePointer[UInt8],
-        UnsafePointer[UInt8],
-        Int,
-    ) -> None
-    var copy_host_to_device: fn (
-        UnsafePointer[DeviceContext],
-        UnsafePointer[UInt8],
-        UnsafePointer[UInt8],
-        Int,
-    ) -> None
-    var copy_device_to_device: fn (
-        UnsafePointer[DeviceContext],
-        UnsafePointer[UInt8],
-        UnsafePointer[UInt8],
-        Int,
-    ) -> None
-    var free_buffer: fn (
-        UnsafePointer[DeviceContext],
-        UnsafePointer[UInt8],
-    ) -> None
-    var free_context: fn (UnsafePointer[DeviceContext],) -> None
-    var synchronize: fn (UnsafePointer[DeviceContext],) -> None
-
-    fn __init__(inout self):
-        self.alloc_device_context = alloc_device_context
-        self.alloc_device_buffer = alloc_device_buffer
-        self.copy_device_to_host = copy_device_to_host
-        self.copy_host_to_device = copy_host_to_device
-        self.copy_device_to_device = copy_device_to_device
-        self.free_buffer = free_buffer
-        self.free_context = free_context
-        self.synchronize = synchronize
-
-
 fn cuda_device(gpu_id: Int = 0) raises -> Device:
     var lib = DriverLibrary()
-    var device_context_func_ptrs = ContextAPIFuncPtrs()
     var cuda_dev = Device(
         lib,
         owned_ptr=lib.create_cuda_device_fn(
             gpu_id,
-            UnsafePointer[ContextAPIFuncPtrs].address_of(
-                device_context_func_ptrs
-            ),
         ),
     )
-    _ = device_context_func_ptrs
     return cuda_dev
 
 

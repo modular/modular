@@ -8,7 +8,6 @@ from sys.ffi import DLHandle, _get_dylib
 from memory import Arc
 from max._utils import call_dylib_func, get_lib_path_from_cfg
 from max.tensor import TensorSpec
-from .cuda import ContextAPIFuncPtrs
 
 
 struct ManagedDLHandle:
@@ -41,9 +40,7 @@ struct DriverLibrary:
     alias create_cpu_device_fn_sig = fn (Int32) -> Self.device_type
     var create_cpu_device_fn: Self.create_cpu_device_fn_sig
 
-    alias create_cuda_device_fn_sig = fn (
-        Int, UnsafePointer[ContextAPIFuncPtrs]
-    ) -> Self.device_type
+    alias create_cuda_device_fn_sig = fn (Int) -> Self.device_type
     var create_cuda_device_fn: Self.create_cuda_device_fn_sig
 
     alias copy_device_fn_sig = fn (Self.device_type) -> Self.device_type
