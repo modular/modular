@@ -27,3 +27,12 @@ def keep_entrypoint : Flag<["--"], "keep-entrypoint">,
   Group<CollectionOptionGroup>, Index<1>,
   HelpText<"Keep the test entrypoint for later debugging.">,
   Flags<[HelpHidden]>;
+
+defm entrypoint_path : CommandOptionHidden<["--"], "entrypoint-path",
+  CollectionOptionGroup, Index<2>, MetaVarName<"PATH">,
+  HelpText<"Override the location for the entrypoint executable.">>;
+
+def no_execute : Flag<["--"], "no-execute">,
+  Group<CollectionOptionGroup>, Index<3>,
+  HelpText<"Build the test entrypoint but do not execute tests.">,
+  Flags<[HelpHidden]>;

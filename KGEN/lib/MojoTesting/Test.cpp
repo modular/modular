@@ -977,7 +977,7 @@ std::optional<TestExecutionResult> TestExecutionInstance::checkExecution() {
 
 /// Execute the given set of tests, returning the result.
 static MaybeResolvedResult
-executeTests(ArrayRef<Test> tests,
+executeTests(ArrayRef<Test> tests, const std::filesystem::path &entrypointPath,
              ArrayRef<std::string> additionalImportPaths) {
   auto emitInitError = [&](const Twine &error) {
     return processTestExecutorResults(tests, emitTestInitError(tests, error));
@@ -1014,12 +1014,11 @@ executeTests(ArrayRef<Test> tests,
   // file.
   std::string in = inFileOr->getPath().string();
   std::string out = outFileOr->getPath().string();
-  const std::optional<StringRef> redirects[] = {
-      /*stdin=*/in,
-      /*stdout=*/out,
-      /*stderr=*/"",
-  };
-  SmallVector<StringRef> args = {testExecutorPath};
+  const std::optional<StringRef> redirects[] = {/*stdin=*/in,
+                                                /*stdout=*/out,
+                                                /*stderr=*/std::nullopt};
+  std::string entrypointStr = entrypointPath.string();
+  SmallVector<StringRef> args = {testExecutorPath, "-", entrypointStr};
   for (StringRef path : additionalImportPaths)
     llvm::append_range(args, ArrayRef<StringRef>{"-I", path});
 
@@ -1040,6 +1039,7 @@ executeTests(ArrayRef<Test> tests,
 /// Execute the given doc test, returning the result.
 static MaybeResolvedResult
 executeDocTest(AsyncRT::Runtime &runtime, const Test &test,
+               const std::filesystem::path &entrypointPath,
                ArrayRef<std::string> additionalImportPaths) {
   // Doc tests are unique compare to unit tests in that they are execution
   // dependent on the previous tests in the same suite. As a result, we need to
@@ -1051,7 +1051,7 @@ executeDocTest(AsyncRT::Runtime &runtime, const Test &test,
   }
   // If this is the first test, execute it directly.
   if (index == 0)
-    return executeTests(test, additionalImportPaths);
+    return executeTests(test, entrypointPath, additionalImportPaths);
 
   // Pull in the parent doc test suite.
   ErrorOr<std::optional<Test>> parentTestOr = Test::discoverFromID(
@@ -1062,32 +1062,35 @@ executeDocTest(AsyncRT::Runtime &runtime, const Test &test,
         test.getTestID(), "id does not correspond to a valid doc test");
   const Test &parentTest = **parentTestOr;
   return executeTests(parentTest.getChildren().take_front(index + 1),
-                      additionalImportPaths);
+                      entrypointPath, additionalImportPaths);
 }
 
 /// Execute the given test or suite, returning the result.
 static MaybeResolvedResult
 executeTestOrSuite(AsyncRT::Runtime &runtime, const Test &test,
+                   const std::filesystem::path &entrypointPath,
                    ArrayRef<std::string> additionalImportPaths) {
   // If this is a test, execute it directly.
   const TestID &testID = test.getTestID();
   if (testID.getTest()) {
     if (testID.getTestSuite() && testID.getTestSuite()->ends_with("__doc__"))
-      return executeDocTest(runtime, test, additionalImportPaths);
-    return executeTests(test, additionalImportPaths);
+      return executeDocTest(runtime, test, entrypointPath,
+                            additionalImportPaths);
+    return executeTests(test, entrypointPath, additionalImportPaths);
   }
   // If this is a doc test suite, we can execute all of the tests together
   // (given that doc tests have execution dependent on the previous tests in the
   // same suite).
   if (testID.getTestSuite() && testID.getTestSuite()->ends_with("__doc__"))
-    return executeTests(test.getChildren(), additionalImportPaths);
+    return executeTests(test.getChildren(), entrypointPath,
+                        additionalImportPaths);
 
   // Otherwise, this is a suite. Execute each of the children, and collect the
   // results.
   std::vector<MaybeResolvedResult> results;
   for (const Test &child : test.getChildren()) {
-    results.push_back(
-        executeTestOrSuite(runtime, child, additionalImportPaths));
+    results.push_back(executeTestOrSuite(runtime, child, entrypointPath,
+                                         additionalImportPaths));
   }
 
   auto now = std::chrono::steady_clock::now();
@@ -1117,12 +1120,13 @@ executeTestOrSuite(AsyncRT::Runtime &runtime, const Test &test,
 
 TestExecutionResult
 Test::execute(AsyncRT::Runtime &runtime,
+              const std::filesystem::path &entrypointPath,
               ArrayRef<std::string> additionalImportPaths) const {
   // Execute this test and wait for it to resolve. We don't block here because
   // resolution of the result may involve communicating with multiple
   // test-executor processes.
   MaybeResolvedResult result =
-      executeTestOrSuite(runtime, *this, additionalImportPaths);
+      executeTestOrSuite(runtime, *this, entrypointPath, additionalImportPaths);
   while (failed(result.resolve()))
     ;
   return result.takeResolvedResult();

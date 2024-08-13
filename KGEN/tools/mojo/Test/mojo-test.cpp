@@ -17,12 +17,12 @@
 #include "Support/FileSystemExtras.h"
 #include "Support/LLVMForwardDecls.h"
 #include "Support/Telemetry/Telemetry.h"
+#include "mlir/Support/IndentedOstream.h"
+#include "llvm/ADT/StringExtras.h"
 #include "llvm/Option/ArgList.h"
 #include "llvm/Option/OptTable.h"
 #include "llvm/Support/Program.h"
 #include "llvm/Support/SourceMgr.h"
-#include <llvm/ADT/DenseSet.h>
-#include <mlir/Support/IndentedOstream.h>
 
 using namespace M;
 using namespace mlir;
@@ -115,9 +115,11 @@ static ErrorOr<TempFile> generateEntrypointSource(ArrayRef<TestID> unitTests) {
       os << "import `" << id.getFilePath().stem() << "`\n";
 
     os << "from sys import argv\n";
+    os << "from testing import assert_not_equal\n";
     os << "fn main() raises:\n";
 
     os.indent();
+    os << "var executed = 0\n";
     os << "var testName = argv()[1]\n";
 
     for (const TestID &id : unitTests) {
@@ -135,12 +137,17 @@ static ErrorOr<TempFile> generateEntrypointSource(ArrayRef<TestID> unitTests) {
       if (names.isError())
         return names.takeError();
 
-      os << formatv("if testName == \"{0}\":\n", id.strref());
+      os << llvm::formatv("if testName == \"{0}::{1}()\":\n", id.getFilePath(),
+                          llvm::join(*names, "."));
       os.indent();
       os << formatv("`{0}`.`{1}`()\n", id.getFilePath().stem(),
                     StringRef(names->back()));
+      os << "executed += 1\n";
       os.unindent();
     }
+
+    os << "print(testName)\n";
+    os << "assert_not_equal(executed, 0, \"no tests were executed\")\n";
 
     os.unindent();
   }
@@ -148,9 +155,10 @@ static ErrorOr<TempFile> generateEntrypointSource(ArrayRef<TestID> unitTests) {
   return sourceFile;
 }
 
-static ErrorOr<TempFile> buildEntrypoint(std::vector<std::string> buildArgs,
-                                         ArrayRef<TestID> unitTests,
-                                         const TempFile &sourceFile) {
+static ErrorOrSuccess buildEntrypoint(std::vector<std::string> buildArgs,
+                                      ArrayRef<TestID> unitTests,
+                                      const TempFile &sourceFile,
+                                      std::string outputPath) {
   ErrorOr<std::string> driverPath = getMojoDriver();
   if (driverPath.isError())
     return Error(driverPath.getError());
@@ -163,16 +171,8 @@ static ErrorOr<TempFile> buildEntrypoint(std::vector<std::string> buildArgs,
         buildArgs,
         ArrayRef<std::string>{"-I", id.getFilePath().parent_path().string()});
 
-  ErrorOr<TempFile> entrypointOutput =
-      TempFile::create("test-entrypoint-%%%%%%");
-  if (entrypointOutput.isError())
-    return Error(entrypointOutput.getError());
-
-  entrypointOutput->close();
-
   buildArgs.emplace_back("-o");
-  std::string outputPath = entrypointOutput->getPath().string();
-  buildArgs.push_back(entrypointOutput->getPath().string());
+  buildArgs.emplace_back(outputPath);
   buildArgs.push_back(sourceFile.getPath().string());
 
   SmallVector<StringRef> buildCommand{*driverPath, "build"};
@@ -189,7 +189,7 @@ static ErrorOr<TempFile> buildEntrypoint(std::vector<std::string> buildArgs,
     return Error(llvm::formatv(
         "couldn't build the test executable. Exit code {0}", result));
 
-  return entrypointOutput;
+  return SuccessType();
 }
 
 //===----------------------------------------------------------------------===//
@@ -299,22 +299,45 @@ static int test(const State &subcommandState) {
   if (entrypointSource.isError())
     return state.reportError(entrypointSource.getError());
 
-  ErrorOr<TempFile> entrypoint =
-      buildEntrypoint(std::move(buildArgStrings), unitTests, *entrypointSource);
-  if (entrypoint.isError())
-    return state.reportError(entrypoint.getError());
+  // TempFile will delete the file it points to once it goes out of scope.
+  // Keeping it here ensures that the executable lives long enough for us to use
+  // it.
+  std::optional<TempFile> entrypointTemp = std::nullopt;
+  std::string entrypointPath;
+  if (args.hasArg(options::OPT_entrypoint_path)) {
+    entrypointPath = args.getLastArgValue(options::OPT_entrypoint_path).str();
+  } else {
+    ErrorOr<TempFile> outputOrErr = TempFile::create("test-entrypoint-%%%%%%");
+    if (outputOrErr.isError())
+      return state.reportError(outputOrErr.getError());
+    entrypointTemp.emplace(std::move(*outputOrErr));
+    entrypointTemp->close();
+    entrypointPath = entrypointTemp->getPath().string();
+  }
+
+  ErrorOrSuccess buildResult = buildEntrypoint(
+      buildArgStrings, unitTests, *entrypointSource, entrypointPath);
+  if (buildResult.isError())
+    return state.reportError(buildResult.getError());
 
   if (args.hasArg(options::OPT_keep_entrypoint)) {
     entrypointSource->keep();
-    entrypoint->keep();
+    if (entrypointTemp)
+      entrypointTemp->keep();
     llvm::errs() << "Entrypoint source can be found at "
                  << entrypointSource->getPath() << "\n";
-    llvm::errs() << "Built entrypoint can be found at " << entrypoint->getPath()
+    llvm::errs() << "Built entrypoint can be found at " << entrypointPath
                  << "\n";
   }
 
+  if (args.hasArg(options::OPT_no_execute)) {
+    llvm::errs() << "Skipping test execution because --no-execute was passed\n";
+    return 0;
+  }
+
   // Execute the test and print the results.
-  TestExecutionResult result = test->execute(runtime, additionalImportPaths);
+  TestExecutionResult result =
+      test->execute(runtime, entrypointPath, additionalImportPaths);
   emitOutput(result);
   return result.getKind() == TestExecutionResult::kSuccess ? 0 : 1;
 }

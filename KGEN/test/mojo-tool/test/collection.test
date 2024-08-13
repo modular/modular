@@ -33,6 +33,8 @@
 // CHECK:       inputs/doc.mojo@doc_fn({{.*}}).__doc__::0>
 // CHECK:     inputs/doc.mojo@Struct.doc_fn({{.*}}).__doc__>
 // CHECK:       inputs/doc.mojo@Struct.doc_fn({{.*}}).__doc__::0>
+// CHECK:   inputs/subfolder/subfolder_test.mojo>
+// CHECK:     inputs/subfolder/subfolder_test.mojo::test_fn()>
 // CHECK:   inputs/test_fire.🔥>
 // CHECK:     inputs/test_fire.🔥::test_fn()>
 // CHECK:     inputs/test_fire.🔥::fn_test()>
