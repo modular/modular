@@ -12,7 +12,6 @@ from pathlib import Path
 from max.tensor import TensorSpec
 from ._driver_library import DriverLibrary
 from .device_memory import DeviceMemory, DeviceTensor
-from .graph import CompiledGraph, _CCompiledGraph, _CExecutableGraph
 from max.graph import Graph
 from ._status import Status, _CStatus
 from .utils import _steal_device_memory_impl_ptr
@@ -137,41 +136,6 @@ struct Device(Stringable):
     fn __eq__(self, other: Self) -> Bool:
         """Check if `self` and `other` point to the same underlying Device."""
         return self._cdev == other._cdev
-
-    @doc_private
-    fn compile(self, graph: Graph) raises -> CompiledGraph:
-        """TODO (MSDK-731): Removing in favour of engine APIs."""
-
-        # contains AsyncRT Runtime, Telemetery etc.
-        var max_context = _get_global_or_null["MaxContext"]().address
-        var status = Status(self.lib.value())
-        var compiled_ptr = call_dylib_func[_CCompiledGraph](
-            self.lib.value().get_handle(),
-            "M_compileGraph",
-            graph._module().c.ptr,
-            self._cdev,
-            max_context,
-            status.impl,
-        )
-        if status:
-            raise str(status)
-        return CompiledGraph(compiled_ptr, self)
-
-    @doc_private
-    fn load(self, compiled_graph: CompiledGraph) raises -> ExecutableGraph:
-        """TODO (MSDK-731): Removing in favour of engine APIs."""
-
-        var status = Status(self.lib.value())
-        var executable_ptr = call_dylib_func[_CExecutableGraph](
-            self.lib.value().get_handle(),
-            "M_loadGraph",
-            compiled_graph._impl,
-            self._cdev,
-            status.impl,
-        )
-        if status:
-            raise str(status)
-        return ExecutableGraph(executable_ptr, self)
 
 
 fn cpu_device(descriptor: CPUDescriptor = CPUDescriptor()) raises -> Device:
