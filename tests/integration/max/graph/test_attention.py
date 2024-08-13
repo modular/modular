@@ -129,9 +129,9 @@ def test_attention():
             ),
         )
 
-        # TODO(MSDK-759): Re-enable tests when debugged. .
-        # graph.output(attention(*graph.inputs))
-        # compiled = session.load(graph)
+        outputs = attention(*graph.inputs)
+        graph.output(*outputs)
+        compiled = session.load(graph)
 
     input = (
         np.array(
@@ -154,9 +154,7 @@ def test_attention():
 
     v_cache = np.zeros(shape=(0, 1, 2, n_kv_heads, head_dim)).astype(np.float32)
 
-    # output = compiled.execute(
-    # input0=input, input1=k_cache, input2=v_cache
-    # )
+    output = compiled.execute(input0=input, input1=k_cache, input2=v_cache)
 
     expected = (
         np.array(
