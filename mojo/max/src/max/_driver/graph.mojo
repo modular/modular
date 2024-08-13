@@ -27,7 +27,9 @@ struct _CExecutableGraph:
 
 
 struct ExecutableGraph:
-    """Represents a compiled graph loaded to device and ready for execution."""
+    """TODO (MSDK-731): Removing in favour of engine APIs.
+
+    Represents a compiled graph loaded to device and ready for execution."""
 
     var _impl: _CExecutableGraph
     var _device: Device
