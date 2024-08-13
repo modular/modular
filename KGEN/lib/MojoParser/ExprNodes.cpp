@@ -240,6 +240,36 @@ bindAttributesToMLIROperatorCall(const SubscriptNode &subscript,
       return {};
     }
 
+    // Custom op implementation parameters passed to `_op_impl_params`.
+    // Parameters are wrapped in an ArrayAttr.
+    if (operand.name == "_op_impl_params") {
+      // If a tuple is passed, we grab the sub expressions and put them in an
+      // array.
+      if (auto *paren = dyn_cast<ParenNode>(valueExpr)) {
+        if (auto *tuple = dyn_cast<TupleNode>(paren->subExpr)) {
+          SmallVector<Attribute> subValues;
+          for (ExprNode *expr : tuple->exprs) {
+            auto value = getAttrFromExpr(operand.name, expr, emitter);
+            if (!value)
+              return {};
+            subValues.push_back(value);
+          }
+
+          attrValues.push_back(
+              {operand.name, mlir::ArrayAttr::get(context, subValues)});
+          continue;
+        }
+      }
+
+      // Otherwise, we put the single expression in an array.
+      auto value = getAttrFromExpr(operand.name, valueExpr, emitter);
+      if (!value)
+        return {};
+      attrValues.push_back(
+          {operand.name, mlir::ArrayAttr::get(context, value)});
+      continue;
+    }
+
     auto value = getAttrFromExpr(operand.name, valueExpr, emitter);
     if (!value)
       return {};
