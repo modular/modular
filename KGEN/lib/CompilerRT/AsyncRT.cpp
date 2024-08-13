@@ -411,7 +411,7 @@ KGEN_CompilerRT_CreateAsyncCUDABufferRef(void *data, size_t size,
   AnyAsyncValueRef storageRef;
   storageRef = storageRef.createReady<OwnedCUDAMemoryBlock>(
       cudaRuntimePtr->runtime, reinterpret_cast<CUdeviceptr>(data), size,
-      *cudaRuntimePtr);
+      copyRCRef(cudaRuntimePtr));
 
   if (value.getPointer() && value.getPointer()->isIndirect()) {
     value.copy().emplaceIndirect<TensorBufferRef>(TensorBufferRef::create(
