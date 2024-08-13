@@ -26,6 +26,11 @@ modular_cc_binary(
 
 run_tool(
     name = "kgen-standalone",
+    data = [
+        "//KGEN:CompilerRT",
+        "//KGEN:CompilerRT.distributable",
+        "@llvm-project//compiler-rt:orc_rt",
+    ],
     tags = ["manual"],
     tool = ":kgen",
     visibility = ["//visibility:private"],
