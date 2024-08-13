@@ -17,6 +17,13 @@ fn _get_nvptx_target[
     # TODO: Ideally this is an Optional[StringLiteral] but blocked by MOCO-1039
     target_arch: StringLiteral = "sm_80",
 ]() -> __mlir_type.`!kgen.target`:
+    # Note: features = "+ptx81" means that the kernel should be compiled using
+    # PTX version 8.1. This must be less than or equal to the installed CUDA
+    # driver's maximum supported PTX version. Currently we hardcode this to
+    # PTX version 8.1 which means that you need to have a CUDA driver newer than
+    # 530.30.02 (driver included with CUDA 12.1 toolkit).
+    # The mapping from CUDA Driver to PTX version can be found by looking at the
+    # PTX ISA in the versioned docs here https://developer.nvidia.com/cuda-toolkit-archive.
     @parameter
     if target_arch == "sm_80":
         return __mlir_attr[
