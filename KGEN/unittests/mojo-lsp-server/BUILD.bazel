@@ -28,6 +28,7 @@ modular_cc_test(
     env = {
         "MODULAR_MOJO_MAX_IMPORT_PATH": "open-source/mojo/stdlib",
         "MODULAR_PATH": ".",
+        "PRESERVE_LSP_IO_FILES": "1",
     },
     tags = [
         "no-sandbox",  # The LSP server currently has issues with symlinks and non-canonical paths

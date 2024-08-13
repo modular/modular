@@ -363,9 +363,15 @@ LSPBatchClient::ExecutionResult LSPBatchClient::execute() {
 
   StringRef lspServerPath = configOr->getLSPServerPath();
 
-  ErrorOr<TempDir> tempDirOr = TempDir::create("lsp-test-client.%%%%%%");
-  if (failed(tempDirOr))
+  std::filesystem::path tempDirPath = "lsp-test-client.%%%%%%";
+  if (auto bazelTempDir = std::getenv("TEST_UNDECLARED_OUTPUTS_DIR"))
+    tempDirPath = bazelTempDir / tempDirPath;
+
+  ErrorOr<TempDir> tempDirOr = TempDir::create(tempDirPath.generic_string());
+  if (failed(tempDirOr)) {
+    llvm::errs() << "tmp dir failed: " << tempDirOr.takeError() << "\n";
     return {tempDirOr.takeError()};
+  }
   LSPServerStdioFiles ioFiles(tempDirOr->getPath());
 
   if (std::getenv("PRESERVE_LSP_IO_FILES")) {
