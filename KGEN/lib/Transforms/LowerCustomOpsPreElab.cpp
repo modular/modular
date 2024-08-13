@@ -70,9 +70,13 @@ void LowerCustomOpsPreElabPass::runOnOperation() {
     // If our operation has parameters, specialize the op implementation
     // symbol for these parameters.
     if (implParamsAttr) {
-      // FIXME(math-fehr): Support multiple parameters
+      if (auto attr = dyn_cast<PreservedAttr>(implParamsAttr))
+        implParamsAttr = attr.getValue();
+
       SmallVector<TypedAttr> parameters;
-      parameters.push_back(cast<TypedAttr>(implParamsAttr));
+      auto paramsArrayAttr = cast<mlir::ArrayAttr>(implParamsAttr);
+      for (Attribute param : paramsArrayAttr)
+        parameters.push_back(cast<TypedAttr>(param));
 
       SignatureType specializedSig =
           opImplSym.getType().getSpecializedSignature(parameters, loc);

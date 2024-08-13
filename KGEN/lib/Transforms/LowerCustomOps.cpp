@@ -124,11 +124,12 @@ SymbolConstantAttr LowerCustomOpsPass::getSymbolForCustomOp(
     return opImplSym;
   }
 
-  // FIXME(math-fehr): Support multiple parameters
-  SmallVector<TypedAttr> parameters;
   if (auto attr = dyn_cast<PreservedAttr>(implParamsAttr))
     implParamsAttr = attr.getValue();
-  parameters.push_back(cast<TypedAttr>(implParamsAttr));
+  SmallVector<TypedAttr> parameters;
+  auto paramsArrayAttr = cast<mlir::ArrayAttr>(implParamsAttr);
+  for (Attribute param : paramsArrayAttr)
+    parameters.push_back(cast<TypedAttr>(param));
 
   return specializeParametrizedGenerator(opImplSym, parameters, loc,
                                          opImplsTable);
