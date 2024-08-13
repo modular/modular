@@ -242,13 +242,15 @@ struct LayoutTensor[
             ),
         ]()
 
+        var res_tensor = Self.stack_allocation()
+
         @parameter
         for i in range(self.layout.size()):
             alias idx = self.layout(i)
-            (self.ptr + idx).store[width = Self.element_size](
-                func((self.ptr + idx).load[width = Self.element_size]())
+            res_tensor.ptr.store(
+                idx, func(self.ptr.load[width = Self.element_size](idx))
             )
-        return self
+        return res_tensor
 
     @always_inline
     fn __elementwise_binary_with_broadcast[
@@ -300,6 +302,8 @@ struct LayoutTensor[
         # constrain.
         constrained[rank == 2, "Only supports rank-2 tensor"]()
 
+        var res_tensor = Self.stack_allocation()
+
         @parameter
         if other.rank == 1:
             constrained[
@@ -317,26 +321,26 @@ struct LayoutTensor[
                 alias lhs_idx = self.layout(i)
                 alias rhs_idx = other.layout(i % other_size)
 
-                self.ptr.store(
+                res_tensor.ptr.store(
                     lhs_idx,
                     func(
-                        (self.ptr + lhs_idx).load[width = Self.element_size](),
-                        (other.ptr + rhs_idx).load[width = Self.element_size](),
+                        self.ptr.load[width = Self.element_size](lhs_idx),
+                        other.ptr.load[width = Self.element_size](rhs_idx),
                     ),
                 )
-            return self
+            return res_tensor
 
         @parameter
         for i in range(self.layout.size()):
             alias idx = self.layout(i)
-            self.ptr.store(
+            res_tensor.ptr.store(
                 idx,
                 func(
-                    (self.ptr + idx).load[width = Self.element_size](),
-                    (other.ptr + idx).load[width = Self.element_size](),
+                    self.ptr.load[width = Self.element_size](idx),
+                    other.ptr.load[width = Self.element_size](idx),
                 ),
             )
-        return self
+        return res_tensor
 
     @always_inline
     fn __add__(self, other: Scalar[dtype]) -> Self:
@@ -377,7 +381,7 @@ struct LayoutTensor[
     @always_inline
     fn __sub__(self, other: Scalar[dtype]) -> Self:
         fn add_val(val: Self.element_type) capturing -> Self.element_type:
-            return Self.element_type(other) - val
+            return val - Self.element_type(other)
 
         return self.__elementwise_unary[add_val]()
 
