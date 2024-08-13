@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from enum import Enum
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Optional, Type, Union
+from typing import Any, Dict, Iterable, List, Optional, Type, Union, overload
 
 import numpy as np
 from max._engine import DType as _DType
@@ -17,10 +17,15 @@ from max._engine import InferenceSession as _InferenceSession
 from max._engine import Model as _Model
 from max._engine import TensorSpec as _TensorSpec
 from max._engine import TorchInputSpec as _TorchInputSpec
+from max.driver import DType as DriverDType
+from max.driver import Tensor
 
 InputShape = Optional[List[Union[int, str, None]]]
 CustomExtensionType = Union[str, Path, Any]
 CustomExtensionsType = Union[List[CustomExtensionType], CustomExtensionType]
+ExecResultType = Union[
+    Dict[str, Union[np.ndarray, dict, list, tuple]], List[Tensor]
+]
 
 
 class Model:
@@ -49,9 +54,21 @@ class Model:
         """
         self._impl._export_mef(path)
 
+    # `execute` can be called with positional arguments only if all arguments
+    # are Max Driver tensors.
+    @overload
+    def execute(self, *args: Tensor) -> List[Tensor]:
+        ...
+
+    # `execute` can also be called with keyword arguments, with each keyword
+    # corresponding to an input tensor name and each arg being a numpy array.
+    @overload
     def execute(
-        self, *args, **kwargs
+        self, **kwargs: Any
     ) -> Dict[str, Union[np.ndarray, dict, list, tuple]]:
+        ...
+
+    def execute(self, *args, **kwargs) -> ExecResultType:
         """Executes the model with the provided input and returns the outputs.
 
         For example, if the model has one input tensor named "input":
@@ -88,12 +105,22 @@ class Model:
             expects.
         """
         if args:
-            raise RuntimeError(
-                "Execute API only accepts keyword arguments e.g. outs ="
-                " model.execute(arg0=np.ones((1,"
-                " 10)).astype(np.float32)).Keywords have to be tensor names"
-                " which can be queried using the input_metadata API."
+            if any(not isinstance(arg, Tensor) for arg in args):
+                raise RuntimeError(
+                    "All positional arguments provided to the execute API must"
+                    " be Max Driver tensors (i.e. max.driver.Tensor). The"
+                    " execute API can also be invoked using keyword arguments"
+                    " e.g. outs = model.execute(arg0=np.ones((1,"
+                    " 10)).astype(np.float32)). Keywords have to be tensor"
+                    " names which can be queried using the input_metadata API."
+                )
+            results = self._impl.execute_device_tensors(
+                [arg._impl for arg in args]
             )
+            return [
+                Tensor((), DriverDType.unknown, _impl=result)
+                for result in results
+            ]
         dtype_map = {spec.name: spec.dtype for spec in self.input_metadata}
         for input_name, input_value in kwargs.items():
             if dtype_map[input_name] == DType.unknown:
