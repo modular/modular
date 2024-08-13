@@ -7,6 +7,8 @@ from enum import Enum
 from pathlib import Path
 from typing import Any, List, Optional, Union
 
+from max.driver.driver_core import Tensor as TensorImpl
+
 InputShape = Optional[List[Union[int, str, None]]]
 CustomExtensionType = Union[str, Path, Any]
 CustomExtensionsType = Union[List[CustomExtensionType], CustomExtensionType]
@@ -26,6 +28,9 @@ class Model:
     output_metadata: List[TensorSpec]
     def load(self): ...
     def execute(self, **kwargs) -> dict[str, Any]: ...
+    def execute_device_tensors(
+        self, *tensors: List[TensorImpl]
+    ) -> List[TensorImpl]: ...
     def init(self) -> None: ...
     def _export_mef(self, path): ...
 
