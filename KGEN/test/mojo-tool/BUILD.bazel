@@ -12,14 +12,15 @@ lit_tests(
             "package/test_package/**/*.mojo",
             "package/test_package_with_main/**/*.mojo",
             "package/test-package-moco-773/**/*.mojo",
-            "format/mojo-format.test",  # TODO: Requires mblack
             "test/test_execution.mojo",  # TODO: Debug crash
-            "debug/mojo-lldb-version.mojo",  # TODO: LLDB
         ],
     ),
     data = [
         "//KGEN:CompilerRT",
         "//KGEN:CompilerRT.distributable",
+        "//KGEN:MojoLLDB",
+        "//KGEN:mojo-lldb",
+        "//utils/mblack:shim.py",
         "@llvm-project//compiler-rt:orc_rt",
     ] + glob([
         "**/inputs/**",
@@ -30,6 +31,9 @@ lit_tests(
         "test/inputs/**/*.mojo",
         "test/inputs/**/*.🔥",
     ]),
+    env = {
+        "MODULAR_MOJO_MAX_MBLACK_PATH": "$(location //utils/mblack:shim.py)",
+    },
     mojo_deps = [
         "//Kernels/mojo/layout",
         "//open-source/mojo/stdlib/stdlib",
@@ -43,5 +47,8 @@ lit_tests(
         "//KGEN/tools/kgen-opt",
         "//KGEN/tools/mojo",
         "@llvm-project//llvm:llvm-objdump",
+    ],
+    deps = [
+        "//utils/mblack",
     ],
 )
