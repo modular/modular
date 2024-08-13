@@ -1,0 +1,21 @@
+//===----------------------------------------------------------------------===//
+//
+// This file is Modular Inc proprietary.
+//
+//===----------------------------------------------------------------------===//
+
+// RUN: not mojo test "%S/inputs/" | FileCheck %s
+
+// CHECK: Testing Time: {{.*}}s
+// CHECK: Total Discovered Tests: 19
+// CHECK: Passed : 17
+// CHECK: Failed : 2
+// CHECK: Skipped: 0
+
+// CHECK: {{.*}} Failure: '{{.*}}subfolder/subfolder_test.mojo::test_fails()'
+// CHECK: Unhandled exception caught during execution
+// CHECK: {{.*}}subfolder/subfolder_test.mojo:23:16: AssertionError: condition was unexpectedly False
+
+// CHECK: {{.*}} Failure: '{{.*}}subfolder/subfolder_test.mojo::test_backtick\2Efails()'
+// CHECK: Unhandled exception caught during execution
+// CHECK: {{.*}}subfolder/subfolder_test.mojo:19:16: AssertionError: condition was unexpectedly False
