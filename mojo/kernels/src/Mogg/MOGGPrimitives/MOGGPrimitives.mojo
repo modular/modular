@@ -127,7 +127,7 @@ fn byte_buffer_alloc[
     var shape = StaticIntTuple[1](byte_size)
 
     @parameter
-    if target == "cuda":
+    if "cuda" in target:
         # For now, only cuda targets can use device context directly
         return NDBuffer[DType.int8, 1](
             callCtx.get_cuda_device().cuda_context.malloc_async[Int8](
@@ -197,7 +197,7 @@ fn create_buffer_ref_async[
     callCtx: MojoCallContextPtr,
 ):
     @parameter
-    if target == "cuda":
+    if "cuda" in target:
         external_call["KGEN_CompilerRT_CreateAsyncCUDABufferRef", NoneType](
             buffer.data, len(buffer), async_ptr, runtime, callCtx.ptr
         )

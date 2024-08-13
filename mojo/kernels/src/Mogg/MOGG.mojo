@@ -3880,7 +3880,7 @@ fn masked_flash_attention_gpu[
     by Tri Dao et al.
     """
 
-    constrained[target == "cuda", "only valid on CUDA GPUs"]()
+    constrained["cuda" in target, "only valid on CUDA GPUs"]()
 
     @always_inline
     @__copy_capture(q, k, v, mask, output)
