@@ -22,6 +22,12 @@ target_include_directories(AsyncRTRuntimeGlobals
 
 target_compile_definitions(AsyncRTRuntimeGlobals PRIVATE MODULAR_BUILDING_LIBRARY)
 
+if (TCMALLOC_LIBRARY)
+  target_link_libraries(AsyncRTRuntimeGlobals PRIVATE libtcmalloc)
+  target_include_directories(AsyncRTRuntimeGlobals PUBLIC ${TCMALLOC_PATH}/include)
+endif()
+
+
 # CAUTION: Only use this if you know that you won't be dlopen'ing another modular binary!
 add_modular_library(AsyncRTRuntimeGlobals-static
   OBJECT # Always generate an obj.${name} target.
@@ -38,3 +44,9 @@ target_include_directories(AsyncRTRuntimeGlobals-static
 )
 target_compile_definitions(AsyncRTRuntimeGlobals-static PRIVATE MODULAR_NO_EXPORT)
 target_compile_definitions(obj.AsyncRTRuntimeGlobals-static PRIVATE MODULAR_NO_EXPORT)
+
+if (TCMALLOC_LIBRARY)
+  target_link_libraries(AsyncRTRuntimeGlobals-static PUBLIC libtcmalloc)
+  target_link_libraries(obj.AsyncRTRuntimeGlobals-static PUBLIC libtcmalloc)
+  target_include_directories(AsyncRTRuntimeGlobals-static PUBLIC ${TCMALLOC_PATH}/include)
+endif()
