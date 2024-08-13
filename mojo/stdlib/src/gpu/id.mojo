@@ -277,9 +277,9 @@ fn lane_id() -> UInt:
     """
     return UInt(
         int(
-            llvm_intrinsic["llvm.nvvm.read.ptx.sreg.laneid", Int32]().cast[
-                DType.uint32
-            ]()
+            llvm_intrinsic[
+                "llvm.nvvm.read.ptx.sreg.laneid", Int32, has_side_effect=False
+            ]().cast[DType.uint32]()
         )
     )
 
@@ -298,8 +298,8 @@ fn sm_id() -> UInt:
     """
     return UInt(
         int(
-            llvm_intrinsic["llvm.nvvm.read.ptx.sreg.smid", Int32]().cast[
-                DType.uint32
-            ]()
+            llvm_intrinsic[
+                "llvm.nvvm.read.ptx.sreg.smid", Int32, has_side_effect=False
+            ]().cast[DType.uint32]()
         )
     )
