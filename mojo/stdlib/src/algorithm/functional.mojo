@@ -1140,7 +1140,7 @@ fn _elementwise_impl[
     target: StringLiteral = "cpu",
 ](shape: StaticIntTuple[rank], context: DeviceContext,):
     @parameter
-    if target == "cuda":
+    if "cuda" in target:
         _elementwise_impl_gpu[func, simd_width](
             shape,
             context,
@@ -1165,7 +1165,7 @@ fn _elementwise_impl[
     context: MojoCallContextPtr = MojoCallContextPtr(),
 ):
     @parameter
-    if target == "cuda":
+    if "cuda" in target:
         _elementwise_impl_gpu[func, simd_width](
             shape,
             context.get_cuda_device(),
@@ -1199,7 +1199,7 @@ fn _elementwise[
     """
 
     @parameter
-    if target == "cuda":
+    if "cuda" in target:
         _elementwise_impl[
             func, simd_width, use_blocking_impl=False, target=target
         ](shape)
