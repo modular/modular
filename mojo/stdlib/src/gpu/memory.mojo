@@ -445,6 +445,7 @@ fn _load_impl[
     type: DType, //,
     width: Int = 1,
     *,
+    read_only: Bool = False,
     prefetch_size: Optional[Int] = None,
     cache_policy: CacheOperation = CacheOperation.ALWAYS,
     eviction_policy: CacheEviction = CacheEviction.EVICT_NORMAL,
@@ -502,6 +503,7 @@ fn _load_impl[
     alias pretch_size_mnemonic = (
         ".L2::" + _int_to_str[prefetch_size.value()]() + "B"
     ) if prefetch_size else ""
+    alias cache_operation = ".nc" if read_only else ""
 
     alias cache_policy_inst = (
         "" if cache_policy
@@ -509,14 +511,14 @@ fn _load_impl[
     )
     alias v_width = ("" if width == 1 else ".v" + _int_to_str[width]())
 
-    alias instruction_name = "ld.global" + eviction_policy_mnemonic + pretch_size_mnemonic + cache_policy_inst + v_width + "." + type_mnemonic
+    alias instruction_name = "ld.global" + cache_policy_inst + cache_operation + eviction_policy_mnemonic + pretch_size_mnemonic + v_width + "." + type_mnemonic
 
     var res = SIMD[type, width]()
 
     @parameter
     if width == 1:
         var tmp = inlined_assembly[
-            "ld.global " + cache_policy_inst + " $0, [$2];",
+            "ld.global " + cache_policy_inst + cache_operation + " $0, [$2];",
             Scalar[type],
             constraints="=r,l,r",
             has_side_effect=True,
@@ -563,6 +565,7 @@ fn load[
     type: DType, //,
     width: Int = 1,
     *,
+    read_only: Bool = False,
     prefetch_size: Optional[Int] = None,
     cache_policy: CacheOperation = CacheOperation.ALWAYS,
     eviction_policy: CacheEviction = CacheEviction.EVICT_NORMAL,
@@ -570,6 +573,7 @@ fn load[
 ](ptr: UnsafePointer[Scalar[type]]) -> SIMD[type, width]:
     return _load_impl[
         width=width,
+        read_only=read_only,
         prefetch_size=prefetch_size,
         cache_policy=cache_policy,
         eviction_policy=eviction_policy,
@@ -583,6 +587,7 @@ fn load[
     type: DType, //,
     width: Int = 1,
     *,
+    read_only: Bool = False,
     prefetch_size: Optional[Int] = None,
     cache_policy: CacheOperation = CacheOperation.ALWAYS,
     eviction_policy: CacheEviction = CacheEviction.EVICT_NORMAL,
