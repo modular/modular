@@ -55,8 +55,9 @@ fn _shuffle[
                 mask, splatted_val, offset
             )[0]
         else:
-            # bitcast and recurse to use i32 intrinsic
-            var packed_val = bitcast[DType.int32, 1](val)
+            # bitcast and recurse to use i32 intrinsic. Two half values fit
+            # into an int32.
+            var packed_val = bitcast[DType.int32, simd_width // 2](val)
             var result_packed = _shuffle[mnemonic, WIDTH_MASK=WIDTH_MASK](
                 mask, packed_val, offset
             )
