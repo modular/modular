@@ -1116,36 +1116,35 @@ fn _matmul_gpu[
     #     "single_thread_blocking_override not applicable",
     # ]()
 
-    var shape = GemmShape.get[transpose_b=False](c, a, b)
-    var m = shape.M
-    var n = shape.N
-    var k = shape.K
+    try:
 
-    @parameter
-    if elementwise_lambda_fn:
-        _matmul_gpu_dispatch[
-            a.type,
-            a.shape,
-            b.type,
-            b.shape,
-            c.type,
-            c.shape,
-            transpose_b=transpose_b,
-            use_tensor_core=use_tensor_core,
-            elementwise_lambda_fn=elementwise_lambda_fn,
-        ](c, a, b, ctx)
+        @parameter
+        if elementwise_lambda_fn:
+            _matmul_gpu_dispatch[
+                a.type,
+                a.shape,
+                b.type,
+                b.shape,
+                c.type,
+                c.shape,
+                transpose_b=transpose_b,
+                use_tensor_core=use_tensor_core,
+                elementwise_lambda_fn=elementwise_lambda_fn,
+            ](c, a, b, ctx)
 
-    else:
-        _matmul_gpu_dispatch[
-            a.type,
-            a.shape,
-            b.type,
-            b.shape,
-            c.type,
-            c.shape,
-            transpose_b=transpose_b,
-            use_tensor_core=use_tensor_core,
-        ](c, a, b, ctx)
+        else:
+            _matmul_gpu_dispatch[
+                a.type,
+                a.shape,
+                b.type,
+                b.shape,
+                c.type,
+                c.shape,
+                transpose_b=transpose_b,
+                use_tensor_core=use_tensor_core,
+            ](c, a, b, ctx)
+    except e:
+        abort(e)
 
 
 @always_inline
@@ -1164,247 +1163,219 @@ fn _matmul_gpu_dispatch[
     a: NDBuffer[a_type, 2, a_shape],
     b: NDBuffer[b_type, 2, b_shape],
     ctx: DeviceContext,
-):
+) raises:
     var shape = GemmShape.get[transpose_b=False](c, a, b)
     var m = shape.M
     var n = shape.N
     var k = shape.K
-    try:
-        alias s_type = DType.float32 if (
-            a_type == DType.bfloat16 or a_type == DType.float16
-        ) else c_type
+    alias s_type = DType.float32 if (
+        a_type == DType.bfloat16 or a_type == DType.float16
+    ) else c_type
 
-        # Currently sgemm_warp_tiling_kernel is supportred only for float32 and
-        # no elementwise_epilogue, fallback to generic matmul_kernel.
-        var warp_tiled_matmul_supported_shape = (
-            m % 128 == 0 and n % 128 == 0 and k % 128 == 0
-        )
-        alias matmul_supported_format = (
-            a_type in (DType.float32, DType.bfloat16)
-            and b_type in (DType.float32, DType.bfloat16)
-            and c_type in (DType.float32, DType.bfloat16)
-        )
-        alias buffer_matmul_supported_format = (
-            a_type == DType.float32
-            and b_type == DType.float32
-            and c_type == DType.float32
-            and not transpose_b
-        )
-        var double_buffer_supported_cond = (
-            m % 128 == 0 and n % 128 == 0 and k % 16 == 0 and k < m and k < n
-        )
+    # Currently sgemm_warp_tiling_kernel is supportred only for float32 and
+    # no elementwise_epilogue, fallback to generic matmul_kernel.
+    var warp_tiled_matmul_supported_shape = (
+        m % 128 == 0 and n % 128 == 0 and k % 128 == 0
+    )
+    alias matmul_supported_format = (
+        a_type in (DType.float32, DType.bfloat16)
+        and b_type in (DType.float32, DType.bfloat16)
+        and c_type in (DType.float32, DType.bfloat16)
+    )
+    alias buffer_matmul_supported_format = (
+        a_type == DType.float32
+        and b_type == DType.float32
+        and c_type == DType.float32
+        and not transpose_b
+    )
+    var double_buffer_supported_cond = (
+        m % 128 == 0 and n % 128 == 0 and k % 16 == 0 and k < m and k < n
+    )
 
-        # NOTE: k has to be a multiple of BK * num_stages. Hard coded this condition to 128 for now.
-        # TODO: Need to find a better dispatch strategy.
-        var multi_gemm_cond = (m > 1 and n % 128 == 0 and k % 128 == 0)
+    # NOTE: k has to be a multiple of BK * num_stages. Hard coded this condition to 128 for now.
+    # TODO: Need to find a better dispatch strategy.
+    var multi_gemm_cond = (m > 1 and n % 128 == 0 and k % 128 == 0)
 
-        @parameter
-        if (
-            matmul_supported_format
-            and use_tensor_core
-            and b_shape.all_known[2]()
-        ):
-            if multi_gemm_cond:
-                alias num_pipeline_stages = 4
-                alias BM = 128
-                alias BN = 128
-                alias BK = 32 if a_type == DType.bfloat16 else 16
-                alias WM = 64
-                alias WN = 64
-                alias shared_mem_bytes = 80 * 1024
-                alias num_threads = (BM // WM) * (BN // WN) * WARP_SIZE
-
-                alias mgemm = multistage_gemm[
-                    c_type,
-                    c_shape,
-                    a_type,
-                    a_shape,
-                    b_type,
-                    b_shape,
-                    transpose_b,
-                    BM,
-                    BN,
-                    BK,
-                    WM,
-                    WN,
-                    num_threads,
-                    num_pipeline_stages,
-                    elementwise_lambda_fn,
-                ]
-                # TODO: The cache config doesn't really help here, see #38391.
-
-                var multistage_func = ctx.compile_function[mgemm](
-                    threads_per_block=num_threads,
-                    func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-                        shared_mem_bytes
-                    ),
-                )
-                ctx.enqueue_function(
-                    multistage_func,
-                    c,
-                    a,
-                    b,
-                    grid_dim=(ceildiv(n, BN), ceildiv(m, BM), 1),
-                    block_dim=(num_threads, 1, 1),
-                    shared_mem_bytes=shared_mem_bytes,
-                )
-                return
-
-        # Dispatch bouble buffer gemm for FP32, constant B, and certain shapes.
-        @parameter
-        if buffer_matmul_supported_format and b_shape.all_known[2]():
-            if double_buffer_supported_cond:
-                # TODO: Add shape constraints for K << M and K << N.
-                alias NUM_THREADS = 256
-                alias K = b_shape.get[0]()
-                alias N = b_shape.get[1]()
-                alias BM = 128
-                alias BN = 128
-                alias BK = 16
-                alias WM = 32
-                alias WN = 64
-                alias TM = 8
-                alias TN = 8
-                alias b_layout = Layout.row_major(K, N)
-
-                var b_tsr = LayoutTensor[b_type, b_layout](b.data)
-
-                alias dbuffgemm = sgemm_double_buffer_kernel[
-                    c_type,
-                    a_type,
-                    b_type,
-                    b_layout,
-                    BM,
-                    BN,
-                    BK,
-                    WM,
-                    WN,
-                    TM,
-                    TN,
-                    NUM_THREADS,
-                    elementwise_lambda_fn=elementwise_lambda_fn,
-                ]
-                var gpu_func = ctx.compile_function[dbuffgemm](
-                    threads_per_block=NUM_THREADS
-                )
-                ctx.enqueue_function(
-                    gpu_func,
-                    m,
-                    c.data,
-                    a.data,
-                    b_tsr,
-                    grid_dim=(ceildiv(n, BN), ceildiv(m, BM), 1),
-                    block_dim=(NUM_THREADS, 1, 1),
-                )
-                return
-
-        if warp_tiled_matmul_supported_shape and buffer_matmul_supported_format:
-            # TODO: Auto tune these for A100.
-            # TODO: NUM_THREADS need to vary as M, N varies.
-            alias NUM_THREADS = 128
-            alias BN = 128
+    @parameter
+    if matmul_supported_format and use_tensor_core and b_shape.all_known[2]():
+        if multi_gemm_cond:
+            alias num_pipeline_stages = 4
             alias BM = 128
-            alias BK = 16
-            alias WN = 64
+            alias BN = 128
+            alias BK = 32 if a_type == DType.bfloat16 else 16
             alias WM = 64
-            alias WNITER = 4
-            alias TN = 4
-            alias TM = 8
-            alias WMITER = (WM * WN) // (WARP_SIZE * TM * TN * WNITER)
-            alias mm = sgemm_warp_tiling_kernel[
+            alias WN = 64
+            alias shared_mem_bytes = 80 * 1024
+            alias num_threads = (BM // WM) * (BN // WN) * WARP_SIZE
+
+            alias mgemm = multistage_gemm[
                 c_type,
                 c_shape,
                 a_type,
                 a_shape,
                 b_type,
                 b_shape,
-                BM=BM,
-                BN=BN,
-                BK=BK,
-                WM=WM,
-                WN=WN,
-                WMITER=WMITER,
-                WNITER=WNITER,
-                TM=TM,
-                TN=TN,
-                NUM_THREADS=NUM_THREADS,
+                transpose_b,
+                BM,
+                BN,
+                BK,
+                WM,
+                WN,
+                num_threads,
+                num_pipeline_stages,
+                elementwise_lambda_fn,
+            ]
+            # TODO: The cache config doesn't really help here, see #38391.
+
+            var multistage_func = ctx.compile_function[mgemm](
+                threads_per_block=num_threads,
+                func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
+                    shared_mem_bytes
+                ),
+            )
+            ctx.enqueue_function(
+                multistage_func,
+                c,
+                a,
+                b,
+                grid_dim=(ceildiv(n, BN), ceildiv(m, BM), 1),
+                block_dim=(num_threads, 1, 1),
+                shared_mem_bytes=shared_mem_bytes,
+            )
+            return
+
+    # Dispatch bouble buffer gemm for FP32, constant B, and certain shapes.
+    @parameter
+    if buffer_matmul_supported_format and b_shape.all_known[2]():
+        if double_buffer_supported_cond:
+            # TODO: Add shape constraints for K << M and K << N.
+            alias NUM_THREADS = 256
+            alias K = b_shape.get[0]()
+            alias N = b_shape.get[1]()
+            alias BM = 128
+            alias BN = 128
+            alias BK = 16
+            alias WM = 32
+            alias WN = 64
+            alias TM = 8
+            alias TN = 8
+            alias b_layout = Layout.row_major(K, N)
+
+            var b_tsr = LayoutTensor[b_type, b_layout](b.data)
+
+            alias dbuffgemm = sgemm_double_buffer_kernel[
+                c_type,
+                a_type,
+                b_type,
+                b_layout,
+                BM,
+                BN,
+                BK,
+                WM,
+                WN,
+                TM,
+                TN,
+                NUM_THREADS,
                 elementwise_lambda_fn=elementwise_lambda_fn,
             ]
-            var gpu_func = ctx.compile_function[mm](
+            var gpu_func = ctx.compile_function[dbuffgemm](
                 threads_per_block=NUM_THREADS
             )
             ctx.enqueue_function(
                 gpu_func,
-                c,
-                a,
-                b,
-                Scalar[c_type](1),
-                Scalar[c_type](0),
-                grid_dim=(ceildiv(n, BN), ceildiv(m, BM)),
-                block_dim=(NUM_THREADS),
+                m,
+                c.data,
+                a.data,
+                b_tsr,
+                grid_dim=(ceildiv(n, BN), ceildiv(m, BM), 1),
+                block_dim=(NUM_THREADS, 1, 1),
             )
-        elif n == 1:
+            return
 
-            @parameter
-            if a_type == DType.bfloat16:
-                alias WARPS_PER_BLOCK = 32
-                alias simd_width = simdwidthof[
-                    DType.bfloat16, target = _get_nvptx_target()
+    if warp_tiled_matmul_supported_shape and buffer_matmul_supported_format:
+        # TODO: Auto tune these for A100.
+        # TODO: NUM_THREADS need to vary as M, N varies.
+        alias NUM_THREADS = 128
+        alias BN = 128
+        alias BM = 128
+        alias BK = 16
+        alias WN = 64
+        alias WM = 64
+        alias WNITER = 4
+        alias TN = 4
+        alias TM = 8
+        alias WMITER = (WM * WN) // (WARP_SIZE * TM * TN * WNITER)
+        alias mm = sgemm_warp_tiling_kernel[
+            c_type,
+            c_shape,
+            a_type,
+            a_shape,
+            b_type,
+            b_shape,
+            BM=BM,
+            BN=BN,
+            BK=BK,
+            WM=WM,
+            WN=WN,
+            WMITER=WMITER,
+            WNITER=WNITER,
+            TM=TM,
+            TN=TN,
+            NUM_THREADS=NUM_THREADS,
+            elementwise_lambda_fn=elementwise_lambda_fn,
+        ]
+        var gpu_func = ctx.compile_function[mm](threads_per_block=NUM_THREADS)
+        ctx.enqueue_function(
+            gpu_func,
+            c,
+            a,
+            b,
+            Scalar[c_type](1),
+            Scalar[c_type](0),
+            grid_dim=(ceildiv(n, BN), ceildiv(m, BM)),
+            block_dim=(NUM_THREADS),
+        )
+    elif n == 1:
+
+        @parameter
+        if a_type == DType.bfloat16:
+            alias WARPS_PER_BLOCK = 32
+            alias simd_width = simdwidthof[
+                DType.bfloat16, target = _get_nvptx_target()
+            ]()
+            if k % simd_width == 0:
+                var block_dim = min(
+                    align_up(k // simd_width, WARP_SIZE),
+                    WARP_SIZE * WARPS_PER_BLOCK,
+                )
+
+                var gpu_func = ctx.compile_function[
+                    gemv_tc_kernel_vector[
+                        c_type,
+                        c_shape,
+                        a_type,
+                        a_shape,
+                        b_type,
+                        b_shape,
+                        simd_width,
+                        elementwise_lambda_fn=elementwise_lambda_fn,
+                    ]
                 ]()
-                if k % simd_width == 0:
-                    var block_dim = min(
-                        align_up(k // simd_width, WARP_SIZE),
-                        WARP_SIZE * WARPS_PER_BLOCK,
-                    )
-
-                    var gpu_func = ctx.compile_function[
-                        gemv_tc_kernel_vector[
-                            c_type,
-                            c_shape,
-                            a_type,
-                            a_shape,
-                            b_type,
-                            b_shape,
-                            simd_width,
-                            elementwise_lambda_fn=elementwise_lambda_fn,
-                        ]
-                    ]()
-                    ctx.enqueue_function(
-                        gpu_func,
-                        c,
-                        a,
-                        b,
-                        UInt(m),
-                        UInt(n),
-                        UInt(k),
-                        grid_dim=ceildiv(m, block_dim // WARP_SIZE),
-                        block_dim=block_dim,
-                    )
-                else:
-                    alias WARPS_PER_BLOCK = 32
-                    var gpu_func = ctx.compile_function[
-                        gemv_tc_kernel[
-                            c_type,
-                            a_type,
-                            b_type,
-                            elementwise_lambda_fn=elementwise_lambda_fn,
-                        ]
-                    ]()
-                    ctx.enqueue_function(
-                        gpu_func,
-                        c.data,
-                        a.data,
-                        b.data,
-                        UInt(m),
-                        UInt(n),
-                        UInt(k),
-                        grid_dim=ceildiv(m, WARPS_PER_BLOCK),
-                        block_dim=WARP_SIZE * WARPS_PER_BLOCK,
-                    )
+                ctx.enqueue_function(
+                    gpu_func,
+                    c,
+                    a,
+                    b,
+                    UInt(m),
+                    UInt(n),
+                    UInt(k),
+                    grid_dim=ceildiv(m, block_dim // WARP_SIZE),
+                    block_dim=block_dim,
+                )
             else:
                 alias WARPS_PER_BLOCK = 32
                 var gpu_func = ctx.compile_function[
-                    gemv_kernel[
+                    gemv_tc_kernel[
                         c_type,
                         a_type,
                         b_type,
@@ -1416,76 +1387,75 @@ fn _matmul_gpu_dispatch[
                     c.data,
                     a.data,
                     b.data,
-                    m,
-                    n,
-                    k,
+                    UInt(m),
+                    UInt(n),
+                    UInt(k),
                     grid_dim=ceildiv(m, WARPS_PER_BLOCK),
                     block_dim=WARP_SIZE * WARPS_PER_BLOCK,
                 )
-        elif m == 1 and transpose_b == True:
+        else:
+            alias WARPS_PER_BLOCK = 32
+            var gpu_func = ctx.compile_function[
+                gemv_kernel[
+                    c_type,
+                    a_type,
+                    b_type,
+                    elementwise_lambda_fn=elementwise_lambda_fn,
+                ]
+            ]()
+            ctx.enqueue_function(
+                gpu_func,
+                c.data,
+                a.data,
+                b.data,
+                m,
+                n,
+                k,
+                grid_dim=ceildiv(m, WARPS_PER_BLOCK),
+                block_dim=WARP_SIZE * WARPS_PER_BLOCK,
+            )
+    elif m == 1 and transpose_b == True:
 
-            @parameter
-            if a_type == DType.bfloat16:
-                alias WARPS_PER_BLOCK = 32
-                alias simd_width = simdwidthof[
-                    DType.bfloat16, target = _get_nvptx_target()
+        @parameter
+        if a_type == DType.bfloat16:
+            alias WARPS_PER_BLOCK = 32
+            alias simd_width = simdwidthof[
+                DType.bfloat16, target = _get_nvptx_target()
+            ]()
+            if k % simd_width == 0:
+                var block_dim = min(
+                    align_up(k // simd_width, WARP_SIZE),
+                    WARP_SIZE * WARPS_PER_BLOCK,
+                )
+
+                var gpu_func = ctx.compile_function[
+                    gemv_tc_kernel_vector[
+                        c_type,
+                        c_shape,
+                        a_type,
+                        a_shape,
+                        b_type,
+                        b_shape,
+                        simd_width,
+                        transpose_b=transpose_b,
+                        elementwise_lambda_fn=elementwise_lambda_fn,
+                    ]
                 ]()
-                if k % simd_width == 0:
-                    var block_dim = min(
-                        align_up(k // simd_width, WARP_SIZE),
-                        WARP_SIZE * WARPS_PER_BLOCK,
-                    )
-
-                    var gpu_func = ctx.compile_function[
-                        gemv_tc_kernel_vector[
-                            c_type,
-                            c_shape,
-                            a_type,
-                            a_shape,
-                            b_type,
-                            b_shape,
-                            simd_width,
-                            transpose_b=transpose_b,
-                            elementwise_lambda_fn=elementwise_lambda_fn,
-                        ]
-                    ]()
-                    ctx.enqueue_function(
-                        gpu_func,
-                        c,
-                        b,
-                        a,
-                        UInt(n),
-                        UInt(m),
-                        UInt(k),
-                        grid_dim=ceildiv(n, block_dim // WARP_SIZE),
-                        block_dim=block_dim,
-                    )
-                else:
-                    alias WARPS_PER_BLOCK = 32
-                    var gpu_func = ctx.compile_function[
-                        gemv_tc_kernel[
-                            c_type,
-                            b_type,
-                            a_type,
-                            transpose_b=transpose_b,
-                            elementwise_lambda_fn=elementwise_lambda_fn,
-                        ]
-                    ]()
-                    ctx.enqueue_function(
-                        gpu_func,
-                        c.data,
-                        b.data,
-                        a.data,
-                        UInt(n),
-                        UInt(m),
-                        UInt(k),
-                        grid_dim=ceildiv(n, WARPS_PER_BLOCK),
-                        block_dim=WARP_SIZE * WARPS_PER_BLOCK,
-                    )
+                ctx.enqueue_function(
+                    gpu_func,
+                    c,
+                    b,
+                    a,
+                    UInt(n),
+                    UInt(m),
+                    UInt(k),
+                    grid_dim=ceildiv(n, block_dim // WARP_SIZE),
+                    block_dim=block_dim,
+                )
             else:
                 alias WARPS_PER_BLOCK = 32
                 var gpu_func = ctx.compile_function[
-                    gemv_kernel[
+                    gemv_tc_kernel[
                         c_type,
                         b_type,
                         a_type,
@@ -1498,71 +1468,71 @@ fn _matmul_gpu_dispatch[
                     c.data,
                     b.data,
                     a.data,
-                    n,
-                    m,
-                    k,
+                    UInt(n),
+                    UInt(m),
+                    UInt(k),
                     grid_dim=ceildiv(n, WARPS_PER_BLOCK),
                     block_dim=WARP_SIZE * WARPS_PER_BLOCK,
                 )
+        else:
+            alias WARPS_PER_BLOCK = 32
+            var gpu_func = ctx.compile_function[
+                gemv_kernel[
+                    c_type,
+                    b_type,
+                    a_type,
+                    transpose_b=transpose_b,
+                    elementwise_lambda_fn=elementwise_lambda_fn,
+                ]
+            ]()
+            ctx.enqueue_function(
+                gpu_func,
+                c.data,
+                b.data,
+                a.data,
+                n,
+                m,
+                k,
+                grid_dim=ceildiv(n, WARPS_PER_BLOCK),
+                block_dim=WARP_SIZE * WARPS_PER_BLOCK,
+            )
 
-        elif m == 1 and n % WARP_SIZE == 0 and k % WARP_SIZE == 0:
+    elif m == 1 and n % WARP_SIZE == 0 and k % WARP_SIZE == 0:
 
-            @parameter
-            if a_type == DType.bfloat16:
-                alias simd_width = simdwidthof[
-                    DType.bfloat16, target = _get_nvptx_target()
+        @parameter
+        if a_type == DType.bfloat16:
+            alias simd_width = simdwidthof[
+                DType.bfloat16, target = _get_nvptx_target()
+            ]()
+            alias max_warps_per_block = 32
+
+            if (
+                k >= 4096
+                and n >= 4096
+                and k % simd_width == 0
+                and n % simd_width == 0
+            ):
+                var gpu_func = ctx.compile_function[
+                    gevm_tc_kernel_vector_8x[
+                        c_type,
+                        a_type,
+                        b_type,
+                        WARP_SIZE * max_warps_per_block * simd_width,
+                        simd_width,
+                        elementwise_lambda_fn=elementwise_lambda_fn,
+                    ]
                 ]()
-                alias max_warps_per_block = 32
-
-                if (
-                    k >= 4096
-                    and n >= 4096
-                    and k % simd_width == 0
-                    and n % simd_width == 0
-                ):
-                    var gpu_func = ctx.compile_function[
-                        gevm_tc_kernel_vector_8x[
-                            c_type,
-                            a_type,
-                            b_type,
-                            WARP_SIZE * max_warps_per_block * simd_width,
-                            simd_width,
-                            elementwise_lambda_fn=elementwise_lambda_fn,
-                        ]
-                    ]()
-                    ctx.enqueue_function(
-                        gpu_func,
-                        c,
-                        a,
-                        b,
-                        m,
-                        n,
-                        k,
-                        grid_dim=ceildiv(n, WARP_SIZE * simd_width),
-                        block_dim=WARP_SIZE * max_warps_per_block,
-                    )
-                else:
-                    alias WARPS_PER_BLOCK = 32
-                    var gpu_func = ctx.compile_function[
-                        gevm_kernel[
-                            c_type,
-                            a_type,
-                            b_type,
-                            tile_size = WARP_SIZE * WARPS_PER_BLOCK,
-                            elementwise_lambda_fn=elementwise_lambda_fn,
-                        ]
-                    ]()
-                    ctx.enqueue_function(
-                        gpu_func,
-                        c.data,
-                        a.data,
-                        b.data,
-                        m,
-                        n,
-                        k,
-                        grid_dim=ceildiv(n, WARPS_PER_BLOCK),
-                        block_dim=WARP_SIZE * WARPS_PER_BLOCK,
-                    )
+                ctx.enqueue_function(
+                    gpu_func,
+                    c,
+                    a,
+                    b,
+                    m,
+                    n,
+                    k,
+                    grid_dim=ceildiv(n, WARP_SIZE * simd_width),
+                    block_dim=WARP_SIZE * max_warps_per_block,
+                )
             else:
                 alias WARPS_PER_BLOCK = 32
                 var gpu_func = ctx.compile_function[
@@ -1586,56 +1556,76 @@ fn _matmul_gpu_dispatch[
                     block_dim=WARP_SIZE * WARPS_PER_BLOCK,
                 )
         else:
-            # Tile size for tiling in shared memory.
-            # Thread block would have shape (tile_size, tile_size, 1)
-            # If k < tile_size use naive version.
-            alias tile_size = 16
-            if k >= tile_size and not transpose_b:
-                var gpu_func = ctx.compile_function[
-                    matmul_kernel[
-                        c_type,
-                        a_type,
-                        b_type,
-                        tile_size,
-                        elementwise_lambda_fn=elementwise_lambda_fn,
-                    ]
-                ]()
-                ctx.enqueue_function(
-                    gpu_func,
-                    c.data,
-                    a.data,
-                    b.data,
-                    m,
-                    n,
-                    k,
-                    grid_dim=(ceildiv(n, tile_size), ceildiv(m, tile_size)),
-                    block_dim=(tile_size, tile_size),
-                )
-            else:
-                alias BLOCK_DIM = 16
-                var gpu_func = ctx.compile_function[
-                    matmul_kernel_naive[
-                        a_type,
-                        b_type,
-                        c_type,
-                        BLOCK_DIM,
-                        transpose_b,
-                        elementwise_lambda_fn=elementwise_lambda_fn,
-                    ]
-                ]()
-                ctx.enqueue_function(
-                    gpu_func,
-                    c.data,
-                    a.data,
-                    b.data,
-                    m,
-                    n,
-                    k,
-                    grid_dim=(ceildiv(m, BLOCK_DIM), ceildiv(n, BLOCK_DIM)),
-                    block_dim=(BLOCK_DIM, BLOCK_DIM),
-                )
-    except e:
-        abort(e)
+            alias WARPS_PER_BLOCK = 32
+            var gpu_func = ctx.compile_function[
+                gevm_kernel[
+                    c_type,
+                    a_type,
+                    b_type,
+                    tile_size = WARP_SIZE * WARPS_PER_BLOCK,
+                    elementwise_lambda_fn=elementwise_lambda_fn,
+                ]
+            ]()
+            ctx.enqueue_function(
+                gpu_func,
+                c.data,
+                a.data,
+                b.data,
+                m,
+                n,
+                k,
+                grid_dim=ceildiv(n, WARPS_PER_BLOCK),
+                block_dim=WARP_SIZE * WARPS_PER_BLOCK,
+            )
+    else:
+        # Tile size for tiling in shared memory.
+        # Thread block would have shape (tile_size, tile_size, 1)
+        # If k < tile_size use naive version.
+        alias tile_size = 16
+        if k >= tile_size and not transpose_b:
+            var gpu_func = ctx.compile_function[
+                matmul_kernel[
+                    c_type,
+                    a_type,
+                    b_type,
+                    tile_size,
+                    elementwise_lambda_fn=elementwise_lambda_fn,
+                ]
+            ]()
+            ctx.enqueue_function(
+                gpu_func,
+                c.data,
+                a.data,
+                b.data,
+                m,
+                n,
+                k,
+                grid_dim=(ceildiv(n, tile_size), ceildiv(m, tile_size)),
+                block_dim=(tile_size, tile_size),
+            )
+        else:
+            alias BLOCK_DIM = 16
+            var gpu_func = ctx.compile_function[
+                matmul_kernel_naive[
+                    a_type,
+                    b_type,
+                    c_type,
+                    BLOCK_DIM,
+                    transpose_b,
+                    elementwise_lambda_fn=elementwise_lambda_fn,
+                ]
+            ]()
+            ctx.enqueue_function(
+                gpu_func,
+                c.data,
+                a.data,
+                b.data,
+                m,
+                n,
+                k,
+                grid_dim=(ceildiv(m, BLOCK_DIM), ceildiv(n, BLOCK_DIM)),
+                block_dim=(BLOCK_DIM, BLOCK_DIM),
+            )
 
 
 @always_inline
