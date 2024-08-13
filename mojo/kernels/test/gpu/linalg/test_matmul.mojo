@@ -629,8 +629,28 @@ def main():
 
         print("=== test fp16 with generic M and epilogue")
 
+        test_matmul[DType.bfloat16, DimList(12288, 3072)](
+            ctx, (1024, 3072, 12288)
+        ).run_test[
+            epilogue_test[
+                DType.bfloat16,
+                shape = DimList(12288, 3072),
+                use_tensor_core=True,
+            ]
+        ]()
+
+        test_matmul[DType.bfloat16, DimList(3072, 12288)](
+            ctx, (1024, 12288, 3072)
+        ).run_test[
+            epilogue_test[
+                DType.bfloat16,
+                shape = DimList(3072, 12288),
+                use_tensor_core=True,
+            ]
+        ]()
+
         test_matmul[DType.bfloat16, DimList(3072, 5120)](
-            ctx, (1000, 5120, 3072)
+            ctx, (100, 5120, 3072)
         ).run_test[
             epilogue_test[
                 DType.bfloat16,
@@ -639,10 +659,71 @@ def main():
             ]
         ]()
 
+        test_matmul[DType.bfloat16, DimList(32768, 3072)](
+            ctx, (1000, 3072, 32768)
+        ).run_test[
+            basic_test[
+                DType.bfloat16,
+                shape = DimList(32768, 3072),
+                use_tensor_core=True,
+            ]
+        ]()
+
         test_matmul[DType.bfloat16, DimList(3072, 3072)](
             ctx, (1000, 3072, 3072)
         ).run_test[
             epilogue_test[
+                DType.bfloat16,
+                shape = DimList(3072, 3072),
+                use_tensor_core=True,
+            ]
+        ]()
+
+        print("=== test shapes from pipeline tests")
+        test_matmul[DType.bfloat16, DimList(12288, 3072)](
+            ctx, (10, 3072, 12288)
+        ).run_test[
+            basic_test[
+                DType.bfloat16,
+                shape = DimList(12288, 3072),
+                use_tensor_core=True,
+            ]
+        ]()
+
+        test_matmul[DType.bfloat16, DimList(3072, 12288)](
+            ctx, (10, 12288, 3072)
+        ).run_test[
+            basic_test[
+                DType.bfloat16,
+                shape = DimList(3072, 12288),
+                use_tensor_core=True,
+            ]
+        ]()
+
+        test_matmul[DType.bfloat16, DimList(3072, 5120)](
+            ctx, (10, 5120, 3072)
+        ).run_test[
+            basic_test[
+                DType.bfloat16,
+                shape = DimList(3072, 5120),
+                use_tensor_core=True,
+            ]
+        ]()
+
+        test_matmul[DType.bfloat16, DimList(32768, 3072)](
+            ctx, (10, 3072, 32768)
+        ).run_test[
+            basic_test[
+                DType.bfloat16,
+                shape = DimList(32768, 3072),
+                use_tensor_core=True,
+            ]
+        ]()
+
+        test_matmul[DType.bfloat16, DimList(3072, 3072)](
+            ctx, (10, 3072, 3072)
+        ).run_test[
+            basic_test[
                 DType.bfloat16,
                 shape = DimList(3072, 3072),
                 use_tensor_core=True,
