@@ -14,8 +14,7 @@ fn test_reduce_sum():
     print("== test_reduce_sum")
     var tensor_4x4 = LayoutTensor[
         DType.float32, Layout.row_major(4, 4)
-    ].stack_allocation()
-    tensor_4x4.linspace()
+    ].stack_allocation().linspace()
     var tensor_4 = LayoutTensor[
         DType.float32, Layout.row_major(4)
     ].stack_allocation()
@@ -38,8 +37,7 @@ fn test_reduce_max():
     print("== test_reduce_max")
     var tensor_4x4 = LayoutTensor[
         DType.float32, Layout.row_major(4, 4)
-    ].stack_allocation()
-    tensor_4x4.linspace()
+    ].stack_allocation().linspace()
     var tensor_4 = LayoutTensor[
         DType.float32, Layout.row_major(4)
     ].stack_allocation()
@@ -63,8 +61,7 @@ fn test_exp():
     print("== test_exp")
     var tensor_4x4 = LayoutTensor[
         DType.float32, Layout.row_major(4, 4)
-    ].stack_allocation()
-    tensor_4x4.linspace()
+    ].stack_allocation().linspace()
     # CHECK: 1.0 2.7182817459106445 7.3890562057495117 20.085536956787109
     # CHECK: 54.598148345947266 148.41316223144531 403.42877197265625 1096.6331787109375
     # CHECK: 2980.9580078125 8103.08349609375 22026.46484375 59874.140625
@@ -77,8 +74,7 @@ fn test_unary_scalar():
     print("== test_unary_scalar")
     var tensor_4x4 = LayoutTensor[
         DType.float32, Layout.row_major(4, 4)
-    ].stack_allocation()
-    tensor_4x4.linspace()
+    ].stack_allocation().linspace()
     # CHECK: 2.0 3.0 4.0 5.0
     # CHECK: 6.0 7.0 8.0 9.0
     # CHECK: 10.0 11.0 12.0 13.0
