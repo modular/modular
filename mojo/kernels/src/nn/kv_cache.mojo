@@ -641,8 +641,8 @@ fn _matmul_kv_cache[
     """
     var BS = hidden_state.dim[0]()
     var SEQ_LEN = hidden_state.dim[1]()
-    var N = weight.dim[1]()
-    var K = weight.dim[0]()
+    var N = weight.dim[0]()
+    var K = weight.dim[1]()
 
     @parameter
     @__copy_capture(cache, SEQ_LEN)
@@ -688,7 +688,7 @@ fn _matmul_kv_cache[
         weight.shape,
         type,
         c_nd.shape,
-        transpose_b=False,
+        transpose_b=True,
         elementwise_lambda_fn=write_to_cache,
         target=target,
     ](c_nd, hidden_state_2d, weight, ctx=context)
@@ -916,8 +916,8 @@ fn _fused_qkv_matmul_kv_cache[
     """
     var BS = hidden_state.dim[0]()
     var SEQ_LEN = hidden_state.dim[1]()
-    var N = weight.dim[1]()
-    var K = weight.dim[0]()
+    alias N = weight_shape.get[0]()
+    alias K = weight_shape.get[1]()
 
     var q_dim = output.dim[2]()
     var k_dim = kv_params.head_size * kv_params.num_heads
@@ -989,7 +989,7 @@ fn _fused_qkv_matmul_kv_cache[
         BS * SEQ_LEN * N
     ) if target == "cpu" else UnsafePointer[Scalar[type]]()
 
-    var c_nd = NDBuffer[type, 2, DimList(Dim(), weight.shape.get[1]())](
+    var c_nd = NDBuffer[type, 2, DimList(Dim(), N)](
         c_ptr,
         StaticIntTuple[2](BS * SEQ_LEN, N),
     )
@@ -1000,7 +1000,7 @@ fn _fused_qkv_matmul_kv_cache[
         weight.shape,
         type,
         c_nd.shape,
-        transpose_b=False,
+        transpose_b=True,
         elementwise_lambda_fn=write_to_cache,
         target=target,
     ](c_nd, hidden_state_2d, weight, ctx=context)
