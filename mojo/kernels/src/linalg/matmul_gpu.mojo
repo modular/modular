@@ -52,6 +52,7 @@ from sys import llvm_intrinsic
 from ._multistage_gemm_gpu import multistage_gemm
 from .utils import GemmShape, apply_epilogue, elementwise_epilogue_type
 from gpu.host._compile import _get_nvptx_target
+from algorithm.functional import _elementwise_impl_gpu
 from gpu.memory import load, CacheOperation
 
 
@@ -1635,3 +1636,37 @@ fn _matmul_gpu_dispatch[
                 )
     except e:
         abort(e)
+
+
+@always_inline
+fn split_k_reduce[
+    type: DType,
+    a_shape: DimList,
+    b_shape: DimList,
+](
+    A: NDBuffer[type, 2, a_shape],
+    B: NDBuffer[type, 2, b_shape],
+    num_partition: UInt,
+    ctx: DeviceContext,
+):
+    alias pack_size = simdwidthof[type, target = _get_nvptx_target()]()
+    var M = A.dim[0]()
+    var N = A.dim[1]()
+
+    @always_inline
+    @__copy_capture(A, B, M)
+    @parameter
+    fn _reduce[simd_width: Int, rank: Int](idx0: StaticIntTuple[rank]):
+        var idx = rebind[StaticIntTuple[2]](idx0)
+        var i = idx[0]
+        var j = idx[1]
+
+        var vec = A.load[width=simd_width](idx)
+        for k in range(num_partition):
+            vec += B.load[width=simd_width](i, j + k * M)
+        A.store[width=simd_width](idx, vec)
+
+    _elementwise_impl_gpu[_reduce, pack_size](
+        StaticIntTuple[2](M, N),
+        ctx,
+    )
