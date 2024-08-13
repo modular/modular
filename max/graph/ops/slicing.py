@@ -83,7 +83,7 @@ def _slice_index_and_output(
         if isinstance(dim, StaticDim):
             if not -dim.dim <= index < dim.dim:
                 raise IndexError(f"Index {index} out of range of dim {dim.dim}")
-        return (slice(index, (index + 1) or None), 1)
+        return (slice(index, index + 1, 1), 1)
     elif isinstance(index, GraphValue):
         if index.tensor_type.num_elements() != 1:
             raise ValueError(
@@ -94,12 +94,13 @@ def _slice_index_and_output(
             slice(
                 index,
                 ops.select(index == scalar(-1, DType.int64), int64_max, 0),
+                1,
             ),
             1,
         )
     elif isinstance(index, slice):
         if index.start is None and index.stop is None and index.step is None:
-            return (slice(int64_max), dim)
+            return (slice(0, int64_max, 1), dim)
 
         raise NotImplementedError(
             "Can't yet support slicing with calculated output size. Please use"
@@ -222,6 +223,7 @@ def slice_tensor(x: GraphValue, indices: SliceIndices) -> GraphValue:
     output_shape = [dim(d) for _, d in slices_and_outputs]
 
     def value(dim: Union[GraphValue, int]) -> GraphValue:
+        assert isinstance(dim, (GraphValue, int))
         return dim if isinstance(dim, GraphValue) else scalar(dim, DType.int64)
 
     starts = stack_scalars(value(s.start) for s in slices)
