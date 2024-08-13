@@ -17,7 +17,7 @@ from modular.utils import logging
 from modular.utils.subprocess import get_command_output
 
 
-def has_gpu() -> bool:
+def has_gpu():
     """Check if the system has an NVidia GPU we can target.
 
     Returns:
@@ -27,8 +27,7 @@ def has_gpu() -> bool:
         return False
 
     try:
-        get_command_output(["cuda-query"])
-        return True
+        return get_command_output(["cuda-query"])
     except Exception:
         return False
 
