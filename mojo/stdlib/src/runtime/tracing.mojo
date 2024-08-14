@@ -7,6 +7,7 @@
 
 from collections.optional import Optional
 from sys.param_env import env_get_int, is_defined
+from sys import external_call
 from utils import StaticIntTuple
 
 
