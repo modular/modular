@@ -94,14 +94,14 @@ def test_transformer(session):
     with Graph(
         "transformer_block",
         input_types=[
-            TensorType(dtype=DType.float32, shape=[batch, seq_len, dim]),
+            TensorType(dtype=DType.float32, shape=[2, 2, 2]),
             TensorType(
                 dtype=DType.float32,
-                shape=[prev_seq_len, 1, batch, n_kv_heads, head_dim],
+                shape=[0, 1, 2, n_kv_heads, head_dim],
             ),
             TensorType(
                 dtype=DType.float32,
-                shape=[prev_seq_len, 1, batch, n_kv_heads, head_dim],
+                shape=[0, 1, 2, n_kv_heads, head_dim],
             ),
         ],
     ) as graph:
@@ -127,9 +127,9 @@ def test_transformer(session):
             mlp_norm=RMSNorm(np.array([-1.0754, -1.1960])),
         )
 
-        # TODO(MSDK-759): Re-enable tests when debugged.
-        # graph.output(transformer_block(*graph.inputs))
-        # compiled = session.load(graph)
+        outputs = transformer_block(*graph.inputs)
+        graph.output(*outputs)
+        compiled = session.load(graph)
 
         x = (
             np.array(
@@ -148,12 +148,6 @@ def test_transformer(session):
             .astype(np.float32)
         )
 
-        freqs_cis = (
-            np.array([1.0000, 0.0000, 0.5403, 0.8415])
-            .reshape(2, 1, 2)
-            .astype(np.float32)
-        )
-
         k_cache = np.zeros(shape=(0, 1, 2, n_kv_heads, head_dim)).astype(
             np.float32
         )
@@ -161,9 +155,7 @@ def test_transformer(session):
             np.float32
         )
 
-        # output = compiled.execute(
-        # input0=x, input1=freqs_cis, input2=k_cache, input3=v_cache
-        # )
+        output = compiled.execute(input0=x, input1=k_cache, input2=v_cache)
 
         expected_tokens = (
             np.array(
@@ -216,6 +208,7 @@ def test_transformer(session):
             .astype(np.float32)
         )
 
+        # TODO (MSDK-747): Re-enable once Attention accuracy issue is solved.
         # np.testing.assert_almost_equal(output["output0"], expected_tokens, decimal=4)
         # np.testing.assert_almost_equal(output["output1"], expected_k_cache, decimal=4)
         # np.testing.assert_almost_equal(output["output2"], expected_v_cache, decimal=4)
