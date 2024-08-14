@@ -4,6 +4,7 @@ load("//bazel:api.bzl", "lit_tests")
 filegroup(
     name = "pytest_inputs",
     srcs = [
+        "Inputs/dynamic-model.mlir",
         "Inputs/relu3x100x100.onnx",
         "Inputs/relu3x100x100.torchscript",
         "c/custom-ops-override.api",

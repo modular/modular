@@ -32,6 +32,19 @@ def mo_model_path(modular_path: Path) -> Path:
     )
 
 
+@pytest.fixture
+def dynamic_model_path(modular_path: Path) -> Path:
+    """Returns the path to the dynamic shape model."""
+    return (
+        modular_path
+        / "SDK"
+        / "integration-test"
+        / "EngineAPI"
+        / "Inputs"
+        / "dynamic-model.mlir"
+    )
+
+
 def pytest_addoption(parser):
     parser.addoption(
         "--custom-ops-path",

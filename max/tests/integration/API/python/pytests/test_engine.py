@@ -194,6 +194,25 @@ def test_execute_device_tensor(mo_model_path: Path):
         assert isclose(output_tensor[idx].item(), expected[idx])
 
 
+def test_execute_devicetensor_dynamic_shape(dynamic_model_path: Path):
+    # Device tensors should be able to execute even when the model expects
+    # dynamic shapes.
+    session = me.InferenceSession()
+    model = session.load(dynamic_model_path)
+    tensor_one = md.Tensor((5,), md.DType.int32)
+    tensor_two = md.Tensor((5,), md.DType.int32)
+
+    for x in range(5):
+        tensor_one[x] = x
+        tensor_two[x] = 2 * x
+
+    outputs = model.execute(tensor_one, tensor_two)
+    assert len(outputs) == 1
+    output_tensor = outputs[0]
+    for idx in range(5):
+        assert output_tensor[x].item() == 3 * x
+
+
 # TODO(#36814): Debug segfault after PT 2.2.2 bump.
 # Skip this test if we don't have onnx and torch framework libs available.
 @pytest.mark.skip(reason="#36814")
