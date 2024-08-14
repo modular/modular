@@ -31,6 +31,7 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
+from sys import sizeof, simdwidthof
 from algorithm import vectorize
 from collections import InlineArray, Optional
 from math import sqrt

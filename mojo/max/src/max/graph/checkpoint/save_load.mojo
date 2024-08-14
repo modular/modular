@@ -8,6 +8,7 @@ from max.tensor import Tensor, TensorShape, TensorSpec
 from max.engine import TensorMap
 from pathlib import Path
 from os import PathLike
+from sys import sizeof
 
 from .tensor_dict import TensorDict, _CheckpointTensor
 from .metadata import current_version, _read_version, _serialization_header

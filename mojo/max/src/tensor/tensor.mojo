@@ -39,6 +39,7 @@ print(gray_scale_image.shape())
 from collections import List
 from pathlib import Path
 from random import rand, randn
+from sys import sizeof, simdwidthof
 
 from algorithm.functional import elementwise, vectorize
 from algorithm.reduction import argmax, argmin

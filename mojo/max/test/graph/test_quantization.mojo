@@ -7,6 +7,7 @@
 # RUN: mojo "%s"
 
 import sys
+from sys import sizeof
 from memory import memset_zero
 from testing import assert_equal
 from collections import InlineArray

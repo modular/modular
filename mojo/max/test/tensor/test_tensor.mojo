@@ -9,6 +9,7 @@ from math import iota, sqrt
 from pathlib import Path
 from tempfile import NamedTemporaryFile
 from utils.index import Index, StaticIntTuple
+from sys import sizeof
 
 from max.tensor import Tensor, TensorShape, TensorSpec
 from tensor.tensor import _serialize_as_tensor

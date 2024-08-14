@@ -6,6 +6,7 @@
 # RUN: %mojo %s
 
 from tempfile import NamedTemporaryFile
+from sys import sizeof
 
 import testing
 

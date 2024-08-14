@@ -11,7 +11,7 @@ from max._utils import exchange
 from collections import Optional
 from utils import Variant
 from utils._serialize import _serialize
-from sys import is_x86, external_call
+from sys import is_x86, external_call, sizeof, alignof
 
 
 struct AnyTensor:

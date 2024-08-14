@@ -9,6 +9,7 @@ all tensors.
 
 from pathlib import Path
 from os import PathLike
+from sys import sizeof
 from max.tensor import Tensor
 from collections import InlineArray
 

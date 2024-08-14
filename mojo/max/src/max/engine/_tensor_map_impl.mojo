@@ -6,6 +6,7 @@
 
 from memory import UnsafePointer
 from sys.ffi import DLHandle, external_call
+from sys import sizeof, alignof
 from max._utils import call_dylib_func, CString
 
 from ._status import Status

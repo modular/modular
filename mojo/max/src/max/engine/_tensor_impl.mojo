@@ -9,6 +9,7 @@ from memory import UnsafePointer, memcpy
 from memory.unsafe import bitcast
 from python import Python, PythonObject
 from sys.ffi import DLHandle
+from sys import sizeof
 from max._utils import call_dylib_func, exchange
 
 from .session import InferenceSession
