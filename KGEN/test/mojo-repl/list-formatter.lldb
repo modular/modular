@@ -20,14 +20,14 @@ struct Point(CollectionElement):
     self.x = x
     self.y = y
 
-# CHECK: (List[Int, 0]) vec = (size 5) {
+# CHECK: (List[Int]) vec = (size 5) {
 # CHECK:   (Int) [0] = 1
 # CHECK:   (Int) [1] = 2
 # CHECK:   (Int) [2] = 3
 # CHECK:   (Int) [3] = 4
 # CHECK:   (Int) [4] = 5
 # CHECK: }
-# CHECK: (List[SIMD[float32, 1], 0]) vec2 = (size 2) {
+# CHECK: (List[SIMD[float32, 1]]) vec2 = (size 2) {
 # CHECK:   (SIMD[float32, 1]) [0] = {
 # CHECK:     (f32) [0] = 4.3{{[0-9]*}}
 # CHECK:   }
@@ -35,7 +35,7 @@ struct Point(CollectionElement):
 # CHECK:     (f32) [0] = 8.8{{[0-9]*}}
 # CHECK:   }
 # CHECK: }
-# CHECK: (List[Point, 0]) vec3 = (size 3) {
+# CHECK: (List[Point]) vec3 = (size 3) {
 # CHECK:   (Point) [0] = {
 # CHECK:     (Int) x = 1
 # CHECK:     (Int) y = 1
@@ -48,6 +48,11 @@ struct Point(CollectionElement):
 # CHECK:     (Int) x = 3
 # CHECK:     (Int) y = 3
 # CHECK:   }
+# CHECK: }
+# CHECK: (List[Int, Trivial]) vec_trivial = (size 3) {
+# CHECK:   (Int) [0] = 1
+# CHECK:   (Int) [1] = 2
+# CHECK:   (Int) [2] = 3
 # CHECK: }
 
 var vec = List[Int](capacity=5)
@@ -66,3 +71,7 @@ var p3 = Point(3, 3)
 vec3.append(p1)
 vec3.append(p2)
 vec3.append(p3)
+var vec_trivial = List[Int, hint_trivial_type=True](capacity=3)
+vec_trivial.append(1)
+vec_trivial.append(2)
+vec_trivial.append(3)

@@ -28,6 +28,8 @@ public:
 
   size_t GetIndexOfChildWithName(lldb_private::ConstString name) override;
 
+  lldb_private::ConstString GetSyntheticTypeName() override;
+
   /// Parse the given `ValueObject` representing a List.
   ///
   /// Return a pair `<data pointer, size>`, where `data pointer` represents
