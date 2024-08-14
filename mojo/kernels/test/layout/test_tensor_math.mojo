@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo %s | FileCheck %s
 
-from layout import Layout, LayoutTensor
+from layout import Layout, LayoutTensor, stack_allocation_like
 from layout.math import exp, sum, max
 
 
@@ -108,6 +108,12 @@ fn test_binary_same_rank():
     # CHECK: 32.0 34.0 36.0 38.0 40.0
     print(tensor_4x5 + tensor_4x5_2)
 
+    # CHECK: 0.0 0.5 1.0 1.5 2.0
+    # CHECK: 2.5 3.0 3.5 4.0 4.5
+    # CHECK: 5.0 5.5 6.0 6.5 7.0
+    # CHECK: 7.5 8.0 8.5 9.0 9.5
+    print(tensor_4x5 / stack_allocation_like(tensor_4x5).fill(2))
+
 
 # CHECK-LABEL: test_binary_broadcast_inner
 fn test_binary_broadcast_inner():
@@ -123,6 +129,12 @@ fn test_binary_broadcast_inner():
     # CHECK: 7.0 8.0 9.0 10.0 11.0
     # CHECK: 11.0 12.0 13.0 14.0 15.0
     print(tensor_4x5 - tensor_4)
+
+    # CHECK: 0.0 0.5 1.0 1.5 2.0
+    # CHECK: 2.5 3.0 3.5 4.0 4.5
+    # CHECK: 5.0 5.5 6.0 6.5 7.0
+    # CHECK: 7.5 8.0 8.5 9.0 9.5
+    print(tensor_4x5 / stack_allocation_like(tensor_4).fill(2))
 
 
 fn main():

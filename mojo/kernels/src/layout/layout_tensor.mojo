@@ -409,6 +409,35 @@ struct LayoutTensor[
         return self.__elementwise_binary_with_broadcast[sub_val](other)
 
     @always_inline
+    fn __truediv__(self, other: Scalar[dtype]) -> Self:
+        fn div_val(val: Self.element_type) capturing -> Self.element_type:
+            return val / Self.element_type(other)
+
+        return self.__elementwise_unary[div_val]()
+
+    @always_inline
+    fn __truediv__[
+        other_layout: Layout,
+        index_type: DType,
+    ](
+        self,
+        other: LayoutTensor[
+            dtype,
+            other_layout,
+            _,
+            address_space=address_space,
+            element_layout=element_layout,
+            index_type=index_type,
+        ],
+    ) -> Self:
+        fn div_val(
+            lhs: Self.element_type, rhs: Self.element_type
+        ) capturing -> Self.element_type:
+            return lhs / rhs
+
+        return self.__elementwise_binary_with_broadcast[div_val](other)
+
+    @always_inline
     fn __getitem__(self, *dims: Int) -> Self.element_type:
         var strides = self.runtime_layout.stride.value
         var vec_res = SIMD[dtype, Self.element_size]()
