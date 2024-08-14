@@ -535,7 +535,7 @@ struct _product3[T: CollectionElement, D: ElementDelegate = DefaultDelegate](
 
 
 @always_inline
-fn _lift(n: Int, shape: List[Int]) -> List[Int]:
+fn _lift(n: Int, shape: List[Int, *_]) -> List[Int]:
     """Lifts the linearized shape to the ND shape. This is the same as
     _get_start_indices_of_nth_subvolume[N, 0] but works in the runtime
     domain."""
