@@ -9,6 +9,7 @@ from collections import Optional
 from collections.string import _calc_initial_buffer_size_int32
 from pathlib import Path
 from sys.arg import argv
+from os import abort
 
 from stdlib.builtin.file import FileHandle
 from stdlib.builtin.io import _snprintf
