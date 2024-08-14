@@ -6,6 +6,7 @@
 
 from os import abort
 from collections import OptionalReg
+from sys import simdwidthof
 
 from algorithm.reduction import _reduce_generator
 from buffer import Buffer, NDBuffer

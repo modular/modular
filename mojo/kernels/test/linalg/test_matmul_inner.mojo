@@ -7,7 +7,7 @@
 # RUN: %mojo %s | FileCheck %s
 
 from math import align_up
-from sys.info import has_neon, has_vnni
+from sys import has_neon, has_vnni, alignof
 
 from buffer import NDBuffer
 from buffer.dimlist import DimList

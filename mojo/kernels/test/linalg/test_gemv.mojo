@@ -7,7 +7,7 @@
 
 from math import isclose
 from random import rand
-from sys.info import simdwidthof
+from sys import simdwidthof, sizeof
 
 import benchmark
 from buffer import Buffer, NDBuffer

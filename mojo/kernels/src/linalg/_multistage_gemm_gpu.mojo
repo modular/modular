@@ -7,6 +7,7 @@
 from collections.optional import OptionalReg
 from collections import Optional
 from math import ceildiv
+from sys import sizeof, simdwidthof
 
 from buffer import NDBuffer
 from buffer.dimlist import Dim, DimList
