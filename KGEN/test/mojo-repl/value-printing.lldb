@@ -91,7 +91,7 @@ var a_bool = True
 var another_bool = False
 
 
-# CHECK: (List[Int, 0]) z = (size 3) {
+# CHECK: (List[Int]) z = (size 3) {
 # CHECK:   (Int) [0] = 1
 # CHECK:   (Int) [1] = 2
 # CHECK:   (Int) [2] = 3
