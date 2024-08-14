@@ -25,10 +25,6 @@ namespace M::KGEN::MOGGPreElab {
 struct CallGraph : public CallGraphBase<CallGraph, CallGraphNode> {
   explicit CallGraph(const SymbolTable &symtab) : symtab(symtab) {}
 
-  bool shouldAddToGraph(KGENCallOpInterface call, CallGraphNode *node) {
-    return true;
-  }
-
   const SymbolTable &symtab;
 };
 } // namespace M::KGEN::MOGGPreElab
