@@ -322,9 +322,11 @@ struct Model:
 
         Arguments:
             inputs: Inputs can either be tensors or mojo objects for opaque
-            types defined in the graph, which may be located on any Device. If
-            inputs are tensors, API will automatically copy the input tensors
-            to the Device set in the InferenceSession's SessionConfig.
+            types defined in the graph, which may be located on any Device.
+            If there are both tensor and opaque inputs, all tensor inputs
+            should come before opaque inputs in graph. If inputs are tensors,
+            API will automatically copy the input tensors to the Device set
+            in the InferenceSession's SessionConfig.
         Returns:
             A list of outputs which can either be output tensors, which are
             located on the Device set in the InferenceSession's SessionConfig,
@@ -332,8 +334,13 @@ struct Model:
         """
         var on_device_inputs = List[AnyTensor]()
         var values_impl = List[AnyMojoValue.c_type]()
+        var has_seen_opaque = False
         for input in inputs:
             if input[].is_tensor():
+                # FIXME(MSDK-791): Remove this restriction.
+                if has_seen_opaque:
+                    raise "all opaque inputs should come after tensor inputs."
+
                 var tensor = input[].take_tensor()
                 if tensor._device == self._session._ptr[].device:
                     on_device_inputs.append(tensor^)
@@ -345,6 +352,7 @@ struct Model:
                     )
                     on_device_inputs.append(input_dt)
             else:
+                has_seen_opaque = True
                 values_impl.append(input[].take_value().release())
 
         var on_device_inputs_impl = List[UnsafePointer[NoneType]]()
