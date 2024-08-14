@@ -24,9 +24,9 @@ public:
   MLIR_DEFINE_EXPLICIT_INTERNAL_INLINE_TYPE_ID(MContextExtension)
 
   /// Apply this extension once MDialect is loaded.
-  explicit MContextExtension(ContextRef ref)
+  explicit MContextExtension(ContextRef ref, bool enableThreadPool)
       : DialectExtensionBase(MDialect::getDialectNamespace()),
-        ctxRef(std::move(ref)) {}
+        ctxRef(std::move(ref)), enableThreadPool(enableThreadPool) {}
 
   /// Apply this extension to the given context and the required dialects.
   void apply(MLIRContext *context,
@@ -34,7 +34,7 @@ public:
     auto *dialect = cast<MDialect>(dialects.front());
 
     dialect->setInternal(ctxRef.copy());
-    if (context->isMultithreadingEnabled())
+    if (context->isMultithreadingEnabled() || !enableThreadPool)
       return;
     AsyncRT::LLVMThreadPool *tp = ctxRef->get<AsyncRT::LLVMThreadPool>();
     if (!tp) {
@@ -49,25 +49,28 @@ public:
 
   /// Return a copy of this extension.
   std::unique_ptr<DialectExtensionBase> clone() const final {
-    return std::make_unique<MContextExtension>(ctxRef.copy());
+    return std::make_unique<MContextExtension>(ctxRef.copy(), enableThreadPool);
   }
 
 private:
   ContextRef ctxRef;
+  bool enableThreadPool;
 };
 
 } // namespace
 
-void M::registerContext(mlir::DialectRegistry &registry, ContextRef &ref) {
+void M::registerContext(mlir::DialectRegistry &registry, ContextRef &ref,
+                        bool enableThreadPool) {
   std::unique_ptr<mlir::DialectExtensionBase> ctxExtension =
-      std::make_unique<MContextExtension>(ref.copy());
+      std::make_unique<MContextExtension>(ref.copy(), enableThreadPool);
   registry.addExtension(mlir::TypeID::get<MContextExtension>(),
                         std::move(ctxExtension));
 }
 
-void M::registerContext(mlir::MLIRContext &ctx, ContextRef &ref) {
+void M::registerContext(mlir::MLIRContext &ctx, ContextRef &ref,
+                        bool enableThreadPool) {
   DialectRegistry registry;
-  registerContext(registry, ref);
+  registerContext(registry, ref, enableThreadPool);
   ctx.appendDialectRegistry(registry);
 }
 

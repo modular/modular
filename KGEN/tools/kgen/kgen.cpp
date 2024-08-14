@@ -199,8 +199,8 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
                   clOptions.parser.options.withCPUAffinity(false)));
   if (ctxOr.isError())
     return failure();
-  if (!clOptions.enableMLIRCrashReproducer)
-    registerContext(registry, *ctxOr);
+  registerContext(registry, *ctxOr,
+                  /*enableThreadPool=*/!clOptions.enableMLIRCrashReproducer);
   AsyncRT::Runtime &runtime = *(*ctxOr)->get<AsyncRT::Runtime>();
 
   // Set up the dialects in the context.
