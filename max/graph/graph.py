@@ -330,7 +330,7 @@ class Graph:
         )
 
     def __repr__(self) -> str:
-        return f"Graph(name={self.name!r}, input_types={self._input_types})"
+        return str(self._mlir_op)
 
     def add_weight(
         self,

@@ -50,6 +50,9 @@ class GraphValue:
         else:
             raise ValueError(f"can't construct GraphValue from {value}")
 
+    def __repr__(self):
+        return str(self._mlir_value)
+
     # TODO(MSDK-662): Should both DimLike and ShapeLike be considered ValueLike now?
     @staticmethod
     def from_dim(dim: DimLike) -> GraphValue:
