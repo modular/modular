@@ -7,6 +7,7 @@
 from collections import OptionalReg
 from math import align_up, ceildiv, gcd
 from sys.info import simdwidthof
+from os import abort
 
 from algorithm import sync_parallelize, vectorize
 from algorithm.functional import (

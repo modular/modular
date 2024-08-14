@@ -6,6 +6,7 @@
 from math import align_down, align_up, ceildiv
 from sys.info import has_neon
 from sys.intrinsics import PrefetchOptions
+from os import abort
 
 from algorithm import unswitch
 from buffer.buffer import Buffer, NDBuffer, partial_simd_load

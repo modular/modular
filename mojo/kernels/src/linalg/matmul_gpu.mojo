@@ -6,6 +6,7 @@
 from collections import OptionalReg, InlineArray
 from math import align_up, align_down, ceildiv
 from sys.info import alignof
+from os import abort
 
 from algorithm.functional import tile_and_unswitch
 from buffer.buffer import NDBuffer

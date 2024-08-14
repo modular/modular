@@ -4,6 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
+from os import abort
 from collections import OptionalReg
 
 from algorithm.reduction import _reduce_generator
