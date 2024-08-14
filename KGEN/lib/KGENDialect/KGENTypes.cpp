@@ -57,6 +57,7 @@ void KGENDialect::registerTypes() {
   registerMnemonicType<StructType>();
   registerMnemonicType<StructDefType>();
   registerMnemonicType<AppliedStructType>();
+  registerMnemonicType<StructInstanceType>();
   registerMnemonicType<TypeValueType>();
   registerMnemonicType<VariantType>();
 }
@@ -1206,6 +1207,31 @@ AppliedStructType::verify(function_ref<InFlightDiagnostic()> emitError,
   } else {
     return emitError() << "expected an operand of struct_def type, but got "
                        << structDef.getType();
+  }
+  return success();
+}
+
+//===----------------------------------------------------------------------===//
+// StructInstanceType
+//===----------------------------------------------------------------------===//
+
+StructInstanceType StructInstanceType::get(StringAttr name,
+                                           ArrayRef<StringAttr> paramNames,
+                                           ArrayRef<TypedAttr> paramValues,
+                                           ArrayRef<StructDefFieldAttr> fields,
+                                           bool isMemoryOnly) {
+  return get(name.getContext(), name, paramNames, paramValues, fields,
+             isMemoryOnly);
+}
+
+LogicalResult StructInstanceType::verify(
+    function_ref<InFlightDiagnostic()> emitError, StringAttr name,
+    ArrayRef<StringAttr> paramNames, ArrayRef<TypedAttr> paramValues,
+    ArrayRef<StructDefFieldAttr> fields, bool isMemoryOnly) {
+  if (paramNames.size() != paramValues.size()) {
+    return emitError()
+           << "parameter name and parameter value length mismatch. Expected "
+           << paramNames.size() << ", got " << paramValues.size();
   }
   return success();
 }

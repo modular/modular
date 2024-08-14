@@ -693,6 +693,18 @@ void KGEN::printParamName(AsmPrinter &p, StringAttr name, bool isRef) {
     p << '"';
 }
 
+ParseResult KGEN::parseParamNames(AsmParser &p,
+                                  SmallVector<StringAttr> &names) {
+  return p.parseCommaSeparatedList(
+      [&] { return parseParamName(p, names.emplace_back()); });
+}
+
+void KGEN::printParamNames(AsmPrinter &p, ArrayRef<StringAttr> names,
+                           bool isRef) {
+  llvm::interleaveComma(
+      names, p, [&](StringAttr name) { printParamName(p, name, isRef); });
+}
+
 /// Parse operator expression operands with operator-specific syntax.
 static ParseResult parseOperatorOperands(AsmParser &p, uint32_t opcode,
                                          SmallVectorImpl<TypedAttr> &operands,
@@ -1349,6 +1361,29 @@ ParseResult KGEN::parseIsMemoryOnly(AsmParser &p, bool &isMemoryOnly) {
   if (succeeded(p.parseOptionalKeyword("memoryOnly")))
     isMemoryOnly = true;
   return success();
+}
+
+ParseResult
+KGEN::parseStructDefFields(AsmParser &p,
+                           SmallVector<StructDefFieldAttr> &fields) {
+  MLIRContext *ctx = p.getContext();
+  return p.parseCommaSeparatedList([&]() {
+    StringAttr name;
+    Type type;
+    if (parseParamName(p, name) || p.parseColon() || parseKGENType(p, type))
+      return failure();
+    fields.push_back(StructDefFieldAttr::get(ctx, name, type));
+    return mlir::success();
+  });
+}
+
+void KGEN::printStructDefFields(AsmPrinter &p,
+                                ArrayRef<StructDefFieldAttr> fields) {
+  llvm::interleaveComma(fields, p, [&](StructDefFieldAttr field) {
+    printParamName(p, field.getName());
+    p << ": ";
+    printKGENType(p, field.getType());
+  });
 }
 
 //===----------------------------------------------------------------------===//

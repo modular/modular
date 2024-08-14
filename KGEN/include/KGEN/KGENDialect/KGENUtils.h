@@ -106,6 +106,11 @@ void extendWithModularEnvAttr(ModuleOp moduleOp);
 void printIsMemoryOnly(AsmPrinter &p, bool isMemoryOnly);
 ParseResult parseIsMemoryOnly(AsmParser &p, bool &isMemoryOnly);
 
+/// Parser & printer for array of simplified StructDefFieldAttrs.
+ParseResult parseStructDefFields(AsmParser &p,
+                                 SmallVector<StructDefFieldAttr> &fields);
+void printStructDefFields(AsmPrinter &p, ArrayRef<StructDefFieldAttr> fields);
+
 //===----------------------------------------------------------------------===//
 // Parameter Printing and Parsing
 //===----------------------------------------------------------------------===//
@@ -117,6 +122,11 @@ ParseResult parseIsMemoryOnly(AsmParser &p, bool &isMemoryOnly);
 void printParamName(AsmPrinter &p, StringAttr name, bool isRef = false);
 /// Parse a parameter name as either a keyword or double quoted string.
 ParseResult parseParamName(AsmParser &p, StringAttr &name);
+
+/// Print & parse a list of parameter names.
+void printParamNames(AsmPrinter &p, ArrayRef<StringAttr> names,
+                     bool isRef = false);
+ParseResult parseParamNames(AsmParser &p, SmallVector<StringAttr> &names);
 
 /// When in a context that knows it is dealing with a parameter specifically,
 /// utilize syntactic shortcuts to make the printed syntax easier to grok. In a
