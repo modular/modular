@@ -835,8 +835,6 @@ CValue OverloadSet::emitAsCValue(ExprEmitter &emitter, ValueDest &dest) {
   if (!baseValue)
     return emitter.emitCResult(directSymbolAttr, expr, dest);
 
-  auto loc = baseValue.expr->getLoc();
-
   // Otherwise, we have a base symbol for an instance method /and/ a self value
   // to apply to it.  Partially apply it to form a result closure.
   [[maybe_unused]] auto calleeSignature =
@@ -846,8 +844,13 @@ CValue OverloadSet::emitAsCValue(ExprEmitter &emitter, ValueDest &dest) {
 
   // TODO: Need to emit a closure instance that partially applies the 'self'
   // argument here.
-  emitter.emitError(
-      loc, "TODO: partial application of member methods is not yet supported");
+  auto loc = expr->getLoc();
+  auto diag = emitter.emitError(loc, "cannot emit closure for method '")
+              << baseName << "'";
+  diag.attachNote(loc)
+      << "computing member method closure is not yet supported";
+  diag.attachNote(loc) << "did you forget '()'s?";
+
   return {};
 }
 

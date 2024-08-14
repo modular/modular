@@ -122,7 +122,9 @@ def testLValuesRvalues() -> None:
   lv.mutatingMethod()
 
   # Partial application.
-  # expected-error @+1 {{TODO: partial application of member methods is not yet supported}}
+  # expected-error @below {{cannot emit closure for method 'mutatingMethod'}}
+  # expected-note @below {{computing member method closure is not yet supported}}
+  # expected-note @below {{did you forget '()'s?}}
   lv.mutatingMethod
 
   # Test with rvalues
@@ -493,7 +495,9 @@ fn transfer_warnings(borrowed_arg: CopyAndInitMemType):
 struct SomeThing:
     fn overloaded[a: Int](self, b: Int) -> Int: pass
 fn testSomeThing(a: SomeThing):
-   # expected-error @+1 {{TODO: partial application of member methods is not yet supported}}
+  # expected-error @below {{cannot emit closure for method 'overloaded'}}
+  # expected-note @below {{computing member method closure is not yet supported}}
+  # expected-note @below {{did you forget '()'s?}}
    a.overloaded[4] / 1.0
 
 # Test invalid references that cannot bind to potentially-register_passable
