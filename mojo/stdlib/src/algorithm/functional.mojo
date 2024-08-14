@@ -14,7 +14,7 @@ from algorithm import map
 
 from math import align_down, ceildiv
 from os import abort
-from sys.info import num_physical_cores, triple_is_nvidia_cuda
+from sys import num_physical_cores, triple_is_nvidia_cuda, simdwidthof
 
 from bit import is_power_of_two
 from gpu import BlockIdx, GridDim, ThreadIdx
