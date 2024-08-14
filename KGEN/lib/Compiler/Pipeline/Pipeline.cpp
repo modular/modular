@@ -226,6 +226,7 @@ void KGEN::buildPostElaborationPipeline(
   pm.addPass(createEliminateDeadSymbols());
 
   if (options.optimizationLevel >= 1) {
+    pm.addPass(createArgPromotion());
     pm.addNestedPass<FuncOp>(createRaiseForLoops());
     pm.addNestedPass<FuncOp>(createLoopUnrolling({options.optimizationLevel}));
     pm.addNestedPass<FuncOp>(createSROA());

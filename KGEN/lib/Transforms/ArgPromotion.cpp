@@ -34,6 +34,9 @@ public:
 enum class State { NoCapture, Capture };
 
 struct Node : public SCCNode<Node, FuncOp, CallOp> {
+  Node(Node &&other)
+      : SCCNode(other.func), argStates(std::move(other.argStates)) {}
+
   Node(FuncOp func) : SCCNode(func) {
     // Check for the root node.
     if (!func)
@@ -53,6 +56,10 @@ struct Node : public SCCNode<Node, FuncOp, CallOp> {
 
   /// Whether each in-memory argument of the function is known to be captured.
   SmallVector<State> argStates;
+
+  /// If the function has references outside of direct calls, we cannot promote
+  /// it. Keep a flag here to set during graph building.
+  std::atomic<bool> canPromote = true;
 };
 
 struct Graph : public SCCGraph<Graph, Node> {
@@ -74,8 +81,10 @@ struct Graph : public SCCGraph<Graph, Node> {
   /// functions cannot be modified.
   void checkNonCallOp(Operation *op) {
     mlir::AttrTypeWalker walker;
-    walker.addWalk(
-        [&](FlatSymbolRefAttr ref) { cantPromote.insert(ref.getAttr()); });
+    walker.addWalk([&](FlatSymbolRefAttr ref) {
+      nodes.find(symtab.lookup<FuncOp>(ref.getAttr()))->second.canPromote =
+          false;
+    });
     for (const NamedAttribute &attr : op->getAttrs())
       walker.walk(attr.getValue());
     // Note: At this stage in the pipeline, there should be no function
@@ -88,10 +97,6 @@ struct Graph : public SCCGraph<Graph, Node> {
   TargetInfoAttr target;
   /// The largest argument size to promote.
   unsigned maxInlineSize;
-
-  /// These are functions that have references outside of direct calls. We can
-  /// only modify the ABI of internal functions that are directly called.
-  DenseSet<StringAttr> cantPromote;
 };
 
 struct UseIterator : public ProjectionUseIterator<UseIterator> {
@@ -126,7 +131,7 @@ bool Graph::doAnalysis(Node *node) {
   FuncOp func = node->func;
 
   // If the function can't be promoted, set everything to a fixed point.
-  if (cantPromote.contains(func.getSymNameAttr())) {
+  if (!node->canPromote) {
     bool changed = false;
     for (State &state : node->argStates) {
       changed |= state != State::Capture;
