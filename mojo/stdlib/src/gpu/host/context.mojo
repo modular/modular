@@ -8,7 +8,7 @@
 from os import abort
 from sys import sizeof, bitwidthof
 
-from memory import UnsafePointer
+from memory import UnsafePointer, bitcast
 
 from ._utils import _check_error, _ContextHandle, _StreamHandle
 from .cuda_instance import *
