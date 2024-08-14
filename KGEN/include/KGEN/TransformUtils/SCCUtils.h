@@ -98,9 +98,8 @@ struct SCCGraph : public CallGraphBase<DerivedT, NodeT> {
       if (++caller->numReady == caller->numCallees)
         state.fork([this, &state, caller] { doWork(caller, state); });
 
-    for (NodeT *node : scc->nodes) {
+    for (NodeT *node : scc->nodes)
       state.fork([this, node] { ParentT::getDerived().doRewrite(node); });
-    }
   }
 
   /// This runs the analysis on the full call graph in post-order SCC. It starts
