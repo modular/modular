@@ -6,6 +6,7 @@
 
 add_modular_library(KGENTransforms
   ApplyInliner.cpp
+  ArgPromotion.cpp
   AutomaticInline.cpp
   Canonicalizer.cpp
   DeadArgumentElimination.cpp
