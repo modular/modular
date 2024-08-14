@@ -6,6 +6,7 @@
 
 from memory import UnsafePointer
 from sys.ffi import RTLD, DLHandle, _get_dylib_function
+from os import abort
 from pathlib import Path
 from utils import StringRef
 from runtime.asyncrt import _get_current_runtime

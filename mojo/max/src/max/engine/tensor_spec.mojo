@@ -7,6 +7,7 @@
 Defines `EngineTensorSpec` to define a model's input and output specs.
 """
 
+from os import abort
 from collections import List
 from collections.optional import Optional
 from sys.ffi import DLHandle

@@ -9,6 +9,7 @@ from builtin._location import __call_location, _SourceLocation
 from collections import Set, Optional
 from memory import Arc
 from sys.info import has_neon
+from os import abort
 
 import _mlir
 from _mlir.builtin_attributes import StringAttr, TypeAttr

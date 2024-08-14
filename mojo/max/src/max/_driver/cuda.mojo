@@ -4,6 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
+from os import abort
 from .device import Device, _get_driver_path, _CDevice
 from max._utils import call_dylib_func
 from sys.ffi import DLHandle
