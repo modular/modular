@@ -81,24 +81,32 @@ Runtime::~Runtime() {
 }
 
 std::unique_ptr<Allocator>
-AsyncRT::getAllocator(const RuntimeOptions &options) {
+AsyncRT::getAllocator(const AllocatorOptions &options) {
+  // Create base allocator: UseAfterFree, TCMalloc, or Malloc
+  // These are mutually exclusive and must be enabled at compile time.
+  std::unique_ptr<Allocator> allocator;
   if (options.useAfterFreeAllocator) {
 #ifdef HAVE_MODULAR_USE_AFTER_FREE_ALLOCATOR
-    return createUseAfterFreeAllocator();
+    allocator = createUseAfterFreeAllocator();
 #else
     llvm_unreachable("cannot use the user-after-free allocator");
 #endif
-  }
-  if (options.tcmallocAllocator) {
+  } else if (options.tcmallocAllocator) {
 #ifdef USE_TCMALLOC
-    return createTCMallocAllocator();
+    allocator = createTCMallocAllocator();
 #else
     llvm_unreachable("cannot use the tcmalloc allocator because the code was "
                      "not compiled with the tcmalloc library");
 #endif
+  } else {
+    allocator = createMallocAllocator();
   }
-
-  return createMallocAllocator();
+  // Optionally wrap in one or more debug allocators.
+  if (options.leakCheckedAllocator)
+    allocator = createLeakCheckAllocator(std::move(allocator));
+  if (options.profilingAllocator)
+    allocator = createProfilingAllocator(std::move(allocator));
+  return allocator;
 }
 
 std::unique_ptr<Runtime>
@@ -107,11 +115,8 @@ AsyncRT::createUniqueRuntime(const RuntimeOptions &options) {
          "creating a runtime from a thread already associated with an outer "
          "runtime");
   CompactRuntimePtr runtimePtr = CompactRuntimePtr::reserve();
-  std::unique_ptr<Allocator> allocator = getAllocator(options);
-  if (options.leakCheckedAllocator)
-    allocator = createLeakCheckAllocator(std::move(allocator));
-  if (options.profilingAllocator)
-    allocator = createProfilingAllocator(std::move(allocator));
+  std::unique_ptr<Allocator> allocator =
+      getAllocator(options.getAllocatorOptions());
   std::unique_ptr<WorkQueue> workQueue =
       options.singleThreaded
           ? createSingleThreadWorkQueue(runtimePtr)

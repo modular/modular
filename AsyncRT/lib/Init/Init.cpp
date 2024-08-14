@@ -108,11 +108,7 @@ ErrorOr<ContextRef> Init::createContext(StringRef programName,
     AsyncRT::CompactRuntimePtr runtimePtr =
         AsyncRT::CompactRuntimePtr::reserve();
     std::unique_ptr<Allocator> allocator =
-        AsyncRT::getAllocator(*options.runtimeOptions);
-    if (options.runtimeOptions->leakCheckedAllocator)
-      allocator = createLeakCheckAllocator(std::move(allocator));
-    if (options.runtimeOptions->profilingAllocator)
-      allocator = createProfilingAllocator(std::move(allocator));
+        AsyncRT::getAllocator(options.runtimeOptions->getAllocatorOptions());
     std::unique_ptr<AsyncRT::WorkQueue> workQueue =
         options.runtimeOptions->singleThreaded
             ? AsyncRT::createSingleThreadWorkQueue(runtimePtr)
