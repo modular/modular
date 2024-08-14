@@ -56,6 +56,24 @@ fn test_reduce_max():
     print(tensor_4)
 
 
+# CHECK-LABEL: test_reduce_res_allocated
+fn test_reduce_res_allocated():
+    print("== test_reduce_res_allocated")
+    var tensor_4x4 = LayoutTensor[
+        DType.float32, Layout.row_major(4, 4)
+    ].stack_allocation().linspace()
+    # CHECK: 12.0
+    # CHECK: 13.0
+    # CHECK: 14.0
+    # CHECK: 15.0
+    print(max[axis=0](tensor_4x4))
+    # CHECK: 6.0
+    # CHECK: 22.0
+    # CHECK: 38.0
+    # CHECK: 54.0
+    print(sum[axis=1](tensor_4x4))
+
+
 # CHECK-LABEL: test_exp
 fn test_exp():
     print("== test_exp")
@@ -137,10 +155,30 @@ fn test_binary_broadcast_inner():
     print(tensor_4x5 / stack_allocation_like(tensor_4).fill(2))
 
 
+# CHECK-LABEL: test_softmax_math
+fn test_softmax_math():
+    print("== test_softmax_math")
+    var tensor_5x4 = LayoutTensor[
+        DType.float32, Layout.row_major(5, 4)
+    ].stack_allocation().linspace()
+
+    var exp_norm = exp(tensor_5x4 - max[axis=1](tensor_5x4))
+    var exp_norm_sum = sum[axis=1](exp_norm)
+    var soft_max = exp_norm / exp_norm_sum
+    # CHECK: 0.032058604061603546 0.087144322693347931 0.23688283562660217 0.64391428232192993
+    # CHECK: 0.032058604061603546 0.087144322693347931 0.23688283562660217 0.64391428232192993
+    # CHECK: 0.032058604061603546 0.087144322693347931 0.23688283562660217 0.64391428232192993
+    # CHECK: 0.032058604061603546 0.087144322693347931 0.23688283562660217 0.64391428232192993
+    # CHECK: 0.032058604061603546 0.087144322693347931 0.23688283562660217 0.64391428232192993
+    print(soft_max)
+
+
 fn main():
     test_reduce_sum()
     test_reduce_max()
+    test_reduce_res_allocated()
     test_exp()
     test_unary_scalar()
     test_binary_same_rank()
     test_binary_broadcast_inner()
+    test_softmax_math()

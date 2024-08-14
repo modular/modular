@@ -7,6 +7,7 @@
 import math
 
 from layout import LayoutTensor
+from layout.int_tuple import to_int
 
 from utils.numerics import min_or_neg_inf
 
@@ -145,6 +146,77 @@ fn max[axis: Int](inp: LayoutTensor, out: LayoutTensor):
         return b_max(a, b)
 
     _reduce[axis, max_init, max_func](inp, out)
+
+
+fn _reduce_res_row_major_shape(axis: Int, in_layout: Layout) -> Layout:
+    var res_shape = IntTuple()
+    for dim in range(0, axis):
+        res_shape.append(to_int(in_layout.shape[dim]))
+    for dim in range(axis + 1, in_layout.rank()):
+        res_shape.append(to_int(in_layout.shape[dim]))
+    return Layout.row_major(res_shape)
+
+
+@always_inline
+fn max[
+    axis: Int,
+    dtype: DType,
+    layout: Layout,
+    rank: Int,
+    address_space: AddressSpace,
+    element_layout: Layout,
+    index_type: DType,
+](
+    inp: LayoutTensor[
+        dtype,
+        layout,
+        rank,
+        address_space=address_space,
+        element_layout=element_layout,
+        index_type=index_type,
+    ]
+) -> LayoutTensor[
+    dtype,
+    _reduce_res_row_major_shape(axis, layout),
+    rank - 1,
+    address_space=address_space,
+    element_layout=element_layout,
+    index_type=index_type,
+] as res:
+    var res_tensor = __type_of(res).stack_allocation()
+    max[axis](inp, res_tensor)
+    return res_tensor
+
+
+@always_inline
+fn sum[
+    axis: Int,
+    dtype: DType,
+    layout: Layout,
+    rank: Int,
+    address_space: AddressSpace,
+    element_layout: Layout,
+    index_type: DType,
+](
+    inp: LayoutTensor[
+        dtype,
+        layout,
+        rank,
+        address_space=address_space,
+        element_layout=element_layout,
+        index_type=index_type,
+    ]
+) -> LayoutTensor[
+    dtype,
+    _reduce_res_row_major_shape(axis, layout),
+    rank - 1,
+    address_space=address_space,
+    element_layout=element_layout,
+    index_type=index_type,
+] as res:
+    var res_tensor = __type_of(res).stack_allocation()
+    sum[axis](inp, res_tensor)
+    return res_tensor
 
 
 @always_inline
