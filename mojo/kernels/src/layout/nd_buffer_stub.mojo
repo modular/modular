@@ -4,6 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
+from sys import sizeof
 from buffer import NDBuffer
 from buffer.dimlist import Dim, DimList
 from collections import Optional

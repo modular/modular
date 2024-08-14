@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from collections import InlineArray, Optional
-from sys.info import sizeof
+from sys import sizeof, simdwidthof
 from sys.intrinsics import PrefetchOptions
 from os import abort
 

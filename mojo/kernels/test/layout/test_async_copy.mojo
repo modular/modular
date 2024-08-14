@@ -8,6 +8,7 @@
 
 from math import ceildiv
 from pathlib import Path
+from sys import simdwidthof
 
 from gpu import AddressSpace, barrier
 from gpu.host import DeviceContext

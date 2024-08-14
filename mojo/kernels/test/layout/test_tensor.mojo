@@ -6,6 +6,7 @@
 # RUN: %mojo %s | FileCheck %s
 
 from math import ceildiv
+from sys import alignof
 
 from buffer import NDBuffer
 from buffer.dimlist import DimList

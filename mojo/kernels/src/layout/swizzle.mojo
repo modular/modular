@@ -5,6 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from collections import OptionalReg
+from sys import sizeof, simdwidthof
 
 # ===-----------------------------------------------------------------------===#
 # Motivation of thread swizzling                                               #
