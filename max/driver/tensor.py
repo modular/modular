@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from typing import Any, Tuple
 
-from max.driver.driver_core import Tensor as _Tensor
+from max._driver import Tensor as _Tensor
 
 from .driver import CPU
 from .dtype import DType

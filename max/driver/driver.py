@@ -4,8 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from max.driver.driver_core import __version__
-from max.driver.driver_core import cpu_device as _cpu_device
+from max._driver import cpu_device as _cpu_device
 
 
 class CPU:

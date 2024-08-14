@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from enum import Enum
 
-from max.driver.driver_core import DType as _DType
+from max._driver import DType as _DType
 
 
 class DType(Enum):
