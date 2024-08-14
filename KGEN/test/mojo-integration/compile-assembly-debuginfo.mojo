@@ -6,6 +6,7 @@
 # RUN: %mojo -debug-level full %s | FileCheck %s
 
 from compile import compile_code
+from sys import sizeof
 
 
 fn get_type(dtype: DType) -> DType:
