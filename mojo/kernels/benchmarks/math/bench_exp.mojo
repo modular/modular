@@ -11,6 +11,7 @@ from math import *
 from math.math import _exp_taylor, _ldexp_impl
 from math.polynomial import polynomial_evaluate
 from sys.arg import argv
+from sys import external_call
 
 from algorithm.functional import vectorize
 from benchmark import (
