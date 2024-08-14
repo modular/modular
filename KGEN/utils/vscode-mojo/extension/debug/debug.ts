@@ -251,7 +251,7 @@ class MojoDebugDynamicConfigurationProvider
  */
 export class MojoDebugContext extends DisposableContext {
   private context: MojoContext;
-  rpcServers: Map<string, RpcLaunchServer> = new Map();
+  rpcServer: RpcLaunchServer | undefined;
 
   constructor(context: MojoContext) {
     super();
@@ -316,73 +316,18 @@ export class MojoDebugContext extends DisposableContext {
       )
     );
 
-    // Register the RPC-based debug launcher.
-    this.pushSubscription(
-      vscode.workspace.onDidChangeWorkspaceFolders((event) => {
-        // We fully restart all the servers after a workspace event for
-        // simplicity.
-        for (const [_, rpcServer] of this.rpcServers) {
-          rpcServer.dispose();
-        }
-        this.rpcServers.clear();
-        this.launchRpcServers();
-      })
-    );
-    // Initialize the RPC servers.
-    this.launchRpcServers();
+    // Initialize the RPC server.
+    this.launchRpcServer();
   }
 
-  private launchRpcServers(): void {
-    // It's not possible to ask VS Code for the settings that are specific to a
-    // given workspace or to the user. In fact, you can only provide some
-    // "context" and then VS Code will return a set of settings that might come
-    // from different places all merged together. Because of this, we need to
-    // fetch settings from different contexts and reuse servers whenever
-    // possible.
-    for (const folder of vscode.workspace.workspaceFolders || []) {
-      let options = config.get<{ port: number; secret?: string }>(
-        'lldb.rpcServer',
-        folder
-      );
-      if (
-        options != null &&
-        Object.keys(options).length > 0 &&
-        options.port !== undefined
-      ) {
-        this.updateOrCreateRpcServer(options.port, options.secret);
-      }
-    }
-
-    if (
-      !config.get<boolean>(
-        'lldb.disableDefaultRPCServer',
-        /*workspaceFolder=*/ undefined
-      )
-    ) {
-      this.updateOrCreateRpcServer(12346);
-    }
-  }
-
-  /**
-   * Create a debug RPC server with the port and secret.
-   */
-  private updateOrCreateRpcServer(port: number, secret?: string) {
-    const key = `${port}`;
-    const existingServer = this.rpcServers.get(key);
-    if (existingServer) {
-      existingServer.addServerSecret(secret);
-    } else {
-      let rpcServer = new RpcLaunchServer(
-        this.context.loggingService,
-        port,
-        secret || ''
+  private launchRpcServer(): void {
+    this.rpcServer = new RpcLaunchServer(
+      this.context.loggingService,
       );
       this.context.loggingService.main.logInfo(
-        `Starting RPC server for port '${port}' and secret '${secret}'`
+        "Starting RPC server"
       );
-      this.pushSubscription(rpcServer);
-      rpcServer.listen();
-      this.rpcServers.set(key, rpcServer);
-    }
+    this.pushSubscription(this.rpcServer);
+    this.rpcServer.listen();
   }
 }

@@ -45,14 +45,6 @@ getLLDBArgs(llvm::opt::InputArgList &parsedArgs) {
   return lldbArgs;
 }
 
-static std::optional<StringRef>
-getRPCSecret(llvm::opt::InputArgList &parsedArgs) {
-  StringRef secret = parsedArgs.getLastArgValue(options::OPT_secret);
-  if (!secret.empty())
-    return secret;
-  return {};
-}
-
 auto getCompilationOptions(llvm::opt::InputArgList &parsedArgs) {
   return parsedArgs.filtered(options::OPT_CompilationOptionGroup,
                              options::OPT_ExperimentalCompilationOptionGroup,
@@ -127,18 +119,26 @@ static int debug(const State &state) {
   }
 
   bool useRpc = parsedArgs.hasArg(options::OPT_rpc);
-  std::optional<StringRef> rpcSecret = getRPCSecret(parsedArgs);
-  StringRef rawRPCPort = parsedArgs.getLastArgValue(options::OPT_port, "12346");
+
+  std::vector<int> rpcPorts;
+  if (parsedArgs.hasArg(options::OPT_port)) {
+    StringRef rawRPCPort =
+        parsedArgs.getLastArgValue(options::OPT_port, "12346");
+    int rpcPort;
+    if (rawRPCPort.getAsInteger(10, rpcPort))
+      return state.reportError(Twine("invalid RPC port '") + rawRPCPort + "'");
+    rpcPorts.push_back(rpcPort);
+  } else {
+    for (int p = 12355; p <= 12364; ++p)
+      rpcPorts.push_back(p);
+  }
+
   bool dryRun = parsedArgs.hasArg(options::OPT_dry_run);
   StringRef rpcTerminal =
       parsedArgs.getLastArgValue(options::OPT_terminal, "console");
   SmallVector<std::string> lldbArgs = getLLDBArgs(parsedArgs);
   bool isJITDebugging = target && isMojoFile(*target);
   auto compilationOptions = getCompilationOptions(parsedArgs);
-
-  int rpcPort;
-  if (rawRPCPort.getAsInteger(10, rpcPort))
-    return state.reportError(Twine("invalid RPC port '") + rawRPCPort + "'");
 
   if (!isJITDebugging && !compilationOptions.empty()) {
     // Compilation options are only allowed when doing JIT debugging.
@@ -177,8 +177,8 @@ static int debug(const State &state) {
       target = *mojoDriver;
     }
     if (useRpc) {
-      ErrorOrSuccess status = invokeLaunchRPC(dryRun, rpcPort, rpcSecret,
-                                              *target, runArgs, rpcTerminal);
+      ErrorOrSuccess status =
+          invokeLaunchRPC(dryRun, rpcPorts, *target, runArgs, rpcTerminal);
       if (failed(status))
         return state.reportError(status.getError());
       return 0;
@@ -200,7 +200,7 @@ static int debug(const State &state) {
   if (pid || processName) {
     if (useRpc) {
       ErrorOrSuccess status =
-          invokeAttachRPC(dryRun, rpcPort, rpcSecret, pid, processName);
+          invokeAttachRPC(dryRun, rpcPorts, pid, processName);
       if (failed(status))
         return state.reportError(status.getError());
       return 0;

@@ -124,6 +124,9 @@ export class UriLaunchServer implements UriHandler {
   }
 }
 
+const PORT_MIN = 12355;
+const PORT_MAX = 12364; // Inclusive
+
 /**
  * RPC-based debug launcher.
  *
@@ -131,9 +134,8 @@ export class UriLaunchServer implements UriHandler {
  * launches them using lldb-vscode.
  */
 export class RpcLaunchServer extends DisposableContext {
-  private inner: net.Server;
-  private port: number;
-  private secrets = new Set<string>();
+  private server: net.Server;
+  private port: number | undefined = PORT_MIN;
   private errorEmitter = new EventEmitter<Error>();
   private loggingService: LoggingService;
 
@@ -142,11 +144,9 @@ export class RpcLaunchServer extends DisposableContext {
    * `secret` attribute from the incoming debug configuration requests as a
    * safety mechanism.
    */
-  constructor(loggingService: LoggingService, port: number, secret: string) {
+  constructor(loggingService: LoggingService) {
     super();
     this.loggingService = loggingService;
-    this.port = port;
-    this.addServerSecret(secret);
 
     this.pushSubscription(
       this.errorEmitter.event((e: Error) => {
@@ -157,11 +157,18 @@ export class RpcLaunchServer extends DisposableContext {
       })
     );
 
-    this.inner = net.createServer({ allowHalfOpen: true });
-    this.inner.on('error', (err) => {
+    this.server = net.createServer({ allowHalfOpen: true });
+    this.server.on('error', (err) => {
       this.errorEmitter.fire(err);
+      if (err.message.includes('EADDRINUSE')) {
+        if (this.port !== undefined && this.port < PORT_MAX) {
+          this.loggingService.main.logInfo("Will try to start the RPC Server with a new port.")
+          this.port += 1;
+          this.listen();
+        }
+      } 
     });
-    this.inner.on('connection', (socket) => {
+    this.server.on('connection', (socket) => {
       let request = '';
       socket.on('data', (chunk) => {
         request += chunk;
@@ -206,17 +213,9 @@ export class RpcLaunchServer extends DisposableContext {
 
     this.pushSubscription(
       new vscode.Disposable(() => {
-        this.inner.close();
+        this.server.close();
       })
     );
-  }
-
-  /**
-   * Adds the given secret to the list of secrets used for basic authentication
-   * of this server.
-   */
-  addServerSecret(secret: string | undefined) {
-    this.secrets.add(secret || '');
   }
 
   /**
@@ -232,14 +231,6 @@ export class RpcLaunchServer extends DisposableContext {
     };
     Object.assign(debugConfig, request);
     debugConfig.name = debugConfig.name || debugConfig.program;
-    if (!this.secrets.has(debugConfig.secret || '')) {
-      return {
-        success: false,
-        message:
-          'Debugger error: invalid secret. The Mojo RPC debug server expects a different `secret` attribute for the debug configuration.',
-      };
-    }
-    delete debugConfig.secret;
     try {
       let success = await debug.startDebugging(
         /*workspaceFolder=*/ undefined,
@@ -255,9 +246,11 @@ export class RpcLaunchServer extends DisposableContext {
    * Listens to messages using the provided network options.
    */
   public async listen() {
+    this.loggingService.main.logInfo(`Attempting to create the RPC server with port ${this.port}`);
+
     return new Promise<net.AddressInfo | string>((resolve) =>
-      this.inner.listen({ port: this.port, host: '127.0.0.1' }, () =>
-        resolve(this.inner.address() || '')
+      this.server.listen({ port: this.port, host: '127.0.0.1' }, () =>
+        resolve(this.server.address() || '')
       )
     );
   }

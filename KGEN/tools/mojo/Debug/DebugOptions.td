@@ -74,10 +74,4 @@ defm terminal: CommandOptionWithValues<
 defm port: CommandOption<["--", "-"], "port",
   RPCOptionGroup, Index<3>, MetaVarName<"PORT">,
   HelpText<"Uses the given PORT to communicate with the RPC debug server. "
-  "Defaults to 12346.">>;
-
-defm secret: CommandOption<["--", "-"], "secret",
-  RPCOptionGroup, Index<4>, MetaVarName<"SECRET">,
-  HelpText<"Uses the given optional SECRET string as a minimal authentication "
-  "mechanism when communicating with the RPC debug server. It must be used if "
-  "the RPC debug server expects it.">>;
+  "Defaults to trying all ports from 12355 to 12364 inclusive.">>;
