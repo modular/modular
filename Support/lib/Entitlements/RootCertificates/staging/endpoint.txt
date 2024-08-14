@@ -1,1 +1,1 @@
-https://phoenix.staging.modular.com
+https://phoenix.modular-staging.com
