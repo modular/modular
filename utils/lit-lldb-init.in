@@ -10,7 +10,7 @@ settings set target.disable-aslr false
 settings set symbols.enable-external-lookup false
 
 # Testsuite runs in parallel and the host can have also other load.
-settings set plugin.process.gdb-remote.packet-timeout 60
+settings set plugin.process.gdb-remote.packet-timeout 300
 
 # Prevent comments in LLDB commands to be echoed.
 settings set interpreter.echo-comment-commands false
