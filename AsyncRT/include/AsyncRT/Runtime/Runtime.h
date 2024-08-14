@@ -447,17 +447,8 @@ getAllocator(const RuntimeOptions &options = RuntimeOptions());
 
 /// Creates a runtime with the given options, on the assumption the caller
 /// is not within any outer runtime's thread (main or worker).
-///
-/// Consider using createNestedRuntime if it is possible an existing runtime
-/// has already been established by an outer context, yet the caller must
-/// use a runtime with the given options.
 std::unique_ptr<Runtime>
 createUniqueRuntime(const RuntimeOptions &options = RuntimeOptions());
-
-/// Creates a runtime with the given options, where it is legal for the caller
-/// to be within an outer runtime's thread (main or worker).
-std::unique_ptr<Runtime>
-createNestedRuntime(const RuntimeOptions &options = RuntimeOptions());
 
 //===----------------------------------------------------------------------===//
 // Debugging helpers
