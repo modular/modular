@@ -837,16 +837,13 @@ struct LayoutTensor[
         threads_layout: Layout,
         axis: Optional[Int] = None,
         swizzle: Optional[_swizzle_signature] = None,
-        tiled_layout: Layout = _compute_distribute_layout[
-            layout, threads_layout, axis
-        ](),
         submode_axis: Optional[Int] = None,
     ](self, thread_id: UInt) -> LayoutTensor[
         dtype,
-        tiled_layout[1],
+        _compute_distribute_layout[layout, threads_layout, axis]()[1],
         address_space=address_space,
         element_layout=element_layout,
-    ]:
+    ] as distributed_layout_result:
         """Distribute tiled workload to threads.
 
         If the `axis` is given, for example, using `axis = 0` for 4 threads:
@@ -858,9 +855,13 @@ struct LayoutTensor[
         some threads share the same vector.
         """
 
+        alias distributed_layout = _compute_distribute_layout[
+            layout, threads_layout, axis
+        ]()
+
         alias coalesce_thread_layout = coalesce(threads_layout, keep_rank=True)
 
-        alias res_rank = tiled_layout[1].rank()
+        alias res_rank = distributed_layout_result.layout.rank()
 
         # Update org_coords offset and stride according to thread_id.
         var org_coords_offset = StaticIntTuple[res_rank]()
@@ -882,7 +883,9 @@ struct LayoutTensor[
         # TODO: Consider merge the two cases in away that won't slowdown the fully static layout.
         @parameter
         if layout.all_dims_known():
-            alias fragments_layout_stride = flatten(tiled_layout[0].stride)
+            alias fragments_layout_stride = flatten(
+                distributed_layout[0].stride
+            )
 
             alias threads_layout_shape = flatten(threads_layout.shape)
             alias threads_layout_stride = flatten(threads_layout.stride)
@@ -926,16 +929,16 @@ struct LayoutTensor[
 
             return LayoutTensor[
                 dtype,
-                tiled_layout[1],
+                distributed_layout_result.layout,
                 address_space=address_space,
                 element_layout=element_layout,
             ](
                 self.ptr.offset(int(swizzled_offset)),
                 org_coords_offset=rebind[
-                    StaticIntTuple[tiled_layout[1].rank()]
+                    StaticIntTuple[distributed_layout_result.layout.rank()]
                 ](org_coords_offset),
                 org_coords_stride=rebind[
-                    StaticIntTuple[tiled_layout[1].rank()]
+                    StaticIntTuple[distributed_layout_result.layout.rank()]
                 ](org_coords_stride),
             )
 
@@ -968,8 +971,12 @@ struct LayoutTensor[
 
             var offset: Scalar[Self.index_type] = 0
 
-            var runtime_shape = RuntimeTuple[tiled_layout[1].shape]()
-            var runtime_stride = RuntimeTuple[tiled_layout[1].stride]()
+            var runtime_shape = RuntimeTuple[
+                distributed_layout_result.layout.shape
+            ]()
+            var runtime_stride = RuntimeTuple[
+                distributed_layout_result.layout.stride
+            ]()
 
             @parameter
             for i in range(runtime_shape.scalar_length):
@@ -1001,17 +1008,17 @@ struct LayoutTensor[
 
             return LayoutTensor[
                 dtype,
-                tiled_layout[1],
+                distributed_layout_result.layout,
                 address_space=address_space,
                 element_layout=element_layout,
             ](
                 self.ptr.offset(int(swizzled_offset)),
                 RuntimeLayout(runtime_shape, runtime_stride),
                 org_coords_offset=rebind[
-                    StaticIntTuple[tiled_layout[1].rank()]
+                    StaticIntTuple[distributed_layout_result.layout.rank()]
                 ](org_coords_offset),
                 org_coords_stride=rebind[
-                    StaticIntTuple[tiled_layout[1].rank()]
+                    StaticIntTuple[distributed_layout_result.layout.rank()]
                 ](org_coords_stride),
             )
 
