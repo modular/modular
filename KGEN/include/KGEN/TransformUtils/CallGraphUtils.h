@@ -101,6 +101,15 @@ struct CallGraphBase {
   /// Get a reference to the derived class.
   DerivedT &getDerived() { return *static_cast<DerivedT *>(this); }
 
+  /// This method handles an operation that is not a call in a function. The
+  /// base implementation does nothing.
+  void checkNonCallOp(Operation *op) {}
+
+  /// This method is called on a call graph edge and determines whether it
+  /// should be added to the graph. That is, whether the analysis cares about
+  /// this edge. The base implementation always returns true.
+  bool shouldAddToGraph(CallOpT call, NodeT *node) { return true; }
+
   /// Build the inlining graph for a module.
   template <typename... NodeArgTs>
   void build(ModuleOp module, const SymbolTable &symtab, NodeArgTs &&...args);
@@ -130,7 +139,13 @@ void CallGraphBase<DerivedT, NodeT>::build(ModuleOp module,
   // as appropriate.
   auto workFn = [this, &symtab](NodeT *callerNode) {
     FuncOpT func = callerNode->func;
-    func.getBodyRegion().walk([&](CallOpT call) {
+    func.getBodyRegion().walk([&](Operation *op) {
+      auto call = dyn_cast<CallOpT>(op);
+      if (!call) {
+        getDerived().checkNonCallOp(op);
+        return;
+      }
+
       Operation *calleeOp = symtab.lookup(
           cast<FlatSymbolRefAttr>(
               cast<SymbolConstantAttr>(call.getCallee()).getSymbol())

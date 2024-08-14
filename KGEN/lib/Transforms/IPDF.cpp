@@ -333,9 +333,6 @@ struct Node : public SCCNode<Node, FuncOp, KGENCallOpInterface> {
 };
 
 struct Graph : public SCCGraph<Graph, Node> {
-  /// Add all edges formed by direct function references to the graph.
-  bool shouldAddToGraph(KGENCallOpInterface call, Node *node) { return true; }
-
   bool doAnalysis(Region &region, RegionState &rs, FunctionState &fs,
                   size_t &seqIdx);
   bool doAnalysis(Node *node);
