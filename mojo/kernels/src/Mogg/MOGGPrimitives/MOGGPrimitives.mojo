@@ -27,7 +27,7 @@ from MOGGIntList import IntList
 from register import *
 from runtime.asyncrt import MojoCallContextPtr
 from utils import StaticIntTuple
-from sys import alignof
+from sys import alignof, external_call
 
 # ===----------------------------------------------------------------------===#
 # Helper Structures
