@@ -7,6 +7,7 @@
 from collections.vector import InlinedFixedVector
 from math import ceildiv
 from os import abort
+from sys import sizeof
 
 from buffer import NDBuffer
 from buffer.dimlist import Dim, DimList
