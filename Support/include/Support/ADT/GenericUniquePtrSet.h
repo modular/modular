@@ -17,7 +17,7 @@
 
 namespace M {
 
-/// A set of type-erased GenericUniquePts. Pointers may be added and retrieved.
+/// A set of type-erased GenericUniquePtrs. Pointers may be added and retrieved.
 /// The set may contain at most one pointer per concrete pointer type.
 ///
 /// Thread safe, though the caller is responsible for thread safe access to
