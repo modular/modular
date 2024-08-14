@@ -10,6 +10,7 @@ from memory import UnsafePointer
 from buffer import Buffer
 from collections import Optional
 from utils import StaticIntTuple
+from sys import simdwidthof
 
 
 # ===----------------------------------------------------------------------=== #
