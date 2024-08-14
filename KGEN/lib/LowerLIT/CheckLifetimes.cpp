@@ -2778,7 +2778,7 @@ LogicalResult DestructorInsertion::elideCopyDestroyPair(Value value,
       auto param = cast<ParamDeclRefAttr>(refType.getLifetime());
 
       // The old reference type used a novel lifetime.  We need to declare it,
-      // and coerce back to it.
+      // and coerce back to it with a rebind.
       builder.create<ParamDeclareOp>(ParamDeclAttr::get(param),
                                      LifetimeAttr::get(param.getType()));
       auto refCasted = builder.create<RebindOp>(tmpDecl.getType(),

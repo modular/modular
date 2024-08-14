@@ -1267,3 +1267,12 @@ LIT::getUnboundSpecializedSignature(LITSignatureType type,
   return {type,
           ParameterExprArrayAttr::get(type.getContext(), unboundBindings)};
 }
+
+/// This returns the singleton value to use for a parameter value that
+/// `isSingletonParameter` returns true on. This aborts on non-singleton types.
+TypedAttr LIT::getSingletonParameterValue(Type type) {
+  // TODO: Could support structs of lifetimes.
+  if (auto lifetime = dyn_cast<LifetimeType>(type))
+    return LifetimeAttr::get(lifetime);
+  llvm_unreachable("isn't a singleton parameter");
+}
