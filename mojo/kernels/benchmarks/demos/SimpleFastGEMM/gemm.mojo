@@ -8,6 +8,7 @@
 
 from math import align_up
 from sys.intrinsics import PrefetchOptions
+from sys import alignof, simdwidthof
 
 import benchmark
 from buffer import Buffer, NDBuffer

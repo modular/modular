@@ -10,6 +10,7 @@
 # CHECK: Benchmark results
 
 from random import random_si64
+from sys import sizeof, simdwidthof
 
 from benchmark import Bench, BenchConfig, Bencher, BenchId
 from buffer import NDBuffer

@@ -6,6 +6,7 @@
 # REQUIRES: has_cuda_device
 # RUN: %bare-mojo build %s
 
+from sys import sizeof
 from gpu.host.device_context import DeviceContext
 from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
 from gpu.host._utils import _human_memory

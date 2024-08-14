@@ -8,6 +8,7 @@
 
 from random import randn
 from os import abort
+from sys import sizeof
 
 from builtin._closure import __ownership_keepalive
 from algorithm.functional import elementwise

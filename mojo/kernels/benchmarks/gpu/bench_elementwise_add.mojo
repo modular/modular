@@ -7,6 +7,7 @@
 # RUN: %bare-mojo build %s
 
 from random import randn
+from sys import sizeof, simdwidthof
 
 from algorithm.functional import _elementwise_impl_gpu
 from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure

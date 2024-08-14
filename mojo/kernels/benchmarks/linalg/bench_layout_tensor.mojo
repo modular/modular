@@ -7,6 +7,7 @@
 # CHECK: CPU Results
 
 import math
+from sys import alignof, simdwidthof
 from random import rand
 
 import benchmark

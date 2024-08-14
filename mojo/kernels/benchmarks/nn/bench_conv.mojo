@@ -10,6 +10,7 @@
 from math import align_up, ceildiv
 from random import rand
 from sys.param_env import env_get_int, env_get_string
+from sys import sizeof, simdwidthof
 
 from benchmark import *
 from benchmark import keep

@@ -6,6 +6,8 @@
 # REQUIRES: has_cuda_device
 # RUN: %bare-mojo build %s
 
+from sys import alignof, simdwidthof
+
 from algorithm._gpu.reduction import reduce_launch
 from buffer import NDBuffer
 from gpu.host.device_context import DeviceContext

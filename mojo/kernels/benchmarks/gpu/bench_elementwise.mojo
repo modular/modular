@@ -7,7 +7,7 @@
 # RUN: %bare-mojo build %s
 
 from math import sqrt, isqrt, log, sin, tanh, exp, erf, fma
-from sys.info import triple_is_nvidia_cuda
+from sys import alignof, sizeof, triple_is_nvidia_cuda, simdwidthof
 
 from algorithm.functional import _elementwise_impl_gpu
 from buffer import DimList, NDBuffer
