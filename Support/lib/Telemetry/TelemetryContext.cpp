@@ -269,6 +269,23 @@ TelemetryContext::TelemetryContext(
   machineId = local_ids.first;
 
   auto webId = dyn_cast_if_present<StringRef>(settings.get("web.id"));
+  if (webId.empty()) {
+    auto homeDir = llvm::sys::Process::GetEnv("HOME");
+    if (homeDir) {
+      auto webIdFile =
+          std::filesystem::path(*homeDir) / ".modular" / "webUserId";
+      if (std::filesystem::exists(webIdFile)) {
+        auto mBufOr = llvm::MemoryBuffer::getFile(webIdFile.string(),
+                                                  /*IsText=*/true);
+        if (mBufOr) {
+          std::unique_ptr<llvm::MemoryBuffer> mbuf = std::move(*mBufOr);
+          auto buffer = mbuf->getBuffer();
+          size_t newlineLoc = buffer.find_first_of("\n\r\f\v");
+          webId = buffer.take_front(newlineLoc);
+        }
+      }
+    }
+  }
   if (!webId.empty()) {
     attrs.SetAttribute("web.user.id", webId);
   }
