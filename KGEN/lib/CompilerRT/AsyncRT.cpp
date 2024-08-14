@@ -203,25 +203,13 @@ KGEN_CompilerRT_AsyncRT_GetCurrentRuntime() {
 
 /// Create an AsyncRT runtime and return its pointer.
 COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT AsyncRTRuntimeRef
-KGEN_CompilerRT_AsyncRT_CreateRuntimeWithProfile(ssize_t numThreads,
-                                                 const char *profileFilenamePtr,
-                                                 ssize_t profileFilenameLen) {
-  StringRef profileFilename{profileFilenamePtr,
-                            static_cast<size_t>(profileFilenameLen)};
+KGEN_CompilerRT_AsyncRT_CreateRuntime(ssize_t numThreads) {
   // Create non global runtimes from mojo with mainWillDonate=false. Refer to
   // Runtime.h for detailed explanation.
   auto options = numThreads > 0 ? RuntimeOptions().withMainWillNotDonate()
                                 : RuntimeOptions();
-  std::unique_ptr<Runtime> runtime = createNestedRuntime(
-      options.withNumThreads(numThreads).withProfileFilename(profileFilename));
+  auto runtime = createUniqueRuntime(options.withNumThreads(numThreads));
   return wrap(runtime.release());
-}
-
-/// Create an AsyncRT runtime and return its pointer.
-COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT AsyncRTRuntimeRef
-KGEN_CompilerRT_AsyncRT_CreateRuntime(ssize_t numThreads) {
-  return KGEN_CompilerRT_AsyncRT_CreateRuntimeWithProfile(numThreads, nullptr,
-                                                          0);
 }
 
 /// Given a pointer to an AsyncRT runtime, destroy it.
@@ -574,8 +562,6 @@ void M::KGEN::registerAsyncRT(
 
   funcs.push_back({"KGEN_CompilerRT_AsyncRT_GetCurrentRuntime",
                    (void *)&KGEN_CompilerRT_AsyncRT_GetCurrentRuntime});
-  funcs.push_back({"KGEN_CompilerRT_AsyncRT_CreateRuntimeWithProfile",
-                   (void *)&KGEN_CompilerRT_AsyncRT_CreateRuntimeWithProfile});
   funcs.push_back({"KGEN_CompilerRT_AsyncRT_CreateRuntime",
                    (void *)&KGEN_CompilerRT_AsyncRT_CreateRuntime});
   funcs.push_back({"KGEN_CompilerRT_AsyncRT_DestroyRuntime",

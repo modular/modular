@@ -101,8 +101,11 @@ AsyncRT::getAllocator(const RuntimeOptions &options) {
   return createMallocAllocator();
 }
 
-static std::unique_ptr<Runtime>
-createRuntimeImpl(Context *context, const RuntimeOptions &options) {
+std::unique_ptr<Runtime>
+AsyncRT::createUniqueRuntime(const RuntimeOptions &options) {
+  assert(Runtime::getCurrentRuntimeOrNull() == nullptr &&
+         "creating a runtime from a thread already associated with an outer "
+         "runtime");
   CompactRuntimePtr runtimePtr = CompactRuntimePtr::reserve();
   std::unique_ptr<Allocator> allocator = getAllocator(options);
   if (options.leakCheckedAllocator)
@@ -118,23 +121,7 @@ createRuntimeImpl(Context *context, const RuntimeOptions &options) {
                 std::chrono::microseconds(options.threadBusyWaitTime),
                 options.poolName, options.paranoid);
   return std::make_unique<Runtime>(
-      runtimePtr, context, std::move(allocator), std::move(workQueue),
+      runtimePtr, nullptr, std::move(allocator), std::move(workQueue),
       options.profileFilename, options.runtimeProfilingTypeMask,
       options.profilerDebuginfo);
-}
-
-std::unique_ptr<Runtime>
-AsyncRT::createUniqueRuntime(const RuntimeOptions &options) {
-  assert(Runtime::getCurrentRuntimeOrNull() == nullptr &&
-         "creating a runtime from a thread already associated with an outer "
-         "runtime");
-  return createRuntimeImpl(nullptr, options);
-}
-
-std::unique_ptr<Runtime>
-AsyncRT::createNestedRuntime(const RuntimeOptions &options) {
-  if (auto runtime = Runtime::getCurrentRuntimeOrNull())
-    return createRuntimeImpl(runtime->context, options);
-  else
-    return createRuntimeImpl(nullptr, options);
 }
