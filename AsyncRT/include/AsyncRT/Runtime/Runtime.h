@@ -41,6 +41,17 @@ class WorkQueue;
 // Runtime
 //===----------------------------------------------------------------------===//
 
+struct AllocatorOptions {
+  bool leakCheckedAllocator = false;
+#ifdef USE_TCMALLOC
+  bool tcmallocAllocator = true;
+#else  // USE_TCMALLOC
+  bool tcmallocAllocator = false;
+#endif // USE_TCMALLOC
+  bool profilingAllocator = false;
+  bool useAfterFreeAllocator = false;
+};
+
 /// Collects all the options which influence a runtime.
 struct RuntimeOptions {
   enum class OnFailure {
@@ -208,6 +219,14 @@ struct RuntimeOptions {
              " a release build.\n";
 #endif
     return profileFilename;
+  }
+
+  // Temporary shim, remove once we separate the Allocator from the Runtime
+  // Extract the Allocator-specific options from the RuntimeOptions into a
+  // new struct.
+  AllocatorOptions getAllocatorOptions() const {
+    return {leakCheckedAllocator, tcmallocAllocator, profilingAllocator,
+            useAfterFreeAllocator};
   }
 
   /// Print information about the runtime configuration to standard out.
@@ -443,7 +462,7 @@ private:
 
 /// Creates a suitable allocator given the options.
 std::unique_ptr<Allocator>
-getAllocator(const RuntimeOptions &options = RuntimeOptions());
+getAllocator(const AllocatorOptions &options = AllocatorOptions());
 
 /// Creates a runtime with the given options, on the assumption the caller
 /// is not within any outer runtime's thread (main or worker).
