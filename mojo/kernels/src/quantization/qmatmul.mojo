@@ -24,7 +24,7 @@ from linalg.accumulate import _Accumulator
 from linalg.neon_intrinsics import _neon_dotprod_lane, _neon_matmul
 from linalg.vnni_intrinsics import dot_i8_to_i32_saturated_x86, pmaddubs, pmaddw
 from linalg.utils import partition_work
-from memory import UnsafePointer, stack_allocation
+from memory import UnsafePointer, stack_allocation, bitcast
 from sys import alignof
 from runtime.asyncrt import parallelism_level
 
