@@ -8,6 +8,7 @@
 
 from math import ceildiv, isclose
 from sys import argv
+from sys import simdwidthof
 
 from buffer import NDBuffer
 from buffer.dimlist import DimList

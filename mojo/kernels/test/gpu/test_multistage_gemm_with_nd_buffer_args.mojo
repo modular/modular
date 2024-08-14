@@ -8,7 +8,7 @@
 
 from math import ceildiv, isclose
 from pathlib import Path
-from sys import argv
+from sys import alignof, simdwidthof, argv
 
 from buffer import NDBuffer
 from buffer.dimlist import DimList

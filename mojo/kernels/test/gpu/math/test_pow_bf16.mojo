@@ -6,6 +6,7 @@
 # REQUIRES: has_cuda_device
 # RUN: %mojo-no-debug %s
 
+from sys import simdwidthof
 from algorithm.functional import _elementwise_impl_gpu
 from buffer import DimList, NDBuffer
 from gpu import *

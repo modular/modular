@@ -7,7 +7,7 @@
 # RUN: %mojo-no-debug %s
 
 from math import exp
-from sys.info import has_neon
+from sys import has_neon, simdwidthof
 
 from algorithm.functional import _elementwise_impl_gpu
 from buffer import DimList, NDBuffer

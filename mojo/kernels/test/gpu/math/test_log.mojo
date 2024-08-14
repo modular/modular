@@ -7,6 +7,7 @@
 # RUN: %mojo-no-debug %s
 
 from math import log, log10, log2
+from sys import simdwidthof
 
 from algorithm.functional import _elementwise_impl_gpu
 from buffer import DimList, NDBuffer

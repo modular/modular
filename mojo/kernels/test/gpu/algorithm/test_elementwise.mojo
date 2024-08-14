@@ -7,7 +7,7 @@
 # RUN: %mojo %s
 
 from math import exp
-from sys.info import triple_is_nvidia_cuda
+from sys import triple_is_nvidia_cuda, simdwidthof
 
 from algorithm.functional import _elementwise_impl_gpu
 from buffer import DimList, NDBuffer

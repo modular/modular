@@ -7,6 +7,7 @@
 
 # RUN: %mojo-no-debug %s | FileCheck %s
 
+from sys import sizeof
 from gpu import ThreadIdx
 from gpu.host import DeviceContext
 from gpu.memory import (

@@ -6,6 +6,7 @@
 # REQUIRES: has_cuda_device
 # RUN: %mojo-no-debug %s
 
+from sys import simdwidthof
 from algorithm import mean, variance
 from math import ceildiv, isqrt
 from random import random_float64
