@@ -25,6 +25,7 @@ void KGEN::registerDefaultKGENPasses() {
 
   // Register opt passes.
   KGEN::registerApplyInliner();
+  KGEN::registerArgPromotion();
   KGEN::registerCheckLifetimes();
   KGEN::registerEliminateDeadSymbols();
   KGEN::registerFunctionStats();
@@ -79,7 +80,4 @@ void KGEN::registerDefaultKGENPasses() {
   KGEN::registerAutomaticInline();
   KGEN::registerDeadArgumentElimination();
   KGEN::registerResolveCompilerPromises();
-
-  // Register passes that require other arguments.
-  KGEN::CompilationOptions options;
 }

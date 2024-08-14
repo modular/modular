@@ -692,6 +692,19 @@ def SimplifyCF : Pass<"simplify-cf", "KGEN::FuncOp"> {
 }
 
 //===----------------------------------------------------------------------===//
+// ArgPromotion
+//===----------------------------------------------------------------------===//
+
+def ArgPromotion : Pass<"arg-promotion"> {
+  let options = [
+    Option<"maxInlineSize", "max-inline-size", "unsigned", "256",
+           "The maximum argument size to promote, in bytes.">,
+  ];
+
+  let dependentDialects = ["POP::POPDialect"];
+}
+
+//===----------------------------------------------------------------------===//
 // SROA
 //===----------------------------------------------------------------------===//
 
