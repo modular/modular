@@ -589,28 +589,6 @@ std::optional<bool> StructDefSelfRefAttr::isLessThan(Attribute rhs) const {
 // StructDefAttr
 //===----------------------------------------------------------------------===//
 
-static ParseResult
-parseStructDefFields(AsmParser &p, SmallVector<StructDefFieldAttr> &fields) {
-  MLIRContext *ctx = p.getContext();
-  return p.parseCommaSeparatedList([&]() {
-    StringAttr name;
-    Type type;
-    if (parseParamName(p, name) || p.parseColon() || parseKGENType(p, type))
-      return failure();
-    fields.push_back(StructDefFieldAttr::get(ctx, name, type));
-    return mlir::success();
-  });
-}
-
-static void printStructDefFields(AsmPrinter &p,
-                                 ArrayRef<StructDefFieldAttr> fields) {
-  llvm::interleaveComma(fields, p, [&](StructDefFieldAttr field) {
-    printParamName(p, field.getName());
-    p << ": ";
-    printKGENType(p, field.getType());
-  });
-}
-
 StructDefAttr StructDefAttr::get(StringAttr name,
                                  ArrayRef<ParamDeclAttr> inputParams,
                                  ArrayRef<StructDefFieldAttr> fields,

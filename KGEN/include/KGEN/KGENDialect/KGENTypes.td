@@ -682,6 +682,62 @@ def KGEN_AppliedStructType : KGENType<"AppliedStruct", "applied_struct"> {
 }
 
 //===----------------------------------------------------------------------===//
+// StructInstanceType
+//===----------------------------------------------------------------------===//
+
+def KGEN_StructInstanceType : KGENType<"StructInstance", "struct_inst"> {
+  let summary = "concretized mojo struct type";
+  let description = [{
+    This type represents a concretized mojo source struct type. It is the result
+    of flattening an AppliedStructType.
+
+    Example:
+
+    ```mlir
+    // A trivially-concretized struct with no parameters and no fields.
+    !kgen.struct_inst<"Foo">
+
+    // A parameterized memory-only struct with primitive element types.
+    !kgen.struct_inst<
+      "Bar"
+      [elemT]
+      <:dtype f32>
+      (first: !kgen.scalar<f32>, second: !kgen.scalar<f32>)
+      memoryOnly
+    >
+    ```
+  }];
+
+  let parameters = (ins
+    "StringAttr":$name,
+    OptionalArrayRefParameter<"StringAttr">:$paramNames,
+    OptionalArrayRefParameter<"TypedAttr">:$paramValues,
+    OptionalArrayRefParameter<"StructDefFieldAttr">:$fields,
+    "bool":$isMemoryOnly
+  );
+
+  let assemblyFormat = [{
+    `<` $name
+        (`[` custom<ParamNames>($paramNames)^ `]`)?
+        `` custom<ParameterValues>($paramValues)
+        (`(` custom<StructDefFields>($fields)^ `)`)?
+        `` custom<IsMemoryOnly>($isMemoryOnly)
+    `>`
+  }];
+
+  let builders = [
+    AttrBuilderWithInferredContext<(ins
+        "StringAttr":$name,
+        "ArrayRef<StringAttr>":$paramNames,
+        "ArrayRef<TypedAttr>":$paramValues,
+        "ArrayRef<StructDefFieldAttr>":$fields,
+        "bool":$isMemoryOnly)>
+  ];
+
+  let genVerifyDecl = 1;
+}
+
+//===----------------------------------------------------------------------===//
 // PackType
 //===----------------------------------------------------------------------===//
 

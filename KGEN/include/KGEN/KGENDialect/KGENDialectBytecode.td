@@ -94,6 +94,14 @@ def AppliedStructType : DialectType<(type
   TypedAttrArray:$paramValues
 )>;
 
+def StructInstanceType : DialectType<(type
+  StringAttr:$name,
+  ConcreteAttrArray<"StringAttr">:$paramNames,
+  TypedAttrArray:$paramValues,
+  ConcreteAttrArray<"StructDefFieldAttr">:$fields,
+  Bool:$isMemoryOnly
+)>;
+
 def PackType : DialectType<(type
   TypedAttr:$variadic
 )>;
@@ -121,6 +129,7 @@ def KGENDialectTypes : DialectTypes<"kgen"> {
     StructType,
     StructDefType,
     AppliedStructType,
+    StructInstanceType,
     PackType,
     WrappedVariantType,
     FloatLiteralType

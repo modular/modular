@@ -24,7 +24,7 @@ class FuncInterface;
 class ParamDeclAttr;
 class ParamDeclArrayAttr;
 class SignatureType;
-class StructFieldAttr;
+class StructDefFieldAttr;
 class StructDefSelfRefAttr;
 class StructDefAttr;
 class VariadicType;

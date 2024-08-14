@@ -718,3 +718,8 @@ kgen.func @illegal_source_struct_type() {
   kgen.param.constant: !kgen.struct_def<[elemT: dtype]> = <#kgen.struct_def<"Bar"[elemT: dtype, size](data: struct<()>) memoryOnly>>
   kgen.return
 }
+
+// -----
+
+// expected-error @below {{parameter name and parameter value length mismatch. Expected 1, got 2}}
+kgen.func @illegal_applied_struct_param_length(%arg0: !kgen.struct_inst<"Bar"[elemT]<:dtype f32, 16>(data: struct<()>) memoryOnly>) {}
