@@ -5,6 +5,8 @@
 # ===----------------------------------------------------------------------=== #
 # REQUIRES: disabled
 
+from os import abort
+
 from gpu.host.memory import _free, _malloc_managed
 from layout import *
 

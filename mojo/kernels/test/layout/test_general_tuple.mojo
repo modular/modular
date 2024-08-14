@@ -5,6 +5,8 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo-no-debug %s | FileCheck %s
 
+from os import abort
+
 from layout.dynamic_tuple import *
 from testing import assert_equal, assert_not_equal
 

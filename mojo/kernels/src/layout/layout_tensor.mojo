@@ -7,6 +7,7 @@
 from collections import InlineArray, Optional
 from sys.info import sizeof
 from sys.intrinsics import PrefetchOptions
+from os import abort
 
 from algorithm import vectorize
 from builtin.int import int as _int
