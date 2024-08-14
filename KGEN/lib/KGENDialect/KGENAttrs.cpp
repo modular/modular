@@ -239,6 +239,60 @@ bool TypeConstantAttr::hasIdenticalRepresentation() {
 }
 
 //===----------------------------------------------------------------------===//
+// TypeConstantRefAttr
+//===----------------------------------------------------------------------===//
+
+/// This symbol is a constant its bindings are constants.
+bool TypeConstantRefAttr::isConstant() const {
+  return llvm::all_of(getParamValues(), ParameterAttr::isSimpleConstant) &&
+         !isParameterizedType(getType());
+}
+
+LogicalResult
+TypeConstantRefAttr::verifySymbolUses(Operation *module,
+                                      mlir::LockedSymbolTableCollection &symtab,
+                                      Location loc) const {
+  VerboseCompilerTimeTraceScope traceScope(
+      "TypeConstantRefAttr::verifySymbolUses");
+
+  // The leaf symbol is expected to only refer to a struct generator now.
+  SymbolRefAttr symbol = getSymbol();
+  StructGeneratorOp structGen;
+  {
+    VerboseCompilerTimeTraceScope traceScope("lookupSymbolIn");
+    if (!(structGen = symtab.lookupSymbolIn<StructGeneratorOp>(module, symbol)))
+      return emitError(loc)
+             << symbol << " does not reference a struct generator";
+  }
+
+  ParameterEvaluator evaluator;
+  SmallVector<ParamDeclAttr> remappedParamDecls;
+  for (auto [decl, value] :
+       llvm::zip(structGen.getInputParams(), getParamValues())) {
+    remappedParamDecls.push_back(ParamDeclAttr::get(
+        decl.getName(), evaluator.getReboundType(decl.getType())));
+    evaluator.setParameterValue(decl.getName(), value);
+  }
+
+  // Check parameter types.
+  if (failed(verifyParamDeclsMatch("input parameter",
+                                   "!kgen.struct.generator symbol use",
+                                   getParamValues(), loc, structGen.getName(),
+                                   remappedParamDecls, structGen.getLoc())))
+    return failure();
+
+  // Check result type. Most likely it's not parameterized.
+  Type specializedType = evaluator.getReboundType(structGen.getType());
+  if (getType() != specializedType) {
+    return emitError(loc) << " result type mismatch. Reference has type "
+                          << getType() << ", symbol has type "
+                          << specializedType;
+  }
+
+  return success();
+}
+
+//===----------------------------------------------------------------------===//
 // DTypeConstantAttr
 //===----------------------------------------------------------------------===//
 
@@ -1076,6 +1130,7 @@ LogicalResult ParamOperatorAttr::verify(
   case POC::GetLinkageName:
   case POC::GetTypeMethod:
   case POC::PtrBitcast:
+  case POC::InstantiateStruct:
   case POC::VariadicPtrMap:
   case POC::VariadicPtrRemoveMap:
     break;
@@ -1270,6 +1325,10 @@ LogicalResult ParamOperatorAttr::verify(
   case POC::LoadFromMem:
     if (operands.size() != 1)
       return emitError() << "'load_from_mem' expects one operand";
+    break;
+  case POC::InstantiateStruct:
+    if (operands.size() != 1)
+      return emitError() << "'inst_struct' expects one operand";
     break;
   case POC::VariadicPtrMap:
     return verifyVariadicPtrMap(operands, type, emitError);
@@ -2533,6 +2592,9 @@ static TypedAttr getParamOperator(MLIRContext *ctx, POC opcode,
     break;
   case POC::LoadFromMem:
     result = simplifyLoadFromMem(operands, resultType);
+    break;
+  case POC::InstantiateStruct:
+    result = {};
     break;
   case POC::VariadicPtrMap:
     assert(operands.size() == 2 && "variadic_ptr_map always has 2 operands");

@@ -139,6 +139,24 @@ def FuncInterface : OpInterface<"FuncInterface"> {
   let dependentTraits = [DeclInterface];
 }
 
+
+//===----------------------------------------------------------------------===//
+// GeneratorOpInterface
+
+def KGEN_GeneratorOpInterface : OpInterface<"GeneratorOpInterface",
+    [DeclInterface, Symbol]> {
+  let description = [{
+    A parameterized symbol that can be multi-versioned by the elaborator based
+    on its actual uses.
+  }];
+  let cppNamespace = "::M::KGEN";
+  let methods = [
+    InterfaceMethod<[{
+      Return the body region of this generator.
+    }], "Region &", "getBodyRegion", (ins)>,
+  ];
+}
+
 //===----------------------------------------------------------------------===//
 // GeneratorUserOpInterface
 

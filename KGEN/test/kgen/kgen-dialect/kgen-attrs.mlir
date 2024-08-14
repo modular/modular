@@ -120,3 +120,18 @@ kgen.generator @entry2() -> index {
   c = #kgen<tailkind musttail>,
   d = #kgen<tailkind notail>
 } : () -> ()
+
+kgen.struct.generator @LinkedList<T: type, x: !kgen.paramref<T>> : !kgen.type {
+  // CHECK: kgen.struct.info :type struct_inst<
+  // CHECK-SAME: "LinkedList"
+  // CHECK-SAME: [T, x]
+  // CHECK-SAME: <:type T, :!kgen.paramref<T> x>
+  // CHECK-SAME: (data: typevalue<T>,
+  // CHECK-SAME:  next: typevalue<inst_struct(#kgen.typeref<@LinkedList<:type T, :!kgen.paramref<T> x>>)>)
+  kgen.struct.info :type struct_inst<"LinkedList"[T, x]<:type T, :!kgen.paramref<T> x>(data: typevalue<T>, next: typevalue<inst_struct(#kgen.typeref<@LinkedList<:type T, :!kgen.paramref<T> x>>)>)>
+}
+
+// CHECK: a = #kgen.typeref<@LinkedList<:type index, 3>>
+"some.op"() {
+  a = #kgen.typeref<@LinkedList<:type index, 3>>
+} : () -> ()

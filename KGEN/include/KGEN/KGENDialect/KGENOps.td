@@ -129,7 +129,8 @@ def KGEN_FuncOp : KGENOp<"func", [
 
 def KGEN_GeneratorOp : KGENOp<"generator", [
     HasParent<"mlir::ModuleOp">, FunctionOpInterface, Symbol, IsolatedFromAbove,
-    SingleBlock, DeclInterface, FuncInterface, FunctionLike, ExportInterface]> {
+    SingleBlock, DeclInterface, FuncInterface, FunctionLike, ExportInterface,
+    KGEN_GeneratorOpInterface]> {
   let summary = "Function generator definition.";
   let description = [{
     The `kgen.generator` operation defines a function generator. A generator is
@@ -233,6 +234,62 @@ def KGEN_ExternGeneratorOp : KGENOp<"extern.generator", [
                             $resultParams) attr-dict-with-keyword
     ($body^)?
   }];
+}
+
+//===----------------------------------------------------------------------===//
+// StructGeneratorOp
+//===----------------------------------------------------------------------===//
+
+def KGEN_StructGeneratorOp : KGENOp<"struct.generator", [
+    HasParent<"mlir::ModuleOp">, Symbol, DeclInterface, SingleBlock,
+    KGEN_GeneratorOpInterface]> {
+  let summary = "Struct generator definition.";
+  let description = [{
+    The `kgen.struct.generator` operation defines a type-value generator. It is
+    a parametric template for a type-value. It can have input parameters.
+
+    Its body contains the definition for a potentially parametric struct type
+    as a type-value.
+
+    Example:
+
+    ```mlir
+    kgen.struct.generator @struct_SIMD<dt: dtype, size> {
+      kgen.struct.info = #type_value : !kgen.type
+    }
+    ```
+  }];
+
+  let arguments = (ins SymbolNameAttr:$sym_name,
+                       KGEN_ParamDeclArrayAttr:$inputParams,
+                       TypeAttr:$type);
+  let regions = (region SizedRegion<1>:$body);
+
+  let extraClassDeclaration = [{
+    ArrayRef<ParamDeclAttr> getResultParams() { return {}; }
+  }];
+
+  let assemblyFormat = [{
+    $sym_name `` custom<StructGeneratorSpec>($inputParams, $type)
+    attr-dict-with-keyword
+    ($body^)?
+  }];
+}
+
+//===----------------------------------------------------------------------===//
+// StructInfoOp
+//===----------------------------------------------------------------------===//
+
+def KGEN_StructInfoOp : KGENOp<"struct.info", [Terminator]> {
+  let summary = "Struct type info.";
+  let description = [{
+    The `kgen.struct.info` operation contains the definition of a parameterized
+    type-value.
+  }];
+
+  let arguments = (ins TypedAttrInterface:$typeConstant);
+
+  let assemblyFormat = "custom<ColonTypeParamValue>($typeConstant) attr-dict";
 }
 
 //===----------------------------------------------------------------------===//

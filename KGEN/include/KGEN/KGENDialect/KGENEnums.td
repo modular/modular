@@ -82,6 +82,8 @@ def KGEN_POCAttr : I32EnumAttr<"POC", "Parameter Operator Code", [
   //     [ptr<i32>, ptr<f32>] -> [i32, f32].
   // This takes one operand, the list of pointer types.
   I32EnumAttrCase<"VariadicPtrRemoveMap", 36, "variadic_ptrremove_map">,
+
+  I32EnumAttrCase<"InstantiateStruct", 37, "inst_struct">,
 ]>;
 
 //===----------------------------------------------------------------------===//

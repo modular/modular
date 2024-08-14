@@ -15,6 +15,7 @@
 #include "mlir/IR/BuiltinTypes.h"
 #include "mlir/IR/OpDefinition.h"
 #include "mlir/IR/Region.h"
+#include "mlir/IR/SymbolTable.h"
 
 namespace mlir {
 class IRRewriter;

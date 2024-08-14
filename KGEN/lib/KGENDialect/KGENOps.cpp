@@ -507,6 +507,37 @@ static void printExternGenerator(OpAsmPrinter &p, Operation *op,
 }
 
 //===----------------------------------------------------------------------===//
+// StructGeneratorOp
+//===----------------------------------------------------------------------===//
+
+static ParseResult parseStructGeneratorSpec(OpAsmParser &p,
+                                            ParamDeclArrayAttr &inputParams,
+                                            TypeAttr &type) {
+  SmallVector<ParamDeclAttr> paramAttrs;
+  if (succeeded(p.parseOptionalLess()) &&
+      (parseParamDeclAttrs(p, paramAttrs) || p.parseGreater()))
+    return failure();
+  inputParams = ParamDeclArrayAttr::get(p.getContext(), paramAttrs);
+
+  Type resultType;
+  if (p.parseColon() || p.parseType(resultType))
+    return failure();
+  type = TypeAttr::get(resultType);
+  return success();
+}
+
+static void printStructGeneratorSpec(OpAsmPrinter &p, Operation *op,
+                                     ParamDeclArrayAttr inputParams,
+                                     TypeAttr type) {
+  if (!inputParams.empty()) {
+    p << '<';
+    printParamDeclAttrs(p, inputParams);
+    p << '>';
+  }
+  p << " : " << type.getValue();
+}
+
+//===----------------------------------------------------------------------===//
 // CallOp
 //===----------------------------------------------------------------------===//
 

@@ -391,6 +391,40 @@ def KGEN_TypeConstantAttr : KGEN_ExprAttr<"TypeConstant", "type"> {
 }
 
 //===----------------------------------------------------------------------===//
+// TypeConstantRefAttr
+//===----------------------------------------------------------------------===//
+
+def KGEN_TypeConstantRefAttr : KGEN_ExprAttr<"TypeConstantRef", "typeref",
+    [DeclareAttrInterfaceMethods<DeclRefAttrInterface>]> {
+  let summary = "type constant reference";
+  let description = [{
+    This is a symbolic reference to a type-value. Its type is the metatype of
+    the type-value. If the type-value is parametric, additional parameter values
+    may be bound.
+  }];
+
+  let parameters = (ins "SymbolRefAttr":$symbol,
+                        OptionalArrayRefParameter<"TypedAttr">:$paramValues,
+                        AttributeSelfTypeParameter<"">:$type);
+
+  let builders = [
+    AttrBuilderWithInferredContext<(ins "SymbolRefAttr":$symbol,
+                                        "Type":$type), [{
+      return get(type.getContext(), symbol, {}, type);
+    }]>,
+    AttrBuilderWithInferredContext<(ins "SymbolRefAttr":$symbol,
+                                        "ArrayRef<TypedAttr>":$paramValues,
+                                        "Type":$type), [{
+      return get(type.getContext(), symbol, paramValues, type);
+    }]>,
+  ];
+
+  let assemblyFormat = [{
+    `<` $symbol `` custom<ParameterValues>($paramValues) `` `>`
+  }];
+}
+
+//===----------------------------------------------------------------------===//
 // DTypeConstantAttr
 //===----------------------------------------------------------------------===//
 
