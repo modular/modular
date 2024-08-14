@@ -4,7 +4,9 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from .driver import CPU, __version__
+from max._driver.core import __version__
+
+from .driver import CPU
 from .dtype import DType
 from .tensor import Tensor
 
