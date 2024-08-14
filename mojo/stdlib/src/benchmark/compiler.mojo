@@ -5,6 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from sys._assembly import inlined_assembly
+from sys import sizeof
 
 from memory import UnsafePointer
 
