@@ -7,7 +7,6 @@
 
 from dataclasses import dataclass
 
-import max.engine as me
 import numpy as np
 from llama3.attention import Attention
 from llama3.mlp import Linear
@@ -92,8 +91,7 @@ class NanoLlama3:
     )
 
 
-def test_attention():
-    session = me.InferenceSession()
+def test_attention(session):
     model = NanoLlama3()
 
     dim = 2

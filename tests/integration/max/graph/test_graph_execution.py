@@ -9,13 +9,11 @@
 import os
 import tempfile
 
-import max.engine as me
 import numpy as np
 from max.graph import DType, Graph, TensorType, ops
 
 
-def test_max_graph():
-    session = me.InferenceSession()
+def test_max_graph(session):
     input_type = TensorType(dtype=DType.float32, shape=["batch", "channels"])
     with Graph("add", input_types=(input_type, input_type)) as graph:
         graph.output(ops.add(graph.inputs[0], graph.inputs[1]))
@@ -26,10 +24,9 @@ def test_max_graph():
         assert output["output0"] == a + b
 
 
-def test_max_graph_export():
+def test_max_graph_export(session):
     """Creates a graph via max-graph API, exports the mef to a tempfile, and
     check to ensure that the file contents are non-empty."""
-    session = me.InferenceSession()
     input_type = TensorType(dtype=DType.float32, shape=["batch", "channels"])
     with tempfile.NamedTemporaryFile() as mef_file:
         with Graph("add", input_types=(input_type, input_type)) as graph:
@@ -39,11 +36,10 @@ def test_max_graph_export():
             assert os.path.getsize(mef_file.name) > 0
 
 
-def test_max_graph_export_import():
+def test_max_graph_export_import(session):
     """Creates a graph via max-graph API, exports the mef to a tempfile, and
     loads the mef. Both the original model from the max-graph and the model
     from the mef are executed to ensure that they produce the same output."""
-    session = me.InferenceSession()
     input_type = TensorType(dtype=DType.float32, shape=["batch", "channels"])
     with tempfile.NamedTemporaryFile() as mef_file:
         with Graph("add", input_types=(input_type, input_type)) as graph:
@@ -54,8 +50,7 @@ def test_max_graph_export_import():
             b = np.ones((1, 1)).astype(np.float32)
             output = compiled.execute(input0=a, input1=b)
             assert output["output0"] == a + b
-            session2 = me.InferenceSession()
-            compiled2 = session2.load(mef_file.name)
+            compiled2 = session.load(mef_file.name)
             output2 = compiled2.execute(input0=a, input1=b)
             assert output2["output0"] == a + b
             assert output["output0"] == output2["output0"]

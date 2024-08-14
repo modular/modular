@@ -5,7 +5,6 @@
 # ===----------------------------------------------------------------------=== #
 """Temporary Tests to ensure layers execute."""
 
-import max.engine as me
 import numpy as np
 from max.graph import DType, Graph, TensorType
 from dataclasses import dataclass
@@ -16,7 +15,7 @@ from llama3.norm import RMSNorm
 from llama3.rotary_embedding import RotaryEmbedding
 
 
-def test_transformer():
+def test_transformer(session):
     dim = 2
     n_layers = 1
     n_heads = 1
@@ -91,8 +90,6 @@ def test_transformer():
     batch = "batch"
     seq_len = "seq_len"
     prev_seq_len = "prev_seq_len"
-
-    session = me.InferenceSession()
 
     with Graph(
         "transformer_block",

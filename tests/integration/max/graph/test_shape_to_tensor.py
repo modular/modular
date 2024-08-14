@@ -8,13 +8,11 @@
 import os
 import tempfile
 
-import max.engine as me
 import numpy as np
 from max.graph import DType, Graph, GraphValue, TensorType, ops
 
 
-def test_shape_to_tensor_static():
-    session = me.InferenceSession()
+def test_shape_to_tensor_static(session):
     input_type = TensorType(dtype=DType.float32, shape=[2, 4])
     with Graph("input_shape", input_types=(input_type,)) as graph:
         shape = graph.inputs[0].shape
@@ -28,8 +26,7 @@ def test_shape_to_tensor_static():
     np.testing.assert_equal(output["output0"], np.array([2, 4]))
 
 
-def test_shape_to_tensor_dynamic():
-    session = me.InferenceSession()
+def test_shape_to_tensor_dynamic(session):
     input_type = TensorType(dtype=DType.float32, shape=["batch", "channels"])
     with Graph("input_shape", input_types=(input_type,)) as graph:
         shape = graph.inputs[0].shape
@@ -43,8 +40,7 @@ def test_shape_to_tensor_dynamic():
     np.testing.assert_equal(output["output0"], np.array([7, 3]))
 
 
-def test_shape_to_tensor_solo_dim():
-    session = me.InferenceSession()
+def test_shape_to_tensor_solo_dim(session):
     input_type = TensorType(dtype=DType.float32, shape=["batch", "channels"])
     with Graph("input_shape", input_types=(input_type,)) as graph:
         shape = graph.inputs[0].shape

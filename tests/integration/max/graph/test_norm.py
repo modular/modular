@@ -8,7 +8,6 @@ from datetime import timedelta
 
 import hypothesis
 import hypothesis.strategies as st
-import max.engine as me
 import numpy as np
 import torch
 import torch.nn as nn
@@ -62,11 +61,10 @@ input_shape = st.tuples(header, hidden_size).map(lambda x: x[0] + x[1])
         shape=input_shape,
     ),
 )
-@hypothesis.settings(max_examples=10, deadline=timedelta(seconds=3))
-def test_norm(eps, weights, input):
+@hypothesis.settings(max_examples=10, deadline=None)
+def test_norm(session, eps, weights, input):
     # Initialize Graph
     # TODO: This is not resulting in nan, when all input values are 0
-    session = me.InferenceSession()
     norm = Graph(
         "norm",
         RMSNorm(weight=weights, eps=np.array(eps)),

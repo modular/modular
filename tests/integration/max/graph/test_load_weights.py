@@ -6,7 +6,6 @@
 """Test the Python weight loading interface."""
 from tempfile import NamedTemporaryFile
 
-import max.engine as me
 import numpy as np
 import pytest
 import torch
@@ -14,9 +13,8 @@ from max.graph import DType, Graph
 from max.graph.utils import load_gguf, load_pytorch
 
 
-def test_weight() -> None:
+def test_weight(session) -> None:
     """Tests adding an external weight to a graph."""
-    session = me.InferenceSession()
     with Graph("graph_with_weights") as graph:
         weight_shape = [5, 10]
         weight = np.random.uniform(1, 100, size=weight_shape).astype(np.int64)
@@ -35,9 +33,8 @@ def test_weight() -> None:
             np.testing.assert_array_equal(weight, output["output0"])
 
 
-def test_weight_offset() -> None:
+def test_weight_offset(session) -> None:
     """Tests adding an external weight to a graph."""
-    session = me.InferenceSession()
     with Graph("graph_with_offset_weights") as graph:
         weight_shape = [5, 10]
         weight = np.random.uniform(1, 100, size=weight_shape).astype(np.int64)
@@ -71,9 +68,8 @@ def _test_data():
     }
 
 
-def test_load_pytorch(graph_testdata) -> None:
+def test_load_pytorch(session, graph_testdata) -> None:
     """Tests adding an external weight to a graph."""
-    session = me.InferenceSession()
     expected_dict = _test_data()
     flat_keys = list(expected_dict.keys())
     expected = [expected_dict[k] for k in flat_keys]
@@ -93,9 +89,8 @@ def test_load_pytorch(graph_testdata) -> None:
             np.testing.assert_array_equal(expected, output[f"output{n}"])
 
 
-def test_load_gguf(graph_testdata) -> None:
+def test_load_gguf(session, graph_testdata) -> None:
     """Tests adding an external weight to a graph."""
-    session = me.InferenceSession()
     expected_dict = _test_data()
     flat_keys = list(expected_dict.keys())
     expected = [expected_dict[k] for k in flat_keys]
