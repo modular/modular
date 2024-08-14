@@ -8,6 +8,7 @@ from collections import OptionalReg
 from math import align_down, ceildiv
 from sys.info import has_neon, sizeof
 from sys.intrinsics import PrefetchOptions
+from os import abort
 
 from algorithm import elementwise, parallel_memcpy, sync_parallelize
 from algorithm.functional import _elementwise_impl, tile

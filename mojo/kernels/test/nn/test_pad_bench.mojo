@@ -6,6 +6,7 @@
 # RUN: %mojo %s | FileCheck %s
 
 import benchmark
+from os import abort
 from benchmark import Unit, keep
 from buffer import Buffer, NDBuffer
 from buffer.dimlist import Dim, DimList

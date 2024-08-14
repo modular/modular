@@ -8,6 +8,7 @@ from collections.vector import InlinedFixedVector
 from math import align_down, align_up, ceildiv
 from sys._build import is_kernels_debug_build
 from sys.info import simdwidthof, sizeof
+from os import abort
 
 from algorithm.functional import (
     _elementwise_impl,
