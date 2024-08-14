@@ -302,6 +302,19 @@ def test_layer_norm() -> None:
     graph._mlir_op.verify()
 
 
+def test_matmul_dtype_promotion() -> None:
+    """Tests for dtype promotion in matmul."""
+    graph = Graph(
+        "matmul_dtype_promotion",
+        lambda x, y: x @ y,
+        (
+            TensorType(DType.float32, (4, 2, 3)),
+            TensorType(DType.float64, (3, 2)),
+        ),
+    )
+    assert_matmul_properties(graph, (4, 2, 2), DType.float64)
+
+
 def test_band_part() -> None:
     def _band_part(input: GraphValue) -> GraphValue:
         return ops.band_part(input, -1, 0)
