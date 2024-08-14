@@ -4,13 +4,15 @@
 #
 # ===----------------------------------------------------------------------=== #
 from math import ceildiv
-from sys.info import (
+from sys import (
     has_vnni,
     has_avx2,
     has_neon_int8_dotprod,
     has_neon_int8_matmul,
     is_apple_silicon,
     has_neon,
+    sizeof,
+    simdwidthof,
 )
 
 from algorithm import sync_parallelize, tile

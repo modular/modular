@@ -3,7 +3,7 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-from sys.info import has_avx512f, has_neon
+from sys.info import has_avx512f, has_neon, simdwidthof
 from sys.intrinsics import llvm_intrinsic
 
 

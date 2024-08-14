@@ -7,6 +7,7 @@
 
 from math import ceildiv, isclose
 from random import rand, random_float64
+from sys import sizeof
 
 from algorithm import sync_parallelize
 from buffer import NDBuffer

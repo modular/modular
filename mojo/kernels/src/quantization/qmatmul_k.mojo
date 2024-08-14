@@ -4,13 +4,15 @@
 #
 # ===----------------------------------------------------------------------=== #
 from math import ceildiv
-from sys.info import (
+from sys import (
     has_avx512f,
     has_neon_int8_dotprod,
     has_neon_int8_matmul,
     is_apple_silicon,
     is_x86,
     has_neon,
+    sizeof,
+    simdwidthof,
 )
 from sys.intrinsics import llvm_intrinsic
 
