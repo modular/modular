@@ -55,11 +55,13 @@ def _check_gguf():
         }
 
 
-def load_gguf(filepath) -> Dict[str, Weight]:
+def load_gguf(gguf_or_filepath) -> Dict[str, Weight]:
     _check_gguf()
+    assert gguf is not None
     graph = Graph.current
-
-    reader = gguf.GGUFReader(filepath)
+    reader = gguf_or_filepath
+    if not isinstance(reader, gguf.GGUFReader):
+        reader = gguf.GGUFReader(gguf_or_filepath)
     ret = {}
     for tensor in reader.tensors:
         dtype = _GGML_TO_DTYPE.get(tensor.tensor_type)
@@ -70,7 +72,7 @@ def load_gguf(filepath) -> Dict[str, Weight]:
             # https://github.com/ggerganov/llama.cpp/blob/master/gguf-py/gguf/gguf_reader.py#L277
             # We have to un-reverse them here.
             reversed(tensor.shape.tolist()),
-            filepath,
+            tensor.data.filename,
             tensor.data_offset,
         )
     return ret

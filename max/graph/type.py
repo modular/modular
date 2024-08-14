@@ -12,6 +12,7 @@ import re
 from dataclasses import dataclass
 from typing import Any, Iterable, TypeGuard, Union
 
+import numpy as np
 from max import _graph, mlir
 
 from .dtype import DType
@@ -296,19 +297,19 @@ class StaticDim(Dim):
 Shape = list[Dim]
 StaticShape = list[StaticDim]
 
-DimLike = Union[int, str, Dim]
+DimLike = Union[int, str, Dim, np.integer]
 ShapeLike = Iterable[DimLike]
 
 
 def dim(value: DimLike) -> Dim:
     """Converts valid input values to Dim."""
-    if isinstance(value, int):
+    if isinstance(value, (int, np.integer)):
         return StaticDim(value)
     elif isinstance(value, str):
         return SymbolicDim(value)
     elif isinstance(value, Dim):
         return value
-    raise TypeError(f"Unsupported dimension type {value}")
+    raise TypeError(f"Unsupported dimension type {value} ({type(value)})")
 
 
 def shape(shape_like: ShapeLike) -> Shape:
