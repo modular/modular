@@ -21,6 +21,17 @@ class FnMetadataAttr;
 class RefPackType;
 class SymbolAttr;
 enum class PassingKind : uint32_t;
+} // namespace LIT
+} // namespace M::KGEN
+
+//===----------------------------------------------------------------------===//
+// ODS-Generated Declarations
+//===----------------------------------------------------------------------===//
+
+#define GET_TYPEDEF_CLASSES
+#include "KGEN/LITDialect/LITTypes.h.inc"
+
+namespace M::KGEN::LIT {
 
 //===----------------------------------------------------------------------===//
 // LITSignatureType
@@ -185,14 +196,18 @@ std::pair<LITSignatureType, ParameterExprArrayAttr>
 getUnboundSpecializedSignature(LITSignatureType type,
                                ParameterExprArrayAttr bindings);
 
-} // namespace LIT
-} // namespace M::KGEN
+/// This predicate returns true if a parameter of the specified type may only
+/// expand into one parameter value (e.g. `!lit.lifetime<x>` that only expands
+/// to a single #lit.lifetime value.  Such a parameter doesn't need elaboration.
+static inline bool isSingletonParameter(Type type) {
+  // TODO: Could support structs of lifetimes.
+  return isa<LIT::LifetimeType>(type);
+}
 
-//===----------------------------------------------------------------------===//
-// ODS-Generated Declarations
-//===----------------------------------------------------------------------===//
+/// This returns the singleton value to use for a parameter value that
+/// `isSingletonParameter` returns true on. This aborts on non-singleton types.
+TypedAttr getSingletonParameterValue(Type type);
 
-#define GET_TYPEDEF_CLASSES
-#include "KGEN/LITDialect/LITTypes.h.inc"
+} // namespace M::KGEN::LIT
 
 #endif // KGEN_LITDIALECT_LITTYPES_H

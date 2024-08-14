@@ -18,7 +18,7 @@ lit.func @caller() -> index attributes {test.target.0 = #module_target, doNotExt
   %0 = index.constant 32
   // CHECK: kgen.call @precompiled_func
   // ELAB: kgen.call @precompiled_func
-  %1 = kgen.call @precompiled_func(%0) : (index) -> index
+  %1 = lit.call @precompiled_func(%0) : !lit.signature<("arg0": index) -> index>  
   kgen.return %1 : index
 }
 

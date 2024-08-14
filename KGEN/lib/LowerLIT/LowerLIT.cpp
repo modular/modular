@@ -9,6 +9,7 @@
 #include "KGEN/HLCFDialect/HLCFOps.h"
 #include "KGEN/HLCFDialect/HLCFUtils.h"
 #include "KGEN/KGENDialect/KGENOps.h"
+#include "KGEN/KGENDialect/KGENParameters.h"
 #include "KGEN/KGENDialect/KGENUtils.h"
 #include "KGEN/KGENDialect/ParameterEvaluator.h"
 #include "KGEN/LITDialect/LITOps.h"
@@ -57,6 +58,33 @@ static ArrayRef<ParamDeclAttr> extractImplicitLifetimeParams(LIT::FuncOp func) {
   size_t numImplicitLifetimes =
       func.getSignature().getNumImplicitLifetimeDecls();
   return func.getInputParams().drop_back(numImplicitLifetimes);
+}
+
+/// Check a list of parameter declarations to see if any of the parameters are
+/// singletons like lifetime parameters.  If so, remove them from the list.
+static void
+removeSingletonParamDecls(SmallVectorImpl<ParamDeclAttr> &paramDecls) {
+  size_t numRemoved = 0;
+  for (auto [idx, paramDecl] : llvm::enumerate(paramDecls)) {
+    // If this is a parameter we are supposed to remove, bind it.
+    if (isSingletonParameter(paramDecl.getType())) {
+      // We can just remove the parameter without inserting a placeholder
+      // in the body. This is safe because we unconditionally replace
+      // all attributes of lifetime type at the end of this pass with
+      // #lit.lifetime, which will conveniently get all references to
+      // this. That said, we need to remember the index so we can update
+      // the signature.
+      ++numRemoved;
+      continue;
+    }
+
+    // If we removed any before it, copy this down.
+    if (numRemoved)
+      paramDecls[idx - numRemoved] = paramDecls[idx];
+  }
+
+  // Drop any removed parameters.
+  paramDecls.resize(paramDecls.size() - numRemoved);
 }
 
 //===----------------------------------------------------------------------===//
@@ -195,6 +223,9 @@ LogicalResult LITLowerer::lowerLITFunc(LIT::FuncOp func,
                       /*parentVariadicMask=*/{});
 }
 
+/// This lowers a top level (not nested function) lit.func to a kgen.generator.
+/// If this is a method of a struct, the struct my have parameters indicated by
+/// parentInputParams.
 LogicalResult
 LITLowerer::lowerLITFunc(LIT::FuncOp func, Block::iterator symTableIt,
                          const Twine &parentPrefix,
@@ -211,12 +242,10 @@ LITLowerer::lowerLITFunc(LIT::FuncOp func, Block::iterator symTableIt,
 
   lowerLITOps(func);
 
-  OpBuilder b(func->getContext());
   LITSignatureType signature = func.getSignature();
 
-  ArrayRef<ParamDeclAttr> genParams = extractImplicitLifetimeParams(func);
-
-  // Prepend the parameters from the parent decl if present.
+  // Build the parameter list of the new function, prepending the parameters
+  // from the parent decl if present.
   SmallVector<ParamDeclAttr> inputParams;
   if (!parentInputParams.empty()) {
     // Concat the parent and generator input parameter decls.
@@ -226,15 +255,20 @@ LITLowerer::lowerLITFunc(LIT::FuncOp func, Block::iterator symTableIt,
     signature = LITSignatureType::prependParams(signature, parentInputParams,
                                                 parentVariadicMask);
   }
-  llvm::append_range(inputParams, genParams);
+  llvm::append_range(inputParams, extractImplicitLifetimeParams(func));
 
-  Operation *result;
+  // Now that we have the full parameter list, remove any singleton parameters.
+  // This ensures that the elaborator doesn't instantiate the function based on
+  // lifetimes.
+  removeSingletonParamDecls(inputParams);
+
   // If the function has an alias name, rename it.
   if (StringAttr newName = func.getLinkageNameAttr()) {
     renamedSymbols[func.getSymNameAttr()] = newName;
     func.setSymName(newName);
   }
 
+  OpBuilder b(func->getContext());
   auto inputParamsArr = ParamDeclArrayAttr::get(b.getContext(), inputParams);
   auto resParamsArr = ParamDeclArrayAttr::get(b.getContext(), {});
   auto sigAttr = TypeAttr::get(signature);
@@ -250,7 +284,6 @@ LITLowerer::lowerLITFunc(LIT::FuncOp func, Block::iterator symTableIt,
     state.attributes.push_back(attr);
 
   auto newFunc = cast<GeneratorOp>(b.create(state));
-  result = newFunc;
 
   // Move over the body.
   newFunc.getBodyRegion().takeBody(func.getBodyRegion());
@@ -258,9 +291,8 @@ LITLowerer::lowerLITFunc(LIT::FuncOp func, Block::iterator symTableIt,
   // Move over the symbol, and we're done.
   Block::iterator genIter = func->getIterator();
   symbolTable.remove(func);
-  symbolTable.insert(result, genIter);
+  symbolTable.insert(newFunc, genIter);
   func.erase();
-
   return success();
 }
 
@@ -274,11 +306,14 @@ void LITLowerer::lowerNestedFunction(LIT::FuncOp func) {
   ImplicitLocOpBuilder b(func.getLoc(), func);
 
   // The new param.declare.region will drop implicit lifetimes.
-  ArrayRef<ParamDeclAttr> inputParams = extractImplicitLifetimeParams(func);
+  SmallVector<ParamDeclAttr> inputParams;
+  llvm::append_range(inputParams, extractImplicitLifetimeParams(func));
+  removeSingletonParamDecls(inputParams);
 
   auto region = b.create<ParamDeclareRegionOp>(
       decl, func.getSignature(), func.getFunctionType(), inputParams,
-      func.getResultParams(), /*isolated=*/false, func.getInlineLevel());
+      func.getResultParams(),
+      /*isolated=*/false, func.getInlineLevel());
   region.getBodyRegion().takeBody(func.getBodyRegion());
   func.erase();
 }
@@ -409,6 +444,48 @@ LogicalResult LITLowerer::lowerModuleDecl(Block *moduleBody,
 // Type lowering
 //===----------------------------------------------------------------------===//
 
+/// Check to see if any of the parameters of the specified signature are
+/// singletons like lifetime parameters.  If so, bind them to a dummy value and
+/// return the updated signature without them.
+static SignatureType removeSingletonParams(SignatureType signature) {
+  llvm::SmallVector<TypedAttr> paramsToBind;
+  size_t numRemoved = 0;
+
+  ParameterEvaluator evaluator;
+  for (auto [idx, paramType] :
+       llvm::enumerate(signature.getInputParamTypes())) {
+    Type adjParamType = evaluator.getReboundType(paramType);
+
+    // If this is a parameter we are supposed to keep, leave it unbound.
+    if (!isSingletonParameter(adjParamType)) {
+      // Any uses of this parameter in later replaced lifetimes needs to refer
+      // to the appropriate index of the resultant parameter number, e.g. the
+      // bool in a lifetime may shift to a new index.
+      auto idxValue = ParamIndexRefAttr::get(/*depth*/ -1, /*isResult*/ false,
+                                             idx - numRemoved, paramType);
+      evaluator.addInputValue(idxValue);
+
+      // We tell getSpecializedSignature not to touch this though.
+      paramsToBind.push_back(UnboundAttr::get(adjParamType));
+
+    } else {
+      // Bind the parameter to the expected singleton value of the right
+      // type. 'getSpecializedSignature' strips off a level of indexes from
+      // the type, so we need to adapt the type to cooperate.
+      paramsToBind.push_back(getSingletonParameterValue(adjParamType));
+      evaluator.addInputValue(paramsToBind.back());
+      ++numRemoved;
+    }
+  }
+
+  // Update the signature type if we dropped anything.
+  if (numRemoved) {
+    signature = signature.getSpecializedSignature(paramsToBind);
+    assert(signature && "didn't replace lifetimes correctly");
+  }
+  return signature;
+}
+
 static void lowerAttributesAndTypes(
     Operation *op, const DenseMap<StringAttr, StringAttr> &renamedSymbols) {
   mlir::AttrTypeReplacer replacer;
@@ -425,15 +502,51 @@ static void lowerAttributesAndTypes(
   });
 
   // Remove signature metadata.
-  replacer.addReplacement([](SignatureType sig) {
-    return SignatureType::get(sig.getValues(), sig.getInputParamTypes(),
-                              sig.getResultParamTypes(),
-                              sig.getArgConventions(), sig.getFnEffects());
+  replacer.addReplacement([&](SignatureType sig) {
+    // Remove uses of any singleton attributes.
+    SmallVector<Type> paramTypes;
+    for (auto ty : sig.getInputParamTypes())
+      paramTypes.push_back(replacer.replace(ty));
+
+    sig = SignatureType::get(
+        cast<FunctionType>(replacer.replace(sig.getValues())), paramTypes,
+        /*no resultParamTypes*/ {}, sig.getArgConventions(),
+        sig.getFnEffects());
+    // Remove the singleton parameter declarations.
+    return removeSingletonParams(sig);
   });
 
-  replacer.addReplacement([](TypedAttr attr) -> TypedAttr {
+  replacer.addReplacement([&](TypedAttr attr) -> TypedAttr {
+    // Remove all values of lifetime type.  This removes all references to
+    // lifetime parameters that have been dropped.
     if (auto type = dyn_cast<LifetimeType>(attr.getType()))
       return LifetimeAttr::get(type);
+
+    // Remove singleton parameter values from SymbolConstantAttr.
+    if (auto symCst = dyn_cast<SymbolConstantAttr>(attr)) {
+      SmallVector<TypedAttr> newParams;
+      for (auto param : symCst.getParamValues())
+        if (!isSingletonParameter(param.getType()))
+          newParams.push_back(param);
+      if (newParams.size() != symCst.getParamValues().size())
+        return SymbolConstantAttr::get(symCst.getSymbol(), newParams,
+                                       symCst.getType());
+    }
+
+    // Remove singleton parameter values from bind_signature.
+    if (auto paramOperator = dyn_cast<ParamOperatorAttr>(attr)) {
+      if (paramOperator.getOpcode() == POC::BindSignature) {
+        SmallVector<TypedAttr> newOperands;
+        for (auto op : paramOperator.getOperands()) {
+          auto adjusted = cast<TypedAttr>(replacer.replace(op));
+          if (!isSingletonParameter(adjusted.getType()))
+            newOperands.push_back(adjusted);
+        }
+        if (newOperands.size() != paramOperator.getNumOperands())
+          return ParamOperatorAttr::get(paramOperator.getOpcode(), newOperands);
+      }
+    }
+
     return attr;
   });
 

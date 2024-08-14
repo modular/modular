@@ -357,7 +357,7 @@ SignatureType SignatureType::getSpecializedSignature(
   }
 
   // Remap the result parameter types, and input/result argument types. The size
-  // of the SmallVector here has been determined by manual microoptimizations.
+  // of the SmallVector here has been determined by manual micro-optimizations.
   SmallVector<Type, 16> newParamResultTypes, inputTypes, resultTypes;
   llvm::append_range(newParamResultTypes,
                      llvm::map_range(resultParamTypes, remapType));
