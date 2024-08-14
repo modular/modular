@@ -8,6 +8,7 @@ import os
 from pathlib import Path
 
 import pytest
+from max.engine import InferenceSession
 
 
 @pytest.fixture
@@ -52,3 +53,8 @@ def pytest_addoption(parser):
         default="",
         help="Path to custom Ops package",
     )
+
+
+@pytest.fixture
+def session() -> InferenceSession:
+    return InferenceSession()

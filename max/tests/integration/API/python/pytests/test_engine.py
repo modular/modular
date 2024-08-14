@@ -12,9 +12,9 @@ from pathlib import Path
 from subprocess import run
 
 import max.driver as md
-import max.engine as me
 import numpy as np
 import pytest
+from max.engine import DType, InferenceSession, TensorSpec, TorchInputSpec
 
 DYLIB_FILE_EXTENSION = "dylib" if os.uname().sysname == "Darwin" else "so"
 
@@ -74,8 +74,7 @@ def mo_listio_model_path(modular_path: Path) -> Path:
     )
 
 
-def test_execute_success(mo_model_path: Path):
-    session = me.InferenceSession()
+def test_execute_success(session: InferenceSession, mo_model_path: Path):
     model = session.load(mo_model_path)
     output = model.execute(input=np.ones((5)))
     assert "output" in output.keys()
@@ -85,10 +84,11 @@ def test_execute_success(mo_model_path: Path):
     )
 
 
-def test_devicetensor_wrong_num_inputs(mo_model_path: Path):
+def test_devicetensor_wrong_num_inputs(
+    session: InferenceSession, mo_model_path: Path
+):
     # The engine should throw a ValueError when executing with the
     # wrong number of input tensors.
-    session = me.InferenceSession()
     model = session.load(mo_model_path)
     first_tensor = md.Tensor((5,), md.DType.float32)
     second_tensor = md.Tensor((5,), md.DType.float32)
@@ -106,10 +106,11 @@ def test_devicetensor_wrong_num_inputs(mo_model_path: Path):
         model.execute(first_tensor, second_tensor)
 
 
-def test_devicetensor_wrong_shape(mo_model_path: Path):
+def test_devicetensor_wrong_shape(
+    session: InferenceSession, mo_model_path: Path
+):
     # The engine should throw a ValueError when executing a tensor with
     # the wrong shape.
-    session = me.InferenceSession()
     model = session.load(mo_model_path)
     tensor = md.Tensor((6,), md.DType.float32)
     # Ensure that tensors are initialized
@@ -125,10 +126,11 @@ def test_devicetensor_wrong_shape(mo_model_path: Path):
         model.execute(tensor)
 
 
-def test_devicetensor_wrong_rank(mo_model_path: Path):
+def test_devicetensor_wrong_rank(
+    session: InferenceSession, mo_model_path: Path
+):
     # The engine should throw a ValueError when executing a tensor with
     # the wrong shape.
-    session = me.InferenceSession()
     model = session.load(mo_model_path)
     tensor = md.Tensor((5, 2), md.DType.float32)
     # Ensure that tensors are initialized
@@ -145,10 +147,11 @@ def test_devicetensor_wrong_rank(mo_model_path: Path):
         model.execute(tensor)
 
 
-def test_devicetensor_wrong_dtype(mo_model_path: Path):
+def test_devicetensor_wrong_dtype(
+    session: InferenceSession, mo_model_path: Path
+):
     # The engine should throw a ValueError when executing a tensor with
     # the wrong dtype.
-    session = me.InferenceSession()
     model = session.load(mo_model_path)
     tensor = md.Tensor((6,), md.DType.int32)
     # Ensure that tensors are initialized
@@ -163,10 +166,11 @@ def test_devicetensor_wrong_dtype(mo_model_path: Path):
         model.execute(tensor)
 
 
-def test_execute_non_devicetensor_positional_arguments(mo_model_path: Path):
+def test_execute_non_devicetensor_positional_arguments(
+    session: InferenceSession, mo_model_path: Path
+):
     # We allow execution with positional arguments only if they are
     # devicetensors.
-    session = me.InferenceSession()
     model = session.load(mo_model_path)
     with pytest.raises(
         RuntimeError,
@@ -178,10 +182,9 @@ def test_execute_non_devicetensor_positional_arguments(mo_model_path: Path):
         model.execute(np.ones((5)))
 
 
-def test_execute_device_tensor(mo_model_path: Path):
+def test_execute_device_tensor(session: InferenceSession, mo_model_path: Path):
     # The engine should be able to take in a simple 1-d tensor and execute a
     # model with this input.
-    session = me.InferenceSession()
     model = session.load(mo_model_path)
     input_tensor = md.Tensor((5,), md.DType.float32)
     for idx in range(5):
@@ -194,10 +197,11 @@ def test_execute_device_tensor(mo_model_path: Path):
         assert isclose(output_tensor[idx].item(), expected[idx])
 
 
-def test_execute_devicetensor_dynamic_shape(dynamic_model_path: Path):
+def test_execute_devicetensor_dynamic_shape(
+    session: InferenceSession, dynamic_model_path: Path
+):
     # Device tensors should be able to execute even when the model expects
     # dynamic shapes.
-    session = me.InferenceSession()
     model = session.load(dynamic_model_path)
     tensor_one = md.Tensor((5,), md.DType.int32)
     tensor_two = md.Tensor((5,), md.DType.int32)
@@ -229,12 +233,12 @@ def test_execute_devicetensor_dynamic_shape(dynamic_model_path: Path):
     reason="One or more missing framework libs",
 )
 def test_execute_multi_framework(
+    session: InferenceSession,
     relu_onnx_model_path: Path,
     relu_torchscript_model_path: Path,
 ):
-    session = me.InferenceSession()
     trch_input_specs = [
-        me.TorchInputSpec(shape=[1, 3, 100, 100], dtype=me.DType.float32)
+        TorchInputSpec(shape=[1, 3, 100, 100], dtype=DType.float32)
     ]
     onnx_model = session.load(relu_onnx_model_path)
     trch_model = session.load(
@@ -254,7 +258,7 @@ def _cuda_available() -> bool:
 
 @pytest.mark.skipif(not _cuda_available(), reason="Requires CUDA")
 def test_execute_gpu(mo_model_path: Path):
-    session = me.InferenceSession(device="cuda")
+    session = InferenceSession(device="cuda")
     model = session.load(mo_model_path)
     output = model.execute(input=np.ones((5)))
     assert "output" in output.keys()
@@ -267,7 +271,7 @@ def test_execute_gpu(mo_model_path: Path):
 @pytest.mark.skipif(not _cuda_available(), reason="Requires CUDA")
 def test_gpu_fails_no_device_tensors(mo_model_path: Path):
     """GPU execution must use DeviceTensor inputs."""
-    session = me.InferenceSession(device="cuda")
+    session = InferenceSession(device="cuda")
     model = session.load(mo_model_path)
     with pytest.raises(
         RuntimeError,
@@ -277,9 +281,10 @@ def test_gpu_fails_no_device_tensors(mo_model_path: Path):
 
 
 def test_custom_ops(
-    mo_custom_ops_model_path: Path, custom_ops_package_path: Path
+    session: InferenceSession,
+    mo_custom_ops_model_path: Path,
+    custom_ops_package_path: Path,
 ):
-    session = me.InferenceSession()
     model = session.load(mo_custom_ops_model_path)
     inputs = np.ones((1)) * 4
     output = model.execute(input0=inputs)
@@ -301,8 +306,7 @@ def test_custom_ops(
     )
 
 
-def test_list_io(mo_listio_model_path: Path):
-    session = me.InferenceSession()
+def test_list_io(session: InferenceSession, mo_listio_model_path: Path):
     model_with_list_io = session.load(mo_listio_model_path)
     output = model_with_list_io.execute(
         input_list=[np.zeros(2)], input_tensor=np.ones(5)
@@ -316,9 +320,9 @@ def test_list_io(mo_listio_model_path: Path):
 
 
 def test_dynamic_rank_spec():
-    input_spec = me.TensorSpec(None, me.DType.float64, "dynamic")
+    input_spec = TensorSpec(None, DType.float64, "dynamic")
     assert input_spec.shape is None
-    assert input_spec.dtype == me.DType.float64
+    assert input_spec.dtype == DType.float64
     assert input_spec.name == "dynamic"
 
     assert (
@@ -329,9 +333,9 @@ def test_dynamic_rank_spec():
 
 
 def test_repr_torch_input_spec():
-    input_spec_with_shape = me.TorchInputSpec([20, 30], me.DType.float32)
+    input_spec_with_shape = TorchInputSpec([20, 30], DType.float32)
     assert input_spec_with_shape.shape == [20, 30]
-    assert input_spec_with_shape.dtype == me.DType.float32
+    assert input_spec_with_shape.dtype == DType.float32
 
     assert (
         repr(input_spec_with_shape)
@@ -339,9 +343,9 @@ def test_repr_torch_input_spec():
     )
     assert str(input_spec_with_shape) == "20x30xfloat32"
 
-    input_spec_without_shape = me.TorchInputSpec(None, me.DType.float64)
+    input_spec_without_shape = TorchInputSpec(None, DType.float64)
     assert input_spec_without_shape.shape == None
-    assert input_spec_without_shape.dtype == me.DType.float64
+    assert input_spec_without_shape.dtype == DType.float64
 
     assert (
         repr(input_spec_without_shape)
@@ -349,9 +353,7 @@ def test_repr_torch_input_spec():
     )
     assert str(input_spec_without_shape) == "None x float64"
 
-    input_spec_with_dim_names = me.TorchInputSpec(
-        ["BATCH", 30], me.DType.float32
-    )
+    input_spec_with_dim_names = TorchInputSpec(["BATCH", 30], DType.float32)
     assert input_spec_with_dim_names.shape == ["BATCH", 30]
     assert (
         repr(input_spec_with_dim_names)
