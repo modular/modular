@@ -332,7 +332,9 @@ struct Tensor[type: DType](
         self = Self(shape, ptr)
 
     @always_inline
-    fn __init__(inout self, shape: TensorShape, owned list: List[Scalar[type]]):
+    fn __init__(
+        inout self, shape: TensorShape, owned list: List[Scalar[type], *_]
+    ):
         """Initializes a 1-dimensional Tensor from the provided list.
 
         Args:
@@ -345,7 +347,7 @@ struct Tensor[type: DType](
         self = Self(shape, data_anyptr)
 
     @always_inline
-    fn __init__(inout self, owned list: List[Scalar[type]]):
+    fn __init__(inout self, owned list: List[Scalar[type], *_]):
         """Initializes a 1-dimensional Tensor from the provided list.
 
         Args:

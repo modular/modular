@@ -70,7 +70,7 @@ struct TensorSpec(
         self = TensorSpec(type, TensorShape(shapes))
 
     @always_inline
-    fn __init__(inout self, type: DType, shapes: List[Int]):
+    fn __init__(inout self, type: DType, shapes: List[Int, *_]):
         """Initializes a Tensorspec from the dtype and shapes provided.
 
         Args:
