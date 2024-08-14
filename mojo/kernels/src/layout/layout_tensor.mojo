@@ -412,6 +412,7 @@ struct LayoutTensor[
     fn __getitem__(self, *dims: Int) -> Self.element_type:
         var strides = self.runtime_layout.stride.value
         var vec_res = SIMD[dtype, Self.element_size]()
+        var offset = Self._getOffset(strides, dims)
 
         # TODO: We should vectorize the reads of contiguous loads this just stash
         # scalar elements.
@@ -422,20 +423,17 @@ struct LayoutTensor[
             @parameter
             if element_layout.all_dims_known():
                 alias element_offset = self.element_layout(idx)
-                vec_res[idx] = self.ptr.load(
-                    Self._getOffset(strides, dims) + element_offset
-                )
+                vec_res[idx] = self.ptr.load(offset + element_offset)
             else:
                 var element_offset = self.runtime_element_layout(idx)
-                vec_res[idx] = self.ptr.load(
-                    Self._getOffset(strides, dims) + element_offset
-                )
+                vec_res[idx] = self.ptr.load(offset + element_offset)
 
         return vec_res
 
     @always_inline
     fn __setitem__(self, d0: Int, val: Self.element_type):
         var strides = self.runtime_layout.stride.value
+        var offset = Self._getOffset(strides, VariadicList[Int](d0))
 
         # TODO: We should vectorize contiguous stores this just stash scalars.
         @parameter
@@ -444,22 +442,15 @@ struct LayoutTensor[
             @parameter
             if element_layout.all_dims_known():
                 alias element_offset = self.element_layout(i)
-                self.ptr.store(
-                    Self._getOffset(strides, VariadicList[Int](d0))
-                    + element_offset,
-                    val[i],
-                )
+                self.ptr.store(offset + element_offset, val[i])
             else:
                 alias element_offset = self.element_layout(i)
-                self.ptr.store(
-                    Self._getOffset(strides, VariadicList[Int](d0))
-                    + element_offset,
-                    val[i],
-                )
+                self.ptr.store(offset + element_offset, val[i])
 
     @always_inline
     fn __setitem__(self, d0: Int, d1: Int, val: Self.element_type):
         var strides = self.runtime_layout.stride.value
+        var offset = Self._getOffset(strides, VariadicList[Int](d0, d1))
 
         @parameter
         for i in range(Self.element_size):
@@ -467,22 +458,15 @@ struct LayoutTensor[
             @parameter
             if element_layout.all_dims_known():
                 alias element_offset = self.element_layout(i)
-                self.ptr.store(
-                    Self._getOffset(strides, VariadicList[Int](d0, d1))
-                    + element_offset,
-                    val[i],
-                )
+                self.ptr.store(offset + element_offset, val[i])
             else:
                 var element_offset = self.runtime_element_layout(i)
-                self.ptr.store(
-                    Self._getOffset(strides, VariadicList[Int](d0, d1))
-                    + element_offset,
-                    val[i],
-                )
+                self.ptr.store(offset + element_offset, val[i])
 
     @always_inline
     fn __setitem__(self, d0: Int, d1: Int, d2: Int, val: Self.element_type):
         var strides = self.runtime_layout.stride.value
+        var offset = Self._getOffset(strides, VariadicList[Int](d0, d1, d2))
 
         @parameter
         for i in range(Self.element_size):
@@ -490,24 +474,17 @@ struct LayoutTensor[
             @parameter
             if element_layout.all_dims_known():
                 alias element_offset = self.element_layout(i)
-                self.ptr.store(
-                    Self._getOffset(strides, VariadicList[Int](d0, d1, d2))
-                    + element_offset,
-                    val[i],
-                )
+                self.ptr.store(offset + element_offset, val[i])
             else:
                 var element_offset = self.runtime_element_layout(i)
-                self.ptr.store(
-                    Self._getOffset(strides, VariadicList[Int](d0, d1, d2))
-                    + element_offset,
-                    val[i],
-                )
+                self.ptr.store(offset + element_offset, val[i])
 
     @always_inline
     fn __setitem__(
         self, d0: Int, d1: Int, d2: Int, d3: Int, val: Self.element_type
     ):
         var strides = self.runtime_layout.stride.value
+        var offset = Self._getOffset(strides, VariadicList[Int](d0, d1, d2, d3))
 
         @parameter
         for i in range(Self.element_size):
@@ -515,18 +492,10 @@ struct LayoutTensor[
             @parameter
             if element_layout.all_dims_known():
                 alias element_offset = self.element_layout(i)
-                self.ptr.store(
-                    Self._getOffset(strides, VariadicList[Int](d0, d1, d2, d3))
-                    + element_offset,
-                    val[i],
-                )
+                self.ptr.store(offset + element_offset, val[i])
             else:
                 var element_offset = self.runtime_element_layout(i)
-                self.ptr.store(
-                    Self._getOffset(strides, VariadicList[Int](d0, d1, d2, d3))
-                    + element_offset,
-                    val[i],
-                )
+                self.ptr.store(offset + element_offset, val[i])
 
     @always_inline
     fn load[width: Int](self, m: Int, n: Int) -> SIMD[dtype, width]:
