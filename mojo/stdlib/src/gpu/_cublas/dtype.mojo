@@ -4,6 +4,8 @@
 #
 # ===----------------------------------------------------------------------=== #
 
+from os import abort
+
 
 @value
 @register_passable("trivial")

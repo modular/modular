@@ -5,6 +5,8 @@
 # ===----------------------------------------------------------------------=== #
 """Implements CUDA compilation operations."""
 
+from os import abort
+
 from compile import Info, compile_info, get_linkage_name
 
 # ===----------------------------------------------------------------------===#
