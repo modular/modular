@@ -6,7 +6,7 @@
 # REQUIRES: has_cuda_device
 # RUN: %mojo-no-debug %s | FileCheck %s
 
-from sys.info import simdwidthof
+from sys.info import simdwidthof, sizeof
 
 from buffer import NDBuffer
 from buffer.dimlist import DimList

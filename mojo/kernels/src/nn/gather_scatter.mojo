@@ -6,7 +6,7 @@
 
 from collections import OptionalReg
 from math import align_down, ceildiv
-from sys.info import has_neon, sizeof
+from sys import has_neon, sizeof, simdwidthof
 from sys.intrinsics import PrefetchOptions
 from os import abort
 

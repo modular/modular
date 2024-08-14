@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from math import align_down, align_up, ceildiv, exp
-from sys.info import has_avx512f, has_neon
+from sys import has_avx512f, has_neon, simdwidthof
 
 from algorithm import sync_parallelize, tile, vectorize
 from algorithm.reduction import (

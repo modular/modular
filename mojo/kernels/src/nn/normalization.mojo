@@ -5,6 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from math import ceildiv, isqrt
+from sys.info import alignof, simdwidthof
 from collections import OptionalReg
 from algorithm import map_reduce, mean, variance, vectorize
 from algorithm.functional import sync_parallelize

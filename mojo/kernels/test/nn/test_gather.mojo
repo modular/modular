@@ -10,7 +10,7 @@
 # compilation. The test can also be used to check the assembly to see
 # if compiler generates proper SIMD instructions and unrolling.
 
-from sys.info import simdwidthof
+from sys import simdwidthof
 
 from buffer import NDBuffer
 from buffer.dimlist import DimList

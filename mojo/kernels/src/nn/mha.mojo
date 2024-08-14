@@ -51,7 +51,7 @@ from utils.numerics import neg_inf, min_or_neg_inf
 from utils.static_tuple import StaticTuple
 
 from .softmax import softmax, _online_softmax_iter_for_mma_output, _softmax_gpu
-from sys import alignof
+from sys import alignof, simdwidthof
 
 # ===----------------------------------------------------------------------===#
 # Multi-Head Attention
