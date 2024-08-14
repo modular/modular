@@ -807,7 +807,7 @@ struct TensorShape(
         self._rep = rep
 
     @always_inline
-    fn __init__(inout self, shapes: List[Int]):
+    fn __init__(inout self, shapes: List[Int, *_]):
         """Initializes a TensorShape from the list provided.
 
         Args:
