@@ -302,7 +302,8 @@ SignatureType SignatureType::getSpecializedSignature(
   // We do this with with ParameterEvaluator which can do the remapping for us.
   ParameterEvaluator evaluator;
   evaluator.setInputDepth(1);
-  IndexDepthAdjuster adjuster(/*adjustDepth=*/1);
+  IndexDepthAdjuster plusOneAdjuster(/*adjustDepth=*/1);
+  IndexDepthAdjuster minusOneAdjuster(/*adjustDepth=*/-1);
 
   auto remapType = [&](Type type) -> Type {
     return evaluator.getReboundType(type);
@@ -321,17 +322,20 @@ SignatureType SignatureType::getSpecializedSignature(
     // partial bind).
     if (::isa<UnboundAttr>(value)) {
       // Set the binding to a declref of the thing itself - that will keep it
-      // from becoming #kgen.unbound.
-      auto value =
-          ParamIndexRefAttr::get(/*depth=*/-1, /*isResult=*/false,
-                                 unboundParamTypes.size(), remappedDeclType);
+      // from becoming #kgen.unbound.  This #param.index.ref will have a level
+      // of -1, and we adjust the level of its type by -1 so it balances out
+      // correctly when referenced.
+      auto adjustedParamType = minusOneAdjuster.replace(remappedDeclType);
+      auto value = ParamIndexRefAttr::get(
+          /*depth=*/-1, /*isResult=*/false, unboundParamTypes.size(),
+          adjustedParamType);
       unboundParamTypes.push_back(remappedDeclType);
       evaluator.addInputValue(value);
     } else {
       // We must remap the value type being provided as well, because it may be
       // referring to outer-context indexed parameters, whose depth will be
       // increased when substituted into this signature.
-      Type reboundType = adjuster.replace(value.getType());
+      Type reboundType = plusOneAdjuster.replace(value.getType());
       if (reboundType != remappedDeclType) {
         assert(emitErrorFn && "unexpected invalid signature");
         emitErrorFn() << "caller input parameter #" << paramNo << " has type "
