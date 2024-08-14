@@ -512,16 +512,16 @@ struct Function[
             var func_handle = module.load(fn_name)
 
             var cuda_dll = payload.device_context_ptr[].cuda_instance.cuda_dll
-            var cuFuncSetCacheConfig = cuda_dll.cuFuncSetCacheConfig
-            var cuFuncSetAttribute = cuda_dll.cuFuncSetAttribute
 
             if payload.cache_config != -1:
                 _check_error(
-                    cuFuncSetCacheConfig(func_handle, payload.cache_config)
+                    cuda_dll.cuFuncSetCacheConfig(
+                        func_handle, payload.cache_config
+                    )
                 )
             if payload.func_attribute.code != -1:
                 _check_error(
-                    cuFuncSetAttribute(
+                    cuda_dll.cuFuncSetAttribute(
                         func_handle,
                         payload.func_attribute.code,
                         payload.func_attribute.value,
