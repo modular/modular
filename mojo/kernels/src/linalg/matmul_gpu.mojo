@@ -714,7 +714,6 @@ fn matmul_kernel[
     """Matrix Multiplication using shared memory.
     This version loads blocks of size tile_size x tile_size from A and B
     and updates a tile_size x tile_size in C.
-
     The thread block should have shape (tile_size, tile_size, 1). Each
     thread is mapped one element in C. The grid should have shape
     (N/tile_size, M/tile_size, 1). N is the first dimension for coalesced
@@ -1574,54 +1573,28 @@ fn _matmul_gpu_dispatch[
                 block_dim=WARP_SIZE * WARPS_PER_BLOCK,
             )
     else:
-        # Tile size for tiling in shared memory.
-        # Thread block would have shape (tile_size, tile_size, 1)
-        # If k < tile_size use naive version.
-        alias tile_size = 16
-        if k >= tile_size and not transpose_b:
-            var gpu_func = ctx.compile_function[
-                matmul_kernel[
-                    c_type,
-                    a_type,
-                    b_type,
-                    tile_size,
-                    elementwise_lambda_fn=elementwise_lambda_fn,
-                ]
-            ]()
-            ctx.enqueue_function(
-                gpu_func,
-                c.data,
-                a.data,
-                b.data,
-                m,
-                n,
-                k,
-                grid_dim=(ceildiv(n, tile_size), ceildiv(m, tile_size)),
-                block_dim=(tile_size, tile_size),
-            )
-        else:
-            alias BLOCK_DIM = 16
-            var gpu_func = ctx.compile_function[
-                matmul_kernel_naive[
-                    a_type,
-                    b_type,
-                    c_type,
-                    BLOCK_DIM,
-                    transpose_b,
-                    elementwise_lambda_fn=elementwise_lambda_fn,
-                ]
-            ]()
-            ctx.enqueue_function(
-                gpu_func,
-                c.data,
-                a.data,
-                b.data,
-                m,
-                n,
-                k,
-                grid_dim=(ceildiv(m, BLOCK_DIM), ceildiv(n, BLOCK_DIM)),
-                block_dim=(BLOCK_DIM, BLOCK_DIM),
-            )
+        alias BLOCK_DIM = 16
+        var gpu_func = ctx.compile_function[
+            matmul_kernel_naive[
+                a_type,
+                b_type,
+                c_type,
+                BLOCK_DIM,
+                transpose_b,
+                elementwise_lambda_fn=elementwise_lambda_fn,
+            ]
+        ]()
+        ctx.enqueue_function(
+            gpu_func,
+            c.data,
+            a.data,
+            b.data,
+            m,
+            n,
+            k,
+            grid_dim=(ceildiv(m, BLOCK_DIM), ceildiv(n, BLOCK_DIM)),
+            block_dim=(BLOCK_DIM, BLOCK_DIM),
+        )
 
 
 @always_inline
