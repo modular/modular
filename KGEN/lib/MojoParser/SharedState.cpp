@@ -1615,16 +1615,17 @@ void SharedState::traverseImportDirectories(
     // Cannot find the file, then check child directories of the auto import
     // directory.
     std::error_code ec;
-    for (auto &childDir :
-         std::filesystem::recursive_directory_iterator(rawPath, ec)) {
+    for (llvm::sys::fs::recursive_directory_iterator f(rawPath, ec), e; f != e;
+         f.increment(ec)) {
       if (ec)
         continue;
+      const std::string &path = f->path();
       // Skip non-directories and source packages, internal packages should be
       // imported using a relative import.
-      if (!childDir.is_directory() ||
-          Filesystem::isMojoSourcePackagePath(childDir.path()))
+      if (!llvm::sys::fs::is_directory(path) ||
+          Filesystem::isMojoSourcePackagePath(path))
         continue;
-      if (callback(childDir.path().string()).wasInterrupted())
+      if (callback(path).wasInterrupted())
         return;
     }
   }
