@@ -6,7 +6,7 @@
 
 from os import abort
 from pathlib import Path
-from sys.ffi import C_char, DLHandle
+from sys.ffi import C_char, DLHandle, external_call
 
 from memory.unsafe_pointer import *
 

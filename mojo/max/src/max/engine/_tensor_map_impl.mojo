@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from memory import UnsafePointer
-from sys.ffi import DLHandle
+from sys.ffi import DLHandle, external_call
 from max._utils import call_dylib_func, CString
 
 from ._status import Status
