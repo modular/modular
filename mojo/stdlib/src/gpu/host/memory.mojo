@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 """Implements CUDA memory operations."""
 
-from sys.info import sizeof
+from sys import sizeof, bitwidthof
 
 from memory import UnsafePointer
 from memory.unsafe import bitcast

@@ -7,7 +7,7 @@
 
 from collections import Optional
 from memory import UnsafePointer
-from sys.info import triple_is_nvidia_cuda, bitwidthof
+from sys import triple_is_nvidia_cuda, bitwidthof, alignof, sizeof
 from sys.intrinsics import _RegisterPackType
 from sys._assembly import inlined_assembly
 from builtin.dtype import _uint_type_of_width

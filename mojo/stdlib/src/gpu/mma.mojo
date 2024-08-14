@@ -6,7 +6,7 @@
 """This module includes utilities for working with the
 warp-matrix-matrix-multiplication (wmma) instructions."""
 
-from sys import _RegisterPackType, llvm_intrinsic
+from sys import _RegisterPackType, llvm_intrinsic, sizeof
 
 from gpu.memory import AddressSpace
 from memory import UnsafePointer, bitcast

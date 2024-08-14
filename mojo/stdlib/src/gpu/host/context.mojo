@@ -6,6 +6,7 @@
 """Implements CUDA context operations."""
 
 from os import abort
+from sys import sizeof, bitwidthof
 
 from memory import UnsafePointer
 

@@ -5,6 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from os import abort
+from sys import sizeof
 
 from ._compile import _get_nvptx_fn_name
 from collections import List
