@@ -117,15 +117,15 @@
         "mojo.onSettingsChanged": {
           "type": "string",
           "default": "prompt",
-          "description": "Action taken when a setting change requires a server restart to take effect.",
+          "description": "Action taken when a setting change require the extension to restart to take effect.",
           "enum": [
             "prompt",
             "restart",
             "ignore"
           ],
           "enumDescriptions": [
-            "Prompt the user for restarting the server",
-            "Automatically restart the server",
+            "Prompt the user for restarting the extension",
+            "Automatically restart the extension",
             "Do nothing"
           ]
         },
@@ -141,28 +141,6 @@
           "scope": "resource",
           "type": "array",
           "description": "Arguments passed in. Each argument is a separate item in the array."
-        },
-        "mojo.lldb.rpcServer": {
-          "scope": "resource",
-          "description": "Start an RPC debug server that will accept debug requests. Multiple servers with the same port but different secret can exist at once in the same instance of VS Code. This server is not linked to any workspace folders, so workspace-related variable substitution in the debug configuration is not supported.",
-          "type": "object",
-          "properties": {
-            "port": {
-              "type": "number",
-              "description": "The port to use for creating this server in localhost."
-            },
-            "secret": {
-              "type": "string",
-              "description": "An optional string that is used for basic authentication. If set, debug configurations must include the `secret` or `token` entry with this value."
-            }
-          },
-          "order": 2
-        },
-        "mojo.lldb.disableDefaultRPCServer": {
-          "scope": "machine",
-          "description": "Disable the default RPC server launched by the extension on this host, which uses port 12346 and has no `secret`.",
-          "type": "boolean",
-          "default": false
         }
       }
     },

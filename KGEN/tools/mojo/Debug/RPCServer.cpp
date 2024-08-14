@@ -30,8 +30,7 @@ namespace json = llvm::json;
 
 /// Create an object with the common fields that are sent to the RPC server
 /// to start the different kinds of requests.
-static ErrorOr<json::Object>
-createBasicRPCPayload(const std::optional<StringRef> &secret) {
+static ErrorOr<json::Object> createBasicRPCPayload() {
   ErrorOr<std::filesystem::path> modularHome =
       Config::getModularConfigFolderPath();
   if (failed(modularHome))
@@ -39,9 +38,6 @@ createBasicRPCPayload(const std::optional<StringRef> &secret) {
 
   json::Object payload{{"modularHomePath", modularHome->string()},
                        {"type", "mojo-lldb"}};
-
-  if (secret)
-    payload.insert({"secret", *secret});
 
   return payload;
 }
@@ -96,13 +92,16 @@ static ErrorOrSuccess doSendRequest(SOCKET sockfd, StringRef payloadStr) {
   return Error("couldn't initialize the debug session");
 }
 
-/// Send the given payload to the RPC server at the specified port. If `dryRun`
-/// is specified, then the payload is printed to the standard output instead.
-static ErrorOrSuccess invokeRPC(bool dryRun, int port, json::Object payload) {
+/// Send the given payload to the RPC server at one of the specified ports. If
+/// `dryRun` is specified, then the payload is printed to the standard output
+/// instead.
+static ErrorOrSuccess invokeRPC(bool dryRun, ArrayRef<int> ports,
+                                json::Object payload) {
   std::string payloadStr =
       llvm::formatv("{0:2}", json::Value(std::move(payload)));
   if (dryRun) {
-    llvm::outs() << "port: " << port << "\n";
+    for (int p : ports)
+      llvm::outs() << "port: " << p << "\n";
     llvm::outs() << "payload: " << payloadStr << "\n";
     return success();
   }
@@ -117,15 +116,22 @@ static ErrorOrSuccess invokeRPC(bool dryRun, int port, json::Object payload) {
   struct sockaddr_in serverAddress;
   memset((char *)&serverAddress, 0, sizeof(serverAddress));
   serverAddress.sin_family = AF_INET;
-  serverAddress.sin_port = htons(port);
   serverAddress.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
 
   ErrorOrSuccess status = success();
-  if (connect(sockfd, (struct sockaddr *)&serverAddress,
-              sizeof(serverAddress)) < 0) {
-    status = Error(Twine("can't connect to the RPC debug server socket: ") +
-                   strerror(errno));
-  } else {
+  bool didConnect = false;
+  for (int port : ports) {
+    serverAddress.sin_port = htons(port);
+    if (connect(sockfd, (struct sockaddr *)&serverAddress,
+                sizeof(serverAddress)) < 0) {
+      status = Error(Twine("can't connect to the RPC debug server socket : ") +
+                     strerror(errno));
+    } else {
+      didConnect = true;
+      break;
+    }
+  }
+  if (didConnect) {
     // We create a dangling thread to easily handle timeouts. The thread will
     // die anyway as soon as we close the socket.
     auto future = new std::future<ErrorOrSuccess>(
@@ -147,11 +153,10 @@ static ErrorOrSuccess invokeRPC(bool dryRun, int port, json::Object payload) {
   return status;
 }
 
-ErrorOrSuccess M::invokeAttachRPC(bool dryRun, int rpcPort,
-                                  const std::optional<StringRef> &secret,
+ErrorOrSuccess M::invokeAttachRPC(bool dryRun, ArrayRef<int> rpcPorts,
                                   const std::optional<StringRef> &pid,
                                   const std::optional<StringRef> &processName) {
-  ErrorOr<json::Object> payload = createBasicRPCPayload(secret);
+  ErrorOr<json::Object> payload = createBasicRPCPayload();
   if (failed(payload))
     return payload.takeError();
   payload->insert({"request", "attach"});
@@ -159,15 +164,14 @@ ErrorOrSuccess M::invokeAttachRPC(bool dryRun, int rpcPort,
     payload->insert({"pid", *pid});
   if (processName)
     payload->insert({"program", *processName});
-  return invokeRPC(dryRun, rpcPort, *payload);
+  return invokeRPC(dryRun, rpcPorts, *payload);
 }
 
-ErrorOrSuccess M::invokeLaunchRPC(bool dryRun, int rpcPort,
-                                  const std::optional<StringRef> &secret,
+ErrorOrSuccess M::invokeLaunchRPC(bool dryRun, ArrayRef<int> rpcPorts,
                                   StringRef target,
                                   ArrayRef<std::string> runArgs,
                                   StringRef rpcTerminal) {
-  ErrorOr<json::Object> payload = createBasicRPCPayload(secret);
+  ErrorOr<json::Object> payload = createBasicRPCPayload();
   if (failed(payload))
     return payload.takeError();
 
@@ -193,5 +197,5 @@ ErrorOrSuccess M::invokeLaunchRPC(bool dryRun, int rpcPort,
   payload->insert({"env", std::move(env)});
   payload->insert({"runInTerminal", rpcTerminal == "dedicated"});
 
-  return invokeRPC(dryRun, rpcPort, *payload);
+  return invokeRPC(dryRun, rpcPorts, *payload);
 }

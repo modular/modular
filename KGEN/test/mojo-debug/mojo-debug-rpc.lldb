@@ -17,10 +17,6 @@
 # CHECK-PID-NEXT:   "type": "mojo-lldb"
 # CHECK-PID-NEXT: }
 
-# COM: Check if the RPC attach command is created properly with pid and secret.
-# RUN: %debug --rpc --pid 123 --secret secreto --dry-run | FileCheck %s --check-prefix=CHECK-PID-SECRET
-# CHECK-PID-SECRET:   "secret": "secreto"
-
 # COM: Check if the CLI attach command is created properly with process name.
 # RUN: %debug --rpc --process-name foo --dry-run | FileCheck %s --check-prefix=CHECK-PROC-NAME
 # CHECK-PROC-NAME:     {
@@ -45,10 +41,6 @@
 # CHECK-BIN-NEXT:   "runInTerminal": false
 # CHECK-BIN-NEXT:   "type": "mojo-lldb"
 # CHECK-BIN-NEXT: }
-
-# COM: Check if the RPC launch command is created properly with a binary and a secret
-# RUN: %debug --secret secreto --dry-run --rpc bin.exe --some-arg | FileCheck %s --check-prefix=CHECK-BIN-SECRET
-# CHECK-BIN-SECRET:  "secret": "secreto"
 
 # COM: Check if the RPC launch command is created properly with a mojo file
 # RUN: %debug --terminal dedicated --dry-run --rpc --debug-level line-tables file.mojo --some-arg | FileCheck %s --check-prefix=CHECK-MOJO
