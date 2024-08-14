@@ -28,6 +28,7 @@ from builtin.simd import _simd_apply
 from compile import *
 from layout import *
 from sys import llvm_intrinsic
+from memory import bitcast
 
 
 fn apply[
