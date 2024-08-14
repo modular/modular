@@ -8,6 +8,7 @@
 # CHECK: Benchmark results
 
 from random import rand
+from os import abort
 
 from benchmark import *
 from benchmark import keep

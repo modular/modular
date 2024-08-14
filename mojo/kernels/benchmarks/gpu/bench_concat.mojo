@@ -7,6 +7,7 @@
 # RUN: %bare-mojo build %s
 
 from random import randn
+from os import abort
 
 from builtin._closure import __ownership_keepalive
 from algorithm.functional import elementwise
