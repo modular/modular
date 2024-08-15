@@ -660,20 +660,29 @@ struct Device(StringableRaising):
         )
         res += (
             "max_block: "
-            + Dim(
-                self._query(DeviceAttribute.MAX_BLOCK_DIM_X),
-                self._query(DeviceAttribute.MAX_BLOCK_DIM_Y),
-                self._query(DeviceAttribute.MAX_BLOCK_DIM_Z),
-            ).__str__()
+            + str(
+                Dim(
+                    self._query(DeviceAttribute.MAX_BLOCK_DIM_X),
+                    self._query(DeviceAttribute.MAX_BLOCK_DIM_Y),
+                    self._query(DeviceAttribute.MAX_BLOCK_DIM_Z),
+                )
+            )
             + "\n"
         )
         res += (
             "max_grid: "
-            + Dim(
-                self._query(DeviceAttribute.MAX_GRID_DIM_X),
-                self._query(DeviceAttribute.MAX_GRID_DIM_Y),
-                self._query(DeviceAttribute.MAX_GRID_DIM_Z),
-            ).__str__()
+            + str(
+                Dim(
+                    self._query(DeviceAttribute.MAX_GRID_DIM_X),
+                    self._query(DeviceAttribute.MAX_GRID_DIM_Y),
+                    self._query(DeviceAttribute.MAX_GRID_DIM_Z),
+                )
+            )
+            + "\n"
+        )
+        res += (
+            "max_access_window_size: "
+            + str(self._query(DeviceAttribute.MAX_ACCESS_POLICY_WINDOW_SIZE))
             + "\n"
         )
         res += "SM count: " + str(self.multiprocessor_count()) + "\n"
