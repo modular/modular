@@ -6,8 +6,9 @@
 # RUN: %mojo %s
 
 
-from utils.lock import SpinWaiter
 from testing import assert_true
+
+from utils.lock import SpinWaiter
 
 
 def test_spin_waiter():

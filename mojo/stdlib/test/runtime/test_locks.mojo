@@ -9,9 +9,10 @@
 from os import Atomic
 from time import now, sleep, time_function
 
-from utils.lock import BlockingSpinLock, BlockingScopedLock
 from runtime.asyncrt import TaskGroup
 from testing import assert_equal
+
+from utils.lock import BlockingScopedLock, BlockingSpinLock
 
 
 fn test_basic_lock() raises:
