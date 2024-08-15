@@ -1,0 +1,32 @@
+[build-system]
+requires = ["setuptools", "setuptools-scm"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "modular-pyutils"
+version = "0.0.5"
+description = "Modular Python utilities"
+readme = "README.md"
+requires-python = ">=3.8"
+dependencies = [
+    "find-libpython>=0.3.0",
+    "numpy",
+    "ruamel.yaml>=0.17",
+]
+
+[project.optional-dependencies]
+build-metrics = [
+    "opentelemetry-api>=1.18.0",
+    "opentelemetry-exporter-otlp>=1.18.0",
+    "opentelemetry-sdk>=1.18.0",
+]
+dev = [
+    "black>=22.12.0",
+    "flake8>=3.9",
+    "isort>=5.10.1",
+    "pyright>=1.1.255",
+]
+tests = [
+    "pytest-cov",
+    "pytest>=7.1.2",
+]
