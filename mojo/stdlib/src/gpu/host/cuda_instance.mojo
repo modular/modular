@@ -271,10 +271,26 @@ struct AccessProperty:
     alias PERSISTING = Self(2)
     """Persisting access is more likely to persist in cache."""
 
+    @always_inline("nodebug")
+    fn __eq__(self, other: Self) -> Bool:
+        return self._value == other._value
+
+    @always_inline("nodebug")
+    fn __ne__(self, other: Self) -> Bool:
+        return not (self == other)
+
+    fn __init__(inout self, *, other: Self):
+        """Explicitly construct a deep copy of the provided value.
+
+        Args:
+            other: The value to copy.
+        """
+        self = other
+
 
 @value
 @register_passable("trivial")
-struct AccessPolictyWindow:
+struct AccessPolicyWindow:
     """Specifies an access policy for a window, a contiguous extent of
     memory beginning at base_ptr and ending at base_ptr + num_bytes.
     num_bytes is limited by
@@ -299,6 +315,208 @@ struct AccessPolictyWindow:
     """AccessProperty set for hit."""
     var miss_prop: AccessProperty
     """AccessProperty set for miss. Must be either NORMAL or STREAMING."""
+
+
+@value
+@register_passable("trivial")
+struct LimitProperty:
+    var _value: Int32
+
+    alias STACK_SIZE = 0x00
+    """Controls the stack size in bytes of each GPU thread. The driver
+    automatically increases the per-thread stack size for each kernel launch as
+    needed. This size isn't reset back to the original value after each launch.
+    Setting this value will take effect immediately, and if necessary, the device
+  w ill block until all preceding requested tasks are complete."""
+
+    alias PRINTF_FIFO_SIZE = 0x01
+    """Controls the size in bytes of the FIFO used by the printf() device
+    system call. Setting CU_LIMIT_PRINTF_FIFO_SIZE must be performed before
+    launching any kernel that uses the printf() device system call, otherwise
+    CUDA_ERROR_INVALID_VALUE will be returned."""
+
+    alias MALLOC_HEAP_SIZE = 0x02
+    """Controls the size in bytes of the heap used by the malloc() and free()
+    device system calls. Setting CU_LIMIT_MALLOC_HEAP_SIZE must be performed
+    before launching any kernel that uses the malloc() or free() device system
+    calls, otherwise CUDA_ERROR_INVALID_VALUE will be returned."""
+
+    alias DEV_RUNTIME_SYNC_DEPTH = 0x03
+    """GPU device runtime launch synchronize depth."""
+
+    alias DEV_RUNTIME_PENDING_LAUNCH_COUNT = 0x04
+    """GPU device runtime pending launch count."""
+
+    alias MAX_L2_FETCH_GRANULARITY = 0x05
+    """A value between 0 and 128 that indicates the maximum fetch granularity
+    of L2 (in Bytes). This is a hint."""
+
+    alias PERSISTING_L2_CACHE_SIZE = 0x06
+    """A size in bytes for L2 persisting lines cache size."""
+
+    alias SHMEM_SIZE = 0x07
+    """A maximum size in bytes of shared memory available to CUDA kernels on a
+    CIG context. Can only be queried, cannot be set."""
+
+    alias CIG_ENABLED = 0x08
+    """A non-zero value indicates this CUDA context is a CIG-enabled context.
+    Can only be queried, cannot be set."""
+
+    alias CIG_SHMEM_FALLBACK_ENABLED = 0x09
+    """When set to a non-zero value, CUDA will fail to launch a kernel on a
+    CIG context, instead of using the fallback path, if the kernel uses more
+    shared memory than available."""
+
+    @always_inline("nodebug")
+    fn __eq__(self, other: Self) -> Bool:
+        return self._value == other._value
+
+    @always_inline("nodebug")
+    fn __ne__(self, other: Self) -> Bool:
+        return not (self == other)
+
+    fn __init__(inout self, *, other: Self):
+        """Explicitly construct a deep copy of the provided value.
+
+        Args:
+            other: The value to copy.
+        """
+        self = other
+
+
+alias cuLimit = _dylib_function[
+    "cuLimit",
+    fn (LimitProperty, Int) -> Result,
+]
+
+
+@value
+@register_passable("trivial")
+struct LaunchAttribute:
+    var _value: Int32
+
+    alias IGNORE = Self(0)
+    """Ignored entry, for convenient composition."""
+
+    alias ACCESS_POLICY_WINDOW = Self(1)
+    """Valid for streams, graph nodes, launches."""
+
+    alias COOPERATIVE = Self(2)
+    """Valid for graph nodes, launches."""
+
+    alias SYNCHRONIZATION_POLICY = Self(3)
+    """Valid for streams."""
+
+    alias CLUSTER_DIMENSION = Self(4)
+    """Valid for graph nodes, launches."""
+
+    alias CLUSTER_SCHEDULING_POLICY_PREFERENCE = Self(5)
+    """Valid for graph nodes, launches."""
+
+    alias PROGRAMMATIC_STREAM_SERIALIZATION = Self(6)
+    """Valid for launches. Setting CUlaunchAttributeValue::
+    programmaticStreamSerializationAllowed to non-0 signals that the kernel
+    will use programmatic means to resolve its stream dependency, so that the
+    CUDA runtime should opportunistically allow the grid's execution to overlap
+    with the previous kernel in the stream, if that kernel requests the overlap.
+    The dependent launches can choose to wait on the dependency using the
+    programmatic sync."""
+
+    alias PROGRAMMATIC_EVENT = Self(7)
+    """Valid for launches. Set CUlaunchAttributeValue::programmaticEvent to
+    record the event. Event recorded through this launch attribute is guaranteed
+    to only trigger after all block in the associated kernel trigger the event.
+    A block can trigger the event through PTX launchdep.release or CUDA builtin
+    function cudaTriggerProgrammaticLaunchCompletion(). A trigger can also be
+    inserted at the beginning of each block's execution if triggerAtBlockStart
+    is set to non-0. The dependent launches can choose to wait on the dependency
+    using the programmatic sync (cudaGridDependencySynchronize() or equivalent
+    PTX instructions). Note that dependents (including the CPU thread calling
+    cuEventSynchronize()) are not guaranteed to observe the release precisely
+    when it is released. For example, cuEventSynchronize() may only observe
+    the event trigger long after the associated kernel has completed. This
+    recording type is primarily meant for establishing programmatic dependency
+    between device tasks. Note also this type of dependency allows, but does not
+    guarantee, concurrent execution of tasks. The event supplied must not be an
+    interprocess or interop event. The event must disable timing (i.e. must be
+    created with the CU_EVENT_DISABLE_TIMING flag set)."""
+
+    alias PRIORITY = Self(8)
+    """Valid for streams, graph nodes, launches."""
+
+    alias MEM_SYNC_DOMAIN_MAP = Self(9)
+    """Valid for streams, graph nodes, launches."""
+
+    alias MEM_SYNC_DOMAIN = Self(10)
+    """Valid for streams, graph nodes, launches."""
+
+    alias LAUNCH_COMPLETION_EVENT = Self(12)
+    """Valid for launches. Set CUlaunchAttributeValue::launchCompletionEvent to
+    record the event. Nominally, the event is triggered once all blocks of the
+    kernel have begun execution. Currently this is a best effort. If a kernel
+    B has a launch completion dependency on a kernel A, B may wait until A is
+    complete. Alternatively, blocks of B may begin before all blocks of A have
+    begun, for example if B can claim execution resources unavailable to A
+    (e.g. they run on different GPUs) or if B is a higher priority than A.
+    Exercise caution if such an ordering inversion could lead to deadlock.
+    A launch completion event is nominally similar to a programmatic event
+    with triggerAtBlockStart set except that it is not visible to
+    cudaGridDependencySynchronize() and can be used with compute capability
+    less than 9.0. The event supplied must not be an interprocess or interop
+    event. The event must disable timing (i.e. must be created with the
+    CU_EVENT_DISABLE_TIMING flag set)."""
+
+    alias DEVICE_UPDATABLE_KERNEL_NODE = Self(13)
+    """Valid for graph nodes, launches. This attribute is graphs-only,
+    and passing it to a launch in a non-capturing stream will result in an
+    error. CUlaunchAttributeValue::deviceUpdatableKernelNode::deviceUpdatable
+    can only be set to 0 or 1. Setting the field to 1 indicates that the
+    corresponding kernel node should be device-updatable. On success, a handle
+    will be returned via CUlaunchAttributeValue::deviceUpdatableKernelNode::devNode
+    which can be passed to the various device-side update functions to update
+    the node's kernel parameters from within another kernel. For more
+    information on the types of device updates that can be made, as well as the
+    relevant limitations thereof, see cudaGraphKernelNodeUpdatesApply. Nodes
+    which are device-updatable have additional restrictions compared to regular
+    kernel nodes. Firstly, device-updatable nodes cannot be removed from their
+    graph via cuGraphDestroyNode. Additionally, once opted-in to this
+    functionality, a node cannot opt out, and any attempt to set the
+    deviceUpdatable attribute to 0 will result in an error. Device-updatable
+    kernel nodes also cannot have their attributes copied to/from another kernel
+    node via cuGraphKernelNodeCopyAttributes. Graphs containing one or more
+    device-updatable nodes also do not allow multiple instantiation, and neither
+    the graph nor its instantiated version can be passed to cuGraphExecUpdate.
+    If a graph contains device-updatable nodes and updates those nodes from the
+    device from within the graph, the graph must be uploaded with cuGraphUpload
+    before it is launched. For such a graph, if host-side executable graph
+    updates are made to the device-updatable nodes, the graph must be uploaded
+    before it is launched again."""
+
+    alias PREFERRED_SHARED_MEMORY_CARVEOUT = Self(14)
+    """Valid for launches. On devices where the L1 cache and shared memory use
+    the same hardware resources, setting CUlaunchAttributeValue::sharedMemCarveout
+    to a percentage between 0-100 signals the CUDA driver to set the shared
+    memory carveout preference, in percent of the total shared memory for that
+    kernel launch. This attribute takes precedence over
+    CU_FUNC_ATTRIBUTE_PREFERRED_SHARED_MEMORY_CARVEOUT. This is only a hint,
+    and the CUDA driver can choose a different configuration if required for
+    the launch."""
+
+    @always_inline("nodebug")
+    fn __eq__(self, other: Self) -> Bool:
+        return self._value == other._value
+
+    @always_inline("nodebug")
+    fn __ne__(self, other: Self) -> Bool:
+        return not (self == other)
+
+    fn __init__(inout self, *, other: Self):
+        """Explicitly construct a deep copy of the provided value.
+
+        Args:
+            other: The value to copy.
+        """
+        self = other
 
 
 # ===----------------------------------------------------------------------=== #
