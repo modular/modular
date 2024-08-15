@@ -55,4 +55,7 @@ class TorchInputSpec:
     dtype: DType
     def __init__(self, shape: InputShape, dtype: DType): ...
 
+class TensorData:
+    def __init__(self, ptr: int, shape: List[int], dtype: DType): ...
+
 __version__: str

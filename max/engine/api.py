@@ -17,6 +17,7 @@ from max._engine import InferenceSession as _InferenceSession
 from max._engine import Model as _Model
 from max._engine import TensorSpec as _TensorSpec
 from max._engine import TorchInputSpec as _TorchInputSpec
+from max._engine import TensorData as _TensorData
 from max.driver import DType as DriverDType
 from max.driver import Tensor
 
@@ -28,41 +29,61 @@ ExecResultType = Union[
 ]
 
 
-def _map_execute_kwarg(input_value: Any, expected_dtype: DType) -> Any:
+def _map_execute_kwarg(
+    input_value: Any, expected_dtype: DType, keep_referenced: dict[int, Any]
+) -> Any:
+    def _wrap_tensor(value: Any) -> _TensorData:
+        # NOTE: this only works if the tensor/array is contiguous.
+        if _is_torch_tensor(value):
+            keep_referenced[value.data_ptr()] = value
+            return _TensorData(
+                value.data_ptr(),
+                list(value.shape),
+                DType[str(value.dtype).removeprefix("torch.")]._to(),
+            )
+        if isinstance(value, np.ndarray):
+            keep_referenced[value.ctypes.data] = value
+            return _TensorData(
+                value.ctypes.data,
+                list(value.shape),
+                DType[str(value.dtype)]._to(),
+            )
+        # Just pass the value through if it's not a tensor/array.
+        return value
+
     if expected_dtype == DType.unknown:
         # This currently indicates that the value expected by the model
-        # internally is not a `M::Tensor`. We recursively try to map torch
-        # tensors to np arrays, and pass other values as-is, since no metadata
+        # internally is not a `M::Tensor`. We recursively try to wrap torch
+        # tensors and np arrays, and pass other values as-is, since no metadata
         # is available to check the runtime values against.
         # TODO(#27300): Introduce input specs for non-tensor inputs.
 
-        def torch_to_np(value: Any) -> Any:
-            """Traverse a potentially nested python data structure (e.g.
-            lists, dictionaries, and tuples) containing `torch.tensor`
-            leaf nodes and convert them to `numpy.ndarray`s.
+        def wrap_nested(value: Any) -> Any:
+            """Traverse a potentially nested python data structure (e.g. lists,
+            dictionaries, and tuples) containing `torch.tensor` and
+            `numpy.ndarray`s leaf nodes and wrap them.
             """
-            if _is_torch_tensor(value):
-                return value.numpy()
             if isinstance(value, list):
-                return [torch_to_np(v) for v in value]
+                return [wrap_nested(v) for v in value]
             if isinstance(value, dict):
                 return {
-                    torch_to_np(k): torch_to_np(v) for k, v in value.items()
+                    wrap_nested(k): wrap_nested(v) for k, v in value.items()
                 }
             if isinstance(value, tuple):
-                return tuple(torch_to_np(v) for v in value)
-            return value
+                return tuple(wrap_nested(v) for v in value)
+            return _wrap_tensor(value)
 
-        return torch_to_np(input_value)
-    if _is_torch_tensor(input_value):
-        return input_value.numpy()
-    if not isinstance(input_value, np.ndarray):
+        return wrap_nested(input_value)
+
+    if not isinstance(input_value, np.ndarray) and not _is_torch_tensor(
+        input_value
+    ):
         # Indicates that the model expects an ndarray (internally `M::Tensor`),
         # but if the input isn't already an ndarray, then we can attempt to
         # interpret it as a scalar primitive that needs to be converted to an
         # ndarray.
-        return np.array(input_value)
-    return input_value
+        return _wrap_tensor(np.array(input_value))
+    return _wrap_tensor(input_value)
 
 
 class Model:
@@ -158,10 +179,16 @@ class Model:
                 Tensor((), DriverDType.unknown, _impl=result)
                 for result in results
             ]
+
+        # Wrapping the tensors happens by recording their addresses, which does
+        # not increase reference count, so we need to ensure the garbage
+        # collector does not free them. Since numpy arrays are not hashable, we
+        # do this with a dictionary with pointer keys.
+        keep_referenced = dict()
         dtype_map = {spec.name: spec.dtype for spec in self.input_metadata}
         for input_name, input_value in kwargs.items():
             kwargs[input_name] = _map_execute_kwarg(
-                input_value, dtype_map[input_name]
+                input_value, dtype_map[input_name], keep_referenced
             )
         return self._impl.execute(**kwargs)
 
