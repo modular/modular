@@ -5,14 +5,11 @@
 # ===----------------------------------------------------------------------=== #
 """Test the max.graph Python bindings."""
 
-import itertools
-from typing import Optional
-
 from conftest import broadcast_shapes, broadcastable_tensor_types
 from hypothesis import assume, event, given
 from max.graph import DType, Graph
 from max.graph.ops import sub
-from max.graph.type import Dim, StaticDim, TensorType
+from max.graph.type import Dim, TensorType
 
 
 @given(tensor_type=...)
