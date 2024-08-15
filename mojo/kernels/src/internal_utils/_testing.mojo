@@ -5,13 +5,14 @@
 # ===----------------------------------------------------------------------=== #
 
 
-from buffer import NDBuffer
-import testing
-from testing.testing import _assert_cmp_error
-from ._utils import TestTensor, HostNDBuffer
 from collections import Optional
-from builtin._location import _SourceLocation, __call_location
 
+import testing
+from buffer import NDBuffer
+from builtin._location import __call_location, _SourceLocation
+from testing.testing import _assert_cmp_error
+
+from ._utils import HostNDBuffer, TestTensor
 
 # ===----------------------------------------------------------------------=== #
 # assert_almost_equal

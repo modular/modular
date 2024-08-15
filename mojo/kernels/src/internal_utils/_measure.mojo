@@ -4,14 +4,15 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from math import log, isnan, nan, inf, sqrt
-from algorithm import elementwise, sum, mean
-from memory import UnsafePointer
-from buffer import Buffer
 from collections import Optional
-from utils import StaticIntTuple
+from math import inf, isnan, log, nan, sqrt
 from sys import simdwidthof
 
+from algorithm import elementwise, mean, sum
+from buffer import Buffer
+from memory import UnsafePointer
+
+from utils import StaticIntTuple
 
 # ===----------------------------------------------------------------------=== #
 # kl_div

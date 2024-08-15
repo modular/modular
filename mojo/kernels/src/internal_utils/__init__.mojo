@@ -4,6 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
+from ._measure import correlation, cosine, kl_div
 from ._testing import (
     assert_almost_equal,
     assert_equal,
@@ -12,12 +13,11 @@ from ._testing import (
 )
 from ._utils import (
     DeviceNDBuffer,
-    fill,
     HostNDBuffer,
-    linspace,
     TestTensor,
-    zero,
-    random,
     bench_compile_time,
+    fill,
+    linspace,
+    random,
+    zero,
 )
-from ._measure import kl_div, correlation, cosine

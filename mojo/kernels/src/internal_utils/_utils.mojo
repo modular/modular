@@ -4,18 +4,10 @@
 #
 # ===----------------------------------------------------------------------=== #
 
+from collections import InlineArray
+from random import random_float64
 from sys.info import alignof
 
-from buffer import DimList, NDBuffer
-from buffer.dimlist import _make_tuple
-from testing import assert_equal, assert_true
-
-from collections import InlineArray
-from utils import StaticIntTuple
-from gpu.host.device_context import DeviceBuffer, DeviceContext
-from utils.index import product
-from random import random_float64
-from testing import assert_equal, assert_almost_equal
 from benchmark import (
     Bench,
     Bencher,
@@ -24,7 +16,14 @@ from benchmark import (
     ThroughputMeasure,
     keep,
 )
+from buffer import DimList, NDBuffer
+from buffer.dimlist import _make_tuple
 from compile import compile_code
+from gpu.host.device_context import DeviceBuffer, DeviceContext
+from testing import assert_almost_equal, assert_equal, assert_true
+
+from utils import StaticIntTuple
+from utils.index import product
 
 
 @value
