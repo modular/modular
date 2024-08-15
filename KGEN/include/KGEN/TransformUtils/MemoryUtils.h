@@ -10,6 +10,15 @@
 #include "mlir/IR/Value.h"
 
 namespace M::KGEN {
+/// This CRTP class defines a simple recursive iterator over the uses of a
+/// "projection" of a value, where the derived class defines how values are
+/// projected.
+///
+/// For example, we may consider the extent of uses of a projection over a stack
+/// allocation to apply side effects to the underlying stack allocation. One can
+/// use this type to iterate over the uses of a stack allocation while "seeing
+/// through" trivially aliasing operations by defining the `project` function in
+/// the derived class.
 template <typename DerivedT>
 class ProjectionUseIterator {
 public:
