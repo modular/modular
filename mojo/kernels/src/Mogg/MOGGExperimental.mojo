@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from collections import Optional
-from math import erf, exp, iota, log, log1p, isqrt, sqrt, tanh, ceil, floor
+from math import ceil, erf, exp, floor, iota, isqrt, log, log1p, sqrt, tanh
 
 from algorithm.reduction import _reduce_generator
 from buffer.dimlist import DimList
@@ -15,7 +15,7 @@ from nn.activations import relu
 from register import *
 from runtime.tracing import Trace, TraceLevel
 
-from utils import unroll, StaticIntTuple
+from utils import StaticIntTuple, unroll
 from utils.numerics import isinf, isnan
 
 alias MAX_BENEFIT = 1000

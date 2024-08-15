@@ -18,7 +18,8 @@ from memory import UnsafePointer
 from memory.unsafe import bitcast
 from MOGGIntList import IntList
 from register import *
-from utils import unroll, StaticIntTuple
+
+from utils import StaticIntTuple, unroll
 
 
 @always_inline

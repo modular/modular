@@ -7,7 +7,7 @@
 from collections.vector import InlinedFixedVector
 from math import ceildiv
 from os import abort
-from sys import sizeof
+from sys import alignof, external_call, sizeof
 
 from buffer import NDBuffer
 from buffer.dimlist import Dim, DimList
@@ -27,8 +27,8 @@ from memory.memory import _malloc as _malloc_cpu
 from MOGGIntList import IntList
 from register import *
 from runtime.asyncrt import MojoCallContextPtr
+
 from utils import StaticIntTuple
-from sys import alignof, external_call
 
 # ===----------------------------------------------------------------------===#
 # Helper Structures

@@ -5,11 +5,12 @@
 # ===----------------------------------------------------------------------=== #
 
 import compiler
-from tensor_utils import UnsafeTensorSlice
-from utils.index import StaticIntTuple
 from buffer import NDBuffer
 from buffer.dimlist import Dim, DimList
 from nn.mha import fused_attention as cpu_fused_attention_impl
+from tensor_utils import UnsafeTensorSlice
+
+from utils.index import StaticIntTuple
 
 
 @compiler.register("imposter_add")

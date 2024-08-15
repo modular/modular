@@ -6,22 +6,13 @@
 
 from collections import OptionalReg
 from collections.vector import InlinedFixedVector
-from math import (
-    cos,
-    erf,
-    exp,
-    fma,
-    log,
-    log1p,
-    isqrt,
-    sin,
-    sqrt,
-    ceil as _ceil,
-    floor as _floor,
-    tanh as _tanh,
-)
+from math import ceil as _ceil
+from math import cos, erf, exp
+from math import floor as _floor
+from math import fma, isqrt, log, log1p, sin, sqrt
+from math import tanh as _tanh
 from random import randn, seed
-from sys import external_call
+from sys import external_call, llvm_intrinsic
 from sys.info import simdwidthof, sizeof
 from sys.intrinsics import strided_load
 from sys.param_env import is_defined
@@ -52,7 +43,7 @@ from linalg.packing import (
     pack_transposed_b_ndbuffer,
 )
 from linalg.utils import GemmShape
-from memory import memset_zero, UnsafePointer
+from memory import UnsafePointer, memset_zero
 from memory.unsafe import bitcast
 from MOGGIntList import IntList
 from MOGGTensor import Tensor
@@ -108,7 +99,7 @@ from nn.resize import CoordinateTransformationMode, RoundMode
 from nn.resize import resize_linear as resize_linear_kernel
 from nn.resize import resize_nearest_neighbor
 from nn.roi_align import roi_align_nhwc
-from nn.slice import slice_as_view, slice_shape, slice_dim_as_view
+from nn.slice import slice_as_view, slice_dim_as_view, slice_shape
 from nn.softmax import logsoftmax as _logsoftmax
 from nn.softmax import softmax as _softmax
 from nn.split import split as _split
@@ -133,9 +124,7 @@ from quantization.qmatmul_k import (
 from register import *
 from runtime.asyncrt import MojoCallContextPtr
 from runtime.tracing import Trace, TraceLevel, trace_arg
-
 from tensor_utils import UnsafeTensorSlice
-from sys import llvm_intrinsic
 
 from utils import StaticTuple
 from utils.index import Index, StaticIntTuple, product
