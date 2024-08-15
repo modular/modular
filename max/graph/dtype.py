@@ -40,6 +40,38 @@ class DType(Enum):
     def _mlir(self):
         return self.value
 
+    def to_numpy(self) -> np.dtype:
+        """Converts a NumPy dtype to the corresponding DType.
+
+        Args:
+            dtype (np.dtype): The NumPy dtype to convert.
+
+        Returns:
+            DType: The corresponding DType enum value.
+
+        Raises:
+            ValueError: If the input dtype is not supported.
+        """
+        dtype_to_numpy = {
+            DType.bool: np.bool_,
+            DType.int8: np.int8,
+            DType.int16: np.int16,
+            DType.int32: np.int32,
+            DType.int64: np.int64,
+            DType.uint8: np.uint8,
+            DType.uint16: np.uint16,
+            DType.uint32: np.uint32,
+            DType.uint64: np.uint64,
+            DType.float16: np.float16,
+            DType.float32: np.float32,
+            DType.float64: np.float64,
+        }
+
+        if self in dtype_to_numpy:
+            return dtype_to_numpy[self]
+        else:
+            raise ValueError(f"unsupported DType to convert to NumPy: {dtype}")
+
     @classmethod
     def from_numpy(cls, dtype: np.dtype) -> DType:
         """Converts a NumPy dtype to the corresponding DType.

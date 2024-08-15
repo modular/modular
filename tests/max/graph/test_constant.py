@@ -4,7 +4,8 @@
 #
 # ===----------------------------------------------------------------------=== #
 import numpy as np
-import pytest
+from hypothesis import assume, given
+from max import _graph
 from max.graph import DType, Graph, ops
 
 
@@ -28,3 +29,21 @@ def test_constant_transpose() -> None:
         graph._mlir_op.verify()
 
         assert "0, 3, 1, 4, 2, 5" in str(graph._mlir_op)
+
+
+@given(dtype=...)
+def test_scalar(dtype: DType) -> None:
+    # Can represent an integer value
+    assume(dtype != DType.bool)
+    # Not supported by numpy
+    assume(dtype != DType.bfloat16)
+    with Graph("scalar", input_types=()) as graph:
+        const = 7.2
+        const = ops.scalar(const, dtype)
+
+        graph.output(const)
+        graph._mlir_op.verify()
+
+        mlir_dtype = _graph.dtype_type(graph._context, dtype._mlir)
+        assert "7" in str(graph._mlir_op)
+        assert str(mlir_dtype) in str(graph._mlir_op)

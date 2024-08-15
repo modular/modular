@@ -247,8 +247,9 @@ def test_transformer_block(session):
             .astype(np.float32)
         )
 
-        # TODO (MSDK-747): Re-enable once Attention accuracy issue is solved.
-        # np.testing.assert_almost_equal(output["output0"], expected_tokens, decimal=4)
+        np.testing.assert_almost_equal(
+            output["output0"], expected_tokens, decimal=4
+        )
         np.testing.assert_almost_equal(
             output["output1"], expected_k_cache, decimal=4
         )
@@ -388,8 +389,9 @@ def test_transformer():
             .astype(np.float32)
         )
 
-        # TODO (MSDK-747): Re-enable once Attention accuracy issue is solved.
-        # np.testing.assert_almost_equal(output["output0"], expected_tokens, decimal=4)
+        np.testing.assert_almost_equal(
+            output["output0"], expected_tokens, decimal=4
+        )
         np.testing.assert_almost_equal(
             output["output1"], expected_k_cache, decimal=4
         )

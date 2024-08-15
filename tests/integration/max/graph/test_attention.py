@@ -223,8 +223,7 @@ def test_attention(session):
         .astype(np.float32)
     )
 
-    # TODO (MSDK-720): Re-enable after troubleshooting accuracy.
-    # np.testing.assert_almost_equal(output["output0"], expected, decimal=4)
+    np.testing.assert_almost_equal(output["output0"], expected, decimal=4)
 
     np.testing.assert_almost_equal(
         output["output1"], expected_k_cache, decimal=4

@@ -48,7 +48,9 @@ def scalar(value: Union[int, float], dtype: DType, rank: int = 0) -> GraphValue:
     A scalar is a tensor with a single element. Generally scalars are of rank 0, but that is configurable.
     """
     tensor_type = TensorType(dtype, [1] * rank).to_mlir()
-    array_attr = _graph.array_attr("value", np.array([value]), tensor_type)
+    array_attr = _graph.array_attr(
+        "value", np.array([value]).astype(dtype.to_numpy()), tensor_type
+    )
     return Graph.current._add_op(
         mo.constant, result=tensor_type, value=array_attr
     )[0]
