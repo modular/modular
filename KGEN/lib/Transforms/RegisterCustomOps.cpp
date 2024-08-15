@@ -108,8 +108,14 @@ void RegisterCustomOpsPass::runOnOperation() {
 
   // No canonicalization patterns here, or a failure somewhere, so we exit
   // early.
-  if (implsOp.getImpls().empty())
+  if (!implsOp)
     return;
+
+  // No canonicalization here, so we exit early as well.
+  if (implsOp.getImpls().empty()) {
+    implsOp.erase();
+    return;
+  }
 
   auto &symtabAnalysis = getAnalysis<mlir::SymbolTableAnalysis>();
   SymbolTableCollection &tables = symtabAnalysis.getSymbolTables();
