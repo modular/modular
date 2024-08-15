@@ -786,7 +786,7 @@ fn matmul[
             transpose_b=transpose_b,
             elementwise_lambda_fn=elementwise_lambda_fn,
             single_thread_blocking_override=single_thread_blocking_override,
-        ](c, a, b, ctx.get_cuda_device())
+        ](c, a, b, ctx.get_device_context())
 
 
 fn _submatmul_sequential_sync[

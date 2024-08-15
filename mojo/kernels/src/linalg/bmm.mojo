@@ -586,7 +586,7 @@ fn batched_matmul[
             transpose_b,
             elementwise_epilogue_fn,
             saturated_vnni,
-        ](c_buf, a_buf, b_buf, context.get_cuda_device())
+        ](c_buf, a_buf, b_buf, context.get_device_context())
 
 
 @mogg_register("batch_matmul_shape")
