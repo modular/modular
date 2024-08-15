@@ -27,6 +27,10 @@ struct _dylib_function[fn_name: StringLiteral, type: AnyTrivialRegType]:
         return _get_dylib_function[fn_name, type]()
 
 
+# ===----------------------------------------------------------------------=== #
+# Types
+# ===----------------------------------------------------------------------=== #
+
 alias _DeviceHandle = Int32
 
 alias cuDeviceGetCount = _dylib_function[
@@ -250,6 +254,56 @@ alias cuModuleGetFunction = _dylib_function[
         UnsafePointer[C_char],
     ) -> Result,
 ]
+
+
+@value
+@register_passable("trivial")
+struct AccessProperty:
+    """Specifies performance hint with AccessPolicyWindow for hit_prop and
+    miss_prop fields."""
+
+    var _value: Int32
+
+    alias NORMAL = Self(0)
+    """Normal cache persistence."""
+    alias STREAMING = Self(1)
+    """Streaming access is less likely to persit from cache."""
+    alias PERSISTING = Self(2)
+    """Persisting access is more likely to persist in cache."""
+
+
+@value
+@register_passable("trivial")
+struct AccessPolictyWindow:
+    """Specifies an access policy for a window, a contiguous extent of
+    memory beginning at base_ptr and ending at base_ptr + num_bytes.
+    num_bytes is limited by
+    CU_DEVICE_ATTRIBUTE_MAX_ACCESS_POLICY_WINDOW_SIZE. Partition into
+    many segments and assign segments such that: sum of "hit segments"
+    / window == approx. ratio. sum of "miss segments" / window ==
+    approx 1-ratio. Segments and ratio specifications are fitted to the
+    capabilities of the architecture. Accesses in a hit segment apply
+    the hitProp access policy. Accesses in a miss segment apply the
+    missProp access policy.
+    """
+
+    var base_ptr: UnsafePointer[NoneType]
+    """Starting address of the access policy window. Driver may align it."""
+    var num_bytes: Int
+    """Size in bytes of the window policy. CUDA driver may restrict the
+    maximum size and alignment."""
+    var hit_ratio: Float32
+    """Specifies percentage of lines assigned hitProp, rest are assigned
+    missProp."""
+    var hit_prop: AccessProperty
+    """AccessProperty set for hit."""
+    var miss_prop: AccessProperty
+    """AccessProperty set for miss. Must be either NORMAL or STREAMING."""
+
+
+# ===----------------------------------------------------------------------=== #
+# CudaDLL
+# ===----------------------------------------------------------------------=== #
 
 
 @value
