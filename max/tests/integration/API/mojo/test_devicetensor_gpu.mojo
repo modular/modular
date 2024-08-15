@@ -20,7 +20,7 @@ from pathlib import Path
 from max.engine import InferenceSession, SessionOptions
 from max.graph import Graph, Symbol, TensorType, Type
 from max.tensor import TensorSpec
-from max._driver import cpu_device, cuda_device, Device, Tensor, DeviceTensor
+from max.driver import cpu_device, cuda_device, Device, Tensor, DeviceTensor
 
 
 def test_model_device_tensor(
@@ -46,7 +46,7 @@ def test_model_device_tensor(
         cuda_dev
     ) if inputs_on_device else cpu_input_tensor.to_device_tensor()
 
-    outputs = model._execute(input)
+    outputs = model.execute(input)
     assert_equal(len(outputs), 1)
 
     # In order to examine the output tensor, we need to copy it from the CUDA
@@ -84,7 +84,7 @@ def test_device_graph(
         cuda_dev
     ) if inputs_on_device else cpu_input_tensor.to_device_tensor()
 
-    outputs = model._execute(input)
+    outputs = model.execute(input)
     assert_equal(len(outputs), 1)
 
     cuda_output_dt = outputs[0].take().to_device_tensor()
