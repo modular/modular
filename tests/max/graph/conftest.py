@@ -31,7 +31,20 @@ symbolic_dims = st.builds(
 dims = st.one_of(static_dims, symbolic_dims)
 
 
-def tensor_types(dtypes=dtypes, shapes=st.lists(dims)):
+def shapes(min_size=0, max_size=None, include_dims=()):
+    return (
+        st.lists(
+            dims,
+            min_size=max(0, min_size - len(include_dims)),
+            max_size=None if max_size
+            is None else max(0, max_size - len(include_dims)),
+        )
+        .map(lambda shape: [*shape, *include_dims])
+        .flatmap(st.permutations)
+    )
+
+
+def tensor_types(dtypes=dtypes, shapes=shapes()):
     return st.builds(TensorType, dtypes, shapes)
 
 
