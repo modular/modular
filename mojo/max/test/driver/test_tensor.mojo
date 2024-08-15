@@ -13,7 +13,6 @@
 # RUN: %t/test-tensor
 
 from max.driver import (
-    CPUDescriptor,
     cpu_device,
     Tensor,
     TensorSlice,
@@ -196,8 +195,8 @@ def test_round_trip():
 
 
 def test_copy():
-    cpu1 = cpu_device(CPUDescriptor(numa_id=0))
-    cpu2 = cpu_device(CPUDescriptor(numa_id=1))
+    cpu1 = cpu_device()
+    cpu2 = cpu_device()
 
     src_dev_tensor = cpu1.allocate(
         TensorSpec(DType.float32, 10, 2),

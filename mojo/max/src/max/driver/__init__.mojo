@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from .anytensor import AnyTensor, AnyMemory, AnyMojoValue
-from .device import Device, CPUDescriptor, cpu_device
+from .device import Device, cpu_device
 from .device_memory import DeviceMemory, DeviceTensor
 from .tensor import Tensor
 from .tensor_slice import TensorSlice

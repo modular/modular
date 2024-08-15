@@ -3,7 +3,18 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
+"""
+Defines the types and functions to interact with hardware devices.
 
+For example, you can create a CPU device like this:
+
+```mojo
+from max.driver import cpu_device
+
+def main():
+    device = cpu_device()
+```
+"""
 
 from collections import Optional
 from sys.ffi import DLHandle, _get_global_or_null
@@ -15,7 +26,7 @@ from .device_memory import DeviceMemory, DeviceTensor
 from ._status import Status, _CStatus
 
 
-struct CPUDescriptor:
+struct _CPUDescriptor:
     var numa_id: Int
 
     fn __init__(inout self, *, numa_id: Optional[Int] = None):
@@ -44,7 +55,12 @@ struct _CDevice:
 
 
 struct Device(Stringable):
-    var lib: Optional[DriverLibrary]
+    """Represents a logical instance of a device, for eg: CPU. This
+    can be used to allocate and manage memory in a device's address space,
+    and to compile and execute models and graphs on a device.
+    """
+
+    var _lib: Optional[DriverLibrary]
     var _cdev: _CDevice
 
     fn __init__(inout self):
@@ -55,14 +71,14 @@ struct Device(Stringable):
         Use cpu_device() or cuda_device() to create a CPU or GPU Device.
         """
 
-        self.lib = None
+        self._lib = None
         self._cdev = _CDevice(UnsafePointer[NoneType]())
 
     @doc_private
     fn __init__(
         inout self, lib: DriverLibrary, *, owned owned_ptr: _CDevice
     ) raises:
-        self.lib = lib
+        self._lib = lib
         self._cdev = owned_ptr
 
     fn __copyinit__(inout self, existing: Self):
@@ -72,8 +88,8 @@ struct Device(Stringable):
             existing: Instance from which to copy.
         """
 
-        self.lib = existing.lib
-        self._cdev = existing._cdev.copy(existing.lib)
+        self._lib = existing._lib
+        self._cdev = existing._cdev.copy(existing._lib)
 
     fn __moveinit__(inout self, owned existing: Self):
         """Create a new Device and consume `existing`.
@@ -81,17 +97,19 @@ struct Device(Stringable):
         Args:
             existing: Instance from which to move from.
         """
-        self.lib = existing.lib^
+        self._lib = existing._lib^
         self._cdev = existing._cdev
 
     fn allocate(
         self, spec: TensorSpec, name: Optional[String] = None
     ) raises -> DeviceTensor:
-        """Returns a DeviceTensor allocated in the Device's address space.
+        """Creates tensor allocated in the Device's address space.
 
         Args:
             spec: TensorSpec descripting the shape and type of the tensor to allocate.
             name: An optional name for the DeviceTensor.
+        Returns:
+            DeviceTensor allocated in Device's address space.
         """
 
         return DeviceTensor(spec, self, name)
@@ -112,12 +130,16 @@ struct Device(Stringable):
         return DeviceMemory(bytecount, self, name)
 
     fn _free(self, data: UnsafePointer[UInt8]):
-        self._cdev.free_data(self.lib.value(), data)
+        self._cdev.free_data(self._lib.value(), data)
 
     fn __str__(self) -> String:
-        """Returns a descriptor of the device."""
+        """Returns a descriptor of the device.
 
-        return StringRef(self.lib.value().get_device_desc_fn(self._cdev._ptr))
+        Returns:
+            String representation of device.
+        """
+
+        return StringRef(self._lib.value().get_device_desc_fn(self._cdev._ptr))
 
     fn __del__(owned self):
         """Destroys the device.
@@ -129,14 +151,25 @@ struct Device(Stringable):
 
         if not self._cdev._ptr:
             return
-        self.lib.value().destroy_device_fn(self._cdev._ptr)
+        self._lib.value().destroy_device_fn(self._cdev._ptr)
 
     fn __eq__(self, other: Self) -> Bool:
-        """Check if `self` and `other` point to the same underlying Device."""
+        """Check if `self` and `other` point to the same underlying Device.
+
+        Args:
+            other: Instance to compare against.
+        Returns:
+            True if they are the same logical device.
+        """
         return self._cdev == other._cdev
 
 
-fn cpu_device(descriptor: CPUDescriptor = CPUDescriptor()) raises -> Device:
-    """Creates a CPU Device from a CPUDescriptor."""
+fn cpu_device() raises -> Device:
+    """Creates a CPU Device.
+
+    Returns:
+        A logical device representing CPU.
+    """
     var lib = DriverLibrary()
+    var descriptor = _CPUDescriptor()
     return Device(lib, owned_ptr=lib.create_cpu_device_fn(descriptor.numa_id))

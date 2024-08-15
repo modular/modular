@@ -98,7 +98,7 @@ struct DeviceMemory(DeviceBuffer, StringableRaising, CollectionElement):
         self._device = device
         var tmp_spec = TensorSpec(DType.uint8, num_bytes)
         # CAUTION: this assumes that TensorSpec is bitwise identical in mojo and cpp
-        self._impl_ptr = device.lib.value().create_device_memory_fn(
+        self._impl_ptr = device._lib.value().create_device_memory_fn(
             UnsafePointer[TensorSpec].address_of(tmp_spec),
             self._device._cdev._ptr,
         )
@@ -168,7 +168,7 @@ struct DeviceMemory(DeviceBuffer, StringableRaising, CollectionElement):
         """
         if not self._impl_ptr:
             return
-        self._device.lib.value().destroy_device_memory_fn(self._impl_ptr)
+        self._device._lib.value().destroy_device_memory_fn(self._impl_ptr)
 
     fn bytecount(self) -> Int:
         """Returns the number of bytes in the DeviceMemory."""
@@ -209,9 +209,11 @@ struct DeviceMemory(DeviceBuffer, StringableRaising, CollectionElement):
 
     fn _steal_ptr(owned self) -> UnsafePointer[UInt8]:
         alias func_name_take_data = "M_takeDataFromDeviceMemory"
-        var take_data_func = self._device.lib.value().get_handle().get_function[
+        var take_data_func = self._device._lib.value().get_handle().get_function[
             fn (UnsafePointer[NoneType]) -> UnsafePointer[UInt8]
-        ](func_name_take_data)
+        ](
+            func_name_take_data
+        )
         var data = take_data_func(self._impl_ptr)
         # Extend lifetime of self to avoid the C funtion working on invalid pointer.
         _ = self^
@@ -226,7 +228,7 @@ struct DeviceMemory(DeviceBuffer, StringableRaising, CollectionElement):
         if self.bytecount() != dst_memory.bytecount():
             raise "src and dst bytcount mismatch in copy_into()"
 
-        self._device.lib.value().copy_device_memory_fn(
+        self._device._lib.value().copy_device_memory_fn(
             dst_memory._impl_ptr, self._impl_ptr
         )
 
@@ -275,7 +277,7 @@ struct DeviceMemory(DeviceBuffer, StringableRaising, CollectionElement):
         is not used after its owner is last used.
         """
 
-        return self._device.lib.value().get_data_fn(self._impl_ptr)
+        return self._device._lib.value().get_data_fn(self._impl_ptr)
 
     fn take(inout self) raises -> Self:
         """Takes and returns the contents of `self`, leaving `self` in an empty but destructible state.

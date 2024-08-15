@@ -39,7 +39,7 @@ fn check_compute_capability(device: Device) raises:
     """Checks if a device is compatible with MAX. Will raise an exception if
     CUDA version is below 8.0."""
     var device_context = call_dylib_func[UnsafePointer[DeviceContext]](
-        device.lib.value().get_handle(), "M_getDeviceContext", device._cdev
+        device._lib.value().get_handle(), "M_getDeviceContext", device._cdev
     )
     device_context[].is_compatible()
 
@@ -84,7 +84,7 @@ struct CompiledDeviceKernel[
         var shared_mem_bytes = kwargs.find("shared_mem_bytes").or_else(0)
 
         var device_context = call_dylib_func[UnsafePointer[DeviceContext]](
-            device.lib.value().get_handle(), "M_getDeviceContext", device._cdev
+            device._lib.value().get_handle(), "M_getDeviceContext", device._cdev
         )
         # need to call _enqueue function, not enqueue_function, otherwise the whole
         # pack is passed as a single argument
@@ -149,7 +149,7 @@ fn compile[
         raise "compile() expects CUDA device."
 
     var device_context = call_dylib_func[UnsafePointer[DeviceContext]](
-        device.lib.value().get_handle(), "M_getDeviceContext", device._cdev
+        device._lib.value().get_handle(), "M_getDeviceContext", device._cdev
     )
 
     var compile_args = CUDACompiledKernelArgs(kwargs)
