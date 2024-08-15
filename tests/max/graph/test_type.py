@@ -32,6 +32,23 @@ def test_static_dim(dim: int):
     assert StaticDim(dim).dim == dim
 
 
+@given(i=...)
+def test_static_dim__equals_dim_value(i: int):
+    assume(-1 <= i < 2**63)
+    dim = StaticDim(i)
+    assert isinstance(dim, Dim)
+    assert dim == i
+    assert dim == dim
+
+
+@given(i=...)
+def test_static_dim__compares_to_dim_value(i: int):
+    assume(-1 <= i < 2**63)
+    dim = StaticDim(i)
+    assert isinstance(dim, Dim)
+    assert i <= dim < i + 1
+
+
 @given(dim=...)
 def test_static_dim_negative(dim: int):
     assume(dim < -1)
@@ -54,6 +71,20 @@ def test_static_dim_too_big(dim: int):
 def test_symbolic_dim(name: str):
     assume(name != "")
     SymbolicDim(name)
+
+
+# TODO(MSDK-695): less restrictive dim names
+@given(
+    name=st.text(
+        alphabet=st.characters(min_codepoint=ord("a"), max_codepoint=ord("z"))
+    )
+)
+def test_symbolic_dim__equals_name(name: str):
+    assume(name != "")
+    dim = SymbolicDim(name)
+    assert isinstance(dim, Dim)
+    assert dim == name
+    assert dim == dim
 
 
 # TODO(MSDK-695): less restrictive dim names

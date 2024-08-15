@@ -7,6 +7,7 @@
 
 from __future__ import annotations
 
+import functools
 import math
 import re
 from dataclasses import dataclass
@@ -189,7 +190,9 @@ class SymbolicDim(Dim):
         Returns:
             True if the dimensions have the same name, False otherwise.
         """
-        return isinstance(other, SymbolicDim) and self.name == other.name
+        return self.name == other or (
+            isinstance(other, SymbolicDim) and self.name == other.name
+        )
 
     def __hash__(self):
         return hash(self.name)
@@ -219,6 +222,7 @@ class SymbolicDim(Dim):
         return SymbolicDim(_graph.symbolic_dim_name(dim_attr))
 
 
+@functools.total_ordering
 @dataclass
 class StaticDim(Dim):
     """A static tensor dimension.
@@ -264,7 +268,12 @@ class StaticDim(Dim):
         Returns:
             True if both dimensions have the same static size, False otherwise.
         """
-        return isinstance(other, StaticDim) and self.dim == other.dim
+        return self.dim == other or (
+            isinstance(other, StaticDim) and self.dim == other.dim
+        )
+
+    def __lt__(self, other: Union[int, StaticDim]):
+        return self.dim < (other.dim if isinstance(other, StaticDim) else other)
 
     def __hash__(self):
         return hash(self.dim)
@@ -304,7 +313,7 @@ ShapeLike = Iterable[DimLike]
 def dim(value: DimLike) -> Dim:
     """Converts valid input values to Dim."""
     if isinstance(value, (int, np.integer)):
-        return StaticDim(value)
+        return StaticDim(int(value))
     elif isinstance(value, str):
         return SymbolicDim(value)
     elif isinstance(value, Dim):
