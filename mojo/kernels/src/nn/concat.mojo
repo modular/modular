@@ -6,9 +6,9 @@
 
 from collections.vector import InlinedFixedVector
 from math import align_down, align_up, ceildiv
+from os import abort
 from sys._build import is_kernels_debug_build
 from sys.info import simdwidthof, sizeof
-from os import abort
 
 from algorithm.functional import (
     _elementwise_impl,
@@ -19,13 +19,12 @@ from algorithm.functional import (
 )
 from buffer import NDBuffer
 from gpu import BlockIdx, ThreadIdx
-from gpu.host import DeviceContext, DeviceBuffer
-from memory import memcpy, UnsafePointer
+from gpu.host import DeviceBuffer, DeviceContext
+from memory import UnsafePointer, memcpy
 from register import mogg_register
 from runtime.asyncrt import MojoCallContextPtr
 
 from utils import StaticIntTuple, StaticTuple, product
-
 
 # ===----------------------------------------------------------------------===#
 # concat

@@ -29,6 +29,7 @@ from .conv_utils import (
     ConvInfoStatic,
     ConvPartition,
     ConvShape,
+    align_down_residual,
     elementwise_epilogue_type,
     get_conv_num_tasks,
     get_conv_shape,
@@ -36,7 +37,6 @@ from .conv_utils import (
     get_direct_conv_micro_kernel_height,
     get_direct_conv_micro_kernel_width,
     get_micro_kernel_shape,
-    align_down_residual,
 )
 
 # TODO: All attributes, except for groups and auto_pad, are supported.

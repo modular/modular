@@ -5,16 +5,17 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo %s | FileCheck %s
 
-import benchmark
 from os import abort
+
+import benchmark
 from benchmark import Unit, keep
 from buffer import Buffer, NDBuffer
 from buffer.dimlist import Dim, DimList
+from internal_utils import assert_equal
 from memory import memcpy
 from nn.pad import _AxisParams, _do_pad, _fill, pad_constant, pad_reflect
 from python import Python
 from testing import assert_true
-from internal_utils import assert_equal
 
 from utils import StaticIntTuple, StaticTuple, unroll
 

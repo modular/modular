@@ -7,13 +7,15 @@
 
 from math import align_down, ceildiv, exp, iota, recip
 from os import abort
+from sys import alignof, simdwidthof
+
 from algorithm import elementwise
 from buffer import Buffer, NDBuffer
 from buffer.dimlist import DimList
 from gpu import (
     WARP_SIZE,
-    BlockIdx,
     BlockDim,
+    BlockIdx,
     ThreadIdx,
     barrier,
     lane_id,
@@ -28,30 +30,25 @@ from layout.layout_tensor import (
     LayoutTensor,
     LayoutTensorIter,
     copy_dram_to_sram,
-    copy_local_to_sram,
     copy_local_to_dram,
+    copy_local_to_sram,
     copy_sram_to_dram,
 )
-from layout.tensor_core import (
-    get_accum_type,
-    get_fragment_size,
-    get_mma_shape,
-)
+from layout.tensor_core import get_accum_type, get_fragment_size, get_mma_shape
+from linalg._multistage_gemm_gpu import multistage_mma
 from linalg.bmm import batched_matmul
 from linalg.matmul import matmul
 from linalg.transpose import transpose
-from linalg._multistage_gemm_gpu import multistage_mma
-from memory import stack_allocation, UnsafePointer
+from memory import UnsafePointer, stack_allocation
 from memory.reference import AddressSpace as _AddressSpace
 from memory.unsafe import bitcast
 from runtime.asyncrt import MojoCallContextPtr
 
 from utils.index import Index, StaticIntTuple
-from utils.numerics import neg_inf, min_or_neg_inf
+from utils.numerics import min_or_neg_inf, neg_inf
 from utils.static_tuple import StaticTuple
 
-from .softmax import softmax, _online_softmax_iter_for_mma_output, _softmax_gpu
-from sys import alignof, simdwidthof
+from .softmax import _online_softmax_iter_for_mma_output, _softmax_gpu, softmax
 
 # ===----------------------------------------------------------------------===#
 # Multi-Head Attention

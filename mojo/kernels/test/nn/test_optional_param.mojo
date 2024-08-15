@@ -7,8 +7,9 @@
 
 from buffer.dimlist import Dim, DimList
 from nn._optional_param import OptionalParamInt, OptionalParamInts
-from utils import StaticIntTuple
 from testing import *
+
+from utils import StaticIntTuple
 
 
 # CHECK-LABEL: test_opt_param_int

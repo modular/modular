@@ -4,13 +4,14 @@
 #
 # ===----------------------------------------------------------------------=== #
 
+from math import clamp
+
 from algorithm import elementwise
 from buffer import NDBuffer
 from register import mogg_register
-from math import clamp
 
-from utils.index import StaticIntTuple
 from utils._select import _select_register_value as select
+from utils.index import StaticIntTuple
 
 
 @always_inline("nodebug")

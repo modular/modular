@@ -8,8 +8,9 @@
 from buffer import NDBuffer
 from buffer.dimlist import DimList
 from nn.roi_align import roi_align_nhwc
-from utils import StaticIntTuple
 from testing import *
+
+from utils import StaticIntTuple
 
 
 def test_roi_align_avg[scale_type: DType]():

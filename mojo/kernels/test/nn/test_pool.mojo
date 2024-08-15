@@ -6,6 +6,7 @@
 # RUN: %mojo %s | FileCheck %s
 
 from sys import simdwidthof
+
 import builtin
 from buffer import Buffer, NDBuffer
 from buffer.dimlist import DimList

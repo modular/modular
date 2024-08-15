@@ -6,22 +6,21 @@
 
 from collections import OptionalReg
 from math import align_down, ceildiv
-from sys import has_neon, sizeof, simdwidthof
-from sys.intrinsics import PrefetchOptions
 from os import abort
+from sys import has_neon, simdwidthof, sizeof
+from sys.intrinsics import PrefetchOptions
 
 from algorithm import elementwise, parallel_memcpy, sync_parallelize
 from algorithm.functional import _elementwise_impl, tile
 from buffer import NDBuffer
 from buffer.dimlist import DimList
 from gpu.host import DeviceBuffer, DeviceContext
-from memory import memset_zero, stack_allocation
+from memory import memcpy, memset_zero, stack_allocation
 from register import mogg_register
 from runtime.asyncrt import MojoCallContextPtr, parallelism_level
 from runtime.tracing import Trace, TraceLevel
 
 from utils import StaticIntTuple, StaticTuple, unroll
-from memory import memcpy, memset_zero
 
 from .reshape import reshape
 

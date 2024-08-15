@@ -16,10 +16,10 @@ from algorithm.reduction import (
 from buffer import Buffer, NDBuffer
 from buffer.dimlist import Dim, DimList
 from builtin.uint import _temp_uint_from_int
-from gpu import BlockIdx, GridDim, ThreadIdx, barrier, WARP_SIZE, lane_id
+from gpu import WARP_SIZE, BlockIdx, GridDim, ThreadIdx, barrier, lane_id
 from gpu.host import Device, DeviceAttribute, DeviceContext
 from gpu.memory import AddressSpace
-from gpu.shuffle import shuffle_xor, shuffle_up
+from gpu.shuffle import shuffle_up, shuffle_xor
 from layout.layout import Layout
 from layout.layout_tensor import LayoutTensor
 from layout.tensor_core import get_fragment_size
@@ -27,8 +27,8 @@ from memory import stack_allocation
 from runtime.asyncrt import MojoCallContextPtr, parallelism_level
 from runtime.tracing import Trace, TraceLevel, trace_arg
 
-from utils import StaticTuple, StaticIntTuple
-from utils.index import product, Index
+from utils import StaticIntTuple, StaticTuple
+from utils.index import Index, product
 from utils.numerics import get_accum_type, min_or_neg_inf
 
 # ===----------------------------------------------------------------------===#

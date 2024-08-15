@@ -25,7 +25,7 @@ from buffer.buffer import (
 from buffer.dimlist import Dim, DimList
 from linalg.accumulate import _Accumulator
 from linalg.utils import partition_work
-from memory import stack_allocation, UnsafePointer
+from memory import UnsafePointer, stack_allocation
 from register import mogg_register
 from runtime.asyncrt import parallelism_level
 
@@ -36,6 +36,7 @@ from .conv_utils import (
     ConvInfoStatic,
     ConvPartition,
     ConvShape,
+    align_down_residual,
     elementwise_epilogue_type,
     get_conv_num_partitions,
     get_conv_shape,
@@ -45,7 +46,6 @@ from .conv_utils import (
     get_micro_kernel_shape,
     get_partition,
     reorder_padding,
-    align_down_residual,
 )
 from .shapes import get_sliding_window_out_dim
 

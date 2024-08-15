@@ -6,7 +6,7 @@
 # REQUIRES: has_cuda_device
 # RUN: %mojo-no-debug %s
 
-from math import ceildiv, isqrt, isclose
+from math import ceildiv, isclose, isqrt
 from random import rand
 from sys import argv
 
@@ -20,9 +20,9 @@ from nn.mha import (
     flash_attention_impl,
     mha_gpu_naive,
 )
+from testing import assert_almost_equal
 
 from utils.index import Index
-from testing import assert_almost_equal
 
 
 fn is_benchmark() -> Bool:

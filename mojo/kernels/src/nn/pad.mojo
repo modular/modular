@@ -16,7 +16,7 @@ from buffer.dimlist import Dim, DimList
 
 # TODO Refactor -- we should decide on and put them into a more common file
 from linalg.transpose import _fill_strides
-from memory import memcpy, UnsafePointer
+from memory import UnsafePointer, memcpy
 from register import mogg_register
 
 from utils import StaticIntTuple, StaticTuple, unroll

@@ -8,6 +8,7 @@
 # Use `kgen --emit-asm %s -o %t.asm` to exam the assembly code.
 
 from sys import simdwidthof
+
 from buffer import NDBuffer
 from buffer.dimlist import DimList
 from nn.conv import conv1d_update_wo_tile

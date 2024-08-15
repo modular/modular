@@ -4,9 +4,10 @@
 #
 # ===----------------------------------------------------------------------=== #
 
+from collections import OptionalReg
 from math import ceildiv, isqrt
 from sys.info import alignof, simdwidthof
-from collections import OptionalReg
+
 from algorithm import map_reduce, mean, variance, vectorize
 from algorithm.functional import sync_parallelize
 from algorithm.reduction import (
@@ -16,26 +17,27 @@ from algorithm.reduction import (
 )
 from buffer import Buffer, NDBuffer
 from buffer.dimlist import DimList
-from memory import stack_allocation
-from register import mogg_register
-from runtime.asyncrt import parallelism_level
-from runtime.tracing import Trace, TraceLevel, trace_arg
-from gpu.host.device_context import DeviceBuffer, DeviceContext
-from utils.index import StaticTuple, StaticIntTuple, Index
 from gpu import (
+    WARP_SIZE,
+    BlockDim,
     BlockIdx,
     ThreadIdx,
-    lane_id,
-    BlockDim,
     barrier,
+    lane_id,
     syncwarp,
-    WARP_SIZE,
 )
 from gpu.host._compile import _get_nvptx_target
-from gpu.shuffle import _static_log2, shuffle_down, shuffle_idx
+from gpu.host.device_context import DeviceBuffer, DeviceContext
 from gpu.memory import AddressSpace
+from gpu.shuffle import _static_log2, shuffle_down, shuffle_idx
+from memory import stack_allocation
+from register import mogg_register
+from runtime.asyncrt import MojoCallContextPtr, parallelism_level
+from runtime.tracing import Trace, TraceLevel, trace_arg
+
+from utils.index import Index, StaticIntTuple, StaticTuple
+
 from .reshape import reshape
-from runtime.asyncrt import MojoCallContextPtr
 
 
 # using numerically stable Welford online algorithm to compute single pass mean and variance
