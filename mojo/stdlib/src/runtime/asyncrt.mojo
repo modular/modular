@@ -412,15 +412,31 @@ struct MojoCallContextPtr:
         )
 
     @always_inline
-    fn get_cuda_device(self) -> DeviceContext:
+    fn set_stream(self, stream: Stream):
+        """Set the cuda stream."""
+        external_call[
+            "KGEN_CompilerRT_AsyncRT_MojoCallContext_SetCUStream",
+            NoneType._mlir_type,
+        ](self.ptr, stream.stream.handle)
+
+    @always_inline
+    fn set_context(self, context: CudaContext):
+        """Get the cuda stream."""
+        external_call[
+            "KGEN_CompilerRT_AsyncRT_MojoCallContext_SetCUContext",
+            NoneType._mlir_type,
+        ](self.ptr, context.ctx.handle)
+
+    @always_inline
+    fn get_device_context(self) -> DeviceContext:
         """Get the device context passed in."""
-        var ptr = external_call[
-            "KGEN_CompilerRT_AsyncRT_MojoCallContext_GetCudaDevice",
+        var ctx_ptr = external_call[
+            "KGEN_CompilerRT_AsyncRT_MojoCallContext_GetDeviceContext",
             UnsafePointer[DeviceContext],
         ](
             self.ptr,
         )
-        return ptr[]
+        return ctx_ptr[]
 
     @always_inline
     fn set_to_error(self, err: Error):
