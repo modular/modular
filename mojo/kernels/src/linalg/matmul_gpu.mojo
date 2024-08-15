@@ -12,7 +12,13 @@ from algorithm.functional import _elementwise_impl_gpu, tile_and_unswitch
 from buffer.buffer import NDBuffer
 from buffer.dimlist import DimList
 from gpu import WARP_SIZE, BlockDim, BlockIdx, ThreadIdx, barrier, lane_id
-from gpu.host import DeviceContext, FuncAttribute
+from gpu.host import (
+    DeviceContext,
+    FuncAttribute,
+    LaunchAttribute,
+    AccessPolicyWindow,
+    AccessProperty,
+)
 from gpu.host._compile import _get_nvptx_target
 from gpu.memory import (
     AddressSpace,
@@ -1329,6 +1335,17 @@ fn _matmul_gpu_dispatch[
             block_dim=(NUM_THREADS),
         )
     elif n == 1:
+        # TODO: Should use Device.query
+        alias MAX_ACCESS_POLICY_WINDOW_SIZE = 134213632
+        var launch_attributes = List[LaunchAttribute](
+            AccessPolicyWindow(
+                base_ptr=a.data,
+                count=min(a.size(), MAX_ACCESS_POLICY_WINDOW_SIZE),
+                hit_ratio=1,
+                hit_prop=AccessProperty.PERSISTING,
+                miss_prop=AccessProperty.STREAMING,
+            ),
+        )
 
         @parameter
         if a_type == DType.bfloat16:
@@ -1364,6 +1381,7 @@ fn _matmul_gpu_dispatch[
                     UInt(k),
                     grid_dim=ceildiv(m, block_dim // WARP_SIZE),
                     block_dim=block_dim,
+                    attributes=launch_attributes,
                 )
             else:
                 alias WARPS_PER_BLOCK = 32
