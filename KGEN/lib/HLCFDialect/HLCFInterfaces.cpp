@@ -107,6 +107,16 @@ LogicalResult ControlFlowVerifier::verifyTerminator(ControlFlowTerminator op) {
 LogicalResult ControlFlowVerifier::verifyNode(ControlFlowNode op) {
   scopes.push_back(op);
 
+  SmallVector<ControlFlowTarget, 2> targets;
+  op.getEntryTargets(SmallVector<Attribute>(op->getNumOperands(), {}), targets);
+
+  for (auto [target, inputs] : targets) {
+    ValueRange args = op.getEntryArguments(target);
+    if (failed(verifyTypesAlongEdge(inputs.getTypes(), args.getTypes(), op, op,
+                                    target)))
+      return failure();
+  }
+
   for (Region &region : op->getRegions()) {
     for (Block &block : region) {
       if (block.empty() || !block.back().hasTrait<OpTrait::IsTerminator>())

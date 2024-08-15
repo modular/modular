@@ -42,10 +42,8 @@ def ControlFlowNode : OpInterface<"ControlFlowNode"> {
     InterfaceMethod<[{
        Add block arguments to the region.
     }], "BlockArgument", "insertArgumentToRegion",
-      (ins "Location":$loc,
-           "Type":$argType,
-           "size_t":$argIdx,
-           "Region&":$region), [{}], [{
+      (ins "Location":$loc, "Type":$argType, "size_t":$argIdx,
+           "Region &":$region), [{}], [{
         return region.addArgument(argType, loc);
     }]>
   ];

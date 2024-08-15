@@ -255,7 +255,6 @@ def HLCF_LoopOp : HLCFParentOp<"loop"> {
   }];
 
   let hasCanonicalizer = 1;
-  let hasVerifier = 1;
 }
 
 //===----------------------------------------------------------------------===//
@@ -556,8 +555,6 @@ def HLCF_ForYieldOp : HLCFTerminatorOp<"for.yield", [
   }];
 
   let extraClassDeclaration = [{
-    /// Get the operand that is used as for-loop's induction variable.
-    Value getForInductionVariableOperand();
     /// Insert variants as operation operands.
     void insertVariants(ValueRange newOperands);
   }];
