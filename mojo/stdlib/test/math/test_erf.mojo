@@ -7,13 +7,13 @@
 # RUN: %mojo %s
 
 
-from math import erf
 from collections import InlineArray
+from math import erf
 from random import randn, seed
-from testing import assert_almost_equal, assert_equal
 
 from internal_utils import compare
 from test_utils import libm_call
+from testing import assert_almost_equal, assert_equal
 
 
 def test_erf_float32():
