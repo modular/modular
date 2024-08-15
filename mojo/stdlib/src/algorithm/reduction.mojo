@@ -484,7 +484,7 @@ fn _reduce_generator[
             output_0_fn,
             reduce_function,
             single_thread_blocking_override,
-        ](shape, init, reduce_dim, context.get_cuda_device())
+        ](shape, init, reduce_dim, context.get_device_context())
 
 
 @always_inline

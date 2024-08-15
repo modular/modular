@@ -1168,7 +1168,7 @@ fn _elementwise_impl[
     if "cuda" in target:
         _elementwise_impl_gpu[func, simd_width](
             shape,
-            context.get_cuda_device(),
+            context.get_device_context(),
         )
     else:
         constrained[target == "cpu", "unsupported target"]()
