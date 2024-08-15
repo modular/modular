@@ -69,7 +69,8 @@ private:
   FailureOr<TypedAttr> evaluateApplyLike(ParamOperatorAttr op,
                                          bool withResultSlot);
   /// Evaluate a `inst_struct` operator.
-  FailureOr<SymbolConstantAttr> evaluateInstantiateStruct(ParamOperatorAttr op);
+  FailureOr<TypeConstantRefAttr>
+  evaluateInstantiateStruct(ParamOperatorAttr op);
   /// Evaluate a `get_env` operator.
   FailureOr<TypedAttr> evaluateGetEnv(ParamOperatorAttr op);
   /// Evaluate a `compile_assembly` operator.
@@ -105,13 +106,13 @@ private:
 /// of elaboration for that concrete instance.
 struct ImplNode {
   /// Create a new generator implementation node.
-  ImplNode(FuncOp func, ParamNode *parent, ParameterUseDefGraph &&graph,
-           std::string &&baseName)
-      : func(func), parent(parent), paramGraph(std::move(graph)),
+  ImplNode(InstantiatedOpInterface inst, ParamNode *parent,
+           ParameterUseDefGraph &&graph, std::string &&baseName)
+      : inst(inst), parent(parent), paramGraph(std::move(graph)),
         baseName(std::move(baseName)) {}
 
   /// Create a special root node. Root nodes can be identified with a null
-  /// function.
+  /// symbol.
   ImplNode(ParamNode *parent);
 
   /// Take the provided error and set this node to an `error` state. Erase all
@@ -125,14 +126,14 @@ struct ImplNode {
   /// Get the current active evaluator instance.
   IREvaluator &getEvaluator() { return stack.back().evaluator; }
 
-  /// This function represents a concrete instantiation of a generator.
-  FuncOp func;
+  /// This op represents a concrete instantiation of a generator.
+  InstantiatedOpInterface inst;
   /// The parent expansion tree node.
   ParamNode *parent;
-  /// Keep track of the nested parameter scopes within this function.
+  /// Keep track of the nested parameter scopes within this symbol.
   ParameterUseDefGraph paramGraph;
   /// The base name of the node to use to create derived names. This may differ
-  /// from the actual name of the function.
+  /// from the actual name of the symbol.
   std::string baseName;
 
   /// An error contained by this node. This allows us to delay error handling in

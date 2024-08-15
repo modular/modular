@@ -46,7 +46,7 @@ struct ExpansionGraph {
       nodes;
 
   /// Map from concrete function to implementation node.
-  Shared<DenseMap<FuncOp, ImplNode *>> concreteNodes;
+  Shared<DenseMap<InstantiatedOpInterface, ImplNode *>> concreteNodes;
 
   /// The current number of in-flight struct instantiations not yet complete.
   /// This needs to go down to zero before everything is considered done.
@@ -150,12 +150,12 @@ public:
   /// Lookup an existing concrete function.
   FuncOp lookupConcreteFunction(SymbolRefAttr symbol) {
     StringAttr name = cast<FlatSymbolRefAttr>(symbol).getAttr();
-    FuncOp &localResult = (*tlFuncs)[name];
+    InstantiatedOpInterface &localResult = (*tlInsts)[name];
     if (!localResult) {
       localResult =
-          concreteFuncs.read([name](auto &map) { return map.at(name); });
+          concreteInsts.read([name](auto &map) { return map.at(name); });
     }
-    return localResult;
+    return cast<FuncOp>(*localResult);
   }
 
   /// Look up the callee symbol. If it's a FuncOp, return it. Otherwise,
@@ -169,7 +169,7 @@ public:
   /// Otherwise, dispatch an elaboration of the struct generator and immediately
   /// return the concrete symbol reference (the symbol may not exist yet, but
   /// its elaboration will have been scheduled).
-  ErrorTreeOr<SymbolConstantAttr>
+  ErrorTreeOr<TypeConstantRefAttr>
   getConcreteStructTypeReference(ImplNode *parent, Location loc,
                                  TypeConstantRefAttr typeref);
 
@@ -234,19 +234,20 @@ private:
 
   /// Insert an ImplNode for a function that is already concrete.
   void addConcreteFunc(FuncOp func) {
-    auto node = std::make_unique<ImplNode>(func, /*parent=*/nullptr,
+    auto inst = cast<InstantiatedOpInterface>(*func);
+    auto node = std::make_unique<ImplNode>(inst, /*parent=*/nullptr,
                                            func.getBodyRegion(),
                                            func.getSymName().str());
     g.concreteNodes.modify(
-        [this, func, node = std::move(node)](auto &map) mutable {
-          map.try_emplace(func, node.get());
+        [this, inst, node = std::move(node)](auto &map) mutable {
+          map.try_emplace(inst, node.get());
           g.elaboratedNodes.push_back(std::move(node));
         });
   }
 
-  /// Once a concrete function has finished specializing, finish processing the
-  /// function and call the verifier.
-  void finalizeFunction(ImplNode *node);
+  /// Once a concrete instance has finished specializing, finish processing the
+  /// instance and call the verifier.
+  void finalizeInstance(ImplNode *node);
 
   //===--------------------------------------------------------------------===//
   // Operation Processing
@@ -369,8 +370,8 @@ private:
   ElaborateGeneratorsOptions config;
 
   /// This is the symbol table of the new module.
-  Shared<DenseMap<StringAttr, FuncOp>> concreteFuncs;
-  mlir::ThreadLocalCache<DenseMap<StringAttr, FuncOp>> tlFuncs;
+  Shared<DenseMap<StringAttr, InstantiatedOpInterface>> concreteInsts;
+  mlir::ThreadLocalCache<DenseMap<StringAttr, InstantiatedOpInterface>> tlInsts;
 
   /// This is used to cache interpreter invocations across the elaborator.
   using InterpreterMapTy =
