@@ -965,7 +965,7 @@ fn broadcast_to_shape[
 # When we have many SIMD types in one kernel we need to use the `min` of them.
 # This involves applying parameter expressions to this result which must be
 # `mlir.index` typed so we need to return as `mlir.index` and then cast to int.
-@mogg_register("simd_target")
+@mogg_register("simd_target_cpu")
 fn get_target_simd[type: DType]() -> __mlir_type.index:
     return int(simdwidthof[type]()).value
 
