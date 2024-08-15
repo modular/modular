@@ -267,7 +267,7 @@ fn flash_attention[
         "Only support single and half precision.",
     ]()
 
-    var ctx = context.get_cuda_device()
+    var ctx = context.get_device_context()
 
     # Runtime dimensions.
     var batch_size = q.dim[0]()

@@ -1313,7 +1313,7 @@ fn concat[
             output,
             axis,
             inputs,
-            context.get_cuda_device(),
+            context.get_device_context(),
         )
 
 

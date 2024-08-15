@@ -733,7 +733,7 @@ fn layer_norm[
         )
     elif "cuda" in target:
         layer_norm_gpu[type, input_0_fn, input_1_fn, rank](
-            shape, beta, epsilon, output, ctx.get_cuda_device()
+            shape, beta, epsilon, output, ctx.get_device_context()
         )
     else:
         constrained[False, "unsupported target " + target]()

@@ -818,7 +818,7 @@ fn scatter_nd_generator[
     if "cuda" in target:
         try:
             # TODO: Does it matter if output.data or output_flat.data (and data)?
-            var ctx = context.get_cuda_device()
+            var ctx = context.get_device_context()
             # TODO: Owning = True or False?
             var outp = DeviceBuffer(
                 ctx,

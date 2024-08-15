@@ -853,7 +853,7 @@ fn softmax[
                 shape,
                 output,
                 axis,
-                context.get_cuda_device(),
+                context.get_device_context(),
             )
         else:
             constrained[False, "unsupported target " + target]()
