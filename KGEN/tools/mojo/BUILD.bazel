@@ -1,5 +1,4 @@
 load("@bazel_skylib//rules:expand_template.bzl", "expand_template")
-load("@pip_deps//:requirements.bzl", "requirement")
 load("@rules_pkg//pkg:mappings.bzl", "pkg_files")
 load(
     "//bazel:api.bzl",
@@ -7,7 +6,6 @@ load(
     "modular_cc_binary",
     "modular_cc_library",
     "rpath_shim",
-    "run_tool",
     "td_library",
 )
 
@@ -117,6 +115,9 @@ modular_cc_binary(
     data = [
         "//KGEN:CompilerRT",
         "//KGEN:CompilerRT.distributable",
+        "//KGEN:MojoLLDB",
+        "//KGEN:mojo-lldb",
+        "//KGEN/tools/mojo-repl-entry-point",
         "@llvm-project//compiler-rt:orc_rt",
     ],
     includes = ["."],
@@ -168,35 +169,4 @@ rpath_shim(
     deps = [
         "//ModularFramework/tools/mof",
     ],
-)
-
-run_tool(
-    name = "mojo-standalone",
-    data = [
-        "//:libpython",
-        "//GenericML:DeviceDriver",
-        "//GenericML:modular-framework-common",
-        "//KGEN:CompilerRT",
-        "//KGEN:CompilerRT.distributable",
-        "//KGEN:MojoLLDB",
-        "//KGEN:mojo-lldb",
-        "//KGEN/tools/mojo",
-        "//KGEN/tools/mojo-repl-entry-point",
-        "//ModularFramework/tools/mof",
-        "//utils/mblack",
-        "//utils/mblack:shim.py",
-        "@llvm-project//compiler-rt:orc_rt",
-        requirement("transformers"),
-        requirement("torch"),
-    ],
-    env = {
-        "MODULAR_MOJO_MAX_MBLACK_PATH": "$(rlocationpath //utils/mblack:shim.py)",
-    },
-    env_inherit = [
-        "MODULAR_PROFILE_FILENAME",
-        "MODULAR_MAX_TEMPS_DIR",
-    ],
-    tags = ["manual"],
-    tool = ":mojo",
-    visibility = ["//visibility:private"],
 )
