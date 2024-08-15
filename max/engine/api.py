@@ -55,34 +55,14 @@ def _map_execute_kwarg(input_value: Any, expected_dtype: DType) -> Any:
 
         return torch_to_np(input_value)
     if _is_torch_tensor(input_value):
-        input_value = input_value.numpy()
+        return input_value.numpy()
     if not isinstance(input_value, np.ndarray):
         # Indicates that the model expects an ndarray (internally `M::Tensor`),
         # but if the input isn't already an ndarray, then we can attempt to
         # interpret it as a scalar primitive that needs to be converted to an
         # ndarray.
         return np.array(input_value)
-    if input_value.dtype != expected_dtype:
-        try:
-            # The default casting settings of NumPy are extremely liberal - all
-            # data conversions are allowed e.g. uint8 -> float64 and vice versa.
-            # We use `same_kind` casting instead which casts within the same
-            # numerics class. This can be made stricter to only allow casting
-            # that preserves values.
-            #
-            # NumPy casting creates a copy which is a runtime cost, but we only
-            # pay for it in the event of a dtype mismatch.
-            return input_value.astype(
-                np.dtype(expected_dtype.name), casting="same_kind"
-            )
-        except TypeError:
-            # This can happen if the expected data type is not supported by
-            # NumPy. Also, NumPy can theoretically raise a ComplexWarning but
-            # complex numpy tensors are super rare in ML.
-            raise TypeError(
-                f"Input dtype {input_value.dtype} not compatible with"
-                f" {expected_dtype} required for model execution."
-            )
+    return input_value
 
 
 class Model:
