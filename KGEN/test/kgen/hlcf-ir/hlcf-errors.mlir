@@ -1,10 +1,10 @@
 // RUN: kgen-opt %s -allow-unregistered-dialect -verify-diagnostics -split-input-file
 
 kgen.func @loop_args() {
-  // expected-error @below {{'hlcf.loop' op operand types do not match body region argument types}}
+  // expected-error @below {{'hlcf.loop' op specifies 0 branch inputs but target expected 1 along control-flow edge from here}}
   "hlcf.loop"() ({
   ^bb0(%arg0: i32):
-    kgen.return
+    kgen.return // expected-note {{to beginning of region #0 here}}
   }) : () -> ()
   kgen.return
 }

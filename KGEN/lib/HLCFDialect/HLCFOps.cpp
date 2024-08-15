@@ -74,18 +74,15 @@ void HLCF::printLoop(OpAsmPrinter &p, Operation *op, ValueRange operands,
 
 LogicalResult ForOp::verify() {
   if (getIterArgs().size() != getBody().getNumArguments())
-    return emitOpError("operand size do not match body region argument size.");
+    return emitOpError("operand count do not match body region argument count");
 
-  for (auto [loopArgs, blockarg] :
-       llvm::zip(getIterArgs(), getBody().getArguments())) {
-    if (loopArgs.getType() != blockarg.getType()) {
-      std::string str;
-      llvm::raw_string_ostream os(str);
-      os << "argument type: " << blockarg.getType()
-         << " operand type: " << loopArgs.getType();
-      return emitOpError(
-          "operand types do not match body region argument types: " +
-          Twine(blockarg.getArgNumber()) + "th argument -- " + str);
+  for (auto [i, loopArg, blockArg] :
+       llvm::enumerate(getIterArgs(), getBody().getArguments())) {
+    if (loopArg.getType() != blockArg.getType()) {
+      return emitOpError("operand #")
+             << i << " type " << loopArg.getType()
+             << " does not match type of corresponding block argument "
+             << blockArg.getType();
     }
   }
 
@@ -103,11 +100,11 @@ void ForOp::getEntryTargets(ArrayRef<Attribute> operands,
   assert(operands.size() == getNumOperands());
 
   auto iter = dyn_cast_if_present<IntegerAttr>(operands.back());
-  auto upperBound = this->getUpperBoundAsInt();
-  auto step = this->getStepAsInt();
+  std::optional<int64_t> upperBound = getUpperBoundAsInt();
+  std::optional<int64_t> step = getStepAsInt();
 
   if (!iter || !upperBound || !step) {
-    targets.emplace_back(0, getOperands());
+    targets.emplace_back(0, getIterArgs());
     targets.emplace_back(std::nullopt, getResults());
     return;
   }
@@ -115,7 +112,7 @@ void ForOp::getEntryTargets(ArrayRef<Attribute> operands,
   if ((step.value() > 0 && iter.getInt() < upperBound.value()) ||
       (step.value() < 0 && iter.getInt() > upperBound.value())) {
     // for-loop continues.
-    targets.emplace_back(0, getOperands());
+    targets.emplace_back(0, getIterArgs());
   } else {
     // for-loop exits.
     targets.emplace_back(std::nullopt, getResults());
@@ -208,16 +205,16 @@ std::optional<int64_t> ForOp::getUnrollFactorN() {
 }
 
 void ForOp::insertVariants(ValueRange newOperands) {
-  int32_t retValueSize = getNumResults();
-  int32_t otherIterValueSize = getIterArgs().size() - retValueSize - 1;
-  auto newOperandSegmentSizesAttr = mlir::DenseI32ArrayAttr ::get(
-      getContext(), {1, retValueSize, otherIterValueSize});
+  // Add the variant values to both the result argument and the body iter
+  // argument ranges.
+  MutableOperandRange resultArgs =
+      getIterArgsMutable().slice(1, getNumResults());
+  resultArgs.append(newOperands);
 
-  mlir::MutableOperandRangeRange operandSegments = getIterArgsMutable().split(
-      NamedAttribute(StringAttr::get(getContext(), "operandSegmentSizes"),
-                     newOperandSegmentSizesAttr));
-  operandSegments[1].append(newOperands);
-  getOperation()->insertOperands(getNumOperands(), newOperands);
+  size_t leading = 1 + resultArgs.size();
+  MutableOperandRange iterArgs =
+      getIterArgsMutable().slice(leading, getIterArgs().size() - leading);
+  iterArgs.append(newOperands);
 }
 
 BlockArgument ForOp::insertArgumentToRegion(Location loc, Type argType,
@@ -231,12 +228,6 @@ BlockArgument ForOp::insertArgumentToRegion(Location loc, Type argType,
 //===----------------------------------------------------------------------===//
 // LoopOp
 //===----------------------------------------------------------------------===//
-
-LogicalResult LoopOp::verify() {
-  if (getOperandTypes() != getBody().getArgumentTypes())
-    return emitOpError("operand types do not match body region argument types");
-  return success();
-}
 
 void LoopOp::getEntryTargets(ArrayRef<Attribute> operands,
                              SmallVectorImpl<ControlFlowTarget> &targets) {
@@ -505,21 +496,17 @@ bool ForYieldOp::isParentNode(Operation *op) { return isa<ForOp>(op); }
 
 void ForYieldOp::getBranchTargets(ArrayRef<Attribute> operands,
                                   SmallVectorImpl<ControlFlowTarget> &targets) {
-
   assert(operands.size() == getNumOperands());
-  ForOp forLoop = this->getParentOp<ForOp>();
-  IntegerAttr iter;
-  if (!operands.empty())
-    iter = dyn_cast_or_null<IntegerAttr>(operands.front());
+  ForOp forLoop = getParentOp<ForOp>();
+  auto iter = dyn_cast_or_null<IntegerAttr>(operands.front());
 
-  auto upperBound = forLoop.getUpperBoundAsInt();
-  auto step = forLoop.getStepAsInt();
+  std::optional<int64_t> upperBound = forLoop.getUpperBoundAsInt();
+  std::optional<int64_t> step = forLoop.getStepAsInt();
   if (!iter || !upperBound || !step) {
     // Branch to the beginning of the body region.
     targets.emplace_back(0, getOperands());
     // Though `hlcf.for.yield` can exit when iter count meets upperbound.
-    targets.emplace_back(std::nullopt, getOperands().drop_front().take_front(
-                                           forLoop.getNumResults()));
+    targets.emplace_back(std::nullopt, getReturnValues());
     return;
   }
 
@@ -545,16 +532,15 @@ void ForYieldOp::getBranchTargets(ArrayRef<Attribute> operands,
     targets.emplace_back(0, getOperands());
   } else {
     // Though `hlcf.for.yield` can exit when iter count meets upperbound.
-    targets.emplace_back(std::nullopt, getOperands().drop_front().take_front(
-                                           forLoop.getNumResults()));
+    targets.emplace_back(std::nullopt, getReturnValues());
   }
 }
 
 ErrorTreeOrSuccess ForYieldOp::interpret(ArrayRef<Attribute> operands,
                                          InterpreterState &state) {
-  ForOp forLoop = this->getParentOp<ForOp>();
-  auto iter = dyn_cast_or_null<IntegerAttr>(
-      state.lookupValue(getForInductionVariableOperand()));
+  ForOp forLoop = getParentOp<ForOp>();
+  FoldAdaptor adaptor(operands, (*this)->getAttrDictionary());
+  auto iter = dyn_cast_or_null<IntegerAttr>(adaptor.getInductionVar());
   if (!iter)
     return ErrorTree(getLoc(), "non-integer induction variable.");
 
@@ -586,15 +572,13 @@ ErrorTreeOrSuccess ForYieldOp::interpret(ArrayRef<Attribute> operands,
                  (iter.getInt() == upperBound.getInt() &&
                   pred == ForLoopBoundCmpPredicate::SLE);
 
-  if (continueFor)
+  if (continueFor) {
     state.transferControlFlowTo(&forLoop.getBody().front(), operands);
-  else
+  } else {
+    state.setReturnValues(adaptor.getReturnValues());
     state.transferControlFlowTo(forLoop->getParentOp());
+  }
   return success();
-}
-
-Value ForYieldOp::getForInductionVariableOperand() {
-  return this->getOperands().front();
 }
 
 void ForYieldOp::insertVariants(ValueRange newOperands) {

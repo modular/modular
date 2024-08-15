@@ -1616,7 +1616,6 @@ TraitType TraitDeclOp::bindReference() {
 
 void TryOp::getEntryTargets(ArrayRef<Attribute> operands,
                             SmallVectorImpl<HLCF::ControlFlowTarget> &targets) {
-  assert(operands.empty());
   targets.emplace_back(0, getTryRegion().getArguments());
 }
 
