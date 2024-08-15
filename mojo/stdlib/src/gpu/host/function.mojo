@@ -29,6 +29,7 @@ from .context import Context
 from .dim import Dim
 from .module import Module
 from .stream import Stream
+from .cuda_instance import LaunchConfig
 
 # ===----------------------------------------------------------------------===#
 # CacheConfig
@@ -465,25 +466,27 @@ struct Function[
         stream: Stream,
         shared_mem_bytes: Int = 0,
     ) raises:
-        var stream_value = stream.stream
-        var cuLaunchKernel = self.cuda_dll.cuLaunchKernel
+        var config = LaunchConfig(
+            grid_dim_x=grid_dim.x(),
+            grid_dim_y=grid_dim.y(),
+            grid_dim_z=grid_dim.z(),
+            block_dim_x=block_dim.x(),
+            block_dim_y=block_dim.y(),
+            block_dim_z=block_dim.z(),
+            shared_mem_bytes=shared_mem_bytes,
+            stream=stream.stream,
+        )
         _check_error(
-            cuLaunchKernel(
+            self.cuda_dll.cuLaunchKernelEx(
+                UnsafePointer.address_of(config),
                 self.info.func_handle,
-                UInt32(grid_dim.x()),
-                UInt32(grid_dim.y()),
-                UInt32(grid_dim.z()),
-                UInt32(block_dim.x()),
-                UInt32(block_dim.y()),
-                UInt32(block_dim.z()),
-                UInt32(shared_mem_bytes),
-                stream_value,
                 args,
                 UnsafePointer[NoneType](),
             ),
             msg=Self._impl.function_name,
             location=__call_location(),
         )
+        _ = config
 
     @staticmethod
     fn init_fn[

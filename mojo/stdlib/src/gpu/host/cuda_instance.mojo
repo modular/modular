@@ -194,18 +194,11 @@ alias cuMemsetD32Async = _dylib_function[
     fn (UnsafePointer[UInt32], UInt32, Int, _StreamHandle) -> Result,
 ]
 
-alias cuLaunchKernel = _dylib_function[
-    "cuLaunchKernel",
+alias cuLaunchKernelEx = _dylib_function[
+    "cuLaunchKernelEx",
     fn (
+        UnsafePointer[LaunchConfig],
         _FunctionHandle,
-        UInt32,  # GridDimZ
-        UInt32,  # GridDimY
-        UInt32,  # GridDimX
-        UInt32,  # BlockDimZ
-        UInt32,  # BlockDimY
-        UInt32,  # BlockDimX
-        UInt32,  # SharedMemSize
-        _StreamHandle,
         UnsafePointer[UnsafePointer[NoneType]],  # Args
         UnsafePointer[NoneType],  # Extra
     ) -> Result,
@@ -256,6 +249,17 @@ alias cuModuleGetFunction = _dylib_function[
 ]
 
 
+alias cuLimit = _dylib_function[
+    "cuLimit",
+    fn (LimitProperty, Int) -> Result,
+]
+
+
+# ===----------------------------------------------------------------------===#
+# AccessProperty
+# ===----------------------------------------------------------------------===#
+
+
 @value
 @register_passable("trivial")
 struct AccessProperty:
@@ -288,6 +292,11 @@ struct AccessProperty:
         self = other
 
 
+# ===----------------------------------------------------------------------===#
+# AccessPolicyWindow
+# ===----------------------------------------------------------------------===#
+
+
 @value
 @register_passable("trivial")
 struct AccessPolicyWindow:
@@ -315,6 +324,11 @@ struct AccessPolicyWindow:
     """AccessProperty set for hit."""
     var miss_prop: AccessProperty
     """AccessProperty set for miss. Must be either NORMAL or STREAMING."""
+
+
+# ===----------------------------------------------------------------------===#
+# LimitProperty
+# ===----------------------------------------------------------------------===#
 
 
 @value
@@ -384,15 +398,40 @@ struct LimitProperty:
         self = other
 
 
-alias cuLimit = _dylib_function[
-    "cuLimit",
-    fn (LimitProperty, Int) -> Result,
-]
+# ===----------------------------------------------------------------------===#
+# LaunchAttribute
+# ===----------------------------------------------------------------------===#
 
 
 @value
 @register_passable("trivial")
 struct LaunchAttribute:
+    var id: Int32
+    var value: LaunchAttributeValue
+
+
+# ===----------------------------------------------------------------------===#
+# LaunchAttributeValue
+# ===----------------------------------------------------------------------===#
+
+
+@value
+@register_passable("trivial")
+struct LaunchAttributeValue:
+    # TODO: This should be a union as defined in
+    # https://docs.nvidia.com/cuda/cuda-driver-api/unionCUlaunchAttributeValue.html#unionCUlaunchAttributeValue
+    # but right now we only care about the AccessPolicyWindow
+    var access_policy_window: AccessPolicyWindow
+
+
+# ===----------------------------------------------------------------------===#
+# LaunchAttributeID
+# ===----------------------------------------------------------------------===#
+
+
+@value
+@register_passable("trivial")
+struct LaunchAttributeID:
     var _value: Int32
 
     alias IGNORE = Self(0)
@@ -519,6 +558,65 @@ struct LaunchAttribute:
         self = other
 
 
+# ===----------------------------------------------------------------------===#
+# Launch Config
+# ===----------------------------------------------------------------------===#
+
+
+@value
+@register_passable("trivial")
+struct LaunchConfig:
+    var grid_dim_x: UInt32
+    """Width of grid in blocks."""
+    var grid_dim_y: UInt32
+    """Height of grid in blocks."""
+    var grid_dim_z: UInt32
+    """Depth of grid in blocks."""
+    var block_dim_x: UInt32
+    """X dimension of each thread block."""
+    var block_dim_y: UInt32
+    """Y dimension of each thread block."""
+    var block_dim_z: UInt32
+    """Z dimension of each thread block."""
+    var shared_mem_bytes: UInt32
+    """Dynamic shared-memory size per thread block in bytes."""
+    var stream: _StreamHandle
+    """Stream identifier."""
+    var attrs: UnsafePointer[LaunchAttribute]
+    """List of attributes; nullable if num_attrs == 0."""
+    var num_attrs: UInt32
+    """Number of attributes populated in attrs."""
+
+    @always_inline
+    fn __init__(
+        inout self,
+        *,
+        grid_dim_x: UInt32,
+        block_dim_x: UInt32,
+        block_dim_y: UInt32 = 1,
+        block_dim_z: UInt32 = 1,
+        grid_dim_y: UInt32 = 1,
+        grid_dim_z: UInt32 = 1,
+        attrs: UnsafePointer[LaunchAttribute] = UnsafePointer[
+            LaunchAttribute
+        ](),
+        stream: _StreamHandle = _StreamHandle(),
+        num_attrs: UInt32 = 0,
+        shared_mem_bytes: UInt32 = 0,
+    ):
+        self.attrs = attrs
+        self.grid_dim_x = grid_dim_x
+        self.grid_dim_y = grid_dim_y
+        self.grid_dim_z = grid_dim_z
+        self.block_dim_x = block_dim_x
+        self.block_dim_y = block_dim_y
+        self.block_dim_z = block_dim_z
+        self.attrs = attrs
+        self.stream = stream
+        self.num_attrs = num_attrs
+        self.shared_mem_bytes = shared_mem_bytes
+
+
 # ===----------------------------------------------------------------------=== #
 # CudaDLL
 # ===----------------------------------------------------------------------=== #
@@ -576,7 +674,7 @@ struct CudaDLL:
     var cuMemsetD32Async: cuMemsetD32Async.type
 
     # cuFunc
-    var cuLaunchKernel: cuLaunchKernel.type
+    var cuLaunchKernelEx: cuLaunchKernelEx.type
     var cuFuncSetCacheConfig: cuFuncSetCacheConfig.type
     var cuFuncSetAttribute: cuFuncSetAttribute.type
 
@@ -623,7 +721,7 @@ struct CudaDLL:
         self.cuMemsetD8Async = cuMemsetD8Async.load()
         self.cuMemsetD16Async = cuMemsetD16Async.load()
         self.cuMemsetD32Async = cuMemsetD32Async.load()
-        self.cuLaunchKernel = cuLaunchKernel.load()
+        self.cuLaunchKernelEx = cuLaunchKernelEx.load()
         self.cuFuncSetCacheConfig = cuFuncSetCacheConfig.load()
         self.cuFuncSetAttribute = cuFuncSetAttribute.load()
         self.cuModuleLoad = cuModuleLoad.load()
