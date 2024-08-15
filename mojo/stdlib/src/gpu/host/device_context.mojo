@@ -272,24 +272,6 @@ struct DeviceContext:
         else:
             self.profiling_info_ptr = UnsafePointer[KernelProfilingInfo]()
 
-    # This initializer is only called from MGP.
-    fn __init__(
-        inout self,
-        cuda_instance: CudaInstance,
-        cuda_context: Context,
-        cuda_stream: Stream,
-        profiling_info: UnsafePointer[KernelProfilingInfo],
-    ):
-        self.cuda_instance = cuda_instance
-        self.cuda_context = cuda_context
-        self.cuda_stream = cuda_stream
-
-        @parameter
-        if self.profiling_enabled:
-            self.profiling_info_ptr = profiling_info
-        else:
-            self.profiling_info_ptr = UnsafePointer[KernelProfilingInfo]()
-
     fn __enter__(owned self) -> Self:
         return self^
 
@@ -323,6 +305,10 @@ struct DeviceContext:
         cache_config: Optional[CacheConfig] = None,
         func_attribute: Optional[FuncAttribute] = None,
     ) raises -> DeviceFunction[func, target=target, _is_failable=_is_failable]:
+        # TODO: Remove once KERN-810 is done
+        _check_error(
+            self.cuda_context.cuda_dll.cuCtxPushCurrent(self.cuda_context.ctx)
+        )
         return DeviceFunction[func, target=target, _is_failable=_is_failable](
             self,
             verbose=verbose,

@@ -66,7 +66,7 @@ struct Event:
         """Creates an event for the current CUDA context."""
         self.cuda_dll = ctx.cuda_dll
         self._event = _EventHandle()
-
+        _check_error(self.cuda_dll.cuCtxPushCurrent(ctx.ctx))
         var cuEventCreate = self.cuda_dll.cuEventCreate
         _check_error(
             cuEventCreate(UnsafePointer.address_of(self._event), flags)
