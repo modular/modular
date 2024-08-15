@@ -6,6 +6,7 @@
 # RUN: %mojo %s | FileCheck %s
 
 from extensibility import Tensor, empty_tensor
+
 from utils import StaticIntTuple
 
 
