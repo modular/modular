@@ -6,7 +6,7 @@
 # RUN: %mojo %s
 
 
-from complex import ComplexSIMD, ComplexFloat32, abs
+from complex import ComplexFloat32, ComplexSIMD, abs
 from testing import assert_almost_equal, assert_equal
 
 
