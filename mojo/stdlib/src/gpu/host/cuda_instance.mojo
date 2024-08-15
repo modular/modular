@@ -308,6 +308,18 @@ struct AccessProperty:
         """
         self = other
 
+    @no_inline
+    fn __str__(self) -> String:
+        return String.format_sequence(self)
+
+    @no_inline
+    fn format_to(self, inout writer: Formatter):
+        if self is Self.NORMAL:
+            return writer.write("NORMAL")
+        if self is Self.STREAMING:
+            return writer.write("STREAMING")
+        return writer.write("PERSISTING")
+
 
 # ===----------------------------------------------------------------------===#
 # AccessPolicyWindow
@@ -364,6 +376,25 @@ struct AccessPolicyWindow:
         self.hit_ratio = hit_ratio
         self.hit_prop = hit_prop
         self.miss_prop = miss_prop
+
+    @no_inline
+    fn __str__(self) -> String:
+        return String.format_sequence(self)
+
+    @no_inline
+    fn format_to(self, inout writer: Formatter):
+        return writer.write(
+            "base_ptr: ",
+            self.base_ptr,
+            ", num_bytes: ",
+            self.num_bytes,
+            ", hit_ratio: ",
+            self.hit_ratio,
+            ", hit_prop: ",
+            self.hit_prop,
+            ", miss_prop: ",
+            self.miss_prop,
+        )
 
 
 # ===----------------------------------------------------------------------===#
@@ -443,6 +474,14 @@ struct LimitProperty:
         """
         self = other
 
+    @no_inline
+    fn __str__(self) -> String:
+        return String.format_sequence(self)
+
+    @no_inline
+    fn format_to(self, inout writer: Formatter):
+        return writer.write(self._value)
+
 
 # ===----------------------------------------------------------------------===#
 # LaunchAttribute
@@ -467,6 +506,14 @@ struct LaunchAttribute:
         self.__pad = __type_of(self.__pad)()
         self.value = LaunchAttributeValue(policy)
 
+    @no_inline
+    fn __str__(self) -> String:
+        return String.format_sequence(self)
+
+    @no_inline
+    fn format_to(self, inout writer: Formatter):
+        return writer.write("id: ", self.id, ", value: ", self.value)
+
 
 # ===----------------------------------------------------------------------===#
 # LaunchAttributeValue
@@ -483,6 +530,14 @@ struct LaunchAttributeValue:
 
     fn __init__(inout self):
         self.access_policy_window = AccessPolicyWindow()
+
+    @no_inline
+    fn __str__(self) -> String:
+        return String.format_sequence(self)
+
+    @no_inline
+    fn format_to(self, inout writer: Formatter):
+        return writer.write(self.access_policy_window)
 
 
 # ===----------------------------------------------------------------------===#
@@ -623,6 +678,14 @@ struct LaunchAttributeID:
             other: The value to copy.
         """
         self = other
+
+    @no_inline
+    fn __str__(self) -> String:
+        return String.format_sequence(self)
+
+    @no_inline
+    fn format_to(self, inout writer: Formatter):
+        return writer.write(self._value)
 
 
 # ===----------------------------------------------------------------------===#
