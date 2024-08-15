@@ -4,8 +4,8 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from sys._assembly import inlined_assembly
 from sys import sizeof
+from sys._assembly import inlined_assembly
 
 from memory import UnsafePointer
 
