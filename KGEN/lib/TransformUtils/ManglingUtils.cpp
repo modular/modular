@@ -134,7 +134,7 @@ static void printParameterMangling(TypedAttr value, raw_ostream &os) {
   os << getParamAsString(value);
 }
 
-std::string KGEN::mangleParameterValues(GeneratorOp generator,
+std::string KGEN::mangleParameterValues(GeneratorOpInterface generator,
                                         ArrayRef<TypedAttr> inputParamValues) {
   Builder b(generator.getContext());
   if (inputParamValues.empty())
@@ -147,7 +147,7 @@ std::string KGEN::mangleParameterValues(GeneratorOp generator,
   // Mangle in things like "size=42" for each of the parameters to make it easy
   // to read the resultant symbol and also to make things unique when
   // instantiated with different values.
-  auto inputParamDecls = generator.getInputParamsAttr();
+  auto inputParamDecls = generator.getInputParams();
   for (auto [inputDecl, value] : llvm::zip(inputParamDecls, inputParamValues)) {
     os << ',' << inputDecl.getName().str() << '=';
     printParameterMangling(value, os);

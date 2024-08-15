@@ -13,7 +13,7 @@ namespace M::KGEN {
 
 /// This returns a name to use when the specified generator is specialized
 /// with the specified input parameters.
-std::string mangleParameterValues(KGEN::GeneratorOp generator,
+std::string mangleParameterValues(KGEN::GeneratorOpInterface generator,
                                   ArrayRef<TypedAttr> inputParamValues);
 
 } // namespace M::KGEN

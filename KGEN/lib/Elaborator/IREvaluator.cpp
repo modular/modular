@@ -118,6 +118,8 @@ FailureOr<TypedAttr> IREvaluator::evaluateExpression(ParamOperatorAttr op) {
     return evaluateApplyLike(op, /*withResultSlot=*/false);
   case POC::ApplyResultSlot:
     return evaluateApplyLike(op, /*withResultSlot=*/true);
+  case POC::InstantiateStruct:
+    return evaluateInstantiateStruct(op);
   case POC::Rebind:
     // Catch unfolded rebinds to emit a nicer error message.
     emitError(ErrorTree(
@@ -189,6 +191,20 @@ FailureOr<TypedAttr> IREvaluator::evaluateApplyLike(ParamOperatorAttr op,
   }
   emitError(result.takeError());
   return TypedAttr();
+}
+
+FailureOr<SymbolConstantAttr>
+IREvaluator::evaluateInstantiateStruct(ParamOperatorAttr op) {
+  // Attempt to concretize the function first.
+  ErrorTreeOr<SymbolConstantAttr> symOr =
+      elaborator->getConcreteStructTypeReference(
+          parent, *errorLoc,
+          cast<TypeConstantRefAttr>(op.getOperands().front()));
+  if (symOr.isError()) {
+    emitError(symOr.takeError());
+    return failure();
+  }
+  return symOr.takeValue();
 }
 
 FailureOr<TypedAttr> IREvaluator::evaluateGetEnv(ParamOperatorAttr op) {

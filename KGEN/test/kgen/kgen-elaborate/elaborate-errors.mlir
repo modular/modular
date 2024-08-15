@@ -205,3 +205,30 @@ kgen.generator export @main() {
   kgen.return
 }
 
+// -----
+
+// Illegal recursion hidden behind struct type instantiation.
+
+kgen.generator @recursive() -> index {
+  // expected-note @below {{function instantiation in parameter domain that recursively requires itself}}
+  // expected-note @below {{function recursively calls itself in the parameter domain}}
+  kgen.param.apply x = [() -> index: @recursive]()
+  %0 = kgen.param.constant = <x>
+  kgen.return %0 : index
+}
+
+// expected-error @below {{function instantiation failed}}
+kgen.struct.generator @WeirdStruct<T: type> : !kgen.type {
+  kgen.struct.info :type struct_inst<"WeirdStruct"(data: array<apply(:() -> index @recursive), index>)>
+}
+
+kgen.generator @use_type<T: type>() {
+  kgen.return
+}
+
+#weird_struct = #kgen.type<typevalue<inst_struct(#kgen.typeref<@WeirdStruct<:type index>>)>, struct<(array<2, index>)>> : !kgen.type
+
+kgen.generator export @gen_structs() {
+  kgen.call @use_type<:type #weird_struct>() : () -> ()
+  kgen.return
+}

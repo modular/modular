@@ -1991,3 +1991,71 @@ kgen.generator @call_generator_test() {
   kgen.call @genA<:type [string, {"__del__" : (!kgen.pointer<string> owned_in_mem) -> !kgen.none = @"x::y::z::__del__(x::y::z)"}]>() : () -> ()
   kgen.return
 }
+
+// -----
+
+// Test struct generator elaboration.
+
+// CHECK-LABEL: kgen.func @"LinkedList,T=index"
+// CHECK-NEXT:    kgen.struct.info :type struct_inst<"LinkedList"[T]<:type index>(data: index, next: typevalue<:() -> !kgen.type @"LinkedList,T=index">)>
+
+// CHECK-LABEL: kgen.func @"LinkedList,T=none"
+// CHECK-NEXT:    kgen.struct.info :type struct_inst<"LinkedList"[T]<:type none>(data: none, next: typevalue<:() -> !kgen.type @"LinkedList,T=none">)>
+kgen.struct.generator @"LinkedList"<T: type> : !kgen.type {
+  kgen.struct.info :type struct_inst<"LinkedList"[T]<:type T>(data: typevalue<T>, next: typevalue<inst_struct(:type #kgen.typeref<@LinkedList<:type T>>)>)>
+}
+
+// CHECK-LABEL: kgen.func @NonParametric
+// CHECK-NEXT:    kgen.struct.info :type struct_inst<"NonParametric"(data: index)>
+kgen.struct.generator @NonParametric : !kgen.type {
+  kgen.struct.info :type struct_inst<"NonParametric"(data: index)>
+}
+
+kgen.generator @use_type<T: type>() {
+  kgen.return
+}
+
+#linkedlist_index = #kgen.type<typevalue<:() -> !kgen.type inst_struct(#kgen.typeref<@LinkedList<:type index>>)>, struct<(index, !kgen.none)>> : !kgen.type
+#linkedlist_none = #kgen.type<typevalue<:() -> !kgen.type inst_struct(#kgen.typeref<@LinkedList<:type none>>)>, struct<(index, !kgen.none)>> : !kgen.type
+#nonparametric = #kgen.type<typevalue<:() -> !kgen.type inst_struct(#kgen.typeref<@NonParametric>)>, struct<(index)>> : !kgen.type
+
+// CHECK-LABEL: kgen.func @gen_structs
+kgen.generator @gen_structs() {
+  // CHECK-NEXT: kgen.call {{.*}}LinkedList,T=index
+  kgen.call @use_type<:type #linkedlist_index>() : () -> ()
+  // CHECK-NEXT: kgen.call {{.*}}LinkedList,T=none
+  kgen.call @use_type<:type #linkedlist_none>() : () -> ()
+  // CHECK-NEXT: kgen.call {{.*}}NonParametric
+  kgen.call @use_type<:type #nonparametric>() : () -> ()
+  kgen.return
+}
+
+// -----
+
+// Intermixing of function apply and struct instantiation.
+
+// CHECK: kgen.func @"get_array_type,T=index"
+// CHECK-NEXT:    kgen.param.constant: type = <array<[[SIZEOF:.+]], index>>
+kgen.generator @get_array_type<T: type>() -> !kgen.type {
+  %0 = kgen.param.constant: type = <array<get_sizeof(T, current_target()), index>>
+  kgen.return %0 : !kgen.type
+}
+
+// CHECK: kgen.func @"WeirdStruct,T=index"
+// CHECK-NEXT:    kgen.struct.info :type struct_inst<"WeirdStruct"(data: array<[[SIZEOF]], index>)>
+kgen.struct.generator @WeirdStruct<T: type> : !kgen.type {
+  kgen.struct.info :type struct_inst<"WeirdStruct"(data: typevalue<apply(:() -> !kgen.type @get_array_type<:type T>)>)>
+}
+
+kgen.generator @use_type<T: type>() {
+  kgen.return
+}
+
+#weird_struct = #kgen.type<typevalue<:() -> !kgen.type inst_struct(#kgen.typeref<@WeirdStruct<:type index>>)>, struct<(apply(:() -> !kgen.type @get_array_type<:type index>))>> : !kgen.type
+
+// CHECK: kgen.func @gen_structs
+kgen.generator @gen_structs() {
+  // CHECK-NEXT: kgen.call {{.*}}WeirdStruct,T=index{{.*}}, struct<(array<[[SIZEOF]], index>)>
+  kgen.call @use_type<:type #weird_struct>() : () -> ()
+  kgen.return
+}
