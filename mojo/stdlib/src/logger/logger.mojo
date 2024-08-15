@@ -4,11 +4,11 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from utils._format import Formatter
-from sys.param_env import env_get_string
 import sys
 from os import abort
+from sys.param_env import env_get_string
 
+from utils._format import Formatter
 
 # ===----------------------------------------------------------------------===#
 # DEFAULT_LEVEL

@@ -6,7 +6,7 @@
 # RUN: %mojo %s | FileCheck %s
 
 
-from logger import Logger, Level
+from logger import Level, Logger
 
 
 def main():

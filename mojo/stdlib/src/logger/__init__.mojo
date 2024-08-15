@@ -4,4 +4,4 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from .logger import Logger, Level
+from .logger import Level, Logger

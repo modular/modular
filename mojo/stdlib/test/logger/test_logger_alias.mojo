@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo %s | FileCheck %s
 
-from logger import Logger, Level
+from logger import Level, Logger
 
 alias log = Logger[Level.INFO]()
 
