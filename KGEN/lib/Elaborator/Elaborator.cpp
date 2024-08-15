@@ -117,7 +117,9 @@ ErrorTreeOr<FuncOp> ParamNode::getFirstConcreteFunc() {
   ErrorTreeOr<ImplNode *> impl = getFirstConcreteNode();
   if (impl.isError())
     return impl.takeError();
-  return impl.takeValue()->func;
+  FuncOp func = dyn_cast<FuncOp>(*impl.takeValue()->inst);
+  assert(func && "concrete instance not a FuncOp");
+  return func;
 }
 
 ErrorTreeOrSuccess
@@ -353,14 +355,13 @@ Elaborator::Elaborator(SymbolTable &symtab,
       callbacks(std::move(callbacks)), diagHandlerID(diagHandlerID) {}
 
 //===----------------------------------------------------------------------===//
-// Elaborator::finalizeFunction
+// Elaborator::finalizeInstance
 //===----------------------------------------------------------------------===//
 
-void Elaborator::finalizeFunction(ImplNode *node) {
-  VerboseCompilerTimeTraceScope traceScope("finalizeFunction");
+void Elaborator::finalizeInstance(ImplNode *node) {
+  VerboseCompilerTimeTraceScope traceScope("finalizeInstance");
   // Erase everything but the entry blocks of each region.
-  FuncOp func = node->func;
-  func.walk<mlir::WalkOrder::PreOrder>([](Operation *op) {
+  node->inst.walk<mlir::WalkOrder::PreOrder>([](Operation *op) {
     for (Region &region : op->getRegions())
       for (Block &block : llvm::make_early_inc_range(llvm::drop_begin(region)))
         block.erase();
@@ -378,8 +379,10 @@ ErrorTreeOr<FuncOp> Elaborator::getConcreteFunction(ImplNode *parent,
   auto gen = oldSymTab.lookup<GeneratorOpInterface>(name);
   // If this doesn't reference anything in the existing module, then it must
   // refer to a concrete function in the new module.
-  if (!gen)
-    return concreteFuncs.read([name](auto &funcs) { return funcs.at(name); });
+  if (!gen) {
+    return cast<FuncOp>(
+        *concreteInsts.read([name](auto &insts) { return insts.at(name); }));
+  }
 
   auto vals =
       ParameterExprArrayAttr::get(loc.getContext(), symbol.getParamValues());
@@ -394,7 +397,7 @@ ErrorTreeOr<FuncOp> Elaborator::getConcreteFunction(ImplNode *parent,
   return node->getFirstConcreteFunc();
 }
 
-ErrorTreeOr<SymbolConstantAttr>
+ErrorTreeOr<TypeConstantRefAttr>
 Elaborator::getConcreteStructTypeReference(ImplNode *parent, Location loc,
                                            TypeConstantRefAttr typeref) {
   StringAttr name = cast<FlatSymbolRefAttr>(typeref.getSymbol()).getAttr();
@@ -410,10 +413,9 @@ Elaborator::getConcreteStructTypeReference(ImplNode *parent, Location loc,
   // eventual dependency.
   specializeGenerator(parent, node, loc, /*addWaiter=*/false);
   parent->eventualDeps.emplace_back(loc, node);
-  return SymbolConstantAttr::get(
+  return TypeConstantRefAttr::get(
       SymbolRefAttr::get(loc->getContext(), node->getMangledName()),
-      SignatureType::get(
-          FunctionType::get(loc->getContext(), {}, {typeref.getType()})));
+      typeref.getType());
 }
 
 ErrorTreeOr<Attribute> Elaborator::concretizeSymbolsWithin(Attribute value,
@@ -455,7 +457,7 @@ ErrorTreeOr<Attribute> Elaborator::concretizeSymbolsWithin(Attribute value,
 
 void Elaborator::addDeferredFunction(OwningOpRef<FuncOp> func) {
   FuncOp op = func.release();
-  if (concreteFuncs.modify(
+  if (concreteInsts.modify(
           [this, op, name = op.getSymNameAttr()](auto &funcs) mutable {
             if (funcs.try_emplace(name, op).second) {
               deferredSymbols.push_back(op);
@@ -508,10 +510,10 @@ Elaborator::instantiateGeneratorReference(
   Operation *calleeOp = oldSymTab.lookup(name);
 
   if (!calleeOp) {
-    FuncOp func =
-        concreteFuncs.read([name](auto &map) { return map.at(name); });
+    InstantiatedOpInterface inst =
+        concreteInsts.read([name](auto &map) { return map.at(name); });
     ImplNode *node =
-        g.concreteNodes.read([func](auto &map) { return map.at(func); });
+        g.concreteNodes.read([inst](auto &map) { return map.at(inst); });
     return {ElaborationState::advance(), node};
   }
 
@@ -676,7 +678,8 @@ Elaborator::completeCallProcessing(GeneratorUserOpInterface user,
     return failure();
   }
 
-  FuncOp newCalleeFunc = thisNode->func;
+  FuncOp newCalleeFunc = dyn_cast<FuncOp>(*thisNode->inst);
+  assert(newCalleeFunc && "expected FuncOp as instantiated callee");
 
   // If this is a `kgen.param.apply`, bind its result here.
   if (auto apply = dyn_cast<ParamApplyOp>(*user))
@@ -1124,7 +1127,7 @@ void Elaborator::completeImplNodeProcessing(ImplNode *inode) {
              "expected all dependencies to be ready");
     }
     if (!inode->error)
-      finalizeFunction(inode);
+      finalizeInstance(inode);
   }
 
   // If this is the last implementation node for its parent parameter node to
@@ -1152,7 +1155,7 @@ void Elaborator::scheduleImplNode(ImplNode *inode) {
 
 LogicalResult Elaborator::processImplNode(ImplNode *inode) {
   // Check for a root node.
-  if (!inode->func) {
+  if (!inode->inst) {
     // Begin specialization of the parameter node. Immediately suspend
     // execution by returning `failure`.
     (void)specializeGenerator(inode, inode->parent, inode->parent->gen.getLoc(),
@@ -1163,7 +1166,7 @@ LogicalResult Elaborator::processImplNode(ImplNode *inode) {
     return success();
 
   VerboseCompilerTimeTraceScope traceScope(
-      "processImplNode", [inode] { return inode->func.getSymName().str(); });
+      "processImplNode", [inode] { return inode->inst.getName().str(); });
 
   while (!inode->stack.empty()) {
     ImplNode::WorkItem &item = inode->stack.back();
@@ -1351,48 +1354,45 @@ ElaborationState Elaborator::specializeGenerator(ImplNode *inode,
   OpBuilder b(gen.getContext());
   StringAttr mangledName = genNode->getMangledName();
 
-  FuncOp newFunc;
+  InstantiatedOpInterface instance;
   if (auto generatorOp = dyn_cast<GeneratorOp>(*gen)) {
-    newFunc = b.create<FuncOp>(
+    instance = cast<InstantiatedOpInterface>(*b.create<FuncOp>(
         gen.getLoc(), mangledName,
         SignatureType::get(generatorOp.getFunctionType(),
                            generatorOp.getSignature().getArgConventions(),
                            generatorOp.getSignature().getFnEffects()),
         generatorOp.getInlineLevel(), generatorOp.getExportKind(),
-        generatorOp.getDecorators(), generatorOp.getLLVMMetadata());
+        generatorOp.getDecorators(), generatorOp.getLLVMMetadata()));
   } else {
-    // TODO: Use custom container post-elaboration.
     auto structGenOp = dyn_cast<StructGeneratorOp>(*gen);
-    Location loc = DebugInfo::extractSourceLoc(gen.getLoc());
-    newFunc =
-        b.create<FuncOp>(loc, mangledName,
-                         SignatureType::get(FunctionType::get(
-                             b.getContext(), {}, {structGenOp.getType()})));
+    instance = cast<InstantiatedOpInterface>(*b.create<StructInstanceOp>(
+        gen.getLoc(), mangledName, structGenOp.getType()));
   }
 
   // Insert the newFunc into the symbol table which will then know about it,
   // but it will also auto-rename the symbol for us in the case of conflicts.
-  concreteFuncs.modify([newFunc, mangledName](auto &map) {
-    map.try_emplace(mangledName, newFunc);
+  concreteInsts.modify([instance, mangledName](auto &map) {
+    map.try_emplace(mangledName, instance);
   });
 
   // Clone the body of the generator into the function.
   // TODO: is there a nice way for us to avoid cloning this?
   IRMapping map;
-  gen.getBodyRegion().cloneInto(&newFunc.getBodyRegion(), map);
+  gen.getBodyRegion().cloneInto(&instance.getBodyRegion(), map);
 
   // Map from the generator to the new function for the parameter graph copy.
-  map.map(gen.getOperation(), newFunc.getOperation());
+  map.map(gen.getOperation(), instance.getOperation());
   // Copy over the parameter use-def graph for this clone.
   ParameterUseDefGraph childGraph = genNodeGraph->copy(map);
 
   // The node for this new func is simply the child of the node for the
   // generator.
   auto childNode = std::make_unique<ImplNode>(
-      newFunc, genNode, std::move(childGraph), mangledName.str());
+      instance, genNode, std::move(childGraph), mangledName.str());
   g.concreteNodes.modify(
-      [newFunc, node = childNode.get()](DenseMap<FuncOp, ImplNode *> &map) {
-        map.try_emplace(newFunc, node);
+      [instance, node = childNode.get()](
+          DenseMap<InstantiatedOpInterface, ImplNode *> &map) {
+        map.try_emplace(instance, node);
       });
   ImplNode *newFuncNode = childNode.get();
   genNode->impl = std::move(childNode);
@@ -1401,24 +1401,26 @@ ElaborationState Elaborator::specializeGenerator(ImplNode *inode,
   // Kick off the expansion for the new function.
   std::vector<Operation *> opsToRewrite;
   llvm::append_range(opsToRewrite, llvm::reverse(uses.paramOps));
-  opsToRewrite.push_back(newFunc);
-  collectOpsToProcess(&newFunc.getBodyRegion(), uses, opsToRewrite);
+  opsToRewrite.push_back(instance);
+  collectOpsToProcess(&instance.getBodyRegion(), uses, opsToRewrite);
 
-  // Since the function will have a new name, we need to update the linkage name
-  // in the subprogram information.
-  if (auto scope = newFunc.getSubprogramScope()) {
-    SmallVector<StringAttr> paramValues;
-    for (TypedAttr value : inputParamValues)
-      paramValues.push_back(getParamTypeAsString(value));
-    DebugInfo::SourceNameAttr name = scope.getName();
-    name = DebugInfo::SourceNameAttr::get(
-        name.getName(), name.getParamTypes(), name.getArgTypes(), paramValues,
-        name.getParent(), name.getKind(), name.getDecorators());
-    StringRef linkageName = newFunc.getSymName();
-    if (inputParamValues.empty())
-      linkageName.consume_back("_concrete");
-    DebugInfo::updateSubprogram(
-        newFunc, StringAttr::get(name.getContext(), linkageName), name);
+  // Since the symbol will have a new name, we need to update the linkage name
+  // in the subprogram information (if any).
+  if (auto newFunc = dyn_cast<FuncOp>(*instance)) {
+    if (auto scope = newFunc.getSubprogramScope()) {
+      SmallVector<StringAttr> paramValues;
+      for (TypedAttr value : inputParamValues)
+        paramValues.push_back(getParamTypeAsString(value));
+      DebugInfo::SourceNameAttr name = scope.getName();
+      name = DebugInfo::SourceNameAttr::get(
+          name.getName(), name.getParamTypes(), name.getArgTypes(), paramValues,
+          name.getParent(), name.getKind(), name.getDecorators());
+      StringRef linkageName = newFunc.getSymName();
+      if (inputParamValues.empty())
+        linkageName.consume_back("_concrete");
+      DebugInfo::updateSubprogram(
+          newFunc, StringAttr::get(name.getContext(), linkageName), name);
+    }
   }
 
   std::function<LogicalResult(ImplNode *)> onComplete;
@@ -1428,9 +1430,10 @@ ElaborationState Elaborator::specializeGenerator(ImplNode *inode,
     // ensure that all parameter computation is completed, e.g. we have
     // processed all kgen.param.decl ops.
     onComplete = [](ImplNode *inode) -> LogicalResult {
-      if (failed(concretizeLocOf(*inode->func, inode)))
+      if (failed(concretizeLocOf(*inode->inst, inode)))
         return failure();
-      if (failed(concretizeLocsInScope(*inode->func.getBody(), inode)))
+      if (failed(concretizeLocsInScope(inode->inst.getBodyRegion().front(),
+                                       inode)))
         return failure();
       return success();
     };
@@ -1736,7 +1739,7 @@ LogicalResult Elaborator::run(ModuleOp theModule,
   // not want to re-process them. Add concrete ImplNodes for each one.
   for (FuncOp func : theModule.getOps<FuncOp>()) {
     addConcreteFunc(func);
-    concreteFuncs.get().try_emplace(func.getSymNameAttr(), func);
+    concreteInsts.get().try_emplace(func.getSymNameAttr(), func);
   }
 
   auto emptyInputParamKey = ParameterExprArrayAttr::get(ctx, {});
@@ -1802,8 +1805,9 @@ LogicalResult Elaborator::run(ModuleOp theModule,
     }
   }
   if (failed) {
-    for (FuncOp func : llvm::make_second_range(concreteFuncs.get()))
-      func.erase();
+    for (InstantiatedOpInterface inst :
+         llvm::make_second_range(concreteInsts.get()))
+      inst.erase();
 
     return failure();
   }
@@ -1813,12 +1817,12 @@ LogicalResult Elaborator::run(ModuleOp theModule,
   // generators - everything else we don't care about.
   // Sort instantiations of each generator to ensure we have a deterministic
   // output in multithreaded execution.
-  struct SuccessfulFuncs {
+  struct SuccessfulInstances {
     std::string paramStr;
-    FuncOp func;
+    InstantiatedOpInterface inst;
   };
   auto *newBlock = new Block;
-  llvm::MapVector<GeneratorOpInterface, std::vector<SuccessfulFuncs>>
+  llvm::MapVector<GeneratorOpInterface, std::vector<SuccessfulInstances>>
       genInstantiations;
   for (Operation &op : llvm::make_early_inc_range(*theModule.getBody())) {
     if (auto gen = dyn_cast<GeneratorOpInterface>(op)) {
@@ -1832,14 +1836,14 @@ LogicalResult Elaborator::run(ModuleOp theModule,
        llvm::make_pointee_range(llvm::make_second_range(g.nodes.get()))) {
     VerboseCompilerTimeTraceScope traceScope(
         "processGen", [name = node.gen.getName()] { return name.str(); });
-    // Erase all erroneous functions.
+    // Erase all erroneous instances.
     if (node.impl->error) {
-      node.impl->func.erase();
+      node.impl->inst.erase();
       continue;
     }
 
-    genInstantiations[node.gen].push_back(
-        SuccessfulFuncs{mlir::debugString(node.inputParams), node.impl->func});
+    genInstantiations[node.gen].push_back(SuccessfulInstances{
+        mlir::debugString(node.inputParams), node.impl->inst});
   }
 
   // Now reorder all instantiations of each generator to be deterministic.

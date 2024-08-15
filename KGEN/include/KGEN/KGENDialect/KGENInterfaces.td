@@ -158,6 +158,22 @@ def KGEN_GeneratorOpInterface : OpInterface<"GeneratorOpInterface",
 }
 
 //===----------------------------------------------------------------------===//
+// InstantiatedOpInterface
+
+def KGEN_InstantiatedOpInterface : OpInterface<"InstantiatedOpInterface",
+    [Symbol]> {
+  let description = [{
+    A concrete symbol instantiated from a GeneratorOpInterface op.
+  }];
+  let cppNamespace = "::M::KGEN";
+  let methods = [
+    InterfaceMethod<[{
+      Return the body region of this generator.
+    }], "Region &", "getBodyRegion", (ins)>,
+  ];
+}
+
+//===----------------------------------------------------------------------===//
 // GeneratorUserOpInterface
 
 def KGEN_GeneratorUserOpInterface : OpInterface<"GeneratorUserOpInterface"> {

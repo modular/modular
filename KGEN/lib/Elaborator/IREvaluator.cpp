@@ -193,10 +193,10 @@ FailureOr<TypedAttr> IREvaluator::evaluateApplyLike(ParamOperatorAttr op,
   return TypedAttr();
 }
 
-FailureOr<SymbolConstantAttr>
+FailureOr<TypeConstantRefAttr>
 IREvaluator::evaluateInstantiateStruct(ParamOperatorAttr op) {
   // Attempt to concretize the function first.
-  ErrorTreeOr<SymbolConstantAttr> symOr =
+  ErrorTreeOr<TypeConstantRefAttr> symOr =
       elaborator->getConcreteStructTypeReference(
           parent, *errorLoc,
           cast<TypeConstantRefAttr>(op.getOperands().front()));

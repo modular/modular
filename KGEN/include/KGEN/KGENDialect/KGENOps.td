@@ -38,7 +38,8 @@ class KGENOp<string mnemonic, list<Trait> traits = []> :
 
 def KGEN_FuncOp : KGENOp<"func", [
     HasParent<"mlir::ModuleOp">, FunctionOpInterface, Symbol, IsolatedFromAbove,
-    SingleBlock, DeclInterface, FuncInterface, FunctionLike, ExportInterface]> {
+    SingleBlock, DeclInterface, FuncInterface, FunctionLike, ExportInterface,
+    KGEN_InstantiatedOpInterface]> {
   let summary = "Concrete function definition.";
   let description = [{
     The `kgen.func` operation represents a concrete KGEN function. It has no
@@ -277,10 +278,45 @@ def KGEN_StructGeneratorOp : KGENOp<"struct.generator", [
 }
 
 //===----------------------------------------------------------------------===//
+// StructInstanceOp
+//===----------------------------------------------------------------------===//
+
+def KGEN_StructInstanceOp : KGENOp<"struct.instance", [
+    HasParent<"mlir::ModuleOp">, Symbol, SingleBlock,
+    KGEN_InstantiatedOpInterface]> {
+  let summary = "Concretized struct instance.";
+  let description = [{
+    The `kgen.struct.instance` operation defines a concretized struct type
+    instance.
+
+    Its body contains the definition for a non-parametric struct type as a
+    type-value.
+
+    Example:
+
+    ```mlir
+    kgen.struct.instance @"struct_SIMD,dt=f32,size=4" {
+      kgen.struct.info = #type_value : !kgen.type
+    }
+    ```
+  }];
+
+  let arguments = (ins SymbolNameAttr:$sym_name,
+                       TypeAttr:$type);
+  let regions = (region MaxSizedRegion<1>:$body);
+
+  let assemblyFormat = [{
+    $sym_name `:` $type attr-dict-with-keyword
+    ($body^)?
+  }];
+}
+
+//===----------------------------------------------------------------------===//
 // StructInfoOp
 //===----------------------------------------------------------------------===//
 
-def KGEN_StructInfoOp : KGENOp<"struct.info", [Terminator]> {
+def KGEN_StructInfoOp : KGENOp<"struct.info", [Terminator,
+    ParentOneOf<["StructGeneratorOp", "StructInstanceOp"]>]> {
   let summary = "Struct type info.";
   let description = [{
     The `kgen.struct.info` operation contains the definition of a parameterized
