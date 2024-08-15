@@ -6,50 +6,41 @@
 # REQUIRES: has_cuda_device
 # RUN: %mojo-no-debug %s
 
-from math import ceildiv
 from collections.optional import Optional
+from math import ceildiv
 from sys import simdwidthof
 
-from buffer import NDBuffer
-from buffer.dimlist import DimList
-from gpu import BlockDim, BlockIdx, ThreadIdx, barrier
-from gpu.host.memory import _memset
-from gpu.host._compile import _get_nvptx_target
 from algorithm.functional import _elementwise_impl_gpu
-from gpu.host.device_context import DeviceContext, DeviceBuffer
+from buffer import NDBuffer
+from buffer.dimlist import DimList, _make_tuple
+from gpu import BlockDim, BlockIdx, ThreadIdx, barrier
+from gpu.cublas.cublas import (
+    check_cublas_error,
+    cublasContext,
+    cublasCreate,
+    cublasDestroy,
+)
+from gpu.host._compile import _get_nvptx_target
+from gpu.host.device_context import DeviceBuffer, DeviceContext
+from gpu.host.memory import _memset
+from internal_utils import (
+    DeviceNDBuffer,
+    HostNDBuffer,
+    assert_almost_equal,
+    assert_equal,
+    fill,
+    linspace,
+    random,
+    zero,
+)
+from linalg.cublas import cublas_matmul
 from linalg.matmul_gpu import _matmul_gpu, matmul_kernel_naive
 from memory import memset_zero, stack_allocation
 from memory.reference import _GPUAddressSpace as GPUAddressSpace
-from gpu.cublas.cublas import (
-    check_cublas_error,
-    cublasContext,
-    cublasCreate,
-    cublasDestroy,
-)
-
-from linalg.cublas import cublas_matmul
-from utils import StaticIntTuple
-from utils.index import Index
-from internal_utils import (
-    HostNDBuffer,
-    DeviceNDBuffer,
-    fill,
-    zero,
-    linspace,
-    random,
-    assert_equal,
-    assert_almost_equal,
-)
-from gpu.cublas.cublas import (
-    check_cublas_error,
-    cublasContext,
-    cublasCreate,
-    cublasDestroy,
-)
-from buffer.dimlist import _make_tuple
-from linalg.cublas import cublas_matmul
 from testing import assert_equal as assert_equal_val
 
+from utils import StaticIntTuple
+from utils.index import Index
 
 alias init_fn_type = fn (buff: NDBuffer) -> None
 

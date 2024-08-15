@@ -7,13 +7,15 @@
 # RUN: %mojo-no-debug %s
 
 from math import isclose
+from random import rand
+
 from buffer import Dim, DimList, NDBuffer
 from gpu.host.device_context import DeviceBuffer, DeviceContext
 from linalg.matmul_gpu import split_k_reduce
-from utils import StaticIntTuple
-from testing import assert_almost_equal
-from random import rand
 from memory import memcpy
+from testing import assert_almost_equal
+
+from utils import StaticIntTuple
 
 
 fn _size[rank: Int](dims: StaticIntTuple[rank]) -> Int:

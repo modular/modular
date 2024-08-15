@@ -6,19 +6,21 @@
 # REQUIRES: has_cuda_device
 # RUN: %mojo-no-debug %s
 
-from sys import simdwidthof
-from algorithm import mean, variance
 from math import ceildiv, isqrt
 from random import random_float64
-from nn.normalization import *
+from sys import simdwidthof
+
+from algorithm import mean, variance
 from buffer import Buffer, NDBuffer
 from buffer.dimlist import DimList
-from gpu.host.device_context import DeviceBuffer, DeviceContext
 from gpu import WARP_SIZE
-from memory import UnsafePointer
-from testing import assert_almost_equal
-from utils.index import StaticTuple, StaticIntTuple, Index
 from gpu.host._compile import _compile_code, _get_nvptx_target
+from gpu.host.device_context import DeviceBuffer, DeviceContext
+from memory import UnsafePointer
+from nn.normalization import *
+from testing import assert_almost_equal
+
+from utils.index import Index, StaticIntTuple, StaticTuple
 
 
 fn welford_mean_var[

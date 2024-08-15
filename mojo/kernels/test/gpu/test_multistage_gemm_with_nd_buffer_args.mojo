@@ -6,13 +6,13 @@
 # REQUIRES: has_cuda_device
 # RUN: %mojo %s
 
+from collections import Optional
 from math import ceildiv, isclose
 from pathlib import Path
-from sys import alignof, simdwidthof, argv
+from sys import alignof, argv, simdwidthof
 
 from buffer import NDBuffer
 from buffer.dimlist import DimList
-from collections import Optional
 from gpu import WARP_SIZE, BlockIdx, ThreadIdx, barrier, lane_id
 from gpu.host import DeviceContext, FuncAttribute
 from gpu.memory import (
@@ -36,9 +36,10 @@ from layout.nd_buffer_stub import (
 )
 from layout.swizzle import Swizzle
 from linalg.matmul_gpu import matmul_kernel_naive
-from memory.reference import _GPUAddressSpace as AddressSpace
 from memory import UnsafePointer
+from memory.reference import _GPUAddressSpace as AddressSpace
 from testing import assert_almost_equal
+
 from utils import StaticIntTuple
 
 

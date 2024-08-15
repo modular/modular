@@ -23,10 +23,8 @@ from gpu import (
 )
 from gpu.host import DeviceContext
 from gpu.host._compile import _compile_code, _get_nvptx_target
-
 from gpu.memory import AddressSpace
-from memory import memset_zero, stack_allocation
-from memory import UnsafePointer
+from memory import UnsafePointer, memset_zero, stack_allocation
 from testing import *
 
 from utils.index import StaticIntTuple

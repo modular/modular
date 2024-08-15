@@ -5,8 +5,8 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo %s
 
-from testing import assert_equal
 from gpu.host import Result
+from testing import assert_equal
 
 
 def test_result():

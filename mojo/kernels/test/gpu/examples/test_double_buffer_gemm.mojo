@@ -6,13 +6,12 @@
 # REQUIRES: has_cuda_device
 # RUN: %mojo-no-debug %s
 
+from collections import InlineArray
 from math import ceildiv, isclose
-from sys import argv
-from sys import simdwidthof
+from sys import argv, simdwidthof
 
 from buffer import NDBuffer
 from buffer.dimlist import DimList
-from collections import InlineArray
 from gpu import WARP_SIZE, BlockIdx, ThreadIdx, barrier, lane_id
 from gpu.host import DeviceContext
 from gpu.memory import async_copy_wait_all
@@ -26,8 +25,8 @@ from layout.layout_tensor import (
 )
 from layout.math import outer_product_acc
 from linalg.matmul_gpu import matmul_kernel_naive
-from memory.reference import _GPUAddressSpace as AddressSpace
 from memory import UnsafePointer
+from memory.reference import _GPUAddressSpace as AddressSpace
 from testing import assert_almost_equal
 
 from utils import unroll

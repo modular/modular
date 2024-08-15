@@ -8,10 +8,12 @@
 # RUN: true
 
 from gpu.host import DeviceContext
-from gpu.host.memory import create_tma_descriptor, _malloc_managed, _free
-from gpu.memory import cp_async_bulk_tensor_shared_cluster_global
-from gpu.sync import mbarrier_init, mbarrier_arrive, mbarrier_test_wait
-from gpu.memory import _GPUAddressSpace
+from gpu.host.memory import _free, _malloc_managed, create_tma_descriptor
+from gpu.memory import (
+    _GPUAddressSpace,
+    cp_async_bulk_tensor_shared_cluster_global,
+)
+from gpu.sync import mbarrier_arrive, mbarrier_init, mbarrier_test_wait
 
 from utils.index import Index
 

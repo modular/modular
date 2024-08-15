@@ -6,9 +6,9 @@
 # RUN: %mojo %s
 
 from gpu.host._compile import _compile_code
-from testing import assert_true
 from memory import stack_allocation
 from memory.reference import _GPUAddressSpace
+from testing import assert_true
 
 
 def test_constant_memory():

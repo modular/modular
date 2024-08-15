@@ -5,11 +5,12 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo %s
 
-from gpu.host._compile import _compile_code
-from testing import assert_true, assert_equal
-from memory.reference import _GPUAddressSpace
 from collections import Optional
 from sys.intrinsics import strided_load
+
+from gpu.host._compile import _compile_code
+from memory.reference import _GPUAddressSpace
+from testing import assert_equal, assert_true
 
 
 fn strided_load_kernel[

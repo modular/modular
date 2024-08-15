@@ -5,9 +5,10 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo %s
 
+from sys.intrinsics import prefetch
+
 from gpu.host._compile import _compile_code
 from testing import assert_true
-from sys.intrinsics import prefetch
 
 
 def test_prefetch():

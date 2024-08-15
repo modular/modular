@@ -6,14 +6,14 @@
 # REQUIRES: has_cuda_device
 # RUN: %mojo-no-debug %s
 
-from math import log, log10, log2
+from math import log, log2, log10
 from sys import simdwidthof
 
 from algorithm.functional import _elementwise_impl_gpu
 from buffer import DimList, NDBuffer
 from gpu import *
-from gpu.host.device_context import DeviceContext
 from gpu.host._compile import _get_nvptx_target
+from gpu.host.device_context import DeviceContext
 from testing import assert_almost_equal
 
 

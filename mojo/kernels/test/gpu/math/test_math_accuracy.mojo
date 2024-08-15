@@ -6,16 +6,15 @@
 # REQUIRES: has_cuda_device
 # RUN: %mojo-no-debug %s
 
-from math import log, exp, exp2
+from math import exp, exp2, log
 from sys import simdwidthof
 
 from algorithm.functional import _elementwise_impl_gpu
 from buffer import DimList, NDBuffer
 from gpu import *
-from gpu.host.device_context import DeviceContext
 from gpu.host._compile import _get_nvptx_target
+from gpu.host.device_context import DeviceContext
 from testing import assert_almost_equal
-
 
 alias length = 8192
 

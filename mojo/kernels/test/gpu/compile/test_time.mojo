@@ -5,9 +5,10 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo-no-debug %s
 
+from time import sleep
+
 from gpu.host._compile import _compile_code, _get_nvptx_target
 from gpu.time import *
-from time import sleep
 from testing import *
 
 

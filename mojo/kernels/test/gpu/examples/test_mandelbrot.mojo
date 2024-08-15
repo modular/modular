@@ -16,6 +16,7 @@ from complex import ComplexSIMD
 from gpu import *
 from gpu.host import DeviceContext
 from testing import assert_equal
+
 from utils.index import Index
 
 alias float_type = DType.float64

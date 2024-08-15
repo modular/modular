@@ -6,7 +6,7 @@
 # REQUIRES: has_cuda_device
 # RUN: %mojo-no-debug %s
 
-from math import sqrt, isqrt
+from math import isqrt, sqrt
 from sys import has_neon, simdwidthof
 
 from algorithm.functional import _elementwise_impl_gpu

@@ -7,12 +7,12 @@
 # RUN: %mojo %s
 
 from math import exp
-from sys import triple_is_nvidia_cuda, simdwidthof
+from sys import simdwidthof, triple_is_nvidia_cuda
 
 from algorithm.functional import _elementwise_impl_gpu
 from buffer import DimList, NDBuffer
-from gpu.host.device_context import DeviceContext
 from gpu.host._compile import _get_nvptx_target
+from gpu.host.device_context import DeviceContext
 from testing import assert_equal
 
 from utils import StaticIntTuple

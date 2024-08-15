@@ -6,12 +6,12 @@
 # REQUIRES: has_cuda_device
 # RUN: %mojo-no-debug %s | FileCheck %s
 
+from builtin._location import __source_location
 from builtin.io import _printf
 from gpu.host import DeviceContext
 from layout import Layout
 
 from utils.inline_string import _FixedString
-from builtin._location import __source_location
 
 
 # CHECK-LABEL: == test_gpu_printf

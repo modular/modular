@@ -6,6 +6,7 @@
 # RUN: %mojo-no-debug %s | FileCheck %s
 
 from linalg.utils_gpu import block_swizzle
+
 from utils.index import Index, StaticIntTuple
 
 

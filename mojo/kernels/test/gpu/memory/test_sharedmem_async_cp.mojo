@@ -6,10 +6,11 @@
 # REQUIRES: has_cuda_device
 # Hangs with debug mode Issue #24921
 # RUN: %mojo-no-debug %s | FileCheck %s
+import time
+
 import builtin
 from gpu import AddressSpace, ThreadIdx, memory, sync
 from gpu.host import DeviceContext
-import time
 from memory import stack_allocation
 
 

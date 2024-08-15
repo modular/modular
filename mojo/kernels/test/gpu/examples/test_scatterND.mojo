@@ -13,6 +13,7 @@ from buffer.dimlist import DimList
 from gpu import BlockDim, BlockIdx, ThreadIdx
 from gpu.host.device_context import DeviceContext
 from memory import memcpy
+
 from utils.index import Index
 
 # This is DeviceAttribute.MAX_THREADS_PER_BLOCK (in ONNXRT it is a global

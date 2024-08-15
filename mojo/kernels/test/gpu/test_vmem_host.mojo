@@ -8,14 +8,13 @@
 
 from gpu.host import DeviceContext
 from gpu.host.memory import (
-    _mem_get_allocation_granularity,
+    MemAllocationGranularityFlags,
     MemAllocationProp,
     MemAllocationType,
-    MemLocationType,
     MemLocation,
-    MemAllocationGranularityFlags,
+    MemLocationType,
+    _mem_get_allocation_granularity,
 )
-
 from testing import assert_equal
 
 

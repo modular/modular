@@ -7,8 +7,8 @@
 # RUN: %mojo-no-debug %s
 
 from gpu.host import DeviceContext
-from testing import *
 from gpu.host._compile import _compile_code, _get_nvptx_target
+from testing import *
 
 
 def test_convert_asm():

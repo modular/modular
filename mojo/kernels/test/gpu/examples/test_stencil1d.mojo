@@ -18,8 +18,7 @@ from gpu.host.memory import (
     _free,
     _malloc,
 )
-from memory import stack_allocation
-from memory import UnsafePointer
+from memory import UnsafePointer, stack_allocation
 
 from utils.index import Index
 

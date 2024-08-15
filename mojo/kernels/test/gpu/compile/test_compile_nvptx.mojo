@@ -6,8 +6,9 @@
 # REQUIRES: has_cuda_device
 # RUN: %mojo %s | FileCheck %s
 
-from gpu import ThreadIdx
 from sys._assembly import inlined_assembly
+
+from gpu import ThreadIdx
 from gpu.host import DeviceContext
 from gpu.host._compile import _compile_code
 

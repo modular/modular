@@ -9,7 +9,8 @@
 from collections.optional import OptionalReg
 from math import ceildiv, isclose
 from pathlib import Path
-from sys import alignof, simdwidthof, argv
+from random import rand
+from sys import alignof, argv, simdwidthof
 
 from buffer import NDBuffer
 from buffer.dimlist import DimList
@@ -46,12 +47,11 @@ from layout.tensor_core import (
     get_fragment_size,
     get_mma_shape,
 )
-from linalg.cublas import cublas_matmul
 from linalg._multistage_gemm_gpu import multistage_mma
+from linalg.cublas import cublas_matmul
 from linalg.utils_gpu import block_swizzle
-from memory.reference import _GPUAddressSpace as AddressSpace
 from memory import UnsafePointer
-from random import rand
+from memory.reference import _GPUAddressSpace as AddressSpace
 from testing import assert_almost_equal
 
 from utils.index import Index, StaticIntTuple

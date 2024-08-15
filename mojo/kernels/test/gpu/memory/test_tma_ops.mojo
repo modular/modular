@@ -6,8 +6,11 @@
 # RUN: %mojo-no-debug %s
 
 from gpu.host._compile import _compile_code, _get_nvptx_target
-from gpu.memory import cp_async_bulk_tensor_shared_cluster_global
-from gpu.memory import _GPUAddressSpace
+from gpu.memory import (
+    _GPUAddressSpace,
+    cp_async_bulk_tensor_shared_cluster_global,
+)
+
 from utils.index import Index
 
 

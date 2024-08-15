@@ -16,7 +16,7 @@ from gpu.mma import ld_matrix, mma
 from gpu.mma_util import store_matrix_d
 from layout.tensor_core import get_accum_type, get_fragment_size, get_mma_shape
 from linalg.matmul_gpu import matmul_kernel_naive
-from memory import stack_allocation, UnsafePointer
+from memory import UnsafePointer, stack_allocation
 from testing import assert_almost_equal
 
 

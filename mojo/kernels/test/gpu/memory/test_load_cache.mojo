@@ -5,10 +5,11 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo %s
 
-from gpu.memory import load, CacheOperation, CacheEviction
-from gpu.host._compile import _compile_code
-from testing import assert_true, assert_equal
 from collections import Optional
+
+from gpu.host._compile import _compile_code
+from gpu.memory import CacheEviction, CacheOperation, load
+from testing import assert_equal, assert_true
 
 
 fn load_value[

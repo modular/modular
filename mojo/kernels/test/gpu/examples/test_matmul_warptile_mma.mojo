@@ -8,6 +8,7 @@
 
 from collections import OptionalReg
 from math import ceildiv
+from sys import llvm_intrinsic
 
 from buffer import NDBuffer
 from buffer.dimlist import DimList
@@ -15,15 +16,12 @@ from gpu import WARP_SIZE, BlockIdx, ThreadIdx, barrier
 from gpu.host import DeviceContext
 from gpu.memory import AddressSpace
 from gpu.mma import mma
-from linalg.matmul_gpu import matmul_kernel_naive, __nvvm_ldg_f4
+from linalg.matmul_gpu import __nvvm_ldg_f4, matmul_kernel_naive
 from linalg.utils import elementwise_epilogue_type
-from memory import memset_zero, stack_allocation
-from memory import UnsafePointer, bitcast
+from memory import UnsafePointer, bitcast, memset_zero, stack_allocation
 
 from utils import Index, StaticTuple, unroll
 from utils.numerics import isnan
-from sys import llvm_intrinsic
-
 
 # MMA dimensions. FP32 = TF32*TF32 + FP32. We use the following (via library):
 # llvm.nvvm.mma.m16n8k8.row.col.tf32

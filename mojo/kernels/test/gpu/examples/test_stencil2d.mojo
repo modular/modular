@@ -13,8 +13,7 @@ from buffer.dimlist import DimList
 from gpu import BlockDim, BlockIdx, ThreadIdx, barrier
 from gpu.host import DeviceContext
 from gpu.memory import AddressSpace
-from memory import stack_allocation
-from memory import UnsafePointer
+from memory import UnsafePointer, stack_allocation
 
 from utils.index import Index
 
