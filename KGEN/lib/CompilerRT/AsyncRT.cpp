@@ -235,25 +235,6 @@ KGEN_CompilerRT_AsyncRT_GetCurrentStream() {
   return CUDA::Globals::getCurrentStreamInTLS();
 }
 
-COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void
-KGEN_CompilerRT_CudaContextSetDevice(
-    void *devCtx, MojoValue::DestructorFn destructor,
-    AsyncRTWrapper<CUDA::CUDARuntime> runtime) {
-  unwrap(runtime).deviceContext = MojoValue(devCtx, destructor);
-}
-
-COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void
-KGEN_CompilerRT_CudaContextSetContext(
-    CUcontext ctx, AsyncRTWrapper<CUDA::CUDARuntime> runtime) {
-  unwrap(runtime).context = ctx;
-}
-
-COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void
-KGEN_CompilerRT_CudaContextSetStream(
-    CUstream stream, AsyncRTWrapper<CUDA::CUDARuntime> runtime) {
-  unwrap(runtime).stream = stream;
-}
-
 //===----------------------------------------------------------------------===//
 // MojoCallContext
 //===----------------------------------------------------------------------===//
@@ -282,11 +263,33 @@ KGEN_CompilerRT_AsyncRT_MojoCallContext_GetCUStream(
   return reinterpret_cast<CUDA::CUDARuntime *>(runtime)->stream;
 }
 
+/// Set the cuda stream from the context. Null for cpu kernels.
+COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void
+KGEN_CompilerRT_AsyncRT_MojoCallContext_SetCUStream(
+    AsyncRTMojoCallContextRef callContext, void *stream) {
+  auto runtime = unwrap(callContext).deviceRuntime;
+  reinterpret_cast<CUDA::CUDARuntime *>(runtime)->stream =
+      reinterpret_cast<CUstream>(stream);
+  return;
+}
+/// Set the cuda stream from the context. Null for cpu kernels.
+COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void
+KGEN_CompilerRT_AsyncRT_MojoCallContext_SetCUContext(
+    AsyncRTMojoCallContextRef callContext, void *context) {
+  auto runtime = unwrap(callContext).deviceRuntime;
+  reinterpret_cast<CUDA::CUDARuntime *>(runtime)->context =
+      reinterpret_cast<CUcontext>(context);
+  return;
+}
+
 /// Get cuda device from cuda runtime.
 COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void *
-KGEN_CompilerRT_AsyncRT_MojoCallContext_GetCudaDevice(
+KGEN_CompilerRT_AsyncRT_MojoCallContext_GetDeviceContext(
     AsyncRTMojoCallContextRef callContext) {
-  return unwrap(callContext).deviceContext;
+  auto mojoValueDataPtr =
+      reinterpret_cast<M::MojoValue *>(unwrap(callContext).deviceContext)
+          ->getData();
+  return mojoValueDataPtr;
 }
 
 //===----------------------------------------------------------------------===//
@@ -440,7 +443,6 @@ KGEN_CompilerRT_CreateOwnedAsyncMojoValue(
     AsyncRTWrapper<Runtime> runtimePtr) {
   Runtime &runtime = unwrap(runtimePtr);
   AnyAsyncValueRef &value = unwrap(async);
-
   if (value.getPointer() && value.getPointer()->isIndirect()) {
     value.copy().emplaceIndirect<MojoValue>(data, destructorFn);
   } else {
@@ -571,12 +573,6 @@ void M::KGEN::registerAsyncRT(
 
   funcs.push_back({"KGEN_CompilerRT_AsyncRT_GetCurrentStream",
                    (void *)&KGEN_CompilerRT_AsyncRT_GetCurrentStream});
-  funcs.push_back({"KGEN_CompilerRT_CudaContextSetDevice",
-                   (void *)&KGEN_CompilerRT_CudaContextSetDevice});
-  funcs.push_back({"KGEN_CompilerRT_CudaContextSetContext",
-                   (void *)&KGEN_CompilerRT_CudaContextSetContext});
-  funcs.push_back({"KGEN_CompilerRT_CudaContextSetStream",
-                   (void *)&KGEN_CompilerRT_CudaContextSetStream});
   funcs.push_back({"KGEN_CompilerRT_CreateAsync_ssizet",
                    (void *)&KGEN_CompilerRT_CreateAsync_ssizet});
   funcs.push_back({"KGEN_CompilerRT_CreateAsync_chain",
@@ -609,8 +605,11 @@ void M::KGEN::registerAsyncRT(
       {"KGEN_CompilerRT_AsyncRT_MojoCallContext_SetToError",
        (void *)&KGEN_CompilerRT_AsyncRT_MojoCallContext_SetToError});
   funcs.push_back(
-      {"KGEN_CompilerRT_AsyncRT_MojoCallContext_GetCUStream",
-       (void *)&KGEN_CompilerRT_AsyncRT_MojoCallContext_GetCUStream});
+      {"KGEN_CompilerRT_AsyncRT_MojoCallContext_SetCUStream",
+       (void *)&KGEN_CompilerRT_AsyncRT_MojoCallContext_SetCUStream});
+  funcs.push_back(
+      {"KGEN_CompilerRT_AsyncRT_MojoCallContext_SetCUContext",
+       (void *)&KGEN_CompilerRT_AsyncRT_MojoCallContext_SetCUContext});
 
   funcs.push_back({"KGEN_CompilerRT_CreateAsyncCUDABufferRef",
                    (void *)&KGEN_CompilerRT_CreateAsyncCUDABufferRef});
