@@ -283,6 +283,12 @@ struct AccessProperty:
     fn __ne__(self, other: Self) -> Bool:
         return not (self == other)
 
+    fn __is__(self, other: Self) -> Bool:
+        return self == other
+
+    fn __isnot__(self, other: Self) -> Bool:
+        return self != other
+
     fn __init__(inout self, *, other: Self):
         """Explicitly construct a deep copy of the provided value.
 
@@ -411,6 +417,12 @@ struct LimitProperty:
     @always_inline("nodebug")
     fn __ne__(self, other: Self) -> Bool:
         return not (self == other)
+
+    fn __is__(self, other: Self) -> Bool:
+        return self == other
+
+    fn __isnot__(self, other: Self) -> Bool:
+        return self != other
 
     fn __init__(inout self, *, other: Self):
         """Explicitly construct a deep copy of the provided value.
@@ -583,6 +595,12 @@ struct LaunchAttributeID:
     @always_inline("nodebug")
     fn __ne__(self, other: Self) -> Bool:
         return not (self == other)
+
+    fn __is__(self, other: Self) -> Bool:
+        return self == other
+
+    fn __isnot__(self, other: Self) -> Bool:
+        return self != other
 
     fn __init__(inout self, *, other: Self):
         """Explicitly construct a deep copy of the provided value.
