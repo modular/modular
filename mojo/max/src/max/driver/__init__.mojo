@@ -5,7 +5,6 @@
 # ===----------------------------------------------------------------------=== #
 
 from .anytensor import AnyTensor, AnyMemory, AnyMojoValue
-from .cuda import check_compute_capability, cuda_device
 from .device import Device, CPUDescriptor, cpu_device
 from .device_memory import DeviceMemory, DeviceTensor
 from .tensor import Tensor

@@ -13,7 +13,8 @@
 # RUN: mojo build %s -o %t/cuda-test-device
 # RUN: %t/cuda-test-device
 
-from max.driver import cpu_device, cuda_device, Tensor, AnyTensor
+from max.driver import cpu_device, Tensor, AnyTensor
+from max.driver._cuda import cuda_device
 from testing import assert_equal, assert_not_equal
 from max.tensor import TensorSpec
 from utils import Index

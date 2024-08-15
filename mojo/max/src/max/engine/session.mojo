@@ -15,7 +15,8 @@ from pathlib import Path
 from sys.ffi import _get_global_or_null
 from memory import Arc, UnsafePointer
 from max._utils import call_dylib_func
-from max.driver import check_compute_capability, cpu_device, Device
+from max.driver import cpu_device, Device
+from max.driver._cuda import check_compute_capability
 
 from ._compilation import (
     CCompiledModel,
