@@ -5,31 +5,31 @@
 # ===----------------------------------------------------------------------=== #
 """This module implements the function type."""
 
-from collections import Dict, Optional, List
+from collections import Dict, List, Optional
 from math.math import align_up
 from pathlib import Path
 from sys.intrinsics import _mlirtype_is_eq
 
+from builtin._location import __call_location
 from gpu.host.device_context import DeviceBuffer
 from memory import stack_allocation
 
-from utils.lock import BlockingSpinLock, BlockingScopedLock
+from utils.lock import BlockingScopedLock, BlockingSpinLock
 from utils.variant import Variant
 
 from ._compile import _compile_code, _get_nvptx_fn_name, _get_nvptx_target
-from builtin._location import __call_location
 from ._utils import (
+    CudaHandle,
     _check_error,
     _FunctionHandle,
     _ModuleHandle,
     _StreamHandle,
-    CudaHandle,
 )
 from .context import Context
+from .cuda_instance import LaunchConfig
 from .dim import Dim
 from .module import Module
 from .stream import Stream
-from .cuda_instance import LaunchConfig
 
 # ===----------------------------------------------------------------------===#
 # CacheConfig

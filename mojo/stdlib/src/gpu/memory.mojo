@@ -6,13 +6,15 @@
 """This module includes NVIDIA GPUs memory operations."""
 
 from collections import Optional
-from memory import UnsafePointer
-from sys import triple_is_nvidia_cuda, bitwidthof, alignof, sizeof
-from sys.intrinsics import _RegisterPackType
+from sys import alignof, bitwidthof, sizeof, triple_is_nvidia_cuda
 from sys._assembly import inlined_assembly
+from sys.intrinsics import _RegisterPackType
+
 from builtin.dtype import _uint_type_of_width
+from memory import UnsafePointer
 from memory.reference import _GPUAddressSpace
 from memory.unsafe import bitcast
+
 from utils import StaticIntTuple
 
 # ===----------------------------------------------------------------------===#

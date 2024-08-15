@@ -5,15 +5,15 @@
 # ===----------------------------------------------------------------------=== #
 """Implements CUDA memory operations."""
 
-from sys import sizeof, bitwidthof
+from sys import bitwidthof, sizeof
 
 from memory import UnsafePointer
 from memory.unsafe import bitcast
 
+from utils import StaticTuple
+
 from ._utils import _check_error, _get_dylib_function
 from .stream import Stream, _StreamHandle
-
-from utils import StaticTuple
 
 # ===----------------------------------------------------------------------===#
 # Memory

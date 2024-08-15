@@ -6,12 +6,14 @@
 """Implements some utilties."""
 
 from collections import List
+from math import floor
 from os import abort
 from pathlib import Path
 from sys.ffi import DLHandle
 from sys.ffi import _get_dylib_function as _ffi_get_dylib_function
+
 from builtin._location import __call_location, _SourceLocation
-from math import floor
+
 from .result import Result as DriverResult
 
 # ===----------------------------------------------------------------------===#

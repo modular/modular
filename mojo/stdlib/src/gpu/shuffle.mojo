@@ -6,6 +6,7 @@
 """This module includes intrinsics for NVIDIA GPUs shuffle instructions."""
 
 from sys import llvm_intrinsic
+
 from memory import bitcast
 
 from .globals import WARP_SIZE

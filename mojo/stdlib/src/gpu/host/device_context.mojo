@@ -4,11 +4,12 @@
 #
 # ===----------------------------------------------------------------------=== #
 
+from collections import List
 from os import abort
 from sys import sizeof
+from sys.param_env import env_get_int, is_defined
 
-from ._compile import _get_nvptx_fn_name
-from collections import List
+from gpu.host._compile import _get_nvptx_target
 from gpu.host.context import Context
 from gpu.host.cuda_instance import CudaInstance, LaunchAttribute
 from gpu.host.device import Device
@@ -16,9 +17,9 @@ from gpu.host.event import Event
 from gpu.host.function import Function
 from gpu.host.memory import _memset_async
 from gpu.host.stream import Stream
-from sys.param_env import is_defined, env_get_int
+
+from ._compile import _get_nvptx_fn_name
 from ._utils import _check_error, _StreamHandle
-from gpu.host._compile import _get_nvptx_target
 
 
 # TODO: Figure a way to resolve circular dependency between the gpu and runtime

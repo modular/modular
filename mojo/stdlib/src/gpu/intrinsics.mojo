@@ -8,8 +8,8 @@
 from sys._assembly import inlined_assembly
 from sys.info import alignof, bitwidthof
 from sys.intrinsics import llvm_intrinsic
-from builtin.dtype import _int_type_of_width
 
+from builtin.dtype import _int_type_of_width
 from memory import UnsafePointer
 from memory.unsafe import bitcast
 

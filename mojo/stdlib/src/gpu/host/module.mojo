@@ -7,8 +7,8 @@
 
 from collections.optional import Optional
 from os import abort
-from sys import env_get_string, env_get_int
 from pathlib import Path
+from sys import env_get_int, env_get_string
 
 from memory import memset_zero, stack_allocation
 

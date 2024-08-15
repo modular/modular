@@ -6,14 +6,14 @@
 """Implements CUDA context operations."""
 
 from os import abort
-from sys import sizeof, bitwidthof
+from sys import bitwidthof, sizeof
 
+from gpu.host.function import FunctionCache
 from memory import UnsafePointer, bitcast
 
 from ._utils import _check_error, _ContextHandle, _StreamHandle
 from .cuda_instance import *
 from .device import Device
-from gpu.host.function import FunctionCache
 
 # ===----------------------------------------------------------------------===#
 # Context

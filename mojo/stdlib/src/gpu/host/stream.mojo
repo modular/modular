@@ -7,9 +7,7 @@
 
 from os import abort
 
-
 from ._utils import _check_error, _StreamHandle
-
 
 # ===----------------------------------------------------------------------===#
 # Stream
