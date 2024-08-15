@@ -20,6 +20,7 @@ struct Info:
     var allocation_granularity: String
     var max_registers_per_thread: Int
     var max_registers_per_block: Int
+    var max_blocks_per_multiprocessor: Int
     var shared_memory_allocation_unit_size: Int
     var warp_allocation_granularity: Int
     var max_thread_block_size: Int
@@ -43,6 +44,7 @@ struct Info:
         allocation_granularity: String,
         max_registers_per_thread: Int,
         max_registers_per_block: Int,
+        max_blocks_per_multiprocessor: Int,
         shared_memory_allocation_unit_size: Int,
         warp_allocation_granularity: Int,
         max_thread_block_size: Int,
@@ -63,6 +65,7 @@ struct Info:
         self.allocation_granularity = allocation_granularity
         self.max_registers_per_thread = max_registers_per_thread
         self.max_registers_per_block = max_registers_per_block
+        self.max_blocks_per_multiprocessor = max_blocks_per_multiprocessor
         self.shared_memory_allocation_unit_size = (
             shared_memory_allocation_unit_size
         )
@@ -97,6 +100,7 @@ alias A100 = Info(
     allocation_granularity="warp",
     max_registers_per_thread=255,
     max_registers_per_block=65536,
+    max_blocks_per_multiprocessor=32,
     shared_memory_allocation_unit_size=128,
     warp_allocation_granularity=4,
     max_thread_block_size=1024,
@@ -130,10 +134,45 @@ alias A10 = Info(
     allocation_granularity="warp",
     max_registers_per_thread=255,
     max_registers_per_block=65536,
+    max_blocks_per_multiprocessor=16,
     shared_memory_allocation_unit_size=128,
     warp_allocation_granularity=4,
     max_thread_block_size=1024,
     peak_fp16_tflops=125,
     peak_i8_tflops=250,
     peak_i4_tflops=500,
+)
+
+# ===----------------------------------------------------------------------===#
+# L4
+# ===----------------------------------------------------------------------===#
+
+
+alias L4 = Info(
+    name="L4",
+    version="sm_89",
+    target=__mlir_attr[
+        `#kgen.target<triple = "nvptx64-nvidia-cuda", `,
+        `arch = "sm_89", `,
+        `features = "+ptx85", `,
+        `data_layout = "e-i64:64-i128:128-v16:16-v32:32-n16:32:64",`,
+        `simd_bit_width = 128> : !kgen.target`,
+    ],
+    threads_per_warp=32,
+    warps_per_multiprocessor=64,
+    threads_per_multiprocessor=2048,
+    thread_blocks_per_multiprocessor=32,
+    shared_memory_per_multiprocessor=102400,
+    register_file_size=65536,
+    register_allocation_unit_size=256,
+    allocation_granularity="warp",
+    max_registers_per_thread=255,
+    max_registers_per_block=65536,
+    max_blocks_per_multiprocessor=24,
+    shared_memory_allocation_unit_size=128,
+    warp_allocation_granularity=4,
+    max_thread_block_size=1024,
+    peak_fp16_tflops=121,
+    peak_i8_tflops=242,
+    peak_i4_tflops=485,
 )
