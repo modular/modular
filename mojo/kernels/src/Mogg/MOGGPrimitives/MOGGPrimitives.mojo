@@ -5,6 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from collections.vector import InlinedFixedVector
+from collections import Optional
 from math import ceildiv
 from os import abort
 from sys import alignof, external_call, sizeof
@@ -13,6 +14,8 @@ from buffer import NDBuffer
 from buffer.dimlist import Dim, DimList
 from extensibility import Tensor as ExtensibilityTensor
 from gpu.host import Context as CudaContext
+from gpu.host.cuda_instance import *
+from gpu.host._utils import _check_error
 from gpu.host import (
     CudaInstance,
     Device,
@@ -120,7 +123,7 @@ struct StateContext:
 fn byte_buffer_alloc[
     target: StringLiteral,
     alignment: Int,
-](byte_size: Int, callCtx: MojoCallContextPtr) raises -> NDBuffer[
+](byte_size: Int, call_ctx: MojoCallContextPtr) raises -> NDBuffer[
     DType.int8, 1
 ]:
     """Function will allocate a 1-D buffer with the specified size/alignment on device.
@@ -132,8 +135,8 @@ fn byte_buffer_alloc[
     if "cuda" in target:
         # For now, only cuda targets can use device context directly
         return NDBuffer[DType.int8, 1](
-            callCtx.get_cuda_device().cuda_context.malloc_async[Int8](
-                byte_size, callCtx.get_cuda_device().cuda_stream
+            call_ctx.get_device_context().cuda_context.malloc_async[Int8](
+                byte_size, call_ctx.get_device_context().cuda_stream
             ),
             shape,
         )
@@ -196,12 +199,12 @@ fn create_buffer_ref_async[
     buffer: NDBuffer[DType.int8, 1],
     async_ptr: UnsafePointer[NoneType],
     runtime: UnsafePointer[NoneType],
-    callCtx: MojoCallContextPtr,
+    call_ctx: MojoCallContextPtr,
 ):
     @parameter
     if "cuda" in target:
         external_call["KGEN_CompilerRT_CreateAsyncCUDABufferRef", NoneType](
-            buffer.data, len(buffer), async_ptr, runtime, callCtx.ptr
+            buffer.data, len(buffer), async_ptr, runtime, call_ctx.ptr
         )
     else:
         external_call["KGEN_CompilerRT_CreateAsyncBufferRef", NoneType](
@@ -219,7 +222,7 @@ fn create_buffer_ref_with_borrow_async[
     async_to_borrow: UnsafePointer[NoneType],
     output_async: UnsafePointer[NoneType],
     runtime: UnsafePointer[NoneType],
-    callCtx: MojoCallContextPtr,
+    call_ctx: MojoCallContextPtr,
 ):
     external_call["KGEN_CompilerRT_CreateAsyncBufferWithBorrow", NoneType](
         buffer.data, len(buffer), async_to_borrow, output_async, runtime
@@ -525,13 +528,13 @@ fn mgp_buffer_alloc_static[
     cRawAlign: UInt64,
     dDevice: StringLiteral,
 ](
-    dummy_chain: Int, stateCtx: StateContext, callCtx: MojoCallContextPtr
+    dummy_chain: Int, stateCtx: StateContext, call_ctx: MojoCallContextPtr
 ) raises -> NDBuffer[DType.int8, 1]:
     # Default to alignment of 1 if cRawAlign is kUnknownSize (SizeUtils.h).
     alias alignment = alignof[DType.int8]() if cRawAlign == UInt64.MAX else int(
         cRawAlign
     )
-    return byte_buffer_alloc[dDevice, alignment=alignment](int(bSize), callCtx)
+    return byte_buffer_alloc[dDevice, alignment=alignment](int(bSize), call_ctx)
 
 
 @mogg_register("mgp.buffer.alloc.dynamic")
@@ -545,13 +548,13 @@ fn mgp_buffer_alloc_dynamic[
     dummy_chain: Int,
     ctx: StateContext,
     byte_size: Int,
-    callCtx: MojoCallContextPtr,
+    call_ctx: MojoCallContextPtr,
 ) raises -> NDBuffer[DType.int8, 1]:
     # Default to alignment of 1 if cRawAlign is kUnknownSize (SizeUtils.h).
     alias alignment = alignof[DType.int8]() if bRawAlign == UInt64.MAX else int(
         bRawAlign
     )
-    return byte_buffer_alloc[cDevice, alignment=alignment](byte_size, callCtx)
+    return byte_buffer_alloc[cDevice, alignment=alignment](byte_size, call_ctx)
 
 
 @always_inline
@@ -724,6 +727,22 @@ fn mgp_chain_host_to_device[aRuntimeSlot: UInt64, bDevice: StringLiteral]():
 # ===----------------------------------------------------------------------===#
 
 
+struct WrappedDeviceContext(Movable):
+    var _dev_ctx: Optional[DeviceContext]
+
+    @always_inline
+    fn __init__(inout self) raises:
+        self._dev_ctx = None
+
+    @always_inline
+    fn __init__(inout self, owned ctx: DeviceContext) raises:
+        self._dev_ctx = ctx^
+
+    @always_inline
+    fn __moveinit__(inout self, owned existing: Self):
+        self._dev_ctx = existing._dev_ctx^
+
+
 @mogg_register("mgp.device.context.create")
 @export
 fn mgp_device_context_create[
@@ -732,69 +751,22 @@ fn mgp_device_context_create[
     dummy_chain: Int,
     ctx: StateContext,
     dev_ctx_ptr: UnsafePointer[DeviceContext],
-) raises -> UnsafePointer[DeviceContext]:
+    call_ctx: MojoCallContextPtr,
+) raises -> WrappedDeviceContext:
     if dev_ctx_ptr:
-        # We cannot return the original pointer because it is already owned by someone else.
-        var dev_ctx = external_call[
-            "KGEN_CompilerRT_MojoValueAllocateBuffer",
-            UnsafePointer[DeviceContext],
-        ](sizeof[DeviceContext](), alignof[DeviceContext]())
-        dev_ctx.init_pointee_copy(dev_ctx_ptr[])
-        external_call[
-            "KGEN_CompilerRT_CudaContextSetDevice",
-            NoneType._mlir_type,
-        ](
-            dev_ctx,
-            empty_destructor,
-            ctx[Int(aDeviceRuntimeSlot.cast[DType.int64]().value)],
-        )
-        external_call[
-            "KGEN_CompilerRT_CudaContextSetContext",
-            NoneType._mlir_type,
-        ](
-            dev_ctx_ptr[].cuda_context.ctx.handle,
-            ctx[Int(aDeviceRuntimeSlot.cast[DType.int64]().value)],
-        )
-        external_call[
-            "KGEN_CompilerRT_CudaContextSetStream",
-            NoneType._mlir_type,
-        ](
-            dev_ctx_ptr[].cuda_stream.stream.handle,
-            ctx[Int(aDeviceRuntimeSlot.cast[DType.int64]().value)],
-        )
-        return dev_ctx
+        var dev_ctx = WrappedDeviceContext(dev_ctx_ptr[])
+        call_ctx.set_stream(dev_ctx._dev_ctx.value().cuda_stream)
+        call_ctx.set_context(dev_ctx._dev_ctx.value().cuda_context)
+        return dev_ctx^
 
     @parameter
     if bDevice == "cuda":
-        var dev_ctx = external_call[
-            "KGEN_CompilerRT_MojoValueAllocateBuffer",
-            UnsafePointer[DeviceContext],
-        ](sizeof[DeviceContext](), alignof[DeviceContext]())
-        dev_ctx.init_pointee_move(DeviceContext())
-        external_call[
-            "KGEN_CompilerRT_CudaContextSetDevice",
-            NoneType._mlir_type,
-        ](
-            dev_ctx,
-            mgp_device_context_destroy,
-            ctx[Int(aDeviceRuntimeSlot.cast[DType.int64]().value)],
-        )
-        external_call[
-            "KGEN_CompilerRT_CudaContextSetContext",
-            NoneType._mlir_type,
-        ](
-            dev_ctx[].cuda_context.ctx.handle,
-            ctx[Int(aDeviceRuntimeSlot.cast[DType.int64]().value)],
-        )
-        external_call[
-            "KGEN_CompilerRT_CudaContextSetStream",
-            NoneType._mlir_type,
-        ](
-            dev_ctx[].cuda_stream.stream.handle,
-            ctx[Int(aDeviceRuntimeSlot.cast[DType.int64]().value)],
-        )
-        return dev_ctx
-    return UnsafePointer[DeviceContext]()
+        var dev_ctx = WrappedDeviceContext(DeviceContext())
+        call_ctx.set_stream(dev_ctx._dev_ctx.value().cuda_stream)
+        call_ctx.set_context(dev_ctx._dev_ctx.value().cuda_context)
+        return dev_ctx^
+    # This returns an empty wrapped context
+    return WrappedDeviceContext()
 
 
 @export
@@ -810,7 +782,7 @@ fn mgp_device_context_profile_start[
     bDevice: StringLiteral,
     cTag: StringLiteral,
     dFilePath: StringLiteral,
-](ctx: StateContext, callCtx: MojoCallContextPtr) -> Int:
+](ctx: StateContext, call_ctx: MojoCallContextPtr) -> Int:
     # Call into device_context here.
     return 1
 
@@ -823,10 +795,10 @@ fn mgp_device_context_profile_end[
     bDevice: StringLiteral,
     cTag: StringLiteral,
     dFilePath: StringLiteral,
-](ctx: StateContext, callCtx: MojoCallContextPtr) -> Int:
+](ctx: StateContext, call_ctx: MojoCallContextPtr) -> Int:
     # Call into device_context here....
     try:
-        callCtx.get_cuda_device().dump_kernel_timing_info()
+        call_ctx.get_device_context().dump_kernel_timing_info()
     except e:
         abort(e)
     return 1
@@ -844,8 +816,8 @@ fn mgp_sync[
 ) raises -> Int:
     @parameter
     if bDevice == "cuda":
-        var e = Event(call_ctx.get_cuda_device().cuda_context)
-        e.record(call_ctx.get_cuda_device().cuda_stream)
+        var e = Event(call_ctx.get_device_context().cuda_context)
+        e.record(call_ctx.get_device_context().cuda_stream)
         e.sync()
 
     return 0
