@@ -6,6 +6,18 @@
 """Contains information about the GPUs."""
 
 
+@value
+struct Flops:
+    var fp16: Int
+    var i8: Int
+    var i4: Int
+
+    fn __init__(inout self, *, fp16: Int, i8: Int, i4: Int):
+        self.fp16 = fp16
+        self.i8 = i8
+        self.i4 = i4
+
+
 struct Info:
     var name: String
     var version: String
@@ -24,9 +36,7 @@ struct Info:
     var shared_memory_allocation_unit_size: Int
     var warp_allocation_granularity: Int
     var max_thread_block_size: Int
-    var peak_fp16_tflops: Int
-    var peak_i8_tflops: Int
-    var peak_i4_tflops: Int
+    var flops: Flops
 
     fn __init__(
         inout self,
@@ -48,9 +58,7 @@ struct Info:
         shared_memory_allocation_unit_size: Int,
         warp_allocation_granularity: Int,
         max_thread_block_size: Int,
-        peak_fp16_tflops: Int,
-        peak_i8_tflops: Int,
-        peak_i4_tflops: Int,
+        flops: Flops,
     ):
         self.name = name
         self.version = version
@@ -71,9 +79,7 @@ struct Info:
         )
         self.warp_allocation_granularity = warp_allocation_granularity
         self.max_thread_block_size = max_thread_block_size
-        self.peak_fp16_tflops = peak_fp16_tflops
-        self.peak_i8_tflops = peak_i8_tflops
-        self.peak_i4_tflops = peak_i4_tflops
+        self.flops = flops
 
 
 # ===----------------------------------------------------------------------===#
@@ -104,9 +110,7 @@ alias A100 = Info(
     shared_memory_allocation_unit_size=128,
     warp_allocation_granularity=4,
     max_thread_block_size=1024,
-    peak_fp16_tflops=312,
-    peak_i8_tflops=624,
-    peak_i4_tflops=1248,
+    flops=Flops(fp16=312, i8=624, i4=1248),
 )
 
 # ===----------------------------------------------------------------------===#
@@ -138,9 +142,7 @@ alias A10 = Info(
     shared_memory_allocation_unit_size=128,
     warp_allocation_granularity=4,
     max_thread_block_size=1024,
-    peak_fp16_tflops=125,
-    peak_i8_tflops=250,
-    peak_i4_tflops=500,
+    flops=Flops(fp16=125, i8=250, i4=500),
 )
 
 # ===----------------------------------------------------------------------===#
@@ -172,7 +174,5 @@ alias L4 = Info(
     shared_memory_allocation_unit_size=128,
     warp_allocation_granularity=4,
     max_thread_block_size=1024,
-    peak_fp16_tflops=121,
-    peak_i8_tflops=242,
-    peak_i4_tflops=485,
+    flops=Flops(fp16=121, i8=242, i4=485),
 )
