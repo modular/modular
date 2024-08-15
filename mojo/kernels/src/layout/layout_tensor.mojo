@@ -119,6 +119,22 @@ struct LayoutTensor[
     element_layout: Layout = Layout(1, 1),
     index_type: DType = _get_index_type(layout, address_space),
 ](CollectionElement, CollectionElementNew, Stringable, Formattable):
+    """This is a Tensor type that has a specified memory layout and rank. The
+    following example demonstrate a LayoutTensor of float32 with a row major
+    layout of shape (5, 4).
+
+        alias f32 = DType.float32
+        var tensor_5x4 = LayoutTensor[f32, Layout.row_major(5,4)].stack_allocation()
+
+    Parameters:
+        dtype: The data type of the underlying pointer.
+        layout: The memory layout of the Tensor.
+        rank: The rank of the Tensor.
+        address_space: The address space of the underlying pointer.
+        element_layout: The memory layout of each element in the Tensor.
+        index_type: The data type of index.
+    """
+
     var ptr: UnsafePointer[Scalar[dtype], address_space]
 
     var runtime_layout: RuntimeLayout[layout]
@@ -146,6 +162,17 @@ struct LayoutTensor[
         org_coords_offset: StaticIntTuple[rank] = StaticIntTuple[rank](0),
         org_coords_stride: StaticIntTuple[rank] = StaticIntTuple[rank](1),
     ):
+        """Create a LayoutTensor with an UnsafePointer. Expect layout to be
+        fully static.
+
+        Args:
+            ptr: The UnsafePointer pointing to the underlying data.
+            org_coords_offset: The coordinate offset with respect to the global
+                               coordinates of the pointer.
+            org_coords_stride: The coordinate stride with respect to the global
+                               coordinates of the pointer.
+        """
+
         constrained[layout.all_dims_known(), "Layout must be fully static"]()
         self.ptr = ptr
         self.runtime_layout = RuntimeLayout[layout]()
@@ -163,6 +190,18 @@ struct LayoutTensor[
         org_coords_offset: StaticIntTuple[rank] = StaticIntTuple[rank](0),
         org_coords_stride: StaticIntTuple[rank] = StaticIntTuple[rank](1),
     ):
+        """Create a LayoutTensor with an UnsafePointer. Expect element layout
+        to be fully static.
+
+        Args:
+            ptr: The UnsafePointer pointing to the underlying data.
+            runtime_layout: The runtime layout of the LayoutTensor.
+            org_coords_offset: The coordinate offset with respect to the global
+                               coordinates of the pointer.
+            org_coords_stride: The coordinate stride with respect to the global
+                               coordinates of the pointer.
+        """
+
         constrained[
             element_layout.all_dims_known(), "Layout must be fully static"
         ]()
@@ -177,28 +216,45 @@ struct LayoutTensor[
         inout self,
         ptr: UnsafePointer[Scalar[dtype], address_space],
         runtime_layout: RuntimeLayout[layout],
-        elemnt_runtime_layout: RuntimeLayout[element_layout],
+        element_runtime_layout: RuntimeLayout[element_layout],
         /,
         *,
         org_coords_offset: StaticIntTuple[rank] = StaticIntTuple[rank](0),
         org_coords_stride: StaticIntTuple[rank] = StaticIntTuple[rank](1),
     ):
+        """Create a LayoutTensor with an UnsafePointer, a runtime layout of the
+        Tensor, the runtime layout of each element.
+
+        Args:
+            ptr: The UnsafePointer pointing to the underlying data.
+            runtime_layout: The runtime layout of the LayoutTensor.
+            element_runtime_layout: The runtime layout of each element.
+            org_coords_offset: The coordinate offset with respect to the global
+                               coordinates of the pointer.
+            org_coords_stride: The coordinate stride with respect to the global
+                               coordinates of the pointer.
+        """
         self.ptr = ptr
         self.runtime_layout = runtime_layout
-        self.runtime_element_layout = elemnt_runtime_layout
+        self.runtime_element_layout = element_runtime_layout
         self.org_coords_offset = org_coords_offset
         self.org_coords_stride = org_coords_stride
 
     fn __init__(inout self, *, other: Self):
-        """Explicitly copy the provided value.
+        """Explicitly copy the other LayoutTensor.
 
         Args:
-            other: The value to copy.
+            other: The LayoutTensor to copy.
         """
         self.__copyinit__(other)
 
     @always_inline
     fn __copyinit__(inout self: Self, existing: Self):
+        """Explicitly copy the other LayoutTensor.
+
+        Args:
+            existing: The LayoutTensor to copy.
+        """
         self.ptr = existing.ptr
         self.runtime_layout = existing.runtime_layout
         self.runtime_element_layout = existing.runtime_element_layout
