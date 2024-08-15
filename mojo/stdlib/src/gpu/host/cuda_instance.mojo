@@ -18,6 +18,7 @@ from ._utils import (
 from .device import Device
 from .event import Flag
 from .function import _FunctionHandle
+from utils.static_tuple import StaticTuple
 
 
 @register_passable("trivial")
@@ -442,6 +443,7 @@ struct LimitProperty:
 @register_passable("trivial")
 struct LaunchAttribute:
     var id: LaunchAttributeID
+    var __pad: StaticTuple[UInt8, 8 - sizeof[LaunchAttributeID]()]
     var value: LaunchAttributeValue
 
     fn __init__(inout self):
@@ -451,6 +453,7 @@ struct LaunchAttribute:
 
     fn __init__(inout self, policy: AccessPolicyWindow):
         self.id = LaunchAttributeID.ACCESS_POLICY_WINDOW
+        self.__pad = __type_of(self.__pad)()
         self.value = LaunchAttributeValue(policy)
 
 
