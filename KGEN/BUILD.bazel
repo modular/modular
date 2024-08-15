@@ -3,6 +3,7 @@ load("@bazel_skylib//rules:write_file.bzl", "write_file")
 load("@build_bazel_apple_support//rules:apple_genrule.bzl", "apple_genrule")
 load(
     "//bazel:api.bzl",
+    "copy_files",
     "gentbl_cc_library",
     "gentbl_mlir_dialect",
     "gentbl_modular_passes",
@@ -1416,6 +1417,19 @@ copy_file(
     name = "lldb-server",
     src = "@llvm-project//lldb:lldb-server",
     out = "lldb-server",
+)
+
+copy_files(
+    name = "copy-lldb-visualizers",
+    srcs = [
+        "@llvm-project//llvm:utils/lldbDataFormatters.py",
+        "@llvm-project//mlir:utils/lldb-scripts/mlirDataFormatters.py",
+    ],
+    outs = [
+        "lldbDataFormatters.py",
+        "mlirDataFormatters.py",
+    ],
+    visibility = ["//visibility:public"],
 )
 
 # NOTE: These binaries must live beside the lldb binary to be discovered at runtime without an env var
