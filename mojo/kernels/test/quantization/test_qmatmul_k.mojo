@@ -5,6 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo %s
 
+from collections import InlineArray
 from math import ceildiv, isclose
 from random import rand, random_float64
 from sys import sizeof
@@ -12,12 +13,8 @@ from sys import sizeof
 from algorithm import sync_parallelize
 from buffer import NDBuffer
 from buffer.dimlist import DimList
-from collections import InlineArray
 from memory import stack_allocation
-from quantization.qmatmul import (
-    matmul_qint4,
-    matmul_qint4_pack_b,
-)
+from quantization.qmatmul import matmul_qint4, matmul_qint4_pack_b
 from quantization.qmatmul_k import (
     _block_Q4_K,
     _block_Q6_K,
@@ -27,6 +24,7 @@ from quantization.qmatmul_k import (
     matmul_Q6_K,
     matmul_Q6_K_pack_b,
 )
+
 from utils.index import Index
 
 

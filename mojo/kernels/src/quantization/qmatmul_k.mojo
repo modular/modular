@@ -3,16 +3,18 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
+from collections import InlineArray
 from math import ceildiv
 from sys import (
+    alignof,
     has_avx512f,
+    has_neon,
     has_neon_int8_dotprod,
     has_neon_int8_matmul,
     is_apple_silicon,
     is_x86,
-    has_neon,
-    sizeof,
     simdwidthof,
+    sizeof,
 )
 from sys.intrinsics import llvm_intrinsic
 
@@ -20,7 +22,6 @@ from algorithm import sync_parallelize, tile, vectorize
 from bit import is_power_of_two
 from buffer import NDBuffer
 from buffer.dimlist import DimList
-from collections import InlineArray
 from linalg.accumulate import _Accumulator
 from linalg.neon_intrinsics import _neon_dotprod_lane, _neon_matmul
 from linalg.utils import partition_work
@@ -28,8 +29,7 @@ from linalg.vnni_intrinsics import (
     dot_i8_to_i32_saturated_x86,
     dot_i16_to_i32_x86,
 )
-from memory import UnsafePointer, stack_allocation, bitcast
-from sys import alignof
+from memory import UnsafePointer, bitcast, stack_allocation
 from runtime.asyncrt import parallelism_level
 
 from utils.index import Index

@@ -3,13 +3,13 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
+from collections import InlineArray
 from math import ceil, ceildiv
 from sys.info import sizeof
 
 from bit import is_power_of_two
 from buffer import NDBuffer
 from buffer.buffer import prod_dims
-from collections import InlineArray
 from memory import bitcast, memcpy
 
 from utils import Index, StaticIntTuple, StaticTuple
