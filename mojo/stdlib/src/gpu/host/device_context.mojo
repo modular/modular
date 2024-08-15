@@ -10,7 +10,7 @@ from sys import sizeof
 from ._compile import _get_nvptx_fn_name
 from collections import List
 from gpu.host.context import Context
-from gpu.host.cuda_instance import CudaInstance
+from gpu.host.cuda_instance import CudaInstance, LaunchAttribute
 from gpu.host.device import Device
 from gpu.host.event import Event
 from gpu.host.function import Function
@@ -343,8 +343,16 @@ struct DeviceContext:
         grid_dim: Dim,
         block_dim: Dim,
         shared_mem_bytes: Int = 0,
+        owned attributes: List[LaunchAttribute] = List[LaunchAttribute](),
     ) raises:
-        self._enqueue_function(f, args, grid_dim, block_dim, shared_mem_bytes)
+        self._enqueue_function(
+            f,
+            args,
+            grid_dim=grid_dim,
+            block_dim=block_dim,
+            shared_mem_bytes=shared_mem_bytes,
+            attributes=attributes^,
+        )
 
     @parameter
     fn _enqueue_function[
@@ -356,6 +364,7 @@ struct DeviceContext:
         grid_dim: Dim,
         block_dim: Dim,
         shared_mem_bytes: Int = 0,
+        owned attributes: List[LaunchAttribute] = List[LaunchAttribute](),
     ) raises:
         var kernel_time: Int
         var stream = self.cuda_stream
@@ -372,6 +381,7 @@ struct DeviceContext:
                 block_dim=block_dim,
                 shared_mem_bytes=shared_mem_bytes,
                 stream=stream,
+                attributes=attributes^,
             )
             end.record(stream)
             end.sync()
@@ -394,25 +404,21 @@ struct DeviceContext:
                 block_dim=block_dim,
                 shared_mem_bytes=shared_mem_bytes,
                 stream=stream,
+                attributes=attributes^,
             )
 
     fn execution_time[
         func: fn (DeviceContext) raises capturing -> None
     ](self, num_iters: Int) raises -> Int:
-        var kernel_time: Int = 0
-        try:
-            var stream = self.cuda_stream
-            var start = Event(self.cuda_context)
-            var end = Event(self.cuda_context)
-            start.record(stream)
-            for _ in range(num_iters):
-                func(self)
-            end.record(stream)
-            end.sync()
-            kernel_time = int(start.elapsed(end) * 1e6)
-        except e:
-            abort(e)
-        return kernel_time
+        var stream = self.cuda_stream
+        var start = Event(self.cuda_context)
+        var end = Event(self.cuda_context)
+        start.record(stream)
+        for _ in range(num_iters):
+            func(self)
+        end.record(stream)
+        end.sync()
+        return int(start.elapsed(end) * 1e6)
 
     fn enqueue_copy_to_device[
         type: DType

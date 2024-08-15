@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 """This module implements the function type."""
 
-from collections import Dict, Optional
+from collections import Dict, Optional, List
 from math.math import align_up
 from pathlib import Path
 from sys.intrinsics import _mlirtype_is_eq
@@ -409,6 +409,7 @@ struct Function[
         block_dim: Dim,
         stream: Stream,
         shared_mem_bytes: Int = 0,
+        owned attributes: List[LaunchAttribute] = List[LaunchAttribute](),
     ) raises:
         self._call_pack(
             args,
@@ -416,6 +417,7 @@ struct Function[
             block_dim=block_dim,
             stream=stream,
             shared_mem_bytes=shared_mem_bytes,
+            attributes=attributes^,
         )
 
     @always_inline
@@ -429,6 +431,7 @@ struct Function[
         block_dim: Dim,
         stream: Stream,
         shared_mem_bytes: Int = 0,
+        owned attributes: List[LaunchAttribute] = List[LaunchAttribute](),
     ) raises:
         alias num_args = len(VariadicList(Ts))
         alias num_captures = Self._impl.num_captures
@@ -454,6 +457,7 @@ struct Function[
             block_dim=block_dim,
             stream=stream,
             shared_mem_bytes=shared_mem_bytes,
+            attributes=attributes^,
         )
 
     @always_inline
@@ -465,6 +469,7 @@ struct Function[
         block_dim: Dim,
         stream: Stream,
         shared_mem_bytes: Int = 0,
+        owned attributes: List[LaunchAttribute] = List[LaunchAttribute](),
     ) raises:
         var config = LaunchConfig(
             grid_dim_x=grid_dim.x(),
@@ -475,6 +480,8 @@ struct Function[
             block_dim_z=block_dim.z(),
             shared_mem_bytes=shared_mem_bytes,
             stream=stream.stream,
+            attrs=attributes.unsafe_ptr(),
+            num_attrs=len(attributes),
         )
         _check_error(
             self.cuda_dll.cuLaunchKernelEx(
@@ -487,6 +494,7 @@ struct Function[
             location=__call_location(),
         )
         _ = config
+        _ = attributes^
 
     @staticmethod
     fn init_fn[

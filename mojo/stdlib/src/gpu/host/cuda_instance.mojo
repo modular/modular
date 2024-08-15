@@ -563,7 +563,6 @@ struct LaunchAttributeID:
 # ===----------------------------------------------------------------------===#
 
 
-@value
 @register_passable("trivial")
 struct LaunchConfig:
     var grid_dim_x: UInt32
