@@ -68,6 +68,8 @@ private:
   /// Evaluate an apply-like operator.
   FailureOr<TypedAttr> evaluateApplyLike(ParamOperatorAttr op,
                                          bool withResultSlot);
+  /// Evaluate a `inst_struct` operator.
+  FailureOr<SymbolConstantAttr> evaluateInstantiateStruct(ParamOperatorAttr op);
   /// Evaluate a `get_env` operator.
   FailureOr<TypedAttr> evaluateGetEnv(ParamOperatorAttr op);
   /// Evaluate a `compile_assembly` operator.
@@ -177,6 +179,13 @@ struct ImplNode {
   /// dependency edge: we need the result to be available to proceed with
   /// elaboration of the current generator.
   std::vector<std::pair<Location, ParamNode *>> otherDeps;
+  /// Dependencies that need to be instantiated eventually, but are not needed
+  /// for the elaboration of this node. This is used for struct instantiations,
+  /// which will be immediately resolved to the concrete symbol reference after
+  /// its elaboration is scheduled. Errors from these dependencies are not
+  /// propagate back up, so this list is used to keep track.
+  /// TODO(MOCO-1055): Merge this with non-type dependencies.
+  std::vector<std::pair<Location, ParamNode *>> eventualDeps;
   /// This flag is set when the implementation node is done processing. A
   /// separate flag is needed because an error state can cause the node to
   /// complete early. This flag prevents double-completion.
@@ -245,7 +254,7 @@ private:
 /// dependencies in order to make that graph explicit.
 struct ParamNode {
   /// Create an expansion tree node to represent a generator instantiation.
-  ParamNode(AsyncRT::Runtime &runtime, GeneratorOp gen,
+  ParamNode(AsyncRT::Runtime &runtime, GeneratorOpInterface gen,
             ParameterExprArrayAttr vals, size_t depth,
             ExpansionGraph *expansionGraph)
       : gen(gen), inputParams(vals), depth(depth),
@@ -269,10 +278,15 @@ struct ParamNode {
 
   /// Return an error if expansion of this parameter node failed. If any
   /// implementation succeeded, return success instead.
-  ErrorTreeOrSuccess collectErrorsOrSuccess();
+  /// `visited` contains the set of previously visited nodes to prevent cycles.
+  ErrorTreeOrSuccess collectErrorsOrSuccess(DenseSet<ParamNode *> &visited);
+
+  /// Return the mangled name of this ParamNode. Calculates it on first
+  /// invocation.
+  StringAttr getMangledName();
 
   /// The generator represented by this node.
-  GeneratorOp gen;
+  GeneratorOpInterface gen;
   /// The input parameters with which the generator is being instantiated.
   ParameterExprArrayAttr inputParams;
   /// The current depth of the node. The depth varies based on the traversal
@@ -308,6 +322,9 @@ struct ParamNode {
   AsyncValueRef<Chain> copy() const;
 
 private:
+  /// The name of the parameterized node.
+  StringAttr mangledName;
+
   /// The chain to signal when this parameter node is done processing.
   AsyncRT::AsyncValueRef<AsyncRT::Chain> paramCh;
 

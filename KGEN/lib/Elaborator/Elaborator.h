@@ -40,13 +40,18 @@ struct ExpansionGraph {
   void didCompleteTask();
 
   /// Map from generator instantiation to expansion tree node.
-  Shared<llvm::MapVector<std::pair<ParameterExprArrayAttr, GeneratorOp>,
-                         std::unique_ptr<ParamNode>>>
+  Shared<
+      llvm::MapVector<std::pair<ParameterExprArrayAttr, GeneratorOpInterface>,
+                      std::unique_ptr<ParamNode>>>
       nodes;
 
   /// Map from concrete function to implementation node.
   Shared<DenseMap<FuncOp, ImplNode *>> concreteNodes;
 
+  /// The current number of in-flight struct instantiations not yet complete.
+  /// This needs to go down to zero before everything is considered done.
+  /// TODO(MOCO-1055): Merge this with non-type dependencies.
+  std::atomic<size_t> pendingStructInstantiations = 0;
   /// The current number of tasks scheduled anywhere in the elaborator on the
   /// worklist.
   std::atomic<size_t> numWorkItems = 1;
@@ -66,8 +71,8 @@ struct ExpansionGraph {
 
   /// Get or create the node for a generator instantiation.
   ParamNode *getOrCreate(AsyncRT::Runtime &runtime,
-                         ParameterExprArrayAttr values, GeneratorOp gen,
-                         size_t depth);
+                         ParameterExprArrayAttr values,
+                         GeneratorOpInterface gen, size_t depth);
 };
 
 //===----------------------------------------------------------------------===//
@@ -158,6 +163,15 @@ public:
   /// implementation. Return none if the specialization is not ready yet.
   ErrorTreeOr<FuncOp> getConcreteFunction(ImplNode *parent, Location loc,
                                           SymbolConstantAttr symbol);
+
+  /// Look up the callee symbol (for a struct generator). If elaboration is
+  /// already in-progress or done, return the concrete symbol reference.
+  /// Otherwise, dispatch an elaboration of the struct generator and immediately
+  /// return the concrete symbol reference (the symbol may not exist yet, but
+  /// its elaboration will have been scheduled).
+  ErrorTreeOr<SymbolConstantAttr>
+  getConcreteStructTypeReference(ImplNode *parent, Location loc,
+                                 TypeConstantRefAttr typeref);
 
   /// Get the environment defines.
   EnvAttr getCompilationEnvAttr() const { return env; }
@@ -327,7 +341,7 @@ private:
   /// reference.
   std::pair<ElaborationState, ImplNode *> instantiateGeneratorReference(
       ImplNode *parent, Operation *user, SymbolConstantAttr calleeSymbol,
-      ParameterExprArrayAttr &inputParamKey, GeneratorOp &gen,
+      ParameterExprArrayAttr &inputParamKey, GeneratorOpInterface &gen,
       function_ref<bool(ParamNode *)> shouldWait = [](ParamNode *) {
         return true;
       });
@@ -376,7 +390,7 @@ private:
   /// issues with caching (though it would be easy to simply recompute) unless
   /// we create a ParametricNode or something we can use to store these in a
   /// proper data structure.
-  Shared<DenseMap<GeneratorOp, std::unique_ptr<ParameterUseDefGraph>>>
+  Shared<DenseMap<GeneratorOpInterface, std::unique_ptr<ParameterUseDefGraph>>>
       knownGraphs;
 
   /// The AsyncRT runtime instance to use.

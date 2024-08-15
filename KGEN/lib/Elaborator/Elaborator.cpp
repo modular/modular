@@ -78,15 +78,20 @@ ExpansionGraph::~ExpansionGraph() {
 
 ParamNode *ExpansionGraph::getOrCreate(AsyncRT::Runtime &runtime,
                                        ParameterExprArrayAttr values,
-                                       GeneratorOp gen, size_t depth) {
+                                       GeneratorOpInterface gen, size_t depth) {
   // TODO: Split this into `get` and `create` methods, so that some can be
   // read-only accesses.
-  return nodes.modify([&](auto &map) {
+  auto [node, inserted] = nodes.modify([&](auto &map) {
     std::unique_ptr<ParamNode> &n = map[{values, gen}];
-    if (!n)
+    if (!n) {
       n = std::make_unique<ParamNode>(runtime, gen, values, depth, this);
-    return n.get();
+      return std::make_pair(n.get(), true);
+    }
+    return std::make_pair(n.get(), false);
   });
+  if (inserted && isa<StructGeneratorOp>(*gen))
+    ++pendingStructInstantiations;
+  return node;
 }
 
 void ExpansionGraph::didCompleteTask() {
@@ -115,14 +120,47 @@ ErrorTreeOr<FuncOp> ParamNode::getFirstConcreteFunc() {
   return impl.takeValue()->func;
 }
 
-ErrorTreeOrSuccess ParamNode::collectErrorsOrSuccess() {
-  if (!impl->error)
+ErrorTreeOrSuccess
+ParamNode::collectErrorsOrSuccess(DenseSet<ParamNode *> &visited) {
+  if (visited.contains(this))
     return success();
+
+  ErrorTreeOrSuccess status = success();
+  if (impl->error) {
+    status = impl->error->copy();
+  } else {
+    // TODO(MOCO-1055): Not needed after merging dependencies.
+    // Check recursively for failures via eventual dependencies.
+    visited.insert(this);
+    for (ParamNode *node : llvm::make_second_range(impl->eventualDeps)) {
+      status = node->collectErrorsOrSuccess(visited);
+      if (status.isError())
+        break;
+    }
+    visited.erase(this);
+  }
+  if (!status.isError())
+    return success();
+
   // Propagate the error trivially if the current generator has no parameters.
   if (inputParams.empty())
-    return impl->error->copy();
+    return status;
   return ErrorTree(gen.getLoc(), "function instantiation failed",
-                   impl->error->copy());
+                   status.takeError());
+}
+
+StringAttr ParamNode::getMangledName() {
+  if (mangledName)
+    return mangledName;
+
+  // Bind all parameter values in this scope.
+  ArrayRef<TypedAttr> inputParamValues = inputParams.getValue();
+  ArrayRef<ParamDeclAttr> inputParamDecls = gen.getInputParams();
+  assert(inputParamValues.size() == inputParamDecls.size() &&
+         "incorrect # input parameter values");
+
+  std::string baseName = mangleParameterValues(gen, inputParamValues);
+  return mangledName = StringAttr::get(gen->getContext(), baseName);
 }
 
 #define HANDLE_EVALUATOR_CONC(VAR, INODE, LOC, EXPR)                           \
@@ -337,7 +375,7 @@ ErrorTreeOr<FuncOp> Elaborator::getConcreteFunction(ImplNode *parent,
                                                     Location loc,
                                                     SymbolConstantAttr symbol) {
   StringAttr name = cast<FlatSymbolRefAttr>(symbol.getSymbol()).getAttr();
-  auto gen = oldSymTab.lookup<GeneratorOp>(name);
+  auto gen = oldSymTab.lookup<GeneratorOpInterface>(name);
   // If this doesn't reference anything in the existing module, then it must
   // refer to a concrete function in the new module.
   if (!gen)
@@ -354,6 +392,28 @@ ErrorTreeOr<FuncOp> Elaborator::getConcreteFunction(ImplNode *parent,
   if (result.shouldSkipNode())
     return FuncOp();
   return node->getFirstConcreteFunc();
+}
+
+ErrorTreeOr<SymbolConstantAttr>
+Elaborator::getConcreteStructTypeReference(ImplNode *parent, Location loc,
+                                           TypeConstantRefAttr typeref) {
+  StringAttr name = cast<FlatSymbolRefAttr>(typeref.getSymbol()).getAttr();
+  auto gen = oldSymTab.lookup<GeneratorOpInterface>(name);
+  assert(gen && isa<StructGeneratorOp>(*gen) && "unknown struct generator");
+
+  auto vals =
+      ParameterExprArrayAttr::get(loc.getContext(), typeref.getParamValues());
+  ParamNode *node =
+      g.getOrCreate(runtime, vals, gen, parent->parent->depth + 1);
+
+  // Ensure elaboration is dispatched but return immediately. Track as an
+  // eventual dependency.
+  specializeGenerator(parent, node, loc, /*addWaiter=*/false);
+  parent->eventualDeps.emplace_back(loc, node);
+  return SymbolConstantAttr::get(
+      SymbolRefAttr::get(loc->getContext(), node->getMangledName()),
+      SignatureType::get(
+          FunctionType::get(loc->getContext(), {}, {typeref.getType()})));
 }
 
 ErrorTreeOr<Attribute> Elaborator::concretizeSymbolsWithin(Attribute value,
@@ -441,7 +501,7 @@ ElaborationState Elaborator::processParamConstantOp(ImplNode *parent, OpT op) {
 std::pair<ElaborationState, ImplNode *>
 Elaborator::instantiateGeneratorReference(
     ImplNode *parent, Operation *user, SymbolConstantAttr calleeSymbol,
-    ParameterExprArrayAttr &inputParamKey, GeneratorOp &gen,
+    ParameterExprArrayAttr &inputParamKey, GeneratorOpInterface &gen,
     function_ref<bool(ParamNode *)> shouldWait) {
   // Lookup the callee.
   StringAttr name = cast<FlatSymbolRefAttr>(calleeSymbol.getSymbol()).getAttr();
@@ -460,7 +520,7 @@ Elaborator::instantiateGeneratorReference(
                                               calleeSymbol.getParamValues());
 
   // If we already have a binding for this, we're done.
-  gen = cast<GeneratorOp>(calleeOp);
+  gen = cast<GeneratorOpInterface>(calleeOp);
 
   // Check for excessive instantiation depth.
   if (parent->parent->depth > config.maxDepth) {
@@ -526,7 +586,7 @@ Elaborator::processGeneratorUser(GeneratorUserOpInterface user,
   }
 
   ParameterExprArrayAttr inputParamKey;
-  GeneratorOp gen;
+  GeneratorOpInterface gen;
   bool wasSkipped = false;
   ParamNode *calleeNode;
   auto [result, concrete] = instantiateGeneratorReference(
@@ -1069,6 +1129,8 @@ void Elaborator::completeImplNodeProcessing(ImplNode *inode) {
 
   // If this is the last implementation node for its parent parameter node to
   // complete, then the parameter node is done.
+  if (isa<StructGeneratorOp>(*p->gen))
+    --g.pendingStructInstantiations;
   g.numWorkItems.fetch_add(p->state.markDone());
   p->emplace();
   signalWorklist();
@@ -1252,16 +1314,13 @@ ElaborationState Elaborator::specializeGenerator(ImplNode *inode,
     break;
   }
 
-  GeneratorOp gen = genNode->gen;
+  GeneratorOpInterface gen = genNode->gen;
 
-  // Bind all parameter values in this scope.
   ArrayRef<TypedAttr> inputParamValues = genNode->inputParams.getValue();
   ArrayRef<ParamDeclAttr> inputParamDecls = gen.getInputParams();
-  assert(inputParamValues.size() == inputParamDecls.size() &&
-         "incorrect # input parameter values");
 
   VerboseCompilerTimeTraceScope traceScope("specializeGenerator: " +
-                                           gen.getSymName().str());
+                                           gen.getName().str());
 
   // Get a partial ordering of parameter definitions and uses that are listed
   // "top down" in our evaluation order, if we don't have one already. This
@@ -1287,20 +1346,29 @@ ElaborationState Elaborator::specializeGenerator(ImplNode *inode,
         });
   }
 
-  std::string baseName = mangleParameterValues(gen, inputParamValues);
-
   // TODO (low prio): Some day we could mangle "instantiated from here"
   // information into the location.
   OpBuilder b(gen.getContext());
-  StringAttr mangledName = b.getStringAttr(baseName);
+  StringAttr mangledName = genNode->getMangledName();
 
-  auto newFunc = b.create<FuncOp>(
-      gen.getLoc(), mangledName,
-      SignatureType::get(gen.getFunctionType(),
-                         gen.getSignature().getArgConventions(),
-                         gen.getSignature().getFnEffects()),
-      gen.getInlineLevel(), gen.getExportKind(), gen.getDecorators(),
-      gen.getLLVMMetadata());
+  FuncOp newFunc;
+  if (auto generatorOp = dyn_cast<GeneratorOp>(*gen)) {
+    newFunc = b.create<FuncOp>(
+        gen.getLoc(), mangledName,
+        SignatureType::get(generatorOp.getFunctionType(),
+                           generatorOp.getSignature().getArgConventions(),
+                           generatorOp.getSignature().getFnEffects()),
+        generatorOp.getInlineLevel(), generatorOp.getExportKind(),
+        generatorOp.getDecorators(), generatorOp.getLLVMMetadata());
+  } else {
+    // TODO: Use custom container post-elaboration.
+    auto structGenOp = dyn_cast<StructGeneratorOp>(*gen);
+    Location loc = DebugInfo::extractSourceLoc(gen.getLoc());
+    newFunc =
+        b.create<FuncOp>(loc, mangledName,
+                         SignatureType::get(FunctionType::get(
+                             b.getContext(), {}, {structGenOp.getType()})));
+  }
 
   // Insert the newFunc into the symbol table which will then know about it,
   // but it will also auto-rename the symbol for us in the case of conflicts.
@@ -1321,7 +1389,7 @@ ElaborationState Elaborator::specializeGenerator(ImplNode *inode,
   // The node for this new func is simply the child of the node for the
   // generator.
   auto childNode = std::make_unique<ImplNode>(
-      newFunc, genNode, std::move(childGraph), std::move(baseName));
+      newFunc, genNode, std::move(childGraph), mangledName.str());
   g.concreteNodes.modify(
       [newFunc, node = childNode.get()](DenseMap<FuncOp, ImplNode *> &map) {
         map.try_emplace(newFunc, node);
@@ -1404,7 +1472,8 @@ struct GraphEdge {
   /// In the graph edge, this ParamNode represents the caller node.
   ParamNode *pnode;
   /// This is the index into the concatenated range over
-  /// `[dependencies, otherDeps]` pointing to the callee ParamNode.
+  /// `[dependencies, otherDeps, eventualDeps]` pointing to the callee
+  /// ParamNode.
   size_t depIdx;
 
   /// This function returns the callee ParamNode by indexing into the
@@ -1413,7 +1482,13 @@ struct GraphEdge {
     auto &inode = *pnode->impl;
     if (depIdx < inode.dependencies.size())
       return inode.dependencies[depIdx].second;
-    return inode.otherDeps[depIdx - inode.dependencies.size()].second;
+
+    size_t otherDepIdx = depIdx - inode.dependencies.size();
+    if (otherDepIdx < inode.otherDeps.size())
+      return inode.otherDeps[otherDepIdx].second;
+
+    size_t eventualDepIdx = otherDepIdx - inode.otherDeps.size();
+    return inode.eventualDeps[eventualDepIdx].second;
   }
   /// Return the location on the callee side representing where the edge
   /// originates from, to be used for diagnostic reporting.
@@ -1421,13 +1496,20 @@ struct GraphEdge {
     auto &inode = *pnode->impl;
     if (depIdx < inode.dependencies.size())
       return inode.dependencies[depIdx].first.getLoc();
-    return inode.otherDeps[depIdx - inode.dependencies.size()].first;
+
+    size_t otherDepIdx = depIdx - inode.dependencies.size();
+    if (otherDepIdx < inode.otherDeps.size())
+      return inode.otherDeps[otherDepIdx].first;
+
+    size_t eventualDepIdx = otherDepIdx - inode.otherDeps.size();
+    return inode.eventualDeps[eventualDepIdx].first;
   }
   /// Return true if this edge is an interpreter edge. We know it's an
   /// interpreter edge if it is in `otherDeps` instead of `dependencies`.
   bool isInterpreterEdge() const {
     auto &inode = *pnode->impl;
-    return depIdx >= inode.dependencies.size();
+    return depIdx >= inode.dependencies.size() &&
+           depIdx < (inode.dependencies.size() + inode.otherDeps.size());
   }
 
   // Comparison operators for GraphTraits.
@@ -1448,7 +1530,8 @@ struct GraphEdge {
   GraphEdge end() const {
     ParamNode *next = getPointee();
     ImplNode &inode = *next->impl;
-    return {next, inode.dependencies.size() + inode.otherDeps.size()};
+    return {next, inode.dependencies.size() + inode.otherDeps.size() +
+                      inode.eventualDeps.size()};
   }
 
   /// GraphEdge is its own iterator.
@@ -1690,7 +1773,8 @@ LogicalResult Elaborator::run(ModuleOp theModule,
       assert(g.numWorkItems == 0);
 
       // Check if all primary generators are done. If so, break.
-      if (llvm::all_of(primaryChs, [](auto &ch) { return ch.isReady(); }))
+      if (llvm::all_of(primaryChs, [](auto &ch) { return ch.isReady(); }) &&
+          g.pendingStructInstantiations.load() == 0)
         break;
       g.numWorkItems = 1;
 
@@ -1707,8 +1791,10 @@ LogicalResult Elaborator::run(ModuleOp theModule,
 
   // Check for any errors and emit them. Emit as many errors as possible.
   bool failed = false;
+  DenseSet<ParamNode *> visited;
   for (ParamNode *genNode : primaryNodes) {
-    ErrorTreeOrSuccess err = genNode->collectErrorsOrSuccess();
+    visited.clear();
+    ErrorTreeOrSuccess err = genNode->collectErrorsOrSuccess(visited);
     if (err.isError()) {
       failed = true;
       err.takeError().emit([](Location loc) { return mlir::emitError(loc); },
@@ -1732,9 +1818,10 @@ LogicalResult Elaborator::run(ModuleOp theModule,
     FuncOp func;
   };
   auto *newBlock = new Block;
-  llvm::MapVector<GeneratorOp, std::vector<SuccessfulFuncs>> genInstantiations;
+  llvm::MapVector<GeneratorOpInterface, std::vector<SuccessfulFuncs>>
+      genInstantiations;
   for (Operation &op : llvm::make_early_inc_range(*theModule.getBody())) {
-    if (auto gen = dyn_cast<GeneratorOp>(op)) {
+    if (auto gen = dyn_cast<GeneratorOpInterface>(op)) {
       genInstantiations[gen];
     } else {
       op.remove();
@@ -1744,7 +1831,7 @@ LogicalResult Elaborator::run(ModuleOp theModule,
   for (ParamNode &node :
        llvm::make_pointee_range(llvm::make_second_range(g.nodes.get()))) {
     VerboseCompilerTimeTraceScope traceScope(
-        "processGen", [name = node.gen.getSymName()] { return name.str(); });
+        "processGen", [name = node.gen.getName()] { return name.str(); });
     // Erase all erroneous functions.
     if (node.impl->error) {
       node.impl->func.erase();
