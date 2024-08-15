@@ -28,6 +28,63 @@ ExecResultType = Union[
 ]
 
 
+def _map_execute_kwarg(input_value: Any, expected_dtype: DType) -> Any:
+    if expected_dtype == DType.unknown:
+        # This currently indicates that the value expected by the model
+        # internally is not a `M::Tensor`. We recursively try to map torch
+        # tensors to np arrays, and pass other values as-is, since no metadata
+        # is available to check the runtime values against.
+        # TODO(#27300): Introduce input specs for non-tensor inputs.
+
+        def torch_to_np(value: Any) -> Any:
+            """Traverse a potentially nested python data structure (e.g.
+            lists, dictionaries, and tuples) containing `torch.tensor`
+            leaf nodes and convert them to `numpy.ndarray`s.
+            """
+            if _is_torch_tensor(value):
+                return value.numpy()
+            if isinstance(value, list):
+                return [torch_to_np(v) for v in value]
+            if isinstance(value, dict):
+                return {
+                    torch_to_np(k): torch_to_np(v) for k, v in value.items()
+                }
+            if isinstance(value, tuple):
+                return tuple(torch_to_np(v) for v in value)
+            return value
+
+        return torch_to_np(input_value)
+    if _is_torch_tensor(input_value):
+        input_value = input_value.numpy()
+    if not isinstance(input_value, np.ndarray):
+        # Indicates that the model expects an ndarray (internally `M::Tensor`),
+        # but if the input isn't already an ndarray, then we can attempt to
+        # interpret it as a scalar primitive that needs to be converted to an
+        # ndarray.
+        return np.array(input_value)
+    if input_value.dtype != expected_dtype:
+        try:
+            # The default casting settings of NumPy are extremely liberal - all
+            # data conversions are allowed e.g. uint8 -> float64 and vice versa.
+            # We use `same_kind` casting instead which casts within the same
+            # numerics class. This can be made stricter to only allow casting
+            # that preserves values.
+            #
+            # NumPy casting creates a copy which is a runtime cost, but we only
+            # pay for it in the event of a dtype mismatch.
+            return input_value.astype(
+                np.dtype(expected_dtype.name), casting="same_kind"
+            )
+        except TypeError:
+            # This can happen if the expected data type is not supported by
+            # NumPy. Also, NumPy can theoretically raise a ComplexWarning but
+            # complex numpy tensors are super rare in ML.
+            raise TypeError(
+                f"Input dtype {input_value.dtype} not compatible with"
+                f" {expected_dtype} required for model execution."
+            )
+
+
 class Model:
     """A loaded model that you can execute.
 
@@ -123,45 +180,9 @@ class Model:
             ]
         dtype_map = {spec.name: spec.dtype for spec in self.input_metadata}
         for input_name, input_value in kwargs.items():
-            if dtype_map[input_name] == DType.unknown:
-                # This currently indicates that the value expected by the model
-                # internally is not a `M::Tensor`. We pass the value as-is,
-                # since no metadata is available to check the runtime values
-                # against.
-                kwargs[input_name] = input_value
-            elif not isinstance(input_value, np.ndarray):
-                # Indicates that the model expects an ndarray
-                # (internally `M::Tensor`), but if the input
-                # isn't already an ndarray, then we can attempt to interpret it
-                # as a scalar primitive that needs to be converted to an
-                # ndarray.
-                kwargs[input_name] = np.array(input_value)
-            elif input_value.dtype != dtype_map[input_name]:
-                try:
-                    # the default casting settings of NumPy
-                    # are extremely liberal - all data conversions are allowed
-                    # e.g. uint8 -> float64 and vice versa. We use `same_kind`
-                    # casting instead which casts within the same numerics class.
-                    # This can be made stricter to only allow casting that
-                    # preserves values.
-                    #
-                    # NumPy casting creates a copy which is a runtime cost, but
-                    # we only pay for it in the event of a dtype mismatch.
-                    kwargs[input_name] = input_value.astype(
-                        dtype_map[input_name]._to_np_dtype(),
-                        casting="same_kind",
-                    )
-                except TypeError:
-                    # We don't expect this branch to be taken in practice but it
-                    # is added for completeness' sake. NumPy can theoretically
-                    # raise a ComplexWarning but complex numpy tensors are
-                    # super rare in ML.
-                    raise TypeError(
-                        f"Input dtype {input_value.dtype} not compatible with"
-                        f" {dtype_map[input_name]}"
-                        " required for model"
-                        " execution."
-                    )
+            kwargs[input_name] = _map_execute_kwarg(
+                input_value, dtype_map[input_name]
+            )
         return self._impl.execute(**kwargs)
 
     def __repr__(self) -> str:
@@ -226,33 +247,6 @@ class DType(Enum):
 
     def __repr__(self) -> str:
         return self.name
-
-    def _to_np_dtype(self):
-        if self == DType.bool:
-            return np.bool_
-        elif self == DType.int8:
-            return np.int8
-        elif self == DType.int16:
-            return np.int16
-        elif self == DType.int32:
-            return np.int32
-        elif self == DType.int64:
-            return np.int64
-        elif self == DType.uint8:
-            return np.uint8
-        elif self == DType.uint16:
-            return np.uint16
-        elif self == DType.uint32:
-            return np.uint32
-        elif self == DType.uint64:
-            return np.uint64
-        elif self == DType.float16:
-            return np.float16
-        elif self == DType.float32:
-            return np.float32
-        elif self == DType.float64:
-            return np.float64
-        return None
 
 
 class TensorSpec:
@@ -375,25 +369,32 @@ def _unwrap_pybind_objects(value: Any) -> Any:
     return value
 
 
+def _is_torch_tensor(obj: Any) -> bool:
+    """Checks if an object is a `torch.Tensor`."""
+    t = type(obj)
+    return t.__module__ == "torch" and t.__name__ == "Tensor"
+
+
 def _is_torch_metadata_module(obj: Any) -> bool:
     """Checks if an object is an `TorchMetadata`."""
     return type(obj).__name__ == "TorchMetadata"
 
 
 def _is_torchscript_module(obj: Any) -> bool:
-    """Checks if an object is a `torch.jit.script.ScriptModule` or a compatible (sub)class thereof.
+    """Checks if an object is a `torch.jit.script.ScriptModule` or a compatible
+    (sub)class thereof.
     """
-    return type(obj).__name__ in [
+    t = type(obj)
+    return t.__name__ in [
         "ScriptModule",
         "RecursiveScriptModule",
-    ] and type(obj).__module__ in ["torch.jit.script", "torch.jit._script"]
+    ] and t.__module__ in ["torch.jit.script", "torch.jit._script"]
 
 
 def _is_torchscript_function(obj: Any) -> bool:
     """Checks if an object is a `torch.jit.ScriptFunction`."""
-    return type(obj).__name__ in ["ScriptFunction"] and type(
-        obj
-    ).__module__ in ["torch.jit"]
+    t = type(obj)
+    return t.__name__ == "ScriptFunction" and t.__module__ == "torch.jit"
 
 
 def _is_torch_mlir_module(obj: Any) -> bool:
