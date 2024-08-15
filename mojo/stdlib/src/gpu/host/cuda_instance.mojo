@@ -297,7 +297,6 @@ struct AccessProperty:
 # ===----------------------------------------------------------------------===#
 
 
-@value
 @register_passable("trivial")
 struct AccessPolicyWindow:
     """Specifies an access policy for a window, a contiguous extent of
@@ -324,6 +323,30 @@ struct AccessPolicyWindow:
     """AccessProperty set for hit."""
     var miss_prop: AccessProperty
     """AccessProperty set for miss. Must be either NORMAL or STREAMING."""
+
+    fn __init__(inout self):
+        self.base_ptr = UnsafePointer[NoneType]()
+        self.num_bytes = 0
+        self.hit_ratio = 0
+        self.hit_prop = AccessProperty.NORMAL
+        self.miss_prop = AccessProperty.NORMAL
+
+    fn __init__[
+        T: AnyType
+    ](
+        inout self,
+        *,
+        base_ptr: UnsafePointer[T],
+        count: Int,
+        hit_ratio: Float32,
+        hit_prop: AccessProperty = AccessProperty.NORMAL,
+        miss_prop: AccessProperty = AccessProperty.NORMAL,
+    ):
+        self.base_ptr = base_ptr.bitcast[NoneType]()
+        self.num_bytes = count * sizeof[T]()
+        self.hit_ratio = hit_ratio
+        self.hit_prop = hit_prop
+        self.miss_prop = miss_prop
 
 
 # ===----------------------------------------------------------------------===#
@@ -409,6 +432,11 @@ struct LaunchAttribute:
     var id: LaunchAttributeID
     var value: LaunchAttributeValue
 
+    fn __init__(inout self):
+        constrained[sizeof[Self]() == 64]()
+        self.id = LaunchAttributeID.IGNORE
+        self.value = LaunchAttributeValue()
+
     fn __init__(inout self, policy: AccessPolicyWindow):
         self.id = LaunchAttributeID.ACCESS_POLICY_WINDOW
         self.value = LaunchAttributeValue(policy)
@@ -426,6 +454,9 @@ struct LaunchAttributeValue:
     # https://docs.nvidia.com/cuda/cuda-driver-api/unionCUlaunchAttributeValue.html#unionCUlaunchAttributeValue
     # but right now we only care about the AccessPolicyWindow
     var access_policy_window: AccessPolicyWindow
+
+    fn __init__(inout self):
+        self.access_policy_window = AccessPolicyWindow()
 
 
 # ===----------------------------------------------------------------------===#
