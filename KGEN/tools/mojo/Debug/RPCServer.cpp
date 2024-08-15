@@ -127,6 +127,7 @@ static ErrorOrSuccess invokeRPC(bool dryRun, ArrayRef<int> ports,
       status = Error(Twine("can't connect to the RPC debug server socket : ") +
                      strerror(errno));
     } else {
+      status = success();
       didConnect = true;
       break;
     }
