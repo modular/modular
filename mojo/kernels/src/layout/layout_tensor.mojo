@@ -654,7 +654,7 @@ struct LayoutTensor[
         dtype,
         Self._compute_tile_layout[tile_sizes]()[0],
         address_space=address_space,
-    ] as tiled_layout_result:
+    ] as result:
         alias num_tiles = __get_len[tile_sizes]()
 
         # need to calculate this again because __tiled_layout[1] is required for the offset calculation
@@ -668,7 +668,7 @@ struct LayoutTensor[
         # Static layout tiling
         # TODO: Consider merge the two cases in away that won't slowdown the fully static layout.
         @parameter
-        if tiled_layout_result.layout.all_dims_known():
+        if result.layout.all_dims_known():
             var offset = 0
 
             @parameter
@@ -684,25 +684,21 @@ struct LayoutTensor[
                 org_coords_offset[i] += tile_sizes[i] * tile_coords[i]
 
             return LayoutTensor[
-                dtype, tiled_layout_result.layout, address_space=address_space
+                dtype, result.layout, address_space=address_space
             ](
                 self.ptr.offset(offset),
-                org_coords_offset=rebind[
-                    StaticIntTuple[tiled_layout_result.layout.rank()]
-                ](org_coords_offset),
+                org_coords_offset=rebind[StaticIntTuple[result.layout.rank()]](
+                    org_coords_offset
+                ),
             )
 
         else:
             # Dynamic layout, use strides
             var offset = 0
 
-            var dynamic_layout_shape = RuntimeTuple[
-                tiled_layout_result.layout.shape
-            ]()
+            var dynamic_layout_shape = RuntimeTuple[result.layout.shape]()
 
-            var dynamic_layout_stride = RuntimeTuple[
-                tiled_layout_result.layout.stride
-            ]()
+            var dynamic_layout_stride = RuntimeTuple[result.layout.stride]()
 
             @parameter
             for i in range(num_tiles):
@@ -714,7 +710,7 @@ struct LayoutTensor[
 
             return LayoutTensor[
                 dtype,
-                tiled_layout_result.layout,
+                result.layout,
                 address_space=address_space,
             ](
                 self.ptr.offset(offset),
@@ -838,7 +834,7 @@ struct LayoutTensor[
         _compute_distribute_layout[layout, threads_layout, axis]()[1],
         address_space=address_space,
         element_layout=element_layout,
-    ] as distributed_layout_result:
+    ] as result:
         """Distribute tiled workload to threads.
 
         If the `axis` is given, for example, using `axis = 0` for 4 threads:
@@ -856,7 +852,7 @@ struct LayoutTensor[
 
         alias coalesce_thread_layout = coalesce(threads_layout, keep_rank=True)
 
-        alias res_rank = distributed_layout_result.layout.rank()
+        alias res_rank = result.layout.rank()
 
         # Update org_coords offset and stride according to thread_id.
         var org_coords_offset = StaticIntTuple[res_rank]()
@@ -924,17 +920,17 @@ struct LayoutTensor[
 
             return LayoutTensor[
                 dtype,
-                distributed_layout_result.layout,
+                result.layout,
                 address_space=address_space,
                 element_layout=element_layout,
             ](
                 self.ptr.offset(int(swizzled_offset)),
-                org_coords_offset=rebind[
-                    StaticIntTuple[distributed_layout_result.layout.rank()]
-                ](org_coords_offset),
-                org_coords_stride=rebind[
-                    StaticIntTuple[distributed_layout_result.layout.rank()]
-                ](org_coords_stride),
+                org_coords_offset=rebind[StaticIntTuple[result.layout.rank()]](
+                    org_coords_offset
+                ),
+                org_coords_stride=rebind[StaticIntTuple[result.layout.rank()]](
+                    org_coords_stride
+                ),
             )
 
         else:
@@ -966,12 +962,8 @@ struct LayoutTensor[
 
             var offset: Scalar[Self.index_type] = 0
 
-            var runtime_shape = RuntimeTuple[
-                distributed_layout_result.layout.shape
-            ]()
-            var runtime_stride = RuntimeTuple[
-                distributed_layout_result.layout.stride
-            ]()
+            var runtime_shape = RuntimeTuple[result.layout.shape]()
+            var runtime_stride = RuntimeTuple[result.layout.stride]()
 
             @parameter
             for i in range(runtime_shape.scalar_length):
@@ -1003,18 +995,18 @@ struct LayoutTensor[
 
             return LayoutTensor[
                 dtype,
-                distributed_layout_result.layout,
+                result.layout,
                 address_space=address_space,
                 element_layout=element_layout,
             ](
                 self.ptr.offset(int(swizzled_offset)),
                 RuntimeLayout(runtime_shape, runtime_stride),
-                org_coords_offset=rebind[
-                    StaticIntTuple[distributed_layout_result.layout.rank()]
-                ](org_coords_offset),
-                org_coords_stride=rebind[
-                    StaticIntTuple[distributed_layout_result.layout.rank()]
-                ](org_coords_stride),
+                org_coords_offset=rebind[StaticIntTuple[result.layout.rank()]](
+                    org_coords_offset
+                ),
+                org_coords_stride=rebind[StaticIntTuple[result.layout.rank()]](
+                    org_coords_stride
+                ),
             )
 
     # Returns the original coordiantes a specific tensor element at `idx`.
@@ -1033,14 +1025,13 @@ struct LayoutTensor[
 
     @always_inline
     fn vectorize[
-        *vector_shape: Int,
-        __tiled_layout: Layout = Self._compute_tile_layout[vector_shape](),
+        *vector_shape: Int
     ](self) -> LayoutTensor[
         dtype,
-        coalesce(__tiled_layout[1], keep_rank=True),
+        coalesce(Self._compute_tile_layout[vector_shape]()[1], keep_rank=True),
         address_space=address_space,
-        element_layout = __tiled_layout[0],
-    ]:
+        element_layout = Self._compute_tile_layout[vector_shape]()[0],
+    ] as result:
         # Update element stride to account for vector shapes.
         var org_coords_stride = StaticIntTuple[rank]()
 
@@ -1052,39 +1043,31 @@ struct LayoutTensor[
         if layout.all_dims_known():
             return LayoutTensor[
                 dtype,
-                coalesce(__tiled_layout[1], keep_rank=True),
+                result.layout,
                 address_space=address_space,
-                element_layout = __tiled_layout[0],
+                element_layout = result.element_layout,
             ](
                 self.ptr,
-                org_coords_offset=rebind[
-                    StaticIntTuple[
-                        coalesce(__tiled_layout[1], keep_rank=True).rank()
-                    ]
-                ](self.org_coords_offset),
-                org_coords_stride=rebind[
-                    StaticIntTuple[
-                        coalesce(__tiled_layout[1], keep_rank=True).rank()
-                    ]
-                ](org_coords_stride),
+                org_coords_offset=rebind[StaticIntTuple[result.layout.rank()]](
+                    self.org_coords_offset
+                ),
+                org_coords_stride=rebind[StaticIntTuple[result.layout.rank()]](
+                    org_coords_stride
+                ),
             )
         else:
             constrained[
-                coalesce(__tiled_layout[0]).known_shape(),
+                coalesce(result.element_layout).known_shape(),
                 "Result element layout should have known shape",
             ]()
-            var runtime_shape = RuntimeTuple[
-                coalesce(__tiled_layout[1], keep_rank=True).shape
-            ]()
-            var runtime_stride = RuntimeTuple[
-                coalesce(__tiled_layout[1], keep_rank=True).stride
-            ]()
+            var runtime_shape = RuntimeTuple[result.layout.shape]()
+            var runtime_stride = RuntimeTuple[result.layout.stride]()
 
             var runtime_element_layout_shape = RuntimeTuple[
-                __tiled_layout[0].shape
+                result.element_layout.shape
             ]()
             var runtime_element_layout_stride = RuntimeTuple[
-                __tiled_layout[0].stride
+                result.element_layout.stride
             ](self.runtime_layout.stride.value)
 
             @parameter
@@ -1098,23 +1081,21 @@ struct LayoutTensor[
 
             return LayoutTensor[
                 dtype,
-                coalesce(__tiled_layout[1], keep_rank=True),
+                result.layout,
                 address_space=address_space,
-                element_layout = __tiled_layout[0],
+                element_layout = result.element_layout,
             ](
                 self.ptr,
                 RuntimeLayout(runtime_shape, runtime_stride),
-                rebind[RuntimeLayout[__tiled_layout[0]]](
+                rebind[RuntimeLayout[result.element_layout]](
                     RuntimeLayout(
                         runtime_element_layout_shape,
                         runtime_element_layout_stride,
                     )
                 ),
-                org_coords_offset=rebind[
-                    StaticIntTuple[
-                        coalesce(__tiled_layout[1], keep_rank=True).rank()
-                    ]
-                ](self.org_coords_offset),
+                org_coords_offset=rebind[StaticIntTuple[result.layout.rank()]](
+                    self.org_coords_offset
+                ),
             )
 
     @staticmethod
@@ -1166,22 +1147,21 @@ struct LayoutTensor[
     fn slice[
         d0_slice: Slice,
         d1_slice: Slice,
-        __slice_layout: Layout = Self.__compute_slice_layout(
+    ](self) -> LayoutTensor[
+        dtype,
+        Self.__compute_slice_layout(
             d0_slice,
             d1_slice,
         ),
-    ](self) -> LayoutTensor[
-        dtype,
-        __slice_layout,
         address_space=address_space,
         element_layout=element_layout,
-    ]:
+    ] as result:
         constrained[
             d0_slice.step == 1 and d1_slice.step == 1,
             "Slice should have no gaps",
         ]()
-        alias stride_m = to_int(__slice_layout.stride[0])
-        alias stride_n = to_int(__slice_layout.stride[1])
+        alias stride_m = to_int(result.layout.stride[0])
+        alias stride_n = to_int(result.layout.stride[1])
 
         alias d0_slice_start = d0_slice.start.or_else(0)
         alias d1_slice_start = d1_slice.start.or_else(0)
@@ -1190,7 +1170,7 @@ struct LayoutTensor[
 
         return LayoutTensor[
             dtype,
-            __slice_layout,
+            result.layout,
             address_space=address_space,
             element_layout=element_layout,
         ](self.ptr.offset(offset))
@@ -1201,18 +1181,17 @@ struct LayoutTensor[
         d1_slice: Slice,
         slice_indices: StaticIntTuple[2],
         __offset_dims: Int = Self.rank - 2,
-        __slice_layout: Layout = Self.__compute_slice_layout(
-            d0_slice, d1_slice, slice_indices[0], slice_indices[1]
-        ),
     ](
         self,
         offsets: StaticIntTuple[__offset_dims],
     ) -> LayoutTensor[
         dtype,
-        __slice_layout,
+        Self.__compute_slice_layout(
+            d0_slice, d1_slice, slice_indices[0], slice_indices[1]
+        ),
         address_space=address_space,
         element_layout=element_layout,
-    ]:
+    ] as result:
         constrained[
             d0_slice.step == 1 and d1_slice.step == 1,
             "Slice should have no gaps",
@@ -1221,8 +1200,8 @@ struct LayoutTensor[
             slice_indices[0] < slice_indices[1],
             "Slice indices should be ordered",
         ]()
-        alias stride_0 = to_int(__slice_layout.stride[0])
-        alias stride_1 = to_int(__slice_layout.stride[1])
+        alias stride_0 = to_int(result.layout.stride[0])
+        alias stride_1 = to_int(result.layout.stride[1])
 
         alias d0_slice_start = d0_slice.start.or_else(0)
         alias d1_slice_start = d1_slice.start.or_else(0)
@@ -1244,7 +1223,7 @@ struct LayoutTensor[
 
         return LayoutTensor[
             dtype,
-            __slice_layout,
+            result.layout,
             address_space=address_space,
             element_layout=element_layout,
         ](self.ptr.offset(slice_offset))
@@ -1256,24 +1235,21 @@ struct LayoutTensor[
         d0_slice: Slice,
         slice_indices: StaticIntTuple[1],
         __offset_dims: Int = Self.rank - 1,
-        __slice_layout: Layout = Self.__compute_slice_layout(
-            d0_slice, slice_indices[0]
-        ),
     ](
         self,
         offsets: StaticIntTuple[__offset_dims],
     ) -> LayoutTensor[
         dtype,
-        __slice_layout,
+        Self.__compute_slice_layout(d0_slice, slice_indices[0]),
         address_space=address_space,
         element_layout=element_layout,
-    ]:
+    ] as result:
         constrained[
             d0_slice.step == 1,
             "Slice should have no gaps",
         ]()
 
-        alias stride_0 = to_int(__slice_layout.stride[0])
+        alias stride_0 = to_int(result.layout.stride[0])
 
         alias d0_slice_start = d0_slice.start.or_else(0)
 
@@ -1294,7 +1270,7 @@ struct LayoutTensor[
 
         return LayoutTensor[
             dtype,
-            __slice_layout,
+            result.layout,
             address_space=address_space,
             element_layout=element_layout,
         ](self.ptr.offset(slice_offset))
@@ -1303,19 +1279,18 @@ struct LayoutTensor[
     fn transpose[
         M: Int = Self.dim[0](),
         N: Int = Self.dim[1](),
-        transposed_layout: Layout = composition(
+    ](self) -> LayoutTensor[
+        dtype,
+        composition(
             layout,
             Layout(IntTuple(N, M), IntTuple(M, 1)),
         ),
-    ](self) -> LayoutTensor[
-        dtype,
-        transposed_layout,
         address_space=address_space,
         element_layout=element_layout,
-    ]:
+    ] as result:
         return LayoutTensor[
             dtype,
-            transposed_layout,
+            result.layout,
             address_space=address_space,
             element_layout=element_layout,
         ](self.ptr)
