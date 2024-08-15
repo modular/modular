@@ -29,24 +29,38 @@ class NanoLlama3:
         "n_rep": 1,
     }
 
-    mlp_w1 = np.array(
-        [
-            [0.5641, 0.4875],
-            [-1.1172, -1.1583],
-        ]
-    ).astype(np.float32)
-    mlp_w2 = np.array(
-        [
-            [0.5355, -0.9487],
-            [-0.6487, 0.1838],
-        ]
-    ).astype(np.float32)
-    mlp_w3 = np.array(
-        [
-            [-0.6765, 0.7103],
-            [-0.4643, 0.2860],
-        ]
-    ).astype(np.float32)
+    mlp_w1 = (
+        np.array(
+            [
+                [0.5641, 0.4875],
+                [-1.1172, -1.1583],
+            ]
+        )
+        .astype(np.float32)
+        .transpose(-1, -2)
+    )
+
+    mlp_w2 = (
+        np.array(
+            [
+                [0.5355, -0.9487],
+                [-0.6487, 0.1838],
+            ]
+        )
+        .astype(np.float32)
+        .transpose(-1, -2)
+    )
+
+    mlp_w3 = (
+        np.array(
+            [
+                [-0.6765, 0.7103],
+                [-0.4643, 0.2860],
+            ]
+        )
+        .astype(np.float32)
+        .transpose(-1, -2)
+    )
 
     attn_wq = (
         np.array(
@@ -59,6 +73,7 @@ class NanoLlama3:
         )
         .reshape((2, 2))
         .astype(np.float32)
+        .transpose(-1, -2)
     )
     attn_wk = (
         np.array(
@@ -71,6 +86,7 @@ class NanoLlama3:
         )
         .reshape((2, 2))
         .astype(np.float32)
+        .transpose(-1, -2)
     )
     attn_wv = (
         np.array(
@@ -83,11 +99,13 @@ class NanoLlama3:
         )
         .reshape((2, 2))
         .astype(np.float32)
+        .transpose(-1, -2)
     )
     attn_wo = (
         np.array([0.0713, 0.3269, 0.0103, -0.0694])
         .reshape((2, 2))
         .astype(np.float32)
+        .transpose(-1, -2)
     )
 
 
@@ -207,5 +225,10 @@ def test_attention(session):
 
     # TODO (MSDK-720): Re-enable after troubleshooting accuracy.
     # np.testing.assert_almost_equal(output["output0"], expected, decimal=4)
-    # np.testing.assert_almost_equal(output["output1"], expected_k_cache, decimal=4)
-    # np.testing.assert_almost_equal(output["output2"], expected_v_cache, decimal=4)
+
+    np.testing.assert_almost_equal(
+        output["output1"], expected_k_cache, decimal=4
+    )
+    np.testing.assert_almost_equal(
+        output["output2"], expected_v_cache, decimal=4
+    )
