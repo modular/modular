@@ -5,6 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from math import align_down
+from sys import prefetch
 from sys.info import alignof, has_avx512f, has_neon, has_neon_int8_dotprod
 from sys.intrinsics import PrefetchOptions
 
@@ -15,8 +16,7 @@ from buffer.buffer import (
     partial_simd_store,
 )
 from buffer.dimlist import DimList
-from memory import stack_allocation, UnsafePointer
-from sys import prefetch
+from memory import UnsafePointer, stack_allocation
 from memory.unsafe import bitcast
 
 from utils.index import Index, StaticIntTuple

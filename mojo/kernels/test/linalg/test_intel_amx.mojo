@@ -30,8 +30,7 @@ from linalg.intel_amx_intrinsics import (
 )
 from linalg.matmul import Matrix, naive_matmul
 from linalg.transpose import transpose, transpose_inplace
-from memory import memcmp, memset_zero, UnsafePointer
-from memory import UnsafePointer
+from memory import UnsafePointer, memcmp, memset_zero
 
 from utils.loop import unroll
 

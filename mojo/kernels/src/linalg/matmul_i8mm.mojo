@@ -5,12 +5,13 @@
 # ===----------------------------------------------------------------------=== #
 
 from math import align_up
+from sys import prefetch
 from sys.info import alignof
 from sys.intrinsics import PrefetchOptions
 
 from buffer.buffer import NDBuffer, partial_simd_load, partial_simd_store
 from buffer.dimlist import DimList
-from memory import stack_allocation, UnsafePointer
+from memory import UnsafePointer, stack_allocation
 
 from utils.index import Index, StaticIntTuple
 from utils.loop import unroll
@@ -19,7 +20,6 @@ from .accumulate import _Accumulator
 from .matmul import InnerMatmulKernel
 from .neon_intrinsics import _neon_matmul
 from .utils import GemmShape, get_matmul_prefetch_b_distance_k
-from sys import prefetch
 
 
 struct LoadStore_i8mm[

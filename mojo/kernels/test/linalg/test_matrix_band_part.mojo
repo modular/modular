@@ -8,8 +8,9 @@
 from buffer import NDBuffer
 from buffer.dimlist import DimList
 from linalg.matrix_band_part import matrix_band_part as _matrix_band_part
-from testing import assert_equal
 from runtime.asyncrt import MojoCallContextPtr
+from testing import assert_equal
+
 from utils import StaticIntTuple
 
 

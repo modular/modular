@@ -12,7 +12,7 @@ from sys.intrinsics import strided_load, strided_store
 from algorithm import parallel_memcpy, sync_parallelize, tile, vectorize
 from buffer import Buffer, NDBuffer
 from buffer.dimlist import DimList
-from memory import memcpy, UnsafePointer
+from memory import UnsafePointer, memcpy
 from runtime.asyncrt import parallelism_level
 
 from utils.index import StaticIntTuple, StaticTuple

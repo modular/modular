@@ -3,30 +3,33 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-from collections import OptionalReg, InlineArray
-from math import align_up, align_down, ceildiv
-from sys import alignof, simdwidthof
+from collections import InlineArray, OptionalReg
+from math import align_down, align_up, ceildiv
 from os import abort
+from sys import alignof, llvm_intrinsic, simdwidthof
 
-from algorithm.functional import tile_and_unswitch
+from algorithm.functional import _elementwise_impl_gpu, tile_and_unswitch
 from buffer.buffer import NDBuffer
 from buffer.dimlist import DimList
 from gpu import WARP_SIZE, BlockDim, BlockIdx, ThreadIdx, barrier, lane_id
 from gpu.host import DeviceContext, FuncAttribute
+from gpu.host._compile import _get_nvptx_target
 from gpu.memory import (
     AddressSpace,
+    CacheOperation,
     async_copy_commit_group,
     async_copy_wait_all,
     async_copy_wait_group,
     dynamic_shared_memory,
+    load,
 )
 from gpu.mma import ld_matrix, mma
 from gpu.shuffle import shuffle_down, shuffle_idx, warp_reduce
 from gpu.tensor_ops import (
     tc_reduce,
-    tc_reduce_vector,
     tc_reduce_gevm_4x,
     tc_reduce_gevm_8x,
+    tc_reduce_vector,
 )
 from layout._utils import ManagedLayoutTensor, gpu_free, gpu_managed_alloc
 from layout.int_tuple import IntTuple
@@ -41,20 +44,15 @@ from layout.layout_tensor import (
 from layout.math import outer_product_acc
 from layout.nd_buffer_stub import copy_from_nd_buffer, distribute, vectorize
 from layout.swizzle import Swizzle
-from memory import stack_allocation, UnsafePointer, bitcast
+from memory import UnsafePointer, bitcast, stack_allocation
 
 from utils import StaticIntTuple
 from utils.index import Index
 from utils.numerics import get_accum_type
 from utils.static_tuple import StaticTuple
 
-from sys import llvm_intrinsic
-
 from ._multistage_gemm_gpu import multistage_gemm
 from .utils import GemmShape, apply_epilogue, elementwise_epilogue_type
-from gpu.host._compile import _get_nvptx_target
-from algorithm.functional import _elementwise_impl_gpu
-from gpu.memory import load, CacheOperation
 
 
 @always_inline

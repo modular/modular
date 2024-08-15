@@ -4,14 +4,14 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from collections.optional import OptionalReg
 from collections import Optional
+from collections.optional import OptionalReg
 from math import ceildiv
-from sys import sizeof, simdwidthof
+from sys import alignof, simdwidthof, sizeof
 
 from buffer import NDBuffer
 from buffer.dimlist import Dim, DimList
-from gpu import WARP_SIZE, BlockIdx, ThreadIdx, barrier, lane_id, GridDim
+from gpu import WARP_SIZE, BlockIdx, GridDim, ThreadIdx, barrier, lane_id
 from gpu.host import Context, FuncAttribute, Function, Stream, synchronize
 from gpu.host.memory import _copy_device_to_host, _copy_host_to_device
 from gpu.memory import (
@@ -20,7 +20,7 @@ from gpu.memory import (
     dynamic_shared_memory,
 )
 from gpu.mma import ld_matrix, mma
-from layout.int_tuple import IntTuple, UNKNOWN_VALUE
+from layout.int_tuple import UNKNOWN_VALUE, IntTuple
 from layout.layout import *
 from layout.layout_tensor import (
     LayoutTensor,
@@ -28,9 +28,9 @@ from layout.layout_tensor import (
     _swizzle_signature,
     copy_dram_to_sram_async,
     copy_local_to_dram,
+    copy_local_to_local,
     copy_local_to_sram,
     copy_sram_to_dram,
-    copy_local_to_local,
 )
 from layout.nd_buffer_stub import (
     copy_from_nd_buffer,
@@ -46,11 +46,10 @@ from layout.tensor_core import (
     get_fragment_size,
     get_mma_shape,
 )
-from memory.reference import _GPUAddressSpace as AddressSpace
 from memory import UnsafePointer
+from memory.reference import _GPUAddressSpace as AddressSpace
 
 from utils.index import Index
-from sys import alignof
 
 from .matmul_gpu import matmul_kernel_naive
 from .utils import apply_epilogue, elementwise_epilogue_type

@@ -5,6 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from math import align_down, align_up, ceildiv
+from sys import alignof
 from sys._build import is_debug_build
 from sys.info import (
     has_avx2,
@@ -30,7 +31,6 @@ from layout.layout import *
 from layout.layout_tensor import LayoutTensor
 
 from utils.index import Index, StaticIntTuple
-from sys import alignof
 
 alias elementwise_epilogue_type = fn[type: DType, width: Int] (
     StaticIntTuple[2], SIMD[type, width]

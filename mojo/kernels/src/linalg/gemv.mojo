@@ -4,8 +4,8 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from os import abort
 from collections import OptionalReg
+from os import abort
 from sys import simdwidthof
 
 from algorithm.reduction import _reduce_generator

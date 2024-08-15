@@ -6,14 +6,15 @@
 
 from collections.optional import Optional
 from math import fma
+from sys import alignof, prefetch
 from sys.info import has_neon
 from sys.intrinsics import PrefetchOptions
 
 from algorithm.functional import tile
 from buffer.buffer import Buffer, partial_simd_load, partial_simd_store
-from memory import stack_allocation, UnsafePointer
+from memory import UnsafePointer, stack_allocation
+
 from utils import StaticIntTuple
-from sys import alignof, prefetch
 
 
 # ===----------------------------------------------------------------------===#

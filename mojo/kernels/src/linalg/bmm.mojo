@@ -6,13 +6,14 @@
 
 from collections import OptionalReg
 from math import align_up, ceildiv, gcd
-from sys.info import simdwidthof
 from os import abort
+from sys import alignof
+from sys.info import simdwidthof
 
 from algorithm import sync_parallelize, vectorize
 from algorithm.functional import (
-    _get_start_indices_of_nth_subvolume_uint,
     _get_start_indices_of_nth_subvolume,
+    _get_start_indices_of_nth_subvolume_uint,
 )
 from algorithm.reduction import _reduce_generator
 from buffer import NDBuffer
@@ -22,7 +23,6 @@ from gpu.host import DeviceContext
 from memory import memset_zero
 from register import mogg_register
 from runtime.asyncrt import MojoCallContextPtr, parallelism_level
-from sys import alignof
 
 from utils.index import StaticIntTuple
 from utils.numerics import get_accum_type

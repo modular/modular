@@ -9,7 +9,7 @@ from sys.info import alignof
 
 from buffer.buffer import NDBuffer
 from buffer.dimlist import DimList
-from memory import stack_allocation, UnsafePointer
+from memory import UnsafePointer, stack_allocation
 
 from utils.index import Index, StaticIntTuple
 from utils.loop import unroll

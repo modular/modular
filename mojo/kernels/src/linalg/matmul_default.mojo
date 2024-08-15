@@ -5,13 +5,13 @@
 # ===----------------------------------------------------------------------=== #
 
 from math import fma
+from sys import prefetch
 from sys.info import alignof
 from sys.intrinsics import PrefetchOptions
 
 from buffer.buffer import NDBuffer, partial_simd_load, partial_simd_store
 from buffer.dimlist import DimList
-from memory import stack_allocation, UnsafePointer
-from sys import prefetch
+from memory import UnsafePointer, stack_allocation
 
 from utils.index import Index, StaticIntTuple
 from utils.loop import unroll

@@ -16,11 +16,11 @@ from sys.info import sizeof
 from buffer import NDBuffer
 from buffer.dimlist import DimList
 from memory import (
+    AddressSpace,
+    UnsafePointer,
     memcpy,
     memset_zero,
     stack_allocation,
-    UnsafePointer,
-    AddressSpace,
 )
 
 # All AMX instructions are of the form

@@ -4,13 +4,14 @@
 #
 # ===----------------------------------------------------------------------=== #
 from math import align_down, align_up, ceildiv
-from sys import has_neon, simdwidthof
-from sys.intrinsics import PrefetchOptions
 from os import abort
+from sys import alignof, has_neon, simdwidthof
+from sys.intrinsics import PrefetchOptions
 
 from algorithm import unswitch
 from buffer.buffer import Buffer, NDBuffer, partial_simd_load
 from buffer.dimlist import DimList
+from memory import memcpy, stack_allocation
 from register import mogg_register
 
 from utils.index import Index, StaticIntTuple
@@ -31,8 +32,6 @@ from .utils import (
     use_i8mm_fn,
     use_vnni_fn,
 )
-from sys import alignof
-from memory import stack_allocation, memcpy
 
 
 @value
