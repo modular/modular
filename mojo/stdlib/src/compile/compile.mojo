@@ -8,12 +8,14 @@ function. This is very useful for kernel engineers that do not want to look
 at an entire file's assembly nor do they want to invoke the kgen tool manually.
 """
 
-from sys.info import _current_target
-from utils._format import Formatter
-from pathlib import Path
 from os import PathLike
+from pathlib import Path
+from sys.info import _current_target
 
 from memory import UnsafePointer
+
+from utils._format import Formatter
+
 from .reflection import get_linkage_name
 
 # ===----------------------------------------------------------------------===#
