@@ -35,35 +35,15 @@ namespace M::KGEN {
 namespace {
 struct RegisterCustomOpsPass
     : KGEN::impl::RegisterCustomOpsBase<RegisterCustomOpsPass> {
-
-  LogicalResult initialize(MLIRContext *ctx) override;
-
   /// Slice custom operation definitions from the module to a new module, that
   /// is then translated into bytecode and stored in a dense resource attribute.
   static DenseResourceElementsAttr
   sliceCustomModuleToAttr(ModuleOp theModule, SymbolTableCollection &tables);
 
   void runOnOperation() override;
-
-private:
-  /// The compilation target.
-  TargetInfoAttr target;
 };
 
 } // namespace
-
-LogicalResult RegisterCustomOpsPass::initialize(MLIRContext *ctx) {
-  // Get the default target, as the JIT is going to be ran on the host.
-  if (!target) {
-    ErrorOr<TargetInfoAttr> targetOr =
-        getTargetInfoFor(ctx, llvm::sys::getDefaultTargetTriple(),
-                         llvm::sys::getHostCPUName(), getHostCPUFeatures());
-    if (targetOr.isError())
-      return mlir::emitError(UnknownLoc::get(ctx), targetOr.getError());
-    target = targetOr.takeValue();
-  }
-  return success();
-}
 
 DenseResourceElementsAttr
 RegisterCustomOpsPass::sliceCustomModuleToAttr(ModuleOp theModule,
