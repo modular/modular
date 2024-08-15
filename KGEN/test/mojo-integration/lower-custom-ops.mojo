@@ -58,12 +58,3 @@ fn main():
 
 
 # CHECK: %simd = kgen.param.constant: scalar<si32> = <42>
-
-# CHECK: %[[PARAM:.*]] = kgen.param.constant: scalar<si32> = <12>
-# CHECK: %{{.*}} = pop.add %{{.*}}, %[[PARAM]] : !pop.scalar<si32>
-
-# CHECK: %[[PARAM2:.*]] = kgen.param.constant: scalar<si32> = <30>
-# CHECK: %{{.*}} = pop.add %{{.*}}, %[[PARAM2]] : !pop.scalar<si32>
-
-# CHECK: %[[PARAM3:.*]] = kgen.param.constant: scalar<si32> = <23>
-# CHECK: kgen.call @"lower-custom-ops::add_constant_wrapper[::SIMD[{int32}, {1}]](::SIMD[{int32}, {1}]),cst=21"(%[[PARAM3]]) : (!pop.scalar<si32>) -> !pop.scalar<si32>

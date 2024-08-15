@@ -241,17 +241,20 @@ void LowerCustomOpsPass::runOnOperation() {
 
   // Get the symbol table for both the current module.
   auto &symtabAnalysis = getAnalysis<mlir::SymbolTableAnalysis>();
-  SymbolTable table = symtabAnalysis.getTopLevelSymbolTable();
+  SymbolTable &table = symtabAnalysis.getTopLevelSymbolTable();
 
   // Move all new operations to the original module. Operations with the same
   // names are functionally equivalent, so they are not compiled.
   auto rewriter = mlir::IRRewriter(&getContext());
   for (auto toplevelOp : llvm::make_early_inc_range(
            opImplsModule->getOps<mlir::SymbolOpInterface>())) {
+    // Do not add the custom op implementation map.
+    if (mlir::isa<CustomOpImplsOp>(toplevelOp))
+      continue;
     if (table.lookup(toplevelOp.getNameAttr()))
       continue;
-    rewriter.moveOpAfter(toplevelOp, theModule.getBody(),
-                         theModule.getBody()->begin());
+    toplevelOp->remove();
+    table.insert(toplevelOp);
   }
 
   // Finally, remove the op implementation module from our module, as all custom
