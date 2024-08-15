@@ -406,8 +406,12 @@ struct LimitProperty:
 @value
 @register_passable("trivial")
 struct LaunchAttribute:
-    var id: Int32
+    var id: LaunchAttributeID
     var value: LaunchAttributeValue
+
+    fn __init__(inout self, policy: AccessPolicyWindow):
+        self.id = LaunchAttributeID.ACCESS_POLICY_WINDOW
+        self.value = LaunchAttributeValue(policy)
 
 
 # ===----------------------------------------------------------------------===#
@@ -596,24 +600,23 @@ struct LaunchConfig:
         block_dim_z: UInt32 = 1,
         grid_dim_y: UInt32 = 1,
         grid_dim_z: UInt32 = 1,
+        shared_mem_bytes: UInt32 = 0,
+        stream: _StreamHandle = _StreamHandle(),
         attrs: UnsafePointer[LaunchAttribute] = UnsafePointer[
             LaunchAttribute
         ](),
-        stream: _StreamHandle = _StreamHandle(),
         num_attrs: UInt32 = 0,
-        shared_mem_bytes: UInt32 = 0,
     ):
-        self.attrs = attrs
         self.grid_dim_x = grid_dim_x
         self.grid_dim_y = grid_dim_y
         self.grid_dim_z = grid_dim_z
         self.block_dim_x = block_dim_x
         self.block_dim_y = block_dim_y
         self.block_dim_z = block_dim_z
-        self.attrs = attrs
-        self.stream = stream
-        self.num_attrs = num_attrs
         self.shared_mem_bytes = shared_mem_bytes
+        self.stream = stream
+        self.attrs = attrs
+        self.num_attrs = num_attrs
 
 
 # ===----------------------------------------------------------------------=== #
