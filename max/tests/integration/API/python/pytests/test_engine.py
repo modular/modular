@@ -76,11 +76,11 @@ def mo_listio_model_path(modular_path: Path) -> Path:
 
 def test_execute_success(session: InferenceSession, mo_model_path: Path):
     model = session.load(mo_model_path)
-    output = model.execute(input=np.ones((5)))
+    output = model.execute(input=np.ones(5, dtype=np.float32))
     assert "output" in output.keys()
     assert np.allclose(
         output["output"],
-        np.array([4.0, 2.0, -5.0, 3.0, 6.0]).astype(np.float32),
+        np.array([4.0, 2.0, -5.0, 3.0, 6.0], dtype=np.float32),
     )
 
 
@@ -179,7 +179,7 @@ def test_execute_non_devicetensor_positional_arguments(
             r"API must be Max Driver tensors"
         ),
     ):
-        model.execute(np.ones((5)))
+        model.execute(np.ones(5))
 
 
 def test_execute_device_tensor(session: InferenceSession, mo_model_path: Path):
@@ -260,11 +260,11 @@ def _cuda_available() -> bool:
 def test_execute_gpu(mo_model_path: Path):
     session = InferenceSession(device="cuda")
     model = session.load(mo_model_path)
-    output = model.execute(input=np.ones((5)))
+    output = model.execute(input=np.ones(5, dtype=np.float32))
     assert "output" in output.keys()
     assert np.allclose(
         output["output"],
-        np.array([4.0, 2.0, -5.0, 3.0, 6.0]).astype(np.float32),
+        np.array([4.0, 2.0, -5.0, 3.0, 6.0], dtype=np.float32),
     )
 
 
@@ -277,7 +277,7 @@ def test_gpu_fails_no_device_tensors(mo_model_path: Path):
         RuntimeError,
         match=r"model execution on GPUs only supports DeviceTensor inputs",
     ):
-        model.execute(input=np.ones((5)))
+        model.execute(input=np.ones(5, dtype=np.float32))
 
 
 def test_custom_ops(
@@ -286,23 +286,23 @@ def test_custom_ops(
     custom_ops_package_path: Path,
 ):
     model = session.load(mo_custom_ops_model_path)
-    inputs = np.ones((1)) * 4
+    inputs = np.array([4.0], dtype=np.float32)
     output = model.execute(input0=inputs)
     assert "output" in output.keys()
     assert np.allclose(
         output["output"],
-        np.array([2.0]).astype(np.float32),
+        np.array([2.0], dtype=np.float32),
     )
 
     model_with_custom_op = session.load(
         mo_custom_ops_model_path, custom_ops_path=str(custom_ops_package_path)
     )
-    inputs = np.ones((1)) * 4
+    inputs = np.array([4.0], dtype=np.float32)
     output = model_with_custom_op.execute(input0=inputs)
     assert "output" in output.keys()
     assert np.allclose(
         output["output"],
-        np.array([4.0]).astype(np.float32),
+        np.array([4.0], dtype=np.float32),
     )
 
 
