@@ -20,7 +20,8 @@ from pathlib import Path
 from max.engine import InferenceSession, SessionOptions
 from max.graph import Graph, Symbol, TensorType, Type
 from max.tensor import TensorSpec
-from max.driver import cpu_device, cuda_device, Device, Tensor, DeviceTensor
+from max.driver import cpu_device, Device, Tensor, DeviceTensor
+from max.driver._cuda import cuda_device
 
 
 def test_model_device_tensor(
