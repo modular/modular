@@ -19,7 +19,7 @@
 
 from sys import stderr
 
-from max._driver import (
+from max.driver import (
     cpu_device,
     cuda_device,
     Tensor,
@@ -27,7 +27,7 @@ from max._driver import (
     Device,
     DeviceTensor,
 )
-from max._driver import cuda
+from max.driver import cuda
 from testing import assert_equal
 from max.tensor import TensorShape
 from gpu.id import ThreadIdx, BlockDim, BlockIdx

@@ -7,7 +7,7 @@
 from memory import UnsafePointer
 from sys.ffi import DLHandle
 from collections.optional import Optional
-from max._driver import Device
+from max.driver import Device
 from max._utils import call_dylib_func, exchange
 from ._status import Status
 from sys.param_env import is_defined

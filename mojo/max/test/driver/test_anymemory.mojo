@@ -12,7 +12,7 @@
 # RUN: mojo build %s -o %t/test-anymemory
 # RUN: %t/test-anymemory
 
-from max._driver import AnyTensor, cpu_device, Tensor, AnyMemory, AnyMojoValue
+from max.driver import AnyTensor, cpu_device, Tensor, AnyMemory, AnyMojoValue
 from testing import assert_equal, assert_true, assert_false, assert_raises
 from max.tensor import TensorSpec
 

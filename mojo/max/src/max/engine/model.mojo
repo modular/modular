@@ -8,7 +8,7 @@ Defines the `Model` type that holds a model ready for execution.
 """
 
 from max._utils import call_dylib_func, exchange
-from max._driver import (
+from max.driver import (
     AnyMemory,
     AnyTensor,
     AnyMojoValue,
@@ -317,7 +317,7 @@ struct Model:
         input_map.borrow(name3, EngineNumpyView(input3))
         return self.execute(input_map)
 
-    fn _execute(self, owned *inputs: AnyMemory) raises -> List[AnyMemory]:
+    fn execute(self, owned *inputs: AnyMemory) raises -> List[AnyMemory]:
         """Execute model with the given inputs.
 
         Arguments:

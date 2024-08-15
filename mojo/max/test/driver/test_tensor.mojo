@@ -12,7 +12,7 @@
 # RUN: mojo build %s -o %t/test-tensor
 # RUN: %t/test-tensor
 
-from max._driver import (
+from max.driver import (
     CPUDescriptor,
     cpu_device,
     Tensor,

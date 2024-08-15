@@ -12,7 +12,7 @@
 # RUN: mojo build %s -o %t/test-device
 # RUN: %t/test-device
 
-from max._driver import (
+from max.driver import (
     cpu_device,
     DeviceMemory,
     DeviceTensor,
