@@ -3,15 +3,7 @@ load("@rules_pkg//pkg:mappings.bzl", "pkg_files", "strip_prefix")
 load("@rules_python//python:defs.bzl", "py_library")
 load("//bazel:api.bzl", "modular_py_test")
 
-filegroup(
-    name = "cfg",
-    srcs = [
-        "README.md",
-        "modular/utils/version.py",
-        "setup.py",
-    ],
-    visibility = ["//visibility:public"],
-)
+exports_files(["pyproject.toml"])
 
 py_library(
     name = "support",
