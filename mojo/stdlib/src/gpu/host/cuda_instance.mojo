@@ -17,7 +17,7 @@ from ._utils import (
 )
 from .device import Device
 from .event import Flag
-from .function import _FunctionHandle
+from .function import _FunctionHandle, CacheConfig
 from utils.static_tuple import StaticTuple
 
 
@@ -250,9 +250,19 @@ alias cuModuleGetFunction = _dylib_function[
 ]
 
 
-alias cuLimit = _dylib_function[
-    "cuLimit",
+alias cuCtxSetLimit = _dylib_function[
+    "cuCtxSetLimit",
     fn (LimitProperty, Int) -> Result,
+]
+
+alias cuCtxSetCacheConfig = _dylib_function[
+    "cuCtxSetCacheConfig",
+    fn (CacheConfig) -> Result,
+]
+
+alias cuCtxResetPersistingL2Cache = _dylib_function[
+    "cuCtxResetPersistingL2Cache",
+    fn () -> Result,
 ]
 
 
@@ -449,6 +459,7 @@ struct LaunchAttribute:
     fn __init__(inout self):
         constrained[sizeof[Self]() == 64]()
         self.id = LaunchAttributeID.IGNORE
+        self.__pad = __type_of(self.__pad)()
         self.value = LaunchAttributeValue()
 
     fn __init__(inout self, policy: AccessPolicyWindow):
@@ -691,6 +702,8 @@ struct CudaDLL:
     var cuCtxGetCurrent: cuCtxGetCurrent.type
     var cuCtxDestroy: cuCtxDestroy.type
     var cuCtxSynchronize: cuCtxSynchronize.type
+    var cuCtxSetCacheConfig: cuCtxSetCacheConfig.type
+    var cuCtxResetPersistingL2Cache: cuCtxResetPersistingL2Cache.type
 
     # cuEvent
     var cuEventCreate: cuEventCreate.type
@@ -746,8 +759,10 @@ struct CudaDLL:
         self.cuDeviceGetName = cuDeviceGetName.load()
         self.cuDeviceTotalMem = cuDeviceTotalMem.load()
         self.cuCtxCreate = cuCtxCreate.load()
+        self.cuCtxResetPersistingL2Cache = cuCtxResetPersistingL2Cache.load()
         self.cuCtxPushCurrent = cuCtxPushCurrent.load()
         self.cuCtxGetCurrent = cuCtxGetCurrent.load()
+        self.cuCtxSetCacheConfig = cuCtxSetCacheConfig.load()
         self.cuCtxDestroy = cuCtxDestroy.load()
         self.cuCtxSynchronize = cuCtxSynchronize.load()
         self.cuEventCreate = cuEventCreate.load()

@@ -38,9 +38,14 @@ struct Context:
         self.ctx = _ContextHandle()
         self.owner = True
 
-        var cuCtxCreate = self.cuda_dll.cuCtxCreate
         _check_error(
-            cuCtxCreate(UnsafePointer.address_of(self.ctx), flags, device.id)
+            self.cuda_dll.cuCtxCreate(
+                UnsafePointer.address_of(self.ctx), flags, device.id
+            )
+        )
+
+        _check_error(
+            self.cuda_dll.cuCtxSetCacheConfig(CacheConfig.PREFER_SHARED)
         )
 
     fn __del__(owned self):
