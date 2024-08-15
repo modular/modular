@@ -12,9 +12,7 @@ from pathlib import Path
 from max.tensor import TensorSpec
 from ._driver_library import DriverLibrary
 from .device_memory import DeviceMemory, DeviceTensor
-from max.graph import Graph
 from ._status import Status, _CStatus
-from .utils import _steal_device_memory_impl_ptr
 
 
 struct CPUDescriptor:

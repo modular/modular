@@ -15,8 +15,8 @@ from max.driver import (
     Device,
     DeviceMemory,
     DeviceTensor,
-    _steal_device_memory_impl_ptr,
 )
+from max.driver._utils import _steal_device_memory_impl_ptr
 from python import PythonObject
 from sys.ffi import DLHandle
 

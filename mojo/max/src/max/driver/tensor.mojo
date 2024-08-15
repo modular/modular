@@ -15,7 +15,7 @@ from tensor_utils.indexing import (
 from collections import Optional, InlineArray
 from utils import StaticIntTuple
 from utils._serialize import _serialize
-from .utils import _convert_from
+from ._utils import _convert_from
 
 
 struct Tensor[type: DType, rank: Int](CollectionElement, TensorLike):
