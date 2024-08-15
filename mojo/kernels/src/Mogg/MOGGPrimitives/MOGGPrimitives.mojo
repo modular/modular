@@ -12,7 +12,6 @@ from sys import alignof, external_call, sizeof
 
 from buffer import NDBuffer
 from buffer.dimlist import Dim, DimList
-from extensibility import Tensor as ExtensibilityTensor
 from gpu.host import Context as CudaContext
 from gpu.host.cuda_instance import *
 from gpu.host._utils import _check_error
@@ -555,18 +554,6 @@ fn mgp_buffer_alloc_dynamic[
         bRawAlign
     )
     return byte_buffer_alloc[cDevice, alignment=alignment](byte_size, call_ctx)
-
-
-@always_inline
-@export
-fn get_mgp_buffer[
-    rank: Int, type: DType
-](tensor: ExtensibilityTensor[type, rank]) -> NDBuffer[DType.uint8, 1]:
-    var bufferRef = NDBuffer[DType.uint8, 1](
-        tensor.data.bitcast[DType.uint8](),
-        tensor.nelems() * sizeof[type](),
-    )
-    return bufferRef
 
 
 @always_inline

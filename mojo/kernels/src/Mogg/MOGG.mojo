@@ -30,7 +30,6 @@ from algorithm.reduction import mean as _mean
 from buffer import NDBuffer
 from buffer.dimlist import Dim, DimList
 from builtin.simd import Int64, UInt8, UInt64, _pow
-from extensibility import Tensor as ExtensibilityTensor
 from gpu.host._compile import _get_nvptx_target
 from linalg.bmm import batched_matmul as _batched_matmul
 from linalg.bmm import batched_matmul_shape
@@ -425,19 +424,6 @@ fn shape_to_ndbuffer[
         buf[i] = shape[i]
 
 
-@mogg_register("shape_to_extensibility_tensor")
-@always_inline
-fn shape_to_extensibility_tensor[
-    shape_rank: Int, buf_rank: Int, type: DType
-](
-    shape: StaticIntTuple[shape_rank],
-    inout tensor: ExtensibilityTensor[type, buf_rank],
-):
-    @parameter
-    for i in range(shape_rank):
-        tensor.store[1](i, shape[i])
-
-
 @mogg_register("shape_to_unsafe_tensor_slice")
 @always_inline
 fn shape_to_unsafe_tensor_slice[
@@ -592,34 +578,6 @@ fn to_tensor[
     )
 
 
-@mogg_register("to_extensibility_tensor")
-@export
-@always_inline
-fn to_extensibility_tensor[
-    type: DType, rank: Int
-](
-    data: UnsafePointer[Scalar[type]],
-    shape: UnsafePointer[Int],
-) -> ExtensibilityTensor[type, rank]:
-    var shape_ptr = shape
-    var shape_tuple = StaticIntTuple[rank]()
-    var stride_tuple = StaticIntTuple[rank]()
-    var stride: Int = 1
-
-    @parameter
-    for i in reversed(range(rank)):
-        # Start from the back so we can accumulate the strides.
-        shape_tuple[i] = shape_ptr[i]
-        stride_tuple[i] = stride
-        stride *= shape_tuple[i]
-
-    return ExtensibilityTensor[type, rank](
-        data,
-        shape_tuple,
-        stride_tuple,
-    )
-
-
 @mogg_register("to_unsafe_tensor_slice")
 @export
 @always_inline
@@ -639,19 +597,6 @@ fn to_unsafe_tensor_slice[
         data,
         shape_tuple,
     )
-
-
-@mogg_register("get_shape_of_tensor")
-@always_inline
-@export
-fn get_shape_of_tensor[
-    rank: Int, type: DType
-](tensor: ExtensibilityTensor[type, rank]) -> StaticIntTuple[rank]:
-    var shape_tuple = StaticIntTuple[rank]()
-    var tensor_shape = tensor.shape
-    for i in range(rank):
-        shape_tuple[i] = tensor_shape[i]
-    return shape_tuple
 
 
 @mogg_register("shape_from_kgen")

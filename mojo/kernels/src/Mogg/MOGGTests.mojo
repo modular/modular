@@ -8,8 +8,6 @@ from algorithm import vectorize
 from algorithm.functional import _elementwise_impl
 from buffer import NDBuffer
 from buffer.dimlist import DimList
-from extensibility import Tensor as ExtensibilityTensor
-from extensibility import empty_tensor
 from register import *
 from runtime.asyncrt import MojoCallContextPtr
 
@@ -406,17 +404,6 @@ fn basic_target[
     print("hello from kernel on", target)
 
 
-@mogg_register("basic_target_extensibility")
-@always_inline
-@export
-fn basic_target_extensibility[
-    rank: Int, type: DType, target: StringLiteral
-](tensor: ExtensibilityTensor[type, rank]) -> ExtensibilityTensor[type, rank]:
-    print("hello from extensibility kernel on", target)
-    var out = empty_tensor[type, rank](tensor.shape)
-    return out^
-
-
 struct MyCustomSIMD[type: DType, len: Int](Movable):
     var val: SIMD[type, len]
 
@@ -425,19 +412,6 @@ struct MyCustomSIMD[type: DType, len: Int](Movable):
 
     fn __moveinit__(inout self, owned other: Self):
         self.val = other.val
-
-
-@mogg_register("test_make_custom_simd")
-@export
-@no_inline
-fn test_make_custom_simd[
-    type1: DType, type2: DType, rank1: Int, rank2: Int
-](
-    t1: ExtensibilityTensor[type1, rank1],
-    t2: ExtensibilityTensor[type2, rank2],
-    s_in: MyCustomSIMD[type1, rank2],
-) -> MyCustomSIMD[type2, rank1]:
-    return MyCustomSIMD[type2, rank1](0)
 
 
 # For testing support for Scalar[...] in Mojo
@@ -461,43 +435,6 @@ struct MyCustomScalar[type: DType](Movable):
 
     fn __del__(owned self):
         print("MyCustomScalar.__del__", self.val)
-
-
-@mogg_register("tensor_to_my_custom_scalar")
-@export
-fn tensor_to_my_custom_scalar[
-    type: DType
-](x: ExtensibilityTensor[type, 1]) -> MyCustomScalar[type]:
-    var val = x.simd_load[simd_width=1](0)
-    return MyCustomScalar(val)
-
-
-@mogg_register("my_custom_scalar_to_tensor")
-@export
-fn my_custom_scalar_to_tensor[
-    type: DType
-](x: MyCustomScalar[type]) -> ExtensibilityTensor[type, 1]:
-    var out = empty_tensor[type, 1](StaticIntTuple[1](1))
-    out.store[width=1](0, x.val)
-    return out^
-
-
-@mogg_register("scale_with_my_custom_scalar")
-@export
-fn scale_with_my_custom_scalar[
-    type: DType, rank: Int
-](
-    x: ExtensibilityTensor[type, rank], scale: MyCustomScalar[type]
-) -> ExtensibilityTensor[type, rank]:
-    var out = empty_tensor[x.type](x.shape)
-
-    @parameter
-    @always_inline
-    fn func[width: Int](i: StaticIntTuple[rank]) -> SIMD[out.type, width]:
-        return x.simd_load[width](i) * scale.val
-
-    out.for_each[func]()
-    return out^
 
 
 @mogg_register("tensor_to_my_custom_scalar_ndbuff")
