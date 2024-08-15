@@ -5,7 +5,12 @@
 # ===----------------------------------------------------------------------=== #
 
 from collections import OptionalReg
-from sys import sizeof, simdwidthof
+from sys import simdwidthof, sizeof
+
+from gpu.shuffle import _static_log2
+
+from .int_tuple import flatten
+from .layout import LayoutTrait
 
 # ===-----------------------------------------------------------------------===#
 # Motivation of thread swizzling                                               #
@@ -197,11 +202,6 @@ from sys import sizeof, simdwidthof
 #  11xxx ^ 11  |-- T27--|-- T26--|-- T25--|-- T24--|-- T31--|-- T30--|-- T29--|-- T28--|
 #
 
-
-from gpu.shuffle import _static_log2
-
-from .int_tuple import flatten
-from .layout import LayoutTrait
 
 # ===-----------------------------------------------------------------------===#
 # Helpers                                                                      #

@@ -5,8 +5,8 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo %s | FileCheck %s
 
-from layout import LayoutTensor, Layout, RuntimeLayout, RuntimeTuple
-from layout.int_tuple import IntTuple, UNKNOWN_VALUE
+from layout import Layout, LayoutTensor, RuntimeLayout, RuntimeTuple
+from layout.int_tuple import UNKNOWN_VALUE, IntTuple
 
 
 #  CHECK-LABEL: test_fill_and_print

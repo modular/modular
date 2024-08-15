@@ -4,19 +4,20 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from os import abort
 from collections.string import _calc_initial_buffer_size_int32
+from os import abort
 
 from utils._format import Formattable, Formatter
 
 from .dynamic_tuple import *
 from .int_tuple import (
+    UNKNOWN_VALUE,
     IntTuple,
     abs,
     crd2idx,
     flatten,
-    inner_product,
     idx2crd,
+    inner_product,
     is_int,
     is_tuple,
     mul,
@@ -29,8 +30,6 @@ from .int_tuple import (
     tuple_min,
     zip,
 )
-
-from .int_tuple import UNKNOWN_VALUE
 
 # ===-----------------------------------------------------------------------===#
 # Layout Trait                                                                 #

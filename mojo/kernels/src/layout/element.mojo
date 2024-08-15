@@ -4,12 +4,15 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from . import Layout, RuntimeLayout
-from .layout import to_int
-from .int_tuple import UNKNOWN_VALUE
-from memory import AddressSpace
 from sys import alignof
+
+from memory import AddressSpace
+
 from utils import StaticIntTuple
+
+from . import Layout, RuntimeLayout
+from .int_tuple import UNKNOWN_VALUE
+from .layout import to_int
 
 
 @always_inline

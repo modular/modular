@@ -6,18 +6,17 @@
 # REQUIRES: has_cuda_device
 # RUN: %mojo %s | FileCheck %s
 
-from layout.layout_tensor import LayoutTensor, Layout
-from layout._utils import ManagedLayoutGPUTensor
-
+from builtin.io import _printf
+from gpu import BlockIdx, GridDim, ThreadIdx, barrier
 from gpu.host.device_context import DeviceContext
 from gpu.memory import (
     _GPUAddressSpace,
     async_copy_commit_group,
     async_copy_wait_group,
 )
-from gpu import BlockIdx, GridDim, ThreadIdx, barrier
+from layout._utils import ManagedLayoutGPUTensor
+from layout.layout_tensor import Layout, LayoutTensor
 from testing import assert_true
-from builtin.io import _printf
 
 
 # CHECK-LABEL: test_copy_dram_to_sram_async

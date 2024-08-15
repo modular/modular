@@ -6,19 +6,17 @@
 # UNSUPPORTED: asan
 # RUN: %mojo %s | FileCheck %s
 
+from layout.int_tuple import UNKNOWN_VALUE
+from layout.layout import coalesce as coalesce_layout
+from layout.layout import crd2idx, print_layout
 from layout.runtime_layout import (
-    RuntimeLayout,
-    Layout,
-    RuntimeTuple,
     IntTuple,
+    Layout,
+    RuntimeLayout,
+    RuntimeTuple,
     coalesce,
     make_layout,
 )
-
-from layout.layout import print_layout, crd2idx, coalesce as coalesce_layout
-
-from layout.int_tuple import UNKNOWN_VALUE
-
 from testing import assert_equal
 
 

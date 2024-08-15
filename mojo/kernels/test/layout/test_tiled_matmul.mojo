@@ -6,6 +6,7 @@
 # RUN: %mojo %s | FileCheck %s
 
 from sys import simdwidthof
+
 from algorithm import parallelize, sync_parallelize, vectorize
 from layout import *
 from layout._utils import ManagedLayoutTensor

@@ -6,12 +6,11 @@
 
 import math
 
+from builtin.math import max as b_max
 from layout import LayoutTensor
 from layout.int_tuple import to_int
 
 from utils.numerics import min_or_neg_inf
-
-from builtin.math import max as b_max
 
 
 # Updates res with the outer product of lhs, rhs vectors, res += outer(lhs, rhs).

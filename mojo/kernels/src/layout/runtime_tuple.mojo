@@ -4,16 +4,14 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from os import abort
-from layout.int_tuple import IntTuple, flatten
-
-from layout.int_tuple import (
-    idx2crd as idx2crd_int_tuple,
-    prefix_product as prefix_product_int_tuple,
-    shape_div as shape_div_int_tuple,
-    UNKNOWN_VALUE,
-)
 from collections import InlineArray
+from os import abort
+
+from layout.int_tuple import UNKNOWN_VALUE, IntTuple, flatten
+from layout.int_tuple import idx2crd as idx2crd_int_tuple
+from layout.int_tuple import prefix_product as prefix_product_int_tuple
+from layout.int_tuple import shape_div as shape_div_int_tuple
+
 from utils import StaticIntTuple
 
 

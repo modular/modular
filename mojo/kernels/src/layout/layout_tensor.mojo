@@ -5,31 +5,28 @@
 # ===----------------------------------------------------------------------=== #
 
 from collections import InlineArray, Optional
-from sys import sizeof, simdwidthof
-from sys.intrinsics import PrefetchOptions
 from os import abort
+from sys import alignof, prefetch, simdwidthof, sizeof
+from sys.intrinsics import PrefetchOptions
 
 from algorithm import vectorize
 from builtin.int import int as _int
 from gpu.id import ThreadIdx
-from gpu.memory import async_copy, Fill
+from gpu.memory import Fill, async_copy
 from layout.element import Element
-from memory import memcpy, UnsafePointer, stack_allocation
+from memory import UnsafePointer, memcpy, stack_allocation
 from memory.reference import AddressSpace, _GPUAddressSpace
 
-from sys import alignof, prefetch
 from utils import StaticIntTuple
 from utils.numerics import max_finite
 
 from .int_tuple import fill_like, flatten, idx2crd, product, to_int
 from .layout import *
-from .swizzle import xor_2bits_per8T, xor_3bits_per16T
-from .runtime_layout import (
-    RuntimeLayout,
-    coalesce as runtime_coalesce,
-    make_layout as make_runtime_layout,
-)
+from .runtime_layout import RuntimeLayout
+from .runtime_layout import coalesce as runtime_coalesce
+from .runtime_layout import make_layout as make_runtime_layout
 from .runtime_tuple import RuntimeTuple
+from .swizzle import xor_2bits_per8T, xor_3bits_per16T
 
 
 # Distribute thread_layout into data_layout, if axis is provided

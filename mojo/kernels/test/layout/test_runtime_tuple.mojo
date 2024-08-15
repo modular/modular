@@ -5,26 +5,22 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo %s | FileCheck %s
 
+from layout.int_tuple import IntTuple
+from layout.int_tuple import crd2idx as crd2idx_int_tuple
+from layout.int_tuple import fill_like
+from layout.int_tuple import idx2crd as idx2crd_int_tuple
+from layout.int_tuple import shape_div as shape_div_int_tuple
 from layout.runtime_tuple import (
+    UNKNOWN_VALUE,
     RuntimeTuple,
-    prefix_product,
+    crd2idx,
+    idx2crd,
     is_int,
     is_tuple,
-    idx2crd,
-    crd2idx,
+    prefix_product,
     shape_div,
-    UNKNOWN_VALUE,
 )
-
-from layout.int_tuple import (
-    IntTuple,
-    idx2crd as idx2crd_int_tuple,
-    fill_like,
-    crd2idx as crd2idx_int_tuple,
-    shape_div as shape_div_int_tuple,
-)
-
-from testing import assert_equal, assert_true, assert_false
+from testing import assert_equal, assert_false, assert_true
 
 
 # CHECK-LABEL: test_construct

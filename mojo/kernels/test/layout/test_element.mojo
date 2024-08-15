@@ -7,9 +7,11 @@
 # RUN: %mojo %s | FileCheck %s
 
 from sys import alignof
+
 from layout import IntTuple, Layout, LayoutTensor, RuntimeLayout, RuntimeTuple
 from layout.element import Element
 from layout.int_tuple import UNKNOWN_VALUE
+
 from utils import StaticIntTuple
 
 

@@ -5,15 +5,12 @@
 # ===----------------------------------------------------------------------=== #
 
 from . import IntTuple, Layout
-from .runtime_tuple import RuntimeTuple, product, crd2idx
-from .int_tuple import flatten, to_int, UNKNOWN_VALUE
-from .layout import (
-    coalesce as coalesce_layout,
-    composition as composition_layout,
-    make_layout as make_layout_static,
-    is_tuple,
-)
-
+from .int_tuple import UNKNOWN_VALUE, flatten, to_int
+from .layout import coalesce as coalesce_layout
+from .layout import composition as composition_layout
+from .layout import is_tuple
+from .layout import make_layout as make_layout_static
+from .runtime_tuple import RuntimeTuple, crd2idx, product
 
 # A `Layout` like type that uses RuntimeTuple as its storage instead of
 # IntTuple.

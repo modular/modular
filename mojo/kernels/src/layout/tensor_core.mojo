@@ -6,14 +6,16 @@
 """This module provides abstractions for using Tensor Cores do to arithmetic and matrix operations
 """
 
-from sys import sizeof, simdwidthof
-from gpu import WARP_SIZE, ThreadIdx, lane_id, BlockIdx, ThreadIdx
+from sys import simdwidthof, sizeof
+
+from gpu import WARP_SIZE, BlockIdx, ThreadIdx, lane_id
 from gpu.memory import AddressSpace
 from gpu.mma import ld_matrix, mma
 from layout.int_tuple import IntTuple
 from layout.layout import *
 from layout.layout_tensor import LayoutTensor, _swizzle_signature
 from layout.swizzle import *
+
 from utils import StaticIntTuple
 
 
