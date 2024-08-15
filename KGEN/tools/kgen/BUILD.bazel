@@ -1,8 +1,13 @@
-load("//bazel:api.bzl", "modular_cc_binary", "run_tool")
+load("//bazel:api.bzl", "modular_cc_binary")
 
 modular_cc_binary(
     name = "kgen",
     srcs = glob(["*.cpp"]),
+    data = [
+        "//KGEN:CompilerRT",
+        "//KGEN:CompilerRT.distributable",
+        "@llvm-project//compiler-rt:orc_rt",
+    ],
     deps = [
         "//AsyncRT:Init",
         "//AsyncRT:Runtime",
@@ -22,16 +27,4 @@ modular_cc_binary(
         "//Support:MArchTarget",
         "@llvm-project//mlir:BytecodeWriter",
     ],
-)
-
-run_tool(
-    name = "kgen-standalone",
-    data = [
-        "//KGEN:CompilerRT",
-        "//KGEN:CompilerRT.distributable",
-        "@llvm-project//compiler-rt:orc_rt",
-    ],
-    tags = ["manual"],
-    tool = ":kgen",
-    visibility = ["//visibility:private"],
 )
