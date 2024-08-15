@@ -14,13 +14,13 @@ from algorithm import map
 
 from math import align_down, ceildiv
 from os import abort
-from sys import num_physical_cores, triple_is_nvidia_cuda, simdwidthof
+from sys import num_physical_cores, simdwidthof, triple_is_nvidia_cuda
 
 from bit import is_power_of_two
 from gpu import BlockIdx, GridDim, ThreadIdx
 from gpu.host import Device, DeviceContext
 from runtime import tracing
-from runtime.asyncrt import TaskGroup, MojoCallContextPtr, parallelism_level
+from runtime.asyncrt import MojoCallContextPtr, TaskGroup, parallelism_level
 from runtime.tracing import Trace, TraceLevel
 
 from utils.index import Index, StaticIntTuple
