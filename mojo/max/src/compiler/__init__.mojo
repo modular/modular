@@ -10,5 +10,6 @@ from .directives import (
     foreach,
     shapeof,
     stridesof,
+    specsof,
     output_lambda,
 )
