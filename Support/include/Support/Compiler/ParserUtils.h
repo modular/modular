@@ -172,7 +172,7 @@ void printOptionalEnum(AsmPrinter &p, Operation *, EnumAttrT attr,
                        std::optional<EnumT> (*)(StringRef)) {
   if (attr.getValue() == EnumT())
     return;
-  p << stringifyEnum(attr.getValue());
+  p << ' ' << stringifyEnum(attr.getValue());
   return;
 }
 
