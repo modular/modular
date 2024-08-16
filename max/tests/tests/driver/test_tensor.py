@@ -6,25 +6,26 @@
 """Test max.driver Tensors."""
 import max.driver as md
 import pytest
+from max.dtype import DType
 
 
 def test_tensor():
     # Validate that metadata shows up correctly
-    tensor = md.Tensor((3, 4, 5), md.DType.float32)
-    assert md.DType.float32 == tensor.dtype
+    tensor = md.Tensor((3, 4, 5), DType.float32)
+    assert DType.float32 == tensor.dtype
     assert "DType.float32" == str(tensor.dtype)
     assert (3, 4, 5) == tensor.shape
     assert 3 == tensor.rank
 
 
 def test_get_and_set():
-    tensor = md.Tensor((3, 4, 5), md.DType.int32)
+    tensor = md.Tensor((3, 4, 5), DType.int32)
     tensor[0, 1, 3] = 68
     # Get should return zero-d tensor
     elt = tensor[0, 1, 3]
     assert 0 == elt.rank
     assert () == elt.shape
-    assert md.DType.int32 == elt.dtype
+    assert DType.int32 == elt.dtype
     assert 68 == elt.item()
 
     # Setting negative indices
@@ -56,7 +57,7 @@ def test_get_and_set():
 def test_slice():
     # Tensor slices should have the desired shape and should preserve
     # reference semantics.
-    tensor = md.Tensor((3, 3, 3), md.DType.int32)
+    tensor = md.Tensor((3, 3, 3), DType.int32)
     subtensor = tensor[:2, :2, :2]
     assert subtensor.shape == (2, 2, 2)
     subtensor[0, 0, 0] = 25
@@ -83,7 +84,7 @@ def test_slice():
 
 
 def test_drop_dimensions():
-    tensor = md.Tensor((5, 5, 5), md.DType.int32)
+    tensor = md.Tensor((5, 5, 5), DType.int32)
     # When indexing into a tensor with a mixture of slices and integral
     # indices, the slice should drop any dimensions that correspond to
     # integral indices.
@@ -99,7 +100,7 @@ def test_drop_dimensions():
 
 
 def test_negative_step():
-    tensor = md.Tensor((3, 3), md.DType.int32)
+    tensor = md.Tensor((3, 3), DType.int32)
     elt = 0
     for x in range(3):
         for y in range(3):
@@ -115,7 +116,7 @@ def test_negative_step():
 
 
 def test_out_of_bounds_slices():
-    tensor = md.Tensor((3, 3, 3), md.DType.int32)
+    tensor = md.Tensor((3, 3, 3), DType.int32)
 
     # Out of bounds indexes are allowed in slices.
     assert tensor[4:, :2, 8:10:-1].shape == (0, 2, 0)
@@ -126,7 +127,7 @@ def test_out_of_bounds_slices():
 
 
 def test_one_dimensional_tensor():
-    tensor = md.Tensor((10,), md.DType.int32)
+    tensor = md.Tensor((10,), DType.int32)
     for i in range(10):
         tensor[i] = i
 
