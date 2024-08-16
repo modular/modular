@@ -696,6 +696,17 @@ def SimplifyCF : Pass<"simplify-cf", "KGEN::FuncOp"> {
 //===----------------------------------------------------------------------===//
 
 def ArgPromotion : Pass<"arg-promotion", "ModuleOp"> {
+  let summary = "promotion of in-memory arguments";
+  let description = [{
+    The `arg-promotion` pass is an inter-procedural optimization pass that
+    rewrites internal function signatures to pass in-memory arguments by value
+    if and only if the pointer is not captured.
+
+    If possible, this rewrites borrowed and owned in-memory arguments to pass in
+    the arguments by value, inout and ref arguments to return the result as an
+    SSA result, and byref result arguments to return the new value as a result.
+  }];
+
   let options = [
     Option<"maxInlineSize", "max-inline-size", "unsigned", "256",
            "The maximum argument size to promote, in bytes.">,
