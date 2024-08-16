@@ -326,8 +326,9 @@ compileElaboratorAsm(GeneratorOp func, SymbolConstantAttr symbol,
   options.relocModel = target.getRelocationModel();
 
   // Initialize the object compiler.
-  ErrorOr<std::unique_ptr<ObjectCompiler>> compilerOr = ObjectCompiler::create(
-      ".mojo_cache", options, /*isJIT=*/false, *target.getContext());
+  ErrorOr<std::unique_ptr<ObjectCompiler>> compilerOr =
+      ObjectCompiler::create(".mojo_cache", options, /*isJIT=*/
+                             false, *target.getContext());
 
   if (compilerOr.isError())
     return compilerOr.takeError();

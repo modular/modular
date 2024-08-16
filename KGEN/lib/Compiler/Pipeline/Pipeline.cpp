@@ -99,8 +99,7 @@ void KGEN::buildGenerateLibraryPipeline(
   // FIXME(#32286): The bodies of precompiled functions are not available to the
   // parametric inliner.
   pm.addPass(createInlineParametric(inlinerOpts));
-  pm.addPass(createVerifyParameters(
-      VerifyParametersOptions{/*simplifyParameters=*/true}));
+  pm.addPass(createVerifyParameters({/*simplifyParameters=*/true}));
 
   // These passes don't influence parameters, so we don't need to verify them.
   if (options.optimizationLevel >= 1) {
@@ -116,8 +115,7 @@ void KGEN::buildGenerateLibraryPipeline(
     pm.addPass(createEliminateDeadSymbols());
     pm.addPass(createApplyInliner());
     pm.addPass(createInlineParametric(inlinerOpts));
-    pm.addPass(createVerifyParameters(
-        VerifyParametersOptions{/*simplifyParameters=*/true}));
+    pm.addPass(createVerifyParameters({/*simplifyParameters=*/true}));
     pm.addNestedPass<GeneratorOp>(createSROA());
     pm.addNestedPass<GeneratorOp>(createMem2Reg());
     pm.addNestedPass<GeneratorOp>(createCanonicalizer(compileCanonFn));
@@ -170,6 +168,7 @@ void KGEN::buildPostElaborationPipeline(
   // We lower argument input conventions.
   pm.addNestedPass<FuncOp>(createLowerArgConventions());
   pm.addNestedPass<FuncOp>(createLowerCallingConventions());
+  pm.addNestedPass<FuncOp>(createCanonicalizer(compileCanonFn));
   pm.addNestedPass<FuncOp>(createMem2Reg());
 
   // Run the AutomaticInline pass with an inner function pass pipeline.
@@ -227,6 +226,7 @@ void KGEN::buildPostElaborationPipeline(
 
   if (options.optimizationLevel >= 1) {
     pm.addPass(createArgPromotion());
+    pm.addNestedPass<FuncOp>(createCanonicalizer(compileCanonFn));
     pm.addNestedPass<FuncOp>(createRaiseForLoops());
     pm.addNestedPass<FuncOp>(createLoopUnrolling({options.optimizationLevel}));
     pm.addNestedPass<FuncOp>(createSROA());

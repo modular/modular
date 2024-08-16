@@ -487,8 +487,10 @@ struct RemoveUnusedLoopArgs : OpRewritePattern<LoopOp> {
     if (unused.none())
       return b.notifyMatchFailure(loop.getLoc(), "no unused arguments");
 
-    loop->eraseOperands(unused);
-    loop.getBody().front().eraseArguments(unused);
+    b.modifyOpInPlace(loop, [&] {
+      loop->eraseOperands(unused);
+      loop.getBody().front().eraseArguments(unused);
+    });
 
     // Find all matching continue operations.
     StringAttr label = loop.getLabelAttr();
