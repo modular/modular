@@ -404,6 +404,12 @@ static GeneratorOp specializeOnSpec(CallGraphNode *node,
   node->hasBeenProcessed = true;
   node->specialization = cloned;
 
+  // Remove the attribute that identifies the operation name.
+  // It ensures MojoLibraryAnalysis will chose the specialized kernel (and not
+  // the original one).
+  gen->removeAttr(MOGGPreElab::kMOGGExecuteFunctionLabel);
+  gen->removeAttr(MOGGPreElab::kMOGGShapeFunctionLabel);
+
   LLVM_DEBUG(llvm::dbgs() << "END specializeOnSpec for " << gen.getSymName()
                           << "\n\n");
 
