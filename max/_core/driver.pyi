@@ -8,6 +8,8 @@ from __future__ import annotations
 from enum import Enum
 from typing import Any, Tuple, Union
 
+from max.dtype.core import DType
+
 IndexType = Union[int, Tuple[Union[int, slice], ...]]
 
 class DType(Enum): ...
