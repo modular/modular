@@ -190,7 +190,7 @@ static void rewriteFn(Operation *op, mlir::AttrTypeReplacer &replacer) {
   // Recursively replace all signatures in the operation. This will handle the
   // signatures of `kgen.func`, `kgen.stage_closure`, and `co.execute`.
   replacer.replaceElementsIn(op, /*replaceAttrs=*/true, /*replaceLocs=*/true,
-                             /*replaceAttrs=*/true);
+                             /*replaceTypes=*/true);
 
   // Handle exiting terminators.
   if (isa<ReturnOp, HLCF::YieldOp, HLCF::BreakOp>(op)) {

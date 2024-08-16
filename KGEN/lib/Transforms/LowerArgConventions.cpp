@@ -426,6 +426,6 @@ void LowerArgConventionsPass::runOnOperation() {
   });
   func.walk([&](Operation *op) {
     replacer.replaceElementsIn(op, /*replaceAttrs=*/true,
-                               /*replaceLocs=*/true, /*replaceAttrs=*/true);
+                               /*replaceLocs=*/true, /*replaceTypes=*/true);
   });
 }

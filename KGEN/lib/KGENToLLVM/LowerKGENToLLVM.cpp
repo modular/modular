@@ -416,21 +416,7 @@ struct ConvertKGENCall : public ConvertPOPToLLVMPattern<CallOp> {
     // Create the LLVM call operation.
     LLVM::CallOp llvmCall = createLLVMCall(rewriter, op.getLoc(), types,
                                            flatSymbol, filteredOperands);
-
-    // Unpack the struct if necessary.
-    SmallVector<Value> results;
-    if (op.getNumResults() <= 1) {
-      llvm::append_range(results, llvmCall.getResults());
-    } else {
-      results.reserve(op.getNumResults());
-      for (unsigned i = 0, e = op.getNumResults(); i < e; ++i) {
-        results.push_back(rewriter.create<LLVM::ExtractValueOp>(
-            op.getLoc(), llvmCall.getResult(), i));
-      }
-    }
-
-    // Replace the call operation.
-    rewriter.replaceOp(op, results);
+    replaceCallWithLLVMCall(rewriter, op, llvmCall);
     return success();
   }
 };
