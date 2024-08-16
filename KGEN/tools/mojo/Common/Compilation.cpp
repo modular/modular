@@ -8,7 +8,6 @@
 #include "KGEN/Compiler/KGENCompiler.h"
 #include "KGEN/Compiler/ObjectCompiler.h"
 #include "KGEN/KGENDialect/KGENAttrs.h"
-#include "KGEN/KGENVersion/KGENVersion.h"
 #include "KGEN/MojoParser/EntryPoint.h"
 #include "KGEN/ToolCommon/InitAllDialects.h"
 #include "Support/MArchTarget/MArchTarget.h"

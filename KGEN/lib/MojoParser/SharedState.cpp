@@ -22,7 +22,6 @@
 #include "KGEN/Support/CompilerProfiling.h"
 
 #include "KGEN/KGENDialect/KGENOps.h"
-#include "KGEN/KGENVersion/KGENVersion.h"
 #include "KGEN/LITDialect/LITOps.h"
 #include "KGEN/LITDialect/LITUtils.h"
 #include "KGEN/POPDialect/POPOps.h"

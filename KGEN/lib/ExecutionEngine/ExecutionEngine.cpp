@@ -10,7 +10,6 @@
 #include "Cache/Support/Keys.h"
 #include "KGEN/ExecutionEngine/JIT/MaterializationLayer.h"
 #include "KGEN/ExecutionEngine/JIT/StaticArchiveLayer.h"
-#include "KGEN/KGENVersion/KGENVersion.h"
 #include "KGEN/Support/Configuration.h"
 #include "Support/ErrorOr.h"
 #include "Support/FileSystemExtras.h"

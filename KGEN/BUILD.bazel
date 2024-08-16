@@ -11,7 +11,6 @@ load(
     "modular_cc_library",
     "modular_cc_test",
     "modular_shared_library",
-    "modular_versioned_expand_template",
     "td_library",
 )
 load("//bazel:config.bzl", "ASYNCRT_PROFILING_LOCAL_DEFINES", "CONFIG_SECTION_LOCAL_DEFINES", "KERNELS_BUILD_TYPE_LOCAL_DEFINES")
@@ -896,19 +895,6 @@ modular_cc_library(
     ],
 )
 
-modular_versioned_expand_template(
-    name = "kgen_version_gen",
-    out = "KGENVersion.h",
-    substitutions = {},
-    template = "include/KGEN/KGENVersion/KGENVersion.h.tmpl",
-)
-
-modular_cc_library(
-    name = "VersionHeader",
-    hdrs = [":kgen_version_gen"],
-    include_prefix = "KGEN/KGENVersion",
-)
-
 modular_cc_library(
     name = "ToolCommon.headers",
     hdrs = glob(["include/KGEN/ToolCommon/*.h"]),
@@ -941,10 +927,10 @@ modular_cc_library(
         ":Pipeline",
         ":ToolCommon.headers",
         ":TransformUtils",
-        ":VersionHeader",
         "//AsyncRT:CompilerSupport",
         "//Support:DebugInfoTransforms",
         "//Support:Telemetry",
+        "//bazel:mojo.linkstamp",
         "@llvm-project//llvm:OrcJIT",
     ],
 )
@@ -1171,7 +1157,6 @@ modular_cc_library(
         ":KGENDialect",
         ":LITDialect",
         ":ToolCommon.headers",
-        ":VersionHeader",
         "//AsyncRT:CompilerSupport",
         "//Cache",
         "@llvm-project//mlir:IndexDialect",
@@ -1224,6 +1209,7 @@ modular_cc_library(
         ":KGENToLLVM",
         ":Pipeline",
         "//AsyncRT:CompilerSupport",
+        "//bazel:mojo.linkstamp",
         "@llvm-project//mlir:BytecodeWriter",
     ],
 )
@@ -1279,7 +1265,6 @@ modular_cc_library(
     hdrs = glob(["include/KGEN/ExecutionEngine/*.h"]),
     deps = [
         ":JIT",
-        ":VersionHeader",
         "//Cache",
         "//Support:Buffer",
         "//Support:Compiler",
@@ -1300,7 +1285,6 @@ modular_cc_library(
         ":ExecutionEngine.headers",
         ":KGENDialect",
         ":ToolCommon.headers",
-        ":VersionHeader",
         "//Cache",
         "//Support:Buffer",
         "@llvm-project//llvm:OrcDebugging",
