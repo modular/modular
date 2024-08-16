@@ -138,14 +138,28 @@ kgen.func @external_call(%a : !kgen.struct<(scalar<si32>)>,
    // CHECK: %1 = builtin.unrealized_conversion_cast %arg0
 
    // CHECK: %2 = llvm.extractvalue %1[0]
-   // CHECK: llvm.call @call1(%2) {fastmathFlags = #llvm.fastmath<contract>} : (i32) -> i32 
+   // CHECK: llvm.call @call1(%2) {fastmathFlags = #llvm.fastmath<contract>} : (i32) -> i32
    %0 = pop.external_call @call1(%a) : (!kgen.struct<(scalar<si32>)>) -> !pop.scalar<si32>
 
    // CHECK: %4 = llvm.extractvalue %0[0]
    // CHECK: %5 = llvm.extractvalue %0[1]
    // CHECK: %6 = llvm.extractvalue %0[2]
-   // CHECK: %7 = llvm.call @call3(%4, %5, %6) {fastmathFlags = #llvm.fastmath<contract>} : (i32, f32, f32) -> i32 
+   // CHECK: %7 = llvm.call @call3(%4, %5, %6) {fastmathFlags = #llvm.fastmath<contract>} : (i32, f32, f32) -> i32
    %1 = pop.external_call @call3(%b) : (!kgen.struct<(scalar<si32>, scalar<f32>, scalar<f32>)>) -> !pop.scalar<si32>
+   kgen.return
+}
+}
+
+// -----
+
+module attributes {M.target_info = #M.target<triple="", arch="", features="", data_layout="", simd_bit_width=128>} {
+
+// CHECK-LABEL: @external_call_pack
+kgen.func @external_call_pack() {
+   // CHECK: [[R:%.*]] = llvm.call @call1() {{.*}} : () -> !llvm.struct<(i32, i64)>
+   // CHECK-NEXT: llvm.extractvalue [[R]][0]
+   // CHECK-NEXT: llvm.extractvalue [[R]][1]
+   %0:2 = pop.external_call @call1() : () -> (i32, i64)
    kgen.return
 }
 }

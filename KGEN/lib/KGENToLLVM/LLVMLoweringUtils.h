@@ -281,6 +281,11 @@ private:
 Value materializeLLVMStruct(ImplicitLocOpBuilder &b, Type structType,
                             ValueRange elements);
 
+/// Replace a KGEN call with an LLVM call, handling unpacking call results if
+/// necessary.
+void replaceCallWithLLVMCall(mlir::RewriterBase &b, Operation *op,
+                             mlir::LLVM::CallOp call);
+
 //===----------------------------------------------------------------------===//
 // Attribute Conversion
 //===----------------------------------------------------------------------===//

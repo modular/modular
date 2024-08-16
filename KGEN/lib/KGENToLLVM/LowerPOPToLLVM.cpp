@@ -1618,7 +1618,7 @@ struct ConvertPOPExternalCall : public ConvertSymbolOpToLLVM<ExternalCallOp> {
     }
 
     LLVM::CallOp call = createLLVMCall(rewriter, op.getLoc(), func, operands);
-    rewriter.replaceOp(op, call);
+    replaceCallWithLLVMCall(rewriter, op, call);
     return success();
   }
 };

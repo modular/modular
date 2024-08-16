@@ -840,6 +840,25 @@ Value KGEN::materializeLLVMStruct(ImplicitLocOpBuilder &b, Type structType,
   return container;
 }
 
+void KGEN::replaceCallWithLLVMCall(mlir::RewriterBase &b, Operation *op,
+                                   LLVM::CallOp call) {
+  SmallVector<Value> results;
+
+  // Unpack the struct if necessary.
+  if (op->getNumResults() <= 1) {
+    llvm::append_range(results, call.getResults());
+  } else {
+    results.reserve(op->getNumResults());
+    for (unsigned i = 0, e = op->getNumResults(); i < e; ++i) {
+      results.push_back(
+          b.create<LLVM::ExtractValueOp>(op->getLoc(), call.getResult(), i));
+    }
+  }
+
+  // Replace the call operation.
+  b.replaceOp(op, results);
+}
+
 Value KGEN::convertParameterToLLVM(
     ImplicitLocOpBuilder &b, const POPToLLVMTypeConverter &tc,
     InterpreterMemoryConverter *imc,
