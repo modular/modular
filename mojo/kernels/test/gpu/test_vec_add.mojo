@@ -16,7 +16,7 @@
 # GDB-COMMAND: info locals
 # GDB-COMMAND: info args
 
-# RUN: %if cuda-gdb %{ %cuda-gdb-commands mojo run -O0 -g %s | FileCheck %s --check-prefix=CHECK-GDB %}
+# RUN: %if cuda-gdb %{ %mojo-debug-cuda %s | FileCheck %s --check-prefix=CHECK-GDB %}
 
 # CHECK-GDB: hit Breakpoint
 # CHECK-GDB: tid = 0
