@@ -21,6 +21,7 @@ from ..graph import Graph
 from ..weight import Weight
 
 _GGML_TO_DTYPE = {}
+_QUANTIZED_GGML_DTYPES = set()
 
 
 def _install(package):
@@ -28,7 +29,7 @@ def _install(package):
 
 
 def _check_gguf():
-    global gguf, _GGML_TO_DTYPE
+    global gguf, _GGML_TO_DTYPE, _QUANTIZED_GGML_DTYPES
     if gguf is None:
         _install("sentencepiece")
         _install("gguf")
@@ -48,6 +49,30 @@ def _check_gguf():
             gguf.GGMLQuantizationType.BF16: DType.bfloat16,
         }
 
+        _QUANTIZED_GGML_DTYPES = {
+            gguf.GGMLQuantizationType.Q4_0,
+            gguf.GGMLQuantizationType.Q4_1,
+            gguf.GGMLQuantizationType.Q5_0,
+            gguf.GGMLQuantizationType.Q5_1,
+            gguf.GGMLQuantizationType.Q8_0,
+            gguf.GGMLQuantizationType.Q8_1,
+            gguf.GGMLQuantizationType.Q2_K,
+            gguf.GGMLQuantizationType.Q3_K,
+            gguf.GGMLQuantizationType.Q4_K,
+            gguf.GGMLQuantizationType.Q5_K,
+            gguf.GGMLQuantizationType.Q6_K,
+            gguf.GGMLQuantizationType.Q8_K,
+            gguf.GGMLQuantizationType.IQ2_XXS,
+            gguf.GGMLQuantizationType.IQ2_XS,
+            gguf.GGMLQuantizationType.IQ3_XXS,
+            gguf.GGMLQuantizationType.IQ1_S,
+            gguf.GGMLQuantizationType.IQ4_NL,
+            gguf.GGMLQuantizationType.IQ3_S,
+            gguf.GGMLQuantizationType.IQ2_S,
+            gguf.GGMLQuantizationType.IQ4_XS,
+            gguf.GGMLQuantizationType.IQ1_M,
+        }
+
 
 def load_gguf(gguf_or_filepath) -> Dict[str, Weight]:
     _check_gguf()
@@ -64,10 +89,14 @@ def load_gguf(gguf_or_filepath) -> Dict[str, Weight]:
         shape = list(reversed(tensor.shape.tolist()))
         dtype = _GGML_TO_DTYPE.get(tensor.tensor_type, None)
         if dtype is None:
-            # Quantized dtypes do not have a direct map to a graph DType and are
-            # treated as uint8 values.
-            dtype = DType.uint8
-            shape = gguf.quant_shape_to_byte_shape(shape, tensor.tensor_type)
+            if tensor.tensor_type in _QUANTIZED_GGML_DTYPES:
+                # Quantized dtypes are treated as uint8 values.
+                dtype = DType.uint8
+                shape = gguf.quant_shape_to_byte_shape(
+                    shape, tensor.tensor_type
+                )
+            else:
+                raise ValueError(f"Unknown GGML DType: {tensor.tensor_type}.")
         ret[tensor.name] = graph.add_weight(
             tensor.name,
             dtype,
