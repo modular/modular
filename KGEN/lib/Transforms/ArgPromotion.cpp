@@ -191,7 +191,6 @@ State Graph::doAnalysis(BlockArgument arg) {
       return State::Capture;
 
     // The call use does not capture!
-    continue;
   }
 
   // Okay, all the uses check out. We know this argument isn't captured.
@@ -265,7 +264,7 @@ void Graph::doRewrite(const Node *node) {
 
     // We are going to be replacing this argument. Figure out how.
     auto [in, out] = getInOutFlags(conv);
-    assert(in || out && "expected some kind of rewrite prescription");
+    assert((in || out) && "expected some kind of rewrite prescription");
 
     // First, rewrite the argument as a local variable.
     auto type = cast<PointerType>(arg.getType());
@@ -339,7 +338,7 @@ void Graph::doRewrite(const Node *node) {
 
       // Figure out how the argument needs to be rewritten.
       auto [in, out] = getInOutFlags(conv);
-      assert(in || out && "expected some kind of rewrite prescription");
+      assert((in || out) && "expected some kind of rewrite prescription");
 
       // For 'in' arguments, we load the current value and pass it in by value.
       if (in) {
