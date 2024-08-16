@@ -11,7 +11,7 @@ modular_py_test(
         "//Kernels/mojo/Mogg:MOGG.lib.mlirbc",
         "//Kernels/mojo/Mogg:MOGGPrimitives.lib.mlirbc",
         "//SDK/integration-test:test_user_op",
-        "//SDK/test/API/graph/python:testdata",
+        "//SDK/test/API/graph/python/pytests/testdata",
         "@llvm-project//compiler-rt:orc_rt",
     ],
     env = {

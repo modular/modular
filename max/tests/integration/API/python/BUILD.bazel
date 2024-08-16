@@ -22,7 +22,7 @@ modular_py_test(
         "//SDK/integration-test:test_user_op",
         "//SDK/integration-test/EngineAPI:inputs",
         "//SDK/integration-test/EngineAPI:pytest_inputs",
-        "//SDK/test/API/graph/python:testdata",
+        "//SDK/test/API/graph/python/pytests/testdata",
         "@llvm-project//compiler-rt:orc_rt",
     ],
     env = {
