@@ -39,7 +39,7 @@ struct TensorSlice[
     type: DType,
     rank: Int,
     lifetime: AnyLifetime[is_mutable].type,
-](TensorLike):
+]:
     """Sliced view of a tensor. This is safe to use even after the last use of
     tensor from which it is created. For creating a slice use the __getitem__
     method defined in tensor.
@@ -75,14 +75,6 @@ struct TensorSlice[
             Spec of slice as TensorSpec.
         """
         return self._unsafe_slice._spec.get_tensor_spec()
-
-    fn unsafe_ptr[__type: DType = type](self) -> UnsafePointer[Scalar[__type]]:
-        """Gets pointer to start of the slice.
-
-        Returns:
-            Pointer to the start of the slice.
-        """
-        return rebind[UnsafePointer[Scalar[__type]]](self._unsafe_slice._ptr)
 
     @always_inline
     fn __getitem__(self, *indices: Int) -> Scalar[type]:

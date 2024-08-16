@@ -196,10 +196,17 @@ struct Tensor[type: DType, rank: Int](CollectionElement, TensorLike):
         )
 
     fn unsafe_ptr[__type: DType = type](self) -> UnsafePointer[Scalar[__type]]:
-        """Returns a pointer to the underlying memory.
+        """Gets a pointer to the underlying memory.
 
         Note: The caller is responsible for ensuring that the returned pointer
         is not used after it's owner is last used.
+
+        Parameters:
+            __type: If given the pointer will be rebound to this type. Defaulted
+                    to type of tensor.
+
+        Returns:
+           Pointer to the beginning of tensor data.
         """
         return rebind[UnsafePointer[Scalar[__type]]](self._ptr)
 
