@@ -5,22 +5,29 @@
 # ===----------------------------------------------------------------------=== #
 """Contains information about the GPUs."""
 
+# ===----------------------------------------------------------------------===#
+# Flops
+# ===----------------------------------------------------------------------===#
+
 
 @value
+@register_passable
 struct Flops:
     var fp16: Int
     var i8: Int
     var i4: Int
 
-    fn __init__(inout self, *, fp16: Int, i8: Int, i4: Int):
-        self.fp16 = fp16
-        self.i8 = i8
-        self.i4 = i4
+
+# ===----------------------------------------------------------------------===#
+# Info
+# ===----------------------------------------------------------------------===#
 
 
+@value
+@register_passable
 struct Info:
-    var name: String
-    var version: String
+    var name: StringLiteral
+    var version: StringLiteral
     var target: __mlir_type.`!kgen.target`
     var threads_per_warp: Int
     var warps_per_multiprocessor: Int
@@ -29,7 +36,7 @@ struct Info:
     var shared_memory_per_multiprocessor: Int
     var register_file_size: Int
     var register_allocation_unit_size: Int
-    var allocation_granularity: String
+    var allocation_granularity: StringLiteral
     var max_registers_per_thread: Int
     var max_registers_per_block: Int
     var max_blocks_per_multiprocessor: Int
@@ -38,53 +45,40 @@ struct Info:
     var max_thread_block_size: Int
     var flops: Flops
 
-    fn __init__(
-        inout self,
-        *,
-        name: String,
-        version: String,
-        target: __mlir_type.`!kgen.target`,
-        threads_per_warp: Int,
-        warps_per_multiprocessor: Int,
-        threads_per_multiprocessor: Int,
-        thread_blocks_per_multiprocessor: Int,
-        shared_memory_per_multiprocessor: Int,
-        register_file_size: Int,
-        register_allocation_unit_size: Int,
-        allocation_granularity: String,
-        max_registers_per_thread: Int,
-        max_registers_per_block: Int,
-        max_blocks_per_multiprocessor: Int,
-        shared_memory_allocation_unit_size: Int,
-        warp_allocation_granularity: Int,
-        max_thread_block_size: Int,
-        flops: Flops,
-    ):
-        self.name = name
-        self.version = version
-        self.target = target
-        self.threads_per_warp = threads_per_warp
-        self.warps_per_multiprocessor = warps_per_multiprocessor
-        self.threads_per_multiprocessor = threads_per_multiprocessor
-        self.thread_blocks_per_multiprocessor = thread_blocks_per_multiprocessor
-        self.shared_memory_per_multiprocessor = shared_memory_per_multiprocessor
-        self.register_file_size = register_file_size
-        self.register_allocation_unit_size = register_allocation_unit_size
-        self.allocation_granularity = allocation_granularity
-        self.max_registers_per_thread = max_registers_per_thread
-        self.max_registers_per_block = max_registers_per_block
-        self.max_blocks_per_multiprocessor = max_blocks_per_multiprocessor
-        self.shared_memory_allocation_unit_size = (
-            shared_memory_allocation_unit_size
-        )
-        self.warp_allocation_granularity = warp_allocation_granularity
-        self.max_thread_block_size = max_thread_block_size
-        self.flops = flops
+
+# ===----------------------------------------------------------------------===#
+# _get_info_from_target
+# ===----------------------------------------------------------------------===#
+
+
+@always_inline
+fn _get_info_from_target[target_arch: StringLiteral]() -> Info:
+    constrained[target_arch in ("sm_80", "sm_86", "sm_89", "sm_90", "sm_90a")]()
+
+    @parameter
+    if target_arch == "sm_80":
+        return A100
+    elif target_arch == "sm_86":
+        return A10
+    elif target_arch == "sm_89":
+        return L4
+    elif target_arch in ("sm_90", "sm_90a"):
+        return H100
+
+    return A100
 
 
 # ===----------------------------------------------------------------------===#
 # A100
 # ===----------------------------------------------------------------------===#
+
+# Note: features = "+ptx85" means that the kernel should be compiled using
+# PTX version 8.5. This must be less than or equal to the installed CUDA
+# driver's maximum supported PTX version. Currently we hardcode this to
+# PTX version 8.5 which means that you need to have a CUDA driver included with
+# CUDA 12.5 toolkit. The mapping from CUDA Driver to PTX version can be found by
+# looking at the PTX ISA in the versioned docs
+# https://developer.nvidia.com/cuda-toolkit-archive.
 
 alias A100 = Info(
     name="A100",
@@ -175,4 +169,36 @@ alias L4 = Info(
     warp_allocation_granularity=4,
     max_thread_block_size=1024,
     flops=Flops(fp16=121, i8=242, i4=485),
+)
+
+# ===----------------------------------------------------------------------===#
+# H100
+# ===----------------------------------------------------------------------===#
+
+
+alias H100 = Info(
+    name="H100",
+    version="sm_90",
+    target=__mlir_attr[
+        `#kgen.target<triple = "nvptx64-nvidia-cuda", `,
+        `arch = "sm_90a", `,
+        `features = "+ptx85", `,
+        `data_layout = "e-i64:64-i128:128-v16:16-v32:32-n16:32:64",`,
+        `simd_bit_width = 128> : !kgen.target`,
+    ],
+    threads_per_warp=32,
+    warps_per_multiprocessor=64,
+    threads_per_multiprocessor=2048,
+    thread_blocks_per_multiprocessor=32,
+    shared_memory_per_multiprocessor=167936,
+    register_file_size=65536,
+    register_allocation_unit_size=256,
+    allocation_granularity="warp",
+    max_registers_per_thread=255,
+    max_registers_per_block=65536,
+    max_blocks_per_multiprocessor=32,
+    shared_memory_allocation_unit_size=128,
+    warp_allocation_granularity=4,
+    max_thread_block_size=1024,
+    flops=Flops(fp16=1979, i8=3958, i4=7916),
 )
