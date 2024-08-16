@@ -295,7 +295,7 @@ private:
   /// The module in which to lookup symbol references.
   ModuleOp module;
   /// The symbol to use to verify symbol references.
-  mlir::LockedSymbolTableCollection *symtab;
+  [[maybe_unused]] mlir::LockedSymbolTableCollection *symtab;
   /// Cached references that have already been verified.
   DenseSet<const void *> verifiedRefs;
 };

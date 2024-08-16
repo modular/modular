@@ -832,7 +832,8 @@ std::string Lexer::getStringLiteralValue(StringRef bytes) {
       while (i < (startDigit + 3) && i < bytes.size() && isOctalDigit(bytes[i]))
         i++;
       unsigned int num;
-      bool failed = bytes.slice(startDigit, i).getAsInteger(8, num);
+      [[maybe_unused]] bool failed =
+          bytes.slice(startDigit, i).getAsInteger(8, num);
       assert(!failed && "we know this should always work because we lexed it");
       result.push_back(static_cast<char>(num));
       continue;
