@@ -10,31 +10,6 @@
 include "Support/Compiler/Bytecode.td"
 
 //===----------------------------------------------------------------------===//
-// KGENDialect Helper Attributes
-//===----------------------------------------------------------------------===//
-
-def ParamDeclAttr : DialectAttribute<(attr
-  StringAttr:$name,
-  Type:$type
-)>;
-
-def ParamDeclArrayAttr : DialectAttribute<(attr
-  ConcreteAttrArray<"ParamDeclAttr">:$value
-)>;
-
-def StructDefFieldAttr : DialectAttribute<(attr
-  StringAttr:$name,
-  Type:$type
-)>;
-
-def StructDefAttr : DialectAttribute<(attr
-  StringAttr:$name,
-  ConcreteAttrArray<"ParamDeclAttr">:$inputParams,
-  ConcreteAttrArray<"StructDefFieldAttr">:$fields,
-  Bool:$isMemoryOnly
-)>;
-
-//===----------------------------------------------------------------------===//
 // KGENDialect Types
 //===----------------------------------------------------------------------===//
 
@@ -85,15 +60,6 @@ def StructType : DialectType<(type
   Bool:$isMemoryOnly
 )>;
 
-def StructDefType : DialectType<(type
-  ConcreteAttrArray<"ParamDeclAttr">:$paramDecls
-)>;
-
-def AppliedStructType : DialectType<(type
-  TypedAttr:$structDef,
-  TypedAttrArray:$paramValues
-)>;
-
 def StructInstanceType : DialectType<(type
   StringAttr:$name,
   ConcreteAttrArray<"StringAttr">:$paramNames,
@@ -127,8 +93,6 @@ def KGENDialectTypes : DialectTypes<"kgen"> {
     TargetType,
     BuildInfoType,
     StructType,
-    StructDefType,
-    AppliedStructType,
     StructInstanceType,
     PackType,
     WrappedVariantType,
@@ -139,6 +103,15 @@ def KGENDialectTypes : DialectTypes<"kgen"> {
 //===----------------------------------------------------------------------===//
 // KGENDialect Attributes
 //===----------------------------------------------------------------------===//
+
+def ParamDeclAttr : DialectAttribute<(attr
+  StringAttr:$name,
+  Type:$type
+)>;
+
+def ParamDeclArrayAttr : DialectAttribute<(attr
+  ConcreteAttrArray<"ParamDeclAttr">:$value
+)>;
 
 def ParameterExprArrayAttr : DialectAttribute<(attr
   TypedAttrArray:$value
@@ -229,14 +202,9 @@ def ExportKindAttr : DialectAttribute<(attr
   EnumAttr<"ExportKind">:$value
 )>;
 
-def StructDefParamRefAttr : DialectAttribute<(attr
+def StructDefFieldAttr : DialectAttribute<(attr
   StringAttr:$name,
   Type:$type
-)>;
-
-def StructDefSelfRefAttr : DialectAttribute<(attr
-  VarInt:$depth,
-  ConcreteType<"StructDefType">:$type
 )>;
 
 def StructAttr : DialectAttribute<(attr
@@ -298,8 +266,6 @@ def KGENDialectAttributes : DialectAttributes<"kgen"> {
     DecoratorsAttr,
     ExportKindAttr,
     StructDefFieldAttr,
-    StructDefSelfRefAttr,
-    StructDefAttr,
     StructAttr,
     WrappedStructExtractAttr,
     PackAttr,

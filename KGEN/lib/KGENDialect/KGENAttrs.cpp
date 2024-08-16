@@ -613,69 +613,6 @@ Type TargetParamAttr::getType() const { return TargetType::get(getContext()); }
 bool TargetParamAttr::isConstant() const { return true; }
 
 //===----------------------------------------------------------------------===//
-// StructDefParamRefAttr
-//===----------------------------------------------------------------------===//
-
-/// A parameter reference forms the basis of a non-constant parameter attribute.
-bool StructDefParamRefAttr::isConstant() const { return false; }
-
-/// Sort the parameter references by name.
-std::optional<bool> StructDefParamRefAttr::isLessThan(Attribute rhs) const {
-  if (auto ref = llvm::dyn_cast<StructDefParamRefAttr>(rhs))
-    return getName().getValue() < ref.getName().getValue();
-  // Otherwise, named parameters are always to the right.
-  return false;
-}
-
-//===----------------------------------------------------------------------===//
-// StructDefSelfRefAttr
-//===----------------------------------------------------------------------===//
-
-bool StructDefSelfRefAttr::isConstant() const { return false; }
-
-std::optional<bool> StructDefSelfRefAttr::isLessThan(Attribute rhs) const {
-  if (auto ref = llvm::dyn_cast<StructDefSelfRefAttr>(rhs))
-    return getDepth() < ref.getDepth();
-  return false;
-}
-
-//===----------------------------------------------------------------------===//
-// StructDefAttr
-//===----------------------------------------------------------------------===//
-
-StructDefAttr StructDefAttr::get(StringAttr name,
-                                 ArrayRef<ParamDeclAttr> inputParams,
-                                 ArrayRef<StructDefFieldAttr> fields,
-                                 bool isMemoryOnly) {
-  MLIRContext *ctx = name.getContext();
-  return get(
-      ctx, name, inputParams, fields, isMemoryOnly,
-      StructDefType::get(ctx, ParamDeclArrayAttr::get(ctx, inputParams)));
-}
-
-LogicalResult
-StructDefAttr::verify(function_ref<InFlightDiagnostic()> emitError,
-                      StringAttr name, ArrayRef<ParamDeclAttr> inputParams,
-                      ::llvm::ArrayRef<StructDefFieldAttr> fields,
-                      bool isMemoryOnly, StructDefType type) {
-  MLIRContext *ctx = name.getContext();
-  if (inputParams != type.getParamDecls()) {
-    return emitError() << "inconsistent struct_def type. Expected: "
-                       << StructDefType::get(ctx, inputParams)
-                       << ", got: " << type;
-  }
-  return success();
-}
-
-bool StructDefAttr::isConstant() const { return false; }
-
-std::optional<bool> StructDefAttr::isLessThan(Attribute rhs) const {
-  if (auto def = llvm::dyn_cast<StructDefAttr>(rhs))
-    return getName().getValue() < def.getName().getValue();
-  return false;
-}
-
-//===----------------------------------------------------------------------===//
 // StructAttr
 //===----------------------------------------------------------------------===//
 

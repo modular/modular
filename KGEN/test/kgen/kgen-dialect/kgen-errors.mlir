@@ -690,35 +690,6 @@ kgen.generator export @top() {
   kgen.param.constant: string = <compile_assembly(current_target(), something, 0, :() -> () @kernel)>
   kgen.return
 }
-
-// -----
-
-// expected-error @below {{!kgen.applied_struct parameter type and parameter value length mismatch. Expected 1, got 2}}
-kgen.func @illegal_applied_struct_param_length(%arg0: !kgen.applied_struct<[dt: dtype] #kgen.struct_def<"Foo"[dt: dtype]>, <:dtype i32, 8>>) {}
-
-// -----
-
-// expected-error @below {{!kgen.applied_struct parameter type mismatch at index 0. Expected '!kgen.dtype', got 'index'}}
-kgen.func @illegal_applied_struct_param_type(%arg0: !kgen.applied_struct<[dt: dtype] #kgen.struct_def<"Foo"[dt: dtype]>, <:index 8>>) {}
-
-// -----
-
-// expected-error @below {{!kgen.applied_struct parameter type mismatch at index 0. Expected '!kgen.dtype', got 'index'}}
-kgen.func @illegal_applied_struct_self_param_type(%arg0: !kgen.applied_struct<[dt: dtype] #kgen.struct_def.self<1>, <:index 8>>) {}
-
-// -----
-
-// expected-error @below {{!kgen.applied_struct parameter type mismatch at index 1. Expected '!kgen.paramref<*("T")>' (aka 'index'), got '!kgen.dtype'}}
-kgen.func @illegal_source_struct_type(%arg0: !kgen.applied_struct<[T: type, x: !kgen.paramref<*("T")>] #kgen.struct_def<"Bar"[T: type, x: !kgen.paramref<*("T")>](data: typevalue<*("T")>)>, <:type index, :dtype i32>>) {}
-
-// -----
-
-kgen.func @illegal_source_struct_type() {
-  // expected-error @below {{inconsistent struct_def type. Expected: '!kgen.struct_def<[elemT: dtype, size]>', got: '!kgen.struct_def<[elemT: dtype]>'}}
-  kgen.param.constant: !kgen.struct_def<[elemT: dtype]> = <#kgen.struct_def<"Bar"[elemT: dtype, size](data: struct<()>) memoryOnly>>
-  kgen.return
-}
-
 // -----
 
 // expected-error @below {{parameter name and parameter value length mismatch. Expected 1, got 2}}

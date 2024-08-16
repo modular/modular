@@ -906,16 +906,6 @@ ParseResult KGEN::parseParamValue(AsmParser &p, TypedAttr &value, Type type) {
   // parameter reference.
   if (succeeded(p.parseOptionalStar())) {
     if (succeeded(p.parseOptionalLParen())) {
-      // Try to parse *("...") as a SourceStruct parameter name reference.
-      std::string name;
-      if (succeeded(p.parseOptionalString(&name))) {
-        if (p.parseRParen())
-          return failure();
-        value = StructDefParamRefAttr::get(
-            StringAttr::get(p.getContext(), name), type);
-        return success();
-      }
-
       // Try to parse *(0,0) as an index reference.
       size_t depth, index;
       if (p.parseInteger(depth) || p.parseComma() || p.parseInteger(index) ||
@@ -1218,10 +1208,6 @@ void KGEN::printParamValue(AsmPrinter &p, TypedAttr value, Type type,
     p << "*(" << indexRef.getDepth() << ',' << indexRef.getIndex() << ")";
     if (indexRef.getIsResult())
       p << '*';
-    return;
-  }
-  if (auto sourceStructParamRef = dyn_cast<StructDefParamRefAttr>(value)) {
-    p << "*(" << sourceStructParamRef.getName() << ")";
     return;
   }
 
