@@ -8,7 +8,6 @@
 #include "Support/Configuration.h"
 #include "Support/FileSystemExtras.h"
 #include "Support/Process.h"
-#include "mlir/Support/IndentedOstream.h"
 #include "llvm/Support/JSON.h"
 #include "llvm/Support/Process.h"
 #include <filesystem>
@@ -134,7 +133,7 @@ static ErrorOr<json::Object> createBasicDebugConfiguration() {
 
 template <typename TResponse>
 static ErrorOr<TResponse> doSendRequest(SOCKET sockfd, StringRef payloadStr,
-                                        raw_ostream &extraLogStream) {
+                                        raw_ostream &extraLogStream, int port) {
   ssize_t sentBytes = send(sockfd, payloadStr.data(), payloadStr.size(), 0);
   if (sentBytes < 0)
     return Error(Twine("can't send data to the RPC debug server: ") +
@@ -157,7 +156,8 @@ static ErrorOr<TResponse> doSendRequest(SOCKET sockfd, StringRef payloadStr,
       break;
   }
 
-  extraLogStream << "Got response:\n" << rawResponse << "\n";
+  extraLogStream << "[port=" << port << "] Got response:\n"
+                 << rawResponse << "\n";
 
   StringRef response(rawResponse);
   if (!response.consume_back(protocolSeparator)) {
@@ -202,21 +202,22 @@ ErrorOr<Connection> tryToConnectToServer(int port,
                       port, strerror(errno)));
   }
 
-  extraLogStream << "TCP connection successful\n";
+  extraLogStream << "[port=" << port << "] TCP connection successful\n";
 
   // We create a dangling thread to easily handle timeouts. The thread will
   // die anyway as soon as we close the socket.
   std::string request = llvm::formatv(
       "{0:2}{1}", json::toJSON(RequestConnect()), protocolSeparator);
-  extraLogStream << "Will send:\n" << request << "\n";
+  extraLogStream << "[port=" << port << "] Will send:\n" << request << "\n";
   auto future = new std::future<ErrorOr<ResponseConnect>>(
       std::async(doSendRequest<ResponseConnect>, sockfd, request,
-                 std::ref(extraLogStream)));
+                 std::ref(extraLogStream), port));
   auto timeout = std::chrono::seconds(5);
   if (future->wait_for(timeout) == std::future_status::timeout)
-    return Error("timeout when connecting to the RPC debug server");
+    return Error("timeout when waiting for the `connect` response");
 
-  extraLogStream << "Server info successfully obtained.\n";
+  extraLogStream << "[port=" << port
+                 << "] Server info successfully obtained.\n";
   ErrorOr<ResponseConnect> response = future->get();
   delete future;
   if (failed(response))
@@ -248,10 +249,9 @@ static ErrorOrSuccess invokeRPC(bool dryRun, ArrayRef<int> ports,
     return Error(std::string("could not create file for additional logs: ") +
                  logFileOrErr.getError());
   logFileOrErr->keep();
-  llvm::raw_fd_ostream rawExtraLogStream(logFileOrErr->getFD(),
-                                         /*shouldClose=*/true,
-                                         /*unbuffered=*/true);
-  mlir::raw_indented_ostream extraLogStream(rawExtraLogStream);
+  llvm::raw_fd_ostream extraLogStream(logFileOrErr->getFD(),
+                                      /*shouldClose=*/true,
+                                      /*unbuffered=*/true);
   llvm::errs() << "[INFO] Additional logs can be found in "
                << logFileOrErr->getPath()
                << ". Please include them when reporting bugs.\n\n";
@@ -259,18 +259,21 @@ static ErrorOrSuccess invokeRPC(bool dryRun, ArrayRef<int> ports,
                     "the `Output` tab of each VSCode Window.\n\n";
 
   std::set<Connection> connections;
+  std::vector<std::pair<int, std::future<ErrorOr<Connection>>>>
+      connectionFutures;
   for (int port : ports) {
-    extraLogStream << "Will try to connect to an RPC server via port=" << port
-                   << "\n";
-    extraLogStream.indent();
-
-    ErrorOr<Connection> connection = tryToConnectToServer(port, extraLogStream);
+    extraLogStream << "[port=" << port
+                   << "] Will try to connect to its RPC server\n";
+    connectionFutures.emplace_back(
+        port, std::async(tryToConnectToServer, port, std::ref(extraLogStream)));
+  }
+  for (auto &connectionFuture : connectionFutures) {
+    ErrorOr<Connection> connection = connectionFuture.second.get();
     if (failed(connection))
-      extraLogStream << "Error: " << connection.takeError() << "\n";
+      extraLogStream << "[port=" << connectionFuture.first
+                     << "] Error: " << connection.takeError() << "\n";
     else
       connections.insert(std::move(*connection));
-
-    extraLogStream.unindent();
   }
 
   if (connections.empty())
@@ -312,12 +315,11 @@ static ErrorOrSuccess invokeRPC(bool dryRun, ArrayRef<int> ports,
   auto it = connections.begin();
   std::advance(it, index);
 
-  extraLogStream << "Will send debug request to server with port " << it->port
-                 << ":\n"
+  extraLogStream << "[port=" << it->port << "] Will send debug request:\n"
                  << requestStr << "\n";
 
-  ErrorOr<ResponseDebug> response =
-      doSendRequest<ResponseDebug>(it->sockfd, requestStr, extraLogStream);
+  ErrorOr<ResponseDebug> response = doSendRequest<ResponseDebug>(
+      it->sockfd, requestStr, extraLogStream, it->port);
   if (failed(response))
     return response.takeError();
   return success();
