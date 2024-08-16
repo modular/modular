@@ -59,6 +59,7 @@ def test_compile_function_with_assembly():
         )
 
     # CHECK: nanosleep
+    # CHECK-NOT: begin assembly
 
     with DeviceContext() as ctx:
         _ = ctx.compile_function[kernel_inlined_assembly](dump_ptx=True)
