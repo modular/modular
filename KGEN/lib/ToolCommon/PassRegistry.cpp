@@ -28,6 +28,7 @@ void KGEN::registerDefaultKGENPasses() {
   KGEN::registerArgPromotion();
   KGEN::registerCheckLifetimes();
   KGEN::registerEliminateDeadSymbols();
+  KGEN::registerExpandStructs();
   KGEN::registerFunctionStats();
   KGEN::registerHoistTrivialInvariants();
   KGEN::registerLiftAndFoldApply();

@@ -11,6 +11,7 @@ add_modular_library(KGENTransforms
   Canonicalizer.cpp
   DeadArgumentElimination.cpp
   EliminateDeadSymbols.cpp
+  ExpandStructs.cpp
   FunctionStats.cpp
   HoistTrivialInvariants.cpp
   InlineParametric.cpp

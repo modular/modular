@@ -31,9 +31,16 @@ def Canonicalizer : Pass<"canonicalizer"> {
     IR only has single-block regions.
   }];
 
+  // FIXME(#15949): Should not require all these dialects to be loaded.
   let dependentDialects = [
+    "KGENDialect",
+    "DebugInfo::DebugInfoDialect",
+    "HLCF::HLCFDialect",
+    "MDialect",
+    "Custom::CustomDialect",
+    "mlir::LLVM::LLVMDialect",
+    "mlir::NVVM::NVVMDialect",
     "mlir::index::IndexDialect",
-    "Custom::CustomDialect"
   ];
 }
 
@@ -713,6 +720,19 @@ def ArgPromotion : Pass<"arg-promotion", "ModuleOp"> {
   ];
 
   let dependentDialects = ["POP::POPDialect"];
+}
+
+//===----------------------------------------------------------------------===//
+// ExpandStructs
+//===----------------------------------------------------------------------===//
+
+def ExpandStructs : Pass<"expand-structs", "FuncOp"> {
+  let summary = "expand structs across control flow boundaries";
+  let description = [{
+    The `expand-structs` pass removes `!kgen.struct` recursively across
+    control-flow boundaries, including functions and function calls. This
+    results in less IR bloat but is also part of the Mojo function ABI.
+  }];
 }
 
 //===----------------------------------------------------------------------===//

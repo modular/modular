@@ -25,8 +25,7 @@ namespace M::KGEN {
 } // namespace M::KGEN
 
 namespace {
-class ArgPromotionPass : public impl::ArgPromotionBase<ArgPromotionPass> {
-public:
+struct ArgPromotionPass : public impl::ArgPromotionBase<ArgPromotionPass> {
   using ArgPromotionBase::ArgPromotionBase;
   void runOnOperation() override;
 };
