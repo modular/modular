@@ -121,6 +121,7 @@ modular_cc_binary(
         "@llvm-project//compiler-rt:orc_rt",
     ],
     includes = ["."],
+    stamp = 1,
     deps = [
         ":Build.inc_files",
         ":Debug.inc_files",
