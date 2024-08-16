@@ -1988,6 +1988,36 @@ def POP_StringConcatOp : POPOp<"string.concat", [Pure]> {
 }
 
 //===----------------------------------------------------------------------===//
+// StringReplaceOp
+//===----------------------------------------------------------------------===//
+
+def POP_StringReplaceOp : POPOp<"string.replace", [Pure]> {
+  let summary = "Replaces occurences of a substring with another string.";
+  let description = [{
+    The `pop.string.replace` operation replaces all occurences of the substring
+    `src` with the `target` substring. Because string values are backed by
+    global constants, this operation does not have a runtime representation.
+
+    Example:
+
+    ```mlir
+    // E.g. if str = "hello world", src = " world", and target = "" then the
+    // result of the following is going to be "hello".
+    %0 = pop.string.replace %str, %src, %target
+    ```
+  }];
+
+  let arguments = (ins KGEN_StringType:$str,
+                       KGEN_StringType:$src,
+                       KGEN_StringType:$target);
+  let results = (outs KGEN_StringType:$result);
+  let assemblyFormat = "$str `,` $src `,` $target attr-dict";
+
+  let hasFolder = 1;
+}
+
+
+//===----------------------------------------------------------------------===//
 // DTypeToUI8
 //===----------------------------------------------------------------------===//
 

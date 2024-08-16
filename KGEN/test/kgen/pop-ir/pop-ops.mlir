@@ -992,14 +992,18 @@ kgen.func @atomic_rmw(%ptr: !kgen.pointer<scalar<index>>,
   kgen.return
 }
 
-// CHECK-LABEL: kgen.func @string_ops(%arg0: !kgen.string) -> index
-kgen.func @string_ops(%a: !kgen.string) ->  index {
+// CHECK-LABEL: kgen.func @string_ops(%arg0: !kgen.string, %arg1: !kgen.string, %arg2: !kgen.string) -> index
+kgen.func @string_ops(%a: !kgen.string,
+                      %src: !kgen.string,
+                      %target: !kgen.string) ->  index {
   // CHECK: pop.string.address %arg0
   %0 = pop.string.address %a
   // CHECK: pop.string.size %arg0
   %1 = pop.string.size %a
   // CHECK: pop.string.concat %arg0, %arg0
   %2 = pop.string.concat %a, %a
+  // CHECK: pop.string.replace %arg0, %arg1, %arg2
+  %3 = pop.string.replace %a, %src, %target
   kgen.return %1: index
 }
 

@@ -1696,6 +1696,37 @@ OpFoldResult StringConcatOp::fold(FoldAdaptor adaptor) {
 }
 
 //===----------------------------------------------------------------------===//
+// StringReplaceOp
+//===----------------------------------------------------------------------===//
+
+static void replaceAll(std::string &str, const std::string &from,
+                       const std::string &to) {
+  if (from.empty())
+    return;
+  size_t startPos = 0;
+  while ((startPos = str.find(from, startPos)) != std::string::npos) {
+    str.replace(startPos, from.length(), to);
+    startPos += to.length();
+  }
+}
+
+OpFoldResult StringReplaceOp::fold(FoldAdaptor adaptor) {
+  auto str = dyn_cast_or_null<StringAttr>(adaptor.getStr());
+  auto src = dyn_cast_or_null<StringAttr>(adaptor.getSrc());
+  auto target = dyn_cast_or_null<StringAttr>(adaptor.getTarget());
+  if (!str || !src || !target)
+    return {};
+
+  int occurrences = str.getValue().count(src.getValue());
+  if (occurrences == 0)
+    return str;
+
+  std::string replacement = str.str();
+  replaceAll(replacement, src.str(), target.str());
+  return StringAttr::get(replacement, StringType::get(getContext()));
+}
+
+//===----------------------------------------------------------------------===//
 // DTypeToUI8
 //===----------------------------------------------------------------------===//
 
