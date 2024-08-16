@@ -29,6 +29,7 @@ struct Info:
     var name: StringLiteral
     var version: StringLiteral
     var target: __mlir_type.`!kgen.target`
+    var target_32bit: __mlir_type.`!kgen.target`
     var threads_per_warp: Int
     var warps_per_multiprocessor: Int
     var threads_per_multiprocessor: Int
@@ -90,6 +91,13 @@ alias A100 = Info(
         `data_layout = "e-i64:64-i128:128-v16:16-v32:32-n16:32:64",`,
         `simd_bit_width = 128> : !kgen.target`,
     ],
+    target_32bit=__mlir_attr[
+        `#kgen.target<triple = "nvptx64-nvidia-cuda", `,
+        `arch = "sm_80", `,
+        `features = "+ptx85", `,
+        `data_layout="e-p32:64:64-i64:64-i128:128-v16:16-v32:32-n16:32:64",`,
+        `simd_bit_width = 128> : !kgen.target`,
+    ],
     threads_per_warp=32,
     warps_per_multiprocessor=64,
     threads_per_multiprocessor=2048,
@@ -120,6 +128,13 @@ alias A10 = Info(
         `arch = "sm_86", `,
         `features = "+ptx85", `,
         `data_layout = "e-i64:64-i128:128-v16:16-v32:32-n16:32:64",`,
+        `simd_bit_width = 128> : !kgen.target`,
+    ],
+    target_32bit=__mlir_attr[
+        `#kgen.target<triple = "nvptx64-nvidia-cuda", `,
+        `arch = "sm_86", `,
+        `features = "+ptx85", `,
+        `data_layout="e-p32:64:64-i64:64-i128:128-v16:16-v32:32-n16:32:64",`,
         `simd_bit_width = 128> : !kgen.target`,
     ],
     threads_per_warp=32,
@@ -154,6 +169,13 @@ alias L4 = Info(
         `data_layout = "e-i64:64-i128:128-v16:16-v32:32-n16:32:64",`,
         `simd_bit_width = 128> : !kgen.target`,
     ],
+    target_32bit=__mlir_attr[
+        `#kgen.target<triple = "nvptx64-nvidia-cuda", `,
+        `arch = "sm_89", `,
+        `features = "+ptx85", `,
+        `data_layout="e-p32:64:64-i64:64-i128:128-v16:16-v32:32-n16:32:64",`,
+        `simd_bit_width = 128> : !kgen.target`,
+    ],
     threads_per_warp=32,
     warps_per_multiprocessor=64,
     threads_per_multiprocessor=2048,
@@ -184,6 +206,13 @@ alias H100 = Info(
         `arch = "sm_90a", `,
         `features = "+ptx85", `,
         `data_layout = "e-i64:64-i128:128-v16:16-v32:32-n16:32:64",`,
+        `simd_bit_width = 128> : !kgen.target`,
+    ],
+    target_32bit=__mlir_attr[
+        `#kgen.target<triple = "nvptx64-nvidia-cuda", `,
+        `arch = "sm_90a", `,
+        `features = "+ptx85", `,
+        `data_layout="e-p32:64:64-i64:64-i128:128-v16:16-v32:32-n16:32:64",`,
         `simd_bit_width = 128> : !kgen.target`,
     ],
     threads_per_warp=32,
