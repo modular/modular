@@ -68,6 +68,63 @@ fn _get_info_from_target[target_arch: StringLiteral]() -> Info:
 
     return A100
 
+    fn __lt__(self, other: Self) -> Bool:
+        if self.name == "sm_90a":
+            return True
+
+        return _get_compute(self.name) < _get_compute(other.name)
+
+    fn __le__(self, other: Self) -> Bool:
+        if self == other:
+            return True
+        return self < other
+
+    fn __gt__(self, other: Self) -> Bool:
+        if self.name == "sm_90a":
+            return False
+        return _get_compute(self.name) == _get_compute(other.name)
+
+    fn __ge__(self, other: Self) -> Bool:
+        if self == other:
+            return True
+        return _get_compute(self.name) >= _get_compute(other.name)
+
+    fn __eq__(self, other: Self) -> Bool:
+        return self.name == other.name
+
+    fn __ne__(self, other: Self) -> Bool:
+        return not (self == other)
+
+    fn __is__(self, other: Self) -> Bool:
+        return self == other
+
+    fn __isnot__(self, other: Self) -> Bool:
+        return self != other
+
+
+@always_inline("nodebug")
+fn _get_compute(name: String) -> Int:
+    if name == "sm_50":
+        return 50
+    elif name == "sm_60":
+        return 60
+    elif name == "sm_61":
+        return 61
+    elif name == "sm_70":
+        return 70
+    elif name == "sm_75":
+        return 75
+    elif name == "sm_80":
+        return 80
+    elif name == "sm_86":
+        return 86
+    elif name == "sm_89":
+        return 89
+    elif name == "sm_90":
+        return 90
+    else:
+        return -1
+
 
 # ===----------------------------------------------------------------------===#
 # A100
