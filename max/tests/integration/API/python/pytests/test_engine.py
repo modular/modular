@@ -14,7 +14,8 @@ from subprocess import run
 import max.driver as md
 import numpy as np
 import pytest
-from max.engine import DType, InferenceSession, TensorSpec, TorchInputSpec
+from max.dtype import DType
+from max.engine import InferenceSession, TensorSpec, TorchInputSpec
 
 DYLIB_FILE_EXTENSION = "dylib" if os.uname().sysname == "Darwin" else "so"
 
@@ -90,8 +91,8 @@ def test_devicetensor_wrong_num_inputs(
     # The engine should throw a ValueError when executing with the
     # wrong number of input tensors.
     model = session.load(mo_model_path)
-    first_tensor = md.Tensor((5,), md.DType.float32)
-    second_tensor = md.Tensor((5,), md.DType.float32)
+    first_tensor = md.Tensor((5,), DType.float32)
+    second_tensor = md.Tensor((5,), DType.float32)
     # Ensure that tensors are initialized
     for i in range(5):
         first_tensor[i] = i
@@ -112,7 +113,7 @@ def test_devicetensor_wrong_shape(
     # The engine should throw a ValueError when executing a tensor with
     # the wrong shape.
     model = session.load(mo_model_path)
-    tensor = md.Tensor((6,), md.DType.float32)
+    tensor = md.Tensor((6,), DType.float32)
     # Ensure that tensors are initialized
     for i in range(6):
         tensor[i] = i
@@ -132,7 +133,7 @@ def test_devicetensor_wrong_rank(
     # The engine should throw a ValueError when executing a tensor with
     # the wrong shape.
     model = session.load(mo_model_path)
-    tensor = md.Tensor((5, 2), md.DType.float32)
+    tensor = md.Tensor((5, 2), DType.float32)
     # Ensure that tensors are initialized
     for i in range(5):
         for j in range(2):
@@ -153,7 +154,7 @@ def test_devicetensor_wrong_dtype(
     # The engine should throw a ValueError when executing a tensor with
     # the wrong dtype.
     model = session.load(mo_model_path)
-    tensor = md.Tensor((6,), md.DType.int32)
+    tensor = md.Tensor((6,), DType.int32)
     # Ensure that tensors are initialized
     for i in range(6):
         tensor[i] = i
@@ -186,7 +187,7 @@ def test_execute_device_tensor(session: InferenceSession, mo_model_path: Path):
     # The engine should be able to take in a simple 1-d tensor and execute a
     # model with this input.
     model = session.load(mo_model_path)
-    input_tensor = md.Tensor((5,), md.DType.float32)
+    input_tensor = md.Tensor((5,), DType.float32)
     for idx in range(5):
         input_tensor[idx] = 1.0
     output = model.execute(input_tensor)
@@ -203,8 +204,8 @@ def test_execute_devicetensor_dynamic_shape(
     # Device tensors should be able to execute even when the model expects
     # dynamic shapes.
     model = session.load(dynamic_model_path)
-    tensor_one = md.Tensor((5,), md.DType.int32)
-    tensor_two = md.Tensor((5,), md.DType.int32)
+    tensor_one = md.Tensor((5,), DType.int32)
+    tensor_two = md.Tensor((5,), DType.int32)
 
     for x in range(5):
         tensor_one[x] = x
