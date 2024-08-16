@@ -296,7 +296,7 @@ static void
 getCallOpEffects(Operation &op,
                  SmallVectorImpl<std::pair<Value, OperandEffect>> &operands,
                  SmallVectorImpl<ResultEffect> &results,
-                 SmallVectorImpl<TypedAttr> &lifetimes,
+                 SmallVectorImpl<std::pair<TypedAttr, size_t>> &lifetimes,
                  CachedTypeLifetimeFinder &lifetimeFinder) {
   LITSignatureType signature;
   OperandRange callArguments = op.getOperands();
@@ -356,8 +356,7 @@ getCallOpEffects(Operation &op,
     llvm_unreachable("invalid input convention");
   };
 
-  SmallVector<Type> typesAccessibleByCallee;
-  auto addArgument = [&](Value arg, ArgConvention conv,
+  auto addArgument = [&](Value arg, ArgConvention conv, size_t argIdx,
                          bool noIndirect = false) {
     // Get normal argument effect.
     Type argType = arg.getType();
@@ -392,13 +391,14 @@ getCallOpEffects(Operation &op,
     // In addition to the direct (field-sensitive) effect of loading/storing
     // the bits, the callee may do whatever it wants with lifetimes embedded
     // in the type.  Collect all of these so we can process them.
-    typesAccessibleByCallee.push_back(argType);
+    for (auto lifetime : lifetimeFinder.findLifetimesInTypes(argType))
+      lifetimes.push_back({lifetime, argIdx});
   };
 
   for (auto [idx, arg, convention] :
        llvm::enumerate(callArguments, conventions)) {
     if (auto splat = arg.getDefiningOp<POP::VariadicSplatOp>()) {
-      addArgument(splat.getOperand(), splat.getType().getConvention());
+      addArgument(splat.getOperand(), splat.getType().getConvention(), idx);
       continue;
     }
 
@@ -413,10 +413,11 @@ getCallOpEffects(Operation &op,
     //      e.g. you can pass `a.x` through varargs and `a.y` through an inout
     //      without the compiler imagining a conflict on "a" just like other
     //      arguments.
+    // TODO(field-sensitive lifetimes): remove this hack.
     if (auto vararg = arg.getDefiningOp<POP::VariadicCreateOp>()) {
       auto varargConvention = vararg.getType().getConvention();
       for (auto varOperand : vararg.getOperands())
-        addArgument(varOperand, varargConvention);
+        addArgument(varOperand, varargConvention, idx);
       continue;
     }
 
@@ -424,6 +425,7 @@ getCallOpEffects(Operation &op,
     // arguments correctly.
     // TODO: It would be nice to handle more fine grain effects in a general way
     // on calls.  This is a hack.
+    // TODO(field-sensitive lifetimes): remove this hack.
     if (signature.isPackVarArg(idx)) {
       auto packVal = findRefPackCreate(arg);
       assert(packVal && "couldn't decode variadic pack information!");
@@ -433,13 +435,13 @@ getCallOpEffects(Operation &op,
           auto argConvention =
               signature.getPackVarArgConvention(idx + argIdxOffset);
           for (auto packOperand : pack.getOperands())
-            addArgument(packOperand, argConvention);
+            addArgument(packOperand, argConvention, idx);
 
           // Also add the pack itself so the VariadicPack doesn't get destroyed
           // too early.  We already handled all the individual elements, so
           // don't redundantly process them.  Doing so is a problem for owned
           // operands.
-          addArgument(arg, convention, true);
+          addArgument(arg, convention, idx, true);
           continue;
         }
       }
@@ -448,15 +450,7 @@ getCallOpEffects(Operation &op,
       assert(packVal.getDefiningOp<ParamConstantOp>());
     }
 
-    addArgument(arg, convention);
-  }
-
-  // Look at the types accessible by the callee to see if there are any
-  // lifetime accesses.
-  {
-    SmallVector<TypedAttr> lifetimesUsedByTypes =
-        lifetimeFinder.findLifetimesInTypes(typesAccessibleByCallee);
-    lifetimes.append(lifetimesUsedByTypes.begin(), lifetimesUsedByTypes.end());
+    addArgument(arg, convention, idx);
   }
 
   // If the result is defining an owned register value, then we treat this as
@@ -471,10 +465,12 @@ getCallOpEffects(Operation &op,
 
 /// This computes the effects that an operation has on any operands and result
 /// values. This information is used by both phases of CheckLifetimes.
+///
+/// The "lifetimes" set includes the operand # for the access.
 OverallOpValueEffect LIT::getOperationEffects(
     Operation &op, SmallVectorImpl<std::pair<Value, OperandEffect>> &operands,
     SmallVectorImpl<ResultEffect> &results,
-    SmallVectorImpl<TypedAttr> &lifetimes,
+    SmallVectorImpl<std::pair<TypedAttr, size_t>> &lifetimes,
     CachedTypeLifetimeFinder &lifetimeFinder) {
   // Debuginfo ops may reference values that aren't fully initialized, so we
   // skip over them.  These indexing operations are handled specially.
@@ -524,7 +520,7 @@ OverallOpValueEffect LIT::getOperationEffects(
   }
 
   if (auto use = dyn_cast<OwnershipUseLifetimeOp>(op)) {
-    lifetimes.push_back(use.getLifetime());
+    lifetimes.push_back({use.getLifetime(), /*operand#*/ 0});
     return {};
   }
 
@@ -595,7 +591,8 @@ OverallOpValueEffect LIT::getOperationEffects(
     for (auto o : op.getOperands())
       operands.push_back({o, OperandEffect::regConsume});
 
-    // Yield doesn't need any special processing, just handling of its operands.
+    // Yield doesn't need any special processing, just handling of its
+    // operands.
     if (isa<HLCF::YieldOp>(op))
       return {};
 
@@ -652,7 +649,7 @@ OverallOpValueEffect LIT::getOperationEffects(
   if (isa<LIT::TryOp>(op))
     return OverallOpValueEffect::tryOp;
 
-  assert(!isa<HLCF::SwitchOp>(op) && "Only created by LowerSuspention Points");
+  assert(!isa<HLCF::SwitchOp>(op) && "Only created by LowerSuspension Points");
   return OverallOpValueEffect::unknownOp;
 }
 

@@ -1135,14 +1135,20 @@ computeArgumentsLifetime(AsyncCallOp call,
                          CachedTypeLifetimeFinder &lifetimeFinder) {
   SmallVector<std::pair<Value, OperandEffect>> operands;
   SmallVector<ResultEffect> results;
-  SmallVector<TypedAttr> lifetimes;
+  SmallVector<std::pair<TypedAttr, size_t>> lifetimeUses;
   // Check lifetime accesses on the types. We need to forward this to the
   // coroutine since it is a transitive capture.
-  LIT::getOperationEffects(*call, operands, results, lifetimes, lifetimeFinder);
+  LIT::getOperationEffects(*call, operands, results, lifetimeUses,
+                           lifetimeFinder);
+
+  SmallVector<TypedAttr> lifetimes;
+
   // Collect the implicit lifetimes of the arguments.
   for (Value value : call.getOperands())
     if (auto ref = dyn_cast<RefType>(value.getType()))
       lifetimes.push_back(ref.getLifetime());
+  for (auto [lifetime, _] : lifetimeUses)
+    lifetimes.push_back(lifetime);
   return LifetimeSetAttr::get(call.getContext(), lifetimes);
 }
 

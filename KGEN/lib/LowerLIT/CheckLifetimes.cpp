@@ -1162,7 +1162,7 @@ void UninitializedValueScan::scanFunction(LIT::FuncOp func) {
 void UninitializedValueScan::scanBlock(Block &block) {
   SmallVector<std::pair<Value, OperandEffect>> operandEffects;
   SmallVector<ResultEffect> resultEffects;
-  SmallVector<TypedAttr> lifetimeEffects;
+  SmallVector<std::pair<TypedAttr, size_t>> lifetimeEffects;
   for (Operation &op : block) {
     operandEffects.clear();
     resultEffects.clear();
@@ -1267,7 +1267,7 @@ void UninitializedValueScan::scanBlock(Block &block) {
     }
 
     // Process any other indirect lifetimes accessed.
-    for (auto lifetime : lifetimeEffects)
+    for (auto [lifetime, argIdx] : lifetimeEffects)
       checkLifetimeEffect(lifetime, op);
 
     switch (overall) {
@@ -1674,7 +1674,7 @@ void DestructorInsertion::scanBlock(Block &block) {
   // Process each operation bottom-up in the block.
   SmallVector<std::pair<Value, OperandEffect>> operandEffects;
   SmallVector<ResultEffect> resultEffects;
-  SmallVector<TypedAttr> lifetimeEffects;
+  SmallVector<std::pair<TypedAttr, size_t>> lifetimeEffects;
   for (Operation &op : llvm::reverse(block)) {
     operandEffects.clear();
     resultEffects.clear();
@@ -1778,7 +1778,7 @@ void DestructorInsertion::scanBlock(Block &block) {
     }
 
     // Process any other indirect lifetimes accessed.
-    for (auto lifetime : lifetimeEffects)
+    for (auto [lifetime, argIdx] : lifetimeEffects)
       checkLifetimeEffect(lifetime, op);
   }
 }
