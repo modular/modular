@@ -1212,20 +1212,38 @@ fn mha_decoding_single_batch[
     # TODO: generalize with layout tensor's masked copy
     var q_offset = depth * head_idx
 
-    @parameter
-    for i in range(Int(depth // BK)):
-        if tid < BK // simd_size:
-            var vec = q_ptr.load[
+    for i in range(tid * simd_size, BM * depth, BlockDim.x() * simd_size):
+        var vec = SIMD[q_type, simd_size](0.0)
+        if i < depth:
+            vec = q_ptr.load[
                 width=simd_size, alignment = alignof[SIMD[q_type, simd_size]]()
-            ](q_offset + i * BK + tid * simd_size)
-            (q_smem + i * BM * BK + tid * simd_size).store[
-                alignment = alignof[SIMD[q_type, simd_size]]()
-            ](vec)
-        elif tid < BM * BK // simd_size:
+            ](q_offset + i)
+        var row: UInt
+        var col: UInt
+        row, col = divmod(i, depth)
+        var chunk_id: UInt
+        var in_chunk_id: UInt
+        chunk_id, in_chunk_id = divmod(col, BK)
+        if i < BM * depth:
             q_smem.store[alignment = alignof[SIMD[q_type, simd_size]]()](
-                i * BM * BK + tid * simd_size,
-                SIMD[q_type, simd_size](0.0),
+                chunk_id * BM * BK + row * BK + in_chunk_id,
+                vec,
             )
+
+    # @parameter
+    # for i in range(Int(depth // BK)):
+    #     if tid < BK // simd_size:
+    #         var vec = q_ptr.load[
+    #             width=simd_size, alignment = alignof[SIMD[q_type, simd_size]]()
+    #         ](q_offset + i * BK + tid * simd_size)
+    #         (q_smem + i * BM * BK + tid * simd_size).store[
+    #             alignment = alignof[SIMD[q_type, simd_size]]()
+    #         ](vec)
+    #     elif tid < BM * BK // simd_size:
+    #         q_smem.store[alignment = alignof[SIMD[q_type, simd_size]]()](
+    #             i * BM * BK + tid * simd_size,
+    #             SIMD[q_type, simd_size](0.0),
+    #         )
 
     # Loop over Key and Value tiles
     for kv_tile_start_row in range(0, num_keys, BN):
