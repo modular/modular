@@ -9,6 +9,6 @@
 # UNSUPPORTED: asan
 
 # Invoking the subcommand with `--help` prints its help text.
-# RUN: mojo debug -Xlldb --version | FileCheck %s
+# RUN: mojo debug -X --version | FileCheck %s
 
 # CHECK: lldb version

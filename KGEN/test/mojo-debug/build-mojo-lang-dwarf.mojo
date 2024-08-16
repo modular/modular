@@ -11,12 +11,12 @@
 
 # COM: Using the default language Mojo
 # RUN: mojo build --debug-level=full -O0 %s -o %t
-# RUN: mojo debug -Xlldb -o -Xlldb 'image lookup -vs build-mojo-lang-dwarf::foo()' -Xlldb -b %t | FileCheck %s --check-prefix CHECK-MOJO
+# RUN: mojo debug -X -o -X 'image lookup -vs build-mojo-lang-dwarf::foo()' -X -b %t | FileCheck %s --check-prefix CHECK-MOJO
 # CHECK-MOJO: language = "mojo"
 
 # COM: Setting explicitly the language C
 # RUN: mojo build --debug-level full -O0 --debug-info-language C %s -o %t
-# RUN: mojo debug -Xlldb -o -Xlldb 'image lookup -vs build-mojo-lang-dwarf::foo()' -Xlldb -b %t | FileCheck %s --check-prefix CHECK-C
+# RUN: mojo debug -X -o -X 'image lookup -vs build-mojo-lang-dwarf::foo()' -X -b %t | FileCheck %s --check-prefix CHECK-C
 
 
 # CHECK-C: language = "c"
