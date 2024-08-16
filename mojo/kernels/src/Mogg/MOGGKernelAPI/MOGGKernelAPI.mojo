@@ -11,6 +11,8 @@ from nn.mha import fused_attention as cpu_fused_attention_impl
 from tensor_utils import UnsafeTensorSlice
 
 from utils.index import StaticIntTuple
+from linalg.matmul import matmul as _matmul
+from runtime.asyncrt import MojoCallContextPtr
 
 
 @compiler.register("imposter_add")
@@ -40,6 +42,7 @@ struct Foo:
 fn toNDBuffer[
     out_dtype: DType, out_rank: Int
 ](tensor: UnsafeTensorSlice) -> NDBuffer[out_dtype, out_rank]:
+    # TODO(GRA-734): forward other static params automatically
     return rebind[NDBuffer[out_dtype, out_rank]](
         NDBuffer[tensor.type, tensor.rank](
             tensor._ptr, tensor.get_static_spec().shape
@@ -112,3 +115,56 @@ struct ImposterMHANoMask:
         scale: UnsafeTensorSlice,
     ) -> StaticIntTuple[q.rank]:
         return q.get_static_spec().shape
+
+
+# c = a @ b, should support CPU and GPU
+@compiler.register("imposter_matmul")
+struct ImposterMatmul:
+    @staticmethod
+    fn execute[
+        synchronous: Bool,
+        target: StringLiteral,
+    ](
+        c: UnsafeTensorSlice,
+        a: UnsafeTensorSlice,
+        b: UnsafeTensorSlice,
+        ctx: MojoCallContextPtr,
+    ):
+        alias rank = a.rank
+        alias a_dtype = a.type
+        alias b_dtype = b.type
+        alias c_dtype = c.type
+
+        # Convert everything to NDBuffer
+        var c_buffer = toNDBuffer[c_dtype, 2](c)
+        var a_buffer = toNDBuffer[a_dtype, 2](a)
+        var b_buffer = toNDBuffer[b_dtype, 2](b)
+        _matmul[
+            a_dtype,
+            a_buffer.shape,
+            b_dtype,
+            b_buffer.shape,
+            c_dtype,
+            c_buffer.shape,
+            False,
+            False,
+            False,
+            None,
+            saturated_vnni=False,
+            single_thread_blocking_override=synchronous,
+            target=target,
+        ](
+            c_buffer,
+            a_buffer,
+            b_buffer,
+            ctx,
+        )
+
+    @staticmethod
+    fn shape(
+        a: UnsafeTensorSlice,
+        b: UnsafeTensorSlice,
+    ) -> StaticIntTuple[2]:
+        var shape = a.get_static_spec().shape
+        shape[1] = b.get_static_spec().shape[1]
+        return rebind[StaticIntTuple[2]](shape)
