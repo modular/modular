@@ -168,3 +168,26 @@ struct ImposterMatmul:
         var shape = a.get_static_spec().shape
         shape[1] = b.get_static_spec().shape[1]
         return rebind[StaticIntTuple[2]](shape)
+
+
+@compiler.register("test_shape_param")
+struct StaticShapeTest:
+    @staticmethod
+    fn execute[
+        synchronous: Bool,
+        target: StringLiteral,
+    ](out: UnsafeTensorSlice, x: UnsafeTensorSlice):
+        alias x_shape = compiler.specsof[x.type, x.rank]("x").shape
+
+        @parameter
+        @always_inline
+        fn func[
+            width: Int
+        ](idx: StaticIntTuple[out.rank]) -> SIMD[out.type, width]:
+            return rebind[SIMD[out.type, width]](x.load[width](idx))
+
+        compiler.foreach[func](out)
+
+    @staticmethod
+    fn shape(x: UnsafeTensorSlice) -> StaticIntTuple[x.rank]:
+        return x.get_static_spec().shape
