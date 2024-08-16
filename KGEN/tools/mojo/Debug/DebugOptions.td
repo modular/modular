@@ -47,3 +47,8 @@ def cudaGDB: Flag<["--", "-"], "cuda-gdb">,
   HelpText<"Uses cuda-gdb instead of LLDB for debugging. In this mode, it's "
   "possible to step into GPU code, but the CPU debugging experience is "
   "degraded.">;
+
+defm cudaGDBPath: CommandOption<["--", "-"], "cuda-gdb-path",
+  cudaGDBOptionGroup, Index<2>, MetaVarName<"CUDA_GDB_PATH">,
+  HelpText<"Uses the given CUDA_GDB_PATH instead of looking for cuda-gdb in "
+  "the PATH environment variable.">>;

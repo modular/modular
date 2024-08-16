@@ -46,6 +46,14 @@ getLLDBArgs(llvm::opt::InputArgList &parsedArgs) {
   return lldbArgs;
 }
 
+static std::optional<std::string>
+getCudaGDBPath(llvm::opt::InputArgList &parsedArgs) {
+  StringRef path = parsedArgs.getLastArgValue(options::OPT_cudaGDBPath);
+  if (!path.empty())
+    return path.str();
+  return {};
+}
+
 auto getCompilationOptions(llvm::opt::InputArgList &parsedArgs) {
   return parsedArgs.filtered(options::OPT_CompilationOptionGroup,
                              options::OPT_ExperimentalCompilationOptionGroup,
@@ -136,6 +144,10 @@ static int debug(const State &state) {
 
   bool dryRun = parsedArgs.hasArg(options::OPT_dry_run);
   bool useCudaGDB = parsedArgs.hasArg(options::OPT_cudaGDB);
+  std::optional<std::string> cudaGdbPath = getCudaGDBPath(parsedArgs);
+  if (cudaGdbPath.has_value() && !useCudaGDB) {
+    return state.reportError(Twine("--cuda-gdb-path requires --cuda-gdb"));
+  }
   StringRef rpcTerminal =
       parsedArgs.getLastArgValue(options::OPT_terminal, "console");
   SmallVector<std::string> lldbArgs = getLLDBArgs(parsedArgs);
@@ -193,7 +205,7 @@ static int debug(const State &state) {
     runArgs.insert(runArgs.begin(), *target);
 
     if (useCudaGDB)
-      return invokeCudaGdb(state, lldbArgs, runArgs, dryRun);
+      return invokeCudaGdb(state, lldbArgs, runArgs, cudaGdbPath, dryRun);
     else
       return invokeLLDB(state, lldbArgs, runArgs, dryRun);
   }
@@ -224,7 +236,7 @@ static int debug(const State &state) {
         llvm::append_values(lldbArgs, std::string("-n"),
                             resolvePath(processName->str()));
       if (useCudaGDB)
-        return invokeCudaGdb(state, lldbArgs, {}, dryRun);
+        return invokeCudaGdb(state, lldbArgs, {}, cudaGdbPath, dryRun);
       else
         return invokeLLDB(state, lldbArgs, {}, dryRun);
     }
@@ -236,7 +248,7 @@ static int debug(const State &state) {
 
   // This is a regular cli passthrough.
   if (useCudaGDB)
-    return invokeCudaGdb(state, lldbArgs, {}, dryRun);
+    return invokeCudaGdb(state, lldbArgs, {}, cudaGdbPath, dryRun);
   else
     return invokeLLDB(state, lldbArgs, {}, dryRun);
 }
