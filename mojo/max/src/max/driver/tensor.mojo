@@ -49,26 +49,34 @@ struct Tensor[type: DType, rank: Int](CollectionElement, TensorLike):
         device_tensor._storage = DeviceMemory()
         self._device_memory_impl_ptr = tmp^._steal_impl_ptr()
 
-    fn __init__(inout self, shape: Tuple) raises:
-        var device = cpu_device()
+    fn __init__(
+        inout self, shape: Tuple, device: Optional[Device] = None
+    ) raises:
+        """Creates tensor with given shape on the given device. If device is
+        not given tensor will be created on cpu.
+
+        Args:
+            shape: Shape of the tensor.
+            device: Device on which tensor is to be allocated.
+        """
         var spec = TensorSpec(type, shape)
-        var dt = device.allocate(spec)
+        var dev = device.value() if device else cpu_device()
+        var dt = dev.allocate(spec)
         self = Self(dt)
 
-    fn __init__(inout self, shape: Tuple, device: Device) raises:
-        var spec = TensorSpec(type, shape)
-        var dt = device.allocate(spec)
-        self = Self(dt)
+    fn __init__(
+        inout self, shape: TensorShape, device: Optional[Device] = None
+    ) raises:
+        """Creates tensor with given shape on the given device. If device is
+        not given tensor will be created on cpu.
 
-    fn __init__(inout self, shape: TensorShape) raises:
-        var device = cpu_device()
+        Args:
+            shape: Shape of the tensor.
+            device: Device on which tensor is to be allocated.
+        """
         var spec = TensorSpec(type, shape)
-        var dt = device.allocate(spec)
-        self = Self(dt)
-
-    fn __init__(inout self, shape: TensorShape, device: Device) raises:
-        var spec = TensorSpec(type, shape)
-        var dt = device.allocate(spec)
+        var dev = device.value() if device else cpu_device()
+        var dt = dev.allocate(spec)
         self = Self(dt)
 
     fn __init__(inout self, tensor: OldTensor[type]) raises:
