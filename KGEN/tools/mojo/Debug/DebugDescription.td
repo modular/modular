@@ -33,7 +33,7 @@ def DebugDescription : MojoCommandDescription<
   "* Start the LLDB command-line interface.\n\n"
   "        mojo debug [options]\n\n"
   "    Launches the LLDB CLI with support for debugging Mojo programs. This"
-  " command only supports LLDB options (via the `--Xlldb` option).\n\n"
+  " command only supports LLDB options (via the `--X` option).\n\n"
   "You can also select one of two interfaces for the debug session:\n\n"
   "* LLDB CLI: By default, all debug session modes are launched using the "
   "regular LLDB command-line interface.\n\n"

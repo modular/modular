@@ -15,15 +15,15 @@
 include "Support/Driver/DriverCommand.td"
 
 //===----------------------------------------------------------------------===//
-// LLDB Options
+// Debugger Options
 //===----------------------------------------------------------------------===//
 
-def LLDBOptionGroup : OptionGroup<"LLDB options">, Index<1>;
+def DebuggerOptionGroup : OptionGroup<"Debugger options">, Index<1>;
 
-defm xlldb: CommandOption<["--", "-"], "Xlldb",
-  LLDBOptionGroup, Index<1>, MetaVarName<"ARG">,
-  HelpText<"Passes ARG as an argument to LLDB when the debug session is "
-  "launched using the LLDB command-line interface. This option can be "
+defm xdebugger: CommandOption<["--", "-"], "X",
+  DebuggerOptionGroup, Index<1>, MetaVarName<"ARG">,
+  HelpText<"Passes ARG as an argument to the debugger when the debug session "
+  "is launched using the debugger command-line interface. This option can be "
   "specified multiple times. It is ignored when using the RPC mode.">>;
 
 //===----------------------------------------------------------------------===//

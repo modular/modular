@@ -4,12 +4,12 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-# RUN: %debug -Xlldb -b -Xlldb -o -Xlldb 'b jit.mojo:9' -Xlldb -o -Xlldb 'run' '%S/Inputs/jit.mojo' | FileCheck %s
+# RUN: %debug -X -b -X -o -X 'b jit.mojo:9' -X -o -X 'run' '%S/Inputs/jit.mojo' | FileCheck %s
 
 # COM: Here we test debugging of a source file passed by relative path.
 # RUN: mkdir -p debug-jit/Inputs
 # RUN: cp '%S/Inputs/jit.mojo' debug-jit/Inputs/jit.mojo
-# RUN: %debug -Xlldb -b -Xlldb -o -Xlldb 'b jit.mojo:9' -Xlldb -o -Xlldb run  'debug-jit/Inputs/jit.mojo' | FileCheck %s
+# RUN: %debug -X -b -X -o -X 'b jit.mojo:9' -X -o -X run  'debug-jit/Inputs/jit.mojo' | FileCheck %s
 
 # CHECK-NOT: hello
 # CHECK: Process {{.*}} stopped

@@ -39,11 +39,11 @@ static ErrorOr<std::string> getMojoDriver() {
 }
 
 static SmallVector<std::string>
-getLLDBArgs(llvm::opt::InputArgList &parsedArgs) {
-  SmallVector<std::string> lldbArgs;
-  for (StringRef value : parsedArgs.getAllArgValues(options::OPT_xlldb))
-    lldbArgs.push_back(value.str());
-  return lldbArgs;
+getDebuggerArgs(llvm::opt::InputArgList &parsedArgs) {
+  SmallVector<std::string> debuggerArgs;
+  for (StringRef value : parsedArgs.getAllArgValues(options::OPT_xdebugger))
+    debuggerArgs.push_back(value.str());
+  return debuggerArgs;
 }
 
 static std::optional<std::string>
@@ -150,7 +150,7 @@ static int debug(const State &state) {
   }
   StringRef rpcTerminal =
       parsedArgs.getLastArgValue(options::OPT_terminal, "console");
-  SmallVector<std::string> lldbArgs = getLLDBArgs(parsedArgs);
+  SmallVector<std::string> debuggerArgs = getDebuggerArgs(parsedArgs);
   bool isJITDebugging = target && isMojoFile(*target);
   auto compilationOptions = getCompilationOptions(parsedArgs);
 
@@ -205,9 +205,9 @@ static int debug(const State &state) {
     runArgs.insert(runArgs.begin(), *target);
 
     if (useCudaGDB)
-      return invokeCudaGdb(state, lldbArgs, runArgs, cudaGdbPath, dryRun);
+      return invokeCudaGdb(state, debuggerArgs, runArgs, cudaGdbPath, dryRun);
     else
-      return invokeLLDB(state, lldbArgs, runArgs, dryRun);
+      return invokeLLDB(state, debuggerArgs, runArgs, dryRun);
   }
 
   std::optional<StringRef> pid;
@@ -231,14 +231,14 @@ static int debug(const State &state) {
       return 0;
     } else {
       if (pid)
-        llvm::append_values(lldbArgs, std::string("-p"), pid->str());
+        llvm::append_values(debuggerArgs, std::string("-p"), pid->str());
       if (processName)
-        llvm::append_values(lldbArgs, std::string("-n"),
+        llvm::append_values(debuggerArgs, std::string("-n"),
                             resolvePath(processName->str()));
       if (useCudaGDB)
-        return invokeCudaGdb(state, lldbArgs, {}, cudaGdbPath, dryRun);
+        return invokeCudaGdb(state, debuggerArgs, {}, cudaGdbPath, dryRun);
       else
-        return invokeLLDB(state, lldbArgs, {}, dryRun);
+        return invokeLLDB(state, debuggerArgs, {}, dryRun);
     }
   }
 
@@ -248,9 +248,9 @@ static int debug(const State &state) {
 
   // This is a regular cli passthrough.
   if (useCudaGDB)
-    return invokeCudaGdb(state, lldbArgs, {}, cudaGdbPath, dryRun);
+    return invokeCudaGdb(state, debuggerArgs, {}, cudaGdbPath, dryRun);
   else
-    return invokeLLDB(state, lldbArgs, {}, dryRun);
+    return invokeLLDB(state, debuggerArgs, {}, dryRun);
 }
 
 void M::registerDebugSubcommand(SubcommandRegistry &registry) {

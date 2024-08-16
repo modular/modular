@@ -31,8 +31,8 @@ config.substitutions.append(
     (
         "%debug",
         (
-            f"{config.lldb_env} mojo debug -Xlldb --source-quietly -Xlldb -S "
-            f"-Xlldb {config.lit_lldb_init}"
+            f"{config.lldb_env} mojo debug -X --source-quietly -X -S "
+            f"-X {config.lit_lldb_init}"
         ),
     )
 )

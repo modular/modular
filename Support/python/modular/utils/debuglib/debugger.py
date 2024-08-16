@@ -38,7 +38,7 @@ def _load_lldb() -> Any:
     if lldb is None:
         # Fortunately the path to the module can be gotten from LLDB itself.
         lldb_lib = subprocess.check_output(
-            ["mojo", "debug", "-Xlldb=-P"], text=True
+            ["mojo", "debug", "-X=-P"], text=True
         ).strip()
         if lldb_lib != "<COULD NOT FIND PATH>":
             sys.path.insert(0, lldb_lib)

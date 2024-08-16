@@ -9,7 +9,7 @@ lit_tests(
     ]),
     custom_substitutions = {
         # Mirrored from lit.cfg.py to avoid searching $PATH for 'mojo'
-        "%debug": "$(rlocationpath //KGEN/tools/mojo) debug -Xlldb -x -Xlldb --source-quietly -Xlldb -S -Xlldb ../../../utils/lit-lldb-init.in",
+        "%debug": "$(rlocationpath //KGEN/tools/mojo) debug -X -x -X --source-quietly -X -S -X ../../../utils/lit-lldb-init.in",
     },
     data = glob(["Inputs/*.mojo"]) + [
         "//KGEN:CompilerRT",
