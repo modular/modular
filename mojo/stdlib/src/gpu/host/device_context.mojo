@@ -250,7 +250,10 @@ struct DeviceContext:
     ) > 0
 
     # We only support CUDA architectures sm_80 and above.
-    alias min_supported_cuda_arch = 8.0
+    alias MIN_COMPUTE_CAPABILITY = 8.0
+
+    # We only support CUDA versions 12.0 and above.
+    alias MIN_DRIVER_VERSION = 12.0
 
     # Default initializer for all existing cases outside MGP; this currently
     # includes tests, benchmarks, Driver API. The tests and benchmarks (all of
@@ -494,8 +497,9 @@ struct DeviceContext:
         """Returns whether the current CUDA device is compatible with MAX."""
         if (
             self.cuda_context.get_compute_capability()
-            < self.min_supported_cuda_arch
+            < Self.MIN_COMPUTE_CAPABILITY
         ):
-            raise Error(
-                "MAX only supports CUDA architectures `sm_80` or higher"
-            )
+            raise Error("MAX only supports CUDA Ampere architectures or higher")
+
+        if self.cuda_context.get_version() < Self.MIN_DRIVER_VERSION:
+            raise Error("MAX not supported using current GPU driver")

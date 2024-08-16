@@ -351,3 +351,8 @@ struct Context:
     fn get_compute_capability(self) raises -> Float64:
         """Returns the device compute capability version."""
         return self.device.compute_capability()
+
+    fn get_version(self) raises -> Float64:
+        """Returns the cuda version."""
+        var cuda_version = self.device.cuda_version()
+        return cuda_version[0] + Float64(cuda_version[1]) / 1000
