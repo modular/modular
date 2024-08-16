@@ -3,6 +3,21 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
+"""Defines tensor type, which is an owned, indexible buffer allocated on a given
+device.
+
+For example, a tensor can be created and used like this:
+
+```mojo
+from max.driver import Tensor
+
+def main():
+    tensor = Tensor[DType.float32, rank=2]((1, 2))
+    tensor[0, 0] = 1.0
+```
+
+"""
+
 from .device import Device, DeviceMemory, DeviceTensor
 from .tensor_slice import TensorSlice
 from max.tensor import TensorSpec, TensorShape
@@ -19,6 +34,8 @@ from ._utils import _convert_from
 
 
 struct Tensor[type: DType, rank: Int](CollectionElement, TensorLike):
+    """An owned, indexible buffer type."""
+
     var _ptr: UnsafePointer[Scalar[type]]
     var _spec: StaticTensorSpec[type, rank]
     var _strides: StaticIntTuple[rank]
@@ -32,6 +49,9 @@ struct Tensor[type: DType, rank: Int](CollectionElement, TensorLike):
     var _device_memory_impl_ptr: UnsafePointer[NoneType]
 
     fn __init__(inout self) raises:
+        """Default constructor for Tensor. Accessing the elements of default
+        constructed tensor is undefined behavior.
+        """
         self._ptr = UnsafePointer[Scalar[type]]()
         self._spec = StaticTensorSpec[type, rank](StaticIntTuple[rank]())
         self._strides = StaticIntTuple[rank]()
@@ -40,6 +60,11 @@ struct Tensor[type: DType, rank: Int](CollectionElement, TensorLike):
         self._device_memory_impl_ptr = UnsafePointer[NoneType]()
 
     fn __init__(inout self, owned device_tensor: DeviceTensor) raises:
+        """Creates a tensor from DeviceTensor.
+
+        Args:
+            device_tensor: DeviceTensor to create tensor from.
+        """
         self._device = device_tensor.device()
         self.name = device_tensor.name()
         self._spec = device_tensor.spec
@@ -89,6 +114,11 @@ struct Tensor[type: DType, rank: Int](CollectionElement, TensorLike):
         self = _convert_from[rank=rank](tensor)
 
     fn __moveinit__(inout self, owned existing: Self):
+        """Move constructor for Tensor.
+
+        Args:
+            existing: Instance to move from.
+        """
         self._ptr = existing._ptr
         self._spec = existing._spec^
         self._strides = existing._strides
@@ -96,6 +126,7 @@ struct Tensor[type: DType, rank: Int](CollectionElement, TensorLike):
         self.name = existing.name^
         self._device_memory_impl_ptr = existing._device_memory_impl_ptr
 
+    @doc_private
     fn __copyinit__(inout self, existing: Self):
         # This temporarily exists so that we can store Tensor in a List
         # TODO(MSTDL-467): Once Copyable requirement on List is removed, this
@@ -109,6 +140,11 @@ struct Tensor[type: DType, rank: Int](CollectionElement, TensorLike):
         self._device_memory_impl_ptr = existing._device_memory_impl_ptr
 
     fn spec(self) -> TensorSpec:
+        """Gets the spec of tensor.
+
+        Returns
+            Spec of the tensor.
+        """
         return self._spec.get_tensor_spec()
 
     @always_inline
@@ -159,6 +195,17 @@ struct Tensor[type: DType, rank: Int](CollectionElement, TensorLike):
     fn __getitem__(
         ref [_]self: Self, *slices: Slice
     ) raises -> TensorSlice[type, rank, __lifetime_of(self)]:
+        """Returns a view of the tensor conforming to given slices. If given
+        a single slice `:` the view would point to the entire tensor. The
+        returned slice has the lifetime of tensor and will extend the lifetime
+        of tensor accordingly.
+
+        Args:
+          slices: Dimension slices to slice against.
+
+        Returns:
+          View of the tensor according to given slices.
+        """
         if len(slices) > rank:
             raise "len(slices) exceeds rank"
         return TensorSlice(self, self._canonicalize_slices(slices))
@@ -168,6 +215,16 @@ struct Tensor[type: DType, rank: Int](CollectionElement, TensorLike):
         self,
         *slices: Slice,
     ) raises -> UnsafeTensorSlice[type, rank]:
+        """Returns a view of the tensor conforming to given slices. If given
+        a single slice `:` the view would point to the entire tensor. The caller
+        is responsible to make sure tensor outlives the returned slice.
+
+        Args:
+          slices: Dimension slices to slice against.
+
+        Returns:
+          View of the tensor according to given slices.
+        """
         if len(slices) > rank:
             raise "len(slices) exceeds rank"
         return UnsafeTensorSlice[type, rank](
@@ -185,10 +242,16 @@ struct Tensor[type: DType, rank: Int](CollectionElement, TensorLike):
         return self._device
 
     fn to_device_tensor(owned self) raises -> DeviceTensor:
+        """Converts the tensor to a DeviceTensor.
+
+        Returns:
+            DeviceTensor pointing to the memory owned by tensor.
+        """
         var spec = self._spec.get_tensor_spec()
         return DeviceTensor(DeviceMemory(self^), spec)
 
     fn __del__(owned self):
+        """Destructor for the tensor."""
         _ = DeviceMemory(
             self._device_memory_impl_ptr,
             self._spec.get_tensor_spec().bytecount(),
@@ -211,8 +274,12 @@ struct Tensor[type: DType, rank: Int](CollectionElement, TensorLike):
         return rebind[UnsafePointer[Scalar[__type]]](self._ptr)
 
     fn take(inout self) raises -> Self:
-        """The returned value takes self's resources and replaces them with default
-        initialized values."""
+        """Takes self's resources and replaces them with default
+        initialized values.
+
+        Returns:
+            An instance of tensor.
+        """
         var tmp = Self()
         swap(tmp, self)
         return tmp
@@ -270,14 +337,14 @@ struct Tensor[type: DType, rank: Int](CollectionElement, TensorLike):
         )
         writer.write(")")
 
-    fn move_to(owned self, dev: Device) raises -> Self:
-        """Returns self if already allocated on dev, otherwise copy the contents
-        of self to dev.
+    fn move_to(owned self, device: Device) raises -> Self:
+        """Returns self if already allocated on device, otherwise copy the contents
+        of self to device.
 
         Args:
-            dev: The Device of the returned buffer.
+            device: The Device of the returned buffer.
 
         Returns:
             Instance of Tensor allocated on given device.
         """
-        return self^.to_device_tensor().move_to(dev).to_tensor[type, rank]()
+        return self^.to_device_tensor().move_to(device).to_tensor[type, rank]()
