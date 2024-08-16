@@ -46,28 +46,6 @@ struct Info:
     var max_thread_block_size: Int
     var flops: Flops
 
-
-# ===----------------------------------------------------------------------===#
-# _get_info_from_target
-# ===----------------------------------------------------------------------===#
-
-
-@always_inline
-fn _get_info_from_target[target_arch: StringLiteral]() -> Info:
-    constrained[target_arch in ("sm_80", "sm_86", "sm_89", "sm_90", "sm_90a")]()
-
-    @parameter
-    if target_arch == "sm_80":
-        return A100
-    elif target_arch == "sm_86":
-        return A10
-    elif target_arch == "sm_89":
-        return L4
-    elif target_arch in ("sm_90", "sm_90a"):
-        return H100
-
-    return A100
-
     fn __lt__(self, other: Self) -> Bool:
         if self.name == "sm_90a":
             return True
@@ -100,6 +78,28 @@ fn _get_info_from_target[target_arch: StringLiteral]() -> Info:
 
     fn __isnot__(self, other: Self) -> Bool:
         return self != other
+
+
+# ===----------------------------------------------------------------------===#
+# _get_info_from_target
+# ===----------------------------------------------------------------------===#
+
+
+@always_inline
+fn _get_info_from_target[target_arch: StringLiteral]() -> Info:
+    constrained[target_arch in ("sm_80", "sm_86", "sm_89", "sm_90", "sm_90a")]()
+
+    @parameter
+    if target_arch == "sm_80":
+        return A100
+    elif target_arch == "sm_86":
+        return A10
+    elif target_arch == "sm_89":
+        return L4
+    elif target_arch in ("sm_90", "sm_90a"):
+        return H100
+
+    return A100
 
 
 @always_inline("nodebug")
