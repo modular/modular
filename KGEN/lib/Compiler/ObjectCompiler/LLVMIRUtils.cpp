@@ -478,7 +478,7 @@ void LLVMModulePerFunctionSplitterImpl::split(LLVMSplitProcessFn processFn) {
     splitValues.insert(splitDeps.begin(), splitDeps.end());
   };
 
-  int64_t count = 0;
+  [[maybe_unused]] int64_t count = 0;
   SmallVector<const llvm::GlobalValue *> toSplit;
   for (auto &global : mainModule->globals()) {
     if (global.hasInternalLinkage() || global.hasPrivateLinkage()) {

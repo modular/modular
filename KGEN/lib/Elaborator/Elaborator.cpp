@@ -157,7 +157,8 @@ StringAttr ParamNode::getMangledName() {
 
   // Bind all parameter values in this scope.
   ArrayRef<TypedAttr> inputParamValues = inputParams.getValue();
-  ArrayRef<ParamDeclAttr> inputParamDecls = gen.getInputParams();
+  [[maybe_unused]] ArrayRef<ParamDeclAttr> inputParamDecls =
+      gen.getInputParams();
   assert(inputParamValues.size() == inputParamDecls.size() &&
          "incorrect # input parameter values");
 
