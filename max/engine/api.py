@@ -6,20 +6,18 @@
 
 from __future__ import annotations
 
-from enum import Enum
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Type, Union, overload
 
 import numpy as np
-from max._engine import DType as _DType
 from max._engine import FrameworkFormat as _FrameworkFormat
 from max._engine import InferenceSession as _InferenceSession
 from max._engine import Model as _Model
+from max._engine import TensorData as _TensorData
 from max._engine import TensorSpec as _TensorSpec
 from max._engine import TorchInputSpec as _TorchInputSpec
-from max._engine import TensorData as _TensorData
-from max.driver import DType as DriverDType
 from max.driver import Tensor
+from max.dtype import DType
 
 InputShape = Optional[List[Union[int, str, None]]]
 CustomExtensionType = Union[str, Path, Any]
@@ -176,8 +174,7 @@ class Model:
                 [arg._impl for arg in args]
             )
             return [
-                Tensor((), DriverDType.unknown, _impl=result)
-                for result in results
+                Tensor((), DType.unknown, _impl=result) for result in results
             ]
 
         # Wrapping the tensors happens by recording their addresses, which does
@@ -224,36 +221,6 @@ class Model:
                 print(f'name: {tensor.name}, shape: {tensor.shape}, dtype: {tensor.dtype}')
         """
         return [TensorSpec._init(spec) for spec in self._impl.output_metadata]
-
-
-class DType(Enum):
-    """The tensor data type."""
-
-    bool = 0
-    int8 = 1
-    int16 = 2
-    int32 = 3
-    int64 = 4
-    uint8 = 5
-    uint16 = 6
-    uint32 = 7
-    uint64 = 8
-    float16 = 9
-    float32 = 10
-    float64 = 11
-    bfloat16 = 12
-    unknown = 13
-
-    @classmethod
-    def _from(cls, dtype: _DType):
-        obj = cls.__dict__[dtype.name]
-        return obj
-
-    def _to(self):
-        return _DType.__dict__[self.name]
-
-    def __repr__(self) -> str:
-        return self.name
 
 
 class TensorSpec:

@@ -8,9 +8,9 @@ from __future__ import annotations
 from typing import Any, Tuple
 
 from max._driver import Tensor as _Tensor
+from max.dtype import DType
 
 from .driver import CPU
-from .dtype import DType
 
 
 class Tensor:
