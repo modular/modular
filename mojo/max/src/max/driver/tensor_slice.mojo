@@ -3,6 +3,20 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
+"""Represents a sliced view of a tensor. The slice has lifetime same as that of the
+tensor from which it is created.
+
+For example, you can create a TensorSlice and use it like this:
+
+```mojo
+from max.driver import Tensor
+
+def main():
+    tensor = Tensor[DType.float32, rank=3]((1, 2, 3))
+    slice_one = tensor[:]
+```
+
+"""
 from .tensor import Tensor
 from max.tensor import StaticTensorSpec, TensorSpec
 from max._tensor_utils import TensorLike
@@ -26,10 +40,16 @@ struct TensorSlice[
     rank: Int,
     lifetime: AnyLifetime[is_mutable].type,
 ](TensorLike):
+    """Sliced view of a tensor. This is safe to use even after the last use of
+    tensor from which it is created. For creating a slice use the __getitem__
+    method defined in tensor.
+    """
+
     alias _ref_type = Reference[Tensor[type, rank], lifetime]
     var _ref: Self._ref_type
     var _unsafe_slice: UnsafeTensorSlice[type, rank]
 
+    @doc_private
     fn __init__(
         inout self, tensor: Self._ref_type, slices: InlineArray[Slice, rank]
     ):
@@ -49,9 +69,19 @@ struct TensorSlice[
         return self._unsafe_slice.get_static_spec()
 
     fn spec(self) -> TensorSpec:
+        """Gets the spec of the slice.
+
+        Returns:
+            Spec of slice as TensorSpec.
+        """
         return self._unsafe_slice._spec.get_tensor_spec()
 
     fn unsafe_ptr[__type: DType = type](self) -> UnsafePointer[Scalar[__type]]:
+        """Gets pointer to start of the slice.
+
+        Returns:
+            Pointer to the start of the slice.
+        """
         return rebind[UnsafePointer[Scalar[__type]]](self._unsafe_slice._ptr)
 
     @always_inline
