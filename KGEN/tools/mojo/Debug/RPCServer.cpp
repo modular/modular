@@ -6,11 +6,15 @@
 
 #include "RPCServer.h"
 #include "Support/Configuration.h"
+#include "Support/FileSystemExtras.h"
 #include "Support/Process.h"
+#include "mlir/Support/IndentedOstream.h"
 #include "llvm/Support/JSON.h"
 #include "llvm/Support/Process.h"
 #include <filesystem>
 #include <future>
+#include <iostream>
+#include <set>
 #include <thread>
 
 #if defined(_WIN32)
@@ -28,9 +32,95 @@ using namespace M;
 
 namespace json = llvm::json;
 
-/// Create an object with the common fields that are sent to the RPC server
-/// to start the different kinds of requests.
-static ErrorOr<json::Object> createBasicRPCPayload() {
+StringRef protocolSeparator = "\n----\n";
+
+namespace {
+struct ResponseConnect {
+  std::string kind;
+  bool success;
+  std::optional<std::string> message;
+  int64_t pid;
+  int64_t lastTimeSeenActiveInSecs;
+  std::string name;
+};
+
+struct RequestConnect {
+  std::string kind = "connect";
+};
+
+struct ResponseDebug {
+  std::string kind;
+  bool success;
+  std::optional<std::string> message;
+};
+} // namespace
+
+namespace llvm::json {
+bool fromJSON(const json::Value &value, ResponseConnect &response, Path path) {
+  ObjectMapper o(value, path);
+  return o && o.map("success", response.success) &&
+         o.map("kind", response.kind) && o.map("pid", response.pid) &&
+         o.mapOptional("message", response.message) &&
+         o.map("lastTimeSeenActiveInSecs", response.lastTimeSeenActiveInSecs) &&
+         o.map("name", response.name);
+}
+
+bool fromJSON(const json::Value &value, ResponseDebug &response, Path path) {
+  ObjectMapper o(value, path);
+  return o && o.map("success", response.success) &&
+         o.map("kind", response.kind) &&
+         o.mapOptional("message", response.message);
+}
+
+llvm::json::Value toJSON(const RequestConnect &request) {
+  return llvm::json::Object{{"kind", request.kind}};
+}
+} // namespace llvm::json
+
+namespace {
+/// Move-only wrapper around an active socket and the information of
+/// the connected RPC Server.
+struct Connection {
+  SOCKET sockfd;
+  int port;
+  ResponseConnect serverInfo;
+
+  Connection(SOCKET sockfd, int port, ResponseConnect serverInfo)
+      : sockfd(sockfd), port(port), serverInfo(std::move(serverInfo)) {}
+
+  Connection(const Connection &) = delete;
+  Connection &operator=(const Connection &) = delete;
+
+  Connection(Connection &&o)
+      : sockfd(o.sockfd), port(o.port), serverInfo(std::move(o.serverInfo)) {
+    o.sockfd = -1;
+  }
+
+  /// Operator used to sort connections for display.
+  bool operator<(const Connection &o) const {
+    int64_t diff = serverInfo.lastTimeSeenActiveInSecs -
+                   o.serverInfo.lastTimeSeenActiveInSecs;
+    if (diff != 0)
+      return diff < 0;
+    if (serverInfo.name != o.serverInfo.name)
+      return serverInfo.name.length() > o.serverInfo.name.length();
+    return port < o.port;
+  }
+
+  ~Connection() {
+    if (sockfd == -1)
+      return;
+#if defined(_WIN32)
+    closesocket(sockfd);
+#else
+    close(sockfd);
+#endif
+  }
+};
+} // namespace
+
+/// Create an object with the common fields of debug configurations.
+static ErrorOr<json::Object> createBasicDebugConfiguration() {
   ErrorOr<std::filesystem::path> modularHome =
       Config::getModularConfigFolderPath();
   if (failed(modularHome))
@@ -42,22 +132,9 @@ static ErrorOr<json::Object> createBasicRPCPayload() {
   return payload;
 }
 
-namespace {
-struct RPCResponse {
-  bool success;
-  std::optional<std::string> message;
-};
-} // namespace
-
-namespace llvm::json {
-bool fromJSON(const json::Value &value, RPCResponse &response, Path path) {
-  ObjectMapper o(value, path);
-  return o && o.map("success", response.success) &&
-         o.mapOptional("message", response.message);
-}
-} // namespace llvm::json
-
-static ErrorOrSuccess doSendRequest(SOCKET sockfd, StringRef payloadStr) {
+template <typename TResponse>
+static ErrorOr<TResponse> doSendRequest(SOCKET sockfd, StringRef payloadStr,
+                                        raw_ostream &extraLogStream) {
   ssize_t sentBytes = send(sockfd, payloadStr.data(), payloadStr.size(), 0);
   if (sentBytes < 0)
     return Error(Twine("can't send data to the RPC debug server: ") +
@@ -76,88 +153,180 @@ static ErrorOrSuccess doSendRequest(SOCKET sockfd, StringRef payloadStr) {
       break;
 
     rawResponse.append(buff, recvBytes);
+    if (StringRef(rawResponse).ends_with(protocolSeparator))
+      break;
   }
 
-  llvm::Expected<RPCResponse> response =
-      llvm::json::parse<RPCResponse>(rawResponse);
-  if (!response) {
-    llvm::consumeError(response.takeError());
-    return Error(Twine("can't parse response from the RPC debug server: ") +
+  extraLogStream << "Got response:\n" << rawResponse << "\n";
+
+  StringRef response(rawResponse);
+  if (!response.consume_back(protocolSeparator)) {
+    return Error(Twine("response from the RPC server doesn't follow the "
+                       "expected protocol: ") +
                  rawResponse);
   }
-  if (response->success)
-    return success();
-  if (response->message)
-    return Error(*response->message);
-  return Error("couldn't initialize the debug session");
-}
 
-/// Send the given payload to the RPC server at one of the specified ports. If
-/// `dryRun` is specified, then the payload is printed to the standard output
-/// instead.
-static ErrorOrSuccess invokeRPC(bool dryRun, ArrayRef<int> ports,
-                                json::Object payload) {
-  std::string payloadStr =
-      llvm::formatv("{0:2}", json::Value(std::move(payload)));
-  if (dryRun) {
-    for (int p : ports)
-      llvm::outs() << "port: " << p << "\n";
-    llvm::outs() << "payload: " << payloadStr << "\n";
-    return success();
+  llvm::Expected<TResponse> parsedResponse =
+      llvm::json::parse<TResponse>(response);
+  if (!parsedResponse) {
+    llvm::consumeError(parsedResponse.takeError());
+    return Error(Twine("invalid RPC server response: ") + response);
   }
 
+  if (parsedResponse->success)
+    return *parsedResponse;
+  if (parsedResponse->message)
+    return Error(Twine("RPC Server response:\n", *parsedResponse->message));
+  return Error("couldn't get a valid response from the RPC server");
+}
+
+ErrorOr<Connection> tryToConnectToServer(int port,
+                                         raw_ostream &extraLogStream) {
   SOCKET sockfd = socket(AF_INET, SOCK_STREAM, 0);
   if (sockfd < 0) {
-    return Error(
-        Twine("can't open socket to communicate with the RPC debug server: ") +
-        strerror(errno));
+    return Error(llvm::formatv("can't open socket to communicate with the RPC "
+                               "debug server with port {0}: {1}",
+                               port, strerror(errno)));
   }
 
   struct sockaddr_in serverAddress;
   memset((char *)&serverAddress, 0, sizeof(serverAddress));
   serverAddress.sin_family = AF_INET;
   serverAddress.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+  serverAddress.sin_port = htons(port);
 
-  ErrorOrSuccess status = success();
-  bool didConnect = false;
+  if (connect(sockfd, (struct sockaddr *)&serverAddress,
+              sizeof(serverAddress)) < 0) {
+    return Error(
+        llvm::formatv("can't connect to the RPC server with port {0}: {1}",
+                      port, strerror(errno)));
+  }
+
+  extraLogStream << "TCP connection successful\n";
+
+  // We create a dangling thread to easily handle timeouts. The thread will
+  // die anyway as soon as we close the socket.
+  std::string request = llvm::formatv(
+      "{0:2}{1}", json::toJSON(RequestConnect()), protocolSeparator);
+  extraLogStream << "Will send:\n" << request << "\n";
+  auto future = new std::future<ErrorOr<ResponseConnect>>(
+      std::async(doSendRequest<ResponseConnect>, sockfd, request,
+                 std::ref(extraLogStream)));
+  auto timeout = std::chrono::seconds(5);
+  if (future->wait_for(timeout) == std::future_status::timeout)
+    return Error("timeout when connecting to the RPC debug server");
+
+  extraLogStream << "Server info successfully obtained.\n";
+  ErrorOr<ResponseConnect> response = future->get();
+  delete future;
+  if (failed(response))
+    return response.takeError();
+  return Connection(sockfd, port, *response);
+}
+
+/// Send the given payload to the RPC server at one of the specified ports. If
+/// `dryRun` is specified, then the payload is printed to the standard output
+/// instead.
+static ErrorOrSuccess invokeRPC(bool dryRun, ArrayRef<int> ports,
+                                json::Object debugConfiguration) {
+
+  json::Value request = json::Object{
+      {"kind", "debug"}, {"debugConfiguration", std::move(debugConfiguration)}};
+  std::string requestStr =
+      llvm::formatv("{0:2}{1}", request, protocolSeparator);
+  if (dryRun) {
+    for (int p : ports)
+      llvm::outs() << "port: " << p << "\n";
+    llvm::outs() << "payload: " << requestStr << "\n";
+    return success();
+  }
+
+  // Create a temporary file to write additional logs.
+  ErrorOr<TempFile> logFileOrErr =
+      TempFile::create("mojo-debug-rpc-logs-%%%%%%.txt");
+  if (failed(logFileOrErr))
+    return Error(std::string("could not create file for additional logs: ") +
+                 logFileOrErr.getError());
+  logFileOrErr->keep();
+  llvm::raw_fd_ostream rawExtraLogStream(logFileOrErr->getFD(),
+                                         /*shouldClose=*/true,
+                                         /*unbuffered=*/true);
+  mlir::raw_indented_ostream extraLogStream(rawExtraLogStream);
+  llvm::errs() << "[INFO] Additional logs can be found in "
+               << logFileOrErr->getPath()
+               << ". Please include them when reporting bugs.\n\n";
+  extraLogStream << "Server-side logs can be found in the `Mojo` section of "
+                    "the `Output` tab of each VSCode Window.\n\n";
+
+  std::set<Connection> connections;
   for (int port : ports) {
-    serverAddress.sin_port = htons(port);
-    if (connect(sockfd, (struct sockaddr *)&serverAddress,
-                sizeof(serverAddress)) < 0) {
-      status = Error(Twine("can't connect to the RPC debug server socket : ") +
-                     strerror(errno));
-    } else {
-      status = success();
-      didConnect = true;
-      break;
-    }
+    extraLogStream << "Will try to connect to an RPC server via port=" << port
+                   << "\n";
+    extraLogStream.indent();
+
+    ErrorOr<Connection> connection = tryToConnectToServer(port, extraLogStream);
+    if (failed(connection))
+      extraLogStream << "Error: " << connection.takeError() << "\n";
+    else
+      connections.insert(std::move(*connection));
+
+    extraLogStream.unindent();
   }
-  if (didConnect) {
-    // We create a dangling thread to easily handle timeouts. The thread will
-    // die anyway as soon as we close the socket.
-    auto future = new std::future<ErrorOrSuccess>(
-        std::async(doSendRequest, sockfd, payloadStr));
-    auto timeout = std::chrono::seconds(5);
-    if (future->wait_for(timeout) == std::future_status::timeout) {
-      status = Error("timeout when communicating with the RPC debug server");
-    } else {
-      status = future->get();
-      delete future;
+
+  if (connections.empty())
+    return Error("couldn't connect to any RPC servers. You might need to "
+                 "restart the IDE or file a bug.");
+
+  llvm::outs() << "Active RPC servers:\n";
+  for (auto [idx, conn] : llvm::enumerate(connections)) {
+    std::string index = std::to_string(idx);
+    llvm::outs() << index << ": "
+                 << llvm::formatv(
+                        "{0}\n{4}  Last activity identified {1} seconds "
+                        "ago, pid={2}, port={3}\n",
+                        conn.serverInfo.name,
+                        conn.serverInfo.lastTimeSeenActiveInSecs,
+                        conn.serverInfo.pid, conn.port,
+                        std::string(index.size(), ' '));
+  }
+
+  int64_t index = 0;
+  if (connections.size() == 1) {
+    llvm::outs() << "\nOnly one RPC server was found. The debug session will "
+                    "be launched with this server automatically.\n\n";
+  } else {
+    llvm::outs()
+        << "\nMultiple RPC servers found. Press enter to select the server "
+           "with index 0 or provide the index of the server to use:\n";
+    std::string rawInput;
+    std::getline(std::cin, rawInput);
+    StringRef input(rawInput);
+    input = input.trim();
+    if (!input.empty()) {
+      if (input.consumeInteger(10, index)) {
+        return Error("invalid input");
+      }
     }
   }
 
-#if defined(_WIN32)
-  closesocket(sockfd);
-#else
-  close(sockfd);
-#endif
-  return status;
+  auto it = connections.begin();
+  std::advance(it, index);
+
+  extraLogStream << "Will send debug request to server with port " << it->port
+                 << ":\n"
+                 << requestStr << "\n";
+
+  ErrorOr<ResponseDebug> response =
+      doSendRequest<ResponseDebug>(it->sockfd, requestStr, extraLogStream);
+  if (failed(response))
+    return response.takeError();
+  return success();
 }
 
 ErrorOrSuccess M::invokeAttachRPC(bool dryRun, ArrayRef<int> rpcPorts,
                                   const std::optional<StringRef> &pid,
                                   const std::optional<StringRef> &processName) {
-  ErrorOr<json::Object> payload = createBasicRPCPayload();
+  ErrorOr<json::Object> payload = createBasicDebugConfiguration();
   if (failed(payload))
     return payload.takeError();
   payload->insert({"request", "attach"});
@@ -172,7 +341,7 @@ ErrorOrSuccess M::invokeLaunchRPC(bool dryRun, ArrayRef<int> rpcPorts,
                                   StringRef target,
                                   ArrayRef<std::string> runArgs,
                                   StringRef rpcTerminal) {
-  ErrorOr<json::Object> payload = createBasicRPCPayload();
+  ErrorOr<json::Object> payload = createBasicDebugConfiguration();
   if (failed(payload))
     return payload.takeError();
 
