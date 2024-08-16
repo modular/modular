@@ -35,3 +35,15 @@ def dry_run: Flag<["--", "-"], "dry-run">,
   HelpText<"Instead of executing LLDB on the CLI, dumps the command that would "
   "be used to start the LLDB command-line interface. If using the RPC mode, "
   "dumps the payload that would be sent to the RPC server.">;
+
+//===----------------------------------------------------------------------===//
+// cuda-gdb options
+//===----------------------------------------------------------------------===//
+
+def cudaGDBOptionGroup : OptionGroup<"cuda-gdb options">, Index<4>;
+
+def cudaGDB: Flag<["--", "-"], "cuda-gdb">,
+  Group<cudaGDBOptionGroup>, Index<1>,
+  HelpText<"Uses cuda-gdb instead of LLDB for debugging. In this mode, it's "
+  "possible to step into GPU code, but the CPU debugging experience is "
+  "degraded.">;

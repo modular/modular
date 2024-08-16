@@ -18,6 +18,7 @@ set(sources
   mojo.cpp
   Build/mojo-build.cpp
   Common/Compilation.cpp
+  Common/CudaGdb.cpp
   Common/LLDB.cpp
   Demangle/mojo-demangle.cpp
   Doc/mojo-doc.cpp
