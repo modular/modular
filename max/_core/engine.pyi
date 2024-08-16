@@ -7,13 +7,12 @@ from enum import Enum
 from pathlib import Path
 from typing import Any, List, Optional, Union
 
-from max.driver.driver_core import Tensor as TensorImpl
+from max.driver.core import Tensor as TensorImpl
+from max.dtype.core import DType
 
 InputShape = Optional[List[Union[int, str, None]]]
 CustomExtensionType = Union[str, Path, Any]
 CustomExtensionsType = Union[List[CustomExtensionType], CustomExtensionType]
-
-class DType(Enum): ...
 
 class FrameworkFormat(Enum):
     max_graph = ...
