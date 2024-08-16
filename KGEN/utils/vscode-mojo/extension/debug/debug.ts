@@ -7,12 +7,10 @@
 import * as vscode from 'vscode';
 
 import { MojoContext } from '../mojoContext';
-import * as config from '../utils/config';
 import { DisposableContext } from '../utils/disposableContext';
 import { getAllOpenMojoFiles, WorkspaceAwareFile } from '../utils/files';
 
 import { activatePickProcessToAttachCommand } from './attachQuickPick';
-import { RpcLaunchServer, UriLaunchServer } from './externalDebugLauncher';
 import { initializeInlineLocalVariablesProvider } from './inlineVariables';
 
 /**
@@ -251,7 +249,6 @@ class MojoDebugDynamicConfigurationProvider
  */
 export class MojoDebugContext extends DisposableContext {
   private context: MojoContext;
-  rpcServer: RpcLaunchServer | undefined;
 
   constructor(context: MojoContext) {
     super();
@@ -309,25 +306,5 @@ export class MojoDebugContext extends DisposableContext {
       })
     );
 
-    // Register the URI-based debug launcher.
-    this.pushSubscription(
-      vscode.window.registerUriHandler(
-        new UriLaunchServer(context.loggingService)
-      )
-    );
-
-    // Initialize the RPC server.
-    this.launchRpcServer();
-  }
-
-  private launchRpcServer(): void {
-    this.rpcServer = new RpcLaunchServer(
-      this.context.loggingService,
-      );
-      this.context.loggingService.main.logInfo(
-        "Starting RPC server"
-      );
-    this.pushSubscription(this.rpcServer);
-    this.rpcServer.listen();
   }
 }

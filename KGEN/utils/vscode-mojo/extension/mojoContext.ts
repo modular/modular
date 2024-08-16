@@ -15,6 +15,7 @@ import { MojoLSPContext } from './lsp/lsp';
 import { MojoSDKManager } from './mojoSDK';
 import { MojoTestContext } from './testing/testing';
 import { DisposableContext } from './utils/disposableContext';
+import { RpcServer } from './server/RpcServer';
 
 /**
  *  This class manages the Mojo extension state.
@@ -80,5 +81,15 @@ export class MojoContext extends DisposableContext {
         this.loggingService.main.logInfo('Disposing MOJOContext.');
       })
     );
+
+    // Initialize the RPC server
+    const rpcServer = new RpcServer(
+      this.loggingService,
+    );
+    this.loggingService.main.logInfo(
+      "Starting RPC server"
+    );
+    this.pushSubscription(rpcServer);
+    rpcServer.listen();
   }
 }
