@@ -110,6 +110,10 @@ class GraphValue:
     def transpose(self, dim_1: int, dim_2: int) -> GraphValue:
         return ops.transpose(self, dim_1, dim_2)
 
+    @property
+    def T(self) -> GraphValue:
+        return self.transpose(-1, -2)
+
     def __getitem__(self, index):
         if isinstance(index, Iterable):
             return ops.slice_tensor(self, index)
