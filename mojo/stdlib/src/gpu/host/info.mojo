@@ -27,6 +27,7 @@ struct Flops:
 @register_passable
 struct Info:
     var name: StringLiteral
+    var compute: FloatLiteral
     var version: StringLiteral
     var target: __mlir_type.`!kgen.target`
     var target_32bit: __mlir_type.`!kgen.target`
@@ -47,25 +48,16 @@ struct Info:
     var flops: Flops
 
     fn __lt__(self, other: Self) -> Bool:
-        if self.name == "sm_90a":
-            return True
-
-        return _get_compute(self.name) < _get_compute(other.name)
+        return self.compute < other.compute
 
     fn __le__(self, other: Self) -> Bool:
-        if self == other:
-            return True
-        return self < other
+        return self.compute <= other.compute
 
     fn __gt__(self, other: Self) -> Bool:
-        if self.name == "sm_90a":
-            return False
-        return _get_compute(self.name) == _get_compute(other.name)
+        return self.compute > other.compute
 
     fn __ge__(self, other: Self) -> Bool:
-        if self == other:
-            return True
-        return _get_compute(self.name) >= _get_compute(other.name)
+        return self.compute >= other.compute
 
     fn __eq__(self, other: Self) -> Bool:
         return self.name == other.name
@@ -87,43 +79,47 @@ struct Info:
 
 @always_inline
 fn _get_info_from_target[target_arch: StringLiteral]() -> Info:
-    constrained[target_arch in ("sm_80", "sm_86", "sm_89", "sm_90", "sm_90a")]()
+    constrained[
+        target_arch
+        in (
+            "cuda_sm_80",
+            "cuda_sm_86",
+            "cuda_sm_89",
+            "cuda_sm_90",
+            "cuda_sm_90a",
+            "sm_80",
+            "sm_86",
+            "sm_89",
+            "sm_90",
+            "sm_90a",
+        )
+    ]()
 
     @parameter
-    if target_arch == "sm_80":
+    if target_arch in ("cuda_sm_80", "sm_80"):
         return A100
-    elif target_arch == "sm_86":
+    elif target_arch in ("cuda_sm_86", "sm_86"):
         return A10
-    elif target_arch == "sm_89":
+    elif target_arch in ("cuda_sm_89", "sm_89"):
         return L4
-    elif target_arch in ("sm_90", "sm_90a"):
+    elif target_arch in ("cuda_sm_90", "cuda_sm_90a", "sm_90", "sm_90a"):
         return H100
 
     return A100
 
 
 @always_inline("nodebug")
-fn _get_compute(name: String) -> Int:
-    if name == "sm_50":
-        return 50
-    elif name == "sm_60":
-        return 60
-    elif name == "sm_61":
-        return 61
-    elif name == "sm_70":
-        return 70
-    elif name == "sm_75":
-        return 75
-    elif name == "sm_80":
-        return 80
-    elif name == "sm_86":
-        return 86
-    elif name == "sm_89":
-        return 89
-    elif name == "sm_90":
-        return 90
-    else:
-        return -1
+fn _get_compute(target_arch: String) -> Float32:
+    if target_arch in ("cuda_sm_80", "sm_80"):
+        return A100.compute
+    elif target_arch in ("cuda_sm_86", "sm_86"):
+        return A10.compute
+    elif target_arch in ("cuda_sm_89", "sm_89"):
+        return L4.compute
+    elif target_arch in ("cuda_sm_90", "cuda_sm_90a", "sm_90", "sm_90a"):
+        return H100.compute
+
+    return A100.compute
 
 
 # ===----------------------------------------------------------------------===#
@@ -140,6 +136,7 @@ fn _get_compute(name: String) -> Int:
 
 alias A100 = Info(
     name="A100",
+    compute=8.0,
     version="sm_80",
     target=__mlir_attr[
         `#kgen.target<triple = "nvptx64-nvidia-cuda", `,
@@ -179,6 +176,7 @@ alias A100 = Info(
 
 alias A10 = Info(
     name="A10",
+    compute=8.6,
     version="sm_86",
     target=__mlir_attr[
         `#kgen.target<triple = "nvptx64-nvidia-cuda", `,
@@ -218,6 +216,7 @@ alias A10 = Info(
 
 alias L4 = Info(
     name="L4",
+    compute=8.9,
     version="sm_89",
     target=__mlir_attr[
         `#kgen.target<triple = "nvptx64-nvidia-cuda", `,
@@ -257,6 +256,7 @@ alias L4 = Info(
 
 alias H100 = Info(
     name="H100",
+    compute=9.0,
     version="sm_90",
     target=__mlir_attr[
         `#kgen.target<triple = "nvptx64-nvidia-cuda", `,
