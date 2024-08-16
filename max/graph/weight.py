@@ -9,6 +9,7 @@ from typing import Optional, Union
 
 from .graph_value import GraphValue
 from .type import TensorType
+from .quantization import QuantizationEncoding
 
 
 @dataclass
@@ -21,12 +22,7 @@ class Weight:
     filepath: Union[PathLike, str, None]
     offset: Optional[int]
 
-    def __repr__(self):
-        return (
-            f"Weight(name='{self.name}',"
-            f" tensor_type='{self.value.tensor_type}',"
-            f" filepath='{self.filepath}', offset='{self.offset}')"
-        )
+    quantization_encoding: Optional[QuantizationEncoding] = None
 
     def assign(
         self,

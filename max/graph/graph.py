@@ -339,7 +339,8 @@ class Graph:
         shape: Optional[ShapeLike] = None,
         filepath: Union[PathLike, str, None] = None,
         offset: Optional[int] = None,
-    ):
+        quantization_encoding: Optional[QuantizationEncoding] = None,
+    ) -> Weight:
         """Initializes a new weight in the current graph.
 
         Args:
@@ -349,6 +350,8 @@ class Graph:
             shape: The shape of the weight. Defaults to a scalar (`shape=[1]`).
             filepath: File pointing to file containing weight value.
             offset: Offset to weight in the file (defaults to 0).
+            quantization_encoding: Quantization encoding of the weight.
+                Defaults to not-quantized.
 
         Returns:
             The added `Weight` object.
@@ -379,6 +382,7 @@ class Graph:
             name=name,
             filepath=filepath,
             offset=offset,
+            quantization_encoding=quantization_encoding,
         )
         self.weights[name] = weight
 
