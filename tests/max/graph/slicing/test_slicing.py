@@ -11,7 +11,7 @@ from conftest import broadcast_shapes, broadcastable_tensor_types, tensor_types
 from hypothesis import assume, given
 from hypothesis import strategies as st
 from max.graph import DType, Graph, TensorType, ops
-from max.graph.type import Dim, shape
+from max.graph.type import Dim
 
 
 @given(input_types=broadcastable_tensor_types(3))
@@ -36,7 +36,7 @@ def test_slice_basic():
     ) as graph:
         out = graph.inputs[0][:, 1, ..., 3]
 
-        assert out.shape == shape([1, 1, 3, 4, 1])
+        assert out.shape == [1, 1, 3, 4, 1]
         graph.output(out)
         graph._mlir_op.verify()
 
@@ -50,7 +50,7 @@ def test_slice_with_graph_value():
             (slice(start, None), 3), (slice(start, None), "out_dim")
         ]
 
-        assert out.shape == shape([3, "out_dim"])
+        assert out.shape == [3, "out_dim"]
         graph.output(out)
         graph._mlir_op.verify()
 

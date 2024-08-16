@@ -19,7 +19,6 @@ from max import _graph, mlir
 from .dtype import DType
 
 
-@dataclass
 class Dim:
     """A tensor dimension.
 
@@ -56,6 +55,17 @@ class Dim:
     dims are the easiest to optimize and therefore the easiest to create
     and work with.
     """
+
+    def __new__(cls, value: DimLike):
+        """Converts valid input values to Dim."""
+        # There has to be a better pattern for this
+        if isinstance(value, Dim):
+            return super().__new__(type(value))
+        elif isinstance(value, (int, np.integer)):
+            return super().__new__(StaticDim)
+        elif isinstance(value, str):
+            return super().__new__(SymbolicDim)
+        raise TypeError(f"Unsupported dimension type {value} ({type(value)})")
 
     def is_static(self) -> bool:
         """Checks whether or not the dimension is a static dimension.
@@ -128,7 +138,13 @@ class Dim:
             return SymbolicDim.from_mlir(dim_attr)
         elif _graph.is_symbolic_expression_dim(dim_attr):
             raise ValueError(
-                "graph api does not support algebraic expression dimensions"
+                """
+    Graph API currently doesn't support directly materializing algebraic dimensions.
+    Please rebind the dimension before using it.
+
+    For example:
+    >>> x.reshape(["batch", -1]).rebind(["batch", "new_dim"])
+    """
             )
         else:
             raise ValueError("graph api does not support unknown dimensions")
@@ -154,11 +170,14 @@ class SymbolicDim(Dim):
     name: str
     """The name of the dimension."""
 
-    def __init__(self, name: str):
-        self.name = name
+    def __init__(self, name: str | SymbolicDim):
+        self.name = str(name)
         # TODO(MSDK-695): less restrictive names
-        if not re.match(r"^[a-zA-Z_]\w*$", name):
+        if not re.match(r"^[a-zA-Z_]\w*$", self.name):
             raise ValueError("Invalid name for symbolic dimension")
+
+    def __str__(self) -> str:
+        return self.name
 
     def is_static(self) -> bool:
         """Checks whether or not the dimension is a static dimension.
@@ -223,7 +242,6 @@ class SymbolicDim(Dim):
 
 
 @functools.total_ordering
-@dataclass
 class StaticDim(Dim):
     """A static tensor dimension.
 
@@ -238,10 +256,13 @@ class StaticDim(Dim):
     dim: int
     """The size of the static dimension."""
 
-    def __init__(self, dim: int):
-        if not -1 <= dim < 2**63:
+    def __init__(self, dim: int | StaticDim):
+        self.dim = int(dim)
+        if not -1 <= self.dim < 2**63:
             raise ValueError("Dim value must be -1 <= dim < 2**63")
-        self.dim = dim
+
+    def __int__(self) -> int:
+        return self.dim
 
     def is_static(self) -> bool:
         """Checks whether or not the dimension is a static dimension.
@@ -303,33 +324,26 @@ class StaticDim(Dim):
         return StaticDim(_graph.static_dim_value(dim_attr))
 
 
-Shape = list[Dim]
+class Shape(list[Dim]):
+    def __init__(self, dims: ShapeLike = ()):
+        super().__init__(Dim(dim) for dim in dims)
+
+    def to_mlir(self) -> mlir.Attribute:
+        return _graph.shape_attr(
+            mlir.Context.current, [dim.to_mlir() for dim in self]
+        )
+
+
 StaticShape = list[StaticDim]
 
 DimLike = Union[int, str, Dim, np.integer]
 ShapeLike = Iterable[DimLike]
 
 
-def dim(value: DimLike) -> Dim:
-    """Converts valid input values to Dim."""
-    if isinstance(value, (int, np.integer)):
-        return StaticDim(int(value))
-    elif isinstance(value, str):
-        return SymbolicDim(value)
-    elif isinstance(value, Dim):
-        return value
-    raise TypeError(f"Unsupported dimension type {value} ({type(value)})")
-
-
-def shape(shape_like: ShapeLike) -> Shape:
-    return [dim(d) for d in shape_like]
-
-
 def _is_static_shape(dims: Shape) -> TypeGuard[StaticShape]:
     return all(dim.is_static() for dim in dims)
 
 
-@dataclass
 class Type:
     """Represents any possible type for Graph values.
 
@@ -392,7 +406,7 @@ class TensorType(Type):
                   is the rank of the tensor.
         """
         self.dtype = dtype
-        self.shape = [dim(d) for d in shape]
+        self.shape = Shape(shape)
 
     def to_mlir(self) -> mlir.Type:
         """Converts to an mlir.Type instance.
@@ -405,7 +419,7 @@ class TensorType(Type):
         return _graph.tensor_type(
             mlir.Context.current,
             _graph.dtype_type(mlir.Context.current, self.dtype._mlir),
-            [d.to_mlir() for d in self.shape],
+            [dim.to_mlir() for dim in self.shape],
         )
 
     @staticmethod

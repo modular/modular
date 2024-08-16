@@ -6,33 +6,30 @@
 """Casting ops."""
 
 import numpy as np
-from max import _graph, mlir
+from max import mlir
 from max.mlir.dialects import mo, rmo
 
 from ..graph import Graph
 from ..graph_value import GraphValue, TensorType, ValueLike, ops
-from ..type import DType, ShapeLike, StaticDim, dim
+from ..type import DType, Shape, ShapeLike, StaticDim
 
 
 def rebind(x: ValueLike, shape: ShapeLike, message: str):
     # TODO(MSDK-662): Add checks to ensure that statically known dims are
     # rebound in a way to keep the size the same.
     v = GraphValue(x)
-    dims = [dim(d) for d in shape]
     message_attr = mlir.StringAttr.get(message)
     return Graph.current._add_op(
         rmo.rebind_tensor_shape,
-        TensorType(v.dtype, dims).to_mlir(),
+        TensorType(v.dtype, shape).to_mlir(),
         v,
         message=message_attr,
     )[0]
 
 
 def reshape(x: ValueLike, shape: ShapeLike):
-    v = GraphValue(x)
-    dims = [dim(d).to_mlir() for d in shape]
     return Graph.current._add_op(
-        rmo.reshape, v, new_shape=_graph.shape_attr(mlir.Context.current, dims)
+        rmo.reshape, GraphValue(x), new_shape=Shape(shape).to_mlir()
     )[0]
 
 
@@ -46,21 +43,16 @@ def cast(x: ValueLike, dtype: DType):
 
 
 def unsqueeze(x: ValueLike, axis: int) -> GraphValue:
-    v = GraphValue(x)
-    rank = v.tensor_type.rank
+    x = GraphValue(x)
+    rank = x.rank
     if axis < 0:
         axis += rank + 1
-    if axis < 0 or axis > rank:
-        raise ValueError(
-            "unsqueeze axis out of bounds: axis="
-            + str(axis)
-            + ", rank="
-            + str(rank),
-        )
+    if not 0 <= axis <= rank:
+        raise ValueError(f"unsqueeze axis out of bounds: {axis=}, {rank=}")
 
-    shape = v.tensor_type.shape
+    shape = x.shape
     new_shape = shape[:axis] + [1] + shape[axis:]
-    return ops.reshape(v, new_shape)
+    return ops.reshape(x, new_shape)
 
 
 def squeeze(x: ValueLike, axis=None) -> GraphValue:
@@ -106,17 +98,12 @@ def transpose(x: ValueLike, dim_1: int, dim_2: int) -> GraphValue:
 
 
 def broadcast_to(x: GraphValue, shape: ShapeLike):
-    dims = [dim(d).to_mlir() for d in shape]
     return Graph.current._add_op(
-        rmo.broadcast_to,
-        x,
-        new_shape=_graph.shape_attr(mlir.Context.current, dims),
+        rmo.broadcast_to, x, new_shape=Shape(shape).to_mlir()
     )[0]
 
 
 def shape_to_tensor(shape: ShapeLike) -> GraphValue:
-    dims = [dim(d).to_mlir() for d in shape]
     return Graph.current._add_op(
-        rmo.shape_to_tensor,
-        shape=_graph.shape_attr(mlir.Context.current, dims),
+        rmo.shape_to_tensor, shape=Shape(shape).to_mlir()
     )[0]

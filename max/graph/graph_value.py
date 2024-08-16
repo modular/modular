@@ -7,15 +7,14 @@
 from __future__ import annotations
 
 import inspect
-from typing import Any, Iterable, Union, TypeGuard
+from typing import Any, Iterable, TypeGuard, Union
 
-from max import _graph, mlir
 import numpy as np
+from max import _graph, mlir
 
-from . import graph
-from . import ops
+from . import graph, ops
 from .dtype import DType
-from .type import Shape, ShapeLike, TensorType
+from .type import DimLike, Shape, ShapeLike, TensorType
 
 
 class GraphValue:

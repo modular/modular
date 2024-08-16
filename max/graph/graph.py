@@ -19,7 +19,7 @@ from max.mlir.dialects import mo
 
 from .dtype import DType
 from .graph_value import GraphValue
-from .type import ShapeLike, SymbolicDim, TensorType, Type, Dim
+from .type import Dim, ShapeLike, SymbolicDim, TensorType, Type
 from .weight import Weight
 
 CURRENT_GRAPH: ContextVar[Graph] = ContextVar("CURRENT_GRAPH")

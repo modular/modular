@@ -6,7 +6,7 @@
 """Slicing ops."""
 
 import typing
-from typing import TYPE_CHECKING, Iterable, Union, TypeGuard
+from typing import TYPE_CHECKING, Iterable, TypeGuard, Union
 
 if TYPE_CHECKING:
     # EllipsisType was added in 3.10, but we support down to 3.9.
@@ -19,7 +19,7 @@ from max.mlir.dialects import rmo
 from .. import ops
 from ..graph import DType, Graph
 from ..graph_value import GraphValue, ValueLike
-from ..type import Dim, DimLike, StaticDim, TensorType, dim
+from ..type import Dim, DimLike, Shape, StaticDim, TensorType
 from .casting import unsqueeze
 from .constant import scalar
 
@@ -220,7 +220,7 @@ def slice_tensor(x: GraphValue, indices: SliceIndices) -> GraphValue:
         for dim, index in zip(x.shape, full_index)
     ]
     slices = [s for s, _ in slices_and_outputs]
-    output_shape = [dim(d) for _, d in slices_and_outputs]
+    output_shape = Shape(d for _, d in slices_and_outputs)
 
     def value(dim: Union[GraphValue, int]) -> GraphValue:
         assert isinstance(dim, (GraphValue, int))
