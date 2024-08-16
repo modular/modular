@@ -411,13 +411,12 @@ struct TensorCore[
                     var mma_tile = warp_tile.tile[
                         2 * shape[1], warp_tile.dim[1]()
                     ](i // 2, 0)
-                    var vec = _load_matrix_frag(mma_tile, swizzle_offset)
-                    fragments[i, 0] = rebind[frag_type](
-                        SIMD[type0, 4](vec[0], vec[1], vec[4], vec[5])
+                    var vec = _load_matrix_frag[x4_row_major=True](
+                        mma_tile, swizzle_offset
                     )
-                    fragments[i + 1, 0] = rebind[frag_type](
-                        SIMD[type0, 4](vec[2], vec[3], vec[6], vec[7])
-                    )
+                    var high_low = vec.split()
+                    fragments[i, 0] = rebind[frag_type](high_low[0])
+                    fragments[i + 1, 0] = rebind[frag_type](high_low[1])
 
         else:
 
@@ -519,6 +518,7 @@ fn _load_matrix_frag[
     # swizzle: Optional[_swizzle_signature] = None,
     swizzle: Bool = True,
     transposed: Bool = False,
+    x4_row_major: Bool = False,
     *,
     # Work around parameter deduction MOCO-854.
     __type: DType,
@@ -540,23 +540,41 @@ fn _load_matrix_frag[
     # mma_tile is tiled from the row major shared memory buffer. Retrieve the
     # buffer's stride for computing the swizzle.
     alias row_size = mma_tile.stride[0]()
+    alias num_mat_per_row = row_size // simd_size
 
     var lane = lane_id()
+
+    # We load 4 matrices a time for max throughput. Each matrix has 8 vectors
+    # and each thread loads one vector. The 4 matrices for 16x8x8 and 16x8x16
+    # could be arranged in column or row-major.
+    #
+    #         |--------|--------|            |--------|--------|
+    #         | mat 0  | mat 2  |            | mat 0  | mat 1  |
+    #         |--------|--------|            |--------|--------|
+    #         | mat 1  | mat 3  |            | mat 2  | mat 3  |
+    #         |--------|--------|            |--------|--------|
+    #            A 16x16  or                 B Transposed 2 16x8
+    #            B 2x 16x8
+    #
+    # Left is for A since it match A's mma tile layout exactly. It's also for B
+    # 16x8x16 when two 16x8 matrices are grouped in one load (using ldmatrix.trans).
+    # When B is *transposed*, we arrage 4 matrices in row-major so that mat0-1
+    # contribute to one mma's fragment.
+    # !!! Don't use column major and pass mat0, mat2's register to HMMA. This
+    # hits undocumented register conflicts and is very slow !!!
 
     # We load 4 matrices a time for max throughput. Each matrix has 8 vectors
     # and each thread loads one vector. For mma shape 16x8 or 16x16, the 4
     # matrices are arranged in column major.
     alias ldmatrix_threadmap = Layout.col_major(16, 2)
 
-    # Layout of a strip in smem: mma_tile's height x smem buffer's width.
-    # The layout has been vectorized i.e. the width is number of vectors not elements.
-    # This serves as the base for composed layout in swizzling.
-    alias smem_layout = Layout.row_major(
-        mma_tile.dim[0](), row_size // simd_size
-    )
+    # 4 submatrices layout
+    alias x4_layout = Layout(
+        IntTuple(8, 2, 2), IntTuple(num_mat_per_row, 1, 8 * num_mat_per_row)
+    ) if x4_row_major else Layout(IntTuple(16, 2), IntTuple(num_mat_per_row, 1))
 
     alias ldmatrix_layout = ComposedLayout(
-        composition(smem_layout, ldmatrix_threadmap),
+        x4_layout,
         make_ldmatrix_swizzleex[
             mma_tile.dtype, row_size
         ]() if swizzle else SwizzleEx(0, 0, 1),
