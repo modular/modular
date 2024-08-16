@@ -1080,7 +1080,7 @@ def KGEN_CallIndirectOp : KGENOp<"call_indirect", [
   let results = (outs Variadic<AnyType>:$results);
 
   let assemblyFormat = [{
-    custom<OptionalEnum>($tailKind, "symbolizeTailKind") $callee
+    `` custom<OptionalEnum>($tailKind, "symbolizeTailKind") $callee
     `(` $arguments `)` `:` custom<Signature>(type($callee)) attr-dict
   }];
 
