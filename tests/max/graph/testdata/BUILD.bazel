@@ -1,0 +1,23 @@
+load("@pip_deps//:requirements.bzl", "requirement")
+
+package(default_visibility = ["//visibility:public"])
+
+filegroup(
+    name = "testdata",
+    srcs = glob(
+        ["*"],
+        exclude = ["*.py"],
+    ),
+)
+
+py_binary(
+    name = "gen_external_checkpoints",
+    srcs = ["gen_external_checkpoints.py"],
+    deps = [
+        requirement("torch"),
+        requirement("sentencepiece"),
+        requirement("gguf"),
+        requirement("click"),
+        requirement("numpy"),
+    ],
+)

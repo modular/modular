@@ -3,16 +3,18 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-"""Generates external checkpoints for testing weight loading."""
+"""Generates external checkpoints for testing weight loading.
+
+br //SDK/test/API/graph/python/pytests/testdata:gen_external_checkpoints -- $(pwd)/SDK/test/API/graph/python/pytests/testdata/
+"""
 
 import os
 from pathlib import Path
 
+import click
 import numpy as np
 import torch
 from gguf import GGMLQuantizationType, GGUFReader, GGUFWriter
-
-OUTPUT_DIRECTORY = Path(os.path.dirname(__file__))
 
 
 def test_data():
@@ -43,6 +45,13 @@ def write_gguf(filename):
         raw_dtype=GGMLQuantizationType.BF16,
     )
 
+    # Add a quantized tensor (fake data).
+    gguf_writer.add_tensor(
+        "quantized",
+        np.arange(0, 288, dtype=np.uint8).reshape(2, 144),
+        raw_dtype=GGMLQuantizationType.Q4_K,
+    )
+
     gguf_writer.write_header_to_file()
     gguf_writer.write_kv_data_to_file()
     gguf_writer.write_tensors_to_file()
@@ -61,9 +70,11 @@ def write_pytorch(filename):
     torch.save(data, filename)
 
 
-def main():
-    write_pytorch(OUTPUT_DIRECTORY / "example_data.pt")
-    write_gguf(OUTPUT_DIRECTORY / "example_data.gguf")
+@click.command()
+@click.argument("output_directory", type=Path)
+def main(output_directory):
+    write_pytorch(output_directory / "example_data.pt")
+    write_gguf(output_directory / "example_data.gguf")
 
 
 if __name__ == "__main__":

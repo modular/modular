@@ -37,17 +37,11 @@ def _check_gguf():
         gguf = _gguf
 
     if not _GGML_TO_DTYPE:
-        # Unsupported types are commented out.
         _GGML_TO_DTYPE = {
-            # torch.bool: DType.bool,
             gguf.GGMLQuantizationType.I8: DType.int8,
             gguf.GGMLQuantizationType.I16: DType.int16,
             gguf.GGMLQuantizationType.I32: DType.int32,
             gguf.GGMLQuantizationType.I64: DType.int64,
-            #: DType.uint8,
-            #: DType.uint16,
-            #: DType.uint32,
-            #: DType.uint64,
             gguf.GGMLQuantizationType.F16: DType.float16,
             gguf.GGMLQuantizationType.F32: DType.float32,
             gguf.GGMLQuantizationType.F64: DType.float64,
@@ -64,14 +58,20 @@ def load_gguf(gguf_or_filepath) -> Dict[str, Weight]:
         reader = gguf.GGUFReader(gguf_or_filepath)
     ret = {}
     for tensor in reader.tensors:
-        dtype = _GGML_TO_DTYPE.get(tensor.tensor_type)
+        # Dims are reversed for some reason:
+        # https://github.com/ggerganov/llama.cpp/blob/master/gguf-py/gguf/gguf_reader.py#L277
+        # We have to un-reverse them here.
+        shape = list(reversed(tensor.shape.tolist()))
+        dtype = _GGML_TO_DTYPE.get(tensor.tensor_type, None)
+        if dtype is None:
+            # Quantized dtypes do not have a direct map to a graph DType and are
+            # treated as uint8 values.
+            dtype = DType.uint8
+            shape = gguf.quant_shape_to_byte_shape(shape, tensor.tensor_type)
         ret[tensor.name] = graph.add_weight(
             tensor.name,
             dtype,
-            # Dims are reversed for some reason:
-            # https://github.com/ggerganov/llama.cpp/blob/master/gguf-py/gguf/gguf_reader.py#L277
-            # We have to un-reverse them here.
-            reversed(tensor.shape.tolist()),
+            shape,
             tensor.data.filename,
             tensor.data_offset,
         )

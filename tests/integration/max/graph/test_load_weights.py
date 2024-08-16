@@ -92,6 +92,10 @@ def test_load_pytorch(session, graph_testdata) -> None:
 def test_load_gguf(session, graph_testdata) -> None:
     """Tests adding an external weight to a graph."""
     expected_dict = _test_data()
+    expected_dict["quantized"] = np.arange(0, 288, dtype=np.uint8).reshape(
+        2, 144
+    )
+
     flat_keys = list(expected_dict.keys())
     expected = [expected_dict[k] for k in flat_keys]
 
