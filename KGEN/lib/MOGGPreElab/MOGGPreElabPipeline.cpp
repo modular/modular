@@ -39,12 +39,13 @@ public:
 
     bool hasKernels = false;
     for (auto func : mod.getOps<GeneratorOp>())
-      hasKernels |= MOGGPreElab::isKernel(func) ||
-                    MOGGPreElab::isExecuteFunc(func) ||
-                    MOGGPreElab::isShapeFunc(func);
+      hasKernels |=
+          MOGGPreElab::isKernel(func) || MOGGPreElab::isExecuteFunc(func) ||
+          MOGGPreElab::isShapeFunc(func) || MOGGPreElab::isDPSKernel(func);
 
     if (hasKernels && !debugBuild) {
       mlir::OpPassManager pm(ModuleOp::getOperationName());
+      pm.addPass(MOGGPreElab::createMOGGAutoparameterize());
       pm.addPass(MOGGPreElab::createSliceMOGGFuncs());
       pm.addPass(MOGGPreElab::createOutlineMOGGFuncs());
 
