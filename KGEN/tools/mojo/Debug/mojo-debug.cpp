@@ -6,6 +6,7 @@
 
 #include "mojo-debug.h"
 #include "../../common/Telemetry.h"
+#include "../Common/CudaGdb.h"
 #include "../Common/LLDB.h"
 #include "AsyncRT/Init/Init.h"
 #include "KGEN/Support/Configuration.h"
@@ -71,7 +72,7 @@ static std::string resolvePath(std::string path) {
   return canonicalPath.string();
 }
 
-/// Launches LLDB with the Mojo plugin enabled.
+/// Launches LLDB with the Mojo plugin enabled, or vanilla cuda-gdb.
 /// Exits unsuccessfully if LLDB could not be found in the SDK.
 static int debug(const State &state) {
   // Parse command line arguments.
@@ -134,6 +135,7 @@ static int debug(const State &state) {
   }
 
   bool dryRun = parsedArgs.hasArg(options::OPT_dry_run);
+  bool useCudaGDB = parsedArgs.hasArg(options::OPT_cudaGDB);
   StringRef rpcTerminal =
       parsedArgs.getLastArgValue(options::OPT_terminal, "console");
   SmallVector<std::string> lldbArgs = getLLDBArgs(parsedArgs);
@@ -177,15 +179,23 @@ static int debug(const State &state) {
       target = *mojoDriver;
     }
     if (useRpc) {
+      if (useCudaGDB)
+        return state.reportError(
+            Twine("cuda-gdb with --rpc not yet supported"));
       ErrorOrSuccess status =
           invokeLaunchRPC(dryRun, rpcPorts, *target, runArgs, rpcTerminal);
       if (failed(status))
         return state.reportError(status.getError());
       return 0;
     }
+
     // When using the LLDB CLI, the first run arg has to be the target.
     runArgs.insert(runArgs.begin(), *target);
-    return invokeLLDB(state, lldbArgs, runArgs, dryRun);
+
+    if (useCudaGDB)
+      return invokeCudaGdb(state, lldbArgs, runArgs, dryRun);
+    else
+      return invokeLLDB(state, lldbArgs, runArgs, dryRun);
   }
 
   std::optional<StringRef> pid;
@@ -199,6 +209,9 @@ static int debug(const State &state) {
   //  This is an attach case.
   if (pid || processName) {
     if (useRpc) {
+      if (useCudaGDB)
+        return state.reportError(
+            Twine("cuda-gdb with --rpc not yet supported"));
       ErrorOrSuccess status =
           invokeAttachRPC(dryRun, rpcPorts, pid, processName);
       if (failed(status))
@@ -210,7 +223,10 @@ static int debug(const State &state) {
       if (processName)
         llvm::append_values(lldbArgs, std::string("-n"),
                             resolvePath(processName->str()));
-      return invokeLLDB(state, lldbArgs, {}, dryRun);
+      if (useCudaGDB)
+        return invokeCudaGdb(state, lldbArgs, {}, dryRun);
+      else
+        return invokeLLDB(state, lldbArgs, {}, dryRun);
     }
   }
 
@@ -218,8 +234,11 @@ static int debug(const State &state) {
     return state.reportError(
         Twine("unexpected option '", rpcArg->getSpelling()) + "'");
 
-  // This is a regular lldb cli passthrough.
-  return invokeLLDB(state, lldbArgs, {}, dryRun);
+  // This is a regular cli passthrough.
+  if (useCudaGDB)
+    return invokeCudaGdb(state, lldbArgs, {}, dryRun);
+  else
+    return invokeLLDB(state, lldbArgs, {}, dryRun);
 }
 
 void M::registerDebugSubcommand(SubcommandRegistry &registry) {
