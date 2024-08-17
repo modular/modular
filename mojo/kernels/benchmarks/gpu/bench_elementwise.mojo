@@ -9,7 +9,7 @@
 from math import sqrt, isqrt, log, sin, tanh, exp, erf, fma
 from sys import alignof, sizeof, triple_is_nvidia_cuda, simdwidthof
 
-from algorithm.functional import _elementwise_impl_gpu
+from algorithm.functional import elementwise
 from buffer import DimList, NDBuffer
 from buffer.dimlist import _make_tuple
 from gpu.host.device_context import DeviceContext
@@ -191,7 +191,7 @@ fn run_elementwise[
         @parameter
         @always_inline
         fn kernel_launch(ctx: DeviceContext) raises:
-            _elementwise_impl_gpu[func, pack_size](
+            elementwise[func, pack_size, target="cuda"](
                 dims,
                 ctx,
             )

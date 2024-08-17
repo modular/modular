@@ -9,7 +9,7 @@
 from random import randn
 from sys import sizeof, simdwidthof
 
-from algorithm.functional import _elementwise_impl_gpu
+from algorithm.functional import elementwise
 from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
 from buffer import NDBuffer
 from buffer.dimlist import DimList
@@ -55,7 +55,7 @@ fn bench_add[
         @parameter
         @always_inline
         fn kernel_launch(ctx: DeviceContext) raises:
-            _elementwise_impl_gpu[add, simd_width=unroll_by](shape, ctx)
+            elementwise[add, simd_width=unroll_by, target="cuda"](shape, ctx)
 
         b.iter_custom[kernel_launch](ctx)
 
