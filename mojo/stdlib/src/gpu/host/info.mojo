@@ -193,6 +193,16 @@ struct Flops:
     var i8: Int
     var i4: Int
 
+    @no_inline
+    fn format_to(self, inout writer: Formatter):
+        writer.write("flops_fp16: ", self.fp16, "\n")
+        writer.write("flops_i8: ", self.i8, "\n")
+        writer.write("flops_i4: ", self.i4)
+
+    @no_inline
+    fn __str__(self) -> String:
+        return String.format_sequence(self)
+
 
 # ===----------------------------------------------------------------------===#
 # Info
@@ -252,6 +262,75 @@ struct Info:
 
     fn __isnot__(self, other: Self) -> Bool:
         return self != other
+
+    @no_inline
+    fn format_to(self, inout writer: Formatter):
+        writer.write("name: ", self.name, "\n")
+        writer.write("compute: ", self.compute, "\n")
+        writer.write("version: ", self.version, "\n")
+        writer.write("sm_count: ", self.sm_count, "\n")
+        writer.write("threads_per_sm: ", self.threads_per_sm, "\n")
+        writer.write("threads_per_warp: ", self.threads_per_warp, "\n")
+        writer.write(
+            "warps_per_multiprocessor: ", self.warps_per_multiprocessor, "\n"
+        )
+        writer.write(
+            "threads_per_multiprocessor: ",
+            self.threads_per_multiprocessor,
+            "\n",
+        )
+        writer.write(
+            "thread_blocks_per_multiprocessor: ",
+            self.thread_blocks_per_multiprocessor,
+            "\n",
+        )
+        writer.write(
+            "shared_memory_per_multiprocessor: ",
+            self.shared_memory_per_multiprocessor,
+            "\n",
+        )
+        writer.write(
+            "register_file_size: ",
+            self.register_file_size,
+            "\n",
+        )
+        writer.write(
+            "register_allocation_unit_size: ",
+            self.register_allocation_unit_size,
+            "\n",
+        )
+        writer.write(
+            "allocation_granularity: ", self.allocation_granularity, "\n"
+        )
+        writer.write(
+            "max_registers_per_thread: ", self.max_registers_per_thread, "\n"
+        )
+        writer.write(
+            "max_registers_per_block: ", self.max_registers_per_block, "\n"
+        )
+        writer.write(
+            "max_blocks_per_multiprocessor: ",
+            self.max_blocks_per_multiprocessor,
+            "\n",
+        )
+        writer.write(
+            "shared_memory_allocation_unit_size: ",
+            self.shared_memory_allocation_unit_size,
+            "\n",
+        )
+        writer.write(
+            "warp_allocation_granularity: ",
+            self.warp_allocation_granularity,
+            "\n",
+        )
+        writer.write(
+            "max_thread_block_size: ", self.max_thread_block_size, "\n"
+        )
+        writer.write(self.flops)
+
+    @no_inline
+    fn __str__(self) -> String:
+        return String.format_sequence(self)
 
 
 # ===----------------------------------------------------------------------===#
