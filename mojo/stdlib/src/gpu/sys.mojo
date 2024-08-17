@@ -5,6 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 """This module includes utilities for getting NVIDIA GPUs features."""
 
+from gpu.host.info import Info
 from sys.info import _current_arch, _current_target
 
 
@@ -68,8 +69,7 @@ fn is_sm_greater_equal[name: StringLiteral]() -> Bool:
     """If device SM version number is greater than or equal to the provided value.
     """
 
-    @parameter
-    if _get_sm_name() == "sm_90a":
-        return _get_sm_name() == name
+    alias current = Info.from_target_name[_get_sm_name()]()
+    alias hw = Info.from_target_name[name]()
 
-    return _get_compute[name]() >= _get_sm()
+    return current >= hw
