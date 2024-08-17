@@ -375,13 +375,10 @@ struct Function[
     ) raises:
         if _dump_q(dump_ptx):
             alias ptx = Self._impl.asm
-            alias cleaned_up_ptx = ptx.replace(
-                "\t// begin inline asm\n", ""
-            ).replace("\t// end inline asm\n", "")
             if dump_ptx.isa[Path]():
-                dump_ptx[Path].write_text(cleaned_up_ptx)
+                dump_ptx[Path].write_text(ptx)
             else:
-                print(cleaned_up_ptx)
+                print(ptx)
 
         if _dump_q(dump_llvm):
             alias llvm = _compile_code[func, emission_kind="llvm"]().asm
