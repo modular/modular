@@ -15,8 +15,7 @@ fn test_never_declared_fn():
     never_declared_fn()
 
 fn implicit_var_decl(a: int):
-    # expected-error @+1 {{use of unknown declaration 'c', 'fn' declarations require explicit variable declarations}}
-    c = a
+    c = a  # implicit declaration of c
 
 # expected-error @+1 {{'__add__' requires 2 operands}}
 fn __add__():

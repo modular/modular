@@ -54,13 +54,13 @@ fn test_var_let_type_literal_value():
     var c: `42`
 
 fn use_before_def():
-    # expected-error @below {{use of unknown declaration 'x', 'fn' declarations require explicit variable declarations}}
+    # expected-error @below {{use of unknown declaration 'x'}}
     var y = x
     var x = `42`
 
 # Issue #18150: https://github.com/modularml/modular/issues/18150
 fn self_reference():
-    # expected-error @+1 {{use of unknown declaration 'num', 'fn' declarations require explicit variable declarations}}
+    # expected-error @+1 {{use of unknown declaration 'num'}}
     var num: Int = fudge_int(num)
 
 # Doesn't reject empty identifier name

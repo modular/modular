@@ -511,8 +511,8 @@ AnyValue DeclRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   LookupResult lookup = emitter.shared.lookupAndResolveDecl(
       spelling, getLoc(), container, /*searchParentScopes=*/true);
 
-  // If we're in a 'def' function and have a contextual type, then this may be
-  // an implicit declaration of a variable.  However, name lookup could find
+  // If we're in a function and have a contextual type, then this may be an
+  // implicit declaration of a variable.  However, name lookup could find
   // global symbols (e.g. the "slice" function in `slice = foo()`) which are
   // obviously not mutable.  Handle this by filtering out the overload set if
   // it is obviously not mutable, but we know we're in an lvalue context with
@@ -599,22 +599,9 @@ AnyValue DeclRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
       }
     }
 
-    // By policy in order to produce a more predictable programming model,
-    // implicit declarations of variables are only allowed in `def` contexts,
-    // not in `fn`, structs, or top level.
-    auto funcContext =
-        dyn_cast_or_null<LIT::FuncOp>(emitter.declScope.getIfOperation());
-    if (!funcContext || !funcContext.isDef()) {
-      auto diag = emitter.emitError(getLoc()) << "use of unknown declaration '"
-                                              << spelling << "'" << getRange();
-      if (funcContext)
-        diag << ", 'fn' declarations require explicit variable declarations";
-      return {};
-    }
-
     auto diag = emitter.emitError(getLoc()) << getRange();
     if (auto structDecl = dyn_cast<StructDeclOp>(container))
-      diag << structDecl.getName() << " has no '" << spelling << "' member";
+      diag << structDecl.getNameAttr() << " has no '" << spelling << "' member";
     else
       diag << "use of unknown declaration '" << spelling << "'";
     return {};

@@ -158,15 +158,14 @@ struct StmtParser : public ParserBase {
       : ParserBase(shared, lexer), parentDecl(curDeclScope),
         curDeclScope(&curDeclScope), builder(curDeclScope.getDeclEndBuilder()) {
 
-    // If we are parsing into a 'def', then we need a position to synthesize
+    // If we are parsing into a function, then we need a position to synthesize
     // variable definitions at the top of the function.
+    // TODO: If we're parsing into top level code, we don't know how to do this.
     if (auto funcOp = dyn_cast<LIT::FuncOp>(getParentDecl())) {
-      if (funcOp.isDef()) {
-        // The operation builder inserts before its insertion point, but for a
-        // stable insertion point, keep the previous iterator position.
-        varDeclCursor = OpBuilder(builder.getInsertionBlock(),
-                                  std::prev(builder.getInsertionPoint()));
-      }
+      // The operation builder inserts before its insertion point, but for a
+      // stable insertion point, keep the previous iterator position.
+      varDeclCursor = OpBuilder(builder.getInsertionBlock(),
+                                std::prev(builder.getInsertionPoint()));
     }
   }
 
@@ -1591,7 +1590,9 @@ ParseResult StmtParser::parseSingleWithStmt(size_t curIndent, SMLoc smLoc,
   // we need to use lexical scope.  When we support `with` at the top level, we
   // should decide whether it is lexical or global scope.  This largely depends
   // on our view of what `python superset` or `python++` means.
-  bool useLexicalScope = !getEmitter().varDeclCursor.has_value();
+  bool useLexicalScope = true;
+  if (auto funcDecl = curDeclScope->getNearestDeclOfType<LIT::FuncOp>())
+    useLexicalScope = !cast<LIT::FuncOp>(*funcDecl).isDef();
 
   // If there is an explicit target specified, use it.
   ValueDest enterDest(EC_WithContextMgr);

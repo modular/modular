@@ -22,6 +22,10 @@ fn testThing(a: Int) -> FloatDyn:
 fn testThing(a: Int, b: Int) -> Int:
     return 1
 
+fn implicit_variable_decls(a: Int) -> Int:
+    b = a+a
+    return b
+
 
 alias IntToFloat32Type = fn (Int) -> FloatDyn
 
