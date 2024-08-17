@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 """The module implements matrix band part functions."""
 
-from algorithm.functional import _elementwise_impl, unswitch
+from algorithm.functional import elementwise, unswitch
 from buffer import NDBuffer
 from buffer.dimlist import DimList
 from register import mogg_register
@@ -107,10 +107,9 @@ fn _matrix_band_part_impl[
         else:
             output[idx] = 0
 
-    _elementwise_impl[
+    elementwise[
         func,
-        1,
-        rank,
+        simd_width=1,
         use_blocking_impl=single_thread_blocking_override,
         target=target,
     ](input_shape, context=ctx)

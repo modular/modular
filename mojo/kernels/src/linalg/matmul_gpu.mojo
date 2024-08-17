@@ -8,7 +8,7 @@ from math import align_down, align_up, ceildiv
 from os import abort
 from sys import alignof, llvm_intrinsic, simdwidthof
 
-from algorithm.functional import _elementwise_impl_gpu, tile_and_unswitch
+from algorithm.functional import elementwise, tile_and_unswitch
 from buffer.buffer import NDBuffer
 from buffer.dimlist import DimList
 from gpu import WARP_SIZE, BlockDim, BlockIdx, ThreadIdx, barrier, lane_id
@@ -1641,7 +1641,4 @@ fn split_k_reduce[
             vec += B.load[width=simd_width](i, j + k * N)
         A.store[width=simd_width](idx, vec)
 
-    _elementwise_impl_gpu[_reduce, pack_size](
-        StaticIntTuple[2](M, N),
-        ctx,
-    )
+    elementwise[_reduce, pack_size, target="cuda"](StaticIntTuple[2](M, N), ctx)
