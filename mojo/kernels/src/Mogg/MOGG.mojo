@@ -20,7 +20,7 @@ from sys.param_env import is_defined
 from algorithm import argmax as _argmax
 from algorithm import argmin as _argmin
 from algorithm import sync_parallelize, vectorize
-from algorithm.functional import _elementwise_impl
+from algorithm.functional import elementwise
 from algorithm.reduction import (
     _get_nd_indices_from_flat_index,
     _reduce_generator,
@@ -519,10 +519,9 @@ fn elementwise_wrapper[
         "mojo.elementwise",
         Trace[TraceLevel.OP]._get_detail_str[description_fn](),
     ):
-        _elementwise_impl[
+        elementwise[
             func,
-            simd_width,
-            rank,
+            simd_width=simd_width,
             use_blocking_impl=single_thread_blocking_override,
             target=target,
         ](buffer.dynamic_shape, context=ctx)

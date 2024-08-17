@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from algorithm import vectorize
-from algorithm.functional import _elementwise_impl
+from algorithm.functional import elementwise
 from buffer import NDBuffer
 from buffer.dimlist import DimList
 from register import *
@@ -236,10 +236,9 @@ fn test_custom_identity[
         var x = input_0_fn[simd_width, rank](idx)
         output_0_fn[simd_width, rank](idx, x)
 
-    _elementwise_impl[
+    elementwise[
         identity,
-        simd_width,
-        rank,
+        simd_width=simd_width,
         use_blocking_impl=single_thread_blocking_override,
         target="cpu",
     ](
@@ -254,7 +253,7 @@ fn test_custom_identity[
 @export
 fn test_custom_identity_shape_func[
     type: DType, rank: Int, single_thread_blocking_override: Bool
-](data: NDBuffer[type, rank],) -> StaticIntTuple[rank]:
+](data: NDBuffer[type, rank]) -> StaticIntTuple[rank]:
     return data.get_shape()
 
 
@@ -313,10 +312,9 @@ fn custom_op_that_raises[
         var x = input_0_fn[simd_width, rank](idx)
         output_0_fn[simd_width, rank](idx, x)
 
-    _elementwise_impl[
+    elementwise[
         identity,
-        simd_width,
-        rank,
+        simd_width=simd_width,
         use_blocking_impl=single_thread_blocking_override,
         target="cpu",
     ](
@@ -463,7 +461,7 @@ fn scale_with_my_custom_scalar_ndbuff[
         ) * scale.val
         out.store[width=simd_width](rebind[StaticIntTuple[rank]](idx), val)
 
-    _elementwise_impl[func, 1, rank, use_blocking_impl=True, target="cpu",](
+    elementwise[func, simd_width=1, use_blocking_impl=True, target="cpu"](
         x.get_shape(),
     )
 
