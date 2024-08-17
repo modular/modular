@@ -660,16 +660,8 @@ static bool handleLifetimeAttr(TypedAttr attr,
 
   size_t oldNumResults = results.size();
   // FIXME: Track mutability correctly.
-  attr = LifetimeMutCastAttr::strip(attr);
-
-  // Unpack lifetime unions.
-  if (auto unionAttr = dyn_cast<LifetimeUnionAttr>(attr)) {
-    for (auto elt : unionAttr.getOperands())
-      if (auto sublifetime = LifetimeMutCastAttr::strip(elt))
-        results.push_back(sublifetime);
-  } else {
-    results.push_back(attr);
-  }
+  // Look through imm casts and unions.
+  processRawLifetime(attr, [&](TypedAttr raw) { results.push_back(raw); });
   return oldNumResults != results.size();
 }
 

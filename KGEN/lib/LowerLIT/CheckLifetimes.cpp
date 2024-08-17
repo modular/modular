@@ -775,19 +775,12 @@ ValueRef ValueSet::getDirectValueRef(Value value, bool isDeref) const {
 SmallVector<ValueRef> ValueSet::getValueRefsForLifetime(TypedAttr lifetime) {
   SmallVector<ValueRef> result;
 
-  // FIXME: Track mutability correctly.
-  lifetime = LifetimeMutCastAttr::strip(lifetime);
+  // Look through imm cast and unions to find the underlying attrs.
+  processRawLifetime(lifetime, [&](TypedAttr raw) {
+    if (auto valueRef = getFullValueRefForLifetime(raw))
+      result.push_back(valueRef);
+  });
 
-  // If the lifetime is a LifetimeUnionAttr then it will already be uniqued,
-  // inlined, and stripped of immortal references, so we can just return all
-  // the value refs for its elments.
-  if (auto unionAttr = dyn_cast<LifetimeUnionAttr>(lifetime)) {
-    for (auto elt : unionAttr.getOperands())
-      if (auto valueRef =
-              getFullValueRefForLifetime(LifetimeMutCastAttr::strip(elt)))
-        result.push_back(valueRef);
-  } else if (auto valueRef = getFullValueRefForLifetime(lifetime))
-    result.push_back(valueRef);
   return result;
 }
 
