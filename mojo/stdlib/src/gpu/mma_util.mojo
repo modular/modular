@@ -33,10 +33,10 @@ fn load_matrix_a[
     var a23_col = group_lane_id + 4
 
     return SIMD[DType.float32, 4](
-        a_ptr[int((tile_row + a02_row) * ldm + (tile_col + a01_col))],
-        a_ptr[int((tile_row + a13_row) * ldm + (tile_col + a01_col))],
-        a_ptr[int((tile_row + a02_row) * ldm + (tile_col + a23_col))],
-        a_ptr[int((tile_row + a13_row) * ldm + (tile_col + a23_col))],
+        a_ptr[(tile_row + a02_row) * ldm + (tile_col + a01_col)],
+        a_ptr[(tile_row + a13_row) * ldm + (tile_col + a01_col)],
+        a_ptr[(tile_row + a02_row) * ldm + (tile_col + a23_col)],
+        a_ptr[(tile_row + a13_row) * ldm + (tile_col + a23_col)],
     )
 
 
@@ -66,10 +66,10 @@ fn load_matrix_a[
     var a3_col = (group_lane_id * 2) + (3 & 0x1)
 
     return SIMD[DType.float16, 4](
-        a_ptr[int((tile_row + a01_row) * ldm + (tile_col + a0_col))],
-        a_ptr[int((tile_row + a01_row) * ldm + (tile_col + a1_col))],
-        a_ptr[int((tile_row + a23_row) * ldm + (tile_col + a2_col))],
-        a_ptr[int((tile_row + a23_row) * ldm + (tile_col + a3_col))],
+        a_ptr[(tile_row + a01_row) * ldm + (tile_col + a0_col)],
+        a_ptr[(tile_row + a01_row) * ldm + (tile_col + a1_col)],
+        a_ptr[(tile_row + a23_row) * ldm + (tile_col + a2_col)],
+        a_ptr[(tile_row + a23_row) * ldm + (tile_col + a3_col)],
     )
 
 
@@ -100,10 +100,10 @@ fn load_matrix_a[
         var a3_col = (group_lane_id * 2) + (3 & 0x1)
 
         return SIMD[DType.bfloat16, k // 2](
-            a_ptr[int((tile_row + a01_row) * ldm + (tile_col + a0_col))],
-            a_ptr[int((tile_row + a01_row) * ldm + (tile_col + a1_col))],
-            a_ptr[int((tile_row + a23_row) * ldm + (tile_col + a2_col))],
-            a_ptr[int((tile_row + a23_row) * ldm + (tile_col + a3_col))],
+            a_ptr[(tile_row + a01_row) * ldm + (tile_col + a0_col)],
+            a_ptr[(tile_row + a01_row) * ldm + (tile_col + a1_col)],
+            a_ptr[(tile_row + a23_row) * ldm + (tile_col + a2_col)],
+            a_ptr[(tile_row + a23_row) * ldm + (tile_col + a3_col)],
         )
     else:
         constrained[m == 16 and n == 8 and k == 16]()
@@ -123,15 +123,15 @@ fn load_matrix_a[
         var a_col_7 = (group_lane_id * 2) + (7 & 0x1) + 8
 
         var a = SIMD[DType.bfloat16, k // 2]()
-        a[0] = a_ptr[int((tile_row + a_row_0) * ldm + (tile_col + a_col_0))]
-        a[1] = a_ptr[int((tile_row + a_row_0) * ldm + (tile_col + a_col_1))]
-        a[2] = a_ptr[int((tile_row + a_row_1) * ldm + (tile_col + a_col_2))]
-        a[3] = a_ptr[int((tile_row + a_row_1) * ldm + (tile_col + a_col_3))]
+        a[0] = a_ptr[(tile_row + a_row_0) * ldm + (tile_col + a_col_0)]
+        a[1] = a_ptr[(tile_row + a_row_0) * ldm + (tile_col + a_col_1)]
+        a[2] = a_ptr[(tile_row + a_row_1) * ldm + (tile_col + a_col_2)]
+        a[3] = a_ptr[(tile_row + a_row_1) * ldm + (tile_col + a_col_3)]
 
-        a[4] = a_ptr[int((tile_row + a_row_0) * ldm + (tile_col + a_col_4))]
-        a[5] = a_ptr[int((tile_row + a_row_0) * ldm + (tile_col + a_col_5))]
-        a[6] = a_ptr[int((tile_row + a_row_1) * ldm + (tile_col + a_col_6))]
-        a[7] = a_ptr[int((tile_row + a_row_1) * ldm + (tile_col + a_col_7))]
+        a[4] = a_ptr[(tile_row + a_row_0) * ldm + (tile_col + a_col_4)]
+        a[5] = a_ptr[(tile_row + a_row_0) * ldm + (tile_col + a_col_5)]
+        a[6] = a_ptr[(tile_row + a_row_1) * ldm + (tile_col + a_col_6)]
+        a[7] = a_ptr[(tile_row + a_row_1) * ldm + (tile_col + a_col_7)]
         return a
 
 
@@ -158,8 +158,8 @@ fn load_matrix_b[
     var b1_row = group_lane_id + 4
 
     return SIMD[DType.float32, 2](
-        b_ptr[int((tile_row + b0_row) * ldm + (tile_col + b01_col))],
-        b_ptr[int((tile_row + b1_row) * ldm + (tile_col + b01_col))],
+        b_ptr[(tile_row + b0_row) * ldm + (tile_col + b01_col)],
+        b_ptr[(tile_row + b1_row) * ldm + (tile_col + b01_col)],
     )
 
 
@@ -186,8 +186,8 @@ fn load_matrix_b[
     var b1_row = (group_lane_id * 2) + (1 & 0x1)
 
     return SIMD[DType.float16, 2](
-        b_ptr[int((tile_row + b0_row) * ldm + (tile_col + b01_col))],
-        b_ptr[int((tile_row + b1_row) * ldm + (tile_col + b01_col))],
+        b_ptr[(tile_row + b0_row) * ldm + (tile_col + b01_col)],
+        b_ptr[(tile_row + b1_row) * ldm + (tile_col + b01_col)],
     )
 
 
@@ -215,8 +215,8 @@ fn load_matrix_b[
         var b1_row = (group_lane_id * 2) + (1 & 0x1)
 
         return SIMD[DType.bfloat16, k // 4](
-            b_ptr[int((tile_row + b0_row) * ldm + (tile_col + b01_col))],
-            b_ptr[int((tile_row + b1_row) * ldm + (tile_col + b01_col))],
+            b_ptr[(tile_row + b0_row) * ldm + (tile_col + b01_col)],
+            b_ptr[(tile_row + b1_row) * ldm + (tile_col + b01_col)],
         )
     else:
         constrained[m == 16 and n == 8 and k == 16]()
@@ -230,10 +230,10 @@ fn load_matrix_b[
         var b_col = group_id
 
         return SIMD[DType.bfloat16, k // 4](
-            b_ptr[int((tile_row + b_row_0) * ldm + (tile_col + b_col))],
-            b_ptr[int((tile_row + b_row_1) * ldm + (tile_col + b_col))],
-            b_ptr[int((tile_row + b_row_2) * ldm + (tile_col + b_col))],
-            b_ptr[int((tile_row + b_row_3) * ldm + (tile_col + b_col))],
+            b_ptr[(tile_row + b_row_0) * ldm + (tile_col + b_col)],
+            b_ptr[(tile_row + b_row_1) * ldm + (tile_col + b_col)],
+            b_ptr[(tile_row + b_row_2) * ldm + (tile_col + b_col)],
+            b_ptr[(tile_row + b_row_3) * ldm + (tile_col + b_col)],
         )
 
 
@@ -262,7 +262,7 @@ fn store_matrix_d[
     var d2_col = (group_lane_id * 2) + (2 & 0x1)
     var d3_col = (group_lane_id * 2) + (3 & 0x1)
 
-    d_ptr[int((tile_row + d01_row) * ldm + (tile_col + d0_col))] = d[0]
-    d_ptr[int((tile_row + d01_row) * ldm + (tile_col + d1_col))] = d[1]
-    d_ptr[int((tile_row + d23_row) * ldm + (tile_col + d2_col))] = d[2]
-    d_ptr[int((tile_row + d23_row) * ldm + (tile_col + d3_col))] = d[3]
+    d_ptr[(tile_row + d01_row) * ldm + (tile_col + d0_col)] = d[0]
+    d_ptr[(tile_row + d01_row) * ldm + (tile_col + d1_col)] = d[1]
+    d_ptr[(tile_row + d23_row) * ldm + (tile_col + d2_col)] = d[2]
+    d_ptr[(tile_row + d23_row) * ldm + (tile_col + d3_col)] = d[3]
