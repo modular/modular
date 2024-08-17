@@ -425,13 +425,13 @@ struct Tensor[
 
                 @parameter
                 if type is DType.bool:
-                    var v = strided_load[DType.uint8, simd_width](
+                    var v = strided_load[simd_width](
                         self.data.bitcast[DType.uint8]().offset(flat_index),
                         stride,
                     )
                     return v.cast[type]()
                 else:
-                    return strided_load[type, simd_width](
+                    return strided_load[simd_width](
                         self.data.offset(flat_index), stride
                     )
 

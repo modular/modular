@@ -659,13 +659,13 @@ fn simd_load[
 
         @parameter
         if type is DType.bool:
-            var v = strided_load[DType.uint8, simd_width](
+            var v = strided_load[simd_width](
                 buffer.data.bitcast[DType.uint8]().offset(flat_index),
                 stride,
             )
             return v.cast[type]()
         else:
-            return strided_load[type, simd_width](
+            return strided_load[simd_width](
                 buffer.data.offset(flat_index), stride
             )
     return _simd_load_internal[simd_width, type, rank, input_0_static_shape](
