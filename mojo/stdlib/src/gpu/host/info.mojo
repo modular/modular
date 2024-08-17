@@ -5,6 +5,182 @@
 # ===----------------------------------------------------------------------=== #
 """Contains information about the GPUs."""
 
+
+# ===----------------------------------------------------------------------===#
+# A100
+# ===----------------------------------------------------------------------===#
+
+# Note: features = "+ptx85" means that the kernel should be compiled using
+# PTX version 8.5. This must be less than or equal to the installed CUDA
+# driver's maximum supported PTX version. Currently we hardcode this to
+# PTX version 8.5 which means that you need to have a CUDA driver included with
+# CUDA 12.5 toolkit. The mapping from CUDA Driver to PTX version can be found by
+# looking at the PTX ISA in the versioned docs
+# https://developer.nvidia.com/cuda-toolkit-archive.
+
+alias A100 = Info(
+    name="A100",
+    compute=8.0,
+    version="sm_80",
+    target=__mlir_attr[
+        `#kgen.target<triple = "nvptx64-nvidia-cuda", `,
+        `arch = "sm_80", `,
+        `features = "+ptx85", `,
+        `data_layout = "e-i64:64-i128:128-v16:16-v32:32-n16:32:64",`,
+        `simd_bit_width = 128> : !kgen.target`,
+    ],
+    target_32bit=__mlir_attr[
+        `#kgen.target<triple = "nvptx64-nvidia-cuda", `,
+        `arch = "sm_80", `,
+        `features = "+ptx85", `,
+        `data_layout="e-p32:64:64-i64:64-i128:128-v16:16-v32:32-n16:32:64",`,
+        `simd_bit_width = 128> : !kgen.target`,
+    ],
+    sm_count=108,
+    threads_per_sm=2048,
+    threads_per_warp=32,
+    warps_per_multiprocessor=64,
+    threads_per_multiprocessor=2048,
+    thread_blocks_per_multiprocessor=32,
+    shared_memory_per_multiprocessor=167936,
+    register_file_size=65536,
+    register_allocation_unit_size=256,
+    allocation_granularity="warp",
+    max_registers_per_thread=255,
+    max_registers_per_block=65536,
+    max_blocks_per_multiprocessor=32,
+    shared_memory_allocation_unit_size=128,
+    warp_allocation_granularity=4,
+    max_thread_block_size=1024,
+    flops=Flops(fp16=312, i8=624, i4=1248),
+)
+
+# ===----------------------------------------------------------------------===#
+# A10
+# ===----------------------------------------------------------------------===#
+
+
+alias A10 = Info(
+    name="A10",
+    compute=8.6,
+    version="sm_86",
+    target=__mlir_attr[
+        `#kgen.target<triple = "nvptx64-nvidia-cuda", `,
+        `arch = "sm_86", `,
+        `features = "+ptx85", `,
+        `data_layout = "e-i64:64-i128:128-v16:16-v32:32-n16:32:64",`,
+        `simd_bit_width = 128> : !kgen.target`,
+    ],
+    target_32bit=__mlir_attr[
+        `#kgen.target<triple = "nvptx64-nvidia-cuda", `,
+        `arch = "sm_86", `,
+        `features = "+ptx85", `,
+        `data_layout="e-p32:64:64-i64:64-i128:128-v16:16-v32:32-n16:32:64",`,
+        `simd_bit_width = 128> : !kgen.target`,
+    ],
+    sm_count=72,
+    threads_per_sm=1536,
+    threads_per_warp=32,
+    warps_per_multiprocessor=64,
+    threads_per_multiprocessor=2048,
+    thread_blocks_per_multiprocessor=32,
+    shared_memory_per_multiprocessor=102400,
+    register_file_size=65536,
+    register_allocation_unit_size=256,
+    allocation_granularity="warp",
+    max_registers_per_thread=255,
+    max_registers_per_block=65536,
+    max_blocks_per_multiprocessor=16,
+    shared_memory_allocation_unit_size=128,
+    warp_allocation_granularity=4,
+    max_thread_block_size=1024,
+    flops=Flops(fp16=125, i8=250, i4=500),
+)
+
+# ===----------------------------------------------------------------------===#
+# L4
+# ===----------------------------------------------------------------------===#
+
+
+alias L4 = Info(
+    name="L4",
+    compute=8.9,
+    version="sm_89",
+    target=__mlir_attr[
+        `#kgen.target<triple = "nvptx64-nvidia-cuda", `,
+        `arch = "sm_89", `,
+        `features = "+ptx85", `,
+        `data_layout = "e-i64:64-i128:128-v16:16-v32:32-n16:32:64",`,
+        `simd_bit_width = 128> : !kgen.target`,
+    ],
+    target_32bit=__mlir_attr[
+        `#kgen.target<triple = "nvptx64-nvidia-cuda", `,
+        `arch = "sm_89", `,
+        `features = "+ptx85", `,
+        `data_layout="e-p32:64:64-i64:64-i128:128-v16:16-v32:32-n16:32:64",`,
+        `simd_bit_width = 128> : !kgen.target`,
+    ],
+    sm_count=58,
+    threads_per_sm=1536,
+    threads_per_warp=32,
+    warps_per_multiprocessor=64,
+    threads_per_multiprocessor=2048,
+    thread_blocks_per_multiprocessor=32,
+    shared_memory_per_multiprocessor=102400,
+    register_file_size=65536,
+    register_allocation_unit_size=256,
+    allocation_granularity="warp",
+    max_registers_per_thread=255,
+    max_registers_per_block=65536,
+    max_blocks_per_multiprocessor=24,
+    shared_memory_allocation_unit_size=128,
+    warp_allocation_granularity=4,
+    max_thread_block_size=1024,
+    flops=Flops(fp16=121, i8=242, i4=485),
+)
+
+# ===----------------------------------------------------------------------===#
+# H100
+# ===----------------------------------------------------------------------===#
+
+
+alias H100 = Info(
+    name="H100",
+    compute=9.0,
+    version="sm_90a",
+    target=__mlir_attr[
+        `#kgen.target<triple = "nvptx64-nvidia-cuda", `,
+        `arch = "sm_90a", `,
+        `features = "+ptx85", `,
+        `data_layout = "e-i64:64-i128:128-v16:16-v32:32-n16:32:64",`,
+        `simd_bit_width = 128> : !kgen.target`,
+    ],
+    target_32bit=__mlir_attr[
+        `#kgen.target<triple = "nvptx64-nvidia-cuda", `,
+        `arch = "sm_90a", `,
+        `features = "+ptx85", `,
+        `data_layout="e-p32:64:64-i64:64-i128:128-v16:16-v32:32-n16:32:64",`,
+        `simd_bit_width = 128> : !kgen.target`,
+    ],
+    sm_count=114,
+    threads_per_sm=-1,
+    threads_per_warp=32,
+    warps_per_multiprocessor=64,
+    threads_per_multiprocessor=2048,
+    thread_blocks_per_multiprocessor=32,
+    shared_memory_per_multiprocessor=167936,
+    register_file_size=65536,
+    register_allocation_unit_size=256,
+    allocation_granularity="warp",
+    max_registers_per_thread=255,
+    max_registers_per_block=65536,
+    max_blocks_per_multiprocessor=32,
+    shared_memory_allocation_unit_size=128,
+    warp_allocation_granularity=4,
+    max_thread_block_size=1024,
+    flops=Flops(fp16=1979, i8=3958, i4=7916),
+)
+
 # ===----------------------------------------------------------------------===#
 # Flops
 # ===----------------------------------------------------------------------===#
@@ -31,6 +207,8 @@ struct Info:
     var version: StringLiteral
     var target: __mlir_type.`!kgen.target`
     var target_32bit: __mlir_type.`!kgen.target`
+    var sm_count: Int
+    var threads_per_sm: Int
     var threads_per_warp: Int
     var warps_per_multiprocessor: Int
     var threads_per_multiprocessor: Int
@@ -46,6 +224,10 @@ struct Info:
     var warp_allocation_granularity: Int
     var max_thread_block_size: Int
     var flops: Flops
+
+    @staticmethod
+    fn from_target_name[name: StringLiteral]() -> Self:
+        return _get_info_from_target[name]()
 
     fn __lt__(self, other: Self) -> Bool:
         return self.compute < other.compute
@@ -120,171 +302,3 @@ fn _get_compute(target_arch: String) -> Float32:
         return H100.compute
 
     return A100.compute
-
-
-# ===----------------------------------------------------------------------===#
-# A100
-# ===----------------------------------------------------------------------===#
-
-# Note: features = "+ptx85" means that the kernel should be compiled using
-# PTX version 8.5. This must be less than or equal to the installed CUDA
-# driver's maximum supported PTX version. Currently we hardcode this to
-# PTX version 8.5 which means that you need to have a CUDA driver included with
-# CUDA 12.5 toolkit. The mapping from CUDA Driver to PTX version can be found by
-# looking at the PTX ISA in the versioned docs
-# https://developer.nvidia.com/cuda-toolkit-archive.
-
-alias A100 = Info(
-    name="A100",
-    compute=8.0,
-    version="sm_80",
-    target=__mlir_attr[
-        `#kgen.target<triple = "nvptx64-nvidia-cuda", `,
-        `arch = "sm_80", `,
-        `features = "+ptx85", `,
-        `data_layout = "e-i64:64-i128:128-v16:16-v32:32-n16:32:64",`,
-        `simd_bit_width = 128> : !kgen.target`,
-    ],
-    target_32bit=__mlir_attr[
-        `#kgen.target<triple = "nvptx64-nvidia-cuda", `,
-        `arch = "sm_80", `,
-        `features = "+ptx85", `,
-        `data_layout="e-p32:64:64-i64:64-i128:128-v16:16-v32:32-n16:32:64",`,
-        `simd_bit_width = 128> : !kgen.target`,
-    ],
-    threads_per_warp=32,
-    warps_per_multiprocessor=64,
-    threads_per_multiprocessor=2048,
-    thread_blocks_per_multiprocessor=32,
-    shared_memory_per_multiprocessor=167936,
-    register_file_size=65536,
-    register_allocation_unit_size=256,
-    allocation_granularity="warp",
-    max_registers_per_thread=255,
-    max_registers_per_block=65536,
-    max_blocks_per_multiprocessor=32,
-    shared_memory_allocation_unit_size=128,
-    warp_allocation_granularity=4,
-    max_thread_block_size=1024,
-    flops=Flops(fp16=312, i8=624, i4=1248),
-)
-
-# ===----------------------------------------------------------------------===#
-# A10
-# ===----------------------------------------------------------------------===#
-
-
-alias A10 = Info(
-    name="A10",
-    compute=8.6,
-    version="sm_86",
-    target=__mlir_attr[
-        `#kgen.target<triple = "nvptx64-nvidia-cuda", `,
-        `arch = "sm_86", `,
-        `features = "+ptx85", `,
-        `data_layout = "e-i64:64-i128:128-v16:16-v32:32-n16:32:64",`,
-        `simd_bit_width = 128> : !kgen.target`,
-    ],
-    target_32bit=__mlir_attr[
-        `#kgen.target<triple = "nvptx64-nvidia-cuda", `,
-        `arch = "sm_86", `,
-        `features = "+ptx85", `,
-        `data_layout="e-p32:64:64-i64:64-i128:128-v16:16-v32:32-n16:32:64",`,
-        `simd_bit_width = 128> : !kgen.target`,
-    ],
-    threads_per_warp=32,
-    warps_per_multiprocessor=64,
-    threads_per_multiprocessor=2048,
-    thread_blocks_per_multiprocessor=32,
-    shared_memory_per_multiprocessor=102400,
-    register_file_size=65536,
-    register_allocation_unit_size=256,
-    allocation_granularity="warp",
-    max_registers_per_thread=255,
-    max_registers_per_block=65536,
-    max_blocks_per_multiprocessor=16,
-    shared_memory_allocation_unit_size=128,
-    warp_allocation_granularity=4,
-    max_thread_block_size=1024,
-    flops=Flops(fp16=125, i8=250, i4=500),
-)
-
-# ===----------------------------------------------------------------------===#
-# L4
-# ===----------------------------------------------------------------------===#
-
-
-alias L4 = Info(
-    name="L4",
-    compute=8.9,
-    version="sm_89",
-    target=__mlir_attr[
-        `#kgen.target<triple = "nvptx64-nvidia-cuda", `,
-        `arch = "sm_89", `,
-        `features = "+ptx85", `,
-        `data_layout = "e-i64:64-i128:128-v16:16-v32:32-n16:32:64",`,
-        `simd_bit_width = 128> : !kgen.target`,
-    ],
-    target_32bit=__mlir_attr[
-        `#kgen.target<triple = "nvptx64-nvidia-cuda", `,
-        `arch = "sm_89", `,
-        `features = "+ptx85", `,
-        `data_layout="e-p32:64:64-i64:64-i128:128-v16:16-v32:32-n16:32:64",`,
-        `simd_bit_width = 128> : !kgen.target`,
-    ],
-    threads_per_warp=32,
-    warps_per_multiprocessor=64,
-    threads_per_multiprocessor=2048,
-    thread_blocks_per_multiprocessor=32,
-    shared_memory_per_multiprocessor=102400,
-    register_file_size=65536,
-    register_allocation_unit_size=256,
-    allocation_granularity="warp",
-    max_registers_per_thread=255,
-    max_registers_per_block=65536,
-    max_blocks_per_multiprocessor=24,
-    shared_memory_allocation_unit_size=128,
-    warp_allocation_granularity=4,
-    max_thread_block_size=1024,
-    flops=Flops(fp16=121, i8=242, i4=485),
-)
-
-# ===----------------------------------------------------------------------===#
-# H100
-# ===----------------------------------------------------------------------===#
-
-
-alias H100 = Info(
-    name="H100",
-    compute=9.0,
-    version="sm_90",
-    target=__mlir_attr[
-        `#kgen.target<triple = "nvptx64-nvidia-cuda", `,
-        `arch = "sm_90a", `,
-        `features = "+ptx85", `,
-        `data_layout = "e-i64:64-i128:128-v16:16-v32:32-n16:32:64",`,
-        `simd_bit_width = 128> : !kgen.target`,
-    ],
-    target_32bit=__mlir_attr[
-        `#kgen.target<triple = "nvptx64-nvidia-cuda", `,
-        `arch = "sm_90a", `,
-        `features = "+ptx85", `,
-        `data_layout="e-p32:64:64-i64:64-i128:128-v16:16-v32:32-n16:32:64",`,
-        `simd_bit_width = 128> : !kgen.target`,
-    ],
-    threads_per_warp=32,
-    warps_per_multiprocessor=64,
-    threads_per_multiprocessor=2048,
-    thread_blocks_per_multiprocessor=32,
-    shared_memory_per_multiprocessor=167936,
-    register_file_size=65536,
-    register_allocation_unit_size=256,
-    allocation_granularity="warp",
-    max_registers_per_thread=255,
-    max_registers_per_block=65536,
-    max_blocks_per_multiprocessor=32,
-    shared_memory_allocation_unit_size=128,
-    warp_allocation_granularity=4,
-    max_thread_block_size=1024,
-    flops=Flops(fp16=1979, i8=3958, i4=7916),
-)
