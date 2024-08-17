@@ -11,8 +11,7 @@ from sys._build import is_kernels_debug_build
 from sys.info import simdwidthof, sizeof
 
 from algorithm.functional import (
-    _elementwise_impl,
-    _elementwise_impl_gpu,
+    elementwise,
     _get_start_indices_of_nth_subvolume,
     _get_start_indices_of_nth_subvolume_uint,
     sync_parallelize,
@@ -389,18 +388,16 @@ fn _concat_small[
 
     # If we are concat'ing along the last dimension we can do a simd load.
     if axis == rank - 1 and inputs_simd_aligned:
-        _elementwise_impl[
+        elementwise[
             concat_lambda,
-            simd_width,
-            rank,
+            simd_width=simd_width,
             use_blocking_impl=single_thread_blocking_override,
         ](output.dynamic_shape)
     else:
         # Otherwise we must run scalar.
-        _elementwise_impl[
+        elementwise[
             concat_lambda,
-            1,
-            rank,
+            simd_width=1,
             use_blocking_impl=single_thread_blocking_override,
         ](output.dynamic_shape)
 
@@ -1393,7 +1390,7 @@ fn _concat_gpu_elementwise[
     # Slices of the innermost dim of output_reshape are contiguous in the corresponding input.
     # Because the inner dim is contiguous we will get coalesced memory access
     # using the elementwise generator with simd_width=1.
-    _elementwise_impl_gpu[per_output_elem, 1](output.get_shape(), ctx)
+    elementwise[per_output_elem, 1, target="cuda"](output.get_shape(), ctx)
 
 
 @always_inline

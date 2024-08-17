@@ -10,7 +10,6 @@ from sys.info import _current_target
 from utils import Index
 from utils.numerics import min_finite, isnan
 
-from algorithm.functional import _elementwise_impl
 from gpu.host import Stream, DeviceContext, DeviceBuffer
 from gpu.host._compile import _get_nvptx_target
 from linalg import transpose

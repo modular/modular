@@ -11,7 +11,7 @@ from sys import has_neon, simdwidthof, sizeof
 from sys.intrinsics import PrefetchOptions
 
 from algorithm import elementwise, parallel_memcpy, sync_parallelize
-from algorithm.functional import _elementwise_impl, tile
+from algorithm.functional import tile
 from buffer import NDBuffer
 from buffer.dimlist import DimList
 from gpu.host import DeviceBuffer, DeviceContext
@@ -635,18 +635,16 @@ fn gather[
 
         # If we are gathering on the last dimension then we have to be scalar.
         if int(axis) == input_rank - 1:
-            _elementwise_impl[
+            elementwise[
                 gather_elementwise_fn,
-                1,
-                output_rank,
+                simd_width=1,
                 use_blocking_impl=single_thread_blocking_override,
                 target=target,
             ](output_shape, context)
         else:
-            _elementwise_impl[
+            elementwise[
                 gather_elementwise_fn,
-                simdwidthof[type](),
-                output_rank,
+                simd_width = simdwidthof[type](),
                 use_blocking_impl=single_thread_blocking_override,
                 target=target,
             ](output_shape, context)
@@ -717,18 +715,16 @@ fn gather[
 
         # If we are gathering on the last dimension then we have to be scalar.
         if int(axis) == input_rank - 1:
-            _elementwise_impl[
+            elementwise[
                 gather_elementwise_fn,
-                1,
-                output_rank,
+                simd_width=1,
                 use_blocking_impl=single_thread_blocking_override,
                 target=target,
             ](output_shape, context)
         else:
-            _elementwise_impl[
+            elementwise[
                 gather_elementwise_fn,
-                simdwidthof[type](),
-                output_rank,
+                simd_width = simdwidthof[type](),
                 use_blocking_impl=single_thread_blocking_override,
                 target=target,
             ](output_shape, context)
@@ -927,10 +923,9 @@ fn scatter_nd_generator[
     for i in range(len(indices.get_shape()) - 1):
         iter_shape[i] = indices.get_shape()[i]
 
-    _elementwise_impl[
+    elementwise[
         update_func,
-        1,
-        indices_rank - 1,
+        simd_width=1,
         use_blocking_impl=single_thread_blocking_override,
         target=target,
     ](iter_shape, context)
