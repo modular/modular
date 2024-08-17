@@ -362,17 +362,6 @@ getCallOpEffects(Operation &op,
     Type argType = arg.getType();
     auto effect = getOperandEffectForConvention(conv, argType);
 
-    // If this is a borrowed register of a !lit.ref, then we know that this is
-    // an explicitly declared low-level reference.
-    // TODO(references): This is a hack because we can't get lifetime of self.
-    bool isIndirect = SignatureType::hasAddress(conv);
-    if (conv == ArgConvention::BorrowedInReg)
-      if (auto ref = dyn_cast<RefType>(argType)) {
-        effect = ref.isMutableKnown(false) ? OperandEffect::memLoad
-                                           : OperandEffect::memInOut;
-        isIndirect = true;
-      }
-
     // If this is a normal register use, and if the value is a reference
     // (whether the argument convention is fancy or if it is an explicitly
     // passed reference) treat this as a field sensitive access so we can
@@ -382,10 +371,15 @@ getCallOpEffects(Operation &op,
     if (noIndirect)
       return;
 
+    // Do not add type-based lifetime effects for result arguments.  They are
+    // returned, not accessed and therefore don't conflict with the inputs.
+    if (conv == ArgConvention::ByRefResult || conv == ArgConvention::ByRefError)
+      return;
+
     // If this is a memConsume or memStoreOwned, then the lifetime of the
     // reference is handled directly, strip it off.  Otherwise handle borrowed,
     // inout, etc operands as just any-old reference use.
-    if (isIndirect)
+    if (SignatureType::hasAddress(conv))
       argType = cast<RefType>(argType).getElementType();
 
     // In addition to the direct (field-sensitive) effect of loading/storing
