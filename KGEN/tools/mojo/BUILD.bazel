@@ -121,6 +121,10 @@ modular_cc_binary(
         "@llvm-project//compiler-rt:orc_rt",
     ],
     includes = ["."],
+    linkopts = select({
+        "@platforms//os:linux": ["-rdynamic"],
+        "//conditions:default": [],
+    }),
     stamp = 1,
     deps = [
         ":Build.inc_files",
@@ -149,6 +153,7 @@ modular_cc_binary(
         "//KGEN:ObjectCompiler",
         "//KGEN:POPDialect",
         "//KGEN:Support",
+        "//KGEN:SupportForceLinkMLIRC",
         "//KGEN:ToolCommon",
         "//KGEN/tools/common",
         "//Support:Base",

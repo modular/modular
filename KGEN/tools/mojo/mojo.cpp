@@ -16,6 +16,7 @@
 
 #include "Config/Version.h"
 #include "KGEN/Support/Configuration.h"
+#include "KGEN/Support/ForceLinkMLIRC.h"
 #include "Support/CrashReporting/CrashReporting.h"
 #include "Support/Driver/DriverSupport.h"
 #include "Support/LogicalResult.h"
@@ -44,6 +45,10 @@ struct DriverOptTable : public llvm::opt::PrecomputedOptTable {
 //===----------------------------------------------------------------------===//
 
 int main(int argc, char **argv) {
+  // Force linking of MLIR C symbols to JIT Mojo code relying on the mlir
+  // bindings.
+  KGEN::forceLinkMLIRC();
+
   // Install LLVM signal handlers and convert `argc` and `argv` for Windows
   // hosts.
   llvm::InitLLVM initLLVM(argc, argv);
