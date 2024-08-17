@@ -18,7 +18,7 @@ fn strided_load_kernel[
 ](ptr: UnsafePointer[Scalar[type], AddressSpace.GENERIC], stride: Int) -> SIMD[
     type, width
 ]:
-    return strided_load[type, width](ptr, stride)
+    return strided_load[width](ptr, stride)
 
 
 def test_strided_load():
