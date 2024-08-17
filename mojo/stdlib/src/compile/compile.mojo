@@ -23,6 +23,12 @@ from .reflection import get_linkage_name
 # ===----------------------------------------------------------------------===#
 
 
+fn _cleanup_asm(s: StringLiteral) -> StringLiteral:
+    return s.replace("\t// begin inline asm\n", "").replace(
+        "\t// end inline asm\n", ""
+    )
+
+
 @value
 @register_passable("trivial")
 struct _Info:
@@ -103,7 +109,7 @@ fn _compile_info_asm_failable_impl[
         }
         return result
     alias result = Info {
-        asm: impl.asm,
+        asm: _cleanup_asm(impl.asm),
         function_name: get_linkage_name[target, func](),
         num_captures: impl.num_captures,
         populate: rebind[fn (UnsafePointer[NoneType]) capturing -> None](
@@ -138,7 +144,7 @@ fn _compile_info_asm_non_failable_impl[
     constrained[Int(cls.num_captures) != -1, "failed to compile code"]()
 
     alias result = Info {
-        asm: cls.asm,
+        asm: _cleanup_asm(cls.asm),
         function_name: get_linkage_name[target, func](),
         num_captures: cls.num_captures,
         populate: rebind[fn (UnsafePointer[NoneType]) capturing -> None](
