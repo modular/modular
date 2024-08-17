@@ -259,8 +259,13 @@ class Graph:
             try:
                 results = op(*args, **kwargs)
             except Exception as e:
-                diags = "\n\t".join(diagnostics)
-                raise ValueError(f"Mlir Diagnostics:\n\t{diags}\n") from e
+                raise ValueError(
+                    f"Failed to create {op.__qualname__} op:\n\tInputs:\n"
+                    + "".join(f"\t\t{arg!r}\n" for arg in args)
+                    + "".join(f"\t\t{k} = {v!r}\n" for k, v in kwargs.items())
+                    + "\tMLIR Diagnostics\n"
+                    + "".join(f"\n\t\t{d}" for d in diagnostics)
+                ) from e
             finally:
                 handle.detach()
 
