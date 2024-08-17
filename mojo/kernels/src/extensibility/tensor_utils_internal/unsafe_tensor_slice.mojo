@@ -175,15 +175,13 @@ struct UnsafeTensorSlice[
 
             @parameter
             if type is DType.bool:
-                var v = strided_load[DType.uint8, width](
+                var v = strided_load[width](
                     self._ptr.bitcast[DType.uint8]().offset(flat_index),
                     stride,
                 )
                 return v.cast[type]()
             else:
-                return strided_load[type, width](
-                    self._ptr.offset(flat_index), stride
-                )
+                return strided_load[width](self._ptr.offset(flat_index), stride)
 
     @always_inline
     fn store[
@@ -214,12 +212,10 @@ struct UnsafeTensorSlice[
             @parameter
             if type is DType.bool:
                 var v = val.cast[DType.uint8]()
-                strided_store[DType.uint8, width](
+                strided_store(
                     v,
                     self._ptr.bitcast[DType.uint8]().offset(flat_index),
                     stride,
                 )
             else:
-                return strided_store[type, width](
-                    val, self._ptr.offset(flat_index), stride
-                )
+                return strided_store(val, self._ptr.offset(flat_index), stride)
