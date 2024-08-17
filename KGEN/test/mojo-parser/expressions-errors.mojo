@@ -357,7 +357,7 @@ def bad_assignment1(a: Int, b: Int):
    a = (b += b)
 
 fn bad_walrus_implicit_decl_in_fn():
-  # expected-error @+1 {{use of unknown declaration 'a'}}
+  # Implicit definition in an 'fn' is ok.
   if a := 4:
     pass
 

@@ -87,7 +87,7 @@ fn takes_reg_type(t: AnyTrivialRegType):
 
 
 fn test_takes_reg_type():
-    # expected-error @below {{use of unknown declaration 'takes_type', 'fn' declarations require explicit variable declarations}}
+    # expected-error @below {{use of unknown declaration 'takes_type'}}
     takes_type(Int)
 
 
@@ -96,5 +96,5 @@ fn takes_mem_type(t: AnyType):
 
 
 fn test_takes_mem_type():
-    # expected-error @below {{use of unknown declaration 'takes_type', 'fn' declarations require explicit variable declarations}}
+    # expected-error @below {{use of unknown declaration 'takes_type'}}
     takes_type(SomeType)

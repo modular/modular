@@ -73,7 +73,7 @@ from test_package.unknown_nested_module import bar
 import test_package
 
 fn assignPackageModule():
-  test_package = test_package # expected-error {{expression must be mutable in assignment}}
+  test_package = test_package
 
 # // -----
 

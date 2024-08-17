@@ -435,7 +435,7 @@ fn testOverloadInitError(a: InitOverloaded, b: Parametric[1], c: Int):
 # Decorators
 ##===----------------------------------------------------------------------===##
 
-@decorator  # expected-error {{use of unknown declaration 'decorator'}}
+@decorator  # expected-error {{'DecoratedStruct' has no 'decorator' member}}
 struct DecoratedStruct: pass
 
 fn decoratorTest():
