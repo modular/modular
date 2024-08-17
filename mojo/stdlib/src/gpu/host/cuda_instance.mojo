@@ -877,13 +877,6 @@ struct CudaInstance:
     fn __init__(inout self) raises:
         self.cuda_dll = CudaDLL()
 
-    fn __enter__(owned self) -> Self:
-        return self^
-
-    fn __moveinit__(inout self, owned existing: Self):
-        self.cuda_dll = existing.cuda_dll
-        existing.cuda_dll = CudaDLL()
-
     fn __copyinit__(inout self, existing: Self):
         self.cuda_dll = existing.cuda_dll
 
