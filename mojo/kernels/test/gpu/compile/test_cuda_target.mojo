@@ -3,12 +3,13 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
+# REQUIRES: has_cuda_device
 # RUN: %mojo-no-debug %s
 
 from math import erf
 from sys.info import simdwidthof, triple_is_nvidia_cuda
 
-from algorithm.functional import _elementwise_impl
+from algorithm.functional import elementwise
 from builtin.io import _printf
 from gpu import (
     WARP_SIZE,
@@ -118,8 +119,8 @@ fn erf_elementwise(buf: UnsafePointer[Float32], len: Int, ctx: DeviceContext):
             return
         buf[offset] = erf(buf[offset])
 
-    _elementwise_impl[func, simdwidthof[DType.float32]()](
-        StaticIntTuple[1](granularity), ctx
+    elementwise[func, simd_width = simdwidthof[DType.float32](), target="cuda"](
+        granularity, ctx
     )
 
 

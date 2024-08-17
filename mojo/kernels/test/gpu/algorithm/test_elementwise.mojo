@@ -9,7 +9,7 @@
 from math import exp
 from sys import simdwidthof, triple_is_nvidia_cuda
 
-from algorithm.functional import _elementwise_impl_gpu
+from algorithm.functional import elementwise
 from buffer import DimList, NDBuffer
 from gpu.host._compile import _get_nvptx_target
 from gpu.host.device_context import DeviceContext
@@ -48,7 +48,7 @@ fn run_elementwise[type: DType](ctx: DeviceContext) raises:
             in_buffer.load[width=simd_width](idx) + 42,
         )
 
-    _elementwise_impl_gpu[func, pack_size](
+    elementwise[func, pack_size, target="cuda"](
         StaticIntTuple[2](2, 8),
         ctx,
     )
@@ -115,7 +115,7 @@ fn run_elementwise_uneven_simd[type: DType](ctx: DeviceContext) raises:
             in_buffer.load[width=simd_width](idx) + 42,
         )
 
-    _elementwise_impl_gpu[func, pack_size](
+    elementwise[func, pack_size, target="cuda"](
         StaticIntTuple[2](3, 3),
         ctx,
     )
@@ -169,7 +169,7 @@ fn run_elementwise_transpose_copy[type: DType](ctx: DeviceContext) raises:
             idx, in_buffer_transposed.load[width=simd_width, alignment=1](idx)
         )
 
-    _elementwise_impl_gpu[func, 1](
+    elementwise[func, 1, target="cuda"](
         StaticIntTuple[3](4, 2, 5),
         ctx,
     )

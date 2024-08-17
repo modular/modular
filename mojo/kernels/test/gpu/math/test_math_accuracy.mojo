@@ -9,7 +9,7 @@
 from math import exp, exp2, log
 from sys import simdwidthof
 
-from algorithm.functional import _elementwise_impl_gpu
+from algorithm.functional import elementwise
 from buffer import DimList, NDBuffer
 from gpu import *
 from gpu.host._compile import _get_nvptx_target
@@ -45,7 +45,7 @@ def run_elementwise[
         var result = math_fn(val)
         out_buffer.store[width=simd_width](idx, result)
 
-    _elementwise_impl_gpu[func, pack_size](StaticIntTuple[1](length), ctx)
+    elementwise[func, pack_size, target="cuda"](StaticIntTuple[1](length), ctx)
     ctx.synchronize()
 
     ctx.enqueue_copy_from_device(out_host.data, out_device)

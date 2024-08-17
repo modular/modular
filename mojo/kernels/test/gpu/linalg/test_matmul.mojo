@@ -10,7 +10,7 @@ from collections.optional import Optional
 from math import ceildiv
 from sys import simdwidthof
 
-from algorithm.functional import _elementwise_impl_gpu
+from algorithm.functional import elementwise
 from buffer import NDBuffer
 from buffer.dimlist import DimList, _make_tuple
 from gpu import BlockDim, BlockIdx, ThreadIdx, barrier
@@ -420,7 +420,7 @@ def main():
                     c_ref_tensor.load[width=simd_width](idx) * another_val,
                 )
 
-            _elementwise_impl_gpu[func, pack_size](
+            elementwise[func, pack_size, target="cuda"](
                 StaticIntTuple[2](M, N),
                 ctx,
             )

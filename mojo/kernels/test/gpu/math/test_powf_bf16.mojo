@@ -8,7 +8,7 @@
 
 from sys import simdwidthof
 
-from algorithm.functional import _elementwise_impl
+from algorithm.functional import elementwise
 from buffer import DimList, NDBuffer
 from gpu import *
 from gpu.host._compile import _get_nvptx_target
@@ -51,9 +51,7 @@ def run_elementwise(exponent: BFloat16, ctx: DeviceContext):
         var result = val ** SIMD[DType.bfloat16, simd_width](exponent)
         out_buffer.store[width=simd_width](idx, result.cast[DType.float32]())
 
-    _elementwise_impl[func, pack_size, target="cuda"](
-        StaticIntTuple[1](length), ctx
-    )
+    elementwise[func, pack_size, target="cuda"](StaticIntTuple[1](length), ctx)
     ctx.synchronize()
 
     ctx.enqueue_copy_from_device(out_host.data, out_device)

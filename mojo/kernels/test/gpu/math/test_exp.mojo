@@ -9,7 +9,7 @@
 from math import exp
 from sys import has_neon, simdwidthof
 
-from algorithm.functional import _elementwise_impl_gpu
+from algorithm.functional import elementwise
 from buffer import DimList, NDBuffer
 from gpu import *
 from gpu.host import DeviceContext
@@ -47,7 +47,7 @@ def run_elementwise[type: DType](ctx: DeviceContext):
             idx, exp(in_buffer.load[width=simd_width](idx))
         )
 
-    _elementwise_impl_gpu[func, pack_size](StaticIntTuple[1](length), ctx)
+    elementwise[func, pack_size, target="cuda"](StaticIntTuple[1](length), ctx)
 
     ctx.synchronize()
 
