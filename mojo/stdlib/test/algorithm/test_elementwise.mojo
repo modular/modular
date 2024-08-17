@@ -6,7 +6,6 @@
 # RUN: %mojo %s | FileCheck %s
 
 from algorithm.functional import (
-    _elementwise_impl,
     _get_start_indices_of_nth_subvolume,
     elementwise,
 )
@@ -44,7 +43,7 @@ fn test_elementwise[
         var in2 = buffer2.load[width=simd_width](index)
         out_buffer.store[width=simd_width](index, in1 * in2)
 
-    _elementwise_impl[func, 1, outer_rank, use_blocking_impl=is_blocking](
+    elementwise[func, simd_width=1, use_blocking_impl=is_blocking](
         rebind[StaticIntTuple[outer_rank]](out_buffer.dynamic_shape),
     )
 
@@ -69,7 +68,7 @@ fn test_elementwise_implicit_runtime():
     fn func[simd_width: Int, rank: Int](idx: StaticIntTuple[rank]):
         vector[idx[0]] = 42
 
-    elementwise[func, 1](Index(20))
+    elementwise[func, simd_width=1](20)
 
     for i in range(len(vector)):
         if int(vector[i]) != 42:

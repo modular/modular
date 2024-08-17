@@ -25,6 +25,7 @@ from runtime.tracing import Trace, TraceLevel
 
 from utils.index import Index, StaticIntTuple
 from utils.numerics import FlushDenormals
+from runtime.asyncrt import MojoCallContextPtr
 
 # ===----------------------------------------------------------------------===#
 # Map
@@ -1015,11 +1016,6 @@ fn _get_num_workers(problem_size: Int, grain_size: Int = 32768) -> Int:
     return max(1, min(parallelism_level(), ceildiv(problem_size, grain_size)))
 
 
-# ===----------------------------------------------------------------------===#
-# Elementwise
-# ===----------------------------------------------------------------------===#
-
-
 @always_inline
 fn _get_start_indices_of_nth_subvolume[
     rank: Int, subvolume_rank: Int
@@ -1128,107 +1124,38 @@ fn _get_start_indices_of_nth_subvolume_uint[
     )
 
 
-# TODO: Delete / for testing purposes (test_gather.mojo)
-@always_inline
-fn _elementwise_impl[
-    func: fn[width: Int, rank: Int] (StaticIntTuple[rank]) capturing -> None,
-    simd_width: Int,
-    rank: Int,
-    /,
-    *,
-    use_blocking_impl: Bool = False,
-    target: StringLiteral = "cpu",
-](shape: StaticIntTuple[rank], context: DeviceContext,):
-    @parameter
-    if "cuda" in target:
-        _elementwise_impl_gpu[func, simd_width](
-            shape,
-            context,
-        )
-    else:
-        constrained[target == "cpu", "unsupported target"]()
-        alias impl = _elementwise_impl_cpu_1d if rank == 1 else _elementwise_impl_cpu_nd
-        impl[func, simd_width, use_blocking_impl=use_blocking_impl](shape)
-
-
-@always_inline
-fn _elementwise_impl[
-    func: fn[width: Int, rank: Int] (StaticIntTuple[rank]) capturing -> None,
-    simd_width: Int,
-    rank: Int,
-    /,
-    *,
-    use_blocking_impl: Bool = False,
-    target: StringLiteral = "cpu",
-](
-    shape: StaticIntTuple[rank],
-    context: MojoCallContextPtr = MojoCallContextPtr(),
-):
-    @parameter
-    if "cuda" in target:
-        _elementwise_impl_gpu[func, simd_width](
-            shape,
-            context.get_device_context(),
-        )
-    else:
-        constrained[target == "cpu", "unsupported target"]()
-        alias impl = _elementwise_impl_cpu_1d if rank == 1 else _elementwise_impl_cpu_nd
-        impl[func, simd_width, use_blocking_impl=use_blocking_impl](shape)
-
-
-@always_inline
-fn _elementwise[
-    func: fn[width: Int, rank: Int] (StaticIntTuple[rank]) capturing -> None,
-    simd_width: Int,
-    rank: Int,
-    /,
-    *,
-    target: StringLiteral = "cpu",
-](shape: StaticIntTuple[rank]):
-    """Executes `func[width, rank](indices)` as sub-tasks for a suitable
-    combination of width and indices so as to cover shape.
-
-    Parameters:
-        func: The body function.
-        simd_width: The SIMD vector width to use.
-        rank: The rank of the buffer.
-        target: The target to run on.
-
-    Args:
-        shape: The shape of the buffer.
-    """
-
-    @parameter
-    if "cuda" in target:
-        _elementwise_impl[
-            func, simd_width, use_blocking_impl=False, target=target
-        ](shape)
-    else:
-        elementwise[func, simd_width](shape)
+# ===----------------------------------------------------------------------===#
+# Elementwise
+# ===----------------------------------------------------------------------===#
 
 
 @always_inline
 fn elementwise[
     func: fn[width: Int, rank: Int] (StaticIntTuple[rank]) capturing -> None,
     simd_width: Int,
+    *,
+    use_blocking_impl: Bool = False,
+    target: StringLiteral = "cpu",
 ](shape: Int):
-    """Executes `func[width, rank](index)`, possibly as sub-tasks, for a
+    """Executes `func[width, rank](indices)`, possibly as sub-tasks, for a
     suitable combination of width and indices so as to cover shape. Returns when
     all sub-tasks have completed.
 
     Parameters:
         func: The body function.
         simd_width: The SIMD vector width to use.
+        use_blocking_impl: Do not invoke the function using asychronous calls.
+        target: The target to run on.
 
     Args:
         shape: The shape of the buffer.
     """
-    _elementwise_impl[
+
+    elementwise[
         func,
-        simd_width,
-        # On CUDA devices, we do not want to launch threads, so we use the
-        # blocking API
-        use_blocking_impl = triple_is_nvidia_cuda(),
+        simd_width=simd_width,
+        use_blocking_impl=use_blocking_impl,
+        target=target,
     ](Index(shape))
 
 
@@ -1237,6 +1164,9 @@ fn elementwise[
     rank: Int, //,
     func: fn[width: Int, rank: Int] (StaticIntTuple[rank]) capturing -> None,
     simd_width: Int,
+    *,
+    use_blocking_impl: Bool = False,
+    target: StringLiteral = "cpu",
 ](shape: StaticIntTuple[rank]):
     """Executes `func[width, rank](indices)`, possibly as sub-tasks, for a
     suitable combination of width and indices so as to cover shape. Returns when
@@ -1246,18 +1176,156 @@ fn elementwise[
         rank: The rank of the buffer.
         func: The body function.
         simd_width: The SIMD vector width to use.
+        use_blocking_impl: Do not invoke the function using asychronous calls.
+        target: The target to run on.
 
     Args:
         shape: The shape of the buffer.
     """
 
-    _elementwise_impl[
-        func,
-        simd_width,
-        # On CUDA devices, we do not want to launch threads, so we use the
-        # blocking API
-        use_blocking_impl = triple_is_nvidia_cuda(),
+    constrained[
+        target == "cpu",
+        (
+            "the target must be CPU use the elementwise which takes the"
+            " DeviceContext to be able to use the GPU version"
+        ),
+    ]()
+
+    _elementwise_impl_cpu[
+        func, simd_width, use_blocking_impl=use_blocking_impl
     ](shape)
+
+
+@always_inline
+fn elementwise[
+    func: fn[width: Int, rank: Int] (StaticIntTuple[rank]) capturing -> None,
+    simd_width: Int,
+    *,
+    use_blocking_impl: Bool = False,
+    target: StringLiteral = "cpu",
+](shape: Int, context: DeviceContext):
+    """Executes `func[width, rank](indices)`, possibly as sub-tasks, for a
+    suitable combination of width and indices so as to cover shape. Returns when
+    all sub-tasks have completed.
+
+    Parameters:
+        func: The body function.
+        simd_width: The SIMD vector width to use.
+        use_blocking_impl: Do not invoke the function using asychronous calls.
+        target: The target to run on.
+
+    Args:
+        shape: The shape of the buffer.
+        context: The device context to use.
+    """
+
+    elementwise[
+        func,
+        simd_width=simd_width,
+        use_blocking_impl=use_blocking_impl,
+        target=target,
+    ](Index(shape), context)
+
+
+@always_inline
+fn elementwise[
+    rank: Int, //,
+    func: fn[width: Int, rank: Int] (StaticIntTuple[rank]) capturing -> None,
+    simd_width: Int,
+    *,
+    use_blocking_impl: Bool = False,
+    target: StringLiteral = "cpu",
+](shape: StaticIntTuple[rank], context: DeviceContext):
+    """Executes `func[width, rank](indices)`, possibly as sub-tasks, for a
+    suitable combination of width and indices so as to cover shape. Returns when
+    all sub-tasks have completed.
+
+    Parameters:
+        rank: The rank of the buffer.
+        func: The body function.
+        simd_width: The SIMD vector width to use.
+        use_blocking_impl: Do not invoke the function using asychronous calls.
+        target: The target to run on.
+
+    Args:
+        shape: The shape of the buffer.
+        context: The device context to use.
+    """
+
+    _elementwise_impl[
+        func, simd_width, use_blocking_impl=use_blocking_impl, target=target
+    ](shape, context)
+
+
+@always_inline
+fn elementwise[
+    rank: Int, //,
+    func: fn[width: Int, rank: Int] (StaticIntTuple[rank]) capturing -> None,
+    simd_width: Int,
+    *,
+    use_blocking_impl: Bool = False,
+    target: StringLiteral = "cpu",
+](shape: StaticIntTuple[rank], context: MojoCallContextPtr):
+    """Executes `func[width, rank](indices)`, possibly as sub-tasks, for a
+    suitable combination of width and indices so as to cover shape. Returns when
+    all sub-tasks have completed.
+
+    Parameters:
+        rank: The rank of the buffer.
+        func: The body function.
+        simd_width: The SIMD vector width to use.
+        use_blocking_impl: Do not invoke the function using asychronous calls.
+        target: The target to run on.
+
+    Args:
+        shape: The shape of the buffer.
+        context: The device context to use.
+    """
+
+    @parameter
+    if "cuda" in target:
+        _elementwise_impl_gpu[func, simd_width=simd_width](
+            shape, context.get_device_context()
+        )
+    else:
+        _elementwise_impl_cpu[
+            func, simd_width, use_blocking_impl=use_blocking_impl
+        ](shape)
+
+
+@always_inline
+fn _elementwise_impl[
+    rank: Int, //,
+    func: fn[width: Int, rank: Int] (StaticIntTuple[rank]) capturing -> None,
+    simd_width: Int,
+    /,
+    *,
+    use_blocking_impl: Bool = False,
+    target: StringLiteral = "cpu",
+](shape: StaticIntTuple[rank], context: DeviceContext):
+    @parameter
+    if "cuda" in target:
+        _elementwise_impl_gpu[func, simd_width](
+            shape,
+            context,
+        )
+    else:
+        _elementwise_impl_cpu[
+            func, simd_width, use_blocking_impl=use_blocking_impl
+        ](shape)
+
+
+@always_inline
+fn _elementwise_impl_cpu[
+    rank: Int, //,
+    func: fn[width: Int, rank: Int] (StaticIntTuple[rank]) capturing -> None,
+    simd_width: Int,
+    /,
+    *,
+    use_blocking_impl: Bool = False,
+](shape: StaticIntTuple[rank]):
+    alias impl = _elementwise_impl_cpu_1d if rank == 1 else _elementwise_impl_cpu_nd
+    impl[func, simd_width, use_blocking_impl=use_blocking_impl](shape)
 
 
 @always_inline
