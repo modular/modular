@@ -62,6 +62,7 @@ add_modular_tool(mojo
   KGENExecutionEngine
   KGENCompiler
   KGENObjectCompiler
+  KGENSupportForceLinkMLIRC
 
   MLIRTransformUtils
   MLIRIR
