@@ -30,6 +30,9 @@ class FnMetadataAttr;
 
 #include "KGEN/LITDialect/LITEnums.h.inc"
 
+#define GET_ATTRDEF_CLASSES
+#include "KGEN/LITDialect/LITAttrs.h.inc"
+
 namespace M::KGEN::LIT {
 
 /// Given a list of operations, create an array of bools (as a mask) indicating
@@ -37,9 +40,25 @@ namespace M::KGEN::LIT {
 /// The given operations must all implement DeclInterface.
 SmallVector<bool> getContextualVariadicMask(ArrayRef<Operation *> ops);
 
-} // namespace M::KGEN::LIT
+/// This digs in and unpacks all of the lifetime references in the specified
+/// TypedAttr, looking through mutability casts and unpacking unions. This
+/// invokes the specified closure on each lifetime element.
+template <typename T>
+static inline void processRawLifetime(TypedAttr lifetime, T &&fn) {
+  // Ignore mutcasts.
+  lifetime = LifetimeMutCastAttr::strip(lifetime);
 
-#define GET_ATTRDEF_CLASSES
-#include "KGEN/LITDialect/LITAttrs.h.inc"
+  // Expand lifetime unions into their members, we know they will canonicalize
+  // nested unions into a single one.
+  if (auto unionAttr = dyn_cast<LifetimeUnionAttr>(lifetime)) {
+    for (auto elt : unionAttr.getOperands())
+      fn(LifetimeMutCastAttr::strip(elt));
+    return;
+  }
+
+  fn(lifetime);
+}
+
+} // namespace M::KGEN::LIT
 
 #endif // KGEN_LITDIALECT_LITATTRS_H
