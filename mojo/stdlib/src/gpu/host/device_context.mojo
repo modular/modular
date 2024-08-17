@@ -264,7 +264,9 @@ struct DeviceContext:
     fn __init__(inout self) raises:
         self.cuda_instance = CudaInstance()
         self.cuda_context = Context(Device(self.cuda_instance))
-        self.cuda_stream = Stream(self.cuda_context)
+        # TODO(field sensitivity lifetimes), eliminate stream_tmp.
+        var stream_tmp = Stream(self.cuda_context)
+        self.cuda_stream = stream_tmp^
 
         @parameter
         if self.profiling_enabled:
