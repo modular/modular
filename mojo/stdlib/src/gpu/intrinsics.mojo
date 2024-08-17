@@ -116,3 +116,20 @@ fn warpgroup_reg_dealloc[count: Int]():
         inlined_assembly["llvm.nvvm.setmaxnreg.dec.sync.aligned.u32", NoneType](
             Int32(count)
         )
+
+
+# ===----------------------------------------------------------------------===#
+# clock
+# ===----------------------------------------------------------------------===#
+
+
+@always_inline("nodebug")
+fn clock() -> UInt:
+    """Returns a 32-bit unsigned cycle counter."""
+    return int(llvm_intrinsic["llvm.nvvm.read.ptx.sreg.clock", Int32]())
+
+
+@always_inline("nodebug")
+fn clock64() -> UInt:
+    """Returns a 64-bit unsigned cycle counter."""
+    return int(llvm_intrinsic["llvm.nvvm.read.ptx.sreg.clock64", Int64]())
