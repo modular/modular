@@ -19,6 +19,7 @@ from sys import num_physical_cores, simdwidthof, triple_is_nvidia_cuda
 from bit import is_power_of_two
 from gpu import BlockIdx, GridDim, ThreadIdx
 from gpu.host import Device, DeviceContext
+from gpu.host.info import Info
 from runtime import tracing
 from runtime.asyncrt import MojoCallContextPtr, TaskGroup, parallelism_level
 from runtime.tracing import Trace, TraceLevel
@@ -1284,7 +1285,7 @@ fn elementwise[
 
     @parameter
     if "cuda" in target:
-        _elementwise_impl_gpu[func, simd_width=simd_width](
+        _elementwise_impl_gpu[func, simd_width=simd_width, target=target](
             shape, context.get_device_context()
         )
     else:
@@ -1305,7 +1306,7 @@ fn _elementwise_impl[
 ](shape: StaticIntTuple[rank], context: DeviceContext):
     @parameter
     if "cuda" in target:
-        _elementwise_impl_gpu[func, simd_width](
+        _elementwise_impl_gpu[func, simd_width, target=target](
             shape,
             context,
         )
@@ -1494,6 +1495,8 @@ fn _elementwise_impl_gpu[
     rank: Int, //,
     func: fn[width: Int, rank: Int] (StaticIntTuple[rank]) capturing -> None,
     simd_width: UInt,
+    *,
+    target: StringLiteral,
 ](shape: StaticIntTuple[rank], ctx: DeviceContext):
     """Executes `func[width, rank](indices)` as sub-tasks for a suitable
     combination of width and indices so as to cover shape on the GPU.
@@ -1502,6 +1505,7 @@ fn _elementwise_impl_gpu[
         rank: The rank of the buffer.
         func: The body function.
         simd_width: The SIMD vector width to use.
+        target: The target to run on.
 
     Args:
         shape: The shape of the buffer.
@@ -1509,18 +1513,19 @@ fn _elementwise_impl_gpu[
     """
 
     # optimized implementation inspired by https://archive.md/Tye9y#selection-1101.2-1151.3
+
+    alias hw_info = Info.from_target_name[target]()
+
     alias registers_per_thread = 255
     alias num_waves = 32
-    alias registers_per_block = 65536
+    alias registers_per_block = hw_info.max_registers_per_block
+    alias sm_count: UInt = hw_info.sm_count
+    alias threads_per_sm: UInt = hw_info.threads_per_sm
 
-    # optimize based on device attributes
-    var sm_count: UInt = 142
-    var threads_per_sm: UInt = 1536
-    try:
-        sm_count = Device().multiprocessor_count()
-        threads_per_sm = Device().max_threads_per_sm()
-    except e:
-        pass
+    constrained[
+        sm_count > 0 and threads_per_sm > 0,
+        "the sm_count and thread_count must be known",
+    ]()
 
     # split between packed and tail regions of input
     var length: UInt = shape.flattened_length()
@@ -1584,7 +1589,8 @@ fn _elementwise_impl_gpu[
             var gpu_func = ctx.compile_function[
                 _elementwise_gpu_kernel[
                     block_size=block_size, handle_uneven_simd=False
-                ]
+                ],
+                target = hw_info.target,
             ]()
             ctx.enqueue_function(
                 gpu_func, grid_dim=int(num_blocks), block_dim=int(block_size)
@@ -1593,7 +1599,8 @@ fn _elementwise_impl_gpu[
             var gpu_func = ctx.compile_function[
                 _elementwise_gpu_kernel[
                     block_size=block_size, handle_uneven_simd=True
-                ]
+                ],
+                target = hw_info.target,
             ]()
             ctx.enqueue_function(
                 gpu_func, grid_dim=int(num_blocks), block_dim=int(block_size)
