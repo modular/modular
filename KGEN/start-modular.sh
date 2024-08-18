@@ -40,27 +40,52 @@ fi
 # Mojo build helper
 ##===----------------------------------------------------------------------===##
 
-source $MODULAR_PATH/utils/start-modular.sh
+BR="$MODULAR_PATH/bazelw run"
+BT="$MODULAR_PATH/bazelw test"
+BB="$MODULAR_PATH/bazelw build"
+
+get_build_alias() {
+    if [ "$1" = "kgen" ]; then
+        echo "kgen-tool"
+    elif [ "$1" = "check-kgen" ]; then
+        echo "KGEN/test/kgen/..."
+    elif [ "$1" = "check-mojo-integration" ]; then
+        echo "KGEN/test/mojo-integration/..."
+    elif [ "$1" = "check-mojo-isolated" ]; then
+        echo "KGEN/test/mojo-isolated/..."
+    elif [ "$1" = "check-mojo-parser" ]; then
+        echo "KGEN/test/mojo-isolated/... KGEN/test/mojo-parser/..."
+    elif [ "$1" = "check-mojo" ]; then
+        echo "KGEN/test/..."
+    elif [ "$1" = "check-genericml" ]; then
+        echo "GenericML/test/... GenericML/unittests/..."
+    elif [ "$1" = "check-graph-compiler-integration" ]; then
+        echo "GenericML/graph-compiler/integration-test/..."
+    fi
+}
 
 b() {
-    if [ "$1" = "kgen" ]; then
-        br kgen-tool
-    elif [ "$1" = "check-kgen" ]; then
-        bt KGEN/test/kgen/...
-    elif [ "$1" = "check-mojo-integration" ]; then
-        bt KGEN/test/mojo-integration/...
-    elif [ "$1" = "check-mojo-isolated" ]; then
-        bt KGEN/test/mojo-isolated/...
-    elif [ "$1" = "check-mojo-parser" ]; then
-        bt KGEN/test/mojo-isolated/... KGEN/test/mojo-parser/...
-    elif [ "$1" = "check-mojo" ]; then
-        bt KGEN/test/...
-    elif [ "$1" = "check-genericml" ]; then
-        bt GenericML/test/... GenericML/unittests/...
-    elif [ "$1" = "check-graph-compiler-integration" ]; then
-        bt GenericML/graph-compiler/integration-test/...
-    else
-        br "$1"
+    local test_targets=()
+    local run_targets=()
+    for target in $@; do
+        local als=$(get_build_alias $target)
+        if [ -z "$als" ]; then
+            als="$target"
+        fi
+        if [[ "$target" == "check-"* ]]; then
+            test_targets=($test_targets $als)
+        else
+            run_targets=($run_targets $als)
+        fi
+    done
+
+    if [ "${#test_targets[@]}" -ne 0 ]; then
+        test_targets=$(IFS=" "; echo "${test_targets[*]}")
+        eval "$BT $test_targets"
+    fi
+    if [ "${#run_targets[@]}" -ne 0 ]; then
+        run_targets=$(IFS=" "; echo "${run_targets[*]}")
+        eval "$BR $run_targets"
     fi
 }
 
