@@ -340,21 +340,23 @@ struct Info:
 
 @always_inline
 fn _get_info_from_target[target_arch: StringLiteral]() -> Info:
-    constrained[
-        target_arch
-        in (
-            "cuda_sm_80",
-            "cuda_sm_86",
-            "cuda_sm_89",
-            "cuda_sm_90",
-            "cuda_sm_90a",
-            "sm_80",
-            "sm_86",
-            "sm_89",
-            "sm_90",
-            "sm_90a",
-        )
-    ]()
+    # TODO: Comment back in once we figure out graph compiler reqs.
+    # constrained[
+    #     target_arch
+    #     in (
+    #         "cuda",
+    #         "cuda_sm_80",
+    #         "cuda_sm_86",
+    #         "cuda_sm_89",
+    #         "cuda_sm_90",
+    #         "cuda_sm_90a",
+    #         "sm_80",
+    #         "sm_86",
+    #         "sm_89",
+    #         "sm_90",
+    #         "sm_90a",
+    #     )
+    # ]()
 
     @parameter
     if target_arch in ("cuda_sm_80", "sm_80"):
