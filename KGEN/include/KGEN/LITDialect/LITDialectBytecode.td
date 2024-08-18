@@ -207,10 +207,6 @@ def VarDeclKindAttr : DialectAttribute<(attr
   EnumAttr<"VarDeclKind">:$value
 )>;
 
-def InvalidRefLifetimeAttr : DialectAttribute<(attr
-  ConcreteType<"LifetimeType">:$type
-)>;
-
 def RefPackAttr : DialectAttribute<(attr
   TypedAttrArray:$values,
   ConcreteType<"RefPackType">:$type
@@ -242,7 +238,6 @@ def LITDialectAttributes : DialectAttributes<"lit"> {
     WrappedLifetimeUnionAttr,
     WrappedLifetimeMutCastAttr,
     VarDeclKindAttr,
-    InvalidRefLifetimeAttr,
     RefPackAttr,
     TypeLineageArrayAttr
   ];

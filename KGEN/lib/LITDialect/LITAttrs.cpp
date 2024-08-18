@@ -701,11 +701,6 @@ TypedAttr LifetimeUnionAttr::get(ArrayRef<TypedAttr> operandsIn,
       continue;
     }
 
-    // It takes just one InvalidRefLifetimeAttr to make the whole list be
-    // invalid for references.
-    if (::isa<InvalidRefLifetimeAttr>(operands[i]))
-      return operands[i];
-
     // Flatten any of the same operation into the operand list:
     // `(union x, (union y, z))` => `(union x, y, z)`.
     if (auto subexpr = ::dyn_cast<LifetimeUnionAttr>(operands[i])) {
@@ -792,8 +787,6 @@ TypedAttr LifetimeMutCastAttr::get(TypedAttr operand, TypedAttr isMutable) {
   // Singletons don't need a cast, just form one with the new mutability.
   if (::isa<LifetimeAttr>(operand))
     return LifetimeAttr::get(isMutable);
-  if (::isa<InvalidRefLifetimeAttr>(operand))
-    return InvalidRefLifetimeAttr::get(isMutable);
 
   // Push into union so it cancels out.
   if (auto unionAttr = ::dyn_cast<LifetimeUnionAttr>(operand)) {
@@ -875,8 +868,8 @@ LifetimeSetAttr LifetimeSetAttr::get(ArrayRef<TypedAttr> operands,
       llvm::append_range(newOperands, set.getOperands());
       continue;
     }
-    // These lifetimes don't carry any information. Just drop them.
-    if (::isa<LifetimeAttr, InvalidRefLifetimeAttr>(operand))
+    // This doesn't carry any information. Just drop it.
+    if (::isa<LifetimeAttr>(operand))
       continue;
     // Break up unions into their constituents without mutcasts.
     if (auto unionAttr = ::dyn_cast<LifetimeUnionAttr>(operand)) {

@@ -861,7 +861,7 @@ CValue OverloadSet::emitAsCValue(ExprEmitter &emitter, ValueDest &dest) {
   diag.attachNote(loc)
       << "computing member method closure is not yet supported";
   diag.attachNote(loc) << "did you forget '()'s?";
-
+  dest.resetForError();
   return {};
 }
 

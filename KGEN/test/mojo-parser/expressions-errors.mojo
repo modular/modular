@@ -504,19 +504,12 @@ fn testSomeThing(a: SomeThing):
 # argument values.
 # Issue #32603: References to borrowed args in generics miscompile when instantiated on regpassable types
 fn get_ref_to_bad_argument[T: AnyType](a: T, *args: T):
-  # expected-error @+1 {{cannot form a reference to an argument that might instantiate to @register_passable type}}
+  # These are all fine since they are not returned.
   _ = Reference(a)
-
-  # expected-error @+1 {{cannot get the lifetime of an argument that might instantiate to @register_passable type}}
   _ = __lifetime_of(a)
-
-  # expected-error @+1 {{cannot form a reference to an argument that might instantiate to @register_passable type}}
   _ = __get_mvalue_as_litref(a)
-
-  # COM: This is okay. The VariadicListMem has a lifetime.
+  # This is okay. The VariadicListMem has a lifetime.
   _ = Reference(args)
-
-  # expected-error @+1 {{cannot form a reference to an argument that might instantiate to @register_passable type}}
   _ = Reference(args[0])
 
 @register_passable
@@ -524,7 +517,6 @@ struct NonTrivialReg:
   pass
 
 fn get_ref_to_reg_variadic(*args: NonTrivialReg):
-  # expected-error @+1 {{cannot form a reference to an argument that might instantiate to @register_passable type}}
   _ = Reference(args[0])
 
 fn variadic_int(*x: Int) -> Bool: pass

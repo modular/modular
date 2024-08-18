@@ -668,16 +668,15 @@ fn patterns():
 
 # CHECK-LABEL: lit.func @"byval_byref_function(::Int,::Int&)"{{.*}}(%a: !Int, %b: !lit.ref<!Int, mut {{.*}}> inout) -> !kgen.none
 fn byval_byref_function(a: Int, inout b: Int):
-  # CHECK-NEXT: [[BI:%.*]] = kgen.rebind %b {{.*}}#lit.invalid.ref.lifetime
-  # CHECK-NEXT: lit.ref.store %a, [[BI]]
+  # CHECK-NEXT: lit.ref.store %a, %b
   b = a
 
   # CHECK-NEXT: %x = lit.var.decl "x" var
   var x : Int
   # This needs to load 'b' to pass it by value for the first arg, but pass its
   # address in directly for the second.
-  # CHECK: [[TMP:%.*]] = lit.ref.load [[BI]]
-  # CHECK: = lit.call @{{.*}}::@"byval_byref_function{{.*}}([[TMP]], [[BI]])
+  # CHECK: [[TMP:%.*]] = lit.ref.load %b
+  # CHECK: = lit.call @{{.*}}::@"byval_byref_function{{.*}}([[TMP]], %b)
   byval_byref_function(b, b)
 
 # CHECK-LABEL: lit.func @"lvaluesAndRValues()

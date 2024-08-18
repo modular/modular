@@ -198,3 +198,16 @@ fn exclusivity[spanlife: MutableLifetime](inout x: MemExample, span: MyMutSpan[s
     # expected-warning @below {{call argument allows writing a memory location previously writable through another aliased argument}}
     # expected-note @below {{'spanlife' memory accessed through reference embedded in value of type 'MyMutSpan[spanlife]'}}
     take_two_spans(span, span)
+
+fn take_two_ints(inout a: Int, inout b: Int): pass
+
+fn inout_ref_exclusivity(inout a: Int, inout b: Int):
+    # This is ok.
+    take_two_ints(a, b)
+
+    # This is not.
+    # expected-warning @below {{call argument allows writing a memory location previously writable through another aliased argument}}
+    # expected-note @below {{'a' value is passed through aliasing 'inout' argument}}
+    take_two_ints(a, a)
+
+

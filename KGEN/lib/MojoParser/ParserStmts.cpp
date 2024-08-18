@@ -748,19 +748,6 @@ ParseResult StmtParser::parseReturnStmt(size_t returnIndent) {
     }
     RefType argType = cast<RefType>(refValue.getType());
 
-    // If the lifetime is an InvalidRefLifetimeAttr then this value is
-    // derived from an argument which might be bound (after elaboration)
-    // to a register value that has no lifetime.  Emit an error because
-    // you can't return a reference to it.
-    if (isa<InvalidRefLifetimeAttr>(argType.getLifetime())) {
-      emitError(operandExpr->getLoc())
-          << "cannot return a reference to an argument that "
-             "might instantiate to @register_passable type "
-          << ASTType(argType.getElementType()) << operandExpr->getRange();
-      resultDest.resetForError();
-      return {};
-    }
-
     // We already checked the element type, check the lifetime and address
     // space.
     if (!userResultType.isEqualCanon(argType)) {

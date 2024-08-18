@@ -150,7 +150,6 @@ void StructDecls::buildReplacer(mlir::AttrTypeReplacer &replacer,
   addReplacement([=](LifetimeAttr) { return emptyStruct; });
   addReplacement([=](LifetimeUnionAttr) { return emptyStruct; });
   addReplacement([=](LifetimeMutCastAttr) { return emptyStruct; });
-  addReplacement([=](InvalidRefLifetimeAttr) { return emptyStruct; });
   addReplacement([=](ImplicitLifetimeRefAttr) { return emptyStruct; });
   addReplacement([=](LifetimeSetAttr) { return emptyStruct; });
 

@@ -285,17 +285,6 @@ AnyValue CallEmitter::emitOneArgVal(ASTExprAnd<AnyValue> operand,
     auto refValueType = cast<RefType>(refValue.getType());
     auto expectedRefType = cast<RefType>(expectedType);
 
-    // If the lifetime is an InvalidRefLifetimeAttr then this value is
-    // derived from an argument which might be bound (after elaboration)
-    // to a register value that has no lifetime.  Emit an error because
-    // you can't form a 'ref' to these things.
-    if (isa<InvalidRefLifetimeAttr>(refValueType.getLifetime())) {
-      emitter.emitError(operand.expr->getLoc(),
-                        "cannot form a reference to an argument that might "
-                        "instantiate to @register_passable type");
-      return {};
-    }
-
     // Lifetimes must be convertible, this is checked by OverloadFitness.
     // The destination may be less mutable because of canConvertWithRebind.
     // This also lazy materializes cast to immutable that MBValue avoided.
@@ -1158,11 +1147,6 @@ void ExclusivityChecker::checkArgument(Value val, ArgConvention convention,
 
     // Accesses to the global lifetime never conflict.
     if (isa<LifetimeAttr>(lifetime))
-      return;
-
-    // Don't warn about InvalidRefLifetimeAttr
-    // TODO: Need to fix this.
-    if (isa<InvalidRefLifetimeAttr>(lifetime))
       return;
 
     // Determine whether we've seen this lifetime before.

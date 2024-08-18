@@ -1212,6 +1212,74 @@ static void typeCheckResult(ParsedArgument resultArg, bool isDef,
   // Remember the user-declared result type.
   tcSignature.resultType = resultType;
 
+  // Check to see if the result type has any embedded lifetimes that refer to
+  // in-memory argument lifetimes of generic type, e.g.:
+  //
+  //     fn get[T: AnyType](a: T) -> Reference[T, __lifetimeof(a)]:
+  //        return Reference(a)
+  //
+  // These lifetimes are not allowed to be returned from the function, because
+  // when instantiated with a register-passable type, argument convention
+  // lowering will turn them into:
+  //
+  //     fn get[T: AnyType](borrow_in_reg a: T)
+  //                             -> Reference[T, __lifetimeof(tmp)]:
+  //        var tmp = a
+  //        return Reference(tmp)
+  //
+  // Note that we're now returning a reference to something that doesn't outlast
+  // the function!
+  if (auto resultLifetimes =
+          shared.cachedLifetimeFinder.findLifetimesInTypes(resultType.mlirType);
+      !resultLifetimes.empty()) {
+    SmallDenseMap<TypedAttr, size_t, 8> possiblyRegisterPassableLifetimes;
+    for (auto [idx, parsedArg, fullType] : llvm::enumerate(
+             tcSignature.argList.parsedArgs, tcSignature.fullArgTypes)) {
+
+      // Only look at inout, borrowed, owned arguments.  RegisterPassable args
+      // won't have a lifetime, and `ref` args are not lowered by-reg.
+      if (!SignatureType::hasAddress(parsedArg.kgenConvention) ||
+          parsedArg.kgenConvention == ArgConvention::Ref)
+        continue;
+
+      // The argument is only a potential problem if it is generic that might
+      // expand to a @register_passable type.
+      auto refType = cast<RefType>(fullType);
+      if (!ASTType(refType.getElementType())
+               .mightBeRegisterPassable(parsedArg.loc, shared))
+        continue;
+
+      // Ok, this lifetime is a problem.
+      possiblyRegisterPassableLifetimes[refType.getLifetime()] = idx;
+    }
+
+    // Now that we know all the problematic lifetimes, check to see if any of
+    // them are referenced.
+    for (TypedAttr lifetime : resultLifetimes) {
+      // Don't allow mutability dropping to interfere.
+      lifetime = LifetimeMutCastAttr::strip(lifetime);
+      if (!possiblyRegisterPassableLifetimes.count(lifetime))
+        continue;
+
+      // Oops, found a problem, report it and indicate the argument at fault.
+      assert(resultArg.typeExpr &&
+             "implicit result types can't have lifetimes");
+      size_t argIdx = possiblyRegisterPassableLifetimes[lifetime];
+      const ParsedArgument &badArg = tcSignature.argList.parsedArgs[argIdx];
+      auto diag = shared.emitError(resultArg.typeExpr->getLoc());
+      diag << "cannot return " << badArg.name << "s lifetime, because it ";
+      ASTType argType =
+          ASTType(tcSignature.fullArgTypes[argIdx]).getReferenceElementType();
+      if (argType.isRegisterPassable(badArg.loc, shared))
+        diag << "has @register_passable type " << argType;
+      else
+        diag << "might expand to a @register_passable type";
+      diag << resultArg.typeExpr->getRange()
+           << SourceRange(badArg.loc, badArg.loc);
+      break;
+    }
+  }
+
   // Now that we have the user's result type, compute the full type of the
   // result, which can can be different when memory only, when throwing, etc.
   ASTType fullResultType = resultType;
