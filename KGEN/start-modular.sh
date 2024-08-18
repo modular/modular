@@ -65,17 +65,17 @@ get_build_alias() {
 }
 
 b() {
-    local test_targets=()
-    local run_targets=()
+    test_targets=()
+    run_targets=()
     for target in $@; do
-        local als=$(get_build_alias $target)
+        als=$(get_build_alias $target)
         if [ -z "$als" ]; then
             als="$target"
         fi
         if [[ "$target" == "check-"* ]]; then
-            test_targets=($test_targets $als)
+            test_targets+=("$als")
         else
-            run_targets=($run_targets $als)
+            run_targets+=("$als")
         fi
     done
 
@@ -84,8 +84,11 @@ b() {
         eval "$BT $test_targets"
     fi
     if [ "${#run_targets[@]}" -ne 0 ]; then
-        run_targets=$(IFS=" "; echo "${run_targets[*]}")
-        eval "$BR $run_targets"
+        run_targets_str=$(IFS=" "; echo "${run_targets[*]}")
+        eval "$BB $run_targets_str"
+        for target in "${run_targets[@]}"; do
+            eval "$BR $target"
+        done
     fi
 }
 
