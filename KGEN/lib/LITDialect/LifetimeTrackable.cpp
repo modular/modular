@@ -655,14 +655,20 @@ OverallOpValueEffect LIT::getOperationEffects(
 /// lifetimes. Returns true if any lifetimes were found.
 static bool handleLifetimeAttr(TypedAttr attr,
                                SmallVector<TypedAttr> &results) {
-  if (isa<ImplicitLifetimeRefAttr>(attr))
-    return false;
+  bool foundAny = false;
 
-  size_t oldNumResults = results.size();
-  // FIXME: Track mutability correctly.
-  // Look through imm casts and unions.
-  processRawLifetime(attr, [&](TypedAttr raw) { results.push_back(raw); });
-  return oldNumResults != results.size();
+  // Look through unions to find the values referenced.
+  processRawLifetime(attr, [&](TypedAttr raw) {
+    // FIXME(lifetimes): This shouldn't happen; UncheckedCallEmission isn't
+    // forming captures correctly for async functions with implicit lifetime
+    // refs.
+    if (isa<ImplicitLifetimeRefAttr>(LifetimeMutCastAttr::strip(attr)))
+      return;
+
+    results.push_back(raw);
+    foundAny = true;
+  });
+  return foundAny;
 }
 
 template <typename TypeOrAttr>
@@ -713,6 +719,9 @@ static bool scanForLifetimes(
   return hasLifetimes;
 }
 
+/// This method finds all the lifetimes buried in the specified type,
+/// returning them as a list.  This typically will return ParamRefAttr's or
+/// ImmutCast(ParamRefAttr)'s if a mutable lifetime is accessed immutably.
 SmallVector<TypedAttr>
 CachedTypeLifetimeFinder::findLifetimesInTypes(ArrayRef<Type> types) {
   SmallVector<TypedAttr> results;

@@ -41,18 +41,25 @@ namespace M::KGEN::LIT {
 SmallVector<bool> getContextualVariadicMask(ArrayRef<Operation *> ops);
 
 /// This digs in and unpacks all of the lifetime references in the specified
-/// TypedAttr, looking through mutability casts and unpacking unions. This
-/// invokes the specified closure on each lifetime element.
+/// TypedAttr unpacking unions, but maintaining mutability.  This typically
+/// will return ParamRefAttr's or ImmutCast(ParamRefAttr)'s if a mutable
+/// lifetime is accessed immutably.
+///
+/// This invokes the specified closure on each lifetime element.
 template <typename T>
 static inline void processRawLifetime(TypedAttr lifetime, T &&fn) {
-  // Ignore mutcasts.
-  lifetime = LifetimeMutCastAttr::strip(lifetime);
-
   // Expand lifetime unions into their members, we know they will canonicalize
   // nested unions into a single one.
-  if (auto unionAttr = dyn_cast<LifetimeUnionAttr>(lifetime)) {
-    for (auto elt : unionAttr.getOperands())
-      fn(LifetimeMutCastAttr::strip(elt));
+  if (auto unionAttr =
+          dyn_cast<LifetimeUnionAttr>(LifetimeMutCastAttr::strip(lifetime))) {
+    // If we stripped a MutCastAttr off the outer union, put it onto each
+    // element we return.
+    bool needsImmutCast = TypedAttr(unionAttr) != lifetime;
+    for (auto elt : unionAttr.getOperands()) {
+      if (needsImmutCast)
+        elt = LifetimeMutCastAttr::get(elt, lifetime.getType());
+      fn(elt);
+    }
     return;
   }
 
