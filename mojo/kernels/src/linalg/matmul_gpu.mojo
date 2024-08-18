@@ -486,9 +486,8 @@ fn gemv_tc_kernel_vector[
 ):
     alias align_a = alignof[SIMD[a_type, simd_width]]()
     alias align_b = alignof[SIMD[b_type, simd_width]]()
-    var x = BlockIdx.x() * BlockDim.x() + ThreadIdx.x()
-    var warp_id = x // WARP_SIZE
-    var accum = Scalar[s_type]()
+    var tid = BlockIdx.x() * BlockDim.x() + ThreadIdx.x()
+    var warp_id = tid // WARP_SIZE
 
     var a_ptr = _mark_as_exclusive(
         a.data + (warp_id * a.dim[1]()) + lane_id() * simd_width
@@ -500,31 +499,34 @@ fn gemv_tc_kernel_vector[
         return
 
     # Every warp processes a single row of the resultant vector
+    var local_accum = SIMD[s_type, simd_width](0)
     for _ in range(ceildiv(k // simd_width, WARP_SIZE)):
-        var local_accum = SIMD[a_type, simd_width](0)
-        if idx < k:
-            var ax = load[
-                width=simd_width,
-                prefetch_size=128,
-                alignment=align_a,
-                cache_policy = CacheOperation.LAST_USE,
-            ](a_ptr)
-            var bx = load[
-                width=simd_width,
-                prefetch_size=128,
-                alignment=align_b,
-                cache_policy = CacheOperation.ALWAYS,
-            ](b._offset(reverse_idx[transpose_b](idx, 0))).cast[a_type]()
+        if idx >= k:
+            continue
+        var ax = load[
+            width=simd_width,
+            prefetch_size=128,
+            alignment=align_a,
+            cache_policy = CacheOperation.LAST_USE,
+        ](a_ptr).cast[s_type]()
+        var bx = load[
+            width=simd_width,
+            prefetch_size=128,
+            alignment=align_b,
+            cache_policy = CacheOperation.ALWAYS,
+        ](b._offset(reverse_idx[transpose_b](idx, 0))).cast[s_type]()
 
-            # Do simd vector loads in ax,bx to multiply element wise for matrix
-            # row and vector column
-            local_accum += ax * bx
+        # Do simd vector loads in ax,bx to multiply element wise for matrix
+        # row and vector column
+        local_accum += ax * bx
 
-            idx += step
-            a_ptr += step
+        idx += step
+        a_ptr += step
 
-        # Do a fast tensor core and warp shuffle based reduce operation
-        accum += tc_reduce_vector[s_type, a_type, simd_width](local_accum)
+    # Do a fast tensor core and warp shuffle based reduce operation
+    var accum = tc_reduce_vector[s_type, a_type, simd_width](
+        local_accum.cast[a_type]()
+    )
 
     if lane_id() == 0:
 
