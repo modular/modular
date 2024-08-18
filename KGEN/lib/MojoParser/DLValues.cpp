@@ -177,7 +177,8 @@ CValue SubscriptDLValue::emitLoad(ValueDest &dest, ExprEmitter &emitter) const {
     return {};
   }
 
-  return emitter.emitIndirectCall(getter, CallOperands(operands), dest, expr);
+  return emitter.emitIndirectCall(getter, CallOperands(operands), dest,
+                                  CallSyntax::kMethodCall, expr);
 }
 
 BValue SubscriptDLValue::emitStore(ASTExprAnd<CValue> value,

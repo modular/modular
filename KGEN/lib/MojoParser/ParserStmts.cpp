@@ -1804,7 +1804,7 @@ ParseResult StmtParser::parseSingleWithStmt(size_t curIndent, SMLoc smLoc,
                                   {MBValue(nestedErrDecl), contextExp}});
     CValue exitResult = getEmitter().emitIndirectCall(
         conditionalExit, std::move(exitOperandList), exitResultDest,
-        contextExp);
+        CallSyntax::kMethodCall, contextExp);
     RValue exitI1RVal =
         getEmitter().emitI1({exitResult, contextExp}, EC_WithExitResult);
     SRValue exitI1Val =

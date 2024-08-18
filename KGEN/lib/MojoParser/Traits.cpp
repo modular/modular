@@ -249,8 +249,8 @@ static void synthesizeRegisterTraitStub(ASTDecl &structDecl,
     hasRegisterResult = true;
   }
 
-  CValue callResult =
-      emitter.emitIndirectCall(PValue(callee), std::move(operands), dest, node);
+  CValue callResult = emitter.emitIndirectCall(
+      PValue(callee), std::move(operands), dest, CallSyntax::kMethodCall, node);
   if (!callResult)
     return;
 

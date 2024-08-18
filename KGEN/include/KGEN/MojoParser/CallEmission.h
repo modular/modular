@@ -32,6 +32,8 @@ enum class CallSyntax : uint8_t {
   kSubscript,          // v[1, 2]
   kAttribute,          // v.x             (where x is not a static member of v).
   kImplicitConvert,    //< Conversion in an argument context
+  kImplicitCopyInit,   //< Implicit __copyinit__ call.
+  kImplicitMoveInit,   //< Implicit __moveinit__ call.
   kDestructor,         //< Destructor due to a value definition.
   kTupleGetItem,       //< Call to getitem in a tuple assignment.
   kMethodCallSynthetic //< Call to a method for synthetic checks.

@@ -62,6 +62,10 @@ StringRef LIT::stringifyCallSyntax(CallSyntax val) {
     return "attribute";
   case CallSyntax::kImplicitConvert:
     return "implicit_convert";
+  case CallSyntax::kImplicitCopyInit:
+    return "implicit_copy";
+  case CallSyntax::kImplicitMoveInit:
+    return "implicit_move";
   case CallSyntax::kDestructor:
     return "destructor";
   case CallSyntax::kTupleGetItem:
@@ -167,6 +171,8 @@ static CallKind getCallKind(CallSyntax syntax) {
   case CallSyntax::kDirectCall:      //< f()
   case CallSyntax::kTypeCall:        //< T()
   case CallSyntax::kImplicitConvert: //< Conversion in an argument context
+  case CallSyntax::kImplicitCopyInit: //< Implicit __copyinit__ call.
+  case CallSyntax::kImplicitMoveInit: //< Implicit __moveinit__ call.
     return CallKind::kFunction;
   case CallSyntax::kIndirectCall: //< expr()
     return CallKind::kIndirect;
@@ -335,8 +341,7 @@ PValue OverloadSet::filterOverloadSet(CallOperands &operands,
       return {};
     }
 
-    // Diagnose implicit conversions with a custom message, unless this is
-    // forming a Reference.
+    // Diagnose implicit conversions with a custom message.
     if (syntax == CallSyntax::kImplicitConvert && selfOperandType &&
         singleOperandType) {
       // This is true if passing Int type to Int instead of Int() to Int.
@@ -375,6 +380,12 @@ PValue OverloadSet::filterOverloadSet(CallOperands &operands,
       break;
     case CallSyntax::kImplicitConvert:
       diag << "implicit conversion";
+      break;
+    case CallSyntax::kImplicitCopyInit:
+      diag << "implicit copy";
+      break;
+    case CallSyntax::kImplicitMoveInit:
+      diag << "implicit move";
       break;
     }
 
@@ -880,19 +891,19 @@ CValue OverloadSet::emitCall(CallOperands &&operands, ValueDest &dest,
     dest.resetForError();
     return {};
   }
-  return emitter.emitCallUnchecked(callee, operands, dest, expr);
+  return emitter.emitCallUnchecked(callee, operands, dest, syntax, expr);
 }
 
 CValue ExprEmitter::emitIndirectCall(CValue callee, CallOperands &&operands,
-                                     ValueDest &dest,
+                                     ValueDest &dest, CallSyntax syntax,
                                      const ExprNode *callExpr) {
   auto calleeSig = dyn_cast<SignatureType>(callee.getRValueType());
   if (!calleeSig) {
     // If we are invoking something other than a SignatureType, try to invoke
     // its `__call__` method.
     operands.addSelf({callee, callExpr});
-    return emitNamedMethodCall("__call__", std::move(operands), dest,
-                               CallSyntax::kDirectCall, callExpr);
+    return emitNamedMethodCall("__call__", std::move(operands), dest, syntax,
+                               callExpr);
   }
 
   // If we have a function pointer, resolve it to an RValue.
@@ -904,7 +915,7 @@ CValue ExprEmitter::emitIndirectCall(CValue callee, CallOperands &&operands,
 
   // Check to see if we can apply these operands to the callee signature.
   OverloadSet bindings{"callee", /*fnDecls=*/{}, ParamBindings(getScopeInfo()),
-                       callExpr, CallSyntax::kIndirectCall};
+                       callExpr, syntax};
   auto fitness = OverloadFitness::evaluate(calleeSig, /*indirect*/ nullptr,
                                            bindings, operands,
                                            /*allowImplicitConversions=*/true);
@@ -938,7 +949,7 @@ CValue ExprEmitter::emitIndirectCall(CValue callee, CallOperands &&operands,
     calleeRV = PValue(ParamOperatorAttr::get(POC::BindSignature, bindOperands));
   }
 
-  return emitCallUnchecked(calleeRV, operands, dest, callExpr);
+  return emitCallUnchecked(calleeRV, operands, dest, syntax, callExpr);
 }
 
 CValue ExprEmitter::emitNamedMethodCall(StringRef methodName,
@@ -990,7 +1001,7 @@ CValue ExprEmitter::emitNamedMethodCall(StringRef methodName,
     return {};
   }
 
-  return emitIndirectCall(callee, std::move(operands), dest, callNode);
+  return emitIndirectCall(callee, std::move(operands), dest, syntax, callNode);
 }
 
 /// Emit a call to __init__, returning an instance of the specified type.  If

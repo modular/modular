@@ -1728,7 +1728,8 @@ AnyValue CallNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
 
   // Otherwise, we must have a concrete RValue, emit an indirect call.
   if (auto crVal = calleeVal.getIfCValue())
-    return emitter.emitIndirectCall(crVal, std::move(operandsList), dest, this);
+    return emitter.emitIndirectCall(crVal, std::move(operandsList), dest,
+                                    CallSyntax::kIndirectCall, this);
 
   emitter.emitError(getLoc(), "cannot call this unresolved expression");
   return {};
@@ -2169,7 +2170,7 @@ static AnyValue emitBinOpCall(ASTExprAnd<AnyValue> lhs,
             lhsCV.getRValueType(), specialFnInfo.name, operands, callExpr,
             CallSyntax::kOperator, emitter))
       return emitter.emitIndirectCall(callee, std::move(operands), dest,
-                                      callExpr);
+                                      CallSyntax::kOperator, callExpr);
   }
 
   // Check to see if we have the reverse version of this operator.
@@ -2182,7 +2183,7 @@ static AnyValue emitBinOpCall(ASTExprAnd<AnyValue> lhs,
               rhsCV.getRValueType(), reversedFnInfo.name, operands, callExpr,
               CallSyntax::kReversedOperator, emitter))
         return emitter.emitIndirectCall(callee, std::move(operands), dest,
-                                        callExpr);
+                                        CallSyntax::kOperator, callExpr);
     }
 
     // Swap these back so we emit the right error.
