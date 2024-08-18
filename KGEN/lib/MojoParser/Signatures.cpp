@@ -1460,7 +1460,7 @@ void TypeCheckedFnSignature::verifyFunctionNameBinding(
       ASTType selfArgType = argTypes[kSelfArgNo];
       const ParsedArgument &selfArg = parsedArgs[kSelfArgNo];
 
-      // Don't check broken args, becaue we don't want redundant diagnostics.
+      // Don't check broken args, because we don't want redundant diagnostics.
       if (selfArg.isErroneous)
         return;
 
@@ -1472,6 +1472,11 @@ void TypeCheckedFnSignature::verifyFunctionNameBinding(
       // declaration, this is a form of conditional conformance.
       if (selfType.getWithoutParameters(shared).isEqualCanon(
               selfArgType.getWithoutParameters(shared)))
+        // TODO: We should check to make sure the parameters are a subtype of
+        // the declared parameters.  We don't want Self to say T is Movable, but
+        // then have it be implemented with AnyType.
+        // Replacing this whole thing with 'where' clauses would be much nicer
+        // anyhow.
         return;
 
       // Otherwise, this is an unrecognized self type. If this is a trait, the

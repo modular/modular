@@ -786,7 +786,7 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
   ASTDecl &sigDecl = addFullyResolvedDecl(funcOp.getOperation(), StringAttr(),
                                           decl.getLoc(), decl.getParentDecl());
 
-  // Parse declared meta parameters and add them to the current scope.
+  // Parse declared parameters and add them to the current scope.
   ParsedParamList parsedParamList;
 
   // Add the parameters to the symbol table, and resolve their types.  We

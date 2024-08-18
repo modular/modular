@@ -1160,6 +1160,11 @@ void ExclusivityChecker::checkArgument(Value val, ArgConvention convention,
     if (isa<LifetimeAttr>(lifetime))
       return;
 
+    // Don't warn about InvalidRefLifetimeAttr
+    // TODO: Need to fix this.
+    if (isa<InvalidRefLifetimeAttr>(lifetime))
+      return;
+
     // Determine whether we've seen this lifetime before.
     auto [iter, isNew] =
         lifetimeAccesses.insert({lifetime, {unsigned(argIdx), isImmut}});
