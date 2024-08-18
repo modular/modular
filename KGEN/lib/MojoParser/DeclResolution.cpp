@@ -1008,17 +1008,6 @@ static VarDeclOp makeVarArgWrapper(SRValue argValue, StringAttr argName,
   if (varListType.isTypeCheckErrorType())
     return {};
 
-  // If this is a variadic of in-memory values that might not have lifetimes,
-  // forbid taking the lifetime of the values.
-  if (refType && ASTType(refType.getElementType())
-                     .mightBeRegisterPassable(loc, emitter.shared)) {
-    auto newRefType = refType.getWithLifetime(
-        InvalidRefLifetimeAttr::get(refType.isMutable()));
-    argValue = emitter.builder->create<RebindOp>(
-        emitter.translateLocation(loc),
-        variadicType.getWithElementType(newRefType), argValue);
-  }
-
   // Emit a VarDeclOp: VaridicListMem needs a lifetime for its self accesses.
   // This also provides a user name for the argument.
   auto mlirLoc = emitter.translateLocation(loc);
@@ -1132,36 +1121,16 @@ ParseResult DeclResolver::resolveBody(LIT::FuncOp funcOp, Lexer &lexer,
           &argDecl, argBValue, argBValue.getRValueType(), argIdx)));
     };
 
-    // If this is an MValue argument whose underlying type could be a register
-    // type (e.g. because it is generic) then we cannot allow arbitrary user
-    // defined references to bind to the argument.  These arguments will be
-    // lowered late (after elaboration) by argument convention lowering to be
-    // direct register passes, so any references will be invalid.
-    //
-    // To handle this, we cast the value to a marker lifetime which cannot be
-    // bound to Reference.
-    if (SignatureType::hasAddress(convention)) {
-      Value argValue = bbArg;
-      auto argRefType = cast<RefType>(bbArg.getType());
-      if (ASTType(argRefType.getElementType())
-              .mightBeRegisterPassable(argDecl.getLoc(), shared)) {
-        // Cast away our lifetime since the body can't use it.
-        auto expectedType = argRefType.getWithLifetime(
-            InvalidRefLifetimeAttr::get(argRefType.isMutable()));
-        argValue = emitter.builder->create<RebindOp>(
-            emitter.translateLocation(argDecl.getLoc()), expectedType, bbArg);
-      }
-
-      if (convention == ArgConvention::BorrowedInMem)
-        setBorrowedDecl(MBValue(argValue)); // borrowed
-      else
-        setDecl(MLValue(argValue)); // owned or inout
-      continue;
+    if (convention == ArgConvention::BorrowedInReg)
+      setBorrowedDecl(SBValue(bbArg));
+    else if (convention == ArgConvention::BorrowedInMem)
+      setBorrowedDecl(MBValue(bbArg)); // borrowed
+    else {
+      assert(convention == ArgConvention::OwnedInMem ||
+             convention == ArgConvention::InOut ||
+             convention == ArgConvention::InitSelf);
+      setDecl(MLValue(bbArg));
     }
-
-    // Otherwise, this is a borrowed register value.
-    assert(convention == ArgConvention::BorrowedInReg);
-    setBorrowedDecl(SBValue(bbArg));
   }
 
   // If the function has a named result slot, bind it here.

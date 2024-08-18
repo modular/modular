@@ -468,40 +468,6 @@ def BindTypeAttr : LITTypedAttr<"BindType", "bind_type"> {
 }
 
 //===----------------------------------------------------------------------===//
-// InvalidRefLifetimeAttr
-//===----------------------------------------------------------------------===//
-
-def InvalidRefLifetimeAttr
-  : LITTypedAttr<"InvalidRefLifetime", "invalid.ref.lifetime"> {
-  let summary = "An attribute value of !lit.lifetime<mut> type";
-  let description = [{
-    This attribute is a singleton lifetime value used to indicate when a
-    !lit.ref type should not be bindable to a Reference library type.  This
-    happens in generic borrowed arguments that may be bound to a
-    @register_passable type that doesn't have a lifetime.
-  }];
-
-  let parameters = (ins
-    AttributeSelfTypeParameter<"", "LifetimeType">:$type
-  );
-
-  let assemblyFormat = "";
-
-  let builders = [
-    AttrBuilderWithInferredContext<(ins "Type":$type), [{
-      assert(::isa<LifetimeType>(type) && "LifetimeAttr must have LifetimeType");
-      return get(type.getContext(), ::cast<LifetimeType>(type));
-    }]>,
-    AttrBuilderWithInferredContext<(ins "TypedAttr":$isMutable), [{
-      return get(isMutable.getContext(), LifetimeType::get(isMutable));
-    }]>,
-    AttrBuilder<(ins "bool":$isMutable), [{
-      return get($_ctxt, LifetimeType::get($_ctxt, isMutable));
-    }]>
- ];
-}
-
-//===----------------------------------------------------------------------===//
 // LifetimeAttr
 //===----------------------------------------------------------------------===//
 

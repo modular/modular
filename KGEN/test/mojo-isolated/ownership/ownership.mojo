@@ -503,23 +503,21 @@ struct BigRegExample:
 
   # CHECK-LABEL: lit.func @"__init__(ownership::BigRegExample=&)"
   fn __init__(inout self):
-    # CHECK-NEXT: %0 = kgen.rebind %self
-    # CHECK-NEXT: %1 = lit.ref.struct.ger %0[a]
-    # CHECK-NEXT: lit.call {{.*}}__init__{{.*}}(%1)
-    # CHECK-NEXT: %3 = lit.ref.struct.ger %0[b]
-    # CHECK-NEXT: lit.call {{.*}}__init__{{.*}}(%3)
+    # CHECK-NEXT: [[A:%.*]] = lit.ref.struct.ger %self[a]
+    # CHECK-NEXT: lit.call {{.*}}__init__{{.*}}([[A]])
+    # CHECK-NEXT: [[B:%.*]] = lit.ref.struct.ger %self[b]
+    # CHECK-NEXT: lit.call {{.*}}__init__{{.*}}([[B]])
     self.a = RegExample()
     self.b = RegExample()
 
   # CHECK-LABEL: lit.func @"__copyinit__
   fn __copyinit__(inout self, existing: Self):
-    # CHECK-NEXT: %0 = kgen.rebind %self
-    # CHECK-NEXT: %1 = lit.struct.extract %existing[a]
-    # CHECK-NEXT: %2 = lit.ref.struct.ger %0[a]
-    # CHECK-NEXT: lit.call {{.*}}__copyinit__{{.*}}(%2, %1)
-    # CHECK-NEXT: %4 = lit.struct.extract %existing[b]
-    # CHECK-NEXT: %5 = lit.ref.struct.ger %0[b]
-    # CHECK-NEXT: lit.call {{.*}}__copyinit__{{.*}}(%5, %4)
+    # CHECK-NEXT: [[EA:%.*]] = lit.struct.extract %existing[a]
+    # CHECK-NEXT: [[SA:%.*]] = lit.ref.struct.ger %self[a]
+    # CHECK-NEXT: lit.call {{.*}}__copyinit__{{.*}}([[SA]], [[EA]])
+    # CHECK-NEXT: [[EB:%.*]] = lit.struct.extract %existing[b]
+    # CHECK-NEXT: [[SB:%.*]] = lit.ref.struct.ger %self[b]
+    # CHECK-NEXT: lit.call {{.*}}__copyinit__{{.*}}([[SB]], [[EB]])
     self.a = existing.a
     self.b = existing.b
 
