@@ -844,7 +844,6 @@ fn sgemm_double_buffer_kernel[
 
     var tid = ThreadIdx.x()
     var warp_id = tid // WARP_SIZE
-    var lane_id = lane_id()
 
     # Coordinates of the current warp.
     var warp_x = warp_id % num_warps_n
@@ -1443,10 +1442,10 @@ fn _matmul_gpu_dispatch[
                     gemv_tc_kernel_vector[
                         c_type,
                         c_shape,
-                        a_type,
-                        a_shape,
                         b_type,
                         b_shape,
+                        a_type,
+                        a_shape,
                         simd_width=simd_width,
                         transpose_b=transpose_b,
                         elementwise_lambda_fn=elementwise_lambda_fn,
