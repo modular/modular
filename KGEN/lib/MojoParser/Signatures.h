@@ -212,6 +212,15 @@ public:
   // finally gets treated as the ABI for the function.
   ASTType fullResultType;
 
+  /// This performs any special checks over the declaration based on its name
+  /// and whether it is a method.  This happens after decorator processing
+  /// because that is how defs work in Python.
+  ///
+  /// If this function detects a problem, it marks the decl as erroneous and
+  /// resets the SpecialFunctionInfo.
+  void verifyFunctionNameBinding(ASTDecl &decl, StringAttr name,
+                                 SpecialFunctionInfo &fnInfo) const;
+
   /// Return a FunctionType with the specified argTypes and resultType.
   FunctionType getFunctionType() const;
 

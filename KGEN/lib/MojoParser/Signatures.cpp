@@ -11,8 +11,8 @@
 //===----------------------------------------------------------------------===//
 
 #include "Signatures.h"
-#include "KGEN/KGENDialect/KGENOps.h"
-#include "KGEN/LITDialect/LITOps.h"
+#include "MojoUtils.h"
+
 #include "KGEN/MojoParser/ASTDecl.h"
 #include "KGEN/MojoParser/CallEmission.h"
 #include "KGEN/MojoParser/DeclResolver.h"
@@ -20,6 +20,9 @@
 #include "KGEN/MojoParser/ExprNodes.h"
 #include "KGEN/MojoParser/ParserBase.h"
 #include "KGEN/MojoParser/ParserParamEvaluator.h"
+
+#include "KGEN/KGENDialect/KGENOps.h"
+#include "KGEN/LITDialect/LITOps.h"
 #include "llvm/ADT/StringExtras.h"
 
 using namespace M;
@@ -1398,6 +1401,206 @@ TypeCheckedFnSignature::TypeCheckedFnSignature(TypeCheckedParamList &paramList,
 
   // Compute the result type.
   typeCheckResult(resultArg, isDef, fnInfo, fnDecl, *this);
+}
+
+/// This performs any special checks over the declaration based on its name
+/// and whether it is a method.  This happens after decorator processing
+/// because that is how defs work in Python.
+///
+/// If this function detects a problem, it marks the decl as erroneous and
+/// resets the SpecialFunctionInfo.
+void TypeCheckedFnSignature::verifyFunctionNameBinding(
+    ASTDecl &decl, StringAttr name, SpecialFunctionInfo &fnInfo) const {
+  LIT::FuncOp funcOp = cast<LIT::FuncOp>(decl);
+
+  ArrayRef<ParsedArgument> parsedArgs = argList.parsedArgs;
+  ArrayRef<Type> argTypes = this->argTypes;
+  auto &shared = paramList.shared;
+
+  // On any semantic error we mark the declaration erroneous - so references to
+  // it don't type check, and we clear our special function information.  This
+  // reduces cascade errors.
+  auto emitErrorLoc = [&](SMLoc loc,
+                          const Twine &message = Twine()) -> InflightDiag {
+    fnInfo = SpecialFunctionInfo();
+    decl.setErroneous();
+    return shared.emitError(loc, message);
+  };
+  auto emitError = [&](const Twine &message = Twine()) -> InflightDiag {
+    fnInfo = SpecialFunctionInfo();
+    decl.setErroneous();
+    return shared.emitError(funcOp.getLoc(), message);
+  };
+
+  // If the argument list has a inout result or inout error, ignore it for type
+  // checking purposes.
+  while (!parsedArgs.empty() && parsedArgs.back().convention ==
+                                    ParsedArgument::kConventionByRefResult) {
+    parsedArgs = parsedArgs.drop_back();
+    argTypes = argTypes.drop_back();
+  }
+
+  // If this definition is a struct/class member, compute the self type.
+  ASTType selfType;
+  constexpr size_t kSelfArgNo = 0;
+  if (ASTDecl *parent = decl.getParentDecl();
+      parent && isa<StructDeclOp, TraitDeclOp>(*parent)) {
+    // The parent decl must be fully resolved in order to resolve any of its
+    // members.
+    assert(parent->resolvedness == DeclResolvedness::fully);
+    selfType = parent->getTypeDeclSelf();
+  }
+
+  // Check any special function information.
+
+  // Check that the 'self' argument of a method was specified correctly.
+  if (selfType && !funcOp.getIsStatic()) {
+    // Implement this as a lambda so we can early exit with 'return'.
+    auto checkSelf = [&]() {
+      ASTType selfArgType = argTypes[kSelfArgNo];
+      const ParsedArgument &selfArg = parsedArgs[kSelfArgNo];
+
+      // Don't check broken args, becaue we don't want redundant diagnostics.
+      if (selfArg.isErroneous)
+        return;
+
+      // It ok if it exactly matches (typically with a specific convention).
+      if (selfType.isEqualCanon(selfArgType))
+        return;
+
+      // It is ok if the self type has different parameters than the
+      // declaration, this is a form of conditional conformance.
+      if (selfType.getWithoutParameters(shared).isEqualCanon(
+              selfArgType.getWithoutParameters(shared)))
+        return;
+
+      // Otherwise, this is an unrecognized self type. If this is a trait, the
+      // explicit self type is very hard to specify in mojo, so we suggest to
+      // use 'Self' instead.
+      auto diag = emitErrorLoc(selfArg.loc, "'self' argument must have type ");
+      if (isa<TraitDeclOp>(*decl.getParentDecl()))
+        diag << "'Self' in trait method declaration";
+      else
+        diag << selfType;
+      diag << ", but actually has type " << ASTType(argTypes[kSelfArgNo]);
+      selfArg.isErroneous = true;
+      if (selfArg.typeExpr)
+        diag << selfArg.typeExpr->getRange();
+    };
+
+    if (argTypes.empty()) {
+      // TODO('def' allows unused arguments): We can/should relax this for
+      // 'def' declarations in the future, they should be able to implicit
+      // ignore arguments like Python does.
+      emitError("self argument must be present in instance method");
+    } else {
+      checkSelf();
+    }
+  }
+
+  // Verify the argument count lines up.
+  if (fnInfo.kind != SpecialFunctionKind::kNormal) {
+    size_t numActualArgs = parsedArgs.size();
+    size_t numMin = fnInfo.minNumArguments;
+    ssize_t numMax = fnInfo.maxNumArguments;
+    if (numMin == size_t(numMax) && numActualArgs != numMin) {
+      emitError() << name << " requires " << numMin << " operand"
+                  << plural(numMin);
+    } else if (numActualArgs < numMin) {
+      emitError() << name << " requires at least " << numMin << " operand"
+                  << plural(numMin);
+    } else if (numMax != -1 && numActualArgs > size_t(numMax)) {
+      emitError() << name << " requires at most " << size_t(numMax)
+                  << " operand" << plural(numMax);
+    }
+  }
+
+  // Check other invariants based on method flags.
+  if (fnInfo.isInstMethod()) {
+    if (!selfType) {
+      emitError() << name << " must be a method";
+    } else if (funcOp.getIsStatic()) {
+      if (!(fnInfo.flags & SpecialFunctionInfo::kImplicitlyStaticMethod))
+        emitError("special method may not be a static method");
+    } else if (fnInfo.requiresOwnedSelfInstMethod() &&
+               parsedArgs[kSelfArgNo].convention !=
+                   ParsedArgument::kConventionOwned) {
+      emitErrorLoc(parsedArgs[kSelfArgNo].loc, "self argument must be 'owned'")
+          << FixIt::insertBeforeToken(parsedArgs[kSelfArgNo].loc, "owned ");
+    }
+  }
+
+  // Get the user-declared result type, which might be a memory-only type.
+  ASTType declaredResultType = resultType;
+
+  // Some functions like __new__ require a Self result type.
+  if (fnInfo.flags & SpecialFunctionInfo::kSelfResult &&
+      !declaredResultType.isEqualCanon(selfType))
+    emitError() << name << " result type must be " << selfType;
+
+  // If the function is required to return None, verify that.
+  if (fnInfo.hasNoneResult() && !declaredResultType.isNoneType())
+    emitError() << name << " result type must be elided (or None)";
+
+  // Reject special functions declared as throwing when that is invalid.
+  if (argList.effects.isThrows() &&
+      fnInfo.flags & SpecialFunctionInfo::kCannotRaise) {
+    // Specialize the error if raising is implicit because it was defined as a
+    // def.
+    if (funcOp.isDef()) {
+      emitError() << "cannot define " << name
+                  << " as 'def'; 'def' implicitly raises"
+                  << FixIt::replaceToken(decl.getLoc(), "fn");
+    } else {
+      emitError() << name << " cannot be declared as raising an exception";
+    }
+  }
+
+  // Diagnose common errors and handle other special cases.
+  switch (fnInfo.kind) {
+  default:
+    break;
+  case SpecialFunctionKind::kNew:
+    emitError("'__new__' is not supported on structs; use '__init__' instead");
+    break;
+  case SpecialFunctionKind::kMLIRI1:
+    if (!declaredResultType.mlirType.isSignlessInteger(1))
+      emitError() << name << " result type must be __mlir_type.i1";
+    break;
+  case SpecialFunctionKind::kInit:
+  case SpecialFunctionKind::kCopyInit:
+  case SpecialFunctionKind::kMoveInit: {
+    // The first/self argument is syntactically declared as a by-ref argument,
+    // but we need to change it to InitSelf since it is not initialized coming
+    // in.
+    assert(!parsedArgs.empty() && "arg count already checked above");
+    SMLoc selfArgLoc = parsedArgs[0].loc;
+
+    // __init__ methods must take their self argument 'inout' syntactically.
+    if (parsedArgs[0].convention != ParsedArgument::kConventionInitSelfResult) {
+      auto diag = emitErrorLoc(selfArgLoc, "'self' in struct ")
+                  << name << " must be passed 'inout'";
+      if (parsedArgs[0].convention == ParsedArgument::kConventionUnspec)
+        diag << FixIt::insertBeforeToken(selfArgLoc, "inout ");
+    }
+
+    if (fnInfo.kind == SpecialFunctionKind::kCopyInit) {
+      if (parsedArgs[1].convention != ParsedArgument::kConventionBorrowed)
+        emitErrorLoc(parsedArgs[1].loc,
+                     "existing value argument must be passed as borrowed");
+    } else if (fnInfo.kind == SpecialFunctionKind::kMoveInit) {
+      if (parsedArgs[1].convention != ParsedArgument::kConventionOwned)
+        emitErrorLoc(parsedArgs[1].loc,
+                     "existing value argument must be passed as owned");
+    }
+    break;
+  }
+  }
+
+  // If we have a special function kind and didn't have any errors with it,
+  // remember which kind it is.
+  if (fnInfo.kind != SpecialFunctionKind::kNormal)
+    funcOp.setSpecialFnKind(uint8_t(fnInfo.kind));
 }
 
 FunctionType TypeCheckedFnSignature::getFunctionType() const {
