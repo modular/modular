@@ -378,7 +378,8 @@ public:
   /// then generating the call logic.  This emits an error and returns null on
   /// failure.
   CValue emitIndirectCall(CValue callee, CallOperands &&operands,
-                          ValueDest &dest, const ExprNode *callExpr);
+                          ValueDest &dest, CallSyntax syntax,
+                          const ExprNode *callExpr);
 
   /// This helper emits a named method call with the provided `operands`,
   /// where the first positional operand is the receiver of the call. This emits
@@ -549,7 +550,8 @@ public:
   /// Internal implementation of call emission, use emitCall/emitIndirectCall
   /// or higher level wrappers instead.
   CValue emitCallUnchecked(RValue callee, const CallOperands &operands,
-                           ValueDest &dest, const ExprNode *callExpr);
+                           ValueDest &dest, CallSyntax syntax,
+                           const ExprNode *callExpr);
 };
 
 } // namespace M::KGEN::LIT

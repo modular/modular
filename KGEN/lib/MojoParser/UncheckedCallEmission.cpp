@@ -691,8 +691,7 @@ CallEmitter::emitArgValues(const CallOperands &operands) {
     CallOperands insertOperands(
         {{MLValue(kwargsDict), callExpr}, {literalKey, operand.expr}, operand});
     emitter.emitNamedMethodCall("_insert", std::move(insertOperands),
-                                kwargsDest, CallSyntax::kImplicitConvert,
-                                callExpr);
+                                kwargsDest, CallSyntax::kMethodCall, callExpr);
   }
 
   return argumentValues;
@@ -1157,7 +1156,7 @@ computeArgumentsLifetime(AsyncCallOp call,
 
 CValue ExprEmitter::emitCallUnchecked(RValue callee,
                                       const CallOperands &callOperands,
-                                      ValueDest &dest,
+                                      ValueDest &dest, CallSyntax syntax,
                                       const ExprNode *callExpr) {
   CallEmitter callEmitter(callee, callExpr, *this, dest);
   auto calleeSig = cast<LITSignatureType>(callee.getRValueType());

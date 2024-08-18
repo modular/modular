@@ -1554,7 +1554,7 @@ CValue ExprEmitter::emitCopyOfValue(ASTExprAnd<CValue> value, ValueDest &dest) {
   CallOperands operands({ASTExprAnd<AnyValue>{destBuffer, value.expr}, value});
   ValueDest copyDest(dest.getContext());
   if (!emitNamedMethodCall("__copyinit__", std::move(operands), copyDest,
-                           CallSyntax::kImplicitConvert, value.expr))
+                           CallSyntax::kImplicitCopyInit, value.expr))
     return {};
   // If we required an implicit conversion, make sure it happens.
   return emitCResult(MRValue(destBuffer), value.expr, dest);
@@ -1645,7 +1645,7 @@ BValue ExprEmitter::emitStoreToLValue(ASTExprAnd<CValue> value, LValue destLV,
         ASTExprAnd<AnyValue>{destRef, value.expr}, value};
     ValueDest moveDest(context);
     if (!emitNamedMethodCall("__moveinit__", {operands}, moveDest,
-                             CallSyntax::kImplicitConvert, value.expr))
+                             CallSyntax::kImplicitMoveInit, value.expr))
       return {};
     return MBValue(destRef);
   }
