@@ -528,13 +528,13 @@ class InferenceSession:
                     "clip-vit.torchscript",
                     input_specs = [
                         engine.TorchInputSpec(
-                            shape=[1, 16], dtype=engine.DType.int32
+                            shape=[1, 16], dtype=DType.int32
                         ),
                         engine.TorchInputSpec(
-                            shape=[1, 3, 224, 224], dtype=engine.DType.float32
+                            shape=[1, 3, 224, 224], dtype=DType.float32
                         ),
                         engine.TorchInputSpec(
-                            shape=[1, 16], dtype=engine.DType.int32
+                            shape=[1, 16], dtype=DType.int32
                         ),
                     ],
                 )
