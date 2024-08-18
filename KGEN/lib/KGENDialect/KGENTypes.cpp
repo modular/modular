@@ -23,6 +23,31 @@ using namespace M;
 using namespace KGEN;
 
 //===----------------------------------------------------------------------===//
+// ArgConvention
+//===----------------------------------------------------------------------===//
+
+/// Return a string like "borrowed" or "inout".
+const char *KGEN::getUserSyntax(ArgConvention convention) {
+  switch (convention) {
+  case ArgConvention::BorrowedInReg:
+  case ArgConvention::BorrowedInMem:
+    return "borrowed";
+  case ArgConvention::OwnedInReg:
+  case ArgConvention::OwnedInMem:
+    return "owned";
+  case ArgConvention::InOut:
+    return "inout";
+  case ArgConvention::Ref:
+    return "ref";
+  case ArgConvention::ByRefResult:
+  case ArgConvention::InitSelf:
+  case ArgConvention::ByRefError:
+    return "init";
+  }
+  llvm_unreachable("invalid convention");
+}
+
+//===----------------------------------------------------------------------===//
 // FnEffects
 //===----------------------------------------------------------------------===//
 

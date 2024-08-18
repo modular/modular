@@ -754,13 +754,13 @@ bool CallEmitter::isSafeToUseValueDestForDirectResult(
     argTypes.push_back(value.getType());
   }
 
-  CachedTypeLifetimeFinder &finder = emitter.shared.cachedLifetimeFinder;
   TypedAttr destLifetime =
       cast<RefType>(underlyingDest.getType()).getLifetime();
 
   // Check to see if any of the the lifetimes they may be accessing are the
   // lifetime in question.  If any of them is a possible reference to the
   // destination slot, then we must fail.
+  CachedTypeLifetimeFinder &finder = emitter.shared.cachedLifetimeFinder;
   for (TypedAttr lifetime : finder.findLifetimesInTypes(argTypes)) {
     // If an operand is reading from the lifetime, there will be an immcast in
     // the way.  Look through it.
@@ -1111,6 +1111,147 @@ void CallEmitter::emitDirectCallWarnings(LIT::CallOp call,
   }
 }
 
+// As we emit the arguments, we check to see if there are any exclusivity
+// violations provided by the argument.
+namespace {
+struct ExclusivityChecker {
+  ExclusivityChecker(const ExprNode *callExpr, CallSyntax syntax,
+                     ArrayRef<ASTExprAnd<AnyValue>> argumentValues,
+                     SharedState &shared)
+      : callExpr(callExpr), syntax(syntax), argumentValues(argumentValues),
+        shared(shared) {}
+
+  /// As each argument is emitted, check against previous arguments for
+  /// exclusivity violations.
+  void checkArgument(Value val, ArgConvention convention, size_t argIdx);
+
+private:
+  const ExprNode *callExpr;
+  CallSyntax syntax;
+  /// These are the arguments that are being emitted.
+  ArrayRef<ASTExprAnd<AnyValue>> argumentValues;
+  SharedState &shared;
+
+  /// For each lifetime that is referenced, we keep track of what argIdx it came
+  /// from, and whether it was potentially mutated.
+  struct LifetimeInfo {
+    unsigned argIdx;
+    bool isImmut;
+  };
+  SmallDenseMap<TypedAttr, LifetimeInfo, 8> lifetimeAccesses;
+
+  void diagViolation(Value val, ArgConvention convention, size_t argIdx,
+                     TypedAttr lifetime, const LifetimeInfo &previousAccess);
+};
+} // end anonymous namespace
+
+/// As each argument is emitted, check against previous arguments for
+/// exclusivity violations.
+void ExclusivityChecker::checkArgument(Value val, ArgConvention convention,
+                                       size_t argIdx) {
+  auto checkLifetimeAccess = [&](TypedAttr lifetime) {
+    // Determine whether the access was immutable.
+    bool isImmut = cast<LifetimeType>(lifetime.getType()).isMutableKnown(false);
+
+    // Look through immcasts to determine the accessed lifetime.
+    lifetime = LifetimeMutCastAttr::strip(lifetime);
+
+    // Accesses to the global lifetime never conflict.
+    if (isa<LifetimeAttr>(lifetime))
+      return;
+
+    // Determine whether we've seen this lifetime before.
+    auto [iter, isNew] =
+        lifetimeAccesses.insert({lifetime, {unsigned(argIdx), isImmut}});
+    if (isNew) // If not, then it isn't a conflict.
+      return;
+
+    // If so, check to see if this access and the previous one were both
+    // immutable.  Read/read aliasing is fine.
+    if (iter->second.isImmut && isImmut)
+      return;
+
+    // If not, we have a problem!
+    diagViolation(val, convention, argIdx, lifetime, iter->second);
+  };
+
+  // If this is a result argument, then we only look at the lifetime of the
+  // destination that we're storing into, not any nested references that may
+  // be in the result. This returned value is derived from the other arguments
+  // passed to the function, it doesn't conflict with them.
+  if (convention == ArgConvention::InitSelf ||
+      convention == ArgConvention::ByRefResult ||
+      convention == ArgConvention::ByRefError) {
+    checkLifetimeAccess(cast<RefType>(val.getType()).getLifetime());
+    return;
+  }
+
+  // Find all the of the lifetimes that are buried in the specified type.
+  for (TypedAttr lifetime :
+       shared.cachedLifetimeFinder.findLifetimesInTypes(val.getType()))
+    checkLifetimeAccess(lifetime);
+}
+
+/// Emit an error about an access to a conflicting lifetime after a previous
+/// access was seen.
+void ExclusivityChecker::diagViolation(Value val, ArgConvention convention,
+                                       size_t argIdx, TypedAttr lifetime,
+                                       const LifetimeInfo &previousAccess) {
+  bool isImmut = cast<LifetimeType>(lifetime.getType()).isMutableKnown(false);
+  auto diag = shared.emitWarning(callExpr->getLoc());
+
+  switch (syntax) {
+  default:
+    diag << "call ";
+    break;
+  case CallSyntax::kImplicitConvert:
+    diag << "implicit conversion ";
+    break;
+  case CallSyntax::kImplicitCopyInit:
+    diag << "implicit __copyinit__ call ";
+    break;
+  case CallSyntax::kImplicitMoveInit:
+    diag << "implicit __moveinit__ call ";
+    break;
+  }
+
+  diag << "argument allows ";
+  diag << (isImmut ? "reading" : "writing");
+  diag << " a memory location previously ";
+  diag << (previousAccess.isImmut ? "readable" : "writable");
+  diag << " through another aliased argument";
+
+  // Add ranges for the two arguments.
+  diag << argumentValues[argIdx].expr->getRange()
+       << argumentValues[previousAccess.argIdx].expr->getRange();
+
+  // Attach a note to explain what is going on in more detail.
+  diag.attachNote(callExpr->getLoc());
+  lifetime = LifetimeMutCastAttr::strip(lifetime);
+
+  // If the lifetime in question is because of the top-level ref binding, then
+  // we have a common problem where something is passed both mutable and
+  // borrowed.
+  if (SignatureType::hasAddress(convention) &&
+      LifetimeMutCastAttr::strip(cast<RefType>(val.getType()).getLifetime()) ==
+          lifetime) {
+    diag << lifetime << " value is passed through aliasing '"
+         << getUserSyntax(convention) << "' argument"
+         << argumentValues[argIdx].expr->getRange();
+    return;
+  }
+
+  ASTType argType = val.getType();
+  if (SignatureType::hasAddress(convention))
+    argType = argType.getReferenceElementType();
+
+  // Otherwise, it is a more complicated buried lifetime in a type like a
+  // Reference or Span.
+  diag << lifetime
+       << " memory accessed through reference embedded in value of type "
+       << argType;
+}
+
 /// When emitting a call where any of the arguments are nonmaterializable, we
 /// know the type lacks a runtime representation and that it must be
 /// interpretable. If all other arguments are PValues, we can safely emit the
@@ -1197,9 +1338,14 @@ CValue ExprEmitter::emitCallUnchecked(RValue callee,
     return result;
   }
 
+  // Otherwise, materialize PValue and DLValue's as SSA values for emission.
   Location loc = translateLocation(callExpr->getLoc());
 
-  // Otherwise, materialize PValue and DLValue's as SSA values for emission.
+  // As we emit the arguments, we check to see if there are any exclusivity
+  // violations provided by the argument.
+  ExclusivityChecker exclusivityChecker(callExpr, syntax, argumentValues,
+                                        shared);
+
   SmallVector<Value> callArgs;
   SmallVector<TypedAttr> implicitLifetimes;
   ArrayRef<ArgConvention> conventions = calleeSig.getArgConventions();
@@ -1232,12 +1378,11 @@ CValue ExprEmitter::emitCallUnchecked(RValue callee,
     // Owned and borrowed packs are passed as expected, but inout is passed
     // borrowed.
     if (calleeSig.isPackVarArg(argIdx)) {
-      if (convention == ArgConvention::InOut)
+      if (convention == ArgConvention::InOut ||
+          convention == ArgConvention::BorrowedInMem)
         convention = ArgConvention::BorrowedInReg;
       else if (convention == ArgConvention::OwnedInMem)
         convention = ArgConvention::OwnedInReg;
-      else if (convention == ArgConvention::BorrowedInMem)
-        convention = ArgConvention::BorrowedInReg;
     }
 
     Value arg = callEmitter.emitPreemittedArgumentAsDynamicValue(
@@ -1272,6 +1417,11 @@ CValue ExprEmitter::emitCallUnchecked(RValue callee,
         return {};
       }
 
+    // The argument looks good on its own, check to see if it is an exclusivity
+    // violation with a previous argument.
+    exclusivityChecker.checkArgument(arg, convention, argIdx);
+
+    // All looks good!
     callArgs.push_back(arg);
   }
 
