@@ -172,4 +172,29 @@ fn call_test_ref(inout s: String):
     f2(s)
 
 
+@value
+struct MyMutSpan[
+   lifetime: MutableLifetime
+]: pass
 
+fn take_two_spans(a: MyMutSpan[_], b: MyMutSpan[_]):
+    # This is totally fine, can take two different mutable spans.
+    pass
+
+
+fn exclusivity[spanlife: MutableLifetime](inout x: MemExample, span: MyMutSpan[spanlife]):
+    # expected-warning @below {{implicit __copyinit__ call argument allows writing a memory location previously writable through another aliased argument}}
+    # expected-note @below {{'x' value is passed through aliasing 'borrowed' argument}}
+    x = x
+
+    # TODO: This is not correctly diagnosed, due to transfer creating a novel
+    # uncorrelated lifetime in the same space (!).
+    x = x^
+
+    # expected-warning @below {{call argument allows writing a memory location previously writable through another aliased argument}}
+    # expected-note @below {{'x' value is passed through aliasing 'borrowed' argument}}
+    x.__copyinit__(x)
+
+    # expected-warning @below {{call argument allows writing a memory location previously writable through another aliased argument}}
+    # expected-note @below {{'spanlife' memory accessed through reference embedded in value of type 'MyMutSpan[spanlife]'}}
+    take_two_spans(span, span)
