@@ -573,6 +573,10 @@ struct ValueSet {
 
   /// Given a lifetime attribute, return the value ref that defines it.
   ValueRef getFullValueRefForLifetime(TypedAttr lifetime) const {
+    // The mutability of the lifetime access doesn't affect what ValueRef is
+    // accessed.
+    lifetime = LifetimeMutCastAttr::strip(lifetime);
+
     auto it = lifetimeToValueIndex.find(lifetime);
     if (it == lifetimeToValueIndex.end())
       return {};
@@ -2617,20 +2621,13 @@ static bool canEntirelyElideMemoryTemporary(LIT::CallOp copyInitCall,
   return true;
 }
 
-/// If this is a lit.ref.immut op that removes mutability, look through it.
-static Value stripImmutCast(Value value) {
-  if (auto cast = value.getDefiningOp<RefImmutOp>())
-    return cast.getOperand();
-  return value;
-}
-
 /// Given a value of reference type, this checks to see if it is immutable, and
 /// casts it back to a mutable reference.  This isn't a generally safe operation
 /// from a type system perspective, so should only be used for things like
 /// destructor insertion that happen after borrow checking.
 static Value getMutableRefForPossiblyImmutValue(Value value,
                                                 ImplicitLocOpBuilder &builder) {
-  value = stripImmutCast(value);
+  value = RefImmutOp::strip(value);
 
   // Check to see if the reference is already mutable.
   auto destType = cast<RefType>(value.getType()).getWithMutability(true);
@@ -2747,7 +2744,7 @@ LogicalResult DestructorInsertion::elideCopyDestroyPair(Value value,
   if (copyInitCall.getOperand(1) != value) {
     // The value being destroyed may be a mutable source, and the source of the
     // copy is (by definition) immutable.
-    if (stripImmutCast(copyInitCall.getOperand(1)) == value)
+    if (RefImmutOp::strip(copyInitCall.getOperand(1)) == value)
       value = copyInitCall.getOperand(1);
     else
       return failure();

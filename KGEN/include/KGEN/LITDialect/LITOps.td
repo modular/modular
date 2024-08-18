@@ -1568,6 +1568,17 @@ def LIT_RefImmutOp : LITOp<"ref.immut", [RefImmutType<"ref", "result">]> {
   let arguments = (ins LIT_RefType:$ref);
   let results = (outs LIT_RefType:$result);
   let assemblyFormat = "$ref `:` type($ref) attr-dict";
+
+
+  let extraClassDeclaration = [{
+    /// If the specified value is a RefImmutOp, look through it to its operand.
+    /// Otherwise just return the value.
+    static Value strip(Value value) {
+      if (auto cast = value.getDefiningOp<RefImmutOp>())
+        return cast.getOperand();
+      return value;
+    }
+  }];
 }
 
 //===----------------------------------------------------------------------===//

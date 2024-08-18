@@ -762,8 +762,11 @@ bool CallEmitter::isSafeToUseValueDestForDirectResult(
   // Check to see if any of the the lifetimes they may be accessing are the
   // lifetime in question.  If any of them is a possible reference to the
   // destination slot, then we must fail.
-  for (TypedAttr lifetimes : finder.findLifetimesInTypes(argTypes)) {
-    if (lifetimes == destLifetime)
+  for (TypedAttr lifetime : finder.findLifetimesInTypes(argTypes)) {
+    // If an operand is reading from the lifetime, there will be an immcast in
+    // the way.  Look through it.
+    lifetime = LifetimeMutCastAttr::strip(lifetime);
+    if (lifetime == destLifetime)
       return false;
   }
 

@@ -17,7 +17,8 @@ namespace LIT {
 class CachedTypeLifetimeFinder {
 public:
   /// This method finds all the lifetimes buried in the specified type,
-  /// returning them as a list.
+  /// returning them as a list.  This typically will return ParamRefAttr's or
+  /// ImmutCast(ParamRefAttr)'s if a mutable lifetime is accessed immutably.
   SmallVector<TypedAttr> findLifetimesInType(Type type) {
     return findLifetimesInTypes(type);
   }
