@@ -26,7 +26,9 @@ from utils.index import Index
 from utils.numerics import isnan
 
 
-fn run_matvec(M: Int, N: Int, K: Int, ctx: DeviceContext) raises:
+fn run_matvec[
+    reduction_method: ReductionMethod
+](M: Int, N: Int, K: Int, *, ctx: DeviceContext) raises:
     print("== run_matvec kernel")
 
     var iterations = 100
@@ -60,7 +62,7 @@ fn run_matvec(M: Int, N: Int, K: Int, ctx: DeviceContext) raises:
             DType.float32,
             DType.float32,
             DType.float32,
-            reduction_method = ReductionMethod.WARP,
+            reduction_method=reduction_method,
         ]
     ]()
 
@@ -198,9 +200,9 @@ fn run_matvec(M: Int, N: Int, K: Int, ctx: DeviceContext) raises:
     _ = func_naive^
 
 
-fn test_gevm_with_epilogue_fn(
-    M: Int, N: Int, K: Int, ctx: DeviceContext
-) raises:
+fn test_gevm_with_epilogue_fn[
+    reduction_method: ReductionMethod
+](M: Int, N: Int, K: Int, *, ctx: DeviceContext) raises:
     alias c_stride = 5
     alias seed_val = 42
 
@@ -250,7 +252,7 @@ fn test_gevm_with_epilogue_fn(
             DType.float32,
             DType.float32,
             DType.float32,
-            reduction_method = ReductionMethod.WARP,
+            reduction_method=reduction_method,
             elementwise_lambda_fn=epilogue_fn,
         ]
     ]()
@@ -399,8 +401,22 @@ fn test_gevm_with_epilogue_fn(
 
 def main():
     with DeviceContext() as ctx:
-        # gemv for matrix vector multiply and gevm for vector matrix multiply
-        run_matvec(4096, 1, 4096, ctx)
-        run_matvec(1, 4096, 4096, ctx)
-        test_gevm_with_epilogue_fn(1, 4096, 4096, ctx)
-        test_gevm_with_epilogue_fn(4096, 1, 4096, ctx)
+
+        @parameter
+        for i in range(2):
+            alias reduction_method = List[ReductionMethod](
+                ReductionMethod.WARP, ReductionMethod.TENSOR_CORE
+            )[i]
+            # gemv for matrix vector multiply and gevm for vector matrix multiply
+            run_matvec[reduction_method=reduction_method](
+                4096, 1, 4096, ctx=ctx
+            )
+            run_matvec[reduction_method=reduction_method](
+                1, 4096, 4096, ctx=ctx
+            )
+            test_gevm_with_epilogue_fn[reduction_method=reduction_method](
+                1, 4096, 4096, ctx=ctx
+            )
+            test_gevm_with_epilogue_fn[reduction_method=reduction_method](
+                4096, 1, 4096, ctx=ctx
+            )

@@ -16,7 +16,9 @@ from memory import UnsafePointer
 from utils.numerics import isnan
 
 
-fn run_matvec(M: Int, N: Int, K: Int, ctx: DeviceContext) raises:
+fn run_matvec[
+    reduction_method: ReductionMethod
+](M: Int, N: Int, K: Int, *, ctx: DeviceContext) raises:
     print("== run_matvec kernel")
 
     var iterations = 100
@@ -57,7 +59,7 @@ fn run_matvec(M: Int, N: Int, K: Int, ctx: DeviceContext) raises:
             DType.float32,
             DType.bfloat16,
             DType.bfloat16,
-            reduction_method = ReductionMethod.TENSOR_CORE,
+            reduction_method=reduction_method,
         ]
     ]()
 
@@ -170,4 +172,9 @@ fn run_matvec(M: Int, N: Int, K: Int, ctx: DeviceContext) raises:
 
 def main():
     with DeviceContext() as ctx:
-        run_matvec(4096, 1, 4096, ctx)
+        run_matvec[reduction_method = ReductionMethod.WARP](
+            4096, 1, 4096, ctx=ctx
+        )
+        run_matvec[reduction_method = ReductionMethod.TENSOR_CORE](
+            4096, 1, 4096, ctx=ctx
+        )
