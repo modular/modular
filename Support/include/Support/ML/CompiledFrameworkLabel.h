@@ -35,8 +35,6 @@ namespace M {
 ///
 /// Some tools need to 'sniff' formats from textual files. Some of the op
 /// name and framework name conventions encoded here can help with that.
-///
-/// TODO(#4991): Hoist up into GenericML once MEFFile supports it.
 class CompiledFrameworkLabel {
 public:
   enum Cases {
