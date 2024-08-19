@@ -39,7 +39,7 @@ def test_sub__promoted_dtype__operator(d1: DType, d2: DType, shape: list[Dim]):
             assert (i0 - i1).tensor_type == (i1 - i0).tensor_type
             event("types promote")
         except ValueError as e:
-            assert "Unsafe cast" in str(e)
+            assert "Unsafe cast" in str(e.__cause__)
             event("types don't promote")
 
 

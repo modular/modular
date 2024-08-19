@@ -221,6 +221,25 @@ class Graph:
         finally:
             CURRENT_GRAPH.reset(token)
 
+    @contextlib.contextmanager
+    def _capturing_mlir_diagnostics(self):
+        diagnostics = []
+
+        def handler(d):
+            diagnostics.append(str(d))
+            return True
+
+        # Temporarily hookup a handler to record diagnostics from mlir.
+        # These are used to generate a better error message on failure.
+        handle = self._context.attach_diagnostic_handler(handler)
+        try:
+            yield None
+        except Exception as e:
+            diags = "\n\t".join(diagnostics)
+            raise ValueError(f"Mlir Diagnostics:\n\t{diags}\n") from e
+        finally:
+            handle.detach()
+
     @_classproperty
     def current(cls) -> Graph:
         try:
@@ -246,28 +265,16 @@ class Graph:
         args = tuple(unwrap(arg) for arg in args)
         kwargs = {k: unwrap(arg) for k, arg in kwargs.items()}
 
-        diagnostics = []
-
-        def handler(d):
-            diagnostics.append(str(d))
-            return True
-
         with mlir.InsertionPoint(self._body), location():
-            # Temporarily hookup a handler to record diagnostics from the mlir op builder.
-            # These are used to generate a better error message on failure.
-            handle = self._context.attach_diagnostic_handler(handler)
             try:
-                results = op(*args, **kwargs)
+                with self._capturing_mlir_diagnostics():
+                    results = op(*args, **kwargs)
             except Exception as e:
                 raise ValueError(
                     f"Failed to create {op.__qualname__} op:\n\tInputs:\n"
                     + "".join(f"\t\t{arg!r}\n" for arg in args)
                     + "".join(f"\t\t{k} = {v!r}\n" for k, v in kwargs.items())
-                    + "\tMLIR Diagnostics\n"
-                    + "".join(f"\n\t\t{d}" for d in diagnostics)
                 ) from e
-            finally:
-                handle.detach()
 
         if isinstance(results, mlir.Operation):
             return []
@@ -333,6 +340,16 @@ class Graph:
         self._mlir_op.attributes["result_names"] = mlir.Attribute.parse(
             f"[{', '.join(output_names)}]"
         )
+
+        # Outputting means the graph is complete. Verify the entire graph.
+        try:
+            with self._capturing_mlir_diagnostics():
+                assert self._mlir_op.verify()
+        except Exception as e:
+            raise ValueError(
+                "Graph failed to verify. Please file an issue. This should be"
+                " impossible."
+            ) from e
 
     def __repr__(self) -> str:
         return str(self._mlir_op)

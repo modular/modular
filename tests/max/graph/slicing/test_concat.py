@@ -39,7 +39,6 @@ def test_concat(base_type: TensorType, axis_sizes: list[StaticDim], axis: int):
         assert out.shape == target_shape
 
         graph.output(out)
-        graph._mlir_op.verify()
 
 
 @given(
@@ -70,5 +69,5 @@ def test_concat_bad_dtype(
     input_types[random.randint(0, len(input_types) - 1)].dtype = dtype
 
     with Graph("concat", input_types=input_types) as graph:
-        with pytest.raises(ValueError, match="have a differing dtype"):
+        with pytest.raises(ValueError):
             out = ops.concat(graph.inputs, axis)

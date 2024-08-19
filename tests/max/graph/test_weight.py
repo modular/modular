@@ -32,7 +32,6 @@ def test_add_weight() -> None:
             )
 
             graph.output(w.value, w2.value)
-            graph._mlir_op.verify()
             gen_mlir = str(graph._mlir_op)
             print(gen_mlir)
             assert (

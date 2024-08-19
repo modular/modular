@@ -15,7 +15,6 @@ def test_constant() -> None:
         const = ops.constant(const)
 
         graph.output(const)
-        graph._mlir_op.verify()
 
         assert "0, 1, 2, 3, 4, 5" in str(graph._mlir_op)
 
@@ -26,7 +25,6 @@ def test_constant_transpose() -> None:
         const = ops.constant(const)
 
         graph.output(const)
-        graph._mlir_op.verify()
 
         assert "0, 3, 1, 4, 2, 5" in str(graph._mlir_op)
 
@@ -42,7 +40,6 @@ def test_scalar(dtype: DType) -> None:
         const = ops.scalar(const, dtype)
 
         graph.output(const)
-        graph._mlir_op.verify()
 
         mlir_dtype = _graph.dtype_type(graph._context, dtype._mlir)
         assert "7" in str(graph._mlir_op)

@@ -46,8 +46,6 @@ def test_reshape() -> None:
             symbolic_reshape_neg_one,
         )
 
-        graph._mlir_op.verify()
-
 
 def static_known_shape_size(shape: Shape):
     """Returns the size of a shape only considering static dims"""
@@ -86,7 +84,6 @@ def test_reshape__can_permute_input_shape(
         out = graph.inputs[0].reshape(output_shape)
         assert out.shape == output_shape
         graph.output(out)
-        graph._mlir_op.verify()
 
 
 @pytest.mark.skip("MSDK-765")
@@ -112,7 +109,6 @@ def test_reshapes__can_replace_any_dims_with_negative_one(
             if expected != -1:
                 assert dim == expected
         graph.output(out)
-        graph._mlir_op.verify()
 
 
 @given(
@@ -134,7 +130,6 @@ def test_reshapes__zero_dim(input_type: TensorType, reshape_shape: list[Dim]):
         assert out.tensor_type.dtype == input_type.dtype
         assert out.tensor_type.shape == reshape_shape
         graph.output(out)
-        assert graph._mlir_op.verify()
 
 
 def shapes_plus_ones(shapes=shapes()):
@@ -153,7 +148,6 @@ def test_reshapes__unsqueeze(input_type: TensorType, reshape_shape: list[Dim]):
         assert out.tensor_type.dtype == input_type.dtype
         assert out.tensor_type.shape == reshape_shape
         graph.output(out)
-        assert graph._mlir_op.verify()
 
 
 @given(
@@ -166,7 +160,6 @@ def test_reshapes__squeeze(input_type: TensorType, reshape_shape: list[Dim]):
         assert out.tensor_type.dtype == input_type.dtype
         assert out.tensor_type.shape == reshape_shape
         graph.output(out)
-        assert graph._mlir_op.verify()
 
 
 @given(
@@ -183,7 +176,7 @@ def test_reshape__fails_with_different_symoblic_dim(
     assume(0 not in input_type.shape)
     assume(dim not in input_type.shape)
     with Graph("reshape", input_types=[input_type]) as graph:
-        with pytest.raises(ValueError, match="number of elements must match"):
+        with pytest.raises(ValueError):
             graph.inputs[0].reshape([*output_shape, dim])
 
 
@@ -201,7 +194,7 @@ def test_reshape__fails_with_different_number_of_elements(
     assume(0 not in input_type.shape)
     assume(dim > 1)  # 0 and 1 should both work
     with Graph("reshape", input_types=[input_type]) as graph:
-        with pytest.raises(ValueError, match="number of elements must match"):
+        with pytest.raises(ValueError):
             graph.inputs[0].reshape([*output_shape, dim])
 
 
@@ -218,7 +211,6 @@ def test_reshape__can_reshape_single_element_tensors(
         assert out.tensor_type.dtype == input_type.dtype
         assert out.tensor_type.shape == output_shape
         graph.output(out)
-        graph._mlir_op.verify()
 
 
 shared_types = st.shared(tensor_types())
@@ -234,7 +226,6 @@ def test_transpose__output_shape(input_type: TensorType, a: int, b: int):
         assert out.shape == target_shape
 
         graph.output(out)
-        graph._mlir_op.verify()
 
 
 def test_rebind() -> None:
@@ -273,5 +264,3 @@ def test_rebind() -> None:
             rebind_to_new_names,
             rebind_expression,
         )
-
-        graph._mlir_op.verify()

@@ -20,4 +20,3 @@ def test_graph_value__T(input_type: TensorType):
         assert out.shape == expected
 
         graph.output(out)
-        graph._mlir_op.verify()

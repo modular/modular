@@ -27,7 +27,6 @@ def test_select(input_types: list[TensorType]):
         assert out.dtype in (t.dtype for t in input_types)
 
         graph.output(out)
-        graph._mlir_op.verify()
 
 
 def test_slice_basic():
@@ -38,7 +37,6 @@ def test_slice_basic():
 
         assert out.shape == [1, 1, 3, 4, 1]
         graph.output(out)
-        graph._mlir_op.verify()
 
 
 def test_slice_with_graph_value():
@@ -52,7 +50,6 @@ def test_slice_with_graph_value():
 
         assert out.shape == [3, "out_dim"]
         graph.output(out)
-        graph._mlir_op.verify()
 
 
 def dim_indexes(dim: Dim):
@@ -124,4 +121,3 @@ def test_slice_valid_ints(tensor_type: TensorType, index):
         out = ops.slice_tensor(graph.inputs[0], index)
         assert out.shape == expected_slice_shape(tensor_type.shape, index)
         graph.output(out)
-        graph._mlir_op.verify()

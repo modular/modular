@@ -20,6 +20,5 @@ def test_prints(input_type: TensorType, label: str):
         out.print(label)
 
         graph.output(out)
-        graph._mlir_op.verify()
         assert "mo.debug.tensor.print" in str(graph._mlir_op)
         assert label in str(graph._mlir_op)

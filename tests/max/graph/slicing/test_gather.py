@@ -33,4 +33,3 @@ def test_gather(input_type: TensorType, indices_type: TensorType, axis: int):
             input.tensor_type.dtype, target_shape
         )
         graph.output(out)
-        graph._mlir_op.verify()

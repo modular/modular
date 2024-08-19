@@ -28,4 +28,3 @@ def test_stack(type: TensorType, stack_size: int, axis: int):
         )
         assert out.shape == target_shape
         graph.output(out)
-        graph._mlir_op.verify()

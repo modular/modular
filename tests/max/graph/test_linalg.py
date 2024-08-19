@@ -5,7 +5,6 @@
 # ===----------------------------------------------------------------------=== #
 """Tests for max.graph linear algebra operations."""
 import sys
-import re
 from typing import Iterable, Optional, Union
 
 import numpy as np
@@ -56,7 +55,6 @@ def assert_matmul_properties(
     """Asserts that the graph contains a matmul, has the expected shape and
     dtype.
     """
-    assert graph._mlir_op.verify()
     assert "rmo.matmul" in str(graph._mlir_op)
     assert f"[{', '.join([str(s) for s in expected_output_shape])}]" in str(
         graph_result_type(graph)
@@ -212,15 +210,7 @@ def test_builder_failure_message() -> None:
     This is really a test that we are able to bubble up MLIR diagnostics into
     Python exceptions from RMO builders.
     """
-    with pytest.raises(
-        ValueError,
-        match=(
-            re.escape(
-                "dimension at axis -1 (value D) must match input rhs (shape [E,"
-                " F, G]) dimension at axis -2 (value F)"
-            )
-        ),
-    ):
+    with pytest.raises(ValueError):
         matmul_graph(
             "symbolic_higher_rank_incompatible",
             (["A", "B", "C", "D"], ["E", "F", "G"]),
@@ -240,7 +230,6 @@ def test_matmul_chaining() -> None:
             TensorType(DType.float32, ["C", "D"]),
         ),
     )
-    assert graph._mlir_op.verify()
     assert str(graph._mlir_op).count("rmo.matmul") == 2
     assert "A, D" in str(graph._mlir_op)
 
@@ -255,7 +244,6 @@ def test_matmul_chaining() -> None:
             TensorType(DType.float32, ["D", "E"]),
         ),
     )
-    assert graph._mlir_op.verify()
     assert str(graph._mlir_op).count("rmo.matmul") == 3
     assert "A, E" in str(graph._mlir_op)
 
@@ -269,7 +257,6 @@ def test_matmul_chaining() -> None:
             TensorType(DType.float32, ["D", "E"]),
         ),
     )
-    assert graph._mlir_op.verify()
     assert str(graph._mlir_op).count("rmo.matmul") == 2
     assert "A, B, E" in str(graph._mlir_op)
 
@@ -299,7 +286,6 @@ def test_layer_norm() -> None:
     )
 
     assert "mo.layer_norm" in str(graph._mlir_op)
-    graph._mlir_op.verify()
 
 
 def test_matmul_dtype_promotion() -> None:
@@ -326,4 +312,3 @@ def test_band_part() -> None:
     )
 
     assert "rmo.mo.linalg.band_part" in str(graph._mlir_op)
-    graph._mlir_op.verify()

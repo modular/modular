@@ -24,7 +24,6 @@ def test_simple_graphs(graph: Graph):
     assume(len(graph.inputs) > 0)
     with graph:
         graph.output(graph.inputs[0])
-    assert graph._mlir_op.verify()
 
 
 def test_mlir_module_create() -> None:
@@ -52,8 +51,6 @@ def test_elementwise_add_graph() -> None:
     ) as graph:
         graph.output(graph.inputs[0] + 1)
 
-        graph._mlir_op.verify()
-
 
 @pytest.mark.skipif(sys.version_info.minor > 10, reason="MSDK-636")
 def test_location() -> None:
@@ -80,8 +77,6 @@ def test_add_op() -> None:
         elemwise_sum = ops.add(lhs, rhs)
         graph.output(elemwise_sum)
 
-        graph._mlir_op.verify()
-
         # Check that the arg/result name attributes were added.
         assert "argument_names = " in str(graph._mlir_op)
         assert "result_names = " in str(graph._mlir_op)
@@ -97,8 +92,6 @@ def test_add_op_closure() -> None:
 
     input_type = TensorType(dtype=DType.float32, shape=["batch", "channels"])
     add_graph = Graph("add", elementwise_add, (input_type, input_type))
-
-    add_graph._mlir_op.verify()
 
     assert "rmo.add" in str(add_graph._mlir_op)
     assert "mo.output" in str(add_graph._mlir_op)
