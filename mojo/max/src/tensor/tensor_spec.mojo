@@ -9,7 +9,7 @@ Implements the `TensorSpec` type.
 You can import these APIs from the `max.tensor` package. For example:
 
 ```mojo
-from max.tensor import TensorSpec
+from tensor import TensorSpec
 ```
 """
 
