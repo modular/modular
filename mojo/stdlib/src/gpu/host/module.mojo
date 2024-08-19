@@ -351,7 +351,7 @@ struct Module:
         alias debug_level = env_get_string["DEBUG_LEVEL", "none"]()
         self.cuda_dll = cuda_dll
         self.module = _ModuleHandle()
-        if verbose or debug_level == "full" or debug_level == "line-tables":
+        if debug_level in ("full", "line-tables") or verbose:
             alias buffer_size = 4096
             alias max_num_options = 10
             var num_options = 0
@@ -381,11 +381,13 @@ struct Module:
             option_vals[num_options] = buffer_size
             num_options += 1
 
+            @parameter
             if debug_level == "full":
                 opts[num_options] = JitOptions.GENERATE_DEBUG_INFO
                 option_vals[num_options] = 1
                 num_options += 1
 
+            @parameter
             if debug_level == "line-tables":
                 opts[num_options] = JitOptions.GENERATE_LINE_INFO
                 option_vals[num_options] = 1
@@ -395,6 +397,7 @@ struct Module:
             # 4, while ours only goes up to (and defaults to) 3.  The most
             # important setting, though, is to set optimization level to 0 when
             # ours is at 0.
+            @parameter
             if env_get_int["OPTIMIZATION_LEVEL", 4]() == 0:
                 opts[num_options] = JitOptions.OPTIMIZATION_LEVEL
                 option_vals[num_options] = 0
