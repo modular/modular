@@ -263,9 +263,9 @@ struct DeviceContext:
     # profiling_enabled = False, which is OK. But for the Driver API, we would
     # want profiling to occur for appropriate builds when it substitutes the
     # current MGP implementation.
-    fn __init__(inout self) raises:
+    fn __init__(inout self, gpu_id: Int = 0) raises:
         self.cuda_instance = CudaInstance()
-        self.cuda_context = Context(Device(self.cuda_instance))
+        self.cuda_context = Context(Device(self.cuda_instance), gpu_id)
         # TODO(field sensitivity lifetimes), eliminate stream_tmp.
         var stream_tmp = Stream(self.cuda_context)
         self.cuda_stream = stream_tmp^
