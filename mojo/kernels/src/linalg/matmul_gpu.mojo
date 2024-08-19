@@ -387,8 +387,8 @@ fn gemv_kernel[
     n: Int,
     k: Int,
 ):
-    var x = BlockIdx.x() * BlockDim.x() + ThreadIdx.x()
-    var warp_id = x // WARP_SIZE
+    var tid = BlockIdx.x() * BlockDim.x() + ThreadIdx.x()
+    var warp_id = tid // WARP_SIZE
     var accum = Scalar[s_type]()
 
     if warp_id >= m:
@@ -441,16 +441,17 @@ fn _mark_as_exclusive[
     ]()[]
 
 
-# Matrix-Column Vector Multiplication utilizing Tensor Cores
-fn gemv_tc_kernel_vector[
+# Matrix-Column Vector Multiplication using vectorized instructions
+fn gemv_kernel_vector[
     c_type: DType,
     c_shape: DimList,
     a_type: DType,
     a_shape: DimList,
     b_type: DType,
     b_shape: DimList,
-    simd_width: UInt,
     *,
+    reduction_method: ReductionMethod,
+    simd_width: UInt,
     transpose_b: Bool = False,
     elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
     s_type: DType = get_accum_type[c_type](),
@@ -466,6 +467,7 @@ fn gemv_tc_kernel_vector[
     alias align_b = alignof[SIMD[b_type, simd_width]]()
     var tid = BlockIdx.x() * BlockDim.x() + ThreadIdx.x()
     var warp_id = tid // WARP_SIZE
+    var accum = Scalar[s_type]()
 
     var a_ptr = _mark_as_exclusive(
         a.data + (warp_id * a.dim[1]()) + lane_id() * simd_width
@@ -501,10 +503,21 @@ fn gemv_tc_kernel_vector[
         idx += step
         a_ptr += step
 
-    # Do a fast tensor core and warp shuffle based reduce operation
-    var accum = tc_reduce_vector[s_type, a_type, simd_width](
-        local_accum.cast[a_type]()
-    )
+    @parameter
+    if reduction_method is ReductionMethod.WARP:
+
+        @parameter
+        fn reduce_add[
+            type: DType,
+            width: Int,
+        ](x: SIMD[type, width], y: SIMD[type, width]) -> SIMD[type, width]:
+            return x + y
+
+        accum = warp_reduce[shuffle_down, reduce_add](local_accum.reduce_add())
+    else:
+        accum = tc_reduce_vector[s_type, a_type, simd_width](
+            local_accum.cast[a_type]()
+        )
 
     if lane_id() == 0:
 
@@ -1339,7 +1352,7 @@ fn _matmul_gpu_dispatch[
                 )
 
                 var gpu_func = ctx.compile_function[
-                    gemv_tc_kernel_vector[
+                    gemv_kernel_vector[
                         c_type,
                         c_shape,
                         a_type,
@@ -1347,6 +1360,7 @@ fn _matmul_gpu_dispatch[
                         b_type,
                         b_shape,
                         simd_width=simd_width,
+                        reduction_method = ReductionMethod.TENSOR_CORE,
                         elementwise_lambda_fn=elementwise_lambda_fn,
                     ]
                 ]()
@@ -1421,7 +1435,7 @@ fn _matmul_gpu_dispatch[
                 )
 
                 var gpu_func = ctx.compile_function[
-                    gemv_tc_kernel_vector[
+                    gemv_kernel_vector[
                         c_type,
                         c_shape,
                         b_type,
@@ -1429,6 +1443,7 @@ fn _matmul_gpu_dispatch[
                         a_type,
                         a_shape,
                         simd_width=simd_width,
+                        reduction_method = ReductionMethod.TENSOR_CORE,
                         transpose_b=transpose_b,
                         elementwise_lambda_fn=elementwise_lambda_fn,
                     ]
