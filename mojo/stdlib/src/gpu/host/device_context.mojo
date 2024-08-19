@@ -509,3 +509,10 @@ struct DeviceContext:
 
         if self.cuda_context.get_version() < Self.MIN_DRIVER_VERSION:
             raise Error("MAX not supported using current GPU driver")
+
+    fn compute_capability(self) raises -> Int:
+        return self.cuda_context.device._query(
+            DeviceAttribute.COMPUTE_CAPABILITY_MAJOR
+        ) * 10 + self.cuda_context.device._query(
+            DeviceAttribute.COMPUTE_CAPABILITY_MINOR
+        )
