@@ -349,12 +349,33 @@ fn reverse_idx[transpose: Bool](x: Int, y: Int) -> StaticIntTuple[2]:
         return Index(x, y)
 
 
-# Matrix-Column Vector Multiplication
+@value
+struct ReductionMethod:
+    var _value: Int
+
+    alias TENSOR_CORE = Self(0)
+    alias WARP = Self(1)
+
+    fn __eq__(self, other: Self) -> Bool:
+        return self._value == other._value
+
+    fn __ne__(self, other: Self) -> Bool:
+        return not (self == other)
+
+    fn __is__(self, other: Self) -> Bool:
+        return self == other
+
+    fn __isnot__(self, other: Self) -> Bool:
+        return self != other
+
+
+# Matrix-Column Vector Multiplication using scalar arithmetic
 fn gemv_kernel[
     c_type: DType,
     a_type: DType,
     b_type: DType,
     *,
+    reduction_method: ReductionMethod,
     transpose_b: Bool = False,
     elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
     s_type: DType = get_accum_type[c_type](),
@@ -383,61 +404,18 @@ fn gemv_kernel[
             )
 
     @parameter
-    fn reduce_add[
-        type: DType,
-        width: Int,
-    ](x: SIMD[type, width], y: SIMD[type, width]) -> SIMD[type, width]:
-        return x + y
-
-    accum = warp_reduce[shuffle_down, reduce_add](accum)
-
-    if lane_id() == 0:
+    if reduction_method is ReductionMethod.WARP:
 
         @parameter
-        if elementwise_lambda_fn:
-            alias elementwise_lambda = elementwise_lambda_fn.value()
-            elementwise_lambda[c_type, 1](
-                reverse_idx[transpose_b](warp_id, 0),
-                accum.cast[c_type](),
-            )
-        else:
-            c[warp_id] = accum.cast[c_type]()
+        fn reduce_add[
+            type: DType,
+            width: Int,
+        ](x: SIMD[type, width], y: SIMD[type, width]) -> SIMD[type, width]:
+            return x + y
 
-
-# Matrix-Column Vector Multiplication utilizing Tensor Cores
-fn gemv_tc_kernel[
-    c_type: DType,
-    a_type: DType,
-    b_type: DType,
-    *,
-    transpose_b: Bool = False,
-    elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
-    s_type: DType = get_accum_type[c_type](),
-](
-    c: UnsafePointer[Scalar[c_type]],
-    a: UnsafePointer[Scalar[a_type]],
-    b: UnsafePointer[Scalar[b_type]],
-    m: UInt,
-    n: UInt,
-    k: UInt,
-):
-    var x = BlockIdx.x() * BlockDim.x() + ThreadIdx.x()
-    var warp_id = x // WARP_SIZE
-    var accum = Scalar[s_type]()
-
-    if warp_id >= m:
-        return
-
-    # Every warp processes a single row of the resultant vector
-    for i in range(ceildiv(k, WARP_SIZE)):
-        var idx = i * WARP_SIZE + lane_id()
-        if idx < k:
-            accum += (
-                a.load(warp_id * k + idx).cast[s_type]()
-                * b.load(idx).cast[s_type]()
-            )
-
-    accum = tc_reduce[s_type, a_type](accum.cast[a_type]())
+        accum = warp_reduce[shuffle_down, reduce_add](accum)
+    else:
+        accum = tc_reduce[s_type, a_type](accum.cast[a_type]())
 
     if lane_id() == 0:
 
@@ -1387,10 +1365,11 @@ fn _matmul_gpu_dispatch[
             else:
                 alias WARPS_PER_BLOCK = 32
                 var gpu_func = ctx.compile_function[
-                    gemv_tc_kernel[
+                    gemv_kernel[
                         c_type,
                         a_type,
                         b_type,
+                        reduction_method = ReductionMethod.TENSOR_CORE,
                         elementwise_lambda_fn=elementwise_lambda_fn,
                     ]
                 ]()
@@ -1412,6 +1391,7 @@ fn _matmul_gpu_dispatch[
                     c_type,
                     a_type,
                     b_type,
+                    reduction_method = ReductionMethod.WARP,
                     elementwise_lambda_fn=elementwise_lambda_fn,
                 ]
             ]()
@@ -1467,10 +1447,11 @@ fn _matmul_gpu_dispatch[
             else:
                 alias WARPS_PER_BLOCK = 32
                 var gpu_func = ctx.compile_function[
-                    gemv_tc_kernel[
+                    gemv_kernel[
                         c_type,
-                        a_type,
                         b_type,
+                        a_type,
+                        reduction_method = ReductionMethod.TENSOR_CORE,
                         transpose_b=transpose_b,
                         elementwise_lambda_fn=elementwise_lambda_fn,
                     ]
@@ -1493,6 +1474,7 @@ fn _matmul_gpu_dispatch[
                     c_type,
                     a_type,
                     b_type,
+                    reduction_method = ReductionMethod.WARP,
                     transpose_b=transpose_b,
                     elementwise_lambda_fn=elementwise_lambda_fn,
                 ]
