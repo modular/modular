@@ -9,7 +9,7 @@ Implements the `TensorShape` type.
 You can import these APIs from the `tensor` package. For example:
 
 ```mojo
-from max.tensor import TensorShape
+from tensor import TensorShape
 ```
 """
 
