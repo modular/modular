@@ -263,6 +263,7 @@ fn chris_lifetime_example(a: Bool, b: Bool):
             if a:
                 # CHECK: __init__{{.*}}(%x)
                 x = MemExample()
+                
                 # CHECK: lit.try.raise
                 raise Error()
         # CHECK: except
@@ -281,11 +282,13 @@ fn chris_lifetime_example(a: Bool, b: Bool):
         finally:
             if b:
                 return
-    # CHECK: except
+        # CHECK: } except {
+    # CHECK: } except {
     except:
-        # CHECK: [[DEAD:%.*]] = lit.transfer_mem_ownership %x
+        # CHECK-NEXT:  [[IMMUT_X:%.*]] = lit.ref.immut %x
+        # CHECK: [[DEAD:%.*]] = kgen.rebind [[IMMUT_X]]
         # CHECK: __del__{{.*}}([[DEAD]])
-        _ = x^
+        _ = x
     # CHECK: else
     # CHECK-NEXT: lit.try.yield
 
@@ -381,9 +384,9 @@ struct TestLoopWithWholeObjectBit:
             buf.noop()
         # CHECK-NEXT: }
 
-        # CHECK-NEXT: [[TRANSFER_REF:%.*]] = lit.transfer_mem_ownership %buf
+        # CHECK-NEXT: lit.ownership.use %buf
         # CHECK-NEXT: [[FIELD_REF:%.*]] = lit.ref.struct.ger %self[field]
-        # CHECK-NEXT: lit.call {{.*}}__moveinit__{{.*}}([[FIELD_REF]], [[TRANSFER_REF]])
+        # CHECK-NEXT: lit.call {{.*}}__moveinit__{{.*}}([[FIELD_REF]], %buf)
         # CHECK-NEXT: lifetime.end %buf
         # CHECK-NEXT: %none = kgen.param.constant
         # CHECK-NEXT: kgen.return

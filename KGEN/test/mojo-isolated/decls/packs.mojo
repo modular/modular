@@ -63,14 +63,14 @@ fn test_owned_trait():
     var value2: SomeMem
 
     # Argument expressions emitted first
-    # CHECK-NEXT: [[V1T:%.*]] = lit.transfer_mem_ownership %value
+    # CHECK-NEXT: lit.ownership.use %value1
     # CHECK-NEXT: [[ANONSLOT:%.*]] = lit.var.decl "anonymous
     # CHECK-NEXT: [[V2I:%.*]] = lit.ref.immut %value2
     # CHECK-NEXT: lit.call {{.*}}__copyinit__{{.*}}([[ANONSLOT]], [[V2I]])
 
     # Coerce to common lifetime
-    # CHECK-NEXT: [[V1C:%.*]] = kgen.rebind [[V1T]] : !lit.ref<!SomeMem, mut *"value1(transfer)`2"> to !lit.ref<!SomeMem, mut {*"anonymous*`3", *"value1(transfer)`2"}>
-    # CHECK-NEXT: [[V2C:%.*]] = kgen.rebind [[ANONSLOT]] : !lit.ref<!SomeMem, mut *"anonymous*`3"> to !lit.ref<!SomeMem, mut {*"anonymous*`3", *"value1(transfer)`2"}>
+    # CHECK-NEXT: [[V1C:%.*]] = kgen.rebind %value1 : !lit.ref<!SomeMem, mut *"value1`"> to !lit.ref<!SomeMem, mut {*"anonymous*`2", *"value1`"}> 
+    # CHECK-NEXT: [[V2C:%.*]] = kgen.rebind [[ANONSLOT]] : !lit.ref<!SomeMem, mut *"anonymous*`2"> to !lit.ref<!SomeMem, mut {*"anonymous*`2", *"value1`"}
 
     # Form pack and call
     # CHECK-NEXT: [[PACK:%.*]] = lit.ref.pack.create([[V1C]], [[V2C]])
@@ -89,11 +89,11 @@ fn test_owned_trait():
     var value3: SomeReg
 
     # Argument expressions emitted first
-    # CHECK-NEXT: [[V3T:%.*]] = lit.transfer_mem_ownership %value3
+    # CHECK-NEXT: lit.ownership.use %value3
     # CHECK-NEXT: [[ANONSLOT:%.*]] = lit.var.decl "anonymous
     # CHECK-NEXT: lit.call {{.*}}__init__{{.*}}([[ANONSLOT]])
     # Coerce to common lifetime
-    # CHECK-NEXT: [[V3C:%.*]] = kgen.rebind [[V3T]]
+    # CHECK-NEXT: [[V3C:%.*]] = kgen.rebind %value3
     # CHECK-NEXT: [[V4C:%.*]] = kgen.rebind [[ANONSLOT]]
     # CHECK-NEXT: [[PACK:%.*]] = lit.ref.pack.create([[V3C]], [[V4C]])
 

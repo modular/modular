@@ -505,8 +505,8 @@ struct UnaryOpNode final : public ExprNode {
     return {opLoc, subExpr->getRangeEnd()};
   }
   AnyValue emitIR(ValueDest &dest, ExprEmitter &emitter) const override;
-  static AnyValue emitTransfer(AnyValue argValue, const ExprNode *expr,
-                               ValueDest &dest, ExprEmitter &emitter);
+  AnyValue emitTransfer(AnyValue argValue, ValueDest &dest,
+                        ExprEmitter &emitter) const;
 
   /// Emit a unary arithmetic operation.
   static AnyValue emitArith(Kind kind, const ExprNode *expr,

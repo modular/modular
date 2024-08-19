@@ -135,13 +135,9 @@ lit.func @test_consumed() -> index {
 
   // Move `x` into `y`.
   // CHECK: debuginfo.kill #[[DIVAR_X]] loc(#[[LOC_USE:.*]])
-  // CHECK-NEXT: [[X_TRANSFER:%.*]] = lit.transfer_mem_ownership %x {{.*}} loc(#[[LOC_USE]])
-  // CHECK-NEXT: debuginfo.value #[[DIVAR_Y]] #[[DIEXPR_DEREF]] = %[[VAR_Y]]
-  // CHECK-NEXT: lifetime.start %y
-  // CHECK-NEXT: lit.call @S::@__moveinit__{{.*}}(%y, [[X_TRANSFER]]) {{.*}} loc(#[[LOC_USE]])
+  // CHECK-NEXT: lit.call @S::@__moveinit__{{.*}}(%y, %x) {{.*}} loc(#[[LOC_USE]])
   // CHECK-NEXT: lifetime.end %x
-  %x_moved = lit.transfer_mem_ownership %x : !lit.ref<@S, mut xlife> -> !lit.ref<@S, mut xlifetrans> {paramDecl = #kgen<param.decl xlifetrans : !lit.lifetime<1>>} loc(#locUse)
-  lit.call @S::@__moveinit__(%y, %x_moved) : !lit.signature<(!lit.ref<@S, mut ylife> init_self, !lit.ref<@S, mut xlifetrans> owned_in_mem) -> !kgen.none> loc(#locUse)
+  lit.call @S::@__moveinit__(%y, %x) : !lit.signature<(!lit.ref<@S, mut ylife> init_self, !lit.ref<@S, mut xlife> owned_in_mem) -> !kgen.none> loc(#locUse)
 
   // Last use of `y`.
   // CHECK: [[Y_A:%.*]] = lit.ref.struct.ger {{.*}} loc(#[[LOC_RET:.*]])

@@ -2204,10 +2204,7 @@ void DestructorInsertion::checkConsume(Value value, Operation &op,
   if (!dryRun) {
     mlir::ImplicitLocOpBuilder builder(op.getLoc(), &op);
     emitDebugKill(valueRef, builder);
-    // `lit.transfer_mem_ownership` may alias an underlying allocation. Don't
-    // emit a lifetime end marker when a value is consumed by it.
-    if (!isa<TransferMemOwnershipOp>(op))
-      emitLifetimeEndAfter(value, &op);
+    emitLifetimeEndAfter(value, &op);
   }
 }
 
@@ -2945,10 +2942,6 @@ void DestructorInsertion::emitLifetimeEndAfter(Value value, Operation *after) {
 
 void DestructorInsertion::emitLifetimeEnd(Value value,
                                           ImplicitLocOpBuilder &builder) {
-  // Memory transfers may alias a var decl. Make sure we insert the end marker
-  // of the memory backing the vardecl only when the transfer's lifetime ends.
-  if (auto transfer = value.getDefiningOp<TransferMemOwnershipOp>())
-    value = transfer.getValue();
   if (value.getDefiningOp<VarDeclOp>())
     builder.create<VarLifetimeEndOp>(value);
 }

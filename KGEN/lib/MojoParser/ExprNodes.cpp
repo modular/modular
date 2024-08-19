@@ -2547,9 +2547,9 @@ AnyValue BinOpNode::emitAndOr(ValueDest &dest, ExprEmitter &emitter) const {
 }
 
 /// Emit the x^ expression.
-AnyValue UnaryOpNode::emitTransfer(AnyValue argValue, const ExprNode *expr,
-                                   ValueDest &dest, ExprEmitter &emitter) {
-  auto loc = expr->getLoc();
+AnyValue UnaryOpNode::emitTransfer(AnyValue argValue, ValueDest &dest,
+                                   ExprEmitter &emitter) const {
+  auto loc = getLoc();
   if (!emitter.builder)
     return emitter.emitErrorForDynamicValueInParameter(
         loc, "cannot transfer a value in this context");
@@ -2560,7 +2560,7 @@ AnyValue UnaryOpNode::emitTransfer(AnyValue argValue, const ExprNode *expr,
     emitter.emitWarning(loc)
         << "transfer from an owned value has no effect and can be removed"
         << FixIt::remove(loc);
-    return emitter.emitResult(argValue, expr, dest);
+    return emitter.emitResult(argValue, this, dest);
   }
 
   // We don't support transferring from trivial values, since this won't end the
@@ -2572,7 +2572,7 @@ AnyValue UnaryOpNode::emitTransfer(AnyValue argValue, const ExprNode *expr,
         << "transfer from a value of trivial register type "
         << argCValue.getRValueType() << " has no effect and can be removed"
         << FixIt::remove(loc);
-    return emitter.emitResult(argValue, expr, dest);
+    return emitter.emitResult(argValue, this, dest);
   }
 
   // The transfer expression expects the result to be a ownable value that it
@@ -2595,17 +2595,14 @@ AnyValue UnaryOpNode::emitTransfer(AnyValue argValue, const ExprNode *expr,
     return {};
   }
 
-  auto mloc = expr->getLocation(emitter);
-  LifetimeTrackable trackable(trackableValue);
-  assert(trackable && "we checked this would work above");
+  // Make sure the lifetime of the value is extended to at least here.  This is
+  // a use, and the `_ = x^` pattern to extend the lifetime of something is very
+  // common.
+  emitter.builder->create<OwnershipUseOp>(getLocation(emitter), value);
 
-  // For memory values, we create a new lifetime since this is a conceptually
-  // new thing and the old thing is dead.
-  StringAttr lifetimeAttr = emitter.declScope.mangleParamName(
-      trackable.name.str() + Twine("(transfer)"));
-  auto newVal = emitter.builder->create<TransferMemOwnershipOp>(mloc, value,
-                                                                lifetimeAttr);
-  return emitter.emitResult(MRValue(newVal), expr, dest);
+  // For memory values, we can just treat the value as an MRValue, and whoever
+  // consumes this can consume it directly.
+  return emitter.emitResult(MRValue(value), this, dest);
 }
 
 AnyValue UnaryOpNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
@@ -2614,7 +2611,7 @@ AnyValue UnaryOpNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
     return {};
 
   if (kind == kTransfer)
-    return emitTransfer(exprRep, this, dest, emitter);
+    return emitTransfer(exprRep, dest, emitter);
 
   if (kind == kUnpack) {
     emitter.emitError(getLoc(), "unsupported unpack operation") << getRange();

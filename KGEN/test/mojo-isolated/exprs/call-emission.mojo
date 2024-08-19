@@ -310,7 +310,7 @@ fn test_implicit_conversion_bvalue():
     # CHECK-NEXT: %foo = lit.var.decl
     # CHECK-NEXT: Struct1::@"__init__
     var foo = Struct1()
-    # CHECK-NEXT: lit.transfer_mem_ownership %foo
+    # CHECK-NEXT: lit.ownership.use %foo
     # CHECK-NEXT: %anonymous2A = lit.var.decl
     # CHECK-NEXT: lit.call {{.*}}Struct2::@"__init__
     # CHECK-NEXT: lit.ref.immut

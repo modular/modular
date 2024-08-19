@@ -21,8 +21,7 @@ fn use(u: Thing):
 
 # CHECK-LABEL: lit.func @"outer
 fn outer(owned x: Thing):
-    # CHECK: [[X_TAKEN:%.*]] = lit.transfer_mem_ownership %x
-    # CHECK: call {{.*}}__init__{{.*}}(%{{.*}}, [[X_TAKEN]])
+    # CHECK: call {{.*}}__init__{{.*}}(%{{.*}}, %x)
     @__move_capture(x)
     fn nested() escaping:
         use(x)

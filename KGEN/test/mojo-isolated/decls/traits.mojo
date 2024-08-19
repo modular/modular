@@ -249,8 +249,8 @@ fn copy_me[T: Copyable](value: T) -> T:
 # CHECK-SAME: !Movable T, {{.*}}> owned_in_mem
 # CHECK-SAME: !Movable T, {{.*}}> byref_result
 fn move_me[T: Movable](owned value: T) -> T:
-    # CHECK-NEXT: %value28transfer29 = lit.transfer_mem_ownership %value
-    # CHECK-NEXT: call[{{.*}}get_type_method({{.*}} T, "__moveinit__")]{{.*}}(%__result__, %value28transfer29)
+    # CHECK-NEXT: lit.ownership.use %value
+    # CHECK-NEXT: call[{{.*}}get_type_method({{.*}} T, "__moveinit__")]{{.*}}(%__result__, %value)
     return value^
 
 

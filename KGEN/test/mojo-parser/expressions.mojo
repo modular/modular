@@ -866,8 +866,7 @@ struct MemoryOnlyIntArray:
 
 # CHECK-LABEL: lit.func @"testMemoryOnlyIntArray
 fn testMemoryOnlyIntArray(inout arr: MemoryOnlyIntArray, x: Int, owned moi: MemoryOnlyInt):
-  # CHECK: %moi28transfer29 = lit.transfer_mem_ownership %moi
-  # CHECK: lit.call {{.*}}__setitem__{{.*}}(%arr, %x, %moi28transfer29)
+  # CHECK: lit.call {{.*}}__setitem__{{.*}}(%arr, %x, %moi)
   arr[x] = moi^
   # CHECK: [[ANON:%.*]] = lit.var.decl "anonymous*"
   # CHECK: lit.call {{.*}}__getitem__{{.*}}(%arr, %x, %anonymous2A)

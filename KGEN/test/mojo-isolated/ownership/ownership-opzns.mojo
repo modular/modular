@@ -67,9 +67,9 @@ struct MemoryUniqueMovable:
         # Mercilessly steal 'other's state which could be interesting.
 
         # CHECK-NEXT: %0 = lit.ref.struct.ger %other[state]
-        # CHECK-NEXT: %other28transfer29 = lit.transfer_mem_ownership %0
+        # CHECK-NEXT: lit.ownership.use %0
         # CHECK-NEXT: %1 = lit.ref.struct.ger %self[state]
-        # CHECK-NEXT: lit.call {{.*}}__moveinit__{{.*}}(%1, %other28transfer29)
+        # CHECK-NEXT: lit.call {{.*}}__moveinit__{{.*}}(%1, %0)
         self.state = other.state^
 
         # CHECK-NEXT: kgen.param.constant: none
@@ -98,8 +98,8 @@ struct MemoryMovableCopyable:
 
 # CHECK-LABEL: lit.func @"result_mem1
 fn result_mem1(owned a: MemoryUniqueMovable) -> MemoryUniqueMovable:
-    # CHECK-NEXT: %a28transfer29 = lit.transfer_mem_ownership %a
-    # CHECK-NEXT: lit.call {{.*}}__moveinit__{{.*}}(%__result__, %a28transfer29)
+    # CHECK-NEXT: lit.ownership.use %a
+    # CHECK-NEXT: lit.call {{.*}}__moveinit__{{.*}}(%__result__, %a)
     # CHECK-NEXT: kgen.param.constant: none
     # CHECK-NEXT: kgen.return
     return a^
@@ -107,8 +107,8 @@ fn result_mem1(owned a: MemoryUniqueMovable) -> MemoryUniqueMovable:
 
 # CHECK-LABEL: lit.func @"result_mem3
 fn result_mem3(owned a: MemoryMovableCopyable) -> MemoryMovableCopyable:
-    # CHECK-NEXT: %a28transfer29 = lit.transfer_mem_ownership %a
-    # CHECK-NEXT: lit.call {{.*}}__moveinit__{{.*}}(%__result__, %a28transfer29){{.*}}init_self{{.*}} owned_in_mem
+    # CHECK-NEXT: lit.ownership.use %a
+    # CHECK-NEXT: lit.call {{.*}}__moveinit__{{.*}}(%__result__, %a){{.*}}init_self{{.*}} owned_in_mem
     # CHECK-NEXT: kgen.param.constant: none
     # CHECK-NEXT: kgen.return
     return a^
@@ -140,8 +140,8 @@ fn result_reg1(owned a: RegUniqueMovable) -> RegUniqueMovable:
     # CHECK-NEXT: %a_0 = lit.var.decl "a" arg
     # CHECK-NEXT: lifetime.start %a_0
     # CHECK-NEXT: lit.ref.store %a, %a_0
-    # CHECK-NEXT: [[EOL:%.*]] = lit.transfer_mem_ownership %a_0
-    # CHECK-NEXT: [[AVAL:%.*]] = lit.load.consume [[EOL]]
+    # CHECK-NEXT: lit.ownership.use %a_0
+    # CHECK-NEXT: [[AVAL:%.*]] = lit.load.consume %a_0
     # CHECK-NEXT: lifetime.end %a_0
     # CHECK-NEXT: kgen.return [[AVAL]]
     return a^
@@ -163,8 +163,8 @@ fn result_reg3(owned a: RegMovableCopyable) -> RegMovableCopyable:
     # CHECK-NEXT: %a_0 = lit.var.decl "a" arg
     # CHECK-NEXT: lifetime.start %a_0
     # CHECK-NEXT: lit.ref.store %a, %a_0
-    # CHECK-NEXT: [[AREF:%.*]] = lit.transfer_mem_ownership %a_0
-    # CHECK-NEXT: [[A:%.*]] = lit.load.consume [[AREF]]
+    # CHECK-NEXT: lit.ownership.use %a_0
+    # CHECK-NEXT: [[A:%.*]] = lit.load.consume %a_0
     # CHECK-NEXT: lifetime.end %a_0
     # CHECK-NEXT: kgen.return [[A]]
     return a^
@@ -177,15 +177,15 @@ fn result_reg4(owned a: RegMovableCopyable) -> RegMovableCopyable:
     # CHECK-NEXT: lit.ref.store %a, %a_0
 
     # CHECK-NEXT: %x = lit.var.decl "x"
-    # CHECK-NEXT: [[AREF:%.*]] = lit.transfer_mem_ownership %a_0
-    # CHECK-NEXT: [[A:%.*]] = lit.load.consume [[AREF]]
+    # CHECK-NEXT: lit.ownership.use %a_0
+    # CHECK-NEXT: [[A:%.*]] = lit.load.consume %a_0
     # CHECK-NEXT: lifetime.end %a_0
     # CHECK-NEXT: lifetime.start %x
     # CHECK-NEXT: lit.ref.store [[A]], %x
     var x = a^
 
-    # CHECK-NEXT: [[X:%.*]] = lit.transfer_mem_ownership %x
-    # CHECK-NEXT: [[RES:%.*]] = lit.load.consume [[X]]
+    # CHECK-NEXT: lit.ownership.use %x
+    # CHECK-NEXT: [[RES:%.*]] = lit.load.consume %x
     # CHECK-NEXT: lifetime.end %x
     # CHECK-NEXT: kgen.return [[RES]]
     return x^
@@ -409,12 +409,9 @@ fn optimize_transfers() -> MemExample:
     # CHECK: lit.call {{.*}}__init__{{.*}}(%x
     var x = MemExample()
 
-    # CHECK: [[XTMP:%.*]] = lit.transfer_mem_ownership %x
-    # CHECK: lit.call {{.*}}__moveinit__{{.*}}(%y, [[XTMP]]
+    # CHECK: lit.call {{.*}}__moveinit__{{.*}}(%y, %x)
     var y = x^
-    # CHECK: [[YTMP:%.*]] = lit.transfer_mem_ownership %y
-    # CHECK: lit.call {{.*}}__moveinit__{{.*}}(%z, [[YTMP]]
+    # CHECK: lit.call {{.*}}__moveinit__{{.*}}(%z, %y)
     var z = y^
-    # CHECK: [[ZTMP:%.*]] = lit.transfer_mem_ownership %z
-    # CHECK: lit.call {{.*}}__moveinit__{{.*}}(%__result__, [[ZTMP]]
+    # CHECK: lit.call {{.*}}__moveinit__{{.*}}(%__result__, %z)
     return z^

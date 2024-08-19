@@ -61,6 +61,8 @@ struct RegExample:
     fn __del__(owned self):
         pass
 
+    fn consume(owned self):
+        pass
 
 fn use(x: RegExample):
     pass
@@ -126,13 +128,13 @@ fn uninit_lvalue_int():
 
 # Return-specific errors.
 fn return_error1(inout a: MemExample):  # expected-note {{'a' declared here}}
-    _ = a^
+    a^.consume()
     return  # expected-error {{'a' is uninitialized at return from this function}}
 
 
 # expected-error @+1 {{'a' is uninitialized at the implicit return from this function}}
 fn return_error2(inout a: RegExample):  # expected-note {{'a' declared here}}
-    _ = a^
+    a^.consume()
 
 
 ##===----------------------------------------------------------------------===##
@@ -304,9 +306,9 @@ fn testClosure(a: Bool):
     _ = thing()
 
 
-# expected-error @+1 {{field 'x.mem' destroyed out of the middle of a value, preventing the overall value from being destroyed}}
 fn disableDtor(owned x: MoreComplexExample):
-    _ = x.mem^
+# expected-error @+1 {{field 'x.mem' destroyed out of the middle of a value, preventing the overall value from being destroyed}}
+    x.mem^.consume()
 
 
 fn badMarkDestroyed(owned x: MoreComplexExample):
@@ -316,32 +318,32 @@ fn badMarkDestroyed(owned x: MoreComplexExample):
     )
 
 
-# expected-error @+3 {{field 'x.mem' destroyed out of the middle of a value, preventing the overall value from being destroyed}}
 fn fieldConsumeError(
     owned w: MoreComplexExample,  # expected-note {{'w' declared here}}
     owned x: MoreComplexExample,
     owned y: MoreComplexExample,
     owned z: MoreComplexExample,  # expected-note {{'z' declared here}}
 ):
-    _ = x.mem^  # Error diagnosed above.
+    # expected-error @+1 {{field 'x.mem' destroyed out of the middle of a value, preventing the overall value from being destroyed}}
+    x.mem^.consume()
 
     # This is ok because we replace the mem field.
-    _ = y.mem^
+    y.mem^.consume()
     y.mem = MemExample()
 
-    _ = z.mem^
-    _ = z.mem^  # expected-error {{use of uninitialized value 'z.mem'}}
+    z.mem^.consume()
+    z.mem^.consume()  # expected-error {{use of uninitialized value 'z.mem'}}
     z.mem = MemExample()
 
-    _ = w.mem^
+    w.mem^.consume()
     use(w)  # expected-error {{use of uninitialized value 'w.mem'}}
 
-    # expected-error @+1 {{field 'twoRegsRP.reg1' destroyed out of the middle of a value, preventing the overall value from being destroyed}}
     var twoRegsRP = TwoRegsRP()
-    _ = twoRegsRP.reg1^
+    # expected-error @+1 {{field 'twoRegsRP.reg1' destroyed out of the middle of a value, preventing the overall value from being destroyed}}
+    twoRegsRP.reg1^.consume()
 
     var single1 = MemExample()  # expected-note {{'single1' declared here}}
-    _ = single1^
+    single1^.consume()
     _ = single1  # expected-error {{use of uninitialized value 'single1'}}
 
 
@@ -390,7 +392,7 @@ fn testStructWithNoDel():
 fn inout_restored_at_throw(inout x: MemExample, err: Error) raises:
     # x is uninit after this point, needs to be restored if an
     # error is thrown.
-    _ = x^
+    x^.consume()
     raise err  # expected-error {{use of uninitialized value 'x'}}
 
 
@@ -486,10 +488,11 @@ fn get_inout_ref(inout x: String) -> ref [__lifetime_of(x)] String:
 
 struct StrArray:
     fn __getitem__(self, x: Int) -> String: return String()
-    fn __setitem__(inout self, x: Int, value: String): pass
+    fn __setitem__(inout self, x: Int, owned value: String): pass
 
 fn test_inout_ref(inout v: StrArray, i: Int):
     # expected-note @below {{'(expression temporary)' declared here}}
     # expected-error @below {{use of uninitialized value '(expression temporary)'}}
     var r = Reference(get_inout_ref(v[i]))
 
+    _ = r[]
