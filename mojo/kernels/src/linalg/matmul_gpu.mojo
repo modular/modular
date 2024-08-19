@@ -1360,7 +1360,7 @@ fn _matmul_gpu_dispatch[
                         b_type,
                         b_shape,
                         simd_width=simd_width,
-                        reduction_method = ReductionMethod.TENSOR_CORE,
+                        reduction_method = ReductionMethod.WARP,
                         elementwise_lambda_fn=elementwise_lambda_fn,
                     ]
                 ]()
@@ -1443,7 +1443,7 @@ fn _matmul_gpu_dispatch[
                         a_type,
                         a_shape,
                         simd_width=simd_width,
-                        reduction_method = ReductionMethod.TENSOR_CORE,
+                        reduction_method = ReductionMethod.WARP,
                         transpose_b=transpose_b,
                         elementwise_lambda_fn=elementwise_lambda_fn,
                     ]
