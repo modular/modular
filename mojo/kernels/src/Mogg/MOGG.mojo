@@ -42,7 +42,7 @@ from linalg.packing import (
     pack_transposed_b_ndbuffer,
 )
 from linalg.utils import GemmShape
-from memory import UnsafePointer, memset_zero
+from memory import UnsafePointer, memset_zero, memcpy
 from memory.unsafe import bitcast
 from MOGGIntList import IntList
 from MOGGTensor import Tensor
@@ -4707,3 +4707,18 @@ fn tanh[
         The result of the Tanh operation.
     """
     return _tanh(x)
+
+
+# useful for testing --> identity op that simply copies input into output
+@mogg_register("copy")
+@always_inline
+@export
+fn identity[
+    rank: Int,
+    input_type: DType,
+](
+    input: NDBuffer[input_type, rank],
+    output: NDBuffer[input_type, rank],
+    ctx: MojoCallContextPtr,
+) raises:
+    memcpy(output.data, input.data, len(input))
