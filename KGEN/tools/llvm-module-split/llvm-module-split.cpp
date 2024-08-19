@@ -7,6 +7,7 @@
 #include "Config/Version.h"
 #include "KGEN/Compiler/LLVMIRUtils.h"
 #include "KGEN/ExecutionEngine/ExecutionEngine.h"
+#include "KGEN/Support/CompilerProfiling.h"
 #include "KGEN/ToolCommon/CLOptions.h"
 #include "Support/CommonCLOptions.h"
 #include "llvm/IR/LLVMContext.h"
@@ -40,24 +41,37 @@ public:
   std::string inputFilename{"-"};
   std::string outputPrefix{"-"};
   bool perFunctionSplit = false;
+  bool timeTrace = false;
+  int timeTraceGranularity = 0;
 
 private:
-  llvm::cl::OptionCategory CommonOptionsCategory{"Common command line options"};
+  llvm::cl::OptionCategory cat{"Common command line options"};
 
   M::cl::MOpt<std::string, true> inputFilenameOpt{
       llvm::cl::Positional, llvm::cl::desc("<input file>"),
-      llvm::cl::location(inputFilename), llvm::cl::cat(CommonOptionsCategory)};
+      llvm::cl::location(inputFilename), llvm::cl::cat(cat)};
 
   M::cl::MOpt<std::string, true> outputPrefixOpt{
       "output-prefix", llvm::cl::desc("output prefix"),
       llvm::cl::value_desc("output prefix"), llvm::cl::location(outputPrefix),
-      llvm::cl::cat(CommonOptionsCategory)};
+      llvm::cl::cat(cat)};
 
   M::cl::MOpt<bool, true> perFunctionSplitOpt{
       "per-func", llvm::cl::desc("split each function into separate modules"),
       llvm::cl::value_desc("split each function into separate modules"),
-      llvm::cl::location(perFunctionSplit),
-      llvm::cl::cat(CommonOptionsCategory)};
+      llvm::cl::location(perFunctionSplit), llvm::cl::cat(cat)};
+
+  M::cl::MOpt<bool, true> timeTraceOpt{
+      "time-trace",
+      llvm::cl::desc("Turn on time profiler. Generates JSON file "
+                     "called kgen.trace.json in the derived directory."),
+      llvm::cl::location(timeTrace), llvm::cl::cat(cat)};
+
+  M::cl::MOpt<int, true> timeTraceGranularityOpt{
+      "time-trace-granularity",
+      llvm::cl::desc("Minimum time granularity (in microseconds) "
+                     "traced by time profiler."),
+      llvm::cl::location(timeTraceGranularity), llvm::cl::cat(cat)};
 };
 
 } // namespace
@@ -93,6 +107,7 @@ int main(int argc, char **argv) {
 
   // Enable command line options for various MLIR internals.
   llvm::cl::ParseCommandLineOptions(argc, argv);
+  TraceProfiler tracer(clOptions.timeTrace, clOptions.timeTraceGranularity);
 
   LLVMModuleAndContext module;
   ErrorOrSuccess err = module.create(

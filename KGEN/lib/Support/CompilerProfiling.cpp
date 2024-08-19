@@ -14,6 +14,11 @@ using namespace KGEN;
 //===--------------------------------------------------------------------===//
 
 void TraceProfiler::initialize(int timeTraceGranularity) {
+  if constexpr (!KGEN::kIsTracingEnabled) {
+    llvm::errs() << "[WARNING] -time-trace specified but tracing isn't coded "
+                    "on; set `kIsTracingEnabled` to `true`";
+  }
+
   std::error_code ec;
   std::filesystem::path derived = std::filesystem::absolute(
       llvm::sys::Process::GetEnv("MODULAR_DERIVED_PATH").value_or("."), ec);
