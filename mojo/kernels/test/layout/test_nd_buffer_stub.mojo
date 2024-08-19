@@ -8,7 +8,7 @@
 import math
 
 from buffer import NDBuffer
-from buffer.dimlist import DimList
+from buffer.dimlist import DimList, Dim
 from layout import IntTuple, Layout, LayoutTensor
 from layout.layout import LayoutList
 from layout.nd_buffer_stub import (
@@ -24,11 +24,13 @@ from layout.nd_buffer_stub import (
     copy_from_nd_buffer_masked,
     copy_to_nd_buffer,
     copy_to_nd_buffer_masked,
+    from_ndbuffer_row_major,
     distribute,
     vectorize,
 )
 
 from utils import Index, StaticIntTuple, StaticTuple
+from testing import assert_equal
 
 
 fn linspace_fill[
@@ -1326,6 +1328,50 @@ fn test_copy_to_nd_buffer_masked_scalar():
     print_buff(buff_7x9)
 
 
+fn test_from_ndbuffer_to_layout_tensor():
+    print("== test_from_ndbuffer_to_layout_tensor")
+    alias type = DType.float32
+    alias ptr = UnsafePointer[Scalar[type]].alloc(64)
+    alias rank = 4
+    alias shape = DimList(2, 3, 2, 2)
+    var buffer1 = NDBuffer[type, rank, shape=shape](ptr, shape)
+    linspace_fill(buffer1)
+    var tensor1 = from_ndbuffer_row_major(buffer1)
+
+    alias static_shape = DimList(Dim(), 3, Dim(), 2)
+    alias dynamic_shape = DimList(2, 3, 2, 2)
+
+    var buffer2 = NDBuffer[type, rank, shape=static_shape](ptr, dynamic_shape)
+    var tensor2 = from_ndbuffer_row_major(buffer2)
+
+    print(tensor1.runtime_layout.shape)
+    print(tensor1.runtime_layout.stride)
+    print(tensor1.layout.shape)
+    print(tensor1.layout.stride)
+    print(tensor1[0, 1, 0, 1])
+    print(tensor1[1, 0, 1, 0])
+    # CHECK: (2, 3, 2, 2)
+    # CHECK: (12, 4, 2, 1)
+    # CHECK: (2, 3, 2, 2)
+    # CHECK: (12, 4, 2, 1)
+    # CHECK: 5.0
+    # CHECK: 14.0
+    print(tensor2.runtime_layout.shape)
+    print(tensor2.runtime_layout.stride)
+    print(tensor2.layout.shape)
+    print(tensor2.layout.stride)
+    print(tensor2[0, 1, 0, 0])
+    print(tensor2[1, 0, 1, 1])
+    # CHECK: (2, 3, 2, 2)
+    # CHECK: (12, 4, 2, 1)
+    # CHECK: (-1, 3, -1, 2)
+    # CHECK: (-1, -1, 2, 1)
+    # CHECK: 4.0
+    # CHECK: 15.0
+
+    ptr.free()
+
+
 fn main():
     test_copy_from_nd_buffer_scalars()
     test_copy_to_nd_buffer_scalars()
@@ -1345,3 +1391,4 @@ fn main():
     test_copy_nd_buffer_to_layout_tensor_masked_scalar()
     test_copy_from_nd_buffer_masked_scalar()
     test_copy_to_nd_buffer_masked_scalar()
+    test_from_ndbuffer_to_layout_tensor()

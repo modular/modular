@@ -1337,3 +1337,23 @@ fn copy_from_nd_buffer_async[
         src_buffer,
         int(ThreadIdx.x()),
     )
+
+
+fn from_ndbuffer_row_major(
+    buffer: NDBuffer,
+) -> LayoutTensor[
+    buffer.type,
+    Layout.row_major[buffer.rank](buffer.shape),
+    address_space = buffer.address_space,
+] as result:
+    """This function takes the underlying buffer from NDBuffer without explicitly
+    copying any data.
+    """
+    var runtime_layout = RuntimeLayout[
+        Layout.row_major[buffer.rank](buffer.shape)
+    ].row_major[buffer.rank](buffer.dynamic_shape)
+    return LayoutTensor[
+        buffer.type,
+        Layout.row_major[buffer.rank](buffer.shape),
+        address_space = buffer.address_space,
+    ](buffer.data, runtime_layout)

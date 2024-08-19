@@ -8,6 +8,7 @@ from collections.string import _calc_initial_buffer_size_int32
 from os import abort
 
 from utils._format import Formattable, Formatter
+from buffer.dimlist import DimList
 
 from .dynamic_tuple import *
 from .int_tuple import (
@@ -176,6 +177,29 @@ struct Layout(
             c_stride *= dim
         for dim in dims:
             shape.append(dim)
+        return Layout(shape, reverse(stride))
+
+    @staticmethod
+    fn row_major[rank: Int](dims: DimList) -> Layout:
+        var shape = IntTuple()
+        var stride = IntTuple()
+        var unknown_flag = False
+        var c_stride = 1
+        stride.append(c_stride)
+
+        @parameter
+        for i in range(rank):
+            var dim = dims.get[i]()
+            shape.append(dim if dims.has_value[i]() else UNKNOWN_VALUE)
+
+        @parameter
+        for i in range(rank - 1):
+            var dim = dims.get[rank - 1 - i]()
+            if not dims.has_value[rank - 1 - i]():
+                unknown_flag = True
+            stride.append(UNKNOWN_VALUE if unknown_flag else dim * c_stride)
+            c_stride *= dim
+
         return Layout(shape, reverse(stride))
 
     @staticmethod
