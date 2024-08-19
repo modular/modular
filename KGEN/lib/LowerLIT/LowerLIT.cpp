@@ -133,15 +133,11 @@ void LITLowerer::lowerLITOps(LIT::FuncOp func) {
       auto arg = lifetimeEnd.getArg();
       b.replaceOpWithNewOp<POP::StackAllocLifetimeEndOp>(
           op, arg.getDefiningOp()->getOperand(0));
-    } else if (isa<OwnershipUseOp, OwnershipUseLifetimeOp,
-                   OwnershipMarkInitializedOp, OwnershipMarkDestroyedOp,
-                   OwnershipMarkConsumedOp, OwnershipDefLValueOp,
+    } else if (isa<OwnershipUseOp, OwnershipMarkInitializedOp,
+                   OwnershipMarkDestroyedOp, OwnershipMarkConsumedOp,
                    UnresolvedImportOp, UnresolvedWildcardImportOp>(op)) {
       // lit.ownership.* are used internally by the
       // frontend and ownership lowering, but is not needed after that.
-      op->erase();
-    } else if (isa<TransferRegOwnershipOp>(op)) {
-      op->getResult(0).replaceAllUsesWith(op->getOperand(0));
       op->erase();
     } else if (auto transfer = dyn_cast<TransferMemOwnershipOp>(op)) {
       b.replaceOpWithNewOp<mlir::UnrealizedConversionCastOp>(
