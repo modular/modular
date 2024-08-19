@@ -273,6 +273,13 @@ struct LayoutTensor[
         address_space=address_space,
         element_layout=element_layout,
     ]:
+        """Bitcast the underlying pointer to a new data type.
+
+        Parameters:
+            new_type: The new data type it is casting to.
+            address_space: The address space of the returned LayoutTensor.
+            element_layout: The element layout of the returned LayoutTensor.
+        """
         return LayoutTensor[
             new_type,
             layout,
@@ -347,7 +354,7 @@ struct LayoutTensor[
         constrained[
             other.rank <= rank,
             (
-                "__elementwise_binary_with_broadcast must operats on tensr of"
+                "__elementwise_binary_with_broadcast must operates on tensor of"
                 " equal of lower rank"
             ),
         ]()
@@ -398,6 +405,13 @@ struct LayoutTensor[
 
     @always_inline
     fn __add__(self, other: Scalar[dtype]) -> Self:
+        """Add the LayoutTensor with a scalar value. The scalar value will be
+        broadcasted to the entire tensor.
+
+        Args:
+            other: The scalar value.
+        """
+
         fn add_val(val: Self.element_type) capturing -> Self.element_type:
             return Self.element_type(other) + val
 
@@ -418,6 +432,18 @@ struct LayoutTensor[
             index_type=index_type,
         ],
     ) -> Self:
+        """Do an addition with another LayoutTensor and return the added
+        tensor. Currently only support tensors of the same shape if the rank
+        is the same and also tensors of rank-2.
+
+        Parameters:
+            other_layout: The layout of the other tensor.
+            index_type: The indexing type of the other tensor.
+
+        Args:
+            other: The other tensor to be added to.
+        """
+
         fn add_val(
             lhs: Self.element_type, rhs: Self.element_type
         ) capturing -> Self.element_type:
@@ -427,6 +453,13 @@ struct LayoutTensor[
 
     @always_inline
     fn __mul__(self, other: Scalar[dtype]) -> Self:
+        """Multiply the LayoutTensor with a scalar value. The scalar value will be
+        broadcasted to the entire tensor.
+
+        Args:
+            other: The scalar value.
+        """
+
         fn add_val(val: Self.element_type) capturing -> Self.element_type:
             return Self.element_type(other) * val
 
@@ -434,6 +467,13 @@ struct LayoutTensor[
 
     @always_inline
     fn __sub__(self, other: Scalar[dtype]) -> Self:
+        """Subtract the LayoutTensor with a scalar value. The scalar value will be
+        broadcasted to the entire tensor.
+
+        Args:
+            other: The scalar value.
+        """
+
         fn add_val(val: Self.element_type) capturing -> Self.element_type:
             return val - Self.element_type(other)
 
@@ -454,6 +494,18 @@ struct LayoutTensor[
             index_type=index_type,
         ],
     ) -> Self:
+        """Do an subtraction with another LayoutTensor and return the subtracted
+        tensor. Currently only support tensors of the same shape if the rank
+        is the same and also tensors of rank-2.
+
+        Parameters:
+            other_layout: The layout of the other tensor.
+            index_type: The indexing type of the other tensor.
+
+        Args:
+            other: The other tensor to be subtract from.
+        """
+
         fn sub_val(
             lhs: Self.element_type, rhs: Self.element_type
         ) capturing -> Self.element_type:
@@ -463,6 +515,13 @@ struct LayoutTensor[
 
     @always_inline
     fn __truediv__(self, other: Scalar[dtype]) -> Self:
+        """Truediv the LayoutTensor with a scalar value. The scalar value will be
+        broadcasted to the entire tensor.
+
+        Args:
+            other: The scalar value.
+        """
+
         fn div_val(val: Self.element_type) capturing -> Self.element_type:
             return val / Self.element_type(other)
 
@@ -483,6 +542,18 @@ struct LayoutTensor[
             index_type=index_type,
         ],
     ) -> Self:
+        """Do an truediv with another LayoutTensor and return the divided
+        tensor. Currently only support tensors of the same shape if the rank
+        is the same and also tensors of rank-2.
+
+        Parameters:
+            other_layout: The layout of the other tensor.
+            index_type: The indexing type of the other tensor.
+
+        Args:
+            other: The other tensor to be subtract from.
+        """
+
         fn div_val(
             lhs: Self.element_type, rhs: Self.element_type
         ) capturing -> Self.element_type:
