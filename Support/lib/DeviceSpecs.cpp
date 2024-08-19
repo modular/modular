@@ -54,8 +54,7 @@ struct VersionedName {
 std::string M::encodeFeatures(ArrayRef<std::string> features) {
   std::string featureStr;
   llvm::raw_string_ostream os(featureStr);
-  llvm::interleave(
-      features, os, [&](auto &f) { os << '+' << f; }, ",");
+  llvm::interleave(features, os, [&](auto &f) { os << '+' << f; }, ",");
   return featureStr;
 }
 
@@ -311,6 +310,23 @@ void DeviceSpec::serializeToJSON(llvm::json::OStream &json) const {
   target.serializeToJSON(json);
   json.attributeEnd();
   json.objectEnd();
+}
+
+std::string DeviceSpec::serializeToJSON() const {
+  std::string str;
+  llvm::raw_string_ostream os(str);
+  llvm::json::OStream json(os);
+  serializeToJSON(json);
+  return str;
+}
+
+ErrorOr<DeviceSpec> DeviceSpec::deserializeFromJSON(StringRef json) {
+  llvm::Expected<llvm::json::Value> errOrValue = llvm::json::parse(json);
+  if (llvm::Error err = errOrValue.takeError()) {
+    return Error(Twine("ill-formed serialized target info: ") +
+                 toString(std::move(err)));
+  }
+  return deserializeFromJSON(&errOrValue.get());
 }
 
 ErrorOr<DeviceSpec>

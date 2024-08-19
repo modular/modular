@@ -131,9 +131,11 @@ struct DeviceSpec {
 
   /// Serialized this device spec to JSON.
   void serializeToJSON(llvm::json::OStream &json) const;
+  std::string serializeToJSON() const;
 
   /// Returns the device spec deserialized from JSON.
   static ErrorOr<DeviceSpec> deserializeFromJSON(const llvm::json::Value *json);
+  static ErrorOr<DeviceSpec> deserializeFromJSON(StringRef json);
 };
 
 /// A map from device references (from the 'required' devices) to
