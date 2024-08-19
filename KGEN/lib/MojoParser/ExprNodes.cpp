@@ -2554,16 +2554,30 @@ AnyValue UnaryOpNode::emitTransfer(AnyValue argValue, const ExprNode *expr,
     return emitter.emitErrorForDynamicValueInParameter(
         loc, "cannot transfer a value in this context");
 
+  // If the input is already an owned RValue, then there is no need to
+  // transfer from the temporary.
+  if (argValue.getIfRValue()) {
+    emitter.emitWarning(loc)
+        << "transfer from an owned value has no effect and can be removed"
+        << FixIt::remove(loc);
+    return emitter.emitResult(argValue, expr, dest);
+  }
+
+  // We don't support transferring from trivial values, since this won't end the
+  // lifetime. CheckLifetimes doesn't and can't track these things because they
+  // don't have consume operators, move operators, etc.
+  if (CValue argCValue = argValue.getIfCValue();
+      argCValue && argCValue.getRValueType().isTrivial(loc, emitter.shared)) {
+    emitter.emitWarning(loc)
+        << "transfer from a value of trivial register type "
+        << argCValue.getRValueType() << " has no effect and can be removed"
+        << FixIt::remove(loc);
+    return emitter.emitResult(argValue, expr, dest);
+  }
+
   // The transfer expression expects the result to be a ownable value that it
   // can launder into an RValue.
-  Value value;
-  bool isRegister = false;
-  if (argValue.isMValue())
-    value = argValue.getMValueReference();
-  else if (argValue.isSValue()) {
-    value = argValue.getSValueRegister();
-    isRegister = true;
-  }
+  Value value = argValue.isMValue() ? argValue.getMValueReference() : Value();
 
   // Lifetime checking needs to understand this value or field.
   Value trackableValue;
@@ -2575,46 +2589,15 @@ AnyValue UnaryOpNode::emitTransfer(AnyValue argValue, const ExprNode *expr,
     return {};
   }
 
-  LifetimeTrackable trackable(trackableValue);
-  assert(trackable && "we checked this would work above");
-
-  // Since this a value we can track the lifetime of, we can end that value's
-  // lifetime to make a new RValue.
-
-  // If the input is already an owned RValue, then there is no need to
-  // transfer from the temporary.
-  if (argValue.getIfRValue()) {
-    emitter.emitWarning(loc)
-        << "transfer from an owned value has no effect and can be removed"
-        << FixIt::remove(loc);
-    return emitter.emitResult(argValue, expr, dest);
-  }
-  CValue argCValue = argValue.getIfCValue();
-  assert(argCValue && "MValue and SValue is always a CValue");
-  if (argCValue.getRValueType().isTrivial(loc, emitter.shared)) {
-    // We don't support transferring from register-passable trivial values,
-    // since this won't end the lifetime. CheckLifetimes doesn't and can't track
-    // these things because they don't have consume operators, move operators,
-    // etc.
-    emitter.emitWarning(loc)
-        << "transfer from a value of trivial register type "
-        << argCValue.getRValueType() << " has no effect and can be removed"
-        << FixIt::remove(loc);
-    return emitter.emitResult(argValue, expr, dest);
-  }
-
-  // Register lifetimes are broken with TransferRegOwnershipOp.
-  auto mloc = expr->getLocation(emitter);
-  if (isRegister) {
-    auto newVal = emitter.builder->create<TransferRegOwnershipOp>(mloc, value);
-    return emitter.emitResult(SRValue(newVal), expr, dest);
-  }
-
   // If the memory type isn't mutable, then we can't transfer out of it.
   if (!cast<RefType>(value.getType()).isMutableKnown(true)) {
     emitter.emitError(loc, "cannot transfer out of immutable reference");
     return {};
   }
+
+  auto mloc = expr->getLocation(emitter);
+  LifetimeTrackable trackable(trackableValue);
+  assert(trackable && "we checked this would work above");
 
   // For memory values, we create a new lifetime since this is a conceptually
   // new thing and the old thing is dead.

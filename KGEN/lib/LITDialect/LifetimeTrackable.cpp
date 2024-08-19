@@ -67,16 +67,6 @@ LifetimeTrackable::LifetimeTrackable(Value v) {
     return;
   }
 
-  // The lit.transfer_reg_ownership op ends a register lifetime and creates
-  // a new one.
-  if (auto endLifetime = v.getDefiningOp<TransferRegOwnershipOp>()) {
-    name = StringAttr::get(v.getContext(), "(transferred value)");
-    isIndirect = false;
-    startsUninit = true;
-    endInitState = EndsUninit;
-    return;
-  }
-
   // The lit.transfer_mem_ownership op ends a memory lifetime and creates
   // a new one.
   if (auto endLifetime = v.getDefiningOp<TransferMemOwnershipOp>()) {
@@ -519,29 +509,11 @@ OverallOpValueEffect LIT::getOperationEffects(
     return {};
   }
 
-  if (auto use = dyn_cast<OwnershipUseLifetimeOp>(op)) {
-    lifetimes.push_back(use.getLifetime());
-    return {};
-  }
-
   // These ops consume their operands, struct.create and param.materialize
   // define a result.
   if (isa<LIT::StructCreateOp, ParamMaterializeOp>(op)) {
     for (Value o : op.getOperands())
       operands.push_back({o, OperandEffect::regConsume});
-    results.push_back(ResultEffect::regDefine);
-    return {};
-  }
-
-  // lit.ownership.deflvalue is like an inout use of the ref.
-  if (auto deflvalue = dyn_cast<OwnershipDefLValueOp>(op)) {
-    operands.push_back({deflvalue.getOperand(), OperandEffect::memInOut});
-    return {};
-  }
-
-  // lit.transfer_reg_ownership consumes its operand then defines its result.
-  if (auto transfer = dyn_cast<TransferRegOwnershipOp>(op)) {
-    operands.push_back({transfer.getOperand(), OperandEffect::regConsume});
     results.push_back(ResultEffect::regDefine);
     return {};
   }

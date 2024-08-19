@@ -110,14 +110,6 @@ lit.func @references1[mut alife](%a: !lit.ref<@Struct, mut alife> owned_in_mem,
   kgen.return
 }
 
-// CHECK-LABEL: lit.func @lifetime_use
-lit.func @lifetime_use[mut alife](%a: !lit.ref<@Struct, mut alife> owned_in_mem) {
-  // CHECK-NEXT: lit.ownership.use_lifetime mut alife
-  lit.ownership.use_lifetime mut alife
-  // CHECK-NEXT: __del__
-  kgen.return
-}
-
 // -----
 
 // COM: Test all fields are destroyed in object destructor
