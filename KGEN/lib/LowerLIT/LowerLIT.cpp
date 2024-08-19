@@ -139,9 +139,6 @@ void LITLowerer::lowerLITOps(LIT::FuncOp func) {
       // lit.ownership.* are used internally by the
       // frontend and ownership lowering, but is not needed after that.
       op->erase();
-    } else if (auto transfer = dyn_cast<TransferMemOwnershipOp>(op)) {
-      b.replaceOpWithNewOp<mlir::UnrealizedConversionCastOp>(
-          transfer, ArrayRef<Type>(transfer.getType()), transfer.getOperand());
     } else if (auto loadConsume = dyn_cast<LoadConsumeOp>(op)) {
       b.replaceOpWithNewOp<RefLoadOp>(loadConsume, loadConsume.getRef());
     } else if (auto call = dyn_cast<LIT::CallOp>(op)) {

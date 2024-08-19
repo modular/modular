@@ -115,8 +115,8 @@ fn destructors(owned arg0: MemExample):
   # These should warn and not create IR transfers.
 
   # First transfer is ok.
-  # CHECK-NEXT: [[T1:%.*]] = lit.transfer_mem_ownership %mem3
-  # CHECK-NEXT: lit.call {{.*}}consume{{.*}}([[T1]])
+  # CHECK-NEXT: lit.ownership.use %mem3
+  # CHECK-NEXT: lit.call {{.*}}consume{{.*}}(%mem3)
   # CHECK-NEXT: lifetime.end %mem3
   consume(mem3^^^)
 
@@ -445,8 +445,8 @@ fn test_result_consume_reg(cond: __mlir_type.i1) -> RegExample:
   # CHECK-NEXT: hlcf.elif.yield
   # CHECK-NEXT: } then {
   if (cond):
-    # CHECK-NEXT: [[TMP:%.*]] = lit.transfer_mem_ownership %example2
-    # CHECK-NEXT: [[TMP2:%.*]] = lit.load.consume [[TMP]]
+    # CHECK-NEXT: lit.ownership.use %example2
+    # CHECK-NEXT: [[TMP2:%.*]] = lit.load.consume %example2
     # CHECK-NEXT: lifetime.end %example2
     # CHECK-NEXT: kgen.return [[TMP2]]
     return example2^
@@ -479,8 +479,8 @@ fn test_result_consume_mem(cond: __mlir_type.i1) -> MemExample:
   consumeMem(example)
 
   # This does consume example, so no copy needed.
-  # CHECK-NEXT: [[CONSUME:%.*]] = lit.transfer_mem_ownership %example
-  # CHECK-NEXT: lit.call {{.*}}consumeMem{{.*}}([[CONSUME]])
+  # CHECK-NEXT: lit.ownership.use %example
+  # CHECK-NEXT: lit.call {{.*}}consumeMem{{.*}}(%example)
   # CHECK-NEXT: lifetime.end %example
   consumeMem(example^)
 
@@ -489,8 +489,8 @@ fn test_result_consume_mem(cond: __mlir_type.i1) -> MemExample:
   # CHECK-NEXT: lit.call {{.*}}__init__{{.*}}(%example2)
   var example2 = MemExample()
 
-  # CHECK-NEXT: [[CONSUME:%.*]] = lit.transfer_mem_ownership %example2
-  # CHECK-NEXT: lit.call {{.*}}__moveinit__{{.*}}(%__result__, [[CONSUME]])
+  # CHECK-NEXT: lit.ownership.use %example2
+  # CHECK-NEXT: lit.call {{.*}}__moveinit__{{.*}}(%__result__, %example2)
   # CHECK-NEXT: lifetime.end %example2
   # CHECK-NEXT: kgen.param.constant: none
   return example2^
@@ -545,8 +545,8 @@ fn bigreg_test():
   var varThing = BigRegExample()
 
   # CHECK-NEXT: [[FIELD:%.*]] = lit.ref.struct.ger %varThing[a]
-  # CHECK-NEXT: [[LIFEEND:%.*]] = lit.transfer_mem_ownership [[FIELD]]
-  # CHECK-NEXT: [[AVAL:%.*]] = lit.load.consume [[LIFEEND]]
+  # CHECK-NEXT: lit.ownership.use [[FIELD]]
+  # CHECK-NEXT: [[AVAL:%.*]] = lit.load.consume [[FIELD]]
   # CHECK-NEXT: lit.call {{.*}}consume{{.*}}([[AVAL]])
   consume(varThing.a^)
 
@@ -597,8 +597,8 @@ struct ExoticDelExample:
       # This side we manually consume for c.
 
       # CHECK-NEXT: [[CREF:%.*]] = lit.ref.struct.ger %self_0[c]
-      # CHECK-NEXT: [[CREF2:%.*]] = lit.transfer_mem_ownership [[CREF]]
-      # CHECK-NEXT: [[CVAL:%.*]] = lit.load.consume [[CREF2]]
+      # CHECK-NEXT: lit.ownership.use [[CREF]]
+      # CHECK-NEXT: [[CVAL:%.*]] = lit.load.consume [[CREF]]
       # CHECK-NEXT: lit.call {{.*}}consume{{.*}}([[CVAL]])
       # CHECK-NEXT: hlcf.yield
       consume(self.c^)
@@ -759,12 +759,12 @@ fn variadic_field_sensitivity():
   var memPair = MemPair()
 
   # CHECK: [[AREF:%.*]] = lit.ref.struct.ger %memPair[a]
-  # CHECK-NEXT: [[OWNEDAREF:%.*]] = lit.transfer_mem_ownership [[AREF]]
-  # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}([[OWNEDAREF]])
+  # CHECK-NEXT: lit.ownership.use [[AREF]]
+  # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}([[AREF]])
   _ = memPair.a^  # Destroy a.
 
   # Can still pass b through varargs.
-  # CHECK-NEXT: [[BREF:%.*]] = lit.ref.struct.ger %memPair[b]
+  # CHECK: [[BREF:%.*]] = lit.ref.struct.ger %memPair[b]
   # CHECK-NEXT: [[IMMREF:%.*]] = lit.ref.immut [[BREF]]
   # CHECK-NEXT: [[VAR:%.*]] = pop.variadic.splat 1, [[IMMREF]]
   # CHECK-NEXT: lit.call {{.*}}variadic_mems{{.*}}[muttoimm *"memPair`"]([[VAR]])

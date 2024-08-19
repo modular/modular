@@ -1381,37 +1381,6 @@ def LIT_OwnershipUseOp : LITOp<"ownership.use"> {
 }
 
 //===----------------------------------------------------------------------===//
-// TransferMemOwnershipOp
-//===----------------------------------------------------------------------===//
-
-def LIT_TransferMemOwnershipOp : LITOp<"transfer_mem_ownership", [
-          DeclareOpInterfaceMethods<OpAsmOpInterface, ["getAsmResultNames"]>,
-          DeclareOpInterfaceMethods<ParamOpInterface>]>, OneParamDecl {
-  let summary = "End the lifetime of a tracked value and start a new lifetime";
-  let description = [{
-    This op is spelled `x^` when `x` is a lifetime-tracked memory value.  It
-    indicates that the lifetime of `x` ends here and a new value with a new
-    lifetime is created.  This also defines the new lifetime used in the
-    result reference.
-
-    This works with both memory values.
-
-    ```mlir
-    %1 = lit.transfer_mem_ownership %0 : !lit.ref<T, lt1> -> !lit.ref<T, lt2>
-    ```
-  }];
-
-  let arguments = (ins LIT_RefType:$value, KGEN_ParamDeclAttr:$paramDecl);
-  let results = (outs LIT_RefType:$result);
-  let assemblyFormat = "$value `:` type($value) `->` type($result) attr-dict";
-
-  let builders = [
-    /// Create a TransferMem that has a lifetime with the specified name.
-    OpBuilder<(ins "Value":$srcValue, "StringAttr":$lifetimeName)>
-  ];
-}
-
-//===----------------------------------------------------------------------===//
 // OwnershipMarkInitialized
 //===----------------------------------------------------------------------===//
 

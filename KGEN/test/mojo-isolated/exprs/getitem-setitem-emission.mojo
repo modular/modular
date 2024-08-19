@@ -137,9 +137,8 @@ fn test_writeback2[
     # CHECK-NEXT: %[[C2:.*]] = kgen.param.constant = <y>
     # CHECK-NEXT: %[[V5:.*]] = lit.call {{.*}}__getitem__{{.*}}(%[[LT2]], %[[C2]])
 
-    # CHECK-NEXT: %[[LT2_TRAN:.*]] = lit.transfer_mem_ownership %[[LT2]]
     # CHECK-NEXT: %[[C1:.*]] = kgen.param.constant = <x>
-    # CHECK-NEXT: lit.call {{.*}}__setitem__{{.*}}(%b, %[[C1]], %[[LT2_TRAN]])
+    # CHECK-NEXT: lit.call {{.*}}__setitem__{{.*}}(%b, %[[C1]], %[[LT2]])
     # CHECK-NEXT: lit.ref.store %[[V5]], %[[LT1]]
     # CHECK-NEXT: lit.call {{.*}}takes_inout_int{{.*}}(%[[LT1]])
     # CHECK-NEXT: %[[LT3:.*]] = lit.var.decl
@@ -148,9 +147,8 @@ fn test_writeback2[
     # CHECK-NEXT: %[[C2:.*]] = kgen.param.constant = <y>
     # CHECK-NEXT: %[[V9:.*]] = lit.ref.load %[[LT1]]
     # CHECK-NEXT: lit.call {{.*}}__setitem__{{.*}}(%[[LT3]], %[[C2]], %[[V9]])
-    # CHECK-NEXT: %[[LT3_TRAN:.*]] = lit.transfer_mem_ownership %[[LT3]]
     # CHECK-NEXT: %[[C1:.*]] = kgen.param.constant = <x>
-    # CHECK-NEXT: %[[V11:.*]] = lit.call {{.*}}__setitem__{{.*}}(%b, %[[C1]], %[[LT3_TRAN]])
+    # CHECK-NEXT: %[[V11:.*]] = lit.call {{.*}}__setitem__{{.*}}(%b, %[[C1]], %[[LT3]])
     takes_inout_int(b[x][y])
 
 

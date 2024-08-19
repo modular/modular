@@ -67,16 +67,6 @@ LifetimeTrackable::LifetimeTrackable(Value v) {
     return;
   }
 
-  // The lit.transfer_mem_ownership op ends a memory lifetime and creates
-  // a new one.
-  if (auto endLifetime = v.getDefiningOp<TransferMemOwnershipOp>()) {
-    name = endLifetime.getParamDecl().getName();
-    isIndirect = true;
-    startsUninit = true;
-    endInitState = EndsUninit;
-    return;
-  }
-
   // The lit.ref.from_pointer op takes an lifetime-tracked reference.  We
   // unconditionally model this as same liveness on entry to the function as on
   // exit, because some control flow paths may never execute the operation.
@@ -515,13 +505,6 @@ OverallOpValueEffect LIT::getOperationEffects(
     for (Value o : op.getOperands())
       operands.push_back({o, OperandEffect::regConsume});
     results.push_back(ResultEffect::regDefine);
-    return {};
-  }
-
-  // lit.transfer_mem_ownership consumes its operand then defines its result.
-  if (auto transfer = dyn_cast<TransferMemOwnershipOp>(op)) {
-    operands.push_back({transfer.getOperand(), OperandEffect::memConsume});
-    results.push_back(ResultEffect::memDefineInitToUninit);
     return {};
   }
 

@@ -199,7 +199,6 @@ private:
 
 void CallEmitter::AfterCallActions::emit() {
   ExprEmitter &emitter = callEmitter.emitter;
-  const ExprNode *callExpr = callEmitter.callExpr;
 
   // Emit the elements and clear the writebacks so the ValueDest's get
   // destroyed when they are emitted into.
@@ -208,25 +207,15 @@ void CallEmitter::AfterCallActions::emit() {
     // temporary we're working with) so we can do a writeback.
     auto [dest, lValue] = lvalueWritebacks.pop_back_val();
 
-    // The lValue is to the temporary holding the 'get'd value.  If non-trivial,
-    // transfer it so it may be consumed by the setter and so nothing is allowed
-    // to extend the lifetime of the temp beyond the set call.
-    AnyValue value;
-    if (!lValue.getRValueType().isTrivial(callExpr->getLoc(), emitter.shared)) {
-      ValueDest transferDest(EC_OperatorOperandValue);
-      value =
-          UnaryOpNode::emitTransfer(lValue, callExpr, transferDest, emitter);
-    } else {
-      // Otherwise just take an owned version of the trivial value.
-      value = MRValue(lValue);
-    }
-
-    if (!callEmitter.emitter.emitResult(value, callExpr, dest))
+    // The lValue is the MLValue of the temporary holding the 'get'd value.  We
+    // pass it as an MRValue to the "set" method, allowing the value to be
+    // consumed directly by an 'owned' argument without a copy.
+    if (!emitter.emitResult(MRValue(lValue), callEmitter.callExpr, dest))
       dest.resetForError();
   }
 
   // Emit all the lit.ownership.use ops.
-  OpBuilder &b = *callEmitter.emitter.builder;
+  OpBuilder &b = *emitter.builder;
   for (auto [value, alloc] : valuesToKeepAlive) {
     b.create<OwnershipUseOp>(callEmitter.loc, value);
     b.create<POP::StackAllocLifetimeEndOp>(callEmitter.loc, alloc);

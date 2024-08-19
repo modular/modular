@@ -12,8 +12,8 @@
 # CHECK-NEXT:    %0 = lit.call {{.*}}CI{{.*}}__init__{{.*}}"[{{.*}}](%anonymous2A, %m)
 # CHECK-NEXT:    %myclosure = lit.var.decl "myclosure" var : !lit.ref<!index
 # CHECK-NEXT:    %1 = lit.call {{.*}}fn{{.*}}__init__{{.*}}(%myclosure, %anonymous2A)
-# CHECK-NEXT:    [[XFER:%.*]] = lit.transfer_mem_ownership %myclosure
-# CHECK-NEXT:    lit.call {{.*}}fn{{.*}}__moveinit__{{.*}}(%__result__, [[XFER]]){{.*}} loc(#[[LOC26:.*]])
+# CHECK-NEXT:    lit.ownership.use %myclosure
+# CHECK-NEXT:    lit.call {{.*}}fn{{.*}}__moveinit__{{.*}}(%__result__, %myclosure){{.*}} loc(#[[LOC26:.*]])
 
 # CHECK-DAG: #makes_escaping_closure_name = #debuginfo.source_name<(fn)"makes_escaping_closure"(<"index">, <"index">) from <(module)"debuginfo">>
 # CHECK-DAG: #[[SP9:.*]] = #debuginfo.subprogram<compileUnit = #compile_unit, scope = #file, name = #makes_escaping_closure_name, linkageName = "makes_escaping_closure{{.*}}", file = #file, line = [[#LN42:]],
