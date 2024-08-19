@@ -3,6 +3,23 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
+"""Implements type erased generic tensor and memory types.
+
+For example you can use AnyTensor if you don't know the dtype of tensor in
+advance or if you don't know the tensor is DeviceTensor or Tensor:
+
+```mojo
+from max.driver import Tensor, AnyTensor
+
+@value
+struct Container:
+    var _tensor: AnyTensor
+
+def main():
+    tensor = Tensor[DType.float32, rank=1]((1,))
+    container = Container(tensor^)
+```
+"""
 from .device_memory import DeviceMemory
 from .tensor import Tensor
 from .device import Device, cpu_device
@@ -25,6 +42,7 @@ struct AnyTensor:
     var _device_memory_impl_ptr: UnsafePointer[NoneType]
 
     fn __init__(inout self) raises:
+        """Default constructor for AnyTensor."""
         self._device = Device()
         self._spec = TensorSpec(DType.uint8, 0)
         self._name = None
@@ -32,6 +50,11 @@ struct AnyTensor:
         self._device_memory_impl_ptr = UnsafePointer[NoneType]()
 
     fn __init__(inout self, owned device_tensor: DeviceTensor):
+        """Creates AnyTensor from a DeviceTensor.
+
+        Args:
+            device_tensor: DeviceTensor to construct AnyTensor from.
+        """
         self._device = device_tensor.device()
         self._spec = device_tensor.spec
         self._name = device_tensor.name()
@@ -41,6 +64,7 @@ struct AnyTensor:
         tmp._storage = DeviceMemory()
         self._device_memory_impl_ptr = tmp_dm^._steal_impl_ptr()
 
+    @doc_private
     fn __copyinit__(inout self, existing: Self):
         constrained[False, "AnyTensor is non-copyable"]()
         self._device = existing._device
@@ -50,6 +74,11 @@ struct AnyTensor:
         self._device_memory_impl_ptr = existing._device_memory_impl_ptr
 
     fn __moveinit__(inout self, owned existing: Self):
+        """Move constructor for AnyTensor.
+
+        Args:
+            existing: Instance to move from.
+        """
         self._device = existing._device^
         self._spec = existing._spec^
         self._name = existing._name^
@@ -59,6 +88,11 @@ struct AnyTensor:
     fn __init__[
         type: DType, rank: Int
     ](inout self, owned tensor: Tensor[type, rank]) raises:
+        """Creates AnyTensor from a Tensor.
+
+        Args:
+            tensor: Tensor to construct AnyTensor from.
+        """
         self = Self(tensor^.to_device_tensor())
 
     fn get_rank(self) -> Int:
@@ -70,6 +104,11 @@ struct AnyTensor:
         return self._spec.rank()
 
     fn spec(self) -> TensorSpec:
+        """Gets the spec of the tensor.
+
+        Returns:
+            Spec of the tensor.
+        """
         return self._spec
 
     fn _steal_ptr(owned self) -> UnsafePointer[UInt8]:
@@ -78,23 +117,41 @@ struct AnyTensor:
         return ptr
 
     fn to_device_tensor(owned self) raises -> DeviceTensor:
+        """Consumes this AnyTensor and converts it into a device tensor.
+
+        Returns:
+            DeviceTensor representation of AnyTensor.
+        """
         var spec = self._spec
         return DeviceTensor(DeviceMemory(self^), spec)
 
     fn to_tensor[
         type: DType, rank: Int
     ](owned self) raises -> Tensor[type, rank]:
-        """Consumes this anytensor and convert it into a tensor."""
+        """Consumes this anytensor and convert it into a tensor.
+
+        Parameters:
+            type: Type of tensor.
+            rank: Rank of tensor.
+
+        Returns:
+            Tensor representation of AnyTensor.
+        """
         return self^.to_device_tensor().to_tensor[type, rank]()
 
     fn take(inout self) raises -> Self:
         """The returned value takes self's resources and replaces them with default
-        initialized values."""
+        initialized values.
+
+        Returns:
+            Newly constructed anytensor that takes storage from this.
+        """
         var tmp = Self()
         swap(self, tmp)
         return tmp
 
     fn __del__(owned self):
+        """Destructor for AnyTensor."""
         _ = DeviceMemory(
             self._device_memory_impl_ptr, self._spec.bytecount(), self._device
         )
@@ -236,39 +293,61 @@ struct _CMojoValue:
 
 struct AnyMojoValue:
     """Type erased representation of a mojo object. This is useful for passing
-    opaque type as input for graph executution."""
+    opaque type as input for graph executution.
 
+    CAUTION: Experimental API.
+    """
+
+    """Internal representation of Mojo object."""
     alias c_type = _CMojoValue
 
     var _impl: Self.c_type
 
     fn __init__(inout self):
+        """Default constructor for MojoValue."""
         self._impl = _CMojoValue()
 
+    @doc_private
     fn __init__(inout self, impl: _CMojoValue):
         self._impl = impl
 
     fn __init__[T: Movable](inout self, owned val: T):
+        """Creates Type erased Mojo Value from T.
+
+        Args:
+            val: Object to type erase.
+        """
         var ptr = external_call[
             "KGEN_CompilerRT_MojoValueAllocateBuffer", UnsafePointer[T]
         ](sizeof[T](), alignof[T]())
         ptr.init_pointee_move(val^)
         self._impl = _CMojoValue(ptr)
 
+    @doc_private
     fn __copyinit__(inout self, existing: Self):
         constrained[False, "AnyMojoValue is not copyable"]()
         self._impl = existing._impl
 
     fn __moveinit__(inout self, owned existing: Self):
+        """Move constructor for AnyMojoValue.
+
+        Args:
+            existing: Instance to move from.
+        """
         self._impl = existing._impl
 
     fn take(inout self) -> Self:
-        """Returns the current value and initializes this object to default state.
+        """Returns the current value and initializes this object to default
+        state.
+
+        Returns:
+            An instance of AnyMojoValue.
         """
         var tmp = Self()
         swap(tmp, self)
         return tmp^
 
+    @doc_private
     fn release(owned self) -> Self.c_type:
         """Release the underlying Mojo Value pointer. Caller is responsible for
         destroying the object."""
@@ -277,12 +356,17 @@ struct AnyMojoValue:
 
     fn to[T: Movable](owned self) -> T:
         """Consume this object and produces an instance of T. This doesn't do
-        any type check and assumes this AnyMojoValue was created from T."""
+        any type check and assumes this AnyMojoValue was created from T.
+
+        Returns:
+            Instance of type T.
+        """
         var value = self._impl._ptr.bitcast[T]().take_pointee()
         self._impl._destroy_func = _CMojoValue._no_op_destructor[T]
         return value^
 
     fn __del__(owned self):
+        """Destructor for AnyMojoValue."""
         self._impl.destroy()
 
 
@@ -294,34 +378,67 @@ struct AnyMemory:
     var _value: Variant[AnyTensor, AnyMojoValue]
 
     fn __init__(inout self):
+        "Default constructor for AnyMemory."
         self._value = AnyMojoValue()
 
     fn __init__(inout self, owned device_tensor: DeviceTensor):
+        """Creates AnyMemory from a DeviceTensor.
+
+        Args:
+            device_tensor: DeviceTensor to construct AnyMemory from.
+        """
         self._value = AnyTensor(device_tensor^)
 
     fn __init__[
         type: DType, rank: Int
     ](inout self, owned tensor: Tensor[type, rank]) raises:
+        """Creates AnyMemory from a Tensor.
+
+        Args:
+            tensor: Tensor to construct AnyMemory from.
+        """
         self._value = AnyTensor(tensor^)
 
     fn __init__(inout self, owned tensor: AnyTensor):
+        """Creates AnyMemory from a AnyTensor.
+
+        Args:
+            tensor: AnyTensor to construct AnyMemory from.
+        """
         self._value = tensor^
 
     fn __init__(inout self, owned value: AnyMojoValue):
+        """Creates AnyMemory from AnyMojoValue.
+
+        Args:
+            value: AnyMojoValue to construct AnyMemory from.
+        """
         self._value = value^
 
     fn is_tensor(self) -> Bool:
-        """Check whether this contains a tensor."""
+        """Check whether this contains a tensor.
+
+        Returns:
+            True if contains tensor.
+        """
         return self._value.isa[AnyTensor]()
 
     fn take_tensor(inout self) raises -> AnyTensor:
-        """Take tensor from object. Further access to this object is undefined behavior.
+        """Take tensor from object. Further access to this object is
+            undefined behavior.
+
+        Returns:
+            The tensor inside the memory as AnyTensor.
         """
         return self._value[AnyTensor].take()
 
     fn take(inout self) -> Self:
-        """The returned value takes self's resources and replaces them with default
-        initialized values."""
+        """The returned value takes self's resources and replaces them with
+        default initialized values.
+
+        Returns:
+            Newly constructed AnyMemory that takes storage from this.
+        """
         var tmp = Self()
         swap(tmp, self)
         return tmp^
@@ -329,6 +446,9 @@ struct AnyMemory:
     fn to_device_tensor(owned self) raises -> DeviceTensor:
         """Consume this object and produces and instance of DeviceTensor.
         Only valid if this was created from DeviceTensor.
+
+        Returns:
+            DeviceTensor representation of AnyMemory.
         """
         var tmp = self^
         return tmp.take_tensor().to_device_tensor()
@@ -336,13 +456,21 @@ struct AnyMemory:
     fn to[T: Movable](owned self) -> T:
         """Consume this object and produces an instance of T. This doesn't do
         any type check beyond whether this is a AnyTensor or not,
-        and if not assume this was created from T."""
+        and if not assume this was created from T.
+
+        Returns:
+            An instance of type T.
+        """
         var tmp = self^
         var value = tmp.take_value()
         return value.to[T]()
 
     fn take_value(inout self) -> AnyMojoValue:
-        """Take value from object. Further access to this object is undefined behavior.
+        """Take value from object. Further access to this object is undefined
+        behavior.
+
+        Returns:
+            The value inside the memory as AnyMojoValue.
         """
         return self._value[AnyMojoValue].take()
 
@@ -353,7 +481,8 @@ struct AnyMemory:
 
     fn format_to(self, inout writer: Formatter):
         """
-        Formats the string representation of this value to the provided formatter.
+        Formats the string representation of this value to the provided
+        formatter.
 
         Args:
             writer: The formatter to write to.
