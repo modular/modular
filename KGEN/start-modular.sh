@@ -36,6 +36,8 @@ else
   export MODULAR_PATH=$(python3 -c "from pathlib import Path; print(Path('$CUR_DIR').resolve().parent.parent)")
 fi
 
+source "$MODULAR_PATH/utils/start-modular.sh"
+
 ##===----------------------------------------------------------------------===##
 # Mojo build helper
 ##===----------------------------------------------------------------------===##
