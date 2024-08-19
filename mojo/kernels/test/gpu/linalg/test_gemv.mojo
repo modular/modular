@@ -17,6 +17,7 @@ from linalg.matmul_gpu import (
     gevm_kernel,
     matmul_kernel,
     matmul_kernel_naive,
+    ReductionMethod,
 )
 from memory import UnsafePointer
 
@@ -59,6 +60,7 @@ fn run_matvec(M: Int, N: Int, K: Int, ctx: DeviceContext) raises:
             DType.float32,
             DType.float32,
             DType.float32,
+            reduction_method = ReductionMethod.WARP,
         ]
     ]()
 
@@ -248,6 +250,7 @@ fn test_gevm_with_epilogue_fn(
             DType.float32,
             DType.float32,
             DType.float32,
+            reduction_method = ReductionMethod.WARP,
             elementwise_lambda_fn=epilogue_fn,
         ]
     ]()

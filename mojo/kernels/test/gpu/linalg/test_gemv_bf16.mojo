@@ -10,7 +10,7 @@ from math import ceildiv
 
 from gpu import WARP_SIZE
 from gpu.host import DeviceContext
-from linalg.matmul_gpu import gemv_tc_kernel, matmul_kernel_naive
+from linalg.matmul_gpu import matmul_kernel_naive, gemv_kernel, ReductionMethod
 from memory import UnsafePointer
 
 from utils.numerics import isnan
@@ -53,10 +53,11 @@ fn run_matvec(M: Int, N: Int, K: Int, ctx: DeviceContext) raises:
 
     alias WARPS_PER_BLOCK = 32
     var func_gemv = ctx.compile_function[
-        gemv_tc_kernel[
+        gemv_kernel[
             DType.float32,
             DType.bfloat16,
             DType.bfloat16,
+            reduction_method = ReductionMethod.TENSOR_CORE,
         ]
     ]()
 
