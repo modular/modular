@@ -4,5 +4,5 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from .unsafe_tensor_slice import UnsafeTensorSlice
-from .tensor_like import TensorLike
+# Note to make it hard to have circular dependencies, the impl lives elsewhere
+from tensor_utils_internal import UnsafeTensorSlice, TensorLike, indexing
