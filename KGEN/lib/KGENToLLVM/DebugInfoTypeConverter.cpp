@@ -209,9 +209,14 @@ DIType KGEN::DebugInfoTypeConverter::buildDebugType(PointerType type) {
 
 DIType KGEN::DebugInfoTypeConverter::buildDebugType(POP::SIMDType type) {
   int64_t size = *type.getResolvedSize();
-  DIType baseType = buildDebugTypeFromDType(type.getContext(),
-                                            type.getResolvedDType()->getValue(),
-                                            tc.getIndexTypeBitwidth());
+
+  DIType baseType;
+  if (std::optional<KGENDType> dtype = type.getResolvedDType()) {
+    baseType = buildDebugTypeFromDType(type.getContext(), dtype->getValue(),
+                                       tc.getIndexTypeBitwidth());
+  } else {
+    baseType = DIUnspecifiedType::get(type.getContext(), "unknown");
+  }
   return DIVectorType::get(
       baseType, size,
       StringAttr::get(type.getContext(), mlir::debugString(type)));
