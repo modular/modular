@@ -14,6 +14,7 @@ namespace M::KGEN::MOGGPreElab {
 
 // The prefix that internal and max scoped decorators will start with.
 constexpr StringLiteral MAX_PREFIX = "max";
+constexpr StringLiteral COMPILER_PREFIX_INTERNAL = "compiler_internal";
 constexpr StringLiteral COMPILER_PREFIX = "compiler";
 constexpr StringLiteral INTERNAL_PREFIX = "register";
 
@@ -99,12 +100,10 @@ bool stripDecorators(LIT::FuncOp func) {
     // vs `@decorator()`.
     auto directSym = dyn_cast<SymbolConstantAttr>(decorator);
     if (directSym) {
+      auto strRef = directSym.getSymbol().getRootReference().strref();
       // Only accept decorators in max / register domain.
-      if (!(directSym.getSymbol().getRootReference().strref() == MAX_PREFIX ||
-            directSym.getSymbol().getRootReference().strref() ==
-                INTERNAL_PREFIX ||
-            directSym.getSymbol().getRootReference().strref() ==
-                COMPILER_PREFIX))
+      if (!(strRef == MAX_PREFIX || strRef == INTERNAL_PREFIX ||
+            strRef == COMPILER_PREFIX || strRef == COMPILER_PREFIX_INTERNAL))
         continue;
       decoratorName = directSym.getSymbol().getLeafReference().strref();
     }
@@ -121,10 +120,11 @@ bool stripDecorators(LIT::FuncOp func) {
         // The first operand is expected to be the symbol we are applying.
         if (auto sym = dyn_cast<SymbolConstantAttr>(apply.getOperand(0))) {
           SymbolRefAttr symRef = sym.getSymbol();
+          auto strRef = symRef.getRootReference().strref();
           // Only accept decorators in max / register domain.
-          if (!(symRef.getRootReference().strref() == "max" ||
-                symRef.getRootReference().strref() == "register" ||
-                symRef.getRootReference().strref() == COMPILER_PREFIX))
+          if (!(strRef == "max" || strRef == "register" ||
+                strRef == COMPILER_PREFIX ||
+                strRef == COMPILER_PREFIX_INTERNAL))
             continue;
           decoratorName = symRef.getLeafReference().strref();
         }
