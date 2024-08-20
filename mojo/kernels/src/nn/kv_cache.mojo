@@ -6,10 +6,11 @@
 from buffer import DimList, NDBuffer, Dim
 from collections import OptionalReg
 from math import isqrt
-from sys.info import _current_target
+from sys.info import _current_target, simdwidthof
 from utils import Index
 from utils.numerics import min_finite, isnan
 
+from algorithm.functional import elementwise
 from gpu.host import Stream, DeviceContext, DeviceBuffer
 from gpu.host._compile import _get_nvptx_target
 from linalg import transpose
@@ -39,7 +40,7 @@ struct KVCacheKernelNames:
     var key_cache_for_layer_kernel: StringLiteral
     var value_cache_for_layer_kernel: StringLiteral
     var fused_qkv_matmul_kernel: StringLiteral
-    var fused_qkv_matmul_w_rope_kernel: StringLiteral
+    var fused_qk_rope_kernel: StringLiteral
 
 
 fn _kv_cache_kernel_names[
@@ -58,9 +59,7 @@ fn _kv_cache_kernel_names[
                 "value_cache_for_layer_h6_d48_bshd_f32"
             ),
             fused_qkv_matmul_kernel="fused_qkv_matmul_kv_cache_h6_d48_bshd",
-            fused_qkv_matmul_w_rope_kernel=(
-                "fused_qkv_matmul_kv_cache_w_rope_h6_d48_bshd"
-            ),
+            fused_qk_rope_kernel="fused_qk_rope_h6_d48_bshd",
         )
     elif type == DType.float32 and params == KVCacheStaticParams(
         num_heads=6, head_size=48, layout=KVCacheLayout.BHSD
@@ -74,9 +73,7 @@ fn _kv_cache_kernel_names[
                 "value_cache_for_layer_h6_d48_bhsd_f32"
             ),
             fused_qkv_matmul_kernel="fused_qkv_matmul_kv_cache_h6_d48_bhsd",
-            fused_qkv_matmul_w_rope_kernel=(
-                "fused_qkv_matmul_kv_cache_w_rope_h6_d48_bhsd"
-            ),
+            fused_qk_rope_kernel="fused_qk_rope_h6_d48_bhsd",
         )
     elif type == DType.float32 and params == KVCacheStaticParams(
         num_heads=8, head_size=128, layout=KVCacheLayout.BSHD
@@ -90,9 +87,7 @@ fn _kv_cache_kernel_names[
                 "value_cache_for_layer_h8_d128_bshd_f32"
             ),
             fused_qkv_matmul_kernel="fused_qkv_matmul_kv_cache_h8_d128_bshd",
-            fused_qkv_matmul_w_rope_kernel=(
-                "fused_qkv_matmul_kv_cache_w_rope_h8_d128_bshd"
-            ),
+            fused_qk_rope_kernel="fused_qk_rope_h8_d128_bshd",
         )
     elif type == DType.float32 and params == KVCacheStaticParams(
         num_heads=8, head_size=128, layout=KVCacheLayout.BHSD
@@ -106,9 +101,7 @@ fn _kv_cache_kernel_names[
                 "value_cache_for_layer_h8_d128_bhsd_f32"
             ),
             fused_qkv_matmul_kernel="fused_qkv_matmul_kv_cache_h8_d128_bhsd",
-            fused_qkv_matmul_w_rope_kernel=(
-                "fused_qkv_matmul_kv_cache_w_rope_h8_d128_bhsd"
-            ),
+            fused_qk_rope_kernel="fused_qk_rope_h8_d128_bhsd",
         )
     elif type == DType.bfloat16 and params == KVCacheStaticParams(
         num_heads=8, head_size=128, layout=KVCacheLayout.BSHD
@@ -122,9 +115,7 @@ fn _kv_cache_kernel_names[
                 "value_cache_for_layer_h8_d128_bshd_bf16"
             ),
             fused_qkv_matmul_kernel="fused_qkv_matmul_kv_cache_h8_d128_bshd",
-            fused_qkv_matmul_w_rope_kernel=(
-                "fused_qkv_matmul_kv_cache_w_rope_h8_d128_bshd"
-            ),
+            fused_qk_rope_kernel="fused_qk_rope_h8_d128_bshd",
         )
     elif type == DType.bfloat16 and params == KVCacheStaticParams(
         num_heads=8, head_size=128, layout=KVCacheLayout.BHSD
@@ -138,9 +129,7 @@ fn _kv_cache_kernel_names[
                 "value_cache_for_layer_h8_d128_bhsd_bf16"
             ),
             fused_qkv_matmul_kernel="fused_qkv_matmul_kv_cache_h8_d128_bhsd",
-            fused_qkv_matmul_w_rope_kernel=(
-                "fused_qkv_matmul_kv_cache_w_rope_h8_d128_bhsd"
-            ),
+            fused_qk_rope_kernel="fused_qk_rope_h8_d128_bhsd",
         )
     else:
         constrained[False, "Unsupported KV Cache configuration"]()
@@ -152,7 +141,7 @@ fn _kv_cache_kernel_names[
         key_cache_for_layer_kernel="",
         value_cache_for_layer_kernel="",
         fused_qkv_matmul_kernel="",
-        fused_qkv_matmul_w_rope_kernel="",
+        fused_qk_rope_kernel="",
     )
 
 
@@ -889,8 +878,6 @@ fn _fused_qkv_matmul_kv_cache[
     kv_params: KVCacheStaticParams,
     *,
     target: StringLiteral,
-    q_embed_fn: OptionalReg[embed_fn_type] = None,
-    k_embed_fn: OptionalReg[embed_fn_type] = None,
 ](
     hidden_state: NDBuffer[type, 3, hidden_state_shape],
     weight: NDBuffer[type, 2, weight_shape],
@@ -931,20 +918,7 @@ fn _fused_qkv_matmul_kv_cache[
         var b_idx = bs_and_seq[0]
         var t_idx = bs_and_seq[1]
         if idx[1] < q_dim:
-            var output_val = val
-
-            @parameter
-            if q_embed_fn:
-                alias q_fn_val = q_embed_fn.value()
-
-                var head_and_dim = divmod(idx[1], kv_params.head_size)
-                var h_idx = head_and_dim[0]
-                var hd_idx = head_and_dim[1]
-                output_val = q_fn_val((b_idx, t_idx, h_idx, hd_idx), output_val)
-
-            output.store(
-                (b_idx, t_idx, idx[1]), rebind[SIMD[type, width]](output_val)
-            )
+            output.store((b_idx, t_idx, idx[1]), rebind[SIMD[type, width]](val))
             return
 
         var h_idx: Int
@@ -957,10 +931,6 @@ fn _fused_qkv_matmul_kv_cache[
             hd_idx = head_and_dim[1]
             cache = k_cache
 
-            @parameter
-            if k_embed_fn:
-                alias k_fn_val = k_embed_fn.value()
-                output_val = k_fn_val((b_idx, t_idx, h_idx, hd_idx), output_val)
         else:
             cache = v_cache
             var head_and_dim = divmod(idx[1] - qk_offset, kv_params.head_size)
@@ -1006,179 +976,202 @@ fn _fused_qkv_matmul_kv_cache[
     c_nd.data.free()
 
 
-@mogg_register("fused_qkv_matmul_kv_cache_w_rope_h6_d48_bshd")
-@export
-fn fused_qkv_matmul_kv_cache_w_rope_h6_d48_bshd[
+@mogg_register("fused_qk_rope_h6_d48_bshd")
+fn fused_qk_rope_h6_d48_bshd[
     type: DType,
-    hidden_state_shape: DimList,
-    weight_shape: DimList,
+    q_shape: DimList,
     freqs_shape: DimList,
     output_shape: DimList,
-    target: StringLiteral = "cpu",
-](
-    hidden_state: NDBuffer[type, 3, hidden_state_shape],
-    weight: NDBuffer[type, 2, weight_shape],
-    freqs: NDBuffer[type, 2, freqs_shape],
-    k_cache: ContiguousKVCache[
-        type,
-        KVCacheStaticParams(
-            num_heads=6, head_size=48, layout=KVCacheLayout.BSHD
-        ),
-    ],
-    v_cache: ContiguousKVCache[
-        type,
-        KVCacheStaticParams(
-            num_heads=6, head_size=48, layout=KVCacheLayout.BSHD
-        ),
-    ],
-    output: NDBuffer[type, 3, output_shape],
-    context: MojoCallContextPtr = MojoCallContextPtr(),
-):
-    return _fused_qkv_matmul_kv_cache_w_rope[target=target](
-        hidden_state, weight, freqs, k_cache, v_cache, output, context
-    )
-
-
-@mogg_register("fused_qkv_matmul_kv_cache_w_rope_h6_d48_bhsd")
-@export
-fn fused_qkv_matmul_kv_cache_w_rope_h6_d48_bhsd[
-    type: DType,
-    hidden_state_shape: DimList,
-    weight_shape: DimList,
-    freqs_shape: DimList,
-    output_shape: DimList,
-    target: StringLiteral = "cpu",
-](
-    hidden_state: NDBuffer[type, 3, hidden_state_shape],
-    weight: NDBuffer[type, 2, weight_shape],
-    freqs: NDBuffer[type, 2, freqs_shape],
-    k_cache: ContiguousKVCache[
-        type,
-        KVCacheStaticParams(
-            num_heads=6, head_size=48, layout=KVCacheLayout.BHSD
-        ),
-    ],
-    v_cache: ContiguousKVCache[
-        type,
-        KVCacheStaticParams(
-            num_heads=6, head_size=48, layout=KVCacheLayout.BHSD
-        ),
-    ],
-    output: NDBuffer[type, 3, output_shape],
-    context: MojoCallContextPtr = MojoCallContextPtr(),
-):
-    return _fused_qkv_matmul_kv_cache_w_rope[target=target](
-        hidden_state, weight, freqs, k_cache, v_cache, output, context
-    )
-
-
-@mogg_register("fused_qkv_matmul_kv_cache_w_rope_h8_d128_bshd")
-@export
-fn fused_qkv_matmul_kv_cache_w_rope_h8_d128_bshd[
-    type: DType,
-    hidden_state_shape: DimList,
-    weight_shape: DimList,
-    freqs_shape: DimList,
-    output_shape: DimList,
-    target: StringLiteral = "cpu",
-](
-    hidden_state: NDBuffer[type, 3, hidden_state_shape],
-    weight: NDBuffer[type, 2, weight_shape],
-    freqs: NDBuffer[type, 2, freqs_shape],
-    k_cache: ContiguousKVCache[
-        type,
-        KVCacheStaticParams(
-            num_heads=8, head_size=128, layout=KVCacheLayout.BSHD
-        ),
-    ],
-    v_cache: ContiguousKVCache[
-        type,
-        KVCacheStaticParams(
-            num_heads=8, head_size=128, layout=KVCacheLayout.BSHD
-        ),
-    ],
-    output: NDBuffer[type, 3, output_shape],
-    context: MojoCallContextPtr = MojoCallContextPtr(),
-):
-    return _fused_qkv_matmul_kv_cache_w_rope[target=target](
-        hidden_state, weight, freqs, k_cache, v_cache, output, context
-    )
-
-
-@mogg_register("fused_qkv_matmul_kv_cache_w_rope_h8_d128_bhsd")
-@export
-fn fused_qkv_matmul_kv_cache_w_rope_h8_d128_bhsd[
-    type: DType,
-    hidden_state_shape: DimList,
-    weight_shape: DimList,
-    freqs_shape: DimList,
-    output_shape: DimList,
-    target: StringLiteral = "cpu",
-](
-    hidden_state: NDBuffer[type, 3, hidden_state_shape],
-    weight: NDBuffer[type, 2, weight_shape],
-    freqs: NDBuffer[type, 2, freqs_shape],
-    k_cache: ContiguousKVCache[
-        type,
-        KVCacheStaticParams(
-            num_heads=8, head_size=128, layout=KVCacheLayout.BHSD
-        ),
-    ],
-    v_cache: ContiguousKVCache[
-        type,
-        KVCacheStaticParams(
-            num_heads=8, head_size=128, layout=KVCacheLayout.BHSD
-        ),
-    ],
-    output: NDBuffer[type, 3, output_shape],
-    context: MojoCallContextPtr = MojoCallContextPtr(),
-):
-    return _fused_qkv_matmul_kv_cache_w_rope[target=target](
-        hidden_state, weight, freqs, k_cache, v_cache, output, context
-    )
-
-
-@always_inline
-fn _fused_qkv_matmul_kv_cache_w_rope[
-    type: DType,
-    hidden_state_shape: DimList,
-    weight_shape: DimList,
-    freqs_shape: DimList,
-    output_shape: DimList,
-    kv_params: KVCacheStaticParams,
     *,
     target: StringLiteral,
 ](
-    hidden_state: NDBuffer[type, 3, hidden_state_shape],
-    weight: NDBuffer[type, 2, weight_shape],
-    freqs: NDBuffer[type, 2, freqs_shape],
-    k_cache: ContiguousKVCache[type, kv_params],
-    v_cache: ContiguousKVCache[type, kv_params],
-    output: NDBuffer[type, 3, output_shape],
+    q_proj: NDBuffer[type, 4, q_shape],
+    k_cache: ContiguousKVCache[
+        type,
+        KVCacheStaticParams(
+            num_heads=6, head_size=48, layout=KVCacheLayout.BSHD
+        ),
+    ],
+    freqs_cis: NDBuffer[type, 2, freqs_shape],
+    output: NDBuffer[type, 4, output_shape],
     context: MojoCallContextPtr = MojoCallContextPtr(),
 ):
+    """Performs a fused RoPE projection for Q and K projections.
+
+    We have a manually fused QKV projection with mo.opaque types in our Llama model.
+    Due to a limitation in custom op definitions, we can't declare both a tensor
+    and opaque type as output from a custom kernel. This requires us to only note
+    Q_proj as an output from the QKV projection. If we immediately follow the
+    QKV proj kernel with a RoPE kernel applied to K, we'll get a race condition
+    because the graph compiler doesn't know about the dependency between these
+    kernels in the graph definition. Here we fuse the RoPE kernel applied to
+    Q_proj with K_proj, so K_proj RoPE is only excuted after QKV completes.
+    """
+    _fused_qk_rope[target=target](q_proj, k_cache, freqs_cis, output, context)
+
+
+@mogg_register("fused_qk_rope_h6_d48_bhsd")
+fn fused_qk_rope_h6_d48_bhsd[
+    type: DType,
+    q_shape: DimList,
+    freqs_shape: DimList,
+    output_shape: DimList,
+    *,
+    target: StringLiteral,
+](
+    q_proj: NDBuffer[type, 4, q_shape],
+    k_cache: ContiguousKVCache[
+        type,
+        KVCacheStaticParams(
+            num_heads=6, head_size=48, layout=KVCacheLayout.BHSD
+        ),
+    ],
+    freqs_cis: NDBuffer[type, 2, freqs_shape],
+    output: NDBuffer[type, 4, output_shape],
+    context: MojoCallContextPtr = MojoCallContextPtr(),
+):
+    """Performs a fused RoPE projection for Q and K projections.
+
+    We have a manually fused QKV projection with mo.opaque types in our Llama model.
+    Due to a limitation in custom op definitions, we can't declare both a tensor
+    and opaque type as output from a custom kernel. This requires us to only note
+    Q_proj as an output from the QKV projection. If we immediately follow the
+    QKV proj kernel with a RoPE kernel applied to K, we'll get a race condition
+    because the graph compiler doesn't know about the dependency between these
+    kernels in the graph definition. Here we fuse the RoPE kernel applied to
+    Q_proj with K_proj, so K_proj RoPE is only excuted after QKV completes.
+    """
+    _fused_qk_rope[target=target](q_proj, k_cache, freqs_cis, output, context)
+
+
+@mogg_register("fused_qk_rope_h8_d128_bshd")
+fn fused_qk_rope_h8_d128_bshd[
+    type: DType,
+    q_shape: DimList,
+    freqs_shape: DimList,
+    output_shape: DimList,
+    *,
+    target: StringLiteral,
+](
+    q_proj: NDBuffer[type, 4, q_shape],
+    k_cache: ContiguousKVCache[
+        type,
+        KVCacheStaticParams(
+            num_heads=8, head_size=128, layout=KVCacheLayout.BSHD
+        ),
+    ],
+    freqs_cis: NDBuffer[type, 2, freqs_shape],
+    output: NDBuffer[type, 4, output_shape],
+    context: MojoCallContextPtr = MojoCallContextPtr(),
+):
+    """Performs a fused RoPE projection for Q and K projections.
+
+    We have a manually fused QKV projection with mo.opaque types in our Llama model.
+    Due to a limitation in custom op definitions, we can't declare both a tensor
+    and opaque type as output from a custom kernel. This requires us to only note
+    Q_proj as an output from the QKV projection. If we immediately follow the
+    QKV proj kernel with a RoPE kernel applied to K, we'll get a race condition
+    because the graph compiler doesn't know about the dependency between these
+    kernels in the graph definition. Here we fuse the RoPE kernel applied to
+    Q_proj with K_proj, so K_proj RoPE is only excuted after QKV completes.
+    """
+    _fused_qk_rope[target=target](q_proj, k_cache, freqs_cis, output, context)
+
+
+@mogg_register("fused_qk_rope_h8_d128_bhsd")
+fn fused_qk_rope_h8_d128_bhsd[
+    type: DType,
+    q_shape: DimList,
+    freqs_shape: DimList,
+    output_shape: DimList,
+    *,
+    target: StringLiteral,
+](
+    q_proj: NDBuffer[type, 4, q_shape],
+    k_cache: ContiguousKVCache[
+        type,
+        KVCacheStaticParams(
+            num_heads=8, head_size=128, layout=KVCacheLayout.BHSD
+        ),
+    ],
+    freqs_cis: NDBuffer[type, 2, freqs_shape],
+    output: NDBuffer[type, 4, output_shape],
+    context: MojoCallContextPtr = MojoCallContextPtr(),
+):
+    """Performs a fused RoPE projection for Q and K projections.
+
+    We have a manually fused QKV projection with mo.opaque types in our Llama model.
+    Due to a limitation in custom op definitions, we can't declare both a tensor
+    and opaque type as output from a custom kernel. This requires us to only note
+    Q_proj as an output from the QKV projection. If we immediately follow the
+    QKV proj kernel with a RoPE kernel applied to K, we'll get a race condition
+    because the graph compiler doesn't know about the dependency between these
+    kernels in the graph definition. Here we fuse the RoPE kernel applied to
+    Q_proj with K_proj, so K_proj RoPE is only excuted after QKV completes.
+    """
+    _fused_qk_rope[target=target](q_proj, k_cache, freqs_cis, output, context)
+
+
+@always_inline
+fn _fused_qk_rope[
+    type: DType,
+    q_shape: DimList,
+    kv_params: KVCacheStaticParams,
+    freqs_shape: DimList,
+    output_shape: DimList,
+    *,
+    target: StringLiteral,
+](
+    q_proj: NDBuffer[type, 4, q_shape],
+    k_cache: ContiguousKVCache[type, kv_params],
+    freqs_cis: NDBuffer[type, 2, freqs_shape],
+    output: NDBuffer[type, 4, output_shape],
+    context: MojoCallContextPtr,
+):
+    var batch_size = q_proj.dim[0]()
+    var new_seq_len = q_proj.dim[1]()
+    alias num_q_heads = q_shape.get[2]()
+    alias num_k_heads = kv_params.num_heads
+    alias head_size = q_shape.get[3]()
+
     @always_inline
     @parameter
-    @__copy_capture(freqs)
-    fn rope_fn[
-        type_: DType, width: Int
-    ](idx: StaticIntTuple[4], val: SIMD[type_, width]) -> SIMD[type_, width]:
+    @__copy_capture(freqs_cis, q_proj, k_cache, output)
+    fn rope_fn[width: Int, rank: Int](idx_arg: StaticIntTuple[rank]):
+        constrained[rank == 4, "Invalid rank passed to rope kernel"]()
+
         @parameter
         if width == 1:
             print("ROPE KERNEL CALLED WITH SINGLE VALUE, EXPECTED AT LEAST 2")
-            return val
+            return
         else:
-            var t_idx = idx[1]
-            var hd_idx = idx[3]
+            var idx = rebind[StaticIntTuple[4]](idx_arg)
+            var bs_idx = idx[0]
+            var seq_idx = idx[1]
+            var head_idx = idx[2]
+            var head_dim_idx = idx[3]
+
+            # WARN assumes head_size % simd_width == 0
+            # guarded by constrained statement below
+            var is_q_proj = head_idx < num_q_heads
+            var val: SIMD[type, width]
+
+            if is_q_proj:
+                val = q_proj.load[width=width](idx)
+            else:
+                head_idx -= num_q_heads
+
+                var cache_seq_idx = seq_idx + k_cache.cache_length(bs_idx)
+                val = k_cache.load[width=width](
+                    bs_idx, head_idx, cache_seq_idx, head_dim_idx
+                )
 
             var x_c = val.deinterleave()
             var x_re = x_c[0]
             var x_im = x_c[1]
 
-            var f_idx = StaticIntTuple[2](t_idx, hd_idx)
-            var f_c_temp = rebind[SIMD[type_, width]](
-                freqs.load[width=width](f_idx)
-            )
+            var f_idx = StaticIntTuple[2](seq_idx, head_dim_idx)
+            var f_c_temp = freqs_cis.load[width=width](f_idx)
 
             var f_c = f_c_temp.deinterleave()
             var f_re = f_c[0]
@@ -1187,11 +1180,31 @@ fn _fused_qkv_matmul_kv_cache_w_rope[
             var r_re = (x_re * f_re) - (x_im * f_im)
             var r_im = (x_re * f_im) + (x_im * f_re)
 
-            return rebind[SIMD[type_, width]](r_re.interleave(r_im))
+            var result = r_re.interleave(r_im)
+            if is_q_proj:
+                output.store(idx, result)
+            else:
+                var cache_seq_idx = seq_idx + k_cache.cache_length(bs_idx)
+                k_cache.store(
+                    bs_idx, head_idx, cache_seq_idx, head_dim_idx, result
+                )
 
-    return _fused_qkv_matmul_kv_cache[
-        target=target, q_embed_fn=rope_fn, k_embed_fn=rope_fn
-    ](hidden_state, weight, k_cache, v_cache, output, context)
+    alias compile_target = _current_target() if target == "cpu" else _get_nvptx_target()
+    alias simd_width = simdwidthof[type, target=compile_target]()
+    constrained[
+        (kv_params.head_size % simd_width) == 0,
+        "Invalid simd_width and head size",
+    ]()
+
+    var launch_shape = StaticIntTuple[4](
+        batch_size,
+        new_seq_len,
+        num_q_heads + num_k_heads,  # concat q and k along head dim
+        head_size,
+    )
+    elementwise[func=rope_fn, simd_width=simd_width, target=target](
+        launch_shape, context.get_device_context()
+    )
 
 
 @mogg_register("flash_attention_kv_cache_h6_d48_bshd")
