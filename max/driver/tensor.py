@@ -11,7 +11,7 @@ from typing import Any, Generator, Tuple
 from max._driver import Tensor as _Tensor
 from max.dtype import DType
 
-from .driver import CPU
+from .driver import CPU, Device
 
 
 class Tensor:
@@ -35,7 +35,7 @@ class Tensor:
         self,
         shape: Tuple[int, ...],
         dt: DType,
-        device: CPU = CPU(),
+        device: Device = CPU(),
         **kwargs,
     ) -> None:
         # Note that we ignore the dtype and shape arguments if we provide an
