@@ -43,8 +43,8 @@ def test_matmul(c: NDBuffer, a: NDBuffer, b: NDBuffer, m: Int, n: Int, k: Int):
     if not os_is_macos():
         return
 
-    var golden_ptr = UnsafePointer[Scalar[c.type]].alloc(
-        m * n, alignment=alignment
+    var golden_ptr = UnsafePointer[Scalar[c.type], alignment=alignment].alloc(
+        m * n
     )
     var golden = NDBuffer[c.type, 2](golden_ptr, Index(m, n))
 
@@ -88,9 +88,9 @@ def test_matmul(c: NDBuffer, a: NDBuffer, b: NDBuffer, m: Int, n: Int, k: Int):
 
 
 def test_matmul(m: Int, n: Int, k: Int):
-    var c_ptr = UnsafePointer[Scalar[c_type]].alloc(m * n, alignment=alignment)
-    var a_ptr = UnsafePointer[Scalar[a_type]].alloc(m * k, alignment=alignment)
-    var b_ptr = UnsafePointer[Scalar[b_type]].alloc(k * n, alignment=alignment)
+    var c_ptr = UnsafePointer[Scalar[c_type], alignment=alignment].alloc(m * n)
+    var a_ptr = UnsafePointer[Scalar[a_type], alignment=alignment].alloc(m * k)
+    var b_ptr = UnsafePointer[Scalar[b_type], alignment=alignment].alloc(k * n)
 
     var c = NDBuffer[c_type, 2](c_ptr, Index(m, n))
     var a = NDBuffer[a_type, 2](a_ptr, Index(m, k))
@@ -139,8 +139,8 @@ def test_batched_matmul(
     if not os_is_macos():
         return
 
-    var golden_ptr = UnsafePointer[Scalar[c.type]].alloc(
-        batches * m * n, alignment=alignment
+    var golden_ptr = UnsafePointer[Scalar[c.type], alignment=alignment].alloc(
+        batches * m * n
     )
     var golden = NDBuffer[c.type, 3](golden_ptr, Index(batches, m, n))
 
@@ -196,14 +196,14 @@ def test_batched_matmul(
 
 
 def test_batched_matmul(batch: Int, m: Int, n: Int, k: Int):
-    var c_ptr = UnsafePointer[Scalar[c_type]].alloc(
-        batch * m * n, alignment=alignment
+    var c_ptr = UnsafePointer[Scalar[c_type], alignment=alignment].alloc(
+        batch * m * n
     )
-    var a_ptr = UnsafePointer[Scalar[a_type]].alloc(
-        batch * m * k, alignment=alignment
+    var a_ptr = UnsafePointer[Scalar[a_type], alignment=alignment].alloc(
+        batch * m * k
     )
-    var b_ptr = UnsafePointer[Scalar[b_type]].alloc(
-        batch * k * n, alignment=alignment
+    var b_ptr = UnsafePointer[Scalar[b_type], alignment=alignment].alloc(
+        batch * k * n
     )
 
     var c = NDBuffer[c_type, 3](c_ptr, Index(batch, m, n))

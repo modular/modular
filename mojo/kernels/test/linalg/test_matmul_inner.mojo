@@ -149,14 +149,13 @@ fn test_micro_kernel[
 
     alias alignment = alignof[SIMD[c_type, config.simd_size]]()
 
-    var a_ptr = UnsafePointer[Scalar[a_type]].alloc(m * k, alignment=alignment)
-    var b_packed_ptr = UnsafePointer[Scalar[b_type]].alloc(
+    var a_ptr = UnsafePointer[Scalar[a_type], alignment=alignment].alloc(m * k)
+    var b_packed_ptr = UnsafePointer[Scalar[b_type], alignment=alignment].alloc(
         (np // config.kernel_cols)
         * (kh // factor)
-        * (factor * config.kernel_cols),
-        alignment=alignment,
+        * (factor * config.kernel_cols)
     )
-    var c_ptr = UnsafePointer[Scalar[c_type]].alloc(m * n, alignment=alignment)
+    var c_ptr = UnsafePointer[Scalar[c_type], alignment=alignment].alloc(m * n)
     var a = NDBuffer[a_type, 2, a_shape](a_ptr, Index(m, k))
 
     var b_packed = NDBuffer[b_type, 3, config.packed_shape](
