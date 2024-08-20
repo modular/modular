@@ -23,7 +23,7 @@ from .tensor_slice import TensorSlice
 from max.tensor import TensorSpec, TensorShape
 from max.tensor import Tensor as OldTensor
 from max._tensor_utils import UnsafeTensorSlice, TensorLike
-from max._tensor_utils.indexing import (
+from tensor_utils.indexing import (
     _dot_prod,
     _row_major_strides,
 )
