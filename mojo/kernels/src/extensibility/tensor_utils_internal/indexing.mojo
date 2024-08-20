@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from tensor import StaticTensorSpec
+from tensor_internal import StaticTensorSpec
 from utils import StaticIntTuple
 from collections import InlineArray
 

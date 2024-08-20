@@ -7,7 +7,7 @@
 from .indexing import _dot_prod, _slice_to_tuple, _row_major_strides
 from .tensor_like import TensorLike
 
-from tensor import TensorSpec, StaticTensorSpec
+from tensor_internal import TensorSpec, StaticTensorSpec
 
 from collections import InlineArray
 from utils import StaticIntTuple
