@@ -11,10 +11,12 @@
 // RUN: mojo test --co "%S/inputs/doc.mojo@doc_fn(\3A\3AInt).__doc__" | FileCheck %s --check-prefix=CHECK-SUITE
 // RUN: mojo test --co "%S/inputs/doc.mojo@doc_fn(\3A\3AInt).__doc__::0" | FileCheck %s --check-prefix=CHECK-SUITE-AND-TEST
 // RUN: mojo test --co --diagnostic-format json "%S/inputs/doc.mojo@doc_fn(\3A\3AInt).__doc__" | FileCheck %s --check-prefix=CHECK-JSON
+// RUN: mojo test --filter backtick --co %S/inputs/ | FileCheck %s --check-prefix=CHECK-FILTER
 
 // RUN: not mojo test --co "%S/inputs/doc.mojo@doc_fn.::0" 2>&1 | FileCheck %s --check-prefix=CHECK-INVALID-SCOPE-0
 // RUN: not mojo test --co "%S/inputs/doc.mojo@.doc_fn::0" 2>&1 | FileCheck %s --check-prefix=CHECK-INVALID-SCOPE-1
 // RUN: not mojo test --co "%S/inputs/doc.mojo@\1::0" 2>&1 | FileCheck %s --check-prefix=CHECK-INVALID-SCOPE-2
+// RUN: not mojo test --co "%S/inputs/" --filter '+' 2>&1 | FileCheck %s --check-prefix=CHECK-INVALID-FILTER
 
 // Test that relative paths get resolved correctly.
 // RUN: mojo test --co %S/./inputs/ | FileCheck %s
@@ -70,3 +72,8 @@
 // CHECK-JSON:   "children":
 // CHECK-JSON:       "id": "{{.*}}inputs/doc.mojo@doc_fn(\\3A\\3AInt).__doc__::0"
 // CHECK-JSON:   "id": "{{.*}}inputs/doc.mojo@doc_fn(\\3A\\3AInt).__doc__"
+
+// CHECK-FILTER: inputs/subfolder/subfolder_test.mojo::test_backtick\2Ename\2Erequired()>
+// CHECK-FILTER: inputs/subfolder/subfolder_test.mojo::test_backtick\2Efails()>
+
+// CHECK-INVALID-FILTER: Invalid regex pattern `+`: repetition-operator operand invalid

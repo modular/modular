@@ -27,6 +27,7 @@
 #include "llvm/ADT/Twine.h"
 #include "llvm/Support/Process.h"
 #include "llvm/Support/Program.h"
+#include "llvm/Support/Regex.h"
 #include "llvm/Support/SourceMgr.h"
 #include <filesystem>
 
@@ -280,19 +281,19 @@ llvm::json::Value KGEN::Mojo::toJSON(const TestExecutionResult &value) {
 // Test
 //===----------------------------------------------------------------------===//
 
-void Test::print(raw_ostream &os) const {
-  os << "<" << testID << ">";
-  if (children.empty())
-    return;
-  os << "\n";
-
+void Test::print(raw_ostream &os,
+                 const std::optional<llvm::Regex> &filter) const {
   mlir::raw_indented_ostream indentedOS(os);
-  llvm::interleave(children, indentedOS.indent(2), "\n");
-}
+  if (!filter || filter->match(testID.strref())) {
+    os << "<" << testID << ">\n";
+    if (children.empty())
+      return;
 
-raw_ostream &KGEN::Mojo::operator<<(raw_ostream &os, const Test &test) {
-  test.print(os);
-  return os;
+    indentedOS.indent(2);
+  }
+
+  for (const Test &child : children)
+    child.print(indentedOS, filter);
 }
 
 //===----------------------------------------------------------------------===//
@@ -482,11 +483,14 @@ struct Test::TestDiscovery {
         if (line && col && endLine && endCol)
           location.emplace(line - 1, col, endLine, endCol);
       }
+      TestID childID = testID.withTest(Twine(index).str());
       children.emplace_back(Test(testID.withTest(Twine(index).str()),
                                  /*newChildren=*/{}, location));
     }
+
     return Test(TestID(testID), std::move(children));
   }
+
   static std::optional<Test> getDocTestSuiteFromDecl(StringRef filePath,
                                                      MojoASTDeclRef decl,
                                                      SourceMgr &sourceMgr) {
@@ -520,6 +524,7 @@ struct Test::TestDiscovery {
                                   bool processUnitTests) {
     // Check if the decl defines a unit test.
     if (processUnitTests && doesDeclDefineUnitTest(ref, shared)) {
+      TestID id = getDeclTestID(path, ref);
       tests.emplace_back(
           Test(getDeclTestID(path, ref), /*newChildren=*/{},
                getSourceRangeForDecl(ref, shared.getSourceMgr())));
@@ -766,6 +771,7 @@ Test::discoverFromID(AsyncRT::Runtime &runtime, const TestID &testID,
   std::error_code ec;
   if (!std::filesystem::exists(path, ec))
     return std::nullopt;
+
   TestDiscovery testDiscovery(runtime, additionalImportPaths);
 
   // Check if the test specifies a specific suite within the path. In this
@@ -829,6 +835,13 @@ static std::vector<TestExecutionResult> emitTestInitError(ArrayRef<Test> tests,
   return results;
 }
 
+static std::vector<TestExecutionResult> emitTestSkip(ArrayRef<Test> tests) {
+  std::vector<TestExecutionResult> results;
+  for (const Test &test : tests)
+    results.emplace_back(TestExecutionResult::buildSkip(test.getTestID()));
+  return results;
+}
+
 /// Process the result of a test executor execution.
 static TestExecutionResult
 processTestExecutorResults(ArrayRef<Test> tests,
@@ -850,6 +863,7 @@ processTestExecutorResults(ArrayRef<Test> tests,
   if (results.size() == 1)
     return results.front();
 
+  bool hasError = false;
   // Check that the results are in the expected order.
   std::chrono::milliseconds duration = std::chrono::milliseconds(0);
   for (size_t i = 0, e = tests.size(); i < e; ++i) {
@@ -857,10 +871,11 @@ processTestExecutorResults(ArrayRef<Test> tests,
       return emitError(
           "fatal error: test execution generated unexpected results");
     duration += results[i].getDuration();
+
+    hasError = hasError || results[i].getKind() < TestExecutionResult::kSuccess;
   }
 
   // Return an execution result for the parent suite, with the children results.
-  bool hasError = results.back().getKind() != TestExecutionResult::kSuccess;
   return TestExecutionResult(hasError ? TestExecutionResult::kExecutionError
                                       : TestExecutionResult::kSuccess,
                              tests[0].getTestID().withTest(""), duration,
@@ -978,7 +993,8 @@ std::optional<TestExecutionResult> TestExecutionInstance::checkExecution() {
 /// Execute the given set of tests, returning the result.
 static MaybeResolvedResult
 executeTests(ArrayRef<Test> tests, const std::filesystem::path &entrypointPath,
-             ArrayRef<std::string> additionalImportPaths) {
+             ArrayRef<std::string> additionalImportPaths,
+             const std::optional<llvm::Regex> &filter) {
   auto emitInitError = [&](const Twine &error) {
     return processTestExecutorResults(tests, emitTestInitError(tests, error));
   };
@@ -990,6 +1006,20 @@ executeTests(ArrayRef<Test> tests, const std::filesystem::path &entrypointPath,
                          Twine(config.getError()));
   StringRef testExecutorPath = config->getTestExecutorPath();
 
+  std::vector<Test> filteredTests;
+  SmallVector<TestID> skippedTests;
+  for (const Test &test : tests) {
+    if (filter && !filter->match(test.getTestID().strref())) {
+      skippedTests.push_back(test.getTestID());
+      continue;
+    }
+
+    filteredTests.push_back(test);
+  }
+
+  if (filteredTests.empty())
+    return processTestExecutorResults(tests, emitTestSkip(tests));
+
   // Create a input file for the test executor and write the set of tests to
   // execute to the input file.
   auto inFileOr = createTempOutputFile();
@@ -997,7 +1027,7 @@ executeTests(ArrayRef<Test> tests, const std::filesystem::path &entrypointPath,
     return emitInitError(inFileOr.getError());
   {
     llvm::raw_fd_ostream inOS(inFileOr->getFD(), /*shouldClose=*/false);
-    llvm::json::OStream(inOS).value(llvm::json::Array(tests));
+    llvm::json::OStream(inOS).value(filteredTests);
   }
 
   // Create a temporary output file for the test executor.
@@ -1030,8 +1060,8 @@ executeTests(ArrayRef<Test> tests, const std::filesystem::path &entrypointPath,
 
   // Build an unresolved result that waits for the process to complete.
   auto instance = std::make_unique<TestExecutionInstance>(
-      tests, std::move(*outFileOr), outFile, processInfo);
-  return MaybeResolvedResult([instance = std::move(instance)]() {
+      filteredTests, std::move(*outFileOr), outFile, processInfo);
+  return MaybeResolvedResult([instance = std::move(instance), skippedTests]() {
     return instance->checkExecution();
   });
 }
@@ -1040,7 +1070,8 @@ executeTests(ArrayRef<Test> tests, const std::filesystem::path &entrypointPath,
 static MaybeResolvedResult
 executeDocTest(AsyncRT::Runtime &runtime, const Test &test,
                const std::filesystem::path &entrypointPath,
-               ArrayRef<std::string> additionalImportPaths) {
+               ArrayRef<std::string> additionalImportPaths,
+               const std::optional<llvm::Regex> &filter) {
   // Doc tests are unique compare to unit tests in that they are execution
   // dependent on the previous tests in the same suite. As a result, we need to
   // execute all of the previous tests in the suite together with `test`.
@@ -1051,9 +1082,11 @@ executeDocTest(AsyncRT::Runtime &runtime, const Test &test,
   }
   // If this is the first test, execute it directly.
   if (index == 0)
-    return executeTests(test, entrypointPath, additionalImportPaths);
+    return executeTests(test, entrypointPath, additionalImportPaths, filter);
 
   // Pull in the parent doc test suite.
+  // We don't need to pass a filter string here - we've already done filtering
+  // as part of test discovery.
   ErrorOr<std::optional<Test>> parentTestOr = Test::discoverFromID(
       runtime, test.getTestID().withTest(""), additionalImportPaths);
   if (parentTestOr || !*parentTestOr ||
@@ -1062,35 +1095,36 @@ executeDocTest(AsyncRT::Runtime &runtime, const Test &test,
         test.getTestID(), "id does not correspond to a valid doc test");
   const Test &parentTest = **parentTestOr;
   return executeTests(parentTest.getChildren().take_front(index + 1),
-                      entrypointPath, additionalImportPaths);
+                      entrypointPath, additionalImportPaths, filter);
 }
 
 /// Execute the given test or suite, returning the result.
 static MaybeResolvedResult
 executeTestOrSuite(AsyncRT::Runtime &runtime, const Test &test,
                    const std::filesystem::path &entrypointPath,
-                   ArrayRef<std::string> additionalImportPaths) {
+                   ArrayRef<std::string> additionalImportPaths,
+                   const std::optional<llvm::Regex> &filter) {
   // If this is a test, execute it directly.
   const TestID &testID = test.getTestID();
   if (testID.getTest()) {
     if (testID.getTestSuite() && testID.getTestSuite()->ends_with("__doc__"))
       return executeDocTest(runtime, test, entrypointPath,
-                            additionalImportPaths);
-    return executeTests(test, entrypointPath, additionalImportPaths);
+                            additionalImportPaths, filter);
+    return executeTests(test, entrypointPath, additionalImportPaths, filter);
   }
   // If this is a doc test suite, we can execute all of the tests together
   // (given that doc tests have execution dependent on the previous tests in the
   // same suite).
   if (testID.getTestSuite() && testID.getTestSuite()->ends_with("__doc__"))
     return executeTests(test.getChildren(), entrypointPath,
-                        additionalImportPaths);
+                        additionalImportPaths, filter);
 
   // Otherwise, this is a suite. Execute each of the children, and collect the
   // results.
   std::vector<MaybeResolvedResult> results;
   for (const Test &child : test.getChildren()) {
     results.push_back(executeTestOrSuite(runtime, child, entrypointPath,
-                                         additionalImportPaths));
+                                         additionalImportPaths, filter));
   }
 
   auto now = std::chrono::steady_clock::now();
@@ -1121,12 +1155,13 @@ executeTestOrSuite(AsyncRT::Runtime &runtime, const Test &test,
 TestExecutionResult
 Test::execute(AsyncRT::Runtime &runtime,
               const std::filesystem::path &entrypointPath,
-              ArrayRef<std::string> additionalImportPaths) const {
+              ArrayRef<std::string> additionalImportPaths,
+              const std::optional<llvm::Regex> &filter) const {
   // Execute this test and wait for it to resolve. We don't block here because
   // resolution of the result may involve communicating with multiple
   // test-executor processes.
-  MaybeResolvedResult result =
-      executeTestOrSuite(runtime, *this, entrypointPath, additionalImportPaths);
+  MaybeResolvedResult result = executeTestOrSuite(
+      runtime, *this, entrypointPath, additionalImportPaths, filter);
   while (failed(result.resolve()))
     ;
   return result.takeResolvedResult();

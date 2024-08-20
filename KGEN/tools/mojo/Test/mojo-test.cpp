@@ -22,6 +22,7 @@
 #include "llvm/Option/ArgList.h"
 #include "llvm/Option/OptTable.h"
 #include "llvm/Support/Program.h"
+#include "llvm/Support/Regex.h"
 #include "llvm/Support/SourceMgr.h"
 
 using namespace M;
@@ -301,6 +302,18 @@ static int test(const State &subcommandState) {
     buildArgStrings.push_back(testIDFilePath.string());
   }
 
+  std::optional<llvm::Regex> filterRegex = std::nullopt;
+  if (args.hasArg(options::OPT_filter)) {
+    StringRef filterString = args.getLastArgValue(options::OPT_filter);
+
+    filterRegex = llvm::Regex(filterString.data(), llvm::Regex::IgnoreCase);
+
+    std::string error;
+    if (!filterRegex->isValid(error))
+      return state.reportError(llvm::formatv("Invalid regex pattern `{0}`: {1}",
+                                             filterString, error));
+  }
+
   AsyncRT::Runtime &runtime = *ctx->get<AsyncRT::Runtime>();
   ErrorOr<std::optional<Test>> testOr =
       Test::discoverFromID(runtime, testID, additionalImportPaths);
@@ -308,25 +321,21 @@ static int test(const State &subcommandState) {
     return state.reportError(testOr.getError());
   std::optional<Test> test = std::move(*testOr);
 
-  // Utility functor used to format the output for a given result.
-  auto emitOutput = [&](const auto &result) {
-    switch (state.diagnosticFormat) {
-    case DiagnosticFormat::Text:
-      result.print(llvm::outs());
-      break;
-    case DiagnosticFormat::JSON:
-      llvm::json::OStream jsonOS(llvm::outs(), /*IndentSize=*/2);
-      jsonOS.value(toJSON(result));
-      break;
-    }
-    llvm::outs() << "\n";
-  };
-
   // If we're only collecting, exit early.
   if (args.hasArg(options::OPT_collect_only)) {
     if (!test)
       return 0;
-    emitOutput(*test);
+
+    switch (state.diagnosticFormat) {
+    case DiagnosticFormat::Text:
+      test->print(llvm::outs(), filterRegex);
+      break;
+    case DiagnosticFormat::JSON:
+      llvm::json::OStream jsonOS(llvm::outs(), /*IndentSize=*/2);
+      jsonOS.value(toJSON(*test));
+      break;
+    }
+    llvm::outs() << "\n";
     return 0;
   }
 
@@ -388,9 +397,20 @@ static int test(const State &subcommandState) {
   }
 
   // Execute the test and print the results.
-  TestExecutionResult result =
-      test->execute(runtime, entrypointPath, additionalImportPaths);
-  emitOutput(result);
+  TestExecutionResult result = test->execute(
+      runtime, entrypointPath, additionalImportPaths, filterRegex);
+
+  switch (state.diagnosticFormat) {
+  case DiagnosticFormat::Text:
+    result.print(llvm::outs());
+    break;
+  case DiagnosticFormat::JSON:
+    llvm::json::OStream jsonOS(llvm::outs(), /*IndentSize=*/2);
+    jsonOS.value(toJSON(result));
+    break;
+  }
+  llvm::outs() << "\n";
+
   return result.getKind() == TestExecutionResult::kSuccess ? 0 : 1;
 }
 

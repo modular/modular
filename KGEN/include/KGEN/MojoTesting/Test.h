@@ -14,6 +14,7 @@
 #include "llvm/ADT/StringMap.h"
 #include "llvm/ADT/Twine.h"
 #include "llvm/Support/JSON.h"
+#include "llvm/Support/Regex.h"
 #include <chrono>
 #include <filesystem>
 
@@ -248,7 +249,8 @@ public:
   // Display
 
   /// Print the test and its children to the given stream.
-  void print(raw_ostream &os) const;
+  void print(raw_ostream &os,
+             const std::optional<llvm::Regex> &filter = std::nullopt) const;
 
   //===--------------------------------------------------------------------===//
   // Execution
@@ -259,7 +261,8 @@ public:
   TestExecutionResult
   execute(AsyncRT::Runtime &runtime,
           const std::filesystem::path &entrypointPath,
-          ArrayRef<std::string> additionalImportPaths) const;
+          ArrayRef<std::string> additionalImportPaths,
+          const std::optional<llvm::Regex> &filter = std::nullopt) const;
 
 private:
   friend bool fromJSON(const llvm::json::Value &value, Test &result,
