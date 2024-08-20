@@ -37,7 +37,7 @@ struct DriverLibrary:
     alias destroy_device_fn_sig = fn (Self.device_type) -> None
     var destroy_device_fn: Self.destroy_device_fn_sig
 
-    alias create_cpu_device_fn_sig = fn (Int32) -> Self.device_type
+    alias create_cpu_device_fn_sig = fn (Int) -> Self.device_type
     var create_cpu_device_fn: Self.create_cpu_device_fn_sig
 
     alias create_cuda_device_fn_sig = fn (Int) -> Self.device_type
