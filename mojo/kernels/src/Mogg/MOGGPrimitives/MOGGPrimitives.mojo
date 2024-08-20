@@ -24,7 +24,7 @@ from gpu.host import (
     KernelProfilingInfo,
 )
 from gpu.host.memory import _free, _malloc
-from memory import UnsafePointer
+from memory import UnsafePointer, memcpy
 from memory.memory import _malloc as _malloc_cpu
 from MOGGIntList import IntList
 from register import *
@@ -619,6 +619,112 @@ fn mgp_buffer_slice(
     buffer: NDBuffer[DType.uint8, 1], offset: Int, size: Int
 ) -> NDBuffer[DType.uint8, 1]:
     return NDBuffer[DType.uint8, 1](buffer.data.offset(offset), size)
+
+
+@mogg_register("mgp.buffer.device_to_host")
+@always_inline
+fn mgp_buffer_device_to_host[
+    aOtherRuntimeSlot: UInt64,
+    bHostRuntimeSlot: UInt64,
+    cOtherDevice: StringLiteral,
+    dHostDevice: StringLiteral,
+](
+    in_chain: Int,
+    ctx: StateContext,
+    dev_buf: NDBuffer[DType.uint8, 1],
+    host_buf: NDBuffer[DType.uint8, 1],
+    call_ctx: MojoCallContextPtr,
+) raises -> Int:
+    @parameter
+    if (dHostDevice == "cpu") and (cOtherDevice == "cuda"):
+        call_ctx.get_device_context().enqueue_copy_from_device[DType.uint8](
+            host_buf.data,
+            DeviceBuffer[DType.uint8](
+                call_ctx.get_device_context(),
+                dev_buf.data,
+                dev_buf.size(),
+                owning=False,
+            ),
+        )
+    else:
+        raise Error(
+            "mgp.buffer.device_to_host must be scheduled on cuda device"
+        )
+    return 0
+
+
+@mogg_register("mgp.buffer.device_to_device")
+@always_inline
+fn mgp_buffer_device_to_device[
+    aSrcRuntimeSlot: UInt64,
+    bDstRuntimeSlot: UInt64,
+    cSrcDevice: StringLiteral,
+    dDstDevice: StringLiteral,
+](
+    in_chain: Int,
+    ctx: StateContext,
+    src_buf: NDBuffer[DType.uint8, 1],
+    dst_buf: NDBuffer[DType.uint8, 1],
+    call_ctx: MojoCallContextPtr,
+) raises -> Int:
+    @parameter
+    if cSrcDevice == dDstDevice == "cuda":
+        call_ctx.get_device_context().enqueue_copy_device_to_device[
+            DType.uint8
+        ](
+            DeviceBuffer[DType.uint8](
+                call_ctx.get_device_context(),
+                dst_buf.data,
+                dst_buf.size(),
+                owning=False,
+            ),
+            DeviceBuffer[DType.uint8](
+                call_ctx.get_device_context(),
+                src_buf.data,
+                src_buf.size(),
+                owning=False,
+            ),
+        )
+    elif cSrcDevice == dDstDevice == "cpu":
+        memcpy(dst_buf.data, src_buf.data, src_buf.size())
+    else:
+        raise Error(
+            "mgp.buffer.device_to_device can be scheduled between same device"
+            " types (cpu-cpu) or (cuda-cuda)"
+        )
+    return 0
+
+
+@mogg_register("mgp.buffer.host_to_device")
+@always_inline
+fn mgp_buffer_host_to_device[
+    aHostRuntimeSlot: UInt64,
+    bOtherRuntimeSlot: UInt64,
+    cHostDevice: StringLiteral,
+    dOtherDevice: StringLiteral,
+](
+    in_chain: Int,
+    ctx: StateContext,
+    host_buf: NDBuffer[DType.uint8, 1],
+    dev_buf: NDBuffer[DType.uint8, 1],
+    call_ctx: MojoCallContextPtr,
+) raises -> Int:
+    @parameter
+    if (dOtherDevice == "cuda") and (cHostDevice == "cpu"):
+        call_ctx.get_device_context().enqueue_copy_to_device[DType.uint8](
+            DeviceBuffer[DType.uint8](
+                call_ctx.get_device_context(),
+                dev_buf.data,
+                dev_buf.size(),
+                owning=False,
+            ),
+            host_buf.data,
+        )
+    else:
+        raise Error(
+            "mgp.buffer.host_to_device must be scheduled on cuda device"
+        )
+    return 0
 
 
 # ===----------------------------------------------------------------------===#
