@@ -4,6 +4,8 @@
 #
 # ===----------------------------------------------------------------------=== #
 """Test max.driver Tensors."""
+from itertools import product
+
 import max.driver as md
 import pytest
 from max.dtype import DType
@@ -101,18 +103,26 @@ def test_drop_dimensions():
 
 def test_negative_step():
     tensor = md.Tensor((3, 3), DType.int32)
-    elt = 0
-    for x in range(3):
-        for y in range(3):
-            tensor[x, y] = elt
-            elt += 1
-    elt -= 1
+    tensor[0, 0] = 1
+    tensor[0, 1] = 2
+    tensor[0, 2] = 3
+    tensor[1, 0] = 4
+    tensor[1, 1] = 5
+    tensor[1, 2] = 6
+    tensor[2, 0] = 7
+    tensor[2, 1] = 8
+    tensor[2, 2] = 9
     # Tensors should support slices with negative steps.
     revtensor = tensor[::-1, ::-1]
-    for x in range(3):
-        for y in range(3):
-            assert revtensor[x, y].item() == elt
-            elt -= 1
+    assert revtensor[0, 0].item() == 9
+    assert revtensor[0, 1].item() == 8
+    assert revtensor[0, 2].item() == 7
+    assert revtensor[1, 0].item() == 6
+    assert revtensor[1, 1].item() == 5
+    assert revtensor[1, 2].item() == 4
+    assert revtensor[2, 0].item() == 3
+    assert revtensor[2, 1].item() == 2
+    assert revtensor[2, 2].item() == 1
 
 
 def test_out_of_bounds_slices():
@@ -133,3 +143,46 @@ def test_one_dimensional_tensor():
 
     for i in range(i):
         assert tensor[i].item() == i
+
+
+def test_contiguous_tensor():
+    # Initialized tensors should be contiguous, and tensor slices should not be.
+    tensor = md.Tensor((3, 3), DType.int32)
+    assert tensor.is_contiguous
+    val = 1
+    for x, y in product(range(3), range(3)):
+        tensor[x, y] = val
+        val += 1
+
+    subtensor = tensor[:2, :2]
+    assert not subtensor.is_contiguous
+
+    # There's a special case where reversed slices (which are "technically"
+    # contiguous) should not be considered as such.
+    assert not tensor[::-1, ::-1].is_contiguous
+
+    subsubtensor = tensor[:2, :2]
+    assert subsubtensor.shape == (2, 2)
+    cont_tensor = subsubtensor.contiguous()
+    assert cont_tensor.shape == (2, 2)
+    assert cont_tensor.is_contiguous
+    assert cont_tensor[0, 0].item() == 1
+    assert cont_tensor[0, 1].item() == 2
+    assert cont_tensor[1, 0].item() == 4
+    assert cont_tensor[1, 1].item() == 5
+
+
+def test_modify_contiguous_tensor():
+    # Modifications made to the original tensor should not be reflected
+    # on the contiguous copy, and vice-versa.
+    tensor = md.Tensor((3, 3), DType.int32)
+    for x, y in product(range(3), range(3)):
+        tensor[x, y] = 1
+
+    cont_tensor = tensor.contiguous()
+
+    cont_tensor[1, 1] = 22
+    assert tensor[1, 1].item() == 1
+
+    tensor[2, 2] = 25
+    assert cont_tensor[2, 2].item() == 1
