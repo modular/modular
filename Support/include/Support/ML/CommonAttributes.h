@@ -14,6 +14,16 @@
 namespace M {
 
 //===----------------------------------------------------------------------===//
+// MGP::ModelOp constants
+//===----------------------------------------------------------------------===//
+
+/// Number of implicit init args that aren't device contexts.
+constexpr int kMgpModelNumFixedImplicitInitArgs = 1;
+
+/// Number of implicit execute args that aren't device contexts.
+constexpr int kMgpModelNumFixedImplicitExecArgs = 3;
+
+//===----------------------------------------------------------------------===//
 // MGP::ModelOp 'extra' attributes
 //===----------------------------------------------------------------------===//
 
