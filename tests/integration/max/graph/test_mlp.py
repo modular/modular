@@ -3,80 +3,57 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-import hypothesis
-import numpy as np
-import torch
+from conftest import modular_vs_torch_test
+import pytest
 import torch.nn as nn
 import torch.nn.functional as F
-from hypothesis import strategies as st
-from hypothesis.extra import numpy as nps
-from hypothesis.strategies import integers, lists, shared, tuples
 from llama3.mlp import MLP, Linear
 from max.graph import DType, Graph, TensorType
+
+
+def torch_linear(weight, **kwargs):
+    linear = nn.Linear(*weight.shape, **kwargs)
+    linear.weight = nn.Parameter(weight)
+    return linear
 
 
 class TorchMLP(nn.Module):
     def __init__(self, w1, w2, w3):
         super().__init__()
-        self.gate_proj = nn.Linear(w1.shape[0], w1.shape[1], bias=False)
-        self.gate_proj.weight = nn.Parameter(w1)
-        self.down_proj = nn.Linear(w2.shape[0], w2.shape[1], bias=False)
-        self.down_proj.weight = nn.Parameter(w2)
-        self.up_proj = nn.Linear(w3.shape[0], w3.shape[1], bias=False)
-        self.up_proj.weight = nn.Parameter(w3)
+        self.gate_proj = torch_linear(w1, bias=False)
+        self.down_proj = torch_linear(w2, bias=False)
+        self.up_proj = torch_linear(w3, bias=False)
 
     def forward(self, x):
         return self.down_proj(F.silu(self.gate_proj(x)) * self.up_proj(x))
 
 
-# GRA-855, Currently batched matmul is limited to tensors with rank less than 4
-header = shared(
-    lists(integers(min_value=1, max_value=4), min_size=3, max_size=4),
-    key="shared",
+@pytest.mark.parametrize(
+    "input_type",
+    [
+        TensorType(DType.float32, ["dim"]),
+        TensorType(DType.float32, ["batch", "dim"]),
+        TensorType(DType.float32, ["x", "y", "z", "dim"]),
+        # TODO(GRA-855): batched matmul rank > 4
+        # TensorType(DType.float32, ["a", "x", "y", "z", "dim"]),
+        TensorType(DType.float64, ["dim"]),
+    ],
 )
+def test_mlp(session, input_type: TensorType):
+    dim = input_type.shape[-1]
+    w1_type = TensorType(input_type.dtype, [dim, "hidden_dim"])
+    w2_type = TensorType(input_type.dtype, ["hidden_dim", dim])
+    w3_type = w1_type
+    with Graph(
+        "mlp", input_types=[input_type, w1_type, w2_type, w3_type]
+    ) as graph:
+        x, w1, w2, w3 = graph.inputs
+        mlp = MLP(Linear(w1), Linear(w2), Linear(w3))
+        graph.output(mlp(x))
 
-hidden_state_size = shared(integers(min_value=1, max_value=6), key="hidden")
-intermediate_state_size = shared(
-    integers(min_value=1, max_value=6), key="intermediate"
-)
-output_size = shared(integers(min_value=1, max_value=6), key="output_size")
-
-
-@hypothesis.given(
-    x=nps.arrays(
-        dtype=np.float32,
-        shape=tuples(
-            header, lists(hidden_state_size, min_size=1, max_size=1)
-        ).map(lambda x: x[0] + x[1]),
-    ),
-    w1=nps.arrays(
-        dtype=np.float32,
-        shape=tuples(hidden_state_size, intermediate_state_size),
-    ),
-    w2=nps.arrays(
-        dtype=np.float32,
-        shape=tuples(intermediate_state_size, output_size),
-    ),
-    w3=nps.arrays(
-        dtype=np.float32,
-        shape=tuples(hidden_state_size, intermediate_state_size),
-    ),
-)
-@hypothesis.settings(max_examples=16, deadline=None)
-def test_mlp(session, x, w1, w2, w3):
-    # Initialize Max MLP
-    graph = Graph(
-        "mlp",
-        MLP(Linear(w1), Linear(w2), Linear(w3)),
-        input_types=[TensorType(dtype=DType.float32, shape=x.shape)],
-    )
-
-    compiled = session.load(graph)
-
-    # Initialize Pytorch MLP
-    torch_mlp = TorchMLP(*[torch.from_numpy(v) for v in [w1.T, w2.T, w3.T]])
-
-    # Execute two options
-    generated = compiled.execute(input0=x)
-    expected = torch_mlp(torch.from_numpy(x)).detach().numpy()
-    np.testing.assert_almost_equal(generated["output0"], expected, decimal=4)
+        modular_vs_torch_test(
+            session,
+            graph,
+            # Transpose weights to match our Linear semantics.
+            (lambda x, w1, w2, w3: TorchMLP(w1.T, w2.T, w3.T)(x)),
+        )
