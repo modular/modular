@@ -35,7 +35,6 @@ from gpu.tensor_ops import (
     tc_reduce,
     tc_reduce_gevm_4x,
     tc_reduce_gevm_8x,
-    tc_reduce_vector,
 )
 from layout._utils import ManagedLayoutTensor, gpu_free, gpu_managed_alloc
 from layout.int_tuple import IntTuple
@@ -369,6 +368,11 @@ struct ReductionMethod:
         return self != other
 
 
+@parameter
+fn _reduce_add(x: SIMD, y: __type_of(x)) -> __type_of(x):
+    return x + y
+
+
 # Matrix-Column Vector Multiplication using scalar arithmetic
 fn gemv_kernel[
     c_type: DType,
@@ -389,10 +393,11 @@ fn gemv_kernel[
 ):
     var tid = BlockIdx.x() * BlockDim.x() + ThreadIdx.x()
     var warp_id = tid // WARP_SIZE
-    var accum = Scalar[s_type]()
 
     if warp_id >= m:
         return
+
+    var accum = Scalar[s_type](0)
 
     # Every warp processes a single row of the resultant vector
     for i in range(ceildiv(k, WARP_SIZE)):
@@ -405,17 +410,9 @@ fn gemv_kernel[
 
     @parameter
     if reduction_method is ReductionMethod.WARP:
-
-        @parameter
-        fn reduce_add[
-            type: DType,
-            width: Int,
-        ](x: SIMD[type, width], y: SIMD[type, width]) -> SIMD[type, width]:
-            return x + y
-
-        accum = warp_reduce[shuffle_down, reduce_add](accum)
+        accum = warp_reduce[shuffle_down, _reduce_add](accum)
     else:
-        accum = tc_reduce[s_type, a_type](accum.cast[a_type]())
+        accum = tc_reduce[s_type](accum.cast[a_type]())
 
     if lane_id() == 0:
 
@@ -467,7 +464,6 @@ fn gemv_kernel_vector[
     alias align_b = alignof[SIMD[b_type, simd_width]]()
     var tid = BlockIdx.x() * BlockDim.x() + ThreadIdx.x()
     var warp_id = tid // WARP_SIZE
-    var accum = Scalar[s_type]()
 
     var a_ptr = _mark_as_exclusive(
         a.data + (warp_id * a.dim[1]()) + lane_id() * simd_width
@@ -503,21 +499,13 @@ fn gemv_kernel_vector[
         idx += step
         a_ptr += step
 
+    var accum = Scalar[s_type]()
+
     @parameter
     if reduction_method is ReductionMethod.WARP:
-
-        @parameter
-        fn reduce_add[
-            type: DType,
-            width: Int,
-        ](x: SIMD[type, width], y: SIMD[type, width]) -> SIMD[type, width]:
-            return x + y
-
-        accum = warp_reduce[shuffle_down, reduce_add](local_accum.reduce_add())
+        accum = warp_reduce[shuffle_down, _reduce_add](local_accum.reduce_add())
     else:
-        accum = tc_reduce_vector[s_type, a_type, simd_width](
-            local_accum.cast[a_type]()
-        )
+        accum = tc_reduce[s_type](local_accum.cast[a_type]())
 
     if lane_id() == 0:
 
