@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-import compiler
+import compiler_internal as compiler
 from buffer import NDBuffer
 from buffer.dimlist import Dim, DimList
 from nn.mha import fused_attention as cpu_fused_attention_impl
