@@ -11,7 +11,7 @@ import torch.nn.functional as F
 from hypothesis import strategies as st
 from hypothesis.extra import numpy as nps
 from hypothesis.strategies import integers, lists, shared, tuples
-from llama3.mlp import MLP
+from llama3.mlp import MLP, Linear
 from max.graph import DType, Graph, TensorType
 
 
@@ -67,7 +67,7 @@ def test_mlp(session, x, w1, w2, w3):
     # Initialize Max MLP
     graph = Graph(
         "mlp",
-        MLP(w1, w2, w3),
+        MLP(Linear(w1), Linear(w2), Linear(w3)),
         input_types=[TensorType(dtype=DType.float32, shape=x.shape)],
     )
 
