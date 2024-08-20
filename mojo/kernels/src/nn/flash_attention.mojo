@@ -691,12 +691,11 @@ struct _FlashAttention[
             ]().stack_allocation()
 
             var packed_ptr = UnsafePointer[
-                Scalar[type]
-            ]() if seq_len == 1 else UnsafePointer[Scalar[type]].alloc[
-                alignment = alignof[SIMD[type, simd_width]]()
-            ](
-                packed_size,
-            )
+                Scalar[type],
+                alignment = alignof[SIMD[type, simd_width]](),
+            ]()
+            if seq_len != 1:
+                packed_ptr = packed_ptr.alloc(packed_size)
 
             var block_range = partition_work(
                 task_id, num_threads, work_count, 1
