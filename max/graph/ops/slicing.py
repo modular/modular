@@ -5,8 +5,14 @@
 # ===----------------------------------------------------------------------=== #
 """Slicing ops."""
 
+import sys
 import typing
-from typing import TYPE_CHECKING, Iterable, TypeGuard, Union
+from typing import TYPE_CHECKING, Iterable, Union
+
+if sys.version_info >= (3, 10):
+    from typing import TypeGuard
+else:
+    from typing_extensions import TypeGuard
 
 if TYPE_CHECKING:
     # EllipsisType was added in 3.10, but we support down to 3.9.

@@ -11,7 +11,13 @@ import functools
 import math
 import re
 from dataclasses import dataclass
-from typing import Any, Iterable, TypeGuard, Union
+import sys
+from typing import Any, Iterable, Union
+
+if sys.version_info >= (3, 10):
+    from typing import TypeGuard
+else:
+    from typing_extensions import TypeGuard
 
 import numpy as np
 from max import _graph, mlir
