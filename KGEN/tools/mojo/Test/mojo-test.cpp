@@ -110,24 +110,29 @@ static ErrorOr<std::string> getMojoDriver() {
   return driver.str();
 }
 
-static std::vector<TestID> filterUnitTests(const Test &root) {
+/// Collects a flat list of unit tests from a test hierarchy. In the process,
+/// also searches for the presence of doctests.
+static std::pair<std::vector<TestID>, bool> filterUnitTests(const Test &root) {
   std::vector<TestID> unitTests;
-  std::function<void(const Test &test)> visit = [&unitTests,
-                                                 &visit](const Test &test) {
-    TestID id = test.getTestID();
-    if (id.getTest()) {
-      if (!id.getTestSuite()) {
-        unitTests.push_back(std::move(id));
-      }
-    } else {
-      for (const Test &child : test.getChildren()) {
-        visit(child);
-      }
-    }
-  };
+  bool hasDocTest = false;
+  std::function<void(const Test &test)> visit =
+      [&unitTests, &visit, &hasDocTest](const Test &test) {
+        TestID id = test.getTestID();
+        if (id.getTest()) {
+          if (!id.getTestSuite()) {
+            unitTests.push_back(std::move(id));
+          } else {
+            hasDocTest = true;
+          }
+        } else {
+          for (const Test &child : test.getChildren()) {
+            visit(child);
+          }
+        }
+      };
   visit(root);
 
-  return unitTests;
+  return {unitTests, hasDocTest};
 }
 
 static ErrorOr<TempFile> generateEntrypointSource(ArrayRef<TestID> unitTests) {
@@ -344,7 +349,7 @@ static int test(const State &subcommandState) {
     return 0;
   }
 
-  std::vector<TestID> unitTests = filterUnitTests(*test);
+  auto [unitTests, hasDocTest] = filterUnitTests(*test);
   ErrorOr<TempFile> entrypointSource = generateEntrypointSource(unitTests);
   if (entrypointSource.isError())
     return state.reportError(entrypointSource.getError());
@@ -386,6 +391,10 @@ static int test(const State &subcommandState) {
   }
 
   if (args.hasArg(options::OPT_debug)) {
+    if (hasDocTest)
+      llvm::errs() << "WARNING: Doctests were discovered, but will not be "
+                      "executed when `--debug` is passed.\n";
+
     std::vector<std::string> debugOptions = extractOptionsAndValues(
         state, options::OPT_DebuggerOptionGroup, options::OPT_RPCOptionGroup);
     ErrorOrSuccess debugResult = launchDebug(debugOptions, entrypointPath);
