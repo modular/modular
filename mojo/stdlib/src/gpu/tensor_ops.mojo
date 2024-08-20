@@ -48,8 +48,19 @@ fn tc_reduce_gevm_4x[
 
 
 @always_inline("nodebug")
-fn tc_reduce_vector[
-    out_type: DType, in_type: DType, simd_width: Int
+fn tc_reduce[
+    in_type: DType, simd_width: Int, //, out_type: DType
+](val: SIMD[in_type, simd_width]) -> Scalar[out_type]:
+    @parameter
+    if simd_width == 1:
+        return _tc_reduce_scalar[out_type](rebind[Scalar[in_type]](val))
+    else:
+        return _tc_reduce_vector[out_type](val)
+
+
+@always_inline("nodebug")
+fn _tc_reduce_vector[
+    in_type: DType, simd_width: Int, //, out_type: DType
 ](val: SIMD[in_type, simd_width]) -> Scalar[out_type]:
     """Using Tensor Cores to do warp level reduction."""
 
@@ -116,7 +127,7 @@ fn tc_reduce_vector[
 
             @parameter
             for i in range(0, simd_width, 8):
-                tmp[i // 8] = tc_reduce_vector[out_type](
+                tmp[i // 8] = _tc_reduce_vector[out_type](
                     val.slice[8, offset=i]()
                 )
 
@@ -131,8 +142,8 @@ fn tc_reduce_vector[
 
 
 @always_inline("nodebug")
-fn tc_reduce[
-    out_type: DType, in_type: DType
+fn _tc_reduce_scalar[
+    in_type: DType, //, out_type: DType
 ](val: Scalar[in_type]) -> Scalar[out_type]:
     """Using Tensor Cores to do warp level reduction."""
 
