@@ -286,8 +286,8 @@ fn test_custom() raises:
     alias N = 1024
     alias alignment = 64
     alias type = DType.int32
-    var x = UnsafePointer[Scalar[type]].alloc(N, alignment=alignment)
-    var y = UnsafePointer[Scalar[type]].alloc(N, alignment=alignment)
+    var x = UnsafePointer[Scalar[type], alignment=alignment].alloc(N)
+    var y = UnsafePointer[Scalar[type], alignment=alignment].alloc(N)
     randint[type](x, N, 0, 255)
     randint[type](y, N, 0, 255)
 
