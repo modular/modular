@@ -8,3 +8,12 @@ filegroup(
         "**/*.py",
     ]),
 )
+
+filegroup(
+    name = "docs",
+    srcs = [
+        "engine.rst",
+        "index.rst",
+    ],
+    visibility = ["//visibility:public"],
+)
