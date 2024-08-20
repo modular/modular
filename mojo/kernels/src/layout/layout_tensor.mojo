@@ -1995,10 +1995,6 @@ struct LayoutTensor[
                 self.ptr[i] = val
         return self
 
-    # TODO: Will be deprecated
-    fn print(self):
-        print(self)
-
     @no_inline
     fn __str__(self) -> String:
         return String.format_sequence(self)
@@ -2040,6 +2036,8 @@ struct LayoutTensor[
                 vec[idx] = self.ptr.load(vec_offset + element_offset)
 
             writer.write(vec)
+            if i != layout.size() - 1:
+                writer.write(" ")
 
 
 fn stack_allocation_like[
