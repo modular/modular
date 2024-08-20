@@ -9,4 +9,4 @@ import max.driver as md
 
 def test_cpu_device():
     cpu = md.CPU()
-    assert "CPU" in str(cpu)
+    assert "cpu" in str(cpu)
