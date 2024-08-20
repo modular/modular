@@ -1,13 +1,10 @@
-load("@bazel_skylib//rules:copy_file.bzl", "copy_file")
 load("@bazel_skylib//rules:write_file.bzl", "write_file")
-load("@build_bazel_apple_support//rules:apple_genrule.bzl", "apple_genrule")
 load(
     "//bazel:api.bzl",
     "copy_files",
     "gentbl_cc_library",
     "gentbl_mlir_dialect",
     "gentbl_modular_passes",
-    "modular_cc_binary",
     "modular_cc_library",
     "modular_cc_test",
     "modular_shared_library",
@@ -1320,89 +1317,6 @@ modular_cc_library(
     ],
 )
 
-genrule(
-    name = "gen_exports_file_linux",
-    srcs = ["@llvm-project//lldb:source/API/liblldb-private.exports"],
-    outs = ["exports_linux.txt"],
-    cmd = """
-cat > $(OUTS) <<EOF
-{
-  global:
-    $$(sed 's/$$/;/g' $(SRCS))
-};
-EOF
-""",
-)
-
-genrule(
-    name = "gen_exports_file_macos",
-    srcs = ["@llvm-project//lldb:source/API/liblldb-private.exports"],
-    outs = ["exports_macos.txt"],
-    cmd = "sed 's/^/_/g' $(SRCS) > $(OUTS)",
-)
-
-# TODO: Delete once https://github.com/llvm/llvm-project/pull/91549 is in
-modular_cc_binary(
-    name = "lldb19.0.0git",
-    additional_linker_inputs = select({
-        "@platforms//os:linux": [
-            ":gen_exports_file_linux",
-        ],
-        "@platforms//os:macos": [
-            ":gen_exports_file_macos",
-        ],
-        "//conditions:default": [],
-    }),
-    linkopts = select({
-        "@platforms//os:linux": [
-            "-Wl,--export-dynamic-symbol-list=$(location :gen_exports_file_linux)",
-        ],
-        "@platforms//os:macos": [
-            "-Wl,-exported_symbols_list,$(location :gen_exports_file_macos)",
-        ],
-        "//conditions:default": [],
-    }),
-    linkshared = True,
-    deps = [
-        "@llvm-project//lldb:API",
-        "@llvm-project//lldb:Interpreter",
-    ],
-)
-
-cc_import(
-    name = "liblldb.wrapper",
-    shared_library = "lldb19.0.0git",
-    visibility = [":__subpackages__"],
-)
-
-# TODO: Remove once https://github.com/llvm/llvm-project/pull/91789 is in
-apple_genrule(
-    name = "debugserver_signed",
-    srcs = ["@llvm-project//lldb:debugserver"],
-    outs = ["debugserver"],
-    cmd = "cp $(SRCS) $(OUTS) && xcrun codesign -f -s - --entitlements $(location //:third-party/llvm-project/lldb/tools/debugserver/resources/debugserver-macosx-entitlements.plist) $(OUTS)",
-    target_compatible_with = select({
-        "@platforms//os:macos": [],
-        "//conditions:default": ["@platforms//:incompatible"],
-    }),
-    tools = [
-        "//:third-party/llvm-project/lldb/tools/debugserver/resources/debugserver-macosx-entitlements.plist",
-    ],
-)
-
-copy_file(
-    name = "mojo-lldb-dap",
-    src = "@llvm-project//lldb/tools/lldb-dap",
-    out = "mojo-lldb-dap",
-    visibility = ["//visibility:public"],
-)
-
-copy_file(
-    name = "lldb-server",
-    src = "@llvm-project//lldb:lldb-server",
-    out = "lldb-server",
-)
-
 copy_files(
     name = "copy-lldb-visualizers",
     srcs = [
@@ -1419,29 +1333,14 @@ copy_files(
 # NOTE: These binaries must live beside the lldb binary to be discovered at runtime without an env var
 alias(
     name = "gdb-server",
-    actual = select({
-        "@platforms//os:macos": ":debugserver",
-        "//conditions:default": ":lldb-server",
-    }),
+    actual = "@llvm-project//lldb:gdb-server",
     visibility = ["//visibility:public"],
 )
 
-# TODO: Replace with copy_file when https://github.com/llvm/llvm-project/pull/91549 is in
-modular_cc_binary(
+alias(
     name = "mojo-lldb",
-    srcs = [
-        "//:third-party/llvm-project/lldb/tools/driver/Driver.cpp",
-        "//:third-party/llvm-project/lldb/tools/driver/Driver.h",
-        "//:third-party/llvm-project/lldb/tools/driver/Platform.cpp",
-        "//:third-party/llvm-project/lldb/tools/driver/Platform.h",
-    ],
-    deps = [
-        ":liblldb.wrapper",
-        ":lldb19.0.0git",
-        "@llvm-project//lldb:lldb_options_inc_gen",
-        "@llvm-project//llvm:Option",
-        "@llvm-project//llvm:Support",
-    ],
+    actual = "@llvm-project//lldb",
+    visibility = ["//visibility:public"],
 )
 
 modular_cc_library(
@@ -1468,13 +1367,13 @@ modular_shared_library(
         ":MojoTooling",
         ":ObjectCompiler",
         ":TransformUtils",
-        ":liblldb.wrapper",
-        ":lldb19.0.0git",
         "//AsyncRT:Init",
         "//AsyncRT:RuntimeGlobals",
         "//Support:Base",
         "//Support:CrashReporting",
         "//Support:Globals",
+        "@llvm-project//lldb:liblldb.wrapper",
+        "@llvm-project//lldb:lldb20.0.0git",
         "@llvm-project//llvm:ExecutionEngine",
         "@llvm-project//llvm:MCJIT",
     ],
@@ -1536,7 +1435,7 @@ modular_shared_library(
         ":MojoLLDB",
         ":MojoLLDBPublicHeaders",
         ":MojoTooling",
-        ":liblldb.wrapper",
-        ":lldb19.0.0git",
+        "@llvm-project//lldb:liblldb.wrapper",
+        "@llvm-project//lldb:lldb20.0.0git",
     ],
 )

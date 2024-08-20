@@ -6,10 +6,10 @@ modular_cc_library(
     srcs = ["Support.cpp"],
     hdrs = ["Support.h"],
     deps = [
-        "//KGEN:liblldb.wrapper",
-        "//KGEN:lldb19.0.0git",
         "//KGEN/tools/mojo-lsp-test-client",
         "//KGEN/unittests:include_shim",
+        "@llvm-project//lldb:liblldb.wrapper",
+        "@llvm-project//lldb:lldb20.0.0git",
         "@llvm-project//third-party/unittest:gtest",
     ],
 )

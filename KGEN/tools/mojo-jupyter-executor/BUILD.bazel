@@ -10,7 +10,7 @@ modular_cc_binary(
         "//KGEN:MojoJupyter",
         "//KGEN:MojoLLDB",
         "//KGEN:MojoLLDBPublicHeaders",
-        "//KGEN:liblldb.wrapper",
         "//Support:Globals",
+        "@llvm-project//lldb:liblldb.wrapper",
     ],
 )
