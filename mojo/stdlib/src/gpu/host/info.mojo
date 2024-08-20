@@ -10,10 +10,10 @@
 # A100
 # ===----------------------------------------------------------------------===#
 
-# Note: features = "+ptx85" means that the kernel should be compiled using
-# PTX version 8.5. This must be less than or equal to the installed CUDA
+# Note: features = "+ptx81" means that the kernel should be compiled using
+# PTX version 8.1. This must be less than or equal to the installed CUDA
 # driver's maximum supported PTX version. Currently we hardcode this to
-# PTX version 8.5 which means that you need to have a CUDA driver included with
+# PTX version 8.1 which means that you need to have a CUDA driver included with
 # CUDA 12.5 toolkit. The mapping from CUDA Driver to PTX version can be found by
 # looking at the PTX ISA in the versioned docs
 # https://developer.nvidia.com/cuda-toolkit-archive.
@@ -25,14 +25,14 @@ alias A100 = Info(
     target=__mlir_attr[
         `#kgen.target<triple = "nvptx64-nvidia-cuda", `,
         `arch = "sm_80", `,
-        `features = "+ptx85", `,
+        `features = "+ptx81", `,
         `data_layout = "e-i64:64-i128:128-v16:16-v32:32-n16:32:64",`,
         `simd_bit_width = 128> : !kgen.target`,
     ],
     target_32bit=__mlir_attr[
         `#kgen.target<triple = "nvptx64-nvidia-cuda", `,
         `arch = "sm_80", `,
-        `features = "+ptx85", `,
+        `features = "+ptx81", `,
         `data_layout="e-p32:64:64-i64:64-i128:128-v16:16-v32:32-n16:32:64",`,
         `simd_bit_width = 128> : !kgen.target`,
     ],
@@ -67,14 +67,14 @@ alias A10 = Info(
     target=__mlir_attr[
         `#kgen.target<triple = "nvptx64-nvidia-cuda", `,
         `arch = "sm_86", `,
-        `features = "+ptx85", `,
+        `features = "+ptx81", `,
         `data_layout = "e-i64:64-i128:128-v16:16-v32:32-n16:32:64",`,
         `simd_bit_width = 128> : !kgen.target`,
     ],
     target_32bit=__mlir_attr[
         `#kgen.target<triple = "nvptx64-nvidia-cuda", `,
         `arch = "sm_86", `,
-        `features = "+ptx85", `,
+        `features = "+ptx81", `,
         `data_layout="e-p32:64:64-i64:64-i128:128-v16:16-v32:32-n16:32:64",`,
         `simd_bit_width = 128> : !kgen.target`,
     ],
@@ -109,14 +109,14 @@ alias L4 = Info(
     target=__mlir_attr[
         `#kgen.target<triple = "nvptx64-nvidia-cuda", `,
         `arch = "sm_89", `,
-        `features = "+ptx85", `,
+        `features = "+ptx81", `,
         `data_layout = "e-i64:64-i128:128-v16:16-v32:32-n16:32:64",`,
         `simd_bit_width = 128> : !kgen.target`,
     ],
     target_32bit=__mlir_attr[
         `#kgen.target<triple = "nvptx64-nvidia-cuda", `,
         `arch = "sm_89", `,
-        `features = "+ptx85", `,
+        `features = "+ptx81", `,
         `data_layout="e-p32:64:64-i64:64-i128:128-v16:16-v32:32-n16:32:64",`,
         `simd_bit_width = 128> : !kgen.target`,
     ],
@@ -151,14 +151,14 @@ alias H100 = Info(
     target=__mlir_attr[
         `#kgen.target<triple = "nvptx64-nvidia-cuda", `,
         `arch = "sm_90a", `,
-        `features = "+ptx85", `,
+        `features = "+ptx81", `,
         `data_layout = "e-i64:64-i128:128-v16:16-v32:32-n16:32:64",`,
         `simd_bit_width = 128> : !kgen.target`,
     ],
     target_32bit=__mlir_attr[
         `#kgen.target<triple = "nvptx64-nvidia-cuda", `,
         `arch = "sm_90a", `,
-        `features = "+ptx85", `,
+        `features = "+ptx81", `,
         `data_layout="e-p32:64:64-i64:64-i128:128-v16:16-v32:32-n16:32:64",`,
         `simd_bit_width = 128> : !kgen.target`,
     ],
