@@ -23,6 +23,7 @@
 #include "mlir/Dialect/Index/IR/IndexOps.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 #include "mlir/Dialect/LLVMIR/NVVMDialect.h"
+#include "mlir/Dialect/LLVMIR/Transforms/InlinerInterfaceImpl.h"
 #include "mlir/IR/DialectRegistry.h"
 
 using namespace M;
@@ -253,6 +254,7 @@ void M::registerAllKGENDialects(mlir::DialectRegistry &registry) {
   registry
       .addExtensions<InterpreterDialectExtension,
                      ParameterPrettyFormatExtension, KGENDialectExtension>();
+  mlir::LLVM::registerInlinerInterface(registry);
 }
 
 void M::preloadAllKGENDialects(MLIRContext *ctx) {

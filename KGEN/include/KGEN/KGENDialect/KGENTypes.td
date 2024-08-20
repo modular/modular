@@ -425,7 +425,7 @@ class PointerOf<Type type> : ConfinedType<PointerType,
       "llvm::cast<PointerType>($_self).getElementType()",
       type.predicate>],
     "pointer to " # type.summary> {
-  let cppClassName = "::M::KGEN::PointerType";
+  let cppType = "::M::KGEN::PointerType";
   let builderCall = !if(!empty(type.builderCall), "",
                        "PointerType::get(" # type.builderCall #")");
 }

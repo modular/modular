@@ -311,9 +311,9 @@ kgen.func @simd_insertelement(%val: !pop.scalar<f32>, %vec: !pop.simd<4, f32>, %
 }
 
 // CHECK-LABEL: @simd_insertelement_1xf32
+// CHECK-SAME: (%[[ARG0:[[:alnum:]]+]]:
 kgen.func @simd_insertelement_1xf32(%val: !pop.scalar<f32>, %vec: !pop.scalar<f32>, %idx: index) -> !pop.scalar<f32> {
-  // CHECK: %[[F32_VAL:.*]] = builtin.unrealized_conversion_cast %[[E:..*]] : !pop.scalar<f32> to f32
-  // CHECK: %[[RESULT:.*]] = builtin.unrealized_conversion_cast %[[F32_VAL]] : f32 to !pop.scalar<f32>
+  // CHECK-NEXT: kgen.return %[[ARG0]]
   %0 = pop.simd.insertelement %val, %vec[%idx] : !pop.scalar<f32>
   kgen.return %0 : !pop.scalar<f32>
 }

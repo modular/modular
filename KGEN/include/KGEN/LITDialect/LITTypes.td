@@ -495,7 +495,7 @@ class RefOf<Type type> : ConfinedType<LIT_RefType,
       "llvm::cast<::M::KGEN::LIT::RefType>($_self).getElementType()",
       type.predicate>],
     "reference to " # type.summary> {
-  let cppClassName = "::M::KGEN::LIT::RefType";
+  let cppType = "::M::KGEN::LIT::RefType";
 }
 
 //===----------------------------------------------------------------------===//
