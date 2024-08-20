@@ -5,6 +5,7 @@
 //===----------------------------------------------------------------------===//
 
 // RUN: not mojo test "%S/inputs/" | FileCheck %s
+// RUN: mojo test "%S/inputs/" --filter 'suffix' | FileCheck %s --check-prefix=CHECK-FILTER
 
 // CHECK: Testing Time: {{.*}}s
 // CHECK: Total Discovered Tests: 19
@@ -19,3 +20,9 @@
 // CHECK: {{.*}} Failure: '{{.*}}subfolder/subfolder_test.mojo::test_backtick\2Efails()'
 // CHECK: Unhandled exception caught during execution
 // CHECK: {{.*}}subfolder/subfolder_test.mojo:19:16: AssertionError: condition was unexpectedly False
+
+// CHECK-FILTER: Testing Time: {{.*}}s
+// CHECK-FILTER: Total Discovered Tests: 19
+// CHECK-FILTER: Passed : 2
+// CHECK-FILTER: Failed : 0
+// CHECK-FILTER: Skipped: 17

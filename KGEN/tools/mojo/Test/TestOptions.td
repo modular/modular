@@ -24,6 +24,11 @@ def collect_only : Flag<["--"], "collect-only">,
 def : Flag<["--"], "co">, Group<CollectionOptionGroup>, Index<0>,
   Alias<collect_only>;
 
+defm filter : CommandOption<["--"], "filter",
+  CollectionOptionGroup, Index<2>, MetaVarName<"REGEX">,
+  HelpText<"A POSIX extended regular expression regex string that will be used to filter test IDs. "
+  "See https://en.wikibooks.org/wiki/Regular_Expressions/POSIX-Extended_Regular_Expressions for more information.">>;
+
 def keep_entrypoint : Flag<["--"], "keep-entrypoint">,
   Group<CollectionOptionGroup>, Index<1>,
   HelpText<"Keep the test entrypoint for later debugging.">,
