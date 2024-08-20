@@ -7,7 +7,7 @@
 # TODO(asan): Timing out in ASAN. Fix.
 # UNSUPPORTED: asan
 
-# RUN: not mojo test -I %S/inputs "%s" | FileCheck %s
+# RUN: not mojo test -I %S/inputs -D TEST_PASS "%s" | FileCheck %s
 # RUN: not mojo test -I %S/inputs "%s@doc_test_failure_first_cell().__doc__" | FileCheck %s --check-prefix=CHECK-DOC
 # RUN: not mojo test -I %S/inputs "%s@doc_test_failure_first_cell().__doc__::1" | FileCheck %s --check-prefix=CHECK-DOC
 # RUN: not mojo test -I %S/inputs "%s::test_unit\2Efailure()" | FileCheck %s --check-prefix=CHECK-UNIT
@@ -15,10 +15,11 @@
 
 from imported_module import returns_false
 from testing import assert_true
+from sys import is_defined
 
 # CHECK: Testing Time: {{.*}}s
-# CHECK: Total Discovered Tests: 8
-# CHECK: Passed : 4
+# CHECK: Total Discovered Tests: 9
+# CHECK: Passed : 5
 # CHECK: Failed : 3
 # CHECK: Skipped: 1
 
@@ -32,7 +33,7 @@ from testing import assert_true
 
 # CHECK: Failure: '{{.*}}test_execution.mojo::test_unit\2Efailure()'
 # CHECK: Unhandled exception caught during execution
-# CHECK: {{.*}}test_execution.mojo:60:16: AssertionError: condition was unexpectedly False
+# CHECK: {{.*}}test_execution.mojo:61:16: AssertionError: condition was unexpectedly False
 
 # CHECK-DOC: Total Discovered Tests: 2
 # CHECK-DOC: Passed : 0
@@ -109,3 +110,7 @@ fn doc_test_pass():
     ```
     """
     return
+
+
+fn test_def() raises:
+    assert_true(is_defined["TEST_PASS"]())
