@@ -6,11 +6,12 @@
 """Optimized quantized operations."""
 
 from typing import Callable, Dict
+
 from max.graph.ops import custom_ops
 from max.graph.graph import Graph
 from max.graph.graph_value import GraphValue
 from max.graph.quantization import QuantizationEncoding
-from max.graph.type import Dim, DType, TensorType
+from max.graph.type import Dim, DType, StaticDim, TensorType
 
 
 def _repack_quantized_weights(op_name: str, rhs: GraphValue) -> GraphValue:
@@ -129,3 +130,49 @@ def qmatmul(
     if strategy is None:
         raise ValueError(f"unsupported quantization encoding {encoding}")
     return strategy(lhs, rhs)
+
+
+_DEQUANTIZE_OP_NAMES: Dict[QuantizationEncoding, str] = {
+    QuantizationEncoding.Q4_0: "ggml_q4_0_dequantize",
+    QuantizationEncoding.Q4_K: "ggml_q4_k_dequantize",
+    QuantizationEncoding.Q6_K: "ggml_q6_k_dequantize",
+}
+
+
+def dequantize(
+    encoding: QuantizationEncoding, quantized: GraphValue
+) -> GraphValue:
+    """Dequantizes a quantized tensor to floating point.
+
+    NOTE: Currently this supports Q4_0, Q4_K, and Q6_K encodings only.
+
+    Args:
+        encoding: The quantization encoding to use.
+        quantized: The quantized tensor to dequantize.
+
+    Returns:
+        The dequantized result (a floating point tensor).
+    """
+    op_name = _DEQUANTIZE_OP_NAMES.get(encoding)
+    if op_name is None:
+        raise ValueError(f"unsupported quantization encoding {encoding}")
+    *dims, qdim = quantized.shape
+    if not isinstance(qdim, StaticDim):
+        raise TypeError("dequantize only supported with static last dimension")
+    if qdim.dim % encoding.block_size != 0:
+        raise ValueError(
+            f"last dimension ({qdim}) not divisible by block size "
+            f"({encoding.block_size})"
+        )
+    odim = StaticDim(
+        (qdim.dim // encoding.block_size) * encoding.elements_per_block
+    )
+    flat_quantized = quantized.reshape([-1, qdim])
+    flat_dequantized = custom_ops.custom(
+        name=op_name,
+        values=[flat_quantized],
+        out_types=[
+            TensorType(DType.float32, [flat_quantized.shape[0], odim]).to_mlir()
+        ],
+    )[0]
+    return flat_dequantized.reshape([*dims, odim])

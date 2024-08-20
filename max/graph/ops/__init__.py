@@ -36,6 +36,6 @@ from .custom_ops import custom
 from .debug import print
 from .elementwise import *
 from .linalg import band_part, layer_norm, matmul
-from .quantized_ops import qmatmul
+from .quantized_ops import dequantize, qmatmul
 from .reduction import mean
 from .slicing import concat, gather, select, slice_tensor, stack
