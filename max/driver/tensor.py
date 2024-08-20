@@ -5,7 +5,8 @@
 # ===----------------------------------------------------------------------=== #
 from __future__ import annotations
 
-from typing import Any, Tuple
+from itertools import product
+from typing import Any, Generator, Tuple
 
 from max._driver import Tensor as _Tensor
 from max.dtype import DType
@@ -60,11 +61,34 @@ class Tensor:
         """Tensor rank"""
         return self._impl.rank
 
+    @property
+    def is_contiguous(self) -> bool:
+        """Whether or not tensor is contiguously allocated in memory. Returns
+        false if the tensor is a non-contiguous slice.
+
+        Currently, we consider certain situations that are contiguous as
+        non-contiguous for the purposes of our engine. These situations include:
+        * A tensor with negative steps.
+        * A 1-dimensional tensor slice that is derived from a larger tensor."""
+        return self._impl.is_contiguous
+
+    def _iterate_indices(self) -> Generator[Tuple[int, ...]]:
+        index_gen = [range(x) for x in self.shape]
+        for idx in product(*index_gen):
+            yield idx
+
+    def contiguous(self) -> Tensor:
+        """Creates a contiguous copy of the parent tensor."""
+        tensor_copy = Tensor(self.shape, self.dtype)
+        for idx in self._iterate_indices():
+            tensor_copy[*idx] = self[*idx].item()
+        return tensor_copy
+
     def __repr__(self) -> str:
         return f"max.driver.Tensor({self.dtype}, {self.shape})"
 
     def __setitem__(self, idx: Tuple[int, ...], value: Any) -> None:
-        """Sets an item in the tensor"""
+        """Sets an item in the tensor."""
         self._impl.set(idx, value)
 
     def __getitem__(self, idx: Tuple[int, ...]) -> Tensor:

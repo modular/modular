@@ -162,13 +162,20 @@ class Model:
         """
         if args:
             if any(not isinstance(arg, Tensor) for arg in args):
-                raise RuntimeError(
+                raise ValueError(
                     "All positional arguments provided to the execute API must"
                     " be Max Driver tensors (i.e. max.driver.Tensor). The"
                     " execute API can also be invoked using keyword arguments"
                     " e.g. outs = model.execute(arg0=np.ones((1,"
                     " 10)).astype(np.float32)). Keywords have to be tensor"
                     " names which can be queried using the input_metadata API."
+                )
+            if any(not arg.is_contiguous for arg in args):
+                raise ValueError(
+                    "Max does not currently support executing non-contiguous"
+                    " tensors. Before executing these tensors, please make a"
+                    " contiguous copy of them using `.contiguous` before"
+                    " feeding them into the `execute` API."
                 )
             results = self._impl.execute_device_tensors(
                 [arg._impl for arg in args]

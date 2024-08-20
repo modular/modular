@@ -21,6 +21,7 @@ class Tensor:
     dtype: DType
     shape: Tuple[int, ...]
     rank: int
+    is_contiguous: bool
 
     def __init__(
         self,
