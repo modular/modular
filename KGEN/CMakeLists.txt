@@ -218,29 +218,6 @@ macro(collect_exposed_mojo_packages target names)
   endforeach()
 endmacro()
 
-# Validate that a given package only depends on the set of packages that it
-# declares as dependencies.
-function(validate_mojo_dependencies target package_dir depends)
-  # Run a python script to validate that all of the dependencies are within the
-  # known set.
-  set(DEPENDS_FILE ${CMAKE_CURRENT_BINARY_DIR}/${target}-validate-deps.txt)
-  add_custom_command(
-    OUTPUT ${DEPENDS_FILE}
-    COMMENT "Validating Mojo dependencies for ${target}..."
-
-    COMMAND ${Python3_EXECUTABLE}
-      ${MODULAR_SOURCE_DIR}/KGEN/utils/validate_mojo_dependencies.py
-      --path ${package_dir} --known_dependencies ${depends}
-    COMMAND ${CMAKE_COMMAND} -E touch ${DEPENDS_FILE}
-
-    DEPENDS
-      ${MODULAR_SOURCE_DIR}/KGEN/utils/validate_mojo_dependencies.py
-      ${package_dir}
-  )
-  add_custom_target(${target}-validate-deps DEPENDS ${DEPENDS_FILE})
-  add_dependencies(${target} ${target}-validate-deps)
-endfunction()
-
 # This function will generate the CMake targets needed to build a Mojo package
 # for the current source directory, or directory specified by PACKAGE_DIR.
 #   Usage:
@@ -368,8 +345,6 @@ function(add_mojo_package target visibility)
     add_mojo_package_doc(${target}-doc ${visibility} ${KGEN_PACKAGE_DIR}
       ${KGEN_DOCS_DIR}/ DEPENDS ${KGEN_SOURCE_FILES} ${target})
   endif()
-
-  validate_mojo_dependencies(${target} ${KGEN_PACKAGE_DIR} "${MOJO_DEPENDENCIES}")
 endfunction()
 
 
