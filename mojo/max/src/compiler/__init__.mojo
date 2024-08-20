@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from .directives import (
+from compiler_internal import (
     register,
     elementwise,
     foreach,
