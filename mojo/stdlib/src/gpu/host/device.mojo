@@ -741,8 +741,8 @@ struct Device(StringableRaising):
         """Returns the maximum resident threads per multiprocessor."""
         return self._query(DeviceAttribute.MAX_THREADS_PER_MULTIPROCESSOR)
 
-    fn compute_capability(self) raises -> Float64:
+    fn compute_capability(self) raises -> Int:
         """Returns the device compute capability version."""
-        return self._query(DeviceAttribute.COMPUTE_CAPABILITY_MAJOR) + (
-            self._query(DeviceAttribute.COMPUTE_CAPABILITY_MINOR) / 10
-        )
+        return self._query(
+            DeviceAttribute.COMPUTE_CAPABILITY_MAJOR
+        ) * 10 + self._query(DeviceAttribute.COMPUTE_CAPABILITY_MINOR)

@@ -252,7 +252,7 @@ struct DeviceContext:
     ) > 0
 
     # We only support CUDA architectures sm_80 and above.
-    alias MIN_COMPUTE_CAPABILITY = 8.0
+    alias MIN_COMPUTE_CAPABILITY = 80
 
     # We only support CUDA versions 12.0 and above.
     alias MIN_DRIVER_VERSION = 12.0
@@ -501,10 +501,7 @@ struct DeviceContext:
 
     fn is_compatible(self) raises:
         """Returns whether the current CUDA device is compatible with MAX."""
-        if (
-            self.cuda_context.get_compute_capability()
-            < Self.MIN_COMPUTE_CAPABILITY
-        ):
+        if self.compute_capability() < Self.MIN_COMPUTE_CAPABILITY:
             raise Error("MAX only supports CUDA Ampere architectures or higher")
 
         if self.cuda_context.get_version() < Self.MIN_DRIVER_VERSION:
