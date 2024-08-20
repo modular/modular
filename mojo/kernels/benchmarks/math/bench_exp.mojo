@@ -55,9 +55,9 @@ def bench_unary[
     type: DType,
 ](inout m: Bench, size: Int, op_name: String):
     alias alignment = 64
-    var input_ptr = UnsafePointer[Scalar[type]].alloc(size, alignment=alignment)
-    var output_ptr = UnsafePointer[Scalar[type]].alloc(
-        size, alignment=alignment
+    var input_ptr = UnsafePointer[Scalar[type], alignment=alignment].alloc(size)
+    var output_ptr = UnsafePointer[Scalar[type], alignment=alignment].alloc(
+        size
     )
 
     var linspace = range(0x3000_0000, 0x42B0_0000, 1)

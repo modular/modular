@@ -45,7 +45,7 @@ fn run_reduce[
     var out_size = product(shape, rank - 1)
 
     alias align = alignof_simd[type, simd_target = _get_nvptx_target()]()
-    var expected_vals = UnsafePointer[Scalar[type]].alloc[alignment=align](
+    var expected_vals = UnsafePointer[Scalar[type], alignment=align].alloc(
         out_size
     )
 

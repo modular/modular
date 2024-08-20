@@ -188,8 +188,8 @@ fn alloc_aligned_tile[
 ]() -> UnsafePointer[Scalar[dtype]]:
     alias alignment = alignof[SIMD[dtype, simdwidthof[dtype]()]]()
     alias cache_width = ((N + alignment - 1) // alignment) * alignment
-    return UnsafePointer[Scalar[dtype]].alloc(
-        M * cache_width, alignment=alignment
+    return UnsafePointer[Scalar[dtype], alignment=alignment].alloc(
+        M * cache_width
     )
 
 

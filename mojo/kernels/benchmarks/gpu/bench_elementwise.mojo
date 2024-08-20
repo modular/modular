@@ -140,8 +140,8 @@ fn run_elementwise[
     ]() if use_aligned_memory else 1
     var N = product(dims, rank)
 
-    var in_host_ptr = UnsafePointer[Scalar[type]].alloc(N, alignment=align)
-    var out_host_ptr = UnsafePointer[Scalar[type]].alloc(N, alignment=align)
+    var in_host_ptr = UnsafePointer[Scalar[type], alignment=align].alloc(N)
+    var out_host_ptr = UnsafePointer[Scalar[type], alignment=align].alloc(N)
 
     var in_host = NDBuffer[type, rank](in_host_ptr, dims)
     var out_host = NDBuffer[type, rank](out_host_ptr, dims)
