@@ -10,6 +10,7 @@ include "Common/DiagnosticFormatOptions.td"
 include "../Common/CompilationOptions.td"
 include "../Common/DiagnosticOptions.td"
 include "../Common/TargetOptions.td"
+include "../Common/StandaloneDebugOptions.td"
 
 //===----------------------------------------------------------------------===//
 // Collection Options
@@ -36,3 +37,13 @@ def no_execute : Flag<["--"], "no-execute">,
   Group<CollectionOptionGroup>, Index<3>,
   HelpText<"Build the test entrypoint but do not execute tests.">,
   Flags<[HelpHidden]>;
+
+//===----------------------------------------------------------------------===//
+// Test Run Options
+//===----------------------------------------------------------------------===//
+
+def TestRunOptionGroup : OptionGroup<"Test run options">, Index<1>;
+
+def debug : Flag<["--"], "debug">,
+  Group<TestRunOptionGroup>, Index<0>,
+  HelpText<"Launch a debugger session with `mojo debug`. This is not supported for docstring tests. Most debug flags are supported, including `--rpc`.">;
