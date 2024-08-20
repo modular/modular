@@ -59,9 +59,10 @@ public:
   /// Parse recursively all the children of the given die that is a forward
   /// declaration type.
   /// Return true if the type could be completed.
-  bool CompleteTypeFromDWARF(const lldb_private::plugin::dwarf::DWARFDIE &die,
-                             lldb_private::Type *type,
-                             lldb_private::CompilerType &compilerType) override;
+  bool CompleteTypeFromDWARF(
+      const lldb_private::plugin::dwarf::DWARFDIE &die,
+      lldb_private::Type *type,
+      const lldb_private::CompilerType &compilerType) override;
 
   lldb_private::CompilerDecl GetDeclForUIDFromDWARF(
       const lldb_private::plugin::dwarf::DWARFDIE &die) override {
@@ -93,7 +94,7 @@ public:
 private:
   bool CompleteStructureTypeFromDWARF(
       const lldb_private::plugin::dwarf::DWARFDIE &die,
-      lldb_private::Type *type, lldb_private::CompilerType &compilerType);
+      lldb_private::Type *type, const lldb_private::CompilerType &compilerType);
 
   /// Set the symbol context scope for the recently created type.
   void updateSymbolContextScopeForType(

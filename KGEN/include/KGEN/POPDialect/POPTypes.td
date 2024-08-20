@@ -171,7 +171,7 @@ class SIMDOfDType<DTypeConstraint constraint, string desc> :
   ConfinedType<POP_SIMDType,
     [CPred<!subst("$_self", "llvm::cast<POP::SIMDType>($_self).getResolvedDType()",
                  constraint.pred)>], desc> {
-  let cppClassName = "::M::KGEN::POP::SIMDType";
+  let cppType = "::M::KGEN::POP::SIMDType";
 }
 
 def BoolSIMD : SIMDOfDType<BoundAnd<BoolDType>, "!pop.simd<N, bool>">;
