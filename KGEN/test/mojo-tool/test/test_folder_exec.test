@@ -6,6 +6,7 @@
 
 // RUN: not mojo test "%S/inputs/" | FileCheck %s
 // RUN: mojo test "%S/inputs/" --filter 'suffix' | FileCheck %s --check-prefix=CHECK-FILTER
+// RUN: mojo test "not_a_test_id" | FileCheck %s --check-prefix=CHECK-BADID
 
 // CHECK: Testing Time: {{.*}}s
 // CHECK: Total Discovered Tests: 19
@@ -26,3 +27,6 @@
 // CHECK-FILTER: Passed : 2
 // CHECK-FILTER: Failed : 0
 // CHECK-FILTER: Skipped: 17
+
+// CHECK-BADID: Total Discovered Tests: 0
+// CHECK-BADID: No tests were discovered with the test ID not_a_test_id. Did you mean to use --filter instead?

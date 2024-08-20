@@ -346,6 +346,15 @@ static int test(const State &subcommandState) {
 
   if (!test) {
     llvm::outs() << "Total Discovered Tests: 0\n";
+
+    // If the user specified a test ID but we still didn't find any tests, we
+    // should suggest the use of `--filter` instead.
+    if (args.hasArg(options::OPT_INPUT))
+      llvm::outs() << llvm::formatv(
+          "No tests were discovered with the test ID {0}. Did you mean to use "
+          "--filter instead?\n",
+          testID);
+
     return 0;
   }
 
