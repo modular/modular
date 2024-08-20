@@ -4,80 +4,33 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from datetime import timedelta
-
-import hypothesis
-import hypothesis.strategies as st
-import numpy as np
+from conftest import modular_vs_torch_test
+import pytest
 import torch
-import torch.nn as nn
-from hypothesis.extra.numpy import arrays
 from llama3.norm import RMSNorm
 from max.graph import DType, Graph, TensorType
 
 
-class TorchRMSNorm(torch.nn.Module):
-    def __init__(self, weight: float, eps: float = 1e-6):
-        """
-        This is sourced from: https://github.com/meta-llama/llama/blob/main/llama/model.py#L34
-        """
-        super().__init__()
-        self.weight = nn.Parameter(weight)
-        self.eps = eps
-
-    def _norm(self, x):
-        return x * torch.rsqrt(x.pow(2).mean(-1, keepdim=True) + self.eps)
-
-    def forward(self, x):
-        output = self._norm(x.float()).type_as(x)
-        return output * self.weight
+def torch_rms_norm(x, weight, eps=1e-6):
+    #   See https://github.com/meta-llama/llama/blob/main/llama/model.py#L34
+    return x * torch.rsqrt((x**2).mean(-1, keepdim=True) + eps) * weight
 
 
-header = st.shared(
-    st.lists(st.integers(min_value=5, max_value=10), min_size=2, max_size=5),
-    key="header",
+@pytest.mark.parametrize(
+    "input_type",
+    [
+        TensorType(DType.float32, ["dim"]),
+        TensorType(DType.float32, ["batch", "dim"]),
+        TensorType(DType.float32, ["a", "x", "y", "z", "dim"]),
+        TensorType(DType.float64, ["dim"]),
+    ],
 )
-hidden_size = st.shared(
-    st.lists(st.integers(min_value=5, max_value=10), min_size=1, max_size=1),
-    key="hidden_size",
-)
-input_shape = st.tuples(header, hidden_size).map(lambda x: x[0] + x[1])
-
-
-@hypothesis.given(
-    st.floats(min_value=1e-6, max_value=1),
-    arrays(
-        np.float32,
-        elements=st.floats(
-            min_value=9.999999974752427e-07, max_value=2.0, width=32
-        ),
-        shape=hidden_size,
-    ),
-    arrays(
-        np.float32,
-        elements=st.floats(
-            min_value=9.999999974752427e-07, max_value=2.0, width=32
-        ),
-        shape=input_shape,
-    ),
-)
-@hypothesis.settings(max_examples=10, deadline=None)
-def test_norm(session, eps, weights, input):
+def test_norm(session, input_type):
     # Initialize Graph
-    # TODO: This is not resulting in nan, when all input values are 0
-    norm = Graph(
-        "norm",
-        RMSNorm(weight=weights, eps=np.array(eps)),
-        input_types=[TensorType(dtype=DType.float32, shape=input.shape)],
-    )
-    compiled = session.load(norm)
+    dim = input_type.shape[-1]
+    weight_type = TensorType(input_type.dtype, [dim])
+    with Graph("norm", input_types=[input_type, weight_type]) as graph:
+        x, weight = graph.inputs
+        graph.output(RMSNorm(weight)(x))
 
-    # Initialize Pytorch RMSNorm
-    torch_norm = TorchRMSNorm(
-        eps=torch.tensor(eps), weight=torch.from_numpy(weights)
-    )
-
-    # Execute two options
-    generated = compiled.execute(input0=input)
-    expected = torch_norm(torch.from_numpy(input)).detach().numpy()
-    np.testing.assert_almost_equal(generated["output0"], expected, decimal=4)
+        modular_vs_torch_test(session, graph, torch_rms_norm)
