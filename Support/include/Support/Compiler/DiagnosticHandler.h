@@ -23,6 +23,7 @@ public:
   /// Manually remove the handler from the context.
   void release();
 
+  /// Get the global HandlerID which is a unique identifier for this Handler.
   mlir::DiagnosticEngine::HandlerID getHandlerID();
 
 private:

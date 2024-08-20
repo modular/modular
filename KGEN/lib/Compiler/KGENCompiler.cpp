@@ -318,7 +318,7 @@ compileElaboratorAsm(GeneratorOp func, SymbolConstantAttr symbol,
                      StringAttr name, const SymbolTable &symtab,
                      TargetInfoAttr target, EmissionKind emissionKind,
                      CompilationOptions options,
-                     mlir::DiagnosticEngine::HandlerID diagHanlerID) {
+                     mlir::DiagnosticEngine::HandlerID diagHandlerID) {
   // Configure the compilation options given the new target.
   options.targetTriple = target.getTripleStr();
   options.targetCpu = target.getArch();
@@ -373,7 +373,7 @@ compileElaboratorAsm(GeneratorOp func, SymbolConstantAttr symbol,
   elaboratorOptions.elaborateDebugInfo =
       options.debugLevel == CompilationOptions::kLineTablesOnly ||
       options.debugLevel == CompilationOptions::kFullDebugInfo;
-  elaboratorOptions.diagHandlerID = diagHanlerID;
+  elaboratorOptions.diagHandlerID = diagHandlerID;
   mlir::PassManager pm(target.getContext());
   if constexpr (KGEN::kIsTracingEnabled)
     pm.enableTiming(std::make_unique<TimeProfilerTimingManager>());
@@ -387,7 +387,7 @@ compileElaboratorAsm(GeneratorOp func, SymbolConstantAttr symbol,
           mlir::DiagnosticEngine::HandlerID diagHandlerID) {
         // Recursion...!
         return compileElaboratorAsm(func, symbol, name, symtab, target,
-                                    emissionKind, options, diagHanlerID);
+                                    emissionKind, options, diagHandlerID);
       }));
   buildPostElaborationPipeline(pm, options, compileCustomCanonicalizationFns);
 
