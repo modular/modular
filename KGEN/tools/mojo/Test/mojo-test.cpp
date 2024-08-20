@@ -69,6 +69,29 @@ static std::optional<int> parseArgs(State &state,
   return {};
 }
 
+/// Extracts a set of options from the subcommand's arguments as strings
+/// suitable for passing through to another process, like the compilation flags.
+template <typename... OptFilters>
+static std::vector<std::string> extractOptionsAndValues(State &state,
+                                                        OptFilters... filters) {
+  // We need to re-parse the options, otherwise we'll get errors due to
+  // options being disposed after we extract them.
+  TestOptTable options;
+  unsigned unused = 0;
+  auto args = options.ParseArgs(state.arguments, unused, unused);
+
+  auto filtered = args.filtered(filters...);
+
+  std::vector<std::string> extractedTokens;
+  for (auto &arg : filtered) {
+    extractedTokens.push_back(arg->getSpelling().str());
+    for (const char *value : arg->getValues())
+      extractedTokens.emplace_back(value);
+  }
+
+  return extractedTokens;
+}
+
 //===----------------------------------------------------------------------===//
 // Test entrypoint building
 //===----------------------------------------------------------------------===//
@@ -137,8 +160,8 @@ static ErrorOr<TempFile> generateEntrypointSource(ArrayRef<TestID> unitTests) {
       if (names.isError())
         return names.takeError();
 
-      os << llvm::formatv("if testName == \"{0}::{1}()\":\n", id.getFilePath(),
-                          llvm::join(*names, "."));
+      os << llvm::formatv("if testName == 'all' or testName == '{0}::{1}()':\n",
+                          id.getFilePath(), llvm::join(*names, "."));
       os.indent();
       os << formatv("`{0}`.`{1}`()\n", id.getFilePath().stem(),
                     StringRef(names->back()));
@@ -193,6 +216,37 @@ static ErrorOrSuccess buildEntrypoint(std::vector<std::string> buildArgs,
 }
 
 //===----------------------------------------------------------------------===//
+// Test debugging
+//===----------------------------------------------------------------------===//
+
+static ErrorOrSuccess launchDebug(ArrayRef<std::string> options,
+                                  StringRef entrypointPath) {
+  ErrorOr<std::string> driverPath = getMojoDriver();
+  if (driverPath.isError())
+    return Error(driverPath.getError());
+
+  SmallVector<StringRef> debugCommand{
+      *driverPath,
+      "debug",
+  };
+
+  llvm::append_range(debugCommand, options);
+  llvm::append_range(debugCommand, ArrayRef<StringRef>{entrypointPath, "all"});
+
+  std::string errorMessage;
+  int result =
+      llvm::sys::ExecuteAndWait(*driverPath, debugCommand, std::nullopt,
+                                std::nullopt, 0, 0, &errorMessage);
+  if (!errorMessage.empty())
+    return Error(errorMessage);
+  else if (result != 0)
+    return Error(llvm::formatv(
+        "Debug command exited with non-zero exit code {0}", result));
+
+  return SuccessType();
+}
+
+//===----------------------------------------------------------------------===//
 // Mojo test input
 //===----------------------------------------------------------------------===//
 
@@ -223,23 +277,10 @@ static int test(const State &subcommandState) {
 
   // Collect compilation args now. For some reason, if we do this after reading
   // OPT_INPUT, the argument parser ends up in an invalid state.
-  std::vector<std::string> buildArgStrings;
-  {
-    // We need to re-parse the options, otherwise we'll get errors due to
-    // options being disposed after we extract them.
-    TestOptTable options;
-    unsigned unused = 0;
-    auto args = options.ParseArgs(state.arguments, unused, unused);
-    auto filtered =
-        args.filtered(options::OPT_CompilationOptionGroup,
-                      options::OPT_ExperimentalCompilationOptionGroup,
-                      options::OPT_TargetOptionGroup);
-    for (auto &arg : filtered) {
-      buildArgStrings.push_back(arg->getSpelling().str());
-      for (const char *value : arg->getValues())
-        buildArgStrings.emplace_back(value);
-    }
-  }
+  std::vector<std::string> buildArgStrings =
+      extractOptionsAndValues(state, options::OPT_CompilationOptionGroup,
+                              options::OPT_ExperimentalCompilationOptionGroup,
+                              options::OPT_TargetOptionGroup);
 
   // If an input was provided, use that as the test id. Otherwise, fallback to
   // the current working directory.
@@ -332,6 +373,17 @@ static int test(const State &subcommandState) {
 
   if (args.hasArg(options::OPT_no_execute)) {
     llvm::errs() << "Skipping test execution because --no-execute was passed\n";
+    return 0;
+  }
+
+  if (args.hasArg(options::OPT_debug)) {
+    std::vector<std::string> debugOptions = extractOptionsAndValues(
+        state, options::OPT_DebuggerOptionGroup, options::OPT_RPCOptionGroup);
+    ErrorOrSuccess debugResult = launchDebug(debugOptions, entrypointPath);
+
+    if (debugResult.isError())
+      return state.reportError(debugResult.getError());
+
     return 0;
   }
 

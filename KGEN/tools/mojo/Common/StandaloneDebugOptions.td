@@ -18,7 +18,7 @@ include "Support/Driver/DriverCommand.td"
 // Debugger Options
 //===----------------------------------------------------------------------===//
 
-def DebuggerOptionGroup : OptionGroup<"Debugger options">, Index<1>;
+def DebuggerOptionGroup : OptionGroup<"Debugger options">, Index<11>;
 
 defm xdebugger: CommandOption<["--", "-"], "X",
   DebuggerOptionGroup, Index<1>, MetaVarName<"ARG">,
@@ -30,7 +30,7 @@ defm xdebugger: CommandOption<["--", "-"], "X",
 // RPC Options
 //===----------------------------------------------------------------------===//
 
-def RPCOptionGroup : OptionGroup<"RPC debug server options">, Index<3>;
+def RPCOptionGroup : OptionGroup<"RPC debug server options">, Index<12>;
 
 def rpc: Flag<["--", "-"], "rpc">,
   Group<RPCOptionGroup>, Index<1>,
