@@ -174,7 +174,7 @@ def test_execute_non_devicetensor_positional_arguments(
     # devicetensors.
     model = session.load(mo_model_path)
     with pytest.raises(
-        RuntimeError,
+        ValueError,
         match=(
             r"All positional arguments provided to the execute "
             r"API must be Max Driver tensors"
@@ -191,6 +191,32 @@ def test_execute_device_tensor(session: InferenceSession, mo_model_path: Path):
     for idx in range(5):
         input_tensor[idx] = 1.0
     output = model.execute(input_tensor)
+    expected = [4.0, 2.0, -5.0, 3.0, 6.0]
+    assert len(output) == 1
+    output_tensor = output[0]
+    for idx in range(5):
+        assert isclose(output_tensor[idx].item(), expected[idx])
+
+
+def test_execute_noncontiguous_tensor(
+    session: InferenceSession, mo_model_path: Path
+):
+    # The engine should reject any strided tensor inputs and request that they
+    # be reallocated using `.contiguous`.
+    model = session.load(mo_model_path)
+    input_tensor = md.Tensor((8,), DType.float32)
+    for idx in range(5):
+        input_tensor[idx] = 1.0
+    subtensor = input_tensor[:5]
+    with pytest.raises(
+        ValueError,
+        match=(
+            r"Max does not currently support executing "
+            r"non-contiguous tensors."
+        ),
+    ):
+        model.execute(subtensor)
+    output = model.execute(subtensor.contiguous())
     expected = [4.0, 2.0, -5.0, 3.0, 6.0]
     assert len(output) == 1
     output_tensor = output[0]
