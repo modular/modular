@@ -175,43 +175,10 @@ private:
 
     // Map from the actual parameters we know are unused onto their index in the
     // function parameter list.
-    SmallVector<ParamDeclAttr> unusedDecls;
     for (auto [idx, decl] : llvm::enumerate(oldFunction.getInputParams())) {
       if (!unusedParamsAttr.contains(decl.getName())) {
         unusedParamsIndex[idx] = false;
         inputParams.push_back(decl);
-      } else {
-        unusedDecls.push_back(decl);
-      }
-    }
-
-    // The DISubroutineType of the function may reference unused parameters.
-    // This just means this function has a shared implementation across all
-    // possible instantiations of this parameter. Concretize unused parameters
-    // into UnknownAttr for now.
-    // TODO (MOCO-900): Represent templated DISubroutineType and concretize
-    // unused parameters to some special type (e.g. DIUnspecifiedType).
-    if (DebugInfo::DISubprogramAttr oldScope = oldFunction.getSubprogramScope();
-        oldScope && !unusedDecls.empty()) {
-      SmallVector<TypedAttr> unknownTypes(
-          llvm::map_range(unusedDecls, [](ParamDeclAttr decl) -> TypedAttr {
-            return UnknownAttr::get(decl.getType());
-          }));
-      ParameterEvaluator evaluator(unusedDecls, unknownTypes);
-      auto newType = cast<DebugInfo::DISubroutineType>(
-          evaluator.getReboundType(oldScope.getType()));
-      if (newType != oldScope.getType()) {
-        mlir::AttrTypeReplacer replacer;
-        auto newScope = oldScope.cloneWith(oldScope.getName(),
-                                           oldScope.getLinkageName(), newType);
-        replacer.addReplacement([=](DebugInfo::DISubprogramAttr scope) {
-          if (scope == oldScope)
-            return std::make_pair(newScope, WalkResult::skip());
-          return std::make_pair(scope, WalkResult::advance());
-        });
-        replacer.recursivelyReplaceElementsIn(
-            oldFunction, /*replaceAttrs=*/false, /*replaceLocs=*/true,
-            /*replaceTypes=*/false);
       }
     }
   }
@@ -382,6 +349,8 @@ void RemoveUnusedParams::runOnOperation() {
   OpBuilder builder{mod->getContext()};
   auto &analysis = getAnalysis<mlir::SymbolTableAnalysis>();
   SymbolTable &symTab = analysis.getTopLevelSymbolTable();
+  auto optimizedOutDIType = builder.getType<DebugInfo::DIUnspecifiedType>(
+      builder.getStringAttr("optimized out"));
 
   // Count number of functions cloned to tell how much memory to alloc.
   size_t numFuncs = 0;
@@ -534,6 +503,47 @@ void RemoveUnusedParams::runOnOperation() {
     // functions are being linked across packages by the package include.
     newFunc.setSymName((Twine(newFunc.getSymName()) + "_REMOVED_ARG").str());
     symTab.insert(newFunc);
+
+    // The DISubroutineType of the function may reference unused parameters.
+    // This just means this function has a shared implementation across all
+    // possible instantiations of this parameter. Concretize unused parameters
+    // into UnknownAttr for now.
+    // TODO (MOCO-900): Represent templated DISubroutineType and concretize
+    // unused parameters to some special type (e.g. DIUnspecifiedType).
+    if (DebugInfo::DISubprogramAttr oldScope =
+            oldFunction.getSubprogramScope()) {
+      ParameterEvaluator evaluator;
+      ArrayRef<ParamDeclAttr> inputParams(oldFunction.getInputParams());
+      for (size_t index : unusedParamsIndex.set_bits()) {
+        ParamDeclAttr decl = inputParams[index];
+        evaluator.setParameterValue(decl, UnknownAttr::get(decl.getType()));
+      }
+
+      auto subroutineType =
+          cast<DebugInfo::DISubroutineType>(oldScope.getType());
+      SmallVector<DebugInfo::DIType> argTypes(
+          subroutineType.getArgumentTypes());
+      for (size_t index : unusedArgs.set_bits())
+        argTypes[index] = optimizedOutDIType;
+
+      auto newType = cast<DebugInfo::DISubroutineType>(
+          evaluator.getReboundType(builder.getType<DebugInfo::DISubroutineType>(
+              subroutineType.getCallingConvention(), argTypes,
+              subroutineType.getResultTypes())));
+      if (newType != subroutineType) {
+        mlir::AttrTypeReplacer replacer;
+        auto newScope = oldScope.cloneWith(oldScope.getName(),
+                                           newFunc.getSymNameAttr(), newType);
+        replacer.addReplacement([=](DebugInfo::DISubprogramAttr scope) {
+          if (scope == oldScope)
+            return std::make_pair(newScope, WalkResult::skip());
+          return std::make_pair(scope, WalkResult::advance());
+        });
+        replacer.recursivelyReplaceElementsIn(newFunc, /*replaceAttrs=*/false,
+                                              /*replaceLocs=*/true,
+                                              /*replaceTypes=*/false);
+      }
+    }
 
     auto flatSym = FlatSymbolRefAttr::get(ctx, newFunc.getSymName());
 
