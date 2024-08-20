@@ -40,4 +40,4 @@ llvm_config.add_tool_substitutions(tools, tool_dirs)
 # TODO(#23665): Fix memory leaks.
 config.environment["LSAN_OPTIONS"] = "detect_leaks=0"
 # TODO(#25946): Fix ODR violations.
-config.environment["ASAN_OPTIONS"] = "detect_odr_violation=0"
+config.environment["ASAN_OPTIONS"] = "detect_odr_violation=0,use_sigaltstack=0"
