@@ -15,14 +15,23 @@
 
 from max.driver import cpu_device, Tensor, AnyTensor
 from max.driver._cuda import cuda_device
-from testing import assert_equal, assert_not_equal
+from testing import assert_equal, assert_not_equal, assert_true
 from max.tensor import TensorSpec
 from utils import Index
+from gpu.host import Device
+
+
+def _to_device_str(gpu_id: Int, sm_ver: Int) -> String:
+    return (
+        "Device(type=cuda,gpu_id=0,target_info(triple=nvptx64-nvidia-cuda,arch=sm_"
+        + str(sm_ver)
+        + ",features=[])"
+    )
 
 
 def test_cuda_device():
     gpu = cuda_device(gpu_id=0)
-    assert_equal(str(gpu), "Device(type=CUDA,gpu_id=0)")
+    assert_equal(str(gpu), _to_device_str(0, Device(0).compute_capability()))
 
 
 def test_copy_d2h():
@@ -118,31 +127,21 @@ def test_print():
     input_cpu = input^.to_device_tensor()
     gpu_tensor1 = input_cpu.copy_to(gpu)
 
-    # DeviceTensor
-    assert_equal(
-        str(gpu_tensor1),
-        "DeviceTensor(Device(type=CUDA,gpu_id=0),Spec(10x2xfloat32))",
-    )
+    assert_true("DeviceTensor(Device(" in str(gpu_tensor1))
+    assert_true("Spec(10x2xfloat32))" in str(gpu_tensor1))
 
     # AnyTensor
     any_tensor = AnyTensor(gpu_tensor1^)
-    assert_equal(
-        str(any_tensor),
-        (
-            "Tensor(<Unable to print device tensor>,"
-            " Device(type=CUDA,gpu_id=0), dtype=float32, shape=10x2)"
-        ),
-    )
+
+    assert_true("Tensor(<Unable to print device tensor>," in str(any_tensor))
+    assert_true("Device(" in str(any_tensor))
+    assert_true("dtype=float32, shape=10x2" in str(any_tensor))
 
     # Tensor
     tensor = any_tensor.to_device_tensor().to_tensor[DType.float32, 2]()
-    assert_equal(
-        str(tensor),
-        (
-            "Tensor(<Unable to print device tensor>,"
-            " Device(type=CUDA,gpu_id=0), dtype=float32, shape=10x2)"
-        ),
-    )
+    assert_true("Tensor(<Unable to print device tensor>," in str(tensor))
+    assert_true("Device(" in str(tensor))
+    assert_true("dtype=float32, shape=10x2" in str(tensor))
 
 
 def main():

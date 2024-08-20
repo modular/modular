@@ -17,43 +17,37 @@ from max.driver import (
     DeviceMemory,
     DeviceTensor,
 )
-from testing import assert_equal
+from testing import assert_equal, assert_true
 from max.tensor import TensorSpec
 
 
 def test_device():
     dev = cpu_device()
-    assert_equal(str(dev), "Device(type=CPU)")
+    assert_true("Device(type=cpu,target_info(" in str(dev))
 
     dev2 = dev
-    assert_equal(str(dev), str(dev2))
+    assert_true("Device(type=cpu,target_info(" in str(dev2))
 
 
 def test_device_memory():
     dev = cpu_device()
     alias type = DType.float32
 
-    dt1 = dev.allocate(
-        TensorSpec(DType.float32, 2, 2),
-    )
-    assert_equal(str(dt1), "DeviceTensor(Device(type=CPU),Spec(2x2xfloat32))")
+    dt1 = dev.allocate(TensorSpec(DType.float32, 2, 2))
+    assert_true("DeviceTensor(Device(type=cpu,target_info(" in str(dt1))
+    assert_true("Spec(2x2xfloat32))" in str(dt1))
 
-    dt2 = dev.allocate(
-        TensorSpec(DType.float32, 3, 2),
-    )
-    assert_equal(str(dt2), "DeviceTensor(Device(type=CPU),Spec(3x2xfloat32))")
+    dt2 = dev.allocate(TensorSpec(DType.float32, 3, 2))
+    assert_true("DeviceTensor(Device(type=cpu,target_info(" in str(dt2))
+    assert_true("Spec(3x2xfloat32))" in str(dt2))
 
     dt3 = dev.allocate(TensorSpec(type, 3, 2), str("foo"))
-    assert_equal(
-        str(dt3),
-        "DeviceTensor(foo,Device(type=CPU),Spec(3x2xfloat32))",
-    )
+    assert_true("DeviceTensor(foo,Device(type=cpu,target_info(" in str(dt3))
+    assert_true("Spec(3x2xfloat32))" in str(dt3))
 
     dt4 = dev.allocate(bytecount=128)
-    assert_equal(
-        str(dt4),
-        "DeviceMemory(Device(type=CPU),Bytecount(128))",
-    )
+    assert_true("DeviceMemory(Device(type=cpu,target_info(" in str(dt4))
+    assert_true("Bytecount(128)" in str(dt4))
 
     dt5 = dev.allocate(TensorSpec(type, 2))
     ptr = dt5.unsafe_ptr()
@@ -69,7 +63,8 @@ def test_take():
         tensors.append(cpu.allocate(TensorSpec(DType.float32, 2, 2)))
 
     def consume_and_check(owned t: DeviceTensor):
-        assert_equal(str(t), "DeviceTensor(Device(type=CPU),Spec(2x2xfloat32))")
+        assert_true("DeviceTensor(Device(type=cpu,target_info" in str(t))
+        assert_true("Spec(2x2xfloat32))" in str(t))
 
     for tensor in tensors:
         consume_and_check(tensor[].take())
@@ -84,10 +79,8 @@ def test_kv_cache():
         allocs.append(cpu.allocate(TensorSpec(type, shape)))
 
     for t in allocs:
-        assert_equal(
-            str(t[]),
-            "DeviceTensor(Device(type=CPU),Spec(2x2xfloat32))",
-        )
+        assert_true("DeviceTensor(Device(type=cpu,target_info(" in str(t[]))
+        assert_true("Spec(2x2xfloat32))" in str(t[]))
 
 
 def main():

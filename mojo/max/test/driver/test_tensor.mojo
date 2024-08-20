@@ -20,7 +20,7 @@ from max.driver import (
 )
 from max.tensor import TensorSpec, TensorShape
 from max.tensor import Tensor as OldTensor
-from testing import assert_equal, assert_raises
+from testing import assert_equal, assert_raises, assert_true
 from utils import Index, StaticIntTuple
 
 
@@ -185,10 +185,8 @@ def test_round_trip():
     assert_equal(tensor[1, 0], 3)
 
     dt2 = tensor^.to_device_tensor()
-    assert_equal(
-        str(dt2),
-        "DeviceTensor(Device(type=CPU),Spec(10x2xfloat32))",
-    )
+    assert_true("DeviceTensor(Device(type=cpu,target_info(" in str(dt2))
+    assert_true("Spec(10x2xfloat32))" in str(dt2))
 
     tensor2 = dt2^.to_tensor[DType.float32, 2]()
     assert_equal(tensor2[1, 0], 3)
