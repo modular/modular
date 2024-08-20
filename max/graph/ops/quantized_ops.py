@@ -5,6 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 """Optimized quantized operations."""
 
+from typing import Callable, Dict
 from max.graph.ops import custom_ops
 from max.graph.graph import Graph
 from max.graph.graph_value import GraphValue
@@ -12,28 +13,8 @@ from max.graph.quantization import QuantizationEncoding
 from max.graph.type import Dim, DType, TensorType
 
 
-_REPACK_WEIGHTS_CUSTOM_OP_NAMES = {
-    QuantizationEncoding.Q4_0: "vroom_q4_0_repack_weights",
-    QuantizationEncoding.Q4_K: "vroom_q4_k_repack_weights",
-    QuantizationEncoding.Q6_K: "vroom_q6_k_repack_weights",
-}
-
-_PACKED_QMATMUL_CUSTOM_OP_NAMES = {
-    QuantizationEncoding.Q4_0: "vroom_q4_0_matmul",
-    QuantizationEncoding.Q4_K: "vroom_q4_k_matmul",
-    QuantizationEncoding.Q6_K: "vroom_q6_k_matmul",
-}
-
-
-def _repack_quantized_weights(
-    encoding: QuantizationEncoding, rhs: GraphValue
-) -> GraphValue:
+def _repack_quantized_weights(op_name: str, rhs: GraphValue) -> GraphValue:
     rhs_type = rhs.tensor_type
-
-    op_name = _REPACK_WEIGHTS_CUSTOM_OP_NAMES.get(encoding)
-    if op_name is None:
-        raise ValueError(f"unsupported quantization encoding {encoding}")
-
     return custom_ops.custom(
         op_name,
         [rhs],
@@ -46,14 +27,8 @@ def _repack_quantized_weights(
 
 
 def _packed_qmatmul(
-    encoding: QuantizationEncoding,
-    lhs_matrix: GraphValue,
-    rhs_repack: GraphValue,
+    op_name: str, lhs_matrix: GraphValue, rhs_repack: GraphValue
 ) -> GraphValue:
-    op_name = _PACKED_QMATMUL_CUSTOM_OP_NAMES.get(encoding)
-    if op_name is None:
-        raise ValueError(f"unsupported quantization encoding {encoding}")
-
     return custom_ops.custom(
         op_name,
         [lhs_matrix, rhs_repack],
@@ -63,6 +38,58 @@ def _packed_qmatmul(
             ).to_mlir(),
         ],
     )[0]
+
+
+def _repack_then_matmul(
+    repack_op_name: str, matmul_op_name: str
+) -> Callable[[GraphValue, GraphValue], GraphValue]:
+    def impl(lhs: GraphValue, rhs: GraphValue) -> GraphValue:
+        # Quantized matmul for supported quantized encoding types.
+        # rhs is uint8 and in a packed format such as Q4_0, Q4_K, or Q6_K.
+        if rhs.tensor_type.dtype is not DType.uint8:
+            raise TypeError(
+                f"expected uint8 DType but got {rhs.tensor_type.dtype}"
+            )
+
+        if len(rhs.shape) != 2:
+            raise TypeError("rhs must be a matrix")
+
+        # Reshape LHS to a matrix, which is expected by the q4_0 matmul op.
+        lhs_matrix = lhs.reshape((-1, lhs.shape[-1]))
+        # Rebinding here breaks the reshape later, see GRA-881.
+        # Fortunately things work without the rebind.
+        # prod_dim = Graph.current.unique_symbolic_dim("qmatmul")
+        # lhs_matrix = lhs_matrix.rebind((prod_dim, lhs.shape[-1]))
+
+        # Prepack weights.
+        rhs_repack = _repack_quantized_weights(repack_op_name, rhs)
+
+        # Perform quantized matmul.
+        qmatmul_out = _packed_qmatmul(matmul_op_name, lhs_matrix, rhs_repack)
+
+        # Reshape matmul output to restore the original rank(lhs) - 1 dimensions.
+        return qmatmul_out.reshape((*lhs.shape[:-1], rhs.shape[0]))
+
+    return impl
+
+
+# We do not know for sure that all future quantization encodings will best be
+# served by the "repack and then matmul" scheme, so this design lets us better
+# support future alternative schemes while continuing to support the current
+# scheme.
+_QMATMUL_STRATEGIES: Dict[
+    QuantizationEncoding, Callable[[GraphValue, GraphValue], GraphValue]
+] = {
+    QuantizationEncoding.Q4_0: _repack_then_matmul(
+        "vroom_q4_0_repack_weights", "vroom_q4_0_matmul"
+    ),
+    QuantizationEncoding.Q4_K: _repack_then_matmul(
+        "vroom_q4_k_repack_weights", "vroom_q4_k_matmul"
+    ),
+    QuantizationEncoding.Q6_K: _repack_then_matmul(
+        "vroom_q6_k_repack_weights", "vroom_q6_k_matmul"
+    ),
+}
 
 
 def qmatmul(
@@ -88,10 +115,8 @@ def qmatmul(
 
     NOTE: Currently this supports Q4_0, Q4_K, and Q6_K encodings only.
 
-    Parameters:
-        encoding: The quantization encoding to use.
-
     Args:
+        encoding: The quantization encoding to use.
         lhs: The non-quantized, left-hand-side of the matmul.
         rhs: The transposed and quantized right-hand-side of the matmul.
              Must be rank 2 (a 2D tensor/matrix) and in a supported
@@ -100,26 +125,7 @@ def qmatmul(
     Returns:
         The dequantized result (a floating point tensor).
     """
-    # Quantized matmul for supported quantized encoding types.
-    # rhs is uint8 and in a packed format such as Q4_0, Q4_K, or Q6_K.
-    if rhs.tensor_type.dtype is not DType.uint8:
-        raise TypeError(f"expected uint8 DType but got {rhs.tensor_type.dtype}")
-
-    if len(rhs.shape) != 2:
-        raise TypeError("rhs must be a matrix")
-
-    # Reshape LHS to a matrix, which is expected by the q4_0 matmul op.
-    lhs_matrix = lhs.reshape((-1, lhs.shape[-1]))
-    # Rebinding here breaks the reshape later, see GRA-881.
-    # Fortunately things work without the rebind.
-    # prod_dim = Graph.current.unique_symbolic_dim("qmatmul")
-    # lhs_matrix = lhs_matrix.rebind((prod_dim, lhs.shape[-1]))
-
-    # Prepack weights.
-    rhs_repack = _repack_quantized_weights(encoding, rhs)
-
-    # Perform quantized matmul.
-    qmatmul_out = _packed_qmatmul(encoding, lhs_matrix, rhs_repack)
-
-    # Reshape matmul output to restore the original rank(lhs) - 1 dimensions.
-    return qmatmul_out.reshape((*lhs.shape[:-1], rhs.shape[0]))
+    strategy = _QMATMUL_STRATEGIES.get(encoding)
+    if strategy is None:
+        raise ValueError(f"unsupported quantization encoding {encoding}")
+    return strategy(lhs, rhs)
