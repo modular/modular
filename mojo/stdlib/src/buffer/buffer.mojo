@@ -768,7 +768,7 @@ struct NDBuffer[
         fn serialize[T: Formattable](val: T):
             writer.write(val)
 
-        var shape = List[Int]()
+        var shape = List[Int, hint_trivial_type=True]()
         for i in range(rank):
             shape.append(self.dynamic_shape[i])
 
