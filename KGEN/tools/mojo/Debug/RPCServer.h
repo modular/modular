@@ -15,15 +15,17 @@ namespace M {
 /// Starts an `attach` debug session with an existing RPC debug server.
 /// If `dryRun` is specified, then the request payload is printed to the
 /// standard output instead.
-ErrorOrSuccess invokeAttachRPC(bool dryRun, ArrayRef<int> rpcPorts,
+ErrorOrSuccess invokeAttachRPC(bool dryRun, bool useCudaGdb,
+                               ArrayRef<int> rpcPorts,
                                const std::optional<StringRef> &pid,
                                const std::optional<StringRef> &processName);
 
 /// Starts a `launch` debug session with an existing RPC debug server.
 /// If `dryRun` is specified, then the request payload is printed to the
 /// standard output instead.
-ErrorOrSuccess invokeLaunchRPC(bool dryRun, ArrayRef<int> rpcPorts,
-                               StringRef target, ArrayRef<std::string> runArgs,
+ErrorOrSuccess invokeLaunchRPC(bool dryRun, bool useCudaGdb,
+                               ArrayRef<int> rpcPorts, StringRef target,
+                               ArrayRef<std::string> runArgs,
                                StringRef rpcTerminal);
 } // namespace M
 
