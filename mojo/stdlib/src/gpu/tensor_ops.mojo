@@ -47,7 +47,7 @@ fn tc_reduce_gevm_4x[
     return d_reg
 
 
-@always_inline("nodebug")
+@always_inline
 fn tc_reduce[
     in_type: DType, simd_width: Int, //, out_type: DType
 ](val: SIMD[in_type, simd_width]) -> Scalar[out_type]:
@@ -58,7 +58,7 @@ fn tc_reduce[
         return _tc_reduce_vector[out_type](val)
 
 
-@always_inline("nodebug")
+@always_inline
 fn _tc_reduce_vector[
     in_type: DType, simd_width: Int, //, out_type: DType
 ](val: SIMD[in_type, simd_width]) -> Scalar[out_type]:
@@ -141,7 +141,7 @@ fn _tc_reduce_vector[
         return val[0].cast[out_type]()
 
 
-@always_inline("nodebug")
+@always_inline
 fn _tc_reduce_scalar[
     in_type: DType, //, out_type: DType
 ](val: Scalar[in_type]) -> Scalar[out_type]:
