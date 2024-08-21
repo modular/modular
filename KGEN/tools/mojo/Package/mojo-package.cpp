@@ -9,9 +9,9 @@
 #include "../Common/Compilation.h"
 
 #include "AsyncRT/CompilerSupport/Context.h"
-#include "AsyncRT/Init/Init.h"
 #include "AsyncRT/Runtime/Runtime.h"
 #include "Cache/CachedTransform.h"
+#include "Init/Init.h"
 #include "KGEN/Compiler/KGENCompiler.h"
 #include "KGEN/LITDialect/LITOps.h"
 #include "KGEN/LITDialect/LITUtils.h"

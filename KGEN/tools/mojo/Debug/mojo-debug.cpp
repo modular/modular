@@ -8,7 +8,7 @@
 #include "../../common/Telemetry.h"
 #include "../Common/CudaGdb.h"
 #include "../Common/LLDB.h"
-#include "AsyncRT/Init/Init.h"
+#include "Init/Init.h"
 #include "KGEN/Support/Configuration.h"
 #include "RPCServer.h"
 #include "llvm/Option/ArgList.h"

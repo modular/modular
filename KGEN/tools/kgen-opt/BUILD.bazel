@@ -8,9 +8,9 @@ modular_cc_binary(
         "//conditions:default": [],
     }),
     deps = [
-        "//AsyncRT:Init",
         "//AsyncRT:Runtime",
         "//AsyncRT:RuntimeGlobals",
+        "//Init",
         "//KGEN:Compiler",
         "//KGEN:CompilerRT",
         "//KGEN:ExecutionEngine",

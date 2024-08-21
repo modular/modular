@@ -4,8 +4,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "AsyncRT/Init/Init.h"
 #include "AsyncRT/Runtime/Runtime.h"
+#include "Init/Init.h"
 #include "KGEN/MojoJupyter/Kernel.h"
 #include "KGEN/MojoParser/DocString.h"
 #include "KGEN/MojoParser/EntryPoint.h"

@@ -43,7 +43,7 @@ add_modular_library(MojoLLDB SHARED
   AsyncRTRuntimeGlobals
   MCrashReporting
   MSupportGlobals
-  MAsyncRTInit
+  Init
   MVersion
   MojoTooling
 

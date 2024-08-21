@@ -5,8 +5,8 @@
 //===----------------------------------------------------------------------===//
 
 #include "AsyncRT/CompilerSupport/Context.h"
-#include "AsyncRT/Init/Init.h"
 #include "Helpers.h"
+#include "Init/Init.h"
 #include "KGEN/HLCFDialect/HLCFInterfaces.h"
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/ToolCommon/CLOptions.h"

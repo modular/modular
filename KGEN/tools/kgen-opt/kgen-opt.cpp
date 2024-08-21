@@ -9,8 +9,8 @@
 //===----------------------------------------------------------------------===//
 
 #include "AsyncRT/CompilerSupport/Context.h"
-#include "AsyncRT/Init/Init.h"
 #include "AsyncRT/Runtime/Runtime.h"
+#include "Init/Init.h"
 #include "KGEN/Compiler/KGENCompiler.h"
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/LITDialect/LITAttrs.h"

@@ -10,8 +10,8 @@ modular_cc_binary(
         "-g0",
     ],
     deps = [
-        "//AsyncRT:Init",
         "//AsyncRT:RuntimeGlobals",
+        "//Init",
         "//KGEN:CompilerRT.static",
         "//KGEN:MojoParser",
         "//KGEN:MojoTooling",

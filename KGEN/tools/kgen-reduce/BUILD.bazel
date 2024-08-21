@@ -7,8 +7,8 @@ modular_cc_binary(
         "*.h",
     ]),
     deps = [
-        "//AsyncRT:Init",
         "//AsyncRT:RuntimeGlobals",
+        "//Init",
         "//KGEN:Compiler",
         "//KGEN:CompilerRT",
         "//KGEN:ExecutionEngine",

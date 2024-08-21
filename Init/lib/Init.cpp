@@ -4,7 +4,7 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "AsyncRT/Init/Init.h"
+#include "Init/Init.h"
 #include "AsyncRT/Runtime/Runtime.h"
 #include "Config/Version.h"
 #include "Support/Configuration.h"

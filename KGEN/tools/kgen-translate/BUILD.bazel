@@ -4,9 +4,9 @@ modular_cc_binary(
     name = "kgen-translate",
     srcs = glob(["*.cpp"]),
     deps = [
-        "//AsyncRT:Init",
         "//AsyncRT:Runtime",
         "//AsyncRT:RuntimeGlobals",
+        "//Init",
         "//KGEN:Compiler",
         "//KGEN:CompilerRT",
         "//KGEN:ExecutionEngine",

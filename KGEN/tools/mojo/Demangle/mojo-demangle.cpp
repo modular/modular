@@ -7,8 +7,8 @@
 #include "mojo-demangle.h"
 #include "../../common/Telemetry.h"
 
-#include "AsyncRT/Init/Init.h"
 #include "AsyncRT/Runtime/Runtime.h"
+#include "Init/Init.h"
 #include "KGEN/LITDialect/LITOps.h"
 #include "KGEN/LITDialect/LITUtils.h"
 #include "KGEN/ToolCommon/InitAllDialects.h"
