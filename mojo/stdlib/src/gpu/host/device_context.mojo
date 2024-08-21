@@ -121,6 +121,7 @@ struct DeviceBuffer[type: DType](Sized):
         using the stream in the device context.
         """
         self.ctx_ptr = UnsafePointer[DeviceContext].address_of(ctx)
+        self.ctx_ptr[].cuda_context.set_current()
         self.ptr = self.ctx_ptr[].cuda_context.malloc_async[Scalar[type]](
             size, self.ctx_ptr[].cuda_stream
         )
@@ -168,6 +169,7 @@ struct DeviceBuffer[type: DType](Sized):
         """
         try:
             if self.owning and self.ptr:
+                self.ctx_ptr[].cuda_context.set_current()
                 self.ctx_ptr[].cuda_context.free_async(
                     self.ptr, self.ctx_ptr[].cuda_stream
                 )
@@ -222,6 +224,7 @@ struct DeviceFunction[
         func_attribute: Optional[FuncAttribute] = None,
     ) raises:
         self.ctx_ptr = UnsafePointer[DeviceContext].address_of(ctx)
+        self.ctx_ptr[].cuda_context.set_current()
         self.cuda_function = Function[
             func, target=target, _is_failable=_is_failable
         ](
@@ -265,7 +268,7 @@ struct DeviceContext:
     # current MGP implementation.
     fn __init__(inout self, gpu_id: Int = 0) raises:
         self.cuda_instance = CudaInstance()
-        self.cuda_context = Context(Device(self.cuda_instance), gpu_id)
+        self.cuda_context = Context(Device(self.cuda_instance, gpu_id))
         # TODO(field sensitivity lifetimes), eliminate stream_tmp.
         var stream_tmp = Stream(self.cuda_context)
         self.cuda_stream = stream_tmp^
@@ -313,10 +316,6 @@ struct DeviceContext:
         cache_config: Optional[CacheConfig] = None,
         func_attribute: Optional[FuncAttribute] = None,
     ) raises -> DeviceFunction[func, target=target, _is_failable=_is_failable]:
-        # TODO: Remove once KERN-810 is done
-        _check_error(
-            self.cuda_context.cuda_dll.cuCtxPushCurrent(self.cuda_context.ctx)
-        )
         return DeviceFunction[func, target=target, _is_failable=_is_failable](
             self,
             verbose=verbose,
@@ -362,6 +361,8 @@ struct DeviceContext:
         shared_mem_bytes: Int = 0,
         owned attributes: List[LaunchAttribute] = List[LaunchAttribute](),
     ) raises:
+        self.cuda_context.set_current()
+
         var kernel_time: Int
         var stream = self.cuda_stream
 
@@ -406,6 +407,7 @@ struct DeviceContext:
     fn execution_time[
         func: fn (DeviceContext) raises capturing -> None
     ](self, num_iters: Int) raises -> Int:
+        self.cuda_context.set_current()
         var stream = self.cuda_stream
         var start = Event(self.cuda_context)
         var end = Event(self.cuda_context)
@@ -419,6 +421,7 @@ struct DeviceContext:
     fn enqueue_copy_to_device[
         type: DType
     ](self, buf: DeviceBuffer[type], ptr: UnsafePointer[Scalar[type]]) raises:
+        self.cuda_context.set_current()
         self.cuda_context.copy_host_to_device_async(
             buf.ptr, ptr, len(buf), self.cuda_stream
         )
@@ -426,6 +429,7 @@ struct DeviceContext:
     fn enqueue_copy_from_device[
         type: DType
     ](self, ptr: UnsafePointer[Scalar[type]], buf: DeviceBuffer[type]) raises:
+        self.cuda_context.set_current()
         self.cuda_context.copy_device_to_host_async(
             ptr, buf.ptr, len(buf), self.cuda_stream
         )
@@ -433,6 +437,7 @@ struct DeviceContext:
     fn enqueue_copy_device_to_device[
         type: DType
     ](self, dst: DeviceBuffer[type], src: DeviceBuffer[type]) raises:
+        self.cuda_context.set_current()
         self.cuda_context.copy_device_to_device_async(
             dst.ptr, src.ptr, len(dst), self.cuda_stream
         )
@@ -440,16 +445,19 @@ struct DeviceContext:
     fn copy_to_device_sync[
         type: DType
     ](self, buf: DeviceBuffer[type], ptr: UnsafePointer[Scalar[type]]) raises:
+        self.cuda_context.set_current()
         self.cuda_context.copy_host_to_device(buf.ptr, ptr, len(buf))
 
     fn copy_from_device_sync[
         type: DType
     ](self, ptr: UnsafePointer[Scalar[type]], buf: DeviceBuffer[type]) raises:
+        self.cuda_context.set_current()
         self.cuda_context.copy_device_to_host(ptr, buf.ptr, len(buf))
 
     fn copy_device_to_device_sync[
         type: DType
     ](self, dst: DeviceBuffer[type], src: DeviceBuffer[type]) raises:
+        self.cuda_context.set_current()
         self.cuda_context.copy_device_to_device_async(
             dst.ptr, src.ptr, len(dst), self.cuda_stream
         )
@@ -458,9 +466,11 @@ struct DeviceContext:
     fn memset[
         type: DType
     ](self, dst: DeviceBuffer[type], val: Scalar[type]) raises:
+        self.cuda_context.set_current()
         _memset_async[type](dst.ptr, val, dst.size, self.cuda_stream)
 
     fn synchronize(self) raises:
+        self.cuda_context.set_current()
         self.cuda_stream.synchronize()
 
     fn print_kernel_timing_info(self):

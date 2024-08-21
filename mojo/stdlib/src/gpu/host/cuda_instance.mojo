@@ -56,6 +56,24 @@ alias cuDeviceTotalMem = _dylib_function[
     "cuDeviceTotalMem_v2", fn (UnsafePointer[Int], _DeviceHandle) -> Result
 ]
 
+alias cuDevicePrimaryCtxRetain = _dylib_function[
+    "cuDevicePrimaryCtxRetain",
+    fn (UnsafePointer[_ContextHandle], _DeviceHandle) -> Result,
+]
+
+alias cuDevicePrimaryCtxSetFlags = _dylib_function[
+    "cuDevicePrimaryCtxSetFlags",
+    fn (_DeviceHandle, Int32) -> Result,
+]
+
+alias cuDevicePrimaryCtxRelease = _dylib_function[
+    "cuDevicePrimaryCtxRelease", fn (_DeviceHandle) -> Result
+]
+
+alias cuDevicePrimaryCtxReset = _dylib_function[
+    "cuDevicePrimaryCtxReset", fn (_DeviceHandle) -> Result
+]
+
 alias cuCtxCreate = _dylib_function[
     "cuCtxCreate_v2",
     fn (UnsafePointer[_ContextHandle], Int32, _DeviceHandle) -> Result,
@@ -73,6 +91,10 @@ alias cuCtxGetCurrent = _dylib_function[
 
 alias cuCtxDestroy = _dylib_function[
     "cuCtxDestroy_v2", fn (_ContextHandle) -> Result
+]
+
+alias cuCtxSetCurrent = _dylib_function[
+    "cuCtxSetCurrent", fn (_ContextHandle) -> Result
 ]
 
 alias cuCtxSynchronize = _dylib_function["cuCtxSynchronize", fn () -> Result]
@@ -759,12 +781,19 @@ struct CudaDLL:
     var cuDeviceGetName: cuDeviceGetName.type
     var cuDeviceTotalMem: cuDeviceTotalMem.type
 
+    # cuDevicePrimaryCtx
+    var cuDevicePrimaryCtxRetain: cuDevicePrimaryCtxRetain.type
+    var cuDevicePrimaryCtxSetFlags: cuDevicePrimaryCtxSetFlags.type
+    var cuDevicePrimaryCtxRelease: cuDevicePrimaryCtxRelease.type
+    var cuDevicePrimaryCtxReset: cuDevicePrimaryCtxReset.type
+
     # cuCtx
     var cuCtxCreate: cuCtxCreate.type
     var cuCtxPushCurrent: cuCtxPushCurrent.type
     var cuCtxGetCurrent: cuCtxGetCurrent.type
     var cuCtxDestroy: cuCtxDestroy.type
     var cuCtxSynchronize: cuCtxSynchronize.type
+    var cuCtxSetCurrent: cuCtxSetCurrent.type
     var cuCtxSetCacheConfig: cuCtxSetCacheConfig.type
     var cuCtxResetPersistingL2Cache: cuCtxResetPersistingL2Cache.type
 
@@ -821,6 +850,10 @@ struct CudaDLL:
         self.cuDriverGetVersion = cuDriverGetVersion.load()
         self.cuDeviceGetName = cuDeviceGetName.load()
         self.cuDeviceTotalMem = cuDeviceTotalMem.load()
+        self.cuDevicePrimaryCtxRelease = cuDevicePrimaryCtxRelease.load()
+        self.cuDevicePrimaryCtxReset = cuDevicePrimaryCtxReset.load()
+        self.cuDevicePrimaryCtxRetain = cuDevicePrimaryCtxRetain.load()
+        self.cuDevicePrimaryCtxSetFlags = cuDevicePrimaryCtxSetFlags.load()
         self.cuCtxCreate = cuCtxCreate.load()
         self.cuCtxResetPersistingL2Cache = cuCtxResetPersistingL2Cache.load()
         self.cuCtxPushCurrent = cuCtxPushCurrent.load()
@@ -828,6 +861,7 @@ struct CudaDLL:
         self.cuCtxSetCacheConfig = cuCtxSetCacheConfig.load()
         self.cuCtxDestroy = cuCtxDestroy.load()
         self.cuCtxSynchronize = cuCtxSynchronize.load()
+        self.cuCtxSetCurrent = cuCtxSetCurrent.load()
         self.cuEventCreate = cuEventCreate.load()
         self.cuEventDestroy = cuEventDestroy.load()
         self.cuEventSynchronize = cuEventSynchronize.load()

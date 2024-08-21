@@ -27,6 +27,8 @@ struct Context:
     var cuda_function_cache: UnsafePointer[FunctionCache]
     var owner: Bool
 
+    alias USE_CTX_RETAIN = False
+
     fn __init__(inout self) raises:
         self.__init__(Device())
 
@@ -38,11 +40,25 @@ struct Context:
         self.ctx = _ContextHandle()
         self.owner = True
 
-        _check_error(
-            self.cuda_dll.cuCtxCreate(
-                UnsafePointer.address_of(self.ctx), flags, device.id
+        @parameter
+        if self.USE_CTX_RETAIN:
+            # FIXME: This tends to fail. KERN-841.
+            # _check_error(
+            #     self.cuda_dll.cuDevicePrimaryCtxSetFlags(device.id, flags)
+            # )
+            _check_error(
+                self.cuda_dll.cuDevicePrimaryCtxRetain(
+                    UnsafePointer.address_of(self.ctx), device.id
+                )
             )
-        )
+            _check_error(self.cuda_dll.cuCtxSetCurrent(self.ctx))
+        else:
+            var cuCtxCreate = self.cuda_dll.cuCtxCreate
+            _check_error(
+                self.cuda_dll.cuCtxCreate(
+                    UnsafePointer.address_of(self.ctx), flags, device.id
+                )
+            )
 
         _check_error(
             self.cuda_dll.cuCtxSetCacheConfig(CacheConfig.PREFER_SHARED)
@@ -51,8 +67,15 @@ struct Context:
     fn __del__(owned self):
         try:
             if self.ctx and self.owner:
-                var cuCtxDestroy = self.cuda_dll.cuCtxDestroy
-                _check_error(cuCtxDestroy(self.ctx))
+
+                @parameter
+                if self.USE_CTX_RETAIN:
+                    var cuDevicePrimaryCtxRelease = self.cuda_dll.cuDevicePrimaryCtxRelease
+                    _check_error(cuDevicePrimaryCtxRelease(self.device.id))
+                else:
+                    var cuCtxDestroy = self.cuda_dll.cuCtxDestroy
+                    _check_error(cuCtxDestroy(self.ctx))
+
                 self.ctx = _ContextHandle()
                 if self.cuda_function_cache:
                     self.cuda_function_cache.destroy_pointee()
@@ -82,8 +105,15 @@ struct Context:
         self.cuda_function_cache = existing.cuda_function_cache
         self.owner = False
 
+    fn set_current(self) raises:
+        """Set the current context for this thread."""
+        var cuCtxSetCurrent = self.cuda_dll.cuCtxSetCurrent
+        _check_error(cuCtxSetCurrent(self.ctx))
+        pass
+
     fn synchronize(self) raises:
         """Blocks for a Cuda Context's tasks to complete."""
+
         var cuCtxSynchronize = self.cuda_dll.cuCtxSynchronize
         _check_error(cuCtxSynchronize())
 
@@ -116,6 +146,7 @@ struct Context:
     ](self, count: Int) raises -> UnsafePointer[type]:
         """Allocates memory that will be automatically managed by the Unified Memory system.
         """
+
         alias CU_MEM_ATTACH_GLOBAL = UInt32(1)
         var ptr = UnsafePointer[Int]()
         var cuMemAllocManaged = self.cuda_dll.cuMemAllocManaged
@@ -347,6 +378,11 @@ struct Context:
 
         var cuMemFreeAsync = self.cuda_dll.cuMemFreeAsync
         _check_error(cuMemFreeAsync(ptr.bitcast[Int](), stream.stream))
+
+    fn get_compute_capability(self) raises -> Float64:
+        """Returns the device compute capability version."""
+
+        return self.device.compute_capability()
 
     fn get_version(self) raises -> Float64:
         """Returns the cuda version."""
