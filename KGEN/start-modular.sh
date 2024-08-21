@@ -93,30 +93,3 @@ b() {
         done
     fi
 }
-
-c() {
-    if [ "$1" = "default" ]; then
-        echo "" > ./local.bazelrc
-    elif [ "$1" = "production" ]; then
-        echo "build --config=production" > ./local.bazelrc
-    elif [ "$1" = "release" ]; then
-        echo "build --config=release" > ./local.bazelrc
-    elif [ "$1" = "asan" ]; then
-        echo "build --config=asan" > ./local.bazelrc
-    elif [ "$1" = "relwithdebinfo" ]; then
-        echo "build:relwithdebinfo --cc_output_directory_tag=relwithdebinfo" > ./local.bazelrc
-        echo "build:relwithdebinfo --compilation_mode=opt" >> ./local.bazelrc
-        echo "build:relwithdebinfo --copt=-O3" >> ./local.bazelrc
-        echo "build:relwithdebinfo --copt=-g" >> ./local.bazelrc
-        echo "build:relwithdebinfo --strip=always" >> ./local.bazelrc
-    elif [ "$1" = "relwithdebinfo-modular" ]; then
-        echo "build:relwithdebinfo-modular --cc_output_directory_tag=relwithdebinfo-modular" > ./local.bazelrc
-        echo "build:relwithdebinfo-modular --compilation_mode=opt" >> ./local.bazelrc
-        echo "build:relwithdebinfo-modular --copt=-O3" >> ./local.bazelrc
-        echo "build:relwithdebinfo-modular --copt=-g" >> ./local.bazelrc
-        echo "build:relwithdebinfo-modular --strip=always" >> ./local.bazelrc
-        echo "build:relwithdebinfo-modular --per_file_copt=external/llvm-project/.*@-g0" >> ./local.bazelrc
-    else
-        echo "invalid build config specified"
-    fi
-}
