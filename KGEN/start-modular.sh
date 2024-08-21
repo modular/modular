@@ -63,6 +63,8 @@ get_build_alias() {
         echo "GenericML/test/... GenericML/unittests/..."
     elif [ "$1" = "check-graph-compiler-integration" ]; then
         echo "GenericML/graph-compiler/integration-test/..."
+    elif [ "$1" = "check-mojo-stdlib" ]; then
+        echo "open-source/mojo/stdlib/test/..."
     fi
 }
 
