@@ -168,7 +168,6 @@ void KGEN::buildPostElaborationPipeline(
   // We lower argument input conventions.
   pm.addNestedPass<FuncOp>(createLowerArgConventions());
   pm.addNestedPass<FuncOp>(createLowerCallingConventions());
-  pm.addNestedPass<FuncOp>(createCanonicalizer(compileCanonFn));
   pm.addNestedPass<FuncOp>(createMem2Reg());
 
   // Run the AutomaticInline pass with an inner function pass pipeline.
@@ -226,7 +225,6 @@ void KGEN::buildPostElaborationPipeline(
 
   if (options.optimizationLevel >= 1) {
     pm.addPass(createArgPromotion());
-    pm.addNestedPass<FuncOp>(createCanonicalizer(compileCanonFn));
     pm.addNestedPass<FuncOp>(createRaiseForLoops());
     pm.addNestedPass<FuncOp>(createLoopUnrolling({options.optimizationLevel}));
     pm.addNestedPass<FuncOp>(createSROA());
