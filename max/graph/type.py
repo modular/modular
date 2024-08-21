@@ -156,7 +156,7 @@ class Dim:
             raise ValueError("graph api does not support unknown dimensions")
 
 
-@dataclass
+@dataclass(frozen=True)
 class SymbolicDim(Dim):
     """A symbolic tensor dimension.
 
@@ -177,7 +177,8 @@ class SymbolicDim(Dim):
     """The name of the dimension."""
 
     def __init__(self, name: str | SymbolicDim):
-        self.name = str(name)
+        # Can't assign directly to frozen dataclasses.
+        super().__setattr__("name", str(name))
         # TODO(MSDK-695): less restrictive names
         if not re.match(r"^[a-zA-Z_]\w*$", self.name):
             raise ValueError("Invalid name for symbolic dimension")
@@ -219,9 +220,6 @@ class SymbolicDim(Dim):
             isinstance(other, SymbolicDim) and self.name == other.name
         )
 
-    def __hash__(self):
-        return hash(self.name)
-
     def to_mlir(self) -> mlir.Attribute:
         """Creates an mlir.Attribute representing this dimension.
 
@@ -248,6 +246,7 @@ class SymbolicDim(Dim):
 
 
 @functools.total_ordering
+@dataclass(frozen=True)
 class StaticDim(Dim):
     """A static tensor dimension.
 
@@ -263,7 +262,8 @@ class StaticDim(Dim):
     """The size of the static dimension."""
 
     def __init__(self, dim: int | StaticDim):
-        self.dim = int(dim)
+        # Can't assign directly to frozen dataclasses.
+        super().__setattr__("dim", int(dim))
         if not -1 <= self.dim < 2**63:
             raise ValueError("Dim value must be -1 <= dim < 2**63")
 
