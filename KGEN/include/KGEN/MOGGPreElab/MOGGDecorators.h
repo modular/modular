@@ -136,6 +136,23 @@ inline bool isDPSKernel(Operation *gen) {
                             gen->hasAttr(kMOGGShapeFunctionLabel));
 }
 
+//===----------------------------------------------------------------------===//
+// DPS Tensor API type strings
+//===----------------------------------------------------------------------===//
+
+// The stored mojo type symbol name of Tensor type in extensibility kernels.
+constexpr StringLiteral MOJO_DPS_TENSOR_TYPE_NAME =
+    "tensor_utils::UnsafeTensorSlice";
+
+constexpr StringLiteral MOJO_INTERNAL_DPS_TENSOR_TYPE_NAME =
+    "tensor_utils_internal::UnsafeTensorSlice";
+
+//===----------------------------------------------------------------------===//
+// MOGG Tensor API type strings
+//===----------------------------------------------------------------------===//
+
+constexpr StringLiteral MOJO_MOGG_TENSOR_TYPE_NAME = "MOGGTensor::Tensor";
+
 } // namespace M::KGEN::MOGGPreElab
 
 #endif // KGEN_LIB_MOGGPREELAB_MOGGDECORATORS_H

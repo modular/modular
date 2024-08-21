@@ -38,12 +38,10 @@ namespace M::KGEN::MOGGPreElab {
 } // namespace M::KGEN::MOGGPreElab
 
 static constexpr llvm::StringLiteral SPEC_PREFIX_STR = "__MOGG_SPEC";
-static constexpr llvm::StringLiteral DPS_TENSOR_STR =
-    "tensor_utils::UnsafeTensorSlice";
 static constexpr llvm::StringLiteral TENSOR_SPEC_NONE = "TENSOR_SPEC_NONE";
 
 static bool isTensorType(Attribute typeName) {
-  return cast<StringAttr>(typeName).strref() == DPS_TENSOR_STR;
+  return cast<StringAttr>(typeName).strref() == MOJO_DPS_TENSOR_TYPE_NAME;
 }
 
 namespace {
