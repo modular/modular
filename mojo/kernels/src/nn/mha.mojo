@@ -29,7 +29,6 @@ from layout.layout import *
 from layout.layout_tensor import (
     LayoutTensor,
     LayoutTensorIter,
-    copy_dram_to_sram,
     copy_local_to_dram,
     copy_local_to_sram,
     copy_sram_to_dram,
@@ -684,16 +683,9 @@ fn mha_single_batch[
         address_space = AddressSpace.SHARED,
     ]((k_smem + k_smem_size).bitcast[Scalar[accum_type]]())
 
-    # Share memory tile for Value, reuse K's shared memory tile.
-    alias v_smem_size = num_pipeline_stages * BN * BK
-    var v_smem = k_smem.bitcast[Scalar[v_type]]()
-    var v_smem_iter = LayoutTensorIter[
-        v_type, Layout.row_major(BK, BN), AddressSpace.SHARED, circular=True
-    ](v_smem, v_smem_size)
-
     # Shared memory for P = Q * K^t
     # This overlaps key tile but are used at the same time i.e. no race condition.
-    var p_smem = (v_smem + v_smem_size).bitcast[Scalar[v_type]]()
+    var p_smem = (k_smem + k_smem_size).bitcast[Scalar[v_type]]()
     alias p_smem_size = BM * BN
     var p_smem_tile = LayoutTensor[
         v_type,
@@ -721,6 +713,12 @@ fn mha_single_batch[
         ](k_ptr + kv_offset + kv_tile_start_row * kv_num_heads * depth)
         var k_gmem_iter = k_gmem_block.tiled_iterator[BN, BK, axis=1](0, 0)
 
+        var v_gmem_block = LayoutTensor[
+            v_type,
+            Layout(IntTuple(BN, depth), IntTuple(kv_num_heads * depth, 1)),
+        ](v_ptr + kv_offset + kv_tile_start_row * kv_num_heads * depth)
+        var v_gmem_iter = v_gmem_block.tiled_iterator[BK, BN, axis=0](0, 0)
+
         _ = p_reg_tile.fill(0)
 
         # First iteration load q from global memory to shared memory.
@@ -734,6 +732,8 @@ fn mha_single_batch[
                 num_threads,
                 num_pipeline_stages,
                 True,  # transpose_b
+                continue_prefetch_b=True,
+                b_next_smem_layout = Layout.row_major(BK, BN),
             ](
                 p_reg_tile,
                 q_gmem_iter,
@@ -741,6 +741,7 @@ fn mha_single_batch[
                 q_smem_iter,
                 k_smem_iter,
                 depth // BK,
+                next_op_b_iter=v_gmem_iter.bitcast[k_type](),
             )
         # Subsequent iterations just use q in share memory.
         # TODO: Figure out a better function interface instead of passing in
@@ -755,6 +756,8 @@ fn mha_single_batch[
                 num_threads,
                 num_pipeline_stages,
                 True,  # transpose_b
+                continue_prefetch_b=True,
+                b_next_smem_layout = Layout.row_major(BK, BN),
             ](
                 p_reg_tile,
                 # Pass shared memory iterator to hint not loading from global memory.
@@ -763,7 +766,11 @@ fn mha_single_batch[
                 q_smem_iter,
                 k_smem_iter,
                 depth // BK,
+                next_op_b_iter=v_gmem_iter.bitcast[k_type](),
             )
+
+        # Increment V iterator since it's prefetched inside 1st matmul.
+        v_gmem_iter += num_pipeline_stages - 1
 
         # Vectorize by 2.
         var p_reg_vec2 = p_reg_tile.vectorize[1, p_frag_simdwidth]()
@@ -811,11 +818,10 @@ fn mha_single_batch[
             rowsum,
         )
 
-        var v_gmem_block = LayoutTensor[
-            v_type,
-            Layout(IntTuple(BN, depth), IntTuple(kv_num_heads * depth, 1)),
-        ](v_ptr + kv_offset + kv_tile_start_row * kv_num_heads * depth)
-        var v_gmem_iter = v_gmem_block.tiled_iterator[BK, BN, axis=0](0, 0)
+        # V reuse K's smem iterator. They has same smem footage expect for different layouts.
+        var v_smem_iter = k_smem_iter.reshape[
+            Layout.row_major(BK, BN)
+        ]().bitcast[v_type]()
 
         @parameter
         if num_warps_n > 1:
@@ -835,6 +841,7 @@ fn mha_single_batch[
                 num_pipeline_stages,
                 False,  # transpose_b
                 swizzle_a=False,
+                prefetch_init=False,
             ](
                 output_reg_tile,
                 p_smem_iter,
@@ -861,6 +868,7 @@ fn mha_single_batch[
                 False,  # transpose_b
                 swizzle_a=False,
                 static_num_iters = BN // BK,
+                prefetch_init=False,
             ](
                 output_reg_tile,
                 p_reg_iter,
