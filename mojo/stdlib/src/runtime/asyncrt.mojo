@@ -168,14 +168,13 @@ fn parallelism_level() -> Int:
 
 fn create_task(
     owned handle: Coroutine[*_],
-    desired_worker_id: Int = -1,
 ) -> Task[handle.type, handle.lifetimes] as task:
-    """Run the coroutine as a task on the LLCL Runtime."""
+    """Run the coroutine as a task on the AsyncRT Runtime."""
     var ctx = handle._get_ctx[AsyncContext]()
     _init_asyncrt_chain(AsyncContext.get_chain(ctx))
     ctx[].callback = AsyncContext.complete
     task.__init__(handle^)
-    _async_execute[handle.type](task._handle._handle, desired_worker_id)
+    _async_execute[handle.type](task._handle._handle, desired_worker_id=-1)
 
 
 @always_inline
@@ -342,6 +341,15 @@ struct TaskGroup[lifetimes: LifetimeSet]:
             _async_complete(UnsafePointer[Chain].address_of(self.chain))
 
     fn create_task(
+        inout self,
+        # FIXME(MSTDL-722): Avoid accessing ._mlir_type here, use `NoneType`.
+        owned task: Coroutine[NoneType._mlir_type],
+    ):
+        self._create_task(task^, desired_worker_id=-1)
+
+    # Deprecated, use create_task() instead
+    # Only sync_parallelize() uses this to pass desired_worker_id
+    fn _create_task(
         inout self,
         # FIXME(MSTDL-722): Avoid accessing ._mlir_type here, use `NoneType`.
         owned task: Coroutine[NoneType._mlir_type],
