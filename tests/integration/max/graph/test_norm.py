@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from conftest import modular_vs_torch_test
+from conftest import modular_graph_test, assert_allclose
 import pytest
 import torch
 from llama3.norm import RMSNorm
@@ -33,4 +33,8 @@ def test_norm(session, input_type):
         x, weight = graph.inputs
         graph.output(RMSNorm(weight)(x))
 
-        modular_vs_torch_test(session, graph, torch_rms_norm)
+        @modular_graph_test(session, graph)
+        def test_correctness(execute, inputs, torch_inputs):
+            result = execute(inputs)
+            expected = torch_rms_norm(*torch_inputs).detach().numpy()
+            assert_allclose(result, expected)

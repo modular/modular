@@ -3,7 +3,7 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-from conftest import modular_vs_torch_test
+from conftest import assert_allclose, modular_graph_test
 import pytest
 import torch.nn as nn
 import torch.nn.functional as F
@@ -51,9 +51,10 @@ def test_mlp(session, input_type: TensorType):
         mlp = MLP(Linear(w1), Linear(w2), Linear(w3))
         graph.output(mlp(x))
 
-        modular_vs_torch_test(
-            session,
-            graph,
+        @modular_graph_test(session, graph)
+        def test_correctness(execute, inputs, torch_inputs):
+            result = execute(inputs)
+            x, w1, w2, w3 = torch_inputs
             # Transpose weights to match our Linear semantics.
-            (lambda x, w1, w2, w3: TorchMLP(w1.T, w2.T, w3.T)(x)),
-        )
+            expected = TorchMLP(w1.T, w2.T, w3.T)(x).detach().numpy()
+            assert_allclose(result, expected)

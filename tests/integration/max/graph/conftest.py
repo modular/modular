@@ -4,6 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
+import functools
 import os
 from pathlib import Path
 
@@ -72,27 +73,41 @@ def arrays(tensor_type: TensorType, **kwargs):
     )
 
 
-def modular_vs_torch_test(session, graph, torch_fn):
-    input_types = [input.tensor_type for input in graph.inputs]
-    model = session.load(graph)
+def assert_allclose(result, expected):
+    try:
+        np.testing.assert_allclose(
+            result,
+            expected,
+            rtol=ACCURACY_RTOL,
+            atol=ACCURACY_ATOL,
+            equal_nan=True,
+        )
+        # TODO(MSDK-830): Don't filter out tests where we NaN and torch doesn't
+    except AssertionError:
+        if np.isnan(result).any():
+            reject()
 
-    @given(st.tuples(*(arrays(input_type) for input_type in input_types)))
-    def test_correctness(inputs):
-        names = [spec.name for spec in model.input_metadata]
-        results = model.execute(**dict(zip(names, inputs)))
-        result = results["output0"]
-        expected = torch_fn(*(torch.tensor(i) for i in inputs)).detach().numpy()
-        try:
-            np.testing.assert_allclose(
-                result,
-                expected,
-                rtol=ACCURACY_RTOL,
-                atol=ACCURACY_ATOL,
-                equal_nan=True,
-            )
-            # TODO(MSDK-830): Don't filter out tests where we NaN and torch doesn't
-        except AssertionError:
-            if np.isnan(result).any():
-                reject()
 
-    test_correctness()
+def given_input_types(input_types):
+    return given(st.tuples(*(arrays(input_type) for input_type in input_types)))
+
+
+def execute(model, inputs):
+    names = [spec.name for spec in model.input_metadata]
+    results = model.execute(**dict(zip(names, inputs)))
+    return results["output0"]
+
+
+def modular_graph_test(session, graph):
+    def decorator(test_fn):
+        model = session.load(graph)
+
+        @given_input_types(input.tensor_type for input in graph.inputs)
+        def test_correctness(inputs):
+            model_execute = functools.partial(execute, model)
+            test_fn(model_execute, inputs, [torch.tensor(i) for i in inputs])
+
+        test_correctness()
+        return test_correctness
+
+    return decorator
