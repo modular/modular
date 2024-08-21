@@ -4,7 +4,7 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "AsyncRT/Init/Init.h"
+#include "Init/Init.h"
 #include "Support/CommandLine.h"
 #include "Support/CrashReporting/CrashReporting.h"
 

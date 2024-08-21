@@ -10,7 +10,7 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "AsyncRT/Init/Init.h"
+#include "Init/Init.h"
 #include "KGEN/CompilerRT/Registration.h"
 #include "Support/Context.h"
 #include "llvm/Support/raw_ostream.h"

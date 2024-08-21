@@ -7,11 +7,11 @@
 #include "mojo-doc.h"
 #include "../../common/Telemetry.h"
 
-#include "AsyncRT/Init/Init.h"
 #include "AsyncRT/Runtime/Allocator.h"
 #include "AsyncRT/Runtime/Runtime.h"
 #include "AsyncRT/Runtime/WorkQueue.h"
 #include "Config/Version.h"
+#include "Init/Init.h"
 #include "KGEN/MojoParser/EntryPoint.h"
 #include "KGEN/MojoTooling/ASTDeclRef.h"
 #include "KGEN/MojoTooling/ASTDeclView.h"

@@ -5,8 +5,8 @@
 //===----------------------------------------------------------------------===//
 
 #include "AsyncRT/CompilerSupport/Context.h"
-#include "AsyncRT/Init/Init.h"
 #include "AsyncRT/Runtime/Runtime.h"
+#include "Init/Init.h"
 #include "KGEN/KGENDialect/KGENDialect.h"
 #include "KGEN/MojoParser/EntryPoint.h"
 #include "KGEN/Support/CompilerProfiling.h"

@@ -4,7 +4,7 @@
 #
 ##===----------------------------------------------------------------------===##
 
-add_modular_library(MAsyncRTInit
+add_modular_library(Init
   Init.cpp
 
   LINK_LIBS PUBLIC

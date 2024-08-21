@@ -1,0 +1,17 @@
+load("//bazel:api.bzl", "modular_cc_library")
+
+modular_cc_library(
+    name = "Init",
+    srcs = [
+        "lib/Init.cpp",
+    ],
+    hdrs = [
+        "include/Init/Init.h",
+    ],
+    deps = [
+        "//AsyncRT:Runtime",
+        "//Support:CrashReporting",
+        "//Support:Settings",
+        "//Support:Telemetry",
+    ],
+)

@@ -20,7 +20,7 @@ add_modular_tool(kgen-reduce
   AsyncRTCompilerSupport
   AsyncRTRuntimeGlobals
   MSupportGlobals
-  MAsyncRTInit
+  Init
   MDialect
 
   MLIRIR

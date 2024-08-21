@@ -13,7 +13,7 @@ add_modular_tool(kgen-translate
   AsyncRTCompilerSupport
   AsyncRTRuntimeGlobals
   MSupportGlobals
-  MAsyncRTInit
+  Init
   MSupport
   MArchTarget
   MProfiling

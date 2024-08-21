@@ -4,17 +4,4 @@
 #
 ##===----------------------------------------------------------------------===##
 
-add_modular_tool(mojo-jupyter-executor
-  main.cpp
-
-  DEPENDS
-  mojo-sdk
-
-  LINK_LIBS PUBLIC
-  KGENCompilerRT
-  KGENSupport
-  AsyncRTRuntimeGlobals
-  MSupportGlobals
-  Init
-  MojoJupyter
-)
+add_subdirectory(lib)

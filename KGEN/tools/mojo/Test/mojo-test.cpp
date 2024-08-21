@@ -7,8 +7,8 @@
 #include "mojo-test.h"
 #include "../../common/Telemetry.h"
 
-#include "AsyncRT/Init/Init.h"
 #include "AsyncRT/Runtime/Runtime.h"
+#include "Init/Init.h"
 #include "KGEN/Compiler/KGENCompiler.h"
 #include "KGEN/MojoParser/EntryPoint.h"
 #include "KGEN/MojoTesting/Test.h"

@@ -9,7 +9,7 @@ add_modular_tool(crash-test-dummy
 
   LINK_LIBS PRIVATE
   MCrashReporting
-  MAsyncRTInit
+  Init
   MSupportGlobals
   AsyncRTRuntimeGlobals
 )

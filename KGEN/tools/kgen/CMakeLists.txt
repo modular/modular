@@ -25,7 +25,7 @@ add_modular_tool(kgen
   AsyncRTRuntimeGlobals
   MArchTarget
   MSupportGlobals
-  MAsyncRTInit
+  Init
   MVersion
   MojoParser
 

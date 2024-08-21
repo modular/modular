@@ -5,10 +5,10 @@
 //===----------------------------------------------------------------------===//
 
 #include "AsyncRT/CompilerSupport/Context.h"
-#include "AsyncRT/Init/Init.h"
 #include "AsyncRT/Runtime/Runtime.h"
 #include "AsyncRT/Runtime/RuntimeCLOptions.h"
 #include "Config/Version.h"
+#include "Init/Init.h"
 #include "KGEN/Compiler/KGENCompiler.h"
 #include "KGEN/Compiler/ObjectCompiler.h"
 #include "KGEN/ExecutionEngine/ExecutionEngine.h"

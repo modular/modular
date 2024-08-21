@@ -13,7 +13,7 @@ add_modular_tool(mojo-repl-entry-point
   AsyncRTRuntimeGlobals
   MSupportGlobals
   MSupport
-  MAsyncRTInit
+  Init
 )
 
 # The entry point is a win32 executable, and uses WinMain instead of main. This

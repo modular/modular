@@ -14,7 +14,7 @@ add_modular_tool(mojo-test-executor
   AsyncRTCompilerSupport
   AsyncRTRuntimeGlobals
   MSupportGlobals
-  MAsyncRTInit
+  Init
   MojoJupyter
   MojoParser
   MojoTesting

@@ -4,8 +4,8 @@ modular_cc_binary(
     name = "mojo-test-executor",
     srcs = ["main.cpp"],
     deps = [
-        "//AsyncRT:Init",
         "//AsyncRT:RuntimeGlobals",
+        "//Init",
         "//KGEN:ExecutionEngine",
         "//KGEN:LITDialect",
         "//KGEN:MojoJupyter",

@@ -9,10 +9,10 @@ modular_cc_binary(
         "@llvm-project//compiler-rt:orc_rt",
     ],
     deps = [
-        "//AsyncRT:Init",
         "//AsyncRT:Runtime",
         "//AsyncRT:RuntimeGlobals",
         "//Config",
+        "//Init",
         "//KGEN:Compiler",
         "//KGEN:ExecutionEngine",
         "//KGEN:KGENDialect",

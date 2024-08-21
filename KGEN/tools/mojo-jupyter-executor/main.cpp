@@ -10,7 +10,7 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "AsyncRT/Init/Init.h"
+#include "Init/Init.h"
 #include "KGEN/MojoJupyter/Kernel.h"
 #include "KGEN/Support/Configuration.h"
 #include "mlir/Support/FileUtilities.h"

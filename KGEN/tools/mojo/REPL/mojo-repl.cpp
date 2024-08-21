@@ -7,7 +7,7 @@
 #include "mojo-repl.h"
 #include "../../common/Telemetry.h"
 #include "../Common/LLDB.h"
-#include "AsyncRT/Init/Init.h"
+#include "Init/Init.h"
 #include "llvm/Option/ArgList.h"
 
 using namespace M;

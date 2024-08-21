@@ -103,19 +103,3 @@ modular_cc_library(
         "//Support:Threading",
     ],
 )
-
-modular_cc_library(
-    name = "Init",
-    srcs = [
-        "lib/Init/Init.cpp",
-    ],
-    hdrs = [
-        "include/AsyncRT/Init/Init.h",
-    ],
-    deps = [
-        ":Runtime",
-        "//Support:CrashReporting",
-        "//Support:Settings",
-        "//Support:Telemetry",
-    ],
-)
