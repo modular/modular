@@ -535,11 +535,11 @@ struct _product3[T: CollectionElement, D: ElementDelegate = DefaultDelegate](
 
 
 @always_inline
-fn _lift(n: Int, shape: List[Int, *_]) -> List[Int]:
+fn _lift(n: Int, shape: List[Int, *_]) -> List[Int, hint_trivial_type=True]:
     """Lifts the linearized shape to the ND shape. This is the same as
     _get_start_indices_of_nth_subvolume[N, 0] but works in the runtime
     domain."""
-    var out = List[Int](capacity=len(shape))
+    var out = List[Int, hint_trivial_type=True](capacity=len(shape))
     var curr_index = n
 
     for i in reversed(range(len(shape))):
@@ -552,8 +552,8 @@ fn _lift(n: Int, shape: List[Int, *_]) -> List[Int]:
 @always_inline
 fn _get_shapes[
     T: CollectionElement, D: ElementDelegate = DefaultDelegate
-](tuples: List[DynamicTuple[T, D]]) -> List[Int]:
-    var tuples_shapes = List[Int](capacity=len(tuples))
+](tuples: List[DynamicTuple[T, D]]) -> List[Int, hint_trivial_type=True]:
+    var tuples_shapes = List[Int, hint_trivial_type=True](capacity=len(tuples))
     for tup in tuples:
         tuples_shapes.append(len(tup[]))
     return tuples_shapes
@@ -564,7 +564,7 @@ struct _ProductIterN[
 ]:
     var offset: Int
     var tuples: List[DynamicTuple[T, D]]
-    var tuples_shape: List[Int]
+    var tuples_shape: List[Int, hint_trivial_type=True]
 
     fn __init__(inout self, tuples: List[DynamicTuple[T, D]]):
         self.offset = 0
