@@ -20,11 +20,6 @@ def main():
 from .tensor import Tensor
 from max.tensor import StaticTensorSpec, TensorSpec
 from max._tensor_utils import TensorLike
-from tensor_utils.indexing import (
-    _dot_prod,
-    _slice_to_tuple,
-    _row_major_strides,
-)
 from collections import InlineArray
 from math import ceil
 from max.tensor import TensorSpec
