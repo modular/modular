@@ -18,5 +18,6 @@ add_modular_library(KGENInitAllDialects
 
   MLIRIndexDialect
   MLIRLLVMDialect
+  MLIRLLVMIRTransforms
   MLIRNVVMDialect
   )
