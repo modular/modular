@@ -119,14 +119,14 @@ struct Connection {
 } // namespace
 
 /// Create an object with the common fields of debug configurations.
-static ErrorOr<json::Object> createBasicDebugConfiguration() {
+static ErrorOr<json::Object> createBasicDebugConfiguration(bool useCudaGdb) {
   ErrorOr<std::filesystem::path> modularHome =
       Config::getModularConfigFolderPath();
   if (failed(modularHome))
     return modularHome.takeError();
 
   json::Object payload{{"modularHomePath", modularHome->string()},
-                       {"type", "mojo-lldb"}};
+                       {"type", useCudaGdb ? "cuda-gdb" : "mojo-lldb"}};
 
   return payload;
 }
@@ -325,10 +325,11 @@ static ErrorOrSuccess invokeRPC(bool dryRun, ArrayRef<int> ports,
   return success();
 }
 
-ErrorOrSuccess M::invokeAttachRPC(bool dryRun, ArrayRef<int> rpcPorts,
+ErrorOrSuccess M::invokeAttachRPC(bool dryRun, bool useCudaGdb,
+                                  ArrayRef<int> rpcPorts,
                                   const std::optional<StringRef> &pid,
                                   const std::optional<StringRef> &processName) {
-  ErrorOr<json::Object> payload = createBasicDebugConfiguration();
+  ErrorOr<json::Object> payload = createBasicDebugConfiguration(useCudaGdb);
   if (failed(payload))
     return payload.takeError();
   payload->insert({"request", "attach"});
@@ -339,11 +340,11 @@ ErrorOrSuccess M::invokeAttachRPC(bool dryRun, ArrayRef<int> rpcPorts,
   return invokeRPC(dryRun, rpcPorts, *payload);
 }
 
-ErrorOrSuccess M::invokeLaunchRPC(bool dryRun, ArrayRef<int> rpcPorts,
-                                  StringRef target,
+ErrorOrSuccess M::invokeLaunchRPC(bool dryRun, bool useCudaGdb,
+                                  ArrayRef<int> rpcPorts, StringRef target,
                                   ArrayRef<std::string> runArgs,
                                   StringRef rpcTerminal) {
-  ErrorOr<json::Object> payload = createBasicDebugConfiguration();
+  ErrorOr<json::Object> payload = createBasicDebugConfiguration(useCudaGdb);
   if (failed(payload))
     return payload.takeError();
 
@@ -358,15 +359,40 @@ ErrorOrSuccess M::invokeLaunchRPC(bool dryRun, ArrayRef<int> rpcPorts,
   if (ec)
     return Error("failed to get the current working path: " + ec.message());
 
-  json::Array env;
-  for (StringRef entry : getEnv())
-    env.push_back(entry);
-
+  if (useCudaGdb) {
+    payload->insert({"name", "Mojo debug with cuda-gdb"});
+  }
   payload->insert({"program", fullTarget.string()});
   payload->insert({"request", "launch"});
   payload->insert({"cwd", cwd.string()});
-  payload->insert({"args", json::Array{runArgs}});
-  payload->insert({"env", std::move(env)});
+
+  json::Array env;
+  if (useCudaGdb) {
+    // The cuda-gdb json config takes environment as an array of
+    // {"name": NAME, "value": VALUE} objects.
+    for (StringRef entry : getEnv()) {
+      StringRef name, value;
+      std::tie(name, value) = entry.split('=');
+      env.push_back(json::Object({{"name", name}, {"value", value}}));
+    }
+    payload->insert({"environment", std::move(env)});
+    // The nsight-vscode-edition package.json file says that they can take args
+    // as an array of strings, but it doesn't seem to work.  All of their
+    // examples use a single string for the args, which does work.  I'm not sure
+    // what escaping rules they use for the args, but it's likely shell escaping
+    // (hopefully, at best, I guess).
+    std::string argsString;
+    for (std::string arg : runArgs) {
+      // TODO - need to do string escaping.
+      argsString += arg + " ";
+    }
+    payload->insert({"args", argsString});
+  } else {
+    for (StringRef entry : getEnv())
+      env.push_back(entry);
+    payload->insert({"env", std::move(env)});
+    payload->insert({"args", json::Array{runArgs}});
+  }
   payload->insert({"runInTerminal", rpcTerminal == "dedicated"});
 
   return invokeRPC(dryRun, rpcPorts, *payload);

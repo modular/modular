@@ -191,11 +191,8 @@ static int debug(const State &state) {
       target = *mojoDriver;
     }
     if (useRpc) {
-      if (useCudaGDB)
-        return state.reportError(
-            Twine("cuda-gdb with --rpc not yet supported"));
-      ErrorOrSuccess status =
-          invokeLaunchRPC(dryRun, rpcPorts, *target, runArgs, rpcTerminal);
+      ErrorOrSuccess status = invokeLaunchRPC(dryRun, useCudaGDB, rpcPorts,
+                                              *target, runArgs, rpcTerminal);
       if (failed(status))
         return state.reportError(status.getError());
       return 0;
@@ -221,11 +218,8 @@ static int debug(const State &state) {
   //  This is an attach case.
   if (pid || processName) {
     if (useRpc) {
-      if (useCudaGDB)
-        return state.reportError(
-            Twine("cuda-gdb with --rpc not yet supported"));
       ErrorOrSuccess status =
-          invokeAttachRPC(dryRun, rpcPorts, pid, processName);
+          invokeAttachRPC(dryRun, useCudaGDB, rpcPorts, pid, processName);
       if (failed(status))
         return state.reportError(status.getError());
       return 0;
