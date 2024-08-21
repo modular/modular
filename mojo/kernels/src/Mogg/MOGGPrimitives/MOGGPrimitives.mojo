@@ -141,7 +141,7 @@ fn byte_buffer_alloc[
         )
     else:
         return NDBuffer[DType.int8, 1](
-            UnsafePointer[Int8, alignment=alignment].alloc(byte_size),
+            call_ctx.alloc(byte_size, alignment).bitcast[Int8](),
             shape,
         )
 
