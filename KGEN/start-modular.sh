@@ -93,3 +93,8 @@ b() {
         done
     fi
 }
+
+bench() {
+    cmd="$@"
+    hyperfine --prepare='rm -rf .derived/.mojo_cache' "$cmd" --warmup 3
+}
