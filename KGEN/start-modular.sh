@@ -110,6 +110,7 @@ c() {
         source "$MODULAR_PATH/utils/start-modular.sh"
         c $@
     fi
+    echo "build --remote_upload_local_results=false" >> ./config.bazelrc
 }
 
 bench() {
