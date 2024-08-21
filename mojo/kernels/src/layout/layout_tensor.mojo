@@ -2725,6 +2725,14 @@ struct LayoutTensorIter[
     var bound: Int
 
     @always_inline
+    fn __init__(inout self):
+        """Empty iterator, used as default value."""
+        self.ptr = UnsafePointer[Scalar[type], address_space]()
+        self.offset = 0
+        self.stride = 0
+        self.bound = 0
+
+    @always_inline
     fn __init__(
         inout self,
         ptr: UnsafePointer[Scalar[type], address_space],
@@ -2818,4 +2826,15 @@ struct LayoutTensorIter[
 
         return LayoutTensorIter[type, dst_layout, address_space, circular](
             self.ptr, self.bound, self.stride, self.offset
+        )
+
+    @always_inline
+    fn bitcast[
+        new_type: DType, *, address_space: AddressSpace = Self.address_space
+    ](self) -> LayoutTensorIter[new_type, layout, address_space, Self.circular]:
+        return LayoutTensorIter[new_type, layout, address_space, Self.circular](
+            self.ptr.bitcast[new_type, address_space](),
+            self.bound,
+            self.stride,
+            self.offset,
         )
