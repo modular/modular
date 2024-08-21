@@ -882,7 +882,7 @@ struct Tensor[type: DType](
         fn serialize[T: Formattable](val: T):
             writer.write(val)
 
-        var shape = List[Int]()
+        var shape = List[Int, hint_trivial_type=True]()
         for i in range(self.rank()):
             shape.append(self.shape()[i])
 
@@ -1173,8 +1173,12 @@ struct Tensor[type: DType](
     fn _to_buffer(self) -> Buffer[type]:
         return Buffer[type](self._ptr, self.num_elements())
 
-    fn _truncate_axis_dim(self, axis: Int, keep_dims: Bool = True) -> List[Int]:
-        var output_shape = List[Int](capacity=self.rank())
+    fn _truncate_axis_dim(
+        self, axis: Int, keep_dims: Bool = True
+    ) -> List[Int, hint_trivial_type=True]:
+        var output_shape = List[Int, hint_trivial_type=True](
+            capacity=self.rank()
+        )
         for i in range(self.rank()):
             if i == axis or i == axis + self.rank():
                 if keep_dims:

@@ -254,7 +254,7 @@ struct StaticTensorSpec[type: DType, rank: Int]:
             self.shape[i] = spec[i]
 
     fn get_tensor_spec(self) -> TensorSpec:
-        var shapes = List[Int]()
+        var shapes = List[Int, hint_trivial_type=True]()
         shapes.reserve(rank)
         for i in range(rank):
             shapes.append(self[i])
