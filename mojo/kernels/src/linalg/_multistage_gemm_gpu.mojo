@@ -89,10 +89,10 @@ fn multistage_mma[
     c: LayoutTensor[c_type, c_layout, address_space = AddressSpace.LOCAL],
     a_iter_arg: LayoutTensorIter[_, a_layout, address_space=_, circular=_],
     b_iter_arg: LayoutTensorIter[b_type, b_layout],
-    a_smem_iter: LayoutTensorIter[
+    a_smem_iter_arg: LayoutTensorIter[
         a_type, a_smem_layout, address_space = AddressSpace.SHARED, circular=_
     ],
-    b_smem_iter: LayoutTensorIter[
+    inout b_smem_iter: LayoutTensorIter[
         b_type, b_smem_layout, address_space = AddressSpace.SHARED, circular=_
     ],
     num_iters: Int,
@@ -111,6 +111,7 @@ fn multistage_mma[
 
     var a_iter = a_iter_arg
     var b_iter = b_iter_arg
+    var a_smem_iter = a_smem_iter_arg
 
     alias async_copy_a_layout = Layout.row_major(
         num_threads * simd_size // BK, BK // simd_size
@@ -337,11 +338,8 @@ fn multistage_mma[
         return
 
     for k_tile_id in range(num_iters):
-        var a_smem_iter_tmp = a_smem_iter.next(k_tile_id)
-        var b_smem_iter_tmp = b_smem_iter.next(k_tile_id)
-
-        var a_warp_tile = a_smem_iter_tmp[].tile[WM, BK](int(warp_y), 0)
-        var b_warp_tile = b_smem_iter_tmp[].tile[b_wtile_dim0, b_wtile_dim1](
+        var a_warp_tile = a_smem_iter[].tile[WM, BK](int(warp_y), 0)
+        var b_warp_tile = b_smem_iter[].tile[b_wtile_dim0, b_wtile_dim1](
             b_wtile_coord0,
             b_wtile_coord1,
         )
@@ -354,11 +352,11 @@ fn multistage_mma[
             var next = (k_mma + 1) % 2
 
             if k_mma == num_k_mmas - 1:
-                var a_smem_next_tile = a_smem_iter_tmp.next()[]
-                var b_smem_next_tile = b_smem_iter_tmp.next()[]
+                a_smem_iter += 1
+                b_smem_iter += 1
 
-                a_warp_tile = a_smem_next_tile.tile[WM, BK](int(warp_y), 0)
-                b_warp_tile = b_smem_next_tile.tile[b_wtile_dim0, b_wtile_dim1](
+                a_warp_tile = a_smem_iter[].tile[WM, BK](int(warp_y), 0)
+                b_warp_tile = b_smem_iter[].tile[b_wtile_dim0, b_wtile_dim1](
                     b_wtile_coord0, b_wtile_coord1
                 )
 
@@ -390,7 +388,7 @@ fn multistage_mma[
 
                     @parameter
                     if a_iter.address_space == AddressSpace.GENERIC:
-                        var a_smem_prefetch_tile = a_smem_iter_tmp.next(
+                        var a_smem_prefetch_tile = a_smem_iter.next(
                             num_pipeline_stages - 1
                         )[]
 
@@ -426,7 +424,7 @@ fn multistage_mma[
 
                     @parameter
                     if b_iter.address_space == AddressSpace.GENERIC:
-                        var b_smem_prefetch_tile = b_smem_iter_tmp.next(
+                        var b_smem_prefetch_tile = b_smem_iter.next(
                             num_pipeline_stages - 1
                         )[]
 
@@ -681,11 +679,8 @@ fn multistage_gemm[
     var num_k_tiles = ceildiv(K, BK)
 
     for k_tile_id in range(num_k_tiles):
-        var a_iter = a_smem_iter.next(k_tile_id)
-        var b_iter = b_smem_iter.next(k_tile_id)
-
-        var a_warp_tile = a_iter[].tile[WM, BK](int(warp_y), 0)
-        var b_warp_tile = b_iter[].tile[b_wtile_dim0, b_wtile_dim1](
+        var a_warp_tile = a_smem_iter[].tile[WM, BK](int(warp_y), 0)
+        var b_warp_tile = b_smem_iter[].tile[b_wtile_dim0, b_wtile_dim1](
             b_wtile_coord0,
             b_wtile_coord1,
         )
@@ -699,11 +694,11 @@ fn multistage_gemm[
             var next = (k_mma + 1) % 2
 
             if k_mma == num_k_mmas - 1:
-                var a_smem_next_tile = a_iter.next()[]
-                var b_smem_next_tile = b_iter.next()[]
+                a_smem_iter += 1
+                b_smem_iter += 1
 
-                a_warp_tile = a_smem_next_tile.tile[WM, BK](int(warp_y), 0)
-                b_warp_tile = b_smem_next_tile.tile[b_wtile_dim0, b_wtile_dim1](
+                a_warp_tile = a_smem_iter[].tile[WM, BK](int(warp_y), 0)
+                b_warp_tile = b_smem_iter[].tile[b_wtile_dim0, b_wtile_dim1](
                     b_wtile_coord0, b_wtile_coord1
                 )
 
@@ -728,8 +723,8 @@ fn multistage_gemm[
                 # shared memory buffer.
                 if prefetch_tile_id < num_k_tiles:
                     # fmt: off
-                    var a_smem_prefetch_tile = a_iter.next(num_pipeline_stages - 1)[]
-                    var b_smem_prefetch_tile = b_iter.next(num_pipeline_stages - 1)[]
+                    var a_smem_prefetch_tile = a_smem_iter.next(num_pipeline_stages - 1)[]
+                    var b_smem_prefetch_tile = b_smem_iter.next(num_pipeline_stages - 1)[]
                     # fmt: on
 
                     # TODO: Extend the async copy instrinsic to creat dummy copies. The
