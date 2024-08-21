@@ -306,8 +306,8 @@ fn testClosure(a: Bool):
     _ = thing()
 
 
-fn disableDtor(owned x: MoreComplexExample):
 # expected-error @+1 {{field 'x.mem' destroyed out of the middle of a value, preventing the overall value from being destroyed}}
+fn disableDtor(owned x: MoreComplexExample):
     x.mem^.consume()
 
 
@@ -320,11 +320,11 @@ fn badMarkDestroyed(owned x: MoreComplexExample):
 
 fn fieldConsumeError(
     owned w: MoreComplexExample,  # expected-note {{'w' declared here}}
+    # expected-error @+1 {{field 'x.mem' destroyed out of the middle of a value, preventing the overall value from being destroyed}}
     owned x: MoreComplexExample,
     owned y: MoreComplexExample,
     owned z: MoreComplexExample,  # expected-note {{'z' declared here}}
 ):
-    # expected-error @+1 {{field 'x.mem' destroyed out of the middle of a value, preventing the overall value from being destroyed}}
     x.mem^.consume()
 
     # This is ok because we replace the mem field.
@@ -338,8 +338,8 @@ fn fieldConsumeError(
     w.mem^.consume()
     use(w)  # expected-error {{use of uninitialized value 'w.mem'}}
 
-    var twoRegsRP = TwoRegsRP()
     # expected-error @+1 {{field 'twoRegsRP.reg1' destroyed out of the middle of a value, preventing the overall value from being destroyed}}
+    var twoRegsRP = TwoRegsRP()
     twoRegsRP.reg1^.consume()
 
     var single1 = MemExample()  # expected-note {{'single1' declared here}}

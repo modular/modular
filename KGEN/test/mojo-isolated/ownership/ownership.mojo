@@ -1006,3 +1006,29 @@ fn test_if_ownership(x: Bool, owned a: RegExample, owned b: RegExample) -> RegEx
     # CHECK-NEXT:  }
     # CHECK-NEXT:  kgen.return [[RES]]
     return a if x else b
+
+
+struct MyStructWithMarkDestroyed[T: CollectionElement]:
+    var a: T
+    var b: T
+
+# CHECK-LABEL: lit.func @{{.*}}reap
+    fn reap(owned self) -> T:
+        # "a" field is never used here so it is destroyed early.
+        # CHECK-NEXT: [[AREF:%.*]] = lit.ref.struct.ger %self[a] 
+        # CHECK-NEXT: lit.call{{.*}}__del__{{.*}}([[AREF]]
+
+        # Full object bit is explicitly destroyed.
+        # CHECK-NEXT: lit.ownership.mark_destroyed %self
+        __mlir_op.`lit.ownership.mark_destroyed`(__get_mvalue_as_litref(self))
+
+        # Transfer operator includes a lit.ownership.use.
+        # CHECK-NEXT: [[BREF:%.*]] = lit.ref.struct.ger %self[b]
+        # CHECK-NEXT: lit.ownership.use [[BREF]]
+
+        # Rvalue can be moved into the result slot.
+        # CHECK-NEXT: lit.call{{.*}}__moveinit__{{.*}}(%__result__, [[BREF]])
+
+        # CHECK-NEXT: kgen.param.constant: none
+        # CHECK-NEXT: kgen.return
+        return self.b^
