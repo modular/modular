@@ -81,7 +81,7 @@ class Tensor:
         """Creates a contiguous copy of the parent tensor."""
         tensor_copy = Tensor(self.shape, self.dtype)
         for idx in self._iterate_indices():
-            tensor_copy[*idx] = self[*idx].item()
+            tensor_copy[idx] = self[idx].item()
         return tensor_copy
 
     def __repr__(self) -> str:
