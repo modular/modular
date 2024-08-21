@@ -55,23 +55,14 @@ def unsqueeze(x: ValueLike, axis: int) -> GraphValue:
     return ops.reshape(x, new_shape)
 
 
-def squeeze(x: ValueLike, axis=None) -> GraphValue:
+def squeeze(x: ValueLike, axis: int) -> GraphValue:
     v = GraphValue(x)
     # TODO (MSDK-655): Probably want to add rmo.mo_squeeze_shape here
-    if axis is not None:
-        shape = v.tensor_type.shape
-        if not shape[axis].is_static() or shape[axis].dim != 1:
-            raise ValueError(
-                f"Cannot squeeze axis {axis} with size"
-                f" {v.tensor_type.shape[axis]}"
-            )
-        new_shape = v.tensor_type.shape[:axis] + v.tensor_type.shape[axis + 1 :]
-    else:
-        new_shape = []
-        for d in v.tensor_type.shape:
-            if isinstance(d, StaticDim) and d.dim != 1:
-                new_shape.append(d)
-    return ops.reshape(v, new_shape)
+    shape = Shape(v.shape)
+    if shape[axis] != 1:
+        raise ValueError(f"Squeeze dim must be 1, got {axis=}, {shape=}")
+    shape.pop(axis)
+    return ops.reshape(v, shape)
 
 
 def transpose(x: ValueLike, dim_1: int, dim_2: int) -> GraphValue:
