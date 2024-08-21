@@ -73,6 +73,7 @@ static TestExecutionResult executeMojoRunTest(StringRef workingDirectory,
   auto emitInitError = [&](StringRef error) {
     return TestExecutionResult::buildInitError(test.id, error);
   };
+
   // Create a temporary output file for the test executor.
   ErrorOr<TempFile> outFileOr = TempFile::create("test-out-%%%%%%.txt");
   if (failed(outFileOr))
@@ -91,6 +92,16 @@ static TestExecutionResult executeMojoRunTest(StringRef workingDirectory,
   std::string fullId =
       llvm::formatv("{0}::{1}", test.id.getFilePath(), unescapedId);
 
+  ErrorOr<TempFile> inFileOr = TempFile::create("test-in-%%%%%%.txt");
+  if (failed(inFileOr))
+    return emitInitError(inFileOr.getError());
+  std::string inFilePath = inFileOr->getPath().string();
+
+  {
+    llvm::raw_fd_ostream rawInOs(inFileOr->getFD(), /*shouldClose=*/false);
+    rawInOs << fullId << "\n";
+  }
+
   std::string out = outFileOr->getPath().string();
   std::string errPath = errFileOr->getPath().string();
   const std::optional<StringRef> redirects[] = {
@@ -98,7 +109,7 @@ static TestExecutionResult executeMojoRunTest(StringRef workingDirectory,
       /*stdout=*/out,
       /*stderr=*/errPath,
   };
-  SmallVector<StringRef> args = {entrypointFile, fullId};
+  SmallVector<StringRef> args = {entrypointFile, inFilePath};
 
   auto now = std::chrono::steady_clock::now();
   auto exitCode =
