@@ -2800,3 +2800,22 @@ struct LayoutTensorIter[
     @always_inline
     fn next(self, rhs: UInt = 1) -> Self:
         return self.next(int(rhs))
+
+    @always_inline
+    fn reshape[
+        dst_layout: Layout,
+    ](self) -> LayoutTensorIter[type, dst_layout, address_space, circular]:
+        constrained[
+            dst_layout.size() == layout.size(),
+            "Destination layout doesn't match the original.",
+        ]()
+
+        constrained[
+            dst_layout.size() == dst_layout.cosize()
+            and layout.size() == layout.cosize(),
+            "Iterator reshape only supports contiguous layout.",
+        ]()
+
+        return LayoutTensorIter[type, dst_layout, address_space, circular](
+            self.ptr, self.bound, self.stride, self.offset
+        )

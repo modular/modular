@@ -1500,6 +1500,16 @@ fn test_layout_tensor_iterator():
         print(iter.get())
         iter += 1
 
+    # Reshape iterator.
+    # CHECK: 12.0 13.0
+    # CHECK: 14.0 15.0
+    # CHECK: 16.0 17.0
+    var iter2x3 = LayoutTensorIter[type, Layout.row_major(2, 3)](ptr, size)
+    iter2x3 += 1
+    var iter3x2 = iter2x3.reshape[Layout.row_major(3, 2)]()
+    iter3x2 += 1
+    print(iter3x2[])
+
 
 # CHECK-LABEL: test_layout_tensor_copy_from_masked_src
 fn test_layout_tensor_copy_from_masked_src():
