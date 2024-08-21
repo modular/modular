@@ -447,3 +447,9 @@ struct MojoCallContextPtr:
             "KGEN_CompilerRT_AsyncRT_MojoCallContext_SetToError", NoneType
         ](self.ptr, strref.data, strref.length)
         str._strref_keepalive()
+
+    fn alloc(self, byte_size: Int, alignment: Int) -> UnsafePointer[NoneType]:
+        return external_call[
+            "KGEN_CompilerRT_AsyncRT_MojoCallContext_Allocate",
+            UnsafePointer[NoneType],
+        ](self.ptr, byte_size, alignment)
