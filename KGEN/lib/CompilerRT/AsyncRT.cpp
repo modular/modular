@@ -292,6 +292,13 @@ KGEN_CompilerRT_AsyncRT_MojoCallContext_GetDeviceContext(
   return mojoValueDataPtr;
 }
 
+COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void *
+KGEN_CompilerRT_AsyncRT_MojoCallContext_Allocate(AsyncRTMojoCallContextRef ctx,
+                                                 int64_t size,
+                                                 int64_t alignment) {
+  return unwrap(ctx).runtime->getAllocator()->allocateBytes(size, alignment);
+}
+
 //===----------------------------------------------------------------------===//
 // Packing functions for creating async values
 //===----------------------------------------------------------------------===//
@@ -610,6 +617,8 @@ void M::KGEN::registerAsyncRT(
   funcs.push_back(
       {"KGEN_CompilerRT_AsyncRT_MojoCallContext_SetCUContext",
        (void *)&KGEN_CompilerRT_AsyncRT_MojoCallContext_SetCUContext});
+  funcs.push_back({"KGEN_CompilerRT_AsyncRT_MojoCallContext_Allocate",
+                   (void *)&KGEN_CompilerRT_AsyncRT_MojoCallContext_Allocate});
 
   funcs.push_back({"KGEN_CompilerRT_CreateAsyncCUDABufferRef",
                    (void *)&KGEN_CompilerRT_CreateAsyncCUDABufferRef});
