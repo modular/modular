@@ -363,6 +363,7 @@ TypeDeclInfo::getFieldContaining(LIT::StructType declRef, unsigned fieldNo) {
 //===----------------------------------------------------------------------===//
 
 namespace {
+struct ValueRef;
 struct ValueInfo {
   /// This is the declared value being tracked.
   const Value value;
@@ -401,6 +402,10 @@ struct ValueInfo {
     assert(value && "cannot get name of null entry");
     return LifetimeTrackable(value).name;
   }
+
+  /// Return a ValueRef that covers this whole value.  The caller must provide
+  /// the valueId.
+  ValueRef getFullValueRef(unsigned valueId) const;
 };
 
 /// A ValueRef indicates a slice reference into the BitVector for all the
@@ -482,6 +487,12 @@ struct ValueRef {
                     isIndirect);
   }
 };
+
+/// Return a ValueRef that covers this whole value.  The caller must provide
+/// the valueId.
+ValueRef ValueInfo::getFullValueRef(unsigned valueId) const {
+  return ValueRef{valueId, startValueBit, endValueBit, isIndirect};
+}
 
 /// This tracks the values in a function (including nested functions) that are
 /// relevant for ownership - that needs to be tracked for uses without being
@@ -567,8 +578,7 @@ struct ValueSet {
   /// Return a reference to the entire value with the specified ID.
   ValueRef getFullValueRef(unsigned valueId) const {
     const auto &entry = valueInfos[valueId];
-    return ValueRef{valueId, entry.startValueBit, entry.endValueBit,
-                    entry.isIndirect};
+    return entry.getFullValueRef(valueId);
   }
 
   /// Given a lifetime attribute, return the value ref that defines it.
@@ -931,7 +941,7 @@ static void addBadValueNameToDiag(ValueRef valueRef, const BitVector &bits,
 
   diag << "'" << valueEntry.getName().str();
   // If the whole value is missing, then don't add any field information.
-  if (valueSet.getFullValueRef(valueRef.valueId).isAllMissing(bits)) {
+  if (valueEntry.getFullValueRef(valueRef.valueId).isAllMissing(bits)) {
     diag << "'";
     return;
   }
@@ -2174,7 +2184,7 @@ void DestructorInsertion::checkConsume(Value value, Operation &op,
     ValueInfo &info = valueSet.getValueInfo(valueRef.valueId);
     if (info.hasErrorDiagnosed)
       return;
-    ValueRef fullValueRef = valueSet.getFullValueRef(valueRef.valueId);
+    ValueRef fullValueRef = info.getFullValueRef(valueRef.valueId);
 
     auto diag = mlir::emitError(op.getLoc(), "value ");
     // Use a clear bitvector of the right size so we print the entire value
@@ -2250,8 +2260,21 @@ void DestructorInsertion::checkUse(Value value,
     // of that value in a break branch.
     if (value != valueInfo.value &&
         !consumedValues[valueInfo.endValueBit - 1] && !dryRun) {
-      value = valueInfo.value;
-      valueRef = valueSet.getFullValueRef(valueRef.valueId);
+      auto fullValueRef = valueInfo.getFullValueRef(valueRef.valueId);
+      // The full value must be live at this point for us to destroy the full
+      // value.  We've already checked that values are defined before use, so
+      // in this scenario, the full object bit will be handled somehow else,
+      // e.g. by an explicit mark_destroyed.
+      //
+      //  init(&aggregate)
+      //  use(aggregate)
+      //  mark_destroyed(aggregate)
+      //  use(aggregate.field1)       <<-- We are here.
+      //  consume(aggregate.field2)
+      if (fullValueRef.isAllMissing(consumedValues)) {
+        value = valueInfo.value;
+        valueRef = fullValueRef;
+      }
     }
 
     // Otherwise, it is possible that that ValueRef is live but the overall

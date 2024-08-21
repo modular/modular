@@ -49,7 +49,7 @@ struct AnyLifetime[is_mutable: Bool]:
 # ===----------------------------------------------------------------------=== #
 
 
-trait CollectionElement:
+trait CollectionElement(Copyable, Movable):
     pass
 
 
@@ -77,6 +77,9 @@ struct object:
         pass
 
     fn __init__(inout self, value: Int):
+        pass
+
+    fn __moveinit__(inout self, owned existing: Self):
         pass
 
     fn __copyinit__(inout self, existing: Self, /):
