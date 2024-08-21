@@ -1,0 +1,25 @@
+load("//bazel:api.bzl", "modular_cc_binary")
+
+modular_cc_binary(
+    name = "compilation-server",
+    srcs = glob([
+        "*.cpp",
+        "*.h",
+    ]),
+    deps = [
+        "//AsyncRT:Init",
+        "//AsyncRT:Runtime",
+        "//AsyncRT:RuntimeGlobals",
+        "//KGEN:MojoTooling",
+        "//KGEN:ObjectCompiler",
+        "//KGEN:Pipeline",
+        "//KGEN:Support",
+        "//KGEN:ToolCommon",
+        "//KGEN/tools/common/lsp-protocol",
+        "//Support:Base",
+        "//Support:Globals",
+        "//Support:Telemetry",
+        "@llvm-project//llvm:Support",
+        "@llvm-project//mlir:MlirLspServerLib",
+    ],
+)
