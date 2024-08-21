@@ -204,7 +204,7 @@ def load[PathLike: PathLike](path: PathLike) -> TensorDict:
             var key = _read_string(f, key_size)
             var dtype = _read_int[DType.uint8](f)
             var rank = _read_int[DType.uint8](f)
-            var dims = List[Int]()
+            var dims = List[Int, hint_trivial_type=True]()
             for _ in range(rank):
                 var d = _read_int[DType.uint32](f)
                 dims.append(int(d))

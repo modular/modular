@@ -273,7 +273,7 @@ struct EngineTensorSpec(Stringable, CollectionElement):
         if not rank_or:
             raise "tensors with dynamic rank cannot be converted to Mojo TensorSpec."
 
-        var shape = List[Int]()
+        var shape = List[Int, hint_trivial_type=True]()
         var rank = rank_or.value()
         for i in range(rank):
             shape.append(self[i].value())

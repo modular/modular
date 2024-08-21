@@ -39,7 +39,7 @@ struct CTensorView:
 
 fn _get_tensor_spec(view: CTensorView) -> TensorSpec:
     var dtype = view.dtype
-    var shape = List[Int](capacity=view.rank)
+    var shape = List[Int, hint_trivial_type=True](capacity=view.rank)
     for i in range(view.rank):
         shape.append(int(view.shape[i]))
 

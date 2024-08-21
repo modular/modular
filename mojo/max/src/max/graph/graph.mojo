@@ -618,7 +618,7 @@ struct Graph(CollectionElement, Stringable, Formattable):
         Returns:
             The symbolic output of this node.
         """
-        var shape = List[Int](capacity=rank)
+        var shape = List[Int, hint_trivial_type=True](capacity=rank)
         for _ in range(rank):
             shape.append(1)
         return self.constant[dtype](Tensor(shape, value))

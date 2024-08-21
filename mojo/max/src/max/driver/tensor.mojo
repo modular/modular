@@ -328,7 +328,7 @@ struct Tensor[type: DType, rank: Int](CollectionElement, TensorLike):
         fn serialize[T: Formattable](val: T):
             writer.write(val)
 
-        var shape = List[Int]()
+        var shape = List[Int, hint_trivial_type=True]()
         for i in range(self._spec.rank):
             shape.append(self._spec.shape[i])
 

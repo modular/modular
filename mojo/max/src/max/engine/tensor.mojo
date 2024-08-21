@@ -211,7 +211,7 @@ struct EngineNumpyView:
         @always_inline
         @parameter
         fn get_spec[ty: DType]() raises -> TensorSpec:
-            var shape = List[Int]()
+            var shape = List[Int, hint_trivial_type=True]()
             var array_shape = self._obj.shape
             for dim in array_shape:
                 shape.append(dim)

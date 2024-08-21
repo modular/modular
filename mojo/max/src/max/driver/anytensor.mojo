@@ -202,7 +202,7 @@ struct AnyTensor:
 
         @parameter
         fn dispatcher[dt: DType]():
-            var shape = List[Int]()
+            var shape = List[Int, hint_trivial_type=True]()
             for i in range(self.get_rank()):
                 shape.append(self._spec.shape[i])
             _serialize[serialize_fn=serialize, serialize_end_line=False](

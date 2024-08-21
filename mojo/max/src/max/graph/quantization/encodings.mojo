@@ -81,7 +81,7 @@ struct BFloat16Encoding(QuantizationEncoding):
         # bfloat16 element in the innermost dimension.
         # Note that this implies the storage is row major.
         tensor_shape = tensor.shape()
-        buff_dims = List[Int]()
+        buff_dims = List[Int, hint_trivial_type=True]()
         for i in range(tensor_shape.rank() - 1):
             buff_dims.append(tensor_shape[i])
 
@@ -201,7 +201,7 @@ struct Q4_0Encoding(QuantizationEncoding):
 
         # Q4_0 quantizes row-wise, so compute the output shape as the same as
         # the input shape, except with the last dimension packed as _BlockQ40.
-        buff_dims = List[Int]()
+        buff_dims = List[Int, hint_trivial_type=True]()
         for i in range(tensor_shape.rank() - 1):
             buff_dims.append(tensor_shape[i])
         # Compute number of bytes in last block, which is packed.
@@ -727,7 +727,7 @@ def _qn_k_quantize[
 
     # Qn_K quantizes row-wise, so compute the output shape as the same as
     # the input shape, except with the last dimension packed as BlockType.
-    buff_dims = List[Int]()
+    buff_dims = List[Int, hint_trivial_type=True]()
     for i in range(tensor_shape.rank() - 1):
         buff_dims.append(tensor_shape[i])
     # Compute number of bytes in last dimension, which is packed.
