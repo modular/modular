@@ -14,6 +14,7 @@
 #include "llvm/ADT/StringExtras.h"
 #include "llvm/Bitcode/BitcodeReader.h"
 #include "llvm/Bitcode/BitcodeWriter.h"
+#include "llvm/IR/Constants.h"
 #include "llvm/IR/InstrTypes.h"
 #include "llvm/IR/LLVMContext.h"
 #include "llvm/Linker/Linker.h"
@@ -45,10 +46,107 @@ ErrorOrSuccess LLVMModuleAndContext::create(
 }
 
 //===----------------------------------------------------------------------===//
-// Module Splitter
+// StringConstantTable
 //===----------------------------------------------------------------------===//
 
 namespace {
+/// Large strings are very inefficiently encoded in LLVM bitcode (each `char` is
+/// encoded as a `uint64_t`). The LLVM bitcode reader is also very inefficiently
+/// reads strings back, performing 3 ultimate copies of the data. This is made
+/// worse by the fact the `getLazyBitcodeModule` does not lazily parse constants
+/// from the LLVM bitcode. Thus, when per-function splitting a module with N
+/// functions and M large string constants, we form 3*M*N copies of the large
+/// strings.
+///
+/// This class is part of a workaround of this inefficiency. When processing a
+/// module for splitting, we track any string global constants and their indices
+/// in this table. If a module is going to be roundtripped through bitcode to be
+/// lazily loaded, we externalize the strings by setting the corresponding
+/// constants to `zeroinitializer` in the module before it is written to
+/// bitcode. As we materialize constants on the other side, we check for a
+/// materialized global variable that matches an entry in the string table and
+/// directly copy the data over into the new LLVM context.
+///
+/// We can generalize this optimziation to other large data types as necessary.
+///
+/// This class is used in an `RCRef` to be shared across multiple threads.
+class StringConstantTable : public ReferenceCounted<StringConstantTable> {
+  /// An entry in the string table consists of a global variable, its module
+  /// index, and the a reference to the string data. Because the string data is
+  /// owned by the original LLVM context, we have to ensure it stays alive.
+  struct Entry {
+    unsigned idx;
+    const llvm::GlobalVariable *var;
+    StringRef value;
+  };
+
+public:
+  /// If `value` denotes a string constant, record the data at index `gvIdx`.
+  void recordIfStringConstant(unsigned gvIdx, const llvm::GlobalValue &value) {
+    auto var = dyn_cast<llvm::GlobalVariable>(&value);
+    if (var && var->isConstant() && var->hasInternalLinkage()) {
+      auto *init =
+          dyn_cast<llvm::ConstantDataSequential>(var->getInitializer());
+      if (init && init->isCString())
+        stringConstants.push_back(Entry{gvIdx, var, init->getAsString()});
+    }
+  }
+
+  /// Before writing the main module to bitcode, externalize large string
+  /// constants by stubbing out their values. Take ownership of the main module
+  /// so the string data stays alive.
+  llvm::Module &externalizeStrings(LLVMModuleAndContext &&module) {
+    mainModule = std::move(module);
+    // Stub the initializers. The global variable is an internal constant, so it
+    // must have an initializer.
+    for (Entry &e : stringConstants) {
+      auto *stub =
+          llvm::Constant::getNullValue(e.var->getInitializer()->getType());
+      // `const_cast` is OK because we own the module now.
+      const_cast<llvm::GlobalVariable *>(e.var)->setInitializer(stub);
+    }
+    return *mainModule;
+  }
+
+  /// This is an iterator over the entries in the string table.
+  class Injector {
+    using const_iterator = std::vector<Entry>::const_iterator;
+
+  public:
+    /// Given a global variable in a materialized module and its index, if it is
+    /// a string constant found in the table, copy the data over into the new
+    /// LLVM context and set the initializer.
+    void materializeIfStringConstant(unsigned gvIdx,
+                                     llvm::GlobalVariable &var) {
+      while (it != e && it->idx < gvIdx)
+        ++it;
+      if (it == e || it->idx != gvIdx)
+        return;
+      var.setInitializer(llvm::ConstantDataArray::getString(
+          var.getType()->getContext(), it->value, /*AddNull=*/false));
+    }
+
+  private:
+    explicit Injector(const_iterator it, const_iterator e) : it(it), e(e) {}
+
+    const_iterator it, e;
+
+    friend class StringConstantTable;
+  };
+
+  Injector begin() const {
+    return Injector(stringConstants.begin(), stringConstants.end());
+  }
+
+private:
+  std::vector<Entry> stringConstants;
+  LLVMModuleAndContext mainModule;
+};
+
+//===----------------------------------------------------------------------===//
+// Module Splitter
+//===----------------------------------------------------------------------===//
+
 class LLVMModuleSplitterImpl {
 public:
   explicit LLVMModuleSplitterImpl(LLVMModuleAndContext module)
@@ -101,18 +199,22 @@ private:
 
 static LLVMModuleAndContext readAndMaterializeDependencies(
     BufferRef buf,
-    const llvm::MapVector<const llvm::GlobalValue *, unsigned> &set) {
-  CompilerTimeTraceScope traceScope("readAndMaterializeDependencies");
+    const llvm::MapVector<const llvm::GlobalValue *, unsigned> &set,
+    const StringConstantTable &strtab) {
 
   // First, create a lazy module with an internal bitcode materializer.
   // TODO: Not sure how to make lazy loading metadata work.
   LLVMModuleAndContext result;
-  (void)result.create([&](llvm::LLVMContext &ctx) {
-    return llvm::cantFail(llvm::getLazyBitcodeModule(
-        llvm::MemoryBufferRef(buf->getBuffer(), "<split-module>"), ctx,
-        /*ShouldLazyLoadMetadata=*/false));
-  });
-  result->setModuleInlineAsm("");
+  {
+    CompilerTimeTraceScope traceScope("createLLVMContext");
+    (void)result.create([&](llvm::LLVMContext &ctx) {
+      CompilerTimeTraceScope traceScope("getLazyBitcodeModule");
+      return llvm::cantFail(llvm::getLazyBitcodeModule(
+          llvm::MemoryBufferRef(buf->getBuffer(), "<split-module>"), ctx,
+          /*ShouldLazyLoadMetadata=*/false));
+    });
+    result->setModuleInlineAsm("");
+  }
 
   SmallVector<unsigned> sortIndices =
       llvm::to_vector(llvm::make_second_range(set));
@@ -123,12 +225,14 @@ static LLVMModuleAndContext readAndMaterializeDependencies(
   // The global value indices go from globals, functions, then aliases. This
   // mirrors the order in which global values are deleted by LLVM's GlobalDCE.
   unsigned curIdx = 0;
+  StringConstantTable::Injector it = strtab.begin();
   // We need to keep the IR "valid" for the verifier because `materializeAll`
   // may invoke it. It doesn't matter since we're deleting the globals anyway.
   for (llvm::GlobalVariable &global : result->globals()) {
     if (idxIt != idxEnd && curIdx == *idxIt) {
       ++idxIt;
       llvm::cantFail(global.materialize());
+      it.materializeIfStringConstant(curIdx, global);
     } else {
       global.setInitializer(nullptr);
       global.setComdat(nullptr);
@@ -192,8 +296,10 @@ void KGEN::splitPerExported(LLVMModuleAndContext module,
 void LLVMModuleSplitterImpl::split(LLVMSplitProcessFn processFn) {
   // The use-def list is sparse. Use it to build a sparse dependency graph
   // between global values.
+  auto strtab = RCRef<StringConstantTable>::create();
   unsigned gvIdx = 0;
   auto computeDeps = [&](const llvm::GlobalValue &value) {
+    strtab->recordIfStringConstant(gvIdx, value);
     infos[&value].gvIdx = gvIdx++;
     collectImmediateDependencies(&value, &value);
   };
@@ -325,13 +431,14 @@ void LLVMModuleSplitterImpl::split(LLVMSplitProcessFn processFn) {
   auto buf = WriteableBuffer::get();
   {
     CompilerTimeTraceScope traceScope("writeMainModuleBitcode");
-    llvm::WriteBitcodeToFile(*mainModule, *buf);
+    llvm::Module &module = strtab->externalizeStrings(std::move(mainModule));
+    llvm::WriteBitcodeToFile(module, *buf);
   }
 
   for (auto [idx, set] : llvm::enumerate(setsToProcess)) {
-    auto makeModule = [set = std::move(*set),
-                       buf = BufferRef(buf.copy())]() mutable {
-      return readAndMaterializeDependencies(std::move(buf), set);
+    auto makeModule = [set = std::move(*set), buf = BufferRef(buf.copy()),
+                       strtab = strtab.copy()]() mutable {
+      return readAndMaterializeDependencies(std::move(buf), set, *strtab);
     };
     processFn(std::move(makeModule), idx);
   }
@@ -411,8 +518,10 @@ void LLVMModulePerFunctionSplitterImpl::split(LLVMSplitProcessFn processFn) {
   // Compute the value info for each global in the module.
   // NOTE: The visitation of globals then functions has to line up with
   // `readAndMaterializeDependencies`.
+  auto strtab = RCRef<StringConstantTable>::create();
   unsigned gvIdx = 0;
   auto computeUsers = [&](const llvm::GlobalValue &value) {
+    strtab->recordIfStringConstant(gvIdx, value);
     valueInfos[&value].gvIdx = gvIdx++;
     collectValueUsers(&value);
   };
@@ -526,13 +635,14 @@ void LLVMModulePerFunctionSplitterImpl::split(LLVMSplitProcessFn processFn) {
   auto buf = WriteableBuffer::get();
   {
     CompilerTimeTraceScope traceScope("writeMainModuleBitcode");
-    llvm::WriteBitcodeToFile(*mainModule, *buf);
+    llvm::Module &module = strtab->externalizeStrings(std::move(mainModule));
+    llvm::WriteBitcodeToFile(module, *buf);
   }
 
   for (auto [idx, set] : llvm::enumerate(setsToProcess)) {
-    auto makeModule = [set = std::move(set),
-                       buf = BufferRef(buf.copy())]() mutable {
-      return readAndMaterializeDependencies(std::move(buf), set);
+    auto makeModule = [set = std::move(set), buf = BufferRef(buf.copy()),
+                       strtab = strtab.copy()]() mutable {
+      return readAndMaterializeDependencies(std::move(buf), set, *strtab);
     };
     processFn(std::move(makeModule), idx);
   }
