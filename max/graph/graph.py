@@ -262,13 +262,13 @@ class Graph:
             else:
                 return arg
 
-        args = tuple(unwrap(arg) for arg in args)
-        kwargs = {k: unwrap(arg) for k, arg in kwargs.items()}
+        unwrapped_args = tuple(unwrap(arg) for arg in args)
+        unwrapped_kwargs = {k: unwrap(arg) for k, arg in kwargs.items()}
 
         with mlir.InsertionPoint(self._body), location():
             try:
                 with self._capturing_mlir_diagnostics():
-                    results = op(*args, **kwargs)
+                    results = op(*unwrapped_args, **unwrapped_kwargs)
             except Exception as e:
                 raise ValueError(
                     f"Failed to create {op.__qualname__} op:\n\tInputs:\n"
