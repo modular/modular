@@ -563,6 +563,13 @@ struct LayoutTensor[
 
     @always_inline
     fn __getitem__(self, *dims: Int) -> Self.element_type:
+        """Get the element of the tensor with a specified index. Note that the
+        size of index has to match the rank of the tensor.
+
+        Args:
+            dims: The indexes that specify which element to retrieve.
+        """
+
         var strides = self.runtime_layout.stride.value
         var vec_res = SIMD[dtype, Self.element_size]()
         var offset = Self._getOffset(strides, dims)
@@ -585,6 +592,13 @@ struct LayoutTensor[
 
     @always_inline
     fn __setitem__(self, d0: Int, val: Self.element_type):
+        """Set the element of the tensor with a specified index and value.
+
+        Args:
+            d0: The first dimensional index.
+            val: The value writing to the tensor.
+        """
+
         var strides = self.runtime_layout.stride.value
         var offset = Self._getOffset(strides, VariadicList[Int](d0))
 
@@ -602,6 +616,14 @@ struct LayoutTensor[
 
     @always_inline
     fn __setitem__(self, d0: Int, d1: Int, val: Self.element_type):
+        """Set the element of the tensor with a specified index and value.
+
+        Args:
+            d0: The first dimensional index.
+            d1: The second dimensional index.
+            val: The value writing to the tensor.
+        """
+
         var strides = self.runtime_layout.stride.value
         var offset = Self._getOffset(strides, VariadicList[Int](d0, d1))
 
@@ -618,6 +640,15 @@ struct LayoutTensor[
 
     @always_inline
     fn __setitem__(self, d0: Int, d1: Int, d2: Int, val: Self.element_type):
+        """Set the element of the tensor with a specified index and value.
+
+        Args:
+            d0: The first dimensional index.
+            d1: The second dimensional index.
+            d2: The third dimensional index.
+            val: The value writing to the tensor.
+        """
+
         var strides = self.runtime_layout.stride.value
         var offset = Self._getOffset(strides, VariadicList[Int](d0, d1, d2))
 
@@ -636,6 +667,16 @@ struct LayoutTensor[
     fn __setitem__(
         self, d0: Int, d1: Int, d2: Int, d3: Int, val: Self.element_type
     ):
+        """Set the element of the tensor with a specified index and value.
+
+        Args:
+            d0: The first dimensional index.
+            d1: The second dimensional index.
+            d2: The third dimensional index.
+            d3: The fourth dimensional index.
+            val: The value writing to the tensor.
+        """
+
         var strides = self.runtime_layout.stride.value
         var offset = Self._getOffset(strides, VariadicList[Int](d0, d1, d2, d3))
 
@@ -652,16 +693,42 @@ struct LayoutTensor[
 
     @always_inline
     fn load[width: Int](self, m: Int, n: Int) -> SIMD[dtype, width]:
+        """Load a value from a specified location.
+
+        Parameters:
+            width: The simd width of the returned value.
+
+        Args:
+            m: The m dimension of the value.
+            n: The n dimension of the value.
+        """
+
         return self.ptr.load[width=width](self._offset(m, n))
 
     @always_inline
     fn prefetch(self, m: Int, n: Int):
+        """Do software prefetching of a value from a specified location.
+
+        Args:
+            m: The m dimension of the value.
+            n: The n dimension of the value.
+        """
         prefetch[PrefetchOptions().for_read().high_locality().to_data_cache()](
             self.ptr.offset(self._offset(m, n))
         )
 
     @always_inline
     fn aligned_load[width: Int](self, m: Int, n: Int) -> SIMD[dtype, width]:
+        """Do a load with a specified alignment base on the dtype and simd width.
+
+        Parameters:
+            width: The simd width if the returned value.
+
+        Args:
+            m: The m dimension of the value.
+            n: The n dimension of the value.
+        """
+
         alias alignment = alignof[SIMD[dtype, width]]()
         return self.ptr.load[width=width, alignment=alignment](
             self._offset(m, n)
@@ -669,10 +736,32 @@ struct LayoutTensor[
 
     @always_inline
     fn store[width: Int](self, m: Int, n: Int, val: SIMD[dtype, width]):
+        """Store a value to a specified location.
+
+        Parameters:
+            width: The simd width of the stored value.
+
+        Args:
+            m: The m dimensional index to the tensor.
+            n: The n dimensional index to the tensor.
+            val: The value to be stored.
+        """
+
         return self.ptr.store[width=width](self._offset(m, n), val)
 
     @always_inline
     fn aligned_store[width: Int](self, m: Int, n: Int, val: SIMD[dtype, width]):
+        """Do a store with a specified alignment base on the dtype and simd width.
+
+        Parameters:
+            width: The simd width if the stored value.
+
+        Args:
+            m: The m dimensional index to the tensor.
+            n: The n dimensional index to the tensor.
+            val: The value to be stored.
+        """
+
         alias alignment = alignof[SIMD[dtype, width]]()
         return self.ptr.store[width=width, alignment=alignment](
             self._offset(m, n), val
