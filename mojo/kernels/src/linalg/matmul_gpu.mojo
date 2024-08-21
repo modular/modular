@@ -127,9 +127,8 @@ fn sgemm_warp_tiling_kernel[
     alpha: Scalar[c_type],
     beta: Scalar[c_type],
 ):
-    var M = mat_c.dim(0)
-    var K = mat_a.dim(1)
-    var N = mat_c.dim(1)
+    var K = mat_a.dim[1]()
+    var N = mat_c.dim[1]()
 
     var c_row = BlockIdx.y()
     var c_col = BlockIdx.x()
@@ -204,7 +203,7 @@ fn sgemm_warp_tiling_kernel[
     reg_n.zero()
 
     # Outer-most loop over block tiles.
-    for bk_idx in range(0, int(K), int(BK)):
+    for _ in range(0, K, BK):
         for offset in range(0, int(BM - row_stride_a + 1), int(row_stride_a)):
             # Load 4 elements at a time and store to shared memory.
             var tmp = __nvvm_ldg_f4[a_type](
@@ -586,15 +585,8 @@ fn gevm_kernel[
     x_shared[lane_id() * WARP_SIZE + warp_id] = accum
     barrier()
 
-    @parameter
-    fn reduce_add[
-        type: DType,
-        width: Int,
-    ](x: SIMD[type, width], y: SIMD[type, width]) -> SIMD[type, width]:
-        return x + y
-
     var total = x_shared.load(ThreadIdx.x()).cast[s_type]()
-    total = warp_reduce[shuffle_down, reduce_add](total)
+    total = warp_reduce[shuffle_down, _reduce_add](total)
 
     if lane_id() == 0:
 
