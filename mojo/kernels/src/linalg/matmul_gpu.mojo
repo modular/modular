@@ -373,6 +373,35 @@ fn _reduce_add(x: SIMD, y: __type_of(x)) -> __type_of(x):
     return x + y
 
 
+@always_inline
+fn _blockwise_sum[
+    intermediate_type: DType,
+    *,
+    reduction_method: ReductionMethod,
+    output_type: DType,
+](x: SIMD) -> Scalar[output_type]:
+    """Performs a blockwise reduction using either a warp shuffle or tensor
+    core operation. If the tensor core method is chosen, then the input value
+    is cast to the intermediate type to make the value consumable by the
+    tensor core op."""
+
+    @parameter
+    if reduction_method is ReductionMethod.WARP:
+        constrained[
+            output_type == x.type,
+            (
+                "the output type must match the input value for warp-level"
+                " blockwise reduction"
+            ),
+        ]()
+
+        return rebind[Scalar[output_type]](
+            warp_reduce[shuffle_down, _reduce_add](x.reduce_add())
+        )
+    else:
+        return tc_reduce[output_type](x.cast[intermediate_type]())
+
+
 # Matrix-Column Vector Multiplication using scalar arithmetic
 fn gemv_kernel[
     c_type: DType,
@@ -408,11 +437,9 @@ fn gemv_kernel[
                 * b.load(idx).cast[s_type]()
             )
 
-    @parameter
-    if reduction_method is ReductionMethod.WARP:
-        accum = warp_reduce[shuffle_down, _reduce_add](accum)
-    else:
-        accum = tc_reduce[s_type](accum.cast[a_type]())
+    accum = _blockwise_sum[
+        a_type, reduction_method=reduction_method, output_type=s_type
+    ](accum)
 
     if lane_id() == 0:
 
@@ -499,13 +526,9 @@ fn gemv_kernel_vector[
         idx += step
         a_ptr += step
 
-    var accum = Scalar[s_type]()
-
-    @parameter
-    if reduction_method is ReductionMethod.WARP:
-        accum = warp_reduce[shuffle_down, _reduce_add](local_accum.reduce_add())
-    else:
-        accum = tc_reduce[s_type](local_accum.cast[a_type]())
+    var accum = _blockwise_sum[
+        a_type, reduction_method=reduction_method, output_type=s_type
+    ](local_accum)
 
     if lane_id() == 0:
 
