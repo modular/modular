@@ -15,7 +15,7 @@ from hypothesis import assume
 from hypothesis import strategies as st
 from max import _graph, mlir
 from max.graph import DType, TensorType
-from max.graph.type import Dim, StaticDim, SymbolicDim
+from max.graph.type import Dim, Shape, StaticDim, SymbolicDim
 
 dtypes = st.sampled_from(DType)
 static_dims = st.builds(
@@ -39,8 +39,9 @@ def shapes(min_size=0, max_size=None, include_dims=()):
             max_size=None if max_size
             is None else max(0, max_size - len(include_dims)),
         )
-        .map(lambda shape: [*shape, *include_dims])
+        .map(lambda shape: (*shape, *include_dims))
         .flatmap(st.permutations)
+        .map(Shape)
     )
 
 
@@ -48,21 +49,21 @@ def tensor_types(dtypes=dtypes, shapes=shapes()):
     return st.builds(TensorType, dtypes, shapes)
 
 
-def axes(types):
-    def strategy(type):
-        assume(type.rank > 0)
-        return st.integers(min_value=-type.rank, max_value=type.rank - 1)
+def axes(shapes):
+    def strategy(shape):
+        assume(shape.rank > 0)
+        return st.integers(min_value=-shape.rank, max_value=shape.rank - 1)
 
-    return types.flatmap(strategy)
+    return shapes.flatmap(strategy)
 
 
-def new_axes(types):
-    def strategy(type):
-        if not type.rank:
+def new_axes(shapes):
+    def strategy(shapes):
+        if not shapes.rank:
             return st.sampled_from([0, -1])
-        return st.integers(min_value=-type.rank, max_value=type.rank)
+        return st.integers(min_value=-shapes.rank, max_value=shapes.rank)
 
-    return types.flatmap(strategy)
+    return shapes.flatmap(strategy)
 
 
 st.register_type_strategy(DType, dtypes)

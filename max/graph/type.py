@@ -334,6 +334,10 @@ class Shape(list[Dim]):
     def __init__(self, dims: ShapeLike = ()):
         super().__init__(Dim(dim) for dim in dims)
 
+    @property
+    def rank(self):
+        return len(self)
+
     def to_mlir(self) -> mlir.Attribute:
         return _graph.shape_attr(
             mlir.Context.current, [dim.to_mlir() for dim in self]
