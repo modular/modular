@@ -116,6 +116,32 @@ export class RpcServer extends DisposableContext {
     }
   }
 
+  // Launch a debug session. Throws if debug session initialization has error.
+  private async handleDebugRequest(debugConfig: DebugConfiguration) {
+    debugConfig.name = debugConfig.name || debugConfig.program;
+    if (debugConfig.type == "cuda-gdb") {
+      const nsight =
+        vscode.extensions.getExtension("nvidia.nsight-vscode-edition");
+      if (!nsight) {
+        // Tell the user to install the nsight extension.
+        const message = "Unable to start the cuda-gdb debug session. You first need to install the NVIDIA Nsight extension (nsight-vscode-edition)";
+        this.loggingService.main.logInfo(message);
+        const response = await vscode.window.showInformationMessage("Unable to debug in cuda-gdb mode without NVIDIA Nsight extension.",
+                                                                    "Find NVIDIA Nsight extension");
+        if (response) {
+          vscode.commands.executeCommand("workbench.extensions.search", "@id:nvidia.nsight-vscode-edition");
+        }
+        throw new Error(message);
+      }
+    }
+    let success = await debug.startDebugging(
+      /*workspaceFolder=*/ undefined,
+      debugConfig
+    );
+    if (!success)
+      throw new Error("Unable to start the debug session");
+  }
+
   private async dispatchRequest(socket: net.Socket, rawRequest: string): Promise<void> {
     let request: any | undefined;
     try {
@@ -161,14 +187,8 @@ export class RpcServer extends DisposableContext {
       socket.write(JSON.stringify(response) + this.protocolSeparator);
     } else if (instanceOfDebug(request)) {
       const debugConfig: DebugConfiguration = request.debugConfiguration;
-      debugConfig.name = debugConfig.name || debugConfig.program;
       try {
-        let success = await debug.startDebugging(
-          /*workspaceFolder=*/ undefined,
-          debugConfig
-        );
-        if (!success)
-          throw new Error("Unable to launch debug session");
+        await this.handleDebugRequest(debugConfig);
         const response: RPCServerResponse = {
           success: true,
           kind: "debug",
