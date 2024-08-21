@@ -356,7 +356,7 @@ fn sync_parallelize[
     var count = 0
     for i in range(num_per_lq_tasks):
         for j in range(num_threads):
-            tg.create_task(task_fn(count), j)
+            tg._create_task(task_fn(count), j)
             count += 1
     for k in range(num_global_queue_tasks):
         tg.create_task(task_fn(count))
