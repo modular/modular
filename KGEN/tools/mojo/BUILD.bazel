@@ -116,9 +116,11 @@ modular_cc_binary(
         "//KGEN:CompilerRT",
         "//KGEN:CompilerRT.distributable",
         "//KGEN:MojoLLDB",
+        "//KGEN:gdb-server",
         "//KGEN:mojo-lldb",
         "//KGEN/tools/mojo-repl-entry-point",
         "@llvm-project//compiler-rt:orc_rt",
+        "@llvm-project//lldb:lldb-argdumper",
     ],
     includes = ["."],
     linkopts = select({
