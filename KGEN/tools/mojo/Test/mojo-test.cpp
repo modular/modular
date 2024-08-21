@@ -145,11 +145,22 @@ static ErrorOr<TempFile> generateEntrypointSource(ArrayRef<TestID> unitTests) {
 
     os << "from sys import argv\n";
     os << "from testing import assert_not_equal\n";
+    os << "from collections import Set\n";
     os << "fn main() raises:\n";
 
     os.indent();
+    os << "var ids = Set[String]()\n";
+    os << "var filePath = argv()[1]\n";
+    os << "with open(filePath, 'r') as idFile:\n";
+    os.indent();
+    os << "var lines = idFile.read().splitlines()\n";
+    os << "for line in lines:\n";
+    os.indent();
+    os << "print(line[])\n";
+    os << "ids.add(line[].strip())\n";
+    os.unindent();
+    os.unindent();
     os << "var executed = 0\n";
-    os << "var testName = argv()[1]\n";
 
     for (const TestID &id : unitTests) {
       std::optional<StringRef> testId = id.getTest();
@@ -166,7 +177,7 @@ static ErrorOr<TempFile> generateEntrypointSource(ArrayRef<TestID> unitTests) {
       if (names.isError())
         return names.takeError();
 
-      os << llvm::formatv("if testName == 'all' or testName == '{0}::{1}()':\n",
+      os << llvm::formatv("if not ids or '{0}::{1}()' in ids:\n",
                           id.getFilePath(), llvm::join(*names, "."));
       os.indent();
       os << formatv("`{0}`.`{1}`()\n", id.getFilePath().stem(),
@@ -175,7 +186,6 @@ static ErrorOr<TempFile> generateEntrypointSource(ArrayRef<TestID> unitTests) {
       os.unindent();
     }
 
-    os << "print(testName)\n";
     os << "assert_not_equal(executed, 0, \"no tests were executed\")\n";
 
     os.unindent();
@@ -226,10 +236,35 @@ static ErrorOrSuccess buildEntrypoint(std::vector<std::string> buildArgs,
 //===----------------------------------------------------------------------===//
 
 static ErrorOrSuccess launchDebug(ArrayRef<std::string> options,
-                                  StringRef entrypointPath) {
+                                  StringRef entrypointPath,
+                                  ArrayRef<TestID> unitTests,
+                                  std::optional<llvm::Regex> &filter,
+                                  bool keepInput) {
   ErrorOr<std::string> driverPath = getMojoDriver();
   if (driverPath.isError())
     return Error(driverPath.getError());
+
+  ErrorOr<TempFile> inputFile =
+      TempFile::create("mojo-test-debug-ids-XXXXXXXX");
+  if (failed(inputFile))
+    return inputFile.takeError();
+
+  {
+    llvm::raw_fd_ostream rawOs(inputFile->getFD(), /*shouldClose=*/false);
+    for (const TestID &id : unitTests) {
+      if (!filter || filter->match(id.strref())) {
+        rawOs << id.strref() << "\n";
+      }
+    }
+  }
+
+  std::string inputPath = inputFile->getPath().string();
+
+  if (keepInput) {
+    llvm::errs() << "Entrypoint input file can be found at " << inputPath
+                 << "\n";
+    inputFile->keep();
+  }
 
   SmallVector<StringRef> debugCommand{
       *driverPath,
@@ -237,7 +272,8 @@ static ErrorOrSuccess launchDebug(ArrayRef<std::string> options,
   };
 
   llvm::append_range(debugCommand, options);
-  llvm::append_range(debugCommand, ArrayRef<StringRef>{entrypointPath, "all"});
+  llvm::append_range(debugCommand,
+                     ArrayRef<StringRef>{entrypointPath, inputPath});
 
   std::string errorMessage;
   int result =
@@ -406,7 +442,9 @@ static int test(const State &subcommandState) {
 
     std::vector<std::string> debugOptions = extractOptionsAndValues(
         state, options::OPT_DebuggerOptionGroup, options::OPT_RPCOptionGroup);
-    ErrorOrSuccess debugResult = launchDebug(debugOptions, entrypointPath);
+    ErrorOrSuccess debugResult =
+        launchDebug(debugOptions, entrypointPath, unitTests, filterRegex,
+                    args.hasArg(options::OPT_keep_entrypoint));
 
     if (debugResult.isError())
       return state.reportError(debugResult.getError());
