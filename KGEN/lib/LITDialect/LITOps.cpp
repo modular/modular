@@ -10,6 +10,7 @@
 
 #include "KGEN/LITDialect/LITOps.h"
 #include "KGEN/CODialect/COUtils.h"
+#include "KGEN/Interpreter/InterpreterState.h"
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/KGENDialect/KGENUtils.h"
 #include "KGEN/KGENDialect/ParameterEvaluator.h"

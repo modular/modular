@@ -582,32 +582,6 @@ mlir::Speculation::Speculatability CallLLVMIntrinsicOp::getSpeculatability() {
 }
 
 //===----------------------------------------------------------------------===//
-// CompilerGlobalLoadOp
-//===----------------------------------------------------------------------===//
-
-ErrorTreeOrSuccess CompilerGlobalLoadOp::interpret(ArrayRef<Attribute> operands,
-                                                   InterpreterState &state) {
-  Attribute value = state.getNamedGlobal(getNameAttr());
-  if (!value)
-    return ErrorTree(
-        getLoc(),
-        "cannot evaluate standalone capturing closure at compile time");
-  state.mapResults(value);
-  return success();
-}
-
-//===----------------------------------------------------------------------===//
-// CompilerGlobalStoreOp
-//===----------------------------------------------------------------------===//
-
-ErrorTreeOrSuccess
-CompilerGlobalStoreOp::interpret(ArrayRef<Attribute> operands,
-                                 InterpreterState &state) {
-  state.setNamedGlobal(getNameAttr(), operands.front());
-  return success();
-}
-
-//===----------------------------------------------------------------------===//
 // PointerToIndexOp
 //===----------------------------------------------------------------------===//
 
