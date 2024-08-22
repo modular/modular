@@ -113,6 +113,9 @@ class GraphValue:
         frame = inspect.currentframe()
         return ops.rebind(self, shape, graph._frame_str(frame))
 
+    def cast(self, dtype: DType) -> GraphValue:
+        return ops.cast(self, dtype)
+
     def transpose(self, dim_1: int, dim_2: int) -> GraphValue:
         return ops.transpose(self, dim_1, dim_2)
 
