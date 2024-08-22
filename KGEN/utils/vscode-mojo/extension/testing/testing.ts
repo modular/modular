@@ -8,7 +8,7 @@ import { exec } from 'child_process';
 import * as vscode from 'vscode';
 
 import { MojoContext } from '../mojoContext';
-import { MojoSDK } from '../mojoSDK';
+import { MojoSDK } from '../sdk/sdk';
 import * as config from '../utils/config';
 import { DisposableContext } from '../utils/disposableContext';
 

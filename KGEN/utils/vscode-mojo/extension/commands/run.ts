@@ -8,8 +8,8 @@ import * as shellescape from 'shell-escape';
 import * as vscode from 'vscode';
 
 import { MojoContext } from '../mojoContext';
-import { MojoSDKConfig } from '../mojoSDK';
 import { DisposableContext } from '../utils/disposableContext';
+import { MojoSDKConfig } from '../sdk/sdkConfig';
 
 /**
  * This class provides a manager for executing and debugging mojo files.

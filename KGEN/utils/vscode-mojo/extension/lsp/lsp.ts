@@ -11,7 +11,7 @@ import { TransportKind } from 'vscode-languageclient/node';
 
 import { InitializationOptions } from '../../lsp-proxy/src/types';
 import { MojoContext } from '../mojoContext';
-import { MojoSDK } from '../mojoSDK';
+import { MojoSDK } from '../sdk/sdk';
 import * as config from '../utils/config';
 import { DisposableContext } from '../utils/disposableContext';
 
