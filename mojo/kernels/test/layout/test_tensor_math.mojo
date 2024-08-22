@@ -109,6 +109,13 @@ fn test_unary_scalar():
     # CHECK: 120.0 130.0 140.0 150.0
     print(tensor_4x4 * 10.0)
 
+    # CHECK: 1.0 2.0 3.0 4.0
+    # CHECK: 5.0 6.0 7.0 8.0
+    # CHECK: 9.0 10.0 11.0 12.0
+    # CHECK: 13.0 14.0 15.0 16.0
+    tensor_4x4 += 1
+    print(tensor_4x4)
+
 
 # CHECK-LABLE: test_binary_same_rank
 fn test_binary_same_rank():
@@ -131,6 +138,13 @@ fn test_binary_same_rank():
     # CHECK: 5.0 5.5 6.0 6.5 7.0
     # CHECK: 7.5 8.0 8.5 9.0 9.5
     print(tensor_4x5 / stack_allocation_like(tensor_4x5).fill(2))
+
+    # CHECK: 0.0 2.0 4.0 6.0 8.0
+    # CHECK: 10.0 12.0 14.0 16.0 18.0
+    # CHECK: 20.0 22.0 24.0 26.0 28.0
+    # CHECK: 30.0 32.0 34.0 36.0 38.0
+    tensor_4x5 += tensor_4x5
+    print(tensor_4x5)
 
 
 # CHECK-LABEL: test_binary_broadcast_inner

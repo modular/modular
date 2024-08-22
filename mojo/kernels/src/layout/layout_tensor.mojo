@@ -293,7 +293,8 @@ struct LayoutTensor[
 
     @always_inline
     fn __elementwise_unary[
-        func: fn (Self.element_type) capturing -> (Self.element_type)
+        func: fn (Self.element_type) capturing -> (Self.element_type),
+        inplace: Bool = False,
     ](self) -> Self:
         constrained[
             layout.all_dims_known(),
@@ -303,7 +304,7 @@ struct LayoutTensor[
             ),
         ]()
 
-        var res_tensor = Self.stack_allocation()
+        var res_tensor = self if inplace else Self.stack_allocation()
 
         @parameter
         for i in range(self.layout.size()):
@@ -320,6 +321,7 @@ struct LayoutTensor[
         ),
         other_layout: Layout,
         index_type: DType,
+        inplace: Bool = False,
     ](
         self,
         other: LayoutTensor[
@@ -363,7 +365,7 @@ struct LayoutTensor[
         # constrain.
         constrained[rank == 2, "Only supports rank-2 tensor"]()
 
-        var res_tensor = Self.stack_allocation()
+        var res_tensor = self if inplace else Self.stack_allocation()
 
         @parameter
         if other.rank == 1:
@@ -418,6 +420,20 @@ struct LayoutTensor[
         return self.__elementwise_unary[add_val]()
 
     @always_inline
+    fn __iadd__(self, other: Scalar[dtype]):
+        """Adds scalar value to the LayoutTensor. The scalar value will be
+        broadcasted to the entire tensor.
+
+        Args:
+            other: The scalar value.
+        """
+
+        fn add_val(val: Self.element_type) capturing -> Self.element_type:
+            return Self.element_type(other) + val
+
+        _ = self.__elementwise_unary[add_val, inplace=True]()
+
+    @always_inline
     fn __add__[
         other_layout: Layout,
         index_type: DType,
@@ -452,18 +468,104 @@ struct LayoutTensor[
         return self.__elementwise_binary_with_broadcast[add_val](other)
 
     @always_inline
+    fn __iadd__[
+        other_layout: Layout,
+        index_type: DType,
+    ](
+        self,
+        other: LayoutTensor[
+            dtype,
+            other_layout,
+            _,
+            address_space=address_space,
+            element_layout=element_layout,
+            index_type=index_type,
+        ],
+    ):
+        """Do an addition with another LayoutTensor in place.
+        Currently only support tensors of the same shape if the rank
+        is the same and also tensors of rank-2.
+
+        Parameters:
+            other_layout: The layout of the other tensor.
+            index_type: The indexing type of the other tensor.
+
+        Args:
+            other: The other tensor to be added to.
+        """
+
+        fn add_val(
+            lhs: Self.element_type, rhs: Self.element_type
+        ) capturing -> Self.element_type:
+            return lhs + rhs
+
+        _ = self.__elementwise_binary_with_broadcast[add_val, inplace=True](
+            other
+        )
+
+    @always_inline
     fn __mul__(self, other: Scalar[dtype]) -> Self:
-        """Multiply the LayoutTensor with a scalar value. The scalar value will be
-        broadcasted to the entire tensor.
+        """Multiply the LayoutTensor with a scalar value. The scalar value will
+        be broadcasted to the entire tensor.
 
         Args:
             other: The scalar value.
         """
 
-        fn add_val(val: Self.element_type) capturing -> Self.element_type:
+        fn mul_val(val: Self.element_type) capturing -> Self.element_type:
             return Self.element_type(other) * val
 
-        return self.__elementwise_unary[add_val]()
+        return self.__elementwise_unary[mul_val]()
+
+    @always_inline
+    fn __imul__(self, other: Scalar[dtype]):
+        """Multiply the LayoutTensor with a scalar value inplace.
+        The scalar value will be broadcasted to the entire tensor.
+
+        Args:
+            other: The scalar value.
+        """
+
+        fn mul_val(val: Self.element_type) capturing -> Self.element_type:
+            return Self.element_type(other) * val
+
+        _ = self.__elementwise_unary[mul_val, inplace=True]()
+
+    @always_inline
+    fn __imul__[
+        other_layout: Layout,
+        index_type: DType,
+    ](
+        self,
+        other: LayoutTensor[
+            dtype,
+            other_layout,
+            _,
+            address_space=address_space,
+            element_layout=element_layout,
+            index_type=index_type,
+        ],
+    ):
+        """Do a multiplication with another LayoutTensor in place.
+        Currently only support tensors of the same shape if the rank
+        is the same and also tensors of rank-2.
+
+        Parameters:
+            other_layout: The layout of the other tensor.
+            index_type: The indexing type of the other tensor.
+
+        Args:
+            other: The other tensor to be added to.
+        """
+
+        fn mul_val(
+            lhs: Self.element_type, rhs: Self.element_type
+        ) capturing -> Self.element_type:
+            return lhs * rhs
+
+        _ = self.__elementwise_binary_with_broadcast[mul_val, inplace=True](
+            other
+        )
 
     @always_inline
     fn __sub__(self, other: Scalar[dtype]) -> Self:
@@ -474,10 +576,10 @@ struct LayoutTensor[
             other: The scalar value.
         """
 
-        fn add_val(val: Self.element_type) capturing -> Self.element_type:
+        fn sub_val(val: Self.element_type) capturing -> Self.element_type:
             return val - Self.element_type(other)
 
-        return self.__elementwise_unary[add_val]()
+        return self.__elementwise_unary[sub_val]()
 
     @always_inline
     fn __sub__[
@@ -512,6 +614,55 @@ struct LayoutTensor[
             return lhs - rhs
 
         return self.__elementwise_binary_with_broadcast[sub_val](other)
+
+    @always_inline
+    fn __isub__(self, other: Scalar[dtype]):
+        """Subtract scalar value from the LayoutTensor. The scalar value will
+        be broadcasted to the entire tensor.
+
+        Args:
+            other: The scalar value.
+        """
+
+        fn sub_val(val: Self.element_type) capturing -> Self.element_type:
+            return val - Self.element_type(other)
+
+        _ = self.__elementwise_unary[sub_val, inplace=True]()
+
+    @always_inline
+    fn __isub__[
+        other_layout: Layout,
+        index_type: DType,
+    ](
+        self,
+        other: LayoutTensor[
+            dtype,
+            other_layout,
+            _,
+            address_space=address_space,
+            element_layout=element_layout,
+            index_type=index_type,
+        ],
+    ):
+        """Subtracts other from the LayoutTensor. Currently only support tensors
+        of the same shape if the rank is the same and also tensors of rank-2.
+
+        Parameters:
+            other_layout: The layout of the other tensor.
+            index_type: The indexing type of the other tensor.
+
+        Args:
+            other: The other tensor to be subtract from.
+        """
+
+        fn sub_val(
+            lhs: Self.element_type, rhs: Self.element_type
+        ) capturing -> Self.element_type:
+            return lhs - rhs
+
+        _ = self.__elementwise_binary_with_broadcast[sub_val, inplace=True](
+            other
+        )
 
     @always_inline
     fn __truediv__(self, other: Scalar[dtype]) -> Self:
