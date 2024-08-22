@@ -9,6 +9,7 @@ from collections import Dict, List, Optional
 from math.math import align_up
 from pathlib import Path
 from sys.intrinsics import _mlirtype_is_eq
+from sys import is_defined
 
 from builtin._location import __call_location
 from gpu.host.device_context import DeviceBuffer
@@ -381,6 +382,18 @@ struct Function[
         self.info = _CachedFunctionInfo(module.module, function_handle)
 
     @staticmethod
+    fn _gen_llvm() -> StringLiteral:
+        @parameter
+        if is_defined["GEN_GPU_LLVM"]():
+            alias llvm = _compile_code[func, emission_kind="llvm"]().asm
+            return llvm
+        else:
+            return (
+                "LLVMIR is not generated for GPU kernels by default, please"
+                " specify -D GEN_GPU_LLVM"
+            )
+
+    @staticmethod
     @no_inline
     fn _dump_rep(
         *,
@@ -396,7 +409,7 @@ struct Function[
                 print(ptx)
 
         if _dump_q(dump_llvm):
-            alias llvm = _compile_code[func, emission_kind="llvm"]().asm
+            var llvm = Self._gen_llvm()
 
             if dump_llvm.isa[Path]():
                 dump_llvm[Path].write_text(StringRef(llvm))
@@ -524,9 +537,7 @@ struct Function[
         try:
             var payload = payload_ptr[]
 
-            alias _impl = _compile_code[
-                func, emission_kind="asm", is_failable=_is_failable
-            ]()
+            alias _impl = Self._impl
             alias fn_name = _impl.function_name
 
             var module = Module(
