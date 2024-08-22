@@ -162,15 +162,9 @@
       },
       {
         "category": "Mojo",
-        "command": "mojo.execFileInTerminal",
-        "icon": "$(play)",
-        "title": "Run Mojo File"
-      },
-      {
-        "category": "Mojo",
         "command": "mojo.execFileInDedicatedTerminal",
         "icon": "$(play-circle)",
-        "title": "Run Mojo File in Dedicated Terminal"
+        "title": "Run Mojo File"
       },
       {
         "category": "Mojo",
@@ -182,7 +176,7 @@
         "category": "Mojo",
         "command": "mojo.debugFileInTerminal",
         "icon": "$(debug-console)",
-        "title": "Debug Mojo File in Dedicated Terminal"
+        "title": "Debug Mojo File in Terminal"
       },
       {
         "category": "Mojo",
@@ -211,10 +205,6 @@
       ],
       "commandPalette": [
         {
-          "command": "mojo.execFileInTerminal",
-          "when": "resourceLangId == mojo && !virtualWorkspace && shellExecutionSupported"
-        },
-        {
           "command": "mojo.execFileInDedicatedTerminal",
           "when": "resourceLangId == mojo && !virtualWorkspace && shellExecutionSupported"
         },
@@ -228,11 +218,6 @@
         }
       ],
       "explorer/context/mojo": [
-        {
-          "command": "mojo.execFileInTerminal",
-          "group": "1_run@0",
-          "when": "resourceLangId == mojo && !virtualWorkspace && shellExecutionSupported"
-        },
         {
           "command": "mojo.execFileInDedicatedTerminal",
           "group": "1_run@1",
@@ -250,11 +235,6 @@
         }
       ],
       "editor/title/run": [
-        {
-          "command": "mojo.execFileInTerminal",
-          "group": "navigation@0",
-          "when": "resourceLangId == mojo && !isInDiffEditor && !virtualWorkspace && shellExecutionSupported"
-        },
         {
           "command": "mojo.execFileInDedicatedTerminal",
           "group": "navigation@1",
