@@ -310,7 +310,7 @@ private:
 
   /// Create the continuation and initialize the state and resume function.
   Value initializeContinuation(FuncOp rampFunction, FuncOp resumeFunction,
-                               COTypes &coTypes, unsigned initialState);
+                               COTypes &coTypes);
 
   /// Given a function and a frame, insert a continuation and load/store values
   /// from frame instead of using local values. If loadFromFrame is true, values
@@ -858,8 +858,7 @@ FuncOp LowerAsyncBuildContext::createHotRamp(StringRef prefix, FuncOp original,
       hotRamp.getBodyRegion().getArgument(indexOfCoroutine);
 
   builder.setInsertionPointToStart(&hotRamp.getBodyRegion().front());
-  Value continuation =
-      initializeContinuation(hotRamp, resumeFunction, coTypes, 1);
+  Value continuation = initializeContinuation(hotRamp, resumeFunction, coTypes);
   continuationArg.replaceAllUsesWith(continuation);
   hotRamp.getBodyRegion().front().eraseArgument(indexOfCoroutine);
   hotRamp.setSignature(SignatureType::get(
@@ -894,10 +893,17 @@ FuncOp LowerAsyncBuildContext::createHotRamp(StringRef prefix, FuncOp original,
   // Return the continuation.
   Value bitcast = builder.create<PointerBitcastOp>(
       PointerType::get(coTypes.getHeaderType()), continuation);
+  int susId = 0;
   hotRamp.walk([&](Operation *op) {
     if (auto returnOp = dyn_cast<ReturnOp>(op)) {
       returnOp->insertOperands(0, bitcast);
     } else if (auto suspend = dyn_cast<SuspendOp>(op)) {
+      // Insert state change
+      builder.setInsertionPoint(suspend);
+      Value newState =
+          builder.create<ParamConstantOp>(builder.getI32IntegerAttr(++susId));
+      Value stateSlot = builder.create<StructGEPOp>(continuation, State);
+      builder.create<StoreOp>(newState, stateSlot);
       Operation *current = &suspend.getBody().front().getOperations().front();
       while (current) {
         Operation *op = current;
@@ -941,7 +947,7 @@ FuncOp LowerAsyncBuildContext::createColdRamp(StringRef prefix,
   for (Type argument : rampFunction.getSignature().getArguments())
     rampFunction.getBodyRegion().addArgument(argument, rampFunction.getLoc());
   Value continuation =
-      initializeContinuation(rampFunction, resumeFunction, coTypes, 0);
+      initializeContinuation(rampFunction, resumeFunction, coTypes);
   // Store arguments in frame.
   for (auto [index, argSlot] : coTypes.getFrameData()->argsInFrame) {
     Value arg = rampFunction.getArgument(index);
@@ -1141,8 +1147,7 @@ void LowerAsyncBuildContext::insertFrameLoadsStores(
 
 Value LowerAsyncBuildContext::initializeContinuation(FuncOp rampFunction,
                                                      FuncOp resumeFunction,
-                                                     COTypes &coTypes,
-                                                     unsigned initialState) {
+                                                     COTypes &coTypes) {
   Type continuationType = coTypes.getContinuationType();
   // Allocate memory for continuation.
   std::optional<int64_t> size =
@@ -1156,8 +1161,7 @@ Value LowerAsyncBuildContext::initializeContinuation(FuncOp rampFunction,
       PointerType::get(continuationType), ValueRange{alignOf, sizeOf});
 
   // Initialize state to 0.
-  Value zero =
-      builder.create<ParamConstantOp>(builder.getI32IntegerAttr(initialState));
+  Value zero = builder.create<ParamConstantOp>(builder.getI32IntegerAttr(0));
   Value stateSlot = builder.create<StructGEPOp>(continuation, State);
   builder.create<StoreOp>(zero, stateSlot);
 
