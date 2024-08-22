@@ -1906,6 +1906,17 @@ module attributes {M.target_info = #M.target<triple="", arch="", features="", da
 
 // Return Coroutine
 // CHECK-NEXT: kgen.return [[V13]]
+
+// Verify that the hot resume has been stripped of the first state.
+// CHECK-LABEL:  kgen.func @conditional_suspoint_resume
+// CHECK-NEXT:   [[ARBITRARY_VALUE:%.*]] = kgen.undef : i1
+// CHECK-NEXT:   hlcf.if [[ARBITRARY_VALUE]] {
+// CHECK-NEXT:   hlcf.yield
+// CHECK-NEXT:   } else {
+// CHECK-NEXT:   co.suspend {
+// CHECK-NEXT:   co.suspend.end
+// CHECK-NEXT:   }
+// CHECK-NEXT:   [[V10:%.*]] = kgen.struct.gep %arg0[[[#FRAME9]]]
 kgen.func @conditional_suspoint(%arg0: i1,
                      %arg1: index,
                      %arg2: index,
@@ -1944,6 +1955,44 @@ kgen.func @trigger_creation(%arg0: i1, %arg1: index, %arg2: index, %__result__: 
 
 kgen.func @trigger_trigger_creation(%arg0: i1, %arg1: index, %arg2: index, %__result__: !kgen.pointer<index> byref_result) {
   %coro = co.invoke[(i1, index, index, !kgen.pointer<index> byref_result) async -> ():@trigger_creation](%arg0, %arg1, %arg2)
+  kgen.return
+}
+
+
+// CHECK-LABEL: kgen.func @conditional_suspoint_elif_resume
+kgen.func @conditional_suspoint_elif(%arg0: i1,
+                     %arg1: index,
+                     %arg2: index,
+                     %__result__: !kgen.pointer<index> byref_result) async -> index {
+  // CHECK-NEXT: hlcf.elif {
+  // CHECK-NEXT: [[V9:%.*]] = kgen.undef : i1
+  // CHECK-NEXT: hlcf.elif.yield [[V9]] : i1
+  hlcf.elif {
+    hlcf.elif.yield %arg0 : i1
+  } then {
+    pop.store %arg1, %__result__ : !kgen.pointer<index>
+    hlcf.yield
+  } else {
+    %t1 = index.add %arg2, %arg2
+    co.suspend (%hdl) {
+      co.suspend.end
+    }
+    %t2 = index.add %t1, %arg1
+    pop.store %t2, %__result__ : !kgen.pointer<index>
+    hlcf.yield
+ }
+ %result = pop.load %__result__ : !kgen.pointer<index>
+ %final = index.add %result, %arg1
+ kgen.return %final : index
+}
+
+kgen.func @trigger_creation_elif(%arg0: i1, %arg1: index, %arg2: index, %__result__: !kgen.pointer<index> byref_result) async {
+   %coro = co.hot_invoke[(i1, index, index, !kgen.pointer<index> byref_result) async -> index: @conditional_suspoint_elif](%arg0, %arg1, %arg2, %__result__)
+   kgen.return
+}
+
+kgen.func @trigger_trigger_creation_elif(%arg0: i1, %arg1: index, %arg2: index, %__result__: !kgen.pointer<index> byref_result) {
+  %coro = co.invoke[(i1, index, index, !kgen.pointer<index> byref_result) async -> ():@trigger_creation_elif](%arg0, %arg1, %arg2)
   kgen.return
 }
 
@@ -2005,6 +2054,10 @@ kgen.func @coroutine(%arg0: i1, %arg1: index, %__result__: !kgen.pointer<index> 
  kgen.return %final : index
 }
 
+// Check that the operands of parents that are state 0 are replaced with constants. All other ops in state 0 will be erased.
+// CHECK-LABEL:  kgen.func @coroutine_resume
+// CHECK-NEXT:   [[UNDEF:%.*]] = kgen.undef : index
+// CHECK-NEXT:   hlcf.loop "_loop_0" (%arg1 = [[UNDEF]] : index) {
 kgen.func @trigger_creation(%arg0: i1, %arg1: index, %__result__: !kgen.pointer<index> byref_result) async {
    %coro = co.hot_invoke[(i1, index, !kgen.pointer<index> byref_result) async -> index: @coroutine](%arg0, %arg1, %__result__)
    kgen.return
@@ -2093,9 +2146,9 @@ kgen.func @trigger_creation(%arg0: i1, %arg1: index, %__result__: !kgen.pointer<
 
 kgen.func @trigger_trigger_creation(%arg0: i1, %arg1: index) {
   %coro = co.invoke[(i1, index, !kgen.pointer<index> byref_result) async -> (): @trigger_creation](%arg0, %arg1)
+  %coro2 = co.invoke[(i1, index, !kgen.pointer<index> byref_result) async -> index: @conditional_suspoint](%arg0, %arg1)
   kgen.return
 }
-
 }
 
 // -----
