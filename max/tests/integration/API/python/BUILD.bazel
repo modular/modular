@@ -43,7 +43,7 @@ modular_py_test(
     }),
     deps = [
         "//ModularFramework/examples/pipelines_python/llama3",
-        "//SDK/lib/EngineAPI/python:max_engine",
+        "//SDK/lib/API/python:max_engine",
         requirement("torch"),
         requirement("transformers"),
         requirement("hypothesis"),
