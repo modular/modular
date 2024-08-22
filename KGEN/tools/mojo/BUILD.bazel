@@ -1,34 +1,10 @@
-load("@bazel_skylib//rules:expand_template.bzl", "expand_template")
 load("@rules_pkg//pkg:mappings.bzl", "pkg_files")
 load(
     "//bazel:api.bzl",
     "driver_option_tablegen",
     "modular_cc_binary",
-    "modular_cc_library",
     "rpath_shim",
     "td_library",
-)
-
-expand_template(
-    name = "MojoDebugHeaderGen",
-    out = "MojoDebug.h",
-    substitutions = select({
-        "@platforms//os:macos": {
-            "@CMAKE_SHARED_LIBRARY_PREFIX@": "lib",
-            "@CMAKE_SHARED_LIBRARY_SUFFIX@": ".dylib",
-        },
-        "@platforms//os:linux": {
-            "@CMAKE_SHARED_LIBRARY_PREFIX@": "lib",
-            "@CMAKE_SHARED_LIBRARY_SUFFIX@": ".so",
-        },
-    }),
-    template = "Debug/MojoDebug.h.in",
-)
-
-modular_cc_library(
-    name = "MojoDebugHeader",
-    hdrs = [":MojoDebugHeaderGen"],
-    include_prefix = "Debug",
 )
 
 [
@@ -139,7 +115,6 @@ modular_cc_binary(
         ":Doc.inc_files",
         ":Format.inc_files",
         ":Index.inc_files",
-        ":MojoDebugHeader",
         ":Package.inc_files",
         ":REPL.inc_files",
         ":Run.inc_files",

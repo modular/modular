@@ -6,7 +6,6 @@
 
 #include "LLDB.h"
 #include "AsyncRT/Runtime/Runtime.h"
-#include "Debug/MojoDebug.h"
 #include "KGEN/Support/Configuration.h"
 #include "Support/Driver/DriverSupport.h"
 #include "llvm/Option/ArgList.h"
