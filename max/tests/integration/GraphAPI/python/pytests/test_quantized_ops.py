@@ -6,11 +6,11 @@
 
 import numpy as np
 import pytest
-
+from max.dtype import DType
 from max.engine import InferenceSession
-from max.graph import DType, Graph, TensorType, ops
-from max.graph.type import SymbolicDim
+from max.graph import Graph, TensorType, ops
 from max.graph.quantization import QuantizationEncoding
+from max.graph.type import SymbolicDim
 
 
 def test_qmatmul():
