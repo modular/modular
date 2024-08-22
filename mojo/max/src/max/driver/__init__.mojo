@@ -36,4 +36,4 @@ from .device_memory import DeviceMemory, DeviceTensor
 from .tensor import Tensor
 from .tensor_slice import TensorSlice
 from max.tensor import StaticTensorSpec
-from max._tensor_utils import UnsafeTensorSlice
+from max._tensor_utils import ManagedTensorSlice

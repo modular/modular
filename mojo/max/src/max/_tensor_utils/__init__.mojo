@@ -6,7 +6,7 @@
 """Tensor utilities for working with tensor-like objects"""
 
 from tensor_utils import (
-    UnsafeTensorSlice,
+    ManagedTensorSlice,
     TensorLike,
     indexing,
 )

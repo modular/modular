@@ -6,7 +6,7 @@
 # RUN: %mojo %s
 
 import max._compiler as compiler
-from max.driver import cpu_device, UnsafeTensorSlice, Tensor
+from max.driver import cpu_device, ManagedTensorSlice, Tensor
 from utils import Index
 from max.tensor import TensorSpec
 from testing import assert_equal
@@ -19,12 +19,12 @@ fn test_foreach() raises:
     var shape = (10, 2)
 
     var tensor1 = Tensor[DType.float32, 2](shape)
-    var unsafe_slice1 = UnsafeTensorSlice[DType.float32, 2](
+    var unsafe_slice1 = ManagedTensorSlice[DType.float32, 2](
         tensor1.unsafe_ptr(), shape
     )
 
     var tensor2 = Tensor[DType.float32, 2](shape)
-    var unsafe_slice2 = UnsafeTensorSlice[DType.float32, 2](
+    var unsafe_slice2 = ManagedTensorSlice[DType.float32, 2](
         tensor2.unsafe_ptr(), shape
     )
 

@@ -16,7 +16,7 @@ from max.driver import (
     cpu_device,
     Tensor,
     TensorSlice,
-    UnsafeTensorSlice,
+    ManagedTensorSlice,
 )
 from max.tensor import TensorSpec, TensorShape
 from max.tensor import Tensor as OldTensor
@@ -259,7 +259,7 @@ def test_unsafe_slice():
 
     assert_equal(tensor[1, 0], 3)
 
-    var unsafe_slice = UnsafeTensorSlice[DType.float32, 2](
+    var unsafe_slice = ManagedTensorSlice[DType.float32, 2](
         tensor.unsafe_ptr(), shape
     )
 

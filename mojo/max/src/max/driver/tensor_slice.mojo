@@ -42,7 +42,7 @@ struct TensorSlice[
 
     alias _ref_type = Reference[Tensor[type, rank], lifetime]
     var _ref: Self._ref_type
-    var _unsafe_slice: UnsafeTensorSlice[type, rank]
+    var _unsafe_slice: ManagedTensorSlice[type, rank]
 
     @doc_private
     fn __init__(
@@ -50,7 +50,7 @@ struct TensorSlice[
     ):
         self = Self(
             tensor,
-            UnsafeTensorSlice[type, rank](
+            ManagedTensorSlice[type, rank](
                 tensor[]._ptr, slices, tensor[]._spec
             ),
         )

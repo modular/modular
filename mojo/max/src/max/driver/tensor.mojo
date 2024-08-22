@@ -23,7 +23,7 @@ from .tensor_slice import TensorSlice
 from max.tensor import TensorSpec, TensorShape
 from max.tensor import Tensor as OldTensor
 from max._tensor_utils import (
-    UnsafeTensorSlice,
+    ManagedTensorSlice,
     TensorLike,
     indexing,
 )
@@ -214,7 +214,7 @@ struct Tensor[type: DType, rank: Int](CollectionElement, TensorLike):
     fn unsafe_slice(
         self,
         *slices: Slice,
-    ) raises -> UnsafeTensorSlice[type, rank]:
+    ) raises -> ManagedTensorSlice[type, rank]:
         """Returns a view of the tensor conforming to given slices. If given
         a single slice `:` the view would point to the entire tensor. The caller
         is responsible to make sure tensor outlives the returned slice.
@@ -227,7 +227,7 @@ struct Tensor[type: DType, rank: Int](CollectionElement, TensorLike):
         """
         if len(slices) > rank:
             raise "len(slices) exceeds rank"
-        return UnsafeTensorSlice[type, rank](
+        return ManagedTensorSlice[type, rank](
             self.unsafe_ptr(),
             self._canonicalize_slices(slices),
             self._spec,

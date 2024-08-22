@@ -22,7 +22,7 @@ from sys import stderr
 from max.driver import (
     cpu_device,
     Tensor,
-    UnsafeTensorSlice,
+    ManagedTensorSlice,
     Device,
     DeviceTensor,
 )
@@ -39,9 +39,9 @@ from pathlib import Path
 fn vec_add[
     type: DType, rank: Int
 ](
-    in0: UnsafeTensorSlice[type, rank],
-    in1: UnsafeTensorSlice[type, rank],
-    out: UnsafeTensorSlice[type, rank],
+    in0: ManagedTensorSlice[type, rank],
+    in1: ManagedTensorSlice[type, rank],
+    out: ManagedTensorSlice[type, rank],
 ):
     var row = ThreadIdx.x()
     var col = ThreadIdx.y()
