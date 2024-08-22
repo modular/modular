@@ -324,6 +324,10 @@
     ],
     "debuggers": [
       {
+        "type": "mojo-cuda-gdb",
+        "label": "Mojo cuda-gdb"
+      },
+      {
         "type": "mojo-lldb",
         "label": "Mojo",
         "configurationAttributes": {
