@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from tensor_utils.tensor_spec import StaticTensorSpec
-from tensor_utils.unsafe_tensor_slice import UnsafeTensorSlice
+from tensor_utils.managed_tensor_slice import ManagedTensorSlice
 from utils import StaticIntTuple
 
 
@@ -43,5 +43,5 @@ fn for_each[
     func: fn[_width: Int] (StaticIntTuple[rank]) capturing -> SIMD[
         type, _width
     ],
-](arr: UnsafeTensorSlice[type, rank]):
+](arr: ManagedTensorSlice[type, rank]):
     pass

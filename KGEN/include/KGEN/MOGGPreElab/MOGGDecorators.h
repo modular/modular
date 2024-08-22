@@ -142,10 +142,10 @@ inline bool isDPSKernel(Operation *gen) {
 
 // The stored mojo type symbol name of Tensor type in extensibility kernels.
 constexpr StringLiteral MOJO_DPS_TENSOR_TYPE_NAME =
-    "tensor_utils::UnsafeTensorSlice";
+    "tensor_utils::ManagedTensorSlice";
 
 constexpr StringLiteral MOJO_INTERNAL_DPS_TENSOR_TYPE_NAME =
-    "tensor_utils_internal::UnsafeTensorSlice";
+    "tensor_utils_internal::ManagedTensorSlice";
 
 //===----------------------------------------------------------------------===//
 // MOGG Tensor API type strings
