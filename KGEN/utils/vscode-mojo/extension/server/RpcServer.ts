@@ -17,6 +17,7 @@ import {
 import { LoggingService } from '../logging';
 import { DisposableContext } from '../utils/disposableContext';
 import path = require('path');
+import shellEscape = require ('shell-escape');
 
 type ResponseConnect = {
   kind: "connect";
@@ -119,7 +120,7 @@ export class RpcServer extends DisposableContext {
   // Launch a debug session. Throws if debug session initialization has error.
   private async handleDebugRequest(debugConfig: DebugConfiguration) {
     debugConfig.name = debugConfig.name || debugConfig.program;
-    if (debugConfig.type == "cuda-gdb") {
+    if (debugConfig.type == "mojo-cuda-gdb") {
       const nsight =
         vscode.extensions.getExtension("nvidia.nsight-vscode-edition");
       if (!nsight) {
@@ -133,6 +134,13 @@ export class RpcServer extends DisposableContext {
         }
         throw new Error(message);
       }
+      // Transform debugConfig into normal cuda-gdb config.
+      debugConfig.type = "cuda-gdb";
+      // cuda-gdb takes args as a single string, while we take them as an array.
+      // Actually, cuda-gdb can take an array, which it then joins into a single
+      // string separated by ";" characters. So it takes the list of program
+      // arguments to the debuggee as a single string.
+      debugConfig.args = shellEscape(debugConfig.args);
     }
     let success = await debug.startDebugging(
       /*workspaceFolder=*/ undefined,

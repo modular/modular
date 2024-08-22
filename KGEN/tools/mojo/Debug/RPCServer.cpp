@@ -125,8 +125,10 @@ static ErrorOr<json::Object> createBasicDebugConfiguration(bool useCudaGdb) {
   if (failed(modularHome))
     return modularHome.takeError();
 
+  // For the cuda-gdb case, we use a custom mojo-cuda-gdb type that we massage
+  // into the cuda-gdb type in the RPC server.
   json::Object payload{{"modularHomePath", modularHome->string()},
-                       {"type", useCudaGdb ? "cuda-gdb" : "mojo-lldb"}};
+                       {"type", useCudaGdb ? "mojo-cuda-gdb" : "mojo-lldb"}};
 
   return payload;
 }
@@ -376,23 +378,12 @@ ErrorOrSuccess M::invokeLaunchRPC(bool dryRun, bool useCudaGdb,
       env.push_back(json::Object({{"name", name}, {"value", value}}));
     }
     payload->insert({"environment", std::move(env)});
-    // The nsight-vscode-edition package.json file says that they can take args
-    // as an array of strings, but it doesn't seem to work.  All of their
-    // examples use a single string for the args, which does work.  I'm not sure
-    // what escaping rules they use for the args, but it's likely shell escaping
-    // (hopefully, at best, I guess).
-    std::string argsString;
-    for (std::string arg : runArgs) {
-      // TODO - need to do string escaping.
-      argsString += arg + " ";
-    }
-    payload->insert({"args", argsString});
   } else {
     for (StringRef entry : getEnv())
       env.push_back(entry);
     payload->insert({"env", std::move(env)});
-    payload->insert({"args", json::Array{runArgs}});
   }
+  payload->insert({"args", json::Array{runArgs}});
   payload->insert({"runInTerminal", rpcTerminal == "dedicated"});
 
   return invokeRPC(dryRun, rpcPorts, *payload);
