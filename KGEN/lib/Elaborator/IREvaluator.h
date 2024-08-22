@@ -174,7 +174,7 @@ struct ImplNode {
   /// This is the list of deferred generator instantiations via calls that need
   /// to be handled when the implementation node is complete and all its
   /// dependencies are ready.
-  std::vector<std::pair<GeneratorUserOpInterface, ParamNode *>> dependencies;
+  std::vector<std::pair<Location, ParamNode *>> dependencies;
   /// Other non-direct-call dependencies, such as through parameter calls. These
   /// dependencies cannot be processed in parallel because they indicate a hard
   /// dependency edge: we need the result to be available to proceed with
@@ -324,7 +324,7 @@ struct ParamNode {
 
 private:
   /// The name of the parameterized node.
-  StringAttr mangledName;
+  std::atomic<const void *> mangledName = nullptr;
 
   /// The chain to signal when this parameter node is done processing.
   AsyncRT::AsyncValueRef<AsyncRT::Chain> paramCh;

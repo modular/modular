@@ -152,8 +152,9 @@ ParamNode::collectErrorsOrSuccess(DenseSet<ParamNode *> &visited) {
 }
 
 StringAttr ParamNode::getMangledName() {
-  if (mangledName)
-    return mangledName;
+  // Check cached result.
+  if (const void *namePtr = mangledName.load())
+    return StringAttr::getFromOpaquePointer(namePtr);
 
   // Bind all parameter values in this scope.
   ArrayRef<TypedAttr> inputParamValues = inputParams.getValue();
@@ -161,9 +162,13 @@ StringAttr ParamNode::getMangledName() {
       gen.getInputParams();
   assert(inputParamValues.size() == inputParamDecls.size() &&
          "incorrect # input parameter values");
-
   std::string baseName = mangleParameterValues(gen, inputParamValues);
-  return mangledName = StringAttr::get(gen->getContext(), baseName);
+  StringAttr name = StringAttr::get(gen->getContext(), baseName);
+
+  const void *existing = nullptr;
+  if (mangledName.compare_exchange_strong(existing, name.getAsOpaquePointer()))
+    return name;
+  return StringAttr::getFromOpaquePointer(existing);
 }
 
 #define HANDLE_EVALUATOR_CONC(VAR, INODE, LOC, EXPR)                           \
@@ -543,7 +548,7 @@ Elaborator::instantiateGeneratorReference(
     return {ElaborationState::skipNode(), nullptr};
 
   FailureOr<ImplNode *> concrete =
-      collectConcreteImplementations(user, parent, calleeNode);
+      collectConcreteImplementations(user->getLoc(), parent, calleeNode);
   if (failed(concrete))
     return {failure(), nullptr};
   return {ElaborationState(success()), *concrete};
@@ -554,7 +559,7 @@ Elaborator::instantiateGeneratorReference(
 //===----------------------------------------------------------------------===//
 
 FailureOr<ImplNode *>
-Elaborator::collectConcreteImplementations(Operation *user, ImplNode *parent,
+Elaborator::collectConcreteImplementations(Location loc, ImplNode *parent,
                                            ParamNode *calleeNode) {
   // Get all valid implementations of the callee node.
   ErrorTreeOr<ImplNode *> concrete = calleeNode->getFirstConcreteNode();
@@ -563,8 +568,8 @@ Elaborator::collectConcreteImplementations(Operation *user, ImplNode *parent,
     if (calleeNode->inputParams.empty()) {
       parent->setToError(concrete.takeError());
     } else {
-      parent->setToError(ErrorTree(user->getLoc(), "call expansion failed",
-                                   concrete.takeError()));
+      parent->setToError(
+          ErrorTree(loc, "call expansion failed", concrete.takeError()));
     }
     return failure();
   }
@@ -590,15 +595,15 @@ Elaborator::processGeneratorUser(GeneratorUserOpInterface user,
 
   ParameterExprArrayAttr inputParamKey;
   GeneratorOpInterface gen;
-  bool wasSkipped = false;
+  bool isBlocking = false;
   ParamNode *calleeNode;
   auto [result, concrete] = instantiateGeneratorReference(
       parent, user, calleeSymbol, inputParamKey, gen, [&](ParamNode *genNode) {
         calleeNode = genNode;
-        return wasSkipped = !genNode->gen.getResultParams().empty() ||
+        return isBlocking = !genNode->gen.getResultParams().empty() ||
                             isa<ParamApplyOp>(user);
       });
-  if (result.isError() || (result.shouldSkipNode() && wasSkipped))
+  if (result.isError() || (result.shouldSkipNode() && isBlocking))
     return result;
 
   for (auto [i, resultType] : llvm::enumerate(user->getResultTypes())) {
@@ -607,25 +612,40 @@ Elaborator::processGeneratorUser(GeneratorUserOpInterface user,
     user->getResult(i).setType(type);
   }
 
-  // We don't have to suspend elaboration of this node if the instantiation of a
-  // generator with no result parameters is not yet ready. Process it later.
+  StringAttr concreteSymName;
   if (result.shouldSkipNode()) {
+    // The callee node is not done yet, but `isBlocking` is false, which means
+    // we just need to track the dependency and move on.
     assert(parent->numDependencies >= 1 && "impossible for impl to be done");
-    parent->dependencies.emplace_back(user, calleeNode);
+    parent->dependencies.emplace_back(user->getLoc(), calleeNode);
     if (calleeNode->state.addWaiter()) {
       ++parent->numDependencies;
       calleeNode->andThenAsync(
           [this, parent] { completeImplNodeProcessing(parent); });
     }
-    return ElaborationState::advance();
+    concreteSymName = calleeNode->getMangledName();
+  } else {
+    // This resolved to a direct function call.
+    FuncOp newCalleeFunc = dyn_cast<FuncOp>(*concrete->inst);
+    assert(newCalleeFunc && "expected FuncOp as instantiated callee");
+
+    // If this is a `kgen.param.apply`, bind its result here.
+    if (auto apply = dyn_cast<ParamApplyOp>(*user))
+      return processParamApplyOp(parent, apply, newCalleeFunc);
+    concreteSymName = newCalleeFunc.getNameAttr();
   }
 
-  // If this resolved to a direct function call, there are no parameters.
-  return completeCallProcessing(user, concrete, parent);
+  // Regardless if the callee node is ready or not, we can concretize the callee
+  // symbol reference immediately.
+  mlir::IRRewriter b{OpBuilder(user)};
+  auto newCallee = SymbolConstantAttr::get(
+      FlatSymbolRefAttr::get(concreteSymName), calleeSymbol.getType());
+  user.concretizeCallee(b, newCallee);
+  return ElaborationState::advance();
 }
 
 //===----------------------------------------------------------------------===//
-// Elaborator::completeCallProcessing
+// Elaborator::processParamApplyOp
 //===----------------------------------------------------------------------===//
 
 /// Complete processing of a `kgen.param.apply` operation by invoking the
@@ -663,37 +683,6 @@ ElaborationState Elaborator::processParamApplyOp(ImplNode *inode,
   // Bind the result and erase the operation.
   inode->getEvaluator().setParameterValue(op.getParamDecl(), cached);
   op.erase();
-  return ElaborationState::advance();
-}
-
-ElaborationState
-Elaborator::completeCallProcessing(GeneratorUserOpInterface user,
-                                   ImplNode *thisNode, ImplNode *node) {
-  if (thisNode->error) {
-    if (thisNode->parent->inputParams.empty()) {
-      node->setToError(thisNode->error->copy());
-    } else {
-      node->setToError(ErrorTree(user.getLoc(), "call expansion failed",
-                                 thisNode->error->copy()));
-    }
-    return failure();
-  }
-
-  FuncOp newCalleeFunc = dyn_cast<FuncOp>(*thisNode->inst);
-  assert(newCalleeFunc && "expected FuncOp as instantiated callee");
-
-  // If this is a `kgen.param.apply`, bind its result here.
-  if (auto apply = dyn_cast<ParamApplyOp>(*user))
-    return processParamApplyOp(node, apply, newCalleeFunc);
-
-  // Now that we resolved the call to a new thing, build a new call to replace
-  // the old one.
-  mlir::IRRewriter b{OpBuilder(user)};
-  auto newCallee = SymbolConstantAttr::get(
-      FlatSymbolRefAttr::get(newCalleeFunc.getNameAttr()),
-      newCalleeFunc.getSignature());
-  user.concretizeCallee(b, newCallee);
-
   return ElaborationState::advance();
 }
 
@@ -1109,23 +1098,14 @@ void Elaborator::completeImplNodeProcessing(ImplNode *inode) {
     // Complete processing of outstanding dependencies. Process in reverse with
     // `pop_back` so that forks will end up in the same state.
     while (!inode->dependencies.empty()) {
-      auto [call, genNode] = inode->dependencies.back();
+      auto [loc, genNode] = inode->dependencies.back();
       inode->dependencies.pop_back();
 
-      // Check for an existing binding.
-      // Otherwise, get all bound nodes.
+      // Check for errors in dependencies.
       FailureOr<ImplNode *> concrete =
-          collectConcreteImplementations(call, inode, genNode);
+          collectConcreteImplementations(loc, inode, genNode);
       if (failed(concrete))
         break;
-      // Process the multiple concrete nodes. If this causes multi-versioning,
-      // the forks will correctly get rescheduled on the worklists with no
-      // stacks, and then immediately fallthrough to this function.
-      ElaborationState result = completeCallProcessing(call, *concrete, inode);
-      if (result.isError())
-        break;
-      assert(!result.shouldSkipNode() && !result.shouldSkipFrame() &&
-             "expected all dependencies to be ready");
     }
     if (!inode->error)
       finalizeInstance(inode);
@@ -1499,7 +1479,7 @@ struct GraphEdge {
   Location getLoc() const {
     auto &inode = *pnode->impl;
     if (depIdx < inode.dependencies.size())
-      return inode.dependencies[depIdx].first.getLoc();
+      return inode.dependencies[depIdx].first;
 
     size_t otherDepIdx = depIdx - inode.dependencies.size();
     if (otherDepIdx < inode.otherDeps.size())
@@ -1691,14 +1671,10 @@ bool Elaborator::diagnoseAndBreakRecursion(unsigned generation,
     // Now, we break all the edges in the SCC for each node in the SCC.
     for (ParamNode *node : sccNodes) {
       ImplNode *inode = node->impl.get();
-      std::vector<std::pair<GeneratorUserOpInterface, ParamNode *>> newDeps;
+      std::vector<std::pair<Location, ParamNode *>> newDeps;
       for (auto [idx, dep] : llvm::enumerate(inode->dependencies)) {
         if (!inSCC.contains(GraphEdge{node, idx})) {
           newDeps.push_back(dep);
-        } else {
-          // If this is an edge in the SCC, complete the dependency.
-          auto [call, genNode] = dep;
-          (void)completeCallProcessing(call, genNode->impl.get(), inode);
         }
       }
       // Decrement the number of dependencies and set the new dependencies.
