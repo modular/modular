@@ -16,7 +16,7 @@ from conftest import (
 )
 from hypothesis import assume, given
 from hypothesis import strategies as st
-from llama3.rotary_embedding import RotaryEmbedding
+from llama3.model.rotary_embedding import RotaryEmbedding
 from max.dtype import DType
 from max.graph import Graph, TensorType, ValueLike
 from max.graph.type import Dim

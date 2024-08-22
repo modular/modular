@@ -7,7 +7,7 @@ from conftest import assert_allclose, modular_graph_test
 import pytest
 import torch.nn as nn
 import torch.nn.functional as F
-from llama3.mlp import MLP, Linear
+from llama3.model.mlp import MLP, Linear
 from max.dtype import DType
 from max.graph import Graph, TensorType
 

@@ -144,6 +144,7 @@ class Graph:
     _context: mlir.Context
     _module: mlir.Module
     _unique_symbolic_dim_counter: int
+    _context_state: list
     inputs: tuple[GraphValue, ...]
     weights: dict[str, Weight]
 
@@ -165,6 +166,7 @@ class Graph:
             if isinstance(dim, SymbolicDim)
         }
         self._unique_symbolic_dim_counter = 0
+        self._context_state = []
 
         registry = mlir.DialectRegistry()
         _graph.load_modular_dialects(registry)
@@ -207,11 +209,11 @@ class Graph:
                 self.output(result)
 
     def __enter__(self) -> Graph:
-        self._context_state = self._enter()
-        return self._context_state.__enter__()
+        self._context_state.append(state := self._enter())
+        return state.__enter__()
 
     def __exit__(self, *exc):
-        self._context_state.__exit__(*exc)
+        self._context_state.pop().__exit__(*exc)
 
     @contextlib.contextmanager
     def _enter(self):
