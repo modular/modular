@@ -90,7 +90,8 @@ def _slice_index_and_output(
         if isinstance(dim, StaticDim):
             if not -dim.dim <= index < dim.dim:
                 raise IndexError(f"Index {index} out of range of dim {dim.dim}")
-        return (slice(index, index + 1, 1), 1)
+        stop = int64_max if index == -1 else index + 1
+        return (slice(index, stop, 1), 1)
     elif isinstance(index, GraphValue):
         if index.tensor_type.num_elements() != 1:
             raise ValueError(
