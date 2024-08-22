@@ -31,6 +31,44 @@ from buffer import NDBuffer
 from buffer.dimlist import Dim, DimList
 from builtin.simd import Int64, UInt8, UInt64, _pow
 from gpu.host._compile import _get_nvptx_target
+
+from kv_cache.kernels import (
+    kv_cache_length_h8_d128_bshd_bf16,
+    kv_cache_length_h8_d128_bhsd_bf16,
+    kv_cache_length_h6_d48_bshd_f32,
+    kv_cache_length_h6_d48_bhsd_f32,
+    kv_cache_length_h8_d128_bshd_f32,
+    kv_cache_length_h8_d128_bhsd_f32,
+    key_cache_for_layer_h8_d128_bhsd_bf16,
+    key_cache_for_layer_h8_d128_bshd_bf16,
+    key_cache_for_layer_h6_d48_bshd_f32,
+    key_cache_for_layer_h6_d48_bhsd_f32,
+    key_cache_for_layer_h8_d128_bshd_f32,
+    key_cache_for_layer_h8_d128_bhsd_f32,
+    value_cache_for_layer_h8_d128_bshd_bf16,
+    value_cache_for_layer_h8_d128_bhsd_bf16,
+    value_cache_for_layer_h6_d48_bshd_f32,
+    value_cache_for_layer_h6_d48_bhsd_f32,
+    value_cache_for_layer_h8_d128_bshd_f32,
+    value_cache_for_layer_h8_d128_bhsd_f32,
+    matmul_kv_cache_h6_d48_bshd,
+    matmul_kv_cache_h6_d48_bhsd,
+    matmul_kv_cache_h8_d128_bshd,
+    matmul_kv_cache_h8_d128_bhsd,
+    fused_qkv_matmul_kv_cache_h6_d48_bshd,
+    fused_qkv_matmul_kv_cache_h6_d48_bhsd,
+    fused_qkv_matmul_kv_cache_h8_d128_bshd,
+    fused_qkv_matmul_kv_cache_h8_d128_bhsd,
+    fused_qk_rope_h6_d48_bshd,
+    fused_qk_rope_h6_d48_bhsd,
+    fused_qk_rope_h8_d128_bshd,
+    fused_qk_rope_h8_d128_bhsd,
+    flash_attention_kv_cache_h6_d48_bshd,
+    flash_attention_kv_cache_h6_d48_bhsd,
+    flash_attention_kv_cache_h8_d128_bshd,
+    flash_attention_kv_cache_h8_d128_bhsd,
+)
+
 from linalg.bmm import batched_matmul as _batched_matmul
 from linalg.bmm import batched_matmul_shape
 from linalg.matmul import matmul as _matmul
@@ -177,6 +215,42 @@ fn MOGGExport():
     alias _top_k_shape = top_k_shape
     alias _tile = tile
     alias _tile_shape = tile_shape
+
+    # kv-cache
+    alias _kv_cache_length_h8_d128_bshd_bf16 = kv_cache_length_h8_d128_bshd_bf16
+    alias _kv_cache_length_h8_d128_bhsd_bf16 = kv_cache_length_h8_d128_bhsd_bf16
+    alias _kv_cache_length_h6_d48_bshd_f32 = kv_cache_length_h6_d48_bshd_f32
+    alias _kv_cache_length_h6_d48_bhsd_f32 = kv_cache_length_h6_d48_bhsd_f32
+    alias _kv_cache_length_h8_d128_bshd_f32 = kv_cache_length_h8_d128_bshd_f32
+    alias _kv_cache_length_h8_d128_bhsd_f32 = kv_cache_length_h8_d128_bhsd_f32
+    alias _key_cache_for_layer_h8_d128_bhsd_bf16 = key_cache_for_layer_h8_d128_bhsd_bf16
+    alias _key_cache_for_layer_h8_d128_bshd_bf16 = key_cache_for_layer_h8_d128_bshd_bf16
+    alias _key_cache_for_layer_h6_d48_bshd_f32 = key_cache_for_layer_h6_d48_bshd_f32
+    alias _key_cache_for_layer_h6_d48_bhsd_f32 = key_cache_for_layer_h6_d48_bhsd_f32
+    alias _key_cache_for_layer_h8_d128_bshd_f32 = key_cache_for_layer_h8_d128_bshd_f32
+    alias _key_cache_for_layer_h8_d128_bhsd_f32 = key_cache_for_layer_h8_d128_bhsd_f32
+    alias _value_cache_for_layer_h8_d128_bshd_bf16 = value_cache_for_layer_h8_d128_bshd_bf16
+    alias _value_cache_for_layer_h8_d128_bhsd_bf16 = value_cache_for_layer_h8_d128_bhsd_bf16
+    alias _value_cache_for_layer_h6_d48_bshd_f32 = value_cache_for_layer_h6_d48_bshd_f32
+    alias _value_cache_for_layer_h6_d48_bhsd_f32 = value_cache_for_layer_h6_d48_bhsd_f32
+    alias _value_cache_for_layer_h8_d128_bshd_f32 = value_cache_for_layer_h8_d128_bshd_f32
+    alias _value_cache_for_layer_h8_d128_bhsd_f32 = value_cache_for_layer_h8_d128_bhsd_f32
+    alias _matmul_kv_cache_h6_d48_bshd = matmul_kv_cache_h6_d48_bshd
+    alias _matmul_kv_cache_h6_d48_bhsd = matmul_kv_cache_h6_d48_bhsd
+    alias _matmul_kv_cache_h8_d128_bshd = matmul_kv_cache_h8_d128_bshd
+    alias _matmul_kv_cache_h8_d128_bhsd = matmul_kv_cache_h8_d128_bhsd
+    alias _fused_qkv_matmul_kv_cache_h6_d48_bshd = fused_qkv_matmul_kv_cache_h6_d48_bshd
+    alias _fused_qkv_matmul_kv_cache_h6_d48_bhsd = fused_qkv_matmul_kv_cache_h6_d48_bhsd
+    alias _fused_qkv_matmul_kv_cache_h8_d128_bshd = fused_qkv_matmul_kv_cache_h8_d128_bshd
+    alias _fused_qkv_matmul_kv_cache_h8_d128_bhsd = fused_qkv_matmul_kv_cache_h8_d128_bhsd
+    alias _fused_qk_rope_h6_d48_bshd = fused_qk_rope_h6_d48_bshd
+    alias _fused_qk_rope_h6_d48_bhsd = fused_qk_rope_h6_d48_bhsd
+    alias _fused_qk_rope_h8_d128_bshd = fused_qk_rope_h8_d128_bshd
+    alias _fused_qk_rope_h8_d128_bhsd = fused_qk_rope_h8_d128_bhsd
+    alias _flash_attention_kv_cache_h6_d48_bshd = flash_attention_kv_cache_h6_d48_bshd
+    alias _flash_attention_kv_cache_h6_d48_bhsd = flash_attention_kv_cache_h6_d48_bhsd
+    alias _flash_attention_kv_cache_h8_d128_bshd = flash_attention_kv_cache_h8_d128_bshd
+    alias _flash_attention_kv_cache_h8_d128_bhsd = flash_attention_kv_cache_h8_d128_bhsd
 
 
 # ===----------------------------------------------------------------------===#
