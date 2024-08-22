@@ -48,10 +48,6 @@ struct ExpansionGraph {
   /// Map from concrete function to implementation node.
   Shared<DenseMap<InstantiatedOpInterface, ImplNode *>> concreteNodes;
 
-  /// The current number of in-flight struct instantiations not yet complete.
-  /// This needs to go down to zero before everything is considered done.
-  /// TODO(MOCO-1055): Merge this with non-type dependencies.
-  std::atomic<size_t> pendingStructInstantiations = 0;
   /// The current number of tasks scheduled anywhere in the elaborator on the
   /// worklist.
   std::atomic<size_t> numWorkItems = 1;

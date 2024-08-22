@@ -217,7 +217,7 @@ kgen.generator @recursive() -> index {
   kgen.return %0 : index
 }
 
-// expected-error @below {{function instantiation failed}}
+// expected-note @below {{function instantiation failed}}
 kgen.struct.generator @WeirdStruct<T: type> : !kgen.type {
   kgen.struct.info :type struct_inst<"WeirdStruct"(data: array<apply(:() -> index @recursive), index>)>
 }
@@ -229,6 +229,7 @@ kgen.generator @use_type<T: type>() {
 #weird_struct = #kgen.type<typevalue<inst_struct(#kgen.typeref<@WeirdStruct<:type index>>)>, struct<(array<2, index>)>> : !kgen.type
 
 kgen.generator export @gen_structs() {
+  // expected-error @below {{call expansion failed}}
   kgen.call @use_type<:type #weird_struct>() : () -> ()
   kgen.return
 }

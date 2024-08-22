@@ -81,17 +81,12 @@ ParamNode *ExpansionGraph::getOrCreate(AsyncRT::Runtime &runtime,
                                        GeneratorOpInterface gen, size_t depth) {
   // TODO: Split this into `get` and `create` methods, so that some can be
   // read-only accesses.
-  auto [node, inserted] = nodes.modify([&](auto &map) {
+  return nodes.modify([&](auto &map) {
     std::unique_ptr<ParamNode> &n = map[{values, gen}];
-    if (!n) {
+    if (!n)
       n = std::make_unique<ParamNode>(runtime, gen, values, depth, this);
-      return std::make_pair(n.get(), true);
-    }
-    return std::make_pair(n.get(), false);
+    return n.get();
   });
-  if (inserted && isa<StructGeneratorOp>(*gen))
-    ++pendingStructInstantiations;
-  return node;
 }
 
 void ExpansionGraph::didCompleteTask() {
@@ -122,33 +117,14 @@ ErrorTreeOr<FuncOp> ParamNode::getFirstConcreteFunc() {
   return func;
 }
 
-ErrorTreeOrSuccess
-ParamNode::collectErrorsOrSuccess(DenseSet<ParamNode *> &visited) {
-  if (visited.contains(this))
+ErrorTreeOrSuccess ParamNode::collectErrorsOrSuccess() {
+  if (!impl->error)
     return success();
-
-  ErrorTreeOrSuccess status = success();
-  if (impl->error) {
-    status = impl->error->copy();
-  } else {
-    // TODO(MOCO-1055): Not needed after merging dependencies.
-    // Check recursively for failures via eventual dependencies.
-    visited.insert(this);
-    for (ParamNode *node : llvm::make_second_range(impl->eventualDeps)) {
-      status = node->collectErrorsOrSuccess(visited);
-      if (status.isError())
-        break;
-    }
-    visited.erase(this);
-  }
-  if (!status.isError())
-    return success();
-
   // Propagate the error trivially if the current generator has no parameters.
   if (inputParams.empty())
-    return status;
+    return impl->error->copy();
   return ErrorTree(gen.getLoc(), "function instantiation failed",
-                   status.takeError());
+                   impl->error->copy());
 }
 
 StringAttr ParamNode::getMangledName() {
@@ -412,15 +388,26 @@ Elaborator::getConcreteStructTypeReference(ImplNode *parent, Location loc,
 
   auto vals =
       ParameterExprArrayAttr::get(loc.getContext(), typeref.getParamValues());
-  ParamNode *node =
+  ParamNode *calleeNode =
       g.getOrCreate(runtime, vals, gen, parent->parent->depth + 1);
 
   // Ensure elaboration is dispatched but return immediately. Track as an
   // eventual dependency.
-  specializeGenerator(parent, node, loc, /*addWaiter=*/false);
-  parent->eventualDeps.emplace_back(loc, node);
+  ElaborationState result =
+      specializeGenerator(parent, calleeNode, loc, /*addWaiter=*/false);
+  if (result.shouldSkipNode()) {
+    // The callee node is not done yet, but we just need to track the dependency
+    // and move on.
+    assert(parent->numDependencies >= 1 && "impossible for impl to be done");
+    parent->dependencies.emplace_back(loc, calleeNode);
+    if (calleeNode->state.addWaiter()) {
+      ++parent->numDependencies;
+      calleeNode->andThenAsync(
+          [this, parent] { completeImplNodeProcessing(parent); });
+    }
+  }
   return TypeConstantRefAttr::get(
-      SymbolRefAttr::get(loc->getContext(), node->getMangledName()),
+      SymbolRefAttr::get(loc->getContext(), calleeNode->getMangledName()),
       typeref.getType());
 }
 
@@ -1113,8 +1100,6 @@ void Elaborator::completeImplNodeProcessing(ImplNode *inode) {
 
   // If this is the last implementation node for its parent parameter node to
   // complete, then the parameter node is done.
-  if (isa<StructGeneratorOp>(*p->gen))
-    --g.pendingStructInstantiations;
   g.numWorkItems.fetch_add(p->state.markDone());
   p->emplace();
   signalWorklist();
@@ -1456,8 +1441,7 @@ struct GraphEdge {
   /// In the graph edge, this ParamNode represents the caller node.
   ParamNode *pnode;
   /// This is the index into the concatenated range over
-  /// `[dependencies, otherDeps, eventualDeps]` pointing to the callee
-  /// ParamNode.
+  /// `[dependencies, otherDeps]` pointing to the callee ParamNode.
   size_t depIdx;
 
   /// This function returns the callee ParamNode by indexing into the
@@ -1466,13 +1450,7 @@ struct GraphEdge {
     auto &inode = *pnode->impl;
     if (depIdx < inode.dependencies.size())
       return inode.dependencies[depIdx].second;
-
-    size_t otherDepIdx = depIdx - inode.dependencies.size();
-    if (otherDepIdx < inode.otherDeps.size())
-      return inode.otherDeps[otherDepIdx].second;
-
-    size_t eventualDepIdx = otherDepIdx - inode.otherDeps.size();
-    return inode.eventualDeps[eventualDepIdx].second;
+    return inode.otherDeps[depIdx - inode.dependencies.size()].second;
   }
   /// Return the location on the callee side representing where the edge
   /// originates from, to be used for diagnostic reporting.
@@ -1480,20 +1458,13 @@ struct GraphEdge {
     auto &inode = *pnode->impl;
     if (depIdx < inode.dependencies.size())
       return inode.dependencies[depIdx].first;
-
-    size_t otherDepIdx = depIdx - inode.dependencies.size();
-    if (otherDepIdx < inode.otherDeps.size())
-      return inode.otherDeps[otherDepIdx].first;
-
-    size_t eventualDepIdx = otherDepIdx - inode.otherDeps.size();
-    return inode.eventualDeps[eventualDepIdx].first;
+    return inode.otherDeps[depIdx - inode.dependencies.size()].first;
   }
   /// Return true if this edge is an interpreter edge. We know it's an
   /// interpreter edge if it is in `otherDeps` instead of `dependencies`.
   bool isInterpreterEdge() const {
     auto &inode = *pnode->impl;
-    return depIdx >= inode.dependencies.size() &&
-           depIdx < (inode.dependencies.size() + inode.otherDeps.size());
+    return depIdx >= inode.dependencies.size();
   }
 
   // Comparison operators for GraphTraits.
@@ -1514,8 +1485,7 @@ struct GraphEdge {
   GraphEdge end() const {
     ParamNode *next = getPointee();
     ImplNode &inode = *next->impl;
-    return {next, inode.dependencies.size() + inode.otherDeps.size() +
-                      inode.eventualDeps.size()};
+    return {next, inode.dependencies.size() + inode.otherDeps.size()};
   }
 
   /// GraphEdge is its own iterator.
@@ -1753,8 +1723,7 @@ LogicalResult Elaborator::run(ModuleOp theModule,
       assert(g.numWorkItems == 0);
 
       // Check if all primary generators are done. If so, break.
-      if (llvm::all_of(primaryChs, [](auto &ch) { return ch.isReady(); }) &&
-          g.pendingStructInstantiations.load() == 0)
+      if (llvm::all_of(primaryChs, [](auto &ch) { return ch.isReady(); }))
         break;
       g.numWorkItems = 1;
 
@@ -1771,10 +1740,8 @@ LogicalResult Elaborator::run(ModuleOp theModule,
 
   // Check for any errors and emit them. Emit as many errors as possible.
   bool failed = false;
-  DenseSet<ParamNode *> visited;
   for (ParamNode *genNode : primaryNodes) {
-    visited.clear();
-    ErrorTreeOrSuccess err = genNode->collectErrorsOrSuccess(visited);
+    ErrorTreeOrSuccess err = genNode->collectErrorsOrSuccess();
     if (err.isError()) {
       failed = true;
       err.takeError().emit([](Location loc) { return mlir::emitError(loc); },
