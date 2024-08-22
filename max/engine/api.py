@@ -49,12 +49,12 @@ def _map_execute_kwarg(
         # Just pass the value through if it's not a tensor/array.
         return value
 
-    if expected_dtype == DType.unknown:
+    if expected_dtype == DType._unknown:
         # This currently indicates that the value expected by the model
         # internally is not a `M::Tensor`. We recursively try to wrap torch
         # tensors and np arrays, and pass other values as-is, since no metadata
         # is available to check the runtime values against.
-        # TODO(#27300): Introduce input specs for non-tensor inputs.
+        # TODO(MSDK-43): Introduce input specs for non-tensor inputs.
 
         def wrap_nested(value: Any) -> Any:
             """Traverse a potentially nested python data structure (e.g. lists,
@@ -180,9 +180,7 @@ class Model:
             results = self._impl.execute_device_tensors(
                 [arg._impl for arg in args]
             )
-            return [
-                Tensor((), DType.unknown, _impl=result) for result in results
-            ]
+            return [Tensor._from_impl(result) for result in results]
 
         # Wrapping the tensors happens by recording their addresses, which does
         # not increase reference count, so we need to ensure the garbage

@@ -26,7 +26,9 @@ class DType(Enum):
     float32 = 10
     float64 = 11
     bfloat16 = 12
-    unknown = 13
+
+    # The unknown DType is used for passing python objects to the MAX Engine.
+    _unknown = 13
 
     @classmethod
     def _missing_(cls, value):
@@ -36,11 +38,20 @@ class DType(Enum):
 
     @classmethod
     def _from(cls, dtype: _DType):
-        obj = cls.__dict__[dtype.name]
-        return obj
+        try:
+            return cls.__dict__[dtype.name]
+        except KeyError as e:
+            if dtype.name == "unknown":
+                return DType._unknown
+            raise e
 
     def _to(self):
-        return _DType.__dict__[self.name]
+        try:
+            return _DType.__dict__[self.name]
+        except KeyError as e:
+            if self.name == "_unknown":
+                return _DType.unknown
+            raise e
 
     def __repr__(self) -> str:
         return self.name
@@ -132,7 +143,7 @@ _DTYPE_TO_MLIR = {
     DType.float32: "f32",
     DType.float64: "f64",
     DType.bfloat16: "bf16",
-    DType.unknown: "invalid",
+    DType._unknown: "invalid",
 }
 
 
@@ -150,5 +161,5 @@ _MLIR_TO_DTYPE = {
     "f32": DType.float32,
     "f64": DType.float64,
     "bf16": DType.bfloat16,
-    "invalid": DType.unknown,
+    "invalid": DType._unknown,
 }
