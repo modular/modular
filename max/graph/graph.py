@@ -274,6 +274,7 @@ class Graph:
                     f"Failed to create {op.__qualname__} op:\n\tInputs:\n"
                     + "".join(f"\t\t{arg!r}\n" for arg in args)
                     + "".join(f"\t\t{k} = {v!r}\n" for k, v in kwargs.items())
+                    + f"\n{e}"
                 ) from e
 
         if isinstance(results, mlir.Operation):
