@@ -329,13 +329,7 @@ private:
   /// suspended.
   ElaborationState specializeGenerator(ImplNode *inode, ParamNode *genNode,
                                        Location from, bool addWaiter);
-  /// Complete processing of a generator user by resolving any bound result
-  /// types or parameters in the parent scope. This is the step that propagates
-  /// result parameters from the inner scope to the outer scope.
-  ///
-  /// See function definition for the meaning of `invertLockOrder`.
-  ElaborationState completeCallProcessing(GeneratorUserOpInterface user,
-                                          ImplNode *thisNode, ImplNode *node);
+
   /// Instantiate a generator reference by retrieving the concrete
   /// implementations of a reference. If this function returns `advance` but
   /// `inputParamKey` is not populated, then the callee is a direct function
@@ -348,7 +342,7 @@ private:
       });
   /// Given a user of a completed parameter node, collect concrete
   /// implementations whose bindings are consistent with the current node.
-  FailureOr<ImplNode *> collectConcreteImplementations(Operation *user,
+  FailureOr<ImplNode *> collectConcreteImplementations(Location loc,
                                                        ImplNode *parent,
                                                        ParamNode *calleeNode);
 
