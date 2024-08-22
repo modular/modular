@@ -63,7 +63,7 @@ def assert_matmul_properties(
         assert dtype._mlir in str(graph._mlir_op)
 
 
-@pytest.mark.parametrize("dtype", [d for d in DType if d is not DType.unknown])
+@pytest.mark.parametrize("dtype", [d for d in DType if d is not DType._unknown])
 def test_matmul_static(dtype: DType) -> None:
     """Tests for static matmul."""
 
