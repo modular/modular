@@ -46,6 +46,11 @@ class Tensor:
         else:
             self._impl = _Tensor(shape, dt._to(), device._device)
 
+    @classmethod
+    def _from_impl(cls, impl: _Tensor) -> Tensor:
+        # The dtype and shape arguments are ignored.
+        return cls((), DType.uint8, _impl=impl)
+
     @property
     def dtype(self) -> DType:
         """DType of constituent elements in tensor"""
@@ -95,8 +100,7 @@ class Tensor:
         """Gets a tensor slice. Supports full numpy-style slicing. Invocations
         using only integer-based indexes will return zero-rank tensors."""
         new_tensor = self._impl.get(idx)
-        # The shape and dtype we pass into this constructor will be ignored.
-        return Tensor((), DType.unknown, _impl=new_tensor)
+        return Tensor._from_impl(new_tensor)
 
     def item(self) -> Any:
         """Returns the scalar value at a given location. Currently
