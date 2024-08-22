@@ -921,6 +921,13 @@ struct LayoutTensor[
     @staticmethod
     @always_inline("nodebug")
     fn stack_allocation[*, alignment: Int = alignof[dtype]()]() -> Self:
+        """Allocates stack memory for a LayoutTensor. Expects layout to be
+        fully static.
+
+        Parameters:
+            alignment: The memory alignment of the underlying pointer.
+        """
+
         constrained[layout.all_dims_known(), "Requires fully static layout"]()
         var ptr = stack_allocation[
             layout.size(),
@@ -972,18 +979,36 @@ struct LayoutTensor[
     @always_inline
     @staticmethod
     fn shape[idx: Int]() -> Int:
+        """Returns the shape of the tensor given a index.
+
+        Parameters:
+            idx: The index to the shape of the tensor.
+        """
+
         alias shape = Self._toStatic[layout.shape]()
         return shape[idx]
 
     @always_inline
     @staticmethod
     fn stride[idx: Int]() -> Int:
+        """Returns the stride of the tensor given a index.
+
+        Parameters:
+            idx: The index to the stride of the tensor.
+        """
+
         alias stride = Self._toStatic[layout.stride]()
         return stride[idx]
 
     @always_inline
     @staticmethod
     fn dim[idx: Int]() -> Int:
+        """Returns the dimension of the tensor given a index.
+
+        Parameters:
+            idx: The index to the dimension of the tensor.
+        """
+
         return Self.shape[idx]()
 
     @always_inline
