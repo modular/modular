@@ -12,7 +12,7 @@ py_library(
     name = "_mlir_libs",
     srcs = [":py_srcs"],
     visibility = ["//visibility:public"],
-    deps = ["//SDK/lib/GraphAPI/python/max/_mlir/_mlir_libs/_mlir"],
+    deps = ["//SDK/lib/API/python/max/_mlir/_mlir_libs/_mlir"],
 )
 
 modular_pybind_extension(
