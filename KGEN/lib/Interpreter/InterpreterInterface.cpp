@@ -7,9 +7,7 @@
 #include "KGEN/Interpreter/InterpreterInterface.h"
 #include "Support/AlignedAlloc.h"
 #include "Support/MDialect/MTypeInterfaces.h"
-#include "mlir/IR/DialectResourceBlobManager.h"
-#include "mlir/Interfaces/CallInterfaces.h"
-#include "mlir/Interfaces/ControlFlowInterfaces.h"
+#include "mlir/IR/SymbolTable.h"
 #include "mlir/Support/DebugStringHelper.h"
 #include "llvm/ADT/ScopeExit.h"
 

@@ -372,10 +372,12 @@ private:
     // Drop all stack memory on the current frame.
     MemoryTable &table = getTable(MemoryKind::Stack);
     StackFrame &frame = getCurrentFrame();
-    for (size_t i = 0, e = frame.numStackAllocs; i != e; ++i)
-      table.blobs.pop_back();
-    for (size_t i = 0, e = frame.numSymbolicAllocs; i != e; ++i)
-      symbolicMemory.pop_back();
+    auto popBackCount = [](auto &vec, unsigned num) {
+      vec.erase(vec.end() - num, vec.end());
+    };
+
+    popBackCount(table.blobs, frame.numStackAllocs);
+    popBackCount(symbolicMemory, frame.numSymbolicAllocs);
 
     Operation *origin = frame.origin;
     // Soft-remove the frame from the stack.
