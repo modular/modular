@@ -132,14 +132,15 @@ public:
   /// Transfer control flow to the given operation. If the operation is null,
   /// this is indicating that the interpreter should exit. Otherwise, the
   /// current return values are taken as the results of the target operation.
-  void transferControlFlowTo(Operation *target) {
+  void transferControlFlowTo(Operation *target, ArrayRef<Attribute> values) {
     if (target) {
       block = target->getBlock();
       pc = target->getIterator();
-      mapResults(returnValues);
+      mapResults(values);
     } else {
       block = nullptr;
       pc = Block::iterator();
+      exitValues = llvm::to_vector(values);
     }
   }
 
@@ -207,9 +208,6 @@ public:
   /// Return the origin operation of the frame at the given depth in the stack.
   /// If the stack is not deep enough, return null.
   Operation *getOrigin(size_t depth);
-
-  /// Set the return values.
-  void setReturnValues(ArrayRef<Attribute> values) { returnValues = values; }
 
   /// Set the value of a named global.
   void setNamedGlobal(StringAttr name, Attribute value) {
@@ -388,12 +386,12 @@ private:
   SmallVector<StackFrame, 32> stack;
   size_t stackIdx = 0;
 
-  /// A list of return values.
-  ArrayRef<Attribute> returnValues;
+  /// The return values of the top frame of the interpreter. These are set when
+  /// the interpreter is exiting from the entry function.
+  SmallVector<Attribute> exitValues;
 
   /// This map implements named global values. Named global values represent a
   /// mechanism for storing SSA value captures at compile time.
-  /// FIXME(#19175): This should live in `StackFrame`.
   DenseMap<StringAttr, Attribute> namedGlobals;
 };
 } // namespace M

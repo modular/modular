@@ -609,8 +609,7 @@ static ErrorTreeOrSuccess interpretOpWithFolder(Operation *op,
   SmallVector<OpFoldResult> results;
   if (failed(op->fold(operands, results)))
     return reportFoldError(op, operands, "failed to fold operation ");
-  for (auto [i, result, output] : llvm::zip(
-           llvm::seq<int>(0, op->getNumResults()), results, op->getResults())) {
+  for (auto [result, output] : llvm::zip(results, op->getResults())) {
     if (auto value = llvm::dyn_cast<Attribute>(result))
       state.mapOrOverwrite(output, value);
     else
@@ -777,7 +776,7 @@ ErrorTreeOr<SmallVector<Attribute>> InterpreterState::runInterpreter() {
     llvm::report_fatal_error(
         "exiting interpreter with remaining stack frames " + Twine(stackIdx));
   }
-  return llvm::to_vector(returnValues);
+  return std::move(exitValues);
 }
 
 Operation *InterpreterState::getOrigin(size_t depth) {

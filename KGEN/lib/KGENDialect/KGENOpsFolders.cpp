@@ -354,8 +354,7 @@ ErrorTreeOrSuccess ReturnOp::interpret(ArrayRef<Attribute> operands,
   // Pop the current frame and transfer control flow back to the call operation,
   // using the operands of the return as the results of the call.
   Operation *call = state.popFrame();
-  state.setReturnValues(operands);
-  state.transferControlFlowTo(call);
+  state.transferControlFlowTo(call, operands);
   return success();
 }
 
