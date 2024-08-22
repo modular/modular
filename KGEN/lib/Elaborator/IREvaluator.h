@@ -180,13 +180,6 @@ struct ImplNode {
   /// dependency edge: we need the result to be available to proceed with
   /// elaboration of the current generator.
   std::vector<std::pair<Location, ParamNode *>> otherDeps;
-  /// Dependencies that need to be instantiated eventually, but are not needed
-  /// for the elaboration of this node. This is used for struct instantiations,
-  /// which will be immediately resolved to the concrete symbol reference after
-  /// its elaboration is scheduled. Errors from these dependencies are not
-  /// propagate back up, so this list is used to keep track.
-  /// TODO(MOCO-1055): Merge this with non-type dependencies.
-  std::vector<std::pair<Location, ParamNode *>> eventualDeps;
   /// This flag is set when the implementation node is done processing. A
   /// separate flag is needed because an error state can cause the node to
   /// complete early. This flag prevents double-completion.
@@ -279,8 +272,7 @@ struct ParamNode {
 
   /// Return an error if expansion of this parameter node failed. If any
   /// implementation succeeded, return success instead.
-  /// `visited` contains the set of previously visited nodes to prevent cycles.
-  ErrorTreeOrSuccess collectErrorsOrSuccess(DenseSet<ParamNode *> &visited);
+  ErrorTreeOrSuccess collectErrorsOrSuccess();
 
   /// Return the mangled name of this ParamNode. Calculates it on first
   /// invocation.
