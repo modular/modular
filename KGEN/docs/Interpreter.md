@@ -136,16 +136,15 @@ ErrorTreeOrSuccess IfOp::interpret(ArrayRef<Attribute> operands,
 The second version models functional control-flow, both returning from a
 function call and branching out of an `if` or `loop` region back to the parent
 operation. When this function is called on a target operation, the return values
-as set by `setReturnValues` are taken as the results of the operation and the
-program counter advances to the operation after the target operation. For
-example, this is the `interpret` method for `HLCF::BreakOp`:
+as passed are taken as the results of the operation and the program counter
+advances to the operation after the target operation. For example, this is the
+`interpret` method for `HLCF::BreakOp`:
 
 ```C++
 ErrorTreeOrSuccess BreakOp::interpret(ArrayRef<Attribute> operands,
                                       InterpreterState &state) {
   auto loop = getOperation()->getParentOfType<LoopOp>();
-  state.setReturnValues(operands);
-  state.transferControlFlowTo(loop);
+  state.transferControlFlowTo(loop, operands);
   return success();
 }
 ```

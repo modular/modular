@@ -461,8 +461,7 @@ void BreakOp::getBranchTargets(ArrayRef<Attribute> operands,
 ErrorTreeOrSuccess BreakOp::interpret(ArrayRef<Attribute> operands,
                                       InterpreterState &state) {
   LoopOp loop = getParentLoop(*this, getLabelAttr());
-  state.setReturnValues(operands);
-  state.transferControlFlowTo(loop);
+  state.transferControlFlowTo(loop, operands);
   return success();
 }
 
@@ -483,8 +482,7 @@ void YieldOp::getBranchTargets(ArrayRef<Attribute> operands,
 
 ErrorTreeOrSuccess YieldOp::interpret(ArrayRef<Attribute> operands,
                                       InterpreterState &state) {
-  state.setReturnValues(operands);
-  state.transferControlFlowTo((*this)->getParentOp());
+  state.transferControlFlowTo((*this)->getParentOp(), operands);
   return success();
 }
 
@@ -575,8 +573,8 @@ ErrorTreeOrSuccess ForYieldOp::interpret(ArrayRef<Attribute> operands,
   if (continueFor) {
     state.transferControlFlowTo(&forLoop.getBody().front(), operands);
   } else {
-    state.setReturnValues(adaptor.getReturnValues());
-    state.transferControlFlowTo(forLoop->getParentOp());
+    state.transferControlFlowTo(forLoop->getParentOp(),
+                                adaptor.getReturnValues());
   }
   return success();
 }
