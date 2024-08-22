@@ -64,7 +64,8 @@ struct FrameData {
         operationToIndexInFrame(std::move(other.operationToIndexInFrame)),
         opToState(std::move(other.opToState)),
         virtualBlocksFirstState(std::move(other.virtualBlocksFirstState)),
-        argsInFrame(other.argsInFrame) {}
+        argsInFrame(std::move(other.argsInFrame)),
+        firstSuspends(std::move(other.firstSuspends)) {}
 
   FrameData() {}
   /// pairs index of argument from original function with its index in the
@@ -89,6 +90,10 @@ struct FrameData {
   DenseMap<Operation *, int> opToState;
   SmallVector<Operation *> virtualBlocksFirstState;
   SmallVector<ArgInFrame> argsInFrame;
+  /// A suspend op 'S' is in this data structure if it is possible to reach 'S'
+  /// from the entry point without passing through another suspend op. This is
+  /// used to clear the state 0 blocks in hot resumes.
+  DenseSet<SuspendOp> firstSuspends;
 };
 
 static bool needsStateClone(Operation *operation) {
@@ -193,6 +198,7 @@ public:
   FrameData *getFrameData() { return &frameData; }
   StructType getHeaderType() const { return headerType; }
   Type getResumeSignatureType() const { return resumeSignatureType; }
+  StructType getPromiseType() const { return promiseType; }
 
 private:
   Type continuationType;
@@ -202,7 +208,7 @@ private:
   StructType headerType;
   MLIRContext *cxt;
   FrameData frameData;
-  Type promiseType;
+  StructType promiseType;
 };
 
 using VirtualBlock = Operation *;
@@ -293,10 +299,14 @@ private:
   /// function that can be shared by hot and cold ramps.
   FuncOp createSharedResume(StringRef prefix, FuncOp funcOp,
                             COTypes &coldCoTypes, Type hotCoroType);
+  void populateHotResumeFrom(FuncOp original, FuncOp target,
+                             COTypes &coTypesOfOriginal);
 
-  /// A hot ramp contains the first state of the given function.
+  /// A hot ramp contains the first state of the given function. If takeOriginal
+  /// is false, the original function will be left alone and the hot ramp will
+  /// be created by cloning up to the first suspension point.
   FuncOp createHotRamp(StringRef prefix, FuncOp original, COTypes &coTypes,
-                       FuncOp resumeFunction);
+                       FuncOp resumeFunction, bool takeOriginal);
 
   /// Create the continuation and initialize the state and resume function.
   Value initializeContinuation(FuncOp rampFunction, FuncOp resumeFunction,
@@ -318,6 +328,12 @@ private:
   /// the first suspension point. If there is a path with no suspension point,
   /// the callback is invoked. The hotRamp TAKES the body of the fromFuncOp.
   void takeSlicedFirstStateFrom(FuncOp hotRamp, FuncOp fromFuncOp);
+
+  /// Given an async function, populate a function with the paths to
+  /// the first suspension point. If there is a path with no suspension point,
+  /// the callback is invoked.
+  FrameData cloneFrameAndFirstStateTo(FuncOp hotRamp, FuncOp fromFuncOp,
+                                      FrameData *originalFrameData);
 
   /// Replace all `return x` with `store x, y` where y is the address of the
   /// result slot in the frame.
@@ -516,6 +532,141 @@ static std::pair<Value, Value> getErrorAndMemoryValues(FuncOp original) {
   return {errorValue, memoryResultValue};
 }
 
+/// Copy Context pairs a source operation with a target block.
+/// Clones are always written to the end of the target block.
+struct CopyContext {
+  Operation *source;
+  Block *target;
+};
+
+FrameData LowerAsyncBuildContext::cloneFrameAndFirstStateTo(
+    FuncOp hotRamp, FuncOp fromFuncOp, FrameData *originalFrameData) {
+  FrameData emptyFrame;
+  COTypes opaqueCoTypes(builder.getContext(), std::move(emptyFrame),
+                        /*promiseType=*/{});
+  FrameData frameData;
+  /// Augment the hot ramp function signature. We will clone ops from the funcOp
+  /// into the hot ramp function.
+  SmallVector<Type> inputs;
+  SmallVector<ArgConvention> conventions;
+  Type closureType = opaqueCoTypes.typeForField(M::KGEN::ClosureState);
+  Type callbackType = opaqueCoTypes.typeForField(M::KGEN::CallbackFn);
+  inputs.push_back(callbackType);
+  conventions.push_back(ArgConvention::BorrowedInReg);
+  inputs.push_back(closureType);
+  conventions.push_back(ArgConvention::BorrowedInReg);
+  llvm::append_range(inputs, fromFuncOp.getArgumentTypes());
+  llvm::append_range(conventions,
+                     fromFuncOp.getSignature().getArgConventions());
+
+  IRMapping mapping;
+  Block &block = hotRamp.getBodyRegion().emplaceBlock();
+  for (BlockArgument oldArg : fromFuncOp.getArguments()) {
+    Value newArg = block.addArgument(oldArg.getType(), oldArg.getLoc());
+    mapping.map(oldArg, newArg);
+    frameData.valueToIndexInFrame[newArg] =
+        originalFrameData->valueToIndexInFrame[oldArg];
+  }
+
+  SignatureType signature = SignatureType::get(
+      hotRamp.getContext(), {}, {},
+      FunctionType::get(builder.getContext(), inputs,
+                        PointerType::get(opaqueCoTypes.getHeaderType())),
+      conventions, fromFuncOp.getSignature().getFnEffects(),
+      fromFuncOp.getSignature().getMetadata());
+  hotRamp.setSignature(signature);
+
+  Value callback = hotRamp.getBodyRegion().front().insertArgument(
+      (unsigned)0, callbackType, hotRamp->getLoc());
+  Value closureState = hotRamp.getBodyRegion().front().insertArgument(
+      1, closureType, hotRamp->getLoc());
+
+  SmallVector<CopyContext> paths;
+  auto addTargets = [&](ArrayRef<HLCF::ControlFlowTarget> targets,
+                        Operation *cfn, Operation *clone,
+                        Operation *cloneParent, CopyContext &copyContext) {
+    for (HLCF::ControlFlowTarget target : targets) {
+      if (target.index.has_value()) {
+        unsigned index = target.index.value();
+        Block &sourceBlock = cfn->getRegion(index).front();
+        Region *cloneRegion = &cloneParent->getRegion(index);
+        if (cloneRegion->empty()) {
+          Block &block = cloneRegion->emplaceBlock();
+          for (Value arg : sourceBlock.getArguments()) {
+            Value newArg = block.addArgument(arg.getType(), arg.getLoc());
+            mapping.map(arg, newArg);
+            frameData.valueToIndexInFrame[newArg] =
+                originalFrameData->valueToIndexInFrame[arg];
+          }
+        }
+        paths.push_back({&*sourceBlock.begin(), &cloneRegion->front()});
+      } else {
+        paths.push_back({cfn->getNextNode(), cloneParent->getBlock()});
+      }
+    }
+  };
+  DenseSet<Operation *> visited;
+  paths.push_back({&fromFuncOp.getBodyRegion().front().front(),
+                   &hotRamp.getBodyRegion().front()});
+  while (!paths.empty()) {
+    CopyContext copyContext = paths.pop_back_val();
+    if (visited.contains(copyContext.source))
+      continue;
+    visited.insert(copyContext.source);
+    builder.setInsertionPointToEnd(copyContext.target);
+    for (Operation *operation = copyContext.source; operation != nullptr;
+         operation = operation->getNextNode()) {
+      /// Clone.
+      Operation *clone = builder.cloneWithoutRegions(*operation, mapping);
+      mapping.map(operation, clone);
+      frameData.opToState[clone] = originalFrameData->opToState[operation];
+      auto maybeIndex =
+          originalFrameData->operationToIndexInFrame.find(operation);
+      if (maybeIndex != originalFrameData->operationToIndexInFrame.end())
+        frameData.operationToIndexInFrame[clone] = maybeIndex->second;
+
+      /// Traverse.
+      if (auto suspendOp = dyn_cast<SuspendOp>(operation)) {
+        builder.create<KGEN::ReturnOp>();
+        Block &block = clone->getRegion(0).emplaceBlock();
+        for (Value arg : suspendOp.getBody().front().getArguments())
+          mapping.map(arg, block.addArgument(arg.getType(), arg.getLoc()));
+        paths.push_back({&suspendOp.getBody().front().front(), &block});
+        break;
+      }
+      if (auto cfn = dyn_cast<HLCF::ControlFlowNode>(operation)) {
+        SmallVector<HLCF::ControlFlowTarget> targets;
+        SmallVector<Attribute> controlFlowOperands(cfn->getNumOperands(),
+                                                   Attribute());
+        cfn.getEntryTargets(controlFlowOperands, targets);
+        addTargets(targets, cfn, clone, clone, copyContext);
+        break;
+      }
+      if (isa<ReturnOp>(operation)) {
+        builder.setInsertionPoint(clone);
+        insertCoroutineEnd(builder, callback, closureState);
+        break;
+      }
+      if (isa<UnreachableOp, SuspendEndOp>(operation))
+        break;
+      if (auto terminator = dyn_cast<HLCF::ControlFlowTerminator>(operation)) {
+        SmallVector<HLCF::ControlFlowTarget> targets;
+        SmallVector<Attribute> controlFlowTerminatorOperands(
+            terminator->getNumOperands(), Attribute());
+        terminator.getBranchTargets(controlFlowTerminatorOperands, targets);
+        addTargets(
+            targets, HLCF::getParentNode(terminator), clone,
+            HLCF::getParentNode(cast<HLCF::ControlFlowTerminator>(clone)),
+            copyContext);
+        break;
+      }
+    }
+  }
+  for (Type frameType : originalFrameData->frameTypes)
+    frameData.frameTypes.push_back(frameType);
+  return frameData;
+}
+
 FuncOp LowerAsyncBuildContext::createColdResume(StringRef prefix, FuncOp funcOp,
                                                 COTypes &coTypes) {
   builder.setInsertionPoint(funcOp);
@@ -537,6 +688,69 @@ FuncOp LowerAsyncBuildContext::createColdResume(StringRef prefix, FuncOp funcOp,
                          Temp::Cold,
                          /*loadFromFrame=*/true);
   return resumeFunction;
+}
+
+void LowerAsyncBuildContext::populateHotResumeFrom(FuncOp original,
+                                                   FuncOp resumeFunction,
+                                                   COTypes &coTypes) {
+  auto [errorValue, memoryResultValue] = getErrorAndMemoryValues(original);
+  resumeFunction.getBodyRegion().takeBody(original.getBodyRegion());
+  insertFrameLoadsStores(resumeFunction, coTypes, errorValue, memoryResultValue,
+                         Temp::Hot, /*loadFromFrame=*/true);
+  // (1) Replace arguments in parent control flow with constants.
+  DenseSet<Operation *> parents;
+  for (SuspendOp suspendOp : coTypes.getFrameData()->firstSuspends) {
+    Operation *current = suspendOp->getParentOp();
+    while (current) {
+      Operation *parent = current;
+      current = current->getParentOp();
+      if (parent == resumeFunction)
+        break;
+      if (parents.contains(parent))
+        break;
+      parents.insert(parent);
+      assert(coTypes.getFrameData()->opToState.contains(parent) &&
+             "The function should not be augmented with control flow ops");
+      if (coTypes.getFrameData()->opToState[parent] > 0)
+        continue;
+
+      builder.setInsertionPoint(parent);
+      for (auto [index, operand] : llvm::enumerate(parent->getOperands()))
+        parent->setOperand(index, builder.create<UndefOp>(operand.getType()));
+    }
+  }
+
+  // (2) Remove the first state.
+  {
+    SmallVector<Operation *> opsToRemove;
+    for (auto virtualBlock : coTypes.getFrameData()->virtualBlocksFirstState) {
+      Operation *current = virtualBlock;
+      while (current) {
+        Operation *op = current;
+        current = current->getNextNode();
+        if (isa<HLCF::ControlFlowNode, SuspendOp, SuspendEndOp>(op))
+          break;
+        if (isa<HLCF::ControlFlowTerminator>(op)) {
+          builder.setInsertionPoint(op);
+          for (auto [index, type] : llvm::enumerate(op->getOperandTypes()))
+            op->setOperand(index, builder.create<UndefOp>(type));
+          break;
+        }
+        opsToRemove.push_back(op);
+      }
+    }
+    for (Operation *op : llvm::reverse(opsToRemove))
+      op->erase();
+
+    llvm::BitVector args(
+        resumeFunction.getBodyRegion().front().getNumArguments(), true);
+    args.reset(0);
+    resumeFunction.getBodyRegion().front().eraseArguments(args);
+    resumeFunction.setSignature(SignatureType::get(
+        builder.getContext(),
+        resumeFunction.getBodyRegion().front().getArgumentTypes(),
+        resumeFunction.getResultTypes()));
+  }
 }
 
 FuncOp LowerAsyncBuildContext::createSharedResume(StringRef prefix,
@@ -595,9 +809,10 @@ FuncOp LowerAsyncBuildContext::createSharedResume(StringRef prefix,
 }
 FuncOp LowerAsyncBuildContext::createHotRamp(StringRef prefix, FuncOp original,
                                              COTypes &coTypes,
-                                             FuncOp resumeFunction) {
+                                             FuncOp resumeFunction,
+                                             bool takeOriginal) {
   StringAttr hotRampName = builder.getStringAttr(prefix + "_hot_ramp");
-  builder.setInsertionPoint(original);
+  builder.setInsertionPoint(resumeFunction);
   FuncOp hotRamp =
       builder.create<FuncOp>(original->getLoc(), hotRampName,
                              SignatureType::get(builder.getContext(), {}, {}));
@@ -607,17 +822,31 @@ FuncOp LowerAsyncBuildContext::createHotRamp(StringRef prefix, FuncOp original,
       });
 
   // Given (args:A) -> B, create (callback:(P) -> (), closure: P, args:A) -> B
-  takeSlicedFirstStateFrom(hotRamp, original);
+  Value errorValue;
+  Value memoryResultValue;
+  if (takeOriginal) {
+    takeSlicedFirstStateFrom(hotRamp, original);
+    std::tie(errorValue, memoryResultValue) = getErrorAndMemoryValues(hotRamp);
+    insertFrameLoadsStores(hotRamp, coTypes, errorValue, memoryResultValue,
+                           Temp::Hot,
+                           /*loadFromFrame=*/false);
+  } else {
+    FrameData rampFrameData(
+        cloneFrameAndFirstStateTo(hotRamp, original, coTypes.getFrameData()));
+    COTypes rampCoTypes(builder.getContext(), std::move(rampFrameData),
+                        coTypes.getPromiseType());
+    std::tie(errorValue, memoryResultValue) = getErrorAndMemoryValues(hotRamp);
+    insertFrameLoadsStores(hotRamp, rampCoTypes, errorValue, memoryResultValue,
+                           Temp::Hot,
+                           /*loadFromFrame=*/false);
+  }
   // Check parent region for termination (everything after first suspend was
   // deleted).
   if (!hotRamp.getBodyRegion().front().mightHaveTerminator()) {
     builder.setInsertionPointToEnd(&hotRamp.getBodyRegion().front());
     builder.create<UnreachableOp>();
   }
-  auto [errorValue, memoryResultValue] = getErrorAndMemoryValues(hotRamp);
-  insertFrameLoadsStores(hotRamp, coTypes, errorValue, memoryResultValue,
-                         Temp::Hot,
-                         /*loadFromFrame=*/false);
+
   constexpr unsigned indexOfCoroutine = 0;
   constexpr unsigned indexOfCallback = 1;
   constexpr unsigned indexOfClosure = 2;
@@ -757,14 +986,26 @@ Coroutine LowerAsyncBuildContext::createCoroutine(FuncOp originalAsyncFunc,
     originalAsyncFunc->erase();
     return coro;
   } else if (temperature == Temp::Hot) {
-    FuncOp clone = originalAsyncFunc.clone();
-    COTypes hotCoTypes(calculateFrame(clone, /*includeArgs=*/false));
-    COTypes coTypes(calculateFrame(originalAsyncFunc, /*includeArgs=*/true));
-    FuncOp sharedResume = createSharedResume(prefix, originalAsyncFunc, coTypes,
-                                             hotCoTypes.getContinuationType());
-    FuncOp hotRamp = createHotRamp(prefix, clone, hotCoTypes, sharedResume);
-    Coroutine coro(sharedResume, hotRamp, {}, hotCoTypes.getContinuationType());
-    clone->erase();
+    COTypes hotCoTypes(
+        calculateFrame(originalAsyncFunc, /*includeArgs=*/false));
+    builder.setInsertionPoint(originalAsyncFunc);
+    StringAttr resumeName = builder.getStringAttr(prefix + "_resume");
+    auto resumeSignature = SignatureType::get(
+        builder.getContext(),
+        PointerType::get(hotCoTypes.getContinuationType()), {});
+    FuncOp resumeFunction =
+        builder.create<FuncOp>(originalAsyncFunc->getParentOp()->getLoc(),
+                               resumeName, resumeSignature);
+    resumeFunction.setCoroutineTypeAttr(
+        TypeAttr::get(hotCoTypes.getContinuationType()));
+    resumeName = sharedTable.modify(
+        [resumeFunction, it = originalAsyncFunc->getIterator()](
+            SymbolTable &symtab) { return symtab.insert(resumeFunction, it); });
+    FuncOp hotRamp = createHotRamp(prefix, originalAsyncFunc, hotCoTypes,
+                                   resumeFunction, /*takeOriginal=*/false);
+    populateHotResumeFrom(originalAsyncFunc, resumeFunction, hotCoTypes);
+    Coroutine coro(resumeFunction, hotRamp, {},
+                   hotCoTypes.getContinuationType());
     originalAsyncFunc->erase();
     return coro;
   } else if (temperature == Temp::Both) {
@@ -774,7 +1015,8 @@ Coroutine LowerAsyncBuildContext::createCoroutine(FuncOp originalAsyncFunc,
     COTypes coTypes(calculateFrame(originalAsyncFunc, /*includeArgs=*/true));
     FuncOp sharedResume = createSharedResume(prefix, originalAsyncFunc, coTypes,
                                              hotCoTypes.getContinuationType());
-    FuncOp hotRamp = createHotRamp(prefix, clone, hotCoTypes, sharedResume);
+    FuncOp hotRamp = createHotRamp(prefix, clone, hotCoTypes, sharedResume,
+                                   /*takeOriginal=*/true);
     FuncOp coldRamp =
         createColdRamp(prefix, originalSignature, coTypes, sharedResume);
     Coroutine coro(sharedResume, hotRamp, coldRamp,
@@ -1171,12 +1413,13 @@ void FrameData::updateVirtualBlock(VirtualBlock virtualBlock, int newState) {
 using PathContainer = SmallVector<Operation *>;
 struct PathInfo {
   PathInfo(VirtualBlock v) : virtualBlock(v), state(0) {}
-  PathInfo(VirtualBlock v, int state, PathContainer const &parent)
-      : virtualBlock(v), path(parent), state(state) {}
+  PathInfo(VirtualBlock v, int state, PathContainer const &parent, bool hitSus)
+      : virtualBlock(v), path(parent), state(state), hitSus(hitSus) {}
   int existsAt(VirtualBlock virtualBlock) const;
   VirtualBlock virtualBlock;
   PathContainer path;
   int state;
+  bool hitSus = false;
 };
 
 int PathInfo::existsAt(VirtualBlock virtualBlock) const {
@@ -1288,15 +1531,16 @@ FrameData::FrameData(
     auto pushSuccessors =
         [&](SmallVector<HLCF::ControlFlowTarget> const &targets,
             Operation *controlFlowVirtualBlock, Operation *controlFlowParent,
-            PathContainer &path, int state) {
+            PathContainer &path, int state, bool hitSus) {
           for (HLCF::ControlFlowTarget target : targets) {
             if (target.index.has_value()) {
               auto o = &*controlFlowParent->getRegion(target.index.value())
                              .front()
                              .begin();
-              paths.push_back({o, state, path});
+              paths.push_back({o, state, path, hitSus});
             } else {
-              paths.push_back({controlFlowParent->getNextNode(), state, path});
+              paths.push_back(
+                  {controlFlowParent->getNextNode(), state, path, hitSus});
             }
           }
         };
@@ -1311,6 +1555,7 @@ FrameData::FrameData(
       int indexOfMe = paths.back().existsAt(virtualBlock);
       PathContainer path = std::move(paths.back().path);
       int state = paths.back().state;
+      bool hitSus = paths.back().hitSus;
       paths.pop_back();
 
       auto recordedStatePtr = opToState.find(virtualBlock);
@@ -1344,14 +1589,17 @@ FrameData::FrameData(
           Operation *next = susEnd->getParentOp()->getNextNode();
           ++state;
           if (next)
-            paths.push_back({next, state, path});
+            paths.push_back({next, state, path, hitSus});
           opToState[op] = state;
           break;
         }
         opToState[op] = state;
 
         if (auto suspend = dyn_cast<CO::SuspendOp>(op)) {
-          paths.push_back({&*suspend.getBody().front().begin(), state, path});
+          if (!hitSus)
+            firstSuspends.insert(suspend);
+          paths.push_back(
+              {&*suspend.getBody().front().begin(), state, path, true});
           break;
         }
         if (isa<ReturnOp, UnreachableOp>(op))
@@ -1361,8 +1609,8 @@ FrameData::FrameData(
           SmallVector<Attribute> controlFlowNodeOperands(
               controlFlowNode->getNumOperands(), Attribute());
           controlFlowNode.getEntryTargets(controlFlowNodeOperands, targets);
-          pushSuccessors(targets, controlFlowNode, controlFlowNode, path,
-                         state);
+          pushSuccessors(targets, controlFlowNode, controlFlowNode, path, state,
+                         hitSus);
           break;
         }
         if (auto controlFlowTerminator =
@@ -1373,7 +1621,8 @@ FrameData::FrameData(
           controlFlowTerminator.getBranchTargets(controlFlowTerminatorOperands,
                                                  targets);
           pushSuccessors(targets, controlFlowTerminator,
-                         getParentNode(controlFlowTerminator), path, state);
+                         getParentNode(controlFlowTerminator), path, state,
+                         hitSus);
           break;
         }
       }
@@ -1383,7 +1632,13 @@ FrameData::FrameData(
   auto propagateChildSuspoints = [&]() -> bool {
     bool wasChange = false;
     for (auto [virtualBlock, preds] : predecessors) {
-      int initialState = opToState[virtualBlock];
+      auto stateMaybe = opToState.find(virtualBlock);
+      if (stateMaybe == opToState.end()) {
+        opToState[virtualBlock] = -1;
+        continue;
+      }
+
+      int initialState = stateMaybe->second;
       int postState = initialState;
       int stateAtContinue = 0;
       int smallestPredState = initialState;
