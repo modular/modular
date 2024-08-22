@@ -532,6 +532,7 @@ void RemoveUnusedParams::runOnOperation() {
               subroutineType.getResultTypes())));
       if (newType != subroutineType) {
         mlir::AttrTypeReplacer replacer;
+        // Replace occurrences of the current subprogram with a new type & name.
         auto newScope = oldScope.cloneWith(oldScope.getName(),
                                            newFunc.getSymNameAttr(), newType);
         replacer.addReplacement([=](DebugInfo::DISubprogramAttr scope) {
@@ -539,7 +540,12 @@ void RemoveUnusedParams::runOnOperation() {
             return std::make_pair(newScope, WalkResult::skip());
           return std::make_pair(scope, WalkResult::advance());
         });
-        replacer.recursivelyReplaceElementsIn(newFunc, /*replaceAttrs=*/false,
+        // Replace subroutine types of other subprograms (inlined scopes).
+        replacer.addReplacement([&](DebugInfo::DISubroutineType subroutine) {
+          return evaluator.getReboundType(subroutine);
+        });
+        replacer.recursivelyReplaceElementsIn(newFunc,
+                                              /*replaceAttrs=*/false,
                                               /*replaceLocs=*/true,
                                               /*replaceTypes=*/false);
       }
