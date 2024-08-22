@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from sys import simdwidthof
-from tensor_utils_internal import UnsafeTensorSlice
+from tensor_utils_internal import ManagedTensorSlice
 from buffer.dimlist import DimList
 from utils import StaticIntTuple
 from collections import Optional
@@ -50,7 +50,7 @@ fn foreach[
     type: DType,
     rank: Int, //,
     func: fn[width: Int] (StaticIntTuple[rank]) capturing -> SIMD[type, width],
-](tensor: UnsafeTensorSlice[type, rank]):
+](tensor: ManagedTensorSlice[type, rank]):
     alias simd_width = simdwidthof[tensor.type]()
 
     @parameter

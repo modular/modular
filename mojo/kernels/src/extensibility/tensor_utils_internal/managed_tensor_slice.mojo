@@ -17,13 +17,20 @@ from sys.intrinsics import strided_load, strided_store
 
 @value
 @register_passable
-struct UnsafeTensorSlice[
+struct ManagedTensorSlice[
     type: DType,
     rank: Int,
 ](TensorLike):
-    """UnsafeTensorSlice is like TensorSlice but it contains no reference to
-    the original Tensor. Therefore, the user must take care to keep the ptr alive
-    until UnsafeTensorSlice's last use.
+    """ManagedTensorSlice is like TensorSlice but it does not effect the life
+    of the underlying allocated pointer. Unlike TensorSlice, when the object
+    lifetime ends it does not effect the lifetime of the underlying pointer.
+    Conversly, if a ManagedTensorSlice is created, it will not extend the life
+    of the underlying pointer.
+
+    Therefore, the user must take care to keep the ptr alive until
+    ManagedTensorSlice's last use. This class is useful for writing kernels
+    where memory is managed by an external runtime like in MAX's inference
+    stack.
     """
 
     var _ptr: UnsafePointer[Scalar[type]]

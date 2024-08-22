@@ -4,5 +4,5 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from .unsafe_tensor_slice import UnsafeTensorSlice
+from .managed_tensor_slice import ManagedTensorSlice
 from .tensor_like import TensorLike
