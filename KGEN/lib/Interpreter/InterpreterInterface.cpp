@@ -135,8 +135,9 @@ InterpreterState::MemoryTable::getBlob(int64_t addr) {
 
 ErrorOr<int64_t> InterpreterState::allocateStackMemory(size_t size,
                                                        size_t align) {
-  // Track the additional stack allocation on the current frame.
-  ++getCurrentFrame().numStackAllocs;
+  // Track the additional stack allocation on the current frame if there is one.
+  if (stackIdx)
+    ++getCurrentFrame().numStackAllocs;
 
   ErrorOr<MemoryBlob &> blob =
       getTable(MemoryKind::Stack).addBlob(size, align, /*hdl=*/{});
@@ -330,7 +331,9 @@ ErrorOr<TypedAttr> InterpreterState::readAttributeFromMemory(int64_t addr,
 uint64_t InterpreterState::allocateSymbolicMemory(TypedAttr init) {
   uint64_t result = symbolicMemory.size();
   symbolicMemory.push_back(init);
-  ++getCurrentFrame().numSymbolicAllocs;
+  // Track the allocation on the current frame if there is one.
+  if (stackIdx)
+    ++getCurrentFrame().numSymbolicAllocs;
   return result;
 }
 
@@ -553,10 +556,8 @@ InterpreterState::internalizeMemory(MutableArrayRef<Attribute> args) {
 
 ErrorOr<TypedAttr> InterpreterState::loadAttributeFromMemRef(MemRefAttr memref,
                                                              Type type) {
-  // Push a frame so we can internalize the memory. Reset upon exit.
-  pushFrame(nullptr, nullptr);
+  // Reset memory upon exit.
   auto resetState = llvm::make_scope_exit([&] { reset(); });
-
   Attribute attr = memref;
   if (ErrorOrSuccess err = internalizeMemory(attr))
     return err.takeError();
@@ -618,22 +619,6 @@ static ErrorTreeOrSuccess interpretOpWithFolder(Operation *op,
   return success();
 }
 
-ErrorTreeOrSuccess
-InterpreterState::startInterpreterAt(Region &region,
-                                     ArrayRef<Attribute> arguments) {
-  // Push an empty stack frame.
-  pushFrame(nullptr, region.getParentOp());
-
-  // Internal memory references.
-  SmallVector<Attribute> args = llvm::to_vector(arguments);
-  if (ErrorOrSuccess err = internalizeMemory(args); err.isError())
-    return ErrorTree(region.getLoc(), err.takeError());
-
-  // Set the program counter and map the region arguments.
-  transferControlFlowTo(&region.front(), args);
-  return success();
-}
-
 void InterpreterState::reset() {
   block = nullptr;
   pc = Block::iterator();
@@ -658,15 +643,16 @@ ErrorTree InterpreterState::addStackTrace(ErrorTree error) {
 
 ErrorTreeOr<SmallVector<Attribute>>
 InterpreterState::executeRegion(Region &region, ArrayRef<Attribute> arguments) {
-  if (ErrorTreeOrSuccess err = startInterpreterAt(region, arguments);
-      err.isError())
-    return err.takeError();
+  // Internalize memory inside function arguments.
+  SmallVector<Attribute> args = llvm::to_vector(arguments);
+  if (ErrorOrSuccess err = internalizeMemory(args); err.isError())
+    return ErrorTree(region.getLoc(), err.takeError());
 
   // Reset the interpret to a clean state.
   auto resetState = llvm::make_scope_exit([&] { reset(); });
 
   // Run the interpreter.
-  ErrorTreeOr<SmallVector<Attribute>> result = runInterpreter();
+  ErrorTreeOr<SmallVector<Attribute>> result = interpretFunction(region, args);
   if (result) {
     SmallVector<Attribute> results = result.takeValue();
     // Externalize references to interpreter memory.
@@ -712,15 +698,16 @@ ErrorTreeOr<TypedAttr> InterpreterState::executeRegionWithResultSlot(
   if (!isInitSelf)
     allArgs.push_back(resultSlotAttr);
 
-  if (ErrorTreeOrSuccess err = startInterpreterAt(region, allArgs);
-      err.isError())
-    return err.takeError();
+  // Internalize memory inside function arguments.
+  if (ErrorOrSuccess err = internalizeMemory(allArgs); err.isError())
+    return ErrorTree(region.getLoc(), err.takeError());
 
   // Reset the interpret to a clean state.
   auto resetState = llvm::make_scope_exit([&] { reset(); });
 
   // Run the interpreter.
-  ErrorTreeOr<SmallVector<Attribute>> result = runInterpreter();
+  ErrorTreeOr<SmallVector<Attribute>> result =
+      interpretFunction(region, allArgs);
 
   // The interpreter ran into an error. Report an error using a stacktrace.
   if (!result)
@@ -742,7 +729,11 @@ ErrorTreeOr<TypedAttr> InterpreterState::executeRegionWithResultSlot(
   return value;
 }
 
-ErrorTreeOr<SmallVector<Attribute>> InterpreterState::runInterpreter() {
+ErrorTreeOr<SmallVector<Attribute>>
+InterpreterState::interpretFunction(Region &body,
+                                    ArrayRef<Attribute> arguments) {
+  callFunctionBody(body, arguments);
+
   SmallVector<Attribute> operands;
   while (block) {
     // Advance the iterator.

@@ -183,7 +183,7 @@ public:
   void callFunctionBody(Region &body, ArrayRef<Attribute> arguments) {
     // Function regions are isolated from above, so push a new stack frame.
     // Then, transfer control flow to the beginning of the function body.
-    pushFrame(&*pc, body.getParentOp());
+    pushFrame(pc.isValid() ? &*pc : nullptr, body.getParentOp());
     transferControlFlowTo(&body.front(), arguments);
   }
 
@@ -234,10 +234,6 @@ public:
   }
 
 private:
-  /// Run the interpreter until completion, returning the final results of the
-  /// operation.
-  ErrorTreeOr<SmallVector<Attribute>> runInterpreter();
-
   /// The MLIR context.
   MLIRContext *ctx;
 
@@ -353,6 +349,11 @@ private:
     return stack[stackIdx - 1];
   }
 
+  /// Run the interpreter on the function body until completion, returning the
+  /// final results of the function.
+  ErrorTreeOr<SmallVector<Attribute>>
+  interpretFunction(Region &body, ArrayRef<Attribute> arguments);
+
   /// Push a new stack frame.
   void pushFrame(Operation *origin, Operation *func) {
     StackFrame &frame =
@@ -381,10 +382,6 @@ private:
     --stackIdx;
     return origin;
   }
-
-  /// Process input arguments to the region and initialize the program counter.
-  ErrorTreeOrSuccess startInterpreterAt(Region &region,
-                                        ArrayRef<Attribute> arguments);
 
   /// Reset all interpreter state.
   void reset();
