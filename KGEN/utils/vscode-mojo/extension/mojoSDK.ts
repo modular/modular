@@ -101,9 +101,6 @@ export class MojoSDKConfig {
 
     // If we had modular home provided somewhere, make sure that
     // gets propagated.
-
-    // If we had modular home provided somewhere, make sure that
-    // gets propagated.
     if (this.modularHomePath) {
       env.MODULAR_HOME = this.modularHomePath;
     }
@@ -115,8 +112,6 @@ export class MojoSDKConfig {
    *     python scripting feature.
    */
   public lldbHasPythonScriptingSupport(): Promise<boolean> {
-    // We cache this check because it's not a no-op.
-
     // We cache this check because it's not a no-op.
     if (this.lldbHasPythonScriptingSupportResult == undefined) {
       this.lldbHasPythonScriptingSupportResult =
@@ -150,8 +145,6 @@ export class MojoSDKConfig {
       if (!match) {
         return undefined;
       }
-
-      // Build the title of the version based on the config key.
 
       // Build the title of the version based on the config key.
       let title = 'Mojo';
@@ -313,25 +306,15 @@ export class MojoSDK {
     possibleKeys: string[]
   ): string | undefined {
     // Bail early if we don't have any keys.
-
-    // Bail early if we don't have any keys.
     if (possibleKeys.length === 0) {
       return undefined;
     }
 
     // If this is a dev-build path, there'll only be one key so just grab
     // it.
-
-    // If this is a dev-build path, there'll only be one key so just grab
-    // it.
-
-    // If this is a dev-build path, there'll only be one key so just grab
-    // it.
     if (modularHomePath.endsWith('.derived')) {
       return possibleKeys[0];
     }
-
-    // Filter the keys to only those that match the current extension.
 
     // Filter the keys to only those that match the current extension.
     possibleKeys = possibleKeys.filter(
@@ -343,15 +326,11 @@ export class MojoSDK {
     }
 
     // Prefer the 'max' key if it exists.
-
-    // Prefer the 'max' key if it exists.
     const maxKey = possibleKeys.find((key) => key.includes('max'));
 
     if (maxKey) {
       return maxKey;
     }
-
-    // Otherwise, just grab the first key.
 
     // Otherwise, just grab the first key.
     return possibleKeys[0];
@@ -362,13 +341,9 @@ export class MojoSDK {
    */
   public async warnIfSDKOutOfDate() {
     // If this is a dev-build, there's no version to check.
-
-    // If this is a dev-build, there's no version to check.
     if (this.config.version.isDev()) {
       return;
     }
-
-    // Grab the current extension version.
 
     // Grab the current extension version.
     const extensionVersion = this.context.extension.packageJSON
@@ -552,15 +527,9 @@ export class MojoSDKManager extends DisposableContext {
         let value = match[3];
 
         // Ignore nightly configs in non-nightly extensions, and vice versa.
-
-        // Ignore nightly configs in non-nightly extensions, and vice versa.
         if (isNightly != section.endsWith('-nightly')) {
           continue;
         }
-
-        // Set this configuration value.
-
-        // Set this configuration value.
 
         // Set this configuration value.
         if (!configurationValues.has(section)) {
@@ -679,8 +648,6 @@ export class MojoSDKManager extends DisposableContext {
     if (possibleSDKs.length == 0) {
       return undefined;
     }
-
-    // Resolve the SDK from the set of possible choices.
 
     // Resolve the SDK from the set of possible choices.
     let sdk = possibleSDKs[0];
