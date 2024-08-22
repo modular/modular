@@ -188,6 +188,20 @@ fn max[
 
 
 @always_inline
+fn max(x: LayoutTensor, y: __type_of(x)) -> __type_of(x) as res:
+    constrained[
+        x.layout.all_dims_known(), "max expects tensor of statically know shape"
+    ]()
+    var res_tensor = __type_of(res).stack_allocation()
+
+    @parameter
+    for i in range(res_tensor.layout.size()):
+        alias idx = x.layout(i)
+        res_tensor.ptr[idx] = b_max(x.ptr[idx], y.ptr[idx])
+    return res_tensor
+
+
+@always_inline
 fn sum[
     axis: Int,
     dtype: DType,

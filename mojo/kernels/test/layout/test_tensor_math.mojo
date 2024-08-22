@@ -187,6 +187,24 @@ fn test_softmax_math():
     print(soft_max)
 
 
+# CHECK: test_max_elemntwise
+fn test_max_elemntwise():
+    print("== test_max_elemntwise")
+    var tensor_4x4_a = LayoutTensor[
+        DType.float32, Layout.row_major(4, 4)
+    ].stack_allocation().linspace()
+
+    var tensor_4x4_b = LayoutTensor[
+        DType.float32, Layout.row_major(4, 4)
+    ].stack_allocation().fill(5)
+
+    # CHECK: 5.0 5.0 5.0 5.0
+    # CHECK: 5.0 5.0 6.0 7.0
+    # CHECK: 8.0 9.0 10.0 11.0
+    # CHECK: 12.0 13.0 14.0 15.0
+    print(max(tensor_4x4_a, tensor_4x4_b))
+
+
 fn main():
     test_reduce_sum()
     test_reduce_max()
@@ -196,3 +214,4 @@ fn main():
     test_binary_same_rank()
     test_binary_broadcast_inner()
     test_softmax_math()
+    test_max_elemntwise()
