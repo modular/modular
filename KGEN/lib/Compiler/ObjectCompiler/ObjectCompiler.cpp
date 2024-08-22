@@ -279,116 +279,85 @@ static AsyncRT::AnyAsyncValueRef compileOptimizedLLVMModuleToObject(
 
   llvm::WriteBitcodeToFile(*module, *keyBuf);
 
-  auto runTransformation = [nonBitcodeKeySize, loc, &runtime, emitAssembly,
-                            keyBuf = keyBuf.copy(), options, isJIT, moduleIdx,
-                            splitIdx](WriteableBufferRef buf,
-                                      AsyncRT::AnyAsyncValueRef chain) mutable {
-    auto output = AsyncRT::AsyncValueRef<BufferRef>::allocate(runtime);
-#ifdef MODULAR_ENABLE_TELEMETRY
-    Cache::CacheTelemetryContext::getCacheTelemetryContext(runtime.context)
-        .recordCacheMiss("compileOptimizedLLVMModuleToObject");
-#endif
+  auto output = AsyncRT::AsyncValueRef<BufferRef>::allocate(runtime);
 
-    chain.andThenAsync([nonBitcodeKeySize, loc, &runtime, emitAssembly,
-                        output = output.copy(), buf = buf.copy(),
-                        keyBuf = std::move(keyBuf), options, isJIT, moduleIdx,
-                        splitIdx]() mutable {
+  runtime.getWorkQueue()->addTask([nonBitcodeKeySize, loc, &runtime,
+                                   emitAssembly, keyBuf = keyBuf.copy(),
+                                   output = output.copy(), options, isJIT,
+                                   moduleIdx, splitIdx]() mutable {
+    BufferRef keyBufRef(std::move(keyBuf));
+    StringRef bitcodeBuffer = keyBufRef->getBuffer();
+    bitcodeBuffer = bitcodeBuffer.drop_front(nonBitcodeKeySize);
 
-#ifdef MODULAR_ENABLE_TELEMETRY
-      [[maybe_unused]] auto timeScope =
-          runtime.context->get<M::Telemetry::TelemetryContext>()
-              ->createUInt64Timer<std::chrono::milliseconds>(
-                  "mojo.compile.cache.miss.time", M::Telemetry::Level::L2,
-                  {{"pipeline", "compileOptimizedLLVMModuleToObject"}});
+    // Load the cached bytecode into a new context. This is necessary to
+    // avoid data races during multi-threading.
+    llvm::LLVMContext ctx;
+    llvm::Expected<std::unique_ptr<llvm::Module>> moduleOr =
+        llvm::parseBitcodeFile(
+            llvm::MemoryBufferRef(bitcodeBuffer, "<split-module-llc>"), ctx);
+    if (!moduleOr) {
+      return std::move(output).setToError(
+          AsyncRT::getMLIRDiagnostic("failed to load LLVM IR bitcode", loc));
+    }
+    std::unique_ptr<llvm::Module> module = std::move(*moduleOr);
 
-#endif
+    // Create TargetMachine for this module. This is also necessary to
+    // avoid data races during multi-threading.
+    ErrorOr<std::unique_ptr<llvm::TargetMachine>> machineOr =
+        createTargetMachine(options, isJIT);
+    if (failed(machineOr)) {
+      return std::move(output).setToError(
+          AsyncRT::getMLIRDiagnostic("failed to create TargetMachine", loc));
+    }
 
-      BufferRef keyBufRef(std::move(keyBuf));
-      StringRef bitcodeBuffer = keyBufRef->getBuffer();
-      bitcodeBuffer = bitcodeBuffer.drop_front(nonBitcodeKeySize);
+    std::string saveTempsPrefix = options.saveTempsPrefix;
+    if (!options.saveTempsPrefix.empty()) {
+      if (moduleIdx)
+        saveTempsPrefix += "_" + std::to_string(*moduleIdx);
+      if (splitIdx)
+        saveTempsPrefix += "__" + std::to_string(*splitIdx);
+    }
 
-      // Load the cached bytecode into a new context. This is necessary to
-      // avoid data races during multi-threading.
-      llvm::LLVMContext ctx;
-      llvm::Expected<std::unique_ptr<llvm::Module>> moduleOr =
-          llvm::parseBitcodeFile(
-              llvm::MemoryBufferRef(bitcodeBuffer, "<split-module-llc>"), ctx);
-      if (!moduleOr) {
+    if (failed(writeTempModule("pre-llc", saveTempsPrefix, *module))) {
+      return std::move(output).setToError(
+          AsyncRT::getMLIRDiagnostic("failed save pre-llc llvm IR", loc));
+    }
+
+    auto buf = WriteableBuffer::get();
+
+    // Run llc passes.
+    if (failed(runLlcPasses(
+            *module, options, **machineOr, *buf,
+            emitAssembly ? llvm::CodeGenFileType::AssemblyFile
+                         : llvm::CodeGenFileType::ObjectFile,
+            runtime.context->get<M::Telemetry::TelemetryContext>()))) {
+      return std::move(output).setToError(AsyncRT::getMLIRDiagnostic(
+          "llc failed to codegen LLVM IR to object code", loc));
+    }
+
+    if (!options.saveTempsPrefix.empty()) {
+      std::string outPath = saveTempsPrefix + ".asm";
+      auto outFile = mlir::openOutputFile(outPath);
+      if (!outFile) {
         return std::move(output).setToError(
-            AsyncRT::getMLIRDiagnostic("failed to load LLVM IR bitcode", loc));
-      }
-      std::unique_ptr<llvm::Module> module = std::move(*moduleOr);
-
-      // Create TargetMachine for this module. This is also necessary to
-      // avoid data races during multi-threading.
-      ErrorOr<std::unique_ptr<llvm::TargetMachine>> machineOr =
-          createTargetMachine(options, isJIT);
-      if (failed(machineOr)) {
-        return std::move(output).setToError(
-            AsyncRT::getMLIRDiagnostic("failed to create TargetMachine", loc));
+            AsyncRT::getMLIRDiagnostic("failed open output asm file", loc));
       }
 
-      std::string saveTempsPrefix = options.saveTempsPrefix;
-      if (!options.saveTempsPrefix.empty()) {
-        if (moduleIdx)
-          saveTempsPrefix += "_" + std::to_string(*moduleIdx);
-        if (splitIdx)
-          saveTempsPrefix += "__" + std::to_string(*splitIdx);
-      }
-
-      if (failed(writeTempModule("pre-llc", saveTempsPrefix, *module))) {
-        return std::move(output).setToError(
-            AsyncRT::getMLIRDiagnostic("failed save pre-llc llvm IR", loc));
-      }
-
-      // Run llc passes.
-      if (failed(runLlcPasses(
-              *module, options, **machineOr, *buf,
-              emitAssembly ? llvm::CodeGenFileType::AssemblyFile
-                           : llvm::CodeGenFileType::ObjectFile,
-              runtime.context->get<M::Telemetry::TelemetryContext>()))) {
+      if (failed(runLlcPasses(*module, options, **machineOr, outFile->os(),
+                              llvm::CodeGenFileType::AssemblyFile)))
         return std::move(output).setToError(AsyncRT::getMLIRDiagnostic(
             "llc failed to codegen LLVM IR to object code", loc));
+      outFile->keep();
+
+      if (failed(writeTempModule("post-llc", saveTempsPrefix, *module))) {
+        return std::move(output).setToError(
+            AsyncRT::getMLIRDiagnostic("failed save post-llc llvm IR", loc));
       }
+    }
+    std::move(output).emplace(buf.copy());
+  });
 
-      if (!options.saveTempsPrefix.empty()) {
-        std::string outPath = saveTempsPrefix + ".asm";
-        auto outFile = mlir::openOutputFile(outPath);
-        if (!outFile) {
-          return std::move(output).setToError(
-              AsyncRT::getMLIRDiagnostic("failed open output asm file", loc));
-        }
-
-        if (failed(runLlcPasses(*module, options, **machineOr, outFile->os(),
-                                llvm::CodeGenFileType::AssemblyFile)))
-          return std::move(output).setToError(AsyncRT::getMLIRDiagnostic(
-              "llc failed to codegen LLVM IR to object code", loc));
-        outFile->keep();
-
-        if (failed(writeTempModule("post-llc", saveTempsPrefix, *module))) {
-          return std::move(output).setToError(
-              AsyncRT::getMLIRDiagnostic("failed save post-llc llvm IR", loc));
-        }
-      }
-
-      std::move(output).emplace(buf.copy());
-    });
-    return output;
-  };
-
-  auto onCacheHit = [&](BufferRef buf) {
-#ifdef MODULAR_ENABLE_TELEMETRY
-    Cache::CacheTelemetryContext::getCacheTelemetryContext(runtime.context)
-        .recordCacheHit("compileOptimizedLLVMModuleToObject");
-#endif
-    return buf.copy();
-  };
-
-  return Cache::cachedTransform(
-      AsyncRT::MLIRLocationDecoder::getEncodedLocation(loc),
-      transformCache.copy(),
-      AsyncRT::AsyncValueRef<Chain>::createReady(runtime), keyBuf.copy(),
-      std::move(runTransformation), onCacheHit);
+  return output;
 }
 
 /// Optimize the llvm module to prepare for codegen object file.
