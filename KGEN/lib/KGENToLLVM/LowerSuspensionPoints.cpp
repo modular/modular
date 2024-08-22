@@ -43,16 +43,14 @@ struct LowerSuspensionPointsPass
 struct BuildContext {
   BuildContext(LLVMBuilder &builder, Type continuationType)
       : builder(builder), continuationType(continuationType) {}
-  void emitUpdateState(Value continuation) {
+  void emitUpdateState(Value continuation, int32_t suspensionPointID) {
     GEPOp slot = builder.create<GEPOp>(
         /*resultType=*/LLVMPointerType::get(builder.getContext()),
         /*elementType=*/continuationType,
         /*basePtr=*/continuation, ArrayRef<GEPArg>({0, State}));
-    Value state = builder.create<LoadOp>(builder.getI32Type(), slot);
-    Value one = builder.create<ConstantOp>(
-        IntegerType::get(builder.getContext(), 32), 1);
-    Value newState = builder.create<AddOp>(state, one);
-    builder.create<StoreOp>(newState, slot);
+    Value susID = builder.create<ConstantOp>(
+        IntegerType::get(builder.getContext(), 32), suspensionPointID);
+    builder.create<StoreOp>(susID, slot);
   }
 
   Value getContinuationField(Value operand, AsyncContinuationField fieldIndex) {
@@ -78,15 +76,17 @@ struct BuildContext {
 
   LLVMBuilder &builder;
   SmallVector<Block *> blockList;
+  SmallVector<int32_t> resumeValues;
   Type continuationType;
 };
 
 static void addSuspensionPoint(SuspendOp suspend, Block *currentBlock,
+                               int32_t suspensionPointID,
                                BuildContext &buildContext) {
   LLVMFuncOp func = cast<LLVMFuncOp>(currentBlock->getParent()->getParentOp());
   Value continuation = func.getBody().getArgument(0);
   buildContext.builder.setInsertionPoint(suspend);
-  buildContext.emitUpdateState(continuation);
+  buildContext.emitUpdateState(continuation, suspensionPointID);
   // Move operations from suspend region. They represent code to execute after
   // update state but before return.
   Block *susBlock = &suspend.getRegion().front();
@@ -122,10 +122,12 @@ static void addSuspensionPoint(SuspendOp suspend, Block *currentBlock,
     }
   }
   buildContext.blockList.push_back(targetBlock);
+  buildContext.resumeValues.push_back(suspensionPointID);
 }
 
 static LogicalResult lowerSuspensionPoints(LLVMFuncOp funcOp,
                                            StringAttr coroAttrName) {
+  int32_t suspensionPointID = 0;
   if (!funcOp->hasAttr(coroAttrName))
     return success();
 
@@ -156,7 +158,7 @@ static LogicalResult lowerSuspensionPoints(LLVMFuncOp funcOp,
       if (auto suspend = dyn_cast<SuspendOp>(current)) {
         current = suspend->getNextNode();
         Block *b = continueInResume ? buildContext.blockList.back() : block;
-        addSuspensionPoint(suspend, b, buildContext);
+        addSuspensionPoint(suspend, b, ++suspensionPointID, buildContext);
         suspend->erase();
         continueInResume = true;
         continue;
@@ -180,14 +182,10 @@ static LogicalResult lowerSuspensionPoints(LLVMFuncOp funcOp,
     initialBlock.eraseArgument(0);
 
     b.setInsertionPoint(controlBlock, controlBlock->begin());
-    SmallVector<int32_t> values;
-    for (size_t i = 1; i <= buildContext.blockList.size(); i++)
-      values.push_back(i);
-
     Value state = buildContext.getContinuationField(
         funcOp.getBody().getArgument(0), AsyncContinuationField::State);
-    values.push_back(0);
     buildContext.blockList.push_back(&initialBlock);
+    buildContext.resumeValues.push_back(0);
     SmallVector<ValueRange> operands(buildContext.blockList.size());
     b.create<SwitchOp>(
         state,
@@ -195,7 +193,9 @@ static LogicalResult lowerSuspensionPoints(LLVMFuncOp funcOp,
         /*defaultOperands=*/ValueRange(),
         /*caseValues=*/
         DenseIntElementsAttr::get(
-            VectorType::get({(int32_t)values.size()}, b.getI32Type()), values),
+            VectorType::get({(int32_t)buildContext.resumeValues.size()},
+                            b.getI32Type()),
+            buildContext.resumeValues),
         /*caseDestinations=*/buildContext.blockList,
         /*caseOperands=*/operands);
   }
