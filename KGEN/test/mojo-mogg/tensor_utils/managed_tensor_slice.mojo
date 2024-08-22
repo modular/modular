@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 
 
-struct UnsafeTensorSlice[type: DType, rank: Int]:
+struct ManagedTensorSlice[type: DType, rank: Int]:
     @staticmethod
     fn _get_dtype() -> DType:
         return Self.type

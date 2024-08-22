@@ -29,8 +29,8 @@ namespace M::KGEN::MOGGPreElab {
 
 static constexpr llvm::StringLiteral kExecuteFuncName = "execute";
 static constexpr llvm::StringLiteral kShapeFuncName = "shape";
-static constexpr std::array<StringLiteral, 3> kMaxUnsafeTensorSlice = {
-    "tensor_utils", "unsafe_tensor_slice", "UnsafeTensorSlice"};
+static constexpr std::array<StringLiteral, 3> kMaxManagedTensorSlice = {
+    "tensor_utils", "managed_tensor_slice", "ManagedTensorSlice"};
 
 static void annotateTypes(LIT::FuncOp func) {
   // Look through ref types to get underlaying decl ref type if needed.
@@ -153,7 +153,7 @@ static void labelTensorParamsInKernel(LIT::FuncOp funcOp) {
   for (auto [i, litType] : llvm::enumerate(funcOp.getArgumentTypes())) {
     auto asStructType = getAsStructType(litType);
     if (!asStructType ||
-        !symbolMatches(asStructType.getSymbol(), kMaxUnsafeTensorSlice)) {
+        !symbolMatches(asStructType.getSymbol(), kMaxManagedTensorSlice)) {
       tensorSpecs.push_back(emptyAttr);
       continue;
     }

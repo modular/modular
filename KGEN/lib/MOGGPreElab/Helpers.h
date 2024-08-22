@@ -61,7 +61,7 @@ inline bool isExtensibilityTensor(LIT::StructType maybeTensor) {
 inline bool isDPSTensor(LIT::StructType maybeTensor) {
   return maybeTensor.getSymbol().getRootReference().strref().starts_with(
              "tensor_utils") &&
-         maybeTensor.getSymbol().getLeafReference() == "UnsafeTensorSlice";
+         maybeTensor.getSymbol().getLeafReference() == "ManagedTensorSlice";
 }
 
 inline bool isCustomType(LIT::StructType maybeCustom) {
