@@ -17,9 +17,9 @@ else:
 
 import numpy as np
 from max import _graph, mlir
+from max.dtype import DType
 
 from . import graph, ops
-from .dtype import DType
 from .type import DimLike, Shape, ShapeLike, TensorType
 
 

@@ -12,7 +12,8 @@ import pytest
 from llama3.attention import Attention
 from llama3.mlp import Linear
 from llama3.rotary_embedding import RotaryEmbedding
-from max.graph import DType, Graph, TensorType
+from max.dtype import DType
+from max.graph import Graph, TensorType
 
 
 @dataclass

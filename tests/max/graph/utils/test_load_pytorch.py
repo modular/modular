@@ -5,7 +5,8 @@
 # ===----------------------------------------------------------------------=== #
 """Test loading external PyTorch weights into Max Graph."""
 
-from max.graph import DType, Graph, TensorType
+from max.dtype import DType
+from max.graph import Graph, TensorType
 from max.graph.utils import load_pytorch
 
 

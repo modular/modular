@@ -11,7 +11,8 @@ import pytest
 from hypothesis import assume, given
 from hypothesis import strategies as st
 from max import mlir
-from max.graph import DType, Graph, GraphValue, TensorType, graph, ops
+from max.dtype import DType
+from max.graph import Graph, GraphValue, TensorType, graph, ops
 from max.graph.type import Dim
 
 empty_graphs = st.builds(

@@ -10,9 +10,9 @@ from pathlib import Path
 from tempfile import NamedTemporaryFile
 
 import pytest
-
 from max import _graph
-from max.graph import DType, TensorType
+from max.dtype import DType
+from max.graph import TensorType
 
 
 def test_array_attr(mlir_context) -> None:

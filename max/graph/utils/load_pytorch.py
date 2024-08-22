@@ -15,7 +15,8 @@ try:
 except ImportError:
     torch = None
 
-from ..dtype import DType
+from max.dtype import DType
+
 from ..graph import Graph
 from ..weight import Weight
 

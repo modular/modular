@@ -7,11 +7,12 @@
 
 from typing import Callable, Dict
 
-from max.graph.ops import custom_ops
+from max.dtype import DType
 from max.graph.graph import Graph
 from max.graph.graph_value import GraphValue
+from max.graph.ops import custom_ops
 from max.graph.quantization import QuantizationEncoding
-from max.graph.type import Dim, DType, StaticDim, TensorType
+from max.graph.type import Dim, StaticDim, TensorType
 
 
 def _repack_quantized_weights(op_name: str, rhs: GraphValue) -> GraphValue:

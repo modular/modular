@@ -7,7 +7,8 @@
 
 from conftest import broadcast_shapes, broadcastable_tensor_types
 from hypothesis import assume, event, given
-from max.graph import DType, Graph
+from max.dtype import DType
+from max.graph import Graph
 from max.graph.ops import sub
 from max.graph.type import Dim, TensorType
 

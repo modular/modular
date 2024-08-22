@@ -20,10 +20,11 @@ except ImportError:
     gguf = None
 
 
-from ..dtype import DType
+from max.dtype import DType
+
 from ..graph import Graph
-from ..weight import Weight
 from ..quantization import QuantizationEncoding
+from ..weight import Weight
 
 _GGML_TO_DTYPE = {}
 _QUANTIZED_GGML_DTYPES = {}

@@ -7,9 +7,8 @@
 from tempfile import NamedTemporaryFile
 
 import numpy as np
-import pytest
-import torch
-from max.graph import DType, Graph
+from max.dtype import DType
+from max.graph import Graph
 from max.graph.utils import load_gguf, load_pytorch
 
 

@@ -9,7 +9,8 @@ import os
 import tempfile
 
 import numpy as np
-from max.graph import DType, Graph, GraphValue, TensorType, ops
+from max.dtype import DType
+from max.graph import Graph, GraphValue, TensorType, ops
 
 
 def test_shape_to_tensor_static(session):

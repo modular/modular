@@ -14,10 +14,11 @@ import pytest
 from hypothesis import assume
 from hypothesis import strategies as st
 from max import _graph, mlir
-from max.graph import DType, TensorType
+from max.dtype import DType
+from max.graph import TensorType
 from max.graph.type import Dim, Shape, StaticDim, SymbolicDim
 
-dtypes = st.sampled_from(DType)
+dtypes = st.sampled_from([d for d in DType if d is not DType.unknown])
 static_dims = st.builds(
     StaticDim, st.integers(min_value=0, max_value=2**63 - 1)
 )

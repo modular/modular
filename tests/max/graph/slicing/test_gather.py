@@ -8,7 +8,8 @@
 from conftest import axes, dims, tensor_types
 from hypothesis import assume, given
 from hypothesis import strategies as st
-from max.graph import DType, Graph, TensorType, ops
+from max.dtype import DType
+from max.graph import Graph, TensorType, ops
 
 # gather not meaningful for scalar inputs
 input_types = tensor_types(shapes=st.lists(dims, min_size=1))

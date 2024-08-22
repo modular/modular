@@ -10,7 +10,8 @@ from functools import reduce
 from conftest import broadcast_shapes, broadcastable_tensor_types, tensor_types
 from hypothesis import assume, given
 from hypothesis import strategies as st
-from max.graph import DType, Graph, TensorType, ops
+from max.dtype import DType
+from max.graph import Graph, TensorType, ops
 from max.graph.type import Dim
 
 

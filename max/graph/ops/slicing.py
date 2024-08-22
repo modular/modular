@@ -20,10 +20,11 @@ if TYPE_CHECKING:
     from types import EllipsisType
 
 from max import mlir
+from max.dtype import DType
 from max.mlir.dialects import rmo
 
 from .. import ops
-from ..graph import DType, Graph
+from ..graph import Graph
 from ..graph_value import GraphValue, ValueLike
 from ..type import Dim, DimLike, Shape, StaticDim, TensorType
 from .casting import unsqueeze

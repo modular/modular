@@ -15,9 +15,9 @@ from pathlib import Path
 from typing import Callable, Iterable, Optional, Union
 
 from max import _graph, mlir
+from max.dtype import DType
 from max.mlir.dialects import mo
 
-from .dtype import DType
 from .graph_value import GraphValue
 from .type import Dim, ShapeLike, SymbolicDim, TensorType, Type
 from .weight import Weight
@@ -115,7 +115,8 @@ class Graph:
     ```python
     from dataclasses import dataclass
     import numpy as np
-    from max.graph import DType, Graph, GraphValue, TensorType
+    from max.dtype import DType
+    from max.graph import Graph, GraphValue, TensorType
 
     @dataclass
     class Linear:

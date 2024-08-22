@@ -9,9 +9,9 @@ from typing import Iterable, Optional, Union
 
 import numpy as np
 import pytest
-
-from max.graph import ops, DType, Graph, GraphValue, TensorType
 from max import mlir
+from max.dtype import DType
+from max.graph import Graph, GraphValue, TensorType, ops
 
 if sys.version_info[:2] >= (3, 10):
     from typing import TypeAlias
@@ -63,7 +63,7 @@ def assert_matmul_properties(
         assert dtype._mlir in str(graph._mlir_op)
 
 
-@pytest.mark.parametrize("dtype", list(DType))
+@pytest.mark.parametrize("dtype", [d for d in DType if d is not DType.unknown])
 def test_matmul_static(dtype: DType) -> None:
     """Tests for static matmul."""
 

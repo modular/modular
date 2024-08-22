@@ -10,7 +10,8 @@ import os
 import tempfile
 
 import numpy as np
-from max.graph import DType, Graph, TensorType, ops
+from max.dtype import DType
+from max.graph import Graph, TensorType, ops
 
 
 def test_max_graph(session):

@@ -6,11 +6,12 @@
 """Complex ops."""
 
 from max import _graph, mlir
-from max.mlir.dialects import rmo, mo
+from max.dtype import DType
+from max.mlir.dialects import mo, rmo
 
 from ..graph import Graph
 from ..graph_value import GraphValue, ValueLike, ops
-from ..type import ShapeLike, DType, DimLike, Dim, StaticDim
+from ..type import Dim, DimLike, ShapeLike, StaticDim
 from .casting import reshape
 
 

@@ -7,11 +7,12 @@
 
 import numpy as np
 from max import mlir
+from max.dtype import DType
 from max.mlir.dialects import mo, rmo
 
 from ..graph import Graph
 from ..graph_value import GraphValue, TensorType, ValueLike, ops
-from ..type import DType, Shape, ShapeLike, StaticDim
+from ..type import Shape, ShapeLike, StaticDim
 
 
 def rebind(x: ValueLike, shape: ShapeLike, message: str):

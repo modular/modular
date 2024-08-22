@@ -8,7 +8,8 @@ import pytest
 import torch.nn as nn
 import torch.nn.functional as F
 from llama3.mlp import MLP, Linear
-from max.graph import DType, Graph, TensorType
+from max.dtype import DType
+from max.graph import Graph, TensorType
 
 
 def torch_linear(weight, **kwargs):

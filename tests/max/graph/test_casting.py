@@ -9,16 +9,11 @@ import math
 from collections.abc import Collection
 
 import pytest
-from conftest import (
-    axes,
-    shapes,
-    static_dims,
-    symbolic_dims,
-    tensor_types,
-)
+from conftest import axes, shapes, static_dims, symbolic_dims, tensor_types
 from hypothesis import assume, given
 from hypothesis import strategies as st
-from max.graph import DType, Graph, TensorType
+from max.dtype import DType
+from max.graph import Graph, TensorType
 from max.graph.type import Dim, Shape, StaticDim
 
 

@@ -5,17 +5,19 @@
 # ===----------------------------------------------------------------------=== #
 """Temporary Tests to ensure layers execute."""
 
+from dataclasses import dataclass
+
+import max.engine as me
 import numpy as np
 import pytest
-from max.graph import DType, Graph, TensorType
-from dataclasses import dataclass
-from llama3.mlp import MLP, Linear
 from llama3.attention import Attention
-from llama3.transformer import TransformerBlock, Transformer
+from llama3.embedding import Embedding
+from llama3.mlp import MLP, Linear
 from llama3.norm import RMSNorm
 from llama3.rotary_embedding import RotaryEmbedding
-from llama3.embedding import Embedding
-import max.engine as me
+from llama3.transformer import Transformer, TransformerBlock
+from max.dtype import DType
+from max.graph import Graph, TensorType
 
 
 class Weights:

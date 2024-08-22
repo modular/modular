@@ -6,19 +6,20 @@
 
 from dataclasses import dataclass
 
+import pytest
+import torch
 from conftest import (
-    assert_allclose,
     arrays,
+    assert_allclose,
     given_input_types,
     modular_graph_test,
 )
-import pytest
-import torch
-from hypothesis import assume, given, strategies as st
+from hypothesis import assume, given
+from hypothesis import strategies as st
 from llama3.rotary_embedding import RotaryEmbedding
-from max.graph import DType, Graph, TensorType, ValueLike
+from max.dtype import DType
+from max.graph import Graph, TensorType, ValueLike
 from max.graph.type import Dim
-
 
 MAX_SEQ_LEN = 2**16
 

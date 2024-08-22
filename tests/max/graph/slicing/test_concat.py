@@ -11,7 +11,8 @@ import pytest
 from conftest import axes, tensor_types
 from hypothesis import assume, given
 from hypothesis import strategies as st
-from max.graph import DType, Graph, TensorType, ops
+from max.dtype import DType
+from max.graph import Graph, TensorType, ops
 from max.graph.type import StaticDim
 
 

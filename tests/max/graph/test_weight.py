@@ -8,7 +8,8 @@ from tempfile import NamedTemporaryFile
 
 import numpy as np
 import pytest
-from max.graph import DType, Graph
+from max.dtype import DType
+from max.graph import Graph
 
 
 def test_add_weight() -> None:

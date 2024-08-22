@@ -4,11 +4,12 @@
 #
 # ===----------------------------------------------------------------------=== #
 """Linear algebra operations."""
-import numpy as np
 from typing import Union
+
+import numpy as np
+from max.dtype import DType
 from max.mlir.dialects import mo, rmo
 
-from ..dtype import DType
 from ..graph import Graph
 from ..graph_value import GraphValue, ValueLike
 from .constant import scalar

@@ -6,7 +6,8 @@
 import numpy as np
 from hypothesis import assume, given
 from max import _graph
-from max.graph import DType, Graph, ops
+from max.dtype import DType
+from max.graph import Graph, ops
 
 
 def test_constant() -> None:

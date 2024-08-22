@@ -21,8 +21,7 @@ else:
 
 import numpy as np
 from max import _graph, mlir
-
-from .dtype import DType
+from max.dtype import DType
 
 
 class Dim:
