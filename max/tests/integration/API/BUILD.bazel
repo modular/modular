@@ -81,9 +81,9 @@ lit_tests(
         "//conditions:default": [],
     }),
     tools = [
-        "//CUDASupport/tools/is-cuda-available",
         "//GenericML/tools/mt",
         "//KGEN/tools/mojo",
+        "//Runtime/tools/is-cuda-available",
         "//SDK/tools/modular-api-executor",
     ],
     deps = [

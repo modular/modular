@@ -8,7 +8,7 @@ modular_py_test(
         "graph_tests/**/*.py",
     ]),
     data = [
-        "//CUDASupport/tools/is-cuda-available",
+        "//Runtime/tools/is-cuda-available",
         "//KGEN:CompilerRT",
         "//ModularFramework/tools/mof",
         # TODO(SDLC-918): remove when landed

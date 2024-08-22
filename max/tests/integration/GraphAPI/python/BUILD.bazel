@@ -4,7 +4,7 @@ modular_py_test(
     name = "tests",
     srcs = glob(["pytests/**/*.py"]),
     data = [
-        "//CUDASupport/tools/is-cuda-available",
+        "//Runtime/tools/is-cuda-available",
         "//KGEN:CompilerRT",
         "//ModularFramework/tools/mof",
         # TODO(SDLC-918): remove when landed
