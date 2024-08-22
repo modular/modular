@@ -157,10 +157,34 @@ fn linspace(buffer: NDBuffer):
             buffer[(i, j)] = i * buffer.dim[1]() + j
 
 
+fn _recurse_fn[
+    rand_fn: fn (idx: StaticIntTuple[_]) capturing -> Scalar[DType.float64],
+](idx: StaticIntTuple, buffer: NDBuffer,):
+    var new_idx = StaticIntTuple[idx.size + 1]()
+
+    @parameter
+    for i in range(idx.size):
+        new_idx[i] = idx[i]
+
+    for i in range(buffer.dim[idx.size]()):
+        new_idx[idx.size] = i
+
+        @parameter
+        if new_idx.size == buffer.rank:
+            buffer[rebind[StaticIntTuple[buffer.rank]](new_idx)] = rand_fn(
+                new_idx
+            ).cast[buffer.type]()
+        else:
+            _recurse_fn[rand_fn](new_idx, buffer)
+
+
 fn random(buffer: NDBuffer, min: Float64 = 0, max: Float64 = 1):
-    for i in range(buffer.dim[0]()):
-        for j in range(buffer.dim[1]()):
-            buffer[(i, j)] = random_float64(min, max).cast[buffer.type]()
+    @parameter
+    fn do_rand(idx: StaticIntTuple[_]) -> Scalar[DType.float64]:
+        constrained[idx.size == buffer.rank]()
+        return random_float64(min, max)
+
+    _recurse_fn[do_rand](StaticIntTuple[0](), buffer)
 
 
 fn zero(buffer: NDBuffer):
