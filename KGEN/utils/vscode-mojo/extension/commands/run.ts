@@ -10,6 +10,7 @@ import * as vscode from 'vscode';
 import { MojoContext } from '../mojoContext';
 import { DisposableContext } from '../utils/disposableContext';
 import { MojoSDKConfig } from '../sdk/sdkConfig';
+import path = require('path');
 
 /**
  * This class provides a manager for executing and debugging mojo files.
@@ -28,19 +29,12 @@ class ExecutionManager extends DisposableContext {
    * Activate the run commands, used for executing and debugging mojo files.
    */
   activateRunCommands() {
-    for (const cmd of [
-      'mojo.execFileInTerminal',
-      'mojo.execFileInDedicatedTerminal',
-    ]) {
-      this.pushSubscription(
-        vscode.commands.registerCommand(cmd, async (file?: vscode.Uri) => {
-          await this.executeFileInTerminal(
-            file,
-            /*newTerminalPerFile=*/ cmd === 'mojo.execFileInDedicatedTerminal'
-          );
-        })
-      );
-    }
+    const cmd = 'mojo.execFileInDedicatedTerminal';
+    this.pushSubscription(
+      vscode.commands.registerCommand(cmd, async (file?: vscode.Uri) => {
+        await this.executeFileInTerminal(file);
+      })
+    );
 
     for (const cmd of ['mojo.debugFile', 'mojo.debugFileInTerminal']) {
       this.pushSubscription(
@@ -61,15 +55,12 @@ class ExecutionManager extends DisposableContext {
    */
   async executeFileInTerminal(
     file: vscode.Uri | undefined,
-    newTerminalPerFile: boolean
   ) {
     let doc = await this.getDocumentToExecute(file);
 
     if (!doc) {
       return;
     }
-
-    // Find the config for processing this file.
 
     // Find the config for processing this file.
     let sdk = await this.context.sdkManager.findSDK();
@@ -79,13 +70,9 @@ class ExecutionManager extends DisposableContext {
     }
 
     // Execute the file.
-
-    // Execute the file.
-    let terminal = this.getTerminalForFile(doc, sdk.config, newTerminalPerFile);
+    let terminal = this.getTerminalForFile(doc, sdk.config);
     terminal.show();
     terminal.sendText(shellescape([sdk.config.mojoDriverPath, doc.fileName]));
-
-    // Focus on the terminal if the user has configured it to do so.
 
     // Focus on the terminal if the user has configured it to do so.
     if (this.shouldTerminalFocusOnStart(doc.uri)) {
@@ -126,19 +113,8 @@ class ExecutionManager extends DisposableContext {
   getTerminalForFile(
     doc: vscode.TextDocument,
     config: MojoSDKConfig,
-    newTerminalPerFile: boolean
   ): vscode.Terminal {
-    if (vscode.window.activeTerminal && !newTerminalPerFile) {
-      return vscode.window.activeTerminal;
-    }
-
-    let terminalName = 'Mojo';
-
-    if (newTerminalPerFile) {
-      terminalName += `: ${doc.fileName}`;
-    }
-
-    // Look for an existing terminal.
+    let terminalName = `Mojo: ${path.basename(doc.fileName)} · ${doc.fileName}`;
 
     // Look for an existing terminal.
     let terminal = vscode.window.terminals.find((t) => t.name === terminalName);
@@ -146,8 +122,6 @@ class ExecutionManager extends DisposableContext {
     if (terminal) {
       return terminal;
     }
-
-    // Build a new terminal.
 
     // Build a new terminal.
     return vscode.window.createTerminal({
