@@ -8,7 +8,7 @@ import compiler_internal as compiler
 from buffer import NDBuffer
 from buffer.dimlist import Dim, DimList
 from nn.mha import fused_attention as cpu_fused_attention_impl
-from tensor_utils import UnsafeTensorSlice
+from tensor_utils import ManagedTensorSlice
 
 from utils.index import StaticIntTuple
 from linalg.matmul import matmul as _matmul
@@ -21,7 +21,7 @@ struct Foo:
     fn execute[
         synchronous: Bool,
         target: StringLiteral,
-    ](z: UnsafeTensorSlice, x: UnsafeTensorSlice, y: UnsafeTensorSlice):
+    ](z: ManagedTensorSlice, x: ManagedTensorSlice, y: ManagedTensorSlice):
         @parameter
         @always_inline
         fn func[width: Int](idx: StaticIntTuple[z.rank]) -> SIMD[z.type, width]:
@@ -33,7 +33,7 @@ struct Foo:
 
     @staticmethod
     fn shape(
-        x: UnsafeTensorSlice, y: UnsafeTensorSlice
+        x: ManagedTensorSlice, y: ManagedTensorSlice
     ) -> StaticIntTuple[x.rank]:
         return x.get_static_spec().shape
 
@@ -41,7 +41,7 @@ struct Foo:
 @always_inline
 fn toNDBuffer[
     out_dtype: DType, out_rank: Int
-](tensor: UnsafeTensorSlice) -> NDBuffer[out_dtype, out_rank]:
+](tensor: ManagedTensorSlice) -> NDBuffer[out_dtype, out_rank]:
     # TODO(GRA-734): forward other static params automatically
     return rebind[NDBuffer[out_dtype, out_rank]](
         NDBuffer[tensor.type, tensor.rank](
@@ -58,11 +58,11 @@ struct ImposterMHANoMask:
         synchronous: Bool,
         target: StringLiteral,
     ](
-        output: UnsafeTensorSlice,
-        q: UnsafeTensorSlice,
-        k: UnsafeTensorSlice,
-        v: UnsafeTensorSlice,
-        scale: UnsafeTensorSlice,
+        output: ManagedTensorSlice,
+        q: ManagedTensorSlice,
+        k: ManagedTensorSlice,
+        v: ManagedTensorSlice,
+        scale: ManagedTensorSlice,
     ):
         alias qkv_rank = q.rank
         alias qkv_dtype = q.type
@@ -109,10 +109,10 @@ struct ImposterMHANoMask:
 
     @staticmethod
     fn shape(
-        q: UnsafeTensorSlice,
-        k: UnsafeTensorSlice,
-        v: UnsafeTensorSlice,
-        scale: UnsafeTensorSlice,
+        q: ManagedTensorSlice,
+        k: ManagedTensorSlice,
+        v: ManagedTensorSlice,
+        scale: ManagedTensorSlice,
     ) -> StaticIntTuple[q.rank]:
         return q.get_static_spec().shape
 
@@ -125,9 +125,9 @@ struct ImposterMatmul:
         synchronous: Bool,
         target: StringLiteral,
     ](
-        c: UnsafeTensorSlice,
-        a: UnsafeTensorSlice,
-        b: UnsafeTensorSlice,
+        c: ManagedTensorSlice,
+        a: ManagedTensorSlice,
+        b: ManagedTensorSlice,
         ctx: MojoCallContextPtr,
     ):
         alias rank = a.rank
@@ -162,8 +162,8 @@ struct ImposterMatmul:
 
     @staticmethod
     fn shape(
-        a: UnsafeTensorSlice,
-        b: UnsafeTensorSlice,
+        a: ManagedTensorSlice,
+        b: ManagedTensorSlice,
     ) -> StaticIntTuple[2]:
         var shape = a.get_static_spec().shape
         shape[1] = b.get_static_spec().shape[1]
@@ -176,7 +176,7 @@ struct StaticShapeTest:
     fn execute[
         synchronous: Bool,
         target: StringLiteral,
-    ](out: UnsafeTensorSlice, x: UnsafeTensorSlice):
+    ](out: ManagedTensorSlice, x: ManagedTensorSlice):
         alias x_shape = compiler.specsof[x.type, x.rank]("x").shape
 
         @parameter
@@ -189,5 +189,5 @@ struct StaticShapeTest:
         compiler.foreach[func](out)
 
     @staticmethod
-    fn shape(x: UnsafeTensorSlice) -> StaticIntTuple[x.rank]:
+    fn shape(x: ManagedTensorSlice) -> StaticIntTuple[x.rank]:
         return x.get_static_spec().shape

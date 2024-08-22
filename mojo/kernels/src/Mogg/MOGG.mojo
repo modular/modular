@@ -123,7 +123,7 @@ from quantization.qmatmul_k import (
 from register import *
 from runtime.asyncrt import MojoCallContextPtr
 from runtime.tracing import Trace, TraceLevel, trace_arg
-from tensor_utils import UnsafeTensorSlice
+from tensor_utils import ManagedTensorSlice
 
 from utils import StaticTuple
 from utils.index import Index, StaticIntTuple, product
@@ -333,11 +333,11 @@ fn create_known_dim[known_val: Int]() -> Dim:
 # ===----------------------------------------------------------------------===#
 
 
-@mogg_register("unsafe_tensor_slice_to_ndbuffer")
+@mogg_register("managed_tensor_slice_to_ndbuffer")
 @always_inline
-fn unsafe_tensor_slice_to_ndbuffer[
+fn managed_tensor_slice_to_ndbuffer[
     type: DType, rank: Int
-](tensor: UnsafeTensorSlice[type, rank]) -> NDBuffer[type, rank]:
+](tensor: ManagedTensorSlice[type, rank]) -> NDBuffer[type, rank]:
     return NDBuffer[type, rank](
         tensor._ptr, tensor.get_static_spec().shape, tensor._strides
     )
@@ -424,13 +424,13 @@ fn shape_to_ndbuffer[
         buf[i] = shape[i]
 
 
-@mogg_register("shape_to_unsafe_tensor_slice")
+@mogg_register("shape_to_managed_tensor_slice")
 @always_inline
-fn shape_to_unsafe_tensor_slice[
+fn shape_to_managed_tensor_slice[
     shape_rank: Int, buf_rank: Int, type: DType
 ](
     shape: StaticIntTuple[shape_rank],
-    inout tensor: UnsafeTensorSlice[type, buf_rank],
+    inout tensor: ManagedTensorSlice[type, buf_rank],
 ):
     @parameter
     for i in range(shape_rank):
@@ -577,22 +577,22 @@ fn to_tensor[
     )
 
 
-@mogg_register("to_unsafe_tensor_slice")
+@mogg_register("to_managed_tensor_slice")
 @export
 @always_inline
-fn to_unsafe_tensor_slice[
+fn to_managed_tensor_slice[
     type: DType, rank: Int
 ](
     data: UnsafePointer[Scalar[type]],
     shape: UnsafePointer[Int],
-) -> UnsafeTensorSlice[type, rank]:
+) -> ManagedTensorSlice[type, rank]:
     var shape_tuple = StaticIntTuple[rank]()
 
     @parameter
     for i in reversed(range(rank)):
         shape_tuple[i] = shape[i]
 
-    return UnsafeTensorSlice[type, rank](
+    return ManagedTensorSlice[type, rank](
         data,
         shape_tuple,
     )
