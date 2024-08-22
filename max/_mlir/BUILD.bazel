@@ -9,7 +9,7 @@ copy_files(
 modular_pybind_py_library(
     name = "_mlir_pybind",
     srcs = [],
-    pybind_data = ["//SDK/lib/GraphAPI/python/max/_mlir/_mlir_libs:_mlir"],
+    pybind_data = ["//SDK/lib/API/python/max/_mlir/_mlir_libs:_mlir"],
     visibility = ["//visibility:public"],
 )
 
@@ -17,11 +17,11 @@ py_library(
     name = "_mlir",
     srcs = [
         ":ir_py",
-        "//SDK/lib/GraphAPI/python/max/_mlir/dialects",
+        "//SDK/lib/API/python/max/_mlir/dialects",
     ],
     visibility = ["//visibility:public"],
     deps = [
         ":_mlir_pybind",
-        "//SDK/lib/GraphAPI/python/max/_mlir/_mlir_libs",
+        "//SDK/lib/API/python/max/_mlir/_mlir_libs",
     ],
 )
