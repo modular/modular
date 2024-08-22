@@ -5,6 +5,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "KGEN/KGENDialect/KGENAttrs.h"
+#include "KGEN/Interpreter/InterpreterAttrs.h"
 #include "KGEN/KGENDialect/KGENDType.h"
 #include "KGEN/KGENDialect/KGENDialect.h"
 #include "KGEN/KGENDialect/KGENOps.h"

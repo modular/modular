@@ -6,6 +6,7 @@
 
 #include "KGEN/HLCFDialect/Analysis/ControlFlowTree.h"
 #include "KGEN/HLCFDialect/HLCFOps.h"
+#include "mlir/IR/BuiltinTypes.h"
 
 using namespace M;
 using namespace HLCF;

@@ -4,6 +4,7 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "KGEN/Interpreter/InterpreterState.h"
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/POPDialect/POPAttrs.h"
 #include "KGEN/POPDialect/POPDialect.h"
@@ -1431,6 +1432,32 @@ OpFoldResult PointerToIndexOp::fold(FoldAdaptor adaptor) {
   if (auto ptr = dyn_cast_if_present<PointerAttr>(adaptor.getValue()))
     return Builder(getContext()).getIndexAttr(ptr.getAddr());
   return {};
+}
+
+//===----------------------------------------------------------------------===//
+// CompilerGlobalLoadOp
+//===----------------------------------------------------------------------===//
+
+ErrorTreeOrSuccess CompilerGlobalLoadOp::interpret(ArrayRef<Attribute> operands,
+                                                   InterpreterState &state) {
+  Attribute value = state.getNamedGlobal(getNameAttr());
+  if (!value)
+    return ErrorTree(
+        getLoc(),
+        "cannot evaluate standalone capturing closure at compile time");
+  state.mapResults(value);
+  return success();
+}
+
+//===----------------------------------------------------------------------===//
+// CompilerGlobalStoreOp
+//===----------------------------------------------------------------------===//
+
+ErrorTreeOrSuccess
+CompilerGlobalStoreOp::interpret(ArrayRef<Attribute> operands,
+                                 InterpreterState &state) {
+  state.setNamedGlobal(getNameAttr(), operands.front());
+  return success();
 }
 
 //===----------------------------------------------------------------------===//

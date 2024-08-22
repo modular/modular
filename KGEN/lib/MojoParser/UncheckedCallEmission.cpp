@@ -17,6 +17,7 @@
 #include "KGEN/MojoParser/ParserParamEvaluator.h"
 #include "MojoUtils.h"
 
+#include "KGEN/Interpreter/InterpreterAttrs.h"
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/LITDialect/LITOps.h"
 #include "KGEN/LITDialect/LITUtils.h"

@@ -15,6 +15,7 @@
 #include "KGEN/MojoParser/IRValues.h"
 #include "KGEN/MojoParser/SharedState.h"
 
+#include "KGEN/Interpreter/InterpreterAttrs.h"
 #include "KGEN/KGENDialect/KGENUtils.h"
 #include "KGEN/LITDialect/LITOps.h"
 #include "KGEN/LITDialect/LITUtils.h"
