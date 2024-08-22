@@ -112,26 +112,26 @@ class Graph:
     sequence of ops and set the graph output with [`output()`](#output). For
     example:
 
-    ```python
-    from dataclasses import dataclass
-    import numpy as np
-    from max.dtype import DType
-    from max.graph import Graph, GraphValue, TensorType
+    .. code-block:: python
 
-    @dataclass
-    class Linear:
-      weight: np.ndarray
-      bias: np.ndarray
+        from dataclasses import dataclass
+        import numpy as np
+        from max.dtype import DType
+        from max.graph import Graph, GraphValue, TensorType
 
-      def __call__(self, x: GraphValue) -> GraphValue:
-          return x @ self.weight + self.bias
+        @dataclass
+        class Linear:
+          weight: np.ndarray
+          bias: np.ndarray
 
-    linear_graph = Graph(
-        "linear",
-        Linear(np.ones((2, 2)), np.ones((2,))),
-        input_types=[TensorType(DType.float32, (2,))],
-    )
-    ```
+          def __call__(self, x: GraphValue) -> GraphValue:
+              return x @ self.weight + self.bias
+
+        linear_graph = Graph(
+            "linear",
+            Linear(np.ones((2, 2)), np.ones((2,))),
+            input_types=[TensorType(DType.float32, (2,))],
+        )
 
     You can't call a `Graph` directly from Python. You must compile it and
     execute it with MAX Engine. For more detail, see the tutorial about how to
