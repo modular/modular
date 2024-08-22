@@ -4,7 +4,11 @@ modular_cc_binary(
     name = "kgen-opt",
     srcs = glob(["*.cpp"]),
     linkopts = select({
-        "@platforms//os:linux": ["-rdynamic"],
+        "@platforms//os:linux": [
+            "-Wl,--export-dynamic-symbol=__jit_debug_*",
+            "-Wl,--export-dynamic-symbol=llvm_reg*",
+            "-Wl,--export-dynamic-symbol=mlir*",
+        ],
         "//conditions:default": [],
     }),
     deps = [
