@@ -11,273 +11,14 @@ import * as vscode from 'vscode';
 
 const execFile = util.promisify(require('child_process').execFile);
 
-import { LoggingService } from './logging';
-import * as config from './utils/config';
-import { substituteVariables } from './utils/vscodeVariables';
-import { isNightlyExtension } from './utils/buildInfo';
-import { DisposableContext } from './utils/disposableContext';
-import * as configWatcher from './utils/configWatcher';
+import { LoggingService } from '../logging';
+import * as config from '../utils/config';
+import { substituteVariables } from '../utils/vscodeVariables';
+import { isNightlyExtension } from '../utils/buildInfo';
+import { DisposableContext } from '../utils/disposableContext';
+import * as configWatcher from '../utils/configWatcher';
+import { MojoSDKConfig } from './sdkConfig';
 
-/**
- * This class represents a Mojo SDK version.
- */
-export class MojoSDKVersion {
-  constructor(
-    title: string,
-    major: number,
-    minor: number,
-    patch: number,
-    driverPath: string
-  ) {
-    this.title = title;
-    this.minor = minor;
-    this.major = major;
-    this.patch = patch;
-    this.driverPath = driverPath;
-  }
-
-  /**
-   * Return if this is a dev version.
-   */
-  isDev(): boolean {
-    return this.minor == 0 && this.major == 0 && this.patch == 0;
-  }
-
-  /**
-   * Convert the version into a human readable string.
-   */
-  toString(): string {
-    // If this is a dev build, format the title differently.
-    if (this.isDev()) {
-      // We include the path to the modular repo, which is three levels up from
-      // the mojo driver path.
-      const repo = path.join(path.parse(this.driverPath).dir, '..', '..', '..');
-      return `${this.title} (dev) - ${repo}`;
-    }
-
-    // Otherwise, just format the version number.
-    return `${this.title} (${this.major}.${this.minor}.${this.patch})`;
-  }
-
-  title: string;
-  minor: number;
-  major: number;
-  patch: number;
-  driverPath: string;
-}
-
-/**
- * This class represents a subset of the Modular config object used by extension
- * for interacting with mojo.
- */
-export class MojoSDKConfig {
-  /**
-   * Create a new MojoSDKConfig object from the given configuration.
-   */
-  static async create(
-    loggingService: LoggingService,
-    modularPath: string,
-    configSection: string,
-    rawConfig: { [key: string]: any }
-  ): Promise<MojoSDKConfig | undefined> {
-    let version = await MojoSDKConfig.parseVersionFromDriver(
-      loggingService,
-      rawConfig.driver_path,
-      configSection
-    );
-
-    if (!version) {
-      return undefined;
-    }
-    return new MojoSDKConfig(loggingService, version, modularPath, rawConfig);
-  }
-
-  /**
-   * Returns a process environment to be used when executing SDK
-   * binaries.
-   */
-  public getProcessEnv(): NodeJS.ProcessEnv {
-    let env = { ...process.env };
-
-    // If we had modular home provided somewhere, make sure that
-    // gets propagated.
-    if (this.modularHomePath) {
-      env.MODULAR_HOME = this.modularHomePath;
-    }
-    return env;
-  }
-
-  /**
-   * @returns true if and only if the LLDB binary in this SDK has a working
-   *     python scripting feature.
-   */
-  public lldbHasPythonScriptingSupport(): Promise<boolean> {
-    // We cache this check because it's not a no-op.
-    if (this.lldbHasPythonScriptingSupportResult == undefined) {
-      this.lldbHasPythonScriptingSupportResult =
-        this.doLLDBHasPythonScriptingSupport();
-    }
-    return this.lldbHasPythonScriptingSupportResult;
-  }
-
-  /**
-   * Parse a version number from the given mojo driver.
-   */
-  private static async parseVersionFromDriver(
-    loggingService: LoggingService,
-    driverPath: string,
-    configSection: string
-  ): Promise<MojoSDKVersion | undefined> {
-    try {
-      let { stdout, stderr } = await execFile(driverPath, ['--version'], {
-        env: { ...process.env },
-        encoding: 'utf-8',
-      });
-
-      if (stderr) {
-        return undefined;
-      }
-
-      let match = stdout
-        .toString()
-        .match(/mojo\s+([0-9]+)\.([0-9]+)\.([0-9]+)/);
-
-      if (!match) {
-        return undefined;
-      }
-
-      // Build the title of the version based on the config key.
-      let title = 'Mojo';
-
-      if (configSection.includes('max')) {
-        title += ' Max';
-      }
-
-      if (configSection.includes('nightly')) {
-        title += ' (nightly)';
-      }
-
-      return new MojoSDKVersion(
-        title,
-        +match[1],
-        +match[2],
-        +match[3],
-        driverPath
-      );
-    } catch (e) {
-      loggingService.main.logError(
-        'Unable to parse version from `mojo` driver: ',
-        e
-      );
-      return undefined;
-    }
-  }
-
-  /**
-   * Actually determine whether python scripting is functional in LLDB. As there
-   * are many reasons why python scripting would fail (e.g. disabled in CMake,
-   * wrong SDK installation, etc.), it's more effective to just execute a
-   * minimal script to confirm it's operative.
-   */
-  private async doLLDBHasPythonScriptingSupport(): Promise<boolean> {
-    try {
-      let { stdout, stderr } = await execFile(this.lldbPath, [
-        '-b',
-        '-o',
-        'script print(100+1)',
-      ]);
-      stdout = (stdout || '') as string;
-      stderr = (stderr || '') as string;
-
-      if (stdout.indexOf('101') != -1) {
-        this.loggingService.main.logInfo(
-          'Python scripting support in LLDB found.'
-        );
-        return true;
-      } else {
-        this.loggingService.main.logInfo(
-          `Python scripting support in LLDB not found. The test script returned:\n${
-            stdout
-          }\n${stderr}`
-        );
-      }
-    } catch (e) {
-      this.loggingService.main.logError(
-        'Python scripting support in LLDB not found. The test script failed with',
-        e
-      );
-    }
-    return false;
-  }
-
-  private constructor(
-    loggingService: LoggingService,
-    version: MojoSDKVersion,
-    modularPath: string,
-    rawConfig: { [key: string]: any }
-  ) {
-    this.loggingService = loggingService;
-
-    this.version = version;
-    this.modularHomePath = modularPath;
-    this.mojoLLDBVSCodePath = rawConfig.lldb_vscode_path;
-    this.mojoLLDBVisualizersPath = rawConfig.lldb_visualizers_path;
-    this.mojoDriverPath = rawConfig.driver_path;
-    this.mojoLanguageServerPath = rawConfig.lsp_server_path;
-    this.mojoLLDBPluginPath = rawConfig.lldb_plugin_path;
-    this.lldbPath = rawConfig.lldb_path;
-  }
-
-  /**
-   * A service that can be used to log message in the Mojo output channel.
-   */
-  private loggingService: LoggingService;
-
-  /**
-   * The version of the SDK.
-   */
-  version: MojoSDKVersion;
-
-  /**
-   * The MODULAR_HOME path containing the SDK.
-   */
-  modularHomePath: string = '';
-
-  /**
-   * The path to the mojo driver within the SDK installation.
-   */
-  mojoDriverPath: string = '';
-
-  /**
-   * The path to the LLDB vscode debug adapter.
-   */
-  mojoLLDBVSCodePath: string = '';
-
-  /**
-   * The path to the LLDB visualizers.
-   */
-  mojoLLDBVisualizersPath: string = '';
-
-  /**
-   * The path the mojo language server within the SDK installation.
-   */
-  mojoLanguageServerPath: string = '';
-
-  /**
-   * The path to the mojo LLDB plugin.
-   */
-  mojoLLDBPluginPath: string = '';
-
-  /**
-   * The path to the LLDB binary.
-   */
-  lldbPath: string = '';
-
-  /**
-   * A promise for if the LLDB binary has python scripting support.
-   */
-  private lldbHasPythonScriptingSupportResult?: Promise<boolean>;
-}
 
 /**
  * Class used for interacting with and checking the status of the Mojo SDK.
@@ -367,8 +108,8 @@ export class MojoSDK {
     ) {
       vscode.window.showWarningMessage(
         'The current Mojo SDK version is incompatible with this ' +
-          'version of the Mojo extension. Please update your SDK ' +
-          'to ensure the extension behaves correctly.'
+        'version of the Mojo extension. Please update your SDK ' +
+        'to ensure the extension behaves correctly.'
       );
     }
   }
@@ -578,8 +319,7 @@ export class MojoSDKManager extends DisposableContext {
       }
     } catch (e) {
       this.showSDKErrorMessage(
-        `The modular config file '${
-          modularCfg
+        `The modular config file '${modularCfg
         }' does not exist or VS Code does not have permissions to access it.`,
         e
       );
@@ -697,9 +437,9 @@ export class MojoSDKManager extends DisposableContext {
 
     let value = await vscode.window.showInformationMessage(
       prefix +
-        'If the Mojo SDK is installed, please set the MODULAR_HOME environment variable to the ' +
-        'appropriate path, or set the `mojo.modularHomePath` configuration. If you do ' +
-        'not have it installed, would you like to install it?',
+      'If the Mojo SDK is installed, please set the MODULAR_HOME environment variable to the ' +
+      'appropriate path, or set the `mojo.modularHomePath` configuration. If you do ' +
+      'not have it installed, would you like to install it?',
       'Install',
       'Open setting'
     );
