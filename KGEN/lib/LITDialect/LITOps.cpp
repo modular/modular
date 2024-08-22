@@ -366,10 +366,7 @@ ErrorTreeOrSuccess LIT::CallOp::interpret(ArrayRef<Attribute> operands,
     return ErrorTree(getLoc(), bodyOr.takeError());
   Region &body = **bodyOr;
 
-  // Function regions are isolated from above, so push a new stack frame. Then,
-  // transfer control flow to the beginning of the function body.
-  state.pushFrame(*this, body.getParentOp());
-  state.transferControlFlowTo(&body.front(), operands);
+  state.callFunctionBody(body, operands);
   return success();
 }
 
@@ -1872,10 +1869,7 @@ LogicalResult LIT::ReturnOp::verify() {
 
 ErrorTreeOrSuccess LIT::ReturnOp::interpret(ArrayRef<Attribute> operands,
                                             InterpreterState &state) {
-  // Pop the current frame and transfer control flow back to the call operation,
-  // using the operands of the return as the results of the call.
-  Operation *call = state.popFrame();
-  state.transferControlFlowTo(call, operands);
+  state.returnFromFunction(operands);
   return success();
 }
 

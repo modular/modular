@@ -176,33 +176,24 @@ public:
     DenseMap<Value, Attribute> values;
   };
 
-  /// Push a new stack frame.
-  void pushFrame(Operation *origin, Operation *func) {
-    StackFrame &frame =
-        stackIdx == stack.size() ? stack.emplace_back() : stack[stackIdx];
-    // Initialize or re-initialize the frame. This avoids unnecessary memory
-    // pressure from freeing and allocating the contained DenseMap.
-    frame.origin = origin;
-    frame.func = func;
-    frame.numStackAllocs = 0;
-    frame.numSymbolicAllocs = 0;
-    ++stackIdx;
+  /// This function executes a function call in the interpreter, where the
+  /// current operation is treated as the calling operation that the interpreter
+  /// should return to when the callee returns, `body` is the region of the
+  /// callee, and `arguments` are the call argument values.
+  void callFunctionBody(Region &body, ArrayRef<Attribute> arguments) {
+    // Function regions are isolated from above, so push a new stack frame.
+    // Then, transfer control flow to the beginning of the function body.
+    pushFrame(&*pc, body.getParentOp());
+    transferControlFlowTo(&body.front(), arguments);
   }
 
-  /// Pop the current stack frame, returning the origin operation.
-  Operation *popFrame() {
-    // Drop all stack memory on the current frame.
-    MemoryTable &table = getTable(MemoryKind::Stack);
-    StackFrame &frame = getCurrentFrame();
-    for (size_t i = 0, e = frame.numStackAllocs; i != e; ++i)
-      table.blobs.pop_back();
-    for (size_t i = 0, e = frame.numSymbolicAllocs; i != e; ++i)
-      symbolicMemory.pop_back();
-
-    Operation *origin = frame.origin;
-    // Soft-remove the frame from the stack.
-    --stackIdx;
-    return origin;
+  /// Return from the current function back to the caller using `returnValues`
+  /// as the return values of the function.
+  void returnFromFunction(ArrayRef<Attribute> returnValues) {
+    // Pop the current frame and transfer control flow back to the call
+    // operation, using the operands of the return as the results of the call.
+    Operation *call = popFrame();
+    transferControlFlowTo(call, returnValues);
   }
 
   /// Return the origin operation of the frame at the given depth in the stack.
@@ -360,6 +351,35 @@ private:
   StackFrame &getCurrentFrame() {
     assert(!stack.empty() && "expected a stack frame");
     return stack[stackIdx - 1];
+  }
+
+  /// Push a new stack frame.
+  void pushFrame(Operation *origin, Operation *func) {
+    StackFrame &frame =
+        stackIdx == stack.size() ? stack.emplace_back() : stack[stackIdx];
+    // Initialize or re-initialize the frame. This avoids unnecessary memory
+    // pressure from freeing and allocating the contained DenseMap.
+    frame.origin = origin;
+    frame.func = func;
+    frame.numStackAllocs = 0;
+    frame.numSymbolicAllocs = 0;
+    ++stackIdx;
+  }
+
+  /// Pop the current stack frame, returning the origin operation.
+  Operation *popFrame() {
+    // Drop all stack memory on the current frame.
+    MemoryTable &table = getTable(MemoryKind::Stack);
+    StackFrame &frame = getCurrentFrame();
+    for (size_t i = 0, e = frame.numStackAllocs; i != e; ++i)
+      table.blobs.pop_back();
+    for (size_t i = 0, e = frame.numSymbolicAllocs; i != e; ++i)
+      symbolicMemory.pop_back();
+
+    Operation *origin = frame.origin;
+    // Soft-remove the frame from the stack.
+    --stackIdx;
+    return origin;
   }
 
   /// Process input arguments to the region and initialize the program counter.
