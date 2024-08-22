@@ -1,8 +1,8 @@
 {
-  "name": "vscode-mojo",
-  "displayName": "Mojo 🔥",
-  "description": "Mojo language support",
-  "version": "7.0.0-dev",
+  "name": "vscode-mojo-nightly",
+  "displayName": "Mojo 🔥 (nightly dev)",
+  "description": "Mojo language support (nightly dev)",
+  "version": "0.0.0",
   "publisher": "modular-mojotools",
   "icon": "icon.png",
   "engines": {
