@@ -1178,17 +1178,17 @@ struct LayoutTensor[
     fn split[
         count: Int,
         axis: Int = 0,
-        __tile_size: Int = layout.shape[axis].value() // count,
-        __tiled_layout: Layout = Self._compute_tile_layout[__tile_size, axis](),
     ](self) -> InlineArray[
         LayoutTensor[
             dtype,
-            __tiled_layout[0],
+            Self._compute_tile_layout[
+                layout.shape[axis].value() // count, axis
+            ]()[0],
             address_space=address_space,
             element_layout=element_layout,
         ],
         count,
-    ]:
+    ] as result:
         constrained[
             layout.shape[axis].is_value(),
             "Only support partition modes that are plain values.",
@@ -1200,27 +1200,25 @@ struct LayoutTensor[
         ]()
 
         alias stride = layout.stride[axis].value()
-
-        var tiles = InlineArray[
-            LayoutTensor[
-                dtype,
-                __tiled_layout[0],
-                address_space=address_space,
-                element_layout=element_layout,
-            ],
-            count,
-        ](unsafe_uninitialized=True)
+        var tiles = __type_of(result)(unsafe_uninitialized=True)
 
         @parameter
         for i in range(count):
+            # Need tile_size alias to ensure that the ptr passed to LayoutTensor is
+            # known at compile time. Otherwise we get compile time failure.
+            # The compiler can't allocate LayoutTensor on stack if ptr is not known at compile time.
+            # See MOCO-1081 for more details.
+            alias tile_size = layout.shape[axis].value() // count
             var ptr = UnsafePointer.address_of(tiles.unsafe_get(i))
             ptr.init_pointee_move(
                 LayoutTensor[
                     dtype,
-                    __tiled_layout[0],
+                    Self._compute_tile_layout[
+                        layout.shape[axis].value() // count, axis
+                    ]()[0],
                     address_space=address_space,
                     element_layout=element_layout,
-                ](self.ptr.offset(i * __tile_size * stride)),
+                ](self.ptr.offset(i * tile_size * stride)),
             )
 
         return tiles
