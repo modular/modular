@@ -4,8 +4,8 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from collections.vector import InlinedFixedVector
 from collections import Optional
+from collections.vector import InlinedFixedVector
 from math import ceildiv
 from os import abort
 from sys import alignof, external_call, sizeof
@@ -557,7 +557,7 @@ fn mgp_buffer_alloc_dynamic[
 
 
 @always_inline
-fn fillBuffer[
+fn fill_buffer[
     type: DType
 ](buf: NDBuffer[DType.uint8, 1], vals: VariadicList[Int]):
     var ptr = buf.data.bitcast[type]()
@@ -587,9 +587,9 @@ fn mgp_buffer_set_with_index[
 
     var elSize = bufSize / numArgs
     if elSize == 4:
-        fillBuffer[DType.int32](buffer, vals)
+        fill_buffer[DType.int32](buffer, vals)
     elif elSize == 8:
-        fillBuffer[DType.int64](buffer, vals)
+        fill_buffer[DType.int64](buffer, vals)
     else:
         raise Error("unsupported element size")
     return 1  # Dummy int for output chain on DeviceOp.td
