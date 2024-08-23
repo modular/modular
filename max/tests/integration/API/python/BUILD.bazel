@@ -35,6 +35,7 @@ modular_py_test(
     mojo_deps = [
         "//SDK/integration-test:test_user_op",
     ],
+    requires_gpu = False,
     tags = ["gpu"],
     target_compatible_with = select({
         # TODO: Sanitizer libs aren't available when python loads pybind shared libs
