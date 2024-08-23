@@ -50,13 +50,13 @@ def _repack_then_matmul(
     def impl(lhs: GraphValue, rhs: GraphValue) -> GraphValue:
         # Quantized matmul for supported quantized encoding types.
         # rhs is uint8 and in a packed format such as Q4_0, Q4_K, or Q6_K.
-        if rhs.tensor_type.dtype is not DType.uint8:
-            raise TypeError(
-                f"expected uint8 DType but got {rhs.tensor_type.dtype}"
-            )
+        if rhs.dtype is not DType.uint8:
+            raise TypeError(f"Right-hand side must be uint8, but got {rhs=}")
+        if lhs.dtype is not DType.float32:
+            raise TypeError(f"Left-hand side must be float32, but got {lhs=}")
 
         if len(rhs.shape) != 2:
-            raise TypeError("rhs must be a matrix")
+            raise TypeError(f"Right-hand side must be a matrix, but got {rhs=}")
 
         # Reshape LHS to a matrix, which is expected by the q4_0 matmul op.
         lhs_matrix = lhs.reshape((-1, lhs.shape[-1]))
