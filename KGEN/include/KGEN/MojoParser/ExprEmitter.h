@@ -406,9 +406,9 @@ public:
                              bool allowImplicitConversion = true);
 
   /// Emit a call to a custom op, given the custom op implementation class.
-  CValue emitCustomOpCall(ASTType type, StructDeclOp structDecl,
-                          CallOperands &&callOperands, const ExprNode *callNode,
-                          ValueDest &dest);
+  CValue emitCustomOpCall(ASTType type, ArrayRef<TypedAttr> parameters,
+                          StringAttr customOpName, CallOperands &&callOperands,
+                          const ExprNode *callNode, ValueDest &dest);
 
   //===--------------------------------------------------------------------===//
   // Type conversion helpers.

@@ -43,8 +43,7 @@ struct AddOp:
 
 
 fn main():
-    var x: Int32 = 4
-    var res = __mlir_op.`custom.add`[_type=Int32](x, x)
+    var res = AddOp(4, 4)
     print(res)
 
 

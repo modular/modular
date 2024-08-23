@@ -1704,6 +1704,15 @@ AnyValue CallNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
     }
   }
 
+  // If this is the invocation of a custom MLIR operation, bind it into an
+  // actual operator!
+  if (auto mValue = calleeVal.getIfPValue()) {
+    if (auto customOp = dyn_cast<UnboundCustomOperationAttr>(mValue.get()))
+      return emitter.emitCustomOpCall(
+          customOp.getStructType(), customOp.getParams(), customOp.getOpName(),
+          std::move(operandsList), this, dest);
+  }
+
   // If the callee is a type value (as in `T()` or `T[123]()`), then this is an
   // invocation of the initializer for the type, or a call to a custom op.
   if (ASTType calledType = calleeVal.getIfTypeValue()) {
@@ -1716,7 +1725,8 @@ AnyValue CallNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
 
     auto structDecl = dyn_cast<StructDeclOp>(calleeDecl);
     if (structDecl && structDecl.getCustomOpName())
-      return emitter.emitCustomOpCall(calledType, structDecl,
+      return emitter.emitCustomOpCall(calledType, {},
+                                      structDecl.getCustomOpNameAttr(),
                                       std::move(operandsList), this, dest);
 
     // Check to see if we can invoke an __init__ method to convert it.
@@ -1833,8 +1843,24 @@ AnyValue SubscriptNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
 
   // If the sub-value is an unbound Type, try binding parameters to it!
   if (Type typeValue = baseValue.getIfTypeValue()) {
-    // Handle user-defined types.
-    if (isa<AnyStructType>(baseType)) {
+    // Handle user-defined types and custom MLIR types.
+    if (auto structValue = dyn_cast<AnyStructType>(baseType)) {
+      auto *calleeDecl = baseType.getDecl(emitter.shared);
+      auto structDecl = dyn_cast<StructDeclOp>(calleeDecl);
+      if (structDecl && structDecl.getCustomOpName()) {
+        SmallVector<TypedAttr> operandValues;
+        for (auto operand : operands) {
+          auto operandValue =
+              emitter.emitExprPValue(operand.expr, ExprContext::EC_MLIRMagic);
+          if (!operandValue)
+            return {};
+          operandValues.push_back(operandValue);
+        }
+        PValue result = PValue(UnboundCustomOperationAttr::get(
+            structDecl.getCustomOpNameAttr(), structValue, operandValues));
+        return emitter.emitResult(result, this, dest);
+      }
+
       PValue result = substituteParametersIntoUserDefinedType(
           baseValue.getIfPValue(), operands, getLoc(), lsquareLoc, rsquareLoc,
           emitter);

@@ -17,6 +17,7 @@
 #include "KGEN/MojoParser/ParserParamEvaluator.h"
 #include "MojoUtils.h"
 
+#include "KGEN/CustomDialect/CustomUtils.h"
 #include "KGEN/Interpreter/InterpreterAttrs.h"
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/LITDialect/LITOps.h"
@@ -1416,6 +1417,18 @@ CValue ExprEmitter::emitCallUnchecked(RValue callee,
     customOp->setAttr("__custom_op_struct_ref",
                       TypeAttr::get(customOpStructType.mlirType));
 
+    // If we had any parameters, add their values to the custom op.
+    ArrayRef<TypedAttr> parameters =
+        cast<SymbolConstantAttr>(target.get()).getParamValues();
+    if (!parameters.empty()) {
+      SmallVector<Attribute> parametersAttr;
+      for (TypedAttr parameter :
+           cast<SymbolConstantAttr>(target.get()).getParamValues())
+        parametersAttr.push_back(parameter);
+
+      customOp->setAttr(Custom::kCustomOpParamsAttrName,
+                        mlir::ArrayAttr::get(getContext(), parametersAttr));
+    }
   } else if (auto target = callee.getIfPValue()) {
     if (calleeSig.isAsync()) {
       // If the callee is an async function, emit an async call. Then wrap the

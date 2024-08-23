@@ -18,6 +18,7 @@
 #include "KGEN/MojoParser/ParserParamEvaluator.h"
 #include "MojoUtils.h"
 
+#include "KGEN/CustomDialect/CustomUtils.h"
 #include "KGEN/HLCFDialect/HLCFOps.h"
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/LITDialect/LITOps.h"
@@ -1098,10 +1099,9 @@ CValue ExprEmitter::emitConstructorCall(ASTType type,
   return callee.emitCall(std::move(callOperands), dest, *this);
 }
 
-CValue ExprEmitter::emitCustomOpCall(ASTType type, StructDeclOp structDecl,
-                                     CallOperands &&callOperands,
-                                     const ExprNode *callNode,
-                                     ValueDest &dest) {
+CValue ExprEmitter::emitCustomOpCall(
+    ASTType type, ArrayRef<TypedAttr> parameters, StringAttr customOpName,
+    CallOperands &&callOperands, const ExprNode *callNode, ValueDest &dest) {
   // Custom op calls are always of TypeCall syntax.
   auto syntax = CallSyntax::kTypeCall;
 
@@ -1128,6 +1128,10 @@ CValue ExprEmitter::emitCustomOpCall(ASTType type, StructDeclOp structDecl,
   if (overloadCallee.isErroneous())
     return {};
 
+  // Add parameters to the overload set.
+  for (auto parameter : parameters)
+    overloadCallee.paramBindings.add(callNode, parameter);
+
   // Check the direct callees to see if they can be unambiguously resolved
   // with the bindings list and specified arguments.
   PValue callee =
@@ -1140,7 +1144,7 @@ CValue ExprEmitter::emitCustomOpCall(ASTType type, StructDeclOp structDecl,
   }
 
   return emitCallUnchecked(callee, callOperands, dest, syntax, callNode,
-                           structDecl.getCustomOpNameAttr(), type);
+                           customOpName, type);
 }
 
 //===----------------------------------------------------------------------===//

@@ -348,6 +348,35 @@ def UnboundMLIROperationAttr
 }
 
 //===----------------------------------------------------------------------===//
+// UnboundCustomOperationAttr
+//===----------------------------------------------------------------------===//
+
+def UnboundCustomOperationAttr
+  : LITTypedAttr<"UnboundCustomOperation", "unbound_custom_operation"> {
+  let summary = "An unbound custom MLIR operation";
+  let description = [{
+    This attribute is used by the Lit parser as a reference to a custom MLIR
+    operation by referring to the custom op struct definition: it may have bound
+    attributes as well. When applied to value operands, it materializes into a
+    specific MLIR operation instance.
+  }];
+
+  let parameters = (ins "StringAttr":$opName,
+                        "AnyStructType":$structType,
+                        ArrayRefParameter<"TypedAttr">:$params);
+  let assemblyFormat = "$opName $structType $params";
+  let extraClassDeclaration = [{ Type getType() const; }];
+
+  let builders = [
+    AttrBuilderWithInferredContext<(ins "StringAttr":$opName,
+                                        "AnyStructType":$structType,
+                                        "ArrayRef<TypedAttr>":$params), [{
+      return $_get(opName.getContext(), opName, structType, params);
+    }]>
+  ];
+}
+
+//===----------------------------------------------------------------------===//
 // UnpackedAttr
 //===----------------------------------------------------------------------===//
 
