@@ -5,8 +5,8 @@
 # ===----------------------------------------------------------------------=== #
 
 # COM: Check that we can't use the RPC mode when using explicitly the CLI mode.
-# RUN: not env %debug --rpc 2>&1 | FileCheck %s --check-prefix=CHECK-NO-CLI-RPC
-# CHECK-NO-CLI-RPC: unexpected option '--rpc'
+# RUN: not env %debug --vscode 2>&1 | FileCheck %s --check-prefix=CHECK-NO-CLI-RPC
+# CHECK-NO-CLI-RPC: unexpected option '--vscode'
 
 # COM: Check if the RPC attach command is created properly with pid.
 # RUN: %debug --rpc --pid 123 --dry-run | FileCheck %s --check-prefix=CHECK-PID
@@ -18,7 +18,7 @@
 # CHECK-PID-NEXT: }
 
 # COM: Check if the CLI attach command is created properly with process name.
-# RUN: %debug --rpc --process-name foo --dry-run | FileCheck %s --check-prefix=CHECK-PROC-NAME
+# RUN: %debug --vscode --process-name foo --dry-run | FileCheck %s --check-prefix=CHECK-PROC-NAME
 # CHECK-PROC-NAME:     {
 # CHECK-PROC-NAME:   "modularHomePath": "
 # CHECK-PROC-NAME-NEXT:   "program": "foo",
@@ -27,7 +27,7 @@
 # CHECK-PROC-NAME-NEXT: }
 
 # COM: Check if the RPC launch command is created properly with a binary
-# RUN: %debug --dry-run --rpc bin.exe --some-arg | FileCheck %s --check-prefix=CHECK-BIN
+# RUN: %debug --dry-run --vscode bin.exe --some-arg | FileCheck %s --check-prefix=CHECK-BIN
 # CHECK-BIN:      {
 # CHECK-BIN:   "args": [
 # CHECK-BIN-NEXT:     "--some-arg"
@@ -43,7 +43,7 @@
 # CHECK-BIN-NEXT: }
 
 # COM: Check if the RPC launch command is created properly with a mojo file
-# RUN: %debug --terminal dedicated --dry-run --rpc --debug-level line-tables file.mojo --some-arg | FileCheck %s --check-prefix=CHECK-MOJO
+# RUN: %debug --terminal dedicated --dry-run --vscode --debug-level line-tables file.mojo --some-arg | FileCheck %s --check-prefix=CHECK-MOJO
 # CHECK-MOJO:       {
 # CHECK-MOJO:   "args": [
 # CHECK-MOJO-NEXT:     "run",

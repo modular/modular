@@ -48,9 +48,9 @@ void M::attachToNewRemoteDebugSession() {
           << ": unable to resolve the mojo path from the modular.cfg\n";
     } else {
       std::string pidStr = std::to_string(llvm::sys::Process::getProcessId());
-      SmallVector<StringRef> args{mojo, "debug", "--rpc", "--pid", pidStr};
+      SmallVector<StringRef> args{mojo, "debug", "--vscode", "--pid", pidStr};
 
-      // `mojo debug --rpc` succeeds if lldb-dap was launched, but it might
+      // `mojo debug --vscode` succeeds if lldb-dap was launched, but it might
       // still be possible that the actual attach failed.
       int exitCode = llvm::sys::ExecuteAndWait(mojo, args, /*Env=*/std::nullopt,
                                                /*Redirects=*/{});
