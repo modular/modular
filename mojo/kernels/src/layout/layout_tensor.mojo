@@ -1118,32 +1118,61 @@ struct LayoutTensor[
         Self._compute_tile_layout[tile_sizes]()[0],
         address_space,
         circular=False,
-    ] as tiled_iterator_result:
-        alias num_tiles = __get_len[tile_sizes]()
+    ] as result:
+        alias tiles_rank = __get_len[tile_sizes]()
         alias __tiled_layout = Self._compute_tile_layout[tile_sizes]()
         constrained[
-            __tiled_layout[1].rank() == num_tiles,
+            __tiled_layout[1].rank() == tiles_rank,
             "Number of tiles should match the rank",
         ]()
-
-        var ptr_offset = 0
-
-        @parameter
-        for i in range(num_tiles):
-            alias stride = to_int(__tiled_layout[1].stride[i])
-            ptr_offset += tile_coords[i] * stride
 
         constrained[
             layout.shape[axis].is_value(),
             "The layout in the input axis can't be a tuple",
         ]()
 
-        alias bound = layout.shape[axis].value()
-        alias stride = __tiled_layout[1].stride[axis].value()
+        var ptr_offset = 0
 
-        return LayoutTensorIter[
-            dtype, tiled_iterator_result.layout, address_space, circular=False
-        ](self.ptr + ptr_offset, bound, stride=stride)
+        @parameter
+        if layout.all_dims_known():
+
+            @parameter
+            for i in range(tiles_rank):
+                alias stride = to_int(__tiled_layout[1].stride[i])
+                ptr_offset += tile_coords[i] * stride
+
+            # fmt: off
+            alias bound = layout.shape[axis].value() * layout.stride[axis].value()
+            alias stride = __tiled_layout[1].stride[axis].value()
+            # fmt: on
+
+            return LayoutTensorIter[
+                dtype, result.layout, address_space, circular=False
+            ](self.ptr + ptr_offset, bound, stride=stride)
+
+        else:
+            var runtime_shape = RuntimeTuple[result.layout.shape]()
+            var runtime_stride = RuntimeTuple[result.layout.stride]()
+
+            @parameter
+            for i in range(tiles_rank):
+                var stride = self.runtime_layout.stride.value[i] * tile_sizes[i]
+                ptr_offset += tile_coords[i] * stride
+
+            var axis_dim = self.runtime_layout.shape.value[axis]
+            var axis_stride = self.runtime_layout.stride.value[axis]
+            var iter_bound = axis_dim * axis_stride
+            var iter_stride = tile_sizes[axis] * axis_stride
+
+            return LayoutTensorIter[
+                dtype, result.layout, address_space, circular=False
+            ](
+                self.ptr + ptr_offset,
+                iter_bound,
+                stride=iter_stride,
+                offset=0,
+                runtime_layout=RuntimeLayout(runtime_shape, runtime_stride),
+            )
 
     @always_inline
     fn split[
@@ -2980,14 +3009,13 @@ struct LayoutTensorIter[
     """Iterate through a memory buffer and construct layout tensor.
 
     The returned layout tensor is NOT vectorized. User should explicitly vectorize.
-
-    TODO: support constructing iterator from layout tensor.
     """
 
     var ptr: UnsafePointer[Scalar[type], address_space]
     var offset: Int
     var stride: Int
     var bound: Int
+    var runtime_layout: RuntimeLayout[layout]
 
     @always_inline
     fn __init__(inout self):
@@ -2996,19 +3024,24 @@ struct LayoutTensorIter[
         self.offset = 0
         self.stride = 0
         self.bound = 0
+        self.runtime_layout = RuntimeLayout[layout]()
 
     @always_inline
     fn __init__(
         inout self,
         ptr: UnsafePointer[Scalar[type], address_space],
         bound: Int,
-        stride: Int = layout.size(),
+        stride: Int = layout.size() if layout.all_dims_known() else UNKNOWN_VALUE,
         offset: Int = 0,
+        runtime_layout: RuntimeLayout[layout] = RuntimeLayout[layout](),
     ):
         self.ptr = ptr
         self.offset = offset
-        self.stride = stride
+        self.stride = (
+            runtime_layout.size() if stride == UNKNOWN_VALUE else stride
+        )
         self.bound = bound
+        self.runtime_layout = runtime_layout
 
     @always_inline
     fn __copyinit__(inout self: Self, existing: Self):
@@ -3016,6 +3049,7 @@ struct LayoutTensorIter[
         self.offset = existing.offset
         self.stride = existing.stride
         self.bound = existing.bound
+        self.runtime_layout = existing.runtime_layout
 
     @always_inline
     fn get(self) -> LayoutTensor[type, layout, address_space=address_space]:
@@ -3023,7 +3057,7 @@ struct LayoutTensorIter[
         # TODO: Use deref `[]` to be consistent with mojo feature.
 
         return LayoutTensor[type, layout, address_space=address_space](
-            self.ptr + self.offset
+            self.ptr + self.offset, self.runtime_layout
         )
 
     @always_inline
@@ -3068,7 +3102,13 @@ struct LayoutTensorIter[
 
         return LayoutTensorIter[
             type, layout, address_space=address_space, circular=circular
-        ](self.ptr, self.bound, stride=self.stride, offset=next_offset)
+        ](
+            self.ptr,
+            self.bound,
+            stride=self.stride,
+            offset=next_offset,
+            runtime_layout=self.runtime_layout,
+        )
 
     @always_inline
     fn next(self, rhs: UInt = 1) -> Self:
@@ -3089,8 +3129,17 @@ struct LayoutTensorIter[
             "Iterator reshape only supports contiguous layout.",
         ]()
 
+        constrained[
+            layout.all_dims_known() and dst_layout.all_dims_known(),
+            "Iterator reshape only supports compile time layout.",
+        ]()
+
         return LayoutTensorIter[type, dst_layout, address_space, circular](
-            self.ptr, self.bound, self.stride, self.offset
+            self.ptr,
+            self.bound,
+            self.stride,
+            self.offset,
+            RuntimeLayout[dst_layout](),
         )
 
     @always_inline
@@ -3102,4 +3151,5 @@ struct LayoutTensorIter[
             self.bound,
             self.stride,
             self.offset,
+            self.runtime_layout,
         )

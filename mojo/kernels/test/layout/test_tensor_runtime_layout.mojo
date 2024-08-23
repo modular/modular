@@ -6,6 +6,7 @@
 # RUN: %mojo %s | FileCheck %s
 
 from layout import Layout, LayoutTensor, RuntimeLayout, RuntimeTuple
+from layout.layout_tensor import LayoutTensorIter
 from layout.int_tuple import UNKNOWN_VALUE, IntTuple
 
 
@@ -489,6 +490,63 @@ fn test_linspace_fill():
     print(src_tensor.ptr == src_tensor_copy.ptr)
 
 
+# CHECK-LABEL: test_iterator
+fn test_iterator():
+    print("== test_iterator")
+    alias layout = Layout(IntTuple(UNKNOWN_VALUE, 8), IntTuple(8, 1))
+
+    var dynamic_layout = RuntimeLayout[layout](
+        RuntimeTuple[layout.shape](8, 8), RuntimeTuple[layout.stride](8, 1)
+    )
+
+    var ptr = UnsafePointer[Float32].alloc(dynamic_layout.size())
+    var tensor = LayoutTensor[DType.float32, layout](
+        ptr, dynamic_layout
+    ).linspace()
+
+    # CHECK: ((4, 4):(8, 1))
+    # CHECK: 64 32 32
+    # CHECK: 36.0 37.0 38.0 39.0
+    # CHECK: 44.0 45.0 46.0 47.0
+    # CHECK: 52.0 53.0 54.0 55.0
+    # CHECK: 60.0 61.0 62.0 63.0
+    var iter4x4_axis0 = tensor.tiled_iterator[4, 4, axis=0](0, 1)
+    iter4x4_axis0 += 1
+    print(iter4x4_axis0.runtime_layout)
+    print(iter4x4_axis0.bound, iter4x4_axis0.offset, iter4x4_axis0.stride)
+    print(iter4x4_axis0[])
+
+    # CHECK: ((2, 2):(8, 1))
+    # CHECK: 8 2 2
+    # CHECK: 34.0 35.0
+    # CHECK: 42.0 43.0
+    var iter2x2_axis1 = tensor.tiled_iterator[2, 2, axis=1](2, 0)
+    iter2x2_axis1 += 1
+    print(iter2x2_axis1.runtime_layout)
+    print(iter2x2_axis1.bound, iter2x2_axis1.offset, iter2x2_axis1.stride)
+    print(iter2x2_axis1[])
+
+    # CHECK: ((4, 2):(2, 1))
+    # CHECK: 64 8 8
+    # CHECK: 8.0 9.0
+    # CHECK: 10.0 11.0
+    # CHECK: 12.0 13.0
+    # CHECK: 14.0 15.0
+    alias layout1 = Layout(
+        IntTuple(4, UNKNOWN_VALUE), IntTuple(2, UNKNOWN_VALUE)
+    )
+    var dynamic_layout1 = RuntimeLayout[layout1](
+        RuntimeTuple[layout1.shape](4, 2), RuntimeTuple[layout1.stride](2, 1)
+    )
+    var iter = LayoutTensorIter[DType.float32, layout1, circular=True](
+        ptr, 64, runtime_layout=dynamic_layout1
+    )
+    iter += 9
+    print(iter.runtime_layout)
+    print(iter.bound, iter.offset, iter.stride)
+    print(iter[])
+
+
 def main():
     test_fill_and_print()
     test_set_and_get_items()
@@ -497,3 +555,4 @@ def main():
     test_tile_and_vectorize()
     test_copy_from()
     test_linspace_fill()
+    test_iterator()
