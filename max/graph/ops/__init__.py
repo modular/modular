@@ -20,6 +20,7 @@ convenience methods such as
 [`swapaxes()`](/max/api/python/graph/graph_value/GraphValue#swapaxes).
 """
 
+from .band_part import band_part
 from .broadcast_to import broadcast_to
 from .cast import cast
 from .complex import as_interleaved_complex
@@ -29,7 +30,8 @@ from .custom_ops import custom
 from .debug import print
 from .elementwise import *
 from .gather import gather
-from .linalg import band_part, layer_norm, matmul
+from .layer_norm import layer_norm
+from .matmul import matmul
 from .quantized_ops import dequantize, qmatmul
 from .rebind import rebind
 from .reduction import mean
