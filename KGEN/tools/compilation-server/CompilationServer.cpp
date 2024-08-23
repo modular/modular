@@ -5,6 +5,8 @@
 //===----------------------------------------------------------------------===//
 
 #include "CompilationServer.h"
+#include "LLVMServer.h"
+#include "Protocol.h"
 #include "Support/LLVMCompilerForwardDecls.h"
 #include "mlir/Tools/lsp-server-support/Logging.h"
 #include "mlir/Tools/lsp-server-support/Transport.h"
@@ -18,7 +20,7 @@
 #define DEBUG_TYPE "compilation-server"
 
 using namespace mlir::lsp;
-using namespace M;
+using namespace M::KGEN::CSP;
 
 //===----------------------------------------------------------------------===//
 // CompilationServer
@@ -26,7 +28,7 @@ using namespace M;
 
 namespace {
 struct CompilationServer {
-  CompilationServer() {}
+  CompilationServer(LLVMServer &server) : llvmServer(server) {}
 
   //===--------------------------------------------------------------------===//
   // Initialization
@@ -36,8 +38,16 @@ struct CompilationServer {
   void onShutdown(const NoParams &params, Callback<std::nullptr_t> reply);
 
   //===--------------------------------------------------------------------===//
+  // Compilation
+
+  void onCompileLLVMModule(const CompileLLVMModuleParams &params,
+                           Callback<std::nullptr_t> reply);
+
+  //===--------------------------------------------------------------------===//
   // Fields
   //===--------------------------------------------------------------------===//
+
+  LLVMServer &llvmServer;
 
   /// Used to indicate that the 'shutdown' request was received from the
   /// Compilation Server client.
@@ -63,12 +73,23 @@ void CompilationServer::onShutdown(const NoParams &,
   shutdownRequestReceived = true;
   reply(nullptr);
 }
+
+//===--------------------------------------------------------------------===//
+// Compilation
+
+void CompilationServer::onCompileLLVMModule(
+    const CompileLLVMModuleParams &params, Callback<std::nullptr_t> reply) {
+  llvmServer.compileBitcode(params.bitcode);
+  reply(nullptr);
+}
+
 //===----------------------------------------------------------------------===//
 // Entry Point
 //===----------------------------------------------------------------------===//
 
 mlir::LogicalResult M::KGEN::runCompilationServer(JSONTransport &transport) {
-  CompilationServer compilationServer;
+  LLVMServer llvmServer;
+  CompilationServer compilationServer(llvmServer);
   MessageHandler messageHandler(transport);
 
   // Initialization
@@ -78,6 +99,8 @@ mlir::LogicalResult M::KGEN::runCompilationServer(JSONTransport &transport) {
                               &CompilationServer::onInitialized);
   messageHandler.method("shutdown", &compilationServer,
                         &CompilationServer::onShutdown);
+  messageHandler.method("compile", &compilationServer,
+                        &CompilationServer::onCompileLLVMModule);
 
   // Run the main loop of the transport.
   if (llvm::Error error = transport.run(messageHandler)) {
