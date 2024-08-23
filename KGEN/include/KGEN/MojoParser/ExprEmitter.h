@@ -8,8 +8,10 @@
 #define KGEN_MOJOPARSER_EXPREMITTER_H
 
 #include "KGEN/LITDialect/LITAttrs.h"
+#include "KGEN/LITDialect/LITTypes.h"
 #include "KGEN/MojoParser/ExprNode.h"
 #include "KGEN/MojoParser/IRValues.h"
+#include "KGEN/MojoParser/ParserParamEvaluator.h"
 #include "KGEN/MojoParser/SharedState.h"
 #include "KGEN/MojoParser/TypeCheckScopeInfo.h"
 #include "mlir/IR/Builders.h"
@@ -26,6 +28,7 @@ class CallOperands;
 class AliasDeclOp;
 class TraitType;
 class VarDeclOp;
+class CallOp;
 
 //===----------------------------------------------------------------------===//
 // ExprContext
@@ -552,6 +555,119 @@ public:
   CValue emitCallUnchecked(RValue callee, const CallOperands &operands,
                            ValueDest &dest, CallSyntax syntax,
                            const ExprNode *callExpr);
+};
+
+class CallEmitter {
+public:
+  CallEmitter(RValue callee, const ExprNode *callExpr, ExprEmitter &emitter,
+              ValueDest &dest)
+      : emitter(emitter), callee(callee), callExpr(callExpr),
+        loc(emitter.translateLocation(callExpr->getLoc())),
+        evaluator(emitter.getDeclResolver()), dest(dest),
+        calleeSig(cast<SignatureType>(callee.getRValueType())),
+        afterCallActions(*this) {}
+
+  /// Emit IR for a single argument, according to its convention.
+  AnyValue emitOneArgVal(ASTExprAnd<AnyValue> operand, unsigned argIdx,
+                         ArgConvention convention, Type expectedType,
+                         size_t sequenceIndex = 0);
+
+  /// Emit all arguments and return their values in a vector. This function
+  /// iterates by expected arguments since we're building the argument list of
+  /// the call. Default arguments are applied (if available and an operand isn't
+  /// provided for the arg), and variadics (including packs) are collected from
+  /// the operand list and emitted as the appropriate variadic/pack type to the
+  /// callee.
+  FailureOr<SmallVector<ASTExprAnd<AnyValue>>>
+  emitArgValues(const CallOperands &operands);
+
+  /// This function emits the specified pre-emitted argument into a single MLIR
+  /// Value suitable for passing to the callee with the specified convention.
+  /// This handles promotion of PValues to dynamic values as needed.
+  Value emitPreemittedArgumentAsDynamicValue(ASTExprAnd<AnyValue> argValAndExpr,
+                                             ArgConvention convention,
+                                             Type declaredArgType);
+
+  /// If this is a call to a @always_inline function (and there's only one
+  /// possible callee), this method tries to fold the entire function body into
+  /// an PValue.
+  FailureOr<CValue> inlineFunctionCallIntoPValueIfPossible(
+      ArrayRef<ASTExprAnd<AnyValue>> argumentValues);
+
+  /// Emit a function call in a parameter context.
+  TypedAttr
+  emitCallInParamContext(ArrayRef<ASTExprAnd<AnyValue>> argumentValues);
+
+  /// Emit any after-call actions collected during call emission.
+  void emitAfterCallActions() { afterCallActions.emit(); }
+
+  /// Emit warnings about incorrect code in a direct call.
+  void emitDirectCallWarnings(CallOp call, const CallOperands &callOperands);
+
+  /// The underlying expression emitter instance.
+  ExprEmitter &emitter;
+
+  /// Given a call to a function with a memory only result and the desired value
+  /// destination, decide if it is safe to directly emit into the slot.  Doing
+  /// so requires a form of alias analysis to determine whether any input
+  /// arguments could alias the result slot.  We cannot emit into the result
+  /// slot when passing the value as an argument like 'x = foo(x)' or 'x = x +
+  /// 1'.
+  ///
+  /// At this point, we've already applied implicit conversions and converted
+  /// things to RValues or BValues as required by the argument convention, but
+  /// things may still be in parameter space.
+  bool isSafeToUseValueDestForDirectResult(ASTType destRValueType,
+                                           ArrayRef<Value> argumentValues);
+
+private:
+  /// The (type-checked and resolved) callee we are emitting the call to.
+  RValue callee;
+  /// The call's expression node.
+  const ExprNode *callExpr;
+  /// The mlir location of the call expression above, stored for convenience.
+  Location loc;
+  /// A parameter evaluator used to simplify parameter expression and fold the
+  /// callee if possible.
+  ParserParamEvaluator evaluator;
+  /// The destination context we're emitting into.
+  ValueDest &dest;
+  /// The signature type of the callee, stored for convenience.
+  LITSignatureType calleeSig;
+
+  /// This struct accumulates information about IR to emit after the call, e.g.
+  /// writebacks for computed inout lvalues, and lifetime markers.
+  struct AfterCallActions {
+    CallEmitter &callEmitter;
+
+    // The first entry of this is a ValueDest for a DLValue that we can invoke
+    // for the setter.
+    SmallVector<std::pair<ValueDest, MLValue>> lvalueWritebacks;
+
+    /// This is a list of values that we need to keep alive across the duration
+    /// of the call.  They will get lit.ownership.use operations at the end of
+    /// the call.
+    SmallVector<std::pair<Value, Value>> valuesToKeepAlive;
+
+    AfterCallActions(CallEmitter &callEmitter) : callEmitter(callEmitter) {}
+
+    /// Emit all after-call actions.
+    void emit();
+
+    ~AfterCallActions() {
+      // If an error happens before we emit the write backs, make sure to nuke
+      // them so they don't crash the compiler.
+      while (!lvalueWritebacks.empty())
+        lvalueWritebacks.pop_back_val().first.resetForError();
+    }
+  } afterCallActions;
+
+  /// Emit the given (remaining) operands as a variadic or pack sequence,
+  /// appending to the given argument value vector.
+  LogicalResult emitRemainingPosOperands(
+      size_t argIdx, MutableArrayRef<ASTExprAnd<AnyValue>> remainingOperands,
+      ArgConvention convention, Type expectedType,
+      SmallVectorImpl<ASTExprAnd<AnyValue>> &argumentValues);
 };
 
 } // namespace M::KGEN::LIT
