@@ -48,6 +48,7 @@
   "dependencies": {
     "chokidar": "^3.6.0",
     "ini": "4.1.1",
+    "typescript-memoize": "1.1.1",
     "rxjs": "7.8.1",
     "shell-escape": "0.2.0",
     "string-argv": "0.3.2",
