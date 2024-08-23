@@ -284,9 +284,16 @@ def _cuda_available() -> bool:
 
 
 @pytest.mark.skipif(not _cuda_available(), reason="Requires CUDA")
-def test_execute_gpu(mo_model_path: Path):
-    session = InferenceSession(device="cuda")
-    model = session.load(mo_model_path)
+def test_load_on_gpu(gpu_session: InferenceSession, mo_model_path: Path):
+    """Verify we can compile and load a model on GPU."""
+    _ = gpu_session.load(mo_model_path)
+
+
+@pytest.mark.skip(reason="MSDK-693: Input should be in GPU if device is CUDA")
+@pytest.mark.skipif(not _cuda_available(), reason="Requires CUDA")
+def test_execute_gpu(gpu_session: InferenceSession, mo_model_path: Path):
+    """GPU execution is disabled now."""
+    model = gpu_session.load(mo_model_path)
     output = model.execute(input=np.ones(5, dtype=np.float32))
     assert "output" in output.keys()
     assert np.allclose(
@@ -295,14 +302,14 @@ def test_execute_gpu(mo_model_path: Path):
     )
 
 
+# TODO: MSDK-693: Remove this when we can create inputs for gpu.
 @pytest.mark.skipif(not _cuda_available(), reason="Requires CUDA")
-def test_gpu_fails_no_device_tensors(mo_model_path: Path):
-    """GPU execution must use DeviceTensor inputs."""
-    session = InferenceSession(device="cuda")
-    model = session.load(mo_model_path)
+def test_gpu_fails(gpu_session: InferenceSession, mo_model_path: Path):
+    """GPU execution is disabled now."""
+    model = gpu_session.load(mo_model_path)
     with pytest.raises(
-        RuntimeError,
-        match=r"model execution on GPUs only supports DeviceTensor inputs",
+        ValueError,
+        match=r"executing model on gpu is not supported",
     ):
         model.execute(input=np.ones(5, dtype=np.float32))
 

@@ -7,6 +7,7 @@
 import os
 from pathlib import Path
 
+import max.driver as md
 import pytest
 from max.engine import InferenceSession
 
@@ -55,6 +56,11 @@ def pytest_addoption(parser):
     )
 
 
-@pytest.fixture
+@pytest.fixture(scope="module")
 def session() -> InferenceSession:
     return InferenceSession()
+
+
+@pytest.fixture(scope="module")
+def gpu_session() -> InferenceSession:
+    return InferenceSession(device=md.CUDA())

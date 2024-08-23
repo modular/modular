@@ -64,7 +64,6 @@ lit_tests(
         "MODULAR_MAX_ENABLE_MODEL_IR_CACHE": "false",
     },
     gpu_only_srcs = [
-        "c/gpu.api",
         "mojo/test_devicetensor_gpu.mojo",
     ],
     mojo_deps = [
