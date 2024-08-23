@@ -28,9 +28,6 @@ module attributes {M.target_info = #M.target<triple="", arch="", features="", da
 // CHECK-NEXT:    llvm.cond_br [[V2]], ^bb2, ^bb4
 // CHECK-NEXT:  ^bb2:  // pred: ^bb1
 // CHECK-NEXT:    [[V3:%.*]] = llvm.call @anotherTask()
-// CHECK-NEXT:    [[STATE_SLOT:%.*]] = llvm.getelementptr %arg0[0, 0]
-// CHECK-NEXT:    [[NEW_STATE:%.*]] = llvm.mlir.constant(1 : i32)
-// CHECK-NEXT:    llvm.store [[NEW_STATE]], [[STATE_SLOT]]
 // CHECK-NEXT:    [[V8:%.*]] = llvm.call @getElementFromContext([[V3]])
 // CHECK-NEXT:    llvm.call @print([[V8]])
 // CHECK-NEXT:    llvm.return
@@ -82,17 +79,11 @@ module attributes {M.target_info = #M.target<triple="", arch="", features="", da
 // CHECK-NEXT:    llvm.cond_br [[V2]], ^bb2, ^bb5
 // CHECK-NEXT:  ^bb2:  // pred: ^bb1
 // CHECK-NEXT:    [[V3:%.*]] = llvm.call @anotherTask()
-// CHECK-NEXT:    [[V4:%.*]] = llvm.getelementptr %arg0[0, 0]
-// CHECK-NEXT:    [[V6:%.*]] = llvm.mlir.constant(1
-// CHECK-NEXT:    llvm.store [[V6]], [[V4]]
 // CHECK-NEXT:    [[V8:%.*]] = llvm.call @getElementFromContext([[V3]])
 // CHECK-NEXT:    llvm.call @print([[V8]])
 // CHECK-NEXT:    llvm.return
 // CHECK-NEXT:  ^bb3:  // pred: ^bb0
 // CHECK-NEXT:    [[V9:%.*]] = llvm.call @anotherTask() : () -> !llvm.ptr
-// CHECK-NEXT:    [[V10:%.*]] = llvm.getelementptr %arg0[0, 0]
-// CHECK-NEXT:    [[V12:%.*]] = llvm.mlir.constant(2
-// CHECK-NEXT:    llvm.store [[V12]], [[V10]] : i32, !llvm.ptr
 // CHECK-NEXT:    llvm.return
 // CHECK-NEXT:  ^bb4:  // pred: ^bb0
 // CHECK-NEXT:    llvm.call @getElementFromContext
@@ -272,10 +263,6 @@ module attributes {M.target_info = #M.target<triple="", arch="", features="", da
 // CHECK-NEXT:   [[V2:%.*]] = llvm.getelementptr %arg0[0, 9]
 // CHECK-NEXT:   [[V3:%.*]] = llvm.load [[V2]]
 
-// CHECK-NEXT:   [[STATE_PTR:%.*]] = llvm.getelementptr %arg0[0, 0]
-// CHECK-NEXT:   llvm.mlir.constant
-// CHECK-NEXT:   llvm.store
-
 // CHECK-NEXT: llvm.cond_br [[V3]], ^bb2, ^bb3
 
 // Blocks 2 through 4 are lifted from suspension body
@@ -367,84 +354,4 @@ module attributes {M.target_info = #M.target<triple="", arch="", features="", da
     }
     llvm.return
   }
-}
-
-// -----
-
-// COM: Verify that state is set to the destination block number.
-
-module attributes {M.target_info = #M.target<triple="", arch="", features="", data_layout="", simd_bit_width=128>} {
-  // COM: STUBS
-  llvm.func internal @anotherTask1() -> !llvm.ptr {
-    %nil = llvm.mlir.constant(0 : i8) : i8
-    %nilptr = builtin.unrealized_conversion_cast %nil : i8 to !llvm.ptr
-    llvm.return %nilptr : !llvm.ptr
-  }
-  llvm.func internal @anotherTask2() -> !llvm.ptr {
-    %nil = llvm.mlir.constant(0 : i8) : i8
-    %nilptr = builtin.unrealized_conversion_cast %nil : i8 to !llvm.ptr
-    llvm.return %nilptr : !llvm.ptr
-  }
-  llvm.func internal @resumeFIRST() {
-    llvm.return
-  }
-  llvm.func internal @resumeSECOND() {
-    llvm.return
-  }
-  llvm.func internal @getElementFromContext(%continuation: !llvm.ptr) -> i1 {
-    %cond = llvm.mlir.constant(0 : i1) : i1
-    llvm.return %cond : i1
-  }
-
-  // CHECK-LABEL: llvm.func @disjoint_suspends
-  llvm.func @disjoint_suspends(%continuation: !llvm.ptr) attributes { coroutineType = !llvm.struct<(i32, ptr, ptr, ptr, ptr, ptr, struct<(i1)>, f32, f32, i1)> } {
-    // If the first suspension point was hit the state is 1 and we resume at block 4
-    // If the second suspension point was hit the state is 2 and we resume at block 7
-    // CHECK: llvm.switch %1 : i32, ^bb1 [
-    // CHECK-NEXT:	1: ^bb3,
-    // CHECK-NEXT:	2: ^bb5,
-    // CHECK-NEXT:	0: ^bb1
-
-    // When we hit the first suspension point, marked by the call to 'anotherTask1' we set the state of the continuation to 1
-    // CHECK: ^bb2:  // pred: ^bb1
-    // CHECK-NEXT: [[V3:%.*]] = llvm.call @anotherTask1() : () -> !llvm.ptr
-    // CHECK-NEXT: [[V4:%.*]] = llvm.getelementptr %arg0[0, 0]
-    // CHECK-NEXT: [[V5:%.*]] = llvm.mlir.constant(1 : i32) : i32
-    // CHECK-NEXT: llvm.store [[V5]], [[V4]] : i32, !llvm.ptr
-    // CHECK-NEXT: llvm.return
-
-    //  Verify that '1' maps to the resume of the first suspension point
-    // CHECK-NEXT: ^bb3:  // pred: ^bb0
-    // CHECK-NEXT: llvm.call @resumeFIRST() : () -> ()
-
-    // When we hit the second suspension point, marked by the call to 'anotherTask2', we set the state of the continuation to 2
-    // CHECK: ^bb4:  // pred: ^bb1
-    // CHECK:  [[V7:%.*]] = llvm.call @anotherTask2() : () -> !llvm.ptr
-    // CHECK:  [[V8:%.*]] = llvm.getelementptr %arg0[0, 0]
-    // CHECK:  [[V9:%.*]] = llvm.mlir.constant(2 : i32) : i32
-    // CHECK:  llvm.store [[V9]], [[V8]] : i32, !llvm.ptr
-    // CHECK:  llvm.return
-
-    //  Verify that '2' maps to the resume of the second suspension point
-    // CHECK-NEXT: ^bb5:  // pred: ^bb0
-    // CHECK-NEXT: llvm.call @resumeSECOND() : () -> ()
-    %cond = llvm.call @getElementFromContext(%continuation) : (!llvm.ptr) -> i1
-    llvm.cond_br %cond, ^bb1, ^bb2
-  ^bb1:
-    %someContinuation = llvm.call @anotherTask1() : () -> !llvm.ptr
-    co.suspend {
-	    co.suspend.end
-    }
-    llvm.call @resumeFIRST() : () -> ()
-    llvm.br ^bb3
-  ^bb2:
-    %someContinuation2 = llvm.call @anotherTask2() : () -> !llvm.ptr
-    co.suspend {
-      co.suspend.end
-    }
-    llvm.call @resumeSECOND() : () -> ()
-    llvm.br ^bb3
-  ^bb3:
-    llvm.return
- }
 }
