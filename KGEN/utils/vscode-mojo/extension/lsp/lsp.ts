@@ -14,6 +14,7 @@ import { MojoContext } from '../mojoContext';
 import { MojoSDK } from '../sdk/sdk';
 import * as config from '../utils/config';
 import { DisposableContext } from '../utils/disposableContext';
+import { Subject } from 'rxjs';
 
 /**
  *  This class manages the LSP clients.
@@ -21,6 +22,7 @@ import { DisposableContext } from '../utils/disposableContext';
 export class MojoLSPContext extends DisposableContext {
   private mojoContext: MojoContext;
   public lspClient: vscodelc.LanguageClient | undefined;
+  public lspClientChanges = new Subject<vscodelc.LanguageClient | undefined>();
 
   constructor(mojoContext: MojoContext) {
     super();
@@ -45,21 +47,33 @@ export class MojoLSPContext extends DisposableContext {
       })
     );
 
-    vscode.workspace.textDocuments.forEach(doc => this.tryStartLanguageClient(doc, launchServerWithDebuggerAttached));
-    this.pushSubscription(vscode.workspace.onDidOpenTextDocument(doc => this.tryStartLanguageClient(doc, launchServerWithDebuggerAttached)));
+    vscode.workspace.textDocuments.forEach((doc) =>
+      this.tryStartLanguageClient(doc, launchServerWithDebuggerAttached)
+    );
+    this.pushSubscription(
+      vscode.workspace.onDidOpenTextDocument((doc) =>
+        this.tryStartLanguageClient(doc, launchServerWithDebuggerAttached)
+      )
+    );
   }
 
-  async tryStartLanguageClient(doc: vscode.TextDocument, debuggerAttached: boolean): Promise<void> {
-    if (doc.languageId !== "mojo")
+  async tryStartLanguageClient(
+    doc: vscode.TextDocument,
+    debuggerAttached: boolean
+  ): Promise<void> {
+    if (doc.languageId !== 'mojo') {
       return;
+    }
 
     let sdk = await this.mojoContext.sdkManager.findSDK();
 
-    if (!sdk)
+    if (!sdk) {
       return;
+    }
 
-    if (this.lspClient !== undefined)
+    if (this.lspClient !== undefined) {
       return;
+    }
 
     const includeDirs = config.get<string[]>(
       'lsp.includeDirs',
@@ -72,10 +86,13 @@ export class MojoLSPContext extends DisposableContext {
       includeDirs
     );
     this.lspClient = lspClient;
+    this.lspClientChanges.next(lspClient);
     this.pushSubscription(
       new vscode.Disposable(() => {
         lspClient.stop();
         lspClient.dispose();
+        this.lspClientChanges.next(undefined);
+        this.lspClientChanges.unsubscribe();
       })
     );
   }

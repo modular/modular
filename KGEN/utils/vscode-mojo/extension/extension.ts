@@ -15,7 +15,7 @@ import { isNightlyExtension } from './utils/buildInfo';
  * extension's state and disposal.
  */
 class MojoExtension {
-  private readonly mojoContext: MojoContext;
+  public readonly mojoContext: MojoContext;
   private readonly loggingService: LoggingService;
 
   constructor(context: vscode.ExtensionContext) {
@@ -23,11 +23,14 @@ class MojoExtension {
     this.loggingService = new LoggingService(isNightly);
     this.loggingService.main.logInfo('Initializing the Mojo extension.');
     this.mojoContext = new MojoContext(context, this.loggingService);
-    this.mojoContext.activate();
     this.loggingService.main.logInfo('Mojo extension initialized.');
 
     // Check and warn for incompatible extensions.
     this.checkForIncompatibleExtensions(isNightly);
+  }
+
+  async activate() {
+    await this.mojoContext.activate();
   }
 
   async checkForIncompatibleExtensions(isNightly: boolean) {
@@ -69,7 +72,7 @@ class MojoExtension {
   }
 }
 
-let extension: MojoExtension;
+let extension: Promise<MojoExtension>;
 
 /**
  *  This method is called when the extension is activated. See the
@@ -77,7 +80,9 @@ let extension: MojoExtension;
  * activate this extension.
  */
 export function activate(context: vscode.ExtensionContext) {
-  extension = new MojoExtension(context);
+  let ext = new MojoExtension(context);
+
+  extension = ext.activate().then(() => ext);
 }
 
 /**
@@ -86,5 +91,9 @@ export function activate(context: vscode.ExtensionContext) {
  * disabled the extension manually.
  */
 export function deactivate() {
-  extension.dispose();
+  extension.then((extension) => extension.dispose());
+}
+
+export function getExtension(): Promise<MojoExtension> {
+  return extension;
 }
