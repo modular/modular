@@ -8,16 +8,18 @@
 from typing import Callable, Dict
 
 from max.dtype import DType
-from max.graph.graph import Graph
-from max.graph.graph_value import GraphValue
-from max.graph.ops import custom_ops
-from max.graph.quantization import QuantizationEncoding
-from max.graph.type import Dim, StaticDim, TensorType
+
+from ..graph import Graph
+from ..graph_value import GraphValue
+from ..quantization import QuantizationEncoding
+from ..type import Dim, StaticDim, TensorType
+
+from .custom import custom
 
 
 def _repack_quantized_weights(op_name: str, rhs: GraphValue) -> GraphValue:
     rhs_type = rhs.tensor_type
-    return custom_ops.custom(
+    return custom(
         op_name,
         [rhs],
         out_types=[
@@ -31,7 +33,7 @@ def _repack_quantized_weights(op_name: str, rhs: GraphValue) -> GraphValue:
 def _packed_qmatmul(
     op_name: str, lhs_matrix: GraphValue, rhs_repack: GraphValue
 ) -> GraphValue:
-    return custom_ops.custom(
+    return custom(
         op_name,
         [lhs_matrix, rhs_repack],
         out_types=[
@@ -169,7 +171,7 @@ def dequantize(
         (qdim.dim // encoding.block_size) * encoding.elements_per_block
     )
     flat_quantized = quantized.reshape([-1, qdim])
-    flat_dequantized = custom_ops.custom(
+    flat_dequantized = custom(
         name=op_name,
         values=[flat_quantized],
         out_types=[

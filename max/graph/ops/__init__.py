@@ -26,13 +26,13 @@ from .cast import cast
 from .complex import as_interleaved_complex
 from .concat import concat
 from .constant import constant, scalar
-from .custom_ops import custom
+from .custom import custom
 from .debug import print
 from .elementwise import *
 from .gather import gather
 from .layer_norm import layer_norm
 from .matmul import matmul
-from .quantized_ops import dequantize, qmatmul
+from .quantized import dequantize, qmatmul
 from .rebind import rebind
 from .reduction import mean
 from .reshape import reshape
