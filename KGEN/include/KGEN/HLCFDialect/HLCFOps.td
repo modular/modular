@@ -528,8 +528,7 @@ def HLCF_YieldOp : HLCFTerminatorOp<"yield", [Pure,
 //===----------------------------------------------------------------------===//
 
 def HLCF_ForYieldOp : HLCFTerminatorOp<"for.yield", [
-    ParentOneOf<["ForOp"]>,
-    DeclareOpInterfaceMethods<InterpreterOpInterface>, AttrSizedOperandSegments]> {
+    ParentOneOf<["ForOp"]>, AttrSizedOperandSegments]> {
   let summary = "yield operation in a for-loop";
   let description = [{
     The `hlcf.for.yield` operation is a control-flow terminator that transfers

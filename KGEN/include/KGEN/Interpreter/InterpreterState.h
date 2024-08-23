@@ -133,73 +133,31 @@ public:
   /// Transfer control flow to the given operation. If the operation is null,
   /// this is indicating that the interpreter should exit. Otherwise, the
   /// current return values are taken as the results of the target operation.
-  void transferControlFlowTo(Operation *target, ArrayRef<Attribute> values) {
-    if (target) {
-      block = target->getBlock();
-      pc = target->getIterator();
-      mapResults(values);
-    } else {
-      block = nullptr;
-      pc = Block::iterator();
-      exitValues = llvm::to_vector(values);
-    }
-  }
+  virtual void transferControlFlowTo(Operation *target,
+                                     ArrayRef<Attribute> values) = 0;
 
   /// Transfer control flow to the beginning of the given block with the
   /// constant values of the block arguments.
-  void transferControlFlowTo(Block *target, ArrayRef<Attribute> arguments) {
-    for (auto [arg, value] : llvm::zip(target->getArguments(), arguments))
-      mapOrOverwrite(arg, value);
-    block = target;
-    pc = Block::iterator();
-  }
+  virtual void transferControlFlowTo(Block *target,
+                                     ArrayRef<Attribute> arguments) = 0;
 
   //===--------------------------------------------------------------------===//
   // Interpreter Stack Management
-
-  /// A call stack frame contains the call operation and the value map at the
-  /// callsite. The entry frame has a null operation. Also keep the operation
-  /// the stack frame is for so that if an error occurs, we can emit a nice
-  /// stacktrace.
-  struct StackFrame {
-    StackFrame() {}
-    /// The operation that created the frame and invoked the function.
-    Operation *origin;
-    /// The corresponding function to the frame.
-    Operation *func;
-    /// The number of memory blobs allocated on the stack. This many blobs
-    /// are popped off stack memory when the function returns.
-    size_t numStackAllocs;
-    /// The number of symbolic slots allocated on the stack. This many slots are
-    /// popped off when the function returns.
-    size_t numSymbolicAllocs;
-    /// The map of SSA values to constant values in the current frame.
-    DenseMap<Value, Attribute> values;
-  };
 
   /// This function executes a function call in the interpreter, where the
   /// current operation is treated as the calling operation that the interpreter
   /// should return to when the callee returns, `body` is the region of the
   /// callee, and `arguments` are the call argument values.
-  void callFunctionBody(Region &body, ArrayRef<Attribute> arguments) {
-    // Function regions are isolated from above, so push a new stack frame.
-    // Then, transfer control flow to the beginning of the function body.
-    pushFrame(pc.isValid() ? &*pc : nullptr, body.getParentOp());
-    transferControlFlowTo(&body.front(), arguments);
-  }
+  virtual void callFunctionBody(Region &body,
+                                ArrayRef<Attribute> arguments) = 0;
 
   /// Return from the current function back to the caller using `returnValues`
   /// as the return values of the function.
-  void returnFromFunction(ArrayRef<Attribute> returnValues) {
-    // Pop the current frame and transfer control flow back to the call
-    // operation, using the operands of the return as the results of the call.
-    Operation *call = popFrame();
-    transferControlFlowTo(call, returnValues);
-  }
+  virtual void returnFromFunction(ArrayRef<Attribute> returnValues) = 0;
 
   /// Return the origin operation of the frame at the given depth in the stack.
   /// If the stack is not deep enough, return null.
-  Operation *getOrigin(size_t depth);
+  virtual Operation *getOrigin(size_t depth) = 0;
 
   /// Set the value of a named global.
   void setNamedGlobal(StringAttr name, Attribute value) {
@@ -214,25 +172,8 @@ public:
   //===--------------------------------------------------------------------===//
   // Interpreter Value Management
 
-  /// Map a value to a constant value, overwriting the previous value if there
-  /// was one.
-  void mapOrOverwrite(Value value, Attribute attr) {
-    getCurrentFrame().values[value] = attr;
-  }
-
   /// Map the results of the current operation.
-  void mapResults(ArrayRef<Attribute> results) {
-    assert(pc->getNumResults() == results.size());
-    for (auto [result, value] : llvm::zip(pc->getResults(), results))
-      mapOrOverwrite(result, value);
-  }
-
-  /// Lookup a constant value for the value.
-  Attribute lookupValue(Value value) {
-    Attribute attr = getCurrentFrame().values[value];
-    assert(attr && "value was not mapped");
-    return attr;
-  }
+  virtual void mapResults(ArrayRef<Attribute> results) = 0;
 
 private:
   /// The MLIR context.
@@ -240,6 +181,12 @@ private:
 
   /// The interpreter target configuration.
   TargetInfoAttr target;
+
+  void reset() {
+    resetExecutor();
+    for (MemoryTable &table : memory)
+      table.reset();
+  }
 
   //===--------------------------------------------------------------------===//
   // Interpreter Memory Model
@@ -335,6 +282,25 @@ private:
     return memory[static_cast<unsigned>(kind)];
   }
 
+  /// This function is called to tell the interpreter executor model that an
+  /// allocation is to be made on the current function frame, if there is one.
+  /// This allocation needs to be freed when the function exits.
+  virtual void notifyAllocationOnFrame(bool isSymbolic) = 0;
+
+protected:
+  /// When the interpreter executor returns from a function, it needs to notify
+  /// the memory model how many stack allocations need to get popped.
+  void notifyReturnFromFrame(size_t numStackAllocs, size_t numSymbolicAllocs) {
+    auto popBackCount = [](auto &vec, unsigned num) {
+      vec.erase(vec.end() - num, vec.end());
+    };
+
+    MemoryTable &table = getTable(MemoryKind::Stack);
+    popBackCount(table.blobs, numStackAllocs);
+    popBackCount(symbolicMemory, numSymbolicAllocs);
+  }
+
+private:
   /// All interpreter memory tables, containing stack, heap, persistent, and
   /// constant global memory.
   MemoryTable memory[4];
@@ -345,15 +311,119 @@ private:
   //===--------------------------------------------------------------------===//
   // Interpreter Execution
 
-  StackFrame &getCurrentFrame() {
-    assert(!stack.empty() && "expected a stack frame");
-    return stack[stackIdx - 1];
+  /// Reset the executor state.
+  virtual void resetExecutor() = 0;
+
+  virtual ErrorTreeOr<SmallVector<Attribute>>
+  interpretFunction(Region &body, ArrayRef<Attribute> arguments) = 0;
+
+  /// When the interpreter hits an error, construct an error tree given the
+  /// current stack frame.
+  virtual ErrorTree addStackTrace(ErrorTree error) = 0;
+
+  /// This map implements named global values. Named global values represent a
+  /// mechanism for storing SSA value captures at compile time.
+  DenseMap<StringAttr, Attribute> namedGlobals;
+};
+
+//===----------------------------------------------------------------------===//
+// IRInterpreter
+//===----------------------------------------------------------------------===//
+
+class IRInterpreter : public InterpreterState {
+public:
+  using InterpreterState::InterpreterState;
+
+  void callFunctionBody(Region &body, ArrayRef<Attribute> arguments) override {
+    // Function regions are isolated from above, so push a new stack frame.
+    // Then, transfer control flow to the beginning of the function body.
+    pushFrame(pc.isValid() ? &*pc : nullptr, body.getParentOp());
+    transferControlFlowTo(&body.front(), arguments);
   }
 
-  /// Run the interpreter on the function body until completion, returning the
-  /// final results of the function.
+  void returnFromFunction(ArrayRef<Attribute> returnValues) override {
+    // Pop the current frame and transfer control flow back to the call
+    // operation, using the operands of the return as the results of the call.
+    Operation *call = popFrame();
+    transferControlFlowTo(call, returnValues);
+  }
+
+  void transferControlFlowTo(Operation *target,
+                             ArrayRef<Attribute> values) override {
+    if (target) {
+      block = target->getBlock();
+      pc = target->getIterator();
+      mapResults(values);
+    } else {
+      block = nullptr;
+      pc = Block::iterator();
+      exitValues = llvm::to_vector(values);
+    }
+  }
+
+  void transferControlFlowTo(Block *target,
+                             ArrayRef<Attribute> arguments) override {
+    for (auto [arg, value] : llvm::zip(target->getArguments(), arguments))
+      mapOrOverwrite(arg, value);
+    block = target;
+    pc = Block::iterator();
+  }
+
+  void mapResults(ArrayRef<Attribute> results) override {
+    assert(pc->getNumResults() == results.size());
+    for (auto [result, value] : llvm::zip(pc->getResults(), results))
+      mapOrOverwrite(result, value);
+  }
+
+private:
+  ErrorTree addStackTrace(ErrorTree err) override;
+
+  Operation *getOrigin(size_t depth) override;
+
+  void resetExecutor() override {
+    block = nullptr;
+    pc = Block::iterator();
+    stackIdx = 0;
+  }
+
+  void notifyAllocationOnFrame(bool isSymbolic) override {
+    if (stackIdx) {
+      StackFrame &frame = getCurrentFrame();
+      if (isSymbolic)
+        ++frame.numSymbolicAllocs;
+      else
+        ++frame.numStackAllocs;
+    }
+  }
+
   ErrorTreeOr<SmallVector<Attribute>>
-  interpretFunction(Region &body, ArrayRef<Attribute> arguments);
+  interpretFunction(Region &body, ArrayRef<Attribute> arguments) override;
+
+  /// A call stack frame contains the caller operation, the number of stack
+  /// allocations live in the current function frame, and the value map of the
+  /// function. The entry frame has a null origin. It also keeps the function
+  /// operation the stack frame is for so that if an error occurs, we can emit a
+  /// nice stacktrace.
+  struct StackFrame {
+    StackFrame() {}
+
+    /// The operation that created the frame and invoked the function.
+    Operation *origin;
+    /// The corresponding function to the frame.
+    Operation *func;
+    /// The number of memory blobs allocated on the stack. This many blobs
+    /// are popped off stack memory when the function returns.
+    size_t numStackAllocs;
+    /// The number of symbolic slots allocated on the stack. This many slots are
+    /// popped off when the function returns.
+    size_t numSymbolicAllocs;
+    /// The map of SSA values to constant values in the current frame.
+    DenseMap<Value, Attribute> values;
+  };
+
+  /// Interpret a generic operation by trying to use its operation folder.
+  ErrorTreeOrSuccess interpretOpWithFolder(Operation *op,
+                                           ArrayRef<Attribute> operands);
 
   /// Push a new stack frame.
   void pushFrame(Operation *origin, Operation *func) {
@@ -371,14 +441,8 @@ private:
   /// Pop the current stack frame, returning the origin operation.
   Operation *popFrame() {
     // Drop all stack memory on the current frame.
-    MemoryTable &table = getTable(MemoryKind::Stack);
     StackFrame &frame = getCurrentFrame();
-    auto popBackCount = [](auto &vec, unsigned num) {
-      vec.erase(vec.end() - num, vec.end());
-    };
-
-    popBackCount(table.blobs, frame.numStackAllocs);
-    popBackCount(symbolicMemory, frame.numSymbolicAllocs);
+    notifyReturnFromFrame(frame.numStackAllocs, frame.numSymbolicAllocs);
 
     Operation *origin = frame.origin;
     // Soft-remove the frame from the stack.
@@ -386,12 +450,23 @@ private:
     return origin;
   }
 
-  /// Reset all interpreter state.
-  void reset();
+  StackFrame &getCurrentFrame() {
+    assert(!stack.empty() && "expected a stack frame");
+    return stack[stackIdx - 1];
+  }
 
-  /// When the interpreter hits an error, construct an error tree given the
-  /// current stack frame.
-  ErrorTree addStackTrace(ErrorTree error);
+  /// Map a value to a constant value, overwriting the previous value if there
+  /// was one.
+  void mapOrOverwrite(Value value, Attribute attr) {
+    getCurrentFrame().values[value] = attr;
+  }
+
+  /// Lookup a constant value for the value.
+  Attribute lookupValue(Value value) {
+    Attribute attr = getCurrentFrame().values[value];
+    assert(attr && "value was not mapped");
+    return attr;
+  }
 
   /// The current block being interpreter. The interpreter exits when the block
   /// is null. in which case the required invariant is that the stack frame is
@@ -409,10 +484,6 @@ private:
   /// The return values of the top frame of the interpreter. These are set when
   /// the interpreter is exiting from the entry function.
   SmallVector<Attribute> exitValues;
-
-  /// This map implements named global values. Named global values represent a
-  /// mechanism for storing SSA value captures at compile time.
-  DenseMap<StringAttr, Attribute> namedGlobals;
 };
 
 } // namespace M

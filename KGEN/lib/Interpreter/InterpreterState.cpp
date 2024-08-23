@@ -135,8 +135,7 @@ InterpreterState::MemoryTable::getBlob(int64_t addr) {
 ErrorOr<int64_t> InterpreterState::allocateStackMemory(size_t size,
                                                        size_t align) {
   // Track the additional stack allocation on the current frame if there is one.
-  if (stackIdx)
-    ++getCurrentFrame().numStackAllocs;
+  notifyAllocationOnFrame(/*isSymbolic=*/false);
 
   ErrorOr<MemoryBlob &> blob =
       getTable(MemoryKind::Stack).addBlob(size, align, /*hdl=*/{});
@@ -331,8 +330,7 @@ uint64_t InterpreterState::allocateSymbolicMemory(TypedAttr init) {
   uint64_t result = symbolicMemory.size();
   symbolicMemory.push_back(init);
   // Track the allocation on the current frame if there is one.
-  if (stackIdx)
-    ++getCurrentFrame().numSymbolicAllocs;
+  notifyAllocationOnFrame(/*isSymbolic=*/true);
   return result;
 }
 
@@ -582,64 +580,6 @@ ErrorOr<PointerAttr> InterpreterState::allocateInternalStackFor(Type type,
 //===----------------------------------------------------------------------===//
 // Interpreter Implementation
 
-/// Report an error with folding an operation.
-static ErrorTree reportFoldError(Operation *op, ArrayRef<Attribute> operands,
-                                 const Twine &prefix,
-                                 const Twine &suffix = "") {
-  std::string note;
-  llvm::raw_string_ostream os(note);
-  os << prefix << op->getName();
-  if (!op->getAttrs().empty()) {
-    os << '{';
-    llvm::interleaveComma(op->getAttrs(), os, [&](const NamedAttribute &attr) {
-      os << attr.getName().getValue() << ": " << attr.getValue();
-    });
-    os << '}';
-  }
-  os << '(';
-  llvm::interleaveComma(operands, os);
-  os << ')' << suffix;
-  return {op->getLoc(), Error(os.str())};
-}
-
-/// Interpret a generic operation by trying to use its operation folder.
-static ErrorTreeOrSuccess interpretOpWithFolder(Operation *op,
-                                                ArrayRef<Attribute> operands,
-                                                InterpreterState &state) {
-  SmallVector<OpFoldResult> results;
-  if (failed(op->fold(operands, results)))
-    return reportFoldError(op, operands, "failed to fold operation ");
-  for (auto [result, output] : llvm::zip(results, op->getResults())) {
-    if (auto value = llvm::dyn_cast<Attribute>(result))
-      state.mapOrOverwrite(output, value);
-    else
-      state.mapOrOverwrite(output, state.lookupValue(result.get<Value>()));
-  }
-  return success();
-}
-
-void InterpreterState::reset() {
-  block = nullptr;
-  pc = Block::iterator();
-  stackIdx = 0;
-  for (MemoryTable &table : memory)
-    table.reset();
-}
-
-ErrorTree InterpreterState::addStackTrace(ErrorTree error) {
-  for (const StackFrame &frame :
-       llvm::reverse(ArrayRef(stack).take_front(stackIdx))) {
-    StringRef funcName = cast<mlir::SymbolOpInterface>(frame.func).getName();
-    error = ErrorTree(frame.func->getLoc(),
-                      Error("failed to interpret function @" + funcName),
-                      std::move(error));
-    if (frame.origin)
-      error = ErrorTree(frame.origin->getLoc(),
-                        Error("failed to evaluate call"), std::move(error));
-  }
-  return error;
-}
-
 ErrorTreeOr<SmallVector<Attribute>>
 InterpreterState::executeRegion(Region &region, ArrayRef<Attribute> arguments) {
   // Internalize memory inside function arguments.
@@ -728,9 +668,61 @@ ErrorTreeOr<TypedAttr> InterpreterState::executeRegionWithResultSlot(
   return value;
 }
 
+//===----------------------------------------------------------------------===//
+// IRInterpreter
+//===----------------------------------------------------------------------===//
+
+ErrorTree IRInterpreter::addStackTrace(ErrorTree error) {
+  for (const StackFrame &frame :
+       llvm::reverse(ArrayRef(stack).take_front(stackIdx))) {
+    StringRef funcName = cast<mlir::SymbolOpInterface>(frame.func).getName();
+    error = ErrorTree(frame.func->getLoc(),
+                      Error("failed to interpret function @" + funcName),
+                      std::move(error));
+    if (frame.origin)
+      error = ErrorTree(frame.origin->getLoc(),
+                        Error("failed to evaluate call"), std::move(error));
+  }
+  return error;
+}
+
+/// Report an error with folding an operation.
+static ErrorTree reportFoldError(Operation *op, ArrayRef<Attribute> operands,
+                                 const Twine &prefix,
+                                 const Twine &suffix = "") {
+  std::string note;
+  llvm::raw_string_ostream os(note);
+  os << prefix << op->getName();
+  if (!op->getAttrs().empty()) {
+    os << '{';
+    llvm::interleaveComma(op->getAttrs(), os, [&](const NamedAttribute &attr) {
+      os << attr.getName().getValue() << ": " << attr.getValue();
+    });
+    os << '}';
+  }
+  os << '(';
+  llvm::interleaveComma(operands, os);
+  os << ')' << suffix;
+  return {op->getLoc(), Error(os.str())};
+}
+
+ErrorTreeOrSuccess
+IRInterpreter::interpretOpWithFolder(Operation *op,
+                                     ArrayRef<Attribute> operands) {
+  SmallVector<OpFoldResult> results;
+  if (failed(op->fold(operands, results)))
+    return reportFoldError(op, operands, "failed to fold operation ");
+  for (auto [result, output] : llvm::zip(results, op->getResults())) {
+    if (auto value = llvm::dyn_cast<Attribute>(result))
+      mapOrOverwrite(output, value);
+    else
+      mapOrOverwrite(output, lookupValue(result.get<Value>()));
+  }
+  return success();
+}
+
 ErrorTreeOr<SmallVector<Attribute>>
-InterpreterState::interpretFunction(Region &body,
-                                    ArrayRef<Attribute> arguments) {
+IRInterpreter::interpretFunction(Region &body, ArrayRef<Attribute> arguments) {
   callFunctionBody(body, arguments);
 
   SmallVector<Attribute> operands;
@@ -755,7 +747,7 @@ InterpreterState::interpretFunction(Region &body,
 
       // Otherwise, try to use the operation folder.
     } else {
-      ErrorTreeOrSuccess result = interpretOpWithFolder(&*pc, operands, *this);
+      ErrorTreeOrSuccess result = interpretOpWithFolder(&*pc, operands);
       if (result.isError())
         return result.takeError();
     }
@@ -769,7 +761,7 @@ InterpreterState::interpretFunction(Region &body,
   return std::move(exitValues);
 }
 
-Operation *InterpreterState::getOrigin(size_t depth) {
+Operation *IRInterpreter::getOrigin(size_t depth) {
   if (depth >= stack.size())
     return nullptr;
   return stack[stackIdx - 1 - depth].origin;

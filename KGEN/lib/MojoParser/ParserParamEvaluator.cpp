@@ -20,12 +20,12 @@ using namespace LIT;
 //===----------------------------------------------------------------------===//
 
 namespace {
-/// This class is an implementation of InterpreterState that knows about parser
+/// This class is an implementation of IRInterpreter that knows about parser
 /// state for function lookup.
-class ParserInterpreter : public InterpreterState {
+class ParserInterpreter : public IRInterpreter {
 public:
   ParserInterpreter(DeclResolver &resolver)
-      : InterpreterState(resolver.getContext()), resolver(resolver) {}
+      : IRInterpreter(resolver.getContext()), resolver(resolver) {}
 
   /// Lookup the body of the referenced function using the DeclResolver.
   ErrorOr<Region *> lookupFunctionBody(SymbolRefAttr symbol) override;

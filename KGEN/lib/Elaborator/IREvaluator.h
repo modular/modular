@@ -31,13 +31,13 @@ struct ExpansionGraph;
 /// to concretize parameter expressions and compute symbolic parameter
 /// expressions, such as `apply` on a symbol constant or `get_sizeof` and
 /// `get_alignof` a decl type.
-class IREvaluator : public ParameterEvaluator, public InterpreterState {
+class IREvaluator : public ParameterEvaluator, public IRInterpreter {
 public:
   /// Construct the IR evaluator with a symbol table for evaluating symbolic
   /// expressions.
   IREvaluator(Elaborator &elaborator, ImplNode *parent);
   IREvaluator(const IREvaluator &other)
-      : ParameterEvaluator(other), InterpreterState(other.getTarget()),
+      : ParameterEvaluator(other), IRInterpreter(other.getTarget()),
         elaborator(other.elaborator), parent(other.parent) {}
 
   /// Evaluate symbolic expressions using the symbol table.
