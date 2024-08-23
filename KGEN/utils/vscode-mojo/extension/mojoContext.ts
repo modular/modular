@@ -12,7 +12,7 @@ import { MojoDecoratorContext } from './decorations';
 import { registerFormatter } from './formatter';
 import { LoggingService } from './logging';
 import { MojoLSPContext } from './lsp/lsp';
-import { MojoSDKManager } from './sdk/sdk';
+import { MojoSDKManager } from './sdk/sdkManager';
 import { MojoTestContext } from './testing/testing';
 import { DisposableContext } from './utils/disposableContext';
 import { RpcServer } from './server/RpcServer';
