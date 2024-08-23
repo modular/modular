@@ -74,7 +74,6 @@ struct BuildContext {
 static void addSuspensionPoint(SuspendOp suspend, Block *currentBlock,
                                int32_t suspensionPointID,
                                BuildContext &buildContext) {
-  LLVMFuncOp func = cast<LLVMFuncOp>(currentBlock->getParent()->getParentOp());
   buildContext.builder.setInsertionPoint(suspend);
   // Move operations from suspend region. They represent code to execute after
   // update state but before return.
