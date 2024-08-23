@@ -5,14 +5,9 @@
 # ===----------------------------------------------------------------------=== #
 """Complex ops."""
 
-from max import _graph, mlir
-from max.dtype import DType
-from max.mlir.dialects import mo, rmo
-
-from ..graph import Graph
-from ..graph_value import GraphValue, ValueLike, ops
-from ..type import Dim, DimLike, ShapeLike, StaticDim
-from .casting import reshape
+from ..graph_value import GraphValue, ValueLike
+from ..type import StaticDim
+from .reshape import reshape
 
 
 def as_interleaved_complex(x: ValueLike) -> GraphValue:
@@ -24,4 +19,4 @@ def as_interleaved_complex(x: ValueLike) -> GraphValue:
     if last.dim % 2 != 0:
         raise ValueError("The last dimension must be divisible by 2.")
     new_shape = shape[:-1] + [last.dim // 2, 2]
-    return ops.reshape(g, new_shape)
+    return reshape(g, new_shape)

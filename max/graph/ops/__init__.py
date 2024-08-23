@@ -20,16 +20,8 @@ convenience methods such as
 [`swapaxes()`](/max/api/python/graph/graph_value/GraphValue#swapaxes).
 """
 
-from .casting import (
-    broadcast_to,
-    cast,
-    rebind,
-    reshape,
-    shape_to_tensor,
-    squeeze,
-    transpose,
-    unsqueeze,
-)
+from .broadcast_to import broadcast_to
+from .cast import cast
 from .complex import as_interleaved_complex
 from .constant import constant, scalar
 from .custom_ops import custom
@@ -37,5 +29,11 @@ from .debug import print
 from .elementwise import *
 from .linalg import band_part, layer_norm, matmul
 from .quantized_ops import dequantize, qmatmul
+from .rebind import rebind
 from .reduction import mean
+from .reshape import reshape
+from .shape_to_tensor import shape_to_tensor
 from .slicing import concat, gather, select, slice_tensor, stack
+from .squeeze import squeeze
+from .transpose import transpose
+from .unsqueeze import unsqueeze

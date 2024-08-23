@@ -27,7 +27,7 @@ from .. import ops
 from ..graph import Graph
 from ..graph_value import GraphValue, ValueLike
 from ..type import Dim, DimLike, Shape, StaticDim, TensorType
-from .casting import unsqueeze
+from .unsqueeze import unsqueeze
 from .constant import scalar
 
 
