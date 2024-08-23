@@ -23,17 +23,21 @@ convenience methods such as
 from .broadcast_to import broadcast_to
 from .cast import cast
 from .complex import as_interleaved_complex
+from .concat import concat
 from .constant import constant, scalar
 from .custom_ops import custom
 from .debug import print
 from .elementwise import *
+from .gather import gather
 from .linalg import band_part, layer_norm, matmul
 from .quantized_ops import dequantize, qmatmul
 from .rebind import rebind
 from .reduction import mean
 from .reshape import reshape
+from .select import select
 from .shape_to_tensor import shape_to_tensor
-from .slicing import concat, gather, select, slice_tensor, stack
+from .slice_tensor import slice_tensor
 from .squeeze import squeeze
+from .stack import stack
 from .transpose import transpose
 from .unsqueeze import unsqueeze
