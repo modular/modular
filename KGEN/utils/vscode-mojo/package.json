@@ -29,7 +29,8 @@
     "watch": "tsc -b -watch ./",
     "package": "vsce package --out ./out/vscode-mojo.vsix",
     "format": "npx prettier . --write --ignore-path .gitignore",
-    "publish": "vsce publish"
+    "publish": "vsce publish",
+    "test": "npm run vscode:prepublish && vscode-test"
   },
   "devDependencies": {
     "@types/ini": "~1.3.31",
@@ -37,6 +38,8 @@
     "@types/node": "^18.11.18",
     "@types/shell-escape": "0.2.0",
     "@types/vscode": "^1.85.0",
+    "@vscode/test-cli": "^0.0.10",
+    "@vscode/test-electron": "^2.4.1",
     "@vscode/vsce": "^2.19.0",
     "prettier": "^3.3.3",
     "prettier-plugin-curly": "^0.2.1",
@@ -45,6 +48,7 @@
   "dependencies": {
     "chokidar": "^3.6.0",
     "ini": "4.1.1",
+    "rxjs": "7.8.1",
     "shell-escape": "0.2.0",
     "string-argv": "0.3.2",
     "vscode-languageclient": "^9.0.1",
