@@ -1271,8 +1271,11 @@ ElaborationState Elaborator::specializeGenerator(ImplNode *inode,
     // intra-node parallelism) while correctly handling recursion.
     if (addWaiter) {
       if (genNode->state.addWaiter()) {
-        inode->otherDeps.emplace_back(from, genNode);
-        genNode->andThenSync([inode, this] { scheduleImplNode(inode); });
+        inode->blocker = std::make_pair(from, genNode);
+        genNode->andThenSync([inode, this] {
+          inode->blocker.reset();
+          scheduleImplNode(inode);
+        });
         return ElaborationState::skipNode();
       }
       // Raced with node completion.
@@ -1418,8 +1421,11 @@ ElaborationState Elaborator::specializeGenerator(ImplNode *inode,
   if (addWaiter) {
     [[maybe_unused]] bool added = genNode->state.addWaiter();
     assert(added);
-    inode->otherDeps.emplace_back(from, genNode);
-    genNode->andThenSync([inode, this] { scheduleImplNode(inode); });
+    inode->blocker = std::make_pair(from, genNode);
+    genNode->andThenSync([inode, this] {
+      inode->blocker.reset();
+      scheduleImplNode(inode);
+    });
   }
   g.numWorkItems.fetch_add(1);
   scheduleImplNode(newFuncNode);
@@ -1441,7 +1447,7 @@ struct GraphEdge {
   /// In the graph edge, this ParamNode represents the caller node.
   ParamNode *pnode;
   /// This is the index into the concatenated range over
-  /// `[dependencies, otherDeps]` pointing to the callee ParamNode.
+  /// `[*dependencies, blocker]` pointing to the callee ParamNode.
   size_t depIdx;
 
   /// This function returns the callee ParamNode by indexing into the
@@ -1450,7 +1456,7 @@ struct GraphEdge {
     auto &inode = *pnode->impl;
     if (depIdx < inode.dependencies.size())
       return inode.dependencies[depIdx].second;
-    return inode.otherDeps[depIdx - inode.dependencies.size()].second;
+    return inode.blocker->second;
   }
   /// Return the location on the callee side representing where the edge
   /// originates from, to be used for diagnostic reporting.
@@ -1458,11 +1464,10 @@ struct GraphEdge {
     auto &inode = *pnode->impl;
     if (depIdx < inode.dependencies.size())
       return inode.dependencies[depIdx].first;
-    return inode.otherDeps[depIdx - inode.dependencies.size()].first;
+    return inode.blocker->first;
   }
-  /// Return true if this edge is an interpreter edge. We know it's an
-  /// interpreter edge if it is in `otherDeps` instead of `dependencies`.
-  bool isInterpreterEdge() const {
+  /// Return true if this edge is a blocker/interpreter edge.
+  bool isBlockerEdge() const {
     auto &inode = *pnode->impl;
     return depIdx >= inode.dependencies.size();
   }
@@ -1485,7 +1490,7 @@ struct GraphEdge {
   GraphEdge end() const {
     ParamNode *next = getPointee();
     ImplNode &inode = *next->impl;
-    return {next, inode.dependencies.size() + inode.otherDeps.size()};
+    return {next, inode.dependencies.size() + inode.blocker.has_value()};
   }
 
   /// GraphEdge is its own iterator.
@@ -1512,13 +1517,13 @@ struct PartialExpansionGraph {
     virtualRoot.impl = std::make_unique<ImplNode>(
         /*func=*/nullptr, &virtualRoot, ParameterUseDefGraph(&unused), "");
     for (ParamNode *root : roots)
-      virtualRoot.impl->otherDeps.emplace_back(root->gen.getLoc(), root);
+      virtualRoot.impl->dependencies.emplace_back(root->gen.getLoc(), root);
 
     // The base node just has an edge to the virtual root.
     baseNode.impl = std::make_unique<ImplNode>(
         /*func=*/nullptr, &baseNode, ParameterUseDefGraph(&unused), "");
-    baseNode.impl->otherDeps.emplace_back(roots.front()->gen.getLoc(),
-                                          &virtualRoot);
+    baseNode.impl->dependencies.emplace_back(roots.front()->gen.getLoc(),
+                                             &virtualRoot);
   }
 
   /// Dummy region needed by the ParameterUseDefGraph constructor.
@@ -1625,7 +1630,7 @@ bool Elaborator::diagnoseAndBreakRecursion(unsigned generation,
       inSCC.insert(edge);
       sccNodes.insert(edge.pnode);
       // Check if we have an invalid edge in the SCC.
-      if (edge.isInterpreterEdge())
+      if (edge.isBlockerEdge())
         badEdge = edge;
     }
     // If we found an invalid edge, diagnose and set an error. Mark the node as
