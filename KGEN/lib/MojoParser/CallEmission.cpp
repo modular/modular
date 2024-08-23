@@ -1098,6 +1098,51 @@ CValue ExprEmitter::emitConstructorCall(ASTType type,
   return callee.emitCall(std::move(callOperands), dest, *this);
 }
 
+CValue ExprEmitter::emitCustomOpCall(ASTType type, StructDeclOp structDecl,
+                                     CallOperands &&callOperands,
+                                     const ExprNode *callNode,
+                                     ValueDest &dest) {
+  // Custom op calls are always of TypeCall syntax.
+  auto syntax = CallSyntax::kTypeCall;
+
+  // Ensure that all arguments are positional.
+  if (callOperands.getNumKwOperands() != 0) {
+    for (auto &value : callOperands.values) {
+      if (value.keyword) {
+        emitError(value.expr->getLoc(),
+                  "MLIR operators only support positional arguments");
+        return {};
+      }
+    }
+  }
+
+  // If the dest type is invalid, then an error has already been reported.
+  if (type.isTypeCheckErrorType())
+    return {};
+
+  // Check the `impl` method of the class, which we use for type checking.
+  auto overloadCallee =
+      OverloadSet::lookup(getScopeInfo(), type, "impl", callNode, syntax);
+  shared.notifyListenerOnCall(overloadCallee.fnDecls, callNode->getRangeEnd(),
+                              syntax, callOperands);
+  if (overloadCallee.isErroneous())
+    return {};
+
+  // Check the direct callees to see if they can be unambiguously resolved
+  // with the bindings list and specified arguments.
+  PValue callee =
+      overloadCallee.filterOverloadSet(callOperands,
+                                       /*allowImplicitConversions=*/true,
+                                       /*emitDiagnosticOnFailure=*/true, *this);
+  if (!callee) {
+    dest.resetForError();
+    return {};
+  }
+
+  return emitCallUnchecked(callee, callOperands, dest, syntax, callNode,
+                           structDecl.getCustomOpNameAttr(), type);
+}
+
 //===----------------------------------------------------------------------===//
 // Type conversion helpers.
 

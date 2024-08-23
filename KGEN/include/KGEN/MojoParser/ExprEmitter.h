@@ -405,6 +405,11 @@ public:
                              ValueDest &dest,
                              bool allowImplicitConversion = true);
 
+  /// Emit a call to a custom op, given the custom op implementation class.
+  CValue emitCustomOpCall(ASTType type, StructDeclOp structDecl,
+                          CallOperands &&callOperands, const ExprNode *callNode,
+                          ValueDest &dest);
+
   //===--------------------------------------------------------------------===//
   // Type conversion helpers.
 
@@ -552,9 +557,13 @@ public:
 
   /// Internal implementation of call emission, use emitCall/emitIndirectCall
   /// or higher level wrappers instead.
+  /// In case customOpName is provided, emit a custom MLIR operation instead
+  /// with the given name for the given custom op definition struct type.
   CValue emitCallUnchecked(RValue callee, const CallOperands &operands,
                            ValueDest &dest, CallSyntax syntax,
-                           const ExprNode *callExpr);
+                           const ExprNode *callExpr,
+                           StringAttr customOpName = {},
+                           ASTType customOpStructType = {});
 };
 
 class CallEmitter {

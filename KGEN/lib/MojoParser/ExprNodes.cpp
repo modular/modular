@@ -1705,13 +1705,19 @@ AnyValue CallNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   }
 
   // If the callee is a type value (as in `T()` or `T[123]()`), then this is an
-  // invocation of the initializer for the type.
+  // invocation of the initializer for the type, or a call to a custom op.
   if (ASTType calledType = calleeVal.getIfTypeValue()) {
-    if (!calledType.getDecl(emitter.shared)) {
+    auto *calleeDecl = calledType.getDecl(emitter.shared);
+    if (!calleeDecl) {
       emitter.emitError(getLoc(), "cannot use initializer syntax on MLIR type ")
           << calledType << callee->getRange();
       return {};
     }
+
+    auto structDecl = dyn_cast<StructDeclOp>(calleeDecl);
+    if (structDecl && structDecl.getCustomOpName())
+      return emitter.emitCustomOpCall(calledType, structDecl,
+                                      std::move(operandsList), this, dest);
 
     // Check to see if we can invoke an __init__ method to convert it.
     return emitter.emitConstructorCall(calledType, std::move(operandsList),
