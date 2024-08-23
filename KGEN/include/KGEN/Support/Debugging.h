@@ -31,7 +31,7 @@ void waitForDebuggerToAttach();
 ///     do something else...
 ///   }
 ///
-/// This uses `mojo debug --rpc` under the hood.
+/// This uses `mojo debug --vscode` under the hood.
 ///
 /// ```
 void attachToNewRemoteDebugSession();

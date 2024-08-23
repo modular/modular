@@ -127,7 +127,8 @@ static int debug(const State &state) {
     );
   }
 
-  bool useRpc = parsedArgs.hasArg(options::OPT_rpc);
+  bool useRpc = parsedArgs.hasArg(options::OPT_rpc) ||
+                parsedArgs.hasArg(options::OPT_vscode);
 
   std::vector<int> rpcPorts;
   if (parsedArgs.hasArg(options::OPT_port)) {
@@ -236,7 +237,7 @@ static int debug(const State &state) {
     }
   }
 
-  for (auto rpcArg : parsedArgs.filtered(options::OPT_RPCOptionGroup))
+  for (auto rpcArg : parsedArgs.filtered(options::OPT_DebugServerOptionGroup))
     return state.reportError(
         Twine("unexpected option '", rpcArg->getSpelling()) + "'");
 

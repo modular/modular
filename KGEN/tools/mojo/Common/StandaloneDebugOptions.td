@@ -27,18 +27,21 @@ defm xdebugger: CommandOption<["--", "-"], "X",
   "specified multiple times. It is ignored when using the RPC mode.">>;
 
 //===----------------------------------------------------------------------===//
-// RPC Options
+// Debug Server Options
 //===----------------------------------------------------------------------===//
 
-def RPCOptionGroup : OptionGroup<"RPC debug server options">, Index<12>;
+def DebugServerOptionGroup : OptionGroup<"Debug server options">, Index<12>;
+
+def vscode: Flag<["--", "-"], "vscode">,
+  Group<DebugServerOptionGroup>, Index<1>,
+  HelpText<"Launches the debug session on VS Code via the Mojo extension.">;
 
 def rpc: Flag<["--", "-"], "rpc">,
-  Group<RPCOptionGroup>, Index<1>,
-  HelpText<"Launches the debug session in the external editor that has an "
-  "active RPC debug server.">;
+  Group<DebugServerOptionGroup>, Index<1>,
+  HelpText<"Alias for --vscode.">;
 
 defm terminal: CommandOptionWithValues<
-          ["--"], "terminal", RPCOptionGroup, Index<2>,
+          ["--"], "terminal", DebugServerOptionGroup, Index<2>,
           MetaVarName<"TERMINAL">,
           HelpText<"The type of terminal to use when starting a launch debug "
                    "session.\n\n"
@@ -50,7 +53,7 @@ defm terminal: CommandOptionWithValues<
           Values<"console,integrated">>;
 
 defm port: CommandOption<["--", "-"], "port",
-  RPCOptionGroup, Index<3>, MetaVarName<"PORT">,
+  DebugServerOptionGroup, Index<3>, MetaVarName<"PORT">,
   HelpText<"Uses the given PORT to communicate with the RPC debug server. "
   "Defaults to trying all ports from 12355 to 12364 inclusive.">>;
 

@@ -51,4 +51,6 @@ def TestRunOptionGroup : OptionGroup<"Test run options">, Index<1>;
 
 def debug : Flag<["--"], "debug">,
   Group<TestRunOptionGroup>, Index<0>,
-  HelpText<"Launch a debugger session with `mojo debug`. This is not supported for docstring tests. Most debug flags are supported, including `--rpc`.">;
+  HelpText<"Launch a debugger session with `mojo debug`. This is not supported "
+           "for docstring tests. Most debug flags are supported, including "
+           "`--vscode`.">;

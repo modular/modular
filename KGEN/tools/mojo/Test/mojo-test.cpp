@@ -440,8 +440,9 @@ static int test(const State &subcommandState) {
       llvm::errs() << "WARNING: Doctests were discovered, but will not be "
                       "executed when `--debug` is passed.\n";
 
-    std::vector<std::string> debugOptions = extractOptionsAndValues(
-        state, options::OPT_DebuggerOptionGroup, options::OPT_RPCOptionGroup);
+    std::vector<std::string> debugOptions =
+        extractOptionsAndValues(state, options::OPT_DebuggerOptionGroup,
+                                options::OPT_DebugServerOptionGroup);
     ErrorOrSuccess debugResult =
         launchDebug(debugOptions, entrypointPath, unitTests, filterRegex,
                     args.hasArg(options::OPT_keep_entrypoint));
