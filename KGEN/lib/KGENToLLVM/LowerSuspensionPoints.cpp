@@ -43,15 +43,6 @@ struct LowerSuspensionPointsPass
 struct BuildContext {
   BuildContext(LLVMBuilder &builder, Type continuationType)
       : builder(builder), continuationType(continuationType) {}
-  void emitUpdateState(Value continuation, int32_t suspensionPointID) {
-    GEPOp slot = builder.create<GEPOp>(
-        /*resultType=*/LLVMPointerType::get(builder.getContext()),
-        /*elementType=*/continuationType,
-        /*basePtr=*/continuation, ArrayRef<GEPArg>({0, State}));
-    Value susID = builder.create<ConstantOp>(
-        IntegerType::get(builder.getContext(), 32), suspensionPointID);
-    builder.create<StoreOp>(susID, slot);
-  }
 
   Value getContinuationField(Value operand, AsyncContinuationField fieldIndex) {
     Type type;
@@ -84,9 +75,7 @@ static void addSuspensionPoint(SuspendOp suspend, Block *currentBlock,
                                int32_t suspensionPointID,
                                BuildContext &buildContext) {
   LLVMFuncOp func = cast<LLVMFuncOp>(currentBlock->getParent()->getParentOp());
-  Value continuation = func.getBody().getArgument(0);
   buildContext.builder.setInsertionPoint(suspend);
-  buildContext.emitUpdateState(continuation, suspensionPointID);
   // Move operations from suspend region. They represent code to execute after
   // update state but before return.
   Block *susBlock = &suspend.getRegion().front();

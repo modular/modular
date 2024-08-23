@@ -97,6 +97,9 @@ kgen.func @coroutine1(%arg0: i1, %arg1: index, %arg2: index, %arg3: index) async
     // CHECK-NEXT: [[V24:%.*]] = kgen.struct.gep %arg0[[[#FRAME8 + 2]]]
     // CHECK-NEXT: [[V25:%.*]] = pop.load [[V24]] : !kgen.pointer<i1>
     // CHECK-NEXT: hlcf.if [[V25]] {
+    // CHECK-NEXT:   kgen.param.constant
+    // CHECK-NEXT:   kgen.struct.gep
+    // CHECK-NEXT:   pop.store
     // CHECK-NEXT:   co.suspend {
     // CHECK-NEXT:     co.suspend.end
     // CHECK-NEXT:   }
@@ -164,6 +167,9 @@ kgen.func @coroutine5(%arg0: i1, %arg1: index, %arg3: index) async -> index {
        // CHECK-NEXT: [[V17:%.*]] = kgen.struct.gep %arg0[[[#FRAME8 + 1]]]
        // CHECK-NEXT: [[V18:%.*]] = pop.load [[V17]] : !kgen.pointer<index>
        // CHECK-NEXT: [[V19:%.*]] = kgen.call @bar([[NOT_IN_FRAME]], [[V18]]) : (index, index) -> index
+       // CHECK-NEXT: kgen.param.constant
+       // CHECK-NEXT: kgen.struct.gep
+       // CHECK-NEXT: pop.store
        // CHECK-NEXT: co.suspend
        %result4 = kgen.call @bar(%result, %arg3): (index,index) -> index
        co.suspend (%hdl) {
@@ -212,6 +218,9 @@ kgen.func @coroutine3(%arg0: i1, %arg1: index, %arg3: index) async -> index {
     // CHECK-NEXT: [[V17:%.*]] = kgen.call @bar([[NIF]], [[V16]]) : (index, index) -> index
     // CHECK-NEXT: [[V18:%.*]] = kgen.struct.gep %arg0[[[#FRAME11 - 4]]]
     // CHECK-NEXT: pop.store [[V17]], [[V18]] : !kgen.pointer<index>
+    // CHECK-NEXT: kgen.param.constant
+    // CHECK-NEXT: kgen.struct.gep
+    // CHECK-NEXT: pop.store
     // CHECK-NEXT: co.suspend {
     // CHECK-NEXT:   co.suspend.end
     // CHECK-NEXT: }
@@ -220,6 +229,9 @@ kgen.func @coroutine3(%arg0: i1, %arg1: index, %arg3: index) async -> index {
     // CHECK-NEXT: [[V21:%.*]] = kgen.struct.gep %arg0[[[#FRAME11 - 1]]]
     // CHECK-NEXT: [[V22:%.*]] = pop.load [[V21]] : !kgen.pointer<index>
     // CHECK-NEXT: [[V23:%.*]] = kgen.call @bar([[V20]], [[V22]]) : (index, index) -> index
+    // CHECK-NEXT: kgen.param.constant
+    // CHECK-NEXT: kgen.struct.gep
+    // CHECK-NEXT: pop.store
     // CHECK-NEXT: co.suspend {
     // CHECK-NEXT:   co.suspend.end
     // CHECK-NEXT: }
@@ -270,6 +282,9 @@ kgen.func @coroutine_nested(%arg0: i1, %arg1: index, %arg3: index) async -> inde
          // CHECK-NEXT: hlcf.if [[V24]] {
          // CHECK-NEXT:   hlcf.yield
          // CHECK-NEXT: } else {
+         // CHECK-NEXT:   kgen.param.constant
+         // CHECK-NEXT:   kgen.struct.gep
+         // CHECK-NEXT:   pop.store
          // CHECK-NEXT:   co.suspend {
          // CHECK-NEXT:     co.suspend.end
          // CHECK-NEXT:   }
@@ -328,6 +343,9 @@ kgen.func @coroutine2(%arg0: i1, %arg1: index, %arg3: index) async -> index {
   // CHECK-NEXT: [[V2:%.*]] = kgen.call @foo(%idx3, [[V5]]) : (index, index) -> index
   // CHECK-NEXT: [[V7:%.*]] = kgen.struct.gep %arg0[[[#FRAME8 - 1]]]
   // CHECK-NEXT: pop.store [[V2]], [[V7]] : !kgen.pointer<index>
+  // CHECK-NEXT: kgen.param.constant
+  // CHECK-NEXT: kgen.struct.gep
+  // CHECK-NEXT: pop.store
   // CHECK-NEXT: co.suspend {
   // CHECK-NEXT:   [[V8:%.*]] = kgen.struct.gep %arg0[[[#FRAME8 + 1]]]
   // CHECK-NEXT:   [[V9:%.*]] = pop.load [[V8]]
@@ -365,6 +383,9 @@ kgen.func @coroutine_block_args3(%arg0: index) async -> index {
   // CHECK-NEXT:  %idx0 = index.constant 0
   // CHECK-NEXT:  [[V11:%.*]] = index.cmp slt(%arg1, %idx0)
   // CHECK-NEXT:  hlcf.if [[V11]] {
+  // CHECK-NEXT:    kgen.param.constant
+  // CHECK-NEXT:    kgen.struct.gep
+  // CHECK-NEXT:    pop.store
   // CHECK-NEXT:    co.suspend {
   // CHECK-NEXT:      co.suspend.end
   // CHECK-NEXT:    }
@@ -529,6 +550,9 @@ kgen.func @tryraise(%arg1: index, %arg2 : index) async -> index {
       // CHECK-NEXT: [[V9:%.*]] = kgen.call @foo([[V8]]) : (index) -> index
       // CHECK-NEXT: [[V10:%.*]] = kgen.struct.gep %arg0[[[#FRAME10 - 3]]]
       // CHECK-NEXT: pop.store [[V9]], [[V10]] : !kgen.pointer<index>
+      // CHECK-NEXT: kgen.param.constant
+      // CHECK-NEXT: kgen.struct.gep
+      // CHECK-NEXT: pop.store
       // CHECK-NEXT: co.suspend {
       // CHECK-NEXT:   co.suspend.end
       // CHECK-NEXT: }
@@ -548,6 +572,9 @@ kgen.func @tryraise(%arg1: index, %arg2 : index) async -> index {
     // CHECK:     } except (%arg1: index) {
     // CHECK-NEXT: [[V10:%.*]] = kgen.struct.gep %arg0[[[#FRAME10 - 2]]]
     // CHECK-NEXT: pop.store %arg1, [[V10]] : !kgen.pointer<index>
+    // CHECK-NEXT: kgen.param.constant
+    // CHECK-NEXT: kgen.struct.gep
+    // CHECK-NEXT: pop.store
     // CHECK-NEXT: co.suspend {
     // CHECK-NEXT: co.suspend.end
     // CHECK-NEXT: }
@@ -873,6 +900,9 @@ module attributes {M.target_info = #M.target<triple="", arch="", features="", da
 
 // CHECK-LABEL: kgen.func @in_frame_resume
 kgen.func @in_frame(%arg1: index, %arg2: index) async -> index {
+  // CHECK-NEXT: kgen.param.constant: i32 = <1>
+  // CHECK-NEXT: kgen.struct.gep
+  // CHECK-NEXT: pop.store
   // CHECK-NEXT: co.suspend {
   // CHECK-NEXT: co.suspend.end
   // CHECK-NEXT: }
@@ -885,6 +915,9 @@ kgen.func @in_frame(%arg1: index, %arg2: index) async -> index {
   // CHECK-NEXT: [[FRAME_SA:%.*]] = kgen.struct.gep %arg0[[[#FRAME8 - 1]]]
   // CHECK-NEXT: pop.store [[ARG]], [[FRAME_SA]]
   // CHECK-NEXT: kgen.call @use([[FRAME_SA]])
+  // CHECK-NEXT: kgen.param.constant: i32 = <2>
+  // CHECK-NEXT: kgen.struct.gep
+  // CHECK-NEXT: pop.store
   // CHECK-NEXT: co.suspend {
   // CHECK-NEXT:   co.suspend.end
   // CHECK-NEXT: }
@@ -905,6 +938,9 @@ kgen.func @in_frame(%arg1: index, %arg2: index) async -> index {
   // CHECK-NEXT: [[ARG1_SLOT:%.*]] = kgen.struct.gep %arg0[[[#FRAME8]]]
   // CHECK-NEXT: [[ARG1:%.*]] = pop.load [[ARG1_SLOT]]
   // CHECK-NEXT: pop.store [[ARG1]], [[FRAME_SA]] : !kgen.pointer<index>
+  // CHECK-NEXT: kgen.param.constant: i32 = <3>
+  // CHECK-NEXT: kgen.struct.gep
+  // CHECK-NEXT: pop.store
   // CHECK-NEXT: co.suspend {
   // CHECK-NEXT:   co.suspend.end
   // CHECK-NEXT: }
@@ -968,6 +1004,9 @@ kgen.func @in_frame_cf(%arg1: index, %arg2: index, %arg3: i1) async -> index {
     pop.store %arg1, %0 : !kgen.pointer<index>
     hlcf.yield
   }
+  // CHECK-NEXT: kgen.param.constant: i32 = <1>
+  // CHECK-NEXT: kgen.struct.gep
+  // CHECK-NEXT: pop.store
   // CHECK-NEXT: co.suspend
   // CHECK-NEXT: co.suspend.end
   // CHECK-NEXT: }
@@ -1013,12 +1052,18 @@ module attributes {M.target_info = #M.target<triple="", arch="", features="", da
 
 // CHECK-LABEL: kgen.func @not_in_frame_cf_resume
 kgen.func @not_in_frame_cf(%arg1: index, %arg2: index, %arg3: i1) async -> index {
+  // CHECK-NEXT: kgen.param.constant: i32 = <1>
+  // CHECK-NEXT: kgen.struct.gep
+  // CHECK-NEXT: pop.store
   // CHECK-NEXT: co.suspend {
   // CHECK-NEXT: co.suspend.end
   // CHECK-NEXT: }
   // CHECK-NEXT: [[ARG3_SLOT:%.*]] = kgen.struct.gep %arg0[[[#FRAME8:]]]
   // CHECK-NEXT: [[ARG3:%.*]] = pop.load [[ARG3_SLOT]] : !kgen.pointer<i1>
   // CHECK-NEXT: hlcf.if [[ARG3]] {
+  // CHECK-NEXT: kgen.param.constant: i32 = <2>
+  // CHECK-NEXT: kgen.struct.gep
+  // CHECK-NEXT: pop.store
   // CHECK-NEXT: co.suspend {
   // CHECK-NEXT:  co.suspend.end
   // CHECK-NEXT: }
@@ -1117,6 +1162,9 @@ kgen.func @not_in_frame(%arg1: index) async -> index {
 
 // CHECK-LABEL: kgen.func @multiple_lifetimes_frame_resume
 kgen.func @multiple_lifetimes_frame(%arg1: index, %arg2: i1) async -> index {
+  // CHECK-NEXT: kgen.param.constant: i32 = <1>
+  // CHECK-NEXT: kgen.struct.gep
+  // CHECK-NEXT: pop.store
   // CHECK-NEXT: co.suspend {
   // CHECK-NEXT:   co.suspend.end
   // CHECK-NEXT: }
@@ -1192,6 +1240,9 @@ kgen.func @coroutine(%arg0: i1) async -> index {
   // CHECK-NEXT: [[CAST:%.*]] = pop.pointer.bitcast [[SLOT]]
   // CHECK-NEXT: [[SLOT2:%.*]] = kgen.struct.gep [[CAST]][0] : <struct<((!kgen.pointer<none>) -> (), pointer<none>)>>
   // CHECK-NEXT: pop.store [[CALLBACK]], [[SLOT2]] : !kgen.pointer<(!kgen.pointer<none>) -> ()>
+  // CHECK-NEXT: kgen.param.constant: i32 = <1>
+  // CHECK-NEXT: kgen.struct.gep
+  // CHECK-NEXT: pop.store
   // CHECK-NEXT: co.suspend {
   %coro = co.invoke[(i1) async -> index: @coroutine1](%true)
   %callback = kgen.create_closure[(!kgen.pointer<none>) -> (): @callback]()
@@ -1235,6 +1286,9 @@ kgen.func @coroutine(%arg0: i1) async -> index {
   // CHECK: [[CORO:%.*]] = kgen.call @coroutine1_ramp(%true)
   // CHECK-NEXT: [[CORO_SLOT:%.*]] = kgen.struct.gep %arg0[[[#FRAME8:]]]
   // CHECK-NEXT: pop.store [[CORO]], [[CORO_SLOT]]
+  // CHECK-NEXT: kgen.param.constant: i32 = <1>
+  // CHECK-NEXT: kgen.struct.gep
+  // CHECK-NEXT: pop.store
   // CHECK-NEXT: co.suspend {
   // CHECK-NEXT: co.suspend.end
   // CHECK-NEXT: }
@@ -1306,6 +1360,9 @@ kgen.func @missing_markers(%arg1: index, %arg2: i1) async -> index {
   // CHECK:      [[INFRAME:%.*]] = kgen.struct.gep %arg0[[[#FRAME7 + 2]]]
   // CHECK-NEXT: [[V6:%.*]] = pop.load [[INFRAME]] : !kgen.pointer<index>
   // CHECK-NEXT: pop.store [[V6]], [[V2]] : !kgen.pointer<index>
+  // CHECK-NEXT: kgen.param.constant: i32 = <1>
+  // CHECK-NEXT: kgen.struct.gep
+  // CHECK-NEXT: pop.store
   // CHECK-NEXT: co.suspend {
   pop.store %arg1, %1 : !kgen.pointer<index>
   co.suspend (%hdl) {
@@ -1547,6 +1604,9 @@ kgen.func @coroutine(%arg0: i1) async -> index {
   %true = index.bool.constant true
   %coro = co.invoke[(i1) async -> index: @coroutine1](%true)
   // CHECK:      [[CORO:%.*]] = kgen.call @coroutine1_ramp(%true)
+  // CHECK-NEXT: kgen.param.constant: i32 = <1>
+  // CHECK-NEXT: kgen.struct.gep
+  // CHECK-NEXT: pop.store
   // CHECK-NEXT: co.suspend {
   // CHECK-NEXT:   [[RESUME_SLOT:%.*]] = kgen.struct.gep [[CORO]][[[#FRAME1:]]]
   // CHECK-NEXT:   [[TYPED_RESUME:%.*]] = pop.pointer.bitcast [[RESUME_SLOT]] : !kgen.pointer<pointer<none>> to !kgen.pointer<(!kgen.pointer<struct<(i32, pointer<none>, (!kgen.pointer<none>) -> (), pointer<none>, pointer<none>, pointer<none>)>>) -> ()>
@@ -2243,13 +2303,16 @@ module attributes {M.target_info = #M.target<triple="", arch="", features="", da
 // accesses a member that is in both cold and hot frames
 // CHECK-NEXT:  [[V5:%.*]] = kgen.struct.gep %arg0[7]
 // CHECK-NEXT:  pop.store [[V4]], [[V5]] : !kgen.pointer<index>
+// CHECK-NEXT:  kgen.param.constant: i32 = <1>
+// CHECK-NEXT:  kgen.struct.gep
+// CHECK-NEXT:  pop.store
 // CHECK-NEXT:  co.suspend {
 // CHECK-NEXT:  co.suspend.end
 // CHECK-NEXT:  }
 
 // The rest of the resume uses arg0, not the bitcasted version
 // CHECK-NEXT:  [[V6:%.*]] = kgen.struct.gep %arg0[7]
-// CHECK-NEXT:  [[V7:%.*]] = pop.load %6 : !kgen.pointer<index>
+// CHECK-NEXT:  [[V7:%.*]] = pop.load [[V6]] : !kgen.pointer<index>
 // CHECK-NEXT:  [[V8:%.*]] = kgen.struct.gep %arg0[6]
 // CHECK-NEXT:  [[V9:%.*]] = kgen.struct.gep [[V8]][0] : <struct<(index)>>
 // CHECK-NEXT:  pop.store [[V7]], [[V9]] : !kgen.pointer<index>

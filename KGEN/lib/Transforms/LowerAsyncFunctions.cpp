@@ -687,6 +687,17 @@ FuncOp LowerAsyncBuildContext::createColdResume(StringRef prefix, FuncOp funcOp,
   insertFrameLoadsStores(resumeFunction, coTypes, errorValue, memoryResultValue,
                          Temp::Cold,
                          /*loadFromFrame=*/true);
+
+  // Insert state updates.
+  int susId = 0;
+  Value continuation = resumeFunction.getBodyRegion().getArgument(0);
+  resumeFunction.walk([&](SuspendOp suspendOp) {
+    builder.setInsertionPoint(suspendOp);
+    Value newState =
+        builder.create<ParamConstantOp>(builder.getI32IntegerAttr(++susId));
+    Value stateSlot = builder.create<StructGEPOp>(continuation, State);
+    builder.create<StoreOp>(newState, stateSlot);
+  });
   return resumeFunction;
 }
 
@@ -904,6 +915,7 @@ FuncOp LowerAsyncBuildContext::createHotRamp(StringRef prefix, FuncOp original,
           builder.create<ParamConstantOp>(builder.getI32IntegerAttr(++susId));
       Value stateSlot = builder.create<StructGEPOp>(continuation, State);
       builder.create<StoreOp>(newState, stateSlot);
+
       Operation *current = &suspend.getBody().front().getOperations().front();
       while (current) {
         Operation *op = current;
@@ -1007,8 +1019,9 @@ Coroutine LowerAsyncBuildContext::createCoroutine(FuncOp originalAsyncFunc,
     resumeName = sharedTable.modify(
         [resumeFunction, it = originalAsyncFunc->getIterator()](
             SymbolTable &symtab) { return symtab.insert(resumeFunction, it); });
-    FuncOp hotRamp = createHotRamp(prefix, originalAsyncFunc, hotCoTypes,
-                                   resumeFunction, /*takeOriginal=*/false);
+    FuncOp hotRamp =
+        createHotRamp(prefix, originalAsyncFunc, hotCoTypes, resumeFunction,
+                      /*takeOriginal=*/false);
     populateHotResumeFrom(originalAsyncFunc, resumeFunction, hotCoTypes);
     Coroutine coro(resumeFunction, hotRamp, {},
                    hotCoTypes.getContinuationType());
