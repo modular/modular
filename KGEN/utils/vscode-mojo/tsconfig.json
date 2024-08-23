@@ -6,7 +6,8 @@
     "sourceMap": true,
     "strict": true,
     "noImplicitOverride": true,
-    "target": "es6"
+    "target": "es6",
+    "experimentalDecorators": true
   },
   "include": ["extension"],
   "exclude": ["node_modules", ".vscode-test"],

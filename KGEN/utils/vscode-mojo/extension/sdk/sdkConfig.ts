@@ -10,13 +10,57 @@ const execFile = util.promisify(require('child_process').execFile);
 
 import { LoggingService } from '../logging';
 import { MojoSDKVersion } from './sdkVersion';
-
+import { Memoize } from 'typescript-memoize';
 
 /**
  * This class represents a subset of the Modular config object used by extension
  * for interacting with mojo.
  */
 export class MojoSDKConfig {
+  /**
+   * A service that can be used to log message in the Mojo output channel.
+   */
+  private loggingService: LoggingService;
+
+  /**
+   * The version of the SDK.
+   */
+  readonly version: MojoSDKVersion;
+
+  /**
+   * The MODULAR_HOME path containing the SDK.
+   */
+  readonly modularHomePath: string;
+
+  /**
+   * The path to the mojo driver within the SDK installation.
+   */
+  readonly mojoDriverPath: string;
+
+  /**
+   * The path to the LLDB vscode debug adapter.
+   */
+  readonly mojoLLDBVSCodePath: string;
+
+  /**
+   * The path to the LLDB visualizers.
+   */
+  readonly mojoLLDBVisualizersPath: string;
+
+  /**
+   * The path the mojo language server within the SDK installation.
+   */
+  readonly mojoLanguageServerPath: string;
+
+  /**
+   * The path to the mojo LLDB plugin.
+   */
+  readonly mojoLLDBPluginPath: string;
+
+  /**
+   * The path to the LLDB binary.
+   */
+  readonly lldbPath: string;
   /**
    * Create a new MojoSDKConfig object from the given configuration.
    */
@@ -51,19 +95,6 @@ export class MojoSDKConfig {
       env.MODULAR_HOME = this.modularHomePath;
     }
     return env;
-  }
-
-  /**
-   * @returns true if and only if the LLDB binary in this SDK has a working
-   *     python scripting feature.
-   */
-  public lldbHasPythonScriptingSupport(): Promise<boolean> {
-    // We cache this check because it's not a no-op.
-    if (this.lldbHasPythonScriptingSupportResult == undefined) {
-      this.lldbHasPythonScriptingSupportResult =
-        this.doLLDBHasPythonScriptingSupport();
-    }
-    return this.lldbHasPythonScriptingSupportResult;
   }
 
   /**
@@ -120,12 +151,16 @@ export class MojoSDKConfig {
   }
 
   /**
-   * Actually determine whether python scripting is functional in LLDB. As there
-   * are many reasons why python scripting would fail (e.g. disabled in CMake,
+   * Determine whether python scripting is functional in LLDB. As there
+   * are many reasons why python scripting would fail (e.g. disabled in the build system,
    * wrong SDK installation, etc.), it's more effective to just execute a
    * minimal script to confirm it's operative.
+   *
+   * @returns true if and only if the LLDB binary in this SDK has a working
+   *     python scripting feature.
    */
-  private async doLLDBHasPythonScriptingSupport(): Promise<boolean> {
+  @Memoize()
+  public async lldbHasPythonScriptingSupport(): Promise<boolean> {
     try {
       let { stdout, stderr } = await execFile(this.lldbPath, [
         '-b',
@@ -142,7 +177,8 @@ export class MojoSDKConfig {
         return true;
       } else {
         this.loggingService.main.logInfo(
-          `Python scripting support in LLDB not found. The test script returned:\n${stdout
+          `Python scripting support in LLDB not found. The test script returned:\n${
+            stdout
           }\n${stderr}`
         );
       }
@@ -172,54 +208,4 @@ export class MojoSDKConfig {
     this.mojoLLDBPluginPath = rawConfig.lldb_plugin_path;
     this.lldbPath = rawConfig.lldb_path;
   }
-
-  /**
-   * A service that can be used to log message in the Mojo output channel.
-   */
-  private loggingService: LoggingService;
-
-  /**
-   * The version of the SDK.
-   */
-  version: MojoSDKVersion;
-
-  /**
-   * The MODULAR_HOME path containing the SDK.
-   */
-  modularHomePath: string = '';
-
-  /**
-   * The path to the mojo driver within the SDK installation.
-   */
-  mojoDriverPath: string = '';
-
-  /**
-   * The path to the LLDB vscode debug adapter.
-   */
-  mojoLLDBVSCodePath: string = '';
-
-  /**
-   * The path to the LLDB visualizers.
-   */
-  mojoLLDBVisualizersPath: string = '';
-
-  /**
-   * The path the mojo language server within the SDK installation.
-   */
-  mojoLanguageServerPath: string = '';
-
-  /**
-   * The path to the mojo LLDB plugin.
-   */
-  mojoLLDBPluginPath: string = '';
-
-  /**
-   * The path to the LLDB binary.
-   */
-  lldbPath: string = '';
-
-  /**
-   * A promise for if the LLDB binary has python scripting support.
-   */
-  private lldbHasPythonScriptingSupportResult?: Promise<boolean>;
 }
