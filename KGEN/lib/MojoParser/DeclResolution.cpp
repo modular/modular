@@ -1752,8 +1752,8 @@ struct StructBodyDecorators : public SharedStateUser {
       : SharedStateUser(resolver.shared), structOp(structOp),
         structDecl(structDecl), structFields(structFields) {}
 
-  LogicalResult processDecorator(ExprNode *decorator, LIT::FuncOp moveFunc,
-                                 LIT::FuncOp copyFunc);
+  LogicalResult processDecorator(ExprNode *decorator, StructDeclOp structOp,
+                                 LIT::FuncOp moveFunc, LIT::FuncOp copyFunc);
 
 private:
   /// Process the @value body decorator on structs.  This synthesizes the
@@ -1771,7 +1771,8 @@ private:
   /// Process the @op_implementation body decorator on structs.
   /// It adds a new operation in the IR that link the new op name with the
   /// relevant struct methods.
-  void processOpImplDecorator(ExprNode *decorator, StringRef opName);
+  void processOpImplDecorator(ExprNode *decorator, StructDeclOp structOp,
+                              StringRef opName);
 
   StructDeclOp structOp;
   ASTDecl &structDecl;
@@ -1893,6 +1894,7 @@ SymbolConstantAttr StructBodyDecorators::getSymbolForMethod(
 }
 
 void StructBodyDecorators::processOpImplDecorator(ExprNode *decorator,
+                                                  StructDeclOp structOp,
                                                   StringRef opName) {
   SMLoc decoratorLoc = decorator->getRangeStart();
   auto noImplMethodError = [this, decoratorLoc]() {
@@ -1910,10 +1912,12 @@ void StructBodyDecorators::processOpImplDecorator(ExprNode *decorator,
   // implementation.
   (void)shared.addCustomOpImpl(
       CustomOpImplAttr::get(opName, implSym, canonicalizeSym), decoratorLoc);
-  return;
+
+  structOp.setCustomOpName(StringAttr::get(getContext(), opName));
 }
 
 LogicalResult StructBodyDecorators::processDecorator(ExprNode *decorator,
+                                                     StructDeclOp structOp,
                                                      LIT::FuncOp moveFunc,
                                                      LIT::FuncOp copyFunc) {
   // @value decorator
@@ -1945,7 +1949,7 @@ LogicalResult StructBodyDecorators::processDecorator(ExprNode *decorator,
       structDecl.setErroneous();
       return success();
     }
-    processOpImplDecorator(decorator, strExpr->getValue());
+    processOpImplDecorator(decorator, structOp, strExpr->getValue());
     return success();
   }
   return failure();
@@ -2087,10 +2091,11 @@ ParseResult DeclResolver::resolveBody(StructDeclOp structOp, Lexer &lexer,
   StructBodyDecorators structDecorators(structOp, structDecl, *this,
                                         structFields);
   Decorators(structDecl, shared)
-      .applyBodyDecorators([&, moveFunc = moveFunc,
-                            copyFunc = copyFunc](ExprNode *decorator) {
-        return structDecorators.processDecorator(decorator, moveFunc, copyFunc);
-      });
+      .applyBodyDecorators(
+          [&, moveFunc = moveFunc, copyFunc = copyFunc](ExprNode *decorator) {
+            return structDecorators.processDecorator(decorator, structOp,
+                                                     moveFunc, copyFunc);
+          });
 
   if (structDecl.isErroneous())
     return success();

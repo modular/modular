@@ -11,24 +11,36 @@
 
 import _mlir
 
+
+# CHECK-LABEL: lit.struct.decl @CustomOpA
+# CHECK-SAME: customOpName = "custom.a"
 @op_implementation("custom.a")
 struct CustomOpA:
     @staticmethod
     fn impl(x: Int32, y: Int32) -> Int32:
         return x + y
 
+
+# CHECK-LABEL: lit.struct.decl @CustomOpC
+# CHECK-SAME: customOpName = "custom.c"
 @op_implementation("custom.c")
 struct CustomOpC:
     @staticmethod
     fn impl(x: Int32, y: Int32) -> Int32:
         return x + y
 
+
+# CHECK-LABEL: lit.struct.decl @CustomOpB
+# CHECK-SAME: customOpName = "custom.b"
 @op_implementation("custom.b")
 struct CustomOpB:
     @staticmethod
     fn impl(x: Int32, y: Int32) -> Int32:
         return x + y
 
+
+# CHECK-LABEL: lit.struct.decl @CustomOpWithCanonicalize
+# CHECK-SAME: customOpName = "custom.with_canonicalize"
 @op_implementation("custom.with_canonicalize")
 struct CustomOpWithCanonicalize:
     @staticmethod
@@ -39,11 +51,13 @@ struct CustomOpWithCanonicalize:
     fn canonicalize(x: _mlir.Operation):
         return
 
+
 fn main():
     var x: Int32 = 4
     var y: Int32 = 6
     var res = __mlir_op.`custom.a`[_type=Int32](x, y)
     print(res)
+
 
 # Check that the custom ops are registered with `custom.op_impls`
 

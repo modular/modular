@@ -375,6 +375,7 @@ def LIT_StructDeclOp : LITOp<"struct.decl", [
     OptionalAttr<LIT_DocStringAttr>:$docString,
     OptionalAttr<StrAttr>:$deprecationWarning,
     OptionalAttr<SourceNameAttr>:$sourceName,
+    OptionalAttr<StrAttr>:$customOpName,
     EnumProperty<"TypeConvention">:$convention
   );
   let regions = (region SizedRegion<1>:$fields);
