@@ -18,12 +18,7 @@ from memory import stack_allocation
 from utils.lock import BlockingScopedLock, BlockingSpinLock
 from utils.variant import Variant
 
-from ._compile import (
-    _compile_code,
-    _get_nvptx_fn_name,
-    _get_nvptx_target,
-    _to_sass,
-)
+from ._compile import _compile_code, _get_nvptx_fn_name, _get_nvptx_target
 from ._utils import (
     CudaHandle,
     _check_error,
@@ -278,7 +273,6 @@ struct Function[
         verbose: Bool = False,
         dump_ptx: Variant[Path, Bool] = False,
         dump_llvm: Variant[Path, Bool] = False,
-        dump_sass: Variant[Path, Bool] = False,
         max_registers: Optional[Int] = None,
         threads_per_block: Optional[Int] = None,
         cache_config: Optional[CacheConfig] = None,
@@ -288,7 +282,6 @@ struct Function[
             verbose=verbose,
             dump_ptx=dump_ptx,
             dump_llvm=dump_llvm,
-            dump_sass=dump_sass,
             max_registers=max_registers,
             threads_per_block=threads_per_block,
             cache_config=cache_config,
@@ -308,7 +301,6 @@ struct Function[
         verbose: Bool = False,
         dump_ptx: Variant[Path, Bool] = False,
         dump_llvm: Variant[Path, Bool] = False,
-        dump_sass: Variant[Path, Bool] = False,
         max_registers: Optional[Int] = None,
         threads_per_block: Optional[Int] = None,
         cache_config: Optional[CacheConfig] = None,
@@ -327,10 +319,8 @@ struct Function[
         self.cuda_dll = cuda_dll
         self.cuda_function_cache = cuda_function_cache
 
-        if _dump_q(dump_ptx) or _dump_q(dump_llvm) or _dump_q(dump_sass):
-            Self._dump_rep(
-                dump_ptx=dump_ptx, dump_llvm=dump_llvm, dump_sass=dump_sass
-            )
+        if _dump_q(dump_ptx) or _dump_q(dump_llvm):
+            Self._dump_rep(dump_ptx, dump_llvm)
 
         var info = Self._get_cached_function_info[func_type, func](
             device_context_ptr=device_context_ptr,
@@ -358,7 +348,6 @@ struct Function[
         cuda_dll: CudaDLL,
         dump_ptx: Variant[Path, Bool] = False,
         dump_llvm: Variant[Path, Bool] = False,
-        dump_sass: Variant[Path, Bool] = False,
         cuda_function_cache: UnsafePointer[FunctionCache] = UnsafePointer[
             FunctionCache
         ](),
@@ -370,10 +359,8 @@ struct Function[
         self.cuda_dll = cuda_dll
         self.cuda_function_cache = cuda_function_cache
 
-        if _dump_q(dump_ptx) or _dump_q(dump_llvm) or _dump_q(dump_sass):
-            Self._dump_rep(
-                dump_ptx=dump_ptx, dump_llvm=dump_llvm, dump_sass=dump_sass
-            )
+        if _dump_q(dump_ptx) or _dump_q(dump_llvm):
+            Self._dump_rep(dump_ptx, dump_llvm)
 
         var function_handle = module.load(name)
         if not function_handle:
@@ -396,10 +383,8 @@ struct Function[
     @staticmethod
     @no_inline
     fn _dump_rep(
-        *,
         dump_ptx: Variant[Path, Bool] = False,
         dump_llvm: Variant[Path, Bool] = False,
-        dump_sass: Variant[Path, Bool] = False,
     ) raises:
         if _dump_q(dump_ptx):
             alias ptx = Self._impl.asm
@@ -415,15 +400,6 @@ struct Function[
                 dump_llvm[Path].write_text(StringRef(llvm))
             else:
                 print(llvm)
-
-        if _dump_q(dump_sass):
-            alias ptx = Self._impl.asm
-            var sass = _to_sass[target](ptx)
-
-            if dump_llvm.isa[Path]():
-                dump_sass[Path].write_text(sass)
-            else:
-                print(sass)
 
     @always_inline
     fn __bool__(self) -> Bool:
