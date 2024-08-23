@@ -1480,15 +1480,6 @@ CValue ExprEmitter::emitCallUnchecked(RValue callee,
   // errors.
   callEmitter.emitAfterCallActions();
 
-  return callResult = callEmitter.emitCallResult(
-             callResult, calleeSig, callArgs, needInitSelfSlot, callExpr, dest);
-}
-
-CValue CallEmitter::emitCallResult(CValue callResult,
-                                   LITSignatureType calleeSig,
-                                   ArrayRef<Value> callArgs,
-                                   bool needInitSelfSlot,
-                                   ExprNode const *callExpr, ValueDest &dest) {
   // If there is a memory result slot, the value we filled in is our MRValue
   // result and we've already handled the ValueDest by emitting into it.
   if (calleeSig.hasMemoryOnlyResult() && !calleeSig.isAsync()) {
@@ -1501,14 +1492,13 @@ CValue CallEmitter::emitCallResult(CValue callResult,
     else
       // Otherwise, always return `None` when directly invoking a constructor.
       // Raising constructors have an ABI result of `i1`.
-      callResult = PValue(emitter.shared.getNoneAttr());
+      callResult = PValue(shared.getNoneAttr());
   }
 
   // If returning a reference, we need to convert to an MValue from
   // the SRValue we've got.
   if (calleeSig.isRefResult()) {
-    auto resultVal =
-        emitter.emitSRValue({callResult, callExpr}, EC_CallCalleeValue);
+    auto resultVal = emitSRValue({callResult, callExpr}, EC_CallCalleeValue);
     if (!resultVal) {
       dest.resetForError();
       return {};
@@ -1520,5 +1510,5 @@ CValue CallEmitter::emitCallResult(CValue callResult,
 
   // Otherwise, register-passable results are the call result which may need to
   // be emitted into a ValueDest.
-  return emitter.emitCResult(callResult, callExpr, dest);
+  return emitCResult(callResult, callExpr, dest);
 }
