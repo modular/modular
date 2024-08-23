@@ -11,6 +11,7 @@ import { MojoContext } from '../mojoContext';
 import { DisposableContext } from '../utils/disposableContext';
 import { MojoSDKConfig } from '../sdk/sdkConfig';
 import path = require('path');
+import { MojoSDK } from '../sdk/sdk';
 
 /**
  * This class provides a manager for executing and debugging mojo files.
@@ -53,9 +54,7 @@ class ExecutionManager extends DisposableContext {
    *
    * @param options Options to consider when executing the file.
    */
-  async executeFileInTerminal(
-    file: vscode.Uri | undefined,
-  ) {
+  async executeFileInTerminal(file: vscode.Uri | undefined) {
     let doc = await this.getDocumentToExecute(file);
 
     if (!doc) {
@@ -70,7 +69,7 @@ class ExecutionManager extends DisposableContext {
     }
 
     // Execute the file.
-    let terminal = this.getTerminalForFile(doc, sdk.config);
+    let terminal = this.getTerminalForFile(doc, sdk);
     terminal.show();
     terminal.sendText(shellescape([sdk.config.mojoDriverPath, doc.fileName]));
 
@@ -110,10 +109,7 @@ class ExecutionManager extends DisposableContext {
   /**
    * Get a terminal to use for the given file.
    */
-  getTerminalForFile(
-    doc: vscode.TextDocument,
-    config: MojoSDKConfig,
-  ): vscode.Terminal {
+  getTerminalForFile(doc: vscode.TextDocument, sdk: MojoSDK): vscode.Terminal {
     let terminalName = `Mojo: ${path.basename(doc.fileName)} · ${doc.fileName}`;
 
     // Look for an existing terminal.
@@ -126,7 +122,7 @@ class ExecutionManager extends DisposableContext {
     // Build a new terminal.
     return vscode.window.createTerminal({
       name: terminalName,
-      env: config.getProcessEnv(),
+      env: sdk.getProcessEnv(),
     });
   }
 

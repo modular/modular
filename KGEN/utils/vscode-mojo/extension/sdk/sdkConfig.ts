@@ -15,11 +15,6 @@ const execFile = util.promisify(require('child_process').execFile);
  */
 export class MojoSDKConfig {
   /**
-   * A service that can be used to log message in the Mojo output channel.
-   */
-  private loggingService: LoggingService;
-
-  /**
    * The version of the SDK.
    */
   readonly version: MojoSDKVersion;
@@ -58,6 +53,7 @@ export class MojoSDKConfig {
    * The path to the LLDB binary.
    */
   readonly lldbPath: string;
+
   /**
    * Create a new MojoSDKConfig object from the given configuration.
    */
@@ -76,22 +72,7 @@ export class MojoSDKConfig {
     if (!version) {
       return undefined;
     }
-    return new MojoSDKConfig(loggingService, version, modularPath, rawConfig);
-  }
-
-  /**
-   * Returns a process environment to be used when executing SDK
-   * binaries.
-   */
-  public getProcessEnv(): NodeJS.ProcessEnv {
-    let env = { ...process.env };
-
-    // If we had modular home provided somewhere, make sure that
-    // gets propagated.
-    if (this.modularHomePath) {
-      env.MODULAR_HOME = this.modularHomePath;
-    }
-    return env;
+    return new MojoSDKConfig(version, modularPath, rawConfig);
   }
 
   /**
@@ -148,13 +129,10 @@ export class MojoSDKConfig {
   }
 
   private constructor(
-    loggingService: LoggingService,
     version: MojoSDKVersion,
     modularPath: string,
     rawConfig: { [key: string]: any }
   ) {
-    this.loggingService = loggingService;
-
     this.version = version;
     this.modularHomePath = modularPath;
     this.mojoLLDBVSCodePath = rawConfig.lldb_vscode_path;

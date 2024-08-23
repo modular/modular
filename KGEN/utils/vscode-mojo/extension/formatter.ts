@@ -33,7 +33,7 @@ export function registerFormatter(
       // Grab the formatter from the Mojo SDK (i.e. `mojo format`).
       var command = sdk.config.mojoDriverPath + ' format';
 
-      let env = sdk.config.getProcessEnv();
+      let env = sdk.getProcessEnv();
 
       command += ' --quiet ' + args.join(' ') + ' -';
 
