@@ -203,7 +203,7 @@ class MojoDebugConfigurationResolver
     ];
 
     // Pull in the additional visualizers within the lldb-visualizers dir.
-    if (await sdk.config.lldbHasPythonScriptingSupport()) {
+    if (await sdk.lldbHasPythonScriptingSupport()) {
       let visualizersDir = sdk.config.mojoLLDBVisualizersPath;
       let visualizers = await vscode.workspace.fs.readDirectory(
         vscode.Uri.file(visualizersDir)

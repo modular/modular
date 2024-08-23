@@ -4,17 +4,14 @@
 //
 //===----------------------------------------------------------------------===//
 
-import * as util from 'util';
-
-const execFile = util.promisify(require('child_process').execFile);
-
 import { LoggingService } from '../logging';
 import { MojoSDKVersion } from './sdkVersion';
-import { Memoize } from 'typescript-memoize';
+import * as util from 'util';
+const execFile = util.promisify(require('child_process').execFile);
 
 /**
  * This class represents a subset of the Modular config object used by extension
- * for interacting with mojo.
+ * for interacting with mojo. It should be handled a POD object.
  */
 export class MojoSDKConfig {
   /**
@@ -148,47 +145,6 @@ export class MojoSDKConfig {
       );
       return undefined;
     }
-  }
-
-  /**
-   * Determine whether python scripting is functional in LLDB. As there
-   * are many reasons why python scripting would fail (e.g. disabled in the build system,
-   * wrong SDK installation, etc.), it's more effective to just execute a
-   * minimal script to confirm it's operative.
-   *
-   * @returns true if and only if the LLDB binary in this SDK has a working
-   *     python scripting feature.
-   */
-  @Memoize()
-  public async lldbHasPythonScriptingSupport(): Promise<boolean> {
-    try {
-      let { stdout, stderr } = await execFile(this.lldbPath, [
-        '-b',
-        '-o',
-        'script print(100+1)',
-      ]);
-      stdout = (stdout || '') as string;
-      stderr = (stderr || '') as string;
-
-      if (stdout.indexOf('101') != -1) {
-        this.loggingService.main.logInfo(
-          'Python scripting support in LLDB found.'
-        );
-        return true;
-      } else {
-        this.loggingService.main.logInfo(
-          `Python scripting support in LLDB not found. The test script returned:\n${
-            stdout
-          }\n${stderr}`
-        );
-      }
-    } catch (e) {
-      this.loggingService.main.logError(
-        'Python scripting support in LLDB not found. The test script failed with',
-        e
-      );
-    }
-    return false;
   }
 
   private constructor(
