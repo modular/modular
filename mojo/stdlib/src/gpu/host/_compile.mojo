@@ -8,6 +8,7 @@
 from os import abort
 import subprocess
 import tempfile
+from pathlib import Path
 from compile import Info, compile_info, get_linkage_name
 from .info import _get_info_from_target
 
@@ -63,15 +64,25 @@ fn _get_arch[target: __mlir_type.`!kgen.target`]() -> String:
     ]
 
 
+@no_inline
 fn _to_sass[
     target: __mlir_type.`!kgen.target` = _get_nvptx_target()
 ](asm: String, *, nvdisasm_opts: String = "") raises -> String:
+    alias ptxas_path = Path("/usr/local/cuda/bin/ptxas")
+    alias nvdisasm_path = Path("/usr/local/cuda/bin/nvdisasm")
+    if not ptxas_path.exists():
+        raise "the `ptxas` binary does not exist in '" + str(ptxas_path) + "'"
+    if not nvdisasm_path.exists():
+        raise "the `nvdisasm` binary does not exist in '" + str(
+            nvdisasm_path
+        ) + "'"
     with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmpdir:
         var ptx_file = Path(tmpdir) / "output.ptx"
         var elf_file = Path(tmpdir) / "output.elf"
         ptx_file.write_text(asm)
         _ = subprocess.run(
-            "/usr/local/cuda/bin/ptxas --gpu-name "
+            str(ptxas_path)
+            + " --gpu-name "
             + _get_arch[target]()
             + " -O3 "
             + str(ptx_file)
@@ -79,9 +90,6 @@ fn _to_sass[
             + str(elf_file)
         )
         return subprocess.run(
-            "/usr/local/cuda/bin/nvdisasm -c "
-            + nvdisasm_opts
-            + " "
-            + str(elf_file)
+            str(nvdisasm_path) + " -c " + nvdisasm_opts + " " + str(elf_file)
         )
     return ""
