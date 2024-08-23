@@ -291,6 +291,8 @@ private:
     if (g.numWorkItems.fetch_sub(1) == 1)
       g.worklistCh.copy().emplace();
   }
+  /// This function is run by tasks that process nodes.
+  void processImplNodeTask(ImplNode *node);
   /// Schedule an implementation node on the AsyncRT work queue.
   void scheduleImplNode(ImplNode *inode);
   /// Process the scopes within an implementation node. This function returns
