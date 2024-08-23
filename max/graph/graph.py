@@ -238,8 +238,8 @@ class Graph:
         try:
             yield None
         except Exception as e:
-            diags = "\n\t".join(diagnostics)
-            raise ValueError(f"Mlir Diagnostics:\n\t{diags}\n") from e
+            diags = "\n  ".join(diagnostics)
+            raise ValueError(f"Diagnostics:\n    {diags}\n") from e
         finally:
             handle.detach()
 
@@ -273,10 +273,13 @@ class Graph:
                 with self._capturing_mlir_diagnostics():
                     results = op(*unwrapped_args, **unwrapped_kwargs)
             except Exception as e:
+                try:
+                    args = inspect.signature(op).bind(*args, **kwargs).arguments
+                except TypeError:
+                    args = {"args": list(args), **kwargs}
                 raise ValueError(
-                    f"Failed to create {op.__qualname__} op:\n\tInputs:\n"
-                    + "".join(f"\t\t{arg!r}\n" for arg in args)
-                    + "".join(f"\t\t{k} = {v!r}\n" for k, v in kwargs.items())
+                    f"Failed to create op '{op.__qualname__}':\nInputs:\n"
+                    + "".join(f"    {k} = {v!r}\n" for k, v in args.items())
                     + f"\n{e}"
                 ) from e
 
