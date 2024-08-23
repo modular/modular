@@ -37,7 +37,6 @@ tool_dirs = [
 ]
 tools = [
     "build-info",
-    ToolSubst("%crash-report-path-info", FindTool("crash-report-path-info")),
     "crash-test-dummy",
     "driver-tblgen",
     ToolSubst(
