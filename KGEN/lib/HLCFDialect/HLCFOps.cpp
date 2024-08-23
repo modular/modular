@@ -535,51 +535,6 @@ void ForYieldOp::getBranchTargets(ArrayRef<Attribute> operands,
   }
 }
 
-ErrorTreeOrSuccess ForYieldOp::interpret(ArrayRef<Attribute> operands,
-                                         InterpreterState &state) {
-  ForOp forLoop = getParentOp<ForOp>();
-  FoldAdaptor adaptor(operands, (*this)->getAttrDictionary());
-  auto iter = dyn_cast_or_null<IntegerAttr>(adaptor.getInductionVar());
-  if (!iter)
-    return ErrorTree(getLoc(), "non-integer induction variable.");
-
-  auto upperBound =
-      dyn_cast_or_null<IntegerAttr>(state.lookupValue(forLoop.getUpperBound()));
-  if (!upperBound)
-    return ErrorTree(getLoc(), "non-integer parent for-loop upperBound.");
-
-  auto step =
-      dyn_cast_or_null<IntegerAttr>(state.lookupValue(forLoop.getStep()));
-  if (!step)
-    return ErrorTree(getLoc(), "non-integer parent for-loop step.");
-
-  ForLoopBoundCmpPredicate pred = forLoop.getCmpPredicateType();
-  ForLoopIndVarCompute opType = forLoop.getIndVarComputeType();
-
-  bool continueFor =
-      (step.getInt() > 0 && iter.getInt() < upperBound.getInt() &&
-       opType == ForLoopIndVarCompute::ADD) ||
-      (step.getInt() < 0 && iter.getInt() > upperBound.getInt() &&
-       opType == ForLoopIndVarCompute::ADD) ||
-      (step.getInt() < 0 && iter.getInt() < upperBound.getInt() &&
-       opType == ForLoopIndVarCompute::SUB) ||
-      (step.getInt() > 0 && iter.getInt() > upperBound.getInt() &&
-       opType == ForLoopIndVarCompute::SUB);
-
-  continueFor |= (iter.getInt() == upperBound.getInt() &&
-                  pred == ForLoopBoundCmpPredicate::SGE) ||
-                 (iter.getInt() == upperBound.getInt() &&
-                  pred == ForLoopBoundCmpPredicate::SLE);
-
-  if (continueFor) {
-    state.transferControlFlowTo(&forLoop.getBody().front(), operands);
-  } else {
-    state.transferControlFlowTo(forLoop->getParentOp(),
-                                adaptor.getReturnValues());
-  }
-  return success();
-}
-
 void ForYieldOp::insertVariants(ValueRange newOperands) {
   // Append variants to both retValues and otherIterValues.
   getReturnValuesMutable().append(newOperands);

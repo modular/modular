@@ -371,7 +371,7 @@ FailureOr<TypedAttr> IREvaluator::evaluateGetLinkageName(ParamOperatorAttr op) {
 //===----------------------------------------------------------------------===//
 
 IREvaluator::IREvaluator(Elaborator &elaborator, ImplNode *parent)
-    : InterpreterState(elaborator.getTarget()), elaborator(&elaborator),
+    : IRInterpreter(elaborator.getTarget()), elaborator(&elaborator),
       parent(parent) {}
 
 /// Given a generic parameter expression, simplify it by folding the

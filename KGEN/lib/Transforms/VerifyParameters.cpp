@@ -26,15 +26,15 @@ namespace M::KGEN {
 } // namespace M::KGEN
 
 namespace {
-class ParameterSimplifier : public ParameterEvaluator, public InterpreterState {
+class ParameterSimplifier : public ParameterEvaluator, public IRInterpreter {
 public:
   ParameterSimplifier(bool enableInterp, ModuleOp module,
                       SymbolTableCollection &symtabs)
-      : InterpreterState(module.getContext()), enableInterp(enableInterp),
+      : IRInterpreter(module.getContext()), enableInterp(enableInterp),
         module(module), symtabs(symtabs) {}
   ParameterSimplifier(const ParameterSimplifier &other)
       : ParameterEvaluator(other.getParameterValues()),
-        InterpreterState(other.getContext()), enableInterp(other.enableInterp),
+        IRInterpreter(other.getContext()), enableInterp(other.enableInterp),
         module(other.module), symtabs(other.symtabs) {}
 
   FailureOr<TypedAttr> evaluateExpression(ParamOperatorAttr op) override;
