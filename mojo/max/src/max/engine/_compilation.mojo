@@ -59,7 +59,6 @@ struct CCompileConfig:
     alias SetPipelineNameFnName = "M_setPipelineName"
     alias SetModelPathFnName = "M_setModelPath"
     alias ReplaceOpsFnName = "M_useKernelsFrom"
-    alias SetDeviceFnName = "M_setDevice"
     alias SetTorchInputSpecsFnName = "M_setTorchInputSpecs"
 
     fn set_model_source(self, model_source: ModelSource, lib: DLHandle):

@@ -35,7 +35,7 @@ struct CRuntimeConfig:
 
     alias FreeRuntimeConfigFnName = "M_freeRuntimeConfig"
     alias SetAllocatorTypeFnName = "M_setAllocatorType"
-    alias SetDriverDeviceFnName = "M_setDriverDevice"
+    alias SetDeviceFnName = "M_setDevice"
     alias SetMaxContextFnName = "M_setMaxContext"
     alias SetAPILanguageFnName = "M_setAPILanguage"
 
@@ -43,7 +43,7 @@ struct CRuntimeConfig:
         call_dylib_func(lib, Self.FreeRuntimeConfigFnName, self)
 
     fn set_device(self, lib: DLHandle, device: Device):
-        call_dylib_func(lib, Self.SetDriverDeviceFnName, self, device._cdev)
+        call_dylib_func(lib, Self.SetDeviceFnName, self, device._cdev)
 
     fn set_api_language(self, lib: DLHandle, source: String):
         call_dylib_func(
