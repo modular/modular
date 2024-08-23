@@ -6,7 +6,7 @@
 from collections import InlineArray, OptionalReg
 from math import align_down, align_up, ceildiv
 from os import abort
-from sys import alignof, llvm_intrinsic, simdwidthof
+from sys import alignof, llvm_intrinsic, simdwidthof, bitwidthof
 
 from algorithm.functional import elementwise, tile_and_unswitch
 from buffer.buffer import NDBuffer
@@ -49,7 +49,7 @@ from layout.layout_tensor import (
 from layout.math import outer_product_acc
 from layout.nd_buffer_stub import copy_from_nd_buffer, distribute, vectorize
 from layout.swizzle import Swizzle
-from memory import UnsafePointer, bitcast, stack_allocation
+from memory import UnsafePointer, bitcast, stack_allocation, memset_zero
 
 from utils import StaticIntTuple
 from utils.index import Index
@@ -543,6 +543,122 @@ fn gemv_kernel_vector[
                 reverse_idx[transpose_b](warp_id, 0),
                 accum.cast[c_type](),
             )
+
+
+fn gemv_split_k[
+    c_type: DType,
+    c_shape: DimList,
+    a_type: DType,
+    a_shape: DimList,
+    b_type: DType,
+    b_shape: DimList,
+    simd_width: UInt,
+    tile_m: Int,
+    tile_n: Int,
+    block_size: Int,
+    elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
+    s_type: DType = get_accum_type[c_type](),
+](
+    output: NDBuffer[c_type, 2, c_shape],
+    act: NDBuffer[a_type, 2, a_shape],
+    weight: NDBuffer[b_type, 2, b_shape],
+    m: UInt,
+    n: UInt,
+    k: UInt,
+):
+    alias block_step = 128
+    alias step_k = block_step // (bitwidthof[a_type]())
+    alias tile_k = step_k * block_size
+    var tile_id_m = BlockIdx.x() * tile_m
+    var tile_id_n = BlockIdx.y() * tile_n
+    var tid = ThreadIdx.x()
+    var tile_a = stack_allocation[
+        step_k, a_type, address_space = AddressSpace.LOCAL
+    ]()
+    var tile_w = stack_allocation[
+        tile_n * step_k, b_type, address_space = AddressSpace.LOCAL
+    ]()
+    var acc = stack_allocation[
+        tile_m * tile_n, s_type, address_space = AddressSpace.LOCAL
+    ]()
+
+    alias align_act = alignof[SIMD[a_type, simd_width]]()
+    alias align_weight = alignof[SIMD[b_type, simd_width]]()
+
+    memset_zero(acc, tile_m * tile_n)
+
+    var act_idx = tile_id_m * k
+    var weight_idx = tile_id_n * k
+    var output_idx = tile_id_m * n + tile_id_n
+
+    for idxK in range(tid * step_k, k, tile_k):
+
+        @parameter
+        for i in range(tile_n):
+            var tile_w_quantized = weight.data.load[
+                width=simd_width, alignment=align_weight
+            ](weight_idx + i * k + idxK)
+
+            @parameter
+            for cvt_idx in range(int(simd_width)):
+                tile_w[i * simd_width + cvt_idx] = tile_w_quantized[cvt_idx]
+
+        @parameter
+        for i in range(tile_m):
+            var tile_a_quantized = act.data.load[
+                width=simd_width, alignment=align_act
+            ](act_idx + i * k + idxK)
+
+            @parameter
+            for cvt_idx in range(int(simd_width)):
+                tile_a[cvt_idx] = tile_a_quantized[cvt_idx]
+
+            @parameter
+            for j in range(tile_n):
+
+                @parameter
+                for l in range(step_k):
+                    acc[i * tile_n + j] += (
+                        tile_a[l].cast[s_type]()
+                        * tile_w[j * step_k + l].cast[s_type]()
+                    )
+
+    alias k_warp_num = block_size // WARP_SIZE
+    var warp_id = tid // WARP_SIZE
+    var lane_id = tid % WARP_SIZE
+    var shmem = stack_allocation[
+        tile_m * tile_n, s_type, address_space = AddressSpace.SHARED
+    ]()
+
+    @parameter
+    for mi in range(tile_m):
+
+        @parameter
+        for ni in range(tile_n):
+            var val = warp_reduce[shuffle_down, _reduce_add](
+                acc[mi * tile_n + ni]
+            )
+            if lane_id == 0:
+                shmem[mi * tile_n + ni + warp_id * tile_m * tile_n] = val
+
+    barrier()
+    for ii in range(tid, tile_m * tile_n, block_size):
+        var mid = ii // tile_n
+        var nid = ii % tile_n
+        var val = Scalar[s_type]()
+
+        @parameter
+        for jj in range(k_warp_num):
+            val += shmem[jj * tile_m * tile_n + ii]
+
+        @parameter
+        if elementwise_lambda_fn:
+            alias elementwise_lambda = elementwise_lambda_fn.value()
+            elementwise_lambda[c_type, 1](
+                Index(0, output_idx + mid * n + nid), val.cast[c_type]()
+            )
+        else:
+            output.data.store(output_idx + mid * n + nid, val.cast[c_type]())
 
 
 # Row Vector-Matrix multiplication
@@ -1424,6 +1540,7 @@ fn _matmul_gpu_dispatch[
                 block_dim=WARP_SIZE * WARPS_PER_BLOCK,
             )
     elif m == 1 and transpose_b == True:
+        alias use_gemv_vector = False
 
         @parameter
         if a_type == DType.bfloat16:
@@ -1431,7 +1548,7 @@ fn _matmul_gpu_dispatch[
             alias simd_width = simdwidthof[
                 DType.bfloat16, target = _get_nvptx_target()
             ]()
-            if k % simd_width == 0:
+            if k % simd_width == 0 and use_gemv_vector:
                 var block_dim = min(
                     align_up(k // simd_width, WARP_SIZE),
                     WARP_SIZE * WARPS_PER_BLOCK,
@@ -1462,6 +1579,36 @@ fn _matmul_gpu_dispatch[
                     grid_dim=ceildiv(n, block_dim // WARP_SIZE),
                     block_dim=block_dim,
                 )
+            elif k % simd_width == 0:
+                alias block_size = 128
+                alias tile_m = 1
+                alias tile_n = 2
+                var gpu_func = ctx.compile_function[
+                    gemv_split_k[
+                        c_type,
+                        c_shape,
+                        a_type,
+                        a_shape,
+                        b_type,
+                        b_shape,
+                        simd_width=simd_width,
+                        tile_m=tile_m,
+                        tile_n=tile_n,
+                        block_size=block_size,
+                        elementwise_lambda_fn=elementwise_lambda_fn,
+                    ]
+                ]()
+                ctx.enqueue_function(
+                    gpu_func,
+                    c,
+                    a,
+                    b,
+                    m,
+                    n,
+                    k,
+                    grid_dim=(ceildiv(m, tile_m), ceildiv(n, tile_n)),
+                    block_dim=block_size,
+                )
             else:
                 alias WARPS_PER_BLOCK = 32
                 var gpu_func = ctx.compile_function[
@@ -1490,8 +1637,8 @@ fn _matmul_gpu_dispatch[
             var gpu_func = ctx.compile_function[
                 gemv_kernel[
                     c_type,
-                    a_type,
                     b_type,
+                    a_type,
                     reduction_method = ReductionMethod.WARP,
                     transpose_b=transpose_b,
                     elementwise_lambda_fn=elementwise_lambda_fn,
