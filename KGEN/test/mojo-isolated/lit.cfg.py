@@ -11,9 +11,6 @@ from lit.llvm import llvm_config
 # name: The name of this test suite.
 config.name = "mojo-isolated"
 
-config.parser_stubs_derived = os.path.join(
-    config.modular_obj_root, "KGEN", "test", "test-packages"
-)
 config.parser_stubs_source = os.path.join(
     config.modular_src_root, "KGEN", "test", "test-packages"
 )
