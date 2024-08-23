@@ -11,10 +11,6 @@ from lit.llvm import llvm_config
 # name: The name of this test suite.
 config.name = "mojo-mogg"
 
-config.parser_stubs_source = os.path.join(
-    config.modular_src_root, "KGEN", "test", "test-packages"
-)
-
 # suffixes: A list of file extensions to treat as test files.
 config.suffixes = [".mojo", ".🔥", ".test"]
 
