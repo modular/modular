@@ -41,7 +41,9 @@ static constexpr llvm::StringLiteral SPEC_PREFIX_STR = "__MOGG_SPEC";
 static constexpr llvm::StringLiteral TENSOR_SPEC_NONE = "TENSOR_SPEC_NONE";
 
 static bool isTensorType(Attribute typeName) {
-  return cast<StringAttr>(typeName).strref() == MOJO_DPS_TENSOR_TYPE_NAME;
+  auto typeNameStr = cast<StringAttr>(typeName).strref();
+  return typeNameStr == MOJO_DPS_TENSOR_TYPE_NAME ||
+         typeNameStr == MOJO_INTERNAL_DPS_TENSOR_TYPE_NAME;
 }
 
 namespace {
