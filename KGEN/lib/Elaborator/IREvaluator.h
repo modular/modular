@@ -295,9 +295,6 @@ struct ParamNode {
   /// ParamNodeRuntime.
   void andThenAsync(AsyncValue::Waiter &&waiter);
 
-  /// Add a waiter to the runtime.
-  void andThenSync(AsyncValue::Waiter &&waiter);
-
   /// Construct the async value. This will notify waiters.
   void emplace();
 

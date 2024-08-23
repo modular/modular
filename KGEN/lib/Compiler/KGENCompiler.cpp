@@ -108,8 +108,8 @@ static void generateInstantiateStub(GeneratorOp func, SymbolConstantAttr symbol,
 /// HACK HACK HACK https://github.com/modularml/modular/issues/22959
 /// HACK: Read out the magic attribute used to propagate captures across device
 /// boundaries, generate the capture function, and write them into the buffer.
-static LogicalResult writeCaptureArgs(ModuleOp module, StringAttr name,
-                                      WriteableBufferRef buf) {
+static std::pair<OwningOpRef<FuncOp>, unsigned>
+writeCaptureArgs(ModuleOp module, StringAttr name) {
   // First, go find the elaborated instance of the function.
   FuncOp sliced;
   for (auto func : module.getOps<FuncOp>()) {
@@ -175,54 +175,7 @@ static LogicalResult writeCaptureArgs(ModuleOp module, StringAttr name,
   b.create<ReturnOp>(
       b.create<ParamConstantOp>(b.getAttr<NoneAttr>()).getResult());
 
-  // Now write this into the buffer as bytecode. Add space for a header that
-  // contains the size of the bytecode first.
-  uint64_t size = 0;
-  buf->write((char *)&size, sizeof(size));
-  // Then write the bytecode.
-  if (failed(mlir::writeBytecodeToFile(*func, *buf)))
-    return failure();
-  // Now write the size of the bytecode into the allocate header space. Be
-  // mindful of endianness here.
-  size = buf->tell() - sizeof(size);
-  size = llvm::support::endian::byte_swap(size, llvm::endianness::little);
-  buf->pwrite((char *)&size, sizeof(size), /*Offset=*/0);
-
-  // Write the number of captures.
-  uint64_t numCaptures = llvm::support::endian::byte_swap(
-      captures.size(), llvm::endianness::little);
-  buf->write((char *)&numCaptures, sizeof(uint64_t));
-  return success();
-}
-
-/// HACK: Read out the capture function and generated code.
-static ErrorOr<CrossDeviceFunction> readCaptureArgs(MLIRContext *ctx,
-                                                    BufferRef buf) {
-  // First, read the bytecode header size.
-  const char *it = buf->getBufferStart();
-  uint64_t size = llvm::support::endian::read64le(it);
-  it += sizeof(uint64_t);
-
-  // Then read the bytecode for the capture population function.
-  std::unique_ptr<llvm::MemoryBuffer> bytecode =
-      llvm::MemoryBuffer::getMemBuffer(StringRef(it, size), /*BufferName=*/"",
-                                       /*RequiresNullTerminator=*/false);
-  OwningOpRef<Operation *> func = readOpFromBytecodeFile(
-      *bytecode, mlir::ParserConfig(ctx, /*verifyAfterParse=*/false));
-  if (!func)
-    return Error("failed to read capture function bytecode");
-  it += size;
-
-  // Read the number of captures.
-  uint64_t numCaptures = llvm::support::endian::read64le(it);
-  it += sizeof(uint64_t);
-
-  // Read out the rest of the data as the payload.
-  auto contents =
-      StringAttr::get(StringRef(it, std::distance(it, buf->getBufferEnd())),
-                      StringType::get(ctx));
-
-  return CrossDeviceFunction{contents, (unsigned)numCaptures, std::move(func)};
+  return {std::move(func), captures.size()};
 }
 
 //===----------------------------------------------------------------------===//
@@ -391,94 +344,31 @@ compileElaboratorAsm(GeneratorOp func, SymbolConstantAttr symbol,
       }));
   buildPostElaborationPipeline(pm, options, compileCustomCanonicalizationFns);
 
-  // This functor runs the desired transformation to cache.
-  auto compileToAsm =
-      [&pm, &compiler, &options, tm = std::move(tm), name, emissionKind](
-          Operation *op, WriteableBufferRef buffer) mutable -> ErrorOrSuccess {
-    if (failed(pm.run(op)))
-      return Error("failed to run the pass manager");
-    if (failed(writeCaptureArgs(cast<ModuleOp>(op), name, buffer.copy())))
-      return Error("failed to generate capture stub");
-    LLVMModuleAndContext llvmModule;
-    if (auto err = llvmModule.create([&](llvm::LLVMContext &ctx) {
-          return compiler->lowerAllFuncsToLLVM(ctx, cast<ModuleOp>(op));
-        }))
-      return err.takeError();
+  if (failed(pm.run(*module)))
+    return Error("failed to run the pass manager");
+  auto [capturesFunc, numCaptures] = writeCaptureArgs(*module, name);
+  LLVMModuleAndContext llvmModule;
+  if (auto err = llvmModule.create([&](llvm::LLVMContext &ctx) {
+        return compiler->lowerAllFuncsToLLVM(ctx, *module);
+      }))
+    return err.takeError();
 
-    if (emissionKind == EmissionKind::LLVM) {
-      llvmModule->print(*buffer, nullptr);
-      return success();
-    }
-
+  SmallVector<char> buf;
+  buf.reserve(256 * 128); // 32 KB
+  llvm::raw_svector_ostream os(buf);
+  if (emissionKind == EmissionKind::LLVM) {
+    llvmModule->print(os, nullptr);
+  } else {
     AsyncRT::Runtime &runtime =
         *loadContext(pm.getContext())->get<AsyncRT::Runtime>();
-    if (failed(compileLLVMToAssembly(std::move(llvmModule), *tm, *buffer,
-                                     options, runtime)))
+    if (failed(compileLLVMToAssembly(std::move(llvmModule), *tm, os, options,
+                                     runtime)))
       return Error("failed to emit assembly");
-    return success();
-  };
+  }
 
-  // Cache the compilation down to assembly as a single step. Finer-grain
-  // caching here would not create any re-use with the rest of the stack.
-  WriteableBufferRef key = WriteableBuffer::get();
-  pm.printAsTextualPipeline(*key);
-  options.print(*key);
-  // Encode the cache key to disambiguiate between different emission kinds.
-  *key << (int)emissionKind;
-  // Functor to adapt the transform functor to the required API.
-  auto runTransformation = [func = std::move(compileToAsm)](
-                               Operation *op, WriteableBufferRef buf,
-                               AnyAsyncValueRef chain) mutable {
-#ifdef MODULAR_ENABLE_TELEMETRY
-    Cache::CacheTelemetryContext::getCacheTelemetryContext(
-        loadContext(op->getContext()))
-        .recordCacheMiss("KGEN::compileElaboratorAsm");
-#endif
-
-    auto output = AsyncValueRef<BufferRef>::allocate(chain.getRuntime());
-    std::move(chain).andThenSync(
-        [op, func = std::move(func), output = output.copy(),
-         buf = std::move(buf)](AnyAsyncValueRef &&chain) mutable {
-
-#ifdef MODULAR_ENABLE_TELEMETRY
-          [[maybe_unused]] auto timeScope =
-              loadContext(op->getContext())
-                  ->get<M::Telemetry::TelemetryContext>()
-                  ->createUInt64Timer<std::chrono::milliseconds>(
-                      "mojo.compile.cache.miss.time", M::Telemetry::Level::L2,
-                      {{"pipeline", "KGEN::compileElaboratorAsm"}});
-#endif
-          if (chain.isError())
-            return std::move(output).setToError(chain.takeDiagnostic());
-          if (ErrorOrSuccess err = func(op, buf.copy()); err.isError())
-            return std::move(output).setToError(
-                AsyncRT::getMLIRDiagnostic(err.takeError(), op->getLoc()));
-          return std::move(output).emplace(std::move(buf));
-        });
-    return output;
-  };
-  // On cache hit, just return the assembly buffer.
-  auto onCacheHit = [](Operation *op, BufferRef buf) {
-#ifdef MODULAR_ENABLE_TELEMETRY
-    Cache::CacheTelemetryContext::getCacheTelemetryContext(
-        loadContext(op->getContext()))
-        .recordCacheHit("KGEN::compileElaboratorAsm");
-#endif
-
-    return buf.copy();
-  };
-  AsyncRT::Runtime &runtime =
-      *loadContext(target.getContext())->get<AsyncRT::Runtime>();
-  AnyAsyncValueRef result = Cache::cachedTransform(
-      *module, compiler->getTransformCache(),
-      AsyncValueRef<Chain>::createReady(runtime), std::move(key),
-      std::move(runTransformation), onCacheHit);
-  await(result);
-  if (result.isError())
-    return std::move(result.takeDiagnostic().getMessage());
-
-  BufferRef buf = std::move(result.get<BufferRef>());
-  return readCaptureArgs(func.getContext(), buf.copy());
+  return CrossDeviceFunction{
+      StringAttr::get(buf, StringType::get(func.getContext())), numCaptures,
+      std::move(capturesFunc)};
 }
 
 //===----------------------------------------------------------------------===//

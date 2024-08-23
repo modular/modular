@@ -48,10 +48,6 @@ void ParamNode::andThenAsync(AsyncValue::Waiter &&waiter) {
   });
 }
 
-void ParamNode::andThenSync(AsyncValue::Waiter &&waiter) {
-  paramCh.andThenSync(std::forward<AsyncValue::Waiter>(waiter));
-}
-
 void ParamNode::emplace() {
   if (done.exchange(DoneState::DONE) == DoneState::NOT_DONE)
     paramCh.copy().emplace();
@@ -1105,18 +1101,20 @@ void Elaborator::completeImplNodeProcessing(ImplNode *inode) {
   signalWorklist();
 }
 
+void Elaborator::processImplNodeTask(ImplNode *inode) {
+  // Process the node. If processing the node got pre-empted, then return. It
+  // will get scheduled again later.
+  if (succeeded(processImplNode(inode))) {
+    g.numWorkItems.fetch_add(1);
+    completeImplNodeProcessing(inode);
+  }
+  // Signal the worklist that the work is complete.
+  signalWorklist();
+}
+
 void Elaborator::scheduleImplNode(ImplNode *inode) {
-  // Increment the number of scheduled work items.
-  runtime.getWorkQueue()->addTask([inode, this] {
-    // Process the node. If processing the node got pre-empted, then return. It
-    // will get scheduled again later.
-    if (succeeded(processImplNode(inode))) {
-      g.numWorkItems.fetch_add(1);
-      completeImplNodeProcessing(inode);
-    }
-    // Signal the worklist that the work is complete.
-    signalWorklist();
-  });
+  runtime.getWorkQueue()->addTask(
+      [inode, this] { processImplNodeTask(inode); });
 }
 
 LogicalResult Elaborator::processImplNode(ImplNode *inode) {
@@ -1272,9 +1270,9 @@ ElaborationState Elaborator::specializeGenerator(ImplNode *inode,
     if (addWaiter) {
       if (genNode->state.addWaiter()) {
         inode->blocker = std::make_pair(from, genNode);
-        genNode->andThenSync([inode, this] {
+        genNode->andThenAsync([inode, this] {
           inode->blocker.reset();
-          scheduleImplNode(inode);
+          processImplNodeTask(inode);
         });
         return ElaborationState::skipNode();
       }
@@ -1422,9 +1420,9 @@ ElaborationState Elaborator::specializeGenerator(ImplNode *inode,
     [[maybe_unused]] bool added = genNode->state.addWaiter();
     assert(added);
     inode->blocker = std::make_pair(from, genNode);
-    genNode->andThenSync([inode, this] {
+    genNode->andThenAsync([inode, this] {
       inode->blocker.reset();
-      scheduleImplNode(inode);
+      processImplNodeTask(inode);
     });
   }
   g.numWorkItems.fetch_add(1);
@@ -1663,12 +1661,12 @@ bool Elaborator::diagnoseAndBreakRecursion(unsigned generation,
 
     // When all of them are done as individual nodes, they will reset their
     // dependency counter to 1 and wait for all chains to complete.
-    AsyncRT::andThenSyncMoving(sccChains,
-                               [this, nodes = sccNodes.takeVector()](
-                                   MutableArrayRef<AnyAsyncValueRef>) {
-                                 for (ParamNode *node : nodes)
-                                   completeImplNodeProcessing(node->impl.get());
-                               });
+    AsyncRT::andThenAsyncMoving(
+        sccChains, [this, nodes = sccNodes.takeVector()](
+                       MutableArrayRef<AnyAsyncValueRef>) {
+          for (ParamNode *node : nodes)
+            completeImplNodeProcessing(node->impl.get());
+        });
   }
 
   // Now reschedule the nodes outside the loop to avoid races.
