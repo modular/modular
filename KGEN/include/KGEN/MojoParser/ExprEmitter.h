@@ -581,6 +581,11 @@ public:
   FailureOr<SmallVector<ASTExprAnd<AnyValue>>>
   emitArgValues(const CallOperands &operands);
 
+  /// Emit the value of a call result.
+  CValue emitCallResult(CValue callResult, LITSignatureType calleeSig,
+                        ArrayRef<Value> callArgs, bool needInitSelfSlot,
+                        ExprNode const *callExpr, ValueDest &dest);
+
   /// This function emits the specified pre-emitted argument into a single MLIR
   /// Value suitable for passing to the callee with the specified convention.
   /// This handles promotion of PValues to dynamic values as needed.
