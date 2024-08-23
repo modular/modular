@@ -365,7 +365,7 @@ export class MojoTestContext extends DisposableContext {
       testId +
       "' " +
       args.join(' ');
-    let env = sdk.config.getProcessEnv();
+    let env = sdk.getProcessEnv();
 
     return new Promise<Result | undefined>(function (resolve, reject) {
       exec(command, { env }, (error, stdout, stderr) => {

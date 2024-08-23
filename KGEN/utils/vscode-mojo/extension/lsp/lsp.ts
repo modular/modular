@@ -119,7 +119,7 @@ export class MojoLSPContext extends DisposableContext {
 
     const initializationOptions: InitializationOptions = {
       serverArgs: serverArgs,
-      serverEnv: sdk.config.getProcessEnv(),
+      serverEnv: sdk.getProcessEnv(),
       serverPath: sdk.config.mojoLanguageServerPath,
     };
 

@@ -279,10 +279,10 @@ static ErrorOrSuccess invokeRPC(bool dryRun, ArrayRef<int> ports,
   }
 
   if (connections.empty())
-    return Error("couldn't connect to any RPC servers. You might need to "
+    return Error("couldn't connect to any VSCode windows. You might need to "
                  "restart the IDE or file a bug.");
 
-  llvm::outs() << "Active RPC servers:\n";
+  llvm::outs() << "Active VS Code windows:\n";
   for (auto [idx, conn] : llvm::enumerate(connections)) {
     std::string index = std::to_string(idx);
     llvm::outs() << index << ": "
@@ -297,12 +297,13 @@ static ErrorOrSuccess invokeRPC(bool dryRun, ArrayRef<int> ports,
 
   int64_t index = 0;
   if (connections.size() == 1) {
-    llvm::outs() << "\nOnly one RPC server was found. The debug session will "
-                    "be launched with this server automatically.\n\n";
-  } else {
     llvm::outs()
-        << "\nMultiple RPC servers found. Press enter to select the server "
-           "with index 0 or provide the index of the server to use:\n";
+        << "\nOnly one VS Code window was found. The debug session will "
+           "be launched in this window automatically.\n\n";
+  } else {
+    llvm::outs() << "\nMultiple VS Code windows found. Press <enter> to select "
+                    "the window with index 0 or provide the index of the "
+                    "window to use:\n";
     std::string rawInput;
     std::getline(std::cin, rawInput);
     StringRef input(rawInput);
