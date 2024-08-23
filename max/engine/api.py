@@ -16,7 +16,7 @@ from max._engine import Model as _Model
 from max._engine import TensorData as _TensorData
 from max._engine import TensorSpec as _TensorSpec
 from max._engine import TorchInputSpec as _TorchInputSpec
-from max.driver import Tensor
+from max.driver import CPU, Device, Tensor
 from max.dtype import DType
 
 InputShape = Optional[List[Union[int, str, None]]]
@@ -463,14 +463,17 @@ class InferenceSession:
 
     _impl: _InferenceSession
 
-    def __init__(self, num_threads: Optional[int] = None, **kwargs):
+    def __init__(
+        self,
+        num_threads: Optional[int] = None,
+        device: Device = CPU(),
+        **kwargs,
+    ):
         config = {}
         self.num_threads = num_threads
         if num_threads:
             config["num_threads"] = num_threads
-        device = kwargs["device"] if kwargs and "device" in kwargs else None
-        if device:
-            config["device"] = device
+        config["device"] = device._device
         if "custom_extensions" in kwargs:
             config["custom_extensions"] = _process_custom_extensions_objects(
                 kwargs["custom_extensions"]
