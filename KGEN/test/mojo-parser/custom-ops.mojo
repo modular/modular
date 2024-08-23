@@ -53,9 +53,9 @@ struct CustomOpWithCanonicalize:
 
 
 fn main():
-    var x: Int32 = 4
-    var y: Int32 = 6
-    var res = __mlir_op.`custom.a`[_type=Int32](x, y)
+    # CHECK: %{{.*}} = "custom.a"(%{{[A-Za-z0-9]+}}, %{{[A-Za-z0-9]+}})
+    # CHECK-SAME: __custom_op_struct_ref = {{.*}}
+    var res = CustomOpA(19, 23)
     print(res)
 
 

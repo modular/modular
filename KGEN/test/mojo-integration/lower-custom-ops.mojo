@@ -44,8 +44,7 @@ fn main():
     ](x)
     print("The answer is:", res)
 
-    var y: Int32 = 12
-    var res2 = __mlir_op.`custom.add_thirty`[_type=Int32](y)
+    var res2 = AddThirtyOp(12)
     print("The answer is still:", res2)
 
     var res3 = add_constant_wrapper[21](23)
