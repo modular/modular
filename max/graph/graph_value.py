@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import inspect
 import sys
+from functools import cached_property
 from typing import Any, Iterable, Union
 
 if sys.version_info >= (3, 10):
@@ -72,7 +73,11 @@ class GraphValue:
     def from_shape(shape: ShapeLike) -> GraphValue:
         return ops.shape_to_tensor(shape)
 
-    @property
+    # TODO(MSDK-847): Fix the underlying perf issue and remove this.
+    # Using cached_property here is a bandaid.
+    # When running hypothesis tests, loading the type can be called 100,000s of times.
+    # Caching this property halves the execution time of some tests.
+    @cached_property
     def tensor_type(self) -> TensorType:
         """Returns the type of the GraphValue as a TensorType.
 
@@ -91,7 +96,7 @@ class GraphValue:
     # dtype and rank are special.
     # They use _graph directly to avoid loading the shape dimension if they aren't needed.
     # This also avoids accidentally loading algebraic expression dimensions (which will throw an exception).
-    @property
+    @cached_property
     def dtype(self) -> DType:
         t = self._mlir_value.type
         if not _graph.type_is_tensor(t):
@@ -99,7 +104,7 @@ class GraphValue:
 
         return DType(_graph.tensor_type_get_dtype(t))
 
-    @property
+    @cached_property
     def rank(self) -> int:
         t = self._mlir_value.type
         if not _graph.type_is_tensor(t):
