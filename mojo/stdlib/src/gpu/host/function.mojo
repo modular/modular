@@ -160,7 +160,6 @@ struct _CachedFunctionInfo(Boolable):
 
 
 @value
-@register_passable("trivial")
 struct _CachedFunctionPayload:
     var verbose: Bool
     var max_registers: Int32
@@ -169,6 +168,7 @@ struct _CachedFunctionPayload:
     var func_attribute: FuncAttribute
     var device_context_ptr: UnsafePointer[DeviceContext]
     var cuda_dll_ptr: UnsafePointer[CudaDLL]
+    var constant_memory: List[ConstantMemoryMapping]
 
     fn __init__(
         inout self,
@@ -179,6 +179,7 @@ struct _CachedFunctionPayload:
         func_attribute: FuncAttribute,
         device_context_ptr: UnsafePointer[DeviceContext],
         cuda_dll_ptr: UnsafePointer[CudaDLL],
+        owned constant_memory: List[ConstantMemoryMapping],
     ):
         self.verbose = verbose
         self.max_registers = max_registers
@@ -187,35 +188,27 @@ struct _CachedFunctionPayload:
         self.func_attribute = func_attribute
         self.device_context_ptr = device_context_ptr
         self.cuda_dll_ptr = cuda_dll_ptr
+        self.constant_memory = constant_memory^
 
 
 struct FunctionCache:
-    var dict: Dict[StringLiteral, UnsafePointer[_CachedFunctionInfo]]
+    var dict: Dict[StringLiteral, _CachedFunctionInfo]
     var lock: BlockingSpinLock
 
     fn __init__(inout self):
-        self.dict = Dict[StringLiteral, UnsafePointer[_CachedFunctionInfo]]()
+        self.dict = Dict[StringLiteral, _CachedFunctionInfo]()
         self.lock = BlockingSpinLock()
 
     fn __moveinit__(inout self: Self, owned existing: Self):
         self.dict = existing.dict^
         self.lock = BlockingSpinLock()
 
-    fn __del__(owned self):
-        for v in self.dict.values():
-            v[].destroy_pointee()
-
     fn get_or_create_entry[
         name: StringLiteral,
-        init_fn: fn (UnsafePointer[_CachedFunctionPayload]) -> UnsafePointer[
-            _CachedFunctionInfo
-        ],
+        init_fn: fn (_CachedFunctionPayload) raises -> _CachedFunctionInfo,
     ](
-        inout self,
-        payload: UnsafePointer[_CachedFunctionPayload] = UnsafePointer[
-            _CachedFunctionPayload
-        ](),
-    ) -> UnsafePointer[_CachedFunctionInfo]:
+        inout self, payload: _CachedFunctionPayload
+    ) raises -> _CachedFunctionInfo:
         with BlockingScopedLock(self.lock):
             # FIXME: (MSTDL-694) The following sporadically fails in commit test (unhandled exception).
 
@@ -229,15 +222,12 @@ struct FunctionCache:
             # return info_ptr
 
             # FIXME: (MSTDL-694) This code is unnecessairly expensive, but it won't fail in commit tests.
-            try:
-                if name in self.dict:
-                    return self.dict[name]
+            if name in self.dict:
+                return self.dict[name]
 
-                var info_ptr = init_fn(payload)
-                self.dict[name] = info_ptr
-                return info_ptr
-            except:
-                return UnsafePointer[_CachedFunctionInfo]()
+            var info_ptr = init_fn(payload)
+            self.dict[name] = info_ptr
+            return info_ptr
 
 
 # ===----------------------------------------------------------------------===#
@@ -270,6 +260,7 @@ struct Function[
     fn __init__(
         inout self,
         ctx_ptr: UnsafePointer[DeviceContext],
+        *,
         verbose: Bool = False,
         dump_ptx: Variant[Path, Bool] = False,
         dump_llvm: Variant[Path, Bool] = False,
@@ -277,6 +268,9 @@ struct Function[
         threads_per_block: Optional[Int] = None,
         cache_config: Optional[CacheConfig] = None,
         func_attribute: Optional[FuncAttribute] = None,
+        owned constant_memory: List[ConstantMemoryMapping] = List[
+            ConstantMemoryMapping
+        ](),
     ) raises:
         self.__init__(
             verbose=verbose,
@@ -311,6 +305,9 @@ struct Function[
         device_context_ptr: UnsafePointer[DeviceContext] = UnsafePointer[
             DeviceContext
         ](),
+        owned constant_memory: List[ConstantMemoryMapping] = List[
+            ConstantMemoryMapping
+        ](),
     ) raises:
         @parameter
         if _is_failable and self._impl.is_error:
@@ -331,6 +328,7 @@ struct Function[
             cache_config=cache_config.value().code if cache_config else -1,
             func_attribute=func_attribute.value() if func_attribute else FuncAttribute.NULL,
             cuda_function_cache=cuda_function_cache,
+            constant_memory=constant_memory^,
         )
 
         if info.error:
@@ -506,57 +504,37 @@ struct Function[
     @staticmethod
     fn init_fn[
         func_type: AnyTrivialRegType, func: func_type
-    ](payload_ptr: UnsafePointer[_CachedFunctionPayload]) -> UnsafePointer[
-        _CachedFunctionInfo
-    ]:
-        var res = UnsafePointer[_CachedFunctionInfo].alloc(1)
-        try:
-            var payload = payload_ptr[]
+    ](payload: _CachedFunctionPayload) raises -> _CachedFunctionInfo:
+        alias _impl = Self._impl
+        alias fn_name = _impl.function_name
 
-            alias _impl = Self._impl
-            alias fn_name = _impl.function_name
+        var module = Module(
+            _impl.asm,
+            verbose=payload.verbose,
+            max_registers=Optional[Int]() if payload.max_registers
+            <= 0 else Optional[Int](int(payload.max_registers)),
+            threads_per_block=Optional[Int]() if payload.threads_per_block
+            <= 0 else Optional[Int](int(payload.threads_per_block)),
+            cuda_dll=payload.cuda_dll_ptr[],
+            constant_memory=payload.constant_memory,
+        )
+        var func_handle = module.load(fn_name)
 
-            var module = Module(
-                _impl.asm,
-                verbose=payload.verbose,
-                max_registers=Optional[Int]() if payload.max_registers
-                <= 0 else Optional[Int](int(payload.max_registers)),
-                threads_per_block=Optional[Int]() if payload.threads_per_block
-                <= 0 else Optional[Int](int(payload.threads_per_block)),
-                cuda_dll=payload.cuda_dll_ptr[],
+        var cuda_dll = payload.device_context_ptr[].cuda_instance.cuda_dll
+
+        if payload.cache_config != -1:
+            _check_error(
+                cuda_dll.cuFuncSetCacheConfig(func_handle, payload.cache_config)
             )
-            var func_handle = module.load(fn_name)
-
-            var cuda_dll = payload.device_context_ptr[].cuda_instance.cuda_dll
-
-            if payload.cache_config != -1:
-                _check_error(
-                    cuda_dll.cuFuncSetCacheConfig(
-                        func_handle, payload.cache_config
-                    )
+        if payload.func_attribute.code != -1:
+            _check_error(
+                cuda_dll.cuFuncSetAttribute(
+                    func_handle,
+                    payload.func_attribute.code,
+                    payload.func_attribute.value,
                 )
-            if payload.func_attribute.code != -1:
-                _check_error(
-                    cuda_dll.cuFuncSetAttribute(
-                        func_handle,
-                        payload.func_attribute.code,
-                        payload.func_attribute.value,
-                    )
-                )
-            res.init_pointee_move(
-                _CachedFunctionInfo(module._steal_handle(), func_handle)
             )
-        except e:
-            res.init_pointee_move(_CachedFunctionInfo(e))
-        return res
-
-    @staticmethod
-    fn _init_fn[
-        func_type: AnyTrivialRegType, func: func_type
-    ](payload_ptr: UnsafePointer[NoneType]) -> UnsafePointer[NoneType]:
-        return Self.init_fn[func_type, func](
-            payload_ptr.bitcast[_CachedFunctionPayload]()
-        ).bitcast[NoneType]()
+        return _CachedFunctionInfo(module._steal_handle(), func_handle)
 
     @staticmethod
     fn _destroy_fn(cached_value_ptr: UnsafePointer[NoneType]):
@@ -581,7 +559,10 @@ struct Function[
         cuda_function_cache: UnsafePointer[FunctionCache] = UnsafePointer[
             FunctionCache
         ](),
-    ) -> _CachedFunctionInfo:
+        owned constant_memory: List[ConstantMemoryMapping] = List[
+            ConstantMemoryMapping
+        ](),
+    ) raises -> _CachedFunctionInfo:
         alias fn_name = _get_nvptx_fn_name[func]()
 
         var payload = _CachedFunctionPayload(
@@ -592,13 +573,14 @@ struct Function[
             func_attribute=func_attribute,
             device_context_ptr=device_context_ptr,
             cuda_dll_ptr=cuda_dll_ptr,
+            constant_memory=constant_memory^,
         )
 
-        var info_ptr = cuda_function_cache[].get_or_create_entry[
+        var info = cuda_function_cache[].get_or_create_entry[
             fn_name,
             Self.init_fn[func_type, func],
-        ](UnsafePointer.address_of(payload))
+        ](payload)
 
         _ = payload
 
-        return info_ptr[]
+        return info

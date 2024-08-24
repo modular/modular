@@ -506,6 +506,22 @@ struct LimitProperty:
 
 
 # ===----------------------------------------------------------------------===#
+# ConstantMemoryMapping
+# ===----------------------------------------------------------------------===#
+
+
+@value
+@register_passable("trivial")
+struct ConstantMemoryMapping:
+    var name: StringLiteral
+    var ptr: UnsafePointer[NoneType]
+
+    fn __init__(inout self, name: StringLiteral, ptr: UnsafePointer[NoneType]):
+        self.name = name
+        self.ptr = ptr
+
+
+# ===----------------------------------------------------------------------===#
 # LaunchAttribute
 # ===----------------------------------------------------------------------===#
 

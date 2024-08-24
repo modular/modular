@@ -325,9 +325,13 @@ struct Module:
         inout self,
         ctx: Context,
         content: String,
+        *,
         verbose: Bool = False,
         max_registers: Optional[Int] = None,
         threads_per_block: Optional[Int] = None,
+        owned constant_memory: List[ConstantMemoryMapping] = List[
+            ConstantMemoryMapping
+        ](),
     ) raises:
         self.__init__(
             content=content,
@@ -335,15 +339,62 @@ struct Module:
             max_registers=max_registers,
             threads_per_block=threads_per_block,
             cuda_dll=ctx.cuda_dll,
+            constant_memory=constant_memory^,
         )
 
     fn __init__(
         inout self,
         content: String,
         cuda_dll: CudaDLL,
+        *,
         verbose: Bool = False,
         max_registers: Optional[Int] = None,
         threads_per_block: Optional[Int] = None,
+        owned constant_memory: List[ConstantMemoryMapping] = List[
+            ConstantMemoryMapping
+        ](),
+    ) raises:
+        self.__init__(
+            content._strref_dangerous(),
+            cuda_dll=cuda_dll,
+            verbose=verbose,
+            max_registers=max_registers,
+            threads_per_block=threads_per_block,
+            constant_memory=constant_memory^,
+        )
+
+    fn __init__(
+        inout self,
+        content: StringLiteral,
+        cuda_dll: CudaDLL,
+        *,
+        verbose: Bool = False,
+        max_registers: Optional[Int] = None,
+        threads_per_block: Optional[Int] = None,
+        owned constant_memory: List[ConstantMemoryMapping] = List[
+            ConstantMemoryMapping
+        ](),
+    ) raises:
+        self.__init__(
+            StringRef(content),
+            cuda_dll=cuda_dll,
+            verbose=verbose,
+            max_registers=max_registers,
+            threads_per_block=threads_per_block,
+            constant_memory=constant_memory^,
+        )
+
+    fn __init__(
+        inout self,
+        content: StringRef,
+        cuda_dll: CudaDLL,
+        *,
+        verbose: Bool = False,
+        max_registers: Optional[Int] = None,
+        threads_per_block: Optional[Int] = None,
+        owned constant_memory: List[ConstantMemoryMapping] = List[
+            ConstantMemoryMapping
+        ](),
     ) raises:
         """Loads a module in the current CUDA context by mapping PTX provided as a NULL terminated text string.
         """

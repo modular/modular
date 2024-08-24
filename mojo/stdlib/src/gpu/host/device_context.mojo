@@ -214,6 +214,7 @@ struct DeviceFunction[
     fn __init__(
         inout self,
         ctx: DeviceContext,
+        *,
         verbose: Bool = False,
         dump_ptx: Variant[Path, Bool] = False,
         dump_llvm: Variant[Path, Bool] = False,
@@ -221,6 +222,9 @@ struct DeviceFunction[
         threads_per_block: Optional[Int] = None,
         cache_config: Optional[CacheConfig] = None,
         func_attribute: Optional[FuncAttribute] = None,
+        owned constant_memory: List[ConstantMemoryMapping] = List[
+            ConstantMemoryMapping
+        ](),
     ) raises:
         self.ctx_ptr = UnsafePointer[DeviceContext].address_of(ctx)
         self.ctx_ptr[].cuda_context.set_current()
@@ -228,13 +232,14 @@ struct DeviceFunction[
             func, target=target, _is_failable=_is_failable
         ](
             self.ctx_ptr,
-            verbose,
-            dump_ptx,
-            dump_llvm,
-            max_registers,
-            threads_per_block,
-            cache_config,
-            func_attribute,
+            verbose=verbose,
+            dump_ptx=dump_ptx,
+            dump_llvm=dump_llvm,
+            max_registers=max_registers,
+            threads_per_block=threads_per_block,
+            cache_config=cache_config,
+            func_attribute=func_attribute,
+            constant_memory=constant_memory^,
         )
 
 
@@ -305,6 +310,7 @@ struct DeviceContext:
         _is_failable: Bool = False,
     ](
         self,
+        *,
         verbose: Bool = False,
         dump_ptx: Variant[Path, Bool] = False,
         dump_llvm: Variant[Path, Bool] = False,
@@ -312,6 +318,9 @@ struct DeviceContext:
         threads_per_block: Optional[Int] = None,
         cache_config: Optional[CacheConfig] = None,
         func_attribute: Optional[FuncAttribute] = None,
+        owned constant_memory: List[ConstantMemoryMapping] = List[
+            ConstantMemoryMapping
+        ](),
     ) raises -> DeviceFunction[func, target=target, _is_failable=_is_failable]:
         return DeviceFunction[func, target=target, _is_failable=_is_failable](
             self,
