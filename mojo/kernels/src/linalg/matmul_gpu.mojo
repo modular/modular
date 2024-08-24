@@ -544,6 +544,7 @@ fn gemv_kernel_vector[
             )
 
 
+@__llvm_metadata(`nvvm.maxntid`=StaticTuple[Int32, 1](block_size))
 fn gemv_split_k[
     c_type: DType,
     c_shape: DimList,
@@ -552,9 +553,9 @@ fn gemv_split_k[
     b_type: DType,
     b_shape: DimList,
     simd_width: UInt,
-    tile_m: Int,
-    tile_n: Int,
-    block_size: Int,
+    tile_m: UInt,
+    tile_n: UInt,
+    block_size: UInt,
     elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
     s_type: DType = get_accum_type[c_type](),
 ](
@@ -566,7 +567,7 @@ fn gemv_split_k[
     k: UInt,
 ):
     alias block_step = 128
-    alias step_k = block_step // (bitwidthof[a_type]())
+    alias step_k = block_step // bitwidthof[a_type]()
     alias tile_k = step_k * block_size
     var tile_id_m = BlockIdx.x() * tile_m
     var tile_id_n = BlockIdx.y() * tile_n
@@ -584,7 +585,7 @@ fn gemv_split_k[
     alias align_act = alignof[SIMD[a_type, simd_width]]()
     alias align_weight = alignof[SIMD[b_type, simd_width]]()
 
-    memset_zero(acc, tile_m * tile_n)
+    memset_zero[count = tile_m * tile_n](acc)
 
     var act_idx = tile_id_m * k
     var weight_idx = tile_id_n * k
@@ -593,7 +594,7 @@ fn gemv_split_k[
     for idxK in range(tid * step_k, k, tile_k):
 
         @parameter
-        for i in range(tile_n):
+        for i in range(int(tile_n)):
             var tile_w_quantized = weight.data.load[
                 width=simd_width, alignment=align_weight
             ](weight_idx + i * k + idxK)
@@ -603,7 +604,7 @@ fn gemv_split_k[
                 tile_w[i * simd_width + cvt_idx] = tile_w_quantized[cvt_idx]
 
         @parameter
-        for i in range(tile_m):
+        for i in range(int(tile_m)):
             var tile_a_quantized = act.data.load[
                 width=simd_width, alignment=align_act
             ](act_idx + i * k + idxK)
@@ -613,7 +614,7 @@ fn gemv_split_k[
                 tile_a[cvt_idx] = tile_a_quantized[cvt_idx]
 
             @parameter
-            for j in range(tile_n):
+            for j in range(int(tile_n)):
 
                 @parameter
                 for l in range(step_k):
@@ -630,10 +631,10 @@ fn gemv_split_k[
     ]()
 
     @parameter
-    for mi in range(tile_m):
+    for mi in range(int(tile_m)):
 
         @parameter
-        for ni in range(tile_n):
+        for ni in range(int(tile_n)):
             var val = warp_reduce[shuffle_down, _reduce_add](
                 acc[mi * tile_n + ni]
             )
@@ -647,7 +648,7 @@ fn gemv_split_k[
         var val = Scalar[s_type]()
 
         @parameter
-        for jj in range(k_warp_num):
+        for jj in range(int(k_warp_num)):
             val += shmem[jj * tile_m * tile_n + ii]
 
         @parameter
