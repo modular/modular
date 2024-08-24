@@ -164,6 +164,7 @@ fn async_copy_wait_all():
 @always_inline
 fn dynamic_shared_memory[
     type: AnyType,
+    *,
     alignment: Int,
 ]() -> UnsafePointer[type, _GPUAddressSpace.SHARED]:
     """Gets a pointer to dynamic shared memory.
