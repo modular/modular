@@ -136,9 +136,9 @@ public:
   virtual void transferControlFlowTo(Operation *target,
                                      ArrayRef<Attribute> values) = 0;
 
-  /// Transfer control flow to the beginning of the given block with the
+  /// Transfer control flow to the beginning of the given region with the
   /// constant values of the block arguments.
-  virtual void transferControlFlowTo(Block *target,
+  virtual void transferControlFlowTo(Region &target,
                                      ArrayRef<Attribute> arguments) = 0;
 
   //===--------------------------------------------------------------------===//
@@ -338,7 +338,7 @@ public:
     // Function regions are isolated from above, so push a new stack frame.
     // Then, transfer control flow to the beginning of the function body.
     pushFrame(pc.isValid() ? &*pc : nullptr, body.getParentOp());
-    transferControlFlowTo(&body.front(), arguments);
+    transferControlFlowTo(body, arguments);
   }
 
   void returnFromFunction(ArrayRef<Attribute> returnValues) override {
@@ -361,11 +361,11 @@ public:
     }
   }
 
-  void transferControlFlowTo(Block *target,
+  void transferControlFlowTo(Region &target,
                              ArrayRef<Attribute> arguments) override {
-    for (auto [arg, value] : llvm::zip(target->getArguments(), arguments))
+    for (auto [arg, value] : llvm::zip(target.getArguments(), arguments))
       mapOrOverwrite(arg, value);
-    block = target;
+    block = &target.front();
     pc = Block::iterator();
   }
 

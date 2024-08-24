@@ -5,6 +5,7 @@
 ##===----------------------------------------------------------------------===##
 
 add_modular_library(InterpreterInterface
+  BytecodeInterpreter.cpp
   InterpreterAttrs.cpp
   InterpreterDialect.cpp
   InterpreterInterface.cpp

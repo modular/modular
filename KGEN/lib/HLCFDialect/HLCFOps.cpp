@@ -129,7 +129,7 @@ ValueRange ForOp::getEntryArguments(std::optional<unsigned> target) {
 
 ErrorTreeOrSuccess ForOp::interpret(ArrayRef<Attribute> operands,
                                     InterpreterState &state) {
-  state.transferControlFlowTo(&getBody().front(), operands);
+  state.transferControlFlowTo(getBody(), operands);
   return success();
 }
 
@@ -245,7 +245,7 @@ ValueRange LoopOp::getEntryArguments(std::optional<unsigned> target) {
 
 ErrorTreeOrSuccess LoopOp::interpret(ArrayRef<Attribute> operands,
                                      InterpreterState &state) {
-  state.transferControlFlowTo(&getBody().front(), operands);
+  state.transferControlFlowTo(getBody(), operands);
   return success();
 }
 
@@ -302,7 +302,7 @@ ErrorTreeOrSuccess IfOp::interpret(ArrayRef<Attribute> operands,
     return ErrorTree(getLoc(), "non-constant condition");
 
   state.transferControlFlowTo(
-      &(cond.getValue() ? getThenRegion() : getElseRegion()).front(), {});
+      cond.getValue() ? getThenRegion() : getElseRegion(), {});
   return success();
 }
 
@@ -386,12 +386,12 @@ ErrorTreeOrSuccess SwitchOp::interpret(ArrayRef<Attribute> operands,
   for (auto [i, caseValue] : llvm::enumerate(getCaseValues())) {
     if (cond.getInt() == caseValue) {
       // Matching case branch.
-      state.transferControlFlowTo(&getCaseRegions()[i].front(), {});
+      state.transferControlFlowTo(getCaseRegions()[i], {});
       return success();
     }
   }
   // Default branch.
-  state.transferControlFlowTo(&getDefaultRegion().front(), {});
+  state.transferControlFlowTo(getDefaultRegion(), {});
   return success();
 }
 
@@ -428,7 +428,7 @@ void ContinueOp::getBranchTargets(ArrayRef<Attribute> operands,
 ErrorTreeOrSuccess ContinueOp::interpret(ArrayRef<Attribute> operands,
                                          InterpreterState &state) {
   LoopOp loop = getParentLoop(*this, getLabelAttr());
-  state.transferControlFlowTo(&loop.getBody().front(), operands);
+  state.transferControlFlowTo(loop.getBody(), operands);
   return success();
 }
 
@@ -664,7 +664,7 @@ ValueRange ElifOp::getEntryArguments(std::optional<unsigned int> target) {
 
 ErrorTreeOrSuccess ElifOp::interpret(ArrayRef<Attribute> operands,
                                      InterpreterState &state) {
-  state.transferControlFlowTo(&getElifRegions()[0].front(), operands);
+  state.transferControlFlowTo(getElifRegions()[0], operands);
   return success();
 }
 
@@ -706,17 +706,16 @@ ErrorTreeOrSuccess ElifYieldOp::interpret(ArrayRef<Attribute> operands,
   ArrayRef<Attribute> blockArguments = operands.slice(1);
   if (auto cond = dyn_cast_if_present<BoolAttr>(operands[0])) {
     if (cond.getValue()) {
-      state.transferControlFlowTo(&parent.getElifRegions()[myIndex + 1].front(),
+      state.transferControlFlowTo(parent.getElifRegions()[myIndex + 1],
                                   blockArguments);
       return success();
     }
     unsigned nextIndex = myIndex + 2;
     if (nextIndex < parent.getElifRegions().size()) {
-      state.transferControlFlowTo(&parent.getElifRegions()[myIndex + 2].front(),
+      state.transferControlFlowTo(parent.getElifRegions()[myIndex + 2],
                                   blockArguments);
     } else {
-      state.transferControlFlowTo(&parent.getElseRegion().front(),
-                                  blockArguments);
+      state.transferControlFlowTo(parent.getElseRegion(), blockArguments);
     }
     return success();
   }

@@ -1,0 +1,53 @@
+//===----------------------------------------------------------------------===//
+//
+// This file is Modular Inc proprietary.
+//
+//===----------------------------------------------------------------------===//
+
+#ifndef KGEN_INTERPRETER_UTILS_H
+#define KGEN_INTERPRETER_UTILS_H
+
+#include "Support/Compiler/ErrorTree.h"
+#include "mlir/IR/SymbolTable.h"
+
+namespace M {
+/// Add a stack trace to an interpreter error.
+template <typename StackFrame, typename GetOriginFnT>
+ErrorTree addStackTraceImpl(ErrorTree error, ArrayRef<StackFrame> stack,
+                            GetOriginFnT &&getOrigin) {
+  for (const StackFrame &frame : llvm::reverse(stack)) {
+    StringRef funcName = cast<mlir::SymbolOpInterface>(frame.func).getName();
+    error = ErrorTree(frame.func->getLoc(),
+                      Error("failed to interpret function @" + funcName),
+                      std::move(error));
+    if (Operation *origin = getOrigin(frame)) {
+      error = ErrorTree(origin->getLoc(), Error("failed to evaluate call"),
+                        std::move(error));
+    }
+  }
+  return error;
+}
+
+/// Report an error with folding an operation.
+inline ErrorTree reportFoldError(Operation *op, ArrayRef<Attribute> operands,
+                                 const Twine &prefix,
+                                 const Twine &suffix = "") {
+  std::string note;
+  llvm::raw_string_ostream os(note);
+  os << prefix << op->getName();
+  if (!op->getAttrs().empty()) {
+    os << '{';
+    llvm::interleaveComma(op->getAttrs(), os, [&](const NamedAttribute &attr) {
+      os << attr.getName().getValue() << ": " << attr.getValue();
+    });
+    os << '}';
+  }
+  os << '(';
+  llvm::interleaveComma(operands, os);
+  os << ')' << suffix;
+  return {op->getLoc(), Error(os.str())};
+}
+
+} // namespace M
+
+#endif // KGEN_INTERPRETER_UTILS_H
