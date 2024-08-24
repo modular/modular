@@ -687,8 +687,8 @@ kgen.generator @global_constant() {
 
 // CHECK-LABEL: @global_alloc
 kgen.generator @global_alloc() {
-  // CHECK-NEXT: pop.global_alloc 2 x scalar<si32> address_space 3 align 32
-  %0 = pop.global_alloc 2 x !pop.scalar<si32> address_space 3 align 32
+  // CHECK-NEXT: pop.global_alloc "hello" 2 x scalar<si32> address_space 3 align 32
+  %0 = pop.global_alloc "hello" 2 x !pop.scalar<si32> address_space 3 align 32
   kgen.return
 }
 
