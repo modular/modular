@@ -415,6 +415,9 @@ struct Function[
         stream: Stream,
         shared_mem_bytes: Int = 0,
         owned attributes: List[LaunchAttribute] = List[LaunchAttribute](),
+        owned constant_memory: List[ConstantMemoryMapping] = List[
+            ConstantMemoryMapping
+        ](),
     ) raises:
         self._call_pack(
             args,
@@ -423,6 +426,7 @@ struct Function[
             stream=stream,
             shared_mem_bytes=shared_mem_bytes,
             attributes=attributes^,
+            constant_memory=constant_memory^,
         )
 
     @always_inline
@@ -437,6 +441,9 @@ struct Function[
         stream: Stream,
         shared_mem_bytes: Int = 0,
         owned attributes: List[LaunchAttribute] = List[LaunchAttribute](),
+        owned constant_memory: List[ConstantMemoryMapping] = List[
+            ConstantMemoryMapping
+        ](),
     ) raises:
         alias num_args = len(VariadicList(Ts))
         alias num_captures = Self._impl.num_captures
@@ -463,6 +470,7 @@ struct Function[
             stream=stream,
             shared_mem_bytes=shared_mem_bytes,
             attributes=attributes^,
+            constant_memory=constant_memory^,
         )
 
     @always_inline
@@ -475,7 +483,33 @@ struct Function[
         stream: Stream,
         shared_mem_bytes: Int = 0,
         owned attributes: List[LaunchAttribute] = List[LaunchAttribute](),
+        owned constant_memory: List[ConstantMemoryMapping] = List[
+            ConstantMemoryMapping
+        ](),
     ) raises:
+        if constant_memory:
+            for i in range(len(constant_memory)):
+                var entry = constant_memory[i]
+                var device_ptr = UnsafePointer[NoneType]()
+                _check_error(
+                    self.cuda_dll.cuModuleGetGlobal(
+                        UnsafePointer.address_of(device_ptr),
+                        UnsafePointer[Int](),
+                        self.info.mod_handle,
+                        entry.name.unsafe_cstr_ptr(),
+                    )
+                )
+                _check_error(
+                    self.cuda_dll.cuMemcpyHtoDAsync(
+                        device_ptr,
+                        entry.ptr.bitcast[Int](),
+                        entry.byte_count,
+                        stream.stream,
+                    )
+                )
+                _ = entry
+                _ = device_ptr
+
         var config = LaunchConfig(
             grid_dim_x=grid_dim.x(),
             grid_dim_y=grid_dim.y(),
@@ -500,6 +534,7 @@ struct Function[
         )
         _ = config
         _ = attributes^
+        _ = constant_memory^
 
     @staticmethod
     fn init_fn[

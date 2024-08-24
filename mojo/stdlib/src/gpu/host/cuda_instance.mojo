@@ -288,14 +288,14 @@ alias cuCtxResetPersistingL2Cache = _dylib_function[
 ]
 
 alias cuModuleGetGlobal = _dylib_function[
-    "cuModuleGetGlobal",
+    "cuModuleGetGlobal_v2",
     fn (
-        UnsafePointer[_DeviceHandle],
-        UnsafePointer[_ModuleHandle],
+        UnsafePointer[UnsafePointer[NoneType]],
+        UnsafePointer[Int],
+        _ModuleHandle,
         UnsafePointer[C_char],
     ) -> Result,
 ]
-
 
 # ===----------------------------------------------------------------------===#
 # AccessProperty
@@ -524,10 +524,17 @@ struct LimitProperty:
 struct ConstantMemoryMapping:
     var name: StringLiteral
     var ptr: UnsafePointer[NoneType]
+    var byte_count: Int
 
-    fn __init__(inout self, name: StringLiteral, ptr: UnsafePointer[NoneType]):
+    fn __init__(
+        inout self,
+        name: StringLiteral,
+        ptr: UnsafePointer[NoneType],
+        byte_count: Int,
+    ):
         self.name = name
         self.ptr = ptr
+        self.byte_count = byte_count
 
 
 # ===----------------------------------------------------------------------===#

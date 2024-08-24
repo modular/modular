@@ -331,6 +331,7 @@ struct DeviceContext:
             threads_per_block=threads_per_block,
             cache_config=cache_config,
             func_attribute=func_attribute,
+            constant_memory=constant_memory^,
         )
 
     @parameter
@@ -344,6 +345,9 @@ struct DeviceContext:
         block_dim: Dim,
         shared_mem_bytes: Int = 0,
         owned attributes: List[LaunchAttribute] = List[LaunchAttribute](),
+        owned constant_memory: List[ConstantMemoryMapping] = List[
+            ConstantMemoryMapping
+        ](),
     ) raises:
         self._enqueue_function(
             f,
@@ -352,6 +356,7 @@ struct DeviceContext:
             block_dim=block_dim,
             shared_mem_bytes=shared_mem_bytes,
             attributes=attributes^,
+            constant_memory=constant_memory^,
         )
 
     @parameter
@@ -365,6 +370,9 @@ struct DeviceContext:
         block_dim: Dim,
         shared_mem_bytes: Int = 0,
         owned attributes: List[LaunchAttribute] = List[LaunchAttribute](),
+        owned constant_memory: List[ConstantMemoryMapping] = List[
+            ConstantMemoryMapping
+        ](),
     ) raises:
         self.cuda_context.set_current()
 
@@ -384,6 +392,7 @@ struct DeviceContext:
                 shared_mem_bytes=shared_mem_bytes,
                 stream=stream,
                 attributes=attributes^,
+                constant_memory=constant_memory^,
             )
             end.record(stream)
             end.sync()
@@ -407,6 +416,7 @@ struct DeviceContext:
                 shared_mem_bytes=shared_mem_bytes,
                 stream=stream,
                 attributes=attributes^,
+                constant_memory=constant_memory^,
             )
 
     fn execution_time[
