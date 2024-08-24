@@ -363,7 +363,10 @@ struct LayoutTensor[
 
         # TODO(KERN-812): Support numpy like broadcasting and relax rank-2
         # constrain.
-        constrained[rank == 2, "Only supports rank-2 tensor"]()
+        constrained[
+            rank == 2 or rank == other.rank,
+            "Only supports rank-2 tensor, or same rank",
+        ]()
 
         var res_tensor = self if inplace else Self.stack_allocation()
 
@@ -516,6 +519,45 @@ struct LayoutTensor[
             return Self.element_type(other) * val
 
         return self.__elementwise_unary[mul_val]()
+
+    @always_inline
+    fn __mul__[
+        other_layout: Layout,
+        index_type: DType,
+    ](
+        self,
+        other: LayoutTensor[
+            dtype,
+            other_layout,
+            _,
+            address_space=address_space,
+            element_layout=element_layout,
+            index_type=index_type,
+        ],
+    ) -> Self:
+        """Perform a multiplication with another LayoutTensor and return the
+        resulting tensor.
+
+        Currently, only tensors of the same shape are supported if the ranks are
+        the same. Additionally, tensors of rank-2 are supported.
+
+        Parameters:
+            other_layout: The layout of the other tensor.
+            index_type: The indexing type of the other tensor.
+
+        Args:
+            other: The other tensor to be multiplied with.
+
+        Returns:
+            The resulting tensor after multiplication.
+        """
+
+        fn mul_val(
+            lhs: Self.element_type, rhs: Self.element_type
+        ) capturing -> Self.element_type:
+            return lhs * rhs
+
+        return self.__elementwise_binary_with_broadcast[mul_val](other)
 
     @always_inline
     fn __imul__(self, other: Scalar[dtype]):
