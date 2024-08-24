@@ -34,6 +34,48 @@ using namespace KGEN;
 using namespace AsyncRT;
 
 //===----------------------------------------------------------------------===//
+// InterpreterCache
+//===----------------------------------------------------------------------===//
+
+const FunctionIRBytecode *
+ConcreteFunction::CompiledRegion::compileIfNecessary(Region &region,
+                                                     bool optimize) {
+  // Try to minimize writer contention by checking quickly if the region is
+  // already compiled.
+  if (compiled)
+    return &*bytecode.get();
+
+  // Let in only one thread at a time.
+  return bytecode.modify([&](auto &bc) -> const FunctionIRBytecode * {
+    // If another thread got in here first, just exit.
+    if (compiled)
+      return &*bc;
+
+    auto func = cast<FuncOp>(region.getParentOp());
+    CompilerTimeTraceScope traceScope(
+        "compileBytecode", [func] { return FuncOp(func).getSymName().str(); });
+
+    // If the compilation mode is -O0, quickly optimize the function.
+    if (optimize) {
+      clone = func.clone();
+      func = *clone;
+      mlir::PassManager mgr(clone->getContext());
+      mgr.enableVerifier(false);
+      mgr.addPass(createCanonicalizer());
+      mgr.addPass(createSROA());
+      mgr.addPass(createMem2Reg());
+      mgr.addPass(createCanonicalizer());
+      mgr.addPass(mlir::createCSEPass());
+      (void)mgr.run(*clone);
+    }
+
+    bc.emplace(FunctionIRBytecode::compile(func.getBodyRegion()));
+    compiled = true;
+    return &*bc;
+  });
+}
+
+//===----------------------------------------------------------------------===//
 // ExpansionGraph
 //===----------------------------------------------------------------------===//
 
@@ -323,14 +365,14 @@ static void collectOpsToProcessInside(Region &toProcess, ImplNode *parent,
 Elaborator::Elaborator(SymbolTable &symtab,
                        ParameterCollector::Analysis &paramCache,
                        TargetInfoAttr target, ElaboratorCallbacks callbacks,
-                       const ElaborateGeneratorsOptions &config,
-                       mlir::DiagnosticEngine::HandlerID diagHandlerID)
-    : target(target), config(config), oldSymTab(symtab),
+                       const ElaborateGeneratorsOptions &config)
+    : InterpreterCache(config.optimizeInterpreter), target(target),
+      config(config), oldSymTab(symtab),
       env(symtab.getOp()->getAttrOfType<EnvAttr>(EnvAttr::getEnvAttrName())),
       runtime(*loadContext(target.getContext())->get<AsyncRT::Runtime>()),
       g(this->runtime),
       paramCache(paramCache, runtime.getWorkQueue()->getParallelismLevel()),
-      callbacks(std::move(callbacks)), diagHandlerID(diagHandlerID) {}
+      callbacks(std::move(callbacks)) {}
 
 //===----------------------------------------------------------------------===//
 // Elaborator::finalizeInstance
@@ -446,16 +488,18 @@ ErrorTreeOr<Attribute> Elaborator::concretizeSymbolsWithin(Attribute value,
 
 void Elaborator::addDeferredFunction(OwningOpRef<FuncOp> func) {
   FuncOp op = func.release();
-  if (concreteInsts.modify(
-          [this, op, name = op.getSymNameAttr()](auto &funcs) mutable {
-            if (funcs.try_emplace(name, op).second) {
-              deferredSymbols.push_back(op);
-              return true;
-            }
-            op.erase();
-            return false;
-          }))
+  auto tryAdd = [this, op, name = op.getSymNameAttr()](auto &funcs) mutable {
+    if (funcs.try_emplace(name, op).second) {
+      deferredSymbols.push_back(op);
+      return true;
+    }
+    op.erase();
+    return false;
+  };
+  if (concreteInsts.modify(tryAdd)) {
+    addRegion(op.getBodyRegion());
     addConcreteFunc(op);
+  }
 }
 
 //===----------------------------------------------------------------------===//
@@ -1341,6 +1385,7 @@ ElaborationState Elaborator::specializeGenerator(ImplNode *inode,
   concreteInsts.modify([instance, mangledName](auto &map) {
     map.try_emplace(mangledName, instance);
   });
+  addRegion(instance.getBodyRegion());
 
   // Clone the body of the generator into the function.
   // TODO: is there a nice way for us to avoid cloning this?
@@ -1690,6 +1735,7 @@ LogicalResult Elaborator::run(ModuleOp theModule,
   for (FuncOp func : theModule.getOps<FuncOp>()) {
     addConcreteFunc(func);
     concreteInsts.get().try_emplace(func.getSymNameAttr(), func);
+    addRegion(func.getBodyRegion());
   }
 
   auto emptyInputParamKey = ParameterExprArrayAttr::get(ctx, {});
@@ -1910,15 +1956,14 @@ public:
     }
 
     ElaboratorCallbacks callbacks{compileAsmFn};
-    ElaborateGeneratorsOptions config{enableSearch, allowMultiplePrimaryImpls,
-                                      maxDepth, elaborateDebugInfo,
-                                      diagAllFailures};
+    ElaborateGeneratorsOptions config{maxDepth, elaborateDebugInfo,
+                                      optimizeInterpreter};
 
     VerboseCompilerTimeTraceScope traceScope("elaborate-generators");
 
     // Now, construct and run the elaborator.
     Elaborator impl(symtab.getTopLevelSymbolTable(), paramCache, target,
-                    std::move(callbacks), config, diagHandlerID);
+                    std::move(callbacks), config);
     if (failed(impl.run(theModule, primaryGenerators)))
       return signalPassFailure();
   }

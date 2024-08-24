@@ -50,8 +50,7 @@ public:
   };
 
   CompilationOptions(
-      bool enableSearch = true, unsigned optimizationLevel = 3,
-      DebugInfoLevel debugLevel = kNoDebug,
+      unsigned optimizationLevel = 3, DebugInfoLevel debugLevel = kNoDebug,
       std::optional<DebugAtLevel> debugAtLevel = std::nullopt,
       Sanitizers sanitizers = Sanitizers(),
       bool enableXRayInstrumentation = false,
@@ -84,7 +83,6 @@ public:
   /// Save temporary files to a file with the given prefix.
   void setSaveTemps(std::string prefix) { saveTempsPrefix = prefix; }
 
-  bool enableSearch = true;
   unsigned optimizationLevel = 3;
   DebugInfoLevel debugLevel = kNoDebug;
   std::optional<DebugAtLevel> debugAtLevel;
@@ -97,7 +95,6 @@ public:
   DebugInfoLanguage debugInfoLanguage = kLangMojo;
 
   std::string saveTempsPrefix = "";
-  bool emitAllElaboratorDiags = false;
   std::string searchPaths = "";
 
   // HACK: to disable llvm splitting for some cases.

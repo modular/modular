@@ -8,7 +8,7 @@
 #define KGEN_ELABORATOR_IREVALUATOR_H
 
 #include "Cache/CachedTransform.h"
-#include "KGEN/Interpreter/InterpreterState.h"
+#include "KGEN/Interpreter/BytecodeInterpreter.h"
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/KGENDialect/KGENParameters.h"
 #include "KGEN/KGENDialect/ParameterEvaluator.h"
@@ -31,14 +31,12 @@ struct ExpansionGraph;
 /// to concretize parameter expressions and compute symbolic parameter
 /// expressions, such as `apply` on a symbol constant or `get_sizeof` and
 /// `get_alignof` a decl type.
-class IREvaluator : public ParameterEvaluator, public IRInterpreter {
+class IREvaluator : public ParameterEvaluator, public BytecodeInterpreter {
 public:
   /// Construct the IR evaluator with a symbol table for evaluating symbolic
   /// expressions.
   IREvaluator(Elaborator &elaborator, ImplNode *parent);
-  IREvaluator(const IREvaluator &other)
-      : ParameterEvaluator(other), IRInterpreter(other.getTarget()),
-        elaborator(other.elaborator), parent(other.parent) {}
+  IREvaluator(const IREvaluator &other);
 
   /// Evaluate symbolic expressions using the symbol table.
   FailureOr<TypedAttr> evaluateExpression(ParamOperatorAttr op) override;

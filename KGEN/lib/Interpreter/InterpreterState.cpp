@@ -735,7 +735,7 @@ IRInterpreter::interpretFunction(Region &body, ArrayRef<Attribute> arguments) {
 }
 
 Operation *IRInterpreter::getOrigin(size_t depth) {
-  if (depth >= stack.size())
+  if (depth >= stackIdx)
     return nullptr;
   return stack[stackIdx - 1 - depth].origin;
 }

@@ -147,11 +147,11 @@ void KGEN::buildElaborateModulePipeline(mlir::PassManager &pm,
 
   // After elaboration, we have no use for the parameter verifier anymore.
   ElaborateGeneratorsOptions elaboratorOptions;
-  elaboratorOptions.enableSearch = options.enableSearch;
   elaboratorOptions.elaborateDebugInfo =
       options.debugLevel == CompilationOptions::kLineTablesOnly ||
       options.debugLevel == CompilationOptions::kFullDebugInfo;
-  elaboratorOptions.diagAllFailures = options.emitAllElaboratorDiags;
+  // When compiling with -O0, optimize functions before interpreting them.
+  elaboratorOptions.optimizeInterpreter = options.optimizationLevel == 0;
   pm.addPass(createElaborateGenerators(target, elaboratorOptions,
                                        std::move(compileAsmFn)));
 }

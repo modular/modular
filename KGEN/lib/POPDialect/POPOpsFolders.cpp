@@ -789,8 +789,11 @@ LogicalResult CastOp::canonicalize(CastOp op, PatternRewriter &b) {
 
 OpFoldResult SIMDExtractElementOp::fold(FoldAdaptor adaptor) {
   // Extracting from a scalar is always going to return the scalar.
-  if (getVector().getType().isScalar())
+  if (getVector().getType().isScalar()) {
+    if (Attribute attr = adaptor.getVector())
+      return attr;
     return getVector();
+  }
 
   auto vec = dyn_cast_if_present<SIMDAttr>(adaptor.getVector());
   auto idx = dyn_cast_if_present<IntegerAttr>(adaptor.getPosition());
@@ -930,8 +933,11 @@ OpFoldResult SIMDShuffleOp::fold(FoldAdaptor adaptor) {
 OpFoldResult SIMDSplatOp::fold(FoldAdaptor adaptor) {
   std::optional<int64_t> size = getType().getResolvedSize();
 
-  if (size == 1)
+  if (size == 1) {
+    if (Attribute scalar = adaptor.getScalar())
+      return scalar;
     return getScalar();
+  }
 
   auto scalar = dyn_cast_if_present<SIMDAttr>(adaptor.getScalar());
   if (!size || !scalar)
@@ -1058,8 +1064,16 @@ LogicalResult OffsetOp::canonicalize(OffsetOp op, PatternRewriter &b) {
 
 OpFoldResult SelectOp::fold(FoldAdaptor adaptor) {
   // Narrow to one of the conditional values.
-  if (auto cond = dyn_cast_if_present<BoolAttr>(adaptor.getCondition()))
-    return cond.getValue() ? getTrueValue() : getFalseValue();
+  if (auto cond = dyn_cast_if_present<BoolAttr>(adaptor.getCondition())) {
+    if (cond.getValue()) {
+      if (Attribute attr = adaptor.getTrueValue())
+        return attr;
+      return getTrueValue();
+    }
+    if (Attribute attr = adaptor.getFalseValue())
+      return attr;
+    return getFalseValue();
+  }
 
   // Fold `select x, true, false -> x`.
   auto trueAttr = dyn_cast_if_present<BoolAttr>(adaptor.getTrueValue());

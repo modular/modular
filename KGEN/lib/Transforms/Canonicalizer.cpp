@@ -439,10 +439,10 @@ struct Canonicalizer : public impl::CanonicalizerBase<Canonicalizer> {
 
 void Canonicalizer::runOnOperation() {
   // If we do not have custom patterns, check if there are some defined.
-  if (!hasCustomPatterns) {
+  if (!hasCustomPatterns && compileCanonicalizationFnsFn) {
     auto theModule = getOperation()->getParentOfType<ModuleOp>();
     if (!theModule)
-      theModule = mlir::cast<ModuleOp>(getOperation());
+      theModule = cast<ModuleOp>(getOperation());
 
     auto customOpImplsModuleAttr =
         theModule->getAttrOfType<DenseResourceElementsAttr>(
