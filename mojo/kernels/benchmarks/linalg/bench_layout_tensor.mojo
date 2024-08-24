@@ -45,15 +45,15 @@ struct Matrix[rows: Int, cols: Int]:
         return Self(data)
 
     fn __getitem__(self, y: Int, x: Int) -> SIMD[dtype, 1]:
-        return self.load[1](y, x)
+        return self.load(y, x)
 
     fn __setitem__(inout self, y: Int, x: Int, val: SIMD[dtype, 1]):
-        self.store[1](y, x, val)
+        self.store(y, x, val)
 
-    fn load[nelts: Int](self, y: Int, x: Int) -> SIMD[dtype, nelts]:
+    fn load[nelts: Int = 1](self, y: Int, x: Int) -> SIMD[dtype, nelts]:
         return self.data.load[width=nelts](y * self.cols + x)
 
-    fn store[nelts: Int](self, y: Int, x: Int, val: SIMD[dtype, nelts]):
+    fn store[nelts: Int = 1](self, y: Int, x: Int, val: SIMD[dtype, nelts]):
         return self.data.store[width=nelts](y * self.cols + x, val)
 
 
