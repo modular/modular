@@ -13,6 +13,7 @@ from sys.intrinsics import _RegisterPackType
 from builtin.dtype import _uint_type_of_width
 from memory import UnsafePointer
 from memory.reference import _GPUAddressSpace
+from memory.reference import AddressSpace as _AddressSpace
 from memory.unsafe import bitcast
 
 from utils import StaticIntTuple
@@ -162,22 +163,24 @@ fn async_copy_wait_all():
 
 
 @always_inline
-fn dynamic_shared_memory[
+fn external_memory[
     type: AnyType,
     *,
+    address_space: _AddressSpace,
     alignment: Int,
-]() -> UnsafePointer[type, _GPUAddressSpace.SHARED]:
+]() -> UnsafePointer[type, address_space]:
     """Gets a pointer to dynamic shared memory.
 
     Parameters:
         type: The pointer's type.
+        address_space: The address space used.
         alignment: The pointer's address alignment.
 
     Returns:
         A pointer to dynamic shared memory.
     """
     return __mlir_op.`pop.extern_ptr_symbol`[
-        _type = UnsafePointer[type, _GPUAddressSpace.SHARED]._mlir_type,
+        _type = UnsafePointer[type, address_space]._mlir_type,
         alignment = alignment.value,
     ]()
 
