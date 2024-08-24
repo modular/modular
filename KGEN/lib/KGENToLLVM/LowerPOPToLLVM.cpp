@@ -1933,7 +1933,7 @@ public:
       Type resType = convertType(op.getResSymbol().getType().getElementType());
       auto global = rewriter.create<LLVM::GlobalOp>(
           op.getLoc(), resType, /*constant=*/false, LLVM::Linkage::External,
-          "extern_ptr_syml", /*value=*/nullptr,
+          cast<StringAttr>(adaptor.getName()).strref(), /*value=*/nullptr,
           /*alignment=*/
           getAlignment(getTypeConverter(), op.getResSymbol().getType(),
                        op.getAlignmentAttr()),
