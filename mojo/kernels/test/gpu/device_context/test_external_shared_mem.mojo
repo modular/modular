@@ -12,9 +12,9 @@ from gpu.memory import external_memory, AddressSpace
 from gpu.sync import barrier
 
 
-# CHECK-LABEL: test_dynamic_shared_mem
-fn test_dynamic_shared_mem(ctx: DeviceContext) raises:
-    print("== test_dynamic_shared_mem")
+# CHECK-LABEL: test_external_shared_mem
+fn test_external_shared_mem(ctx: DeviceContext) raises:
+    print("== test_external_shared_mem")
 
     fn dynamc_smem_kernel(data: UnsafePointer[Float32]):
         var dynamic_sram = external_memory[
@@ -40,8 +40,8 @@ fn test_dynamic_shared_mem(ctx: DeviceContext) raises:
     ctx.enqueue_function(
         func,
         res_device,
-        grid_dim=(1),
-        block_dim=(16),
+        grid_dim=1,
+        block_dim=16,
         shared_mem_bytes=64 * 1024,
     )
 
@@ -72,4 +72,4 @@ fn test_dynamic_shared_mem(ctx: DeviceContext) raises:
 
 def main():
     with DeviceContext() as ctx:
-        test_dynamic_shared_mem(ctx)
+        test_external_shared_mem(ctx)
