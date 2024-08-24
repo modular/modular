@@ -10,16 +10,83 @@
 #include "AsyncRT/CompilerSupport/AsyncSideEffectMap.h"
 #include "Cache/CachedTransform.h"
 #include "IREvaluator.h"
+#include "KGEN/Interpreter/BytecodeInterpreter.h"
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/KGENDialect/KGENParameters.h"
+#include "KGEN/Support/CompilerProfiling.h"
 #include "KGEN/ToolCommon/KGENPasses.h"
 #include "Support/Compiler/ErrorTree.h"
 #include "Support/Threading/Shared.h"
 #include "Support/Threading/ThreadLocalCache.h"
 #include "mlir/Analysis/SymbolTableAnalysis.h"
+#include "mlir/Pass/PassManager.h"
 #include "mlir/Support/ThreadLocalCache.h"
+#include "mlir/Transforms/Passes.h"
 
 namespace M::KGEN {
+
+//===----------------------------------------------------------------------===//
+// InterpreterCache
+//===----------------------------------------------------------------------===//
+
+/// A concrete function is a region with a lazily generated interpreter
+/// bytecode.
+class ConcreteFunction {
+public:
+  ConcreteFunction() : region(nullptr) {}
+  ConcreteFunction(Region &region)
+      : region(&region), compiled(std::make_shared<CompiledRegion>()) {}
+
+  /// Get the bytecode or generate it if necessary.
+  const FunctionIRBytecode *getOrCompile(bool optimize) {
+    return compiled->compileIfNecessary(*region, optimize);
+  }
+
+  operator bool() const { return region; }
+
+private:
+  struct CompiledRegion {
+    const FunctionIRBytecode *compileIfNecessary(Region &region, bool optimize);
+
+    /// A clone of the original function if we choose to optimize it before
+    /// generating bytecode.
+    OwningOpRef<FuncOp> clone;
+    /// Shared bytecode generation.
+    Shared<std::optional<FunctionIRBytecode>> bytecode;
+    /// A flag to indicate whether the bytecode has already been generated.
+    std::atomic<bool> compiled = false;
+  };
+
+  /// The region to compile.
+  Region *region;
+  /// A shared pointer to a compiled bytecode that can be sharded across
+  /// threads.
+  std::shared_ptr<CompiledRegion> compiled;
+};
+
+class InterpreterCache : public BytecodeCompiler {
+public:
+  InterpreterCache(bool optimize) : optimize(optimize) {}
+
+  void addRegion(Region &region) {
+    cache.modify(
+        [&](auto &map) { map.try_emplace(&region, ConcreteFunction(region)); });
+  }
+
+  const FunctionIRBytecode *compileBytecode(Region &region) override {
+    ConcreteFunction &value = (*tlc)[&region];
+    if (!value)
+      value = cache.read([&](auto &map) { return map.at(&region); });
+    return value.getOrCompile(optimize);
+  }
+
+private:
+  bool optimize;
+  // Shared top-level cache.
+  Shared<DenseMap<Region *, ConcreteFunction>> cache;
+  // Per-thread cache to reduce contention.
+  mlir::ThreadLocalCache<DenseMap<Region *, ConcreteFunction>> tlc;
+};
 
 //===----------------------------------------------------------------------===//
 // ExpansionGraph
@@ -126,13 +193,12 @@ struct ElaboratorCallbacks {
 /// it walks the IR and specializes operations. This outputs IR that has been
 /// fully specialized/concretized, with the appropriate functions
 /// multi-versioned.
-class Elaborator {
+class Elaborator : public InterpreterCache {
 public:
   /// Initialize the elaborator and its symbol table.
   Elaborator(SymbolTable &symtab, ParameterCollector::Analysis &paramCache,
              TargetInfoAttr target, ElaboratorCallbacks callbacks,
-             const ElaborateGeneratorsOptions &config,
-             mlir::DiagnosticEngine::HandlerID diagHandleID);
+             const ElaborateGeneratorsOptions &config);
 
   //===--------------------------------------------------------------------===//
   // IREvaluator Interface
@@ -400,9 +466,6 @@ private:
 
   /// Deferred generated symbols to append to the module.
   SmallVector<FuncOp> deferredSymbols;
-
-  /// A unique ID for Diagnostic Handle if filter is needed.
-  mlir::DiagnosticEngine::HandlerID diagHandlerID;
 };
 
 } // namespace M::KGEN

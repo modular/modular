@@ -368,19 +368,13 @@ def ElaborateGenerators : Pass<"elaborate-generators", "ModuleOp"> {
   ];
 
   let options = [
-    Option<"enableSearch", "enable-search", "bool", "false",
-           "If true, benchmark implementations to find the fastest one.">,
-    Option<"allowMultiplePrimaryImpls", "allow-multiple-primary-impls", "bool",
-           "false", "Allow primary generators to have multiple implementations.">,
     Option<"maxDepth", "max-depth", "unsigned",
            "std::numeric_limits<unsigned>::max()",
            "The maximum elaborator instantiation depth.">,
     Option<"elaborateDebugInfo", "elaborate-debuginfo", "bool", "false",
            "If true, parameter references in debuginfo will be concretized.">,
-    Option<"diagAllFailures", "diag-all-failures", "bool", "false",
-           "If true, emit remarks for why any implementation failed.">,
-    Option<"diagHandlerID", "diag-handler-id", "uint64_t", "0",
-           "The diagnostic handler ID.">
+    Option<"optimizeInterpreter", "optimize-interp", "bool", "false",
+           "Whether to optimize interpreter functions.">
   ];
 }
 

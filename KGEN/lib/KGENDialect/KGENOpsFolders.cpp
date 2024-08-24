@@ -59,8 +59,11 @@ ErrorTreeOrSuccess ParamMaterializeOp::interpret(ArrayRef<Attribute> operands,
 
 /// Fold away the rebind if the input and output types are the same.
 OpFoldResult RebindOp::fold(FoldAdaptor adaptor) {
-  if (getInput().getType() == getType())
+  if (getInput().getType() == getType()) {
+    if (Attribute input = adaptor.getInput())
+      return input;
     return getInput();
+  }
   if (auto ptr = dyn_cast_or_null<SymbolicPointerAttr>(adaptor.getInput()))
     return SymbolicPointerAttr::get(ptr.getSlot(), getType());
   return {};

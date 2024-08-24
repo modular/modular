@@ -322,11 +322,9 @@ compileElaboratorAsm(GeneratorOp func, SymbolConstantAttr symbol,
 
   // Run elaboration through to the end of the optimization pipeline.
   ElaborateGeneratorsOptions elaboratorOptions;
-  elaboratorOptions.enableSearch = options.enableSearch;
   elaboratorOptions.elaborateDebugInfo =
       options.debugLevel == CompilationOptions::kLineTablesOnly ||
       options.debugLevel == CompilationOptions::kFullDebugInfo;
-  elaboratorOptions.diagHandlerID = diagHandlerID;
   mlir::PassManager pm(target.getContext());
   if constexpr (KGEN::kIsTracingEnabled)
     pm.enableTiming(std::make_unique<TimeProfilerTimingManager>());

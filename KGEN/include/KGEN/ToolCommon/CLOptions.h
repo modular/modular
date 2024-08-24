@@ -84,8 +84,6 @@ public:
 
   bool enableXRayInstrumentation{false};
 
-  bool enableSearch{false};
-
   SmallVector<std::string> includePaths;
 
   SmallVector<std::string> defines;
@@ -135,7 +133,7 @@ public:
     std::optional<CompilationOptions::DebugAtLevel> debugAt;
     if (debugAtLevel != CompilationOptions::kDebugUnset)
       debugAt = debugAtLevel;
-    return CompilationOptions(enableSearch, optLevel, debugInfoLevel, debugAt,
+    return CompilationOptions(optLevel, debugInfoLevel, debugAt,
                               sanitizerOptions, enableXRayInstrumentation,
                               targetTriple, targetCpu, targetFeatures);
   }
@@ -202,11 +200,6 @@ private:
       "xray-instrument",
       cl::desc("Enable XRay instrumentation for the generated code."),
       llvm::cl::location(options.enableXRayInstrumentation),
-      llvm::cl::cat(KGENOptionsCategory)};
-
-  M::cl::MOpt<bool, true> enableSearch{
-      "enable-search", cl::desc("Do search when an evaluator is provided."),
-      llvm::cl::location(options.enableSearch),
       llvm::cl::cat(KGENOptionsCategory)};
 
   M::cl::MListOpt<std::string, SmallVector<std::string>> includePaths{

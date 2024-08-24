@@ -1,4 +1,4 @@
-// RUN: kgen-opt %s -elaborate-generators="enable-search=true max-depth=128" -verify-diagnostics -split-input-file -allow-unregistered-dialect
+// RUN: kgen-opt %s -elaborate-generators="max-depth=128" -verify-diagnostics -split-input-file -allow-unregistered-dialect
 
 // Recursive expansions.
 
@@ -179,7 +179,7 @@ kgen.generator @recursive1() -> index {
 }
 
 
-// ----
+// -----
 // COM: MOCO-964 fix.
 kgen.generator @will_fail() {
   kgen.param.declare B : !kgen.string = <"foo">

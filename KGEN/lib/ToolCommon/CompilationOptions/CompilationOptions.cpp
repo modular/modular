@@ -13,14 +13,13 @@ using namespace M;
 using namespace KGEN;
 
 CompilationOptions::CompilationOptions(
-    bool enableSearch, unsigned optimizationLevel, DebugInfoLevel debugLevel,
+    unsigned optimizationLevel, DebugInfoLevel debugLevel,
     std::optional<DebugAtLevel> debugAtLevel, Sanitizers sanitizers,
     bool enableXRayInstrumentation, std::string targetTriple,
     std::string targetCpu, std::string targetFeatures,
     DebugInfoLanguage debugInfoLanguage, std::string searchPaths)
-    : enableSearch(enableSearch), optimizationLevel(optimizationLevel),
-      debugLevel(debugLevel), debugAtLevel(debugAtLevel),
-      sanitizers(sanitizers),
+    : optimizationLevel(optimizationLevel), debugLevel(debugLevel),
+      debugAtLevel(debugAtLevel), sanitizers(sanitizers),
       enableXRayInstrumentation(enableXRayInstrumentation),
       targetTriple(std::move(targetTriple)), targetCpu(std::move(targetCpu)),
       targetFeatures(std::move(targetFeatures)),
@@ -71,8 +70,7 @@ CompilationOptions::parseDefinesWithDefaults(MLIRContext *ctx,
 }
 
 void CompilationOptions::print(raw_ostream &os) const {
-  os << "CompilationOptions { enableSearch: " << enableSearch
-     << ", optimizationLevel: " << optimizationLevel;
+  os << "CompilationOptions { optimizationLevel: " << optimizationLevel;
   if (debugLevel != kNoDebug) {
     os << ", debugLevel: "
        << (debugLevel == kLineTablesOnly ? "line-tables"

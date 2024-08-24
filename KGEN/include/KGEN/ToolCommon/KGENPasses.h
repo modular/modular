@@ -143,7 +143,7 @@ using CompileCanonicalizationFnsFn =
         TargetInfoAttr)>;
 
 std::unique_ptr<mlir::Pass>
-createCanonicalizer(CompileCanonicalizationFnsFn compileModuleFn = {});
+createCanonicalizer(CompileCanonicalizationFnsFn compileModuleFn);
 
 //===----------------------------------------------------------------------===//
 // Lower custom ops

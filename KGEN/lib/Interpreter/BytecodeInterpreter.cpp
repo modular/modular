@@ -414,16 +414,20 @@ void BytecodeInterpreter::mapResults(ArrayRef<Attribute> results) {
 ErrorTree BytecodeInterpreter::addStackTrace(ErrorTree err) {
   return addStackTraceImpl(
       std::move(err), ArrayRef(stack).take_front(stackIdx),
-      [](const StackFrame &frame) {
-        return frame.originBc->at<BCOperation>(frame.origin)->op;
+      [](const StackFrame &frame) -> Operation * {
+        if (frame.originBc)
+          return frame.originBc->at<BCOperation>(frame.origin)->op;
+        return nullptr;
       });
 }
 
 Operation *BytecodeInterpreter::getOrigin(size_t depth) {
   // Lookup the callee at `depth` and return it.
-  if (depth >= stack.size())
+  if (depth >= stackIdx)
     return nullptr;
-  StackFrame &frame = stack.end()[-depth];
+  StackFrame &frame = stack[stackIdx - 1 - depth];
+  if (!frame.originBc)
+    return nullptr;
   return frame.originBc->at<BCOperation>(frame.origin)->op;
 }
 
@@ -474,8 +478,10 @@ BytecodeInterpreter::interpretFunction(Region &body,
       results.clear();
       // Otherwise, use the folder.
       Operation *mlirOp = op->op;
-      if (LLVM_UNLIKELY(failed(mlirOp->fold(operandsRef, results))))
-        return reportFoldError(mlirOp, operandsRef, "failed to fold operation");
+      if (LLVM_UNLIKELY(failed(mlirOp->fold(operandsRef, results)))) {
+        return reportFoldError(mlirOp, operandsRef,
+                               "failed to fold operation ");
+      }
 
       for (unsigned i = 0, e = op->numResults; i != e; ++i) {
         uint32_t idx = op->getResult(i)->idx;
