@@ -19,7 +19,7 @@ from max.graph.type import StaticDim
     stack_size=st.integers(min_value=1, max_value=20),
     axis=new_axes(st.shared(tensor_types(), key="type")),
 )
-# TODO(MSDK-847): fix the perf here.
+# TODO(MSDK-847): fix the perf here and re-enable the deadline.
 @settings(deadline=None)
 def test_stack(type: TensorType, stack_size: int, axis: int):
     with Graph("stack", input_types=[type] * stack_size) as graph:
