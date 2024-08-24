@@ -14,7 +14,7 @@ from runtime.asyncrt import (
 )
 from buffer import NDBuffer, Dim, DimList
 from kv_cache.types import KVCacheLayout, ContiguousKVCache, KVCacheStaticParams
-from kv_cache.kernels import (
+from nn.kv_cache import (
     _matmul_kv_cache_impl,
     _fused_qkv_matmul_kv_cache_impl,
 )
