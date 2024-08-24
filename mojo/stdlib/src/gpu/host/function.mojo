@@ -162,10 +162,10 @@ struct _CachedFunctionInfo(Boolable):
 @value
 struct _CachedFunctionPayload:
     var verbose: Bool
-    var max_registers: Int32
-    var threads_per_block: Int32
-    var cache_config: Int32
-    var func_attribute: FuncAttribute
+    var max_registers: Optional[Int]
+    var threads_per_block: Optional[Int]
+    var cache_config: Optional[CacheConfig]
+    var func_attribute: Optional[FuncAttribute]
     var device_context_ptr: UnsafePointer[DeviceContext]
     var cuda_dll_ptr: UnsafePointer[CudaDLL]
     var constant_memory: List[ConstantMemoryMapping]
@@ -173,10 +173,10 @@ struct _CachedFunctionPayload:
     fn __init__(
         inout self,
         verbose: Bool,
-        max_registers: Int32,
-        threads_per_block: Int32,
-        cache_config: Int32,
-        func_attribute: FuncAttribute,
+        max_registers: Optional[Int],
+        threads_per_block: Optional[Int],
+        cache_config: Optional[CacheConfig],
+        func_attribute: Optional[FuncAttribute],
         device_context_ptr: UnsafePointer[DeviceContext],
         cuda_dll_ptr: UnsafePointer[CudaDLL],
         owned constant_memory: List[ConstantMemoryMapping],
@@ -323,10 +323,10 @@ struct Function[
             device_context_ptr=device_context_ptr,
             cuda_dll_ptr=cuda_dll_ptr,
             verbose=verbose,
-            max_registers=max_registers.value() if max_registers else -1,
-            threads_per_block=threads_per_block.value() if threads_per_block else -1,
-            cache_config=cache_config.value().code if cache_config else -1,
-            func_attribute=func_attribute.value() if func_attribute else FuncAttribute.NULL,
+            max_registers=max_registers,
+            threads_per_block=threads_per_block,
+            cache_config=cache_config,
+            func_attribute=func_attribute,
             cuda_function_cache=cuda_function_cache,
             constant_memory=constant_memory^,
         )
@@ -511,10 +511,8 @@ struct Function[
         var module = Module(
             _impl.asm,
             verbose=payload.verbose,
-            max_registers=Optional[Int]() if payload.max_registers
-            <= 0 else Optional[Int](int(payload.max_registers)),
-            threads_per_block=Optional[Int]() if payload.threads_per_block
-            <= 0 else Optional[Int](int(payload.threads_per_block)),
+            max_registers=payload.max_registers,
+            threads_per_block=payload.threads_per_block,
             cuda_dll=payload.cuda_dll_ptr[],
             constant_memory=payload.constant_memory,
         )
@@ -522,16 +520,18 @@ struct Function[
 
         var cuda_dll = payload.device_context_ptr[].cuda_instance.cuda_dll
 
-        if payload.cache_config != -1:
+        if payload.cache_config:
             _check_error(
-                cuda_dll.cuFuncSetCacheConfig(func_handle, payload.cache_config)
+                cuda_dll.cuFuncSetCacheConfig(
+                    func_handle, payload.cache_config.value().code
+                )
             )
-        if payload.func_attribute.code != -1:
+        if payload.func_attribute:
             _check_error(
                 cuda_dll.cuFuncSetAttribute(
                     func_handle,
-                    payload.func_attribute.code,
-                    payload.func_attribute.value,
+                    payload.func_attribute.value().code,
+                    payload.func_attribute.value().value,
                 )
             )
         return _CachedFunctionInfo(module._steal_handle(), func_handle)
@@ -551,11 +551,12 @@ struct Function[
     ](
         device_context_ptr: UnsafePointer[DeviceContext],
         cuda_dll_ptr: UnsafePointer[CudaDLL],
+        *,
         verbose: Bool = False,
-        max_registers: Int = -1,
-        threads_per_block: Int = -1,
-        cache_config: Int32 = -1,
-        func_attribute: FuncAttribute = FuncAttribute.NULL,
+        max_registers: Optional[Int] = None,
+        threads_per_block: Optional[Int] = None,
+        cache_config: Optional[CacheConfig] = None,
+        func_attribute: Optional[FuncAttribute] = None,
         cuda_function_cache: UnsafePointer[FunctionCache] = UnsafePointer[
             FunctionCache
         ](),
