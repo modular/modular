@@ -174,7 +174,7 @@ fn gemm_kernel_2[
     for k in range(b.shape[0]()):
         var a_tile = a.tile[BM, 1](bidy, k)
         var b_tile = b.tile[1, BN](k, bidx)
-        dst_reg += a_tile.load[1](row, k) * b_tile.load[1](k, col)
+        dst_reg += a_tile[row, k] * b_tile[k, col]
     dst[row, col] = dst_reg
 
 
