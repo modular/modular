@@ -287,6 +287,15 @@ alias cuCtxResetPersistingL2Cache = _dylib_function[
     fn () -> Result,
 ]
 
+alias cuModuleGetGlobal = _dylib_function[
+    "cuModuleGetGlobal",
+    fn (
+        UnsafePointer[_DeviceHandle],
+        UnsafePointer[_ModuleHandle],
+        UnsafePointer[C_char],
+    ) -> Result,
+]
+
 
 # ===----------------------------------------------------------------------===#
 # AccessProperty
@@ -859,6 +868,7 @@ struct CudaDLL:
     var cuModuleLoadDataEx: cuModuleLoadDataEx.type
     var cuModuleUnload: cuModuleUnload.type
     var cuModuleGetFunction: cuModuleGetFunction.type
+    var cuModuleGetGlobal: cuModuleGetGlobal.type
 
     fn __init__(inout self):
         self.cuDeviceGetCount = cuDeviceGetCount.load()
@@ -911,6 +921,7 @@ struct CudaDLL:
         self.cuModuleLoadDataEx = cuModuleLoadDataEx.load()
         self.cuModuleUnload = cuModuleUnload.load()
         self.cuModuleGetFunction = cuModuleGetFunction.load()
+        self.cuModuleGetGlobal = cuModuleGetGlobal.load()
 
     fn __init__(inout self, *, other: Self):
         """Explicitly construct a deep copy of the provided value.
