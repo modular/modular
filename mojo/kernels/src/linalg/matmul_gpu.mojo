@@ -26,7 +26,6 @@ from gpu.memory import (
     async_copy_commit_group,
     async_copy_wait_all,
     async_copy_wait_group,
-    dynamic_shared_memory,
     load,
 )
 from gpu.mma import ld_matrix, mma

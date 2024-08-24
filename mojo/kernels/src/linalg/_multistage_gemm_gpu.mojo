@@ -17,7 +17,7 @@ from gpu.host.memory import _copy_device_to_host, _copy_host_to_device
 from gpu.memory import (
     async_copy_commit_group,
     async_copy_wait_group,
-    dynamic_shared_memory,
+    external_memory,
 )
 from gpu.mma import ld_matrix, mma
 from layout.int_tuple import UNKNOWN_VALUE, IntTuple
@@ -579,8 +579,10 @@ fn multistage_gemm[
 
     # Prepare circular shared memory buffer for A and B.
     # Each pipeline stage has its own buffer.
-    var a_smem = dynamic_shared_memory[
-        Scalar[a_type], alignment = alignof[SIMD[a_type, simd_size]]()
+    var a_smem = external_memory[
+        Scalar[a_type],
+        address_space = AddressSpace.SHARED,
+        alignment = alignof[SIMD[a_type, simd_size]](),
     ]()
     alias a_smem_size = num_pipeline_stages * BM * BK
     var a_smem_iter = LayoutTensorIter[
