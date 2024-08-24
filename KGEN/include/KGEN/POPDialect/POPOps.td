@@ -1301,20 +1301,22 @@ def POP_ExternPointerSymbolOp : POPOp<"extern_ptr_symbol"> {
   let description = [{
     The `pop.external_ptr_symbol` returns a pointer to an opaque external symbol
 
-    This operation is useful to model runtime allocation for bacends that models
+    This operation is useful to model runtime allocation for backends that models
     this allocation as externalized symbols e.g NVPTX.
 
     Example:
 
     ```mlir
-    %0 = pop.extern_ptr_symbol aligment <4> : !kgen.pointer<scalar<f32>, 3>
+    %1 = pop.extern_ptr_symbol "name" aligment <4> : !kgen.pointer<scalar<f32>, 3>
     ```
   }];
 
-  let arguments = (ins AttrOfType<Index>:$alignment);
+  let arguments = (ins AttrOfType<KGEN_StringType>:$name,
+                       AttrOfType<Index>:$alignment);
   let results = (outs Res<PointerType, "", [MemAlloc]>:$res_symbol);
 
   let assemblyFormat = [{
+    custom<ParamValue>($name, "StringType::get($_ctxt)")
     `alignment` `<` custom<IndexParamValue>($alignment) `>`
     attr-dict `:` type($res_symbol)
   }];
