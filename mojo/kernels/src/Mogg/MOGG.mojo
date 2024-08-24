@@ -32,7 +32,7 @@ from buffer.dimlist import Dim, DimList
 from builtin.simd import Int64, UInt8, UInt64, _pow
 from gpu.host._compile import _get_nvptx_target
 
-from kv_cache.kernels import (
+from nn.kv_cache import (
     kv_cache_length_h8_d128_bshd_bf16,
     kv_cache_length_h8_d128_bhsd_bf16,
     kv_cache_length_h6_d48_bshd_f32,
