@@ -23,7 +23,7 @@ from gpu import (
     warp_reduce,
 )
 from gpu.host import DeviceContext, FuncAttribute
-from gpu.memory import AddressSpace, dynamic_shared_memory
+from gpu.memory import AddressSpace, external_memory
 from layout.int_tuple import IntTuple
 from layout.layout import *
 from layout.layout_tensor import (
@@ -618,8 +618,10 @@ fn mha_single_batch[
 
     # The entire query block (BM x depth) is tiled in shared memory.
     alias q_smem_size = BM * depth
-    var q_smem = dynamic_shared_memory[
-        Scalar[q_type], alignment = alignof[SIMD[q_type, simd_size]]()
+    var q_smem = external_memory[
+        Scalar[q_type],
+        address_space = AddressSpace.SHARED,
+        alignment = alignof[SIMD[q_type, simd_size]](),
     ]()
     var q_smem_iter = LayoutTensorIter[
         q_type, Layout.row_major(BM, BK), AddressSpace.SHARED
@@ -1130,8 +1132,10 @@ fn mha_decoding_single_batch[
 
     # The entire query block (BM x depth) is tiled in shared memory.
     alias q_smem_size = BM * depth
-    var q_smem = dynamic_shared_memory[
-        Scalar[q_type], alignment = alignof[SIMD[q_type, simd_size]]()
+    var q_smem = external_memory[
+        Scalar[q_type],
+        address_space = AddressSpace.SHARED,
+        alignment = alignof[SIMD[q_type, simd_size]](),
     ]()
     var q_smem_iter = LayoutTensorIter[
         q_type, Layout.row_major(BM, BK), AddressSpace.SHARED
