@@ -1339,16 +1339,18 @@ def POP_GlobalAllocOp : POPOp<"global_alloc"> {
 
 
     ```mlir
-    %ptr = pop.global_alloc 2 x !pop.scalar<si32> align 32 address_space 3
+    %ptr = pop.global_alloc "name" 2 x !pop.scalar<si32> align 32 address_space 3
     ```
   }];
 
-  let arguments = (ins AttrOfType<Index>:$count,
+  let arguments = (ins AttrOfType<KGEN_StringType>:$name,
+                       AttrOfType<Index>:$count,
                        OptionalAttr<AttrOfType<Index>>:$alignment,
                        OptionalAttr<AttrOfType<Index>>:$address_space);
   let results = (outs Res<PointerType, "", [MemAlloc]>:$result);
 
   let assemblyFormat = [{
+    custom<ParamValue>($name, "StringType::get($_ctxt)")
     custom<IndexParamValue>($count) `x`
     custom<PointerOf>(type($result), $address_space)
     (`align` custom<IndexParamValue>($alignment)^)? attr-dict

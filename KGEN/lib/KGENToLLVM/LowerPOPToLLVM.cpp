@@ -1810,8 +1810,7 @@ struct ConvertPOPGlobalAlloc : public ConvertSymbolOpToLLVM<GlobalAllocOp> {
             dyn_cast_or_null<IntegerAttr>(op.getAddressSpaceAttr()))
       addrSpace = addrSpaceAttr.getInt();
 
-    // Mangle the name according to the contained function.
-    std::string name = (func.getName() + "_global_alloc").str();
+    StringRef name = cast<StringAttr>(adaptor.getName()).strref();
 
     // Create the global.
     auto global = b.create<LLVM::GlobalOp>(
