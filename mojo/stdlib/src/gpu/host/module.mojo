@@ -402,7 +402,13 @@ struct Module:
         alias debug_level = env_get_string["DEBUG_LEVEL", "none"]()
         self.cuda_dll = cuda_dll
         self.module = _ModuleHandle()
-        if debug_level in ("full", "line-tables") or verbose:
+        if (
+            debug_level in ("full", "line-tables")
+            or verbose
+            or max_registers
+            or threads_per_block
+            or constant_memory
+        ):
             alias buffer_size = 4096
             alias max_num_options = 10
             var num_options = 0
@@ -451,7 +457,7 @@ struct Module:
             @parameter
             if env_get_int["OPTIMIZATION_LEVEL", 4]() == 0:
                 opts[num_options] = JitOptions.OPTIMIZATION_LEVEL
-                option_vals[num_options] = 0
+                option_vals[num_options] = env_get_int["OPTIMIZATION_LEVEL"]()
                 num_options += 1
 
             if max_registers:
@@ -462,6 +468,34 @@ struct Module:
             if threads_per_block:
                 opts[num_options] = JitOptions.THREADS_PER_BLOCK
                 option_vals[num_options] = threads_per_block.value()
+                num_options += 1
+
+            var constant_memory_addresses = List[UnsafePointer[NoneType]]()
+            var constant_memory_names = List[UnsafePointer[UInt8]]()
+            if constant_memory:
+                var num_constant_memory = len(constant_memory)
+                constant_memory_addresses = List[UnsafePointer[NoneType]](
+                    capacity=num_constant_memory
+                )
+                constant_memory_names = List[UnsafePointer[UInt8]](
+                    capacity=num_constant_memory
+                )
+                for i in range(num_constant_memory):
+                    constant_memory_addresses.append(constant_memory[i].ptr)
+                    constant_memory_names.append(
+                        constant_memory[i].name.unsafe_ptr()
+                    )
+
+                opts[num_options] = JitOptions.GLOBAL_SYMBOL_COUNT
+                option_vals[num_options] = num_constant_memory
+                num_options += 1
+
+                opts[num_options] = JitOptions.GLOBAL_SYMBOL_NAMES
+                option_vals[num_options] = int(constant_memory_names.data)
+                num_options += 1
+
+                opts[num_options] = JitOptions.GLOBAL_SYMBOL_ADDRESSES
+                option_vals[num_options] = int(constant_memory_addresses.data)
                 num_options += 1
 
             # Note that content has already gone through _cleanup_asm and
@@ -484,11 +518,14 @@ struct Module:
                 if error_buffer_str:
                     print(error_buffer_str)
 
+            _ = constant_memory_addresses^
+            _ = constant_memory_names^
+            _ = constant_memory^
+
             _check_error(result)
         else:
-            var cuModuleLoadData = self.cuda_dll.cuModuleLoadData
             _check_error(
-                cuModuleLoadData(
+                self.cuda_dll.cuModuleLoadData(
                     UnsafePointer.address_of(self.module), content.unsafe_ptr()
                 )
             )
