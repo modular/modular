@@ -8,15 +8,15 @@
 from typing import List
 
 from max.graph.graph import Graph
-from max.graph.graph_value import GraphValue
+from max.graph.value import Value
 from max.graph.type import Type
 from max.mlir import StringAttr
 from max.mlir.dialects import mo
 
 
 def custom(
-    name: str, values: List[GraphValue], out_types: List[Type]
-) -> List[GraphValue]:
+    name: str, values: List[Value], out_types: List[Type]
+) -> List[Value]:
     """Creates a node to execute a custom graph operation in the graph.
 
     The custom op should be registered by annotating a function with

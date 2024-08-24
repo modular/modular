@@ -40,7 +40,7 @@ def test_slice_basic():
         graph.output(out)
 
 
-def test_slice_with_graph_value():
+def test_slice_with_tensor_value():
     with Graph(
         "slice", input_types=[TensorType(DType.int32, [5, "in_dim"])]
     ) as graph:

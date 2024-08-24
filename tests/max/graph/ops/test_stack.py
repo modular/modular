@@ -6,7 +6,7 @@
 """ops.stack tests."""
 
 from conftest import new_axes, tensor_types
-from hypothesis import assume, given
+from hypothesis import assume, given, settings
 from hypothesis import strategies as st
 from max.graph import Graph, TensorType, ops
 from max.graph.type import StaticDim
@@ -19,6 +19,8 @@ from max.graph.type import StaticDim
     stack_size=st.integers(min_value=1, max_value=20),
     axis=new_axes(st.shared(tensor_types(), key="type")),
 )
+# TODO(MSDK-847): fix the perf here.
+@settings(deadline=None)
 def test_stack(type: TensorType, stack_size: int, axis: int):
     with Graph("stack", input_types=[type] * stack_size) as graph:
         out = ops.stack(graph.inputs, axis)

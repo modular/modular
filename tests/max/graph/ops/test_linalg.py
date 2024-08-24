@@ -11,7 +11,7 @@ import numpy as np
 import pytest
 from max import mlir
 from max.dtype import DType
-from max.graph import Graph, GraphValue, TensorType, ops
+from max.graph import Graph, TensorValue, TensorType, ops
 
 if sys.version_info[:2] >= (3, 10):
     from typing import TypeAlias
@@ -271,7 +271,7 @@ def test_matmul_invalid_param_name() -> None:
 def test_layer_norm() -> None:
     """Basic test for layer norm."""
 
-    def _layer_norm(input: GraphValue) -> GraphValue:
+    def _layer_norm(input: TensorValue) -> TensorValue:
         return ops.layer_norm(
             input,
             gamma=np.array((0.5, 0.25), np.float32),
@@ -302,7 +302,7 @@ def test_matmul_dtype_promotion() -> None:
 
 
 def test_band_part() -> None:
-    def _band_part(input: GraphValue) -> GraphValue:
+    def _band_part(input: TensorValue) -> TensorValue:
         return ops.band_part(input, -1, 0)
 
     graph = Graph(

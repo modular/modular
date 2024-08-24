@@ -8,10 +8,10 @@
 from max.mlir.dialects import rmo
 
 from ..graph import Graph
-from ..graph_value import GraphValue, ValueLike
+from ..value import TensorValue, ValueLike
 
 
-def matmul(lhs: ValueLike, rhs: ValueLike) -> GraphValue:
+def matmul(lhs: ValueLike, rhs: ValueLike) -> TensorValue:
     """Computes the matrix multiplication of two tensor graph values.
 
     Performs general matrix multiplication with broadcasting.
@@ -40,6 +40,6 @@ def matmul(lhs: ValueLike, rhs: ValueLike) -> GraphValue:
         matricies together and then performing a matrix multiply
         along the innermost two dimension of each tensor.
     """
-    return Graph.current._add_op(rmo.matmul, GraphValue(lhs), GraphValue(rhs))[
-        0
-    ]
+    return Graph.current._add_op(
+        rmo.matmul, TensorValue(lhs), TensorValue(rhs)
+    )[0].tensor

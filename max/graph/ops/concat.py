@@ -11,13 +11,13 @@ from max import mlir
 from max.mlir.dialects import rmo
 
 from ..graph import Graph
-from ..graph_value import GraphValue, ValueLike
+from ..value import TensorValue, ValueLike
 from ..type import Dim, DimLike, Shape
 
 
 def concat(
     vals: Iterable[ValueLike], axis: int = 0, new_dim: Optional[DimLike] = None
-):
+) -> TensorValue:
     """Concatenates a list of symbolic tensors along an axis.
 
     Args:
@@ -38,7 +38,7 @@ def concat(
         as each input tensor's for each dimension other than `axis`, which will
         have size equal to the sum of all tensor's size for that dimension.
     """
-    vals = [GraphValue(v) for v in vals]
+    vals = [TensorValue(v) for v in vals]
 
     if not vals:
         raise ValueError("Must provide at least one value to concat.")
@@ -62,7 +62,7 @@ def concat(
 
     axis_attr = mlir.IntegerAttr.get(mlir.IndexType.get(), axis)
 
-    result = Graph.current._add_op(rmo.concat, vals, axis=axis_attr)[0]
+    result = Graph.current._add_op(rmo.concat, vals, axis=axis_attr)[0].tensor
 
     if new_dim is not None:
         shape = Shape(vals[0].shape)

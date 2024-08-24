@@ -9,13 +9,13 @@ from max.dtype import DType
 from max.mlir.dialects import rmo
 
 from ..graph import Graph
-from ..graph_value import GraphValue, ValueLike
+from ..value import TensorValue, ValueLike
 from .constant import scalar
 
 
 def band_part(
     x: ValueLike, num_lower: int, num_upper: int, exclude: bool = False
-) -> GraphValue:
+) -> TensorValue:
     """Masks out everything except a diagonal band of an input matrix.
 
     Copies a tensor setting everything outside the central diagonal band of the
@@ -49,12 +49,12 @@ def band_part(
         A symbolic tensor value with the configured selection masked out
         to 0 values, and the remaining values copied from the input tensor.
     """
-    x = GraphValue(x)
+    x = TensorValue(x)
     return Graph.current._add_op(
         rmo.mo_linalg_band_part,
-        x.tensor_type.to_mlir(),
+        x.type.to_mlir(),
         x,
         scalar(num_lower, DType.int64),
         scalar(num_upper, DType.int64),
         scalar(exclude, DType.bool),
-    )[0]
+    )[0].tensor

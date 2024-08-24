@@ -5,12 +5,12 @@
 # ===----------------------------------------------------------------------=== #
 """Op implementation for squeeze."""
 
-from ..graph_value import GraphValue, ValueLike
+from ..value import TensorValue, ValueLike
 from .reshape import reshape
 
 
-def unsqueeze(x: ValueLike, axis: int) -> GraphValue:
-    x = GraphValue(x)
+def unsqueeze(x: ValueLike, axis: int) -> TensorValue:
+    x = TensorValue(x)
     rank = x.rank
     if axis < 0:
         axis += rank + 1

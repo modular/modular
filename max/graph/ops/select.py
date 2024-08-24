@@ -8,10 +8,10 @@
 from max.mlir.dialects import rmo
 
 from ..graph import Graph
-from ..graph_value import GraphValue, ValueLike
+from ..value import TensorValue, ValueLike
 
 
-def select(cond: ValueLike, x: ValueLike, y: ValueLike):
+def select(cond: ValueLike, x: ValueLike, y: ValueLike) -> TensorValue:
     return Graph.current._add_op(
-        rmo.select, GraphValue(cond), GraphValue(x), GraphValue(y)
-    )[0]
+        rmo.select, TensorValue(cond), TensorValue(x), TensorValue(y)
+    )[0].tensor

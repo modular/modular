@@ -18,7 +18,7 @@ from max import _graph, mlir
 from max.dtype import DType
 from max.mlir.dialects import mo
 
-from .graph_value import GraphValue
+from .value import Value
 from .type import Dim, ShapeLike, SymbolicDim, TensorType, Type
 from .weight import Weight
 
@@ -117,14 +117,14 @@ class Graph:
         from dataclasses import dataclass
         import numpy as np
         from max.dtype import DType
-        from max.graph import Graph, GraphValue, TensorType
+        from max.graph import Graph, TensorValue, TensorType
 
         @dataclass
         class Linear:
           weight: np.ndarray
           bias: np.ndarray
 
-          def __call__(self, x: GraphValue) -> GraphValue:
+          def __call__(self, x: TensorValue) -> TensorValue:
               return x @ self.weight + self.bias
 
         linear_graph = Graph(
@@ -145,7 +145,7 @@ class Graph:
     _module: mlir.Module
     _unique_symbolic_dim_counter: int
     _context_state: list
-    inputs: tuple[GraphValue, ...]
+    inputs: tuple[Value, ...]
     weights: dict[str, Weight]
 
     def __init__(
@@ -198,7 +198,7 @@ class Graph:
         )
         self._mlir_op.attributes["inputParams"] = param_decl
 
-        self.inputs = tuple(GraphValue(arg) for arg in self._body.arguments)
+        self.inputs = tuple(Value(arg) for arg in self._body.arguments)
         self.weights = {}
 
         if forward is not None:
@@ -256,9 +256,9 @@ class Graph:
     def _body(self) -> mlir.Block:
         return self._mlir_op.regions[0].blocks[0]
 
-    def _add_op(self, op, *args, **kwargs) -> list[GraphValue]:
+    def _add_op(self, op, *args, **kwargs) -> list[Value]:
         def unwrap(arg):
-            if isinstance(arg, GraphValue):
+            if isinstance(arg, Value):
                 return arg._mlir_value
             if isinstance(arg, list):
                 return [unwrap(elem) for elem in arg]
@@ -287,9 +287,9 @@ class Graph:
             return []
 
         if isinstance(results, mlir.Value):
-            results = [GraphValue(results)]
+            results = [Value(results)]
         else:
-            results = [GraphValue(result) for result in results]
+            results = [Value(result) for result in results]
 
         new_params = set()
         for result in results:
@@ -324,7 +324,7 @@ class Graph:
 
         return results
 
-    def output(self, *outputs: GraphValue) -> None:
+    def output(self, *outputs: Value) -> None:
         # mo.output doesn't support infer_type
         self._add_op(mo.output, [o._mlir_value for o in outputs])
         # We have a type mismatch now, these are MLIR types

@@ -125,6 +125,8 @@ def test_concat__mismatched_dims(
 ):
     assert type_a.dtype == type_b.dtype
     assert type_a.rank == type_b.rank
+    # If the rank is 1, this will not raise an exception.
+    assume(type_a.rank > 1)
     assume(
         not all(
             d1 == d2

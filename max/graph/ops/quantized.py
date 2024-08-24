@@ -10,15 +10,15 @@ from typing import Callable, Dict
 from max.dtype import DType
 
 from ..graph import Graph
-from ..graph_value import GraphValue
+from ..value import TensorValue
 from ..quantization import QuantizationEncoding
 from ..type import Dim, StaticDim, TensorType
 
 from .custom import custom
 
 
-def _repack_quantized_weights(op_name: str, rhs: GraphValue) -> GraphValue:
-    rhs_type = rhs.tensor_type
+def _repack_quantized_weights(op_name: str, rhs: TensorValue) -> TensorValue:
+    rhs_type = rhs.type
     return custom(
         op_name,
         [rhs],
@@ -27,12 +27,12 @@ def _repack_quantized_weights(op_name: str, rhs: GraphValue) -> GraphValue:
                 DType.uint8, (rhs_type.shape[0], rhs_type.shape[1])
             ).to_mlir()
         ],
-    )[0]
+    )[0].tensor
 
 
 def _packed_qmatmul(
-    op_name: str, lhs_matrix: GraphValue, rhs_repack: GraphValue
-) -> GraphValue:
+    op_name: str, lhs_matrix: TensorValue, rhs_repack: TensorValue
+) -> TensorValue:
     return custom(
         op_name,
         [lhs_matrix, rhs_repack],
@@ -41,13 +41,13 @@ def _packed_qmatmul(
                 DType.float32, (lhs_matrix.shape[0], rhs_repack.shape[0])
             ).to_mlir(),
         ],
-    )[0]
+    )[0].tensor
 
 
 def _repack_then_matmul(
     repack_op_name: str, matmul_op_name: str
-) -> Callable[[GraphValue, GraphValue], GraphValue]:
-    def impl(lhs: GraphValue, rhs: GraphValue) -> GraphValue:
+) -> Callable[[TensorValue, TensorValue], TensorValue]:
+    def impl(lhs: TensorValue, rhs: TensorValue) -> TensorValue:
         # Quantized matmul for supported quantized encoding types.
         # rhs is uint8 and in a packed format such as Q4_0, Q4_K, or Q6_K.
         if rhs.dtype is not DType.uint8:
@@ -82,7 +82,7 @@ def _repack_then_matmul(
 # support future alternative schemes while continuing to support the current
 # scheme.
 _QMATMUL_STRATEGIES: Dict[
-    QuantizationEncoding, Callable[[GraphValue, GraphValue], GraphValue]
+    QuantizationEncoding, Callable[[TensorValue, TensorValue], TensorValue]
 ] = {
     QuantizationEncoding.Q4_0: _repack_then_matmul(
         "vroom_q4_0_repack_weights", "vroom_q4_0_matmul"
@@ -97,8 +97,8 @@ _QMATMUL_STRATEGIES: Dict[
 
 
 def qmatmul(
-    encoding: QuantizationEncoding, lhs: GraphValue, rhs: GraphValue
-) -> GraphValue:
+    encoding: QuantizationEncoding, lhs: TensorValue, rhs: TensorValue
+) -> TensorValue:
     """Performs matrix multiplication between floating point and quantized
     tensors.
 
@@ -143,8 +143,8 @@ _DEQUANTIZE_OP_NAMES: Dict[QuantizationEncoding, str] = {
 
 
 def dequantize(
-    encoding: QuantizationEncoding, quantized: GraphValue
-) -> GraphValue:
+    encoding: QuantizationEncoding, quantized: TensorValue
+) -> TensorValue:
     """Dequantizes a quantized tensor to floating point.
 
     NOTE: Currently this supports Q4_0, Q4_K, and Q6_K encodings only.
@@ -177,5 +177,5 @@ def dequantize(
         out_types=[
             TensorType(DType.float32, [flat_quantized.shape[0], odim]).to_mlir()
         ],
-    )[0]
+    )[0].tensor
     return flat_dequantized.reshape([*dims, odim])

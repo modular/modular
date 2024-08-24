@@ -12,12 +12,12 @@ such as [`constant()`](/max/api/python/graph/graph/Graph#constant),
 [`vector()`](/max/api/python/graph/graph/Graph#vector), and
 [`scalar()`](/max/api/python/graph/graph/Graph#scalar).
 
-The [`GraphValue`](/max/api/python/graph/graph_value/GraphValue) type (returned
-by all ops) also implements various dunder methods to support operations
-between GraphValues, such as `+` add, `*` multiply, and `@` matmul, plus
+The [`TensorValue`](/max/api/python/graph/value/TensorValue) type (returned
+by most ops) also implements various dunder methods to support operations
+between TensorValues, such as `+` add, `*` multiply, and `@` matmul, plus
 convenience methods such as
-[`reshape()`](/max/api/python/graph/graph_value/GraphValue#reshape) and
-[`swapaxes()`](/max/api/python/graph/graph_value/GraphValue#swapaxes).
+[`reshape()`](/max/api/python/graph/value/TensorValue#reshape) and
+[`swapaxes()`](/max/api/python/graph/value/TensorValue#swapaxes).
 """
 
 from .band_part import band_part

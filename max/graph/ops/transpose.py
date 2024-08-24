@@ -9,11 +9,11 @@ import numpy as np
 from max.mlir.dialects import rmo
 
 from ..graph import Graph
-from ..graph_value import GraphValue, TensorType, ValueLike
+from ..value import TensorValue, TensorType, ValueLike
 
 
-def transpose(x: ValueLike, dim_1: int, dim_2: int) -> GraphValue:
-    v = GraphValue(x)
+def transpose(x: ValueLike, dim_1: int, dim_2: int) -> TensorValue:
+    v = TensorValue(x)
 
     rank = len(v.shape)
     if dim_1 < 0:
@@ -29,7 +29,7 @@ def transpose(x: ValueLike, dim_1: int, dim_2: int) -> GraphValue:
 
     return Graph.current._add_op(
         rmo.mo_transpose,
-        TensorType(dtype=v.tensor_type.dtype, shape=new_shape).to_mlir(),
+        TensorType(dtype=v.dtype, shape=new_shape).to_mlir(),
         v,
-        GraphValue(indices),
-    )[0]
+        TensorValue(indices),
+    )[0].tensor

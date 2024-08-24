@@ -7,6 +7,6 @@
 
 from . import ops
 from .graph import Graph
-from .graph_value import GraphValue, ValueLike
+from .value import Value, TensorValue, ValueLike
 from .type import DimLike, TensorType, Type
 from .weight import Weight

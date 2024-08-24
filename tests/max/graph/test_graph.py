@@ -12,7 +12,7 @@ from hypothesis import assume, given
 from hypothesis import strategies as st
 from max import mlir
 from max.dtype import DType
-from max.graph import Graph, GraphValue, TensorType, graph, ops
+from max.graph import Graph, TensorValue, TensorType, graph, ops
 from max.graph.type import Dim
 
 empty_graphs = st.builds(
@@ -88,7 +88,7 @@ def test_add_op_closure() -> None:
     and checks the IR.
     """
 
-    def elementwise_add(lhs: GraphValue, rhs: GraphValue) -> GraphValue:
+    def elementwise_add(lhs: TensorValue, rhs: TensorValue) -> TensorValue:
         return ops.add(lhs, rhs)
 
     input_type = TensorType(dtype=DType.float32, shape=["batch", "channels"])

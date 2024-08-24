@@ -5,14 +5,14 @@
 # ===----------------------------------------------------------------------=== #
 """Op implementation for squeeze."""
 
-from ..graph_value import GraphValue, ValueLike
+from ..value import TensorValue, ValueLike
 from ..type import Shape
 
 from .reshape import reshape
 
 
-def squeeze(x: ValueLike, axis: int) -> GraphValue:
-    v = GraphValue(x)
+def squeeze(x: ValueLike, axis: int) -> TensorValue:
+    v = TensorValue(x)
     # TODO (MSDK-655): Probably want to add rmo.mo_squeeze_shape here
     shape = Shape(v.shape)
     if shape[axis] != 1:

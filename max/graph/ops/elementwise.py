@@ -8,7 +8,7 @@
 from max.mlir.dialects import rmo
 
 from ..graph import Graph
-from ..graph_value import GraphValue, ValueLike
+from ..value import TensorValue, ValueLike
 
 # ===----------------------------------------------------------------------=== #
 # Binary Ops
@@ -17,8 +17,10 @@ from ..graph_value import GraphValue, ValueLike
 
 
 def _elementwise_binary(op):
-    def elementwise_op(lhs: ValueLike, rhs: ValueLike) -> GraphValue:
-        return Graph.current._add_op(op, GraphValue(lhs), GraphValue(rhs))[0]
+    def elementwise_op(lhs: ValueLike, rhs: ValueLike) -> TensorValue:
+        return Graph.current._add_op(op, TensorValue(lhs), TensorValue(rhs))[
+            0
+        ].tensor
 
     elementwise_op.__name__ = op.__name__
     return elementwise_op
@@ -44,8 +46,8 @@ not_equal = _elementwise_binary(rmo.not_equal)
 
 
 def _elementwise_unary(op):
-    def elementwise_op(x: GraphValue) -> GraphValue:
-        return Graph.current._add_op(op, x._mlir_value.type, x)[0]
+    def elementwise_op(x: TensorValue) -> TensorValue:
+        return Graph.current._add_op(op, x._mlir_value.type, x)[0].tensor
 
     elementwise_op.__name__ = op.__name__
     return elementwise_op
@@ -62,7 +64,7 @@ relu = _elementwise_unary(rmo.mo_relu)
 sigmoid = _elementwise_unary(rmo.sigmoid)
 
 
-def silu(x: GraphValue):
+def silu(x: TensorValue):
     return mul(x, sigmoid(x))
 
 

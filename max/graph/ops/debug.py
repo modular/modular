@@ -7,8 +7,8 @@
 from max.mlir.dialects import mo
 
 from ..graph import Graph
-from ..graph_value import GraphValue
+from ..value import TensorValue
 
 
-def print(value: GraphValue, label: str = "debug_tensor"):
+def print(value: TensorValue, label: str = "debug_tensor"):
     Graph.current._add_op(mo.debug_tensor_print, value, label=label)

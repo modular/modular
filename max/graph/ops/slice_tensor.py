@@ -22,7 +22,7 @@ from max.dtype import DType
 from max.mlir.dialects import rmo
 
 from ..graph import Graph
-from ..graph_value import GraphValue
+from ..value import TensorValue
 from ..type import Dim, DimLike, Shape, StaticDim, TensorType
 from .constant import scalar
 from .select import select
@@ -34,7 +34,7 @@ from .stack import stack_scalars
 # but this is the simplest path to get us nice results.
 
 
-SliceIndex = Union[GraphValue, int, slice, tuple[slice, DimLike]]
+SliceIndex = Union[TensorValue, int, slice, tuple[slice, DimLike]]
 SliceIndices = list[Union[SliceIndex, "EllipsisType"]]
 
 
@@ -44,7 +44,7 @@ def _slice_index_and_output(
     # These are values within an index which contains at least one
     # shape. The returned values will be used as `start, stop, stop`
     # values in a mo.slice op. slices can therefore be forwarded
-    # directly, while `int` and `GraphValue` need to be converted
+    # directly, while `int` and `TensorValue` need to be converted
     # to a slice(v, v+1).
 
     int64_max = 2**63 - 1
@@ -56,8 +56,8 @@ def _slice_index_and_output(
                 raise IndexError(f"Index {index} out of range of dim {dim.dim}")
         stop = int64_max if index == -1 else index + 1
         return (slice(index, stop, 1), 1)
-    elif isinstance(index, GraphValue):
-        if index.tensor_type.num_elements() != 1:
+    elif isinstance(index, TensorValue):
+        if index.type.num_elements() != 1:
             raise ValueError(
                 f"Slice index value must be a scalar, had shape {index.shape}"
             )
@@ -120,7 +120,7 @@ def _has_no_ellipsis(indices: SliceIndices) -> TypeGuard[list[SliceIndex]]:
     return not any(index is Ellipsis for index in indices)
 
 
-def slice_tensor(x: GraphValue, indices: SliceIndices) -> GraphValue:
+def slice_tensor(x: TensorValue, indices: SliceIndices) -> TensorValue:
     ellipsis_count = indices.count(Ellipsis)
     if ellipsis_count > 1:
         raise ValueError("Slicing index can contain at most one ellipsis")
@@ -150,15 +150,15 @@ def slice_tensor(x: GraphValue, indices: SliceIndices) -> GraphValue:
     slices = [s for s, _ in slices_and_outputs]
     output_shape = Shape(d for _, d in slices_and_outputs)
 
-    def value(dim: Union[GraphValue, int]) -> GraphValue:
-        assert isinstance(dim, (GraphValue, int))
-        return dim if isinstance(dim, GraphValue) else scalar(dim, DType.int64)
+    def value(dim: Union[TensorValue, int]) -> TensorValue:
+        assert isinstance(dim, (TensorValue, int))
+        return dim if isinstance(dim, TensorValue) else scalar(dim, DType.int64)
 
     starts = stack_scalars(value(s.start) for s in slices)
     stops = stack_scalars(value(s.stop) for s in slices)
     steps = stack_scalars(value(s.step) for s in slices)
 
-    output_type = TensorType(x.tensor_type.dtype, output_shape)
+    output_type = TensorType(x.dtype, output_shape)
     return Graph.current._add_op(
         rmo.mo_slice, output_type.to_mlir(), x, starts, stops, steps
-    )[0]
+    )[0].tensor

@@ -30,7 +30,5 @@ def test_gather(input_type: TensorType, indices_type: TensorType, axis: int):
             *indices.shape,
             *input.shape[axis + 1 :],
         ]
-        assert out.tensor_type == TensorType(
-            input.tensor_type.dtype, target_shape
-        )
+        assert out.type == TensorType(input.dtype, target_shape)
         graph.output(out)

@@ -103,7 +103,7 @@ def modular_graph_test(session, graph):
     def decorator(test_fn):
         model = session.load(graph)
 
-        @given_input_types(input.tensor_type for input in graph.inputs)
+        @given_input_types(input.type for input in graph.inputs)
         def test_correctness(inputs):
             model_execute = functools.partial(execute, model)
             test_fn(model_execute, inputs, [torch.tensor(i) for i in inputs])

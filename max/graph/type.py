@@ -356,7 +356,7 @@ def _is_static_shape(dims: Shape) -> TypeGuard[StaticShape]:
 class Type:
     """Represents any possible type for Graph values.
 
-    Every GraphValue has a Type, and that type is represented by an Type.
+    Every Value in the Graph has a Type, and that type is represented by an Type.
     This type may be inspected to get finer-grained types and learn more
     about an individual Value.
     """

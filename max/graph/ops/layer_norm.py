@@ -9,12 +9,12 @@ import numpy as np
 from max.mlir.dialects import mo
 
 from ..graph import Graph
-from ..graph_value import GraphValue, ValueLike
+from ..value import TensorValue, ValueLike
 
 
 def layer_norm(
-    input: GraphValue, gamma: ValueLike, beta: ValueLike, epsilon: float
-) -> GraphValue:
+    input: TensorValue, gamma: ValueLike, beta: ValueLike, epsilon: float
+) -> TensorValue:
     """Performs layer normalization.
 
     Args:
@@ -30,7 +30,7 @@ def layer_norm(
         mo.layer_norm,
         input._mlir_value.type,
         input,
-        GraphValue(gamma),
-        GraphValue(beta),
-        GraphValue(np.array(epsilon)),
-    )[0]
+        TensorValue(gamma),
+        TensorValue(beta),
+        TensorValue(np.array(epsilon)),
+    )[0].tensor

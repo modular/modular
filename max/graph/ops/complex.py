@@ -5,14 +5,14 @@
 # ===----------------------------------------------------------------------=== #
 """Complex ops."""
 
-from ..graph_value import GraphValue, ValueLike
+from ..value import TensorValue, ValueLike
 from ..type import StaticDim
 from .reshape import reshape
 
 
-def as_interleaved_complex(x: ValueLike) -> GraphValue:
-    g = GraphValue(x)
-    shape = g.tensor_type.shape
+def as_interleaved_complex(x: ValueLike) -> TensorValue:
+    g = TensorValue(x)
+    shape = g.shape
     last = shape[-1]
     if not isinstance(last, StaticDim):
         raise TypeError("The last dimension must be static.")

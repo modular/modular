@@ -99,8 +99,8 @@ def test_reshapes__can_replace_any_dims_with_negative_one(
 
     with Graph("reshape", input_types=[input_type]) as graph:
         out = graph.inputs[0].reshape(reshape_shape)
-        assert out.tensor_type.dtype == input_type.dtype
-        for dim, expected in zip(out.tensor_type.shape, reshape_shape):
+        assert out.dtype == input_type.dtype
+        for dim, expected in zip(out.shape, reshape_shape):
             if expected != -1:
                 assert dim == expected
         graph.output(out)
@@ -122,8 +122,8 @@ def test_reshapes__zero_dim(input_type: TensorType, reshape_shape: list[Dim]):
     )
     with Graph("reshape", input_types=[input_type]) as graph:
         out = graph.inputs[0].reshape(reshape_shape)
-        assert out.tensor_type.dtype == input_type.dtype
-        assert out.tensor_type.shape == reshape_shape
+        assert out.dtype == input_type.dtype
+        assert out.shape == reshape_shape
         graph.output(out)
 
 
@@ -140,8 +140,8 @@ def shapes_plus_ones(shapes=shapes()):
 def test_reshapes__unsqueeze(input_type: TensorType, reshape_shape: list[Dim]):
     with Graph("reshape", input_types=[input_type]) as graph:
         out = graph.inputs[0].reshape(reshape_shape)
-        assert out.tensor_type.dtype == input_type.dtype
-        assert out.tensor_type.shape == reshape_shape
+        assert out.dtype == input_type.dtype
+        assert out.shape == reshape_shape
         graph.output(out)
 
 
@@ -152,8 +152,8 @@ def test_reshapes__unsqueeze(input_type: TensorType, reshape_shape: list[Dim]):
 def test_reshapes__squeeze(input_type: TensorType, reshape_shape: list[Dim]):
     with Graph("reshape", input_types=[input_type]) as graph:
         out = graph.inputs[0].reshape(reshape_shape)
-        assert out.tensor_type.dtype == input_type.dtype
-        assert out.tensor_type.shape == reshape_shape
+        assert out.dtype == input_type.dtype
+        assert out.shape == reshape_shape
         graph.output(out)
 
 
@@ -203,8 +203,8 @@ def test_reshape__can_reshape_single_element_tensors(
 ):
     with Graph("reshape", input_types=[input_type]) as graph:
         out = graph.inputs[0].reshape(output_shape)
-        assert out.tensor_type.dtype == input_type.dtype
-        assert out.tensor_type.shape == output_shape
+        assert out.dtype == input_type.dtype
+        assert out.shape == output_shape
         graph.output(out)
 
 

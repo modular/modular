@@ -11,7 +11,7 @@ from max.graph.type import Shape
 
 
 @given(input_type=...)
-def test_graph_value__T(input_type: TensorType):
+def test_tensor_value__T(input_type: TensorType):
     assume(input_type.rank >= 2)
     with Graph("transpose", input_types=[input_type]) as graph:
         out = graph.inputs[0].T

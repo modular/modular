@@ -15,12 +15,8 @@ def test_load_pytorch(testdata_directory):
         # Loads the data saved in gen_external_checkpoints.py.
         data = load_pytorch(testdata_directory / "example_data.pt")
         assert len(data) == 5
-        assert data["a"].value.tensor_type == TensorType(DType.int32, [5, 2])
-        assert data["b"].value.tensor_type == TensorType(
-            DType.float64, [1, 2, 3]
-        )
-        assert data["c"].value.tensor_type == TensorType(DType.float32, [])
-        assert data["fancy/name"].value.tensor_type == TensorType(
-            DType.int64, [3]
-        )
-        assert data["bf16"].value.tensor_type == TensorType(DType.bfloat16, [2])
+        assert data["a"].value.type == TensorType(DType.int32, [5, 2])
+        assert data["b"].value.type == TensorType(DType.float64, [1, 2, 3])
+        assert data["c"].value.type == TensorType(DType.float32, [])
+        assert data["fancy/name"].value.type == TensorType(DType.int64, [3])
+        assert data["bf16"].value.type == TensorType(DType.bfloat16, [2])

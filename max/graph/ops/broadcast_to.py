@@ -8,11 +8,11 @@
 from max.mlir.dialects import rmo
 
 from ..graph import Graph
-from ..graph_value import GraphValue
+from ..value import TensorValue
 from ..type import Shape, ShapeLike
 
 
-def broadcast_to(x: GraphValue, shape: ShapeLike):
+def broadcast_to(x: TensorValue, shape: ShapeLike) -> TensorValue:
     return Graph.current._add_op(
         rmo.broadcast_to, x, new_shape=Shape(shape).to_mlir()
-    )[0]
+    )[0].tensor

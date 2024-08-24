@@ -11,12 +11,12 @@ from max import mlir
 from max.mlir.dialects import rmo
 
 from ..graph import Graph
-from ..graph_value import GraphValue, ValueLike
+from ..value import TensorValue, ValueLike
 from .concat import concat
 from .unsqueeze import unsqueeze
 
 
-def stack(vals: Iterable[ValueLike], axis: int = 0) -> GraphValue:
+def stack(vals: Iterable[ValueLike], axis: int = 0) -> TensorValue:
     """Stacks a list of tensors along a new axis.
 
     Args:
@@ -36,7 +36,7 @@ def stack(vals: Iterable[ValueLike], axis: int = 0) -> GraphValue:
         with the new axis inserted. Along the new dimension it will have size
         `len(values)`.
     """
-    vals_coerced = [GraphValue(v) for v in vals]
+    vals_coerced = [TensorValue(v) for v in vals]
     if len(vals_coerced) == 0:
         raise ValueError("Expected at least one value to stack")
 
@@ -53,8 +53,8 @@ def stack(vals: Iterable[ValueLike], axis: int = 0) -> GraphValue:
     return concat(unsqueezed, axis=axis)
 
 
-def stack_scalars(vals: Iterable[GraphValue]):
+def stack_scalars(vals: Iterable[TensorValue]) -> TensorValue:
     axis = mlir.IntegerAttr.get(mlir.IndexType.get(), 0)
 
     vals = [v.reshape([1]) if v.shape != [1] else v for v in vals]
-    return Graph.current._add_op(rmo.concat, vals, axis=axis)[0]
+    return Graph.current._add_op(rmo.concat, vals, axis=axis)[0].tensor

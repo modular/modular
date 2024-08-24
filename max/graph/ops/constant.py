@@ -12,11 +12,11 @@ from max.dtype import DType
 from max.mlir.dialects import mo
 
 from ..graph import Graph
-from ..graph_value import GraphValue
+from ..value import TensorValue
 from ..type import TensorType
 
 
-def constant(value: np.ndarray) -> GraphValue:
+def constant(value: np.ndarray) -> TensorValue:
     """Adds a node representing a constant operation.
 
     The value of this constant will have the type `TensorType` with the
@@ -39,10 +39,12 @@ def constant(value: np.ndarray) -> GraphValue:
     )
     return Graph.current._add_op(
         mo.constant, result=tensor_type, value=array_attr
-    )[0]
+    )[0].tensor
 
 
-def scalar(value: Union[int, float], dtype: DType, rank: int = 0) -> GraphValue:
+def scalar(
+    value: Union[int, float], dtype: DType, rank: int = 0
+) -> TensorValue:
     """Creates a scalar in the graph and returns the value.
 
     A scalar is a tensor with a single element. Generally scalars are of rank 0, but that is configurable.
@@ -53,4 +55,4 @@ def scalar(value: Union[int, float], dtype: DType, rank: int = 0) -> GraphValue:
     )
     return Graph.current._add_op(
         mo.constant, result=tensor_type, value=array_attr
-    )[0]
+    )[0].tensor

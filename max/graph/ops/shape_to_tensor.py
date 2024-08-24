@@ -8,11 +8,11 @@
 from max.mlir.dialects import rmo
 
 from ..graph import Graph
-from ..graph_value import GraphValue
+from ..value import TensorValue
 from ..type import Shape, ShapeLike
 
 
-def shape_to_tensor(shape: ShapeLike) -> GraphValue:
+def shape_to_tensor(shape: ShapeLike) -> TensorValue:
     return Graph.current._add_op(
         rmo.shape_to_tensor, shape=Shape(shape).to_mlir()
-    )[0]
+    )[0].tensor

@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from os import PathLike
 from typing import Optional, Union
 
-from .graph_value import GraphValue
+from .value import TensorValue
 from .type import TensorType
 from .quantization import QuantizationEncoding
 
@@ -16,7 +16,7 @@ from .quantization import QuantizationEncoding
 class Weight:
     """Represents a value in a Graph that can be loaded at a later time."""
 
-    value: GraphValue
+    value: TensorValue
     name: str
 
     filepath: Union[PathLike, str, None]
