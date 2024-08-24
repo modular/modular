@@ -16,7 +16,7 @@ from gpu import ThreadIdx, BlockIdx, BlockDim, barrier
 from gpu.host import DeviceContext
 import time
 from math import ceildiv
-from gpu.memory import dynamic_shared_memory, async_copy_wait_all
+from gpu.memory import async_copy_wait_all
 from memory.reference import _GPUAddressSpace as AddressSpace
 from layout.int_tuple import IntTuple
 from utils import StaticIntTuple

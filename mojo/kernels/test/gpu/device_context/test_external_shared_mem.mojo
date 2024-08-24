@@ -8,7 +8,7 @@
 
 from gpu.host import DeviceContext, FuncAttribute
 from gpu.id import ThreadIdx
-from gpu.memory import dynamic_shared_memory
+from gpu.memory import external_memory, AddressSpace
 from gpu.sync import barrier
 
 
@@ -17,7 +17,9 @@ fn test_dynamic_shared_mem(ctx: DeviceContext) raises:
     print("== test_dynamic_shared_mem")
 
     fn dynamc_smem_kernel(data: UnsafePointer[Float32]):
-        var dynamic_sram = dynamic_shared_memory[Float32, alignment=4]()
+        var dynamic_sram = external_memory[
+            Float32, address_space = AddressSpace.SHARED, alignment=4
+        ]()
         dynamic_sram[ThreadIdx.x()] = ThreadIdx.x()
         barrier()
         data[ThreadIdx.x()] = dynamic_sram[ThreadIdx.x()]

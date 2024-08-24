@@ -18,7 +18,8 @@ from gpu.host import DeviceContext, FuncAttribute
 from gpu.memory import (
     async_copy_commit_group,
     async_copy_wait_group,
-    dynamic_shared_memory,
+    external_memory,
+    AddressSpace,
 )
 from gpu.mma import ld_matrix, mma
 from layout.int_tuple import IntTuple
@@ -37,7 +38,6 @@ from layout.nd_buffer_stub import (
 from layout.swizzle import Swizzle
 from linalg.matmul_gpu import matmul_kernel_naive
 from memory import UnsafePointer
-from memory.reference import _GPUAddressSpace as AddressSpace
 from testing import assert_almost_equal
 
 from utils import StaticIntTuple
@@ -160,7 +160,9 @@ fn multistage_gemm[
     var warp_x = warp_id % num_warps_n
     var warp_y = warp_id // num_warps_n
 
-    var a_smem = dynamic_shared_memory[Scalar[a_type], alignment=4]()
+    var a_smem = external_memory[
+        Scalar[a_type], address_space = AddressSpace.SHARED, alignment=4
+    ]()
     var b_smem = (a_smem + num_pipeline_stages * BM * BK).bitcast[
         Scalar[b_type]
     ]()
