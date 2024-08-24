@@ -8,6 +8,7 @@
 #include "KGEN/Interpreter/InterpreterInterface.h"
 #include "Support/AlignedAlloc.h"
 #include "Support/MDialect/MTypeInterfaces.h"
+#include "Utils.h"
 #include "mlir/IR/SymbolTable.h"
 #include "mlir/Support/DebugStringHelper.h"
 #include "llvm/ADT/ScopeExit.h"
@@ -673,37 +674,9 @@ ErrorTreeOr<TypedAttr> InterpreterState::executeRegionWithResultSlot(
 //===----------------------------------------------------------------------===//
 
 ErrorTree IRInterpreter::addStackTrace(ErrorTree error) {
-  for (const StackFrame &frame :
-       llvm::reverse(ArrayRef(stack).take_front(stackIdx))) {
-    StringRef funcName = cast<mlir::SymbolOpInterface>(frame.func).getName();
-    error = ErrorTree(frame.func->getLoc(),
-                      Error("failed to interpret function @" + funcName),
-                      std::move(error));
-    if (frame.origin)
-      error = ErrorTree(frame.origin->getLoc(),
-                        Error("failed to evaluate call"), std::move(error));
-  }
-  return error;
-}
-
-/// Report an error with folding an operation.
-static ErrorTree reportFoldError(Operation *op, ArrayRef<Attribute> operands,
-                                 const Twine &prefix,
-                                 const Twine &suffix = "") {
-  std::string note;
-  llvm::raw_string_ostream os(note);
-  os << prefix << op->getName();
-  if (!op->getAttrs().empty()) {
-    os << '{';
-    llvm::interleaveComma(op->getAttrs(), os, [&](const NamedAttribute &attr) {
-      os << attr.getName().getValue() << ": " << attr.getValue();
-    });
-    os << '}';
-  }
-  os << '(';
-  llvm::interleaveComma(operands, os);
-  os << ')' << suffix;
-  return {op->getLoc(), Error(os.str())};
+  return addStackTraceImpl(
+      std::move(error), ArrayRef(stack).take_front(stackIdx),
+      [](const StackFrame &frame) { return frame.origin; });
 }
 
 ErrorTreeOrSuccess
@@ -754,7 +727,7 @@ IRInterpreter::interpretFunction(Region &body, ArrayRef<Attribute> arguments) {
   }
 
   // The stack frame must be empty.
-  if (stackIdx) {
+  if (LLVM_UNLIKELY(stackIdx)) {
     llvm::report_fatal_error(
         "exiting interpreter with remaining stack frames " + Twine(stackIdx));
   }

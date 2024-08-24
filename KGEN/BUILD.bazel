@@ -528,7 +528,10 @@ modular_cc_library(
 
 modular_cc_library(
     name = "Interpreter",
-    srcs = glob(["lib/Interpreter/*.cpp"]),
+    srcs = glob([
+        "lib/Interpreter/*.cpp",
+        "lib/Interpreter/*.h",
+    ]),
     hdrs = glob(["include/KGEN/Interpreter/*.h"]),
     deps = [
         ":InterpreterAttrsIncGen",
