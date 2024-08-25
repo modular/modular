@@ -222,9 +222,6 @@ struct DeviceFunction[
         threads_per_block: Optional[Int] = None,
         cache_config: Optional[CacheConfig] = None,
         func_attribute: Optional[FuncAttribute] = None,
-        owned constant_memory: List[ConstantMemoryMapping] = List[
-            ConstantMemoryMapping
-        ](),
     ) raises:
         self.ctx_ptr = UnsafePointer[DeviceContext].address_of(ctx)
         self.ctx_ptr[].cuda_context.set_current()
@@ -239,7 +236,6 @@ struct DeviceFunction[
             threads_per_block=threads_per_block,
             cache_config=cache_config,
             func_attribute=func_attribute,
-            constant_memory=constant_memory^,
         )
 
 
@@ -318,9 +314,6 @@ struct DeviceContext:
         threads_per_block: Optional[Int] = None,
         cache_config: Optional[CacheConfig] = None,
         func_attribute: Optional[FuncAttribute] = None,
-        owned constant_memory: List[ConstantMemoryMapping] = List[
-            ConstantMemoryMapping
-        ](),
     ) raises -> DeviceFunction[func, target=target, _is_failable=_is_failable]:
         return DeviceFunction[func, target=target, _is_failable=_is_failable](
             self,
@@ -331,7 +324,6 @@ struct DeviceContext:
             threads_per_block=threads_per_block,
             cache_config=cache_config,
             func_attribute=func_attribute,
-            constant_memory=constant_memory^,
         )
 
     @parameter

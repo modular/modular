@@ -143,17 +143,17 @@ struct _CachedFunctionInfo(Boolable):
         self.func_handle = _FunctionHandle()
         self.error = Error()
 
+    fn __init__(inout self, error: Error):
+        self.mod_handle = _ModuleHandle()
+        self.func_handle = _FunctionHandle()
+        self.error = error
+
     fn __init__(
         inout self, mod_handle: _ModuleHandle, func_handle: _FunctionHandle
     ):
         self.mod_handle = mod_handle
         self.func_handle = func_handle
         self.error = Error()
-
-    fn __init__(inout self, error: Error):
-        self.mod_handle = _ModuleHandle()
-        self.func_handle = _FunctionHandle()
-        self.error = error
 
     fn __bool__(self) -> Bool:
         return self.func_handle.__bool__()
@@ -168,7 +168,6 @@ struct _CachedFunctionPayload:
     var func_attribute: Optional[FuncAttribute]
     var device_context_ptr: UnsafePointer[DeviceContext]
     var cuda_dll_ptr: UnsafePointer[CudaDLL]
-    var constant_memory: List[ConstantMemoryMapping]
 
     fn __init__(
         inout self,
@@ -179,7 +178,6 @@ struct _CachedFunctionPayload:
         func_attribute: Optional[FuncAttribute],
         device_context_ptr: UnsafePointer[DeviceContext],
         cuda_dll_ptr: UnsafePointer[CudaDLL],
-        owned constant_memory: List[ConstantMemoryMapping],
     ):
         self.verbose = verbose
         self.max_registers = max_registers
@@ -188,7 +186,6 @@ struct _CachedFunctionPayload:
         self.func_attribute = func_attribute
         self.device_context_ptr = device_context_ptr
         self.cuda_dll_ptr = cuda_dll_ptr
-        self.constant_memory = constant_memory^
 
 
 struct FunctionCache:
@@ -268,9 +265,6 @@ struct Function[
         threads_per_block: Optional[Int] = None,
         cache_config: Optional[CacheConfig] = None,
         func_attribute: Optional[FuncAttribute] = None,
-        owned constant_memory: List[ConstantMemoryMapping] = List[
-            ConstantMemoryMapping
-        ](),
     ) raises:
         self.__init__(
             verbose=verbose,
@@ -305,9 +299,6 @@ struct Function[
         device_context_ptr: UnsafePointer[DeviceContext] = UnsafePointer[
             DeviceContext
         ](),
-        owned constant_memory: List[ConstantMemoryMapping] = List[
-            ConstantMemoryMapping
-        ](),
     ) raises:
         @parameter
         if _is_failable and self._impl.is_error:
@@ -319,7 +310,7 @@ struct Function[
         if _dump_q(dump_ptx) or _dump_q(dump_llvm):
             Self._dump_rep(dump_ptx, dump_llvm)
 
-        var info = Self._get_cached_function_info[func_type, func](
+        self.info = Self._get_cached_function_info[func_type, func](
             device_context_ptr=device_context_ptr,
             cuda_dll_ptr=cuda_dll_ptr,
             verbose=verbose,
@@ -328,16 +319,7 @@ struct Function[
             cache_config=cache_config,
             func_attribute=func_attribute,
             cuda_function_cache=cuda_function_cache,
-            constant_memory=constant_memory^,
         )
-
-        if info.error:
-            raise info.error
-
-        self.info = info
-
-        if not self.info.func_handle:
-            raise "Unable to load the CUDA function"
 
     fn __init__(
         inout self,
@@ -549,7 +531,6 @@ struct Function[
             max_registers=payload.max_registers,
             threads_per_block=payload.threads_per_block,
             cuda_dll=payload.cuda_dll_ptr[],
-            constant_memory=payload.constant_memory,
         )
         var func_handle = module.load(fn_name)
 
@@ -595,9 +576,6 @@ struct Function[
         cuda_function_cache: UnsafePointer[FunctionCache] = UnsafePointer[
             FunctionCache
         ](),
-        owned constant_memory: List[ConstantMemoryMapping] = List[
-            ConstantMemoryMapping
-        ](),
     ) raises -> _CachedFunctionInfo:
         alias fn_name = _get_nvptx_fn_name[func]()
 
@@ -609,7 +587,6 @@ struct Function[
             func_attribute=func_attribute,
             device_context_ptr=device_context_ptr,
             cuda_dll_ptr=cuda_dll_ptr,
-            constant_memory=constant_memory^,
         )
 
         var info = cuda_function_cache[].get_or_create_entry[

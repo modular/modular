@@ -329,9 +329,6 @@ struct Module:
         verbose: Bool = False,
         max_registers: Optional[Int] = None,
         threads_per_block: Optional[Int] = None,
-        owned constant_memory: List[ConstantMemoryMapping] = List[
-            ConstantMemoryMapping
-        ](),
     ) raises:
         self.__init__(
             content=content,
@@ -339,7 +336,6 @@ struct Module:
             max_registers=max_registers,
             threads_per_block=threads_per_block,
             cuda_dll=ctx.cuda_dll,
-            constant_memory=constant_memory^,
         )
 
     fn __init__(
@@ -350,9 +346,6 @@ struct Module:
         verbose: Bool = False,
         max_registers: Optional[Int] = None,
         threads_per_block: Optional[Int] = None,
-        owned constant_memory: List[ConstantMemoryMapping] = List[
-            ConstantMemoryMapping
-        ](),
     ) raises:
         self.__init__(
             content._strref_dangerous(),
@@ -360,7 +353,6 @@ struct Module:
             verbose=verbose,
             max_registers=max_registers,
             threads_per_block=threads_per_block,
-            constant_memory=constant_memory^,
         )
 
     fn __init__(
@@ -371,9 +363,6 @@ struct Module:
         verbose: Bool = False,
         max_registers: Optional[Int] = None,
         threads_per_block: Optional[Int] = None,
-        owned constant_memory: List[ConstantMemoryMapping] = List[
-            ConstantMemoryMapping
-        ](),
     ) raises:
         self.__init__(
             StringRef(content),
@@ -381,7 +370,6 @@ struct Module:
             verbose=verbose,
             max_registers=max_registers,
             threads_per_block=threads_per_block,
-            constant_memory=constant_memory^,
         )
 
     fn __init__(
@@ -392,9 +380,6 @@ struct Module:
         verbose: Bool = False,
         max_registers: Optional[Int] = None,
         threads_per_block: Optional[Int] = None,
-        owned constant_memory: List[ConstantMemoryMapping] = List[
-            ConstantMemoryMapping
-        ](),
     ) raises:
         """Loads a module in the current CUDA context by mapping PTX provided as a NULL terminated text string.
         """
@@ -407,7 +392,6 @@ struct Module:
             or verbose
             or max_registers
             or threads_per_block
-            or constant_memory
         ):
             alias buffer_size = 4096
             alias max_num_options = 10
@@ -470,34 +454,6 @@ struct Module:
                 option_vals[num_options] = threads_per_block.value()
                 num_options += 1
 
-            var constant_memory_addresses = List[UnsafePointer[NoneType]]()
-            var constant_memory_names = List[UnsafePointer[UInt8]]()
-            if constant_memory:
-                var num_constant_memory = len(constant_memory)
-                constant_memory_addresses = List[UnsafePointer[NoneType]](
-                    capacity=num_constant_memory
-                )
-                constant_memory_names = List[UnsafePointer[UInt8]](
-                    capacity=num_constant_memory
-                )
-                for i in range(num_constant_memory):
-                    constant_memory_addresses.append(constant_memory[i].ptr)
-                    constant_memory_names.append(
-                        constant_memory[i].name.unsafe_ptr()
-                    )
-
-                opts[num_options] = JitOptions.GLOBAL_SYMBOL_COUNT
-                option_vals[num_options] = num_constant_memory
-                num_options += 1
-
-                opts[num_options] = JitOptions.GLOBAL_SYMBOL_NAMES
-                option_vals[num_options] = int(constant_memory_names.data)
-                num_options += 1
-
-                opts[num_options] = JitOptions.GLOBAL_SYMBOL_ADDRESSES
-                option_vals[num_options] = int(constant_memory_addresses.data)
-                num_options += 1
-
             # Note that content has already gone through _cleanup_asm and
             # is null terminated.
             var cuModuleLoadDataEx = self.cuda_dll.cuModuleLoadDataEx
@@ -517,10 +473,6 @@ struct Module:
                 var error_buffer_str = StringRef(error_buffer)
                 if error_buffer_str:
                     print(error_buffer_str)
-
-            _ = constant_memory_addresses^
-            _ = constant_memory_names^
-            _ = constant_memory^
 
             _check_error(result)
         else:
