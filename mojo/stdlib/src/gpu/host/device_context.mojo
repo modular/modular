@@ -228,6 +228,7 @@ struct DeviceFunction[
         verbose: Bool = False,
         max_registers: Optional[Int] = None,
         threads_per_block: Optional[Int] = None,
+        cache_mode: Optional[CacheMode] = None,
         cache_config: Optional[CacheConfig] = None,
         func_attribute: Optional[FuncAttribute] = None,
     ) raises:
@@ -245,6 +246,7 @@ struct DeviceFunction[
             verbose=verbose,
             max_registers=max_registers,
             threads_per_block=threads_per_block,
+            cache_mode=cache_mode,
             cache_config=cache_config,
             func_attribute=func_attribute,
         )
@@ -324,6 +326,7 @@ struct DeviceContext:
         verbose: Bool = False,
         max_registers: Optional[Int] = None,
         threads_per_block: Optional[Int] = None,
+        cache_mode: Optional[CacheMode] = None,
         cache_config: Optional[CacheConfig] = None,
         func_attribute: Optional[FuncAttribute] = None,
     ) raises -> DeviceFunction[
@@ -346,6 +349,7 @@ struct DeviceContext:
             verbose=verbose,
             max_registers=max_registers,
             threads_per_block=threads_per_block,
+            cache_mode=cache_mode,
             cache_config=cache_config,
             func_attribute=func_attribute,
         )

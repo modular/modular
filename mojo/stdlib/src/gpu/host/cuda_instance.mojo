@@ -799,6 +799,62 @@ struct LaunchConfig:
         self.num_attrs = num_attrs
 
 
+# ===----------------------------------------------------------------------===#
+# LaunchAttributeID
+# ===----------------------------------------------------------------------===#
+
+
+@value
+@register_passable("trivial")
+struct CacheMode:
+    """Caching modes for dlcm."""
+
+    var _value: Int
+
+    alias NONE = Self(0)
+    """Compile with no -dlcm flag specified."""
+
+    alias L1_CACHE_DISABLED = Self(1)
+    """Compile with L1 cache disabled."""
+
+    alias L1_CACHE_ENABLED = Self(2)
+    """Compile with L1 cache enabled."""
+
+    @always_inline("nodebug")
+    fn __eq__(self, other: Self) -> Bool:
+        return self._value == other._value
+
+    @always_inline("nodebug")
+    fn __ne__(self, other: Self) -> Bool:
+        return not (self == other)
+
+    fn __is__(self, other: Self) -> Bool:
+        return self == other
+
+    fn __isnot__(self, other: Self) -> Bool:
+        return self != other
+
+    fn __init__(inout self, *, other: Self):
+        """Explicitly construct a deep copy of the provided value.
+
+        Args:
+            other: The value to copy.
+        """
+        self = other
+
+    @always_inline
+    fn __int__(self) -> Int:
+        return self._value
+
+    @no_inline
+    fn __str__(self) -> String:
+        return String.format_sequence(self)
+
+    @no_inline
+    fn format_to(self, inout writer: Formatter):
+        return writer.write(self._value)
+
+
 # ===----------------------------------------------------------------------=== #
 # CudaDLL
 # ===----------------------------------------------------------------------=== #

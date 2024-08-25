@@ -310,10 +310,10 @@ struct Module:
     fn __init__(inout self, path: Path, cuda_dll: CudaDLL) raises:
         self.cuda_dll = cuda_dll
         var module = _ModuleHandle()
-        var path_cstr = path.__str__()
+        var path_cstr = str(path)
 
         _check_error(
-            cuModuleLoad.load()(
+            cuda_dll.cuModuleLoad(
                 UnsafePointer.address_of(module),
                 path_cstr.unsafe_cstr_ptr(),
             )
@@ -329,6 +329,7 @@ struct Module:
         verbose: Bool = False,
         max_registers: Optional[Int] = None,
         threads_per_block: Optional[Int] = None,
+        cache_mode: Optional[CacheMode] = None,
     ) raises:
         self.__init__(
             content=content,
@@ -336,6 +337,7 @@ struct Module:
             max_registers=max_registers,
             threads_per_block=threads_per_block,
             cuda_dll=ctx.cuda_dll,
+            cache_mode=cache_mode,
         )
 
     fn __init__(
@@ -346,6 +348,7 @@ struct Module:
         verbose: Bool = False,
         max_registers: Optional[Int] = None,
         threads_per_block: Optional[Int] = None,
+        cache_mode: Optional[CacheMode] = None,
     ) raises:
         self.__init__(
             content._strref_dangerous(),
@@ -353,6 +356,7 @@ struct Module:
             verbose=verbose,
             max_registers=max_registers,
             threads_per_block=threads_per_block,
+            cache_mode=cache_mode,
         )
 
     fn __init__(
@@ -363,6 +367,7 @@ struct Module:
         verbose: Bool = False,
         max_registers: Optional[Int] = None,
         threads_per_block: Optional[Int] = None,
+        cache_mode: Optional[CacheMode] = None,
     ) raises:
         self.__init__(
             StringRef(content),
@@ -370,6 +375,7 @@ struct Module:
             verbose=verbose,
             max_registers=max_registers,
             threads_per_block=threads_per_block,
+            cache_mode=cache_mode,
         )
 
     fn __init__(
@@ -380,8 +386,10 @@ struct Module:
         verbose: Bool = False,
         max_registers: Optional[Int] = None,
         threads_per_block: Optional[Int] = None,
+        cache_mode: Optional[CacheMode] = None,
     ) raises:
-        """Loads a module in the current CUDA context by mapping PTX provided as a NULL terminated text string.
+        """Loads a module in the current CUDA context by mapping PTX
+        provided as a NULL terminated text string.
         """
 
         alias debug_level = env_get_string["DEBUG_LEVEL", "none"]()
@@ -392,6 +400,7 @@ struct Module:
             or verbose
             or max_registers
             or threads_per_block
+            or cache_mode
         ):
             alias buffer_size = 4096
             alias max_num_options = 10
@@ -452,6 +461,11 @@ struct Module:
             if threads_per_block:
                 opts[num_options] = JitOptions.THREADS_PER_BLOCK
                 option_vals[num_options] = threads_per_block.value()
+                num_options += 1
+
+            if cache_mode:
+                opts[num_options] = JitOptions.CACHE_MODE
+                option_vals[num_options] = int(cache_mode.value())
                 num_options += 1
 
             # Note that content has already gone through _cleanup_asm and
