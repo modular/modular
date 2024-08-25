@@ -6,16 +6,12 @@
 
 # REQUIRES: cuda
 # RUN: %mojo %s %t1
-# RUN: cat %t1 | FileCheck %s
 
 # COM: Test with mojo build
 # RUN: mkdir -p %t
 # RUN: rm -rf %t/cuda-test-mojo-kernel
 # RUN: mojo build %s -o %t/cuda-test-mojo-kernel
 # RUN: %t/cuda-test-mojo-kernel %t2
-# RUN: cat %t2 | FileCheck %s
-
-# CHECK: .target sm_80
 
 from sys import stderr
 
@@ -32,7 +28,6 @@ from testing import assert_equal
 from max.tensor import TensorShape
 from gpu.id import ThreadIdx, BlockDim, BlockIdx
 from gpu.host import Dim
-from sys import env_get_string, argv
 from pathlib import Path
 
 
@@ -66,7 +61,7 @@ def test_vec_add():
     out = fill(cuda_dev, shape, 0).to_tensor[type, 2]()
 
     kernel = cuda.compile[vec_add[type, 2], target_arch="sm_80"](
-        cuda_dev, debug=True, max_registers=128, dump_ptx=Path(argv()[1])
+        cuda_dev, max_registers=128
     )
     kernel(
         cuda_dev,

@@ -51,7 +51,7 @@ struct CompiledDeviceKernel[
     func: func_type,
     target: __mlir_type.`!kgen.target` = _get_nvptx_target(),
 ]:
-    var _compiled_func: CUDAFunction[func, target]
+    var _compiled_func: CUDAFunction[func, target=target]
     alias LaunchArg = Variant[Dim, Int]
 
     @parameter
@@ -103,8 +103,6 @@ alias CompileArg = Variant[Int, Path, Bool]
 @value
 struct CUDACompiledKernelArgs:
     var verbose: Bool
-    var dump_ptx: Optional[Path]
-    var dump_llvm: Optional[Path]
     var max_registers: Optional[Int]
     var threads_per_block: Optional[Int]
 
@@ -116,8 +114,6 @@ struct CUDACompiledKernelArgs:
 
     fn __init__(inout self, kwargs: OwnedKwargsDict[CompileArg]) raises:
         self.verbose = kwargs.find("verbose").or_else(False)[Bool]
-        self.dump_ptx = Self._get_opt[Path](kwargs, "dump_ptx")
-        self.dump_llvm = Self._get_opt[Path](kwargs, "dump_llvm")
         self.max_registers = Self._get_opt[Int](kwargs, "max_registers")
         self.threads_per_block = Self._get_opt[Int](kwargs, "threads_per_block")
 
@@ -137,7 +133,6 @@ fn compile[
             can execute on a different Device, as long as the device architecture matches.
         kwargs:
             verbose (Bool): Prints verbose log messages from cuModuleLoadEx during compilation/linking.
-            dump_ptx (Path): File in which to write the PTX for your kernel.
             max_registers (Int): Limits the max of registers that can be used by your kernel.
             threads_per_block (Int): Block size that will be used to launch the kernel. Can help
                 the compiler decide how to tradeoff resources (e.g. registers).
@@ -159,12 +154,6 @@ fn compile[
         _is_failable=False,
     ](
         verbose=compile_args.verbose,
-        dump_llvm=Variant[Path, Bool](
-            compile_args.dump_llvm.value()
-        ) if compile_args.dump_llvm else False,
-        dump_ptx=Variant[Path, Bool](
-            compile_args.dump_ptx.value()
-        ) if compile_args.dump_ptx else False,
         max_registers=compile_args.max_registers,
         threads_per_block=compile_args.threads_per_block,
     )
