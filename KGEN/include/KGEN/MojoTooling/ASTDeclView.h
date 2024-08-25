@@ -206,13 +206,15 @@ public:
     kBorrowed,
     kInOut,
     kOwned,
+    kRef,
   };
-  ArgumentDeclView(StringRef name, StringRef type,
+  ArgumentDeclView(StringRef name, std::string prefix, std::string type,
                    KGEN::LIT::PassingKind passingKind,
                    VariadicKind variadicKind,
                    std::optional<std::string> defaultValue,
                    Convention convention)
-      : DeclView(DeclViewKind::DK_ArgumentDeclView, name), type(type),
+      : DeclView(DeclViewKind::DK_ArgumentDeclView, name),
+        prefix(std::move(prefix)), type(std::move(type)),
         passingKind(passingKind), variadicKind(variadicKind),
         defaultValue(std::move(defaultValue)), convention(convention) {}
 
@@ -227,6 +229,7 @@ public:
   bool isBorrowed() const { return convention == Convention::kBorrowed; }
   bool isInout() const { return convention == Convention::kInOut; }
   bool isOwned() const { return convention == Convention::kOwned; }
+  bool isRef() const { return convention == Convention::kRef; }
 
   KGEN::LIT::PassingKind getPassingKind() const { return passingKind; }
 
@@ -260,6 +263,8 @@ public:
   }
 
 private:
+  /// The prefix is the ref lifetime + addr space marker.
+  std::string prefix;
   std::string type;
   KGEN::LIT::PassingKind passingKind;
   VariadicKind variadicKind;
