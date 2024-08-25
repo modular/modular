@@ -1179,7 +1179,13 @@ struct NDBuffer[
             The buffer must be contiguous.
         """
         debug_assert(self.is_contiguous, "Function requires contiguous buffer.")
-        memset_zero(self.data, len(self))
+
+        @parameter
+        if shape.all_known[rank]():
+            alias count = int(shape.product())
+            memset_zero[count=count](self.data)
+        else:
+            memset_zero(self.data, len(self))
 
     @always_inline
     fn _simd_fill[simd_width: Int](self, val: Scalar[type]):

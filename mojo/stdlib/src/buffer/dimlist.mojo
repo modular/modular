@@ -414,7 +414,9 @@ struct DimList(Sized, Stringable, Formattable):
         for i in range(len(self)):
             if not self.value[i]:
                 return Dim()
-            res *= self.value[i].get()
+            var val = self.value[i].get()
+            if val:
+                res *= val
         return res
 
     @always_inline
