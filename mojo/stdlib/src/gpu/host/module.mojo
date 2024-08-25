@@ -409,8 +409,8 @@ struct Module:
             var info_buffer = stack_allocation[buffer_size, Int8]()
             var error_buffer = stack_allocation[buffer_size, Int8]()
 
-            memset_zero(info_buffer, buffer_size)
-            memset_zero(error_buffer, buffer_size)
+            memset_zero[count=buffer_size](info_buffer)
+            memset_zero[count=buffer_size](error_buffer)
 
             var opts = stack_allocation[max_num_options, JitOptions]()
             var option_vals = stack_allocation[max_num_options, Int]()
