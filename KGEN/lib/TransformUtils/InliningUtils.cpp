@@ -157,6 +157,48 @@ void KGEN::foldTrivialLoop(mlir::RewriterBase &b, Operation *op) {
 // updateScopeDebugInfo
 //===----------------------------------------------------------------------===//
 
+static void updateBlockDebugInfo(Block &block, IntegerAttr tag,
+                                 StringAttr updateAttrName,
+                                 bool insideInlinedSubprogram,
+                                 Location callLoc) {
+  for (BlockArgument arg : block.getArguments())
+    arg.setLoc(mlir::CallSiteLoc::get(arg.getLoc(), callLoc));
+
+  for (Operation &op : llvm::make_early_inc_range(block)) {
+    // Inline the location if not inside an inlined subprogram.
+    if (!insideInlinedSubprogram) {
+      DebugInfo::updateInlinedLoc(&op, callLoc);
+    }
+
+    // Don't recurse into nested functions.
+    if (isa<FuncInterface>(op))
+      continue;
+
+    // Recurse into the body if needed and allowed.
+    if (isa<DebugInfo::InlinedSubprogramScoped>(op)) {
+      // Recurse inside if the inlined subprogram has a tag (deferred update).
+      IntegerAttr tag;
+      if (updateAttrName &&
+          (tag = op.getAttrOfType<IntegerAttr>(updateAttrName)))
+        updateScopeDebugInfoFrom(&op, tag, updateAttrName);
+
+      // Always skip walking directly into subprogram scopes.
+      continue;
+    } else if (updateAttrName && isa<HLCF::LoopOp>(op)) {
+      if (auto tag = op.getAttrOfType<IntegerAttr>(updateAttrName)) {
+        updateScopeDebugInfoFrom(&op, tag, updateAttrName);
+        continue;
+      }
+    }
+
+    // Traverse into op.
+    for (Region &region : op.getRegions())
+      for (Block &block : region.getBlocks())
+        updateBlockDebugInfo(block, tag, updateAttrName,
+                             insideInlinedSubprogram, callLoc);
+  }
+}
+
 void KGEN::updateScopeDebugInfoFrom(Operation *scope, IntegerAttr tag,
                                     StringAttr updateAttrName) {
   // Unpack the bits.
@@ -168,33 +210,9 @@ void KGEN::updateScopeDebugInfoFrom(Operation *scope, IntegerAttr tag,
   Location callLoc = scope->getLoc();
 
   bool insideInlinedSubprogram = isa<DebugInfo::InlinedSubprogramScoped>(scope);
-  body.walk<mlir::WalkOrder::PreOrder>([&](Operation *op) {
-    // Inline the location if not inside an inlined subprogram.
-    if (!insideInlinedSubprogram)
-      DebugInfo::updateInlinedLoc(op, callLoc);
-
-    // Don't recurse into nested functions.
-    if (isa<FuncInterface>(op))
-      return WalkResult::skip();
-
-    // Recurse into the body if needed and allowed.
-    if (isa<DebugInfo::InlinedSubprogramScoped>(op)) {
-      // Recurse inside if the inlined subprogram has a tag (deferred update).
-      IntegerAttr tag;
-      if (updateAttrName &&
-          (tag = op->getAttrOfType<IntegerAttr>(updateAttrName)))
-        updateScopeDebugInfoFrom(op, tag, updateAttrName);
-
-      // Always skip walking directly into subprogram scopes.
-      return WalkResult::skip();
-    } else if (updateAttrName && isa<HLCF::LoopOp>(op)) {
-      if (auto tag = op->getAttrOfType<IntegerAttr>(updateAttrName)) {
-        updateScopeDebugInfoFrom(op, tag, updateAttrName);
-        return WalkResult::skip();
-      }
-    }
-    return WalkResult::advance();
-  });
+  for (Block &block : body.getBlocks())
+    updateBlockDebugInfo(block, tag, updateAttrName, insideInlinedSubprogram,
+                         callLoc);
 
   // If this scope is a trivial control-flow scope, fold it away.
   if (singleExit) {
