@@ -163,7 +163,7 @@ fn check_ldmatrix_transposed_bf16[
 
     var func = ctx.compile_function[
         test_ldmatrix_transposed[input_type, output_type]
-    ](dump_ptx=False)
+    ]()
 
     ctx.enqueue_function(
         func,
@@ -244,7 +244,7 @@ fn check_ldmatrix(
     ctx.enqueue_copy_to_device(a_device, a_host)
     ctx.enqueue_copy_to_device(b_device, b_host)
 
-    var func_ldmatrix = ctx.compile_function[test_ldmatrix_fp32](dump_ptx=False)
+    var func_ldmatrix = ctx.compile_function[test_ldmatrix_fp32]()
 
     alias WARP_PER_BLOCK = 1
     alias MMA_M = 16

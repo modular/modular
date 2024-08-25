@@ -327,13 +327,15 @@ fn test[type: DType, transpose_b: Bool](ctx: DeviceContext) raises:
         num_pipeline_stages,
     ]
     # TODO: The cache config doesn't really help here, see #38391.
-    var func = ctx.compile_function[gemm](
+    var func = ctx.compile_function[
+        gemm,
+        # dump_llvm=Path("./pipeline-gemm.ir"),
+        # dump_ptx=Path("./pipeline-gemm.ptx"),
+    ](
         threads_per_block=num_threads,
         func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
             shared_mem_bytes
         ),
-        # dump_llvm=Path("./pipeline-gemm.ir"),
-        # dump_ptx=Path("./pipeline-gemm.ptx"),
     )
 
     if is_benchmark():

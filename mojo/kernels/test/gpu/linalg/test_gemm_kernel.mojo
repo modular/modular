@@ -33,20 +33,6 @@ fn is_benchmark() -> Bool:
     return False
 
 
-fn dump_ptx() -> Bool:
-    for arg in argv():
-        if arg == "--dump_ptx" or arg == "--dump_ptx":
-            return True
-    return False
-
-
-fn dump_llvm() -> Bool:
-    for arg in argv():
-        if arg == "--dump_llvm" or arg == "--dump_llvm":
-            return True
-    return False
-
-
 fn gemm_kernel[
     c_type: DType,
     c_shape: DimList,
@@ -197,9 +183,7 @@ fn test_gemm_kernel_dynamic(ctx: DeviceContext) raises:
     ctx.enqueue_copy_to_device(a_device, a_host)
     ctx.enqueue_copy_to_device(b_device, b_host)
 
-    var gemm_kernel_func = ctx.compile_function[gemm_kernel_func_t](
-        dump_ptx=dump_ptx(), dump_llvm=dump_llvm()
-    )
+    var gemm_kernel_func = ctx.compile_function[gemm_kernel_func_t]()
 
     var mat_a = NDBuffer[DType.float32, 2, DimList.create_unknown[2]()](
         a_device.ptr, dynamic_shape=Index(M, K)

@@ -70,9 +70,9 @@ def test_tma_tile_copy(ctx: DeviceContext):
             var val = shmem[i]
             print(val)
 
-    var kernel_copy_async = ctx.compile_function[kernel_copy_async_tma](
-        dump_ptx=True
-    )
+    var kernel_copy_async = ctx.compile_function[
+        kernel_copy_async_tma, dump_ptx=True
+    ]()
     ctx.enqueue_function(kernel_copy_async, grid_dim=(1), block_dim=(1))
     _ = gmem_dev
     gmem_host.free()

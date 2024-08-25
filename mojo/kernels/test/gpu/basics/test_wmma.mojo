@@ -256,7 +256,7 @@ fn run_mma_fp32_tf32(
     ctx.enqueue_copy_to_device(a_device, a_host)
     ctx.enqueue_copy_to_device(b_device, b_host)
 
-    var func_mma = ctx.compile_function[mma_kernel_fp32_tf32](dump_ptx=False)
+    var func_mma = ctx.compile_function[mma_kernel_fp32_tf32]()
 
     alias WARP_PER_BLOCK = 1
     alias MMA_M = 16
@@ -406,7 +406,7 @@ fn run_mma_fp32_bf16(
     ctx.enqueue_copy_to_device(a_device, a_host)
     ctx.enqueue_copy_to_device(b_device, b_host)
 
-    var func_mma = ctx.compile_function[mma_kernel_fp32_bf16](dump_ptx=False)
+    var func_mma = ctx.compile_function[mma_kernel_fp32_bf16]()
 
     alias WARP_PER_BLOCK = 1
     alias MMA_M = 16
@@ -556,7 +556,7 @@ fn run_mma_fp32_bf16_2(
     ctx.enqueue_copy_to_device(a_device, a_host)
     ctx.enqueue_copy_to_device(b_device, b_host)
 
-    var func_mma = ctx.compile_function[mma_kernel_fp32_bf16_2](dump_ptx=False)
+    var func_mma = ctx.compile_function[mma_kernel_fp32_bf16_2]()
 
     alias WARP_PER_BLOCK = 1
     alias MMA_M = 16
@@ -706,7 +706,7 @@ fn run_mma_fp32_fp16(
     ctx.enqueue_copy_to_device(a_device, a_host)
     ctx.enqueue_copy_to_device(b_device, b_host)
 
-    var func_mma = ctx.compile_function[mma_kernel_fp32_fp16](dump_ptx=False)
+    var func_mma = ctx.compile_function[mma_kernel_fp32_fp16]()
 
     alias WARP_PER_BLOCK = 1
     alias MMA_M = 16
@@ -857,7 +857,7 @@ fn run_mma_fp16_fp16(
     ctx.enqueue_copy_to_device(a_device, a_host)
     ctx.enqueue_copy_to_device(b_device, b_host)
 
-    var func_mma = ctx.compile_function[mma_kernel_fp16_fp16](dump_ptx=False)
+    var func_mma = ctx.compile_function[mma_kernel_fp16_fp16]()
 
     alias WARP_PER_BLOCK = 1
     alias MMA_M = 16

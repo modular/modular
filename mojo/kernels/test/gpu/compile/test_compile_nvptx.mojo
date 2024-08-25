@@ -46,7 +46,7 @@ def test_compile_function():
     # CHECK: tid.x
 
     with DeviceContext() as ctx:
-        _ = ctx.compile_function[kernel](dump_ptx=True)
+        _ = ctx.compile_function[kernel, dump_ptx=True]()
 
 
 # CHECK-LABEL: test_compile_function_with_assembly
@@ -62,7 +62,7 @@ def test_compile_function_with_assembly():
     # CHECK-NOT: begin assembly
 
     with DeviceContext() as ctx:
-        _ = ctx.compile_function[kernel_inlined_assembly](dump_ptx=True)
+        _ = ctx.compile_function[kernel_inlined_assembly, dump_ptx=True]()
 
 
 def main():
