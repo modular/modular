@@ -238,10 +238,19 @@ fn _dump_q(val: Variant[Path, Bool]) -> Bool:
     return val[Path] != Path("")
 
 
+fn _cleanup_asm(s: StringLiteral) -> StringLiteral:
+    return s.replace("\t// begin inline asm\n", "").replace(
+        "\t// end inline asm\n", ""
+    )
+
+
 @value
 struct Function[
     func_type: AnyTrivialRegType, //,
     func: func_type,
+    *,
+    dump_ptx: Variant[Path, Bool] = False,
+    dump_llvm: Variant[Path, Bool] = False,
     target: __mlir_type.`!kgen.target` = _get_nvptx_target(),
     _is_failable: Bool = False,
 ](Boolable):
@@ -268,8 +277,6 @@ struct Function[
     ) raises:
         self.__init__(
             verbose=verbose,
-            dump_ptx=dump_ptx,
-            dump_llvm=dump_llvm,
             max_registers=max_registers,
             threads_per_block=threads_per_block,
             cache_config=cache_config,
@@ -287,8 +294,6 @@ struct Function[
         cuda_dll: CudaDLL,
         cuda_dll_ptr: UnsafePointer[CudaDLL],
         verbose: Bool = False,
-        dump_ptx: Variant[Path, Bool] = False,
-        dump_llvm: Variant[Path, Bool] = False,
         max_registers: Optional[Int] = None,
         threads_per_block: Optional[Int] = None,
         cache_config: Optional[CacheConfig] = None,
@@ -307,8 +312,7 @@ struct Function[
         self.cuda_dll = cuda_dll
         self.cuda_function_cache = cuda_function_cache
 
-        if _dump_q(dump_ptx) or _dump_q(dump_llvm):
-            Self._dump_rep(dump_ptx, dump_llvm)
+        Self._dump_rep()
 
         self.info = Self._get_cached_function_info[func_type, func](
             device_context_ptr=device_context_ptr,
@@ -326,8 +330,6 @@ struct Function[
         module: Module,
         name: String,
         cuda_dll: CudaDLL,
-        dump_ptx: Variant[Path, Bool] = False,
-        dump_llvm: Variant[Path, Bool] = False,
         cuda_function_cache: UnsafePointer[FunctionCache] = UnsafePointer[
             FunctionCache
         ](),
@@ -339,8 +341,7 @@ struct Function[
         self.cuda_dll = cuda_dll
         self.cuda_function_cache = cuda_function_cache
 
-        if _dump_q(dump_ptx) or _dump_q(dump_llvm):
-            Self._dump_rep(dump_ptx, dump_llvm)
+        Self._dump_rep()
 
         var function_handle = module.load(name)
         if not function_handle:
@@ -348,33 +349,20 @@ struct Function[
 
         self.info = _CachedFunctionInfo(module.module, function_handle)
 
-    @staticmethod
-    fn _gen_llvm() -> StringLiteral:
-        @parameter
-        if is_defined["GEN_GPU_LLVM"]():
-            alias llvm = _compile_code[func, emission_kind="llvm"]().asm
-            return llvm
-        else:
-            return (
-                "LLVMIR is not generated for GPU kernels by default, please"
-                " specify -D GEN_GPU_LLVM"
-            )
-
-    @staticmethod
     @no_inline
-    fn _dump_rep(
-        dump_ptx: Variant[Path, Bool] = False,
-        dump_llvm: Variant[Path, Bool] = False,
-    ) raises:
+    @staticmethod
+    fn _dump_rep() raises:
+        @parameter
         if _dump_q(dump_ptx):
-            alias ptx = Self._impl.asm
+            alias ptx = _cleanup_asm(Self._impl.asm)
             if dump_ptx.isa[Path]():
                 dump_ptx[Path].write_text(ptx)
             else:
                 print(ptx)
 
+        @parameter
         if _dump_q(dump_llvm):
-            var llvm = Self._gen_llvm()
+            alias llvm = _compile_code[Self.func, emission_kind="llvm"]().asm
 
             if dump_llvm.isa[Path]():
                 dump_llvm[Path].write_text(StringRef(llvm))

@@ -203,12 +203,20 @@ struct DeviceBuffer[type: DType](Sized):
 struct DeviceFunction[
     func_type: AnyTrivialRegType, //,
     func: func_type,
-    target: __mlir_type.`!kgen.target` = _get_nvptx_target(),
     *,
+    dump_ptx: Variant[Path, Bool] = False,
+    dump_llvm: Variant[Path, Bool] = False,
+    target: __mlir_type.`!kgen.target` = _get_nvptx_target(),
     _is_failable: Bool = False,
 ]:
     var ctx_ptr: UnsafePointer[DeviceContext]
-    var cuda_function: Function[func, target=target, _is_failable=_is_failable]
+    var cuda_function: Function[
+        func,
+        dump_ptx=dump_ptx,
+        dump_llvm=dump_llvm,
+        target=target,
+        _is_failable=_is_failable,
+    ]
     alias fn_name = _get_nvptx_fn_name[func]()
 
     fn __init__(
@@ -216,8 +224,6 @@ struct DeviceFunction[
         ctx: DeviceContext,
         *,
         verbose: Bool = False,
-        dump_ptx: Variant[Path, Bool] = False,
-        dump_llvm: Variant[Path, Bool] = False,
         max_registers: Optional[Int] = None,
         threads_per_block: Optional[Int] = None,
         cache_config: Optional[CacheConfig] = None,
@@ -226,12 +232,14 @@ struct DeviceFunction[
         self.ctx_ptr = UnsafePointer[DeviceContext].address_of(ctx)
         self.ctx_ptr[].cuda_context.set_current()
         self.cuda_function = Function[
-            func, target=target, _is_failable=_is_failable
+            func,
+            dump_ptx=dump_ptx,
+            dump_llvm=dump_llvm,
+            target=target,
+            _is_failable=_is_failable,
         ](
             self.ctx_ptr,
             verbose=verbose,
-            dump_ptx=dump_ptx,
-            dump_llvm=dump_llvm,
             max_registers=max_registers,
             threads_per_block=threads_per_block,
             cache_config=cache_config,
@@ -302,24 +310,34 @@ struct DeviceContext:
         func_type: AnyTrivialRegType, //,
         func: func_type,
         *,
+        dump_ptx: Variant[Path, Bool] = False,
+        dump_llvm: Variant[Path, Bool] = False,
         target: __mlir_type.`!kgen.target` = _get_nvptx_target(),
         _is_failable: Bool = False,
     ](
         self,
         *,
         verbose: Bool = False,
-        dump_ptx: Variant[Path, Bool] = False,
-        dump_llvm: Variant[Path, Bool] = False,
         max_registers: Optional[Int] = None,
         threads_per_block: Optional[Int] = None,
         cache_config: Optional[CacheConfig] = None,
         func_attribute: Optional[FuncAttribute] = None,
-    ) raises -> DeviceFunction[func, target=target, _is_failable=_is_failable]:
-        return DeviceFunction[func, target=target, _is_failable=_is_failable](
-            self,
-            verbose=verbose,
+    ) raises -> DeviceFunction[
+        func,
+        dump_ptx=dump_ptx,
+        dump_llvm=dump_llvm,
+        target=target,
+        _is_failable=_is_failable,
+    ]:
+        return DeviceFunction[
+            func,
             dump_ptx=dump_ptx,
             dump_llvm=dump_llvm,
+            target=target,
+            _is_failable=_is_failable,
+        ](
+            self,
+            verbose=verbose,
             max_registers=max_registers,
             threads_per_block=threads_per_block,
             cache_config=cache_config,
