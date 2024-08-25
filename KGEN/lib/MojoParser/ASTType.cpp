@@ -569,8 +569,14 @@ static void printDemangledParam(raw_ostream &os, TypedAttr param,
   }
   if (auto memAttr = dyn_cast<StoreToMemAttr>(param))
     return printDemangledParam(os, memAttr.getValue(), forDiag);
+
   if (auto dtypeAttr = dyn_cast<DTypeConstantAttr>(param)) {
     os << getDTypeAsString(dtypeAttr.getDType());
+    return;
+  }
+
+  if (isa<LifetimeAttr>(param)) {
+    os << "MutableStaticLifetime";
     return;
   }
 

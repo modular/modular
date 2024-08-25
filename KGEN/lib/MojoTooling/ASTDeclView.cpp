@@ -79,6 +79,57 @@ static VariadicKind getVariadicKind(PogListAttr pogListAttr, size_t idx) {
   return VariadicKind::kPosVar;
 }
 
+/// Generate a user-readable representation of the given pvalue.
+static std::string generatePValueString(PValue value) {
+  std::string typeName;
+  llvm::raw_string_ostream os(typeName);
+  value.printForDiag(os);
+  return os.str();
+}
+
+/// Unpack a lifetime into a printable name when it is uttered in a signature
+/// position.
+static std::string getSignatureLifetime(TypedAttr lifetime,
+                                        LITSignatureType signature) {
+  // Check to see if the lifetime is a parameter on this signature.  If so, it
+  // will have a depth of zero.
+  if (auto indexRef = dyn_cast<ParamIndexRefAttr>(lifetime);
+      indexRef && indexRef.getDepth() == 0 && signature) {
+    PogListAttr paramListMetadata = signature.getParamListAttrs();
+    if (paramListMetadata.getPassingKind(indexRef.getIndex()) ==
+        PassingKind::Implicit)
+      return "_";
+    return paramListMetadata.getName(indexRef.getIndex()).str();
+  }
+
+  // Otherwise, just print as normal.
+  return generatePValueString(lifetime);
+}
+
+/// Unpack a "ref" argument or result type into a string that can be shown to
+/// the user.
+static std::string getRefPrefixAsString(RefType refType,
+                                        LITSignatureType signature) {
+  std::string result =
+      "[" + getSignatureLifetime(refType.getLifetime(), signature);
+
+  // Include the address space if it is non-default.
+  if (!refType.isDefaultAddrSpace()) {
+    // It will often be two extract_elements from the inner guts of the actual
+    // AddressSpace value. Remove them.
+    TypedAttr addrSpace = refType.getAddressSpace();
+    if (auto extractAttr = dyn_cast<LIT::StructExtractAttr>(addrSpace)) {
+      addrSpace = extractAttr.getStructValue();
+      if (auto extractAttr2 = dyn_cast<LIT::StructExtractAttr>(addrSpace)) {
+        addrSpace = extractAttr2.getStructValue();
+      }
+    }
+    result += ", " + generatePValueString(addrSpace);
+  }
+  result += "] ";
+  return result;
+}
+
 /// Generate a user-readable representation of the given type and variadic kind,
 /// with an optional value convention, and parent struct "Self" type.
 static std::string
@@ -118,14 +169,6 @@ generateTypeString(Type type, VariadicKind varKind,
   else
     os << astType.getAsString(/*forDiag=*/true, /*demangleParams=*/true);
 
-  return os.str();
-}
-
-/// Generate a user-readable representation of the given pvalue.
-static std::string generatePValueString(PValue value) {
-  std::string typeName;
-  llvm::raw_string_ostream os(typeName);
-  value.printForDiag(os);
   return os.str();
 }
 
@@ -465,6 +508,10 @@ std::string ArgumentDeclView::getDeclarationSnippet() const {
     os << "inout ";
   if (isOwned())
     os << "owned ";
+  if (isRef())
+    os << "ref ";
+  // Include the prefix if any (eg for a ref argument).
+  os << prefix;
 
   dumpIdentifierWithType(os, getName(), type, variadicKind);
   if (defaultValue)
@@ -480,11 +527,14 @@ std::string ArgumentDeclView::getMarkdownDocString() const {
 }
 
 llvm::json::Object ArgumentDeclView::toJSON(MojoParserContext &ctx) const {
-  StringRef conventions[] = {"borrowed", "inout", "owned"};
+  StringRef conventions[] = {"borrowed", "inout", "owned", "ref"};
+  assert(static_cast<size_t>(convention) <
+             sizeof(conventions) / sizeof(conventions[0]) &&
+         "enums added");
 
   llvm::json::Object object{
       {"description", description},
-      {"convention", conventions[static_cast<int>(convention)]},
+      {"convention", conventions[static_cast<size_t>(convention)]},
       {"kind", getKindAsString()},
       {"name", prependVariadicIdentifiers(getName(), variadicKind).str()},
       {"type", type},
@@ -761,17 +811,21 @@ void FunctionDeclView::initFromSignature(MojoASTDeclRef declRef,
     if (auto defaultAttr = defaultArgHandler.getDefault(argIdx))
       defaultValue = generatePValueString(defaultAttr);
 
+    std::string prefix;
     auto declConvention = ArgumentDeclView::Convention::kBorrowed;
     if (convention == ArgConvention::InOut ||
         convention == ArgConvention::InitSelf)
       declConvention = ArgumentDeclView::Convention::kInOut;
-    else if (convention == ArgConvention::OwnedInMem ||
-             convention == ArgConvention::OwnedInReg)
+    else if (convention == ArgConvention::Ref) {
+      declConvention = ArgumentDeclView::Convention::kRef;
+      prefix = getRefPrefixAsString(cast<RefType>(type), signature);
+    } else if (convention == ArgConvention::OwnedInMem ||
+               convention == ArgConvention::OwnedInReg)
       declConvention = ArgumentDeclView::Convention::kOwned;
     VariadicKind variadicKind =
         getVariadicKind(signature.getArgListAttrs(), argIdx);
     args.push_back(ArgumentDeclView(
-        pogAttr.getName(),
+        pogAttr.getName(), std::move(prefix),
         generateTypeString(type, variadicKind, selfType, convention),
         pogAttr.getPassingKind(), variadicKind, std::move(defaultValue),
         declConvention));
@@ -800,15 +854,20 @@ void FunctionDeclView::initFromSignature(MojoASTDeclRef declRef,
   ASTType resultType = ASTType(signature).getSignatureUserResultType();
   assert(resultType && "didn't find a result type?");
   std::string resultPrefix;
-  if (signature.isRefResult()) {
-    auto refType = cast<RefType>(resultType);
-    resultPrefix = "ref [" + generatePValueString(refType.getLifetime()) + "] ";
-    resultType = refType.getElementType();
-  }
 
-  if (!resultType.isNoneType() || !resultPrefix.empty())
-    returnType = resultPrefix +
-                 generateTypeString(resultType, VariadicKind::kNone, selfType);
+  if (!resultType.isNoneType()) {
+    std::string str;
+    std::optional<ArgConvention> convention;
+    // If this is a ref result add the "ref [life, addrspace] "
+    // prefix to the specifier.
+    if (signature.isRefResult()) {
+      convention = ArgConvention::Ref;
+      str = "ref " + getRefPrefixAsString(cast<RefType>(resultType), signature);
+    }
+    str += generateTypeString(resultType, VariadicKind::kNone, selfType,
+                              convention);
+    returnType = str;
+  }
 
   if (auto docStr = declRef->getParsedDocString()) {
     summary = docStr->getSummary();

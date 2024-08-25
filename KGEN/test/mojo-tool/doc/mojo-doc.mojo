@@ -496,6 +496,35 @@ fn parameter_with_escaped_mlir_name[type: AnyType](value: type):
     pass
 
 
+##===----------------------------------------------------------------------===##
+# Ref args and results.
+##===----------------------------------------------------------------------===##
+
+# MOTO-516: [doc generation] Print 'ref' arguments and results in docgen
+
+# CHECK-LABEL: "name": "fn_with_anon_refs",
+# CHECK: "args": [
+# CHECK-NEXT:     {
+# CHECK-NEXT:       "convention": "ref",
+
+
+# CHECK:     "signature": "fn_with_anon_refs(ref [ref_arg1_is_lifetime] ref_arg1: AnyTrivialRegType) -> ref [_] AnyTrivialRegType",
+fn fn_with_anon_refs(
+    ref [_]ref_arg1: AnyTrivialRegType,
+) -> ref [__lifetime_of(ref_arg1)] AnyTrivialRegType:
+    pass
+
+
+# CHECK-LABEL: "name": "fn_with_named_refs",
+# CHECK:     "signature": "fn_with_named_refs[life: MutableLifetime](ref [life] ref_arg1: AnyTrivialRegType) -> ref [life] AnyTrivialRegType",
+fn fn_with_named_refs[
+    life: MutableLifetime
+](ref [life]ref_arg1: AnyTrivialRegType) -> ref [
+    __lifetime_of(ref_arg1)
+] AnyTrivialRegType:
+    pass
+
+
 # CHECK: "kind": "function"
 # CHECK: "overloads":
 # CHECK:    "deprecated": "deprecated function"
@@ -509,6 +538,31 @@ fn deprecated_function():
 # CHECK:  "name": "mojo-doc",
 
 # CHECK:  "structs": [
+
+
+# MOTO-516: [doc generation] Print 'ref' arguments and results in docgen
+@register_passable("trivial")
+struct HMyUnsafePointer[
+    T: AnyType,
+    address_space: AddressSpace = AddressSpace.GENERIC,
+]:
+    # CHECK: "signature": "__getitem__(self: Self) -> ref [MutableStaticLifetime, address_space] T",
+    fn __getitem__(
+        self,
+    ) -> ref [MutableStaticLifetime, address_space._value.value] T:
+        pass
+
+    # CHECK: "signature": "address_of(ref [arg_is_lifetime, address_space] arg: T) -> Self",
+    @staticmethod
+    fn address_of(ref [_, address_space._value.value]arg: T) -> Self:
+        pass
+
+
+struct HList[T: CollectionElement, hint_trivial_type: Bool = False]:
+    # CHECK: "signature": "__getitem__(ref [self_is_lifetime] self: Self, idx: Int) -> ref [_] T",
+    fn __getitem__(ref [_]self, idx: Int) -> ref [__lifetime_of(self)] T:
+        pass
+
 
 # Check that we don't generate any synthesized thunk methods
 # from the trait usage.
