@@ -2582,13 +2582,22 @@ AnyValue BinOpNode::emitAndOr(ValueDest &dest, ExprEmitter &emitter) const {
 AnyValue UnaryOpNode::emitTransfer(AnyValue argValue, ValueDest &dest,
                                    ExprEmitter &emitter) const {
   auto loc = getLoc();
+  // We don't track ownership right in parameter expressions, e.g. we don't have
+  // a PBValue to correspond to PRValue (which is what PValue really is).  As
+  // such, transfering in a parameter context isn't useful, just disallow it.
   if (!emitter.builder)
     return emitter.emitErrorForDynamicValueInParameter(
-        loc, "cannot transfer a value in this context");
+        loc, "cannot transfer a value in a parameter context");
 
   // If the input is already an owned RValue, then there is no need to
   // transfer from the temporary.
   if (argValue.getIfRValue()) {
+    if (argValue.getIfPValue()) {
+      emitter.emitError(loc, "cannot transfer from a parameter expression; did "
+                             "you want to introduce a local 'var'?");
+      return {};
+    }
+
     emitter.emitWarning(loc)
         << "transfer from an owned value has no effect and can be removed"
         << FixIt::remove(loc);
@@ -2607,9 +2616,24 @@ AnyValue UnaryOpNode::emitTransfer(AnyValue argValue, ValueDest &dest,
     return emitter.emitResult(argValue, this, dest);
   }
 
+  // The operand value must be in memory to have a lifetime.
+  if (!argValue.isMValue()) {
+    if (argValue.getIfSBValue()) {
+      emitter.emitError(loc, "expression is an immutable register value, "
+                             "transfer requires mutability");
+      return {};
+    }
+    // Note: a DLValue like a[i] could be copied into a local value, but that
+    // would almost always return an RValue which need not be transferred
+    // anyway.
+    emitter.emitError(loc, "expression does not live in a memory location, so "
+                           "it need not be transferred");
+    return {};
+  }
+
   // The transfer expression expects the result to be a ownable value that it
   // can launder into an RValue.
-  Value value = argValue.isMValue() ? argValue.getMValueReference() : Value();
+  Value value = argValue.getMValueReference();
 
   // Lifetime checking needs to understand this value or field.
   Value trackableValue;
@@ -2627,9 +2651,9 @@ AnyValue UnaryOpNode::emitTransfer(AnyValue argValue, ValueDest &dest,
     return {};
   }
 
-  // Make sure the lifetime of the value is extended to at least here.  This is
-  // a use, and the `_ = x^` pattern to extend the lifetime of something is very
-  // common.
+  // Make sure the lifetime of the value is extended to at least here.  This
+  // is a use, and the `_ = x^` pattern to extend the lifetime of something is
+  // very common.
   emitter.builder->create<OwnershipUseOp>(getLocation(emitter), value);
 
   // For memory values, we can just treat the value as an MRValue, and whoever

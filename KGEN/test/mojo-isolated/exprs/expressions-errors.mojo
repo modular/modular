@@ -6,6 +6,8 @@
 
 # RUN: %parse-mojo-isolated %s -verify-diagnostics
 
+@register_passable
+struct SomeNonTrivRegPassable: pass
 
 fn takes_pos_or_kw_arg(i: int, j: int):
     pass
@@ -564,7 +566,7 @@ fn test_bad_ref(a: Int, b: CopyAndInitMemType):
   # expected-error @+1 {{invalid call to '__le__': right side cannot be converted from 'Reference[0, CopyAndInitMemType, b, 0]' to 'CopyAndInitMemType'}}
   _ = b <= bref
 
-fn transfer_warnings(borrowed_arg: CopyAndInitMemType):
+fn transfer_diags[param: String](borrowed_arg: CopyAndInitMemType, obj: SomeNonTrivRegPassable, *vararg: String):
   var mem3 = CopyAndInitMemType()
 
   # Test pointless transfers from RValues and trivial values.
@@ -587,6 +589,16 @@ fn transfer_warnings(borrowed_arg: CopyAndInitMemType):
   # MOCO-757: Transfer ^ of borrowed arg leads to double free
   # expected-error @+1 {{cannot transfer out of immutable reference}}
   _ = borrowed_arg^
+
+  # expected-error @+1 {{expression is an immutable register value, transfer requires mutability}}
+  _ = obj^
+
+  # expected-error @+1 {{cannot transfer from a parameter expression; did you want to introduce a local 'var'?}}
+  _ = param^
+
+  # DLValue.
+  # expected-error @+1 {{expression does not designate a value with a lifetime}}
+  _ = vararg[1]^
 
 # Issue #1708: https://github.com/modularml/mojo/issues/1708
 # Issue #1699: https://github.com/modularml/mojo/issues/1699
