@@ -113,6 +113,13 @@ struct FuncAttribute(CollectionElement, EqualityComparable):
 
     @always_inline
     @staticmethod
+    fn CACHE_MODE_CA(val: Bool) -> FuncAttribute:
+        """Indicates whether the function has been compiled with user specified
+        option CacheMode.L1_CACHE_DISABLED set."""
+        return FuncAttribute(7, int(val))
+
+    @always_inline
+    @staticmethod
     fn MAX_DYNAMIC_SHARED_SIZE_BYTES(val: Int32) -> FuncAttribute:
         """The maximum size in bytes of dynamically-allocated shared memory that
         can be used by this function. If the user-specified dynamic shared memory
