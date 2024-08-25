@@ -18,7 +18,12 @@ from memory import stack_allocation
 from utils.lock import BlockingScopedLock, BlockingSpinLock
 from utils.variant import Variant
 
-from ._compile import _compile_code, _get_nvptx_fn_name, _get_nvptx_target
+from ._compile import (
+    _compile_code,
+    _get_nvptx_fn_name,
+    _get_nvptx_target,
+    _to_sass,
+)
 from ._utils import (
     CudaHandle,
     _check_error,
@@ -251,6 +256,7 @@ struct Function[
     *,
     dump_ptx: Variant[Path, Bool] = False,
     dump_llvm: Variant[Path, Bool] = False,
+    dump_sass: Variant[Path, Bool] = False,
     target: __mlir_type.`!kgen.target` = _get_nvptx_target(),
     _is_failable: Bool = False,
 ](Boolable):
@@ -268,8 +274,6 @@ struct Function[
         ctx_ptr: UnsafePointer[DeviceContext],
         *,
         verbose: Bool = False,
-        dump_ptx: Variant[Path, Bool] = False,
-        dump_llvm: Variant[Path, Bool] = False,
         max_registers: Optional[Int] = None,
         threads_per_block: Optional[Int] = None,
         cache_config: Optional[CacheConfig] = None,
@@ -359,6 +363,15 @@ struct Function[
                 dump_ptx[Path].write_text(ptx)
             else:
                 print(ptx)
+
+        @parameter
+        if _dump_q(dump_sass):
+            alias ptx = _cleanup_asm(Self._impl.asm)
+            var sass = _to_sass[target](ptx)
+            if dump_sass.isa[Path]():
+                dump_sass[Path].write_text(sass)
+            else:
+                print(sass)
 
         @parameter
         if _dump_q(dump_llvm):

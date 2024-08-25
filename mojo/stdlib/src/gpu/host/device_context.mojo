@@ -206,6 +206,7 @@ struct DeviceFunction[
     *,
     dump_ptx: Variant[Path, Bool] = False,
     dump_llvm: Variant[Path, Bool] = False,
+    dump_sass: Variant[Path, Bool] = False,
     target: __mlir_type.`!kgen.target` = _get_nvptx_target(),
     _is_failable: Bool = False,
 ]:
@@ -214,6 +215,7 @@ struct DeviceFunction[
         func,
         dump_ptx=dump_ptx,
         dump_llvm=dump_llvm,
+        dump_sass=dump_sass,
         target=target,
         _is_failable=_is_failable,
     ]
@@ -235,6 +237,7 @@ struct DeviceFunction[
             func,
             dump_ptx=dump_ptx,
             dump_llvm=dump_llvm,
+            dump_sass=dump_sass,
             target=target,
             _is_failable=_is_failable,
         ](
@@ -312,6 +315,7 @@ struct DeviceContext:
         *,
         dump_ptx: Variant[Path, Bool] = False,
         dump_llvm: Variant[Path, Bool] = False,
+        dump_sass: Variant[Path, Bool] = False,
         target: __mlir_type.`!kgen.target` = _get_nvptx_target(),
         _is_failable: Bool = False,
     ](
@@ -326,6 +330,7 @@ struct DeviceContext:
         func,
         dump_ptx=dump_ptx,
         dump_llvm=dump_llvm,
+        dump_sass=dump_sass,
         target=target,
         _is_failable=_is_failable,
     ]:
@@ -333,6 +338,7 @@ struct DeviceContext:
             func,
             dump_ptx=dump_ptx,
             dump_llvm=dump_llvm,
+            dump_sass=dump_sass,
             target=target,
             _is_failable=_is_failable,
         ](
