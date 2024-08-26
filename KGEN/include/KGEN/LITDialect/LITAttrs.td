@@ -619,6 +619,37 @@ def LifetimeMutCastAttr : LITTypedAttr<"LifetimeMutCast", "lifetime.mutcast"> {
   }];
 }
 
+
+//===----------------------------------------------------------------------===//
+// LifetimeFieldAttr
+//===----------------------------------------------------------------------===//
+
+def LifetimeFieldAttr : LITTypedAttr<"LifetimeField", "lifetime.field"> {
+  let summary = "Get a field-sensitive subfield of another lifetime";
+  let description = [{
+    This attribute refines a larger lifetime to that of a subfield.  This
+    subfield is known to alias the larger lifetime, but not other sibling
+    lifetimes.
+  }];
+
+  let parameters = (ins "TypedAttr":$structLifetime,
+                        "StringAttr":$field,
+                        AttributeSelfTypeParameter<"", "LifetimeType">:$type);
+
+  let assemblyFormat = "`<` $structLifetime `,` $field `>`";
+
+  let skipDefaultBuilders = 1;
+  let builders = [
+    // These builders fold the request automatically.
+    AttrBuilderWithInferredContext<(ins
+      "TypedAttr":$structLifetime, "StringAttr":$field), "", "TypedAttr">,
+    AttrBuilder<(ins "TypedAttr":$structLifetime, "StringAttr":$field,
+                "LifetimeType":$type), [{
+      return get(structLifetime, field);
+    }], "TypedAttr">,
+  ];
+}
+
 //===----------------------------------------------------------------------===//
 // ImplicitLifetimeRefAttr
 //===----------------------------------------------------------------------===//
