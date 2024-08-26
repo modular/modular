@@ -204,7 +204,40 @@ fn fused_attention[
 # Flash attention
 # ===----------------------------------------------------------------------===#
 
+
 # Using 32 bits index for GPU kernel.
+fn flash_attention[
+    rank: Int,
+    mask_rank: Int,
+    q_shape: DimList,
+    k_shape: DimList,
+    v_shape: DimList,
+    mask_shape: DimList,
+    output_shape: DimList,
+    q_type: DType,
+    k_type: DType,
+    v_type: DType,
+    mask_type: DType,
+    output_type: DType,
+    # llama 2 has attention mask but not causal mask.
+    add_attn_mask: Bool = True,
+    target: StringLiteral = "cpu",
+    use_tensor_core: Bool = False,
+](
+    output: NDBuffer[output_type, rank, output_shape],
+    q: NDBuffer[q_type, rank, q_shape],
+    k: NDBuffer[k_type, rank, k_shape],
+    v: NDBuffer[v_type, rank, v_shape],
+    mask: NDBuffer[mask_type, mask_rank, mask_shape],
+    scale: Float32,
+    context: MojoCallContextPtr = MojoCallContextPtr(),
+) raises:
+    # TODO docstring
+    return flash_attention[
+        add_attn_mask=add_attn_mask,
+        target=target,
+        use_tensor_core=use_tensor_core,
+    ](output, q, k, v, mask, scale, context.get_device_context())
 
 
 fn flash_attention[
@@ -231,7 +264,7 @@ fn flash_attention[
     v: NDBuffer[v_type, rank, v_shape],
     mask: NDBuffer[mask_type, mask_rank, mask_shape],
     scale: Float32,
-    context: MojoCallContextPtr = MojoCallContextPtr(),
+    ctx: DeviceContext,
 ) raises:
     """Flash attention 2 algorithm.
     Compute:
@@ -265,8 +298,6 @@ fn flash_attention[
         q_type == DType.float32 or q_type.is_half_float(),
         "Only support single and half precision.",
     ]()
-
-    var ctx = context.get_device_context()
 
     # Runtime dimensions.
     var batch_size = q.dim[0]()

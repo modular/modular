@@ -1374,6 +1374,55 @@ fn _flash_attention_kv_cache[
         context: Pointer containing the runtime context for the target device.
     """
 
+    var cuda_ctx: DeviceContext
+
+    @parameter
+    if target == "cpu":
+        try:
+            cuda_ctx = DeviceContext()
+        except e:
+            abort("failed to default initialize a DeviceContext:" + str(e))
+            return
+    else:
+        cuda_ctx = context.get_device_context()
+
+    _flash_attention_kv_cache_impl[target=target](
+        q, k, v, mask, scale, output, cuda_ctx
+    )
+
+
+@always_inline
+fn _flash_attention_kv_cache_impl[
+    type: DType,
+    mask_rank: Int,
+    q_shape: DimList,
+    mask_shape: DimList,
+    scale_shape: DimList,
+    output_shape: DimList,
+    kv_params: KVCacheStaticParams,
+    target: StringLiteral,
+](
+    q: NDBuffer[type, 4, q_shape],
+    k: ContiguousKVCache[type, kv_params],
+    v: ContiguousKVCache[type, kv_params],
+    mask: NDBuffer[type, mask_rank, mask_shape],
+    scale: NDBuffer[DType.float32, 1, scale_shape],
+    output: NDBuffer[type, 4, output_shape],
+    context: DeviceContext,
+):
+    """Performs flash attention using k and v caches from ContiguousKVCache custom types.
+
+    Args:
+        q: NDBuffer with shape (batch_size, num_heads, seq_len, head_size).
+        k: ContiguousKVCache type with logical shape (batch_size, num_heads, max_seq_len, head_size).
+        v: ContiguousKVCache type with logical shape (batch_size, num_heads, max_seq_len, head_size).
+        mask: The attention mask to apply to the score matrix.
+        scale: The scaled factor in scaled-dot product attention. Usually isqrt(head_size).
+        output: The Pre-allocated output buffer to write results to. Has shape:
+            (batch_size, num_heads, seq_len, head_size).
+        context: CUDA DeviceContext. This is not used if target == "cpu"
+    """
+
     @parameter
     if target == "cpu":
         return _flash_attention_kv_cache_cpu[
@@ -1383,7 +1432,7 @@ fn _flash_attention_kv_cache[
             mask_shape,
             scale_shape,
             output_shape,
-        ](q, k, v, mask, scale, output, context)
+        ](q, k, v, mask, scale, output)
     else:
         return _flash_attention_kv_cache_gpu[
             type,
@@ -1411,7 +1460,6 @@ fn _flash_attention_kv_cache_cpu[
     mask: NDBuffer[type, mask_rank, mask_shape],
     scale: NDBuffer[DType.float32, 1, scale_shape],
     output: NDBuffer[type, 4, output_shape],
-    context: MojoCallContextPtr,
 ):
     constrained[
         kv_params.layout == KVCacheLayout.BHSD,
@@ -1502,7 +1550,7 @@ fn _flash_attention_kv_cache_gpu[
     mask: NDBuffer[type, mask_rank, mask_shape],
     scale: NDBuffer[DType.float32, 1, scale_shape],
     output: NDBuffer[type, 4, output_shape],
-    context: MojoCallContextPtr,
+    context: DeviceContext,
 ):
     constrained[
         kv_params.layout == KVCacheLayout.BSHD,
