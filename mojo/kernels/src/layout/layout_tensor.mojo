@@ -1251,7 +1251,7 @@ struct LayoutTensor[
             # The compiler can't allocate LayoutTensor on stack if ptr is not known at compile time.
             # See MOCO-1081 for more details.
             alias tile_size = layout.shape[axis].value() // count
-            var ptr = UnsafePointer.address_of(tiles.unsafe_get(i))
+            var ptr = tiles.unsafe_ptr().offset(i)
             ptr.init_pointee_move(
                 LayoutTensor[
                     dtype,
