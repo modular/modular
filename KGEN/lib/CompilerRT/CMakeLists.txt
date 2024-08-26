@@ -26,7 +26,7 @@ add_modular_library(KGENCompilerRT
   ${SOURCES}
 
   LINK_LIBS PUBLIC
-  ArraySupport
+  RuntimeTensor
   CUDASupport
   AsyncRTRuntime
   AsyncRTRuntimeGlobals
@@ -44,7 +44,7 @@ add_modular_library(KGENCompilerRTShared SHARED
   ${SOURCES}
 
   LINK_LIBS PRIVATE
-  ArraySupport
+  RuntimeTensor
   CUDASupport
   CUDASupportGlobals
   AsyncRTRuntime
@@ -104,7 +104,7 @@ set(COMPILER_RT_OBJECT_SRCS
   $<TARGET_OBJECTS:obj.MSupportGlobals-static>
   $<TARGET_OBJECTS:obj.CUDASupportGlobals-static>
   $<TARGET_OBJECTS:obj.AsyncRTRuntimeGlobals-static>
-  $<TARGET_OBJECTS:obj.ArraySupport>
+  $<TARGET_OBJECTS:obj.RuntimeTensor>
   $<TARGET_OBJECTS:obj.MSupport>
   $<TARGET_OBJECTS:obj.MSupportML>
   $<TARGET_OBJECTS:obj.MThreading>

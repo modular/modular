@@ -7,7 +7,7 @@
 #ifndef GENERICML_SUPPORT_DEBUGPRINT_H
 #define GENERICML_SUPPORT_DEBUGPRINT_H
 
-#include "ArraySupport/Tensor.h"
+#include "Runtime/Tensor/Tensor.h"
 #include "Support/ErrorOr.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Support/raw_os_ostream.h"
