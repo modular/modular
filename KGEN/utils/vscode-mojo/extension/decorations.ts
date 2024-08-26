@@ -12,7 +12,7 @@ import { DisposableContext } from './utils/disposableContext';
  * MojoDecoratorContext is responsible for decorating mojo documents with
  * additional information.
  */
-export class MojoDecoratorContext extends DisposableContext {
+export class MojoDecoratorManager extends DisposableContext {
   private docStringDecorationType: vscode.TextEditorDecorationType;
 
   constructor() {

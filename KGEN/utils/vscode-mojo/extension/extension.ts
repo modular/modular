@@ -9,13 +9,13 @@ import * as vscode from 'vscode';
 import { LoggingService } from './logging';
 import { isNightlyExtension } from './utils/buildInfo';
 import { MojoSDKManager } from './sdk/sdkManager';
-import { MojoLSPContext } from './lsp/lsp';
+import { MojoLSPManager } from './lsp/lsp';
 import { DisposableContext } from './utils/disposableContext';
-import { MojoTestContext } from './testing/testing';
+import { MojoTestManager } from './testing/testing';
 import { registerFormatter } from './formatter';
 import { activateRunCommands } from './commands/run';
-import { MojoDebugContext } from './debug/debug';
-import { MojoDecoratorContext } from './decorations';
+import { MojoDebugManager } from './debug/debug';
+import { MojoDecoratorManager } from './decorations';
 import { RpcServer } from './server/RpcServer';
 
 /**
@@ -26,7 +26,7 @@ export class MojoExtension extends DisposableContext {
   public readonly loggingService: LoggingService;
   public readonly sdkManager: MojoSDKManager;
   public readonly extensionContext: vscode.ExtensionContext;
-  public lspContext?: MojoLSPContext;
+  public lspManager?: MojoLSPManager;
 
   constructor(context: vscode.ExtensionContext) {
     super();
@@ -52,9 +52,9 @@ export class MojoExtension extends DisposableContext {
     );
 
     // Initialize the testing support.
-    let testContext = new MojoTestContext(this);
-    await testContext.activate();
-    this.pushSubscription(testContext);
+    let testManager = new MojoTestManager(this);
+    await testManager.activate();
+    this.pushSubscription(testManager);
 
     // Initialize the formatter.
     this.pushSubscription(
@@ -62,18 +62,18 @@ export class MojoExtension extends DisposableContext {
     );
 
     // Initialize the debugger support.
-    this.pushSubscription(new MojoDebugContext(this));
+    this.pushSubscription(new MojoDebugManager(this));
 
     // Initialize the execution commands.
     this.pushSubscription(activateRunCommands(this));
 
     // Initialize the decorations.
-    this.pushSubscription(new MojoDecoratorContext());
+    this.pushSubscription(new MojoDecoratorManager());
 
     // Initialize the LSPs
-    this.lspContext = new MojoLSPContext(this);
-    await this.lspContext.activate();
-    this.pushSubscription(this.lspContext);
+    this.lspManager = new MojoLSPManager(this);
+    await this.lspManager.activate();
+    this.pushSubscription(this.lspManager);
 
     this.loggingService.main.logInfo('MojoContext activated.');
     this.pushSubscription(
