@@ -12,7 +12,7 @@ import {
 import { TextDocument } from 'vscode-languageserver-textdocument';
 
 import { MojoLSPServer } from './MojoLSPServer';
-import { Client, URI } from './types';
+import { Client, URI, Optional } from './types';
 
 /**
  * Base class for all kinds of Mojo documents.
@@ -353,7 +353,7 @@ export class MojoDocumentsStateHandler {
     originalNotification: string,
     server: MojoLSPServer,
     uri: URI,
-    doc: MojoDocument | undefined
+    doc: Optional<MojoDocument>
   ): void {
     if (!doc) {
       this.client.console.log(
@@ -531,7 +531,7 @@ export class MojoDocumentsStateHandler {
    */
   public getOwningTextOrNotebookDocument(
     uri: URI
-  ): MojoNotebookDocument | MojoTextDocument | undefined {
+  ): Optional<MojoNotebookDocument | MojoTextDocument> {
     {
       const doc = this.uriToTextDocs.get(uri);
 

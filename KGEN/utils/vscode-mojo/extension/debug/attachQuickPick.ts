@@ -69,7 +69,7 @@ async function getProcessItems(
 async function showQuickPick(
   extension: MojoExtension,
   debugConfig: any
-): Promise<string | undefined> {
+): Promise<Optional<string>> {
   const processItems: ProcessItem[] = await getProcessItems(
     extension.extensionContext
   );
@@ -77,7 +77,7 @@ async function showQuickPick(
   const filterMementoKey = 'searchProgramToAttach' + debugConfig.name;
   const previousFilter = memento.get<string>(filterMementoKey);
 
-  return new Promise<string | undefined>((resolve, reject) => {
+  return new Promise<Optional<string>>((resolve, reject) => {
     const quickPick: vscode.QuickPick<ProcessItem> =
       vscode.window.createQuickPick<ProcessItem>();
     quickPick.value = previousFilter || '';

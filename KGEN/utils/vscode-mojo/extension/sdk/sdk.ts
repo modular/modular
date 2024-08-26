@@ -36,7 +36,7 @@ export class MojoSDK {
     modularHomePath: string,
     isNightly: boolean,
     possibleKeys: string[]
-  ): string | undefined {
+  ): Optional<string> {
     // Bail early if we don't have any keys.
     if (possibleKeys.length === 0) {
       return undefined;

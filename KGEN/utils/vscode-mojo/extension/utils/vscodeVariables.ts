@@ -18,7 +18,7 @@ import * as vscode from 'vscode';
  */
 export function substituteVariables(
   text: string,
-  workspaceFolder: vscode.WorkspaceFolder | undefined
+  workspaceFolder: Optional<vscode.WorkspaceFolder>
 ) {
   text = text.replace(
     /\${workspaceFolder}/g,

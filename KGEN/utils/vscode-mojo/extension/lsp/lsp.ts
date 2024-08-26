@@ -22,8 +22,8 @@ import { LoggingService } from '../logging';
  */
 export class MojoLSPManager extends DisposableContext {
   private mojoExtension: MojoExtension;
-  public lspClient: vscodelc.LanguageClient | undefined;
-  public lspClientChanges = new Subject<vscodelc.LanguageClient | undefined>();
+  public lspClient: Optional<vscodelc.LanguageClient>;
+  public lspClientChanges = new Subject<Optional<vscodelc.LanguageClient>>();
   private loggingService: LoggingService;
 
   constructor(mojoExtension: MojoExtension) {

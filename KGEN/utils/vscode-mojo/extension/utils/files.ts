@@ -38,7 +38,7 @@ export class WorkspaceAwareFile {
  *     all other mojo files in no particular order.
  */
 export function getAllOpenMojoFiles(): [
-  WorkspaceAwareFile | undefined,
+  Optional<WorkspaceAwareFile>,
   WorkspaceAwareFile[],
 ] {
   const mojoUriFilter = (uri: vscode.Uri) =>

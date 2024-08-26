@@ -81,8 +81,8 @@ class MojoDebugAdapterDescriptorFactory
 
   async createDebugAdapterDescriptor(
     session: vscode.DebugSession,
-    _executable: vscode.DebugAdapterExecutable | undefined
-  ): Promise<vscode.DebugAdapterDescriptor | undefined> {
+    _executable: Optional<vscode.DebugAdapterExecutable>
+  ): Promise<Optional<vscode.DebugAdapterDescriptor>> {
     let sdk = await this.extension.sdkManager.findSDK();
     // We don't need to show error messages here because
     // `findSDKConfigForDebugSession` does that.
@@ -118,7 +118,7 @@ class MojoDebugConfigurationResolver
   }
 
   async resolveDebugConfigurationWithSubstitutedVariables?(
-    folder: vscode.WorkspaceFolder | undefined,
+    folder: Optional<vscode.WorkspaceFolder>,
     debugConfiguration: MojoDebugConfiguration,
     token?: vscode.CancellationToken
   ): Promise<undefined | vscode.DebugConfiguration> {
@@ -229,7 +229,7 @@ class MojoDebugConfigurationResolver
   }
 
   async resolveDebugConfiguration(
-    folder: vscode.WorkspaceFolder | undefined,
+    folder: Optional<vscode.WorkspaceFolder>,
     debugConfiguration: MojoDebugConfiguration,
     token?: vscode.CancellationToken
   ): Promise<vscode.DebugConfiguration> {
@@ -255,9 +255,9 @@ class MojoDebugDynamicConfigurationProvider
   implements vscode.DebugConfigurationProvider
 {
   async provideDebugConfigurations(
-    _folder: vscode.WorkspaceFolder | undefined,
-    _token?: vscode.CancellationToken | undefined
-  ): Promise<vscode.DebugConfiguration[] | undefined> {
+    _folder: Optional<vscode.WorkspaceFolder>,
+    _token?: Optional<vscode.CancellationToken>
+  ): Promise<Optional<vscode.DebugConfiguration[]>> {
     const [activeFile, otherOpenFiles] = getAllOpenMojoFiles();
     return [activeFile, ...otherOpenFiles]
       .filter((file): file is WorkspaceAwareFile => !!file)

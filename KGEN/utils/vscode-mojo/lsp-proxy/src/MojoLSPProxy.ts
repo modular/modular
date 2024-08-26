@@ -24,7 +24,13 @@ import {
 
 import { MojoDocument, MojoDocumentsStateHandler } from './MojoDocument';
 import { MojoLSPServer } from './MojoLSPServer';
-import { Client, ExitStatus, RequestParamsWithDocument, URI } from './types';
+import {
+  Client,
+  ExitStatus,
+  Optional,
+  RequestParamsWithDocument,
+  URI,
+} from './types';
 
 /**
  * Class in charge of of managing the communication between the VSCode client
@@ -39,7 +45,7 @@ export class MojoLSPProxy {
    * The actual Mojo LSP Server. It'll be created as part of the `onInitialize`
    * method of the proxy.
    */
-  private server: MojoLSPServer | undefined;
+  private server: Optional<MojoLSPServer>;
   /**
    * The state handler for all the documents notified by the client.
    */
@@ -53,7 +59,7 @@ export class MojoLSPProxy {
    * the client as part of the `initialize` request and have to be reused
    * whenever the server is restarted.
    */
-  private initializeParams: InitializeParams | undefined;
+  private initializeParams: Optional<InitializeParams>;
 
   constructor() {
     this.client = createClientConnection(ProposedFeatures.all);
@@ -74,7 +80,7 @@ export class MojoLSPProxy {
    */
   private createDiagnosticErrorMessageUponCrash(
     doc: MojoDocument,
-    crashTrigger: URI | undefined
+    crashTrigger: Optional<URI>
   ): string {
     let errorMessage = 'A crash happened in the Mojo Language Server';
     if (this.docsStateHandler.isCrashTrigger(doc)) {
@@ -110,9 +116,7 @@ export class MojoLSPProxy {
     // any other moment, e.g., when reading its stdin, we would need a more
     // complex mechanism to identify the actual issue.
     const crashTriggerURI = (
-      this.server?.getOldestPendingRequest() as
-        | RequestParamsWithDocument
-        | undefined
+      this.server?.getOldestPendingRequest() as Optional<RequestParamsWithDocument>
     )?.textDocument?.uri;
     for (const doc of this.docsStateHandler.getAllDocs()) {
       if (doc.uri == crashTriggerURI) {

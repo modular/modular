@@ -20,39 +20,41 @@ import path = require('path');
 import shellEscape = require ('shell-escape');
 
 type ResponseConnect = {
-  kind: "connect";
+  kind: 'connect';
   pid: number;
   lastTimeSeenActiveInSecs: number;
-  name: string | undefined;
+  name: Optional<string>;
 };
 
 type ResponseDebug = {
-  kind: "debug";
+  kind: 'debug';
 };
 type Response = ResponseConnect | ResponseDebug;
 
 type RPCServerResponse =
   | ({ success: true } & Response)
   | {
-    success: false;
-    message?: string;
-    kind?: string;
-  };
+      success: false;
+      message?: string;
+      kind?: string;
+    };
 
 type RequestConnect = {
-  kind: "connect";
+  kind: 'connect';
 };
 type RequestDebug = {
-  kind: "debug";
+  kind: 'debug';
   debugConfiguration: DebugConfiguration;
-}
+};
 
 function instanceOfConnect(object: any): object is RequestConnect {
-  return object.kind === "connect";
+  return object.kind === 'connect';
 }
 
 function instanceOfDebug(object: any): object is RequestDebug {
-  return object.kind === "debug" && typeof object.debugConfiguration === 'object';
+  return (
+    object.kind === 'debug' && typeof object.debugConfiguration === 'object'
+  );
 }
 
 const PORT_MIN = 12355;
@@ -68,7 +70,7 @@ export class RpcServer extends DisposableContext {
   private server: net.Server;
   private port: number = PORT_MIN;
   private loggingService: LoggingService;
-  private readonly protocolSeparator = "\n----\n";
+  private readonly protocolSeparator = '\n----\n';
   private lastTimeActiveInMillis: Date = new Date();
 
   constructor(loggingService: LoggingService) {
@@ -77,8 +79,8 @@ export class RpcServer extends DisposableContext {
 
     this.server = net.createServer({ allowHalfOpen: true });
     let clients: net.Socket[] = [];
-    this.server.on('error', err => this.onError(err));
-    this.server.on('connection', socket => {
+    this.server.on('error', (err) => this.onError(err));
+    this.server.on('connection', (socket) => {
       this.configureSocket(socket);
       clients.push(socket);
       socket.on('close', () => {
@@ -92,21 +94,25 @@ export class RpcServer extends DisposableContext {
           client.destroy();
         }
         this.server.close(() => {
-          this.loggingService.main.logInfo("RPC server closed.");
+          this.loggingService.main.logInfo('RPC server closed.');
           this.server.unref();
         });
       })
     );
-    this.pushSubscription(vscode.window.onDidChangeWindowState((e: vscode.WindowState) => {
-      if (e.active) {
-        this.lastTimeActiveInMillis = new Date();
-      }
-    }));
+    this.pushSubscription(
+      vscode.window.onDidChangeWindowState((e: vscode.WindowState) => {
+        if (e.active) {
+          this.lastTimeActiveInMillis = new Date();
+        }
+      })
+    );
   }
 
   private onError(err: Error): void {
     if (err.message.includes('EADDRINUSE') && this.port < PORT_MAX) {
-      this.loggingService.main.logInfo("Will try to start the RPC Server with a new port.");
+      this.loggingService.main.logInfo(
+        'Will try to start the RPC Server with a new port.'
+      );
       this.port += 1;
       this.listen();
     } else {
@@ -120,22 +126,29 @@ export class RpcServer extends DisposableContext {
   // Launch a debug session. Throws if debug session initialization has error.
   private async handleDebugRequest(debugConfig: DebugConfiguration) {
     debugConfig.name = debugConfig.name || debugConfig.program;
-    if (debugConfig.type == "mojo-cuda-gdb") {
-      const nsight =
-        vscode.extensions.getExtension("nvidia.nsight-vscode-edition");
+    if (debugConfig.type == 'mojo-cuda-gdb') {
+      const nsight = vscode.extensions.getExtension(
+        'nvidia.nsight-vscode-edition'
+      );
       if (!nsight) {
         // Tell the user to install the nsight extension.
-        const message = "Unable to start the cuda-gdb debug session. You first need to install the NVIDIA Nsight extension (nsight-vscode-edition)";
+        const message =
+          'Unable to start the cuda-gdb debug session. You first need to install the NVIDIA Nsight extension (nsight-vscode-edition)';
         this.loggingService.main.logInfo(message);
-        const response = await vscode.window.showInformationMessage("Unable to debug in cuda-gdb mode without NVIDIA Nsight extension.",
-                                                                    "Find NVIDIA Nsight extension");
+        const response = await vscode.window.showInformationMessage(
+          'Unable to debug in cuda-gdb mode without NVIDIA Nsight extension.',
+          'Find NVIDIA Nsight extension'
+        );
         if (response) {
-          vscode.commands.executeCommand("workbench.extensions.search", "@id:nvidia.nsight-vscode-edition");
+          vscode.commands.executeCommand(
+            'workbench.extensions.search',
+            '@id:nvidia.nsight-vscode-edition'
+          );
         }
         throw new Error(message);
       }
       // Transform debugConfig into normal cuda-gdb config.
-      debugConfig.type = "cuda-gdb";
+      debugConfig.type = 'cuda-gdb';
       // cuda-gdb takes args as a single string, while we take them as an array.
       // Actually, cuda-gdb can take an array, which it then joins into a single
       // string separated by ";" characters. So it takes the list of program
@@ -146,19 +159,26 @@ export class RpcServer extends DisposableContext {
       /*workspaceFolder=*/ undefined,
       debugConfig
     );
-    if (!success)
-      throw new Error("Unable to start the debug session");
+
+    if (!success) {
+      throw new Error('Unable to start the debug session');
+    }
   }
 
-  private async dispatchRequest(socket: net.Socket, rawRequest: string): Promise<void> {
-    let request: any | undefined;
+  private async dispatchRequest(
+    socket: net.Socket,
+    rawRequest: string
+  ): Promise<void> {
+    let request: Optional<any>;
     try {
       const parsedRequest = JSON.parse(rawRequest);
       if (typeof parsedRequest === 'object') {
         request = parsedRequest;
       }
     } catch (err) {
-      this.loggingService.main.logInfo(`RPC Server request parsing error: ${err}`);
+      this.loggingService.main.logInfo(
+        `RPC Server request parsing error: ${err}`
+      );
     }
 
     if (request === undefined) {
@@ -169,10 +189,12 @@ export class RpcServer extends DisposableContext {
       socket.end(JSON.stringify(response) + this.protocolSeparator);
       return;
     }
-    this.loggingService.main.logInfo(`RPC Server request: ${JSON.stringify(request)}`);
+    this.loggingService.main.logInfo(
+      `RPC Server request: ${JSON.stringify(request)}`
+    );
 
     if (instanceOfConnect(request)) {
-      let name = "[VSCode]";
+      let name = '[VSCode]';
       const activeTab = vscode.window.tabGroups.activeTabGroup.activeTab?.label;
       if (activeTab !== undefined) {
         name += ` ${activeTab}`;
@@ -183,15 +205,19 @@ export class RpcServer extends DisposableContext {
         }
       }
 
-      const now = (new Date()).getTime();
+      const now = new Date().getTime();
       const response: RPCServerResponse = {
         success: true,
-        kind: "connect",
+        kind: 'connect',
         pid: process.pid,
-        lastTimeSeenActiveInSecs: Math.floor((now - this.lastTimeActiveInMillis.getTime()) / 1000),
+        lastTimeSeenActiveInSecs: Math.floor(
+          (now - this.lastTimeActiveInMillis.getTime()) / 1000
+        ),
         name,
       };
-      this.loggingService.main.logInfo(`RPC Server response: ${JSON.stringify(response)}`);
+      this.loggingService.main.logInfo(
+        `RPC Server response: ${JSON.stringify(response)}`
+      );
       socket.write(JSON.stringify(response) + this.protocolSeparator);
     } else if (instanceOfDebug(request)) {
       const debugConfig: DebugConfiguration = request.debugConfiguration;
@@ -199,17 +225,21 @@ export class RpcServer extends DisposableContext {
         await this.handleDebugRequest(debugConfig);
         const response: RPCServerResponse = {
           success: true,
-          kind: "debug",
+          kind: 'debug',
         };
-        this.loggingService.main.logInfo(`RPC Server response: ${JSON.stringify(response)}`);
+        this.loggingService.main.logInfo(
+          `RPC Server response: ${JSON.stringify(response)}`
+        );
         socket.write(JSON.stringify(response) + this.protocolSeparator);
       } catch (err) {
         const response: RPCServerResponse = {
           success: false,
           message: `${err}`,
-          kind: "debug"
+          kind: 'debug',
         };
-        this.loggingService.main.logInfo(`RPC Server response: ${JSON.stringify(response)}`);
+        this.loggingService.main.logInfo(
+          `RPC Server response: ${JSON.stringify(response)}`
+        );
         socket.write(JSON.stringify(response) + this.protocolSeparator);
       }
     } else {
@@ -217,7 +247,9 @@ export class RpcServer extends DisposableContext {
         success: false,
         message: 'Invalid request',
       };
-      this.loggingService.main.logInfo(`RPC Server response: ${JSON.stringify(response)}`);
+      this.loggingService.main.logInfo(
+        `RPC Server response: ${JSON.stringify(response)}`
+      );
       socket.end(JSON.stringify(response) + this.protocolSeparator);
     }
   }
@@ -238,12 +270,13 @@ export class RpcServer extends DisposableContext {
     });
   }
 
-
   /**
    * Listens to messages using the provided network options.
    */
   public async listen() {
-    this.loggingService.main.logInfo(`Attempting to create the RPC server with port ${this.port}`);
+    this.loggingService.main.logInfo(
+      `Attempting to create the RPC server with port ${this.port}`
+    );
 
     return new Promise<net.AddressInfo | string>((resolve) =>
       this.server.listen({ port: this.port, host: '127.0.0.1' }, () =>
