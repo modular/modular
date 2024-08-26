@@ -280,7 +280,7 @@ class MojoDebugDynamicConfigurationProvider
  * Class used to register and manage all the necessary constructs to support
  * mojo debugging.
  */
-export class MojoDebugContext extends DisposableContext {
+export class MojoDebugManager extends DisposableContext {
   private extension: MojoExtension;
 
   constructor(extension: MojoExtension) {

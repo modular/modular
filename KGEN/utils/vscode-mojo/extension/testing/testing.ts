@@ -52,7 +52,7 @@ interface MojoTestExecutionResult {
  * Class used to register and manage all the necessary constructs to support
  * mojo testing.
  */
-export class MojoTestContext extends DisposableContext {
+export class MojoTestManager extends DisposableContext {
   private extension: MojoExtension;
   private controller: vscode.TestController;
 

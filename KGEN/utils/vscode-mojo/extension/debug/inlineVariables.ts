@@ -216,7 +216,7 @@ export class InlineLocalVariablesProvider implements vscode.InlineValuesProvider
     }
 
     const uri = vscode.Uri.file(path);
-    const lspServer = this.extension.lspContext?.lspClient;
+    const lspServer = this.extension.lspManager?.lspClient;
 
     if (lspServer === undefined) {
       return [];

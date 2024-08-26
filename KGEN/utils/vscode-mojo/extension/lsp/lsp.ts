@@ -20,7 +20,7 @@ import { LoggingService } from '../logging';
 /**
  *  This class manages the LSP clients.
  */
-export class MojoLSPContext extends DisposableContext {
+export class MojoLSPManager extends DisposableContext {
   private mojoExtension: MojoExtension;
   public lspClient: vscodelc.LanguageClient | undefined;
   public lspClientChanges = new Subject<vscodelc.LanguageClient | undefined>();
