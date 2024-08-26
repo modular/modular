@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 from buffer import DimList, NDBuffer, Dim
-from collections import OptionalReg
+from collections import Optional, OptionalReg
 from math import isqrt
 from sys.info import _current_target, simdwidthof
 from utils import Index
@@ -519,16 +519,10 @@ fn _matmul_kv_cache[
         context: Pointer containing the runtime context for the target device.
     """
 
-    var cuda_ctx: DeviceContext
+    var cuda_ctx: Optional[DeviceContext] = None
 
     @parameter
-    if target == "cpu":
-        try:
-            cuda_ctx = DeviceContext()
-        except e:
-            abort("failed to default initialize a DeviceContext:" + str(e))
-            return cache
-    else:
+    if target != "cpu":
         cuda_ctx = context.get_device_context()
 
     return _matmul_kv_cache_impl[target=target](
@@ -548,7 +542,7 @@ fn _matmul_kv_cache_impl[
     hidden_state: NDBuffer[type, 3, hidden_state_shape],
     weight: NDBuffer[type, 2, weight_shape],
     cache: ContiguousKVCache[type, kv_params],
-    ctx: DeviceContext,
+    ctx: Optional[DeviceContext],
 ) -> ContiguousKVCache[type, kv_params]:
     """Helper for performing matmul with custom ContiguousKVCache types.
 
@@ -815,16 +809,10 @@ fn _fused_qkv_matmul_kv_cache[
         context: The call context pointer, passed by the graph compiler.
     """
 
-    var cuda_ctx: DeviceContext
+    var cuda_ctx: Optional[DeviceContext] = None
 
     @parameter
-    if target == "cpu":
-        try:
-            cuda_ctx = DeviceContext()
-        except e:
-            abort("failed to default initialize a DeviceContext:" + str(e))
-            return
-    else:
+    if target != "cpu":
         cuda_ctx = context.get_device_context()
 
     return _fused_qkv_matmul_kv_cache_impl[target=target](
@@ -849,7 +837,7 @@ fn _fused_qkv_matmul_kv_cache_impl[
     k_cache: ContiguousKVCache[type, kv_params],
     v_cache: ContiguousKVCache[type, kv_params],
     output: NDBuffer[type, 3, output_shape],
-    context: DeviceContext,
+    context: Optional[DeviceContext],
 ):
     """Performs a fused QKV matmul. Q outputs are written to the output argument
     while K and V outputs are written in-place into k_cache and v_cache.
@@ -928,7 +916,7 @@ fn _matmul_common[
 ](
     hidden_state: NDBuffer[type, 3, hidden_state_shape],
     weight: NDBuffer[type, 2, weight_shape],
-    context: DeviceContext,
+    context: Optional[DeviceContext],
 ):
     var BS = hidden_state.dim[0]()
     var SEQ_LEN = hidden_state.dim[1]()
@@ -972,7 +960,7 @@ fn _matmul_common[
             elementwise_lambda_fn=elementwise_lambda_fn,
             use_tensor_core=True,
             transpose_b=True,
-        ](c_nd, hidden_state_2d, weight, context)
+        ](c_nd, hidden_state_2d, weight, context.value())
 
     c_nd.data.free()
 
