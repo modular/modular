@@ -602,31 +602,35 @@ void ASTType::print(raw_ostream &os, bool forDiag, bool demangleParams) const {
   }
 
   Type type = mlirType;
-  auto printUserType = [&](SymbolRefAttr symbol, ArrayRef<TypedAttr> params) {
+  auto printUserType = [&](SymbolRefAttr symbol, ArrayRef<TypedAttr> params,
+                           TypeSignatureType tstInfo) {
     // Only print the leaf reference when pretty printing types.
     printSymbol(os, symbol, forDiag, /*isFunc=*/false);
 
     if (params.empty())
       return;
 
+    // If this type has parameters, some number of them may be implicit.  Go
+    // ahead and drop those because they aren't part of the general UX of the
+    // type from the user's perspective.
+    params = params.drop_front(tstInfo.getParamListAttrs().getNumImplicit());
+
     os << '[';
     llvm::interleaveComma(params, os, [&](TypedAttr value) {
-      // If the parameter is a type, print it nicely.
-      auto val = PValue(value);
-
-      if (ASTType type = val.getIfTypeValue())
-        if (!isa<ParamRefType>(type.mlirType))
-          return type.print(os, forDiag);
-
-      printParam(os, val, forDiag, demangleParams);
+      printParam(os, value, forDiag, demangleParams);
     });
     os << ']';
   };
-  if (auto declRef = dyn_cast<StructType>(type)) {
-    printUserType(declRef.getSymbol(), declRef.getParamValues());
+  if (auto structTy = dyn_cast<StructType>(type)) {
+    // FIXME: StructType invariants should be tightened.  Some legacy .mlir
+    // test-cases need to be updated.
+    TypeSignatureType tstInfo =
+        cast<AnyStructType>(structTy.getMetaType()).getSignature();
+    printUserType(structTy.getSymbol(), structTy.getParamValues(), tstInfo);
   } else if (auto anyStruct = dyn_cast<AnyStructType>(type)) {
     os << "AnyStruct[";
-    printUserType(anyStruct.getSymbol(), anyStruct.getParamValues());
+    printUserType(anyStruct.getSymbol(), anyStruct.getParamValues(),
+                  anyStruct.getSignature());
     os << ']';
   } else if (auto traitType = dyn_cast<TraitType>(type)) {
     printSymbol(os, traitType.getSymbol(), forDiag, /*isFunc=*/false);
