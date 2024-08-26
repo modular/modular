@@ -151,7 +151,7 @@ fn vectorize[
     /,
     *,
     size: Int,
-    unroll_factor: Int = 1,
+    unroll_factor: Int = size if triple_is_nvidia_cuda() else 1,
 ]():
     """Simplifies SIMD optimized loops by mapping a function across a range from
     0 to `size`, incrementing by `simd_width` at each step. The remainder of
@@ -222,10 +222,28 @@ fn vectorize[
     ```
     """
 
+    constrained[simd_width > 0, "simd width must be > 0"]()
+    constrained[unroll_factor > 0, "unroll factor must be > 0"]()
     alias vector_end_simd = align_down(size, simd_width)
-    _perfect_vectorized_impl[
-        func, simd_width=simd_width, unroll_factor=unroll_factor
-    ](size, vector_end_simd)
+
+    alias unrolled_simd_width = simd_width * unroll_factor
+    alias vector_end_unrolled_simd = align_down(size, unrolled_simd_width)
+
+    @parameter
+    for unrolled_simd_idx in range(
+        0, vector_end_unrolled_simd, unrolled_simd_width
+    ):
+
+        @parameter
+        for idx in range(unroll_factor):
+            func[simd_width](unrolled_simd_idx + idx * simd_width)
+
+    @parameter
+    if unroll_factor != 1:
+        for simd_idx in range(
+            vector_end_unrolled_simd, vector_end_simd, simd_width
+        ):
+            func[simd_width](simd_idx)
 
     @parameter
     if size != vector_end_simd:
