@@ -77,17 +77,17 @@ struct Level:
 
     fn format_to(self, inout writer: Formatter):
         if self is Self.NOTSET:
-            writer.write_str["NOTSET"]()
+            writer.write_str("NOTSET")
         elif self is Self.DEBUG:
-            writer.write_str["DEBUG"]()
+            writer.write_str("DEBUG")
         elif self is Self.INFO:
-            writer.write_str["INFO"]()
+            writer.write_str("INFO")
         elif self is Self.WARNING:
-            writer.write_str["WARNING"]()
+            writer.write_str("WARNING")
         elif self is Self.ERROR:
-            writer.write_str["ERROR"]()
+            writer.write_str("ERROR")
         elif self is Self.CRITICAL:
-            writer.write_str["CRITICAL"]()
+            writer.write_str("CRITICAL")
 
     @no_inline
     fn __str__(self) -> String:
