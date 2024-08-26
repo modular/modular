@@ -6,13 +6,13 @@
 # REQUIRES: has_cuda_device
 # RUN: %bare-mojo build %s
 
-from math import sqrt, isqrt, log, sin, tanh, exp, erf, fma
+from math import sqrt, isqrt, log, sin, tanh, exp, erf, fma, ceildiv, align_up
 from sys import alignof, sizeof, triple_is_nvidia_cuda, simdwidthof
 
 from algorithm.functional import elementwise
 from buffer import DimList, NDBuffer
 from buffer.dimlist import _make_tuple
-from gpu.host.device_context import DeviceContext
+from gpu.host.device_context import DeviceContext, DeviceBuffer
 from gpu.host._compile import _get_nvptx_target
 from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
 from internal_utils import DeviceNDBuffer
@@ -140,57 +140,74 @@ fn run_elementwise[
     ]() if use_aligned_memory else 1
     var N = product(dims, rank)
 
-    var in_host_ptr = UnsafePointer[Scalar[type], alignment=align].alloc(N)
-    var out_host_ptr = UnsafePointer[Scalar[type], alignment=align].alloc(N)
+    # Choose a size larger than the two times the L2 cache
+    # 128 MiB is larger that twice the L2 cache on the A100, A10, and L4.
+    var stride = align_up(N, pack_size)
+    var N_cache = align_up(
+        128 * 1024 * 1024, stride * sizeof[type]()
+    ) // sizeof[type]()
+
+    var in_host_ptr = UnsafePointer[Scalar[type], alignment=align].alloc(
+        N_cache
+    )
+    var out_host_ptr = UnsafePointer[Scalar[type], alignment=align].alloc(
+        N_cache
+    )
 
     var in_host = NDBuffer[type, rank](in_host_ptr, dims)
     var out_host = NDBuffer[type, rank](out_host_ptr, dims)
 
-    for i in range(N):
+    for i in range(N_cache):
         in_host_ptr[i] = i
 
-    var in_buffer = DeviceNDBuffer[type, rank](dims, ctx=ctx)
-    var out_buffer = DeviceNDBuffer[type, rank](dims, ctx=ctx)
+    var in_buffer = ctx.create_buffer[type](N_cache)
+    var out_buffer = ctx.create_buffer[type](N_cache)
 
-    ctx.enqueue_copy_to_device(in_buffer.buffer, in_host.data)
-
-    var in_tensor = in_buffer.tensor
-    var out_tensor = out_buffer.tensor
-
-    @always_inline
-    @__copy_capture(in_tensor, out_tensor)
-    @parameter
-    fn func[simd_width: Int, rank_: Int](idx0: StaticIntTuple[rank_]):
-        var idx = rebind[StaticIntTuple[rank]](idx0)
-
-        @parameter
-        if emulate_graph_compiler:
-            """In this mode we use the simd_store / simd_load that are copied
-            from MOGG.mojo. This is used to emulate what the graph compiler
-            would generate for the elementwise operations."""
-            simd_store[type, simd_width, rank](
-                out_tensor,
-                idx,
-                kernel_fn(
-                    simd_load[type, simd_width, rank, in_tensor.shape](
-                        in_tensor, idx
-                    )
-                ),
-            )
-        else:
-            out_tensor.store[alignment=align](
-                idx,
-                kernel_fn(
-                    in_tensor.load[width=simd_width, alignment=align](idx)
-                ),
-            )
+    ctx.enqueue_copy_to_device(in_buffer, in_host.data)
 
     @parameter
+    @__copy_capture(stride, N_cache)
     @always_inline
     fn bench_func(inout b: Bencher):
         @parameter
+        @__copy_capture(N, stride)
         @always_inline
-        fn kernel_launch(ctx: DeviceContext) raises:
+        fn kernel_launch(ctx: DeviceContext, iteration: Int) raises:
+            # cycle through chunks of N_cache to ensure the tensor is not in the cache each iteration
+            var offset = (iteration * stride) % N_cache
+            var in_tensor = NDBuffer[type, rank](in_buffer.ptr + offset, dims)
+            var out_tensor = NDBuffer[type, rank](out_buffer.ptr + offset, dims)
+
+            @always_inline
+            @__copy_capture(in_tensor, out_tensor)
+            @parameter
+            fn func[simd_width: Int, rank_: Int](idx0: StaticIntTuple[rank_]):
+                var idx = rebind[StaticIntTuple[rank]](idx0)
+
+                @parameter
+                if emulate_graph_compiler:
+                    """In this mode we use the simd_store / simd_load that are copied
+                    from MOGG.mojo. This is used to emulate what the graph compiler
+                    would generate for the elementwise operations."""
+                    simd_store[type, simd_width, rank](
+                        out_tensor,
+                        idx,
+                        kernel_fn(
+                            simd_load[type, simd_width, rank, in_tensor.shape](
+                                in_tensor, idx
+                            )
+                        ),
+                    )
+                else:
+                    out_tensor.store[alignment=align](
+                        idx,
+                        kernel_fn(
+                            in_tensor.load[width=simd_width, alignment=align](
+                                idx
+                            )
+                        ),
+                    )
+
             elementwise[func, pack_size, target="cuda"](
                 dims,
                 ctx,
@@ -198,7 +215,7 @@ fn run_elementwise[
 
         b.iter_custom[kernel_launch](ctx)
 
-    var num_bytes = N * sizeof[type]()
+    var num_bytes = 2 * N * sizeof[type]()
     m.bench_function[bench_func](
         BenchId(
             "elementwise",
@@ -216,7 +233,7 @@ fn run_elementwise[
     )
 
     ctx.synchronize()
-    ctx.enqueue_copy_from_device(out_host.data, out_buffer.buffer)
+    ctx.enqueue_copy_from_device(out_host.data, out_buffer)
 
     _ = in_buffer
     _ = out_buffer
