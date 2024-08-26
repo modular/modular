@@ -179,7 +179,9 @@ static ErrorOr<TResponse> doSendRequest(SOCKET sockfd, StringRef payloadStr,
     return *parsedResponse;
   if (parsedResponse->message)
     return Error(Twine("RPC Server response:\n", *parsedResponse->message));
-  return Error("couldn't get a valid response from the RPC server");
+  return Error(
+      "couldn't get a valid response from the RPC server, see "
+      "https://docs.modular.com/mojo/tools/debugging for possible fixes");
 }
 
 ErrorOr<Connection> tryToConnectToServer(int port,
@@ -199,9 +201,10 @@ ErrorOr<Connection> tryToConnectToServer(int port,
 
   if (connect(sockfd, (struct sockaddr *)&serverAddress,
               sizeof(serverAddress)) < 0) {
-    return Error(
-        llvm::formatv("can't connect to the RPC server with port {0}: {1}",
-                      port, strerror(errno)));
+    return Error(llvm::formatv(
+        "can't connect to the RPC server with port {0}: {1}. "
+        "See https://docs.modular.com/mojo/tools/debugging for possible fixes.",
+        port, strerror(errno)));
   }
 
   extraLogStream << "[port=" << port << "] TCP connection successful\n";
