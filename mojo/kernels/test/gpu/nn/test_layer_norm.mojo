@@ -378,9 +378,7 @@ fn run_layer_norm_warp_tiling_vector[
 
     alias simd_width = simdwidthof[type, target = _get_nvptx_target()]()
     var func_ln = ctx.compile_function[
-        layer_norm_gpu_warp_tiling_vector[
-            type, simd_width, rank, input_fn, gamma_fn
-        ]
+        layer_norm_gpu_warp_tiling_vector[type, simd_width, input_fn, gamma_fn]
     ]()
 
     var max_warps_per_block = 32
