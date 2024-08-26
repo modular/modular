@@ -1362,16 +1362,10 @@ fn _flash_attention_kv_cache[
         context: Pointer containing the runtime context for the target device.
     """
 
-    var cuda_ctx: DeviceContext
+    var cuda_ctx: Optional[DeviceContext] = None
 
     @parameter
-    if target == "cpu":
-        try:
-            cuda_ctx = DeviceContext()
-        except e:
-            abort("failed to default initialize a DeviceContext:" + str(e))
-            return
-    else:
+    if target != "cpu":
         cuda_ctx = context.get_device_context()
 
     _flash_attention_kv_cache_impl[target=target](
@@ -1396,7 +1390,7 @@ fn _flash_attention_kv_cache_impl[
     mask: NDBuffer[type, mask_rank, mask_shape],
     scale: NDBuffer[DType.float32, 1, scale_shape],
     output: NDBuffer[type, 4, output_shape],
-    context: DeviceContext,
+    context: Optional[DeviceContext],
 ):
     """Performs flash attention using k and v caches from ContiguousKVCache custom types.
 
@@ -1429,7 +1423,7 @@ fn _flash_attention_kv_cache_impl[
             mask_shape,
             scale_shape,
             output_shape,
-        ](q, k, v, mask, scale, output, context)
+        ](q, k, v, mask, scale, output, context.value())
 
 
 @always_inline
