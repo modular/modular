@@ -453,6 +453,19 @@ struct DeviceContext:
         end.sync()
         return int(start.elapsed(end) * 1e6)
 
+    fn execution_time_iter[
+        func: fn (DeviceContext, Int) raises capturing -> None
+    ](self, num_iters: Int) raises -> Int:
+        var stream = self.cuda_stream
+        var start = Event(self.cuda_context)
+        var end = Event(self.cuda_context)
+        start.record(stream)
+        for i in range(num_iters):
+            func(self, i)
+        end.record(stream)
+        end.sync()
+        return int(start.elapsed(end) * 1e6)
+
     fn enqueue_copy_to_device[
         type: DType
     ](self, buf: DeviceBuffer[type], ptr: UnsafePointer[Scalar[type]]) raises:
