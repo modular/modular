@@ -207,6 +207,18 @@ PassingKind PogListAttr::getPassingKind(size_t idx) const {
   return getPogs()[idx].getPassingKind();
 }
 
+/// Return the number of leading "implicit" parameters by PassingKinds.
+size_t PogListAttr::getNumImplicit() const {
+  size_t numImplicit = 0;
+  for (auto pog : getPogs()) {
+    if (pog.getPassingKind() == PassingKind::Implicit)
+      ++numImplicit;
+    else
+      break;
+  }
+  return numImplicit;
+}
+
 /// Create a variadic mask of given length from a list of variadic indices.
 static SmallVector<bool> toMask(ArrayRef<size_t> indices, size_t length) {
   SmallVector<bool> variadicMask(length, false);

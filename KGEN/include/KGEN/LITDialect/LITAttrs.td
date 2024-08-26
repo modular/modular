@@ -185,6 +185,9 @@ def LIT_PogListAttr : LITAttr<"PogList", "pog_list"> {
     /// Return the passing kind for the argument/parameter at the given index.
     PassingKind getPassingKind(size_t idx) const;
 
+    /// Return the number of leading "implicit" parameters by PassingKinds.
+    size_t getNumImplicit() const;
+
     /// Create an array of PogMetadataAttr from the given names, passing kinds,
     /// and variadic indices.
     static SmallVector<PogMetadataAttr> toPogs(

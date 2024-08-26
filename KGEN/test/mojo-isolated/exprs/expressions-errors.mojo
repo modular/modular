@@ -650,3 +650,11 @@ fn test_subscript_conflict(a: Int):
   # expected-error @below {{duplicate keyword parameter 'idx'}}
   # expected-note @below {{previously specified here}}
   _ = a[idx=4, idx=7]
+
+
+struct Addable: 
+    fn __add__(self, other: Self): pass # expected-note {{function declared here}}
+fn test(a: Reference[Addable, _], b: Addable):
+    # FIXME: This shouldn't mention is_mutable since it is an implicit parameter.
+    # expected-error @+1 {{invalid call to '__add__': right side cannot be converted from 'Reference[is_mutable, Addable, lifetime, 0]' to 'Addable'}}
+    _ = b+a
