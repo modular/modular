@@ -110,7 +110,9 @@ export class LocalVariablesTracker implements vscode.DebugAdapterTracker {
 /**
  * Provides inline local variables during a debug session.
  */
-export class InlineLocalVariablesProvider implements vscode.InlineValuesProvider {
+export class InlineLocalVariablesProvider
+  implements vscode.InlineValuesProvider
+{
   private localVariablesTrackers: Map<SessionId, LocalVariablesTracker>;
   private extension: MojoExtension;
 

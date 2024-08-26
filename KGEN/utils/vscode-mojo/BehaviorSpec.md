@@ -66,12 +66,13 @@ Initialization can happen in the following cases:
    of them and restart the extension. No language feature is activated in this case.
 1. If only one extension is enabled, then it performs its async activation,
    where most language features are activated, which include
+
    - Test Manager
    - RPC Debug Server
    - Decoration Manager
    - LSP Manager
    - Debug Manager
-  
+
    This step is asynchronous given the nature of finding the SDK, which is used
    by almost all language features. The interesting bits are in the
    `SDK management` section.
@@ -142,12 +143,14 @@ first time. Besides that, it has to be guaranteed that all terminal nodes invoke
 `set as activeSDK`.
 
 - `initialization` with `initializationSDK`:
+
   - The `activeSDK` remains the `initializationSDK` and it is `set as activeSDK`
     even if it fails SDK validation. This is done to guarantee that there are
     no unexpected SDK changes.
   - The `activeSDK` is returned.
 
 - `initialization` (`enableMagicSDK` is `false`):
+
   - The extension will look for a `modular cli SDK` without doing version
     matching. It will also look for all the `dev SDK` from workspace directories
     and open files.
@@ -188,17 +191,17 @@ active.
 ### `set as activeSDK`
 
 This step runs `SDK validation` and prompts the user of a corresponding
-  troubleshooting message upon failures.
+troubleshooting message upon failures.
 
 - For `modular cli SDK`, the message prompts reinstalling the SDK via a
-    web link and then indicates that the IDE should be reloaded after that.
+  web link and then indicates that the IDE should be reloaded after that.
 - For `dev SDK`, the message asks running the `://install` target, and
-    also mentions that the extension will pick this change up eventually. It also
-    shows a button to restart the extension manually.
+  also mentions that the extension will pick this change up eventually. It also
+  shows a button to restart the extension manually.
 - For `magic SDK`, the message shows a button to run the reinstallation
-    of the `magic SDK` without locking, or file an issue. Upon a successful
-    reinstallation, the extension is reloaded automatically using it as
-    `initializationSDK`.
+  of the `magic SDK` without locking, or file an issue. Upon a successful
+  reinstallation, the extension is reloaded automatically using it as
+  `initializationSDK`.
 
 Additionally, a file listener is installed to look for changes to `modular.cfg`
 that will evict saved validation error message.
