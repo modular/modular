@@ -4,8 +4,6 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "ArraySupport/StateContext.h"
-#include "ArraySupport/TensorBufferRef.h"
 #include "AsyncRT/Runtime/Algorithms.h"
 #include "AsyncRT/Runtime/Allocator.h"
 #include "AsyncRT/Runtime/AsyncValueRef.h"
@@ -19,6 +17,8 @@
 #include "Runtime/CUDA/Globals/Globals.h"
 #include "Runtime/MojoCallContext.h"
 #include "Runtime/MojoValue.h"
+#include "Runtime/Tensor/StateContext.h"
+#include "Runtime/Tensor/TensorBufferRef.h"
 #include "Support/ML/TensorSpec.h"
 #include "Support/SymbolExport.h"
 #include "llvm/ADT/StringRef.h"
