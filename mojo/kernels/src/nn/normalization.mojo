@@ -36,6 +36,7 @@ from runtime.asyncrt import MojoCallContextPtr, parallelism_level
 from runtime.tracing import Trace, TraceLevel, trace_arg
 
 from utils.index import Index, StaticIntTuple, StaticTuple
+from utils.numerics import get_accum_type
 
 from .reshape import reshape
 
@@ -200,35 +201,38 @@ fn welford_block_all_reduce[
 fn layer_norm_gpu_warp_tiling_vector[
     type: DType,
     simd_width: Int,
-    rank: Int,
     input_func: fn[width: Int, _r: Int] (StaticIntTuple[_r]) capturing -> SIMD[
         type, width
     ],
     gamma_fn: fn[_width: Int, _r: Int] (StaticIntTuple[_r]) capturing -> SIMD[
         type, _width
     ],
-](data: NDBuffer[type, 2], beta: NDBuffer[type, 1], epsilon: Scalar[type],):
+](data: NDBuffer[type, 2], beta: NDBuffer[type, 1], epsilon: Scalar[type]):
     alias align = alignof[SIMD[type, simd_width]]()
+    alias accum_type = get_accum_type[type]()
+
     var num_cols = data.dim[1]()
     var tid: UInt = ThreadIdx.x()
     var row: UInt = BlockIdx.x()
 
-    var vec_data = SIMD[type, simd_width]()
+    var vec_data = SIMD[accum_type, simd_width]()
 
     # To store final row mean, mean of squares and the element count
-    var row_mean = Scalar[type]()
-    var row_m2 = Scalar[type]()
-    var row_count = Scalar[type]()
+    var row_mean = Scalar[accum_type]()
+    var row_m2 = Scalar[accum_type]()
+    var row_count = Scalar[accum_type]()
 
     var idx: UInt = tid * simd_width
-    var thread_mean = Scalar[type]()
-    var thread_m2 = Scalar[type]()
-    var thread_count = Scalar[type]()
+    var thread_mean = Scalar[accum_type]()
+    var thread_m2 = Scalar[accum_type]()
+    var thread_count = Scalar[accum_type]()
 
     # To utilize simd vector load
     if idx < num_cols:
-        vec_data = input_func[simd_width, rank](StaticIntTuple[rank](row, idx))
+        vec_data = input_func[simd_width](Index(row, idx)).cast[accum_type]()
+
         # every thread computes its own simd width of mean and variance
+        @parameter
         for i in range(simd_width):
             welford_update(vec_data[i], thread_mean, thread_m2, thread_count)
 
@@ -239,18 +243,15 @@ fn layer_norm_gpu_warp_tiling_vector[
     )
 
     var row_var = max((row_m2 / (row_count - 1)), 0.0)
+    var norm_factor = isqrt(row_var + epsilon.cast[accum_type]())
 
-    var norm_factor = isqrt(row_var + epsilon)
     if idx < num_cols:
-        var gamma_val = gamma_fn[simd_width, 1](StaticIntTuple[1](idx))
-        var norm_val = (
-            vec_data - row_mean
-        ) * norm_factor * gamma_val + beta.load[
-            width=simd_width, alignment=align
-        ](
-            Index(idx)
-        )
-        data.store[width=simd_width, alignment=align](Index(row, idx), norm_val)
+        var gamma_val = gamma_fn[simd_width](Index(idx))
+        var beta_val = beta.load[width=simd_width, alignment=align](Index(idx))
+        var norm_val = (vec_data - row_mean) * norm_factor * gamma_val.cast[
+            accum_type
+        ]() + beta_val.cast[accum_type]()
+        data.store[alignment=align](Index(row, idx), norm_val.cast[type]())
 
 
 fn layer_norm_gpu_warp_tiling_scalar[
@@ -481,7 +482,7 @@ fn layer_norm_gpu[
         if cols % simd_width == 0:
             var gpu_func = ctx.compile_function[
                 layer_norm_gpu_warp_tiling_vector[
-                    type, simd_width, rank_rs, input_0_fn, input_1_fn
+                    type, simd_width, input_0_fn, input_1_fn
                 ]
             ]()
             ctx.enqueue_function(
