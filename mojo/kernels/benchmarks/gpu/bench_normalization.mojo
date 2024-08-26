@@ -113,6 +113,9 @@ def main():
             StaticIntTuple[2](256, 256),
             StaticIntTuple[2](1024, 1024),
             StaticIntTuple[2](8192, 8192),
+            StaticIntTuple[2](1, 3072),
+            StaticIntTuple[2](512, 3072),
+            StaticIntTuple[2](1024, 3072),
             StaticIntTuple[2](4096, 3072),
             StaticIntTuple[2](5072, 256),
         )
