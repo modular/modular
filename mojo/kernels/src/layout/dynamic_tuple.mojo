@@ -35,7 +35,7 @@ struct DefaultDelegate(ElementDelegate):
     fn format_element_to[
         T: CollectionElement
     ](inout writer: Formatter, a: Variant[T]):
-        writer.write_str["#"]()
+        writer.write_str("#")
 
 
 struct DynamicTupleBase[
@@ -106,15 +106,15 @@ struct DynamicTupleBase[
         if v.isa[T]():
             return D.format_element_to[T](writer, v[T])
         else:
-            writer.write_str["("]()
+            writer.write_str("(")
             if v.isa[Self]():
                 var _elements = v[Self]._elements
                 for i in range(len(_elements)):
                     var e: Self.Element = _elements[i]
                     Self.format_element_to(writer, e)
                     if i < len(_elements) - 1:
-                        writer.write_str[", "]()
-            writer.write_str[")"]()
+                        writer.write_str(", ")
+            writer.write_str(")")
 
     @staticmethod
     fn is_equal(a: Self.Element, b: Self.Element) -> Bool:

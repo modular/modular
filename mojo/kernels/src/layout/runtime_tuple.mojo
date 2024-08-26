@@ -125,7 +125,7 @@ struct RuntimeTuple[S: IntTuple = UNKNOWN_VALUE](Stringable, Sized):
         if S.is_value():
             self.get_int().format_to(f)
         else:
-            f.write_str["("]()
+            f.write_str("(")
 
             alias size = len(S)
 
@@ -135,8 +135,8 @@ struct RuntimeTuple[S: IntTuple = UNKNOWN_VALUE](Stringable, Sized):
 
                 @parameter
                 if i != size - 1:
-                    f.write_str[", "]()
-            f.write_str[")"]()
+                    f.write_str(", ")
+            f.write_str(")")
 
     @always_inline
     fn __len__(self) -> Int:

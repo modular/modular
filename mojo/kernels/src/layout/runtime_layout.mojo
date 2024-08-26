@@ -66,11 +66,11 @@ struct RuntimeLayout[layout: Layout](Stringable, Formattable):
 
     @no_inline
     fn format_to(self, inout f: Formatter):
-        f.write_str["("]()
+        f.write_str("(")
         self.shape.format_to(f)
-        f.write_str[":"]()
+        f.write_str(":")
         self.stride.format_to(f)
-        f.write_str[")"]()
+        f.write_str(")")
 
     fn sublayout[i: Int](self) -> RuntimeLayout[layout[i]]:
         return RuntimeLayout[layout[i]](
