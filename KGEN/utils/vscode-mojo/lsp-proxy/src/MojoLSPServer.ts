@@ -17,6 +17,7 @@ import {
   ExitStatus,
   InitializationOptions,
   JSONObject,
+  Optional,
   RequestId,
   RequestParams,
 } from './types';
@@ -171,7 +172,7 @@ export class MojoLSPServer extends DisposableContext {
   /**
    * @returns the params of the oldest pending request.
    */
-  public getOldestPendingRequest(): RequestParams | undefined {
+  public getOldestPendingRequest(): Optional<RequestParams> {
     for (const params of this.pendingRequests.values()) {
       return params.params;
     }

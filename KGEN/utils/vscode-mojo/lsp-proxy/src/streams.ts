@@ -6,7 +6,7 @@
 
 import { ChildProcess } from 'child_process';
 
-import { ExitStatus, JSONObject } from './types';
+import { ExitStatus, JSONObject, Optional } from './types';
 
 /**
  * A stream reader that reports whenever a line ending with `\n` is found.
@@ -62,7 +62,7 @@ export class JSONRPCStream {
 
       this.buffer += chunk;
 
-      let packet: JSONObject | undefined;
+      let packet: Optional<JSONObject>;
       while ((packet = this.tryProcessPacket()) != undefined) {
         if ('id' in packet) {
           onResponse(packet);
@@ -77,7 +77,7 @@ export class JSONRPCStream {
   /**
    * Tries to read a packet from the buffer and update that buffer if found.
    */
-  private tryProcessPacket(): JSONObject | undefined {
+  private tryProcessPacket(): Optional<JSONObject> {
     // We process first the protocol header.
 
     // We process first the protocol header.

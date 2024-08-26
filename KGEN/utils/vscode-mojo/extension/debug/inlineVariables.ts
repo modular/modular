@@ -155,7 +155,7 @@ export class InlineLocalVariablesProvider implements vscode.InlineValuesProvider
     document: vscode.TextDocument,
     line: number,
     variable: Variable
-  ): number | undefined {
+  ): Optional<number> {
     const text = document.lineAt(line).text;
     let index = -1;
 

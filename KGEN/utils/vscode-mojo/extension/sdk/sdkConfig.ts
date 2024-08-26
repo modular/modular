@@ -62,7 +62,7 @@ export class MojoSDKConfig {
     modularPath: string,
     configSection: string,
     rawConfig: { [key: string]: any }
-  ): Promise<MojoSDKConfig | undefined> {
+  ): Promise<Optional<MojoSDKConfig>> {
     let version = await MojoSDKConfig.parseVersionFromDriver(
       loggingService,
       rawConfig.driver_path,
@@ -82,7 +82,7 @@ export class MojoSDKConfig {
     loggingService: LoggingService,
     driverPath: string,
     configSection: string
-  ): Promise<MojoSDKVersion | undefined> {
+  ): Promise<Optional<MojoSDKVersion>> {
     try {
       let { stdout, stderr } = await execFile(driverPath, ['--version'], {
         env: { ...process.env },

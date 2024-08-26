@@ -57,10 +57,10 @@ async function promptRestart(settingName: string, promptMessage: string) {
 
 /**
  *  Activate watchers that track configuration changes for the given workspace
- *  folder, or null if the workspace is top-level.
+ *  folder, or undefined if the workspace is top-level.
  */
 export async function activate(
-  workspaceFolder: vscode.WorkspaceFolder | undefined,
+  workspaceFolder: Optional<vscode.WorkspaceFolder>,
   settings: string[],
   paths: string[]
 ): Promise<DisposableContext> {

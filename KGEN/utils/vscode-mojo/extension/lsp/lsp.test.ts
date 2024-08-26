@@ -14,7 +14,7 @@ const repoConfig = {
 function openModularRoot() {
   vscode.workspace.updateWorkspaceFolders(
     vscode.workspace.workspaceFolders?.length || 0,
-    null,
+    undefined,
     {
       uri: vscode.Uri.file(repoConfig.root),
       name: 'modular',

@@ -52,7 +52,7 @@ class ExecutionManager extends DisposableContext {
    *
    * @param options Options to consider when executing the file.
    */
-  async executeFileInTerminal(file: vscode.Uri | undefined) {
+  async executeFileInTerminal(file: Optional<vscode.Uri>) {
     let doc = await this.getDocumentToExecute(file);
 
     if (!doc) {
@@ -84,7 +84,7 @@ class ExecutionManager extends DisposableContext {
    *     terminal, and therefore its stdin and stdout are not managed by the
    *     Debug Console.
    */
-  async debugFile(file: vscode.Uri | undefined, runInTerminal: boolean) {
+  async debugFile(file: Optional<vscode.Uri>, runInTerminal: boolean) {
     let doc = await this.getDocumentToExecute(file);
 
     if (!doc) {
@@ -135,7 +135,7 @@ class ExecutionManager extends DisposableContext {
    */
   async getDocumentToExecute(
     file?: vscode.Uri
-  ): Promise<vscode.TextDocument | undefined> {
+  ): Promise<Optional<vscode.TextDocument>> {
     let doc =
       file === undefined
         ? vscode.window.activeTextEditor?.document

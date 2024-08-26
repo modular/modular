@@ -55,7 +55,7 @@ export interface InitializationOptions {
   /**
    * The environment to use when invoking `mojo-lsp-server`.
    */
-  serverEnv: { [env: string]: string | undefined };
+  serverEnv: { [env: string]: Optional<string> };
 }
 
 /**
@@ -112,3 +112,5 @@ export type RequestParamsWithoutDocument = InitializeParams | ShutdownParams;
 export type RequestParams =
   | RequestParamsWithDocument
   | RequestParamsWithoutDocument;
+
+export type Optional<T> = T | undefined;

@@ -29,8 +29,8 @@ interface MojoSourceRange {
  */
 interface MojoTest {
   id: string;
-  location: MojoSourceRange | undefined;
-  children: MojoTest[] | undefined;
+  location: Optional<MojoSourceRange>;
+  children: Optional<MojoTest[]>;
 }
 
 /**
@@ -45,7 +45,7 @@ interface MojoTestExecutionResult {
   stdOut: string;
   stdErr: string;
 
-  children: MojoTestExecutionResult[] | undefined;
+  children: Optional<MojoTestExecutionResult[]>;
 }
 
 /**
@@ -341,12 +341,12 @@ export class MojoTestManager extends DisposableContext {
   async runMojoTestCommand<Result>(
     sdk: MojoSDK,
     testId: string,
-    workspaceFolder: vscode.WorkspaceFolder | undefined,
+    workspaceFolder: Optional<vscode.WorkspaceFolder>,
     args: string[] = []
-  ): Promise<Result | undefined> {
+  ): Promise<Optional<Result>> {
     // Grab any additional include directories from the workspace settings.
     const includeDirs =
-      (await config.get<string[] | undefined>(
+      (await config.get<Optional<string[]>>(
         'lsp.includeDirs',
         workspaceFolder
       )) || [];
@@ -367,7 +367,7 @@ export class MojoTestManager extends DisposableContext {
       args.join(' ');
     let env = sdk.getProcessEnv();
 
-    return new Promise<Result | undefined>(function (resolve, reject) {
+    return new Promise<Optional<Result>>(function (resolve, reject) {
       exec(command, { env }, (error, stdout, stderr) => {
         // Parse the json output from the stdout.
         try {

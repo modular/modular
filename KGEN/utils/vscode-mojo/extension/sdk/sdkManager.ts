@@ -28,7 +28,7 @@ export class MojoSDKManager extends DisposableContext {
   /**
    * The main SDK owned by the manager.
    */
-  private sdk: Promise<MojoSDK | undefined> | undefined;
+  private sdk: Optional<Promise<Optional<MojoSDK>>>;
 
   /**
    * A service that can be used to log message in the Mojo output channel.
@@ -71,7 +71,7 @@ export class MojoSDKManager extends DisposableContext {
    * This function caches the result and the cache is refreshed whenever there's
    * a change in the list of active workspaces.
    */
-  public async findSDK(): Promise<MojoSDK | undefined> {
+  public async findSDK(): Promise<Optional<MojoSDK>> {
     // Find the SDK if we haven't yet.
     if (!this.sdk) {
       this.sdk = this.doFindSDK();
@@ -100,7 +100,7 @@ export class MojoSDKManager extends DisposableContext {
 
     // Utilities for processing SDKs found via modular home paths.
     let checkedPaths = new Set<string>();
-    let addSDKPath = async (path: string | undefined) => {
+    let addSDKPath = async (path: Optional<string>) => {
       if (!path || checkedPaths.has(path)) {
         return;
       }
@@ -207,7 +207,7 @@ export class MojoSDKManager extends DisposableContext {
    */
   private async loadSDKFromModularHome(
     modularPath: string
-  ): Promise<MojoSDK | undefined> {
+  ): Promise<Optional<MojoSDK>> {
     this.loggingService.main.logInfo(`MODULAR_HOME is ${modularPath}.`);
 
     // Read in the config file.
@@ -269,7 +269,7 @@ export class MojoSDKManager extends DisposableContext {
     configSection: string,
     rawConfig: { [key: string]: any },
     modularPath: string = ''
-  ): Promise<MojoSDK | undefined> {
+  ): Promise<Optional<MojoSDK>> {
     let sdkConfig = await MojoSDKConfig.create(
       this.loggingService,
       modularPath,
@@ -287,7 +287,7 @@ export class MojoSDKManager extends DisposableContext {
    * This function discovers an SDK following the procedure described in
    * `findSDK`.
    */
-  private async doFindSDK(): Promise<MojoSDK | undefined> {
+  private async doFindSDK(): Promise<Optional<MojoSDK>> {
     // Find the possible set of SDKs.
     let possibleSDKs = await this.findAllPossibleSDKs();
 
@@ -369,8 +369,8 @@ export class MojoSDKManager extends DisposableContext {
    * return undefined.
    */
   private async tryGetModularHomePathFromConfig(
-    workspaceFolder: vscode.WorkspaceFolder | undefined
-  ): Promise<string | undefined> {
+    workspaceFolder: Optional<vscode.WorkspaceFolder>
+  ): Promise<Optional<string>> {
     let modularPath = config.get<string>('modularHomePath', workspaceFolder);
 
     if (!modularPath) {

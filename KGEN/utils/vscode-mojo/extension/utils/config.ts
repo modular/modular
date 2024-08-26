@@ -11,8 +11,8 @@ import * as vscode from 'vscode';
  */
 export function get<T>(
   key: string,
-  workspaceFolder: vscode.WorkspaceFolder | undefined
-): T | undefined;
+  workspaceFolder: Optional<vscode.WorkspaceFolder>
+): Optional<T>;
 
 /**
  *  Gets the config value `mojo.<key>`, with an optional workspace folder and a
@@ -20,15 +20,15 @@ export function get<T>(
  */
 export function get<T>(
   key: string,
-  workspaceFolder: vscode.WorkspaceFolder | undefined,
+  workspaceFolder: Optional<vscode.WorkspaceFolder>,
   defaultValue: T
 ): T;
 
 export function get<T>(
   key: string,
-  workspaceFolder: vscode.WorkspaceFolder | undefined = undefined,
-  defaultValue: T | undefined = undefined
-): T | undefined {
+  workspaceFolder: Optional<vscode.WorkspaceFolder> = undefined,
+  defaultValue: Optional<T> = undefined
+): Optional<T> {
   if (defaultValue === undefined) {
     return vscode.workspace
       .getConfiguration('mojo', workspaceFolder)
