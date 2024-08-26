@@ -7,30 +7,87 @@
 import * as vscode from 'vscode';
 
 import { LoggingService } from './logging';
-import { MojoContext } from './mojoContext';
 import { isNightlyExtension } from './utils/buildInfo';
+import { MojoSDKManager } from './sdk/sdkManager';
+import { MojoLSPContext } from './lsp/lsp';
+import { DisposableContext } from './utils/disposableContext';
+import { MojoTestContext } from './testing/testing';
+import { registerFormatter } from './formatter';
+import { activateRunCommands } from './commands/run';
+import { MojoDebugContext } from './debug/debug';
+import { MojoDecoratorContext } from './decorations';
+import { RpcServer } from './server/RpcServer';
 
 /**
  * This class provides an entry point for the Mojo extension, managing the
  * extension's state and disposal.
  */
-class MojoExtension {
-  public readonly mojoContext: MojoContext;
-  private readonly loggingService: LoggingService;
+export class MojoExtension extends DisposableContext {
+  public readonly loggingService: LoggingService;
+  public readonly sdkManager: MojoSDKManager;
+  public readonly extensionContext: vscode.ExtensionContext;
+  public lspContext?: MojoLSPContext;
 
   constructor(context: vscode.ExtensionContext) {
+    super();
     const isNightly = isNightlyExtension(context);
     this.loggingService = new LoggingService(isNightly);
-    this.loggingService.main.logInfo('Initializing the Mojo extension.');
-    this.mojoContext = new MojoContext(context, this.loggingService);
-    this.loggingService.main.logInfo('Mojo extension initialized.');
+    this.pushSubscription(this.loggingService);
+    this.extensionContext = context;
+    this.sdkManager = new MojoSDKManager(this.loggingService, context);
 
     // Check and warn for incompatible extensions.
     this.checkForIncompatibleExtensions(isNightly);
   }
 
   async activate() {
-    await this.mojoContext.activate();
+    this.loggingService.main.logInfo('Activating the Mojo Context.');
+    // Initialize the commands of the extension.
+    this.pushSubscription(
+      vscode.commands.registerCommand('mojo.restart', async () => {
+        // Dispose and reactivate the context.
+        this.dispose();
+        await this.activate();
+      })
+    );
+
+    // Initialize the testing support.
+    let testContext = new MojoTestContext(this);
+    await testContext.activate();
+    this.pushSubscription(testContext);
+
+    // Initialize the formatter.
+    this.pushSubscription(
+      registerFormatter(this.loggingService, this.sdkManager)
+    );
+
+    // Initialize the debugger support.
+    this.pushSubscription(new MojoDebugContext(this));
+
+    // Initialize the execution commands.
+    this.pushSubscription(activateRunCommands(this));
+
+    // Initialize the decorations.
+    this.pushSubscription(new MojoDecoratorContext());
+
+    // Initialize the LSPs
+    this.lspContext = new MojoLSPContext(this);
+    await this.lspContext.activate();
+    this.pushSubscription(this.lspContext);
+
+    this.loggingService.main.logInfo('MojoContext activated.');
+    this.pushSubscription(
+      new vscode.Disposable(() => {
+        this.loggingService.main.logInfo('Disposing MOJOContext.');
+      })
+    );
+
+    // Initialize the RPC server
+    const rpcServer = new RpcServer(this.loggingService);
+    this.loggingService.main.logInfo('Starting RPC server');
+    this.pushSubscription(rpcServer);
+    rpcServer.listen();
+    this.loggingService.main.logInfo('Mojo extension initialized.');
   }
 
   async checkForIncompatibleExtensions(isNightly: boolean) {
@@ -64,12 +121,6 @@ class MojoExtension {
         }
       });
   }
-
-  public dispose() {
-    this.loggingService.main.logInfo('Deactivating extension.');
-    this.mojoContext.dispose();
-    this.loggingService.dispose();
-  }
 }
 
 let extension: Promise<MojoExtension>;
@@ -91,7 +142,10 @@ export function activate(context: vscode.ExtensionContext) {
  * disabled the extension manually.
  */
 export function deactivate() {
-  extension.then((extension) => extension.dispose());
+  extension.then((extension) => {
+    extension.loggingService.main.logInfo('Deactivating extension.');
+    extension.dispose();
+  });
 }
 
 export function getExtension(): Promise<MojoExtension> {

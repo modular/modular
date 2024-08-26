@@ -25,15 +25,13 @@ function openModularRoot() {
 suite('LSP', () => {
   test('LSP should not be loaded on startup', async () => {
     const extension = await getExtension();
-    assert.strictEqual(extension.mojoContext.lspContext!.lspClient, undefined);
+    assert.strictEqual(extension.lspContext!.lspClient, undefined);
   });
 
   test('LSP should be launched upon a file is opened', async () => {
     const extension = await getExtension();
 
-    const lsp = firstValueFrom(
-      extension.mojoContext.lspContext!.lspClientChanges
-    );
+    const lsp = firstValueFrom(extension.lspContext!.lspClientChanges);
 
     openModularRoot();
     await vscode.workspace.openTextDocument(

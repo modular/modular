@@ -7,7 +7,7 @@
 import * as vscode from 'vscode';
 
 import { ProcessDescriptor, psList } from '../external/psList';
-import { MojoContext } from '../mojoContext';
+import { MojoExtension } from '../extension';
 
 class RefreshButton implements vscode.QuickInputButton {
   get iconPath(): vscode.ThemeIcon {
@@ -67,13 +67,13 @@ async function getProcessItems(
  *     exception is thrown.
  */
 async function showQuickPick(
-  context: MojoContext,
+  extension: MojoExtension,
   debugConfig: any
 ): Promise<string | undefined> {
   const processItems: ProcessItem[] = await getProcessItems(
-    context.extensionContext
+    extension.extensionContext
   );
-  const memento = context.extensionContext.workspaceState;
+  const memento = extension.extensionContext.workspaceState;
   const filterMementoKey = 'searchProgramToAttach' + debugConfig.name;
   const previousFilter = memento.get<string>(filterMementoKey);
 
@@ -93,7 +93,7 @@ async function showQuickPick(
 
     quickPick.onDidTriggerButton(
       async () => {
-        quickPick.items = await getProcessItems(context.extensionContext);
+        quickPick.items = await getProcessItems(extension.extensionContext);
       },
       undefined,
       disposables
@@ -137,10 +137,10 @@ async function showQuickPick(
 }
 
 export function activatePickProcessToAttachCommand(
-  context: MojoContext
+  extension: MojoExtension
 ): vscode.Disposable {
   return vscode.commands.registerCommand(
     'mojo.pickProcessToAttach',
-    async (debugConfig: any) => showQuickPick(context, debugConfig)
+    async (debugConfig: any) => showQuickPick(extension, debugConfig)
   );
 }

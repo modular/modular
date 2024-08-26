@@ -6,10 +6,8 @@
 
 import * as shellescape from 'shell-escape';
 import * as vscode from 'vscode';
-
-import { MojoContext } from '../mojoContext';
+import { MojoExtension } from '../extension';
 import { DisposableContext } from '../utils/disposableContext';
-import { MojoSDKConfig } from '../sdk/sdkConfig';
 import path = require('path');
 import { MojoSDK } from '../sdk/sdk';
 
@@ -17,12 +15,12 @@ import { MojoSDK } from '../sdk/sdk';
  * This class provides a manager for executing and debugging mojo files.
  */
 class ExecutionManager extends DisposableContext {
-  readonly context: MojoContext;
+  readonly extension: MojoExtension;
 
-  constructor(context: MojoContext) {
+  constructor(extension: MojoExtension) {
     super();
 
-    this.context = context;
+    this.extension = extension;
     this.activateRunCommands();
   }
 
@@ -62,7 +60,7 @@ class ExecutionManager extends DisposableContext {
     }
 
     // Find the config for processing this file.
-    let sdk = await this.context.sdkManager.findSDK();
+    let sdk = await this.extension.sdkManager.findSDK();
 
     if (!sdk) {
       return;
@@ -170,10 +168,11 @@ class ExecutionManager extends DisposableContext {
 /**
  * Activate the run commands, used for executing and debugging mojo files.
  *
- * @param context The MOJO context to use.
  * @returns A disposable connected to the lifetime of the registered run
  *     commands.
  */
-export function activateRunCommands(context: MojoContext): vscode.Disposable {
-  return new ExecutionManager(context);
+export function activateRunCommands(
+  extension: MojoExtension
+): vscode.Disposable {
+  return new ExecutionManager(extension);
 }

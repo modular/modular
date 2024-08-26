@@ -6,7 +6,7 @@
 
 import * as vscode from 'vscode';
 
-import { MojoContext } from '../mojoContext';
+import { MojoExtension } from '../extension';
 import { DisposableContext } from '../utils/disposableContext';
 
 import { DEBUG_TYPE } from './constants';
@@ -110,17 +110,15 @@ export class LocalVariablesTracker implements vscode.DebugAdapterTracker {
 /**
  * Provides inline local variables during a debug session.
  */
-export class InlineLocalVariablesProvider
-  implements vscode.InlineValuesProvider
-{
+export class InlineLocalVariablesProvider implements vscode.InlineValuesProvider {
   private localVariablesTrackers: Map<SessionId, LocalVariablesTracker>;
-  private context: MojoContext;
+  private extension: MojoExtension;
 
   constructor(
-    context: MojoContext,
+    extension: MojoExtension,
     localVariablesTrackers: Map<SessionId, LocalVariablesTracker>
   ) {
-    this.context = context;
+    this.extension = extension;
     this.localVariablesTrackers = localVariablesTrackers;
   }
 
@@ -218,7 +216,7 @@ export class InlineLocalVariablesProvider
     }
 
     const uri = vscode.Uri.file(path);
-    const lspServer = this.context.lspContext?.lspClient;
+    const lspServer = this.extension.lspContext?.lspClient;
 
     if (lspServer === undefined) {
       return [];
@@ -262,7 +260,7 @@ export class InlineLocalVariablesProvider
     if (tracker === undefined) {
       // This could be a non-bug if there are two simultaneous debug sessions
       // with different debuggers.
-      this.context.loggingService.main.logError(
+      this.extension.loggingService.main.logError(
         `Couldn't find the local variable tracker for sessionId ${
           vscode.debug.activeDebugSession?.id
         } and frameId ${context.frameId}.`
@@ -289,7 +287,7 @@ export class InlineLocalVariablesProvider
 }
 
 export function initializeInlineLocalVariablesProvider(
-  context: MojoContext
+  extension: MojoExtension
 ): DisposableContext {
   const localVariablesTrackers: Map<SessionId, LocalVariablesTracker> =
     new Map();
@@ -317,7 +315,7 @@ export function initializeInlineLocalVariablesProvider(
   disposables.pushSubscription(
     vscode.languages.registerInlineValuesProvider(
       '*',
-      new InlineLocalVariablesProvider(context, localVariablesTrackers)
+      new InlineLocalVariablesProvider(extension, localVariablesTrackers)
     )
   );
   return disposables;
