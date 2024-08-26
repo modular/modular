@@ -180,7 +180,7 @@ struct Tensor[type: DType, rank: Int](CollectionElement, TensorLike):
     ) -> InlineArray[Slice, rank]:
         var slice_array = InlineArray[Slice, rank](unsafe_uninitialized=True)
         for i in range(len(slices)):
-            slice_array[i] = slices[i]
+            slice_array.unsafe_ptr().offset(i).init_pointee_copy(slices[i])
             slice_array[i].start = (slice_array[i].start or 0).value()
             slice_array[i].end = (slice_array[i].end or self._spec[i]).value()
         # pads any unspecified Slices with default values
