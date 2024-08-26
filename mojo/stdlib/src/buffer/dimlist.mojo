@@ -237,7 +237,7 @@ struct Dim(Intable, Stringable, Formattable, ImplicitlyBoolable):
         """
 
         if self.is_dynamic():
-            return writer.write_str["?"]()
+            return writer.write_str("?")
         else:
             return writer.write(int(self))
 
@@ -508,14 +508,14 @@ struct DimList(Sized, Stringable, Formattable):
             writer: The formatter to write to.
         """
 
-        writer.write_str["["]()
+        writer.write_str("[")
 
         for i in range(len(self)):
             if i:
-                writer.write_str[", "]()
+                writer.write_str(", ")
             writer.write(self.value[i])
 
-        writer.write_str["]"]()
+        writer.write_str("]")
 
 
 @always_inline
