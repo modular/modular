@@ -10,14 +10,11 @@
 
 import * as net from 'net';
 import * as vscode from 'vscode';
-import {
-  debug,
-  DebugConfiguration,
-} from 'vscode';
+import { debug, DebugConfiguration } from 'vscode';
 import { LoggingService } from '../logging';
 import { DisposableContext } from '../utils/disposableContext';
 import path = require('path');
-import shellEscape = require ('shell-escape');
+import shellEscape = require('shell-escape');
 
 type ResponseConnect = {
   kind: 'connect';
