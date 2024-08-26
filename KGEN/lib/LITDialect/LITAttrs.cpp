@@ -838,6 +838,42 @@ TypedAttr LifetimeMutCastAttr::get(TypedAttr operand, bool isMutable) {
 }
 
 //===----------------------------------------------------------------------===//
+// LifetimeFieldAttr
+//===----------------------------------------------------------------------===//
+
+TypedAttr LifetimeFieldAttr::get(TypedAttr structLifetime, StringAttr field) {
+  // Check to see if there are any permutations we can fold.
+
+  // If we have the global mutable lifetime, treat it conservatively by
+  // returning the global mutable lifetime.  It isn't wise to try to derive
+  // information from something where lifetimes have been casted away.
+  if (::isa<LifetimeAttr>(structLifetime))
+    return structLifetime;
+
+  // We push any mutability casts outside of ourselves.
+  //     mutcast(x).myfield => mutcast(x.myfield)
+  if (auto mutCast = ::dyn_cast<LifetimeMutCastAttr>(structLifetime)) {
+    auto inner = LifetimeFieldAttr::get(mutCast.getOperand(), field);
+    return LifetimeMutCastAttr::get(inner, mutCast.getType());
+  }
+
+  // We push this inside a lifetime.union as well, so we get the union on the
+  // outside.
+  if (auto unionAttr = ::dyn_cast<LifetimeUnionAttr>(structLifetime)) {
+    SmallVector<TypedAttr> elts;
+    for (auto elt : unionAttr.getOperands())
+      elts.push_back(LifetimeFieldAttr::get(elt, field));
+    // Field accesses don't affect mutability, so we use the same type.
+    return LifetimeUnionAttr::get(elts, unionAttr.getType());
+  }
+
+  // The structLifetimeRef must have a LifetimeType, which we propagate.
+  auto structLife = ::cast<LifetimeType>(structLifetime.getType());
+  return LifetimeFieldAttr::Base::get(structLifetime.getContext(),
+                                      structLifetime, field, structLife);
+}
+
+//===----------------------------------------------------------------------===//
 // ImplicitLifetimeRefAttr
 //===----------------------------------------------------------------------===//
 
