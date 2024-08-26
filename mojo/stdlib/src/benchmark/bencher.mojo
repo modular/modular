@@ -990,6 +990,24 @@ struct Bencher:
         except e:
             abort(e)
 
+    fn iter_custom[
+        kernel_launch_fn: fn (DeviceContext, Int) raises capturing -> None
+    ](inout self, ctx: DeviceContext):
+        """Times a target GPU function with custom number of iterations via DeviceContext ctx.
+
+        Parameters:
+            kernel_launch_fn: The target GPU kernel launch function to benchmark.
+
+        Args:
+            ctx: The GPU DeviceContext for launching kernel.
+        """
+        try:
+            self.elapsed = ctx.execution_time_iter[kernel_launch_fn](
+                self.num_iters
+            )
+        except e:
+            abort(e)
+
     fn iter[iter_fn: fn () capturing raises -> None](inout self) raises:
         """Returns the total elapsed time by running a target function a particular
         number of times.
