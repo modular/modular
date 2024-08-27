@@ -117,6 +117,8 @@ static constexpr StringLiteral kMOGGExecuteFunctionLabel = "mogg.execute";
 static constexpr StringLiteral kMOGGShapeFunctionLabel = "mogg.shape";
 static constexpr StringLiteral kKernelTensorParameterAttrName =
     "mogg.tensor_params";
+static constexpr StringLiteral kKernelTensorSpecParameterAttrName =
+    "mogg.tensor_spec_params";
 static constexpr StringLiteral kMOGGSynchronousParameterName = "synchronous";
 static constexpr StringLiteral kMOGGSynchronousLabel = "mogg.synchronous";
 static constexpr StringLiteral kMOGGTargetParameterName = "target";

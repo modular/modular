@@ -47,5 +47,7 @@ kgen.generator export @some_kernel<spec: struct<() memoryOnly>, type: dtype, ran
 // CHECK-NEXT: kgen.call @function_with_attr_{{[[0-9]]*}}<:dtype type, rank, :struct<({{.*}}) memoryOnly> __MOGG_SPEC1>
 
 // CHECK: kgen.generator export @some_kernel_{{[[0-9]]*}}<spec: struct<() memoryOnly>, type: dtype, rank, __MOGG_SPEC1: struct<({{.*}}) memoryOnly>, __MOGG_SPEC2: struct<({{.*}}) memoryOnly>>
+// COM: Only arguments 1 and 2 have the tensor spec parameter
+// CHECK-SAME: mogg.tensor_spec_params = ["", "__MOGG_SPEC1", "__MOGG_SPEC2"]
 // CHECK-NEXT: kgen.call @function_with_attr_{{[[0-9]]*}}<:dtype type, rank, :struct<({{.*}}) memoryOnly> __MOGG_SPEC1>
 // CHECK-NEXT: kgen.call @function_calling_func_with_attr_{{[[0-9]]*}}<:dtype type, rank, :struct<({{.*}}) memoryOnly> __MOGG_SPEC2>
