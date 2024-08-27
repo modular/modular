@@ -424,6 +424,19 @@ def test_from_max_tensor():
         _ = Tensor[rank=2](old)
 
 
+def test_copy_error():
+    cpu = cpu_device()
+    src_dev_tensor = cpu.allocate(
+        TensorSpec(DType.float32, 10, 2),
+    )
+    dst_dev_tensor = cpu.allocate(
+        TensorSpec(DType.float32, 10, 1),
+    )
+
+    with assert_raises(contains="do not match"):
+        src_dev_tensor.copy_into(dst_dev_tensor)
+
+
 def main():
     test_tensor()
     test_tensor_slice()
@@ -444,3 +457,4 @@ def main():
     test_print()
     test_move()
     test_from_max_tensor()
+    test_copy_error()

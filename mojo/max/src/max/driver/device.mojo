@@ -47,8 +47,11 @@ struct _CDevice:
             return self
         return lib.value().copy_device_fn(self._ptr)
 
-    fn free_data(self, lib: DriverLibrary, data: UnsafePointer[UInt8]):
-        lib.free_device_data_fn(self._ptr, data)
+    fn free_data(self, lib: DriverLibrary, data: UnsafePointer[UInt8]) raises:
+        var status = Status(lib)
+        lib.free_device_data_fn(self._ptr, data, status.impl)
+        if status:
+            raise str(status)
 
     fn __eq__(self, other: Self) -> Bool:
         return self._ptr == other._ptr
@@ -129,7 +132,7 @@ struct Device(Stringable):
 
         return DeviceMemory(bytecount, self, name)
 
-    fn _free(self, data: UnsafePointer[UInt8]):
+    fn _free(self, data: UnsafePointer[UInt8]) raises:
         self._cdev.free_data(self._lib.value(), data)
 
     fn __str__(self) -> String:

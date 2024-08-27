@@ -48,7 +48,7 @@ struct DriverLibrary:
     var copy_device_fn: Self.copy_device_fn_sig
 
     alias free_device_data_fn_sig = fn (
-        Self.device_type, UnsafePointer[UInt8]
+        Self.device_type, UnsafePointer[UInt8], _CStatus
     ) -> None
     var free_device_data_fn: Self.free_device_data_fn_sig
 
@@ -56,7 +56,7 @@ struct DriverLibrary:
     var get_device_desc_fn: Self.get_device_desc_fn_sig
 
     alias create_device_memory_fn_sig = fn (
-        UnsafePointer[TensorSpec], Self.device_type
+        UnsafePointer[TensorSpec], Self.device_type, _CStatus
     ) -> Self.device_memory_type
     var create_device_memory_fn: Self.create_device_memory_fn_sig
 
@@ -64,7 +64,7 @@ struct DriverLibrary:
     var destroy_device_memory_fn: Self.destroy_device_memory_fn_sig
 
     alias copy_device_memory_fn_sig = fn (
-        Self.device_memory_type, Self.device_memory_type
+        Self.device_memory_type, Self.device_memory_type, _CStatus
     ) -> None
     var copy_device_memory_fn: Self.copy_device_memory_fn_sig
 

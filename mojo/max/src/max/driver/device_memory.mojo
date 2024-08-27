@@ -10,6 +10,7 @@ from .device import Device, _CDevice
 from .tensor import Tensor
 from .anytensor import AnyTensor
 from collections import Optional
+from ._status import Status
 
 
 trait DeviceBuffer:
@@ -97,11 +98,15 @@ struct DeviceMemory(DeviceBuffer, StringableRaising, CollectionElement):
         """
         self._device = device
         var tmp_spec = TensorSpec(DType.uint8, num_bytes)
+        var status = Status(device._lib.value())
         # CAUTION: this assumes that TensorSpec is bitwise identical in mojo and cpp
         self._impl_ptr = device._lib.value().create_device_memory_fn(
             UnsafePointer[TensorSpec].address_of(tmp_spec),
             self._device._cdev._ptr,
+            status.impl,
         )
+        if status:
+            raise str(status)
         self.name = name
         self.num_bytes = num_bytes
         _ = tmp_spec^
@@ -226,11 +231,17 @@ struct DeviceMemory(DeviceBuffer, StringableRaising, CollectionElement):
             dst_memory: The destination DeviceMemory of the copy.
         """
         if self.bytecount() != dst_memory.bytecount():
-            raise "src and dst bytcount mismatch in copy_into()"
+            raise String(
+                "source bytecount({}) does not match destination bytecount({})"
+            ).format(self.bytecount(), dst_memory.bytecount())
+
+        var status = Status(self._device._lib.value())
 
         self._device._lib.value().copy_device_memory_fn(
-            dst_memory._impl_ptr, self._impl_ptr
+            dst_memory._impl_ptr, self._impl_ptr, status.impl
         )
+        if status:
+            raise str(status)
 
     fn copy_to(
         self, dev: Device, name: Optional[String] = None
@@ -355,7 +366,9 @@ struct DeviceTensor(DeviceBuffer, StringableRaising, CollectionElement):
             dst_tensor: The destination DeviceTensor of the copy.
         """
         if dst_tensor.spec != self.spec:
-            raise "src and dst tensor specs do not match"
+            raise String(
+                "source({}) and destination({}) specs do not match"
+            ).format(self.spec, dst_tensor.spec)
         self._storage.copy_into(dst_tensor._storage)
 
     fn move_to(owned self, dev: Device) raises -> Self:
