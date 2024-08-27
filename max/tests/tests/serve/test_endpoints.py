@@ -8,7 +8,7 @@
 import pytest
 import sseclient
 from fastapi.testclient import TestClient
-from max.serve.api_server import create_app
+from max.serve.api_server import fastapi_app
 from max.serve.config import APIType, Settings
 from max.serve.mocks.mock_api_requests import (
     simple_kserve_request,
@@ -25,7 +25,7 @@ from max.serve.schemas.openai import (
 @pytest.fixture
 def app():
     settings = Settings(api_types=[APIType.OPENAI, APIType.KSERVE])
-    return create_app(settings)
+    return fastapi_app(settings)
 
 
 # TODO: Split up kserve and openai tests.
