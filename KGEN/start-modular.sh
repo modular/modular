@@ -102,12 +102,21 @@ b() {
 
 c() {
     if [ $1 = "debug-asan" ]; then
-        echo "build:debug-asan --cc_output_directory_tag=debug-asan" > ./config.bazelrc
-        echo "build:debug-asan --compilation_mode=dbg" >> ./config.bazelrc
-        echo "build:debug-asan --copt=-O0" >> ./config.bazelrc
-        echo "build:debug-asan --//bazel/internal:debug_modular=true" >> ./config.bazelrc
-        echo "build:debug-asan --copt=-g" >> ./config.bazelrc
-        echo "build:debug-asan --strip=never" >> ./config.bazelrc
+        echo "build --config=asan" > ./config.bazelrc
+        echo "build --cc_output_directory_tag=debug-asan" >> ./config.bazelrc
+        echo "build --compilation_mode=dbg" >> ./config.bazelrc
+        echo "build --copt=-O0" >> ./config.bazelrc
+        echo "build --copt=-g" >> ./config.bazelrc
+        echo "build --strip=never" >> ./config.bazelrc
+        echo "build --per_file_copt=external/llvm-project/.*@-g" >> ./config.bazelrc
+    elif [ $1 = "debug-tsan" ]; then
+        echo "build --config=tsan" > ./config.bazelrc
+        echo "build --cc_output_directory_tag=debug-tsan" >> ./config.bazelrc
+        echo "build --compilation_mode=dbg" >> ./config.bazelrc
+        echo "build --copt=-O0" >> ./config.bazelrc
+        echo "build --copt=-g" >> ./config.bazelrc
+        echo "build --strip=never" >> ./config.bazelrc
+        echo "build --per_file_copt=external/llvm-project/.*@-g" >> ./config.bazelrc
     else
         source "$MODULAR_PATH/utils/start-modular.sh"
         c $@
