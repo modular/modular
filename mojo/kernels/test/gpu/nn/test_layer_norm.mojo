@@ -15,7 +15,7 @@ from buffer import Buffer, NDBuffer
 from buffer.dimlist import DimList
 from gpu import WARP_SIZE
 from gpu.host._compile import _compile_code, _get_nvptx_target
-from gpu.host.device_context import DeviceBuffer, DeviceContext
+from gpu.host.device_context import DeviceContext
 from memory import UnsafePointer
 from nn.normalization import *
 from testing import assert_almost_equal
@@ -92,7 +92,7 @@ fn run_layer_norm_block[
         return gamma.load[width=width](idx[0])
 
     var func_ln = ctx.compile_function[
-        layer_norm_gpu_block[type, simd_width, rank, input_fn, gamma_fn]
+        layer_norm_gpu_block[type, simd_width, input_fn, gamma_fn]
     ]()
 
     var max_warps_per_block = 32
