@@ -170,14 +170,18 @@ struct ImposterMatmul:
         return rebind[StaticIntTuple[2]](shape)
 
 
-@compiler.register("test_shape_param")
-struct StaticShapeTest:
+@compiler.register("print_shape_strides")
+struct PrintShapeStridesOp:
     @staticmethod
     fn execute[
         synchronous: Bool,
         target: StringLiteral,
     ](out: ManagedTensorSlice, x: ManagedTensorSlice):
         alias x_shape = compiler.specsof[x.type, x.rank]("x").shape
+        alias x_strides = compiler.specsof[x.type, x.rank]("x").strides
+
+        print("x.shape = ", x_shape)
+        print("x.strides = ", x_strides)
 
         @parameter
         @always_inline

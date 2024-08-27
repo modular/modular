@@ -161,7 +161,8 @@ from quantization.qmatmul_k import (
 from register import *
 from runtime.asyncrt import MojoCallContextPtr
 from runtime.tracing import Trace, TraceLevel, trace_arg
-from tensor_utils import ManagedTensorSlice
+from tensor_utils_internal import ManagedTensorSlice
+from compiler_internal import StaticTensorSpec
 
 from utils import StaticTuple
 from utils.index import Index, StaticIntTuple, product
@@ -599,6 +600,20 @@ fn elementwise_wrapper[
             use_blocking_impl=single_thread_blocking_override,
             target=target,
         ](buffer.dynamic_shape, context=ctx)
+
+
+# Build the StaticTensorSpec parameter for the DPS kernels
+@mogg_register("build_static_tensor_specs")
+@export
+fn build_static_tensor_specs[
+    type: DType, rank: Int
+](shape: DimList, strides: DimList) -> StaticTensorSpec[type, rank]:
+    return StaticTensorSpec(
+        shape,
+        strides,
+        OptionalReg[StaticTensorSpec[type, rank].in_lambda_t](None),
+        OptionalReg[StaticTensorSpec[type, rank].out_lambda_t](None),
+    )
 
 
 # ===----------------------------------------------------------------------===#
