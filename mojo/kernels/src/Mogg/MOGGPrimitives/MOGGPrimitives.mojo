@@ -29,6 +29,7 @@ from memory.memory import _malloc as _malloc_cpu
 from MOGGIntList import IntList
 from register import *
 from runtime.asyncrt import MojoCallContextPtr
+from weights_registry import WeightsRegistry
 
 from utils import StaticIntTuple
 
@@ -554,6 +555,43 @@ fn mgp_buffer_alloc_dynamic[
         bRawAlign
     )
     return byte_buffer_alloc[cDevice, alignment=alignment](byte_size, call_ctx)
+
+
+@mogg_register("mgp.buffer.constant.external")
+@export
+fn mgp_buffer_constant_external[
+    aRuntimeSlot: UInt64,
+    bName: StringLiteral,
+    cSize: UInt64,
+    dAlign: UInt64,
+    eDevice: StringLiteral,
+](
+    dummy_chain: Int,
+    ctx: StateContext,
+    weights: UnsafePointer[WeightsRegistry],
+    call_ctx: MojoCallContextPtr,
+) raises -> NDBuffer[DType.int8, 1]:
+    constrained[dAlign > 0, "dAlign must be a positive integer value"]()
+    constrained[
+        eDevice == "cpu",
+        "currently, external constants are only supported on cpu",
+    ]()
+
+    if not weights:
+        raise Error(
+            "received null weights registry in mgp.buffer.constant.external"
+        )
+
+    var weight_ptr = weights[][bName]
+    if (int(weight_ptr) % dAlign) != 0:
+        raise Error(
+            "invalid alignment for address "
+            + str(weight_ptr)
+            + " and align "
+            + str(dAlign)
+        )
+
+    return NDBuffer[DType.int8, 1](weight_ptr.bitcast[Int8](), DimList(cSize))
 
 
 @always_inline
