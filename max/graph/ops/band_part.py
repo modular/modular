@@ -25,16 +25,16 @@ def band_part(
     Assumes the input has dimensions [I, J, ..., M, N], then the output tensor
     has the same shape as the input, and the values are given by
 
-    .. code-block:: python
-
-        out[i, j, ..., m, n] = in_band(m, n) * input[i, j,  ..., m, n].
+    ```
+    out[i, j, ..., m, n] = in_band(m, n) * input[i, j,  ..., m, n].
+    ```
 
     with the indicator function:
 
-    .. code-block:: python
-
-        in_band(m, n) = ((num_lower < 0 || (m - n) <= num_lower)) &&
-                        (num_upper < 0 || (n - m) <= num_upper))
+    ```
+    in_band(m, n) = ((num_lower < 0 || (m - n) <= num_lower)) &&
+                     (num_upper < 0 || (n - m) <= num_upper))
+    ```
 
     Args:
         input: The input to mask out.

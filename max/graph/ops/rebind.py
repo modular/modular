@@ -14,25 +14,6 @@ from ..type import ShapeLike
 
 
 def rebind(x: ValueLike, shape: ShapeLike, message: str) -> TensorValue:
-    """Rebinds a symbolic tensor to a specified set of dimensions.
-
-    This does not mutate the symbolic tensor passed in, but instead adds a
-    runtime assert that the input symbolic shape is equivalent to
-    :code:`out_dims` shape. For example, if the input tensor shape has
-    dynamic/unknown sizes, this will assert a fixed sizes that may be required
-    for a subsequent operation.
-
-    Args:
-        x: The input symbolic tensor to rebind.
-        shape: The symbolic shape to assert for ``x``, as a list of
-               [``Dim``](/max/api/python/graph/type/Dim) values.
-        message: The message printed if the rebind fails at runtime.
-
-    Returns:
-        A symbolic tensor with the same elements and shape as the given tensor,
-        but with the symbolic shape asserted to ``out_dims``.
-
-    """
     # TODO(MSDK-662): Add checks to ensure that statically known dims are
     # rebound in a way to keep the size the same.
     v = TensorValue(x)

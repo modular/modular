@@ -12,18 +12,6 @@ from .reshape import reshape
 
 
 def squeeze(x: ValueLike, axis: int) -> TensorValue:
-    """Removes a size-1 dimension from a symbolic tensor.
-
-    Args:
-        x: The input symbolic tensor to squeeze.
-        axis: The dimension to remove from the input's shape. If negative, this
-              indexes from the end of the tensor. For example,
-              :code:`squeeze(v, -1)` squeezes the last dimension.
-
-    Returns:
-        A symbolic tensor with the same number of elements as the input tensor,
-        and whose rank is 1 less than the rank of the input tensor.
-    """
     v = TensorValue(x)
     # TODO (MSDK-655): Probably want to add rmo.mo_squeeze_shape here
     shape = Shape(v.shape)

@@ -23,18 +23,18 @@ def concat(
     Args:
         vals: A list of symbolic tensor values. Each tensor must have the same
             dtype and rank, and must have the same dimension size for each
-            dimension other than ``axis``.
+            dimension other than `axis`.
         axis: The axis to concatenate along. If negative, indexes relative
-            to the end of the tensor shape. For instance, ``concat(vs, -1)``
+            to the end of the tensor shape. For instance, `concat(vs, -1)`
             will concat along the last dimension.
-        new_dim: The expected output dimension of the concat ``axis``.
+        new_dim: The expected output dimension of the concat `axis`.
           If provided, this will add a runtime assertion to the graph.
           If the resulting dimension can't be known statically, new_dim
           _must_ be provided.
 
     Returns:
         A new symbolic tensor representing the concatenation result. It will
-        have the same rank as each input tensor, and its dimensions will be the same
+        have the same rank as each input tensor, and its dimenions will be the same
         as each input tensor's for each dimension other than `axis`, which will
         have size equal to the sum of all tensor's size for that dimension.
     """

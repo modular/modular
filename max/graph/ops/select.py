@@ -12,22 +12,6 @@ from ..value import TensorValue, ValueLike
 
 
 def select(cond: ValueLike, x: ValueLike, y: ValueLike) -> TensorValue:
-    """
-    Returns ``condition ? x : y`` (element-wise), where ``cond``, ``x`` and ``y``
-    are input tensors.
-
-    Args:
-        condition: The condition tensor to use for selecting elementwise
-                   values.
-        x: If the condition is true at a position, the value from the same
-           position in this tensor will be selected.
-        y: If the condition is false at a position, the value from the same
-           position in this tensor will be selected.
-
-    Returns:
-        A new symbolic tensor holding either values from either ``x`` or ``y``,
-        based on the elements in `condition`.
-    """
     return Graph.current._add_op(
         rmo.select, TensorValue(cond), TensorValue(x), TensorValue(y)
     )[0].tensor
