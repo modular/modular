@@ -10,7 +10,7 @@
 # COM: Test with mojo build
 # RUN: mkdir -p %t
 # RUN: rm -rf %t/cuda-test-device
-# RUN: mojo build %s -o %t/cuda-test-device
+# RUN: %mojo-build %s -o %t/cuda-test-device
 # RUN: %t/cuda-test-device
 
 from max.driver import cpu_device, Tensor, AnyTensor

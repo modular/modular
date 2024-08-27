@@ -10,7 +10,7 @@
 # COM: Test with mojo build
 # RUN: mkdir -p %t
 # RUN: rm -rf %t/cuda-test-mojo-kernel
-# RUN: mojo build %s -o %t/cuda-test-mojo-kernel
+# RUN: %mojo-build %s -o %t/cuda-test-mojo-kernel
 # RUN: %t/cuda-test-mojo-kernel %t2
 
 from sys import stderr
