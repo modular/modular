@@ -64,3 +64,22 @@
 # CHECK-MOJO-NEXT:   "runInTerminal": true
 # CHECK-MOJO-NEXT:   "type": "mojo-lldb"
 # CHECK-MOJO-NEXT: }
+
+# COM: Check if the RPC launch command is created properly with the --cuda-gdb flag
+# RUN: %debug --rpc --cuda-gdb --dry-run hello.mojo | FileCheck %s --check-prefix=CHECK-CUDA-GDB
+# CHECK-CUDA-GDB:     {
+# CHECK-CUDA-GDB:   "args": [
+# CHECK-CUDA-GDB:     "run",
+# CHECK-CUDA-GDB:     "-O0",
+# CHECK-CUDA-GDB:     "--debug-level=full",
+# CHECK-CUDA-GDB:     "hello.mojo"
+# CHECK-CUDA-GDB:   ],
+# CHECK-CUDA-GDB:   "cwd": "
+# CHECK-CUDA-GDB:   "env": [
+# CHECK-CUDA-GDB:          "PATH=
+# CHECK-CUDA-GDB:        ]
+# CHECK-CUDA-GDB:   "modularHomePath": "
+# CHECK-CUDA-GDB:   "program": "{{.*}}mojo",
+# CHECK-CUDA-GDB:   "request": "launch",
+# CHECK-CUDA-GDB:   "type": "mojo-cuda-gdb"
+# CHECK-CUDA-GDB: }
