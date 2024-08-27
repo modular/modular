@@ -13,6 +13,21 @@ from ..value import TensorValue, TensorType, ValueLike
 
 
 def transpose(x: ValueLike, dim_1: int, dim_2: int) -> TensorValue:
+    """Transposes two dimensions of a symbolic tensor.
+
+    Args:
+        input: The input symbolic tensor to transpose.
+        x: One of the two dimensions to transpose. If negative, this indexes
+           from the end of the tensor. For example,
+           :code:`transpose(v, -1, -2)` transposes the last two dimensions.
+        y: The other dimension to transpose. May also be negative to index from
+           the end of the tensor.
+
+    Returns:
+        A new symbolic tensor with the two specified dimensions transposed.
+        It has the same elements and dtype, but the order of the elements
+        is different according to the transposition.
+    """
     v = TensorValue(x)
 
     rank = len(v.shape)

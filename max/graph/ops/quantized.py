@@ -102,19 +102,19 @@ def qmatmul(
     """Performs matrix multiplication between floating point and quantized
     tensors.
 
-    This quantizes the `lhs` floating point value to match the encoding of the
-    `rhs` quantized value, performs matmul, and then dequantizes the result.
-    Beware that, compared to a regular matmul op, this one expects the `rhs`
-    value to be transposed. For example, if the `lhs` shape is `[32, 64]`, and
-    the quantized `rhs` shape is also `[32, 64]`, then the output shape is
-    `[32, 32]`
+    This quantizes the ``lhs`` floating point value to match the encoding of the
+    ``rhs`` quantized value, performs matmul, and then dequantizes the result.
+    Beware that, compared to a regular matmul op, this one expects the ``rhs``
+    value to be transposed. For example, if the ``lhs`` shape is `[32, 64]`, and
+    the quantized ``rhs`` shape is also ``[32, 64]``, then the output shape is
+    ``[32, 32]``.
 
     That is, this function returns the result from:
 
         dequantize(quantize(lhs) @ transpose(rhs))
 
-    The last two dimensions in `lhs` are treated as matrices and multiplied
-    by `rhs` (which must be a 2D tensor). Any remaining dimensions in `lhs`
+    The last two dimensions in ``lhs`` are treated as matrices and multiplied
+    by ``rhs`` (which must be a 2D tensor). Any remaining dimensions in ``lhs``
     are broadcast dimensions.
 
     NOTE: Currently this supports Q4_0, Q4_K, and Q6_K encodings only.

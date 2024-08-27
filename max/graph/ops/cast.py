@@ -13,6 +13,16 @@ from ..value import TensorValue, ValueLike
 
 
 def cast(x: ValueLike, dtype: DType) -> TensorValue:
+    """Casts a symbolic tensor to a different data type.
+
+    Args:
+        v: The input tensor to cast.
+        dtype: The target dtype to which the tensor is cast.
+
+    Returns:
+        A new symbolic tensor with the same shape as the input and the
+        specified dtype.
+    """
     gv = TensorValue(x)
     if gv.dtype == dtype:
         return gv
