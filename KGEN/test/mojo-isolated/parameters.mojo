@@ -316,6 +316,26 @@ fn test_auto_kw_default(a: IndexParam, b: IndexParam):
   auto_kw_default[`1`, v=`2`](a, b)
 
 
+trait ASuperTrait:
+    pass
+
+
+trait ASubTrait(ASuperTrait):
+    pass
+
+
+struct StructWithTraitParam[T: ASuperTrait]():
+    pass
+
+    fn __init__(inout self: StructWithTraitParam[T]):
+        pass
+
+
+# CHECK-LABEL: lit.func @"test_upcast_trait
+fn test_upcast_trait[T: ASubTrait](tuples: StructWithTraitParam[T]):
+    pass
+
+
 ##===----------------------------------------------------------------------===##
 # Memory-only parameters
 ##===----------------------------------------------------------------------===##

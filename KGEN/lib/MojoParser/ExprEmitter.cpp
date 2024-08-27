@@ -1252,6 +1252,8 @@ static AnyValue refineResultValue(AnyValue value, const ExprNode *expr,
 /// register-passable (and visa-versa).
 AnyValue ExprEmitter::emitResult(AnyValue value, const ExprNode *expr,
                                  ValueDest &dest) {
+  AnyValue originalValue = value;
+
   if (!value) {
     dest.resetForError();
     return {};
@@ -1322,10 +1324,16 @@ AnyValue ExprEmitter::emitResult(AnyValue value, const ExprNode *expr,
       if (auto trait = dyn_cast<TraitType>(requiredType)) {
         if (isa<AnyStructType, TraitType>(rvalueType)) {
           PValue result = emitMetaTypeToTraitConversion({cValue, expr}, trait);
+          assert(
+              result.get() != originalValue.getIfPValue().get() &&
+              "emitResult made no progress, stopping before stack overflow.");
           return emitResult(result, expr, dest);
         }
         if (isa<TypeType>(rvalueType)) {
           PValue result = bindMLIRTypeToTrait({cValue, expr}, trait);
+          assert(
+              result.get() != originalValue.getIfPValue().get() &&
+              "emitResult made no progress, stopping before stack overflow.");
           return emitResult(result, expr, dest);
         }
         // If the source value is a parametric value of type 'AnyTrait[trait]'

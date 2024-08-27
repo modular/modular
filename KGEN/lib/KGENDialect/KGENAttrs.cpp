@@ -197,15 +197,16 @@ void TypeConstantAttr::print(AsmPrinter &p) const {
 }
 
 TypedAttr TypeConstantAttr::get(MLIRContext *ctx, Type typeValue, Type mlirType,
-                                Type type, VTableAttr vtable) {
+                                Type metaType, VTableAttr vtable) {
   // If this is a trivial mlir Type (i.e. has identical type & value
   // representation), and the trivial type is a ParamRefType, then we're
   // unwrapping a wrapper. Remove this to keep the types canonical.
   if (mlirType == typeValue && vtable.getEntries().empty())
     if (auto refType = ::dyn_cast<ParamRefType>(mlirType))
-      return refType.getParam();
+      if (refType.getParam().getType() == metaType)
+        return refType.getParam();
 
-  return Base::get(ctx, typeValue, mlirType, type, vtable);
+  return Base::get(ctx, typeValue, mlirType, metaType, vtable);
 }
 
 TypedAttr TypeConstantAttr::get(Type typeValue, Type mlirType, Type type,

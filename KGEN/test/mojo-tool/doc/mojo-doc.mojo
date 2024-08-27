@@ -425,9 +425,9 @@ fn variadic_pack[*Ts: AnyType](*vals: *Ts):
 # CHECK:     "args":
 # CHECK:         "name": "vals",
 # CHECK:         "passingKind": "pos_or_kw",
-# CHECK:         "type": "variadic<!lit.ref<:trait<{{.*}}AnyType> element_type, imm #lit.lifetime>, borrow_in_mem>"
+# CHECK:         "type": "variadic<!lit.ref<!kgen.paramref<:trait<{{.*}}AnyType> element_type>, imm #lit.lifetime>, borrow_in_mem>"
 
-# CHECK:     "signature": "variadic_arg_hack[element_type: AnyType](vals: variadic<!lit.ref<:trait<_stdlib::_builtin::_anytype::_AnyType> element_type, imm #lit.lifetime>, borrow_in_mem>)",
+# CHECK:     "signature": "variadic_arg_hack[element_type: AnyType](vals: variadic<!lit.ref<!kgen.paramref<:trait<_stdlib::_builtin::_anytype::_AnyType> element_type>, imm #lit.lifetime>, borrow_in_mem>)",
 
 
 fn variadic_arg_hack[
