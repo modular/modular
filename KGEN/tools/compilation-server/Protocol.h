@@ -31,15 +31,15 @@ namespace M::KGEN::CSP {
 // CompileLLVMModuleParams
 //===----------------------------------------------------------------------===//
 
-struct CompileLLVMModuleParams {
-  /// LLVM bitcode encoded as string.
-  std::string bitcode;
+struct EmitArchiveParams {
+  /// MLIR module encoded as string.
+  std::string module;
 };
 
 /// Add support for JSON serialization.
-bool fromJSON(const llvm::json::Value &value, CompileLLVMModuleParams &result,
+bool fromJSON(const llvm::json::Value &value, EmitArchiveParams &result,
               llvm::json::Path path);
-llvm::json::Value toJSON(const CompileLLVMModuleParams &value);
+llvm::json::Value toJSON(const EmitArchiveParams &value);
 
 } // namespace M::KGEN::CSP
 

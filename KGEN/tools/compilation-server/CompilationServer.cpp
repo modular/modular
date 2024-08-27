@@ -40,8 +40,8 @@ struct CompilationServer {
   //===--------------------------------------------------------------------===//
   // Compilation
 
-  void onCompileLLVMModule(const CompileLLVMModuleParams &params,
-                           Callback<std::nullptr_t> reply);
+  void onEmitArchive(const EmitArchiveParams &params,
+                     Callback<std::nullptr_t> reply);
 
   //===--------------------------------------------------------------------===//
   // Fields
@@ -77,9 +77,9 @@ void CompilationServer::onShutdown(const NoParams &,
 //===--------------------------------------------------------------------===//
 // Compilation
 
-void CompilationServer::onCompileLLVMModule(
-    const CompileLLVMModuleParams &params, Callback<std::nullptr_t> reply) {
-  llvmServer.compileBitcode(params.bitcode);
+void CompilationServer::onEmitArchive(const EmitArchiveParams &params,
+                                      Callback<std::nullptr_t> reply) {
+  llvmServer.emitArchive(params.module);
   reply(nullptr);
 }
 
@@ -99,8 +99,8 @@ mlir::LogicalResult M::KGEN::runCompilationServer(JSONTransport &transport) {
                               &CompilationServer::onInitialized);
   messageHandler.method("shutdown", &compilationServer,
                         &CompilationServer::onShutdown);
-  messageHandler.method("compile", &compilationServer,
-                        &CompilationServer::onCompileLLVMModule);
+  messageHandler.method("emitArchive", &compilationServer,
+                        &CompilationServer::onEmitArchive);
 
   // Run the main loop of the transport.
   if (llvm::Error error = transport.run(messageHandler)) {

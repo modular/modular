@@ -9,15 +9,15 @@
 namespace CSP = M::KGEN::CSP;
 
 //===----------------------------------------------------------------------===//
-// CompileLLVMModuleParams
+// EmitArchiveParams
 //===----------------------------------------------------------------------===//
 
-bool CSP::fromJSON(const llvm::json::Value &value,
-                   CompileLLVMModuleParams &result, llvm::json::Path path) {
+bool CSP::fromJSON(const llvm::json::Value &value, EmitArchiveParams &result,
+                   llvm::json::Path path) {
   llvm::json::ObjectMapper o(value, path);
-  return o && o.map("bitcode", result.bitcode);
+  return o && o.map("module", result.module);
 }
 
-llvm::json::Value CSP::toJSON(const CompileLLVMModuleParams &value) {
-  return llvm::json::Object{{"bitcode", value.bitcode}};
+llvm::json::Value CSP::toJSON(const EmitArchiveParams &value) {
+  return llvm::json::Object{{"module", value.module}};
 }
