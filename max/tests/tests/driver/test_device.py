@@ -10,6 +10,8 @@ from subprocess import run
 import max.driver as md
 import pytest
 
+from modular.utils.misc import has_gpu
+
 
 def test_cpu_device():
     cpu = md.CPU()
@@ -17,8 +19,7 @@ def test_cpu_device():
 
 
 def _cuda_available() -> bool:
-    output = run(getenv("MODULAR_IS_CUDA_AVAILABLE") or "is-cuda-available")
-    return output.returncode == 0
+    return has_gpu()
 
 
 @pytest.mark.skipif(not _cuda_available(), reason="Requires CUDA")
