@@ -15,22 +15,28 @@ import * as config from '../utils/config';
 import { DisposableContext } from '../utils/disposableContext';
 import { Subject } from 'rxjs';
 import { MojoExtension } from '../extension';
-import { LoggingService } from '../logging';
+import { Logger } from '../logging';
+import { MojoSDKManager } from '../sdk/sdkManager';
 
 /**
  *  This class manages the LSP clients.
  */
 export class MojoLSPManager extends DisposableContext {
-  private mojoExtension: MojoExtension;
+  private sdkManager: MojoSDKManager;
+  private extensionContext: vscode.ExtensionContext;
   public lspClient: Optional<vscodelc.LanguageClient>;
   public lspClientChanges = new Subject<Optional<vscodelc.LanguageClient>>();
-  private loggingService: LoggingService;
+  private logger: Logger;
 
-  constructor(mojoExtension: MojoExtension) {
+  constructor(
+    sdkManager: MojoSDKManager,
+    extensionContext: vscode.ExtensionContext
+  ) {
     super();
 
-    this.mojoExtension = mojoExtension;
-    this.loggingService = mojoExtension.loggingService;
+    this.sdkManager = sdkManager;
+    this.extensionContext = extensionContext;
+    this.logger = sdkManager.logger;
   }
 
   async activate(launchServerWithDebuggerAttached: boolean = false) {
@@ -68,7 +74,7 @@ export class MojoLSPManager extends DisposableContext {
       return;
     }
 
-    let sdk = await this.mojoExtension.sdkManager.findSDK();
+    let sdk = await this.sdkManager.findSDK(/*hideRepeatedErrors=*/ true);
 
     if (!sdk) {
       return;
@@ -108,7 +114,7 @@ export class MojoLSPManager extends DisposableContext {
     sdk: MojoSDK,
     includeDirs: string[]
   ): vscodelc.LanguageClient {
-    this.loggingService.lsp.logInfo('Activating language client');
+    this.logger.lsp.logInfo('Activating language client');
 
     let serverArgs: string[] = [];
 
@@ -126,7 +132,7 @@ export class MojoLSPManager extends DisposableContext {
       serverPath: sdk.config.mojoLanguageServerPath,
     };
 
-    const module = this.mojoExtension.extensionContext.asAbsolutePath(
+    const module = this.extensionContext.asAbsolutePath(
       path.join('lsp-proxy', 'out', 'proxy.js')
     );
     const serverOptions: vscodelc.ServerOptions = {
@@ -152,7 +158,7 @@ export class MojoLSPManager extends DisposableContext {
           '**/*.{mojo,🔥,ipynb}'
         ),
       },
-      outputChannel: this.loggingService.lsp.outputChannel,
+      outputChannel: this.logger.lsp.outputChannel,
 
       // Don't switch to output window when the server returns output.
       revealOutputChannelOn: vscodelc.RevealOutputChannelOn.Never,
@@ -166,13 +172,13 @@ export class MojoLSPManager extends DisposableContext {
       serverOptions,
       clientOptions
     );
-    this.loggingService.lsp.logInfo(
+    this.logger.lsp.logInfo(
       `Launching Language Server '${
         initializationOptions.serverPath
       }' with options:`,
       initializationOptions.serverArgs
     );
-    this.loggingService.lsp.logInfo('Launching Language Server');
+    this.logger.lsp.logInfo('Launching Language Server');
     // We intentionally don't await the `start` so that we can cancelling it
     // during a long initialization, which can happen when in debug mode.
     languageClient.start();

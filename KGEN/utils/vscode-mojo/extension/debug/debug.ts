@@ -14,6 +14,7 @@ import { initializeInlineLocalVariablesProvider } from './inlineVariables';
 import path = require('path');
 import { MojoSDK } from '../sdk/sdk';
 import { MojoExtension } from '../extension';
+import { MojoSDKManager } from '../sdk/sdkManager';
 
 /**
  * Stricter version of vscode.DebugConfiguration intended to reduce the chances
@@ -25,6 +26,7 @@ type MojoDebugConfiguration = {
   pid?: string | number;
   request?: string;
   modularHomePath?: string;
+  modularSection?: string;
   args?: string[];
   program?: string;
   mojoFile?: string;
@@ -41,6 +43,18 @@ type MojoDebugConfiguration = {
  */
 const DEBUG_TYPE: string = 'mojo-lldb';
 
+async function findSDKForDebugConfiguration(
+  config: MojoDebugConfiguration,
+  sdkManager: MojoSDKManager
+): Promise<Optional<MojoSDK>> {
+  if (config.modularHomePath !== undefined) {
+    return sdkManager.createAdHocSDKAndShowError(
+      config.modularHomePath,
+      config.modularSection
+    );
+  }
+  return sdkManager.findSDK(/*hideRepeatedErrors=*/ false);
+}
 /**
  * This class defines a factory used to find the lldb-vscode binary to use
  * depending on the session configuration.
@@ -48,10 +62,10 @@ const DEBUG_TYPE: string = 'mojo-lldb';
 class MojoDebugAdapterDescriptorFactory
   implements vscode.DebugAdapterDescriptorFactory
 {
-  private extension: MojoExtension;
+  private sdkManager: MojoSDKManager;
 
-  constructor(extension: MojoExtension) {
-    this.extension = extension;
+  constructor(sdkManager: MojoSDKManager) {
+    this.sdkManager = sdkManager;
   }
 
   async createDebugAdapterAdditionalEnv(
@@ -83,12 +97,17 @@ class MojoDebugAdapterDescriptorFactory
     session: vscode.DebugSession,
     _executable: Optional<vscode.DebugAdapterExecutable>
   ): Promise<Optional<vscode.DebugAdapterDescriptor>> {
-    let sdk = await this.extension.sdkManager.findSDK();
+    let sdk = await findSDKForDebugConfiguration(
+      session.configuration,
+      this.sdkManager
+    );
+
     // We don't need to show error messages here because
     // `findSDKConfigForDebugSession` does that.
     if (!sdk) {
       return undefined;
     }
+
     return new vscode.DebugAdapterExecutable(
       sdk.config.mojoLLDBVSCodePath,
       [
@@ -111,10 +130,10 @@ class MojoDebugAdapterDescriptorFactory
 class MojoDebugConfigurationResolver
   implements vscode.DebugConfigurationProvider
 {
-  private extension: MojoExtension;
+  private sdkManager: MojoSDKManager;
 
-  constructor(extension: MojoExtension) {
-    this.extension = extension;
+  constructor(sdkManager: MojoSDKManager) {
+    this.sdkManager = sdkManager;
   }
 
   async resolveDebugConfigurationWithSubstitutedVariables?(
@@ -122,9 +141,10 @@ class MojoDebugConfigurationResolver
     debugConfiguration: MojoDebugConfiguration,
     token?: vscode.CancellationToken
   ): Promise<undefined | vscode.DebugConfiguration> {
-    // Load the MojoLLDB plugin. The SDK must be present because otherwise we
-    // can't get access to the debug adapter.
-    let sdk = await this.extension.sdkManager.findSDK();
+    let sdk = await findSDKForDebugConfiguration(
+      debugConfiguration,
+      this.sdkManager
+    );
     // We don't need to show error messages here because
     // `findSDKConfigForDebugSession` does that.
     if (!sdk) {
@@ -143,7 +163,7 @@ class MojoDebugConfigurationResolver
         const message = `Mojo Debug error: the file '${
           debugConfiguration.mojoFile
         }' doesn't have the .🔥 or .mojo extension.`;
-        this.extension.loggingService.main.logError(message);
+        this.sdkManager.logger.main.logError(message);
         vscode.window.showErrorMessage(message);
         return undefined;
       }
@@ -282,16 +302,18 @@ class MojoDebugDynamicConfigurationProvider
  */
 export class MojoDebugManager extends DisposableContext {
   private extension: MojoExtension;
+  private sdkManager: MojoSDKManager;
 
-  constructor(extension: MojoExtension) {
+  constructor(extension: MojoExtension, sdkManager: MojoSDKManager) {
     super();
     this.extension = extension;
+    this.sdkManager = sdkManager;
 
     // Register the lldb-vscode debug adapter.
     this.pushSubscription(
       vscode.debug.registerDebugAdapterDescriptorFactory(
         DEBUG_TYPE,
-        new MojoDebugAdapterDescriptorFactory(extension)
+        new MojoDebugAdapterDescriptorFactory(this.sdkManager)
       )
     );
 
@@ -314,7 +336,7 @@ export class MojoDebugManager extends DisposableContext {
     this.pushSubscription(
       vscode.debug.registerDebugConfigurationProvider(
         DEBUG_TYPE,
-        new MojoDebugConfigurationResolver(extension)
+        new MojoDebugConfigurationResolver(sdkManager)
       )
     );
 
@@ -326,7 +348,9 @@ export class MojoDebugManager extends DisposableContext {
       )
     );
 
-    this.pushSubscription(activatePickProcessToAttachCommand(this.extension));
+    this.pushSubscription(
+      activatePickProcessToAttachCommand(extension.extensionContext)
+    );
 
     this.pushSubscription(
       vscode.commands.registerCommand('mojo.attachToProcess', () => {

@@ -4,7 +4,7 @@
 //
 //===----------------------------------------------------------------------===//
 
-import { LoggingService } from '../logging';
+import { Logger } from '../logging';
 import { MojoSDKVersion } from './sdkVersion';
 import * as util from 'util';
 const execFile = util.promisify(require('child_process').execFile);
@@ -58,13 +58,13 @@ export class MojoSDKConfig {
    * Create a new MojoSDKConfig object from the given configuration.
    */
   static async create(
-    loggingService: LoggingService,
+    logger: Logger,
     modularPath: string,
     configSection: string,
     rawConfig: { [key: string]: any }
   ): Promise<Optional<MojoSDKConfig>> {
     let version = await MojoSDKConfig.parseVersionFromDriver(
-      loggingService,
+      logger,
       rawConfig.driver_path,
       configSection
     );
@@ -78,8 +78,8 @@ export class MojoSDKConfig {
   /**
    * Parse a version number from the given mojo driver.
    */
-  private static async parseVersionFromDriver(
-    loggingService: LoggingService,
+  public static async parseVersionFromDriver(
+    logger: Logger,
     driverPath: string,
     configSection: string
   ): Promise<Optional<MojoSDKVersion>> {
@@ -88,6 +88,9 @@ export class MojoSDKConfig {
         env: { ...process.env },
         encoding: 'utf-8',
       });
+      logger.main.logInfo(
+        `${driverPath} --version results\n` + stderr + '\n' + stdout
+      );
 
       if (stderr) {
         return undefined;
@@ -120,10 +123,7 @@ export class MojoSDKConfig {
         driverPath
       );
     } catch (e) {
-      loggingService.main.logError(
-        'Unable to parse version from `mojo` driver: ',
-        e
-      );
+      logger.main.logError('Unable to parse version from `mojo` driver: ', e);
       return undefined;
     }
   }

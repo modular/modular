@@ -5,7 +5,7 @@
 //===----------------------------------------------------------------------===//
 
 import * as vscode from 'vscode';
-import { LoggingService } from '../logging';
+import { Logger } from '../logging';
 import { MojoSDKConfig } from './sdkConfig';
 import { Memoize } from 'typescript-memoize';
 import * as util from 'util';
@@ -16,16 +16,16 @@ const execFile = util.promisify(require('child_process').execFile);
  */
 export class MojoSDK {
   public readonly config: MojoSDKConfig;
-  private loggingService: LoggingService;
+  private logger: Logger;
   private context: vscode.ExtensionContext;
 
   constructor(
     config: MojoSDKConfig,
-    loggingService: LoggingService,
+    logger: Logger,
     context: vscode.ExtensionContext
   ) {
     this.config = config;
-    this.loggingService = loggingService;
+    this.logger = logger;
     this.context = context;
   }
 
@@ -84,7 +84,7 @@ export class MojoSDK {
       /([0-9]+)\.([0-9]+)\.([0-9]+)/
     );
     if (!extensionVersionMatch) {
-      this.loggingService.main.logError(
+      this.logger.main.logError(
         'Unable to compute extension version: ' + extensionVersion
       );
       return;
@@ -126,19 +126,17 @@ export class MojoSDK {
       stderr = (stderr || '') as string;
 
       if (stdout.indexOf('101') != -1) {
-        this.loggingService.main.logInfo(
-          'Python scripting support in LLDB found.'
-        );
+        this.logger.main.logInfo('Python scripting support in LLDB found.');
         return true;
       } else {
-        this.loggingService.main.logInfo(
+        this.logger.main.logInfo(
           `Python scripting support in LLDB not found. The test script returned:\n${
             stdout
           }\n${stderr}`
         );
       }
     } catch (e) {
-      this.loggingService.main.logError(
+      this.logger.main.logError(
         'Python scripting support in LLDB not found. The test script failed with',
         e
       );

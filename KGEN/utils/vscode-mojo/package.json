@@ -46,6 +46,7 @@
     "typescript": "^4.6.4"
   },
   "dependencies": {
+    "async-mutex": "0.5.0",
     "chokidar": "^3.6.0",
     "ini": "4.1.1",
     "typescript-memoize": "1.1.1",
@@ -146,6 +147,11 @@
           "scope": "resource",
           "type": "array",
           "description": "Arguments passed in. Each argument is a separate item in the array."
+        },
+        "mojo.enableMagicSDK": {
+          "scope": "window",
+          "type": "boolean",
+          "description": "Whether to support `magic`-based SDKs instead of `modular cli` ones."
         }
       }
     },
@@ -193,6 +199,11 @@
         "category": "Mojo",
         "command": "mojo.sdk.install",
         "title": "Install and Configure the Mojo SDK"
+      },
+      {
+        "category": "Mojo",
+        "command": "mojo.sdk.selectSdk",
+        "title": "Select MAX SDK"
       }
     ],
     "submenus": [

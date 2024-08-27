@@ -6,21 +6,21 @@
 
 import * as shellescape from 'shell-escape';
 import * as vscode from 'vscode';
-import { MojoExtension } from '../extension';
 import { DisposableContext } from '../utils/disposableContext';
 import path = require('path');
 import { MojoSDK } from '../sdk/sdk';
+import { MojoSDKManager } from '../sdk/sdkManager';
 
 /**
  * This class provides a manager for executing and debugging mojo files.
  */
 class ExecutionManager extends DisposableContext {
-  readonly extension: MojoExtension;
+  readonly sdkManager: MojoSDKManager;
 
-  constructor(extension: MojoExtension) {
+  constructor(sdkManager: MojoSDKManager) {
     super();
 
-    this.extension = extension;
+    this.sdkManager = sdkManager;
     this.activateRunCommands();
   }
 
@@ -60,7 +60,7 @@ class ExecutionManager extends DisposableContext {
     }
 
     // Find the config for processing this file.
-    let sdk = await this.extension.sdkManager.findSDK();
+    let sdk = await this.sdkManager.findSDK(/*hideRepeatedErrors=*/ false);
 
     if (!sdk) {
       return;
@@ -108,7 +108,7 @@ class ExecutionManager extends DisposableContext {
    * Get a terminal to use for the given file.
    */
   getTerminalForFile(doc: vscode.TextDocument, sdk: MojoSDK): vscode.Terminal {
-    let terminalName = `Mojo: ${path.basename(doc.fileName)} · ${doc.fileName}`;
+    let terminalName = `Mojo: ${path.basename(doc.fileName)} · ${doc.fileName} · ${sdk.config.modularHomePath}`;
 
     // Look for an existing terminal.
     let terminal = vscode.window.terminals.find((t) => t.name === terminalName);
@@ -172,7 +172,7 @@ class ExecutionManager extends DisposableContext {
  *     commands.
  */
 export function activateRunCommands(
-  extension: MojoExtension
+  sdkManager: MojoSDKManager
 ): vscode.Disposable {
-  return new ExecutionManager(extension);
+  return new ExecutionManager(sdkManager);
 }

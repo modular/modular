@@ -5,7 +5,7 @@
 //===----------------------------------------------------------------------===//
 
 // This file is a modified copy from
-// https://github.com/prettier/prettier-vscode/blob/main/src/LoggingService.ts
+// https://github.com/prettier/prettier-vscode/blob/main/src/logger.ts
 // which has MIT license.
 
 import * as vscode from 'vscode';
@@ -126,7 +126,7 @@ class LogChannel {
   }
 }
 
-export class LoggingService extends DisposableContext {
+export class Logger extends DisposableContext {
   public main: LogChannel;
   public lsp: LogChannel;
 

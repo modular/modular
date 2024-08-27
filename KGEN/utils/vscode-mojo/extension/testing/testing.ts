@@ -13,6 +13,7 @@ import * as config from '../utils/config';
 import { DisposableContext } from '../utils/disposableContext';
 
 import path = require('path');
+import { MojoSDKManager } from '../sdk/sdkManager';
 
 /**
  * An interface defining a source range for a mojo test.
@@ -53,16 +54,16 @@ interface MojoTestExecutionResult {
  * mojo testing.
  */
 export class MojoTestManager extends DisposableContext {
-  private extension: MojoExtension;
+  private sdkManager: MojoSDKManager;
   private controller: vscode.TestController;
 
   // A tag used to mark doc tests.
   private docTestTag = new vscode.TestTag('docTest');
   private unitTestTag = new vscode.TestTag('unitTest');
 
-  constructor(extension: MojoExtension) {
+  constructor(sdkManager: MojoSDKManager) {
     super();
-    this.extension = extension;
+    this.sdkManager = sdkManager;
 
     // Register the mojo test controller.
     this.controller = vscode.tests.createTestController(
@@ -266,7 +267,7 @@ export class MojoTestManager extends DisposableContext {
     };
 
     // Grab the sdk for the execution context.
-    let sdk = await this.extension.sdkManager.findSDK();
+    let sdk = await this.sdkManager.findSDK(/*hideRepeatedErrors=*/ false);
     if (!sdk) {
       this.controller.items.delete(test.uri!.fsPath);
       return;
@@ -390,7 +391,7 @@ export class MojoTestManager extends DisposableContext {
     // Invoke the mojo tool to discover tests in the document.
 
     // Invoke the mojo tool to discover tests in the document.
-    let sdk = await this.extension.sdkManager.findSDK();
+    let sdk = await this.sdkManager.findSDK(/*hideRepeatedErrors=*/ true);
     if (!sdk) {
       this.controller.items.delete(document.uri.fsPath);
       return;
