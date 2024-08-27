@@ -271,6 +271,10 @@ alias cuModuleGetFunction = _dylib_function[
     ) -> Result,
 ]
 
+alias cuCtxGetLimit = _dylib_function[
+    "cuCtxGetLimit",
+    fn (UnsafePointer[Int], LimitProperty) -> Result,
+]
 
 alias cuCtxSetLimit = _dylib_function[
     "cuCtxSetLimit",
