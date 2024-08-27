@@ -29,7 +29,7 @@ from gpu.memory import (
     load,
 )
 from gpu.mma import ld_matrix, mma
-from gpu.shuffle import shuffle_down, shuffle_idx, warp_reduce
+from gpu.shuffle import warp_reduce_add
 from gpu.tensor_ops import (
     tc_reduce,
     tc_reduce_gevm_4x,
@@ -366,11 +366,6 @@ struct ReductionMethod:
         return self != other
 
 
-@parameter
-fn _reduce_add(x: SIMD, y: __type_of(x)) -> __type_of(x):
-    return x + y
-
-
 @always_inline
 fn _blockwise_sum[
     intermediate_type: DType,
@@ -393,9 +388,7 @@ fn _blockwise_sum[
             ),
         ]()
 
-        return rebind[Scalar[output_type]](
-            warp_reduce[shuffle_down, _reduce_add](x.reduce_add())
-        )
+        return rebind[Scalar[output_type]](warp_reduce_add(x.reduce_add()))
     else:
         return tc_reduce[output_type](x.cast[intermediate_type]())
 
@@ -635,9 +628,7 @@ fn gemv_split_k[
 
         @parameter
         for ni in range(int(tile_n)):
-            var val = warp_reduce[shuffle_down, _reduce_add](
-                acc[mi * tile_n + ni]
-            )
+            var val = warp_reduce_add(acc[mi * tile_n + ni])
             if lane_id == 0:
                 shmem[mi * tile_n + ni + warp_id * tile_m * tile_n] = val
 
@@ -702,7 +693,7 @@ fn gevm_kernel[
     barrier()
 
     var total = x_shared.load(ThreadIdx.x()).cast[s_type]()
-    total = warp_reduce[shuffle_down, _reduce_add](total)
+    total = warp_reduce_add(total)
 
     if lane_id() == 0:
 
