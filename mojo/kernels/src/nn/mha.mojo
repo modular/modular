@@ -33,6 +33,7 @@ from layout.layout_tensor import (
     copy_local_to_sram,
     copy_sram_to_dram,
 )
+from layout.swizzle import make_ldmatrix_swizzleex
 from layout.tensor_core import get_accum_type, get_fragment_size, get_mma_shape
 from linalg._multistage_gemm_gpu import multistage_mma
 from linalg.bmm import batched_matmul
@@ -529,6 +530,96 @@ fn flash_attention_impl[
 # ===----------------------------------------------------------------------===#
 
 
+@always_inline
+fn _copy_frag_to_smem[
+    BM: UInt,
+    BN: UInt,
+    BK: UInt,
+    WM: UInt,
+    WN: UInt,
+    MMA_M: UInt,
+    MMA_N: UInt,
+    frag_simd_width: UInt,
+    *,
+    type0: DType,
+    layout0: Layout,
+    type1: DType,
+    layout1: Layout,
+](
+    p_smem_iter: LayoutTensorIter[
+        type0, layout0, address_space = AddressSpace.SHARED
+    ],
+    p_reg_tile: LayoutTensor[
+        type1, layout1, address_space = AddressSpace.LOCAL
+    ],
+    warp_x: Int,
+    warp_y: Int,
+):
+    """Copy p fragments to shared memory.
+
+    Logically P has shape BM x BN. It's sharded across threads in 16x8 mma layout.
+    The BM x BN matrix is divided to BM x BK tiles, each tile is CONTIGUOUS for
+    the 2nd mma. This function maps each fragment to the right BM x BK tile and
+    swizzle to avoid bank conflict.
+    """
+
+    alias simd_width = simdwidthof[p_smem_tile.dtype]()
+    alias num_m_mmas = WM // MMA_M
+    alias num_n_mmas = WN // MMA_N
+    # alias BN = p_smem_tile.dim[1]()
+
+    # This tile is used for offset computation because 1st mma output is organized
+    # for BM x BN output tile. The layout for 2nd mma is in p_smem_iter.
+    var p_smem_tile = LayoutTensor[
+        p_smem_iter.type,
+        Layout.row_major(BM, BN),
+        address_space = AddressSpace.SHARED,
+    ](p_smem_iter.ptr)
+    var p_smem_warp_tile = p_smem_tile.tile[WM, WN](warp_y, warp_x)
+    var p_reg_vecs = p_reg_tile.vectorize[1, frag_simd_width]()
+
+    alias swizzle_fn = make_ldmatrix_swizzleex[p_smem_tile.dtype, BK]()
+
+    @parameter
+    for n_mma in range(int(num_n_mmas)):
+
+        @parameter
+        for m_mma in range(int(num_m_mmas)):
+            var p_smem_mma_tile = p_smem_warp_tile.tile[MMA_M, MMA_N](
+                m_mma, n_mma
+            ).vectorize[1, frag_simd_width]()
+            var p_smem_frag = p_smem_mma_tile.distribute[
+                Layout.row_major(8, 4)
+            ](lane_id())
+            var frag_offset = p_smem_frag.distance(p_smem_tile)
+
+            @parameter
+            for i in range(p_reg_vecs.dim[1]()):
+                alias offset_in_frag = p_smem_frag.layout(i)
+
+                # Translate offset in BM x BN matrix to the right BM x BK tile.
+                var offset_BMxBN = frag_offset + offset_in_frag
+                var offset_BMxBK = (offset_BMxBN // BN) * BK + offset_BMxBN % BK
+                # Convert offset to vectorized domain, since BM x BK will be loaded
+                # by vectors in 2nd mma, and swizzle
+                var swizzle_offset = swizzle_fn(offset_BMxBK // simd_width)
+                # Convert offset back to where the frag will be stored.
+                offset_BMxBK = (
+                    swizzle_offset * simd_width + offset_BMxBK % simd_width
+                )
+                # E.g. fp32x2 -> bf16x2 for bf16 mma.
+                var vec = p_reg_vecs[n_mma * num_m_mmas + m_mma, i].cast[
+                    p_smem_tile.dtype
+                ]()
+                # p_smem_frag.aligned_store[frag_simd_width](
+                #     i, 0, rebind[SIMD[p_smem_frag.dtype, frag_simd_width]](vec)
+                # )
+                # Grep the right BMxBK tile and store the casted vec.
+                var tile_BMxBK = p_smem_iter.next((offset_BMxBN % BN) // BK)[]
+                alias align = alignof[SIMD[p_smem_iter.type, frag_simd_width]]()
+                tile_BMxBK.ptr.store[alignment=align](offset_BMxBK, vec)
+
+
 @__llvm_metadata(`nvvm.maxntid`=StaticTuple[Int32, 1](num_threads))
 fn mha[
     mask_rank: Int,
@@ -719,14 +810,9 @@ fn mha_single_batch[
     # Shared memory for P = Q * K^t
     # This overlaps key tile but are used at the same time i.e. no race condition.
     var p_smem = (k_smem + k_smem_size).bitcast[Scalar[v_type]]()
-    alias p_smem_size = BM * BN
-    var p_smem_tile = LayoutTensor[
-        v_type,
-        Layout.row_major(BM, BN),
-        address_space = AddressSpace.SHARED,
-    ](p_smem)
-    var p_smem_warp_tile = p_smem_tile.tile[WM, WN](warp_y, warp_x)
-    var p_smem_iter = p_smem_tile.tiled_iterator[BM, BK, axis=1](0, 0)
+    var p_smem_iter = LayoutTensorIter[
+        v_type, Layout.row_major(BM, BK), address_space = AddressSpace.SHARED
+    ](p_smem, BM * BN)
 
     # Mask global memory iterator.
     var mask_offset = q_tile_idx * BM * seq_len + (
@@ -858,10 +944,10 @@ fn mha_single_batch[
 
         @parameter
         if num_warps_n > 1:
-            copy_local_to_sram[thread_layout = Layout.row_major(8, 4)](
-                p_smem_warp_tile.vectorize[1, 2](),
-                p_reg_tile.vectorize[1, 2]().transpose(),
-            )
+            # Pack the per-thread fragments in shared memory for 2nd mma.
+            _copy_frag_to_smem[
+                BM, BN, BK, WM, WN, MMA_M, MMA_N, p_frag_simdwidth
+            ](p_smem_iter, p_reg_tile, warp_x, warp_y)
             barrier()
 
             multistage_mma[
@@ -873,7 +959,7 @@ fn mha_single_batch[
                 num_threads,
                 num_pipeline_stages,
                 False,  # transpose_b
-                swizzle_a=False,
+                swizzle_a=True,
                 prefetch_init=False,
             ](
                 output_reg_tile,
