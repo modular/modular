@@ -16,6 +16,7 @@ from typing import Callable, Iterable, Optional, Union
 
 from max import _graph, mlir
 from max.dtype import DType
+from max.graph.quantization import QuantizationEncoding
 from max.mlir.dialects import mo
 
 from .value import Value
