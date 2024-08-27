@@ -800,19 +800,19 @@ fn mha_single_batch[
         rowmax[i] = min_or_neg_inf[accum_type]()
         rowsum[i] = 0.0
 
-    # Scratch shared memory for reduction across warps.
-    var warp_scratch = LayoutTensor[
-        accum_type,
-        Layout.row_major(num_warps_n, BM),
-        address_space = AddressSpace.SHARED,
-    ]((k_smem + k_smem_size).bitcast[Scalar[accum_type]]())
-
     # Shared memory for P = Q * K^t
     # This overlaps key tile but are used at the same time i.e. no race condition.
     var p_smem = (k_smem + k_smem_size).bitcast[Scalar[v_type]]()
     var p_smem_iter = LayoutTensorIter[
         v_type, Layout.row_major(BM, BK), address_space = AddressSpace.SHARED
     ](p_smem, BM * BN)
+
+    # Scratch shared memory for reduction across warps.
+    var warp_scratch = LayoutTensor[
+        accum_type,
+        Layout.row_major(2 * num_warps_n, BM),
+        address_space = AddressSpace.SHARED,
+    ]((p_smem + BM * BN).bitcast[Scalar[accum_type]]())
 
     # Mask global memory iterator.
     var mask_offset = q_tile_idx * BM * seq_len + (

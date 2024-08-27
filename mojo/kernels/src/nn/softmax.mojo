@@ -926,7 +926,7 @@ fn _online_softmax_kernel[
 
     var warp_scratch = LayoutTensor[
         type,
-        Layout.row_major(num_rowwise_warps, WM),
+        Layout.row_major(2 * num_rowwise_warps, WM),
         address_space = AddressSpace.SHARED,
     ].stack_allocation()
 
@@ -1179,9 +1179,6 @@ fn _online_softmax_iter_for_mma_output[
 
     @parameter
     if num_rowwise_warps > 1:
-        # Guard access of the shared memory scratch.
-        barrier()
-
         # Write per warp rowmax to shared memory.
         if lane % 4 == 0:
 
@@ -1190,8 +1187,12 @@ fn _online_softmax_iter_for_mma_output[
                 # Each thread handle two rows in the mma output.
                 var row0 = m_mma * MMA_M + lane // (MMA_N // p_frag_simdwidth)
                 var row1 = row0 + MMA_M // 2
-                warp_scratch[int(warp_x), row0] = p_frag_rowsum[2 * m_mma]
-                warp_scratch[int(warp_x), row1] = p_frag_rowsum[2 * m_mma + 1]
+                warp_scratch[warp_x + num_rowwise_warps, row0] = p_frag_rowsum[
+                    2 * m_mma
+                ]
+                warp_scratch[warp_x + num_rowwise_warps, row1] = p_frag_rowsum[
+                    2 * m_mma + 1
+                ]
         # Guard writing warp_scratch
         barrier()
 
@@ -1209,11 +1210,11 @@ fn _online_softmax_iter_for_mma_output[
                 @parameter
                 for w in range(num_rowwise_warps):
                     p_frag_rowsum[2 * m_mma] += rebind[Scalar[type]](
-                        warp_scratch[w, row0]
+                        warp_scratch[w + num_rowwise_warps, row0]
                     )
 
                     p_frag_rowsum[2 * m_mma + 1] += rebind[Scalar[type]](
-                        warp_scratch[w, row1]
+                        warp_scratch[w + num_rowwise_warps, row1]
                     )
 
         # Broadcast to 4 threads in the same row e.g. T0 -> T0-T3.
@@ -1260,9 +1261,3 @@ fn _online_softmax_iter_for_mma_output[
             rowsum[2 * m_mma + 1] * correction[2 * m_mma + 1]
             + p_frag_rowsum[2 * m_mma + 1]
         )
-
-    # Guard the access to shared memory scratch. The same memory may be used
-    # after this function.
-    @parameter
-    if num_rowwise_warps > 1:
-        barrier()
