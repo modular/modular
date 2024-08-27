@@ -375,6 +375,7 @@ static GeneratorOp specializeOnSpec(CallGraphNode *node,
 
   // Let's add the parameters now.
   // We need to add them at the end to ensure they follow the arguments order.
+  SmallVector<Attribute> tensorSpecParamNames;
   LLVM_DEBUG(llvm::dbgs() << "Original parameters count: " << params.size()
                           << "\n");
   for (size_t argIdx = 0, e = argsToSpec.size(); argIdx < e; ++argIdx) {
@@ -383,6 +384,9 @@ static GeneratorOp specializeOnSpec(CallGraphNode *node,
           argNameToSpecParam[cast<StringAttr>(argNames[argIdx]).strref()];
       ASSERT_STREAM(paramInfos.first != nullptr, << "parameter undefined");
       params.push_back(paramInfos.first);
+      tensorSpecParamNames.push_back(paramInfos.first.getName());
+    } else {
+      tensorSpecParamNames.push_back(StringAttr::get(gen->getContext()));
     }
   }
   LLVM_DEBUG(llvm::dbgs() << "Final parameters count: " << params.size()
@@ -400,6 +404,8 @@ static GeneratorOp specializeOnSpec(CallGraphNode *node,
 
   // Remove the old params from the function.
   cloned.setInputParams(params);
+  cloned->setAttr(kKernelTensorSpecParameterAttrName,
+                  ArrayAttr::get(gen->getContext(), tensorSpecParamNames));
 
   node->hasBeenProcessed = true;
   node->specialization = cloned;
