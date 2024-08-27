@@ -17,7 +17,11 @@ from utils import StaticIntTuple
 
 
 fn _get_run_name[
-    type: DType, shape_c: DimList, shape_a: DimList, shape_b: DimList
+    type: DType,
+    shape_c: DimList,
+    shape_a: DimList,
+    shape_b: DimList,
+    transpose_b: Bool = False,
 ](
     shape_c_dim: StaticIntTuple[2],
     shape_a_dim: StaticIntTuple[2],
@@ -26,20 +30,24 @@ fn _get_run_name[
     var str = String("matmul(")
     str += type.__str__()
     str += ") : "
+    # M
     str += shape_c_dim[0].__str__()
+    # N
     str += (
         "_dynamic"
         + " x "
-        + shape_b_dim[1].__str__() if shape_c.at[0]().is_dynamic() else " x "
-        + shape_b_dim[1].__str__()
+        + shape_c_dim[1].__str__() if shape_c.at[0]().is_dynamic() else " x "
+        + shape_c_dim[1].__str__()
     )
+    # K
     str += (
         "_dynamic"
         + " x "
-        + shape_a_dim[1].__str__() if shape_b.at[1]().is_dynamic() else " x "
+        + shape_a_dim[1].__str__() if shape_c.at[1]().is_dynamic() else " x "
         + shape_a_dim[1].__str__()
     )
     str += "_dynamic" if shape_a.at[1]().is_dynamic() else ""
+    str += " transpose_b" if transpose_b else ""
     str += "\t"
     return str
 
@@ -49,6 +57,7 @@ fn bench_matmul[
     shape_c: DimList,
     shape_a: DimList,
     shape_b: DimList,
+    transpose_b: Bool = False,
 ](
     ctx: DeviceContext,
     inout b: Bench,
@@ -66,13 +75,15 @@ fn bench_matmul[
         @parameter
         @always_inline
         fn kernel_launch(ctx: DeviceContext) raises:
-            _matmul_gpu(mat_c.tensor, mat_a.tensor, mat_b.tensor, ctx)
+            _matmul_gpu[use_tensor_core=True, transpose_b=transpose_b](
+                mat_c.tensor, mat_a.tensor, mat_b.tensor, ctx
+            )
 
         b.iter_custom[kernel_launch](ctx)
 
     b.bench_function[bench_func](
         BenchId(
-            _get_run_name[dtype, shape_c, shape_a, shape_b](
+            _get_run_name[dtype, shape_c, shape_a, shape_b, transpose_b](
                 shape_c_dim, shape_a_dim, shape_b_dim
             )
         ),
@@ -112,16 +123,26 @@ fn dynamic(d: Int) -> ValOrDim:
 
 
 fn create_matmul_bench[
-    dtype: DType
+    dtype: DType,
+    transpose_b: Bool = False,
 ](
     ctx: DeviceContext, inout b: Bench, m: ValOrDim, n: ValOrDim, k: ValOrDim
 ) raises:
+    alias static_b_shape = DimList(n.dim, k.dim) if transpose_b else DimList(
+        k.dim, n.dim
+    )
+    var dynamic_b_shape = (n.value, k.value) if transpose_b else (
+        k.value,
+        n.value,
+    )
+
     bench_matmul[
         dtype,
         DimList(m.dim, n.dim),
         DimList(m.dim, k.dim),
-        DimList(k.dim, n.dim),
-    ](ctx, b, (m.value, n.value), (m.value, k.value), (k.value, n.value))
+        static_b_shape,
+        transpose_b,
+    ](ctx, b, (m.value, n.value), (m.value, k.value), dynamic_b_shape)
 
 
 fn compile_matmul_bench[
@@ -146,66 +167,43 @@ fn compile_matmul_bench[
 fn main() raises:
     alias types = List[DType](DType.bfloat16)
     alias shape_list = VariadicList[DimList](
-        # baby-llama-ce-kernels (llama2-ce)
-        DimList(256, 22016, 4096),
-        DimList(256, 12288, 4096),
-        DimList(256, 4096, 11008),
-        DimList(1, 32000, 4096),
-        DimList(256, 4096, 4096),
-        # llama2 shapes LPTG
-        DimList(1, 12288, 3072),
-        DimList(1, 3072, 12288),
-        DimList(1, 5120, 3072),
-        DimList(1, 3072, 3072),
         # replit-V1.5-3b (baby-replit-CE-kernels)
         DimList(1024, 3072, 12288),
         DimList(1024, 12288, 3072),
         DimList(1024, 5120, 3072),
         DimList(1024, 3072, 3072),
-        DimList(1024, 32768, 3072),
-        # misc.
-        DimList(1, 3072, 12288),
-        DimList(1, 12288, 3072),
-        DimList(1, 5120, 3072),
-        DimList(1, 3072, 3072),
-        DimList(1, 32768, 3072),
-        # misc reverse
-        DimList(3072, 1, 12288),
-        DimList(12288, 1, 3072),
-        DimList(5120, 1, 3072),
-        DimList(3072, 1, 3072),
-        DimList(32768, 1, 3072),
-        DimList(32000, 1, 4096),
+        DimList(1024, 3072, 32768),
         # misc.
         DimList(32, 3072, 12288),
         DimList(32, 12288, 3072),
         DimList(32, 5120, 3072),
         DimList(32, 3072, 3072),
-        DimList(32, 32768, 3072),
+        DimList(32, 3072, 32768),
         # misc.
         DimList(64, 3072, 12288),
         DimList(64, 12288, 3072),
         DimList(64, 5120, 3072),
         DimList(64, 3072, 3072),
-        DimList(64, 32768, 3072),
+        DimList(64, 3072, 32768),
         # misc.
         DimList(128, 3072, 12288),
         DimList(128, 12288, 3072),
         DimList(128, 5120, 3072),
         DimList(128, 3072, 3072),
-        DimList(128, 32768, 3072),
+        DimList(128, 3072, 32768),
         # misc.
         DimList(600, 3072, 12288),
         DimList(600, 12288, 3072),
         DimList(600, 5120, 3072),
         DimList(600, 3072, 3072),
-        DimList(600, 32768, 3072),
+        DimList(600, 3072, 32768),
         # misc list from here:
         # https://linear.app/modularml/issue/KERN-679/significant-regression-in-replit-pipeline-in-bf16#comment-163b69e7
         DimList(857, 12288, 3072),
         DimList(857, 3072, 12288),
         DimList(857, 5120, 3072),
         DimList(857, 3072, 3072),
+        DimList(857, 3072, 32768),
     )
 
     var m = Bench()
@@ -219,23 +217,13 @@ fn main() raises:
                 for j in range(len(shape_list)):
                     alias dims = _make_tuple[len(shape_list[j])](shape_list[j])
 
-                    @parameter
-                    if dims[0] % 128 == 0:
-                        create_matmul_bench[types[i]](
-                            ctx,
-                            m,
-                            dynamic(dims[0]),
-                            static[dims[1]](),
-                            static[dims[2]](),
-                        )
-                    else:
-                        create_matmul_bench[types[i]](
-                            ctx,
-                            m,
-                            dynamic(dims[0]),
-                            dynamic(dims[1]),
-                            dynamic(dims[2]),
-                        )
+                    create_matmul_bench[types[i], transpose_b=True](
+                        ctx,
+                        m,
+                        dynamic(dims[0]),
+                        static[dims[1]](),
+                        static[dims[2]](),
+                    )
 
             # benchmarking compilation time of matmul
             @parameter
@@ -245,23 +233,13 @@ fn main() raises:
                 for j in range(len(shape_list)):
                     alias dims = _make_tuple[len(shape_list[j])](shape_list[j])
 
-                    @parameter
-                    if dims[0] % 128 == 0:
-                        compile_matmul_bench[types[i]](
-                            ctx,
-                            m,
-                            dynamic(dims[0]),
-                            static[dims[1]](),
-                            static[dims[2]](),
-                        )
-                    else:
-                        compile_matmul_bench[types[i]](
-                            ctx,
-                            m,
-                            dynamic(dims[0]),
-                            dynamic(dims[1]),
-                            dynamic(dims[2]),
-                        )
+                    compile_matmul_bench[types[i]](
+                        ctx,
+                        m,
+                        dynamic(dims[0]),
+                        static[dims[1]](),
+                        static[dims[2]](),
+                    )
 
     except e:
         print("CUDA_ERROR:", e)
