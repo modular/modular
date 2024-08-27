@@ -8,6 +8,7 @@
 from layout import Layout, LayoutTensor, RuntimeLayout, RuntimeTuple
 from layout.layout_tensor import LayoutTensorIter
 from layout.int_tuple import UNKNOWN_VALUE, IntTuple
+from utils import StaticIntTuple
 
 
 #  CHECK-LABEL: test_fill_and_print
@@ -545,6 +546,37 @@ fn test_iterator():
     print(iter.runtime_layout)
     print(iter.bound, iter.offset, iter.stride)
     print(iter[])
+
+    alias M = 8
+    alias N = 8
+    alias BM = 2
+    alias BN = 2
+    alias type = DType.float32
+    alias unknown_layout = Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)
+    # alias layout = Layout.row_major(M, N)
+    var runtime_layout = RuntimeLayout[unknown_layout].row_major(
+        StaticIntTuple[2](M, N)
+    )
+    var ptr1 = UnsafePointer[Scalar[type]].alloc(M * N)
+
+    var tensor1 = LayoutTensor[type, unknown_layout](
+        ptr1, runtime_layout
+    ).linspace()
+
+    var tensor_slice1 = tensor1.tiled_iterator[BM, BN](0, 0)
+
+    # CHECK: 0.0 1.0
+    # CHECK: 8.0 9.0
+    print(tensor_slice1[])
+
+    var tensor_slice2 = tensor1.tiled_iterator[BM, BN](1, 0)
+
+    # CHECK: 16.0 17.0
+    # CHECK: 24.0 25.0
+    print(tensor_slice2[])
+
+    ptr.free()
+    ptr1.free()
 
 
 def main():

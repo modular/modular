@@ -1176,6 +1176,7 @@ struct LayoutTensor[
             @parameter
             for i in range(tiles_rank):
                 var stride = self.runtime_layout.stride.value[i] * tile_sizes[i]
+                runtime_stride.value[i] = self.runtime_layout.stride.value[i]
                 ptr_offset += tile_coords[i] * stride
 
             var axis_dim = self.runtime_layout.shape.value[axis]
