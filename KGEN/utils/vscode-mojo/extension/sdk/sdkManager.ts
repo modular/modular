@@ -80,6 +80,10 @@ export class MojoSDKManager extends DisposableContext {
         const selected = await vscode.window.showQuickPick(sdkNames, {
           ignoreFocusOut: true,
           title: 'Select the Max SDK to use',
+          placeHolder:
+            this.activeSDK.state == 'selected' && this.activeSDK.sdkSpec
+              ? `Currently using ${this.activeSDK.sdkSpec.version.toString()}`
+              : 'Select an SDK or cancel',
         });
         const selectedSDK = allSDKSpecs.find(
           (spec) => spec.version.toString() == selected
@@ -94,7 +98,8 @@ export class MojoSDKManager extends DisposableContext {
         const spec = await findMagicSDKSpec(
           /*withLock=*/ false,
           this.context,
-          this.logger
+          this.logger,
+          this.isNightly
         );
         if (spec !== undefined) {
           vscode.commands.executeCommand('mojo.restart');
@@ -169,10 +174,7 @@ export class MojoSDKManager extends DisposableContext {
       let errorMessage = result;
       selectedSDK.errorMessage = result;
 
-      if (
-        selectedSDK.sdkSpec?.kind == 'modular-cli' ||
-        selectedSDK.sdkSpec === undefined
-      ) {
+      if (selectedSDK.sdkSpec?.kind == 'modular-cli') {
         errorMessage += '\nPlease install the MAX SDK via the modular tool.';
         vscode.window
           .showErrorMessage(errorMessage, 'Install')
@@ -183,7 +185,7 @@ export class MojoSDKManager extends DisposableContext {
               );
             }
           });
-      } else if (selectedSDK.sdkSpec.kind === 'dev') {
+      } else if (selectedSDK.sdkSpec?.kind === 'dev') {
         errorMessage += '\nPlease run ./bazelw run //:install.';
         vscode.window
           .showErrorMessage(errorMessage, 'Run bazel')
@@ -200,7 +202,7 @@ export class MojoSDKManager extends DisposableContext {
               terminal.sendText(`(cd '${repo}' && ./bazelw run //:install)`);
             }
           });
-      } else if (selectedSDK.sdkSpec.kind === 'magic') {
+      } else if (selectedSDK.sdkSpec?.kind === 'magic') {
         errorMessage += '\nPlease reinstall the MAX SDK for VS Code.';
         vscode.window
           .showErrorMessage(errorMessage, 'Reinstall')
@@ -244,7 +246,7 @@ export class MojoSDKManager extends DisposableContext {
     if (!sdkConfig) {
       return `Unable to determine the MAX SDK version.`;
     }
-    return new MojoSDK(sdkConfig, this.logger, this.context);
+    return new MojoSDK(sdkConfig, this.logger);
   }
 
   private async selectSDK(): Promise<Optional<MojoSDKSpec>> {
@@ -256,10 +258,13 @@ export class MojoSDKManager extends DisposableContext {
       return allSDKSpecs[0];
     }
     const sdkNames = allSDKSpecs.map((spec) => spec.version.toString());
-    const selected = await vscode.window.showQuickPick(sdkNames, {
-      ignoreFocusOut: true,
-      title: 'Select the Max SDK to use',
-    });
+    const selected =
+      (await vscode.window.showQuickPick(sdkNames, {
+        ignoreFocusOut: true,
+        title: 'Select the Max SDK to use',
+        placeHolder:
+          'Select an SDK or cancel to select the first one in the list',
+      })) || sdkNames[0];
     return allSDKSpecs.find((spec) => spec.version.toString() == selected);
   }
 
@@ -307,26 +312,30 @@ export class MojoSDKManager extends DisposableContext {
       return undefined;
     }
     const bazelPath = path.join(repoRoot, 'WORKSPACE.bazel');
-    const bazelBytes = await vscode.workspace.fs.readFile(
-      vscode.Uri.file(bazelPath)
-    );
-    const bazelContents = Buffer.from(bazelBytes).toString('utf-8');
-    if (!bazelContents.includes('workspace(name = "modular")')) {
+    try {
+      const bazelBytes = await vscode.workspace.fs.readFile(
+        vscode.Uri.file(bazelPath)
+      );
+      const bazelContents = Buffer.from(bazelBytes).toString('utf-8');
+      if (!bazelContents.includes('workspace(name = "modular")')) {
+        return undefined;
+      }
+      const modularHomePath = path.join(repoRoot, '.derived');
+      return {
+        kind: 'dev',
+        modularHomePath,
+        version: new MojoSDKVersion(
+          'Modular Repo',
+          '0',
+          '0',
+          '0',
+          modularHomePath
+        ),
+        section: 'mojo-max',
+      };
+    } catch {
       return undefined;
     }
-    const modularHomePath = path.join(repoRoot, '.derived');
-    return {
-      kind: 'dev',
-      modularHomePath,
-      version: new MojoSDKVersion(
-        'Modular Repo',
-        '0',
-        '0',
-        '0',
-        modularHomePath
-      ),
-      section: 'mojo-max',
-    };
   }
 
   private async findReleaseSDKSpecs(): Promise<MojoSDKSpec[]> {
@@ -334,7 +343,8 @@ export class MojoSDKManager extends DisposableContext {
       const spec = await findMagicSDKSpec(
         /*withLock=*/ true,
         this.context,
-        this.logger
+        this.logger,
+        this.isNightly
       );
       return spec ? [spec] : [];
     }

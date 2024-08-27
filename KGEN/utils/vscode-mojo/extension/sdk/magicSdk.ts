@@ -6,7 +6,6 @@
 
 import * as vscode from 'vscode';
 import { MojoSDKSpec } from './types';
-import * as config from '../utils/config';
 import * as path from 'path';
 import { directoryExists, mkdirp } from '../utils/files';
 import * as util from 'util';
@@ -74,7 +73,8 @@ type DownloadSpec = {
 };
 
 function createDownloadSpec(
-  context: vscode.ExtensionContext
+  context: vscode.ExtensionContext,
+  isNightly: boolean
 ): Optional<DownloadSpec> {
   const privateDir = context.globalStorageUri.fsPath;
   const magicDataHome = path.join(privateDir, 'magic-data-home');
@@ -85,8 +85,8 @@ function createDownloadSpec(
     return undefined;
   }
   const major = '24';
-  const minor = '4';
-  const patch = '0dev7';
+  const minor = isNightly ? '5' : '4';
+  const patch = isNightly ? '0.dev2024082715' : '0';
   const version = `${major}.${minor}.${patch}`;
   return {
     privateDir,
@@ -104,7 +104,8 @@ function createDownloadSpec(
 
 async function doInstallMagicSDK(
   downloadSpec: DownloadSpec,
-  logger: Logger
+  logger: Logger,
+  isNightly: boolean
 ): Promise<void> {
   try {
     fs.rmdirSync(downloadSpec.doneDirectory);
@@ -128,7 +129,7 @@ async function doInstallMagicSDK(
     'global',
     'install',
     '-c',
-    'https://conda.modular.com/max',
+    'https://conda.modular.com/max' + (isNightly ? '-nightly' : ''),
     '-c',
     'conda-forge',
     `max==${downloadSpec.version}`,
@@ -143,7 +144,8 @@ async function doInstallMagicSDK(
 
 async function installMagicSDKWithProgress(
   downloadSpec: DownloadSpec,
-  logger: Logger
+  logger: Logger,
+  isNightly: boolean
 ): Promise<boolean> {
   if (
     (await directoryExists(downloadSpec.doneDirectory)) &&
@@ -159,7 +161,7 @@ async function installMagicSDKWithProgress(
     },
     async () => {
       try {
-        await doInstallMagicSDK(downloadSpec, logger);
+        await doInstallMagicSDK(downloadSpec, logger, isNightly);
         return true;
       } catch (e) {
         logger.main.logError("Couldn't install the MAX SDK for VS Code", e);
@@ -172,9 +174,10 @@ async function installMagicSDKWithProgress(
 export async function findMagicSDKSpec(
   withLock: boolean,
   context: vscode.ExtensionContext,
-  logger: Logger
+  logger: Logger,
+  isNightly: boolean
 ): Promise<Optional<MojoSDKSpec>> {
-  const downloadSpec = createDownloadSpec(context);
+  const downloadSpec = createDownloadSpec(context, isNightly);
   if (downloadSpec === undefined) {
     return undefined;
   }
@@ -187,7 +190,11 @@ export async function findMagicSDKSpec(
       ? await lock(downloadSpec.privateDir, { retries: 10 })
       : async () => {};
     logger.main.logInfo('Lock acquired...');
-    success = await installMagicSDKWithProgress(downloadSpec, logger);
+    success = await installMagicSDKWithProgress(
+      downloadSpec,
+      logger,
+      isNightly
+    );
     await release();
   } catch (e) {
     logger.main.logError(
@@ -211,7 +218,7 @@ export async function findMagicSDKSpec(
   return {
     kind: 'magic',
     modularHomePath,
-    section: 'mojo-max',
+    section: 'mojo-max' + (isNightly ? '-nightly' : ''),
     version: new MojoSDKVersion(
       'MAX SDK for VS Code',
       downloadSpec.major,
