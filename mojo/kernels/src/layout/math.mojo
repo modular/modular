@@ -164,7 +164,6 @@ fn max[
     rank: Int,
     address_space: AddressSpace,
     element_layout: Layout,
-    index_type: DType,
 ](
     inp: LayoutTensor[
         dtype,
@@ -172,7 +171,6 @@ fn max[
         rank,
         address_space=address_space,
         element_layout=element_layout,
-        index_type=index_type,
     ]
 ) -> LayoutTensor[
     dtype,
@@ -180,7 +178,6 @@ fn max[
     rank - 1,
     address_space=address_space,
     element_layout=element_layout,
-    index_type=index_type,
 ] as res:
     var res_tensor = __type_of(res).stack_allocation()
     max[axis](inp, res_tensor)
@@ -209,7 +206,6 @@ fn sum[
     rank: Int,
     address_space: AddressSpace,
     element_layout: Layout,
-    index_type: DType,
 ](
     inp: LayoutTensor[
         dtype,
@@ -217,7 +213,6 @@ fn sum[
         rank,
         address_space=address_space,
         element_layout=element_layout,
-        index_type=index_type,
     ]
 ) -> LayoutTensor[
     dtype,
@@ -225,7 +220,6 @@ fn sum[
     rank - 1,
     address_space=address_space,
     element_layout=element_layout,
-    index_type=index_type,
 ] as res:
     var res_tensor = __type_of(res).stack_allocation()
     sum[axis](inp, res_tensor)

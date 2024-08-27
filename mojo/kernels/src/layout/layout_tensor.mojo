@@ -117,7 +117,6 @@ struct LayoutTensor[
     *,
     address_space: AddressSpace = AddressSpace.GENERIC,
     element_layout: Layout = Layout(1, 1),
-    index_type: DType = _get_index_type(layout, address_space),
 ](CollectionElement, CollectionElementNew, Stringable, Formattable):
     """This is a Tensor type that has a specified memory layout and rank. The
     following example demonstrate a LayoutTensor of float32 with a row major
@@ -132,8 +131,9 @@ struct LayoutTensor[
         rank: The rank of the Tensor.
         address_space: The address space of the underlying pointer.
         element_layout: The memory layout of each element in the Tensor.
-        index_type: The data type of index.
     """
+
+    alias index_type: DType = _get_index_type(layout, address_space)
 
     var ptr: UnsafePointer[Scalar[dtype], address_space]
 
@@ -320,7 +320,6 @@ struct LayoutTensor[
             Self.element_type
         ),
         other_layout: Layout,
-        index_type: DType,
         inplace: Bool = False,
     ](
         self,
@@ -330,7 +329,6 @@ struct LayoutTensor[
             _,
             address_space=address_space,
             element_layout=element_layout,
-            index_type=index_type,
         ],
     ) -> Self:
         @parameter
@@ -438,8 +436,7 @@ struct LayoutTensor[
 
     @always_inline
     fn __add__[
-        other_layout: Layout,
-        index_type: DType,
+        other_layout: Layout
     ](
         self,
         other: LayoutTensor[
@@ -448,7 +445,6 @@ struct LayoutTensor[
             _,
             address_space=address_space,
             element_layout=element_layout,
-            index_type=index_type,
         ],
     ) -> Self:
         """Do an addition with another LayoutTensor and return the added
@@ -457,7 +453,6 @@ struct LayoutTensor[
 
         Parameters:
             other_layout: The layout of the other tensor.
-            index_type: The indexing type of the other tensor.
 
         Args:
             other: The other tensor to be added to.
@@ -472,8 +467,7 @@ struct LayoutTensor[
 
     @always_inline
     fn __iadd__[
-        other_layout: Layout,
-        index_type: DType,
+        other_layout: Layout
     ](
         self,
         other: LayoutTensor[
@@ -482,7 +476,6 @@ struct LayoutTensor[
             _,
             address_space=address_space,
             element_layout=element_layout,
-            index_type=index_type,
         ],
     ):
         """Do an addition with another LayoutTensor in place.
@@ -491,7 +484,6 @@ struct LayoutTensor[
 
         Parameters:
             other_layout: The layout of the other tensor.
-            index_type: The indexing type of the other tensor.
 
         Args:
             other: The other tensor to be added to.
@@ -522,8 +514,7 @@ struct LayoutTensor[
 
     @always_inline
     fn __mul__[
-        other_layout: Layout,
-        index_type: DType,
+        other_layout: Layout
     ](
         self,
         other: LayoutTensor[
@@ -532,7 +523,6 @@ struct LayoutTensor[
             _,
             address_space=address_space,
             element_layout=element_layout,
-            index_type=index_type,
         ],
     ) -> Self:
         """Perform a multiplication with another LayoutTensor and return the
@@ -543,7 +533,6 @@ struct LayoutTensor[
 
         Parameters:
             other_layout: The layout of the other tensor.
-            index_type: The indexing type of the other tensor.
 
         Args:
             other: The other tensor to be multiplied with.
@@ -575,8 +564,7 @@ struct LayoutTensor[
 
     @always_inline
     fn __imul__[
-        other_layout: Layout,
-        index_type: DType,
+        other_layout: Layout
     ](
         self,
         other: LayoutTensor[
@@ -585,7 +573,6 @@ struct LayoutTensor[
             _,
             address_space=address_space,
             element_layout=element_layout,
-            index_type=index_type,
         ],
     ):
         """Do a multiplication with another LayoutTensor in place.
@@ -594,7 +581,6 @@ struct LayoutTensor[
 
         Parameters:
             other_layout: The layout of the other tensor.
-            index_type: The indexing type of the other tensor.
 
         Args:
             other: The other tensor to be added to.
@@ -626,7 +612,6 @@ struct LayoutTensor[
     @always_inline
     fn __sub__[
         other_layout: Layout,
-        index_type: DType,
     ](
         self,
         other: LayoutTensor[
@@ -635,7 +620,6 @@ struct LayoutTensor[
             _,
             address_space=address_space,
             element_layout=element_layout,
-            index_type=index_type,
         ],
     ) -> Self:
         """Do an subtraction with another LayoutTensor and return the subtracted
@@ -644,7 +628,6 @@ struct LayoutTensor[
 
         Parameters:
             other_layout: The layout of the other tensor.
-            index_type: The indexing type of the other tensor.
 
         Args:
             other: The other tensor to be subtract from.
@@ -673,8 +656,7 @@ struct LayoutTensor[
 
     @always_inline
     fn __isub__[
-        other_layout: Layout,
-        index_type: DType,
+        other_layout: Layout
     ](
         self,
         other: LayoutTensor[
@@ -683,7 +665,6 @@ struct LayoutTensor[
             _,
             address_space=address_space,
             element_layout=element_layout,
-            index_type=index_type,
         ],
     ):
         """Subtracts other from the LayoutTensor. Currently only support tensors
@@ -691,7 +672,6 @@ struct LayoutTensor[
 
         Parameters:
             other_layout: The layout of the other tensor.
-            index_type: The indexing type of the other tensor.
 
         Args:
             other: The other tensor to be subtract from.
@@ -722,8 +702,7 @@ struct LayoutTensor[
 
     @always_inline
     fn __truediv__[
-        other_layout: Layout,
-        index_type: DType,
+        other_layout: Layout
     ](
         self,
         other: LayoutTensor[
@@ -732,7 +711,6 @@ struct LayoutTensor[
             _,
             address_space=address_space,
             element_layout=element_layout,
-            index_type=index_type,
         ],
     ) -> Self:
         """Do an truediv with another LayoutTensor and return the divided
@@ -741,7 +719,6 @@ struct LayoutTensor[
 
         Parameters:
             other_layout: The layout of the other tensor.
-            index_type: The indexing type of the other tensor.
 
         Args:
             other: The other tensor to be subtract from.
