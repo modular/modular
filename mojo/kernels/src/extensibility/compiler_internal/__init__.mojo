@@ -12,4 +12,5 @@ from .directives import (
     stridesof,
     specsof,
     output_lambda,
+    StaticTensorSpec,
 )
