@@ -63,6 +63,12 @@ export function getAllOpenMojoFiles(): [
   return [activeFile, otherOpenFiles];
 }
 
+export async function mkdirp(path: string): Promise<void> {
+  try {
+    await vscode.workspace.fs.createDirectory(vscode.Uri.file(path));
+  } catch {}
+}
+
 export async function directoryExists(path: string): Promise<boolean> {
   try {
     const stat = await vscode.workspace.fs.stat(vscode.Uri.file(path));

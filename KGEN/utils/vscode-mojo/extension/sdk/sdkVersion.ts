@@ -12,9 +12,9 @@ import * as path from 'path';
 export class MojoSDKVersion {
   constructor(
     title: string,
-    major: number,
-    minor: number,
-    patch: number,
+    major: string,
+    minor: string,
+    patch: string,
     modularHomePath: string
   ) {
     this.title = title;
@@ -28,7 +28,7 @@ export class MojoSDKVersion {
    * Return if this is a dev version.
    */
   isDev(): boolean {
-    return this.minor == 0 && this.major == 0 && this.patch == 0;
+    return this.minor == '0' && this.major == '0' && this.patch == '0';
   }
 
   /**
@@ -47,8 +47,8 @@ export class MojoSDKVersion {
   }
 
   title: string;
-  minor: number;
-  major: number;
-  patch: number;
+  minor: string;
+  major: string;
+  patch: string;
   modularHomePath: string;
 }

@@ -8,12 +8,15 @@ import * as ini from 'ini';
 import * as path from 'path';
 import * as util from 'util';
 import * as vscode from 'vscode';
+import * as fs from 'fs';
 
 const execFile = util.promisify(require('child_process').execFile);
+const chmod = util.promisify(require('fs').chmod);
 
 import { Logger } from '../logging';
 import { isNightlyExtension } from '../utils/buildInfo';
 import { DisposableContext } from '../utils/disposableContext';
+import { lock } from 'proper-lockfile';
 import { MojoSDKConfig } from './sdkConfig';
 import { MojoSDK } from './sdk';
 import { Mutex } from 'async-mutex';
@@ -21,10 +24,12 @@ import {
   directoryExists,
   fileExists,
   getAllOpenMojoFiles,
+  mkdirp,
   moveUpUntil,
   readFile,
 } from '../utils/files';
 import { MojoSDKVersion } from './sdkVersion';
+import axios from 'axios';
 
 export type MojoSDKSpec = {
   kind: 'modular-cli' | 'dev' | 'magic';
@@ -62,6 +67,7 @@ export class MojoSDKManager extends DisposableContext {
   private enableMagicSDK: boolean;
   private activeSDK: SDKSelection = { state: 'not-yet-selected' };
   private findSDKMutex = new Mutex();
+  private isNightly: boolean;
 
   constructor(
     logger: Logger,
@@ -74,6 +80,7 @@ export class MojoSDKManager extends DisposableContext {
     this.context = context;
     this.initializationSDK = initializationSDK;
     this.enableMagicSDK = enableMagicSDK;
+    this.isNightly = isNightlyExtension(this.context);
     this.pushSubscription(
       vscode.commands.registerCommand('mojo.sdk.selectSdk', async () => {
         const allSDKSpecs = await this.findAllSDKs();
@@ -220,23 +227,11 @@ export class MojoSDKManager extends DisposableContext {
       modularConfig
     );
 
-    // Find the appropriate mojo configuration key in the config file.
-    let mojoKeys: string[] = Object.keys(modularConfig).filter((key) =>
-      key.startsWith(spec.section)
-    );
-    let configKey = MojoSDK.getConfigKey(
-      spec.modularHomePath,
-      isNightlyExtension(this.context),
-      mojoKeys
-    );
-    if (configKey === undefined) {
-      return `The modular config file '${modularConfigPath}' is outdated.`;
-    }
     let sdkConfig = await MojoSDKConfig.create(
       this.logger,
       spec.modularHomePath,
       spec.section,
-      modularConfig[configKey]
+      modularConfig[spec.section]
     );
 
     if (!sdkConfig) {
@@ -262,12 +257,12 @@ export class MojoSDKManager extends DisposableContext {
   }
 
   private async findAllSDKs(): Promise<MojoSDKSpec[]> {
-    const [devSDKSpecs, modularCliSDKSpecs] = await Promise.all([
+    const [devSDKSpecs, releaseSDKSpecs] = await Promise.all([
       this.findDevSDKSpecs(),
-      this.findModularCliSDKSpecs(),
+      this.findReleaseSDKSpecs(),
     ]);
 
-    return [...devSDKSpecs, ...modularCliSDKSpecs];
+    return [...devSDKSpecs, ...releaseSDKSpecs];
   }
 
   private async findDevSDKSpecs(): Promise<MojoSDKSpec[]> {
@@ -316,14 +311,163 @@ export class MojoSDKManager extends DisposableContext {
     return {
       kind: 'dev',
       modularHomePath,
-      version: new MojoSDKVersion('Modular Repo', 0, 0, 0, modularHomePath),
+      version: new MojoSDKVersion(
+        'Modular Repo',
+        '0',
+        '0',
+        '0',
+        modularHomePath
+      ),
       section: 'mojo-max',
     };
   }
 
-  private async findModularCliSDKSpecs(): Promise<MojoSDKSpec[]> {
-    let isNightly = isNightlyExtension(this.context);
+  private async findReleaseSDKSpecs(): Promise<MojoSDKSpec[]> {
+    return this.enableMagicSDK
+      ? this.findMagicSDKSpecs()
+      : this.findModularCliSDKSpecs();
+  }
 
+  private async downloadFile(url: string, outputPath: string) {
+    const writer = fs.createWriteStream(outputPath);
+
+    const response = await axios({
+      url,
+      method: 'GET',
+      responseType: 'stream',
+    });
+
+    response.data.pipe(writer);
+
+    return new Promise((resolve, reject) => {
+      writer.on('finish', resolve);
+      writer.on('error', reject);
+    });
+  }
+
+  private async findMagicSDKSpecs(): Promise<MojoSDKSpec[]> {
+    const privateDir = this.context.globalStorageUri.fsPath;
+    const magicDataHome = path.join(privateDir, 'magic-data-home');
+    await mkdirp(magicDataHome);
+
+    const magicPath = path.join(privateDir, 'magic');
+    const doneDirectory = path.join(privateDir, 'done');
+
+    let platform: string;
+    if (process.platform === 'linux') {
+      platform = 'unknown-linux-musl';
+    } else if (process.platform === 'darwin') {
+      platform = 'apple-darwin';
+    } else if (process.platform === 'win32') {
+      platform = 'pc-windows-msvc';
+    } else {
+      vscode.window.showErrorMessage(
+        `The MAX SDK is not supported in this platform: ${process.platform}`
+      );
+      return [];
+    }
+    let arch: string;
+    if (process.arch === 'x64') {
+      arch = 'x86_64';
+    } else if (process.arch === 'arm64') {
+      arch = 'aarch64';
+    } else {
+      arch = process.arch;
+    }
+    const magicUrl = `https://dl.modular.com/public/magic/raw/versions/latest/magic-${arch}-${platform}`;
+    const major = '24';
+    const minor = '4';
+    const patch = '0dev7';
+    const version = `${major}.${minor}.${patch}`;
+
+    const success = await vscode.window.withProgress<boolean>(
+      {
+        title: 'Installing the MAX SDK for VS Code',
+        location: vscode.ProgressLocation.Notification,
+      },
+      async (): Promise<boolean> => {
+        try {
+          this.logger.main.logInfo('Trying to acquire installation lock...');
+          await lock(privateDir, { retries: 10 }).then(async (release) => {
+            if (await directoryExists(doneDirectory)) {
+              this.logger.main.logInfo(
+                'Magic SDK present. Skipping installation.'
+              );
+              return release();
+            }
+
+            this.logger.main.logInfo(
+              `Will download ${magicUrl} into ${magicPath}`
+            );
+            await this.downloadFile(magicUrl, magicPath);
+            this.logger.main.logInfo('Successfully downloaded');
+            await chmod(magicPath, 0o755);
+            this.logger.main.logInfo(
+              `The permissions for ${magicPath} have been changed.`
+            );
+
+            this.logger.main.logInfo(`Will install MAX`);
+            const env = { ...process.env };
+            env['MAGIC_DATA_HOME'] = magicDataHome;
+
+            const args = [
+              'global',
+              'install',
+              '-c',
+              'https://conda.modular.com/max',
+              '-c',
+              'conda-forge',
+              `max==${version}`,
+              'python>=3.11,<3.12',
+            ];
+            await execFile(magicPath, args, { env });
+            this.logger.main.logInfo(`Successfully installed MAX`);
+
+            await mkdirp(doneDirectory);
+            return release();
+          });
+          return true;
+        } catch (e) {
+          this.logger.main.logError(
+            "Couldn't install the MAX SDK for VS Code",
+            e
+          );
+          return false;
+        }
+      }
+    );
+    if (!success) {
+      vscode.window.showErrorMessage(
+        "Couldn't install the MAX SDK for VS Code"
+      );
+      return [];
+    }
+    const modularHomePath = path.join(
+      magicDataHome,
+      'envs',
+      'max',
+      'share',
+      'max'
+    );
+
+    // Consider nightly here
+    return [
+      {
+        kind: 'magic',
+        modularHomePath,
+        section: 'mojo-max',
+        version: new MojoSDKVersion(
+          'MAX SDK for VS Code',
+          major,
+          minor,
+          patch,
+          modularHomePath
+        ),
+      },
+    ];
+  }
+
+  private async findModularCliSDKSpecs(): Promise<MojoSDKSpec[]> {
     // Build a regex to match an .ini like string, where the form is:
     //   section.key = value
     // the section must start with `mojo`.
@@ -349,7 +493,7 @@ export class MojoSDKManager extends DisposableContext {
         let value = match[3];
 
         // Ignore nightly configs in non-nightly extensions, and vice versa.
-        if (isNightly != section.endsWith('-nightly')) {
+        if (this.isNightly != section.endsWith('-nightly')) {
           continue;
         }
 

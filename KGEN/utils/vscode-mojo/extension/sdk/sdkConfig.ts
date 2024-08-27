@@ -96,9 +96,7 @@ export class MojoSDKConfig {
         return undefined;
       }
 
-      let match = stdout
-        .toString()
-        .match(/mojo\s+([0-9]+)\.([0-9]+)\.([0-9]+)/);
+      let match = stdout.toString().match(/mojo\s+([0-9]+)\.([0-9]+)\.(.*)/);
 
       if (!match) {
         return undefined;
@@ -117,9 +115,9 @@ export class MojoSDKConfig {
 
       return new MojoSDKVersion(
         title,
-        +match[1],
-        +match[2],
-        +match[3],
+        `${+match[1]}`,
+        `${+match[2]}`,
+        `${+match[3]}`,
         driverPath
       );
     } catch (e) {
