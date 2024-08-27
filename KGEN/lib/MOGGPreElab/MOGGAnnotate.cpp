@@ -32,6 +32,27 @@ static constexpr llvm::StringLiteral kShapeFuncName = "shape";
 static constexpr std::array<StringLiteral, 3> kMaxManagedTensorSlice = {
     "tensor_utils", "managed_tensor_slice", "ManagedTensorSlice"};
 
+// Check if the decorator correspond to a function call:
+// eg @foo(arg)
+// Also check that foo is marked with the attribute `expectedFuncAttr`.
+// Returns arg (or nullptr if invalid).
+static TypedAttr getDecoratorLambdaArgument(ModuleOp mod, TypedAttr decorator,
+                                            StringRef expectedFuncAttr) {
+  auto apply = dyn_cast<ParamOperatorAttr>(decorator);
+  if (!apply || apply.getNumOperands() != 2)
+    return nullptr;
+
+  auto sym = dyn_cast<SymbolConstantAttr>(apply.getOperand(0));
+  if (!sym)
+    return nullptr;
+
+  auto decoratorFunc = mod.lookupSymbol<LIT::FuncOp>(sym.getSymbol());
+  if (!decoratorFunc || !decoratorFunc->hasAttr(expectedFuncAttr))
+    return nullptr;
+
+  return apply.getOperand(1);
+}
+
 static void annotateTypes(LIT::FuncOp func) {
   // Look through ref types to get underlaying decl ref type if needed.
   auto getAsDeclRefOrNull = [&](Type t) {
@@ -219,20 +240,13 @@ public:
           continue;
         }
 
-        auto apply = dyn_cast<ParamOperatorAttr>(decorator);
-        if (!apply || apply.getNumOperands() != 2)
-          continue;
-
-        auto sym = dyn_cast<SymbolConstantAttr>(apply.getOperand(0));
-        if (!sym)
-          continue;
-
-        auto decoratorFunc = op.lookupSymbol<LIT::FuncOp>(sym.getSymbol());
-        if (!decoratorFunc || !decoratorFunc->hasAttr(MOGG_INTRINSIC_REGISTER))
+        TypedAttr registerOperand =
+            getDecoratorLambdaArgument(op, decorator, MOGG_INTRINSIC_REGISTER);
+        if (!registerOperand)
           continue;
 
         auto [_, nameAttr] =
-            cast<LIT::LITStructAttr>(apply.getOperand(1)).getValues().front();
+            cast<LIT::LITStructAttr>(registerOperand).getValues().front();
         auto name = dyn_cast<StringAttr>(nameAttr);
         assert(name);
 
@@ -297,6 +311,44 @@ public:
       if (isElementWiseKernel)
         executeFunc->setAttr(kMOGGElementFunction,
                              mlir::UnitAttr::get(executeFunc->getContext()));
+
+      // Iterate over the decorators to find enable_fusion_for
+      for (auto decorator : executeFunc.getDecorators()) {
+        TypedAttr enableFusionOperand = getDecoratorLambdaArgument(
+            op, decorator, MOGG_INTRINSIC_ENABLE_FUSION_FOR);
+        if (!enableFusionOperand)
+          continue;
+
+        ArrayAttr argSrcNamesAttr = dyn_cast_or_null<ArrayAttr>(
+            executeFunc->getAttr(MOGG_ARG_SRC_NAMES));
+        if (!argSrcNamesAttr)
+          continue;
+
+        SmallVector<Attribute> argIdxsAttrs;
+        auto nameArgs = cast<KGEN::VariadicAttr>(enableFusionOperand);
+        for (TypedAttr operandAttr : nameArgs.getValues()) {
+          auto [_, nameAttr] =
+              cast<LIT::LITStructAttr>(operandAttr).getValues().front();
+          StringRef argName = cast<StringAttr>(nameAttr).getValue();
+
+          auto argIt =
+              llvm::find_if(argSrcNamesAttr.getValue(), [&](Attribute attr) {
+                return cast<StringAttr>(attr).getValue() == argName;
+              });
+          if (argIt == argSrcNamesAttr.getValue().end()) {
+            emitError(loc, "enable_fusion_for decorator: invalid argument "
+                           "name");
+            return WalkResult::interrupt();
+          }
+          argIdxsAttrs.push_back(builder.getIndexAttr(
+              std::distance(argIt, argSrcNamesAttr.getValue().begin())));
+        }
+
+        if (!argIdxsAttrs.empty()) {
+          executeFunc->setAttr(kMOGGFusableArgs,
+                               builder.getArrayAttr(argIdxsAttrs));
+        }
+      }
 
       return WalkResult::advance();
     };
