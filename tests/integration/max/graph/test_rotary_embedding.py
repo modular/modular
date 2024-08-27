@@ -6,6 +6,7 @@
 
 from dataclasses import dataclass
 
+import numpy as np
 import pytest
 import torch
 from conftest import (
@@ -61,7 +62,7 @@ def test_freqs_cis(session, dtype: DType, params: RopeParams):
             params.n_heads,
             params.theta,
             MAX_SEQ_LEN,
-            params.scaling,
+            np.array([params.scaling], dtype=dtype.to_numpy()),
         )
         graph.output(rope.freqs_cis)
         model = session.load(graph)
