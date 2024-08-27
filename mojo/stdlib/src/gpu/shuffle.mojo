@@ -305,6 +305,18 @@ fn _static_log2[n: Int]() -> Int:
 
 
 @always_inline("nodebug")
+fn warp_reduce_add[
+    val_type: DType,
+    simd_width: Int,
+](val: SIMD[val_type, simd_width]) -> SIMD[val_type, simd_width]:
+    @parameter
+    fn _reduce_add(x: SIMD, y: __type_of(x)) -> __type_of(x):
+        return x + y
+
+    return warp_reduce[shuffle_down, _reduce_add](val)
+
+
+@always_inline("nodebug")
 fn warp_reduce[
     shuffle: fn[type: DType, simd_width: Int] (
         val: SIMD[type, simd_width], offset: Int
