@@ -332,10 +332,32 @@ class MojoCudaGdbDebugConfigurationResolver
 
     // relax the debugConfig.args type
     const debugConfig = debugConfigIn as vscode.DebugConfiguration;
+    let args = debugConfigIn.args || [];
+
+    let sdk = await findSDKForDebugConfiguration(
+      debugConfigIn as vscode.DebugConfiguration,
+      this.sdkManager
+    );
+    // We don't need to show error messages here because
+    // `findSDKConfigForDebugSession` does that.
+    if (!sdk) {
+      return undefined;
+    }
+    // If we have a mojoFile config, translate it to program plus args.
+    if (debugConfigIn.mojoFile) {
+      debugConfig.program = sdk.config.mojoDriverPath;
+      args = [
+        'run',
+        '--no-optimization',
+        '--debug-level',
+        'full',
+        debugConfig.mojoFile,
+        ...args,
+      ];
+    }
 
     // Transform debugConfig into normal cuda-gdb config.
     debugConfig.type = 'cuda-gdb';
-    let args = debugConfigIn.args || [];
     // cuda-gdb takes args as a single string, while we take them as an array.
     // Actually, cuda-gdb can take an array, which it then joins into a single
     // string separated by ";" characters. So it takes the list of program
@@ -343,7 +365,12 @@ class MojoCudaGdbDebugConfigurationResolver
     debugConfig.args = shellEscape(args || []);
     // cuda-gdb takes environment as a list of objects like:
     // [{"name": "HOME", "value": "/home/ubuntu"}]
-    let env = debugConfigIn.env || [];
+    let env = [];
+    // Add MODULAR_HOME, giving preference to user config.
+    if (sdk.config.modularHomePath) {
+      env.push(`MODULAR_HOME=${sdk.config.modularHomePath}`);
+    }
+    env = [...env, ...(debugConfigIn.env || [])];
     debugConfig.environment = env.map((envStr: String) => {
       const split = envStr.split('=');
       return { name: split[0], value: split.slice(1).join('=') };
