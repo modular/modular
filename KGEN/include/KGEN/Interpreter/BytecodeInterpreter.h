@@ -88,6 +88,11 @@ public:
     results.reserve(32);
   }
 
+  /// Initialize the interpreter with a bytecode compiler instance.
+  BytecodeInterpreter(MLIRContext *ctx, BytecodeCompiler *bcCompiler)
+      : InterpreterState(ctx), bcCompiler(bcCompiler),
+        operands(/*initialSize=*/8) {}
+
   // Required interpreter public interface.
   void callFunctionBody(Region &body, ArrayRef<Attribute> arguments) override;
   void returnFromFunction(ArrayRef<Attribute> returnValues) override;
