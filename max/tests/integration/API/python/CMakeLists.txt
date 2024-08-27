@@ -36,7 +36,6 @@ add_modular_pytest(max-engine
   DEPENDS
   ${CUSTOM_OP_OUTPUT}
   mof
-  is-cuda-available
   max-pybind-ext
 
   TAGS

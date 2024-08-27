@@ -17,6 +17,8 @@ import pytest
 from max.dtype import DType
 from max.engine import InferenceSession, TensorSpec, TorchInputSpec
 
+from modular.utils.misc import has_gpu
+
 DYLIB_FILE_EXTENSION = "dylib" if os.uname().sysname == "Darwin" else "so"
 
 
@@ -279,8 +281,7 @@ def test_execute_multi_framework(
 
 
 def _cuda_available() -> bool:
-    output = run(os.getenv("MODULAR_IS_CUDA_AVAILABLE") or "is-cuda-available")
-    return output.returncode == 0
+    return has_gpu()
 
 
 @pytest.mark.skipif(not _cuda_available(), reason="Requires CUDA")
