@@ -1798,8 +1798,10 @@ struct LayoutTensor[
         return UInt(int(self.ptr) - int(addr)) // sizeof[dtype]()
 
     @always_inline
-    fn distance(
-        self, src: LayoutTensor[dtype, _, _, address_space=address_space]
+    fn distance[
+        _layout: Layout  # see MOCO-1089
+    ](
+        self, src: LayoutTensor[dtype, _layout, address_space=address_space]
     ) -> UInt:
         """Returns the distance from the input address."""
 
