@@ -62,6 +62,7 @@ export class MojoSDKManager extends DisposableContext {
   private enableMagicSDK: boolean;
   private activeSDK: SDKSelection = { state: 'not-yet-selected' };
   private findSDKMutex = new Mutex();
+  private isNightly: boolean;
 
   constructor(
     logger: Logger,
@@ -74,6 +75,7 @@ export class MojoSDKManager extends DisposableContext {
     this.context = context;
     this.initializationSDK = initializationSDK;
     this.enableMagicSDK = enableMagicSDK;
+    this.isNightly = isNightlyExtension(this.context);
     this.pushSubscription(
       vscode.commands.registerCommand('mojo.sdk.selectSdk', async () => {
         const allSDKSpecs = await this.findAllSDKs();
@@ -262,12 +264,12 @@ export class MojoSDKManager extends DisposableContext {
   }
 
   private async findAllSDKs(): Promise<MojoSDKSpec[]> {
-    const [devSDKSpecs, modularCliSDKSpecs] = await Promise.all([
+    const [devSDKSpecs, releaseSDKSpecs] = await Promise.all([
       this.findDevSDKSpecs(),
-      this.findModularCliSDKSpecs(),
+      this.findReleaseSDKSpecs(),
     ]);
 
-    return [...devSDKSpecs, ...modularCliSDKSpecs];
+    return [...devSDKSpecs, ...releaseSDKSpecs];
   }
 
   private async findDevSDKSpecs(): Promise<MojoSDKSpec[]> {
@@ -321,9 +323,15 @@ export class MojoSDKManager extends DisposableContext {
     };
   }
 
-  private async findModularCliSDKSpecs(): Promise<MojoSDKSpec[]> {
-    let isNightly = isNightlyExtension(this.context);
+  private async findReleaseSDKSpecs(): Promise<MojoSDKSpec[]> {
+    return this.enableMagicSDK
+      ? this.findMagicSDKSpecs()
+      : this.findModularCliSDKSpecs();
+  }
 
+  private async findMagicSDKSpecs(): Promise<MojoSDKSpec[]> {}
+
+  private async findModularCliSDKSpecs(): Promise<MojoSDKSpec[]> {
     // Build a regex to match an .ini like string, where the form is:
     //   section.key = value
     // the section must start with `mojo`.
@@ -349,7 +357,7 @@ export class MojoSDKManager extends DisposableContext {
         let value = match[3];
 
         // Ignore nightly configs in non-nightly extensions, and vice versa.
-        if (isNightly != section.endsWith('-nightly')) {
+        if (this.isNightly != section.endsWith('-nightly')) {
           continue;
         }
 
