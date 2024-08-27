@@ -496,6 +496,7 @@ class InferenceSession:
         custom_extensions: Optional[CustomExtensionsType] = None,
         custom_ops_path: Optional[str] = None,
         input_specs: Optional[List[TorchInputSpec]] = None,
+        weights_registry: Optional[dict[str, np.ndarray]] = None,
     ) -> Model:
         """Loads a trained model and compiles it for inference.
 
@@ -547,6 +548,11 @@ class InferenceSession:
                     ],
                 )
 
+        weights_registry:
+            A mapping from names of model weights' names to their values.
+            The values are currently expected to be NumPy arrays.
+            Currently, only MAX graph models use this argument.
+
         Returns
         -------
         Model
@@ -572,6 +578,7 @@ class InferenceSession:
             )
         if input_specs is not None:
             options_dict["input_specs"] = _unwrap_pybind_objects(input_specs)
+
         if isinstance(model, (str, bytes)):
             model = Path(str(model))
 
@@ -583,6 +590,12 @@ class InferenceSession:
                 model._module._CAPIPtr, _FrameworkFormat.max_graph, options_dict
             )
         else:
+            if weights_registry:
+                raise ValueError(
+                    "The weights registry is currently only used by MAX graph "
+                    "models."
+                )
+
             if _is_torchscript_module(model):
                 _remove_static_info_from_torch_jit_graph(model.graph)
                 _model = self._impl.compile_from_object(
@@ -607,7 +620,7 @@ class InferenceSession:
                     " torch.jit.ScriptModule or MlirModule."
                 )
 
-        _model.load()
+        _model.load(weights_registry if weights_registry else {})
         return Model._init(_model)
 
     def _get_torch_custom_op_schemas(self):
