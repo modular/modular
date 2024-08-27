@@ -69,43 +69,6 @@ export class MojoSDK {
   }
 
   /**
-   * Emit a warning to the user if the current SDK is out of date.
-   */
-  public async warnIfSDKOutOfDate() {
-    // If this is a dev-build, there's no version to check.
-    if (this.config.version.isDev()) {
-      return;
-    }
-
-    // Grab the current extension version.
-    const extensionVersion = this.context.extension.packageJSON
-      .version as string;
-    const extensionVersionMatch = extensionVersion.match(
-      /([0-9]+)\.([0-9]+)\.([0-9]+)/
-    );
-    if (!extensionVersionMatch) {
-      this.logger.main.logError(
-        'Unable to compute extension version: ' + extensionVersion
-      );
-      return;
-    }
-
-    // Compare the two versions. We don't warn if the extension is older,
-    // just if the SDK is older.
-    if (
-      this.config.version.major < +extensionVersionMatch[1] ||
-      this.config.version.minor < +extensionVersionMatch[2] ||
-      this.config.version.patch < +extensionVersionMatch[3]
-    ) {
-      vscode.window.showWarningMessage(
-        'The current Mojo SDK version is incompatible with this ' +
-          'version of the Mojo extension. Please update your SDK ' +
-          'to ensure the extension behaves correctly.'
-      );
-    }
-  }
-
-  /**
    * Determine whether python scripting is functional in LLDB. As there
    * are many reasons why python scripting would fail (e.g. disabled in the build system,
    * wrong SDK installation, etc.), it's more effective to just execute a
