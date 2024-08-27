@@ -13,6 +13,8 @@ import argparse
 import asyncio
 import logging
 from contextlib import AsyncExitStack, asynccontextmanager
+from functools import partial
+from typing import AsyncContextManager, Sequence
 
 from fastapi import FastAPI
 from max.serve.config import APIType, Settings, api_prefix
@@ -27,7 +29,7 @@ ROUTES = {
 }
 
 logging.basicConfig(
-    level=logging.DEBUG,
+    level=logging.INFO,
     encoding="utf-8",
     format="%(asctime)s - %(levelname)s - %(message)s",
 )
@@ -35,8 +37,7 @@ logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
-async def lifespan(app: FastAPI):
-    pipelines = all_pipelines()
+async def lifespan(pipelines: Sequence[AsyncContextManager], app: FastAPI):
     async with AsyncExitStack() as stack:
         await asyncio.gather(*(stack.enter_async_context(p) for p in pipelines))
         logger.info("Pipelines loaded!")
@@ -44,8 +45,11 @@ async def lifespan(app: FastAPI):
         logger.info("Pipelines unloaded!")
 
 
-def create_app(settings: Settings) -> FastAPI:
-    app = FastAPI(lifespan=lifespan)
+def fastapi_app(
+    settings: Settings,
+    pipelines: Sequence[AsyncContextManager] = all_pipelines(),
+) -> FastAPI:
+    app = FastAPI(lifespan=partial(lifespan, pipelines))
     for api_type in settings.api_types:
         app.include_router(
             ROUTES[api_type].router, prefix=api_prefix(settings, api_type)
@@ -53,7 +57,7 @@ def create_app(settings: Settings) -> FastAPI:
     return app
 
 
-def create_config(app: FastAPI) -> Config:
+def fastapi_config(app: FastAPI) -> Config:
     config = Config(app=app)
     return config
 
@@ -65,8 +69,8 @@ def parse_settings(parser: argparse.ArgumentParser) -> Settings:
 
 async def main() -> None:
     parser = argparse.ArgumentParser()
-    app = create_app(parse_settings(parser))
-    config = create_config(app=app)
+    app = fastapi_app(parse_settings(parser))
+    config = fastapi_config(app=app)
     server = Server(config)
     await server.serve()
 
