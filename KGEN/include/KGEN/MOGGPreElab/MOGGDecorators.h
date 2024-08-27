@@ -57,6 +57,10 @@ constexpr StringLiteral MOGG_INTRINSIC_TENSOR_SPEC_HOOK =
 /// MOGG Intrinsic for the elementwise kernel decorator.
 constexpr StringLiteral MOGG_INTRINSIC_ELEMENTWISE = "mogg.elementwise";
 
+/// MOGG Intrinsic decorator to indicates which I/Os can be fused.
+constexpr StringLiteral MOGG_INTRINSIC_ENABLE_FUSION_FOR =
+    "mogg.enable_fusion_for";
+
 /// MOGG Intrinsic for the for_each function
 constexpr StringLiteral MOGG_INTRINSIC_FOR_EACH = "mogg.for_each";
 
@@ -124,6 +128,8 @@ static constexpr StringLiteral kMOGGSynchronousLabel = "mogg.synchronous";
 static constexpr StringLiteral kMOGGTargetParameterName = "target";
 static constexpr StringLiteral kMOGGTargetLabel = "mogg.target";
 static constexpr StringLiteral kMOGGElementFunction = "mogg.elementwise";
+
+static constexpr StringLiteral kMOGGFusableArgs = "mogg.fusable_args";
 
 inline bool isExecuteFunc(Operation *gen) {
   return gen != nullptr && gen->hasAttr(kMOGGExecuteFunctionLabel);
