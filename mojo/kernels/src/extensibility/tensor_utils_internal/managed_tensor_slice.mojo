@@ -9,10 +9,15 @@ from .tensor_like import TensorLike
 
 from tensor_internal import TensorSpec, StaticTensorSpec
 
-from collections import InlineArray
+from collections import InlineArray, OptionalReg
 from utils import StaticIntTuple
 from math import ceil
+from sys import simdwidthof
 from sys.intrinsics import strided_load, strided_store
+import algorithm
+
+from compiler_internal.directives import __mogg_intrinsic_attr, specsof
+from compiler_internal.directives import StaticTensorSpec as CompilerTensorSpec
 
 
 @value
@@ -161,9 +166,22 @@ struct ManagedTensorSlice[
         _rank: Int,
     ](self, index: StaticIntTuple[_rank]) -> SIMD[type, width]:
         constrained[_rank == rank]()
-        var flat_index = _dot_prod(
-            rebind[StaticIntTuple[rank]](index), self._strides
-        )
+        var ridx = rebind[StaticIntTuple[rank]](index)
+
+        alias in_lambda = specsof[type, rank]("self").in_lambda
+
+        @parameter
+        if in_lambda:
+            alias in_fn = in_lambda.value()
+            return in_fn[width](ridx)
+        else:
+            return self._simd_load_internal[width](ridx)
+
+    @always_inline
+    fn _simd_load_internal[
+        width: Int,
+    ](self, index: StaticIntTuple[rank]) -> SIMD[type, width]:
+        var flat_index = _dot_prod(index, self._strides)
         var stride = self._strides[rank - 1]
 
         if stride == 0:
@@ -192,14 +210,27 @@ struct ManagedTensorSlice[
 
     @always_inline
     fn store[
+        width: Int,
         # Necessary to make it simpler on the call site.
         _rank: Int,
-        width: Int,
     ](self, index: StaticIntTuple[_rank], val: SIMD[type, width]):
         constrained[_rank == rank]()
-        var flat_index = _dot_prod(
-            rebind[StaticIntTuple[rank]](index), self._strides
-        )
+        var ridx = rebind[StaticIntTuple[rank]](index)
+
+        alias out_lambda = specsof[type, rank]("self").out_lambda
+
+        @parameter
+        if out_lambda:
+            alias out_fn = out_lambda.value()
+            out_fn[width](ridx, val)
+        else:
+            self._simd_store_internal[width](ridx, val)
+
+    @always_inline
+    fn _simd_store_internal[
+        width: Int,
+    ](self, index: StaticIntTuple[rank], val: SIMD[type, width]):
+        var flat_index = _dot_prod(index, self._strides)
 
         var stride = self._strides[rank - 1]
         if stride == 0:
@@ -226,3 +257,25 @@ struct ManagedTensorSlice[
                 )
             else:
                 return strided_store(val, self._ptr.offset(flat_index), stride)
+
+
+@__mogg_intrinsic_attr("mogg.for_each")
+@no_inline
+fn foreach[
+    type: DType,
+    rank: Int, //,
+    func: fn[width: Int] (StaticIntTuple[rank]) capturing -> SIMD[type, width],
+](tensor: ManagedTensorSlice[type, rank]):
+    alias simd_width = simdwidthof[tensor.type]()
+
+    @parameter
+    fn elementwise_fn_wrapper[
+        width: Int, rank: Int
+    ](index: StaticIntTuple[rank]) capturing:
+        constrained[rank == tensor.rank]()
+        var val = func[width](rebind[StaticIntTuple[tensor.rank]](index))
+        tensor.store(index, val)
+
+    algorithm.functional.elementwise[elementwise_fn_wrapper, simd_width](
+        tensor.get_static_spec().shape
+    )

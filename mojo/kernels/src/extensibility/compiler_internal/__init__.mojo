@@ -7,10 +7,7 @@
 from .directives import (
     register,
     elementwise,
-    foreach,
-    shapeof,
-    stridesof,
+    enable_fusion_for,
     specsof,
-    output_lambda,
     StaticTensorSpec,
 )

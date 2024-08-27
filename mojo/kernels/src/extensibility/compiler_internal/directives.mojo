@@ -4,68 +4,34 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from sys import simdwidthof
-from tensor_utils_internal import ManagedTensorSlice
+from collections import OptionalReg
 from buffer.dimlist import DimList
 from utils import StaticIntTuple
-from collections import Optional, OptionalReg
-import algorithm.functional
 
 
 fn __mogg_intrinsic_attr(intrin: StringLiteral):
     return
 
 
+# Register a DPS Kernel
 @__mogg_intrinsic_attr("mogg.intrinsic_register")
 fn register(name: StringLiteral):
     pass
 
 
+# Indicates that a DPS Kernel is elementwise
+@__mogg_intrinsic_attr("mogg.elementwise")
 fn elementwise():
     return
 
 
-@no_inline
-fn shapeof(tensor_name: StringLiteral) -> Optional[DimList]:
-    return None
+# Indicates which I/Os of the DPS kernel support fusion
+@__mogg_intrinsic_attr("mogg.enable_fusion_for")
+fn enable_fusion_for(*names: StringLiteral):
+    return
 
 
-@no_inline
-fn stridesof(tensor_name: StringLiteral) -> Optional[DimList]:
-    return None
-
-
-@no_inline
-fn output_lambda[
-    type: DType = DType.invalid,
-    rank: Int = 0,
-](tensor_name: StringLiteral) -> Optional[
-    fn[width: Int] (StaticIntTuple[rank], SIMD[type, width]) capturing -> None
-]:
-    return None
-
-
-@no_inline
-fn foreach[
-    type: DType,
-    rank: Int, //,
-    func: fn[width: Int] (StaticIntTuple[rank]) capturing -> SIMD[type, width],
-](tensor: ManagedTensorSlice[type, rank]):
-    alias simd_width = simdwidthof[tensor.type]()
-
-    @parameter
-    fn elementwise_fn_wrapper[
-        width: Int, rank: Int
-    ](index: StaticIntTuple[rank]) capturing:
-        constrained[rank == tensor.rank]()
-        var val = func[width](rebind[StaticIntTuple[tensor.rank]](index))
-        tensor.store(index, val)
-
-    algorithm.functional.elementwise[elementwise_fn_wrapper, simd_width](
-        tensor.get_static_spec().shape
-    )
-
-
+# Compile time Tensor informations
 struct StaticTensorSpec[type: DType, rank: Int]:
     # Represents the DimList type (not accessible from KGEN tests).
     alias in_lambda_t = fn[simd_width: Int] (
@@ -105,6 +71,9 @@ fn create_none_spec[type: DType, rank: Int]() -> StaticTensorSpec[type, rank]:
     return StaticTensorSpec[type, rank]()
 
 
+# Returns the compile time informations of a DPS kernel I/O.
+# fn foo(x: UnsafeTensorSlice):
+#   alias specs = specsof[x.type, x.rank]("x")
 @__mogg_intrinsic_attr("mogg.intrinsic_tensor_spec_hook")
 @export
 fn specsof[
