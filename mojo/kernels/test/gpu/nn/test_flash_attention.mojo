@@ -188,7 +188,7 @@ fn test[
         )
 
     if is_benchmark:
-        alias nrun = 1000
+        alias nrun = 50
 
         # Warmup
         kernel_launch(ctx)
@@ -295,7 +295,7 @@ def main():
             depth=128,
             num_heads=1,
             against_gpu_naive=True,
-        ](128, 128, ctx)
+        ](384, 384, ctx)
 
         test[
             3,
