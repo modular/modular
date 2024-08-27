@@ -2968,22 +2968,12 @@ fn copy_local_to_sram[
 
         @parameter
         for i in range(num_stores_per_thread):
-            var src_vec = src.aligned_load[elem_size](i, 0)
-            var dst_vec: SIMD[dst_type, elem_size] = 0
             alias dst_idx = dst_frag.layout(i)
 
-            @parameter
-            for j in range(0, elem_size, 2):
-                var vec_converted = SIMD[src_type, 2](
-                    src_vec[j], src_vec[j + 1]
-                ).cast[dst_type]()
-                dst_vec[j] = vec_converted[0]
-                dst_vec[j + 1] = vec_converted[1]
-
-            (dst_frag.ptr + dst_idx).store[
+            dst_frag.ptr.store[
                 width=elem_size,
                 alignment = alignof[SIMD[dst_type, src.element_size]](),
-            ](dst_vec)
+            ](dst_idx, src.aligned_load[elem_size](i, 0).cast[dst_type]())
 
 
 @always_inline
@@ -3042,20 +3032,12 @@ fn copy_local_to_local[
             alias dst_idx = dst_vectorized.layout(i)
             alias src_idx = src_vectorized.layout(i)
 
-            var src_vec = (src_vectorized.ptr + src_idx).load[
-                width=src_frag_size
-            ]()
-            var dst_vec = SIMD[dst_type, src_frag_size](0.0)
-
-            @parameter
-            for j in range(0, src_frag_size, 2):
-                var vec_converted = SIMD[src_type, 2](
-                    src_vec[j], src_vec[j + 1]
-                ).cast[dst_type]()
-                dst_vec[j] = vec_converted[0]
-                dst_vec[j + 1] = vec_converted[1]
-
-            (dst_vectorized.ptr + dst_idx).store[width=src_frag_size](dst_vec)
+            dst_vectorized.ptr.store[width=src_frag_size](
+                dst_idx,
+                src_vectorized.ptr.load[width=src_frag_size](src_idx).cast[
+                    dst_type
+                ](),
+            )
 
     # Default elementwise copy
     else:
@@ -3064,8 +3046,7 @@ fn copy_local_to_local[
         for i in range(dst.layout.size()):
             alias dst_idx = dst.layout(i)
             alias src_idx = src.layout(i)
-            var src_val = src.ptr[src_idx]
-            (dst.ptr + dst_idx).store(src_val.cast[dst.dtype]())
+            dst.ptr.store(dst_idx, src.ptr[src_idx].cast[dst.dtype]())
 
 
 # ===-----------------------------------------------------------------------===#
