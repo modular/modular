@@ -489,7 +489,7 @@ export class MojoDebugManager extends DisposableContext {
     this.pushSubscription(
       vscode.debug.registerDebugConfigurationProvider(
         'mojo-cuda-gdb',
-        new MojoDebugConfigurationResolver(sdkManager)
+        new MojoCudaGdbDebugConfigurationResolver(sdkManager)
       )
     );
   }
