@@ -149,7 +149,7 @@
           "description": "Arguments passed in. Each argument is a separate item in the array."
         },
         "mojo.enableMagicSDK": {
-          "scope": "machine",
+          "scope": "window",
           "type": "boolean",
           "description": "Whether to support `magic`-based SDKs instead of `modular cli` ones."
         }
