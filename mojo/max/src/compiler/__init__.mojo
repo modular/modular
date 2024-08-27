@@ -12,4 +12,5 @@ from compiler_internal import (
     stridesof,
     specsof,
     output_lambda,
+    StaticTensorSpec,
 )
