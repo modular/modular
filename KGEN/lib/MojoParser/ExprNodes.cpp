@@ -762,26 +762,8 @@ CValue AttributeRefNode::emitStoredFieldRef(ASTExprAnd<CValue> base,
          "Dynamic lvalues should already be handled");
   auto mlirLoc = expr->getLocation(emitter);
 
-  // If the base is an memory lvalue, then we can return an lvalue to the field.
-  if (MLValue baseLV = base.ir.getIfMLValue()) {
-    // If this is a parameter context then we cannot return a dynamic field.
-    if (!emitter.builder) {
-      emitter.emitErrorForDynamicValueInParameter(expr);
-      return {};
-    }
-    auto fieldRef =
-        emitter.builder->create<RefStructGEROp>(mlirLoc, baseLV, fieldOp);
-    return emitter.emitCResult(MLValue(fieldRef), expr, dest);
-  }
-
-  // We know the base.ir is a BValue or RValue, decay to BValue.
-  ValueDest bvDest(dest.getContext());
-  BValue baseBVal = emitter.emitBValue(base, bvDest);
-  if (!baseBVal)
-    return {};
-
   // Keep things in the parameter expression domain if we can.
-  if (PValue baseMV = baseBVal.getIfPValue()) {
+  if (PValue baseMV = base.ir.getIfPValue()) {
     auto extractVal = LIT::StructExtractAttr::get(baseMV.get(), fieldOp);
     return emitter.emitCResult(PValue(extractVal), expr, dest);
   }
@@ -792,25 +774,39 @@ CValue AttributeRefNode::emitStoredFieldRef(ASTExprAnd<CValue> base,
     return {};
   }
 
-  // If the base is an MBValue or MBPValue, project the field reference in the
-  // same way.
-  if (MBValue baseMBV = baseBVal.getIfMBValue()) {
-    auto fieldRef =
-        emitter.builder->create<RefStructGEROp>(mlirLoc, baseMBV, fieldOp);
-    return emitter.emitCResult(MBValue(fieldRef), expr, dest);
-  }
-  if (MBPValue baseMBPV = baseBVal.getIfMBPValue()) {
-    auto fieldRef =
-        emitter.builder->create<RefStructGEROp>(mlirLoc, baseMBPV, fieldOp);
-    return emitter.emitCResult(MBPValue(fieldRef), expr, dest);
+  // If the base is an memory value, then project the field to the same mvalue.
+  if (base.ir.isMValue() && !base.ir.getIfMRValue()) {
+    auto fieldRef = emitter.builder->create<RefStructGEROp>(
+        mlirLoc, base.ir.getMValueReference(), fieldOp);
+    CValue result;
+    if (base.ir.getIfMLValue())
+      result = MLValue(fieldRef);
+    else if (base.ir.getIfMBValue())
+      result = MBValue(fieldRef);
+    else if (base.ir.getIfMBPValue())
+      result = MBPValue(fieldRef);
+    else
+      llvm_unreachable("unknown MValue");
+    return emitter.emitCResult(result, expr, dest);
   }
 
-  // Otherwise, it must be a SBValue in an SSA value.
-  SBValue baseSB = baseBVal.getIfSBValue();
-  assert(baseSB && "All cases handled above");
-  auto extractVal =
-      emitter.builder->create<StructExtractOp>(mlirLoc, baseSB, fieldOp);
-  return emitter.emitCResult(SBValue(extractVal), expr, dest);
+  // We know the base.ir is a RValue, DLValue or anything else fancy, decay to a
+  // BValue.
+  ValueDest bvDest(dest.getContext());
+  BValue baseBVal = emitter.emitBValue(base, bvDest);
+  if (!baseBVal)
+    return {};
+
+  // If we got an SBValue in an SSA value, then extract the field.
+  if (SBValue baseSB = baseBVal.getIfSBValue()) {
+    auto extractVal =
+        emitter.builder->create<StructExtractOp>(mlirLoc, baseSB, fieldOp);
+    return emitter.emitCResult(SBValue(extractVal), expr, dest);
+  }
+
+  // Otherwise we have a PValue or MValue, recurse to handle it.
+  return emitStoredFieldRef({baseBVal, base.expr}, fieldOp, expr, dest,
+                            emitter);
 }
 
 /// Return a ParamBindings set for a list of PValue operands. If any operand
@@ -3162,35 +3158,78 @@ AnyValue MagicFunctionNode::emitIR(ValueDest &dest,
   return emitter.emitResult(MLValue(exprVal), this, dest);
 }
 
+/// Emit the specified expression to compute its {lifetime / RValueType}.  This
+/// is more flexible than emitting the error and checking to see if it has a
+/// lifetime because it can work in parameter contexts (like type expressions)
+/// more flexibly than member emission.
+static std::pair<TypedAttr, ASTType> emitExprLifetime(const ExprNode *expr,
+                                                      ExprEmitter &emitter) {
+  // Handle special cases syntactically.
+  if (auto paren = dyn_cast<ParenNode>(expr))
+    return emitExprLifetime(paren->subExpr, emitter);
+
+  // If this is a field reference like "x.field" check the base and then form
+  // a field sensitive lifetime if valid.
+  if (auto attrRef = dyn_cast<AttributeRefNode>(expr)) {
+    // If the attribute spelling is empty, we couldn't find a name to look up.
+    // This was already diagnosed during initial parsing, so we can just bail
+    // here.
+    if (attrRef->spelling.empty())
+      return {};
+
+    auto [baseLifetime, baseType] = emitExprLifetime(attrRef->base, emitter);
+    if (!baseLifetime)
+      return {};
+
+    // Perform lookup to make sure the field is a stored field.
+    ASTDecl *typeDecl = baseType.getDecl(emitter.shared);
+    if (!typeDecl) {
+      emitter.emitError(expr->getLoc())
+          << "MLIR type " << baseType << " has no attribute '"
+          << attrRef->spelling << "'" << expr->getRange();
+      return {};
+    }
+
+    // We only allow stored fields, not accesses through __getattr__ etc.
+    LookupResult lookup = emitter.shared.lookupAndResolveDecl(
+        attrRef->spelling, expr->getLoc(), *typeDecl,
+        /*searchParentScopes=*/false);
+    ArrayRef<ASTDecl *> memberDecls = lookup.getIfSuccess();
+    if (memberDecls.size() == 1 && isa<LIT::StructType>(baseType)) {
+      if (auto field = dyn_cast<StructFieldOp>(*memberDecls[0])) {
+        auto fieldType = field.getReboundType(cast<LIT::StructType>(baseType));
+        // The lifetime of the struct reference incorporates field sensitivity.
+        auto fieldLifetime =
+            LifetimeFieldAttr::get(baseLifetime, field.getNameAttr());
+        return {fieldLifetime, fieldType};
+      }
+    }
+  }
+
+  AnyValue subExprValue = emitter.emitExpr(expr, EC_Lifetime);
+  if (!subExprValue)
+    return {};
+
+  // __lifetime_of(someMValue) -> PValue.
+  if (subExprValue.isMValue())
+    return {subExprValue.getMValueType().getLifetime(),
+            subExprValue.getIfCValue().getRValueType()};
+
+  emitter.emitError(expr->getLoc())
+      << "value doesn't have a memory type" << expr->getRange();
+  return {};
+}
+
 AnyValue MagicFunctionNode::emitLifetimeOf(ValueDest &dest,
                                            ExprEmitter &emitter) const {
   // Gather the lifetimes of each subexpression value. If any of the lifetimes
   // are immutable, then we mutcast the rest to immutable.
   SmallVector<TypedAttr> lifetimes;
   for (ExprNode *subExpr : subExprs) {
-    AnyValue subExprValue = emitter.emitExpr(subExpr, dest.getContext());
-    if (!subExprValue)
+    auto [lifetime, rvType] = emitExprLifetime(subExpr, emitter);
+    if (!lifetime)
       return {};
-
-    // __lifetime_of(someMValue) -> PValue.
-    RefType refType;
-    if (subExprValue.isMValue()) {
-      refType = subExprValue.getMValueType();
-    } else {
-      // FIXME(Variadics): work around variadic arguments not being formally
-      // VariadicListMem, by allowing digging a lifetime out of the
-      // kgen.variadic.
-      if (auto sValue = subExprValue.getIfSBValue()) {
-        if (auto variadic = dyn_cast<VariadicType>(sValue.getType()))
-          refType = dyn_cast<RefType>(variadic.getElementType());
-      }
-      if (!refType) {
-        emitter.emitError(subExpr->getLoc())
-            << "value doesn't have a memory type" << subExpr->getRange();
-        return {};
-      }
-    }
-    lifetimes.push_back(refType.getLifetime());
+    lifetimes.push_back(lifetime);
   }
 
   auto result = LifetimeUnionAttr::get(emitter.getContext(), lifetimes);

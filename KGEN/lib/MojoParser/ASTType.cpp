@@ -575,6 +575,12 @@ static void printDemangledParam(raw_ostream &os, TypedAttr param,
     return;
   }
 
+  if (auto lifetimeField = dyn_cast<LifetimeFieldAttr>(param)) {
+    printDemangledParam(os, lifetimeField.getStructLifetime(), forDiag);
+    os << '.' << lifetimeField.getField().str();
+    return;
+  }
+
   if (isa<LifetimeAttr>(param)) {
     os << "MutableStaticLifetime";
     return;
