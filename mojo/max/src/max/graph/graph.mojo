@@ -10,10 +10,13 @@ from collections import Set, Optional
 from memory import Arc
 from sys.info import has_neon
 from os import abort
+from pathlib import Path
 
 import _mlir
 from _mlir.builtin_attributes import StringAttr, TypeAttr
 from _mlir.builtin_types import FunctionType
+from _mlir.ir import Module, Operation
+
 
 from ._attributes import _tensor_attr, _vector_attr
 from .error import error
@@ -249,6 +252,29 @@ struct Graph(CollectionElement, Stringable, Formattable):
         )
 
         self._graph = Arc(_OwnedGraph(ctx, op, in_types))
+
+    fn __init__(inout self: Self, path: Path) raises:
+        """Constructs a new `Graph` from a MLIR file.
+
+        Experimental. Recreates a graph from an MLIR file.
+
+        Args:
+            path: The path of the MLIR file.
+        """
+        with open(path, "r") as f:
+            var model_str = f.read()
+            var ctx = _mlir.Context()
+            ctx.load_modular_dialects()
+            # Do we need to load all available dialects?
+            ctx.load_all_available_dialects()
+            var module = Module.parse(ctx, model_str)
+            var first_op = module.body().first_operation()
+            var in_list = List[Type]()
+            var first_block = first_op.region(0).first_block()
+            for i in range(first_block.num_arguments()):
+                var arg_type = Type.from_mlir(first_block.argument(i).type())
+                in_list.append(arg_type)
+            self._graph = _OwnedGraph(ctx, first_op, in_list)
 
     fn debug_str(self, pretty_print: Bool = False) -> String:
         return self._module().debug_str(pretty_print)

@@ -761,6 +761,9 @@ struct Block(CollectionElement, Stringable):
     fn parent(self) -> Operation:
         return _c.IR.mlirBlockGetParentOperation(self.c)
 
+    fn first_operation(self) -> Operation:
+        return _c.IR.mlirBlockGetFirstOperation(self.c)
+
     fn num_arguments(self) -> Int:
         return _c.IR.mlirBlockGetNumArguments(self.c)
 
