@@ -948,8 +948,8 @@ fn sgemm_double_buffer_kernel[
 ):
     alias simd_size = simdwidthof[c_type]()
 
-    alias N = b.dim[1]()
-    alias K = b.dim[0]()
+    alias N = b.shape[1]()
+    alias K = b.shape[0]()
 
     alias num_warps_m = BM // WM
     alias num_warps_n = BN // WN
