@@ -17,7 +17,6 @@ import { activateRunCommands } from './commands/run';
 import { MojoDebugManager } from './debug/debug';
 import { MojoDecoratorManager } from './decorations';
 import { RpcServer } from './server/RpcServer';
-import * as config from './utils/config';
 
 /**
  * This class provides an entry point for the Mojo extension, managing the
@@ -46,17 +45,11 @@ export class MojoExtension extends DisposableContext {
     }
 
     this.logger.main.logInfo('Activating the Mojo Context.');
-
-    const enableMagicSDK = config.get<boolean>(
-      'enableMagicSDK',
-      /*workspaceFolder=*/ undefined,
-      false
-    );
     const sdkManager = new MojoSDKManager(
       this.logger,
       this.extensionContext,
       initializationSDK,
-      enableMagicSDK
+      /*enableMagicSDK=*/ false
     );
     this.pushSubscription(sdkManager);
 
