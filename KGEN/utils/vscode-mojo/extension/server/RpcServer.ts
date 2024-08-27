@@ -12,9 +12,9 @@ import * as net from 'net';
 import * as vscode from 'vscode';
 import { debug, DebugConfiguration } from 'vscode';
 import { Logger } from '../logging';
+import { checkNsightInstall } from '../utils/checkNsight';
 import { DisposableContext } from '../utils/disposableContext';
 import path = require('path');
-import shellEscape = require('shell-escape');
 
 type ResponseConnect = {
   kind: 'connect';
@@ -124,33 +124,10 @@ export class RpcServer extends DisposableContext {
   private async handleDebugRequest(debugConfig: DebugConfiguration) {
     debugConfig.name = debugConfig.name || debugConfig.program;
     if (debugConfig.type == 'mojo-cuda-gdb') {
-      const nsight = vscode.extensions.getExtension(
-        'nvidia.nsight-vscode-edition'
-      );
-      if (!nsight) {
-        // Tell the user to install the nsight extension.
-        const message =
-          'Unable to start the cuda-gdb debug session. You first need to install the NVIDIA Nsight extension (nsight-vscode-edition)';
-        this.logger.main.logInfo(message);
-        const response = await vscode.window.showInformationMessage(
-          'Unable to debug in cuda-gdb mode without NVIDIA Nsight extension.',
-          'Find NVIDIA Nsight extension'
-        );
-        if (response) {
-          vscode.commands.executeCommand(
-            'workbench.extensions.search',
-            '@id:nvidia.nsight-vscode-edition'
-          );
-        }
-        throw new Error(message);
+      const maybeErrorMessage = await checkNsightInstall(this.logger);
+      if (maybeErrorMessage) {
+        throw new Error(maybeErrorMessage);
       }
-      // Transform debugConfig into normal cuda-gdb config.
-      debugConfig.type = 'cuda-gdb';
-      // cuda-gdb takes args as a single string, while we take them as an array.
-      // Actually, cuda-gdb can take an array, which it then joins into a single
-      // string separated by ";" characters. So it takes the list of program
-      // arguments to the debuggee as a single string.
-      debugConfig.args = shellEscape(debugConfig.args);
     }
     let success = await debug.startDebugging(
       /*workspaceFolder=*/ undefined,

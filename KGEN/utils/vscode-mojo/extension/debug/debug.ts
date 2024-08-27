@@ -5,7 +5,9 @@
 //===----------------------------------------------------------------------===//
 
 import * as vscode from 'vscode';
+import shellEscape = require('shell-escape');
 
+import { checkNsightInstall } from '../utils/checkNsight';
 import { DisposableContext } from '../utils/disposableContext';
 import { getAllOpenMojoFiles, WorkspaceAwareFile } from '../utils/files';
 
@@ -36,6 +38,26 @@ type MojoDebugConfiguration = {
   timeout?: number;
   initCommands?: string[];
   customFrameFormat?: string;
+};
+
+/**
+ * Stricter version of vscode.DebugConfiguration intended to reduce the chances
+ * of typos when handling individual attributes.
+ */
+type MojoCudaGdbDebugConfiguration = {
+  type?: string;
+  description?: string;
+  name?: string;
+  pid?: string | number;
+  modularHomePath?: string;
+  args?: string[];
+  program?: string;
+  mojoFile?: string;
+  env?: string[];
+  cwd?: string[];
+  initCommands?: string[];
+  stopOnEntry?: boolean;
+  breakOnLaunch?: boolean;
 };
 
 /**
@@ -120,6 +142,23 @@ class MojoDebugAdapterDescriptorFactory
         env: await this.createDebugAdapterAdditionalEnv(sdk),
       }
     );
+  }
+}
+
+/**
+ * This class defines a factory used to for mojo-cuda-gdb.
+ */
+class MojoCudaGdbDebugAdapterDescriptorFactory
+  implements vscode.DebugAdapterDescriptorFactory
+{
+  async createDebugAdapterDescriptor(
+    session: vscode.DebugSession,
+    _executable: Optional<vscode.DebugAdapterExecutable>
+  ): Promise<Optional<vscode.DebugAdapterDescriptor>> {
+    // We never actually call this, but we need a stub for registration.
+    // Instead of making a DebugAdapterDescriptor, we end up tossing the
+    // configuration to the Nsight extension by rewriting to their config.
+    return undefined;
   }
 }
 
@@ -268,6 +307,52 @@ class MojoDebugConfigurationResolver
 }
 
 /**
+ * This class modifies the debug configuration right before the debug adapter is
+ * launched. This is where we mutate the mojo-cuda-gdb config into normal
+ * cuda-gdb config.
+ */
+class MojoCudaGdbDebugConfigurationResolver
+  implements vscode.DebugConfigurationProvider
+{
+  private sdkManager: MojoSDKManager;
+
+  constructor(sdkManager: MojoSDKManager) {
+    this.sdkManager = sdkManager;
+  }
+
+  async resolveDebugConfigurationWithSubstitutedVariables?(
+    folder: Optional<vscode.WorkspaceFolder>,
+    debugConfigIn: MojoCudaGdbDebugConfiguration,
+    token?: vscode.CancellationToken
+  ): Promise<undefined | vscode.DebugConfiguration> {
+    const maybeErrorMessage = await checkNsightInstall(this.sdkManager.logger);
+    if (maybeErrorMessage) {
+      return undefined;
+    }
+
+    // relax the debugConfig.args type
+    const debugConfig = debugConfigIn as vscode.DebugConfiguration;
+
+    // Transform debugConfig into normal cuda-gdb config.
+    debugConfig.type = 'cuda-gdb';
+    let args = debugConfigIn.args || [];
+    // cuda-gdb takes args as a single string, while we take them as an array.
+    // Actually, cuda-gdb can take an array, which it then joins into a single
+    // string separated by ";" characters. So it takes the list of program
+    // arguments to the debuggee as a single string.
+    debugConfig.args = shellEscape(args || []);
+    // cuda-gdb takes environment as a list of objects like:
+    // [{"name": "HOME", "value": "/home/ubuntu"}]
+    let env = debugConfigIn.env || [];
+    debugConfig.environment = env.map((envStr: String) => {
+      const split = envStr.split('=');
+      return { name: split[0], value: split.slice(1).join('=') };
+    });
+    return debugConfig;
+  }
+}
+
+/**
  * Provides debug configurations dynamically depending on the currently open
  * workspaces and files.
  */
@@ -361,6 +446,24 @@ export class MojoDebugManager extends DisposableContext {
           pid: '${command:pickProcessToAttach}',
         });
       })
+    );
+
+    // Add subscriptions for mojo-cuda-gdb.  Need to register
+    // DAPDescriptorFactory, but all of the real work is handled by
+    // registerDebugConfigurationProvider, which translates the config to
+    // Nsight's cuda-gdb format, ultimately launching its debugger instead.
+    this.pushSubscription(
+      vscode.debug.registerDebugAdapterDescriptorFactory(
+        'mojo-cuda-gdb',
+        new MojoCudaGdbDebugAdapterDescriptorFactory()
+      )
+    );
+
+    this.pushSubscription(
+      vscode.debug.registerDebugConfigurationProvider(
+        'mojo-cuda-gdb',
+        new MojoDebugConfigurationResolver(sdkManager)
+      )
     );
   }
 }

@@ -373,20 +373,9 @@ ErrorOrSuccess M::invokeLaunchRPC(bool dryRun, bool useCudaGdb,
   payload->insert({"cwd", cwd.string()});
 
   json::Array env;
-  if (useCudaGdb) {
-    // The cuda-gdb json config takes environment as an array of
-    // {"name": NAME, "value": VALUE} objects.
-    for (StringRef entry : getEnv()) {
-      StringRef name, value;
-      std::tie(name, value) = entry.split('=');
-      env.push_back(json::Object({{"name", name}, {"value", value}}));
-    }
-    payload->insert({"environment", std::move(env)});
-  } else {
-    for (StringRef entry : getEnv())
-      env.push_back(entry);
-    payload->insert({"env", std::move(env)});
-  }
+  for (StringRef entry : getEnv())
+    env.push_back(entry);
+  payload->insert({"env", std::move(env)});
   payload->insert({"args", json::Array{runArgs}});
   payload->insert({"runInTerminal", rpcTerminal == "dedicated"});
 
