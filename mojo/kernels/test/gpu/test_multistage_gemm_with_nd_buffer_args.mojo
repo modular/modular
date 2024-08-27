@@ -73,14 +73,12 @@ fn ld_mma[
     # work around parameter deduction
     __layout: Layout,
     __element_layout: Layout,
-    __index_type: DType,
 ](
     mat: LayoutTensor[
         _,
         __layout,
         address_space = AddressSpace.SHARED,
         element_layout=__element_layout,
-        index_type=__index_type,
     ],
     offset: Int,
 ) -> SIMD[mat.dtype, num_matrices]:
