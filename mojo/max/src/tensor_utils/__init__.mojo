@@ -9,4 +9,5 @@ from tensor_utils_internal import (
     ManagedTensorSlice,
     TensorLike,
     indexing,
+    foreach,
 )

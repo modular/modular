@@ -6,10 +6,9 @@
 """The root package for the compiler module in MAX."""
 
 from compiler import (
-    foreach,
     register,
     elementwise,
-    shapeof,
-    stridesof,
-    output_lambda,
+    enable_fusion_for,
+    specsof,
+    StaticTensorSpec,
 )
