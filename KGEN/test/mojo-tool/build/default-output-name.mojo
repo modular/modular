@@ -11,11 +11,11 @@
 # ===----------------------------------------------------------------------=== #
 
 # RUN: rm default-output-name || true
-# RUN: mojo build %s
+# RUN: %mojo-build %s
 # RUN: test -x default-output-name
 
 # RUN: rm default-output-name-2 || true
-# RUN: mojo build %S/inputs/default-output-name-2.mojo
+# RUN: %mojo-build %S/inputs/default-output-name-2.mojo
 # RUN: test -x default-output-name-2
 
 
