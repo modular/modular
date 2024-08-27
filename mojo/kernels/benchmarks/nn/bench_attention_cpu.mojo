@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-# RUN: %bare-mojo build %s
+# RUN: %mojo-build %s
 
 from random import rand
 from os import abort

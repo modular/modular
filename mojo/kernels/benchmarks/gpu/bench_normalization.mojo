@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 
 # REQUIRES: has_cuda_device
-# RUN: %bare-mojo build %s
+# RUN: %mojo-build %s
 
 from random import random_float64
 from nn.normalization import layer_norm_reshape, layer_norm_gpu

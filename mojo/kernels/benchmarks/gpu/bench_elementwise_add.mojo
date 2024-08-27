@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 # REQUIRES: has_cuda_device
-# RUN: %bare-mojo build %s
+# RUN: %mojo-build %s
 
 from random import randn
 from sys import sizeof, simdwidthof

@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 # REQUIRES: has_cuda_device
-# RUN: %bare-mojo build %s
+# RUN: %mojo-build %s
 
 from math import sqrt, isqrt, log, sin, tanh, exp, erf, fma, ceildiv, align_up
 from sys import alignof, sizeof, triple_is_nvidia_cuda, simdwidthof
