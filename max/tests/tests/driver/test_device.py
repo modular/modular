@@ -25,3 +25,10 @@ def _cuda_available() -> bool:
 def test_cuda_device():
     cuda = md.CUDA()
     assert "cuda" in str(cuda)
+
+
+@pytest.mark.skip(reason="MSDK-834")
+@pytest.mark.skipif(_cuda_available(), reason="Should not have CUDA")
+def test_cuda_device_creation_error():
+    with pytest.raises(ValueError, match="failed to create device:"):
+        _ = md.CUDA()
