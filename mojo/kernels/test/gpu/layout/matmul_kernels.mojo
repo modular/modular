@@ -30,8 +30,8 @@ from gpu.cublas.cublas import (
 from linalg.cublas import cublas_matmul
 
 
-alias NWARMUP = 2
-alias NRUN = 5
+alias NWARMUP = 1
+alias NRUN = 1
 
 
 fn time_kernel[

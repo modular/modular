@@ -126,9 +126,9 @@ fn multistage_gemm[
 
     alias simd_size = simdwidthof[c_type]()
 
-    var M = c.dim[0]()
-    var N = c.dim[1]()
-    var K = a.dim[1]()
+    alias M = c.shape[0]()
+    alias N = c.shape[1]()
+    alias K = a.shape[1]()
 
     alias num_warps_m = BM // WM
     alias num_warps_n = BN // WN

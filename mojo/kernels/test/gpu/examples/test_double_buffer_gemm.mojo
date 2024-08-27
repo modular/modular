@@ -64,9 +64,9 @@ fn sgemm_double_buffer[
 
     alias simd_size = simdwidthof[c_type]()
 
-    var M = c.dim[0]()
-    var N = c.dim[1]()
-    var K = a.dim[1]()
+    var M = c.shape[0]()
+    var N = c.shape[1]()
+    var K = a.shape[1]()
 
     alias num_warps_m = (BM // WM)
     alias num_warps_n = (BN // WN)
