@@ -128,7 +128,7 @@ kgen.generator @f<a, b: @T<a>>() -> !kgen.type {
   // CHECK-NEXT: ref: <index, @T<*(0,0)>, <!kgen.paramref<apply(:() -> !kgen.type @f<*(1,0), :@T<*(1,0)> *(1,1)>)>>() -> ()>() -> () = <?>
   kgen.param.declare ref: <index, @T<*(0,0)>, <!kgen.paramref<apply(:() -> !kgen.type @f<*(1,0), :@T<*(1,0)> *(1,1)>)>>() -> ()>() -> () = <?>
 
-  // CHECK-NEXT: relative: <type, <!kgen.paramref<*(1,0)>>(!kgen.pointer<:!kgen.paramref<*(1,0)> *(0,0)>) -> ()>
+  // CHECK-NEXT: relative: <type, <!kgen.paramref<*(1,0)>>(!kgen.pointer<!kgen.paramref<:!kgen.paramref<*(1,0)> *(0,0)>>) -> ()>
   kgen.param.declare relative: <type, <!kgen.paramref<*(1,0)>>(!kgen.pointer<:!kgen.paramref<*(1,0)> *(0,0)>) -> ()>() -> () = <?>
   kgen.unreachable
 }

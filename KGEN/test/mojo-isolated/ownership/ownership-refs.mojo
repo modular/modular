@@ -316,7 +316,7 @@ struct CutDownVariadicPack[
         # Test that we can infer the type of 'T' from the argument.
         # CHECK-NEXT: [[REFVAL:%.*]] = lit.call {{.*}}get_element{{.*}}(%self)
         # CHECK-NEXT: [[REF:%.*]] = lit.call {{.*}}Reference::@"__getitem__{{.*}}([[REFVAL]])
-        # CHECK-NEXT: [[LITREFRB:%.*]] = kgen.rebind [[REF]] : !lit.ref<:!AnyType {{.*}} to !lit.ref<:!kgen.paramref<:!lit.anytrait<!AnyType> element_trait>
+        # CHECK-NEXT: [[LITREFRB:%.*]] = kgen.rebind [[REF]] : !lit.ref<!kgen.paramref<:!AnyType {{.*}} to !lit.ref<!kgen.paramref<:!kgen.paramref<:!lit.anytrait<!AnyType> element_trait>
         # CHECK-NEXT: lit.call{{.*}}([[LITREFRB]])
         func(self.get_element[i]()[])
 
