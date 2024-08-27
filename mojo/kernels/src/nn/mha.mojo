@@ -594,7 +594,7 @@ fn _copy_frag_to_smem[
             var frag_offset = p_smem_frag.distance(p_smem_tile)
 
             @parameter
-            for i in range(p_reg_vecs.dim[1]()):
+            for i in range(p_reg_vecs.shape[1]()):
                 alias offset_in_frag = p_smem_frag.layout(i)
 
                 # Translate offset in BM x BN matrix to the right BM x BK tile.

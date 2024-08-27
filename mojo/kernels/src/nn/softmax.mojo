@@ -873,8 +873,8 @@ fn _online_softmax_kernel[
     """This is only for online softmax validation, NOT a general kernel."""
 
     alias mma_shape = StaticIntTuple[3](16, 8, 8)
-    alias num_seqs = input.dim[0]()
-    alias seqlen = input.dim[1]()
+    alias num_seqs = input.shape[0]()
+    alias seqlen = input.shape[1]()
 
     constrained[
         WM == num_seqs, "Only consider WM equal to number of rows in test."
@@ -1008,7 +1008,7 @@ fn _online_softmax_iter_for_mma_output[
     rowmax: UnsafePointer[Scalar[type]],
     rowsum: UnsafePointer[Scalar[type]],
 ):
-    constrained[num_m_mmas * num_n_mmas == p_reg_tile.dim[0]()]()
+    constrained[num_m_mmas * num_n_mmas == p_reg_tile.shape[0]()]()
 
     var tid = ThreadIdx.x()
     var lane = lane_id()
@@ -1017,7 +1017,7 @@ fn _online_softmax_iter_for_mma_output[
     alias MMA_M = mma_shape[0]
     alias MMA_N = mma_shape[1]
     alias p_frag_simdwidth = 2
-    alias p_frag_size = p_reg_tile.dim[1]()
+    alias p_frag_size = p_reg_tile.shape[1]()
 
     # Sum of fragment elements in the same row.
     # MMA output has two sub-matrices. Each thread's fragments are on two rows.
