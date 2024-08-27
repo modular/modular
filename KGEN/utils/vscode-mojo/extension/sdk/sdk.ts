@@ -17,16 +17,10 @@ const execFile = util.promisify(require('child_process').execFile);
 export class MojoSDK {
   public readonly config: MojoSDKConfig;
   private logger: Logger;
-  private context: vscode.ExtensionContext;
 
-  constructor(
-    config: MojoSDKConfig,
-    logger: Logger,
-    context: vscode.ExtensionContext
-  ) {
+  constructor(config: MojoSDKConfig, logger: Logger) {
     this.config = config;
     this.logger = logger;
-    this.context = context;
   }
 
   /**

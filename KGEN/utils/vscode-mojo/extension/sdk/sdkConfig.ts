@@ -115,9 +115,9 @@ export class MojoSDKConfig {
 
       return new MojoSDKVersion(
         title,
-        `${+match[1]}`,
-        `${+match[2]}`,
-        `${+match[3]}`,
+        `${match[1]}`,
+        `${match[2]}`,
+        `${match[3]}`,
         driverPath
       );
     } catch (e) {
