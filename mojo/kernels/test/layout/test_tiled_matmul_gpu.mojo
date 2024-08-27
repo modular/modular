@@ -172,8 +172,8 @@ fn sram_blocked_matmul[
     # FIXME: unrolled copy loop doesn't produce the correct results for some
     # tiles!!
     # dst_local_tile.copy_from(dst_register_tile)
-    for m in range(dst_local_tile.dim[0]()):
-        for n in range(dst_local_tile.dim[1]()):
+    for m in range(dst_local_tile.shape[0]()):
+        for n in range(dst_local_tile.shape[1]()):
             dst_local_tile[m, n] = dst_register_tile[m, n]
 
 

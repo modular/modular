@@ -20,7 +20,7 @@ from memory.reference import AddressSpace, _GPUAddressSpace
 from utils import StaticIntTuple
 from utils.numerics import max_finite
 
-from .int_tuple import fill_like, flatten, idx2crd, product, to_int
+from .int_tuple import fill_like, flatten, idx2crd, product, to_int, depth
 from .layout import *
 from .runtime_layout import RuntimeLayout
 from .runtime_layout import coalesce as runtime_coalesce
@@ -337,7 +337,7 @@ struct LayoutTensor[
             @parameter
             for axis in range(rank):
                 constrained[
-                    other.dim[axis]() == self.dim[axis](),
+                    other.shape[axis]() == self.shape[axis](),
                     (
                         "__elementwise_binary_with_broadcast requires shape to"
                         " be the same for tensors of the same rank"
@@ -371,7 +371,7 @@ struct LayoutTensor[
         @parameter
         if other.rank == 1:
             constrained[
-                other.dim[0]() == self.dim[0](),
+                other.shape[0]() == self.shape[0](),
                 (
                     "__elementwise_binary_with_broadcast 1d tensor operand must"
                     " have a dim that matches the tensors"
@@ -1020,15 +1020,17 @@ struct LayoutTensor[
         return stride[idx]
 
     @always_inline
-    @staticmethod
-    fn dim[idx: Int]() -> Int:
+    fn dim(self, idx: Int) -> Int:
         """Returns the dimension of the tensor given a index.
 
-        Parameters:
+        Arguments:
             idx: The index to the dimension of the tensor.
         """
-
-        return Self.shape[idx]()
+        constrained[
+            depth(layout.shape) == 1,
+            "Dim is defined for depth-1 layouts",
+        ]()
+        return self.runtime_layout.shape.value[idx]
 
     @always_inline
     fn coalesce(
@@ -1716,8 +1718,8 @@ struct LayoutTensor[
 
     @always_inline
     fn transpose[
-        M: Int = Self.dim[0](),
-        N: Int = Self.dim[1](),
+        M: Int = Self.shape[0](),
+        N: Int = Self.shape[1](),
     ](self) -> LayoutTensor[
         dtype,
         composition(

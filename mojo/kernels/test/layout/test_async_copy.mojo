@@ -110,8 +110,8 @@ fn multistage_copy[
 
     alias simd_size = simdwidthof[type]()
 
-    var M = a.dim[0]()
-    var K = a.dim[1]()
+    var M = a.shape[0]()
+    var K = a.shape[1]()
 
     # Double buffer in shared memory.
     var a_smem_tiles = LayoutTensor[
@@ -265,8 +265,8 @@ fn swizzle_copy[
 ](a: LayoutTensor[type, a_layout], b: LayoutTensor[type, b_layout]):
     alias simd_size = simdwidthof[type]()
 
-    var M = a.dim[0]()
-    var K = a.dim[1]()
+    var M = a.shape[0]()
+    var K = a.shape[1]()
 
     # Double buffer in shared memory.
     var a_smem_tile = LayoutTensor[

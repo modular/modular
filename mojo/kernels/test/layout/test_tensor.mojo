@@ -19,8 +19,8 @@ from layout.layout_tensor import *
 fn print_raw_major_tensor[
     layout: Layout, dtype: DType
 ](tensor: LayoutTensor[dtype, layout]):
-    for i in range(tensor.dim[0]()):
-        for j in range(tensor.dim[1]()):
+    for i in range(tensor.shape[0]()):
+        for j in range(tensor.shape[1]()):
             print(tensor[i, j], "\t", end="")
         print("")
 
@@ -28,8 +28,8 @@ fn print_raw_major_tensor[
 fn print_tile_tensor[
     layout: Layout, dtype: DType
 ](tensor: LayoutTensor[dtype, layout]):
-    for i in range(tensor.dim[0]()):
-        for j in range(tensor.dim[1]()):
+    for i in range(tensor.shape[0]()):
+        for j in range(tensor.shape[1]()):
             print(tensor[i, j], "\t", end="")
         print("")
 

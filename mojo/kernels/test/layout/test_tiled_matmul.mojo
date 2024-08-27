@@ -56,9 +56,9 @@ struct MMA(TiledOp):
         lhs: LayoutTensor[dtype, layout_m_k],
         rhs: LayoutTensor[dtype, layout_n_k],
     ):
-        alias M = dst.dim[0]()
-        alias N = dst.dim[1]()
-        alias K = lhs.dim[1]()
+        alias M = dst.shape[0]()
+        alias N = dst.shape[1]()
+        alias K = lhs.shape[1]()
 
         for m in range(M):
             for n in range(N):
@@ -79,9 +79,9 @@ struct MMA_Vec(TiledOp):
         lhs: LayoutTensor[dtype, layout_m_k],
         rhs: LayoutTensor[dtype, layout_n_k],
     ):
-        alias M = dst.dim[0]()
-        alias N = dst.dim[1]()
-        alias K = lhs.dim[1]()
+        alias M = dst.shape[0]()
+        alias N = dst.shape[1]()
+        alias K = lhs.shape[1]()
 
         alias width = simdwidthof[dtype]() * 2
 
@@ -114,9 +114,9 @@ fn gemm_l2_cache[
     lhs: LayoutTensor[dtype, layout_m_k],
     rhs: LayoutTensor[dtype, layout_k_n],
 ):
-    alias M = dst.dim[0]()
-    alias N = dst.dim[1]()
-    alias K = lhs.dim[1]()
+    alias M = dst.shape[0]()
+    alias N = dst.shape[1]()
+    alias K = lhs.shape[1]()
 
     # Dimensions of the Operation
     alias op_dim = Dim(M, N, K)
@@ -176,9 +176,9 @@ fn gemm_l1_cache[
     lhs: LayoutTensor[dtype, layout_m_k],
     rhs: LayoutTensor[dtype, layout_k_n],
 ):
-    alias M = dst.dim[0]()
-    alias N = dst.dim[1]()
-    alias K = lhs.dim[1]()
+    alias M = dst.shape[0]()
+    alias N = dst.shape[1]()
+    alias K = lhs.shape[1]()
 
     # Dimensions of the Operation
     alias op_dim = Dim(M, N, K)

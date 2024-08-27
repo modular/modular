@@ -339,13 +339,13 @@ struct TensorCore[
 
         alias frag_type = fragments.element_type
         alias simd_size = simdwidthof[type0]()
-        alias num_frags = fragments.dim[0]()
+        alias num_frags = fragments.shape[0]()
 
         var swizzle_offset = mma_tile_coordk * shape[2] // simd_size
 
         @parameter
         for i in range(num_frags):
-            var mma_tile = warp_tile.tile[shape[0], warp_tile.dim[1]()](i, 0)
+            var mma_tile = warp_tile.tile[shape[0], warp_tile.shape[1]()](i, 0)
             fragments[i, 0] = rebind[frag_type](
                 _load_matrix_frag[swizzle](mma_tile, swizzle_offset)
             )
@@ -379,8 +379,8 @@ struct TensorCore[
 
         alias frag_type = fragments.element_type
         alias simd_size = simdwidthof[in_type]()
-        alias num_frags = fragments.dim[0]()
-        alias WN = warp_tile.dim[1]()
+        alias num_frags = fragments.shape[0]()
+        alias WN = warp_tile.shape[1]()
 
         @parameter
         if transpose_b:
@@ -392,7 +392,7 @@ struct TensorCore[
                 @parameter
                 for i in range(0, num_frags, 2):
                     var mma_tile = warp_tile.tile[
-                        2 * shape[1], warp_tile.dim[1]()
+                        2 * shape[1], warp_tile.shape[1]()
                     ](i // 2, 0)
                     var vec = _load_matrix_frag(mma_tile, swizzle_offset)
                     fragments[i, 0] = rebind[frag_type](
@@ -409,7 +409,7 @@ struct TensorCore[
                 @parameter
                 for i in range(0, num_frags, 2):
                     var mma_tile = warp_tile.tile[
-                        2 * shape[1], warp_tile.dim[1]()
+                        2 * shape[1], warp_tile.shape[1]()
                     ](i // 2, 0)
                     var vec = _load_matrix_frag[x4_row_major=True](
                         mma_tile, swizzle_offset
@@ -441,7 +441,7 @@ struct TensorCore[
             else:
                 constrained[self.supported_half]()
 
-                var mma_tile = warp_tile.tile[shape[2], warp_tile.dim[1]()](
+                var mma_tile = warp_tile.tile[shape[2], warp_tile.shape[1]()](
                     mma_tile_coordk, 0
                 )
 
@@ -491,11 +491,11 @@ struct TensorCore[
         # TODO: Assume that fragments are all vectorized layout tensor with
         # dims num_vectors x 1. Consider using TensorCore to allocate fragments
         # so the caller don't explicitly maintain the shape.
-        alias num_m_mmas = a_frag.dim[0]()
-        alias num_n_mmas = b_frag.dim[0]()
+        alias num_m_mmas = a_frag.shape[0]()
+        alias num_n_mmas = b_frag.shape[0]()
 
         constrained[
-            c_frag.dim[0]() == num_m_mmas * num_n_mmas,
+            c_frag.shape[0]() == num_m_mmas * num_n_mmas,
             "Fragments size mismatch.",
         ]()
 
