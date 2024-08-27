@@ -14,4 +14,4 @@ namespace CSP = M::KGEN::CSP;
 // LLVMServer
 //===----------------------------------------------------------------------===//
 
-void CSP::LLVMServer::compileBitcode(const std::string &bitcode) {}
+void CSP::LLVMServer::emitArchive(const std::string &mlirModule) {}

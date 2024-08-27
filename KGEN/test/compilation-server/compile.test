@@ -2,7 +2,7 @@
 {"jsonrpc":"2.0","id":0,"method":"initialize"}
 // CHECK-LABEL:  "id": 0,
 // -----
-{"jsonrpc":"2.0","id":2,"method":"compile","params":{"bitcode":"dummy"}}
+{"jsonrpc":"2.0","id":2,"method":"emitArchive","params":{"module":"dummy"}}
 // CHECK-LABEL: "id": 2
 // CHECK-NEXT: "jsonrpc": "2.0"
 // CHECK-NEXT: "result": null

@@ -21,7 +21,7 @@ public:
   ~LLVMServer() = default;
 
   /// Compile LLVM bitcode represented as base64 encoded string.
-  void compileBitcode(const std::string &bitcode);
+  void emitArchive(const std::string &mlirModule);
 };
 
 } // namespace M::KGEN::CSP
