@@ -10,35 +10,66 @@ MAX serving in Python prototype. Main API server thing.
 """
 
 import argparse
-import uvicorn
+import asyncio
+import logging
+from contextlib import AsyncExitStack, asynccontextmanager
 
 from fastapi import FastAPI
-
-from max.serve.config import APIType, get_settings
+from max.serve.config import APIType, Settings, api_prefix
+from max.serve.pipelines.deps import all_pipelines
 from max.serve.router import kserve_routes, openai_routes
+from pydantic_settings import CliSettingsSource
+from uvicorn import Config, Server
 
 ROUTES = {
     APIType.KSERVE: kserve_routes,
     APIType.OPENAI: openai_routes,
 }
 
+logging.basicConfig(
+    level=logging.DEBUG,
+    encoding="utf-8",
+    format="%(asctime)s - %(levelname)s - %(message)s",
+)
+logger = logging.getLogger(__name__)
 
-def create_app():
-    settings = get_settings()
-    prefix = lambda api_type: (
-        str(api_type) if len(settings.api_types) > 1 else ""
-    )
-    app = FastAPI()
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    pipelines = all_pipelines()
+    async with AsyncExitStack() as stack:
+        await asyncio.gather(*(stack.enter_async_context(p) for p in pipelines))
+        logger.info("Pipelines loaded!")
+        yield
+        logger.info("Pipelines unloaded!")
+
+
+def create_app(settings: Settings) -> FastAPI:
+    app = FastAPI(lifespan=lifespan)
     for api_type in settings.api_types:
-        app.include_router(ROUTES[api_type].router, prefix=prefix(api_type))
+        app.include_router(
+            ROUTES[api_type].router, prefix=api_prefix(settings, api_type)
+        )
     return app
 
 
-def main():
+def create_config(app: FastAPI) -> Config:
+    config = Config(app=app)
+    return config
+
+
+def parse_settings(parser: argparse.ArgumentParser) -> Settings:
+    cli_settings = CliSettingsSource(Settings, root_parser=parser)
+    return Settings(_cli_settings_source=cli_settings(args=True))  # type: ignore
+
+
+async def main() -> None:
     parser = argparse.ArgumentParser()
-    app = create_app()
-    uvicorn.run(app)
+    app = create_app(parse_settings(parser))
+    config = create_config(app=app)
+    server = Server(config)
+    await server.serve()
 
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())

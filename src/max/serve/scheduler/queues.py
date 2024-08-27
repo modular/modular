@@ -58,13 +58,16 @@ class BatchMultiplexQueue:
                 return
 
     async def respond(self, batch_responses: dict[str, Any]):
-        cancelled = batch_responses.keys() - self.out_queues.keys()
+        # TODO: This cancelled check should be configurable. Won't always be the
+        #       request IDs missing from the latest batch.
+        cancelled = self.out_queues.keys() - batch_responses.keys()
         await asyncio.gather(
             *(
                 self.out_queues[id].put(response)
                 for id, response in batch_responses.items()
                 if id not in cancelled
-            )
+            ),
+            *(self.out_queues[id].put(None) for id in cancelled)
         )
         return cancelled
 

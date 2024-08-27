@@ -5,7 +5,6 @@
 # ===----------------------------------------------------------------------=== #
 """APIs to serve MAX models and graphs."""
 
-from .executor import runner
 from .scheduler import queues
 
 from .router import kserve_routes

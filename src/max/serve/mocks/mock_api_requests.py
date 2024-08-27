@@ -17,7 +17,7 @@ def simple_openai_request():
     }
 
 
-def openai_simple_response(
+def simple_openai_response(
     contents: str,
     model_name: str = "unnamed-model",
     response_id="response_id_0",
@@ -40,7 +40,7 @@ def openai_simple_response(
                 # How do we deal with this.
                 # `"role":assistant"`` is required?
                 "message": {"role": "assistant", "content": contents},
-                "logprobs": None,
+                "logprobs": {"content": []},
                 "finish_reason": "stop",
                 "index": 0,
             }
@@ -61,7 +61,7 @@ def simple_openai_stream_request():
     }
 
 
-def openai_stream_response(
+def simple_openai_stream_response(
     contents: list[str],
     model_name: str = "unnamed-model",
     response_id="response_id_0",
