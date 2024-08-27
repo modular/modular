@@ -37,14 +37,22 @@ class ExecutionManager extends DisposableContext {
 
     for (const cmd of ['mojo.debugFile', 'mojo.debugFileInTerminal']) {
       this.pushSubscription(
-        vscode.commands.registerCommand(cmd, async (file?: vscode.Uri) => {
-          await this.debugFile(
+        vscode.commands.registerCommand(cmd, async (file: vscode.Uri) => {
+          return this.debugFile(
             file,
             /*runInTerminal=*/ cmd === 'mojo.debugFileInTerminal'
           );
         })
       );
     }
+    this.pushSubscription(
+      vscode.commands.registerCommand(
+        'mojo.debugFileWithCudaGdb',
+        async (file: vscode.Uri) => {
+          return this.debugFileWithCudaGdb(file);
+        }
+      )
+    );
   }
 
   /**
@@ -75,6 +83,28 @@ class ExecutionManager extends DisposableContext {
     if (this.shouldTerminalFocusOnStart(doc.uri)) {
       vscode.commands.executeCommand('workbench.action.terminal.focus');
     }
+  }
+
+  /**
+   * Debug the current file with CudaGdb.
+   */
+  async debugFileWithCudaGdb(file: Optional<vscode.Uri>) {
+    let doc = await this.getDocumentToExecute(file);
+
+    if (!doc) {
+      return;
+    }
+
+    let debugConfig: vscode.DebugConfiguration = {
+      type: 'mojo-cuda-gdb',
+      name: 'Mojo CUDA-GDB',
+      request: 'launch',
+      mojoFile: doc.fileName,
+    };
+    await vscode.debug.startDebugging(
+      vscode.workspace.getWorkspaceFolder(doc.uri),
+      debugConfig
+    );
   }
 
   /**
