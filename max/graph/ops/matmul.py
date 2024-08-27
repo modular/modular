@@ -16,17 +16,17 @@ def matmul(lhs: ValueLike, rhs: ValueLike) -> TensorValue:
 
     Performs general matrix multiplication with broadcasting.
 
-    If the lhs is 1D, it will be reshaped to `1xD`.
-    If the rhs is 1D, it will be reshaped to `Dx1`.
+    If the lhs is 1D, it will be reshaped to ``1xD``.
+    If the rhs is 1D, it will be reshaped to ``Dx1``.
     In both cases, the additional `1` dimensions will be removed from the
     output shape.
 
     For the multiplication, the innermost (rightmost) 2 dimensions are treated
     as a matrix.
-    The lhs matrix will have the shape `MxK`.
-    The rhs matrix will have the shape `KxN`.
+    The lhs matrix will have the shape ``MxK``.
+    The rhs matrix will have the shape ``KxN``.
     The output will have the shape `MxN`
-    The `K` dimensions must be equivalent in both matrices.
+    The ``K`` dimensions must be equivalent in both matrices.
 
     The remaining outer dimensions will be broadcasted.
 

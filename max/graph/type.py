@@ -27,30 +27,31 @@ from max.dtype import DType
 class Dim:
     """A tensor dimension.
 
-    Tensor dimensions can be
-    - Static, aka known size
-    - Dynamic, aka unknown size
-    - Symbolic, aka unknown size but named
+    Tensor dimensions can be:
+
+      - Static, aka known size
+      - Dynamic, aka unknown size
+      - Symbolic, aka unknown size but named
 
     In most cases you don't need to work with a `Dim` directly, but can rely
     on conversion constructors, for instance you can specify a tensor type as
 
-    ```python
-    from max.graph import Dim, TensorType
-    tensor_type = TensorType(DType.int64, ("batch", 10))
-    ```
+    .. code-block:: python
+
+        from max.graph import Dim, TensorType
+        tensor_type = TensorType(DType.int64, ("batch", 10))
+
     will create a tensor type with 3 dimensions: a symbolic "batch" dimension,
     a static dimension of size 10, and a dynamic dimension.
-    ```
 
     You can still construct dimensions explicitly via helpers, eg.
 
-    ```python
-    some_dims = [
-        Dim.symbolic("batch"),
-        Dim.static(5),
-    ]
-    ```
+    .. code-block:: python
+
+        some_dims = [
+            Dim.symbolic("batch"),
+            Dim.static(5),
+        ]
 
     Constraining tensor dimensions is one important way to improve model
     performance. If tensors have unknown dimensions, we can't optimize them
@@ -518,7 +519,7 @@ class TensorType(Type):
         """Counts the total number of elements in the tensor type.
 
         For a static tensor, returns the product of all static dimensions.
-        This is the number of elements the tensor will hold _during execution_,
+        This is the number of elements the tensor will hold *during execution*,
         TensorType doesn't actually hold any element values at all.
 
         For any non-static tensor, in other words a tensor having any symbolic

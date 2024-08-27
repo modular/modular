@@ -11,6 +11,19 @@ from .reshape import reshape
 
 
 def as_interleaved_complex(x: ValueLike) -> TensorValue:
+    """Reshapes the input symbolic tensor as complex from alternating (real, imag).
+
+    Args:
+        interleaved: A symbolic tensor representing complex numbers as
+                     alternating pairs of (real, imag) real-valued numbers. Its last
+                     dimension must have an even size.
+
+    Returns:
+        A symbolic tensor representing the complex-valued tensor, but with the
+        values pulled out as complex numbers. The result has the same dimensions
+        for all dimensions except the last dimension, which is halved,
+        and then a final dimension of size 2 representing the complex value.
+    """
     g = TensorValue(x)
     shape = g.shape
     last = shape[-1]
