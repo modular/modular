@@ -26,6 +26,10 @@ struct _CStatus:
         )
         return str(err)
 
+    fn free(self, lib: DriverLibrary):
+        alias free_func = "M_deleteStatus"
+        call_dylib_func(lib.get_handle(), free_func, self)
+
 
 struct Status:
     var impl: _CStatus
@@ -40,3 +44,6 @@ struct Status:
 
     fn __str__(self) -> String:
         return self.impl.get_error(self.lib)
+
+    fn __del__(owned self):
+        self.impl.free(self.lib)

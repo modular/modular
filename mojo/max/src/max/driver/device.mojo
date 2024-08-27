@@ -172,4 +172,8 @@ fn cpu_device() raises -> Device:
     """
     var lib = DriverLibrary()
     var descriptor = _CPUDescriptor()
-    return Device(lib, owned_ptr=lib.create_cpu_device_fn(descriptor.numa_id))
+    var status = Status(lib)
+    var device = lib.create_cpu_device_fn(descriptor.numa_id, status.impl)
+    if status:
+        raise str(status)
+    return Device(lib, owned_ptr=device)

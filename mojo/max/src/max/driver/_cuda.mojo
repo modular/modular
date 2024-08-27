@@ -22,15 +22,18 @@ from collections import Optional
 from collections.dict import OwnedKwargsDict
 from utils import Variant
 from gpu.host._compile import _get_nvptx_target
+from ._status import Status
 
 
 fn cuda_device(gpu_id: Int = 0) raises -> Device:
     var lib = DriverLibrary()
+    var status = Status(lib)
+    var device = lib.create_cuda_device_fn(gpu_id, status.impl)
+    if status:
+        raise str(status)
     var cuda_dev = Device(
         lib,
-        owned_ptr=lib.create_cuda_device_fn(
-            gpu_id,
-        ),
+        owned_ptr=device,
     )
     return cuda_dev
 
