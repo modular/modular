@@ -9,7 +9,7 @@
 # COM: Test with mojo build
 # RUN: mkdir -p %t
 # RUN: rm -rf %t/engine-device-tensor
-# RUN: mojo build %s -o %t/engine-device-tensor
+# RUN: %mojo-build %s -o %t/engine-device-tensor
 # RUN: %t/engine-device-tensor %S/mo_unnamed.mlir
 
 from sys import argv
