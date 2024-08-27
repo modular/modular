@@ -154,22 +154,8 @@
         "mojo.enableMagicSDK": {
           "scope": "machine",
           "type": "boolean",
+          "default": false,
           "description": "Whether to support the MAX SDK for VS Code based on the magic tool."
-        },
-        "mojo.magicSDK.major": {
-          "scope": "machine",
-          "type": "string",
-          "default": "24"
-        },
-        "mojo.magicSDK.minor": {
-          "scope": "machine",
-          "type": "string",
-          "default": "4"
-        },
-        "mojo.magicSDK.patch": {
-          "scope": "machine",
-          "type": "string",
-          "default": "0dev7"
         }
       }
     },
