@@ -135,6 +135,7 @@ struct _InferenceSessionImpl(Movable):
             Model._InitModelFnName,
             self.context.borrow_ptr(),
             compiled_model.borrow_ptr(),
+            UnsafePointer[NoneType](),  # Pass null weights registry.
             status.borrow_ptr(),
         )
         if status:
