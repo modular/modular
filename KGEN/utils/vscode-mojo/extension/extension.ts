@@ -8,7 +8,7 @@ import * as vscode from 'vscode';
 
 import { Logger } from './logging';
 import { isNightlyExtension } from './utils/buildInfo';
-import { MojoSDKManager, MojoSDKSpec } from './sdk/sdkManager';
+import { MojoSDKManager } from './sdk/sdkManager';
 import { MojoLSPManager } from './lsp/lsp';
 import { DisposableContext } from './utils/disposableContext';
 import { MojoTestManager } from './testing/testing';
@@ -19,6 +19,7 @@ import { MojoDecoratorManager } from './decorations';
 import { RpcServer } from './server/RpcServer';
 import * as config from './utils/config';
 import * as configWatcher from './utils/configWatcher';
+import { MojoSDKSpec } from './sdk/types';
 
 /**
  * This class provides an entry point for the Mojo extension, managing the

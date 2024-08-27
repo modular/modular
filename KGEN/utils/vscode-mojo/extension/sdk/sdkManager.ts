@@ -8,16 +8,9 @@ import * as ini from 'ini';
 import * as path from 'path';
 import * as util from 'util';
 import * as vscode from 'vscode';
-import * as fs from 'fs';
-import * as config from '../utils/config';
-
-const execFile = util.promisify(require('child_process').execFile);
-const chmod = util.promisify(require('fs').chmod);
-
 import { Logger } from '../logging';
 import { isNightlyExtension } from '../utils/buildInfo';
 import { DisposableContext } from '../utils/disposableContext';
-import { lock } from 'proper-lockfile';
 import { MojoSDKConfig } from './sdkConfig';
 import { MojoSDK } from './sdk';
 import { Mutex } from 'async-mutex';
@@ -25,19 +18,13 @@ import {
   directoryExists,
   fileExists,
   getAllOpenMojoFiles,
-  mkdirp,
   moveUpUntil,
   readFile,
 } from '../utils/files';
 import { MojoSDKVersion } from './sdkVersion';
-import axios from 'axios';
-
-export type MojoSDKSpec = {
-  kind: 'modular-cli' | 'dev' | 'magic';
-  modularHomePath: string;
-  section: string;
-  version: MojoSDKVersion;
-};
+import { findMagicSDKSpec } from './magicSdk';
+import { MojoSDKSpec } from './types';
+const execFile = util.promisify(require('child_process').execFile);
 
 type NotYetSelectedSDK = {
   state: 'not-yet-selected';
@@ -104,7 +91,11 @@ export class MojoSDKManager extends DisposableContext {
     );
     this.pushSubscription(
       vscode.commands.registerCommand('mojo.magicSdk.install', async () => {
-        const spec = await this.findMagicSDKSpec(/*withLock=*/ false);
+        const spec = await findMagicSDKSpec(
+          /*withLock=*/ false,
+          this.context,
+          this.logger
+        );
         if (spec !== undefined) {
           vscode.commands.executeCommand('mojo.restart');
         }
@@ -340,170 +331,14 @@ export class MojoSDKManager extends DisposableContext {
 
   private async findReleaseSDKSpecs(): Promise<MojoSDKSpec[]> {
     if (this.enableMagicSDK) {
-      const spec = await this.findMagicSDKSpec(/*withLock=*/ true);
+      const spec = await findMagicSDKSpec(
+        /*withLock=*/ true,
+        this.context,
+        this.logger
+      );
       return spec ? [spec] : [];
     }
     return this.findModularCliSDKSpecs();
-  }
-
-  private async downloadFile(url: string, outputPath: string) {
-    const writer = fs.createWriteStream(outputPath);
-
-    const response = await axios({
-      url,
-      method: 'GET',
-      responseType: 'stream',
-    });
-
-    response.data.pipe(writer);
-
-    return new Promise((resolve, reject) => {
-      writer.on('finish', resolve);
-      writer.on('error', reject);
-    });
-  }
-
-  private async findMagicSDKSpec(
-    withLock: boolean
-  ): Promise<Optional<MojoSDKSpec>> {
-    const privateDir = this.context.globalStorageUri.fsPath;
-    const magicDataHome = path.join(privateDir, 'magic-data-home');
-    await mkdirp(magicDataHome);
-
-    const magicPath = path.join(privateDir, 'magic');
-    const doneDirectory = path.join(privateDir, 'done');
-
-    let platform: string;
-    if (process.platform === 'linux') {
-      platform = 'unknown-linux-musl';
-    } else if (process.platform === 'darwin') {
-      platform = 'apple-darwin';
-    } else if (process.platform === 'win32') {
-      platform = 'pc-windows-msvc';
-    } else {
-      vscode.window.showErrorMessage(
-        `The MAX SDK is not supported in this platform: ${process.platform}`
-      );
-      return undefined;
-    }
-    let arch: string;
-    if (process.arch === 'x64') {
-      arch = 'x86_64';
-    } else if (process.arch === 'arm64') {
-      arch = 'aarch64';
-    } else {
-      arch = process.arch;
-    }
-    const magicUrl = `https://dl.modular.com/public/magic/raw/versions/latest/magic-${arch}-${platform}`;
-    const major = config.get(
-      'magicSDK.major',
-      /*workspaceFolder=*/ undefined,
-      ''
-    );
-    const minor = config.get(
-      'magicSDK.minor',
-      /*workspaceFolder=*/ undefined,
-      ''
-    );
-    const patch = config.get(
-      'magicSDK.patch',
-      /*workspaceFolder=*/ undefined,
-      ''
-    );
-    const version = `${major}.${minor}.${patch}`;
-
-    const success = await vscode.window.withProgress<boolean>(
-      {
-        title: 'Installing the MAX SDK for VS Code',
-        location: vscode.ProgressLocation.Notification,
-      },
-      async (): Promise<boolean> => {
-        try {
-          this.logger.main.logInfo('Trying to acquire installation lock...');
-          const release = withLock
-            ? await lock(privateDir, { retries: 10 })
-            : async () => {};
-          const versionDoneDir = path.join(privateDir, version);
-
-          if (
-            (await directoryExists(doneDirectory)) &&
-            (await directoryExists(versionDoneDir))
-          ) {
-            this.logger.main.logInfo(
-              'Magic SDK present. Skipping installation.'
-            );
-            await release();
-            return true;
-          }
-          fs.rmdirSync(doneDirectory);
-
-          this.logger.main.logInfo(
-            `Will download ${magicUrl} into ${magicPath}`
-          );
-          await this.downloadFile(magicUrl, magicPath);
-          this.logger.main.logInfo('Successfully downloaded');
-          await chmod(magicPath, 0o755);
-          this.logger.main.logInfo(
-            `The permissions for ${magicPath} have been changed.`
-          );
-
-          this.logger.main.logInfo(`Will install MAX`);
-          const env = { ...process.env };
-          env['MAGIC_DATA_HOME'] = magicDataHome;
-
-          const args = [
-            'global',
-            'install',
-            '-c',
-            'https://conda.modular.com/max',
-            '-c',
-            'conda-forge',
-            `max==${version}`,
-            'python>=3.11,<3.12',
-          ];
-          await execFile(magicPath, args, { env });
-          this.logger.main.logInfo(`Successfully installed MAX`);
-
-          await mkdirp(doneDirectory);
-          await mkdirp(versionDoneDir);
-          await release();
-          return true;
-        } catch (e) {
-          this.logger.main.logError(
-            "Couldn't install the MAX SDK for VS Code",
-            e
-          );
-          return false;
-        }
-      }
-    );
-    if (!success) {
-      vscode.window.showErrorMessage(
-        "Couldn't install the MAX SDK for VS Code"
-      );
-      return undefined;
-    }
-    const modularHomePath = path.join(
-      magicDataHome,
-      'envs',
-      'max',
-      'share',
-      'max'
-    );
-
-    // Consider nightly here
-    return {
-      kind: 'magic',
-      modularHomePath,
-      section: 'mojo-max',
-      version: new MojoSDKVersion(
-        'MAX SDK for VS Code',
-        major,
-        minor,
-        patch,
-        modularHomePath
-      ),
-    };
   }
 
   private async findModularCliSDKSpecs(): Promise<MojoSDKSpec[]> {
