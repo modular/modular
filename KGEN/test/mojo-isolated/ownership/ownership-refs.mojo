@@ -371,7 +371,6 @@ fn parametric_mut_mbvalue[
   # CHECK: lit.ref.struct.ger
   return a[].field
 
-
 # Reference directly with inferred params.
 struct SomeStructWithReferenceSelfArgument:
     fn __init__(inout self): pass

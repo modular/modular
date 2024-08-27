@@ -658,3 +658,20 @@ fn test(a: Reference[Addable, _], b: Addable):
     # FIXME: This shouldn't mention is_mutable since it is an implicit parameter.
     # expected-error @+1 {{invalid call to '__add__': right side cannot be converted from 'Reference[is_mutable, Addable, lifetime, 0]' to 'Addable'}}
     _ = b+a
+
+
+# Verify that we can propagate parametric mutability through field accesses.
+struct ThingWithFields:
+  var field: Int
+
+fn field_sensitive_lifetimes(a: ThingWithFields)
+    -> Reference[ThingWithFields, __lifetime_of(a.field)]:
+
+  # expected-error @+1 {{'ThingWithFields' value has no attribute 'field_abc'}}
+  _ = __lifetime_of(a.field_abc)
+  # expected-error @+1 {{value doesn't have a memory type}}
+  _ = __lifetime_of(int.field_abc)
+
+  # expected-error @+1 {{cannot implicitly convert 'ThingWithFields' value to 'Reference[0, ThingWithFields, a.field, 0]'}}
+  return a
+
