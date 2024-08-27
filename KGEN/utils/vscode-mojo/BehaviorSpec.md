@@ -242,3 +242,5 @@ that, the LSP is not launched unless a Mojo file is open.
 
 - Enabling auto updates of the magic installation
 - Enabling multiple concurrent SDKs based on max projects
+- Debugger proxy that identifies execution errors
+- Display version mismatch warnings with the modular repo and the external sdk.

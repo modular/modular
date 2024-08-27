@@ -15,13 +15,13 @@ export class MojoSDKVersion {
     major: number,
     minor: number,
     patch: number,
-    driverPath: string
+    modularHomePath: string
   ) {
     this.title = title;
     this.minor = minor;
     this.major = major;
     this.patch = patch;
-    this.driverPath = driverPath;
+    this.modularHomePath = modularHomePath;
   }
 
   /**
@@ -39,8 +39,7 @@ export class MojoSDKVersion {
     if (this.isDev()) {
       // We include the path to the modular repo, which is three levels up from
       // the mojo driver path.
-      const repo = path.join(path.parse(this.driverPath).dir, '..', '..', '..');
-      return `${this.title} (dev) - ${repo}`;
+      return `${this.title} (dev) - ${this.modularHomePath}`;
     }
 
     // Otherwise, just format the version number.
@@ -51,5 +50,5 @@ export class MojoSDKVersion {
   minor: number;
   major: number;
   patch: number;
-  driverPath: string;
+  modularHomePath: string;
 }

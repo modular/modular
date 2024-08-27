@@ -11,141 +11,317 @@ import * as vscode from 'vscode';
 
 const execFile = util.promisify(require('child_process').execFile);
 
-import { LoggingService } from '../logging';
-import * as config from '../utils/config';
-import { substituteVariables } from '../utils/vscodeVariables';
+import { Logger } from '../logging';
 import { isNightlyExtension } from '../utils/buildInfo';
 import { DisposableContext } from '../utils/disposableContext';
-import * as configWatcher from '../utils/configWatcher';
 import { MojoSDKConfig } from './sdkConfig';
 import { MojoSDK } from './sdk';
+import { Mutex } from 'async-mutex';
+import {
+  directoryExists,
+  fileExists,
+  getAllOpenMojoFiles,
+  moveUpUntil,
+  readFile,
+} from '../utils/files';
+import { MojoSDKVersion } from './sdkVersion';
+
+export type MojoSDKSpec = {
+  kind: 'modular-cli' | 'dev' | 'magic';
+  modularHomePath: string;
+  section: string;
+  version: MojoSDKVersion;
+};
+
+type NotYetSelectedSDK = {
+  state: 'not-yet-selected';
+};
+
+type SelectedSDK = {
+  state: 'selected';
+  sdkSpec: Optional<MojoSDKSpec>;
+  errorMessage?: Optional<string>;
+};
+
+type SDKSelection = NotYetSelectedSDK | SelectedSDK;
 
 /**
- *  This class manages the resolution of SDKs for different files, workspaces
- * and tools.
+ * This class manages the active SDK, switching SDKs, and other related ad hoc actions.
+ *
+ * There are two public APIs:
+ *  - `findSDK` is the way to get the active SDK and it's protected by a mutex.
+ *  - `createAdHocSDKAndShowError` is used for actions that force the use of a given SDK.
+ *    This function doesn't have side effects.
+ *
+ * Caching should be minimized to capture the current state of the SDKs in the filesystem.
  */
 export class MojoSDKManager extends DisposableContext {
-  /**
-   * The main SDK owned by the manager.
-   */
-  private sdk: Optional<Promise<Optional<MojoSDK>>>;
-
-  /**
-   * A service that can be used to log message in the Mojo output channel.
-   */
-  private loggingService: LoggingService;
-
-  /**
-   * The current extension context.
-   */
-  private readonly context: vscode.ExtensionContext;
+  public logger: Logger;
+  private context: vscode.ExtensionContext;
+  private initializationSDK: Optional<MojoSDKSpec>;
+  private enableMagicSDK: boolean;
+  private activeSDK: SDKSelection = { state: 'not-yet-selected' };
+  private findSDKMutex = new Mutex();
 
   constructor(
-    loggingService: LoggingService,
-    context: vscode.ExtensionContext
+    logger: Logger,
+    context: vscode.ExtensionContext,
+    initializationSDK: Optional<MojoSDKSpec>,
+    enableMagicSDK: boolean
   ) {
     super();
-    this.loggingService = loggingService;
+    this.logger = logger;
     this.context = context;
-
+    this.initializationSDK = initializationSDK;
+    this.enableMagicSDK = enableMagicSDK;
     this.pushSubscription(
-      vscode.commands.registerCommand('mojo.sdk.install', () => {
-        this.promptInstallSDK();
+      vscode.commands.registerCommand('mojo.sdk.selectSdk', async () => {
+        const allSDKSpecs = await this.findAllSDKs();
+        if (allSDKSpecs.length === 0) {
+          vscode.window.showErrorMessage('No MAX SDKs were found.');
+          return;
+        }
+        const sdkNames = allSDKSpecs.map((spec) => spec.version.toString());
+        const selected = await vscode.window.showQuickPick(sdkNames, {
+          ignoreFocusOut: true,
+          title: 'Select the Max SDK to use',
+        });
+        const selectedSDK = allSDKSpecs.find(
+          (spec) => spec.version.toString() == selected
+        );
+        if (selectedSDK !== undefined) {
+          vscode.commands.executeCommand('mojo.restart', selectedSDK);
+        }
       })
     );
   }
 
-  /**
-   * Resolve the Modular config for the extension.
-   *
-   * The resolver will look for available SDKs in a few specified locations:
-   *   - The `mojo.modularHomePath` setting in the user settings, and any
-   *     current workspaces.
-   *   - The `MODULAR_HOME` environment variable.
-   *   - The packages installed via the `modular` cli tool.
-   *
-   * If a single SDK is found, that is the SDK used for the extension. If
-   * multiple are found, the user is prompted for which SDK they would like to
-   * use.
-   *
-   * This function caches the result and the cache is refreshed whenever there's
-   * a change in the list of active workspaces.
-   */
-  public async findSDK(): Promise<Optional<MojoSDK>> {
-    // Find the SDK if we haven't yet.
-    if (!this.sdk) {
-      this.sdk = this.doFindSDK();
-      this.sdk.then((sdk) => {
-        if (!sdk) {
-          this.promptInstallSDK(/*notifySDKNotFound=*/ true);
-        }
-      });
-    }
-
-    return this.sdk;
-  }
-
-  /**
-   * Finds all of the possible Mojo SDKs reachable by the extension. This checks
-   * all of the possible locations as described by `findSDK`.
-   */
-  private async findAllPossibleSDKs(): Promise<MojoSDK[]> {
-    // SDKs come from two possible places:
-    //  * The `mojo.modularHomePath` setting, which should generally only be
-    //  used
-    //    in a dev build.
-    //  * The `MODULAR_HOME` environment variable.
-    //  * The configurations defined via the `modular` tool.
-    let possibleSDKs: MojoSDK[] = [];
-
-    // Utilities for processing SDKs found via modular home paths.
-    let checkedPaths = new Set<string>();
-    let addSDKPath = async (path: Optional<string>) => {
-      if (!path || checkedPaths.has(path)) {
-        return;
-      }
-      checkedPaths.add(path);
-      let sdk = await this.loadSDKFromModularHome(path);
-
-      if (sdk) {
-        possibleSDKs.push(sdk);
+  public async findSDK(
+    hideRepeatedErrors: boolean
+  ): Promise<Optional<MojoSDK>> {
+    const doWork = async () => {
+      if (this.activeSDK.state === 'selected') {
+        return this.createSDKAndShowError(this.activeSDK, hideRepeatedErrors);
+      } else {
+        const activeSDK = await this.initializeActiveSDK();
+        return this.createSDKAndShowError(
+          activeSDK,
+          /*hideRepeatedErrors=*/ false
+        );
       }
     };
 
-    // First, find the possible SDKs by looking at the `mojo.modularHomePath`
-    // setting.
-    if (vscode.workspace.workspaceFolders) {
-      for (let workspaceFolder of vscode.workspace.workspaceFolders) {
-        await addSDKPath(
-          await this.tryGetModularHomePathFromConfig(workspaceFolder)
-        );
-      }
-    }
-    await addSDKPath(await this.tryGetModularHomePathFromConfig(undefined));
-
-    // Next, check the `MODULAR_HOME` environment variable.
-    await addSDKPath(process.env.MODULAR_HOME);
-
-    // Finally, check the configurations defined via the `modular` tool.
-    possibleSDKs.push(...(await this.findPossibleSDKsFromCLI()));
-
-    /// Remove duplicate SDKs (as determined by version).
-    let seenVersions = new Set<string>();
-    return possibleSDKs.filter((sdk) => {
-      let version = sdk.config.version.toString();
-
-      if (seenVersions.has(version)) {
-        return false;
-      }
-      seenVersions.add(version);
-      return true;
-    });
+    return this.findSDKMutex.runExclusive(() => doWork());
   }
 
-  /**
-   * Find all of the viable Mojo SDKs installed via the `modular` cli tool.
-   */
-  private async findPossibleSDKsFromCLI(): Promise<MojoSDK[]> {
+  public async createAdHocSDKAndShowError(
+    modularHomePath: string,
+    section?: string
+  ): Promise<Optional<MojoSDK>> {
+    const hideRepeatedErrors = false;
+
+    const devSDKSpec = await this.findDevSDKSpecFromSubPath(modularHomePath);
+    if (devSDKSpec !== undefined) {
+      return this.createSDKAndShowError(
+        { state: 'selected', sdkSpec: devSDKSpec },
+        hideRepeatedErrors
+      );
+    }
+    if (
+      this.activeSDK.state === 'selected' &&
+      this.activeSDK.sdkSpec?.modularHomePath === modularHomePath
+    ) {
+      return this.createSDKAndShowError(this.activeSDK, hideRepeatedErrors);
+    }
+    // TODO: create an SDK from a config file and a section once every debug request has a section
+    vscode.window.showErrorMessage(
+      'Unable to determine the SDK for ' + modularHomePath
+    );
+    return undefined;
+  }
+
+  private async initializeActiveSDK(): Promise<SelectedSDK> {
+    // This is invoked only once per extension activation.
+    const sdkSpec =
+      this.initializationSDK !== undefined
+        ? this.initializationSDK
+        : await this.selectSDK();
+    this.activeSDK = { state: 'selected', sdkSpec };
+    return this.activeSDK;
+  }
+
+  private async createSDKAndShowError(
+    selectedSDK: SelectedSDK,
+    hideRepeatedErrors: boolean
+  ): Promise<Optional<MojoSDK>> {
+    const result = await this.doCreateSDK(selectedSDK);
+    if (typeof result === 'string') {
+      if (hideRepeatedErrors && selectedSDK.errorMessage === result) {
+        return undefined;
+      }
+      let errorMessage = result;
+      selectedSDK.errorMessage = result;
+
+      if (
+        selectedSDK.sdkSpec?.kind == 'modular-cli' ||
+        selectedSDK.sdkSpec === undefined
+      ) {
+        errorMessage += '\nPlease install the MAX SDK via the modular tool.';
+        vscode.window
+          .showErrorMessage(errorMessage, 'Install')
+          .then((value) => {
+            if (value === 'Install') {
+              vscode.env.openExternal(
+                vscode.Uri.parse('https://www.modular.com/mojo')
+              );
+            }
+          });
+      } else if (selectedSDK.sdkSpec.kind === 'dev') {
+        errorMessage += '\nPlease run ./bazelw run //:install';
+        vscode.window
+          .showErrorMessage(errorMessage, 'Run bazel')
+          .then((value) => {
+            if (value === 'Run bazel') {
+              const repo = path.dirname(
+                selectedSDK.sdkSpec?.modularHomePath || ''
+              );
+              const terminal =
+                vscode.window.activeTerminal ||
+                vscode.window.createTerminal({
+                  name: repo,
+                });
+              terminal.sendText(`(cd '${repo}' && ./bazelw run //:install)`);
+            }
+          });
+      } else if (selectedSDK.sdkSpec.kind === 'magic') {
+        // TODO: reinstall manually
+      }
+      this.logger.main.logError(errorMessage);
+      return undefined;
+    }
+    return result;
+  }
+
+  private async doCreateSDK(
+    selectedSDK: SelectedSDK
+  ): Promise<MojoSDK | string> {
+    const spec = selectedSDK.sdkSpec;
+    if (spec === undefined) {
+      return 'The Mojo🔥 development environment was not found.';
+    }
+    const modularConfigPath = path.join(spec.modularHomePath, 'modular.cfg');
+    const modularConfigContents = await readFile(modularConfigPath);
+    if (modularConfigContents === undefined) {
+      return `The modular config file '${modularConfigPath}' can't be read.`;
+    }
+    const modularConfig = ini.parse(modularConfigContents);
+    this.logger.main.logInfo(
+      `'${modularConfigPath}' with contents`,
+      modularConfig
+    );
+
+    // Find the appropriate mojo configuration key in the config file.
+    let mojoKeys: string[] = Object.keys(modularConfig).filter((key) =>
+      key.startsWith(spec.section)
+    );
+    let configKey = MojoSDK.getConfigKey(
+      spec.modularHomePath,
+      isNightlyExtension(this.context),
+      mojoKeys
+    );
+    if (configKey === undefined) {
+      return `The modular config file '${modularConfigPath}' is outdated.`;
+    }
+    let sdkConfig = await MojoSDKConfig.create(
+      this.logger,
+      spec.modularHomePath,
+      spec.section,
+      modularConfig[configKey]
+    );
+
+    if (!sdkConfig) {
+      return `Unable to determine the MAX SDK version.`;
+    }
+    return new MojoSDK(sdkConfig, this.logger, this.context);
+  }
+
+  private async selectSDK(): Promise<Optional<MojoSDKSpec>> {
+    const allSDKSpecs = await this.findAllSDKs();
+    if (allSDKSpecs.length === 0) {
+      return undefined;
+    }
+    if (allSDKSpecs.length === 1) {
+      return allSDKSpecs[0];
+    }
+    const sdkNames = allSDKSpecs.map((spec) => spec.version.toString());
+    const selected = await vscode.window.showQuickPick(sdkNames, {
+      ignoreFocusOut: true,
+      title: 'Select the Max SDK to use',
+    });
+    return allSDKSpecs.find((spec) => spec.version.toString() == selected);
+  }
+
+  private async findAllSDKs(): Promise<MojoSDKSpec[]> {
+    const [devSDKSpecs, modularCliSDKSpecs] = await Promise.all([
+      this.findDevSDKSpecs(),
+      this.findModularCliSDKSpecs(),
+    ]);
+
+    return [...devSDKSpecs, ...modularCliSDKSpecs];
+  }
+
+  private async findDevSDKSpecs(): Promise<MojoSDKSpec[]> {
+    const visiblePaths = [];
+    const [activeMojoFile, otherOpenMojoFiles] = getAllOpenMojoFiles();
+
+    if (activeMojoFile) {
+      visiblePaths.push(activeMojoFile.uri.fsPath);
+    }
+    for (const file of otherOpenMojoFiles) {
+      visiblePaths.push(file.uri.fsPath);
+    }
+    for (let workspaceFolder of vscode.workspace.workspaceFolders || []) {
+      visiblePaths.push(workspaceFolder.uri.fsPath);
+    }
+    const candidateSDKSpecs = (
+      await Promise.all(
+        visiblePaths.map((path) => this.findDevSDKSpecFromSubPath(path))
+      )
+    ).filter((x): x is MojoSDKSpec => x !== undefined);
+    const uniqueSDKSpecs = new Map<string, MojoSDKSpec>();
+    candidateSDKSpecs.forEach((spec) =>
+      uniqueSDKSpecs.set(spec.modularHomePath, spec)
+    );
+    return [...uniqueSDKSpecs.values()];
+  }
+
+  private async findDevSDKSpecFromSubPath(
+    fsPath: string
+  ): Promise<Optional<MojoSDKSpec>> {
+    const repoRoot = await moveUpUntil(fsPath, (p) =>
+      directoryExists(path.join(p, '.git'))
+    );
+    if (!repoRoot) {
+      return undefined;
+    }
+    const bazelPath = path.join(repoRoot, 'WORKSPACE.bazel');
+    const bazelBytes = await vscode.workspace.fs.readFile(
+      vscode.Uri.file(bazelPath)
+    );
+    const bazelContents = Buffer.from(bazelBytes).toString('utf-8');
+    if (!bazelContents.includes('workspace(name = "modular")')) {
+      return undefined;
+    }
+    const modularHomePath = path.join(repoRoot, '.derived');
+    return {
+      kind: 'dev',
+      modularHomePath,
+      version: new MojoSDKVersion('Modular Repo', 0, 0, 0, modularHomePath),
+      section: 'mojo-max',
+    };
+  }
+
+  private async findModularCliSDKSpecs(): Promise<MojoSDKSpec[]> {
     let isNightly = isNightlyExtension(this.context);
 
     // Build a regex to match an .ini like string, where the form is:
@@ -184,236 +360,39 @@ export class MojoSDKManager extends DisposableContext {
         configurationValues.get(section)![key] = value;
       }
     } catch (e) {
-      this.loggingService.main.logError(
+      this.logger.main.logError(
         'Unable to invoke `modular config-list`, failed with: ',
         e
       );
     }
 
     // Build a possible SDK for each of the configurations.
-    let possibleSDKs: MojoSDK[] = [];
+    let possibleSDKs: MojoSDKSpec[] = [];
     for (let [section, values] of configurationValues) {
-      let sdk = await this.createSDKAndConfig(section, values);
-
-      if (sdk) {
-        possibleSDKs.push(sdk);
+      const mojoPath = values.driver_path || '';
+      const modularHomePath = await moveUpUntil(mojoPath, async (p) => {
+        const [d1, d2] = await Promise.all([
+          directoryExists(path.join(p, 'pkg')),
+          fileExists(path.join(p, 'modular.cfg')),
+        ]);
+        return d1 && d2;
+      });
+      if (modularHomePath !== undefined) {
+        const version = await MojoSDKConfig.parseVersionFromDriver(
+          this.logger,
+          mojoPath,
+          section
+        );
+        if (version !== undefined) {
+          possibleSDKs.push({
+            kind: 'modular-cli',
+            modularHomePath,
+            section,
+            version,
+          });
+        }
       }
     }
     return possibleSDKs;
-  }
-
-  /**
-   * Load a Mojo SDK defined at the given modular home location.
-   */
-  private async loadSDKFromModularHome(
-    modularPath: string
-  ): Promise<Optional<MojoSDK>> {
-    this.loggingService.main.logInfo(`MODULAR_HOME is ${modularPath}.`);
-
-    // Read in the config file.
-    const modularCfg = path.join(modularPath, 'modular.cfg');
-    let configPath = vscode.Uri.file(modularCfg);
-
-    try {
-      let configPathStat = await vscode.workspace.fs.stat(configPath);
-      if (!(configPathStat.type & vscode.FileType.File)) {
-        this.showSDKErrorMessage(
-          `The modular config file '${modularCfg}' is not a file.`
-        );
-        return undefined;
-      }
-    } catch (e) {
-      this.showSDKErrorMessage(
-        `The modular config file '${
-          modularCfg
-        }' does not exist or VS Code does not have permissions to access it.`,
-        e
-      );
-      return undefined;
-    }
-    let modularConfig = ini.parse(
-      new TextDecoder().decode(await vscode.workspace.fs.readFile(configPath))
-    );
-    this.loggingService.main.logInfo(
-      'modular.cfg file with contents',
-      modularConfig
-    );
-
-    // Find the appropriate mojo configuration key in the config file.
-    let mojoKeys: string[] = Object.keys(modularConfig).filter((key) =>
-      key.startsWith('mojo')
-    );
-    let configKey = MojoSDK.getConfigKey(
-      modularPath,
-      isNightlyExtension(this.context),
-      mojoKeys
-    );
-    if (!configKey) {
-      this.showSDKErrorMessage(
-        `The modular config file '${modularCfg}' is outdated.`
-      );
-      return undefined;
-    }
-
-    return this.createSDKAndConfig(
-      configKey,
-      modularConfig[configKey],
-      modularPath
-    );
-  }
-
-  /**
-   * Create a Mojo SDK from the given configuration.
-   */
-  private async createSDKAndConfig(
-    configSection: string,
-    rawConfig: { [key: string]: any },
-    modularPath: string = ''
-  ): Promise<Optional<MojoSDK>> {
-    let sdkConfig = await MojoSDKConfig.create(
-      this.loggingService,
-      modularPath,
-      configSection,
-      rawConfig
-    );
-
-    if (!sdkConfig) {
-      return undefined;
-    }
-    return new MojoSDK(sdkConfig, this.loggingService, this.context);
-  }
-
-  /**
-   * This function discovers an SDK following the procedure described in
-   * `findSDK`.
-   */
-  private async doFindSDK(): Promise<Optional<MojoSDK>> {
-    // Find the possible set of SDKs.
-    let possibleSDKs = await this.findAllPossibleSDKs();
-
-    if (possibleSDKs.length == 0) {
-      return undefined;
-    }
-
-    // Resolve the SDK from the set of possible choices.
-    let sdk = possibleSDKs[0];
-    if (possibleSDKs.length > 1) {
-      // If there are multiple, ask the user which one they want to use.
-      let sdkNames = possibleSDKs.map((sdk) => sdk.config.version.toString());
-      let selected = await vscode.window.showQuickPick(sdkNames, {
-        placeHolder: 'Select the Mojo SDK to use!',
-        ignoreFocusOut: true,
-      });
-      if (selected) {
-        sdk = possibleSDKs.find(
-          (sdk) => sdk.config.version.toString() == selected
-        )!;
-      }
-    }
-
-    // Push a subscription for changes to any of the SDK paths.
-    this.pushSubscription(
-      await configWatcher.activate(
-        undefined,
-        [],
-        [
-          sdk.config.mojoLLDBVSCodePath,
-          sdk.config.mojoDriverPath,
-          sdk.config.mojoLanguageServerPath,
-          sdk.config.mojoLLDBPluginPath,
-          sdk.config.lldbPath,
-        ]
-      )
-    );
-
-    // Now that we have a resolved SDK, warn if it's out of date.
-    await sdk.warnIfSDKOutOfDate();
-    return sdk;
-  }
-
-  /**
-   * Prompt to the user that the SDK is missing, and provide a link to the
-   * installation instructions.
-   */
-  private async promptInstallSDK(notifySDKNotFound: boolean = false) {
-    this.loggingService.main.logInfo('Prompting Install SDK.');
-    const prefix = notifySDKNotFound
-      ? 'The Mojo🔥 development environment was not found. '
-      : '';
-
-    let value = await vscode.window.showInformationMessage(
-      prefix +
-        'If the Mojo SDK is installed, please set the MODULAR_HOME environment variable to the ' +
-        'appropriate path, or set the `mojo.modularHomePath` configuration. If you do ' +
-        'not have it installed, would you like to install it?',
-      'Install',
-      'Open setting'
-    );
-    if (value === 'Install') {
-      // TODO: This should resolve to the actual mojo download link when
-      // the user console is in place.
-      vscode.env.openExternal(vscode.Uri.parse('https://www.modular.com/mojo'));
-    } else if (value === 'Open setting') {
-      vscode.commands.executeCommand('workbench.action.openGlobalSettings', {
-        openToSide: false,
-        query: `mojo.modularHomePath`,
-      });
-    }
-  }
-
-  /**
-   * Attempt to retrieve the modular home path from the config. This will also
-   * perform the substitution of some common VSCode variables.
-   *
-   * If the setting does not exist or the resolved path is not a directory,
-   * return undefined.
-   */
-  private async tryGetModularHomePathFromConfig(
-    workspaceFolder: Optional<vscode.WorkspaceFolder>
-  ): Promise<Optional<string>> {
-    let modularPath = config.get<string>('modularHomePath', workspaceFolder);
-
-    if (!modularPath) {
-      return undefined;
-    }
-    const substituted = substituteVariables(modularPath, workspaceFolder);
-
-    const showError = (reason: string) => {
-      let message = `The mojo.modularHomePath setting '${modularPath}'`;
-
-      if (substituted !== modularPath) {
-        message += `, which resolves to '${substituted}',`;
-      }
-      message += ' ' + reason + '.';
-      this.showSDKErrorMessage(message);
-      return undefined;
-    };
-
-    if (substituted.length == 0) {
-      return showError('is empty');
-    }
-
-    try {
-      let configPathStat = await vscode.workspace.fs.stat(
-        vscode.Uri.file(substituted)
-      );
-
-      if (configPathStat.type & vscode.FileType.Directory) {
-        return substituted;
-      }
-      return showError('is not a directory');
-    } catch (err) {
-      return showError('does not exist');
-    }
-  }
-
-  /**
-   * Show an error message as a VSCode notification and log it to the output
-   * channel as well.
-   */
-  private showSDKErrorMessage(message: string, error?: unknown): void {
-    message = 'Mojo SDK initialization error: ' + message;
-    this.loggingService.main.logError(message, error);
-    vscode.window.showErrorMessage(message);
   }
 }

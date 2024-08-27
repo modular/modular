@@ -62,3 +62,50 @@ export function getAllOpenMojoFiles(): [
 
   return [activeFile, otherOpenFiles];
 }
+
+export async function directoryExists(path: string): Promise<boolean> {
+  try {
+    const stat = await vscode.workspace.fs.stat(vscode.Uri.file(path));
+    if (stat.type & vscode.FileType.Directory) {
+      return true;
+    }
+  } catch (e) {}
+  return false;
+}
+
+export async function fileExists(path: string): Promise<boolean> {
+  try {
+    const stat = await vscode.workspace.fs.stat(vscode.Uri.file(path));
+    if (stat.type & (vscode.FileType.File | vscode.FileType.SymbolicLink)) {
+      return true;
+    }
+  } catch (e) {}
+  return false;
+}
+
+export async function readFile(path: string): Promise<Optional<string>> {
+  try {
+    return new TextDecoder().decode(
+      await vscode.workspace.fs.readFile(vscode.Uri.file(path))
+    );
+  } catch {
+    return undefined;
+  }
+}
+
+export async function moveUpUntil(
+  fsPath: string,
+  condition: (p: string) => Promise<boolean>
+): Promise<Optional<string>> {
+  while (fsPath.length > 0) {
+    if (await condition(fsPath)) {
+      return fsPath;
+    }
+    const dirname = path.dirname(fsPath);
+    if (dirname === fsPath) {
+      break;
+    }
+    fsPath = dirname;
+  }
+  return undefined;
+}

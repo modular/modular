@@ -11,7 +11,7 @@
 import * as net from 'net';
 import * as vscode from 'vscode';
 import { debug, DebugConfiguration } from 'vscode';
-import { LoggingService } from '../logging';
+import { Logger } from '../logging';
 import { DisposableContext } from '../utils/disposableContext';
 import path = require('path');
 import shellEscape = require('shell-escape');
@@ -66,13 +66,13 @@ const PORT_MAX = 12364; // Inclusive
 export class RpcServer extends DisposableContext {
   private server: net.Server;
   private port: number = PORT_MIN;
-  private loggingService: LoggingService;
+  private logger: Logger;
   private readonly protocolSeparator = '\n----\n';
   private lastTimeActiveInMillis: Date = new Date();
 
-  constructor(loggingService: LoggingService) {
+  constructor(logger: Logger) {
     super();
-    this.loggingService = loggingService;
+    this.logger = logger;
 
     this.server = net.createServer({ allowHalfOpen: true });
     let clients: net.Socket[] = [];
@@ -91,7 +91,7 @@ export class RpcServer extends DisposableContext {
           client.destroy();
         }
         this.server.close(() => {
-          this.loggingService.main.logInfo('RPC server closed.');
+          this.logger.main.logInfo('RPC server closed.');
           this.server.unref();
         });
       })
@@ -107,13 +107,13 @@ export class RpcServer extends DisposableContext {
 
   private onError(err: Error): void {
     if (err.message.includes('EADDRINUSE') && this.port < PORT_MAX) {
-      this.loggingService.main.logInfo(
+      this.logger.main.logInfo(
         'Will try to start the RPC Server with a new port.'
       );
       this.port += 1;
       this.listen();
     } else {
-      this.loggingService.main.logError(
+      this.logger.main.logError(
         'RPC Server error. You might need to restart VS Code to fix this issue.',
         err
       );
@@ -131,7 +131,7 @@ export class RpcServer extends DisposableContext {
         // Tell the user to install the nsight extension.
         const message =
           'Unable to start the cuda-gdb debug session. You first need to install the NVIDIA Nsight extension (nsight-vscode-edition)';
-        this.loggingService.main.logInfo(message);
+        this.logger.main.logInfo(message);
         const response = await vscode.window.showInformationMessage(
           'Unable to debug in cuda-gdb mode without NVIDIA Nsight extension.',
           'Find NVIDIA Nsight extension'
@@ -173,9 +173,7 @@ export class RpcServer extends DisposableContext {
         request = parsedRequest;
       }
     } catch (err) {
-      this.loggingService.main.logInfo(
-        `RPC Server request parsing error: ${err}`
-      );
+      this.logger.main.logInfo(`RPC Server request parsing error: ${err}`);
     }
 
     if (request === undefined) {
@@ -186,9 +184,7 @@ export class RpcServer extends DisposableContext {
       socket.end(JSON.stringify(response) + this.protocolSeparator);
       return;
     }
-    this.loggingService.main.logInfo(
-      `RPC Server request: ${JSON.stringify(request)}`
-    );
+    this.logger.main.logInfo(`RPC Server request: ${JSON.stringify(request)}`);
 
     if (instanceOfConnect(request)) {
       let name = '[VSCode]';
@@ -212,7 +208,7 @@ export class RpcServer extends DisposableContext {
         ),
         name,
       };
-      this.loggingService.main.logInfo(
+      this.logger.main.logInfo(
         `RPC Server response: ${JSON.stringify(response)}`
       );
       socket.write(JSON.stringify(response) + this.protocolSeparator);
@@ -224,7 +220,7 @@ export class RpcServer extends DisposableContext {
           success: true,
           kind: 'debug',
         };
-        this.loggingService.main.logInfo(
+        this.logger.main.logInfo(
           `RPC Server response: ${JSON.stringify(response)}`
         );
         socket.write(JSON.stringify(response) + this.protocolSeparator);
@@ -234,7 +230,7 @@ export class RpcServer extends DisposableContext {
           message: `${err}`,
           kind: 'debug',
         };
-        this.loggingService.main.logInfo(
+        this.logger.main.logInfo(
           `RPC Server response: ${JSON.stringify(response)}`
         );
         socket.write(JSON.stringify(response) + this.protocolSeparator);
@@ -244,7 +240,7 @@ export class RpcServer extends DisposableContext {
         success: false,
         message: 'Invalid request',
       };
-      this.loggingService.main.logInfo(
+      this.logger.main.logInfo(
         `RPC Server response: ${JSON.stringify(response)}`
       );
       socket.end(JSON.stringify(response) + this.protocolSeparator);
@@ -271,7 +267,7 @@ export class RpcServer extends DisposableContext {
    * Listens to messages using the provided network options.
    */
   public async listen() {
-    this.loggingService.main.logInfo(
+    this.logger.main.logInfo(
       `Attempting to create the RPC server with port ${this.port}`
     );
 

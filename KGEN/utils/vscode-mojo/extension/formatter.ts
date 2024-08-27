@@ -7,14 +7,10 @@
 import { exec } from 'child_process';
 import * as vscode from 'vscode';
 
-import { LoggingService } from './logging';
 import { MojoSDKManager } from './sdk/sdkManager';
 import { get } from './utils/config';
 
-export function registerFormatter(
-  loggingService: LoggingService,
-  mojoSDKManager: MojoSDKManager
-) {
+export function registerFormatter(mojoSDKManager: MojoSDKManager) {
   return vscode.languages.registerDocumentFormattingEditProvider('mojo', {
     async provideDocumentFormattingEdits(document, _options) {
       const workspaceFolder = vscode.workspace.getWorkspaceFolder(document.uri);
@@ -22,7 +18,7 @@ export function registerFormatter(
       const cwd = workspaceFolder?.uri?.fsPath || backupFolder?.uri.fsPath;
       const args = get<string[]>('formatting.args', workspaceFolder, []);
 
-      const sdk = await mojoSDKManager.findSDK();
+      const sdk = await mojoSDKManager.findSDK(/*hideRepeatedErrors=*/ true);
 
       if (!sdk) {
         return [];
@@ -44,7 +40,7 @@ export function registerFormatter(
           // necessarily fatal, so this doesn't prevent edits from being
           // applied.
           if (error) {
-            loggingService.main.logError(`Formatting error:\n${stderr}`);
+            mojoSDKManager.logger.main.logError(`Formatting error:\n${stderr}`);
             reject(error);
             return;
           }
