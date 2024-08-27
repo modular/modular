@@ -23,7 +23,6 @@ modular_cc_library(
     name = "Base",
     srcs = [
         "lib/AlignedAlloc.cpp",
-        "lib/BuildInfo.cpp",
         "lib/Config.cpp",
         "lib/DynamicLibrary.cpp",
         "lib/Error.cpp",
@@ -40,7 +39,6 @@ modular_cc_library(
         "include/Support/AlignedAlloc.h",
         "include/Support/AssertStream.h",
         "include/Support/Binary.h",
-        "include/Support/BuildInfo.h",
         "include/Support/CommandLine.h",
         "include/Support/Config.h",
         "include/Support/Context.h",
@@ -68,8 +66,7 @@ modular_cc_library(
         "include/Support/Version.h",
         "include/Support/VisualizationUtils.h",
     ],
-    local_defines = KERNELS_BUILD_TYPE_LOCAL_DEFINES + ASYNCRT_PROFILING_LOCAL_DEFINES + [
-        "LLVM_TARGETS_BUILT=\\\"bazel\\\"",
+    local_defines = [
         "SHARED_LIBRARY_PREFIX='\"lib\"'",
         "STATIC_LIBRARY_PREFIX='\"lib\"'",
         "STATIC_LIBRARY_SUFFIX='\".a\"'",
@@ -88,6 +85,16 @@ modular_cc_library(
     name = "Base64",
     srcs = ["lib/Base64.cpp"],
     hdrs = ["include/Support/Base64.h"],
+    deps = [":Base"],
+)
+
+modular_cc_library(
+    name = "BuildInfo",
+    srcs = ["lib/BuildInfo.cpp"],
+    hdrs = ["include/Support/BuildInfo.h"],
+    local_defines = ASYNCRT_PROFILING_LOCAL_DEFINES + KERNELS_BUILD_TYPE_LOCAL_DEFINES + [
+        "LLVM_TARGETS_BUILT=\\\"bazel\\\"",
+    ],
     deps = [":Base"],
 )
 
