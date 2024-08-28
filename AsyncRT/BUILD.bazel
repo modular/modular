@@ -126,11 +126,9 @@ modular_shared_library(
     deps = [
         ":Runtime.headers",
         "//Support:SymbolExport",
+        "//bazel/third-party:tcmalloc",
         "@llvm-project//llvm:Support",
-    ] + select({
-        "@platforms//os:linux": ["@gperftools//:tcmalloc"],
-        "//conditions:default": [],
-    }),
+    ],
 )
 
 modular_cc_library(
