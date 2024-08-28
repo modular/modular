@@ -43,3 +43,4 @@ from .squeeze import squeeze
 from .stack import stack
 from .transpose import transpose
 from .unsqueeze import unsqueeze
+from .outer import outer
