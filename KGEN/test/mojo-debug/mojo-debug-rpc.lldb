@@ -83,3 +83,23 @@
 # CHECK-CUDA-GDB:   "request": "launch",
 # CHECK-CUDA-GDB:   "type": "mojo-cuda-gdb"
 # CHECK-CUDA-GDB: }
+
+# COM: Check if the RPC launch command is created properly with the --cuda-gdb flag with --break-on-launch
+# RUN: %debug --rpc --cuda-gdb --break-on-launch --dry-run hello.mojo | FileCheck %s --check-prefix=CHECK-CUDA-GDB-BREAK
+# CHECK-CUDA-GDB-BREAK:     {
+# CHECK-CUDA-GDB-BREAK:   "args": [
+# CHECK-CUDA-GDB-BREAK:     "run",
+# CHECK-CUDA-GDB-BREAK:     "-O0",
+# CHECK-CUDA-GDB-BREAK:     "--debug-level=full",
+# CHECK-CUDA-GDB-BREAK:     "hello.mojo"
+# CHECK-CUDA-GDB-BREAK:   ],
+# CHECK-CUDA-GDB-BREAK:   "breakOnLaunch": true,
+# CHECK-CUDA-GDB-BREAK:   "cwd": "
+# CHECK-CUDA-GDB-BREAK:   "env": [
+# CHECK-CUDA-GDB-BREAK:          "PATH=
+# CHECK-CUDA-GDB-BREAK:        ]
+# CHECK-CUDA-GDB-BREAK:   "modularHomePath": "
+# CHECK-CUDA-GDB-BREAK:   "program": "{{.*}}mojo",
+# CHECK-CUDA-GDB-BREAK:   "request": "launch",
+# CHECK-CUDA-GDB-BREAK:   "type": "mojo-cuda-gdb"
+# CHECK-CUDA-GDB-BREAK: }
