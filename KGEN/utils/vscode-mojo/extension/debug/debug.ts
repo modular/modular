@@ -127,8 +127,14 @@ class MojoDebugAdapterDescriptorFactory
     // We don't need to show error messages here because
     // `findSDKConfigForDebugSession` does that.
     if (!sdk) {
+      this.sdkManager.logger.main.logError(
+        "Couldn't find an SDK for the debug session"
+      );
       return undefined;
     }
+    this.sdkManager.logger.main.logInfo(
+      `Using the SDK ${sdk.config.version.toString()} for the debug session`
+    );
 
     return new vscode.DebugAdapterExecutable(
       sdk.config.mojoLLDBVSCodePath,
@@ -277,11 +283,7 @@ class MojoDebugConfigurationResolver
       `LLDB_VSCODE_RIT_TIMEOUT_IN_MS=${initializationTimeoutSec * 1000}`, // runInTerminal initialization timeout.
     ];
 
-    // We add the MODULAR_HOME env var to enable debugging of SDK artifacts,
-    // giving preference to the env specified by the user.
-    if (sdk.config.modularHomePath) {
-      env.push(`MODULAR_HOME=${sdk.config.modularHomePath}`);
-    }
+    env.push(`MODULAR_HOME=${sdk.config.modularHomePath}`);
 
     debugConfiguration.env = [...env, ...(debugConfiguration.env || [])];
     return debugConfiguration as vscode.DebugConfiguration;
@@ -366,10 +368,7 @@ class MojoCudaGdbDebugConfigurationResolver
     // cuda-gdb takes environment as a list of objects like:
     // [{"name": "HOME", "value": "/home/ubuntu"}]
     let env = [];
-    // Add MODULAR_HOME, giving preference to user config.
-    if (sdk.config.modularHomePath) {
-      env.push(`MODULAR_HOME=${sdk.config.modularHomePath}`);
-    }
+    env.push(`MODULAR_HOME=${sdk.config.modularHomePath}`);
     env = [...env, ...(debugConfigIn.env || [])];
     debugConfig.environment = env.map((envStr: String) => {
       const split = envStr.split('=');
