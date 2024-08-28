@@ -3,7 +3,7 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-# RUN: %mojo-no-debug %s | FileCheck %s
+# RUN: %mojo %s | FileCheck %s
 
 from math import ceildiv
 from sys import alignof
