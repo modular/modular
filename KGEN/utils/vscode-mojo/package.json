@@ -803,6 +803,59 @@
               "description": "Search for a process to attach the debugger to.",
               "pid": "^\"\\${command:pickProcessToAttach}\""
             }
+          },
+          {
+            "label": "Mojo: Debug current Mojo file with CUDA-GDB",
+            "description": "Launch and debug the Mojo file that is active on the editor when the debug session starts, using CUDA-GDB.",
+            "body": {
+              "type": "mojo-cuda-gdb",
+              "request": "launch",
+              "name": "Mojo: Debug current Mojo file with CUDA-GDB",
+              "description": "Launch and debug the Mojo file that is active on the editor when the debug session starts, using CUDA-GDB.",
+              "mojoFile": "^\"\\${file}\"",
+              "args": [],
+              "env": [],
+              "cwd": "^\"\\${workspaceFolder}\""
+            }
+          },
+          {
+            "label": "Mojo: Debug Mojo file with CUDA-GDB",
+            "description": "Launch and debug a Mojo file given its path.",
+            "body": {
+              "type": "mojo-cuda-gdb",
+              "request": "launch",
+              "name": "Mojo: Debug Mojo file with CUDA-GDB",
+              "description": "Launch and debug a Mojo file given its path, using CUDA-GDB.",
+              "mojoFile": "^\"\\${workspaceFolder}/<your_file.mojo>\"",
+              "args": [],
+              "env": [],
+              "cwd": "^\"\\${workspaceFolder}\""
+            }
+          },
+          {
+            "label": "Mojo: Debug binary with CUDA-GDB",
+            "description": "Launch and debug a precompiled binary given its path, using CUDA-GDB.",
+            "body": {
+              "type": "mojo-cuda-gdb",
+              "request": "launch",
+              "name": "Mojo: Debug binary with CUDA-GDB",
+              "description": "Launch and debug a precompiled binary given its path, using CUDA-GDB.",
+              "program": "^\"\\${workspaceFolder}/<your_binary>\"",
+              "args": [],
+              "env": [],
+              "cwd": "^\"\\${workspaceFolder}\""
+            }
+          },
+          {
+            "label": "Mojo: Attach to process with CUDA-GDB",
+            "description": "Search for a process to attach CUDA-GDB to.",
+            "body": {
+              "type": "mojo-cuda-gdb",
+              "request": "attach",
+              "name": "Mojo: Attach to process with CUDA-GDB",
+              "description": "Search for a process to attach CUDA-GDB to.",
+              "pid": "^\"\\${command:mojo.pickProcessToAttach}\""
+            }
           }
         ],
         "variables": {
