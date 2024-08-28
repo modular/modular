@@ -301,18 +301,14 @@ def test_execute_multi_framework(
     assert np.allclose(onnx_output, trch_output)
 
 
-def _cuda_available() -> bool:
-    return has_gpu()
-
-
-@pytest.mark.skipif(not _cuda_available(), reason="Requires CUDA")
+@pytest.mark.skipif(not has_gpu(), reason="Requires CUDA")
 def test_load_on_gpu(gpu_session: InferenceSession, mo_model_path: Path):
     """Verify we can compile and load a model on GPU."""
     _ = gpu_session.load(mo_model_path)
 
 
 @pytest.mark.skip(reason="MSDK-693: Input should be in GPU if device is CUDA")
-@pytest.mark.skipif(not _cuda_available(), reason="Requires CUDA")
+@pytest.mark.skipif(not has_gpu(), reason="Requires CUDA")
 def test_execute_gpu(gpu_session: InferenceSession, mo_model_path: Path):
     """GPU execution is disabled now."""
     model = gpu_session.load(mo_model_path)
@@ -325,7 +321,7 @@ def test_execute_gpu(gpu_session: InferenceSession, mo_model_path: Path):
 
 
 # TODO: MSDK-693: Remove this when we can create inputs for gpu.
-@pytest.mark.skipif(not _cuda_available(), reason="Requires CUDA")
+@pytest.mark.skipif(not has_gpu(), reason="Requires CUDA")
 def test_gpu_fails(gpu_session: InferenceSession, mo_model_path: Path):
     """GPU execution is disabled now."""
     model = gpu_session.load(mo_model_path)
