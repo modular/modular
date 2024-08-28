@@ -124,6 +124,9 @@ public:
   /// binary.
   void getSystemLibraryLinkArgs(SmallVectorImpl<StringRef> &libs);
 
+  /// Return the section used for this mojo build.
+  StringRef getMojoConfigSection();
+
 private:
   MojoConfig(Config config) : configSource(std::move(config)) {}
   MojoConfig(Settings *settings) : configSource(settings) {}

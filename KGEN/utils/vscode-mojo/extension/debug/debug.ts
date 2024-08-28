@@ -28,7 +28,7 @@ type MojoDebugConfiguration = {
   pid?: string | number;
   request?: string;
   modularHomePath?: string;
-  modularSection?: string;
+  modularConfigMojoSection?: string;
   args?: string[];
   program?: string;
   mojoFile?: string;
@@ -72,7 +72,7 @@ async function findSDKForDebugConfiguration(
   if (config.modularHomePath !== undefined) {
     return sdkManager.createAdHocSDKAndShowError(
       config.modularHomePath,
-      config.modularSection
+      config.modularConfigMojoSection
     );
   }
   return sdkManager.findSDK(/*hideRepeatedErrors=*/ false);

@@ -11,7 +11,9 @@
 # COM: Check if the RPC attach command is created properly with pid.
 # RUN: %debug --rpc --pid 123 --dry-run | FileCheck %s --check-prefix=CHECK-PID
 # CHECK-PID:      {
-# CHECK-PID:   "modularHomePath": "
+# CHECK-PID:        "modularConfigMojoSection": "
+# CHECK-PID-NEXT:   "modularHomePath": "
+# CHECK-PID-NEXT:   "mojoDriverPath": "
 # CHECK-PID-NEXT:   "pid": "123",
 # CHECK-PID-NEXT:   "request": "attach",
 # CHECK-PID-NEXT:   "type": "mojo-lldb"
@@ -20,7 +22,9 @@
 # COM: Check if the CLI attach command is created properly with process name.
 # RUN: %debug --vscode --process-name foo --dry-run | FileCheck %s --check-prefix=CHECK-PROC-NAME
 # CHECK-PROC-NAME:     {
-# CHECK-PROC-NAME:   "modularHomePath": "
+# CHECK-PROC-NAME:        "modularConfigMojoSection": "
+# CHECK-PROC-NAME-NEXT:   "modularHomePath": "
+# CHECK-PROC-NAME-NEXT:   "mojoDriverPath": "
 # CHECK-PROC-NAME-NEXT:   "program": "foo",
 # CHECK-PROC-NAME-NEXT:   "request": "attach",
 # CHECK-PROC-NAME-NEXT:   "type": "mojo-lldb"
@@ -36,7 +40,7 @@
 # CHECK-BIN-NEXT:   "env": [
 # CHECK-BIN:        ]
 # CHECK-BIN:   "modularHomePath": "
-# CHECK-BIN-NEXT:   "program": "{{.*}}/bin.exe"
+# CHECK-BIN:        "program": "{{.*}}/bin.exe"
 # CHECK-BIN-NEXT:   "request": "launch"
 # CHECK-BIN-NEXT:   "runInTerminal": false
 # CHECK-BIN-NEXT:   "type": "mojo-lldb"
@@ -59,7 +63,7 @@
 # CHECK-MOJO:          "PATH=
 # CHECK-MOJO:        ]
 # CHECK-MOJO:   "modularHomePath": "
-# CHECK-MOJO-NEXT:   "program": "{{.*}}/mojo
+# CHECK-MOJO:        "program": "{{.*}}/mojo
 # CHECK-MOJO-NEXT:   "request": "launch"
 # CHECK-MOJO-NEXT:   "runInTerminal": true
 # CHECK-MOJO-NEXT:   "type": "mojo-lldb"
