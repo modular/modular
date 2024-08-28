@@ -586,6 +586,7 @@ class InferenceSession:
             model_path = Path(str(model))
             _model = self._impl.compile_from_path(model_path, options_dict)
         elif _is_max_graph(model):
+            options_dict["pipeline_name"] = model.name
             _model = self._impl.compile_from_object(
                 model._module._CAPIPtr, _FrameworkFormat.max_graph, options_dict
             )
