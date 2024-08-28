@@ -7,6 +7,8 @@
 #ifndef SUPPORT_COMPILER_OPERATIONUTILS_H
 #define SUPPORT_COMPILER_OPERATIONUTILS_H
 
+#include <utility>
+
 #include "Support/Compiler/MLIRToString.h"
 #include "Support/LLVMCompilerForwardDecls.h"
 #include "mlir/IR/Operation.h"
@@ -39,6 +41,28 @@ OpT getBlockParentOfType(Block *block) {
     return op;
   return block->getParentOp()->getParentOfType<OpT>();
 }
+
+/// Preorder walker that walks the op/region/block hierarchy, and can invoke
+/// callbacks on each of the elements.
+class OpRegionBlockWalker {
+public:
+  OpRegionBlockWalker() = delete;
+  OpRegionBlockWalker(std::function<WalkResult(Operation *)> walkOp,
+                      std::function<WalkResult(Region *)> walkRegion,
+                      std::function<WalkResult(Block *)> walkBlock)
+      : walkOp(std::move(walkOp)), walkRegion(std::move(walkRegion)),
+        walkBlock(std::move(walkBlock)) {}
+
+  WalkResult walk(Operation *op);
+  WalkResult walk(Region *region);
+  WalkResult walk(Block *block);
+
+private:
+  std::function<WalkResult(Operation *)> walkOp;
+  std::function<WalkResult(Region *)> walkRegion;
+  std::function<WalkResult(Block *)> walkBlock;
+};
+
 } // namespace M
 
 #endif // SUPPORT_COMPILER_OPERATIONUTILS_H
