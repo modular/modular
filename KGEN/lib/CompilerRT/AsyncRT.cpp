@@ -398,18 +398,15 @@ KGEN_CompilerRT_CreateAsyncBufferWithBorrow(
 }
 
 COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void
-KGEN_CompilerRT_CreateAsyncCUDABufferRef(void *data, size_t size,
-                                         AsyncRTWrapper<AnyAsyncValueRef> async,
-                                         AsyncRTWrapper<Runtime> runtimePtr,
-                                         AsyncRTMojoCallContextRef callCtx) {
+KGEN_CompilerRT_CreateAsyncMojoValueBufferRef(
+    void *data, size_t size, void *mojoValue, void (*destructorFn)(void *),
+    AsyncRTWrapper<AnyAsyncValueRef> async,
+    AsyncRTWrapper<Runtime> runtimePtr) {
   Runtime &runtime = unwrap(runtimePtr);
-  CUDARuntime *cudaRuntimePtr =
-      reinterpret_cast<CUDARuntime *>(unwrap(callCtx).deviceRuntime);
   AnyAsyncValueRef &value = unwrap(async);
   AnyAsyncValueRef storageRef;
-  storageRef = storageRef.createReady<OwnedCUDAMemoryBlock>(
-      cudaRuntimePtr->runtime, reinterpret_cast<CUdeviceptr>(data), size,
-      copyRCRef(cudaRuntimePtr));
+  storageRef =
+      storageRef.createReady<MojoValue>(runtime, mojoValue, destructorFn);
 
   if (value.getPointer() && value.getPointer()->isIndirect()) {
     value.copy().emplaceIndirect<TensorBufferRef>(TensorBufferRef::create(
@@ -620,8 +617,8 @@ void M::KGEN::registerAsyncRT(
   funcs.push_back({"KGEN_CompilerRT_AsyncRT_MojoCallContext_Allocate",
                    (void *)&KGEN_CompilerRT_AsyncRT_MojoCallContext_Allocate});
 
-  funcs.push_back({"KGEN_CompilerRT_CreateAsyncCUDABufferRef",
-                   (void *)&KGEN_CompilerRT_CreateAsyncCUDABufferRef});
+  funcs.push_back({"KGEN_CompilerRT_CreateAsyncMojoValueBufferRef",
+                   (void *)&KGEN_CompilerRT_CreateAsyncMojoValueBufferRef});
 
   funcs.push_back({"KGEN_CompilerRT_AsyncRT_InitializeSpinWaiter",
                    (void *)&KGEN_CompilerRT_AsyncRT_InitializeSpinWaiter});
