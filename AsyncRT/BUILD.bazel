@@ -24,6 +24,17 @@ modular_cc_library(
 )
 
 modular_cc_library(
+    name = "DeviceContext.headers",
+    hdrs = [
+        "include/AsyncRT/DeviceContext/DeviceContext.h",
+    ],
+    visibility = ["//visibility:private"],
+    deps = [
+        "//Support:Base",
+    ],
+)
+
+modular_cc_library(
     name = "Runtime.headers",
     hdrs = glob([
         "include/AsyncRT/Runtime/*.h",
@@ -50,6 +61,34 @@ modular_cc_library(
     hdrs = glob(["include/AsyncRT/CompilerSupport/*.h"]),
     deps = [
         ":Runtime",
+    ],
+)
+
+modular_cc_library(
+    name = "DeviceContext",
+    srcs = [
+        "lib/DeviceContext/CPU/CpuDeviceContext.cpp",
+        "lib/DeviceContext/CPU/CpuDeviceContext.h",
+        "lib/DeviceContext/DeviceContext.cpp",
+    ],
+    deps = [
+        ":CUDADeviceContext",
+        ":DeviceContext.headers",
+    ],
+)
+
+modular_cc_library(
+    name = "CUDADeviceContext",
+    srcs = [
+        "lib/DeviceContext/CUDA/CUDADeviceContext.cpp",
+        "lib/DeviceContext/CUDA/CUDADriver.cpp",
+        "lib/DeviceContext/CUDA/CUDADriver.h",
+    ],
+    hdrs = [
+        "lib/DeviceContext/CUDA/CUDADeviceContext.h",
+    ],
+    deps = [
+        ":DeviceContext.headers",
     ],
 )
 
