@@ -13,7 +13,9 @@ add_modular_unittest(
 
   AllocatorTest.cpp
   AsyncValueTest.cpp
+  CUDADeviceContextTest.cpp
   DebuggingAllocatorsTest.cpp
+  DeviceContextTest.cpp
   ResourceTest.cpp
   RuntimeTest.cpp
   TimerHeapTest.cpp
