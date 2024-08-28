@@ -9,7 +9,6 @@ import * as path from 'path';
 import * as util from 'util';
 import * as vscode from 'vscode';
 import { Logger } from '../logging';
-import { isNightlyExtension } from '../utils/buildInfo';
 import { DisposableContext } from '../utils/disposableContext';
 import { MojoSDKConfig } from './sdkConfig';
 import { MojoSDK } from './sdk';
@@ -61,6 +60,7 @@ export class MojoSDKManager extends DisposableContext {
     logger: Logger,
     context: vscode.ExtensionContext,
     initializationSDK: Optional<MojoSDKSpec>,
+    isNightly: boolean,
     enableMagicSDK: boolean
   ) {
     super();
@@ -68,7 +68,7 @@ export class MojoSDKManager extends DisposableContext {
     this.context = context;
     this.initializationSDK = initializationSDK;
     this.enableMagicSDK = enableMagicSDK;
-    this.isNightly = isNightlyExtension(this.context);
+    this.isNightly = isNightly;
     this.pushSubscription(
       vscode.commands.registerCommand('mojo.sdk.selectSdk', async () => {
         const allSDKSpecs = await this.findAllSDKs();

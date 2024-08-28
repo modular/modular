@@ -7,7 +7,6 @@
 import * as vscode from 'vscode';
 
 import { Logger } from './logging';
-import { isNightlyExtension } from './utils/buildInfo';
 import { MojoSDKManager } from './sdk/sdkManager';
 import { MojoLSPManager } from './lsp/lsp';
 import { DisposableContext } from './utils/disposableContext';
@@ -22,32 +21,46 @@ import * as configWatcher from './utils/configWatcher';
 import { MojoSDKSpec } from './sdk/types';
 
 /**
+ * Returns if the given extension context is a nightly build.
+ */
+export function isNightlyExtension(context: vscode.ExtensionContext) {
+  return context.extension.id.endsWith('-nightly');
+}
+
+/**
  * This class provides an entry point for the Mojo extension, managing the
  * extension's state and disposal.
  */
 export class MojoExtension extends DisposableContext {
-  public logger?: Logger;
+  public logger: Logger;
   public readonly extensionContext: vscode.ExtensionContext;
   public lspManager?: MojoLSPManager;
+  public readonly isNightly: boolean;
 
-  constructor(context: vscode.ExtensionContext) {
+  constructor(
+    context: vscode.ExtensionContext,
+    logger: Logger,
+    isNightly: boolean
+  ) {
     super();
     this.extensionContext = context;
+    this.logger = logger;
+    this.isNightly = isNightly;
   }
 
   async activate(initializationSDK?: Optional<MojoSDKSpec>) {
-    const isNightly = isNightlyExtension(this.extensionContext);
-    const logger = new Logger(isNightly);
-    this.logger = logger;
-
-    if (this.areThereIncompatibleExtensions(isNightly)) {
+    if (this.areThereIncompatibleExtensions(this.isNightly)) {
       this.logger.main.logInfo(
         'Not activating the Mojo Context due to another Mojo extension being enabled.'
       );
       return;
     }
 
-    this.logger.main.logInfo('Activating the Mojo Context.');
+    this.logger.main.logInfo(`
+=============================
+Activating the Mojo Extension
+=============================
+`);
 
     const enableMagicSDK = config.get<boolean>(
       'enableMagicSDK',
@@ -65,6 +78,7 @@ export class MojoExtension extends DisposableContext {
       this.logger,
       this.extensionContext,
       initializationSDK,
+      this.isNightly,
       enableMagicSDK
     );
     this.pushSubscription(sdkManager);
@@ -152,13 +166,13 @@ export class MojoExtension extends DisposableContext {
   }
 
   override dispose() {
-    this.logger?.main.logInfo('Deactivating extension.');
+    this.logger.main.logInfo('Disposing the extension.');
     super.dispose();
-    this.logger?.dispose();
   }
 }
 
 let extension: Promise<MojoExtension>;
+let logger: Logger;
 
 /**
  *  This method is called when the extension is activated. See the
@@ -166,7 +180,9 @@ let extension: Promise<MojoExtension>;
  * activate this extension.
  */
 export function activate(context: vscode.ExtensionContext) {
-  let ext = new MojoExtension(context);
+  const isNightly = isNightlyExtension(context);
+  logger = new Logger(isNightly);
+  let ext = new MojoExtension(context, logger, isNightly);
 
   extension = ext.activate().then(() => ext);
 }
@@ -177,8 +193,11 @@ export function activate(context: vscode.ExtensionContext) {
  * disabled the extension manually.
  */
 export function deactivate() {
+  logger.main.logInfo('Deactivating the extension.');
   extension.then((extension) => {
     extension.dispose();
+    logger.main.logInfo('Extension deactivated.');
+    logger.dispose();
   });
 }
 
