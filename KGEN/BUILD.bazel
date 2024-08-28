@@ -957,15 +957,13 @@ cc_distributable_static_library(
         "//Support:ML",
         "//Support:Profiling",
         "//Support:Threading",
+        "//bazel/third-party:tcmalloc_objects",
         "@llvm-project//llvm:Demangle",
         "@llvm-project//llvm:Support",
         "@llvm-project//llvm:TargetParser",
         "@llvm-project//mlir:IR",
         "@llvm-project//mlir:Support",
     ] + select({
-        "@platforms//os:linux": ["@gperftools//:tcmalloc_objects"],
-        "//conditions:default": [],
-    }) + select({
         "//bazel/internal:profiling_off": [],
         "//conditions:default": [
             "//Support:CPUCache",
