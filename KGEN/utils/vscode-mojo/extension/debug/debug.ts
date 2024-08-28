@@ -375,6 +375,9 @@ class MojoCudaGdbDebugConfigurationResolver
       const split = envStr.split('=');
       return { name: split[0], value: split.slice(1).join('=') };
     });
+    // Minor name changes between cuda-gdb and mojo-cuda-gdb...
+    debugConfig.stopAtEntry = debugConfigIn.stopOnEntry;
+    debugConfig.processId = debugConfigIn.pid;
     return debugConfig;
   }
 }
