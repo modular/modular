@@ -8,8 +8,6 @@ from __future__ import annotations
 from enum import Enum
 from typing import Any, Tuple, Union
 
-from max.dtype.core import DType
-
 IndexType = Union[int, Tuple[Union[int, slice], ...]]
 
 class DType(Enum): ...
@@ -22,6 +20,7 @@ class Tensor:
     shape: Tuple[int, ...]
     rank: int
     is_contiguous: bool
+    is_host: bool
 
     def __init__(
         self,
@@ -32,5 +31,6 @@ class Tensor:
     def set(self, index: IndexType, value: Any) -> None: ...
     def get(self, index: IndexType) -> Tensor: ...
     def item(self) -> Any: ...
+    def copy_to(self, device: Device) -> Tensor: ...
 
 def cpu_device(device_id: int) -> Device: ...
