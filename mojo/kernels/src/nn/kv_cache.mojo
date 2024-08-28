@@ -137,12 +137,12 @@ fn key_cache_for_layer_h8_d128_bhsd_bf16(
     kv_collection: ContiguousKVCacheCollection[
         DType.bfloat16,
         KVCacheStaticParams(
-            num_heads=6, head_size=48, layout=KVCacheLayout.BHSD
+            num_heads=8, head_size=128, layout=KVCacheLayout.BHSD
         ),
     ],
 ) -> ContiguousKVCache[
     DType.bfloat16,
-    KVCacheStaticParams(num_heads=6, head_size=48, layout=KVCacheLayout.BHSD),
+    KVCacheStaticParams(num_heads=8, head_size=128, layout=KVCacheLayout.BHSD),
 ]:
     return _key_cache_for_layer(layer_idx, kv_collection)
 
@@ -154,12 +154,12 @@ fn key_cache_for_layer_h8_d128_bshd_bf16(
     kv_collection: ContiguousKVCacheCollection[
         DType.bfloat16,
         KVCacheStaticParams(
-            num_heads=6, head_size=48, layout=KVCacheLayout.BSHD
+            num_heads=8, head_size=128, layout=KVCacheLayout.BSHD
         ),
     ],
 ) -> ContiguousKVCache[
     DType.bfloat16,
-    KVCacheStaticParams(num_heads=6, head_size=48, layout=KVCacheLayout.BSHD),
+    KVCacheStaticParams(num_heads=8, head_size=128, layout=KVCacheLayout.BSHD),
 ]:
     return _key_cache_for_layer(layer_idx, kv_collection)
 
@@ -250,12 +250,12 @@ fn value_cache_for_layer_h8_d128_bshd_bf16(
     kv_collection: ContiguousKVCacheCollection[
         DType.bfloat16,
         KVCacheStaticParams(
-            num_heads=6, head_size=48, layout=KVCacheLayout.BSHD
+            num_heads=8, head_size=128, layout=KVCacheLayout.BSHD
         ),
     ],
 ) -> ContiguousKVCache[
     DType.bfloat16,
-    KVCacheStaticParams(num_heads=6, head_size=48, layout=KVCacheLayout.BSHD),
+    KVCacheStaticParams(num_heads=8, head_size=128, layout=KVCacheLayout.BSHD),
 ]:
     return _value_cache_for_layer(layer_idx, kv_collection)
 
@@ -267,12 +267,12 @@ fn value_cache_for_layer_h8_d128_bhsd_bf16(
     kv_collection: ContiguousKVCacheCollection[
         DType.bfloat16,
         KVCacheStaticParams(
-            num_heads=6, head_size=48, layout=KVCacheLayout.BHSD
+            num_heads=8, head_size=128, layout=KVCacheLayout.BHSD
         ),
     ],
 ) -> ContiguousKVCache[
     DType.bfloat16,
-    KVCacheStaticParams(num_heads=6, head_size=48, layout=KVCacheLayout.BHSD),
+    KVCacheStaticParams(num_heads=8, head_size=128, layout=KVCacheLayout.BHSD),
 ]:
     return _value_cache_for_layer(layer_idx, kv_collection)
 
