@@ -5,6 +5,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "RPCServer.h"
+#include "KGEN/Support/Configuration.h"
 #include "Support/Configuration.h"
 #include "Support/FileSystemExtras.h"
 #include "Support/Process.h"
@@ -125,10 +126,18 @@ static ErrorOr<json::Object> createBasicDebugConfiguration(bool useCudaGdb) {
   if (failed(modularHome))
     return modularHome.takeError();
 
+  ErrorOr<KGEN::MojoConfig> configOr = KGEN::MojoConfig::open();
+  if (failed(configOr))
+    return Error(Twine("failed to parse 'modular.cfg': ") +
+                 configOr.getError());
+
   // For the cuda-gdb case, we use a custom mojo-cuda-gdb type that we massage
   // into the cuda-gdb type in the RPC server.
-  json::Object payload{{"modularHomePath", modularHome->string()},
-                       {"type", useCudaGdb ? "mojo-cuda-gdb" : "mojo-lldb"}};
+  json::Object payload{
+      {"modularHomePath", modularHome->string()},
+      {"modularConfigMojoSection", configOr->getMojoConfigSection().str()},
+      {"mojoDriverPath", configOr->getDriverPath().str()},
+      {"type", useCudaGdb ? "mojo-cuda-gdb" : "mojo-lldb"}};
 
   return payload;
 }

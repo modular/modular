@@ -128,7 +128,7 @@ export class MojoSDKManager extends DisposableContext {
 
   public async createAdHocSDKAndShowError(
     modularHomePath: string,
-    section?: string
+    section: Optional<string>
   ): Promise<Optional<MojoSDK>> {
     const hideRepeatedErrors = false;
 
@@ -141,15 +141,27 @@ export class MojoSDKManager extends DisposableContext {
     }
     if (
       this.activeSDK.state === 'selected' &&
-      this.activeSDK.sdkSpec?.modularHomePath === modularHomePath
+      this.activeSDK.sdkSpec?.modularHomePath === modularHomePath &&
+      this.activeSDK.sdkSpec.section == section
     ) {
       return this.createSDKAndShowError(this.activeSDK, hideRepeatedErrors);
     }
-    // TODO: create an SDK from a config file and a section once every debug request has a section
-    vscode.window.showErrorMessage(
-      'Unable to determine the SDK for ' + modularHomePath
+    const sdkSpec: MojoSDKSpec = {
+      kind: 'custom',
+      modularHomePath,
+      section: section || 'mojo-max' + (this.isNightly ? '-nightly' : ''),
+      version: new MojoSDKVersion(
+        modularHomePath,
+        '0',
+        '0',
+        '0',
+        modularHomePath
+      ),
+    };
+    return this.createSDKAndShowError(
+      { state: 'selected', sdkSpec },
+      hideRepeatedErrors
     );
-    return undefined;
   }
 
   private async initializeActiveSDK(): Promise<SelectedSDK> {
@@ -211,6 +223,9 @@ export class MojoSDKManager extends DisposableContext {
               vscode.commands.executeCommand('mojo.magicSdk.install');
             }
           });
+      } else if (selectedSDK.sdkSpec?.kind === 'custom') {
+        errorMessage += `\nPlease reinstall or rebuild the ${selectedSDK.sdkSpec.section} SDK given by ${selectedSDK.sdkSpec.modularHomePath}.`;
+        vscode.window.showErrorMessage(errorMessage);
       }
       this.logger.main.logError(errorMessage);
       return undefined;
@@ -235,12 +250,15 @@ export class MojoSDKManager extends DisposableContext {
       `'${modularConfigPath}' with contents`,
       modularConfig
     );
-
-    let sdkConfig = await MojoSDKConfig.create(
+    const mojoConfig = modularConfig[spec.section];
+    if (!mojoConfig) {
+      return `The modular config file '${modularConfigPath} doesn't have the expected section ${spec.section}`;
+    }
+    const sdkConfig = await MojoSDKConfig.create(
       this.logger,
       spec.modularHomePath,
       spec.section,
-      modularConfig[spec.section]
+      mojoConfig
     );
 
     if (!sdkConfig) {
