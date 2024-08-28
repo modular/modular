@@ -8,6 +8,7 @@ from __future__ import annotations
 from itertools import product
 from typing import Any, Generator, Tuple
 
+import numpy as np
 from max._driver import Tensor as _Tensor
 from max.dtype import DType
 
@@ -53,17 +54,17 @@ class Tensor:
 
     @property
     def dtype(self) -> DType:
-        """DType of constituent elements in tensor"""
+        """DType of constituent elements in tensor."""
         return DType._from(self._impl.dtype)
 
     @property
     def shape(self) -> Tuple[int, ...]:
-        """Shape of tensor"""
+        """Shape of tensor."""
         return self._impl.shape
 
     @property
     def rank(self) -> int:
-        """Tensor rank"""
+        """Tensor rank."""
         return self._impl.rank
 
     @property
@@ -108,3 +109,25 @@ class Tensor:
         converted to a Python built-in type.
         """
         return self._impl.item()
+
+    @property
+    def is_host(self) -> bool:
+        """Whether or not tensor is host-resident. Returns false for GPU tensors,
+        true for CPU tensors."""
+        return self._impl.is_host
+
+    def copy_to(self, device: Device) -> Tensor:
+        """Copies a tensor to the provided device."""
+        return self._impl.copy_to(device._device)
+
+    @classmethod
+    def from_numpy(cls, arr: np.ndarray, device: Device = CPU()) -> Tensor:
+        """Creates a tensor from a provided numpy array, allocated on the
+        provided device. If the target device is a CPU, the underlying data will
+        not be copied. If the target device is a GPU, the device will be copied
+        to the target."""
+        tensor = cls._from_impl(_Tensor(arr, CPU()._device))
+
+        if not tensor.is_host:
+            return tensor.copy_to(device)
+        return tensor
