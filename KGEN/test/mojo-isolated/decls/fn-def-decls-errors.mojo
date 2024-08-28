@@ -123,7 +123,7 @@ fn ref_result_invalid() -> ref [4] MemoryType:
     pass
 
 fn ref_result_invalid2(inout a: MemoryType) -> ref [__lifetime_of(a)] Int:
-    # expected-error @+1 {{cannot return reference with incompatible lifetime: 'anonymous*' vs 'a'}}
+    # expected-error @+1 {{cannot return reference with incompatible lifetime: '*"anonymous*"' vs 'a'}}
     return 4
 
 fn ref_result_invalid3(inout a: MemoryType, inout b: MemoryType)
