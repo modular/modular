@@ -19,7 +19,7 @@ from pathlib import Path
 
 from max.engine import InferenceSession, SessionOptions
 from max.graph import Graph, Symbol, TensorType, Type
-from max.tensor import TensorSpec
+from max.tensor import TensorSpec, TensorShape
 from max.driver import cpu_device, Device, Tensor, DeviceTensor
 from max.driver._cuda import cuda_device
 
@@ -38,7 +38,11 @@ def test_model_device_tensor(
 
     # We have to first allocate the input tensor on CPU and fill it there.
     # Attempting to read or write to a CUDA tensor will cause a segfault.
-    cpu_input_tensor = Tensor[DType.float32, 1]((5,))
+    cpu_input_tensor = Tensor[DType.float32, 1](
+        TensorShape(
+            5,
+        )
+    )
     for i in range(5):
         cpu_input_tensor[i] = 1.0
 
@@ -78,7 +82,11 @@ def test_device_graph(
     g.verify()
     model = session.load(g)
 
-    cpu_input_tensor = Tensor[DType.float32, 1]((1,))
+    cpu_input_tensor = Tensor[DType.float32, 1](
+        TensorShape(
+            1,
+        )
+    )
     cpu_input_tensor[0] = 1.0
 
     input = cpu_input_tensor.to_device_tensor().copy_to(

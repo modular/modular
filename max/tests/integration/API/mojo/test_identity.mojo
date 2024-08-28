@@ -9,6 +9,7 @@
 from max.graph import Graph, TensorType
 from max.driver import Tensor
 from testing import assert_equal
+from max.tensor import TensorShape
 from max import engine
 
 
@@ -17,7 +18,11 @@ def main():
     graph.output(graph[0])
     session = engine.InferenceSession()
     model = session.load(graph)
-    input = Tensor[DType.int32, rank=1]((1,))
+    input = Tensor[DType.int32, rank=1](
+        TensorShape(
+            1,
+        )
+    )
     input[0] = 1
     ret = model.execute(input^)
     output = ret[0].take_tensor().to_tensor[DType.int32, rank=1]()
