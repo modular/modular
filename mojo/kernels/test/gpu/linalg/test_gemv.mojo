@@ -12,13 +12,12 @@ from random import randn, seed
 from buffer import NDBuffer
 from gpu import WARP_SIZE
 from gpu.host import DeviceContext
-from linalg.matmul_gpu import (
+from linalg.gemv import (
     gemv_kernel,
     gevm_kernel,
-    matmul_kernel,
-    matmul_kernel_naive,
     ReductionMethod,
 )
+from linalg.matmul_gpu import matmul_kernel, matmul_kernel_naive
 from memory import UnsafePointer
 
 from utils import StaticIntTuple

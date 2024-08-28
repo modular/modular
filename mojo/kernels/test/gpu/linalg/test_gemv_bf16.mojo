@@ -10,7 +10,8 @@ from math import ceildiv
 
 from gpu import WARP_SIZE
 from gpu.host import DeviceContext
-from linalg.matmul_gpu import matmul_kernel_naive, gemv_kernel, ReductionMethod
+from linalg.matmul_gpu import matmul_kernel_naive
+from linalg.gemv import gemv_kernel, ReductionMethod
 from memory import UnsafePointer
 
 from utils.numerics import isnan
