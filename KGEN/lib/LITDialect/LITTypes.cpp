@@ -478,13 +478,28 @@ LogicalResult AnyTraitType::printValue(AsmPrinter &p, TypedAttr value) const {
 
 OptionalParseResult LifetimeType::parseValue(AsmParser &p,
                                              TypedAttr &result) const {
+  // If there are any postfix lifetime syntax (<whatever>.field1.field2), then
+  // parse them into 'result'.
+  auto processPostFix = [&]() -> OptionalParseResult {
+    if (!result)
+      return failure();
+    while (succeeded(p.parseOptionalArrow())) {
+      StringRef fieldName;
+      if (failed(p.parseKeyword(&fieldName)))
+        return failure();
+      result = LifetimeFieldAttr::get(
+          result, StringAttr::get(p.getContext(), fieldName));
+    }
+    return mlir::success();
+  };
+
   // Handle names, and index references.
   if (succeeded(p.parseOptionalStar())) {
     std::string str;
     // Resolve ambiguity with *"...".
     if (succeeded(p.parseOptionalString(&str))) {
       result = ParamDeclRefAttr::get(str, *this);
-      return mlir::success();
+      return processPostFix();
     }
 
     // Try to parse *(0,0) as an index reference.
@@ -495,7 +510,7 @@ OptionalParseResult LifetimeType::parseValue(AsmParser &p,
         return failure();
       bool isResult = succeeded(p.parseOptionalStar());
       result = ParamIndexRefAttr::get(depth, isResult, index, *this);
-      return mlir::success();
+      return processPostFix();
     }
 
     // *[x,y] is an implicit lifetime ref.
@@ -505,7 +520,7 @@ OptionalParseResult LifetimeType::parseValue(AsmParser &p,
           p.parseRSquare())
         return failure();
       result = ImplicitLifetimeRefAttr::get(depth, index, *this);
-      return mlir::success();
+      return processPostFix();
     }
     // We don't support *?
     p.emitError(p.getCurrentLocation(), "unknown lifetime value");
@@ -525,7 +540,7 @@ OptionalParseResult LifetimeType::parseValue(AsmParser &p,
         p.parseRBrace())
       return failure();
     result = LifetimeUnionAttr::get(elements, *this);
-    return mlir::success();
+    return processPostFix();
   }
 
   // Handle mutability casts in parens.
@@ -535,12 +550,47 @@ OptionalParseResult LifetimeType::parseValue(AsmParser &p,
         p.parseRParen())
       return failure();
     result = LifetimeMutCastAttr::get(operand, *this);
-    return mlir::success();
+    return processPostFix();
   }
-  return std::nullopt;
+
+  // If this is a '*'-prefixed double quoted string, then this is a simple
+  // parameter reference.
+  if (succeeded(p.parseOptionalStar())) {
+    if (succeeded(p.parseOptionalLParen())) {
+      // Try to parse *(0,0) as an index reference.
+      size_t depth, index;
+      if (p.parseInteger(depth) || p.parseComma() || p.parseInteger(index) ||
+          p.parseRParen())
+        return failure();
+      bool isResult = succeeded(p.parseOptionalStar());
+      result = ParamIndexRefAttr::get(depth, isResult, index, *this);
+    } else {
+      std::string name;
+      if (failed(p.parseString(&name)))
+        return failure();
+      result = ParamDeclRefAttr::get(name, *this);
+    }
+    return processPostFix();
+  }
+
+  // Barewords / MLIR keywords are implicitly parameter declaration references
+  // or the start of a expression in function form.
+  StringRef keyword;
+  if (succeeded(p.parseOptionalKeyword(&keyword))) {
+    // A bareword or string must be a parameter reference.
+    result = ParamDeclRefAttr::get(keyword, *this);
+    return processPostFix();
+  }
+
+  return {};
 }
 
 LogicalResult LifetimeType::printValue(AsmPrinter &p, TypedAttr value) const {
+  if (auto declRef = ::dyn_cast<ParamDeclRefAttr>(value)) {
+    printParamName(p, declRef.getName(), /*isRef*/ false);
+    return success();
+  }
+
   if (auto ref = ::dyn_cast<ImplicitLifetimeRefAttr>(value)) {
     p << "*[" << ref.getDepth() << ',' << ref.getIndex() << ']';
     return success();
@@ -563,6 +613,17 @@ LogicalResult LifetimeType::printValue(AsmPrinter &p, TypedAttr value) const {
     p << "(mutcast ";
     printLifetimeParamValue(p, mutcast.getOperand());
     p << ")";
+    return success();
+  }
+
+  // Print field access with dot notation.
+  if (auto field = ::dyn_cast<LifetimeFieldAttr>(value)) {
+    if (failed(printValue(p, field.getStructLifetime())))
+      return failure();
+    // FIXME: This should use ".field" instead of "->field" but MLIR doesn't
+    // make it easy to parse a dot.
+    p << "->";
+    printParamName(p, field.getField(), /*isRef*/ false);
     return success();
   }
 
