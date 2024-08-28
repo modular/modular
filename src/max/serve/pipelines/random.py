@@ -7,8 +7,6 @@
 import random
 from dataclasses import dataclass
 
-from max.serve.pipelines.llm import TokenGenerator
-
 
 @dataclass
 class RandomTokenGeneratorContext:
@@ -16,15 +14,13 @@ class RandomTokenGeneratorContext:
 
 
 @dataclass
-class RandomTokenGenerator(TokenGenerator[RandomTokenGeneratorContext]):
+class RandomTokenGenerator:
     async def new_context(self, prompt: str) -> RandomTokenGeneratorContext:
         return RandomTokenGeneratorContext(prompt)
 
     async def next_token(
         self, batch: dict[str, RandomTokenGeneratorContext]
     ) -> dict[str, str]:
-        outputs = {}
-        for rid in batch:
-            if (rand := random.randint(0, 20)) < 20:
-                outputs[rid] = str(rand)
-        return outputs
+        return {
+            rid: str(rand) for rid in batch if (rand := random.randint(0, 20))
+        }

@@ -4,6 +4,8 @@
 #
 # ===----------------------------------------------------------------------=== #
 
+from __future__ import annotations
+
 
 import asyncio
 from dataclasses import dataclass, field
@@ -14,21 +16,11 @@ from max.serve.scheduler.queues import BatchMultiplexQueue
 Context = TypeVar("Context")
 
 
-class TokenGenerator(Generic[Context], Protocol):
-    """Interface for LLM token-generator models."""
-
-    async def new_context(self, prompt: str) -> Context:
-        ...
-
-    async def next_token(self, batch: dict[str, Context]) -> dict[str, str]:
-        ...
-
-
 @dataclass
 class TokenGeneratorPipeline(Generic[Context]):
     """Base class for LLM pipelines."""
 
-    model: TokenGenerator[Context]
+    model: max.pipelines.interfaces.TokenGenerator[Context]
     max_batch_size: int = 32
 
     tokens_queue: BatchMultiplexQueue = field(
