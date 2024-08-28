@@ -1041,6 +1041,8 @@ struct LayoutTensor[
         address_space=address_space,
         element_layout = self.element_layout,
     ] as out:
+        """Returns a LayoutTensor with a coalesced Layout."""
+
         return __type_of(out)(self.ptr)
 
     @staticmethod
@@ -1068,6 +1070,30 @@ struct LayoutTensor[
         Self._compute_tile_layout[tile_sizes]()[0],
         address_space=address_space,
     ] as result:
+        """Tiles the layout and returns a tensor tile with the specified
+        tile_sizes at specific tile coordinates.
+
+        Parameters:
+            tile_sizes: The tile sizes of the returned LayoutTensor.
+
+        Args:
+            tile_coords: The tile coordinate. This refer to the coordinate of
+                         the tile after the tiled layout. Consider the following
+                         example.
+
+        Example:
+
+            Memory Layout of
+                            [1 2 3 4]
+                            [2 3 4 5]
+                            [5 4 3 2]
+                            [1 1 1 1]
+
+            tile[2, 2](1, 0) will give you
+                            [5 4]
+                            [1 1]
+        """
+
         alias num_tiles = __get_len[tile_sizes]()
 
         # need to calculate this again because __tiled_layout[1] is required for the offset calculation
@@ -1140,6 +1166,16 @@ struct LayoutTensor[
         address_space,
         circular=False,
     ] as result:
+        """Returns the tiled iterator of the LayoutTensor.
+
+        Parameters:
+            tile_sizes: Tile sizes of each tile the iterator will iterate through.
+            axis: Axis of the LayoutTensor the iterator will iterate through.
+
+        Args:
+            tile_coords: The tile coordinate that the iterator will point to.
+        """
+
         alias tiles_rank = __get_len[tile_sizes]()
         alias __tiled_layout = Self._compute_tile_layout[tile_sizes]()
         constrained[
@@ -1211,6 +1247,14 @@ struct LayoutTensor[
         ],
         count,
     ] as result:
+        """Split the LayoutTensor along a axis and return an InlineArray of
+        LayoutTensor.
+
+        Parameters:
+            count: Number of portion to split.
+            axis: The axis where the split is applied to.
+        """
+
         constrained[
             layout.shape[axis].is_value(),
             "Only support partition modes that are plain values.",
