@@ -307,17 +307,17 @@ def test_load_on_gpu(gpu_session: InferenceSession, mo_model_path: Path):
     _ = gpu_session.load(mo_model_path)
 
 
-@pytest.mark.skip(reason="MSDK-693: Input should be in GPU if device is CUDA")
 @pytest.mark.skipif(not has_gpu(), reason="Requires CUDA")
 def test_execute_gpu(gpu_session: InferenceSession, mo_model_path: Path):
-    """GPU execution is disabled now."""
+    """Validate that we can execute inputs on GPU."""
     model = gpu_session.load(mo_model_path)
-    output = model.execute(input=np.ones(5, dtype=np.float32))
-    assert "output" in output.keys()
-    assert np.allclose(
-        output["output"],
-        np.array([4.0, 2.0, -5.0, 3.0, 6.0], dtype=np.float32),
-    )
+    input_tensor = md.Tensor.from_numpy(np.ones(5, dtype=np.float32), md.CUDA())
+    outputs = model.execute(input_tensor)
+    assert len(outputs) == 1
+    output_tensor = outputs[0]
+    host_tensor = output_tensor.copy_to(md.CPU())
+    for idx, elt in enumerate([4.0, 2.0, -5.0, 3.0, 6.0]):
+        assert isclose(host_tensor[idx].item(), elt)
 
 
 # TODO: MSDK-693: Remove this when we can create inputs for gpu.
