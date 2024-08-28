@@ -28,6 +28,7 @@
     "vscode:prepublish": "tsc -b ./",
     "watch": "tsc -b -watch ./",
     "package": "vsce package --out ./out/vscode-mojo.vsix",
+    "ci": "npm ci && cd ./lsp-proxy && npm ci",
     "format": "npx prettier . --write --ignore-path .gitignore",
     "publish": "vsce publish",
     "test": "npm run vscode:prepublish && vscode-test"
