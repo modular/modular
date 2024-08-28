@@ -42,3 +42,48 @@ bool M::isCIdentifier(StringRef ident) {
   return llvm::all_of(ident.drop_front(),
                       [](char c) { return llvm::isAlnum(c) || c == '_'; });
 }
+
+M::WalkResult M::OpRegionBlockWalker::walk(Operation *op) {
+  if (walkOp) {
+    WalkResult opWalkResult = walkOp(op);
+    if (opWalkResult.wasInterrupted() || opWalkResult.wasSkipped())
+      return opWalkResult;
+  }
+
+  for (Region &region : llvm::make_early_inc_range(op->getRegions())) {
+    WalkResult regionWalkResult = walk(&region);
+    if (regionWalkResult.wasInterrupted())
+      return regionWalkResult;
+  }
+  return WalkResult::advance();
+}
+
+M::WalkResult M::OpRegionBlockWalker::walk(Region *region) {
+  if (walkRegion) {
+    WalkResult regionWalkResult = walkRegion(region);
+    if (regionWalkResult.wasInterrupted() || regionWalkResult.wasSkipped())
+      return regionWalkResult;
+  }
+
+  for (Block &block : llvm::make_early_inc_range(region->getBlocks())) {
+    WalkResult blockWalkResult = walk(&block);
+    if (blockWalkResult.wasInterrupted())
+      return blockWalkResult;
+  }
+  return WalkResult::advance();
+}
+
+M::WalkResult M::OpRegionBlockWalker::walk(Block *block) {
+  if (walkBlock) {
+    WalkResult blockWalkResult = walkBlock(block);
+    if (blockWalkResult.wasInterrupted() || blockWalkResult.wasSkipped())
+      return blockWalkResult;
+  }
+
+  for (Operation &op : llvm::make_early_inc_range(block->getOperations())) {
+    WalkResult opWalkResult = walk(&op);
+    if (opWalkResult.wasInterrupted())
+      return opWalkResult;
+  }
+  return WalkResult::advance();
+}

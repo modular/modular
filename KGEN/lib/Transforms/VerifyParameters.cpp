@@ -10,6 +10,7 @@
 #include "KGEN/KGENDialect/ParameterEvaluator.h"
 #include "KGEN/Support/CompilerProfiling.h"
 #include "KGEN/ToolCommon/KGENPasses.h"
+#include "Support/Compiler/OperationUtils.h"
 #include "Support/Compiler/Threading.h"
 #include "mlir/Analysis/SymbolTableAnalysis.h"
 #include "mlir/IR/BuiltinOps.h"
@@ -257,18 +258,26 @@ static void propagateTrivialParameters(Region *region,
   auto rebindLoc = [&](Location loc) {
     return cast<Location>(evaluator.getReboundAttribute(loc));
   };
-  region->walk<mlir::WalkOrder::PreOrder>([&](Operation *op) {
-    if (auto inlined = dyn_cast<DebugInfo::InlinedSubprogramScoped>(op))
-      if (LocationAttr loc = inlined.getCallLocAttr())
-        inlined.setCallLocAttr(rebindLoc(loc));
-    // DeclInterface's location might reference parameters declared by it (e.g.
-    // in case of a parametric argument making it into a subprogram scope type),
-    // so we will handle it when we recurse into it.
-    if (isa<DeclInterface>(op))
-      return WalkResult::skip();
-    op->setLoc(rebindLoc(op->getLoc()));
-    return WalkResult::advance();
-  });
+  OpRegionBlockWalker walker(
+      [&](Operation *op) {
+        if (auto inlined = dyn_cast<DebugInfo::InlinedSubprogramScoped>(op))
+          if (LocationAttr loc = inlined.getCallLocAttr())
+            inlined.setCallLocAttr(rebindLoc(loc));
+        // DeclInterface's location might reference parameters declared by it
+        // (e.g. in case of a parametric argument making it into a subprogram
+        // scope type), so we will handle it when we recurse into it.
+        if (isa<DeclInterface>(op))
+          return WalkResult::skip();
+        op->setLoc(rebindLoc(op->getLoc()));
+        return WalkResult::advance();
+      },
+      nullptr,
+      [&](Block *block) {
+        for (BlockArgument arg : block->getArguments())
+          arg.setLoc(rebindLoc(arg.getLoc()));
+        return WalkResult::advance();
+      });
+  walker.walk(region);
   // Don't process the top-level decl operation. It cannot reference
   // declarations in its body and its location is shared across threads.
   if (region->getParentOp() != topLevel.scope->getParentOp())
