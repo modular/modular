@@ -346,7 +346,87 @@
     "debuggers": [
       {
         "type": "mojo-cuda-gdb",
-        "label": "Mojo cuda-gdb"
+        "label": "Mojo cuda-gdb",
+        "configurationAttributes": {
+          "launch": {
+            "unevaluatedProperties": false,
+            "properties": {
+              "description": {
+                "type": "string",
+                "description": "The description of the debug configuration."
+              },
+              "program": {
+                "type": "string",
+                "description": "Path to the precompiled program to debug."
+              },
+              "mojoFile": {
+                "type": "string",
+                "description": "If provided, this supersedes the `program` argument and initiates a launch debug session where `mojoFile` is JIT compiled. All other properties keep their intended behavior, e.g. `args` are sent to the JIT compiled program as expected."
+              },
+              "args": {
+                "type": [
+                  "array",
+                  "string"
+                ],
+                "description": "Program arguments.",
+                "default": []
+              },
+              "cwd": {
+                "type": "string",
+                "description": "Program working directory.",
+                "default": "${workspaceFolder}"
+              },
+              "env": {
+                "type": "array",
+                "description": "Additional environment variables to set when launching the program. This is an array of strings that contains the variable name followed by an optional '=' character and the environment variable's value. Example:  [\"FOO=BAR\", \"BAZ\"]",
+                "default": []
+              },
+              "modularHomePath": {
+                "type": "string",
+                "description": "Optional path to the MODULAR_HOME containing the Mojo SDK installation."
+              },
+              "initCommands": {
+                "type": "array",
+                "description": "Initialization commands executed upon debugger startup.",
+                "default": []
+              },
+              "stopOnEntry": {
+                "type": "boolean",
+                "description": "Automatically stop after launch.",
+                "default": false
+              }
+            }
+          },
+          "attach": {
+            "unevaluatedProperties": false,
+            "properties": {
+              "description": {
+                "type": "string",
+                "description": "The description of the debug configuration."
+              },
+              "program": {
+                "type": "string",
+                "description": "Path or name to the program to attach to."
+              },
+              "pid": {
+                "type": [
+                  "number",
+                  "string"
+                ],
+                "description": "System process ID to attach to."
+              },
+              "modularHomePath": {
+                "type": "string",
+                "description": "Optional path to the MODULAR_HOME containing the Mojo SDK installation."
+              },
+              "initCommands": {
+                "type": "array",
+                "description": "Initialization commands executed upon debugger startup.",
+                "default": []
+              }
+            }
+          }
+        }
       },
       {
         "type": "mojo-lldb",
