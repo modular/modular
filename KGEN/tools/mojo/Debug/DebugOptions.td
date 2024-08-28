@@ -53,3 +53,8 @@ defm cudaGDBPath: CommandOption<["--", "-"], "cuda-gdb-path",
   cudaGDBOptionGroup, Index<2>, MetaVarName<"CUDA_GDB_PATH">,
   HelpText<"Uses the given CUDA_GDB_PATH instead of looking for cuda-gdb in "
   "the PATH environment variable.">>;
+
+def breakOnLaunch: Flag<["--", "-"], "break-on-launch">,
+  Group<cudaGDBOptionGroup>, Index<3>,
+  HelpText<"Set the breakOnLaunch option for cuda-gdb.  This makes the "
+  "debugger break on the first instruction of every launched kernel.">;

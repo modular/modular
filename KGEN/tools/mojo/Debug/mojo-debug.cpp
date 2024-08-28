@@ -145,10 +145,12 @@ static int debug(const State &state) {
 
   bool dryRun = parsedArgs.hasArg(options::OPT_dry_run);
   bool useCudaGDB = parsedArgs.hasArg(options::OPT_cudaGDB);
+  bool breakOnLaunch = parsedArgs.hasArg(options::OPT_breakOnLaunch);
+  if (breakOnLaunch && !useCudaGDB)
+    return state.reportError(Twine("--break-on-launch requires --cuda-gdb"));
   std::optional<std::string> cudaGdbPath = getCudaGDBPath(parsedArgs);
-  if (cudaGdbPath.has_value() && !useCudaGDB) {
+  if (cudaGdbPath.has_value() && !useCudaGDB)
     return state.reportError(Twine("--cuda-gdb-path requires --cuda-gdb"));
-  }
   StringRef rpcTerminal =
       parsedArgs.getLastArgValue(options::OPT_terminal, "console");
   SmallVector<std::string> debuggerArgs = getDebuggerArgs(parsedArgs);
@@ -192,8 +194,9 @@ static int debug(const State &state) {
       target = *mojoDriver;
     }
     if (useRpc) {
-      ErrorOrSuccess status = invokeLaunchRPC(dryRun, useCudaGDB, rpcPorts,
-                                              *target, runArgs, rpcTerminal);
+      ErrorOrSuccess status =
+          invokeLaunchRPC(dryRun, useCudaGDB, breakOnLaunch, rpcPorts, *target,
+                          runArgs, rpcTerminal);
       if (failed(status))
         return state.reportError(status.getError());
       return 0;
@@ -203,7 +206,8 @@ static int debug(const State &state) {
     runArgs.insert(runArgs.begin(), *target);
 
     if (useCudaGDB)
-      return invokeCudaGdb(state, debuggerArgs, runArgs, cudaGdbPath, dryRun);
+      return invokeCudaGdb(state, debuggerArgs, runArgs, cudaGdbPath,
+                           breakOnLaunch, dryRun);
     else
       return invokeLLDB(state, debuggerArgs, runArgs, dryRun);
   }
@@ -219,8 +223,8 @@ static int debug(const State &state) {
   //  This is an attach case.
   if (pid || processName) {
     if (useRpc) {
-      ErrorOrSuccess status =
-          invokeAttachRPC(dryRun, useCudaGDB, rpcPorts, pid, processName);
+      ErrorOrSuccess status = invokeAttachRPC(dryRun, useCudaGDB, breakOnLaunch,
+                                              rpcPorts, pid, processName);
       if (failed(status))
         return state.reportError(status.getError());
       return 0;
@@ -231,7 +235,8 @@ static int debug(const State &state) {
         llvm::append_values(debuggerArgs, std::string("-n"),
                             resolvePath(processName->str()));
       if (useCudaGDB)
-        return invokeCudaGdb(state, debuggerArgs, {}, cudaGdbPath, dryRun);
+        return invokeCudaGdb(state, debuggerArgs, {}, cudaGdbPath,
+                             breakOnLaunch, dryRun);
       else
         return invokeLLDB(state, debuggerArgs, {}, dryRun);
     }
@@ -243,7 +248,8 @@ static int debug(const State &state) {
 
   // This is a regular cli passthrough.
   if (useCudaGDB)
-    return invokeCudaGdb(state, debuggerArgs, {}, cudaGdbPath, dryRun);
+    return invokeCudaGdb(state, debuggerArgs, {}, cudaGdbPath, breakOnLaunch,
+                         dryRun);
   else
     return invokeLLDB(state, debuggerArgs, {}, dryRun);
 }

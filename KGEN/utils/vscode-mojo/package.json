@@ -394,6 +394,11 @@
                 "type": "boolean",
                 "description": "Automatically stop after launch.",
                 "default": false
+              },
+              "breakOnLaunch": {
+                "type": "boolean",
+                "description": "Break on the first instruction of every launched GPU kernel",
+                "default": false
               }
             }
           },
@@ -423,6 +428,11 @@
                 "type": "array",
                 "description": "Initialization commands executed upon debugger startup.",
                 "default": []
+              },
+              "breakOnLaunch": {
+                "type": "boolean",
+                "description": "Break on the first instruction of every launched GPU kernel",
+                "default": false
               }
             }
           }

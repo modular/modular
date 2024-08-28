@@ -332,7 +332,7 @@ static ErrorOrSuccess invokeRPC(bool dryRun, ArrayRef<int> ports,
 }
 
 ErrorOrSuccess M::invokeAttachRPC(bool dryRun, bool useCudaGdb,
-                                  ArrayRef<int> rpcPorts,
+                                  bool breakOnLaunch, ArrayRef<int> rpcPorts,
                                   const std::optional<StringRef> &pid,
                                   const std::optional<StringRef> &processName) {
   ErrorOr<json::Object> payload = createBasicDebugConfiguration(useCudaGdb);
@@ -343,11 +343,14 @@ ErrorOrSuccess M::invokeAttachRPC(bool dryRun, bool useCudaGdb,
     payload->insert({"pid", *pid});
   if (processName)
     payload->insert({"program", *processName});
+  if (breakOnLaunch)
+    payload->insert({"breakOnLaunch", true});
   return invokeRPC(dryRun, rpcPorts, *payload);
 }
 
 ErrorOrSuccess M::invokeLaunchRPC(bool dryRun, bool useCudaGdb,
-                                  ArrayRef<int> rpcPorts, StringRef target,
+                                  bool breakOnLaunch, ArrayRef<int> rpcPorts,
+                                  StringRef target,
                                   ArrayRef<std::string> runArgs,
                                   StringRef rpcTerminal) {
   ErrorOr<json::Object> payload = createBasicDebugConfiguration(useCudaGdb);
@@ -367,6 +370,8 @@ ErrorOrSuccess M::invokeLaunchRPC(bool dryRun, bool useCudaGdb,
 
   if (useCudaGdb) {
     payload->insert({"name", "Mojo debug with cuda-gdb"});
+    if (breakOnLaunch)
+      payload->insert({"breakOnLaunch", true});
   }
   payload->insert({"program", fullTarget.string()});
   payload->insert({"request", "launch"});
