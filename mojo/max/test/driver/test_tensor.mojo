@@ -25,7 +25,7 @@ from utils import Index, StaticIntTuple
 
 
 def test_tensor():
-    tensor = Tensor[DType.float32, 2]((2, 2))
+    tensor = Tensor[DType.float32, 2](TensorShape(2, 2))
 
     assert_equal(tensor.spec().rank(), 2)
     assert_equal(tensor.spec().dtype(), DType.float32)
@@ -40,7 +40,7 @@ def test_tensor():
 
 
 def test_tensor_slice():
-    tensor = Tensor[DType.float32, 2]((3, 3))
+    tensor = Tensor[DType.float32, 2](TensorShape(3, 3))
 
     assert_equal(tensor.spec().rank(), 2)
     assert_equal(tensor.spec().dtype(), DType.float32)
@@ -90,7 +90,11 @@ def test_tensor_slice():
 
 
 def test_slice_with_step():
-    tensor = Tensor[DType.float32, 1]((18,))
+    tensor = Tensor[DType.float32, 1](
+        TensorShape(
+            18,
+        )
+    )
 
     index = 0
     for _ in range(3):
@@ -105,7 +109,7 @@ def test_slice_with_step():
 
 
 def test_2dslice_with_step():
-    tensor = Tensor[DType.float32, 2]((10, 2))
+    tensor = Tensor[DType.float32, 2](TensorShape(10, 2))
 
     val = 1
     for i in range(10):
@@ -120,7 +124,7 @@ def test_2dslice_with_step():
 
 
 def test_2dslice_with_step_row_column():
-    tensor = Tensor[DType.float32, 2]((10, 10))
+    tensor = Tensor[DType.float32, 2](TensorShape(10, 10))
 
     val = 1
     for i in range(10):
@@ -155,7 +159,7 @@ def test_2dslice_with_step_row_column():
 
 def test_4dslice_with_step():
     var shape = (7, 8, 13, 9)
-    var tensor = Tensor[DType.float32, 4](shape)
+    var tensor = Tensor[DType.float32, 4](TensorShape(shape))
 
     # np.arange
     var val = 0
@@ -174,7 +178,7 @@ def test_4dslice_with_step():
 
 
 def test_round_trip():
-    tensor = Tensor[DType.float32, 2]((10, 2))
+    tensor = Tensor[DType.float32, 2](TensorShape(10, 2))
 
     val = 1
     for i in range(10):
@@ -228,7 +232,7 @@ def test_copy():
 
 
 def test_set_through_slice():
-    tensor = Tensor[DType.float32, 2]((10, 2))
+    tensor = Tensor[DType.float32, 2](TensorShape(10, 2))
 
     val = 1
     for i in range(10):
@@ -249,7 +253,7 @@ def test_set_through_slice():
 
 def test_unsafe_slice():
     var shape = (10, 2)
-    var tensor = Tensor[DType.float32, 2](shape)
+    var tensor = Tensor[DType.float32, 2](TensorShape(shape))
 
     var val = 1
     for i in range(10):
@@ -270,7 +274,7 @@ def test_unsafe_slice():
 
 def test_unsafe_slice_from_tensor():
     var shape = (10, 1)
-    var tensor = Tensor[DType.float32, 2](shape)
+    var tensor = Tensor[DType.float32, 2](TensorShape(shape))
 
     var val = 1
     for i in range(10):
@@ -301,7 +305,7 @@ def test_unsafe_slice_from_tensor():
 
 def test_unsafe_slice_simd():
     var shape = (10, 10)
-    var tensor = Tensor[DType.float32, 2](shape)
+    var tensor = Tensor[DType.float32, 2](TensorShape(shape))
 
     var val = 1
     for i in range(10):
@@ -325,7 +329,7 @@ def test_kv_cache():
     alias shape = (2,)
     tensors = List[Tensor[type, len(shape)]]()
     for _ in range(2):
-        tensor = Tensor[type, len(shape)](shape)
+        tensor = Tensor[type, len(shape)](TensorShape(shape))
         tensor[0] = 1
         tensor[1] = 2
 
@@ -343,7 +347,7 @@ def test_kv_cache():
 def test_raw_data():
     alias type = DType.float32
     alias shape = (1,)
-    t = Tensor[DType.float32, len(shape)](shape)
+    t = Tensor[DType.float32, len(shape)](TensorShape(shape))
     ptr = t.unsafe_ptr()
     t[0] = 22
     assert_equal(ptr.load(), t[0])
@@ -355,7 +359,7 @@ def test_take():
     alias TensorType = Tensor[type, len(shape)]
     tensors = List[TensorType]()
     for i in range(2):
-        tensors.append(TensorType(shape))
+        tensors.append(TensorType(TensorShape(shape)))
 
         tensors[i][0] = 2
 
@@ -375,7 +379,11 @@ def mutate_slice(x: TensorSlice):
 
 
 def test_slice_mutability():
-    x = Tensor[DType.float32, 1]((1,))
+    x = Tensor[DType.float32, 1](
+        TensorShape(
+            1,
+        )
+    )
     x[0] = 0
     assert_equal(x[0], 0)
     mutate_slice(x[:])
@@ -386,7 +394,7 @@ def test_slice_mutability():
 
 
 def test_print():
-    tensor = Tensor[DType.float32, 2]((10, 2))
+    tensor = Tensor[DType.float32, 2](TensorShape(10, 2))
 
     val = 1
     for i in range(10):
@@ -403,7 +411,7 @@ def test_print():
 
 def test_move():
     alias shape = (1,)
-    t = Tensor[DType.float32, len(shape)](shape)
+    t = Tensor[DType.float32, len(shape)](TensorShape(shape))
     t[0] = 1.0
     dev = cpu_device()
     t1 = t.move_to(dev)

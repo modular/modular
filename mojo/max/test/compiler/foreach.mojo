@@ -8,7 +8,7 @@
 from max._tensor_utils import foreach
 from max.driver import cpu_device, ManagedTensorSlice, Tensor
 from utils import Index
-from max.tensor import TensorSpec
+from max.tensor import TensorSpec, TensorShape
 from testing import assert_equal
 from utils import StaticIntTuple
 
@@ -18,12 +18,12 @@ fn test_foreach() raises:
     print("== test_foreach")
     var shape = (10, 2)
 
-    var tensor1 = Tensor[DType.float32, 2](shape)
+    var tensor1 = Tensor[DType.float32, 2](TensorShape(shape))
     var unsafe_slice1 = ManagedTensorSlice[DType.float32, 2](
         tensor1.unsafe_ptr(), shape
     )
 
-    var tensor2 = Tensor[DType.float32, 2](shape)
+    var tensor2 = Tensor[DType.float32, 2](TensorShape(shape))
     var unsafe_slice2 = ManagedTensorSlice[DType.float32, 2](
         tensor2.unsafe_ptr(), shape
     )

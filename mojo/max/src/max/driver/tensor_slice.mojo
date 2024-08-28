@@ -10,9 +10,10 @@ For example, you can create a TensorSlice and use it like this:
 
 ```mojo
 from max.driver import Tensor
+from max.tensor import TensorShape
 
 def main():
-    tensor = Tensor[DType.float32, rank=3]((1, 2, 3))
+    tensor = Tensor[DType.float32, rank=3](TensorShape(1, 2, 3))
     slice_one = tensor[:]
 ```
 

@@ -401,7 +401,7 @@ struct DeviceTensor(DeviceBuffer, StringableRaising, CollectionElement):
         if type != self.spec.dtype():
             raise "requested dtype does not match existing type."
 
-        return Tensor[type, rank](self^)
+        return Tensor[type, rank](device_tensor=self^)
 
     fn device(self) -> Device:
         """Returns the Device on which the DeviceTensor was allocated."""

@@ -16,7 +16,7 @@
 from max.driver import cpu_device, Tensor, AnyTensor
 from max.driver._cuda import cuda_device
 from testing import assert_equal, assert_not_equal, assert_true
-from max.tensor import TensorSpec
+from max.tensor import TensorSpec, TensorShape
 from utils import Index
 from gpu.host import Device
 
@@ -38,7 +38,7 @@ def test_copy_d2h():
     cpu = cpu_device()
     gpu = cuda_device()
 
-    input = Tensor[DType.float32, 2]((10, 2))
+    input = Tensor[DType.float32, 2](TensorShape(10, 2))
 
     val = 1
     for i in range(10):
@@ -76,7 +76,7 @@ def test_copy_d2d():
     cpu = cpu_device()
     gpu = cuda_device()
 
-    input = Tensor[DType.float32, 2]((10, 2))
+    input = Tensor[DType.float32, 2](TensorShape(10, 2))
 
     val = 1
     for i in range(10):
@@ -116,7 +116,7 @@ def test_move():
 def test_print():
     gpu = cuda_device()
 
-    input = Tensor[DType.float32, 2]((10, 2))
+    input = Tensor[DType.float32, 2](TensorShape(10, 2))
 
     val = 1
     for i in range(10):

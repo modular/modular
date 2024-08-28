@@ -10,9 +10,10 @@ For example, a tensor can be created and used like this:
 
 ```mojo
 from max.driver import Tensor
+from max.tensor import TensorShape
 
 def main():
-    tensor = Tensor[DType.float32, rank=2]((1, 2))
+    tensor = Tensor[DType.float32, rank=2](TensorShape(1, 2))
     tensor[0, 0] = 1.0
 ```
 
@@ -59,7 +60,7 @@ struct Tensor[type: DType, rank: Int](CollectionElement, TensorLike):
         self.name = None
         self._device_memory_impl_ptr = UnsafePointer[NoneType]()
 
-    fn __init__(inout self, owned device_tensor: DeviceTensor) raises:
+    fn __init__(inout self, *, owned device_tensor: DeviceTensor) raises:
         """Creates a tensor from DeviceTensor.
 
         Args:
@@ -75,21 +76,6 @@ struct Tensor[type: DType, rank: Int](CollectionElement, TensorLike):
         self._device_memory_impl_ptr = tmp^._steal_impl_ptr()
 
     fn __init__(
-        inout self, shape: Tuple, device: Optional[Device] = None
-    ) raises:
-        """Creates tensor with given shape on the given device. If device is
-        not given tensor will be created on cpu.
-
-        Args:
-            shape: Shape of the tensor.
-            device: Device on which tensor is to be allocated.
-        """
-        var spec = TensorSpec(type, shape)
-        var dev = device.value() if device else cpu_device()
-        var dt = dev.allocate(spec)
-        self = Self(dt)
-
-    fn __init__(
         inout self, shape: TensorShape, device: Optional[Device] = None
     ) raises:
         """Creates tensor with given shape on the given device. If device is
@@ -102,7 +88,7 @@ struct Tensor[type: DType, rank: Int](CollectionElement, TensorLike):
         var spec = TensorSpec(type, shape)
         var dev = device.value() if device else cpu_device()
         var dt = dev.allocate(spec)
-        self = Self(dt)
+        self = Self(device_tensor=dt)
 
     fn __init__(inout self, tensor: OldTensor[type]) raises:
         """Converts max.tensor to max.driver.Tensor. This creates tensor on

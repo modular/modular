@@ -93,12 +93,7 @@ struct ContiguousKVCacheManager[
             constrained[False, "unsupported layout"]()
             raise "failure"
 
-        self.blocks_buf = other_device.allocate(
-            TensorSpec(
-                type,
-                blocks_shape,
-            )
-        )
+        self.blocks_buf = Tensor[type, 5](blocks_shape, other_device)
         self.active_seq_ids = List[Int]()
         self.cache_lengths = List[Int]()
         self.seq_id_counter = 0

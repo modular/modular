@@ -10,13 +10,14 @@ advance or if you don't know the tensor is DeviceTensor or Tensor:
 
 ```mojo
 from max.driver import Tensor, AnyTensor
+from max.tensor import TensorShape
 
 @value
 struct Container:
     var _tensor: AnyTensor
 
 def main():
-    tensor = Tensor[DType.float32, rank=1]((1,))
+    tensor = Tensor[DType.float32, rank=1](TensorShape(1,))
     container = Container(tensor^)
 ```
 """

@@ -14,7 +14,7 @@
 
 from max.driver import AnyTensor, cpu_device, Tensor, AnyMemory, AnyMojoValue
 from testing import assert_equal, assert_true, assert_false, assert_raises
-from max.tensor import TensorSpec
+from max.tensor import TensorSpec, TensorShape
 
 
 def test_from_device_memory():
@@ -33,7 +33,7 @@ def test_from_device_memory():
 
 
 def test_from_tensor():
-    tensor = Tensor[DType.float32, 2]((2, 2))
+    tensor = Tensor[DType.float32, 2](TensorShape(2, 2))
 
     tensor[0, 0] = 1
 
@@ -46,7 +46,7 @@ def test_from_tensor():
 
 
 def test_from_tensor_incorrect():
-    tensor = Tensor[DType.float32, 2]((2, 2))
+    tensor = Tensor[DType.float32, 2](TensorShape(2, 2))
 
     tensor[0, 0] = 1
 
@@ -65,7 +65,7 @@ def _function_that_takes_anytensor(owned t1: AnyTensor, owned t2: AnyTensor):
 def test_implicit_conversion():
     dev = cpu_device()
 
-    tensor = Tensor[DType.float32, 2]((2, 2))
+    tensor = Tensor[DType.float32, 2](TensorShape(2, 2))
 
     dt2 = dev.allocate(
         TensorSpec(DType.float32, 2, 2),
@@ -89,7 +89,7 @@ struct RegFoo:
 def test_any_memory():
     dev = cpu_device()
 
-    tensor = Tensor[DType.float32, 2]((2, 2))
+    tensor = Tensor[DType.float32, 2](TensorShape(2, 2))
 
     dt2 = dev.allocate(
         TensorSpec(DType.float32, 2, 2),
@@ -114,7 +114,7 @@ def test_any_memory():
 
 
 def test_print_any_tensor():
-    tensor = Tensor[DType.float32, 2]((2, 2))
+    tensor = Tensor[DType.float32, 2](TensorShape(2, 2))
 
     tensor[0, 0] = 1
     tensor[0, 1] = 2
