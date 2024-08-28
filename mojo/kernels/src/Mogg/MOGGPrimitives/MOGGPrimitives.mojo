@@ -190,6 +190,19 @@ fn create_i1_async(
     )
 
 
+# TODO: this should contain a pointer or reference to the DeviceContext, NOT
+# a copy of it. This is not possible until GRA-902 is resolved.
+alias DeviceBufferMojoValueType = Tuple[DeviceContext, UnsafePointer[Int8]]
+
+
+fn _destroy_device_buffer(ptr: UnsafePointer[NoneType]):
+    var cast_ptr = ptr.bitcast[DeviceBufferMojoValueType]()
+    var ctx = cast_ptr[][0]
+    var data = cast_ptr[][1]
+    var dev_buffer = DeviceBuffer(ctx, data, 0, owning=True)
+    _ = dev_buffer
+
+
 @mogg_register("builtin.create_buffer_ref_async")
 @always_inline
 @export
@@ -201,15 +214,42 @@ fn create_buffer_ref_async[
     runtime: UnsafePointer[NoneType],
     call_ctx: MojoCallContextPtr,
 ):
+    # DeviceContext does not suppot CPU so handle this specially.
+    # We could also use the MojoValue approach below for CPU, but it is harder
+    # to destroy the buffer in mojo because the runtime (which holds the allocator)
+    # is not currently available in mojo.
     @parameter
-    if "cuda" in target:
-        external_call["KGEN_CompilerRT_CreateAsyncCUDABufferRef", NoneType](
-            buffer.data, len(buffer), async_ptr, runtime, call_ctx.ptr
-        )
-    else:
+    if target == "cpu":
         external_call["KGEN_CompilerRT_CreateAsyncBufferRef", NoneType](
             buffer.data, len(buffer), async_ptr, runtime
         )
+        return
+
+    # Otherwise, create a MojoValue containing the DeviceContext, which is used
+    # to free the data pointer.
+    alias size = sizeof[DeviceBufferMojoValueType]()
+    alias align = alignof[DeviceBufferMojoValueType]()
+
+    var mojo_value_ptr = external_call[
+        "KGEN_CompilerRT_MojoValueAllocateBuffer",
+        UnsafePointer[DeviceBufferMojoValueType],
+    ](size, align)
+    # Note: We need to make a copy of the DeviceContext here because the graph
+    # compiler does not share the same DeviceContext object as the MAX Driver
+    # (GRA-902). The members are shared so this is OK.
+    # The DeviceContext is currently really big (1700B) so this needs to be fixed.
+    mojo_value_ptr.init_pointee_move(
+        (call_ctx.get_device_context(), buffer.data)
+    )
+
+    external_call["KGEN_CompilerRT_CreateAsyncMojoValueBufferRef", NoneType](
+        buffer.data,
+        len(buffer),
+        mojo_value_ptr,
+        _destroy_device_buffer,
+        async_ptr,
+        runtime,
+    )
 
 
 @mogg_register("builtin.create_buffer_ref_with_borrow_async")
