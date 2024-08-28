@@ -7,7 +7,7 @@ name = "modular-pyutils"
 version = "0.0.5"
 description = "Modular Python utilities"
 readme = "README.md"
-requires-python = ">=3.8"
+requires-python = ">=3.9"
 dependencies = [
     "find-libpython>=0.3.0",
     "numpy",
