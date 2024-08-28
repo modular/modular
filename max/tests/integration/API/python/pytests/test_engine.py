@@ -246,6 +246,27 @@ def test_execute_devicetensor_dynamic_shape(
         assert output_tensor[x].item() == 3 * x
 
 
+def test_execute_devicetensor_numpy_stays_alive(
+    session: InferenceSession, mo_model_path: Path
+):
+    # Our engine takes ownership of inputs and readily destroys them
+    # after execution is complete. We need to ensure that when we create
+    # a tensor from a numpy array, the original numpy array stays alive
+    # after execution.
+    model = session.load(mo_model_path)
+    arr = np.ones((5,), dtype=np.float32)
+    input_tensor = md.Tensor.from_numpy(arr)
+    output = model.execute(input_tensor)
+    expected = [4.0, 2.0, -5.0, 3.0, 6.0]
+    assert len(output) == 1
+    output_tensor = output[0]
+    for idx in range(5):
+        assert isclose(output_tensor[idx].item(), expected[idx])
+
+    for idx in range(5):
+        assert isclose(arr[idx].item(), 1.0)
+
+
 # TODO(#36814): Debug segfault after PT 2.2.2 bump.
 # Skip this test if we don't have onnx and torch framework libs available.
 @pytest.mark.skip(reason="#36814")
