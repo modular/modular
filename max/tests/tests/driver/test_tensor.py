@@ -7,8 +7,11 @@
 from itertools import product
 
 import max.driver as md
+import numpy as np
 import pytest
 from max.dtype import DType
+
+from modular.utils.misc import has_gpu
 
 
 def test_tensor():
@@ -186,3 +189,36 @@ def test_modify_contiguous_tensor():
 
     tensor[2, 2] = 25
     assert cont_tensor[2, 2].item() == 1
+
+
+def test_from_numpy():
+    # A user should be able to create a tensor from a numpy array.
+    arr = np.array([[1, 2, 3], [4, 5, 6]], dtype=np.int32)
+    tensor = md.Tensor.from_numpy(arr)
+    assert tensor.shape == (2, 3)
+    assert tensor.dtype == DType.int32
+    assert tensor[0, 0].item() == 1
+    assert tensor[0, 1].item() == 2
+    assert tensor[0, 2].item() == 3
+    assert tensor[1, 0].item() == 4
+    assert tensor[1, 1].item() == 5
+    assert tensor[1, 2].item() == 6
+
+
+@pytest.mark.skipif(not has_gpu(), reason="Requires CUDA")
+def test_from_numpy_cuda():
+    arr = np.array([[1, 2, 3], [4, 5, 6]], dtype=np.int32)
+    tensor = md.Tensor.from_numpy(arr, device=md.CUDA())
+    assert tensor.shape == (2, 3)
+    assert tensor.dtype == DType.int32
+
+
+def test_is_host():
+    # CPU tensors should be marked as being on-host.
+    assert md.Tensor((1, 1), DType.int32, device=md.CPU()).is_host
+
+
+@pytest.mark.skipif(not has_gpu(), reason="Requires CUDA")
+def test_is_host_cuda():
+    # CUDA tensors should be marked as not being on-host.
+    assert not md.Tensor((1, 1), DType.int32, device=md.GPU()).is_host
