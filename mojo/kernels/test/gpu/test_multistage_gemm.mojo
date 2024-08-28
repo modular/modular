@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 # REQUIRES: has_cuda_device
-# RUN: %mojo-no-debug %s
+# RUN: %mojo %s
 
 from collections.optional import OptionalReg
 from math import ceildiv, isclose
