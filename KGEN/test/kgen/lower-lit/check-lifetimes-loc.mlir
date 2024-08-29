@@ -16,7 +16,7 @@ lit.struct.decl @HasMemFields attributes {destructor = #kgen.symbol.constant<@Ha
 
   lit.func @__del__[mut dtorlife](%self: !lit.ref<@HasMemFields, mut dtorlife> loc(#loc) owned_in_mem) -> !kgen.none {
     // CHECK-DAG: [[VAR0:%.*]] = lit.ref.struct.ger %self[a]
-    // CHECK-DAG: [[VAR1:%.*]] = lit.call @S::@__del__[mut dtorlife]([[VAR0]])
+    // CHECK-DAG: [[VAR1:%.*]] = lit.call @S::@__del__[mut dtorlife->a]([[VAR0]])
     lit.ownership.mark_destroyed %self : !lit.ref<@HasMemFields, mut dtorlife> loc(#loc1)
     %none = kgen.param.constant: none = <#kgen.none> loc(#loc1)
     // CHECK-DAG: kgen.return %{{.*}} : !kgen.none loc(#[[LOC]])

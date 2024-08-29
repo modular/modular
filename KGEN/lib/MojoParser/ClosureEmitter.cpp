@@ -65,10 +65,10 @@ static void storeField(ImplicitLocOpBuilder &b, Value self, Value value,
 }
 static void storeField(ImplicitLocOpBuilder &b, Value self, Value value,
                        StringAttr name) {
-  b.create<RefStoreOp>(
-      value, b.create<RefStructGEROp>(
-                 cast<RefType>(self.getType()).getWithElement(value.getType()),
-                 name, self));
+  auto resultTy = RefStructGEROp::getReboundFieldType(
+      cast<RefType>(self.getType()), name, value.getType());
+  auto fieldRef = b.create<RefStructGEROp>(resultTy, name, self);
+  b.create<RefStoreOp>(value, fieldRef);
 }
 
 static std::pair<ASTDecl &, StructDeclOp>

@@ -1409,9 +1409,23 @@ OpFoldResult LIT::StructExtractOp::fold(FoldAdaptor adaptor) {
 // RefStructGEROp
 //===----------------------------------------------------------------------===//
 
+/// Given a reference to a struct, return the reference type to the
+/// specified field, maintaining lifetime and mutability, assuming the type
+/// is already rebound to its final type.
+RefType RefStructGEROp::getReboundFieldType(RefType structRefTy,
+                                            StringAttr fieldName,
+                                            Type reboundType) {
+  // The lifetime of the struct reference incorporates field sensitivity.
+  auto fieldLifetime =
+      LifetimeFieldAttr::get(structRefTy.getLifetime(), fieldName);
+  return RefType::get(reboundType, fieldLifetime,
+                      structRefTy.getAddressSpace());
+}
+
 RefType RefStructGEROp::getFieldType(RefType structRefTy, StructFieldOp field) {
   auto structTy = cast<StructType>(structRefTy.getElementType());
-  return structRefTy.getWithElement(field.getReboundType(structTy));
+  return getReboundFieldType(structRefTy, field.getNameAttr(),
+                             field.getReboundType(structTy));
 }
 
 LogicalResult
@@ -1428,8 +1442,16 @@ void RefStructGEROp::build(OpBuilder &builder, OperationState &result,
   build(builder, result, resultType, field.getNameAttr(), structBaseRef);
 }
 
+LogicalResult RefStructGEROp::verify() {
+  if (getType() != getReboundFieldType(getContainer().getType(), getFieldAttr(),
+                                       getType().getElementType()))
+    return emitOpError("invalid lifetime or address space");
+  return success();
+}
+
 static ParseResult parseStructGERTypes(AsmParser &p, Type &containerType,
-                                       Type &fieldRefType) {
+                                       Type &fieldRefType,
+                                       StringAttr fieldName) {
   llvm::SMLoc loc = p.getCurrentLocation();
   Type fieldType;
   // parse: 'type' `->` 'type'
@@ -1442,12 +1464,14 @@ static ParseResult parseStructGERTypes(AsmParser &p, Type &containerType,
 
   // The field type gets wrapped with the same mutability and lifetime as
   // the result element.
-  fieldRefType = containerRefType.getWithElement(fieldType);
+  fieldRefType = RefStructGEROp::getReboundFieldType(containerRefType,
+                                                     fieldName, fieldType);
   return success();
 }
 
 static void printStructGERTypes(AsmPrinter &p, Operation *,
-                                RefType containerType, RefType fieldType) {
+                                RefType containerType, RefType fieldType,
+                                StringAttr fieldName) {
   containerType.print(p);
   p << " -> ";
   if (auto refType = dyn_cast<RefType>(fieldType))

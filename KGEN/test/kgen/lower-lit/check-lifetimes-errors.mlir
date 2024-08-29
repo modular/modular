@@ -7,7 +7,7 @@ lit.struct.decl @S attributes {
   lit.func @__init__[mut selflife](%self: !lit.ref<@S, mut selflife> init_self, |) -> !kgen.none attributes {isStatic} {
     %0 = lit.ref.struct.ger %self[a] : <@S, mut selflife> -> index
     %idx1 = index.constant 1
-    lit.ref.store %idx1, %0 : !lit.ref<index, mut selflife>
+    lit.ref.store %idx1, %0 : !lit.ref<index, mut selflife->a>
 
     %none = kgen.param.constant: none = <#kgen.none>
     kgen.return %none : !kgen.none

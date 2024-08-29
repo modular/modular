@@ -1591,7 +1591,7 @@ def LIT_RefStructGEROp : LITOp<"ref.struct.ger", [Pure,
   let results = (outs LIT_RefType:$result);
   let assemblyFormat = [{
     $container `[` custom<KeywordAsString>($field) `]` attr-dict `:`
-    custom<StructGERTypes>(type($container), type($result))
+    custom<StructGERTypes>(type($container), type($result), ref($field))
   }];
 
   let builders = [
@@ -1600,11 +1600,19 @@ def LIT_RefStructGEROp : LITOp<"ref.struct.ger", [Pure,
   ];
 
   let hasFolder = 1;
+  let hasVerifier = 1;
 
   let extraClassDeclaration = [{
     /// Given a reference to a struct, return the reference type to the
-    /// specified field, maintaining lifetime and mutability.
+    /// specified field, maintaining lifetime and mutability, and rebinding any
+    /// generics from the base type through the field type.
     static RefType getFieldType(RefType structRefTy, StructFieldOp field);
+
+    /// Given a reference to a struct, return the reference type to the
+    /// specified field, maintaining lifetime and mutability, assuming the type
+    /// is already rebound to its final type.
+    static RefType getReboundFieldType(RefType structRefTy,
+                                       StringAttr fieldName, Type reboundType);
   }];
 
 }

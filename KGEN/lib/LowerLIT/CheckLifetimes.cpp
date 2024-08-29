@@ -587,6 +587,11 @@ struct ValueSet {
     // accessed.
     lifetime = LifetimeMutCastAttr::strip(lifetime);
 
+    // We currently ignore field sensitivity.
+    // FIXME(field sensitivity) use this!
+    while (auto field = dyn_cast<LifetimeFieldAttr>(lifetime))
+      lifetime = field.getStructLifetime();
+
     auto it = lifetimeToValueIndex.find(lifetime);
     if (it == lifetimeToValueIndex.end())
       return {};

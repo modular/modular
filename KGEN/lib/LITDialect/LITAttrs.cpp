@@ -793,6 +793,7 @@ TypedAttr LifetimeUnionAttr::get(ArrayRef<TypedAttr> operandsIn,
   if (operands.size() == 1)
     return operands[0];
 
+  // Otherwise, for multiple elements actually form a union.
   auto resultType = ::cast<LifetimeType>(operands[0].getType());
   return LifetimeUnionAttr::Base::get(type.getContext(), operands, resultType);
 }
