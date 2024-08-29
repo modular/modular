@@ -21,4 +21,49 @@ class InterpreterState;
 #include "KGEN/Interpreter/InterpreterOpInterface.h.inc"
 #include "KGEN/Interpreter/MemoryableTypeInterface.h.inc"
 
+//===----------------------------------------------------------------------===//
+// Delegate Interace Declarations
+//===----------------------------------------------------------------------===//
+
+namespace M::detail {
+class InterpreterDelegateOpInterface;
+
+/// This class defines a delegate op interface to
+/// `BytecodeInterpreterOpInterface` for operations that define a simple
+/// `interpret` method with no additional bytecode payload. This is poor man's
+/// interface inheritance. Most of the code here is boilerplate.
+struct InterpreterDelegateOpInterfaceTraits
+    : public BytecodeInterpreterOpInterfaceInterfaceTraits {
+  template <typename ConcreteOp>
+  class Model : public Concept {
+  public:
+    using Interface = InterpreterDelegateOpInterface;
+    Model() : Concept{interpret} {}
+
+    /// This method defines the delegate `interpret` hook to call into the
+    /// concrete operation's `interpret` method.
+    static inline ErrorTreeOrSuccess
+    interpret(const Concept *impl, Operation *op, ArrayRef<Attribute> operands,
+              const void *payload, InterpreterState &state) {
+      return cast<ConcreteOp>(op).interpret(operands, state);
+    }
+  };
+};
+
+template <typename ConcreteOp>
+struct InterpreterDelegateOpInterfaceTrait;
+
+class InterpreterDelegateOpInterface : public BytecodeInterpreterOpInterface {
+public:
+  template <typename ConcreteOp>
+  struct Trait : public InterpreterDelegateOpInterfaceTrait<ConcreteOp> {};
+};
+
+template <typename ConcreteOp>
+struct InterpreterDelegateOpInterfaceTrait
+    : public mlir::OpInterface<
+          InterpreterDelegateOpInterface,
+          InterpreterDelegateOpInterfaceTraits>::Trait<ConcreteOp> {};
+} // namespace M::detail
+
 #endif // SUPPORT_INTERPRETER_INTERPRETERINTERFACE_H

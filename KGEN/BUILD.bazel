@@ -383,28 +383,6 @@ gentbl_mlir_dialect(
 )
 
 gentbl_cc_library(
-    name = "InterpreterInterfaceIncGen",
-    includes = ["include"],
-    strip_include_prefix = "include",
-    tbl_outs = [
-        (
-            ["-gen-op-interface-decls"],
-            "include/KGEN/Interpreter/InterpreterInterface.h.inc",
-        ),
-        (
-            ["-gen-op-interface-defs"],
-            "include/KGEN/Interpreter/InterpreterInterface.cpp.inc",
-        ),
-    ],
-    tblgen = "@llvm-project//mlir:mlir-tblgen",
-    td_file = "include/KGEN/Interpreter/InterpreterInterface.td",
-    deps = [
-        ":InterpreterDialectIncGen",
-        ":InterpreterTdFiles",
-    ],
-)
-
-gentbl_cc_library(
     name = "InterpreterAttrsIncGen",
     includes = ["include"],
     strip_include_prefix = "include",
@@ -463,7 +441,7 @@ gentbl_cc_library(
         ),
     ],
     tblgen = "@llvm-project//mlir:mlir-tblgen",
-    td_file = "include/KGEN/Interpreter/InterpreterInterface.td",
+    td_file = "include/KGEN/Interpreter/InterpreterInterfaceGen.td",
     deps = [
         ":InterpreterDialectIncGen",
         ":InterpreterTdFiles",
@@ -485,7 +463,7 @@ gentbl_cc_library(
         ),
     ],
     tblgen = "@llvm-project//mlir:mlir-tblgen",
-    td_file = "include/KGEN/Interpreter/InterpreterInterface.td",
+    td_file = "include/KGEN/Interpreter/InterpreterInterfaceGen.td",
     deps = [
         ":InterpreterDialectIncGen",
         ":InterpreterTdFiles",

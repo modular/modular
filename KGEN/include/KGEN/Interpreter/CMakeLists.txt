@@ -18,7 +18,7 @@ mlir_tablegen(InterpreterDialectBytecode.cpp.inc -gen-bytecode -bytecode-dialect
 add_public_tablegen_target(InterpreterDialectBytecodeIncGen)
 add_dependencies(MLIRInterpreterIncGen InterpreterDialectBytecodeIncGen)
 
-set(LLVM_TARGET_DEFINITIONS InterpreterInterface.td)
+set(LLVM_TARGET_DEFINITIONS InterpreterInterfaceGen.td)
 mlir_tablegen(InterpreterOpInterface.h.inc -gen-op-interface-decls)
 mlir_tablegen(InterpreterOpInterface.cpp.inc -gen-op-interface-defs)
 mlir_tablegen(MemoryableTypeInterface.h.inc -gen-type-interface-decls)
