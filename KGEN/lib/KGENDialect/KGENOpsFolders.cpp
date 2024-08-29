@@ -1606,7 +1606,6 @@ ErrorTreeOrSuccess StructGEPOp::interpret(ArrayRef<Attribute> operands,
   offset = llvm::alignTo(
       offset,
       *cast<DataLayoutInterface>(targetType).getTypeAlign(state.getTarget()));
-  state.mapResults(
-      PointerAttr::get(ptr.getAddr() + offset, PointerType::get(targetType)));
+  state.mapResults(PointerAttr::get(ptr.getAddr() + offset, getType()));
   return success();
 }
