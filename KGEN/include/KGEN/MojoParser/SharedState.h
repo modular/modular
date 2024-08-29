@@ -38,6 +38,7 @@ class FuncOp;
 class LookupResult;
 class PackageOp;
 class ParserListener;
+class ParserInterpreterCache;
 class StructDeclOp;
 class CallOperands;
 struct ParserConfig;
@@ -472,6 +473,10 @@ public:
   void finalizeCustomOpImplementations(ModuleOp module);
 
 private:
+  /// Get the shared interpreter cache stored in the shared state.
+  ParserInterpreterCache &getInterpreterCache();
+  friend class ParserParamEvaluator;
+
   /// The internal state of an imported module or package.
   struct ModuleState;
 
