@@ -15,6 +15,7 @@ add_modular_mlir_library(MCompilerSupport
   MLIRToString.cpp
   OperationUtils.cpp
   ParserUtils.cpp
+  PassTimingUtils.cpp
   TimeProfilerTimingManager.cpp
   VerifyUtils.cpp
 
