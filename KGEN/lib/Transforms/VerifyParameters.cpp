@@ -4,7 +4,7 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "KGEN/Interpreter/BytecodeInterpreter.h"
+#include "KGEN/Interpreter/InterpreterState.h"
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/KGENDialect/KGENParameters.h"
 #include "KGEN/KGENDialect/ParameterEvaluator.h"
@@ -16,6 +16,7 @@
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/Threading.h"
 #include "mlir/Pass/Pass.h"
+#include "llvm/Support/Mutex.h"
 
 using namespace M;
 using namespace KGEN;
@@ -26,66 +27,36 @@ namespace M::KGEN {
 } // namespace M::KGEN
 
 namespace {
-class SimpleInterpreter : public BytecodeInterpreter, public BytecodeCompiler {
+class ParameterSimplifier : public ParameterEvaluator, public IRInterpreter {
 public:
-  SimpleInterpreter(ModuleOp module, SymbolTableCollection &symtabs)
-      : BytecodeInterpreter(module.getContext(), this), module(module),
-        symtabs(symtabs) {}
+  ParameterSimplifier(bool enableInterp, ModuleOp module,
+                      SymbolTableCollection &symtabs)
+      : IRInterpreter(module.getContext()), enableInterp(enableInterp),
+        module(module), symtabs(symtabs) {}
+  ParameterSimplifier(const ParameterSimplifier &other)
+      : ParameterEvaluator(other.getParameterValues()),
+        IRInterpreter(other.getContext()), enableInterp(other.enableInterp),
+        module(other.module), symtabs(other.symtabs) {}
 
+  FailureOr<TypedAttr> evaluateExpression(ParamOperatorAttr op) override;
   ErrorOr<Region *> lookupFunctionBody(SymbolRefAttr symbol) override;
   Operation *lookupTypeDefinition(SymbolRefAttr symbol) override;
-  const FunctionIRBytecode *compileBytecode(Region &region) override;
-
-  FailureOr<TypedAttr> evaluateFunction(ParamOperatorAttr op);
 
 private:
-  FailureOr<TypedAttr> evaluateFunctionImpl(ParamOperatorAttr op,
-                                            SymbolConstantAttr ref);
-
+  bool enableInterp;
   ModuleOp module;
   SymbolTableCollection &symtabs;
-
-  DenseMap<ParamOperatorAttr, std::optional<FailureOr<TypedAttr>>> interpCache;
-  DenseMap<Region *, std::unique_ptr<FunctionIRBytecode>> bytecodeCache;
 };
 } // namespace
 
-ErrorOr<Region *> SimpleInterpreter::lookupFunctionBody(SymbolRefAttr symbol) {
-  auto func = symtabs.lookupSymbolIn<mlir::FunctionOpInterface>(module, symbol);
-  assert(func && "invalid function reference");
-  if (func.isExternal())
-    return Error("external function reference");
-  return &func.getFunctionBody();
-}
-
-Operation *SimpleInterpreter::lookupTypeDefinition(SymbolRefAttr symbol) {
-  return symtabs.lookupSymbolIn(module, symbol);
-}
-
-const FunctionIRBytecode *SimpleInterpreter::compileBytecode(Region &region) {
-  // The IR is being rewritten as it is being interpreted. We have to recompile
-  // on-the-fly.
-  std::unique_ptr<FunctionIRBytecode> &bc = bytecodeCache[&region];
-  bc =
-      std::make_unique<FunctionIRBytecode>(FunctionIRBytecode::compile(region));
-  return bc.get();
-}
-
-FailureOr<TypedAttr> SimpleInterpreter::evaluateFunction(ParamOperatorAttr op) {
-  // We can only fold direct calls.
-  auto ref = dyn_cast<SymbolConstantAttr>(op.getOperands().front());
-  if (!ref)
+FailureOr<TypedAttr>
+ParameterSimplifier::evaluateExpression(ParamOperatorAttr op) {
+  if (!enableInterp)
     return failure();
 
-  std::optional<FailureOr<TypedAttr>> &entry = interpCache[op];
-  if (!entry)
-    entry = evaluateFunctionImpl(op, ref);
-  return *entry;
-}
+  if (op.getOpcode() != POC::Apply && op.getOpcode() != POC::ApplyResultSlot)
+    return failure();
 
-FailureOr<TypedAttr>
-SimpleInterpreter::evaluateFunctionImpl(ParamOperatorAttr op,
-                                        SymbolConstantAttr) {
   // We can only fold direct calls.
   auto ref = dyn_cast<SymbolConstantAttr>(op.getOperands().front());
   if (!ref)
@@ -139,26 +110,17 @@ SimpleInterpreter::evaluateFunctionImpl(ParamOperatorAttr op,
   return value;
 }
 
-namespace {
+ErrorOr<Region *>
+ParameterSimplifier::lookupFunctionBody(SymbolRefAttr symbol) {
+  auto func = symtabs.lookupSymbolIn<mlir::FunctionOpInterface>(module, symbol);
+  assert(func && "invalid function reference");
+  if (func.isExternal())
+    return Error("external function reference");
+  return &func.getFunctionBody();
+}
 
-class ParameterSimplifier : public ParameterEvaluator {
-public:
-  ParameterSimplifier(SimpleInterpreter *interp) : interp(interp) {}
-
-  FailureOr<TypedAttr> evaluateExpression(ParamOperatorAttr op) override;
-
-private:
-  SimpleInterpreter *interp;
-};
-} // namespace
-
-FailureOr<TypedAttr>
-ParameterSimplifier::evaluateExpression(ParamOperatorAttr op) {
-  if (!interp)
-    return failure();
-  if (op.getOpcode() != POC::Apply && op.getOpcode() != POC::ApplyResultSlot)
-    return failure();
-  return interp->evaluateFunction(op);
+Operation *ParameterSimplifier::lookupTypeDefinition(SymbolRefAttr symbol) {
+  return symtabs.lookupSymbolIn(module, symbol);
 }
 
 /// Function to walk all op users of parameters and substitute parameters based
@@ -366,18 +328,14 @@ struct VerifyParametersPass : impl::VerifyParametersBase<VerifyParametersPass> {
 #ifdef MODULAR_PRODUCTION
     interp = true;
 #endif
-    std::unique_ptr<SimpleInterpreter> simpleInterp;
-    if (interp) {
-      simpleInterp = std::make_unique<SimpleInterpreter>(
-          module, analysis.getSymbolTables());
-    }
 
     VerboseCompilerTimeTraceScope traceScope("propagateTrivialParameters");
     for (auto [declRegion, i] : declRegions) {
       ParameterUseDefGraph &graph = graphs[i];
-      propagateTrivialParameters(declRegion, graph, graph,
-                                 ParameterSimplifier(simpleInterp.get()),
-                                 DenseSet<TypedAttr>());
+      propagateTrivialParameters(
+          declRegion, graph, graph,
+          ParameterSimplifier(interp, module, analysis.getSymbolTables()),
+          DenseSet<TypedAttr>());
     }
   }
 };
