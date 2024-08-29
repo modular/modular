@@ -12,9 +12,17 @@
 
 namespace M {
 class InterpreterState;
+class TargetInfoAttr;
 
 using InterpretHook = ErrorTreeOrSuccess (*)(Operation *, ArrayRef<Attribute>,
                                              const void *, InterpreterState &);
+using GenBytecodeHook = void (*)(Operation *, const void *, TargetInfoAttr);
+
+struct OpBytecodeGenerator {
+  uint32_t payloadSize;
+  GenBytecodeHook genBytecode;
+  InterpretHook interpret;
+};
 } // namespace M
 
 //===----------------------------------------------------------------------===//
@@ -45,11 +53,12 @@ struct InterpreterDelegateOpInterfaceTraits
 
     /// This method defines the delegate `interpret` hook to call into the
     /// concrete operation's `interpret` method.
-    static inline InterpretHook getInterpretHook() {
-      return +[](Operation *op, ArrayRef<Attribute> operands,
-                 const void *payload, InterpreterState &state) {
-        return cast<ConcreteOp>(op).interpret(operands, state);
-      };
+    static inline OpBytecodeGenerator getInterpretHook() {
+      return {0, nullptr,
+              +[](Operation *op, ArrayRef<Attribute> operands,
+                  const void *payload, InterpreterState &state) {
+                return cast<ConcreteOp>(op).interpret(operands, state);
+              }};
     }
   };
 };

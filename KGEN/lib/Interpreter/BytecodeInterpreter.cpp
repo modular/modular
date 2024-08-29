@@ -69,9 +69,9 @@ class alignas(8) BCOperation final
     : public llvm::TrailingObjects<BCOperation, BCOperand, BCResult> {
 public:
   BCOperation(Operation *op, InterpretHook interpret, unsigned numOperands,
-              unsigned numResults)
+              unsigned numResults, unsigned payloadOffset)
       : op(op), interpret(interpret), numOperands(numOperands),
-        numResults(numResults), nextOffset(-1) {}
+        numResults(numResults), payloadOffset(payloadOffset), nextOffset(-1) {}
 
   BCOperand *getOperand(unsigned i) {
     return getTrailingObjects<BCOperand>() + i;
@@ -85,9 +85,14 @@ public:
     return getTrailingObjects<BCResult>() + i;
   }
 
+  void *getPayload() { return (uint8_t *)this + payloadOffset; }
+  const void *getPayload() const {
+    return (const uint8_t *)this + payloadOffset;
+  }
+
   void setNextOffset(uint32_t nextOffset) { this->nextOffset = nextOffset; }
 
-  /// Backreference to the IR of the operation. This is used to error reporting
+  /// Backreference to the IR of the operation. This is used for error reporting
   /// and calling the folder.
   Operation *op;
   /// A precomputed interpreter hook, which is used to interpret the operation.
@@ -96,6 +101,9 @@ public:
 
   uint32_t numOperands;
   uint32_t numResults;
+
+  /// The relative offset from the start of the operation of the payload.
+  uint32_t payloadOffset;
 
   /// This is the absolute bytecode offset to the next operation in the current
   /// basic block.
@@ -186,6 +194,8 @@ private:
 /// Helper class for writing bytecode recursively.
 class BytecodeBuilder {
 public:
+  explicit BytecodeBuilder(TargetInfoAttr target) : target(target) {}
+
   /// Write an operation.
   void writeOperation(Operation *op);
   /// Write a region.
@@ -197,6 +207,8 @@ public:
   }
 
 private:
+  TargetInfoAttr target;
+
   BytecodeStream stream;
   DenseMap<Value, unsigned> valueMap;
   unsigned valueCounter = 0;
@@ -214,14 +226,16 @@ void BytecodeBuilder::writeOperation(Operation *op) {
 
   // Get the interpret hook for the operation. If it does not implement the
   // interpreter inteface, use the operation folder.
-  InterpretHook interpret = nullptr;
+  OpBytecodeGenerator generator{0, nullptr, nullptr};
   if (auto itf = dyn_cast<BytecodeInterpreterOpInterface>(op))
-    interpret = itf.getInterpretHook();
+    generator = itf.getBytecodeGenerator();
 
   // Create the operation first. This saves the computed properties of the
   // operation required by the interpreter.
-  auto [bc, bcIdx] = stream.next<BCOperation>(totalSize);
-  ::new (bc) BCOperation(op, interpret, numOperands, numResults);
+  auto [bc, bcIdx] =
+      stream.next<BCOperation>(totalSize + generator.payloadSize);
+  ::new (bc)
+      BCOperation(op, generator.interpret, numOperands, numResults, totalSize);
 
   // Now create the trailing objects.
   for (unsigned i = 0; i != numOperands; ++i) {
@@ -235,6 +249,10 @@ void BytecodeBuilder::writeOperation(Operation *op) {
     valueMap.try_emplace(result, idx);
     ::new (bc->getResult(i)) BCResult{idx};
   }
+
+  // Generate the payload if necessary.
+  if (GenBytecodeHook genBytecode = generator.genBytecode)
+    genBytecode(op, bc->getPayload(), target);
 
   // Write the regions first.
   for (unsigned i = 0; i != numRegions; ++i) {
@@ -281,8 +299,9 @@ FunctionIRBytecode::~FunctionIRBytecode() {
     alignedFree(data);
 }
 
-FunctionIRBytecode FunctionIRBytecode::compile(Region &entry) {
-  BytecodeBuilder builder;
+FunctionIRBytecode FunctionIRBytecode::compile(Region &entry,
+                                               TargetInfoAttr target) {
+  BytecodeBuilder builder(target);
   builder.writeRegion(entry);
 
   auto [numValues, data, cfgIndices] = std::move(builder).take();
@@ -476,7 +495,7 @@ BytecodeInterpreter::interpretFunction(Region &body,
     // Use the interpreter interface if one was found.
     if (InterpretHook interpret = op->interpret) {
       ErrorTreeOrSuccess err =
-          interpret(op->op, operandsRef, /*payload=*/nullptr, *this);
+          interpret(op->op, operandsRef, op->getPayload(), *this);
       if (LLVM_UNLIKELY(err.isError())) {
         return reportFoldError(op->op, operandsRef,
                                "failed to interpret operation ")

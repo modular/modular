@@ -37,9 +37,8 @@ using namespace AsyncRT;
 // InterpreterCache
 //===----------------------------------------------------------------------===//
 
-const FunctionIRBytecode *
-ConcreteFunction::CompiledRegion::compileIfNecessary(Region &region,
-                                                     bool optimize) {
+const FunctionIRBytecode *ConcreteFunction::CompiledRegion::compileIfNecessary(
+    Region &region, TargetInfoAttr target, bool optimize) {
   // Try to minimize writer contention by checking quickly if the region is
   // already compiled.
   if (compiled)
@@ -69,7 +68,7 @@ ConcreteFunction::CompiledRegion::compileIfNecessary(Region &region,
       (void)mgr.run(*clone);
     }
 
-    bc.emplace(FunctionIRBytecode::compile(func.getBodyRegion()));
+    bc.emplace(FunctionIRBytecode::compile(func.getBodyRegion(), target));
     compiled = true;
     return &*bc;
   });
@@ -366,7 +365,7 @@ Elaborator::Elaborator(SymbolTable &symtab,
                        ParameterCollector::Analysis &paramCache,
                        TargetInfoAttr target, ElaboratorCallbacks callbacks,
                        const ElaborateGeneratorsOptions &config)
-    : InterpreterCache(config.optimizeInterpreter), target(target),
+    : InterpreterCache(target, config.optimizeInterpreter), target(target),
       config(config), oldSymTab(symtab),
       env(symtab.getOp()->getAttrOfType<EnvAttr>(EnvAttr::getEnvAttrName())),
       runtime(*loadContext(target.getContext())->get<AsyncRT::Runtime>()),

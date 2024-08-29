@@ -28,7 +28,7 @@ def BytecodeInterpreterOpInterface :
     StaticInterfaceMethod<[{
       Get a function pointer that interprets the operation given its constant
       inputs. An operation specific payload is provided to the hook.
-    }], "InterpretHook", "getInterpretHook">
+    }], "OpBytecodeGenerator", "getBytecodeGenerator">
   ];
 }
 
