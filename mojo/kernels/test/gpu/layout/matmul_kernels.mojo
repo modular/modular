@@ -19,6 +19,8 @@ from math import ceildiv
 from gpu.memory import async_copy_wait_all
 from memory.reference import _GPUAddressSpace as AddressSpace
 from layout.int_tuple import IntTuple
+from layout.runtime_tuple import RuntimeTuple
+from layout.runtime_layout import RuntimeLayout, UNKNOWN_VALUE
 from utils import StaticIntTuple
 from builtin.io import _printf
 from gpu.cublas.cublas import (
@@ -44,20 +46,16 @@ fn time_kernel[
 
 
 fn run_cublas[
-    dtype: DType,
-    a_layout: Layout,
-    b_layout: Layout,
-    c_layout: Layout,
+    dtype: DType
 ](
     ctx: DeviceContext,
+    M: Int,
+    N: Int,
+    K: Int,
     a: UnsafePointer[Scalar[dtype]],
     b: UnsafePointer[Scalar[dtype]],
     c: UnsafePointer[Scalar[dtype]],
 ) raises -> Int:
-    var M = a_layout.shape[0].value()
-    var N = b_layout.shape[1].value()
-    var K = b_layout.shape[0].value()
-
     var handle = UnsafePointer[cublasContext]()
     check_cublas_error(cublasCreate(UnsafePointer.address_of(handle)))
     var a_device = NDBuffer[dtype, 2](a, DimList(M, K))
@@ -108,10 +106,10 @@ fn gemm_kernel_1[
 
     var dst = c.tile[BM, BN](bidy, bidx)
     var dst_reg: c.element_type = 0
-    for k in range(b.shape[0]()):
+    for k in range(b.dim(0)):
         var a_tile = a.tile[BM, 1](bidy, k)
         var b_tile = b.tile[1, BN](k, bidx)
-        dst_reg += a_tile[row, k] * b_tile[k, col]
+        dst_reg += a_tile[row, 0] * b_tile[0, col]
     dst[row, col] = dst_reg
 
 
@@ -128,10 +126,10 @@ fn run_gemm_kernel_1[
     b: LayoutTensor,
     c: LayoutTensor,
 ) raises -> Int:
-    var M = a.shape[0]()
-    var N = b.shape[1]()
+    var M = a.dim(0)
+    var N = b.dim(1)
     var func = ctx.compile_function[
-        gemm_kernel_1[dtype, a_layout, b_layout, c_layout, BM, BN]
+        gemm_kernel_1[dtype, a.layout, b.layout, c.layout, BM, BN]
     ]()
 
     @always_inline
@@ -171,10 +169,10 @@ fn gemm_kernel_2[
     var dst = c.tile[BM, BN](bidy, bidx)
 
     var dst_reg: c.element_type = 0
-    for k in range(b.shape[0]()):
+    for k in range(b.dim(0)):
         var a_tile = a.tile[BM, 1](bidy, k)
         var b_tile = b.tile[1, BN](k, bidx)
-        dst_reg += a_tile[row, k] * b_tile[k, col]
+        dst_reg += a_tile[row, 0] * b_tile[0, col]
     dst[row, col] = dst_reg
 
 
@@ -191,10 +189,10 @@ fn run_gemm_kernel_2[
     b: LayoutTensor,
     c: LayoutTensor,
 ) raises -> Int:
-    var M = a.shape[0]()
-    var N = b.shape[1]()
+    var M = a.dim(0)
+    var N = b.dim(1)
     var func = ctx.compile_function[
-        gemm_kernel_2[dtype, a_layout, b_layout, c_layout, BM, BN]
+        gemm_kernel_2[dtype, a.layout, b.layout, c.layout, BM, BN]
     ]()
 
     @always_inline
@@ -243,9 +241,9 @@ fn gemm_kernel_3[
 
     var dst_reg: c.element_type = 0
 
-    for block in range(b.shape[0]() // BK):
+    for block in range(b.dim(0) // BK):
         alias load_a_layout = Layout.row_major(NUM_THREADS // BK, BK)
-        alias load_b_layout = Layout.row_major(BK, NUM_THREADS // BN)
+        alias load_b_layout = Layout.row_major(BK, NUM_THREADS // BK)
         var a_tile = a.tile[BM, BK](BlockIdx.y(), block)
         var b_tile = b.tile[BK, BN](block, BlockIdx.x())
         copy_dram_to_sram_async[thread_layout=load_a_layout](a_smem, a_tile)
@@ -257,6 +255,7 @@ fn gemm_kernel_3[
         for k in range(BK):
             dst_reg += a_smem[row, k] * b_smem[k, col]
         barrier()
+
     dst[row, col] = dst_reg
 
 
@@ -274,10 +273,10 @@ fn run_gemm_kernel_3[
     b: LayoutTensor,
     c: LayoutTensor,
 ) raises -> Int:
-    var M = a.shape[0]()
-    var N = b.shape[1]()
+    var M = a.dim(0)
+    var N = b.dim(1)
     var func = ctx.compile_function[
-        gemm_kernel_3[dtype, a_layout, b_layout, c_layout, BM, BN, BK, BM * BN]
+        gemm_kernel_3[dtype, a.layout, b.layout, c.layout, BM, BN, BK, BM * BN]
     ]()
 
     @always_inline
@@ -288,7 +287,7 @@ fn run_gemm_kernel_3[
             a,
             b,
             c,
-            grid_dim=(ceildiv(M, BM), ceildiv(N, BN)),
+            grid_dim=(ceildiv(N, BN), ceildiv(M, BM)),
             block_dim=(BM * BN),
         )
 
@@ -328,9 +327,9 @@ fn gemm_kernel_4[
 
     var dst_reg = LayoutTensor[dtype, Layout(TM)].stack_allocation().fill(0)
 
-    for block in range(b.shape[0]() // BK):
+    for block in range(b.dim(0) // BK):
         alias load_a_layout = Layout.row_major(NUM_THREADS // BK, BK)
-        alias load_b_layout = Layout.row_major(BK, NUM_THREADS // BN)
+        alias load_b_layout = Layout.row_major(BK, NUM_THREADS // BK)
         var a_tile = a.tile[BM, BK](BlockIdx.y(), block)
         var b_tile = b.tile[BK, BN](block, BlockIdx.x())
         copy_dram_to_sram_async[thread_layout=load_a_layout](a_smem, a_tile)
@@ -367,12 +366,12 @@ fn run_gemm_kernel_4[
     b: LayoutTensor,
     c: LayoutTensor,
 ) raises -> Int:
-    var M = a.shape[0]()
-    var N = b.shape[1]()
+    var M = a.dim(0)
+    var N = b.dim(1)
     alias NUM_THREADS = (BM * BN) // TM
     var func = ctx.compile_function[
         gemm_kernel_4[
-            dtype, a_layout, b_layout, c_layout, BM, BN, BK, TM, NUM_THREADS
+            dtype, a.layout, b.layout, c.layout, BM, BN, BK, TM, NUM_THREADS
         ]
     ]()
 
@@ -384,7 +383,7 @@ fn run_gemm_kernel_4[
             a,
             b,
             c,
-            grid_dim=(ceildiv(M, BM), ceildiv(N, BN)),
+            grid_dim=(ceildiv(N, BN), ceildiv(M, BM)),
             block_dim=(NUM_THREADS),
         )
 
@@ -432,7 +431,7 @@ fn gemm_kernel_5[
     var a_reg = LayoutTensor[dtype, Layout(TM)].stack_allocation()
     var b_reg = LayoutTensor[dtype, Layout(TN)].stack_allocation()
 
-    var ntiles = b.shape[0]() // BK
+    var ntiles = b.dim(0) // BK
 
     for block in range(ntiles):
         alias load_a_layout = Layout.row_major(NUM_THREADS // BK, BK)
@@ -473,12 +472,12 @@ fn run_gemm_kernel_5[
     b: LayoutTensor,
     c: LayoutTensor,
 ) raises -> Int:
-    var M = a.shape[0]()
-    var N = b.shape[1]()
+    var M = a.dim(0)
+    var N = b.dim(1)
     alias NUM_THREADS = (BM * BN) // (TM * TN)
     var func = ctx.compile_function[
         gemm_kernel_5[
-            dtype, a_layout, b_layout, c_layout, BM, BN, BK, TM, TN, NUM_THREADS
+            dtype, a.layout, b.layout, c.layout, BM, BN, BK, TM, TN, NUM_THREADS
         ]
     ]()
 
@@ -490,7 +489,7 @@ fn run_gemm_kernel_5[
             a,
             b,
             c,
-            grid_dim=(ceildiv(M, BM), ceildiv(N, BN)),
+            grid_dim=(ceildiv(N, BN), ceildiv(M, BM)),
             block_dim=(NUM_THREADS),
         )
 

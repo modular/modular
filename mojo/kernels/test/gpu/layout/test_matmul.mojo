@@ -39,9 +39,14 @@ from internal_utils import (
     assert_equal,
     assert_almost_equal,
 )
-from layout.int_tuple import IntTuple
+from layout.int_tuple import IntTuple, UNKNOWN_VALUE
 
-from layout.layout_tensor import LayoutTensor, Layout
+from layout.layout_tensor import (
+    LayoutTensor,
+    Layout,
+    RuntimeTuple,
+    RuntimeLayout,
+)
 
 
 from buffer.dimlist import _make_tuple
@@ -62,12 +67,12 @@ alias run_gemm_kernel_type = fn (
 
 
 struct test_matmul[
-    dtype: DType,
-    a_layout: Layout,
-    b_layout: Layout,
-    c_layout: Layout,
+    dtype: DType, a_layout: Layout, b_layout: Layout, c_layout: Layout
 ]:
     var ctx: DeviceContext
+    var M: Int
+    var N: Int
+    var K: Int
 
     var a_host: HostNDBuffer[dtype, 2]
     var b_host: HostNDBuffer[dtype, 2]
@@ -78,17 +83,16 @@ struct test_matmul[
     var b_device_buffer: DeviceBuffer[dtype]
     var c_device_buffer: DeviceBuffer[dtype]
     var c_device_buffer_ref: DeviceBuffer[dtype]
-    alias M = a_layout.shape[0].value()
-    alias N = b_layout.shape[1].value()
-    alias K = a_layout.shape[1].value()
     var dt_cublas: Int
 
     fn __init__(inout self, ctx: DeviceContext) raises:
         self.ctx = ctx
-
-        var a_shape = DimList(Self.M, Self.K)
-        var b_shape = DimList(Self.K, Self.N)
-        var c_shape = DimList(Self.M, Self.N)
+        self.M = a_layout.shape[0].value()
+        self.N = b_layout.shape[1].value()
+        self.K = b_layout.shape[0].value()
+        var a_shape = DimList(self.M, self.K)
+        var b_shape = DimList(self.K, self.N)
+        var c_shape = DimList(self.M, self.N)
 
         self.a_host = HostNDBuffer[dtype, 2](a_shape)
         self.b_host = HostNDBuffer[dtype, 2](b_shape)
@@ -115,11 +119,14 @@ struct test_matmul[
         )
 
         _memset_async(
-            self.c_device_buffer_ref.ptr, 0, Self.M * Self.N, ctx.cuda_stream
+            self.c_device_buffer_ref.ptr, 0, self.M * self.N, ctx.cuda_stream
         )
 
-        self.dt_cublas = run_cublas[dtype, a_layout, b_layout, c_layout](
+        self.dt_cublas = run_cublas[dtype](
             ctx,
+            self.M,
+            self.N,
+            self.K,
             self.a_device_buffer.ptr,
             self.b_device_buffer.ptr,
             self.c_device_buffer_ref.ptr,
@@ -135,12 +142,29 @@ struct test_matmul[
         var ctx = self.ctx
 
         _memset_async(
-            self.c_device_buffer.ptr, 0, Self.M * Self.N, ctx.cuda_stream
+            self.c_device_buffer.ptr, 0, self.M * self.N, ctx.cuda_stream
         )
 
-        var a = LayoutTensor[dtype, a_layout](self.a_device_buffer.ptr)
-        var b = LayoutTensor[dtype, b_layout](self.b_device_buffer.ptr)
-        var c = LayoutTensor[dtype, c_layout](self.c_device_buffer.ptr)
+        fn create_tensor[
+            layout: Layout
+        ](m: Int, n: Int, ptr: UnsafePointer[Scalar[dtype]]) -> LayoutTensor[
+            dtype, layout
+        ]:
+            var dynamic_layout = RuntimeLayout[layout](
+                RuntimeTuple[layout.shape](m, n),
+                RuntimeTuple[layout.stride](n, 1),
+            )
+            return LayoutTensor[dtype, layout](ptr, dynamic_layout)
+
+        var a = create_tensor[a_layout](
+            self.M, self.K, self.a_device_buffer.ptr
+        )
+        var b = create_tensor[b_layout](
+            self.K, self.N, self.b_device_buffer.ptr
+        )
+        var c = create_tensor[c_layout](
+            self.M, self.N, self.c_device_buffer.ptr
+        )
 
         var dt = gemm(ctx, a, b, c)
 
@@ -162,13 +186,12 @@ struct test_matmul[
 def main():
     alias N = 4096
     alias M = N
-    alias K = N
+    alias K = M
 
     with DeviceContext() as ctx:
         alias a_layout = Layout.row_major(M, K)
         alias b_layout = Layout.row_major(K, N)
         alias c_layout = Layout.row_major(M, N)
-
         var test = test_matmul[DType.float32, a_layout, b_layout, c_layout](ctx)
 
         alias k1 = run_gemm_kernel_1[
