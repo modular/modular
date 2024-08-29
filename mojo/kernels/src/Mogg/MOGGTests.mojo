@@ -150,6 +150,13 @@ fn test_static_stride_deduction[
     unroll[body, rank]()
 
 
+@mogg_register("test_address_space_deduction")
+@export
+fn test_address_space_deduction(tensor: NDBuffer):
+    print("Printing address space: ")
+    print("Address Space: " + str(tensor.address_space._value))
+
+
 @mogg_register("test_static_shape_output")
 @export
 fn test_static_shape_output[

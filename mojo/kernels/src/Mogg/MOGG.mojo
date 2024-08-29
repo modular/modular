@@ -28,6 +28,7 @@ from algorithm.reduction import (
 )
 from algorithm.reduction import mean as _mean
 from buffer import NDBuffer
+from buffer.buffer import _compute_ndbuffer_offset
 from buffer.dimlist import Dim, DimList
 from builtin.simd import Int64, UInt8, UInt64, _pow
 from gpu.host._compile import _get_nvptx_target
@@ -80,7 +81,7 @@ from linalg.packing import (
     pack_transposed_b_ndbuffer,
 )
 from linalg.utils import GemmShape
-from memory import UnsafePointer, memset_zero, memcpy
+from memory import AddressSpace, UnsafePointer, memset_zero, memcpy
 from memory.unsafe import bitcast
 from MOGGIntList import IntList
 from MOGGTensor import Tensor
@@ -602,6 +603,11 @@ fn elementwise_wrapper[
         ](buffer.dynamic_shape, context=ctx)
 
 
+@mogg_register("get_address_space")
+fn get_address_space() -> AddressSpace:
+    return AddressSpace.GENERIC
+
+
 # Build the StaticTensorSpec parameter for the DPS kernels
 @mogg_register("build_static_tensor_specs")
 @export
@@ -700,39 +706,13 @@ fn get_static_shape(shape: IntList) -> StaticIntTuple[shape._safe_len]:
 
 
 @always_inline
-fn _compute_flat_index[
-    type: DType,
-    rank: Int,
-    iters: Int,
-    static_shape: DimList,
-    static_stride: DimList,
-](
-    buffer: NDBuffer[type, rank, static_shape, static_stride],
-    index: StaticIntTuple[rank],
-) -> Int:
-    var flat_index: Int = 0
-
-    @parameter
-    for i in range(iters):
-        flat_index = fma(index[i], buffer.stride[i](), flat_index)
-
-    return flat_index
-
-
-@always_inline
 fn _simd_load_internal[
-    simd_width: Int,
-    type: DType,
-    rank: Int,
-    static_shape: DimList,
-    static_stride: DimList,
-](
-    buffer: NDBuffer[type, rank, static_shape, static_stride], index: Int
-) -> SIMD[type, simd_width]:
+    simd_width: Int
+](buffer: NDBuffer, index: Int) -> SIMD[buffer.type, simd_width]:
     @parameter
-    if type is DType.bool:
+    if buffer.type is DType.bool:
         var v = buffer.data.bitcast[DType.uint8]().load[width=simd_width](index)
-        return v.cast[type]()
+        return v.cast[buffer.type]()
     return buffer.data.load[width=simd_width](index)
 
 
@@ -740,55 +720,47 @@ fn _simd_load_internal[
 @export
 @always_inline
 fn simd_load[
-    type: DType,
-    simd_width: Int,
-    rank: Int,
-    input_0_static_shape: DimList,
-    input_0_static_stride: DimList,
+    simd_width: Int
 ](
-    buffer: NDBuffer[type, rank, input_0_static_shape, input_0_static_stride],
-    index: StaticIntTuple[rank],
-) -> SIMD[type, simd_width]:
-    var flat_index = _compute_flat_index[
-        type, rank, rank, input_0_static_shape
-    ](buffer, index)
-    var stride = buffer.stride[rank - 1]()
+    buffer: NDBuffer,
+    index: StaticIntTuple[buffer.rank],
+) -> SIMD[
+    buffer.type, simd_width
+]:
+    var flat_index = _compute_ndbuffer_offset(buffer, index)
+    var stride = buffer.stride[buffer.rank - 1]()
 
     if stride == 0:
         return buffer.data.load(flat_index)
     elif stride > 1:
-
-        @parameter
-        if type is DType.bool:
+        if buffer.type is DType.bool:
             var v = strided_load[simd_width](
                 buffer.data.bitcast[DType.uint8]().offset(flat_index),
                 stride,
             )
-            return v.cast[type]()
+            return v.cast[buffer.type]()
         else:
             return strided_load[simd_width](
                 buffer.data.offset(flat_index), stride
             )
-    return _simd_load_internal[
-        simd_width, type, rank, input_0_static_shape, input_0_static_stride
-    ](buffer, flat_index)
+    return _simd_load_internal[simd_width](buffer, flat_index)
 
 
 @mogg_register("simd_store")
 @export
 @always_inline
 fn simd_store[
-    type: DType, simd_width: Int, rank: Int
+    simd_width: Int
 ](
-    buffer: NDBuffer[type, rank],
-    index: StaticIntTuple[rank],
-    val: SIMD[type, simd_width],
+    buffer: NDBuffer,
+    index: StaticIntTuple[buffer.rank],
+    val: SIMD[buffer.type, simd_width],
 ):
-    var flat_index = _compute_flat_index[type, rank, rank](buffer, index)
+    var flat_index = _compute_ndbuffer_offset(buffer, index)
 
     # We have to cast bools into their runtime storage type.
     @parameter
-    if type is DType.bool:
+    if buffer.type is DType.bool:
         var v = val.cast[DType.uint8]()
         buffer.data.bitcast[DType.uint8]().store[width=simd_width](
             flat_index, v
