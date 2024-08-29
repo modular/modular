@@ -21,3 +21,11 @@ bool CSP::fromJSON(const llvm::json::Value &value, EmitArchiveParams &result,
 llvm::json::Value CSP::toJSON(const EmitArchiveParams &value) {
   return llvm::json::Object{{"module", value.module}};
 }
+
+//===----------------------------------------------------------------------===//
+// ObjectArchive
+//===----------------------------------------------------------------------===//
+
+llvm::json::Value CSP::toJSON(const ObjectArchive &value) {
+  return llvm::json::Object{{"archive", value.archive}};
+}
