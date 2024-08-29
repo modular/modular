@@ -38,15 +38,16 @@ public:
       : region(&region), compiled(std::make_shared<CompiledRegion>()) {}
 
   /// Get the bytecode or generate it if necessary.
-  const FunctionIRBytecode *getOrCompile(bool optimize) {
-    return compiled->compileIfNecessary(*region, optimize);
+  const FunctionIRBytecode *getOrCompile(TargetInfoAttr target, bool optimize) {
+    return compiled->compileIfNecessary(*region, target, optimize);
   }
 
   operator bool() const { return region; }
 
 private:
   struct CompiledRegion {
-    const FunctionIRBytecode *compileIfNecessary(Region &region, bool optimize);
+    const FunctionIRBytecode *
+    compileIfNecessary(Region &region, TargetInfoAttr target, bool optimize);
 
     /// A clone of the original function if we choose to optimize it before
     /// generating bytecode.
@@ -66,7 +67,8 @@ private:
 
 class InterpreterCache : public BytecodeCompiler {
 public:
-  InterpreterCache(bool optimize) : optimize(optimize) {}
+  InterpreterCache(TargetInfoAttr target, bool optimize)
+      : target(target), optimize(optimize) {}
 
   void addRegion(Region &region) {
     cache.modify(
@@ -77,11 +79,13 @@ public:
     ConcreteFunction &value = (*tlc)[&region];
     if (!value)
       value = cache.read([&](auto &map) { return map.at(&region); });
-    return value.getOrCompile(optimize);
+    return value.getOrCompile(target, optimize);
   }
 
 private:
+  TargetInfoAttr target;
   bool optimize;
+
   // Shared top-level cache.
   Shared<DenseMap<Region *, ConcreteFunction>> cache;
   // Per-thread cache to reduce contention.

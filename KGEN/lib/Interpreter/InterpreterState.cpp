@@ -696,7 +696,6 @@ ErrorTreeOr<SmallVector<Attribute>>
 IRInterpreter::interpretFunction(Region &body, ArrayRef<Attribute> arguments) {
   callFunctionBody(body, arguments);
 
-  SmallVector<Attribute> operands;
   while (block) {
     // Advance the iterator.
     if (pc.isValid())
@@ -712,8 +711,13 @@ IRInterpreter::interpretFunction(Region &body, ArrayRef<Attribute> arguments) {
     // Check for an interpreter interface implementation.
     Operation &op = *pc;
     if (auto interpItf = dyn_cast<BytecodeInterpreterOpInterface>(op)) {
-      ErrorTreeOrSuccess err = interpItf.getInterpretHook()(
-          &op, operands, /*payload=*/nullptr, *this);
+      OpBytecodeGenerator gen = interpItf.getBytecodeGenerator();
+      if (GenBytecodeHook genBytecode = gen.genBytecode) {
+        payload.reserve(gen.payloadSize);
+        genBytecode(&op, payload.data(), getTarget());
+      }
+      ErrorTreeOrSuccess err = interpItf.getBytecodeGenerator().interpret(
+          &op, operands, payload.data(), *this);
       if (err.isError())
         return reportFoldError(&*pc, operands, "failed to interpret operation ")
             .addCause(err.takeError());
