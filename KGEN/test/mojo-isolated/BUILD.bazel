@@ -17,9 +17,6 @@ lit_tests(
         ["**/*.mojo"],
         exclude = _DATA,
     ),
-    custom_substitutions = {
-        "%parse-mojo-isolated": "$(rlocationpath //KGEN/tools/kgen-translate) -import-mojo -mojo-enable-prebuilt-packages",
-    },
     data = [
         "//KGEN/test/test-packages",
         "//KGEN/test/test-packages:stdlib/__init__.mojo",
