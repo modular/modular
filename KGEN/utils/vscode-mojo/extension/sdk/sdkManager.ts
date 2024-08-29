@@ -99,7 +99,8 @@ export class MojoSDKManager extends DisposableContext {
           /*withLock=*/ false,
           this.context,
           this.logger,
-          this.isNightly
+          this.isNightly,
+          /*reinstall=*/ true
         );
         if (spec !== undefined) {
           vscode.commands.executeCommand('mojo.restart');
@@ -252,7 +253,7 @@ export class MojoSDKManager extends DisposableContext {
     );
     const mojoConfig = modularConfig[spec.section];
     if (!mojoConfig) {
-      return `The modular config file '${modularConfigPath} doesn't have the expected section ${spec.section}`;
+      return `The modular config file '${modularConfigPath}' doesn't have the expected section ${spec.section}`;
     }
     const sdkConfig = await MojoSDKConfig.create(
       this.logger,
@@ -430,12 +431,22 @@ export class MojoSDKManager extends DisposableContext {
           section
         );
         if (version !== undefined) {
-          possibleSDKs.push({
-            kind: 'modular-cli',
-            modularHomePath,
-            section,
-            version,
-          });
+          if (
+            possibleSDKs.find(
+              (sdk) =>
+                sdk.modularHomePath === modularHomePath &&
+                sdk.version.major == version.major &&
+                sdk.version.minor === version.minor &&
+                sdk.version.patch === version.patch
+            ) == undefined
+          ) {
+            possibleSDKs.push({
+              kind: 'modular-cli',
+              modularHomePath,
+              section,
+              version,
+            });
+          }
         }
       }
     }
