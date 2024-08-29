@@ -41,10 +41,11 @@ struct DebugOpInterpreterInterface
           DebugOpInterpreterInterface<Concrete>, Concrete> {
   /// Implement the interpret hook for this operation. Since the operation has
   /// no results, we cannot use the fold hook.
-  ErrorTreeOrSuccess interpret(Operation *op, ArrayRef<Attribute> operands,
-                               const void *payload,
-                               InterpreterState &state) const {
-    return success();
+  static InterpretHook getInterpretHook() {
+    return +[](Operation *op, ArrayRef<Attribute> operands, const void *payload,
+               InterpreterState &state) -> ErrorTreeOrSuccess {
+      return success();
+    };
   }
 };
 

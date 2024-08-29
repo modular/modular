@@ -12,6 +12,9 @@
 
 namespace M {
 class InterpreterState;
+
+using InterpretHook = ErrorTreeOrSuccess (*)(Operation *, ArrayRef<Attribute>,
+                                             const void *, InterpreterState &);
 } // namespace M
 
 //===----------------------------------------------------------------------===//
@@ -38,14 +41,15 @@ struct InterpreterDelegateOpInterfaceTraits
   class Model : public Concept {
   public:
     using Interface = InterpreterDelegateOpInterface;
-    Model() : Concept{interpret} {}
+    Model() : Concept{getInterpretHook} {}
 
     /// This method defines the delegate `interpret` hook to call into the
     /// concrete operation's `interpret` method.
-    static inline ErrorTreeOrSuccess
-    interpret(const Concept *impl, Operation *op, ArrayRef<Attribute> operands,
-              const void *payload, InterpreterState &state) {
-      return cast<ConcreteOp>(op).interpret(operands, state);
+    static inline InterpretHook getInterpretHook() {
+      return +[](Operation *op, ArrayRef<Attribute> operands,
+                 const void *payload, InterpreterState &state) {
+        return cast<ConcreteOp>(op).interpret(operands, state);
+      };
     }
   };
 };
