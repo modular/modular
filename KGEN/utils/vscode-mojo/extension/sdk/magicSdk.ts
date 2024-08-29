@@ -145,9 +145,11 @@ async function doInstallMagicSDK(
 async function installMagicSDKWithProgress(
   downloadSpec: DownloadSpec,
   logger: Logger,
-  isNightly: boolean
+  isNightly: boolean,
+  reinstall: boolean
 ): Promise<boolean> {
   if (
+    !reinstall &&
     (await directoryExists(downloadSpec.doneDirectory)) &&
     (await directoryExists(downloadSpec.versionDoneDir))
   ) {
@@ -175,7 +177,8 @@ export async function findMagicSDKSpec(
   withLock: boolean,
   context: vscode.ExtensionContext,
   logger: Logger,
-  isNightly: boolean
+  isNightly: boolean,
+  reinstall: boolean = false
 ): Promise<Optional<MojoSDKSpec>> {
   const downloadSpec = createDownloadSpec(context, isNightly);
   if (downloadSpec === undefined) {
@@ -193,7 +196,8 @@ export async function findMagicSDKSpec(
     success = await installMagicSDKWithProgress(
       downloadSpec,
       logger,
-      isNightly
+      isNightly,
+      reinstall
     );
     await release();
   } catch (e) {
