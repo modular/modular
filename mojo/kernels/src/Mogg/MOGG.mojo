@@ -701,9 +701,13 @@ fn get_static_shape(shape: IntList) -> StaticIntTuple[shape._safe_len]:
 
 @always_inline
 fn _compute_flat_index[
-    type: DType, rank: Int, iters: Int, static_shape: DimList
+    type: DType,
+    rank: Int,
+    iters: Int,
+    static_shape: DimList,
+    static_stride: DimList,
 ](
-    buffer: NDBuffer[type, rank, static_shape],
+    buffer: NDBuffer[type, rank, static_shape, static_stride],
     index: StaticIntTuple[rank],
 ) -> Int:
     var flat_index: Int = 0
@@ -717,10 +721,14 @@ fn _compute_flat_index[
 
 @always_inline
 fn _simd_load_internal[
-    simd_width: Int, type: DType, rank: Int, static_shape: DimList
-](buffer: NDBuffer[type, rank, static_shape], index: Int) -> SIMD[
-    type, simd_width
-]:
+    simd_width: Int,
+    type: DType,
+    rank: Int,
+    static_shape: DimList,
+    static_stride: DimList,
+](
+    buffer: NDBuffer[type, rank, static_shape, static_stride], index: Int
+) -> SIMD[type, simd_width]:
     @parameter
     if type is DType.bool:
         var v = buffer.data.bitcast[DType.uint8]().load[width=simd_width](index)
@@ -732,9 +740,13 @@ fn _simd_load_internal[
 @export
 @always_inline
 fn simd_load[
-    type: DType, simd_width: Int, rank: Int, input_0_static_shape: DimList
+    type: DType,
+    simd_width: Int,
+    rank: Int,
+    input_0_static_shape: DimList,
+    input_0_static_stride: DimList,
 ](
-    buffer: NDBuffer[type, rank, input_0_static_shape],
+    buffer: NDBuffer[type, rank, input_0_static_shape, input_0_static_stride],
     index: StaticIntTuple[rank],
 ) -> SIMD[type, simd_width]:
     var flat_index = _compute_flat_index[
@@ -757,9 +769,9 @@ fn simd_load[
             return strided_load[simd_width](
                 buffer.data.offset(flat_index), stride
             )
-    return _simd_load_internal[simd_width, type, rank, input_0_static_shape](
-        buffer, flat_index
-    )
+    return _simd_load_internal[
+        simd_width, type, rank, input_0_static_shape, input_0_static_stride
+    ](buffer, flat_index)
 
 
 @mogg_register("simd_store")

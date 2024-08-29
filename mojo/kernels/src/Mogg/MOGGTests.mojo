@@ -126,6 +126,30 @@ fn test_static_shape_deduction[
     unroll[body, rank]()
 
 
+@mogg_register("test_static_stride_deduction")
+@export
+fn test_static_stride_deduction[
+    type: DType,
+    rank: Int,
+    input_0_static_shape: DimList,
+    input_0_static_stride: DimList,
+](tensor: NDBuffer[type, rank, input_0_static_shape, input_0_static_stride],):
+    print("Printing stride: ")
+
+    @always_inline
+    @parameter
+    fn body[idx: Int]():
+        alias dim = input_0_static_stride.at[idx]()
+
+        @parameter
+        if dim.is_dynamic():
+            print("unknown")
+        else:
+            print(dim.get())
+
+    unroll[body, rank]()
+
+
 @mogg_register("test_static_shape_output")
 @export
 fn test_static_shape_output[
