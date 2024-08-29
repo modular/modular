@@ -29,6 +29,8 @@ namespace M::KGEN::MOGGPreElab {
 
 static constexpr llvm::StringLiteral kExecuteFuncName = "execute";
 static constexpr llvm::StringLiteral kShapeFuncName = "shape";
+static constexpr llvm::StringLiteral kInitializeOutputFuncName =
+    "initialize_output";
 static constexpr std::array<StringLiteral, 3> kMaxManagedTensorSlice = {
     "tensor_utils", "managed_tensor_slice", "ManagedTensorSlice"};
 
@@ -347,6 +349,7 @@ bool processStructExecuteFunc(ModuleOp moduleOp,
   }
   return true;
 }
+
 class MOGGAnnotatePass
     : public M::KGEN::MOGGPreElab::impl::MOGGAnnotateBase<MOGGAnnotatePass> {
 public:
@@ -383,7 +386,7 @@ public:
       if (!isExtensibilityStruct.takeValue())
         return WalkResult::advance();
 
-      LIT::FuncOp executeOp, shapeOp;
+      LIT::FuncOp executeOp, shapeOp, initializeOutputOp;
       for (auto &curOp : structDeclOp.getFields().front()) {
         auto func = dyn_cast<LIT::FuncOp>(curOp);
         if (!func)
@@ -400,11 +403,31 @@ public:
                                        kMOGGShapeFunctionLabel, builder))
             return WalkResult::interrupt();
           shapeOp = func;
+        } else if (func.getSourceName() == kInitializeOutputFuncName) {
+          if (!processStructFuncCommon(structDeclOp, registrationInfo, func,
+                                       kMOGGInitializeOutputFunctionLabel,
+                                       builder))
+            return WalkResult::interrupt();
+          initializeOutputOp = func;
         }
       }
 
-      if (!executeOp) {
-        structDeclOp.emitError("Struct based extensibility needs execute!");
+      // Some struct verifiers
+      if (!executeOp && !initializeOutputOp) {
+        structDeclOp.emitError("Struct based extensibility needs execute or "
+                               "initialize_output!");
+        return WalkResult::interrupt();
+      }
+
+      if (executeOp && initializeOutputOp) {
+        structDeclOp.emitError("Struct based extensibility cannot have "
+                               "execute and initialize_output op!");
+        return WalkResult::interrupt();
+      }
+
+      if (initializeOutputOp && shapeOp) {
+        structDeclOp.emitError("Struct based extensibility cannot have "
+                               "initialize_output and shape op!");
         return WalkResult::interrupt();
       }
 
