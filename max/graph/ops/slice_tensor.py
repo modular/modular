@@ -18,6 +18,8 @@ if TYPE_CHECKING:
     # Make this import unconditional when we drop 3.9 (MSDK-756).
     from types import EllipsisType
 
+import numpy as np
+
 from max.dtype import DType
 from max.mlir.dialects import rmo
 
@@ -83,7 +85,7 @@ def _slice_index_and_output(
         isinstance(index, tuple)
         and len(index) == 2
         and isinstance(index[0], slice)
-        and isinstance(index[1], DimLike)
+        and isinstance(index[1], (int, str, Dim, np.integer))
     ):
         # TODO (MSDK-751): remove scalar calls below
         start = scalar(index[0].start, DType.int64) if isinstance(
