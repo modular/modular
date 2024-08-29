@@ -1122,9 +1122,7 @@ struct LayoutTensor[
             for i in range(rank):
                 org_coords_offset[i] += tile_sizes[i] * tile_coords[i]
 
-            return LayoutTensor[
-                dtype, result.layout, address_space=address_space
-            ](
+            return __type_of(result)(
                 self.ptr.offset(offset),
                 org_coords_offset=rebind[StaticIntTuple[result.layout.rank()]](
                     org_coords_offset
@@ -1147,11 +1145,7 @@ struct LayoutTensor[
                 ] = self.runtime_layout.stride.value[i]
                 offset += tile_coords[i] * stride
 
-            return LayoutTensor[
-                dtype,
-                result.layout,
-                address_space=address_space,
-            ](
+            return __type_of(result)(
                 self.ptr.offset(offset),
                 RuntimeLayout(dynamic_layout_shape, dynamic_layout_stride),
             )
@@ -1203,9 +1197,9 @@ struct LayoutTensor[
             alias stride = __tiled_layout[1].stride[axis].value()
             # fmt: on
 
-            return LayoutTensorIter[
-                dtype, result.layout, address_space, circular=False
-            ](self.ptr + ptr_offset, bound, stride=stride)
+            return __type_of(result)(
+                self.ptr + ptr_offset, bound, stride=stride
+            )
 
         else:
             var runtime_shape = RuntimeTuple[result.layout.shape]()
@@ -1222,9 +1216,7 @@ struct LayoutTensor[
             var iter_bound = axis_dim * axis_stride
             var iter_stride = tile_sizes[axis] * axis_stride
 
-            return LayoutTensorIter[
-                dtype, result.layout, address_space, circular=False
-            ](
+            return __type_of(result)(
                 self.ptr + ptr_offset,
                 iter_bound,
                 stride=iter_stride,
@@ -1478,12 +1470,7 @@ struct LayoutTensor[
                     * self.element_size
                 )
 
-            return LayoutTensor[
-                dtype,
-                result.layout,
-                address_space=address_space,
-                element_layout=element_layout,
-            ](
+            return __type_of(result)(
                 self.ptr.offset(int(swizzled_offset)),
                 RuntimeLayout(runtime_shape, runtime_stride),
                 org_coords_offset=rebind[StaticIntTuple[result.layout.rank()]](
@@ -1526,12 +1513,7 @@ struct LayoutTensor[
 
         @parameter
         if layout.all_dims_known():
-            return LayoutTensor[
-                dtype,
-                result.layout,
-                address_space=address_space,
-                element_layout = result.element_layout,
-            ](
+            return __type_of(result)(
                 self.ptr,
                 org_coords_offset=rebind[StaticIntTuple[result.layout.rank()]](
                     self.org_coords_offset
@@ -1564,12 +1546,7 @@ struct LayoutTensor[
                     self.runtime_layout.stride.value[i] * vector_shape[i]
                 )
 
-            return LayoutTensor[
-                dtype,
-                result.layout,
-                address_space=address_space,
-                element_layout = result.element_layout,
-            ](
+            return __type_of(result)(
                 self.ptr,
                 RuntimeLayout(runtime_shape, runtime_stride),
                 rebind[RuntimeLayout[result.element_layout]](
@@ -1653,12 +1630,7 @@ struct LayoutTensor[
 
         var offset = d0_slice_start * stride_m + d1_slice_start * stride_n
 
-        return LayoutTensor[
-            dtype,
-            result.layout,
-            address_space=address_space,
-            element_layout=element_layout,
-        ](self.ptr.offset(offset))
+        return __type_of(result)(self.ptr.offset(offset))
 
     @always_inline
     fn slice[
@@ -1706,12 +1678,7 @@ struct LayoutTensor[
                 slice_offset += offsets[idx] * stride_i
                 idx += 1
 
-        return LayoutTensor[
-            dtype,
-            result.layout,
-            address_space=address_space,
-            element_layout=element_layout,
-        ](self.ptr.offset(slice_offset))
+        return __type_of(result)(self.ptr.offset(slice_offset))
 
     # FIXME: Can't overload slice, hitting compiler issue.
     # https://linear.app/modularml/issue/MOCO-174
@@ -1753,12 +1720,7 @@ struct LayoutTensor[
                 slice_offset += offsets[idx] * stride_i
                 idx += 1
 
-        return LayoutTensor[
-            dtype,
-            result.layout,
-            address_space=address_space,
-            element_layout=element_layout,
-        ](self.ptr.offset(slice_offset))
+        return __type_of(result)(self.ptr.offset(slice_offset))
 
     @always_inline
     fn transpose[
@@ -1773,12 +1735,7 @@ struct LayoutTensor[
         address_space=address_space,
         element_layout=element_layout,
     ] as result:
-        return LayoutTensor[
-            dtype,
-            result.layout,
-            address_space=address_space,
-            element_layout=element_layout,
-        ](self.ptr)
+        return __type_of(result)(self.ptr)
 
     @always_inline
     fn reshape[
@@ -1788,13 +1745,8 @@ struct LayoutTensor[
         dst_layout,
         address_space=address_space,
         element_layout=element_layout,
-    ]:
-        return LayoutTensor[
-            dtype,
-            dst_layout,
-            address_space=address_space,
-            element_layout=element_layout,
-        ](self.ptr)
+    ] as result:
+        return __type_of(result)(self.ptr)
 
     @always_inline
     fn composition[
@@ -1805,13 +1757,8 @@ struct LayoutTensor[
         dst_layout,
         address_space=address_space,
         element_layout=element_layout,
-    ]:
-        return LayoutTensor[
-            dtype,
-            dst_layout,
-            address_space=address_space,
-            element_layout=element_layout,
-        ](self.ptr)
+    ] as result:
+        return __type_of(result)(self.ptr)
 
     @always_inline
     fn distance(
