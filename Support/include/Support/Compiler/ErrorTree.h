@@ -134,8 +134,8 @@ public:
   /// Take the underlying value, assuming there is one.
   T takeValue() { return std::move(cast<T>(value)); }
 
-  /// Allow implicit conversion to bool. Returns true if there is a valid value.
-  explicit operator bool() const { return hasValue(); }
+  /// Allow implicit conversion to bool. Returns true if is this an error.
+  explicit operator bool() const { return isError(); }
 
   /// Allow the dereference operator to access the underlying value.
   const T &operator*() const { return getValue(); }
