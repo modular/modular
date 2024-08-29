@@ -69,7 +69,7 @@ class alignas(8) BCOperation final
     : public llvm::TrailingObjects<BCOperation, BCOperand, BCResult> {
 public:
   BCOperation(Operation *op, unsigned numOperands, unsigned numResults)
-      : op(op), itf(dyn_cast<InterpreterOpInterface>(op)),
+      : op(op), itf(dyn_cast<BytecodeInterpreterOpInterface>(op)),
         numOperands(numOperands), numResults(numResults), nextOffset(-1) {}
 
   BCOperand *getOperand(unsigned i) {
@@ -91,7 +91,7 @@ public:
   Operation *op;
   /// A precomputed interpreter interface, which may be null. It is used to
   /// interpret the operation if present.
-  InterpreterOpInterface itf;
+  BytecodeInterpreterOpInterface itf;
 
   uint32_t numOperands;
   uint32_t numResults;
@@ -467,8 +467,9 @@ BytecodeInterpreter::interpretFunction(Region &body,
 
     ArrayRef<Attribute> operandsRef(operands.data(), numOperands);
     // Use the interpreter interface if one was found.
-    if (InterpreterOpInterface itf = op->itf) {
-      ErrorTreeOrSuccess err = itf.interpret(operandsRef, *this);
+    if (BytecodeInterpreterOpInterface itf = op->itf) {
+      ErrorTreeOrSuccess err =
+          itf.interpret(operandsRef, /*payload=*/nullptr, *this);
       if (LLVM_UNLIKELY(err.isError())) {
         return reportFoldError(op->op, operandsRef,
                                "failed to interpret operation ")

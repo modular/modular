@@ -37,11 +37,12 @@ namespace {
 
 template <typename Concrete>
 struct DebugOpInterpreterInterface
-    : public InterpreterOpInterface::ExternalModel<
+    : public BytecodeInterpreterOpInterface::ExternalModel<
           DebugOpInterpreterInterface<Concrete>, Concrete> {
   /// Implement the interpret hook for this operation. Since the operation has
   /// no results, we cannot use the fold hook.
   ErrorTreeOrSuccess interpret(Operation *op, ArrayRef<Attribute> operands,
+                               const void *payload,
                                InterpreterState &state) const {
     return success();
   }
