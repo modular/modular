@@ -337,19 +337,8 @@ fn _compute_nd_index(buf: NDBuffer, index: Int) -> StaticIntTuple[buf.rank]:
 
 
 @always_inline
-fn _compute_ndbuffer_offset[
-    type: DType, rank: Int, shape: DimList, address_space: AddressSpace
-](
-    buf: NDBuffer[type, rank, shape, address_space=address_space],
-    index: VariadicList[Int],
-) -> Int:
+fn _compute_ndbuffer_offset(buf: NDBuffer, index: VariadicList[Int]) -> Int:
     """Computes the NDBuffer's offset using the index positions provided.
-
-    Parameters:
-        type: The element-type of the NDBuffer.
-        rank: The rank of the NDBuffer.
-        shape: The shape of the NDBuffer.
-        address_space: The address space of the NDBuffer.
 
     Args:
         buf: The NDBuffer.
@@ -360,11 +349,11 @@ fn _compute_ndbuffer_offset[
     """
 
     @parameter
-    if rank == 0:
+    if buf.rank == 0:
         return 0
 
     @parameter
-    if triple_is_nvidia_cuda() and address_space in (
+    if triple_is_nvidia_cuda() and buf.address_space in (
         _GPUAddressSpace.SHARED,
         _GPUAddressSpace.LOCAL,
         _GPUAddressSpace.CONSTANT,
@@ -373,7 +362,7 @@ fn _compute_ndbuffer_offset[
         var result: Int32 = 0
 
         @parameter
-        for i in range(rank):
+        for i in range(buf.rank):
             result = fma(Int32(buf.stride[i]()), Int32(index[i]), result)
 
         return int(result)
@@ -382,26 +371,18 @@ fn _compute_ndbuffer_offset[
         var result: Int = 0
 
         @parameter
-        for i in range(rank):
+        for i in range(buf.rank):
             result = fma(buf.stride[i](), index[i], result)
 
         return result
 
 
 @always_inline
-fn _compute_ndbuffer_offset[
-    type: DType, rank: Int, shape: DimList, address_space: AddressSpace
-](
-    buf: NDBuffer[type, rank, shape, address_space=address_space],
-    idx: StaticIntTuple[rank],
+fn _compute_ndbuffer_offset(
+    buf: NDBuffer,
+    idx: StaticIntTuple[buf.rank],
 ) -> Int:
     """Computes the NDBuffer's offset using the index positions provided.
-
-    Parameters:
-        type: The element-type of the NDBuffer.
-        rank: The rank of the NDBuffer.
-        shape: The shape of the NDBuffer.
-        address_space: The address space of the NDBuffer.
 
     Args:
         buf: The NDBuffer.

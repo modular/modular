@@ -50,31 +50,13 @@ fn test_ndbuffer():
     matrix[StaticIntTuple[2](3, 3)] = 15
 
     # CHECK: 11
-    print(
-        _compute_ndbuffer_offset[
-            DType.index,
-            2,
-            DimList(4, 4),
-        ](matrix, StaticIntTuple[2](2, 3))
-    )
+    print(_compute_ndbuffer_offset(matrix, StaticIntTuple[2](2, 3)))
 
     # CHECK: 14
-    print(
-        _compute_ndbuffer_offset[
-            DType.index,
-            2,
-            DimList(4, 4),
-        ](matrix, StaticIntTuple[2](3, 2))
-    )
+    print(_compute_ndbuffer_offset(matrix, StaticIntTuple[2](3, 2)))
 
     # CHECK: 15
-    print(
-        _compute_ndbuffer_offset[
-            DType.index,
-            2,
-            DimList(4, 4),
-        ](matrix, StaticIntTuple[2](3, 3))
-    )
+    print(_compute_ndbuffer_offset(matrix, StaticIntTuple[2](3, 3)))
 
     # CHECK: 2
     print(matrix.get_rank())
