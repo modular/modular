@@ -33,11 +33,8 @@ struct MemPair:
   var a: MemExample
   var b: MemExample
   fn __init__(inout self):
-    # TODO(field sensitivity lifetimes).
-    # self.a = self.b := MemExample()
-    self.a = MemExample() 
-    self.b = MemExample()
-
+    self.a = self.b := MemExample()
+    
   fn use(self): pass
 
 

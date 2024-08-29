@@ -182,7 +182,9 @@ fn take_two_spans(a: MyMutSpan[_], b: MyMutSpan[_]):
     pass
 
 @value
-struct MyStruct: pass
+struct MyStruct:
+    var a: Int
+    var b: Int
 
 fn exclusivity[spanlife: MutableLifetime](inout x: MyStruct, span: MyMutSpan[spanlife]):
     # expected-warning @below {{implicit __copyinit__ call argument allows writing a memory location previously writable through another aliased argument}}
@@ -201,15 +203,28 @@ fn exclusivity[spanlife: MutableLifetime](inout x: MyStruct, span: MyMutSpan[spa
     # expected-note @below {{'spanlife' memory accessed through reference embedded in value of type 'MyMutSpan[spanlife]'}}
     take_two_spans(span, span)
 
-fn take_two_ints(inout a: Int, inout b: Int): pass
+fn mutate_two[A: AnyType, B: AnyType](inout a: A, inout b: B): pass
 
-fn inout_ref_exclusivity(inout a: Int, inout b: Int):
+fn inout_ref_exclusivity(inout a: Int, inout b: Int, inout s: MyStruct):
     # This is ok.
-    take_two_ints(a, b)
+    mutate_two(a, b)
 
     # This is not.
     # expected-warning @below {{call argument allows writing a memory location previously writable through another aliased argument}}
     # expected-note @below {{'a' value is passed through aliasing 'inout' argument}}
-    take_two_ints(a, a)
+    mutate_two(a, a)
 
+    # This is ok: field sensitivity.
+    mutate_two(s.a, s.b)
 
+    # expected-warning @below {{call argument allows writing a memory location previously writable through another aliased argument}}
+    # expected-note @below {{'s.a' value is passed through aliasing 'inout' argument}}
+    mutate_two(s.a, s.a)
+
+    # expected-warning @below {{call argument allows writing a memory location previously writable through another aliased argument}}
+    # expected-note @below {{'s' value is passed through aliasing 'inout' argument}}
+    mutate_two(s.a, s)
+
+    # expected-warning @below {{call argument allows writing a memory location previously writable through another aliased argument}}
+    # expected-note @below {{'s' memory accessed through reference embedded in value of type 'Int'}}
+    mutate_two(s, s.a)

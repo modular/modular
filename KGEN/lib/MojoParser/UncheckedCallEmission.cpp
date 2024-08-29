@@ -1117,43 +1117,89 @@ private:
   struct LifetimeInfo {
     unsigned argIdx;
     bool isImmut;
+    /// True if this is the leaf of a nested access (e.g. "a.x.y.z"), false if
+    /// this is the parent lifetime of a leaf access (e.g. "a.x" from that
+    /// reference).
+    bool isLeaf;
   };
   SmallDenseMap<TypedAttr, LifetimeInfo, 8> lifetimeAccesses;
+
+  void checkLifetimeAccess(Value val, ArgConvention convention, size_t argIdx,
+                           TypedAttr lifetime);
 
   void diagViolation(Value val, ArgConvention convention, size_t argIdx,
                      TypedAttr lifetime, const LifetimeInfo &previousAccess);
 };
 } // end anonymous namespace
 
+/// Given an argument value being passed with a specified convention, check to
+/// see if the following lifetime (which may be part of the argument convention,
+/// or buried in the type) is a legal access given the other things we've
+/// already seen.
+void ExclusivityChecker::checkLifetimeAccess(Value val,
+                                             ArgConvention convention,
+                                             size_t argIdx,
+                                             TypedAttr lifetime) {
+  // Determine whether the access was immutable.
+  bool isImmut = cast<LifetimeType>(lifetime.getType()).isMutableKnown(false);
+
+  // Look through immcasts to determine the accessed lifetime.
+  lifetime = LifetimeMutCastAttr::strip(lifetime);
+
+  // Accesses to the global lifetime never conflict.
+  if (isa<LifetimeAttr>(lifetime))
+    return;
+
+  // Determine whether we've seen this leaf lifetime before.
+  auto [it, isNew] = lifetimeAccesses.insert(
+      {lifetime, {unsigned(argIdx), isImmut, /*isLeaf*/ true}});
+  if (!isNew) {
+    // If so, check to see if this access and the previous one were both
+    // immutable.  Read/read aliasing is fine, but write/write and read/write
+    // are not.
+    if (!it->second.isImmut || !isImmut) {
+      // If not, we have a problem!
+      diagViolation(val, convention, argIdx, lifetime, it->second);
+      return;
+    }
+
+    // Ok, this is a read/read conflict.  If this lifetime was previously seen
+    // as a non-leaf, upgrade it to a leaf access, so any subsequent subfield
+    // modifications are known to conflict.
+    it->second.isLeaf = true;
+  }
+
+  // Ok, there is no direct conflict: scan up the parent structs to see if there
+  // are conflicts for them.
+  while (auto fieldAttr = dyn_cast<LifetimeFieldAttr>(lifetime)) {
+    lifetime = fieldAttr.getStructLifetime();
+    auto [it, isNew] = lifetimeAccesses.insert(
+        {lifetime, {unsigned(argIdx), isImmut, /*isLeaf*/ false}});
+
+    // If we have seen this parent lifetime before, check to see if it is ok.
+    if (isNew)
+      continue;
+
+    // If the other access is a leaf access, then we are a subfield of it -
+    // the access conflicts if either is a store.
+    if (it->second.isLeaf && (!isImmut || !it->second.isImmut)) {
+      diagViolation(val, convention, argIdx, lifetime, it->second);
+      return;
+    }
+
+    // Otherwise we have a non-conflicting access.  This can be because we
+    // have a read of a subfield of another read, or because we have a
+    // write/write or read/write of different subfields (e.g. 'a.x' vs 'a.y').
+    // Either way it is fine, just make sure that we upgrade the interior
+    // access to a write if our access is a write.
+    it->second.isImmut &= isImmut;
+  }
+}
+
 /// As each argument is emitted, check against previous arguments for
 /// exclusivity violations.
 void ExclusivityChecker::checkArgument(Value val, ArgConvention convention,
                                        size_t argIdx) {
-  auto checkLifetimeAccess = [&](TypedAttr lifetime) {
-    // Determine whether the access was immutable.
-    bool isImmut = cast<LifetimeType>(lifetime.getType()).isMutableKnown(false);
-
-    // Look through immcasts to determine the accessed lifetime.
-    lifetime = LifetimeMutCastAttr::strip(lifetime);
-
-    // Accesses to the global lifetime never conflict.
-    if (isa<LifetimeAttr>(lifetime))
-      return;
-
-    // Determine whether we've seen this lifetime before.
-    auto [iter, isNew] =
-        lifetimeAccesses.insert({lifetime, {unsigned(argIdx), isImmut}});
-    if (isNew) // If not, then it isn't a conflict.
-      return;
-
-    // If so, check to see if this access and the previous one were both
-    // immutable.  Read/read aliasing is fine.
-    if (iter->second.isImmut && isImmut)
-      return;
-
-    // If not, we have a problem!
-    diagViolation(val, convention, argIdx, lifetime, iter->second);
-  };
 
   // If this is a result argument, then we only look at the lifetime of the
   // destination that we're storing into, not any nested references that may
@@ -1162,14 +1208,15 @@ void ExclusivityChecker::checkArgument(Value val, ArgConvention convention,
   if (convention == ArgConvention::InitSelf ||
       convention == ArgConvention::ByRefResult ||
       convention == ArgConvention::ByRefError) {
-    checkLifetimeAccess(cast<RefType>(val.getType()).getLifetime());
+    checkLifetimeAccess(val, convention, argIdx,
+                        cast<RefType>(val.getType()).getLifetime());
     return;
   }
 
   // Find all the of the lifetimes that are buried in the specified type.
   for (TypedAttr lifetime :
        shared.cachedLifetimeFinder.findLifetimesInTypes(val.getType()))
-    checkLifetimeAccess(lifetime);
+    checkLifetimeAccess(val, convention, argIdx, lifetime);
 }
 
 /// Emit an error about an access to a conflicting lifetime after a previous
