@@ -287,7 +287,7 @@ def M_TargetInfoAttr : MAttr<"TargetInfo", "target"> {
     ```mlir
     #M.target<triple="x86_64-unknown-linux-gnu", arch="znver3",
               features="+avx,+avx2", data_layout="p:64:64-i64:64:64",
-              relocation_model="static", simd_bit_width=256>
+              relocation_model="static", simd_bit_width=256, index_bit_width=64>
     #M.target<triple="nvptx64-nvidia-cuda", arch="sm_80">
     ```
 
@@ -302,6 +302,8 @@ def M_TargetInfoAttr : MAttr<"TargetInfo", "target"> {
     DefaultValuedParameter<"llvm::Reloc::Model",
                            "llvm::Reloc::Static">:$relocation_model,
     DefaultValuedParameter<"int64_t", "0">:$simd_bit_width,
+    DefaultValuedParameter<"std::optional<int64_t>",
+                           "std::nullopt">:$index_bit_width,
     OptionalStringRefParameter:$tune_cpu
   );
 
@@ -321,6 +323,11 @@ def M_TargetInfoAttr : MAttr<"TargetInfo", "target"> {
     /// Returns the operating system for the triple.
     StringRef getOS() const {
       return llvm::Triple::getOSTypeName(getTriple().getOS());
+    }
+
+    /// Returns the resolved index_bit_width.
+    int64_t resolveIndexBitWidth() {
+      return getIndexBitWidth().value_or(getDataLayout().getPointerBitWidth());
     }
   }];
 }

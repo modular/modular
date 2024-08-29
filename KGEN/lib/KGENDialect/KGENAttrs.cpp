@@ -1991,6 +1991,8 @@ static Attribute simplifyTargetGetField(SmallVectorImpl<TypedAttr> &operands,
     return StringAttr::get(target.getTarget().getArch(), resultType);
   if (field.getValue() == "simd_bit_width")
     return b.getAttr<IntLiteralAttr>(target.getTarget().getSimdBitWidth());
+  if (field.getValue() == "index_bit_width")
+    return b.getAttr<IntLiteralAttr>(target.getTarget().resolveIndexBitWidth());
   if (field.getValue() == "endianness") {
     return StringAttr::get(
         target.getTarget().getTriple().isLittleEndian() ? "little" : "big",

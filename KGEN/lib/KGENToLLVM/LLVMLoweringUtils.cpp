@@ -152,7 +152,7 @@ std::optional<Type> M::KGEN::getMLIRTypeForDType(MLIRContext *ctx,
 /// Build LLVM lowering options for a target.
 static mlir::LowerToLLVMOptions buildLLVMLoweringOpts(TargetInfoAttr target) {
   mlir::LowerToLLVMOptions opts(target.getContext());
-  opts.overrideIndexBitwidth(target.getDataLayout().getPointerBitWidth());
+  opts.overrideIndexBitwidth(target.resolveIndexBitWidth());
   opts.dataLayout = llvm::DataLayout(target.getDataLayout().toString());
   return opts;
 }

@@ -63,10 +63,9 @@ struct FunctionLayout
 
 struct IndexLayout
     : public DataLayoutInterface::ExternalModel<IndexLayout, IndexType> {
-  /// The size of an index type is the pointer width.
+  /// The size of an index type is the one found in the TargetInfoAttr.
   std::optional<int64_t> getTypeSize(Type type, TargetInfoAttr target) const {
-    return llvm::divideCeil(target.getDataLayout().getPointerBitWidth(),
-                            CHAR_BIT);
+    return llvm::divideCeil(target.resolveIndexBitWidth(), CHAR_BIT);
   }
 
   /// The align of an index type is the pointer width.
