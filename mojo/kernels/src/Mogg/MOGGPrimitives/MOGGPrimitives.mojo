@@ -690,6 +690,23 @@ fn mgp_buffer_to_bool[
     return buffer[0] != 0
 
 
+@mogg_register("mgp.buffer.to_index")
+@always_inline
+@export
+fn mgp_buffer_to_index(
+    dummy_chain: Int, buffer: NDBuffer[DType.uint8, 1]
+) raises -> Int64:
+    var bufSize = buffer.num_elements()
+    if bufSize == 4:
+        return Int64(int(buffer.data.bitcast[Int32]()[0]))
+    if bufSize == 8:
+        return buffer.data.bitcast[Int64]()[0]
+
+    raise Error(
+        "mgp.buffer.to_index must be called on either a 4- or 8-byte buffer"
+    )
+
+
 @mogg_register("mgp.buffer.slice")
 @always_inline
 @export
