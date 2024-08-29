@@ -197,16 +197,166 @@ static void labelTensorParamsInKernel(LIT::FuncOp funcOp) {
 }
 
 namespace {
+
+// Important metadata about the structs under the extensibility API
+struct ExtensibilityAPIStructInfo {
+  // Whether the operation is marked as an elementwise kernel
+  bool isElementwiseKernel = false;
+
+  // The name of the operation this struct is registered to
+  StringAttr registrationName{};
+};
+
+// Returns whether this is a struct under the extensibility API.
+// Along the way, populate metadata in `registrationInfo.`
+//
+// Also known as ExtensibilityV3 or KernelAPI.
+ErrorOr<bool>
+isExtensibilityAPIStruct(LIT::StructDeclOp structDeclOp, ModuleOp moduleOp,
+                         ExtensibilityAPIStructInfo &registrationInfo) {
+  auto decorators = structDeclOp.getDecorators();
+
+  // Iterate over the decorators and to find max.compiler.register.
+  for (auto decorator : decorators) {
+    // Handle elementwise annotation
+    if (auto directSym = dyn_cast<SymbolConstantAttr>(decorator)) {
+      auto decoratorFunc =
+          moduleOp.lookupSymbol<LIT::FuncOp>(directSym.getSymbol());
+
+      if (registrationInfo.isElementwiseKernel)
+        return Error("Op has multiple elementwise annotations");
+
+      if (decoratorFunc && decoratorFunc->hasAttr(MOGG_INTRINSIC_ELEMENTWISE))
+        registrationInfo.isElementwiseKernel = true;
+      continue;
+    }
+
+    TypedAttr registerOperand = getDecoratorLambdaArgument(
+        moduleOp, decorator, MOGG_INTRINSIC_REGISTER);
+    if (!registerOperand)
+      continue;
+
+    auto [_, nameAttr] =
+        cast<LIT::LITStructAttr>(registerOperand).getValues().front();
+    auto name = dyn_cast<StringAttr>(nameAttr);
+    assert(name);
+    if (registrationInfo.registrationName) {
+      return Error("Only one op can be registered per kernel struct");
+    }
+    registrationInfo.registrationName = name;
+  }
+
+  return registrationInfo.registrationName != nullptr;
+}
+
+// Run standard checks and mutations on a function. emits an
+// error and returns false if an issue was present.
+//
+// `structDeclOp` the parent struct the function being process lives in
+// `registrationInfo` the metadata about registration info
+// `func` the func being processed
+// `annotation` the annotation name to attach to this function to be used in
+//    later lowering.
+// `builder` builder for ops
+bool processStructFuncCommon(LIT::StructDeclOp structDeclOp,
+                             ExtensibilityAPIStructInfo registrationInfo,
+                             LIT::FuncOp func, StringLiteral annotation,
+                             OpBuilder &builder) {
+  if (!func.getIsStatic()) {
+    func->emitError("Function is not static");
+    return false;
+  }
+
+  func->setAttr(builder.getStringAttr(annotation),
+                registrationInfo.registrationName);
+  func.setExported();
+  annotateTypes(func);
+
+  return true;
+}
+
+// Run checks and mutations on an execute function. emits an
+// error and returns false if an issue was present.
+//
+// `moduleOp` the overarching module containing the code
+// `registrationInfo` whether the struct is annotated as elementwise
+// `structDeclOp` the parent struct the function being process lives in
+// `registrationName` the op the struct is registered for
+// `func` the func being processed
+// `annotation` the annotation name to attach to this function to be used in
+//    later lowering.
+// `builder` builder for ops
+bool processStructExecuteFunc(ModuleOp moduleOp,
+                              ExtensibilityAPIStructInfo registrationInfo,
+                              LIT::StructDeclOp structDeclOp, LIT::FuncOp func,
+                              StringLiteral annotation, OpBuilder &builder) {
+  if (!processStructFuncCommon(structDeclOp, registrationInfo, func, annotation,
+                               builder))
+    return false;
+
+  // Handle extra parameters we allow on execute:
+  for (auto param : func.getInputParams()) {
+    if (param.getName() == kMOGGSynchronousParameterName) {
+      func->setAttr(builder.getStringAttr(kMOGGSynchronousLabel), param);
+    } else if (param.getName() == kMOGGTargetParameterName) {
+      func->setAttr(builder.getStringAttr(kMOGGTargetLabel), param);
+    }
+  }
+
+  // Handle fusion if needed
+  if (registrationInfo.isElementwiseKernel)
+    func->setAttr(kMOGGElementFunction,
+                  mlir::UnitAttr::get(func->getContext()));
+
+  // Iterate over the decorators to find enable_fusion_for
+  for (auto decorator : func.getDecorators()) {
+    TypedAttr enableFusionOperand = getDecoratorLambdaArgument(
+        moduleOp, decorator, MOGG_INTRINSIC_ENABLE_FUSION_FOR);
+    if (!enableFusionOperand)
+      continue;
+
+    ArrayAttr argSrcNamesAttr =
+        dyn_cast_or_null<ArrayAttr>(func->getAttr(MOGG_ARG_SRC_NAMES));
+    if (!argSrcNamesAttr)
+      continue;
+
+    SmallVector<Attribute> argIdxsAttrs;
+    auto nameArgs = cast<KGEN::VariadicAttr>(enableFusionOperand);
+    for (TypedAttr operandAttr : nameArgs.getValues()) {
+      auto [_, nameAttr] =
+          cast<LIT::LITStructAttr>(operandAttr).getValues().front();
+      StringRef argName = cast<StringAttr>(nameAttr).getValue();
+
+      auto argIt =
+          llvm::find_if(argSrcNamesAttr.getValue(), [&](Attribute attr) {
+            return cast<StringAttr>(attr).getValue() == argName;
+          });
+      if (argIt == argSrcNamesAttr.getValue().end()) {
+        emitError(structDeclOp->getLoc(),
+                  "enable_fusion_for decorator: invalid argument "
+                  "name");
+        return false;
+      }
+      argIdxsAttrs.push_back(builder.getIndexAttr(
+          std::distance(argIt, argSrcNamesAttr.getValue().begin())));
+    }
+
+    if (!argIdxsAttrs.empty()) {
+      func->setAttr(kMOGGFusableArgs, builder.getArrayAttr(argIdxsAttrs));
+    }
+  }
+  return true;
+}
 class MOGGAnnotatePass
     : public M::KGEN::MOGGPreElab::impl::MOGGAnnotateBase<MOGGAnnotatePass> {
 public:
   void runOnOperation() override {
-    ModuleOp op = getOperation();
-    OpBuilder builder{op.getContext()};
+    ModuleOp moduleOp = getOperation();
+    OpBuilder builder{moduleOp.getContext()};
 
     // Do a first walk through the IR to strip the decorators and add
-    // attributes.
-    op->walk([](Operation *operation) {
+    // attributes. Mostly used for older extensibility API iterations
+    moduleOp->walk([](Operation *operation) {
       if (auto func = dyn_cast<LIT::FuncOp>(operation)) {
         stripDecorators(func);
         annotateTypes(func);
@@ -215,151 +365,57 @@ public:
       }
     });
 
-    // Do another walk to complete the annotation.
-    // We need two walks because some op X might look at the annotations of op
-    // Y, which might be defined after X. (Eg check if a decorator function
-    // has a mogg_intrinsic_attr set).
+    // Walk to process struct-based extensibility kernels.
     auto walker = [&](LIT::StructDeclOp structDeclOp) {
-      auto loc = structDeclOp->getLoc();
-      std::optional<StringAttr> registrationName;
       auto decorators = structDeclOp.getDecorators();
       if (decorators.empty())
         return WalkResult::advance();
 
-      bool isElementWiseKernel = false;
-
-      // Iterate over the decorators and to find max.compiler.register.
-      for (auto decorator : decorators) {
-        if (auto directSym = dyn_cast<SymbolConstantAttr>(decorator)) {
-          auto decoratorFunc =
-              op.lookupSymbol<LIT::FuncOp>(directSym.getSymbol());
-          if (decoratorFunc &&
-              decoratorFunc->hasAttr(MOGG_INTRINSIC_ELEMENTWISE))
-            isElementWiseKernel = true;
-
-          continue;
-        }
-
-        TypedAttr registerOperand =
-            getDecoratorLambdaArgument(op, decorator, MOGG_INTRINSIC_REGISTER);
-        if (!registerOperand)
-          continue;
-
-        auto [_, nameAttr] =
-            cast<LIT::LITStructAttr>(registerOperand).getValues().front();
-        auto name = dyn_cast<StringAttr>(nameAttr);
-        assert(name);
-
-        if (registrationName) {
-          emitError(loc, "Only one op can be registered per kernel struct");
-          return WalkResult::interrupt();
-        }
-        registrationName = name;
+      ExtensibilityAPIStructInfo registrationInfo;
+      ErrorOr<bool> isExtensibilityStruct =
+          isExtensibilityAPIStruct(structDeclOp, moduleOp, registrationInfo);
+      if (isExtensibilityStruct.isError()) {
+        structDeclOp->emitError(isExtensibilityStruct.getError());
+        return WalkResult::interrupt();
       }
 
-      if (!registrationName)
+      // Is not extensibility struct, but maybe some regular mojo object
+      if (!isExtensibilityStruct.takeValue())
         return WalkResult::advance();
 
-      // Search for the `execute` and the optional `shape` functions. Until
-      // traits can enforce @staticmethod, this has to be done in this pass.
-      LIT::FuncOp executeFunc, shapeFunc;
-      for (auto &op : structDeclOp.getFields().front()) {
-        auto func = dyn_cast<LIT::FuncOp>(op);
+      LIT::FuncOp executeOp, shapeOp;
+      for (auto &curOp : structDeclOp.getFields().front()) {
+        auto func = dyn_cast<LIT::FuncOp>(curOp);
         if (!func)
           continue;
 
-        if (func.getSourceName() == kExecuteFuncName)
-          executeFunc = func;
-        else if (func.getSourceName() == kShapeFuncName)
-          shapeFunc = func;
-      }
-
-      if (!executeFunc) {
-        emitError(loc, "Kernels must have an execution entry point named " +
-                           kExecuteFuncName);
-        return WalkResult::interrupt();
-      }
-
-      if (!executeFunc.getIsStatic()) {
-        emitError(loc, "Kernel entry point must be a static function");
-        return WalkResult::interrupt();
-      }
-
-      if (shapeFunc && !shapeFunc.getIsStatic()) {
-        emitError(loc, "Kernel shape function must be a static function");
-        return WalkResult::interrupt();
-      }
-
-      executeFunc->setAttr(builder.getStringAttr(kMOGGExecuteFunctionLabel),
-                           *registrationName);
-      executeFunc.setExported();
-      if (shapeFunc) {
-        shapeFunc->setAttr(builder.getStringAttr(kMOGGShapeFunctionLabel),
-                           *registrationName);
-        shapeFunc.setExported();
-      }
-
-      for (auto param : executeFunc.getInputParams()) {
-        if (param.getName() == kMOGGSynchronousParameterName) {
-          executeFunc->setAttr(builder.getStringAttr(kMOGGSynchronousLabel),
-                               param);
-        } else if (param.getName() == kMOGGTargetParameterName) {
-          executeFunc->setAttr(builder.getStringAttr(kMOGGTargetLabel), param);
-        }
-      }
-
-      if (isElementWiseKernel)
-        executeFunc->setAttr(kMOGGElementFunction,
-                             mlir::UnitAttr::get(executeFunc->getContext()));
-
-      // Iterate over the decorators to find enable_fusion_for
-      for (auto decorator : executeFunc.getDecorators()) {
-        TypedAttr enableFusionOperand = getDecoratorLambdaArgument(
-            op, decorator, MOGG_INTRINSIC_ENABLE_FUSION_FOR);
-        if (!enableFusionOperand)
-          continue;
-
-        ArrayAttr argSrcNamesAttr = dyn_cast_or_null<ArrayAttr>(
-            executeFunc->getAttr(MOGG_ARG_SRC_NAMES));
-        if (!argSrcNamesAttr)
-          continue;
-
-        SmallVector<Attribute> argIdxsAttrs;
-        auto nameArgs = cast<KGEN::VariadicAttr>(enableFusionOperand);
-        for (TypedAttr operandAttr : nameArgs.getValues()) {
-          auto [_, nameAttr] =
-              cast<LIT::LITStructAttr>(operandAttr).getValues().front();
-          StringRef argName = cast<StringAttr>(nameAttr).getValue();
-
-          auto argIt =
-              llvm::find_if(argSrcNamesAttr.getValue(), [&](Attribute attr) {
-                return cast<StringAttr>(attr).getValue() == argName;
-              });
-          if (argIt == argSrcNamesAttr.getValue().end()) {
-            emitError(loc, "enable_fusion_for decorator: invalid argument "
-                           "name");
+        if (func.getSourceName() == kExecuteFuncName) {
+          if (!processStructExecuteFunc(moduleOp, registrationInfo,
+                                        structDeclOp, func,
+                                        kMOGGExecuteFunctionLabel, builder))
             return WalkResult::interrupt();
-          }
-          argIdxsAttrs.push_back(builder.getIndexAttr(
-              std::distance(argIt, argSrcNamesAttr.getValue().begin())));
-        }
-
-        if (!argIdxsAttrs.empty()) {
-          executeFunc->setAttr(kMOGGFusableArgs,
-                               builder.getArrayAttr(argIdxsAttrs));
+          executeOp = func;
+        } else if (func.getSourceName() == kShapeFuncName) {
+          if (!processStructFuncCommon(structDeclOp, registrationInfo, func,
+                                       kMOGGShapeFunctionLabel, builder))
+            return WalkResult::interrupt();
+          shapeOp = func;
         }
       }
 
-      annotateTypes(executeFunc);
-      if (shapeFunc)
-        annotateTypes(shapeFunc);
+      if (!executeOp) {
+        structDeclOp.emitError("Struct based extensibility needs execute!");
+        return WalkResult::interrupt();
+      }
+
       return WalkResult::advance();
     };
 
-    if (op.walk(walker).wasInterrupted())
+    if (moduleOp.walk(walker).wasInterrupted())
       signalPassFailure();
 
-    op.walk([](LIT::FuncOp funcOp) { labelTensorParamsInKernel(funcOp); });
+    moduleOp.walk(
+        [](LIT::FuncOp funcOp) { labelTensorParamsInKernel(funcOp); });
   }
 };
 } // namespace
