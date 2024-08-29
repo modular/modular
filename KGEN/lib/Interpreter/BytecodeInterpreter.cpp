@@ -68,9 +68,10 @@ private:
 class alignas(8) BCOperation final
     : public llvm::TrailingObjects<BCOperation, BCOperand, BCResult> {
 public:
-  BCOperation(Operation *op, unsigned numOperands, unsigned numResults)
-      : op(op), itf(dyn_cast<BytecodeInterpreterOpInterface>(op)),
-        numOperands(numOperands), numResults(numResults), nextOffset(-1) {}
+  BCOperation(Operation *op, InterpretHook interpret, unsigned numOperands,
+              unsigned numResults)
+      : op(op), interpret(interpret), numOperands(numOperands),
+        numResults(numResults), nextOffset(-1) {}
 
   BCOperand *getOperand(unsigned i) {
     return getTrailingObjects<BCOperand>() + i;
@@ -89,9 +90,9 @@ public:
   /// Backreference to the IR of the operation. This is used to error reporting
   /// and calling the folder.
   Operation *op;
-  /// A precomputed interpreter interface, which may be null. It is used to
-  /// interpret the operation if present.
-  BytecodeInterpreterOpInterface itf;
+  /// A precomputed interpreter hook, which is used to interpret the operation.
+  /// If null, then the folder is used.
+  InterpretHook interpret;
 
   uint32_t numOperands;
   uint32_t numResults;
@@ -211,10 +212,16 @@ void BytecodeBuilder::writeOperation(Operation *op) {
   size_t totalSize = BCOperation::totalSizeToAlloc<BCOperand, BCResult>(
       numOperands, numResults);
 
+  // Get the interpret hook for the operation. If it does not implement the
+  // interpreter inteface, use the operation folder.
+  InterpretHook interpret = nullptr;
+  if (auto itf = dyn_cast<BytecodeInterpreterOpInterface>(op))
+    interpret = itf.getInterpretHook();
+
   // Create the operation first. This saves the computed properties of the
   // operation required by the interpreter.
   auto [bc, bcIdx] = stream.next<BCOperation>(totalSize);
-  ::new (bc) BCOperation(op, numOperands, numResults);
+  ::new (bc) BCOperation(op, interpret, numOperands, numResults);
 
   // Now create the trailing objects.
   for (unsigned i = 0; i != numOperands; ++i) {
@@ -467,9 +474,9 @@ BytecodeInterpreter::interpretFunction(Region &body,
 
     ArrayRef<Attribute> operandsRef(operands.data(), numOperands);
     // Use the interpreter interface if one was found.
-    if (BytecodeInterpreterOpInterface itf = op->itf) {
+    if (InterpretHook interpret = op->interpret) {
       ErrorTreeOrSuccess err =
-          itf.interpret(operandsRef, /*payload=*/nullptr, *this);
+          interpret(op->op, operandsRef, /*payload=*/nullptr, *this);
       if (LLVM_UNLIKELY(err.isError())) {
         return reportFoldError(op->op, operandsRef,
                                "failed to interpret operation ")

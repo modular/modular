@@ -25,12 +25,10 @@ def BytecodeInterpreterOpInterface :
   let cppNamespace = "::M";
 
   let methods = [
-    InterfaceMethod<[{
-      Interpret the operation given its constant inputs. An operation specific
-      payload is provided to the hook.
-    }], "ErrorTreeOrSuccess", "interpret",
-    (ins "ArrayRef<Attribute>":$operands, "const void *":$payload,
-         "InterpreterState &":$state)>
+    StaticInterfaceMethod<[{
+      Get a function pointer that interprets the operation given its constant
+      inputs. An operation specific payload is provided to the hook.
+    }], "InterpretHook", "getInterpretHook">
   ];
 }
 

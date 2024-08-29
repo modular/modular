@@ -710,9 +710,10 @@ IRInterpreter::interpretFunction(Region &body, ArrayRef<Attribute> arguments) {
       operands.push_back(lookupValue(operand));
 
     // Check for an interpreter interface implementation.
-    if (auto interpItf = dyn_cast<BytecodeInterpreterOpInterface>(*pc)) {
-      ErrorTreeOrSuccess err =
-          interpItf.interpret(operands, /*payload=*/nullptr, *this);
+    Operation &op = *pc;
+    if (auto interpItf = dyn_cast<BytecodeInterpreterOpInterface>(op)) {
+      ErrorTreeOrSuccess err = interpItf.getInterpretHook()(
+          &op, operands, /*payload=*/nullptr, *this);
       if (err.isError())
         return reportFoldError(&*pc, operands, "failed to interpret operation ")
             .addCause(err.takeError());
