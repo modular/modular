@@ -18,21 +18,21 @@ from memory import stack_allocation
 fn test_external_constant_mem(ctx: DeviceContext) raises:
     print("== test_external_constant_mem")
 
-    fn dynamic_constant_kernel(data: UnsafePointer[Float32]):
-        var dynamic_constant = stack_allocation[
+    fn static_constant_kernel(data: UnsafePointer[Float32]):
+        var static_constant = stack_allocation[
             16,
             Float32,
-            name="dynamic_constant",
+            name="static_constant",
             address_space = AddressSpace.PARAM,
             alignment=8,
         ]()
-        data[ThreadIdx.x()] = dynamic_constant[ThreadIdx.x()]
+        data[ThreadIdx.x()] = static_constant[ThreadIdx.x()]
 
     var constant_memory = List[Float32](
         0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15
     )
 
-    var func = ctx.compile_function[dynamic_constant_kernel]()
+    var func = ctx.compile_function[static_constant_kernel]()
 
     var res_host_ptr = UnsafePointer[Float32].alloc(16)
     var res_device = ctx.create_buffer[DType.float32](16)
@@ -49,7 +49,7 @@ fn test_external_constant_mem(ctx: DeviceContext) raises:
         block_dim=16,
         constant_memory=List[ConstantMemoryMapping](
             ConstantMemoryMapping(
-                "dynamic_constant",
+                "static_constant",
                 constant_memory.unsafe_ptr().bitcast[NoneType](),
                 len(constant_memory) * sizeof[constant_memory.T](),
             )
