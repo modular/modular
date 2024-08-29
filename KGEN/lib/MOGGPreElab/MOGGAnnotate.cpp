@@ -350,6 +350,9 @@ public:
         }
       }
 
+      annotateTypes(executeFunc);
+      if (shapeFunc)
+        annotateTypes(shapeFunc);
       return WalkResult::advance();
     };
 

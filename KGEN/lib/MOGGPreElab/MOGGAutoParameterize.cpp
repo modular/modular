@@ -41,6 +41,10 @@ static constexpr llvm::StringLiteral SPEC_PREFIX_STR = "__MOGG_SPEC";
 static constexpr llvm::StringLiteral TENSOR_SPEC_NONE = "TENSOR_SPEC_NONE";
 
 static bool isTensorType(Attribute typeName) {
+  // For variadic arguments, the registered type will be a unit attr (e.g.
+  // empty attr)
+  if (!isa<StringAttr>(typeName))
+    return false;
   auto typeNameStr = cast<StringAttr>(typeName).strref();
   return typeNameStr == MOJO_DPS_TENSOR_TYPE_NAME ||
          typeNameStr == MOJO_INTERNAL_DPS_TENSOR_TYPE_NAME;
@@ -435,11 +439,9 @@ public:
     auto &analysis = getAnalysis<mlir::SymbolTableAnalysis>();
     SymbolTable &symTab = analysis.getTopLevelSymbolTable();
 
-    // The tensor spec in KGEN. Contains the function which gets it, the type,
-    // and the parameter expression to create a None spec.
+    // The tensor spec construct in KGEN. We use a hardcoded function annotated
+    // with `MOGG_INTRINSIC_TENSOR_SPEC_HOOK` to grab the parametric signature.
     TensorSpecKGEN specTemplate;
-
-    // First identify the function which is used to get the spec in mojo.
     for (GeneratorOp gen : mod.getOps<GeneratorOp>()) {
       if (gen->hasAttr(MOGG_INTRINSIC_TENSOR_SPEC_HOOK)) {
         specTemplate.pullMetadataFromFunc(gen);
@@ -462,8 +464,7 @@ public:
     cg.build(mod, symTab);
 
     SmallVector<CallGraphNode *> worklist;
-
-    // Start at the kernels.
+    // Collect all kernels which need to be autoparameterized with tensor spec.
     for (GeneratorOp gen : mod.getOps<GeneratorOp>()) {
       // If this is not an DPS kernel skip.
       if (!isDPSKernel(gen))
@@ -475,6 +476,7 @@ public:
           llvm::BitVector(node->func.getNumArguments(), false);
       ArrayAttr argTypeNames =
           gen->getAttrOfType<ArrayAttr>(MOGG_ARG_TYPE_NAMES);
+
       for (auto [idx, type] : llvm::enumerate(argTypeNames)) {
         if (isTensorType(type))
           node->argsNeedingSpec[idx] = true;
@@ -498,6 +500,7 @@ public:
       tensorsNeedingSpecs.clear();
       tensorsToSpecs.clear();
       CallGraphNode *node = worklist.back();
+
       if (node->hasBeenProcessed) {
         worklist.pop_back();
         continue;
@@ -544,6 +547,7 @@ public:
 
       ArrayAttr argTypeNames =
           gen->getAttrOfType<ArrayAttr>(MOGG_ARG_TYPE_NAMES);
+
       for (auto [idx, type] : llvm::enumerate(argTypeNames)) {
         if (!isTensorType(type))
           continue;
