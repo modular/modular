@@ -2342,3 +2342,58 @@ kgen.func @triggerCold(%arg0: index, %arg1: index) {
 }
 
 }
+
+// -----
+
+// COM: Stack Allocations in Hot Frame
+
+module attributes {M.target_info = #M.target<triple="", arch="", features="", data_layout="", simd_bit_width=128>} {
+// CHECK-LABEL: kgen.func @hot_stack_alloc_hot_ramp
+kgen.func @hot_stack_alloc(%arg1: index) async -> index {
+ // CHECK-NEXT:   %idx64 = index.constant 64
+ // CHECK-NEXT:   %idx8 = index.constant 8
+ // CHECK-NEXT:   [[CORO:%.*]] = pop.aligned_alloc
+
+ // CHECK:        pop.pointer.bitcast [[CORO]]
+ // CHECK-NEXT:   [[V9:%.*]] = kgen.struct.gep %0[[[#FRAME7:]]]
+ // CHECK-NEXT:   pop.store %arg2, [[V9]] : !kgen.pointer<index>
+ %0 = pop.stack_allocation 1 x index marked
+ pop.store %arg1, %0 : !kgen.pointer<index>
+ co.suspend (%hdl) {
+    co.suspend.end
+ }
+ %2 = pop.load %0 : !kgen.pointer<index>
+ kgen.return %2 : index
+}
+
+// CHECK-LABEL: kgen.func @hot_stack_alloc_no_sus_hot_ramp
+kgen.func @hot_stack_alloc_no_sus(%arg1: index) async -> index {
+ // CHECK-NEXT:   %idx64 = index.constant 64
+ // CHECK-NEXT:   %idx8 = index.constant 8
+ // CHECK-NEXT:   [[CORO2:%.*]] = pop.aligned_alloc
+
+ // CHECK:        pop.pointer.bitcast [[CORO2]]
+ // CHECK-NEXT:   [[V9:%.*]] = pop.stack_allocation 1 x index marked
+ // CHECK-NEXT:   pop.store %arg2, [[V9]] : !kgen.pointer<index>
+ %0 = pop.stack_allocation 1 x index marked
+ pop.store %arg1, %0 : !kgen.pointer<index>
+ %2 = pop.load %0 : !kgen.pointer<index>
+ co.suspend (%hdl) {
+    co.suspend.end
+ }
+ kgen.return %2 : index
+}
+
+// CHECK-LABEL: kgen.func @trigger_creation_resume
+kgen.func @trigger_creation(%arg1: index) async {
+   %coro = co.hot_invoke[(index) async -> index: @hot_stack_alloc](%arg1)
+   %coro2 = co.hot_invoke[(index) async -> index: @hot_stack_alloc_no_sus](%arg1)
+   kgen.return
+}
+
+kgen.func @trigger_trigger_creation(%arg1: index) {
+  %coro = co.invoke[(index) async -> ():@trigger_creation](%arg1)
+  kgen.return
+}
+
+}
