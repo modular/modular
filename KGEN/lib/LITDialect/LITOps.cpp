@@ -367,7 +367,8 @@ ErrorTreeOrSuccess LIT::CallOp::interpret(ArrayRef<Attribute> operands,
     return ErrorTree(getLoc(), bodyOr.takeError());
   Region &body = **bodyOr;
 
-  state.callFunctionBody(body, operands);
+  if (auto err = state.callFunctionBody(body, operands))
+    return err.takeError();
   return success();
 }
 

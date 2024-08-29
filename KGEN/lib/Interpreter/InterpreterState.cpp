@@ -694,7 +694,8 @@ IRInterpreter::interpretOpWithFolder(Operation *op,
 
 ErrorTreeOr<SmallVector<Attribute>>
 IRInterpreter::interpretFunction(Region &body, ArrayRef<Attribute> arguments) {
-  callFunctionBody(body, arguments);
+  if (auto err = callFunctionBody(body, arguments))
+    return err.takeError();
 
   while (block) {
     // Advance the iterator.
@@ -714,7 +715,8 @@ IRInterpreter::interpretFunction(Region &body, ArrayRef<Attribute> arguments) {
       OpBytecodeGenerator gen = interpItf.getBytecodeGenerator();
       if (GenBytecodeHook genBytecode = gen.genBytecode) {
         payload.reserve(gen.payloadSize);
-        genBytecode(&op, payload.data(), getTarget());
+        if (auto err = genBytecode(&op, payload.data(), getTarget()))
+          return ErrorTree(op.getLoc(), err.takeError());
       }
       ErrorTreeOrSuccess err = interpItf.getBytecodeGenerator().interpret(
           &op, operands, payload.data(), *this);

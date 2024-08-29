@@ -38,7 +38,8 @@ public:
       : region(&region), compiled(std::make_shared<CompiledRegion>()) {}
 
   /// Get the bytecode or generate it if necessary.
-  const FunctionIRBytecode *getOrCompile(TargetInfoAttr target, bool optimize) {
+  ErrorTreeOr<const FunctionIRBytecode *> getOrCompile(TargetInfoAttr target,
+                                                       bool optimize) {
     return compiled->compileIfNecessary(*region, target, optimize);
   }
 
@@ -46,7 +47,7 @@ public:
 
 private:
   struct CompiledRegion {
-    const FunctionIRBytecode *
+    ErrorTreeOr<const FunctionIRBytecode *>
     compileIfNecessary(Region &region, TargetInfoAttr target, bool optimize);
 
     /// A clone of the original function if we choose to optimize it before
@@ -75,7 +76,8 @@ public:
         [&](auto &map) { map.try_emplace(&region, ConcreteFunction(region)); });
   }
 
-  const FunctionIRBytecode *compileBytecode(Region &region) override {
+  ErrorTreeOr<const FunctionIRBytecode *>
+  compileBytecode(Region &region) override {
     ConcreteFunction &value = (*tlc)[&region];
     if (!value)
       value = cache.read([&](auto &map) { return map.at(&region); });

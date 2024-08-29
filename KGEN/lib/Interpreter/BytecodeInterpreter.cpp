@@ -197,9 +197,9 @@ public:
   explicit BytecodeBuilder(TargetInfoAttr target) : target(target) {}
 
   /// Write an operation.
-  void writeOperation(Operation *op);
+  ErrorTreeOrSuccess writeOperation(Operation *op);
   /// Write a region.
-  void writeRegion(Region &region);
+  ErrorTreeOrSuccess writeRegion(Region &region);
 
   auto take() && {
     return std::make_tuple(valueCounter, std::move(stream).take(),
@@ -216,7 +216,7 @@ private:
 };
 }; // namespace
 
-void BytecodeBuilder::writeOperation(Operation *op) {
+ErrorTreeOrSuccess BytecodeBuilder::writeOperation(Operation *op) {
   // Compute the inline size of the operation
   unsigned numOperands = op->getNumOperands();
   unsigned numResults = op->getNumResults();
@@ -252,12 +252,14 @@ void BytecodeBuilder::writeOperation(Operation *op) {
 
   // Generate the payload if necessary.
   if (GenBytecodeHook genBytecode = generator.genBytecode)
-    genBytecode(op, bc->getPayload(), target);
+    if (auto err = genBytecode(op, bc->getPayload(), target))
+      return ErrorTree(op->getLoc(), err.takeError());
 
   // Write the regions first.
   for (unsigned i = 0; i != numRegions; ++i) {
     Region &region = op->getRegion(i);
-    writeRegion(region);
+    if (auto err = writeRegion(region))
+      return err.takeError();
   }
 
   // If the op has regions, we have to save it in case an op branches back.
@@ -266,9 +268,11 @@ void BytecodeBuilder::writeOperation(Operation *op) {
 
   // Save the offset of where the next thing will be written.
   stream.at<BCOperation>(bcIdx)->setNextOffset(stream.getNextOffset());
+
+  return success();
 }
 
-void BytecodeBuilder::writeRegion(Region &region) {
+ErrorTreeOrSuccess BytecodeBuilder::writeRegion(Region &region) {
   unsigned numArgs = region.getNumArguments();
   size_t totalSize = BCRegion::totalSizeToAlloc<BCArgument>(numArgs);
 
@@ -285,9 +289,12 @@ void BytecodeBuilder::writeRegion(Region &region) {
 
   assert(llvm::hasSingleElement(region));
   for (Operation &op : region.front())
-    writeOperation(&op);
+    if (auto err = writeOperation(&op))
+      return err.takeError();
 
   cfgIndices.try_emplace(&region, bcIdx);
+
+  return success();
 }
 
 //===----------------------------------------------------------------------===//
@@ -299,10 +306,11 @@ FunctionIRBytecode::~FunctionIRBytecode() {
     alignedFree(data);
 }
 
-FunctionIRBytecode FunctionIRBytecode::compile(Region &entry,
-                                               TargetInfoAttr target) {
+ErrorTreeOr<FunctionIRBytecode>
+FunctionIRBytecode::compile(Region &entry, TargetInfoAttr target) {
   BytecodeBuilder builder(target);
-  builder.writeRegion(entry);
+  if (auto err = builder.writeRegion(entry))
+    return err.takeError();
 
   auto [numValues, data, cfgIndices] = std::move(builder).take();
   return FunctionIRBytecode(numValues, data, std::move(cfgIndices));
@@ -312,8 +320,9 @@ FunctionIRBytecode FunctionIRBytecode::compile(Region &entry,
 // BytecodeInterpreter
 //===----------------------------------------------------------------------===//
 
-void BytecodeInterpreter::callFunctionBody(Region &body,
-                                           ArrayRef<Attribute> arguments) {
+ErrorTreeOrSuccess
+BytecodeInterpreter::callFunctionBody(Region &body,
+                                      ArrayRef<Attribute> arguments) {
   // Push a new frame.
   StackFrame &newFrame =
       stackIdx == stack.size() ? stack.emplace_back() : stack[stackIdx];
@@ -327,7 +336,12 @@ void BytecodeInterpreter::callFunctionBody(Region &body,
   newFrame.originBc = bc;
 
   // Now request bytecode for the callee.
-  const FunctionIRBytecode *newBc = bcCompiler->compileBytecode(body);
+  ErrorTreeOr<const FunctionIRBytecode *> newBcOr =
+      bcCompiler->compileBytecode(body);
+  if (newBcOr.isError())
+    return newBcOr.takeError();
+  const FunctionIRBytecode *newBc = newBcOr.takeValue();
+
   // Pre-allocate enough space to hold all the intermediate values.
   newFrame.values.reserve(newBc->numValues);
 
@@ -342,6 +356,8 @@ void BytecodeInterpreter::callFunctionBody(Region &body,
 
   pc = bcRegion->firstOpOffset;
   didTransfer = true;
+
+  return success();
 }
 
 void BytecodeInterpreter::returnFromFunction(ArrayRef<Attribute> returnValues) {
@@ -476,7 +492,8 @@ ErrorTreeOr<SmallVector<Attribute>>
 BytecodeInterpreter::interpretFunction(Region &body,
                                        ArrayRef<Attribute> arguments) {
   // Enter the entry function.
-  callFunctionBody(body, arguments);
+  if (auto err = callFunctionBody(body, arguments))
+    return err.takeError();
   didTransfer = false;
 
   while (bc) {
