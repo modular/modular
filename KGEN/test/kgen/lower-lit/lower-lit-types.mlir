@@ -210,13 +210,13 @@ kgen.generator @gerToGEPFooFromBar<l: !lit.lifetime<1>, l2: !lit.lifetime<1>>
   %0 = lit.ref.struct.ger %arg0[x] : <@PairStruct, mut l> -> si32
 
   // This rebind should be removed entirely by lower types.
-  %rb = kgen.rebind %0 : !lit.ref<si32, mut l> to !lit.ref<si32, mut l2>
+  %rb = kgen.rebind %0 : !lit.ref<si32, mut l->x> to !lit.ref<si32, mut l2>
 
   // CHECK-NEXT: pop.store %arg1, %0
   lit.ref.store %arg1, %rb : <si32, mut l2>
 
   // CHECK-NEXT: %1 = pop.load %0 : !kgen.pointer<si32>
-  %a = lit.ref.load %0 : !lit.ref<si32, mut l>
+  %a = lit.ref.load %0 : !lit.ref<si32, mut l->x>
   // CHECK-NEXT: kgen.return %1
   kgen.return %a : si32
 }

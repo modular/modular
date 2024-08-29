@@ -767,7 +767,7 @@ fn variadic_field_sensitivity():
   # CHECK: [[BREF:%.*]] = lit.ref.struct.ger %memPair[b]
   # CHECK-NEXT: [[IMMREF:%.*]] = lit.ref.immut [[BREF]]
   # CHECK-NEXT: [[VAR:%.*]] = pop.variadic.splat 1, [[IMMREF]]
-  # CHECK-NEXT: lit.call {{.*}}variadic_mems{{.*}}[muttoimm *"memPair`"]([[VAR]])
+  # CHECK-NEXT: lit.call {{.*}}variadic_mems{{.*}}[muttoimm *"memPair`"->b]([[VAR]])
   variadic_mems(memPair.b)
 
   # Need to restore 'a' so memPair may destruct.

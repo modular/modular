@@ -26,7 +26,7 @@ lit.func @ger_load(%a: !lit.struct<@Int>) -> index {
   %x = lit.var.decl "x" var : !lit.ref<@Int, mut lt>
   lit.ref.store %a, %x : <@Int, mut lt>
   %0 = lit.ref.struct.ger %x[value] : <@Int, mut lt> -> index
-  %1 = lit.ref.load %0 : <index, mut lt>
+  %1 = lit.ref.load %0 : <index, mut lt->value>
   kgen.return %1 : index
 }
 
@@ -58,7 +58,7 @@ lit.struct.decl @Pair register_passable_trivial {
 lit.func @load_undef_ger() -> index {
   %x = lit.var.decl "x" var : !lit.ref<@Int, mut lt>
   %0 = lit.ref.struct.ger %x[value] : <@Int, mut lt> -> index
-  %1 = lit.ref.load %0 : <index, mut lt>
+  %1 = lit.ref.load %0 : <index, mut lt->value>
   kgen.return %1 : index
 }
 
@@ -72,20 +72,20 @@ lit.func @interpret_undef_ger_load() {
 lit.func @double_ger_store_load(%a: index) -> !lit.struct<@Int> {
   %x = lit.var.decl "x" var : !lit.ref<@Pair, mut lt>
   %0 = lit.ref.struct.ger %x[first] : <@Pair, mut lt> -> @Int
-  %1 = lit.ref.struct.ger %0[value] : <@Int, mut lt> -> index
-  lit.ref.store %a, %1 : <index, mut lt>
-  %2 = lit.ref.load %0 : <@Int, mut lt>
+  %1 = lit.ref.struct.ger %0[value] : <@Int, mut lt->first> -> index
+  lit.ref.store %a, %1 : <index, mut lt->first->value>
+  %2 = lit.ref.load %0 : <@Int, mut lt->first>
   kgen.return %2 : !lit.struct<@Int>
 }
 
 lit.func @initialize_pair(%a: index, %b: index) -> !lit.struct<@Pair> {
   %x = lit.var.decl "x" var : !lit.ref<@Pair, mut lt>
   %0 = lit.ref.struct.ger %x[first] : <@Pair, mut lt> -> @Int
-  %1 = lit.ref.struct.ger %0[value] : <@Int, mut lt> -> index
-  lit.ref.store %a, %1 : <index, mut lt>
+  %1 = lit.ref.struct.ger %0[value] : <@Int, mut lt->first> -> index
+  lit.ref.store %a, %1 : <index, mut lt->first->value>
   %2 = lit.ref.struct.ger %x[second] : <@Pair, mut lt> -> @Int
-  %3 = lit.ref.struct.ger %2[value] : <@Int, mut lt> -> index
-  lit.ref.store %b, %3 : <index, mut lt>
+  %3 = lit.ref.struct.ger %2[value] : <@Int, mut lt->second> -> index
+  lit.ref.store %b, %3 : <index, mut lt->second->value>
   %4 = lit.ref.load %x : <@Pair, mut lt>
   kgen.return %4 : !lit.struct<@Pair>
 }
@@ -102,11 +102,11 @@ lit.func @interpret_ger_store() {
 lit.func @partial_ger_store(%i: index) -> !lit.struct<@Pair> {
   %x = lit.var.decl "x" arg : !lit.ref<@Pair, mut lt>
   %0 = lit.ref.struct.ger %x[first] : <@Pair, mut lt> -> @Int
-  %1 = lit.ref.struct.ger %0[value] : <@Int, mut lt> -> index
+  %1 = lit.ref.struct.ger %0[value] : <@Int, mut lt->first> -> index
   %2 = lit.ref.struct.ger %x[second] : <@Pair, mut lt> -> @Int
-  %3 = lit.ref.struct.ger %2[value] : <@Int, mut lt> -> index
-  lit.ref.store %i, %1 : <index, mut lt>
-  lit.ref.store %i, %3 : <index, mut lt>
+  %3 = lit.ref.struct.ger %2[value] : <@Int, mut lt->second> -> index
+  lit.ref.store %i, %1 : <index, mut lt->first->value>
+  lit.ref.store %i, %3 : <index, mut lt->second->value>
   %4 = lit.load.consume %x : !lit.ref<@Pair, mut lt>
   kgen.return %4 : !lit.struct<@Pair>
 }

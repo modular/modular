@@ -29,7 +29,7 @@ lit.struct.decl @S attributes {
 
   lit.func @__init__(%self: !lit.ref<@S, mut selflife> init_self, %num: index) -> !kgen.none {
     %0 = lit.ref.struct.ger %self[a] : <@S, mut selflife> -> index
-    lit.ref.store %num, %0 : !lit.ref<index, mut selflife>
+    lit.ref.store %num, %0 : !lit.ref<index, mut selflife->a>
 
     %none = kgen.param.constant: none = <#kgen.none>
     kgen.return %none : !kgen.none
@@ -51,7 +51,7 @@ lit.func @test_var() -> index {
   // CHECK: lit.ref.struct.ger {{.*}} loc(#[[LOC_USE:.*]])
   // CHECK-NEXT: lit.ref.load
   %x_a = lit.ref.struct.ger %x[a] : <@S, mut *"x`0"> -> index loc(#locUse)
-  %x_a_val = lit.ref.load %x_a : <index, mut *"x`0"> loc(#locUse)
+  %x_a_val = lit.ref.load %x_a : <index, mut *"x`0"->a> loc(#locUse)
 
   // `x` can be destroyed here.
   // CHECK-NEXT: debuginfo.kill #[[DIVAR_X]] loc(#[[LOC_USE]])
@@ -146,7 +146,7 @@ lit.func @test_consumed() -> index {
   // CHECK-NEXT: call @S::@__del__{{.*}}(%y)
   // CHECK-NEXT: lifetime.end %y
   %y_a = lit.ref.struct.ger %y[a] : <@S, mut ylife> -> index loc(#locRet)
-  %y_a_val = lit.ref.load %y_a : <index, mut ylife> loc(#locRet)
+  %y_a_val = lit.ref.load %y_a : <index, mut ylife->a> loc(#locRet)
   kgen.return %y_a_val : index loc(#locRet)
 } loc(fused<#sp>["test.mlir":10:10])
 
@@ -156,7 +156,7 @@ lit.func @test_arg(%x: !lit.ref<@S, mut *"x"> loc(#locX) owned_in_mem, %ys: !kge
   // CHECK-NOT: debuginfo.value {{.*}} = %ys
   // CHECK-NOT: debuginfo.value {{.*}} = %z
   %x_a = lit.ref.struct.ger %x[a] : <@S, mut *"x"> -> index loc(#locUse)
-  %x_a_val = lit.ref.load %x_a : <index, mut *"x"> loc(#locUse)
+  %x_a_val = lit.ref.load %x_a : <index, mut *"x"->a> loc(#locUse)
 
   // `x` can be destroyed here.
   // CHECK: debuginfo.kill #[[DIARG_X]] loc(#[[LOC_USE]])
