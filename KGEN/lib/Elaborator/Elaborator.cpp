@@ -37,15 +37,18 @@ using namespace AsyncRT;
 // InterpreterCache
 //===----------------------------------------------------------------------===//
 
-const FunctionIRBytecode *ConcreteFunction::CompiledRegion::compileIfNecessary(
-    Region &region, TargetInfoAttr target, bool optimize) {
+ErrorTreeOr<const FunctionIRBytecode *>
+ConcreteFunction::CompiledRegion::compileIfNecessary(Region &region,
+                                                     TargetInfoAttr target,
+                                                     bool optimize) {
   // Try to minimize writer contention by checking quickly if the region is
   // already compiled.
   if (compiled)
     return &*bytecode.get();
 
   // Let in only one thread at a time.
-  return bytecode.modify([&](auto &bc) -> const FunctionIRBytecode * {
+  using Result = ErrorTreeOr<const FunctionIRBytecode *>;
+  return bytecode.modify([&](auto &bc) -> Result {
     // If another thread got in here first, just exit.
     if (compiled)
       return &*bc;
@@ -68,7 +71,11 @@ const FunctionIRBytecode *ConcreteFunction::CompiledRegion::compileIfNecessary(
       (void)mgr.run(*clone);
     }
 
-    bc.emplace(FunctionIRBytecode::compile(func.getBodyRegion(), target));
+    ErrorTreeOr<FunctionIRBytecode> result =
+        FunctionIRBytecode::compile(func.getBodyRegion(), target);
+    if (result.isError())
+      return result.takeError();
+    bc.emplace(result.takeValue());
     compiled = true;
     return &*bc;
   });

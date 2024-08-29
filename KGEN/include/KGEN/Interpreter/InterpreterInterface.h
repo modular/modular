@@ -16,7 +16,7 @@ class TargetInfoAttr;
 
 using InterpretHook = ErrorTreeOrSuccess (*)(Operation *, ArrayRef<Attribute>,
                                              const void *, InterpreterState &);
-using GenBytecodeHook = void (*)(Operation *, const void *, TargetInfoAttr);
+using GenBytecodeHook = ErrorOrSuccess (*)(Operation *, void *, TargetInfoAttr);
 
 struct OpBytecodeGenerator {
   uint32_t payloadSize;

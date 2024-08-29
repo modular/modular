@@ -30,7 +30,8 @@ public:
   }
 
   /// Generate interpreter bytecode for the given function region.
-  static FunctionIRBytecode compile(Region &entry, TargetInfoAttr target);
+  static ErrorTreeOr<FunctionIRBytecode> compile(Region &entry,
+                                                 TargetInfoAttr target);
 
 private:
   FunctionIRBytecode(unsigned numValues, void *data,
@@ -70,7 +71,8 @@ private:
 class BytecodeCompiler {
 public:
   virtual ~BytecodeCompiler() = default;
-  virtual const FunctionIRBytecode *compileBytecode(Region &region) = 0;
+  virtual ErrorTreeOr<const FunctionIRBytecode *>
+  compileBytecode(Region &region) = 0;
 };
 
 /// The bytecode interpreter is an implementation of the interpreter execution
@@ -88,7 +90,8 @@ public:
   }
 
   // Required interpreter public interface.
-  void callFunctionBody(Region &body, ArrayRef<Attribute> arguments) override;
+  ErrorTreeOrSuccess callFunctionBody(Region &body,
+                                      ArrayRef<Attribute> arguments) override;
   void returnFromFunction(ArrayRef<Attribute> returnValues) override;
   void transferControlFlowTo(Operation *target,
                              ArrayRef<Attribute> values) override;

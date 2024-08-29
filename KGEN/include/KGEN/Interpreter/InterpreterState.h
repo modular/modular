@@ -202,8 +202,8 @@ public:
   /// current operation is treated as the calling operation that the interpreter
   /// should return to when the callee returns, `body` is the region of the
   /// callee, and `arguments` are the call argument values.
-  virtual void callFunctionBody(Region &body,
-                                ArrayRef<Attribute> arguments) = 0;
+  virtual ErrorTreeOrSuccess
+  callFunctionBody(Region &body, ArrayRef<Attribute> arguments) = 0;
 
   /// Return from the current function back to the caller using `returnValues`
   /// as the return values of the function.
@@ -388,11 +388,13 @@ class IRInterpreter : public InterpreterState {
 public:
   using InterpreterState::InterpreterState;
 
-  void callFunctionBody(Region &body, ArrayRef<Attribute> arguments) override {
+  ErrorTreeOrSuccess callFunctionBody(Region &body,
+                                      ArrayRef<Attribute> arguments) override {
     // Function regions are isolated from above, so push a new stack frame.
     // Then, transfer control flow to the beginning of the function body.
     pushFrame(pc.isValid() ? &*pc : nullptr, body.getParentOp());
     transferControlFlowTo(body, arguments);
+    return success();
   }
 
   void returnFromFunction(ArrayRef<Attribute> returnValues) override {
