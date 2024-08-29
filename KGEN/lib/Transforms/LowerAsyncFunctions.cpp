@@ -620,6 +620,12 @@ FrameData LowerAsyncBuildContext::cloneFrameAndFirstStateTo(
       Operation *clone = builder.cloneWithoutRegions(*operation, mapping);
       mapping.map(operation, clone);
       frameData.opToState[clone] = originalFrameData->opToState[operation];
+      for (auto [result, image] :
+           llvm::zip(operation->getResults(), clone->getResults())) {
+        auto indexMaybe = originalFrameData->valueToIndexInFrame.find(result);
+        if (indexMaybe != originalFrameData->valueToIndexInFrame.end())
+          frameData.valueToIndexInFrame[image] = indexMaybe->second;
+      }
       auto maybeIndex =
           originalFrameData->operationToIndexInFrame.find(operation);
       if (maybeIndex != originalFrameData->operationToIndexInFrame.end())
@@ -1077,35 +1083,38 @@ void LowerAsyncBuildContext::insertFrameLoadsStores(
 
       storeOpInFrameIfNeeded(frameData, op, continuation, opsToDelete);
 
-      // Extract arguments from operands if needed. Hot start ramp should never
-      // load from frame.
+      // Extract arguments from operands if needed.
       auto useStateMaybe = frameData->opToState.find(op);
       if (useStateMaybe == frameData->opToState.end())
         continue;
-      if (loadFromFrame) {
-        int useState = useStateMaybe->second;
-        for (auto [index, operand] : llvm::enumerate(op->getOperands())) {
-          auto entry = frameData->valueToIndexInFrame.find(operand);
-          if (entry != frameData->valueToIndexInFrame.end() ||
-              operand == errorValue || operand == memoryResultValue) {
-            // Only extract the value out of the frame if the def was in another
-            // state. Block arguments have been cached in frameVariables because
-            // region block arguments are processed before body ops.
-            int defState = temp == Temp::Hot ? 0 : -1;
-            Operation *definingOp = operand.getDefiningOp();
-            if (definingOp)
-              defState = frameData->opToState.at(definingOp);
-
-            // Stack allocated variables are an exception. They are pulled from
-            // the frame regardless of state status because the stack allocation
-            // is replaced with a frame allocation.
-            if (defState == useState &&
-                (!(definingOp && isa<StackAllocationOp>(definingOp))))
-              continue;
-            Value image = frameVariables.getFrameValueForOperand(
-                continuation, operand, op, useState);
-            op->setOperand(index, image);
+      int useState = useStateMaybe->second;
+      for (auto [index, operand] : llvm::enumerate(op->getOperands())) {
+        auto entry = frameData->valueToIndexInFrame.find(operand);
+        if (entry != frameData->valueToIndexInFrame.end() ||
+            operand == errorValue || operand == memoryResultValue) {
+          // Only extract the value out of the frame if the def was in another
+          // state. Block arguments have been cached in frameVariables because
+          // region block arguments are processed before body ops.
+          int defState = temp == Temp::Hot ? 0 : -1;
+          bool isStackAlloc = false;
+          Operation *definingOp = operand.getDefiningOp();
+          if (definingOp) {
+            defState = frameData->opToState.at(definingOp);
+            isStackAlloc = isa<StackAllocationOp>(definingOp);
           }
+
+          // Stack allocated variables are an exception. They are pulled from
+          // the frame regardless of state status because the stack allocation
+          // is replaced with a frame allocation.
+          if (!isStackAlloc) {
+            if (defState == useState)
+              continue;
+            if (!loadFromFrame)
+              continue;
+          }
+          Value image = frameVariables.getFrameValueForOperand(
+              continuation, operand, op, useState);
+          op->setOperand(index, image);
         }
       }
 
@@ -1154,6 +1163,7 @@ void LowerAsyncBuildContext::insertFrameLoadsStores(
       hotInvoke->insertOperands(1, operand1);
     }
   });
+
   for (auto op : opsToDelete)
     op->erase();
 }
@@ -1701,13 +1711,7 @@ FrameData::FrameData(
   bool stateChanged = true;
   while (stateChanged)
     stateChanged = propagateChildSuspoints();
-  // Remember the virtual ops in the first state for hot start resume
-  // generation.
-  for (auto &virtualBlockAndList : predecessors) {
-    VirtualBlock virtualBlock = virtualBlockAndList.first;
-    if (opToState[virtualBlock] == 0)
-      virtualBlocksFirstState.push_back(virtualBlock);
-  }
+
   transform(originalFunction, opToState);
 
   // Calculate the frame. Whenever there is a use whose def lives in another
@@ -1802,6 +1806,20 @@ FrameData::FrameData(
     if (frameSlotMaybe == valueToIndexInFrame.end())
       continue;
     argsInFrame.push_back(ArgInFrame(index, frameSlotMaybe->second));
+  }
+
+  // Remember the virtual ops in the first state for hot start resume
+  // generation.
+  for (auto &virtualBlockAndList : predecessors) {
+    VirtualBlock virtualBlock = virtualBlockAndList.first;
+    if (opToState[virtualBlock] == 0) {
+      // Stack allocations used across frames will be deleted.
+      if (isa<StackAllocationOp>(virtualBlock) &&
+          valueToIndexInFrame.contains(virtualBlock->getResults().front()))
+        virtualBlocksFirstState.push_back(virtualBlock->getNextNode());
+      else
+        virtualBlocksFirstState.push_back(virtualBlock);
+    }
   }
 }
 
