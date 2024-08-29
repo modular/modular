@@ -45,8 +45,7 @@ struct StatsReport {
   void emitTelemetry(M::Telemetry::TelemetryContext *telemetryCtx);
 
 private:
-  /// Framework name: pytorch, tf, onnx, etc.
-  std::string framework;
+  std::string framework; /// framework name: pytorch, tf, onnx, etc.
   std::string modelName;
   size_t numLoweredOps;
   size_t numFallbackOps;

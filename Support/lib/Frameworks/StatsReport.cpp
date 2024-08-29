@@ -13,6 +13,7 @@
 #include "llvm/Support/Signals.h"
 #include "llvm/Support/Threading.h"
 #include "llvm/Support/ToolOutputFile.h"
+#include <cassert>
 #include <sstream>
 #include <string>
 #include <system_error>
@@ -155,6 +156,7 @@ void M::Frameworks::StatsReport::emitTelemetry(
       counts.emplace_back(count);
     }
   };
+
   // Add fallback histogram
   std::vector<std::string_view> loweredOps;
   std::vector<uint32_t> loweredCounts;
