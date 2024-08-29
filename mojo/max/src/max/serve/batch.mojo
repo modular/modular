@@ -3,6 +3,7 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
+"""Implements a batchable trait and a batcher to process items implementing the batchable trait."""
 
 import time
 from memory.arc import Arc
@@ -19,10 +20,24 @@ from utils.lock import BlockingSpinLock, BlockingScopedLock
 
 
 trait Batchable(CollectionElement):
+    """Trait implemented by items that can be batched."""
+
     pass
 
 
 struct Batch[Input: Batchable, Output: Batchable]:
+    """Implements a batch of items such as requests.
+
+    A `Batch` represent an ordered collection of items.
+    This collection is used in processing requests for the same model into a group and
+    offloading them all at once to be processed by the model.
+
+    Parameters:
+        Input: The batchable input type.
+        Output: The batchable output type.
+
+    """
+
     var chain: Chain
     var pending: List[Input]
     var outputs: List[Output]
@@ -36,6 +51,11 @@ struct Batch[Input: Batchable, Output: Batchable]:
     var started: Atomic[DType.int64]
 
     fn __init__(inout self: Self, capacity: Int):
+        """Initializes an empty batch with a given capacity.
+
+        Args:
+            capacity: The capacity of the batch.
+        """
         var chain = Chain()
         _init_asyncrt_chain(UnsafePointer[Chain].address_of(chain))
         self.chain = chain
@@ -55,9 +75,11 @@ struct Batch[Input: Batchable, Output: Batchable]:
         existing.chain.storage = UnsafePointer[Int]()
 
     fn _complete(inout self: Self):
+        """Marks the batch as completed and outputs ready to be consumed."""
         _async_complete(UnsafePointer[Chain].address_of(self.chain))
 
     fn _start(inout self: Self) -> Bool:
+        """Starts processing of a batch."""
         var expected = Int64(self.UNSTARTED)
         var desired = Int64(self.STARTED)
         while expected == Int64(self.UNSTARTED):
@@ -68,6 +90,11 @@ struct Batch[Input: Batchable, Output: Batchable]:
         return False
 
     fn _wait(inout self, last: Bool) -> Bool:
+        """Awaits completion of a batch.
+
+        If the deadline has expired, only the last entry calls `_start`
+        and other entries await on the `_start` to notify completion.
+        """
         if self.deadline == 0:
             if last:
                 # We will always start.
@@ -100,23 +127,50 @@ struct Batcher[
     Output: Batchable,
     func: fn (List[Input]) capturing -> List[Output],
 ]:
+    """Implements a batcher of items such as requests.
+
+    A `Batcher` is responsible for grouping multiple items to be processed
+    into a `Batch` and then execute them.
+
+    Parameters:
+        Input: The batchable input type.
+        Output: The batchable output type.
+        func: The operation to be performed on the inputs.
+
+    """
+
     var max: Int
     var timeout: Int
     var current: Arc[Batch[Input, Output]]
     var mu: BlockingSpinLock
 
     fn __init__(inout self, max: Int = 1, timeout: Int = 0):
+        """Initializes a batcher with a given maximum size and a timeout.
+
+        Args:
+            max: The maximum size of a batch.
+            timeout: The maximum time an item has to wait before being processed.
+        """
         self.max = max
         self.timeout = timeout
         self.current = Batch[Input, Output](capacity=self.max)
         self.mu = BlockingSpinLock()
 
     fn submit(inout self, owned input: Input) -> Output:
+        """Submits an input item to be processed.
+
+        Args:
+            input: The input item to be processed.
+
+        Returns:
+            The output item after execution `func` on `input`.
+        """
         self.mu.lock(0)
         var batch = self.current
         var index = len(batch[].pending)
         batch[].pending.append(input^)
         var last = index + 1 >= self.max
+
         if index == 0 and self.timeout != 0:
             batch[].deadline = time.perf_counter_ns() + self.timeout
         if last:
@@ -140,4 +194,5 @@ struct Batcher[
         return batch[].outputs[index]
 
     fn __del__(owned self):
+        """Destroys a Batcher instance."""
         self.current[]._complete()

@@ -3,6 +3,7 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
+"""Provides utilities to support serving models."""
 
 from .callbacks import (
     ServerCallbacks,

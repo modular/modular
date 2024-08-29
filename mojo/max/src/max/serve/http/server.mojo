@@ -39,6 +39,8 @@ from .service import PythonService
 
 
 struct PythonBatch(Sized, Movable):
+    """A wrapper over a CBatch instance to be used with Python modules."""
+
     var _impl: CBatch
 
     fn __init__(inout self, lib: DLHandle):
@@ -51,9 +53,29 @@ struct PythonBatch(Sized, Movable):
         return int(self._impl.size())
 
     fn request_at(self, index: Int64) -> PythonObject:
+        """Returns the request at the specified index in the form of a python
+        object.
+
+        Args:
+            index: The index of the request to access.
+
+        Returns:
+            A python object corresponding to the request at the index.
+
+        """
         return self._impl.request_at[CPythonRequest](index).load()
 
     fn response_at(self, index: Int64) -> PythonObject:
+        """Returns the response at the specified index in the form of a python
+        object.
+
+        Args:
+            index: The index of the response to access.
+
+        Returns:
+            A python object corresponding to the response at the index.
+
+        """
         return self._impl.response_at[CPythonResponse](index).load()
 
 
