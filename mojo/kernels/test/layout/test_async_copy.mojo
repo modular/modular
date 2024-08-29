@@ -441,6 +441,62 @@ fn test_masked_async_copy[
     _ = input^
 
 
+@always_inline
+fn copy_sram_to_dram_kernel[
+    type: DType, layout: Layout, M: Int, N: Int
+](input: LayoutTensor[type, layout]):
+    alias simd_size = simdwidthof[type]()
+    alias thread_layout = Layout.row_major(simd_size, N // simd_size)
+
+    var smem_tile = LayoutTensor[
+        DType.float32,
+        Layout.row_major(M, N),
+        address_space = AddressSpace.SHARED,
+    ].stack_allocation().linspace()
+
+    copy_sram_to_dram[thread_layout=thread_layout](
+        input.vectorize[1, simd_size](),
+        smem_tile.vectorize[1, simd_size](),
+    )
+
+
+fn test_copy_sram_to_dram[
+    type: DType, layout: Layout, M: Int, N: Int
+](ctx: DeviceContext) raises:
+    print("=== test_copy_sram_to_dram")
+
+    alias runtime_layout = RuntimeLayout[layout].row_major(
+        StaticIntTuple[2](M, N)
+    )
+
+    var input = ManagedLayoutTensor[
+        type,
+        layout,
+        gpu_managed_alloc,
+        gpu_free,
+        gpu_managed_alloc_runtime,
+    ](runtime_layout)
+
+    alias tile_layout = Layout.row_major(M, N)
+
+    var tile_tensor = input.tensor.tile[M, N](0, 0)
+
+    alias kernel_type = copy_sram_to_dram_kernel[type, tile_layout, M, N]
+    var kernel = ctx.compile_function[kernel_type]()
+
+    ctx.enqueue_function(
+        kernel,
+        tile_tensor,
+        grid_dim=(1,),
+        block_dim=(8,),
+    )
+
+    ctx.synchronize()
+    print(tile_tensor)
+
+    _ = input^
+
+
 fn main() raises:
     alias unknown_layout = Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)
 
@@ -576,3 +632,29 @@ fn main() raises:
         test_masked_async_copy[unknown_layout, M_masked, N_masked, num_rows](
             ctx
         )
+
+        # CHECK: == test_copy_sram_to_dram
+        # CHECK: 0.0 1.0 2.0 3.0 4.0 5.0 6.0 7.0
+        # CHECK: 8.0 9.0 10.0 11.0 12.0 13.0 14.0 15.0
+        # CHECK: 16.0 17.0 18.0 19.0 20.0 21.0 22.0 23.0
+        # CHECK: 24.0 25.0 26.0 27.0 28.0 29.0 30.0 31.0
+        # CHECK: 32.0 33.0 34.0 35.0 36.0 37.0 38.0 39.0
+        # CHECK: 40.0 41.0 42.0 43.0 44.0 45.0 46.0 47.0
+        # CHECK: 48.0 49.0 50.0 51.0 52.0 53.0 54.0 55.0
+        # CHECK: 56.0 57.0 58.0 59.0 60.0 61.0 62.0 63.0
+        test_copy_sram_to_dram[
+            DType.float32, layout_masked, M_masked, N_masked
+        ](ctx)
+
+        # CHECK: == test_copy_sram_to_dram
+        # CHECK: 0.0 1.0 2.0 3.0 4.0 5.0 6.0 7.0
+        # CHECK: 8.0 9.0 10.0 11.0 12.0 13.0 14.0 15.0
+        # CHECK: 16.0 17.0 18.0 19.0 20.0 21.0 22.0 23.0
+        # CHECK: 24.0 25.0 26.0 27.0 28.0 29.0 30.0 31.0
+        # CHECK: 32.0 33.0 34.0 35.0 36.0 37.0 38.0 39.0
+        # CHECK: 40.0 41.0 42.0 43.0 44.0 45.0 46.0 47.0
+        # CHECK: 48.0 49.0 50.0 51.0 52.0 53.0 54.0 55.0
+        # CHECK: 56.0 57.0 58.0 59.0 60.0 61.0 62.0 63.0
+        test_copy_sram_to_dram[
+            DType.bfloat16, unknown_layout, M_masked, N_masked
+        ](ctx)

@@ -2742,11 +2742,16 @@ fn copy_sram_to_dram[
         element_layout=src_element_layout,
     ],
 ):
+    constrained[
+        src_layout.all_dims_known(), "Shared memory must have static layout"
+    ]()
+
     var src_fragments = src.distribute[thread_layout](ThreadIdx.x())
     var dst_fragments = dst.distribute[thread_layout, swizzle=swizzle](
         ThreadIdx.x()
     )
 
+    # TODO: copy_from only allows static layout
     @parameter
     if src_type == dst_type:
         dst_fragments.copy_from(src_fragments.bitcast[dst_type]())
@@ -2770,8 +2775,16 @@ fn copy_sram_to_dram[
 
         @parameter
         for i in range(num_stores_per_thread):
+            var dst_idx = 0
+
             alias src_idx = src_fragments.layout(i)
-            alias dst_idx = dst_fragments.layout(i)
+            alias dst_static_idx = dst_fragments.layout(i)
+
+            @parameter
+            if dst_fragments.layout.all_dims_known():
+                dst_idx = dst_static_idx
+            else:
+                dst_idx = dst_fragments.runtime_layout(i)
 
             var src_vec = (src_fragments.ptr + src_idx).load[
                 width=simd_size, alignment=src_align
