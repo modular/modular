@@ -5,11 +5,15 @@
 //===----------------------------------------------------------------------===//
 
 #include "Support.h"
+#include "gmock/gmock.h"
 #include "gtest/gtest.h"
 
 using namespace M;
 using namespace lldb;
 using namespace ::testing::internal;
+
+using ::testing::ContainsRegex;
+using ::testing::HasSubstr;
 
 TEST(StackTraceTest, testStackTraceFormat) {
   // Simple test that ensures frames can be printed out in a nice format.
@@ -32,20 +36,20 @@ TEST(StackTraceTest, testStackTraceFormat) {
     frameDescs.emplace_back(description.GetData());
   }
 
-  EXPECT_TRUE(RE::PartialMatch(
-      frameDescs[0], RE(R"(stack-trace.Foo\[...\].getParametrized\[...\])"
-                        R"(.nested_function\(z=\(\[0\] = 105.25\)\) at)"
-                        R"( stack-trace.mojo:15:13)")));
-  EXPECT_TRUE(RE::PartialMatch(
+  EXPECT_THAT(frameDescs[0],
+              ContainsRegex(R"(stack-trace.Foo\[...\].getParametrized\[...\])"
+                            R"(.nested_function\(z=\(\[0\] = 105.25\)\) at)"
+                            R"( stack-trace.mojo:15:13)"));
+  EXPECT_THAT(
       frameDescs[1],
-      RE(R"(stack-trace.Foo\[index, index\])"
-         R"(.getParametrized\[scalar<f32>\]\(self=.* @ 0x.*,)"
-         R"( val=\(\[0] = 105.25\)\) at stack-trace.mojo:17:31)")));
-  EXPECT_TRUE(RE::PartialMatch(
+      ContainsRegex(R"(stack-trace.Foo\[index, index\])"
+                    R"(.getParametrized\[scalar<f32>\]\(self=.* @ 0x.*,)"
+                    R"( val=\(\[0] = 105.25\)\) at stack-trace.mojo:17:31)"));
+  EXPECT_THAT(
       frameDescs[2],
-      RE(R"(stack-trace.Foo\[index, index\])"
-         R"(.getFloat\(self=.* @ 0x.*, x=\(\[0\] = 1.125\), y=100\))"
-         R"( at stack-trace.mojo:20:45)")));
-  EXPECT_TRUE(StringRef(frameDescs[3])
-                  .contains("stack-trace.main() at stack-trace.mojo:24:35"));
+      ContainsRegex(R"(stack-trace.Foo\[index, index\])"
+                    R"(.getFloat\(self=.* @ 0x.*, x=\(\[0\] = 1.125\), y=100\))"
+                    R"( at stack-trace.mojo:20:45)"));
+  EXPECT_THAT(frameDescs[3],
+              HasSubstr("stack-trace.main() at stack-trace.mojo:24:35"));
 }
