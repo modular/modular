@@ -91,6 +91,22 @@ SymbolConstantAttr ParserParamEvaluator::findDirectCallee(TypedAttr callee) {
 FailureOr<TypedAttr>
 ParserParamEvaluator::evaluateFunctionCall(SymbolRefAttr symbol,
                                            ArrayRef<Attribute> arguments) {
+  auto &map = resolver.shared.getInterpreterCache().interpCache;
+  ParserInterpreterCache::Key key{
+      symbol, ArrayAttr::get(symbol.getContext(), arguments)};
+
+  if (auto it = map.find(key); it != map.end())
+    return it->second;
+
+  // `evaluateFunctionCallImpl` can invalidate the iterator.
+  FailureOr<TypedAttr> result = evaluateFunctionCallImpl(symbol, arguments);
+  map.try_emplace(key, result);
+  return result;
+}
+
+FailureOr<TypedAttr>
+ParserParamEvaluator::evaluateFunctionCallImpl(SymbolRefAttr symbol,
+                                               ArrayRef<Attribute> arguments) {
   // Use the interpreter to execute the function call.
   ParserInterpreter interpreter(resolver);
   ErrorOr<Region *> bodyOr = interpreter.lookupFunctionBody(symbol);

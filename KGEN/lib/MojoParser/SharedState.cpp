@@ -19,6 +19,7 @@
 #include "KGEN/MojoParser/ExprEmitter.h"
 #include "KGEN/MojoParser/ExprNodes.h"
 #include "KGEN/MojoParser/IRValues.h"
+#include "KGEN/MojoParser/ParserParamEvaluator.h"
 #include "KGEN/Support/CompilerProfiling.h"
 
 #include "KGEN/KGENDialect/KGENOps.h"
@@ -317,6 +318,9 @@ struct SharedState::Impl {
   /// MLIR custom op implementations collected from the `@op_implementation`
   /// decorator.
   DenseMap<StringAttr, CustomOpImplAttr> customOpImpls;
+
+  /// The interpreter cache shared throughout the parser.
+  ParserInterpreterCache interpreterCache;
 };
 
 SharedState::SharedState(llvm::SourceMgr &sourceMgr, ParserConfig &config)
@@ -553,6 +557,14 @@ void ASTDecl::setBodyDecorators(ArrayRef<ExprNode *> decorators,
 
   state.getImpl().bodyDecorators.insert({this, decorators.vec()});
   hasBodyDecorators = true;
+}
+
+//===----------------------------------------------------------------------===//
+// Interpreter
+//===----------------------------------------------------------------------===//
+
+ParserInterpreterCache &SharedState::getInterpreterCache() {
+  return getImpl().interpreterCache;
 }
 
 //===----------------------------------------------------------------------===//

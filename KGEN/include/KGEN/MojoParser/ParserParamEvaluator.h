@@ -19,6 +19,16 @@
 namespace M::KGEN::LIT {
 class DeclResolver;
 
+class ParserInterpreterCache {
+  /// Hash the key as the callee function and its arguments.
+  using Key = std::pair<SymbolRefAttr, ArrayAttr>;
+
+  /// Save the interpreter result, even if it's a failure.
+  DenseMap<Key, FailureOr<TypedAttr>> interpCache;
+
+  friend class ParserParamEvaluator;
+};
+
 class ParserParamEvaluator : public ParameterEvaluator {
 public:
   ParserParamEvaluator(DeclResolver &resolver,
@@ -31,10 +41,8 @@ public:
   /// due to lifetimes.
   static SymbolConstantAttr findDirectCallee(TypedAttr callee);
 
-  /// Attempt to evaluate 'apply' expressions.
-  FailureOr<TypedAttr> evaluateExpression(ParamOperatorAttr op) override;
-
-  /// Attempt to evaluate a function call in a parameter context.
+  /// Attempt to evaluate a function call in a parameter context, using a cached
+  /// result if possible.
   FailureOr<TypedAttr> evaluateFunctionCall(SymbolRefAttr symbol,
                                             ArrayRef<Attribute> arguments);
 
@@ -44,6 +52,13 @@ public:
   Attribute refine(Attribute attr);
 
 private:
+  /// Attempt to evaluate 'apply' expressions.
+  FailureOr<TypedAttr> evaluateExpression(ParamOperatorAttr op) override;
+
+  /// Attempt to evaluate a function call in a parameter context.
+  FailureOr<TypedAttr> evaluateFunctionCallImpl(SymbolRefAttr symbol,
+                                                ArrayRef<Attribute> arguments);
+
   template <typename T>
   T refineImpl(T arg);
 
