@@ -6,6 +6,7 @@
 
 #include "Support/MDialect/MDialect.h"
 #include "Support/AlignedAlloc.h"
+#include "Support/Compiler/Bytecode.h"
 #include "Support/MDialect/MAttrs.h"
 #include "mlir/Bytecode/BytecodeImplementation.h"
 #include "mlir/IR/OpImplementation.h"

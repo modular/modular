@@ -609,6 +609,7 @@ modular_cc_library(
         # packages in an apparent set of ordering violations. These create
         # loops in the logical package structure. Just encode these explicit
         # exceptions for now.
+        "include/Support/Compiler/Bytecode.h",
         "include/Support/Compiler/MLIRDenseAttr.h",
         "include/Support/MArchTarget/Host.h",
     ],

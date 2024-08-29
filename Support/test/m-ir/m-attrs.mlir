@@ -37,6 +37,9 @@
 // CHECK: #M.target<triple = "a", arch = "b", features = "+foo", data_layout = "p:64:64-i64:64:64", relocation_model = "pic", simd_bit_width = 128>
 "some.op"() {a = #M.target<triple = "a", arch = "b", features = "+foo", data_layout = "p:64:64-i64:64:64", relocation_model = "pic", simd_bit_width = 128>} : () -> ()
 
+// CHECK: #M.target<triple = "a", arch = "b", features = "+foo", data_layout = "p:64:64-i64:64:64", relocation_model = "pic", simd_bit_width = 128, index_bit_width = 64>
+"some.op"() {a = #M.target<triple = "a", arch = "b", features = "+foo", data_layout = "p:64:64-i64:64:64", relocation_model = "pic", simd_bit_width = 128, index_bit_width = 64>} : () -> ()
+
 // CHECK: #M.target<triple = "a", arch = "b">
 "some.op"() {a = #M.target<triple = "a", arch = "b">} : () -> ()
 

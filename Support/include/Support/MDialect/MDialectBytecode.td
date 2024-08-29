@@ -85,6 +85,11 @@ def LLVMRelocModel :
   WithPrinter<"printRelocModel($_name.getContext(), $_writer, $_getter)",
   WithType<"llvm::Reloc::Model">>>>;
 
+def OptionalInt64 :
+  WithParser<"succeeded(readOptional($_reader, $_var, &readIntegral<int64_t>))",
+  WithPrinter<"writeOptional($_writer, $_getter, &writeIntegral<int64_t>)",
+  WithType<"std::optional<int64_t>">>>;
+
 def TargetInfoAttr : DialectAttribute<(attr
   LLVMTriple:$triple,
   String:$arch,
@@ -92,6 +97,7 @@ def TargetInfoAttr : DialectAttribute<(attr
   Custom<"DataLayout">:$data_layout,
   LLVMRelocModel:$relocation_model,
   SignedVarInt:$simd_bit_width,
+  OptionalInt64:$index_bit_width,
   String:$tune_cpu
 )>;
 
