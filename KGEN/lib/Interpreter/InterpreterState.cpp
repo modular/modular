@@ -585,7 +585,7 @@ ErrorTreeOr<SmallVector<Attribute>>
 InterpreterState::executeRegion(Region &region, ArrayRef<Attribute> arguments) {
   // Internalize memory inside function arguments.
   SmallVector<Attribute> args = llvm::to_vector(arguments);
-  if (ErrorOrSuccess err = internalizeMemory(args); err.isError())
+  if (ErrorOrSuccess err = internalizeMemory(args))
     return ErrorTree(region.getLoc(), err.takeError());
 
   // Reset the interpret to a clean state.
@@ -593,16 +593,14 @@ InterpreterState::executeRegion(Region &region, ArrayRef<Attribute> arguments) {
 
   // Run the interpreter.
   ErrorTreeOr<SmallVector<Attribute>> result = interpretFunction(region, args);
-  if (result) {
-    SmallVector<Attribute> results = result.takeValue();
-    // Externalize references to interpreter memory.
-    if (ErrorOrSuccess err = externalizeMemory(results); err.isError())
-      return ErrorTree(region.getLoc(), err.takeError());
-    return results;
-  }
+  if (result)
+    return addStackTrace(result.takeError());
 
-  // The interpreter ran into an error. Report an error using a stacktrace.
-  return addStackTrace(result.takeError());
+  SmallVector<Attribute> results = result.takeValue();
+  // Externalize references to interpreter memory.
+  if (ErrorOrSuccess err = externalizeMemory(results))
+    return ErrorTree(region.getLoc(), err.takeError());
+  return results;
 }
 
 /// Execute a region that has a ByRefResult or InitSelf argument.
@@ -650,7 +648,7 @@ ErrorTreeOr<TypedAttr> InterpreterState::executeRegionWithResultSlot(
       interpretFunction(region, allArgs);
 
   // The interpreter ran into an error. Report an error using a stacktrace.
-  if (!result)
+  if (result)
     return addStackTrace(result.takeError());
 
   TypedAttr value;
@@ -719,10 +717,9 @@ IRInterpreter::interpretFunction(Region &body, ArrayRef<Attribute> arguments) {
             .addCause(err.takeError());
 
       // Otherwise, try to use the operation folder.
-    } else {
-      ErrorTreeOrSuccess result = interpretOpWithFolder(&*pc, operands);
-      if (result.isError())
-        return result.takeError();
+    } else if (ErrorTreeOrSuccess result =
+                   interpretOpWithFolder(&*pc, operands)) {
+      return result.takeError();
     }
   }
 
