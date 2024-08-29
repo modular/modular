@@ -1428,32 +1428,33 @@ void RefStructGEROp::build(OpBuilder &builder, OperationState &result,
   build(builder, result, resultType, field.getNameAttr(), structBaseRef);
 }
 
-static ParseResult parseStructGERTypes(AsmParser &p, Type &fieldType,
-                                       Type &containerType) {
+static ParseResult parseStructGERTypes(AsmParser &p, Type &containerType,
+                                       Type &fieldRefType) {
   llvm::SMLoc loc = p.getCurrentLocation();
-  // parse: 'type' from 'type'
-  fieldType = RefType::parse(p);
-  if (!fieldType || p.parseKeyword("from") || parseParamType(p, containerType))
+  Type fieldType;
+  // parse: 'type' `->` 'type'
+  containerType = RefType::parse(p);
+  if (!containerType || p.parseArrow() || parseParamType(p, fieldType))
     return failure();
-  auto fieldRefType = dyn_cast<RefType>(fieldType);
-  if (!fieldRefType)
-    return p.emitError(loc, "expected '!lit.ref' type in !lit.struct.ger");
+  auto containerRefType = dyn_cast<RefType>(containerType);
+  if (!containerRefType)
+    return p.emitError(loc, "expected '!lit.ref' type in lit.ref.struct.ger");
 
-  // The container type gets wrapped with the same mutability and lifetime as
+  // The field type gets wrapped with the same mutability and lifetime as
   // the result element.
-  containerType = fieldRefType.getWithElement(containerType);
+  fieldRefType = containerRefType.getWithElement(fieldType);
   return success();
 }
 
-static void printStructGERTypes(AsmPrinter &p, Operation *, RefType fieldType,
-                                RefType containerType) {
-  fieldType.print(p);
-  p << " from ";
-  if (auto refType = dyn_cast<RefType>(containerType))
+static void printStructGERTypes(AsmPrinter &p, Operation *,
+                                RefType containerType, RefType fieldType) {
+  containerType.print(p);
+  p << " -> ";
+  if (auto refType = dyn_cast<RefType>(fieldType))
     printParamType(p, refType.getElementType());
   else {
     p << "<<ERROR NOT REF CONTAINER>>";
-    p.printType(containerType);
+    p.printType(fieldType);
   }
 }
 

@@ -207,7 +207,7 @@ lit.struct.decl @PairStruct {
 kgen.generator @gerToGEPFooFromBar<l: !lit.lifetime<1>, l2: !lit.lifetime<1>>
   (%arg0: !lit.ref<@PairStruct, mut l>, %arg1: si32) -> si32 {
   // CHECK-NEXT: %0 = kgen.struct.gep %arg0[0] : <struct<(si32, ui32) memoryOnly>>
-  %0 = lit.ref.struct.ger %arg0[x] : <si32, mut l> from @PairStruct
+  %0 = lit.ref.struct.ger %arg0[x] : <@PairStruct, mut l> -> si32
 
   // This rebind should be removed entirely by lower types.
   %rb = kgen.rebind %0 : !lit.ref<si32, mut l> to !lit.ref<si32, mut l2>
