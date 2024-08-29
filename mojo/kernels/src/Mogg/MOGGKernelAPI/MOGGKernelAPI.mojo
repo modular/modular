@@ -15,6 +15,37 @@ from linalg.matmul import matmul as _matmul
 from runtime.asyncrt import MojoCallContextPtr
 
 
+@value
+@register_passable
+struct MyCustomScalarReg[type: DType]:
+    var val: Scalar[type]
+
+    fn __init__(inout self, val: Scalar[type]):
+        print("MyCustomScalarReg.__init__", val)
+        self.val = val
+
+    fn __del__(owned self):
+        print("MyCustomScalarReg.__del__", self.val)
+
+
+# Adds two custom scalar types (one of which is register passable) and writes
+# to a tensor
+@compiler.register("opaque_add_to_tensor")
+struct OpaqueAddToTensor:
+    @staticmethod
+    fn execute[
+        synchronous: Bool,
+        target: StringLiteral,
+    ](out: ManagedTensorSlice, x: MyCustomScalarReg, y: MyCustomScalarReg):
+        var scalar_x = x.val
+        var scalar_y = rebind[Scalar[x.type]](y.val)
+        out[0] = rebind[Scalar[out.type]](scalar_x + scalar_y)
+
+    @staticmethod
+    fn shape(x: MyCustomScalarReg, y: MyCustomScalarReg) -> StaticIntTuple[1]:
+        return StaticIntTuple[1](1)
+
+
 @compiler.register("imposter_add")
 struct Foo:
     @staticmethod
