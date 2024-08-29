@@ -5,7 +5,7 @@ lit.struct.decl @S attributes {
     #kgen.symbol.constant<@S::@__del__> : !lit.signature<[1](!lit.ref<@S, mut *[0,0]> owned_in_mem) -> !kgen.none>} {
   lit.struct.field a : index
   lit.func @__init__[mut selflife](%self: !lit.ref<@S, mut selflife> init_self, |) -> !kgen.none attributes {isStatic} {
-    %0 = lit.ref.struct.ger %self[a] : <index, mut selflife> from @S
+    %0 = lit.ref.struct.ger %self[a] : <@S, mut selflife> -> index
     %idx1 = index.constant 1
     lit.ref.store %idx1, %0 : !lit.ref<index, mut selflife>
 

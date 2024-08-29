@@ -1580,10 +1580,10 @@ def LIT_RefStructGEROp : LITOp<"ref.struct.ger", [Pure,
 
     ```mlir
     lit.struct.decl @MyStruct<T: dtype> {
-      lit.struct.field a : !pop.scalar<T>
+      lit.struct.field a : i32
     }
 
-    %0 = lit.ref.struct.ger %struct[a] : !lit.ref<@MyStruct<...>, mut life>
+    %0 = lit.ref.struct.ger %struct[a] : <@MyStruct<...>, mut life> -> i32
     ```
   }];
 
@@ -1591,7 +1591,7 @@ def LIT_RefStructGEROp : LITOp<"ref.struct.ger", [Pure,
   let results = (outs LIT_RefType:$result);
   let assemblyFormat = [{
     $container `[` custom<KeywordAsString>($field) `]` attr-dict `:`
-    custom<StructGERTypes>(type($result), type($container))
+    custom<StructGERTypes>(type($container), type($result))
   }];
 
   let builders = [
