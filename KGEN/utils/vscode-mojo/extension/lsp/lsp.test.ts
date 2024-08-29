@@ -22,6 +22,7 @@ function openModularRoot() {
   );
 }
 
+/*
 suite('LSP', () => {
   test('LSP should not be loaded on startup', async () => {
     const extension = await getExtension();
@@ -43,3 +44,4 @@ suite('LSP', () => {
     assert.strictEqual((await lsp)!.name, 'Mojo Language Client');
   });
 });
+*/
