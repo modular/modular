@@ -17,11 +17,17 @@ namespace M::KGEN::CSP {
 /// necessary for a compilation server.
 class LLVMServer {
 public:
-  LLVMServer() = default;
-  ~LLVMServer() = default;
+  LLVMServer();
+  ~LLVMServer();
 
   /// Compile LLVM bitcode represented as base64 encoded string.
-  void emitArchive(const std::string &mlirModule);
+  /// For testing purposes, return emitted string or "error". This
+  /// will change once the implementation is completed.
+  std::string emitArchive(StringRef mlirModule);
+
+private:
+  struct Impl;
+  std::unique_ptr<Impl> impl;
 };
 
 } // namespace M::KGEN::CSP

@@ -28,11 +28,10 @@
 namespace M::KGEN::CSP {
 
 //===----------------------------------------------------------------------===//
-// CompileLLVMModuleParams
+// EmitArchiveParams
 //===----------------------------------------------------------------------===//
-
 struct EmitArchiveParams {
-  /// MLIR module encoded as string.
+  /// MLIR module printed as string.
   std::string module;
 };
 
@@ -40,6 +39,20 @@ struct EmitArchiveParams {
 bool fromJSON(const llvm::json::Value &value, EmitArchiveParams &result,
               llvm::json::Path path);
 llvm::json::Value toJSON(const EmitArchiveParams &value);
+
+//===----------------------------------------------------------------------===//
+// ObjectArchive
+//===----------------------------------------------------------------------===//
+
+/// Represents an object archive obtained as a result
+/// of the compilation.
+struct ObjectArchive {
+  /// Object archive encoded as a string.
+  std::string archive;
+};
+
+/// Add support for JSON serialization.
+llvm::json::Value toJSON(const ObjectArchive &value);
 
 } // namespace M::KGEN::CSP
 

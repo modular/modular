@@ -41,7 +41,7 @@ struct CompilationServer {
   // Compilation
 
   void onEmitArchive(const EmitArchiveParams &params,
-                     Callback<std::nullptr_t> reply);
+                     Callback<llvm::json::Value> reply);
 
   //===--------------------------------------------------------------------===//
   // Fields
@@ -54,7 +54,6 @@ struct CompilationServer {
   bool shutdownRequestReceived = false;
 };
 } // namespace
-
 //===----------------------------------------------------------------------===//
 // Initialization
 
@@ -78,9 +77,11 @@ void CompilationServer::onShutdown(const NoParams &,
 // Compilation
 
 void CompilationServer::onEmitArchive(const EmitArchiveParams &params,
-                                      Callback<std::nullptr_t> reply) {
-  llvmServer.emitArchive(params.module);
-  reply(nullptr);
+                                      Callback<llvm::json::Value> reply) {
+  std::string result = llvmServer.emitArchive(params.module);
+  ObjectArchive value;
+  value.archive = std::move(result);
+  reply(value);
 }
 
 //===----------------------------------------------------------------------===//
