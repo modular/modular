@@ -8,7 +8,6 @@ from os import PathLike
 from typing import Optional, Union
 
 from .value import TensorValue
-from .type import TensorType
 from .quantization import QuantizationEncoding
 
 
