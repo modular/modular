@@ -21,6 +21,13 @@ import * as configWatcher from './utils/configWatcher';
 import { MojoSDKSpec } from './sdk/types';
 
 /**
+ * State that survives across reloads of the extension, but not re-activations.
+ */
+export class ExtensionSemiPersistentState {
+  public seenDevSDKs = new Set<string>();
+}
+
+/**
  * Returns if the given extension context is a nightly build.
  */
 export function isNightlyExtension(context: vscode.ExtensionContext) {
@@ -36,6 +43,7 @@ export class MojoExtension extends DisposableContext {
   public readonly extensionContext: vscode.ExtensionContext;
   public lspManager?: MojoLSPManager;
   public readonly isNightly: boolean;
+  private semiPersistentState = new ExtensionSemiPersistentState();
 
   constructor(
     context: vscode.ExtensionContext,
@@ -79,7 +87,8 @@ Activating the Mojo Extension
       this.extensionContext,
       initializationSDK,
       this.isNightly,
-      enableMagicSDK
+      enableMagicSDK,
+      this.semiPersistentState
     );
     this.pushSubscription(sdkManager);
 
