@@ -363,8 +363,8 @@ fn matmul_kv_cache_h6_d48_bshd[
     type: DType,
     target: StringLiteral = "cpu",
 ](
-    hidden_state: NDBuffer[type, 3, *_],
-    weight: NDBuffer[type, 2, *_],
+    hidden_state: NDBuffer[type, 3, _],
+    weight: NDBuffer[type, 2, _],
     cache: ContiguousKVCache[
         type,
         KVCacheStaticParams(
@@ -494,8 +494,8 @@ fn _matmul_kv_cache[
     *,
     target: StringLiteral,
 ](
-    hidden_state: NDBuffer[type, 3, *_],
-    weight: NDBuffer[type, 2, *_],
+    hidden_state: NDBuffer[type, 3, _],
+    weight: NDBuffer[type, 2, _],
     cache: ContiguousKVCache[type, kv_params],
     context: MojoCallContextPtr,
 ) -> ContiguousKVCache[type, kv_params]:
@@ -531,8 +531,8 @@ fn _matmul_kv_cache_impl[
     *,
     target: StringLiteral,
 ](
-    hidden_state: NDBuffer[type, 3, *_],
-    weight: NDBuffer[type, 2, *_],
+    hidden_state: NDBuffer[type, 3, _],
+    weight: NDBuffer[type, 2, _],
     cache: ContiguousKVCache[type, kv_params],
     ctx: Optional[DeviceContext],
 ) -> ContiguousKVCache[type, kv_params]:
@@ -897,8 +897,8 @@ fn _matmul_common[
     target: StringLiteral,
     elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
 ](
-    hidden_state: NDBuffer[type, 3, *_],
-    weight: NDBuffer[type, 2, *_],
+    hidden_state: NDBuffer[type, 3, _],
+    weight: NDBuffer[type, 2, _],
     context: Optional[DeviceContext],
 ):
     var BS = hidden_state.dim[0]()
