@@ -1163,7 +1163,7 @@ fn transpose[
 
     # If either input or output is not-contiguous, we need to use a general
     # strided implementation of transpose
-    if not output.is_contiguous or not input.is_contiguous:
+    if not output.is_contiguous() or not input.is_contiguous():
         return transpose_strided[rank, output_shape, input_shape, type](
             output, input, perms
         )
