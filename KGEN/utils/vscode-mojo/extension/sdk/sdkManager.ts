@@ -86,12 +86,12 @@ export class MojoSDKManager extends DisposableContext {
           ignoreFocusOut: true,
           title: 'Select the Max SDK to use',
           placeHolder:
-            this.activeSDK.state == 'selected' && this.activeSDK.sdkSpec
+            this.activeSDK.state === 'selected' && this.activeSDK.sdkSpec
               ? `Currently using ${this.activeSDK.sdkSpec.version.toString()}`
               : 'Select an SDK or cancel',
         });
         const selectedSDK = allSDKSpecs.find(
-          (spec) => spec.version.toString() == selected
+          (spec) => spec.version.toString() === selected
         );
         if (selectedSDK !== undefined) {
           vscode.commands.executeCommand('mojo.restart', selectedSDK);
@@ -183,7 +183,7 @@ export class MojoSDKManager extends DisposableContext {
     if (
       this.activeSDK.state === 'selected' &&
       this.activeSDK.sdkSpec?.modularHomePath === modularHomePath &&
-      this.activeSDK.sdkSpec.section == section
+      this.activeSDK.sdkSpec.section === section
     ) {
       return this.createSDKAndShowError(this.activeSDK, hideRepeatedErrors);
     }
@@ -227,7 +227,7 @@ export class MojoSDKManager extends DisposableContext {
       let errorMessage = result;
       selectedSDK.errorMessage = result;
 
-      if (selectedSDK.sdkSpec?.kind == 'modular-cli') {
+      if (selectedSDK.sdkSpec?.kind === 'modular-cli') {
         errorMessage += '\nPlease install the MAX SDK via the modular tool.';
         vscode.window
           .showErrorMessage(errorMessage, 'Install')
@@ -324,7 +324,7 @@ export class MojoSDKManager extends DisposableContext {
         placeHolder:
           'Select an SDK or cancel to select the first one in the list',
       })) || sdkNames[0];
-    return allSDKSpecs.find((spec) => spec.version.toString() == selected);
+    return allSDKSpecs.find((spec) => spec.version.toString() === selected);
   }
 
   private async findAllSDKs(): Promise<MojoSDKSpec[]> {
@@ -495,10 +495,10 @@ export class MojoSDKManager extends DisposableContext {
             possibleSDKs.find(
               (sdk) =>
                 sdk.modularHomePath === modularHomePath &&
-                sdk.version.major == version.major &&
+                sdk.version.major === version.major &&
                 sdk.version.minor === version.minor &&
                 sdk.version.patch === version.patch
-            ) == undefined
+            ) === undefined
           ) {
             possibleSDKs.push({
               kind: 'modular-cli',

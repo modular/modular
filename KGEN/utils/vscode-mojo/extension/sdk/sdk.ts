@@ -44,7 +44,7 @@ export class MojoSDK {
 
     // Filter the keys to only those that match the current extension.
     possibleKeys = possibleKeys.filter(
-      (key) => isNightly == key.endsWith('-nightly')
+      (key) => isNightly === key.endsWith('-nightly')
     );
 
     if (possibleKeys.length === 0) {

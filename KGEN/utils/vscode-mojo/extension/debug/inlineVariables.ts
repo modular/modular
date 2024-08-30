@@ -59,7 +59,7 @@ export class LocalVariablesTracker implements vscode.DebugAdapterTracker {
 
     return new Promise<VariablesGroups>((resolve, reject) => {
       this.onFrameGotVariables.event(([eventFrameId, variables]) => {
-        if (eventFrameId == frameId) {
+        if (eventFrameId === frameId) {
           resolve(variables);
         }
       });
@@ -169,7 +169,7 @@ export class InlineLocalVariablesProvider
     do {
       index = text.indexOf(variable.evaluateName, index + 1);
 
-      if (index == -1) {
+      if (index === -1) {
         break;
       }
 
@@ -197,7 +197,7 @@ export class InlineLocalVariablesProvider
     const error = variable.$__lldb_extensions.error || '';
     const path = decl?.path || '';
 
-    if (decl?.line === undefined || path.length == 0 || error.length > 0) {
+    if (decl?.line === undefined || path.length === 0 || error.length > 0) {
       return [];
     }
     const line = decl.line - 1;
