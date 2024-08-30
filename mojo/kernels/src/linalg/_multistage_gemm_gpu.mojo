@@ -328,19 +328,42 @@ fn multistage_mma[
                                 num_pipeline_stages - 1
                             )[]
 
-                            copy_dram_to_sram_async[
-                                thread_layout=async_copy_b_layout,
-                                swizzle=swizzle_b,
-                            ](
-                                b_smem_prefetch_tile.vectorize[1, simd_size](),
-                                b_iter[]
-                                .bitcast[
-                                    b_type,
-                                    address_space = AddressSpace.GENERIC,
-                                ]()
-                                .vectorize[1, simd_size](),
-                            )
-
+                            if num_b_rows:
+                                var num_rows_bound = num_b_rows.value() if transpose_b else max(
+                                    0,
+                                    num_b_rows.value() - prefetch_tile_id * BK,
+                                )
+                                copy_dram_to_sram_async[
+                                    thread_layout=async_copy_b_layout,
+                                    swizzle=swizzle_b,
+                                    masked=True,
+                                ](
+                                    b_smem_prefetch_tile.vectorize[
+                                        1, simd_size
+                                    ](),
+                                    b_iter[]
+                                    .bitcast[
+                                        b_type,
+                                        address_space = AddressSpace.GENERIC,
+                                    ]()
+                                    .vectorize[1, simd_size](),
+                                    num_rows_bound,
+                                )
+                            else:
+                                copy_dram_to_sram_async[
+                                    thread_layout=async_copy_b_layout,
+                                    swizzle=swizzle_b,
+                                ](
+                                    b_smem_prefetch_tile.vectorize[
+                                        1, simd_size
+                                    ](),
+                                    b_iter[]
+                                    .bitcast[
+                                        b_type,
+                                        address_space = AddressSpace.GENERIC,
+                                    ]()
+                                    .vectorize[1, simd_size](),
+                                )
                             b_iter += 1
 
                     async_copy_commit_group()
@@ -482,6 +505,13 @@ fn multistage_mma[
                             num_pipeline_stages - 1
                         )[].reshape[b_next_smem_layout]()
 
+                        # TODO: can we guard at compile time num_b_rows is set here?
+                        var num_rows_bound = num_b_rows.value() if transpose_b_next else max(
+                            0,
+                            num_b_rows.value()
+                            - (prefetch_tile_id - num_iters) * BK,
+                        )
+
                         alias row_size = b_next_smem_layout.stride[0].value()
 
                         copy_dram_to_sram_async[
@@ -491,6 +521,7 @@ fn multistage_mma[
                             ),
                             swizzle = transpose_b_next
                             or b_type.is_half_float(),
+                            masked=True,
                         ](
                             b_smem_prefetch_tile.vectorize[1, simd_size](),
                             next_b_iter[]
@@ -498,6 +529,7 @@ fn multistage_mma[
                                 b_type, address_space = AddressSpace.GENERIC
                             ]()
                             .vectorize[1, simd_size](),
+                            num_rows_bound,
                         )
 
                         next_b_iter += 1
