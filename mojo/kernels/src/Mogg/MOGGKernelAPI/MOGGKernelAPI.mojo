@@ -178,6 +178,12 @@ struct ImposterMatmul:
         var a_buffer = toNDBuffer[a_dtype, 2](a)
         var b_buffer = toNDBuffer[b_dtype, 2](b)
         _matmul[
+            a_dtype,
+            a_buffer.shape,
+            b_dtype,
+            b_buffer.shape,
+            c_dtype,
+            c_buffer.shape,
             False,
             False,
             False,
@@ -279,6 +285,12 @@ struct MatmulFuseOut:
             c.store(idx, rebind[SIMD[c.type, width]](val))
 
         _matmul[
+            a_dtype,
+            a_buffer.shape,
+            b_dtype,
+            b_buffer.shape,
+            c_dtype,
+            c_buffer.shape,
             False,
             False,
             False,
