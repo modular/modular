@@ -11,12 +11,15 @@ from max.graph.utils import load_gguf
 
 
 def test_load_gguf(testdata_directory) -> None:
+    weights = load_gguf(testdata_directory / "example_data.gguf")
     with Graph("test_load_gguf") as graph:
-        data = load_gguf(testdata_directory / "example_data.gguf")
+        data = {
+            key: weight.add_to_graph(graph) for key, weight in weights.items()
+        }
         assert len(data) == 6
-        assert data["a"].value.type == TensorType(DType.int32, [5, 2])
-        assert data["b"].value.type == TensorType(DType.float64, [1, 2, 3])
-        assert data["c"].value.type == TensorType(DType.float32, [])
-        assert data["fancy/name"].value.type == TensorType(DType.int64, [3])
-        assert data["bf16"].value.type == TensorType(DType.bfloat16, [2])
-        assert data["quantized"].value.type == TensorType(DType.uint8, [2, 144])
+        assert data["a"].type == TensorType(DType.int32, [5, 2])
+        assert data["b"].type == TensorType(DType.float64, [1, 2, 3])
+        assert data["c"].type == TensorType(DType.float32, [])
+        assert data["fancy/name"].type == TensorType(DType.int64, [3])
+        assert data["bf16"].type == TensorType(DType.bfloat16, [2])
+        assert data["quantized"].type == TensorType(DType.uint8, [2, 144])

@@ -21,6 +21,7 @@ from max.dtype import DType
 
 from . import graph, ops
 from .type import DimLike, Shape, ShapeLike, TensorType
+from .weight import Weight
 
 
 class Value:
@@ -50,7 +51,7 @@ class Value:
             return super().__new__(TensorValue)
         elif isinstance(value, Value):
             return super().__new__(type(value))
-        elif isinstance(value, np.ndarray):
+        elif isinstance(value, (np.ndarray, Weight)):
             return super().__new__(TensorValue)
         else:
             raise TypeError(
@@ -92,6 +93,10 @@ class TensorValue(Value):
             self._mlir_value = value._mlir_value
         elif isinstance(value, np.ndarray):
             self._mlir_value = ops.constant(value)._mlir_value
+        elif isinstance(value, Weight):
+            self._mlir_value = value.add_to_graph(
+                graph.Graph.current
+            )._mlir_value
         else:
             raise TypeError(
                 "TensorValue() argument must be a mlir.Value of tensor type, a"
@@ -267,8 +272,8 @@ class TensorValue(Value):
         return ops.pow(TensorValue(lhs), self)
 
 
-ValueLike = Union[mlir.Value, Value, np.ndarray]
+ValueLike = Union[mlir.Value, Value, np.ndarray, Weight]
 
 
 def _is_value_like(obj: Any) -> TypeGuard[ValueLike]:
-    return isinstance(obj, (mlir.Value, Value, np.ndarray))
+    return isinstance(obj, (mlir.Value, Value, np.ndarray, Weight))

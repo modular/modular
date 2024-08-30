@@ -47,7 +47,6 @@ def load_pytorch(filepath) -> Dict[str, Weight]:
             "Unable to import torch. Please make sure that PyTorch is installed"
             " on your system."
         )
-    graph = Graph.current
     zip_file = torch._C.PyTorchFileReader(str(filepath))
 
     with BytesIO(zip_file.get_record("data.pkl")) as pkl_file:
@@ -57,7 +56,7 @@ def load_pytorch(filepath) -> Dict[str, Weight]:
     ret = {}
     for key, tensor_info in loaded_infos.items():
         dtype = _dtype_from_torch(tensor_info.dtype)
-        ret[key] = graph.add_weight(
+        ret[key] = Weight(
             key, dtype, tensor_info.shape, filepath, tensor_info.offset
         )
     return ret

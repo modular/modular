@@ -10,18 +10,15 @@ from __future__ import annotations
 import contextlib
 import inspect
 from contextvars import ContextVar
-from os import PathLike
-from pathlib import Path
-from typing import Callable, Iterable, Optional, Union
+from dataclasses import dataclass
+from typing import Callable, Iterable, Optional
 
 from max import _graph, mlir
-from max.dtype import DType
-from max.graph.quantization import QuantizationEncoding
 from max.mlir.dialects import mo
 
+from .type import Dim, SymbolicDim, TensorType, Type
 from .value import Value
-from .type import Dim, ShapeLike, SymbolicDim, TensorType, Type
-from .weight import Weight
+from .weight import GraphWeight
 
 CURRENT_GRAPH: ContextVar[Graph] = ContextVar("CURRENT_GRAPH")
 
@@ -147,7 +144,7 @@ class Graph:
     _unique_symbolic_dim_counter: int
     _context_state: list
     inputs: tuple[Value, ...]
-    weights: dict[str, Weight]
+    weights: dict[str, GraphWeight]
 
     def __init__(
         self,
@@ -361,62 +358,6 @@ class Graph:
 
     def __repr__(self) -> str:
         return str(self._mlir_op)
-
-    def add_weight(
-        self,
-        name: str,
-        dtype: Optional[DType] = None,
-        shape: Optional[ShapeLike] = None,
-        filepath: Union[PathLike, str, None] = None,
-        offset: Optional[int] = None,
-        quantization_encoding: Optional[QuantizationEncoding] = None,
-    ) -> Weight:
-        """Initializes a new weight in the current graph.
-
-        Args:
-            name: The name of this weight. All weights in a graph must have
-              unique names.
-            dtype: The DType of the weight. Defaults to Float32.
-            shape: The shape of the weight. Defaults to a scalar (`shape=[1]`).
-            filepath: File pointing to file containing weight value.
-            offset: Offset to weight in the file (defaults to 0).
-            quantization_encoding: Quantization encoding of the weight.
-                Defaults to not-quantized.
-
-        Returns:
-            The added `Weight` object.
-
-        Raises:
-            ValueError if a weight with the same name already exists in the
-            graph.
-        """
-        if name in self.weights:
-            raise ValueError(f"Weight '{name}' already exists in Graph {self}")
-        shape = [1] if shape is None else shape
-        tensor_type = TensorType(dtype or DType.float32, shape)
-
-        # TODO: Allow file path to be set later.
-        if filepath is None:
-            raise ValueError("Filepath must be defined.")
-        weights_attr = _graph.weights_attr(
-            Path(filepath or ""),
-            offset or 0,
-            tensor_type.to_mlir(),
-            name,
-        )
-        weights_tensor = Graph.current._add_op(
-            mo.constant, result=tensor_type.to_mlir(), value=weights_attr
-        )[0]
-        weight = Weight(
-            weights_tensor,
-            name=name,
-            filepath=filepath,
-            offset=offset,
-            quantization_encoding=quantization_encoding,
-        )
-        self.weights[name] = weight
-
-        return weight
 
     def unique_symbolic_dim(self, tag: str) -> SymbolicDim:
         """Create a new symbolic dim with a different name from any other.

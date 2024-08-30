@@ -11,12 +11,15 @@ from max.graph.utils import load_pytorch
 
 
 def test_load_pytorch(testdata_directory):
+    weights = load_pytorch(testdata_directory / "example_data.pt")
     with Graph("test_load_pytorch") as graph:
         # Loads the data saved in gen_external_checkpoints.py.
-        data = load_pytorch(testdata_directory / "example_data.pt")
+        data = {
+            key: weight.add_to_graph(graph) for key, weight in weights.items()
+        }
         assert len(data) == 5
-        assert data["a"].value.type == TensorType(DType.int32, [5, 2])
-        assert data["b"].value.type == TensorType(DType.float64, [1, 2, 3])
-        assert data["c"].value.type == TensorType(DType.float32, [])
-        assert data["fancy/name"].value.type == TensorType(DType.int64, [3])
-        assert data["bf16"].value.type == TensorType(DType.bfloat16, [2])
+        assert data["a"].type == TensorType(DType.int32, [5, 2])
+        assert data["b"].type == TensorType(DType.float64, [1, 2, 3])
+        assert data["c"].type == TensorType(DType.float32, [])
+        assert data["fancy/name"].type == TensorType(DType.int64, [3])
+        assert data["bf16"].type == TensorType(DType.bfloat16, [2])

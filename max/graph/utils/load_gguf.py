@@ -7,11 +7,11 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from os import PathLike
 import subprocess
 import sys
-from typing import Dict, Optional, Callable
+from dataclasses import dataclass, field
+from os import PathLike
+from typing import Callable, Dict, Optional
 
 # Only import gguf when used.
 try:
@@ -24,6 +24,7 @@ from max.dtype import DType
 
 from ..graph import Graph
 from ..quantization import QuantizationEncoding
+from ..value import Value
 from ..weight import Weight
 
 _GGML_TO_DTYPE = {}
@@ -85,17 +86,11 @@ def load_gguf(source: PathLike | gguf.GGUFReader) -> Dict[str, Weight]:
     assert gguf is not None
     GGUFReader = gguf.GGUFReader
 
-    graph = Graph.current
     reader = source if isinstance(source, GGUFReader) else GGUFReader(source)
-    return {
-        tensor.name: parse_weight(tensor)(graph) for tensor in reader.tensors
-    }
+    return {tensor.name: parse_weight(tensor) for tensor in reader.tensors}
 
 
-WeightReader = Callable[[Graph], Weight]
-
-
-def parse_weight(tensor: gguf.ReaderTensor) -> WeightReader:
+def parse_weight(tensor: gguf.ReaderTensor) -> Weight:
     _check_gguf()
     assert gguf is not None
     # Dims are reversed for some reason:
@@ -111,7 +106,7 @@ def parse_weight(tensor: gguf.ReaderTensor) -> WeightReader:
         else:
             raise ValueError(f"Unknown GGML DType: {tensor.tensor_type}.")
 
-    return lambda graph: graph.add_weight(
+    return Weight(
         name=tensor.name,
         dtype=dtype,
         shape=shape,
@@ -136,7 +131,7 @@ class Weights:
             if name.startswith(self._prefix):
                 yield tensor
 
-    def __getattr__(self, attr) -> WeightReader | Weights:
+    def __getattr__(self, attr) -> Weight | Weights:
         full_path = f"{self._prefix}{attr}"
         if tensor := self._tensors.get(full_path):
             return parse_weight(tensor)
@@ -144,5 +139,5 @@ class Weights:
             raise AttributeError(f"No weight {full_path} found")
         return Weights(self._reader, self._tensors, prefix=full_path + ".")
 
-    def __getitem__(self, idx: int) -> WeightReader | Weights:
+    def __getitem__(self, idx: int) -> Weight | Weights:
         return self.__getattr__(str(idx))
