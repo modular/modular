@@ -119,7 +119,7 @@ export class MojoLSPProxy {
       this.server?.getOldestPendingRequest() as Optional<RequestParamsWithDocument>
     )?.textDocument?.uri;
     for (const doc of this.docsStateHandler.getAllDocs()) {
-      if (doc.uri == crashTriggerURI) {
+      if (doc.uri === crashTriggerURI) {
         this.docsStateHandler.markAsCrashTrigger(doc);
       }
       const errorMessage = this.createDiagnosticErrorMessageUponCrash(

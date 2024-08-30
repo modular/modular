@@ -123,7 +123,7 @@ export class RpcServer extends DisposableContext {
   // Launch a debug session. Throws if debug session initialization has error.
   private async handleDebugRequest(debugConfig: DebugConfiguration) {
     debugConfig.name = debugConfig.name || debugConfig.program;
-    if (debugConfig.type == 'mojo-cuda-gdb') {
+    if (debugConfig.type === 'mojo-cuda-gdb') {
       const maybeErrorMessage = await checkNsightInstall(this.logger);
       if (maybeErrorMessage) {
         throw new Error(maybeErrorMessage);

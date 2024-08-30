@@ -26,7 +26,7 @@ export class MojoSDKVersion {
    * Return if this is a dev version.
    */
   isDev(): boolean {
-    return this.minor == '0' && this.major == '0' && this.patch == '0';
+    return this.minor === '0' && this.major === '0' && this.patch === '0';
   }
 
   /**

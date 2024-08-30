@@ -134,7 +134,7 @@ export class MojoDecoratorManager extends DisposableContext {
       let currentLine = splitLines[line];
       let match;
       if ((match = startRegEx.test(currentLine))) {
-        if (numCurrentCodeBlocks++ == 0) {
+        if (numCurrentCodeBlocks++ === 0) {
           prevNumDecorations = docDecorations.length;
         }
         continue;
