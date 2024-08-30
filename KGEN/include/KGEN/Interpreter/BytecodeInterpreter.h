@@ -123,19 +123,13 @@ private:
   ErrorTreeOr<SmallVector<Attribute>>
   interpretFunction(Region &body, ArrayRef<Attribute> arguments) override;
 
-  StackFrame &getCurrentFrame() {
-    assert(!stack.empty() && "expected a stack frame");
-    return stack[stackIdx - 1];
-  }
+  StackFrame &getCurrentFrame() { return stack.back(); }
 
   /// The bytecode compiler instance to use.
   BytecodeCompiler *bcCompiler;
 
   /// These are the stack frames kept by the interpreter.
-  std::vector<StackFrame> stack;
-  /// Instead of popping and pushing new frames, we virtually grow and shink the
-  /// vector by moving this index. This minimizes memory pressure.
-  size_t stackIdx = 0;
+  SoftPopStack<StackFrame> stack;
 
   /// The operation current offset into the function bytecode.
   uint32_t pc = -1;
@@ -153,7 +147,7 @@ private:
   SmallVector<OpFoldResult> results;
 
   /// The values to use when exiting the interpreter.
-  SmallVector<Attribute> exitValues;
+  ArrayRef<Attribute> exitValues;
 };
 
 } // namespace M
