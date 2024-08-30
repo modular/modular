@@ -324,9 +324,7 @@ ErrorTreeOrSuccess
 BytecodeInterpreter::callFunctionBody(Region &body,
                                       ArrayRef<Attribute> arguments) {
   // Push a new frame.
-  StackFrame &newFrame =
-      stackIdx == stack.size() ? stack.emplace_back() : stack[stackIdx];
-  ++stackIdx;
+  StackFrame &newFrame = stack.push();
   newFrame.func = body.getParentOp();
   newFrame.numStackAllocs = 0;
   newFrame.numSymbolicAllocs = 0;
@@ -368,7 +366,7 @@ void BytecodeInterpreter::returnFromFunction(ArrayRef<Attribute> returnValues) {
   pc = frame.origin;
   didTransfer = true;
   bc = frame.originBc;
-  --stackIdx;
+  stack.pop();
 
   // If `bc` is null, this is return from the entry function.
   if (!bc) {
@@ -377,7 +375,7 @@ void BytecodeInterpreter::returnFromFunction(ArrayRef<Attribute> returnValues) {
     values = nullptr;
 #endif
     // Set the return values as the interpreter exit values.
-    exitValues = llvm::to_vector(returnValues);
+    exitValues = returnValues;
     return;
   }
 
@@ -455,7 +453,7 @@ void BytecodeInterpreter::mapResults(ArrayRef<Attribute> results) {
 
 ErrorTree BytecodeInterpreter::addStackTrace(ErrorTree err) {
   return addStackTraceImpl(
-      std::move(err), ArrayRef(stack).take_front(stackIdx),
+      std::move(err), stack.getArrayRef(),
       [](const StackFrame &frame) -> Operation * {
         if (frame.originBc)
           return frame.originBc->at<BCOperation>(frame.origin)->op;
@@ -465,16 +463,16 @@ ErrorTree BytecodeInterpreter::addStackTrace(ErrorTree err) {
 
 Operation *BytecodeInterpreter::getOrigin(size_t depth) {
   // Lookup the callee at `depth` and return it.
-  if (depth >= stackIdx)
+  if (depth >= stack.size())
     return nullptr;
-  StackFrame &frame = stack[stackIdx - 1 - depth];
+  StackFrame &frame = stack[stack.size() - 1 - depth];
   if (!frame.originBc)
     return nullptr;
   return frame.originBc->at<BCOperation>(frame.origin)->op;
 }
 
 void BytecodeInterpreter::resetExecutor() {
-  stackIdx = 0;
+  stack.clear();
   pc = -1;
   bc = nullptr;
   values = nullptr;
@@ -548,9 +546,10 @@ BytecodeInterpreter::interpretFunction(Region &body,
     didTransfer = false;
   }
 
-  if (LLVM_UNLIKELY(stackIdx)) {
+  if (LLVM_UNLIKELY(!stack.empty())) {
     llvm::report_fatal_error(
-        "exiting interpreter with remaining stack frames " + Twine(stackIdx));
+        "exiting interpreter with remaining stack frames " +
+        Twine(stack.size()));
   }
-  return std::move(exitValues);
+  return llvm::to_vector(exitValues);
 }

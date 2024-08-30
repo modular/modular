@@ -673,7 +673,7 @@ ErrorTreeOr<TypedAttr> InterpreterState::executeRegionWithResultSlot(
 
 ErrorTree IRInterpreter::addStackTrace(ErrorTree error) {
   return addStackTraceImpl(
-      std::move(error), ArrayRef(stack).take_front(stackIdx),
+      std::move(error), stack.getArrayRef(),
       [](const StackFrame &frame) { return frame.origin; });
 }
 
@@ -732,15 +732,16 @@ IRInterpreter::interpretFunction(Region &body, ArrayRef<Attribute> arguments) {
   }
 
   // The stack frame must be empty.
-  if (LLVM_UNLIKELY(stackIdx)) {
+  if (LLVM_UNLIKELY(!stack.empty())) {
     llvm::report_fatal_error(
-        "exiting interpreter with remaining stack frames " + Twine(stackIdx));
+        "exiting interpreter with remaining stack frames " +
+        Twine(stack.size()));
   }
   return std::move(exitValues);
 }
 
 Operation *IRInterpreter::getOrigin(size_t depth) {
-  if (depth >= stackIdx)
+  if (depth >= stack.size())
     return nullptr;
-  return stack[stackIdx - 1 - depth].origin;
+  return stack[stack.size() - 1 - depth].origin;
 }

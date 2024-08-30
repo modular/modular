@@ -70,6 +70,47 @@ private:
 };
 
 //===----------------------------------------------------------------------===//
+// SoftPopStack
+//===----------------------------------------------------------------------===//
+
+/// This class is a stack data structure that does not deallocate elements when
+/// `pop` is called. Instead, it keeps them alive so they can be re-used
+/// later on `push`. By virtually growing and shrinking the stack, we reduce
+/// memory pressure.
+template <typename T>
+class SoftPopStack {
+public:
+  size_t size() const { return idx; }
+  bool empty() const { return !idx; }
+  void clear() { idx = 0; }
+  void reserve(size_t capacity) { stack.reserve(capacity); }
+
+  T &back() {
+    assert(!empty() && "empty stack");
+    return stack[idx - 1];
+  }
+
+  T &operator[](size_t idx) {
+    assert(idx < size() && "index out of bounds");
+    return stack[idx];
+  }
+
+  void pop() { --idx; }
+
+  T &push() {
+    T &result = idx == stack.size() ? stack.emplace_back() : stack[idx];
+    ++idx;
+    return result;
+  }
+
+  ArrayRef<T> getArrayRef() const { return ArrayRef(stack).take_front(idx); }
+
+private:
+  SmallVector<T> stack;
+  size_t idx = 0;
+};
+
+//===----------------------------------------------------------------------===//
 // InterpreterState
 //===----------------------------------------------------------------------===//
 
@@ -439,11 +480,11 @@ private:
   void resetExecutor() override {
     block = nullptr;
     pc = Block::iterator();
-    stackIdx = 0;
+    stack.clear();
   }
 
   void notifyAllocationOnFrame(bool isSymbolic) override {
-    if (stackIdx) {
+    if (!stack.empty()) {
       StackFrame &frame = getCurrentFrame();
       if (isSymbolic)
         ++frame.numSymbolicAllocs;
@@ -483,15 +524,13 @@ private:
 
   /// Push a new stack frame.
   void pushFrame(Operation *origin, Operation *func) {
-    StackFrame &frame =
-        stackIdx == stack.size() ? stack.emplace_back() : stack[stackIdx];
+    StackFrame &frame = stack.push();
     // Initialize or re-initialize the frame. This avoids unnecessary memory
     // pressure from freeing and allocating the contained DenseMap.
     frame.origin = origin;
     frame.func = func;
     frame.numStackAllocs = 0;
     frame.numSymbolicAllocs = 0;
-    ++stackIdx;
   }
 
   /// Pop the current stack frame, returning the origin operation.
@@ -501,15 +540,11 @@ private:
     notifyReturnFromFrame(frame.numStackAllocs, frame.numSymbolicAllocs);
 
     Operation *origin = frame.origin;
-    // Soft-remove the frame from the stack.
-    --stackIdx;
+    stack.pop();
     return origin;
   }
 
-  StackFrame &getCurrentFrame() {
-    assert(!stack.empty() && "expected a stack frame");
-    return stack[stackIdx - 1];
-  }
+  StackFrame &getCurrentFrame() { return stack.back(); }
 
   /// Map a value to a constant value, overwriting the previous value if there
   /// was one.
@@ -534,8 +569,7 @@ private:
 
   /// A call stack. The values in the current frame are available to the
   /// operation being interpreted.
-  SmallVector<StackFrame, 32> stack;
-  size_t stackIdx = 0;
+  SoftPopStack<StackFrame> stack;
 
   /// Reused vector for operation operand values.
   SmallVector<Attribute> operands;
