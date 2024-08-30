@@ -38,10 +38,8 @@ from .utils import (
 struct PackMatrixRows[
     # original matrix shape list
     original_shape: DimList,
-    original_strides: DimList,
     # packed matrix shape list
     packed_shape: DimList,
-    packed_strides: DimList,
     type: DType,
     simd_size: Int,
     row_inner_size: Int,
@@ -52,9 +50,9 @@ struct PackMatrixRows[
     """
 
     # packed matrix
-    var packed_matrix: NDBuffer[type, 3, packed_shape, packed_strides]
+    var packed_matrix: NDBuffer[type, 3, packed_shape]
     # original matrix:
-    var original_matrix: NDBuffer[type, 2, original_shape, original_strides]
+    var original_matrix: NDBuffer[type, 2, original_shape]
     # offsets in original matrix
     var global_offset: StaticIntTuple[2]
     # number of Row and Col to pack.
@@ -69,8 +67,8 @@ struct PackMatrixRows[
     #  run the packing and store to the given buffer.
     @staticmethod
     fn run(
-        packed_matrix: NDBuffer[type, 3, packed_shape, packed_strides],
-        original_matrix: NDBuffer[type, 2, original_shape, original_strides],
+        packed_matrix: NDBuffer[type, 3, packed_shape],
+        original_matrix: NDBuffer[type, 2, original_shape],
         global_offset: StaticIntTuple[2],
         pack_tile_dim: StaticIntTuple[2],
         valid_data_dim: StaticIntTuple[2],
@@ -275,10 +273,8 @@ struct PackMatrixRows[
 struct PackMatrixCols[
     # original matrix shape list
     original_shape: DimList,
-    original_strides: DimList,
     # packed matrix shape list
     packed_shape: DimList,
-    packed_strides: DimList,
     type: DType,
     simd_size: Int,
     column_inner_size: Int,
@@ -291,9 +287,9 @@ struct PackMatrixCols[
     """
 
     # packed matrix
-    var packed_matrix: NDBuffer[type, 3, packed_shape, packed_strides]
+    var packed_matrix: NDBuffer[type, 3, packed_shape]
     # original matrix:
-    var original_matrix: NDBuffer[type, 2, original_shape, original_strides]
+    var original_matrix: NDBuffer[type, 2, original_shape]
     # offsets in original matrix:
     var global_offset: StaticIntTuple[2]
     # number of Row and Col to pack.
@@ -305,8 +301,8 @@ struct PackMatrixCols[
     # Interface function:
     @staticmethod
     fn run(
-        packed_matrix: NDBuffer[type, 3, packed_shape, packed_strides],
-        original_matrix: NDBuffer[type, 2, original_shape, original_strides],
+        packed_matrix: NDBuffer[type, 3, packed_shape],
+        original_matrix: NDBuffer[type, 2, original_shape],
         global_offset: StaticIntTuple[2],
         pack_tile_dim: StaticIntTuple[2],
         valid_data_dim: StaticIntTuple[2],
@@ -614,9 +610,11 @@ fn pack_b[
     a_type: DType,
     b_type: DType,
     c_type: DType,
+    src_shape: DimList,
+    dst_shape: DimList,
 ](
-    dst: NDBuffer[b_type, 2, *_],
-    src: NDBuffer[b_type, 2, *_],
+    dst: NDBuffer[b_type, 2, dst_shape],
+    src: NDBuffer[b_type, 2, src_shape],
     tile_n: Int,
     tile_k: Int,
 ):
@@ -666,9 +664,7 @@ fn pack_b[
                 var valid_k = min(tile_k2, k_in - idx_k)
                 var valid_n = min(tile_n, n_in - idx_n)
                 PackMatrixCols[
-                    src.shape,
-                    src.strides,
-                    DimList.create_unknown[3](),
+                    src_shape,
                     DimList.create_unknown[3](),
                     b_type,
                     simd_size,
@@ -711,9 +707,7 @@ fn pack_b[
                 var valid_k_t = min(tile_k, k_in_t - idx_k_t)
                 var valid_n_t = min(tile_n, n_in_t - idx_n_t)
                 PackMatrixRows[
-                    src.shape,
-                    src.strides,
-                    DimList.create_unknown[3](),
+                    src_shape,
                     DimList.create_unknown[3](),
                     b_type,
                     simd_size,
@@ -741,8 +735,8 @@ fn _pack_b_ndbuffer_impl[
     c_shape: DimList,
     transposed: Bool,
 ](
-    b_input: NDBuffer[b_type, 2, b_shape, *_],
-    output_buffer: NDBuffer[b_type, 2, *_],
+    b_input: NDBuffer[b_type, 2, b_shape],
+    output_buffer: NDBuffer[b_type, 2],
     kernel_type_m: Int,
 ):
     """Performs the layout transformation on `b_input` expected by
@@ -804,6 +798,8 @@ fn _pack_b_ndbuffer_impl[
                 a_type,
                 b_type,
                 c_type,
+                src_shape=b_shape,
+                dst_shape = DimList.create_unknown[2](),
             ](output_buffer, b_input, tile_n_k[0], tile_n_k[1])
 
         dispatch_get_kernel_type[dispatch_on_kernel_type](kernel_type_m, n, k)
@@ -817,10 +813,7 @@ fn pack_b_ndbuffer[
     b_shape: DimList,
     c_type: DType,
     c_shape: DimList,
-](
-    b_input: NDBuffer[b_type, 2, b_shape, *_],
-    output_buffer: NDBuffer[b_type, 2, *_],
-):
+](b_input: NDBuffer[b_type, 2, b_shape], output_buffer: NDBuffer[b_type, 2],):
     # NOTE `get_kernel_type` expects `m == 0` for dynamic M.
     var kernel_type_m = 0
 
@@ -871,7 +864,6 @@ struct BTileGenerator[
     b_type: DType,
     c_type: DType,
     shape: DimList,
-    strides: DimList,
     transpose_b: Bool,
     b_packed: Bool,
 ]:
@@ -881,9 +873,7 @@ struct BTileGenerator[
     Otherwise, calls to get_tile will copy a tile from B into a stack allocated
     scratch buffer and return a view of that."""
 
-    var b: NDBuffer[
-        b_type, 2, shape, strides
-    ]  # packed layout if b_packed is True
+    var b: NDBuffer[b_type, 2, shape]  # packed layout if b_packed is True
     var b_tile_stack_ptr: UnsafePointer[Scalar[b_type]]
     var tile_n_k: StaticIntTuple[2]
 
@@ -891,10 +881,10 @@ struct BTileGenerator[
     @always_inline
     @staticmethod
     fn get(
-        b: NDBuffer[b_type, 2, shape, strides], tile_n_k: StaticIntTuple[2]
+        b: NDBuffer[b_type, 2, shape], tile_n_k: StaticIntTuple[2]
     ) -> BTileGenerator[
-        config, a_type, b_type, c_type, shape, strides, transpose_b, b_packed
-    ] as result:
+        config, a_type, b_type, c_type, shape, transpose_b, b_packed
+    ]:
         var b_tile_stack_ptr = UnsafePointer[Scalar[b_type]]()
 
         debug_assert(
@@ -910,7 +900,9 @@ struct BTileGenerator[
                 alignof[SIMD[b_type, simdwidthof[b_type]()]](),
             ]()
 
-        return __type_of(result)(b, b_tile_stack_ptr, tile_n_k)
+        return BTileGenerator[
+            config, a_type, b_type, c_type, shape, transpose_b, b_packed
+        ](b, b_tile_stack_ptr, tile_n_k)
 
     fn get_tile[
         inner_size: Int
@@ -955,9 +947,7 @@ struct BTileGenerator[
         if transpose_b and not b_packed:
             PackMatrixRows[
                 shape,
-                strides,
                 config.packed_shape,
-                packed_b.strides,
                 b_type,
                 config.simd_size,
                 inner_size,
@@ -975,9 +965,7 @@ struct BTileGenerator[
         elif (not transpose_b) and (not b_packed):
             PackMatrixCols[
                 shape,
-                strides,
                 config.packed_shape,
-                packed_b.strides,
                 b_type,
                 config.simd_size,
                 inner_size,

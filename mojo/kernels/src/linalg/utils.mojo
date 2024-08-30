@@ -92,11 +92,11 @@ struct GemmShape:
     # Construct from dynamic shaped input.
     @staticmethod
     fn get[
-        transpose_b: Bool
+        transpose_b: Bool,
     ](
-        c: NDBuffer[_, 2, *_],
-        a: NDBuffer[_, 2, *_],
-        b: NDBuffer[_, 2, *_],
+        c: NDBuffer[_, 2, _],
+        a: NDBuffer[_, 2, _],
+        b: NDBuffer[_, 2, _],
     ) -> GemmShape:
         """Constructor of a gemm shape record from input buffers.
 
@@ -248,7 +248,7 @@ fn _get_tile_n_k[
     c_type: DType,
     kernel_cols: Int,
     transpose_b: Bool,
-](b: NDBuffer[_, 2, *_]) -> StaticIntTuple[2]:
+](b: NDBuffer[_, 2, _]) -> StaticIntTuple[2]:
     var tile_n_k: StaticIntTuple[2]
 
     @parameter
