@@ -139,12 +139,6 @@ def test_matmul[
     fn bench_fn_matmul():
         if kernel_type_m != 0:
             _matmul_cpu[
-                a_type,
-                a_shape,
-                b_type,
-                b_shape,
-                c_type,
-                c_shape,
                 transpose_b=transpose_b,
                 b_packed=b_packed,
                 elementwise_lambda_fn=epilogue_fn,
@@ -156,12 +150,6 @@ def test_matmul[
             )
         else:
             matmul[
-                a_type,
-                a_shape,
-                b_type,
-                b_shape,
-                c_type,
-                c_shape,
                 transpose_b=transpose_b,
                 b_packed=b_packed,
                 elementwise_lambda_fn=epilogue_fn,

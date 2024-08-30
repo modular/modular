@@ -140,25 +140,13 @@ def test_matmul[
 
     if kernel_type_m != 0:
         _matmul_cpu[
-            a_type,
-            a_shape,
-            b_type,
-            b_shape,
-            c_type,
-            c_shape,
-            transpose_b,
+            transpose_b=transpose_b,
             b_packed=b_packed,
             saturated_vnni=saturated,
         ](c, a, rebind[NDBuffer[b_type, 2, b_shape]](bp), kernel_type_m)
     else:
         matmul[
-            a_type,
-            a_shape,
-            b_type,
-            b_shape,
-            c_type,
-            c_shape,
-            transpose_b,
+            transpose_b=transpose_b,
             b_packed=b_packed,
             saturated_vnni=saturated,
         ](c, a, rebind[NDBuffer[b_type, 2, b_shape]](bp))

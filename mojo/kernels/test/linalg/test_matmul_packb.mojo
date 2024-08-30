@@ -30,8 +30,10 @@ fn pack_b(
     b: NDBuffer[type, 2, DimList(K, N)],
 ):
     PackMatrixCols[
-        DimList(K, N),
-        DimList(width // kernel_cols, K, kernel_cols),
+        b.shape,
+        b.strides,
+        packed_b.shape,
+        packed_b.strides,
         type,
         simd_size,
         kernel_cols,

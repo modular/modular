@@ -163,10 +163,13 @@ fn _mark_as_exclusive[
 fn gemv_kernel_vector[
     c_type: DType,
     c_shape: DimList,
+    c_strides: DimList,
     a_type: DType,
     a_shape: DimList,
+    a_strides: DimList,
     b_type: DType,
     b_shape: DimList,
+    b_strides: DimList,
     *,
     reduction_method: ReductionMethod,
     simd_width: UInt,
@@ -174,9 +177,9 @@ fn gemv_kernel_vector[
     elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
     s_type: DType = get_accum_type[c_type](),
 ](
-    c: NDBuffer[c_type, 2, c_shape],
-    a: NDBuffer[a_type, 2, a_shape],
-    b: NDBuffer[b_type, 2, b_shape],
+    c: NDBuffer[c_type, 2, shape=c_shape, strides=c_strides],
+    a: NDBuffer[a_type, 2, shape=a_shape, strides=a_strides],
+    b: NDBuffer[b_type, 2, shape=b_shape, strides=b_strides],
     m: UInt,
     n: UInt,
     k: UInt,
@@ -244,10 +247,14 @@ fn gemv_kernel_vector[
 fn gemv_split_k[
     c_type: DType,
     c_shape: DimList,
+    c_strides: DimList,
     a_type: DType,
     a_shape: DimList,
+    a_strides: DimList,
     b_type: DType,
     b_shape: DimList,
+    b_strides: DimList,
+    *,
     simd_width: UInt,
     tile_m: UInt,
     tile_n: UInt,
@@ -255,9 +262,9 @@ fn gemv_split_k[
     elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
     s_type: DType = get_accum_type[c_type](),
 ](
-    output: NDBuffer[c_type, 2, c_shape],
-    act: NDBuffer[a_type, 2, a_shape],
-    weight: NDBuffer[b_type, 2, b_shape],
+    output: NDBuffer[c_type, 2, shape=c_shape, strides=c_strides],
+    act: NDBuffer[a_type, 2, shape=a_shape, strides=a_strides],
+    weight: NDBuffer[b_type, 2, shape=b_shape, strides=b_strides],
     m: UInt,
     n: UInt,
     k: UInt,
@@ -412,16 +419,23 @@ fn gevm_kernel[
 
 fn gevm_tc_kernel_vector_8x[
     c_type: DType,
+    c_shape: DimList,
+    c_strides: DimList,
     a_type: DType,
+    a_shape: DimList,
+    a_strides: DimList,
     b_type: DType,
+    b_shape: DimList,
+    b_strides: DimList,
+    *,
     tile_size: Int,
     simd_width: Int,
     elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
     s_type: DType = get_accum_type[c_type](),
 ](
-    c: NDBuffer[c_type, 2],
-    a: NDBuffer[a_type, 2],
-    b: NDBuffer[b_type, 2],
+    c: NDBuffer[c_type, 2, shape=c_shape, strides=c_strides],
+    a: NDBuffer[a_type, 2, shape=a_shape, strides=a_strides],
+    b: NDBuffer[b_type, 2, shape=b_shape, strides=b_strides],
     m: UInt,
     n: UInt,
     k: UInt,
@@ -508,18 +522,21 @@ fn gevm_tc_kernel_vector_8x[
 
 @always_inline
 fn gemv_gpu[
-    a_type: DType,
-    a_shape: DimList,
-    b_type: DType,
-    b_shape: DimList,
     c_type: DType,
     c_shape: DimList,
+    c_strides: DimList,
+    a_type: DType,
+    a_shape: DimList,
+    a_strides: DimList,
+    b_type: DType,
+    b_shape: DimList,
+    b_strides: DimList, //,
     transpose_b: Bool = False,
     elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
 ](
-    c: NDBuffer[c_type, 2, c_shape],
-    a: NDBuffer[a_type, 2, a_shape],
-    b: NDBuffer[b_type, 2, b_shape],
+    c: NDBuffer[c_type, 2, shape=c_shape, strides=c_strides],
+    a: NDBuffer[a_type, 2, shape=a_shape, strides=a_strides],
+    b: NDBuffer[b_type, 2, shape=b_shape, strides=b_strides],
     ctx: DeviceContext,
 ) raises:
     var shape = GemmShape.get[transpose_b=False](c, a, b)
@@ -557,10 +574,13 @@ fn gemv_gpu[
                     gemv_kernel_vector[
                         c_type,
                         c_shape,
+                        c_strides,
                         a_type,
                         a_shape,
+                        a_strides,
                         b_type,
                         b_shape,
+                        b_strides,
                         simd_width=simd_width,
                         reduction_method = ReductionMethod.WARP,
                         elementwise_lambda_fn=elementwise_lambda_fn,
@@ -641,10 +661,13 @@ fn gemv_gpu[
                     gemv_kernel_vector[
                         c_type,
                         c_shape,
+                        c_strides,
                         b_type,
                         b_shape,
+                        b_strides,
                         a_type,
                         a_shape,
+                        a_strides,
                         simd_width=simd_width,
                         reduction_method = ReductionMethod.WARP,
                         transpose_b=transpose_b,
@@ -670,10 +693,13 @@ fn gemv_gpu[
                     gemv_split_k[
                         c_type,
                         c_shape,
+                        c_strides,
                         a_type,
                         a_shape,
+                        a_strides,
                         b_type,
                         b_shape,
+                        b_strides,
                         simd_width=simd_width,
                         tile_m=tile_m,
                         tile_n=tile_n,
@@ -757,10 +783,18 @@ fn gemv_gpu[
                 var gpu_func = ctx.compile_function[
                     gevm_tc_kernel_vector_8x[
                         c_type,
+                        c_shape,
+                        c_strides,
                         a_type,
+                        a_shape,
+                        a_strides,
                         b_type,
-                        WARP_SIZE * max_warps_per_block * simd_width,
-                        simd_width,
+                        b_shape,
+                        b_strides,
+                        tile_size = WARP_SIZE
+                        * max_warps_per_block
+                        * simd_width,
+                        simd_width=simd_width,
                         elementwise_lambda_fn=elementwise_lambda_fn,
                     ]
                 ]()
@@ -850,19 +884,9 @@ fn gemv_gpu[
 @always_inline
 fn gemv[
     parallelize: Bool,
-    c_size: Dim,
-    c_type: DType,
-    a_shape: DimList,
-    a_type: DType,
-    b_size: Dim,
-    b_type: DType,
     elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
-](
-    c_buf: Buffer[c_type, c_size],
-    a_buf: NDBuffer[a_type, 2, a_shape],
-    b_buf: Buffer[b_type, b_size],
-):
-    alias simd_width = simdwidthof[c_type]()
+](c_buf: Buffer, a_buf: NDBuffer[_, 2, *_], b_buf: Buffer):
+    alias simd_width = simdwidthof[c_buf.type]()
 
     var M = a_buf.dim[0]()
     var K = a_buf.dim[1]()
@@ -890,7 +914,7 @@ fn gemv[
             for i in range(width):
                 func[out_type, 1]((idx[0] + i, 0), value[i])
         else:
-            c_buf.store[width=width](idx[0], value.cast[c_type]())
+            c_buf.store(idx[0], value.cast[c_buf.type]())
 
     @always_inline
     @parameter
@@ -907,7 +931,7 @@ fn gemv[
             single_thread_blocking_override = not parallelize,
         ](
             Index(M, K),
-            init=Scalar[c_type](0),
+            init=Scalar[c_buf.type](0),
             reduce_dim=1,
         )
 

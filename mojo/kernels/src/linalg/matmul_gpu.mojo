@@ -733,9 +733,9 @@ fn _matmul_gpu[
     elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
     single_thread_blocking_override: Bool = False,
 ](
-    c: NDBuffer[_, 2, _],
-    a: NDBuffer[_, 2, _],
-    b: NDBuffer[_, 2, _],
+    c: NDBuffer[_, 2, *_],
+    a: NDBuffer[_, 2, *_],
+    b: NDBuffer[_, 2, *_],
     ctx: DeviceContext,
 ):
     # HACK HACK HACK https://github.com/modularml/modular/issues/22959
@@ -752,12 +752,6 @@ fn _matmul_gpu[
         @parameter
         if elementwise_lambda_fn:
             _matmul_gpu_dispatch[
-                a.type,
-                a.shape,
-                b.type,
-                b.shape,
-                c.type,
-                c.shape,
                 transpose_b=transpose_b,
                 use_tensor_core=use_tensor_core,
                 elementwise_lambda_fn=elementwise_lambda_fn,
@@ -765,12 +759,6 @@ fn _matmul_gpu[
 
         else:
             _matmul_gpu_dispatch[
-                a.type,
-                a.shape,
-                b.type,
-                b.shape,
-                c.type,
-                c.shape,
                 transpose_b=transpose_b,
                 use_tensor_core=use_tensor_core,
             ](c, a, b, ctx)
@@ -790,9 +778,9 @@ fn _matmul_gpu_dispatch[
     use_tensor_core: Bool = False,
     elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
 ](
-    c: NDBuffer[c_type, 2, c_shape],
-    a: NDBuffer[a_type, 2, a_shape],
-    b: NDBuffer[b_type, 2, b_shape],
+    c: NDBuffer[c_type, 2, c_shape, *_],
+    a: NDBuffer[a_type, 2, a_shape, *_],
+    b: NDBuffer[b_type, 2, b_shape, *_],
     ctx: DeviceContext,
 ) raises:
     var shape = GemmShape.get[transpose_b=False](c, a, b)
@@ -968,12 +956,6 @@ fn _matmul_gpu_dispatch[
         )
     elif n == 1 or m == 1:
         gemv_gpu[
-            a_type,
-            a_shape,
-            b_type,
-            b_shape,
-            c_type,
-            c_shape,
             transpose_b=transpose_b,
             elementwise_lambda_fn=elementwise_lambda_fn,
         ](c, a, b, ctx)
