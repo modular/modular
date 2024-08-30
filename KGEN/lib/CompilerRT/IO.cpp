@@ -4,8 +4,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "./Memory.h"
 #include "KGEN/CompilerRT/Registration.h"
+#include "Memory.h"
 #include "Support/AlignedAlloc.h"
 #include "llvm/Support/FileSystem.h"
 #include "llvm/Support/raw_ostream.h"

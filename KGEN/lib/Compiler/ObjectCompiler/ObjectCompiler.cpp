@@ -576,9 +576,6 @@ ObjectCompiler::lowerAllFuncsToLLVM(llvm::LLVMContext &ctx, ModuleOp module) {
       static_cast<llvm::dwarf::SourceLanguage>(options.debugInfoLanguage));
   llvmOptions.globalCtorFnName = ExecutionEngine::getGlobalCtorFnName();
   llvmOptions.globalDtorFnName = ExecutionEngine::getGlobalDtorFnName();
-  // Use KGENCompilerRT allocators.
-  llvmOptions.alignedAllocFnName = "KGEN_CompilerRT_AlignedAlloc";
-  llvmOptions.alignedFreeFnName = "KGEN_CompilerRT_AlignedFree";
 
   buildLowerToLLVMPipeline(mgr, llvmOptions);
 

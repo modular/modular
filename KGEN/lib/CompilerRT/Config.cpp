@@ -4,8 +4,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "./Memory.h"
 #include "KGEN/CompilerRT/Registration.h"
+#include "Memory.h"
 #include "Support/AlignedAlloc.h"
 #include "Support/Configuration.h"
 #include "Support/SymbolExport.h"

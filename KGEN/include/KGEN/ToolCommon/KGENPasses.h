@@ -214,16 +214,6 @@ struct LowerToLLVMOptions
           clEnumValN(llvm::dwarf::DW_LANG_Mojo, "Mojo", "Mojo language")),
       llvm::cl::init(llvm::dwarf::DW_LANG_Mojo)};
 
-  Option<std::string> alignedAllocFnName{
-      *this, "aligned-alloc-fn-name",
-      llvm::cl::desc("The name of the aligned allocator function"),
-      llvm::cl::init("kgenAlignedAlloc")};
-
-  Option<std::string> alignedFreeFnName{
-      *this, "aligned-free-fn-name",
-      llvm::cl::desc("The name of the aligned free function"),
-      llvm::cl::init("kgenAlignedFree")};
-
   Option<std::string> globalCtorFnName{
       *this, "global-ctor-fn-name",
       llvm::cl::desc("The name of the global init function in JIT mode."),
