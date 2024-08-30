@@ -202,12 +202,6 @@
       },
       {
         "category": "Mojo",
-        "command": "mojo.debugFileWithCudaGdb",
-        "icon": "$(debug-alt)",
-        "title": "Debug Mojo File With CUDA-GDB"
-      },
-      {
-        "category": "Mojo",
         "command": "mojo.magicSdk.install",
         "title": "Reinstall the MAX SDK for VS Code"
       },
@@ -242,10 +236,6 @@
         {
           "command": "mojo.debugFileInTerminal",
           "when": "resourceLangId == mojo && !virtualWorkspace && shellExecutionSupported"
-        },
-        {
-          "command": "mojo.debugFileWithCudaGdb",
-          "when": "resourceLangId == mojo && !virtualWorkspace"
         }
       ],
       "explorer/context/mojo": [
@@ -263,11 +253,6 @@
           "command": "mojo.debugFileInTerminal",
           "group": "2_debug@1",
           "when": "resourceLangId == mojo && !virtualWorkspace && shellExecutionSupported"
-        },
-        {
-          "command": "mojo.debugFileWithCudaGdb",
-          "group": "2_debug@2",
-          "when": "resourceLangId == mojo && !virtualWorkspace"
         }
       ],
       "editor/title/run": [
@@ -285,11 +270,6 @@
           "command": "mojo.debugFileInTerminal",
           "group": "navigation@3",
           "when": "resourceLangId == mojo && !isInDiffEditor && !virtualWorkspace && shellExecutionSupported"
-        },
-        {
-          "command": "mojo.debugFileWithCudaGdb",
-          "group": "navigation@4",
-          "when": "resourceLangId == mojo && !isInDiffEditor && !virtualWorkspace"
         }
       ]
     },
