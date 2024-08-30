@@ -10,9 +10,9 @@
 
 #include "KGEN/MojoParser/CallEmission.h"
 
+#include "ExprEmitter.h"
 #include "KGEN/MojoParser/ASTDecl.h"
 #include "KGEN/MojoParser/DeclResolver.h"
-#include "KGEN/MojoParser/ExprEmitter.h"
 #include "KGEN/MojoParser/ExprNodes.h"
 #include "KGEN/MojoParser/OverloadFitness.h"
 #include "KGEN/MojoParser/ParserParamEvaluator.h"
@@ -169,9 +169,9 @@ enum class CallKind { kMethod, kFunction, kIndirect };
 
 static CallKind getCallKind(CallSyntax syntax) {
   switch (syntax) {
-  case CallSyntax::kDirectCall:      //< f()
-  case CallSyntax::kTypeCall:        //< T()
-  case CallSyntax::kImplicitConvert: //< Conversion in an argument context
+  case CallSyntax::kDirectCall:       //< f()
+  case CallSyntax::kTypeCall:         //< T()
+  case CallSyntax::kImplicitConvert:  //< Conversion in an argument context
   case CallSyntax::kImplicitCopyInit: //< Implicit __copyinit__ call.
   case CallSyntax::kImplicitMoveInit: //< Implicit __moveinit__ call.
     return CallKind::kFunction;

@@ -9,12 +9,12 @@
 //===----------------------------------------------------------------------===//
 
 #include "KGEN/MojoParser/StructEmitter.h"
+#include "ExprEmitter.h"
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/LITDialect/LITUtils.h"
 #include "KGEN/MojoParser/ASTDecl.h"
 #include "KGEN/MojoParser/CallEmission.h"
 #include "KGEN/MojoParser/DeclResolver.h"
-#include "KGEN/MojoParser/ExprEmitter.h"
 #include "KGEN/MojoParser/ExprNodes.h"
 #include "KGEN/MojoParser/ParserBase.h"
 #include "KGEN/POPDialect/POPTypes.h"

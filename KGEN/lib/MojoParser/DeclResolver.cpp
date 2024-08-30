@@ -9,9 +9,9 @@
 //===----------------------------------------------------------------------===//
 
 #include "KGEN/MojoParser/DeclResolver.h"
+#include "ExprEmitter.h"
 #include "KGEN/MojoParser/ASTDecl.h"
 #include "KGEN/MojoParser/DocString.h"
-#include "KGEN/MojoParser/ExprEmitter.h"
 #include "KGEN/MojoParser/ParserBase.h"
 #include "KGEN/Support/CompilerProfiling.h"
 #include "MojoUtils.h"
