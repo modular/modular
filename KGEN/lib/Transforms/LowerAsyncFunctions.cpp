@@ -707,6 +707,30 @@ FuncOp LowerAsyncBuildContext::createColdResume(StringRef prefix, FuncOp funcOp,
   return resumeFunction;
 }
 
+static void walkVirtualBlocks(ArrayRef<Operation *> virtualBlocks,
+                              function_ref<void(Operation *)> callback) {
+  for (auto virtualBlock : virtualBlocks) {
+    Operation *current = virtualBlock;
+    // Frame inserts may have resulted in the virtual block boundary being off
+    // by the number of frame operands.
+    while (current->getPrevNode()) {
+      // A control flow node is a virtual block boundary
+      if (isa<HLCF::ControlFlowNode>(current->getPrevNode()))
+        break;
+      current = current->getPrevNode();
+    }
+
+    while (current) {
+      Operation *op = current;
+      current = current->getNextNode();
+      callback(op);
+      if (isa<SuspendOp, SuspendEndOp, HLCF::ControlFlowTerminator,
+              HLCF::ControlFlowNode>(op))
+        break;
+    }
+  }
+}
+
 void LowerAsyncBuildContext::populateHotResumeFrom(FuncOp original,
                                                    FuncOp resumeFunction,
                                                    COTypes &coTypes) {
@@ -714,7 +738,20 @@ void LowerAsyncBuildContext::populateHotResumeFrom(FuncOp original,
   resumeFunction.getBodyRegion().takeBody(original.getBodyRegion());
   insertFrameLoadsStores(resumeFunction, coTypes, errorValue, memoryResultValue,
                          Temp::Hot, /*loadFromFrame=*/true);
-  // (1) Replace arguments in parent control flow with constants.
+  // (1) Collect ops to remove.
+  SmallVector<Operation *> opsToRemove;
+  walkVirtualBlocks(
+      coTypes.getFrameData()->virtualBlocksFirstState, [&](Operation *op) {
+        if (isa<HLCF::ControlFlowTerminator>(op)) {
+          builder.setInsertionPoint(op);
+          for (auto [index, type] : llvm::enumerate(op->getOperandTypes()))
+            op->setOperand(index, builder.create<UndefOp>(type));
+        } else if (!isa<SuspendOp, SuspendEndOp>(op)) {
+          opsToRemove.push_back(op);
+        }
+      });
+
+  // (2) Replace arguments in parent control flow with constants.
   DenseSet<Operation *> parents;
   for (SuspendOp suspendOp : coTypes.getFrameData()->firstSuspends) {
     Operation *current = suspendOp->getParentOp();
@@ -737,37 +774,21 @@ void LowerAsyncBuildContext::populateHotResumeFrom(FuncOp original,
     }
   }
 
-  // (2) Remove the first state.
-  {
-    SmallVector<Operation *> opsToRemove;
-    for (auto virtualBlock : coTypes.getFrameData()->virtualBlocksFirstState) {
-      Operation *current = virtualBlock;
-      while (current) {
-        Operation *op = current;
-        current = current->getNextNode();
-        if (isa<HLCF::ControlFlowNode, SuspendOp, SuspendEndOp>(op))
-          break;
-        if (isa<HLCF::ControlFlowTerminator>(op)) {
-          builder.setInsertionPoint(op);
-          for (auto [index, type] : llvm::enumerate(op->getOperandTypes()))
-            op->setOperand(index, builder.create<UndefOp>(type));
-          break;
-        }
-        opsToRemove.push_back(op);
-      }
-    }
-    for (Operation *op : llvm::reverse(opsToRemove))
-      op->erase();
-
-    llvm::BitVector args(
-        resumeFunction.getBodyRegion().front().getNumArguments(), true);
-    args.reset(0);
-    resumeFunction.getBodyRegion().front().eraseArguments(args);
-    resumeFunction.setSignature(SignatureType::get(
-        builder.getContext(),
-        resumeFunction.getBodyRegion().front().getArgumentTypes(),
-        resumeFunction.getResultTypes()));
+  // (3) Remove the first state.
+  for (Operation *op : llvm::reverse(opsToRemove)) {
+    if (isa<HLCF::ControlFlowNode>(op) && parents.contains(op))
+      continue;
+    op->erase();
   }
+
+  llvm::BitVector args(resumeFunction.getBodyRegion().front().getNumArguments(),
+                       true);
+  args.reset(0);
+  resumeFunction.getBodyRegion().front().eraseArguments(args);
+  resumeFunction.setSignature(SignatureType::get(
+      builder.getContext(),
+      resumeFunction.getBodyRegion().front().getArgumentTypes(),
+      resumeFunction.getResultTypes()));
 }
 
 FuncOp LowerAsyncBuildContext::createSharedResume(StringRef prefix,
@@ -1821,6 +1842,10 @@ FrameData::FrameData(
         virtualBlocksFirstState.push_back(virtualBlock);
     }
   }
+  // If a dominates b then a should appear first.
+  llvm::sort(
+      virtualBlocksFirstState.begin(), virtualBlocksFirstState.end(),
+      [&](Operation *a, Operation *b) { return domInfo.dominates(a, b); });
 }
 
 //===----------------------------------------------------------------------===//
