@@ -11,7 +11,7 @@
 
 namespace M::DebugInfo {
 /// Adapter for NVPTX backend.
-TargetAdapter getNVPTXAdapter();
+TargetAdapter getNVPTXAdapter(bool tradeoffPerfForVariableDI);
 } // namespace M::DebugInfo
 
 #endif // SUPPORT_DEBUGINFODIALECT_DEBUGINFOTOLLVM_TARGET_NVPTXADAPTER_H

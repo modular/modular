@@ -46,7 +46,8 @@ void KGEN::buildLowerToLLVMPipeline(mlir::OpPassManager &pm,
   }
 
   // Run the LLVM lowering for debug info last.
-  pm.addPass(DebugInfo::createDebugInfoToLLVM());
+  pm.addPass(DebugInfo::createDebugInfoToLLVM(
+      {/*tradeoffPerfForVariableDI=*/options.optimizationLevel == 0}));
 }
 
 void KGEN::registerLowerToLLVMPipeline() {

@@ -20,16 +20,18 @@ namespace LLVM = mlir::LLVM;
 //===----------------------------------------------------------------------===//
 // TargetAdapter
 //===----------------------------------------------------------------------===//
-TargetAdapter DebugInfo::getTargetAdapter(M::TargetInfoAttr target) {
+TargetAdapter DebugInfo::getTargetAdapter(M::TargetInfoAttr target,
+                                          bool tradeoffPerfForVariableDI) {
   if (target && target.getTriple().isNVPTX())
-    return getNVPTXAdapter();
-  return getFallbackAdapter();
+    return getNVPTXAdapter(tradeoffPerfForVariableDI);
+  return getFallbackAdapter(tradeoffPerfForVariableDI);
 }
 
-TargetAdapter DebugInfo::getFallbackAdapter() {
+TargetAdapter DebugInfo::getFallbackAdapter(bool tradeoffPerfForVariableDI) {
   return TargetAdapter{populateFallbackConversionPatterns,
                        [](ModuleOp module) { sinkDebugKills(module); },
-                       convertDbgValueToDeclare};
+                       tradeoffPerfForVariableDI ? convertDbgValueToDeclare
+                                                 : [](ModuleOp module) {}};
 }
 
 //===----------------------------------------------------------------------===//

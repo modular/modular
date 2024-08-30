@@ -27,10 +27,11 @@ struct TargetAdapter {
 };
 
 /// Get the corresponding adapter for the target.
-TargetAdapter getTargetAdapter(M::TargetInfoAttr target);
+TargetAdapter getTargetAdapter(M::TargetInfoAttr target,
+                               bool tradeoffPerfForVariableDI);
 
 /// Default adapter for targets without a more specific adapter.
-TargetAdapter getFallbackAdapter();
+TargetAdapter getFallbackAdapter(bool tradeoffPerfForVariableDI);
 
 //===----------------------------------------------------------------------===//
 // Common Routines

@@ -14,4 +14,10 @@ def DebugInfoToLLVM : Pass<"convert-debuginfo-to-llvm", "mlir::ModuleOp"> {
   }];
 
   let dependentDialects = ["::mlir::LLVM::LLVMDialect"];
+
+  let options = [
+    Option<"tradeoffPerfForVariableDI", "tradeoff-perf", "bool", "false",
+           "If true, pass will attempt to maximally preserve debuginfo for "
+           "variables at the expense of runtime performance.">,
+  ];
 }

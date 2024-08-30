@@ -64,7 +64,8 @@ static void removeDebugKills(mlir::ModuleOp module) {
 // getNVPTXAdapter
 //===----------------------------------------------------------------------===//
 
-TargetAdapter DebugInfo::getNVPTXAdapter() {
+TargetAdapter DebugInfo::getNVPTXAdapter(bool tradeoffPerfForVariableDI) {
   return TargetAdapter{populateNVPTXConversionPatterns, removeDebugKills,
-                       convertDbgValueToDeclare};
+                       tradeoffPerfForVariableDI ? convertDbgValueToDeclare
+                                                 : [](ModuleOp module) {}};
 }
