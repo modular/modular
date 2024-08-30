@@ -61,9 +61,15 @@ from matmul_kernels import (
     run_cublas,
 )
 
+from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
+
 alias run_gemm_kernel_type = fn (
-    ctx: DeviceContext, a: LayoutTensor, b: LayoutTensor, c: LayoutTensor
-) raises -> Int
+    inout m: Bench,
+    ctx: DeviceContext,
+    a: LayoutTensor,
+    b: LayoutTensor,
+    c: LayoutTensor,
+) raises -> None
 
 
 struct test_matmul[
@@ -83,9 +89,8 @@ struct test_matmul[
     var b_device_buffer: DeviceBuffer[dtype]
     var c_device_buffer: DeviceBuffer[dtype]
     var c_device_buffer_ref: DeviceBuffer[dtype]
-    var dt_cublas: Int
 
-    fn __init__(inout self, ctx: DeviceContext) raises:
+    fn __init__(inout self, inout m: Bench, ctx: DeviceContext) raises:
         self.ctx = ctx
         self.M = a_layout.shape[0].value()
         self.N = b_layout.shape[1].value()
@@ -122,7 +127,8 @@ struct test_matmul[
             self.c_device_buffer_ref.ptr, 0, self.M * self.N, ctx.cuda_stream
         )
 
-        self.dt_cublas = run_cublas[dtype](
+        run_cublas[dtype](
+            m,
             ctx,
             self.M,
             self.N,
@@ -136,7 +142,7 @@ struct test_matmul[
             self.c_host_ref.tensor.data, self.c_device_buffer_ref
         )
 
-    fn run_test[gemm: run_gemm_kernel_type](self) raises:
+    fn run_test[gemm: run_gemm_kernel_type](self, inout m: Bench) raises:
         print("=== test_matmul")
 
         var ctx = self.ctx
@@ -166,21 +172,11 @@ struct test_matmul[
             self.M, self.N, self.c_device_buffer.ptr
         )
 
-        var dt = gemm(ctx, a, b, c)
+        gemm(m, ctx, a, b, c)
 
         ctx.enqueue_copy_from_device(
             self.c_host.tensor.data, self.c_device_buffer
         )
-
-        assert_almost_equal(
-            self.c_host_ref.tensor,
-            self.c_host.tensor,
-            atol=0.0001,
-            rtol=0.01,
-        )
-        print("Time Native: ", dt / 1e6, "ms", end=" ")
-        print("Time Cublas: ", self.dt_cublas / 1e6, "ms", end=" ")
-        print("Relative perf: ", self.dt_cublas / dt * 100, "%")
 
 
 def main():
@@ -188,11 +184,16 @@ def main():
     alias M = N
     alias K = M
 
+    var m = Bench()
+
     with DeviceContext() as ctx:
         alias a_layout = Layout.row_major(M, K)
         alias b_layout = Layout.row_major(K, N)
         alias c_layout = Layout.row_major(M, N)
-        var test = test_matmul[DType.float32, a_layout, b_layout, c_layout](ctx)
+
+        var test = test_matmul[DType.float32, a_layout, b_layout, c_layout](
+            m, ctx
+        )
 
         alias k1 = run_gemm_kernel_1[
             DType.float32, a_layout, b_layout, c_layout, 32, 32
@@ -214,8 +215,10 @@ def main():
             DType.float32, a_layout, b_layout, c_layout, 128, 128, 8, 8, 8
         ]
 
-        test.run_test[k1]()
-        test.run_test[k2]()
-        test.run_test[k3]()
-        test.run_test[k4]()
-        test.run_test[k5]()
+        test.run_test[k1](m)
+        test.run_test[k2](m)
+        test.run_test[k3](m)
+        test.run_test[k4](m)
+        test.run_test[k5](m)
+
+    m.dump_report()

@@ -30,6 +30,7 @@ from gpu.cublas.cublas import (
     cublasDestroy,
 )
 from linalg.cublas import cublas_matmul
+from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
 
 
 alias NWARMUP = 1
@@ -38,16 +39,26 @@ alias NRUN = 1
 
 fn time_kernel[
     func: fn (DeviceContext) raises capturing -> None
-](ctx: DeviceContext) raises -> Int:
-    for _ in range(NWARMUP):
-        func(ctx)
-    var dt = ctx.execution_time[func](NRUN) // NRUN
-    return dt
+](inout m: Bench, ctx: DeviceContext, size: Int, kernel_name: String) raises:
+    @parameter
+    @always_inline
+    fn bench_func(inout m: Bencher):
+        @parameter
+        @always_inline
+        fn kernel_launch(ctx: DeviceContext, iteration: Int) raises:
+            func(ctx)
+
+        m.iter_custom[kernel_launch](ctx)
+
+    m.bench_function[bench_func](
+        BenchId(kernel_name), ThroughputMeasure(BenchMetric.elements, 2 * size)
+    )
 
 
 fn run_cublas[
     dtype: DType
 ](
+    inout m: Bench,
     ctx: DeviceContext,
     M: Int,
     N: Int,
@@ -55,9 +66,7 @@ fn run_cublas[
     a: UnsafePointer[Scalar[dtype]],
     b: UnsafePointer[Scalar[dtype]],
     c: UnsafePointer[Scalar[dtype]],
-) raises -> Int:
-    var handle = UnsafePointer[cublasContext]()
-    check_cublas_error(cublasCreate(UnsafePointer.address_of(handle)))
+) raises:
     var a_device = NDBuffer[dtype, 2](a, DimList(M, K))
     var b_device = NDBuffer[dtype, 2](b, DimList(K, N))
     var c_device_ref = NDBuffer[dtype, 2](
@@ -65,26 +74,35 @@ fn run_cublas[
         DimList(M, N),
     )
 
+    var handle = UnsafePointer[cublasContext]()
+    check_cublas_error(cublasCreate(UnsafePointer.address_of(handle)))
+
+    @parameter
     @__copy_capture(c_device_ref, a_device, b_device)
     @always_inline
-    @parameter
-    fn run_func(ctx: DeviceContext) raises:
-        check_cublas_error(
-            cublas_matmul(
-                handle,
-                c_device_ref,
-                a_device,
-                b_device,
-                c_row_major=True,
-                transpose_b=False,
+    fn bench_func(inout m: Bencher):
+        @parameter
+        @__copy_capture(c_device_ref, a_device, b_device)
+        @always_inline
+        fn kernel_launch():
+            check_cublas_error(
+                cublas_matmul(
+                    handle,
+                    c_device_ref,
+                    a_device,
+                    b_device,
+                    c_row_major=True,
+                    transpose_b=False,
+                )
             )
-        )
 
-    for _ in range(NWARMUP):
-        run_func(ctx)
-    var dt = ctx.execution_time[run_func](NRUN) // NRUN
+        m.iter[kernel_launch]()
+
+    m.bench_function[bench_func](
+        BenchId("cublas"),
+        ThroughputMeasure(BenchMetric.elements, 2 * M * N * K),
+    )
     check_cublas_error(cublasDestroy(handle))
-    return dt
 
 
 fn gemm_kernel_1[
@@ -121,13 +139,16 @@ fn run_gemm_kernel_1[
     BM: Int,
     BN: Int,
 ](
+    inout m: Bench,
     ctx: DeviceContext,
     a: LayoutTensor,
     b: LayoutTensor,
     c: LayoutTensor,
-) raises -> Int:
-    var M = a.dim(0)
-    var N = b.dim(1)
+) raises:
+    var M = a.shape[0]()
+    var N = b.shape[1]()
+    var K = a.shape[1]()
+
     var func = ctx.compile_function[
         gemm_kernel_1[dtype, a.layout, b.layout, c.layout, BM, BN]
     ]()
@@ -144,9 +165,8 @@ fn run_gemm_kernel_1[
             block_dim=(BN, BM),
         )
 
-    var dt = time_kernel[run_func](ctx)
+    time_kernel[run_func](m, ctx, M * N * K, "naive")
     _ = func^
-    return dt
 
 
 fn gemm_kernel_2[
@@ -184,13 +204,16 @@ fn run_gemm_kernel_2[
     BM: Int,
     BN: Int,
 ](
+    inout m: Bench,
     ctx: DeviceContext,
     a: LayoutTensor,
     b: LayoutTensor,
     c: LayoutTensor,
-) raises -> Int:
-    var M = a.dim(0)
-    var N = b.dim(1)
+) raises:
+    var M = a.shape[0]()
+    var N = b.shape[1]()
+    var K = a.shape[1]()
+
     var func = ctx.compile_function[
         gemm_kernel_2[dtype, a.layout, b.layout, c.layout, BM, BN]
     ]()
@@ -207,9 +230,8 @@ fn run_gemm_kernel_2[
             block_dim=(BN, BM),
         )
 
-    var dt = time_kernel[run_func](ctx)
+    time_kernel[run_func](m, ctx, M * N * K, "mem_coalesce")
     _ = func^
-    return dt
 
 
 fn gemm_kernel_3[
@@ -268,13 +290,16 @@ fn run_gemm_kernel_3[
     BN: Int,
     BK: Int,
 ](
+    inout m: Bench,
     ctx: DeviceContext,
     a: LayoutTensor,
     b: LayoutTensor,
     c: LayoutTensor,
-) raises -> Int:
-    var M = a.dim(0)
-    var N = b.dim(1)
+) raises:
+    var M = a.shape[0]()
+    var N = b.shape[1]()
+    var K = a.shape[1]()
+
     var func = ctx.compile_function[
         gemm_kernel_3[dtype, a.layout, b.layout, c.layout, BM, BN, BK, BM * BN]
     ]()
@@ -291,9 +316,8 @@ fn run_gemm_kernel_3[
             block_dim=(BM * BN),
         )
 
-    var dt = time_kernel[run_func](ctx)
+    time_kernel[run_func](m, ctx, M * N * K, "shared_mem")
     _ = func^
-    return dt
 
 
 fn gemm_kernel_4[
@@ -361,13 +385,16 @@ fn run_gemm_kernel_4[
     BK: Int,
     TM: Int,
 ](
+    inout m: Bench,
     ctx: DeviceContext,
     a: LayoutTensor,
     b: LayoutTensor,
     c: LayoutTensor,
-) raises -> Int:
-    var M = a.dim(0)
-    var N = b.dim(1)
+) raises:
+    var M = a.shape[0]()
+    var N = b.shape[1]()
+    var K = a.shape[1]()
+
     alias NUM_THREADS = (BM * BN) // TM
     var func = ctx.compile_function[
         gemm_kernel_4[
@@ -387,9 +414,8 @@ fn run_gemm_kernel_4[
             block_dim=(NUM_THREADS),
         )
 
-    var dt = time_kernel[run_func](ctx)
+    time_kernel[run_func](m, ctx, M * N * K, "1d_blocktiling")
     _ = func^
-    return dt
 
 
 fn gemm_kernel_5[
@@ -467,13 +493,16 @@ fn run_gemm_kernel_5[
     TM: Int,
     TN: Int,
 ](
+    inout m: Bench,
     ctx: DeviceContext,
     a: LayoutTensor,
     b: LayoutTensor,
     c: LayoutTensor,
-) raises -> Int:
-    var M = a.dim(0)
-    var N = b.dim(1)
+) raises:
+    var M = a.shape[0]()
+    var N = b.shape[1]()
+    var K = a.shape[1]()
+
     alias NUM_THREADS = (BM * BN) // (TM * TN)
     var func = ctx.compile_function[
         gemm_kernel_5[
@@ -493,6 +522,5 @@ fn run_gemm_kernel_5[
             block_dim=(NUM_THREADS),
         )
 
-    var dt = time_kernel[run_func](ctx)
+    time_kernel[run_func](m, ctx, M * N * K, "2d_blocktiling")
     _ = func^
-    return dt
