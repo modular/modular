@@ -2142,10 +2142,13 @@ from linalg.utils import (
 fn matmul[
     a_type: DType,
     input_0_static_shape: DimList,
+    input_0_static_strides: DimList,
     b_type: DType,
     input_1_static_shape: DimList,
+    input_1_static_strides: DimList,
     c_type: DType,
     input_2_static_shape: DimList,
+    input_2_static_strides: DimList,
     transpose_in_1: Bool,  # matches name of MO attribute
     packed_in_1: Bool,
     single_thread_blocking_override: Bool,
@@ -2156,9 +2159,9 @@ fn matmul[
     /,
     target: StringLiteral = "cpu",
 ](
-    a: NDBuffer[a_type, 2, input_0_static_shape],
-    b: NDBuffer[b_type, 2, input_1_static_shape],
-    c: NDBuffer[c_type, 2, input_2_static_shape],
+    a: NDBuffer[a_type, 2, input_0_static_shape, input_0_static_strides],
+    b: NDBuffer[b_type, 2, input_1_static_shape, input_1_static_strides],
+    c: NDBuffer[c_type, 2, input_2_static_shape, input_2_static_strides],
     ctx: MojoCallContextPtr,
 ) raises:
     alias transpose_a = False
@@ -2201,12 +2204,6 @@ fn matmul[
         "mojo.matmul", Trace[TraceLevel.OP]._get_detail_str[description_fn]()
     ):
         _matmul[
-            a_type,
-            input_0_static_shape,
-            b_type,
-            input_1_static_shape,
-            c_type,
-            input_2_static_shape,
             transpose_a,
             transpose_b,
             b_packed,
