@@ -573,8 +573,6 @@ fn multistage_gemm[
     ) if swizzle_block else Index(int(BlockIdx.x()), int(BlockIdx.y()))
 
     # Coordinates of the current warp.
-    var warp_x: UInt
-    var warp_y: UInt
     warp_y, warp_x = divmod(tid // WARP_SIZE, num_warps_n)
 
     # Prepare circular shared memory buffer for A and B.
