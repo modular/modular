@@ -298,6 +298,8 @@ fn xor_3bits_per16T[type: DType](tid: Scalar[type]) -> Scalar[type]:
     return Swizzle[3, 0, 4]()(tid)
 
 
+@value
+@register_passable("trivial")
 struct SwizzleEx(LayoutTrait, Stringable, Formattable):
     var bits: Int
     var base: Int
@@ -322,14 +324,6 @@ struct SwizzleEx(LayoutTrait, Stringable, Formattable):
         self.zzz_mask = ((1 << self.bits) - 1) << (
             self.base - min(0, self.shift)
         )
-
-    @always_inline
-    fn __copyinit__(inout self, other: Self):
-        self.bits = other.bits
-        self.base = other.base
-        self.shift = other.shift
-        self.yyy_mask = other.yyy_mask
-        self.zzz_mask = other.zzz_mask
 
     @always_inline
     fn __call__(self, index: IntTuple) -> Int:

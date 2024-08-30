@@ -26,7 +26,7 @@ from .runtime_layout import RuntimeLayout
 from .runtime_layout import coalesce as runtime_coalesce
 from .runtime_layout import make_layout as make_runtime_layout
 from .runtime_tuple import RuntimeTuple
-from .swizzle import xor_2bits_per8T, xor_3bits_per16T
+from .swizzle import SwizzleEx, make_ldmatrix_swizzleex
 
 
 # Distribute thread_layout into data_layout, if axis is provided
@@ -1304,7 +1304,7 @@ struct LayoutTensor[
     fn distribute[
         threads_layout: Layout,
         axis: Optional[Int] = None,
-        swizzle: Optional[_swizzle_signature] = None,
+        swizzle: Optional[SwizzleEx] = None,
         submode_axis: Optional[Int] = None,
     ](self, thread_id: UInt) -> LayoutTensor[
         dtype,
@@ -1466,8 +1466,7 @@ struct LayoutTensor[
             if swizzle:
                 alias swizzle_fn = swizzle.value()
                 swizzled_offset = (
-                    swizzle_fn[Self.index_type](offset // self.element_size)
-                    * self.element_size
+                    swizzle_fn(offset // self.element_size) * self.element_size
                 )
 
             return __type_of(result)(
@@ -2402,7 +2401,7 @@ fn copy_dram_to_sram[
     dst_thread_layout: Layout,
     src_element_layout: Layout,
     dst_element_layout: Layout,
-    swizzle: Optional[_swizzle_signature] = None,
+    swizzle: Optional[SwizzleEx] = None,
 ](
     dst: LayoutTensor[
         dtype,
@@ -2434,7 +2433,7 @@ fn copy_dram_to_sram[
     thread_layout: Layout,
     src_element_layout: Layout,
     dst_element_layout: Layout,
-    swizzle: Optional[_swizzle_signature] = None,
+    swizzle: Optional[SwizzleEx] = None,
 ](
     dst: LayoutTensor[
         dtype,
@@ -2501,10 +2500,16 @@ fn copy_dram_to_sram_async[
         "Only support swizzle for 4 or 8 ways conflict.",
     ]()
 
-    alias swizzle_option0 = Optional[_swizzle_signature](xor_2bits_per8T)
-    alias swizzle_option1 = Optional[_swizzle_signature](xor_3bits_per16T)
+    constrained[
+        (swizzle and row_size in (16, 32, 64, 128, 256)) or not swizzle,
+        (
+            "Only support 2^4-2^8 elements per row in shared memory tile for"
+            " async copy with swizzling."
+        ),
+    ]()
+
     alias swizzle_option = None if not swizzle else (
-        swizzle_option0 if conflict_ways == 4 else swizzle_option1
+        Optional[SwizzleEx](make_ldmatrix_swizzleex[dtype, row_size]())
     )
 
     var src_fragments = src.distribute[src_thread_layout](ThreadIdx.x())
@@ -2567,12 +2572,17 @@ fn copy_dram_to_sram_async[
         "Only support swizzle for 4 or 8 ways conflict.",
     ]()
 
-    alias swizzle_option0 = Optional[_swizzle_signature](xor_2bits_per8T)
-    alias swizzle_option1 = Optional[_swizzle_signature](xor_3bits_per16T)
-    alias swizzle_option = None if not swizzle else (
-        swizzle_option0 if conflict_ways == 4 else swizzle_option1
-    )
+    constrained[
+        (swizzle and row_size in (16, 32, 64, 128, 256)) or not swizzle,
+        (
+            "Only support 2^4-2^8 elements per row in shared memory tile for"
+            " async copy with swizzling."
+        ),
+    ]()
 
+    alias swizzle_option = None if not swizzle else (
+        Optional[SwizzleEx](make_ldmatrix_swizzleex[dtype, row_size]())
+    )
     var src_fragments = src.distribute[src_thread_layout](ThreadIdx.x())
     var dst_fragments = dst.distribute[
         dst_thread_layout, swizzle=swizzle_option
@@ -2672,7 +2682,7 @@ fn copy_sram_to_dram[
     thread_layout: Layout,
     src_element_layout: Layout,
     dst_element_layout: Layout,
-    swizzle: Optional[_swizzle_signature] = None,
+    swizzle: Optional[SwizzleEx] = None,
 ](
     dst: LayoutTensor[
         dst_type,
@@ -2748,7 +2758,7 @@ fn copy_sram_to_dram[
     thread_layout: Layout,
     src_element_layout: Layout,
     dst_element_layout: Layout,
-    swizzle: Optional[_swizzle_signature] = None,
+    swizzle: Optional[SwizzleEx] = None,
 ](
     dst: LayoutTensor[
         dst_type,
