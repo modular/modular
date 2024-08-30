@@ -23,7 +23,7 @@ fn reshape[
     output_rank: Int,
     single_thread_blocking_override: Bool = True,
 ](
-    input: NDBuffer[type, rank],
+    input: NDBuffer[type, rank, *_],
     new_shape: StaticIntTuple[output_rank],
 ) -> NDBuffer[type, output_rank]:
     var stride_tuple = StaticIntTuple[output_rank]()

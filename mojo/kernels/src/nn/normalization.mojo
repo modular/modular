@@ -439,13 +439,17 @@ fn layer_norm_gpu_block[
 
 
 fn layer_norm_reshape[
-    type: DType, rank: Int, output_rank: Int
+    type: DType, rank: Int, //, output_rank: Int
 ](
     shape: StaticIntTuple[rank],
-    buf: NDBuffer[type, rank],
+    buf: NDBuffer[type, rank, *_],
 ) -> NDBuffer[
     type, output_rank
-]:
+] as result:
+    @parameter
+    if rank == output_rank:
+        return rebind[__type_of(result)](buf)
+
     var last_dim = shape[rank - 1]
     var prod_all_but_last_dim = shape.flattened_length() // last_dim
     var new_shape = StaticIntTuple[output_rank](prod_all_but_last_dim, last_dim)
@@ -455,12 +459,12 @@ fn layer_norm_reshape[
 
 fn rms_norm_gpu[
     type: DType,
-    rank: Int,
+    rank: Int, //,
 ](
     shape: StaticIntTuple[rank],
     gamma: NDBuffer[type, 1],
     epsilon: Scalar[type],
-    output: NDBuffer[type, rank],
+    output: NDBuffer[type, rank, *_],
     ctx: DeviceContext,
 ) raises:
     if rank == 0:
@@ -472,7 +476,7 @@ fn rms_norm_gpu[
         return
 
     alias rank_rs = 2
-    var output_rs = layer_norm_reshape[type, rank, rank_rs](shape, output)
+    var output_rs = layer_norm_reshape[rank_rs](shape, output)
     var rows = output_rs.dim[0]()
     var cols = output_rs.dim[1]()
 
@@ -527,18 +531,18 @@ fn rms_norm_gpu[
 
 fn layer_norm_gpu[
     type: DType,
+    rank: Int, //,
     input_0_fn: fn[_width: Int, _rank: Int] (
         StaticIntTuple[_rank]
     ) capturing -> SIMD[type, _width],
     input_1_fn: fn[_width: Int, _rank: Int] (
         StaticIntTuple[_rank]
     ) capturing -> SIMD[type, _width],
-    rank: Int,
 ](
     shape: StaticIntTuple[rank],
     beta: NDBuffer[type, 1],
     epsilon: Scalar[type],
-    output: NDBuffer[type, rank],
+    output: NDBuffer[type, rank, *_],
     ctx: DeviceContext,
 ) raises:
     if rank == 0:
@@ -550,7 +554,7 @@ fn layer_norm_gpu[
         return
 
     alias rank_rs = 2
-    var output_rs = layer_norm_reshape[type, rank, rank_rs](shape, output)
+    var output_rs = layer_norm_reshape[rank_rs](shape, output)
     var rows = output_rs.dim[0]()
     var cols = output_rs.dim[1]()
 
@@ -690,18 +694,18 @@ fn layer_norm_cpu[
 
 fn layer_norm_cpu[
     type: DType,
+    rank: Int, //,
     input_0_fn: fn[_width: Int, _rank: Int] (
         StaticIntTuple[_rank]
     ) capturing -> SIMD[type, _width],
     gamma_fn: fn[_width: Int, _rank: Int] (
         StaticIntTuple[_rank]
     ) capturing -> SIMD[type, _width],
-    rank: Int,
 ](
     shape: StaticIntTuple[rank],
     beta: NDBuffer[type, 1],
     epsilon: Scalar[type],
-    output: NDBuffer[type, rank],
+    output: NDBuffer[type, rank, *_],
 ):
     @always_inline
     @parameter
@@ -761,20 +765,20 @@ fn layer_norm_cpu[
 
 fn layer_norm[
     type: DType,
+    rank: Int, //,
     input_0_fn: fn[_width: Int, _rank: Int] (
         StaticIntTuple[_rank]
     ) capturing -> SIMD[type, _width],
     input_1_fn: fn[_width: Int, _rank: Int] (
         StaticIntTuple[_rank]
     ) capturing -> SIMD[type, _width],
-    rank: Int,
     target: StringLiteral = "cpu",
 ](
     shape: StaticIntTuple[rank],
     gamma_shape: StaticIntTuple[1],
     beta: NDBuffer[type, 1],
     epsilon: Scalar[type],
-    output: NDBuffer[type, rank],
+    output: NDBuffer[type, rank, *_],
     ctx: MojoCallContextPtr = MojoCallContextPtr(),
 ) raises:
     # Note: we only support reduction along the last dimension
@@ -792,11 +796,9 @@ fn layer_norm[
 
     @parameter
     if target == "cpu":
-        layer_norm_cpu[type, input_0_fn, input_1_fn](
-            shape, beta, epsilon, output
-        )
+        layer_norm_cpu[input_0_fn, input_1_fn](shape, beta, epsilon, output)
     elif "cuda" in target:
-        layer_norm_gpu[type, input_0_fn, input_1_fn, rank](
+        layer_norm_gpu[input_0_fn, input_1_fn](
             shape, beta, epsilon, output, ctx.get_device_context()
         )
     else:
