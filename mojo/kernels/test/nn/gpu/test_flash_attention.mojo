@@ -278,6 +278,24 @@ def main():
             against_gpu_naive=True,
         ](1024, 1024, ctx, is_benchmark())
 
+        test[
+            3,
+            DType.float32,
+            DType.float32,
+            128,
+            3,
+            against_gpu_naive=True,
+        ](14, 14, ctx, is_benchmark())
+
+        test[
+            3,
+            DType.float32,
+            DType.float32,
+            128,
+            1,
+            against_gpu_naive=True,
+        ](178, 178, ctx, is_benchmark())
+
         # bf16 depth == 128, bf16-fp32 mma
         test[
             4,
@@ -324,6 +342,45 @@ def main():
             group=3,
             against_gpu_naive=True,
         ](1024, 1024, ctx)
+
+        # BF16 with sequence length not multiple of 128
+        test[
+            4,
+            DType.bfloat16,
+            DType.float32,
+            128,
+            3,
+            group=3,
+            against_gpu_naive=True,
+        ](64, 64, ctx)
+
+        test[
+            4,
+            DType.bfloat16,
+            DType.bfloat16,
+            128,
+            3,
+            group=3,
+            against_gpu_naive=True,
+        ](102, 102, ctx)
+
+        test[
+            3,
+            DType.bfloat16,
+            DType.float32,
+            128,
+            1,
+            against_gpu_naive=True,
+        ](14, 14, ctx)
+
+        test[
+            3,
+            DType.bfloat16,
+            DType.bfloat16,
+            128,
+            1,
+            against_gpu_naive=True,
+        ](528, 528, ctx)
 
         # BF16 token gen
         test[

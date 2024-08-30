@@ -402,7 +402,7 @@ fn flash_attention_impl[
             # num warps in M and N, multipled by warp size.
             alias num_threads = (BM // WM) * (BN // WN) * WARP_SIZE
 
-            if seq_len == num_keys and seq_len % 128 == 0:
+            if seq_len == num_keys and seq_len % 2 == 0:
                 var func = ctx.compile_function[
                     mha[
                         mask_rank,
@@ -764,6 +764,9 @@ fn mha_single_batch[
         q_type, Layout(IntTuple(BM, depth), IntTuple(num_heads * depth, 1))
     ](q_ptr + q_offset)
     var q_gmem_iter = q_gmem_block.tiled_iterator[BM, BK, axis=1](0, 0)
+    # q tile has valid shape q_tile_num_rows x depth
+    # q_tile_num_rows could be less than BM when seqlen % BM != 0
+    var q_tile_num_rows = min(BM, seq_len - q_tile_idx * BM)
 
     alias mma_shape = get_mma_shape[q_type, get_accum_type[q_type]()]()
     alias MMA_M = mma_shape[0]
@@ -816,8 +819,9 @@ fn mha_single_batch[
     var mask_offset = q_tile_idx * BM * seq_len + (
         Int(head_idx * seq_len * seq_len) if mask_rank == 4 else 0
     )
-    var warp_offset = warp_y * WM * seq_len + warp_x * WN
-    var mask_warp_ptr = mask_ptr + Int(mask_offset) + Int(warp_offset)
+    var mask_tile_ptr = mask_ptr + mask_offset
+    var mask_warp_row = warp_y * WM
+    var mask_warp_col = warp_x * WN
 
     # Account for group query.
     alias kv_num_heads = num_heads // group
@@ -835,6 +839,8 @@ fn mha_single_batch[
             Layout(IntTuple(BN, depth), IntTuple(kv_num_heads * depth, 1)),
         ](v_ptr + kv_offset + kv_tile_start_row * kv_num_heads * depth)
         var v_gmem_iter = v_gmem_block.tiled_iterator[BK, BN, axis=0](0, 0)
+
+        var kv_tile_num_rows = min(BN, seq_len - kv_tile_start_row)
 
         _ = p_reg_tile.fill(0)
 
@@ -859,6 +865,8 @@ fn mha_single_batch[
                 k_smem_iter,
                 depth // BK,
                 next_op_b_iter=v_gmem_iter.bitcast[k_type](),
+                num_a_rows=Int(q_tile_num_rows),
+                num_b_rows=Int(kv_tile_num_rows),
             )
         # Subsequent iterations just use q in share memory.
         # TODO: Figure out a better function interface instead of passing in
@@ -884,6 +892,8 @@ fn mha_single_batch[
                 k_smem_iter,
                 depth // BK,
                 next_op_b_iter=v_gmem_iter.bitcast[k_type](),
+                num_a_rows=Int(q_tile_num_rows),
+                num_b_rows=Int(kv_tile_num_rows),
             )
 
         # Increment V iterator since it's prefetched inside 1st matmul.
@@ -899,31 +909,46 @@ fn mha_single_batch[
 
             @parameter
             for n_mma in range(num_n_mmas):
-                var frag_offset = m_mma * MMA_M * seq_len + n_mma * MMA_N
-                var mask_frag_ptr = mask_warp_ptr + frag_offset
+                alias mma_id = n_mma * num_m_mmas + m_mma
 
-                var frag_lane_row = int(lane // (MMA_N // p_frag_simdwidth))
-                var frag_lane_col = int(lane * p_frag_simdwidth % MMA_N)
+                # Coordinates in mask for current mma tile.
+                var mask_frag_row = mask_warp_row + m_mma * MMA_M
+                var mask_frag_col = mask_warp_col + n_mma * MMA_N
+
+                # Offset to current thread's fragment
+                mask_frag_row += lane // (MMA_N // p_frag_simdwidth)
+                mask_frag_col += lane * p_frag_simdwidth % MMA_N
 
                 alias mask_align = alignof[SIMD[mask_type, p_frag_simdwidth]]()
 
                 @parameter
                 for i in range(2):
-                    var mask_vec = (
-                        mask_frag_ptr
-                        + (frag_lane_row + i * MMA_M // 2) * seq_len
-                        + frag_lane_col
-                    ).load[width=p_frag_simdwidth, alignment=mask_align]()
+                    # The intermeidate result is logically BM x BN.
+                    # The overall mask tensor is seqlen x seqlen, some remainder tiles
+                    # may not fit in BM x BN.
+                    if mask_frag_row < seq_len and mask_frag_col < seq_len:
+                        var mask_vec = (
+                            mask_tile_ptr
+                            + (mask_frag_row + i * MMA_M // 2) * seq_len
+                            + mask_frag_col
+                        ).load[width=p_frag_simdwidth, alignment=mask_align]()
 
-                    p_reg_vec2[n_mma * num_m_mmas + m_mma, i] = p_reg_vec2[
-                        n_mma * num_m_mmas + m_mma, i
-                    ] * scale.cast[accum_type]() + rebind[
-                        p_reg_vec2.element_type
-                    ](
-                        mask_vec.cast[accum_type]()
-                    )
+                        p_reg_vec2[mma_id, i] = p_reg_vec2[
+                            mma_id, i
+                        ] * scale.cast[accum_type]() + rebind[
+                            p_reg_vec2.element_type
+                        ](
+                            mask_vec.cast[accum_type]()
+                        )
+                    else:
+                        p_reg_vec2[mma_id, i] = rebind[p_reg_vec2.element_type](
+                            SIMD[accum_type, p_frag_simdwidth](
+                                min_or_neg_inf[accum_type]()
+                            )
+                        )
+
         # Increment mask to next BM x BN block.
-        mask_warp_ptr += BN
+        mask_warp_col += BN
 
         _online_softmax_iter_for_mma_output[
             num_m_mmas, num_n_mmas, num_warps_n, mma_shape
@@ -966,6 +991,7 @@ fn mha_single_batch[
                 p_smem_iter,
                 v_smem_iter,
                 BN // BK,
+                num_b_rows=Int(kv_tile_num_rows),
             )
         else:
             # Reuse 1st mma output (MMA_M, MMA_N) as 2nd mma's input (MMA_M, MMA_K).
@@ -993,6 +1019,7 @@ fn mha_single_batch[
                 p_smem_iter,
                 v_smem_iter,
                 BN // BK,
+                num_b_rows=Int(kv_tile_num_rows),
             )
 
     # Apply softmax denumerator.
@@ -1045,6 +1072,10 @@ fn mha_single_batch[
         ](
             output_gmem_tile.vectorize[1, simd_size](),
             accum_smem_tile.vectorize[1, simd_size](),
+            q_offset,
+            # Equivalent as storing to seq_len x (num_heads * depth) matrix.
+            seq_len,
+            num_heads * depth,
         )
     else:
         copy_local_to_dram[dst_thread_layout = Layout.row_major(8, 4)](
@@ -1052,6 +1083,9 @@ fn mha_single_batch[
             output_reg_tile.bitcast[output_type]()
             .vectorize[1, 2]()
             .transpose(),
+            output_gmem_warp_tile.distance(output_ptr),
+            seq_len,
+            num_heads * depth,
         )
 
 
