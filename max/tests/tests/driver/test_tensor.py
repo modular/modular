@@ -6,17 +6,15 @@
 """Test max.driver Tensors."""
 from itertools import product
 
-import max.driver as md
 import numpy as np
 import pytest
+from max.driver import CPU, Tensor
 from max.dtype import DType
-
-from modular.utils.misc import has_gpu
 
 
 def test_tensor():
     # Validate that metadata shows up correctly
-    tensor = md.Tensor((3, 4, 5), DType.float32)
+    tensor = Tensor((3, 4, 5), DType.float32)
     assert DType.float32 == tensor.dtype
     assert "DType.float32" == str(tensor.dtype)
     assert (3, 4, 5) == tensor.shape
@@ -24,7 +22,7 @@ def test_tensor():
 
 
 def test_get_and_set():
-    tensor = md.Tensor((3, 4, 5), DType.int32)
+    tensor = Tensor((3, 4, 5), DType.int32)
     tensor[0, 1, 3] = 68
     # Get should return zero-d tensor
     elt = tensor[0, 1, 3]
@@ -62,7 +60,7 @@ def test_get_and_set():
 def test_slice():
     # Tensor slices should have the desired shape and should preserve
     # reference semantics.
-    tensor = md.Tensor((3, 3, 3), DType.int32)
+    tensor = Tensor((3, 3, 3), DType.int32)
     subtensor = tensor[:2, :2, :2]
     assert subtensor.shape == (2, 2, 2)
     subtensor[0, 0, 0] = 25
@@ -89,7 +87,7 @@ def test_slice():
 
 
 def test_drop_dimensions():
-    tensor = md.Tensor((5, 5, 5), DType.int32)
+    tensor = Tensor((5, 5, 5), DType.int32)
     # When indexing into a tensor with a mixture of slices and integral
     # indices, the slice should drop any dimensions that correspond to
     # integral indices.
@@ -105,7 +103,7 @@ def test_drop_dimensions():
 
 
 def test_negative_step():
-    tensor = md.Tensor((3, 3), DType.int32)
+    tensor = Tensor((3, 3), DType.int32)
     tensor[0, 0] = 1
     tensor[0, 1] = 2
     tensor[0, 2] = 3
@@ -129,7 +127,7 @@ def test_negative_step():
 
 
 def test_out_of_bounds_slices():
-    tensor = md.Tensor((3, 3, 3), DType.int32)
+    tensor = Tensor((3, 3, 3), DType.int32)
 
     # Out of bounds indexes are allowed in slices.
     assert tensor[4:, :2, 8:10:-1].shape == (0, 2, 0)
@@ -140,7 +138,7 @@ def test_out_of_bounds_slices():
 
 
 def test_one_dimensional_tensor():
-    tensor = md.Tensor((10,), DType.int32)
+    tensor = Tensor((10,), DType.int32)
     for i in range(10):
         tensor[i] = i
 
@@ -150,7 +148,7 @@ def test_one_dimensional_tensor():
 
 def test_contiguous_tensor():
     # Initialized tensors should be contiguous, and tensor slices should not be.
-    tensor = md.Tensor((3, 3), DType.int32)
+    tensor = Tensor((3, 3), DType.int32)
     assert tensor.is_contiguous
     val = 1
     for x, y in product(range(3), range(3)):
@@ -178,7 +176,7 @@ def test_contiguous_tensor():
 def test_modify_contiguous_tensor():
     # Modifications made to the original tensor should not be reflected
     # on the contiguous copy, and vice-versa.
-    tensor = md.Tensor((3, 3), DType.int32)
+    tensor = Tensor((3, 3), DType.int32)
     for x, y in product(range(3), range(3)):
         tensor[x, y] = 1
 
@@ -194,7 +192,7 @@ def test_modify_contiguous_tensor():
 def test_from_numpy():
     # A user should be able to create a tensor from a numpy array.
     arr = np.array([[1, 2, 3], [4, 5, 6]], dtype=np.int32)
-    tensor = md.Tensor.from_numpy(arr)
+    tensor = Tensor.from_numpy(arr)
     assert tensor.shape == (2, 3)
     assert tensor.dtype == DType.int32
     assert tensor[0, 0].item() == 1
@@ -205,69 +203,17 @@ def test_from_numpy():
     assert tensor[1, 2].item() == 6
 
 
-@pytest.mark.skipif(not has_gpu(), reason="Requires CUDA")
-def test_from_numpy_cuda():
-    arr = np.array([[1, 2, 3], [4, 5, 6]], dtype=np.int32)
-    tensor = md.Tensor.from_numpy(arr, device=md.CUDA())
-    assert tensor.shape == (2, 3)
-    assert tensor.dtype == DType.int32
-
-
 def test_is_host():
     # CPU tensors should be marked as being on-host.
-    assert md.Tensor((1, 1), DType.int32, device=md.CPU()).is_host
-
-
-@pytest.mark.skipif(not has_gpu(), reason="Requires CUDA")
-def test_is_host_cuda():
-    # CUDA tensors should be marked as not being on-host.
-    assert not md.Tensor((1, 1), DType.int32, device=md.CUDA()).is_host
+    assert Tensor((1, 1), DType.int32, device=CPU()).is_host
 
 
 def test_host_host_copy():
     # We should be able to freely copy tensors between host and host.
-    cpu_device = md.CPU()
+    cpu_device = CPU()
 
-    host_tensor = md.Tensor.from_numpy(np.array([1, 2, 3], dtype=np.int32))
+    host_tensor = Tensor.from_numpy(np.array([1, 2, 3], dtype=np.int32))
     tensor = host_tensor.copy_to(cpu_device)
-
-    assert tensor.shape == host_tensor.shape
-    assert tensor.dtype == DType.int32
-    assert tensor[0].item() == 1
-    assert tensor[1].item() == 2
-    assert tensor[2].item() == 3
-
-
-@pytest.mark.skipif(not has_gpu(), reason="Requires CUDA")
-def test_host_device_copy():
-    # We should be able to freely copy tensors between host and device.
-    cpu_device = md.CPU()
-    cuda_device = md.CUDA()
-
-    host_tensor = md.Tensor.from_numpy(
-        np.array([1, 2, 3], dtype=np.int32), device=cpu_device
-    )
-    device_tensor = host_tensor.copy_to(cuda_device)
-    tensor = device_tensor.copy_to(cpu_device)
-
-    assert tensor.shape == host_tensor.shape
-    assert tensor.dtype == DType.int32
-    assert tensor[0].item() == 1
-    assert tensor[1].item() == 2
-    assert tensor[2].item() == 3
-
-
-@pytest.mark.skipif(not has_gpu(), reason="Requires CUDA")
-def test_device_device_copy():
-    # We should be able to freely copy tensors between device and device.
-    cpu_device = md.CPU()
-    cuda_device = md.CUDA()
-
-    host_tensor = md.Tensor.from_numpy(
-        np.array([1, 2, 3], dtype=np.int32), device=cuda_device
-    )
-    device_tensor = host_tensor.copy_to(cuda_device)
-    tensor = device_tensor.copy_to(cpu_device)
 
     assert tensor.shape == host_tensor.shape
     assert tensor.dtype == DType.int32

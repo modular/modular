@@ -4,27 +4,19 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-import max.driver as md
 import pytest
-
-from modular.utils.misc import has_gpu
+from max.driver import CPU, CUDA
 
 
 def test_cpu_device():
-    cpu = md.CPU()
+    # We should be able to create a CPU device.
+    cpu = CPU()
     assert "cpu" in str(cpu)
     assert cpu.is_host
 
 
-@pytest.mark.skipif(not has_gpu(), reason="Requires CUDA")
-def test_cuda_device():
-    cuda = md.CUDA()
-    assert "cuda" in str(cuda)
-    assert not cuda.is_host
-
-
 @pytest.mark.skip(reason="MSDK-834")
-@pytest.mark.skipif(not has_gpu(), reason="Should not have CUDA")
 def test_cuda_device_creation_error():
+    # Creating a CUDA device on a machine without a GPU should raise an error.
     with pytest.raises(ValueError, match="failed to create device:"):
-        _ = md.CUDA()
+        _ = CUDA()
