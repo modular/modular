@@ -105,12 +105,9 @@ def bench_attention[
         fn iter_fn[depth_static_dim: Dim]():
             alias output_static_shape = DimList(Dim(), Dim(), depth_static_dim)
             flash_attention[
-                type,
-                3,
                 input_k_fn,
                 input_v_fn,
                 mask_fn,
-                output_static_shape,
                 transpose_k=transpose_k,
             ](
                 q.make_dims_unknown(),
