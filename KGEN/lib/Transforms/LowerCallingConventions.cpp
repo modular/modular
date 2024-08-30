@@ -206,7 +206,7 @@ static void rewriteFn(Operation *op, mlir::AttrTypeReplacer &replacer) {
   // Handle `hlcf.if`, `hlcf.loop`, `kgen.call`, `kgen.call_indirect`, and
   // `co.get_results`.
   if (isa<HLCF::IfOp, HLCF::LoopOp, CallOp, CallIndirectOp, CO::GetResultsOp,
-          CO::AwaitOp>(op)) {
+          CO::AwaitOp, CO::InvokeOp, CO::HotInvokeOp>(op)) {
     auto [anyNone, newResults] = removeNoneTypes(op->getResultTypes());
     // Exit early if there are no none results.
     if (!anyNone)

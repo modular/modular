@@ -7,6 +7,7 @@
 #include "KGEN/CODialect/COOps.h"
 #include "KGEN/CODialect/CODialect.h"
 #include "KGEN/CODialect/COUtils.h"
+#include "KGEN/HLCFDialect/HLCFUtils.h"
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/KGENDialect/KGENUtils.h"
 #include "KGEN/TransformUtils/InliningUtils.h"
@@ -173,8 +174,14 @@ LogicalResult HotInvokeOp::verify() {
   return verifyCallOperands(*this, getOperands(), signature);
 }
 
+// inlining a hot invoke is equivalent to awaiting an execute op
 FailureOr<InlineResult> HotInvokeOp::prepInline(mlir::RewriterBase &b) {
-  return {{*this, [](Operation *) {}}};
+  StringAttr label = b.getStringAttr("inlined_cf_scope");
+  auto op =
+      b.create<HLCF::LoopOp>(getLoc(), getResultTypes(), ValueRange(), label);
+  return {{op, [label, &b](Operation *op) {
+             b.replaceOpWithNewOp<HLCF::BreakOp>(op, op->getOperands(), label);
+           }}};
 }
 
 //===----------------------------------------------------------------------===//
@@ -241,6 +248,16 @@ LogicalResult AwaitOp::canonicalize(AwaitOp op, PatternRewriter &b) {
     if (singleExit)
       foldTrivialLoop(b, scope);
     b.eraseOp(execute);
+    return success();
+  } else if (auto invoke = op.getCoroutine().getDefiningOp<InvokeOp>()) {
+    if (!invoke.getCoroutine().hasOneUse())
+      return b.notifyMatchFailure(op.getLoc(), "coroutine has other uses");
+    SmallVector<Value> args;
+    llvm::append_range(args, invoke.getOperands());
+    llvm::append_range(args, llvm::reverse(op.getSlots()));
+    b.replaceOpWithNewOp<HotInvokeOp>(op, op->getResultTypes(),
+                                      invoke.getCallee(), args);
+    b.eraseOp(invoke);
     return success();
   }
   return failure();

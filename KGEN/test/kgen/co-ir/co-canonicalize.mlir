@@ -94,3 +94,19 @@ kgen.func @await_execute(%arg0: !kgen.pointer<i1> byref_error, %arg1: !kgen.poin
 
   kgen.return %2, %4#0, %4#1 : i1, index, index
 }
+
+kgen.func @foo(%arg0: !kgen.pointer<i1> byref_error, %arg1: !kgen.pointer<index> byref_result) throws|async -> (i1, index, index) {
+  %idx3 = index.constant 3
+  %true = index.bool.constant true
+  kgen.return %true, %idx3, %idx3 : i1, index, index
+}
+
+// CHECK-LABEL: kgen.func @await_invoke
+kgen.func @await_invoke(%arg0: !kgen.pointer<i1> byref_error, %arg1: !kgen.pointer<index> byref_result) throws|async -> (i1, index, index) {
+  %0 = co.invoke[(!kgen.pointer<i1> byref_error, !kgen.pointer<index> byref_result) throws|async -> (i1, index, index): @foo]()
+  // CHECK: %[[#N:]]:3 = co.hot_invoke[(!kgen.pointer<i1> byref_error, !kgen.pointer<index> byref_result) throws|async -> (i1, index, index): @foo](%arg0, %arg1)
+  // CHECK-NEXT: kgen.return %[[#N]]#0, %[[#N]]#1, %[[#N]]#2 : i1, index, index
+  %1:3 = co.await %0, %arg1, %arg0 : (!co.routine, !kgen.pointer<index>, !kgen.pointer<i1>) -> (i1, index, index)
+  kgen.return %1#0, %1#1, %1#2 : i1, index, index
+}
+
