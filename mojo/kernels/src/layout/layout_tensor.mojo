@@ -2019,12 +2019,17 @@ struct LayoutTensor[
 
         @parameter
         for i in range(dst_size):
-            alias src_idx = make_layout(other.element_layout, other_layout)(
-                i * src_element_size
-            )
-            alias dst_idx = make_layout(self.element_layout, self.layout)(
-                i * dst_element_size
-            )
+            alias src_idx = other_layout(i)
+            alias dst_static_idx = self.layout(i)
+
+            var dst_idx = 0
+
+            @parameter
+            if self.layout.all_dims_known():
+                dst_idx = dst_static_idx
+            else:
+                dst_idx = self.runtime_layout(i)
+
             if offset + dst_idx < rows * cols:
                 var src_element = Element[dtype, other.element_layout].load(
                     other.ptr.offset(src_idx)
