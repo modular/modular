@@ -163,11 +163,6 @@ fn test[
         flash_attention_impl[
             4,
             mask_rank,
-            qkv_type,
-            qkv_type,
-            qkv_type,
-            mask_type,
-            qkv_type,
             depth,
             num_heads,
             group=group,

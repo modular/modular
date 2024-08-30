@@ -208,28 +208,17 @@ fn fused_attention[
 
 # Using 32 bits index for GPU kernel.
 fn flash_attention[
-    rank: Int,
-    mask_rank: Int,
-    q_shape: DimList,
-    k_shape: DimList,
-    v_shape: DimList,
-    mask_shape: DimList,
-    output_shape: DimList,
-    q_type: DType,
-    k_type: DType,
-    v_type: DType,
-    mask_type: DType,
-    output_type: DType,
+    rank: Int, //,
     # llama 2 has attention mask but not causal mask.
     add_attn_mask: Bool = True,
     target: StringLiteral = "cpu",
     use_tensor_core: Bool = False,
 ](
-    output: NDBuffer[output_type, rank, output_shape],
-    q: NDBuffer[q_type, rank, q_shape],
-    k: NDBuffer[k_type, rank, k_shape],
-    v: NDBuffer[v_type, rank, v_shape],
-    mask: NDBuffer[mask_type, mask_rank, mask_shape],
+    output: NDBuffer[_, rank, *_],
+    q: NDBuffer[_, rank, *_],
+    k: NDBuffer[_, rank, *_],
+    v: NDBuffer[_, rank, *_],
+    mask: NDBuffer,
     scale: Float32,
     context: MojoCallContextPtr = MojoCallContextPtr(),
 ) raises:
@@ -242,28 +231,17 @@ fn flash_attention[
 
 
 fn flash_attention[
-    rank: Int,
-    mask_rank: Int,
-    q_shape: DimList,
-    k_shape: DimList,
-    v_shape: DimList,
-    mask_shape: DimList,
-    output_shape: DimList,
-    q_type: DType,
-    k_type: DType,
-    v_type: DType,
-    mask_type: DType,
-    output_type: DType,
+    rank: Int, //,
     # llama 2 has attention mask but not causal mask.
     add_attn_mask: Bool = True,
     target: StringLiteral = "cpu",
     use_tensor_core: Bool = False,
 ](
-    output: NDBuffer[output_type, rank, output_shape],
-    q: NDBuffer[q_type, rank, q_shape],
-    k: NDBuffer[k_type, rank, k_shape],
-    v: NDBuffer[v_type, rank, v_shape],
-    mask: NDBuffer[mask_type, mask_rank, mask_shape],
+    output: NDBuffer[_, rank, *_],
+    q: NDBuffer[_, rank, *_],
+    k: NDBuffer[_, rank, *_],
+    v: NDBuffer[_, rank, *_],
+    mask: NDBuffer,
     scale: Float32,
     ctx: DeviceContext,
 ) raises:
@@ -290,13 +268,13 @@ fn flash_attention[
     """
     constrained["cuda" in target, "only valid on Nvidia GPUs"]()
     constrained[rank == 4, "only support rank 4 inputs."]()
-    constrained[mask_rank in (3, 4), "only support rank 3 or 4 mask."]()
+    constrained[mask.rank in (3, 4), "only support rank 3 or 4 mask."]()
     constrained[
-        q_type == k_type == v_type == output_type,
+        q.type == k.type == v.type == output.type,
         "Q, K, V, output should have same type.",
     ]()
     constrained[
-        q_type == DType.float32 or q_type.is_half_float(),
+        q.type == DType.float32 or q.type.is_half_float(),
         "Only support single and half precision.",
     ]()
 
@@ -306,20 +284,15 @@ fn flash_attention[
     var num_keys = k.dim[1]()
 
     @parameter
-    if q_shape.all_known[2, 4]() and k_shape.has_value[2]():
-        alias num_heads = q_shape.get[2]()
-        alias depth = q_shape.get[3]()
-        alias k_num_heads = k_shape.get[2]()
+    if q.shape.all_known[2, 4]() and k.shape.has_value[2]():
+        alias num_heads = q.shape.get[2]()
+        alias depth = q.shape.get[3]()
+        alias k_num_heads = k.shape.get[2]()
         alias group = num_heads // k_num_heads
 
         flash_attention_impl[
             rank,
-            mask_rank,
-            q_type,
-            k_type,
-            v_type,
-            mask_type,
-            output_type,
+            mask.rank,
             depth,
             num_heads,
             group,
@@ -344,9 +317,7 @@ fn flash_attention[
         var depth = q.dim[3]()
         var group = q.dim[2]() // k.dim[2]()
 
-        mha_gpu_naive[
-            mask_rank, q_type, k_type, v_type, mask_type, output_type
-        ](
+        mha_gpu_naive[mask.rank](
             q.data,
             k.data,
             v.data,
@@ -364,13 +335,13 @@ fn flash_attention[
 
 
 fn flash_attention_impl[
-    rank: Int,
-    mask_rank: Int,
     q_type: DType,
     k_type: DType,
     v_type: DType,
     mask_type: DType,
-    output_type: DType,
+    output_type: DType, //,
+    rank: Int,
+    mask_rank: Int,
     depth: Int,
     num_heads: Int,
     group: Int = 1,
@@ -378,11 +349,11 @@ fn flash_attention_impl[
     target: StringLiteral = "cpu",
     use_tensor_core: Bool = False,
 ](
-    output: UnsafePointer[Scalar[output_type]],
-    q: UnsafePointer[Scalar[q_type]],
-    k: UnsafePointer[Scalar[k_type]],
-    v: UnsafePointer[Scalar[v_type]],
-    mask: UnsafePointer[Scalar[mask_type]],
+    output: UnsafePointer[Scalar[output_type], *_],
+    q: UnsafePointer[Scalar[q_type], *_],
+    k: UnsafePointer[Scalar[k_type], *_],
+    v: UnsafePointer[Scalar[v_type], *_],
+    mask: UnsafePointer[Scalar[mask_type], *_],
     scale: Float32,
     batch_size: Int,
     seq_len: Int,
@@ -1548,18 +1519,18 @@ fn mha_decoding_single_batch[
 
 
 fn mha_gpu_naive[
-    mask_rank: Int,
     q_type: DType,
     k_type: DType,
     v_type: DType,
     mask_type: DType,
-    output_type: DType,
+    output_type: DType, //,
+    mask_rank: Int,
 ](
-    q_ptr: UnsafePointer[Scalar[q_type]],
-    k_ptr: UnsafePointer[Scalar[k_type]],
-    v_ptr: UnsafePointer[Scalar[v_type]],
-    mask_ptr: UnsafePointer[Scalar[mask_type]],
-    output_ptr: UnsafePointer[Scalar[output_type]],
+    q_ptr: UnsafePointer[Scalar[q_type], *_],
+    k_ptr: UnsafePointer[Scalar[k_type], *_],
+    v_ptr: UnsafePointer[Scalar[v_type], *_],
+    mask_ptr: UnsafePointer[Scalar[mask_type], *_],
+    output_ptr: UnsafePointer[Scalar[output_type], *_],
     scale: Float32,
     batch_size: Int,
     seq_len: Int,

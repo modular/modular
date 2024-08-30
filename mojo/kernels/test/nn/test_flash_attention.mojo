@@ -290,12 +290,9 @@ def test_case[
         )
 
     flash_attention[
-        type,
-        output.rank,
         input_k_fn,
         input_v_fn,
         mask_fn,
-        output_static_shape,
         transpose_k=transpose_k,
     ](q, k.get_shape(), v.get_shape(), output, cfg.scale)
 
@@ -483,14 +480,7 @@ def test_case_split_kv[
     ](cfg.prev_seq_len(), cfg.depth_dim)
 
     flash_attention_split_kv[
-        type,
-        cfg.rank,
-        input_k_fn,
-        input_v_fn,
-        input_k_cache_fn,
-        input_v_cache_fn,
-        mask_fn,
-        output_static_shape,
+        input_k_fn, input_v_fn, input_k_cache_fn, input_v_cache_fn, mask_fn
     ](
         q,
         kv_present_shape,

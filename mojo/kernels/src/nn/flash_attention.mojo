@@ -528,6 +528,7 @@ struct _FlashAttentionConfig[
 struct _FlashAttention[
     type: DType,
     rank: Int,
+    output_static_shape: DimList, //,
     simd_width: Int,
     input_k_fn: fn[simd_width: Int, rank: Int] (
         StaticIntTuple[rank]
@@ -538,7 +539,6 @@ struct _FlashAttention[
     input_mask_fn: fn[simd_width: Int, rank: Int] (
         StaticIntTuple[rank]
     ) capturing -> SIMD[type, simd_width],
-    output_static_shape: DimList,
     *,
     transpose_k: Bool = False,
 ]:
@@ -633,10 +633,10 @@ struct _FlashAttention[
 
     @staticmethod
     fn run(
-        q: NDBuffer[type, rank],
+        q: NDBuffer[type, rank, *_],
         k_shape: StaticIntTuple[rank],
         v_shape: StaticIntTuple[rank],
-        output: NDBuffer[type, rank, output_static_shape],
+        output: NDBuffer[type, rank, output_static_shape, *_],
         scale: Float32,
     ):
         var num_batches = output.dim[0]()
@@ -836,7 +836,7 @@ struct _FlashAttention[
 
 fn flash_attention[
     type: DType,
-    rank: Int,
+    rank: Int, //,
     input_k_fn: fn[simd_width: Int, rank: Int] (
         StaticIntTuple[rank]
     ) capturing -> SIMD[type, simd_width],
@@ -846,31 +846,27 @@ fn flash_attention[
     input_mask_fn: fn[simd_width: Int, rank: Int] (
         StaticIntTuple[rank]
     ) capturing -> SIMD[type, simd_width],
-    output_static_shape: DimList = DimList.create_unknown[rank](),
     *,
     transpose_k: Bool = False,
 ](
-    q: NDBuffer[type, rank],
+    q: NDBuffer[type, rank, *_],
     k_shape: StaticIntTuple[rank],
     v_shape: StaticIntTuple[rank],
-    output: NDBuffer[type, rank, output_static_shape],
+    output: NDBuffer[type, rank, *_],
     scale: Float32,
 ):
     _FlashAttention[
-        type,
-        rank,
         simdwidthof[type](),
         input_k_fn,
         input_v_fn,
         input_mask_fn,
-        output_static_shape,
         transpose_k=transpose_k,
     ].run(q, k_shape, v_shape, output, scale)
 
 
 fn flash_attention_split_kv[
     type: DType,
-    rank: Int,
+    rank: Int, //,
     input_k_fn: fn[simd_width: Int, rank: Int] (
         StaticIntTuple[rank]
     ) capturing -> SIMD[type, simd_width],
@@ -886,15 +882,14 @@ fn flash_attention_split_kv[
     input_mask_fn: fn[simd_width: Int, rank: Int] (
         StaticIntTuple[rank]
     ) capturing -> SIMD[type, simd_width],
-    output_static_shape: DimList = DimList.create_unknown[rank](),
 ](
-    q: NDBuffer[type, rank],
+    q: NDBuffer[type, rank, *_],
     k_shape: StaticIntTuple[rank],
     v_shape: StaticIntTuple[rank],
     # {k,v}_cache_shape are rank + 1 because reshape in MO IR prevents fusion.
     k_cache_shape: StaticIntTuple[rank + 1],
     v_cache_shape: StaticIntTuple[rank + 1],
-    output: NDBuffer[type, rank, output_static_shape],
+    output: NDBuffer[type, rank, *_],
     scale: Float32,
 ):
     """Variant of flash attention that takes the previous KV cache
@@ -989,12 +984,9 @@ fn flash_attention_split_kv[
         ](idx)
 
     _FlashAttention[
-        type,
-        rank,
         simdwidthof[type](),
         input_k_cache_fn_wrapper,
         input_v_cache_fn_wrapper,
         input_mask_fn,
-        output_static_shape,
         transpose_k=True,
     ].run(q, k_shape_new, v_shape_new, output, scale)
