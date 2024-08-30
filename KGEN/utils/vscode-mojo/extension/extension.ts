@@ -56,12 +56,14 @@ export class MojoExtension extends DisposableContext {
     this.isNightly = isNightly;
   }
 
-  async activate(initializationSDK?: Optional<MojoSDKSpec>) {
+  async activate(
+    initializationSDK?: Optional<MojoSDKSpec>
+  ): Promise<MojoExtension> {
     if (this.areThereIncompatibleExtensions(this.isNightly)) {
       this.logger.main.logInfo(
         'Not activating the Mojo Context due to another Mojo extension being enabled.'
       );
-      return;
+      return this;
     }
 
     this.logger.main.logInfo(`
@@ -139,6 +141,7 @@ Activating the Mojo Extension
     this.pushSubscription(rpcServer);
     rpcServer.listen();
     this.logger.main.logInfo('Mojo extension initialized.');
+    return this;
   }
 
   private areThereIncompatibleExtensions(isNightly: boolean): boolean {
@@ -180,7 +183,7 @@ Activating the Mojo Extension
   }
 }
 
-let extension: Promise<MojoExtension>;
+export let extension: MojoExtension;
 let logger: Logger;
 
 /**
@@ -188,12 +191,13 @@ let logger: Logger;
  * `activationEvents` in the package.json file for the current events that
  * activate this extension.
  */
-export function activate(context: vscode.ExtensionContext) {
+export function activate(
+  context: vscode.ExtensionContext
+): Promise<MojoExtension> {
   const isNightly = isNightlyExtension(context);
   logger = new Logger(isNightly);
-  let ext = new MojoExtension(context, logger, isNightly);
-
-  extension = ext.activate().then(() => ext);
+  extension = new MojoExtension(context, logger, isNightly);
+  return extension.activate();
 }
 
 /**
@@ -203,13 +207,7 @@ export function activate(context: vscode.ExtensionContext) {
  */
 export function deactivate() {
   logger.main.logInfo('Deactivating the extension.');
-  extension.then((extension) => {
-    extension.dispose();
-    logger.main.logInfo('Extension deactivated.');
-    logger.dispose();
-  });
-}
-
-export function getExtension(): Promise<MojoExtension> {
-  return extension;
+  extension.dispose();
+  logger.main.logInfo('Extension deactivated.');
+  logger.dispose();
 }
