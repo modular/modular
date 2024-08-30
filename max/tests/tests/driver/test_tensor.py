@@ -221,4 +221,56 @@ def test_is_host():
 @pytest.mark.skipif(not has_gpu(), reason="Requires CUDA")
 def test_is_host_cuda():
     # CUDA tensors should be marked as not being on-host.
-    assert not md.Tensor((1, 1), DType.int32, device=md.GPU()).is_host
+    assert not md.Tensor((1, 1), DType.int32, device=md.CUDA()).is_host
+
+
+def test_host_host_copy():
+    # We should be able to freely copy tensors between host and host.
+    cpu_device = md.CPU()
+
+    host_tensor = md.Tensor.from_numpy(np.array([1, 2, 3], dtype=np.int32))
+    tensor = host_tensor.copy_to(cpu_device)
+
+    assert tensor.shape == host_tensor.shape
+    assert tensor.dtype == DType.int32
+    assert tensor[0].item() == 1
+    assert tensor[1].item() == 2
+    assert tensor[2].item() == 3
+
+
+@pytest.mark.skipif(not has_gpu(), reason="Requires CUDA")
+def test_host_device_copy():
+    # We should be able to freely copy tensors between host and device.
+    cpu_device = md.CPU()
+    cuda_device = md.CUDA()
+
+    host_tensor = md.Tensor.from_numpy(
+        np.array([1, 2, 3], dtype=np.int32), device=cpu_device
+    )
+    device_tensor = host_tensor.copy_to(cuda_device)
+    tensor = device_tensor.copy_to(cpu_device)
+
+    assert tensor.shape == host_tensor.shape
+    assert tensor.dtype == DType.int32
+    assert tensor[0].item() == 1
+    assert tensor[1].item() == 2
+    assert tensor[2].item() == 3
+
+
+@pytest.mark.skipif(not has_gpu(), reason="Requires CUDA")
+def test_device_device_copy():
+    # We should be able to freely copy tensors between device and device.
+    cpu_device = md.CPU()
+    cuda_device = md.CUDA()
+
+    host_tensor = md.Tensor.from_numpy(
+        np.array([1, 2, 3], dtype=np.int32), device=cuda_device
+    )
+    device_tensor = host_tensor.copy_to(cuda_device)
+    tensor = device_tensor.copy_to(cpu_device)
+
+    assert tensor.shape == host_tensor.shape
+    assert tensor.dtype == DType.int32
+    assert tensor[0].item() == 1
+    assert tensor[1].item() == 2
+    assert tensor[2].item() == 3

@@ -13,12 +13,14 @@ from modular.utils.misc import has_gpu
 def test_cpu_device():
     cpu = md.CPU()
     assert "cpu" in str(cpu)
+    assert cpu.is_host
 
 
 @pytest.mark.skipif(not has_gpu(), reason="Requires CUDA")
 def test_cuda_device():
     cuda = md.CUDA()
     assert "cuda" in str(cuda)
+    assert not cuda.is_host
 
 
 @pytest.mark.skip(reason="MSDK-834")
