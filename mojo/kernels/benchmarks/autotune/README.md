@@ -56,9 +56,16 @@ autotuning problem, so let’s just lean into building something simple.
     ```
 
 4. Run `tune.py` script as follows:
+    For simply running all the configs in the YAML file:
 
     ```bash
     $MODULAR_PYTHON tune.py --yaml YAML_FILE --output OUTPUT_PATH
+    ```
+
+    For finding the best measured elapsed time add `--tune`:
+
+    ```bash
+    $MODULAR_PYTHON tune.py --yaml YAML_FILE --output OUTPUT_PATH --tune
     ```
 
 ## Example

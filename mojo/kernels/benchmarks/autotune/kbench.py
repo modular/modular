@@ -29,7 +29,7 @@ from modular.utils.subprocess import (
 )
 import subprocess
 from modular.utils.yaml import YAML
-
+import csv
 
 MOJO_BINARY = shutil.which("mojo")
 if not MOJO_BINARY:
@@ -127,11 +127,11 @@ class SpecInstance:
 
         return output_file
 
-    def to_yaml(self) -> str:
-        yaml_str = "params:"
+    def to_obj(self) -> str:
+        obj = {}
         for param in self.params:
-            yaml_str += f"\n  {param.name}: {param.value}"
-        return yaml_str
+            obj[param.name] = param.value
+        return obj
 
 
 @dataclass(repr=True)
@@ -139,10 +139,10 @@ class Spec:
     name: str
     file: Path
     params: List[ParamSpace] = field(default_factory=list)
+    fixed_params: List[object] = field(default_factory=list)
     mesh_idx: int = 0
-    name_list: List[str] = field(default_factory=list)
-    mesh: List[object] = field(default_factory=list)
     mesh_size: int = 0
+    instances: List[SpecInstance] = field(default_factory=list)
 
     @staticmethod
     def load_yaml(file: Path) -> "Spec":
@@ -164,6 +164,17 @@ class Spec:
         except Exception as exc:
             raise Exception(f"Could not load spec from {file}") from exc
 
+    def dump_yaml(self, out_path: Path):
+        assert self.instances, "There are no instances to write to YAML!"
+        obj = {
+            "name": self.name,
+            "file": self.file,
+            "fixed_params": [s.to_obj() for s in self.instances],
+        }
+        with open(out_path, "w") as f:
+            YAML(typ="safe").dump(obj, f, sort=False)
+        print(f"dumped {len(self.instances)} instances to [{out_path}]")
+
     @staticmethod
     def loads(yaml_str: str) -> "Spec":
         """
@@ -176,23 +187,36 @@ class Spec:
             Spec: a Spec loaded from the given yaml string
         """
         obj = YAML(typ="safe").load(yaml_str)
+
+        fixed_params = []
+        if "fixed_params" in obj.keys():
+            for cfg in obj["fixed_params"]:
+                e = []
+                for k, v in cfg.items():
+                    if isinstance(v, list):
+                        assert len(v) == 1
+                        v = v[0]
+                    e.append(ParamSpace(name=k, value=v))
+                fixed_params.append(e)
+
+        params = []
+        if "params" in obj.keys():
+            params.extend(
+                [ParamSpace(name=k, value=v) for k, v in obj["params"].items()]
+            )
+
         return Spec(
             name=obj["name"],
             file=obj["file"],
-            params=[
-                ParamSpace(name=k, value=v) for k, v in obj["params"].items()
-            ],
+            params=params,
+            fixed_params=fixed_params,
         )
 
-    def __post_init__(self):
-        self.init_mesh()
-        self.num_params = len(self.params)
-
     def __len__(self):
-        assert self.mesh
+        assert self.instances
         return self.mesh_size
 
-    def init_mesh(self):
+    def __post_init__(self):
         """
         Setup a mesh (cartesian product) of all values for all params. For example,
         if we have 2 set of params M=[64,256] and N=[A,B,C], the mesh will include
@@ -208,13 +232,39 @@ class Spec:
         4    : [256,B]
         5    : [256,C]
 
+        At the end, append the configs with fixed parameters, if any exists in YAML.
+
         Return the total size of mesh.
         """
+
+        name_list = [p.name for p in self.params]
         param_list = [p.value_list for p in self.params]
-        self.name_list = [p.name for p in self.params]
-        self.mesh = list(product(*param_list))
+        param_mesh = list(product(*param_list))
+
+        # params
+        num_params = len(self.params)
+        for idx in range(len(param_mesh)):
+            s = SpecInstance(
+                name=self.name,
+                file=self.file,
+                params=[
+                    Param(name=name_list[i], value=param_mesh[idx][i])
+                    for i in range(num_params)
+                ],
+            )
+            self.instances.append(s)
+
+        # fixed_params
+        for cfg in self.fixed_params:
+            s = SpecInstance(
+                name=self.name,
+                file=self.file,
+                params=[Param(name=p.name, value=p.value_list[0]) for p in cfg],
+            )
+            self.instances.append(s)
+
         self.mesh_idx = 0
-        self.mesh_size = len(self.mesh)
+        self.mesh_size = len(self.instances)
         return self.mesh_size
 
     def __iter__(self):
@@ -222,7 +272,7 @@ class Spec:
 
     def __next__(self) -> "SpecInstance":
         assert (
-            self.mesh != None
+            self.instances != None
         ), "Should call self.init_mesh after loading or in postinit."
 
         # Stop condition
@@ -233,18 +283,9 @@ class Spec:
         # Retrieve and update self.mesh_idx
         idx = self.mesh_idx
         self.mesh_idx = self.mesh_idx + 1
-
-        return SpecInstance(
-            name=self.name,
-            file=self.file,
-            params=[
-                Param(name=self.name_list[i], value=self.mesh[idx][i])
-                for i in range(self.num_params)
-            ],
-        )
+        return self.instances[idx]
 
 
-# file: ../autotune_multistage_gemm.mojo
 SPEC_CONTENT = """
 name: multistage_gemm
 file: ./sample.mojo
@@ -254,11 +295,22 @@ params:
   N: [1024,512]
   STAGES: [4,8,12]
 
+fixed_params:
+  - DTYPE1: DType.float32
+    M1: [1024]
+    N1: 768
+    STAGES1: 12
+  - DTYPE2: DType.float16
+    M2: 132
+    N2: 768
+    STAGES2: 14
+
 """
 
 
-def tune(yaml_path, output_path=None, verbose=False):
+def run(yaml_path, output_path=None, tune=True, verbose=False):
     spec = Spec.load_yaml(Path(yaml_path))
+    # spec.dump_yaml(Path("rewrite.yaml"))
     # else:
     #     spec = Spec.loads(SPEC_CONTENT)
 
@@ -292,6 +344,7 @@ def tune(yaml_path, output_path=None, verbose=False):
             # When a benchmark is completed for one combination of parameters we advance progress by 1
             progress.update(bench_progress, advance=1)
 
+    t_elapsed = time() - t_start
     ########################################################
     # Retrieve, sort, and pick top choices
     valid_specs = []
@@ -314,25 +367,36 @@ def tune(yaml_path, output_path=None, verbose=False):
         ########################################################
         # Get the name of column 2 (met (ms))
         met_col = merged_df.columns[2]
-        sorted_df = merged_df.sort_values([met_col], ascending=True)
-        output_lines += [sorted_df.to_string(index=False)]
-        # Index to top spec after sort
-        top_spec_idx = sorted_df.iloc[0].mesh_idx
-        output_lines += [f"top_spec_idx: {top_spec_idx}"]
 
-        output_lines += [LINE]
-        output_lines += ["Best Measured Time:"]
-        output_lines += [LINE]
-        output_lines += [spec_list[top_spec_idx].to_yaml()]
-        output_lines += [LINE]
+        if tune:
+            sorted_df = merged_df.sort_values([met_col], ascending=True)
+            output_lines += [sorted_df.to_string(index=False)]
+            # Index to top spec after sort
+            top_spec_idx = sorted_df.iloc[0].mesh_idx
+            output_lines += [f"top_spec_idx: {top_spec_idx}"]
+
+            output_lines += [LINE]
+            output_lines += ["Best Measured Time:"]
+            output_lines += [LINE]
+            output_lines += [spec_list[top_spec_idx].to_obj()]
+            output_lines += [LINE]
+        else:
+            sorted_df = merged_df.sort_values([met_col], ascending=True)
+            output_lines += [merged_df.to_string(index=False)]
+            output_lines += [LINE]
         ########################################################
-    t_elapsed = time() - t_start
     output_lines += ["Elasped tuning time: %.1f (s)" % (t_elapsed)]
     output_str = "\n".join([str(x) for x in output_lines])
     print(output_str)
     if output_path:
-        with open(output_path, "w") as f:
-            f.write(output_str + "\n")
+        if tune:
+            with open(output_path, "w") as f:
+                f.write(output_str + "\n")
+        else:
+            merged_df.drop(columns=["mesh_idx"]).to_csv(
+                output_path, index=False, quoting=csv.QUOTE_NONNUMERIC
+            )
+        print(f"wrote results to [{output_path}]")
 
 
 help_str = (
@@ -345,6 +409,14 @@ help_str = (
 @click.option(
     "--output", "-o", "output_path", default=None, help="Path to output file."
 )
+@click.option(
+    "--tune",
+    "-t",
+    "tune",
+    is_flag=True,
+    default=False,
+    help="Tune or just run.",
+)
 @click.option("--force", "-f", is_flag=True, default=False, help="Force.")
 @click.option(
     "--verbose", is_flag=True, default=False, help="Verbose printing."
@@ -352,10 +424,18 @@ help_str = (
 def cli(
     yaml_path,
     output_path,
+    tune,
     force,
     verbose,
 ) -> bool:
-    tune(yaml_path=yaml_path, output_path=output_path, verbose=verbose)
+    run(
+        yaml_path=yaml_path,
+        output_path=output_path,
+        tune=tune,
+        verbose=verbose,
+    )
+
+    # TODO: add --expand and --factorize options to rewrite YAML files
 
 
 def main():
