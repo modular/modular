@@ -178,7 +178,7 @@ fn run_layer_norm_gpu[
     ctx.enqueue_copy_to_device(beta_d, beta_h)
 
     alias rank_rs = 2
-    var data_buf_rs = layer_norm_reshape[type, rank, rank_rs](shape, data_buf)
+    var data_buf_rs = layer_norm_reshape[rank_rs](shape, data_buf)
 
     @__copy_capture(data_buf_rs)
     @always_inline
@@ -197,9 +197,7 @@ fn run_layer_norm_gpu[
     ](idx: StaticIntTuple[rank]) -> SIMD[type, width]:
         return gamma.load[width=width](idx[0])
 
-    layer_norm_gpu[type, input_fn, gamma_fn, rank](
-        shape, beta, epsilon, data_buf, ctx
-    )
+    layer_norm_gpu[input_fn, gamma_fn](shape, beta, epsilon, data_buf, ctx)
     ctx.enqueue_copy_from_device(res, data_d)
     ctx.synchronize()
 

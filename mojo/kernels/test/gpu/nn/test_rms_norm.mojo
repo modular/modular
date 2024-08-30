@@ -64,7 +64,7 @@ fn run_rms_norm_gpu[
     ctx.enqueue_copy_to_device(data_d, data_h)
     ctx.enqueue_copy_to_device(gamma_d, gamma_h)
 
-    rms_norm_gpu[type, rank](shape, gamma, epsilon, data_buf, ctx)
+    rms_norm_gpu(shape, gamma, epsilon, data_buf, ctx)
     ctx.enqueue_copy_from_device(res, data_d)
     ctx.synchronize()
 
