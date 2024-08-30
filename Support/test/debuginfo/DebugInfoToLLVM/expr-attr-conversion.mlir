@@ -1,4 +1,4 @@
-// RUN: support-dialect-opt %s -convert-debuginfo-to-llvm | FileCheck %s
+// RUN: support-dialect-opt %s -convert-debuginfo-to-llvm=tradeoff-perf | FileCheck %s
 
 #file = #debuginfo.file<"foo.c" in "/mlir/">
 #compile_unit = #debuginfo.compile_unit<

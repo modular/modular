@@ -171,14 +171,20 @@ std::unique_ptr<mlir::Pass> createAutomaticInline(
 struct LowerToLLVMOptions
     : public mlir::PassPipelineOptions<LowerToLLVMOptions> {
   LowerToLLVMOptions(
+      unsigned optLevel = 3,
       DebugInfo::EmissionKind diLevel = DebugInfo::EmissionKind::None,
       std::optional<CompilationOptions::DebugAtLevel> diAtLevel = std::nullopt,
       llvm::dwarf::SourceLanguage diLanguage = llvm::dwarf::DW_LANG_Mojo) {
+    optimizationLevel = optLevel;
     debugInfoLevel = diLevel;
     if (diAtLevel)
       debugAtLevel = *diAtLevel;
     debugInfoLanguage = diLanguage;
   }
+
+  Option<unsigned> optimizationLevel{
+      *this, "optimization-level",
+      llvm::cl::desc("The level of optimization to use"), llvm::cl::init(3)};
 
   Option<DebugInfo::EmissionKind> debugInfoLevel{
       *this, "debug-level",

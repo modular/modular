@@ -628,7 +628,8 @@ void DebugInfoToLLVMPass::runOnOperation() {
   mlir::RewritePatternSet patterns(&getContext());
   populateDebugInfoToLLVMPatterns(replacer, patterns);
 
-  TargetAdapter targetAdapter = getTargetAdapter(getTargetInfo(getOperation()));
+  TargetAdapter targetAdapter = getTargetAdapter(getTargetInfo(getOperation()),
+                                                 tradeoffPerfForVariableDI);
   targetAdapter.populateConversionPatterns(replacer, patterns);
 
   // Massage DebugInfo before conversion.

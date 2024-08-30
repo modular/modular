@@ -571,7 +571,8 @@ ObjectCompiler::lowerAllFuncsToLLVM(llvm::LLVMContext &ctx, ModuleOp module) {
                          options.getDIEmissionKind());
 
   LowerToLLVMOptions llvmOptions(
-      options.getDIEmissionKind(), options.debugAtLevel,
+      options.optimizationLevel, options.getDIEmissionKind(),
+      options.debugAtLevel,
       static_cast<llvm::dwarf::SourceLanguage>(options.debugInfoLanguage));
   llvmOptions.globalCtorFnName = ExecutionEngine::getGlobalCtorFnName();
   llvmOptions.globalDtorFnName = ExecutionEngine::getGlobalDtorFnName();
