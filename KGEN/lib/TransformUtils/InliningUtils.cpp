@@ -304,6 +304,9 @@ uint64_t KGEN::getNumOperations(Operation *op) {
     return 0;
 
   uint64_t result = 0;
-  op->walk([&](Operation *) { ++result; });
+  op->walk([&](Operation *op) {
+    if (!isa_and_nonnull<DebugInfo::DebugInfoDialect>(op->getDialect()))
+      ++result;
+  });
   return result;
 }

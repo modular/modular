@@ -81,7 +81,7 @@ private:
   llvm::sys::SmartRWMutex<true> mutex;
 };
 
-/// Get number of operations in this function.
+/// Get number of operations in this function, excluding debug ops.
 uint64_t getNumOperations(Operation *op);
 
 } // namespace M::KGEN
