@@ -8,7 +8,7 @@
 
 import * as assert from 'assert';
 import * as vscode from 'vscode';
-import { getExtension } from '../extension';
+import { extension } from '../extension';
 import path = require('path');
 import { firstValueFrom } from 'rxjs';
 
@@ -30,13 +30,10 @@ function openModularRoot() {
 
 suite('LSP', () => {
   test('LSP should not be loaded on startup', async () => {
-    const extension = await getExtension();
     assert.strictEqual(extension.lspManager!.lspClient, undefined);
   });
 
   test('LSP should be launched upon a file is opened', async () => {
-    const extension = await getExtension();
-
     const lsp = firstValueFrom(extension.lspManager!.lspClientChanges);
 
     openModularRoot();
