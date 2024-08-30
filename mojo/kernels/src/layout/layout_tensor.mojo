@@ -2953,7 +2953,6 @@ fn copy_local_to_sram[
             alias dst_idx = dst_frag.layout(i)
 
             dst_frag.ptr.store[
-                width=elem_size,
                 alignment = alignof[SIMD[dst_type, src.element_size]](),
             ](dst_idx, src.aligned_load[elem_size](i, 0).cast[dst_type]())
 
@@ -3014,7 +3013,7 @@ fn copy_local_to_local[
             alias dst_idx = dst_vectorized.layout(i)
             alias src_idx = src_vectorized.layout(i)
 
-            dst_vectorized.ptr.store[width=src_frag_size](
+            dst_vectorized.ptr.store(
                 dst_idx,
                 src_vectorized.ptr.load[width=src_frag_size](src_idx).cast[
                     dst_type
