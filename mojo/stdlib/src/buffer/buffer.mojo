@@ -1111,7 +1111,9 @@ struct NDBuffer[
         return self.stride[rank - 1]() == 1
 
     @always_inline
-    fn flatten(self) -> Buffer[type, Dim(), address_space=address_space]:
+    fn flatten(
+        self,
+    ) -> Buffer[type, shape.product(), address_space=address_space] as result:
         """Constructs a flattened Buffer counterpart for this NDBuffer.
 
         Constraints:
@@ -1123,26 +1125,18 @@ struct NDBuffer[
         debug_assert(
             self.is_contiguous(), "Function requires contiguous buffer."
         )
-        return Buffer[type, Dim(), address_space=address_space](
-            self.data, self.size()
-        )
+        return __type_of(result)(self.data, self.size())
 
     @always_inline
     fn make_dims_unknown(
         self,
-    ) -> NDBuffer[type, rank, address_space=address_space]:
+    ) -> NDBuffer[type, rank, address_space=address_space] as result:
         """Rebinds the NDBuffer to one with unknown shape.
 
         Returns:
             The rebound NDBuffer with unknown shape.
         """
-        return rebind[
-            NDBuffer[
-                type,
-                rank,
-                address_space=address_space,
-            ]
-        ](self)
+        return rebind[__type_of(result)](self)
 
     @always_inline
     fn bytecount(self) -> Int:
