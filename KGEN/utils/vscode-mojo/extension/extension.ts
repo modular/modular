@@ -19,6 +19,7 @@ import { RpcServer } from './server/RpcServer';
 import * as config from './utils/config';
 import * as configWatcher from './utils/configWatcher';
 import { MojoSDKSpec } from './sdk/types';
+import { Mutex } from 'async-mutex';
 
 /**
  * State that survives across reloads of the extension, but not re-activations.
@@ -44,6 +45,7 @@ export class MojoExtension extends DisposableContext {
   public lspManager?: MojoLSPManager;
   public readonly isNightly: boolean;
   private semiPersistentState = new ExtensionSemiPersistentState();
+  private activateMutex = new Mutex();
 
   constructor(
     context: vscode.ExtensionContext,
@@ -57,91 +59,97 @@ export class MojoExtension extends DisposableContext {
   }
 
   async activate(
-    initializationSDK?: Optional<MojoSDKSpec>
+    initializationSDK: Optional<MojoSDKSpec>,
+    reloading: boolean
   ): Promise<MojoExtension> {
-    if (this.areThereIncompatibleExtensions(this.isNightly)) {
-      this.logger.main.logInfo(
-        'Not activating the Mojo Context due to another Mojo extension being enabled.'
-      );
-      return this;
-    }
+    return await this.activateMutex.runExclusive(async () => {
+      if (reloading) {
+        this.dispose();
+      }
 
-    this.logger.main.logInfo(`
+      if (this.areThereIncompatibleExtensions(this.isNightly)) {
+        this.logger.main.logInfo(
+          'Not activating the Mojo Context due to another Mojo extension being enabled.'
+        );
+        return this;
+      }
+
+      this.logger.main.logInfo(`
 =============================
 Activating the Mojo Extension
 =============================
 `);
 
-    const enableMagicSDK = config.get<boolean>(
-      'enableMagicSDK',
-      /*workspaceFolder=*/ undefined,
-      false
-    );
-    this.pushSubscription(
-      await configWatcher.activate(
+      const enableMagicSDK = config.get<boolean>(
+        'enableMagicSDK',
         /*workspaceFolder=*/ undefined,
-        ['enableMagicSDK'],
-        /*paths=*/ []
-      )
-    );
-    const sdkManager = new MojoSDKManager(
-      this.logger,
-      this.extensionContext,
-      initializationSDK,
-      this.isNightly,
-      enableMagicSDK,
-      this.semiPersistentState
-    );
-    this.pushSubscription(sdkManager);
+        false
+      );
+      this.pushSubscription(
+        await configWatcher.activate(
+          /*workspaceFolder=*/ undefined,
+          ['enableMagicSDK'],
+          /*paths=*/ []
+        )
+      );
+      const sdkManager = new MojoSDKManager(
+        this.logger,
+        this.extensionContext,
+        initializationSDK,
+        this.isNightly,
+        enableMagicSDK,
+        this.semiPersistentState
+      );
+      this.pushSubscription(sdkManager);
 
-    // Initialize the commands of the extension.
-    this.pushSubscription(
-      vscode.commands.registerCommand(
-        'mojo.restart',
-        async (initializationSDK: Optional<MojoSDKSpec>) => {
-          // Dispose and reactivate the context.
-          this.dispose();
-          await this.activate(initializationSDK);
-        }
-      )
-    );
+      // Initialize the commands of the extension.
+      this.pushSubscription(
+        vscode.commands.registerCommand(
+          'mojo.restart',
+          async (initializationSDK: Optional<MojoSDKSpec>) => {
+            // Dispose and reactivate the context.
+            await this.activate(initializationSDK, /*reloading=*/ true);
+          }
+        )
+      );
 
-    // Initialize the testing support.
-    let testManager = new MojoTestManager(sdkManager);
-    await testManager.activate();
-    this.pushSubscription(testManager);
+      // Initialize the testing support.
+      let testManager = new MojoTestManager(sdkManager);
+      await testManager.activate();
+      this.pushSubscription(testManager);
 
-    // Initialize the formatter.
-    this.pushSubscription(registerFormatter(sdkManager));
+      // Initialize the formatter.
+      this.pushSubscription(registerFormatter(sdkManager));
 
-    // Initialize the debugger support.
-    this.pushSubscription(new MojoDebugManager(this, sdkManager));
+      // Initialize the debugger support.
+      this.pushSubscription(new MojoDebugManager(this, sdkManager));
 
-    // Initialize the execution commands.
-    this.pushSubscription(activateRunCommands(sdkManager));
+      // Initialize the execution commands.
+      this.pushSubscription(activateRunCommands(sdkManager));
 
-    // Initialize the decorations.
-    this.pushSubscription(new MojoDecoratorManager());
+      // Initialize the decorations.
+      this.pushSubscription(new MojoDecoratorManager());
 
-    // Initialize the LSPs
-    this.lspManager = new MojoLSPManager(sdkManager, this.extensionContext);
-    await this.lspManager.activate();
-    this.pushSubscription(this.lspManager);
+      // Initialize the LSPs
+      this.lspManager = new MojoLSPManager(sdkManager, this.extensionContext);
+      await this.lspManager.activate();
+      this.pushSubscription(this.lspManager);
 
-    this.logger.main.logInfo('MojoContext activated.');
-    this.pushSubscription(
-      new vscode.Disposable(() => {
-        logger.main.logInfo('Disposing MOJOContext.');
-      })
-    );
+      this.logger.main.logInfo('MojoContext activated.');
+      this.pushSubscription(
+        new vscode.Disposable(() => {
+          logger.main.logInfo('Disposing MOJOContext.');
+        })
+      );
 
-    // Initialize the RPC server
-    const rpcServer = new RpcServer(this.logger);
-    this.logger.main.logInfo('Starting RPC server');
-    this.pushSubscription(rpcServer);
-    rpcServer.listen();
-    this.logger.main.logInfo('Mojo extension initialized.');
-    return this;
+      // Initialize the RPC server
+      const rpcServer = new RpcServer(this.logger);
+      this.logger.main.logInfo('Starting RPC server');
+      this.pushSubscription(rpcServer);
+      rpcServer.listen();
+      this.logger.main.logInfo('Mojo extension initialized.');
+      return this;
+    });
   }
 
   private areThereIncompatibleExtensions(isNightly: boolean): boolean {
@@ -197,7 +205,10 @@ export function activate(
   const isNightly = isNightlyExtension(context);
   logger = new Logger(isNightly);
   extension = new MojoExtension(context, logger, isNightly);
-  return extension.activate();
+  return extension.activate(
+    /*initializationSDK=*/ undefined,
+    /*reloading=*/ false
+  );
 }
 
 /**
