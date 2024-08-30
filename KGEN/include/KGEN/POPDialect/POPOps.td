@@ -1023,8 +1023,7 @@ def POP_ArrayGEPOp : POPOp<"array.gep", [Pure,
 // StackAllocationOp
 //===----------------------------------------------------------------------===//
 
-def POP_StackAllocationOp : POPOp<"stack_allocation",
-    [DeclareOpInterfaceMethods<InterpreterOpInterface>]> {
+def POP_StackAllocationOp : POPOp<"stack_allocation", [BytecodeOpInterface]> {
   let summary = "scoped stack allocation operation";
   let description = [{
     The `pop.stack_allocation` operation allocates statically-sized scoped
@@ -1120,6 +1119,13 @@ def POP_StackAllocationOp : POPOp<"stack_allocation",
                    CArg<"TypedAttr", "TypedAttr()">:$alignment,
                    CArg<"unsigned", "0">:$addressSpace)>
   ];
+
+  let extraClassDeclaration = [{
+    struct Payload { int32_t size, align; };
+    ErrorOrSuccess compile(Payload &payload, TargetInfoAttr target);
+    ErrorTreeOrSuccess interpret(ArrayRef<Attribute> operands,
+      const Payload &payload, InterpreterState &state);
+  }];
 }
 
 //===----------------------------------------------------------------------===//
