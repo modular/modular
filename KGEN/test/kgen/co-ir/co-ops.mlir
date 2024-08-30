@@ -87,7 +87,7 @@ kgen.func @hot_call_async_fn(%arg0: index, %__error__: !kgen.pointer<index> byre
     %fn = co.resume %hdl : <(!co.routine) -> ()>
     // CHECK:      co.hot_invoke[(index, !kgen.pointer<index> byref_error, !kgen.pointer<index> byref_result) throws|async -> (): @async_hot_fn]
     // CHECK-SAME: (%arg0, %arg1, %arg2)
-    %0 = co.hot_invoke[
+    co.hot_invoke[
      (index, !kgen.pointer<index> byref_error, !kgen.pointer<index> byref_result) throws|async -> (): @async_hot_fn
       ](%arg0, %__error__, %__result__)
     co.suspend.end
