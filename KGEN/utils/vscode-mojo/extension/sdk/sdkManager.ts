@@ -23,6 +23,7 @@ import {
 import { MojoSDKVersion } from './sdkVersion';
 import { findMagicSDKSpec } from './magicSdk';
 import { MojoSDKSpec } from './types';
+import { ExtensionSemiPersistentState } from '../extension';
 const execFile = util.promisify(require('child_process').execFile);
 
 type NotYetSelectedSDK = {
@@ -55,13 +56,15 @@ export class MojoSDKManager extends DisposableContext {
   private activeSDK: SDKSelection = { state: 'not-yet-selected' };
   private findSDKMutex = new Mutex();
   private isNightly: boolean;
+  private extensionSemiPersistentState;
 
   constructor(
     logger: Logger,
     context: vscode.ExtensionContext,
     initializationSDK: Optional<MojoSDKSpec>,
     isNightly: boolean,
-    enableMagicSDK: boolean
+    enableMagicSDK: boolean,
+    extensionSemiPersistentState: ExtensionSemiPersistentState
   ) {
     super();
     this.logger = logger;
@@ -69,6 +72,8 @@ export class MojoSDKManager extends DisposableContext {
     this.initializationSDK = initializationSDK;
     this.enableMagicSDK = enableMagicSDK;
     this.isNightly = isNightly;
+    this.extensionSemiPersistentState = extensionSemiPersistentState;
+
     this.pushSubscription(
       vscode.commands.registerCommand('mojo.sdk.selectSdk', async () => {
         const allSDKSpecs = await this.findAllSDKs();
@@ -107,6 +112,26 @@ export class MojoSDKManager extends DisposableContext {
         }
       })
     );
+    this.pushSubscription(
+      vscode.workspace.onDidOpenTextDocument((doc: vscode.TextDocument) =>
+        this.onPathSeenAfterInitialization(doc.uri.fsPath)
+      )
+    );
+    this.pushSubscription(
+      vscode.workspace.onDidOpenNotebookDocument(
+        (doc: vscode.NotebookDocument) =>
+          this.onPathSeenAfterInitialization(doc.uri.fsPath)
+      )
+    );
+    this.pushSubscription(
+      vscode.workspace.onDidChangeWorkspaceFolders(
+        (e: vscode.WorkspaceFoldersChangeEvent) => {
+          for (const added of e.added) {
+            this.onPathSeenAfterInitialization(added.uri.fsPath);
+          }
+        }
+      )
+    );
   }
 
   public async findSDK(
@@ -127,6 +152,21 @@ export class MojoSDKManager extends DisposableContext {
     return this.findSDKMutex.runExclusive(() => doWork());
   }
 
+  private async onPathSeenAfterInitialization(path: string): Promise<void> {
+    const specResult = await this.findDevSDKSpecFromSubPath(path);
+    if (specResult !== undefined && specResult.isNew) {
+      const result = await vscode.window.showInformationMessage(
+        'A new MAX SDK from a Modular repo has been identified: ' +
+          specResult.spec.modularHomePath +
+          '.\nDo you want to use this SDK?',
+        'Use this SDK'
+      );
+      if (result === 'Use this SDK') {
+        vscode.commands.executeCommand('mojo.restart', specResult.spec);
+      }
+    }
+  }
+
   public async createAdHocSDKAndShowError(
     modularHomePath: string,
     section: Optional<string>
@@ -136,7 +176,7 @@ export class MojoSDKManager extends DisposableContext {
     const devSDKSpec = await this.findDevSDKSpecFromSubPath(modularHomePath);
     if (devSDKSpec !== undefined) {
       return this.createSDKAndShowError(
-        { state: 'selected', sdkSpec: devSDKSpec },
+        { state: 'selected', sdkSpec: devSDKSpec.spec },
         hideRepeatedErrors
       );
     }
@@ -309,11 +349,19 @@ export class MojoSDKManager extends DisposableContext {
     for (let workspaceFolder of vscode.workspace.workspaceFolders || []) {
       visiblePaths.push(workspaceFolder.uri.fsPath);
     }
+    return this.findDevSDKSpecsFromSubPaths(visiblePaths);
+  }
+
+  private async findDevSDKSpecsFromSubPaths(
+    paths: string[]
+  ): Promise<MojoSDKSpec[]> {
     const candidateSDKSpecs = (
       await Promise.all(
-        visiblePaths.map((path) => this.findDevSDKSpecFromSubPath(path))
+        paths.map((path) => this.findDevSDKSpecFromSubPath(path))
       )
-    ).filter((x): x is MojoSDKSpec => x !== undefined);
+    )
+      .map((x) => x?.spec)
+      .filter((x): x is MojoSDKSpec => x !== undefined);
     const uniqueSDKSpecs = new Map<string, MojoSDKSpec>();
     candidateSDKSpecs.forEach((spec) =>
       uniqueSDKSpecs.set(spec.modularHomePath, spec)
@@ -323,7 +371,7 @@ export class MojoSDKManager extends DisposableContext {
 
   private async findDevSDKSpecFromSubPath(
     fsPath: string
-  ): Promise<Optional<MojoSDKSpec>> {
+  ): Promise<Optional<{ spec: MojoSDKSpec; isNew: boolean }>> {
     const repoRoot = await moveUpUntil(fsPath, (p) =>
       directoryExists(path.join(p, '.git'))
     );
@@ -340,7 +388,7 @@ export class MojoSDKManager extends DisposableContext {
         return undefined;
       }
       const modularHomePath = path.join(repoRoot, '.derived');
-      return {
+      const spec: MojoSDKSpec = {
         kind: 'dev',
         modularHomePath,
         version: new MojoSDKVersion(
@@ -352,6 +400,14 @@ export class MojoSDKManager extends DisposableContext {
         ),
         section: 'mojo-max',
       };
+      let isNew = false;
+      if (
+        !this.extensionSemiPersistentState.seenDevSDKs.has(spec.modularHomePath)
+      ) {
+        this.extensionSemiPersistentState.seenDevSDKs.add(spec.modularHomePath);
+        isNew = true;
+      }
+      return { spec, isNew };
     } catch {
       return undefined;
     }
