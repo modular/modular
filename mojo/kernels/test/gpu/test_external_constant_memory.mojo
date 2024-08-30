@@ -51,7 +51,7 @@ fn test_external_constant_mem(ctx: DeviceContext) raises:
             ConstantMemoryMapping(
                 "static_constant",
                 constant_memory.unsafe_ptr().bitcast[NoneType](),
-                len(constant_memory) * sizeof[constant_memory.T](),
+                constant_memory.bytecount(),
             )
         ),
     )
