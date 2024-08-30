@@ -1974,9 +1974,7 @@ struct LayoutTensor[
             alias dst_idx = make_layout(self.element_layout, self.layout)(
                 i * dst_element_size
             )
-            var m: Int
-            var n: Int
-            m, n = divmod(offset + src_idx, cols)
+            var m = (offset + src_idx) // cols
             if m < rows:
                 var src_element = Element[dtype, other.element_layout].load(
                     other.ptr.offset(src_idx)
