@@ -2248,6 +2248,13 @@ struct LayoutTensor[
             "copy_from_async should move data of the same element size",
         ]()
 
+        # Share memory must always have static layout.
+        alias dst_dims_known = (
+            self.layout.all_dims_known()
+            and self.element_layout.all_dims_known()
+        )
+        constrained[dst_dims_known, "dst tensor must have static layout"]()
+
         # Eligibility for 4, 8, 16 bytes async load.
         alias element_size_bytes = sizeof[dtype]() * src_element_size
         constrained[
@@ -2268,20 +2275,26 @@ struct LayoutTensor[
 
         @parameter
         if (
-            coalesce_src_element_layout.rank() == 1
-            and coalesce_dst_element_layout.stride[0] == 1
+            src_element_layout.all_dims_known()
+            and coalesce_src_element_layout.rank() == 1
+            and coalesce_src_element_layout.stride[0] == 1
             and coalesce_dst_element_layout.rank() == 1
             and coalesce_dst_element_layout.stride[0] == 1
         ):
 
             @parameter
             for i in range(dst_size):
-                alias src_idx = make_layout(src.element_layout, src_layout)(
-                    i * src_element_size
-                )
-                alias dst_idx = make_layout(self.element_layout, self.layout)(
-                    i * dst_element_size
-                )
+                var src_idx = 0
+
+                # only get index like this when it is vectorized form
+                alias src_static_idx = src_layout(i)
+                alias dst_idx = self.layout(i)
+
+                @parameter
+                if src_layout.all_dims_known():
+                    src_idx = src_static_idx
+                else:
+                    src_idx = src.runtime_layout(i)
 
                 if offset + src_idx < rows * cols:
                     async_copy[element_size_bytes, fill=fill](
@@ -2291,8 +2304,20 @@ struct LayoutTensor[
 
             @parameter
             for i in range(dst_size * dst_element_size):
-                alias src_idx = make_layout(src.element_layout, src_layout)(i)
+                var src_idx = 0
+
+                alias src_static_idx = make_layout(
+                    src.element_layout, src_layout
+                )(i)
                 alias dst_idx = make_layout(self.element_layout, self.layout)(i)
+
+                @parameter
+                if src_layout.all_dims_known():
+                    src_idx = src_static_idx
+                else:
+                    src_idx = make_runtime_layout(
+                        src.runtime_element_layout, src.runtime_layout
+                    )(i)
 
                 if offset + src_idx < rows * cols:
                     async_copy[4, fill=fill](
@@ -2806,7 +2831,15 @@ fn copy_sram_to_dram[
         @parameter
         for i in range(num_stores_per_thread):
             alias src_idx = src_fragments.layout(i)
-            alias dst_idx = dst_fragments.layout(i)
+            alias dst_static_idx = dst_fragments.layout(i)
+
+            var dst_idx = 0
+
+            @parameter
+            if dst_layout.all_dims_known():
+                dst_idx = dst_static_idx
+            else:
+                dst_idx = dst_fragments.runtime_layout(i)
 
             if thread_offset + dst_idx < rows * cols:
                 var src_vec = (src_fragments.ptr + src_idx).load[

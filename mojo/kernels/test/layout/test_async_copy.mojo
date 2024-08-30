@@ -497,6 +497,78 @@ fn test_copy_sram_to_dram[
     _ = input^
 
 
+@always_inline
+fn copy_with_rows_cols_kernel[
+    type: DType, layout: Layout, M: Int, N: Int
+](input: LayoutTensor[type, layout]):
+    alias simd_size = simdwidthof[type]()
+    alias thread_layout = Layout.row_major(simd_size, N // simd_size)
+
+    alias tile_layout = Layout.row_major(M, N)
+
+    var tile_tensor = input.tile[M, N](0, 0)
+
+    var smem_tile = LayoutTensor[
+        type, Layout.row_major(M, N), address_space = AddressSpace.SHARED
+    ].stack_allocation().fill(0)
+
+    copy_dram_to_sram_async[dtype=type, thread_layout=thread_layout,](
+        smem_tile.vectorize[1, simd_size](),
+        tile_tensor.vectorize[1, simd_size](),
+        0,
+        M,
+        N,
+    )
+
+    async_copy_commit_group()
+    async_copy_wait_all()
+
+    copy_sram_to_dram[thread_layout=thread_layout](
+        tile_tensor.vectorize[1, simd_size](),
+        smem_tile.vectorize[1, simd_size](),
+        0,
+        M,
+        N,
+    )
+
+
+fn test_copy_with_rows_cols[
+    layout: Layout, M: Int, N: Int
+](ctx: DeviceContext) raises:
+    print("=== test_copy_with_rows_cols")
+
+    # alias num_threads = thread_layout.size()
+
+    alias runtime_layout = RuntimeLayout[layout].row_major(
+        StaticIntTuple[2](M, N)
+    )
+
+    var input = ManagedLayoutTensor[
+        DType.float32,
+        layout,
+        gpu_managed_alloc,
+        gpu_free,
+        gpu_managed_alloc_runtime,
+    ](runtime_layout)
+
+    _ = input.tensor.linspace()
+
+    alias kernel_type = copy_with_rows_cols_kernel[DType.float32, layout, M, N]
+    var kernel = ctx.compile_function[kernel_type]()
+
+    ctx.enqueue_function(
+        kernel,
+        input,
+        grid_dim=(1,),
+        block_dim=(8,),
+    )
+
+    ctx.synchronize()
+    print(input.tensor)
+
+    _ = input^
+
+
 fn main() raises:
     alias unknown_layout = Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)
 
@@ -658,3 +730,20 @@ fn main() raises:
         test_copy_sram_to_dram[
             DType.bfloat16, unknown_layout, M_masked, N_masked
         ](ctx)
+
+        alias rows = 4
+        alias cols = 4
+        alias copy_layout = Layout.row_major(rows, cols)
+        # CHECK: === test_copy_with_rows_cols
+        # CHECK: 0.0 1.0 2.0 3.0
+        # CHECK: 4.0 5.0 6.0 7.0
+        # CHECK: 8.0 9.0 10.0 11.0
+        # CHECK: 12.0 13.0 14.0 15.0
+        test_copy_with_rows_cols[copy_layout, rows, cols](ctx)
+
+        # CHECK: === test_copy_with_rows_cols
+        # CHECK: 0.0 1.0 2.0 3.0
+        # CHECK: 4.0 5.0 6.0 7.0
+        # CHECK: 8.0 9.0 10.0 11.0
+        # CHECK: 12.0 13.0 14.0 15.0
+        test_copy_with_rows_cols[unknown_layout, rows, cols](ctx)
