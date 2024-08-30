@@ -940,12 +940,6 @@ fn _matmul_common[
         var kernel_type_m = hidden_state_2d.shape.at[0]().or_else(0)
 
         _matmul_cpu[
-            type,
-            hidden_state_2d.shape,
-            type,
-            weight.shape,
-            type,
-            c_nd.shape,
             transpose_b=True,
             elementwise_lambda_fn=elementwise_lambda_fn,
         ](c_nd, hidden_state_2d, weight, kernel_type_m)
