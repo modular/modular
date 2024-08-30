@@ -9,9 +9,9 @@
 //===----------------------------------------------------------------------===//
 
 #include "KGEN/MojoParser/OverloadFitness.h"
+#include "ExprEmitter.h"
 #include "KGEN/MojoParser/ASTDecl.h"
 #include "KGEN/MojoParser/CallEmission.h"
-#include "KGEN/MojoParser/ExprEmitter.h"
 #include "KGEN/MojoParser/ExprNodes.h"
 #include "KGEN/MojoParser/ParameterInference.h"
 #include "KGEN/MojoParser/ParserParamEvaluator.h"
