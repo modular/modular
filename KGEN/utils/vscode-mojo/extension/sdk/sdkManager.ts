@@ -295,13 +295,11 @@ export class MojoSDKManager extends DisposableContext {
     if (!mojoConfig) {
       return `The modular config file '${modularConfigPath}' doesn't have the expected section ${spec.section}`;
     }
-    const sdkConfig = await MojoSDKConfig.create(
-      this.logger,
+    const sdkConfig = new MojoSDKConfig(
+      spec.version,
       spec.modularHomePath,
-      spec.section,
       mojoConfig
     );
-
     if (!sdkConfig) {
       return `Unable to determine the MAX SDK version.`;
     }

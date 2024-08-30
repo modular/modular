@@ -54,25 +54,19 @@ export class MojoSDKConfig {
    */
   readonly lldbPath: string;
 
-  /**
-   * Create a new MojoSDKConfig object from the given configuration.
-   */
-  static async create(
-    logger: Logger,
+  public constructor(
+    version: MojoSDKVersion,
     modularPath: string,
-    configSection: string,
     rawConfig: { [key: string]: any }
-  ): Promise<Optional<MojoSDKConfig>> {
-    let version = await MojoSDKConfig.parseVersionFromDriver(
-      logger,
-      rawConfig.driver_path,
-      configSection
-    );
-
-    if (!version) {
-      return undefined;
-    }
-    return new MojoSDKConfig(version, modularPath, rawConfig);
+  ) {
+    this.version = version;
+    this.modularHomePath = modularPath;
+    this.mojoLLDBVSCodePath = rawConfig.lldb_vscode_path;
+    this.mojoLLDBVisualizersPath = rawConfig.lldb_visualizers_path;
+    this.mojoDriverPath = rawConfig.driver_path;
+    this.mojoLanguageServerPath = rawConfig.lsp_server_path;
+    this.mojoLLDBPluginPath = rawConfig.lldb_plugin_path;
+    this.lldbPath = rawConfig.lldb_path;
   }
 
   /**
@@ -124,20 +118,5 @@ export class MojoSDKConfig {
       logger.main.logError('Unable to parse version from `mojo` driver: ', e);
       return undefined;
     }
-  }
-
-  private constructor(
-    version: MojoSDKVersion,
-    modularPath: string,
-    rawConfig: { [key: string]: any }
-  ) {
-    this.version = version;
-    this.modularHomePath = modularPath;
-    this.mojoLLDBVSCodePath = rawConfig.lldb_vscode_path;
-    this.mojoLLDBVisualizersPath = rawConfig.lldb_visualizers_path;
-    this.mojoDriverPath = rawConfig.driver_path;
-    this.mojoLanguageServerPath = rawConfig.lsp_server_path;
-    this.mojoLLDBPluginPath = rawConfig.lldb_plugin_path;
-    this.lldbPath = rawConfig.lldb_path;
   }
 }
