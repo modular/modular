@@ -6,7 +6,10 @@ kgen.func @top() -> index {
   // CHECK-NEXT: [[V0:%.*]] = index.add [[IDX0]], [[IDX0]]
   // CHECK-NEXT: [[V1:%.*]] = index.add [[V0]], [[V0]]
   // CHECK-NEXT: [[V2:%.*]] = kgen.call @foo_over_threshold([[V1]]) : (index) -> index
-  // CHECK-NEXT: kgen.return [[V2]] : index
+  // CHECK-NEXT: debuginfo.value
+  // CHECK-NEXT: debuginfo.kill
+  // CHECK-NOT: kgen.call @foo_debug_over_threshold
+  // CHECK: kgen.return [[V2]] : index
   // CHECK-NOT:  kgen.call @bar
   // CHECK-NOT:  kgen.call @foo
   %idx0 = index.constant 0
@@ -25,6 +28,9 @@ kgen.func @bar(%arg0: index) -> index {
   // Don't inline @foo_over_threshold.
   // Threshold value is defined by inline heuristics, which is 10 (operations * #calls) for O0 now.
   %2 = kgen.call @foo_over_threshold(%1) : (index) -> index
+
+  // Inline @foo_debug_over_threshold.
+  %3 = kgen.call @foo_debug_over_threshold(%1) : (index) -> index
   kgen.return %2 : index
 }
 
@@ -50,6 +56,27 @@ kgen.func @foo_over_threshold(%arg0: index) -> index {
   %9 = index.add %arg0, %8
   %10 = index.add %arg0, %9
   kgen.return %10 : index
+}
+
+#subprogram = #debuginfo.subprogram<name = <"foo_debug_over_threshold">> : !debuginfo.subroutine<(index) -> (index): DW_CC_normal>
+#local_variable = #debuginfo.local_variable<scope = #subprogram, name = "arg0"> : !debuginfo.unresolved<index>
+
+// CHECK-NOT: kgen.func @foo_debug_over_threshold(%arg0: index) -> index {
+kgen.func @foo_debug_over_threshold(%arg0: index) -> index {
+  // This function _will_ be inlined, because even though it exceeds current
+  // inline heuristics which is 10 (operations * #calls) for O0, it is only
+  // due to debug ops.
+  debuginfo.value #local_variable = %arg0 : index
+  debuginfo.kill #local_variable
+  debuginfo.value #local_variable = %arg0 : index
+  debuginfo.kill #local_variable
+  debuginfo.value #local_variable = %arg0 : index
+  debuginfo.kill #local_variable
+  debuginfo.value #local_variable = %arg0 : index
+  debuginfo.kill #local_variable
+  debuginfo.value #local_variable = %arg0 : index
+  debuginfo.kill #local_variable
+  kgen.return %arg0 : index
 }
 
 // CHECK-LABEL: kgen.func @not_inline_bar

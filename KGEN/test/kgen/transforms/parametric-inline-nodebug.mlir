@@ -1,4 +1,4 @@
-// RUN: kgen-opt %s -inline-param=nodebug-only=true -mlir-print-debuginfo | FileCheck %s
+// RUN: kgen-opt %s -inline-param="nodebug-only=true optimization-level=2" -mlir-print-debuginfo -split-input-file -allow-unregistered-dialect | FileCheck %s
 
 kgen.generator @wrap_source_loc_0() -> !kgen.none always_inline_no_debug {
   %line, %col, %fileName = kgen.source_loc[0]
@@ -63,6 +63,11 @@ kgen.generator @nodebug_inline_me() always_inline_no_debug {
 }
 
 kgen.generator @always_inline() always_inline {
+  // Inflate function size so not impacted by heuristic.
+  kgen.param.declare value1 = <1>
+  kgen.param.declare value2 = <1>
+  kgen.param.declare value3 = <1>
+  kgen.param.declare value4 = <1>
   kgen.return
 }
 
@@ -84,3 +89,44 @@ kgen.generator @main() {
 
 // CHECK-DAG: #[[LOC_CALLEE]] = loc("foo.mlir":10:5)
 // CHECK-DAG: #[[LOC_INLINED]] = loc(unknown)
+
+// -----
+
+#subprogram = #debuginfo.subprogram<name = <"fake_larger_callee">> : !debuginfo.subroutine<(!debuginfo.unresolved<!kgen.paramref<T>>) -> (!debuginfo.unresolved<!kgen.paramref<T>>): DW_CC_normal>
+#local_variable = #debuginfo.local_variable<scope = #subprogram, name = "arg0"> : !debuginfo.unresolved<!kgen.paramref<T>>
+
+// CHECK-LABEL: kgen.generator @inline_heuristic
+kgen.generator @inline_heuristic<A>(%arg: index) {
+  // CHECK-NOT: kgen.call @callee
+  %0 = kgen.call @callee<:type index>(%arg) : (index) -> index
+  // CHECK: kgen.call @larger_callee
+  %1 = kgen.call @larger_callee<:type index>(%arg) : (index) -> index
+  // CHECK: debuginfo.value
+  // CHECK-NOT: kgen.call @fake_larger_callee
+  %2 = kgen.call @fake_larger_callee<:type index>(%arg) : (index) -> index
+  kgen.return
+}
+
+// CHECK-LABEL: kgen.generator @callee
+kgen.generator @callee<T: type>(%arg: !kgen.paramref<T>) -> !kgen.paramref<T> always_inline {
+  kgen.return %arg : !kgen.paramref<T>
+}
+
+// CHECK-LABEL: kgen.generator @larger_callee
+kgen.generator @larger_callee<T: type>(%arg: !kgen.paramref<T>) -> !kgen.paramref<T> always_inline {
+  kgen.param.declare value1 = <1>
+  kgen.param.declare value2 = <1>
+  kgen.param.declare value3 = <1>
+  kgen.param.declare value4 = <1>
+  kgen.return %arg : !kgen.paramref<T>
+}
+
+// CHECK-LABEL: kgen.generator @fake_larger_callee
+// This function looks large but is just full of debug ops.
+kgen.generator @fake_larger_callee<T: type>(%arg: !kgen.paramref<T>) -> !kgen.paramref<T> always_inline {
+  debuginfo.value #local_variable = %arg : !kgen.paramref<T>
+  debuginfo.value #local_variable = %arg : !kgen.paramref<T>
+  debuginfo.value #local_variable = %arg : !kgen.paramref<T>
+  debuginfo.kill #local_variable
+  kgen.return %arg : !kgen.paramref<T>
+}
