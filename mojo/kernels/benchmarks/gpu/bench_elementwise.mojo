@@ -19,6 +19,7 @@ from internal_utils import DeviceNDBuffer
 from utils import StaticIntTuple
 from utils.index import product
 from sys.intrinsics import strided_load
+from buffer.buffer import _compute_ndbuffer_offset
 
 
 fn add_const_fn(x: SIMD) -> __type_of(x):
@@ -34,80 +35,56 @@ fn simd_sqrt(x: SIMD) -> __type_of(x):
 
 
 @always_inline
-fn _compute_flat_index[
-    type: DType, rank: Int, iters: Int, static_shape: DimList
-](
-    buffer: NDBuffer[type, rank, static_shape],
-    index: StaticIntTuple[rank],
-) -> Int:
-    var flat_index: Int = 0
-
-    @parameter
-    for i in range(iters):
-        flat_index = fma(index[i], buffer.stride[i](), flat_index)
-
-    return flat_index
-
-
-@always_inline
 fn _simd_load_internal[
-    simd_width: Int, type: DType, rank: Int, static_shape: DimList
-](buffer: NDBuffer[type, rank, static_shape], index: Int) -> SIMD[
-    type, simd_width
-]:
+    simd_width: Int
+](buffer: NDBuffer, index: Int) -> SIMD[buffer.type, simd_width]:
     @parameter
-    if type is DType.bool:
+    if buffer.type is DType.bool:
         var v = buffer.data.bitcast[DType.uint8]().load[width=simd_width](index)
-        return v.cast[type]()
-    else:
-        return buffer.data.load[width=simd_width](index)
+        return v.cast[buffer.type]()
+    return buffer.data.load[width=simd_width](index)
 
 
 @always_inline
 fn simd_load[
-    type: DType, simd_width: Int, rank: Int, input_0_static_shape: DimList
+    simd_width: Int
 ](
-    buffer: NDBuffer[type, rank, input_0_static_shape],
-    index: StaticIntTuple[rank],
-) -> SIMD[type, simd_width]:
-    var flat_index = _compute_flat_index[
-        type, rank, rank, input_0_static_shape
-    ](buffer, index)
-    var stride = buffer.stride[rank - 1]()
+    buffer: NDBuffer,
+    index: StaticIntTuple[buffer.rank],
+) -> SIMD[
+    buffer.type, simd_width
+]:
+    var flat_index = _compute_ndbuffer_offset(buffer, index)
 
-    if stride != 0:
+    if buffer.is_contiguous():
+        return _simd_load_internal[simd_width](buffer, flat_index)
+
+    var stride = buffer.stride[buffer.rank - 1]()
+    if stride == 0:
         return buffer.data.load(flat_index)
-    elif stride > 1:
 
-        @parameter
-        if type is DType.bool:
-            var v = strided_load[simd_width](
-                buffer.data.bitcast[DType.uint8]().offset(flat_index),
-                stride,
-            )
-            return v.cast[type]()
-        else:
-            return strided_load[simd_width](
-                buffer.data.offset(flat_index), stride
-            )
-    return _simd_load_internal[simd_width, type, rank, input_0_static_shape](
-        buffer, flat_index
-    )
+    if buffer.type is DType.bool:
+        var v = strided_load[simd_width](
+            buffer.data.bitcast[DType.uint8]().offset(flat_index),
+            stride,
+        )
+        return v.cast[buffer.type]()
+    return strided_load[simd_width](buffer.data.offset(flat_index), stride)
 
 
 @always_inline
 fn simd_store[
-    type: DType, simd_width: Int, rank: Int
+    simd_width: Int
 ](
-    buffer: NDBuffer[type, rank],
-    index: StaticIntTuple[rank],
-    val: SIMD[type, simd_width],
+    buffer: NDBuffer,
+    index: StaticIntTuple[buffer.rank],
+    val: SIMD[buffer.type, simd_width],
 ):
-    var flat_index = _compute_flat_index[type, rank, rank](buffer, index)
+    var flat_index = _compute_ndbuffer_offset(buffer, index)
 
     # We have to cast bools into their runtime storage type.
     @parameter
-    if type is DType.bool:
+    if buffer.type is DType.bool:
         var v = val.cast[DType.uint8]()
         buffer.data.bitcast[DType.uint8]().store[width=simd_width](
             flat_index, v
@@ -189,14 +166,10 @@ fn run_elementwise[
                     """In this mode we use the simd_store / simd_load that are copied
                     from MOGG.mojo. This is used to emulate what the graph compiler
                     would generate for the elementwise operations."""
-                    simd_store[type, simd_width, rank](
+                    simd_store(
                         out_tensor,
                         idx,
-                        kernel_fn(
-                            simd_load[type, simd_width, rank, in_tensor.shape](
-                                in_tensor, idx
-                            )
-                        ),
+                        kernel_fn(simd_load[simd_width](in_tensor, idx)),
                     )
                 else:
                     out_tensor.store[alignment=align](
