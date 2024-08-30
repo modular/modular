@@ -1,7 +1,13 @@
+//===----------------------------------------------------------------------===//
+//
+// This file is Modular Inc proprietary.
+//
+//===----------------------------------------------------------------------===//
+
+// Note: extension tests disable the use of modular cli or magic SDK
+
 import * as assert from 'assert';
-
 import * as vscode from 'vscode';
-
 import { getExtension } from '../extension';
 import path = require('path');
 import { firstValueFrom } from 'rxjs';
@@ -22,7 +28,6 @@ function openModularRoot() {
   );
 }
 
-/*
 suite('LSP', () => {
   test('LSP should not be loaded on startup', async () => {
     const extension = await getExtension();
@@ -44,4 +49,3 @@ suite('LSP', () => {
     assert.strictEqual((await lsp)!.name, 'Mojo Language Client');
   });
 });
-*/
