@@ -8,6 +8,7 @@
 #define SUPPORT_INTERPRETER_INTERPRETERINTERFACE_H
 
 #include "Support/Compiler/ErrorTree.h"
+#include "Support/MDialect/MAttrs.h"
 #include "mlir/IR/OpDefinition.h"
 
 namespace M {
@@ -38,6 +39,7 @@ struct OpBytecodeGenerator {
 
 namespace M::detail {
 class InterpreterDelegateOpInterface;
+class BytecodeDelegateOpInterface;
 
 /// This class defines a delegate op interface to
 /// `BytecodeInterpreterOpInterface` for operations that define a simple
@@ -63,13 +65,44 @@ struct InterpreterDelegateOpInterfaceTraits
   };
 };
 
+struct BytecodeDelegateOpInterfaceTraits
+    : public BytecodeInterpreterOpInterfaceInterfaceTraits {
+  template <typename ConcreteOp>
+  class Model : public Concept {
+  public:
+    using Interface = InterpreterDelegateOpInterface;
+    Model() : Concept{getInterpretHook} {}
+
+    static inline OpBytecodeGenerator getInterpretHook() {
+      using Payload = typename ConcreteOp::Payload;
+      return {sizeof(Payload),
+              +[](Operation *op, void *payload, TargetInfoAttr target) {
+                return cast<ConcreteOp>(op).compile(*(Payload *)payload,
+                                                    target);
+              },
+              +[](Operation *op, ArrayRef<Attribute> operands,
+                  const void *payload, InterpreterState &state) {
+                return cast<ConcreteOp>(op).interpret(
+                    operands, *(const Payload *)payload, state);
+              }};
+    }
+  };
+};
+
 template <typename ConcreteOp>
 struct InterpreterDelegateOpInterfaceTrait;
+template <typename ConcreteOp>
+struct BytecodeDelegateOpInterfaceTrait;
 
 class InterpreterDelegateOpInterface : public BytecodeInterpreterOpInterface {
 public:
   template <typename ConcreteOp>
   struct Trait : public InterpreterDelegateOpInterfaceTrait<ConcreteOp> {};
+};
+class BytecodeDelegateOpInterface : public BytecodeInterpreterOpInterface {
+public:
+  template <typename ConcreteOp>
+  struct Trait : public BytecodeDelegateOpInterfaceTrait<ConcreteOp> {};
 };
 
 template <typename ConcreteOp>
@@ -77,6 +110,11 @@ struct InterpreterDelegateOpInterfaceTrait
     : public mlir::OpInterface<
           InterpreterDelegateOpInterface,
           InterpreterDelegateOpInterfaceTraits>::Trait<ConcreteOp> {};
+template <typename ConcreteOp>
+struct BytecodeDelegateOpInterfaceTrait
+    : public mlir::OpInterface<
+          BytecodeDelegateOpInterface,
+          BytecodeDelegateOpInterfaceTraits>::Trait<ConcreteOp> {};
 } // namespace M::detail
 
 #endif // SUPPORT_INTERPRETER_INTERPRETERINTERFACE_H

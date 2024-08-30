@@ -1172,45 +1172,59 @@ void SelectOp::getCanonicalizationPatterns(RewritePatternSet &results,
 // StackAllocationOp
 //===----------------------------------------------------------------------===//
 
-ErrorTreeOrSuccess StackAllocationOp::interpret(ArrayRef<Attribute> operands,
-                                                InterpreterState &state) {
+ErrorOrSuccess StackAllocationOp::compile(Payload &payload,
+                                          TargetInfoAttr target) {
   auto countAttr = dyn_cast<IntegerAttr>(getCount());
   if (!countAttr)
-    return ErrorTree(getLoc(), "array size is not a constant");
+    return Error("array size is not a constant");
   int64_t count = countAttr.getInt();
 
-  if (!state.getTarget()) {
+  if (!target) {
     if (count != 1)
-      return ErrorTree(getLoc(), "array allocation requires a target model");
-    uint64_t slot = state.allocateSymbolicMemory(
-        createUninitializedValueOf(getType().getElementType()));
-    state.mapResults(SymbolicPointerAttr::get(slot, getType()));
+      return Error("array allocation requires a target model");
     return success();
   }
 
   // Determine the allocation size.
   Type type = cast<PointerType>(getType()).getElementType();
   std::optional<int64_t> size =
-      DataLayoutInterface::getTypeAllocSize(state.getTarget(), type);
+      DataLayoutInterface::getTypeAllocSize(target, type);
   if (!size)
-    return ErrorTree(getLoc(), "could not query type size");
+    return Error("could not query type size");
 
-  // Determine the alignment. If the alignment is unspecified or zero, query the
-  // natural alignment of the type.
+  // Determine the alignment. If the alignment is unspecified or zero, query
+  // the natural alignment of the type.
   int64_t align = 0;
   if (TypedAttr alignAttr = getAlignmentAttr())
     align = cast<IntegerAttr>(alignAttr).getInt();
   if (align < 0)
-    return ErrorTree(getLoc(), "invalid alignment value: " + Twine(align));
+    return Error("invalid alignment value: " + Twine(align));
   if (align == 0) {
     std::optional<int64_t> typeAlign =
-        DataLayoutInterface::getTypeABIAlign(state.getTarget(), type);
+        DataLayoutInterface::getTypeABIAlign(target, type);
     if (!typeAlign)
-      return ErrorTree(getLoc(), "could not query type alignment");
+      return Error("could not query type alignment");
     align = *typeAlign;
   }
 
-  ErrorOr<int64_t> addr = state.allocateStackMemory(count * *size, align);
+  payload.size = count * *size;
+  payload.align = align;
+  return success();
+}
+
+ErrorTreeOrSuccess StackAllocationOp::interpret(ArrayRef<Attribute> operands,
+                                                const Payload &payload,
+                                                InterpreterState &state) {
+  // If there is no target model, we know it is a count 1 alloc.
+  if (!state.getTarget()) {
+    uint64_t slot = state.allocateSymbolicMemory(
+        createUninitializedValueOf(getType().getElementType()));
+    state.mapResults(SymbolicPointerAttr::get(slot, getType()));
+    return success();
+  }
+
+  ErrorOr<int64_t> addr =
+      state.allocateStackMemory(payload.size, payload.align);
   if (addr.isError())
     return ErrorTree(getLoc(), addr.takeError());
   state.mapResults(PointerAttr::get(addr.takeValue(), getType()));
