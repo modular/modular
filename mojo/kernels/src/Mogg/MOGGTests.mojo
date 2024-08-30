@@ -72,7 +72,7 @@ fn test_3D_in_out_lambda[
     input_0_fn: fn[width: Int, rank: Int] (
         StaticIntTuple[rank]
     ) capturing -> SIMD[type, width],
-    output_0_fn: fn[width: Int, rank: Int] (
+    output_0_fn: fn[width: Int, rank: Int, element_alignment: Int] (
         StaticIntTuple[rank], SIMD[type, width]
     ) capturing -> None,
 ](tensor1: NDBuffer[type, 3], output: NDBuffer[type, 3],) -> NDBuffer[type, 3]:
@@ -88,7 +88,7 @@ fn test_3D_in_out_lambda[
             fn func_wrapper[simd_width: Int](idx: Int):
                 var indices = StaticIntTuple[3](x, y, idx)
                 var result = input_0_fn[simd_width, 3](indices)
-                output_0_fn[simd_width, 3](indices, result)
+                output_0_fn[simd_width, 3, element_alignment=1](indices, result)
 
             vectorize[func_wrapper, simd_width](tensor1.dim[2]())
 
@@ -208,7 +208,7 @@ fn test_unary_kernel[
     input_0_fn: fn[width: Int, rank: Int] (
         StaticIntTuple[rank]
     ) capturing -> SIMD[type, width],
-    output_0_fn: fn[width: Int, rank: Int] (
+    output_0_fn: fn[width: Int, rank: Int, element_alignment: Int] (
         StaticIntTuple[rank], SIMD[type, width]
     ) capturing -> None,
     single_thread_blocking_override: Bool,
@@ -254,7 +254,7 @@ fn test_custom_identity[
     input_0_fn: fn[width: Int, rank: Int] (
         StaticIntTuple[rank]
     ) capturing -> SIMD[type, width],
-    output_0_fn: fn[width: Int, rank: Int] (
+    output_0_fn: fn[width: Int, rank: Int, element_alignment: Int] (
         StaticIntTuple[rank], SIMD[type, width]
     ) capturing -> None,
     single_thread_blocking_override: Bool,
@@ -265,7 +265,7 @@ fn test_custom_identity[
     @always_inline
     fn identity[simd_width: Int, rank: Int](idx: StaticIntTuple[rank]):
         var x = input_0_fn[simd_width, rank](idx)
-        output_0_fn[simd_width, rank](idx, x)
+        output_0_fn[simd_width, rank, element_alignment=1](idx, x)
 
     elementwise[
         identity,
@@ -329,7 +329,7 @@ fn custom_op_that_raises[
     input_0_fn: fn[width: Int, rank: Int] (
         StaticIntTuple[rank]
     ) capturing -> SIMD[type, width],
-    output_0_fn: fn[width: Int, rank: Int] (
+    output_0_fn: fn[width: Int, rank: Int, element_alignment: Int] (
         StaticIntTuple[rank], SIMD[type, width]
     ) capturing -> None,
     single_thread_blocking_override: Bool,
@@ -341,7 +341,7 @@ fn custom_op_that_raises[
     @always_inline
     fn identity[simd_width: Int, rank: Int](idx: StaticIntTuple[rank]):
         var x = input_0_fn[simd_width, rank](idx)
-        output_0_fn[simd_width, rank](idx, x)
+        output_0_fn[simd_width, rank, element_alignment=1](idx, x)
 
     elementwise[
         identity,

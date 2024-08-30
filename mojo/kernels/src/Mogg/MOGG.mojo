@@ -12,7 +12,7 @@ from math import floor as _floor
 from math import fma, isqrt, log, log1p, sin, sqrt
 from math import tanh as _tanh
 from random import randn, seed
-from sys import external_call, llvm_intrinsic
+from sys import external_call, llvm_intrinsic, alignof
 from sys.info import simdwidthof, sizeof
 from sys.intrinsics import strided_load
 from sys.param_env import is_defined
@@ -568,7 +568,9 @@ fn elementwise_wrapper[
     type: DType,
     rank: Int,
     single_thread_blocking_override: Bool,
-    func: fn[width: Int, rank: Int] (StaticIntTuple[rank]) capturing -> None,
+    func: fn[width: Int, rank: Int, element_alignment: Int] (
+        StaticIntTuple[rank]
+    ) capturing -> None,
     /,
     target: StringLiteral = "cpu",
 ](buffer: NDBuffer[type, rank], ctx: MojoCallContextPtr,):
@@ -596,7 +598,7 @@ fn elementwise_wrapper[
         Trace[TraceLevel.OP]._get_detail_str[description_fn](),
     ):
         elementwise[
-            func,
+            func[element_alignment=1],
             simd_width=simd_width,
             use_blocking_impl=single_thread_blocking_override,
             target=target,
@@ -749,7 +751,7 @@ fn simd_load[
 @export
 @always_inline
 fn simd_store[
-    simd_width: Int
+    simd_width: Int, element_alignment: Int
 ](
     buffer: NDBuffer,
     index: StaticIntTuple[buffer.rank],
@@ -765,7 +767,15 @@ fn simd_store[
             flat_index, v
         )
     else:
-        buffer.data.store[width=simd_width](flat_index, val)
+        buffer.data.store[
+            width=simd_width,
+            # TODO(GRA-933): cannot use elemement_alignment here yet because the
+            # pointer backing the NDBuffer may be unaligned (e.g.the graph
+            # compiler may pass in an offset into an aligned buffer if the
+            # subsequent op is concat). Should change to:
+            # alignment = element_alignment * alignof[Scalar[buffer.type]](),
+            alignment = alignof[Scalar[buffer.type]](),
+        ](flat_index, val)
 
 
 # ===----------------------------------------------------------------------===#
@@ -1405,7 +1415,7 @@ fn mean[
     input_0_fn: fn[width: Int, rank: Int] (
         StaticIntTuple[rank]
     ) capturing -> SIMD[type, width],
-    output_0_fn: fn[width: Int, rank: Int] (
+    output_0_fn: fn[width: Int, rank: Int, element_alignment: Int] (
         StaticIntTuple[rank], SIMD[type, width]
     ) capturing -> None,
     /,
@@ -1430,7 +1440,7 @@ fn mean[
         _mean[
             type,
             input_0_fn,
-            output_0_fn,
+            output_0_fn[element_alignment=1],
             target=target,
             single_thread_blocking_override=single_thread_blocking_override,
         ](input_shape, int(axis), output_shape, context=ctx)
@@ -1582,7 +1592,7 @@ fn reduce_add[
     input_0_fn: fn[width: Int, rank: Int] (
         StaticIntTuple[rank]
     ) capturing -> SIMD[type, width],
-    output_0_fn: fn[width: Int, rank: Int] (
+    output_0_fn: fn[width: Int, rank: Int, element_alignment: Int] (
         StaticIntTuple[rank], SIMD[type, width]
     ) capturing -> None,
     target: StringLiteral = "cpu",
@@ -1604,7 +1614,9 @@ fn reduce_add[
     fn output_0_fn_wrapper[
         _type: DType, width: Int, rank: Int
     ](indices: StaticIntTuple[rank], value: SIMD[_type, width]):
-        output_0_fn[width, rank](indices, rebind[SIMD[type, width]](value))
+        output_0_fn[width, rank, element_alignment=1](
+            indices, rebind[SIMD[type, width]](value)
+        )
 
     @always_inline
     @parameter
@@ -1633,7 +1645,7 @@ fn reduce_max[
     input_0_fn: fn[width: Int, rank: Int] (
         StaticIntTuple[rank]
     ) capturing -> SIMD[type, width],
-    output_0_fn: fn[width: Int, rank: Int] (
+    output_0_fn: fn[width: Int, rank: Int, element_alignment: Int] (
         StaticIntTuple[rank], SIMD[type, width]
     ) capturing -> None,
     target: StringLiteral = "cpu",
@@ -1655,7 +1667,9 @@ fn reduce_max[
     fn output_0_fn_wrapper[
         _type: DType, width: Int, rank: Int
     ](indices: StaticIntTuple[rank], value: SIMD[_type, width]):
-        output_0_fn[width, rank](indices, rebind[SIMD[type, width]](value))
+        output_0_fn[width, rank, element_alignment=1](
+            indices, rebind[SIMD[type, width]](value)
+        )
 
     @always_inline
     @parameter
@@ -1684,7 +1698,7 @@ fn reduce_min[
     input_0_fn: fn[width: Int, rank: Int] (
         StaticIntTuple[rank]
     ) capturing -> SIMD[type, width],
-    output_0_fn: fn[width: Int, rank: Int] (
+    output_0_fn: fn[width: Int, rank: Int, element_alignment: Int] (
         StaticIntTuple[rank], SIMD[type, width]
     ) capturing -> None,
     target: StringLiteral = "cpu",
@@ -1706,7 +1720,9 @@ fn reduce_min[
     fn output_0_fn_wrapper[
         _type: DType, width: Int, rank: Int
     ](indices: StaticIntTuple[rank], value: SIMD[_type, width]):
-        output_0_fn[width, rank](indices, rebind[SIMD[type, width]](value))
+        output_0_fn[width, rank, element_alignment=1](
+            indices, rebind[SIMD[type, width]](value)
+        )
 
     @always_inline
     @parameter
@@ -1735,7 +1751,7 @@ fn reduce_mul[
     input_0_fn: fn[width: Int, rank: Int] (
         StaticIntTuple[rank]
     ) capturing -> SIMD[type, width],
-    output_0_fn: fn[width: Int, rank: Int] (
+    output_0_fn: fn[width: Int, rank: Int, element_alignment: Int] (
         StaticIntTuple[rank], SIMD[type, width]
     ) capturing -> None,
     target: StringLiteral = "cpu",
@@ -1757,7 +1773,9 @@ fn reduce_mul[
     fn output_0_fn_wrapper[
         _type: DType, width: Int, rank: Int
     ](indices: StaticIntTuple[rank], value: SIMD[_type, width]):
-        output_0_fn[width, rank](indices, rebind[SIMD[type, width]](value))
+        output_0_fn[width, rank, element_alignment=1](
+            indices, rebind[SIMD[type, width]](value)
+        )
 
     @always_inline
     @parameter
@@ -2082,7 +2100,7 @@ fn gather[
     input_0_fn: fn[width: Int, rank: Int] (
         StaticIntTuple[rank]
     ) capturing -> SIMD[type, width],
-    output_0_fn: fn[width: Int, rank: Int] (
+    output_0_fn: fn[width: Int, rank: Int, element_alignment: Int] (
         StaticIntTuple[rank], SIMD[type, width]
     ) capturing -> None,
     target: StringLiteral = "cpu",
@@ -2110,7 +2128,7 @@ fn gather[
         indices_type,
         input_0_fn,
         load_indices,
-        output_0_fn,
+        output_0_fn[element_alignment=1],
         target=target,
         single_thread_blocking_override=single_thread_blocking_override,
     ](
@@ -2153,7 +2171,7 @@ fn matmul[
     packed_in_1: Bool,
     single_thread_blocking_override: Bool,
     lambdas_have_fusion: Bool,
-    output_0_fn: fn[width: Int, rank: Int] (
+    output_0_fn: fn[width: Int, rank: Int, element_alignment: Int] (
         StaticIntTuple[rank], SIMD[c_type, width]
     ) capturing -> None,
     /,
@@ -2181,7 +2199,9 @@ fn matmul[
     fn epilogue_wrapper[
         _type: DType, width: Int
     ](coords: StaticIntTuple[2], val: SIMD[_type, width]):
-        output_0_fn[width, 2](coords, rebind[SIMD[c_type, width]](val))
+        output_0_fn[width, 2, element_alignment=1](
+            coords, rebind[SIMD[c_type, width]](val)
+        )
 
     @always_inline
     @parameter
@@ -2236,7 +2256,7 @@ fn batched_matmul[
     transpose_in_1: Bool,
     single_thread_blocking_override: Bool,
     lambdas_have_fusion: Bool,
-    output_0_fn: fn[width: Int, rank: Int] (
+    output_0_fn: fn[width: Int, rank: Int, element_alignment: Int] (
         StaticIntTuple[rank], SIMD[c_type, width]
     ) capturing -> None,
     target: StringLiteral = "cpu",
@@ -2254,7 +2274,9 @@ fn batched_matmul[
     fn epilogue_wrapper[
         _type: DType, width: Int, rank: Int
     ](coords: StaticIntTuple[rank], val: SIMD[_type, width]):
-        output_0_fn[width, rank](coords, rebind[SIMD[c_type, width]](val))
+        output_0_fn[width, rank, element_alignment=1](
+            coords, rebind[SIMD[c_type, width]](val)
+        )
 
     @always_inline
     @parameter
@@ -2999,7 +3021,7 @@ fn conv[
     static_strides: DimList,
     static_dilations: DimList,
     static_padding: DimList,
-    output_0_fn: fn[width: Int, rank: Int] (
+    output_0_fn: fn[width: Int, rank: Int, element_alignment: Int] (
         StaticIntTuple[rank], SIMD[output_type, width]
     ) capturing -> None,
 ](
@@ -3075,7 +3097,7 @@ fn conv[
         input_1_static_shape.at[filter_rank - 2](),  # filter C, RSCF or FRSCf
     )
 
-    # Specialize the function to take 4D coordiantes.
+    # Specialize the function to take 4D coordinates.
     # The bias is broadcasted to the same shape as output and
     # accessed by the 4D coordinates.
     @parameter
@@ -3083,7 +3105,7 @@ fn conv[
     fn epilogue_wrapper[
         _type: DType, _rank: Int, _width: Int
     ](coords: StaticIntTuple[_rank], val: SIMD[_type, _width]):
-        output_0_fn[_width, _rank](
+        output_0_fn[_width, _rank, element_alignment=1](
             coords, rebind[SIMD[output_type, _width]](val)
         )
 
@@ -3145,7 +3167,7 @@ fn conv_transpose[
     output_padding_type: DType,
     lambdas_have_fusion: Bool,
     filter_packed: Bool,
-    output_0_fn: fn[width: Int, rank: Int] (
+    output_0_fn: fn[width: Int, rank: Int, element_alignment: Int] (
         StaticIntTuple[rank], SIMD[output_type, width]
     ) capturing -> None,
 ](
@@ -3228,7 +3250,7 @@ fn conv_transpose[
     fn epilogue_wrapper[
         _type: DType, _rank: Int, _width: Int
     ](coords: StaticIntTuple[_rank], val: SIMD[_type, _width]):
-        output_0_fn[_width, _rank](
+        output_0_fn[_width, _rank, element_alignment=1](
             coords, rebind[SIMD[output_type, _width]](val)
         )
 
@@ -3719,7 +3741,7 @@ fn reduce_min_and_max[
     input_0_fn: fn[width: Int, rank: Int] (
         StaticIntTuple[rank]
     ) capturing -> SIMD[type, width],
-    output_0_fn: fn[width: Int, rank: Int] (
+    output_0_fn: fn[width: Int, rank: Int, element_alignment: Int] (
         StaticIntTuple[rank], SIMD[type, width]
     ) capturing -> None,
     target: StringLiteral = "cpu",
@@ -3756,11 +3778,15 @@ fn reduce_min_and_max[
         # TODO: multiple output tensors.
         var indices_min = indices
         indices_min[axis] = 0
-        output_0_fn[width, rank](indices_min, rebind[SIMD[type, width]](val[0]))
+        output_0_fn[width, rank, element_alignment=1](
+            indices_min, rebind[SIMD[type, width]](val[0])
+        )
 
         var indices_max = indices
         indices_max[axis] = 1
-        output_0_fn[width, rank](indices_max, rebind[SIMD[type, width]](val[1]))
+        output_0_fn[width, rank, element_alignment=1](
+            indices_max, rebind[SIMD[type, width]](val[1])
+        )
 
     @always_inline
     @parameter
