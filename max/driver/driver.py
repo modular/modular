@@ -23,6 +23,10 @@ class Device(ABC):
     def __str__(self) -> str:
         return str(self._device)
 
+    @property
+    def is_host(self) -> bool:
+        return False
+
 
 class CPU(Device):
     """This represents an instance of a logical cpu device."""
@@ -32,6 +36,10 @@ class CPU(Device):
     def __init__(self, id: int = -1):
         # FIXME: Use device descriptors
         self._device = _cpu_device(id)
+
+    @property
+    def is_host(self) -> bool:
+        return True
 
 
 class CUDA(Device):

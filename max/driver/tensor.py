@@ -118,7 +118,8 @@ class Tensor:
 
     def copy_to(self, device: Device) -> Tensor:
         """Copies a tensor to the provided device."""
-        return self._impl.copy_to(device._device)
+        copied = self._impl.copy_to(device._device)
+        return Tensor(self.shape, self.dtype, device, _impl=copied)
 
     @classmethod
     def from_numpy(cls, arr: np.ndarray, device: Device = CPU()) -> Tensor:
@@ -128,6 +129,6 @@ class Tensor:
         to the target."""
         tensor = cls._from_impl(_Tensor(arr, CPU()._device))
 
-        if not tensor.is_host:
+        if not device.is_host:
             return tensor.copy_to(device)
         return tensor
