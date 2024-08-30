@@ -25,6 +25,7 @@ fn cublas_matmul(
     c_row_major: Bool = False,
     transpose_a: Bool = False,
     transpose_b: Bool = False,
+    use_tf32: Bool = True,
 ) -> Result:
     constrained[
         a.type == b.type
@@ -50,7 +51,9 @@ fn cublas_matmul(
     elif a.type == DType.bfloat16:
         compute_type = ComputeType.COMPUTE_32F_FAST_16BF
     else:
-        compute_type = ComputeType.COMPUTE_32F_FAST_TF32
+        compute_type = (
+            ComputeType.COMPUTE_32F_FAST_TF32 if use_tf32 else ComputeType.COMPUTE_32F
+        )
 
     # Cublas is by default column-major but we like to have the output in row-major
     # to compare with our results. To do this without an explicit transpose, we
