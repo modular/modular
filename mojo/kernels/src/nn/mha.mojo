@@ -730,12 +730,10 @@ fn mha_single_batch[
     ]()
 
     var tid = ThreadIdx.x()
-    var warp_id = (tid // WARP_SIZE)
+    var warp_id = tid // WARP_SIZE
     var lane = lane_id()
 
     # Coordinates of the current warp.
-    var warp_x: UInt
-    var warp_y: UInt
     warp_y, warp_x = divmod(warp_id, UInt(num_warps_n))
 
     # The entire query block (BM x depth) is tiled in shared memory.
@@ -1243,8 +1241,6 @@ fn mha_decoding_single_batch[
     var lane = lane_id()
 
     # Coordinates of the current warp.
-    var warp_x: UInt
-    var warp_y: UInt
     warp_y, warp_x = divmod(warp_id, UInt(num_warps_n))
 
     # The entire query block (BM x depth) is tiled in shared memory.
@@ -1347,11 +1343,7 @@ fn mha_decoding_single_batch[
             vec = q_ptr.load[
                 width=simd_size, alignment = alignof[SIMD[q_type, simd_size]]()
             ](q_offset + i)
-        var row: UInt
-        var col: UInt
         row, col = divmod(i, depth)
-        var chunk_id: UInt
-        var in_chunk_id: UInt
         chunk_id, in_chunk_id = divmod(col, BK)
         if i < BM * depth:
             q_smem.store[alignment = alignof[SIMD[q_type, simd_size]]()](

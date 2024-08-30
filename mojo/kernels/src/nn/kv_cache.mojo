@@ -559,7 +559,6 @@ fn _matmul_kv_cache_impl[
         cache: The ContiguousKVCache, with shape determined by `kv_params.layout`
         ctx: Pointer containing the runtime context for the target device.
     """
-    var BS = hidden_state.dim[0]()
     var SEQ_LEN = hidden_state.dim[1]()
     alias N = weight_shape.get[0]()
     alias K = weight_shape.get[1]()
@@ -569,12 +568,8 @@ fn _matmul_kv_cache_impl[
     fn write_to_cache[
         type_: DType, width: Int
     ](idx: StaticIntTuple[2], val: SIMD[type_, width]):
-        var bs_and_seq = divmod(idx[0], SEQ_LEN)
-        var b_idx = bs_and_seq[0]
-        var t_idx = bs_and_seq[1]
-        var head_and_dim = divmod(idx[1], kv_params.head_size)
-        var h_idx = head_and_dim[0]
-        var hd_idx = head_and_dim[1]
+        b_idx, t_idx = divmod(idx[0], SEQ_LEN)
+        h_idx, hd_idx = divmod(idx[1], kv_params.head_size)
 
         var valid_len = cache.cache_length(b_idx)
         var cache_t_idx = t_idx + valid_len
