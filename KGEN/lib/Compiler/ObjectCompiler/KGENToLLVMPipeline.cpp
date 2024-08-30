@@ -24,8 +24,7 @@ void KGEN::buildLowerToLLVMPipeline(mlir::OpPassManager &pm,
   pm.addPass(createLowerKGENToLLVM(LowerKGENToLLVMOptions{
       options.globalCtorFnName, options.globalDtorFnName}));
   pm.addPass(createLowerRuntimeClosures());
-  pm.addPass(createLowerGlobalPOPToLLVM(LowerGlobalPOPToLLVMOptions{
-      options.alignedAllocFnName, options.alignedFreeFnName}));
+  pm.addPass(createLowerGlobalPOPToLLVM());
   pm.addNestedPass<LLVMFuncOp>(createLowerPOPToLLVM());
   pm.addNestedPass<LLVMFuncOp>(createLowerControlFlow());
   pm.addNestedPass<LLVMFuncOp>(mlir::createReconcileUnrealizedCastsPass());

@@ -1,7 +1,7 @@
 // RUN: kgen-opt %s -lower-to-llvm | kgen-translate -mlir-to-llvmir | FileCheck %s
 
-// CHECK: declare noalias ptr @kgenAlignedAlloc(i64 allocalign, i64) [[ALLOC_ATTRS:#[0-9]+]]
-// CHECK: declare void @kgenAlignedFree(ptr allocptr) [[FREE_ATTRS:#[0-9]+]]
+// CHECK: declare noalias ptr @KGEN_CompilerRT_AlignedAlloc(i64 allocalign, i64) [[ALLOC_ATTRS:#[0-9]+]]
+// CHECK: declare void @KGEN_CompilerRT_AlignedFree(ptr allocptr) [[FREE_ATTRS:#[0-9]+]]
 
 // CHECK: attributes [[ALLOC_ATTRS]] =
 // CHECK-SAME: allockind("alloc,uninitialized,aligned")

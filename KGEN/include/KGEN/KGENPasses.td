@@ -307,25 +307,18 @@ def LowerGlobalPOPToLLVM : Pass<"lower-global-pop-to-llvm", "ModuleOp"> {
     external calls and glboal constant operations.
 
     The pass converts `pop.aligned_alloc` and `pop.aligned_free` operations to
-    calls to allocate and free functions according to the names supplied to
-    `alloc-fn-name` and `free-fn-name`. The pass will use functions present in
-    the current module if possible, otherwise it will create declarations for
+    calls to allocate and free functions to `KGEN_CompilerRT_AlignedAlloc` and
+    `KGEN_CompilerRT_AlignedFree`. The pass will use functions present in the
+    current module if possible, otherwise it will create declarations for
     external functions. The signatures must be:
 
     ```
-    void *kgenAlignedAlloc(ssize_t align, ssize_t size);
-    void kgenAlignedFree(void *ptr);
+    void *KGEN_CompilerRT_AlignedAlloc(ssize_t align, ssize_t size);
+    void KGEN_CompilerRT_AlignedFree(void *ptr);
     ```
   }];
 
   let dependentDialects = ["::mlir::LLVM::LLVMDialect"];
-  // FIXME(#16605): Global destructors don't work in JIT mode.
-  let options = [
-    Option<"allocFnName", "alloc-fn-name", "std::string",
-           "\"kgenAlignedAlloc\"", "The aligned allocate function name.">,
-    Option<"freeFnName", "free-fn-name", "std::string",
-           "\"kgenAlignedFree\"", "The aligned free function name.">
-  ];
 }
 
 //===----------------------------------------------------------------------===//

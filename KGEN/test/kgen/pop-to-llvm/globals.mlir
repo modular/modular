@@ -108,21 +108,21 @@ module attributes {M.target_info = #M.target<triple="", arch="", features="", da
   llvm.func @alloc_free() {
     %size = index.constant 1
     %align = index.constant 8
-    // CHECK: [[RAW_PTR:%.*]] = llvm.call @kgenAlignedAlloc
+    // CHECK: [[RAW_PTR:%.*]] = llvm.call @KGEN_CompilerRT_AlignedAlloc
     // CHECK-NEXT: [[PTR:%.*]] = llvm.bitcast [[RAW_PTR]] : !llvm.ptr to !llvm.ptr
     %0 = pop.aligned_alloc %align, %size : <index>
     // CHECK: [[RAW_PTR:%.*]] = llvm.bitcast [[PTR]] : !llvm.ptr to !llvm.ptr
-    // CHECK-NEXT: llvm.call @kgenAlignedFree([[RAW_PTR]])
+    // CHECK-NEXT: llvm.call @KGEN_CompilerRT_AlignedFree([[RAW_PTR]])
     pop.aligned_free %0 : <index>
     llvm.return
   }
 
-  // CHECK: llvm.func @kgenAlignedAlloc(i64 {llvm.allocalign}, i64) -> (!llvm.ptr {llvm.noalias})
+  // CHECK: llvm.func @KGEN_CompilerRT_AlignedAlloc(i64 {llvm.allocalign}, i64) -> (!llvm.ptr {llvm.noalias})
   // CHECK-DAG: ["allockind", "41"]
   // CHECK-DAG: ["allocsize", "8589934591"]
   // CHECK-DAG: ["alloc-family", "kgen_aligned_allocator"]
 
-  // CHECK: llvm.func @kgenAlignedFree(!llvm.ptr {llvm.allocptr})
+  // CHECK: llvm.func @KGEN_CompilerRT_AlignedFree(!llvm.ptr {llvm.allocptr})
   // CHECK-DAG: ["allockind", "4"]
   // CHECK-DAG: ["alloc-family", "kgen_aligned_allocator"]
 }
