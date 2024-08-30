@@ -33,8 +33,6 @@ modular_py_test(
     mojo_deps = [
         "//SDK/integration-test:test_user_op",
     ],
-    requires_gpu = False,
-    tags = ["gpu"],
     target_compatible_with = select({
         # TODO: Sanitizer libs aren't available when python loads pybind shared libs
         "//:asan": ["@platforms//:incompatible"],
@@ -44,11 +42,48 @@ modular_py_test(
     deps = [
         "//SDK/lib/API/python:max_engine",
         "//SDK/public/max-repo/pipelines/python/llama3",
-        "//Support/python:support",
         requirement("torch"),
         requirement("transformers"),
         requirement("hypothesis"),
         requirement("sentencepiece"),
         requirement("gguf"),
+    ],
+)
+
+modular_py_test(
+    name = "cuda_tests",
+    srcs = glob(["gpu_tests/**/*.py"]),
+    data = [
+        "//KGEN:CompilerRT",
+        "//ModularFramework/tools/mof",
+        # TODO(SDLC-918): remove when landed
+        "//Kernels/mojo/Mogg:MOGG.lib.mlirbc",
+        "//Kernels/mojo/Mogg:MOGG_debuginfo.lib.mlirbc",
+        "//Kernels/mojo/Mogg:MOGGPrimitives.lib.mlirbc",
+        "//Kernels/mojo/Mogg:MOGGPrimitives_debuginfo.lib.mlirbc",
+        "//ONNX/tools/onnx:monnx",
+        "//PyTorch:TorchRuntimePlugins",
+        "//PyTorch/tools/torch:mtorch",
+        "//SDK/integration-test:test_user_op",
+        "//SDK/integration-test/EngineAPI:inputs",
+        "//SDK/integration-test/EngineAPI:pytest_inputs",
+        "//SDK/test/API/graph/python/pytests/testdata",
+        "@llvm-project//compiler-rt:orc_rt",
+    ],
+    env = {
+        "BAZEL": "true",
+        "CUSTOM_OPS_PATH": "$(location //SDK/integration-test:test_user_op)",
+        "MODULAR_PATH": ".",
+        "GRAPH_TESTDATA": "SDK/test/API/graph/python/pytests/testdata",
+    },
+    tags = ["gpu"],
+    target_compatible_with = select({
+        # TODO: Sanitizer libs aren't available when python loads pybind shared libs
+        "//:asan": ["@platforms//:incompatible"],
+        "//:tsan": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    deps = [
+        "//SDK/lib/API/python:max_engine",
     ],
 )

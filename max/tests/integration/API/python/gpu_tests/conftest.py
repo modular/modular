@@ -3,12 +3,11 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-
 from os import getenv
 from pathlib import Path
 
-import max.driver as md
 import pytest
+from max.driver import CUDA
 from max.engine import InferenceSession
 
 
@@ -34,33 +33,6 @@ def mo_model_path(modular_path: Path) -> Path:
     )
 
 
-@pytest.fixture
-def dynamic_model_path(modular_path: Path) -> Path:
-    """Returns the path to the dynamic shape model."""
-    return (
-        modular_path
-        / "SDK"
-        / "integration-test"
-        / "EngineAPI"
-        / "Inputs"
-        / "dynamic-model.mlir"
-    )
-
-
-def pytest_addoption(parser):
-    parser.addoption(
-        "--custom-ops-path",
-        type=str,
-        default="",
-        help="Path to custom Ops package",
-    )
-
-
-@pytest.fixture(scope="module")
-def session() -> InferenceSession:
-    return InferenceSession()
-
-
 @pytest.fixture(scope="module")
 def gpu_session() -> InferenceSession:
-    return InferenceSession(device=md.CUDA())
+    return InferenceSession(device=CUDA())

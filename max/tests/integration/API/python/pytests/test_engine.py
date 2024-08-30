@@ -6,18 +6,14 @@
 """Test the max.engine Python bindings with MOF."""
 
 import os
-from dataclasses import dataclass, field
 from math import isclose
 from pathlib import Path
-from subprocess import run
 
 import max.driver as md
 import numpy as np
 import pytest
 from max.dtype import DType
 from max.engine import InferenceSession, TensorSpec, TorchInputSpec
-
-from modular.utils.misc import has_gpu
 
 DYLIB_FILE_EXTENSION = "dylib" if os.uname().sysname == "Darwin" else "so"
 
@@ -299,37 +295,6 @@ def test_execute_multi_framework(
     onnx_output = onnx_model.execute(x=np_input)["result0"]
     trch_output = trch_model.execute(x=np_input)["result0"]
     assert np.allclose(onnx_output, trch_output)
-
-
-@pytest.mark.skipif(not has_gpu(), reason="Requires CUDA")
-def test_load_on_gpu(gpu_session: InferenceSession, mo_model_path: Path):
-    """Verify we can compile and load a model on GPU."""
-    _ = gpu_session.load(mo_model_path)
-
-
-@pytest.mark.skipif(not has_gpu(), reason="Requires CUDA")
-def test_execute_gpu(gpu_session: InferenceSession, mo_model_path: Path):
-    """Validate that we can execute inputs on GPU."""
-    model = gpu_session.load(mo_model_path)
-    input_tensor = md.Tensor.from_numpy(np.ones(5, dtype=np.float32), md.CUDA())
-    outputs = model.execute(input_tensor)
-    assert len(outputs) == 1
-    output_tensor = outputs[0]
-    host_tensor = output_tensor.copy_to(md.CPU())
-    for idx, elt in enumerate([4.0, 2.0, -5.0, 3.0, 6.0]):
-        assert isclose(host_tensor[idx].item(), elt)
-
-
-# TODO: MSDK-693: Remove this when we can create inputs for gpu.
-@pytest.mark.skipif(not has_gpu(), reason="Requires CUDA")
-def test_gpu_fails(gpu_session: InferenceSession, mo_model_path: Path):
-    """GPU execution is disabled now."""
-    model = gpu_session.load(mo_model_path)
-    with pytest.raises(
-        ValueError,
-        match=r"executing model on gpu is not supported",
-    ):
-        model.execute(input=np.ones(5, dtype=np.float32))
 
 
 def test_custom_ops(
