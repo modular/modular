@@ -728,22 +728,21 @@ fn simd_load[
     buffer.type, simd_width
 ]:
     var flat_index = _compute_ndbuffer_offset(buffer, index)
-    var stride = buffer.stride[buffer.rank - 1]()
 
+    if buffer.is_contiguous():
+        return _simd_load_internal[simd_width](buffer, flat_index)
+
+    var stride = buffer.stride[buffer.rank - 1]()
     if stride == 0:
         return buffer.data.load(flat_index)
-    elif stride > 1:
-        if buffer.type is DType.bool:
-            var v = strided_load[simd_width](
-                buffer.data.bitcast[DType.uint8]().offset(flat_index),
-                stride,
-            )
-            return v.cast[buffer.type]()
-        else:
-            return strided_load[simd_width](
-                buffer.data.offset(flat_index), stride
-            )
-    return _simd_load_internal[simd_width](buffer, flat_index)
+
+    if buffer.type is DType.bool:
+        var v = strided_load[simd_width](
+            buffer.data.bitcast[DType.uint8]().offset(flat_index),
+            stride,
+        )
+        return v.cast[buffer.type]()
+    return strided_load[simd_width](buffer.data.offset(flat_index), stride)
 
 
 @mogg_register("simd_store")
