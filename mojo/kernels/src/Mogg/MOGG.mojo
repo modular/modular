@@ -3817,24 +3817,14 @@ fn reduce_min_and_max_shape_func[
 @export
 fn masked_flash_attention_gpu[
     rank: Int,
-    mask_rank: Int,
-    input_0_static_shape: DimList,
-    input_1_static_shape: DimList,
-    input_2_static_shape: DimList,
-    input_3_static_shape: DimList,
-    q_type: DType,
-    k_type: DType,
-    v_type: DType,
-    mask_type: DType,
-    output_type: DType,
     target: StringLiteral = "cpu",
 ](
-    q: NDBuffer[q_type, rank, input_0_static_shape],
-    k: NDBuffer[k_type, rank, input_1_static_shape],
-    v: NDBuffer[v_type, rank, input_2_static_shape],
-    mask: NDBuffer[mask_type, mask_rank, input_3_static_shape],
-    scale: NDBuffer[DType.float32, 1],
-    output: NDBuffer[output_type, rank],
+    q: NDBuffer[_, rank, *_],
+    k: NDBuffer[_, rank, *_],
+    v: NDBuffer[_, rank, *_],
+    mask: NDBuffer,
+    scale: Scalar[DType.float32],
+    output: NDBuffer[_, rank, *_],
     ctx: MojoCallContextPtr,
 ) raises:
     """`masked_flash_attention_gpu` is a hand-fused operator which does something
@@ -3901,18 +3891,6 @@ fn masked_flash_attention_gpu[
         Trace[TraceLevel.OP]._get_detail_str[description_fn](),
     ):
         gpu_flash_attention[
-            rank,
-            mask_rank,
-            input_0_static_shape,
-            input_1_static_shape,
-            input_2_static_shape,
-            input_3_static_shape,
-            DimList.create_unknown[rank](),
-            q_type,
-            k_type,
-            v_type,
-            mask_type,
-            output_type,
             add_attn_mask=True,
             target=target,
             use_tensor_core=True,
@@ -4103,14 +4081,7 @@ fn no_mask_flash_attention_cpu[
         ](idx: StaticIntTuple[_rank]) -> SIMD[type, simd_width]:
             return SIMD[type, simd_width](0)
 
-        cpu_flash_attention[
-            type,
-            rank,
-            input_1_fn,
-            input_2_fn,
-            mask_fn,
-            input_4_static_shape,
-        ](
+        cpu_flash_attention[input_1_fn, input_2_fn, mask_fn](
             q,
             input_1_shape,
             input_2_shape,
@@ -4124,7 +4095,7 @@ fn no_mask_flash_attention_cpu[
 @export
 fn with_mask_flash_attention_split_kv_cache_cpu[
     type: DType,
-    rank: Int,
+    rank: Int, //,
     input_1_fn: fn[simd_width: Int, rank: Int] (
         StaticIntTuple[rank]
     ) capturing -> SIMD[type, simd_width],
@@ -4144,7 +4115,7 @@ fn with_mask_flash_attention_split_kv_cache_cpu[
     single_thread_blocking_override: Bool,
     target: StringLiteral = "cpu",
 ](
-    q: NDBuffer[type, rank],
+    q: NDBuffer[type, rank, *_],
     input_1_shape: StaticIntTuple[rank],
     input_2_shape: StaticIntTuple[rank],
     input_3_shape: StaticIntTuple[rank + 1],
@@ -4200,14 +4171,11 @@ fn with_mask_flash_attention_split_kv_cache_cpu[
         Trace[TraceLevel.OP]._get_detail_str[description_fn](),
     ):
         cpu_flash_attention_split_kv[
-            type,
-            rank,
             input_1_fn,
             input_2_fn,
             input_3_fn,
             input_4_fn,
             input_5_fn,
-            input_7_static_shape,
         ](
             q,
             input_1_shape,
@@ -4279,14 +4247,7 @@ fn with_mask_flash_attention_cpu[
         "mojo.flash_attention",
         Trace[TraceLevel.OP]._get_detail_str[description_fn](),
     ):
-        cpu_flash_attention[
-            type,
-            rank,
-            input_1_fn,
-            input_2_fn,
-            input_3_fn,
-            input_5_static_shape,
-        ](
+        cpu_flash_attention[input_1_fn, input_2_fn, input_3_fn,](
             q,
             input_1_shape,
             input_2_shape,
