@@ -366,11 +366,11 @@ def CO_HotInvokeOp : COOp<"hot_invoke", [
     AttrOfType<KGEN_SignatureType>:$callee,
     Variadic<AnyType>:$calleeOperands
   );
-  let results = (outs CoroutineType:$coroutine);
+  let results = (outs Variadic<AnyType>:$results);
 
   let assemblyFormat = [{
   `` custom<HotAsyncParametricCallee>(
-       $callee, $calleeOperands, type($calleeOperands))
+       $callee, $calleeOperands, type($calleeOperands), type($results))
     attr-dict
   }];
 

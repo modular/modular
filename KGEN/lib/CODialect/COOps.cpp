@@ -138,7 +138,7 @@ FailureOr<InlineResult> InvokeOp::prepInline(mlir::RewriterBase &b) {
 static ParseResult parseHotAsyncParametricCallee(
     OpAsmParser &p, TypedAttr &callee,
     SmallVectorImpl<OpAsmParser::UnresolvedOperand> &operands,
-    SmallVectorImpl<Type> &operandTypes) {
+    SmallVectorImpl<Type> &operandTypes, SmallVectorImpl<Type> &resultTypes) {
   if (failed(parseParametricCallee(p, callee)))
     return failure();
 
@@ -150,13 +150,14 @@ static ParseResult parseHotAsyncParametricCallee(
             return p.parseOperand(operands.emplace_back());
           })))
     return failure();
-
+  llvm::append_range(resultTypes, signature.getResults());
   return success();
 }
 
 static void printHotAsyncParametricCallee(OpAsmPrinter &p, Operation *op,
                                           TypedAttr callee, ValueRange operands,
-                                          TypeRange operandTypes) {
+                                          TypeRange operandTypes,
+                                          TypeRange resultTypes) {
   printParametricCallee(p, op, callee);
   p << "(";
   p.printOperands(operands);

@@ -2000,9 +2000,11 @@ kgen.func @trigger_creation(%arg0: i1, %arg1: index, %arg2: index, %__result__: 
    // CHECK: [[V9:%.*]] = kgen.struct.gep %arg0[1]
    // CHECK-NEXT: [[V10:%.*]] = pop.load [[V9]] : !kgen.pointer<pointer<none>>
    // CHECK-NEXT: [[V11:%.*]] = pop.pointer.bitcast [[V10]] : !kgen.pointer<none> to !kgen.signature<(!kgen.pointer<none>) -> ()>
-   // CHECK-NEXT: [[V12:%.*]] = pop.pointer.bitcast %arg0 : !kgen.pointer<struct<(i32, pointer<none>, (!kgen.pointer<none>) -> (), pointer<none>, pointer<none>, pointer<none>, struct<()>, i1, index, index)>> to !kgen.pointer<none>
+   // CHECK-NEXT: [[V12:%.*]] = pop.pointer.bitcast %arg0 : !kgen.pointer<struct<(i32, pointer<none>, (!kgen.pointer<none>) -> (), pointer<none>, pointer<none>, pointer<none>, struct<()>, pointer<struct<{{.*}}>>, i1, index, index)>> to !kgen.pointer<none>
    // CHECK-NEXT: kgen.call @conditional_suspoint_hot_ramp([[V11]], [[V12]], %{{.*}}, %{{.*}}, %{{.*}}, %{{.*}}) :
    // CHECK-SAME: (!kgen.signature<(!kgen.pointer<none>) -> ()>, !kgen.pointer<none>, i1, index, index, !kgen.pointer<index>) -> !kgen.pointer<struct<(i32, pointer<none>, (!kgen.pointer<none>) -> (), pointer<none>, pointer<none>, pointer<none>)>>
+   // CHECK-NEXT: kgen.struct.gep
+   // CHECK-NEXT: pop.store
    // CHECK-NEXT: co.suspend.end
    // CHECK-NEXT: }
    %coro = co.hot_invoke[(i1, index, index, !kgen.pointer<index> byref_result) async -> index: @conditional_suspoint](%arg0, %arg1, %arg2, %__result__)
@@ -2393,6 +2395,52 @@ kgen.func @trigger_creation(%arg1: index) async {
 
 kgen.func @trigger_trigger_creation(%arg1: index) {
   %coro = co.invoke[(index) async -> ():@trigger_creation](%arg1)
+  kgen.return
+}
+
+}
+
+// -----
+
+// COM: Hot Invoke With Results
+
+module attributes {M.target_info = #M.target<triple="", arch="", features="", data_layout="", simd_bit_width=128>} {
+kgen.func @foo(%arg1: index) async -> index {
+ co.suspend (%hdl) {
+    co.suspend.end
+ }
+ kgen.return %arg1 : index
+}
+
+// CHECK-LABEL: kgen.func @trigger_creation_resume
+kgen.func @trigger_creation(%arg1: index) async -> index {
+   // CHECK: [[CORO:%.*]] = kgen.call @foo_hot_ramp
+
+   // Store coro in frame
+   // CHECK-NEXT: [[CORO_SLOT:%.*]] = kgen.struct.gep %arg0[[[#FRAME7:]]]
+   // CHECK-NEXT: pop.store [[CORO]], [[CORO_SLOT]]
+   %result = co.hot_invoke[(index) async -> index: @foo](%arg1)
+
+   // Access results on callback
+   // CHECK-NEXT: co.suspend
+   // CHECK-NEXT: }
+   // CHECK-NEXT: [[CORO_SLOT2:%.*]] = kgen.struct.gep %arg0[[[#FRAME7]]]
+   // CHECK-NEXT: [[CORO2:%.*]] = pop.load [[CORO_SLOT2]]
+   // CHECK-NEXT: [[CORO_WITH_PROMISE:%.*]] = pop.pointer.bitcast [[CORO2]]
+   // CHECK-NEXT: [[PROMISE_SLOT:%.*]] = kgen.struct.gep [[CORO_WITH_PROMISE]][[[#PROMISE_IDX:]]]
+   // CHECK-NEXT: [[PROMISE_PTR:%.*]] = kgen.struct.gep [[PROMISE_SLOT]][0] : <struct<(index)>>
+   // CHECK-NEXT: [[PROMISE:%.*]] = pop.load [[PROMISE_PTR]] : !kgen.pointer<index>
+
+   // Store results of child coro in this coro and return.
+   // CHECK-NEXT: [[MY_RESULT_SLOT:%.*]] = kgen.struct.gep %arg0[[[#PROMISE_IDX]]]
+   // CHECK-NEXT: [[MY_PROMISE_SLOT:%.*]] = kgen.struct.gep [[MY_RESULT_SLOT]][0] : <struct<(index)>>
+   // CHECK-NEXT: pop.store [[PROMISE]], [[MY_PROMISE_SLOT]] : !kgen.pointer<index>
+   // CHECK-NEXT: kgen.return
+   kgen.return %result : index
+}
+
+kgen.func @trigger_trigger_creation(%arg1: index) {
+  %coro = co.invoke[(index) async -> index:@trigger_creation](%arg1)
   kgen.return
 }
 

@@ -1857,10 +1857,22 @@ void LowerAsyncBuildContext::preprocessAsyncFunction(
       auto suspendOp = builder.create<SuspendOp>();
       Block &block = suspendOp->getRegion(0).emplaceBlock();
       builder.setInsertionPointToStart(&block);
-      auto suspendEnd = builder.create<SuspendEndOp>();
-      hotInvoke->moveBefore(suspendEnd);
+      // Partially lower the hot invoke by setting the result type to a
+      // Coroutine. This allows us to access the coroutine after the suspension
+      // point so we can replace the results properly.
+      auto partiallyLoweredHotInvoke = builder.create<HotInvokeOp>(
+          CO::CoroutineType::get(builder.getContext()), hotInvoke.getCallee(),
+          hotInvoke.getCalleeOperands());
+      builder.create<SuspendEndOp>();
+      builder.setInsertionPointAfter(suspendOp);
+      auto results = builder.create<GetResultsOp>(
+          hotInvoke.getResultTypes(), partiallyLoweredHotInvoke->getResult(0));
+      for (auto [result, image] :
+           llvm::zip(hotInvoke.getResults(), results.getResults()))
+        result.replaceAllUsesWith(image);
+      hotInvoke->erase();
       SymbolConstantAttr callee =
-          cast<SymbolConstantAttr>(hotInvoke.getCallee());
+          cast<SymbolConstantAttr>(partiallyLoweredHotInvoke.getCallee());
       auto maybe = temperatures.find(callee);
       if (maybe == temperatures.end())
         temperatures[callee] = Temp::Hot;
@@ -1926,10 +1938,11 @@ void LowerAsyncFunctionsPass::runOnOperation() {
   replacer.addReplacement([&](CoroutineType type) { return headerType; });
 
   for (auto funcOp : module.getOps<FuncOp>()) {
-    replacer.recursivelyReplaceElementsIn(funcOp, /*replaceAttrs=*/true,
-                                          /*replaceLocs=*/true,
-                                          /*replaceTypes=*/true);
+
     if (!funcOp.isAsync()) {
+      replacer.recursivelyReplaceElementsIn(funcOp, /*replaceAttrs=*/true,
+                                            /*replaceLocs=*/true,
+                                            /*replaceTypes=*/true);
       funcOp.walk([&](InvokeOp coldInvoke) {
         SymbolConstantAttr callee =
             cast<SymbolConstantAttr>(coldInvoke.getCallee());
@@ -1939,10 +1952,14 @@ void LowerAsyncFunctionsPass::runOnOperation() {
         else if (maybe->getSecond() == Temp::Hot)
           temperatures[callee] = Temp::Both;
       });
+
       continue;
     }
     // calculate the frame of the original, unmodified resume.
     buildContext.preprocessAsyncFunction(funcOp, domInfo, temperatures);
+    replacer.recursivelyReplaceElementsIn(funcOp, /*replaceAttrs=*/true,
+                                          /*replaceLocs=*/true,
+                                          /*replaceTypes=*/true);
     asyncFunctions.push_back(funcOp);
   }
   DenseMap<SymbolConstantAttr, std::pair<SymbolConstantAttr, Type>>
@@ -2015,9 +2032,6 @@ void LowerAsyncFunctionsPass::runOnOperation() {
             "every callee of an invoke operation should have been lowered");
       }
     } else if (auto hotInvokeOp = dyn_cast<HotInvokeOp>(op)) {
-      // TODO: MOCO-1036
-      // The hot invoke should return results, which means we need to replace
-      // its results with the results of the coroutine the hot ramp returns.
       auto symbol = cast<SymbolConstantAttr>(hotInvokeOp.getCallee());
       auto newSymbolPtr = asyncFuncToHotRampFunctions.find(symbol);
       if (newSymbolPtr != asyncFuncToHotRampFunctions.end()) {
