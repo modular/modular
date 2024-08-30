@@ -358,6 +358,10 @@ export class MojoSDKManager extends DisposableContext {
   }
 
   private async findReleaseSDKSpecs(): Promise<MojoSDKSpec[]> {
+    // In tests, we don't want to download magic and its SDK.
+    if (this.context.extensionMode === vscode.ExtensionMode.Test) {
+      return [];
+    }
     if (this.enableMagicSDK) {
       const spec = await findMagicSDKSpec(
         /*withLock=*/ true,
