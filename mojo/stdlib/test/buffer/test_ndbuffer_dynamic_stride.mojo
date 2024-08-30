@@ -39,8 +39,8 @@ fn test_sub_matrix():
     print(sub_matrix0.stride(0))
     # CHECK: 1
     print(sub_matrix0.stride(1))
-    # CHECK: False
-    print(sub_matrix0.is_contiguous)
+    # CHECK: True
+    print(sub_matrix0.is_contiguous())
     # CHECK: 6.0
     print(sub_matrix0[Index(0, 1)])
     # CHECK: 10.0
@@ -68,7 +68,7 @@ fn test_sub_matrix():
     )
 
     # CHECK: True
-    print(sub_matrix2.is_contiguous)
+    print(sub_matrix2.is_contiguous())
     # CHECK: 8.0
     print(sub_matrix2[Index(1, 1)])
 

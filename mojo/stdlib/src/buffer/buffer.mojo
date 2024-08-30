@@ -504,8 +504,6 @@ struct NDBuffer[
     """The dynamic value of the shape."""
     var dynamic_stride: StaticIntTuple[rank]
     """The dynamic stride of the buffer."""
-    var is_contiguous: Bool
-    """True if the contents of the buffer are contiguous in memory."""
 
     @staticmethod
     fn _default_alignment[width: Int = 1]() -> Int:
@@ -520,7 +518,6 @@ struct NDBuffer[
         self.data = UnsafePointer[Scalar[type], address_space]()
         self.dynamic_shape = StaticIntTuple[rank]()
         self.dynamic_stride = StaticIntTuple[rank]()
-        self.is_contiguous = False
 
     @always_inline
     fn __init__(
@@ -546,7 +543,6 @@ struct NDBuffer[
         self.dynamic_stride = _compute_ndbuffer_stride[rank](
             _make_tuple[rank](shape)
         )
-        self.is_contiguous = True
 
     @always_inline
     fn __init__(
@@ -569,7 +565,6 @@ struct NDBuffer[
         self.data = ptr.bitcast[Scalar[type]]()
         self.dynamic_shape = dynamic_shape
         self.dynamic_stride = _compute_ndbuffer_stride[rank](dynamic_shape)
-        self.is_contiguous = True
 
     @always_inline
     fn __init__(
@@ -590,7 +585,6 @@ struct NDBuffer[
         self.data = ptr
         self.dynamic_shape = dynamic_shape
         self.dynamic_stride = _compute_ndbuffer_stride[rank](dynamic_shape)
-        self.is_contiguous = True
 
     @always_inline
     fn __init__(
@@ -631,9 +625,6 @@ struct NDBuffer[
         self.data = ptr
         self.dynamic_shape = dynamic_shape
         self.dynamic_stride = dynamic_stride
-        self.is_contiguous = (
-            _compute_ndbuffer_stride[rank](dynamic_shape) == dynamic_stride
-        )
 
     @always_inline
     fn __init__(
@@ -885,9 +876,6 @@ struct NDBuffer[
             self.data.offset(offset),
             dynamic_shape=shape,
             dynamic_stride=self.dynamic_stride,
-            # We are beign conservative here, some tiles can be contiguous
-            # TODO: Relax contiguous condition.
-            is_contiguous=False,
         )
         return tile
 
@@ -934,7 +922,7 @@ struct NDBuffer[
             `idx+width`.
         """
         debug_assert(
-            self.is_contiguous or width == 1,
+            self.is_contiguous() or width == 1,
             "Function requires contiguous buffer.",
         )
         return self._offset(idx).load[width=width, alignment=alignment]()
@@ -982,7 +970,7 @@ struct NDBuffer[
             `idx+width`.
         """
         debug_assert(
-            self.is_contiguous or width == 1,
+            self.is_contiguous() or width == 1,
             "Function requires contiguous buffer.",
         )
         return self._offset(idx).load[width=width, alignment=alignment]()
@@ -1044,7 +1032,7 @@ struct NDBuffer[
             val: The value to store.
         """
         debug_assert(
-            self.is_contiguous or width == 1,
+            self.is_contiguous() or width == 1,
             "Function requires contiguous buffer.",
         )
         self._offset(idx).store[width=width, alignment=alignment](val)
@@ -1112,6 +1100,17 @@ struct NDBuffer[
         return self.dynamic_stride[index]
 
     @always_inline
+    fn is_contiguous(self) -> Bool:
+        """Checks if the buffer is contiguous in memory.
+
+        Returns:
+            True if the buffer is contiguous in memory and False otherwise.
+        """
+
+        constrained[rank > 0, "rank must be positive"]()
+        return self.stride[rank - 1]() == 1
+
+    @always_inline
     fn flatten(self) -> Buffer[type, Dim(), address_space=address_space]:
         """Constructs a flattened Buffer counterpart for this NDBuffer.
 
@@ -1121,7 +1120,9 @@ struct NDBuffer[
         Returns:
             Constructed Buffer object.
         """
-        debug_assert(self.is_contiguous, "Function requires contiguous buffer.")
+        debug_assert(
+            self.is_contiguous(), "Function requires contiguous buffer."
+        )
         return Buffer[type, Dim(), address_space=address_space](
             self.data, self.size()
         )
@@ -1159,7 +1160,9 @@ struct NDBuffer[
         Constraints:
             The buffer must be contiguous.
         """
-        debug_assert(self.is_contiguous, "Function requires contiguous buffer.")
+        debug_assert(
+            self.is_contiguous(), "Function requires contiguous buffer."
+        )
 
         @parameter
         if shape.all_known[rank]():
@@ -1204,7 +1207,9 @@ struct NDBuffer[
         Args:
             val: The value to store.
         """
-        debug_assert(self.is_contiguous, "Function requires contiguous buffer.")
+        debug_assert(
+            self.is_contiguous(), "Function requires contiguous buffer."
+        )
         self._simd_fill[simdwidthof[type]()](val)
 
     @staticmethod
