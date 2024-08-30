@@ -119,6 +119,17 @@ static void enableJITDebugging(lldb::SBDebugger &debugger) {
   }
 }
 
+// Disable unsupported DW_FORM value warnings, which are common in magic SDKs
+// on Linux.
+static void disableUnsupportedDWFormValueWarnings(lldb::SBDebugger &debugger) {
+  lldb::SBExecutionContext exeCtx;
+  lldb::SBCommandReturnObject result;
+  debugger.GetCommandInterpreter().HandleCommand(
+      "settings set plugin.symbol-file.dwarf.emit-unsupported-dwform-value "
+      "false",
+      exeCtx, result);
+}
+
 namespace lldb {
 MODULAR_VISIBILITY_EXPORT bool PluginInitialize(SBDebugger debugger) {
   if (!LLDBPluginInitialize())
@@ -129,6 +140,7 @@ MODULAR_VISIBILITY_EXPORT bool PluginInitialize(SBDebugger debugger) {
   // We enable JIT debugging here so that this feature doesn't depend on
   // lldb init files or how LLDB was launched.
   enableJITDebugging(debugger);
+  disableUnsupportedDWFormValueWarnings(debugger);
   return true;
 }
 } // namespace lldb
