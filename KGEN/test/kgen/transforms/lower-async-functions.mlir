@@ -2445,3 +2445,47 @@ kgen.func @trigger_trigger_creation(%arg1: index) {
 }
 
 }
+
+// -----
+
+// COM: Removal of State 0 Virtual Blocks:
+// (1) Users of A are deleted before A
+// (2) Control Flow Nodes that are not parents of suspend are deleted.
+
+module attributes {M.target_info = #M.target<triple="", arch="", features="", data_layout="", simd_bit_width=128>} {
+// CHECK-LABEL: kgen.func @hot_stack_alloc_resume
+// CHECK-NEXT:  co.suspend {
+// CHECK-NEXT:  co.suspend.end
+// CHECK-NEXT:  }
+kgen.func @hot_stack_alloc(%arg0: i1, %arg1: index) async -> index {
+ %0 = "kgen.param.constant"() {value = #kgen.none : !kgen.none} : () -> !kgen.none
+ %1 = pop.stack_allocation 1 x index marked
+ hlcf.if %arg0 {
+  pop.store %arg1, %1 : !kgen.pointer<index>
+  hlcf.yield
+ } else {
+  pop.store %arg1, %1 : !kgen.pointer<index>
+  hlcf.yield
+ }
+
+ co.suspend (%hdl) {
+    %2 = pop.load %1 : !kgen.pointer<index>
+    pop.store %2, %1 : !kgen.pointer<index>
+    co.suspend.end
+ }
+ %2 = pop.load %1 : !kgen.pointer<index>
+ kgen.return %2 : index
+}
+
+// CHECK-LABEL: kgen.func @trigger_creation_resume
+kgen.func @trigger_creation(%arg0: i1, %arg1: index) async {
+   %coro = co.hot_invoke[(i1, index) async -> index: @hot_stack_alloc](%arg0, %arg1)
+   kgen.return
+}
+
+kgen.func @trigger_trigger_creation(%arg0: i1, %arg1: index) {
+  %coro = co.invoke[(i1, index) async -> ():@trigger_creation](%arg0, %arg1)
+  kgen.return
+}
+
+}
