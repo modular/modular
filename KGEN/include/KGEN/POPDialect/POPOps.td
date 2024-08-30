@@ -2118,7 +2118,7 @@ def POP_VariantBitcastOp : POPOp<"variant.bitcast", [Pure]> {
 //===----------------------------------------------------------------------===//
 
 def POP_VariantDiscrGEPOp : POPOp<"variant.discr_gep", [Pure,
-  DeclareOpInterfaceMethods<InterpreterOpInterface>]> {
+  BytecodeOpInterface]> {
   let summary = "Return a pointer to the discriminant field of a variant.";
   let description = [{
     The `pop.variant.discr_gep` operation takes a pointer to a variant type and
@@ -2150,6 +2150,13 @@ def POP_VariantDiscrGEPOp : POPOp<"variant.discr_gep", [Pure,
   }];
 
   let hasVerifier = 1;
+
+  let extraClassDeclaration = [{
+    struct Payload { int32_t offset; };
+    ErrorOrSuccess compile(Payload &payload, TargetInfoAttr target);
+    ErrorTreeOrSuccess interpret(ArrayRef<Attribute> operands,
+      const Payload &payload, InterpreterState &state);
+  }];
 }
 
 //===----------------------------------------------------------------------===//

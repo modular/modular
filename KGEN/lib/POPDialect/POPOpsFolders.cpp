@@ -1820,16 +1820,27 @@ OpFoldResult VariantBitcastOp::fold(FoldAdaptor adaptor) {
 // VariantDiscrGEPOp
 //===----------------------------------------------------------------------===//
 
+ErrorOrSuccess VariantDiscrGEPOp::compile(Payload &payload,
+                                          TargetInfoAttr target) {
+  if (!target)
+    return Error("requires a target model");
+
+  auto variantType = getVariant().getType().getElementAs<VariantType>();
+  std::optional<int64_t> size = variantType.getContentSize(target);
+  if (!size)
+    return Error("failed to compute size");
+  payload.offset = *size;
+  return success();
+}
+
 ErrorTreeOrSuccess VariantDiscrGEPOp::interpret(ArrayRef<Attribute> operands,
+                                                const Payload &payload,
                                                 InterpreterState &state) {
   auto ptr = dyn_cast_if_present<PointerAttr>(operands.front());
   if (!ptr)
     return ErrorTree(getLoc(), "non-constant inputs");
 
-  auto variantType = getVariant().getType().getElementAs<VariantType>();
-  state.mapResults(PointerAttr::get(
-      ptr.getAddr() + *variantType.getContentSize(state.getTarget()),
-      getType()));
+  state.mapResults(PointerAttr::get(ptr.getAddr() + payload.offset, getType()));
   return success();
 }
 
