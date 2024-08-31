@@ -23,7 +23,7 @@
 
 #include "Signatures.h"
 
-#include "KGEN/MojoParser/ExprNodes.h"
+#include "ExprNodes.h"
 #include "KGEN/MojoParser/Lexer.h"
 #include "KGEN/MojoParser/ParserBase.h"
 #include "llvm/ADT/SmallPtrSet.h"
