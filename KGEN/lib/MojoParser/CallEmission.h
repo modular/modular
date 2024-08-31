@@ -11,7 +11,7 @@
 #ifndef KGEN_MOJOPARSER_CALLEMISSION_H
 #define KGEN_MOJOPARSER_CALLEMISSION_H
 
-#include "KGEN/MojoParser/ParamBindings.h"
+#include "ParamBindings.h"
 
 namespace M::KGEN::LIT {
 
