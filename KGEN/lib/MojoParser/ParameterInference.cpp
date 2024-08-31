@@ -4,7 +4,7 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "KGEN/MojoParser/ParameterInference.h"
+#include "ParameterInference.h"
 #include "ExprEmitter.h"
 #include "KGEN/MojoParser/ASTDecl.h"
 #include "KGEN/MojoParser/ExprNodes.h"

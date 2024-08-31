@@ -13,9 +13,9 @@
 #include "KGEN/MojoParser/ASTDecl.h"
 #include "KGEN/MojoParser/CallEmission.h"
 #include "KGEN/MojoParser/ExprNodes.h"
-#include "KGEN/MojoParser/ParameterInference.h"
 #include "KGEN/MojoParser/ParserParamEvaluator.h"
 #include "MojoUtils.h"
+#include "ParameterInference.h"
 
 #include "KGEN/LITDialect/LITOps.h"
 #include "KGEN/LITDialect/LITUtils.h"
