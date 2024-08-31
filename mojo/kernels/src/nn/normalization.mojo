@@ -707,60 +707,51 @@ fn layer_norm_cpu[
     epsilon: Scalar[type],
     output: NDBuffer[type, rank, *_],
 ):
-    @always_inline
+    alias simd_width = simdwidthof[type]()
+
+    var last_dim = shape[rank - 1]
+    var prod_all_but_last_dim = shape.flattened_length() // last_dim
+    var flat_shape = StaticIntTuple[2](prod_all_but_last_dim, last_dim)
+
+    var output_buf = reshape[2](output, flat_shape)
+
+    var num_workers = min(parallelism_level(), prod_all_but_last_dim)
+    var chunk_size = ceildiv(prod_all_but_last_dim, num_workers)
+
+    @__copy_capture(
+        chunk_size, prod_all_but_last_dim, last_dim, output_buf, epsilon
+    )
     @parameter
-    fn description_fn() -> String:
-        return trace_arg("input", shape, type)
-
-    with Trace[TraceLevel.OP](
-        "mojo.layer_norm",
-        Trace[TraceLevel.OP]._get_detail_str[description_fn](),
-    ):
-        alias simd_width = simdwidthof[type]()
-
-        var last_dim = shape[rank - 1]
-        var prod_all_but_last_dim = shape.flattened_length() // last_dim
-        var flat_shape = StaticIntTuple[2](prod_all_but_last_dim, last_dim)
-
-        var output_buf = reshape[2](output, flat_shape)
-
-        var num_workers = min(parallelism_level(), prod_all_but_last_dim)
-        var chunk_size = ceildiv(prod_all_but_last_dim, num_workers)
-
-        @__copy_capture(
-            chunk_size, prod_all_but_last_dim, last_dim, output_buf, epsilon
+    fn task_func(thread_id: Int):
+        var num_rows = min(
+            chunk_size, prod_all_but_last_dim - thread_id * chunk_size
         )
+        var row_idx = thread_id * chunk_size
+        var thread_starting_coord = StaticIntTuple[2](row_idx, 0)
+        var per_thread_dims = DimList(num_rows, last_dim)
+        var output_buf_view = NDBuffer[type, 2](
+            output_buf._offset(thread_starting_coord), per_thread_dims
+        )
+
+        @__copy_capture(row_idx, epsilon)
         @parameter
-        fn task_func(thread_id: Int):
-            var num_rows = min(
-                chunk_size, prod_all_but_last_dim - thread_id * chunk_size
+        @always_inline
+        # Translate given 2d index back to original Nd tensor
+        fn input_fn_2d[
+            return_type: DType, simd_width: Int
+        ](idx: Int, row: Int) -> SIMD[return_type, simd_width]:
+            var indices = _get_nd_indices_from_flat_index[rank](
+                row_idx + row, shape, rank - 1
             )
-            var row_idx = thread_id * chunk_size
-            var thread_starting_coord = StaticIntTuple[2](row_idx, 0)
-            var per_thread_dims = DimList(num_rows, last_dim)
-            var output_buf_view = NDBuffer[type, 2](
-                output_buf._offset(thread_starting_coord), per_thread_dims
-            )
+            indices[rank - 1] = idx
+            var input_val = input_0_fn[simd_width, rank](indices)
+            return input_val.cast[return_type]()
 
-            @__copy_capture(row_idx, epsilon)
-            @parameter
-            @always_inline
-            # Translate given 2d index back to original Nd tensor
-            fn input_fn_2d[
-                return_type: DType, simd_width: Int
-            ](idx: Int, row: Int) -> SIMD[return_type, simd_width]:
-                var indices = _get_nd_indices_from_flat_index[rank](
-                    row_idx + row, shape, rank - 1
-                )
-                indices[rank - 1] = idx
-                var input_val = input_0_fn[simd_width, rank](indices)
-                return input_val.cast[return_type]()
+        layer_norm_cpu[simd_width, type, input_fn_2d, gamma_fn](
+            output_buf_view, beta, epsilon
+        )
 
-            layer_norm_cpu[simd_width, type, input_fn_2d, gamma_fn](
-                output_buf_view, beta, epsilon
-            )
-
-        sync_parallelize[task_func](num_workers)
+    sync_parallelize[task_func](num_workers)
 
 
 fn layer_norm[
@@ -794,15 +785,25 @@ fn layer_norm[
         ctx.set_to_error("Input and output buffers are not same shape")
         return
 
+    @always_inline
     @parameter
-    if target == "cpu":
-        layer_norm_cpu[input_0_fn, input_1_fn](shape, beta, epsilon, output)
-    elif "cuda" in target:
-        layer_norm_gpu[input_0_fn, input_1_fn](
-            shape, beta, epsilon, output, ctx.get_device_context()
-        )
-    else:
-        constrained[False, "unsupported target " + target]()
+    fn description_fn() -> String:
+        return trace_arg("input", shape, type)
+
+    with Trace[TraceLevel.OP](
+        "mojo.layer_norm",
+        Trace[TraceLevel.OP]._get_detail_str[description_fn](),
+    ):
+
+        @parameter
+        if target == "cpu":
+            layer_norm_cpu[input_0_fn, input_1_fn](shape, beta, epsilon, output)
+        elif "cuda" in target:
+            layer_norm_gpu[input_0_fn, input_1_fn](
+                shape, beta, epsilon, output, ctx.get_device_context()
+            )
+        else:
+            constrained[False, "unsupported target " + target]()
 
 
 @mogg_register("layer_norm_shape")
