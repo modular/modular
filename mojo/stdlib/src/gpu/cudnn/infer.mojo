@@ -27,8 +27,7 @@ fn _init_dylib(ignored: UnsafePointer[NoneType]) -> UnsafePointer[NoneType]:
             "the CUDA CUDNN library was not found at " + CUDA_CUDNN_LIBRARY_PATH
         )
     var ptr = UnsafePointer[DLHandle].alloc(1)
-    var handle = DLHandle(CUDA_CUDNN_LIBRARY_PATH)
-    ptr[] = handle
+    ptr.init_pointee_move(DLHandle(CUDA_CUDNN_LIBRARY_PATH))
     return ptr.bitcast[NoneType]().address
 
 

@@ -105,9 +105,8 @@ fn _init_dylib(ignored: UnsafePointer[NoneType]) -> UnsafePointer[NoneType]:
     try:
         var driver_path = _get_cuda_driver_path()
         var ptr = UnsafePointer[DLHandle].alloc(1)
-        var handle = DLHandle(str(driver_path))
-        _ = handle.get_function[fn (UInt32) -> Result]("cuInit")(0)
-        ptr[] = handle
+        ptr.init_pointee_move(DLHandle(str(driver_path)))
+        _ = ptr[].get_function[fn (UInt32) -> Result]("cuInit")(0)
         return ptr.bitcast[NoneType]()
     except e:
         return abort[UnsafePointer[NoneType]](e)
