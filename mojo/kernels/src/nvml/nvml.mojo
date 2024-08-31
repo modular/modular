@@ -44,9 +44,8 @@ fn _init_dylib(ignored: UnsafePointer[NoneType]) -> UnsafePointer[NoneType]:
     try:
         var lib_path = _get_nvml_library_path()
         var ptr = UnsafePointer[DLHandle].alloc(1)
-        var handle = DLHandle(str(lib_path))
-        _ = handle.get_function[fn () -> Result]("nvmlInit_v2")()
-        ptr[] = handle
+        ptr.init_pointee_move(DLHandle(str(lib_path)))
+        _ = ptr[].get_function[fn () -> Result]("nvmlInit_v2")()
         return ptr.bitcast[NoneType]()
     except e:
         return abort[UnsafePointer[NoneType]](e)
