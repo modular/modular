@@ -8,6 +8,7 @@ modular_py_test(
         "graph_tests/**/*.py",
     ]),
     data = [
+        "//Runtime/tools/is-cuda-available",
         "//KGEN:CompilerRT",
         "//ModularFramework/tools/mof",
         # TODO(SDLC-918): remove when landed
@@ -28,6 +29,7 @@ modular_py_test(
         "BAZEL": "true",
         "CUSTOM_OPS_PATH": "$(location //SDK/integration-test:test_user_op)",
         "MODULAR_PATH": ".",
+        "MODULAR_IS_CUDA_AVAILABLE": "$(location //Runtime/tools/is-cuda-available)",
         "GRAPH_TESTDATA": "SDK/test/API/graph/python/pytests/testdata",
     },
     mojo_deps = [

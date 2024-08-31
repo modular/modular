@@ -10,7 +10,6 @@ import sys
 from pathlib import Path
 
 from lit.llvm import llvm_config
-from modular.utils.misc import has_gpu
 
 # name: The name of this test suite.
 config.name = "Max Engine Integration Tests"
@@ -32,7 +31,7 @@ tool_dirs = [
     config.mlir_tools_dir,
     config.llvm_tools_dir,
 ]
-tools = ["modular-api-executor", "mojo", "mt"]
+tools = ["modular-api-executor", "mojo", "mt", "is-cuda-available"]
 llvm_config.add_tool_substitutions(tools, tool_dirs)
 
 multi_tenancy_api_models_dir = (
@@ -105,7 +104,8 @@ else:
 
 config.excludes.update(["test_user_op"])
 
-if has_gpu():
+output = subprocess.run("is-cuda-available")
+if output.returncode == 0:
     config.available_features.add("cuda")
 
 

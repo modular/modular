@@ -32,6 +32,7 @@ add_modular_testsuite(check-max-engine-integration-tests
   mof
   ${FRAMEWORK_DYLIB_DEPS}
   ${FRAMEWORK_TEST_DEPS}
+  is-cuda-available
   max-mojo
   kernels-register
 
