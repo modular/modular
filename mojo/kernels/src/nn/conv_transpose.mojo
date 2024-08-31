@@ -1310,7 +1310,7 @@ fn conv_transposed[
             "padding_w=" + String("x").join(pad_w),
         )
 
-    with Trace[TraceLevel.OP](
+    with Trace[TraceLevel.OP, target="cpu"](
         "mojo.conv_transposed",
         Trace[TraceLevel.OP]._get_detail_str[description_fn](),
     ):

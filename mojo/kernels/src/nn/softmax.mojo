@@ -836,9 +836,9 @@ fn softmax[
 ) raises:
     @parameter
     fn trace_information() -> String:
-        return "target_device=" + target + ";" + trace_arg("input", shape, type)
+        return trace_arg("input", shape, type)
 
-    with Trace[TraceLevel.OP](
+    with Trace[TraceLevel.OP, target=target](
         "mojo.softmax",
         Trace[TraceLevel.OP]._get_detail_str[trace_information](),
     ):

@@ -100,7 +100,7 @@ fn fused_attention[
 
     constrained[rank == 3 or rank == 4, "Only support rank 3 and 4."]()
 
-    with Trace[TraceLevel.OP]("mojo.fused_attention"):
+    with Trace[TraceLevel.OP, target="cpu"]("mojo.fused_attention"):
         alias simd_size = simdwidthof[output_type]()
 
         var score_size: Int
@@ -235,7 +235,6 @@ fn flash_attention[
     @parameter
     fn description_fn() -> String:
         return String(";").join(
-            str("target=" + target),
             "use_tensor_core=" + str(use_tensor_core),
             trace_arg("q", q),
             trace_arg("k", k),
@@ -243,9 +242,9 @@ fn flash_attention[
             trace_arg("output", output),
         )
 
-    with Trace[TraceLevel.OP](
+    with Trace[TraceLevel.OP, target=target](
         "mojo.flash_attention",
-        Trace[TraceLevel.OP]._get_detail_str[description_fn](),
+        Trace[TraceLevel.OP, target=target]._get_detail_str[description_fn](),
     ):
         return flash_attention[
             add_attn_mask=add_attn_mask,

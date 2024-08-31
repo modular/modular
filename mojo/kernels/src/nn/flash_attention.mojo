@@ -922,7 +922,7 @@ fn flash_attention_split_kv[
             trace_arg("output", output),
         )
 
-    with Trace[TraceLevel.OP](
+    with Trace[TraceLevel.OP, target="cpu"](
         "mojo.flash_attention_split_kv",
         Trace[TraceLevel.OP]._get_detail_str[description_fn](),
     ):

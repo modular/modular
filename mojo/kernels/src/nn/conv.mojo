@@ -2895,8 +2895,9 @@ fn conv_nhwc_direct[
             "padding_w=" + String("x").join(pad_w),
         )
 
-    with Trace[TraceLevel.OP](
-        "mojo.conv", Trace[TraceLevel.OP]._get_detail_str[description_fn]()
+    with Trace[TraceLevel.OP, target="cpu"](
+        "mojo.conv",
+        Trace[TraceLevel.OP]._get_detail_str[description_fn](),
     ):
         var conv_shape = get_conv_shape[input_rank - 2, filter_packed](
             output,

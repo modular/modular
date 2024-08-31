@@ -38,7 +38,7 @@ fn arg_nonzero[
         output_buffer: The indices of all non-zero elements.
     """
 
-    with Trace[TraceLevel.OP]("mojo.arg_nonzero"):
+    with Trace[TraceLevel.OP, target="cpu"]("mojo.arg_nonzero"):
         var numel = input_buffer.dynamic_shape.flattened_length()
         if numel == 0:
             return
