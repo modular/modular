@@ -148,17 +148,6 @@ fn gemv_kernel[
             c[warp_id] = accum.cast[c_type]()
 
 
-@always_inline
-fn _mark_as_exclusive[
-    type: DType
-](owned addr: UnsafePointer[Scalar[type]]) -> UnsafePointer[
-    Scalar[type], exclusive=True
-]:
-    return UnsafePointer.address_of(addr).bitcast[
-        UnsafePointer[Scalar[type], exclusive=True]
-    ]()[]
-
-
 # Matrix-Column Vector Multiplication using vectorized instructions
 fn gemv_kernel_vector[
     c_type: DType,
@@ -186,9 +175,9 @@ fn gemv_kernel_vector[
     var tid = BlockIdx.x() * BlockDim.x() + ThreadIdx.x()
     var warp_id = tid // WARP_SIZE
 
-    var a_ptr = _mark_as_exclusive(
+    var a_ptr = (
         a.data + (warp_id * a.dim[1]()) + lane_id() * simd_width
-    )
+    ).as_noalias_ptr()
     var idx = lane_id() * simd_width
     alias step = WARP_SIZE * simd_width
 
