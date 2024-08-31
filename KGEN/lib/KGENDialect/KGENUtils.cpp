@@ -1312,6 +1312,11 @@ KGEN::EnvAttr KGEN::getModularEnvAttr(MLIRContext *ctx) {
   envAttrs.set("MODULAR_PARANOID", IntegerAttr::get(IndexType::get(ctx), 1));
 #endif // MODULAR_PARANOID
 
+#ifdef KERNEL_E2E_GPU_PROFILING
+  envAttrs.set("KERNEL_E2E_GPU_PROFILING",
+               IntegerAttr::get(IndexType::get(ctx), 1));
+#endif // KERNEL_E2E_GPU_PROFILING
+
   envAttrs.set("BUILD_TYPE", StringAttr::get(STRINGIFY(BUILD_TYPE),
                                              KGEN::StringType::get(ctx)));
   envAttrs.set("KERNELS_BUILD_TYPE",
