@@ -30,6 +30,7 @@ from runtime.asyncrt import MojoCallContextPtr
 
 from utils.index import Index, StaticIntTuple, StaticTuple
 from utils.loop import unroll
+from runtime.tracing import Trace, TraceLevel, trace_arg
 
 from ._gpu.reduction import reduce_launch
 
@@ -1336,71 +1337,87 @@ fn mean[
 
     @always_inline
     @parameter
-    fn reduce_impl[
-        ty: DType, width: Int
-    ](v1: SIMD[ty, width], v2: SIMD[ty, width]) -> SIMD[ty, width]:
-        return v1 + v2
-
-    @always_inline
-    @parameter
-    fn input_fn_wrapper[
-        _type: DType, width: Int, rank: Int
-    ](idx: StaticIntTuple[rank]) -> SIMD[_type, width]:
-        return rebind[SIMD[_type, width]](input_fn[width, rank](idx))
-
-    # For floats apply the reciprocal as a multiply.
-    @parameter
-    if type.is_floating_point():
-        # Apply mean division before storing to the output lambda.
-        var reciprocal = 1.0 / input_shape[reduce_dim]
-
-        @always_inline
-        @__copy_capture(reciprocal)
-        @parameter
-        fn wrapped_output_mul[
-            _type: DType, width: Int, rank: Int
-        ](indices: StaticIntTuple[rank], value: SIMD[_type, width]):
-            var mean_val = value * reciprocal.cast[_type]()
-            output_fn[width, rank](indices, rebind[SIMD[type, width]](mean_val))
-
-        _reduce_generator[
-            input_fn_wrapper,
-            wrapped_output_mul,
-            reduce_impl,
-            single_thread_blocking_override=single_thread_blocking_override,
-            target=target,
-        ](
-            input_shape,
-            init=Scalar[type](0),
-            reduce_dim=reduce_dim,
-            context=context,
+    fn description_fn() -> String:
+        return String(";").join(
+            trace_arg("input", input_shape, type),
+            trace_arg("output", output_shape, type),
         )
 
-    else:
-        # For ints just a normal divide.
-        var dim_size = input_shape[reduce_dim]
+    with Trace[TraceLevel.OP](
+        "mojo.mean", Trace[TraceLevel.OP]._get_detail_str[description_fn]()
+    ):
 
         @always_inline
-        @__copy_capture(dim_size)
         @parameter
-        fn wrapped_output_div[
-            _type: DType, width: Int, rank: Int
-        ](indices: StaticIntTuple[rank], value: SIMD[_type, width]):
-            var mean_val = value / dim_size
-            output_fn[width, rank](indices, rebind[SIMD[type, width]](mean_val))
+        fn reduce_impl[
+            ty: DType, width: Int
+        ](v1: SIMD[ty, width], v2: SIMD[ty, width]) -> SIMD[ty, width]:
+            return v1 + v2
 
-        _reduce_generator[
-            input_fn_wrapper,
-            wrapped_output_div,
-            reduce_impl,
-            single_thread_blocking_override=single_thread_blocking_override,
-            target=target,
-        ](
-            input_shape,
-            init=Scalar[type](0),
-            reduce_dim=reduce_dim,
-            context=context,
-        )
+        @always_inline
+        @parameter
+        fn input_fn_wrapper[
+            _type: DType, width: Int, rank: Int
+        ](idx: StaticIntTuple[rank]) -> SIMD[_type, width]:
+            return rebind[SIMD[_type, width]](input_fn[width, rank](idx))
+
+        # For floats apply the reciprocal as a multiply.
+        @parameter
+        if type.is_floating_point():
+            # Apply mean division before storing to the output lambda.
+            var reciprocal = 1.0 / input_shape[reduce_dim]
+
+            @always_inline
+            @__copy_capture(reciprocal)
+            @parameter
+            fn wrapped_output_mul[
+                _type: DType, width: Int, rank: Int
+            ](indices: StaticIntTuple[rank], value: SIMD[_type, width]):
+                var mean_val = value * reciprocal.cast[_type]()
+                output_fn[width, rank](
+                    indices, rebind[SIMD[type, width]](mean_val)
+                )
+
+            _reduce_generator[
+                input_fn_wrapper,
+                wrapped_output_mul,
+                reduce_impl,
+                single_thread_blocking_override=single_thread_blocking_override,
+                target=target,
+            ](
+                input_shape,
+                init=Scalar[type](0),
+                reduce_dim=reduce_dim,
+                context=context,
+            )
+
+        else:
+            # For ints just a normal divide.
+            var dim_size = input_shape[reduce_dim]
+
+            @always_inline
+            @__copy_capture(dim_size)
+            @parameter
+            fn wrapped_output_div[
+                _type: DType, width: Int, rank: Int
+            ](indices: StaticIntTuple[rank], value: SIMD[_type, width]):
+                var mean_val = value / dim_size
+                output_fn[width, rank](
+                    indices, rebind[SIMD[type, width]](mean_val)
+                )
+
+            _reduce_generator[
+                input_fn_wrapper,
+                wrapped_output_div,
+                reduce_impl,
+                single_thread_blocking_override=single_thread_blocking_override,
+                target=target,
+            ](
+                input_shape,
+                init=Scalar[type](0),
+                reduce_dim=reduce_dim,
+                context=context,
+            )
 
 
 # ===----------------------------------------------------------------------===#

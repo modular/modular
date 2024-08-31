@@ -22,11 +22,13 @@ from gpu.host import Device, DeviceContext
 from gpu.host.info import Info
 from runtime import tracing
 from runtime.asyncrt import MojoCallContextPtr, TaskGroup, parallelism_level
-from runtime.tracing import Trace, TraceLevel
+from runtime.tracing import Trace, TraceLevel, trace_arg
 
 from utils.index import Index, StaticIntTuple
 from utils.numerics import FlushDenormals
 from runtime.asyncrt import MojoCallContextPtr
+from runtime.tracing import Trace, TraceLevel
+from buffer import NDBuffer
 
 # ===----------------------------------------------------------------------===#
 # Map
@@ -1155,6 +1157,7 @@ fn elementwise[
     *,
     use_blocking_impl: Bool = False,
     target: StringLiteral = "cpu",
+    trace_description: StringLiteral = "",
 ](shape: Int):
     """Executes `func[width, rank](indices)`, possibly as sub-tasks, for a
     suitable combination of width and indices so as to cover shape. Returns when
@@ -1165,6 +1168,7 @@ fn elementwise[
         simd_width: The SIMD vector width to use.
         use_blocking_impl: Do not invoke the function using asychronous calls.
         target: The target to run on.
+        trace_description: Description of the trace.
 
     Args:
         shape: The shape of the buffer.
@@ -1175,6 +1179,7 @@ fn elementwise[
         simd_width=simd_width,
         use_blocking_impl=use_blocking_impl,
         target=target,
+        trace_description=trace_description,
     ](Index(shape))
 
 
@@ -1186,6 +1191,7 @@ fn elementwise[
     *,
     use_blocking_impl: Bool = False,
     target: StringLiteral = "cpu",
+    trace_description: StringLiteral = "",
 ](shape: StaticIntTuple[rank]):
     """Executes `func[width, rank](indices)`, possibly as sub-tasks, for a
     suitable combination of width and indices so as to cover shape. Returns when
@@ -1197,6 +1203,7 @@ fn elementwise[
         simd_width: The SIMD vector width to use.
         use_blocking_impl: Do not invoke the function using asychronous calls.
         target: The target to run on.
+        trace_description: Description of the trace.
 
     Args:
         shape: The shape of the buffer.
@@ -1222,6 +1229,7 @@ fn elementwise[
     *,
     use_blocking_impl: Bool = False,
     target: StringLiteral = "cpu",
+    trace_description: StringLiteral = "",
 ](shape: Int, context: DeviceContext):
     """Executes `func[width, rank](indices)`, possibly as sub-tasks, for a
     suitable combination of width and indices so as to cover shape. Returns when
@@ -1232,6 +1240,7 @@ fn elementwise[
         simd_width: The SIMD vector width to use.
         use_blocking_impl: Do not invoke the function using asychronous calls.
         target: The target to run on.
+        trace_description: Description of the trace.
 
     Args:
         shape: The shape of the buffer.
@@ -1254,6 +1263,7 @@ fn elementwise[
     *,
     use_blocking_impl: Bool = False,
     target: StringLiteral = "cpu",
+    trace_description: StringLiteral = "",
 ](shape: StaticIntTuple[rank], context: DeviceContext):
     """Executes `func[width, rank](indices)`, possibly as sub-tasks, for a
     suitable combination of width and indices so as to cover shape. Returns when
@@ -1265,6 +1275,7 @@ fn elementwise[
         simd_width: The SIMD vector width to use.
         use_blocking_impl: Do not invoke the function using asychronous calls.
         target: The target to run on.
+        trace_description: Description of the trace.
 
     Args:
         shape: The shape of the buffer.
@@ -1284,6 +1295,7 @@ fn elementwise[
     *,
     use_blocking_impl: Bool = False,
     target: StringLiteral = "cpu",
+    trace_description: StringLiteral = "",
 ](shape: StaticIntTuple[rank], context: MojoCallContextPtr):
     """Executes `func[width, rank](indices)`, possibly as sub-tasks, for a
     suitable combination of width and indices so as to cover shape. Returns when
@@ -1295,21 +1307,48 @@ fn elementwise[
         simd_width: The SIMD vector width to use.
         use_blocking_impl: Do not invoke the function using asychronous calls.
         target: The target to run on.
+        trace_description: Description of the trace.
 
     Args:
         shape: The shape of the buffer.
         context: The device context to use.
     """
 
+    @always_inline
     @parameter
-    if "cuda" in target:
-        _elementwise_impl_gpu[func, simd_width=simd_width, target=target](
-            shape, context.get_device_context()
+    fn description_fn() -> String:
+        var prefix = String("")
+        if trace_description:
+            prefix = "name=" + trace_description + ";"
+        prefix += "target=" + target
+        var shape_str = trace_arg("shape", shape)
+
+        var vector_width_str = "vector_width=" + str(simd_width)
+        var single_thread_blocking_override = "single_thread_blocking_override=" + str(
+            use_blocking_impl
         )
-    else:
-        _elementwise_impl_cpu[
-            func, simd_width, use_blocking_impl=use_blocking_impl
-        ](shape)
+
+        return String(";").join(
+            prefix,
+            shape_str,
+            vector_width_str,
+            single_thread_blocking_override,
+        )
+
+    with Trace[TraceLevel.OP](
+        "mojo.elementwise",
+        Trace[TraceLevel.OP]._get_detail_str[description_fn](),
+    ):
+
+        @parameter
+        if "cuda" in target:
+            _elementwise_impl_gpu[func, simd_width=simd_width, target=target](
+                shape, context.get_device_context()
+            )
+        else:
+            _elementwise_impl_cpu[
+                func, simd_width, use_blocking_impl=use_blocking_impl
+            ](shape)
 
 
 @always_inline
