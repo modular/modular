@@ -691,3 +691,24 @@ fn _generator[
     var next_it = it
     var value = next_it.__next__()
     return _ParamForIterator(next_it, value, False)
+
+
+struct Optional[T: CollectionElement]:
+    fn __init__(inout self):
+        pass
+
+    fn __init__(inout self, owned value: T):
+        pass
+
+    fn __init__(inout self, value: NoneType):
+        pass
+
+    fn __copyinit__(inout self, other: Self):
+        pass
+
+    fn __moveinit__(inout self, owned other: Self):
+        pass
+
+    fn value(ref [_]self: Self) -> ref [__lifetime_of(self)] T:
+        while True:
+            pass

@@ -1029,3 +1029,18 @@ struct MyStructWithMarkDestroyed[T: CollectionElement]:
         # CHECK-NEXT: kgen.param.constant: none
         # CHECK-NEXT: kgen.return
         return self.b^
+
+
+# CHECK-LABEL: lit.func @"field_sensitive_ref_last_use
+fn field_sensitive_ref_last_use(owned write_state : IntAndOptional):
+    # should destroy ALL OF write_state after the copy into msg.
+    var msg = write_state.error.value()
+
+    # CHECK: lit.call {{.*}}__copyinit__{{.*}}(%msg, 
+    # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}(%write_state)
+
+@value
+struct IntAndOptional:
+    var handle: Int
+    var error: Optional[String]
+
