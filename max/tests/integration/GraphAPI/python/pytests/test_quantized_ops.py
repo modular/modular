@@ -70,12 +70,14 @@ def test_dequantize_nondivisible_error():
     with graph:
         with pytest.raises(
             ValueError,
-            match="last dimension (19) not divisible by block size (18)",
+            match=(
+                r"last dimension \(.*19.*\) not divisible by block size \(18\)"
+            ),
         ):
             ops.dequantize(QuantizationEncoding.Q4_0, *graph.inputs)
 
 
-def test_dequantize_nondivisible_error():
+def test_dequantize_nonstatic_last_dim_error():
     graph = Graph(
         "dequantize",
         input_types=[TensorType(DType.uint8, (1, SymbolicDim("x")))],
