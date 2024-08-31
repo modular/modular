@@ -8,9 +8,9 @@
 #include "ExprEmitter.h"
 #include "KGEN/MojoParser/ExprNodes.h"
 #include "KGEN/MojoParser/IRValues.h"
-#include "KGEN/MojoParser/ParameterInference.h"
 #include "KGEN/MojoParser/ParserParamEvaluator.h"
 #include "KGEN/MojoParser/SharedState.h"
+#include "ParameterInference.h"
 
 #include "MojoUtils.h"
 
