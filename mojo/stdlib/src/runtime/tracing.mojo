@@ -370,6 +370,13 @@ struct Trace[level: TraceLevel, target: Optional[StringLiteral] = None]:
         self.__exit__()
 
 
-fn get_current_trace_id() -> Int:
+fn get_current_trace_id[level: TraceLevel]() -> Int:
     """Returns the id of last created trace entry on the current thread."""
-    return external_call["KGEN_CompilerRT_TimeTraceProfilerGetCurrentId", Int]()
+
+    @parameter
+    if is_mojo_profiling_enabled[level]():
+        return external_call[
+            "KGEN_CompilerRT_TimeTraceProfilerGetCurrentId", Int
+        ]()
+    else:
+        return 0
