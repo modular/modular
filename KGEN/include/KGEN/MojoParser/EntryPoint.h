@@ -27,10 +27,20 @@ class CompilationOptions;
 
 namespace M::KGEN::LIT {
 class ASTDecl;
+class CallOperands;
 class ExprNode;
 class PackageOp;
 class ParserListener;
-class CallOperands;
+class SharedState;
+
+//===----------------------------------------------------------------------===//
+// Diagnostic Utils
+//===----------------------------------------------------------------------===//
+
+/// This utility takes a slice of Mojo source code and lexes to the start of the
+/// next token, returning it as an SMLoc. This is useful for providing
+/// diagnostics in tooling.
+llvm::SMLoc findStartOfNextToken(SharedState &shared, StringRef string);
 
 //===----------------------------------------------------------------------===//
 // ParserConfig
