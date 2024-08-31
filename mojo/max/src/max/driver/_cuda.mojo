@@ -105,7 +105,6 @@ alias CompileArg = Variant[Int, Path, Bool]
 
 @value
 struct CUDACompiledKernelArgs:
-    var verbose: Bool
     var max_registers: Optional[Int]
     var threads_per_block: Optional[Int]
 
@@ -116,7 +115,6 @@ struct CUDACompiledKernelArgs:
         return kwargs.find(key).value()[T] if key in kwargs else Optional[T]()
 
     fn __init__(inout self, kwargs: OwnedKwargsDict[CompileArg]) raises:
-        self.verbose = kwargs.find("verbose").or_else(False)[Bool]
         self.max_registers = Self._get_opt[Int](kwargs, "max_registers")
         self.threads_per_block = Self._get_opt[Int](kwargs, "threads_per_block")
 
@@ -156,7 +154,6 @@ fn compile[
         target = out.target,
         _is_failable=False,
     ](
-        verbose=compile_args.verbose,
         max_registers=compile_args.max_registers,
         threads_per_block=compile_args.threads_per_block,
     )
