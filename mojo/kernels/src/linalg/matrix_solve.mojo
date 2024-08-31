@@ -109,7 +109,7 @@ fn matrix_solve[
     if b.dim(row_dim) != 3 or b.dim(col_dim) != 2:
         raise Error("The b matrix's shape must be (3,2)")
 
-    with Trace[TraceLevel.OP]("mojo.matrix_solve"):
+    with Trace[TraceLevel.OP, target="cpu"]("mojo.matrix_solve"):
         var batch_size = 1
         for i in range(row_dim):
             batch_size *= a.dim(i)

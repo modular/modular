@@ -248,7 +248,6 @@ fn batched_matmul[
     @parameter
     fn description_fn() -> String:
         return String(";").join(
-            "target=" + target,
             trace_arg("A", a_buf),
             trace_arg("B", b_buf),
             trace_arg("C", c_buf),
@@ -258,7 +257,7 @@ fn batched_matmul[
             + str(single_thread_blocking_override),
         )
 
-    with Trace[TraceLevel.OP](
+    with Trace[TraceLevel.OP, target=target](
         "mojo.batched_matmul",
         Trace[TraceLevel.OP]._get_detail_str[description_fn](),
     ):
