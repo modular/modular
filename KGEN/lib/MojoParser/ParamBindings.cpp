@@ -6,7 +6,7 @@
 
 #include "KGEN/MojoParser/ParamBindings.h"
 #include "ExprEmitter.h"
-#include "KGEN/MojoParser/ExprNodes.h"
+#include "ExprNodes.h"
 #include "KGEN/MojoParser/IRValues.h"
 #include "KGEN/MojoParser/ParserParamEvaluator.h"
 #include "KGEN/MojoParser/SharedState.h"

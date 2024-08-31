@@ -20,12 +20,12 @@
 #include "MojoUtils.h"
 #include "Signatures.h"
 
+#include "ExprNodes.h"
 #include "KGEN/HLCFDialect/HLCFOps.h"
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/LITDialect/LITOps.h"
 #include "KGEN/LITDialect/LITUtils.h"
 #include "KGEN/LITDialect/SpecialFunctions.h"
-#include "KGEN/MojoParser/ExprNodes.h"
 #include "KGEN/POPDialect/POPAttrs.h"
 #include "KGEN/POPDialect/POPOps.h"
 #include "KGEN/POPDialect/POPTypes.h"

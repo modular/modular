@@ -11,9 +11,9 @@
 #ifndef KGEN_MOJOPARSER_CLOSUREEMITTER_H
 #define KGEN_MOJOPARSER_CLOSUREEMITTER_H
 
+#include "ExprNodes.h"
 #include "KGEN/KGENDialect/KGENAttrs.h"
 #include "KGEN/LITDialect/LITOps.h"
-#include "KGEN/MojoParser/ExprNodes.h"
 #include "KGEN/MojoParser/SharedState.h"
 #include "StructEmitter.h"
 #include "Support/DebugInfoDialect/IR/DIBuilder.h"
