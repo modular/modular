@@ -1343,7 +1343,7 @@ fn mean[
             trace_arg("output", output_shape, type),
         )
 
-    with Trace[TraceLevel.OP](
+    with Trace[TraceLevel.OP, target=target](
         "mojo.mean", Trace[TraceLevel.OP]._get_detail_str[description_fn]()
     ):
 

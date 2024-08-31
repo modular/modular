@@ -349,7 +349,9 @@ fn sync_parallelize[
     @always_inline
     fn func_wrapped(i: Int):
         with FlushDenormals():
-            with Trace[TraceLevel.OP]("task", task_id=i, parent_id=parent_id):
+            with Trace[TraceLevel.OP, target="cpu"](
+                "task", task_id=i, parent_id=parent_id
+            ):
                 try:
                     func(i)
                 except e:
@@ -1320,7 +1322,6 @@ fn elementwise[
         var prefix = String("")
         if trace_description:
             prefix = "name=" + trace_description + ";"
-        prefix += "target=" + target
         var shape_str = trace_arg("shape", shape)
 
         var vector_width_str = "vector_width=" + str(simd_width)
@@ -1335,7 +1336,7 @@ fn elementwise[
             single_thread_blocking_override,
         )
 
-    with Trace[TraceLevel.OP](
+    with Trace[TraceLevel.OP, target=target](
         "mojo.elementwise",
         Trace[TraceLevel.OP]._get_detail_str[description_fn](),
     ):
