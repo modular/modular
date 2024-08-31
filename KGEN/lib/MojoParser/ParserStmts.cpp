@@ -14,8 +14,8 @@
 #include "KGEN/MojoParser/ASTDecl.h"
 #include "KGEN/MojoParser/DeclResolver.h"
 #include "KGEN/MojoParser/Lexer.h"
-#include "KGEN/MojoParser/ParserBase.h"
 #include "MojoUtils.h"
+#include "ParserBase.h"
 
 #include "KGEN/HLCFDialect/HLCFOps.h"
 #include "KGEN/KGENDialect/KGENOps.h"

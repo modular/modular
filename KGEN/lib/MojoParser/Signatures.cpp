@@ -18,8 +18,8 @@
 #include "ExprNodes.h"
 #include "KGEN/MojoParser/ASTDecl.h"
 #include "KGEN/MojoParser/DeclResolver.h"
-#include "KGEN/MojoParser/ParserBase.h"
 #include "KGEN/MojoParser/ParserParamEvaluator.h"
+#include "ParserBase.h"
 
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/LITDialect/LITOps.h"
