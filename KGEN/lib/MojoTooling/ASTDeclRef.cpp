@@ -11,7 +11,6 @@
 #include "KGEN/MojoTooling/ASTDeclRef.h"
 #include "KGEN/MojoParser/ASTDecl.h"
 #include "KGEN/MojoParser/ASTType.h"
-#include "KGEN/MojoParser/DLValues.h"
 #include "KGEN/MojoTooling/ASTDeclView.h"
 
 #include "KGEN/KGENDialect/KGENOps.h"
@@ -283,12 +282,11 @@ ResultType MojoASTDeclRef::getViewImpl() const {
   if (auto lvalue = decl->getIfIRValue().getIfLValue()) {
     // Unresolved to mutable.
     if (auto dlvalue = lvalue.getIfDLValue()) {
-      if (dlvalue->isDefArgument()) {
-        auto &defArgDLVal = ((DefArgumentWrapperDLValue &)*dlvalue);
+      if (std::optional<size_t> argIndex = dlvalue->getDefArgumentIndex()) {
         if constexpr (isApproximateResult)
           return DeclViewKind::DK_ArgumentDeclView;
         else
-          return createArgumentDeclView(*this, defArgDLVal.argIndex);
+          return createArgumentDeclView(*this, *argIndex);
       }
     }
     // Resolved to mutable.

@@ -11,7 +11,7 @@
 #ifndef KGEN_MOJOPARSER_DLVALUES_H
 #define KGEN_MOJOPARSER_DLVALUES_H
 
-#include "CallEmission.h"
+#include "KGEN/MojoParser/CallEmission.h"
 
 namespace M::KGEN::LIT {
 
@@ -126,7 +126,9 @@ public:
   /// def argument.
   RefType getMBValueTypeFromDefArgument() const override;
 
-  bool isDefArgument() const override { return true; }
+  std::optional<size_t> getDefArgumentIndex() const override {
+    return argIndex;
+  }
 
   /// This is the argument decl we're the representation of.
   ASTDecl *argDecl;
