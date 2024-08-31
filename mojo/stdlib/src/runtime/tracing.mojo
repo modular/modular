@@ -39,7 +39,7 @@ struct TraceType(EqualityComparable):
     var value: Int
 
     @always_inline("nodebug")
-    fn __eq__(self, rhs: TraceType) -> Bool:
+    fn __eq__(self, rhs: Self) -> Bool:
         """Compares for equality.
 
         Args:
@@ -51,7 +51,7 @@ struct TraceType(EqualityComparable):
         return self.value == rhs.value
 
     @always_inline("nodebug")
-    fn __ne__(self, rhs: TraceType) -> Bool:
+    fn __ne__(self, rhs: Self) -> Bool:
         """Compares for inequality.
 
         Args:
@@ -61,6 +61,30 @@ struct TraceType(EqualityComparable):
             True if they are not equal.
         """
         return self.value != rhs.value
+
+    @always_inline("nodebug")
+    fn __is__(self, rhs: Self) -> Bool:
+        """Compares for equality.
+
+        Args:
+            rhs: The value to compare.
+
+        Returns:
+            True if they are equal.
+        """
+        return self == rhs
+
+    @always_inline("nodebug")
+    fn __isnot__(self, rhs: Self) -> Bool:
+        """Compares for inequality.
+
+        Args:
+            rhs: The value to compare.
+
+        Returns:
+            True if they are not equal.
+        """
+        return self != rhs
 
 
 # ===----------------------------------------------------------------------===#
@@ -80,7 +104,7 @@ struct TraceLevel(EqualityComparable):
     var value: Int
 
     @always_inline("nodebug")
-    fn __eq__(self, rhs: TraceLevel) -> Bool:
+    fn __eq__(self, rhs: Self) -> Bool:
         """Compares for equality.
 
         Args:
@@ -92,7 +116,7 @@ struct TraceLevel(EqualityComparable):
         return self.value == rhs.value
 
     @always_inline("nodebug")
-    fn __ne__(self, rhs: TraceLevel) -> Bool:
+    fn __ne__(self, rhs: Self) -> Bool:
         """Compares for inequality.
 
         Args:
@@ -104,7 +128,7 @@ struct TraceLevel(EqualityComparable):
         return self.value != rhs.value
 
     @always_inline("nodebug")
-    fn __le__(self, rhs: TraceLevel) -> Bool:
+    fn __le__(self, rhs: Self) -> Bool:
         """Performs less than or equal to comparison.
 
         Args:
@@ -114,6 +138,30 @@ struct TraceLevel(EqualityComparable):
             True if this value is less than or equal to `rhs`.
         """
         return self.value <= rhs.value
+
+    @always_inline("nodebug")
+    fn __is__(self, rhs: Self) -> Bool:
+        """Compares for equality.
+
+        Args:
+            rhs: The value to compare.
+
+        Returns:
+            True if they are equal.
+        """
+        return self == rhs
+
+    @always_inline("nodebug")
+    fn __isnot__(self, rhs: Self) -> Bool:
+        """Compares for inequality.
+
+        Args:
+            rhs: The value to compare.
+
+        Returns:
+            True if they are not equal.
+        """
+        return self != rhs
 
 
 # ===----------------------------------------------------------------------===#
