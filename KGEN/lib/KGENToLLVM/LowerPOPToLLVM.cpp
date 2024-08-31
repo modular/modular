@@ -1810,6 +1810,66 @@ struct ConvertPOPGlobalAlloc : public ConvertSymbolOpToLLVM<GlobalAllocOp> {
 };
 
 //===----------------------------------------------------------------------===//
+// ConvertPOPNoAliasPointerCast
+//===----------------------------------------------------------------------===//
+
+static LLVM::LLVMFuncOp getOrCreateNoAliasCastIntrinsic(SymbolTable &symtab,
+                                                        mlir::RewriterBase &b) {
+  constexpr llvm::StringLiteral fnName = "__kgen_noalias_cast";
+  auto name = b.getStringAttr(fnName);
+  if (auto func = symtab.lookup<LLVM::LLVMFuncOp>(name))
+    return func;
+
+  // Create the function. It has the form `noalias ptr (ptr noalias returned)`.
+  // Since the returned pointer can have arbitrary effects on it, we can't
+  // annotate the argument with any.
+  OpBuilder::InsertionGuard guard(b);
+  b.clearInsertionPoint();
+  auto ptrType = LLVM::LLVMPointerType::get(b.getContext());
+  auto func = b.create<LLVM::LLVMFuncOp>(
+      UnknownLoc::get(b.getContext()), name,
+      LLVM::LLVMFunctionType::get(ptrType, ptrType), LLVM::Linkage::Internal);
+  symtab.insert(func);
+
+  // Set the `noalias` attributes.
+  func.setArgAttr(0, LLVM::LLVMDialect::getNoAliasAttrName(), b.getUnitAttr());
+  func.setResultAttr(0, LLVM::LLVMDialect::getNoAliasAttrName(),
+                     b.getUnitAttr());
+
+  constexpr llvm::StringLiteral funcAttrs[] = {
+      "alwaysinline", "mustprogress", "nofree",    "norecurse",
+      "nosync",       "nounwind",     "willreturn"};
+  SmallVector<Attribute> attrs;
+  for (StringRef attr : funcAttrs)
+    attrs.push_back(b.getStringAttr(attr));
+  // memory(none)
+  attrs.push_back(
+      b.getArrayAttr({b.getStringAttr("memory"), b.getStringAttr("0")}));
+  func.setPassthroughAttr(b.getArrayAttr(attrs));
+
+  // Populate the body.
+  Block *body = b.createBlock(&func.getBody());
+  b.create<LLVM::ReturnOp>(func.getLoc(),
+                           body->addArgument(ptrType, func.getLoc()));
+
+  return func;
+}
+
+struct ConvertPOPNoAliasPointerCast
+    : ConvertSymbolOpToLLVM<NoAliasPointerCastOp> {
+  using ConvertSymbolOpToLLVM::ConvertSymbolOpToLLVM;
+
+  LogicalResult matchAndRewrite(NoAliasPointerCastOp op,
+                                NoAliasPointerCastOpAdaptor adaptor,
+                                ConversionPatternRewriter &b) const override {
+    LLVM::LLVMFuncOp func = getOrCreateNoAliasCastIntrinsic(symtab, b);
+    LLVM::CallOp call = createLLVMCall(b, op.getLoc(), func, adaptor.getIn());
+    b.replaceOp(op, call);
+    return success();
+  }
+};
+
+//===----------------------------------------------------------------------===//
 // ConvertPOPGlobalConstant
 //===----------------------------------------------------------------------===//
 
@@ -1947,7 +2007,8 @@ void LowerGlobalPOPToLLVMPass::runOnOperation() {
   target.addIllegalOp<GlobalAllocOp, ExternalCallOp, ExternPointerSymbolOp>();
   patterns.insert<ConvertPOPGlobalAlloc, ConvertPOPExternalCall,
                   ConvertExternPointerSymbol, ConvertPOPAlignedAlloc,
-                  ConvertPOPAlignedFree>(typeConverter, symtab);
+                  ConvertPOPAlignedFree, ConvertPOPNoAliasPointerCast>(
+      typeConverter, symtab);
 
   // Convert global constants.
   DenseMap<std::pair<TypedAttr, TypedAttr>, LLVM::GlobalOp> constants;

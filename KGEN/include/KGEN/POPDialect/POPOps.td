@@ -1237,7 +1237,7 @@ def POP_AlignedFreeOp : POPOp<"aligned_free",
 // NoAliasPointerCast
 //===----------------------------------------------------------------------===//
 
-def POP_MakeNoAliasPointer : POPOp<"noalias_pointer_cast", [Pure,
+def POP_NoAliasPointerCastOp : POPOp<"noalias_pointer_cast", [Pure,
     AllTypesMatch<["in", "out"]>]> {
   let summary = "declare a pointer value that locally does not alias";
   let description = [{

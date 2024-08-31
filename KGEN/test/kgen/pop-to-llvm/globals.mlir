@@ -163,3 +163,23 @@ kgen.func @external_call_pack() {
    kgen.return
 }
 }
+
+// -----
+
+module attributes {M.target_info = #M.target<triple="", arch="", features="", data_layout="", simd_bit_width=128>} {
+
+// CHECK-LABEL: @noalias_cast
+kgen.func @noalias_cast(%arg0: !kgen.pointer<index>) -> index {
+  // CHECK: llvm.call @__kgen_noalias_cast(%0) {fastmathFlags = #llvm.fastmath<contract>}
+  %0 = pop.noalias_pointer_cast %arg0 : !kgen.pointer<index>
+  %1 = pop.load %0 : !kgen.pointer<index>
+  kgen.return %1 : index
+}
+
+// CHECK: llvm.func internal @__kgen_noalias_cast
+// CHECK-SAME: (%arg0: !llvm.ptr {llvm.noalias}) -> (!llvm.ptr {llvm.noalias})
+// CHECK-SAME: ["alwaysinline", "mustprogress", "nofree", "norecurse", "nosync",
+// CHECK-SAME:  "nounwind", "willreturn", ["memory", "0"]
+// CHECK-NEXT: return %arg0
+
+}
