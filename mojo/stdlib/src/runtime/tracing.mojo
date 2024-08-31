@@ -10,6 +10,7 @@ from sys import external_call
 from sys.param_env import env_get_int, is_defined
 
 from utils import StaticIntTuple
+from buffer import NDBuffer
 
 
 fn build_info_asyncrt_max_profiling_level() -> Optional[Int]:
@@ -159,14 +160,29 @@ fn is_mojo_profiling_disabled[level: TraceLevel]() -> Bool:
 
 
 @always_inline
-fn trace_arg(name: String, shape: StaticIntTuple, dtype: DType) -> String:
+fn trace_arg(name: String, shape: StaticIntTuple) -> String:
     """Helper to stringify the type and shape of a kernel argument for tracing.
     """
     var s = name + "="
     for i in range(len(shape)):
-        s += str(shape[i]) + "x"
-    s += str(dtype)
+        if i != 0:
+            s += "x"
+        s += str(shape[i])
     return s
+
+
+@always_inline
+fn trace_arg(name: String, shape: StaticIntTuple, dtype: DType) -> String:
+    """Helper to stringify the type and shape of a kernel argument for tracing.
+    """
+    return trace_arg(name, shape) + "x" + str(dtype)
+
+
+@always_inline
+fn trace_arg(name: String, buf: NDBuffer) -> String:
+    """Helper to stringify the type and shape of a kernel argument for tracing.
+    """
+    return trace_arg(name, buf.dynamic_shape, buf.type)
 
 
 # ===----------------------------------------------------------------------===#
