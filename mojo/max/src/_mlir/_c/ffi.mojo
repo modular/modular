@@ -31,9 +31,7 @@ fn _init_dylib(ignored: UnsafePointer[NoneType]) -> UnsafePointer[NoneType]:
         abort("cannot load graph library from " + mof_lib_path)
 
     var ptr = UnsafePointer[DLHandle].alloc(1)
-    ptr.init_pointee_move(
-        DLHandle(mof_lib_path._strref_dangerous(), RTLD.NOW | RTLD.GLOBAL)
-    )
+    ptr.init_pointee_move(DLHandle(mof_lib_path, RTLD.NOW | RTLD.GLOBAL))
     mof_lib_path._strref_keepalive()
     return ptr.bitcast[NoneType]()
 
