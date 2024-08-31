@@ -129,9 +129,7 @@ def UnboundMLIROperationAttr : DialectAttribute<(attr
   ConcreteAttribute<"DictionaryAttr">:$attrs
 )>;
 
-def UnpackedAttr : DialectAttribute<(attr
-  ConcreteType<"UnpackedType">:$type
-)>;
+def UnpackedAttr : DialectAttribute<(attr)>;
 
 def ModuleAttr : DialectAttribute<(attr
   ConcreteType<"AnyStructType">:$type

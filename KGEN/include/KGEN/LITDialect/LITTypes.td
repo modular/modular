@@ -133,7 +133,6 @@ def LIT_UnpackedType : LITType<"Unpacked", "unpacked"> {
     the unpacking is actually performed. It stores the type of the expression to
     be unpacked.
   }];
-  let parameters = (ins);
   let assemblyFormat = "";
 }
 
