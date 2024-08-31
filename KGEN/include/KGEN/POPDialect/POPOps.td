@@ -1234,6 +1234,33 @@ def POP_AlignedFreeOp : POPOp<"aligned_free",
 }
 
 //===----------------------------------------------------------------------===//
+// NoAliasPointerCast
+//===----------------------------------------------------------------------===//
+
+def POP_MakeNoAliasPointer : POPOp<"noalias_pointer_cast", [Pure,
+    AllTypesMatch<["in", "out"]>]> {
+  let summary = "declare a pointer value that locally does not alias";
+  let description = [{
+    The `pop.noalias_pointer_cast` operation takes a pointer and casts it to a
+    noalias pointer. This tells the optimizer that the resultant point is known
+    not to alias any other pointer within the current scope. The "current scope"
+    refers to the span of instructions that comprise the function in which the
+    operation is contained. This property carries transitively through inlining.
+
+    Example:
+
+    ```mlir
+    %0 = pop.noalias_pointer_cast %ptr : <simd<4, i32>>
+    ```
+  }];
+
+  let arguments = (ins PointerType:$in);
+  let results = (outs PointerType:$out);
+
+  let assemblyFormat = "$in attr-dict `:` type($in)";
+}
+
+//===----------------------------------------------------------------------===//
 // ExternalCallOp
 //===----------------------------------------------------------------------===//
 
