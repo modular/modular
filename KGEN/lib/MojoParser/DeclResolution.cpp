@@ -15,7 +15,7 @@
 #include "ExprEmitter.h"
 #include "ExprNodes.h"
 #include "KGEN/MojoParser/ASTDecl.h"
-#include "KGEN/MojoParser/ParserBase.h"
+#include "ParserBase.h"
 #include "StructEmitter.h"
 
 #include "KGEN/KGENDialect/KGENOps.h"

@@ -25,7 +25,7 @@
 
 #include "ExprNodes.h"
 #include "KGEN/MojoParser/Lexer.h"
-#include "KGEN/MojoParser/ParserBase.h"
+#include "ParserBase.h"
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/Support/SaveAndRestore.h"
 
