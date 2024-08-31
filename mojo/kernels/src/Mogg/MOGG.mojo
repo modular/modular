@@ -1589,7 +1589,7 @@ fn reduce_add[
     ](v1: SIMD[ty, width], v2: SIMD[ty, width]) -> SIMD[ty, width]:
         return v1 + v2
 
-    with Trace[TraceLevel.OP]("mojo.reduce_add"):
+    with Trace[TraceLevel.OP, target=target]("mojo.reduce_add"):
         _reduce_generator[
             input_0_fn_wrapper,
             output_0_fn_wrapper,
@@ -1642,7 +1642,7 @@ fn reduce_max[
     ](v1: SIMD[ty, width], v2: SIMD[ty, width]) -> SIMD[ty, width]:
         return max(v1, v2)
 
-    with Trace[TraceLevel.OP]("mojo.reduce_max"):
+    with Trace[TraceLevel.OP, target=target]("mojo.reduce_max"):
         _reduce_generator[
             input_0_fn_wrapper,
             output_0_fn_wrapper,
@@ -1695,7 +1695,7 @@ fn reduce_min[
     ](v1: SIMD[ty, width], v2: SIMD[ty, width]) -> SIMD[ty, width]:
         return min(v1, v2)
 
-    with Trace[TraceLevel.OP]("mojo.reduce_min"):
+    with Trace[TraceLevel.OP, target=target]("mojo.reduce_min"):
         _reduce_generator[
             input_0_fn_wrapper,
             output_0_fn_wrapper,
@@ -1748,7 +1748,7 @@ fn reduce_mul[
     ](v1: SIMD[ty, width], v2: SIMD[ty, width]) -> SIMD[ty, width]:
         return v1 * v2
 
-    with Trace[TraceLevel.OP]("mojo.reduce_mul"):
+    with Trace[TraceLevel.OP, target=target]("mojo.reduce_mul"):
         _reduce_generator[
             input_0_fn_wrapper,
             output_0_fn_wrapper,
@@ -2041,7 +2041,7 @@ fn mogg_gather_sum[
             trace_arg("indices", indices),
         )
 
-    with Trace[TraceLevel.OP](
+    with Trace[TraceLevel.OP, target="cpu"](
         "mojo.gather_sum",
         Trace[TraceLevel.OP]._get_detail_str[description_fn](),
     ):
@@ -3700,7 +3700,7 @@ fn reduce_min_and_max[
     var init_max = Scalar[type].MIN
     var init = StaticTuple[Scalar[type], num_reductions](init_min, init_max)
 
-    with Trace[TraceLevel.OP]("reduce_min_and_max"):
+    with Trace[TraceLevel.OP, target=target]("reduce_min_and_max"):
         _reduce_generator[
             num_reductions,
             type,
@@ -4160,7 +4160,7 @@ fn vroom_q4_0_matmul(
     ]()
     constrained[b.type is DType.uint8, "expected uint8 input b"]()
 
-    with Trace[TraceLevel.OP]("mojo.vroom_q4_0_matmul"):
+    with Trace[TraceLevel.OP, target="cpu"]("mojo.vroom_q4_0_matmul"):
         matmul_qint4[32](a, b, c)
 
 
@@ -4209,7 +4209,7 @@ fn ggml_q4_0_dequantize(
     output: NDBuffer[DType.float32, 2],
     ctx: MojoCallContextPtr,
 ) raises:
-    with Trace[TraceLevel.OP]("mojo.ggml_q4_0_dequantize"):
+    with Trace[TraceLevel.OP, target="cpu"]("mojo.ggml_q4_0_dequantize"):
         Q4sym[group_size=32].dequantize_and_write_to_tensor[rank=2](
             input, output, output.dynamic_shape
         )
@@ -4247,7 +4247,7 @@ fn vroom_q4_k_matmul(
     c: NDBuffer[DType.float32, 2],
     ctx: MojoCallContextPtr,
 ) raises:
-    with Trace[TraceLevel.OP]("mojo.vroom_q4_k_matmul"):
+    with Trace[TraceLevel.OP, target="cpu"]("mojo.vroom_q4_k_matmul"):
         matmul_Q4_K(a, b, c)
 
 
@@ -4290,7 +4290,7 @@ fn ggml_q4_k_dequantize(
     output: NDBuffer[DType.float32, 2],
     ctx: MojoCallContextPtr,
 ) raises:
-    with Trace[TraceLevel.OP]("mojo.ggml_q4_k_dequantize"):
+    with Trace[TraceLevel.OP, target="cpu"]("mojo.ggml_q4_k_dequantize"):
         q4_k_dequantize_impl(input, output)
 
 
@@ -4324,7 +4324,7 @@ fn vroom_q6_k_matmul(
     c: NDBuffer[DType.float32, 2],
     ctx: MojoCallContextPtr,
 ) raises:
-    with Trace[TraceLevel.OP]("mojo.vroom_q6_k_matmul"):
+    with Trace[TraceLevel.OP, target="cpu"]("mojo.vroom_q6_k_matmul"):
         matmul_Q6_K(a, b, c)
 
 
@@ -4367,7 +4367,7 @@ fn ggml_q6_k_dequantize(
     output: NDBuffer[DType.float32, 2],
     ctx: MojoCallContextPtr,
 ) raises:
-    with Trace[TraceLevel.OP]("mojo.ggml_q6_k_dequantize"):
+    with Trace[TraceLevel.OP, target="cpu"]("mojo.ggml_q6_k_dequantize"):
         q6_k_dequantize_impl(input, output, output.dynamic_shape)
 
 
