@@ -342,7 +342,7 @@ fn sync_parallelize[
     # If profiling is enabled, and the caller's thread has an active profile
     # entry, each sub-task will also be profiled with a reference back to the
     # parent. Otherwise parent_id will be zero.
-    var parent_id = tracing.get_current_trace_id()
+    var parent_id = tracing.get_current_trace_id[TraceLevel.OP]()
 
     @parameter
     @__copy_capture(parent_id)
