@@ -1103,3 +1103,10 @@ kgen.func @union_wrap_unwrap(%arg0: i32) -> i64 {
   %1 = pop.union.unwrap %0 : <i64, i32> as i64
   kgen.return %1 : i64
 }
+
+// CHECK-LABEL: kgen.func @noalias_cast
+kgen.func @noalias_cast(%arg0: !kgen.pointer<index>) {
+  // CHECK-NEXT: pop.noalias_pointer_cast %arg0 : <index>
+  %0 = pop.noalias_pointer_cast %arg0 : <index>
+  kgen.return
+}
