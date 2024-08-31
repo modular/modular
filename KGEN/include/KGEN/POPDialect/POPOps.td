@@ -1096,28 +1096,21 @@ def POP_StackAllocationOp : POPOp<"stack_allocation", [BytecodeOpInterface]> {
   let arguments = (ins
     AttrOfType<Index>:$count,
     OptionalAttr<AttrOfType<Index>>:$alignment,
-    OptionalAttr<AttrOfType<Index>>:$address_space,
     UnitAttr:$markedLifetimes
   );
   let results = (outs Res<PointerType, "", [MemAlloc]>:$result);
 
   let assemblyFormat = [{
-    custom<IndexParamValue>($count) `x`
-    custom<PointerOf>(type($result), $address_space)
+    custom<IndexParamValue>($count) `x` custom<PointerOf>(type($result))
     (`align` custom<IndexParamValue>($alignment)^)?
     (`marked` $markedLifetimes^)? attr-dict
   }];
 
   let builders = [
-    OpBuilder<(ins "Type":$result,
-                   CArg<"int64_t", "1">:$count,
+    OpBuilder<(ins "Type":$result, CArg<"int64_t", "1">:$count,
                    CArg<"TypedAttr", "TypedAttr()">:$alignment,
-                   CArg<"unsigned", "0">:$addressSpace)>,
-    OpBuilder<(ins "Type":$result, "int64_t":$count, "bool":$markedLifetimes)>,
-    OpBuilder<(ins "Type":$result,
-                   "TypedAttr":$count,
-                   CArg<"TypedAttr", "TypedAttr()">:$alignment,
-                   CArg<"unsigned", "0">:$addressSpace)>
+                   CArg<"bool", "false">:$markedLifetimes)>,
+    OpBuilder<(ins "bool":$markedLifetimes, "Type":$result)>,
   ];
 
   let extraClassDeclaration = [{
@@ -1378,14 +1371,12 @@ def POP_GlobalAllocOp : POPOp<"global_alloc"> {
 
   let arguments = (ins AttrOfType<KGEN_StringType>:$name,
                        AttrOfType<Index>:$count,
-                       OptionalAttr<AttrOfType<Index>>:$alignment,
-                       OptionalAttr<AttrOfType<Index>>:$address_space);
+                       OptionalAttr<AttrOfType<Index>>:$alignment);
   let results = (outs Res<PointerType, "", [MemAlloc]>:$result);
 
   let assemblyFormat = [{
     custom<ParamValue>($name, "StringType::get($_ctxt)")
-    custom<IndexParamValue>($count) `x`
-    custom<PointerOf>(type($result), $address_space)
+    custom<IndexParamValue>($count) `x` custom<PointerOf>(type($result))
     (`align` custom<IndexParamValue>($alignment)^)? attr-dict
   }];
 }

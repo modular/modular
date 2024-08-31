@@ -158,8 +158,8 @@ void LITLowerer::lowerLITOps(LIT::FuncOp func) {
     } else if (auto varDecl = dyn_cast<VarDeclOp>(op)) {
       // Lower a lit.varlet.decl to pop.stack_allocation.
       auto allocOp = b.create<POP::StackAllocationOp>(
-          varDecl.getLoc(), varDecl.getType().getAsPointerType(), 1,
-          /*markedLifetimes=*/true);
+          varDecl.getLoc(), /*markedLifetimes=*/true,
+          varDecl.getType().getAsPointerType());
 
       // Replace !lit.ref result type with a cast from the pointer.  This will
       // get squashed by LowerLITTypes.

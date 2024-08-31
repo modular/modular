@@ -352,9 +352,9 @@ static ParseResult parseOptionalAddressSpaceParamValue(AsmParser &p,
 }
 
 /// Parse the element type of the allocated pointer type.
-static ParseResult parsePointerOf(AsmParser &p, Type &result,
-                                  TypedAttr &addressSpace) {
+static ParseResult parsePointerOf(AsmParser &p, Type &result) {
   Type elementType;
+  TypedAttr addressSpace;
   if (parseParamType(p, elementType) ||
       parseOptionalAddressSpaceParamValue(p, addressSpace))
     return failure();
@@ -364,28 +364,21 @@ static ParseResult parsePointerOf(AsmParser &p, Type &result,
 }
 
 /// Print the element type of the allocated pointer type.
-static void printPointerOf(AsmPrinter &p, Operation *op, Type result,
-                           TypedAttr addressSpace) {
-  printParamType(p, cast<PointerType>(result).getElementType());
-  printOptionalAddressSpaceParamValue(p, op, addressSpace);
-}
-
-void StackAllocationOp::build(OpBuilder &b, OperationState &state, Type result,
-                              TypedAttr count, TypedAttr alignment,
-                              unsigned addressSpace) {
-  build(b, state, result, count, alignment, b.getIndexAttr(addressSpace));
-}
-
-void StackAllocationOp::build(OpBuilder &b, OperationState &state, Type result,
-                              int64_t count, bool markedLifetimes) {
-  build(b, state, result, b.getIndexAttr(count), /*alignment=*/TypedAttr(),
-        /*addressSpace=*/TypedAttr(), markedLifetimes);
+static void printPointerOf(AsmPrinter &p, Operation *op, Type result) {
+  auto ptrType = cast<PointerType>(result);
+  printParamType(p, ptrType.getElementType());
+  printOptionalAddressSpaceParamValue(p, op, ptrType.getAddressSpace());
 }
 
 void StackAllocationOp::build(OpBuilder &b, OperationState &state, Type result,
                               int64_t count, TypedAttr alignment,
-                              unsigned addressSpace) {
-  build(b, state, result, b.getIndexAttr(count), alignment, addressSpace);
+                              bool markedLifetimes) {
+  build(b, state, result, b.getIndexAttr(count), alignment, markedLifetimes);
+}
+
+void StackAllocationOp::build(OpBuilder &b, OperationState &state,
+                              bool markedLifetimes, Type result) {
+  build(b, state, result, /*count=*/1, /*alignment=*/{}, markedLifetimes);
 }
 
 //===----------------------------------------------------------------------===//
