@@ -29,9 +29,11 @@ from algorithm.reduction import (
 from algorithm.reduction import mean as _mean
 from buffer import NDBuffer
 from buffer.buffer import _compute_ndbuffer_offset
+from runtime.tracing import Trace, TraceLevel, trace_arg
 from buffer.dimlist import Dim, DimList
 from builtin.simd import Int64, UInt8, UInt64, _pow
 from gpu.host._compile import _get_nvptx_target
+from runtime.tracing import Trace, TraceLevel, trace_arg
 
 from nn.kv_cache import (
     kv_cache_length_h8_d128_bshd_bf16,
@@ -102,10 +104,6 @@ from nn.conv_transpose import (
     pack_filter_shape as _pack_conv_transpose_filter_shape,
 )
 from nn.cumsum import cumsum as _cumsum
-from nn.flash_attention import flash_attention as cpu_flash_attention
-from nn.flash_attention import (
-    flash_attention_split_kv as cpu_flash_attention_split_kv,
-)
 from nn.gather_scatter import Axis
 from nn.gather_scatter import gather as _gather
 from nn.gather_scatter import gather_nd as _gather_nd
@@ -120,8 +118,10 @@ from nn.gather_scatter import scatter_elements_shape as scatter_shape
 from nn.gather_scatter import scatter_nd as _scatter_nd
 from nn.gather_scatter import scatter_nd_generator, scatter_nd_shape
 from nn.index_tensor import index_tensor_1d as _index_tensor
-from nn.mha import flash_attention as gpu_flash_attention
+from nn.mha import flash_attention
+from nn.flash_attention import flash_attention as nn_flash_attention
 from nn.mha import fused_attention as cpu_fused_attention_impl
+from nn.flash_attention import flash_attention_split_kv
 from nn.nms import non_max_suppression, non_max_suppression_shape_func
 from nn.normalization import layer_norm as _layer_norm
 from nn.normalization import layer_norm_shape
@@ -161,7 +161,6 @@ from quantization.qmatmul_k import (
 )
 from register import *
 from runtime.asyncrt import MojoCallContextPtr
-from runtime.tracing import Trace, TraceLevel, trace_arg
 from tensor_utils_internal import ManagedTensorSlice
 from compiler_internal import StaticTensorSpec
 
@@ -552,12 +551,6 @@ fn destruct_buffer_list[
     list._del_old()
 
 
-@always_inline
-fn trace_buf(name: String, buf: NDBuffer) -> String:
-    """Helper to stringify the type and shape of an NDBuffer for tracing."""
-    return trace_arg(name, buf.dynamic_shape, buf.type)
-
-
 # TODO(#27757): All calls with concrete body functions are as if annotated with
 #               @mogg_register("mo.original_op")
 @mogg_register("elementwise")
@@ -573,36 +566,14 @@ fn elementwise_wrapper[
     ) capturing -> None,
     /,
     target: StringLiteral = "cpu",
-](buffer: NDBuffer[type, rank], ctx: MojoCallContextPtr,):
-    @always_inline
-    @parameter
-    fn description_fn() -> String:
-        var name_str = str("name=") + trace_description
-        var target = str("target_device=" + target)
-        var shape_str = trace_buf("buffer", buffer)
-
-        var vector_width_str = String("vector_width=") + str(simd_width)
-
-        var info = String(";").join(
-            name_str, target, shape_str, vector_width_str
-        )
-
-        return (
-            info
-            + String(";single_thread_blocking_override=")
-            + str(single_thread_blocking_override)
-        )
-
-    with Trace[TraceLevel.OP](
-        "mojo.elementwise",
-        Trace[TraceLevel.OP]._get_detail_str[description_fn](),
-    ):
-        elementwise[
-            func[element_alignment=1],
-            simd_width=simd_width,
-            use_blocking_impl=single_thread_blocking_override,
-            target=target,
-        ](buffer.dynamic_shape, context=ctx)
+](buffer: NDBuffer[type, rank], ctx: MojoCallContextPtr):
+    elementwise[
+        func[element_alignment=1],
+        simd_width=simd_width,
+        use_blocking_impl=single_thread_blocking_override,
+        target=target,
+        trace_description=trace_description,
+    ](buffer.dynamic_shape, context=ctx)
 
 
 @mogg_register("get_address_space")
@@ -1109,13 +1080,12 @@ fn concat_from_list[
     output: NDBuffer[input_type, input_rank],
     ctx: MojoCallContextPtr,
 ) raises:
-    with Trace[TraceLevel.OP]("mojo.concat_from_list"):
-        _concat[input_rank, input_type, single_thread_blocking_override](
-            output,
-            int(normalize_neg_index(axis, input_rank)),
-            inputs,
-            context=ctx,
-        )
+    _concat[input_rank, input_type, single_thread_blocking_override](
+        output,
+        int(normalize_neg_index(axis, input_rank)),
+        inputs,
+        context=ctx,
+    )
 
 
 @mogg_register("mo.concat")
@@ -1133,12 +1103,11 @@ fn concat[
     ctx: MojoCallContextPtr,
     *variadic_ins: NDBuffer[type, rank],
 ) raises:
-    with Trace[TraceLevel.OP]("mojo.concat"):
-        var ins = variadic_list_to_vector(variadic_ins)
-        _concat[rank, type, single_thread_blocking_override, target](
-            output, int(normalize_neg_index(axis, rank)), ins, context=ctx
-        )
-        ins._del_old()
+    var ins = variadic_list_to_vector(variadic_ins)
+    _concat[rank, type, single_thread_blocking_override, target](
+        output, int(normalize_neg_index(axis, rank)), ins, context=ctx
+    )
+    ins._del_old()
 
 
 @mogg_register("concat_shape")
@@ -1426,24 +1395,13 @@ fn mean[
     output_shape: StaticIntTuple[rank],
     ctx: MojoCallContextPtr,
 ) raises:
-    @always_inline
-    @parameter
-    fn description_fn() -> String:
-        return String(";").join(
-            trace_arg("input", input_shape, type),
-            trace_arg("output", output_shape, type),
-        )
-
-    with Trace[TraceLevel.OP](
-        "mojo.mean", Trace[TraceLevel.OP]._get_detail_str[description_fn]()
-    ):
-        _mean[
-            type,
-            input_0_fn,
-            output_0_fn[element_alignment=1],
-            target=target,
-            single_thread_blocking_override=single_thread_blocking_override,
-        ](input_shape, int(axis), output_shape, context=ctx)
+    _mean[
+        type,
+        input_0_fn,
+        output_0_fn[element_alignment=1],
+        target=target,
+        single_thread_blocking_override=single_thread_blocking_override,
+    ](input_shape, int(axis), output_shape, context=ctx)
 
 
 # ===----------------------------------------------------------------------===#
@@ -2072,9 +2030,9 @@ fn mogg_gather_sum[
     @parameter
     fn description_fn() -> String:
         return String(";").join(
-            trace_buf("output", output),
-            trace_buf("input", input),
-            trace_buf("indices", indices),
+            trace_arg("output", output),
+            trace_arg("input", input),
+            trace_arg("indices", indices),
         )
 
     with Trace[TraceLevel.OP](
@@ -2200,48 +2158,28 @@ fn matmul[
             coords, rebind[SIMD[c_type, width]](val)
         )
 
-    @always_inline
-    @parameter
-    fn description_fn() -> String:
-        var shape = GemmShape.get[transpose_b](c, a, b)
-        return String(";").join(
-            "dynamic_tile",
-            trace_arg("A", StaticIntTuple[2](shape.M, shape.K), a_type),
-            trace_arg("B", StaticIntTuple[2](shape.K, shape.N), b_type),
-            trace_arg("C", StaticIntTuple[2](shape.M, shape.N), c_type),
-            "transpose_a=" + str(transpose_a),
-            "transpose_b=" + str(transpose_b),
-            "b_packed=" + str(b_packed),
-            "single_thread_blocking_override="
-            + str(single_thread_blocking_override),
-        )
-
-    # TODO(#23049): Pipe info on whether using faster, saturated_vnni is ok
-    with Trace[TraceLevel.OP](
-        "mojo.matmul", Trace[TraceLevel.OP]._get_detail_str[description_fn]()
-    ):
-        _matmul[
-            a_type,
-            input_0_static_shape,
-            b_type,
-            input_1_static_shape,
-            c_type,
-            input_2_static_shape,
-            transpose_a,
-            transpose_b,
-            b_packed,
-            OptionalReg[matmul_elementwise_epilogue_type](
-                epilogue_wrapper
-            ) if lambdas_have_fusion else None,
-            saturated_vnni=False,
-            single_thread_blocking_override=single_thread_blocking_override,
-            target=target,
-        ](
-            c,
-            a,
-            b,
-            ctx,
-        )
+    _matmul[
+        a_type,
+        input_0_static_shape,
+        b_type,
+        input_1_static_shape,
+        c_type,
+        input_2_static_shape,
+        transpose_a,
+        transpose_b,
+        b_packed,
+        OptionalReg[matmul_elementwise_epilogue_type](
+            epilogue_wrapper
+        ) if lambdas_have_fusion else None,
+        saturated_vnni=False,
+        single_thread_blocking_override=single_thread_blocking_override,
+        target=target,
+    ](
+        c,
+        a,
+        b,
+        ctx,
+    )
 
 
 # ===----------------------------------------------------------------------===#
@@ -2281,38 +2219,20 @@ fn batched_matmul[
             coords, rebind[SIMD[c_type, width]](val)
         )
 
-    @always_inline
-    @parameter
-    fn description_fn() -> String:
-        return String(";").join(
-            "dynamic_tile",
-            trace_buf("A", a),
-            trace_buf("B", b),
-            trace_buf("C", c),
-            "transpose_a=" + str(transpose_a),
-            "transpose_b=" + str(transpose_b),
-            "single_thread_blocking_override="
-            + str(single_thread_blocking_override),
-        )
-
-    with Trace[TraceLevel.OP](
-        "mojo.batched_matmul",
-        Trace[TraceLevel.OP]._get_detail_str[description_fn](),
-    ):
-        _batched_matmul[
-            rank,
-            a_type,
-            b_type,
-            c_type,
-            transpose_a,
-            transpose_b,
-            OptionalReg[batched_matmul_elementwise_epilogue_type](
-                epilogue_wrapper
-            ) if lambdas_have_fusion else None,
-            saturated_vnni=False,
-            single_thread_blocking_override=single_thread_blocking_override,
-            target=target,
-        ](c, a, b, context=ctx)
+    _batched_matmul[
+        rank,
+        a_type,
+        b_type,
+        c_type,
+        transpose_a,
+        transpose_b,
+        OptionalReg[batched_matmul_elementwise_epilogue_type](
+            epilogue_wrapper
+        ) if lambdas_have_fusion else None,
+        saturated_vnni=False,
+        single_thread_blocking_override=single_thread_blocking_override,
+        target=target,
+    ](c, a, b, context=ctx)
 
 
 # ===----------------------------------------------------------------------===#
@@ -3112,47 +3032,30 @@ fn conv[
             coords, rebind[SIMD[output_type, _width]](val)
         )
 
-    @always_inline
-    @__copy_capture(pad_h_tuple, pad_w_tuple)
-    @parameter
-    fn description_fn() -> String:
-        return String(";").join(
-            trace_buf("input", input),
-            trace_buf("filter", filter),
-            trace_buf("output", output),
-            "group=" + str(int(num_groups[0])),
-            "stride=" + String("x").join(stride_tuple),
-            "padding_h=" + String("x").join(pad_h_tuple),
-            "padding_w=" + String("x").join(pad_w_tuple),
-        )
-
-    with Trace[TraceLevel.OP](
-        "mojo.conv", Trace[TraceLevel.OP]._get_detail_str[description_fn]()
-    ):
-        conv_nhwc_direct[
-            input_rank,
-            filter_rank,
-            input_0_static_shape,  # input shape
-            input_1_static_shape,  # filter shape
-            input_6_static_shape,  # output shape
-            input_type,
-            filter_type,
-            output_type,
-            filter_packed,
-            conv_attr,
-            lambdas_have_fusion,
-            epilogue_wrapper,
-        ](
-            input,
-            filter,
-            output,
-            stride_tuple,
-            dilation_tuple,
-            pad_d_tuple,
-            pad_h_tuple,
-            pad_w_tuple,
-            int(num_groups[0]),
-        )
+    conv_nhwc_direct[
+        input_rank,
+        filter_rank,
+        input_0_static_shape,  # input shape
+        input_1_static_shape,  # filter shape
+        input_6_static_shape,  # output shape
+        input_type,
+        filter_type,
+        output_type,
+        filter_packed,
+        conv_attr,
+        lambdas_have_fusion,
+        epilogue_wrapper,
+    ](
+        input,
+        filter,
+        output,
+        stride_tuple,
+        dilation_tuple,
+        pad_d_tuple,
+        pad_h_tuple,
+        pad_w_tuple,
+        int(num_groups[0]),
+    )
 
 
 @mogg_register("mo.conv_transpose")
@@ -3233,21 +3136,6 @@ fn conv_transpose[
         pad_h = Index(paddings[2], paddings[3])
         pad_w = Index(paddings[4], paddings[5])
 
-    @always_inline
-    @__copy_capture(stride_tuple, pad_h, pad_w)
-    @parameter
-    fn description_fn() -> String:
-        return String(";").join(
-            trace_buf("input", input),
-            trace_buf("filter", filter),
-            trace_buf("output", output),
-            "group=" + str(1),
-            "stride=" + String("x").join(stride_tuple),
-            "padding_d=" + String("x").join(Index(0, 0)),
-            "padding_h=" + String("x").join(pad_h),
-            "padding_w=" + String("x").join(pad_w),
-        )
-
     @parameter
     @always_inline
     fn epilogue_wrapper[
@@ -3257,35 +3145,31 @@ fn conv_transpose[
             coords, rebind[SIMD[output_type, _width]](val)
         )
 
-    with Trace[TraceLevel.OP](
-        "mojo.conv_transposed",
-        Trace[TraceLevel.OP]._get_detail_str[description_fn](),
-    ):
-        try:
-            conv_transpose_impl[
-                input_rank,
-                filter_rank,
-                DimList.create_unknown[input_rank](),  # Input shape.
-                DimList.create_unknown[filter_rank](),  # Filter shape.
-                DimList.create_unknown[input_rank](),  # Output shape.
-                input_type,
-                filter_type,  # Filter type.
-                output_type,  # Output type.
-                filter_packed,
-                lambdas_have_fusion,
-                epilogue_wrapper,
-            ](
-                output,
-                input,
-                filter,
-                stride_tuple,
-                dilation_tuple,
-                pad_d,
-                pad_h,
-                pad_w,
-            )
-        except e:
-            ctx.set_to_error(e)
+    try:
+        conv_transpose_impl[
+            input_rank,
+            filter_rank,
+            DimList.create_unknown[input_rank](),  # Input shape.
+            DimList.create_unknown[filter_rank](),  # Filter shape.
+            DimList.create_unknown[input_rank](),  # Output shape.
+            input_type,
+            filter_type,  # Filter type.
+            output_type,  # Output type.
+            filter_packed,
+            lambdas_have_fusion,
+            epilogue_wrapper,
+        ](
+            output,
+            input,
+            filter,
+            stride_tuple,
+            dilation_tuple,
+            pad_d,
+            pad_h,
+            pad_w,
+        )
+    except e:
+        ctx.set_to_error(e)
 
 
 @mogg_register("mo.layer_norm")
@@ -3903,27 +3787,11 @@ fn masked_flash_attention_gpu[
 
     constrained["cuda" in target, "only valid on CUDA GPUs"]()
 
-    @always_inline
-    @__copy_capture(q, k, v, mask, output)
-    @parameter
-    fn description_fn() -> String:
-        return String(";").join(
-            trace_buf("q", q),
-            trace_buf("k", k),
-            trace_buf("v", v),
-            trace_buf("mask", mask),
-            trace_buf("output", output),
-        )
-
-    with Trace[TraceLevel.OP](
-        "mojo.flash_attention",
-        Trace[TraceLevel.OP]._get_detail_str[description_fn](),
-    ):
-        gpu_flash_attention[
-            add_attn_mask=True,
-            target=target,
-            use_tensor_core=True,
-        ](output, q, k, v, mask, scale[0], context=ctx)
+    flash_attention[
+        add_attn_mask=True,
+        target=target,
+        use_tensor_core=True,
+    ](output, q, k, v, mask, scale[0], context=ctx)
 
 
 @mogg_register("no_mask_fused_attention_cpu")
@@ -3975,23 +3843,22 @@ fn no_mask_fused_attention_cpu[
     var mask = NDBuffer[mask_type, rank, mask_shape]()
     var scale_f32 = scale[0].cast[DType.float32]()
     var causal_mask: Float32 = 0
-    with Trace[TraceLevel.OP]("mojo.fused_attention"):
-        cpu_fused_attention_impl[
-            rank,
-            input_0_static_shape,
-            input_1_static_shape,
-            input_2_static_shape,
-            mask_shape,
-            DimList.create_unknown[rank](),
-            q_type,
-            k_type,
-            v_type,
-            mask_type,
-            output_type,
-            transpose_k=False,
-            add_attn_mask=False,
-            add_causal_mask=False,
-        ](output, q, k, v, mask, scale_f32, causal_mask)
+    cpu_fused_attention_impl[
+        rank,
+        input_0_static_shape,
+        input_1_static_shape,
+        input_2_static_shape,
+        mask_shape,
+        DimList.create_unknown[rank](),
+        q_type,
+        k_type,
+        v_type,
+        mask_type,
+        output_type,
+        transpose_k=False,
+        add_attn_mask=False,
+        add_causal_mask=False,
+    ](output, q, k, v, mask, scale_f32, causal_mask)
 
 
 @mogg_register("with_mask_fused_attention_cpu")
@@ -4043,23 +3910,22 @@ fn with_mask_fused_attention_cpu[
     # TODO: Unimplemented and not used
     var scale_f32 = scale[0].cast[DType.float32]()
     var causal_mask: Float32 = 0
-    with Trace[TraceLevel.OP]("mojo.fused_attention"):
-        cpu_fused_attention_impl[
-            rank,
-            input_0_static_shape,
-            input_1_static_shape,
-            input_2_static_shape,
-            input_3_static_shape,
-            DimList.create_unknown[rank](),
-            q_type,
-            k_type,
-            v_type,
-            attn_mask_type,
-            output_type,
-            transpose_k=False,
-            add_attn_mask=True,
-            add_causal_mask=False,
-        ](output, q, k, v, attn_mask, scale_f32, causal_mask)
+    cpu_fused_attention_impl[
+        rank,
+        input_0_static_shape,
+        input_1_static_shape,
+        input_2_static_shape,
+        input_3_static_shape,
+        DimList.create_unknown[rank](),
+        q_type,
+        k_type,
+        v_type,
+        attn_mask_type,
+        output_type,
+        transpose_k=False,
+        add_attn_mask=True,
+        add_causal_mask=False,
+    ](output, q, k, v, attn_mask, scale_f32, causal_mask)
 
 
 @mogg_register("no_mask_flash_attention_cpu")
@@ -4087,36 +3953,20 @@ fn no_mask_flash_attention_cpu[
 ) raises:
     constrained[target == "cpu"]()
 
-    @always_inline
-    @__copy_capture(q, input_1_shape, input_2_shape, output)
     @parameter
-    fn description_fn() -> String:
-        return String(";").join(
-            trace_buf("q", q),
-            trace_arg("k", input_1_shape, type),
-            trace_arg("v", input_2_shape, type),
-            trace_buf("output", output),
-        )
+    @always_inline
+    fn mask_fn[
+        simd_width: Int, _rank: Int
+    ](idx: StaticIntTuple[_rank]) -> SIMD[type, simd_width]:
+        return SIMD[type, simd_width](0)
 
-    with Trace[TraceLevel.OP](
-        "mojo.flash_attention_no_mask",
-        Trace[TraceLevel.OP]._get_detail_str[description_fn](),
-    ):
-
-        @parameter
-        @always_inline
-        fn mask_fn[
-            simd_width: Int, _rank: Int
-        ](idx: StaticIntTuple[_rank]) -> SIMD[type, simd_width]:
-            return SIMD[type, simd_width](0)
-
-        cpu_flash_attention[input_1_fn, input_2_fn, mask_fn](
-            q,
-            input_1_shape,
-            input_2_shape,
-            output,
-            scale[0].cast[DType.float32](),
-        )
+    nn_flash_attention[input_1_fn, input_2_fn, mask_fn](
+        q,
+        input_1_shape,
+        input_2_shape,
+        output,
+        scale[0].cast[DType.float32](),
+    )
 
 
 @mogg_register("with_mask_flash_attention_split_kv_cpu")
@@ -4173,47 +4023,21 @@ fn with_mask_flash_attention_split_kv_cache_cpu[
 
     constrained[target == "cpu"]()
 
-    @always_inline
-    @__copy_capture(
+    flash_attention_split_kv[
+        input_1_fn,
+        input_2_fn,
+        input_3_fn,
+        input_4_fn,
+        input_5_fn,
+    ](
         q,
         input_1_shape,
         input_2_shape,
         input_3_shape,
         input_4_shape,
-        input_5_shape,
         output,
+        scale[0].cast[DType.float32](),
     )
-    @parameter
-    fn description_fn() -> String:
-        return String(";").join(
-            trace_buf("q", q),
-            trace_arg("k", input_1_shape, type),
-            trace_arg("v", input_2_shape, type),
-            trace_arg("k_cache", input_3_shape, type),
-            trace_arg("v_cache", input_4_shape, type),
-            trace_arg("mask", input_5_shape, type),
-            trace_buf("output", output),
-        )
-
-    with Trace[TraceLevel.OP](
-        "mojo.flash_attention_split_kv",
-        Trace[TraceLevel.OP]._get_detail_str[description_fn](),
-    ):
-        cpu_flash_attention_split_kv[
-            input_1_fn,
-            input_2_fn,
-            input_3_fn,
-            input_4_fn,
-            input_5_fn,
-        ](
-            q,
-            input_1_shape,
-            input_2_shape,
-            input_3_shape,
-            input_4_shape,
-            output,
-            scale[0].cast[DType.float32](),
-        )
 
 
 @mogg_register_shape_func("with_mask_flash_attention_split_kv_cpu")
@@ -4260,29 +4084,13 @@ fn with_mask_flash_attention_cpu[
 ) raises:
     constrained[target == "cpu"]()
 
-    @always_inline
-    @__copy_capture(q, input_1_shape, input_2_shape, input_3_shape, output)
-    @parameter
-    fn description_fn() -> String:
-        return String(";").join(
-            trace_buf("q", q),
-            trace_arg("k", input_1_shape, type),
-            trace_arg("v", input_2_shape, type),
-            trace_arg("mask", input_3_shape, type),
-            trace_buf("output", output),
-        )
-
-    with Trace[TraceLevel.OP](
-        "mojo.flash_attention",
-        Trace[TraceLevel.OP]._get_detail_str[description_fn](),
-    ):
-        cpu_flash_attention[input_1_fn, input_2_fn, input_3_fn,](
-            q,
-            input_1_shape,
-            input_2_shape,
-            output,
-            scale[0].cast[DType.float32](),
-        )
+    nn_flash_attention[input_1_fn, input_2_fn, input_3_fn](
+        q,
+        input_1_shape,
+        input_2_shape,
+        output,
+        scale[0].cast[DType.float32](),
+    )
 
 
 @mogg_register("mo.linalg.solve")
