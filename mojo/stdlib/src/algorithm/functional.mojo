@@ -342,14 +342,14 @@ fn sync_parallelize[
     # If profiling is enabled, and the caller's thread has an active profile
     # entry, each sub-task will also be profiled with a reference back to the
     # parent. Otherwise parent_id will be zero.
-    var parent_id = tracing.get_current_trace_id[TraceLevel.OP]()
+    var parent_id = tracing.get_current_trace_id[TraceLevel.THREAD]()
 
     @parameter
     @__copy_capture(parent_id)
     @always_inline
     fn func_wrapped(i: Int):
         with FlushDenormals():
-            with Trace[TraceLevel.OP, target="cpu"](
+            with Trace[TraceLevel.THREAD, target="cpu"](
                 "task", task_id=i, parent_id=parent_id
             ):
                 try:
