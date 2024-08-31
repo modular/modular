@@ -8,12 +8,13 @@
 from collections.optional import Optional
 from sys import external_call
 from sys.param_env import env_get_int, is_defined
+import gpu.host.nvtx
 
 from utils import StaticIntTuple
 from buffer import NDBuffer
 
 
-fn build_info_asyncrt_max_profiling_level() -> Optional[Int]:
+fn _build_info_asyncrt_max_profiling_level() -> Optional[Int]:
     @parameter
     if not is_defined["MODULAR_ASYNCRT_MAX_PROFILING_LEVEL"]():
         return None
@@ -130,7 +131,7 @@ fn is_profiling_enabled[type: TraceType, level: TraceLevel]() -> Bool:
     if level == TraceLevel.ALWAYS:
         return True
 
-    alias max_profiling_level = build_info_asyncrt_max_profiling_level()
+    alias max_profiling_level = _build_info_asyncrt_max_profiling_level()
     if not max_profiling_level:
         return False
 
@@ -145,6 +146,16 @@ fn is_profiling_disabled[type: TraceType, level: TraceLevel]() -> Bool:
     """Returns False if the profiling is enabled for that specific type and
     level and True otherwise."""
     return not is_profiling_enabled[type, level]()
+
+
+@always_inline
+fn _is_nvtx_enabled[type: TraceType, level: TraceLevel]() -> Bool:
+    """Returns True if the e2e kernel profiling is enabled. Note that we always
+    prefer to use llcl profiling if they are enabled."""
+    return (
+        is_profiling_disabled[type, level]()
+        and env_get_int["KERNEL_E2E_GPU_PROFILING", 0]() == 1
+    )
 
 
 @always_inline
@@ -222,11 +233,10 @@ struct Trace[level: TraceLevel, target: Optional[StringLiteral] = None]:
         self.parent_id = parent_id
 
         @parameter
-        if is_profiling_disabled[Self.trace_type, level]():
-            self.name = ""
-            self.detail = ""
-            self.int_payload = Optional[Int]()
-        else:
+        if (
+            _is_nvtx_enabled[Self.trace_type, level]()
+            or is_profiling_enabled[Self.trace_type, level]()
+        ):
             self.name = name
             self.detail = detail
 
@@ -235,6 +245,10 @@ struct Trace[level: TraceLevel, target: Optional[StringLiteral] = None]:
                 if self.detail:
                     self.detail += ";"
                 self.detail += "target=" + target.value()
+            self.int_payload = Optional[Int]()
+        else:
+            self.name = ""
+            self.detail = ""
             self.int_payload = Optional[Int]()
 
     @always_inline
@@ -260,11 +274,10 @@ struct Trace[level: TraceLevel, target: Optional[StringLiteral] = None]:
         self.parent_id = parent_id
 
         @parameter
-        if is_profiling_disabled[Self.trace_type, level]():
-            self.name = ""
-            self.detail = ""
-            self.int_payload = Optional[Int]()
-        else:
+        if (
+            _is_nvtx_enabled[Self.trace_type, level]()
+            or is_profiling_enabled[Self.trace_type, level]()
+        ):
             self.name = name
             self.detail = detail
 
@@ -274,6 +287,10 @@ struct Trace[level: TraceLevel, target: Optional[StringLiteral] = None]:
                     self.detail += ";"
                 self.detail += "target=" + target.value()
             self.int_payload = task_id
+        else:
+            self.name = ""
+            self.detail = ""
+            self.int_payload = Optional[Int]()
 
     @always_inline
     fn __enter__(inout self):
@@ -281,6 +298,13 @@ struct Trace[level: TraceLevel, target: Optional[StringLiteral] = None]:
 
         This begins recording of the trace event.
         """
+
+        @parameter
+        if _is_nvtx_enabled[Self.trace_type, level]():
+            var nvtx_range = nvtx.Range(message=self.name)
+            nvtx_range.__enter__()
+            self.event_id = int(nvtx_range.id())
+            return
 
         @parameter
         if is_profiling_disabled[Self.trace_type, level]():
@@ -330,6 +354,12 @@ struct Trace[level: TraceLevel, target: Optional[StringLiteral] = None]:
 
         This finishes recording of the trace event.
         """
+
+        @parameter
+        if _is_nvtx_enabled[Self.trace_type, level]():
+            var nvtx_range = nvtx.Range(id=nvtx.RangeID(self.event_id))
+            nvtx_range.__exit__()
+            return
 
         @parameter
         if is_profiling_disabled[Self.trace_type, level]():
