@@ -8,7 +8,7 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "KGEN/MojoParser/StructEmitter.h"
+#include "StructEmitter.h"
 #include "CallEmission.h"
 #include "ExprEmitter.h"
 #include "KGEN/KGENDialect/KGENOps.h"

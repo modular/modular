@@ -15,7 +15,7 @@
 #include "KGEN/MojoParser/DeclResolver.h"
 #include "KGEN/MojoParser/ExprNodes.h"
 #include "KGEN/MojoParser/ParserParamEvaluator.h"
-#include "KGEN/MojoParser/StructEmitter.h"
+#include "StructEmitter.h"
 
 #include "MojoUtils.h"
 #include "Traits.h"

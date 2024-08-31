@@ -15,7 +15,7 @@
 #include "KGEN/LITDialect/LITOps.h"
 #include "KGEN/MojoParser/ExprNodes.h"
 #include "KGEN/MojoParser/SharedState.h"
-#include "KGEN/MojoParser/StructEmitter.h"
+#include "StructEmitter.h"
 #include "Support/DebugInfoDialect/IR/DIBuilder.h"
 
 namespace M::KGEN::LIT {

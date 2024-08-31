@@ -16,7 +16,7 @@
 #include "KGEN/MojoParser/ExprNodes.h"
 #include "KGEN/MojoParser/ParserParamEvaluator.h"
 #include "KGEN/MojoParser/SharedState.h"
-#include "KGEN/MojoParser/StructEmitter.h"
+#include "StructEmitter.h"
 #include "mlir/IR/ImplicitLocOpBuilder.h"
 
 using namespace M;
