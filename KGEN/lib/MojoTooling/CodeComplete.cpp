@@ -9,7 +9,6 @@
 #include "KGEN/MojoParser/CallOperands.h"
 #include "KGEN/MojoParser/EntryPoint.h"
 #include "KGEN/MojoParser/ExprNode.h"
-#include "KGEN/MojoParser/Lexer.h"
 #include "KGEN/MojoParser/SharedState.h"
 #include "KGEN/MojoTooling/ASTDeclRef.h"
 #include "KGEN/MojoTooling/ASTDeclView.h"
@@ -395,9 +394,8 @@ static void parseCompletionImpl(
   // Compute the end completion location by finding the next token from the
   // input completion position.
   completionPosStr = buffer.getBuffer().drop_front(completionPosition);
-  Lexer lexer(parserContext.getSharedState().diags, completionPosStr,
-              completionPosStr.data());
-  listener.completionRange.End = lexer.getToken().getLoc();
+  listener.completionRange.End =
+      findStartOfNextToken(parserContext.getSharedState(), completionPosStr);
 
   parserCallback(parserContext, listener.sourceMgr.getMainFileID());
 }

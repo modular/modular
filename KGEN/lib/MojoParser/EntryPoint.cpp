@@ -28,6 +28,15 @@ using namespace KGEN;
 using namespace LIT;
 
 //===----------------------------------------------------------------------===//
+// Diagnostic Utils
+//===----------------------------------------------------------------------===//
+
+llvm::SMLoc LIT::findStartOfNextToken(SharedState &shared, StringRef string) {
+  Lexer lexer(shared.diags, string, string.data());
+  return lexer.getToken().getLoc();
+}
+
+//===----------------------------------------------------------------------===//
 // Driver Entry Points
 //===----------------------------------------------------------------------===//
 
