@@ -38,7 +38,7 @@
     "@types/mocha": "^7.0.2",
     "@types/node": "^18.11.18",
     "@types/proper-lockfile": "4.1.4",
-    "@types/shell-escape": "0.2.0",
+    "@types/shell-quote": "^1.7.5",
     "@types/vscode": "^1.85.0",
     "@vscode/test-cli": "^0.0.10",
     "@vscode/test-electron": "^2.4.1",
@@ -54,7 +54,7 @@
     "ini": "4.1.1",
     "proper-lockfile": "4.1.2",
     "rxjs": "7.8.1",
-    "shell-escape": "0.2.0",
+    "shell-quote": "1.8.1",
     "string-argv": "0.3.2",
     "typescript-memoize": "1.1.1",
     "vscode-languageclient": "^9.0.1",
@@ -163,51 +163,57 @@
     "commands": [
       {
         "category": "Developer",
-        "command": "mojo.restart-and-debug-lsp",
+        "command": "mojo.lsp.restart-and-debug",
         "title": "Restart the Mojo LSP Server and Attach the Debugger to it"
       },
       {
         "category": "Developer",
-        "command": "mojo.restart-lsp",
-        "title": "Restart the Mojo LSP Server (Without the Debugger Attached)"
+        "command": "mojo.lsp.restart",
+        "title": "Restart the Mojo LSP Server"
       },
       {
         "category": "Mojo",
-        "command": "mojo.restart",
+        "command": "mojo.extension.restart",
         "title": "Restart the Extension"
       },
       {
         "category": "Mojo",
-        "command": "mojo.execFileInDedicatedTerminal",
-        "icon": "$(play-circle)",
+        "command": "mojo.file.run",
+        "icon": "$(play)",
         "title": "Run Mojo File"
       },
       {
         "category": "Mojo",
-        "command": "mojo.debugFile",
+        "command": "mojo.file.debug",
         "icon": "$(debug-alt)",
         "title": "Debug Mojo File"
       },
       {
         "category": "Mojo",
-        "command": "mojo.debugFileInTerminal",
+        "command": "mojo.file.debug-in-terminal",
         "icon": "$(debug-console)",
         "title": "Debug Mojo File in Terminal"
       },
       {
         "category": "Mojo",
-        "command": "mojo.attachToProcess",
+        "command": "mojo.file.set-args",
+        "icon": "$(settings-gear)",
+        "title": "Configure Build and Run Args"
+      },
+      {
+        "category": "Mojo",
+        "command": "mojo.debug.attach-to-process",
         "icon": "$(debug)",
         "title": "Attach to Process"
       },
       {
         "category": "Mojo",
-        "command": "mojo.magicSdk.install",
+        "command": "mojo.sdk.reinstall",
         "title": "Reinstall the MAX SDK for VS Code"
       },
       {
         "category": "Mojo",
-        "command": "mojo.sdk.selectSdk",
+        "command": "mojo.sdk.select",
         "title": "Select MAX SDK"
       }
     ],
@@ -226,49 +232,63 @@
       ],
       "commandPalette": [
         {
-          "command": "mojo.execFileInDedicatedTerminal",
+          "command": "mojo.file.run",
           "when": "resourceLangId == mojo && !virtualWorkspace && shellExecutionSupported"
         },
         {
-          "command": "mojo.debugFile",
+          "command": "mojo.file.debug",
           "when": "resourceLangId == mojo && !virtualWorkspace"
         },
         {
-          "command": "mojo.debugFileInTerminal",
+          "command": "mojo.file.debug-in-terminal",
+          "when": "resourceLangId == mojo && !virtualWorkspace && shellExecutionSupported"
+        },
+        {
+          "command": "mojo.file.set-args",
           "when": "resourceLangId == mojo && !virtualWorkspace && shellExecutionSupported"
         }
       ],
       "explorer/context/mojo": [
         {
-          "command": "mojo.execFileInDedicatedTerminal",
+          "command": "mojo.file.run",
           "group": "1_run@1",
           "when": "resourceLangId == mojo && !virtualWorkspace && shellExecutionSupported"
         },
         {
-          "command": "mojo.debugFile",
+          "command": "mojo.file.debug",
           "group": "2_debug@0",
           "when": "resourceLangId == mojo && !virtualWorkspace"
         },
         {
-          "command": "mojo.debugFileInTerminal",
+          "command": "mojo.file.debug-in-terminal",
           "group": "2_debug@1",
+          "when": "resourceLangId == mojo && !virtualWorkspace && shellExecutionSupported"
+        },
+        {
+          "command": "mojo.file.set-args",
+          "group": "3_settings@1",
           "when": "resourceLangId == mojo && !virtualWorkspace && shellExecutionSupported"
         }
       ],
       "editor/title/run": [
         {
-          "command": "mojo.execFileInDedicatedTerminal",
+          "command": "mojo.file.run",
           "group": "navigation@1",
           "when": "resourceLangId == mojo && !isInDiffEditor && !virtualWorkspace && shellExecutionSupported"
         },
         {
-          "command": "mojo.debugFile",
+          "command": "mojo.file.debug",
           "group": "navigation@2",
           "when": "resourceLangId == mojo && !isInDiffEditor && !virtualWorkspace"
         },
         {
-          "command": "mojo.debugFileInTerminal",
+          "command": "mojo.file.debug-in-terminal",
           "group": "navigation@3",
+          "when": "resourceLangId == mojo && !isInDiffEditor && !virtualWorkspace && shellExecutionSupported"
+        },
+        {
+          "command": "mojo.file.set-args",
+          "group": "settings@1",
           "when": "resourceLangId == mojo && !isInDiffEditor && !virtualWorkspace && shellExecutionSupported"
         }
       ]
@@ -349,6 +369,14 @@
                   "string"
                 ],
                 "description": "Program arguments.",
+                "default": []
+              },
+              "buildArgs": {
+                "type": [
+                  "array",
+                  "string"
+                ],
+                "description": "Build arguments when using `mojoFile` instead of `program`.",
                 "default": []
               },
               "cwd": {

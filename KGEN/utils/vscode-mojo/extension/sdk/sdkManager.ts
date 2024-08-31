@@ -75,7 +75,7 @@ export class MojoSDKManager extends DisposableContext {
     this.extensionSemiPersistentState = extensionSemiPersistentState;
 
     this.pushSubscription(
-      vscode.commands.registerCommand('mojo.sdk.selectSdk', async () => {
+      vscode.commands.registerCommand('mojo.sdk.select', async () => {
         const allSDKSpecs = await this.findAllSDKs();
         if (allSDKSpecs.length === 0) {
           vscode.window.showErrorMessage('No MAX SDKs were found.');
@@ -94,12 +94,12 @@ export class MojoSDKManager extends DisposableContext {
           (spec) => spec.version.toString() === selected
         );
         if (selectedSDK !== undefined) {
-          vscode.commands.executeCommand('mojo.restart', selectedSDK);
+          vscode.commands.executeCommand('mojo.extension.restart', selectedSDK);
         }
       })
     );
     this.pushSubscription(
-      vscode.commands.registerCommand('mojo.magicSdk.install', async () => {
+      vscode.commands.registerCommand('mojo.sdk.reinstall', async () => {
         const spec = await findMagicSDKSpec(
           /*withLock=*/ false,
           this.context,
@@ -108,7 +108,7 @@ export class MojoSDKManager extends DisposableContext {
           /*reinstall=*/ true
         );
         if (spec !== undefined) {
-          vscode.commands.executeCommand('mojo.restart');
+          vscode.commands.executeCommand('mojo.extension.restart');
         }
       })
     );
@@ -162,7 +162,10 @@ export class MojoSDKManager extends DisposableContext {
         'Use this SDK'
       );
       if (result === 'Use this SDK') {
-        vscode.commands.executeCommand('mojo.restart', specResult.spec);
+        vscode.commands.executeCommand(
+          'mojo.extension.restart',
+          specResult.spec
+        );
       }
     }
   }
@@ -261,7 +264,7 @@ export class MojoSDKManager extends DisposableContext {
           .showErrorMessage(errorMessage, 'Reinstall')
           .then(async (value) => {
             if (value === 'Reinstall') {
-              vscode.commands.executeCommand('mojo.magicSdk.install');
+              vscode.commands.executeCommand('mojo.sdk.reinstall');
             }
           });
       } else if (selectedSDK.sdkSpec?.kind === 'custom') {

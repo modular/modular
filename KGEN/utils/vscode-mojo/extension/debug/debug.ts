@@ -5,24 +5,23 @@
 //===----------------------------------------------------------------------===//
 
 import * as vscode from 'vscode';
-import shellEscape = require('shell-escape');
 
 import { checkNsightInstall } from '../utils/checkNsight';
 import { DisposableContext } from '../utils/disposableContext';
 import { getAllOpenMojoFiles, WorkspaceAwareFile } from '../utils/files';
-
 import { activatePickProcessToAttachCommand } from './attachQuickPick';
 import { initializeInlineLocalVariablesProvider } from './inlineVariables';
 import path = require('path');
 import { MojoSDK } from '../sdk/sdk';
 import { MojoExtension } from '../extension';
 import { MojoSDKManager } from '../sdk/sdkManager';
+import { quote } from 'shell-quote';
 
 /**
  * Stricter version of vscode.DebugConfiguration intended to reduce the chances
  * of typos when handling individual attributes.
  */
-type MojoDebugConfiguration = {
+export type MojoDebugConfiguration = {
   type?: string;
   name?: string;
   pid?: string | number;
@@ -38,6 +37,8 @@ type MojoDebugConfiguration = {
   timeout?: number;
   initCommands?: string[];
   customFrameFormat?: string;
+  runInTerminal?: boolean;
+  buildArgs?: string[];
 };
 
 /**
@@ -217,6 +218,7 @@ class MojoDebugConfigurationResolver
         '--no-optimization',
         '--debug-level',
         'full',
+        ...(debugConfiguration.buildArgs || []),
         debugConfiguration.mojoFile,
         ...(debugConfiguration.args || []),
       ];
@@ -364,7 +366,7 @@ class MojoCudaGdbDebugConfigurationResolver
     // Actually, cuda-gdb can take an array, which it then joins into a single
     // string separated by ";" characters. So it takes the list of program
     // arguments to the debuggee as a single string.
-    debugConfig.args = shellEscape(args || []);
+    debugConfig.args = quote(args || []);
     // cuda-gdb takes environment as a list of objects like:
     // [{"name": "HOME", "value": "/home/ubuntu"}]
     let env = [];
@@ -467,7 +469,7 @@ export class MojoDebugManager extends DisposableContext {
     );
 
     this.pushSubscription(
-      vscode.commands.registerCommand('mojo.attachToProcess', () => {
+      vscode.commands.registerCommand('mojo.debug.attach-to-process', () => {
         return vscode.debug.startDebugging(undefined, {
           type: 'mojo-lldb',
           request: 'attach',

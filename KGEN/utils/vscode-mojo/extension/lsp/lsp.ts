@@ -42,7 +42,7 @@ export class MojoLSPManager extends DisposableContext {
   async activate(launchServerWithDebuggerAttached: boolean = false) {
     this.pushSubscription(
       vscode.commands.registerCommand(
-        'mojo.restart-and-debug-lsp',
+        'mojo.lsp.restart-and-debug',
         async () => {
           this.dispose();
           await this.activate(/*launchServerWithDebuggerAttached=*/ true);
@@ -50,7 +50,7 @@ export class MojoLSPManager extends DisposableContext {
       )
     );
     this.pushSubscription(
-      vscode.commands.registerCommand('mojo.restart-lsp', async () => {
+      vscode.commands.registerCommand('mojo.lsp.restart', async () => {
         this.dispose();
         await this.activate();
       })
