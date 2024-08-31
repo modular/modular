@@ -326,14 +326,12 @@ struct Module:
         ctx: Context,
         content: String,
         *,
-        verbose: Bool = False,
         max_registers: Optional[Int] = None,
         threads_per_block: Optional[Int] = None,
         cache_mode: Optional[CacheMode] = None,
     ) raises:
         self.__init__(
             content=content,
-            verbose=verbose,
             max_registers=max_registers,
             threads_per_block=threads_per_block,
             cuda_dll=ctx.cuda_dll,
@@ -345,7 +343,6 @@ struct Module:
         content: String,
         cuda_dll: CudaDLL,
         *,
-        verbose: Bool = False,
         max_registers: Optional[Int] = None,
         threads_per_block: Optional[Int] = None,
         cache_mode: Optional[CacheMode] = None,
@@ -353,7 +350,6 @@ struct Module:
         self.__init__(
             content._strref_dangerous(),
             cuda_dll=cuda_dll,
-            verbose=verbose,
             max_registers=max_registers,
             threads_per_block=threads_per_block,
             cache_mode=cache_mode,
@@ -364,7 +360,6 @@ struct Module:
         content: StringLiteral,
         cuda_dll: CudaDLL,
         *,
-        verbose: Bool = False,
         max_registers: Optional[Int] = None,
         threads_per_block: Optional[Int] = None,
         cache_mode: Optional[CacheMode] = None,
@@ -372,7 +367,6 @@ struct Module:
         self.__init__(
             StringRef(content),
             cuda_dll=cuda_dll,
-            verbose=verbose,
             max_registers=max_registers,
             threads_per_block=threads_per_block,
             cache_mode=cache_mode,
@@ -383,7 +377,6 @@ struct Module:
         content: StringRef,
         cuda_dll: CudaDLL,
         *,
-        verbose: Bool = False,
         max_registers: Optional[Int] = None,
         threads_per_block: Optional[Int] = None,
         cache_mode: Optional[CacheMode] = None,
@@ -397,39 +390,15 @@ struct Module:
         self.module = _ModuleHandle()
         if (
             debug_level in ("full", "line-tables")
-            or verbose
             or max_registers
             or threads_per_block
             or cache_mode
         ):
-            alias buffer_size = 4096
             alias max_num_options = 10
             var num_options = 0
 
-            var info_buffer = stack_allocation[buffer_size, Int8]()
-            var error_buffer = stack_allocation[buffer_size, Int8]()
-
-            memset_zero[count=buffer_size](info_buffer)
-            memset_zero[count=buffer_size](error_buffer)
-
             var opts = stack_allocation[max_num_options, JitOptions]()
             var option_vals = stack_allocation[max_num_options, Int]()
-
-            opts[num_options] = JitOptions.INFO_LOG_BUFFER
-            option_vals[num_options] = int(info_buffer)
-            num_options += 1
-
-            opts[num_options] = JitOptions.INFO_LOG_BUFFER_SIZE_BYTES
-            option_vals[num_options] = buffer_size
-            num_options += 1
-
-            opts[num_options] = JitOptions.ERROR_LOG_BUFFER
-            option_vals[num_options] = int(info_buffer)
-            num_options += 1
-
-            opts[num_options] = JitOptions.ERROR_LOG_BUFFER_SIZE_BYTES
-            option_vals[num_options] = buffer_size
-            num_options += 1
 
             @parameter
             if debug_level == "full":
@@ -468,27 +437,16 @@ struct Module:
                 option_vals[num_options] = int(cache_mode.value())
                 num_options += 1
 
-            # Note that content has already gone through _cleanup_asm and
-            # is null terminated.
-            var cuModuleLoadDataEx = self.cuda_dll.cuModuleLoadDataEx
-            var result = cuModuleLoadDataEx(
-                UnsafePointer.address_of(self.module),
-                content.unsafe_ptr(),
-                UInt32(num_options),
-                opts,
-                option_vals,
+            # Note that content is null terminated.
+            _check_error(
+                self.cuda_dll.cuModuleLoadDataEx(
+                    UnsafePointer.address_of(self.module),
+                    content.unsafe_ptr(),
+                    UInt32(num_options),
+                    opts,
+                    option_vals,
+                )
             )
-
-            if verbose:
-                var info_buffer_str = StringRef(info_buffer)
-                if info_buffer_str:
-                    print(info_buffer_str)
-
-                var error_buffer_str = StringRef(error_buffer)
-                if error_buffer_str:
-                    print(error_buffer_str)
-
-            _check_error(result)
         else:
             _check_error(
                 self.cuda_dll.cuModuleLoadData(

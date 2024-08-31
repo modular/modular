@@ -173,7 +173,6 @@ struct _CachedFunctionInfo(Boolable):
 
 @value
 struct _CachedFunctionPayload:
-    var verbose: Bool
     var max_registers: Optional[Int]
     var threads_per_block: Optional[Int]
     var cache_mode: Optional[CacheMode]
@@ -184,7 +183,6 @@ struct _CachedFunctionPayload:
 
     fn __init__(
         inout self,
-        verbose: Bool,
         max_registers: Optional[Int],
         threads_per_block: Optional[Int],
         cache_mode: Optional[CacheMode],
@@ -193,7 +191,6 @@ struct _CachedFunctionPayload:
         device_context_ptr: UnsafePointer[DeviceContext],
         cuda_dll_ptr: UnsafePointer[CudaDLL],
     ):
-        self.verbose = verbose
         self.max_registers = max_registers
         self.threads_per_block = threads_per_block
         self.cache_mode = cache_mode
@@ -283,7 +280,6 @@ struct Function[
         inout self,
         ctx_ptr: UnsafePointer[DeviceContext],
         *,
-        verbose: Bool = False,
         max_registers: Optional[Int] = None,
         threads_per_block: Optional[Int] = None,
         cache_mode: Optional[CacheMode] = None,
@@ -291,7 +287,6 @@ struct Function[
         func_attribute: Optional[FuncAttribute] = None,
     ) raises:
         self.__init__(
-            verbose=verbose,
             max_registers=max_registers,
             threads_per_block=threads_per_block,
             cache_mode=cache_mode,
@@ -310,7 +305,6 @@ struct Function[
         cuda_dll: CudaDLL,
         cuda_dll_ptr: UnsafePointer[CudaDLL],
         *,
-        verbose: Bool = False,
         max_registers: Optional[Int] = None,
         threads_per_block: Optional[Int] = None,
         cache_mode: Optional[CacheMode] = None,
@@ -335,7 +329,6 @@ struct Function[
         self.info = Self._get_cached_function_info[func_type, func](
             device_context_ptr=device_context_ptr,
             cuda_dll_ptr=cuda_dll_ptr,
-            verbose=verbose,
             max_registers=max_registers,
             threads_per_block=threads_per_block,
             cache_mode=cache_mode,
@@ -543,7 +536,6 @@ struct Function[
 
         var module = Module(
             _impl.asm,
-            verbose=payload.verbose,
             max_registers=payload.max_registers,
             threads_per_block=payload.threads_per_block,
             cache_mode=payload.cache_mode,
@@ -585,7 +577,6 @@ struct Function[
         device_context_ptr: UnsafePointer[DeviceContext],
         cuda_dll_ptr: UnsafePointer[CudaDLL],
         *,
-        verbose: Bool = False,
         max_registers: Optional[Int] = None,
         threads_per_block: Optional[Int] = None,
         cache_config: Optional[CacheConfig] = None,
@@ -598,7 +589,6 @@ struct Function[
         alias fn_name = _get_nvptx_fn_name[func]()
 
         var payload = _CachedFunctionPayload(
-            verbose=verbose,
             max_registers=max_registers,
             threads_per_block=threads_per_block,
             cache_config=cache_config,

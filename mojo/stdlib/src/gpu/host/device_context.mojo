@@ -225,7 +225,6 @@ struct DeviceFunction[
         inout self,
         ctx: DeviceContext,
         *,
-        verbose: Bool = False,
         max_registers: Optional[Int] = None,
         threads_per_block: Optional[Int] = None,
         cache_mode: Optional[CacheMode] = None,
@@ -243,7 +242,6 @@ struct DeviceFunction[
             _is_failable=_is_failable,
         ](
             self.ctx_ptr,
-            verbose=verbose,
             max_registers=max_registers,
             threads_per_block=threads_per_block,
             cache_mode=cache_mode,
@@ -321,7 +319,6 @@ struct DeviceContext:
     ](
         self,
         *,
-        verbose: Bool = False,
         max_registers: Optional[Int] = None,
         threads_per_block: Optional[Int] = None,
         cache_mode: Optional[CacheMode] = None,
@@ -344,7 +341,6 @@ struct DeviceContext:
             _is_failable=_is_failable,
         ](
             self,
-            verbose=verbose,
             max_registers=max_registers,
             threads_per_block=threads_per_block,
             cache_mode=cache_mode,
