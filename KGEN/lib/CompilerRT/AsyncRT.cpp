@@ -359,6 +359,24 @@ KGEN_CompilerRT_CreateAsync_chain(AsyncRTWrapper<AnyAsyncValueRef> async,
 }
 
 COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void
+KGEN_CompilerRT_CreateAsyncNonTrackedBufferRef(
+    void *data, size_t size, AsyncRTWrapper<AnyAsyncValueRef> async,
+    AsyncRTWrapper<Runtime> runtimePtr) {
+  Runtime &runtime = unwrap(runtimePtr);
+  AnyAsyncValueRef &value = unwrap(async);
+  if (value.getPointer() && value.getPointer()->isIndirect()) {
+    value.copy().emplaceIndirect<TensorBufferRef>(
+        TensorBufferRef::createWithNonTrackedMemory(
+            data, size, /*alignment=*/std::nullopt));
+  } else {
+    assert(!value.isReady());
+    value = value.createReady<TensorBufferRef>(
+        runtime, TensorBufferRef::createWithNonTrackedMemory(
+                     data, size, /*alignment=*/std::nullopt));
+  }
+}
+
+COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void
 KGEN_CompilerRT_CreateAsyncBufferRef(void *data, size_t size,
                                      AsyncRTWrapper<AnyAsyncValueRef> async,
                                      AsyncRTWrapper<Runtime> runtimePtr) {
@@ -474,11 +492,10 @@ COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void *
 KGEN_CompilerRT_GetValueFromAsync(AsyncRTWrapper<AnyAsyncValueRef> async) {
   AnyAsyncValueRef &value = unwrap(async);
   assert(value.isReady());
-  if (value.getPointer() && value.getPointer()->isIndirect()) {
+  if (value.getPointer() && value.getPointer()->isIndirect())
     return value.getPointer()->getUnderlyingPtr();
-  } else {
+  else
     return value.getPointerToData();
-  }
 }
 
 COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void *
