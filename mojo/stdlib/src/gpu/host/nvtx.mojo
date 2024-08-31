@@ -57,6 +57,23 @@ alias NVTXVersion = 3
 
 
 @value
+struct Color:
+    var _value: Int
+
+    alias FORMAT = 1  # ARGB
+    alias BLUE = Self(0x0000FF)
+    alias GREEN = Self(0x008000)
+    alias ORANGE = Self(0xFFA500)
+    alias PURPLE = Self(0x800080)
+    alias RED = Self(0xFF0000)
+    alias WHITE = Self(0xFFFFFF)
+    alias YELLOW = Self(0xFFFF00)
+
+    fn __int__(self) -> Int:
+        return self._value
+
+
+@value
 @register_passable("trivial")
 struct _C_EventAttributes:
     var version: UInt64
@@ -97,16 +114,15 @@ struct EventAttributes:
         inout self,
         *,
         message: String = "",
-        color: Int = 0xFF880000,
+        color: Color = Color.BLUE,
     ):
-        alias ARGB = 1
         alias ASCII = 1
         self._value = _C_EventAttributes(
             version=NVTXVersion,
             size=sizeof[_C_EventAttributes](),
             category=0,
-            color_type=ARGB,
-            color=color,
+            color_type=Color.FORMAT,
+            color=int(color),
             payload_type=0,
             _reserved=0,
             event_payload=0,
