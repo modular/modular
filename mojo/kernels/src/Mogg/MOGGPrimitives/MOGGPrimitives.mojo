@@ -252,6 +252,27 @@ fn create_buffer_ref_async[
     )
 
 
+@mogg_register("builtin.create_non_tracked_buffer_ref_async")
+@always_inline
+@export
+fn create_non_tracked_buffer_ref_async[
+    target: StringLiteral
+](
+    buffer: NDBuffer[DType.int8, 1],
+    async_ptr: UnsafePointer[NoneType],
+    runtime: UnsafePointer[NoneType],
+    call_ctx: MojoCallContextPtr,
+):
+    constrained[
+        target == "cpu",
+        "currently non-tracked buffers are only supported on cpu",
+    ]()
+
+    external_call["KGEN_CompilerRT_CreateAsyncNonTrackedBufferRef", NoneType](
+        buffer.data, len(buffer), async_ptr, runtime
+    )
+
+
 @mogg_register("builtin.create_buffer_ref_with_borrow_async")
 @always_inline
 @export
