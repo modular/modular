@@ -8,7 +8,7 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "KGEN/MojoParser/ClosureEmitter.h"
+#include "ClosureEmitter.h"
 #include "CallEmission.h"
 #include "ExprEmitter.h"
 #include "KGEN/MojoParser/ASTDecl.h"
