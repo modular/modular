@@ -390,14 +390,12 @@ def LIT_UnpackedAttr : LITTypedAttr<"Unpacked", "unpacked"> {
     parameter lists that autoparameterize the containing declaration.
   }];
 
-  let parameters = (ins AttributeSelfTypeParameter<"", "UnpackedType">:$type);
+  let parameters = (ins);
   let assemblyFormat = "";
 
-  let builders = [
-    AttrBuilder<(ins), [{
-      return get($_ctxt, UnpackedType::get($_ctxt));
-    }]>
-  ];
+  let extraClassDeclaration = [{
+    UnpackedType getType() const;
+  }];
 }
 
 //===----------------------------------------------------------------------===//
