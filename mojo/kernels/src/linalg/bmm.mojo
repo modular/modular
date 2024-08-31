@@ -23,6 +23,7 @@ from gpu.host import DeviceContext
 from memory import memset_zero
 from register import mogg_register
 from runtime.asyncrt import MojoCallContextPtr, parallelism_level
+from runtime.tracing import Trace, TraceLevel, trace_arg
 
 from utils.index import StaticIntTuple
 from utils.numerics import get_accum_type
@@ -243,27 +244,49 @@ fn batched_matmul[
 ):
     constrained[not transpose_a, "transpose_a not yet supported"]()
 
-    # TODO: generalize to > rank 3
+    @always_inline
     @parameter
-    if single_thread_blocking_override and not transpose_b and target == "cpu":
-        return _small_batched_matmul[
+    fn description_fn() -> String:
+        return String(";").join(
+            "target=" + target,
+            trace_arg("A", a_buf),
+            trace_arg("B", b_buf),
+            trace_arg("C", c_buf),
+            "transpose_a=" + str(transpose_a),
+            "transpose_b=" + str(transpose_b),
+            "single_thread_blocking_override="
+            + str(single_thread_blocking_override),
+        )
+
+    with Trace[TraceLevel.OP](
+        "mojo.batched_matmul",
+        Trace[TraceLevel.OP]._get_detail_str[description_fn](),
+    ):
+        # TODO: generalize to > rank 3
+        @parameter
+        if (
+            single_thread_blocking_override
+            and not transpose_b
+            and target == "cpu"
+        ):
+            return _small_batched_matmul[
+                rank,
+                a_type,
+                b_type,
+                c_type,
+                elementwise_epilogue_fn,
+            ](c_buf, a_buf, b_buf)
+
+        batched_matmul[
             rank,
             a_type,
             b_type,
             c_type,
+            transpose_b,
             elementwise_epilogue_fn,
-        ](c_buf, a_buf, b_buf)
-
-    batched_matmul[
-        rank,
-        a_type,
-        b_type,
-        c_type,
-        transpose_b,
-        elementwise_epilogue_fn,
-        saturated_vnni=saturated_vnni,
-        target=target,
-    ](c_buf, a_buf, b_buf, context)
+            saturated_vnni=saturated_vnni,
+            target=target,
+        ](c_buf, a_buf, b_buf, context)
 
 
 @always_inline

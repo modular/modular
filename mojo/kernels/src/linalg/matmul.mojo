@@ -36,6 +36,7 @@ from .utils import (
     packA_i8mm,
     select_inner_kernel,
 )
+from runtime.tracing import Trace, TraceLevel, trace_arg
 
 # Define a trait that defines the common functions across all existing
 # microkernels:
@@ -757,25 +758,46 @@ fn matmul[
     constrained[target == "cpu" or "cuda" in target, "unsupported target"]()
     constrained[not transpose_a, "transpose_a not yet supported"]()
 
+    @always_inline
     @parameter
-    if target == "cpu":
-        var kernel_type_m = a_shape.at[0]().or_else(0)
+    fn description_fn() -> String:
+        var shape = GemmShape.get[transpose_b](c, a, b)
+        return String(";").join(
+            str(target),
+            trace_arg("A", StaticIntTuple[2](shape.M, shape.K), a_type),
+            trace_arg("B", StaticIntTuple[2](shape.K, shape.N), b_type),
+            trace_arg("C", StaticIntTuple[2](shape.M, shape.N), c_type),
+            "transpose_a=" + str(transpose_a),
+            "transpose_b=" + str(transpose_b),
+            "b_packed=" + str(b_packed),
+            "single_thread_blocking_override="
+            + str(single_thread_blocking_override),
+        )
 
-        _matmul_cpu[
-            transpose_b,
-            b_packed,
-            elementwise_lambda_fn,
-            saturated_vnni,
-            single_thread_blocking_override,
-        ](c, a, b, kernel_type_m)
+    # TODO(#23049): Pipe info on whether using faster, saturated_vnni is ok
+    with Trace[TraceLevel.OP](
+        "mojo.matmul", Trace[TraceLevel.OP]._get_detail_str[description_fn]()
+    ):
 
-    else:
-        _matmul_gpu[
-            use_tensor_core=True,
-            transpose_b=transpose_b,
-            elementwise_lambda_fn=elementwise_lambda_fn,
-            single_thread_blocking_override=single_thread_blocking_override,
-        ](c, a, b, ctx.get_device_context())
+        @parameter
+        if target == "cpu":
+            var kernel_type_m = a_shape.at[0]().or_else(0)
+
+            _matmul_cpu[
+                transpose_b,
+                b_packed,
+                elementwise_lambda_fn,
+                saturated_vnni,
+                single_thread_blocking_override,
+            ](c, a, b, kernel_type_m)
+
+        else:
+            _matmul_gpu[
+                use_tensor_core=True,
+                transpose_b=transpose_b,
+                elementwise_lambda_fn=elementwise_lambda_fn,
+                single_thread_blocking_override=single_thread_blocking_override,
+            ](c, a, b, ctx.get_device_context())
 
 
 fn _submatmul_sequential_sync[
