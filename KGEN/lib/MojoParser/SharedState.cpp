@@ -9,11 +9,11 @@
 //===----------------------------------------------------------------------===//
 
 #include "KGEN/MojoParser/SharedState.h"
+#include "CallEmission.h"
 #include "DebugInfo.h"
 #include "ExprEmitter.h"
 #include "KGEN/MojoParser/ASTDecl.h"
 #include "KGEN/MojoParser/ASTType.h"
-#include "KGEN/MojoParser/CallEmission.h"
 #include "KGEN/MojoParser/ClosureEmitter.h"
 #include "KGEN/MojoParser/DeclResolver.h"
 #include "KGEN/MojoParser/EntryPoint.h"
