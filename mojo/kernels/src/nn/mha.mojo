@@ -49,6 +49,7 @@ from utils.numerics import min_or_neg_inf, neg_inf
 from utils.static_tuple import StaticTuple
 
 from .softmax import _online_softmax_iter_for_mma_output, _softmax_gpu, softmax
+from runtime.tracing import Trace, TraceLevel, trace_arg
 
 # ===----------------------------------------------------------------------===#
 # Multi-Head Attention
@@ -99,106 +100,113 @@ fn fused_attention[
 
     constrained[rank == 3 or rank == 4, "Only support rank 3 and 4."]()
 
-    alias simd_size = simdwidthof[output_type]()
+    with Trace[TraceLevel.OP]("mojo.fused_attention"):
+        alias simd_size = simdwidthof[output_type]()
 
-    var score_size: Int
-    var M: Int
-    var N: Int
-    var K: Int
-    var flatten_batch_size: Int
-
-    @parameter
-    if rank == 4:
-        # q shape is [batch size, # heads, seq_len, depth]
-        M = q.dim[2]()
-        N = k.dim[2]() if transpose_k else k.dim[3]()
-        K = q.dim[3]()
-        score_size = q.dim[0]() * q.dim[1]() * M * N
-        flatten_batch_size = q.dim[0]() * q.dim[1]()
-    else:
-        # q shape is [batch size * # heads, seq_len, depth]
-        M = q.dim[1]()
-        N = k.dim[1]() if transpose_k else k.dim[2]()
-        K = q.dim[2]()
-        flatten_batch_size = q.dim[0]()
-        score_size = q.dim[0]() * M * N
-
-    alias score_type = output_type
-    var score_ptr = UnsafePointer[Scalar[score_type]].alloc(score_size)
-
-    var score_shape: StaticIntTuple[rank]
-
-    @parameter
-    if rank == 4:
-        score_shape = rebind[StaticIntTuple[rank]](
-            Index(q.dim[0](), q.dim[1](), M, N)
-        )
-    else:
-        score_shape = rebind[StaticIntTuple[rank]](Index(q.dim[0](), M, N))
-    # fmt: on
-    var score = NDBuffer[score_type, rank](score_ptr, score_shape)
-
-    @__copy_capture(M, N, score)
-    @parameter
-    @always_inline
-    fn fuse_elementwise_fn[
-        inner_type: DType, width: Int, _rank: Int
-    ](_out_coords: StaticIntTuple[_rank], out_val: SIMD[inner_type, width]):
-        var seq_offset = M - N
-        var fused_val = out_val
-
-        fused_val *= rebind[SIMD[inner_type, 1]](scale)
+        var score_size: Int
+        var M: Int
+        var N: Int
+        var K: Int
+        var flatten_batch_size: Int
 
         @parameter
-        if add_causal_mask:
-            var vec_indices = iota[inner_type, width](_out_coords[_rank - 1])
-            var vec_mask = vec_indices <= (_out_coords[_rank - 2] - seq_offset)
-            fused_val = vec_mask.select(
-                fused_val,
-                rebind[SIMD[inner_type, width]](
-                    SIMD[DType.float32, width](causal_mask_value),
-                ),
+        if rank == 4:
+            # q shape is [batch size, # heads, seq_len, depth]
+            M = q.dim[2]()
+            N = k.dim[2]() if transpose_k else k.dim[3]()
+            K = q.dim[3]()
+            score_size = q.dim[0]() * q.dim[1]() * M * N
+            flatten_batch_size = q.dim[0]() * q.dim[1]()
+        else:
+            # q shape is [batch size * # heads, seq_len, depth]
+            M = q.dim[1]()
+            N = k.dim[1]() if transpose_k else k.dim[2]()
+            K = q.dim[2]()
+            flatten_batch_size = q.dim[0]()
+            score_size = q.dim[0]() * M * N
+
+        alias score_type = output_type
+        var score_ptr = UnsafePointer[Scalar[score_type]].alloc(score_size)
+
+        var score_shape: StaticIntTuple[rank]
+
+        @parameter
+        if rank == 4:
+            score_shape = rebind[StaticIntTuple[rank]](
+                Index(q.dim[0](), q.dim[1](), M, N)
+            )
+        else:
+            score_shape = rebind[StaticIntTuple[rank]](Index(q.dim[0](), M, N))
+        # fmt: on
+        var score = NDBuffer[score_type, rank](score_ptr, score_shape)
+
+        @__copy_capture(M, N, score)
+        @parameter
+        @always_inline
+        fn fuse_elementwise_fn[
+            inner_type: DType, width: Int, _rank: Int
+        ](_out_coords: StaticIntTuple[_rank], out_val: SIMD[inner_type, width]):
+            var seq_offset = M - N
+            var fused_val = out_val
+
+            fused_val *= rebind[SIMD[inner_type, 1]](scale)
+
+            @parameter
+            if add_causal_mask:
+                var vec_indices = iota[inner_type, width](
+                    _out_coords[_rank - 1]
+                )
+                var vec_mask = vec_indices <= (
+                    _out_coords[_rank - 2] - seq_offset
+                )
+                fused_val = vec_mask.select(
+                    fused_val,
+                    rebind[SIMD[inner_type, width]](
+                        SIMD[DType.float32, width](causal_mask_value),
+                    ),
+                )
+
+            @parameter
+            if add_attn_mask:
+                var idx = rebind[StaticIntTuple[rank]](_out_coords)
+                fused_val += mask.load[width=width](idx).cast[inner_type]()
+
+            score.store[width=width](
+                rebind[StaticIntTuple[rank]](_out_coords),
+                fused_val.cast[score_type](),
             )
 
-        @parameter
-        if add_attn_mask:
-            var idx = rebind[StaticIntTuple[rank]](_out_coords)
-            fused_val += mask.load[width=width](idx).cast[inner_type]()
-
-        score.store[width=width](
-            rebind[StaticIntTuple[rank]](_out_coords),
-            fused_val.cast[score_type](),
+        # The transpose of Q K V swaps batch and matmul dimensions,
+        # e.x. 1x128x12x64 -> 1x12x128x64, which batched_matmul can't handle.
+        # They are properly transposed before this kernel.
+        batched_matmul[
+            rank,
+            q_type,
+            k_type,
+            score_type,
+            transpose_k,
+            fuse_elementwise_fn,
+        ](
+            score.make_dims_unknown(),
+            q.make_dims_unknown(),
+            k.make_dims_unknown(),
         )
 
-    # The transpose of Q K V swaps batch and matmul dimensions,
-    # e.x. 1x128x12x64 -> 1x12x128x64, which batched_matmul can't handle.
-    # They are properly transposed before this kernel.
-    batched_matmul[
-        rank,
-        q_type,
-        k_type,
-        score_type,
-        transpose_k,
-        fuse_elementwise_fn,
-    ](
-        score.make_dims_unknown(),
-        q.make_dims_unknown(),
-        k.make_dims_unknown(),
-    )
+        softmax[score_type, simd_size, rank](score, score, rank - 1)
 
-    softmax[score_type, simd_size, rank](score, score, rank - 1)
+        # NOTE: synchronous, so the stack allocated score_mem is safe.
+        batched_matmul[
+            rank, score_type, v_type, output_type, transpose_b=False
+        ](
+            output.make_dims_unknown(),
+            score.make_dims_unknown(),
+            v.make_dims_unknown(),
+        )
 
-    # NOTE: synchronous, so the stack allocated score_mem is safe.
-    batched_matmul[rank, score_type, v_type, output_type, transpose_b=False](
-        output.make_dims_unknown(),
-        score.make_dims_unknown(),
-        v.make_dims_unknown(),
-    )
-
-    # We did not reuse the output buffer, so we have to free the allocate
-    # intermediate buffer.
-    if score_ptr != output.data.bitcast[score_type]():
-        score_ptr.free()
+        # We did not reuse the output buffer, so we have to free the allocate
+        # intermediate buffer.
+        if score_ptr != output.data.bitcast[score_type]():
+            score_ptr.free()
 
 
 # ===----------------------------------------------------------------------===#
@@ -223,11 +231,27 @@ fn flash_attention[
     context: MojoCallContextPtr = MojoCallContextPtr(),
 ) raises:
     # TODO docstring
-    return flash_attention[
-        add_attn_mask=add_attn_mask,
-        target=target,
-        use_tensor_core=use_tensor_core,
-    ](output, q, k, v, mask, scale, context.get_device_context())
+    @always_inline
+    @parameter
+    fn description_fn() -> String:
+        return String(";").join(
+            str("target=" + target),
+            "use_tensor_core=" + str(use_tensor_core),
+            trace_arg("q", q),
+            trace_arg("k", k),
+            trace_arg("v", v),
+            trace_arg("output", output),
+        )
+
+    with Trace[TraceLevel.OP](
+        "mojo.flash_attention",
+        Trace[TraceLevel.OP]._get_detail_str[description_fn](),
+    ):
+        return flash_attention[
+            add_attn_mask=add_attn_mask,
+            target=target,
+            use_tensor_core=use_tensor_core,
+        ](output, q, k, v, mask, scale, context.get_device_context())
 
 
 fn flash_attention[

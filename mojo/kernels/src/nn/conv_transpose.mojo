@@ -38,6 +38,7 @@ from .conv_utils import (
     get_direct_conv_micro_kernel_width,
     get_micro_kernel_shape,
 )
+from runtime.tracing import Trace, TraceLevel, trace_arg
 
 # TODO: All attributes, except for groups and auto_pad, are supported.
 #       - Kernel assumes groups = 1.
@@ -1295,84 +1296,102 @@ fn conv_transposed[
     pad_h: StaticIntTuple[2],
     pad_w: StaticIntTuple[2],
 ) raises:
-    alias packed_filter_rank = filter_rank if filter_packed else filter_rank + 1
-
-    var packed_filter_ptr = filter.data
-    var packed_filter_shape = StaticIntTuple[packed_filter_rank](1)
-
-    # If filter is not packed, we have to pack it before the kernel.
-    @parameter
-    if not filter_packed:
-        # Only support single group.
-        packed_filter_shape = rebind[StaticIntTuple[packed_filter_rank]](
-            pack_filter_shape(filter, 1)
-        )
-        packed_filter_ptr = UnsafePointer[Scalar[filter.type]].alloc(
-            packed_filter_shape.flattened_length()
-        )
-    else:
-        packed_filter_shape = rebind[StaticIntTuple[packed_filter_rank]](
-            filter.dynamic_shape
-        )
-
-    var packed_filter = NDBuffer[filter_type, packed_filter_rank](
-        packed_filter_ptr, packed_filter_shape
-    )
-
-    @parameter
-    if not filter_packed:
-        pack_filter(filter, packed_filter, 1)
-
-    alias conv_attr = ConvInfoStatic[input_rank - 2]()
-
-    var conv_shape = get_conv_shape[input_rank - 2, True](
-        output,
-        input,
-        packed_filter,
-        stride,
-        dilation,
-        pad_d,
-        pad_h,
-        pad_w,
-        1,
-    )
-
-    # The closure updates a row segment of the output.
     @always_inline
     @parameter
-    fn elementwise_epilogue[
-        rank: Int
-    ](coords: StaticIntTuple[rank], f_size: Int,):
-        alias simd_size = simdwidthof[output_type]()
+    fn description_fn() -> String:
+        return String(";").join(
+            trace_arg("input", input),
+            trace_arg("filter", filter),
+            trace_arg("output", output),
+            "group=" + str(1),
+            "stride=" + String("x").join(stride),
+            "padding_d=" + String("x").join(Index(0, 0)),
+            "padding_h=" + String("x").join(pad_h),
+            "padding_w=" + String("x").join(pad_w),
+        )
 
+    with Trace[TraceLevel.OP](
+        "mojo.conv_transposed",
+        Trace[TraceLevel.OP]._get_detail_str[description_fn](),
+    ):
+        alias packed_filter_rank = filter_rank if filter_packed else filter_rank + 1
+
+        var packed_filter_ptr = filter.data
+        var packed_filter_shape = StaticIntTuple[packed_filter_rank](1)
+
+        # If filter is not packed, we have to pack it before the kernel.
+        @parameter
+        if not filter_packed:
+            # Only support single group.
+            packed_filter_shape = rebind[StaticIntTuple[packed_filter_rank]](
+                pack_filter_shape(filter, 1)
+            )
+            packed_filter_ptr = UnsafePointer[Scalar[filter.type]].alloc(
+                packed_filter_shape.flattened_length()
+            )
+        else:
+            packed_filter_shape = rebind[StaticIntTuple[packed_filter_rank]](
+                filter.dynamic_shape
+            )
+
+        var packed_filter = NDBuffer[filter_type, packed_filter_rank](
+            packed_filter_ptr, packed_filter_shape
+        )
+
+        @parameter
+        if not filter_packed:
+            pack_filter(filter, packed_filter, 1)
+
+        alias conv_attr = ConvInfoStatic[input_rank - 2]()
+
+        var conv_shape = get_conv_shape[input_rank - 2, True](
+            output,
+            input,
+            packed_filter,
+            stride,
+            dilation,
+            pad_d,
+            pad_h,
+            pad_w,
+            1,
+        )
+
+        # The closure updates a row segment of the output.
         @always_inline
         @parameter
-        fn body[width: Int](idx: Int):
-            # Cooridates of the current index.
-            var curr_coords = rebind[StaticIntTuple[input_rank]](coords)
-            curr_coords[input_rank - 1] += idx
+        fn elementwise_epilogue[
+            rank: Int
+        ](coords: StaticIntTuple[rank], f_size: Int,):
+            alias simd_size = simdwidthof[output_type]()
 
-            var vec = output.load[width=width](curr_coords)
-            elementwise_lambda(curr_coords, vec)
+            @always_inline
+            @parameter
+            fn body[width: Int](idx: Int):
+                # Cooridates of the current index.
+                var curr_coords = rebind[StaticIntTuple[input_rank]](coords)
+                curr_coords[input_rank - 1] += idx
 
-        vectorize[body, simd_size](f_size)
+                var vec = output.load[width=width](curr_coords)
+                elementwise_lambda(curr_coords, vec)
 
-    ConvTransposedPacked[
-        input_rank,
-        packed_filter_rank,
-        input_rank,
-        input_shape,
-        DimList.create_unknown[packed_filter_rank](),
-        output_shape,
-        input_type,
-        filter_type,
-        output_type,
-        conv_attr,
-        OptionalReg[elementwise_epilogue_type](
-            elementwise_epilogue
-        ) if lambdas_have_fusion else None,
-    ].run(output, input, packed_filter, conv_shape)
+            vectorize[body, simd_size](f_size)
 
-    @parameter
-    if not filter_packed:
-        packed_filter_ptr.free()
+        ConvTransposedPacked[
+            input_rank,
+            packed_filter_rank,
+            input_rank,
+            input_shape,
+            DimList.create_unknown[packed_filter_rank](),
+            output_shape,
+            input_type,
+            filter_type,
+            output_type,
+            conv_attr,
+            OptionalReg[elementwise_epilogue_type](
+                elementwise_epilogue
+            ) if lambdas_have_fusion else None,
+        ].run(output, input, packed_filter, conv_shape)
+
+        @parameter
+        if not filter_packed:
+            packed_filter_ptr.free()

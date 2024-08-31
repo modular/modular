@@ -24,6 +24,7 @@ from register import mogg_register
 from runtime.asyncrt import MojoCallContextPtr
 
 from utils import StaticIntTuple, StaticTuple, product
+from runtime.tracing import Trace, TraceLevel
 
 # ===----------------------------------------------------------------------===#
 # concat
@@ -1299,19 +1300,20 @@ fn concat[
     context: MojoCallContextPtr = MojoCallContextPtr(),
 ) raises:
     constrained[target == "cpu" or "cuda" in target, "not a valid target"]()
+    with Trace[TraceLevel.OP]("mojo.concat"):
 
-    @parameter
-    if target == "cpu":
-        _concat_cpu[rank, type, single_thread_blocking_override](
-            output, axis, inputs
-        )
-    else:
-        _concat_gpu_impl[rank, type, single_thread_blocking_override](
-            output,
-            axis,
-            inputs,
-            context.get_device_context(),
-        )
+        @parameter
+        if target == "cpu":
+            _concat_cpu[rank, type, single_thread_blocking_override](
+                output, axis, inputs
+            )
+        else:
+            _concat_gpu_impl[rank, type, single_thread_blocking_override](
+                output,
+                axis,
+                inputs,
+                context.get_device_context(),
+            )
 
 
 fn _concat_inner_most_single_dim[

@@ -26,6 +26,7 @@ from memory import UnsafePointer, memset_zero, stack_allocation
 from runtime.asyncrt import parallelism_level
 
 from utils import Index, StaticIntTuple
+from runtime.tracing import Trace, TraceLevel, trace_arg
 
 
 struct _MatmulConfig:
@@ -909,84 +910,100 @@ fn flash_attention_split_kv[
     # v_cache (input_v_cache_fn): 1BHS'D
     constrained[rank == 4]()
 
-    alias kv_rank = rank + 1
-    alias simd_width = simdwidthof[type]()
-
-    var num_batches = v_cache_shape[1]
-    var num_heads = v_cache_shape[2]
-    var prev_seq_len = v_cache_shape[3]
-    var depth_dim = v_cache_shape[4]
-    var seq_len = v_shape[rank - 2]
-
-    # Wrap `input_{k,v}_cache_fn` with lambdas that operate on indices of
-    # rank 4, as expected by `_FlashAttention.run()`.
-    var k_shape_new = StaticIntTuple[rank](
-        num_batches, num_heads, prev_seq_len + seq_len, depth_dim
-    )
-    var v_shape_new = StaticIntTuple[rank](
-        num_batches, num_heads, prev_seq_len + seq_len, depth_dim
-    )
-
     @always_inline
     @parameter
-    fn kv_index[
-        rank: Int
-    ](idx: StaticIntTuple[rank]) -> StaticIntTuple[kv_rank]:
-        # Index into the previous kv_cache by unsqueezing dim 0.
-        return StaticIntTuple[kv_rank](0, idx[0], idx[1], idx[2], idx[3])
+    fn description_fn() -> String:
+        return String(";").join(
+            trace_arg("q", q),
+            trace_arg("k", k_shape),
+            trace_arg("v", v_shape),
+            trace_arg("k_cache", k_cache_shape),
+            trace_arg("v_cache", v_cache_shape),
+            trace_arg("output", output),
+        )
 
-    @always_inline
-    @__copy_capture(prev_seq_len)
-    @parameter
-    fn load_from_split_cache[
-        curr_fn: fn[simd_width: Int, rank: Int] (
-            StaticIntTuple[rank]
-        ) capturing -> SIMD[type, simd_width],
-        cache_fn: fn[simd_width: Int, rank: Int] (
-            StaticIntTuple[rank]
-        ) capturing -> SIMD[type, simd_width],
-        rank: Int,
-        simd_width: Int,
-    ](idx: StaticIntTuple[rank]) -> SIMD[type, simd_width]:
-        # Load directly from either `curr_fn` or `cache_fn` depending on the
-        # sequence index.
-        # Boundary condition handling is done by the caller since
-        # the last dim `depth_dim` is contiguous.
-        var seq_idx = idx[2]
+    with Trace[TraceLevel.OP](
+        "mojo.flash_attention_split_kv",
+        Trace[TraceLevel.OP]._get_detail_str[description_fn](),
+    ):
+        alias kv_rank = rank + 1
+        alias simd_width = simdwidthof[type]()
 
-        if seq_idx >= prev_seq_len:
-            return curr_fn[simd_width, rank](
-                StaticIntTuple[rank](
-                    idx[0], idx[1], seq_idx - prev_seq_len, idx[3]
+        var num_batches = v_cache_shape[1]
+        var num_heads = v_cache_shape[2]
+        var prev_seq_len = v_cache_shape[3]
+        var depth_dim = v_cache_shape[4]
+        var seq_len = v_shape[rank - 2]
+
+        # Wrap `input_{k,v}_cache_fn` with lambdas that operate on indices of
+        # rank 4, as expected by `_FlashAttention.run()`.
+        var k_shape_new = StaticIntTuple[rank](
+            num_batches, num_heads, prev_seq_len + seq_len, depth_dim
+        )
+        var v_shape_new = StaticIntTuple[rank](
+            num_batches, num_heads, prev_seq_len + seq_len, depth_dim
+        )
+
+        @always_inline
+        @parameter
+        fn kv_index[
+            rank: Int
+        ](idx: StaticIntTuple[rank]) -> StaticIntTuple[kv_rank]:
+            # Index into the previous kv_cache by unsqueezing dim 0.
+            return StaticIntTuple[kv_rank](0, idx[0], idx[1], idx[2], idx[3])
+
+        @always_inline
+        @__copy_capture(prev_seq_len)
+        @parameter
+        fn load_from_split_cache[
+            curr_fn: fn[simd_width: Int, rank: Int] (
+                StaticIntTuple[rank]
+            ) capturing -> SIMD[type, simd_width],
+            cache_fn: fn[simd_width: Int, rank: Int] (
+                StaticIntTuple[rank]
+            ) capturing -> SIMD[type, simd_width],
+            rank: Int,
+            simd_width: Int,
+        ](idx: StaticIntTuple[rank]) -> SIMD[type, simd_width]:
+            # Load directly from either `curr_fn` or `cache_fn` depending on the
+            # sequence index.
+            # Boundary condition handling is done by the caller since
+            # the last dim `depth_dim` is contiguous.
+            var seq_idx = idx[2]
+
+            if seq_idx >= prev_seq_len:
+                return curr_fn[simd_width, rank](
+                    StaticIntTuple[rank](
+                        idx[0], idx[1], seq_idx - prev_seq_len, idx[3]
+                    )
                 )
-            )
 
-        return cache_fn[simd_width, kv_rank](kv_index(idx))
+            return cache_fn[simd_width, kv_rank](kv_index(idx))
 
-    @always_inline
-    @parameter
-    fn input_k_cache_fn_wrapper[
-        simd_width: Int,
-        rank: Int,
-    ](idx: StaticIntTuple[rank]) -> SIMD[type, simd_width]:
-        return load_from_split_cache[
-            input_k_fn, input_k_cache_fn, rank, simd_width
-        ](idx)
+        @always_inline
+        @parameter
+        fn input_k_cache_fn_wrapper[
+            simd_width: Int,
+            rank: Int,
+        ](idx: StaticIntTuple[rank]) -> SIMD[type, simd_width]:
+            return load_from_split_cache[
+                input_k_fn, input_k_cache_fn, rank, simd_width
+            ](idx)
 
-    @always_inline
-    @parameter
-    fn input_v_cache_fn_wrapper[
-        simd_width: Int,
-        rank: Int,
-    ](idx: StaticIntTuple[rank]) -> SIMD[type, simd_width]:
-        return load_from_split_cache[
-            input_v_fn, input_v_cache_fn, rank, simd_width
-        ](idx)
+        @always_inline
+        @parameter
+        fn input_v_cache_fn_wrapper[
+            simd_width: Int,
+            rank: Int,
+        ](idx: StaticIntTuple[rank]) -> SIMD[type, simd_width]:
+            return load_from_split_cache[
+                input_v_fn, input_v_cache_fn, rank, simd_width
+            ](idx)
 
-    _FlashAttention[
-        simdwidthof[type](),
-        input_k_cache_fn_wrapper,
-        input_v_cache_fn_wrapper,
-        input_mask_fn,
-        transpose_k=True,
-    ].run(q, k_shape_new, v_shape_new, output, scale)
+        _FlashAttention[
+            simdwidthof[type](),
+            input_k_cache_fn_wrapper,
+            input_v_cache_fn_wrapper,
+            input_mask_fn,
+            transpose_k=True,
+        ].run(q, k_shape_new, v_shape_new, output, scale)

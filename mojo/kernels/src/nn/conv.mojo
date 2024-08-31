@@ -48,6 +48,7 @@ from .conv_utils import (
     reorder_padding,
 )
 from .shapes import get_sliding_window_out_dim
+from runtime.tracing import Trace, TraceLevel, trace_arg
 
 
 @value
@@ -2881,56 +2882,72 @@ fn conv_nhwc_direct[
         "Filter and input ranks mismatch.",
     ]()
 
-    var conv_shape = get_conv_shape[input_rank - 2, filter_packed](
-        output,
-        input,
-        filter,
-        stride,
-        dilation,
-        pad_d,
-        pad_h,
-        pad_w,
-        num_groups,
-    )
-
-    # The closure updates a row segment of the output.
     @always_inline
     @parameter
-    fn elementwise_epilogue[
-        rank: Int
-    ](coords: StaticIntTuple[rank], f_size: Int,):
-        alias simd_size = simdwidthof[output_type]()
+    fn description_fn() -> String:
+        return String(";").join(
+            trace_arg("input", input),
+            trace_arg("filter", filter),
+            trace_arg("output", output),
+            "group=" + str(num_groups),
+            "stride=" + String("x").join(stride),
+            "padding_h=" + String("x").join(pad_h),
+            "padding_w=" + String("x").join(pad_w),
+        )
 
+    with Trace[TraceLevel.OP](
+        "mojo.conv", Trace[TraceLevel.OP]._get_detail_str[description_fn]()
+    ):
+        var conv_shape = get_conv_shape[input_rank - 2, filter_packed](
+            output,
+            input,
+            filter,
+            stride,
+            dilation,
+            pad_d,
+            pad_h,
+            pad_w,
+            num_groups,
+        )
+
+        # The closure updates a row segment of the output.
         @always_inline
         @parameter
-        fn body[width: Int](idx: Int):
-            # Cooridates of the current index.
-            var curr_coords = rebind[StaticIntTuple[input_rank]](coords)
-            curr_coords[input_rank - 1] += idx
+        fn elementwise_epilogue[
+            rank: Int
+        ](coords: StaticIntTuple[rank], f_size: Int,):
+            alias simd_size = simdwidthof[output_type]()
 
-            var vec = output.load[width=width](curr_coords)
-            elementwise_lambda(curr_coords, vec)
+            @always_inline
+            @parameter
+            fn body[width: Int](idx: Int):
+                # Cooridates of the current index.
+                var curr_coords = rebind[StaticIntTuple[input_rank]](coords)
+                curr_coords[input_rank - 1] += idx
 
-        vectorize[body, simd_size](f_size)
+                var vec = output.load[width=width](curr_coords)
+                elementwise_lambda(curr_coords, vec)
 
-    ConvDirectNHWC[
-        input_rank,
-        filter_rank,
-        input_rank,
-        input_shape,
-        filter_shape,
-        output_shape,
-        input_type,
-        filter_type,
-        output_type,
-        filter_packed,
-        conv_info_static,
-        OptionalReg[elementwise_epilogue_type](
-            elementwise_epilogue
-        ) if lambdas_have_fusion else None,
-    ].run(
-        output,
-        input,
-        filter,
-        conv_shape,
-    )
+            vectorize[body, simd_size](f_size)
+
+        ConvDirectNHWC[
+            input_rank,
+            filter_rank,
+            input_rank,
+            input_shape,
+            filter_shape,
+            output_shape,
+            input_type,
+            filter_type,
+            output_type,
+            filter_packed,
+            conv_info_static,
+            OptionalReg[elementwise_epilogue_type](
+                elementwise_epilogue
+            ) if lambdas_have_fusion else None,
+        ].run(
+            output,
+            input,
+            filter,
+            conv_shape,
+        )
