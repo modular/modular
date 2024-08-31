@@ -9,10 +9,10 @@
 //===----------------------------------------------------------------------===//
 
 #include "KGEN/MojoParser/IRValues.h"
+#include "CallEmission.h"
 #include "KGEN/KGENDialect/KGENTypes.h"
 #include "KGEN/LITDialect/LITOps.h"
 #include "KGEN/LITDialect/LITUtils.h"
-#include "KGEN/MojoParser/CallEmission.h"
 #include "KGEN/MojoParser/ExprNode.h"
 #include "KGEN/POPDialect/POPTypes.h"
 #include "llvm/Support/SMLoc.h"

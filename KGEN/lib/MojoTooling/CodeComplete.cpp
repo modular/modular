@@ -6,7 +6,7 @@
 
 #include "KGEN/MojoTooling/CodeComplete.h"
 #include "KGEN/LITDialect/LITOps.h"
-#include "KGEN/MojoParser/CallEmission.h"
+#include "KGEN/MojoParser/CallOperands.h"
 #include "KGEN/MojoParser/EntryPoint.h"
 #include "KGEN/MojoParser/ExprNode.h"
 #include "KGEN/MojoParser/Lexer.h"

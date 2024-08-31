@@ -11,7 +11,7 @@
 #ifndef KGEN_MOJOPARSER_DLVALUES_H
 #define KGEN_MOJOPARSER_DLVALUES_H
 
-#include "KGEN/MojoParser/CallEmission.h"
+#include "CallEmission.h"
 
 namespace M::KGEN::LIT {
 

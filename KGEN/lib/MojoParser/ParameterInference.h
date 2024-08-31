@@ -7,7 +7,7 @@
 #ifndef KGEN_MOJOPARSER_PARAMETERINFERENCE_H
 #define KGEN_MOJOPARSER_PARAMETERINFERENCE_H
 
-#include "KGEN/MojoParser/CallEmission.h"
+#include "CallEmission.h"
 #include "KGEN/MojoParser/ParserParamEvaluator.h"
 
 namespace M::KGEN::LIT {
