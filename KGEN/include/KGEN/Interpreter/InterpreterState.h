@@ -288,19 +288,18 @@ private:
 
   /// This struct represents a piece of memory in the interpreter.
   struct MemoryBlob {
-    using OwnedMemory = std::unique_ptr<void, void (*)(void *)>;
-    using MemoryT = SmartVariant<OwnedMemory, MemoryHandleAttr, std::nullptr_t>;
+    using MemoryT = SmartVariant<void *, MemoryHandleAttr, std::nullptr_t>;
 
     /// Create a memory blob. If `hdl` is null, an owned blob will be created.
-    explicit MemoryBlob(int64_t baseAddr, size_t size, size_t align,
-                        MemoryHandleAttr hdl);
+    explicit MemoryBlob(llvm::BumpPtrAllocator &allocator, int64_t baseAddr,
+                        size_t size, size_t align, MemoryHandleAttr hdl);
 
     /// Mark or unmark the given region of the blob as a pointer value.
     ErrorOrSuccess setPointerRegion(int64_t offset, int64_t regionSize,
                                     int64_t pointerSize, bool writePointer);
 
     /// Return true if the memory is owned by the interpreter.
-    bool isOwned() const { return isa<OwnedMemory>(memory); }
+    bool isOwned() const { return isa<void *>(memory); }
 
     /// Get the handle to external memory.
     MemoryHandleAttr getHandle() const {
@@ -308,7 +307,7 @@ private:
     }
 
     /// Get the pointer to owned memory.
-    void *getOwned() const { return cast<OwnedMemory>(memory).get(); }
+    void *getOwned() const { return cast<void *>(memory); }
 
     /// Get the pointer to the memory.
     void *getMemory() const {
@@ -346,7 +345,8 @@ private:
     ErrorOr<MemoryBlob &> getBlob(int64_t addr);
 
     /// Allocate a new memory blob .
-    ErrorOr<MemoryBlob &> addBlob(size_t size, size_t align,
+    ErrorOr<MemoryBlob &> addBlob(llvm::BumpPtrAllocator &allocator,
+                                  size_t size, size_t align,
                                   MemoryHandleAttr hdl);
 
     /// Return true if the table contains the address.
@@ -402,6 +402,10 @@ private:
 
   /// Symbolic memory allocated on the stack frame.
   SmallVector<TypedAttr, 0> symbolicMemory;
+
+  /// A bump pointer allocator for fast memory allocations.
+  /// TODO: Use an ArrayRecycler if memory usage is too high.
+  llvm::BumpPtrAllocator allocator;
 
   //===--------------------------------------------------------------------===//
   // Interpreter Execution
