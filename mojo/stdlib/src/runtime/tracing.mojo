@@ -191,7 +191,7 @@ fn trace_arg(name: String, buf: NDBuffer) -> String:
 
 
 @value
-struct Trace[level: TraceLevel]:
+struct Trace[level: TraceLevel, target: Optional[StringLiteral] = None]:
     """An object representing a specific Mojo trace."""
 
     alias trace_type = TraceType.MOJO
@@ -229,6 +229,12 @@ struct Trace[level: TraceLevel]:
         else:
             self.name = name
             self.detail = detail
+
+            @parameter
+            if target:
+                if self.detail:
+                    self.detail += ";"
+                self.detail += "target=" + target.value()
             self.int_payload = Optional[Int]()
 
     @always_inline
@@ -261,6 +267,12 @@ struct Trace[level: TraceLevel]:
         else:
             self.name = name
             self.detail = detail
+
+            @parameter
+            if target:
+                if self.detail:
+                    self.detail += ";"
+                self.detail += "target=" + target.value()
             self.int_payload = task_id
 
     @always_inline
