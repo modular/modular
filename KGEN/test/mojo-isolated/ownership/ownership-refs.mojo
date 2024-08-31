@@ -436,3 +436,16 @@ fn test_pvalue_ref_formation[a: SelfRefTest]():
   # CHECK-NEXT: lit.call {{.*}}method{{.*}}([[REF]])
   _ = r[].method()
   # CHECK-NEXT: lit.call {{.*}}SelfRefTest::@"__del__{{.*}}([[ANONTMP]])
+
+# MOCO-1025 - Need hierarchical lifetimes
+struct FieldRefPropagation:
+  var field1 : Optional[Int]
+  var field2 : Int
+
+  fn __init__(inout self):
+     # Should be able to initialize field1 and use it.
+     self.field1 = 42
+     # Should be able to project it and assign through ref.
+     self.field1.value() = 17
+     # Then initialize field2
+     self.field2 = 1

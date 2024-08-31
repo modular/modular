@@ -168,6 +168,7 @@ struct TypeDeclInfo {
   /// Return the start bit for a field with the specified name in the specified
   /// type.
   unsigned getFieldIndex(LIT::StructType type, StringAttr fieldName) const;
+  int getFieldIndexOrInvalid(LIT::StructType type, StringAttr fieldName) const;
 
   /// Given a field number that indicates a stored field in the specified type,
   /// return the name of the field that contains it as well as its declared
@@ -328,13 +329,20 @@ unsigned TypeDeclInfo::getNumFieldsInType(Type type) {
 }
 
 /// Return the start bit for a field with the specified name in the specified
+/// type, or -1 if the field isn't found.
+int TypeDeclInfo::getFieldIndexOrInvalid(LIT::StructType type,
+                                         StringAttr fieldName) const {
+  auto it = fieldIndices.find({type.getSymbol(), fieldName});
+  return it == fieldIndices.end() ? -1 : it->second;
+}
+
+/// Return the start bit for a field with the specified name in the specified
 /// type.
 unsigned TypeDeclInfo::getFieldIndex(LIT::StructType type,
                                      StringAttr fieldName) const {
-  auto it = fieldIndices.find({type.getSymbol(), fieldName});
-  assert(it != fieldIndices.end() &&
-         "shouldn't get field index of unused value");
-  return it->second;
+  int idx = getFieldIndexOrInvalid(type, fieldName);
+  assert(idx >= 0 && "invalid field name for struct type");
+  return unsigned(idx);
 }
 
 /// Given a field number that indicates a stored field in the specified type,
@@ -577,26 +585,14 @@ struct ValueSet {
 
   /// Return a reference to the entire value with the specified ID.
   ValueRef getFullValueRef(unsigned valueId) const {
-    const auto &entry = valueInfos[valueId];
-    return entry.getFullValueRef(valueId);
+    return valueInfos[valueId].getFullValueRef(valueId);
   }
 
-  /// Given a lifetime attribute, return the value ref that defines it.
-  ValueRef getFullValueRefForLifetime(TypedAttr lifetime) const {
-    // The mutability of the lifetime access doesn't affect what ValueRef is
-    // accessed.
-    lifetime = LifetimeMutCastAttr::strip(lifetime);
-
-    // We currently ignore field sensitivity.
-    // FIXME(field sensitivity) use this!
-    while (auto field = dyn_cast<LifetimeFieldAttr>(lifetime))
-      lifetime = field.getStructLifetime();
-
-    auto it = lifetimeToValueIndex.find(lifetime);
-    if (it == lifetimeToValueIndex.end())
-      return {};
-    return getFullValueRef(it->second);
-  }
+  /// Given a lifetime attribute, return the value ref that defines it, and the
+  /// known type of that value.  This can return a null type if we don't have
+  /// field sensitive information.
+  std::pair<ValueRef, Type>
+  getValueRefAndTypeForLifetime(TypedAttr lifetime) const;
 
   /// Look up all the value refs that an access with the specified Value and
   /// dereference bit touch.
@@ -727,6 +723,64 @@ void ValueSet::dump() const {
   os.flush();
 }
 
+/// Given a lifetime attribute, return the value ref that defines it, and the
+/// known type of that value.  This can return a null type if we don't have
+/// field sensitive information.
+std::pair<ValueRef, Type>
+ValueSet::getValueRefAndTypeForLifetime(TypedAttr lifetime) const {
+  // The mutability of the lifetime access doesn't affect what ValueRef is
+  // accessed.
+  lifetime = LifetimeMutCastAttr::strip(lifetime);
+
+  // If the lifetime has one or more field specifiers like 'a.x.y.z', find
+  // the ValueRef for the base and then refine it.
+  if (auto field = dyn_cast<LifetimeFieldAttr>(lifetime)) {
+    auto [valueRef, type] =
+        getValueRefAndTypeForLifetime(field.getStructLifetime());
+    // If we don't have field sensitive information then we cannot refine the
+    // lifetime.  This also handles the null valueRef case.
+    if (!type)
+      return {valueRef, type};
+
+    assert(valueRef.isIndirect && "Cannot field refine SSA value access");
+    auto fieldName = field.getField();
+
+    // FIXME: Field accesses can be compressed due to subtyping, and we don't
+    // keep track of where this happens in the lifetime, and we don't keep track
+    // of the full struct+symbol name for fields.  *This is a bug*.  Until we
+    // decide to fix this, this should work.
+    auto containerType = dyn_cast<LIT::StructType>(type);
+    if (!containerType)
+      return {valueRef, Type()};
+    int fieldOffset =
+        typeDeclInfo.getFieldIndexOrInvalid(containerType, fieldName);
+    if (fieldOffset == -1)
+      return {valueRef, Type()};
+
+    // Figure out the declared type of the field.
+    auto [thisFieldName, fieldType] =
+        typeDeclInfo.getFieldContaining(containerType, fieldOffset);
+    assert(thisFieldName == fieldName && "index/name mismatch");
+
+    // Refine the value ref.
+    unsigned startBit = valueRef.startBit + fieldOffset;
+    valueRef = ValueRef{valueRef.valueId, startBit,
+                        startBit + typeDeclInfo.getNumFieldsInType(fieldType),
+                        /*isIndirect=*/true};
+    return {valueRef, fieldType};
+  }
+
+  // Otherwise look up the base lifetime value.
+  auto it = lifetimeToValueIndex.find(lifetime);
+  if (it == lifetimeToValueIndex.end())
+    return {};
+
+  const auto &entry = valueInfos[it->second];
+  assert(entry.isIndirect);
+  return {entry.getFullValueRef(it->second),
+          cast<RefType>(entry.value.getType()).getElementType()};
+}
+
 /// Given a pointer that is being accessed indirectly by an operation, return
 /// the value number being referenced, or zero if not tracked.
 ///
@@ -796,7 +850,8 @@ SmallVector<ValueRef> ValueSet::getValueRefsForLifetime(TypedAttr lifetime) {
 
   // Look through imm cast and unions to find the underlying attrs.
   processRawLifetime(lifetime, [&](TypedAttr raw) {
-    if (auto valueRef = getFullValueRefForLifetime(raw))
+    auto [valueRef, type] = getValueRefAndTypeForLifetime(raw);
+    if (valueRef)
       result.push_back(valueRef);
   });
 
@@ -2303,14 +2358,21 @@ void DestructorInsertion::checkUse(Value value,
     SmallVector<ValueRef> lifetimeRelatedValues =
         valueSet.getValueRefsForLifetime(
             cast<RefType>(value.getType()).getLifetime());
-    for (auto lifetimeRelatedValue : lifetimeRelatedValues) {
-      ValueInfo &valueInfo =
-          valueSet.getValueInfos()[lifetimeRelatedValue.valueId];
+    for (auto valueRef : lifetimeRelatedValues) {
+      ValueInfo &valueInfo = valueSet.getValueInfos()[valueRef.valueId];
       if (valueInfo.hasErrorDiagnosed)
         continue;
 
-      destroyValueIfNeeded(valueInfo.value, lifetimeRelatedValue, builder,
-                           opWithUse);
+      // We expand the lifetime use to be an access to the full value being
+      // accessed, even if it we have field sensitivity.  The reason for this
+      // is that we don't have the right Value to pass in to
+      // destroyValueIfNeeded.
+      // TODO: We could extend this to re-derive the field values from the base
+      // like `destroyValuesAtEntryIfNeeded` and unify this and the "direct"
+      // path better.
+      valueRef = valueInfo.getFullValueRef(valueRef.valueId);
+
+      destroyValueIfNeeded(valueInfo.value, valueRef, builder, opWithUse);
     }
   }
 }
