@@ -16,7 +16,7 @@ import { DisposableContext } from './disposableContext';
 async function promptRestart(settingName: string, promptMessage: string) {
   switch (config.get<string>(settingName, /*workspaceFolder=*/ undefined)) {
     case 'restart':
-      vscode.commands.executeCommand('mojo.restart');
+      vscode.commands.executeCommand('mojo.extension.restart');
       break;
     case 'ignore':
       break;
@@ -31,10 +31,10 @@ async function promptRestart(settingName: string, promptMessage: string) {
         )
       ) {
         case 'Yes':
-          vscode.commands.executeCommand('mojo.restart');
+          vscode.commands.executeCommand('mojo.extension.restart');
           break;
         case 'Yes, always':
-          vscode.commands.executeCommand('mojo.restart');
+          vscode.commands.executeCommand('mojo.extension.restart');
           config.update<string>(
             settingName,
             'restart',

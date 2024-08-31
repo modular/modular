@@ -105,7 +105,7 @@ Activating the Mojo Extension
       // Initialize the commands of the extension.
       this.pushSubscription(
         vscode.commands.registerCommand(
-          'mojo.restart',
+          'mojo.extension.restart',
           async (initializationSDK: Optional<MojoSDKSpec>) => {
             // Dispose and reactivate the context.
             await this.activate(initializationSDK, /*reloading=*/ true);
@@ -125,7 +125,9 @@ Activating the Mojo Extension
       this.pushSubscription(new MojoDebugManager(this, sdkManager));
 
       // Initialize the execution commands.
-      this.pushSubscription(activateRunCommands(sdkManager));
+      this.pushSubscription(
+        activateRunCommands(sdkManager, this.extensionContext)
+      );
 
       // Initialize the decorations.
       this.pushSubscription(new MojoDecoratorManager());

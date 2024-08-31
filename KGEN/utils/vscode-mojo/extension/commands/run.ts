@@ -4,47 +4,134 @@
 //
 //===----------------------------------------------------------------------===//
 
-import * as shellescape from 'shell-escape';
+import { quote, parse } from 'shell-quote';
 import * as vscode from 'vscode';
 import { DisposableContext } from '../utils/disposableContext';
 import path = require('path');
 import { MojoSDK } from '../sdk/sdk';
 import { MojoSDKManager } from '../sdk/sdkManager';
+import { MojoDebugConfiguration } from '../debug/debug';
+
+type FileArgs = {
+  runArgs: string[];
+  buildArgs: string[];
+};
 
 /**
  * This class provides a manager for executing and debugging mojo files.
  */
 class ExecutionManager extends DisposableContext {
   readonly sdkManager: MojoSDKManager;
+  private context: vscode.ExtensionContext;
 
-  constructor(sdkManager: MojoSDKManager) {
+  constructor(sdkManager: MojoSDKManager, context: vscode.ExtensionContext) {
     super();
 
     this.sdkManager = sdkManager;
+    this.context = context;
     this.activateRunCommands();
+  }
+
+  private getFileArgsKey(path: string): string {
+    return `file.args.${path}`;
+  }
+
+  private getFileArgs(path: string): FileArgs {
+    return this.context.globalState.get<FileArgs>(this.getFileArgsKey(path), {
+      runArgs: [],
+      buildArgs: [],
+    });
+  }
+
+  private getBuildArgs(path: string): string[] {
+    return this.getFileArgs(path).buildArgs;
+  }
+
+  private async setBuildArgs(path: string, args: string): Promise<void> {
+    const fileArgs = this.getFileArgs(path);
+    fileArgs.buildArgs = parse(args).filter(
+      (x): x is string => typeof x === 'string'
+    );
+    return this.context.globalState.update(this.getFileArgsKey(path), fileArgs);
+  }
+
+  private getRunArgs(path: string): string[] {
+    return this.getFileArgs(path).runArgs;
+  }
+
+  private async setRunArgs(path: string, args: string): Promise<void> {
+    const fileArgs = this.getFileArgs(path);
+    fileArgs.runArgs = parse(args).filter(
+      (x): x is string => typeof x === 'string'
+    );
+    return this.context.globalState.update(this.getFileArgsKey(path), fileArgs);
   }
 
   /**
    * Activate the run commands, used for executing and debugging mojo files.
    */
   activateRunCommands() {
-    const cmd = 'mojo.execFileInDedicatedTerminal';
+    const cmd = 'mojo.file.run';
     this.pushSubscription(
-      vscode.commands.registerCommand(cmd, async (file?: vscode.Uri) => {
-        await this.executeFileInTerminal(file);
+      vscode.commands.registerCommand(cmd, (file?: vscode.Uri) => {
+        this.executeFileInTerminal(file);
+        return true;
       })
     );
 
-    for (const cmd of ['mojo.debugFile', 'mojo.debugFileInTerminal']) {
+    for (const cmd of ['mojo.file.debug', 'mojo.file.debug-in-terminal']) {
       this.pushSubscription(
-        vscode.commands.registerCommand(cmd, async (file: vscode.Uri) => {
-          return this.debugFile(
+        vscode.commands.registerCommand(cmd, (file: vscode.Uri) => {
+          this.debugFile(
             file,
-            /*runInTerminal=*/ cmd === 'mojo.debugFileInTerminal'
+            /*runInTerminal=*/ cmd === 'mojo.file.debug-in-terminal'
           );
+          return true;
         })
       );
     }
+    this.pushSubscription(
+      vscode.commands.registerCommand(
+        'mojo.file.set-args',
+        async (file: vscode.Uri) => {
+          const setBuildArgs = 'Set Build Arguments';
+          const setRunArgs = 'Set Run Arguments';
+          const option = await vscode.window.showQuickPick(
+            [setBuildArgs, setRunArgs],
+            {
+              title: 'Select the arguments you want to configure',
+              placeHolder:
+                'This will affect `Run Mojo File`, `Debug Mojo File` and similar actions.',
+            }
+          );
+
+          if (option === setBuildArgs) {
+            const buildArgs = quote(this.getBuildArgs(file.fsPath));
+
+            const newValue = await vscode.window.showInputBox({
+              placeHolder: 'Enter the arguments as if within a shell.',
+              title: 'Enter the build arguments for the compiler',
+              value: buildArgs.length === 0 ? undefined : buildArgs,
+            });
+            if (newValue !== undefined) {
+              await this.setBuildArgs(file.fsPath, newValue);
+            }
+          } else if (option === setRunArgs) {
+            const runArgs = quote(this.getRunArgs(file.fsPath));
+
+            const newValue = await vscode.window.showInputBox({
+              placeHolder: 'Enter the arguments as if within a shell.',
+              title: 'Enter the run arguments for the final executable',
+              value: runArgs.length === 0 ? undefined : runArgs,
+            });
+            if (newValue !== undefined) {
+              await this.setRunArgs(file.fsPath, newValue);
+            }
+          }
+          return true;
+        }
+      )
+    );
   }
 
   /**
@@ -69,7 +156,15 @@ class ExecutionManager extends DisposableContext {
     // Execute the file.
     let terminal = this.getTerminalForFile(doc, sdk);
     terminal.show();
-    terminal.sendText(shellescape([sdk.config.mojoDriverPath, doc.fileName]));
+    terminal.sendText(
+      quote([
+        sdk.config.mojoDriverPath,
+        'run',
+        ...this.getBuildArgs(doc.fileName),
+        doc.fileName,
+        ...this.getRunArgs(doc.fileName),
+      ])
+    );
 
     // Focus on the terminal if the user has configured it to do so.
     if (this.shouldTerminalFocusOnStart(doc.uri)) {
@@ -91,16 +186,18 @@ class ExecutionManager extends DisposableContext {
       return;
     }
 
-    let debugConfig: vscode.DebugConfiguration = {
+    let debugConfig: MojoDebugConfiguration = {
       type: 'mojo-lldb',
       name: 'Mojo',
       request: 'launch',
       mojoFile: doc.fileName,
       runInTerminal: runInTerminal,
+      buildArgs: this.getBuildArgs(doc.fileName),
+      args: this.getRunArgs(doc.fileName),
     };
     await vscode.debug.startDebugging(
       vscode.workspace.getWorkspaceFolder(doc.uri),
-      debugConfig
+      debugConfig as vscode.DebugConfiguration
     );
   }
 
@@ -172,7 +269,8 @@ class ExecutionManager extends DisposableContext {
  *     commands.
  */
 export function activateRunCommands(
-  sdkManager: MojoSDKManager
+  sdkManager: MojoSDKManager,
+  context: vscode.ExtensionContext
 ): vscode.Disposable {
-  return new ExecutionManager(sdkManager);
+  return new ExecutionManager(sdkManager, context);
 }
