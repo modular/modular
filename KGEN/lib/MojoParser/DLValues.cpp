@@ -8,7 +8,7 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "KGEN/MojoParser/DLValues.h"
+#include "DLValues.h"
 #include "ExprEmitter.h"
 #include "KGEN/MojoParser/ASTDecl.h"
 #include "KGEN/MojoParser/ExprNodes.h"

@@ -10,10 +10,10 @@
 #include "Signatures.h"
 #include "Traits.h"
 
+#include "DLValues.h"
 #include "ExprEmitter.h"
 #include "KGEN/MojoParser/ASTDecl.h"
 #include "KGEN/MojoParser/ClosureEmitter.h"
-#include "KGEN/MojoParser/DLValues.h"
 #include "KGEN/MojoParser/ExprNodes.h"
 #include "KGEN/MojoParser/ParserBase.h"
 #include "KGEN/MojoParser/StructEmitter.h"

@@ -736,7 +736,7 @@ public:
   /// def argument.
   virtual RefType getMBValueTypeFromDefArgument() const;
 
-  virtual bool isDefArgument() const { return false; }
+  virtual std::optional<size_t> getDefArgumentIndex() const { return {}; }
 };
 
 } // namespace M::KGEN::LIT
