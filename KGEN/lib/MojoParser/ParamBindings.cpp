@@ -4,7 +4,7 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "KGEN/MojoParser/ParamBindings.h"
+#include "ParamBindings.h"
 #include "ExprEmitter.h"
 #include "ExprNodes.h"
 #include "KGEN/MojoParser/IRValues.h"

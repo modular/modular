@@ -9,9 +9,9 @@
 #include "ExprNodes.h"
 #include "KGEN/MojoParser/ASTDecl.h"
 #include "KGEN/MojoParser/IRValues.h"
-#include "KGEN/MojoParser/ParamBindings.h"
 #include "KGEN/MojoParser/ParserParamEvaluator.h"
 #include "KGEN/MojoParser/SharedState.h"
+#include "ParamBindings.h"
 
 #include "KGEN/Interpreter/InterpreterAttrs.h"
 #include "KGEN/KGENDialect/KGENAttrs.h"

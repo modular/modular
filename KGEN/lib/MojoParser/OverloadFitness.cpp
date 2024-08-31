@@ -8,7 +8,7 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "KGEN/MojoParser/OverloadFitness.h"
+#include "OverloadFitness.h"
 #include "CallEmission.h"
 #include "ExprEmitter.h"
 #include "ExprNodes.h"
