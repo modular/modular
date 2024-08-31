@@ -28,6 +28,7 @@ from algorithm.reduction import (
 )
 from algorithm.reduction import mean as _mean
 from buffer import NDBuffer
+from buffer.dimlist import _make_tuple
 from buffer.buffer import _compute_ndbuffer_offset
 from runtime.tracing import Trace, TraceLevel, trace_arg
 from buffer.dimlist import Dim, DimList
@@ -573,7 +574,12 @@ fn elementwise_wrapper[
         use_blocking_impl=single_thread_blocking_override,
         target=target,
         trace_description=trace_description,
-    ](buffer.dynamic_shape, context=ctx)
+    ](
+        _make_tuple[buffer.rank](buffer.shape) if buffer.shape.all_known[
+            buffer.rank
+        ]() else buffer.dynamic_shape,
+        context=ctx,
+    )
 
 
 @mogg_register("get_address_space")
