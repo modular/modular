@@ -51,6 +51,7 @@ fn _get_dylib_function[
 # Types
 # ===----------------------------------------------------------------------===#
 
+
 alias RangeID = UInt64
 alias EventPayload = UInt64
 alias NVTXVersion = 3
@@ -107,6 +108,7 @@ struct _C_EventAttributes:
     """Message assigned to this attribute structure."""
 
 
+@register_passable
 struct EventAttributes:
     var _value: _C_EventAttributes
 
@@ -163,26 +165,40 @@ alias _nvtxRangeEnd = _dylib_function["nvtxRangeEnd", fn (RangeID) -> NoneType]
 
 
 struct Range:
-    var _info: _C_EventAttributes
+    var _info: EventAttributes
     var _id: RangeID
 
     var _start_fn: fn (UnsafePointer[_C_EventAttributes]) -> RangeID
     var _end_fn: fn (RangeID) -> NoneType
 
-    fn __init__(inout self, info: EventAttributes):
-        self._info = info._value
+    fn __init__(inout self, *, id: RangeID):
+        self._info = __mlir_op.`kgen.undef`[_type=EventAttributes]()
+        self._id = id
+        self._start_fn = __mlir_op.`kgen.undef`[
+            _type = fn (UnsafePointer[_C_EventAttributes]) -> RangeID
+        ]()
+        self._end_fn = _nvtxRangeEnd.load()
+
+    fn __init__(inout self, *, message: String = "", color: Color = Color.BLUE):
+        self._info = EventAttributes(message=message, color=color)
         self._id = 0
         self._start_fn = _nvtxRangeStartEx.load()
         self._end_fn = _nvtxRangeEnd.load()
 
     @always_inline
     fn __enter__(inout self):
-        self._id = self._start_fn(UnsafePointer.address_of(self._info))
+        self._id = self._start_fn(UnsafePointer.address_of(self._info._value))
 
     @always_inline
     fn __exit__(self):
         self._end_fn(self._id)
 
+    @always_inline
+    fn id(self) -> RangeID:
+        return self._id
 
-fn mark(info: EventAttributes):
-    _nvtxMarkEx.load()(UnsafePointer.address_of(info._value))
+    @always_inline
+    fn mark(self, *, message: String = "", color: Int = 0xFF880000):
+        var info = EventAttributes(message=message, color=color)
+        _nvtxMarkEx.load()(UnsafePointer.address_of(info._value))
+        _ = info^
