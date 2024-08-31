@@ -800,8 +800,8 @@ Value CallEmitter::emitPreemittedArgumentAsDynamicValue(
       const ExprNode *expr = argValAndExpr.expr;
       Location argLoc = expr->getLocation(emitter);
       Value ptr = emitter.builder->create<POP::StackAllocationOp>(
-          argLoc, PointerType::get(sbValue.getType()), 1,
-          /*markedLifetimes=*/true);
+          argLoc, /*markedLifetimes=*/true,
+          PointerType::get(sbValue.getType()));
       emitter.builder->create<POP::StackAllocLifetimeStartOp>(argLoc, ptr);
       emitter.builder->create<POP::StoreOp>(argLoc, sbValue, ptr);
       auto immortal = emitter.builder->getAttr<LifetimeAttr>(/*isMut=*/false);

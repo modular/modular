@@ -530,7 +530,7 @@ static Value materializeLLVMAlloca(OpBuilder &b, Type elementType,
   auto alloca = dyn_cast<StackAllocationOp>(op);
   if (alloca) {
     if (auto addrSpaceAttr =
-            cast_or_null<IntegerAttr>(alloca.getAddressSpaceAttr()))
+            cast_or_null<IntegerAttr>(alloca.getType().getAddressSpace()))
       addressSpace = addrSpaceAttr.getInt();
   }
 
@@ -1782,7 +1782,7 @@ struct ConvertPOPGlobalAlloc : public ConvertSymbolOpToLLVM<GlobalAllocOp> {
     // Set the address space if specified.
     unsigned addrSpace = 0;
     if (auto addrSpaceAttr =
-            dyn_cast_or_null<IntegerAttr>(op.getAddressSpaceAttr()))
+            cast_or_null<IntegerAttr>(op.getType().getAddressSpace()))
       addrSpace = addrSpaceAttr.getInt();
 
     StringRef name = cast<StringAttr>(adaptor.getName()).strref();

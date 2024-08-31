@@ -341,7 +341,7 @@ static void lowerFuncOp(FuncOp funcOp) {
   for (size_t idx : s.changedIndices) {
     BlockArgument arg = body.getArgument(idx);
     Location loc = addDI(arg.getLoc());
-    auto ptr = b.create<POP::StackAllocationOp>(loc, arg.getType(), 1);
+    auto ptr = b.create<POP::StackAllocationOp>(loc, arg.getType());
     auto storeOp = b.create<POP::StoreOp>(loc, arg, ptr);
     arg.setType(newSig.getArguments()[s.mapOperandIndex(idx)]);
     arg.replaceAllUsesExcept(ptr, storeOp);

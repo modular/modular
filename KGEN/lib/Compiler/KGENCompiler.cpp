@@ -163,7 +163,7 @@ writeCaptureArgs(ModuleOp module, StringAttr name) {
     Value value = b.create<POP::CompilerGlobalLoadOp>(
         // Make sure to strip off the type of the StringAttr.
         type, b.getStringAttr(capture.getValue()));
-    Value ptr = b.create<POP::StackAllocationOp>(PointerType::get(type), 1);
+    Value ptr = b.create<POP::StackAllocationOp>(PointerType::get(type));
     b.create<POP::StoreOp>(value, ptr);
     Value argPtrPtrs =
         b.create<POP::PointerBitcastOp>(PointerType::get(nonePtr), argPtrs);
