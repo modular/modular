@@ -1344,7 +1344,7 @@ fn mean[
         )
 
     with Trace[TraceLevel.OP, target=target](
-        "mojo.mean", Trace[TraceLevel.OP]._get_detail_str[description_fn]()
+        "mean", Trace[TraceLevel.OP]._get_detail_str[description_fn]()
     ):
 
         @always_inline

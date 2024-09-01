@@ -1337,7 +1337,7 @@ fn elementwise[
         )
 
     with Trace[TraceLevel.OP, target=target](
-        "mojo.elementwise",
+        "elementwise",
         Trace[TraceLevel.OP]._get_detail_str[description_fn](),
     ):
 
