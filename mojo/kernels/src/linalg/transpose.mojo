@@ -417,9 +417,9 @@ fn _fill_strides[
 
     @parameter
     for idx in range(rank - 1):
-        var axis = rank - idx - 2
+        alias axis = rank - idx - 2
         var next_axis_stride = strides[axis + 1]
-        var next_axis_dim = buf.dim(axis + 1)
+        var next_axis_dim = buf.dim[axis + 1]()
         var curr_axis_stride = next_axis_stride * next_axis_dim
         strides[axis] = curr_axis_stride
 
@@ -586,13 +586,10 @@ fn _process_tile[
 
 
 fn _transpose_2d_serial_tiled[
-    rank: Int,
-    output_shape: DimList,
-    input_shape: DimList,
-    type: DType,
+    rank: Int, type: DType, //
 ](
-    output: NDBuffer[type, rank, output_shape],
-    input: NDBuffer[type, rank, input_shape],
+    output: NDBuffer[type, rank, _],
+    input: NDBuffer[type, rank, _],
     perms: UnsafePointer[Scalar[DType.index]],
     simplified_input_shape: StaticIntTuple[rank],
     simplified_rank: Int,
@@ -653,13 +650,10 @@ fn _should_run_parallel(
 
 
 fn _transpose_2d_parallel_tiled[
-    rank: Int,
-    output_shape: DimList,
-    input_shape: DimList,
-    type: DType,
+    rank: Int, type: DType, //
 ](
-    output: NDBuffer[type, rank, output_shape],
-    input: NDBuffer[type, rank, input_shape],
+    output: NDBuffer[type, rank, _],
+    input: NDBuffer[type, rank, _],
     perms: UnsafePointer[Scalar[DType.index]],
     simplified_input_shape: StaticIntTuple[rank],
     simplified_rank: Int,
@@ -740,7 +734,7 @@ fn transpose_2d[
     alias min_work_per_task = 1024
 
     if _should_run_parallel(M, N, simd_width, min_work_per_task):
-        _transpose_2d_parallel_tiled[rank, output_shape, input_shape](
+        _transpose_2d_parallel_tiled(
             output,
             input,
             perms,
@@ -749,7 +743,7 @@ fn transpose_2d[
             offset,
         )
     else:
-        _transpose_2d_serial_tiled[rank, output_shape, input_shape](
+        _transpose_2d_serial_tiled(
             output,
             input,
             perms,
@@ -762,7 +756,7 @@ fn transpose_2d[
 
 
 fn _transpose_4d_swap_middle_helper[
-    type: DType,
+    type: DType, //
 ](
     dst_ptr: UnsafePointer[Scalar[type]],
     src_ptr: UnsafePointer[Scalar[type]],
@@ -772,7 +766,6 @@ fn _transpose_4d_swap_middle_helper[
     K: Int,
 ):
     var work = L * M * N
-    var memcpy_block_size = K
     var total_size = L * M * N * K
 
     alias KB = 1024
@@ -830,13 +823,10 @@ fn _transpose_4d_swap_middle_helper[
 
 
 fn transpose_4d_swap_middle[
-    rank: Int,
-    output_shape: DimList,
-    input_shape: DimList,
-    type: DType,
+    rank: Int, type: DType, //
 ](
-    output: NDBuffer[type, rank, output_shape],
-    input: NDBuffer[type, rank, input_shape],
+    output: NDBuffer[type, rank, _],
+    input: NDBuffer[type, rank, _],
     perms: UnsafePointer[Scalar[DType.index]],
     simplified_input_shape: StaticIntTuple[rank],
     simplified_rank: Int,
@@ -853,7 +843,7 @@ fn transpose_4d_swap_middle[
     var K = simplified_input_shape[simplified_rank - 1]
     var src_ptr = input.data.offset(0)
     var dst_ptr = output.data.offset(0)
-    _transpose_4d_swap_middle_helper[type](dst_ptr, src_ptr, L, M, N, K)
+    _transpose_4d_swap_middle_helper(dst_ptr, src_ptr, L, M, N, K)
 
 
 fn transpose_3d_swap_outer[
@@ -881,17 +871,14 @@ fn transpose_3d_swap_outer[
     var K = simplified_input_shape[simplified_rank - 1]
     var src_ptr = input.data.offset(0)
     var dst_ptr = output.data.offset(0)
-    _transpose_4d_swap_middle_helper[type](dst_ptr, src_ptr, 1, M, N, K)
+    _transpose_4d_swap_middle_helper(dst_ptr, src_ptr, 1, M, N, K)
 
 
 fn transpose_3d_swap_inner[
-    rank: Int,
-    output_shape: DimList,
-    input_shape: DimList,
-    type: DType,
+    rank: Int, type: DType, //
 ](
-    output: NDBuffer[type, rank, output_shape],
-    input: NDBuffer[type, rank, input_shape],
+    output: NDBuffer[type, rank, _],
+    input: NDBuffer[type, rank, _],
     perms: UnsafePointer[Scalar[DType.index]],
     simplified_input_shape: StaticIntTuple[rank],
     simplified_rank: Int,
@@ -906,7 +893,7 @@ fn transpose_3d_swap_inner[
     ] * simplified_input_shape[simplified_rank - 1]
     # TODO: parallelize this loop
     for i in range(simplified_input_shape[0]):
-        _transpose_2d_serial_tiled[rank, output_shape, input_shape, type](
+        _transpose_2d_serial_tiled(
             output,
             input,
             perms,
@@ -956,12 +943,10 @@ fn transpose_trivial_memcpy[
 #  Transpose generic strided implementation
 # ===------------------------------------------------------------------=== #
 fn _copy_with_strides[
-    rank: Int,
-    output_shape: DimList,
-    type: DType,
+    rank: Int, type: DType, //
 ](
     axis: Int,
-    output: NDBuffer[type, rank, output_shape],
+    output: NDBuffer[type, rank, _],
     input: UnsafePointer[Scalar[type]],
     input_strides: UnsafePointer[Scalar[DType.index]],
     output_strides: UnsafePointer[Scalar[DType.index]],
@@ -1023,7 +1008,7 @@ fn _copy_with_strides[
         var next_input_offset = input_offset
         var next_output_offset = output_offset
         for _ in range(axis_dim):
-            _copy_with_strides[rank, output_shape, type](
+            _copy_with_strides(
                 next_axis,
                 output,
                 input,
@@ -1065,7 +1050,7 @@ fn _copy_with_strides[
                 work_block_size * thread_id,
                 min(work_block_size * (thread_id + 1), work),
             ):
-                _copy_with_strides[rank, output_shape, type](
+                _copy_with_strides(
                     next_axis,
                     output,
                     input,
@@ -1083,13 +1068,10 @@ fn _copy_with_strides[
 
 
 fn transpose_strided[
-    rank: Int,
-    output_shape: DimList,
-    input_shape: DimList,
-    type: DType,
+    rank: Int, type: DType, //
 ](
-    output: NDBuffer[type, rank, output_shape],
-    input: NDBuffer[type, rank, input_shape],
+    output: NDBuffer[type, rank, _],
+    input: NDBuffer[type, rank, _],
     perms: UnsafePointer[Scalar[DType.index]],
 ) raises:
     # Compute `permuted_input_strides`
@@ -1114,7 +1096,7 @@ fn transpose_strided[
     alias init_axis = 0
     # NOTE: Synchronous, so the stack allocated input_strides, permuted_input_strings
     # and output_strides are safe to use.
-    _copy_with_strides[rank, output_shape, type](
+    _copy_with_strides(
         init_axis,
         output,
         input.data,
@@ -1132,13 +1114,10 @@ fn transpose_strided[
 #  Transpose entry points
 # ===------------------------------------------------------------------=== #
 fn transpose[
-    rank: Int,
-    output_shape: DimList,
-    input_shape: DimList,
-    type: DType,
+    rank: Int, type: DType, //
 ](
-    output: NDBuffer[type, rank, output_shape],
-    input: NDBuffer[type, rank, input_shape],
+    output: NDBuffer[type, rank, _],
+    input: NDBuffer[type, rank, _],
     perms: UnsafePointer[Scalar[DType.index]],
 ) raises:
     """
@@ -1151,8 +1130,6 @@ fn transpose[
 
     Parameters:
         rank: The rank of input and output buffers.
-        output_shape: The shape of the output buffer.
-        input_shape: The shape of the input buffer.
         type: The dtype of buffer elements.
 
     Args:
@@ -1164,9 +1141,7 @@ fn transpose[
     # If either input or output is not-contiguous, we need to use a general
     # strided implementation of transpose
     if not output.is_contiguous() or not input.is_contiguous():
-        return transpose_strided[rank, output_shape, input_shape, type](
-            output, input, perms
-        )
+        return transpose_strided(output, input, perms)
 
     # If they are contiguous, we can try to recognize common special cases in
     # the desired permutation.
@@ -1187,9 +1162,7 @@ fn transpose[
 
     if simplified_rank == 1:
         # memcpy
-        return transpose_trivial_memcpy[rank, output_shape, input_shape, type](
-            output, input
-        )
+        return transpose_trivial_memcpy(output, input)
     # TODO: Reenable once #15947 is fixed.
     # elif simplified_rank == 2:
     #     # tiled transpose
@@ -1208,9 +1181,7 @@ fn transpose[
             and simplified_perms[2] == 1
         ):
             # batched tiled transpose
-            return transpose_3d_swap_inner[
-                rank, output_shape, input_shape, type
-            ](
+            return transpose_3d_swap_inner(
                 output,
                 input,
                 perms,
@@ -1222,9 +1193,7 @@ fn transpose[
             and simplified_perms[1] == 0
             and simplified_perms[2] == 2
         ):
-            return transpose_3d_swap_outer[
-                rank, output_shape, input_shape, type
-            ](
+            return transpose_3d_swap_outer(
                 output,
                 input,
                 perms,
@@ -1238,15 +1207,11 @@ fn transpose[
             and simplified_perms[2] == 1
             and simplified_perms[3] == 3
         ):
-            return transpose_4d_swap_middle[
-                rank, output_shape, input_shape, type
-            ](
+            return transpose_4d_swap_middle(
                 output,
                 input,
                 perms,
                 simplified_shape,
                 simplified_rank,
             )
-    transpose_strided[rank, output_shape, input_shape, type](
-        output, input, perms
-    )
+    transpose_strided(output, input, perms)

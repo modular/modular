@@ -222,45 +222,35 @@ fn _cblas_f32[
 # cblas_sgemv has been found to have suboptimal performance compared to this.
 @always_inline
 fn apple_gemv[
-    c_shape: DimList,
-    c_type: DType,
-    a_shape: DimList,
-    a_type: DType,
-    b_shape: DimList,
-    b_type: DType,
+    *,
     b_packed: Bool,
     transpose_b: Bool = False,
     elementwise_lambda_fn: OptionalReg[matmul_elementwise_epilogue_type] = None,
-](
-    c: NDBuffer[c_type, 2, c_shape],
-    a: NDBuffer[a_type, 2, a_shape],
-    b: NDBuffer[b_type, 2, b_shape],
-):
+](c: NDBuffer[_, 2, _], a: NDBuffer[_, 2, _], b: NDBuffer[_, 2, _]):
     # Recall:
     # if b_packed=True, this will be called AFTER pack shape and actual packing
     # function (in MatmulPack.mojo), which will TRANSPOSE the input.
-    var M = a.dim[0]()
     var K = a.dim[1]() if b_packed else b.dim[0]()
     var N = b.dim[0]() if transpose_b or b_packed else b.dim[1]()
 
-    var transposed_b = NDBuffer[b_type, 2]()
-    var transposed_b_ptr = UnsafePointer[Scalar[b_type]]()
+    var transposed_b = NDBuffer[b.type, 2]()
+    var transposed_b_ptr = UnsafePointer[Scalar[b.type]]()
 
     # If both b_packed and transpose_b are False, we need to transpose B at
     # runtime (which is suboptimal, but enables faster gemv below).
     @parameter
     if b_packed == False and not transpose_b:
         var transposed_b_shape = Index(b.dim[1](), b.dim[0]())
-        transposed_b_ptr = UnsafePointer[Scalar[b_type]].alloc(b.num_elements())
-        transposed_b = NDBuffer[b_type, 2](transposed_b_ptr, transposed_b_shape)
+        transposed_b_ptr = UnsafePointer[Scalar[b.type]].alloc(b.num_elements())
+        transposed_b = NDBuffer[b.type, 2](transposed_b_ptr, transposed_b_shape)
 
         pack_b_ndbuffer[
-            a_type,
-            a_shape,
-            b_type,
-            b_shape,
-            c_type,
-            c_shape,
+            a.type,
+            a.shape,
+            b.type,
+            b.shape,
+            c.type,
+            c.shape,
         ](b, transposed_b)
 
     # If b_packed == False and B comes transposed (transpose_b == True) we need
@@ -300,14 +290,14 @@ fn apple_gemv[
                 @parameter
                 if width == 1:
                     acc_scalar = fma(
-                        rebind[Scalar[c_type]](a_val),
-                        rebind[Scalar[c_type]](b_val),
+                        rebind[Scalar[c.type]](a_val),
+                        rebind[Scalar[c.type]](b_val),
                         acc_scalar,
                     )
                 else:
                     acc_vector = fma(
-                        rebind[SIMD[c_type, simd_width]](a_val),
-                        rebind[SIMD[c_type, simd_width]](b_val),
+                        rebind[SIMD[c.type, simd_width]](a_val),
+                        rebind[SIMD[c.type, simd_width]](b_val),
                         acc_vector,
                     )
 

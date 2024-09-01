@@ -746,34 +746,12 @@ fn _matmul_gpu[
     #     not single_thread_blocking_override,
     #     "single_thread_blocking_override not applicable",
     # ]()
-
     try:
-
-        @parameter
-        if elementwise_lambda_fn:
-            _matmul_gpu_dispatch[
-                a.type,
-                a.shape,
-                b.type,
-                b.shape,
-                c.type,
-                c.shape,
-                transpose_b=transpose_b,
-                use_tensor_core=use_tensor_core,
-                elementwise_lambda_fn=elementwise_lambda_fn,
-            ](c, a, b, ctx)
-
-        else:
-            _matmul_gpu_dispatch[
-                a.type,
-                a.shape,
-                b.type,
-                b.shape,
-                c.type,
-                c.shape,
-                transpose_b=transpose_b,
-                use_tensor_core=use_tensor_core,
-            ](c, a, b, ctx)
+        _matmul_gpu_dispatch[
+            transpose_b=transpose_b,
+            use_tensor_core=use_tensor_core,
+            elementwise_lambda_fn=elementwise_lambda_fn,
+        ](c, a, b, ctx)
     except e:
         abort(e)
 
@@ -785,7 +763,7 @@ fn _matmul_gpu_dispatch[
     b_type: DType,
     b_shape: DimList,
     c_type: DType,
-    c_shape: DimList,
+    c_shape: DimList, //,
     transpose_b: Bool = False,
     use_tensor_core: Bool = False,
     elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,

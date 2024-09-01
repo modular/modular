@@ -530,14 +530,8 @@ fn _matmul_cpu_impl[
         if use_apple_accelerate_lib[c.type, a.type, b.type]():
             if m == 1:
                 apple_gemv[
-                    c.shape,
-                    c.type,
-                    a.shape,
-                    a.type,
-                    b.shape,
-                    b.type,
-                    b_packed,
-                    transpose_b,
+                    b_packed=b_packed,
+                    transpose_b=transpose_b,
                     elementwise_lambda_fn=elementwise_lambda_fn,
                 ](c, a, b)
             else:
@@ -640,6 +634,7 @@ fn _matmul_cpu_impl[
 
 @always_inline
 fn _matmul_cpu[
+    *,
     transpose_b: Bool = False,
     b_packed: Bool = False,
     elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
@@ -741,7 +736,7 @@ fn matmul[
     b_type: DType,
     b_shape: DimList,
     c_type: DType,
-    c_shape: DimList,
+    c_shape: DimList, //,
     transpose_a: Bool = False,
     transpose_b: Bool = False,
     b_packed: Bool = False,
@@ -784,11 +779,11 @@ fn matmul[
             var kernel_type_m = a_shape.at[0]().or_else(0)
 
             _matmul_cpu[
-                transpose_b,
-                b_packed,
-                elementwise_lambda_fn,
-                saturated_vnni,
-                single_thread_blocking_override,
+                transpose_b=transpose_b,
+                b_packed=b_packed,
+                elementwise_lambda_fn=elementwise_lambda_fn,
+                saturated_vnni=saturated_vnni,
+                single_thread_blocking_override=single_thread_blocking_override,
             ](c, a, b, kernel_type_m)
 
         else:
