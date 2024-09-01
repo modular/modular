@@ -171,35 +171,6 @@ struct _CachedFunctionInfo(Boolable):
         return self.func_handle.__bool__()
 
 
-@value
-struct _CachedFunctionPayload:
-    var max_registers: Optional[Int]
-    var threads_per_block: Optional[Int]
-    var cache_mode: Optional[CacheMode]
-    var cache_config: Optional[CacheConfig]
-    var func_attribute: Optional[FuncAttribute]
-    var device_context_ptr: UnsafePointer[DeviceContext]
-    var cuda_dll_ptr: UnsafePointer[CudaDLL]
-
-    fn __init__(
-        inout self,
-        max_registers: Optional[Int],
-        threads_per_block: Optional[Int],
-        cache_mode: Optional[CacheMode],
-        cache_config: Optional[CacheConfig],
-        func_attribute: Optional[FuncAttribute],
-        device_context_ptr: UnsafePointer[DeviceContext],
-        cuda_dll_ptr: UnsafePointer[CudaDLL],
-    ):
-        self.max_registers = max_registers
-        self.threads_per_block = threads_per_block
-        self.cache_mode = cache_mode
-        self.cache_config = cache_config
-        self.func_attribute = func_attribute
-        self.device_context_ptr = device_context_ptr
-        self.cuda_dll_ptr = cuda_dll_ptr
-
-
 struct FunctionCache:
     var dict: Dict[StringLiteral, _CachedFunctionInfo]
     var lock: BlockingSpinLock
@@ -212,31 +183,8 @@ struct FunctionCache:
         self.dict = existing.dict^
         self.lock = BlockingSpinLock()
 
-    fn get_or_create_entry[
-        name: StringLiteral,
-        init_fn: fn (_CachedFunctionPayload) raises -> _CachedFunctionInfo,
-    ](
-        inout self, payload: _CachedFunctionPayload
-    ) raises -> _CachedFunctionInfo:
-        with BlockingScopedLock(self.lock):
-            # FIXME: (MSTDL-694) The following sporadically fails in commit test (unhandled exception).
-
-            # var entry = self.dict.find(name)
-
-            # if entry:
-            #     return entry.value()
-
-            # var info_ptr = init_fn(payload)
-            # self.dict[name] = info_ptr
-            # return info_ptr
-
-            # FIXME: (MSTDL-694) This code is unnecessairly expensive, but it won't fail in commit tests.
-            if name in self.dict:
-                return self.dict[name]
-
-            var info_ptr = init_fn(payload)
-            self.dict[name] = info_ptr
-            return info_ptr
+    fn __contains__(self, value: StringLiteral) -> Bool:
+        return value in self.dict
 
 
 # ===----------------------------------------------------------------------===#
@@ -328,7 +276,6 @@ struct Function[
 
         self.info = Self._get_cached_function_info[func_type, func](
             device_context_ptr=device_context_ptr,
-            cuda_dll_ptr=cuda_dll_ptr,
             max_registers=max_registers,
             threads_per_block=threads_per_block,
             cache_mode=cache_mode,
@@ -530,33 +477,41 @@ struct Function[
     @staticmethod
     fn init_fn[
         func_type: AnyTrivialRegType, func: func_type
-    ](payload: _CachedFunctionPayload) raises -> _CachedFunctionInfo:
+    ](
+        device_context_ptr: UnsafePointer[DeviceContext],
+        *,
+        max_registers: Optional[Int],
+        threads_per_block: Optional[Int],
+        cache_config: Optional[CacheConfig],
+        func_attribute: Optional[FuncAttribute],
+        cache_mode: Optional[CacheMode],
+    ) raises -> _CachedFunctionInfo:
         alias _impl = Self._impl
         alias fn_name = _impl.function_name
 
+        var cuda_dll = device_context_ptr[].cuda_instance.cuda_dll
+
         var module = Module(
             _impl.asm,
-            max_registers=payload.max_registers,
-            threads_per_block=payload.threads_per_block,
-            cache_mode=payload.cache_mode,
-            cuda_dll=payload.cuda_dll_ptr[],
+            max_registers=max_registers,
+            threads_per_block=threads_per_block,
+            cache_mode=cache_mode,
+            cuda_dll=cuda_dll,
         )
         var func_handle = module.load(fn_name)
 
-        var cuda_dll = payload.device_context_ptr[].cuda_instance.cuda_dll
-
-        if payload.cache_config:
+        if cache_config:
             _check_error(
                 cuda_dll.cuFuncSetCacheConfig(
-                    func_handle, payload.cache_config.value().code
+                    func_handle, cache_config.value().code
                 )
             )
-        if payload.func_attribute:
+        if func_attribute:
             _check_error(
                 cuda_dll.cuFuncSetAttribute(
                     func_handle,
-                    payload.func_attribute.value().code,
-                    payload.func_attribute.value().value,
+                    func_attribute.value().code,
+                    func_attribute.value().value,
                 )
             )
         return _CachedFunctionInfo(module._steal_handle(), func_handle)
@@ -575,34 +530,39 @@ struct Function[
         func_type: AnyTrivialRegType, func: func_type
     ](
         device_context_ptr: UnsafePointer[DeviceContext],
-        cuda_dll_ptr: UnsafePointer[CudaDLL],
         *,
-        max_registers: Optional[Int] = None,
-        threads_per_block: Optional[Int] = None,
-        cache_config: Optional[CacheConfig] = None,
-        func_attribute: Optional[FuncAttribute] = None,
-        cache_mode: Optional[CacheMode] = None,
-        cuda_function_cache: UnsafePointer[FunctionCache] = UnsafePointer[
-            FunctionCache
-        ](),
+        max_registers: Optional[Int],
+        threads_per_block: Optional[Int],
+        cache_config: Optional[CacheConfig],
+        func_attribute: Optional[FuncAttribute],
+        cache_mode: Optional[CacheMode],
+        cuda_function_cache: UnsafePointer[FunctionCache],
     ) raises -> _CachedFunctionInfo:
         alias fn_name = _get_nvptx_fn_name[func]()
+        with BlockingScopedLock(cuda_function_cache[].lock):
+            # FIXME: (MSTDL-694) The following sporadically fails in commit
+            # test (unhandled exception).
 
-        var payload = _CachedFunctionPayload(
+            # if entry:
+            #     return entry.value()
+
+            # var info_ptr = init_fn(payload)
+            # self.dict[name] = info_ptr
+            # return info_ptr
+
+            # FIXME: (MSTDL-694) This code is unnecessairly expensive,
+            # but it won't fail in commit tests.
+            if fn_name in cuda_function_cache[]:
+                return cuda_function_cache[].dict[fn_name]
+
+        var info = Self.init_fn[func_type, func](
+            device_context_ptr=device_context_ptr,
             max_registers=max_registers,
             threads_per_block=threads_per_block,
             cache_config=cache_config,
             func_attribute=func_attribute,
-            device_context_ptr=device_context_ptr,
             cache_mode=cache_mode,
-            cuda_dll_ptr=cuda_dll_ptr,
         )
-
-        var info = cuda_function_cache[].get_or_create_entry[
-            fn_name,
-            Self.init_fn[func_type, func],
-        ](payload)
-
-        _ = payload
-
-        return info
+        with BlockingScopedLock(cuda_function_cache[].lock):
+            cuda_function_cache[].dict[fn_name] = info
+            return info

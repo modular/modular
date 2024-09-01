@@ -53,7 +53,6 @@ struct Context:
             )
             _check_error(self.cuda_dll.cuCtxSetCurrent(self.ctx))
         else:
-            var cuCtxCreate = self.cuda_dll.cuCtxCreate
             _check_error(
                 self.cuda_dll.cuCtxCreate(
                     UnsafePointer.address_of(self.ctx), flags, device.id
