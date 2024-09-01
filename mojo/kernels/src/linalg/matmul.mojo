@@ -776,7 +776,7 @@ fn matmul[
 
     # TODO(#23049): Pipe info on whether using faster, saturated_vnni is ok
     with Trace[TraceLevel.OP, target=target](
-        "mojo.matmul", Trace[TraceLevel.OP]._get_detail_str[description_fn]()
+        "matmul", Trace[TraceLevel.OP]._get_detail_str[description_fn]()
     ):
 
         @parameter

@@ -258,7 +258,7 @@ fn batched_matmul[
         )
 
     with Trace[TraceLevel.OP, target=target](
-        "mojo.batched_matmul",
+        "batched_matmul",
         Trace[TraceLevel.OP]._get_detail_str[description_fn](),
     ):
         # TODO: generalize to > rank 3
