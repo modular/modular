@@ -32,13 +32,13 @@ fn _build_info_asyncrt_max_profiling_level() -> Optional[Int]:
 
 @value
 @register_passable("trivial")
-struct TraceType(EqualityComparable):
+struct TraceCategory(EqualityComparable):
     """An enum-like struct specifying the type of tracing to perform."""
 
-    alias OTHER = TraceType(0)
-    alias AsyncRT = TraceType(1)
-    alias MEM = TraceType(2)
-    alias MAX = TraceType(3)
+    alias OTHER = TraceCategory(0)
+    alias AsyncRT = TraceCategory(1)
+    alias MEM = TraceCategory(2)
+    alias MAX = TraceCategory(3)
 
     var value: Int
 
@@ -174,7 +174,7 @@ struct TraceLevel(EqualityComparable):
 
 
 @always_inline
-fn is_profiling_enabled[type: TraceType, level: TraceLevel]() -> Bool:
+fn is_profiling_enabled[type: TraceCategory, level: TraceLevel]() -> Bool:
     """Returns True if the profiling is enabled for that specific type and
     level and False otherwise."""
     alias kProfilingTypeWidthBits = 3
@@ -194,14 +194,14 @@ fn is_profiling_enabled[type: TraceType, level: TraceLevel]() -> Bool:
 
 
 @always_inline
-fn is_profiling_disabled[type: TraceType, level: TraceLevel]() -> Bool:
+fn is_profiling_disabled[type: TraceCategory, level: TraceLevel]() -> Bool:
     """Returns False if the profiling is enabled for that specific type and
     level and True otherwise."""
     return not is_profiling_enabled[type, level]()
 
 
 @always_inline
-fn _is_nvtx_enabled[type: TraceType, level: TraceLevel]() -> Bool:
+fn _is_nvtx_enabled[type: TraceCategory, level: TraceLevel]() -> Bool:
     """Returns True if the e2e kernel profiling is enabled. Note that we always
     prefer to use llcl profiling if they are enabled."""
     return (
@@ -214,13 +214,13 @@ fn _is_nvtx_enabled[type: TraceType, level: TraceLevel]() -> Bool:
 @always_inline
 fn is_mojo_profiling_enabled[level: TraceLevel]() -> Bool:
     """Returns whether Mojo profiling is enabled for the specified level."""
-    return is_profiling_enabled[TraceType.MAX, level]()
+    return is_profiling_enabled[TraceCategory.MAX, level]()
 
 
 @always_inline
 fn is_mojo_profiling_disabled[level: TraceLevel]() -> Bool:
     """Returns whether Mojo profiling is disabled for the specified level."""
-    return is_profiling_disabled[TraceType.MAX, level]()
+    return is_profiling_disabled[TraceCategory.MAX, level]()
 
 
 @always_inline
@@ -258,7 +258,7 @@ fn trace_arg(name: String, buf: NDBuffer) -> String:
 struct Trace[level: TraceLevel, target: Optional[StringLiteral] = None]:
     """An object representing a specific Mojo trace."""
 
-    alias trace_type = TraceType.MAX
+    alias category = TraceCategory.MAX
 
     var name: StringLiteral
     var int_payload: Optional[Int]
@@ -286,11 +286,11 @@ struct Trace[level: TraceLevel, target: Optional[StringLiteral] = None]:
         self.parent_id = parent_id
 
         @parameter
-        if _is_nvtx_enabled[Self.trace_type, level]():
+        if _is_nvtx_enabled[Self.category, level]():
             self.name = name
             self.detail = ""
             self.int_payload = Optional[Int]()
-        elif is_profiling_enabled[Self.trace_type, level]():
+        elif is_profiling_enabled[Self.category, level]():
             self.name = name
             self.detail = detail
 
@@ -328,11 +328,11 @@ struct Trace[level: TraceLevel, target: Optional[StringLiteral] = None]:
         self.parent_id = parent_id
 
         @parameter
-        if _is_nvtx_enabled[Self.trace_type, level]():
+        if _is_nvtx_enabled[Self.category, level]():
             self.name = name
             self.detail = ""
             self.int_payload = Optional[Int]()
-        elif is_profiling_enabled[Self.trace_type, level]():
+        elif is_profiling_enabled[Self.category, level]():
             self.name = name
             self.detail = detail
 
@@ -355,12 +355,12 @@ struct Trace[level: TraceLevel, target: Optional[StringLiteral] = None]:
         """
 
         @parameter
-        if _is_nvtx_enabled[Self.trace_type, level]():
+        if _is_nvtx_enabled[Self.category, level]():
             self.event_id = int(_start_nvtx_range(message=self.name))
             return
 
         @parameter
-        if is_profiling_disabled[Self.trace_type, level]():
+        if is_profiling_disabled[Self.category, level]():
             return
 
         if self.detail:
@@ -409,12 +409,12 @@ struct Trace[level: TraceLevel, target: Optional[StringLiteral] = None]:
         """
 
         @parameter
-        if _is_nvtx_enabled[Self.trace_type, level]():
+        if _is_nvtx_enabled[Self.category, level]():
             _end_nvtx_range(nvtx.RangeID(self.event_id))
             return
 
         @parameter
-        if is_profiling_disabled[Self.trace_type, level]():
+        if is_profiling_disabled[Self.category, level]():
             return
         if self.event_id == 0:
             return
@@ -438,7 +438,7 @@ struct Trace[level: TraceLevel, target: Optional[StringLiteral] = None]:
         """
 
         @parameter
-        if is_profiling_enabled[Self.trace_type, level]():
+        if is_profiling_enabled[Self.category, level]():
             return detail_fn()
         else:
             return ""
