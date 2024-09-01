@@ -4,6 +4,17 @@
 #
 # ===----------------------------------------------------------------------=== #
 
+from math import ceildiv
+from sys import sizeof
+
+from gpu import WARP_SIZE
+from gpu.host.info import A100
+from layout.tensor_core import (
+    TensorCore,
+    get_accum_type,
+    get_fragment_size,
+    get_mma_shape,
+)
 from utils.index import Index, StaticIntTuple
 
 # ===------------------------------------------------------------------===#
@@ -49,3 +60,153 @@ fn _block_swizzle_by_scale[
     by = by % grid_dim[1]
 
     return Index(bx, by)
+
+
+# ===------------------------------------------------------------------===#
+# GPU Matmul Cofiguration
+# ===------------------------------------------------------------------===#
+
+
+@value
+@register_passable("trivial")
+struct MatmulConfig[
+    a_type: DType, b_type: DType, c_type: DType, transpose_b: Bool = False
+](Stringable, Formattable):
+    """Static configuration of GPU matmul."""
+
+    var block_tile_shape: StaticIntTuple[3]
+
+    var warp_tile_shape: StaticIntTuple[3]
+
+    var num_pipeline_stages: UInt
+
+    alias accum_type = get_accum_type[a_type]()  # TODO: factor b_type
+    alias mma_shape = get_mma_shape[a_type, get_accum_type[a_type]()]()
+
+    fn __init__(
+        inout self,
+        block_tile_shape: StaticIntTuple[3] = Index(128, 128, 32),
+        warp_tile_shape: StaticIntTuple[3] = Index(64, 64, 32),
+        num_pipeline_stages: UInt = 4,
+    ):
+        self.block_tile_shape = block_tile_shape
+        self.warp_tile_shape = warp_tile_shape
+        self.num_pipeline_stages = num_pipeline_stages
+
+    fn num_warps_m(self) -> UInt:
+        return self.block_tile_shape[0] // self.warp_tile_shape[0]
+
+    fn num_warps_n(self) -> UInt:
+        return self.block_tile_shape[1] // self.warp_tile_shape[1]
+
+    fn num_threads(self) -> UInt:
+        return self.num_warps_m() * self.num_warps_n() * WARP_SIZE
+
+    fn shared_mem_usage(self) -> UInt:
+        # fmt: off
+        var a_usage = self.block_tile_shape[0] * self.block_tile_shape[2] * \
+                      self.num_pipeline_stages * sizeof[a_type]()
+        var b_usage = self.block_tile_shape[1] * self.block_tile_shape[2] * \
+                      self.num_pipeline_stages * sizeof[b_type]()
+        var c_usage = self.block_tile_shape[0] * self.block_tile_shape[1] * \
+                      sizeof[Self.accum_type]() if c_type.is_half_float() else 0
+        # fmt: on
+
+        return max(a_usage + b_usage, c_usage)
+
+    fn grid_dim(self, m: UInt, n: UInt, k: UInt) -> StaticIntTuple[3]:
+        return Index(
+            int(ceildiv(n, self.block_tile_shape[1])),
+            int(ceildiv(m, self.block_tile_shape[0])),
+            1,
+        )
+
+    fn block_dim(self) -> StaticIntTuple[3]:
+        return Index(int(self.num_threads()), 1, 1)
+
+    fn __eq__(self, rhs: MatmulConfig) -> Bool:
+        alias static_info_match = a_type == rhs.a_type and b_type == rhs.b_type and c_type == rhs.c_type and transpose_b == rhs.transpose_b
+
+        @parameter
+        if static_info_match:
+            return (
+                self.block_tile_shape == rhs.block_tile_shape
+                and self.num_pipeline_stages == rhs.num_pipeline_stages
+            )
+        else:
+            return False
+
+    fn __str__(self) -> String:
+        return String.format_sequence(self)
+
+    fn format_to(self, inout writer: Formatter):
+        writer.write("ampere_")
+        writer.write(a_type, "_")
+        writer.write(c_type, "_")
+        # Use BNxBM to match cublas
+        writer.write(
+            self.block_tile_shape[1], "x", self.block_tile_shape[0], "_"
+        )
+        writer.write(self.num_pipeline_stages, "_")
+        # transpose A
+        writer.write("N")
+        # transpose B
+        writer.write("T" if transpose_b else "N")
+        writer.write("\n")
+
+
+# Helper for choosing the base of BK based on type.
+# Actual BK should be multiple of BK_base.
+fn _bk_base[type: DType]() -> Int:
+    return 32 if type in (DType.float16, DType.bfloat16) else 16
+
+
+@value
+@register_passable("trivial")
+struct MatmulKernels[
+    a_type: DType, b_type: DType, c_type: DType, transpose_b: Bool = False
+]:
+    """Supported matmul kernels.
+
+    The configurations are named as: <arch>_<BNxBM>_<stages>.
+    BK, mma shape, and warp tile shape are decided internally.
+    """
+
+    alias ampere_128x128_4 = MatmulConfig[a_type, b_type, c_type, transpose_b](
+        block_tile_shape=Index(128, 128, _bk_base[a_type]()),
+        warp_tile_shape=Index(64, 64, _bk_base[a_type]()),
+        num_pipeline_stages=4,
+    )
+
+    alias ampere_256x64_4 = MatmulConfig[a_type, b_type, c_type, transpose_b](
+        block_tile_shape=Index(64, 256, _bk_base[a_type]()),
+        warp_tile_shape=Index(64, 64, _bk_base[a_type]()),
+        num_pipeline_stages=4,
+    )
+
+
+fn select_config[
+    a_type: DType, b_type: DType, c_type: DType, transpose_b: Bool = False
+](M: Int, N: Int, K: Int) -> MatmulConfig[a_type, b_type, c_type, transpose_b]:
+    # A super simple heuristic is to just choose the tile shapes that lead to
+    # min waves. Only support two shapes for now.
+
+    var best_bmnk = Index(128, 128, _bk_base[a_type]())
+    var min_num_waves = ceildiv(
+        ceildiv(M, best_bmnk[0]) * ceildiv(N, best_bmnk[1]), A100.sm_count
+    )
+
+    for bm_bn in List(Index(128, 128), Index(64, 256)):
+        var bm = bm_bn[][0]
+        var bn = bm_bn[][1]
+        var num_waves = ceildiv(ceildiv(M, bm) * ceildiv(N, bn), A100.sm_count)
+        if num_waves < min_num_waves:
+            best_bmnk[0] = bm
+            best_bmnk[1] = bn
+            min_num_waves = num_waves
+
+    return MatmulConfig[a_type, b_type, c_type, transpose_b](
+        block_tile_shape=best_bmnk,
+        warp_tile_shape=Index(64, 64, best_bmnk[2]),
+        num_pipeline_stages=4,
+    )

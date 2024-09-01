@@ -53,6 +53,7 @@ from utils.static_tuple import StaticTuple
 from ._multistage_gemm_gpu import multistage_gemm
 from .utils import GemmShape, apply_epilogue, elementwise_epilogue_type
 from .gemv import gemv_gpu
+from .utils_gpu import MatmulKernels, select_config
 
 
 @always_inline
@@ -808,49 +809,72 @@ fn _matmul_gpu_dispatch[
     @parameter
     if matmul_supported_format and use_tensor_core and b_shape.all_known[2]():
         if multi_gemm_cond:
-            alias num_pipeline_stages = 4
-            alias BM = 128
-            alias BN = 128
-            alias BK = 32 if a_type == DType.bfloat16 else 16
-            alias WM = 64
-            alias WN = 64
-            alias shared_mem_bytes = 80 * 1024
-            alias num_threads = (BM // WM) * (BN // WN) * WARP_SIZE
+            alias kernels = MatmulKernels[a_type, b_type, c_type, transpose_b]()
 
-            alias mgemm = multistage_gemm[
-                c_type,
-                c_shape,
-                a_type,
-                a_shape,
-                b_type,
-                b_shape,
-                transpose_b,
-                BM,
-                BN,
-                BK,
-                WM,
-                WN,
-                num_threads,
-                num_pipeline_stages,
-                elementwise_lambda_fn,
-            ]
-            # TODO: The cache config doesn't really help here, see #38391.
+            var best_config = select_config[
+                a_type, b_type, c_type, transpose_b
+            ](m, n, k)
 
-            var multistage_func = ctx.compile_function[mgemm](
-                threads_per_block=num_threads,
-                func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-                    shared_mem_bytes
-                ),
-            )
-            ctx.enqueue_function(
-                multistage_func,
-                c,
-                a,
-                b,
-                grid_dim=(ceildiv(n, BN), ceildiv(m, BM), 1),
-                block_dim=(num_threads, 1, 1),
-                shared_mem_bytes=shared_mem_bytes,
-            )
+            if best_config == kernels.ampere_256x64_4:
+                alias config = kernels.ampere_256x64_4
+                alias mgemm = multistage_gemm[
+                    c_type,
+                    c_shape,
+                    a_type,
+                    a_shape,
+                    b_type,
+                    b_shape,
+                    transpose_b,
+                    config,
+                    elementwise_lambda_fn,
+                ]
+                # TODO: The cache config doesn't really help here, see #38391.
+
+                var multistage_func = ctx.compile_function[mgemm](
+                    threads_per_block=int(config.num_threads()),
+                    func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
+                        config.shared_mem_usage()
+                    ),
+                )
+                ctx.enqueue_function(
+                    multistage_func,
+                    c,
+                    a,
+                    b,
+                    grid_dim=config.grid_dim(m, n, k),
+                    block_dim=config.block_dim(),
+                    shared_mem_bytes=config.shared_mem_usage(),
+                )
+            else:  # Default kernel 128x128_4
+                alias config = kernels.ampere_128x128_4
+                alias mgemm = multistage_gemm[
+                    c_type,
+                    c_shape,
+                    a_type,
+                    a_shape,
+                    b_type,
+                    b_shape,
+                    transpose_b,
+                    config,
+                    elementwise_lambda_fn,
+                ]
+
+                var multistage_func = ctx.compile_function[mgemm](
+                    threads_per_block=int(config.num_threads()),
+                    func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
+                        config.shared_mem_usage()
+                    ),
+                )
+                ctx.enqueue_function(
+                    multistage_func,
+                    c,
+                    a,
+                    b,
+                    grid_dim=config.grid_dim(m, n, k),
+                    block_dim=config.block_dim(),
+                    shared_mem_bytes=config.shared_mem_usage(),
+                )
+
             return
 
     # Dispatch bouble buffer gemm for FP32, constant B, and certain shapes.

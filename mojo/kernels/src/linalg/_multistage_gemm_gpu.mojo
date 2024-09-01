@@ -53,7 +53,7 @@ from utils.index import Index
 
 from .matmul_gpu import matmul_kernel_naive
 from .utils import apply_epilogue, elementwise_epilogue_type
-from .utils_gpu import block_swizzle
+from .utils_gpu import block_swizzle, MatmulConfig, MatmulKernels
 
 
 @always_inline
@@ -551,13 +551,7 @@ fn multistage_gemm[
     b_type: DType,
     b_shape: DimList,
     transpose_b: Bool,
-    BM: UInt,
-    BN: UInt,
-    BK: UInt,
-    WM: UInt,
-    WN: UInt,
-    num_threads: UInt,
-    num_pipeline_stages: UInt,
+    config: MatmulConfig[a_type, b_type, c_type, transpose_b],
     elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
 ](
     c: NDBuffer[c_type, 2, c_shape],
@@ -571,25 +565,28 @@ fn multistage_gemm[
         "Pipeline gemm only supports tf32 or BF16 mma",
     ]()
 
-    constrained[
-        (BK == 16 and a_type == DType.float32)
-        or (BK == 32 and a_type == DType.bfloat16),
-        "Pipeline gemm only supports BK = 16 w/ FP32 and BK = 32 w/ BF16.",
-    ]()
-
     alias simd_size = simdwidthof[c_type]()
 
     var M: UInt = c.dim[0]()
     alias N: UInt = b_shape.get[0]() if transpose_b else b_shape.get[1]()
     alias K: UInt = b_shape.get[1]() if transpose_b else b_shape.get[0]()
 
-    alias num_warps_m = BM // WM
-    alias num_warps_n = BN // WN
+    alias BM = config.block_tile_shape[0]
+    alias BN = config.block_tile_shape[1]
+    alias BK = config.block_tile_shape[2]
+    alias WM = config.warp_tile_shape[0]
+    alias WN = config.warp_tile_shape[1]
+    alias num_pipeline_stages = config.num_pipeline_stages
 
     constrained[
-        num_warps_m * num_warps_n == num_threads // WARP_SIZE,
-        "Number of warps doesn't match warp tile sizes.",
+        (BK == 16 and a_type == DType.float32)
+        or (BK == 32 and a_type == DType.bfloat16),
+        "Pipeline gemm only supports BK = 16 w/ FP32 and BK = 32 w/ BF16.",
     ]()
+
+    alias num_warps_m = config.num_warps_m()
+    alias num_warps_n = config.num_warps_n()
+    alias num_threads = config.num_threads()
 
     var tid = ThreadIdx.x()
     var ln_id = lane_id()
