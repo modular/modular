@@ -489,6 +489,10 @@ struct Function[
         alias _impl = Self._impl
         alias fn_name = _impl.function_name
 
+        # Set the current context in case this is called outside the main
+        # thread.
+        device_context_ptr[].cuda_context.set_current()
+
         var cuda_dll = device_context_ptr[].cuda_instance.cuda_dll
 
         var module = Module(

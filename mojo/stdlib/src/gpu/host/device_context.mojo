@@ -232,7 +232,6 @@ struct DeviceFunction[
         func_attribute: Optional[FuncAttribute] = None,
     ) raises:
         self.ctx_ptr = UnsafePointer[DeviceContext].address_of(ctx)
-        self.ctx_ptr[].cuda_context.set_current()
         self.cuda_function = Function[
             func,
             dump_ptx=dump_ptx,
