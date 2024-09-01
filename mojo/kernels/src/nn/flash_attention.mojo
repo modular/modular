@@ -923,7 +923,7 @@ fn flash_attention_split_kv[
         )
 
     with Trace[TraceLevel.OP, target="cpu"](
-        "mojo.flash_attention_split_kv",
+        "flash_attention_split_kv",
         Trace[TraceLevel.OP]._get_detail_str[description_fn](),
     ):
         alias kv_rank = rank + 1

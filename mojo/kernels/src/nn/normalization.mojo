@@ -791,7 +791,7 @@ fn layer_norm[
         return trace_arg("input", shape, type)
 
     with Trace[TraceLevel.OP](
-        "mojo.layer_norm",
+        "layer_norm",
         Trace[TraceLevel.OP]._get_detail_str[description_fn](),
     ):
 

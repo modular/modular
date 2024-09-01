@@ -1301,7 +1301,7 @@ fn concat[
 ) raises:
     constrained[target == "cpu" or "cuda" in target, "not a valid target"]()
 
-    with Trace[TraceLevel.OP, target=target]("mojo.concat"):
+    with Trace[TraceLevel.OP, target=target]("concat"):
 
         @parameter
         if target == "cpu":

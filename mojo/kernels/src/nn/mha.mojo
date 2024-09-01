@@ -100,7 +100,7 @@ fn fused_attention[
 
     constrained[rank == 3 or rank == 4, "Only support rank 3 and 4."]()
 
-    with Trace[TraceLevel.OP, target="cpu"]("mojo.fused_attention"):
+    with Trace[TraceLevel.OP, target="cpu"]("fused_attention"):
         alias simd_size = simdwidthof[output_type]()
 
         var score_size: Int
@@ -243,7 +243,7 @@ fn flash_attention[
         )
 
     with Trace[TraceLevel.OP, target=target](
-        "mojo.flash_attention",
+        "flash_attention",
         Trace[TraceLevel.OP, target=target]._get_detail_str[description_fn](),
     ):
         return flash_attention[

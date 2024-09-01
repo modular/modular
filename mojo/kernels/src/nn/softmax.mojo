@@ -839,7 +839,7 @@ fn softmax[
         return trace_arg("input", shape, type)
 
     with Trace[TraceLevel.OP, target=target](
-        "mojo.softmax",
+        "softmax",
         Trace[TraceLevel.OP]._get_detail_str[trace_information](),
     ):
 

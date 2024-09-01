@@ -1311,7 +1311,7 @@ fn conv_transposed[
         )
 
     with Trace[TraceLevel.OP, target="cpu"](
-        "mojo.conv_transposed",
+        "conv_transposed",
         Trace[TraceLevel.OP]._get_detail_str[description_fn](),
     ):
         alias packed_filter_rank = filter_rank if filter_packed else filter_rank + 1

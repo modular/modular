@@ -2896,7 +2896,7 @@ fn conv_nhwc_direct[
         )
 
     with Trace[TraceLevel.OP, target="cpu"](
-        "mojo.conv",
+        "conv",
         Trace[TraceLevel.OP]._get_detail_str[description_fn](),
     ):
         var conv_shape = get_conv_shape[input_rank - 2, filter_packed](
