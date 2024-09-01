@@ -5,6 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from collections import InlineArray, Optional
+from math import ceildiv
 from os import abort
 from sys import alignof, prefetch, simdwidthof, sizeof
 from sys.intrinsics import PrefetchOptions
@@ -2101,6 +2102,7 @@ struct LayoutTensor[
         src_element_layout: Layout,
         *,
         masked: Bool = False,
+        swizzle: Optional[SwizzleEx] = None,
         fill: Fill = Fill.NONE,
     ](
         self,
@@ -2111,6 +2113,7 @@ struct LayoutTensor[
             element_layout=src_element_layout,
         ],
         src_idx_bound: Int = UNKNOWN_VALUE,
+        base_offset: Int = UNKNOWN_VALUE,
     ):
         constrained[
             self.address_space == _GPUAddressSpace.SHARED,
@@ -2168,33 +2171,64 @@ struct LayoutTensor[
             and coalesce_dst_element_layout.rank() == 1
             and coalesce_dst_element_layout.stride[0] == 1
         ):
+            # Swizzle does `^bits`. Every 2^bits rows is xor-ed with the same binary number.
+            # For vectors within 2^bits, we swizzle each of them.
+            alias num_vecs_per_swizzle = ceildiv(
+                swizzle.value().size(),
+                layout.stride[0].value() // self.element_size,
+            ) if swizzle.__bool__() and layout.size() > 1 else 1
 
             @parameter
-            for i in range(dst_size):
-                var src_idx = 0
+            for j in range(num_vecs_per_swizzle):
+                alias dst_offset = layout(j)
+                var swizzled_offset = dst_offset
 
-                # only get index like this when it is vectorized form
-                alias src_static_idx = src_layout(i)
-                alias dst_idx = self.layout(i)
-
+                # Swizzle each vector within the first 2^bits rows.
                 @parameter
-                if src_dims_known:
-                    src_idx = src_static_idx
-                else:
-                    src_idx = src.runtime_layout(i)
-
-                @parameter
-                if masked:
-                    var src_copy_size = element_size_bytes if src_idx < src_idx_bound else 0
-                    async_copy[element_size_bytes, fill=fill](
-                        src_ptr + src_idx, dst_ptr + dst_idx, src_copy_size
-                    )
-                else:
-                    async_copy[element_size_bytes, fill=fill](
-                        src_ptr + src_idx, dst_ptr + dst_idx
+                if swizzle:
+                    alias swizzle_fn = swizzle.value()
+                    swizzled_offset = (
+                        swizzle_fn(
+                            (base_offset + dst_offset) // self.element_size
+                        )
+                        * self.element_size
+                        - base_offset
                     )
 
+                # Group vectors that are more than (multiple of) 2^bits rows part.
+                # The vector's idx is swizzled_offset + distance to the first vector
+                # in the group, which is within the first 2^bits rows.
+                @parameter
+                for i in range(j, dst_size, num_vecs_per_swizzle):
+                    var src_idx = 0
+
+                    # only get index like this when it is vectorized form
+                    alias src_static_idx = src_layout(i)
+                    alias dst_distance = layout(i) - layout(j)
+
+                    @parameter
+                    if src_dims_known:
+                        src_idx = src_static_idx
+                    else:
+                        src_idx = src.runtime_layout(i)
+
+                    var dst_idx = swizzled_offset + dst_distance
+
+                    @parameter
+                    if masked:
+                        var src_copy_size = element_size_bytes if src_idx < src_idx_bound else 0
+                        async_copy[element_size_bytes, fill=fill](
+                            src_ptr + src_idx, dst_ptr + dst_idx, src_copy_size
+                        )
+                    else:
+                        async_copy[element_size_bytes, fill=fill](
+                            src_ptr + src_idx, dst_ptr + dst_idx
+                        )
+
+        # Async copy should only be used for 16B vector for bypassing L1.
+        # Scalar path is only for kernel tests.
         else:
+            constrained[not swizzle, "Should not swizzle scalar copy."]()
 
             @parameter
             for i in range(dst_size * dst_element_size):
@@ -2222,6 +2256,7 @@ struct LayoutTensor[
         src_element_layout: Layout,
         *,
         fill: Fill = Fill.NONE,
+        swizzle: Optional[SwizzleEx] = None,
     ](
         self,
         src: LayoutTensor[
@@ -2233,6 +2268,7 @@ struct LayoutTensor[
         offset: Int,
         rows: Int,
         cols: Int,
+        base_offset: Int = UNKNOWN_VALUE,
     ):
         constrained[
             self.address_space == _GPUAddressSpace.SHARED,
@@ -2286,25 +2322,47 @@ struct LayoutTensor[
             and coalesce_dst_element_layout.rank() == 1
             and coalesce_dst_element_layout.stride[0] == 1
         ):
+            alias num_vecs_per_swizzle = ceildiv(
+                swizzle.value().size(),
+                layout.stride[0].value() // self.element_size,
+            ) if swizzle.__bool__() and layout.size() > 1 else 1
 
             @parameter
-            for i in range(dst_size):
-                var src_idx = 0
+            for j in range(num_vecs_per_swizzle):
+                alias dst_offset = layout(j)
+                var swizzled_offset = dst_offset
 
-                # only get index like this when it is vectorized form
-                alias src_static_idx = src_layout(i)
-                alias dst_idx = self.layout(i)
+                # Swizzle each vector within the first 2^bits rows.
+                @parameter
+                if swizzle:
+                    alias swizzle_fn = swizzle.value()
+                    swizzled_offset = (
+                        swizzle_fn(
+                            (base_offset + dst_offset) // self.element_size
+                        )
+                        * self.element_size
+                        - base_offset
+                    )
 
                 @parameter
-                if src_layout.all_dims_known():
-                    src_idx = src_static_idx
-                else:
-                    src_idx = src.runtime_layout(i)
+                for i in range(j, dst_size, num_vecs_per_swizzle):
+                    alias src_static_idx = src_layout(i)
+                    var src_idx = 0
 
-                if offset + src_idx < rows * cols:
-                    async_copy[element_size_bytes, fill=fill](
-                        src_ptr + src_idx, dst_ptr + dst_idx
-                    )
+                    @parameter
+                    if src_layout.all_dims_known():
+                        src_idx = src_static_idx
+                    else:
+                        src_idx = src.runtime_layout(i)
+
+                    alias dst_distance = layout(i) - layout(j)
+
+                    var dst_idx = swizzled_offset + dst_distance
+
+                    if offset + src_idx < rows * cols:
+                        async_copy[element_size_bytes, fill=fill](
+                            src_ptr + src_idx, dst_ptr + dst_idx
+                        )
         else:
 
             @parameter
@@ -2543,13 +2601,15 @@ fn copy_dram_to_sram_async[
     )
 
     var src_fragments = src.distribute[src_thread_layout](ThreadIdx.x())
-    var dst_fragments = dst.distribute[
-        dst_thread_layout, swizzle=swizzle_option
-    ](ThreadIdx.x())
+    var dst_fragments = dst.distribute[dst_thread_layout](ThreadIdx.x())
+
+    var dst_frag_offset = dst_fragments.distance(dst.ptr) if swizzle else 0
 
     @parameter
     if not masked:
-        dst_fragments.copy_from_async(src_fragments)
+        dst_fragments.copy_from_async[swizzle=swizzle_option](
+            src_fragments, base_offset=dst_frag_offset
+        )
     else:
         constrained[
             src_layout.stride[1].value() == src.element_size
@@ -2559,7 +2619,11 @@ fn copy_dram_to_sram_async[
         var src_frag_offset = src_fragments.distance(src.ptr)
         alias stride = src_layout.stride[0].value()
         var src_idx_bound = num_rows * stride - src_frag_offset
-        dst_fragments.copy_from_async[masked=True](src_fragments, src_idx_bound)
+        dst_fragments.copy_from_async[masked=True, swizzle=swizzle_option](
+            src_fragments,
+            src_idx_bound=src_idx_bound,
+            base_offset=dst_frag_offset,
+        )
 
 
 # Asynchronous copy from DRAM -> SRAM, this requires w/r thread affinity mapping.
@@ -2610,16 +2674,18 @@ fn copy_dram_to_sram_async[
         ),
     ]()
 
+    var src_fragments = src.distribute[src_thread_layout](ThreadIdx.x())
+    var dst_fragments = dst.distribute[dst_thread_layout](ThreadIdx.x())
+
     alias swizzle_option = None if not swizzle else (
         Optional[SwizzleEx](make_ldmatrix_swizzleex[dtype, row_size]())
     )
-    var src_fragments = src.distribute[src_thread_layout](ThreadIdx.x())
-    var dst_fragments = dst.distribute[
-        dst_thread_layout, swizzle=swizzle_option
-    ](ThreadIdx.x())
+
     var thread_offset = offset + src_fragments.distance(src.ptr)
-    dst_fragments.copy_from_async_masked_src(
-        src_fragments, thread_offset, rows, cols
+    var dst_frag_offset = dst_fragments.distance(dst.ptr) if swizzle else 0
+
+    dst_fragments.copy_from_async_masked_src[swizzle=swizzle_option](
+        src_fragments, thread_offset, rows, cols, base_offset=dst_frag_offset
     )
 
 
