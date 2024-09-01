@@ -158,10 +158,7 @@ fn key_cache_for_layer_h8_d128_bshd_bf16(
             num_heads=8, head_size=128, layout=KVCacheLayout.BSHD
         ),
     ],
-) -> ContiguousKVCache[
-    DType.bfloat16,
-    KVCacheStaticParams(num_heads=8, head_size=128, layout=KVCacheLayout.BSHD),
-]:
+) -> ContiguousKVCache[kv_collection.type, kv_collection.kv_params]:
     return _key_cache_for_layer(layer_idx, kv_collection)
 
 
@@ -175,10 +172,7 @@ fn key_cache_for_layer_h6_d48_bshd_f32(
             num_heads=6, head_size=48, layout=KVCacheLayout.BSHD
         ),
     ],
-) -> ContiguousKVCache[
-    DType.float32,
-    KVCacheStaticParams(num_heads=6, head_size=48, layout=KVCacheLayout.BSHD),
-]:
+) -> ContiguousKVCache[kv_collection.type, kv_collection.kv_params]:
     return _key_cache_for_layer(layer_idx, kv_collection)
 
 
@@ -192,10 +186,7 @@ fn key_cache_for_layer_h6_d48_bhsd_f32(
             num_heads=6, head_size=48, layout=KVCacheLayout.BHSD
         ),
     ],
-) -> ContiguousKVCache[
-    DType.float32,
-    KVCacheStaticParams(num_heads=6, head_size=48, layout=KVCacheLayout.BHSD),
-]:
+) -> ContiguousKVCache[kv_collection.type, kv_collection.kv_params]:
     return _key_cache_for_layer(layer_idx, kv_collection)
 
 
@@ -226,10 +217,7 @@ fn key_cache_for_layer_h8_d128_bhsd_f32(
             num_heads=8, head_size=128, layout=KVCacheLayout.BHSD
         ),
     ],
-) -> ContiguousKVCache[
-    DType.float32,
-    KVCacheStaticParams(num_heads=8, head_size=128, layout=KVCacheLayout.BHSD),
-]:
+) -> ContiguousKVCache[kv_collection.type, kv_collection.kv_params]:
     return _key_cache_for_layer(layer_idx, kv_collection)
 
 
@@ -254,10 +242,7 @@ fn value_cache_for_layer_h8_d128_bshd_bf16(
             num_heads=8, head_size=128, layout=KVCacheLayout.BSHD
         ),
     ],
-) -> ContiguousKVCache[
-    DType.bfloat16,
-    KVCacheStaticParams(num_heads=8, head_size=128, layout=KVCacheLayout.BSHD),
-]:
+) -> ContiguousKVCache[kv_collection.type, kv_collection.kv_params]:
     return _value_cache_for_layer(layer_idx, kv_collection)
 
 
@@ -271,10 +256,7 @@ fn value_cache_for_layer_h8_d128_bhsd_bf16(
             num_heads=8, head_size=128, layout=KVCacheLayout.BHSD
         ),
     ],
-) -> ContiguousKVCache[
-    DType.bfloat16,
-    KVCacheStaticParams(num_heads=8, head_size=128, layout=KVCacheLayout.BHSD),
-]:
+) -> ContiguousKVCache[kv_collection.type, kv_collection.kv_params]:
     return _value_cache_for_layer(layer_idx, kv_collection)
 
 
@@ -288,10 +270,7 @@ fn value_cache_for_layer_h6_d48_bshd_f32(
             num_heads=6, head_size=48, layout=KVCacheLayout.BSHD
         ),
     ],
-) -> ContiguousKVCache[
-    DType.float32,
-    KVCacheStaticParams(num_heads=6, head_size=48, layout=KVCacheLayout.BSHD),
-]:
+) -> ContiguousKVCache[kv_collection.type, kv_collection.kv_params]:
     return _value_cache_for_layer(layer_idx, kv_collection)
 
 
@@ -322,10 +301,7 @@ fn value_cache_for_layer_h8_d128_bshd_f32(
             num_heads=8, head_size=128, layout=KVCacheLayout.BSHD
         ),
     ],
-) -> ContiguousKVCache[
-    DType.float32,
-    KVCacheStaticParams(num_heads=8, head_size=128, layout=KVCacheLayout.BSHD),
-]:
+) -> ContiguousKVCache[kv_collection.type, kv_collection.kv_params]:
     return _value_cache_for_layer(layer_idx, kv_collection)
 
 
@@ -339,10 +315,7 @@ fn value_cache_for_layer_h8_d128_bhsd_f32(
             num_heads=8, head_size=128, layout=KVCacheLayout.BHSD
         ),
     ],
-) -> ContiguousKVCache[
-    DType.float32,
-    KVCacheStaticParams(num_heads=8, head_size=128, layout=KVCacheLayout.BHSD),
-]:
+) -> ContiguousKVCache[kv_collection.type, kv_collection.kv_params]:
     return _value_cache_for_layer(layer_idx, kv_collection)
 
 
@@ -373,10 +346,7 @@ fn matmul_kv_cache_h6_d48_bshd[
         ),
     ],
     ctx: MojoCallContextPtr,
-) -> ContiguousKVCache[
-    type,
-    KVCacheStaticParams(num_heads=6, head_size=48, layout=KVCacheLayout.BSHD),
-]:
+) -> ContiguousKVCache[cache.type, cache.kv_params]:
     """Performs a matmul, writing the output into a mutable ContiguousKVCache object.
 
     Args:
@@ -407,10 +377,7 @@ fn matmul_kv_cache_h6_d48_bhsd[
         ),
     ],
     ctx: MojoCallContextPtr,
-) -> ContiguousKVCache[
-    type,
-    KVCacheStaticParams(num_heads=6, head_size=48, layout=KVCacheLayout.BHSD),
-]:
+) -> ContiguousKVCache[cache.type, cache.kv_params]:
     """Performs a matmul, writing the output into a mutable ContiguousKVCache object.
 
     Args:
@@ -441,10 +408,7 @@ fn matmul_kv_cache_h8_d128_bshd[
         ),
     ],
     ctx: MojoCallContextPtr,
-) -> ContiguousKVCache[
-    type,
-    KVCacheStaticParams(num_heads=8, head_size=128, layout=KVCacheLayout.BSHD),
-]:
+) -> ContiguousKVCache[type, cache.kv_params]:
     """Performs a matmul, writing the output into a mutable ContiguousKVCache object.
 
     Args:
@@ -475,10 +439,7 @@ fn matmul_kv_cache_h8_d128_bhsd[
         ),
     ],
     ctx: MojoCallContextPtr,
-) -> ContiguousKVCache[
-    type,
-    KVCacheStaticParams(num_heads=8, head_size=128, layout=KVCacheLayout.BHSD),
-]:
+) -> ContiguousKVCache[type, cache.kv_params]:
     """Performs a matmul, writing the output into a mutable ContiguousKVCache object.
 
     Args:
@@ -599,12 +560,7 @@ fn fused_qkv_matmul_kv_cache_h6_d48_bshd[
             num_heads=6, head_size=48, layout=KVCacheLayout.BSHD
         ),
     ],
-    v_cache: ContiguousKVCache[
-        type,
-        KVCacheStaticParams(
-            num_heads=6, head_size=48, layout=KVCacheLayout.BSHD
-        ),
-    ],
+    v_cache: ContiguousKVCache[type, k_cache.kv_params],
     output: NDBuffer[type, 3, output_shape],
     ctx: MojoCallContextPtr,
 ):
@@ -647,12 +603,7 @@ fn fused_qkv_matmul_kv_cache_h6_d48_bhsd[
             num_heads=6, head_size=48, layout=KVCacheLayout.BHSD
         ),
     ],
-    v_cache: ContiguousKVCache[
-        type,
-        KVCacheStaticParams(
-            num_heads=6, head_size=48, layout=KVCacheLayout.BHSD
-        ),
-    ],
+    v_cache: ContiguousKVCache[type, k_cache.kv_params],
     output: NDBuffer[type, 3, output_shape],
     ctx: MojoCallContextPtr,
 ):
@@ -695,12 +646,7 @@ fn fused_qkv_matmul_kv_cache_h8_d128_bshd[
             num_heads=8, head_size=128, layout=KVCacheLayout.BSHD
         ),
     ],
-    v_cache: ContiguousKVCache[
-        type,
-        KVCacheStaticParams(
-            num_heads=8, head_size=128, layout=KVCacheLayout.BSHD
-        ),
-    ],
+    v_cache: ContiguousKVCache[type, k_cache.kv_params],
     output: NDBuffer[type, 3, output_shape],
     ctx: MojoCallContextPtr,
 ):
@@ -743,12 +689,7 @@ fn fused_qkv_matmul_kv_cache_h8_d128_bhsd[
             num_heads=8, head_size=128, layout=KVCacheLayout.BHSD
         ),
     ],
-    v_cache: ContiguousKVCache[
-        type,
-        KVCacheStaticParams(
-            num_heads=8, head_size=128, layout=KVCacheLayout.BHSD
-        ),
-    ],
+    v_cache: ContiguousKVCache[type, k_cache.kv_params],
     output: NDBuffer[type, 3, output_shape],
     ctx: MojoCallContextPtr,
 ):
@@ -1199,12 +1140,7 @@ fn flash_attention_kv_cache_h6_d48_bshd[
             num_heads=6, head_size=48, layout=KVCacheLayout.BSHD
         ),
     ],
-    v: ContiguousKVCache[
-        type,
-        KVCacheStaticParams(
-            num_heads=6, head_size=48, layout=KVCacheLayout.BSHD
-        ),
-    ],
+    v: ContiguousKVCache[type, k.kv_params],
     mask: NDBuffer[type, 2, *_],
     scale: NDBuffer[DType.float32, 1, *_],
     output: NDBuffer[type, 4, *_],
@@ -1231,12 +1167,7 @@ fn flash_attention_kv_cache_h6_d48_bhsd[
             num_heads=6, head_size=48, layout=KVCacheLayout.BHSD
         ),
     ],
-    v: ContiguousKVCache[
-        type,
-        KVCacheStaticParams(
-            num_heads=6, head_size=48, layout=KVCacheLayout.BHSD
-        ),
-    ],
+    v: ContiguousKVCache[type, k.kv_params],
     mask: NDBuffer[type, 2, *_],
     scale: NDBuffer[DType.float32, 1, *_],
     output: NDBuffer[type, 4, *_],
@@ -1263,12 +1194,7 @@ fn flash_attention_kv_cache_h8_d128_bshd[
             num_heads=8, head_size=128, layout=KVCacheLayout.BSHD
         ),
     ],
-    v: ContiguousKVCache[
-        type,
-        KVCacheStaticParams(
-            num_heads=8, head_size=128, layout=KVCacheLayout.BSHD
-        ),
-    ],
+    v: ContiguousKVCache[type, k.kv_params],
     mask: NDBuffer[type, *_],
     scale: NDBuffer[DType.float32, 1, *_],
     output: NDBuffer[type, 4, *_],
@@ -1295,12 +1221,7 @@ fn flash_attention_kv_cache_h8_d128_bhsd[
             num_heads=8, head_size=128, layout=KVCacheLayout.BHSD
         ),
     ],
-    v: ContiguousKVCache[
-        type,
-        KVCacheStaticParams(
-            num_heads=8, head_size=128, layout=KVCacheLayout.BHSD
-        ),
-    ],
+    v: ContiguousKVCache[type, k.kv_params],
     mask: NDBuffer[type, *_],
     scale: NDBuffer[DType.float32, 1, *_],
     output: NDBuffer[type, 4, *_],
