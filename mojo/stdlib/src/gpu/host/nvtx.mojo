@@ -20,9 +20,10 @@ alias CUDA_NVTX_LIBRARY_PATH = "/usr/local/cuda/lib64/libnvToolsExt.so"
 
 
 alias _TraceType_OTHER = 0
-alias _TraceType_AsyncRT = 1
+alias _TraceType_ASYNCRT = 1
 alias _TraceType_MEM = 2
-alias _TraceType_MAX = 3
+alias _TraceType_KERNEL = 3
+alias _TraceType_MAX = 4
 
 
 @always_inline
@@ -38,8 +39,9 @@ fn _setup_categories(
     name_category: fn (UInt32, UnsafePointer[UInt8]) -> NoneType
 ):
     _setup_category(name_category, _TraceType_OTHER, "Other")
-    _setup_category(name_category, _TraceType_AsyncRT, "AsyncRT")
+    _setup_category(name_category, _TraceType_ASYNCRT, "AsyncRT")
     _setup_category(name_category, _TraceType_MEM, "Memory")
+    _setup_category(name_category, _TraceType_KERNEL, "Kernel")
     _setup_category(name_category, _TraceType_MAX, "Max")
 
 
@@ -91,7 +93,7 @@ struct Color:
     var _value: Int
 
     alias FORMAT = 1  # ARGB
-    alias DEFAULT = Self(0xB5BAF5)
+    alias MODULAR_MAX = Self(0xB5BAF5)
     alias BLUE = Self(0x0000FF)
     alias GREEN = Self(0x008000)
     alias ORANGE = Self(0xFFA500)
@@ -138,23 +140,43 @@ struct _C_EventAttributes:
     """Message assigned to this attribute structure."""
 
 
+@always_inline
+fn color_from_category(category: Int) -> Color:
+    if category == _TraceType_MAX:
+        return Color.MODULAR_MAX
+    if category == _TraceType_KERNEL:
+        return Color.GREEN
+    if category == _TraceType_ASYNCRT:
+        return Color.ORANGE
+    if category == _TraceType_MEM:
+        return Color.RED
+    return Color.PURPLE
+
+
 @register_passable
 struct EventAttributes:
     var _value: _C_EventAttributes
 
+    @always_inline
     fn __init__(
         inout self,
         *,
         message: String = "",
-        color: Color = Color.DEFAULT,
+        category: Int = _TraceType_MAX,
+        color: Optional[Color] = None,
     ):
         alias ASCII = 1
+        var resolved_color: Color
+        if color:
+            resolved_color = color.value()
+        else:
+            resolved_color = color_from_category(category)
         self._value = _C_EventAttributes(
             version=NVTXVersion,
             size=sizeof[_C_EventAttributes](),
-            category=_TraceType_MAX,
+            category=category,
             color_type=Color.FORMAT,
-            color=int(color),
+            color=int(resolved_color),
             payload_type=0,
             _reserved=0,
             event_payload=0,
@@ -204,9 +226,12 @@ alias _nvtxRangePop = _dylib_function["nvtxRangePop", fn () -> Int32]
 
 @always_inline
 fn _start_range(
-    *, message: String = "", color: Color = Color.DEFAULT
+    *,
+    message: String = "",
+    category: Int = _TraceType_MAX,
+    color: Optional[Color] = None,
 ) -> RangeID:
-    var info = EventAttributes(message=message, color=color)
+    var info = EventAttributes(message=message, color=color, category=category)
     var value = info._value
     var id = _nvtxRangeStartEx.load()(UnsafePointer.address_of(value))
     _ = value
@@ -219,8 +244,13 @@ fn _end_range(id: RangeID):
 
 
 @always_inline
-fn _mark(*, message: String = "", color: Color = Color.DEFAULT):
-    var info = EventAttributes(message=message, color=color)
+fn _mark(
+    *,
+    message: String = "",
+    color: Optional[Color] = None,
+    category: Int = _TraceType_MAX,
+):
+    var info = EventAttributes(message=message, color=color, category=category)
     var value = info._value
     _nvtxMarkEx.load()(UnsafePointer.address_of(value))
     _ = value
@@ -234,9 +264,15 @@ struct Range:
     var _end_fn: fn (RangeID) -> NoneType
 
     fn __init__(
-        inout self, *, message: String = "", color: Color = Color.DEFAULT
+        inout self,
+        *,
+        message: String = "",
+        color: Optional[Color] = None,
+        category: Int = _TraceType_MAX,
     ):
-        self._info = EventAttributes(message=message, color=color)
+        self._info = EventAttributes(
+            message=message, color=color, category=category
+        )
         self._id = 0
         self._start_fn = _nvtxRangeStartEx.load()
         self._end_fn = _nvtxRangeEnd.load()
@@ -257,7 +293,12 @@ struct Range:
 
     @staticmethod
     @always_inline
-    fn mark(*, message: String = "", color: Color = Color.DEFAULT):
+    fn mark(
+        *,
+        message: String = "",
+        color: Optional[Color] = None,
+        category: Int = _TraceType_MAX,
+    ):
         _mark(message=message, color=color)
 
 
@@ -267,8 +308,16 @@ struct RangeStack:
     var _push_fn: fn (UnsafePointer[_C_EventAttributes]) -> Int32
     var _pop_fn: fn () -> Int32
 
-    fn __init__(inout self, *, message: String = "", color: Color = Color.BLUE):
-        self._info = EventAttributes(message=message, color=color)
+    fn __init__(
+        inout self,
+        *,
+        message: String = "",
+        color: Optional[Color] = None,
+        category: Int = _TraceType_MAX,
+    ):
+        self._info = EventAttributes(
+            message=message, color=color, category=category
+        )
         self._push_fn = _nvtxRangePushEx.load()
         self._pop_fn = _nvtxRangePop.load()
 
