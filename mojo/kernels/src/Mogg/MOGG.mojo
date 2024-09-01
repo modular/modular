@@ -2165,12 +2165,6 @@ fn matmul[
         )
 
     _matmul[
-        a_type,
-        input_0_static_shape,
-        b_type,
-        input_1_static_shape,
-        c_type,
-        input_2_static_shape,
         transpose_a,
         transpose_b,
         b_packed,
@@ -2180,12 +2174,7 @@ fn matmul[
         saturated_vnni=False,
         single_thread_blocking_override=single_thread_blocking_override,
         target=target,
-    ](
-        c,
-        a,
-        b,
-        ctx,
-    )
+    ](c, a, b, ctx)
 
 
 # ===----------------------------------------------------------------------===#
