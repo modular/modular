@@ -158,6 +158,14 @@ alias _nvtxRangeStartEx = _dylib_function[
 # NVTX_DECLSPEC void NVTX_API nvtxRangeEnd(nvtxRangeId_t id);
 alias _nvtxRangeEnd = _dylib_function["nvtxRangeEnd", fn (RangeID) -> NoneType]
 
+# NVTX_DECLSPEC int NVTX_API nvtxRangePushEx(const nvtxEventAttributes_t* eventAttrib);
+alias _nvtxRangePushEx = _dylib_function[
+    "nvtxRangePushEx", fn (UnsafePointer[_C_EventAttributes]) -> Int32
+]
+
+# NVTX_DECLSPEC int NVTX_API nvtxRangePop(void);
+alias _nvtxRangePop = _dylib_function["nvtxRangePop", fn () -> Int32]
+
 
 # ===----------------------------------------------------------------------===#
 # Functions
@@ -202,3 +210,23 @@ struct Range:
         var info = EventAttributes(message=message, color=color)
         _nvtxMarkEx.load()(UnsafePointer.address_of(info._value))
         _ = info^
+
+
+struct RangeStack:
+    var _info: EventAttributes
+
+    var _push_fn: fn (UnsafePointer[_C_EventAttributes]) -> Int32
+    var _pop_fn: fn () -> Int32
+
+    fn __init__(inout self, *, message: String = "", color: Color = Color.BLUE):
+        self._info = EventAttributes(message=message, color=color)
+        self._push_fn = _nvtxRangePushEx.load()
+        self._pop_fn = _nvtxRangePop.load()
+
+    @always_inline
+    fn __enter__(inout self):
+        _ = self._push_fn(UnsafePointer.address_of(self._info._value))
+
+    @always_inline
+    fn __exit__(self):
+        _ = self._pop_fn()
