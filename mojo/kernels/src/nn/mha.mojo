@@ -301,60 +301,76 @@ fn flash_attention[
         "Only support single and half precision.",
     ]()
 
-    # Runtime dimensions.
-    var batch_size = q.dim[0]()
-    var seq_len = q.dim[1]()
-    var num_keys = k.dim[1]()
-
+    # TODO docstring
+    @always_inline
     @parameter
-    if q.shape.all_known[2, 4]() and k.shape.has_value[2]():
-        alias num_heads = q.shape.get[2]()
-        alias depth = q.shape.get[3]()
-        alias k_num_heads = k.shape.get[2]()
-        alias group = num_heads // k_num_heads
-
-        flash_attention_impl[
-            rank,
-            mask.rank,
-            depth,
-            num_heads,
-            group,
-            add_attn_mask,
-            target,
-            use_tensor_core,
-        ](
-            output.data,
-            q.data,
-            k.data,
-            v.data,
-            mask.data,
-            scale,
-            batch_size,
-            seq_len,
-            num_keys,
-            ctx,
+    fn description_fn() -> String:
+        return String(";").join(
+            "use_tensor_core=" + str(use_tensor_core),
+            trace_arg("q", q),
+            trace_arg("k", k),
+            trace_arg("v", v),
+            trace_arg("output", output),
         )
 
-    else:
-        var num_heads = q.dim[2]()
-        var depth = q.dim[3]()
-        var group = q.dim[2]() // k.dim[2]()
+    with Trace[TraceLevel.OP, target=target](
+        "flash_attention",
+        Trace[TraceLevel.OP, target=target]._get_detail_str[description_fn](),
+    ):
+        # Runtime dimensions.
+        var batch_size = q.dim[0]()
+        var seq_len = q.dim[1]()
+        var num_keys = k.dim[1]()
 
-        mha_gpu_naive[mask.rank](
-            q.data,
-            k.data,
-            v.data,
-            mask.data,
-            output.data,
-            scale,
-            batch_size,
-            seq_len,
-            num_keys,
-            num_heads,
-            depth,
-            group,
-            ctx,
-        )
+        @parameter
+        if q.shape.all_known[2, 4]() and k.shape.has_value[2]():
+            alias num_heads = q.shape.get[2]()
+            alias depth = q.shape.get[3]()
+            alias k_num_heads = k.shape.get[2]()
+            alias group = num_heads // k_num_heads
+
+            flash_attention_impl[
+                rank,
+                mask.rank,
+                depth,
+                num_heads,
+                group,
+                add_attn_mask,
+                target,
+                use_tensor_core,
+            ](
+                output.data,
+                q.data,
+                k.data,
+                v.data,
+                mask.data,
+                scale,
+                batch_size,
+                seq_len,
+                num_keys,
+                ctx,
+            )
+
+        else:
+            var num_heads = q.dim[2]()
+            var depth = q.dim[3]()
+            var group = q.dim[2]() // k.dim[2]()
+
+            mha_gpu_naive[mask.rank](
+                q.data,
+                k.data,
+                v.data,
+                mask.data,
+                output.data,
+                scale,
+                batch_size,
+                seq_len,
+                num_keys,
+                num_heads,
+                depth,
+                group,
+                ctx,
+            )
 
 
 fn flash_attention_impl[
@@ -383,140 +399,135 @@ fn flash_attention_impl[
     num_keys: Int,
     ctx: DeviceContext,
 ) raises:
-    try:
+    @parameter
+    if use_tensor_core and depth == 128:
+        # Choose matmul parameters based on dtype.
+        alias BM = 32 if q_type is DType.float32 else 64
+        alias BN = depth
+        alias BK = 16 if q_type is DType.float32 else 32
+        alias WM = 32 if q_type is DType.float32 else 16
+        alias WN = 32 if q_type is DType.float32 else depth
+        # num warps in M and N, multipled by warp size.
+        alias num_threads = (BM // WM) * (BN // WN) * WARP_SIZE
 
-        @parameter
-        if use_tensor_core and depth == 128:
-            # Choose matmul parameters based on dtype.
-            alias BM = 32 if q_type is DType.float32 else 64
-            alias BN = depth
-            alias BK = 16 if q_type is DType.float32 else 32
-            alias WM = 32 if q_type is DType.float32 else 16
-            alias WN = 32 if q_type is DType.float32 else depth
-            # num warps in M and N, multipled by warp size.
-            alias num_threads = (BM // WM) * (BN // WN) * WARP_SIZE
-
-            if seq_len == num_keys and seq_len % 2 == 0:
-                var func = ctx.compile_function[
-                    mha[
-                        mask_rank,
-                        q_type,
-                        k_type,
-                        v_type,
-                        mask_type,
-                        output_type,
-                        BM=BM,
-                        BN=BN,
-                        BK=BK,
-                        WM=WM,
-                        WN=WN,
-                        depth=depth,
-                        num_heads=num_heads,
-                        num_threads=num_threads,
-                        num_pipeline_stages=4,
-                        group=group,
-                    ]
-                ](
-                    # TODO: Avoid hard coding shared memory needed. KERN-747
-                    func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-                        80 * 1024
-                    )
+        if seq_len == num_keys and seq_len % 2 == 0:
+            var func = ctx.compile_function[
+                mha[
+                    mask_rank,
+                    q_type,
+                    k_type,
+                    v_type,
+                    mask_type,
+                    output_type,
+                    BM=BM,
+                    BN=BN,
+                    BK=BK,
+                    WM=WM,
+                    WN=WN,
+                    depth=depth,
+                    num_heads=num_heads,
+                    num_threads=num_threads,
+                    num_pipeline_stages=4,
+                    group=group,
+                ]
+            ](
+                # TODO: Avoid hard coding shared memory needed. KERN-747
+                func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
+                    80 * 1024
                 )
+            )
 
-                ctx.enqueue_function(
-                    func,
-                    q,
-                    k,
-                    v,
-                    mask,
-                    output,
-                    scale,
+            ctx.enqueue_function(
+                func,
+                q,
+                k,
+                v,
+                mask,
+                output,
+                scale,
+                batch_size,
+                seq_len,
+                grid_dim=(
+                    ceildiv(seq_len, BM),
+                    num_heads,
                     batch_size,
-                    seq_len,
-                    grid_dim=(
-                        ceildiv(seq_len, BM),
-                        num_heads,
-                        batch_size,
-                    ),
-                    block_dim=(num_threads, 1, 1),
-                    shared_mem_bytes=80 * 1024,
-                )
+                ),
+                block_dim=(num_threads, 1, 1),
+                shared_mem_bytes=80 * 1024,
+            )
 
-                return
+            return
 
-        @parameter
-        if q_type in (DType.float16, DType.bfloat16) and depth == 128:
-            # Choose matmul parameters based on dtype.
-            alias BM = 16
-            alias BN = depth
-            alias BK = 16 if q_type is DType.float32 else 32
-            alias WM = BM
-            alias WN = 32
-            # num warps in M and N, multipled by warp size.
-            alias num_threads = (BM // WM) * (BN // WN) * WARP_SIZE
+    @parameter
+    if q_type in (DType.float16, DType.bfloat16) and depth == 128:
+        # Choose matmul parameters based on dtype.
+        alias BM = 16
+        alias BN = depth
+        alias BK = 16 if q_type is DType.float32 else 32
+        alias WM = BM
+        alias WN = 32
+        # num warps in M and N, multipled by warp size.
+        alias num_threads = (BM // WM) * (BN // WN) * WARP_SIZE
 
-            if seq_len == 1:
-                var func = ctx.compile_function[
-                    mha_decoding[
-                        mask_rank,
-                        q_type,
-                        k_type,
-                        v_type,
-                        mask_type,
-                        output_type,
-                        BM=BM,
-                        BN=BN,
-                        BK=BK,
-                        WM=WM,
-                        WN=WN,
-                        depth=depth,
-                        num_heads=num_heads,
-                        num_threads=num_threads,
-                        num_pipeline_stages=4,
-                        group=group,
-                    ]
-                ](
-                    # TODO: Avoid hard coding shared memory needed.
-                    func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-                        80 * 1024
-                    ),
-                )
+        if seq_len == 1:
+            var func = ctx.compile_function[
+                mha_decoding[
+                    mask_rank,
+                    q_type,
+                    k_type,
+                    v_type,
+                    mask_type,
+                    output_type,
+                    BM=BM,
+                    BN=BN,
+                    BK=BK,
+                    WM=WM,
+                    WN=WN,
+                    depth=depth,
+                    num_heads=num_heads,
+                    num_threads=num_threads,
+                    num_pipeline_stages=4,
+                    group=group,
+                ]
+            ](
+                # TODO: Avoid hard coding shared memory needed.
+                func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
+                    80 * 1024
+                ),
+            )
 
-                ctx.enqueue_function(
-                    func,
-                    q,
-                    k,
-                    v,
-                    mask,
-                    output,
-                    scale,
-                    batch_size,
-                    num_keys,
-                    grid_dim=(1, num_heads, batch_size),
-                    block_dim=(num_threads, 1, 1),
-                    shared_mem_bytes=80 * 1024,
-                )
+            ctx.enqueue_function(
+                func,
+                q,
+                k,
+                v,
+                mask,
+                output,
+                scale,
+                batch_size,
+                num_keys,
+                grid_dim=(1, num_heads, batch_size),
+                block_dim=(num_threads, 1, 1),
+                shared_mem_bytes=80 * 1024,
+            )
 
-                return
+            return
 
-        mha_gpu_naive[mask_rank](
-            q,
-            k,
-            v,
-            mask,
-            output,
-            scale,
-            batch_size,
-            seq_len,
-            num_keys,
-            num_heads,
-            depth,
-            group,
-            ctx,
-        )
-
-    except e:
-        abort(e)
+    mha_gpu_naive[mask_rank](
+        q,
+        k,
+        v,
+        mask,
+        output,
+        scale,
+        batch_size,
+        seq_len,
+        num_keys,
+        num_heads,
+        depth,
+        group,
+        ctx,
+    )
 
 
 # ===----------------------------------------------------------------------===#
