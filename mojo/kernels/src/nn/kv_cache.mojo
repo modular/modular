@@ -31,6 +31,7 @@ from kv_cache.types import (
     KVCacheLayout,
     KVCacheStaticParams,
 )
+from runtime.tracing import Trace, TraceLevel
 
 
 @mogg_register("kv_cache_length_h8_d128_bshd_bf16")
@@ -127,7 +128,7 @@ fn _kv_cache_length[
     """Returns the size of the cache in a ContiguousKVCacheCollection mo.opaque object.
     """
     for bs in range(output.dim[0]()):
-        output.store[width=1](Index(bs), Int64(kv_collection.cache_length(bs)))
+        output.store(Index(bs), kv_collection.cache_length(bs))
 
 
 @mogg_register("key_cache_for_layer_h8_d128_bhsd_bf16")
@@ -385,7 +386,8 @@ fn matmul_kv_cache_h6_d48_bshd[
             (batch_size, max_seq_len, num_kv_heads, head_size).
         ctx: The call context pointer, passed by the graph compiler.
     """
-    return _matmul_kv_cache[target=target](hidden_state, weight, cache, ctx)
+    with Trace[TraceLevel.OP, target=target]("matmul_kv_cache_h6_d48_bshd"):
+        return _matmul_kv_cache[target=target](hidden_state, weight, cache, ctx)
 
 
 @mogg_register("matmul_kv_cache_h6_d48_bhsd")
@@ -418,7 +420,8 @@ fn matmul_kv_cache_h6_d48_bhsd[
             (batch_size, num_kv_heads, max_seq_len, head_size).
         ctx: The call context pointer, passed by the graph compiler.
     """
-    return _matmul_kv_cache[target=target](hidden_state, weight, cache, ctx)
+    with Trace[TraceLevel.OP, target=target]("matmul_kv_cache_h6_d48_bhsd"):
+        return _matmul_kv_cache[target=target](hidden_state, weight, cache, ctx)
 
 
 @mogg_register("matmul_kv_cache_h8_d128_bshd")
@@ -451,7 +454,8 @@ fn matmul_kv_cache_h8_d128_bshd[
             (batch_size, max_seq_len, num_kv_heads, head_size).
         ctx: The call context pointer, passed by the graph compiler.
     """
-    return _matmul_kv_cache[target=target](hidden_state, weight, cache, ctx)
+    with Trace[TraceLevel.OP, target=target]("matmul_kv_cache_h8_d128_bshd"):
+        return _matmul_kv_cache[target=target](hidden_state, weight, cache, ctx)
 
 
 @mogg_register("matmul_kv_cache_h8_d128_bhsd")
@@ -484,7 +488,8 @@ fn matmul_kv_cache_h8_d128_bhsd[
             (batch_size, num_kv_heads, max_seq_len, head_size).
         ctx: The call context pointer, passed by the graph compiler.
     """
-    return _matmul_kv_cache[target=target](hidden_state, weight, cache, ctx)
+    with Trace[TraceLevel.OP, target=target]("matmul_kv_cache_h8_d128_bhsd"):
+        return _matmul_kv_cache[target=target](hidden_state, weight, cache, ctx)
 
 
 @always_inline
@@ -617,9 +622,12 @@ fn fused_qkv_matmul_kv_cache_h6_d48_bshd[
             projections are written in-place to k_cache and v_cache.
         ctx: The call context pointer, passed by the graph compiler.
     """
-    return _fused_qkv_matmul_kv_cache[target=target](
-        hidden_state, weight, k_cache, v_cache, output, ctx
-    )
+    with Trace[TraceLevel.OP, target=target](
+        "fused_qkv_matmul_kv_cache_h6_d48_bshd"
+    ):
+        return _fused_qkv_matmul_kv_cache[target=target](
+            hidden_state, weight, k_cache, v_cache, output, ctx
+        )
 
 
 @mogg_register("fused_qkv_matmul_kv_cache_h6_d48_bhsd")
@@ -662,9 +670,12 @@ fn fused_qkv_matmul_kv_cache_h6_d48_bhsd[
             projections are written in-place to k_cache and v_cache.
         ctx: The call context pointer, passed by the graph compiler.
     """
-    return _fused_qkv_matmul_kv_cache[target=target](
-        hidden_state, weight, k_cache, v_cache, output, ctx
-    )
+    with Trace[TraceLevel.OP, target=target](
+        "fused_qkv_matmul_kv_cache_h6_d48_bhsd"
+    ):
+        return _fused_qkv_matmul_kv_cache[target=target](
+            hidden_state, weight, k_cache, v_cache, output, ctx
+        )
 
 
 @mogg_register("fused_qkv_matmul_kv_cache_h8_d128_bshd")
@@ -707,9 +718,12 @@ fn fused_qkv_matmul_kv_cache_h8_d128_bshd[
             projections are written in-place to k_cache and v_cache.
         ctx: The call context pointer, passed by the graph compiler.
     """
-    return _fused_qkv_matmul_kv_cache[target=target](
-        hidden_state, weight, k_cache, v_cache, output, ctx
-    )
+    with Trace[TraceLevel.OP, target=target](
+        "fused_qkv_matmul_kv_cache_h8_d128_bshd"
+    ):
+        return _fused_qkv_matmul_kv_cache[target=target](
+            hidden_state, weight, k_cache, v_cache, output, ctx
+        )
 
 
 @mogg_register("fused_qkv_matmul_kv_cache_h8_d128_bhsd")
@@ -752,9 +766,12 @@ fn fused_qkv_matmul_kv_cache_h8_d128_bhsd[
             projections are written in-place to k_cache and v_cache.
         ctx: The call context pointer, passed by the graph compiler.
     """
-    return _fused_qkv_matmul_kv_cache[target=target](
-        hidden_state, weight, k_cache, v_cache, output, ctx
-    )
+    with Trace[TraceLevel.OP, target=target](
+        "fused_qkv_matmul_kv_cache_h8_d128_bhsd"
+    ):
+        return _fused_qkv_matmul_kv_cache[target=target](
+            hidden_state, weight, k_cache, v_cache, output, ctx
+        )
 
 
 alias embed_fn_type = fn[type: DType, width: Int] (
@@ -970,7 +987,10 @@ fn fused_qk_rope_h6_d48_bshd[
     kernels in the graph definition. Here we fuse the RoPE kernel applied to
     Q_proj with K_proj, so K_proj RoPE is only excuted after QKV completes.
     """
-    _fused_qk_rope[target=target](q_proj, k_cache, freqs_cis, output, context)
+    with Trace[TraceLevel.OP, target=target]("fused_qk_rope_h6_d48_bshd"):
+        _fused_qk_rope[target=target](
+            q_proj, k_cache, freqs_cis, output, context
+        )
 
 
 @mogg_register("fused_qk_rope_h6_d48_bhsd")
@@ -1001,7 +1021,10 @@ fn fused_qk_rope_h6_d48_bhsd[
     kernels in the graph definition. Here we fuse the RoPE kernel applied to
     Q_proj with K_proj, so K_proj RoPE is only excuted after QKV completes.
     """
-    _fused_qk_rope[target=target](q_proj, k_cache, freqs_cis, output, context)
+    with Trace[TraceLevel.OP, target=target]("fused_qk_rope_h6_d48_bhsd"):
+        _fused_qk_rope[target=target](
+            q_proj, k_cache, freqs_cis, output, context
+        )
 
 
 @mogg_register("fused_qk_rope_h8_d128_bshd")
@@ -1032,7 +1055,10 @@ fn fused_qk_rope_h8_d128_bshd[
     kernels in the graph definition. Here we fuse the RoPE kernel applied to
     Q_proj with K_proj, so K_proj RoPE is only excuted after QKV completes.
     """
-    _fused_qk_rope[target=target](q_proj, k_cache, freqs_cis, output, context)
+    with Trace[TraceLevel.OP, target=target]("fused_qk_rope_h8_d128_bshd"):
+        _fused_qk_rope[target=target](
+            q_proj, k_cache, freqs_cis, output, context
+        )
 
 
 @mogg_register("fused_qk_rope_h8_d128_bhsd")
@@ -1063,7 +1089,10 @@ fn fused_qk_rope_h8_d128_bhsd[
     kernels in the graph definition. Here we fuse the RoPE kernel applied to
     Q_proj with K_proj, so K_proj RoPE is only excuted after QKV completes.
     """
-    _fused_qk_rope[target=target](q_proj, k_cache, freqs_cis, output, context)
+    with Trace[TraceLevel.OP, target=target]("fused_qk_rope_h8_d128_bhsd"):
+        _fused_qk_rope[target=target](
+            q_proj, k_cache, freqs_cis, output, context
+        )
 
 
 @always_inline
@@ -1181,9 +1210,12 @@ fn flash_attention_kv_cache_h6_d48_bshd[
     output: NDBuffer[type, 4, *_],
     context: MojoCallContextPtr,
 ):
-    return _flash_attention_kv_cache[target=target](
-        q, k, v, mask, scale, output, context
-    )
+    with Trace[TraceLevel.OP, target=target](
+        "flash_attention_kv_cache_h6_d48_bshd"
+    ):
+        return _flash_attention_kv_cache[target=target](
+            q, k, v, mask, scale, output, context
+        )
 
 
 @mogg_register("flash_attention_kv_cache_h6_d48_bhsd")
@@ -1210,9 +1242,12 @@ fn flash_attention_kv_cache_h6_d48_bhsd[
     output: NDBuffer[type, 4, *_],
     context: MojoCallContextPtr,
 ):
-    return _flash_attention_kv_cache[target=target](
-        q, k, v, mask, scale, output, context
-    )
+    with Trace[TraceLevel.OP, target=target](
+        "flash_attention_kv_cache_h6_d48_bhsd"
+    ):
+        return _flash_attention_kv_cache[target=target](
+            q, k, v, mask, scale, output, context
+        )
 
 
 @mogg_register("flash_attention_kv_cache_h8_d128_bshd")
@@ -1239,9 +1274,12 @@ fn flash_attention_kv_cache_h8_d128_bshd[
     output: NDBuffer[type, 4, *_],
     context: MojoCallContextPtr,
 ):
-    return _flash_attention_kv_cache[target=target](
-        q, k, v, mask, scale, output, context
-    )
+    with Trace[TraceLevel.OP, target=target](
+        "flash_attention_kv_cache_h8_d128_bshd"
+    ):
+        return _flash_attention_kv_cache[target=target](
+            q, k, v, mask, scale, output, context
+        )
 
 
 @mogg_register("flash_attention_kv_cache_h8_d128_bhsd")
@@ -1268,9 +1306,12 @@ fn flash_attention_kv_cache_h8_d128_bhsd[
     output: NDBuffer[type, 4, *_],
     context: MojoCallContextPtr,
 ):
-    return _flash_attention_kv_cache[target=target](
-        q, k, v, mask, scale, output, context
-    )
+    with Trace[TraceLevel.OP, target=target](
+        "flash_attention_kv_cache_h8_d128_bhsd"
+    ):
+        return _flash_attention_kv_cache[target=target](
+            q, k, v, mask, scale, output, context
+        )
 
 
 @always_inline
