@@ -255,10 +255,13 @@ fn trace_arg(name: String, buf: NDBuffer) -> String:
 
 
 @value
-struct Trace[level: TraceLevel, target: Optional[StringLiteral] = None]:
-    """An object representing a specific Mojo trace."""
-
-    alias category = TraceCategory.MAX
+struct Trace[
+    level: TraceLevel,
+    *,
+    category: TraceCategory = TraceCategory.MAX,
+    target: Optional[StringLiteral] = None,
+]:
+    """An object representing a specific trace."""
 
     var name: StringLiteral
     var int_payload: Optional[Int]
@@ -286,11 +289,11 @@ struct Trace[level: TraceLevel, target: Optional[StringLiteral] = None]:
         self.parent_id = parent_id
 
         @parameter
-        if _is_nvtx_enabled[Self.category, level]():
+        if _is_nvtx_enabled[category, level]():
             self.name = name
             self.detail = ""
             self.int_payload = Optional[Int]()
-        elif is_profiling_enabled[Self.category, level]():
+        elif is_profiling_enabled[category, level]():
             self.name = name
             self.detail = detail
 
@@ -328,11 +331,11 @@ struct Trace[level: TraceLevel, target: Optional[StringLiteral] = None]:
         self.parent_id = parent_id
 
         @parameter
-        if _is_nvtx_enabled[Self.category, level]():
+        if _is_nvtx_enabled[category, level]():
             self.name = name
             self.detail = ""
             self.int_payload = Optional[Int]()
-        elif is_profiling_enabled[Self.category, level]():
+        elif is_profiling_enabled[category, level]():
             self.name = name
             self.detail = detail
 
@@ -355,12 +358,12 @@ struct Trace[level: TraceLevel, target: Optional[StringLiteral] = None]:
         """
 
         @parameter
-        if _is_nvtx_enabled[Self.category, level]():
+        if _is_nvtx_enabled[category, level]():
             self.event_id = int(_start_nvtx_range(message=self.name))
             return
 
         @parameter
-        if is_profiling_disabled[Self.category, level]():
+        if is_profiling_disabled[category, level]():
             return
 
         if self.detail:
@@ -409,12 +412,12 @@ struct Trace[level: TraceLevel, target: Optional[StringLiteral] = None]:
         """
 
         @parameter
-        if _is_nvtx_enabled[Self.category, level]():
+        if _is_nvtx_enabled[category, level]():
             _end_nvtx_range(nvtx.RangeID(self.event_id))
             return
 
         @parameter
-        if is_profiling_disabled[Self.category, level]():
+        if is_profiling_disabled[category, level]():
             return
         if self.event_id == 0:
             return
@@ -438,7 +441,7 @@ struct Trace[level: TraceLevel, target: Optional[StringLiteral] = None]:
         """
 
         @parameter
-        if is_profiling_enabled[Self.category, level]():
+        if is_profiling_enabled[category, level]():
             return detail_fn()
         else:
             return ""
