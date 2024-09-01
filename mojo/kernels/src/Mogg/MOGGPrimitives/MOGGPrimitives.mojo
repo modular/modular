@@ -752,7 +752,7 @@ fn mgp_buffer_device_to_host[
     call_ctx: MojoCallContextPtr,
 ) raises -> Int:
     @parameter
-    if (dHostDevice == "cpu") and (cOtherDevice == "cuda"):
+    if (dHostDevice == "cpu") and ("cuda" in cOtherDevice):
         call_ctx.get_device_context().enqueue_copy_from_device[DType.uint8](
             host_buf.data,
             DeviceBuffer[DType.uint8](
@@ -784,7 +784,7 @@ fn mgp_buffer_device_to_device[
     call_ctx: MojoCallContextPtr,
 ) raises -> Int:
     @parameter
-    if cSrcDevice == dDstDevice == "cuda":
+    if ("cuda" in cSrcDevice) and ("cuda" in dDstDevice):
         call_ctx.get_device_context().enqueue_copy_device_to_device[
             DType.uint8
         ](
@@ -826,7 +826,7 @@ fn mgp_buffer_host_to_device[
     call_ctx: MojoCallContextPtr,
 ) raises -> Int:
     @parameter
-    if (dOtherDevice == "cuda") and (cHostDevice == "cpu"):
+    if ("cuda" in dOtherDevice) and (cHostDevice == "cpu"):
         call_ctx.get_device_context().enqueue_copy_to_device[DType.uint8](
             DeviceBuffer[DType.uint8](
                 call_ctx.get_device_context(),
@@ -969,7 +969,7 @@ fn mgp_device_context_create[
         return dev_ctx^
 
     @parameter
-    if bDevice == "cuda":
+    if "cuda" in bDevice:
         var dev_ctx = WrappedDeviceContext(DeviceContext())
         call_ctx.set_stream(dev_ctx._dev_ctx.value().cuda_stream)
         call_ctx.set_context(dev_ctx._dev_ctx.value().cuda_context)
@@ -1024,7 +1024,7 @@ fn mgp_sync[
     call_ctx: MojoCallContextPtr,
 ) raises -> Int:
     @parameter
-    if bDevice == "cuda":
+    if "cuda" in bDevice:
         var e = Event(call_ctx.get_device_context().cuda_context)
         e.record(call_ctx.get_device_context().cuda_stream)
         e.sync()
