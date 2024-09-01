@@ -1147,7 +1147,8 @@ void StructDeclOp::build(OpBuilder &builder, OperationState &result,
         ParamDeclArrayAttr::get(ctx, {}), DecoratorsAttr::get(ctx, {}),
         TypeLineageArrayAttr::get(ctx, {}), /*isSynthetic=*/{},
         /*nonmaterializableTarget=*/{}, /*destructor=*/{}, /*moveInit=*/{},
-        /*copyInit=*/{}, /*closureSignature=*/{}, /*docString=*/{},
+        /*copyInit=*/{}, /*linearTypeErrorMsg*/ {}, /*closureSignature=*/{},
+        /*docString=*/{},
         /*deprecationWarning=*/{}, /*sourceName=*/{}, /*convention*/ {},
         /*customOpName=*/{});
   result.regions[0]->push_back(new Block());
@@ -1627,7 +1628,8 @@ void TraitDeclOp::build(OpBuilder &builder, OperationState &result,
   MLIRContext *ctx = builder.getContext();
   build(builder, result, name, TypeAttr::get(TypeSignatureType::get(ctx)),
         ParamDeclArrayAttr::get(ctx, {}), TypeLineageArrayAttr::get(ctx, {}),
-        /*dtorSig=*/{}, /*docString=*/{}, /*deprecationWarning=*/{});
+        /*dtorSig=*/{}, /*docString=*/{}, /*deprecationWarning=*/{},
+        /*linearTypeErrorMsg*/ {});
   result.regions[0]->push_back(new Block());
 }
 

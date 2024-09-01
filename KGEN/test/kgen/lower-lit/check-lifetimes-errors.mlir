@@ -33,3 +33,26 @@ lit.func @elifInitError[mut *"__result__`0"](?, %cond: i1, %__result__[__result_
   // expected-error @below {{'__result__' is uninitialized at return from this function}}
   kgen.return %none : !kgen.none
 }
+
+// @__nonimpldestructible struct Linear:
+lit.struct.decl @Linear attributes {
+  linearTypeErrorMsg = "'Linear' isn't implicit destructible, call the 'close' or 'explode' methods to explicitly destroy it"
+}{
+  // fn close(owned self): pass
+  lit.func @close[mut dellife](%self: !lit.ref<@Linear, mut dellife> owned_in_mem) {
+
+    // expected-error @below {{'Linear' isn't implicit destructible, call the 'close' or 'explode' methods to explicitly destroy it}}
+    lit.ownership.use %self: !lit.ref<@Linear, mut dellife> 
+    kgen.return
+  }
+}
+
+// CHECK-LABEL: lit.func @useLinear
+lit.func @useLinear(
+  %b: !lit.ref<@Linear, mut #lit.lifetime> owned_in_mem) {
+ 
+
+  // expected-error @below {{'Linear' isn't implicit destructible, call the 'close' or 'explode' methods to explicitly destroy it}}
+  lit.ownership.use %b: !lit.ref<@Linear, mut #lit.lifetime> 
+  kgen.return
+}
