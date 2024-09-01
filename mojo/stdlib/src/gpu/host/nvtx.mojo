@@ -11,6 +11,7 @@ from sys.ffi import C_char, DLHandle
 from sys.ffi import _get_dylib_function as _ffi_get_dylib_function
 
 from memory import UnsafePointer, stack_allocation
+from sys.param_env import env_get_int
 
 # ===----------------------------------------------------------------------===#
 # Library Load
@@ -46,6 +47,10 @@ fn _setup_categories(
 
 
 fn _init_dylib(ignored: UnsafePointer[NoneType]) -> UnsafePointer[NoneType]:
+    @parameter
+    if _is_disabled():
+        return UnsafePointer[NoneType]()
+
     if not Path(CUDA_NVTX_LIBRARY_PATH).exists():
         return abort[UnsafePointer[NoneType]](
             "the CUDA NVTX library was not found at " + CUDA_NVTX_LIBRARY_PATH
@@ -61,6 +66,10 @@ fn _init_dylib(ignored: UnsafePointer[NoneType]) -> UnsafePointer[NoneType]:
 
 
 fn _destroy_dylib(ptr: UnsafePointer[NoneType]):
+    @parameter
+    if _is_disabled():
+        return None
+
     ptr.bitcast[DLHandle]()[].close()
     ptr.free()
 
@@ -224,6 +233,14 @@ alias _nvtxRangePop = _dylib_function["nvtxRangePop", fn () -> Int32]
 # ===----------------------------------------------------------------------===#
 
 
+fn _is_enabled() -> Bool:
+    return env_get_int["KERNEL_E2E_GPU_PROFILING", 0]() == 1
+
+
+fn _is_disabled() -> Bool:
+    return not _is_enabled()
+
+
 @always_inline
 fn _start_range(
     *,
@@ -231,6 +248,9 @@ fn _start_range(
     category: Int = _TraceType_MAX,
     color: Optional[Color] = None,
 ) -> RangeID:
+    @parameter
+    if _is_disabled():
+        return 0
     var info = EventAttributes(message=message, color=color, category=category)
     var value = info._value
     var id = _nvtxRangeStartEx.load()(UnsafePointer.address_of(value))
@@ -240,6 +260,9 @@ fn _start_range(
 
 @always_inline
 fn _end_range(id: RangeID):
+    @parameter
+    if _is_disabled():
+        return
     _nvtxRangeEnd.load()(int(id))
 
 
@@ -250,6 +273,9 @@ fn _mark(
     color: Optional[Color] = None,
     category: Int = _TraceType_MAX,
 ):
+    @parameter
+    if _is_disabled():
+        return
     var info = EventAttributes(message=message, color=color, category=category)
     var value = info._value
     _nvtxMarkEx.load()(UnsafePointer.address_of(value))
@@ -270,6 +296,7 @@ struct Range:
         color: Optional[Color] = None,
         category: Int = _TraceType_MAX,
     ):
+        constrained[_is_enabled(), "nvtx must be enabled"]()
         self._info = EventAttributes(
             message=message, color=color, category=category
         )
@@ -315,6 +342,7 @@ struct RangeStack:
         color: Optional[Color] = None,
         category: Int = _TraceType_MAX,
     ):
+        constrained[_is_enabled(), "nvtx must be enabled"]()
         self._info = EventAttributes(
             message=message, color=color, category=category
         )
