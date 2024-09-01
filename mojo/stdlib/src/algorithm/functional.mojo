@@ -1319,18 +1319,16 @@ fn elementwise[
     @always_inline
     @parameter
     fn description_fn() -> String:
-        var prefix = String("")
-        if trace_description:
-            prefix = "name=" + trace_description + ";"
         var shape_str = trace_arg("shape", shape)
-
         var vector_width_str = "vector_width=" + str(simd_width)
         var single_thread_blocking_override = "single_thread_blocking_override=" + str(
             use_blocking_impl
         )
 
         return String(";").join(
-            prefix,
+            (
+                "description=" + str(trace_description)
+            ) if trace_description else str(""),
             shape_str,
             vector_width_str,
             single_thread_blocking_override,
