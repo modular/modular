@@ -35,10 +35,11 @@ fn _build_info_asyncrt_max_profiling_level() -> Optional[Int]:
 struct TraceCategory(EqualityComparable):
     """An enum-like struct specifying the type of tracing to perform."""
 
-    alias OTHER = TraceCategory(0)
-    alias AsyncRT = TraceCategory(1)
-    alias MEM = TraceCategory(2)
-    alias MAX = TraceCategory(3)
+    alias OTHER = Self(0)
+    alias ASYNCRT = Self(1)
+    alias MEM = Self(2)
+    alias Kernel = Self(3)
+    alias MAX = Self(4)
 
     var value: Int
 
@@ -90,6 +91,10 @@ struct TraceCategory(EqualityComparable):
         """
         return self != rhs
 
+    @always_inline("nodebug")
+    fn __int__(self) -> Int:
+        return self.value
+
 
 # ===----------------------------------------------------------------------===#
 # TraceLevel
@@ -101,9 +106,9 @@ struct TraceCategory(EqualityComparable):
 struct TraceLevel(EqualityComparable):
     """An enum-like struct specifying the level of tracing to perform."""
 
-    alias ALWAYS = TraceLevel(0)
-    alias OP = TraceLevel(1)
-    alias THREAD = TraceLevel(2)
+    alias ALWAYS = Self(0)
+    alias OP = Self(1)
+    alias THREAD = Self(2)
 
     var value: Int
 
@@ -166,6 +171,10 @@ struct TraceLevel(EqualityComparable):
             True if they are not equal.
         """
         return self != rhs
+
+    @always_inline("nodebug")
+    fn __int__(self) -> Int:
+        return self.value
 
 
 # ===----------------------------------------------------------------------===#
@@ -359,7 +368,9 @@ struct Trace[
 
         @parameter
         if _is_nvtx_enabled[category, level]():
-            self.event_id = int(_start_nvtx_range(message=self.name))
+            self.event_id = int(
+                _start_nvtx_range(message=self.name, category=int(category))
+            )
             return
 
         @parameter
@@ -379,8 +390,8 @@ struct Trace[
             ](
                 self.name.unsafe_cstr_ptr(),
                 len(self.name),
-                detail_strref.data,
-                detail_strref.length.value,
+                detail_strref.unsafe_ptr(),
+                len(detail_strref),
                 self.parent_id,
             )
         elif self.int_payload:
