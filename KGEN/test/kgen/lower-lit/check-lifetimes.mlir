@@ -110,6 +110,30 @@ lit.func @references1[mut alife](%a: !lit.ref<@Struct, mut alife> owned_in_mem,
   kgen.return
 }
 
+
+// @__nonimpldestructible struct Linear:
+// CHECK-LABEL: lit.struct.decl @Linear
+lit.struct.decl @Linear attributes {
+  linearTypeErrorMsg = "'Linear' isn't implicit destructible, call the 'close' or 'explode' methods to explicitly destroy it"
+}{
+  // fn close(owned self): pass
+  // CHECK: lit.func @close
+  lit.func @close[mut dellife](%self: !lit.ref<@Linear, mut dellife> owned_in_mem) {
+    // CHECK-NEXT: lit.ownership.mark_destroyed %self
+    lit.ownership.mark_destroyed %self : !lit.ref<@Linear, mut dellife>
+    // CHECK-NEXT: kgen.return
+    kgen.return
+  }
+}
+
+// CHECK-LABEL: lit.func @useLinear
+lit.func @useLinear(
+  %b: !lit.ref<@Linear, mut #lit.lifetime> owned_in_mem) {
+  lit.call @Linear::@close[mut #lit.lifetime](%b) : !lit.signature<[1](!lit.ref<@Linear, mut *[0,0]> owned_in_mem) -> ()>
+  kgen.return
+}
+
+
 // -----
 
 // COM: Test all fields are destroyed in object destructor

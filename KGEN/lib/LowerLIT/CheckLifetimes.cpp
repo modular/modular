@@ -199,6 +199,10 @@ struct TypeDeclInfo {
   TypedAttr getDestructorForType(Type type) const;
   SymbolConstantAttr getMoveInitForType(Type type) const;
 
+  /// If this is a non-destructible/linear type, return the error message to
+  /// emit if an implicit destructor call is required.
+  StringAttr getLinearTypeErrorMsg(Type type) const;
+
   /// Return the function for a given symbol name if known.
   LIT::FuncOp getFuncForSymbol(SymbolRefAttr symbolRef) const {
     auto it = funcMap.find(symbolRef);
@@ -281,6 +285,22 @@ SymbolConstantAttr TypeDeclInfo::getMoveInitForType(Type type) const {
   return getSpecialMemberForType(type, this, [](StructDeclOp structOp) {
     return structOp.getMoveInitAttr();
   });
+}
+
+/// If this is a non-destructible/linear type, return the error message to
+/// emit if an implicit destructor call is required.
+StringAttr TypeDeclInfo::getLinearTypeErrorMsg(Type type) const {
+  if (auto valueType = dyn_cast<LIT::StructType>(type))
+    return getStructDeclForType(valueType).getLinearTypeErrorMsgAttr();
+
+  if (auto generic = dyn_cast<ParamRefType>(type)) {
+    if (auto trait = dyn_cast<TraitType>(generic.getParam().getType())) {
+      return TraitDeclOp(traitMap.at(trait.getSymbol()))
+          .getLinearTypeErrorMsgAttr();
+    }
+  }
+  // Otherwise, must be an MLIR type like 'index'.
+  return {};
 }
 
 /// Return the total number of flattened fields in the specified type.
@@ -2943,8 +2963,17 @@ void DestructorInsertion::emitDestructorCallAt(Value value, bool isIndirect,
   Type destroyedType =
       ValueRef::getDereferencedType(value.getType(), isIndirect);
   TypedAttr dtor = valueSet.typeDeclInfo.getDestructorForType(destroyedType);
-  if (!dtor) // Trivial types don't have destructors, so nothing to do.
+  if (!dtor) {
+    // If there is no destructor, then this is either a trivial type or a
+    // non-linear type.  Check for linearTypeErrorMsg and emit it if present.
+    if (StringAttr linearMsg =
+            valueSet.typeDeclInfo.getLinearTypeErrorMsg(destroyedType)) {
+      mlir::emitError(builder.getLoc()) << linearMsg.str();
+    }
+
+    // Otherwise, this is a trivial type; nothing to do.
     return emitLifetimeEnd(value, builder);
+  }
 
   // Okay, if there is a destructor, we know that this is a non-trivial value.
   // Check to see if the operation that we are destroying this for is a

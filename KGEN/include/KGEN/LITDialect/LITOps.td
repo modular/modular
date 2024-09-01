@@ -371,6 +371,9 @@ def LIT_StructDeclOp : LITOp<"struct.decl", [
     OptionalAttr<KGEN_SymbolConstantAttr>:$destructor,
     OptionalAttr<KGEN_SymbolConstantAttr>:$moveInit,
     OptionalAttr<KGEN_SymbolConstantAttr>:$copyInit,
+    // This is the error message to produce if a non-destructible type needs an
+    // implicit destructor call.
+    OptionalAttr<StrAttr>:$linearTypeErrorMsg,
     OptionalAttr<TypeAttrOf<KGEN_SignatureType>>:$closureSignature,
     OptionalAttr<LIT_DocStringAttr>:$docString,
     OptionalAttr<StrAttr>:$deprecationWarning,
@@ -610,7 +613,10 @@ def LIT_TraitDeclOp : LITOp<"trait.decl", [
     TypeLineageArrayAttr:$parentTypes,
     OptionalAttr<TypeAttrOf<KGEN_SignatureType>>:$dtorSig,
     OptionalAttr<LIT_DocStringAttr>:$docString,
-    OptionalAttr<StrAttr>:$deprecationWarning
+    OptionalAttr<StrAttr>:$deprecationWarning,
+    // This is the error message to produce if a non-destructible type needs an
+    // implicit destructor call.
+    OptionalAttr<StrAttr>:$linearTypeErrorMsg
   );
 
   let regions = (region SizedRegion<1>:$fields);
