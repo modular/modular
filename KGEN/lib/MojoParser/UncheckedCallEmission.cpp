@@ -1225,7 +1225,7 @@ void ExclusivityChecker::diagViolation(Value val, ArgConvention convention,
                                        size_t argIdx, TypedAttr lifetime,
                                        const LifetimeInfo &previousAccess) {
   bool isImmut = cast<LifetimeType>(lifetime.getType()).isMutableKnown(false);
-  auto diag = shared.emitWarning(callExpr->getLoc());
+  auto diag = shared.emitError(callExpr->getLoc());
 
   switch (syntax) {
   default:
