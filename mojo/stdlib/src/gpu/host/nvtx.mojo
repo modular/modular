@@ -19,6 +19,30 @@ from memory import UnsafePointer, stack_allocation
 alias CUDA_NVTX_LIBRARY_PATH = "/usr/local/cuda/lib64/libnvToolsExt.so"
 
 
+alias _TraceType_OTHER = 0
+alias _TraceType_AsyncRT = 1
+alias _TraceType_MEM = 2
+alias _TraceType_MAX = 3
+
+
+@always_inline
+fn _setup_category(
+    name_category: fn (UInt32, UnsafePointer[UInt8]) -> NoneType,
+    value: Int,
+    name: StringLiteral,
+):
+    name_category(value, name.unsafe_ptr())
+
+
+fn _setup_categories(
+    name_category: fn (UInt32, UnsafePointer[UInt8]) -> NoneType
+):
+    _setup_category(name_category, _TraceType_OTHER, "Other")
+    _setup_category(name_category, _TraceType_AsyncRT, "AsyncRT")
+    _setup_category(name_category, _TraceType_MEM, "Memory")
+    _setup_category(name_category, _TraceType_MAX, "Max")
+
+
 fn _init_dylib(ignored: UnsafePointer[NoneType]) -> UnsafePointer[NoneType]:
     if not Path(CUDA_NVTX_LIBRARY_PATH).exists():
         return abort[UnsafePointer[NoneType]](
@@ -26,6 +50,11 @@ fn _init_dylib(ignored: UnsafePointer[NoneType]) -> UnsafePointer[NoneType]:
         )
     var ptr = UnsafePointer[DLHandle].alloc(1)
     ptr.init_pointee_move(DLHandle(CUDA_NVTX_LIBRARY_PATH))
+    _setup_categories(
+        ptr[].get_function[fn (UInt32, UnsafePointer[UInt8]) -> NoneType](
+            "nvtxNameCategoryA"
+        )
+    )
     return ptr.bitcast[NoneType]()
 
 
@@ -54,7 +83,7 @@ fn _get_dylib_function[
 
 alias RangeID = UInt64
 alias EventPayload = UInt64
-alias NVTXVersion = 3
+alias NVTXVersion = 2
 
 
 @value
@@ -62,6 +91,7 @@ struct Color:
     var _value: Int
 
     alias FORMAT = 1  # ARGB
+    alias DEFAULT = Self(0xB5BAF5)
     alias BLUE = Self(0x0000FF)
     alias GREEN = Self(0x008000)
     alias ORANGE = Self(0xFFA500)
@@ -77,7 +107,7 @@ struct Color:
 @value
 @register_passable("trivial")
 struct _C_EventAttributes:
-    var version: UInt64
+    var version: UInt16
     """Version flag of the structure."""
 
     var size: UInt16
@@ -86,7 +116,7 @@ struct _C_EventAttributes:
     var category: UInt32
     """ID of the category the event is assigned to."""
 
-    var color_type: UInt32
+    var color_type: Int32
     """Color type specified in this attribute structure."""
 
     var color: UInt32
@@ -116,13 +146,13 @@ struct EventAttributes:
         inout self,
         *,
         message: String = "",
-        color: Color = Color.BLUE,
+        color: Color = Color.DEFAULT,
     ):
         alias ASCII = 1
         self._value = _C_EventAttributes(
             version=NVTXVersion,
             size=sizeof[_C_EventAttributes](),
-            category=0,
+            category=_TraceType_MAX,
             color_type=Color.FORMAT,
             color=int(color),
             payload_type=0,
@@ -172,6 +202,30 @@ alias _nvtxRangePop = _dylib_function["nvtxRangePop", fn () -> Int32]
 # ===----------------------------------------------------------------------===#
 
 
+@always_inline
+fn _start_range(
+    *, message: String = "", color: Color = Color.DEFAULT
+) -> RangeID:
+    var info = EventAttributes(message=message, color=color)
+    var value = info._value
+    var id = _nvtxRangeStartEx.load()(UnsafePointer.address_of(value))
+    _ = value
+    return id
+
+
+@always_inline
+fn _end_range(id: RangeID):
+    _nvtxRangeEnd.load()(int(id))
+
+
+@always_inline
+fn _mark(*, message: String = "", color: Color = Color.DEFAULT):
+    var info = EventAttributes(message=message, color=color)
+    var value = info._value
+    _nvtxMarkEx.load()(UnsafePointer.address_of(value))
+    _ = value
+
+
 struct Range:
     var _info: EventAttributes
     var _id: RangeID
@@ -179,15 +233,9 @@ struct Range:
     var _start_fn: fn (UnsafePointer[_C_EventAttributes]) -> RangeID
     var _end_fn: fn (RangeID) -> NoneType
 
-    fn __init__(inout self, *, id: RangeID):
-        self._info = __mlir_op.`kgen.undef`[_type=EventAttributes]()
-        self._id = id
-        self._start_fn = __mlir_op.`kgen.undef`[
-            _type = fn (UnsafePointer[_C_EventAttributes]) -> RangeID
-        ]()
-        self._end_fn = _nvtxRangeEnd.load()
-
-    fn __init__(inout self, *, message: String = "", color: Color = Color.BLUE):
+    fn __init__(
+        inout self, *, message: String = "", color: Color = Color.DEFAULT
+    ):
         self._info = EventAttributes(message=message, color=color)
         self._id = 0
         self._start_fn = _nvtxRangeStartEx.load()
@@ -195,7 +243,9 @@ struct Range:
 
     @always_inline
     fn __enter__(inout self):
-        self._id = self._start_fn(UnsafePointer.address_of(self._info._value))
+        var value = self._info._value
+        self._id = self._start_fn(UnsafePointer.address_of(value))
+        _ = value
 
     @always_inline
     fn __exit__(self):
@@ -205,11 +255,10 @@ struct Range:
     fn id(self) -> RangeID:
         return self._id
 
+    @staticmethod
     @always_inline
-    fn mark(self, *, message: String = "", color: Int = 0xFF880000):
-        var info = EventAttributes(message=message, color=color)
-        _nvtxMarkEx.load()(UnsafePointer.address_of(info._value))
-        _ = info^
+    fn mark(*, message: String = "", color: Color = Color.DEFAULT):
+        _mark(message=message, color=color)
 
 
 struct RangeStack:
