@@ -696,15 +696,17 @@ struct Device(StringableRaising):
         alias buffer_size = 256
         var buffer = stack_allocation[buffer_size, C_char.type]()
 
-        var cuDeviceGetName = self.cuda_dll.cuDeviceGetName
-        _ = cuDeviceGetName(buffer, Int32(buffer_size), self.id)
+        _check_error(
+            self.cuda_dll.cuDeviceGetName(buffer, Int32(buffer_size), self.id)
+        )
 
         return StringRef(buffer)
 
     fn cuda_version(self) raises -> (Int, Int):
         var res: Int32 = 0
-        var cuDriverGetVersion = self.cuda_dll.cuDriverGetVersion
-        _check_error(cuDriverGetVersion(UnsafePointer.address_of(res)))
+        _check_error(
+            self.cuda_dll.cuDriverGetVersion(UnsafePointer.address_of(res))
+        )
 
         var major = res // 1000
         var minor = (res % 1000) // 10
@@ -713,18 +715,21 @@ struct Device(StringableRaising):
     fn _total_memory(self) raises -> Int:
         """Returns the total amount of memory on the device."""
 
-        var cuDeviceTotalMem = self.cuda_dll.cuDeviceTotalMem
         var res: Int = 0
-        _check_error(cuDeviceTotalMem(UnsafePointer.address_of(res), self.id))
+        _check_error(
+            self.cuda_dll.cuDeviceTotalMem(
+                UnsafePointer.address_of(res), self.id
+            )
+        )
         return res
 
     fn _query(self, attr: DeviceAttribute) raises -> Int:
         """Returns information about a particular device attribute."""
-
-        var cuDeviceGetAttribute = self.cuda_dll.cuDeviceGetAttribute
         var res: Int32 = 0
         _check_error(
-            cuDeviceGetAttribute(UnsafePointer.address_of(res), attr, self.id)
+            self.cuda_dll.cuDeviceGetAttribute(
+                UnsafePointer.address_of(res), attr, self.id
+            )
         )
         return int(res)
 

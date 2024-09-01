@@ -36,9 +36,10 @@ struct Stream(CollectionElement):
         self.cuda_dll = cuda_dll
         self.owning = True
 
-        var cuStreamCreate = self.cuda_dll.cuStreamCreate
         _check_error(
-            cuStreamCreate(UnsafePointer.address_of(self.stream), Int32(flags))
+            self.cuda_dll.cuStreamCreate(
+                UnsafePointer.address_of(self.stream), Int32(flags)
+            )
         )
 
     fn __init__(inout self, *, other: Self):
@@ -54,9 +55,8 @@ struct Stream(CollectionElement):
 
     fn __del__(owned self):
         try:
-            var cuStreamDestroy = self.cuda_dll.cuStreamDestroy
             if self.owning and self.stream:
-                _check_error(cuStreamDestroy(self.stream))
+                _check_error(self.cuda_dll.cuStreamDestroy(self.stream))
         except e:
             abort(e.__str__())
 
@@ -76,5 +76,4 @@ struct Stream(CollectionElement):
     fn synchronize(self) raises:
         """Wait until a CUDA stream's tasks are completed."""
         if self.stream:
-            var cuStreamSynchronize = self.cuda_dll.cuStreamSynchronize
-            _check_error(cuStreamSynchronize(self.stream))
+            _check_error(self.cuda_dll.cuStreamSynchronize(self.stream))

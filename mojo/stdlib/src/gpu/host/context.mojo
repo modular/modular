@@ -69,11 +69,11 @@ struct Context:
 
                 @parameter
                 if self.USE_CTX_RETAIN:
-                    var cuDevicePrimaryCtxRelease = self.cuda_dll.cuDevicePrimaryCtxRelease
-                    _check_error(cuDevicePrimaryCtxRelease(self.device.id))
+                    _check_error(
+                        self.cuda_dll.cuDevicePrimaryCtxRelease(self.device.id)
+                    )
                 else:
-                    var cuCtxDestroy = self.cuda_dll.cuCtxDestroy
-                    _check_error(cuCtxDestroy(self.ctx))
+                    _check_error(self.cuda_dll.cuCtxDestroy(self.ctx))
 
                 self.ctx = _ContextHandle()
                 if self.cuda_function_cache:
@@ -106,15 +106,13 @@ struct Context:
 
     fn set_current(self) raises:
         """Set the current context for this thread."""
-        var cuCtxSetCurrent = self.cuda_dll.cuCtxSetCurrent
-        _check_error(cuCtxSetCurrent(self.ctx))
+        _check_error(self.cuda_dll.cuCtxSetCurrent(self.ctx))
         pass
 
     fn synchronize(self) raises:
         """Blocks for a Cuda Context's tasks to complete."""
 
-        var cuCtxSynchronize = self.cuda_dll.cuCtxSynchronize
-        _check_error(cuCtxSynchronize())
+        _check_error(self.cuda_dll.cuCtxSynchronize())
 
     fn malloc_host[
         type: AnyType
@@ -124,9 +122,10 @@ struct Context:
 
         alias sizeof_t = sizeof[type]()
         var ptr = UnsafePointer[Int]()
-        var cuMemAllocHost = self.cuda_dll.cuMemAllocHost
         _check_error(
-            cuMemAllocHost(UnsafePointer.address_of(ptr), count * sizeof_t)
+            self.cuda_dll.cuMemAllocHost(
+                UnsafePointer.address_of(ptr), count * sizeof_t
+            )
         )
         return ptr.bitcast[type]()
 
@@ -134,9 +133,10 @@ struct Context:
         """Allocates GPU device memory."""
 
         var ptr = UnsafePointer[Int]()
-        var cuMemAlloc = self.cuda_dll.cuMemAlloc
         _check_error(
-            cuMemAlloc(UnsafePointer.address_of(ptr), count * sizeof[type]())
+            self.cuda_dll.cuMemAlloc(
+                UnsafePointer.address_of(ptr), count * sizeof[type]()
+            )
         )
         return ptr.bitcast[type]()
 
@@ -148,9 +148,8 @@ struct Context:
 
         alias CU_MEM_ATTACH_GLOBAL = UInt32(1)
         var ptr = UnsafePointer[Int]()
-        var cuMemAllocManaged = self.cuda_dll.cuMemAllocManaged
         _check_error(
-            cuMemAllocManaged(
+            self.cuda_dll.cuMemAllocManaged(
                 UnsafePointer.address_of(ptr),
                 count * sizeof[type](),
                 CU_MEM_ATTACH_GLOBAL,
@@ -160,14 +159,11 @@ struct Context:
 
     fn free_host[type: AnyType](self, ptr: UnsafePointer[type]) raises:
         """Frees memory allocated with malloc_host()."""
-        var cuMemFreeHost = self.cuda_dll.cuMemFreeHost
-        _check_error(cuMemFreeHost(ptr.bitcast[Int]()))
+        _check_error(self.cuda_dll.cuMemFreeHost(ptr.bitcast[Int]()))
 
     fn free[type: AnyType](self, ptr: UnsafePointer[type]) raises:
         """Frees allocated GPU device memory."""
-
-        var cuMemFree = self.cuda_dll.cuMemFree
-        _check_error(cuMemFree(ptr.bitcast[Int]()))
+        _check_error(self.cuda_dll.cuMemFree(ptr.bitcast[Int]()))
 
     fn copy_host_to_device[
         type: AnyType
@@ -179,9 +175,8 @@ struct Context:
     ) raises:
         """Copies memory from host to device."""
 
-        var cuMemcpyHtoD = self.cuda_dll.cuMemcpyHtoD
         _check_error(
-            cuMemcpyHtoD(
+            self.cuda_dll.cuMemcpyHtoD(
                 device_dest.bitcast[Int](),
                 host_src.bitcast[NoneType](),
                 count * sizeof[type](),
@@ -199,9 +194,8 @@ struct Context:
     ) raises:
         """Copies memory from host to device asynchronously."""
 
-        var cuMemcpyHtoDAsync = self.cuda_dll.cuMemcpyHtoDAsync
         _check_error(
-            cuMemcpyHtoDAsync(
+            self.cuda_dll.cuMemcpyHtoDAsync(
                 device_dst.bitcast[NoneType](),
                 host_src.bitcast[Int](),
                 count * sizeof[type](),
@@ -219,9 +213,8 @@ struct Context:
     ) raises:
         """Copies memory from device to host."""
 
-        var cuMemcpyDtoH = self.cuda_dll.cuMemcpyDtoH
         _check_error(
-            cuMemcpyDtoH(
+            self.cuda_dll.cuMemcpyDtoH(
                 host_dest.bitcast[NoneType](),
                 device_src.bitcast[Int](),
                 count * sizeof[type](),
@@ -239,9 +232,8 @@ struct Context:
     ) raises:
         """Copies memory from device to host asynchronously."""
 
-        var cuMemcpyDtoHAsync = self.cuda_dll.cuMemcpyDtoHAsync
         _check_error(
-            cuMemcpyDtoHAsync(
+            self.cuda_dll.cuMemcpyDtoHAsync(
                 host_dest.bitcast[NoneType](),
                 device_src.bitcast[Int](),
                 count * sizeof[type](),
@@ -260,9 +252,8 @@ struct Context:
     ) raises:
         """Copies memory from device to device asynchronously."""
 
-        var cuMemcpyDtoDAsync = self.cuda_dll.cuMemcpyDtoDAsync
         _check_error(
-            cuMemcpyDtoDAsync(
+            self.cuda_dll.cuMemcpyDtoDAsync(
                 dst.bitcast[NoneType](),
                 src.bitcast[Int](),
                 count * sizeof[type](),
@@ -275,9 +266,8 @@ struct Context:
     ](self, device_dest: UnsafePointer[type], val: UInt8, count: Int) raises:
         """Sets the memory range of N 8-bit values to a specified value."""
 
-        var cuMemsetD8 = self.cuda_dll.cuMemsetD8
         _check_error(
-            cuMemsetD8(
+            self.cuda_dll.cuMemsetD8(
                 device_dest.bitcast[Int](),
                 val,
                 count * sizeof[type](),
@@ -298,15 +288,14 @@ struct Context:
 
         alias bitwidth = bitwidthof[type]()
         constrained[
-            bitwidth == 8 or bitwidth == 16 or bitwidth == 32,
+            bitwidth in (8, 16, 32),
             "bitwidth of memset type must be one of [8,16,32]",
         ]()
 
         @parameter
         if bitwidth == 8:
-            var cuMemsetD8Async = self.cuda_dll.cuMemsetD8Async
             _check_error(
-                cuMemsetD8Async(
+                self.cuda_dll.cuMemsetD8Async(
                     device_dest.bitcast[DType.uint8](),
                     bitcast[DType.uint8, 1](val),
                     count * sizeof[type](),
@@ -314,9 +303,8 @@ struct Context:
                 )
             )
         elif bitwidth == 16:
-            var cuMemsetD16Async = self.cuda_dll.cuMemsetD16Async
             _check_error(
-                cuMemsetD16Async(
+                self.cuda_dll.cuMemsetD16Async(
                     device_dest.bitcast[DType.uint16](),
                     bitcast[DType.uint16, 1](val),
                     count,
@@ -324,9 +312,8 @@ struct Context:
                 )
             )
         elif bitwidth == 32:
-            var cuMemsetD32Async = self.cuda_dll.cuMemsetD32Async
             _check_error(
-                cuMemsetD32Async(
+                self.cuda_dll.cuMemsetD32Async(
                     device_dest.bitcast[DType.uint32](),
                     bitcast[DType.uint32, 1](val),
                     count,
@@ -345,9 +332,8 @@ struct Context:
     ) raises:
         """Copies memory from device to device."""
 
-        var cuMemcpyDtoD = self.cuda_dll.cuMemcpyDtoD
         _check_error(
-            cuMemcpyDtoD(
+            self.cuda_dll.cuMemcpyDtoD(
                 device_dest.bitcast[Int](),
                 device_src.bitcast[Int](),
                 count * sizeof[type](),
@@ -360,9 +346,8 @@ struct Context:
         """Allocates memory with stream ordered semantics."""
 
         var ptr = UnsafePointer[Int]()
-        var cuMemAllocAsync = self.cuda_dll.cuMemAllocAsync
         _check_error(
-            cuMemAllocAsync(
+            self.cuda_dll.cuMemAllocAsync(
                 UnsafePointer.address_of(ptr),
                 count * sizeof[type](),
                 stream.stream,
@@ -375,8 +360,9 @@ struct Context:
     ](self, ptr: UnsafePointer[type], stream: Stream) raises:
         """Frees memory with stream ordered semantics."""
 
-        var cuMemFreeAsync = self.cuda_dll.cuMemFreeAsync
-        _check_error(cuMemFreeAsync(ptr.bitcast[Int](), stream.stream))
+        _check_error(
+            self.cuda_dll.cuMemFreeAsync(ptr.bitcast[Int](), stream.stream)
+        )
 
     fn get_compute_capability(self) raises -> Float64:
         """Returns the device compute capability version."""

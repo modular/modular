@@ -458,9 +458,8 @@ struct Module:
         """Unloads a module ffrom the current CUDA context."""
 
         try:
-            var cuModuleUnload = self.cuda_dll.cuModuleUnload
             if self.module:
-                _check_error(cuModuleUnload(self.module))
+                _check_error(self.cuda_dll.cuModuleUnload(self.module))
                 self.module = _ModuleHandle()
         except e:
             abort(e.__str__())
@@ -478,9 +477,8 @@ struct Module:
         """
 
         var func = _FunctionHandle()
-        var cuModuleGetFunction = self.cuda_dll.cuModuleGetFunction
         _check_error(
-            cuModuleGetFunction(
+            self.cuda_dll.cuModuleGetFunction(
                 UnsafePointer.address_of(func),
                 self.module,
                 name.unsafe_cstr_ptr(),

@@ -67,9 +67,10 @@ struct Event:
         self.cuda_dll = ctx.cuda_dll
         self._event = _EventHandle()
         _check_error(self.cuda_dll.cuCtxPushCurrent(ctx.ctx))
-        var cuEventCreate = self.cuda_dll.cuEventCreate
         _check_error(
-            cuEventCreate(UnsafePointer.address_of(self._event), flags)
+            self.cuda_dll.cuEventCreate(
+                UnsafePointer.address_of(self._event), flags
+            )
         )
 
     @always_inline
@@ -80,8 +81,7 @@ struct Event:
             if not self._event:
                 return
 
-            var cuEventCreate = self.cuda_dll.cuEventDestroy
-            _check_error(cuEventCreate(self._event))
+            _check_error(self.cuda_dll.cuEventDestroy(self._event))
             self._event = _EventHandle()
         except e:
             abort(e.__str__())
@@ -90,27 +90,22 @@ struct Event:
     fn sync(self) raises:
         """Waits until the completion of all work currently capturend in a particular event.
         """
-
-        var cuEventSynchronize = self.cuda_dll.cuEventSynchronize
-        _check_error(cuEventSynchronize(self._event))
+        _check_error(self.cuda_dll.cuEventSynchronize(self._event))
 
     @always_inline
     fn record(self, stream: Stream) raises:
         """Captures the contents of a stream in the events object at the time of this call.
         """
-
-        var cuEventRecord = self.cuda_dll.cuEventRecord
-        _check_error(cuEventRecord(self._event, stream.stream))
+        _check_error(self.cuda_dll.cuEventRecord(self._event, stream.stream))
 
     @always_inline
     fn elapsed(self, other: Event) raises -> Float32:
         """Computes the elapsed time between two events (in milliseconds with a resolution of around 0.5 microseconds).
         """
 
-        var cuEventElapsedTime = self.cuda_dll.cuEventElapsedTime
         var ms = Float32(0)
         _check_error(
-            cuEventElapsedTime(
+            self.cuda_dll.cuEventElapsedTime(
                 UnsafePointer.address_of(ms), self._event, other._event
             )
         )
