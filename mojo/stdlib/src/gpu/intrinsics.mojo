@@ -133,3 +133,17 @@ fn clock() -> UInt:
 fn clock64() -> UInt:
     """Returns a 64-bit unsigned cycle counter."""
     return int(llvm_intrinsic["llvm.nvvm.read.ptx.sreg.clock64", Int64]())
+
+
+# ===----------------------------------------------------------------------===#
+# lop
+# ===----------------------------------------------------------------------===#
+
+
+@always_inline
+fn lop[lut: Int](a: Int32, b: Int32, c: Int32) -> Int32:
+    """Performs arbitrary logical operation on 3 inputs."""
+
+    return inlined_assembly[
+        "lop3.b32", Int32, constraints="=r,r,r,r,n", has_side_effect=False
+    ](a, b, c, Int32(lut))
