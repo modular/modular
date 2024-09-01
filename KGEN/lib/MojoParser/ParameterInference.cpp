@@ -47,6 +47,15 @@ void InferenceFailure::emitSpecificNote(
   }
 
   auto failure = cast<TypeConflictFailure>(info);
+  if (isa<TypeType>(failure.paramType)) {
+    if (auto anyStruct = dyn_cast<AnyStructType>(failure.argParamType)) {
+      attachNote() << "argument type " << anyStruct.getStructType()
+                   << " is not a '@register_passable(\"trivial\")' type, so "
+                      "does not satisfy AnyTrivialRegType";
+      return;
+    }
+  }
+
   if (isa<TraitType>(failure.paramType)) {
     if (auto anyStruct = dyn_cast<AnyStructType>(failure.argParamType)) {
       attachNote() << "argument type " << anyStruct.getStructType()

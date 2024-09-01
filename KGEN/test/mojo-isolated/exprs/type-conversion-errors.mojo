@@ -6,14 +6,15 @@
 
 # RUN: %parse-mojo-isolated %s -verify-diagnostics
 
+@register_passable
+struct RP_NotTrivial:
+    pass
 
 struct Foo:
     fn __init__(inout self): pass
 
-
 fn take_instance_param[a: Foo]():
     pass
-
 
 # expected-note @+1 {{function declared here}}
 fn takes_instance_arg(a: Foo):
@@ -106,3 +107,17 @@ struct MyBool:
 fn test_bad_conversion(a: MySIMD[0]):
     # expected-error @+1 {{cannot implicitly convert 'MySIMD[0]' value to 'MySIMD[1]'}}
     var b : MySIMD[1] = a
+
+# MOCO-1090: bad parameter inference error message.
+fn test_rp_trivial_inference(a: RP_NotTrivial, b: Foo):
+    # expected-error @below {{invalid call to 'infer_rp_trivial': could not deduce parameter 'T' of callee 'infer_rp_trivial'}}
+    # expected-note @below {{failed to infer parameter 'T', argument type 'RP_NotTrivial' is not a '@register_passable("trivial")' type, so does not satisfy AnyTrivialRegType}}
+    _ = infer_rp_trivial(a)
+
+    # expected-error @below {{invalid call to 'infer_rp_trivial': could not deduce parameter 'T' of callee 'infer_rp_trivial'}}
+    # expected-note @below {{failed to infer parameter 'T', argument type 'Foo' is not a '@register_passable("trivial")' type, so does not satisfy AnyTrivialRegType}}
+    _ = infer_rp_trivial(b)
+
+# expected-note @below {{function declared here}}
+fn infer_rp_trivial[T: AnyTrivialRegType](val: T): pass
+
