@@ -165,6 +165,9 @@ struct ManagedTensorSlice[
         # Necessary to make it simpler on the call site.
         _rank: Int,
     ](self, index: StaticIntTuple[_rank]) -> SIMD[type, width]:
+        # Nop function to preserve symbols from DCE.
+        self._input_fusion_hook[CompilerTensorSpec[type, rank]()]()
+
         constrained[_rank == rank]()
         var ridx = rebind[StaticIntTuple[rank]](index)
 
@@ -214,6 +217,9 @@ struct ManagedTensorSlice[
         # Necessary to make it simpler on the call site.
         _rank: Int,
     ](self, index: StaticIntTuple[_rank], val: SIMD[type, width]):
+        # Nop function to preserve symbols from DCE.
+        self._output_fusion_hook[CompilerTensorSpec[type, rank]()]()
+
         constrained[_rank == rank]()
         var ridx = rebind[StaticIntTuple[rank]](index)
 
@@ -257,6 +263,44 @@ struct ManagedTensorSlice[
                 )
             else:
                 return strided_store(val, self._ptr.offset(flat_index), stride)
+
+    # Helper function used in SliceMOGGDPSFunc to generate a new TensorSpec with the lambda.
+    @no_inline
+    fn _extract_new_spec[T: CompilerTensorSpec[type, rank]](self):
+        pass
+
+    # Helper function used in SliceMOGGDPSFunc to generate the body of the input lambda
+    @__mogg_intrinsic_attr("mogg.dps_input_fusion_hook")
+    @no_inline
+    fn _input_fusion_hook[spec: CompilerTensorSpec[type, rank]](self):
+        @always_inline
+        @parameter
+        fn _input_lambda[_w: Int](i: StaticIntTuple[rank]) -> SIMD[type, _w]:
+            return rebind[SIMD[type, _w]](self._simd_load_internal[_w](i))
+
+        self._extract_new_spec[
+            CompilerTensorSpec[type, rank](
+                spec.shape, spec.strides, _input_lambda, None
+            )
+        ]()
+
+    # Helper function used in SliceMOGGDPSFunc to generate the body of the output lambda
+    @__mogg_intrinsic_attr("mogg.dps_output_fusion_hook")
+    @no_inline
+    fn _output_fusion_hook[spec: CompilerTensorSpec[type, rank]](self):
+        @always_inline
+        @parameter
+        fn _output_lambda[_w: Int](i: StaticIntTuple[rank], v: SIMD[type, _w]):
+            self._simd_store_internal(i, rebind[SIMD[type, _w]](v))
+
+        self._extract_new_spec[
+            CompilerTensorSpec[type, rank](
+                spec.shape,
+                spec.strides,
+                None,
+                _output_lambda,
+            )
+        ]()
 
 
 @__mogg_intrinsic_attr("mogg.for_each")
