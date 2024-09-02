@@ -17,6 +17,7 @@ add_modular_library(MojoParser
   DocString.cpp
   EntryPoint.cpp
   ExprEmitter.cpp
+  ExprNodePrinters.cpp
   ExprNodes.cpp
   IRValues.cpp
   Lexer.cpp
