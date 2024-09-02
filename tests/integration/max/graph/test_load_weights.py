@@ -24,7 +24,7 @@ def test_weight(session) -> None:
                 dtype=DType.int64,
                 shape=weight_shape,
                 filepath=f.name,
-            ).add_to_graph(graph)
+            )
             graph.output(w)
             compiled = session.load(graph)
             output = compiled.execute()
@@ -48,7 +48,7 @@ def test_weight_offset(session) -> None:
                 shape=weight_shape,
                 filepath=f.name,
                 offset=5,
-            ).add_to_graph(graph)
+            )
             graph.output(w)
             compiled = session.load(graph)
             output = compiled.execute()
@@ -75,10 +75,7 @@ def test_load_pytorch(session, graph_testdata) -> None:
 
     weights = load_pytorch(graph_testdata / "example_data.pt")
     with Graph("graph_with_pt_weights") as graph:
-        loaded = {
-            key: weight.add_to_graph(graph) for key, weight in weights.items()
-        }
-        graph.output(*[loaded[k] for k in flat_keys])
+        graph.output(*[weights[k] for k in flat_keys])
         compiled = session.load(graph)
         output = compiled.execute()
 
@@ -103,10 +100,7 @@ def test_load_gguf(session, graph_testdata) -> None:
 
     weights = load_gguf(graph_testdata / "example_data.gguf")
     with Graph("graph_with_gguf_weights") as graph:
-        loaded = {
-            key: weight.add_to_graph(graph) for key, weight in weights.items()
-        }
-        graph.output(*[loaded[k] for k in flat_keys])
+        graph.output(*[weights[k] for k in flat_keys])
         compiled = session.load(graph)
         output = compiled.execute()
 

@@ -3,10 +3,10 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-from conftest import assert_allclose, modular_graph_test
 import pytest
 import torch.nn as nn
 import torch.nn.functional as F
+from conftest import assert_allclose, modular_graph_test
 from llama3.model.mlp import MLP, Linear
 from max.dtype import DType
 from max.graph import Graph, TensorType
@@ -42,8 +42,8 @@ class TorchMLP(nn.Module):
 )
 def test_mlp(session, input_type: TensorType):
     dim = input_type.shape[-1]
-    w1_type = TensorType(input_type.dtype, [dim, "hidden_dim"])
-    w2_type = TensorType(input_type.dtype, ["hidden_dim", dim])
+    w1_type = TensorType(input_type.dtype, ["hidden_dim", dim])
+    w2_type = TensorType(input_type.dtype, [dim, "hidden_dim"])
     w3_type = w1_type
     with Graph(
         "mlp", input_types=[input_type, w1_type, w2_type, w3_type]
@@ -57,5 +57,5 @@ def test_mlp(session, input_type: TensorType):
             result = execute(inputs)
             x, w1, w2, w3 = torch_inputs
             # Transpose weights to match our Linear semantics.
-            expected = TorchMLP(w1.T, w2.T, w3.T)(x).detach().numpy()
+            expected = TorchMLP(w1, w2, w3)(x).detach().numpy()
             assert_allclose(result, expected)

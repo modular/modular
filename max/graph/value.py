@@ -94,9 +94,7 @@ class TensorValue(Value):
         elif isinstance(value, np.ndarray):
             self._mlir_value = ops.constant(value)._mlir_value
         elif isinstance(value, Weight):
-            self._mlir_value = value.add_to_graph(
-                graph.Graph.current
-            )._mlir_value
+            self._mlir_value = graph.Graph.current.add_weight(value)._mlir_value
         else:
             raise TypeError(
                 "TensorValue() argument must be a mlir.Value of tensor type, a"

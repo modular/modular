@@ -34,7 +34,7 @@ def test_add_weight() -> None:
                 filepath=f.name,
             )
 
-            graph.output(w.add_to_graph(graph), w2.add_to_graph(graph))
+            graph.output(w, w2)
             gen_mlir = str(graph._mlir_op)
             assert (
                 "dense_resource<random_weight> : tensor<5x10xsi64>" in gen_mlir
@@ -52,11 +52,11 @@ def test_add_same_weight() -> None:
                 shape=[],
                 filepath=f.name,
             )
-            value = w.add_to_graph(graph)
+            value = graph.add_weight(w)
 
             # Adding the same Weight is fine, and should return the previously
-            # created Value.
-            value2 = w.add_to_graph(graph)
+            # created value.
+            value2 = graph.add_weight(w)
             assert value is value2
 
             # Test that adding a different Weight with the same name fails.
@@ -68,7 +68,7 @@ def test_add_same_weight() -> None:
             )
 
             with pytest.raises(ValueError, match="already exists"):
-                w2.add_to_graph(graph)
+                graph.add_weight(w2)
 
 
 def test_weight_is_value_like() -> None:

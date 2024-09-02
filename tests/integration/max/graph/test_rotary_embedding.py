@@ -73,7 +73,7 @@ def test_freqs_cis(session, dtype: DType, params: RopeParams):
 
 class CannedRotaryEmbedding(RotaryEmbedding):
     def __init__(self, freqs_cis: ValueLike):
-        self.freqs_cis = freqs_cis
+        self._freqs_cis = freqs_cis
 
 
 def torch_rope(x, freqs_cis, cache):

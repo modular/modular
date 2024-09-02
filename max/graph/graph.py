@@ -11,14 +11,15 @@ import contextlib
 import inspect
 from contextvars import ContextVar
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Callable, Iterable, Optional
 
 from max import _graph, mlir
 from max.mlir.dialects import mo
 
 from .type import Dim, SymbolicDim, TensorType, Type
-from .value import Value
-from .weight import GraphWeight
+from .value import Value, ValueLike
+from .weight import Weight
 
 CURRENT_GRAPH: ContextVar[Graph] = ContextVar("CURRENT_GRAPH")
 
@@ -94,6 +95,12 @@ class _classproperty:
         return self.fget(owner)
 
 
+@dataclass(frozen=True)
+class _GraphWeight:
+    weight: Weight
+    value: Value
+
+
 class Graph:
     """Represents a single MAX graph.
 
@@ -144,7 +151,7 @@ class Graph:
     _unique_symbolic_dim_counter: int
     _context_state: list
     inputs: tuple[Value, ...]
-    weights: dict[str, GraphWeight]
+    weights: dict[str, _GraphWeight]
 
     def __init__(
         self,
@@ -322,11 +329,12 @@ class Graph:
 
         return results
 
-    def output(self, *outputs: Value) -> None:
+    def output(self, *outputs: ValueLike) -> None:
         # mo.output doesn't support infer_type
-        self._add_op(mo.output, [o._mlir_value for o in outputs])
+        mlir_values = [Value(o)._mlir_value for o in outputs]
+        self._add_op(mo.output, mlir_values)
         # We have a type mismatch now, these are MLIR types
-        output_types = [o._mlir_value.type for o in outputs]
+        output_types = [value.type for value in mlir_values]
         # Need to set some more stuff.
         function_type = mlir.FunctionType.get(
             [t.to_mlir() for t in self._input_types],
@@ -355,6 +363,42 @@ class Graph:
                 "Graph failed to verify. Please file an issue. This should be"
                 " impossible."
             ) from e
+
+    def add_weight(self, weight: Weight) -> Value:
+        """Adds a weight to the graph.
+
+        If the weight is in the graph already, return the existing value.
+
+        Args:
+            weight: The weight to add to the graph.
+
+        Returns:
+            `TensorValue` that contains this weight.
+
+        Raises:
+            ValueError if a weight with the same name already exists in the
+            graph.
+        """
+        if graph_weight := self.weights.get(weight.name):
+            if graph_weight.weight is weight:
+                return graph_weight.value
+            else:
+                raise ValueError(
+                    f"Weight '{weight.name}' already exists in Graph {self}"
+                )
+
+        tensor_type = TensorType(weight.dtype, weight.shape).to_mlir()
+        weights_attr = _graph.weights_attr(
+            Path(weight.filepath),
+            weight.offset,
+            tensor_type,
+            weight.name,
+        )
+        weight_tensor = self._add_op(
+            mo.constant, result=tensor_type, value=weights_attr
+        )[0]
+        self.weights[weight.name] = _GraphWeight(weight, weight_tensor)
+        return weight_tensor
 
     def __repr__(self) -> str:
         return str(self._mlir_op)
