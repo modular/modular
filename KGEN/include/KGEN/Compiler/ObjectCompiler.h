@@ -58,6 +58,10 @@ public:
   lowerAllFuncsToLLVM(llvm::LLVMContext &ctx, ModuleOp module);
 
   /// Slices the call graph for all exported symbols to produce a standalone
+  /// LLVMIR file. The LLVMIR output is written to the provided stream.
+  ErrorOrSuccess emitLLVMIR(ModuleOp module, llvm::raw_pwrite_stream &os);
+
+  /// Slices the call graph for all exported symbols to produce a standalone
   /// assembly file. The assembly output is written to the provided stream.
   ErrorOrSuccess emitAssembly(ModuleOp module, llvm::raw_pwrite_stream &os);
 

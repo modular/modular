@@ -375,6 +375,20 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
     return mlir::success();
   }
 
+  if (clOptions.cmd == Command::kEmitLLVMOpt) {
+    auto outFile = clOptions.getOutputFile(/*hasBinaryOutput=*/false, ".ll");
+    if (!outFile)
+      return failure(clOptions.reportError("could not open .ll output file"));
+
+    if (ErrorOrSuccess err =
+            objCompiler.emitLLVMIR(*theModule, outFile->os())) {
+      return failure(clOptions.reportError("failed to generate LLVMIR: " +
+                                           Twine(err.getError())));
+    }
+    outFile->keep();
+    return mlir::success();
+  }
+
   // Handle assembly output.
   if (clOptions.cmd == Command::kEmitAssembly) {
     auto outFile = clOptions.getOutputFile(/*hasBinaryOutput=*/false, ".s");

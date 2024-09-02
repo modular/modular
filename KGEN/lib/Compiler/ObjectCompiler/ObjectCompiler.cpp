@@ -871,6 +871,34 @@ ErrorOr<ElementsAttr> ObjectCompiler::emitArchiveAttr(ModuleOp module) {
 }
 
 //===----------------------------------------------------------------------===//
+// emitLLVMIR
+//===----------------------------------------------------------------------===//
+
+ErrorOrSuccess ObjectCompiler::emitLLVMIR(ModuleOp module,
+                                          llvm::raw_pwrite_stream &os) {
+  CompilerTimeTraceScope traceScope("emitLLVMIR");
+
+  LLVMModuleAndContext llvmModule;
+  if (auto err = llvmModule.create([&](llvm::LLVMContext &ctx) {
+        return lowerAllFuncsToLLVM(ctx, module);
+      }))
+    return err.takeError();
+
+  auto machineOr = createTargetMachine(options, /*isJIT=*/false);
+  if (failed(machineOr))
+    return machineOr.takeError();
+
+  // Set the data layout on the module.
+  llvmModule->setDataLayout((*machineOr)->createDataLayout());
+
+  if (failed(runLLVMOptPasses(*llvmModule, **machineOr, options, runtime)))
+    return Error("failed to run LLVM opt passes");
+
+  llvmModule->print(os, /*AAW=*/nullptr);
+  return success();
+}
+
+//===----------------------------------------------------------------------===//
 // emitAssembly
 //===----------------------------------------------------------------------===//
 
