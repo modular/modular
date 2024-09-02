@@ -6,6 +6,7 @@
 """Test the max.engine Python bindings with MOF."""
 
 import os
+from dataclasses import dataclass
 from math import isclose
 from pathlib import Path
 
@@ -14,6 +15,8 @@ import numpy as np
 import pytest
 from max.dtype import DType
 from max.engine import InferenceSession, TensorSpec, TorchInputSpec
+from max.graph import Graph, Value, TensorType
+from max.mlir.dialects import mo
 
 DYLIB_FILE_EXTENSION = "dylib" if os.uname().sysname == "Darwin" else "so"
 
@@ -366,7 +369,7 @@ def test_repr_torch_input_spec():
     assert str(input_spec_with_shape) == "20x30xfloat32"
 
     input_spec_without_shape = TorchInputSpec(None, DType.float64)
-    assert input_spec_without_shape.shape == None
+    assert input_spec_without_shape.shape is None
     assert input_spec_without_shape.dtype == DType.float64
 
     assert (
@@ -382,3 +385,39 @@ def test_repr_torch_input_spec():
         == "TorchInputSpec(shape=['BATCH', 30], dtype=DType.float32)"
     )
     assert str(input_spec_with_dim_names) == "-1x30xfloat32"
+
+
+@dataclass
+class Model:
+    num_elems: int
+
+    def __call__(self, input: Value) -> Value:
+        weights_tensor_type = TensorType(
+            DType.float32, (self.num_elems,)
+        ).to_mlir()
+        weights_tensor = Graph.current._add_op(
+            mo.constant_external,
+            result=weights_tensor_type,
+            name="foo",
+            align=np.dtype(np.float32).alignment,
+        )[0]
+
+        return input + weights_tensor
+
+
+def test_execute_external_weights(session: InferenceSession) -> None:
+    num_elems = 4096
+    weights = np.arange(num_elems, dtype=np.float32)
+
+    graph = Graph(
+        "external_weights",
+        Model(num_elems),
+        input_types=(TensorType(DType.float32, (num_elems,)),),
+    )
+    graph._mlir_op.verify()
+
+    compiled = session.load(graph, weights_registry={"foo": weights})
+    output = compiled.execute(
+        input0=np.random.randn(num_elems).astype(np.float32)
+    )
+    assert output
