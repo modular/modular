@@ -9,7 +9,7 @@
 from builtin.io import _printf
 
 from layout import LayoutTensor, Layout
-from layout.tensor_core import TensorCore, num_matrix_reg
+from layout.tensor_core import TensorCore
 from layout._utils import ManagedLayoutTensor, gpu_free, gpu_managed_alloc
 
 from gpu.host import DeviceContext
@@ -56,9 +56,7 @@ fn mma_write_operand_kernel[
     inst_shape: StaticIntTuple[3],
 ](out: LayoutTensor[dst_dtype, layout]):
     var mma = TensorCore[dst_dtype, dtype, inst_shape]()
-    var thread_val = SIMD[
-        dst_dtype, num_matrix_reg[inst_shape[0], inst_shape[1]]()
-    ](ThreadIdx.x())
+    var thread_val = mma.c_reg_type(ThreadIdx.x())
     mma.store_d(out, thread_val)
 
 
