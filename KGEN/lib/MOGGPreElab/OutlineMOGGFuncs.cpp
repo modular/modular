@@ -304,6 +304,15 @@ public:
       if (!(kernel->hasAttr(SLICED_ATTR) || kernel->hasAttr(ALLOCS_ATTR)))
         continue;
 
+      // Don't slice view kernels (The GraphCompiler need to access the copy
+      // call).
+      // TODO: Maybe we should still partially slice it to cleanup the IR
+      // (though it's not required since we can "manually" outline our view
+      // kernels).
+      bool isView = kernel->hasAttr(kMOGGViewKernel);
+      if (isView)
+        continue;
+
       // Pull the lambda names off the kernel so we can find their decl in the
       // implementation to avoid outlining them.
       llvm::StringSet<> lambdas;

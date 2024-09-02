@@ -61,6 +61,9 @@ constexpr StringLiteral MOGG_INTRINSIC_ELEMENTWISE = "mogg.elementwise";
 constexpr StringLiteral MOGG_INTRINSIC_ENABLE_FUSION_FOR =
     "mogg.enable_fusion_for";
 
+/// MOGG Intrinsic for the view kernel decorator.
+constexpr StringLiteral MOGG_INTRINSIC_VIEW_KERNEL = "mogg.view_kernel";
+
 /// MOGG Intrinsic for the for_each function
 constexpr StringLiteral MOGG_INTRINSIC_FOR_EACH = "mogg.for_each";
 
@@ -137,6 +140,7 @@ static constexpr StringLiteral kMOGGSynchronousLabel = "mogg.synchronous";
 static constexpr StringLiteral kMOGGTargetParameterName = "target";
 static constexpr StringLiteral kMOGGTargetLabel = "mogg.target";
 static constexpr StringLiteral kMOGGElementFunction = "mogg.elementwise";
+static constexpr StringLiteral kMOGGViewKernel = "mogg.view_kernel";
 
 static constexpr StringLiteral kMOGGFusableArgs = "mogg.fusable_args";
 static constexpr StringLiteral kMOGGInputLambdas = "_in_lambdas";

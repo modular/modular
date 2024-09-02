@@ -205,6 +205,9 @@ struct ExtensibilityAPIStructInfo {
   // Whether the operation is marked as an elementwise kernel
   bool isElementwiseKernel = false;
 
+  // Whether the operation is marked as a view kernel.
+  bool isViewKernel = false;
+
   // The name of the operation this struct is registered to
   StringAttr registrationName{};
 };
@@ -225,12 +228,19 @@ isExtensibilityAPIStruct(LIT::StructDeclOp structDeclOp, ModuleOp moduleOp,
       auto decoratorFunc =
           moduleOp.lookupSymbol<LIT::FuncOp>(directSym.getSymbol());
 
-      if (registrationInfo.isElementwiseKernel)
-        return Error("Op has multiple elementwise annotations");
-
-      if (decoratorFunc && decoratorFunc->hasAttr(MOGG_INTRINSIC_ELEMENTWISE))
+      if (decoratorFunc && decoratorFunc->hasAttr(MOGG_INTRINSIC_ELEMENTWISE)) {
+        if (registrationInfo.isElementwiseKernel)
+          return Error("Op has multiple elementwise annotations");
         registrationInfo.isElementwiseKernel = true;
-      continue;
+        continue;
+      }
+
+      if (decoratorFunc && decoratorFunc->hasAttr(MOGG_INTRINSIC_VIEW_KERNEL)) {
+        if (registrationInfo.isViewKernel)
+          return Error("Op has multiple view annotations");
+        registrationInfo.isViewKernel = true;
+        continue;
+      }
     }
 
     TypedAttr registerOperand = getDecoratorLambdaArgument(
@@ -309,6 +319,8 @@ bool processStructExecuteFunc(ModuleOp moduleOp,
   if (registrationInfo.isElementwiseKernel)
     func->setAttr(kMOGGElementFunction,
                   mlir::UnitAttr::get(func->getContext()));
+  if (registrationInfo.isViewKernel)
+    func->setAttr(kMOGGViewKernel, mlir::UnitAttr::get(func->getContext()));
 
   // Iterate over the decorators to find enable_fusion_for
   for (auto decorator : func.getDecorators()) {
