@@ -64,6 +64,12 @@ constexpr StringLiteral MOGG_INTRINSIC_ENABLE_FUSION_FOR =
 /// MOGG Intrinsic for the for_each function
 constexpr StringLiteral MOGG_INTRINSIC_FOR_EACH = "mogg.for_each";
 
+/// MOGG Instrinsic for the input / output lambda implementations.
+constexpr StringLiteral MOGG_INTRINSIC_INPUT_FUSION_HOOK =
+    "mogg.dps_input_fusion_hook";
+constexpr StringLiteral MOGG_INTRINSIC_OUTPUT_FUSION_HOOK =
+    "mogg.dps_output_fusion_hook";
+
 /// Track the pair of the decorator as it is seen in the LIT IR in its raw from
 /// and the clean processed attribute which is added after it is processed.
 struct MOGGDecorator {
@@ -133,6 +139,9 @@ static constexpr StringLiteral kMOGGTargetLabel = "mogg.target";
 static constexpr StringLiteral kMOGGElementFunction = "mogg.elementwise";
 
 static constexpr StringLiteral kMOGGFusableArgs = "mogg.fusable_args";
+static constexpr StringLiteral kMOGGInputLambdas = "_in_lambdas";
+static constexpr StringLiteral kMOGGOutputLambdas = "_out_lambdas";
+static constexpr StringLiteral kMOGGElementwiseLambda = "_elementwise_lambda";
 
 inline bool isExecuteFunc(Operation *gen) {
   return gen != nullptr && gen->hasAttr(kMOGGExecuteFunctionLabel);
@@ -164,6 +173,10 @@ constexpr StringLiteral MOJO_INTERNAL_DPS_TENSOR_TYPE_NAME =
 //===----------------------------------------------------------------------===//
 
 constexpr StringLiteral MOJO_MOGG_TENSOR_TYPE_NAME = "MOGGTensor::Tensor";
+
+// The stored mojo type symbol name of the mojo ctx in extensibility kernels.
+constexpr StringLiteral MOJO_EXTENSIBILITY_API_CALL_CONTEXT_PTR_TYPE_NAME =
+    "runtime::MojoCallContextPtr";
 
 } // namespace M::KGEN::MOGGPreElab
 

@@ -233,13 +233,13 @@ private:
     SmallVector<StringRef> inNames;
     for (const std::string &name : inputLambdaNames)
       inNames.push_back(name);
-    newAttrs.push_back(NamedAttribute{b.getStringAttr("_in_lambdas"),
+    newAttrs.push_back(NamedAttribute{b.getStringAttr(kMOGGInputLambdas),
                                       b.getStrArrayAttr(inNames)});
 
     SmallVector<StringRef> outNames;
     for (const std::string &name : outputLambdaNames)
       outNames.push_back(name);
-    newAttrs.push_back(NamedAttribute{b.getStringAttr("_out_lambdas"),
+    newAttrs.push_back(NamedAttribute{b.getStringAttr(kMOGGOutputLambdas),
                                       b.getStrArrayAttr(outNames)});
     gen->setAttrs(newAttrs);
   }

@@ -47,6 +47,7 @@ public:
       mlir::OpPassManager pm(ModuleOp::getOperationName());
       pm.addPass(MOGGPreElab::createMOGGAutoparameterize());
       pm.addPass(MOGGPreElab::createSliceMOGGFuncs());
+      pm.addPass(MOGGPreElab::createSliceMOGGDPSFuncs());
       pm.addPass(MOGGPreElab::createOutlineMOGGFuncs());
 
       if (failed(runPipeline(pm, mod)))
