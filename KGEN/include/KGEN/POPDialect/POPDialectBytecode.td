@@ -18,6 +18,10 @@ def ArrayType : DialectType<(type
   Type:$elementType
 )>;
 
+def UnionType : DialectType<(type
+  ConcreteTypeArray<"Type">:$types
+)>;
+
 def SIMDType : DialectType<(type
   TypedAttr:$size,
   TypedAttr:$dType
@@ -26,6 +30,7 @@ def SIMDType : DialectType<(type
 def POPDialectTypes : DialectTypes<"pop"> {
   let elems = [
     ArrayType,
+    UnionType,
     SIMDType
   ];
 }
@@ -50,6 +55,11 @@ def FastmathFlagsAttr : DialectAttribute<(attr
   EnumAttr<"FastmathFlags">:$value
 )>;
 
+def UnionAttr : DialectAttribute<(attr
+  TypedAttr:$value,
+  ConcreteType<"UnionType">:$type
+)>;
+
 def DTypeValues :
   WithParser<"succeeded(readDTypeValues($_reader, $_var))",
   WithPrinter<"writeDTypeValues($_writer, $_getter)",
@@ -71,6 +81,7 @@ def POPDialectAttributes : DialectAttributes<"pop"> {
     AtomicOrderingAttr,
     AtomicBinOpAttr,
     FastmathFlagsAttr,
+    UnionAttr,
     SIMDAttr,
     ArrayAttr
   ];
