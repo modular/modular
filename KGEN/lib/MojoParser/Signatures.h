@@ -19,6 +19,10 @@
 #include "KGEN/MojoParser/Lexer.h"
 #include "KGEN/MojoParser/TypeCheckScopeInfo.h"
 
+namespace mlir {
+class raw_indented_ostream;
+} // namespace mlir
+
 namespace M::KGEN::LIT {
 class ASTDecl;
 class ASTType;
@@ -118,6 +122,10 @@ struct ParsedArgument {
 
   /// Map KWArgHandling to the PassingKind enum of the LIT dialect.
   PassingKind getKWArgHandlingAsPassingKind() const;
+
+  /// Print the argument for debugging.
+  void print(mlir::raw_indented_ostream &os) const;
+  LLVM_DUMP_METHOD void dump() const;
 };
 
 //===----------------------------------------------------------------------===//

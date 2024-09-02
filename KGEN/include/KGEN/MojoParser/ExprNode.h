@@ -14,6 +14,10 @@
 
 #include "Support/LLVMCompilerForwardDecls.h"
 
+namespace mlir {
+class raw_indented_ostream;
+} // namespace mlir
+
 namespace M {
 class SourceRange;
 } // namespace M
@@ -148,6 +152,11 @@ public:
 
   /// Return the source range spanned by this expression.
   virtual SourceRange getRange() const = 0;
+
+  /// Print the expression node.
+  virtual void print(mlir::raw_indented_ostream &os) const = 0;
+  /// Dump the expression node for debugging.
+  LLVM_DUMP_METHOD void dump() const;
 
   /// Return the start or end of the source range.
   llvm::SMLoc getRangeStart() const;
