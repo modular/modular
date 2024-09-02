@@ -10,7 +10,7 @@ from buffer.dimlist import Dim, DimList
 from nn.mha import fused_attention as cpu_fused_attention_impl
 from tensor_utils import ManagedTensorSlice, foreach
 
-from utils.index import StaticIntTuple
+from utils import StaticIntTuple, unroll
 from linalg.matmul import matmul as _matmul
 from runtime.asyncrt import MojoCallContextPtr
 
@@ -301,3 +301,65 @@ struct MatmulFuseOut:
         var shape = a.get_static_spec().shape
         shape[1] = b.get_static_spec().shape[1]
         return rebind[StaticIntTuple[2]](shape)
+
+
+# TensorCopy intrinsic used by view kernels.
+# z is a kernel output, and x a view of the input.
+@no_inline
+fn view_copy_impl[
+    synchronous: Bool, target: StringLiteral, type: DType, rank: Int
+](z: ManagedTensorSlice[type, rank], x: ManagedTensorSlice[type, rank]):
+    @parameter
+    @always_inline
+    fn func[width: Int](idx: StaticIntTuple[z.rank]) -> SIMD[z.type, width]:
+        return x._simd_load_internal[width](idx)
+
+    foreach[func](z)
+
+
+@compiler.register("mo.static.broadcast_to")
+@compiler.view_kernel
+struct BroadcastTo:
+    @staticmethod
+    fn build_view[
+        type: DType,
+        in_rank: Int,
+        out_rank: Int,
+    ](
+        x: ManagedTensorSlice[type, in_rank],
+        output_shape: StaticIntTuple[out_rank],
+    ) -> ManagedTensorSlice[type, out_rank]:
+        var new_strides = StaticIntTuple[out_rank]()
+        alias delta = out_rank - in_rank
+
+        print("Hit new kernel API!")
+
+        @parameter
+        for i in range(out_rank):
+            if i < delta:
+                new_strides[i] = 0
+            elif x.dim_size(i - delta) <= 1:
+                new_strides[i] = 0
+            else:
+                new_strides[i] = x._strides[i - delta]
+
+        return ManagedTensorSlice[type, out_rank](
+            x._ptr, output_shape, new_strides
+        )
+
+    @staticmethod
+    fn execute[
+        synchronous: Bool,
+        target: StringLiteral,
+        type: DType,
+        in_rank: Int,
+        out_rank: Int,
+    ](
+        z: ManagedTensorSlice[type, out_rank],
+        x: ManagedTensorSlice[type, in_rank],
+        output_shape: StaticIntTuple[out_rank],
+    ):
+        # We need the extra output_shape argument.
+        # Using `z.shape` instead will prevent the compiler from fusing the kernels.
+        var x_view = Self.build_view(x, output_shape)
+        view_copy_impl[synchronous, target](z, x_view)
