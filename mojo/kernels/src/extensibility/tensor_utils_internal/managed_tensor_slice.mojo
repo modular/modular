@@ -91,6 +91,19 @@ struct ManagedTensorSlice[
         self._strides = _row_major_strides(self._spec)
         self._start_offset = 0
 
+    fn __init__(
+        inout self,
+        ptr: UnsafePointer[Scalar[type]],
+        shape: StaticIntTuple[rank],
+        strides: StaticIntTuple[rank],
+    ):
+        self = Self(
+            ptr,
+            StaticTensorSpec[type, rank](shape),
+            0,
+            strides,
+        )
+
     fn get_static_spec(self) -> StaticTensorSpec[type, rank]:
         """Gets the static spec of the slice.
 
@@ -155,6 +168,9 @@ struct ManagedTensorSlice[
 
     fn spec(self) -> TensorSpec:
         return self._spec.get_tensor_spec()
+
+    fn dim_size(self, index: Int) -> Int:
+        return self._spec.shape[index]
 
     fn unsafe_ptr[__type: DType = type](self) -> UnsafePointer[Scalar[__type]]:
         return rebind[UnsafePointer[Scalar[__type]]](self._ptr)

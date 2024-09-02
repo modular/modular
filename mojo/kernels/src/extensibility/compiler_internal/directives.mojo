@@ -31,6 +31,12 @@ fn enable_fusion_for(*names: StringLiteral):
     return
 
 
+# Indicates that a DPS Kernel is a view operation
+@__mogg_intrinsic_attr("mogg.view_kernel")
+fn view_kernel():
+    return
+
+
 # Compile time Tensor informations
 struct StaticTensorSpec[type: DType, rank: Int]:
     # Represents the DimList type (not accessible from KGEN tests).
