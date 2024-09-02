@@ -187,10 +187,6 @@ static LogicalResult convertLLVMMetadata(LLVM::LLVMFuncOp func,
   for (auto [i, conv, type] :
        llvm::enumerate(sig.getArgConventions(), sig.getArguments())) {
     list.clear();
-    // `exclusive` pointer implies `noalias` pointer argument.
-    if (auto ptr = dyn_cast<PointerType>(type);
-        ptr && cast<BoolAttr>(ptr.getExclusive()).getValue())
-      list.set(ids.noalias, b.getUnitAttr());
 
     switch (conv) {
     case ArgConvention::OwnedInMem:

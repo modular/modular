@@ -218,11 +218,8 @@ LogicalResult ParameterInferenceState::matchTypes(Type actualType,
       if (failed(
               matchTypes(actual.getElementType(), expected.getElementType())))
         return failure();
-      if (failed(matchSingleEltStruct(actual.getAddressSpace(),
-                                      expected.getAddressSpace())))
-        return failure();
-      return matchSingleEltStruct(actual.getExclusive(),
-                                  expected.getExclusive());
+      return matchSingleEltStruct(actual.getAddressSpace(),
+                                  expected.getAddressSpace());
     }
 
   // Handle VariadicType.

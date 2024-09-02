@@ -40,8 +40,7 @@ def SignatureType : DialectType<(type
 
 def PointerType : DialectType<(type
   Type:$elementType,
-  TypedAttr:$addressSpace,
-  TypedAttr:$exclusive
+  TypedAttr:$addressSpace
 )>;
 
 def VariadicType : DialectType<(type

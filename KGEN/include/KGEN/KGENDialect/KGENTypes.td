@@ -352,11 +352,6 @@ def PointerType : KGENType<"Pointer", "pointer", [
     `!kgen.type` type. An optional `addressSpace` argument can be
     specified (default to 0).
 
-    The `exclusive` parameter can be set to indicate that the underlying memory
-    allocation of the pointer is known only to be accessed through this pointer
-    and pointers derived from this pointer. Neither KGEN nor LLVM are guaranteed
-    to do anything useful with this information, however.
-
     Example:
 
     ```mlir
@@ -383,26 +378,18 @@ def PointerType : KGENType<"Pointer", "pointer", [
   let parameters = (ins
     "Type":$elementType,
     DefaultValuedParameter<"TypedAttr",
-                           "$_builder.getIndexAttr(0)">:$addressSpace,
-    DefaultValuedParameter<"TypedAttr",
-                           "$_builder.getBoolAttr(false)">:$exclusive);
+                           "$_builder.getIndexAttr(0)">:$addressSpace);
   let assemblyFormat = [{
     `<` custom<ParamType>($elementType) ``
-    (`,` custom<IndexParamValue>($addressSpace)^)?
-    (` ` `exclusive` `(` custom<I1ParamValue>($exclusive)^ `)`)? `>`
+    (`,` custom<IndexParamValue>($addressSpace)^)? `>`
   }];
   let genVerifyDecl = 1;
 
   let builders = [
     TypeBuilderWithInferredContext<(ins "Type":$elementType,
-                                        CArg<"unsigned", "0">:$addressSpace,
-                                        CArg<"bool", "false">:$exclusive)>,
+                                        CArg<"unsigned", "0">:$addressSpace)>,
     TypeBuilderWithInferredContext<(ins "Type":$elementType,
-                                        "TypedAttr":$addressSpace,
-                                        CArg<"bool", "false">:$exclusive)>,
-    TypeBuilderWithInferredContext<(ins "Type":$elementType,
-                                        "TypedAttr":$addressSpace,
-                                        "TypedAttr":$exclusive)>,
+                                        "TypedAttr":$addressSpace)>,
   ];
 
   let extraClassDeclaration = [{
