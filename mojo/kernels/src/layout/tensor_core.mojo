@@ -76,6 +76,11 @@ struct TensorCore[
     alias supported_fp32 = in_type == DType.float32 and shape == shape_16x8x8
     alias supported_half = in_type.is_half_float() and shape == shape_16x8x16
 
+    # Operand register types.
+    alias a_reg_type = SIMD[in_type, num_matrix_reg[shape[0], shape[2]]()]
+    alias b_reg_type = SIMD[in_type, num_matrix_reg[shape[2], shape[1]]()]
+    alias c_reg_type = SIMD[out_type, num_matrix_reg[shape[0], shape[1]]()]
+
     fn __init__(inout self):
         pass
 
@@ -95,11 +100,11 @@ struct TensorCore[
     fn load_a(
         inout self,
         a: LayoutTensor,
-    ) -> SIMD[in_type, num_matrix_reg[shape[0], shape[2]]()]:
+    ) -> Self.a_reg_type as res:
         alias mma_m = shape[0]
         alias mma_n = shape[1]
         alias mma_k = shape[2]
-        var a_reg = SIMD[in_type, num_matrix_reg[shape[0], shape[2]]()]()
+        var a_reg = __type_of(res)()
         alias reg_per_thread = num_matrix_reg[mma_m, mma_k]()
 
         alias layout_tf32 = self.tile_16x4 if reg_per_thread == 2 else self.tile_16x8
@@ -167,11 +172,11 @@ struct TensorCore[
     fn load_b(
         inout self,
         b: LayoutTensor,
-    ) -> SIMD[in_type, num_matrix_reg[shape[2], shape[1]]()]:
+    ) -> Self.b_reg_type as res:
         alias mma_m = shape[0]
         alias mma_n = shape[1]
         alias mma_k = shape[2]
-        var b_reg = SIMD[in_type, num_matrix_reg[shape[2], shape[1]]()]()
+        var b_reg = __type_of(res)()
         alias reg_per_thread = num_matrix_reg[mma_k, mma_n]()
 
         alias layout_tf32 = self.tile_8x4 if reg_per_thread == 1 else self.tile_8x8
@@ -224,11 +229,11 @@ struct TensorCore[
     fn load_c(
         inout self,
         c: LayoutTensor,
-    ) -> SIMD[out_type, num_matrix_reg[shape[0], shape[1]]()]:
+    ) -> Self.c_reg_type as res:
         alias mma_m = shape[0]
         alias mma_n = shape[1]
         alias mma_k = shape[2]
-        var c_reg = SIMD[out_type, num_matrix_reg[shape[0], shape[1]]()]()
+        var c_reg = __type_of(res)()
         alias reg_per_thread = num_matrix_reg[mma_m, mma_n]()
 
         alias layout_c = self.tile_16x8_row if reg_per_thread == 4 else self.tile_null
@@ -265,7 +270,7 @@ struct TensorCore[
     ](
         inout self,
         d: LayoutTensor[out_type, layout_mat],
-        d_reg: SIMD[out_type, num_matrix_reg[shape[0], shape[1]]()],
+        d_reg: Self.c_reg_type,
     ):
         alias mma_m = shape[0]
         alias mma_n = shape[1]
@@ -304,8 +309,8 @@ struct TensorCore[
 
     fn mma(
         inout self, inout a: SIMD, inout b: SIMD, inout c: SIMD
-    ) -> SIMD[out_type, num_matrix_reg[shape[0], shape[1]]()]:
-        var d = SIMD[out_type, num_matrix_reg[shape[0], shape[1]]()]()
+    ) -> Self.c_reg_type:
+        var d = Self.c_reg_type()
         mma(d, a, b, c)
         return d
 
