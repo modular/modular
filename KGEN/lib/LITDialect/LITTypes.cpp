@@ -1106,6 +1106,8 @@ unsigned LITSignatureType::getErrorSlotOffset() {
 /// and invokes 'emitError'+returns null on error.
 FunctionType LITSignatureType::substituteImplicitLifetimesIntoValues(
     ArrayRef<TypedAttr> values, function_ref<InFlightDiagnostic()> emitError) {
+  assert(values.size() == getNumImplicitLifetimeDecls() &&
+         "Incorrect # implicit lifetimes specified");
 
   struct Substitutor : IndexParameterReplacer<Substitutor> {
     Type tryReplace(Type, size_t) { return {}; }
