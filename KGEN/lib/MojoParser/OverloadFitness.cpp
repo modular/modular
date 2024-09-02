@@ -47,7 +47,8 @@ struct DiagEmitter : public SharedStateUser {
   InflightDiag wrongArgCountWithPack(size_t minRequiredArgs,
                                      size_t maxAllowedArgs,
                                      size_t numOperands) const;
-  InflightDiag wrongPosOnlyCount(size_t minRequiredArgs, size_t numOperands,
+  InflightDiag wrongPosOnlyCount(size_t minRequiredArgs, size_t maxAllowedArgs,
+                                 size_t numOperands,
                                  const Twine &argOrParam) const;
   InflightDiag resultGenericMemType(Type outputType) const;
   InflightDiag argGenericMemType(size_t expectedArgIdx,
@@ -136,11 +137,11 @@ InflightDiag DiagEmitter::wrongArgCountWithPack(size_t minRequiredArgs,
 }
 
 InflightDiag DiagEmitter::wrongPosOnlyCount(size_t minRequiredArgs,
+                                            size_t maxAllowedArgs,
                                             size_t numOperands,
                                             const Twine &argOrParam) const {
   InflightDiag diag = initDiag() << "callee";
-  emitWrongArgOrParamCount(diag, minRequiredArgs,
-                           /*maxAllowed=*/numOperands, numOperands,
+  emitWrongArgOrParamCount(diag, minRequiredArgs, maxAllowedArgs, numOperands,
                            "positional " + argOrParam);
   return diag;
 }
@@ -675,9 +676,9 @@ OverloadFitness OverloadFitness::evaluate(LITSignatureType signature,
       /*emitParamCount=*/
       [&](size_t numActual, bool posOnly) {
         if (posOnly) {
-          size_t numPosOnly = countNumPosOnly(paramListAttr);
-          diag =
-              emitDiagFor.wrongPosOnlyCount(numPosOnly, numActual, "parameter");
+          diag = emitDiagFor.wrongPosOnlyCount(
+              countNumPosOnly(paramListAttr), countNumPositional(paramListAttr),
+              numActual, "parameter");
         } else {
           // Hide the implicit trait parameter from the diagnostic.
           size_t hidden = 0;
