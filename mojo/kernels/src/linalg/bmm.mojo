@@ -81,9 +81,7 @@ fn _reshape_nd_buffer_with_batch_to_3d(
         batch_size *= buffer.dim[i]()
 
     var matrix_shape = StaticIntTuple[3](
-        batch_size,
-        buffer.dim(buffer.get_rank() - 2),
-        buffer.dim(buffer.get_rank() - 1),
+        batch_size, buffer.dim[rank - 2](), buffer.dim[rank - 1]()
     )
 
     return NDBuffer[buffer.type, 3, address_space = buffer.address_space](
