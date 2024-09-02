@@ -49,7 +49,9 @@ RefType BaseDLValue::getMBValueTypeFromDefArgument() const { return {}; }
 DiscardDLValue::DiscardDLValue(ASTType elementType, const ExprNode *expr)
     : BaseDLValue(elementType), expr(expr) {}
 
-void DiscardDLValue::print(raw_ostream &os) const { os << "discard pattern"; }
+void DiscardDLValue::print(raw_ostream &os) const {
+  os << "discard pattern, type=" << elementType;
+}
 
 CValue DiscardDLValue::emitLoad(ValueDest &dest, ExprEmitter &emitter) const {
   emitter.emitError(expr->getLoc(), "cannot read from discard pattern '_'")
