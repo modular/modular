@@ -547,6 +547,25 @@ fn mo_and(x: Tensor, y: Tensor) -> Tensor[DType.bool, x.static_shape]:
     return out
 
 
+@mogg_register_override("mo.or", MAX_BENEFIT)
+@export
+fn mo_or(x: Tensor, y: Tensor) -> Tensor[DType.bool, x.static_shape]:
+    var out = empty_tensor[DType.bool](x.shape)
+
+    x.enable_fusion()
+    y.enable_fusion()
+    out.enable_fusion()
+
+    @parameter
+    @always_inline
+    fn func[width: Int](i: IntList) -> SIMD[DType.bool, width]:
+        var i2 = rebind[SIMD[x.type, width]](y.simd_load[width](i))
+        return rebind[SIMD[out.type, width]](x.simd_load[width](i) | i2)
+
+    out.for_each[func]()
+    return out
+
+
 @mogg_register_override("mo.equal", MAX_BENEFIT)
 @export
 fn mo_equal(x: Tensor, y: Tensor) -> Tensor[DType.bool, x.static_shape]:
