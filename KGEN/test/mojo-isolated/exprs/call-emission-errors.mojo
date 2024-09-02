@@ -109,14 +109,12 @@ fn test_missing_kw_only_param[x: int]():
 
 
 # expected-note @below {{declared here}}
-fn missing_keyword_only_params_tricky[
-    a: int, /, *, b: int, c: int
-]():
+fn missing_keyword_only_params_tricky[a: int, /, *, b: int, c: int = `3`]():
     pass
 
 
 fn test_missing_keyword_only_params_tricky[x: int]():
-    # expected-error @below {{missing 2 required keyword-only parameters: 'b', 'c}}
+    # expected-error @below {{expects 1 positional parameter, but 3 were specified}}
     missing_keyword_only_params_tricky[x, x, x]
 
 
@@ -135,23 +133,31 @@ fn test_missing_keyword_arg_with_vararg_keyword(x: int):
 
 
 struct MemExample:
-  fn __init__(inout self): pass
-  fn __copyinit__(inout self, existing: Self): pass
+    fn __init__(inout self):
+        pass
 
-fn mutateMem(inout a: MemExample): pass
+    fn __copyinit__(inout self, existing: Self):
+        pass
+
+
+fn mutateMem(inout a: MemExample):
+    pass
+
 
 fn initialize_in_addrspace(ptr: UnsafePointer[MemExample, AddressSpace(1)]):
     # expected-error @+1 {{value of type 'MemExample' cannot be copied into a non-default address space}}
     ptr[] = MemExample()
 
+
 fn mutate_in_addrspace(ptr: UnsafePointer[MemExample, AddressSpace(1)]):
     # expected-error @+1 {{value cannot be passed from a non-default address space}}
     mutateMem(ptr[])
 
+
 struct ParametricMutability:
-    fn take_inout(inout self): # expected-note {{function declared here}}
-       # This is ok
-       self.take_parametric()
+    fn take_inout(inout self):  # expected-note {{function declared here}}
+        # This is ok
+        self.take_parametric()
 
     fn take_parametric(ref [_]self: Self):
         # expected-error @+1 {{invalid call to 'take_inout': invalid use of mutating method on rvalue of type 'ParametricMutability'}}
@@ -160,7 +166,8 @@ struct ParametricMutability:
 
 fn test_ref[
     is_mutable: Bool, lifetime: AnyLifetime[is_mutable].type
-](ref[lifetime] arg: String): pass
+](ref [lifetime]arg: String):
+    pass
 
 
 fn call_test_ref(inout s: String):
@@ -173,20 +180,24 @@ fn call_test_ref(inout s: String):
 
 
 @value
-struct MyMutSpan[
-   lifetime: MutableLifetime
-]: pass
+struct MyMutSpan[lifetime: MutableLifetime]:
+    pass
+
 
 fn take_two_spans(a: MyMutSpan[_], b: MyMutSpan[_]):
     # This is totally fine, can take two different mutable spans.
     pass
+
 
 @value
 struct MyStruct:
     var a: Int
     var b: Int
 
-fn exclusivity[spanlife: MutableLifetime](inout x: MyStruct, span: MyMutSpan[spanlife]):
+
+fn exclusivity[
+    spanlife: MutableLifetime
+](inout x: MyStruct, span: MyMutSpan[spanlife]):
     # expected-error @below {{implicit __copyinit__ call argument allows writing a memory location previously writable through another aliased argument}}
     # expected-note @below {{'x' value is passed through aliasing 'borrowed' argument}}
     x = x
@@ -203,7 +214,10 @@ fn exclusivity[spanlife: MutableLifetime](inout x: MyStruct, span: MyMutSpan[spa
     # expected-note @below {{'spanlife' memory accessed through reference embedded in value of type 'MyMutSpan[spanlife]'}}
     take_two_spans(span, span)
 
-fn mutate_two[A: AnyType, B: AnyType](inout a: A, inout b: B): pass
+
+fn mutate_two[A: AnyType, B: AnyType](inout a: A, inout b: B):
+    pass
+
 
 fn inout_ref_exclusivity(inout a: Int, inout b: Int, inout s: MyStruct):
     # This is ok.

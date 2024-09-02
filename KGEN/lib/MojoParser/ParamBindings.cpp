@@ -408,13 +408,15 @@ ParamBindings::verifyBindingsImpl(
 
     // This lambda hides the diagnostic and error handling logic for checking a
     // single positional parameter binding.
-    auto handlePosBinding = [&, &kwDiagNames = kwDiagNames](
-                                size_t index, ASTExprAnd<AnyValue> binding,
+    auto handlePosBinding = [&](size_t index, ASTExprAnd<AnyValue> binding,
                                 ASTType expectedType) -> PValue {
+      // If the parameter list expected a keyword only parameter, we have too
+      // many positional parameters.
       if (passingKind == PassingKind::KwOnly) {
-        // If this is a keyword-only passed positionally, we remember it.
-        kwDiagNames.push_back(paramName);
-        return UnboundAttr::get(expectedType);
+        if (diagEmitter)
+          diagEmitter->emitParamCount(operands.getNumPositional(),
+                                      /*posOnly=*/true);
+        return {};
       }
 
       PValue pValue = emitSingleParameterValue(binding, expectedType,
@@ -527,9 +529,9 @@ ParamBindings::verifyBindings(ArrayRef<Type> expectedParamTypes,
       /*emitParamCount=*/[&](size_t numActual, bool posOnly) {
         diag = shared.emitError(exprLoc, baseName);
         if (posOnly) {
-          emitWrongArgOrParamCount(
-              *diag, /*minRequired=*/countNumPosOnly(paramListAttr), maxAllowed,
-              numActual, "positional parameter");
+          emitWrongArgOrParamCount(*diag, countNumPosOnly(paramListAttr),
+                                   countNumPositional(paramListAttr), numActual,
+                                   "positional parameter");
         } else {
           size_t minRequired = expectedParamTypes.size() -
                                paramListAttr.getDefaultPos().size() -
