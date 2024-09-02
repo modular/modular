@@ -337,7 +337,10 @@ fn _compute_nd_index(buf: NDBuffer, index: Int) -> StaticIntTuple[buf.rank]:
 
 
 @always_inline
-fn _compute_ndbuffer_offset(buf: NDBuffer, index: VariadicList[Int]) -> Int:
+fn _compute_ndbuffer_offset(
+    buf: NDBuffer,
+    index: VariadicList[Int],
+) -> Int:
     """Computes the NDBuffer's offset using the index positions provided.
 
     Args:
@@ -347,6 +350,8 @@ fn _compute_ndbuffer_offset(buf: NDBuffer, index: VariadicList[Int]) -> Int:
     Returns:
         The offset into the NDBuffer given the indices.
     """
+
+    alias rank = buf.rank
 
     @parameter
     if buf.rank == 0:
@@ -375,23 +380,6 @@ fn _compute_ndbuffer_offset(buf: NDBuffer, index: VariadicList[Int]) -> Int:
             result = fma(buf.stride[i](), index[i], result)
 
         return result
-
-
-@always_inline
-fn _compute_ndbuffer_offset(
-    buf: NDBuffer,
-    idx: StaticIntTuple[buf.rank],
-) -> Int:
-    """Computes the NDBuffer's offset using the index positions provided.
-
-    Args:
-        buf: The NDBuffer.
-        idx: The index positions.
-
-    Returns:
-        The offset into the NDBuffer given the indices.
-    """
-    return _compute_ndbuffer_offset(buf, idx.as_tuple())
 
 
 @always_inline
@@ -433,6 +421,23 @@ fn _compute_ndbuffer_offset(
             result = fma(buf.stride[i](), index[i], result)
 
         return result
+
+
+@always_inline
+fn _compute_ndbuffer_offset(
+    buf: NDBuffer,
+    idx: StaticIntTuple[buf.rank],
+) -> Int:
+    """Computes the NDBuffer's offset using the index positions provided.
+
+    Args:
+        buf: The NDBuffer.
+        idx: The index positions.
+
+    Returns:
+        The offset into the NDBuffer given the indices.
+    """
+    return _compute_ndbuffer_offset(buf, idx.as_tuple())
 
 
 @always_inline
@@ -483,6 +488,7 @@ struct NDBuffer[
     strides: DimList = DimList.create_unknown[rank](),
     *,
     address_space: AddressSpace = AddressSpace.GENERIC,
+    exclusive: Bool = True,
 ](Sized, Stringable, Formattable):
     """An N-dimensional Buffer.
 
@@ -495,6 +501,8 @@ struct NDBuffer[
         shape: The static size (if known) of the buffer.
         strides: The strides (if known) of the buffer.
         address_space: The address space of the buffer.
+        exclusive: The underlying memory allocation of the tensor is known
+            only to be accessible through this pointer.
     """
 
     var data: UnsafePointer[Scalar[type], address_space]
@@ -522,7 +530,7 @@ struct NDBuffer[
     @always_inline
     fn __init__(
         inout self,
-        ptr: UnsafePointer[Scalar[type], address_space],
+        ptr: UnsafePointer[Scalar[type], address_space, *_],
     ):
         """Constructs an NDBuffer with statically known rank, shapes and
         type.
