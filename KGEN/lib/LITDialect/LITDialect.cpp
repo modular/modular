@@ -121,6 +121,7 @@ using WrappedLifetimeUnionAttr = WrappedAttrType<LifetimeUnionAttr>;
 using WrappedLifetimeMutCastAttr = WrappedAttrType<LifetimeMutCastAttr>;
 using WrappedLifetimeSetAttr = WrappedAttrType<LifetimeSetAttr>;
 using WrappedLifetimeSetUnionAttr = WrappedAttrType<LifetimeSetUnionAttr>;
+using WrappedLifetimeFieldAttr = WrappedAttrType<LifetimeFieldAttr>;
 
 //===----------------------------------------------------------------------===//
 // Utilities

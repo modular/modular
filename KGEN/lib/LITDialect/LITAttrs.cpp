@@ -926,6 +926,12 @@ TypedAttr LifetimeFieldAttr::get(TypedAttr structLifetime, StringAttr field) {
                                       structLifetime, field, structLife);
 }
 
+LifetimeFieldAttr LifetimeFieldAttr::getFromBytecode(TypedAttr structLifetime,
+                                                     StringAttr field,
+                                                     LifetimeType type) {
+  return Base::get(type.getContext(), structLifetime, field, type);
+}
+
 //===----------------------------------------------------------------------===//
 // ImplicitLifetimeRefAttr
 //===----------------------------------------------------------------------===//
