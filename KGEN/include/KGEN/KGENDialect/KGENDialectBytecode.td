@@ -160,12 +160,26 @@ def WrappedTypeConstantAttr : DialectAttribute<(attr
   ConcreteAttribute<"VTableAttr">:$vTable
 )>;
 
+def TypeConstantRefAttr : DialectAttribute<(attr
+  ConcreteAttribute<"SymbolRefAttr">:$symbol,
+  TypedAttrArray:$paramValues,
+  Type:$type
+)>;
+
 def DTypeConstantAttr : DialectAttribute<(attr
   Custom<"KGENDType">:$dType
 )>;
 
 def IntLiteralAttr : DialectAttribute<(attr
   Custom<"IPInt">:$value
+)>;
+
+def IntLiteralCmpPredAttr : DialectAttribute<(attr
+  EnumAttr<"IntLiteralCmpPred">:$value
+)>;
+
+def IntLiteralBinopKindAttr : DialectAttribute<(attr
+  EnumAttr<"IntLiteralBinopKind">:$value
 )>;
 
 def SymbolConstantAttr : DialectAttribute<(attr
@@ -233,20 +247,51 @@ def LinkDependencyArrayAttr : DialectAttribute<(attr
   ConcreteAttrArray<"FlatSymbolRefAttr">:$value
 )>;
 
+def CustomOpImplAttr : DialectAttribute<(attr
+  StringAttr:$opName,
+  ConcreteAttribute<"SymbolConstantAttr">:$opImplementation,
+  ConcreteOptionalAttribute<"SymbolConstantAttr">:$opCanonicalization
+)>;
+
+def CustomOpImplArrayAttr : DialectAttribute<(attr
+  ConcreteAttrArray<"CustomOpImplAttr">:$value
+)>;
+
 def FloatLiteralAttr : DialectAttribute<(attr
   ConcreteAttribute<"FloatLiteralSpecialValuesAttr">:$special,
   Custom<"OptionalIPRational">:$rational
+)>;
+
+def FloatLiteralSpecialValuesAttr : DialectAttribute<(attr
+  EnumAttr<"FloatLiteralSpecialValues">:$value
+)>;
+
+def FloatLiteralBinopKindAttr : DialectAttribute<(attr
+  EnumAttr<"FloatLiteralBinopKind">:$value
+)>;
+
+def FloatLiteralCmpPredAttr : DialectAttribute<(attr
+  EnumAttr<"FloatLiteralCmpPred">:$value
 )>;
 
 def PreservedAttr : DialectAttribute<(attr
   Attribute:$value
 )>;
 
+def TailKindAttr : DialectAttribute<(attr
+  EnumAttr<"TailKind">:$value
+)>;
+
 def KGENDialectAttributes : DialectAttributes<"kgen"> {
   let elems = [
+    IntLiteralCmpPredAttr,
+    IntLiteralBinopKindAttr,
+    FloatLiteralSpecialValuesAttr,
+    FloatLiteralCmpPredAttr,
+    FloatLiteralBinopKindAttr,
+    ParameterExprArrayAttr,
     ParamDeclAttr,
     ParamDeclArrayAttr,
-    ParameterExprArrayAttr,
     VariadicAttr,
     UnknownAttr,
     UnboundAttr,
@@ -256,23 +301,27 @@ def KGENDialectAttributes : DialectAttributes<"kgen"> {
     VTableAttr,
     VTableEntryAttr,
     WrappedTypeConstantAttr,
+    TypeConstantRefAttr,
     DTypeConstantAttr,
     IntLiteralAttr,
+    FloatLiteralAttr,
     SymbolConstantAttr,
     TargetParamAttr,
-    EnvAttr,
-    WrappedParamOperatorAttr,
-    MLIROpAttr,
-    DecoratorsAttr,
-    ExportKindAttr,
     StructDefFieldAttr,
     StructAttr,
     WrappedStructExtractAttr,
     PackAttr,
     VariantAttr,
+    EnvAttr,
+    WrappedParamOperatorAttr,
+    MLIROpAttr,
+    DecoratorsAttr,
+    PreservedAttr,
+    ExportKindAttr,
     LinkDependencyArrayAttr,
-    FloatLiteralAttr,
-    PreservedAttr
+    CustomOpImplAttr,
+    CustomOpImplArrayAttr,
+    TailKindAttr
   ];
 }
 
