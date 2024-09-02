@@ -403,7 +403,10 @@ fn reduce[
     alias output_2d_shape = DimList(h_static, c_static)
 
     var input_3d = NDBuffer[
-        src.type, 3, input_3d_shape, address_space = src.address_space
+        src.type,
+        3,
+        shape=input_3d_shape,
+        address_space = src.address_space,
     ](src.data, Index(h_dynamic, w_dynamic, c_dynamic))
     var output_2d = NDBuffer[
         dst.type, 2, output_2d_shape, address_space = dst.address_space
