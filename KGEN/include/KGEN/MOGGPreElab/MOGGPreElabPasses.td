@@ -20,6 +20,42 @@ def SliceMOGGFuncs : Pass<"slice-mogg-funcs", "mlir::ModuleOp"> {
   }];
 }
 
+def SliceMOGGDPSFuncs : Pass<"slice-mogg-dps-funcs", "mlir::ModuleOp"> {
+  let summary = "Slices compute from DPS kernels";
+  let description = [{
+    A mogg domain specific pass which performs KGEN to KGEN transforms that
+    the graph compiler can understand. The KGEN will be legal regardless.
+    We use this pass to enable kernel fusion in the Graph Compiler.
+    We add input / output / elementwise lambdas that can be manipulated
+    easily by the Graph Compiler.
+
+    For every compute kernel, it creates a new cloned kernel
+    where the in/out lambda parameters are replaced
+    by new lambdas that directly read / write from the kernel I/Os.
+    Eg:
+    ```
+    fn foo[spec: StaticTensorSpec](x: ManagedTensorSlice):
+      spec.input_lamda[width](idx)
+      bar(spec.shape)
+    ```
+
+    becomes:
+    ```
+    fn foo_COMPUTE[spec: StaticTensorSpec](x: ManagedTensorSlice):
+      @parameter
+      fn input_lambda[width](idx): return x.load[with](idx)
+      alias new_spec = StaticTensorSpec(spec.shape, spec.strides,
+                                        input_lambda, output_lambda=None)
+
+      new_spec.input_lamda[width](idx)
+      bar(new_spec.shape)
+    ```
+
+    The graph compiler will use `foo_COMPUTE` and can fuse kernels by directly
+    manipulating these lambda regions.
+  }];
+}
+
 def OutlineMOGGFuncs : Pass<"mogg-outline", "mlir::ModuleOp"> {
   let summary = "Outline MOGG kernel functions";
   let description = [{

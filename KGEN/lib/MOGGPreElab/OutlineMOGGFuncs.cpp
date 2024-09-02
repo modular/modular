@@ -48,15 +48,23 @@ private:
 
   void outlineFunction(GeneratorOp gen,
                        SmallVector<KGEN::ParamDeclareRegionOp> &lambdas,
-                       CallOp elementwiseOp, SymbolTable &symTab) {
+                       CallOp elementwiseOp, SymbolTable &symTab,
+                       bool isLegacyMOGGElementwise) {
     // We are either outlining the full function or just the inner elementwise.
     SmallVector<Operation *> opsToClone;
     ArrayRef<Type> returnTypes;
 
     // If this is elementwise outline just the elementwise.
     if (elementwiseOp) {
-      auto elemwiseLambda = elementwiseOp.getParamValues().back();
-      auto asParam = dyn_cast<ParamDeclRefAttr>(elemwiseLambda);
+      TypedAttr elemwiseLambda;
+      if (isLegacyMOGGElementwise) {
+        elemwiseLambda = elementwiseOp.getParamValues().back();
+      } else {
+        // For DPS it's not the last argument since an extra StaticTensorSpec
+        // parameter is added.
+        elemwiseLambda = elementwiseOp.getParamValues()[2];
+      }
+      ParamDeclRefAttr asParam = cast<ParamDeclRefAttr>(elemwiseLambda);
 
       // Look for the lambda and clone the body.
       for (auto lambda : gen.getOps<KGEN::ParamDeclareRegionOp>()) {
@@ -299,12 +307,13 @@ public:
       // Pull the lambda names off the kernel so we can find their decl in the
       // implementation to avoid outlining them.
       llvm::StringSet<> lambdas;
-      if (auto inLambdaAttr = kernel->getAttrOfType<ArrayAttr>("_in_lambdas")) {
+      if (auto inLambdaAttr =
+              kernel->getAttrOfType<ArrayAttr>(kMOGGInputLambdas)) {
         for (StringRef name : inLambdaAttr.getAsValueRange<StringAttr>())
           lambdas.insert(name);
       }
       if (auto outLambdaAttr =
-              kernel->getAttrOfType<ArrayAttr>("_out_lambdas")) {
+              kernel->getAttrOfType<ArrayAttr>(kMOGGOutputLambdas)) {
         for (StringRef name : outLambdaAttr.getAsValueRange<StringAttr>())
           lambdas.insert(name);
       }
@@ -319,6 +328,7 @@ public:
       // If this is an elementwise kernel we are expecting to see a call to the
       // elementwise generator.
       KGEN::CallOp elementwiseOp = nullptr;
+      bool isLegacyMOGGElementwise = false;
 
       // Views should never be marked as elementwise even if they called it.
       if (!kernel->hasAttr("_view")) {
@@ -331,8 +341,11 @@ public:
           if (!func)
             continue;
 
-          if (func->hasAttr(Decorators::ELEM_HOOK.attr))
+          if (func->hasAttr(Decorators::ELEM_HOOK.attr) ||
+              func->hasAttr(MOGG_INTRINSIC_FOR_EACH)) {
+            isLegacyMOGGElementwise = func->hasAttr(Decorators::ELEM_HOOK.attr);
             elementwiseOp = call;
+          }
         }
 
         // Ensure elementwise kernels are actually elementwise.
@@ -342,13 +355,21 @@ public:
       // Outline the actual work of the function.
       // 1. If it is elementwise, outline the body of the elementwise lambda
       // 2. Otherwise outline everything other than the lambdas.
-      outlineFunction(kernel, addedLambdas, elementwiseOp, symTab);
+      outlineFunction(kernel, addedLambdas, elementwiseOp, symTab,
+                      isLegacyMOGGElementwise);
 
       // Tell MOGG this thing is elementwise.
       if (elementwiseOp) {
-        // Last parameter is known to be the lambda...
-        auto elemwiseLambda = elementwiseOp.getParamValues().back();
-        auto asParam = dyn_cast<ParamDeclRefAttr>(elemwiseLambda);
+        TypedAttr elemwiseLambda;
+        if (isLegacyMOGGElementwise) {
+          // Last parameter is known to be the lambda...
+          elemwiseLambda = elementwiseOp.getParamValues().back();
+        } else {
+          // For DPS it's not the last argument since an extra StaticTensorSpec
+          // parameter is added.
+          elemwiseLambda = elementwiseOp.getParamValues()[2];
+        }
+        ParamDeclRefAttr asParam = cast<ParamDeclRefAttr>(elemwiseLambda);
 
         // The new attributes on the generator.
         SmallVector<NamedAttribute> attrsToAdd;
@@ -359,7 +380,7 @@ public:
 
         OpBuilder builder{ctx};
         attrsToAdd.push_back(NamedAttribute{
-            builder.getStringAttr("_elementwise_lambda"), asParam.getName()});
+            builder.getStringAttr(kMOGGElementwiseLambda), asParam.getName()});
         kernel->setAttrs(attrsToAdd);
       }
     }
