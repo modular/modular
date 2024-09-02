@@ -175,8 +175,7 @@ void StructDecls::buildReplacer(mlir::AttrTypeReplacer &replacer,
       // a pointer type, in which case we erase the element type.
       if (isa<PointerType>(type.second)) {
         auto type = cast<PointerType>(value.getType());
-        auto ptrType = PointerType::get(noneType, type.getAddressSpace(),
-                                        type.getExclusive());
+        auto ptrType = PointerType::get(noneType, type.getAddressSpace());
         value = ParamOperatorAttr::get(POC::PtrBitcast, value, ptrType);
       }
       values.push_back(value);
@@ -376,11 +375,8 @@ LITTypeLowerer::LITTypeLowerer(MLIRContext *ctx, StructDecls &structDecls)
          llvm::enumerate(llvm::make_second_range(decl.fields))) {
       if (auto ptrType = dyn_cast<PointerType>(type)) {
         fieldTypes.push_back(PointerType::get(
-            noneType,
-            cast<TypedAttr>(
-                evaluator.getReboundAttribute(ptrType.getAddressSpace())),
-            cast<TypedAttr>(
-                evaluator.getReboundAttribute(ptrType.getExclusive()))));
+            noneType, cast<TypedAttr>(evaluator.getReboundAttribute(
+                          ptrType.getAddressSpace()))));
       } else {
         fieldTypes.push_back(evaluator.getReboundType(type));
       }

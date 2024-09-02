@@ -578,35 +578,21 @@ SignatureType::verify(function_ref<InFlightDiagnostic()> emitError,
 //===----------------------------------------------------------------------===//
 
 LogicalResult PointerType::verify(function_ref<InFlightDiagnostic()> emitError,
-                                  Type type, TypedAttr addressSpace,
-                                  TypedAttr exclusive) {
+                                  Type type, TypedAttr addressSpace) {
   if (!addressSpace.getType().isIndex()) {
     return emitError() << "pointer address space parameter `" << addressSpace
                        << "` must be an index type";
   }
-  if (!exclusive.getType().isSignlessInteger(1)) {
-    return emitError() << "pointer exclusive parameter `" << exclusive
-                       << "` must be an i1 type";
-  }
   return success();
 }
 
-PointerType PointerType::get(Type elementType, unsigned addressSpace,
-                             bool exclusive) {
+PointerType PointerType::get(Type elementType, unsigned addressSpace) {
   Builder b(elementType.getContext());
-  return get(elementType, b.getIndexAttr(addressSpace),
-             b.getBoolAttr(exclusive));
+  return get(elementType, b.getIndexAttr(addressSpace));
 }
 
-PointerType PointerType::get(Type elementType, TypedAttr addressSpace,
-                             bool exclusive) {
-  return get(elementType.getContext(), elementType, addressSpace,
-             BoolAttr::get(elementType.getContext(), exclusive));
-}
-
-PointerType PointerType::get(Type elementType, TypedAttr addressSpace,
-                             TypedAttr exclusive) {
-  return get(elementType.getContext(), elementType, addressSpace, exclusive);
+PointerType PointerType::get(Type elementType, TypedAttr addressSpace) {
+  return get(elementType.getContext(), elementType, addressSpace);
 }
 
 std::optional<int64_t> PointerType::getTypeSize(TargetInfoAttr target) const {

@@ -679,8 +679,7 @@ void VariadicSplatOp::build(OpBuilder &b, OperationState &state,
 
 LogicalResult VariantBitcastOp::verify() {
   auto ptrType = getVariant().getType();
-  if (ptrType.getAddressSpace() != getType().getAddressSpace() ||
-      ptrType.getExclusive() != getType().getExclusive()) {
+  if (ptrType.getAddressSpace() != getType().getAddressSpace()) {
     return emitOpError("result pointer should have the same address space as "
                        "the input pointer");
   }
@@ -713,8 +712,7 @@ LogicalResult VariantBitcastOp::verify() {
 
 LogicalResult VariantDiscrGEPOp::verify() {
   auto ptrType = getVariant().getType();
-  if (ptrType.getAddressSpace() != getType().getAddressSpace() ||
-      ptrType.getExclusive() != getType().getExclusive()) {
+  if (ptrType.getAddressSpace() != getType().getAddressSpace()) {
     return emitOpError("result pointer should have the same address space as "
                        "the input pointer");
   }
