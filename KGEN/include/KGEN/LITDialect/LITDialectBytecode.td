@@ -48,6 +48,8 @@ def LifetimeType : DialectType<(type
   TypedAttr:$isMutable
 )>;
 
+def LifetimeSetType : DialectType<(type)>;
+
 def RefType : DialectType<(type
   Type:$elementType,
   TypedAttr:$lifetime,
@@ -79,20 +81,25 @@ def LITDialectTypes : DialectTypes<"lit"> {
     StructType,
     AnyStructType,
     TraitType,
+    AnyTraitType,
     LifetimeType,
+    LifetimeSetType,
     RefType,
+    RefPackType,
     REPLResultRefType,
     MagicMLIRAttrType,
     MagicMLIROpType,
-    MagicMLIRTypeType,
-    RefPackType,
-    AnyTraitType
+    MagicMLIRTypeType
   ];
 }
 
 //===----------------------------------------------------------------------===//
 // LITDialect Attributes
 //===----------------------------------------------------------------------===//
+
+def SymbolAttr : DialectAttribute<(attr
+  ConcreteAttribute<"SymbolRefAttr">:$value
+)>;
 
 def PogMetadataAttr : DialectAttribute<(attr
   StringAttr:$name,
@@ -129,6 +136,12 @@ def UnboundMLIROperationAttr : DialectAttribute<(attr
   ConcreteAttribute<"DictionaryAttr">:$attrs
 )>;
 
+def UnboundCustomOperationAttr : DialectAttribute<(attr
+  StringAttr:$opName,
+  ConcreteType<"AnyStructType">:$structType,
+  TypedAttrArray:$params
+)>;
+
 def UnpackedAttr : DialectAttribute<(attr)>;
 
 def ModuleAttr : DialectAttribute<(attr
@@ -152,6 +165,12 @@ def WrappedLifetimeUnionAttr : DialectAttribute<(attr
 
 def WrappedLifetimeMutCastAttr : DialectAttribute<(attr
   TypedAttr:$operand,
+  ConcreteType<"LifetimeType">:$type
+)>;
+
+def WrappedLifetimeFieldAttr : DialectAttribute<(attr
+  TypedAttr:$structLifetime,
+  StringAttr:$field,
   ConcreteType<"LifetimeType">:$type
 )>;
 
@@ -188,6 +207,12 @@ def WrappedStructExtractAttr : DialectAttribute<(attr
   Type:$type
 )>;
 
+def StructGERAttr : DialectAttribute<(attr
+  TypedAttr:$value,
+  StringAttr:$field,
+  Type:$type
+)>;
+
 def TypeLineageAttr : DialectAttribute<(attr
   Type:$type,
   TypeArray:$inheritedFrom
@@ -216,28 +241,32 @@ def TypeLineageArrayAttr : DialectAttribute<(attr
 
 def LITDialectAttributes : DialectAttributes<"lit"> {
   let elems = [
+    SymbolAttr,
     PogMetadataAttr,
     PogListAttr,
     FnMetadataAttr,
     DocStringAttr,
     UnboundMLIROperationAttr,
+    UnboundCustomOperationAttr,
     UnpackedAttr,
     ModuleAttr,
     WrappedBindTypeAttr,
     LifetimeAttr,
+    WrappedLifetimeUnionAttr,
+    WrappedLifetimeMutCastAttr,
+    WrappedLifetimeFieldAttr,
     ImplicitLifetimeRefAttr,
     WrappedLifetimeSetAttr,
     WrappedLifetimeSetUnionAttr,
     UnresolvedAliasValueAttr,
     LITStructAttr,
     WrappedStructExtractAttr,
+    StructGERAttr,
     TypeLineageAttr,
-    TypeConventionAttr,
-    WrappedLifetimeUnionAttr,
-    WrappedLifetimeMutCastAttr,
-    VarDeclKindAttr,
+    TypeLineageArrayAttr,
     RefPackAttr,
-    TypeLineageArrayAttr
+    TypeConventionAttr,
+    VarDeclKindAttr,
   ];
 }
 

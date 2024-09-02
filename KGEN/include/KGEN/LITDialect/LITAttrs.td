@@ -617,7 +617,6 @@ def LifetimeMutCastAttr : LITTypedAttr<"LifetimeMutCast", "lifetime.mutcast"> {
   }];
 }
 
-
 //===----------------------------------------------------------------------===//
 // LifetimeFieldAttr
 //===----------------------------------------------------------------------===//
@@ -646,6 +645,13 @@ def LifetimeFieldAttr : LITTypedAttr<"LifetimeField", "lifetime.field"> {
       return get(structLifetime, field);
     }], "TypedAttr">,
   ];
+
+  let extraClassDeclaration = [{
+    /// A specific builder used to build the attribute from a bytecode context,
+    /// providing a slightly different context from the normal builder.
+    static LifetimeFieldAttr getFromBytecode(TypedAttr structLifetime,
+        StringAttr field, LifetimeType type);
+  }];
 }
 
 //===----------------------------------------------------------------------===//
