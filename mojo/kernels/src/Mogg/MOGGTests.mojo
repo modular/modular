@@ -157,6 +157,12 @@ fn test_address_space_deduction(tensor: NDBuffer):
     print("Address Space: " + str(tensor.address_space._value))
 
 
+@mogg_register("test_ndbuffer_exclusive_deduction")
+@export
+fn test_ndbuffer_exclusive_deduction(tensor: NDBuffer):
+    print("Printing exclusive flag: " + str(tensor.exclusive))
+
+
 @mogg_register("test_static_shape_output")
 @export
 fn test_static_shape_output[
