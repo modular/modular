@@ -1732,12 +1732,12 @@ paths:
                 - Uploads
             summary: |
                 Creates an intermediate [Upload](/docs/api-reference/uploads/object) object that you can add [Parts](/docs/api-reference/uploads/part-object) to. Currently, an Upload can accept at most 8 GB in total and expires after an hour after you create it.
-                
+
                 Once you complete the Upload, we will create a [File](/docs/api-reference/files/object) object that contains all the parts you uploaded. This File is usable in the rest of our platform as a regular File object.
-                
+
                 For certain `purpose`s, the correct `mime_type` must be specified. Please refer to documentation for the supported MIME types for your use case:
                 - [Assistants](/docs/assistants/tools/file-search/supported-files)
-                
+
                 For guidance on the proper filename extensions for each purpose, please follow the documentation on [creating a File](/docs/api-reference/files/create).
             requestBody:
                 required: true
@@ -1785,7 +1785,7 @@ paths:
             tags:
                 - Uploads
             summary: |
-                Adds a [Part](/docs/api-reference/uploads/part-object) to an [Upload](/docs/api-reference/uploads/object) object. A Part represents a chunk of bytes from the file you are trying to upload. 
+                Adds a [Part](/docs/api-reference/uploads/part-object) to an [Upload](/docs/api-reference/uploads/object) object. A Part represents a chunk of bytes from the file you are trying to upload.
 
                 Each Part can be at most 64 MB, and you can add Parts until you hit the Upload maximum of 8 GB.
 
@@ -1835,8 +1835,8 @@ paths:
             tags:
                 - Uploads
             summary: |
-                Completes the [Upload](/docs/api-reference/uploads/object). 
-                
+                Completes the [Upload](/docs/api-reference/uploads/object).
+
                 Within the returned Upload object, there is a nested [File](/docs/api-reference/files/object) object that is ready to use in the rest of the platform.
 
                 You can specify the order of the Parts by passing in an ordered list of the Part IDs.
@@ -1937,7 +1937,7 @@ paths:
                           "status": "cancelled",
                           "expires_at": 1719127296
                         }
-  
+
     /fine_tuning/jobs:
         post:
             operationId: createFineTuningJob
@@ -7229,8 +7229,8 @@ paths:
                           }
                         }
 
-    # Organization 
-    # Audit Logs List                        
+    # Organization
+    # Audit Logs List
     /organization/audit_logs:
         get:
             summary: List user actions and configuration changes within this organization.
@@ -7560,7 +7560,7 @@ paths:
                                 "object": "organization.invite.deleted",
                                 "id": "invite-abc",
                                 "deleted": true
-                            }    
+                            }
 
     /organization/users:
         get:
@@ -7665,7 +7665,7 @@ paths:
             tags:
                 - Users
             requestBody:
-                description: The new user role to modify. This must be one of `owner` or `member`. 
+                description: The new user role to modify. This must be one of `owner` or `member`.
                 required: true
                 content:
                     application/json:
@@ -7713,7 +7713,7 @@ paths:
                   description: The ID of the user.
                   required: true
                   schema:
-                    type: string                  
+                    type: string
             responses:
                 "200":
                     description: User deleted successfully.
@@ -7737,7 +7737,7 @@ paths:
                                 "object": "organization.user.deleted",
                                 "id": "user_abc",
                                 "deleted": true
-                            }  
+                            }
     /organization/projects:
         get:
             summary: Returns a list of projects.
@@ -7855,7 +7855,7 @@ paths:
                   description: The ID of the project.
                   required: true
                   schema:
-                    type: string                  
+                    type: string
             responses:
                 "200":
                     description: Project retrieved successfully.
@@ -7964,7 +7964,7 @@ paths:
                                 "archived_at": 1711471533,
                                 "status": "archived"
                             }
-    
+
 
     /organization/projects/{project_id}/users:
         get:
@@ -8044,7 +8044,7 @@ paths:
             summary: Adds a user to the project. Users must already be members of the organization to be added to a project.
             operationId: create-project-user
             parameters:
-                - name: project_id                  
+                - name: project_id
                   in: path
                   description: The ID of the project.
                   required: true
@@ -8115,7 +8115,7 @@ paths:
                   required: true
                   schema:
                     type: string
-                - name: user_id                  
+                - name: user_id
                   in: path
                   description: The ID of the user.
                   required: true
@@ -8209,13 +8209,13 @@ paths:
                   description: The ID of the project.
                   required: true
                   schema:
-                    type: string                  
+                    type: string
                 - name: user_id
                   in: path
                   description: The ID of the user.
                   required: true
                   schema:
-                    type: string                  
+                    type: string
             responses:
                 "200":
                     description: Project user deleted successfully.
@@ -8259,7 +8259,7 @@ paths:
                   description: The ID of the project.
                   required: true
                   schema:
-                    type: string                  
+                    type: string
                 - name: limit
                   in: query
                   description: *pagination_limit_param_description
@@ -8325,7 +8325,7 @@ paths:
                   description: The ID of the project.
                   required: true
                   schema:
-                    type: string                  
+                    type: string
             requestBody:
                 description: The project service account create request payload.
                 required: true
@@ -8388,13 +8388,13 @@ paths:
                   description: The ID of the project.
                   required: true
                   schema:
-                    type: string                  
+                    type: string
                 - name: service_account_id
                   in: path
                   description: The ID of the service account.
                   required: true
                   schema:
-                    type: string                  
+                    type: string
             responses:
                 "200":
                     description: Project service account retrieved successfully.
@@ -8433,13 +8433,13 @@ paths:
                   description: The ID of the project.
                   required: true
                   schema:
-                    type: string                  
+                    type: string
                 - name: service_account_id
                   in: path
                   description: The ID of the service account.
                   required: true
                   schema:
-                    type: string                  
+                    type: string
             responses:
                 "200":
                     description: Project service account deleted successfully.
@@ -8477,7 +8477,7 @@ paths:
                   description: The ID of the project.
                   required: true
                   schema:
-                    type: string                  
+                    type: string
                 - name: limit
                   in: query
                   description: *pagination_limit_param_description
@@ -8556,13 +8556,13 @@ paths:
                   description: The ID of the project.
                   required: true
                   schema:
-                    type: string                  
+                    type: string
                 - name: key_id
                   in: path
                   description: The ID of the API key.
                   required: true
                   schema:
-                    type: string                  
+                    type: string
             responses:
                 "200":
                     description: Project API key retrieved successfully.
@@ -8612,13 +8612,13 @@ paths:
                   description: The ID of the project.
                   required: true
                   schema:
-                    type: string                  
+                    type: string
                 - name: key_id
                   in: path
                   description: The ID of the API key.
                   required: true
                   schema:
-                    type: string                  
+                    type: string
             responses:
                 "200":
                     description: Project API key deleted successfully.
@@ -8654,7 +8654,7 @@ paths:
                             {
                                 "code": 400,
                                 "message": "API keys cannot be deleted for service accounts, please delete the service account"
-                            }      
+                            }
 
 components:
     securitySchemes:
@@ -9205,7 +9205,7 @@ components:
                         - name
             required:
                 - role
-        
+
         FineTuneChatCompletionRequestAssistantMessage:
             allOf:
                 - type: object
@@ -9218,7 +9218,7 @@ components:
                       description: "Controls whether the assistant message is trained against (0 or 1)"
                 - $ref: "#/components/schemas/ChatCompletionRequestAssistantMessage"
             required:
-                - role                    
+                - role
 
         ChatCompletionRequestToolMessage:
             type: object
@@ -10475,7 +10475,7 @@ components:
                 purpose:
                     description: |
                         The intended purpose of the uploaded file.
-            
+
                         See the [documentation on File purposes](/docs/api-reference/files/create#files-create-purpose).
                     type: string
                     enum: ["assistants", "batch", "fine-tune", "vision"]
@@ -10486,7 +10486,7 @@ components:
                 mime_type:
                     description: |
                         The MIME type of the file.
-                        
+
                         This must fall within the supported MIME types for your file purpose. See the supported MIME types for assistants and vision.
                     type: string
             required:
@@ -11212,7 +11212,7 @@ components:
                     type: string
                     description: The object type, which is always "upload".
                     enum: [upload]
-                file: 
+                file:
                     $ref: "#/components/schemas/OpenAIFile"
                     nullable: true
                     description: The ready File object after the Upload is completed.
@@ -11670,7 +11670,7 @@ components:
                       }
                     ]
                   }
-        
+
         FinetuneCompletionRequestInput:
             type: object
             description: The per-line training example of a fine-tuning input file for completions models
@@ -12003,7 +12003,7 @@ components:
                                                               description: Always `auto`.
                                                               enum: ["auto"]
                                                       required:
-                                                          - type 
+                                                          - type
                                                     - type: object
                                                       title: Static Chunking Strategy
                                                       additionalProperties: false
@@ -12025,7 +12025,7 @@ components:
                                                                       type: integer
                                                                       description: |
                                                                           The number of tokens that overlap between chunks. The default value is `400`.
-                                                                          
+
                                                                           Note that the overlap must not exceed half of `max_chunk_size_tokens`.
                                                               required:
                                                                   - max_chunk_size_tokens
@@ -13012,7 +13012,7 @@ components:
                                                               description: Always `auto`.
                                                               enum: ["auto"]
                                                       required:
-                                                          - type 
+                                                          - type
                                                     - type: object
                                                       title: Static Chunking Strategy
                                                       additionalProperties: false
@@ -13034,7 +13034,7 @@ components:
                                                                       type: integer
                                                                       description: |
                                                                           The number of tokens that overlap between chunks. The default value is `400`.
-                                                                          
+
                                                                           Note that the overlap must not exceed half of `max_chunk_size_tokens`.
                                                               required:
                                                                   - max_chunk_size_tokens
@@ -13693,7 +13693,7 @@ components:
                 - type
 
         MessageDeltaContentRefusalObject:
-            title: Refusal 
+            title: Refusal
             type: object
             description: The refusal content that is part of a message.
             properties:
@@ -14613,7 +14613,7 @@ components:
                     type: integer
                     description: |
                         The number of tokens that overlap between chunks. The default value is `400`.
-                        
+
                         Note that the overlap must not exceed half of `max_chunk_size_tokens`.
             required:
                 - max_chunk_size_tokens
@@ -15432,8 +15432,8 @@ components:
                 api_key:
                     type: object
                     $ref: "#/components/schemas/AuditLogActorApiKey"
-                    
-                    
+
+
         AuditLogEventType:
             type: string
             description: The event type.
@@ -15469,7 +15469,7 @@ components:
                     description: The ID of this log.
                 type:
                     $ref: "#/components/schemas/AuditLogEventType"
-                    
+
                 effective_at:
                     type: integer
                     description: The Unix timestamp (in seconds) of the event.
@@ -15484,7 +15484,7 @@ components:
                             type: string
                             description: The project title.
                 actor:
-                    $ref: "#/components/schemas/AuditLogActor" 
+                    $ref: "#/components/schemas/AuditLogActor"
                 api_key.created:
                     type: object
                     description: The details for events with this `type`.
@@ -15516,7 +15516,7 @@ components:
                                     type: array
                                     items:
                                         type: string
-                                    description: A list of scopes allowed for the API key, e.g. `["api.model.request"]`                                    
+                                    description: A list of scopes allowed for the API key, e.g. `["api.model.request"]`
                 api_key.deleted:
                     type: object
                     description: The details for events with this `type`.
@@ -15564,7 +15564,7 @@ components:
                             description: The error code of the failure.
                         error_message:
                             type: string
-                            description: The error message of the failure.                  
+                            description: The error message of the failure.
                 logout.failed:
                     type: object
                     description: The details for events with this `type`.
@@ -15574,7 +15574,7 @@ components:
                             description: The error code of the failure.
                         error_message:
                             type: string
-                            description: The error message of the failure. 
+                            description: The error message of the failure.
                 organization.updated:
                     type: object
                     description: The details for events with this `type`.
@@ -15789,7 +15789,7 @@ components:
                     description: "`owner` or `reader`"
                 status:
                     type: string
-                    enum: [accepted, expired, pending]                    
+                    enum: [accepted, expired, pending]
                     description: "`accepted`,`expired`, or `pending`"
                 invited_at:
                     type: integer
@@ -15800,7 +15800,7 @@ components:
                 accepted_at:
                     type: integer
                     description: The Unix timestamp (in seconds) of when the invite was accepted.
-            
+
             required:
                 - object
                 - id
@@ -15810,7 +15810,7 @@ components:
                 - invited_at
                 - expires_at
             x-oaiMeta:
-                name: The invite object              
+                name: The invite object
                 example: |
                   {
                     "object": "organization.invite",
@@ -15856,7 +15856,7 @@ components:
                 role:
                     type: string
                     enum: [reader, owner]
-                    description: "`owner` or `reader`" 
+                    description: "`owner` or `reader`"
             required:
                 - email
                 - role
@@ -15909,7 +15909,7 @@ components:
                 - role
                 - added_at
             x-oaiMeta:
-                name: The user object                
+                name: The user object
                 example: |
                     {
                         "object": "organization.user",
@@ -15942,7 +15942,7 @@ components:
                 - first_id
                 - last_id
                 - has_more
- 
+
         UserRoleUpdateRequest:
             type: object
             properties:
@@ -16010,7 +16010,7 @@ components:
                         "archived_at": null,
                         "status": "active"
                     }
-        
+
         ProjectListResponse:
             type: object
             properties:
@@ -16070,7 +16070,7 @@ components:
                 object:
                     type: string
                     enum: [organization.project.user]
-                    description: The object type, which is always `organization.project.user`                    
+                    description: The object type, which is always `organization.project.user`
                 id:
                     type: string
                     description: The identifier, which can be referenced in API endpoints
@@ -16134,7 +16134,7 @@ components:
             properties:
                 user_id:
                     type: string
-                    description: The ID of the user. 
+                    description: The ID of the user.
                 role:
                     type: string
                     enum: [owner, member]
@@ -16175,7 +16175,7 @@ components:
                 object:
                     type: string
                     enum: [organization.project.service_account]
-                    description: The object type, which is always `organization.project.service_account`                    
+                    description: The object type, which is always `organization.project.service_account`
                 id:
                     type: string
                     description: The identifier, which can be referenced in API endpoints
@@ -16205,7 +16205,7 @@ components:
                         "role": "owner",
                         "created_at": 1711471533
                     }
-        
+
         ProjectServiceAccountListResponse:
             type: object
             properties:
@@ -16270,7 +16270,7 @@ components:
                 object:
                     type: string
                     enum: [organization.project.service_account.api_key]
-                    description: The object type, which is always `organization.project.service_account.api_key`                    
+                    description: The object type, which is always `organization.project.service_account.api_key`
 
                 value:
                     type: string
@@ -16309,7 +16309,7 @@ components:
                 object:
                     type: string
                     enum: [organization.project.api_key]
-                    description: The object type, which is always `organization.project.api_key`                                        
+                    description: The object type, which is always `organization.project.api_key`
                 redacted_value:
                     type: string
                     description: The redacted value of the API key
@@ -16327,7 +16327,7 @@ components:
                     properties:
                         type:
                             type: string
-                            enum: [user, service_account]                                
+                            enum: [user, service_account]
                             description: "`user` or `service_account`"
                         user:
                             $ref: '#/components/schemas/ProjectUser'
@@ -16660,7 +16660,7 @@ x-oaiMeta:
                 key: CreateModerationResponse
                 path: object
 
-        
+
         - id: assistants
           title: Assistants
           beta: true
@@ -16892,19 +16892,19 @@ x-oaiMeta:
         - id: administration
           title: Overview
           description: |
-              Programmatically manage your organization. 
+              Programmatically manage your organization.
 
-              The Audit Logs endpoint provides a log of all actions taken in the 
+              The Audit Logs endpoint provides a log of all actions taken in the
               organization for security and monitoring purposes.
 
               To access these endpoints please generate an Admin API Key through the [API Platform Organization overview](/organization/admin-keys). Admin API keys cannot be used for non-administration endpoints.
 
               For best practices on setting up your organization, please refer to this [guide](/docs/guides/production-best-practices/setting-up-your-organization)
           navigationGroup: administration
-        
+
         - id: invite
           title: Invites
-          description: Invite and manage invitations for an organization. Invited users are automatically added to the Default project. 
+          description: Invite and manage invitations for an organization. Invited users are automatically added to the Default project.
           navigationGroup: administration
           sections:
               - type: endpoint
@@ -16922,7 +16922,7 @@ x-oaiMeta:
               - type: object
                 key: Invite
                 path: object
-        
+
         - id: users
           title: Users
           description: |
@@ -16944,12 +16944,12 @@ x-oaiMeta:
               - type: object
                 key: User
                 path: object
-        
+
         - id: projects
           title: Projects
           description: |
-              Manage the projects within an orgnanization includes creation, updating, and archiving or projects. 
-              The Default project cannot be modified or archived. 
+              Manage the projects within an orgnanization includes creation, updating, and archiving or projects.
+              The Default project cannot be modified or archived.
           navigationGroup: administration
           sections:
               - type: endpoint
@@ -16966,16 +16966,16 @@ x-oaiMeta:
                 path: modify
               - type: endpoint
                 key: archive-project
-                path: archive              
+                path: archive
               - type: object
                 key: Project
                 path: object
-        
+
         - id: project-users
           title: Project Users
           description: |
-              Manage users within a project, including adding, updating roles, and removing users. 
-              Users cannot be removed from the Default project, unless they are being removed from the organization.  
+              Manage users within a project, including adding, updating roles, and removing users.
+              Users cannot be removed from the Default project, unless they are being removed from the organization.
           navigationGroup: administration
           sections:
               - type: endpoint
@@ -16992,7 +16992,7 @@ x-oaiMeta:
                 path: modify
               - type: endpoint
                 key: delete-project-user
-                path: delete              
+                path: delete
               - type: object
                 key: ProjectUser
                 path: object
@@ -17000,8 +17000,8 @@ x-oaiMeta:
         - id: project-service-accounts
           title: Project Service Accounts
           description:  |
-                Manage service accounts within a project. A service account is a bot user that is not associated with a user. 
-                If a user leaves an organization, their keys and membership in projects will no longer work. Service accounts 
+                Manage service accounts within a project. A service account is a bot user that is not associated with a user.
+                If a user leaves an organization, their keys and membership in projects will no longer work. Service accounts
                 do not have this limitation. However, service accounts can also be deleted from a project.
           navigationGroup: administration
           sections:
@@ -17024,8 +17024,8 @@ x-oaiMeta:
         - id: project-api-keys
           title: Project API Keys
           description: |
-                Manage API keys for a given project. Supports listing and deleting keys for users. 
-                This API does not allow issuing keys for users, as users need to authorize themselves to generate keys. 
+                Manage API keys for a given project. Supports listing and deleting keys for users.
+                This API does not allow issuing keys for users, as users need to authorize themselves to generate keys.
           navigationGroup: administration
           sections:
               - type: endpoint
@@ -17044,9 +17044,9 @@ x-oaiMeta:
         - id: audit-logs
           title: Audit Logs
           description: |
-              Logs of user actions and configuration changes within this organization. 
+              Logs of user actions and configuration changes within this organization.
 
-              To log events, you must activate logging in the [Organization Settings](/settings/organization/general). 
+              To log events, you must activate logging in the [Organization Settings](/settings/organization/general).
               Once activated, for security reasons, logging cannot be deactivated.
           navigationGroup: administration
           sections:

@@ -6,10 +6,9 @@
 
 from __future__ import annotations
 
-
 import asyncio
 from dataclasses import dataclass, field
-from typing import AsyncGenerator, Generic, Protocol, Tuple, TypeVar
+from typing import AsyncGenerator, Generic, Tuple, TypeVar
 
 from max.serve.scheduler.queues import BatchMultiplexQueue
 

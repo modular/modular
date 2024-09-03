@@ -9,7 +9,6 @@ Placeholder file for any configs (runtime, models, pipelines, etc)
 """
 
 from enum import StrEnum, auto
-from functools import lru_cache
 
 from pydantic import Field
 from pydantic_settings import BaseSettings
