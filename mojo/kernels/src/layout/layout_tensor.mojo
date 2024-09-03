@@ -109,7 +109,7 @@ fn _not_in_tuple[n: Int, size: Int, tuple: StaticIntTuple[size]]() -> Bool:
     return True
 
 
-@register_passable
+@register_passable("trivial")
 struct LayoutTensor[
     dtype: DType,
     layout: Layout,
@@ -247,20 +247,7 @@ struct LayoutTensor[
         Args:
             other: The LayoutTensor to copy.
         """
-        self.__copyinit__(other)
-
-    @always_inline
-    fn __copyinit__(inout self: Self, existing: Self):
-        """Explicitly copy the other LayoutTensor.
-
-        Args:
-            existing: The LayoutTensor to copy.
-        """
-        self.ptr = existing.ptr
-        self.runtime_layout = existing.runtime_layout
-        self.runtime_element_layout = existing.runtime_element_layout
-        self.org_coords_offset = existing.org_coords_offset
-        self.org_coords_stride = existing.org_coords_stride
+        self = other
 
     @always_inline
     fn bitcast[
@@ -3149,7 +3136,7 @@ fn copy_local_to_local[
 # ===-----------------------------------------------------------------------===#
 
 
-@register_passable
+@register_passable("trivial")
 struct LayoutTensorIter[
     type: DType,
     layout: Layout,
@@ -3192,14 +3179,6 @@ struct LayoutTensorIter[
         )
         self.bound = bound
         self.runtime_layout = runtime_layout
-
-    @always_inline
-    fn __copyinit__(inout self: Self, existing: Self):
-        self.ptr = existing.ptr
-        self.offset = existing.offset
-        self.stride = existing.stride
-        self.bound = existing.bound
-        self.runtime_layout = existing.runtime_layout
 
     @always_inline
     fn get(self) -> LayoutTensor[type, layout, address_space=address_space]:

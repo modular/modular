@@ -161,6 +161,7 @@ fn gemm_l2_cache[
                             mma.op(
                                 dst_l2_tile, lhs_l2_tile, l2_rhs_cache.tensor
                             )
+    _ = l2_rhs_cache^
 
 
 fn gemm_l1_cache[
@@ -272,6 +273,9 @@ fn test_tiled_matmul[use_l1_cache: Bool]():
             Dim(2, 2, 1),
         ](dst.tensor, lhs.tensor, rhs.tensor)
     print(dst.tensor)
+
+    _ = rhs^
+    _ = lhs^
 
 
 fn main():
