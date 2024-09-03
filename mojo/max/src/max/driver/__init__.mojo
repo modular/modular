@@ -14,14 +14,15 @@ For example, the basic code you need to create tensor on CPU looks like this:
 ```mojo
 from max.driver import Tensor, cpu_device
 from testing import assert_equal
+from max.tensor import TensorShape
 
 def main():
-    tensor = Tensor[DType.float32, rank=2]((1,2))
+    tensor = Tensor[DType.float32, rank=2](TensorShape(1,2))
     tensor[0, 0] = 1.0
 
     # You can also explicitly set the devices.
     device = cpu_device()
-    new_tensor = Tensor[DType.float32, rank=2]((1,2), device)
+    new_tensor = Tensor[DType.float32, rank=2](TensorShape(1,2), device)
     new_tensor[0, 0] = 1.0
 
     # You can also create slices of tensor
