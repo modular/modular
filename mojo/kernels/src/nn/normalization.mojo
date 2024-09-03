@@ -237,9 +237,9 @@ fn welford_block_all_reduce[
 fn layer_norm_gpu_warp_tiling[
     type: DType,
     simd_width: UInt,
-    input_func: fn[width: Int, rank: Int] (
-        StaticIntTuple[rank]
-    ) capturing -> SIMD[type, width],
+    input_fn: fn[width: Int] (row: Int, col: Int) capturing -> SIMD[
+        type, width
+    ],
     gamma_fn: fn[width: Int, rank: Int] (
         StaticIntTuple[rank]
     ) capturing -> SIMD[type, width],
@@ -264,7 +264,7 @@ fn layer_norm_gpu_warp_tiling[
     var thread_count = Scalar[accum_type]()
 
     if idx < num_cols:
-        vec_data = input_func[simd_width](Index(row, idx)).cast[accum_type]()
+        vec_data = input_fn[simd_width](row, idx).cast[accum_type]()
 
         # every thread computes its own simd width of mean and variance
         @parameter
@@ -292,9 +292,9 @@ fn layer_norm_gpu_warp_tiling[
 fn layer_norm_gpu_block[
     type: DType,
     simd_width: UInt,
-    input_func: fn[width: Int, rank: Int] (
-        StaticIntTuple[rank]
-    ) capturing -> SIMD[type, width],
+    input_fn: fn[width: Int] (row: Int, col: Int) capturing -> SIMD[
+        type, width
+    ],
     gamma_fn: fn[width: Int, rank: Int] (
         StaticIntTuple[rank]
     ) capturing -> SIMD[type, width],
@@ -320,9 +320,7 @@ fn layer_norm_gpu_block[
         var offset = x * BlockDim.x() * simd_width + tid * simd_width
 
         if offset < num_cols:
-            var vec_data = input_func[simd_width](Index(row, offset)).cast[
-                accum_type
-            ]()
+            var vec_data = input_fn[simd_width](row, offset).cast[accum_type]()
 
             @parameter
             for i in range(int(simd_width)):
@@ -347,9 +345,7 @@ fn layer_norm_gpu_block[
             var gamma_val = gamma_fn[simd_width](Index(offset))
             var beta_val = beta.load[width=simd_width, alignment=align](offset)
 
-            var vec_data = input_func[simd_width](Index(row, offset)).cast[
-                accum_type
-            ]()
+            var vec_data = input_fn[simd_width](row, offset).cast[accum_type]()
             var norm_val = (
                 (vec_data - row_mean)
                 * norm_factor
@@ -382,10 +378,10 @@ fn layer_norm_reshape[
 fn layer_norm_gpu[
     type: DType,
     rank: Int, //,
-    input_0_fn: fn[_width: Int, _rank: Int] (
+    input_fn: fn[_width: Int, _rank: Int] (
         StaticIntTuple[_rank]
     ) capturing -> SIMD[type, _width],
-    input_1_fn: fn[_width: Int, _rank: Int] (
+    gamma_fn: fn[_width: Int, _rank: Int] (
         StaticIntTuple[_rank]
     ) capturing -> SIMD[type, _width],
 ](
@@ -408,6 +404,18 @@ fn layer_norm_gpu[
     var rows = output_rs.dim[0]()
     var cols = output_rs.dim[1]()
 
+    @parameter
+    @always_inline
+    fn input_fn_2d[
+        simd_width: Int
+    ](row: Int, col: Int) -> SIMD[type, simd_width]:
+        # Translate given 2d index back to original Nd tensor
+        var indices = _get_nd_indices_from_flat_index[rank](
+            row, shape, rank - 1
+        )
+        indices[rank - 1] = col
+        return input_fn[simd_width, rank](indices)
+
     alias simd_width = simdwidthof[type, target = _get_nvptx_target()]()
     alias max_warps_per_block = 32
 
@@ -424,7 +432,7 @@ fn layer_norm_gpu[
         if cols <= (WARP_SIZE * simd_width * max_warps_per_block):
             var gpu_func = ctx.compile_function[
                 layer_norm_gpu_warp_tiling[
-                    type, simd_width, input_0_fn, input_1_fn
+                    type, simd_width, input_fn_2d, gamma_fn
                 ]
             ]()
             ctx.enqueue_function(
@@ -437,7 +445,7 @@ fn layer_norm_gpu[
             )
         else:
             var gpu_func = ctx.compile_function[
-                layer_norm_gpu_block[type, simd_width, input_0_fn, input_1_fn]
+                layer_norm_gpu_block[type, simd_width, input_fn_2d, gamma_fn]
             ]()
             ctx.enqueue_function(
                 gpu_func,
@@ -449,7 +457,7 @@ fn layer_norm_gpu[
             )
     else:
         var gpu_func = ctx.compile_function[
-            layer_norm_gpu_block[type, 1, input_0_fn, input_1_fn]
+            layer_norm_gpu_block[type, 1, input_fn_2d, gamma_fn]
         ]()
         ctx.enqueue_function(
             gpu_func,
