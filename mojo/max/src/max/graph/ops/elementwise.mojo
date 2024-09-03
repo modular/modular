@@ -942,7 +942,7 @@ def rsqrt(value: Symbol) -> Symbol:
     Raises:
         If the symbol doesn't represent a tensor value.
     """
-    return _unary_float_op["rmo.mo.rsqrt"](value)
+    return _unary_float_op["rmo.mo.isqrt"](value)
 
 
 def sqrt(value: Symbol) -> Symbol:
