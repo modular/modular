@@ -54,7 +54,7 @@ fn run_mha[
 
     # Query, key, value dimensions.
     alias batch_size = 1
-    alias scale = Float32(0.125)  # rsqrt[type, 1](Float32(depth))
+    alias scale = Float32(0.125)  # isqrt[type, 1](Float32(depth))
     alias kv_num_heads = num_heads // group
 
     # Q, K, V shapes.
