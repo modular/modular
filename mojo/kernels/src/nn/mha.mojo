@@ -1336,13 +1336,6 @@ fn mha_decoding_single_batch[
         rowmax[i] = min_or_neg_inf[accum_type]()
         rowsum[i] = 0.0
 
-    # Scratch shared memory for reduction across warps.
-    var warp_scratch = LayoutTensor[
-        accum_type,
-        Layout.row_major(num_warps_n, BM),
-        address_space = AddressSpace.SHARED,
-    ]((k_smem + k_smem_size).bitcast[Scalar[accum_type]]())
-
     # Share memory tile for Value, reuse K's shared memory tile.
     alias v_smem_size = num_pipeline_stages * BN * BK
     var v_smem = k_smem.bitcast[Scalar[v_type]]()
@@ -1361,6 +1354,13 @@ fn mha_decoding_single_batch[
     ](p_smem)
     var p_smem_warp_tile = p_smem_tile.tile[WM, WN](warp_y, warp_x)
     var p_smem_iter = p_smem_tile.tiled_iterator[BM, BK, axis=1](0, 0)
+
+    # Scratch shared memory for reduction across warps.
+    var warp_scratch = LayoutTensor[
+        accum_type,
+        Layout.row_major(2 * num_warps_n, BM),
+        address_space = AddressSpace.SHARED,
+    ]((p_smem + BM * BN).bitcast[Scalar[accum_type]]())
 
     # Mask global memory iterator, seq_len = 1
     var mask_offset = Int(head_idx * num_keys) if mask_rank == 4 else 0
@@ -1389,21 +1389,6 @@ fn mha_decoding_single_batch[
                 chunk_id * BM * BK + row * BK + in_chunk_id,
                 vec,
             )
-
-    # @parameter
-    # for i in range(Int(depth // BK)):
-    #     if tid < BK // simd_size:
-    #         var vec = q_ptr.load[
-    #             width=simd_size, alignment = alignof[SIMD[q_type, simd_size]]()
-    #         ](q_offset + i * BK + tid * simd_size)
-    #         (q_smem + i * BM * BK + tid * simd_size).store[
-    #             alignment = alignof[SIMD[q_type, simd_size]]()
-    #         ](vec)
-    #     elif tid < BM * BK // simd_size:
-    #         q_smem.store[alignment = alignof[SIMD[q_type, simd_size]]()](
-    #             i * BM * BK + tid * simd_size,
-    #             SIMD[q_type, simd_size](0.0),
-    #         )
 
     # Loop over Key and Value tiles
     for kv_tile_start_row in range(0, num_keys, BN):
