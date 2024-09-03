@@ -41,7 +41,12 @@ from layout.layout_tensor import (
     copy_sram_to_local,
 )
 from layout.math import outer_product_acc
-from layout.nd_buffer_stub import copy_from_nd_buffer, distribute, vectorize
+from layout.nd_buffer_stub import (
+    copy_from_nd_buffer,
+    distribute,
+    vectorize,
+    from_ndbuffer_row_major,
+)
 from layout.swizzle import Swizzle
 from memory import UnsafePointer, bitcast, stack_allocation, memset_zero
 
@@ -815,15 +820,19 @@ fn _matmul_gpu_dispatch[
                 a_type, b_type, c_type, transpose_b
             ](m, n, k)
 
+            var tensor_c = from_ndbuffer_row_major(c)
+            var tensor_a = from_ndbuffer_row_major(a)
+            var tensor_b = from_ndbuffer_row_major(b)
+
             if best_config == kernels.ampere_256x64_4:
                 alias config = kernels.ampere_256x64_4
                 alias mgemm = multistage_gemm[
                     c_type,
-                    c_shape,
+                    tensor_c.layout,
                     a_type,
-                    a_shape,
+                    tensor_a.layout,
                     b_type,
-                    b_shape,
+                    tensor_b.layout,
                     transpose_b,
                     config,
                     elementwise_lambda_fn,
@@ -849,11 +858,11 @@ fn _matmul_gpu_dispatch[
                 alias config = kernels.ampere_128x128_4
                 alias mgemm = multistage_gemm[
                     c_type,
-                    c_shape,
+                    tensor_c.layout,
                     a_type,
-                    a_shape,
+                    tensor_a.layout,
                     b_type,
-                    b_shape,
+                    tensor_b.layout,
                     transpose_b,
                     config,
                     elementwise_lambda_fn,
@@ -867,9 +876,9 @@ fn _matmul_gpu_dispatch[
                 )
                 ctx.enqueue_function(
                     multistage_func,
-                    c,
-                    a,
-                    b,
+                    tensor_c,
+                    tensor_a,
+                    tensor_b,
                     grid_dim=config.grid_dim(m, n, k),
                     block_dim=config.block_dim(),
                     shared_mem_bytes=config.shared_mem_usage(),

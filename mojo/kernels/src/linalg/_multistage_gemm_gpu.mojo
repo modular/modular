@@ -545,18 +545,18 @@ fn multistage_mma[
 
 fn multistage_gemm[
     c_type: DType,
-    c_shape: DimList,
+    c_layout: Layout,
     a_type: DType,
-    a_shape: DimList,
+    a_layout: Layout,
     b_type: DType,
-    b_shape: DimList,
+    b_layout: Layout,
     transpose_b: Bool,
     config: MatmulConfig[a_type, b_type, c_type, transpose_b],
     elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
 ](
-    c: NDBuffer[c_type, 2, c_shape],
-    a: NDBuffer[a_type, 2, a_shape],
-    b: NDBuffer[b_type, 2, b_shape],
+    c: LayoutTensor[c_type, c_layout],
+    a: LayoutTensor[a_type, a_layout],
+    b: LayoutTensor[b_type, b_layout],
 ):
     # Hold on adding fp16 because it counld have differnet precisions than bf16.
     constrained[
@@ -567,9 +567,9 @@ fn multistage_gemm[
 
     alias simd_size = simdwidthof[c_type]()
 
-    var M: UInt = c.dim[0]()
-    alias N: UInt = b_shape.get[0]() if transpose_b else b_shape.get[1]()
-    alias K: UInt = b_shape.get[1]() if transpose_b else b_shape.get[0]()
+    var M: UInt = c.dim(0)
+    var N: UInt = b.dim(0) if transpose_b else b.dim(1)
+    var K: UInt = b.dim(1) if transpose_b else b.dim(0)
 
     alias BM = config.block_tile_shape[0]
     alias BN = config.block_tile_shape[1]
@@ -626,27 +626,14 @@ fn multistage_gemm[
         b_type, b_smem_layout, AddressSpace.SHARED, circular=True
     ](b_smem, b_smem_size)
 
-    # create input layout tensors A and B
-    var a_gmem_slice = LayoutTensor[
-        a_type,
-        Layout.row_major(BM, K),
-    ](a.data.offset(BM * block_idx[1] * K))
-
-    alias b_layout = Layout.row_major(
-        N, K
-    ) if transpose_b else Layout.row_major(K, N)
-    var b_gmem_tensor = LayoutTensor[
-        b_type,
-        b_layout,
-    ](b.data)
-
+    # create input layout tensors A and Bv
     # global memory iterator
-    var a_gmem_iter = a_gmem_slice.tiled_iterator[BM, BK, axis=1](0, 0)
+    var a_gmem_iter = a.tiled_iterator[BM, BK, axis=1](block_idx[1], 0)
     var b_tile_coords = (block_idx[0], 0) if transpose_b else (0, block_idx[0])
     alias b_tile_axis = 1 if transpose_b else 0
-    var b_gmem_iter = b_gmem_tensor.tiled_iterator[
-        BD_0, BD_1, axis=b_tile_axis
-    ](b_tile_coords[0], b_tile_coords[1])
+    var b_gmem_iter = b.tiled_iterator[BD_0, BD_1, axis=b_tile_axis](
+        b_tile_coords[0], b_tile_coords[1]
+    )
 
     alias async_copy_a_layout = Layout.row_major(
         num_threads * simd_size // BK, BK // simd_size
@@ -679,7 +666,7 @@ fn multistage_gemm[
             ](
                 a_smem_tile.vectorize[1, simd_size](),
                 a_gmem_iter[].vectorize[1, simd_size](),
-                a_gmem_iter[].distance(a.data),
+                a_gmem_iter[].distance(a.ptr),
                 M,
                 K,
             )
@@ -727,7 +714,9 @@ fn multistage_gemm[
         address_space = AddressSpace.LOCAL,
     ].stack_allocation().vectorize[1, b_frag_size]().split[2]()
     var c_reg_tile = LayoutTensor[
-        accum_type, Layout.row_major(num_m_mmas * num_n_mmas, c_frag_size)
+        accum_type,
+        Layout.row_major(num_m_mmas * num_n_mmas, c_frag_size),
+        address_space = AddressSpace.LOCAL,
     ].stack_allocation().fill(0)
 
     var a_warp_tile = a_smem_iter[].tile[WM, BK](int(warp_y), 0)
@@ -816,7 +805,7 @@ fn multistage_gemm[
                         ](
                             a_smem_prefetch_tile.vectorize[1, simd_size](),
                             a_gmem_iter[].vectorize[1, simd_size](),
-                            a_gmem_iter[].distance(a.data),
+                            a_gmem_iter[].distance(a.ptr),
                             M,
                             K,
                         )
@@ -839,10 +828,7 @@ fn multistage_gemm[
                 barrier()
 
     # Map global memory tile down to thread.
-    var c_gmem_slice = LayoutTensor[c_type, Layout.row_major(BM, N)](
-        c.data.offset(block_idx[1] * BM * N)
-    )
-    var c_gmem_tile = c_gmem_slice.tile[BM, BN](0, block_idx[0])
+    var c_gmem_tile = c.tile[BM, BN](block_idx[1], block_idx[0])
     var c_gmem_warp_tile = c_gmem_tile.tile[WM, WN](int(warp_y), int(warp_x))
 
     # Store FP32 mma results to half precision buffer in global memory.
@@ -883,7 +869,7 @@ fn multistage_gemm[
             var c_smem_frag = accum_smem_tile.vectorize[
                 1, simd_size
             ]().distribute[c_store_layout](ThreadIdx.x())
-            var thread_offset = c_gmem_frag.distance(c.data)
+            var thread_offset = c_gmem_frag.distance(c.ptr)
             alias num_stores_per_thread = c_gmem_frag.layout.size()
             alias src_align = alignof[
                 SIMD[accum_type, simdwidthof[accum_type]()]
@@ -893,7 +879,15 @@ fn multistage_gemm[
             @parameter
             for i in range(num_stores_per_thread):
                 alias src_idx = c_smem_frag.layout(i)
-                alias dst_idx = c_gmem_frag.layout(i)
+                alias dst_static_idx = c_gmem_frag.layout(i)
+                var dst_idx = 0
+
+                @parameter
+                if c_layout.all_dims_known():
+                    dst_idx = dst_static_idx
+                else:
+                    dst_idx = c_gmem_frag.runtime_layout(i)
+
                 var m = int((thread_offset + dst_idx) // N)
                 var n = int((thread_offset + dst_idx) % N)
                 if m < M and n < N:
@@ -921,7 +915,7 @@ fn multistage_gemm[
                 ](
                     c_gmem_tile.vectorize[1, simd_size](),
                     accum_smem_tile.vectorize[1, simd_size](),
-                    c_gmem_tile.distance(c.data),
+                    c_gmem_tile.distance(c.ptr),
                     M,
                     N,
                 )
@@ -936,12 +930,20 @@ fn multistage_gemm[
                 Layout.row_major(8, 4)
             ](ln_id)
             var c_reg_frag = c_reg_tile.vectorize[1, 2]().transpose()
-            var thread_offset = c_gmem_frag.distance(c.data)
+            var thread_offset = c_gmem_frag.distance(c.ptr)
 
             @parameter
             for i in range(c_gmem_frag.layout.size()):
                 alias src_idx = c_reg_frag.layout(i)
-                alias dst_idx: UInt = c_gmem_frag.layout(i)
+                alias dst_static_idx: UInt = c_gmem_frag.layout(i)
+                var dst_idx = 0
+
+                @parameter
+                if c_layout.all_dims_known():
+                    dst_idx = dst_static_idx
+                else:
+                    dst_idx = c_gmem_frag.runtime_layout(i)
+
                 var m = int((thread_offset + dst_idx) // N)
                 var n = int((thread_offset + dst_idx) % N)
                 if m < M and n < N:
@@ -954,7 +956,7 @@ fn multistage_gemm[
             copy_local_to_dram[dst_thread_layout = Layout.row_major(8, 4)](
                 c_gmem_warp_tile.vectorize[1, 2](),
                 c_reg_tile.bitcast[c_type]().vectorize[1, 2]().transpose(),
-                c_gmem_warp_tile.distance(c.data),
+                c_gmem_warp_tile.distance(c.ptr),
                 M,
                 N,
             )
