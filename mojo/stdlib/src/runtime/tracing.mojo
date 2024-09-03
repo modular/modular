@@ -12,6 +12,7 @@ import gpu.host.nvtx
 from gpu.host.nvtx import (
     _start_range as _start_nvtx_range,
     _end_range as _end_nvtx_range,
+    _is_enabled as _nvtx_is_enabled,
 )
 
 from utils import StaticIntTuple
@@ -216,7 +217,7 @@ fn _is_nvtx_enabled[type: TraceCategory, level: TraceLevel]() -> Bool:
     return (
         is_profiling_disabled[type, level]()
         and level <= TraceLevel.OP
-        and env_get_int["KERNEL_E2E_GPU_PROFILING", 0]() == 1
+        and _nvtx_is_enabled()
     )
 
 
