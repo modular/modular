@@ -47,9 +47,9 @@ fn cublas_matmul(
 
     @parameter
     if a.type == DType.float16:
-        compute_type = ComputeType.COMPUTE_32F_FAST_16F
+        compute_type = ComputeType.COMPUTE_32F
     elif a.type == DType.bfloat16:
-        compute_type = ComputeType.COMPUTE_32F_FAST_16BF
+        compute_type = ComputeType.COMPUTE_32F
     else:
         compute_type = (
             ComputeType.COMPUTE_32F_FAST_TF32 if use_tf32 else ComputeType.COMPUTE_32F
