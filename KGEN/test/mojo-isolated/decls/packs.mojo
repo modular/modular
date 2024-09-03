@@ -76,8 +76,8 @@ fn test_owned_trait():
     # CHECK-NEXT: [[PACK:%.*]] = lit.ref.pack.create([[V1C]], [[V2C]])
 
     # Create the VariadicPack
-    # CHECK: [[ISOWNED:%.*]] = kgen.param.constant: !Bool = <{:i1 1}>
     # CHECK-NEXT: [[PACKTMP:%.*]] = lit.var.decl
+    # CHECK-NEXT: [[ISOWNED:%.*]] = kgen.param.constant: !Bool = <{:i1 1}>
     # CHECK-NEXT: lit.call @{{.*}}@VariadicPack::@"__init__{{.*}}([[PACKTMP]], [[PACK]], [[ISOWNED]])
     # CHECK-NEXT: [[VARIADICPACK:%.*]] = lit.load.consume [[PACKTMP]]
 
@@ -98,8 +98,8 @@ fn test_owned_trait():
     # CHECK-NEXT: [[PACK:%.*]] = lit.ref.pack.create([[V3C]], [[V4C]])
 
     # Create the VariadicPack
-    # CHECK: [[ISOWNED:%.*]] = kgen.param.constant: !Bool = <{:i1 1}>
     # CHECK-NEXT: [[PACKTMP:%.*]] = lit.var.decl
+    # CHECK-NEXT: [[ISOWNED:%.*]] = kgen.param.constant: !Bool = <{:i1 1}>
     # CHECK-NEXT: lit.call @{{.*}}@VariadicPack::@"__init__{{.*}}([[PACKTMP]], [[PACK]], [[ISOWNED]])
     # CHECK-NEXT: [[VARIADICPACK:%.*]] = lit.load.consume [[PACKTMP]]
 
@@ -130,8 +130,8 @@ fn test_inout():
     # CHECK-NEXT: [[PACK:%.*]] = lit.ref.pack.create([[V1C]], [[V2C]])
 
     # Create the VariadicPack
-    # CHECK: [[ISOWNED:%.*]] = kgen.param.constant: !Bool = <{:i1 0}>
     # CHECK-NEXT: [[PACKTMP:%.*]] = lit.var.decl
+    # CHECK-NEXT: [[ISOWNED:%.*]] = kgen.param.constant: !Bool = <{:i1 0}>
     # CHECK-NEXT: lit.call @{{.*}}@VariadicPack::@"__init__{{.*}}([[PACKTMP]], [[PACK]], [[ISOWNED]])
     # CHECK-NEXT: [[VARIADICPACK:%.*]] = lit.ref.load [[PACKTMP]]
 
@@ -146,8 +146,8 @@ fn test_inout():
     # CHECK-NEXT: [[PACK:%.*]] = lit.ref.pack.create(%value3)
 
     # Create the VariadicPack
-    # CHECK: [[ISOWNED:%.*]] = kgen.param.constant: !Bool = <{:i1 0}>
     # CHECK-NEXT: [[PACKTMP:%.*]] = lit.var.decl
+    # CHECK-NEXT: [[ISOWNED:%.*]] = kgen.param.constant: !Bool = <{:i1 0}>
     # CHECK-NEXT: lit.call @{{.*}}@VariadicPack::@"__init__{{.*}}([[PACKTMP]], [[PACK]], [[ISOWNED]])
     # CHECK-NEXT: [[VARIADICPACK:%.*]] = lit.ref.load [[PACKTMP]]
 

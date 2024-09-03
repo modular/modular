@@ -1283,8 +1283,8 @@ fn test_inference_from_Self_type(x: Int):
   # CHECK-NEXT: call {{.*}}implicit_convert_specific_Self{{.*}}([[IMM]])
   implicit_convert_specific_Self(x)
 
-  # CHECK:      [[TMP:%.*]] = lit.var.decl "anonymous
-  # CHECK-NEXT: lit.call {{.*}}__init__{{.*}}<:!AnyType [!Int, {{.*}}], :!Movable [!Int, {{.*}}]>([[TMP]], %__mem_tmp__)
+  # CHECK: [[TMP:%.*]] = lit.var.decl "anonymous
+  # CHECK: lit.call {{.*}}__init__{{.*}}<:!AnyType [!Int, {{.*}}], :!Movable [!Int, {{.*}}]>([[TMP]], %__mem_tmp__)
   _ = DependentSpecificInitSelf(x)
 
 struct AutoParamDefault[value: int, param: int, default: int = param]:
