@@ -10,6 +10,9 @@ from dataclasses import dataclass
 from io import BytesIO
 from typing import Any, Dict, Tuple
 
+import numpy as np
+import numpy.typing as npt
+
 try:
     import torch
 except ImportError:
@@ -17,7 +20,6 @@ except ImportError:
 
 from max.dtype import DType
 
-from ..graph import Graph
 from ..weight import Weight
 
 
@@ -41,7 +43,7 @@ def _dtype_from_torch(dtype) -> DType:
     return torch_to_dtype[dtype]
 
 
-def load_pytorch(filepath) -> Dict[str, Weight]:
+def load_pytorch(filepath) -> Dict[str, tuple[Weight, npt.NDArray]]:
     if torch is None:
         raise ImportError(
             "Unable to import torch. Please make sure that PyTorch is installed"
@@ -53,11 +55,14 @@ def load_pytorch(filepath) -> Dict[str, Weight]:
         unpickler = WeightUnpickler(pkl_file, zip_file)
         loaded_infos = unpickler.load()
 
-    ret = {}
+    ret: dict[str, tuple[Weight, npt.NDArray]] = {}
     for key, tensor_info in loaded_infos.items():
         dtype = _dtype_from_torch(tensor_info.dtype)
-        ret[key] = Weight(
-            key, dtype, tensor_info.shape, filepath, tensor_info.offset
+        ret[key] = (
+            Weight(key, dtype, tensor_info.shape),
+            np.memmap(
+                filepath, mode="r", dtype=np.uint8, offset=tensor_info.offset
+            ),
         )
     return ret
 

@@ -4,12 +4,14 @@
 #
 # ===----------------------------------------------------------------------=== #
 """Test the Python weight loading interface."""
-from tempfile import NamedTemporaryFile
 
+import gguf
 import numpy as np
+
 from max.dtype import DType
 from max.graph import Graph, Weight
-from max.graph.utils import load_gguf, load_pytorch
+from max.graph.weights import load_pytorch
+from max.graph.weights.load_gguf import load_gguf
 
 
 def test_weight(session) -> None:
@@ -17,19 +19,18 @@ def test_weight(session) -> None:
     with Graph("graph_with_weights") as graph:
         weight_shape = [5, 10]
         weight = np.random.uniform(1, 100, size=weight_shape).astype(np.int64)
-        with NamedTemporaryFile() as f:
-            weight.tofile(f.name)
-            w = Weight(
-                "random_weight",
-                dtype=DType.int64,
-                shape=weight_shape,
-                filepath=f.name,
-            )
-            graph.output(w)
-            compiled = session.load(graph)
-            output = compiled.execute()
+        w = Weight(
+            "random_weight",
+            dtype=DType.int64,
+            shape=weight_shape,
+        )
+        graph.output(graph.add_weight(w))
+        compiled = session.load(
+            graph, weights_registry={"random_weight": weight}
+        )
+        output = compiled.execute()
 
-            np.testing.assert_array_equal(weight, output["output0"])
+        np.testing.assert_array_equal(weight, output["output0"])
 
 
 def test_weight_offset(session) -> None:
@@ -37,23 +38,18 @@ def test_weight_offset(session) -> None:
     with Graph("graph_with_offset_weights") as graph:
         weight_shape = [5, 10]
         weight = np.random.uniform(1, 100, size=weight_shape).astype(np.int64)
-        with NamedTemporaryFile("wb") as f:
-            f.write(b"abcde")  # Add fake offset.
-            f.write(weight.tobytes())
-            f.flush()
+        w = Weight(
+            "random_weight",
+            dtype=DType.int64,
+            shape=weight_shape,
+        )
+        graph.output(graph.add_weight(w))
+        compiled = session.load(
+            graph, weights_registry={"random_weight": weight}
+        )
+        output = compiled.execute()
 
-            w = Weight(
-                "random_weight",
-                dtype=DType.int64,
-                shape=weight_shape,
-                filepath=f.name,
-                offset=5,
-            )
-            graph.output(w)
-            compiled = session.load(graph)
-            output = compiled.execute()
-
-            np.testing.assert_array_equal(weight, output["output0"])
+        np.testing.assert_array_equal(weight, output["output0"])
 
 
 def _test_data():
@@ -75,8 +71,11 @@ def test_load_pytorch(session, graph_testdata) -> None:
 
     weights = load_pytorch(graph_testdata / "example_data.pt")
     with Graph("graph_with_pt_weights") as graph:
-        graph.output(*[weights[k] for k in flat_keys])
-        compiled = session.load(graph)
+        loaded = {k: graph.add_weight(w) for k, (w, _) in weights.items()}
+        graph.output(*[loaded[k] for k in flat_keys])
+        compiled = session.load(
+            graph, weights_registry={k: d for k, (_, d) in weights.items()}
+        )
         output = compiled.execute()
 
         assert len(expected) == len(output)
@@ -98,10 +97,14 @@ def test_load_gguf(session, graph_testdata) -> None:
     flat_keys = list(expected_dict.keys())
     expected = [expected_dict[k] for k in flat_keys]
 
-    weights = load_gguf(graph_testdata / "example_data.gguf")
+    reader = gguf.GGUFReader(graph_testdata / "example_data.gguf")
+    weights = load_gguf(reader)
     with Graph("graph_with_gguf_weights") as graph:
-        graph.output(*[weights[k] for k in flat_keys])
-        compiled = session.load(graph)
+        loaded = {k: graph.add_weight(w) for k, (w, _) in weights.items()}
+        graph.output(*[loaded[k] for k in flat_keys])
+        compiled = session.load(
+            graph, weights_registry={k: d for k, (_, d) in weights.items()}
+        )
         output = compiled.execute()
 
         assert len(expected) == len(output)

@@ -9,9 +9,11 @@ from __future__ import annotations
 
 import subprocess
 import sys
-from dataclasses import dataclass, field
 from os import PathLike
-from typing import Callable, Dict, Optional
+from typing import Any, Optional
+
+import numpy as np
+import numpy.typing as npt
 
 # Only import gguf when used.
 try:
@@ -22,13 +24,13 @@ except ImportError:
 
 from max.dtype import DType
 
-from ..graph import Graph
 from ..quantization import QuantizationEncoding
-from ..value import Value
+from ..type import ShapeLike
 from ..weight import Weight
 
 _GGML_TO_DTYPE = {}
-_QUANTIZED_GGML_DTYPES = {}
+_FROM_QUANTIZED_GGML_DTYPES = {}
+_TO_QUANTIZED_GGML_DTYPES = {}
 
 
 def _install(package):
@@ -36,7 +38,7 @@ def _install(package):
 
 
 def _check_gguf():
-    global gguf, _GGML_TO_DTYPE, _QUANTIZED_GGML_DTYPES
+    global gguf, _GGML_TO_DTYPE, _FROM_QUANTIZED_GGML_DTYPES, _TO_QUANTIZED_GGML_DTYPES
     if gguf is None:
         _install("sentencepiece")
         _install("gguf")
@@ -56,7 +58,7 @@ def _check_gguf():
             gguf.GGMLQuantizationType.BF16: DType.bfloat16,
         }
 
-        _QUANTIZED_GGML_DTYPES = {
+        _FROM_QUANTIZED_GGML_DTYPES = {
             gguf.GGMLQuantizationType.Q4_0: QuantizationEncoding.Q4_0,
             # gguf.GGMLQuantizationType.Q4_1,
             # gguf.GGMLQuantizationType.Q5_0,
@@ -79,15 +81,23 @@ def _check_gguf():
             # gguf.GGMLQuantizationType.IQ4_XS,
             # gguf.GGMLQuantizationType.IQ1_M,
         }
+        _TO_QUANTIZED_GGML_DTYPES = {
+            value: key for key, value in _FROM_QUANTIZED_GGML_DTYPES.items()
+        }
 
 
-def load_gguf(source: PathLike | gguf.GGUFReader) -> Dict[str, Weight]:
+def load_gguf(
+    source: PathLike | gguf.GGUFReader,
+) -> dict[str, tuple[Weight, npt.NDArray[Any]]]:
     _check_gguf()
     assert gguf is not None
     GGUFReader = gguf.GGUFReader
 
     reader = source if isinstance(source, GGUFReader) else GGUFReader(source)
-    return {tensor.name: parse_weight(tensor) for tensor in reader.tensors}
+    return {
+        tensor.name: (parse_weight(tensor), tensor.data)
+        for tensor in reader.tensors
+    }
 
 
 def parse_weight(tensor: gguf.ReaderTensor) -> Weight:
@@ -99,7 +109,7 @@ def parse_weight(tensor: gguf.ReaderTensor) -> Weight:
     shape = list(reversed(tensor.shape.tolist()))
     encoding = None
     if (dtype := _GGML_TO_DTYPE.get(tensor.tensor_type)) is None:
-        if encoding := _QUANTIZED_GGML_DTYPES.get(tensor.tensor_type):
+        if encoding := _FROM_QUANTIZED_GGML_DTYPES.get(tensor.tensor_type):
             # Quantized dtypes are treated as uint8 values.
             dtype = DType.uint8
             shape = gguf.quant_shape_to_byte_shape(shape, tensor.tensor_type)
@@ -110,34 +120,107 @@ def parse_weight(tensor: gguf.ReaderTensor) -> Weight:
         name=tensor.name,
         dtype=dtype,
         shape=shape,
-        filepath=tensor.data.filename,
-        offset=tensor.data_offset,
         quantization_encoding=encoding,
     )
 
 
-class Weights:
+class GGUFWeights:
     _reader: gguf.GGUFReader
     _tensors: dict[str, gguf.ReaderTensor]
     _prefix: str
+    _allocated: dict[str, np.ndarray]
 
-    def __init__(self, reader: gguf.GGUFReader, tensors=None, prefix: str = ""):
+    def __init__(
+        self,
+        reader: gguf.GGUFReader,
+        tensors=None,
+        prefix: str = "",
+        allocated=None,
+    ):
         self._reader = reader
         self._tensors = tensors or {t.name: t for t in reader.tensors}
         self._prefix = prefix
+        self._allocated = {} if allocated is None else allocated
 
     def __iter__(self):
         for name, tensor in self._tensors.items():
             if name.startswith(self._prefix):
                 yield tensor
 
-    def __getattr__(self, attr) -> Weight | Weights:
-        full_path = f"{self._prefix}{attr}"
-        if tensor := self._tensors.get(full_path):
-            return parse_weight(tensor)
-        elif not any(name.startswith(full_path) for name in self._tensors):
+    def __getattr__(self, attr) -> GGUFWeights:
+        if self._prefix:
+            full_path = f"{self._prefix}.{attr}"
+        else:
+            full_path = str(attr)
+        if not any(name.startswith(full_path) for name in self._tensors):
             raise AttributeError(f"No weight {full_path} found")
-        return Weights(self._reader, self._tensors, prefix=full_path + ".")
+        return GGUFWeights(
+            self._reader,
+            self._tensors,
+            prefix=full_path,
+            allocated=self._allocated,
+        )
 
-    def __getitem__(self, idx: int) -> Weight | Weights:
+    def __getitem__(self, idx: int) -> GGUFWeights:
         return self.__getattr__(str(idx))
+
+    def tensor(self) -> gguf.ReaderTensor:
+        """Returns the GGUF tensor corresponding to this weights object.
+
+        Raises:
+            KeyError if this weights object isn't a tensor.
+        """
+        if self._prefix not in self._tensors:
+            raise KeyError(
+                f"Could not find weight named {self._prefix}. Please check that"
+                " the name is correct."
+            )
+
+        return self._tensors[self._prefix]
+
+    def allocate(
+        self,
+        dtype: DType,
+        shape: ShapeLike,
+        quantization_encoding: Optional[QuantizationEncoding] = None,
+    ) -> Weight:
+        tensor = self.tensor()
+        weight = parse_weight(tensor)
+        self._allocated[self._prefix] = tensor.data
+
+        # Validate the loaded weight.
+        expected_shape = tuple(shape)
+        weight_unpacked_shape = tuple(dim for dim in weight.shape)
+        if weight.quantization_encoding:
+            # Get the unpacked weight.
+            ggml_dtype = _TO_QUANTIZED_GGML_DTYPES[weight.quantization_encoding]
+            weight_unpacked_shape = gguf.quant_shape_from_byte_shape(
+                weight_unpacked_shape, ggml_dtype
+            )
+
+        if (weight.dtype, weight_unpacked_shape) != (
+            dtype,
+            expected_shape,
+        ):
+            raise ValueError(
+                "Did not get expected weight shape and/or dtype.\n\tExpected"
+                f" dtype: {dtype}, got: {weight.dtype}\n\tExpected shape:"
+                f" {expected_shape}, got: {weight_unpacked_shape}"
+            )
+
+        # GGUF checkpoints can be mixed precision, so we don't check if the
+        # quantization encoding matches exactly.
+        if quantization_encoding and not weight.quantization_encoding:
+            raise ValueError(
+                "Expected quantized weight but checkpoint contained"
+                f" unquantized weight for {self._prefix}"
+            )
+        if weight.quantization_encoding and not quantization_encoding:
+            raise ValueError("Expected quantized weight")
+
+        return weight
+
+    @property
+    def allocated_weights(self) -> dict[str, np.ndarray]:
+        """Gets the values of all weights that were allocated previously."""
+        return self._allocated

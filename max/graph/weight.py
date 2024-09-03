@@ -4,8 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 from dataclasses import dataclass
-from os import PathLike
-from typing import Optional, Union
+from typing import Optional
 
 from max.dtype import DType
 
@@ -20,7 +19,5 @@ class Weight:
     name: str
     dtype: DType
     shape: ShapeLike
-
-    filepath: Union[PathLike, str]
-    offset: int = 0
     quantization_encoding: Optional[QuantizationEncoding] = None
+    align: Optional[int] = None

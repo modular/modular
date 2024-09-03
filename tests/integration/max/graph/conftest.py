@@ -14,10 +14,8 @@ import torch
 from hypothesis import given, reject
 from hypothesis import strategies as st
 from hypothesis.extra import numpy as nps
-from hypothesis.strategies import integers, lists, shared, tuples
-from max.dtype import DType
 from max.engine import InferenceSession
-from max.graph import Graph, TensorType
+from max.graph import TensorType
 from max.graph.type import Dim, StaticDim, SymbolicDim
 
 MAX_INPUT_MAGNITUDE = 1e5

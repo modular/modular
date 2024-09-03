@@ -18,7 +18,7 @@ from max import _graph, mlir
 from max.mlir.dialects import mo
 
 from .type import Dim, SymbolicDim, TensorType, Type
-from .value import Value, ValueLike
+from .value import TensorValue, Value
 from .weight import Weight
 
 CURRENT_GRAPH: ContextVar[Graph] = ContextVar("CURRENT_GRAPH")
@@ -98,7 +98,7 @@ class _classproperty:
 @dataclass(frozen=True)
 class _GraphWeight:
     weight: Weight
-    value: Value
+    value: TensorValue
 
 
 class Graph:
@@ -364,7 +364,7 @@ class Graph:
                 " impossible."
             ) from e
 
-    def add_weight(self, weight: Weight) -> Value:
+    def add_weight(self, weight: Weight) -> TensorValue:
         """Adds a weight to the graph.
 
         If the weight is in the graph already, return the existing value.
@@ -388,14 +388,16 @@ class Graph:
                 )
 
         tensor_type = TensorType(weight.dtype, weight.shape).to_mlir()
-        weights_attr = _graph.weights_attr(
-            Path(weight.filepath),
-            weight.offset,
-            tensor_type,
-            weight.name,
-        )
-        weight_tensor = self._add_op(
-            mo.constant, result=tensor_type, value=weights_attr
+        weight_tensor = Graph.current._add_op(
+            mo.constant_external,
+            result=tensor_type,
+            name=weight.name,
+            align=(
+                # Default to dtype alignment unless otherwise specified, for
+                # example by checkpoint metadata.
+                weight.align if weight.align
+                is not None else weight.dtype.align
+            ),
         )[0]
         self.weights[weight.name] = _GraphWeight(weight, weight_tensor)
         return weight_tensor

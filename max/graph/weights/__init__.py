@@ -3,7 +3,7 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-"""Graph API utility methods."""
+"""Methods for loading weights into the Graph API."""
 
-from .load_gguf import load_gguf
+from .load_gguf import GGUFWeights
 from .load_pytorch import load_pytorch
