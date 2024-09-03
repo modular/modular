@@ -449,3 +449,40 @@ struct FieldRefPropagation:
      self.field1.value() = 17
      # Then initialize field2
      self.field2 = 1
+
+
+# Issue #3444 (nightly) Raising init causing use of uninitialized variable 
+# https://github.com/modularml/mojo/issues/3444
+struct HasRaisingInit:
+  fn __init__(inout self) raises: pass
+  fn __moveinit__(inout self, owned existing: Self): pass
+  fn __copyinit__(inout self, existing: Self): pass
+  fn __del__(owned self): pass
+
+struct ImmovableRaisingInit:
+  fn __init__(inout self) raises: pass
+
+struct RaisingInitWrapper:
+    var field: HasRaisingInit
+    var immfield: ImmovableRaisingInit
+
+    fn __init__(inout self) raises:
+      self.field = HasRaisingInit()
+      self.immfield = ImmovableRaisingInit()
+
+# CHECK-LABEL: lit.func @"test_inout_raising_init
+fn test_inout_raising_init(inout a: HasRaisingInit, inout b: RaisingInitWrapper) raises:
+  # These init calls need a temporary instead of direct assignment into the dest
+  # to avoid invalidating a value on the error path.
+  # CHECK-NEXT: [[TEMP:%.*]] = lit.var.decl
+  # CHECK: lit.call {{.*}}HasRaisingInit::@"__init__{{.*}}([[TEMP]]
+  a = HasRaisingInit()
+  # EH logic.
+  # CHECK: lit.call {{.*}}HasRaisingInit::@"__moveinit__{{.*}}(%a, [[TEMP]])
+
+  # CHECK: [[FIELDREF:%.*]] = lit.ref.struct.ger %b[field]
+  # CHECK: [[TEMP:%.*]] = lit.var.decl
+  # CHECK: lit.call {{.*}}HasRaisingInit::@"__init__{{.*}}([[TEMP]]
+  b.field = HasRaisingInit()
+  # EH logic.
+  # CHECK: lit.call {{.*}}HasRaisingInit::@"__moveinit__{{.*}}([[FIELDREF:%.*]], [[TEMP]])
