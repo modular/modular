@@ -90,7 +90,8 @@ fn bench_matmul[
         # TODO: Pick relevant benchmetric
         ThroughputMeasure(
             BenchMetric.elements,
-            2 * shape_c_dim[0] * shape_c_dim[1] * shape_b_dim[0],
+            # Flop: 2*M*N*K. Use A and C shapes since they're not transposed.
+            2 * shape_c_dim[0] * shape_c_dim[1] * shape_a_dim[1],
         ),
     )
 
