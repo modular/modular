@@ -704,13 +704,6 @@ bool CallEmitter::isSafeToUseValueDestForDirectResult(
   if (!destBuffer)
     return true;
 
-  // See if the destination buffer is something that ownership can track.  If
-  // not, we cannot make reliable determinations about aliasing.
-  Value underlyingDest =
-      LifetimeTrackable::findUnderlyingValueFromField(destBuffer);
-  if (!underlyingDest)
-    return false;
-
   // If this is a throwing function, then we cannot write to a field of a
   // lifetime tracked value.  Consider:
   //     x.f = foo()
@@ -723,8 +716,34 @@ bool CallEmitter::isSafeToUseValueDestForDirectResult(
   // delete the full 'x' value.  However, we cannot call the destructor on 'x'
   // because the whole value isn't initialized.  Address this by not assigning
   // into submembers in throwing functions.
-  if (calleeSig.isThrows() && underlyingDest != destBuffer)
-    return false;
+  if (calleeSig.isThrows()) {
+    // See if the destination buffer is something that ownership can track.
+    Value underlyingDest =
+        LifetimeTrackable::findUnderlyingValueFromField(destBuffer);
+    // If we don't know what it is, it may be a 'ref' result, handle
+    // conservatively.
+    if (!underlyingDest)
+      return false;
+
+    // Dig deeper into the nature of the thing we're assigning into to try to
+    // enable a few important cases.
+    LifetimeTrackable trackable(underlyingDest);
+
+    // We can't allow assigning into a field because we cannot partially destroy
+    // the value, but we can overwrite the whole thing.
+    if (underlyingDest != destBuffer) {
+      // initself arguments can be piecewise destroyed on a thrown error.
+      if (!trackable.isFullObjectLiveOnEntry ||
+          trackable.endInitState !=
+              LifetimeTrackable::ExitInitState::InitOnNormal)
+        return false;
+    }
+
+    // We also cannot assign to values that must be live-out from the function
+    // on an error return.  This includes (for example) by-ref arguments.
+    if (trackable.endInitState == LifetimeTrackable::ExitInitState::EndsInit)
+      return false;
+  }
 
   // Collect all of the types of all the arguments so we can collect the
   // lifetimes they may reference.
@@ -738,8 +757,18 @@ bool CallEmitter::isSafeToUseValueDestForDirectResult(
     argTypes.push_back(value.getType());
   }
 
-  TypedAttr destLifetime =
-      cast<RefType>(underlyingDest.getType()).getLifetime();
+  SmallPtrSet<Attribute, 2> destLifetimes;
+
+  // We're not doing field sensitive comparisons below, so strip down to the
+  // base lifetime for comparisons.
+  // TODO: Make this more aggressive with field information.
+  processRawLifetime(cast<RefType>(destBuffer.getType()).getLifetime(),
+                     [&](TypedAttr lifetime) {
+                       while (auto fieldAttr =
+                                  dyn_cast<LifetimeFieldAttr>(lifetime))
+                         lifetime = fieldAttr.getStructLifetime();
+                       destLifetimes.insert(lifetime);
+                     });
 
   // Check to see if any of the the lifetimes they may be accessing are the
   // lifetime in question.  If any of them is a possible reference to the
@@ -747,9 +776,14 @@ bool CallEmitter::isSafeToUseValueDestForDirectResult(
   CachedTypeLifetimeFinder &finder = emitter.shared.cachedLifetimeFinder;
   for (TypedAttr lifetime : finder.findLifetimesInTypes(argTypes)) {
     // If an operand is reading from the lifetime, there will be an immcast in
-    // the way.  Look through it.
+    // the way.  Look through it and any field sensitivity.
     lifetime = LifetimeMutCastAttr::strip(lifetime);
-    if (lifetime == destLifetime)
+    while (auto fieldAttr = dyn_cast<LifetimeFieldAttr>(lifetime))
+      lifetime = fieldAttr.getStructLifetime();
+
+    // If the destination set includes this lifetime, then we can't use the
+    // destination.
+    if (destLifetimes.count(lifetime))
       return false;
   }
 
@@ -870,8 +904,7 @@ Value CallEmitter::emitPreemittedArgumentAsDynamicValue(
       // At this point we've got enough information about the arguments to make
       // that assessment in a correct way.
       Value resultSlotVal;
-      if (convention == ArgConvention::InitSelf ||
-          isSafeToUseValueDestForDirectResult(resultRValueType,
+      if (isSafeToUseValueDestForDirectResult(resultRValueType,
                                               callArgsSoFar)) {
         // Use the preferred location of the destination slot.
         resultSlotVal = dest.getMLValueForResult(callExpr->getLoc(),
