@@ -417,7 +417,6 @@ def test_execute_external_weights(session: InferenceSession) -> None:
     graph._mlir_op.verify()
 
     compiled = session.load(graph, weights_registry={"foo": weights})
-    output = compiled.execute(
-        input0=np.random.randn(num_elems).astype(np.float32)
-    )
-    assert output
+    input = np.random.randn(num_elems).astype(np.float32)
+    output = compiled.execute(input0=input)
+    assert np.allclose(output["output0"], input + weights)
