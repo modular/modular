@@ -447,9 +447,9 @@ fn mo_relu(
     return out
 
 
-@mogg_register_override("mo.rsqrt", MAX_BENEFIT)
+@mogg_register_override("mo.isqrt", MAX_BENEFIT)
 @export
-fn mo_rsqrt(
+fn mo_isqrt(
     x: Tensor,
 ) -> Tensor[x.type, x.static_shape]:
     var out = empty_tensor[x.type](x.shape)

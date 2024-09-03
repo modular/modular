@@ -3503,9 +3503,9 @@ fn roundeven[
     return x.roundeven()
 
 
-@mogg_register("mo.rsqrt")
+@mogg_register("mo.isqrt")
 @always_inline("nodebug")
-fn wrapped_rsqrt[
+fn wrapped_isqrt[
     type: DType, simd_width: Int
 ](x: SIMD[type, simd_width]) -> SIMD[type, simd_width]:
     return isqrt(x)
