@@ -39,8 +39,8 @@ class TokenGeneratorPipeline(Generic[Context]):
         for rid, context in requests.items():
             # The first token is part of a context-encoding batch.
             # This goes away once we support ragged tensors.
-            yield rid, await self.context_queue.submit(context)
-            async for token in self.tokens_queue.stream(context):
+            yield rid, await self.context_queue.submit(rid, context)
+            async for token in self.tokens_queue.stream(rid, context):
                 yield rid, token
                 if not token:
                     break

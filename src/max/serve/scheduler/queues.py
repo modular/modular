@@ -7,20 +7,22 @@
 
 import asyncio
 import contextlib
-import uuid
 from asyncio import Queue
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Generic, TypeVar
+
+BatchKey = TypeVar("BatchKey")
 
 
 @dataclass
-class BatchMultiplexQueue:
+class BatchMultiplexQueue(Generic[BatchKey]):
     """Helps manage batching and streaming interfaces.
-
     - Requests should open a channel like
     ```
-        async with queue.open_channel(data) as channel:
+        async with queue.open_channel(id, data) as channel:
+            # id is a key which uniquely identifies the data in your request.
             # channel is an asyncio.Queue which yields streaming data
+
     ```
     - Batching services can use `fill_batch_nowait` and `respond`
         to pull and respond to requests respectively, or interact
@@ -28,11 +30,10 @@ class BatchMultiplexQueue:
     """
 
     in_queue: Queue = field(default_factory=Queue)
-    out_queues: dict[str, Queue] = field(default_factory=dict)
+    out_queues: dict[BatchKey, Queue] = field(default_factory=dict)
 
     @contextlib.asynccontextmanager
-    async def open_channel(self, data):
-        id = str(uuid.uuid4())
+    async def open_channel(self, id: BatchKey, data: dict):
         self.out_queues[id] = out_queue = Queue()
         await self.in_queue.put((id, data))
         try:
@@ -40,16 +41,18 @@ class BatchMultiplexQueue:
         finally:
             del self.out_queues[id]
 
-    async def submit(self, data):
-        async with self.open_channel(data) as queue:
+    async def submit(self, id: BatchKey, data):
+        async with self.open_channel(id, data) as queue:
             return await queue.get()
 
-    async def stream(self, data):
-        async with self.open_channel(data) as queue:
+    async def stream(self, id: BatchKey, data):
+        async with self.open_channel(id, data) as queue:
             while True:
                 yield await queue.get()
 
-    def fill_batch_nowait(self, batch: dict[str, Any], max_batch_size: int):
+    def fill_batch_nowait(
+        self, batch: dict[BatchKey, Any], max_batch_size: int
+    ):
         while len(batch) < max_batch_size:
             try:
                 id, data = self.in_queue.get_nowait()
@@ -57,9 +60,9 @@ class BatchMultiplexQueue:
             except asyncio.QueueEmpty:
                 return
 
-    async def respond(self, batch_responses: dict[str, Any]):
-        # TODO: This cancelled check should be configurable. Won't always be the
-        #       request IDs missing from the latest batch.
+    async def respond(self, batch_responses: dict[BatchKey, Any]):
+        # TODO: This cancelled check should be configurable.
+        # It won't always be the request IDs missing from the latest batch.
         cancelled = self.out_queues.keys() - batch_responses.keys()
         await asyncio.gather(
             *(

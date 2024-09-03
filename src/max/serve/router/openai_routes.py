@@ -10,6 +10,7 @@ from collections import defaultdict
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Annotated
+from uuid import uuid4
 
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import JSONResponse, Response
@@ -70,8 +71,7 @@ async def openai_chat_completions(
         else:
             prompt += message_text(content)
 
-    # TODO: Add in real request ID minting.
-    requests = {"0": await pipeline.model.new_context(prompt)}
+    requests = {str(uuid4()): await pipeline.model.new_context(prompt)}
 
     @dataclass
     class ResponseGenerator:
