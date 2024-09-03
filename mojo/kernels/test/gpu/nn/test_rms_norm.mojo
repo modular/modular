@@ -64,7 +64,15 @@ fn run_rms_norm_gpu[
     ctx.enqueue_copy_to_device(data_d, data_h)
     ctx.enqueue_copy_to_device(gamma_d, gamma_h)
 
-    rms_norm_gpu(shape, gamma, epsilon, data_buf, ctx)
+    @__copy_capture(data_buf)
+    @always_inline
+    @parameter
+    fn input_fn[
+        width: Int, _rank: Int
+    ](idx: StaticIntTuple[_rank]) -> SIMD[type, width]:
+        return data_buf.load[width=width](rebind[StaticIntTuple[rank]](idx))
+
+    rms_norm_gpu[input_fn](shape, gamma, epsilon, data_buf, ctx)
     ctx.enqueue_copy_from_device(res, data_d)
     ctx.synchronize()
 
