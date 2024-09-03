@@ -77,84 +77,6 @@ fn block_reduce[type: DType](val: Scalar[type]) -> Scalar[type]:
     return m2_broadcast[0]
 
 
-fn rms_norm_gpu_warp_tiling[
-    type: DType,
-    simd_width: Int,
-](data: NDBuffer[type, 2], gamma: NDBuffer[type, 1], epsilon: Scalar[type]):
-    alias align = alignof[SIMD[type, simd_width]]()
-    alias accum_type = get_accum_type[type]()
-
-    var num_cols = data.dim[1]()
-    var tid: UInt = ThreadIdx.x()
-    var row: UInt = BlockIdx.x()
-
-    var vec_data = SIMD[accum_type, simd_width]()
-
-    var idx: UInt = tid * simd_width
-    var thread_m2 = Scalar[accum_type](0)
-
-    # To utilize simd vector load
-    if idx < num_cols:
-        vec_data = data.load[width=simd_width, alignment=align](
-            Index(row, idx)
-        ).cast[accum_type]()
-        thread_m2 = (vec_data**2).reduce_add()
-
-    var row_m2 = block_reduce(thread_m2)
-    var norm_factor = isqrt((row_m2 / num_cols) + epsilon.cast[accum_type]())
-
-    if idx < num_cols:
-        var gamma_val = gamma.load[width=simd_width, alignment=align](
-            Index(idx)
-        )
-        var norm_val = vec_data * norm_factor * gamma_val.cast[accum_type]()
-        data.store[alignment=align](Index(row, idx), norm_val.cast[type]())
-
-
-fn rms_norm_gpu_block[
-    type: DType,
-    simd_width: Int,
-](data: NDBuffer[type, 2], gamma: NDBuffer[type, 1], epsilon: Scalar[type]):
-    alias align = alignof[SIMD[type, simd_width]]()
-    alias accum_type = get_accum_type[type]()
-
-    var num_cols = data.dim[1]()
-    var tid: UInt = ThreadIdx.x()
-    var row: UInt = BlockIdx.x()
-    var thread_m2 = Scalar[accum_type](0)
-
-    # Every block has a single row to process
-    for x in range(ceildiv(num_cols // simd_width, BlockDim.x())):
-        var offset = x * BlockDim.x() * simd_width + tid * simd_width
-        if offset < num_cols:
-            var vec_data = data.load[width=simd_width, alignment=align](
-                Index(row, offset)
-            ).cast[accum_type]()
-            thread_m2 += (vec_data**2).reduce_add()
-
-    var row_m2 = block_reduce(thread_m2)
-    var norm_factor = isqrt((row_m2 / num_cols) + epsilon.cast[accum_type]())
-
-    # need a pass again to perform in place normalization
-    for x in range(ceildiv(num_cols // simd_width, BlockDim.x())):
-        var offset = x * BlockDim.x() * simd_width + tid * simd_width
-
-        if offset < num_cols:
-            var gamma_val = gamma.load[width=simd_width, alignment=align](
-                Index(offset)
-            )
-
-            var vec_data = data.load[width=simd_width, alignment=align](
-                Index(row, offset)
-            ).cast[accum_type]()
-            var norm_val = (
-                vec_data * norm_factor * gamma_val.cast[accum_type]()
-            )
-            data.store[alignment=align](
-                Index(row, offset), norm_val.cast[type]()
-            )
-
-
 # using numerically stable Welford online algorithm to compute single pass mean and variance
 fn welford_update[
     type: DType, //
@@ -455,78 +377,6 @@ fn layer_norm_reshape[
     var new_shape = StaticIntTuple[output_rank](prod_all_but_last_dim, last_dim)
     var output_rs = reshape[output_rank](buf, new_shape)
     return output_rs
-
-
-fn rms_norm_gpu[
-    type: DType,
-    rank: Int, //,
-](
-    shape: StaticIntTuple[rank],
-    gamma: NDBuffer[type, 1],
-    epsilon: Scalar[type],
-    output: NDBuffer[type, rank, *_],
-    ctx: DeviceContext,
-) raises:
-    if rank == 0:
-        return
-
-    var last_dim = shape[rank - 1]
-
-    if last_dim == 0:
-        return
-
-    alias rank_rs = 2
-    var output_rs = layer_norm_reshape[rank_rs](shape, output)
-    var rows = output_rs.dim[0]()
-    var cols = output_rs.dim[1]()
-
-    alias simd_width = simdwidthof[type, target = _get_nvptx_target()]()
-    alias max_warps_per_block = 32
-
-    var grid_dim = rows
-    var block_dim = min(
-        ceildiv(ceildiv(cols, simd_width), WARP_SIZE) * WARP_SIZE,
-        WARP_SIZE * max_warps_per_block,
-    )
-
-    if cols % simd_width == 0:
-        # When the number of columns are less enough that they can be placed in
-        # registers we do warp tiling which is a single pass to do mean/var
-        # computation and normalization.
-        if cols <= (WARP_SIZE * simd_width * max_warps_per_block):
-            var gpu_func = ctx.compile_function[
-                rms_norm_gpu_warp_tiling[type, simd_width]
-            ]()
-            ctx.enqueue_function(
-                gpu_func,
-                output_rs,
-                gamma,
-                epsilon,
-                grid_dim=grid_dim,
-                block_dim=block_dim,
-            )
-        else:
-            var gpu_func = ctx.compile_function[
-                rms_norm_gpu_block[type, simd_width]
-            ]()
-            ctx.enqueue_function(
-                gpu_func,
-                output_rs,
-                gamma,
-                epsilon,
-                grid_dim=grid_dim,
-                block_dim=block_dim,
-            )
-    else:
-        var gpu_func = ctx.compile_function[rms_norm_gpu_block[type, 1]]()
-        ctx.enqueue_function(
-            gpu_func,
-            output_rs,
-            gamma,
-            epsilon,
-            grid_dim=grid_dim,
-            block_dim=block_dim,
-        )
 
 
 fn layer_norm_gpu[
@@ -837,3 +687,153 @@ fn layer_norm_shape[
         The output shape.
     """
     return input.get_shape()
+
+
+fn rms_norm_gpu_warp_tiling[
+    type: DType,
+    simd_width: Int,
+](data: NDBuffer[type, 2], gamma: NDBuffer[type, 1], epsilon: Scalar[type]):
+    alias align = alignof[SIMD[type, simd_width]]()
+    alias accum_type = get_accum_type[type]()
+
+    var num_cols = data.dim[1]()
+    var tid: UInt = ThreadIdx.x()
+    var row: UInt = BlockIdx.x()
+
+    var vec_data = SIMD[accum_type, simd_width]()
+
+    var idx: UInt = tid * simd_width
+    var thread_m2 = Scalar[accum_type](0)
+
+    # To utilize simd vector load
+    if idx < num_cols:
+        vec_data = data.load[width=simd_width, alignment=align](
+            Index(row, idx)
+        ).cast[accum_type]()
+        thread_m2 = (vec_data**2).reduce_add()
+
+    var row_m2 = block_reduce(thread_m2)
+    var norm_factor = isqrt((row_m2 / num_cols) + epsilon.cast[accum_type]())
+
+    if idx < num_cols:
+        var gamma_val = gamma.load[width=simd_width, alignment=align](
+            Index(idx)
+        )
+        var norm_val = vec_data * norm_factor * gamma_val.cast[accum_type]()
+        data.store[alignment=align](Index(row, idx), norm_val.cast[type]())
+
+
+fn rms_norm_gpu_block[
+    type: DType,
+    simd_width: Int,
+](data: NDBuffer[type, 2], gamma: NDBuffer[type, 1], epsilon: Scalar[type]):
+    alias align = alignof[SIMD[type, simd_width]]()
+    alias accum_type = get_accum_type[type]()
+
+    var num_cols = data.dim[1]()
+    var tid: UInt = ThreadIdx.x()
+    var row: UInt = BlockIdx.x()
+    var thread_m2 = Scalar[accum_type](0)
+
+    # Every block has a single row to process
+    for x in range(ceildiv(num_cols // simd_width, BlockDim.x())):
+        var offset = x * BlockDim.x() * simd_width + tid * simd_width
+        if offset < num_cols:
+            var vec_data = data.load[width=simd_width, alignment=align](
+                Index(row, offset)
+            ).cast[accum_type]()
+            thread_m2 += (vec_data**2).reduce_add()
+
+    var row_m2 = block_reduce(thread_m2)
+    var norm_factor = isqrt((row_m2 / num_cols) + epsilon.cast[accum_type]())
+
+    # need a pass again to perform in place normalization
+    for x in range(ceildiv(num_cols // simd_width, BlockDim.x())):
+        var offset = x * BlockDim.x() * simd_width + tid * simd_width
+
+        if offset < num_cols:
+            var gamma_val = gamma.load[width=simd_width, alignment=align](
+                Index(offset)
+            )
+
+            var vec_data = data.load[width=simd_width, alignment=align](
+                Index(row, offset)
+            ).cast[accum_type]()
+            var norm_val = (
+                vec_data * norm_factor * gamma_val.cast[accum_type]()
+            )
+            data.store[alignment=align](
+                Index(row, offset), norm_val.cast[type]()
+            )
+
+
+fn rms_norm_gpu[
+    type: DType,
+    rank: Int, //,
+](
+    shape: StaticIntTuple[rank],
+    gamma: NDBuffer[type, 1],
+    epsilon: Scalar[type],
+    output: NDBuffer[type, rank, *_],
+    ctx: DeviceContext,
+) raises:
+    if rank == 0:
+        return
+
+    var last_dim = shape[rank - 1]
+
+    if last_dim == 0:
+        return
+
+    alias rank_rs = 2
+    var output_rs = layer_norm_reshape[rank_rs](shape, output)
+    var rows = output_rs.dim[0]()
+    var cols = output_rs.dim[1]()
+
+    alias simd_width = simdwidthof[type, target = _get_nvptx_target()]()
+    alias max_warps_per_block = 32
+
+    var grid_dim = rows
+    var block_dim = min(
+        ceildiv(ceildiv(cols, simd_width), WARP_SIZE) * WARP_SIZE,
+        WARP_SIZE * max_warps_per_block,
+    )
+
+    if cols % simd_width == 0:
+        # When the number of columns are less enough that they can be placed in
+        # registers we do warp tiling which is a single pass to do mean/var
+        # computation and normalization.
+        if cols <= (WARP_SIZE * simd_width * max_warps_per_block):
+            var gpu_func = ctx.compile_function[
+                rms_norm_gpu_warp_tiling[type, simd_width]
+            ]()
+            ctx.enqueue_function(
+                gpu_func,
+                output_rs,
+                gamma,
+                epsilon,
+                grid_dim=grid_dim,
+                block_dim=block_dim,
+            )
+        else:
+            var gpu_func = ctx.compile_function[
+                rms_norm_gpu_block[type, simd_width]
+            ]()
+            ctx.enqueue_function(
+                gpu_func,
+                output_rs,
+                gamma,
+                epsilon,
+                grid_dim=grid_dim,
+                block_dim=block_dim,
+            )
+    else:
+        var gpu_func = ctx.compile_function[rms_norm_gpu_block[type, 1]]()
+        ctx.enqueue_function(
+            gpu_func,
+            output_rs,
+            gamma,
+            epsilon,
+            grid_dim=grid_dim,
+            block_dim=block_dim,
+        )
