@@ -77,11 +77,8 @@ fn run_layer_norm_block[
     @__copy_capture(data_buf)
     @always_inline
     @parameter
-    fn input_fn[
-        width: Int, _r: Int
-    ](idx: StaticIntTuple[_r]) -> SIMD[type, width]:
-        var r_idx = rebind[StaticIntTuple[rank]](idx)
-        return data_buf.load[width=width](r_idx)
+    fn input_fn[width: Int](row: Int, col: Int) -> SIMD[type, width]:
+        return data_buf.load[width=width](StaticIntTuple[rank](row, col))
 
     @__copy_capture(gamma)
     @always_inline
@@ -177,17 +174,13 @@ fn run_layer_norm_gpu[
     ctx.enqueue_copy_to_device(gamma_d, gamma_h)
     ctx.enqueue_copy_to_device(beta_d, beta_h)
 
-    alias rank_rs = 2
-    var data_buf_rs = layer_norm_reshape[rank_rs](shape, data_buf)
-
-    @__copy_capture(data_buf_rs)
+    @__copy_capture(data_buf)
     @always_inline
     @parameter
     fn input_fn[
-        width: Int, _r: Int
-    ](idx: StaticIntTuple[_r]) -> SIMD[type, width]:
-        var r_idx = rebind[StaticIntTuple[rank_rs]](idx)
-        return data_buf_rs.load[width=width](r_idx)
+        width: Int, _rank: Int
+    ](idx: StaticIntTuple[_rank]) -> SIMD[type, width]:
+        return data_buf.load[width=width](rebind[StaticIntTuple[rank]](idx))
 
     @__copy_capture(gamma)
     @always_inline
@@ -262,11 +255,8 @@ fn run_layer_norm_warp_tiling[
     @__copy_capture(data_buf)
     @always_inline
     @parameter
-    fn input_fn[
-        width: Int, _r: Int
-    ](idx: StaticIntTuple[_r]) -> SIMD[type, width]:
-        var r_idx = rebind[StaticIntTuple[rank]](idx)
-        return data_buf.load[width=width](r_idx)
+    fn input_fn[width: Int](row: Int, col: Int) -> SIMD[type, width]:
+        return data_buf.load[width=width](StaticIntTuple[rank](row, col))
 
     @__copy_capture(gamma)
     @always_inline
