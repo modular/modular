@@ -111,10 +111,10 @@ public:
 
   /// This function emits the specified pre-emitted argument into a single MLIR
   /// Value suitable for passing to the callee with the specified convention.
-  /// This handles promotion of PValues to dynamic values as needed.
   Value emitPreemittedArgumentAsDynamicValue(ASTExprAnd<AnyValue> argValAndExpr,
                                              ArgConvention convention,
-                                             Type declaredArgType);
+                                             Type declaredArgType,
+                                             ArrayRef<Value> callArgsSoFar);
 
   /// If this is a call to a @always_inline function (and there's only one
   /// possible callee), this method tries to fold the entire function body into
@@ -395,8 +395,12 @@ LogicalResult CallEmitter::emitRemainingPosOperands(
   // create a variadic or pack sequence.
   SmallVector<Value> args;
   for (auto &operand : remainingOperands) {
-    Value argVal =
-        emitPreemittedArgumentAsDynamicValue(operand, convention, expectedType);
+    assert(convention != ArgConvention::ByRefResult &&
+           convention != ArgConvention::InitSelf &&
+           "cannot have variadics of this convention, so can pass in empty "
+           "callArgsSoFar");
+    Value argVal = emitPreemittedArgumentAsDynamicValue(
+        operand, convention, expectedType, ArrayRef<Value>());
     if (!argVal)
       return failure();
     args.push_back(argVal);
@@ -487,10 +491,10 @@ LogicalResult CallEmitter::emitRemainingPosOperands(
   return success();
 }
 
-/// Return true if this operand is a placeholder initself that is produced for
-/// constructor calls.  Return false it if it something explicitly specified,
-/// e.g. when a constructor is invoked with `self.__init__()`
-static bool isPlaceholderInitSelf(const AnyValue &value) {
+/// Return true if this operand is a placeholder for a byrefresult or initself.
+/// Return false it if it something explicitly specified, e.g. when a
+/// constructor is invoked with `x.__init__()` or 'x = function()'
+static bool isInitSelfOrByRefResultPlaceholder(const AnyValue &value) {
   if (!value)
     return true;
   if (auto pv = value.getIfPValue())
@@ -536,7 +540,7 @@ CallEmitter::emitArgValues(const CallOperands &operands) {
     // If this is an `init_self` slot that has not been explicitly provided by
     // the user, we will have to find a slot later.
     if (convention == ArgConvention::InitSelf &&
-        isPlaceholderInitSelf(operands.values.front().ir)) {
+        isInitSelfOrByRefResultPlaceholder(operands.values.front().ir)) {
       ++posOperandIdx;
       argumentValues.push_back({AnyValue(), callExpr});
       continue;
@@ -753,16 +757,15 @@ bool CallEmitter::isSafeToUseValueDestForDirectResult(
   return true;
 }
 
+/// This function emits the specified pre-emitted argument into a single MLIR
+/// Value suitable for passing to the callee with the specified convention.
 Value CallEmitter::emitPreemittedArgumentAsDynamicValue(
     ASTExprAnd<AnyValue> argValAndExpr, ArgConvention convention,
-    Type declaredArgType) {
+    Type declaredArgType, ArrayRef<Value> callArgsSoFar) {
   assert(emitter.builder && "Should only be called in dynamic context");
 
   Value arg;
   switch (convention) {
-  case ArgConvention::ByRefResult:
-  case ArgConvention::ByRefError:
-    llvm_unreachable("this is handled specially during call emission");
   case ArgConvention::OwnedInReg:
     // Promote PValue's if needed.
     return emitter.emitSRValue(argValAndExpr, EC_CallArgValue);
@@ -828,8 +831,60 @@ Value CallEmitter::emitPreemittedArgumentAsDynamicValue(
            "Ref args are already emitted to boxes during overload resolution");
     return argValAndExpr.ir.getMValueReference();
 
+  case ArgConvention::ByRefError: {
+    // If the callee throws and is not async, we pass the contextual error slot.
+    MLValue errSlot = emitter.findNearestErrorSlot();
+    if (!errSlot) {
+      auto diag = emitter.emitError(callExpr->getLoc())
+                  << "cannot call function that may raise in a context that "
+                     "cannot raise"
+                  << callExpr->getRange();
+      diag.attachNote(callExpr->getLoc())
+          << "try surrounding the call in a 'try' block";
+      if (auto func = getBlockParentOfType<LIT::FuncOp>(
+              emitter.builder->getInsertionBlock())) {
+        diag.attachNote(func.getLoc())
+            << "or mark surrounding function as 'raises'";
+      }
+      return {};
+    }
+    return errSlot;
+  }
+
+  case ArgConvention::ByRefResult:
   case ArgConvention::InOut:
   case ArgConvention::InitSelf: {
+    // initself and byref_result can have a placeholder when there is no
+    // specified destination, but can also have a destination specified
+    // directly.
+    if (isInitSelfOrByRefResultPlaceholder(argValAndExpr.ir)) {
+      auto resultRValueType = cast<RefType>(declaredArgType).getElementType();
+
+      // Often the result of the call will be directly assigned into a
+      // user-defined var or other location with existing storage.  In these
+      // cases, we really want to assign directly into the existing slot.
+      //
+      // However, we cannot do that if the destination slot is also being passed
+      // into the call as an input value, as in: `x = foo(x)` or `x = x + 1`.
+      // In these cases we really do need a temporary+copy in the var slot.
+      // At this point we've got enough information about the arguments to make
+      // that assessment in a correct way.
+      Value resultSlotVal;
+      if (convention == ArgConvention::InitSelf ||
+          isSafeToUseValueDestForDirectResult(resultRValueType,
+                                              callArgsSoFar)) {
+        // Use the preferred location of the destination slot.
+        resultSlotVal = dest.getMLValueForResult(callExpr->getLoc(),
+                                                 resultRValueType, emitter);
+      } else {
+        auto loc = argValAndExpr.expr->getLocation(emitter);
+        resultSlotVal =
+            emitter.emitVarDecl("__call_result_tmp__", resultRValueType, loc,
+                                VarDeclKind::Synthesized);
+      }
+      argValAndExpr.ir = MLValue(resultSlotVal);
+    }
+
     // We know that the operand is an LValue, but it might be
     // dynamic/computed.
     LValue lv = argValAndExpr.ir.getIfLValue();
@@ -1375,24 +1430,20 @@ CValue ExprEmitter::emitCallUnchecked(RValue callee,
   SmallVector<Value> callArgs;
   SmallVector<TypedAttr> implicitLifetimes;
   ArrayRef<ArgConvention> conventions = calleeSig.getArgConventions();
-  bool needInitSelfSlot = false;
-  for (auto [argIdx, argValAndExpr, conventionX, declaredArgType] :
+
+  // This is true if the call has an init_self slot with an explicitly provided
+  // value, e.g. `SomeType.__init__(out)`.
+  bool hadExplicitDestForInitSelf = false;
+
+  for (auto [argIdx, argValAndExpr, conventionX, declaredArgTypeX] :
        llvm::enumerate(argumentValues, conventions, calleeSig.getArguments())) {
     ArgConvention convention = conventionX;
+    Type declaredArgType = declaredArgTypeX;
 
-    // If this is a byref_result slot, we will have emitted a null value for
-    // this.  We can't know the type of it until we emit all the operands and
-    // collect their lifetimes.
-    bool isInitSelf = convention == ArgConvention::InitSelf;
-    if (SignatureType::isResultSlot(convention) ||
-        (isInitSelf && isPlaceholderInitSelf(argValAndExpr.ir))) {
-      needInitSelfSlot |= isInitSelf;
-      // Don't know the right thing yet, use a placeholder.
-      callArgs.push_back(Value());
-      implicitLifetimes.push_back(
-          LifetimeAttr::get(getContext(), /*isMutable=*/true));
-      continue;
-    }
+    // Notice if we have an explicit destination for initself.
+    if (convention == ArgConvention::InitSelf &&
+        !isInitSelfOrByRefResultPlaceholder(argValAndExpr.ir))
+      hadExplicitDestForInitSelf = true;
 
     // If this is a variadic operation, the N operands have already been emitted
     // together and consolidated into a pop.variadic.create/pop.variadic.attr,
@@ -1411,8 +1462,36 @@ CValue ExprEmitter::emitCallUnchecked(RValue callee,
         convention = ArgConvention::OwnedInReg;
     }
 
+    if (SignatureType::isResultSlot(convention)) {
+      // Async function signatures have results slots even though they are not
+      // actually provided.
+      // TODO: Why are these in the signature, why do they take implicit
+      // lifetimes for these things?
+      if (calleeSig.isAsync()) {
+        implicitLifetimes.push_back(
+            LifetimeAttr::get(getContext(), /*isMutable=*/true));
+        continue;
+      }
+
+      // 'ref' results can have lifetimes derived from implicit lifetimes of
+      // earlier arguments, and can be passed ByRefResult in throwing functions.
+      // Make sure to remap the implicit lifetimes into place.  This works
+      // because ByRefResult is at the end of the list.
+      if (convention == ArgConvention::ByRefResult) {
+        implicitLifetimes.push_back(
+            LifetimeAttr::get(getContext(), /*isMutable=*/true));
+        FunctionType remappedCalleeType =
+            calleeSig.substituteImplicitLifetimesIntoValues(
+                implicitLifetimes, [&]() -> InFlightDiagnostic {
+                  llvm_unreachable("substitution should always succeed");
+                });
+        implicitLifetimes.pop_back();
+        declaredArgType = remappedCalleeType.getInput(argIdx);
+      }
+    }
+
     Value arg = callEmitter.emitPreemittedArgumentAsDynamicValue(
-        argValAndExpr, convention, declaredArgType);
+        argValAndExpr, convention, declaredArgType, callArgs);
     if (!arg)
       return {};
 
@@ -1452,102 +1531,16 @@ CValue ExprEmitter::emitCallUnchecked(RValue callee,
   }
 
   // Now that we have the lifetimes for the arguments, we can calculate what the
-  // substituted signature should be.  This will take in the wrong inout-result
-  // lifetime as an input, but we know that it cannot be referenced in the type
-  // anyway, because there is no way to name it in the Mojo program.
+  // substituted signature should be.
   FunctionType expectedCalleeType =
       calleeSig.substituteImplicitLifetimesIntoValues(
           implicitLifetimes, [&]() -> InFlightDiagnostic {
             llvm_unreachable("substitution should always succeed");
           });
 
-  // With that done, we can know what type the inout result slot should have.
-  // We see if we can emit directly into the ValueDest slot, and if not, we
-  // create a VarDecl temporary and allow emitResult to copy it over to the
-  // destination. Calls to async functions don't need a result slot provided.
-  if ((calleeSig.hasMemoryOnlyResult() || needInitSelfSlot) &&
-      !calleeSig.isAsync()) {
-    Type refType = needInitSelfSlot ? expectedCalleeType.getInputs().front()
-                                    : expectedCalleeType.getInputs().back();
-    auto resultRValueType = cast<RefType>(refType).getElementType();
-
-    // Often the result of the call will be directly assigned into a
-    // user-defined var or other location with existing storage.  In these
-    // cases, we really want to assign directly into the existing slot.
-    //
-    // However, we cannot do that if the destination slot is also being passed
-    // into the call as an input value, as in: `x = foo(x)` or `x = x + 1`.
-    // In these cases we really do need a temporary+copy in the var slot.
-    // At this point we've got enough information about the arguments to make
-    // that assessment in a correct way.
-    Value resultSlotVal;
-    if (needInitSelfSlot || callEmitter.isSafeToUseValueDestForDirectResult(
-                                resultRValueType, callArgs)) {
-      // Use the preferred location of the destination slot.
-      resultSlotVal = dest.getMLValueForResult(
-          callExpr->getLoc(), resultRValueType, callEmitter.emitter);
-    } else {
-      // Create a temporary.
-      resultSlotVal = callEmitter.emitter.emitVarDecl("__call_result_tmp__",
-                                                      resultRValueType, loc,
-                                                      VarDeclKind::Synthesized);
-    }
-    // Now that we know the result slot, we can set it and its lifetime.
-    if (calleeSig.hasMemoryOnlyResult()) {
-      assert(!callArgs.back() && "byref_result slot is always last");
-      callArgs.back() = resultSlotVal;
-      implicitLifetimes.back() =
-          cast<RefType>(resultSlotVal.getType()).getLifetime();
-    } else {
-      assert(!callArgs.front() && "init_self slot is always first");
-      callArgs.front() = resultSlotVal;
-      implicitLifetimes.front() =
-          cast<RefType>(resultSlotVal.getType()).getLifetime();
-    }
-  }
-
-  // If the callee throws and is not async, we can now also resolve the lifetime
-  // and value of the contextual error slot to provide the callee.
-  if (calleeSig.isThrows() && !calleeSig.isAsync()) {
-    // The error slot is always the second last argument.
-    MLValue errSlot = findNearestErrorSlot();
-    if (!errSlot) {
-      InflightDiag diag =
-          emitError(callExpr->getLoc(), "cannot call function that may raise "
-                                        "in a context that cannot raise")
-          << callExpr->getRange();
-      diag.attachNote(callExpr->getLoc())
-          << "try surrounding the call in a 'try' block";
-      if (auto func =
-              getBlockParentOfType<LIT::FuncOp>(builder->getInsertionBlock())) {
-        diag.attachNote(func.getLoc())
-            << "or mark surrounding function as 'raises'";
-      }
-      return {};
-    }
-    unsigned errSlotOffset = calleeSig.getErrorSlotOffset();
-    callArgs[callArgs.size() - errSlotOffset] = errSlot;
-    implicitLifetimes[implicitLifetimes.size() - errSlotOffset] =
-        cast<RefType>(errSlot.getType()).getLifetime();
-  }
-
-  // Now that the implicit lifetimes of result slots are set, recompute the
-  // expected types.
-  expectedCalleeType = calleeSig.substituteImplicitLifetimesIntoValues(
-      implicitLifetimes, [&]() -> InFlightDiagnostic {
-        llvm_unreachable("substitution should always succeed");
-      });
-
-  // If the function is async, we won't have provided any values for the return
-  // slots. Remove them from the call arguments.
-  if (calleeSig.isAsync()) {
-    callArgs.erase(callArgs.end() - calleeSig.getNumAsyncReturnSlots(),
-                   callArgs.end());
-  }
-
   // Now that all of the arguments have been emitted, coerce them to the
   // expected type if needed.  We do this after the first pass above, because
-  // there can be forward refefences from the result slot to the later
+  // there can be forward references from the result slot to the later
   // arguments' lifetimes.
   for (auto [arg, expectedType] :
        llvm::zip(callArgs, expectedCalleeType.getInputs())) {
@@ -1648,12 +1641,14 @@ CValue ExprEmitter::emitCallUnchecked(RValue callee,
   } else if (calleeSig.hasInitSelfArg()) {
     // If this is a constructor call with an implicit `init_self` argument, we
     // need to pass it on to the destination.
-    if (needInitSelfSlot)
+    if (!hadExplicitDestForInitSelf)
       callResult = MRValue(callArgs.front());
-    else
-      // Otherwise, always return `None` when directly invoking a constructor.
-      // Raising constructors have an ABI result of `i1`.
+    else {
+      // Otherwise, always return `None` when directly invoking a constructor
+      // like "SomeType.__init__(out)".
+      // FIXME: Why are we doing this?  This can just return 'out' as an RValue.
       callResult = PValue(shared.getNoneAttr());
+    }
   }
 
   // If returning a reference, we need to convert to an MValue from

@@ -135,8 +135,8 @@ fn memoryOnlyOps(inout a: MemoryOnlyPair) -> MemoryOnlyPair:
   _ = inferred_function_with_memory_result(SIMD[DType.float32, 4]())
 
   # Memory-only default argument with memory-only result.
-  # CHECK-NEXT: %[[C42:.*]] = {{.*}}constant: !Int = <{42}>
   # CHECK-NEXT: [[TMP:%.*]] = lit.var.decl "anonymous*"
+  # CHECK-NEXT: %[[C42:.*]] = {{.*}}constant: !Int = <{42}>
   # CHECK-NEXT: lit.call @{{.*}}__init__{{.*}}([[TMP]], %[[C42]])
   _ = MemoryOnlyInt()
 
@@ -340,11 +340,11 @@ fn reverse_operators(a: Int):
 
 # CHECK-LABEL: lit.func @"precedence_matmul
 fn precedence_matmul(z: RegPassable) -> RegPassable:
-  # CHECK:  [[THREE:%.*]] = kgen.param.constant: !Int = <{3}>
   # CHECK-NEXT: [[THREETMP:%.*]] = lit.var.decl "anonymous*"
+  # CHECK:  [[THREE:%.*]] = kgen.param.constant: !Int = <{3}>
   # CHECK-NEXT:  lit.call {{.*}}@RegPassable::@"__init__{{.*}}([[THREETMP]], [[THREE]])
-  # CHECK-NEXT:  [[TWO:%.*]] = kgen.param.constant: !Int = <{2}>
   # CHECK-NEXT:  [[TWOTMP:%.*]] = lit.var.decl "anonymous*"
+  # CHECK-NEXT:  [[TWO:%.*]] = kgen.param.constant: !Int = <{2}>
   # CHECK-NEXT:  lit.call {{.*}}@RegPassable::@"__init__{{.*}}([[TWOTMP]], [[TWO]])
   # CHECK-NEXT:  [[INT_TWO:%.*]] = lit.ref.load [[TWOTMP]]
   # CHECK-NEXT:  [[NEG:%.*]] = lit.call {{.*}}@RegPassable::@"__neg__{{.*}}([[INT_TWO]])
@@ -1073,8 +1073,8 @@ fn ref_utilities(a: MemoryOnlyInt, inout b: MemoryOnlyInt,
   # CHECK-NEXT: lit.ref.store [[COMMON]], %ref5
   var ref5 = (ref1 if cond else ref2) if cond else __get_mvalue_as_litref(c)
 
-  # CHECK-NEXT: [[TMP:%.*]] = kgen.param.constant: !Int = <{42}>
   # CHECK-NEXT: [[TMP2:%.*]] = lit.ref.load %ref2
+  # CHECK-NEXT: [[TMP:%.*]] = kgen.param.constant: !Int = <{42}>
   # CHECK-NEXT: lit.call {{.*}}MemoryOnlyInt::@"__init__{{.*}}([[TMP2]], [[TMP]])
   __get_litref_as_mvalue(ref2) = MemoryOnlyInt()
 
