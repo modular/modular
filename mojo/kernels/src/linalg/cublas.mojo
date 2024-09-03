@@ -25,7 +25,7 @@ fn cublas_matmul(
     c_row_major: Bool = False,
     transpose_a: Bool = False,
     transpose_b: Bool = False,
-    use_tf32: Bool = True,
+    use_tf32: Bool = False,
 ) -> Result:
     constrained[
         a.type == b.type
