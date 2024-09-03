@@ -24,8 +24,9 @@ fn mma_load_and_print_operands_kenrel[
     lhs_layout: Layout,
     rhs_layout: Layout,
     inst_shape: StaticIntTuple[3],
+    transpose_b: Bool = False,
 ](lhs: LayoutTensor[dtype, lhs_layout], rhs: LayoutTensor[dtype, rhs_layout]):
-    var mma = TensorCore[dst_dtype, dtype, inst_shape]()
+    var mma = TensorCore[dst_dtype, dtype, inst_shape, transpose_b]()
     var a_frags = mma.load_a(lhs).cast[DType.float64]()
     var b_frags = mma.load_b(rhs).cast[DType.float64]()
 
@@ -61,7 +62,10 @@ fn mma_write_operand_kernel[
 
 
 def test_load_operands[
-    dst_dtype: DType, dtype: DType, shape: StaticIntTuple[3]
+    dst_dtype: DType,
+    dtype: DType,
+    shape: StaticIntTuple[3],
+    transpose_b: Bool = False,
 ](ctx: DeviceContext):
     alias M = shape[0]
     alias N = shape[1]
@@ -76,7 +80,7 @@ def test_load_operands[
     ]()
     _ = rhs.tensor.linspace()
     alias mma_load_and_print_kenrel_fn = mma_load_and_print_operands_kenrel[
-        dst_dtype, dtype, lhs.layout, rhs.layout, shape
+        dst_dtype, dtype, lhs.layout, rhs.layout, shape, transpose_b
     ]
     var func = ctx.compile_function[mma_load_and_print_kenrel_fn]()
     ctx.enqueue_function(
@@ -142,6 +146,46 @@ def test_write_res_operand[
 def test_load_tf32_tf32_16x8x8(ctx: DeviceContext):
     print("== test_load_tf32_tf32_16x8x8")
     test_load_operands[DType.float32, DType.float32, Index(16, 8, 8)](ctx)
+
+
+# CHECK-LABEL: test_load_tf32_tf32_16x8x8_b_transpose
+# CHECK-DAG: thread 0 a_vals=[0 64 4 68], b_vals=[0 4]
+# CHECK-DAG: thread 1 a_vals=[1 65 5 69], b_vals=[1 5]
+# CHECK-DAG: thread 2 a_vals=[2 66 6 70], b_vals=[2 6]
+# CHECK-DAG: thread 3 a_vals=[3 67 7 71], b_vals=[3 7]
+# CHECK-DAG: thread 4 a_vals=[8 72 12 76], b_vals=[8 12]
+# CHECK-DAG: thread 5 a_vals=[9 73 13 77], b_vals=[9 13]
+# CHECK-DAG: thread 6 a_vals=[10 74 14 78], b_vals=[10 14]
+# CHECK-DAG: thread 7 a_vals=[11 75 15 79], b_vals=[11 15]
+# CHECK-DAG: thread 8 a_vals=[16 80 20 84], b_vals=[16 20]
+# CHECK-DAG: thread 9 a_vals=[17 81 21 85], b_vals=[17 21]
+# CHECK-DAG: thread 10 a_vals=[18 82 22 86], b_vals=[18 22]
+# CHECK-DAG: thread 11 a_vals=[19 83 23 87], b_vals=[19 23]
+# CHECK-DAG: thread 12 a_vals=[24 88 28 92], b_vals=[24 28]
+# CHECK-DAG: thread 13 a_vals=[25 89 29 93], b_vals=[25 29]
+# CHECK-DAG: thread 14 a_vals=[26 90 30 94], b_vals=[26 30]
+# CHECK-DAG: thread 15 a_vals=[27 91 31 95], b_vals=[27 31]
+# CHECK-DAG: thread 16 a_vals=[32 96 36 100], b_vals=[32 36]
+# CHECK-DAG: thread 17 a_vals=[33 97 37 101], b_vals=[33 37]
+# CHECK-DAG: thread 18 a_vals=[34 98 38 102], b_vals=[34 38]
+# CHECK-DAG: thread 19 a_vals=[35 99 39 103], b_vals=[35 39]
+# CHECK-DAG: thread 20 a_vals=[40 104 44 108], b_vals=[40 44]
+# CHECK-DAG: thread 21 a_vals=[41 105 45 109], b_vals=[41 45]
+# CHECK-DAG: thread 22 a_vals=[42 106 46 110], b_vals=[42 46]
+# CHECK-DAG: thread 23 a_vals=[43 107 47 111], b_vals=[43 47]
+# CHECK-DAG: thread 24 a_vals=[48 112 52 116], b_vals=[48 52]
+# CHECK-DAG: thread 25 a_vals=[49 113 53 117], b_vals=[49 53]
+# CHECK-DAG: thread 26 a_vals=[50 114 54 118], b_vals=[50 54]
+# CHECK-DAG: thread 27 a_vals=[51 115 55 119], b_vals=[51 55]
+# CHECK-DAG: thread 28 a_vals=[56 120 60 124], b_vals=[56 60]
+# CHECK-DAG: thread 29 a_vals=[57 121 61 125], b_vals=[57 61]
+# CHECK-DAG: thread 30 a_vals=[58 122 62 126], b_vals=[58 62]
+# CHECK-DAG: thread 31 a_vals=[59 123 63 127], b_vals=[59 63]
+def test_load_tf32_tf32_16x8x8_b_transpose(ctx: DeviceContext):
+    print("== test_load_tf32_tf32_16x8x8_b_transpose")
+    test_load_operands[
+        DType.float32, DType.float32, Index(16, 8, 8), transpose_b=True
+    ](ctx)
 
 
 # CHECK-LABEL: test_load_tf32_tf32_16x8x4
@@ -229,6 +273,7 @@ def test_write_tf32_tf32_16x8x4(ctx: DeviceContext):
 def main():
     with DeviceContext() as ctx:
         test_load_tf32_tf32_16x8x8(ctx)
+        test_load_tf32_tf32_16x8x8_b_transpose(ctx)
         test_load_tf32_tf32_16x8x4(ctx)
         test_write_tf32_tf32_16x8x8(ctx)
         test_write_tf32_tf32_16x8x4(ctx)

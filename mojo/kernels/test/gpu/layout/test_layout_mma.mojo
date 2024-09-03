@@ -44,7 +44,7 @@ fn mma_layout_tc[
     var b = tc.load_b(mat_b)
     var c = tc.load_c(mat_c)
     var d = tc.mma(a, b, c)
-    tc.store_d[layout_c](mat_c, d)
+    tc.store_d(mat_c, d)
 
 
 fn matmul_naive[
