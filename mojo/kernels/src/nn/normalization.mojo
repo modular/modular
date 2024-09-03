@@ -243,11 +243,11 @@ fn layer_norm_gpu_warp_tiling[
     gamma_fn: fn[width: Int, rank: Int] (
         StaticIntTuple[rank]
     ) capturing -> SIMD[type, width],
-](data: NDBuffer[type, 2], beta: NDBuffer[type, 1], epsilon: Scalar[type]):
+](output: NDBuffer[type, 2], beta: NDBuffer[type, 1], epsilon: Scalar[type]):
     alias align = alignof[SIMD[type, simd_width]]()
     alias accum_type = get_accum_type[type]()
 
-    var num_cols = data.dim[1]()
+    var num_cols = output.dim[1]()
     var tid: UInt = ThreadIdx.x()
     var row: UInt = BlockIdx.x()
 
@@ -286,7 +286,7 @@ fn layer_norm_gpu_warp_tiling[
         var norm_val = (vec_data - row_mean) * norm_factor * gamma_val.cast[
             accum_type
         ]() + beta_val.cast[accum_type]()
-        data.store[alignment=align](Index(row, idx), norm_val.cast[type]())
+        output.store[alignment=align](Index(row, idx), norm_val.cast[type]())
 
 
 fn layer_norm_gpu_block[
@@ -378,12 +378,12 @@ fn layer_norm_reshape[
 fn layer_norm_gpu[
     type: DType,
     rank: Int, //,
-    input_fn: fn[_width: Int, _rank: Int] (
-        StaticIntTuple[_rank]
-    ) capturing -> SIMD[type, _width],
-    gamma_fn: fn[_width: Int, _rank: Int] (
-        StaticIntTuple[_rank]
-    ) capturing -> SIMD[type, _width],
+    input_fn: fn[width: Int, rank: Int] (
+        StaticIntTuple[rank]
+    ) capturing -> SIMD[type, width],
+    gamma_fn: fn[width: Int, rank: Int] (
+        StaticIntTuple[rank]
+    ) capturing -> SIMD[type, width],
 ](
     shape: StaticIntTuple[rank],
     beta: NDBuffer[type, 1],
@@ -410,9 +410,7 @@ fn layer_norm_gpu[
         simd_width: Int
     ](row: Int, col: Int) -> SIMD[type, simd_width]:
         # Translate given 2d index back to original Nd tensor
-        var indices = _get_nd_indices_from_flat_index[rank](
-            row, shape, rank - 1
-        )
+        var indices = _get_nd_indices_from_flat_index(row, shape, rank - 1)
         indices[rank - 1] = col
         return input_fn[simd_width, rank](indices)
 
@@ -478,7 +476,7 @@ fn layer_norm_cpu[
     gamma_fn: fn[_width: Int, _rank: Int] (
         StaticIntTuple[_rank]
     ) capturing -> SIMD[type, _width],
-](out_buf: NDBuffer[type, 2, _], beta: NDBuffer[type, 1], eps: Scalar[type],):
+](out_buf: NDBuffer[type, 2, _], beta: NDBuffer[type, 1], eps: Scalar[type]):
     """Computes layernorm(elementwise_fn(x)) across the last dimension of x, where layernorm is
     defined as $(x-mean(x))/(sqrt(var(x)+eps)*gamma_fn + beta$.
 
@@ -594,11 +592,11 @@ fn layer_norm_cpu[
         @__copy_capture(row_idx, epsilon)
         @parameter
         @always_inline
-        # Translate given 2d index back to original Nd tensor
         fn input_fn_2d[
             return_type: DType, simd_width: Int
         ](idx: Int, row: Int) -> SIMD[return_type, simd_width]:
-            var indices = _get_nd_indices_from_flat_index[rank](
+            # Translate given 2d index back to original Nd tensor
+            var indices = _get_nd_indices_from_flat_index(
                 row_idx + row, shape, rank - 1
             )
             indices[rank - 1] = idx
@@ -700,11 +698,14 @@ fn layer_norm_shape[
 fn rms_norm_gpu_warp_tiling[
     type: DType,
     simd_width: Int,
-](data: NDBuffer[type, 2], gamma: NDBuffer[type, 1], epsilon: Scalar[type]):
+    input_fn: fn[width: Int] (row: Int, col: Int) capturing -> SIMD[
+        type, width
+    ],
+](output: NDBuffer[type, 2], gamma: NDBuffer[type, 1], epsilon: Scalar[type]):
     alias align = alignof[SIMD[type, simd_width]]()
     alias accum_type = get_accum_type[type]()
 
-    var num_cols = data.dim[1]()
+    var num_cols = output.dim[1]()
     var tid: UInt = ThreadIdx.x()
     var row: UInt = BlockIdx.x()
 
@@ -715,9 +716,7 @@ fn rms_norm_gpu_warp_tiling[
 
     # To utilize simd vector load
     if idx < num_cols:
-        vec_data = data.load[width=simd_width, alignment=align](
-            Index(row, idx)
-        ).cast[accum_type]()
+        vec_data = input_fn[simd_width](row, idx).cast[accum_type]()
         thread_m2 = (vec_data**2).reduce_add()
 
     var row_m2 = block_reduce(thread_m2)
@@ -728,17 +727,20 @@ fn rms_norm_gpu_warp_tiling[
             Index(idx)
         )
         var norm_val = vec_data * norm_factor * gamma_val.cast[accum_type]()
-        data.store[alignment=align](Index(row, idx), norm_val.cast[type]())
+        output.store[alignment=align](Index(row, idx), norm_val.cast[type]())
 
 
 fn rms_norm_gpu_block[
     type: DType,
     simd_width: Int,
-](data: NDBuffer[type, 2], gamma: NDBuffer[type, 1], epsilon: Scalar[type]):
+    input_fn: fn[width: Int] (row: Int, col: Int) capturing -> SIMD[
+        type, width
+    ],
+](output: NDBuffer[type, 2], gamma: NDBuffer[type, 1], epsilon: Scalar[type]):
     alias align = alignof[SIMD[type, simd_width]]()
     alias accum_type = get_accum_type[type]()
 
-    var num_cols = data.dim[1]()
+    var num_cols = output.dim[1]()
     var tid: UInt = ThreadIdx.x()
     var row: UInt = BlockIdx.x()
     var thread_m2 = Scalar[accum_type](0)
@@ -747,9 +749,7 @@ fn rms_norm_gpu_block[
     for x in range(ceildiv(num_cols // simd_width, BlockDim.x())):
         var offset = x * BlockDim.x() * simd_width + tid * simd_width
         if offset < num_cols:
-            var vec_data = data.load[width=simd_width, alignment=align](
-                Index(row, offset)
-            ).cast[accum_type]()
+            var vec_data = input_fn[simd_width](row, offset).cast[accum_type]()
             thread_m2 += (vec_data**2).reduce_add()
 
     var row_m2 = block_reduce(thread_m2)
@@ -764,13 +764,11 @@ fn rms_norm_gpu_block[
                 Index(offset)
             )
 
-            var vec_data = data.load[width=simd_width, alignment=align](
-                Index(row, offset)
-            ).cast[accum_type]()
+            var vec_data = input_fn[simd_width](row, offset).cast[accum_type]()
             var norm_val = (
                 vec_data * norm_factor * gamma_val.cast[accum_type]()
             )
-            data.store[alignment=align](
+            output.store[alignment=align](
                 Index(row, offset), norm_val.cast[type]()
             )
 
@@ -778,6 +776,9 @@ fn rms_norm_gpu_block[
 fn rms_norm_gpu[
     type: DType,
     rank: Int, //,
+    input_fn: fn[width: Int, rank: Int] (
+        StaticIntTuple[rank]
+    ) capturing -> SIMD[type, width],
 ](
     shape: StaticIntTuple[rank],
     gamma: NDBuffer[type, 1],
@@ -798,6 +799,16 @@ fn rms_norm_gpu[
     var rows = output_rs.dim[0]()
     var cols = output_rs.dim[1]()
 
+    @parameter
+    @always_inline
+    fn input_fn_2d[
+        simd_width: Int
+    ](row: Int, col: Int) -> SIMD[type, simd_width]:
+        # Translate given 2d index back to original Nd tensor
+        var indices = _get_nd_indices_from_flat_index(row, shape, rank - 1)
+        indices[rank - 1] = col
+        return input_fn[simd_width, rank](indices)
+
     alias simd_width = simdwidthof[type, target = _get_nvptx_target()]()
     alias max_warps_per_block = 32
 
@@ -813,7 +824,7 @@ fn rms_norm_gpu[
         # computation and normalization.
         if cols <= (WARP_SIZE * simd_width * max_warps_per_block):
             var gpu_func = ctx.compile_function[
-                rms_norm_gpu_warp_tiling[type, simd_width]
+                rms_norm_gpu_warp_tiling[type, simd_width, input_fn_2d]
             ]()
             ctx.enqueue_function(
                 gpu_func,
@@ -825,7 +836,7 @@ fn rms_norm_gpu[
             )
         else:
             var gpu_func = ctx.compile_function[
-                rms_norm_gpu_block[type, simd_width]
+                rms_norm_gpu_block[type, simd_width, input_fn_2d]
             ]()
             ctx.enqueue_function(
                 gpu_func,
@@ -836,7 +847,9 @@ fn rms_norm_gpu[
                 block_dim=block_dim,
             )
     else:
-        var gpu_func = ctx.compile_function[rms_norm_gpu_block[type, 1]]()
+        var gpu_func = ctx.compile_function[
+            rms_norm_gpu_block[type, 1, input_fn_2d]
+        ]()
         ctx.enqueue_function(
             gpu_func,
             output_rs,
