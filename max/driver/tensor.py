@@ -23,7 +23,7 @@ class Tensor:
     must be contiguous. Does not currently support setting items across multiple
     indices, but does support numpy-style slicing.
 
-    :param dt: DType of tensor
+    :param dtype: DType of tensor
     :param shape: Tuple of positive, non-zero integers denoting the tensor shape.
     :param device: Device to allocate tensor onto.
     """
@@ -35,7 +35,7 @@ class Tensor:
     def __init__(
         self,
         shape: Tuple[int, ...],
-        dt: DType,
+        dtype: DType,
         device: Device = CPU(),
         **kwargs,
     ) -> None:
@@ -45,7 +45,7 @@ class Tensor:
         if "_impl" in kwargs:
             self._impl = kwargs["_impl"]
         else:
-            self._impl = _Tensor(shape, dt._to(), device._device)
+            self._impl = _Tensor(shape, dtype._to(), device._device)
 
     @classmethod
     def _from_impl(cls, impl: _Tensor) -> Tensor:
