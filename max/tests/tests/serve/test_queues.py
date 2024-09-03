@@ -6,8 +6,8 @@
 
 
 import asyncio
-import pytest
 
+import pytest
 from max.serve.scheduler.queues import BatchMultiplexQueue
 
 
@@ -15,8 +15,8 @@ from max.serve.scheduler.queues import BatchMultiplexQueue
 @pytest.mark.parametrize("batch_size", [8])
 async def test_dynamic_batch_full(batch_size):
     queue = BatchMultiplexQueue()
-    for _ in range(batch_size):
-        async with queue.open_channel({}) as channel:
+    for i in range(batch_size):
+        async with queue.open_channel(i, {}) as channel:
             pass
 
     # Full batch is ready for processing.
