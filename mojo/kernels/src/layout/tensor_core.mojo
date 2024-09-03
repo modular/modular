@@ -185,7 +185,17 @@ struct TensorCore[
             in_type is DType.bfloat16 or in_type is DType.float16
         ) else (layout_tf32)
 
-        var mat_b = b.transpose().composition[layout_b]()
+        @always_inline
+        @parameter
+        fn read_from_mat_b(d0: Int, d1: Int, d2: Int) -> Scalar[in_type]:
+            @parameter
+            if transpose_b:
+                var mat_b = b.composition[layout_b]()
+                return rebind[Scalar[in_type]](mat_b[d0, d1, d2])
+            else:
+                var mat_b = b.transpose().composition[layout_b]()
+                return rebind[Scalar[in_type]](mat_b[d0, d1, d2])
+
         var group_id = lane_id() >> 2
         var group_lane_id = lane_id() % 4
 
@@ -195,14 +205,14 @@ struct TensorCore[
             @parameter
             if reg_per_thread == 1:
                 b_reg[0] = rebind[Scalar[in_type]](
-                    mat_b[group_lane_id, group_id]
+                    read_from_mat_b(group_lane_id, group_id, 0)
                 )
             elif reg_per_thread == 2:
                 b_reg[0] = rebind[Scalar[in_type]](
-                    mat_b[group_lane_id, group_id, 0]
+                    read_from_mat_b(group_lane_id, group_id, 0)
                 )
                 b_reg[1] = rebind[Scalar[in_type]](
-                    mat_b[group_lane_id, group_id, 1]
+                    read_from_mat_b(group_lane_id, group_id, 1)
                 )
             else:
                 constrained[
@@ -213,10 +223,10 @@ struct TensorCore[
             @parameter
             if reg_per_thread == 2:
                 b_reg[0] = rebind[Scalar[in_type]](
-                    mat_b[group_lane_id, group_id, 0]
+                    read_from_mat_b(group_lane_id, group_id, 0)
                 )
                 b_reg[1] = rebind[Scalar[in_type]](
-                    mat_b[group_lane_id, group_id, 1]
+                    read_from_mat_b(group_lane_id, group_id, 1)
                 )
             else:
                 constrained[
@@ -265,13 +275,10 @@ struct TensorCore[
             constrained[False, "No valid type to load matrix fragment c"]()
         return c_reg
 
-    fn store_d[
-        layout_mat: Layout
-    ](
-        inout self,
-        d: LayoutTensor[out_type, layout_mat],
-        d_reg: Self.c_reg_type,
-    ):
+    fn store_d(inout self, d: LayoutTensor, d_reg: Self.c_reg_type):
+        constrained[
+            d.dtype == out_type, "destination tensor must have the same type"
+        ]()
         alias mma_m = shape[0]
         alias mma_n = shape[1]
         alias mma_k = shape[2]
