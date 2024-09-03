@@ -847,9 +847,9 @@ fn _matmul_gpu_dispatch[
                 )
                 ctx.enqueue_function(
                     multistage_func,
-                    c,
-                    a,
-                    b,
+                    tensor_c,
+                    tensor_a,
+                    tensor_b,
                     grid_dim=config.grid_dim(m, n, k),
                     block_dim=config.block_dim(),
                     shared_mem_bytes=config.shared_mem_usage(),
