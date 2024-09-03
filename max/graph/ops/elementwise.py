@@ -692,7 +692,7 @@ Raises:
     Error: If the symbol doesn't represent a tensor value.
 """
 
-rsqrt = _elementwise_unary(rmo.mo_rsqrt)
+rsqrt = _elementwise_unary(rmo.mo_isqrt)
 """
 Computes the elementwise inverse-square-root of a symbolic tensor.
 
