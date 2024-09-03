@@ -128,6 +128,15 @@ class DType(Enum):
         else:
             raise ValueError(f"unsupported NumPy dtype: {dtype}")
 
+    @property
+    def align(self) -> int:
+        """Returns the alignment of the dtype."""
+        if self is DType.bfloat16:
+            # Use float16 alignment since np.bfloat16 doesn't exist.
+            return np.dtype(np.float16).alignment
+
+        return np.dtype(self.to_numpy()).alignment
+
 
 _DTYPE_TO_MLIR = {
     DType.bool: "bool",
