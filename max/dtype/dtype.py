@@ -137,6 +137,15 @@ class DType(Enum):
 
         return np.dtype(self.to_numpy()).alignment
 
+    def is_float(self) -> bool:
+        """Returns true if the dtype is floating point."""
+        return self in [
+            DType.bfloat16,
+            DType.float16,
+            DType.float32,
+            DType.float64,
+        ]
+
 
 _DTYPE_TO_MLIR = {
     DType.bool: "bool",
