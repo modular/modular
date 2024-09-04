@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from collections import OptionalReg
-from math import ceildiv, isqrt
+from math import align_down, ceildiv, isqrt
 from sys.info import alignof, simdwidthof
 
 from algorithm import map_reduce, mean, variance, vectorize
@@ -412,7 +412,7 @@ fn layer_norm_gpu[
         # Translate given 2d index back to original Nd tensor
         var indices = _get_nd_indices_from_flat_index(row, shape, rank - 1)
         indices[rank - 1] = col
-        return input_fn[simd_width, rank](indices)
+        return input_fn[simd_width](indices)
 
     alias simd_width = simdwidthof[type, target = _get_nvptx_target()]()
     alias max_warps_per_block = 32
@@ -467,15 +467,20 @@ fn layer_norm_gpu[
         )
 
 
+@always_inline
+fn _sum_to_mean[type: DType, //](sum_val: Scalar[type], n: Int) -> Scalar[type]:
+    @parameter
+    if type.is_integral():
+        return sum_val // n
+    return sum_val / n
+
+
 fn layer_norm_cpu[
-    simd_width: Int,
-    type: DType,
-    input_fn: fn[mytype: DType, width: Int] (Int, Int) capturing -> SIMD[
-        mytype, width
-    ],
-    gamma_fn: fn[_width: Int, _rank: Int] (
-        StaticIntTuple[_rank]
-    ) capturing -> SIMD[type, _width],
+    type: DType, //,
+    input_fn: fn[width: Int] (Int, Int) capturing -> SIMD[type, width],
+    gamma_fn: fn[width: Int, rank: Int] (
+        StaticIntTuple[rank]
+    ) capturing -> SIMD[type, width],
 ](out_buf: NDBuffer[type, 2, _], beta: NDBuffer[type, 1], eps: Scalar[type]):
     """Computes layernorm(elementwise_fn(x)) across the last dimension of x, where layernorm is
     defined as $(x-mean(x))/(sqrt(var(x)+eps)*gamma_fn + beta$.
@@ -484,7 +489,6 @@ fn layer_norm_cpu[
     fusing the add, mean, and variance loops using Welford's algorithm.
 
     Parameters:
-        simd_width: The vector width for the computation.
         type: The x and out buffers' elements dtype.
         input_fn: Function called to generate an input value.
         gamma_fn: Function called to generate a gamma value.
@@ -494,22 +498,22 @@ fn layer_norm_cpu[
         beta: The beta value to use in the layernorm calculation.
         eps: The eps value to use in the layernorm calculation.
     """
+    alias simd_width = simdwidthof[type]()
 
-    var m = out_buf.dim[0]()
-    var n = out_buf.dim[1]()  # contiguous
+    var num_rows = out_buf.dim[0]()
+    var num_cols = out_buf.dim[1]()
 
-    for i in range(m):
-        var start_coord = StaticIntTuple[2](i, 0)
+    for row in range(num_rows):
         var out_slice = Buffer[type, out_buf.shape.at[1]()](
-            out_buf._offset(start_coord), n
+            out_buf._offset(Index(row, 0)), num_cols
         )
 
-        @__copy_capture(n)
+        @__copy_capture(row)
         @parameter
         fn input_gen_wrapper[
-            return_type: DType, simd_width: Int
-        ](idx: Int) -> SIMD[return_type, simd_width]:
-            return input_fn[return_type, simd_width](idx, i)
+            type: DType, simd_width: Int
+        ](col: Int) -> SIMD[type, simd_width]:
+            return input_fn[simd_width](row, col).cast[type]()
 
         var sum_val = map_reduce[
             simd_width,
@@ -521,53 +525,41 @@ fn layer_norm_cpu[
             _simd_sum,
         ](out_slice, 0)
 
-        @__copy_capture(sum_val, n)
-        @parameter
-        fn _sum_to_mean() -> Scalar[type]:
-            @parameter
-            if type.is_integral():
-                return sum_val // n
-            return sum_val / n
-
-        var mean_val = _sum_to_mean()
-
+        var mean_val = _sum_to_mean(sum_val, num_cols)
         var var_val = variance(out_slice, mean_val, 0)  # use biased estimator
-
         var norm_factor = isqrt(var_val + eps)
 
         @__copy_capture(out_slice, norm_factor, mean_val)
         @parameter
-        fn _normalize[simd_width: Int](idx: Int):
-            var out_val = out_slice.load[width=simd_width](idx)
-            var gamma_val = gamma_fn[simd_width, 1](StaticIntTuple[1](idx))
+        fn _normalize[simd_width: Int](col: Int):
+            var out_val = out_slice.load[width=simd_width](col)
+            var gamma_val = gamma_fn[simd_width, 1](col)
             var norm_val = (
                 out_val - mean_val
-            ) * norm_factor * gamma_val + beta.load[width=simd_width](idx)
-            out_slice.store(idx, norm_val)
+            ) * norm_factor * gamma_val + beta.load[width=simd_width](col)
+            out_slice.store(col, norm_val)
 
-        vectorize[_normalize, simd_width](n)
+        vectorize[_normalize, simd_width](num_cols)
 
 
 fn layer_norm_cpu[
     type: DType,
     rank: Int, //,
-    input_0_fn: fn[_width: Int, _rank: Int] (
-        StaticIntTuple[_rank]
-    ) capturing -> SIMD[type, _width],
-    gamma_fn: fn[_width: Int, _rank: Int] (
-        StaticIntTuple[_rank]
-    ) capturing -> SIMD[type, _width],
+    input_fn: fn[width: Int, rank: Int] (
+        StaticIntTuple[rank]
+    ) capturing -> SIMD[type, width],
+    gamma_fn: fn[width: Int, rank: Int] (
+        StaticIntTuple[rank]
+    ) capturing -> SIMD[type, width],
 ](
     shape: StaticIntTuple[rank],
     beta: NDBuffer[type, 1],
     epsilon: Scalar[type],
     output: NDBuffer[type, rank, *_],
 ):
-    alias simd_width = simdwidthof[type]()
-
     var last_dim = shape[rank - 1]
     var prod_all_but_last_dim = shape.flattened_length() // last_dim
-    var flat_shape = StaticIntTuple[2](prod_all_but_last_dim, last_dim)
+    var flat_shape = Index(prod_all_but_last_dim, last_dim)
 
     var output_buf = reshape[2](output, flat_shape)
 
@@ -583,29 +575,26 @@ fn layer_norm_cpu[
             chunk_size, prod_all_but_last_dim - thread_id * chunk_size
         )
         var row_idx = thread_id * chunk_size
-        var thread_starting_coord = StaticIntTuple[2](row_idx, 0)
+        var thread_starting_coord = Index(row_idx, 0)
         var per_thread_dims = DimList(num_rows, last_dim)
         var output_buf_view = NDBuffer[type, 2](
             output_buf._offset(thread_starting_coord), per_thread_dims
         )
 
-        @__copy_capture(row_idx, epsilon)
+        @__copy_capture(row_idx)
         @parameter
         @always_inline
         fn input_fn_2d[
-            return_type: DType, simd_width: Int
-        ](idx: Int, row: Int) -> SIMD[return_type, simd_width]:
+            simd_width: Int
+        ](row: Int, col: Int) -> SIMD[type, simd_width]:
             # Translate given 2d index back to original Nd tensor
             var indices = _get_nd_indices_from_flat_index(
                 row_idx + row, shape, rank - 1
             )
-            indices[rank - 1] = idx
-            var input_val = input_0_fn[simd_width, rank](indices)
-            return input_val.cast[return_type]()
+            indices[rank - 1] = col
+            return input_fn[simd_width](indices)
 
-        layer_norm_cpu[simd_width, type, input_fn_2d, gamma_fn](
-            output_buf_view, beta, epsilon
-        )
+        layer_norm_cpu[input_fn_2d, gamma_fn](output_buf_view, beta, epsilon)
 
     sync_parallelize[task_func](num_workers)
 
@@ -807,7 +796,7 @@ fn rms_norm_gpu[
         # Translate given 2d index back to original Nd tensor
         var indices = _get_nd_indices_from_flat_index(row, shape, rank - 1)
         indices[rank - 1] = col
-        return input_fn[simd_width, rank](indices)
+        return input_fn[simd_width](indices)
 
     alias simd_width = simdwidthof[type, target = _get_nvptx_target()]()
     alias max_warps_per_block = 32
@@ -858,3 +847,91 @@ fn rms_norm_gpu[
             grid_dim=grid_dim,
             block_dim=block_dim,
         )
+
+
+fn rms_norm_cpu[
+    type: DType, //,
+    input_fn: fn[width: Int] (Int, Int) capturing -> SIMD[type, width],
+](out_buf: NDBuffer[type, 2, _], gamma: NDBuffer[type, 1], eps: Scalar[type]):
+    alias simd_width = simdwidthof[type]()
+
+    var num_rows = out_buf.dim[0]()
+    var num_cols = out_buf.dim[1]()
+
+    var simd_loop_end = align_down(num_cols, simd_width)
+
+    for row in range(num_rows):
+        var sum_simd = SIMD[type, simd_width]()
+        for col in range(0, simd_loop_end, simd_width):
+            sum_simd += input_fn[simd_width](row, col) ** 2
+
+        var sum_val = sum_simd.reduce_add()
+        for col in range(simd_loop_end, num_cols):
+            sum_val += input_fn[1](row, col) ** 2
+
+        var mean_val = _sum_to_mean(sum_val, num_cols)
+        var norm_factor = isqrt(mean_val + eps)
+
+        @__copy_capture(norm_factor)
+        @parameter
+        fn _normalize[simd_width: Int](col: Int):
+            var input_val = input_fn[simd_width](row, col)
+            var gamma_val = gamma.load[width=simd_width](col)
+            var norm_val = input_val * norm_factor * gamma_val
+            out_buf.store(Index(row, col), norm_val)
+
+        vectorize[_normalize, simd_width](num_cols)
+
+
+fn rms_norm_cpu[
+    type: DType,
+    rank: Int, //,
+    input_fn: fn[width: Int, rank: Int] (
+        StaticIntTuple[rank]
+    ) capturing -> SIMD[type, width],
+](
+    shape: StaticIntTuple[rank],
+    gamma: NDBuffer[type, 1],
+    epsilon: Scalar[type],
+    output: NDBuffer[type, rank, *_],
+):
+    var last_dim = shape[rank - 1]
+    var prod_all_but_last_dim = shape.flattened_length() // last_dim
+    var flat_shape = Index(prod_all_but_last_dim, last_dim)
+
+    var output_buf = reshape[2](output, flat_shape)
+
+    var num_workers = min(parallelism_level(), prod_all_but_last_dim)
+    var chunk_size = ceildiv(prod_all_but_last_dim, num_workers)
+
+    @__copy_capture(
+        chunk_size, prod_all_but_last_dim, last_dim, output_buf, epsilon
+    )
+    @parameter
+    fn task_func(thread_id: Int):
+        var num_rows = min(
+            chunk_size, prod_all_but_last_dim - thread_id * chunk_size
+        )
+        var row_idx = thread_id * chunk_size
+        var thread_starting_coord = Index(row_idx, 0)
+        var per_thread_dims = DimList(num_rows, last_dim)
+        var output_buf_view = NDBuffer[type, 2](
+            output_buf._offset(thread_starting_coord), per_thread_dims
+        )
+
+        @__copy_capture(row_idx)
+        @parameter
+        @always_inline
+        fn input_fn_2d[
+            simd_width: Int
+        ](row: Int, col: Int) -> SIMD[type, simd_width]:
+            # Translate given 2d index back to original Nd tensor
+            var indices = _get_nd_indices_from_flat_index(
+                row_idx + row, shape, rank - 1
+            )
+            indices[rank - 1] = col
+            return input_fn[simd_width, rank](indices)
+
+        rms_norm_cpu[input_fn_2d](output_buf_view, gamma, epsilon)
+
+    sync_parallelize[task_func](num_workers)
