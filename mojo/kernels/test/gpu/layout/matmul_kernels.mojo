@@ -13,7 +13,7 @@ from buffer import NDBuffer
 from buffer.dimlist import DimList
 from layout.math import outer_product_acc
 from gpu import ThreadIdx, BlockIdx, BlockDim, barrier
-from gpu.host import DeviceContext
+from gpu.host import DeviceContext, DeviceBuffer
 import time
 from math import ceildiv
 from gpu.memory import async_copy_wait_all
@@ -31,7 +31,6 @@ from gpu.cublas.cublas import (
 )
 from linalg.cublas import cublas_matmul
 from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
-
 
 alias NWARMUP = 1
 alias NRUN = 1
@@ -78,30 +77,38 @@ fn run_cublas[
     check_cublas_error(cublasCreate(UnsafePointer.address_of(handle)))
 
     @parameter
-    @__copy_capture(c_device_ref, a_device, b_device)
-    @always_inline
     fn bench_func(inout m: Bencher):
         @parameter
-        @__copy_capture(c_device_ref, a_device, b_device)
         @always_inline
-        fn kernel_launch():
-            check_cublas_error(
-                cublas_matmul(
-                    handle,
-                    c_device_ref,
-                    a_device,
-                    b_device,
-                    c_row_major=True,
-                    transpose_b=False,
-                )
+        fn kernel_launch(ctx: DeviceContext) raises:
+            _ = cublas_matmul(
+                handle,
+                c_device_ref,
+                a_device,
+                b_device,
+                c_row_major=True,
+                transpose_b=False,
             )
 
-        m.iter[kernel_launch]()
+        m.iter_custom[kernel_launch](ctx)
 
     m.bench_function[bench_func](
         BenchId("cublas"),
         ThroughputMeasure(BenchMetric.elements, 2 * M * N * K),
     )
+    # Do one iteration for verification.
+    ctx.memset(DeviceBuffer[dtype](ctx, c, M * N, owning=False), 0)
+    check_cublas_error(
+        cublas_matmul(
+            handle,
+            c_device_ref,
+            a_device,
+            b_device,
+            c_row_major=True,
+            transpose_b=False,
+        )
+    )
+
     check_cublas_error(cublasDestroy(handle))
 
 
@@ -128,7 +135,7 @@ fn gemm_kernel_1[
         var a_tile = a.tile[BM, 1](bidy, k)
         var b_tile = b.tile[1, BN](k, bidx)
         dst_reg += a_tile[row, 0] * b_tile[0, col]
-    dst[row, col] = dst_reg
+    dst[row, col] += dst_reg
 
 
 fn run_gemm_kernel_1[
@@ -166,6 +173,26 @@ fn run_gemm_kernel_1[
         )
 
     time_kernel[run_func](m, ctx, M * N * K, "naive")
+
+    # Do one iteration for verifciation
+    ctx.memset(
+        DeviceBuffer[dtype](
+            ctx,
+            rebind[UnsafePointer[Scalar[dtype]]](c.ptr),
+            M * N,
+            owning=False,
+        ),
+        0,
+    )
+    ctx.enqueue_function(
+        func,
+        a,
+        b,
+        c,
+        grid_dim=(ceildiv(N, BN), ceildiv(M, BM)),
+        block_dim=(BN, BM),
+    )
+
     _ = func^
 
 
@@ -193,7 +220,7 @@ fn gemm_kernel_2[
         var a_tile = a.tile[BM, 1](bidy, k)
         var b_tile = b.tile[1, BN](k, bidx)
         dst_reg += a_tile[row, 0] * b_tile[0, col]
-    dst[row, col] = dst_reg
+    dst[row, col] += dst_reg
 
 
 fn run_gemm_kernel_2[
@@ -231,6 +258,26 @@ fn run_gemm_kernel_2[
         )
 
     time_kernel[run_func](m, ctx, M * N * K, "mem_coalesce")
+
+    # Do one iteration for verifciation
+    ctx.memset(
+        DeviceBuffer[dtype](
+            ctx,
+            rebind[UnsafePointer[Scalar[dtype]]](c.ptr),
+            M * N,
+            owning=False,
+        ),
+        0,
+    )
+    ctx.enqueue_function(
+        func,
+        a,
+        b,
+        c,
+        grid_dim=(ceildiv(N, BN), ceildiv(M, BM)),
+        block_dim=(BN, BM),
+    )
+
     _ = func^
 
 
@@ -278,7 +325,7 @@ fn gemm_kernel_3[
             dst_reg += a_smem[row, k] * b_smem[k, col]
         barrier()
 
-    dst[row, col] = dst_reg
+    dst[row, col] += dst_reg
 
 
 fn run_gemm_kernel_3[
@@ -317,6 +364,26 @@ fn run_gemm_kernel_3[
         )
 
     time_kernel[run_func](m, ctx, M * N * K, "shared_mem")
+
+    # Do one iteration for verifciation
+    ctx.memset(
+        DeviceBuffer[dtype](
+            ctx,
+            rebind[UnsafePointer[Scalar[dtype]]](c.ptr),
+            M * N,
+            owning=False,
+        ),
+        0,
+    )
+    ctx.enqueue_function(
+        func,
+        a,
+        b,
+        c,
+        grid_dim=(ceildiv(N, BN), ceildiv(M, BM)),
+        block_dim=(BM * BN),
+    )
+
     _ = func^
 
 
@@ -349,7 +416,8 @@ fn gemm_kernel_4[
         dtype, Layout.row_major(BK, BN), address_space = AddressSpace.SHARED
     ].stack_allocation()
 
-    var dst_reg = LayoutTensor[dtype, Layout(TM)].stack_allocation().fill(0)
+    var dst_reg = LayoutTensor[dtype, Layout(TM)].stack_allocation()
+    dst_reg.copy_from(dst)
 
     for block in range(b.dim(0) // BK):
         alias load_a_layout = Layout.row_major(NUM_THREADS // BK, BK)
@@ -415,6 +483,25 @@ fn run_gemm_kernel_4[
         )
 
     time_kernel[run_func](m, ctx, M * N * K, "1d_blocktiling")
+
+    # Do one iteration for verifciation
+    ctx.memset(
+        DeviceBuffer[dtype](
+            ctx,
+            rebind[UnsafePointer[Scalar[dtype]]](c.ptr),
+            M * N,
+            owning=False,
+        ),
+        0,
+    )
+    ctx.enqueue_function(
+        func,
+        a,
+        b,
+        c,
+        grid_dim=(ceildiv(N, BN), ceildiv(M, BM)),
+        block_dim=(NUM_THREADS),
+    )
     _ = func^
 
 
@@ -452,7 +539,8 @@ fn gemm_kernel_5[
 
     var dst_reg = LayoutTensor[
         dtype, Layout.row_major(TM, TN)
-    ].stack_allocation().fill(0)
+    ].stack_allocation()
+    dst_reg.copy_from(dst)
 
     var a_reg = LayoutTensor[dtype, Layout(TM)].stack_allocation()
     var b_reg = LayoutTensor[dtype, Layout(TN)].stack_allocation()
@@ -523,4 +611,22 @@ fn run_gemm_kernel_5[
         )
 
     time_kernel[run_func](m, ctx, M * N * K, "2d_blocktiling")
+    # Do one iteration for verifciation
+    ctx.memset(
+        DeviceBuffer[dtype](
+            ctx,
+            rebind[UnsafePointer[Scalar[dtype]]](c.ptr),
+            M * N,
+            owning=False,
+        ),
+        0,
+    )
+    ctx.enqueue_function(
+        func,
+        a,
+        b,
+        c,
+        grid_dim=(ceildiv(N, BN), ceildiv(M, BM)),
+        block_dim=(NUM_THREADS),
+    )
     _ = func^

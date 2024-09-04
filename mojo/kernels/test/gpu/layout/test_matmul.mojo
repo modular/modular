@@ -10,12 +10,12 @@ from math import ceildiv
 from collections.optional import Optional
 from utils.numerics import FlushDenormals
 from gpu import BlockDim, BlockIdx, ThreadIdx, barrier
-from gpu.host.memory import _memset, _memset_async
 from gpu.host._compile import _get_nvptx_target
 from algorithm.functional import _elementwise_impl_gpu
 from gpu.host.device_context import DeviceContext, DeviceBuffer
 from linalg.matmul_gpu import _matmul_gpu, matmul_kernel_naive
-from memory import memset_zero, stack_allocation
+
+# from memory import memset_zero, stack_allocation
 from memory.reference import _GPUAddressSpace as GPUAddressSpace
 from gpu.cublas.cublas import (
     check_cublas_error,
@@ -122,10 +122,7 @@ struct test_matmul[
         ctx.enqueue_copy_to_device(
             self.b_device_buffer, self.b_host.tensor.data
         )
-
-        _memset_async(
-            self.c_device_buffer_ref.ptr, 0, self.M * self.N, ctx.cuda_stream
-        )
+        ctx.memset(self.c_device_buffer_ref, 0)
 
         run_cublas[dtype](
             m,
@@ -146,10 +143,7 @@ struct test_matmul[
         print("=== test_matmul")
 
         var ctx = self.ctx
-
-        _memset_async(
-            self.c_device_buffer.ptr, 0, self.M * self.N, ctx.cuda_stream
-        )
+        ctx.memset(self.c_device_buffer_ref, 0)
 
         fn create_tensor[
             layout: Layout
@@ -177,6 +171,12 @@ struct test_matmul[
         ctx.enqueue_copy_from_device(
             self.c_host.tensor.data, self.c_device_buffer
         )
+        assert_almost_equal(
+            self.c_host_ref.tensor,
+            self.c_host.tensor,
+            atol=0.0001,
+            rtol=0.01,
+        )
 
 
 def main():
@@ -185,6 +185,9 @@ def main():
     alias K = M
 
     var m = Bench()
+    # The default minimum runtime of 0.1 s understimates the performance.
+    m.config.min_runtime_secs = 1.0
+    m.config.max_runtime_secs = 2.0
 
     with DeviceContext() as ctx:
         alias a_layout = Layout.row_major(M, K)
