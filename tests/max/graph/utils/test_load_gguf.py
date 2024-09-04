@@ -7,15 +7,15 @@
 
 from max.dtype import DType
 from max.graph import Graph, TensorType
-from max.graph.weights.load_gguf import load_gguf
+from max.graph.weights import GGUFWeights
 
 
 def test_load_gguf(testdata_directory) -> None:
-    weights = load_gguf(testdata_directory / "example_data.gguf")
+    weights = GGUFWeights(testdata_directory / "example_data.gguf")
     with Graph("test_load_gguf") as graph:
         data = {
-            key: graph.add_weight(weight)
-            for key, (weight, _) in weights.items()
+            key: graph.add_weight(weight.allocate())
+            for key, weight in weights.items()
         }
         assert len(data) == 6
         assert data["a"].type == TensorType(DType.int32, [5, 2])

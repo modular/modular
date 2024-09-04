@@ -5,13 +5,10 @@
 # ===----------------------------------------------------------------------=== #
 """Test the Python weight loading interface."""
 
-import gguf
 import numpy as np
-
 from max.dtype import DType
 from max.graph import Graph, Weight
-from max.graph.weights import load_pytorch
-from max.graph.weights.load_gguf import load_gguf
+from max.graph.weights import GGUFWeights, PytorchWeights
 
 
 def test_weight(session) -> None:
@@ -69,12 +66,12 @@ def test_load_pytorch(session, graph_testdata) -> None:
     flat_keys = list(expected_dict.keys())
     expected = [expected_dict[k] for k in flat_keys]
 
-    weights = load_pytorch(graph_testdata / "example_data.pt")
+    weights = PytorchWeights(graph_testdata / "example_data.pt")
     with Graph("graph_with_pt_weights") as graph:
-        loaded = {k: graph.add_weight(w) for k, (w, _) in weights.items()}
+        loaded = {k: graph.add_weight(w.allocate()) for k, w in weights.items()}
         graph.output(*[loaded[k] for k in flat_keys])
         compiled = session.load(
-            graph, weights_registry={k: d for k, (_, d) in weights.items()}
+            graph, weights_registry=weights.allocated_weights
         )
         output = compiled.execute()
 
@@ -97,13 +94,12 @@ def test_load_gguf(session, graph_testdata) -> None:
     flat_keys = list(expected_dict.keys())
     expected = [expected_dict[k] for k in flat_keys]
 
-    reader = gguf.GGUFReader(graph_testdata / "example_data.gguf")
-    weights = load_gguf(reader)
+    weights = GGUFWeights(graph_testdata / "example_data.gguf")
     with Graph("graph_with_gguf_weights") as graph:
-        loaded = {k: graph.add_weight(w) for k, (w, _) in weights.items()}
+        loaded = {k: graph.add_weight(w.allocate()) for k, w in weights.items()}
         graph.output(*[loaded[k] for k in flat_keys])
         compiled = session.load(
-            graph, weights_registry={k: d for k, (_, d) in weights.items()}
+            graph, weights_registry=weights.allocated_weights
         )
         output = compiled.execute()
 

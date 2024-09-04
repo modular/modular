@@ -7,17 +7,16 @@
 
 from max.dtype import DType
 from max.graph import Graph, TensorType
-from max.graph.weights import load_pytorch
+from max.graph.weights import PytorchWeights
 
 
 def test_load_pytorch(testdata_directory):
     # Loads the values saved in gen_external_checkpoints.py.
-    weights = load_pytorch(testdata_directory / "example_data.pt")
+    weights = PytorchWeights(testdata_directory / "example_data.pt")
     with Graph("test_load_pytorch") as graph:
-        # Loads the data saved in gen_external_checkpoints.py.
         data = {
-            key: graph.add_weight(weight)
-            for key, (weight, _) in weights.items()
+            key: graph.add_weight(weight.allocate())
+            for key, weight in weights.items()
         }
         assert len(data) == 5
         assert data["a"].type == TensorType(DType.int32, [5, 2])
