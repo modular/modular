@@ -522,6 +522,19 @@ Type UnboundCustomOperationAttr::getType() const {
 // UnpackedAttr
 //===----------------------------------------------------------------------===//
 
+static ParseResult parseUnpackKind(AsmParser &p, bool &kwOnly) {
+  if (succeeded(p.parseOptionalKeyword("kw"))) {
+    kwOnly = true;
+    return success();
+  }
+  kwOnly = false;
+  return p.parseKeyword("pos");
+}
+
+static void printUnpackKind(AsmPrinter &p, bool kwOnly) {
+  p << (kwOnly ? "kw" : "pos");
+}
+
 UnpackedType UnpackedAttr::getType() const {
   return UnpackedType::get(getContext());
 }

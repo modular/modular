@@ -93,7 +93,7 @@ kgen.generator @ref_type<p: !lit.lifetime<0>, q: !lit.lifetime<1>>
 // CHECK-SAME: %arg0: !lit.ref<@Foo, imm life->field>
 // CHECK-SAME: %arg1: !lit.ref<@Foo, imm life->a->b->c>)
 kgen.generator @field_attr<life: !lit.lifetime<0>>
-(%arg0: !lit.ref<@Foo, imm life->field>, 
+(%arg0: !lit.ref<@Foo, imm life->field>,
  %arg1: !lit.ref<@Foo, imm life->a->b->c>) {
 
   // CHECK-NEXT: "verbose_attr"() {attr = #lit.lifetime.field<#kgen.param.decl.ref<"life"> : !lit.lifetime<0>, "field0"> : !lit.lifetime<0>} : () -> ()
@@ -165,8 +165,8 @@ kgen.generator @bind_type<T: anystruct<@Bar<?, :dtype ?>, <index, dtype>>>() {
 
 // CHECK-LABEL: kgen.generator @unpacked
 kgen.generator @unpacked<T: type>() {
-  // CHECK: kgen.param.constant: !lit.unpacked = <#lit.unpacked>
-  %c = kgen.param.constant: !lit.unpacked = <#lit.unpacked>
+  // CHECK: kgen.param.constant: !lit.unpacked = <#lit.unpacked<kw>>
+  %c = kgen.param.constant: !lit.unpacked = <#lit.unpacked<kw>>
   kgen.return
 }
 

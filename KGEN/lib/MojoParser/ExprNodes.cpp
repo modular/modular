@@ -816,9 +816,10 @@ getBindingsForParameterOperands(ArrayRef<Operand> operands,
                                 ExprEmitter &emitter) {
   ParamBindings paramBindings(emitter.getScopeInfo());
   for (const Operand &operand : operands) {
-    // _ and *_ in parameter expressions are magically treated as special syntax
-    // for unbound values, which get a special representation in a parameter
-    // list.  They are not general expressions, so don't emit them as such.
+    // _, *_, and **_ in parameter expressions are magically treated as special
+    // syntax for unbound values, which get a special representation in a
+    // parameter list. They are not general expressions, so don't emit them as
+    // such.
     TypedAttr value;
     if (operand.expr->kind == ExprNode::kDiscardLiteral) {
       value =
@@ -828,7 +829,7 @@ getBindingsForParameterOperands(ArrayRef<Operand> operands,
                    ExprNode::kDiscardLiteral) {
       // Handle the *_ syntax, which is parsed as an Unpack(DiscardLiteral)
       // specially.
-      value = PValue(UnpackedAttr::get(emitter.getContext()));
+      value = PValue(UnpackedAttr::get(emitter.getContext(), /*kwOnly=*/false));
     } else {
       auto pValue = emitter.emitExprPValue(operand.expr, EC_TypeParamValue);
       if (!pValue)

@@ -142,7 +142,9 @@ def UnboundCustomOperationAttr : DialectAttribute<(attr
   TypedAttrArray:$params
 )>;
 
-def UnpackedAttr : DialectAttribute<(attr)>;
+def UnpackedAttr : DialectAttribute<(attr
+  Bool:$kwOnly
+)>;
 
 def ModuleAttr : DialectAttribute<(attr
   ConcreteType<"AnyStructType">:$type
