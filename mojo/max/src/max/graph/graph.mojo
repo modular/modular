@@ -150,7 +150,7 @@ struct Graph(CollectionElement, Stringable, Formattable):
     from max.graph import Type, Graph, TensorType, ops
     from max.tensor import Tensor, TensorShape
 
-    def build_model() -> Graph:
+    def main():
         var graph = Graph(TensorType(DType.float32, 2, 6))
 
         var matmul_constant_value = Tensor[DType.float32](TensorShape(6, 1), 0.15)
@@ -161,7 +161,7 @@ struct Graph(CollectionElement, Stringable, Formattable):
         var softmax = ops.softmax(relu)
         graph.output(softmax)
 
-        return graph
+        print(graph)
     ```
 
     You can't call a `Graph` directly from Mojo. You must compile it and
