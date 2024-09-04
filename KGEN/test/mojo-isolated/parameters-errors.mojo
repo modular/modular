@@ -151,6 +151,13 @@ fn variadic_int_params[*a: Int]():
 fn callVariadic():
   variadic_int_params[1.0]() # expected-error {{callee parameter #0 has 'Int' type, but value has type 'FloatLiteral'}}
 
+struct StructWithVariadic[*a: int]: # expected-note {{'StructWithVariadic' declared here}}
+  pass
+
+# expected-error @below {{unbound syntax (i.e. `_`) cannot be passed as a variadic parameter}}
+fn unbind_variadic(x: StructWithVariadic[_]):
+  pass
+
 ##===----------------------------------------------------------------------===##
 # Function Overloading on Parameters
 ##===----------------------------------------------------------------------===##

@@ -747,15 +747,10 @@ OverloadFitness OverloadFitness::evaluate(LITSignatureType signature,
         diag << " of callee '" << callable.baseName << "'";
         inferenceDiags.attach(paramListAttr, diag);
       },
-      /*emitUnboundPackInVariadic=*/
+      /*emitUnboundInVariadic=*/
       [&](ASTExprAnd<AnyValue> binding) {
-        diag << "unbound pack syntax (i.e. `*_`) cannot be used where variadic "
-                "parameters are expected"
-             << binding.expr->getRange();
-      },
-      /*emitUnboundPackNotEnd=*/
-      [&](ASTExprAnd<AnyValue> binding) {
-        diag << "unbound pack must be at the end of the parameter list"
+        diag << "unbound syntax (i.e. `_`) cannot be passed as a variadic "
+                "parameter"
              << binding.expr->getRange();
       },
       /*emitInferOnlyFailure=*/
@@ -800,10 +795,6 @@ OverloadFitness OverloadFitness::evaluate(LITSignatureType signature,
       /*emitMissing=*/
       [&](ArrayRef<StringAttr> names, const Twine &kindStr) {
         emitMissing(diag, names, kindStr + " parameter");
-      },
-      /*emitTooManyPositional=*/
-      [&](size_t numMaxAllowed, size_t numActual) {
-        emitTooManyPositional(diag, numMaxAllowed, numActual, "parameter");
       },
   };
 
