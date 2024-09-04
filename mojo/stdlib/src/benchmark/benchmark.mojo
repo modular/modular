@@ -527,10 +527,27 @@ fn run[
 fn _run_impl(opts: _RunOptions) -> Report:
     var report = Report()
 
-    var prev_iters = opts.num_warmup
-    var prev_dur = opts.timing_fn(opts.num_warmup) if opts.num_warmup > 0 else 0
-    report.warmup_iters = prev_iters
-    report.warmup_duration = prev_dur
+    var prev_dur: Int
+    var prev_iters: Int
+    if opts.num_warmup > 0:
+        # Make sure to warm up the function and use one iteration to compute
+        # the previous duration.
+        prev_dur = opts.timing_fn(max(opts.num_warmup - 1, 1))
+        prev_iters = 1
+        # If the num warmup is greater than 1, then the prior timing captured
+        # multiple iterations (we only care about 1), so run the timing function
+        # again but capture a single iteration. This logic enables us to handle
+        # the case were num_warmup == 1.
+        if opts.num_warmup > 1:
+            prev_dur = opts.timing_fn(1)
+        report.warmup_iters = 1
+        report.warmup_duration = prev_dur
+    else:
+        prev_iters = 0
+        prev_dur = 0
+        report.warmup_iters = 0
+        report.warmup_duration = 0
+
     var total_iters: Int = 0
     var time_elapsed: Int = 0
     var min_time_ns = int(opts.min_runtime_secs * 1_000_000_000)
