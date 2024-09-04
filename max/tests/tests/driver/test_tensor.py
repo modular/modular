@@ -231,13 +231,14 @@ DLPACK_DTYPES = {
     np.uint16: DType.uint16,
     np.uint32: DType.uint32,
     np.uint64: DType.uint64,
-    # np.float16  # TODO: re-enable
+    # np.float16  # TODO(MSDK-893): enable float16.
     np.float32: DType.float32,
     np.float64: DType.float64,
 }
 
 
 def test_from_dlpack():
+    # TODO(MSDK-897): improve test coverage with different shapes and strides.
     for np_dtype, our_dtype in DLPACK_DTYPES.items():
         array = np.array([0, 1, 2, 3], np_dtype)
         tensor = Tensor.from_dlpack(array)
@@ -259,6 +260,7 @@ def test_dlpack_device():
 
 
 def test_dlpack():
+    # TODO(MSDK-897): improve test coverage with different shapes and strides.
     for np_dtype, our_dtype in DLPACK_DTYPES.items():
         tensor = Tensor((1, 4), our_dtype)
         for j in range(4):
