@@ -244,3 +244,13 @@ def test_from_dlpack():
 
         tensor[0] = np_dtype(7)
         assert array[0] == np_dtype(7)
+
+
+def test_dlpack_device():
+    tensor = Tensor((3, 3), DType.int32)
+    device_tuple = tensor.__dlpack_device__()
+    assert len(device_tuple) == 2
+    assert isinstance(device_tuple[0], int)
+    assert device_tuple[0] == 1  # 1 is the value of DLDeviceType::kDLCPU
+    assert isinstance(device_tuple[1], int)
+    assert device_tuple[1] == 0  # should be the default device
