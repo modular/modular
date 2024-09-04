@@ -1623,26 +1623,26 @@ private:
 
   void checkConsume(Value value, Operation &op, bool isDeref);
   void checkUse(Value value, Operation &op, bool isDeref);
-  void checkUse(Value value, mlir::ImplicitLocOpBuilder &builder,
+  void checkUse(Value value, ImplicitLocOpBuilder &builder,
                 Operation *opWithUse, bool isDeref);
   void checkDef(Value value, Operation &op, bool isDeref);
   void checkLifetimeEffect(TypedAttr lifetime, Operation &op);
   void destroyValueIfNeeded(Value value, ValueRef valueRef,
-                            mlir::ImplicitLocOpBuilder &builder,
+                            ImplicitLocOpBuilder &builder,
                             Operation *opWithUse);
 
   LogicalResult elideCopyDestroyPair(Value value, Type destroyedType,
                                      Operation *opWithUse);
   void emitDestructorCallAt(Value value, bool isIndirect,
-                            mlir::ImplicitLocOpBuilder &builder,
+                            ImplicitLocOpBuilder &builder,
                             Operation *opWithUse);
 
   /// Emit a debug value for the value if it is tracked with debug info.
   void emitDebugInit(Value value, ValueRef valueRef,
-                     mlir::ImplicitLocOpBuilder &builder);
+                     ImplicitLocOpBuilder &builder);
 
   /// Emit a debug kill marker for the value if it is tracked with debug info.
-  void emitDebugKill(ValueRef valueRef, mlir::ImplicitLocOpBuilder &builder);
+  void emitDebugKill(ValueRef valueRef, ImplicitLocOpBuilder &builder);
 
   /// Emit a lifetime end marker for a value that is being consumed.
   void emitLifetimeEnd(Value value, ImplicitLocOpBuilder &builder);
@@ -1650,7 +1650,7 @@ private:
 
   /// Emit both a debug kill & a destructor call.
   void emitDebugKillAndDestructorCallAt(Value value, ValueRef valueRef,
-                                        mlir::ImplicitLocOpBuilder &builder,
+                                        ImplicitLocOpBuilder &builder,
                                         Operation *opWithUse);
 
   /// This is metadata about all the values we are tracking.
@@ -1748,7 +1748,7 @@ void DestructorInsertion::scanFunction(LIT::FuncOp func) {
             DebugInfo::extractScope(cast<mlir::FunctionOpInterface>(*func)))
       loc = FusedLoc::get(loc.getContext(), {loc}, scope);
 
-    mlir::ImplicitLocOpBuilder builder(loc, &funcBody, funcBody.begin());
+    ImplicitLocOpBuilder builder(loc, &funcBody, funcBody.begin());
     checkUse(argValue, builder, /*opWithUse=*/nullptr, /*isDeref=*/isIndirect);
   }
 }
@@ -2218,7 +2218,7 @@ void DestructorInsertion::checkTryOp(LIT::TryOp tryOp) {
     if (!exceptSets.consumedValues[valueRef.startBit]) {
       // There were no references to the owned arguments, so generate a
       // destructor at beginning of the block.
-      mlir::ImplicitLocOpBuilder builder = ImplicitLocOpBuilder::atBlockBegin(
+      ImplicitLocOpBuilder builder = ImplicitLocOpBuilder::atBlockBegin(
           exceptRegion.getLoc(), &exceptRegion.front());
       destroyValueIfNeeded(blockArg, valueRef, builder,
                            /*opWithUse=*/nullptr);
@@ -2292,7 +2292,7 @@ void DestructorInsertion::checkConsume(Value value, Operation &op,
   valueRef.markBits(consumedValues, true);
 
   if (!dryRun) {
-    mlir::ImplicitLocOpBuilder builder(op.getLoc(), &op);
+    ImplicitLocOpBuilder builder(op.getLoc(), &op);
     emitDebugKill(valueRef, builder);
     emitLifetimeEndAfter(value, &op);
   }
@@ -2303,7 +2303,7 @@ void DestructorInsertion::checkConsume(Value value, Operation &op,
 void DestructorInsertion::checkUse(Value value, Operation &op, bool isDeref) {
   // If needed, emit the destructor immediately after the specified operation.
   auto insertPt = std::next(Block::iterator(&op));
-  mlir::ImplicitLocOpBuilder builder(op.getLoc(), op.getBlock(), insertPt);
+  ImplicitLocOpBuilder builder(op.getLoc(), op.getBlock(), insertPt);
   checkUse(value, builder, /*opWithUse=*/&op, isDeref);
 }
 
@@ -2311,8 +2311,7 @@ void DestructorInsertion::checkUse(Value value, Operation &op, bool isDeref) {
 /// destructor of the overall value.  The 'opWithUse' value (if present)
 /// indicates the operation performing the use.  This enables copy ctor elision,
 /// but this is null at the start of block/function for example.
-void DestructorInsertion::checkUse(Value value,
-                                   mlir::ImplicitLocOpBuilder &builder,
+void DestructorInsertion::checkUse(Value value, ImplicitLocOpBuilder &builder,
                                    Operation *opWithUse, bool isDeref) {
   // If this is a direct reference to a value, we are tracking it, meaning there
   // are dedicated bits in the consumeValues bitvector that represent the
@@ -2413,7 +2412,7 @@ void DestructorInsertion::checkDef(Value value, Operation &op, bool isDeref) {
   // target as being consumed.
   if (ValueRef direct = valueSet.getDirectValueRef(value, isDeref)) {
     if (!dryRun && value.getDefiningOp<VarDeclOp>()) {
-      mlir::ImplicitLocOpBuilder builder(op.getLoc(), &op);
+      ImplicitLocOpBuilder builder(op.getLoc(), &op);
       emitDebugInit(value, direct, builder);
       builder.create<VarLifetimeStartOp>(value);
     }
@@ -2428,7 +2427,7 @@ void DestructorInsertion::checkDef(Value value, Operation &op, bool isDeref) {
   // value is guaranteed live-in when nontrivial and indirect.
   if (!valueSet.isTrivial(value, isDeref) && !dryRun) {
     // Destructor call goes ahead of the mutation.
-    mlir::ImplicitLocOpBuilder builder(op.getLoc(), &op);
+    ImplicitLocOpBuilder builder(op.getLoc(), &op);
     emitDestructorCallAt(value, isDeref, builder, &op);
   }
 }
@@ -2439,7 +2438,7 @@ void DestructorInsertion::checkLifetimeEffect(TypedAttr lifetime,
   // For destructor insertion, we don't care if this is a read or write.
   // If needed, emit the destructor immediately after the specified operation.
   auto insertPt = std::next(Block::iterator(&op));
-  mlir::ImplicitLocOpBuilder builder(op.getLoc(), op.getBlock(), insertPt);
+  ImplicitLocOpBuilder builder(op.getLoc(), op.getBlock(), insertPt);
 
   SmallVector<ValueRef> accesses = valueSet.getValueRefsForLifetime(lifetime);
   for (auto access : accesses) {
@@ -3025,7 +3024,7 @@ void DestructorInsertion::emitDestructorCallAt(Value value, bool isIndirect,
 }
 
 void DestructorInsertion::emitDebugInit(Value value, ValueRef valueRef,
-                                        mlir::ImplicitLocOpBuilder &builder) {
+                                        ImplicitLocOpBuilder &builder) {
   assert(!dryRun && "shouldn't be called in a dry run");
   ValueInfo &info = valueSet.getValueInfo(valueRef.valueId);
   // Insert debug value if full value is initialized.
@@ -3042,7 +3041,7 @@ void DestructorInsertion::emitDebugInit(Value value, ValueRef valueRef,
 }
 
 void DestructorInsertion::emitDebugKill(ValueRef valueRef,
-                                        mlir::ImplicitLocOpBuilder &builder) {
+                                        ImplicitLocOpBuilder &builder) {
   assert(!dryRun && "shouldn't be called in a dry run");
   // Insert end-of-life debug value if full value is destroyed.
   // TODO(#34115): Emit fragment end-of-life for partial destruction.
@@ -3066,7 +3065,7 @@ void DestructorInsertion::emitLifetimeEnd(Value value,
 }
 
 void DestructorInsertion::emitDebugKillAndDestructorCallAt(
-    Value value, ValueRef valueRef, mlir::ImplicitLocOpBuilder &builder,
+    Value value, ValueRef valueRef, ImplicitLocOpBuilder &builder,
     Operation *opWithUse) {
   // We are going to emit a destructor for the specified ValueRef, so all none
   // of the things we are about to destroy should already be destroyed.
@@ -3099,7 +3098,7 @@ void DestructorInsertion::destroyValuesAtEntryIfNeeded(
   BitVector savedConsumedValues = std::move(consumedValues);
 
   // Any dtor calls will be emitted at the start of the block.
-  mlir::ImplicitLocOpBuilder builder(loc, &block, block.begin());
+  ImplicitLocOpBuilder builder(loc, &block, block.begin());
 
   // We *only* want to destroy the values in entries, not any other values that
   // may be partially overlapped, so mark all the other things as "already

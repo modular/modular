@@ -45,10 +45,10 @@ def HLCF_UnrollLevelAttr : HLCF_Attr<"UnrollLevel", "unroll_level"> {
 
   let extraClassDeclaration = [{
     /// Get UnrollLevel none attribute.
-    static HLCF::UnrollLevelAttr getNone(mlir::MLIRContext* context);
+    static HLCF::UnrollLevelAttr getNone(MLIRContext* context);
 
     /// Get UnrollLevel full attribute.
-    static HLCF::UnrollLevelAttr getFull(mlir::MLIRContext* context);
+    static HLCF::UnrollLevelAttr getFull(MLIRContext* context);
   }];
 }
 

@@ -6,6 +6,7 @@
 #ifndef KGEN_HLCFDIALECT_HLCFATTRS_H
 #define KGEN_HLCFDIALECT_HLCFATTRS_H
 
+#include "Support/LLVMCompilerForwardDecls.h"
 #include "mlir/IR/Attributes.h"
 #include "mlir/IR/BuiltinAttributeInterfaces.h"
 

@@ -916,7 +916,7 @@ void LIT::FuncOp::build(OpBuilder &b, OperationState &state,
                         ArrayRef<ParamDeclAttr> paramDecls, FnEffects effects,
                         InlineLevel inlineLevel) {
   MLIRContext *ctx = b.getContext();
-  mlir::UnitAttr none;
+  UnitAttr none;
   SmallVector<ArgConvention> convs(funcType.getNumInputs());
   auto sig = LITSignatureType::remapToSignature(
       paramDecls, {}, funcType, convs, effects,
@@ -939,7 +939,7 @@ void LIT::FuncOp::build(OpBuilder &builder, OperationState &result,
                         SignatureType signature,
                         SpecialFunctionKind specialFnKind) {
   MLIRContext *ctx = builder.getContext();
-  mlir::UnitAttr none;
+  UnitAttr none;
   build(builder, result, name, ParamDeclAttr(), TypeAttr::get(signature),
         TypeAttr::get(signature.getValues()), ParamDeclArrayAttr::get(ctx, {}),
         DecoratorsAttr::get(ctx, {}), /*isStatic=*/none, /*isDef=*/none,

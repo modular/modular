@@ -521,7 +521,7 @@ static void processVariablesForPersistence(MojoParserREPLListener &listener,
         varOp->getLoc(), newFieldName, PointerType::get(type));
 
     // Materialize a reference to the variable within the function.
-    mlir::ImplicitLocOpBuilder builder(varOp->getLoc(), varOp);
+    ImplicitLocOpBuilder builder(varOp->getLoc(), varOp);
     Value fieldGep = builder.create<LIT::RefStructGEROp>(varOp->getLoc(),
                                                          structValue, newField);
     Value fieldLoad = builder.create<RefLoadOp>(varOp->getLoc(), fieldGep);

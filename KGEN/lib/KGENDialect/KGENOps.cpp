@@ -576,7 +576,7 @@ static void printCallOp(OpAsmPrinter &p, Operation *op,
       calleeCst.getType());
 }
 
-void CallOp::concretizeCallee(mlir::IRRewriter &b, SymbolConstantAttr callee) {
+void CallOp::concretizeCallee(IRRewriter &b, SymbolConstantAttr callee) {
   setCalleeAttr(callee);
 }
 
@@ -619,8 +619,7 @@ LogicalResult CallIndirectOp::verify() {
 // CallParamOp
 //===----------------------------------------------------------------------===//
 
-void CallParamOp::concretizeCallee(mlir::IRRewriter &b,
-                                   SymbolConstantAttr callee) {
+void CallParamOp::concretizeCallee(IRRewriter &b, SymbolConstantAttr callee) {
   b.replaceOpWithNewOp<CallOp>(*this, getResultTypes(), callee, getOperands());
 }
 
@@ -928,7 +927,7 @@ parseClosureCaptureTypes(AsmParser &p, TypedAttr callee,
            << sig.getNumArguments() << " to bind";
   }
 
-  ArrayRef<mlir::Type> inputs = sig.getArguments().take_front(numCaptures);
+  ArrayRef<Type> inputs = sig.getArguments().take_front(numCaptures);
   captureTypes.append(inputs.begin(), inputs.end());
   return success();
 }

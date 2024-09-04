@@ -365,7 +365,7 @@ static void inlineGeneratorCall(GeneratorOp caller, CallOp call,
           ? &topLevelGraph
           : &topLevelGraph.nestedScopes.find(scopeRegion)->second;
 
-  mlir::IRRewriter b{OpBuilder(call)};
+  IRRewriter b{OpBuilder(call)};
   AttrTypeMangler mangler(manglerCache);
   bool needsMangling =
       mangler.populate(b, *callScope, calleeDecls, topLevelGraph);

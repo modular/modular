@@ -599,7 +599,7 @@ std::vector<CodeCompletionResult>
 MojoREPL::handleREPLCodeComplete(Target &target, StringRef code,
                                  uint64_t completionPos) {
   // Collect the current persistent variables.
-  SmallVector<std::pair<StringRef, mlir::Type>> variables;
+  SmallVector<std::pair<StringRef, Type>> variables;
   MojoTypeSystem &typeSystem = getMojoTypeSystem(target);
   auto *persistentState = static_cast<MojoPersistentExpressionState *>(
       typeSystem.GetPersistentExpressionState());

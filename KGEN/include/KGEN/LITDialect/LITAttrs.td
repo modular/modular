@@ -593,7 +593,7 @@ def LifetimeMutCastAttr : LITTypedAttr<"LifetimeMutCast", "lifetime.mutcast"> {
     AttrBuilderWithInferredContext<(ins
       "TypedAttr":$operand, "TypedAttr":$isMutable), "", "TypedAttr">,
     AttrBuilderWithInferredContext<(ins
-      "TypedAttr":$operand, "mlir::Type":$type), "", "TypedAttr">,
+      "TypedAttr":$operand, "Type":$type), "", "TypedAttr">,
     AttrBuilderWithInferredContext<(ins
       "TypedAttr":$operand, "bool":$isMutable), "", "TypedAttr">,
     AttrBuilder<(ins "TypedAttr":$operand, "LifetimeType":$type), [{

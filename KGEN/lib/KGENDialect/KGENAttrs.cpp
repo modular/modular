@@ -830,7 +830,7 @@ LogicalResult EnvAttr::verify(function_ref<InFlightDiagnostic()> emitError,
       if (!::isa<StringType>(strVal.getType()))
         return emitError() << "environment value " << attr.getName()
                            << " is a string not of `!kgen.string` type";
-    } else if (!::isa<mlir::UnitAttr>(value)) {
+    } else if (!::isa<UnitAttr>(value)) {
       return emitError() << "environment value " << attr.getName()
                          << " is neither an index, string, or unit attribute";
     }
@@ -2749,7 +2749,7 @@ CustomOpImplArrayAttr::verify(function_ref<InFlightDiagnostic()> emitError,
 }
 
 CustomOpImplArrayAttr
-CustomOpImplArrayAttr::get(mlir::MLIRContext *ctx,
+CustomOpImplArrayAttr::get(MLIRContext *ctx,
                            ArrayRef<CustomOpImplAttr> opImpls) {
   SmallVector<CustomOpImplAttr> sortedOpImpls;
   opImplArrayAttrSort(opImpls, sortedOpImpls);
@@ -2758,7 +2758,7 @@ CustomOpImplArrayAttr::get(mlir::MLIRContext *ctx,
 
 CustomOpImplArrayAttr
 CustomOpImplArrayAttr::getChecked(function_ref<InFlightDiagnostic()> emitError,
-                                  mlir::MLIRContext *ctx,
+                                  MLIRContext *ctx,
                                   ArrayRef<CustomOpImplAttr> opImpls) {
   if (failed(verify(emitError, opImpls)))
     return {};

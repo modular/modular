@@ -317,10 +317,9 @@ bool processStructExecuteFunc(ModuleOp moduleOp,
 
   // Handle fusion if needed
   if (registrationInfo.isElementwiseKernel)
-    func->setAttr(kMOGGElementFunction,
-                  mlir::UnitAttr::get(func->getContext()));
+    func->setAttr(kMOGGElementFunction, UnitAttr::get(func->getContext()));
   if (registrationInfo.isViewKernel)
-    func->setAttr(kMOGGViewKernel, mlir::UnitAttr::get(func->getContext()));
+    func->setAttr(kMOGGViewKernel, UnitAttr::get(func->getContext()));
 
   // Iterate over the decorators to find enable_fusion_for
   for (auto decorator : func.getDecorators()) {

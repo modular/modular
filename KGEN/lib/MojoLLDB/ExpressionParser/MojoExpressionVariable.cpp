@@ -152,7 +152,7 @@ lldb::addr_t MojoPersistentExpressionState::LookupSymbol(ConstString name) {
 }
 
 void MojoPersistentExpressionState::collectPersistentVariables(
-    SmallVectorImpl<std::pair<StringRef, mlir::Type>> &variables) {
+    SmallVectorImpl<std::pair<StringRef, Type>> &variables) {
   DenseSet<ConstString> persistentVariableNames;
   for (int i : llvm::reverse(llvm::seq<int>(0, GetSize()))) {
     lldb::ExpressionVariableSP var = GetVariableAtIndex(i);
@@ -162,11 +162,10 @@ void MojoPersistentExpressionState::collectPersistentVariables(
 
     // All persistent variable types are wrapped in a reference type, so unwrap
     // the types before adding them to the current expression.
-    auto ptrType =
-        cast<LIT::REPLResultRefType>(mlir::Type::getFromOpaquePointer(
-            var->GetCompilerType().GetOpaqueQualType()));
+    auto ptrType = cast<LIT::REPLResultRefType>(
+        Type::getFromOpaquePointer(var->GetCompilerType().GetOpaqueQualType()));
 
-    mlir::Type varType = ptrType.getElementType();
+    Type varType = ptrType.getElementType();
     variables.emplace_back(var->GetName().GetStringRef(), varType);
   }
 }

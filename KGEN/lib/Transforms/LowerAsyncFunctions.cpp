@@ -2039,7 +2039,7 @@ void LowerAsyncFunctionsPass::runOnOperation() {
   }
 
   // Apply all other CO lowerings.
-  mlir::IRRewriter rewriter(b);
+  IRRewriter rewriter(b);
   module.walk([&](Operation *op) {
     if (auto invokeOp = dyn_cast<InvokeOp>(op)) {
       auto symbol = cast<SymbolConstantAttr>(invokeOp.getCallee());

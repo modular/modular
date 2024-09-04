@@ -67,7 +67,7 @@ private:
   /// PassManager configuration options.
   PassManagerConfigOptions pmConfigOptions;
 
-  mlir::MLIRContext &context;
+  MLIRContext &context;
 };
 
 //===----------------------------------------------------------------------===//

@@ -37,7 +37,7 @@ class KGENOp<string mnemonic, list<Trait> traits = []> :
 //===----------------------------------------------------------------------===//
 
 def KGEN_FuncOp : KGENOp<"func", [
-    HasParent<"mlir::ModuleOp">, FunctionOpInterface, Symbol, IsolatedFromAbove,
+    HasParent<"ModuleOp">, FunctionOpInterface, Symbol, IsolatedFromAbove,
     SingleBlock, DeclInterface, FuncInterface, FunctionLike, ExportInterface,
     KGEN_InstantiatedOpInterface]> {
   let summary = "Concrete function definition.";
@@ -129,7 +129,7 @@ def KGEN_FuncOp : KGENOp<"func", [
 //===----------------------------------------------------------------------===//
 
 def KGEN_GeneratorOp : KGENOp<"generator", [
-    HasParent<"mlir::ModuleOp">, FunctionOpInterface, Symbol, IsolatedFromAbove,
+    HasParent<"ModuleOp">, FunctionOpInterface, Symbol, IsolatedFromAbove,
     SingleBlock, DeclInterface, FuncInterface, FunctionLike, ExportInterface,
     KGEN_GeneratorOpInterface]> {
   let summary = "Function generator definition.";
@@ -198,7 +198,7 @@ def KGEN_GeneratorOp : KGENOp<"generator", [
 //===----------------------------------------------------------------------===//
 
 def KGEN_ExternGeneratorOp : KGENOp<"extern.generator", [
-    HasParent<"mlir::ModuleOp">, Symbol, DeclInterface, FuncInterface,
+    HasParent<"ModuleOp">, Symbol, DeclInterface, FuncInterface,
     ExportInterface, DeclareOpInterfaceMethods<FunctionOpInterface>]> {
   let summary = "External generator declaration.";
   let description = [{
@@ -242,7 +242,7 @@ def KGEN_ExternGeneratorOp : KGENOp<"extern.generator", [
 //===----------------------------------------------------------------------===//
 
 def KGEN_StructGeneratorOp : KGENOp<"struct.generator", [
-    HasParent<"mlir::ModuleOp">, Symbol, DeclInterface, SingleBlock,
+    HasParent<"ModuleOp">, Symbol, DeclInterface, SingleBlock,
     KGEN_GeneratorOpInterface]> {
   let summary = "Struct generator definition.";
   let description = [{
@@ -282,7 +282,7 @@ def KGEN_StructGeneratorOp : KGENOp<"struct.generator", [
 //===----------------------------------------------------------------------===//
 
 def KGEN_StructInstanceOp : KGENOp<"struct.instance", [
-    HasParent<"mlir::ModuleOp">, Symbol, SingleBlock,
+    HasParent<"ModuleOp">, Symbol, SingleBlock,
     KGEN_InstantiatedOpInterface]> {
   let summary = "Concretized struct instance.";
   let description = [{
@@ -389,7 +389,7 @@ def KGEN_CallOp : KGEN_CallOpBase<"call",
   }];
 
   let extraClassDeclaration = [{
-    void concretizeCallee(mlir::IRRewriter &b, SymbolConstantAttr callee);
+    void concretizeCallee(IRRewriter &b, SymbolConstantAttr callee);
 
     /// Return the symbol reference to the callee.
     FlatSymbolRefAttr getCalleeSymbol() {
@@ -440,7 +440,7 @@ def KGEN_CallParamOp : KGEN_CallOpBase<"call_param",
   }];
 
   let extraClassDeclaration = [{
-    void concretizeCallee(mlir::IRRewriter &b, SymbolConstantAttr callee);
+    void concretizeCallee(IRRewriter &b, SymbolConstantAttr callee);
     bool isAllowedInFunc() { return false; }
   }];
 

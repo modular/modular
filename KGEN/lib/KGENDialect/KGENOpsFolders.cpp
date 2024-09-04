@@ -458,8 +458,7 @@ OpFoldResult IntLiteralBinop::fold(FoldAdaptor adaptor) {
 // IntLiteralConvertOp
 //===----------------------------------------------------------------------===//
 
-static ErrorTreeOrSuccess intLiteralConvertOpHelper(IPInt invalIP,
-                                                    mlir::Type outType,
+static ErrorTreeOrSuccess intLiteralConvertOpHelper(IPInt invalIP, Type outType,
                                                     bool treatIndexAsUnsigned,
                                                     IntegerAttr &attrResult,
                                                     Location loc) {

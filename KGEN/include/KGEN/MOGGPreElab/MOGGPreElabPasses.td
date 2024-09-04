@@ -10,7 +10,7 @@ include "mlir/Pass/PassBase.td"
 // SliceMOGGFuncs
 //===----------------------------------------------------------------------===//
 
-def SliceMOGGFuncs : Pass<"slice-mogg-funcs", "mlir::ModuleOp"> {
+def SliceMOGGFuncs : Pass<"slice-mogg-funcs", "ModuleOp"> {
   let summary = "Slices shape and compute from mogg kernels";
   let description = [{
     A mogg domain specific pass which performs KGEN to KGEN transforms that
@@ -20,7 +20,7 @@ def SliceMOGGFuncs : Pass<"slice-mogg-funcs", "mlir::ModuleOp"> {
   }];
 }
 
-def SliceMOGGDPSFuncs : Pass<"slice-mogg-dps-funcs", "mlir::ModuleOp"> {
+def SliceMOGGDPSFuncs : Pass<"slice-mogg-dps-funcs", "ModuleOp"> {
   let summary = "Slices compute from DPS kernels";
   let description = [{
     A mogg domain specific pass which performs KGEN to KGEN transforms that
@@ -56,7 +56,7 @@ def SliceMOGGDPSFuncs : Pass<"slice-mogg-dps-funcs", "mlir::ModuleOp"> {
   }];
 }
 
-def OutlineMOGGFuncs : Pass<"mogg-outline", "mlir::ModuleOp"> {
+def OutlineMOGGFuncs : Pass<"mogg-outline", "ModuleOp"> {
   let summary = "Outline MOGG kernel functions";
   let description = [{
     Separate the kernel entry point from the implementation details of the
@@ -95,7 +95,7 @@ def OutlineMOGGFuncs : Pass<"mogg-outline", "mlir::ModuleOp"> {
   }];
 }
 
-def MOGGAnnotate : Pass<"mogg-annotate", "mlir::ModuleOp"> {
+def MOGGAnnotate : Pass<"mogg-annotate", "ModuleOp"> {
   let summary = "Strips MOGG decorators and replaces them with attributes";
   let description = [{
     A mogg domain specific pass which will annotate each kernel at the lit
@@ -104,7 +104,7 @@ def MOGGAnnotate : Pass<"mogg-annotate", "mlir::ModuleOp"> {
   }];
 }
 
-def MOGGPreElabPipeline : Pass<"mogg-pre-elab-pipeline", "mlir::ModuleOp"> {
+def MOGGPreElabPipeline : Pass<"mogg-pre-elab-pipeline", "ModuleOp"> {
   let summary = "Run all the mogg pre elab passes";
   let description = [{
     Run the pipeline of MOGG PreElaborated functions.
@@ -115,7 +115,7 @@ def MOGGPreElabPipeline : Pass<"mogg-pre-elab-pipeline", "mlir::ModuleOp"> {
   ];
 }
 
-def MOGGAutoparameterize : Pass<"mogg-autoparameterize", "mlir::ModuleOp"> {
+def MOGGAutoparameterize : Pass<"mogg-autoparameterize", "ModuleOp"> {
   let summary = "Add a spec parameter to each tensor on kernels and propagate them";
   let description = [{
     This pass clones kernel functions and makes them take a spec parameter for each

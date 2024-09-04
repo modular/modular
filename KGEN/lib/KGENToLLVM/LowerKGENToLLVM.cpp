@@ -73,7 +73,7 @@ static Attribute arrayAttrToDenseArrayAttr(Builder builder,
 
 static ErrorOrSuccess addArrayAttrToDict(Builder builder, NamedAttrList &attrs,
                                          StringRef name, POP::ArrayAttr array,
-                                         mlir::Type elementType) {
+                                         Type elementType) {
   if (auto type = dyn_cast<POP::SIMDType>(elementType)) {
     if (type.getResolvedSize().value_or(-1) != 1)
       return Error("ArrayAttr elements must be a scalar");
@@ -135,7 +135,7 @@ static LogicalResult convertLLVMMetadata(LLVM::LLVMFuncOp func,
     if (isa<LLVM::LLVMDialect>(attr.getNameDialect())) {
       StringAttr name = b.getStringAttr(
           attr.getName().strref().drop_front(StringRef("llvm.").size()));
-      if (isa<mlir::UnitAttr>(value)) {
+      if (isa<UnitAttr>(value)) {
         // Add the metadata attribute name without the prefix.
         passthrough.push_back(name);
       } else if (auto intVal = dyn_cast<IntegerAttr>(value)) {
@@ -158,14 +158,14 @@ static LogicalResult convertLLVMMetadata(LLVM::LLVMFuncOp func,
     }
 
     // For anything else, forward them as function attributes.
-    if (isa<mlir::UnitAttr, IntegerAttr>(value)) {
+    if (isa<UnitAttr, IntegerAttr>(value)) {
       // Propagate unit and integer attribute.
       attrs.append(attr.getName(), value);
     } else if (auto str = dyn_cast<StringAttr>(value)) {
       // Strip the type from string attributes.
       attrs.append(attr.getName(), b.getStringAttr(str.getValue()));
     } else if (auto array = dyn_cast<POP::ArrayAttr>(value)) {
-      mlir::Type elementType = array.getType().getElementType();
+      Type elementType = array.getType().getElementType();
       if (auto err =
               addArrayAttrToDict(b, attrs, attr.getName(), array, elementType);
           err.isError())
@@ -757,7 +757,7 @@ static LogicalResult convertGlobals(ModuleOp module, POPToLLVMTypeConverter &tc,
   for (auto global : llvm::make_early_inc_range(module.getOps<GlobalOp>())) {
     // Replace the `pop.global` with an `llvm.mlir.global`, raise the
     // constructor and destructor into functions, and collect a list of them.
-    mlir::IRRewriter b{OpBuilder(global)};
+    IRRewriter b{OpBuilder(global)};
     Type type = tc.convertType(global.getType());
     if (!type)
       return global.emitError("could not convert global type");

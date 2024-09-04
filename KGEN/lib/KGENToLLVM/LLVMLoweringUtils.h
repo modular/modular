@@ -78,7 +78,7 @@ private:
 //===----------------------------------------------------------------------===//
 
 /// Get the MLIR type for a data type.
-std::optional<Type> getMLIRTypeForDType(mlir::MLIRContext *ctx, KGENDType dtype,
+std::optional<Type> getMLIRTypeForDType(MLIRContext *ctx, KGENDType dtype,
                                         size_t indexBitwidth);
 
 /// This type converter maps fully-specified pop dialect parametric types and

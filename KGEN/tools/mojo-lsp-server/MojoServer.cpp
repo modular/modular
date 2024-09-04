@@ -523,7 +523,7 @@ class LSPMojoREPLListener : public MojoParserREPLListener {
 public:
   LSPMojoREPLListener(
       llvm::SourceMgr &sourceMgr,
-      SmallVectorImpl<std::pair<StringRef, mlir::Type>> &newPersistentVariables)
+      SmallVectorImpl<std::pair<StringRef, Type>> &newPersistentVariables)
       : newPersistentVariables(newPersistentVariables),
         diagHandler(sourceMgr.getDiagHandler()),
         diagHandlerContext(sourceMgr.getDiagContext()) {}
@@ -542,7 +542,7 @@ public:
   //===--------------------------------------------------------------------===//
   // Queries
 
-  bool shouldPersistVariable(StringRef name, mlir::Type type) override {
+  bool shouldPersistVariable(StringRef name, Type type) override {
     // Ignore non-user variables.
     if (MojoParserContext::isHiddenPersistentVariable(name))
       return false;
@@ -558,7 +558,7 @@ public:
 
 private:
   llvm::StringMap<unsigned> nameToVariable;
-  SmallVectorImpl<std::pair<StringRef, mlir::Type>> &newPersistentVariables;
+  SmallVectorImpl<std::pair<StringRef, Type>> &newPersistentVariables;
 
   /// The main diagnostic handler used to notify diagnostics.
   llvm::SourceMgr::DiagHandlerTy diagHandler;
@@ -1697,7 +1697,7 @@ void MojoDocStrings::addDocString(MojoDocument &mainDoc, MojoASTDeclRef decl,
       translateEndLocToMainDoc(docStartLoc.getPointer() + rawDocStr.size())));
 
   // Process the code blocks in the doc string.
-  SmallVector<std::pair<StringRef, mlir::Type>> persistentVariables;
+  SmallVector<std::pair<StringRef, Type>> persistentVariables;
   MojoParserContext &ctx = mainDoc.getParserContext();
   MojoASTDeclRef prevDecl = curReplDecl;
   LSPMojoREPLListener listener(sourceMgr, persistentVariables);
@@ -1926,7 +1926,7 @@ MojoNotebookDocument::MojoNotebookDocument(
 }
 
 void MojoNotebookDocument::parseDocumentImpl() {
-  SmallVector<std::pair<StringRef, mlir::Type>> persistentVariables;
+  SmallVector<std::pair<StringRef, Type>> persistentVariables;
   LSPMojoREPLListener listener(getSourceMgr(), persistentVariables);
 
   // Parse each of the cells in the notebook.

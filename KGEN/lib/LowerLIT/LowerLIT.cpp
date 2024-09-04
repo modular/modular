@@ -121,7 +121,7 @@ struct LITLowerer {
 void LITLowerer::lowerLITOps(LIT::FuncOp func) {
   func.getBodyRegion().walk([&](Operation *op) {
     // Lower any aliases within the function body to param declare.
-    mlir::IRRewriter b{OpBuilder(op)};
+    IRRewriter b{OpBuilder(op)};
     if (AliasDeclOp alias = dyn_cast<AliasDeclOp>(op)) {
       b.replaceOpWithNewOp<ParamDeclareOp>(
           alias, TypeRange(), alias.getParamDecl(), alias.getValue());
@@ -612,7 +612,7 @@ orderAndLowerGlobalVariables(ModuleOp module,
     queue.pop_front();
 
     GlobalVarDeclOp op = node->op;
-    mlir::IRRewriter b{OpBuilder(op)};
+    IRRewriter b{OpBuilder(op)};
     MLIRContext *ctx = op.getContext();
 
     // Prepare locations and names for outlining the constructor and destructor.

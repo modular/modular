@@ -1319,7 +1319,7 @@ def LIT_UnresolvedWildcardImportOp : LITOp<"unresolved_wildcard_import"> {
   let builders = [OpBuilder<(ins
     "StringAttr":$moduleName, CArg<"bool", "false">:$isFullImport), [{
     build($_builder, $_state, moduleName,
-          isFullImport ? $_builder.getUnitAttr() : mlir::UnitAttr());
+          isFullImport ? $_builder.getUnitAttr() : UnitAttr());
   }]>];
 }
 

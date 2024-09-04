@@ -180,7 +180,7 @@ static void lowerAsyncExecute(FuncOp parent, CO::ExecuteOp op,
 /// Codegen `co.await` into its `co` dialect constituents:
 static void lowerAwait(CO::AwaitOp op) {
   MLIRContext *ctx = op.getContext();
-  mlir::ImplicitLocOpBuilder b(op.getLoc(), OpBuilder(op));
+  ImplicitLocOpBuilder b(op.getLoc(), OpBuilder(op));
   if (op.getNumOperands() > 1)
     b.create<CO::SetByRefErrorAndResultOp>(TypeRange(), op->getOperands());
   auto suspend = b.create<CO::SuspendOp>();

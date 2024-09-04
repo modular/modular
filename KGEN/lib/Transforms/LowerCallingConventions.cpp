@@ -113,7 +113,7 @@ static StructAttr lowerVariantAttr(VariantAttr attr) {
   return StructAttr::get({unionAttr, discrAttr}, structType);
 }
 
-static void lowerCreateRegStubOp(mlir::IRRewriter &b, CreateRegStubOp op) {
+static void lowerCreateRegStubOp(IRRewriter &b, CreateRegStubOp op) {
   SignatureType resSig = op.getResult().getType();
   SignatureType calleeSig = cast<SignatureType>(op.getCallee().getType());
   SymbolConstantAttr callee = cast<SymbolConstantAttr>(op.getCallee());
@@ -245,7 +245,7 @@ static void rewriteFn(Operation *op, mlir::AttrTypeReplacer &replacer) {
 
   // Handle pack operations. Be mindful here of the ODS methods because the
   // operand and result types will have already been lowered to `!kgen.struct`.
-  mlir::IRRewriter b{OpBuilder(op)};
+  IRRewriter b{OpBuilder(op)};
   if (auto create = dyn_cast<PackCreateOp>(op)) {
     b.replaceOpWithNewOp<StructCreateOp>(create, create->getResultTypes(),
                                          create.getElements());
