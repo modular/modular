@@ -390,8 +390,8 @@ def LIT_UnpackedAttr : LITTypedAttr<"Unpacked", "unpacked"> {
     parameter lists that autoparameterize the containing declaration.
   }];
 
-  let parameters = (ins);
-  let assemblyFormat = "";
+  let parameters = (ins "bool":$kwOnly);
+  let assemblyFormat = "`<` custom<UnpackKind>($kwOnly) `>`";
 
   let extraClassDeclaration = [{
     UnpackedType getType() const;
