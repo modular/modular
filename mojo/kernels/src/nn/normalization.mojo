@@ -35,7 +35,7 @@ from register import mogg_register
 from runtime.asyncrt import MojoCallContextPtr, parallelism_level
 from runtime.tracing import Trace, TraceLevel, trace_arg
 
-from utils.index import Index, StaticIntTuple, StaticTuple
+from utils.index import Index, StaticIntTuple
 from utils.numerics import get_accum_type
 
 from .reshape import reshape
@@ -277,7 +277,7 @@ fn layer_norm_gpu_warp_tiling[
         thread_mean, thread_m2, thread_count, row_mean, row_m2, row_count
     )
 
-    var row_var = max((row_m2 / (row_count - 1)), 0.0)
+    var row_var = max(row_m2 / row_count, 0.0)
     var norm_factor = isqrt(row_var + epsilon.cast[accum_type]())
 
     if idx < num_cols:
@@ -334,7 +334,7 @@ fn layer_norm_gpu_block[
             thread_mean, thread_m2, thread_count, row_mean, row_m2, row_count
         )
 
-    var row_var = max(row_m2 / (row_count - 1), 0)
+    var row_var = max(row_m2 / row_count, 0)
     var norm_factor = isqrt(row_var + epsilon.cast[accum_type]())
 
     # need a pass again to perform in place normalization
