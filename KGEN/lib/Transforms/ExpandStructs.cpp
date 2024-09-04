@@ -70,7 +70,7 @@ void ExpandStructsPass::rewriteFn(Operation *op,
   if (kind == CallFlow::None)
     return recursiveRewrite(op, replacer);
 
-  mlir::IRRewriter b{OpBuilder(op)};
+  IRRewriter b{OpBuilder(op)};
   if (kind & CallFlow::In)
     flattenStructsInOperands(b, op);
 

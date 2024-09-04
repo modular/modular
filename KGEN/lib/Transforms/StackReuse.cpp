@@ -412,7 +412,7 @@ static void processRegion(
       // just replace the use of the stack allocation because the point at
       // which the GEP/offset occurs could have a different value for the
       // alloc than at the load.
-      mlir::ImplicitLocOpBuilder b(load.getLoc(), OpBuilder(load));
+      ImplicitLocOpBuilder b(load.getLoc(), OpBuilder(load));
       OpOperand *operand = &load->getOpOperand(0);
       for (Operation *defOp = operand->get().getDefiningOp(); defOp != alloc;
            defOp = operand->get().getDefiningOp()) {

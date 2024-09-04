@@ -200,7 +200,7 @@ def KGEN_GeneratorUserOpInterface : OpInterface<"GeneratorUserOpInterface"> {
       This method plugs into the elaborator. It is invoked on the operation when
       its callee has been concretized into a symbol constant. The method should
       use the builder to create a new operation that invokes the callee.
-    }], "void", "concretizeCallee", (ins "mlir::IRRewriter &":$b,
+    }], "void", "concretizeCallee", (ins "IRRewriter &":$b,
                                          "SymbolConstantAttr":$callee), [{}], [{
       $_op.setCalleeAttr(callee);
     }]>

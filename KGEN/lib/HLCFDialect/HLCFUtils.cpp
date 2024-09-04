@@ -71,7 +71,7 @@ HLCF::IfOp HLCF::replaceElifWithIfOps(ElifOp elifOp) {
     if (auto elifYieldOp = dyn_cast<HLCF::ElifYieldOp>(terminator)) {
       auto newIfOp = builder.create<HLCF::IfOp>(elifOp.getResultTypes(),
                                                 elifYieldOp->getOperand(0));
-      mlir::IRRewriter rewriter{builder};
+      IRRewriter rewriter{builder};
       rewriter.replaceOp(elifYieldOp,
                          builder.create<HLCF::YieldOp>(newIfOp.getResults()));
       currentRegion = &newIfOp.getThenRegion();
@@ -84,7 +84,7 @@ HLCF::IfOp HLCF::replaceElifWithIfOps(ElifOp elifOp) {
   }
   currentRegion->takeBody(elifOp.getElseRegion());
   builder.setInsertionPoint(elifOp);
-  mlir::IRRewriter rewriter{builder};
+  IRRewriter rewriter{builder};
   rewriter.replaceOp(elifOp, outerMostIfOp);
   return outerMostIfOp;
 }

@@ -670,7 +670,7 @@ Elaborator::processGeneratorUser(GeneratorUserOpInterface user,
 
   // Regardless if the callee node is ready or not, we can concretize the callee
   // symbol reference immediately.
-  mlir::IRRewriter b{OpBuilder(user)};
+  IRRewriter b{OpBuilder(user)};
   auto newCallee = SymbolConstantAttr::get(
       FlatSymbolRefAttr::get(concreteSymName), calleeSymbol.getType());
   user.concretizeCallee(b, newCallee);
@@ -1002,7 +1002,7 @@ ElaborationState Elaborator::processParamForOp(ImplNode *parent,
   // generated iteration. This way, we can lower `continue` to a break to the
   // wrapper loop to model exiting a single iteration and lower `break` to a
   // break to the outer loop to model exiting the whole loop.
-  mlir::IRRewriter b{OpBuilder(op)};
+  IRRewriter b{OpBuilder(op)};
   StringAttr outerLabel = b.getStringAttr("param_for_outer");
   auto outerLoop = b.create<HLCF::LoopOp>(op.getLoc(), resultTypes, outerLabel);
   b.createBlock(&outerLoop.getBody());
@@ -1021,13 +1021,13 @@ ElaborationState Elaborator::processParamForOp(ImplNode *parent,
         if (isa<ParamForOp>(op))
           return WalkResult::skip();
         if (isa<ParamForBreakOp>(op)) {
-          mlir::IRRewriter b{OpBuilder(op)};
+          IRRewriter b{OpBuilder(op)};
           b.replaceOpWithNewOp<HLCF::BreakOp>(op, op->getOperands(),
                                               outerLabel);
           return WalkResult::advance();
         }
         if (isa<ParamForContinueOp>(op)) {
-          mlir::IRRewriter b{OpBuilder(op)};
+          IRRewriter b{OpBuilder(op)};
           b.replaceOpWithNewOp<HLCF::BreakOp>(op, op->getOperands());
           return WalkResult::advance();
         }

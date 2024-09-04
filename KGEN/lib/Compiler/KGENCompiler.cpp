@@ -219,7 +219,7 @@ compileCustomCanonicalizationFns(
   auto dict = DictionaryAttr::get(
       ctx,
       {NamedAttribute(StringAttr::get("MLIRCAPI_LINKED", StringType::get(ctx)),
-                      mlir::UnitAttr::get(ctx))});
+                      UnitAttr::get(ctx))});
   theModule->setAttr(EnvAttr::getEnvAttrName(), EnvAttr::get(dict));
 
   // Run the KGEN pipeline, and compile it to an archive.
@@ -502,7 +502,7 @@ ErrorOrSuccess KGENCompiler::runKGENPipeline(ModuleOp theModule,
 
 static mlir::PassManager
 createPassManager(const std::optional<std::string> &operationName,
-                  mlir::MLIRContext *context) {
+                  MLIRContext *context) {
   if (operationName)
     return {context, *operationName};
   return {context};

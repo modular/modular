@@ -136,7 +136,7 @@ void SimplifyCF::walkPreorder(Region &region) {
 bool SimplifyCF::tryRemovingLoop(LoopOp loop) {
   Block &body = loop.getBody().front();
   int count = jumpsCount[loop];
-  mlir::IRRewriter b{OpBuilder(loop)};
+  IRRewriter b{OpBuilder(loop)};
 
   // Fold loops with a single break to that loop.
   StringAttr label;
@@ -187,7 +187,7 @@ bool SimplifyCF::tryRemovingLoop(LoopOp loop) {
 /// C
 /// ```
 static void removeTrivialTry(LIT::TryOp op) {
-  mlir::IRRewriter b{OpBuilder(op)};
+  IRRewriter b{OpBuilder(op)};
 
   // We know the 'try' body has no raises, meaning it always reaches its
   // terminator or early exits to a parent region.

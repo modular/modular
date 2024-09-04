@@ -758,7 +758,7 @@ struct Test::TestDiscovery {
   }
 
   AsyncRT::Runtime &runtime;
-  mlir::MLIRContext ctx{mlir::MLIRContext::Threading::DISABLED};
+  MLIRContext ctx{MLIRContext::Threading::DISABLED};
   ArrayRef<std::string> additionalImportPaths;
 };
 

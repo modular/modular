@@ -1413,7 +1413,7 @@ def POP_GlobalConstantOp : POPOp<"global_constant", [Pure]> {
   }];
 
   let builders = [
-    OpBuilder<(ins "mlir::Type":$result, "TypedAttr":$value)>
+    OpBuilder<(ins "Type":$result, "TypedAttr":$value)>
   ];
 
   let hasVerifier = 1;

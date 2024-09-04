@@ -281,7 +281,7 @@ namespace {} // namespace
 
 namespace {
 /// Struct operations need to refer to the struct declaration symbol.
-struct LITTypeLowerer : public mlir::IRRewriter, mlir::AttrTypeReplacer {
+struct LITTypeLowerer : public IRRewriter, mlir::AttrTypeReplacer {
   explicit LITTypeLowerer(MLIRContext *ctx, StructDecls &structDecls);
 
   /// Get the index of the struct field.

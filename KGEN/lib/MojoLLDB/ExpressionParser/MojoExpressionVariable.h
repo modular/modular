@@ -179,7 +179,7 @@ public:
   /// Collect the name and type of the current persistent variables within the
   /// given state.
   void collectPersistentVariables(
-      SmallVectorImpl<std::pair<StringRef, mlir::Type>> &variables);
+      SmallVectorImpl<std::pair<StringRef, Type>> &variables);
 
 private:
   /// Instance state associated with successful expression evaluations.

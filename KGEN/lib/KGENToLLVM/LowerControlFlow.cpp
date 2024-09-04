@@ -44,7 +44,7 @@ struct ControlFlowConverter {
   LogicalResult lowerReturn(KGEN::ReturnOp op, ValueRange operands);
 
   /// The rewriter to use.
-  mlir::IRRewriter b;
+  IRRewriter b;
 
   /// The control flow tree analysis.
   const ControlFlowTree &tree;
@@ -297,6 +297,6 @@ void LowerControlFlowPass::runOnOperation() {
     return signalPassFailure();
 
   // Erase unreachable blocks that might arise during HLCF lowering.
-  mlir::IRRewriter rewriter(&getContext());
+  IRRewriter rewriter(&getContext());
   (void)mlir::eraseUnreachableBlocks(rewriter, getOperation()->getRegions());
 }

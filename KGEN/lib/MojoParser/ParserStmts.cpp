@@ -1969,7 +1969,7 @@ ParseResult StmtParser::parseElif(Location ifLoc, LexerCursor startCursor,
   auto appendElifRegionPair = [&]() {
     // We need to add two regions.
     builder.setInsertionPoint(elifOp);
-    mlir::IRRewriter rewriter{builder};
+    IRRewriter rewriter{builder};
     HLCF::ElifOp replacement =
         builder.create<HLCF::ElifOp>(elifOp.getLoc(), elifOp->getResultTypes(),
                                      elifOp.getElifRegions().size() + 2);

@@ -551,7 +551,7 @@ static void adaptDebugEmissionKind(ModuleOp module, StringRef targetTriple,
 
 static mlir::PassManager
 createPassManager(const std::optional<std::string> &operationName,
-                  mlir::MLIRContext *context) {
+                  MLIRContext *context) {
   if (operationName)
     return {context, *operationName};
   return {context};

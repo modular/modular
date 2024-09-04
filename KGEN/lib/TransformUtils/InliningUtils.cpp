@@ -26,7 +26,7 @@ using namespace KGEN;
 std::pair<Operation *, bool> KGEN::inlineRegion(IRMapping &map,
                                                 KGENCallOpInterface call,
                                                 Region &region, bool takeBody) {
-  mlir::IRRewriter b{OpBuilder(call)};
+  IRRewriter b{OpBuilder(call)};
   return inlineRegion(b, map, call, call->getOperands(), region, takeBody);
 }
 
@@ -216,7 +216,7 @@ void KGEN::updateScopeDebugInfoFrom(Operation *scope, IntegerAttr tag,
 
   // If this scope is a trivial control-flow scope, fold it away.
   if (singleExit) {
-    mlir::IRRewriter b{OpBuilder(scope)};
+    IRRewriter b{OpBuilder(scope)};
     foldTrivialLoop(b, scope);
   }
 }
@@ -253,7 +253,7 @@ void KGEN::maybeUpdateDebugInfo(Operation *scope,
       updateScopeDebugInfoFrom(scope, tag, nullptr);
     }
   } else if (singleExit) {
-    mlir::IRRewriter b{OpBuilder(scope)};
+    IRRewriter b{OpBuilder(scope)};
     foldTrivialLoop(b, scope);
   }
 }

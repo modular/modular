@@ -291,8 +291,7 @@ DeclResolver::aliasDeclsImpl(ArrayRef<ASTDecl *> decls, StringAttr name,
         // set. We also need to remove the by-ref result type from the
         // input types, so that aliasing is strictly based on the actual
         // inputs.
-        auto getActualArgs =
-            [](LITSignatureType signature) -> ArrayRef<mlir::Type> {
+        auto getActualArgs = [](LITSignatureType signature) -> ArrayRef<Type> {
           ArrayRef<Type> inputTypes = signature.getArguments();
           // Drop the trailing result slots. Memory-only functions and throwing
           // functions each add a result slot.

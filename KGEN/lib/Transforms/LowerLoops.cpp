@@ -46,7 +46,7 @@ private:
 LogicalResult LowerLoops::lowerForLoop(ForOp forLoop) {
   Block &body = forLoop.getBody().front();
 
-  mlir::IRRewriter rewriter{OpBuilder(forLoop)};
+  IRRewriter rewriter{OpBuilder(forLoop)};
 
   // Create HLCF::LoopOp.
   auto loop = rewriter.create<LoopOp>(

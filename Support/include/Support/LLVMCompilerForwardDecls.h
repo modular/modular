@@ -32,6 +32,7 @@ class Attribute;
 class BFloat16Type;
 class Block;
 class IRMapping;
+class IRRewriter;
 class BlockArgument;
 class BoolAttr;
 class Builder;
@@ -115,6 +116,7 @@ class TypeID;
 class TypeRange;
 class TypeStorage;
 class TypedAttr;
+class UnitAttr;
 class UnknownLoc;
 class Value;
 class ValueRange;
@@ -170,6 +172,7 @@ using mlir::DenseI8ArrayAttr;
 using mlir::DenseIntElementsAttr;
 using mlir::DenseResourceElementsAttr;
 using mlir::IRMapping;
+using mlir::IRRewriter;
 using DenseResourceElementsHandle =
     mlir::DialectResourceBlobHandle<mlir::BuiltinDialect>;
 using DenseResourceElementsHandleManager =
@@ -252,6 +255,7 @@ using TypedValue =
                        mlir::detail::TypedValue<Ty>>;
 using mlir::TypeRange;
 using mlir::TypeStorage;
+using mlir::UnitAttr;
 using mlir::UnknownLoc;
 using mlir::Value;
 using mlir::ValueRange;

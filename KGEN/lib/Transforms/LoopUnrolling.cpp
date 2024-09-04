@@ -70,7 +70,7 @@ void LoopUnrolling::walkLoopsPreorder(Operation *cur) {
 static SmallVector<Value>
 mergeOrInlineUnrollBlock(Block *dest, Block *original, int64_t urollFactorN,
                          bool copyLastIter, bool isUnrollByFactor,
-                         bool hasParentFor, mlir::IRRewriter &rewriter,
+                         bool hasParentFor, IRRewriter &rewriter,
                          Operation *inlineBeforeOp, ValueRange initValues) {
   SmallVector<Value> retValues = initValues;
   ForYieldOp newForYield;
@@ -166,7 +166,7 @@ LogicalResult LoopUnrolling::unrollForLoopN(ForOp loop, int64_t unrollFactorN) {
   if (!count)
     return failure();
 
-  mlir::IRRewriter rewriter{OpBuilder(loop)};
+  IRRewriter rewriter{OpBuilder(loop)};
 
   int64_t lowerBound = loop.getLowerBoundAsInt().value();
   int64_t step = loop.getStepAsInt().value();

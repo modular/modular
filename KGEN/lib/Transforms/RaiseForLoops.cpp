@@ -482,7 +482,7 @@ LogicalResult RaiseForLoops::raiseForLoops(LoopOp loop,
               "unroll";
   }
 
-  mlir::IRRewriter rewriter{OpBuilder(loop)};
+  IRRewriter rewriter{OpBuilder(loop)};
 
   // Collect return value arg numbers (indices).
   llvm::SetVector<int64_t> returnValueArgNumbers;

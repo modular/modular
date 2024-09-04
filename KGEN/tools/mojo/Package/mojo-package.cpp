@@ -163,7 +163,7 @@ struct PackageArgs {
   /// Compilation options common to all Mojo builds.
   CompilationOptions compileOptions;
   /// The MLIR context used for compilation.
-  mlir::MLIRContext ctx{MLIRContext::Threading::DISABLED};
+  MLIRContext ctx{MLIRContext::Threading::DISABLED};
 };
 } // namespace
 

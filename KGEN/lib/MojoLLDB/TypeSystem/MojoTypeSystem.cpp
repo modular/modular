@@ -157,7 +157,7 @@ struct MojoTypeSystem::Impl {
 
   /// The MLIR context to use for compilation/processing associated with this
   /// typesystem.
-  MLIRContext mlirContext{mlir::MLIRContext::Threading::DISABLED};
+  MLIRContext mlirContext{MLIRContext::Threading::DISABLED};
 
   /// The AsyncRT runtime to use for compilation/processing associated with this
   /// type system. This is derived from the context available in the
