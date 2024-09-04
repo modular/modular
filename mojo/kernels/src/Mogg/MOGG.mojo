@@ -2134,6 +2134,7 @@ fn matmul[
         StaticIntTuple[rank], SIMD[c_type, width]
     ) capturing -> None,
     /,
+    trace_description: StringLiteral,
     target: StringLiteral = "cpu",
 ](
     a: NDBuffer[a_type, 2, input_0_static_shape],
@@ -2172,6 +2173,7 @@ fn matmul[
         saturated_vnni=False,
         single_thread_blocking_override=single_thread_blocking_override,
         target=target,
+        trace_description=trace_description,
     ](c, a, b, ctx)
 
 
