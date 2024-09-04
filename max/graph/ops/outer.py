@@ -5,6 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 """Op implementation for outer."""
 
+from .. import dtype_promotion
 from ..value import TensorValue, ValueLike
 from .reshape import reshape
 
@@ -25,8 +26,7 @@ def outer(lhs: ValueLike, rhs: ValueLike) -> TensorValue:
         of the two input vectors. It will have rank 2, with the dimension
         sizes being the number of elements of `lhs` and `rhs` respectively.
     """
-    lhs = TensorValue(lhs)
-    rhs = TensorValue(rhs)
+    lhs, rhs = dtype_promotion._promote_weak_dtypes((lhs, rhs))
     if lhs.rank != 1 or rhs.rank != 1:
         raise ValueError("outer expected 1d-tensors as inputs")
     return reshape(lhs, [-1, 1]) * reshape(rhs, [1, -1])

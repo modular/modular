@@ -1,0 +1,156 @@
+# ===----------------------------------------------------------------------=== #
+#
+# This file is Modular Inc proprietary.
+#
+# ===----------------------------------------------------------------------=== #
+"""Handles DType promotion for TensorValues.
+
+DType promotion in the graph api is used to decide the DType of the output of an operations with multiple inputs.
+Not all operations have DType promotion, but most binary and mathematical ops have promotion.
+
+DType promotion will always return one of the input dtypes.
+This avoids accidentally over promoting and harming performance.
+
+The target DType for promoting a value `x` and `y` is:
+    `(max(category(x), category(y)), max(bitwidth(x), bitwidth(y))`
+
+Where category is an ordered hierachy of: `bool < unsigned int < signed int < float`
+
+If all input dtypes can be fully represented by the target dtype, the promotion is successful.
+If an input can not be guaranteed representable (e.g. `uint8` -> `int8`), an error is raised.
+
+DType promotion of a max object and a non-max object will only ever promote to the max object DType.
+An error will be raised if the values in the non-max object are not representable in the max object DType.
+
+If only non-max objects attempt promotion, it will always fail.
+"""
+
+from typing import Iterable
+
+import numpy as np
+from max import mlir
+from max.dtype import DType
+
+from . import ops
+from .weight import Weight
+from .value import Value, TensorValue, ValueLike, StrongValueLike
+
+
+def _promote_weak_dtypes(values: Iterable[ValueLike]) -> Iterable[TensorValue]:
+    """Promotes weak dtypes on ValueLike objects.
+
+    Most of dtype promotion is dealt with in RMO.
+    This function specifically deals with promotion of non-max objects.
+    All non-max objects have a weak dtype and will promote to a max object dtype.
+    That said, we will always scan the non-max object to ensure it is representable in the max object dtype.
+    """
+    values = list(values)
+    if len(values) == 0 or len(values) > 2:
+        raise ValueError("weak DType promotion must have 1 or 2 inputs")
+
+    if len(values) == 1:
+        value = values[0]
+        if _is_strong(value):
+            # Valid unary op with proper dtype.
+            return (TensorValue(value),)
+        else:
+            # TODO: Maybe special case numpy array with non int64/float64 input.
+            # Theoretically, that is an explicitly set dtype.
+
+            # Non-max object with unary op.
+            # This often is a bug and leads to overpromotion.
+            raise TypeError(
+                "Unary ops do not support non-max objects as input. Non-max"
+                " objects tend to overpromote the dtype, leading to significant"
+                " loss of performance. Please explicitly convert the input to a"
+                " graph.Value. This can be done with ops.constant or"
+                " ops.scalar."
+            )
+    elif len(values) == 2:
+        if _is_strong(values[0]) and _is_strong(values[1]):
+            return (TensorValue(values[0]), TensorValue(values[1]))
+
+        if not _is_strong(values[0]) and not _is_strong(values[1]):
+            raise TypeError(
+                "Binary ops require at least one max object as input. Non-max"
+                " objects tend to overpromote the dtype, leading to significant"
+                " loss of performance. Please explicitly convert at least one"
+                " input to a graph.Value. This can be done with ops.constant or"
+                " ops.scalar."
+            )
+
+        if _is_strong(values[0]):
+            max_value = TensorValue(values[0])
+            return (max_value, _promote_to(values[1], max_value.dtype))
+        else:
+            max_value = TensorValue(values[1])
+            return (_promote_to(values[0], max_value.dtype), max_value)
+
+
+def _promote_to(value: ValueLike, out_dtype: DType) -> TensorValue:
+    if isinstance(value, (int, np.integer)):
+        min, max = _DTYPE_MIN_AND_MAX_FULL_PRECISION[out_dtype]
+        if min <= value <= max:
+            return ops.scalar(value, out_dtype)
+
+        raise ValueError(
+            f"Unsafe cast: Can't promote python int with value ({value}) to"
+            f" dtype({out_dtype}). It would lose precision."
+        )
+
+    elif isinstance(value, (float, np.floating)):
+        if out_dtype.is_float():
+            return ops.scalar(value, out_dtype)
+
+        raise ValueError(
+            f"Unsafe cast: Can't promote python float to dtype({out_dtype})."
+        )
+
+    elif isinstance(value, (np.ndarray)):
+        if DType.from_numpy(value.dtype).is_float():
+            if out_dtype.is_float():
+                return ops.constant(value, out_dtype)
+            else:
+                raise ValueError(
+                    "Unsafe cast: Can't promote numpy float array to"
+                    f" dtype({out_dtype})."
+                )
+
+        min, max = _DTYPE_MIN_AND_MAX_FULL_PRECISION[out_dtype]
+        if np.all(min <= value) and np.all(value <= max):
+            return ops.constant(value, out_dtype)
+
+        raise ValueError(
+            "Unsafe cast: Can't promote numpy integer array with value"
+            f" ({value}) to dtype({out_dtype}). It would lose precision."
+        )
+
+    else:
+        raise TypeError(
+            "_promote_weak_dtypes() argument must be a ValueLike, not"
+            f" '{type(value).__name__}'"
+        )
+
+
+def _is_strong(value: ValueLike) -> bool:
+    return isinstance(value, StrongValueLike)
+
+
+# For each DType, this is the range of values where a conversion would not lose precision.
+# This is used for conversions from python/numpy int to said DType.
+_DTYPE_MIN_AND_MAX_FULL_PRECISION = {
+    DType.bool: (0, 1),
+    DType.int8: (-(2**7), 2**7 - 1),
+    DType.int16: (-(2**15), 2**15 - 1),
+    DType.int32: (-(2**31), 2**31 - 1),
+    DType.int64: (-(2**63), 2**63 - 1),
+    DType.uint8: (0, 2**8 - 1),
+    DType.uint16: (0, 2**16 - 1),
+    DType.uint32: (0, 2**32 - 1),
+    DType.uint64: (0, 2**64 - 1),
+    # This is two to the power of the number of significand bits plus one.
+    DType.bfloat16: (-(2**8), 2**8),
+    DType.float16: (-(2**11), 2**11),
+    DType.float32: (-(2**24), 2**24),
+    DType.float64: (-(2**53), 2**53),
+}

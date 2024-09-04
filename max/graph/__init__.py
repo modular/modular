@@ -10,3 +10,4 @@ from .graph import Graph
 from .value import Value, TensorValue, ValueLike
 from .type import DimLike, TensorType, Type
 from .weight import Weight
+from . import dtype_promotion

@@ -71,7 +71,7 @@ def test_weight_is_value_like() -> None:
             dtype=DType.float32,
             shape=[],
         )
-        constant = ops.constant(np.array(1, dtype=np.float32))
+        constant = ops.constant(np.array(1), DType.float32)
         graph.output(constant + w)
         gen_mlir = str(graph._mlir_op)
         assert re.search(

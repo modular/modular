@@ -7,7 +7,9 @@
 
 import numpy as np
 from max.mlir.dialects import rmo
+from max.dtype import DType
 
+from .constant import scalar
 from ..graph import Graph
 from ..value import TensorValue, ValueLike
 from ..type import Dim, Shape, TensorType
@@ -33,5 +35,5 @@ def mean(x: ValueLike, axis=-1) -> TensorValue:
     shape[axis] = Dim(1)
     type = TensorType(gv.dtype, shape)
     return Graph.current._add_op(
-        rmo.mo_mean, type.to_mlir(), gv, TensorValue(np.array(axis))
+        rmo.mo_mean, type.to_mlir(), gv, scalar(axis, DType.int64)
     )[0].tensor

@@ -6,8 +6,10 @@
 """Op implementation for transpose."""
 
 import numpy as np
+from max.dtype import DType
 from max.mlir.dialects import rmo
 
+from .constant import constant
 from ..graph import Graph
 from ..value import TensorValue, TensorType, ValueLike
 
@@ -46,5 +48,5 @@ def transpose(x: ValueLike, dim_1: int, dim_2: int) -> TensorValue:
         rmo.mo_transpose,
         TensorType(dtype=v.dtype, shape=new_shape).to_mlir(),
         v,
-        TensorValue(indices),
+        constant(indices, DType.int64),
     )[0].tensor

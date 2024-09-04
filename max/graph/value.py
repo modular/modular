@@ -51,7 +51,7 @@ class Value:
             return super().__new__(TensorValue)
         elif isinstance(value, Value):
             return super().__new__(type(value))
-        elif isinstance(value, (np.ndarray, Weight)):
+        elif isinstance(value, (int, float, np.ndarray, Weight)):
             return super().__new__(TensorValue)
         else:
             raise TypeError(
@@ -91,15 +91,18 @@ class TensorValue(Value):
                 )
         elif isinstance(value, TensorValue):
             self._mlir_value = value._mlir_value
-        elif isinstance(value, np.ndarray):
-            self._mlir_value = ops.constant(value)._mlir_value
         elif isinstance(value, Weight):
             self._mlir_value = graph.Graph.current.add_weight(value)._mlir_value
+        elif isinstance(value, (int, float, np.ndarray)):
+            raise TypeError(
+                "TensorValue() can not be created directly from a"
+                f" '{type(value).__name__}'. Use ops.constant or ops.scalar to"
+                " convert to a TensorValue with a specific dtype."
+            )
         else:
             raise TypeError(
-                "TensorValue() argument must be a mlir.Value of tensor type, a"
-                " graph.TensorValue, or an np.ndarray, not"
-                f" '{type(value).__name__}'"
+                "TensorValue() argument must be a mlir.Value of tensor type,"
+                f" or a graph.TensorValue, not '{type(value).__name__}'"
             )
 
     # TODO(MSDK-662): Should both DimLike and ShapeLike be considered ValueLike now?
@@ -151,6 +154,9 @@ class TensorValue(Value):
     def reshape(self, shape: ShapeLike) -> TensorValue:
         return ops.reshape(self, shape)
 
+    def cast(self, dtype: DType) -> TensorValue:
+        return ops.cast(self, dtype)
+
     def rebind(self, shape: ShapeLike) -> TensorValue:
         # For rebind, we create a runtime stack location as the message.
         frame = inspect.currentframe()
@@ -170,7 +176,7 @@ class TensorValue(Value):
 
     def __eq__(self, rhs: Any) -> TensorValue:  # type: ignore[override]
         if _is_value_like(rhs):
-            return ops.equal(self, TensorValue(rhs))
+            return ops.equal(self, rhs)
         else:
             raise TypeError(
                 "'==' not supported between instance of"
@@ -182,7 +188,7 @@ class TensorValue(Value):
 
     def __ne__(self, rhs: Any) -> TensorValue:  # type: ignore[override]
         if _is_value_like(rhs):
-            return ops.not_equal(self, TensorValue(rhs))
+            return ops.not_equal(self, rhs)
         else:
             raise TypeError(
                 "'!=' not supported between instance of"
@@ -191,7 +197,7 @@ class TensorValue(Value):
 
     def __ge__(self, rhs: Any) -> TensorValue:
         if _is_value_like(rhs):
-            return ops.greater_equal(self, TensorValue(rhs))
+            return ops.greater_equal(self, rhs)
         else:
             raise TypeError(
                 "'>=' not supported between instance of"
@@ -200,7 +206,7 @@ class TensorValue(Value):
 
     def __gt__(self, rhs: Any) -> TensorValue:
         if _is_value_like(rhs):
-            return ops.greater(self, TensorValue(rhs))
+            return ops.greater(self, rhs)
         else:
             raise TypeError(
                 f"'>' not supported between instance of '{type(self).__name__}'"
@@ -214,63 +220,64 @@ class TensorValue(Value):
         return ops.logical_not(self > rhs)
 
     def __add__(self, rhs: ValueLike) -> TensorValue:
-        return ops.add(self, TensorValue(rhs))
+        return ops.add(self, rhs)
 
     def __radd__(self, lhs: ValueLike) -> TensorValue:
-        return ops.add(TensorValue(lhs), self)
+        return ops.add(lhs, self)
 
     def __sub__(self, rhs: ValueLike) -> TensorValue:
-        return ops.sub(self, TensorValue(rhs))
+        return ops.sub(self, rhs)
 
     def __rsub__(self, lhs: ValueLike) -> TensorValue:
-        return ops.sub(TensorValue(lhs), self)
+        return ops.sub(lhs, self)
 
     def __mul__(self, rhs: ValueLike) -> TensorValue:
-        return ops.mul(self, TensorValue(rhs))
+        return ops.mul(self, rhs)
 
     def __rmul__(self, lhs: ValueLike) -> TensorValue:
-        return ops.mul(TensorValue(lhs), self)
+        return ops.mul(lhs, self)
 
     def __truediv__(self, rhs: ValueLike) -> TensorValue:
-        return ops.div(self, TensorValue(rhs))
+        return ops.div(self, rhs)
 
     def __rtruediv__(self, lhs: ValueLike) -> TensorValue:
-        return ops.div(TensorValue(lhs), self)
+        return ops.div(lhs, self)
 
     def __floordiv__(self, rhs: ValueLike) -> TensorValue:
-        return ops.floor(ops.div(self, TensorValue(rhs)))
+        return ops.floor(ops.div(self, rhs))
 
     def __rfloordiv__(self, lhs: ValueLike) -> TensorValue:
-        return ops.floor(ops.div(TensorValue(lhs), self))
+        return ops.floor(ops.div(lhs, self))
 
     def __mod__(self, rhs: ValueLike) -> TensorValue:
-        return ops.mod(self, TensorValue(rhs))
+        return ops.mod(self, rhs)
 
     def __rmod__(self, lhs: ValueLike) -> TensorValue:
-        return ops.mod(TensorValue(lhs), self)
+        return ops.mod(lhs, self)
 
     def __divmod__(self, rhs: ValueLike) -> tuple[TensorValue, TensorValue]:
-        rhs = TensorValue(rhs)
         return (self // rhs, self % rhs)
 
     def __rdivmod__(self, lhs: ValueLike) -> tuple[TensorValue, TensorValue]:
-        lhs = TensorValue(lhs)
         return (lhs // self, lhs % self)
 
     def __matmul__(self, rhs: ValueLike) -> TensorValue:
-        return ops.matmul(self, TensorValue(rhs))
+        return ops.matmul(self, rhs)
 
     def __rmatmul__(self, lhs: ValueLike) -> TensorValue:
-        return ops.matmul(TensorValue(lhs), self)
+        return ops.matmul(lhs, self)
 
     def __pow__(self, rhs: ValueLike) -> TensorValue:
-        return ops.pow(self, TensorValue(rhs))
+        return ops.pow(self, rhs)
 
     def __rpow__(self, lhs: ValueLike) -> TensorValue:
-        return ops.pow(TensorValue(lhs), self)
+        return ops.pow(lhs, self)
 
 
-ValueLike = Union[mlir.Value, Value, np.ndarray, Weight]
+StrongValueLike = Union[mlir.Value, Value, Weight]
+ValueLike = Union[
+    StrongValueLike, float, int, np.ndarray, np.floating, np.integer
+]
 
 
 def _is_value_like(obj: Any) -> TypeGuard[ValueLike]:

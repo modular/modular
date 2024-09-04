@@ -52,3 +52,10 @@ def test_sub__broadcast__operator(types: list[TensorType]):
         i0, i1 = graph.inputs
         assert (i0 - i1).shape == broadcast_shape
         assert (i1 - i0).shape == broadcast_shape
+
+
+@given(tensor_type=...)
+def test_sub__python_int__operator(tensor_type: TensorType):
+    with Graph("sub", input_types=[tensor_type, tensor_type]) as graph:
+        op = graph.inputs[0] - 1
+        assert op.type == tensor_type

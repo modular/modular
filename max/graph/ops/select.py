@@ -7,6 +7,7 @@
 
 from max.mlir.dialects import rmo
 
+from .. import dtype_promotion
 from ..graph import Graph
 from ..value import TensorValue, ValueLike
 
@@ -28,6 +29,5 @@ def select(cond: ValueLike, x: ValueLike, y: ValueLike) -> TensorValue:
         A new symbolic tensor holding either values from either ``x`` or ``y``,
         based on the elements in `condition`.
     """
-    return Graph.current._add_op(
-        rmo.select, TensorValue(cond), TensorValue(x), TensorValue(y)
-    )[0].tensor
+    x, y = dtype_promotion._promote_weak_dtypes((x, y))
+    return Graph.current._add_op(rmo.select, TensorValue(cond), x, y)[0].tensor

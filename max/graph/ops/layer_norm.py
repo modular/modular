@@ -8,6 +8,8 @@
 import numpy as np
 from max.mlir.dialects import mo
 
+from .. import dtype_promotion
+from .constant import scalar
 from ..graph import Graph
 from ..value import TensorValue, ValueLike
 
@@ -26,11 +28,13 @@ def layer_norm(
     Returns:
         A graph tensor value with the normalization applied.
     """
+    input, gamma = dtype_promotion._promote_weak_dtypes((input, gamma))
+    input, beta = dtype_promotion._promote_weak_dtypes((input, beta))
     return Graph.current._add_op(
         mo.layer_norm,
         input._mlir_value.type,
         input,
-        TensorValue(gamma),
-        TensorValue(beta),
-        TensorValue(np.array(epsilon)),
+        gamma,
+        beta,
+        scalar(epsilon, input.dtype),
     )[0].tensor
