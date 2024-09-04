@@ -7,6 +7,7 @@
 # RUN: %parse-mojo-isolated %s -verify-diagnostics
 
 
+# expected-note @+1 {{declared here}}
 struct Parametric[a: int]:
     pass
 
@@ -15,16 +16,13 @@ fn takes_var_params[*a: int]():
     pass
 
 
-# expected-note @+1 {{declared here}}
-struct VarParamStruct[*args: Int]:
-    pass
-
-
 fn test_unbound_pack_with_variadic():
-    # expected-error @+1 {{unbound syntax (i.e. `_`) cannot be passed as a variadic parameter}}
-    VarParamStruct[*_]
     # expected-error @+1 {{cannot read from discard pattern '_'}}
     takes_var_params[*_]
+    # expected-error @+1 {{unbound pack `*_` must be the last positional parameter}}
+    Parametric[*_, `2`]
+    # expected-error @+1 {{unbound pack `*_` must be the last positional parameter}}
+    Parametric[*_, `1`, *_]
 
 
 fn test_unpack_non_literal[*a: int]():

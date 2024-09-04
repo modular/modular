@@ -10,14 +10,14 @@
 #include "KGEN/MojoParser/IRValues.h"
 #include "KGEN/MojoParser/ParserParamEvaluator.h"
 #include "KGEN/MojoParser/SharedState.h"
-#include "ParameterInference.h"
-
 #include "MojoUtils.h"
+#include "ParameterInference.h"
 
 #include "KGEN/KGENDialect/KGENAttrs.h"
 #include "KGEN/LITDialect/LITOps.h"
 #include "KGEN/LITDialect/LITTypes.h"
 #include "KGEN/LITDialect/LITUtils.h"
+#include "Support/STLExtras.h"
 
 using namespace M;
 using namespace M::KGEN;
@@ -109,43 +109,39 @@ static PValue emitSingleParameterValue(ASTExprAnd<AnyValue> binding,
 
 std::pair<ParameterExprArrayAttr, ParamBindings::Fitness>
 ParamBindings::verifyBindingsImpl(
-    const CallOperands &operands, ArrayRef<Type> expectedParamTypes,
+    const CallOperands &origOperands, ArrayRef<Type> expectedParamTypes,
     PogListAttr paramListAttr, ParameterInferenceHookTy parameterInferenceHook,
     const DiagEmitter *diagEmitter, bool partial) const {
   Fitness fitness{0, false};
 
-  // Check to see if we have *_, diagnosing invalid uses and unpacking it if so.
-  for (auto [idx, binding] : llvm::enumerate(operands.values)) {
-    // TODO: Emit an error when there is a keyword argument?
-    if (!isa<UnpackedAttr>(binding.ir.getIfPValue().get()) || binding.keyword)
+  // Check to see if we have *_ or **_ and filter them from the operand list.
+  bool unpackedPos = false;
+  bool unpackedKw = false;
+  CallOperands operands;
+  for (auto [idx, binding] : llvm::enumerate(origOperands.values)) {
+    auto unpacked = dyn_cast<UnpackedAttr>(binding.ir.getIfPValue().get());
+    if (!unpacked) {
+      operands.values.push_back(binding);
       continue;
-
-    // `*_` expands in-place to as many `_`'s needed to meet the required number
-    // of positional and posOrKw parameters. This includes clobbering parameters
-    // passed as keywords. E.g.
-    //
-    // def foo(a, b, c): pass
-    // foo(1, *_, c=10) # error: 'c' passed as positional and keyword
-    //
-    auto unboundAttr =
-        UnboundAttr::get(UnresolvedType::get(shared.getContext()));
-    ASTExprAnd<PValue> unboundBinding{PValue(unboundAttr), binding.expr};
-    ssize_t numUnbounds =
-        countNumPositional(paramListAttr) - operands.getNumPositional() + 1;
-    // `*_` will expand to nothing if there are enough/too many parameters.
-    numUnbounds = std::max<ssize_t>(0, numUnbounds);
-
-    // Calculate how many UnboundAttr's (_'s) we need to inject, and put them
-    // where the *_ was found.
-    CallOperands expandedOperands;
-    llvm::append_range(expandedOperands.values,
-                       ArrayRef(operands.values).take_front(idx));
-    expandedOperands.values.append(numUnbounds, {StringAttr(), unboundBinding});
-    llvm::append_range(expandedOperands.values,
-                       ArrayRef(operands.values).drop_front(idx + 1));
-    return verifyBindingsImpl(expandedOperands, expectedParamTypes,
-                              paramListAttr, parameterInferenceHook,
-                              diagEmitter, partial);
+    }
+    if (unpacked.getKwOnly()) {
+      unpackedKw = true;
+      // Verify that **_ is the last keyword parameter.
+      if (idx != origOperands.values.size() - 1) {
+        if (diagEmitter)
+          diagEmitter->emitUnpackedNotAtEnd(binding.expr, /*kw=*/true);
+        return {{}, fitness};
+      }
+    } else {
+      // Verify that *_ is the last positionally-passed parameter.
+      if (idx != origOperands.values.size() - 1 &&
+          !origOperands.values[idx + 1].keyword) {
+        if (diagEmitter)
+          diagEmitter->emitUnpackedNotAtEnd(binding.expr, /*kw=*/false);
+        return {{}, fitness};
+      }
+      unpackedPos = true;
+    }
   }
 
   // With that out of the way, we can now get onto normal type checking of
@@ -227,11 +223,18 @@ ParamBindings::verifyBindingsImpl(
   };
 
   DefaultValueHandler defaultHandler(paramListAttr);
-  auto fulfillValue = [&](Type requestedType) -> PValue {
+  auto fulfillValue = [&](Type requestedType, PassingKind kind) -> PValue {
     // If we have a method to infer parameter values, invoke it to see if we
     // can get an inferred value for the parameter.
     if (PValue value = inferParameter(requestedType))
       return value;
+
+    // Unbind the parameters if those of this passing kind were unbound.
+    if (((kind == PassingKind::PosOnly || kind == PassingKind::PosOrKw) &&
+         unpackedPos) ||
+        ((kind == PassingKind::PosOrKw || kind == PassingKind::KwOnly) &&
+         unpackedKw))
+      return UnboundAttr::get(requestedType);
 
     // If the parameter decl is a variadic parameter list, and do not have
     // pack operands that could be used to infer those parameters, then we can
@@ -260,7 +263,7 @@ ParamBindings::verifyBindingsImpl(
     return {};
   };
 
-  for (auto [idx, sigType, pogAttr] :
+  for (auto [idx, sigType, pog] :
        llvm::enumerate(expectedParamTypes, paramListAttr.getPogs())) {
     // This is the refined type expected by the signature.
     Type requestedType = evaluator.getReboundType(sigType);
@@ -277,8 +280,8 @@ ParamBindings::verifyBindingsImpl(
 
     // Check to see if we ran out of bindings to provide to this param decl.
     // Implicit parameters are infer-only. They cannot be explicitly passed.
-    PassingKind passingKind = pogAttr.getPassingKind();
-    StringAttr paramName = pogAttr.getName();
+    PassingKind passingKind = pog.getPassingKind();
+    StringAttr paramName = pog.getName();
     if (posBindingIdx == numBindings) {
       // We first check if we have a keyword parameter.
       if (const OperandValue *binding = operands.findKwArg(paramName)) {
@@ -298,7 +301,7 @@ ParamBindings::verifyBindingsImpl(
 
       // If we couldn't find a keyword binding for this parameter, then we must
       // be able to infer it or otherwise provide a default value.
-      if (PValue value = fulfillValue(requestedType)) {
+      if (PValue value = fulfillValue(requestedType, passingKind)) {
         setParamValue(value);
         continue;
       }
@@ -341,7 +344,7 @@ ParamBindings::verifyBindingsImpl(
     PValue bindingVal = binding.ir.getIfPValue();
     assert(bindingVal && "Parameters are always PValues");
     if (!partial && isa<UnboundAttr>(bindingVal.get())) {
-      if (PValue value = fulfillValue(requestedType)) {
+      if (PValue value = fulfillValue(requestedType, passingKind)) {
         setParamValue(value);
         ++posBindingIdx;
         continue;
@@ -443,10 +446,9 @@ ParamBindings::verifyBindingsImpl(
       elements.emplace_back(pValue);
       // Passing `_` to a variadic is not allowed. Users should pass `*_` to
       // unbind a variadic parameter.
-      // FIXME: There is no way to explicitly unbind a variadic parameter.
       if (isa<UnboundAttr>(elements.back())) {
         if (diagEmitter)
-          diagEmitter->emitUnboundInVariadic(binding);
+          diagEmitter->emitUnboundInVariadic(binding.expr);
         return {{}, fitness};
       }
     } while (posBindingIdx != numBindings);
@@ -595,10 +597,19 @@ ParamBindings::verifyBindings(ArrayRef<Type> expectedParamTypes,
         }
       },
       /*emitUnboundInVariadic=*/
-      [&](ASTExprAnd<AnyValue> binding) {
-        diag = shared.emitError(binding.expr->getLoc());
+      [&](const ExprNode *expr) {
+        diag = shared.emitError(expr->getLoc());
         *diag << "unbound syntax (i.e. `_`) cannot be passed as a variadic "
                  "parameter";
+        if (opLoc)
+          diag->attachNote(*opLoc) << baseName << " declared here";
+      },
+      /*emitUnpackedNotAtEnd=*/
+      [&](const ExprNode *expr, bool kw) {
+        diag = shared.emitError(expr->getLoc());
+        *diag << "unbound pack `" << (kw ? "**_" : "*_")
+              << "` must be the last " << (kw ? "keyword" : "positional")
+              << " parameter" << expr->getRange();
         if (opLoc)
           diag->attachNote(*opLoc) << baseName << " declared here";
       },

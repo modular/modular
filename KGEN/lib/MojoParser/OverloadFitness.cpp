@@ -748,10 +748,16 @@ OverloadFitness OverloadFitness::evaluate(LITSignatureType signature,
         inferenceDiags.attach(paramListAttr, diag);
       },
       /*emitUnboundInVariadic=*/
-      [&](ASTExprAnd<AnyValue> binding) {
+      [&](const ExprNode *expr) {
         diag << "unbound syntax (i.e. `_`) cannot be passed as a variadic "
                 "parameter"
-             << binding.expr->getRange();
+             << expr->getRange();
+      },
+      /*emitUnpackedNotAtEnd=*/
+      [&](const ExprNode *expr, bool kw) {
+        diag << "unbound pack `" << (kw ? "**_" : "*_") << "` must be the last "
+             << (kw ? "keyword" : "positional") << " parameter"
+             << expr->getRange();
       },
       /*emitInferOnlyFailure=*/
       [&](size_t paramIdx) {
