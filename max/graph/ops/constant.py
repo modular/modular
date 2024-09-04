@@ -34,6 +34,17 @@ def constant(value: np.ndarray, dtype: DType) -> TensorValue:
     Returns:
         A graph value containing the constant data as an attribute.
     """
+    if isinstance(value, (int, float, np.integer, np.floating)):
+        raise TypeError(
+            "ops.constant expects inputs to be numpy array, but got"
+            f" '{type(value).__name__}'. Use ops.scalar for this instead."
+        )
+    if not isinstance(value, (np.ndarray)):
+        raise TypeError(
+            "ops.constant expects inputs to be numpy array, but got"
+            f" '{type(value).__name__}'."
+        )
+
     if dtype == DType.bfloat16:
         # Numpy can't natively generate in bf16.
         # Generate in f32 and cast to bf16.
@@ -71,6 +82,18 @@ def scalar(
 
     Warning: Loading the scalar could result in precision loss.
     """
+    if isinstance(value, (np.ndarray)):
+        raise TypeError(
+            "ops.scalar expects inputs to int, float, np.integer, or"
+            " np.floating, but got numpy array. Use ops.constant for numpy"
+            " arrays."
+        )
+    if not isinstance(value, (int, float, np.integer, np.floating)):
+        raise TypeError(
+            "ops.scalar expects inputs to int, float, np.integer, or"
+            f" np.floating, but got '{type(value).__name__}'."
+        )
+
     if dtype == DType.bfloat16:
         # Numpy can't natively generate in bf16.
         # Generate in f32 and cast to bf16.
