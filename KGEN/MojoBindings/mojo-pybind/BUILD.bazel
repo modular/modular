@@ -1,0 +1,14 @@
+load("@pip_deps//:requirements.bzl", "requirement")
+
+py_binary(
+    name = "mojo-pybind",
+    srcs = ["main.py"] + glob(["src/*.py"]),
+    imports = ["."],
+    main = "main.py",
+    # Prevent dependent uses of this script for the time being, as its still
+    # massively unstable, and unlike our desired final end state.
+    visibility = ["//visibility:private"],
+    deps = [
+        requirement("click"),
+    ],
+)
