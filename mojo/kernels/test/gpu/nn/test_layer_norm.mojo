@@ -73,7 +73,7 @@ fn run_layer_norm_block[
         return gamma.load[width=width](idx[0])
 
     var func_ln = ctx.compile_function[
-        layer_norm_gpu_block[type, simd_width, input_fn, gamma_fn]
+        layer_norm_gpu_block[simd_width, input_fn, gamma_fn]
     ]()
 
     var max_warps_per_block = 32
@@ -252,7 +252,7 @@ fn run_layer_norm_warp_tiling[
         return gamma.load[width=width](idx[0])
 
     var func_ln = ctx.compile_function[
-        layer_norm_gpu_warp_tiling[type, simd_width, input_fn, gamma_fn]
+        layer_norm_gpu_warp_tiling[simd_width, input_fn, gamma_fn]
     ]()
 
     var max_warps_per_block = 32
