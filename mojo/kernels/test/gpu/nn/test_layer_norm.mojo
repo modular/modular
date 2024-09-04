@@ -101,7 +101,7 @@ fn run_layer_norm_block[
     for r in range(rows):
         var vec = Buffer[type](data_h + r * cols, cols)
         var mean_ref = mean(vec)
-        var var_ref = variance(vec, 1)
+        var var_ref = variance(vec, correction=0)
         var norm_factor_ref = isqrt(var_ref + epsilon)
         for c in range(cols):
             var idx = r * cols + c
@@ -182,7 +182,7 @@ fn run_layer_norm_gpu[
     for r in range(rows):
         var vec = Buffer[type](data_h + r * cols, cols)
         var mean_ref = mean(vec)
-        var var_ref = variance(vec, 1)
+        var var_ref = variance(vec, correction=0)
         var norm_factor_ref = isqrt(var_ref + epsilon)
         for c in range(cols):
             var idx = r * cols + c
@@ -280,7 +280,7 @@ fn run_layer_norm_warp_tiling[
     for r in range(rows):
         var vec = Buffer[type](data_h + r * cols, cols)
         var mean_ref = mean(vec)
-        var var_ref = variance(vec, 1)
+        var var_ref = variance(vec, correction=0)
         var norm_factor_ref = isqrt(var_ref + epsilon)
         for c in range(cols):
             var idx = r * cols + c
