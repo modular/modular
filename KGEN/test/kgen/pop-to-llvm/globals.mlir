@@ -46,7 +46,6 @@ module attributes {M.target_info = #M.target<triple="", arch="", features="", da
     kgen.return
   }
 
-  // CHECK-LABEL: llvm.mlir.global internal @my_alloc() {addr_space = 3 : i32, alignment = 4 : i64} : !llvm.array<2 x f32>
   // CHECK-LABEL: kgen.func @global_alloc
   kgen.func @global_alloc() -> !kgen.pointer<scalar<f32>, 3> {
     // CHECK-NEXT: %0 = llvm.mlir.addressof @my_alloc : !llvm.ptr<3>
@@ -54,6 +53,8 @@ module attributes {M.target_info = #M.target<triple="", arch="", features="", da
     %0 = pop.global_alloc "my_alloc" 2 x !pop.scalar<f32> address_space 3 align 4
     kgen.return %0 : !kgen.pointer<scalar<f32>, 3>
   }
+
+  // CHECK-LABEL: llvm.mlir.global internal @my_alloc() {addr_space = 3 : i32, alignment = 4 : i64} : !llvm.array<2 x f32>
 }
 
 // -----

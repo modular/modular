@@ -1770,9 +1770,6 @@ struct ConvertPOPGlobalAlloc : public ConvertSymbolOpToLLVM<GlobalAllocOp> {
 
   LogicalResult matchAndRewrite(GlobalAllocOp op, GlobalAllocOpAdaptor adaptor,
                                 ConversionPatternRewriter &b) const override {
-    auto func = op->getParentOfType<mlir::FunctionOpInterface>();
-    b.setInsertionPoint(func);
-
     // Set the alignment if specified. Otherwise use the natural alignment.
     auto kgenPtrType = cast<PointerType>(op.getType());
     auto elementType = typeConverter->convertType(kgenPtrType.getElementType());
@@ -1788,6 +1785,7 @@ struct ConvertPOPGlobalAlloc : public ConvertSymbolOpToLLVM<GlobalAllocOp> {
     StringRef name = cast<StringAttr>(adaptor.getName()).strref();
 
     // Create the global.
+    b.clearInsertionPoint();
     auto global = b.create<LLVM::GlobalOp>(
         op.getLoc(),
         LLVM::LLVMArrayType::get(elementType,
