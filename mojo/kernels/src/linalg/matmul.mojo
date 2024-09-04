@@ -743,6 +743,7 @@ fn matmul[
     elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
     saturated_vnni: Bool = False,
     single_thread_blocking_override: Bool = False,
+    trace_description: StringLiteral = "",
     target: StringLiteral = "cpu",
 ](
     c: NDBuffer[c_type, 2, c_shape],
@@ -771,7 +772,8 @@ fn matmul[
 
     # TODO(#23049): Pipe info on whether using faster, saturated_vnni is ok
     with Trace[TraceLevel.OP, target=target](
-        "matmul", Trace[TraceLevel.OP]._get_detail_str[description_fn]()
+        "matmul(" + trace_description + ")",
+        Trace[TraceLevel.OP]._get_detail_str[description_fn](),
     ):
 
         @parameter
