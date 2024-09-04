@@ -1326,16 +1326,14 @@ fn elementwise[
         )
 
         return String(";").join(
-            (
-                "description=" + str(trace_description)
-            ) if trace_description else str(""),
             shape_str,
             vector_width_str,
             single_thread_blocking_override,
         )
 
     with Trace[TraceLevel.OP, target=target](
-        "elementwise",
+        "elementwise"
+        + ("(" + trace_description + ")" if trace_description else ""),
         Trace[TraceLevel.OP]._get_detail_str[description_fn](),
     ):
 
