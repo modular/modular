@@ -31,8 +31,8 @@ constexpr std::underlying_type_t<Enum> to_underlying(Enum e) {
 template <typename ForwardIterator, typename UnaryFunctor,
           typename NullaryFunctor>
 auto failableInterleave(ForwardIterator begin, ForwardIterator end,
-                        UnaryFunctor eachFn, NullaryFunctor betweenFn)
-    -> decltype(betweenFn()) {
+                        UnaryFunctor eachFn,
+                        NullaryFunctor betweenFn) -> decltype(betweenFn()) {
   if (begin == end)
     return success();
   if (failed(eachFn(*begin)))
@@ -49,6 +49,18 @@ template <typename Container, typename UnaryFunctor, typename NullaryFunctor>
 auto failableInterleave(const Container &c, UnaryFunctor eachFn,
                         NullaryFunctor betweenFn) {
   return failableInterleave(c.begin(), c.end(), eachFn, betweenFn);
+}
+
+//===----------------------------------------------------------------------===//
+// contains_if
+//===----------------------------------------------------------------------===//
+
+/// Returns true if there is at least one element in the range that satisfies
+/// the unary predicate.
+template <typename Range, typename UnaryPredicate>
+bool contains_if(Range &&range, UnaryPredicate pred) {
+  auto it = llvm::find_if(range, pred);
+  return it != llvm::adl_end(range);
 }
 
 //===----------------------------------------------------------------------===//
