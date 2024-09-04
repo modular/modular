@@ -10,13 +10,10 @@
 struct Parametric[a: int]:
     pass
 
+
 fn takes_var_params[*a: int]():
     pass
 
-
-fn test_multiple_unbound_pack():
-    # expected-error @+1 {{unbound pack must be at the end of the parameter list}}
-    alias t = Parametric[*_, `1`, *_]
 
 # expected-note @+1 {{declared here}}
 struct VarParamStruct[*args: Int]:
@@ -24,7 +21,7 @@ struct VarParamStruct[*args: Int]:
 
 
 fn test_unbound_pack_with_variadic():
-    # expected-error @+1 {{unbound pack syntax cannot be used where variadic parameters are expected}}
+    # expected-error @+1 {{unbound syntax (i.e. `_`) cannot be passed as a variadic parameter}}
     VarParamStruct[*_]
     # expected-error @+1 {{cannot read from discard pattern '_'}}
     takes_var_params[*_]

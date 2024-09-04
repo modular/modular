@@ -120,44 +120,29 @@ ParamBindings::verifyBindingsImpl(
     if (!isa<UnpackedAttr>(binding.ir.getIfPValue().get()) || binding.keyword)
       continue;
 
-    // UnpackedAttr is aka "*_": it fills up all remaining positional slots and
-    // must be at the end of the parameter list.
-    if (idx != operands.size() - 1) {
-      if (diagEmitter)
-        diagEmitter->emitUnboundPackNotEnd(binding);
-      return {{}, fitness};
-    }
-
-    // *_ doesn't work with variadic parameter lists.
-    // TODO: Why not? It should expand to a variadic on the enclosing context.
-    if (paramListAttr.hasVariadic()) {
-      if (diagEmitter)
-        diagEmitter->emitUnboundPackInVariadic(binding);
-      return {{}, fitness};
-    }
-
-    // Check if we have too many parameters after unpacking.
-    size_t numPosPassable = countNumPositional(paramListAttr);
-    if (idx > numPosPassable) {
-      if (diagEmitter)
-        diagEmitter->emitTooManyPositional(numPosPassable, idx);
-      return {{}, fitness};
-    }
-
-    // We replace *_ with some number of UnboundAttr's, just like the user wrote
-    // the right number of _'s, then recurse.
+    // `*_` expands in-place to as many `_`'s needed to meet the required number
+    // of positional and posOrKw parameters. This includes clobbering parameters
+    // passed as keywords. E.g.
+    //
+    // def foo(a, b, c): pass
+    // foo(1, *_, c=10) # error: 'c' passed as positional and keyword
+    //
     auto unboundAttr =
         UnboundAttr::get(UnresolvedType::get(shared.getContext()));
     ASTExprAnd<PValue> unboundBinding{PValue(unboundAttr), binding.expr};
+    ssize_t numUnbounds =
+        countNumPositional(paramListAttr) - operands.getNumPositional() + 1;
+    // `*_` will expand to nothing if there are enough/too many parameters.
+    numUnbounds = std::max<ssize_t>(0, numUnbounds);
 
     // Calculate how many UnboundAttr's (_'s) we need to inject, and put them
     // where the *_ was found.
-    ssize_t numUnbounds = numPosPassable - idx;
-
-    CallOperands expandedOperands(operands);
-    expandedOperands.values.pop_back();
+    CallOperands expandedOperands;
+    llvm::append_range(expandedOperands.values,
+                       ArrayRef(operands.values).take_front(idx));
     expandedOperands.values.append(numUnbounds, {StringAttr(), unboundBinding});
-    assert(expandedOperands.size() == numPosPassable);
+    llvm::append_range(expandedOperands.values,
+                       ArrayRef(operands.values).drop_front(idx + 1));
     return verifyBindingsImpl(expandedOperands, expectedParamTypes,
                               paramListAttr, parameterInferenceHook,
                               diagEmitter, partial);
@@ -456,6 +441,14 @@ ParamBindings::verifyBindingsImpl(
       if (!pValue)
         return {{}, fitness};
       elements.emplace_back(pValue);
+      // Passing `_` to a variadic is not allowed. Users should pass `*_` to
+      // unbind a variadic parameter.
+      // FIXME: There is no way to explicitly unbind a variadic parameter.
+      if (isa<UnboundAttr>(elements.back())) {
+        if (diagEmitter)
+          diagEmitter->emitUnboundInVariadic(binding);
+        return {{}, fitness};
+      }
     } while (posBindingIdx != numBindings);
 
     auto varType = VariadicType::get(evaluator.getReboundType(expectedType),
@@ -601,18 +594,13 @@ ParamBindings::verifyBindings(ArrayRef<Type> expectedParamTypes,
           inferenceDiags.attach(paramListAttr, *diag);
         }
       },
-      /*emitUnboundPackInVariadic=*/
+      /*emitUnboundInVariadic=*/
       [&](ASTExprAnd<AnyValue> binding) {
         diag = shared.emitError(binding.expr->getLoc());
-        *diag << "unbound pack syntax cannot be used where variadic parameters "
-                 "are expected";
+        *diag << "unbound syntax (i.e. `_`) cannot be passed as a variadic "
+                 "parameter";
         if (opLoc)
           diag->attachNote(*opLoc) << baseName << " declared here";
-      },
-      /*emitUnboundPackNotEnd=*/
-      [&](ASTExprAnd<AnyValue> binding) {
-        diag = shared.emitError(binding.expr->getLoc());
-        *diag << "unbound pack must be at the end of the parameter list";
       },
       /*emitInferOnlyFailure=*/
       [&](size_t paramIdx) {
@@ -624,13 +612,6 @@ ParamBindings::verifyBindings(ArrayRef<Type> expectedParamTypes,
       [&](ArrayRef<StringAttr> names, const Twine &kindStr) {
         diag = shared.emitError(exprLoc);
         emitMissing(*diag, names, kindStr + " parameter");
-        if (opLoc)
-          diag->attachNote(*opLoc) << baseName << " declared here";
-      },
-      /*emitTooManyPositional=*/
-      [&](size_t numMaxAllowed, size_t numActual) {
-        diag = shared.emitError(exprLoc);
-        emitTooManyPositional(*diag, numMaxAllowed, numActual, "parameter");
         if (opLoc)
           diag->attachNote(*opLoc) << baseName << " declared here";
       }};

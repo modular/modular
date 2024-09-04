@@ -120,17 +120,12 @@ public:
     std::function<void(ArrayRef<StringAttr>)> emitPosOnlyPassedByKw;
     /// Emit diagnostics for failure to deduce a parameter.
     std::function<void(size_t)> emitDeductionFailure;
-    /// Emit diagnostics when an unbound pack (i.e. `*_`) appears in a variadic
-    /// signature.
-    std::function<void(ASTExprAnd<AnyValue>)> emitUnboundPackInVariadic;
-    /// Emit diagnostic when unbound pack is not at the end of the param list.
-    std::function<void(ASTExprAnd<AnyValue>)> emitUnboundPackNotEnd;
+    /// Emit diagnostics when an unbound (i.e. `_`) is passed to a variadic.
+    std::function<void(ASTExprAnd<AnyValue>)> emitUnboundInVariadic;
     /// Emit diagnostics for failure to deduce an infer-only parameter.
     std::function<void(size_t)> emitInferOnlyFailure;
     /// Emit diagnostics for missing parameters (specified by their names).
     std::function<void(ArrayRef<StringAttr>, const Twine &)> emitMissing;
-    /// Emit diagnostics for too many positional parameters.
-    std::function<void(size_t, size_t)> emitTooManyPositional;
   };
 
   /// Verify the parameter bindings for the given signature. If the signature
