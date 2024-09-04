@@ -11,13 +11,14 @@ from random import rand
 from sys import argv
 
 from buffer import NDBuffer
+from buffer.dimlist import DimList, Dim
 from gpu import *
 from gpu.host import DeviceContext, FuncAttribute
 from gpu.host.event import time_function
 from memory import UnsafePointer
 from nn.mha import (
     _naive_attention_with_transpose,
-    flash_attention_impl,
+    flash_attention,
     mha_gpu_naive,
 )
 from testing import assert_almost_equal
@@ -154,33 +155,42 @@ fn test[
     ctx.enqueue_copy_to_device(v_device_ptr, v_ptr)
     ctx.enqueue_copy_to_device(mask_device_ptr, mask_ptr)
 
+    # Contruct device buffers.
+    var q_device = NDBuffer[
+        qkv_type, 4, DimList(Dim(), Dim(), num_heads, depth)
+    ](q_device_ptr.ptr, Index(batch_size, seq_len, num_heads, depth))
+    var k_device = NDBuffer[
+        qkv_type, 4, DimList(Dim(), Dim(), kv_num_heads, depth)
+    ](k_device_ptr.ptr, Index(batch_size, num_keys, kv_num_heads, depth))
+    var v_device = NDBuffer[
+        qkv_type, 4, DimList(Dim(), Dim(), kv_num_heads, depth)
+    ](v_device_ptr.ptr, Index(batch_size, num_keys, kv_num_heads, depth))
+    var mask3d = NDBuffer[mask_type, 3, DimList.create_unknown[3]()](
+        mask_device_ptr.ptr, Index(batch_size, seq_len, num_keys)
+    )
+    var mask4d = NDBuffer[mask_type, 4, DimList.create_unknown[4]()](
+        mask_device_ptr.ptr, Index(batch_size, num_heads, seq_len, num_keys)
+    )
+    var output_device = NDBuffer[
+        qkv_type, 4, DimList(Dim(), Dim(), num_heads, depth)
+    ](output_device_ptr.ptr, Index(batch_size, seq_len, num_heads, depth))
+
     alias q_tile_num_rows = 32
     alias k_tile_num_rows = 128
 
     @parameter
     @always_inline
+    @__copy_capture(q_device, k_device, v_device, mask3d, mask4d, output_device)
     fn kernel_launch(ctx: DeviceContext) raises:
-        flash_attention_impl[
-            4,
-            mask_rank,
-            depth,
-            num_heads,
-            group=group,
-            add_attn_mask=True,
-            target="gpu",
-            use_tensor_core=True,
-        ](
-            output_device_ptr.ptr,
-            q_device_ptr.ptr,
-            k_device_ptr.ptr,
-            v_device_ptr.ptr,
-            mask_device_ptr.ptr,
-            scale,
-            batch_size,
-            seq_len,
-            num_keys,
-            ctx,
-        )
+        @parameter
+        if mask_rank == 3:
+            flash_attention(
+                output_device, q_device, k_device, v_device, mask3d, scale, ctx
+            )
+        else:
+            flash_attention(
+                output_device, q_device, k_device, v_device, mask4d, scale, ctx
+            )
 
     if is_benchmark:
         alias nrun = 50
