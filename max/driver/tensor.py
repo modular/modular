@@ -133,6 +133,10 @@ class Tensor:
             return tensor.copy_to(device)
         return tensor
 
+    def __dlpack_device__(self) -> Tuple[int, int]:
+        """Implements part of the dlpack contract."""
+        return self._impl.__dlpack_device__()
+
     @classmethod
     def from_dlpack(cls, arr: Any) -> Tensor:
         """Create a tensor from an object implementing the dlpack protocol.
