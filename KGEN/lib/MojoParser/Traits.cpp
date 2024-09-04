@@ -5,18 +5,19 @@
 //===----------------------------------------------------------------------===//
 
 #include "Traits.h"
-#include "MojoUtils.h"
-
 #include "CallEmission.h"
 #include "ExprEmitter.h"
 #include "ExprNodes.h"
+#include "MojoUtils.h"
+#include "StructEmitter.h"
+
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/LITDialect/LITOps.h"
 #include "KGEN/MojoParser/ASTDecl.h"
 #include "KGEN/MojoParser/DeclResolver.h"
 #include "KGEN/MojoParser/ParserParamEvaluator.h"
 #include "KGEN/MojoParser/SharedState.h"
-#include "StructEmitter.h"
+#include "Support/STLExtras.h"
 #include "mlir/IR/ImplicitLocOpBuilder.h"
 
 using namespace M;
@@ -503,9 +504,9 @@ bool ASTDecl::doesNominalTypeConformsTo(TraitType trait,
     parentTypes = cast<TraitDeclOp>(*this).getParentTypes();
 
   // Check if the type explicitly conforms to the trait.
-  if (llvm::find_if(parentTypes, [trait](TypeLineageAttr type) {
+  if (contains_if(parentTypes, [trait](TypeLineageAttr type) {
         return type.getType() == trait;
-      }) != parentTypes.end())
+      }))
     return true;
 
   // Check to see if this is already literally this trait.
