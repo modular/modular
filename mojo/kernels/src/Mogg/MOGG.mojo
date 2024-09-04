@@ -1096,11 +1096,9 @@ fn concat_from_list[
 
 @mogg_register("mo.concat")
 @always_inline
-@export
 fn concat[
     type: DType,
     rank: Int,
-    simd_width: Int,
     single_thread_blocking_override: Bool,
     target: StringLiteral = "cpu",
 ](

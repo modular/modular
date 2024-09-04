@@ -26,6 +26,7 @@ from gpu.host import (
 from gpu.host.memory import _free, _malloc
 from memory import UnsafePointer, memcpy
 from memory.memory import _malloc as _malloc_cpu
+from nn.concat import concat, variadic_list_to_vector
 from MOGGIntList import IntList
 from register import *
 from runtime.asyncrt import MojoCallContextPtr
@@ -582,14 +583,13 @@ fn mgp_assert[message: StringLiteral](cond: Bool) raises -> Int:
 
 @mogg_register("mgp.buffer.alloc.static")
 @always_inline
-@export
 fn mgp_buffer_alloc_static[
     aRuntimeSlot: UInt64,
     bSize: UInt64,
     cRawAlign: UInt64,
     dDevice: StringLiteral,
 ](
-    dummy_chain: Int, stateCtx: StateContext, call_ctx: MojoCallContextPtr
+    dummy_chain: Int, state_ctx: StateContext, call_ctx: MojoCallContextPtr
 ) raises -> NDBuffer[DType.int8, 1]:
     # Default to alignment of 1 if cRawAlign is kUnknownSize (SizeUtils.h).
     alias alignment = alignof[DType.int8]() if cRawAlign == UInt64.MAX else int(
@@ -600,7 +600,6 @@ fn mgp_buffer_alloc_static[
 
 @mogg_register("mgp.buffer.alloc.dynamic")
 @always_inline
-@export
 fn mgp_buffer_alloc_dynamic[
     aRuntimeSlot: UInt64,
     bRawAlign: UInt64,
@@ -696,7 +695,6 @@ fn mgp_buffer_set_with_index[
 
 @mogg_register("mgp.buffer.to_bool")
 @always_inline
-@export
 fn mgp_buffer_to_bool[
     aRuntimeSlot: UInt64, bDevice: StringLiteral
 ](
@@ -730,11 +728,32 @@ fn mgp_buffer_to_index(
 
 @mogg_register("mgp.buffer.slice")
 @always_inline
-@export
 fn mgp_buffer_slice(
     buffer: NDBuffer[DType.uint8, 1], offset: Int, size: Int
 ) -> NDBuffer[DType.uint8, 1]:
     return NDBuffer[DType.uint8, 1](buffer.data.offset(offset), size)
+
+
+@mogg_register("mgp.buffer.concat")
+@always_inline
+fn mgp_buffer_concat[
+    aRuntimeSlot: UInt64, bDevice: StringLiteral
+](
+    dummy_chain: Int,
+    ctx: StateContext,
+    output: NDBuffer[DType.uint8, 1],
+    call_ctx: MojoCallContextPtr,
+    *variadic_ins: NDBuffer[DType.uint8, 1],
+) raises -> Int:
+    var ins = variadic_list_to_vector(variadic_ins)
+
+    if len(output) < 4096:
+        concat[1, DType.uint8, True, bDevice](output, 0, ins, context=call_ctx)
+    else:
+        concat[1, DType.uint8, False, bDevice](output, 0, ins, context=call_ctx)
+    ins._del_old()
+
+    return 0
 
 
 @mogg_register("mgp.buffer.device_to_host")
