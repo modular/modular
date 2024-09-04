@@ -7,7 +7,6 @@
 # RUN: %mojo-no-debug %s
 
 from math import ceildiv, sqrt
-from random import random_float64
 from sys import simdwidthof
 from buffer import Buffer, NDBuffer
 from buffer.dimlist import DimList
@@ -16,9 +15,7 @@ from gpu.host.device_context import DeviceBuffer, DeviceContext
 from nn.normalization import *
 from memory import UnsafePointer
 from testing import assert_almost_equal
-from utils.index import Index, StaticIntTuple, StaticTuple
-from gpu.host._compile import _get_nvptx_target
-from gpu.host.device_context import DeviceContext
+from utils.index import Index, StaticIntTuple
 
 
 fn compute_rms[
@@ -55,7 +52,7 @@ fn run_rms_norm_gpu[
     var gamma_d = ctx.create_buffer[type](cols)
     var beta_d = ctx.create_buffer[type](cols)
 
-    var param_shape = StaticIntTuple[1](cols)
+    var param_shape = Index(cols)
 
     var data_buf = NDBuffer[type, rank](data_d.ptr, shape)
     var gamma = NDBuffer[type, 1](gamma_d.ptr, param_shape)
@@ -84,30 +81,27 @@ fn run_rms_norm_gpu[
             var val = (data_h[idx] / rms_ref) * gamma_h[c]
             assert_almost_equal(val, res[idx], rtol=rtol)
 
-    _ = data_h
-    _ = gamma_h
     _ = data_d
     _ = gamma_d
-    _ = res
+
+    data_h.free()
+    res.free()
+    gamma_h.free()
 
 
 fn main():
     try:
         with DeviceContext() as ctx:
-            run_rms_norm_gpu[DType.float32, 1](ctx, StaticIntTuple[1](0))
-            run_rms_norm_gpu[DType.float32, 1](ctx, StaticIntTuple[1](5))
-            run_rms_norm_gpu[DType.float32, 5](
-                ctx, StaticIntTuple[5](3, 4, 10, 20, 8)
-            )
-            run_rms_norm_gpu[DType.float32, 5](
-                ctx, StaticIntTuple[5](1, 5, 6, 10, 128)
-            )
-            run_rms_norm_gpu[DType.float32, 2](ctx, StaticIntTuple[2](2, 5))
-            run_rms_norm_gpu[DType.float32, 2](ctx, StaticIntTuple[2](2, 55))
-            run_rms_norm_gpu[DType.float32, 2](ctx, StaticIntTuple[2](7, 557))
-            run_rms_norm_gpu[DType.float32, 2](ctx, StaticIntTuple[2](2, 8191))
-            run_rms_norm_gpu[DType.float32, 2](ctx, StaticIntTuple[2](2, 8192))
-            run_rms_norm_gpu[DType.float32, 2](ctx, StaticIntTuple[2](2, 16384))
-            run_rms_norm_gpu[DType.float32, 2](ctx, StaticIntTuple[2](2, 16385))
+            run_rms_norm_gpu[DType.float32](ctx, Index(0))
+            run_rms_norm_gpu[DType.float32](ctx, Index(5))
+            run_rms_norm_gpu[DType.float32](ctx, Index(3, 4, 10, 20, 8))
+            run_rms_norm_gpu[DType.float32](ctx, Index(1, 5, 6, 10, 128))
+            run_rms_norm_gpu[DType.float32](ctx, Index(2, 5))
+            run_rms_norm_gpu[DType.float32](ctx, Index(2, 55))
+            run_rms_norm_gpu[DType.float32](ctx, Index(7, 557))
+            run_rms_norm_gpu[DType.float32](ctx, Index(2, 8191))
+            run_rms_norm_gpu[DType.float32](ctx, Index(2, 8192))
+            run_rms_norm_gpu[DType.float32](ctx, Index(2, 16384))
+            run_rms_norm_gpu[DType.float32](ctx, Index(2, 16385))
     except e:
         print("CUDA ERROR:", str(e))

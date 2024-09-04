@@ -7,7 +7,6 @@
 # RUN: %mojo-no-debug %s
 
 from math import ceildiv, isqrt
-from random import random_float64
 from sys import simdwidthof
 
 from algorithm import mean, variance
@@ -20,21 +19,7 @@ from memory import UnsafePointer
 from nn.normalization import *
 from testing import assert_almost_equal
 
-from utils.index import Index, StaticIntTuple, StaticTuple
-
-
-fn welford_mean_var[
-    type: DType
-](vector: Buffer[type], size: Int) -> StaticTuple[Scalar[type], 2]:
-    var mean: Scalar[type] = 0
-    var s: Scalar[type] = 0
-
-    for i in range(1, size + 1):
-        var x: Scalar[type] = vector[i - 1]
-        var old_mean: Scalar[type] = mean
-        mean = mean + ((x - mean) / i)
-        s = s + ((x - mean) * (x - old_mean))
-    return StaticTuple[Scalar[type], 2](mean, s / (size - 1))
+from utils.index import Index, StaticIntTuple
 
 
 fn run_layer_norm_block[
@@ -44,7 +29,6 @@ fn run_layer_norm_block[
 ](ctx: DeviceContext, rows: Int, cols: Int, rtol: Scalar[type] = 0.01) raises:
     print("== run_layer_norm_gpu block kernel")
 
-    alias rank = 2
     var data_h = UnsafePointer[Scalar[type]].alloc(rows * cols)
     var res = UnsafePointer[Scalar[type]].alloc(rows * cols)
     var gamma_h = UnsafePointer[Scalar[type]].alloc(cols)
@@ -62,10 +46,10 @@ fn run_layer_norm_block[
     var gamma_d = ctx.create_buffer[type](cols)
     var beta_d = ctx.create_buffer[type](cols)
 
-    var data_shape = StaticIntTuple[rank](rows, cols)
-    var param_shape = StaticIntTuple[1](cols)
+    var data_shape = Index(rows, cols)
+    var param_shape = Index(cols)
 
-    var data_buf = NDBuffer[type, rank](data_d.ptr, data_shape)
+    var data_buf = NDBuffer[type, 2](data_d.ptr, data_shape)
     var gamma = NDBuffer[type, 1](gamma_d.ptr, param_shape)
     var beta = NDBuffer[type, 1](beta_d.ptr, param_shape)
     var epsilon = Scalar[type]()
@@ -78,7 +62,7 @@ fn run_layer_norm_block[
     @always_inline
     @parameter
     fn input_fn[width: Int](row: Int, col: Int) -> SIMD[type, width]:
-        return data_buf.load[width=width](StaticIntTuple[rank](row, col))
+        return data_buf.load[width=width](Index(row, col))
 
     @__copy_capture(gamma)
     @always_inline
@@ -126,14 +110,15 @@ fn run_layer_norm_block[
             ] + beta_h[c]
             assert_almost_equal(val, res[idx], rtol=rtol)
 
-    _ = data_h
-    _ = gamma_h
-    _ = beta_h
     _ = data_d
     _ = gamma_d
     _ = beta_d
-    _ = res
     _ = func_ln^
+
+    data_h.free()
+    res.free()
+    gamma_h.free()
+    beta_h.free()
 
 
 fn run_layer_norm_gpu[
@@ -163,7 +148,7 @@ fn run_layer_norm_gpu[
     var gamma_d = ctx.create_buffer[type](cols)
     var beta_d = ctx.create_buffer[type](cols)
 
-    var param_shape = StaticIntTuple[1](cols)
+    var param_shape = Index(cols)
 
     var data_buf = NDBuffer[type, rank](data_d.ptr, shape)
     var gamma = NDBuffer[type, 1](gamma_d.ptr, param_shape)
@@ -206,13 +191,14 @@ fn run_layer_norm_gpu[
             ] + beta_h[c]
             assert_almost_equal(val, res[idx], rtol=rtol)
 
-    _ = data_h
-    _ = gamma_h
-    _ = beta_h
     _ = data_d
     _ = gamma_d
     _ = beta_d
-    _ = res
+
+    data_h.free()
+    res.free()
+    gamma_h.free()
+    beta_h.free()
 
 
 fn run_layer_norm_warp_tiling[
@@ -222,7 +208,6 @@ fn run_layer_norm_warp_tiling[
 ](ctx: DeviceContext, rows: Int, cols: Int, rtol: Scalar[type] = 0.01) raises:
     print("== run_layer_norm_gpu warp tiling kernel")
 
-    alias rank = 2
     var data_h = UnsafePointer[Scalar[type]].alloc(rows * cols)
     var res = UnsafePointer[Scalar[type]].alloc(rows * cols)
     var gamma_h = UnsafePointer[Scalar[type]].alloc(cols)
@@ -240,10 +225,10 @@ fn run_layer_norm_warp_tiling[
     var gamma_d = ctx.create_buffer[type](cols)
     var beta_d = ctx.create_buffer[type](cols)
 
-    var data_shape = StaticIntTuple[rank](rows, cols)
-    var param_shape = StaticIntTuple[1](cols)
+    var data_shape = Index(rows, cols)
+    var param_shape = Index(cols)
 
-    var data_buf = NDBuffer[type, rank](data_d.ptr, data_shape)
+    var data_buf = NDBuffer[type, 2](data_d.ptr, data_shape)
     var gamma = NDBuffer[type, 1](gamma_d.ptr, param_shape)
     var beta = NDBuffer[type, 1](beta_d.ptr, param_shape)
     var epsilon = Scalar[type]()
@@ -256,7 +241,7 @@ fn run_layer_norm_warp_tiling[
     @always_inline
     @parameter
     fn input_fn[width: Int](row: Int, col: Int) -> SIMD[type, width]:
-        return data_buf.load[width=width](StaticIntTuple[rank](row, col))
+        return data_buf.load[width=width](Index(row, col))
 
     @__copy_capture(gamma)
     @always_inline
@@ -304,14 +289,15 @@ fn run_layer_norm_warp_tiling[
             ] + beta_h[c]
             assert_almost_equal(val, res[idx], rtol=rtol)
 
-    _ = data_h
-    _ = gamma_h
-    _ = beta_h
     _ = data_d
     _ = gamma_d
     _ = beta_d
-    _ = res
     _ = func_ln^
+
+    data_h.free()
+    res.free()
+    gamma_h.free()
+    beta_h.free()
 
 
 def main():
@@ -333,11 +319,7 @@ def main():
         run_layer_norm_warp_tiling[DType.float32](ctx, rows=10, cols=4096)
 
         # variable rank
-        run_layer_norm_gpu[DType.float32, 1](ctx, StaticIntTuple[1](0))
-        run_layer_norm_gpu[DType.float32, 1](ctx, StaticIntTuple[1](5))
-        run_layer_norm_gpu[DType.float32, 5](
-            ctx, StaticIntTuple[5](3, 4, 10, 20, 8)
-        )
-        run_layer_norm_gpu[DType.float32, 5](
-            ctx, StaticIntTuple[5](1, 5, 6, 10, 128)
-        )
+        run_layer_norm_gpu[DType.float32](ctx, Index(0))
+        run_layer_norm_gpu[DType.float32](ctx, Index(5))
+        run_layer_norm_gpu[DType.float32](ctx, Index(3, 4, 10, 20, 8))
+        run_layer_norm_gpu[DType.float32](ctx, Index(1, 5, 6, 10, 128))
