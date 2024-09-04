@@ -137,6 +137,10 @@ class Tensor:
         """Implements part of the dlpack contract."""
         return self._impl.__dlpack_device__()
 
+    def __dlpack__(self) -> Any:
+        """Implements part of the dlpack contract."""
+        return self._impl.__dlpack__()
+
     @classmethod
     def from_dlpack(cls, arr: Any) -> Tensor:
         """Create a tensor from an object implementing the dlpack protocol.
