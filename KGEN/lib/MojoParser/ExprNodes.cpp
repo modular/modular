@@ -814,6 +814,7 @@ CValue AttributeRefNode::emitStoredFieldRef(ASTExprAnd<CValue> base,
 static std::optional<ParamBindings>
 getBindingsForParameterOperands(ArrayRef<Operand> operands,
                                 ExprEmitter &emitter) {
+  MLIRContext *ctx = emitter.getContext();
   ParamBindings paramBindings(emitter.getScopeInfo());
   for (const Operand &operand : operands) {
     // _, *_, and **_ in parameter expressions are magically treated as special
@@ -822,14 +823,17 @@ getBindingsForParameterOperands(ArrayRef<Operand> operands,
     // such.
     TypedAttr value;
     if (operand.expr->kind == ExprNode::kDiscardLiteral) {
-      value =
-          PValue(UnboundAttr::get(UnresolvedType::get(emitter.getContext())));
+      // Handle `**_` or `_` syntax, based on the operand passing kind.
+      if (operand.isUnpackedKeyword())
+        value = UnpackedAttr::get(ctx, /*kwOnly=*/true);
+      else
+        value = UnboundAttr::get(UnresolvedType::get(ctx));
     } else if (operand.expr->kind == ExprNode::kUnpack &&
                cast<UnaryOpNode>(operand.expr)->subExpr->kind ==
                    ExprNode::kDiscardLiteral) {
       // Handle the *_ syntax, which is parsed as an Unpack(DiscardLiteral)
       // specially.
-      value = PValue(UnpackedAttr::get(emitter.getContext(), /*kwOnly=*/false));
+      value = UnpackedAttr::get(ctx, /*kwOnly=*/false);
     } else {
       auto pValue = emitter.emitExprPValue(operand.expr, EC_TypeParamValue);
       if (!pValue)

@@ -121,7 +121,9 @@ public:
     /// Emit diagnostics for failure to deduce a parameter.
     std::function<void(size_t)> emitDeductionFailure;
     /// Emit diagnostics when an unbound (i.e. `_`) is passed to a variadic.
-    std::function<void(ASTExprAnd<AnyValue>)> emitUnboundInVariadic;
+    std::function<void(const ExprNode *)> emitUnboundInVariadic;
+    /// Emit diagnostics when an unpacked unbind isn't the last parameter.
+    std::function<void(const ExprNode *, bool)> emitUnpackedNotAtEnd;
     /// Emit diagnostics for failure to deduce an infer-only parameter.
     std::function<void(size_t)> emitInferOnlyFailure;
     /// Emit diagnostics for missing parameters (specified by their names).

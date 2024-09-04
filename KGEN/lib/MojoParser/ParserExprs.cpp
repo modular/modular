@@ -766,7 +766,10 @@ FailureOr<Operand> ExprParser::parseOperand(
   if (consumeIf(Token::star_star)) {
     if (failed(parseExpression(value)))
       return failure();
-    return Operand(value, startLoc, Operand::kStarStar);
+    // Keyword argument unpacking is considered a keyword argument. Mark that
+    // with a non-null but empty name.
+    return Operand(value, startLoc, Operand::kStarStar,
+                   StringAttr::get(getContext()));
   }
 
   // Check for a keyword argument.  We need look-ahead to determine whether
@@ -892,13 +895,21 @@ ParseResult ExprParser::checkOperands(ArrayRef<Operand> operands,
   std::string argOrParam = isArgument ? "argument" : "parameter";
   // We keep a map of "name -> operand" so that we can emit better diagnostics.
   llvm::SmallDenseMap<StringAttr, const Operand *> kwOperandMap;
+  bool hasUnpackedKw = false;
   for (const Operand &operand : operands) {
     SMLoc loc = operand.getLoc();
-    if (operand.isUnpackedKeyword())
-      return emitError(loc, "keyword unpacking not supported yet");
-    if (operand.isPositional() && !kwOperandMap.empty()) {
-      return emitError(loc, "positional ")
-             << argOrParam << " follows keyword " << argOrParam;
+    hasUnpackedKw |= operand.isUnpackedKeyword();
+
+    if (operand.isPositional()) {
+      if (!kwOperandMap.empty()) {
+        return emitError(loc, "positional ")
+               << argOrParam << " follows keyword " << argOrParam;
+      }
+      if (hasUnpackedKw) {
+        return emitError(loc, "positional ")
+               << argOrParam << " follows keyword " << argOrParam
+               << " unpacking";
+      }
     }
     if (operand.isKeyword()) {
       auto [it, addedNew] = kwOperandMap.try_emplace(operand.name, &operand);

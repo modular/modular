@@ -173,11 +173,6 @@ fn variadic_kw_result_binding[**a: Int]():
     pass
 
 
-fn variadic_kw_binding[*a: Int]():
-    variadic_kw_result_binding[**a]() # expected-error {{keyword unpacking not supported yet}}
-    pass
-
-
 # expected-note @below {{function declared here}}
 fn variadic_int_params[*a: Int]():
     pass
