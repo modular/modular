@@ -132,3 +132,11 @@ class Tensor:
         if not device.is_host:
             return tensor.copy_to(device)
         return tensor
+
+    @classmethod
+    def from_dlpack(cls, arr: Any) -> Tensor:
+        """Create a tensor from an object implementing the dlpack protocol.
+
+        This usually does not result in a copy, and the producer of the object
+        retains ownership of the underlying memory."""
+        return cls._from_impl(_Tensor.from_dlpack(arr))
