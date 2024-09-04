@@ -11,12 +11,13 @@ from random import rand
 from sys import argv
 
 from buffer import NDBuffer
+from buffer.dimlist import DimList, Dim
 from gpu import *
 from gpu.host.event import time_function
 from memory import UnsafePointer
 from nn.mha import (
     _naive_attention_with_transpose,
-    flash_attention_impl,
+    flash_attention,
     mha_gpu_naive,
 )
 from benchmark import (
@@ -42,14 +43,7 @@ fn run_mha[
     depth: Int,
     num_heads: Int,
     group: Int = 1,
-    use_tensor_core: Bool = False,
-](
-    inout m: Bench,
-    seq_len: Int,
-    num_keys: Int,
-    ctx: DeviceContext,
-    use_index_input: Bool = False,
-) raises:
+](inout m: Bench, seq_len: Int, num_keys: Int, ctx: DeviceContext,) raises:
     constrained[mask_rank in (3, 4), "mha only support rank 3 or 4."]()
 
     # Query, key, value dimensions.
@@ -73,41 +67,10 @@ fn run_mha[
     var flash_output_ptr = UnsafePointer[Scalar[qkv_type]].alloc(o_size)
 
     # Q, K, V are randomly initalized.
-    if use_index_input:
-        for i in range(seq_len):
-            for h in range(num_heads):
-                for j in range(depth):
-                    q_ptr[(i * num_heads + h) * depth + j] = i * depth + j
-        for i in range(num_keys):
-            for h in range(kv_num_heads):
-                for j in range(depth):
-                    k_ptr[(i * kv_num_heads + h) * depth + j] = i * depth + j
-        for i in range(num_keys):
-            for h in range(kv_num_heads):
-                for j in range(depth):
-                    v_ptr[(i * kv_num_heads + h) * depth + j] = i * depth + j
-
-        @parameter
-        if mask_rank == 3:
-            for i in range(seq_len):
-                for j in range(num_keys):
-                    mask_ptr[i * num_keys + j] = (
-                        (seq_len - i) * num_keys + num_keys - j
-                    )
-        else:
-            for h in range(num_heads):
-                var mask_head_ptr = mask_ptr + h * seq_len * num_keys
-                for i in range(seq_len):
-                    for j in range(num_keys):
-                        mask_head_ptr[i * num_keys + j] = (
-                            (seq_len - i) * num_keys + num_keys - j
-                        )
-
-    else:
-        rand[qkv_type](q_ptr, q_size)
-        rand[qkv_type](k_ptr, k_size)
-        rand[qkv_type](v_ptr, v_size)
-        rand[mask_type](mask_ptr, mask_size)
+    rand[qkv_type](q_ptr, q_size)
+    rand[qkv_type](k_ptr, k_size)
+    rand[qkv_type](v_ptr, v_size)
+    rand[mask_type](mask_ptr, mask_size)
 
     # Contruct buffers.
     var q = NDBuffer[qkv_type, 4](
@@ -137,33 +100,42 @@ fn run_mha[
     ctx.enqueue_copy_to_device(v_device_ptr, v_ptr)
     ctx.enqueue_copy_to_device(mask_device_ptr, mask_ptr)
 
+    # Contruct device buffers.
+    var q_device = NDBuffer[
+        qkv_type, 4, DimList(Dim(), Dim(), num_heads, depth)
+    ](q_device_ptr.ptr, Index(batch_size, seq_len, num_heads, depth))
+    var k_device = NDBuffer[
+        qkv_type, 4, DimList(Dim(), Dim(), kv_num_heads, depth)
+    ](k_device_ptr.ptr, Index(batch_size, num_keys, kv_num_heads, depth))
+    var v_device = NDBuffer[
+        qkv_type, 4, DimList(Dim(), Dim(), kv_num_heads, depth)
+    ](v_device_ptr.ptr, Index(batch_size, num_keys, kv_num_heads, depth))
+    var mask3d = NDBuffer[mask_type, 3, DimList.create_unknown[3]()](
+        mask_device_ptr.ptr, Index(batch_size, seq_len, num_keys)
+    )
+    var mask4d = NDBuffer[mask_type, 4, DimList.create_unknown[4]()](
+        mask_device_ptr.ptr, Index(batch_size, num_heads, seq_len, num_keys)
+    )
+    var output_device = NDBuffer[
+        qkv_type, 4, DimList(Dim(), Dim(), num_heads, depth)
+    ](output_device_ptr.ptr, Index(batch_size, seq_len, num_heads, depth))
+
     alias q_tile_num_rows = 32
     alias k_tile_num_rows = 128
 
     @parameter
     @always_inline
+    @__copy_capture(q_device, k_device, v_device, mask3d, mask4d, output_device)
     fn kernel_launch(ctx: DeviceContext) raises:
-        flash_attention_impl[
-            4,
-            mask_rank,
-            depth,
-            num_heads,
-            group=group,
-            add_attn_mask=True,
-            target="gpu",
-            use_tensor_core=use_tensor_core,
-        ](
-            output_device_ptr.ptr,
-            q_device_ptr.ptr,
-            k_device_ptr.ptr,
-            v_device_ptr.ptr,
-            mask_device_ptr.ptr,
-            scale,
-            batch_size,
-            seq_len,
-            num_keys,
-            ctx,
-        )
+        @parameter
+        if mask_rank == 3:
+            flash_attention(
+                output_device, q_device, k_device, v_device, mask3d, scale, ctx
+            )
+        else:
+            flash_attention(
+                output_device, q_device, k_device, v_device, mask4d, scale, ctx
+            )
 
     @parameter
     @always_inline
@@ -215,9 +187,7 @@ fn run_mha[
     ctx.enqueue_copy_from_device(output_ptr, output_ref_device_ptr)
     _ = output_ref_device_ptr
 
-    var rtol = Scalar[qkv_type](0.02) if (
-        use_tensor_core and not use_index_input
-    ) else Scalar[qkv_type](1e-4)
+    var rtol = Scalar[qkv_type](0.02)
 
     for h in range(num_heads):
         for s in range(seq_len):
@@ -253,7 +223,6 @@ struct MHA_cfg:
     var depth: Int
     var num_heads: Int
     var group: Int
-    var use_tensor_core: Bool
     # vars
     var seq_len: Int
     var num_keys: Int
@@ -291,7 +260,6 @@ fn main() raises:
             depth=128,
             num_heads=32,
             group=1,
-            use_tensor_core=True,
             seq_len=64,
             num_keys=64,
         ),
@@ -302,7 +270,6 @@ fn main() raises:
             depth=128,
             num_heads=32,
             group=1,
-            use_tensor_core=True,
             seq_len=128,
             num_keys=128,
         ),
@@ -313,7 +280,6 @@ fn main() raises:
             depth=128,
             num_heads=32,
             group=1,
-            use_tensor_core=True,
             seq_len=256,
             num_keys=256,
         ),
@@ -324,7 +290,6 @@ fn main() raises:
             depth=128,
             num_heads=32,
             group=1,
-            use_tensor_core=True,
             seq_len=600,
             num_keys=600,
         ),
@@ -335,7 +300,6 @@ fn main() raises:
             depth=128,
             num_heads=32,
             group=1,
-            use_tensor_core=True,
             seq_len=1024,
             num_keys=1024,
         ),
@@ -346,7 +310,6 @@ fn main() raises:
             depth=128,
             num_heads=32,
             group=1,
-            use_tensor_core=True,
             seq_len=2048,
             num_keys=2048,
         ),
@@ -358,7 +321,6 @@ fn main() raises:
             depth=128,
             num_heads=24,
             group=3,
-            use_tensor_core=True,
             seq_len=1024,
             num_keys=1024,
         ),
@@ -370,7 +332,6 @@ fn main() raises:
             depth=128,
             num_heads=32,
             group=1,
-            use_tensor_core=True,
             seq_len=1,
             num_keys=32,
         ),
@@ -381,7 +342,6 @@ fn main() raises:
             depth=128,
             num_heads=32,
             group=1,
-            use_tensor_core=True,
             seq_len=1,
             num_keys=64,
         ),
@@ -392,7 +352,6 @@ fn main() raises:
             depth=128,
             num_heads=32,
             group=1,
-            use_tensor_core=True,
             seq_len=1,
             num_keys=128,
         ),
@@ -403,7 +362,6 @@ fn main() raises:
             depth=128,
             num_heads=32,
             group=1,
-            use_tensor_core=True,
             seq_len=1,
             num_keys=256,
         ),
@@ -414,7 +372,6 @@ fn main() raises:
             depth=128,
             num_heads=32,
             group=1,
-            use_tensor_core=True,
             seq_len=1,
             num_keys=600,
         ),
@@ -425,7 +382,6 @@ fn main() raises:
             depth=128,
             num_heads=32,
             group=1,
-            use_tensor_core=True,
             seq_len=1,
             num_keys=1024,
         ),
@@ -436,7 +392,6 @@ fn main() raises:
             depth=128,
             num_heads=32,
             group=1,
-            use_tensor_core=True,
             seq_len=1,
             num_keys=2048,
         ),
@@ -448,7 +403,6 @@ fn main() raises:
             depth=128,
             num_heads=24,
             group=3,
-            use_tensor_core=True,
             seq_len=1,
             num_keys=1024,
         ),
@@ -460,7 +414,6 @@ fn main() raises:
             depth=128,
             num_heads=32,
             group=1,
-            use_tensor_core=True,
             seq_len=1024,
             num_keys=1024,
         ),
@@ -471,7 +424,6 @@ fn main() raises:
             depth=128,
             num_heads=32,
             group=1,
-            use_tensor_core=True,
             seq_len=1,
             num_keys=1024,
         ),
@@ -491,7 +443,6 @@ fn main() raises:
                     x.depth,
                     x.num_heads,
                     x.group,
-                    x.use_tensor_core,
                 ](m, x.seq_len, x.num_keys, ctx)
 
             @parameter
@@ -505,7 +456,6 @@ fn main() raises:
                         x.depth,
                         x.num_heads,
                         x.group,
-                        x.use_tensor_core,
                     ]
                 ](m, "mha" + str(x))
 
