@@ -424,11 +424,11 @@ fn get_buffer_data(buffer: NDBuffer[DType.uint8, 1]) -> UnsafePointer[UInt8]:
 # ===----------------------------------------------------------------------===#
 
 
-@mogg_register("mip.constant.index")
+@mogg_register("index.constant")
 @always_inline
 @export
-fn mip_constant_index[value: Int64]() -> Int:
-    return value.value
+fn mip_constant_index[value: Int]() -> Int:
+    return value
 
 
 @mogg_register("mip.print.index")
@@ -517,7 +517,7 @@ fn mip_mod(numerator: Int, denominator: Int) -> Int:
 # ===----------------------------------------------------------------------===#
 
 
-@mogg_register("mip.constant.bool")
+@mogg_register("index.bool.constant")
 @always_inline
 @export
 fn mip_constant_bool[value: Bool]() -> Bool:
