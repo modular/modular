@@ -260,7 +260,7 @@ public:
   MaterializationScope createScope() { return MaterializationScope(*this); }
 
   /// Get or add a global for the handle. It must be a `const_global` region.
-  Operation *getOrCreateGlobal(Location loc, MemoryHandleAttr hdl);
+  Operation *getOrCreateGlobal(Location loc, MemoryBlobAttr blob);
 
 private:
   /// The symbol table to use for globals.
@@ -269,7 +269,7 @@ private:
   POPToLLVMTypeConverter &tc;
 
   /// Lazily materialized globals.
-  DenseMap<MemoryHandleAttr, Operation *> globals;
+  DenseMap<MemoryBlobAttr, Operation *> globals;
 };
 
 //===----------------------------------------------------------------------===//
