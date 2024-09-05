@@ -581,21 +581,6 @@ fn mgp_assert[message: StringLiteral](cond: Bool) raises -> Int:
 # ===----------------------------------------------------------------------===#
 
 
-@mogg_register("mgp.buffer.alloc.static")
-@always_inline
-fn mgp_buffer_alloc_static[
-    aRuntimeSlot: UInt64,
-    bSize: UInt64,
-    cRawAlign: UInt64,
-    dDevice: StringLiteral,
-](
-    dummy_chain: Int, state_ctx: StateContext, call_ctx: MojoCallContextPtr
-) raises -> NDBuffer[DType.int8, 1]:
-    # Default to alignment of 0 which means kPreferredMemoryAlignment if cRawAlign is kUnknownSize (SizeUtils.h).
-    alias alignment = 0 if cRawAlign == UInt64.MAX else int(cRawAlign)
-    return byte_buffer_alloc[dDevice, alignment=alignment](int(bSize), call_ctx)
-
-
 @mogg_register("mgp.buffer.alloc.dynamic")
 @always_inline
 fn mgp_buffer_alloc_dynamic[
