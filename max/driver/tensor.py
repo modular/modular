@@ -74,8 +74,7 @@ class Tensor:
 
         Currently, we consider certain situations that are contiguous as
         non-contiguous for the purposes of our engine. These situations include:
-        * A tensor with negative steps.
-        * A 1-dimensional tensor slice that is derived from a larger tensor."""
+        * A tensor with negative steps."""
         return self._impl.is_contiguous
 
     def _iterate_indices(self) -> Generator[Tuple[int, ...]]:
@@ -124,10 +123,17 @@ class Tensor:
     @classmethod
     def from_numpy(cls, arr: np.ndarray, device: Device = CPU()) -> Tensor:
         """Creates a tensor from a provided numpy array, allocated on the
-        provided device. If the target device is a CPU, the underlying data will
-        not be copied. If the target device is a GPU, the device will be copied
+        provided device.
+        If the target device is a CPU, the underlying data will
+        not be copied unless the array is noncontiguous. If it is, a contiguous
+        copy will first be created.
+
+        If the target device is a GPU, the device will be copied
         to the target."""
-        tensor = cls._from_impl(_Tensor(arr, CPU()._device))
+        input_arr = arr if arr.flags["C_CONTIGUOUS"] else np.ascontiguousarray(
+            arr
+        )
+        tensor = cls._from_impl(_Tensor(input_arr, CPU()._device))
 
         if not device.is_host:
             return tensor.copy_to(device)
