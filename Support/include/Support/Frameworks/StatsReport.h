@@ -27,8 +27,8 @@ namespace M::Frameworks {
 /// configurable report file.
 struct StatsReport {
   explicit StatsReport(llvm::StringRef framework, llvm::StringRef modelName)
-      : framework(framework), modelName(modelName), numLoweredOps(0),
-        numFallbackOps(0), numFailedOps(0) {}
+      : numLoweredOps(0), numFallbackOps(0), numFailedOps(0),
+        framework(framework), modelName(modelName) {}
 
   StatsReport(llvm::StringRef framework) : StatsReport(framework, "") {}
 
@@ -44,15 +44,19 @@ struct StatsReport {
   // Emits telemetry info on the ops collected.
   void emitTelemetry(M::Telemetry::TelemetryContext *telemetryCtx);
 
-private:
-  std::string framework; /// framework name: pytorch, tf, onnx, etc.
-  std::string modelName;
+  std::string getJSON();
+
   size_t numLoweredOps;
   size_t numFallbackOps;
   size_t numFailedOps;
   llvm::StringMap<size_t> loweredHistogram;
   llvm::StringMap<size_t> fallbackHistogram;
   llvm::StringMap<size_t> failureHistogram;
+
+private:
+  /// framework name: pytorch, onnx, etc.
+  std::string framework;
+  std::string modelName;
 };
 
 } // namespace M::Frameworks
