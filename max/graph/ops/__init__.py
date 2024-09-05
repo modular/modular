@@ -43,5 +43,6 @@ from .shape_to_tensor import shape_to_tensor
 from .slice_tensor import slice_tensor
 from .squeeze import squeeze
 from .stack import stack
+from .tile import tile
 from .transpose import transpose
 from .unsqueeze import unsqueeze
