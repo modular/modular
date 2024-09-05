@@ -153,7 +153,8 @@ public:
   ErrorOr<int64_t> allocateHeapMemory(size_t size, size_t align);
 
   /// Allocate internal interpreter memory for a persistent object.
-  ErrorOr<int64_t> allocatePersistentMemory(size_t size, size_t align);
+  ErrorOr<int64_t> allocatePersistentMemory(size_t size, size_t align,
+                                            unsigned addressSpace = 0);
 
   /// Free heap-allocated memory from the interpreter.
   ErrorOrSuccess freeHeapMemory(int64_t addr);

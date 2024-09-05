@@ -14,6 +14,7 @@
 // CHECK-DAG: [[RETURN_POINTER_1:#.*]] = #interp.memory_handle<32, "0xEFBE">
 // CHECK-DAG: [[FREED_CONCRETE_MEM:#.*]]:
 // CHECK-DAG: [[STRING:#.*]] = #interp.memory_handle<16, "hello world" string>
+// CHECK-DAG: [[GLOBAL_ALLOC:#.*]] = #interp.memory_handle<16, "0x00000000">
 
 kgen.generator @store_load_pointer(%arg0: i32) -> i32 {
   %0 = pop.stack_allocation 1 x i32
@@ -205,6 +206,11 @@ kgen.generator @store_union(%arg0: !pop.union<i32>) -> i32 {
   kgen.return %2 : i32
 }
 
+kgen.generator @global_alloc() -> !kgen.pointer<i8, 2> {
+  %0 = pop.global_alloc "alloc" 4 x i8 address_space 2 align 16
+  kgen.return %0 : !kgen.pointer<i8, 2>
+}
+
 // CHECK-LABEL: kgen.func export @do_it
 kgen.generator export @do_it() {
   // CHECK-NEXT: <555>
@@ -368,6 +374,9 @@ kgen.generator export @do_it() {
 
   // CHECK-NEXT: <42>
   kgen.param.constant: i32 = <apply(:(!pop.union<i32>) -> i32 @store_union, {:i32 42})>
+
+  // CHECK-NEXT: constant: pointer<i8, 2> = <#interp.memref<[([[GLOBAL_ALLOC]], persistent, [], 2)], 0, 0>>
+  kgen.param.constant: pointer<i8, 2> = <apply(:() -> !kgen.pointer<i8, 2> @global_alloc)>
 
   kgen.return
 }

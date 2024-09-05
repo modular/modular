@@ -1353,7 +1353,8 @@ def POP_ExternPointerSymbolOp : POPOp<"extern_ptr_symbol"> {
 // GlobalAllocOp
 //===----------------------------------------------------------------------===//
 
-def POP_GlobalAllocOp : POPOp<"global_alloc"> {
+def POP_GlobalAllocOp : POPOp<"global_alloc", [Pure,
+    BytecodeOpInterface]> {
   let summary = "allocate a variable in global memory";
   let description = [{
     The `pop.global_alloc` operation allocates a variable as a global. What
@@ -1378,6 +1379,13 @@ def POP_GlobalAllocOp : POPOp<"global_alloc"> {
     custom<ParamValue>($name, "StringType::get($_ctxt)")
     custom<IndexParamValue>($count) `x` custom<PointerOf>(type($result))
     (`align` custom<IndexParamValue>($alignment)^)? attr-dict
+  }];
+
+  let extraClassDeclaration = [{
+    struct Payload { int32_t size, align, addressSpace; };
+    ErrorOrSuccess compile(Payload &payload, TargetInfoAttr target);
+    ErrorTreeOrSuccess interpret(ArrayRef<Attribute> operands,
+      const Payload &payload, InterpreterState &state);
   }];
 }
 
