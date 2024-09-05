@@ -8,20 +8,20 @@
 Placeholder file for any configs (runtime, models, pipelines, etc)
 """
 
-from enum import StrEnum, auto
+from enum import Enum
 
 from pydantic import Field
 from pydantic_settings import BaseSettings
 
 
-class APIType(StrEnum):
-    KSERVE = auto()
-    OPENAI = auto()
+class APIType(Enum):
+    KSERVE = "kserve"
+    OPENAI = "openai"
 
 
-class RunnerType(StrEnum):
-    PYTORCH = auto()
-    TOKEN_GEN = auto()
+class RunnerType(Enum):
+    PYTORCH = "pytorch"
+    TOKEN_GEN = "token_gen"
 
 
 class Settings(BaseSettings):
