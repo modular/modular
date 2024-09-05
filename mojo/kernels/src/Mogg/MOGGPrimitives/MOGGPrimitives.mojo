@@ -591,10 +591,8 @@ fn mgp_buffer_alloc_static[
 ](
     dummy_chain: Int, state_ctx: StateContext, call_ctx: MojoCallContextPtr
 ) raises -> NDBuffer[DType.int8, 1]:
-    # Default to alignment of 1 if cRawAlign is kUnknownSize (SizeUtils.h).
-    alias alignment = alignof[DType.int8]() if cRawAlign == UInt64.MAX else int(
-        cRawAlign
-    )
+    # Default to alignment of 0 which means kPreferredMemoryAlignment if cRawAlign is kUnknownSize (SizeUtils.h).
+    alias alignment = 0 if cRawAlign == UInt64.MAX else int(cRawAlign)
     return byte_buffer_alloc[dDevice, alignment=alignment](int(bSize), call_ctx)
 
 
@@ -610,10 +608,8 @@ fn mgp_buffer_alloc_dynamic[
     byte_size: Int,
     call_ctx: MojoCallContextPtr,
 ) raises -> NDBuffer[DType.int8, 1]:
-    # Default to alignment of 1 if cRawAlign is kUnknownSize (SizeUtils.h).
-    alias alignment = alignof[DType.int8]() if bRawAlign == UInt64.MAX else int(
-        bRawAlign
-    )
+    # Default to alignment of 0 which means kPreferredMemoryAlignment if cRawAlign is kUnknownSize (SizeUtils.h).
+    alias alignment = 0 if bRawAlign == UInt64.MAX else int(bRawAlign)
     return byte_buffer_alloc[cDevice, alignment=alignment](byte_size, call_ctx)
 
 
