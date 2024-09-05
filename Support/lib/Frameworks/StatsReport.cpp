@@ -9,6 +9,7 @@
 #include "Support/Telemetry/Logs.h"
 #include "llvm/ADT/SmallString.h"
 #include "llvm/Support/FileSystem.h"
+#include "llvm/Support/JSON.h"
 #include "llvm/Support/Process.h"
 #include "llvm/Support/Signals.h"
 #include "llvm/Support/Threading.h"
@@ -189,4 +190,22 @@ void M::Frameworks::StatsReport::emitTelemetry(
   // file.
   if (llvm::sys::Process::GetEnv("MODULAR_STATS_FILENAME"))
     writeToFile();
+}
+
+std::string M::Frameworks::StatsReport::getJSON() {
+  std::string s;
+  llvm::raw_string_ostream os(s);
+
+  llvm::json::OStream J(os, 2);
+  J.object([&] {
+    J.attributeArray("fallbacks", [&] {
+      for (const auto &entry : fallbackHistogram)
+        J.object([&] { J.attribute(entry.getKey(), entry.getValue()); });
+    });
+    J.attribute("total_op_count",
+                numFailedOps + numFallbackOps + numLoweredOps);
+  });
+
+  os.flush();
+  return s;
 }
