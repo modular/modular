@@ -61,16 +61,14 @@ class BatchMultiplexQueue(Generic[BatchKey]):
                 return
 
     async def respond(self, batch_responses: dict[BatchKey, Any]):
-        # TODO: This cancelled check should be configurable.
-        # It won't always be the request IDs missing from the latest batch.
-        cancelled = self.out_queues.keys() - batch_responses.keys()
+        # Responses which no longer have an output queue are assumed cancelled.
+        cancelled = batch_responses.keys() - self.out_queues.keys()
         await asyncio.gather(
             *(
                 self.out_queues[id].put(response)
                 for id, response in batch_responses.items()
                 if id not in cancelled
             ),
-            *(self.out_queues[id].put(None) for id in cancelled)
         )
         return cancelled
 
@@ -93,6 +91,15 @@ class BatchMultiplexQueue(Generic[BatchKey]):
             if batch:
                 next_result = await forward(batch)
                 cancelled = await self.respond(next_result)
+                # Remove batches which meet one of the following criteria.
+                # 1. Cancelled: Batches which no longer have a output queue.
+                # Output queues can be removed by consumers when the connection
+                # closes or when they are no longer interested in more outputs.
+                # 2. Completed: Batches with results which are deemed complete.
+                # We test for completion here so that we can immediately remove
+                # the batch from further forward passes. If we defer this to
+                # upstream, then we will do at least one more forward pass before
+                # realizing that the upstream queue is closed.
                 for id, result in next_result.items():
                     if id in cancelled or complete(result):
                         del batch[id]

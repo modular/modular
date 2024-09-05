@@ -20,7 +20,8 @@ class RandomTokenGenerator:
 
     async def next_token(
         self, batch: dict[str, RandomTokenGeneratorContext]
-    ) -> dict[str, str]:
+    ) -> dict[str, str | None]:
         return {
-            rid: str(rand) for rid in batch if (rand := random.randint(0, 20))
+            rid: str(rand) if (rand := random.randint(0, 10)) else None
+            for rid in batch.keys()
         }

@@ -20,7 +20,6 @@ class TokenGeneratorPipeline(Generic[Context]):
     """Base class for LLM pipelines."""
 
     model: max.pipelines.interfaces.TokenGenerator[Context]
-    max_batch_size: int = 32
 
     tokens_queue: BatchMultiplexQueue = field(
         default_factory=BatchMultiplexQueue
@@ -29,6 +28,10 @@ class TokenGeneratorPipeline(Generic[Context]):
         default_factory=BatchMultiplexQueue
     )
     _background_tasks: set = field(default_factory=set)
+
+    # TODO(SERV-180) - Temporarily setting batch size to 1 to unblock benchmarking
+    # as the underlying llama3 pipeline currently only support BS=1.
+    max_batch_size: int = 1
 
     async def next_token(
         self, requests: dict[str, Context]
@@ -42,7 +45,7 @@ class TokenGeneratorPipeline(Generic[Context]):
             yield rid, await self.context_queue.submit(rid, context)
             async for token in self.tokens_queue.stream(rid, context):
                 yield rid, token
-                if not token:
+                if token is None:
                     break
 
     async def __aenter__(self):
@@ -57,7 +60,7 @@ class TokenGeneratorPipeline(Generic[Context]):
         token_generator = loop.create_task(
             self.tokens_queue.continuous_batching_worker(
                 self.model.next_token,
-                complete=(lambda token: not token),
+                complete=(lambda token: token is None),
                 max_batch_size=self.max_batch_size,
             )
         )
