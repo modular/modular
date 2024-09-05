@@ -1845,6 +1845,44 @@ ErrorTreeOrSuccess VariantDiscrGEPOp::interpret(ArrayRef<Attribute> operands,
 }
 
 //===----------------------------------------------------------------------===//
+// GlobalAllocOp
+//===----------------------------------------------------------------------===//
+
+ErrorOrSuccess GlobalAllocOp::compile(Payload &payload, TargetInfoAttr target) {
+  if (!target)
+    return Error("global alloc requires a target");
+
+  auto countAttr = dyn_cast<IntegerAttr>(getCount());
+  if (!countAttr)
+    return Error("count is not concrete");
+
+  Type type = getType().getElementType();
+  payload.size =
+      countAttr.getInt() * *DataLayoutInterface::getTypeAllocSize(target, type);
+
+  if (auto alignAttr = dyn_cast_or_null<IntegerAttr>(getAlignmentAttr()))
+    payload.align = alignAttr.getInt();
+  else
+    payload.align = *DataLayoutInterface::getTypeABIAlign(target, type);
+
+  payload.addressSpace =
+      cast<IntegerAttr>(getType().getAddressSpace()).getInt();
+  return success();
+}
+
+ErrorTreeOrSuccess GlobalAllocOp::interpret(ArrayRef<Attribute> operands,
+                                            const Payload &payload,
+                                            InterpreterState &state) {
+  ErrorOr<int64_t> addr = state.allocatePersistentMemory(
+      payload.size, payload.align, payload.addressSpace);
+  if (addr.isError())
+    return ErrorTree(getLoc(), addr.takeError());
+
+  state.mapResults(PointerAttr::get(addr.takeValue(), getType()));
+  return success();
+}
+
+//===----------------------------------------------------------------------===//
 // ExternalCallOp
 //===----------------------------------------------------------------------===//
 

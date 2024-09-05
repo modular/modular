@@ -162,10 +162,12 @@ ErrorOr<int64_t> InterpreterState::allocateHeapMemory(size_t size,
   return blob->baseAddr;
 }
 
-ErrorOr<int64_t> InterpreterState::allocatePersistentMemory(size_t size,
-                                                            size_t align) {
+ErrorOr<int64_t>
+InterpreterState::allocatePersistentMemory(size_t size, size_t align,
+                                           unsigned addressSpace) {
   ErrorOr<MemoryBlob &> blob =
-      getTable(MemoryKind::Persistent).addBlob(allocator, size, align);
+      getTable(MemoryKind::Persistent)
+          .addBlob(allocator, size, align, addressSpace);
   if (blob.isError())
     return blob.takeError();
   // Zero-initialize the memory.
