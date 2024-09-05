@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-# RUN: %mojo-no-debug %s
+# RUN: %mojo --debug-level full %s
 
 # COM: Test with mojo build
 # RUN: mkdir -p %t
