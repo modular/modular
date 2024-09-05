@@ -1571,9 +1571,7 @@ ParseResult KGEN::parseSignature(AsmParser &p, TypeAttr &signature) {
   return success();
 }
 
-void KGEN::printSignature(AsmPrinter &p, Type signatureType) {
-  auto signature = cast<SignatureType>(signatureType);
-
+void KGEN::printSignature(AsmPrinter &p, SignatureType signature) {
   // If the signature has metadata, ask its dialect to print the signature.
   if (FnMetadataAttrInterface metadata = signature.getMetadata()) {
     metadata.printSignature(p, signature);

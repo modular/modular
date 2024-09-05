@@ -480,7 +480,7 @@ static ParseResult parseVTableEntry(AsmParser &p, StringAttr &name,
 static void printVTableEntry(AsmPrinter &p, StringAttr name, TypedAttr method) {
   p.printString(name.getValue());
   p << " : ";
-  printSignature(p, method.getType());
+  printSignature(p, cast<SignatureType>(method.getType()));
   p << " = ";
   printParamValue(p, method);
 }
