@@ -15,7 +15,7 @@ import numpy as np
 import pytest
 from max.dtype import DType
 from max.engine import InferenceSession, TensorSpec, TorchInputSpec
-from max.graph import Graph, Value, TensorType
+from max.graph import Graph, TensorType, Value
 from max.mlir.dialects import mo
 
 DYLIB_FILE_EXTENSION = "dylib" if os.uname().sysname == "Darwin" else "so"
@@ -420,3 +420,14 @@ def test_execute_external_weights(session: InferenceSession) -> None:
     input = np.random.randn(num_elems).astype(np.float32)
     output = compiled.execute(input0=input)
     assert np.allclose(output["output0"], input + weights)
+
+
+def test_stats_report(
+    session: InferenceSession, relu_torchscript_model_path: Path
+):
+    input_specs = [TorchInputSpec(shape=[1, 3, 100, 100], dtype=DType.float32)]
+    model = session.load(relu_torchscript_model_path, input_specs=input_specs)
+    sr = model.stats_report
+    assert isinstance(sr, dict)
+    assert sr["fallbacks"] == []
+    assert sr["total_op_count"] == 1
