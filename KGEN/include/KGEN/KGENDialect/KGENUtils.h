@@ -303,8 +303,9 @@ ParseResult parseSignature(AsmParser &p, Type &signature);
 ParseResult parseSignatureValues(
     AsmParser &p, function_ref<ParseResult(SmallVectorImpl<Type> &)> parseArg,
     FunctionType &values, FnEffects &effects, bool optionalResultList);
-void printSignature(AsmPrinter &p, Type signatureType);
-inline void printSignature(AsmPrinter &p, Operation *op, Type signatureType) {
+void printSignature(AsmPrinter &p, SignatureType signatureType);
+inline void printSignature(AsmPrinter &p, Operation *op,
+                           SignatureType signatureType) {
   printSignature(p, signatureType);
 }
 void printSignature(AsmPrinter &p, Operation *op, TypeAttr signature);
