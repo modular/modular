@@ -45,7 +45,7 @@ parseCompilationOptions(const State &state, const llvm::opt::InputArgList &args,
                         KGEN::CompilationOptions &compilationOptions,
                         llvm::SourceMgr &sourceMgr, MLIRContext &ctx,
                         llvm::opt::OptSpecifier includeDirsId,
-                        llvm::opt::OptSpecifier noOptimizationId = {},
+                        llvm::opt::OptSpecifier optimizationLevelId = {},
                         llvm::opt::OptSpecifier debugLevelId = {},
                         llvm::opt::OptSpecifier sanitizeId = {},
                         llvm::opt::OptSpecifier debugInfoLanguageId = {});

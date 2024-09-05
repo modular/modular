@@ -27,7 +27,7 @@ ErrorOrSuccess M::parseCompilationOptions(
     const State &state, const llvm::opt::InputArgList &args,
     CompilationOptions &compilationOptions, llvm::SourceMgr &sourceMgr,
     MLIRContext &ctx, llvm::opt::OptSpecifier includeDirsId,
-    llvm::opt::OptSpecifier noOptimizationId,
+    llvm::opt::OptSpecifier optimizationLevelId,
     llvm::opt::OptSpecifier debugLevelId, llvm::opt::OptSpecifier sanitizeId,
     llvm::opt::OptSpecifier debugInfoLanguageId) {
   // Process the sanitizers.
@@ -63,9 +63,20 @@ ErrorOrSuccess M::parseCompilationOptions(
     }
   }
 
-  // Disabled optimizations.
-  if (noOptimizationId.isValid() && args.hasArg(noOptimizationId))
-    compilationOptions.optimizationLevel = 0;
+  // Set up the optimization level.
+  if (optimizationLevelId.isValid()) {
+    StringRef levelStr = args.getLastArgValue(optimizationLevelId, "3");
+    int level = -1;
+    if (levelStr.size() == 1)
+      level = levelStr[0] - '0';
+    if (0 <= level && level <= 3) {
+      compilationOptions.optimizationLevel = level;
+    } else {
+      return Error(llvm::formatv("invalid optimization level '{0}', expected "
+                                 "number from 0-3 inclusive",
+                                 levelStr));
+    }
+  }
 
   // Setup the debug level.
   if (debugLevelId.isValid()) {

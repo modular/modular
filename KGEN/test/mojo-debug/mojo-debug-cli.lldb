@@ -22,7 +22,7 @@
 
 # COM: Check if the CLI attach command can fail in the presence of compilation options.
 # RUN: not env %debug --pid 123 --dry-run -O0 2>&1 | FileCheck %s --check-prefix=CHECK-PID-WITH-COMPILATION-OPTION
-# CHECK-PID-WITH-COMPILATION-OPTION: unexpected compilation option '--no-optimization'
+# CHECK-PID-WITH-COMPILATION-OPTION: unexpected compilation option '--optimization-level'
 
 # COM: Check if we can build correctly the JIT debug command.
 # RUN: %debug --debug-level=line-tables -X foo --debug-level none --dry-run target.mojo --debug-level full | FileCheck %s --check-prefix=CHECK-JIT-DEBUG

@@ -529,11 +529,9 @@ ModulePassManager
 M::KGEN::buildLLVMOptimizationPipeline(const CompilationOptions &options) {
   CodeGenOptLevel optLevel = options.getCodeGenOptLevel();
 
-  assert((optLevel == CodeGenOptLevel::None ||
-          optLevel == CodeGenOptLevel::Aggressive) &&
-         "only OptLevel::None and OptLevel::Aggressive are supported");
   if (optLevel == CodeGenOptLevel::None)
     return buildO0Pipeline(options);
+  // All non-zero optimization levels are currently equivalent.
   return buildO3Pipeline(options);
 }
 
