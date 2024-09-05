@@ -215,7 +215,7 @@ fn create_buffer_ref_async[
     runtime: UnsafePointer[NoneType],
     call_ctx: MojoCallContextPtr,
 ):
-    # DeviceContext does not suppot CPU so handle this specially.
+    # DeviceContext does not support CPU so handle this specially.
     # We could also use the MojoValue approach below for CPU, but it is harder
     # to destroy the buffer in mojo because the runtime (which holds the allocator)
     # is not currently available in mojo.
