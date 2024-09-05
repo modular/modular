@@ -10,9 +10,9 @@ from dataclasses import dataclass
 from math import isclose
 from pathlib import Path
 
-import max.driver as md
 import numpy as np
 import pytest
+from max.driver import Tensor
 from max.dtype import DType
 from max.engine import InferenceSession, TensorSpec, TorchInputSpec
 from max.graph import Graph, TensorType, Value
@@ -92,8 +92,8 @@ def test_devicetensor_wrong_num_inputs(
     # The engine should throw a ValueError when executing with the
     # wrong number of input tensors.
     model = session.load(mo_model_path)
-    first_tensor = md.Tensor((5,), DType.float32)
-    second_tensor = md.Tensor((5,), DType.float32)
+    first_tensor = Tensor((5,), DType.float32)
+    second_tensor = Tensor((5,), DType.float32)
     # Ensure that tensors are initialized
     for i in range(5):
         first_tensor[i] = i
@@ -114,7 +114,7 @@ def test_devicetensor_wrong_shape(
     # The engine should throw a ValueError when executing a tensor with
     # the wrong shape.
     model = session.load(mo_model_path)
-    tensor = md.Tensor((6,), DType.float32)
+    tensor = Tensor((6,), DType.float32)
     # Ensure that tensors are initialized
     for i in range(6):
         tensor[i] = i
@@ -134,7 +134,7 @@ def test_devicetensor_wrong_rank(
     # The engine should throw a ValueError when executing a tensor with
     # the wrong shape.
     model = session.load(mo_model_path)
-    tensor = md.Tensor((5, 2), DType.float32)
+    tensor = Tensor((5, 2), DType.float32)
     # Ensure that tensors are initialized
     for i in range(5):
         for j in range(2):
@@ -155,7 +155,7 @@ def test_devicetensor_wrong_dtype(
     # The engine should throw a ValueError when executing a tensor with
     # the wrong dtype.
     model = session.load(mo_model_path)
-    tensor = md.Tensor((6,), DType.int32)
+    tensor = Tensor((6,), DType.int32)
     # Ensure that tensors are initialized
     for i in range(6):
         tensor[i] = i
@@ -188,7 +188,7 @@ def test_execute_device_tensor(session: InferenceSession, mo_model_path: Path):
     # The engine should be able to take in a simple 1-d tensor and execute a
     # model with this input.
     model = session.load(mo_model_path)
-    input_tensor = md.Tensor((5,), DType.float32)
+    input_tensor = Tensor((5,), DType.float32)
     for idx in range(5):
         input_tensor[idx] = 1.0
     output = model.execute(input_tensor)
@@ -205,10 +205,10 @@ def test_execute_noncontiguous_tensor(
     # The engine should reject any strided tensor inputs and request that they
     # be reallocated using `.contiguous`.
     model = session.load(mo_model_path)
-    input_tensor = md.Tensor((8,), DType.float32)
-    for idx in range(5):
+    input_tensor = Tensor((10,), DType.float32)
+    for idx in range(10):
         input_tensor[idx] = 1.0
-    subtensor = input_tensor[:5]
+    subtensor = input_tensor[::2]
     with pytest.raises(
         ValueError,
         match=(
@@ -231,8 +231,8 @@ def test_execute_devicetensor_dynamic_shape(
     # Device tensors should be able to execute even when the model expects
     # dynamic shapes.
     model = session.load(dynamic_model_path)
-    tensor_one = md.Tensor((5,), DType.int32)
-    tensor_two = md.Tensor((5,), DType.int32)
+    tensor_one = Tensor((5,), DType.int32)
+    tensor_two = Tensor((5,), DType.int32)
 
     for x in range(5):
         tensor_one[x] = x
@@ -254,7 +254,7 @@ def test_execute_devicetensor_numpy_stays_alive(
     # after execution.
     model = session.load(mo_model_path)
     arr = np.ones((5,), dtype=np.float32)
-    input_tensor = md.Tensor.from_numpy(arr)
+    input_tensor = Tensor.from_numpy(arr)
     output = model.execute(input_tensor)
     expected = [4.0, 2.0, -5.0, 3.0, 6.0]
     assert len(output) == 1
@@ -264,6 +264,36 @@ def test_execute_devicetensor_numpy_stays_alive(
 
     for idx in range(5):
         assert isclose(arr[idx].item(), 1.0)
+
+
+def test_execute_subtensor(session: InferenceSession, mo_model_path: Path):
+    # Our engine should be able to execute tensors that are contiguous slices
+    # of larger tensors. This will be important for things like our kv cache
+    # implementation.
+    model = session.load(mo_model_path)
+    arr = np.arange(0, 20, dtype=np.float32).reshape((2, 10))
+    input_tensor = Tensor.from_numpy(arr)
+    output = model.execute(input_tensor[0, :5])
+    expected = [3.0, 2.0, -4.0, 5.0, 9.0]
+    assert len(output) == 1
+    output_tensor = output[0]
+    for idx in range(5):
+        assert isclose(output_tensor[idx].item(), expected[idx])
+
+    # Let's ensure that execution doesn't delete the underlying numpy array.
+    np.array_equal(arr, np.ones((2, 10), dtype=np.float32))
+
+    # We need to also handle situations where we're creating tensors from numpy
+    # arrays that have already been sliced.
+    presliced_input = Tensor.from_numpy(arr[0, ::2])
+    presliced_output = model.execute(presliced_input)
+    presliced_expected = [3.0, 3.0, -2.0, 8.0, 13.0]
+    assert len(presliced_output) == 1
+    presliced_output_tensor = presliced_output[0]
+    for idx in range(5):
+        assert isclose(
+            presliced_output_tensor[idx].item(), presliced_expected[idx]
+        )
 
 
 # TODO(#36814): Debug segfault after PT 2.2.2 bump.
