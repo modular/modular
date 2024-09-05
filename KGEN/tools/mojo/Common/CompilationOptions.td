@@ -22,20 +22,23 @@ include "Support/Driver/DriverCommand.td"
 
 def CompilationOptionGroup : OptionGroup<"Compilation options">, Index<5>;
 
-def no_optimization : Flag<["--", "-"], "no-optimization">,
-  Group<CompilationOptionGroup>, Index<0>,
-  HelpText<"Disables compiler optimizations. This might reduce the "
-           "amount of time it takes to compile the Mojo source file. It might "
-           "also reduce the runtime performance of the compiled executable.">;
-def : Flag<["-"], "O0">, Group<CompilationOptionGroup>, Index<0>,
-  Alias<no_optimization>;
+defm optimization_level : CommandOption<["--", "-"], "optimization-level",
+  CompilationOptionGroup, Index<0>, MetaVarName<"LEVEL">,
+  HelpText<
+    "Sets the level of optimization to use at compilation. The value must be "
+    "a number between 0 and 3. The default is 3."
+  >>;
+def : JoinedOrSeparate<["-"], "O">, Group<CompilationOptionGroup>,
+  Index<1>, Alias<optimization_level>;
+def : Flag<["--", "-"], "no-optimization">, Group<CompilationOptionGroup>,
+  Index<2>, Alias<optimization_level>, AliasArgs<["0"]>;
 
-def I : JoinedOrSeparate<["-"], "I">, Group<CompilationOptionGroup>, Index<1>,
+def I : JoinedOrSeparate<["-"], "I">, Group<CompilationOptionGroup>, Index<3>,
   MetaVarName<"PATH">,
   HelpText<"Appends the given path to the list of directories to search for "
            "imported Mojo files.">;
 
-def D : Separate<["-"], "D">, Group<CompilationOptionGroup>, Index<2>,
+def D : Separate<["-"], "D">, Group<CompilationOptionGroup>, Index<4>,
   MetaVarName<"KEY=VALUE">,
   HelpText<"Defines a named value that can be used from within the Mojo source "
            "file being executed. For example, `-D foo=42` defines a name `foo` "
