@@ -79,6 +79,7 @@ Attribute MemoryBlobAttr::parse(AsmParser &p, Type type) {
     return {};
   StringRef kindStr;
   SmallVector<PointerRegion> pointerRegions;
+  unsigned addressSpace = 0;
 
   auto parsePointerRegion = [&] {
     PointerRegion &region = pointerRegions.emplace_back();
@@ -90,8 +91,13 @@ Attribute MemoryBlobAttr::parse(AsmParser &p, Type type) {
 
   if (p.parseComma() || p.parseKeyword(&kindStr) || p.parseComma() ||
       p.parseCommaSeparatedList(AsmParser::Delimiter::Square,
-                                parsePointerRegion) ||
-      p.parseRParen())
+                                parsePointerRegion))
+    return {};
+  if (succeeded(p.parseOptionalComma())) {
+    if (p.parseInteger(addressSpace))
+      return {};
+  }
+  if (p.parseRParen())
     return {};
 
   MemoryKind kind = llvm::StringSwitch<MemoryKind>(kindStr)
@@ -99,7 +105,7 @@ Attribute MemoryBlobAttr::parse(AsmParser &p, Type type) {
                         .Case("heap", MemoryKind::Heap)
                         .Case("const_global", MemoryKind::ConstGlobal)
                         .Case("persistent", MemoryKind::Persistent);
-  return get(hdl, kind, pointerRegions);
+  return get(hdl, kind, pointerRegions, addressSpace);
 }
 
 void MemoryBlobAttr::print(AsmPrinter &p) const {
@@ -124,7 +130,10 @@ void MemoryBlobAttr::print(AsmPrinter &p) const {
                           p << '(' << region.offset << ", " << region.blobIndex
                             << ", " << region.blobOffset << ')';
                         });
-  p << "])";
+  p << ']';
+  if (getAddressSpace())
+    p << ", " << getAddressSpace();
+  p << ')';
 }
 
 namespace M {

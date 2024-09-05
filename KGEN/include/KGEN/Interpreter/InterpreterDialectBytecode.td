@@ -35,7 +35,8 @@ def PointerRegions :
 def MemoryBlobAttr : DialectAttribute<(attr
   MemoryHandleAttr:$handle,
   EnumAttr<"MemoryKind">:$kind,
-  PointerRegions:$pointerRegions
+  PointerRegions:$pointerRegions,
+  VarInt:$addressSpace
 )>;
 
 def MemorySpaceAttr : DialectAttribute<(attr

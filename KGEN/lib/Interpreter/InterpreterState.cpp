@@ -47,8 +47,9 @@ InterpreterState::InterpreterState(TargetInfoAttr target)
 
 InterpreterState::MemoryBlob::MemoryBlob(llvm::BumpPtrAllocator &allocator,
                                          int64_t baseAddr, size_t size,
-                                         size_t align, MemoryHandleAttr hdl)
-    : baseAddr(baseAddr), size(size), align(align),
+                                         size_t align, unsigned addressSpace,
+                                         MemoryHandleAttr hdl)
+    : baseAddr(baseAddr), size(size), align(align), addressSpace(addressSpace),
       memory(hdl ? MemoryT(hdl) : MemoryT(allocator.Allocate(size, align))) {}
 
 ErrorOrSuccess InterpreterState::MemoryBlob::setPointerRegion(
@@ -80,10 +81,9 @@ ErrorOrSuccess InterpreterState::MemoryBlob::setPointerRegion(
   return success();
 }
 
-ErrorOr<InterpreterState::MemoryBlob &>
-InterpreterState::MemoryTable::addBlob(llvm::BumpPtrAllocator &allocator,
-                                       size_t size, size_t align,
-                                       MemoryHandleAttr hdl) {
+ErrorOr<InterpreterState::MemoryBlob &> InterpreterState::MemoryTable::addBlob(
+    llvm::BumpPtrAllocator &allocator, size_t size, size_t align,
+    unsigned addressSpace, MemoryHandleAttr hdl) {
   // Pick the base address of the new blob.
   int64_t baseAddr = minAddr;
   if (!blobs.empty()) {
@@ -99,7 +99,7 @@ InterpreterState::MemoryTable::addBlob(llvm::BumpPtrAllocator &allocator,
     return Error("interpreter is out of memory!");
 
   // Create the blob with aligned memory.
-  blobs.emplace_back(allocator, baseAddr, size, align, hdl);
+  blobs.emplace_back(allocator, baseAddr, size, align, addressSpace, hdl);
   return blobs.back();
 }
 
@@ -138,7 +138,7 @@ ErrorOr<int64_t> InterpreterState::allocateStackMemory(size_t size,
   notifyAllocationOnFrame(/*isSymbolic=*/false);
 
   ErrorOr<MemoryBlob &> blob =
-      getTable(MemoryKind::Stack).addBlob(allocator, size, align, /*hdl=*/{});
+      getTable(MemoryKind::Stack).addBlob(allocator, size, align);
   if (blob.isError())
     return blob.takeError();
   // Zero-initialize the memory.
@@ -154,7 +154,7 @@ ErrorOr<int64_t> InterpreterState::allocateHeapMemory(size_t size,
     return 0;
 
   ErrorOr<MemoryBlob &> blob =
-      getTable(MemoryKind::Heap).addBlob(allocator, size, align, /*hdl=*/{});
+      getTable(MemoryKind::Heap).addBlob(allocator, size, align);
   if (blob.isError())
     return blob.takeError();
   // Zero-initialize the memory.
@@ -164,8 +164,8 @@ ErrorOr<int64_t> InterpreterState::allocateHeapMemory(size_t size,
 
 ErrorOr<int64_t> InterpreterState::allocatePersistentMemory(size_t size,
                                                             size_t align) {
-  ErrorOr<MemoryBlob &> blob = getTable(MemoryKind::Persistent)
-                                   .addBlob(allocator, size, align, /*hdl=*/{});
+  ErrorOr<MemoryBlob &> blob =
+      getTable(MemoryKind::Persistent).addBlob(allocator, size, align);
   if (blob.isError())
     return blob.takeError();
   // Zero-initialize the memory.
@@ -194,8 +194,8 @@ ErrorOr<int64_t> InterpreterState::mapConstGlobalMemory(MemoryHandleAttr hdl) {
       return blob.baseAddr;
 
   // Otherwise, try to map it in.
-  ErrorOr<MemoryBlob &> blob =
-      table.addBlob(allocator, hdl.getSize(), hdl.getAlign(), hdl);
+  ErrorOr<MemoryBlob &> blob = table.addBlob(
+      allocator, hdl.getSize(), hdl.getAlign(), /*addressSpace=*/0, hdl);
   if (blob.isError())
     return blob.takeError();
   return blob->baseAddr;
@@ -407,7 +407,8 @@ InterpreterState::externalizeMemory(MutableArrayRef<Attribute> results) {
         } else {
           hdl = blob.getHandle();
         }
-        blobs.push_back(MemoryBlobAttr::get(hdl, table.kind, pointerRegions));
+        blobs.push_back(MemoryBlobAttr::get(hdl, table.kind, pointerRegions,
+                                            blob.addressSpace));
       }
     }
     interpreterMemorySpace = MemorySpaceAttr::get(ctx, blobs);
@@ -465,7 +466,8 @@ InterpreterState::internalizeMemory(MutableArrayRef<Attribute> args) {
       MemoryHandleAttr asmBlob = blob.getHandle();
       map.blobs.emplace_back(&table, table.blobs.size());
       ErrorOr<MemoryBlob &> mem =
-          table.addBlob(allocator, asmBlob.getSize(), asmBlob.getAlign(), hdl);
+          table.addBlob(allocator, asmBlob.getSize(), asmBlob.getAlign(),
+                        blob.getAddressSpace(), hdl);
       if (mem.isError())
         return mem.takeError();
       if (!hdl)
@@ -571,7 +573,7 @@ ErrorOr<PointerAttr> InterpreterState::allocateInternalStackFor(Type type,
     return Error("could not get result slot type size or alignment");
 
   ErrorOr<MemoryBlob &> blob =
-      getTable(MemoryKind::Stack).addBlob(allocator, *size, *align, /*hdl=*/{});
+      getTable(MemoryKind::Stack).addBlob(allocator, *size, *align);
   if (blob.isError())
     return blob.takeError();
   return PointerAttr::get(blob->baseAddr, ptrType);

@@ -161,15 +161,18 @@ def MemoryBlobAttr : InterpreterAttr<"MemoryBlob", "memory_blob"> {
   let parameters = (ins
     "MemoryHandleAttr":$handle,
     "MemoryKind":$kind,
-    ArrayRefParameter<"PointerRegion">:$pointerRegions
+    ArrayRefParameter<"PointerRegion">:$pointerRegions,
+    DefaultValuedParameter<"unsigned", "0">:$addressSpace
   );
 
   let builders = [
     AttrBuilderWithInferredContext<(ins
         "MemoryHandleAttr":$handle,
         "MemoryKind":$kind,
-        "ArrayRef<PointerRegion>":$pointerRegions), [{
-      return $_get(handle.getContext(), handle, kind, pointerRegions);
+        "ArrayRef<PointerRegion>":$pointerRegions,
+        "unsigned":$addressSpace), [{
+      return $_get(handle.getContext(), handle, kind, pointerRegions,
+                   addressSpace);
     }]>
   ];
 
