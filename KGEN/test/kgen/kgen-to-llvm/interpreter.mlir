@@ -179,3 +179,20 @@ kgen.func @compress_me() {
   kgen.return
 }
 }
+
+// -----
+
+#memory_handle = #interp.memory_handle<16, "0x00000000">
+
+module attributes {M.target_info = #M.target<triple="", arch="", features="", data_layout="", simd_bit_width=16>} {
+
+// CHECK-LABEL: llvm.func @persistent_global
+kgen.func export @persistent_global() -> !kgen.pointer<i8, 2> {
+  // CHECK: llvm.mlir.addressof @memory_blob{{.*}} : !llvm.ptr<2>
+  %pointer = kgen.param.constant: pointer<i8, 2> = <#interp.memref<[(#memory_handle, persistent, [], 2)], 0, 0>>
+  kgen.return %pointer : !kgen.pointer<i8, 2>
+}
+
+// CHECK: llvm.mlir.global internal @memory_blob{{.*}}(#M.dense_array<0, 0, 0, 0> : !M.array<4xi8>) {addr_space = 2 : i32, alignment = 16 : i64} : !llvm.array<4 x i8>
+
+}

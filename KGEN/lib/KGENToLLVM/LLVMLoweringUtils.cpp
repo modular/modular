@@ -505,8 +505,8 @@ Value VariantHelper::materializeLLVMUnion(mlir::LLVM::LLVMArrayType type,
 Value InterpreterMemoryConverter::MaterializationScope::convertMemRef(
     ImplicitLocOpBuilder &b, MemRefAttr ref) {
   MaterializedBlobs &materialized = getOrMaterialize(b, ref.getMemory());
-  Value ptr = getBlobPointer(b, LLVM::LLVMPointerType::get(b.getContext()),
-                             materialized, ref.getIndex(), ref.getOffset());
+  Value ptr = getBlobPointer(b, imc.tc.convertType(ref.getType()), materialized,
+                             ref.getIndex(), ref.getOffset());
   return b.create<LLVM::BitcastOp>(imc.tc.convertType(ref.getType()), ptr);
 }
 
@@ -525,14 +525,15 @@ Value InterpreterMemoryConverter::MaterializationScope::getBlobPointer(
 }
 
 Operation *InterpreterMemoryConverter::getOrCreateGlobal(Location loc,
-                                                         MemoryHandleAttr hdl) {
+                                                         MemoryBlobAttr blob) {
   // Lookup an existing global for this handle.
-  if (Operation *global = globals.lookup(hdl))
+  if (Operation *global = globals.lookup(blob))
     return global;
 
   // If not, create it.
   OpBuilder b(loc.getContext());
   Attribute value;
+  MemoryHandleAttr hdl = blob.getHandle();
   if (hdl.isString()) {
     // Create a string attribute for readability.
     value = b.getStringAttr(StringRef(hdl.getData(), hdl.getSize()));
@@ -549,9 +550,11 @@ Operation *InterpreterMemoryConverter::getOrCreateGlobal(Location loc,
 
   auto global = b.create<LLVM::GlobalOp>(
       loc, LLVM::LLVMArrayType::get(b.getI8Type(), hdl.getSize()),
-      /*isConstant=*/true, LLVM::Linkage::Internal, key, value, hdl.getAlign());
+      blob.getKind() == MemoryKind::ConstGlobal, LLVM::Linkage::Internal, key,
+      value, hdl.getAlign(), blob.getAddressSpace());
   symtab.insert(global);
-  globals.try_emplace(hdl, global);
+
+  globals.try_emplace(blob, global);
   return global;
 }
 
@@ -587,6 +590,13 @@ static void materializeVectorStores(int64_t idx, int64_t size, Value ptr,
                           align);
 }
 
+/// Blobs in `ConstGlobal` or `Persistent` with non-generic address space are
+/// globally allocated.
+static bool isGlobalBlob(MemoryBlobAttr blob) {
+  return blob.getKind() == MemoryKind::ConstGlobal ||
+         (blob.getKind() == MemoryKind::Persistent && blob.getAddressSpace());
+}
+
 InterpreterMemoryConverter::MaterializedBlobs &
 InterpreterMemoryConverter::MaterializationScope::getOrMaterialize(
     ImplicitLocOpBuilder &b, MemorySpaceAttr space) {
@@ -598,9 +608,8 @@ InterpreterMemoryConverter::MaterializationScope::getOrMaterialize(
 
   // First emit the allocations and the memcpy's.
   for (MemoryBlobAttr blob : space) {
-    if (blob.getKind() == MemoryKind::ConstGlobal) {
-      materialized.emplace_back(
-          imc.getOrCreateGlobal(b.getLoc(), blob.getHandle()));
+    if (isGlobalBlob(blob)) {
+      materialized.emplace_back(imc.getOrCreateGlobal(b.getLoc(), blob));
       continue;
     }
     // Create the relevant allocation.
@@ -628,8 +637,8 @@ InterpreterMemoryConverter::MaterializationScope::getOrMaterialize(
   int64_t pointerSize = imc.tc.getTarget().getDataLayout().getPointerSize();
   int64_t simdWidth = imc.tc.getTarget().getSimdBitWidth() / 8;
   for (auto [blob, value] : llvm::zip(space, materialized)) {
-    // Constant globals don't have pointer regions.
-    if (blob.getKind() == MemoryKind::ConstGlobal)
+    // Globals don't have pointer regions.
+    if (isGlobalBlob(blob))
       continue;
 
     auto ptr = cast<Value>(value);
@@ -816,7 +825,9 @@ static Value lowerStringToGlobalConstant(StringAttr strAttr,
 
   // Add the string to the global string table.
   MemoryHandleAttr hdl = MemoryHandleAttr::get(strAttr.getContext(), str);
-  auto global = cast<LLVM::GlobalOp>(imc.getOrCreateGlobal(b.getLoc(), hdl));
+  auto global = cast<LLVM::GlobalOp>(imc.getOrCreateGlobal(
+      b.getLoc(), MemoryBlobAttr::get(hdl, MemoryKind::ConstGlobal, {},
+                                      /*addressSpace=*/0)));
 
   // The actual string size does not include \0.
   auto sizeType = cast<IntegerType>(tc.getIndexType());
