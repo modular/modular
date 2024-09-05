@@ -292,7 +292,8 @@ private:
 
     /// Create a memory blob. If `hdl` is null, an owned blob will be created.
     explicit MemoryBlob(llvm::BumpPtrAllocator &allocator, int64_t baseAddr,
-                        size_t size, size_t align, MemoryHandleAttr hdl);
+                        size_t size, size_t align, unsigned addressSpace,
+                        MemoryHandleAttr hdl);
 
     /// Mark or unmark the given region of the blob as a pointer value.
     ErrorOrSuccess setPointerRegion(int64_t offset, int64_t regionSize,
@@ -329,6 +330,8 @@ private:
     size_t size;
     /// The alignment of the blob.
     size_t align;
+    /// The address space the blob lives in.
+    unsigned addressSpace;
     /// The actual memory managed by the interpreter.
     MemoryT memory;
     /// A bit is set for each offset value where pointer regions begin. The
@@ -347,7 +350,8 @@ private:
     /// Allocate a new memory blob .
     ErrorOr<MemoryBlob &> addBlob(llvm::BumpPtrAllocator &allocator,
                                   size_t size, size_t align,
-                                  MemoryHandleAttr hdl);
+                                  unsigned addressSpace = 0,
+                                  MemoryHandleAttr hdl = {});
 
     /// Return true if the table contains the address.
     bool contains(int64_t addr) { return addr >= minAddr && addr < maxAddr; }

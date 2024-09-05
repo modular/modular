@@ -8,8 +8,8 @@
 #string_blob = #interp.memory_handle<16, "hello world" string>
 #variadic = #interp.memory_handle<8, "0xDEAD">
 
-// CHECK: #interp.memref<[([[MY_BLOB]], heap, [(1, 1, 3)]), ([[STRING_BLOB]], heap, [])], 0, 24> : memref<2xi32>
-"some.op"() {a = #interp.memref<[(#my_blob, heap, [(1, 1, 3)]), (#string_blob, heap, [])], 0, 24> : memref<2xi32>} : () -> ()
+// CHECK: #interp.memref<[([[MY_BLOB]], heap, [(1, 1, 3)]), ([[STRING_BLOB]], heap, [], 3)], 0, 24> : memref<2xi32>
+"some.op"() {a = #interp.memref<[(#my_blob, heap, [(1, 1, 3)]), (#string_blob, heap, [], 3)], 0, 24> : memref<2xi32>} : () -> ()
 
 // CHECK: #interp.memref<[([[VARIADIC]], persistent, [])], 0, 0> : memref<1xi32>
 "some.op"() {a = #interp.memref<[(#variadic, persistent, [])], 0, 0> : memref<1xi32>} : () -> ()
