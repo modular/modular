@@ -31,7 +31,7 @@ from gpu.host.device_context import DeviceContext
 from gpu.memory import AddressSpace
 from gpu.shuffle import _static_log2, shuffle_down, shuffle_idx, warp_reduce_add
 from memory import stack_allocation
-from register import mogg_register
+from register import mogg_register, mogg_register_shape_func
 from runtime.asyncrt import MojoCallContextPtr, parallelism_level
 from runtime.tracing import Trace, TraceLevel, trace_arg
 
@@ -479,7 +479,11 @@ fn layer_norm_cpu[
     gamma_fn: fn[width: Int, rank: Int] (
         StaticIntTuple[rank]
     ) capturing -> SIMD[type, width],
-](out_buf: NDBuffer[type, 2, _], beta: NDBuffer[type, 1], eps: Scalar[type]):
+](
+    out_buf: NDBuffer[type, 2, _],
+    beta: NDBuffer[type, 1],
+    epsilon: Scalar[type],
+):
     """Computes layernorm(elementwise_fn(x)) across the last dimension of x, where layernorm is
     defined as $(x-mean(x))/(sqrt(var(x)+eps)*gamma_fn + beta$.
 
@@ -494,7 +498,7 @@ fn layer_norm_cpu[
     Args:
         out_buf: The output buffer.
         beta: The beta value to use in the layernorm calculation.
-        eps: The eps value to use in the layernorm calculation.
+        epsilon: The eps value to use in the layernorm calculation.
     """
     alias simd_width = simdwidthof[type]()
 
@@ -525,7 +529,7 @@ fn layer_norm_cpu[
 
         var mean_val = _sum_to_mean(sum_val, num_cols)
         var var_val = variance(out_slice, mean_val, 0)  # use biased estimator
-        var norm_factor = isqrt(var_val + eps)
+        var norm_factor = isqrt(var_val + epsilon)
 
         @__copy_capture(out_slice, norm_factor, mean_val)
         @parameter
@@ -597,15 +601,18 @@ fn layer_norm_cpu[
     sync_parallelize[task_func](num_workers)
 
 
+@mogg_register("mo.layer_norm")
+@export
 fn layer_norm[
     type: DType,
-    rank: Int, //,
+    rank: Int,
     input_0_fn: fn[_width: Int, _rank: Int] (
         StaticIntTuple[_rank]
     ) capturing -> SIMD[type, _width],
     input_1_fn: fn[_width: Int, _rank: Int] (
         StaticIntTuple[_rank]
     ) capturing -> SIMD[type, _width],
+    /,
     target: StringLiteral = "cpu",
 ](
     shape: StaticIntTuple[rank],
@@ -613,7 +620,7 @@ fn layer_norm[
     beta: NDBuffer[type, 1],
     epsilon: Scalar[type],
     output: NDBuffer[type, rank, *_],
-    ctx: MojoCallContextPtr = MojoCallContextPtr(),
+    ctx: MojoCallContextPtr,
 ) raises:
     # Note: we only support reduction along the last dimension
     if gamma_shape[0] != shape[rank - 1]:
@@ -688,7 +695,11 @@ fn rms_norm_gpu_warp_tiling[
     input_fn: fn[width: Int] (row: Int, col: Int) capturing -> SIMD[
         type, width
     ],
-](output: NDBuffer[type, 2], gamma: NDBuffer[type, 1], epsilon: Scalar[type]):
+](
+    output: NDBuffer[type, 2],
+    gamma: NDBuffer[type, 1],
+    epsilon: NDBuffer[type, 1],
+):
     alias align = alignof[SIMD[type, simd_width]]()
     alias accum_type = get_accum_type[type]()
 
@@ -707,7 +718,8 @@ fn rms_norm_gpu_warp_tiling[
         thread_m2 = (vec_data**2).reduce_add()
 
     var row_m2 = block_reduce(thread_m2)
-    var norm_factor = isqrt((row_m2 / num_cols) + epsilon.cast[accum_type]())
+    var epsilon_val = epsilon[0].cast[accum_type]()
+    var norm_factor = isqrt((row_m2 / num_cols) + epsilon_val)
 
     if idx < num_cols:
         var gamma_val = gamma.load[width=simd_width, alignment=align](
@@ -723,7 +735,11 @@ fn rms_norm_gpu_block[
     input_fn: fn[width: Int] (row: Int, col: Int) capturing -> SIMD[
         type, width
     ],
-](output: NDBuffer[type, 2], gamma: NDBuffer[type, 1], epsilon: Scalar[type]):
+](
+    output: NDBuffer[type, 2],
+    gamma: NDBuffer[type, 1],
+    epsilon: NDBuffer[type, 1],
+):
     alias align = alignof[SIMD[type, simd_width]]()
     alias accum_type = get_accum_type[type]()
 
@@ -740,7 +756,8 @@ fn rms_norm_gpu_block[
             thread_m2 += (vec_data**2).reduce_add()
 
     var row_m2 = block_reduce(thread_m2)
-    var norm_factor = isqrt((row_m2 / num_cols) + epsilon.cast[accum_type]())
+    var epsilon_val = epsilon[0].cast[accum_type]()
+    var norm_factor = isqrt((row_m2 / num_cols) + epsilon_val)
 
     # need a pass again to perform in place normalization
     for x in range(ceildiv(num_cols // simd_width, BlockDim.x())):
@@ -769,7 +786,7 @@ fn rms_norm_gpu[
 ](
     shape: StaticIntTuple[rank],
     gamma: NDBuffer[type, 1],
-    epsilon: Scalar[type],
+    epsilon: NDBuffer[type, 1],
     output: NDBuffer[type, rank, *_],
     ctx: DeviceContext,
 ) raises:
@@ -850,7 +867,11 @@ fn rms_norm_gpu[
 fn rms_norm_cpu[
     type: DType, //,
     input_fn: fn[width: Int] (Int, Int) capturing -> SIMD[type, width],
-](out_buf: NDBuffer[type, 2, _], gamma: NDBuffer[type, 1], eps: Scalar[type]):
+](
+    out_buf: NDBuffer[type, 2, _],
+    gamma: NDBuffer[type, 1],
+    epsilon: Scalar[type],
+):
     alias simd_width = simdwidthof[type]()
 
     var num_rows = out_buf.dim[0]()
@@ -868,7 +889,7 @@ fn rms_norm_cpu[
             sum_val += input_fn[1](row, col) ** 2
 
         var mean_val = _sum_to_mean(sum_val, num_cols)
-        var norm_factor = isqrt(mean_val + eps)
+        var norm_factor = isqrt(mean_val + epsilon)
 
         @__copy_capture(norm_factor)
         @parameter
@@ -933,3 +954,65 @@ fn rms_norm_cpu[
         rms_norm_cpu[input_fn_2d](output_buf_view, gamma, epsilon)
 
     sync_parallelize[task_func](num_workers)
+
+
+@mogg_register("rms_norm")
+@always_inline
+@export
+fn rms_norm[
+    type: DType,
+    rank: Int,
+    input_0_fn: fn[width: Int, rank: Int] (
+        StaticIntTuple[rank]
+    ) capturing -> SIMD[type, width],
+    /,
+    target: StringLiteral = "cpu",
+](
+    shape: StaticIntTuple[rank],
+    gamma: NDBuffer[type, 1],
+    epsilon: NDBuffer[type, 1],
+    output: NDBuffer[type, rank],
+    ctx: MojoCallContextPtr,
+) raises:
+    # Note: we only support reduction along the last dimension
+    if gamma.dynamic_shape[0] != shape[rank - 1]:
+        ctx.set_to_error("Gamma size does not match dimension of reduction.")
+        return
+
+    if output.dynamic_shape != shape:
+        ctx.set_to_error("Input and output buffers are not same shape")
+        return
+
+    @always_inline
+    @parameter
+    fn description_fn() -> String:
+        return trace_arg("input", shape, type)
+
+    with Trace[TraceLevel.OP](
+        "rms_norm",
+        Trace[TraceLevel.OP]._get_detail_str[description_fn](),
+    ):
+
+        @parameter
+        if target == "cpu":
+            rms_norm_cpu[input_0_fn](shape, gamma, epsilon[0], output)
+        elif "cuda" in target:
+            rms_norm_gpu[input_0_fn](
+                shape, gamma, epsilon, output, ctx.get_device_context()
+            )
+        else:
+            constrained[False, "unsupported target " + target]()
+
+
+@mogg_register_shape_func("rms_norm_shape")
+@always_inline
+fn rms_norm_shape[
+    type: DType,
+    rank: Int,
+    single_thread_blocking_override: Bool,
+](
+    input: NDBuffer[type, rank],
+    gamma: NDBuffer[type, 1],
+    epsilon: NDBuffer[type, 1],
+) -> StaticIntTuple[rank]:
+    return input.get_shape()
