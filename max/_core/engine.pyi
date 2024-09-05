@@ -56,4 +56,7 @@ class TorchInputSpec:
 class TensorData:
     def __init__(self, ptr: int, shape: List[int], dtype: DType): ...
 
+class MojoValue:
+    pass
+
 __version__: str
