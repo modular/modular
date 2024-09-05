@@ -81,7 +81,6 @@ fn create_none_spec[type: DType, rank: Int]() -> StaticTensorSpec[type, rank]:
 # fn foo(x: UnsafeTensorSlice):
 #   alias specs = specsof[x.type, x.rank]("x")
 @__mogg_intrinsic_attr("mogg.intrinsic_tensor_spec_hook")
-@export
 fn specsof[
     type: DType, rank: Int
 ](name: StringLiteral) -> StaticTensorSpec[type, rank]:
