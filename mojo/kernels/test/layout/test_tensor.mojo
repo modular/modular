@@ -917,7 +917,7 @@ fn test_split():
     # CHECK: [12.0, 13.0] [14.0, 15.0]
     print(tiles_vec2_axis0[1])
 
-    _ = tensor_4x4^
+    _ = tensor_4x4
 
 
 # CHECK-LABEL: test_copy_subtiles_scalars
