@@ -5,6 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 from dataclasses import dataclass
 from typing import Optional
+from pathlib import Path
 
 from max.dtype import DType
 
@@ -21,3 +22,6 @@ class Weight:
     shape: ShapeLike
     quantization_encoding: Optional[QuantizationEncoding] = None
     align: Optional[int] = None
+
+    filepath: Optional[Path] = None
+    offset: int = 0

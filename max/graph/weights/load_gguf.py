@@ -91,6 +91,7 @@ class GGUFWeights:
     _tensors: dict[str, gguf.ReaderTensor]
     _prefix: str
     _allocated: dict[str, np.ndarray]
+    _use_resource: bool
 
     def __init__(
         self,
@@ -98,7 +99,19 @@ class GGUFWeights:
         tensors=None,
         prefix: str = "",
         allocated=None,
+        use_resource=False,
     ):
+        """Creates a GGUF weights reader.
+
+        Args:
+            source: Path to a GGUF file or a GGUFReader object.
+            tensors: List of tensors in the GGUF checkpoint.
+            prefix: Weight name or prefix.
+            allocated: Dictionary of allocated values.
+            use_resource: When this is True, use memmaped dense resources in the
+                the graph. When this is False (default), map the weights during
+                the session initialization block.
+        """
         _check_gguf()
         assert gguf is not None
         self._reader = source if isinstance(
@@ -107,6 +120,7 @@ class GGUFWeights:
         self._tensors = tensors or {t.name: t for t in self._reader.tensors}
         self._prefix = prefix
         self._allocated = {} if allocated is None else allocated
+        self._use_resource = use_resource
 
     @property
     def name(self) -> str:
@@ -122,6 +136,7 @@ class GGUFWeights:
                     self._tensors,
                     prefix=name,
                     allocated=self._allocated,
+                    use_resource=self._use_resource,
                 )
 
     def __getattr__(self, attr) -> GGUFWeights:
@@ -136,6 +151,7 @@ class GGUFWeights:
             self._tensors,
             prefix=full_path,
             allocated=self._allocated,
+            use_resource=self._use_resource,
         )
 
     def __getitem__(self, idx: int) -> GGUFWeights:
@@ -175,14 +191,24 @@ class GGUFWeights:
                 )
             else:
                 raise ValueError(f"Unknown GGML DType: {tensor.tensor_type}.")
-
-        return Weight(
-            name=tensor.name,
-            dtype=dtype,
-            shape=shape,
-            quantization_encoding=encoding,
-            align=self._reader.alignment,
-        )
+        if self._use_resource:
+            return Weight(
+                name=tensor.name,
+                dtype=dtype,
+                shape=shape,
+                quantization_encoding=encoding,
+                align=self._reader.alignment,
+                filepath=tensor.data.filename,
+                offset=tensor.data_offset,
+            )
+        else:
+            return Weight(
+                name=tensor.name,
+                dtype=dtype,
+                shape=shape,
+                quantization_encoding=encoding,
+                align=self._reader.alignment,
+            )
 
     def allocate(
         self,
@@ -193,7 +219,8 @@ class GGUFWeights:
         """Creates and optionally validates a new Weight."""
         tensor = self.raw_tensor()
         weight = self._parse_weight(tensor)
-        self._allocated[self._prefix] = tensor.data
+        if not self._use_resource:
+            self._allocated[self._prefix] = tensor.data
 
         # Validate the loaded weight.
         shape_match = True
