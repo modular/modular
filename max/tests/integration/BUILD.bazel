@@ -18,6 +18,16 @@ mojo_library(
     ],
 )
 
+mojo_library(
+    name = "counter_ops",
+    srcs = glob(["Inputs/counter_ops/*.mojo"]),
+    visibility = [":__subpackages__"],
+    deps = [
+        "//Kernels/mojo/register",
+        "//open-source/mojo/stdlib/stdlib",
+    ],
+)
+
 lit_tests(
     name = "test",
     size = "large",
