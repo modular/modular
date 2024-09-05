@@ -82,13 +82,31 @@ struct FunctionTrait {
 };
 } // namespace
 
+/// Use this function instead of `getNextNode()` on an operation to skip over
+/// debug operations.
+static Operation *getNextNonDebugNode(Operation *op) {
+  do {
+    op = op->getNextNode();
+  } while (op &&
+           isa_and_nonnull<DebugInfo::DebugInfoDialect>(op->getDialect()));
+  return op;
+}
+
+/// Get the first non-debug operation in a block.
+static Operation *getFirstNonDebugNode(Block *block) {
+  Operation *op = &block->front();
+  if (isa_and_nonnull<DebugInfo::DebugInfoDialect>(op->getDialect()))
+    return getNextNonDebugNode(op);
+  return op;
+}
+
 std::optional<FunctionTrait> FunctionTrait::identify(GeneratorOp func) {
   // In all patterns, the function is terminated by a return.
   auto ret = dyn_cast<ReturnOp>(func.getBody()->getTerminator());
   if (!ret)
     return {};
   SignatureType sig = func.getSignature();
-  Operation *first = &func.getBody()->front();
+  Operation *first = getFirstNonDebugNode(func.getBody());
 
   // Check one argument, one result, return is only operation in the body. It
   // follows that the return operand must be the function argument, since there
@@ -101,7 +119,7 @@ std::optional<FunctionTrait> FunctionTrait::identify(GeneratorOp func) {
   // constant.
   auto cst = dyn_cast<ParamConstantOp>(first);
   if (cst && sig.getNumArguments() == 0 && ret.getNumOperands() == 1 &&
-      cst->getNextNode() == ret)
+      getNextNonDebugNode(cst) == ret)
     return FunctionTrait{RegConstant{func.getInputParams(), cst.getValue()}};
 
   // Check two arguments, one result, the return value is a none constant, and
@@ -111,9 +129,9 @@ std::optional<FunctionTrait> FunctionTrait::identify(GeneratorOp func) {
   if (sig.getNumArguments() == 2 && ret.getNumOperands() == 1 &&
       mlir::matchPattern(ret.getOperand(0), mlir::m_Constant(&noneAttr)) &&
       ((store = dyn_cast<POP::StoreOp>(first)) ||
-       (store = dyn_cast<POP::StoreOp>(first->getNextNode()))) &&
-      (store->getNextNode() == ret ||
-       ret.getOperand(0).getDefiningOp()->getNextNode() == ret)) {
+       (store = dyn_cast<POP::StoreOp>(getNextNonDebugNode(first)))) &&
+      (getNextNonDebugNode(store) == ret ||
+       getNextNonDebugNode(ret.getOperand(0).getDefiningOp()) == ret)) {
     int valueIdx = -1;
     if (sig.getArgConvention(0) == ArgConvention::InitSelf)
       valueIdx = 1;
