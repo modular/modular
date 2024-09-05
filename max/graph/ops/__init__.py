@@ -32,7 +32,9 @@ from .elementwise import *
 from .gather import gather
 from .layer_norm import layer_norm
 from .matmul import matmul
+from .outer import outer
 from .quantized import dequantize, qmatmul
+from .range import range
 from .rebind import rebind
 from .reduction import mean
 from .reshape import reshape
@@ -43,4 +45,3 @@ from .squeeze import squeeze
 from .stack import stack
 from .transpose import transpose
 from .unsqueeze import unsqueeze
-from .outer import outer
