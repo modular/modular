@@ -400,13 +400,15 @@ struct AccessPolicyWindow:
     ](
         inout self,
         *,
-        base_ptr: UnsafePointer[T],
+        base_ptr: UnsafePointer[T, *_, **_],
         count: Int,
         hit_ratio: Float32,
         hit_prop: AccessProperty = AccessProperty.NORMAL,
         miss_prop: AccessProperty = AccessProperty.NORMAL,
     ):
-        self.base_ptr = base_ptr.bitcast[NoneType]()
+        self.base_ptr = base_ptr.bitcast[
+            NoneType, address_space = AddressSpace.GENERIC
+        ]().address
         self.num_bytes = count * sizeof[T]()
         self.hit_ratio = hit_ratio
         self.hit_prop = hit_prop
