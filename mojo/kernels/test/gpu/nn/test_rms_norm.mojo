@@ -40,6 +40,7 @@ fn run_rms_norm_gpu[
     var data_h = UnsafePointer[Scalar[type]].alloc(rows * cols)
     var res = UnsafePointer[Scalar[type]].alloc(rows * cols)
     var gamma_h = UnsafePointer[Scalar[type]].alloc(cols)
+    var epsilon_h = UnsafePointer[Scalar[type]].alloc(1)
 
     for i in range(rows * cols):
         var val = Scalar[type](i)
@@ -48,18 +49,22 @@ fn run_rms_norm_gpu[
     for i in range(cols):
         gamma_h[i] = ((i + cols) / cols).cast[type]()
 
+    epsilon_h[0] = 0.001
+
     var data_d = ctx.create_buffer[type](rows * cols)
     var gamma_d = ctx.create_buffer[type](cols)
     var beta_d = ctx.create_buffer[type](cols)
+    var epsilon_d = ctx.create_buffer[type](1)
 
     var param_shape = Index(cols)
 
     var data_buf = NDBuffer[type, rank](data_d.ptr, shape)
     var gamma = NDBuffer[type, 1](gamma_d.ptr, param_shape)
-    var epsilon = Scalar[type]()
+    var epsilon = NDBuffer[type, 1](epsilon_d.ptr, Index(1))
 
     ctx.enqueue_copy_to_device(data_d, data_h)
     ctx.enqueue_copy_to_device(gamma_d, gamma_h)
+    ctx.enqueue_copy_to_device(epsilon_d, epsilon_h)
 
     @__copy_capture(data_buf)
     @always_inline
@@ -75,7 +80,7 @@ fn run_rms_norm_gpu[
 
     for r in range(rows):
         var vec = Buffer[type](data_h + r * cols, cols)
-        var rms_ref = compute_rms(vec, cols, epsilon)
+        var rms_ref = compute_rms(vec, cols, epsilon_h[0])
         for c in range(cols):
             var idx = r * cols + c
             var val = (data_h[idx] / rms_ref) * gamma_h[c]
@@ -83,10 +88,12 @@ fn run_rms_norm_gpu[
 
     _ = data_d
     _ = gamma_d
+    _ = epsilon_d
 
     data_h.free()
     res.free()
     gamma_h.free()
+    epsilon_h.free()
 
 
 fn main():
