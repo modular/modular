@@ -497,25 +497,20 @@ fn gevm_tc_kernel_vector_8x[
 
 @always_inline
 fn gemv_gpu[
-    a_type: DType,
-    a_shape: DimList,
-    b_type: DType,
-    b_shape: DimList,
-    c_type: DType,
-    c_shape: DimList,
     transpose_b: Bool = False,
     elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
 ](
-    c: NDBuffer[c_type, 2, c_shape],
-    a: NDBuffer[a_type, 2, a_shape],
-    b: NDBuffer[b_type, 2, b_shape],
+    c: NDBuffer[_, 2, *_, **_],
+    a: NDBuffer[_, 2, *_, **_],
+    b: NDBuffer[_, 2, *_, **_],
     ctx: DeviceContext,
 ) raises:
     var shape = GemmShape.get[transpose_b=False](c, a, b)
     var m = shape.M
     var n = shape.N
     var k = shape.K
-    alias simd_width = simdwidthof[a_type, target = _get_nvptx_target()]()
+    alias WARPS_PER_BLOCK = 32
+    alias simd_width = simdwidthof[a.type, target = _get_nvptx_target()]()
 
     if n == 1:
         # TODO: Should use Device.query
@@ -531,11 +526,7 @@ fn gemv_gpu[
         )
 
         @parameter
-        if a_type == DType.bfloat16:
-            alias WARPS_PER_BLOCK = 32
-            alias simd_width = simdwidthof[
-                DType.bfloat16, target = _get_nvptx_target()
-            ]()
+        if a.type is DType.bfloat16:
             if k % simd_width == 0:
                 var block_dim = min(
                     align_up(k // simd_width, WARP_SIZE),
@@ -544,12 +535,12 @@ fn gemv_gpu[
 
                 var gpu_func = ctx.compile_function[
                     gemv_kernel_vector[
-                        c_type,
-                        c_shape,
-                        a_type,
-                        a_shape,
-                        b_type,
-                        b_shape,
+                        c.type,
+                        c.shape,
+                        a.type,
+                        a.shape,
+                        b.type,
+                        b.shape,
                         simd_width=simd_width,
                         reduction_method = ReductionMethod.WARP,
                         elementwise_lambda_fn=elementwise_lambda_fn,
@@ -568,12 +559,11 @@ fn gemv_gpu[
                     attributes=launch_attributes,
                 )
             else:
-                alias WARPS_PER_BLOCK = 32
                 var gpu_func = ctx.compile_function[
                     gemv_kernel[
-                        c_type,
-                        a_type,
-                        b_type,
+                        c.type,
+                        a.type,
+                        b.type,
                         reduction_method = ReductionMethod.TENSOR_CORE,
                         elementwise_lambda_fn=elementwise_lambda_fn,
                     ]
@@ -590,12 +580,11 @@ fn gemv_gpu[
                     block_dim=WARP_SIZE * WARPS_PER_BLOCK,
                 )
         else:
-            alias WARPS_PER_BLOCK = 32
             var gpu_func = ctx.compile_function[
                 gemv_kernel[
-                    c_type,
-                    a_type,
-                    b_type,
+                    c.type,
+                    a.type,
+                    b.type,
                     reduction_method = ReductionMethod.WARP,
                     elementwise_lambda_fn=elementwise_lambda_fn,
                 ]
@@ -612,57 +601,21 @@ fn gemv_gpu[
                 block_dim=WARP_SIZE * WARPS_PER_BLOCK,
             )
     elif m == 1 and transpose_b == True:
-        alias use_gemv_vector = False
 
         @parameter
-        if a_type == DType.bfloat16:
-            alias WARPS_PER_BLOCK = 32
-            alias simd_width = simdwidthof[
-                DType.bfloat16, target = _get_nvptx_target()
-            ]()
-            if k % simd_width == 0 and use_gemv_vector:
-                var block_dim = min(
-                    align_up(k // simd_width, WARP_SIZE),
-                    WARP_SIZE * WARPS_PER_BLOCK,
-                )
-
-                var gpu_func = ctx.compile_function[
-                    gemv_kernel_vector[
-                        c_type,
-                        c_shape,
-                        b_type,
-                        b_shape,
-                        a_type,
-                        a_shape,
-                        simd_width=simd_width,
-                        reduction_method = ReductionMethod.WARP,
-                        transpose_b=transpose_b,
-                        elementwise_lambda_fn=elementwise_lambda_fn,
-                    ]
-                ]()
-                ctx.enqueue_function(
-                    gpu_func,
-                    c,
-                    b,
-                    a,
-                    UInt(n),
-                    UInt(m),
-                    UInt(k),
-                    grid_dim=ceildiv(n, block_dim // WARP_SIZE),
-                    block_dim=block_dim,
-                )
-            elif k % simd_width == 0:
+        if a.type is DType.bfloat16:
+            if k % simd_width == 0:
                 alias block_size = 128
                 alias tile_m = 1
                 alias tile_n = 2
                 var gpu_func = ctx.compile_function[
                     gemv_split_k[
-                        c_type,
-                        c_shape,
-                        a_type,
-                        a_shape,
-                        b_type,
-                        b_shape,
+                        c.type,
+                        c.shape,
+                        a.type,
+                        a.shape,
+                        b.type,
+                        b.shape,
                         simd_width=simd_width,
                         tile_m=tile_m,
                         tile_n=tile_n,
@@ -682,12 +635,11 @@ fn gemv_gpu[
                     block_dim=block_size,
                 )
             else:
-                alias WARPS_PER_BLOCK = 32
                 var gpu_func = ctx.compile_function[
                     gemv_kernel[
-                        c_type,
-                        b_type,
-                        a_type,
+                        c.type,
+                        b.type,
+                        a.type,
                         reduction_method = ReductionMethod.TENSOR_CORE,
                         transpose_b=transpose_b,
                         elementwise_lambda_fn=elementwise_lambda_fn,
@@ -705,12 +657,11 @@ fn gemv_gpu[
                     block_dim=WARP_SIZE * WARPS_PER_BLOCK,
                 )
         else:
-            alias WARPS_PER_BLOCK = 32
             var gpu_func = ctx.compile_function[
                 gemv_kernel[
-                    c_type,
-                    b_type,
-                    a_type,
+                    c.type,
+                    b.type,
+                    a.type,
                     reduction_method = ReductionMethod.WARP,
                     transpose_b=transpose_b,
                     elementwise_lambda_fn=elementwise_lambda_fn,
@@ -731,12 +682,7 @@ fn gemv_gpu[
     elif m == 1 and n % WARP_SIZE == 0 and k % WARP_SIZE == 0:
 
         @parameter
-        if a_type == DType.bfloat16:
-            alias simd_width = simdwidthof[
-                DType.bfloat16, target = _get_nvptx_target()
-            ]()
-            alias max_warps_per_block = 32
-
+        if a.type is DType.bfloat16:
             if (
                 k >= 4096
                 and n >= 4096
@@ -745,10 +691,10 @@ fn gemv_gpu[
             ):
                 var gpu_func = ctx.compile_function[
                     gevm_tc_kernel_vector_8x[
-                        c_type,
-                        a_type,
-                        b_type,
-                        WARP_SIZE * max_warps_per_block * simd_width,
+                        c.type,
+                        a.type,
+                        b.type,
+                        WARP_SIZE * WARPS_PER_BLOCK * simd_width,
                         simd_width,
                         elementwise_lambda_fn=elementwise_lambda_fn,
                     ]
@@ -762,15 +708,14 @@ fn gemv_gpu[
                     n,
                     k,
                     grid_dim=ceildiv(n, WARP_SIZE * simd_width),
-                    block_dim=WARP_SIZE * max_warps_per_block,
+                    block_dim=WARP_SIZE * WARPS_PER_BLOCK,
                 )
             else:
-                alias WARPS_PER_BLOCK = 32
                 var gpu_func = ctx.compile_function[
                     gevm_kernel[
-                        c_type,
-                        a_type,
-                        b_type,
+                        c.type,
+                        a.type,
+                        b.type,
                         tile_size = WARP_SIZE * WARPS_PER_BLOCK,
                         elementwise_lambda_fn=elementwise_lambda_fn,
                     ]
@@ -787,12 +732,11 @@ fn gemv_gpu[
                     block_dim=WARP_SIZE * WARPS_PER_BLOCK,
                 )
         else:
-            alias WARPS_PER_BLOCK = 32
             var gpu_func = ctx.compile_function[
                 gevm_kernel[
-                    c_type,
-                    a_type,
-                    b_type,
+                    c.type,
+                    a.type,
+                    b.type,
                     tile_size = WARP_SIZE * WARPS_PER_BLOCK,
                     elementwise_lambda_fn=elementwise_lambda_fn,
                 ]
@@ -812,9 +756,9 @@ fn gemv_gpu[
         alias BLOCK_DIM = 16
         var gpu_func = ctx.compile_function[
             matmul_kernel_naive[
-                a_type,
-                b_type,
-                c_type,
+                c.type,
+                a.type,
+                b.type,
                 BLOCK_DIM,
                 transpose_b,
                 elementwise_lambda_fn=elementwise_lambda_fn,

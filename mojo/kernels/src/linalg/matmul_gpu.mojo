@@ -979,12 +979,6 @@ fn _matmul_gpu_dispatch[
         )
     elif n == 1 or m == 1:
         gemv_gpu[
-            a_type,
-            a_shape,
-            b_type,
-            b_shape,
-            c_type,
-            c_shape,
             transpose_b=transpose_b,
             elementwise_lambda_fn=elementwise_lambda_fn,
         ](c, a, b, ctx)
