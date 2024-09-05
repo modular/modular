@@ -147,3 +147,17 @@ fn lop[lut: Int](a: Int32, b: Int32, c: Int32) -> Int32:
     return inlined_assembly[
         "lop3.b32", Int32, constraints="=r,r,r,r,n", has_side_effect=False
     ](a, b, c, Int32(lut))
+
+
+# ===----------------------------------------------------------------------===#
+# permute
+# ===----------------------------------------------------------------------===#
+
+
+@always_inline
+fn byte_permute(a: UInt32, b: UInt32, c: UInt32) -> UInt32:
+    """Return selected bytes from two 32-bit unsigned integers."""
+
+    return llvm_intrinsic["llvm.nvvm.prmt", UInt32, has_side_effect=False](
+        a, b, c
+    )
