@@ -31,14 +31,14 @@ def test_constant_transpose() -> None:
 
 
 @given(dtype=...)
-def test_scalar(dtype: DType) -> None:
+def test_scalar_constant(dtype: DType) -> None:
     # Can represent an integer value
     assume(dtype != DType.bool)
     # Not supported by numpy
     assume(dtype != DType.bfloat16)
     with Graph("scalar", input_types=()) as graph:
         const = 7.2
-        const = ops.scalar(const, dtype)
+        const = ops.constant(const, dtype)
 
         graph.output(const)
 

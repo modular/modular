@@ -25,7 +25,7 @@ from .broadcast_to import broadcast_to
 from .cast import cast
 from .complex import as_interleaved_complex
 from .concat import concat
-from .constant import constant, scalar
+from .constant import constant
 from .custom import custom
 from .debug import print
 from .elementwise import *

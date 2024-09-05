@@ -22,8 +22,8 @@ def test_range(start: int, stop: int, step: int) -> None:
 
     with Graph("range", input_types=()) as graph:
         dim = (stop - start) // step
-        start = ops.scalar(start, DType.int64)
-        stop = ops.scalar(stop, DType.int64)
-        step = ops.scalar(step, DType.int64)
+        start = ops.constant(start, DType.int64)
+        stop = ops.constant(stop, DType.int64)
+        step = ops.constant(step, DType.int64)
         out = ops.range(start, stop, step, dim)
         graph.output(out)

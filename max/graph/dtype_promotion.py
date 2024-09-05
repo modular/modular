@@ -20,7 +20,9 @@ If all input dtypes can be fully represented by the target dtype, the promotion 
 If an input can not be guaranteed representable (e.g. `uint8` -> `int8`), an error is raised.
 
 DType promotion of a max object and a non-max object will only ever promote to the max object DType.
-An error will be raised if the values in the non-max object are not representable in the max object DType.
+An error will be raised if the values in the non-max object are not precisely representable in the max object DType.
+This means that `16777217` will raise an error if converted to float32 (where it would be represented as 16777216.0).
+To convert a value while allowing for minor precision loss, `ops.constant` can be used.
 
 If only non-max objects attempt promotion, it will always fail.
 """
@@ -63,8 +65,7 @@ def _promote_weak_dtypes(values: Iterable[ValueLike]) -> Iterable[TensorValue]:
                 "Unary ops do not support non-max objects as input. Non-max"
                 " objects tend to overpromote the dtype, leading to significant"
                 " loss of performance. Please explicitly convert the input to a"
-                " graph.Value. This can be done with ops.constant or"
-                " ops.scalar."
+                " graph.Value. This can be done with ops.constant."
             )
     elif len(values) == 2:
         if _is_strong(values[0]) and _is_strong(values[1]):
@@ -75,8 +76,7 @@ def _promote_weak_dtypes(values: Iterable[ValueLike]) -> Iterable[TensorValue]:
                 "Binary ops require at least one max object as input. Non-max"
                 " objects tend to overpromote the dtype, leading to significant"
                 " loss of performance. Please explicitly convert at least one"
-                " input to a graph.Value. This can be done with ops.constant or"
-                " ops.scalar."
+                " input to a graph.Value. This can be done with ops.constant."
             )
 
         if _is_strong(values[0]):
@@ -91,7 +91,7 @@ def _promote_to(value: ValueLike, out_dtype: DType) -> TensorValue:
     if isinstance(value, (int, np.integer)):
         min, max = _DTYPE_MIN_AND_MAX_FULL_PRECISION[out_dtype]
         if min <= value <= max:
-            return ops.scalar(value, out_dtype)
+            return ops.constant(value, out_dtype)
 
         raise ValueError(
             f"Unsafe cast: Can't promote python int with value ({value}) to"
@@ -100,7 +100,7 @@ def _promote_to(value: ValueLike, out_dtype: DType) -> TensorValue:
 
     elif isinstance(value, (float, np.floating)):
         if out_dtype.is_float():
-            return ops.scalar(value, out_dtype)
+            return ops.constant(value, out_dtype)
 
         raise ValueError(
             f"Unsafe cast: Can't promote python float to dtype({out_dtype})."

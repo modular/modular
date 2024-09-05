@@ -44,7 +44,7 @@ def test_slice_with_tensor_value():
     with Graph(
         "slice", input_types=[TensorType(DType.int32, [5, "in_dim"])]
     ) as graph:
-        start = ops.scalar(2, DType.int64)
+        start = ops.constant(2, DType.int64)
         out = graph.inputs[0][
             (slice(start, None), 3), (slice(start, None), "out_dim")
         ]

@@ -9,7 +9,7 @@ import numpy as np
 from max.mlir.dialects import mo
 
 from .. import dtype_promotion
-from .constant import scalar
+from .constant import constant
 from ..graph import Graph
 from ..value import TensorValue, ValueLike
 
@@ -36,5 +36,5 @@ def layer_norm(
         input,
         gamma,
         beta,
-        scalar(epsilon, input.dtype),
+        constant(epsilon, input.dtype),
     )[0].tensor

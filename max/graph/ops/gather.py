@@ -12,7 +12,7 @@ from max.mlir.dialects import rmo
 from ..graph import Graph
 from ..value import TensorValue, ValueLike
 from ..type import TensorType
-from .constant import scalar
+from .constant import constant
 
 
 def gather(input: ValueLike, indices: ValueLike, axis: int = -1) -> TensorValue:
@@ -38,5 +38,5 @@ def gather(input: ValueLike, indices: ValueLike, axis: int = -1) -> TensorValue:
         TensorType(input.dtype, output_shape).to_mlir(),
         input,
         indices,
-        scalar(axis, DType.int64),
+        constant(axis, DType.int64),
     )[0].tensor

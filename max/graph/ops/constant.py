@@ -16,16 +16,19 @@ from ..value import TensorValue
 from ..type import TensorType
 
 
-def constant(value: np.ndarray, dtype: DType) -> TensorValue:
+def constant(
+    value: Union[np.ndarray, int, float, np.integer, np.floating], dtype: DType
+) -> TensorValue:
     """Adds a node representing a constant operation.
 
     The value of this constant will have the type `TensorType` with the
-    same shape and dtype as `value`.
+    same shape as `value`. If `value` is a scalar type, it will create a `TensorType` with 0 dimensions.
 
     The constant will be loaded with the specified dtype.
     If the constant does not fit within the specified dtype, an error is raised.
 
     Warning: Loading the constant could result in precision loss.
+    For example, loading `16777217` as a `float32` will result in `16777216.0`.
 
     Args:
         value: The constant's value.
@@ -34,16 +37,14 @@ def constant(value: np.ndarray, dtype: DType) -> TensorValue:
     Returns:
         A graph value containing the constant data as an attribute.
     """
+    if not isinstance(value, (np.ndarray, int, float, np.integer, np.floating)):
+        raise TypeError(
+            "ops.constant expects inputs to numpy array, int, float,"
+            f" np.integer, or np.floating, but got '{type(value).__name__}'."
+        )
+
     if isinstance(value, (int, float, np.integer, np.floating)):
-        raise TypeError(
-            "ops.constant expects inputs to be numpy array, but got"
-            f" '{type(value).__name__}'. Use ops.scalar for this instead."
-        )
-    if not isinstance(value, (np.ndarray)):
-        raise TypeError(
-            "ops.constant expects inputs to be numpy array, but got"
-            f" '{type(value).__name__}'."
-        )
+        value = np.array(value)
 
     if dtype == DType.bfloat16:
         # Numpy can't natively generate in bf16.
@@ -62,54 +63,6 @@ def constant(value: np.ndarray, dtype: DType) -> TensorValue:
         "value",
         np.ascontiguousarray(value.astype(dtype.to_numpy())),
         tensor_type,
-    )
-    return Graph.current._add_op(
-        mo.constant, result=tensor_type, value=array_attr
-    )[0].tensor
-
-
-def scalar(
-    value: Union[int, float, np.integer, np.floating],
-    dtype: DType,
-    rank: int = 0,
-) -> TensorValue:
-    """Creates a scalar in the graph and returns the value.
-
-    A scalar is a tensor with a single element. Generally scalars are of rank 0, but that is configurable.
-
-    The scalar will be loaded with the specified dtype.
-    If the scalar does not fit within the specified dtype, an error is raised.
-
-    Warning: Loading the scalar could result in precision loss.
-    """
-    if isinstance(value, (np.ndarray)):
-        raise TypeError(
-            "ops.scalar expects inputs to int, float, np.integer, or"
-            " np.floating, but got numpy array. Use ops.constant for numpy"
-            " arrays."
-        )
-    if not isinstance(value, (int, float, np.integer, np.floating)):
-        raise TypeError(
-            "ops.scalar expects inputs to int, float, np.integer, or"
-            f" np.floating, but got '{type(value).__name__}'."
-        )
-
-    if dtype == DType.bfloat16:
-        # Numpy can't natively generate in bf16.
-        # Generate in f32 and cast to bf16.
-        return scalar(value, DType.float32, rank).cast(DType.bfloat16)
-
-    if not dtype.is_float():
-        min, max = _DTYPE_MIN_AND_MAX[dtype]
-        if not (min <= value <= max):
-            raise ValueError(
-                f"Unsafe cast: Can't cast python scalar with value ({value}) to"
-                f" dtype({dtype}). Value out of range of dtype."
-            )
-
-    tensor_type = TensorType(dtype, [1] * rank).to_mlir()
-    array_attr = _graph.array_attr(
-        "value", np.array([value]).astype(dtype.to_numpy()), tensor_type
     )
     return Graph.current._add_op(
         mo.constant, result=tensor_type, value=array_attr

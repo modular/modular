@@ -26,7 +26,7 @@ from max.mlir.dialects import rmo
 from ..graph import Graph
 from ..value import TensorValue
 from ..type import Dim, DimLike, Shape, StaticDim, TensorType
-from .constant import scalar
+from .constant import constant
 from .select import select
 from .stack import stack_scalars
 
@@ -63,11 +63,10 @@ def _slice_index_and_output(
             raise ValueError(
                 f"Slice index value must be a scalar, had shape {index.shape}"
             )
-        # TODO (MSDK-751): remove scalar call
         return (
             slice(
                 index,
-                select(index == scalar(-1, DType.int64), int64_max, 0),
+                select(index == -1, int64_max, constant(0, DType.int64)),
                 1,
             ),
             1,
@@ -87,31 +86,17 @@ def _slice_index_and_output(
         and isinstance(index[0], slice)
         and isinstance(index[1], (int, str, Dim, np.integer))
     ):
-        # TODO (MSDK-751): remove scalar calls below
-        start = scalar(index[0].start, DType.int64) if isinstance(
-            index[0].start, int
-        ) else index[0].start
-        stop = scalar(index[0].stop, DType.int64) if isinstance(
-            index[0].stop, int
-        ) else index[0].stop
-        step = scalar(index[0].step, DType.int64) if isinstance(
-            index[0].step, int
-        ) else index[0].step
+        start = index[0].start
+        stop = index[0].stop
+        step = index[0].step
+        zero = constant(0, DType.int64)
 
         if step is None:
-            step = scalar(1, DType.int64)
+            step = 1
         if start is None:
-            start = select(
-                step >= scalar(0, DType.int64),
-                scalar(0, DType.int64),
-                scalar(int64_max, DType.int64),
-            )
+            start = select(step >= zero, zero, int64_max)
         if stop is None:
-            stop = select(
-                step >= scalar(0, DType.int64),
-                scalar(int64_max, DType.int64),
-                scalar(0, DType.int64),
-            )
+            stop = select(step >= zero, int64_max, zero)
 
         return (slice(start, stop, step), index[1])
 
@@ -154,7 +139,9 @@ def slice_tensor(x: TensorValue, indices: SliceIndices) -> TensorValue:
 
     def value(dim: Union[TensorValue, int]) -> TensorValue:
         assert isinstance(dim, (TensorValue, int))
-        return dim if isinstance(dim, TensorValue) else scalar(dim, DType.int64)
+        return dim if isinstance(dim, TensorValue) else constant(
+            dim, DType.int64
+        )
 
     starts = stack_scalars(value(s.start) for s in slices)
     stops = stack_scalars(value(s.stop) for s in slices)
