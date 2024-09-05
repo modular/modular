@@ -124,8 +124,8 @@ from nn.flash_attention import flash_attention as nn_flash_attention
 from nn.mha import fused_attention as cpu_fused_attention_impl
 from nn.flash_attention import flash_attention_split_kv
 from nn.nms import non_max_suppression, non_max_suppression_shape_func
-from nn.normalization import layer_norm as _layer_norm
-from nn.normalization import layer_norm_shape
+from nn.normalization import layer_norm, layer_norm_shape
+from nn.normalization import rms_norm, rms_norm_shape
 from nn.pad import pad_constant as _pad_constant
 from nn.pad import pad_reflect as _pad_reflect
 from nn.pad import pad_repeat as _pad_repeat
@@ -189,7 +189,10 @@ fn MOGGExport():
     alias _gelu = gelu
     alias _pack_matmul_b_shape_func = pack_matmul_b_shape_func
     alias _pad_shape = pad_shape
+    alias _layer_norm = layer_norm
     alias _layer_norm_shape = layer_norm_shape
+    alias _rms_norm = rms_norm
+    alias _rms_norm_shape = rms_norm_shape
     alias _pack_b_ndbuffer = pack_b_ndbuffer
     alias _pack_transposed_b_ndbuffer = pack_transposed_b_ndbuffer
     alias _max_pool_shape = pool_shape
@@ -3165,32 +3168,6 @@ fn conv_transpose[
         )
     except e:
         ctx.set_to_error(e)
-
-
-@mogg_register("mo.layer_norm")
-@export
-fn layer_norm[
-    type: DType,
-    rank: Int,
-    input_0_fn: fn[_width: Int, _rank: Int] (
-        StaticIntTuple[_rank]
-    ) capturing -> SIMD[type, _width],
-    input_1_fn: fn[_width: Int, _rank: Int] (
-        StaticIntTuple[_rank]
-    ) capturing -> SIMD[type, _width],
-    *,
-    target: StringLiteral = "cpu",
-](
-    shape: StaticIntTuple[rank],
-    gamma_shape: StaticIntTuple[1],
-    beta: NDBuffer[type, 1],
-    epsilon: Scalar[type],
-    output: NDBuffer[type, rank, *_],
-    ctx: MojoCallContextPtr,
-) raises:
-    _layer_norm[input_0_fn, input_1_fn, target=target](
-        shape, gamma_shape, beta, epsilon, output, ctx
-    )
 
 
 # ===----------------------------------------------------------------------===#
