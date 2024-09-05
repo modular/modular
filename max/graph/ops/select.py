@@ -29,5 +29,5 @@ def select(cond: ValueLike, x: ValueLike, y: ValueLike) -> TensorValue:
         A new symbolic tensor holding either values from either ``x`` or ``y``,
         based on the elements in `condition`.
     """
-    x, y = dtype_promotion._promote_weak_dtypes((x, y))
+    x, y = dtype_promotion._promote_weak_dtypes(x, y)
     return Graph.current._add_op(rmo.select, TensorValue(cond), x, y)[0].tensor

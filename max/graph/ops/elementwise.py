@@ -19,7 +19,7 @@ from ..value import TensorValue, ValueLike
 
 def _elementwise_binary(op):
     def elementwise_op(lhs: ValueLike, rhs: ValueLike) -> TensorValue:
-        lhs, rhs = dtype_promotion._promote_weak_dtypes((lhs, rhs))
+        lhs, rhs = dtype_promotion._promote_weak_dtypes(lhs, rhs)
         return Graph.current._add_op(op, lhs, rhs)[0].tensor
 
     elementwise_op.__name__ = op.__name__
@@ -373,7 +373,7 @@ Raises:
 
 def _elementwise_unary(op):
     def elementwise_op(x: ValueLike) -> TensorValue:
-        x, = dtype_promotion._promote_weak_dtypes((x,))
+        x = dtype_promotion._restrict_to_strong_dtypes(x)
         return Graph.current._add_op(op, x._mlir_value.type, x)[0].tensor
 
     elementwise_op.__name__ = op.__name__

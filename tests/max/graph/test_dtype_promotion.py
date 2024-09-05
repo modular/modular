@@ -25,8 +25,8 @@ def test_promote_weak_dtypes__python_float(
             DType.float64,
         ]:
             # float to float will succeed.
-            (v1, v2) = dtype_promotion._promote_weak_dtypes(
-                (graph.inputs[0], scalar)
+            v1, v2 = dtype_promotion._promote_weak_dtypes(
+                graph.inputs[0], scalar
             )
 
             assert v1.dtype == graph_type.dtype
@@ -34,8 +34,8 @@ def test_promote_weak_dtypes__python_float(
         else:
             # float to int will fail.
             with pytest.raises(ValueError, match="Unsafe cast"):
-                (v1, v2) = dtype_promotion._promote_weak_dtypes(
-                    (graph.inputs[0], scalar)
+                v1, v2 = dtype_promotion._promote_weak_dtypes(
+                    graph.inputs[0], scalar
                 )
 
 
@@ -43,8 +43,8 @@ def test_promote_weak_dtypes__python_float(
 def test_promote_weak_dtypes__python_int(graph_type: TensorType, scalar: int):
     with Graph("promote_weak_dtypes", input_types=[graph_type]) as graph:
         try:
-            (v1, v2) = dtype_promotion._promote_weak_dtypes(
-                (graph.inputs[0], scalar)
+            v1, v2 = dtype_promotion._promote_weak_dtypes(
+                graph.inputs[0], scalar
             )
 
             assert v1.dtype == graph_type.dtype
@@ -72,8 +72,8 @@ def test_promote_weak_dtypes__np_float(
             DType.float64,
         ]:
             # float to float will succeed.
-            (v1, v2) = dtype_promotion._promote_weak_dtypes(
-                (graph.inputs[0], np_const)
+            v1, v2 = dtype_promotion._promote_weak_dtypes(
+                graph.inputs[0], np_const
             )
 
             assert v1.dtype == graph_type.dtype
@@ -81,8 +81,8 @@ def test_promote_weak_dtypes__np_float(
         else:
             # float to int will fail.
             with pytest.raises(ValueError, match="Unsafe cast"):
-                (v1, v2) = dtype_promotion._promote_weak_dtypes(
-                    (graph.inputs[0], np_const)
+                v1, v2 = dtype_promotion._promote_weak_dtypes(
+                    graph.inputs[0], np_const
                 )
 
 
@@ -112,8 +112,8 @@ def test_promote_weak_dtypes__np_int(
     with Graph("promote_weak_dtypes", input_types=[graph_type]) as graph:
         np_const = np.array(value).astype(np_dtype.to_numpy())
         try:
-            (v1, v2) = dtype_promotion._promote_weak_dtypes(
-                (graph.inputs[0], np_const)
+            v1, v2 = dtype_promotion._promote_weak_dtypes(
+                graph.inputs[0], np_const
             )
 
             assert v1.dtype == graph_type.dtype

@@ -54,7 +54,7 @@ class Value:
                 return super().__new__(TensorValue)
         elif isinstance(value, Value):
             return super().__new__(type(value))
-        elif isinstance(value, (int, float, np.ndarray, Weight)):
+        elif isinstance(value, _numeric + (Weight,)):
             return super().__new__(TensorValue)
         else:
             raise TypeError(
@@ -111,10 +111,10 @@ class TensorValue(Value):
             self._mlir_value = value._mlir_value
         elif isinstance(value, Weight):
             self._mlir_value = graph.Graph.current.add_weight(value)._mlir_value
-        elif isinstance(value, (int, float, np.ndarray)):
+        elif isinstance(value, _numeric):
             raise TypeError(
                 "TensorValue() can not be created directly from a"
-                f" '{type(value).__name__}'. Use ops.constant or ops.scalar to"
+                f" '{type(value).__name__}'. Use ops.constant to"
                 " convert to a TensorValue with a specific dtype."
             )
         else:

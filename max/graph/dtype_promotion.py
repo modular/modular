@@ -27,8 +27,6 @@ To convert a value while allowing for minor precision loss, `ops.constant` can b
 If only non-max objects attempt promotion, it will always fail.
 """
 
-from typing import Iterable
-
 import numpy as np
 from max import mlir
 from max.dtype import DType
@@ -38,7 +36,31 @@ from .weight import Weight
 from .value import Value, TensorValue, ValueLike, _strong_value_like
 
 
-def _promote_weak_dtypes(values: Iterable[ValueLike]) -> Iterable[TensorValue]:
+def _restrict_to_strong_dtypes(value: ValueLike) -> TensorValue:
+    """Converts strong dtype values to TensorValue.
+
+    Raise an error if the input dtype is weak.
+    """
+    if _is_strong(value):
+        # Valid unary op with proper dtype.
+        return TensorValue(value)
+    else:
+        # TODO: Maybe special case numpy array with non int64/float64 input.
+        # Theoretically, that is an explicitly set dtype.
+
+        # Non-max object with unary op.
+        # This often is a bug and leads to overpromotion.
+        raise TypeError(
+            "Unary ops do not support non-max objects as input. Non-max"
+            " objects tend to overpromote the dtype, leading to significant"
+            " loss of performance. Please explicitly convert the input to a"
+            " graph.Value. This can be done with ops.constant."
+        )
+
+
+def _promote_weak_dtypes(
+    x: ValueLike, y: ValueLike
+) -> (TensorValue, TensorValue):
     """Promotes weak dtypes on ValueLike objects.
 
     Most of dtype promotion is dealt with in RMO.
@@ -46,45 +68,23 @@ def _promote_weak_dtypes(values: Iterable[ValueLike]) -> Iterable[TensorValue]:
     All non-max objects have a weak dtype and will promote to a max object dtype.
     That said, we will always scan the non-max object to ensure it is representable in the max object dtype.
     """
-    values = list(values)
-    if len(values) == 0 or len(values) > 2:
-        raise ValueError("weak DType promotion must have 1 or 2 inputs")
+    if _is_strong(x) and _is_strong(y):
+        return (TensorValue(x), TensorValue(y))
 
-    if len(values) == 1:
-        value = values[0]
-        if _is_strong(value):
-            # Valid unary op with proper dtype.
-            return (TensorValue(value),)
-        else:
-            # TODO: Maybe special case numpy array with non int64/float64 input.
-            # Theoretically, that is an explicitly set dtype.
+    if not _is_strong(x) and not _is_strong(y):
+        raise TypeError(
+            "Binary ops require at least one max object as input. Non-max"
+            " objects tend to overpromote the dtype, leading to significant"
+            " loss of performance. Please explicitly convert at least one"
+            " input to a graph.Value. This can be done with ops.constant."
+        )
 
-            # Non-max object with unary op.
-            # This often is a bug and leads to overpromotion.
-            raise TypeError(
-                "Unary ops do not support non-max objects as input. Non-max"
-                " objects tend to overpromote the dtype, leading to significant"
-                " loss of performance. Please explicitly convert the input to a"
-                " graph.Value. This can be done with ops.constant."
-            )
-    elif len(values) == 2:
-        if _is_strong(values[0]) and _is_strong(values[1]):
-            return (TensorValue(values[0]), TensorValue(values[1]))
-
-        if not _is_strong(values[0]) and not _is_strong(values[1]):
-            raise TypeError(
-                "Binary ops require at least one max object as input. Non-max"
-                " objects tend to overpromote the dtype, leading to significant"
-                " loss of performance. Please explicitly convert at least one"
-                " input to a graph.Value. This can be done with ops.constant."
-            )
-
-        if _is_strong(values[0]):
-            max_value = TensorValue(values[0])
-            return (max_value, _promote_to(values[1], max_value.dtype))
-        else:
-            max_value = TensorValue(values[1])
-            return (_promote_to(values[0], max_value.dtype), max_value)
+    if _is_strong(x):
+        max_value = TensorValue(x)
+        return (max_value, _promote_to(y, max_value.dtype))
+    else:
+        max_value = TensorValue(y)
+        return (_promote_to(x, max_value.dtype), max_value)
 
 
 def _promote_to(value: ValueLike, out_dtype: DType) -> TensorValue:

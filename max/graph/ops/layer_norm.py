@@ -28,8 +28,8 @@ def layer_norm(
     Returns:
         A graph tensor value with the normalization applied.
     """
-    input, gamma = dtype_promotion._promote_weak_dtypes((input, gamma))
-    input, beta = dtype_promotion._promote_weak_dtypes((input, beta))
+    input, gamma = dtype_promotion._promote_weak_dtypes(input, gamma)
+    input, beta = dtype_promotion._promote_weak_dtypes(input, beta)
     return Graph.current._add_op(
         mo.layer_norm,
         input._mlir_value.type,

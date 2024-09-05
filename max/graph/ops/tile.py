@@ -27,7 +27,7 @@ def tile(x: ValueLike, repeats: Iterable[int]):
     The i-th dimension of output shape will be the ith dimension of input shape
     multiplied by N_i.
     """
-    x, = dtype_promotion._promote_weak_dtypes((x,))
+    x = dtype_promotion._restrict_to_strong_dtypes(x)
     shape = x.shape
 
     # TODO(MSDK-604): Move all of these checks and shape inference to RMO.
