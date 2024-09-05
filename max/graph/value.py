@@ -276,9 +276,15 @@ class TensorValue(Value):
 
 StrongValueLike = Union[mlir.Value, Value, Weight]
 ValueLike = Union[
-    StrongValueLike, float, int, np.ndarray, np.floating, np.integer
+    StrongValueLike, int, float, np.integer, np.floating, np.ndarray
 ]
+
+# This is needed for python 3.9 compatibility.
+# `isinstance` only works with tuples and not unions in 3.9.
+_strong_value_like = (mlir.Value, Value, Weight)
+_numeric = (int, float, np.integer, np.floating, np.ndarray)
+_value_like = _strong_value_like + _numeric
 
 
 def _is_value_like(obj: Any) -> TypeGuard[ValueLike]:
-    return isinstance(obj, (mlir.Value, Value, np.ndarray, Weight))
+    return isinstance(obj, _value_like)

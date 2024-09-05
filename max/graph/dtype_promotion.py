@@ -33,7 +33,7 @@ from max.dtype import DType
 
 from . import ops
 from .weight import Weight
-from .value import Value, TensorValue, ValueLike, StrongValueLike
+from .value import Value, TensorValue, ValueLike, _strong_value_like
 
 
 def _promote_weak_dtypes(values: Iterable[ValueLike]) -> Iterable[TensorValue]:
@@ -133,7 +133,7 @@ def _promote_to(value: ValueLike, out_dtype: DType) -> TensorValue:
 
 
 def _is_strong(value: ValueLike) -> bool:
-    return isinstance(value, StrongValueLike)
+    return isinstance(value, _strong_value_like)
 
 
 # For each DType, this is the range of values where a conversion would not lose precision.
