@@ -189,6 +189,28 @@ def test_modify_contiguous_tensor():
     assert cont_tensor[2, 2].item() == 1
 
 
+def test_contiguous_slice():
+    # A contiguous slice of a tensor should be considered contiguous. An
+    # example of this is taking a single row from a 2-d array.
+    singlerow = Tensor.from_numpy(
+        np.array([[1, 2, 3], [4, 5, 6]], dtype=np.int32)
+    )[0, :]
+    assert singlerow.shape == (3,)
+    assert singlerow.is_contiguous
+
+    # This should also work in cases where we take a couple of adjacent rows
+    # from a multi-dimensional array.
+    multirow = Tensor.from_numpy(np.ones((5, 5), dtype=np.int32))[2:4, :]
+    assert multirow.shape == (2, 5)
+    assert multirow.is_contiguous
+
+    # We also need this work in cases where we're just taking subarrays of 1-d
+    # arrays.
+    subarray = Tensor.from_numpy(np.ones((10,), dtype=np.int32))[2:5]
+    assert subarray.shape == (3,)
+    assert subarray.is_contiguous
+
+
 def test_from_numpy():
     # A user should be able to create a tensor from a numpy array.
     arr = np.array([[1, 2, 3], [4, 5, 6]], dtype=np.int32)
