@@ -300,11 +300,6 @@ def test_execute_multi_framework(
     assert np.allclose(onnx_output, trch_output)
 
 
-def _cuda_available() -> bool:
-    output = run(os.getenv("MODULAR_IS_CUDA_AVAILABLE") or "is-cuda-available")
-    return output.returncode == 0
-
-
 def test_custom_ops(
     session: InferenceSession,
     mo_custom_ops_model_path: Path,
