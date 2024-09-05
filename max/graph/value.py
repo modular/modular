@@ -48,7 +48,10 @@ class Value:
 
     def __new__(cls, value: ValueLike):
         if isinstance(value, mlir.Value):
-            return super().__new__(TensorValue)
+            if _graph.type_is_opaque(value.type):
+                return super().__new__(_OpaqueValue)
+            else:
+                return super().__new__(TensorValue)
         elif isinstance(value, Value):
             return super().__new__(type(value))
         elif isinstance(value, (int, float, np.ndarray, Weight)):
@@ -71,8 +74,23 @@ class Value:
         if isinstance(self, TensorValue):
             return self
 
+        raise TypeError(
+            f"Value is not a TensorValue, was '{type(self).__name__}'"
+        )
+
+
+class _OpaqueValue(Value):
+    """Represents an opaque value within a `Graph`."""
+
+    def __init__(self, value: ValueLike) -> None:
+        if isinstance(value, mlir.Value) and _graph.type_is_opaque(value.type):
+            self._mlir_value = value
+        elif isinstance(value, _OpaqueValue):
+            self._mlir_value = value._mlir_value
+        else:
             raise TypeError(
-                f"Value is not a TensorValue, was '{type(self).__name__}'"
+                "_OpaqueValue() argument must be a mlir.Value of opaque type "
+                f"or a graph._OpaqueValue, not {type(value).__name__!r}"
             )
 
 
