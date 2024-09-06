@@ -39,7 +39,6 @@ from layout.nd_buffer_stub import (
     distribute,
     vectorize,
 )
-from layout.swizzle import Swizzle
 from layout.tensor_core import (
     TensorCore,
     get_accum_type,

@@ -47,7 +47,6 @@ from layout.nd_buffer_stub import (
     vectorize,
     from_ndbuffer_row_major,
 )
-from layout.swizzle import Swizzle
 from memory import UnsafePointer, bitcast, stack_allocation, memset_zero
 
 from utils import StaticIntTuple
