@@ -82,9 +82,10 @@ async def openai_chat_completions(
         async def generate(self):
             async for rid, token in pipeline.next_token(requests):
                 index = self.counters[rid]
-                self.counters[rid] = index + 1
-                if not token:
+                self.counters[rid] += 1
+                if token is None:
                     del self.counters[rid]
+                    break
                 choices = [
                     Choice3(
                         index=index,
@@ -110,6 +111,8 @@ async def openai_chat_completions(
                 )
                 yield response.model_dump_json()
 
+            yield "[DONE]"
+
     # TODO: Add request pool abstraction to mediate submitting requests
     #       and polling from the pipeline worker tasks.
 
@@ -117,7 +120,7 @@ async def openai_chat_completions(
         gen = ResponseGenerator()
         return EventSourceResponse(gen.generate())
 
-    message = " ".join(
+    message = "".join(
         [token async for _, token in pipeline.next_token(requests) if token]
     )
     choices = [
