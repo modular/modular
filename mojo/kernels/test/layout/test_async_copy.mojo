@@ -32,7 +32,6 @@ from layout.layout_tensor import (
     copy_dram_to_sram_async,
     copy_sram_to_dram,
 )
-from layout.swizzle import Swizzle
 from memory import UnsafePointer
 from utils import StaticIntTuple
 from testing import assert_almost_equal
@@ -278,12 +277,6 @@ fn swizzle_copy[
     alias thread_layout = Layout.row_major(
         num_threads * simd_size // BK, BK // simd_size
     )
-
-    # Mask ^ tid's 2 least significant and every 8 threads share one mask.
-    # This reproduces the thread map in Cutlass when BK=16.
-    @always_inline
-    fn xor_2bits_per8T[type: DType](tid: Scalar[type]) -> Scalar[type]:
-        return Swizzle[2, 0, 3]()(tid)
 
     copy_dram_to_sram_async[
         src_thread_layout=thread_layout,

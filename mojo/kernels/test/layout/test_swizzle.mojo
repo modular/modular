@@ -7,7 +7,7 @@
 # RUN: %mojo-no-debug %s | FileCheck %s
 
 from layout.layout import Layout
-from layout.swizzle import Swizzle
+from layout.swizzle import SwizzleEx
 
 
 # CHECK-LABEL: test_swizzle_basic
@@ -17,7 +17,7 @@ fn test_swizzle_basic():
     alias thread_layout = Layout.row_major(8, 8)
 
     # swizzle every 16 threads by the least significant bit.
-    alias swizzle_bits1_per16 = Swizzle[1, 0, 4]()
+    var swizzle_bits1_per16 = SwizzleEx(1, 0, 4)
 
     # CHECK: 0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15
     # CHECK: 17 16 19 18 21 20 23 22 25 24 27 26 29 28 31 30
@@ -29,7 +29,7 @@ fn test_swizzle_basic():
             print()
 
     # swizzle every 8 threads by 2 least significant bits.
-    alias swizzle_bits2_per8 = Swizzle[2, 0, 3]()
+    var swizzle_bits2_per8 = SwizzleEx(2, 0, 3)
 
     # CHECK: 0 1 2 3 4 5 6 7
     # CHECK: 9 8 11 10 13 12 15 14
@@ -45,7 +45,7 @@ fn test_swizzle_basic():
             print()
 
     # swizzle every 16 threads the 2nd and 3rd least significant bits.
-    alias swizzle_bits2_base1_per8 = Swizzle[2, 1, 3]()
+    var swizzle_bits2_base1_per8 = SwizzleEx(2, 1, 3)
 
     # CHECK: 0 1 2 3 4 5 6 7
     # CHECK: 8 9 10 11 12 13 14 15
