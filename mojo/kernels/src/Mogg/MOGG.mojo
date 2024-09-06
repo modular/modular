@@ -609,8 +609,9 @@ fn elementwise_wrapper[
         StaticIntTuple[rank]
     ) capturing -> None,
     /,
+    shape: DimList,
     target: StringLiteral = "cpu",
-](buffer: NDBuffer[type, rank], ctx: MojoCallContextPtr):
+](buffer: NDBuffer[type, rank, shape], ctx: MojoCallContextPtr):
     elementwise[
         func[element_alignment=1],
         simd_width=simd_width,
