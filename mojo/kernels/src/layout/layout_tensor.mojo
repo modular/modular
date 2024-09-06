@@ -2792,7 +2792,7 @@ fn copy_sram_to_dram[
     # TODO: copy_from only allows static layout
     @parameter
     if src_type == dst_type:
-        dst_fragments.copy_from(src_fragments.bitcast[dst_type]())
+        dst_fragments.copy_from(src_fragments)
     else:
         constrained[
             src_type == DType.float32 and dst_type.is_half_float(),
@@ -2867,7 +2867,7 @@ fn copy_sram_to_dram[
 
     @parameter
     if src_type == dst_type:
-        dst_fragments.copy_from(src_fragments.bitcast[dst_type]())
+        dst_fragments.copy_from(src_fragments)
     else:
         constrained[
             src_type == DType.float32 and dst_type.is_half_float(),
