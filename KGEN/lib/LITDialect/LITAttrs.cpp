@@ -243,9 +243,27 @@ PogListAttr::toPogs(ArrayRef<StringAttr> names,
 // FnMetadataAttr
 //===----------------------------------------------------------------------===//
 
+static ParseResult parseFnMetadataLifetimes(AsmParser &p,
+                                            TypedAttr &lifetimes) {
+  auto type = LifetimeSetType::get(p.getContext());
+  if (failed(p.parseOptionalComma())) {
+    lifetimes = LifetimeSetAttr::get({}, type);
+    return success();
+  }
+  return parseParamValue(p, lifetimes, type);
+}
+
+static void printFnMetadataLifetimes(AsmPrinter &p, TypedAttr lifetimes) {
+  if (auto set = dyn_cast<LifetimeSetAttr>(lifetimes))
+    if (set.getOperands().empty())
+      return;
+  p << ", ";
+  printParamValue(p, lifetimes);
+}
+
 FnMetadataAttr FnMetadataAttr::get(MLIRContext *context) {
   auto list = PogListAttr::get(context);
-  return FnMetadataAttr::get(context, list, list, 0);
+  return FnMetadataAttr::get(list, list, 0);
 }
 
 FnMetadataAttr FnMetadataAttr::get(MLIRContext *ctx, size_t numParams,
@@ -263,15 +281,18 @@ FnMetadataAttr FnMetadataAttr::get(MLIRContext *ctx, size_t numParams,
 
 FnMetadataAttr FnMetadataAttr::get(PogListAttr argListAttrs,
                                    PogListAttr paramListAttrs,
-                                   size_t numImplicitLifetimeDecls) {
-  return get(argListAttrs.getContext(), argListAttrs, paramListAttrs,
-             numImplicitLifetimeDecls);
+                                   size_t numImplicitLifetimeDecls,
+                                   TypedAttr captureLifetimes) {
+  MLIRContext *ctx = argListAttrs.getContext();
+  if (!captureLifetimes)
+    captureLifetimes = LifetimeSetAttr::get(ctx, {});
+  return get(ctx, argListAttrs, paramListAttrs, numImplicitLifetimeDecls,
+             captureLifetimes);
 }
 
 FnMetadataAttr FnMetadataAttr::get(PogListAttr argListAttrs,
                                    size_t numImplicitLifetimeDecls) {
-  MLIRContext *ctx = argListAttrs.getContext();
-  return get(ctx, argListAttrs, PogListAttr::get(ctx),
+  return get(argListAttrs, PogListAttr::get(argListAttrs.getContext()),
              numImplicitLifetimeDecls);
 }
 

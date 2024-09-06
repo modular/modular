@@ -35,11 +35,11 @@
 // CHECK-SAME: #lit.fn_metadata
 // CHECK-SAME: <[<"someRef", pos, false>, <"v", kw, false>], [13 : index], [17 : i64]>,
 // CHECK-SAME: <[<"someParam", pos, false>, <"paramWithDefault", pos_or_kw, true>], [], []>,
-// CHECK-SAME: 2>
+// CHECK-SAME: 2, {mut lt}>
 "some.metadata"() {metadata = #lit.fn_metadata<
   <[<"someRef", pos, false>, <"v", kw, false>], [13 : index], [17 : i64]>,
   <[<"someParam", pos, false>, <"paramWithDefault", pos_or_kw, true>], [], []>,
-  2
+  2, {mut lt}
 >} : () -> ()
 
 // CHECK-LABEL: "empty.metadata"

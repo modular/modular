@@ -233,10 +233,12 @@ def LIT_FnMetadataAttr : LITAttr<"FnMetadata", "fn_metadata",
   let parameters = (ins
     LIT_PogListAttr:$argListAttrs,
     LIT_PogListAttr:$paramListAttrs,
-    "size_t":$numImplicitLifetimeDecls
+    "size_t":$numImplicitLifetimeDecls,
+    "TypedAttr":$captureLifetimes
   );
   let assemblyFormat = [{
-    `<` $argListAttrs `,` $paramListAttrs `,` $numImplicitLifetimeDecls `>`
+    `<` $argListAttrs `,` $paramListAttrs `,` $numImplicitLifetimeDecls
+    `` custom<FnMetadataLifetimes>($captureLifetimes) `>`
   }];
 
   let builders = [
@@ -245,11 +247,12 @@ def LIT_FnMetadataAttr : LITAttr<"FnMetadata", "fn_metadata",
                      CArg<"size_t", "0">:$numImplicitLifetimeDecls)>,
     AttrBuilderWithInferredContext<(ins
       "PogListAttr":$argListAttrs,
-      "PogListAttr":$paramListAttrs,
       CArg<"size_t", "0">:$numImplicitLifetimeDecls)>,
     AttrBuilderWithInferredContext<(ins
       "PogListAttr":$argListAttrs,
-      CArg<"size_t", "0">:$numImplicitLifetimeDecls)>,
+      "PogListAttr":$paramListAttrs,
+      CArg<"size_t", "0">:$numImplicitLifetimeDecls,
+      CArg<"TypedAttr", "{}">:$captureLifetimes)>,
   ];
 
   let extraClassDeclaration = [{
