@@ -131,6 +131,9 @@ OptionalParseResult
 parseOptionalLifetimeSet(AsmParser &p, SmallVectorImpl<TypedAttr> &lifetimes);
 void printLifetimeSet(AsmPrinter &p, ArrayRef<TypedAttr> lifetimes);
 
+/// Return true if the lifetime set parameter is an empty set.
+bool isEmptyLifetimeSet(TypedAttr attr);
+
 //===----------------------------------------------------------------------===//
 // Pog Utils
 //===----------------------------------------------------------------------===//

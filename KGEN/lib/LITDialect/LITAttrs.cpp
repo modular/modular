@@ -254,9 +254,8 @@ static ParseResult parseFnMetadataLifetimes(AsmParser &p,
 }
 
 static void printFnMetadataLifetimes(AsmPrinter &p, TypedAttr lifetimes) {
-  if (auto set = dyn_cast<LifetimeSetAttr>(lifetimes))
-    if (set.getOperands().empty())
-      return;
+  if (isEmptyLifetimeSet(lifetimes))
+    return;
   p << ", ";
   printParamValue(p, lifetimes);
 }

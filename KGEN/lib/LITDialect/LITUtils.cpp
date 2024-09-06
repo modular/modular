@@ -535,6 +535,12 @@ void LIT::printLifetimeSet(AsmPrinter &p, ArrayRef<TypedAttr> lifetimes) {
   p << '}';
 }
 
+bool LIT::isEmptyLifetimeSet(TypedAttr attr) {
+  if (auto set = dyn_cast<LifetimeSetAttr>(attr))
+    return set.getOperands().empty();
+  return false;
+}
+
 //===----------------------------------------------------------------------===//
 // Pog Utils
 //===----------------------------------------------------------------------===//
