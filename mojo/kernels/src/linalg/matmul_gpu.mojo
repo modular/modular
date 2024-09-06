@@ -1037,3 +1037,43 @@ fn split_k_reduce[
         A.store[width=simd_width](idx, vec)
 
     elementwise[_reduce, pack_size, target="cuda"](StaticIntTuple[2](M, N), ctx)
+
+
+@always_inline
+fn split_k_reduce[
+    c_type: DType,
+    work_space_type: DType,
+    c_shape: DimList,
+    work_space_shape: DimList,
+    elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
+](
+    c: NDBuffer[c_type, 2, c_shape],
+    work_space: NDBuffer[work_space_type, 3, work_space_shape],
+    ctx: DeviceContext,
+):
+    alias simd_width = simdwidthof[c_type]()
+    var num_partitions = work_space.dim[0]()
+    var M = c.dim[0]()
+    var N = c.dim[1]()
+
+    @always_inline
+    @__copy_capture(c, work_space, num_partitions)
+    @parameter
+    fn _reduce[simd_width: Int, rank: Int](c_coord: StaticIntTuple[rank]):
+        var idx = Index(0, c_coord[0], c_coord[1])
+        var vec = work_space.load[width=simd_width](idx)
+        for k in range(1, num_partitions):
+            vec += work_space.load[width=simd_width](
+                Index(k, c_coord[0], c_coord[1])
+            )
+
+        @parameter
+        if elementwise_lambda_fn:
+            alias epilogue = elementwise_lambda_fn.value()
+            epilogue(rebind[StaticIntTuple[2]](c_coord), vec.cast[c_type]())
+        else:
+            c.store[width=simd_width](
+                rebind[StaticIntTuple[2]](c_coord), vec.cast[c_type]()
+            )
+
+    elementwise[_reduce, simd_width, target="cuda"](Index(M, N), ctx)
