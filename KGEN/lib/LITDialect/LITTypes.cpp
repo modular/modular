@@ -1022,6 +1022,10 @@ StringAttr LITSignatureType::getArgName(size_t idx) {
   return getArgListAttrs().getName(idx);
 }
 
+TypedAttr LITSignatureType::getCaptureLifetimes() {
+  return getMetadata().getCaptureLifetimes();
+}
+
 ArrayRef<TypedAttr> LITSignatureType::getDefaultPosArgs() {
   return getMetadata().getDefaultPosArgs();
 }

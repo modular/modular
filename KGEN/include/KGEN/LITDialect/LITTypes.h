@@ -59,6 +59,9 @@ public:
   /// Return the name for the argument at the specified index.
   StringAttr getArgName(size_t idx);
 
+  /// Get the lifetime set of the capture lifetimes.
+  TypedAttr getCaptureLifetimes();
+
   /// Get the function's default positional arguments.
   ArrayRef<TypedAttr> getDefaultPosArgs();
 
