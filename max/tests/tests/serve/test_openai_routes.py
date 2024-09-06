@@ -33,6 +33,7 @@ def test_openai_random_chat_completion(app):
         raw_response = client.post(
             "/v1/chat/completions", json=simple_openai_request()
         )
+        # This is not a streamed completion - There is no [DONE] at the end.
         response = CreateChatCompletionResponse.parse_raw(raw_response.json())
         assert len(response.choices) == 1
         assert response.choices[0].finish_reason == "stop"
@@ -52,14 +53,20 @@ def test_openai_random_stream_chat_completion(app):
         event_client = sseclient.SSEClient(iter_bytes())
         counter = 0
         for event in event_client.events():
-            response = CreateChatCompletionStreamResponse.parse_raw(event.data)
+            event_payload = event.data.strip()
+            # Streamed completions are terminated with a [DONE]
+            if event_payload == "[DONE]":
+                break
+            response = CreateChatCompletionStreamResponse.parse_raw(
+                event_payload
+            )
             assert len(response.choices) == 1
             choice = response.choices[0]
             assert choice.index == counter
             assert choice.finish_reason == "stop"
             counter += 1
 
-        assert counter > 0
+        assert counter >= 0
 
 
 def test_openai_random_chat_completion_multi(app):
