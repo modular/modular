@@ -161,3 +161,84 @@ fn byte_permute(a: UInt32, b: UInt32, c: UInt32) -> UInt32:
     return llvm_intrinsic["llvm.nvvm.prmt", UInt32, has_side_effect=False](
         a, b, c
     )
+
+
+# ===----------------------------------------------------------------------===#
+# mul24
+# ===----------------------------------------------------------------------===#
+
+
+@always_inline
+fn mul24(a: Int, b: Int) -> Int:
+    """Calculate the least significant 32 bits of the product of the least
+    significant 24 bits of two integers.
+    """
+    return int(mul24(Int32(a), Int32(b)))
+
+
+@always_inline
+fn mul24(a: UInt, b: UInt) -> UInt:
+    """Calculate the least significant 32 bits of the product of the least
+    significant 24 bits of two integers.
+    """
+    return int(mul24(UInt32(a), UInt32(b)))
+
+
+@always_inline
+fn mul24(a: UInt32, b: UInt32) -> UInt32:
+    """Calculate the least significant 32 bits of the product of the least
+    significant 24 bits of two integers.
+    """
+    return llvm_intrinsic["mul.lo.u32", UInt32, has_side_effect=False](a, b)
+
+
+@always_inline
+fn mul24(a: Int32, b: Int32) -> Int32:
+    """Calculate the least significant 32 bits of the product of the least
+    significant 24 bits of two integers.
+    """
+    return llvm_intrinsic["mul.lo.s32", Int32, has_side_effect=False](a, b)
+
+
+# ===----------------------------------------------------------------------===#
+# mulhi
+# ===----------------------------------------------------------------------===#
+
+
+@always_inline
+fn mulhi(a: Int, b: Int) -> Int:
+    """Calculate the most significant 32 bits of the product of the two integers.
+    """
+    return int(mulhi(Int32(a), Int32(b)))
+
+
+@always_inline
+fn mulhi(a: UInt, b: UInt) -> UInt:
+    """Calculate the most significant 32 bits of the product of the two UInts.
+    """
+    return int(mulhi(UInt32(a), UInt32(b)))
+
+
+@always_inline
+fn mulhi(a: UInt32, b: UInt32) -> UInt32:
+    """Calculate the most significant 32 bits of the product of the two UInts.
+    """
+    return llvm_intrinsic["mul.hi.u32", UInt32, has_side_effect=False](a, b)
+
+
+@always_inline
+fn mulhi(a: Int32, b: Int32) -> Int32:
+    """Calculate the most significant 32 bits of the product of the two Ints."""
+    return llvm_intrinsic["mul.hi.s32", Int32, has_side_effect=False](a, b)
+
+
+@always_inline
+fn mulhi(a: UInt64, b: UInt64) -> UInt64:
+    """Calculate the most significant 32 bits of the product of the two Ints."""
+    return llvm_intrinsic["mul.hi.u64", UInt64, has_side_effect=False](a, b)
+
+
+@always_inline
+fn mulhi(a: Int64, b: Int64) -> Int64:
+    """Calculate the most significant 32 bits of the product of the two Ints."""
+    return llvm_intrinsic["mul.hi.s64", Int64, has_side_effect=False](a, b)
