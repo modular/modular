@@ -236,35 +236,35 @@ lit.func @different_param_name() {
 
 // CHECK-LABEL: lit.func @lifetime_set
 lit.func @lifetime_set<set: lifetime.set>[mut lt]() {
-  // CHECK-NEXT: f0: !lit.signature<:set:() -> ()> = <?>
-  kgen.param.declare f0: !lit.signature<:set:() -> ()> = <?>
-  // CHECK-NEXT: f1: !lit.signature<:{mut lt}:() -> ()> = <?>
-  kgen.param.declare f1: !lit.signature<:{mut lt}:() -> ()> = <?>
-  // CHECK-NEXT: f2: !lit.signature<[1]:set:() -> ()> = <?>
-  kgen.param.declare f2: !lit.signature<[1]:set:() -> ()> = <?>
-  // CHECK-NEXT: f3: !lit.signature<[1]:{mut lt}:() -> ()> = <?>
-  kgen.param.declare f3: !lit.signature<[1]:{mut lt}:() -> ()> = <?>
-  // CHECK-NEXT: f4: !lit.signature<:set:<index>() -> ()> = <?>
-  kgen.param.declare f4: !lit.signature<:set:<index>() -> ()> = <?>
-  // CHECK-NEXT: f5: !lit.signature<:{mut lt}:<index>() -> ()> = <?>
-  kgen.param.declare f5: !lit.signature<:{mut lt}:<index>() -> ()> = <?>
+  // CHECK-NEXT: f0: !lit.signature<:set:() capturing -> ()> = <?>
+  kgen.param.declare f0: !lit.signature<:set:() capturing -> ()> = <?>
+  // CHECK-NEXT: f1: !lit.signature<:{mut lt}:() capturing -> ()> = <?>
+  kgen.param.declare f1: !lit.signature<:{mut lt}:() capturing -> ()> = <?>
+  // CHECK-NEXT: f2: !lit.signature<[1]:set:() capturing -> ()> = <?>
+  kgen.param.declare f2: !lit.signature<[1]:set:() capturing -> ()> = <?>
+  // CHECK-NEXT: f3: !lit.signature<[1]:{mut lt}:() capturing -> ()> = <?>
+  kgen.param.declare f3: !lit.signature<[1]:{mut lt}:() capturing -> ()> = <?>
+  // CHECK-NEXT: f4: !lit.signature<:set:<index>() capturing -> ()> = <?>
+  kgen.param.declare f4: !lit.signature<:set:<index>() capturing -> ()> = <?>
+  // CHECK-NEXT: f5: !lit.signature<:{mut lt}:<index>() capturing -> ()> = <?>
+  kgen.param.declare f5: !lit.signature<:{mut lt}:<index>() capturing -> ()> = <?>
   kgen.return
 }
 
 // CHECK-LABEL: lit.func @lambda_capture_lifetimes
 lit.func @lambda_capture_lifetimes<set: lifetime.set>[mut lt]() {
-  // CHECK: lit.func set_capture:set:<param>()
-  lit.func set_capture:set:<param>() {
+  // CHECK: lit.func set_capture:set:<param>() capturing
+  lit.func set_capture:set:<param>() capturing {
     kgen.return
   }
-  // CHECK: lit.func lt_capture:{mut lt}:()
-  lit.func lt_capture:{mut lt}:() {
+  // CHECK: lit.func lt_capture:{mut lt}:() capturing
+  lit.func lt_capture:{mut lt}:() capturing {
     kgen.return
   }
 
-  // CHECK: ref0: !lit.signature<:set:<"param": index>() -> ()> = <set_capture>
-  kgen.param.declare ref0: !lit.signature<:set:<"param": index>() -> ()> = <set_capture>
-  // CHECK: ref1: !lit.signature<:{mut lt}:() -> ()> = <lt_capture>
-  kgen.param.declare ref1: !lit.signature<:{mut lt}:() -> ()> = <lt_capture>
+  // CHECK: ref0: !lit.signature<:set:<"param": index>() capturing -> ()> = <set_capture>
+  kgen.param.declare ref0: !lit.signature<:set:<"param": index>() capturing -> ()> = <set_capture>
+  // CHECK: ref1: !lit.signature<:{mut lt}:() capturing -> ()> = <lt_capture>
+  kgen.param.declare ref1: !lit.signature<:{mut lt}:() capturing -> ()> = <lt_capture>
   kgen.return
 }
