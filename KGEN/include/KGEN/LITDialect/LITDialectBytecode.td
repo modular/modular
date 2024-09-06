@@ -123,7 +123,8 @@ def PogListAttr : DialectAttribute<(attr
 def FnMetadataAttr : DialectAttribute<(attr
   ConcreteAttribute<"PogListAttr">:$argListAttrs,
   ConcreteAttribute<"PogListAttr">:$paramListAttrs,
-  VarInt:$numImplicitLifetimeDecls
+  VarInt:$numImplicitLifetimeDecls,
+  TypedAttr:$captureLifetimes
 )>;
 
 def DocStringAttr : DialectAttribute<(attr
