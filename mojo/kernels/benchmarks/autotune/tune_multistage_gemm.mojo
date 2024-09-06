@@ -46,7 +46,6 @@ from layout.layout_tensor import (
     copy_local_to_sram,
     copy_sram_to_dram,
 )
-from layout.swizzle import Swizzle
 from layout.tensor_core import (
     TensorCore,
     get_accum_type,
@@ -62,19 +61,6 @@ from random import rand
 from testing import assert_almost_equal
 
 from utils.index import Index, StaticIntTuple
-
-
-# Mask ^ tid's 2 least significant and every 8 threads share one mask.
-# This reproduces the thread map in Cutlass when BK=16.
-@always_inline
-fn xor_2bits_per8T[type: DType](tid: Scalar[type]) -> Scalar[type]:
-    return Swizzle[2, 0, 3]()(tid)
-
-
-# Figure out the math using BN, BK, dtype to define swizzle parameters.
-@always_inline
-fn xor_3bits_per16T[type: DType](tid: Scalar[type]) -> Scalar[type]:
-    return Swizzle[3, 0, 4]()(tid)
 
 
 @always_inline
