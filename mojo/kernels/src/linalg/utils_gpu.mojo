@@ -80,6 +80,8 @@ struct MatmulConfig[
 
     var num_pipeline_stages: UInt
 
+    var num_k_partitions: UInt
+
     alias accum_type = get_accum_type[a_type]()  # TODO: factor b_type
     alias mma_shape = get_mma_shape[a_type, get_accum_type[a_type]()]()
 
@@ -88,10 +90,12 @@ struct MatmulConfig[
         block_tile_shape: StaticIntTuple[3] = Index(128, 128, 32),
         warp_tile_shape: StaticIntTuple[3] = Index(64, 64, 32),
         num_pipeline_stages: UInt = 4,
+        num_k_partitions: UInt = 1,
     ):
         self.block_tile_shape = block_tile_shape
         self.warp_tile_shape = warp_tile_shape
         self.num_pipeline_stages = num_pipeline_stages
+        self.num_k_partitions = num_k_partitions
 
     fn num_warps_m(self) -> UInt:
         return self.block_tile_shape[0] // self.warp_tile_shape[0]
@@ -124,6 +128,9 @@ struct MatmulConfig[
     fn block_dim(self) -> StaticIntTuple[3]:
         return Index(int(self.num_threads()), 1, 1)
 
+    fn work_space_size(self, M: UInt, N: UInt) -> UInt:
+        return M * N * (self.num_k_partitions - 1)
+
     fn __eq__(self, rhs: MatmulConfig) -> Bool:
         alias static_info_match = a_type == rhs.a_type and b_type == rhs.b_type and c_type == rhs.c_type and transpose_b == rhs.transpose_b
 
@@ -148,11 +155,12 @@ struct MatmulConfig[
             self.block_tile_shape[1], "x", self.block_tile_shape[0], "_"
         )
         writer.write(self.num_pipeline_stages, "_")
+        if self.num_k_partitions > 1:
+            writer.write("k", self.num_k_partitions, "_")
         # transpose A
         writer.write("N")
         # transpose B
         writer.write("T" if transpose_b else "N")
-        writer.write("\n")
 
 
 # Helper for choosing the base of BK based on type.
@@ -191,22 +199,39 @@ fn select_config[
     # A super simple heuristic is to just choose the tile shapes that lead to
     # min waves. Only support two shapes for now.
 
+    alias max_k_partitions = 8
+
     var best_bmnk = Index(128, 128, _bk_base[a_type]())
-    var min_num_waves = ceildiv(
-        ceildiv(M, best_bmnk[0]) * ceildiv(N, best_bmnk[1]), A100.sm_count
-    )
+    var min_num_waves = 1000
+    # var min_num_waves = ceildiv(
+    #     ceildiv(M, best_bmnk[0]) * ceildiv(N, best_bmnk[1]), A100.sm_count
+    # )
+    var best_num_k_partitions = 1
 
     for bm_bn in List(Index(128, 128), Index(64, 256)):
         var bm = bm_bn[][0]
         var bn = bm_bn[][1]
-        var num_waves = ceildiv(ceildiv(M, bm) * ceildiv(N, bn), A100.sm_count)
+        var num_blocks = ceildiv(M, bm) * ceildiv(N, bn)
+
+        # Enable split K when only < 50% of SMs are used.
+        var num_k_partitions = 1
+        if num_blocks < A100.sm_count // 2 and K % 32 == 0:
+            num_k_partitions = min(
+                max_k_partitions, ceildiv(A100.sm_count, num_blocks)
+            )
+            while K % (num_k_partitions * 32) != 0:
+                num_k_partitions -= 1
+
+        var num_waves = ceildiv(num_blocks * num_k_partitions, A100.sm_count)
         if num_waves < min_num_waves:
             best_bmnk[0] = bm
             best_bmnk[1] = bn
             min_num_waves = num_waves
+            best_num_k_partitions = num_k_partitions
 
     return MatmulConfig[a_type, b_type, c_type, transpose_b](
         block_tile_shape=best_bmnk,
         warp_tile_shape=Index(64, 64, best_bmnk[2]),
         num_pipeline_stages=4,
+        num_k_partitions=best_num_k_partitions,
     )
