@@ -439,14 +439,14 @@ fn mip_print_index(x: Int, dummy_chain: Int) -> Int:
     return x
 
 
-@mogg_register("mip.add")
+@mogg_register("index.add")
 @always_inline
 @export
 fn mip_add(x: Int, y: Int) -> Int:
     return x + y
 
 
-@mogg_register("mip.mul")
+@mogg_register("index.mul")
 @always_inline
 @export
 fn mip_mul(lhs: Int, rhs: Int) -> Int:
