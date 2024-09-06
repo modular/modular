@@ -1230,7 +1230,7 @@ static void typeCheckResult(ParsedArgument resultArg, bool isDef,
   // Note that we're now returning a reference to something that doesn't outlast
   // the function!
   if (auto resultLifetimes =
-          shared.cachedLifetimeFinder.findLifetimesInTypes(resultType.mlirType);
+          shared.cachedLifetimeFinder.findLifetimesInType(resultType.mlirType);
       !resultLifetimes.empty()) {
     SmallDenseMap<TypedAttr, size_t, 8> possiblyRegisterPassableLifetimes;
     for (auto [idx, parsedArg, fullType] : llvm::enumerate(

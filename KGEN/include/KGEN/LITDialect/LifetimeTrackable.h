@@ -14,7 +14,7 @@
 namespace M::KGEN {
 namespace LIT {
 
-class CachedTypeLifetimeFinder {
+class CachedLifetimeFinder {
 public:
   /// This method finds all the lifetimes buried in the specified type,
   /// returning them as a list.  This typically will return ParamRefAttr's or
@@ -185,7 +185,7 @@ getOperationEffects(Operation &op,
                     SmallVectorImpl<std::pair<Value, OperandEffect>> &operands,
                     SmallVectorImpl<ResultEffect> &results,
                     SmallVectorImpl<TypedAttr> &lifetimes,
-                    CachedTypeLifetimeFinder &lifetimeFinder);
+                    CachedLifetimeFinder &lifetimeFinder);
 
 } // namespace LIT
 } // namespace M::KGEN

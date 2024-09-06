@@ -536,7 +536,7 @@ struct ValueSet {
   TypeDeclInfo &typeDeclInfo;
 
   /// This provides efficient lookup for lifetimes buried in MLIR types.
-  CachedTypeLifetimeFinder &lifetimeFinder;
+  CachedLifetimeFinder &lifetimeFinder;
 
   /// Initialize the value set with one entry, so index #0 is always invalid and
   /// can be used as a sentinel, and so a null Value is always treated as
@@ -545,7 +545,7 @@ struct ValueSet {
   /// This sentinel is also used by DestructorInsertion as a marker for
   /// "unreachable" code to avoid unnecessary meets.
   ValueSet(TypeDeclInfo &typeDeclInfo, LIT::FuncOp func,
-           CachedTypeLifetimeFinder &lifetimeFinder)
+           CachedLifetimeFinder &lifetimeFinder)
       : typeDeclInfo(typeDeclInfo), lifetimeFinder(lifetimeFinder), func(func) {
     addValue(Value(), LifetimeTrackable(Value()));
   }
@@ -3160,7 +3160,7 @@ struct CheckLifetimes : impl::CheckLifetimesBase<CheckLifetimes> {
     // Process all the structs into TypeDeclInfo.
     TypeDeclInfo typeDeclInfo(std::move(structMap), std::move(funcMap),
                               std::move(traitMap));
-    CachedTypeLifetimeFinder lifetimeFinder;
+    CachedLifetimeFinder lifetimeFinder;
 
     // TODO: Do in parallel, watch out for mutations of TypeDeclInfo and
     // lifetimeFinder though!
@@ -3173,13 +3173,13 @@ struct CheckLifetimes : impl::CheckLifetimesBase<CheckLifetimes> {
   }
 
   LogicalResult processFunction(LIT::FuncOp func, TypeDeclInfo &typeDeclInfo,
-                                CachedTypeLifetimeFinder &lifetimeFinder);
+                                CachedLifetimeFinder &lifetimeFinder);
 };
 } // namespace
 
 LogicalResult
 CheckLifetimes::processFunction(LIT::FuncOp func, TypeDeclInfo &typeDeclInfo,
-                                CachedTypeLifetimeFinder &lifetimeFinder) {
+                                CachedLifetimeFinder &lifetimeFinder) {
   // Pass #1: Collect all of the values declared in the function that have
   // ownership to track, and number them.
   ValueSet valueSet(typeDeclInfo, func, lifetimeFinder);

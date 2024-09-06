@@ -773,7 +773,7 @@ bool CallEmitter::isSafeToUseValueDestForDirectResult(
   // Check to see if any of the the lifetimes they may be accessing are the
   // lifetime in question.  If any of them is a possible reference to the
   // destination slot, then we must fail.
-  CachedTypeLifetimeFinder &finder = emitter.shared.cachedLifetimeFinder;
+  CachedLifetimeFinder &finder = emitter.shared.cachedLifetimeFinder;
   for (TypedAttr lifetime : finder.findLifetimesInTypes(argTypes)) {
     // If an operand is reading from the lifetime, there will be an immcast in
     // the way.  Look through it and any field sensitivity.
@@ -1303,7 +1303,7 @@ void ExclusivityChecker::checkArgument(Value val, ArgConvention convention,
 
   // Find all the of the lifetimes that are buried in the specified type.
   for (TypedAttr lifetime :
-       shared.cachedLifetimeFinder.findLifetimesInTypes(val.getType()))
+       shared.cachedLifetimeFinder.findLifetimesInType(val.getType()))
     checkLifetimeAccess(val, convention, argIdx, lifetime);
 }
 
@@ -1390,7 +1390,7 @@ shouldEmitParameterCall(LITSignatureType calleeSig,
 /// arguments.
 static TypedAttr
 computeArgumentsLifetime(AsyncCallOp call,
-                         CachedTypeLifetimeFinder &lifetimeFinder) {
+                         CachedLifetimeFinder &lifetimeFinder) {
   SmallVector<std::pair<Value, OperandEffect>> operands;
   SmallVector<ResultEffect> results;
   SmallVector<TypedAttr> lifetimes;

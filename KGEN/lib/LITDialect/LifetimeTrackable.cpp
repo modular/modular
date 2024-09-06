@@ -277,7 +277,7 @@ getCallOpEffects(Operation &op,
                  SmallVectorImpl<std::pair<Value, OperandEffect>> &operands,
                  SmallVectorImpl<ResultEffect> &results,
                  SmallVectorImpl<TypedAttr> &lifetimes,
-                 CachedTypeLifetimeFinder &lifetimeFinder) {
+                 CachedLifetimeFinder &lifetimeFinder) {
   LITSignatureType signature;
   OperandRange callArguments = op.getOperands();
   ArrayRef<ArgConvention> conventions;
@@ -451,7 +451,7 @@ OverallOpValueEffect LIT::getOperationEffects(
     Operation &op, SmallVectorImpl<std::pair<Value, OperandEffect>> &operands,
     SmallVectorImpl<ResultEffect> &results,
     SmallVectorImpl<TypedAttr> &lifetimes,
-    CachedTypeLifetimeFinder &lifetimeFinder) {
+    CachedLifetimeFinder &lifetimeFinder) {
   // Debuginfo ops may reference values that aren't fully initialized, so we
   // skip over them.  These indexing operations are handled specially.
   if (isa<RefStructGEROp, RebindOp, RefImmutOp>(op) ||
@@ -608,13 +608,13 @@ OverallOpValueEffect LIT::getOperationEffects(
 }
 
 //===----------------------------------------------------------------------===//
-// CachedTypeLifetimeFinder
+// CachedLifetimeFinder
 //===----------------------------------------------------------------------===//
 
 /// Unpack the specified value of LifetimeType into a set of referenced
 /// lifetimes. Returns true if any lifetimes were found.
 static bool handleLifetimeAttr(TypedAttr attr,
-                               SmallVector<TypedAttr> &results) {
+                               SmallVectorImpl<TypedAttr> &results) {
   bool foundAny = false;
 
   // Look through unions to find the values referenced.
@@ -632,9 +632,11 @@ static bool handleLifetimeAttr(TypedAttr attr,
 }
 
 template <typename TypeOrAttr>
-static bool scanForLifetimes(
-    TypeOrAttr pvalue, DenseSet<const void *> &typesAndAttrsWithoutLifetimes,
-    DenseMap<const void *, bool> &visited, SmallVector<TypedAttr> &results) {
+static bool
+scanForLifetimes(TypeOrAttr pvalue,
+                 DenseSet<const void *> &typesAndAttrsWithoutLifetimes,
+                 DenseMap<const void *, bool> &visited,
+                 SmallVectorImpl<TypedAttr> &results) {
   const void *pvaluePtr = pvalue.getAsOpaquePointer();
 
   // Ignore types we have already scanned.
@@ -683,7 +685,7 @@ static bool scanForLifetimes(
 /// returning them as a list.  This typically will return ParamRefAttr's or
 /// ImmutCast(ParamRefAttr)'s if a mutable lifetime is accessed immutably.
 SmallVector<TypedAttr>
-CachedTypeLifetimeFinder::findLifetimesInTypes(ArrayRef<Type> types) {
+CachedLifetimeFinder::findLifetimesInTypes(ArrayRef<Type> types) {
   SmallVector<TypedAttr> results;
 
   // Scan each type, accumulating the results; the set avoid revisiting nodes
