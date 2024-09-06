@@ -15,6 +15,7 @@ from gpu.host.device_context import DeviceContext
 
 from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
 from testing import assert_equal
+from sys import env_get_int
 
 
 fn vec_func(
@@ -93,6 +94,10 @@ fn bench_vec_add(
 
 # CHECK-NOT: CUDA_ERROR
 def main():
+    # TODO: expand to all the params
+    alias phony = env_get_int["phony", 1]()
+    constrained[phony == 1]()
+
     var b = Bench()
 
     try:

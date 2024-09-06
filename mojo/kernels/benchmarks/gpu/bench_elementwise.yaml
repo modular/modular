@@ -1,0 +1,12 @@
+##===----------------------------------------------------------------------===##
+#
+# This file is Modular Inc proprietary.
+#
+##===----------------------------------------------------------------------===##
+
+name: bench_elementwise
+file: $KERNEL_BENCHMARKS_ROOT/gpu/bench_elementwise.mojo
+
+params:
+- phony: 1
+

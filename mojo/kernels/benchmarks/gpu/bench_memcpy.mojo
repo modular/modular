@@ -6,7 +6,7 @@
 # REQUIRES: has_cuda_device
 # RUN: %mojo-build %s
 
-from sys import sizeof
+from sys import sizeof, env_get_int
 from gpu.host.device_context import DeviceContext
 from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
 from gpu.host._utils import _human_memory
@@ -88,6 +88,10 @@ fn bench_memcpy[
 
 
 def main():
+    # TODO: expand to all the params
+    alias phony = env_get_int["phony", 1]()
+    constrained[phony == 1]()
+
     with DeviceContext() as ctx:
         var m = Bench()
         for log2_length in range(28, 32):

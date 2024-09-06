@@ -1,0 +1,28 @@
+##===----------------------------------------------------------------------===##
+#
+# This file is Modular Inc proprietary.
+#
+##===----------------------------------------------------------------------===##
+
+name: bench_reduce
+file: $KERNEL_BENCHMARKS_ROOT/gpu/bench_reduce.mojo
+
+params:
+# baby-replit-CE/TG-kernels
+- M: 1
+  N: 1024
+  K: 3072
+  dtype: [DType.bfloat16, DType.float32, DType.float16]
+
+# baby-llama-LPTG-kernels
+- M: 1
+  N: 1
+  K: 4096
+  dtype: [DType.bfloat16, DType.float32, DType.float16]
+
+# baby-llama-CE-kernels
+- M: 1
+  N: 256
+  K: 4096
+  dtype: [DType.bfloat16, DType.float32, DType.float16]
+

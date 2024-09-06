@@ -1,0 +1,12 @@
+##===----------------------------------------------------------------------===##
+#
+# This file is Modular Inc proprietary.
+#
+##===----------------------------------------------------------------------===##
+
+name: bench_vec_add
+file: $KERNEL_BENCHMARKS_ROOT/gpu/bench_vec_add.mojo
+
+params:
+- phony: 1
+

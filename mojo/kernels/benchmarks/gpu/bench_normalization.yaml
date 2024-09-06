@@ -1,0 +1,12 @@
+##===----------------------------------------------------------------------===##
+#
+# This file is Modular Inc proprietary.
+#
+##===----------------------------------------------------------------------===##
+
+name: bench_normalization
+file: $KERNEL_BENCHMARKS_ROOT/gpu/bench_normalization.mojo
+
+params:
+- phony: 1
+

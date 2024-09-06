@@ -1,0 +1,12 @@
+##===----------------------------------------------------------------------===##
+#
+# This file is Modular Inc proprietary.
+#
+##===----------------------------------------------------------------------===##
+
+name: bench_matmul
+file: $KERNEL_BENCHMARKS_ROOT/gpu/bench_matmul.mojo
+
+params:
+- phony: 1
+

@@ -14,6 +14,7 @@ from itertools import chain
 from pathlib import Path
 from typing import Dict, List, Optional, Sequence, Tuple, Union
 import os
+import string
 import sys
 import numpy as np
 import pandas as pd
@@ -98,14 +99,23 @@ class SpecInstance:
                 next(tempfile._get_candidate_names())
             )
 
+        # substitute env variables in the path
+        file_abs_path = Path(string.Template(self.file).substitute(os.environ))
+        try:
+            assert file_abs_path.exists()
+        except:
+            print(f"ERROR: [{self.file}] doesn't exist!")
+            return
+
         cmd = [
             MOJO_BINARY,
             *list(
                 np.array([param.define() for param in self.params]).flatten()
             ),
-            self.file,
+            file_abs_path,
         ]
         cmd.extend(["-o", "%s" % (str(output_file))])
+
         if verbose:
             print(f"[output_file: {output_file}")
         try:
@@ -138,8 +148,7 @@ class SpecInstance:
 class Spec:
     name: str
     file: Path
-    params: List[ParamSpace] = field(default_factory=list)
-    fixed_params: List[object] = field(default_factory=list)
+    params: List[object] = field(default_factory=list)
     mesh_idx: int = 0
     mesh_size: int = 0
     instances: List[SpecInstance] = field(default_factory=list)
@@ -169,7 +178,7 @@ class Spec:
         obj = {
             "name": self.name,
             "file": self.file,
-            "fixed_params": [s.to_obj() for s in self.instances],
+            "params": [s.to_obj() for s in self.instances],
         }
         with open(out_path, "w") as f:
             YAML(typ="safe").dump(obj, f, sort=False)
@@ -188,28 +197,18 @@ class Spec:
         """
         obj = YAML(typ="safe").load(yaml_str)
 
-        fixed_params = []
-        if "fixed_params" in obj.keys():
-            for cfg in obj["fixed_params"]:
-                e = []
-                for k, v in cfg.items():
-                    if isinstance(v, list):
-                        assert len(v) == 1
-                        v = v[0]
-                    e.append(ParamSpace(name=k, value=v))
-                fixed_params.append(e)
-
         params = []
         if "params" in obj.keys():
-            params.extend(
-                [ParamSpace(name=k, value=v) for k, v in obj["params"].items()]
-            )
+            for cfg in obj["params"]:
+                e = []
+                for k, v in cfg.items():
+                    e.append(ParamSpace(name=k, value=v))
+                params.append(e)
 
         return Spec(
             name=obj["name"],
             file=obj["file"],
             params=params,
-            fixed_params=fixed_params,
         )
 
     def __len__(self):
@@ -237,34 +236,25 @@ class Spec:
         Return the total size of mesh.
         """
 
-        name_list = [p.name for p in self.params]
-        param_list = [p.value_list for p in self.params]
-        param_mesh = list(product(*param_list))
-
         # params
-        num_params = len(self.params)
-        for idx in range(len(param_mesh)):
-            s = SpecInstance(
-                name=self.name,
-                file=self.file,
-                params=[
-                    Param(name=name_list[i], value=param_mesh[idx][i])
-                    for i in range(num_params)
-                ],
-            )
-            self.instances.append(s)
-
-        # fixed_params
-        for cfg in self.fixed_params:
-            s = SpecInstance(
-                name=self.name,
-                file=self.file,
-                params=[Param(name=p.name, value=p.value_list[0]) for p in cfg],
-            )
-            self.instances.append(s)
-
+        for cfg in self.params:
+            name_list = [p.name for p in cfg]
+            param_list = [p.value_list for p in cfg]
+            param_mesh = list(product(*param_list))
+            num_params = len(cfg)
+            for idx in range(len(param_mesh)):
+                s = SpecInstance(
+                    name=self.name,
+                    file=self.file,
+                    params=[
+                        Param(name=name_list[i], value=param_mesh[idx][i])
+                        for i in range(num_params)
+                    ],
+                )
+                self.instances.append(s)
         self.mesh_idx = 0
         self.mesh_size = len(self.instances)
+
         return self.mesh_size
 
     def __iter__(self):
@@ -290,16 +280,16 @@ SPEC_CONTENT = """
 name: multistage_gemm
 file: ./sample.mojo
 params:
-  DTYPE: DType.float16
-  M: [1024,512]
-  N: [1024,512]
-  STAGES: [4,8,12]
+  - DTYPE: DType.float16
+    M: [1024,512]
+    N: [1024,512]
+    STAGES: [4,8,12]
 
-fixed_params:
   - DTYPE1: DType.float32
     M1: [1024]
     N1: 768
     STAGES1: 12
+
   - DTYPE2: DType.float16
     M2: 132
     N2: 768
@@ -308,7 +298,7 @@ fixed_params:
 """
 
 
-def run(yaml_path, output_path=None, tune=True, verbose=False):
+def run(yaml_path, output_path=None, tune=True, verbose=False, tmp_path=None):
     spec = Spec.load_yaml(Path(yaml_path))
     # spec.dump_yaml(Path("rewrite.yaml"))
     # else:
@@ -318,7 +308,9 @@ def run(yaml_path, output_path=None, tune=True, verbose=False):
     spec_list: Dict[int, SpecInstance] = {}
     # Run the code over the mesh of param/values
 
-    tmp_dir = Path(tempfile.gettempdir())
+    if not tmp_path:
+        tmp_path = Path(tempfile.gettempdir())
+    tmp_dir = Path(tmp_path)
 
     t_start = time()
     with Progress(
@@ -333,6 +325,7 @@ def run(yaml_path, output_path=None, tune=True, verbose=False):
 
         for i, s in enumerate(spec):
             output_dir = Path(f"{tmp_dir}/out_{i}")
+            os.system(f"mkdir -p {output_dir}")
             # Check for the failure here.
             try:
                 output_file = output_dir / "output.csv"
@@ -385,18 +378,18 @@ def run(yaml_path, output_path=None, tune=True, verbose=False):
             output_lines += [merged_df.to_string(index=False)]
             output_lines += [LINE]
         ########################################################
-    output_lines += ["Elasped tuning time: %.1f (s)" % (t_elapsed)]
-    output_str = "\n".join([str(x) for x in output_lines])
-    print(output_str)
-    if output_path:
-        if tune:
-            with open(output_path, "w") as f:
-                f.write(output_str + "\n")
-        else:
-            merged_df.drop(columns=["mesh_idx"]).to_csv(
-                output_path, index=False, quoting=csv.QUOTE_NONNUMERIC
-            )
-        print(f"wrote results to [{output_path}]")
+        output_lines += ["Elasped tuning time: %.1f (s)" % (t_elapsed)]
+        output_str = "\n".join([str(x) for x in output_lines])
+        print(output_str)
+        if output_path:
+            if tune:
+                with open(output_path, "w") as f:
+                    f.write(output_str + "\n")
+            else:
+                merged_df.drop(columns=["mesh_idx"]).to_csv(
+                    output_path, index=False, quoting=csv.QUOTE_NONNUMERIC
+                )
+            print(f"wrote results to [{output_path}]")
 
 
 help_str = (
@@ -419,7 +412,7 @@ help_str = (
 )
 @click.option("--force", "-f", is_flag=True, default=False, help="Force.")
 @click.option(
-    "--verbose", is_flag=True, default=False, help="Verbose printing."
+    "--verbose", "-v", is_flag=True, default=False, help="Verbose printing."
 )
 def cli(
     yaml_path,

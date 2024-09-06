@@ -19,6 +19,7 @@ from utils import StaticIntTuple, StaticTuple
 from utils.index import product
 from internal_utils import DeviceNDBuffer
 from buffer.dimlist import DimList, _make_tuple
+from sys import env_get_string, env_get_int
 
 
 fn alignof_simd[type: DType, simd_target: __mlir_type.`!kgen.target`]() -> Int:
@@ -131,38 +132,31 @@ fn run_reduce[
     res_host.free()
 
 
-def main():
-    @parameter
-    fn reduce_add[
-        type: DType,
-        width: Int,
-    ](x: SIMD[type, width], y: SIMD[type, width]) -> SIMD[type, width]:
-        return x + y
+@parameter
+fn reduce_add[
+    type: DType,
+    width: Int,
+](x: SIMD[type, width], y: SIMD[type, width]) -> SIMD[type, width]:
+    return x + y
 
-    alias types = VariadicList[DType](
-        DType.bfloat16, DType.float32, DType.float16
-    )
-    alias shape_list = VariadicList[DimList](
-        DimList(1, 1024, 3072),  # baby-replit-CE/TG-kernels;
-        DimList(1, 1, 4096),  # baby-llama-LPTG-kernels
-        DimList(1, 256, 4096),  # baby-llama-CE-kernels
-    )
+
+def main():
+    alias dtype = DType._from_str(env_get_string["dtype", "DType.bfloat16"]())
+
+    # DimList(1, 1, 4096) baby-llama-LPTG-kernels
+    alias M = env_get_int["M", 1]()
+    alias N = env_get_int["N", 1]()
+    alias K = env_get_int["K", 4096]()
 
     var m = Bench()
     try:
         with DeviceContext() as ctx:
-
-            @parameter
-            for j in range(len(shape_list)):
-                alias dims = _make_tuple[len(shape_list[j])](shape_list[j])
-
-                @parameter
-                for i in range(len(types)):
-                    run_reduce[reduce_add, types[i]](
-                        m,
-                        dims,
-                        ctx,
-                    )
+            alias dims = StaticIntTuple[3](M, N, K)
+            run_reduce[reduce_add, dtype](
+                m,
+                dims,
+                ctx,
+            )
     except e:
         print("CUDA_ERROR:", e)
 

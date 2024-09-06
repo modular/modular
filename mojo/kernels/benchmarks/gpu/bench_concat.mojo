@@ -8,7 +8,7 @@
 
 from random import randn
 from os import abort
-from sys import sizeof
+from sys import sizeof, env_get_string, env_get_int
 
 from builtin._closure import __ownership_keepalive
 from algorithm.functional import elementwise
@@ -118,26 +118,29 @@ fn bench_concat[
 
 
 fn main() raises:
+    alias num_inputs = env_get_int["num_inputs", 2]()
+    alias axis = env_get_int["axis", 0]()
+    alias W0 = env_get_int["W0", 1]()
+    alias X0 = env_get_int["X0", 1]()
+    alias Y0 = env_get_int["Y0", 1]()
+    alias Z0 = env_get_int["Z0", 1]()
+
+    alias W1 = env_get_int["W1", 1]()
+    alias X1 = env_get_int["X1", 1]()
+    alias Y1 = env_get_int["Y1", 1]()
+    alias Z1 = env_get_int["Z1", 1]()
+
     try:
         var b = Bench()
         with DeviceContext() as ctx:
-            bench_concat[num_inputs=2](
+            bench_concat[num_inputs=num_inputs](
                 b,
                 List(
-                    StaticIntTuple[4](1, 1, 1, 1), StaticIntTuple[4](1, 1, 1, 1)
+                    StaticIntTuple[4](W0, X0, Y0, Z0),
+                    StaticIntTuple[4](W1, X1, Y1, Z1),
                 ),
                 ctx,
-                axis=0,
-            )
-            bench_concat[num_inputs=2](
-                b,
-                # llama kv cache
-                List(
-                    StaticIntTuple[4](1, 8, 1024, 128),
-                    StaticIntTuple[4](1, 8, 1, 128),
-                ),
-                ctx,
-                axis=2,
+                axis=axis,
             )
             b.dump_report()
     except e:

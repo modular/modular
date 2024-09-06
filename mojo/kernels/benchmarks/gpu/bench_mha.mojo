@@ -8,7 +8,7 @@
 
 from math import ceildiv, isqrt, isclose
 from random import rand
-from sys import argv
+from sys import env_get_int
 
 from buffer import NDBuffer
 from buffer.dimlist import DimList, Dim
@@ -251,6 +251,10 @@ struct MHA_cfg:
 
 
 fn main() raises:
+    # TODO: expand to all the params
+    alias phony = env_get_int["phony", 1]()
+    constrained[phony == 1]()
+
     alias cfg_list = List[MHA_cfg](
         # Context encoding
         MHA_cfg(

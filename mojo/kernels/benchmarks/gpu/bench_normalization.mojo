@@ -14,6 +14,7 @@ from gpu.host import DeviceContext
 from internal_utils import DeviceNDBuffer, bench_compile_time
 from buffer import NDBuffer
 from utils.index import StaticTuple, StaticIntTuple, Index
+from sys import env_get_int
 
 
 fn bench_layer_norm_gpu[
@@ -106,6 +107,10 @@ fn bench_layer_norm_gpu[
 
 
 def main():
+    # TODO: expand to all the params
+    alias phony = env_get_int["phony", 1]()
+    constrained[phony == 1]()
+
     with DeviceContext() as ctx:
         var m = Bench(BenchConfig(num_repetitions=1))
 

@@ -14,6 +14,7 @@ from gpu.host.device_context import DeviceBuffer, DeviceContext
 from linalg.matmul_gpu import _matmul_gpu
 from internal_utils import DeviceNDBuffer, bench_compile_time
 from utils import StaticIntTuple
+from sys import env_get_int
 
 
 fn _get_run_name[
@@ -207,6 +208,9 @@ fn main() raises:
         DimList(857, 3072, 32768),
     )
 
+    # TODO: expand to all the params
+    alias phony = env_get_int["phony", 1]()
+    constrained[phony == 1]()
     var m = Bench()
     try:
         with DeviceContext() as ctx:

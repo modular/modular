@@ -30,6 +30,7 @@ config.test_exec_root = os.path.join(
 config.excludes.add("demos")
 config.excludes.add("misc")
 config.excludes.add("packages")
+config.excludes.add("autotune")
 
 
 # Configuration file for the 'lit' test runner.

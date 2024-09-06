@@ -7,7 +7,7 @@
 # RUN: %mojo-build %s
 
 from math import sqrt, isqrt, log, sin, tanh, exp, erf, fma, ceildiv, align_up
-from sys import alignof, sizeof, triple_is_nvidia_cuda, simdwidthof
+from sys import alignof, sizeof, triple_is_nvidia_cuda, simdwidthof, env_get_int
 
 from algorithm.functional import elementwise
 from buffer import DimList, NDBuffer
@@ -216,6 +216,10 @@ fn run_elementwise[
 
 fn main() raises:
     var m = Bench()
+
+    # TODO: expand to all the params
+    alias phony = env_get_int["phony", 1]()
+    constrained[phony == 1]()
 
     alias types = List[DType](DType.bfloat16, DType.float32)
 

@@ -1,0 +1,12 @@
+##===----------------------------------------------------------------------===##
+#
+# This file is Modular Inc proprietary.
+#
+##===----------------------------------------------------------------------===##
+
+name: bench_memcpy
+file: $KERNEL_BENCHMARKS_ROOT/gpu/bench_memcpy.mojo
+
+params:
+- phony: 1
+

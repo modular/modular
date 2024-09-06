@@ -1,0 +1,12 @@
+##===----------------------------------------------------------------------===##
+#
+# This file is Modular Inc proprietary.
+#
+##===----------------------------------------------------------------------===##
+
+name: bench_mha
+file: $KERNEL_BENCHMARKS_ROOT/gpu/bench_mha.mojo
+
+params:
+- phony: 1
+
