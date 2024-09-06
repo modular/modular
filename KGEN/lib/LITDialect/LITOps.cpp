@@ -502,6 +502,15 @@ static ParseResult parseLITFunctionSignature(
     LITSignatureType &signature) {
   llvm::SMLoc startLoc = p.getCurrentLocation();
 
+  TypedAttr captureLifetimes;
+  auto lifetimeSet = LifetimeSetType::get(p.getContext());
+  if (succeeded(p.parseOptionalColon())) {
+    if (parseParamValue(p, captureLifetimes, lifetimeSet) || p.parseColon())
+      return failure();
+  } else {
+    captureLifetimes = LifetimeSetAttr::get({}, lifetimeSet);
+  }
+
   SmallVector<ParamDeclAttr> lifetimeDecls;
   auto parseLifetimeDecl = [&]() -> ParseResult {
     bool isMutable = false;
@@ -593,7 +602,7 @@ static ParseResult parseLITFunctionSignature(
       PogListAttr::get(p.getContext(), argNames, argPassingKinds,
                        defaultPosArgs, defaultKwOnlyArgs, argVariadicIndices,
                        argPackIndex, origArgPackConvention),
-      paramListAttr, lifetimeDecls.size());
+      paramListAttr, lifetimeDecls.size(), captureLifetimes);
   signature = SignatureType::remapToSignature(
       params, /*resultParams=*/{}, functionType, argConventions, effects,
       metadata, [&] { return p.emitError(startLoc); });
@@ -619,6 +628,12 @@ static void printLITFunctionSignature(OpAsmPrinter &p, Region *region,
                                       LITSignatureType signature) {
   ArrayRef<ParamDeclAttr> lifetimeDecls =
       params.drop_front(signature.getNumParams());
+
+  if (!isEmptyLifetimeSet(signature.getCaptureLifetimes())) {
+    p << ':';
+    printParamValue(p, signature.getCaptureLifetimes());
+    p << ':';
+  }
 
   ParameterEvaluator evaluator;
   printOptionalParameterSpec(p, params.drop_back(lifetimeDecls.size()),

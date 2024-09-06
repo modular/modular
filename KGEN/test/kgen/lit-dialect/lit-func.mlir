@@ -1,4 +1,5 @@
 // RUN: kgen-opt %s -verify-parameters | kgen-opt -verify-parameters | FileCheck %s
+// RUN: kgen-opt %s -emit-bytecode | kgen-opt -verify-parameters | FileCheck %s
 
 // CHECK-LABEL: lit.func @argNameParsing(
 // CHECK-SAME: %a: index, %woof: index, %_21451[*"!451"]: index
@@ -247,5 +248,23 @@ lit.func @lifetime_set<set: lifetime.set>[mut lt]() {
   kgen.param.declare f4: !lit.signature<:set:<index>() -> ()> = <?>
   // CHECK-NEXT: f5: !lit.signature<:{mut lt}:<index>() -> ()> = <?>
   kgen.param.declare f5: !lit.signature<:{mut lt}:<index>() -> ()> = <?>
+  kgen.return
+}
+
+// CHECK-LABEL: lit.func @lambda_capture_lifetimes
+lit.func @lambda_capture_lifetimes<set: lifetime.set>[mut lt]() {
+  // CHECK: lit.func set_capture:set:<param>()
+  lit.func set_capture:set:<param>() {
+    kgen.return
+  }
+  // CHECK: lit.func lt_capture:{mut lt}:()
+  lit.func lt_capture:{mut lt}:() {
+    kgen.return
+  }
+
+  // CHECK: ref0: !lit.signature<:set:<"param": index>() -> ()> = <set_capture>
+  kgen.param.declare ref0: !lit.signature<:set:<"param": index>() -> ()> = <set_capture>
+  // CHECK: ref1: !lit.signature<:{mut lt}:() -> ()> = <lt_capture>
+  kgen.param.declare ref1: !lit.signature<:{mut lt}:() -> ()> = <lt_capture>
   kgen.return
 }
