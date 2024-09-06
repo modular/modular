@@ -483,6 +483,12 @@ LogicalResult FnMetadataAttr::verifySignature(
                                 inputParamTypes, "parameter")))
     return failure();
 
+  // Only capturing functions can have capture lifetimes.
+  if (!isEmptyLifetimeSet(getCaptureLifetimes()) && !effects.isCapturing()) {
+    return emitError() << "signature has non-empty capture lifetime set but "
+                          "isn't marked 'capturing'";
+  }
+
   return success();
 }
 
