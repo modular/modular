@@ -581,7 +581,7 @@ fn mgp_assert[message: StringLiteral](cond: Bool) raises -> Int:
 # ===----------------------------------------------------------------------===#
 
 
-@mogg_register("mgp.buffer.alloc.dynamic")
+@mogg_register("mgp.buffer.alloc")
 @always_inline
 fn mgp_buffer_alloc_dynamic[
     aRuntimeSlot: UInt64,
