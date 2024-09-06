@@ -426,7 +426,8 @@ static lldb::REPLSP createInstance(Status &error, lldb::LanguageType language,
   error.Clear();
 
   if (!target && !debugger) {
-    error.SetErrorString("must have a debugger or a target to create a REPL");
+    error = Status::FromErrorString(
+        "must have a debugger or a target to create a REPL");
     return nullptr;
   }
 
@@ -436,12 +437,12 @@ static lldb::REPLSP createInstance(Status &error, lldb::LanguageType language,
     auto repl = createInstanceFromTarget(*target, replOptions);
     if (repl)
       return *repl;
-    return error = repl.takeError(), nullptr;
+    return error = Status::FromError(repl.takeError()), nullptr;
   }
   auto repl = createInstanceFromDebugger(*debugger, replOptions);
   if (repl)
     return *repl;
-  return error = repl.takeError(), nullptr;
+  return error = Status::FromError(repl.takeError()), nullptr;
 }
 
 void MojoREPL::Initialize() {

@@ -724,8 +724,7 @@ struct IRExecDiagnosticHandler : public llvm::DiagnosticHandler {
     if (DI.getKind() == llvm::DK_SrcMgr) {
       const auto &DISM = llvm::cast<llvm::DiagnosticInfoSrcMgr>(DI);
       if (err && err->Success()) {
-        err->SetErrorToGenericError();
-        err->SetErrorStringWithFormat(
+        *err = Status::FromErrorStringWithFormatv(
             "Inline assembly error: %s",
             DISM.getSMDiag().getMessage().str().c_str());
       }
@@ -776,8 +775,9 @@ Status JITExecutionUnit::getRunnableInfo(lldb::addr_t &funcAddr,
 
   Status error;
   if (!process) {
-    error.SetErrorString("Couldn't write the JIT compiled code into the "
-                         "process because the process is invalid");
+    error =
+        Status::FromErrorString("Couldn't write the JIT compiled code into the "
+                                "process because the process is invalid");
     return error;
   }
 
@@ -840,10 +840,8 @@ Status JITExecutionUnit::getRunnableInfo(lldb::addr_t &funcAddr,
   });
 
   if (!impl->executionEngine) {
-    error.SetErrorToGenericError();
-    error.SetErrorStringWithFormat("Couldn't JIT the function: %s",
-                                   errorString.c_str());
-    return error;
+    return Status::FromErrorStringWithFormatv("Couldn't JIT the function: %s",
+                                              errorString.c_str());
   }
 
   impl->usesGlobalUnderscorePrefix =
@@ -862,10 +860,10 @@ Status JITExecutionUnit::getRunnableInfo(lldb::addr_t &funcAddr,
   SmallVector<std::unique_ptr<llvm::object::ObjectFile>> objFiles;
   for (auto &child : impl->archive->children(err)) {
     if (err)
-      return Status(std::move(err));
+      return Status::FromError(std::move(err));
     auto binOrErr = child.getAsBinary();
     if (!binOrErr)
-      return Status(binOrErr.takeError());
+      return Status::FromError(binOrErr.takeError());
     auto objectFile = dyn_cast<llvm::object::ObjectFile>(*binOrErr);
     if (!objectFile)
       return Status("archive member was not an object file");
@@ -904,8 +902,7 @@ Status JITExecutionUnit::getRunnableInfo(lldb::addr_t &funcAddr,
     if (!error.Success())
       return error;
     if (!fnPtr) {
-      error.SetErrorToGenericError();
-      error.SetErrorStringWithFormat(
+      error = Status::FromErrorStringWithFormatv(
           "'%s' was in the parsed module, but wasn't compiled into the "
           "standalone archive",
           name.c_str());
@@ -935,7 +932,7 @@ Status JITExecutionUnit::getRunnableInfo(lldb::addr_t &funcAddr,
       ss.PutCString(Mangled(failedLookup).GetDemangledName().GetStringRef());
     }
     impl->failedLookups.clear();
-    error.SetErrorString(ss.GetString());
+    error = Status::FromErrorString(ss.GetString().data());
     return error;
   }
 

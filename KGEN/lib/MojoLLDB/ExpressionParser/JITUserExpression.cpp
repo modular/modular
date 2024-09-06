@@ -228,9 +228,9 @@ lldb::ExpressionResults JitUserExpression::DoExecute(
     return executionResult;
   }
   if (executionResult != lldb::eExpressionCompleted) {
-    diagnosticManager.Printf(
-        lldb::eSeverityError, "Couldn't execute function; result was %s",
-        Process::ExecutionResultAsCString(executionResult));
+    diagnosticManager.Printf(lldb::eSeverityError,
+                             "Couldn't execute function; result was %s",
+                             ExpressionResultAsCString(executionResult));
     return executionResult;
   }
 

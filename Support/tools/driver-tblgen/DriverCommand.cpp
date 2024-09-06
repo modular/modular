@@ -83,7 +83,7 @@ std::vector<StringRef> CommandAlias::getAliasArguments() const {
 
 ErrorOr<CommandDescription>
 M::CommandDescription::get(const llvm::RecordKeeper &records) {
-  std::vector<llvm::Record *> descriptions =
+  ArrayRef<const llvm::Record *> descriptions =
       records.getAllDerivedDefinitions("CommandDescription");
   if (descriptions.empty())
     return Error("you must define a 'CommandDescription' record");
@@ -223,7 +223,7 @@ ErrorOr<std::vector<CommandOptionGroup>>
 M::CommandOptionGroup::getAll(const llvm::RecordKeeper &records) {
   // Create a sorted list of groups.
   std::vector<CommandOptionGroup> groups;
-  std::vector<llvm::Record *> groupRecords =
+  ArrayRef<const llvm::Record *> groupRecords =
       records.getAllDerivedDefinitions("OptionGroup");
   groups.reserve(groupRecords.size());
   llvm::transform(
@@ -236,7 +236,7 @@ M::CommandOptionGroup::getAll(const llvm::RecordKeeper &records) {
   DenseMap<const llvm::Record *, std::vector<const llvm::Record *>>
       groupOptions;
   llvm::SmallSet<int64_t, 4> groupIndices;
-  for (llvm::Record *option : records.getAllDerivedDefinitions("Option"))
+  for (const llvm::Record *option : records.getAllDerivedDefinitions("Option"))
     if (llvm::Record *group = option->getValueAsOptionalDef("Group"))
       groupOptions[group].push_back(option);
 
