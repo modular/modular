@@ -843,6 +843,15 @@ static ParseResult parseLITSignature(AsmParser &p, Type &signature) {
     if (p.parseInteger(numLifetimeDecls) || p.parseRSquare())
       return failure();
 
+  TypedAttr captureLifetimes;
+  auto lifetimeSet = LifetimeSetType::get(p.getContext());
+  if (succeeded(p.parseOptionalColon())) {
+    if (parseParamValue(p, captureLifetimes, lifetimeSet) || p.parseColon())
+      return failure();
+  } else {
+    captureLifetimes = LifetimeSetAttr::get({}, lifetimeSet);
+  }
+
   SmallVector<Type> inputParamTypes;
   PogListAttr paramListAttr;
   if (failed(parseOptionalParamSignature(p, inputParamTypes, paramListAttr)))
@@ -905,7 +914,7 @@ static ParseResult parseLITSignature(AsmParser &p, Type &signature) {
       PogListAttr::get(ctx, argNames, argPassingKinds, defaultPosArgs,
                        defaultKwOnlyArgs, argVariadicIndices, argPackIndex,
                        origArgPackConvention),
-      paramListAttr, numLifetimeDecls);
+      paramListAttr, numLifetimeDecls, captureLifetimes);
   signature = SignatureType::getChecked(
       [&] { return p.emitError(startLoc); }, functionType, inputParamTypes,
       /*resultParamTypes=*/{}, argConventions, effects, metadata);
@@ -943,6 +952,11 @@ void FnMetadataAttr::printSignature(AsmPrinter &p, SignatureType sig) const {
 
   if (unsigned numLifetimeDecls = getNumImplicitLifetimeDecls())
     p << '[' << numLifetimeDecls << ']';
+  if (!isEmptyLifetimeSet(getCaptureLifetimes())) {
+    p << ':';
+    printParamValue(p, getCaptureLifetimes());
+    p << ':';
+  }
 
   printOptionalParamSignature(p, signature.getParamTypes(),
                               signature.getParamListAttrs());

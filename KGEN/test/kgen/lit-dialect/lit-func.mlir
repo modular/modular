@@ -232,3 +232,20 @@ lit.func @different_param_name() {
   kgen.param.declare ref: !lit.signature<<"a": index, |>() -> ()> = <nested_fn>
   kgen.return
 }
+
+// CHECK-LABEL: lit.func @lifetime_set
+lit.func @lifetime_set<set: lifetime.set>[mut lt]() {
+  // CHECK-NEXT: f0: !lit.signature<:set:() -> ()> = <?>
+  kgen.param.declare f0: !lit.signature<:set:() -> ()> = <?>
+  // CHECK-NEXT: f1: !lit.signature<:{mut lt}:() -> ()> = <?>
+  kgen.param.declare f1: !lit.signature<:{mut lt}:() -> ()> = <?>
+  // CHECK-NEXT: f2: !lit.signature<[1]:set:() -> ()> = <?>
+  kgen.param.declare f2: !lit.signature<[1]:set:() -> ()> = <?>
+  // CHECK-NEXT: f3: !lit.signature<[1]:{mut lt}:() -> ()> = <?>
+  kgen.param.declare f3: !lit.signature<[1]:{mut lt}:() -> ()> = <?>
+  // CHECK-NEXT: f4: !lit.signature<:set:<index>() -> ()> = <?>
+  kgen.param.declare f4: !lit.signature<:set:<index>() -> ()> = <?>
+  // CHECK-NEXT: f5: !lit.signature<:{mut lt}:<index>() -> ()> = <?>
+  kgen.param.declare f5: !lit.signature<:{mut lt}:<index>() -> ()> = <?>
+  kgen.return
+}
