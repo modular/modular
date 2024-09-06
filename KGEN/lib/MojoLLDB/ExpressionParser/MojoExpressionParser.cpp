@@ -505,17 +505,13 @@ Status MojoExpressionParser::prepareForExecution(
   // Luckily, expressions are generally destroyed shortly after this, so we
   // don't have to be too concerned - just something to be aware of.
   OwningOpRef<ModuleOp> mlirModule = std::move(impl->mlirModule);
-  if (!mlirModule) {
-    Status err;
-    err.SetErrorString("Can't prepare a NULL module for execution");
-    return err;
-  }
+  if (!mlirModule)
+    return Status::FromErrorString("Can't prepare a NULL module for execution");
+
   OwningBinary<llvm::object::Archive> archive = std::move(impl->archive);
-  if (!archive.getBinary()) {
-    Status err;
-    err.SetErrorString("Can't prepare a NULL archive for execution");
-    return err;
-  }
+  if (!archive.getBinary())
+    return Status::FromErrorString(
+        "Can't prepare a NULL archive for execution");
 
   // Retrieve an appropriate symbol context.
   SymbolContext sc;
@@ -583,7 +579,7 @@ Status MojoExpressionParser::prepareForExecution(
         exeCtx.GetBestExecutionContextScope(), ConstString(name), lldbType,
         byteOrder, addressByteSize);
     if (!var) {
-      error.SetErrorString("failed to create persistent variable");
+      error = Status::FromErrorString("failed to create persistent variable");
       return error;
     }
 

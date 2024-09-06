@@ -3,9 +3,9 @@
 module attributes {M.target_info = #M.target<triple="", arch="", features="", data_layout="", simd_bit_width=128>} {
   // CHECK-LABEL: @take_closure_no_args
   llvm.func @take_closure_no_args(%arg0: !llvm.struct<(ptr, ptr)>) {
-    // CHECK: %0 = llvm.extractvalue %arg0[0] : !llvm.struct<(ptr, ptr)>
-    // CHECK: %1 = llvm.extractvalue %arg0[1] : !llvm.struct<(ptr, ptr)>
-    // CHECK: llvm.call %0(%1) {fastmathFlags = #llvm.fastmath<contract>}
+    // CHECK: %[[V0:.+]] = llvm.extractvalue %arg0[0] : !llvm.struct<(ptr, ptr)>
+    // CHECK: %[[V1:.+]] = llvm.extractvalue %arg0[1] : !llvm.struct<(ptr, ptr)>
+    // CHECK: llvm.call %[[V0]](%[[V1]]) {fastmathFlags = #llvm.fastmath<contract>}
     %0 = builtin.unrealized_conversion_cast %arg0 : !llvm.struct<(ptr, ptr)> to !kgen.signature<() capturing -> index>
     %1 = kgen.call_indirect %0() : () capturing -> index
     llvm.return

@@ -8,6 +8,7 @@
 #define KGEN_LIB_MOJOLLDB_TYPESYSTEM_MOJODWARFPARSER_H
 
 #include "llvm-project/lldb/source/Plugins/SymbolFile/DWARF/DWARFASTParser.h"
+#include "llvm-project/lldb/source/Plugins/SymbolFile/DWARF/DWARFDIE.h"
 
 namespace lldb_private::plugin::dwarf {
 class DWARFDebugInfoEntry;
@@ -86,7 +87,7 @@ public:
   }
 
   std::string GetDIEClassTemplateParams(
-      const lldb_private::plugin::dwarf::DWARFDIE &die) override {
+      lldb_private::plugin::dwarf::DWARFDIE die) override {
     // Unimplemented.
     return {};
   }

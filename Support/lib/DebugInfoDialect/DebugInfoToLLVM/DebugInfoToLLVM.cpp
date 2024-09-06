@@ -143,7 +143,7 @@ MetadataConverter::convertAttrImpl(DISubprogramAttr attr) {
       attr.getName().encode(), attr.getLinkageName(),
       convertAttr(attr.getFile()), attr.getLine(), attr.getScopeLine(),
       static_cast<LLVM::DISubprogramFlags>(attr.getSubprogramFlags()),
-      convertType(attr.getType()));
+      convertType(attr.getType()), /*retainedNodes=*/{});
 }
 
 LocationAttr MetadataConverter::convertAttrImpl(DICallLocAttr attr) {
@@ -257,7 +257,7 @@ LLVM::DITypeAttr MetadataConverter::convertTypeImpl(DIArrayType type) {
       type.getContext(), builder.getI64IntegerAttr(type.getElementCount()),
       /*lowerBound=*/nullptr, /*upperBound=*/nullptr, /*stride=*/nullptr);
   return LLVM::DICompositeTypeAttr::get(
-      type.getContext(), llvm::dwarf::DW_TAG_array_type, {},
+      type.getContext(), llvm::dwarf::DW_TAG_array_type,
       StringAttr::get(type.getContext()), nullptr, /*line=*/0,
       /*scope=*/nullptr, convertType(type.getElementType()),
       LLVM::DIFlags::Zero, type.getSizeInBits(), /*alignInBits=*/0, element,
@@ -338,7 +338,7 @@ LLVM::DITypeAttr MetadataConverter::convertTypeImpl(DIStructType type) {
     structSize = llvm::alignTo(structSize, structAlign);
 
   return LLVM::DICompositeTypeAttr::get(
-      type.getContext(), llvm::dwarf::DW_TAG_structure_type, {}, type.getName(),
+      type.getContext(), llvm::dwarf::DW_TAG_structure_type, type.getName(),
       /*file=*/nullptr, /*line=*/0, /*scope=*/nullptr, /*baseType=*/nullptr,
       LLVM::DIFlags::Zero, structSize, structAlign, elementTypes,
       /*dataLocation=*/{}, /*rank=*/{},
@@ -394,7 +394,7 @@ LLVM::DITypeAttr MetadataConverter::convertTypeImpl(DIVariantType type) {
   // TODO(#30619): add discriminator field to the DW_TAG_variant_part entry once
   // upstream is ready.
   return LLVM::DICompositeTypeAttr::get(
-      context, llvm::dwarf::DW_TAG_variant_part, {}, StringAttr::get(context),
+      context, llvm::dwarf::DW_TAG_variant_part, StringAttr::get(context),
       nullptr, 0, nullptr, nullptr, LLVM::DIFlags::Zero, type.getSizeInBits(),
       type.getAlignInBits(), variantTypes, /*dataLocation=*/{}, /*rank=*/{},
       /*allocated=*/{}, /*associated=*/{});
@@ -406,7 +406,7 @@ LLVM::DITypeAttr MetadataConverter::convertTypeImpl(DIVectorType type) {
       type.getContext(), builder.getI64IntegerAttr(type.getElementCount()),
       /*lowerBound=*/nullptr, /*upperBound=*/nullptr, /*stride=*/nullptr);
   return LLVM::DICompositeTypeAttr::get(
-      type.getContext(), llvm::dwarf::DW_TAG_array_type, {}, type.getName(),
+      type.getContext(), llvm::dwarf::DW_TAG_array_type, type.getName(),
       nullptr, /*line=*/0, /*scope=*/nullptr,
       convertType(type.getElementType()), LLVM::DIFlags::Vector,
       type.getSizeInBits(), /*alignInBits=*/0, element, /*dataLocation=*/{},
