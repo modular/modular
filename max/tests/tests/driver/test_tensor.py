@@ -8,6 +8,7 @@ from itertools import product
 
 import numpy as np
 import pytest
+import torch
 from max.driver import CPU, Tensor
 from max.dtype import DType
 
@@ -295,3 +296,27 @@ def test_dlpack():
         # Numpy creates a read-only array, so we modify ours.
         tensor[0, 0] = np_dtype(7)
         assert array[0, 0] == np_dtype(7)
+
+
+def test_torch_tensor_conversion():
+    # Our tensors should be convertible to and from Torch tensors.
+    torch_tensor = torch.reshape(torch.arange(1, 11, dtype=torch.int32), (2, 5))
+    driver_tensor = Tensor.from_dlpack(torch_tensor)
+    assert driver_tensor.shape == (2, 5)
+    assert driver_tensor.dtype == DType.int32
+    for x, y in product(range(2), range(5)):
+        assert torch_tensor[x, y].item() == driver_tensor[x, y].item()
+
+    converted_tensor = torch.from_dlpack(driver_tensor)
+    assert torch.all(torch.eq(torch_tensor, converted_tensor))
+
+    # We should also be able to get this running for boolean tensors.
+    bool_tensor = torch.tensor([False, True, False, True])
+    converted_bool = Tensor.from_dlpack(bool_tensor)
+    assert converted_bool.shape == (4,)
+    assert converted_bool.dtype == DType.bool
+    for x in range(4):
+        assert bool_tensor[x].item() == converted_bool[x].item()
+
+    reconverted_bool = torch.from_dlpack(converted_bool)
+    assert torch.all(torch.eq(bool_tensor, reconverted_bool))

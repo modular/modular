@@ -3,7 +3,9 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
+
 import numpy as np
+import torch
 from max.driver import CPU, CUDA, Tensor
 from max.dtype import DType
 
@@ -55,3 +57,17 @@ def test_device_device_copy():
     assert tensor[0].item() == 1
     assert tensor[1].item() == 2
     assert tensor[2].item() == 3
+
+
+def test_torch_tensor_conversion():
+    # Our tensors should be convertible to and from Torch tensors. We have to a
+    # bunch of juggling between host and device because we don't have a
+    # CUDA-compatible version of torch available yet.
+    torch_tensor = torch.reshape(torch.arange(1, 11, dtype=torch.int32), (2, 5))
+    copied_tensor = Tensor.from_dlpack(torch_tensor)
+    gpu_tensor = copied_tensor.copy_to(CUDA())
+    assert gpu_tensor.shape == (2, 5)
+    assert gpu_tensor.dtype == DType.int32
+    host_tensor = gpu_tensor.copy_to(CPU())
+    torch_tensor_copy = torch.from_dlpack(host_tensor)
+    assert torch.all(torch.eq(torch_tensor, torch_tensor_copy))
