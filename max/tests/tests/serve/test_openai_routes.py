@@ -5,6 +5,8 @@
 # ===----------------------------------------------------------------------=== #
 
 
+from threading import Thread
+
 import pytest
 import sseclient
 from fastapi.testclient import TestClient
@@ -58,3 +60,25 @@ def test_openai_random_stream_chat_completion(app):
             counter += 1
 
         assert counter > 0
+
+
+def test_openai_random_chat_completion_multi(app):
+    with TestClient(app) as client:
+
+        def run_single_test(client):
+            raw_response = client.post(
+                "/v1/chat/completions", json=simple_openai_request()
+            )
+            response = CreateChatCompletionResponse.parse_raw(
+                raw_response.json()
+            )
+            assert len(response.choices) == 1
+            assert response.choices[0].finish_reason == "stop"
+
+        threads = []
+        num_threads = 100
+        for i in range(0, num_threads):
+            threads.append(Thread(target=run_single_test, args=(client,)))
+            threads[i].start()
+        for t in threads:
+            t.join()
