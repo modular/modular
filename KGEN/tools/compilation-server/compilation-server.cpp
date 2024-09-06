@@ -5,6 +5,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "AsyncRT/Runtime/Runtime.h"
+#include "AsyncRT/Runtime/RuntimeCLOptions.h"
 #include "CompilationServer.h"
 #include "KGEN/Support/Debugging.h"
 #include "mlir/Tools/lsp-server-support/Logging.h"
@@ -13,6 +14,7 @@
 #include "llvm/Support/InitLLVM.h"
 #include "llvm/Support/Process.h"
 #include "llvm/Support/Program.h"
+#include "llvm/Support/TargetSelect.h"
 
 using namespace M;
 using namespace M::KGEN;
@@ -20,6 +22,11 @@ using namespace mlir::lsp;
 
 int main(int argc, char **argv) {
   llvm::InitLLVM IL(argc, argv, /*InstallPipeSignalExitHandler=*/false);
+  llvm::InitializeAllTargets();
+  llvm::InitializeAllTargetMCs();
+  llvm::InitializeAllAsmParsers();
+  llvm::InitializeAllAsmPrinters();
+
   llvm::PrettyStackTraceProgram X(argc, argv);
   llvm::setBugReportMsg(
       "Compilation server has encountered an internal error. "
@@ -55,11 +62,16 @@ int main(int argc, char **argv) {
       llvm::cl::desc("Pretty-print JSON output"),
       llvm::cl::init(false),
   };
+  llvm::cl::opt<bool> singleThreaded{
+      "single-threaded",
+      llvm::cl::desc("Use single-threaded mode for the runtime"),
+      llvm::cl::init(false),
+  };
   llvm::cl::opt<bool> testMode{
       "test",
-      llvm::cl::desc(
-          "This flags sets up the server in test mode. It effectively sets the "
-          "options `-input-style=delimited -pretty -log=verbose "),
+      llvm::cl::desc("This flags sets up the server in test mode. It "
+                     "effectively sets the "
+                     "options `-input-style=delimited -pretty -log=verbose "),
       llvm::cl::init(false),
   };
   llvm::cl::opt<bool> attach{
@@ -89,6 +101,5 @@ int main(int argc, char **argv) {
     attachToNewRemoteDebugSession();
 
   // Start the server.
-  // Use single-thread mode for now to keep things simple.
-  return failed(runCompilationServer(transport));
+  return failed(runCompilationServer(transport, singleThreaded));
 }

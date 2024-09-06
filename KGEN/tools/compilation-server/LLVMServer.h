@@ -7,6 +7,7 @@
 #ifndef KGEN_TOOLS_MOJO_LSP_SERVER_MOJO_SERVER_H
 #define KGEN_TOOLS_MOJO_LSP_SERVER_MOJO_SERVER_H
 
+#include "Protocol.h"
 #include "Support/ErrorOr.h"
 #include "Support/LLVMForwardDecls.h"
 #include "llvm/ADT/FunctionExtras.h"
@@ -17,16 +18,23 @@ namespace M::KGEN::CSP {
 /// necessary for a compilation server.
 class LLVMServer {
 public:
-  LLVMServer();
+  LLVMServer(LLVMServer &) = delete;
+  LLVMServer(LLVMServer &&);
   ~LLVMServer();
 
-  /// Compile LLVM bitcode represented as base64 encoded string.
-  /// For testing purposes, return emitted string or "error". This
-  /// will change once the implementation is completed.
-  std::string emitArchive(StringRef mlirModule);
+  /// Create a new LLVMServer instance.
+  static ErrorOr<LLVMServer> create(bool singleThreaded);
+
+  /// Execute ObjectCompiler::emitArchive() and return the resulting
+  /// archive.
+  std::string emitArchive(const EmitArchiveParams &params);
+
+  /// Recieve MLIR module, convert it to an op and send it back.
+  std::string echoMLIR(StringRef module);
 
 private:
   struct Impl;
+  LLVMServer(std::unique_ptr<Impl> &&);
   std::unique_ptr<Impl> impl;
 };
 
