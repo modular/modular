@@ -20,4 +20,6 @@ from ._utils import (
     linspace,
     random,
     zero,
+    parse_shape,
+    env_get_shape,
 )

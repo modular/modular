@@ -7,6 +7,7 @@
 from collections import InlineArray
 from random import rand
 from sys.info import alignof
+from sys import env_get_string
 
 from benchmark import (
     Bench,
@@ -212,3 +213,62 @@ fn bench_compile_time[
     m.bench_function[bench_call](
         BenchId("bench_compile" + "/" + emission_kind, name), measures=measures
     )
+
+
+fn parse_shape[name: StringLiteral]() -> List[Int]:
+    """Parse string to get an integer-valued shape (2+ dims) define.
+
+    For example, the following shapes:
+    - shape = x123 => (0,123)
+    - 123 = Not applicable
+    - 123x = (123,0)
+    - 123x456 = (123,456)
+
+    Parameters:
+        name: The name of the define.
+
+    Returns:
+        A List[Int] parameter value.
+    """
+    alias zero = "0".unsafe_ptr()[0]
+    alias x_ptr = "x".unsafe_ptr()[0]
+    alias name_unsafe_ptr = name.unsafe_ptr()
+
+    var vals: List[Int] = List[Int]()
+    var sum: Int = 0
+
+    @parameter
+    for i in range(len(name)):
+        alias diff = int(name_unsafe_ptr[i] - zero)
+        constrained[Bool(name_unsafe_ptr[i] == x_ptr) or Bool(0 <= diff <= 9)]()
+
+        @parameter
+        if name_unsafe_ptr[i] == x_ptr:
+            vals.append(sum)
+            sum = 0
+            continue
+        sum = sum * 10 + diff
+    vals.append(sum)
+    return vals
+
+
+fn env_get_shape[name: StringLiteral, default: StringLiteral]() -> List[Int]:
+    """Try to get an integer-valued shape (2+ dims) define.
+    Compilation fails if the name is not defined.
+
+    For example, the following shapes:
+    - shape = x123 => (0,123)
+    - 123 = Not applicable
+    - 123x = (123,0)
+    - 123x456 = (123,456)
+
+    Parameters:
+        name: The name of the define.
+        default: The default value to use.
+
+    Returns:
+        A List[Int] parameter value.
+    """
+    alias shape_str = env_get_string[name, default]()
+    alias shape: List[Int] = parse_shape[shape_str]()
+    return shape
