@@ -7,7 +7,6 @@
 #ifndef KGEN_TOOLS_COMPILATION_SERVER_H
 #define KGEN_TOOLS_COMPILATION_SERVER_H
 
-#include "Support/LLVMForwardDecls.h"
 #include "mlir/Support/LogicalResult.h"
 #include <memory>
 
@@ -17,7 +16,8 @@ class JSONTransport;
 
 namespace M::KGEN {
 /// Run the main loop using the given transport.
-mlir::LogicalResult runCompilationServer(mlir::lsp::JSONTransport &transport);
+mlir::LogicalResult runCompilationServer(mlir::lsp::JSONTransport &transport,
+                                         bool singleThreaded);
 } // namespace M::KGEN
 
 #endif // KGEN_TOOLS_COMPILATION_SERVER_H

@@ -18,27 +18,60 @@
 #ifndef KGEN_TOOLS_CS_PROTOCOL_H
 #define KGEN_TOOLS_CS_PROTOCOL_H
 
+#include "KGEN/ToolCommon/CompilationOptions.h"
 #include "Support/LLVMForwardDecls.h"
 #include "llvm/IR/Module.h"
+#include "llvm/Support/CodeGen.h"
 #include "llvm/Support/JSON.h"
 #include "llvm/Support/raw_ostream.h"
 #include <optional>
 #include <string>
 
+namespace KGEN = M::KGEN;
 namespace M::KGEN::CSP {
+
+//===----------------------------------------------------------------------===//
+// KGEN::CompilationOptions
+//===----------------------------------------------------------------------===//
+
+/// Add support for JSON serialization.
+bool fromJSON(const llvm::json::Value &value, KGEN::CompilationOptions &result,
+              llvm::json::Path path);
+llvm::json::Value toJSON(const KGEN::CompilationOptions &value);
 
 //===----------------------------------------------------------------------===//
 // EmitArchiveParams
 //===----------------------------------------------------------------------===//
+
 struct EmitArchiveParams {
   /// MLIR module printed as string.
   std::string module;
+
+  /// Compilation options.
+  KGEN::CompilationOptions compilationOptions;
+
+  /// Indicates if the code should be JITted.
+  bool isJIT;
 };
 
 /// Add support for JSON serialization.
 bool fromJSON(const llvm::json::Value &value, EmitArchiveParams &result,
               llvm::json::Path path);
 llvm::json::Value toJSON(const EmitArchiveParams &value);
+
+//===----------------------------------------------------------------------===//
+// MLIRModuleParam
+//===----------------------------------------------------------------------===//
+
+struct MLIRModule {
+  /// MLIR module printed as string.
+  std::string module;
+};
+
+/// Add support for JSON serialization.
+bool fromJSON(const llvm::json::Value &value, MLIRModule &result,
+              llvm::json::Path path);
+llvm::json::Value toJSON(const MLIRModule &value);
 
 //===----------------------------------------------------------------------===//
 // ObjectArchive
