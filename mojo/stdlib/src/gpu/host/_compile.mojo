@@ -68,28 +68,45 @@ fn _get_arch[target: __mlir_type.`!kgen.target`]() -> String:
 fn _to_sass[
     target: __mlir_type.`!kgen.target` = _get_nvptx_target()
 ](asm: String, *, nvdisasm_opts: String = "") raises -> String:
-    alias ptxas_path = Path("/usr/local/cuda/bin/ptxas")
     alias nvdisasm_path = Path("/usr/local/cuda/bin/nvdisasm")
-    if not ptxas_path.exists():
-        raise "the `ptxas` binary does not exist in '" + str(ptxas_path) + "'"
     if not nvdisasm_path.exists():
         raise "the `nvdisasm` binary does not exist in '" + str(
             nvdisasm_path
         ) + "'"
     with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmpdir:
+        var elf_file = Path(tmpdir) / "output.elf"
+        _ = _ptxas_compile(
+            asm,
+            output_file=elf_file,
+        )
+        return subprocess.run(
+            str(nvdisasm_path) + " -c " + nvdisasm_opts + " " + str(elf_file)
+        )
+    return ""
+
+
+@no_inline
+fn _ptxas_compile[
+    target: __mlir_type.`!kgen.target` = _get_nvptx_target()
+](
+    asm: String, *, options: String = "", output_file: Optional[Path] = None
+) raises -> String:
+    alias ptxas_path = Path("/usr/local/cuda/bin/ptxas")
+    if not ptxas_path.exists():
+        raise "the `ptxas` binary does not exist in '" + str(ptxas_path) + "'"
+    with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmpdir:
         var ptx_file = Path(tmpdir) / "output.ptx"
         var elf_file = Path(tmpdir) / "output.elf"
         ptx_file.write_text(asm)
-        _ = subprocess.run(
+        return subprocess.run(
             str(ptxas_path)
             + " --gpu-name "
             + _get_arch[target]()
             + " -O3 "
             + str(ptx_file)
+            + " "
+            + options
             + " -o "
-            + str(elf_file)
-        )
-        return subprocess.run(
-            str(nvdisasm_path) + " -c " + nvdisasm_opts + " " + str(elf_file)
+            + str(output_file.or_else(elf_file))
         )
     return ""
