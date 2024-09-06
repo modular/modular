@@ -8,6 +8,7 @@
 
 from math import isclose
 from random import rand
+from utils.index import Index
 
 from buffer import Dim, DimList, NDBuffer
 from gpu.host.device_context import DeviceBuffer, DeviceContext
@@ -85,10 +86,7 @@ fn split_k_reduce_test_case[
     shape_b_dim: StaticIntTuple[2],
     ctx: DeviceContext,
 ) raises:
-    print(
-        _get_test_name[dtype, shape_a, shape_b](shape_a_dim, shape_b_dim),
-        end=" ",
-    )
+    print(_get_test_name[dtype, shape_a, shape_b](shape_a_dim, shape_b_dim))
 
     var mat_a_dev = _create_device_buffer[dtype, 2, shape_a](ctx, shape_a_dim)
     var mat_b_dev = _create_device_buffer[dtype, 2, shape_b](ctx, shape_b_dim)
@@ -127,12 +125,104 @@ fn split_k_reduce_test_case[
     _ = mat_b_dev^
 
 
+def test_split_k_reduce_rank3[
+    c_type: DType,
+    work_space_type: DType,
+](M: Int, N: Int, num_partitions: Int, ctx: DeviceContext):
+    print(
+        "test_split_k_reduce_rank3",
+        work_space_type,
+        "->",
+        c_type,
+        num_partitions,
+        M,
+        N,
+    )
+
+    var c_host = UnsafePointer[Scalar[c_type]].alloc(M * N)
+    var c_host_ref = UnsafePointer[Scalar[c_type]].alloc(M * N)
+
+    # Randome buffer for host computation.
+    var epilogue_data_host = UnsafePointer[Scalar[c_type]].alloc(M * N)
+    rand[c_type](epilogue_data_host, M * N)
+
+    var work_space_size = num_partitions * M * N
+    var work_space_host = UnsafePointer[Scalar[work_space_type]].alloc(
+        work_space_size
+    )
+    rand[work_space_type](work_space_host, work_space_size)
+
+    # Naive host reduction. The accumulation is in FP32 since CPU may not have
+    # native BF16 instructions.
+    for i in range(M * N):
+        var sum = work_space_host[i].cast[DType.float32]()
+        for j in range(1, num_partitions):
+            sum += work_space_host[i + j * M * N].cast[DType.float32]()
+        sum += epilogue_data_host[i].cast[DType.float32]()
+        c_host_ref[i] = sum.cast[c_type]()
+
+    var work_space_device = ctx.create_buffer[work_space_type](
+        num_partitions * M * N
+    )
+    var c_device = ctx.create_buffer[c_type](M * N)
+    var epilogue_data_device = ctx.create_buffer[c_type](M * N)
+
+    ctx.enqueue_copy_to_device(work_space_device, work_space_host)
+    ctx.enqueue_copy_to_device(epilogue_data_device, epilogue_data_host)
+
+    var c = NDBuffer[c_type, 2](c_device.ptr, Index(M, N))
+    var work_space = NDBuffer[work_space_type, 3](
+        work_space_device.ptr, Index(num_partitions, M, N)
+    )
+    var epilogue_buffer = NDBuffer[c_type, 2](
+        epilogue_data_device.ptr, Index(M, N)
+    )
+
+    @parameter
+    @always_inline
+    @__copy_capture(c, epilogue_buffer)
+    fn epilogue_fn[
+        _type: DType, _width: Int
+    ](idx: StaticIntTuple[2], val: SIMD[_type, _width]) capturing -> None:
+        var another_val = rebind[SIMD[_type, _width]](
+            epilogue_buffer.load[width=_width](idx)
+        )
+        c.store(idx, rebind[SIMD[c_type, _width]](val + another_val))
+
+    split_k_reduce[elementwise_lambda_fn=epilogue_fn](c, work_space, ctx)
+
+    ctx.enqueue_copy_from_device(c_host, c_device)
+
+    alias rtol = 1e-4 if c_type == DType.float32 else 1e-2
+    for i in range(M * N):
+        if not isclose(c_host[i], c_host_ref[i], rtol=rtol):
+            print(
+                i,
+                c_host[i],
+                c_host_ref[i],
+                abs((c_host[i] - c_host_ref[i]) / c_host_ref[i]),
+            )
+        assert_almost_equal(c_host[i], c_host_ref[i], rtol=rtol)
+
+    _ = c
+    _ = work_space
+    _ = epilogue_buffer
+    _ = epilogue_data_device
+    _ = c_device
+    _ = work_space_device
+
+    c_host.free()
+    c_host_ref.free()
+    epilogue_data_host.free()
+    work_space_host.free()
+
+
 def main():
     with DeviceContext() as ctx:
         alias num_part1 = 2
         split_k_reduce_test_case[
             DType.float32, DimList(2, 2), DimList(2, 2 * num_part1), num_part1
-        ](StaticIntTuple[2](2, 2), StaticIntTuple[2](2, 2 * num_part1), ctx)
+        ]((2, 2), (2, 2 * num_part1), ctx)
 
         alias num_part2 = 3
         split_k_reduce_test_case[
@@ -140,7 +230,7 @@ def main():
             DimList(16, 16),
             DimList(16, 16 * num_part2),
             num_part2,
-        ](StaticIntTuple[2](16, 16), StaticIntTuple[2](16, 16 * num_part2), ctx)
+        ]((16, 16), (16, 16 * num_part2), ctx)
 
         # test non-square dimension
         split_k_reduce_test_case[
@@ -148,7 +238,7 @@ def main():
             DimList(2, 4),
             DimList(2, 4 * num_part1),
             num_part1,
-        ](StaticIntTuple[2](2, 4), StaticIntTuple[2](2, 4 * num_part1), ctx)
+        ]((2, 4), (2, 4 * num_part1), ctx)
 
         split_k_reduce_test_case[
             DType.float32,
@@ -156,3 +246,10 @@ def main():
             DimList(16, 8 * num_part2),
             num_part2,
         ](StaticIntTuple[2](16, 8), StaticIntTuple[2](16, 8 * num_part2), ctx)
+
+        # Rank-3 work space.
+        test_split_k_reduce_rank3[DType.bfloat16, DType.bfloat16](
+            64, 64, 2, ctx
+        )
+        test_split_k_reduce_rank3[DType.bfloat16, DType.float32](32, 32, 5, ctx)
+        test_split_k_reduce_rank3[DType.float32, DType.float32](32, 64, 3, ctx)
