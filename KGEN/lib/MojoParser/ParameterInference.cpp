@@ -884,8 +884,6 @@ void ParameterInferenceState::inferOneParam(ASTExprAnd<AnyValue> binding,
   // Don't infer from unpacked parameters.
   PValue bindingVal = binding.ir.getIfPValue();
   assert(bindingVal && "parameters are always PValues");
-  if (isa<UnpackedAttr>(bindingVal.get()))
-    return;
   curArgExpr = binding.expr;
   (void)matchTypes(bindingVal.getType(), expectedType);
 }
