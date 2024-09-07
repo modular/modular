@@ -524,28 +524,28 @@ fn mip_constant_bool[value: Bool]() -> Bool:
     return value
 
 
-@mogg_register("mip.bool.and")
+@mogg_register("arith.andi")
 @always_inline
 @export
 fn mip_and(x: Bool, y: Bool) -> Bool:
     return x & y
 
 
-@mogg_register("mip.bool.or")
+@mogg_register("arith.ori")
 @always_inline
 @export
 fn mip_or(x: Bool, y: Bool) -> Bool:
     return x | y
 
 
-@mogg_register("mip.bool.xor")
+@mogg_register("arith.xori")
 @always_inline
 @export
 fn mip_xor(x: Bool, y: Bool) -> Bool:
     return x ^ y
 
 
-@mogg_register("mip.select")
+@mogg_register("arith.select")
 @always_inline
 @export
 fn mip_select[T: AnyTrivialRegType](cond: Bool, true: T, false: T) -> T:
