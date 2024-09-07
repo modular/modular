@@ -367,7 +367,7 @@ fn parametric_mut_mbvalue[
     is_mutable: __mlir_type.i1,
     lifetime: AnyLifetime[is_mutable].type,
  ](a: Reference[ThingWithFields, lifetime])
-   -> Reference[Int, lifetime]:
+   -> Reference[Int, __lifetime_of(a[].field)]:
   # CHECK: lit.ref.struct.ger
   return a[].field
 

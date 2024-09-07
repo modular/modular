@@ -669,7 +669,7 @@ fn field_sensitive_lifetimes(a: ThingWithFields)
 
   # expected-error @+1 {{'ThingWithFields' value has no attribute 'field_abc'}}
   _ = __lifetime_of(a.field_abc)
-  # expected-error @+1 {{value doesn't have a memory type}}
+  # expected-error @+1 {{MLIR type 'index' has no attributes}}
   _ = __lifetime_of(int.field_abc)
 
   # expected-error @+1 {{cannot implicitly convert 'ThingWithFields' value to 'Reference[0, ThingWithFields, a.field, 0]'}}

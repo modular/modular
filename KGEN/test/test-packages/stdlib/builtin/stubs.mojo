@@ -217,6 +217,9 @@ struct String(KeyElement):
     fn __len__(self) -> Int:
         return 0
 
+    fn __contains__(self, substr: String) -> Bool:
+        return True
+
 
 @value
 @register_passable("trivial")
