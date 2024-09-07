@@ -22,7 +22,6 @@ from algorithm import argmin as _argmin
 from algorithm import sync_parallelize, vectorize
 from algorithm.functional import elementwise
 from algorithm.reduction import (
-    _get_nd_indices_from_flat_index,
     _reduce_generator,
     _reduce_generator_cpu,
 )
