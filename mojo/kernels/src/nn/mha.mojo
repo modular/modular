@@ -144,7 +144,7 @@ fn fused_attention[
         @parameter
         @always_inline
         fn fuse_elementwise_fn[
-            inner_type: DType, width: Int, _rank: Int
+            inner_type: DType, width: Int, _rank: Int, *, alignment: Int = 1
         ](_out_coords: StaticIntTuple[_rank], out_val: SIMD[inner_type, width]):
             var seq_offset = M - N
             var fused_val = out_val

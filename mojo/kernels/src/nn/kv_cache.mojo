@@ -758,7 +758,7 @@ fn _matmul_kv_cache_impl[
     @parameter
     @__copy_capture(cache, SEQ_LEN)
     fn write_to_cache[
-        type_: DType, width: Int
+        type_: DType, width: Int, *, alignment: Int = 1
     ](idx: StaticIntTuple[2], val: SIMD[type_, width]):
         b_idx, t_idx = divmod(idx[0], SEQ_LEN)
         h_idx, hd_idx = divmod(idx[1], kv_params.head_size)
@@ -1130,7 +1130,7 @@ fn _fused_qkv_matmul_kv_cache_impl[
     @parameter
     @__copy_capture(k_cache, v_cache, output, q_dim, qk_offset, SEQ_LEN)
     fn write_to_cache[
-        type_: DType, width: Int
+        type_: DType, width: Int, *, alignment: Int = 1
     ](idx: StaticIntTuple[2], val: SIMD[type_, width]):
         var bs_and_seq = divmod(idx[0], SEQ_LEN)
         var b_idx = bs_and_seq[0]
