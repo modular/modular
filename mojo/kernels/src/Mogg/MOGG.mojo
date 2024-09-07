@@ -2200,9 +2200,9 @@ fn matmul[
     @parameter
     @always_inline
     fn epilogue_wrapper[
-        _type: DType, width: Int
+        _type: DType, width: Int, *, alignment: Int = 1
     ](coords: StaticIntTuple[2], val: SIMD[_type, width]):
-        output_0_fn[width, 2, element_alignment=1](
+        output_0_fn[width, 2, alignment](
             coords, rebind[SIMD[c_type, width]](val)
         )
 
@@ -2251,9 +2251,9 @@ fn batched_matmul[
     @parameter
     @always_inline
     fn epilogue_wrapper[
-        _type: DType, width: Int, rank: Int
+        _type: DType, width: Int, rank: Int, *, alignment: Int = 1
     ](coords: StaticIntTuple[rank], val: SIMD[_type, width]):
-        output_0_fn[width, rank, element_alignment=1](
+        output_0_fn[width, rank, alignment](
             coords, rebind[SIMD[c_type, width]](val)
         )
 

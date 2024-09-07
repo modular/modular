@@ -274,7 +274,7 @@ struct MatmulFuseOut:
         @parameter
         @always_inline
         fn out_func[
-            type: DType, width: Int
+            type: DType, width: Int, *, alignment: Int = 1
         ](idx: StaticIntTuple[2], val: SIMD[type, width]):
             c.store(idx, rebind[SIMD[c.type, width]](val))
 
