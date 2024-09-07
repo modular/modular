@@ -3163,66 +3163,52 @@ AnyValue MagicFunctionNode::emitIR(ValueDest &dest,
   return emitter.emitResult(MLValue(exprVal), this, dest);
 }
 
-/// Emit the specified expression to compute its {lifetime / RValueType}.  This
-/// is more flexible than emitting the error and checking to see if it has a
-/// lifetime because it can work in parameter contexts (like type expressions)
-/// more flexibly than member emission.
-static std::pair<TypedAttr, ASTType> emitExprLifetime(const ExprNode *expr,
-                                                      ExprEmitter &emitter) {
-  // Handle special cases syntactically.
-  if (auto paren = dyn_cast<ParenNode>(expr))
-    return emitExprLifetime(paren->subExpr, emitter);
-
-  // If this is a field reference like "x.field" check the base and then form
-  // a field sensitive lifetime if valid.
-  if (auto attrRef = dyn_cast<AttributeRefNode>(expr)) {
-    // If the attribute spelling is empty, we couldn't find a name to look up.
-    // This was already diagnosed during initial parsing, so we can just bail
-    // here.
-    if (attrRef->spelling.empty())
-      return {};
-
-    auto [baseLifetime, baseType] = emitExprLifetime(attrRef->base, emitter);
-    if (!baseLifetime)
-      return {};
-
-    // Perform lookup to make sure the field is a stored field.
-    ASTDecl *typeDecl = baseType.getDecl(emitter.shared);
-    if (!typeDecl) {
-      emitter.emitError(expr->getLoc())
-          << "MLIR type " << baseType << " has no attribute '"
-          << attrRef->spelling << "'" << expr->getRange();
-      return {};
-    }
-
-    // We only allow stored fields, not accesses through __getattr__ etc.
-    LookupResult lookup = emitter.shared.lookupAndResolveDecl(
-        attrRef->spelling, expr->getLoc(), *typeDecl,
-        /*searchParentScopes=*/false);
-    ArrayRef<ASTDecl *> memberDecls = lookup.getIfSuccess();
-    if (memberDecls.size() == 1 && isa<LIT::StructType>(baseType)) {
-      if (auto field = dyn_cast<StructFieldOp>(*memberDecls[0])) {
-        auto fieldType = field.getReboundType(cast<LIT::StructType>(baseType));
-        // The lifetime of the struct reference incorporates field sensitivity.
-        auto fieldLifetime =
-            LifetimeFieldAttr::get(baseLifetime, field.getNameAttr());
-        return {fieldLifetime, fieldType};
-      }
+/// Emit IR for the specified expression without adding it to the current
+/// execution context.  This even allows evaluating dynamic expressions in a
+/// parameter context.  When the result is computed, evaluate the specified
+/// callback on the result and then discard the result.
+///
+/// On failure, an error is emitted and the callback is not invoked.
+///
+/// This is used for evaluating expressions like __lifetime_of(x) and
+/// __type_of(x).
+static void
+emitExpressionWithOutEvaluatingIt(const ExprNode *expr, ExprContext exprContext,
+                                  ExprEmitter &emitter,
+                                  std::function<void(CValue)> callback) {
+  // The emitter indicates what context to do name lookup against, but cannot
+  // be used to emit the IR into.  Find something in the declScope with an
+  // Operation (e.g. a function), which will allow us to put in a Block to emit
+  // into.  This is a bit of a hack, but is required because some things scan
+  // up the region hierarchy.
+  ASTDecl *curDecl = &emitter.declScope;
+  Operation *opToInsertInto = nullptr;
+  // Scan for an operation with a region.
+  while (!(opToInsertInto = curDecl->getIfOperation()) ||
+         opToInsertInto->getNumRegions() == 0) {
+    curDecl = curDecl->getParentDecl();
+    if (!curDecl) {
+      emitter.emitError(expr->getLoc(),
+                        "INTERNAL ERROR: could not find context to emit IR "
+                        "into.  Please file a bug.");
+      return;
     }
   }
 
-  AnyValue subExprValue = emitter.emitExpr(expr, EC_Lifetime);
-  if (!subExprValue)
-    return {};
+  // Okay we found an operation with a region.  Abuse it :-) by adding a new
+  // block, which keeps any code we're emitting contained.
+  Region &r = opToInsertInto->getRegion(0);
+  Block &tmpBlock = r.emplaceBlock();
+  ExprEmitter tmpEmitter(emitter.shared, emitter.declScope,
+                         OpBuilder::atBlockBegin(&tmpBlock));
 
-  // __lifetime_of(someMValue) -> PValue.
-  if (subExprValue.isMValue())
-    return {subExprValue.getMValueType().getLifetime(),
-            subExprValue.getIfCValue().getRValueType()};
+  // Emit the expression and invoke the callback on success.
+  CValue subExprValue = tmpEmitter.emitExprCValue(expr, exprContext);
+  if (subExprValue)
+    callback(subExprValue);
 
-  emitter.emitError(expr->getLoc())
-      << "value doesn't have a memory type" << expr->getRange();
-  return {};
+  // Finally, remove our temp block
+  tmpBlock.erase();
 }
 
 AnyValue MagicFunctionNode::emitLifetimeOf(ValueDest &dest,
@@ -3231,10 +3217,15 @@ AnyValue MagicFunctionNode::emitLifetimeOf(ValueDest &dest,
   // are immutable, then we mutcast the rest to immutable.
   SmallVector<TypedAttr> lifetimes;
   for (ExprNode *subExpr : subExprs) {
-    auto [lifetime, rvType] = emitExprLifetime(subExpr, emitter);
-    if (!lifetime)
-      return {};
-    lifetimes.push_back(lifetime);
+    emitExpressionWithOutEvaluatingIt(
+        subExpr, EC_Lifetime, emitter, [&](CValue result) {
+          // We can only get the lifetime of an MValue.
+          if (result.isMValue())
+            lifetimes.push_back(result.getMValueType().getLifetime());
+          else
+            emitter.emitError(subExpr->getLoc())
+                << "value doesn't have a memory type" << subExpr->getRange();
+        });
   }
 
   auto result = LifetimeUnionAttr::get(emitter.getContext(), lifetimes);
@@ -3243,12 +3234,16 @@ AnyValue MagicFunctionNode::emitLifetimeOf(ValueDest &dest,
 
 AnyValue MagicFunctionNode::emitTypeOf(ValueDest &dest,
                                        ExprEmitter &emitter) const {
-  CValue subExprValue =
-      emitter.emitExprCValue(subExprs.front(), dest.getContext());
-  if (!subExprValue)
+  // TypeOf can reference dynamic values even when in a parameter context.
+  ASTType resultType;
+  emitExpressionWithOutEvaluatingIt(
+      subExprs.front(), EC_Lifetime, emitter,
+      [&](CValue result) { resultType = result.getRValueType(); });
+
+  if (!resultType)
     return {};
 
-  return emitter.emitResult(PValue(subExprValue.getRValueType()), this, dest);
+  return emitter.emitResult(PValue(resultType), this, dest);
 }
 
 // There are two options. We are either emitting a type or an instance of Tuple.

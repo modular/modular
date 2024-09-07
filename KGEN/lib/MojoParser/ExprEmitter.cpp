@@ -132,6 +132,8 @@ const char *LIT::getContextMessage(ExprContext context) {
     return " in internal closure formation";
   case EC_Lifetime:
     return " in lifetime specifier";
+  case EC_TypeOf:
+    return " in __type_of";
   }
   llvm_unreachable("invalid expr context");
 }

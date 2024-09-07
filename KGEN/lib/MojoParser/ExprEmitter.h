@@ -80,6 +80,7 @@ enum ExprContext {
   EC_Trait,                 // trait conformance checking for `T`
   EC_Closure,               // closure formation
   EC_Lifetime,              // lifetime specifier
+  EC_TypeOf,                // __type_of(x)
 };
 const char *getContextMessage(ExprContext context);
 
