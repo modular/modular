@@ -29,7 +29,6 @@ from gpu.memory import (
     load,
 )
 from gpu.mma import ld_matrix, mma
-from gpu.shuffle import warp_reduce_add
 from layout._utils import ManagedLayoutTensor, gpu_free, gpu_managed_alloc
 from layout.int_tuple import IntTuple
 from layout.layout import *

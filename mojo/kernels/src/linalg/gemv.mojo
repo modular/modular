@@ -26,12 +26,8 @@ from gpu.host import (
     AccessProperty,
 )
 from gpu.memory import AddressSpace, CacheOperation, load
-from gpu.shuffle import warp_reduce_add
-from gpu.tensor_ops import (
-    tc_reduce,
-    tc_reduce_gevm_4x,
-    tc_reduce_gevm_8x,
-)
+from gpu.shuffle import warp_sum, block_sum, ReductionMethod
+from gpu.tensor_ops import tc_reduce_gevm_4x, tc_reduce_gevm_8x
 
 from memory import UnsafePointer, bitcast, stack_allocation, memset_zero
 from utils.numerics import get_accum_type
@@ -47,53 +43,6 @@ fn reverse_idx[transpose: Bool](x: Int, y: Int) -> StaticIntTuple[2]:
         return Index(y, x)
     else:
         return Index(x, y)
-
-
-@value
-struct ReductionMethod:
-    var _value: Int
-
-    alias TENSOR_CORE = Self(0)
-    alias WARP = Self(1)
-
-    fn __eq__(self, other: Self) -> Bool:
-        return self._value == other._value
-
-    fn __ne__(self, other: Self) -> Bool:
-        return not (self == other)
-
-    fn __is__(self, other: Self) -> Bool:
-        return self == other
-
-    fn __isnot__(self, other: Self) -> Bool:
-        return self != other
-
-
-@always_inline
-fn _blockwise_sum[
-    intermediate_type: DType,
-    *,
-    reduction_method: ReductionMethod,
-    output_type: DType,
-](x: SIMD) -> Scalar[output_type]:
-    """Performs a blockwise reduction using either a warp shuffle or tensor
-    core operation. If the tensor core method is chosen, then the input value
-    is cast to the intermediate type to make the value consumable by the
-    tensor core op."""
-
-    @parameter
-    if reduction_method is ReductionMethod.WARP:
-        constrained[
-            output_type == x.type,
-            (
-                "the output type must match the input value for warp-level"
-                " blockwise reduction"
-            ),
-        ]()
-
-        return rebind[Scalar[output_type]](warp_reduce_add(x.reduce_add()))
-    else:
-        return tc_reduce[output_type](x.cast[intermediate_type]())
 
 
 # Matrix-Column Vector Multiplication using scalar arithmetic
@@ -131,7 +80,7 @@ fn gemv_kernel[
                 * b.load(idx).cast[s_type]()
             )
 
-    accum = _blockwise_sum[
+    accum = block_sum[
         a_type, reduction_method=reduction_method, output_type=s_type
     ](accum)
 
@@ -209,7 +158,7 @@ fn gemv_kernel_vector[
         idx += step
         a_ptr += step
 
-    var accum = _blockwise_sum[
+    var accum = block_sum[
         a_type, reduction_method=reduction_method, output_type=s_type
     ](local_accum)
 
@@ -320,7 +269,7 @@ fn gemv_split_k[
 
         @parameter
         for ni in range(int(tile_n)):
-            var val = warp_reduce_add(acc[mi * tile_n + ni])
+            var val = warp_sum(acc[mi * tile_n + ni])
             if lane_id == 0:
                 shmem[mi * tile_n + ni + warp_id * tile_m * tile_n] = val
 
@@ -385,7 +334,7 @@ fn gevm_kernel[
     barrier()
 
     var total = x_shared.load(ThreadIdx.x()).cast[s_type]()
-    total = warp_reduce_add(total)
+    total = warp_sum(total)
 
     if lane_id() == 0:
 
