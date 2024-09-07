@@ -41,7 +41,7 @@ from ._gpu.reduction import reduce_launch
 
 @always_inline
 fn _get_nd_indices_from_flat_index[
-    rank: Int,
+    rank: Int
 ](
     flat_index: Int, shape: StaticIntTuple[rank], skip_dim: Int
 ) -> StaticIntTuple[rank]:
@@ -82,26 +82,14 @@ fn _get_nd_indices_from_flat_index[
     var curr_index = flat_index
 
     @parameter
-    if triple_is_nvidia_cuda():
-        for i in reversed(range(rank)):
-            # There is one dimension we skip, this represents the inner loop that
-            # is being traversed.
-            if i == skip_dim:
-                out[i] = 0
-            else:
-                out[i] = curr_index._positive_rem(shape[i])
-                curr_index = curr_index._positive_div(shape[i])
-    else:
-
-        @parameter
-        for i in reversed(range(rank)):
-            # There is one dimension we skip, this represents the inner loop that
-            # is being traversed.
-            if i == skip_dim:
-                out[i] = 0
-            else:
-                out[i] = curr_index._positive_rem(shape[i])
-                curr_index = curr_index._positive_div(shape[i])
+    for i in reversed(range(rank)):
+        # There is one dimension we skip, this represents the inner loop that
+        # is being traversed.
+        if i == skip_dim:
+            out[i] = 0
+        else:
+            out[i] = curr_index._positive_rem(shape[i])
+            curr_index = curr_index._positive_div(shape[i])
 
     return out
 
