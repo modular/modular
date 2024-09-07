@@ -167,7 +167,9 @@ initializeCompilerRT(llvm::orc::ExecutionSession &session, MojoConfig &cfg,
     libJD->addGenerator(llvm::cantFail(
         llvm::orc::EPCDynamicLibrarySearchGenerator::GetForTargetProcess(
             session, [=](const llvm::orc::SymbolStringPtr &symbolStringPtr) {
-              return (*symbolStringPtr).starts_with("mlir");
+              StringRef name = *symbolStringPtr;
+              // On MachO, the symbol names start with `_`.
+              return name.starts_with("mlir") || name.starts_with("_mlir");
             })));
   }
 
