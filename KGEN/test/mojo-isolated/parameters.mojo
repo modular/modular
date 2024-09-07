@@ -927,6 +927,16 @@ fn useMixedInferAndPosParam():
     # CHECK: lit.call {{.*}}::@MixedInferAndPosParamWithInferredOnStruct::@"__init__{{.*}}<:!ToInt [!HasToInt, {{.*}}], :!Int {27}, :!ToInt [!HasToInt, {{.*}}], :!ToInt [!HasToInt, {{.*}}]
     _ = MixedInferAndPosParamWithInferredOnStruct[27](HasToInt(99), HasToInt(37), HasToInt(47))
 
+@register_passable("trivial")
+struct Box[T: AnyType]:
+    fn __init__(inout self, x: T):
+        pass
+
+# CHECK-LABEL: lit.func @"infer_box_type
+fn infer_box_type[T: AnyType, //, box: Box[T]]():
+    # CHECK-NEXT: lit.call {{.*}}infer_box_type{{.*}}<:!AnyType [!Int,
+    infer_box_type[Int()]()
+
 ##===----------------------------------------------------------------------===##
 # Access parameter through structure
 ##===----------------------------------------------------------------------===##

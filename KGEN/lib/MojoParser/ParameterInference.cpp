@@ -768,10 +768,6 @@ ParameterInferenceState::inferOneOperand(ASTExprAnd<AnyValue> operand,
   if (argType.isEqualCanon(expectedType))
     return success();
 
-  // Zero cost conversions don't count as implicit conversions.
-  if (canConvertWithRebind(argType, expectedType, shared))
-    return success();
-
   // We're speculatively trying different options.  If we have errors on one
   // path we need to roll them back.
   auto savedDiags = diags.saveDiags();
@@ -788,6 +784,11 @@ ParameterInferenceState::inferOneOperand(ASTExprAnd<AnyValue> operand,
   // Go back to diagnostics before we did the thing that failed.
   diags.resetDiags(std::move(savedDiags));
   savedDiags = diags.saveDiags();
+
+  // Zero cost conversions don't count as implicit conversions. We attempt this
+  // after trying to match the types to try to infer values first.
+  if (canConvertWithRebind(argType, expectedType, shared))
+    return success();
 
   // Handle values of nonmaterializable types.  These freely convert to their
   // nonmaterializableTarget type even when implicit conversions are disabled,
@@ -881,11 +882,7 @@ ParameterInferenceState::inferOneOperand(ASTExprAnd<AnyValue> operand,
 
 void ParameterInferenceState::inferOneParam(ASTExprAnd<AnyValue> binding,
                                             Type expectedType) {
-  // Don't infer from unpacked parameters.
-  PValue bindingVal = binding.ir.getIfPValue();
-  assert(bindingVal && "parameters are always PValues");
-  curArgExpr = binding.expr;
-  (void)matchTypes(bindingVal.getType(), expectedType);
+  (void)inferOneOperand(binding, expectedType, ArgConvention::BorrowedInReg);
 }
 
 /// Helper that returns true if the parameter list has any inferred parameters.
