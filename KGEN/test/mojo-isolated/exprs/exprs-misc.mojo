@@ -9,6 +9,8 @@
 struct Unmovable:
   fn __init__(inout self): pass
 
+fn throwing_fn() raises -> Int: return 0
+
 ##===----------------------------------------------------------------------===##
 # Test return slot optimization
 ##===----------------------------------------------------------------------===##
@@ -53,6 +55,8 @@ fn typeof_dynval_in_param(x: index):
     # CHECK-NEXT: lit.alias.decl *"b`2": !mt_Int = <!Int>
     alias b = __type_of(y.__len__())
 
+    # CHECK-NEXT: lit.alias.decl *"c`3": !mt_Int = <!Int>
+    alias c = __type_of(throwing_fn())
 
 ##===----------------------------------------------------------------------===##
 # __lifetime_of

@@ -1336,6 +1336,8 @@ ParseResult StmtParser::parseTryStmt(size_t curIndent) {
   // Restore the builder to its current insertion point after parsing.
   llvm::SaveAndRestore builderSaver(builder);
   ASTType errorType = shared.getBuiltinErrorType(getParentDecl(), smLoc);
+  if (!errorType)
+    return failure();
   VarDeclOp errDecl = getEmitter().emitVarDecl("__try_error__", errorType, loc,
                                                VarDeclKind::Synthesized);
   auto tryOp = builder.create<TryOp>(loc, errDecl);
