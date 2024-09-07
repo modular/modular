@@ -31,7 +31,7 @@ from gpu import (
 from gpu.host._compile import _get_nvptx_target
 from gpu.host.device_context import DeviceContext
 from gpu.memory import AddressSpace
-from gpu.shuffle import _static_log2, shuffle_down, shuffle_idx, warp_reduce_add
+from gpu.shuffle import _static_log2, shuffle_down, shuffle_idx, warp_sum
 from memory import stack_allocation
 from register import mogg_register, mogg_register_shape_func
 from runtime.asyncrt import MojoCallContextPtr, parallelism_level
@@ -62,7 +62,7 @@ fn block_reduce[type: DType](val: Scalar[type]) -> Scalar[type]:
 
     barrier()
 
-    var warp_m2 = warp_reduce_add(val)
+    var warp_m2 = warp_sum(val)
 
     var warp_id = tid // WARP_SIZE
     var lane_idx = lane_id()
@@ -72,7 +72,7 @@ fn block_reduce[type: DType](val: Scalar[type]) -> Scalar[type]:
     barrier()
 
     if warp_id == 0:
-        var block_m2 = warp_reduce_add(m2_shared[lane_idx])
+        var block_m2 = warp_sum(m2_shared[lane_idx])
         if lane_idx == 0:
             m2_broadcast[0] = block_m2
     barrier()
