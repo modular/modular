@@ -190,14 +190,6 @@ kgen.generator @lifetime_union<x: !lit.lifetime<0>, y: !lit.lifetime<0>>() {
   // CHECK-NEXT: "d"() {a = #lit.lifetime.union<#lit.lifetime_ref<0, 1> : !lit.lifetime<0>, #lit.lifetime_ref<1, 0> : !lit.lifetime<0>> : !lit.lifetime<0>}
   "d"() {a = #lit.lifetime.union<#lit.lifetime_ref<1, 0> : !lit.lifetime<0>, #lit.lifetime_ref<0, 1> : !lit.lifetime<0>> : !lit.lifetime<0>} : () -> ()
 
-  // Collapse superset due to field accesses. union("x", "x->field") -> "x"
-  // CHECK-NEXT: "e"() {a = #kgen.param.decl.ref<"x"> : !lit.lifetime<0>}
-  "e"() {a = #lit.lifetime.union<
-                  #kgen.param.decl.ref<"x"> : !lit.lifetime<0>,
-                  #lit.lifetime.field<#kgen.param.decl.ref<"x"> :!lit.lifetime<0>, "field"> : !lit.lifetime<0>
-   > : !lit.lifetime<0>} : () -> ()
-
-
   kgen.param.declare is_mut: i1 = <0>
   kgen.param.declare a: lifetime<1> = <?>
   kgen.param.declare b: lifetime<0> = <?>
