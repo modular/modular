@@ -327,7 +327,7 @@ struct VariadicList[type: AnyTrivialRegType]:
 # Helper to compute the union of two lifetimes:
 # TODO: parametric aliases would be nice.
 struct _lit_lifetime_union[
-    is_mutable: Bool,
+    is_mutable: Bool, //,
     a: AnyLifetime[is_mutable].type,
     b: AnyLifetime[is_mutable].type,
 ]:
@@ -427,7 +427,6 @@ struct VariadicListMem[
         self, idx: Int
     ) -> ref [
         _lit_lifetime_union[
-            Bool {value: elt_is_mutable},
             lifetime,
             # cast mutability of self to match the mutability of the element,
             # since that is what we want to use in the ultimate reference and

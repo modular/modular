@@ -758,10 +758,6 @@ TypedAttr LifetimeUnionAttr::get(ArrayRef<TypedAttr> operandsIn,
   // #lit.lifetime members.
   SmallVector<TypedAttr> operands(operandsIn);
 
-  // The top level values in the set, and whether any LifetimeFieldAttr's exist.
-  bool sawField = false;
-  SmallPtrSet<Attribute, 8> superElements;
-
   // Preprocess operands.
   for (size_t i = 0, e = operands.size(); i != e; ++i) {
     assert(operands[i].getType() == type &&
@@ -785,45 +781,6 @@ TypedAttr LifetimeUnionAttr::get(ArrayRef<TypedAttr> operandsIn,
       // the subunion was formed.
       --e, --i;
       continue;
-    }
-
-    // Get the element without any mutability cast, and remember it in our set.
-    auto superElt = LifetimeMutCastAttr::strip(operands[i]);
-    superElements.insert(superElt);
-    // Remember if we have any LifetimeFieldAttr's.
-    if (::isa<LifetimeFieldAttr>(superElt))
-      sawField = true;
-  }
-
-  // If we have any field accesses, remove any set elements that are redundant
-  // with a superset.
-  if (sawField) {
-    for (size_t i = 0, e = operands.size(); i != e; ++i) {
-      auto elt = LifetimeMutCastAttr::strip(operands[i]);
-      // If not a field access, it must be fine.
-      auto fieldElt = ::dyn_cast<LifetimeFieldAttr>(elt);
-      if (!fieldElt)
-        continue;
-
-      // If it is a field access, check to see if any parent fields are already
-      // in the set.  If so, this isn't needed.
-      bool redundant = false;
-      do {
-        elt = fieldElt.getStructLifetime();
-        if (superElements.count(elt)) {
-          redundant = true;
-          break;
-        }
-
-        fieldElt = ::dyn_cast<LifetimeFieldAttr>(elt);
-      } while (fieldElt);
-
-      // Drop this if redundant.
-      if (redundant) {
-        operands[i] = operands.back();
-        operands.pop_back();
-        --e, --i;
-      }
     }
   }
 
