@@ -187,7 +187,7 @@ def main():
     with DeviceContext() as ctx:
         var m = Bench(BenchConfig(num_repetitions=1))
 
-        var shape_list = List[StaticIntTuple[2]](
+        var layer_norm_shape_list = List[StaticIntTuple[2]](
             StaticIntTuple[2](256, 256),
             StaticIntTuple[2](1024, 1024),
             StaticIntTuple[2](8192, 8192),
@@ -195,17 +195,24 @@ def main():
             StaticIntTuple[2](512, 3072),
             StaticIntTuple[2](1024, 3072),
             StaticIntTuple[2](4096, 3072),
-            StaticIntTuple[2](1, 4096),
-            StaticIntTuple[2](512, 4096),
             StaticIntTuple[2](5072, 256),
         )
 
-        for s in range(len(shape_list)):
-            bench_layer_norm_gpu[DType.bfloat16, 2](
-                ctx, m, "layer_norm_gpu", shape_list[s]
+        for s in range(len(layer_norm_shape_list)):
+            bench_layer_norm_gpu[DType.bfloat16](
+                ctx, m, "layer_norm_gpu", layer_norm_shape_list[s]
             )
-        for s in range(len(shape_list)):
-            bench_rms_norm_gpu[DType.bfloat16, 2](
-                ctx, m, "rms_norm_gpu", shape_list[s]
+
+        var rms_norm_shape_list = List[StaticIntTuple[3]](
+            StaticIntTuple[3](1, 1, 4096),
+            StaticIntTuple[3](1, 512, 4096),
+            StaticIntTuple[3](1, 1024, 4096),
+            StaticIntTuple[3](1, 4096, 4096),
+        )
+
+        for s in range(len(rms_norm_shape_list)):
+            bench_rms_norm_gpu[DType.bfloat16](
+                ctx, m, "rms_norm_gpu", rms_norm_shape_list[s]
             )
+
         m.dump_report()
