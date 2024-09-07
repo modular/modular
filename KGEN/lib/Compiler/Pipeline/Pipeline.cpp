@@ -52,10 +52,9 @@ static void buildLowerLITPipeline(mlir::PassManager &pm,
 #endif
 }
 
-void KGEN::buildGenerateLibraryPipeline(
-    mlir::PassManager &pm, const CompilationOptions &options,
-    const CompileCanonicalizationFnsFn &compileCanonFn,
-    KGENCompiler::StartPipelineAt startAt) {
+void KGEN::buildGenerateLibraryPipeline(mlir::PassManager &pm,
+                                        const CompilationOptions &options,
+                                        KGENCompiler::StartPipelineAt startAt) {
   if (startAt == KGENCompiler::StartPipelineAt::Beginning) {
     // If the compilation options aren't for full debug, strip the extra info
     // from the module.
@@ -84,7 +83,7 @@ void KGEN::buildGenerateLibraryPipeline(
   if (options.optimizationLevel >= 1) {
     pm.addNestedPass<GeneratorOp>(createSROA());
     pm.addNestedPass<GeneratorOp>(createMem2Reg());
-    pm.addNestedPass<GeneratorOp>(createCanonicalizer(compileCanonFn));
+    pm.addNestedPass<GeneratorOp>(createCanonicalizer());
   }
 
   // Only inline `always_inline_no_debug` functions during parametric inlining.
@@ -109,7 +108,7 @@ void KGEN::buildGenerateLibraryPipeline(
     pm.addNestedPass<GeneratorOp>(createSROA());
     pm.addNestedPass<GeneratorOp>(createMem2Reg());
     pm.addNestedPass<GeneratorOp>(createSCCP());
-    pm.addNestedPass<GeneratorOp>(createCanonicalizer(compileCanonFn));
+    pm.addNestedPass<GeneratorOp>(createCanonicalizer());
     if (options.optimizationLevel >= 2)
       pm.addPass(createRemoveUnusedParams());
     pm.addPass(createEliminateDeadSymbols());
@@ -118,7 +117,7 @@ void KGEN::buildGenerateLibraryPipeline(
     pm.addPass(createVerifyParameters({/*simplifyParameters=*/true}));
     pm.addNestedPass<GeneratorOp>(createSROA());
     pm.addNestedPass<GeneratorOp>(createMem2Reg());
-    pm.addNestedPass<GeneratorOp>(createCanonicalizer(compileCanonFn));
+    pm.addNestedPass<GeneratorOp>(createCanonicalizer());
   }
 }
 
@@ -156,9 +155,8 @@ void KGEN::buildElaborateModulePipeline(mlir::PassManager &pm,
                                        std::move(compileAsmFn)));
 }
 
-void KGEN::buildPostElaborationPipeline(
-    mlir::PassManager &pm, const CompilationOptions &options,
-    const CompileCanonicalizationFnsFn &compileCanonFn) {
+void KGEN::buildPostElaborationPipeline(mlir::PassManager &pm,
+                                        const CompilationOptions &options) {
   // Run DCE first coming out of the elaborator.
   pm.addPass(createEliminateDeadSymbols());
 
@@ -171,26 +169,25 @@ void KGEN::buildPostElaborationPipeline(
   pm.addNestedPass<FuncOp>(createMem2Reg());
 
   // Run the AutomaticInline pass with an inner function pass pipeline.
-  auto buildAutomaticInlineFuncPasses =
-      [options, compileCanonFn](mlir::OpPassManager &pm) {
-        if (options.optimizationLevel < 1)
-          return;
-        pm.addPass(createSimplifyCF());
-        pm.addPass(createSROA());
-        pm.addPass(createMem2Reg());
-        // NOTE: Super important that ConditionPropagation pattern runs before
-        // HoistTrivialInvariants, or else structural conditionals are lost.
-        pm.addPass(createCanonicalizer(compileCanonFn));
-        pm.addPass(mlir::createCSEPass());
-        pm.addPass(createHoistTrivialInvariants());
-        pm.addPass(createCanonicalizer(compileCanonFn));
-        pm.addPass(createSimplifyCF());
-        pm.addPass(createSROA());
-        pm.addPass(createMem2Reg());
-        pm.addPass(createStackReuse());
-        pm.addPass(mlir::createCSEPass());
-        pm.addPass(createCanonicalizer(compileCanonFn));
-      };
+  auto buildAutomaticInlineFuncPasses = [options](mlir::OpPassManager &pm) {
+    if (options.optimizationLevel < 1)
+      return;
+    pm.addPass(createSimplifyCF());
+    pm.addPass(createSROA());
+    pm.addPass(createMem2Reg());
+    // NOTE: Super important that ConditionPropagation pattern runs before
+    // HoistTrivialInvariants, or else structural conditionals are lost.
+    pm.addPass(createCanonicalizer());
+    pm.addPass(mlir::createCSEPass());
+    pm.addPass(createHoistTrivialInvariants());
+    pm.addPass(createCanonicalizer());
+    pm.addPass(createSimplifyCF());
+    pm.addPass(createSROA());
+    pm.addPass(createMem2Reg());
+    pm.addPass(createStackReuse());
+    pm.addPass(mlir::createCSEPass());
+    pm.addPass(createCanonicalizer());
+  };
 
   pm.addPass(createAutomaticInline(
       {options.debugLevel == CompilationOptions::DebugInfoLevel::kNoDebug
@@ -209,7 +206,7 @@ void KGEN::buildPostElaborationPipeline(
   // Guaranteed optimizations.
   pm.addNestedPass<FuncOp>(createSROA());
   pm.addNestedPass<FuncOp>(createMem2Reg());
-  pm.addNestedPass<FuncOp>(createCanonicalizer(compileCanonFn));
+  pm.addNestedPass<FuncOp>(createCanonicalizer());
   pm.addNestedPass<FuncOp>(createRaiseForLoops());
   pm.addNestedPass<FuncOp>(createLoopUnrolling({options.optimizationLevel}));
 
@@ -217,7 +214,7 @@ void KGEN::buildPostElaborationPipeline(
     pm.addNestedPass<FuncOp>(createSROA());
     pm.addNestedPass<FuncOp>(createMem2Reg());
     pm.addNestedPass<FuncOp>(createSCCP());
-    pm.addNestedPass<FuncOp>(createCanonicalizer(compileCanonFn));
+    pm.addNestedPass<FuncOp>(createCanonicalizer());
     pm.addNestedPass<FuncOp>(mlir::createCSEPass());
   }
 
@@ -229,7 +226,7 @@ void KGEN::buildPostElaborationPipeline(
     pm.addNestedPass<FuncOp>(createLoopUnrolling({options.optimizationLevel}));
     pm.addNestedPass<FuncOp>(createSROA());
     pm.addNestedPass<FuncOp>(createMem2Reg());
-    pm.addNestedPass<FuncOp>(createCanonicalizer(compileCanonFn));
+    pm.addNestedPass<FuncOp>(createCanonicalizer());
     pm.addNestedPass<FuncOp>(mlir::createCSEPass());
   }
 
@@ -239,7 +236,7 @@ void KGEN::buildPostElaborationPipeline(
     pm.addNestedPass<FuncOp>(createSROA());
     pm.addNestedPass<FuncOp>(createMem2Reg());
     pm.addNestedPass<FuncOp>(createSimplifyCF());
-    pm.addNestedPass<FuncOp>(createCanonicalizer(compileCanonFn));
+    pm.addNestedPass<FuncOp>(createCanonicalizer());
     pm.addNestedPass<FuncOp>(mlir::createCSEPass());
   }
 

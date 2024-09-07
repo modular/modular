@@ -23,9 +23,6 @@ def CustomDialect : Dialect {
   let cppNamespace = "::M::KGEN::Custom";
 
   let extraClassDeclaration = [{
-    /// Mutex guarding the canonicalization functions.
-    llvm::sys::SmartRWMutex<true> canonicalizationMutex;
-
     /// Canonicalization functions of the `custom` unregistered ops. This
     /// variable should not be accessed or modified without locking the
     /// corresponding mutex.

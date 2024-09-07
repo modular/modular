@@ -131,7 +131,7 @@ createElaborateGenerators(TargetInfoAttr target,
                           ElaboratorCompileAsmFn compileAsmFn = {});
 
 //===----------------------------------------------------------------------===//
-// Custom op canonicalization
+// Custom op registration
 //===----------------------------------------------------------------------===//
 
 using CAPICanonicalizationFn =
@@ -143,7 +143,7 @@ using CompileCanonicalizationFnsFn =
         TargetInfoAttr)>;
 
 std::unique_ptr<mlir::Pass>
-createCanonicalizer(CompileCanonicalizationFnsFn compileModuleFn);
+createRegisterCustomOps(CompileCanonicalizationFnsFn compileModuleFn);
 
 //===----------------------------------------------------------------------===//
 // Lower custom ops
