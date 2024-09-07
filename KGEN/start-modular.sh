@@ -72,7 +72,7 @@ get_build_alias() {
     fi
 }
 
-b() {
+b() {(
     test_targets=()
     run_targets=()
     for target in $@; do
@@ -87,6 +87,8 @@ b() {
         fi
     done
 
+    set -e
+    trap "echo 'b' received SIGINT" INT
     if [ "${#test_targets[@]}" -ne 0 ]; then
         test_targets=$(IFS=" "; echo "${test_targets[*]}")
         eval "$BT $test_targets"
@@ -98,7 +100,8 @@ b() {
             eval "$BR $target"
         done
     fi
-}
+    trap - INT
+)}
 
 c() {
     if [ $1 = "debug-asan" ]; then
