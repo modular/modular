@@ -453,19 +453,19 @@ fn mip_mul(lhs: Int, rhs: Int) -> Int:
     return lhs * rhs
 
 
-@mogg_register("mip.div")
+@mogg_register("index.divs")
 @always_inline
 @export
 fn mip_div(numerator: Int, denominator: Int) -> Int:
-    debug_assert(denominator != 0, "mip.div divide by zero")
+    debug_assert(denominator != 0, "index.divs divide by zero")
     return numerator // denominator
 
 
-@mogg_register("mip.div.ceil")
+@mogg_register("index.ceildivs")
 @always_inline
 @export
 fn mip_div_ceil(numerator: Int, denominator: Int) -> Int:
-    debug_assert(denominator != 0, "mip.div.ceil divide by zero")
+    debug_assert(denominator != 0, "index.ceildivs divide by zero")
     return ceildiv(numerator, denominator)
 
 
@@ -490,25 +490,25 @@ fn mip_cmp_le(x: Int, y: Int) -> Bool:
     return x <= y
 
 
-@mogg_register("mip.max")
+@mogg_register("index.maxs")
 @always_inline
 @export
 fn mip_max(x: Int, y: Int) -> Int:
     return max(x, y)
 
 
-@mogg_register("mip.min")
+@mogg_register("index.mins")
 @always_inline
 @export
 fn mip_min(x: Int, y: Int) -> Int:
     return min(x, y)
 
 
-@mogg_register("mip.mod")
+@mogg_register("index.rems")
 @always_inline
 @export
 fn mip_mod(numerator: Int, denominator: Int) -> Int:
-    debug_assert(denominator != 0, "mip.mod divide by zero")
+    debug_assert(denominator != 0, "index.rems divide by zero")
     return numerator % denominator
 
 
