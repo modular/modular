@@ -69,7 +69,7 @@ fn test_batched_matmul(ctx: DeviceContext) raises:
     @__copy_capture(dst_buffer)
     @parameter
     fn elementwise_epilogue_empty_fn[
-        c_type: DType, width: Int, rank: Int
+        c_type: DType, width: Int, rank: Int, *, alignment: Int = 1
     ](idx: StaticIntTuple[rank], val: SIMD[c_type, width]) -> None:
         dst_buffer[(idx[0], idx[1], idx[2])] = rebind[Float32](val) + 2.0
 

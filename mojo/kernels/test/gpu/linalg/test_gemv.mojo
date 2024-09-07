@@ -239,7 +239,7 @@ fn test_gevm_with_epilogue_fn[
     @always_inline
     @__copy_capture(c_device_nd)
     fn epilogue_fn[
-        type: DType, width: Int
+        type: DType, width: Int, *, alignment: Int = 1
     ](idx: StaticIntTuple[2], val: SIMD[type, width]):
         c_device_nd.store[width=width](
             idx, rebind[SIMD[DType.float32, width]](val + 4.0)

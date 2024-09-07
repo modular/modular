@@ -182,7 +182,7 @@ def test_split_k_reduce_rank3[
     @always_inline
     @__copy_capture(c, epilogue_buffer)
     fn epilogue_fn[
-        _type: DType, _width: Int
+        _type: DType, _width: Int, *, alignment: Int = 1
     ](idx: StaticIntTuple[2], val: SIMD[_type, _width]) capturing -> None:
         var another_val = rebind[SIMD[_type, _width]](
             epilogue_buffer.load[width=_width](idx)

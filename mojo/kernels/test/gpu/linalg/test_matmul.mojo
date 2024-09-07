@@ -384,7 +384,7 @@ def main():
             @always_inline
             @__copy_capture(c_tensor, epilogue_buff)
             fn epilogue_fn[
-                _type: DType, width: Int
+                _type: DType, width: Int, *, alignment: Int = 1
             ](
                 idx: StaticIntTuple[2], val: SIMD[_type, width]
             ) capturing -> None:
