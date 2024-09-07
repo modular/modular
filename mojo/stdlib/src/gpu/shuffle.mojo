@@ -6,6 +6,7 @@
 """This module includes intrinsics for NVIDIA GPUs shuffle instructions."""
 
 from sys import llvm_intrinsic
+from .tensor_ops import tc_reduce
 
 from memory import bitcast
 
@@ -305,18 +306,6 @@ fn _static_log2[n: Int]() -> Int:
 
 
 @always_inline("nodebug")
-fn warp_reduce_add[
-    val_type: DType,
-    simd_width: Int,
-](val: SIMD[val_type, simd_width]) -> SIMD[val_type, simd_width]:
-    @parameter
-    fn _reduce_add(x: SIMD, y: __type_of(x)) -> __type_of(x):
-        return x + y
-
-    return warp_reduce[shuffle_down, _reduce_add](val)
-
-
-@always_inline("nodebug")
 fn warp_reduce[
     shuffle: fn[type: DType, simd_width: Int] (
         val: SIMD[type, simd_width], offset: Int
@@ -339,3 +328,72 @@ fn warp_reduce[
         res = func(res, shuffle(res, mask))
 
     return res
+
+
+# ===----------------------------------------------------------------------===#
+# Warp Sum
+# ===----------------------------------------------------------------------===#
+
+
+@always_inline("nodebug")
+fn warp_sum[
+    val_type: DType,
+    simd_width: Int,
+](val: SIMD[val_type, simd_width]) -> SIMD[val_type, simd_width]:
+    @parameter
+    fn _reduce_add(x: SIMD, y: __type_of(x)) -> __type_of(x):
+        return x + y
+
+    return warp_reduce[shuffle_down, _reduce_add](val)
+
+
+# ===----------------------------------------------------------------------===#
+# Block Sum
+# ===----------------------------------------------------------------------===#
+
+
+@value
+struct ReductionMethod:
+    var _value: Int
+
+    alias TENSOR_CORE = Self(0)
+    alias WARP = Self(1)
+
+    fn __eq__(self, other: Self) -> Bool:
+        return self._value == other._value
+
+    fn __ne__(self, other: Self) -> Bool:
+        return not (self == other)
+
+    fn __is__(self, other: Self) -> Bool:
+        return self == other
+
+    fn __isnot__(self, other: Self) -> Bool:
+        return self != other
+
+
+@always_inline
+fn block_sum[
+    intermediate_type: DType,
+    *,
+    reduction_method: ReductionMethod,
+    output_type: DType,
+](x: SIMD) -> Scalar[output_type]:
+    """Performs a blockwise reduction using either a warp shuffle or tensor
+    core operation. If the tensor core method is chosen, then the input value
+    is cast to the intermediate type to make the value consumable by the
+    tensor core op."""
+
+    @parameter
+    if reduction_method is ReductionMethod.WARP:
+        constrained[
+            output_type == x.type,
+            (
+                "the output type must match the input value for warp-level"
+                " blockwise reduction"
+            ),
+        ]()
+
+        return rebind[Scalar[output_type]](warp_sum(x.reduce_add()))
+    else:
+        return tc_reduce[output_type](x.cast[intermediate_type]())
