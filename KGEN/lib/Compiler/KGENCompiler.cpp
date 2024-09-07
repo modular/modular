@@ -255,8 +255,8 @@ compileCustomCanonicalizationFns(
   return compiledFns;
 }
 
-std::unique_ptr<Pass> KGEN::createCanonicalizerWithDefaultJIT() {
-  return createCanonicalizer(compileCustomCanonicalizationFns);
+std::unique_ptr<Pass> KGEN::createRegisterCustomOpsWithDefaultJIT() {
+  return createRegisterCustomOps(compileCustomCanonicalizationFns);
 }
 
 //===----------------------------------------------------------------------===//
@@ -340,7 +340,7 @@ compileElaboratorAsm(GeneratorOp func, SymbolConstantAttr symbol,
         return compileElaboratorAsm(func, symbol, name, symtab, target,
                                     emissionKind, options, diagHandlerID);
       }));
-  buildPostElaborationPipeline(pm, options, compileCustomCanonicalizationFns);
+  buildPostElaborationPipeline(pm, options);
 
   if (failed(pm.run(*module)))
     return Error("failed to run the pass manager");
@@ -432,7 +432,7 @@ void KGEN::populateElaborateModulePasses(mlir::PassManager &pm,
         return compileElaboratorAsm(func, symbol, name, symtab, target,
                                     emissionKind, options, diagHandlerID);
       });
-  buildPostElaborationPipeline(pm, options, compileCustomCanonicalizationFns);
+  buildPostElaborationPipeline(pm, options);
 }
 
 //===----------------------------------------------------------------------===//
@@ -532,8 +532,7 @@ AnyAsyncValueRef KGENCompiler::runKGENPipeline(
   }
 
   // Populate the passes.
-  buildGenerateLibraryPipeline(pm, options, compileCustomCanonicalizationFns,
-                               startAt);
+  buildGenerateLibraryPipeline(pm, options, startAt);
   populateElaborateModulePasses(pm, target, options);
 
   // Run the passes as a cached transform.
@@ -565,7 +564,7 @@ ErrorOrSuccess KGENCompiler::runGenerateLibraryPipeline(ModuleOp module) {
         configPM.getError());
   }
 
-  buildGenerateLibraryPipeline(pm, options, compileCustomCanonicalizationFns);
+  buildGenerateLibraryPipeline(pm, options);
 
   AsyncRT::Runtime &runtime =
       *loadContext(module.getContext())->get<AsyncRT::Runtime>();

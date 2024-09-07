@@ -394,9 +394,6 @@ namespace M::KGEN {
 
 namespace {
 struct Canonicalizer : public impl::CanonicalizerBase<Canonicalizer> {
-  Canonicalizer(CompileCanonicalizationFnsFn compileCanonicalizationFnsFn = {})
-      : compileCanonicalizationFnsFn(std::move(compileCanonicalizationFnsFn)) {}
-
   /// Initialize the canonicalizer by building the starting set of patterns.
   LogicalResult initialize(MLIRContext *context) override {
     RewritePatternSet owningPatterns(context);
@@ -405,17 +402,9 @@ struct Canonicalizer : public impl::CanonicalizerBase<Canonicalizer> {
     return success();
   }
 
-  /// Get the JIT'ed canonicalization patterns. If there are canonicalization
-  /// patterns registered but none are JIT'ed, JIT them all and return them.
-  ErrorOr<const DenseMap<StringAttr, std::function<LogicalResult(
-                                         Operation *, PatternRewriter &)>> &>
-  getOrJITCustomCanonicalizationPatterns(
-      DenseResourceElementsAttr opImplModuleAttr);
-
   /// Update the frozen pattern set after a possible change in the custom ops
   /// patterns.
-  ErrorOrSuccess updatePatterns(MLIRContext *context,
-                                DenseResourceElementsAttr opImplsModuleAttr);
+  void updatePatterns(Custom::CustomDialect *customDialect);
 
   /// Add all canonicalization patterns besides the ones from the `custom`
   /// dialect into the pattern set.
@@ -439,27 +428,10 @@ struct Canonicalizer : public impl::CanonicalizerBase<Canonicalizer> {
 
 void Canonicalizer::runOnOperation() {
   // If we do not have custom patterns, check if there are some defined.
-  if (!hasCustomPatterns && compileCanonicalizationFnsFn) {
-    auto theModule = getOperation()->getParentOfType<ModuleOp>();
-    if (!theModule)
-      theModule = cast<ModuleOp>(getOperation());
-
-    auto customOpImplsModuleAttr =
-        theModule->getAttrOfType<DenseResourceElementsAttr>(
-            Custom::kCustomOpImplModuleAttr);
-
-    // Update the canonicalization patterns if some were defined.
-    if (customOpImplsModuleAttr) {
-      auto errorOnUpdate = updatePatterns(customOpImplsModuleAttr.getContext(),
-                                          customOpImplsModuleAttr);
-      if (errorOnUpdate.isError()) {
-        mlir::emitError(getOperation()->getLoc())
-            << "error while loading custom op canonicalization patterns: "
-            << errorOnUpdate.getError() << "\n";
-        signalPassFailure();
-        return;
-      }
-    }
+  if (!hasCustomPatterns) {
+    auto customDialect = getContext().getLoadedDialect<Custom::CustomDialect>();
+    if (customDialect->areCanonicalizationFnLoaded)
+      updatePatterns(customDialect);
   }
 
   // Run the canonicalization patterns
@@ -481,102 +453,22 @@ void Canonicalizer::addNonCustomCanonicalizationPatterns(
               SimplifyCompareSelect, ConditionPropagation>(context);
 }
 
-ErrorOr<const DenseMap<
-    StringAttr, std::function<LogicalResult(Operation *, PatternRewriter &)>> &>
-Canonicalizer::getOrJITCustomCanonicalizationPatterns(
-    DenseResourceElementsAttr opImplModuleAttr) {
-  auto *customDialect =
-      opImplModuleAttr.getContext()->getLoadedDialect<Custom::CustomDialect>();
-  // Lock the mutex as we are going to read and possibly write in the
-  // canonicalization functions.
-  llvm::sys::SmartScopedWriter<true> lock(customDialect->canonicalizationMutex);
-
-  // First, try to see if the canonicalization patterns are already loaded. If
-  // they are, we can safely return a reference to them, as we know the field
-  // won't be modified anymore (as it is already loaded).
-  if (customDialect->areCanonicalizationFnLoaded)
-    return customDialect->canonicalizationFns;
-
-  // Then, this means we need to JIT the canonicalization patterns.
-  // Get the op canonicalization patterns symbols from the op
-  // implementation module.
-  OwningOpRef<ModuleOp> opImplsModule =
-      readOpFromBytecodeFile<ModuleOp>(opImplModuleAttr);
-  SymbolTable opImplsTable(*opImplsModule);
-  auto opImplOp = CustomOpImplsOp::lookupOp(*opImplsModule);
-  DenseMap<StringAttr, SymbolConstantAttr> canonicalizationSyms;
-  for (auto opImplAttr : opImplOp.getImpls())
-    if (auto canonicalizationSym = opImplAttr.getOpCanonicalization()) {
-      canonicalizationSyms.try_emplace(opImplAttr.getOpName(),
-                                       canonicalizationSym);
-
-      // Set the operation as exported so it doesn't get DCE'd.
-      opImplsTable
-          .lookup<ExportInterface>(
-              canonicalizationSym.getSymbol().getLeafReference())
-          .setExported();
-    }
-
-  ErrorOr<TargetInfoAttr> targetOr =
-      getTargetInfoFor(&getContext(), llvm::sys::getDefaultTargetTriple(),
-                       llvm::sys::getHostCPUName(), getHostCPUFeatures());
-  if (targetOr.isError())
-    return targetOr.takeError();
-  TargetInfoAttr target = targetOr.takeValue();
-
-  // JIT them.
-  auto errorOrCanonFn = compileCanonicalizationFnsFn(
-      *opImplsModule, canonicalizationSyms, target);
-  if (errorOrCanonFn.isError())
-    return errorOrCanonFn.takeError();
-
-  // Insert jit'ed canonicalization patterns to the custom dialect.
-  for (auto &[name, capiCanonFn] : errorOrCanonFn.takeValue()) {
-    auto canonFunc = [func = capiCanonFn](Operation *op,
-                                          PatternRewriter &rewriter) mutable {
-      // Both the operation and the rewriter are passed as pointers, as the
-      // mojo canonicalization pattern is marked as inout.
-      MlirOperation c_op = wrap(op);
-      MlirRewriterBase c_rewriter = wrap(&rewriter);
-      return mlir::success(func(&c_op, &c_rewriter));
-    };
-    customDialect->canonicalizationFns.try_emplace(name, canonFunc);
-  }
-
-  customDialect->areCanonicalizationFnLoaded = true;
-
-  // Return them.
-  return customDialect->canonicalizationFns;
-}
-
-ErrorOrSuccess
-Canonicalizer::updatePatterns(MLIRContext *context,
-                              DenseResourceElementsAttr opImplsModuleAttr) {
+void Canonicalizer::updatePatterns(Custom::CustomDialect *customDialect) {
+  MLIRContext &context = getContext();
   // Mark the patterns as updated.
   hasCustomPatterns = true;
-  RewritePatternSet owningPatterns(context);
+  RewritePatternSet owningPatterns(&context);
 
   // Add the non custom patterns.
-  addNonCustomCanonicalizationPatterns(context, owningPatterns);
+  addNonCustomCanonicalizationPatterns(&context, owningPatterns);
 
   // Add the canonicalization patterns from the custom dialect.
-  auto errorOrFns = getOrJITCustomCanonicalizationPatterns(opImplsModuleAttr);
-  if (errorOrFns.isError())
-    return errorOrFns.takeError();
-
-  for (auto [name, canonFn] : errorOrFns.get())
+  for (auto [name, canonFn] : customDialect->canonicalizationFns)
     owningPatterns.insert<CustomOpPattern>(name, canonFn);
 
   // Update the pattern set, and the number of custom ops patterns that was
   // used to compute the set.
   patterns = mlir::FrozenRewritePatternSet(std::move(owningPatterns));
-  return success();
 }
 
 } // namespace
-
-std::unique_ptr<mlir::Pass> KGEN::createCanonicalizer(
-    CompileCanonicalizationFnsFn compileCanonicalizationFnsFn) {
-  return std::make_unique<Canonicalizer>(
-      std::move(compileCanonicalizationFnsFn));
-}

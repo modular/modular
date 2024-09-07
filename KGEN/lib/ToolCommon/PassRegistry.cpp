@@ -26,6 +26,7 @@ void KGEN::registerDefaultKGENPasses() {
   // Register opt passes.
   KGEN::registerApplyInliner();
   KGEN::registerArgPromotion();
+  KGEN::registerCanonicalizer();
   KGEN::registerCheckLifetimes();
   KGEN::registerEliminateDeadSymbols();
   KGEN::registerExpandStructs();
@@ -50,7 +51,6 @@ void KGEN::registerDefaultKGENPasses() {
   KGEN::registerMem2Reg();
   KGEN::registerOutlineClosures();
   KGEN::registerRaiseForLoops();
-  KGEN::registerRegisterCustomOps();
   KGEN::registerRemoveUnusedParams();
   KGEN::registerSROA();
   KGEN::registerSimplifyCF();
@@ -77,7 +77,8 @@ void KGEN::registerDefaultKGENPasses() {
       [&] { return KGEN::createElaborateGeneratorsWithDefaultJIT(); });
   mlir::registerPass(
       [&] { return KGEN::createLowerCustomOpsWithDefaultJIT(); });
-  mlir::registerPass([&] { return KGEN::createCanonicalizerWithDefaultJIT(); });
+  mlir::registerPass(
+      [&] { return KGEN::createRegisterCustomOpsWithDefaultJIT(); });
   KGEN::registerInlineParametric();
   KGEN::registerAutomaticInline();
   KGEN::registerDeadArgumentElimination();

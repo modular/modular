@@ -92,10 +92,10 @@ std::unique_ptr<Pass> createElaborateGeneratorsWithDefaultJIT();
 /// JITs and executes in-process.
 std::unique_ptr<Pass> createLowerCustomOpsWithDefaultJIT();
 
-/// Create an instance of the canonicalizer pass using the given configuration.
-/// The created pass uses a default specialization executor that JITs and
-/// executes in-process.
-std::unique_ptr<Pass> createCanonicalizerWithDefaultJIT();
+/// Create an instance of the custom ops registration pass using the given
+/// configuration. The created pass uses a default specialization executor that
+/// JITs and executes in-process.
+std::unique_ptr<Pass> createRegisterCustomOpsWithDefaultJIT();
 
 } // namespace M::KGEN
 
