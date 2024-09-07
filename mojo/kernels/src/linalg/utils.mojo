@@ -32,9 +32,9 @@ from layout.layout_tensor import LayoutTensor
 
 from utils.index import Index, StaticIntTuple
 
-alias elementwise_epilogue_type = fn[type: DType, width: Int] (
-    StaticIntTuple[2], SIMD[type, width]
-) capturing -> None
+alias elementwise_epilogue_type = fn[
+    type: DType, width: Int, *, alignment: Int = 1
+] (StaticIntTuple[2], SIMD[type, width]) capturing -> None
 
 
 struct KernelConfig:

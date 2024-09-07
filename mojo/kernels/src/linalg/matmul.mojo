@@ -68,7 +68,7 @@ fn elementwise_epilogue_c_tile[
     simd_width: Int,
     type: DType,
     c_shape: DimList,
-    func: fn[type: DType, width: Int] (
+    func: fn[type: DType, width: Int, *, alignment: Int = 1] (
         StaticIntTuple[2], SIMD[type, width]
     ) capturing -> None,
 ](offset: GemmShape, tile_len: GemmShape, c: NDBuffer[type, 2, c_shape]):

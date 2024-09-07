@@ -289,7 +289,7 @@ def test_matmul[
     @always_inline
     @__copy_capture(c)
     fn epilogue_fn[
-        _type: DType, width: Int
+        _type: DType, width: Int, *, alignment: Int = 1
     ](coords: StaticIntTuple[2], val: SIMD[_type, width]) capturing -> None:
         c.store(coords, rebind[SIMD[c_type, width]](val + some_constant))
 
@@ -491,7 +491,7 @@ def test_batched_matmul[
     @always_inline
     @__copy_capture(c)
     fn epilogue_fn[
-        _type: DType, width: Int, rank: Int
+        _type: DType, width: Int, rank: Int, *, alignment: Int = 1
     ](coords: StaticIntTuple[rank], val: SIMD[_type, width]) capturing -> None:
         c.store(
             rebind[StaticIntTuple[3]](coords),

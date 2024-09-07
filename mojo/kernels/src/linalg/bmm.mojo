@@ -42,9 +42,9 @@ from .utils import (
     use_i8mm_fn,
 )
 
-alias elementwise_epilogue_type = fn[c_type: DType, width: Int, rank: Int] (
-    StaticIntTuple[rank], SIMD[c_type, width]
-) capturing -> None
+alias elementwise_epilogue_type = fn[
+    c_type: DType, width: Int, rank: Int, *, alignment: Int = 1
+] (StaticIntTuple[rank], SIMD[c_type, width]) capturing -> None
 
 
 # Similar to _get_start_indices_of_nth_subvolume but returns only the batch
@@ -424,7 +424,7 @@ fn _batched_matmul_cpu[
 
             @parameter
             fn elementwise_lambda_2d[
-                c_type: DType, width: Int
+                c_type: DType, width: Int, *, alignment: Int = 1
             ](out_coords: StaticIntTuple[2], out_val: SIMD[c_type, width]):
                 # the caller provided the elementwise epilogue fn over the original
                 # buffer rank, not the collapsed buffer rank
