@@ -9,9 +9,11 @@ from math import align_down, ceildiv, isqrt
 from sys.info import alignof, simdwidthof
 
 from algorithm import map_reduce, mean, variance, vectorize
-from algorithm.functional import sync_parallelize
+from algorithm.functional import (
+    _get_start_indices_of_nth_subvolume,
+    sync_parallelize,
+)
 from algorithm.reduction import (
-    _get_nd_indices_from_flat_index,
     _simd_sum,
     _simd_sum_elementwise,
 )
@@ -410,7 +412,7 @@ fn layer_norm_gpu[
         simd_width: Int
     ](row: Int, col: Int) -> SIMD[type, simd_width]:
         # Translate given 2d index back to original Nd tensor
-        var indices = _get_nd_indices_from_flat_index(row, shape, rank - 1)
+        var indices = _get_start_indices_of_nth_subvolume[rank, 1](row, shape)
         indices[rank - 1] = col
         return input_fn[simd_width](indices)
 
@@ -590,8 +592,8 @@ fn layer_norm_cpu[
             simd_width: Int
         ](row: Int, col: Int) -> SIMD[type, simd_width]:
             # Translate given 2d index back to original Nd tensor
-            var indices = _get_nd_indices_from_flat_index(
-                row_idx + row, shape, rank - 1
+            var indices = _get_start_indices_of_nth_subvolume[rank, 1](
+                row_idx + row, shape
             )
             indices[rank - 1] = col
             return input_fn[simd_width](indices)
@@ -809,7 +811,7 @@ fn rms_norm_gpu[
         simd_width: Int
     ](row: Int, col: Int) -> SIMD[type, simd_width]:
         # Translate given 2d index back to original Nd tensor
-        var indices = _get_nd_indices_from_flat_index(row, shape, rank - 1)
+        var indices = _get_start_indices_of_nth_subvolume[rank, 1](row, shape)
         indices[rank - 1] = col
         return input_fn[simd_width](indices)
 
@@ -945,8 +947,8 @@ fn rms_norm_cpu[
             simd_width: Int
         ](row: Int, col: Int) -> SIMD[type, simd_width]:
             # Translate given 2d index back to original Nd tensor
-            var indices = _get_nd_indices_from_flat_index(
-                row_idx + row, shape, rank - 1
+            var indices = _get_start_indices_of_nth_subvolume[rank, 1](
+                row_idx + row, shape
             )
             indices[rank - 1] = col
             return input_fn[simd_width, rank](indices)
