@@ -312,8 +312,13 @@ void VerifyingParameterCollector::verifyRefAttr(DeclRefAttrInterface refAttr) {
   if (!verifiedRefs.insert(refAttr.getAsOpaquePointer()).second)
     return;
 
-  if (failed(refAttr.verifySymbolUses(module, *symtab, op->getLoc())))
+  if (failed(refAttr.verifySymbolUses(module, *symtab, op->getLoc()))) {
+    // If the attribute verifier failed, it will only have the location
+    // source information we're passing down.  Include the full op dump now
+    // for more context since this is an internal MLIR invariant violation.
+    op->emitOpError("invalid symbol use within this operator");
     hadError = true;
+  }
 #endif
 }
 
