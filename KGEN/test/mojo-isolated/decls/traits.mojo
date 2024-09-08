@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-# RUN: %parse-mojo-isolated %s -mlir-print-debuginfo | kgen-opt -verify-parameters --kgen-print-inline-type-values | FileCheck %s
+# RUN: %parse-mojo-isolated %s -mlir-print-debuginfo | kgen-opt --kgen-print-inline-type-values | FileCheck %s
 
 
 # CHECK-LABEL: lit.trait.decl @Trait

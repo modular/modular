@@ -13,9 +13,11 @@
 #include "KGEN/ToolCommon/CLOptions.h"
 #include "KGEN/ToolCommon/CompilationOptions.h"
 #include "KGEN/ToolCommon/InitAllDialects.h"
+#include "KGEN/ToolCommon/KGENPasses.h"
 #include "Support/MDialect/MDialect.h"
 #include "mlir/Bytecode/BytecodeWriter.h"
 #include "mlir/IR/BuiltinOps.h"
+#include "mlir/Pass/PassManager.h"
 #include "mlir/Support/Timing.h"
 #include "mlir/Target/LLVMIR/Export.h"
 #include "mlir/Tools/mlir-translate/MlirTranslateMain.h"
@@ -108,7 +110,19 @@ int main(int argc, char *argv[]) {
         OwningOpRef<ModuleOp> output = LIT::importMojoFile(
             *(*ctxOr)->get<AsyncRT::Runtime>(), sourceMgr, config, ts);
 
-        if (output && !parserBytecodeOutput.getValue().empty()) {
+        if (!output)
+          return {};
+
+        // To make sure the parser did a good thing, we run the
+        // verify-parameters pass.
+        mlir::PassManager pm(context);
+        pm.addPass(createVerifyParameters());
+        if (failed(pm.run(*output))) {
+          llvm::errs() << "mojo parser created invalid IR\n";
+          return {};
+        }
+
+        if (!parserBytecodeOutput.getValue().empty()) {
           std::string message;
           auto out =
               mlir::openOutputFile(parserBytecodeOutput.getValue(), &message);
@@ -116,6 +130,7 @@ int main(int argc, char *argv[]) {
             llvm::errs() << "failed to open file: " << message << "\n";
             return {};
           }
+
           if (failed(mlir::writeBytecodeToFile(*output, out->os())))
             return {};
           out->keep();

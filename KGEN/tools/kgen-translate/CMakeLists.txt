@@ -12,6 +12,7 @@ add_modular_tool(kgen-translate
   MojoParser
   AsyncRTCompilerSupport
   AsyncRTRuntimeGlobals
+  KGENTransforms
   MSupportGlobals
   Init
   MSupport
