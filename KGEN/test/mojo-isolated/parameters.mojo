@@ -1308,6 +1308,24 @@ fn implicit_conversion_overload(x: AutoParamDefault[`1`], ptr: ParamType[`1`]):
     # CHECK: call {{.*}}method{{.*}}(%x, %ptr)
     x.method(ptr)
 
+# MOCO-1144
+# https://linear.app/modularml/issue/MOCO-1144/[mojo-lang]-crash-on-partially-bound-parameter-list
+fn takeAnyTypeReturnInt[t: AnyType]() -> Int: pass
+struct MOCO1144[
+    is_mutable: Bool,
+    type: AnyType,
+    alignment: Int = takeAnyTypeReturnInt[type]() 
+]: pass
+alias MOCO1144Bound = MOCO1144[True, _, _]
+
+fn getMOCO1144Bound() -> MOCO1144Bound[Int]: pass
+
+# CHECK-LABEL: lit.func @"tryCallingAThingReturningMOCO1144Bound
+fn tryCallingAThingReturningMOCO1144Bound():
+    # CHECK-NEXT:  lit.var.decl "x" {{.*}}MOCO1144<:!Bool {:i1 1}, :!AnyType [!Int{{.*}}takeAnyTypeReturnInt[::AnyType]()"<:!AnyType [!Int 
+    var x = getMOCO1144Bound()
+
+
 ##===----------------------------------------------------------------------===##
 # Lifetime Parameters
 ##===----------------------------------------------------------------------===##

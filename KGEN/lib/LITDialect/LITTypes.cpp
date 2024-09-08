@@ -390,6 +390,7 @@ LIT::StructType AnyStructType::getStructType() {
   return LIT::StructType::get(getSymbol(), getParamValues(), *this);
 }
 
+/// Bind parameter values to the metatype, returning a new metatype.
 AnyStructType AnyStructType::bind(ArrayRef<TypedAttr> values) const {
   assert(getParamValues().size() == values.size() && "expected full value set");
 
@@ -406,28 +407,32 @@ AnyStructType AnyStructType::bind(ArrayRef<TypedAttr> values) const {
   DefaultValueHandler defaultHandler(paramListAttr);
   ParameterEvaluator evaluator;
   for (auto [cur, val] : llvm::zip(getParamValues(), values)) {
-    // Current value is unbound. This corresponds to a parameter in the
-    // signature.
-    if (::isa<UnboundAttr>(cur)) {
-      if (::isa<UnboundAttr>(val)) {
-        auto [i, type, pogAttr] = *sigIt;
-        newParamTypes.push_back(evaluator.getReboundType(type));
-        newPogs.push_back(pogAttr);
+    // If the current value is bound, maintain it.
+    if (!::isa<UnboundAttr>(cur)) {
+      assert(cur == val && "cannot change bound parameter value");
+      continue;
+    }
 
-        if (TypedAttr defaultOr = defaultHandler.getPosDefault(i))
-          newPosDefaults.push_back(defaultOr);
-        else if (TypedAttr defaultOr = defaultHandler.getKwOnlyDefault(i))
-          newKwOnlyDefaults.push_back(defaultOr);
-
-        evaluator.addInputValue(ParamIndexRefAttr::get(newParamTypes.size() - 1,
-                                                       newParamTypes.back()));
-      } else {
-        evaluator.addInputValue(val);
-      }
+    // If the current value is bound and we have a specified value, use it.
+    if (!::isa<UnboundAttr>(val)) {
+      evaluator.addInputValue(val);
       ++sigIt;
       continue;
     }
-    assert(cur == val && "cannot change bound parameter value");
+
+    // Otherwise it is still unbound, maintain it as such.
+    auto [i, type, pogAttr] = *sigIt;
+    newParamTypes.push_back(evaluator.getReboundType(type));
+    newPogs.push_back(pogAttr);
+
+    if (TypedAttr defaultOr = defaultHandler.getPosDefault(i))
+      newPosDefaults.push_back(evaluator.replace(defaultOr));
+    else if (TypedAttr defaultOr = defaultHandler.getKwOnlyDefault(i))
+      newKwOnlyDefaults.push_back(evaluator.replace(defaultOr));
+
+    evaluator.addInputValue(
+        ParamIndexRefAttr::get(newParamTypes.size() - 1, newParamTypes.back()));
+    ++sigIt;
   }
   assert(sigIt == sigRange.end() && "expected signature to get processed");
 
