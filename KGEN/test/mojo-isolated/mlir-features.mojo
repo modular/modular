@@ -18,8 +18,8 @@ fn mlirMagicTest(
     alias a: __mlir_type.index = `1`
     # CHECK: %b = lit.var.decl "b" var : !lit.ref<f64, mut
     var b: __mlir_type.f64
-    # CHECK: %c = lit.var.decl "c" var : !lit.ref<pointer<pointer<float32>>, mut
-    var c: __mlir_type.`!kgen.pointer<!kgen.pointer<float32>>`
+    # CHECK: %c = lit.var.decl "c" var : !lit.ref<pointer<pointer<f32>>, mut
+    var c: __mlir_type.`!kgen.pointer<!kgen.pointer<f32>>`
 
     # CHECK: %d = lit.var.decl
     # CHECK: [[TMP:%.*]] = kgen.param.constant: i17 = <4>

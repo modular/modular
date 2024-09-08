@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-# RUN: %parse-mojo-isolated %s | kgen-opt -verify-parameters --kgen-print-inline-type-values | FileCheck %s
+# RUN: %parse-mojo-isolated %s | kgen-opt --kgen-print-inline-type-values | FileCheck %s
 
 ##===----------------------------------------------------------------------===##
 # Input parameters

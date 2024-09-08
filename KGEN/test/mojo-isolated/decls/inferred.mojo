@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-# RUN: %parse-mojo-isolated %s | kgen-opt -verify-parameters | FileCheck %s
+# RUN: %parse-mojo-isolated %s | FileCheck %s
 
 ##===----------------------------------------------------------------------===##
 # inferred Parameters

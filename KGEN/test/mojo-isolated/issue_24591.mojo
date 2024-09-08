@@ -3,7 +3,7 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-# RUN: %parse-mojo-isolated %s | kgen-opt -verify-parameters -mlir-print-op-generic | FileCheck %s
+# RUN: %parse-mojo-isolated %s | kgen-opt -mlir-print-op-generic | FileCheck %s
 
 alias AnyTrivialRegType = __mlir_type.`!kgen.type`
 alias NoneType = __mlir_type.`!kgen.none`

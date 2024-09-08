@@ -16,6 +16,7 @@ modular_cc_binary(
         "//KGEN:Pipeline",
         "//KGEN:Support",
         "//KGEN:ToolCommon",
+        "//KGEN:Transforms",
         "//Support:Globals",
         "//Support:MDialect",
         "@llvm-project//mlir:TranslateLib",
