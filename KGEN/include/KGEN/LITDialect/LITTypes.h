@@ -201,7 +201,8 @@ getUnboundSpecializedSignature(LITSignatureType type,
 
 /// This predicate returns true if a parameter of the specified type may only
 /// expand into one parameter value (e.g. `!lit.lifetime<x>` that only expands
-/// to a single #lit.lifetime value.  Such a parameter doesn't need elaboration.
+/// to a single #lit.any.lifetime value.  Such a parameter doesn't need
+/// elaboration.
 static inline bool isSingletonParameter(Type type) {
   // TODO: Could support structs of lifetimes.
   return isa<LIT::LifetimeType>(type);

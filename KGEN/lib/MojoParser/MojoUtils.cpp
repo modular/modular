@@ -158,6 +158,12 @@ bool LIT::canConvertWithRebind(ASTType fromType, ASTType toType,
                                 shared))
         return false;
 
+      // We allow converting an "any" lifetime to anything concrete.
+      // NOTE: This is not memory safe; we should make this an explicit
+      // operation someday.
+      if (isa<AnyLifetimeAttr>(fromRef.getLifetime()))
+        return true;
+
       // We can convert lifetime subset to a lifetimes superset.
       auto toLifetime = toRef.getLifetime();
       auto lifetimeUnion = LifetimeUnionAttr::get(

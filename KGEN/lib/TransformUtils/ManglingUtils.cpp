@@ -17,8 +17,8 @@ using namespace KGEN;
 
 /// Return a string that is a unique specification of the specified parameter.
 static void printParameterMangling(TypedAttr value, raw_ostream &os) {
-  // TODO: Don't print #lit.lifetime, they are singletons!
-  // if (isa<LifetimeAttr>(value))
+  // TODO: Don't print #lit.any.lifetime, they are singletons!
+  // if (isa<AnyLifetimeAttr>(value))
   //  return;
 
   // It is very common to pass types in as parameters, since this is how

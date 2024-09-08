@@ -575,7 +575,7 @@ struct Tuple[*element_types: AnyType]:
 struct UnsafePointer[
     T: AnyType, address_space: AddressSpace = AddressSpace.GENERIC
 ]:
-    alias _ref_lifetime = __mlir_attr.`#lit.lifetime<1>: !lit.lifetime<1>`
+    alias _ref_lifetime = __mlir_attr.`#lit.any.lifetime<1>: !lit.lifetime<1>`
 
     alias _mlir_type = __mlir_type[
         `!kgen.pointer<`, T, `,`, address_space._value.value, `>`

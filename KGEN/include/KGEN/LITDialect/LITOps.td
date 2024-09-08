@@ -928,7 +928,7 @@ def LIT_GlobalVarRefOp : LITOp<"globalvar.ref",
     Example:
 
     ```mlir
-    %0 = lit.globalvar.ref @global_var : <mut @Int, #lit.lifetime>
+    %0 = lit.globalvar.ref @global_var : <mut @Int, #lit.any.lifetime>
     ```
   }];
 

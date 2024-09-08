@@ -552,7 +552,7 @@ static void processVariablesForPersistence(MojoParserREPLListener &listener,
     // so we need to define the lifetime.
     TypedAttr lifetime = varOp.getType().getLifetime();
     builder.create<ParamDeclareOp>(varOp.getParamDecl(),
-                                   LifetimeAttr::get(lifetime.getType()));
+                                   AnyLifetimeAttr::get(lifetime.getType()));
 
     // Create an untracked reference from this.
     // FIXME: this should really use RefFromPointerOp to make sure that

@@ -643,8 +643,8 @@ fn test_bad_ref_errors[T: AnyType](a: Reference[T, _], b: Reference[T, _]):
   # expected-error @below {{cannot implicitly convert 'T' value to 'Reference[is_mutable, T, lifetime, 0]'}}
   var x : Reference[T, b.lifetime] = a[]
 
-  # expected-error @below {{cannot implicitly convert 'T' value to 'Reference[1, T, MutableStaticLifetime, 0]'}}
-  var y : Reference[T,  __mlir_attr.`#lit.lifetime<1>: !lit.lifetime<1>`, a.address_space] = a[]
+  # expected-error @below {{cannot implicitly convert 'T' value to 'Reference[1, T, MutableAnyLifetime, 0]'}}
+  var y : Reference[T,  __mlir_attr.`#lit.any.lifetime<1>: !lit.lifetime<1>`, a.address_space] = a[]
 
 fn test_subscript_conflict(a: Int):
   # expected-error @below {{duplicate keyword parameter 'idx'}}

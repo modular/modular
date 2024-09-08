@@ -71,7 +71,7 @@ removeSingletonParamDecls(SmallVectorImpl<ParamDeclAttr> &paramDecls) {
       // We can just remove the parameter without inserting a placeholder
       // in the body. This is safe because we unconditionally replace
       // all attributes of lifetime type at the end of this pass with
-      // #lit.lifetime, which will conveniently get all references to
+      // #lit.any.lifetime, which will conveniently get all references to
       // this. That said, we need to remember the index so we can update
       // the signature.
       ++numRemoved;
@@ -513,7 +513,7 @@ static void lowerAttributesAndTypes(
     // Remove all values of lifetime type.  This removes all references to
     // lifetime parameters that have been dropped.
     if (auto type = dyn_cast<LifetimeType>(attr.getType()))
-      return LifetimeAttr::get(type);
+      return AnyLifetimeAttr::get(type);
 
     // Remove singleton parameter values from SymbolConstantAttr.
     if (auto symCst = dyn_cast<SymbolConstantAttr>(attr)) {

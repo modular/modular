@@ -3148,7 +3148,7 @@ AnyValue MagicFunctionNode::emitIR(ValueDest &dest,
     return {};
 
   // TODO(references): if we keep these functions, they should take a lifetime.
-  auto immortal = emitter.builder->getAttr<LifetimeAttr>(/*isMut=*/true);
+  auto immortal = emitter.builder->getAttr<AnyLifetimeAttr>(/*isMut=*/true);
   bool startsUninit = kind == ExprNode::kGetAddressAsUninitLValue;
   bool endsUninit = kind == ExprNode::kGetAddressAsOwned;
   exprVal = emitter.builder->create<RefFromPointerOp>(

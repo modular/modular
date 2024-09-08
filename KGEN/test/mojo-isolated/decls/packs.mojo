@@ -163,7 +163,7 @@ struct not_nested_struct[*Ts: AnyType]:
 # CHECK-LABEL: lit.func @"test_empty_pack
 fn test_empty_pack():
     # Make sure we pass an immortal lifetime for the pack.
-    # CHECK: lit.call {{.*}}VariadicPack::@"__init__{{.*}}:lifetime<1> #lit.lifetime,
+    # CHECK: lit.call {{.*}}VariadicPack::@"__init__{{.*}}:lifetime<1> #lit.any.lifetime,
     var s1 = not_nested_struct()
 
 
@@ -232,6 +232,6 @@ fn usePacks(x: FloatDyn, y: Int):
 fn test_comptime_call[a: Int]():
     # CHECK: lit.alias.decl *"foo`": none =
     # CHECK-SAME: <apply(:!lit.signature<[1](
-    # CHECK-SAME: "args": !lit.struct<#VariadicPack <:i1 0, :lifetime<0> #lit.lifetime, :!lit.anytrait<!AnyType> !AnyType, :variadic<!AnyType> [#Int1]>> borrow_in_mem|pack)
+    # CHECK-SAME: "args": !lit.struct<#VariadicPack <:i1 0, :lifetime<0> #lit.any.lifetime, :!lit.anytrait<!AnyType> !AnyType, :variadic<!AnyType> [#Int1]>> borrow_in_mem|pack)
     # CHECK-SAME: <store_to_mem(a)>, {:i1 0}))>
     alias foo = pack(a)

@@ -157,7 +157,7 @@ def WrappedBindTypeAttr : DialectAttribute<(attr
   ConcreteType<"AnyStructType">:$type
 )>;
 
-def LifetimeAttr : DialectAttribute<(attr
+def AnyLifetimeAttr : DialectAttribute<(attr
   ConcreteType<"LifetimeType">:$type
 )>;
 
@@ -254,7 +254,7 @@ def LITDialectAttributes : DialectAttributes<"lit"> {
     UnpackedAttr,
     ModuleAttr,
     WrappedBindTypeAttr,
-    LifetimeAttr,
+    AnyLifetimeAttr,
     WrappedLifetimeUnionAttr,
     WrappedLifetimeMutCastAttr,
     WrappedLifetimeFieldAttr,

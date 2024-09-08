@@ -580,7 +580,7 @@ struct ValueSet {
       numValueBits = typeDeclInfo.getNumFieldsInType(valType);
 
       // Remember the lifetime if not immortal.
-      if (!isa<LifetimeAttr>(refType.getLifetime()))
+      if (!isa<AnyLifetimeAttr>(refType.getLifetime()))
         valueLifetime = refType.getLifetime();
     } else {
       // We don't track trivial values of register type.
@@ -2876,7 +2876,7 @@ LogicalResult DestructorInsertion::elideCopyDestroyPair(Value value,
       // The old reference type used a novel lifetime.  We need to declare it,
       // and coerce back to it with a rebind.
       builder.create<ParamDeclareOp>(ParamDeclAttr::get(param),
-                                     LifetimeAttr::get(param.getType()));
+                                     AnyLifetimeAttr::get(param.getType()));
       auto refCasted = builder.create<RebindOp>(tmpDecl.getType(),
                                                 copyInitCall.getOperand(1));
 

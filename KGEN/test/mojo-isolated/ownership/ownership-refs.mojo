@@ -290,7 +290,7 @@ struct TwoLifetimes[a_lifetime: ImmutableLifetime,
                     b_lifetime: ImmutableLifetime]:
   fn __init__(inout self): pass
 
-# Crash converting mvalue of #lit.lifetime lifetime to Reference with specific one.
+# Crash converting mvalue of #lit.any.lifetime lifetime to Reference with specific one.
 # https://github.com/modularml/mojo/issues/1921
 struct SomeStruct:
   # CHECK-LABEL: lit.func @"refBindingToImmortal
@@ -298,7 +298,7 @@ struct SomeStruct:
       -> Reference[Int, __lifetime_of(self)]:
     # CHECK: [[REFVAL:%.*]] = lit.call {{.*}}__getitem__{{.*}}(%ptr)
     # CHECK: [[REBIND:%.*]] = kgen.rebind [[REFVAL]]
-    # CHECK-SAME : !lit.ref<!Int, mut #lit.lifetime> to !lit.ref<!Int, mut *"self`2x">
+    # CHECK-SAME : !lit.ref<!Int, mut #lit.any.lifetime> to !lit.ref<!Int, mut *"self`2x">
     # CHECK: [[TMP:%.*]] = lit.var.decl "anonymous*"
     # CHECK: lit.call {{.*}}__init__{{.*}}([[TMP]], [[REBIND]]
     return ptr[]
@@ -326,7 +326,7 @@ struct CutDownVariadicPack[
     ]:
        while True: pass
 
-# Test that you can implicitly convert an immortal mutable reference (as is returned
+# Test that you can implicitly convert an "any" mutable reference (as is returned
 # by UnsafePointer for example) to mortal reference with specified lifetime.
 # CHECK: lit.func @"test_immortal_to_mortal
 fn test_immortal_to_mortal(arg: Reference[Int, _])
@@ -335,7 +335,7 @@ fn test_immortal_to_mortal(arg: Reference[Int, _])
   # CHECK-NEXT: [[PTRVAL:%.*]] = lit.call {{.*}}UnsafePointer::@"address_of{{.*}}([[ARGREF]])
   # CHECK-NEXT: [[REF:%.*]] = lit.call {{.*}}UnsafePointer::@"__getitem__{{.*}}([[PTRVAL]])
 
-  # CHECK-NEXT: [[ADJREFVAL:%.*]] = kgen.rebind [[REF]] : !lit.ref<!Int, mut #lit.lifetime> to !lit.ref<!Int, mut=#lit.struct.extract<:!Bool *"is_mutable`", "value">, *"lifetime`1">
+  # CHECK-NEXT: [[ADJREFVAL:%.*]] = kgen.rebind [[REF]] : !lit.ref<!Int, mut #lit.any.lifetime> to !lit.ref<!Int, mut=#lit.struct.extract<:!Bool *"is_mutable`", "value">, *"lifetime`1">
   # CHECK-NEXT: [[ANON2:%.*]] = lit.var.decl "anonymous*"
   # CHECK-NEXT: lifetime.start [[ANON2]]
   # CHECK-NEXT: lit.call {{.*}}__init__{{.*}}([[ANON2]], [[ADJREFVAL]])

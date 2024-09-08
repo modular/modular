@@ -501,14 +501,14 @@ def BindTypeAttr : LITTypedAttr<"BindType", "bind_type"> {
 }
 
 //===----------------------------------------------------------------------===//
-// LifetimeAttr
+// AnyLifetimeAttr
 //===----------------------------------------------------------------------===//
 
-def LifetimeAttr : LITTypedAttr<"Lifetime", "lifetime"> {
-  let summary = "A !lit.lifetime<mut> value";
+def AnyLifetimeAttr : LITTypedAttr<"AnyLifetime", "any.lifetime"> {
+  let summary = "A !lit.lifetime<mut> value that could refer to anything";
   let description = [{
-    This attribute is a singleton (for each mutability) used when lowering
-    lifetimes, and represents an immortal value.
+    This attribute is a singleton (for each mutability) which represents
+    lifetime that might alias anything.
   }];
 
   let parameters = (ins
@@ -519,7 +519,7 @@ def LifetimeAttr : LITTypedAttr<"Lifetime", "lifetime"> {
 
   let builders = [
     AttrBuilderWithInferredContext<(ins "Type":$type), [{
-      assert(::isa<LifetimeType>(type) && "LifetimeAttr must have LifetimeType");
+      assert(::isa<LifetimeType>(type) && "AnyLifetimeAttr must have LifetimeType");
       return get(type.getContext(), ::cast<LifetimeType>(type));
     }]>,
     AttrBuilderWithInferredContext<(ins "TypedAttr":$isMutable), [{
