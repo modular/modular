@@ -119,6 +119,7 @@ kgen.generator @scalar_params_verbose<n : ui32>(%x : !pop.array<n, scalar<invali
 // -----
 
 kgen.func @entry() {
+  // expected-error @below {{invalid symbol use within this operator}}
   // expected-error @below {{@undefined does not reference a KGEN declaration}}
   kgen.call @undefined() : () -> ()
   kgen.return
@@ -130,6 +131,7 @@ module @nested_nondecl {
 }
 
 kgen.func @entry() {
+  // expected-error @below {{invalid symbol use within this operator}}
   // expected-error @below {{@nested_nondecl::@undefined does not reference a KGEN declaration}}
   kgen.call @nested_nondecl::@undefined() : () -> ()
   kgen.return
@@ -138,6 +140,7 @@ kgen.func @entry() {
 // -----
 
 kgen.generator @g1(%x : i32) {
+  // expected-error @below {{invalid symbol use within this operator}}
   // expected-error @below {{symbol use has 1 argument but @g2 expects 0}}
   kgen.call @g2(%x) : (i32) -> ()
   kgen.return
@@ -156,6 +159,7 @@ kgen.generator @only_returns<p1>() {
 }
 
 kgen.func @test_only_returns() {
+  // expected-error @below {{invalid symbol use within this operator}}
   // expected-error @below {{symbol use has 0 input parameters but @only_returns expects 1}}
   kgen.call @only_returns() : () -> ()
   kgen.return
@@ -169,6 +173,7 @@ kgen.generator @fn(%a: i1) -> i1 {
 }
 
 kgen.func @result_type(%a: i1) {
+  // expected-error @below {{invalid symbol use within this operator}}
   // expected-error @below {{symbol use result #0 has type 'f32' but @fn expected type 'i1'}}
   kgen.call @fn(%a) : (i1) -> f32
   kgen.return
@@ -246,6 +251,7 @@ kgen.generator @callee<DT: dtype>(%x: !pop.scalar<DT>) {
 }
 
 kgen.generator @caller<DT: dtype>(%arg0: !pop.scalar<DT>) {
+  // expected-error @below {{invalid symbol use within this operator}}
   // expected-error @below {{symbol use argument #0 has type '!pop.scalar<DT>' but @callee expected type '!pop.scalar<f64>'}}
   kgen.call @callee<:dtype f64>(%arg0) : (!pop.scalar<DT>) -> ()
   kgen.return
@@ -287,6 +293,7 @@ kgen.func @doubleExample(%arg0: !pop.scalar<si32>) -> !pop.scalar<si32> {
 }
 
 kgen.generator @test_region() {
+  // expected-error @below {{invalid symbol use within this operator}}
   // expected-error @+1 {{caller input parameter #0 has type}}
   kgen.call @takeUnary<:(!pop.scalar<si32>) -> !pop.scalar<si32> @doubleExample>() : () -> ()
   kgen.return
@@ -298,6 +305,7 @@ kgen.generator @takeFn<fn: () -> ()>() {
   kgen.return
 }
 kgen.generator @test() {
+  // expected-error @below {{invalid symbol use within this operator}}
   // expected-error @+1 {{@missing does not reference a KGEN declaration}}
   kgen.call @takeFn<:()->() @missing>() : () -> ()
   kgen.return
@@ -316,6 +324,7 @@ kgen.func @unary(%arg0: !pop.scalar<f32>) -> !pop.scalar<f32> {
 }
 
 kgen.generator @test1() {
+  // expected-error @below {{invalid symbol use within this operator}}
   // expected-error @below {{symbol use argument #0 has type '!pop.scalar<si32>' but @unary expected type '!pop.scalar<f32>'}}
   kgen.call @takeUnary<:(!pop.scalar<si32>) -> !pop.scalar<si32> @unary>() : () -> ()
   kgen.return
@@ -334,6 +343,7 @@ kgen.generator @unary2<dt: dtype>(%arg0: !pop.scalar<si32>) -> !pop.scalar<si32>
 }
 
 kgen.generator @test2() {
+  // expected-error @below {{invalid symbol use within this operator}}
   // expected-error @below {{symbol use has 0 input parameters but @unary2 expects 1}}
   kgen.call @takeUnary<:(!pop.scalar<si32>) -> !pop.scalar<si32> @unary2>() : () -> ()
   kgen.return
@@ -438,6 +448,7 @@ kgen.generator @caller(%arg: !kgen.pointer<i32> owned) {
   // Ok
   kgen.call @callee(%arg) : (!kgen.pointer<i32> inout) -> ()
 
+  // expected-error @below {{invalid symbol use within this operator}}
   // expected-error @+1 {{symbol use argument #0 has convention owned but @callee expected convention inout}}
   kgen.call @callee(%arg) : (!kgen.pointer<i32> owned) -> ()
   kgen.return
@@ -674,6 +685,7 @@ kgen.func @invalid(%arg0: !kgen.pointer<index> byref_result, %arg1: index) -> !k
 // -----
 
 kgen.generator @two_params<a, b>() {
+  // expected-error @below {{invalid symbol use within this operator}}
   // expected-error @below {{callee expects 2 parameters but only got 1}}
   kgen.param.declare f: <index, index>() -> () = <@two_params<?>>
   kgen.return
