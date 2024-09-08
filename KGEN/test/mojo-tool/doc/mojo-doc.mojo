@@ -425,9 +425,9 @@ fn variadic_pack[*Ts: AnyType](*vals: *Ts):
 # CHECK:     "args":
 # CHECK:         "name": "vals",
 # CHECK:         "passingKind": "pos_or_kw",
-# CHECK:         "type": "variadic<!lit.ref<!kgen.paramref<:trait<{{.*}}AnyType> element_type>, imm #lit.lifetime>, borrow_in_mem>"
+# CHECK:         "type": "variadic<!lit.ref<!kgen.paramref<:trait<{{.*}}AnyType> element_type>, imm #lit.any.lifetime>, borrow_in_mem>"
 
-# CHECK:     "signature": "variadic_arg_hack[element_type: AnyType](vals: variadic<!lit.ref<!kgen.paramref<:trait<_stdlib::_builtin::_anytype::_AnyType> element_type>, imm #lit.lifetime>, borrow_in_mem>)",
+# CHECK:     "signature": "variadic_arg_hack[element_type: AnyType](vals: variadic<!lit.ref<!kgen.paramref<:trait<_stdlib::_builtin::_anytype::_AnyType> element_type>, imm #lit.any.lifetime>, borrow_in_mem>)",
 
 
 fn variadic_arg_hack[
@@ -436,7 +436,7 @@ fn variadic_arg_hack[
     vals: __mlir_type[
         `!kgen.variadic<!lit.ref<`,
         element_type,
-        `, #lit.lifetime<0>: !lit.lifetime<0>, 0>, borrow_in_mem>`,
+        `, #lit.any.lifetime<0>: !lit.lifetime<0>, 0>, borrow_in_mem>`,
     ]
 ):
     """Test hacky use case of `!kgen.variadic` argument type printing.
@@ -546,10 +546,10 @@ struct HMyUnsafePointer[
     T: AnyType,
     address_space: AddressSpace = AddressSpace.GENERIC,
 ]:
-    # CHECK: "signature": "__getitem__(self: Self) -> ref [MutableStaticLifetime, address_space] T",
+    # CHECK: "signature": "__getitem__(self: Self) -> ref [MutableAnyLifetime, address_space] T",
     fn __getitem__(
         self,
-    ) -> ref [MutableStaticLifetime, address_space._value.value] T:
+    ) -> ref [MutableAnyLifetime, address_space._value.value] T:
         pass
 
     # CHECK: "signature": "address_of(ref [arg_is_lifetime, address_space] arg: T) -> Self",

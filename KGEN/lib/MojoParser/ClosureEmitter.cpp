@@ -850,7 +850,7 @@ ClosureEmitter::createWrapperInitWithImpl(StructDeclOp closureWrapper,
   Value source = init.getBody()->getArgument(1);
 
   // TODO(references): Move closures off pointers to correct lifetimes.
-  auto immortal = builder.getAttr<LifetimeAttr>(/*isMut=*/true);
+  auto immortal = builder.getAttr<AnyLifetimeAttr>(/*isMut=*/true);
   Value targetRef = builder.create<RefFromPointerOp>(target, immortal,
                                                      /*startUninit=*/true,
                                                      /*endUninit=*/false);
@@ -929,7 +929,7 @@ ClosureEmitter::createWrapperInitWithImpl(StructDeclOp closureWrapper,
         closureImplTopLevelPtrType, body->getArgument(0));
 
     // TODO(references): move closures to references and correct lifetimes.
-    auto immortal = builder.getAttr<LifetimeAttr>(/*isMut=*/true);
+    auto immortal = builder.getAttr<AnyLifetimeAttr>(/*isMut=*/true);
     Value targetRef = builder.create<RefFromPointerOp>(target, immortal,
                                                        /*startUninit=*/true,
                                                        /*endUninit=*/false);
@@ -978,7 +978,7 @@ ClosureEmitter::createWrapperInitWithImpl(StructDeclOp closureWrapper,
     // This takes ownership of the pointer, telling checklifetimes that the
     // value should be destroyed by the exit of the function.  ASAP destruction
     // will make sure it is immediately destroyed because there are no uses.
-    auto immortal = builder.getAttr<LifetimeAttr>(/*isMut=*/true);
+    auto immortal = builder.getAttr<AnyLifetimeAttr>(/*isMut=*/true);
     (void)builder.create<RefFromPointerOp>(implPtr, immortal,
                                            /*startUninit=*/false,
                                            /*endUninit=*/true);
@@ -1034,7 +1034,7 @@ ClosureEmitter::createWrapperInitWithImpl(StructDeclOp closureWrapper,
     // FIXME: Thread a lifetime through correctly.
 
     // TODO(references): Move closures off pointers.
-    auto immortal = builder.getAttr<LifetimeAttr>(/*isMut=*/false);
+    auto immortal = builder.getAttr<AnyLifetimeAttr>(/*isMut=*/false);
     Value implRef = builder.create<RefFromPointerOp>(implPtr, immortal,
                                                      /*startUninit=*/false,
                                                      /*endUninit=*/false);

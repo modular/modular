@@ -64,7 +64,7 @@ fn typeof_dynval_in_param(x: index):
 
 # CHECK-LABEL: lit.func @"lifetime_of
 fn lifetime_of(x: Unmovable, y: Unmovable, inout z: Unmovable):
-    # CHECK-NEXT: lifetime<1> = <#lit.lifetime>
+    # CHECK-NEXT: lifetime<1> = <{}>
     alias lt0 = __lifetime_of()
     # CHECK-NEXT: lifetime<0> = <*"x`">
     alias lt1 = __lifetime_of(x)

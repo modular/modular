@@ -530,15 +530,18 @@ OptionalParseResult LifetimeType::parseValue(AsmParser &p,
   // Handle unions as comma separated elements in braces.
   if (succeeded(p.parseOptionalLBrace())) {
     SmallVector<TypedAttr> elements;
-    if (p.parseCommaSeparatedList(
-            AsmParser::Delimiter::None,
-            [&]() {
-              elements.push_back({});
-              return KGEN::parseParamValue(p, elements.back(), *this);
-            },
-            "in lifetime union") ||
-        p.parseRBrace())
-      return failure();
+    // Body is {} or {elts}
+    if (failed(p.parseOptionalRBrace())) {
+      if (p.parseCommaSeparatedList(
+              AsmParser::Delimiter::None,
+              [&]() {
+                elements.push_back({});
+                return KGEN::parseParamValue(p, elements.back(), *this);
+              },
+              "in lifetime union") ||
+          p.parseRBrace())
+        return failure();
+    }
     result = LifetimeUnionAttr::get(elements, *this);
     return processPostFix();
   }
@@ -597,15 +600,15 @@ LogicalResult LifetimeType::printValue(AsmPrinter &p, TypedAttr value) const {
   }
 
   if (auto unionAttr = ::dyn_cast<LifetimeUnionAttr>(value)) {
-    // We know unions always have >1 element.
-    p << "{";
-    printParamValue(p, unionAttr.getOperand(0));
-    for (auto operand : unionAttr.getOperands().drop_front()) {
-      p << ", ";
-      printParamValue(p, operand);
+    p << '{';
+    if (unionAttr.getNumOperands()) {
+      printParamValue(p, unionAttr.getOperand(0));
+      for (auto operand : unionAttr.getOperands().drop_front()) {
+        p << ", ";
+        printParamValue(p, operand);
+      }
     }
-
-    p << "}";
+    p << '}';
     return success();
   }
 
@@ -727,10 +730,10 @@ LifetimeType RefType::getLifetimeType() {
 }
 
 /// Return a reference to the specified element type and mutability with an
-/// immortal (#lit.lifetime) lifetime.
+/// immortal (#lit.any.lifetime) lifetime.
 RefType RefType::getImmortal(Type elementType, bool isMut,
                              TypedAttr addrSpace) {
-  return get(elementType, LifetimeAttr::get(elementType.getContext(), isMut),
+  return get(elementType, AnyLifetimeAttr::get(elementType.getContext(), isMut),
              addrSpace);
 }
 
@@ -1172,7 +1175,7 @@ LITSignatureType LITSignatureType::getWithImplicitLifetimesBoundImmortal() {
       auto ref = ::dyn_cast<ImplicitLifetimeRefAttr>(attr);
       if (!ref || ref.getDepth() != depth)
         return nullptr;
-      return LifetimeAttr::get(ref.getType());
+      return AnyLifetimeAttr::get(ref.getType());
     }
   };
 
@@ -1355,6 +1358,6 @@ LIT::getUnboundSpecializedSignature(LITSignatureType type,
 TypedAttr LIT::getSingletonParameterValue(Type type) {
   // TODO: Could support structs of lifetimes.
   if (auto lifetime = dyn_cast<LifetimeType>(type))
-    return LifetimeAttr::get(lifetime);
+    return AnyLifetimeAttr::get(lifetime);
   llvm_unreachable("isn't a singleton parameter");
 }

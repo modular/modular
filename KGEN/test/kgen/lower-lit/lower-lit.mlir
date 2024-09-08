@@ -19,7 +19,7 @@ lit.func @calls<f: !lit.signature<[2]() -> ()>>[imm a, mut b](%arg0: !lit.signat
   kgen.return
 }
 
-lit.func @async_fn_throws(%err: !lit.ref<index, mut #lit.lifetime> byref_error, %res: !lit.ref<index, mut #lit.lifetime> byref_result) throws|async {
+lit.func @async_fn_throws(%err: !lit.ref<index, mut #lit.any.lifetime> byref_error, %res: !lit.ref<index, mut #lit.any.lifetime> byref_result) throws|async {
   kgen.return
 }
 
@@ -27,8 +27,8 @@ lit.func @async_fn_throws(%err: !lit.ref<index, mut #lit.lifetime> byref_error, 
 lit.func @async_call[imm a, mut b]() async {
   // CHECK: co.invoke[() async -> (): @async_call]()
   lit.async.call[!lit.signature<[2]() async -> ()>: @async_call][imm a, mut b]()
-  // CHECK: co.invoke[(!lit.ref<index, mut #lit.lifetime> byref_error, !lit.ref<index, mut #lit.lifetime> byref_result) throws|async -> (): @async_fn_throws]()
-  lit.async.call[!lit.signature<("err": !lit.ref<index, mut #lit.lifetime> byref_error, "res": !lit.ref<index, mut #lit.lifetime> byref_result) throws|async -> ()>: @async_fn_throws]()
+  // CHECK: co.invoke[(!lit.ref<index, mut #lit.any.lifetime> byref_error, !lit.ref<index, mut #lit.any.lifetime> byref_result) throws|async -> (): @async_fn_throws]()
+  lit.async.call[!lit.signature<("err": !lit.ref<index, mut #lit.any.lifetime> byref_error, "res": !lit.ref<index, mut #lit.any.lifetime> byref_result) throws|async -> ()>: @async_fn_throws]()
   kgen.return
 }
 
@@ -55,7 +55,7 @@ lit.func @varDecl(%arg0: index) -> index {
 // CHECK-LABEL: kgen.generator @varDecl2
 // CHECK-SAME:  (%[[ARG0:.*]]: index)
 // CHECK-NEXT: %0 = pop.stack_allocation 1 x index
-// CHECK-NEXT: %1 = builtin.unrealized_conversion_cast %0 : !kgen.pointer<index> to !lit.ref<index, mut #lit.lifetime>
+// CHECK-NEXT: %1 = builtin.unrealized_conversion_cast %0 : !kgen.pointer<index> to !lit.ref<index, mut #lit.any.lifetime>
 // CHECK-NEXT: kgen.return
 lit.func @varDecl2(%arg0: index) {
   %a = lit.var.decl "a" var : !lit.ref<index, mut alife>
@@ -76,7 +76,7 @@ lit.func @decorated_fn()
 // CHECK-LABEL: @generic_types_retain_convention
 lit.func @generic_types_retain_convention<T: type>[imm a](
   // CHECK: %arg0: !kgen.paramref<T>,
-  // CHECK: %arg1: !lit.ref<T, imm #lit.lifetime> inout,
+  // CHECK: %arg1: !lit.ref<T, imm #lit.any.lifetime> inout,
   // CHECK: %arg2: !kgen.paramref<T> owned,
   // CHECK: %arg3: index,
   // CHECK: %arg4: !kgen.pointer<index> owned
@@ -318,7 +318,7 @@ lit.func @return_raise_or(%cond: i1, %err: !lit.struct<@Error>) -> !kgen.variant
 }
 
 // CHECK-LABEL: kgen.generator @removeMetadata
-// CHECK-SAME: (%arg0: !lit.ref<index, imm #lit.lifetime> inout) throws ->
+// CHECK-SAME: (%arg0: !lit.ref<index, imm #lit.any.lifetime> inout) throws ->
 lit.func @removeMetadata[imm a](%arg0: !lit.ref<index, imm a> inout) throws -> !kgen.variant<@Error, index> {
   %0 = index.constant 0
   %1 = kgen.variant.create %0, 1 : <@Error, index>
@@ -344,10 +344,10 @@ lit.globalvar.decl @foo : index {
 lit.globalvar.decl @bar : index {
   // CHECK-NEXT: %0 = kgen.global.address @foo
   // CHECK-NEXT:  builtin.unrealized_conversion_cast %0
-  lit.globalvar.ref @foo : <index, mut #lit.lifetime>
+  lit.globalvar.ref @foo : <index, mut #lit.any.lifetime>
   // CHECK-NEXT: %2 = kgen.global.address @baz
   // CHECK-NEXT:  builtin.unrealized_conversion_cast %2
-  lit.globalvar.ref @baz : <index, mut #lit.lifetime>
+  lit.globalvar.ref @baz : <index, mut #lit.any.lifetime>
   // CHECK-NEXT: kgen.return
 }, {
 }
@@ -355,14 +355,14 @@ lit.globalvar.decl @bar : index {
 
 // CHECK: kgen.global @baz : index [{{.*}}](1)
 lit.globalvar.decl @baz : index {
-  lit.globalvar.ref @foo : <index, mut #lit.lifetime>
+  lit.globalvar.ref @foo : <index, mut #lit.any.lifetime>
 }, {
 }
 
 // CHECK: kgen.global @boo : index [{{.*}}](3)
 lit.globalvar.decl @boo : index {
-  lit.globalvar.ref @bar : <index, mut #lit.lifetime>
-  lit.globalvar.ref @baz : <index, mut #lit.lifetime>
+  lit.globalvar.ref @bar : <index, mut #lit.any.lifetime>
+  lit.globalvar.ref @baz : <index, mut #lit.any.lifetime>
 }, {
 }
 
@@ -375,7 +375,7 @@ lit.file_module @module {
   // CHECK-LABEL: kgen.generator @"module::ref_exported"
   lit.func @ref_exported() {
     // CHECK-NEXT: kgen.global.address @foo : <index>
-    %0 = lit.globalvar.ref @module::@exported : <index, mut #lit.lifetime>
+    %0 = lit.globalvar.ref @module::@exported : <index, mut #lit.any.lifetime>
     kgen.return
   }
 }
@@ -385,9 +385,9 @@ lit.file_module @module {
 // CHECK: kgen.generator @"(ctor_fn)self"
 lit.globalvar.decl @self : index {
   // CHECK-NEXT: kgen.global.address @self
-  lit.globalvar.ref @self : <index, mut #lit.lifetime>
+  lit.globalvar.ref @self : <index, mut #lit.any.lifetime>
 }, {
-  lit.globalvar.ref @self : <index, mut #lit.lifetime>
+  lit.globalvar.ref @self : <index, mut #lit.any.lifetime>
 }
 
 // -----
@@ -480,9 +480,9 @@ lit.struct.decl @Mem   {
 }
 
 // CHECK-LABEL: kgen.generator @getThing
-// CHECK-SAME:(%arg0: !lit.ref<@Mem, mut #lit.lifetime> byref_result)
+// CHECK-SAME:(%arg0: !lit.ref<@Mem, mut #lit.any.lifetime> byref_result)
 lit.func @getThing[mut abc](%res: !lit.ref<!Mem, mut abc> byref_result, |) -> !kgen.none {
-  // CHECK-NEXT: kgen.param.declare.region localTest = (%arg1: !lit.ref<@Mem, mut #lit.lifetime> byref_result) capturing
+  // CHECK-NEXT: kgen.param.declare.region localTest = (%arg1: !lit.ref<@Mem, mut #lit.any.lifetime> byref_result) capturing
   lit.func localTest[mut lt](%__result__[__result__]: !lit.ref<!Mem, mut lt> byref_result, |) capturing -> !kgen.none {
     // CHECK-NEXT: call @"Mem::__init__"(%arg1)
     %1 = lit.call @Mem::@__init__[mut lt](%__result__) : !lit.signature<[1]("self": !lit.ref<!Mem, mut *[0,0]> init_self, |) -> !kgen.none>
@@ -490,7 +490,7 @@ lit.func @getThing[mut abc](%res: !lit.ref<!Mem, mut abc> byref_result, |) -> !k
     kgen.return %none : !kgen.none
   }
   // CHECK: }
-  // CHECK-NEXT: kgen.call_param[(!lit.ref<@Mem, mut #lit.lifetime> byref_result) capturing -> !kgen.none: localTest](%arg0)
+  // CHECK-NEXT: kgen.call_param[(!lit.ref<@Mem, mut #lit.any.lifetime> byref_result) capturing -> !kgen.none: localTest](%arg0)
   %0 = lit.call[!lit.signature<[1]("__result__": !lit.ref<!Mem, mut *[0,0]> byref_result, |) capturing -> !kgen.none>: localTest][mut abc](%res)
   %none = kgen.param.constant: none = <#kgen.none>
   kgen.return %none : !kgen.none
@@ -498,7 +498,7 @@ lit.func @getThing[mut abc](%res: !lit.ref<!Mem, mut abc> byref_result, |) -> !k
 
 
 // CHECK-LABEL: kgen.generator @callThing
-// CHECK-SAME: (%arg0: !lit.ref<@Mem, mut #lit.lifetime> byref_result)
+// CHECK-SAME: (%arg0: !lit.ref<@Mem, mut #lit.any.lifetime> byref_result)
 lit.func @callThing[mut lt](%__result__: !lit.ref<!Mem, mut lt> byref_result, |) -> !kgen.none attributes {isParametric, sourceName = "callThing", specialFnKind = 0 : i8} {
   // CHECK-NEXT: kgen.call @getThing(%arg0)
   %0 = lit.call @getThing[mut lt](%__result__) : !lit.signature<[1]("res": !lit.ref<!Mem, mut *[0,0]> byref_result, |) -> !kgen.none>
@@ -514,9 +514,9 @@ lit.func @testLifetimeOf2[imm *"a`"](%a: !lit.ref<!Mem, imm *"a`"> borrow_in_mem
 }
 
 // CHECK-LABEL: kgen.generator @callLifetimes
-// CHECK-SAME: (%arg0: !lit.ref<index, mut #lit.lifetime>) -> !lit.ref<index, mut #lit.lifetime>
+// CHECK-SAME: (%arg0: !lit.ref<index, mut #lit.any.lifetime>) -> !lit.ref<index, mut #lit.any.lifetime>
 lit.func @callLifetimes[mut lt](%arg0[*""]: !lit.ref<index, mut lt>) -> !lit.ref<index, mut lt> {
-  // CHECK: kgen.call @callLifetimes(%arg0) : (!lit.ref<index, mut #lit.lifetime>) -> !lit.ref<index, mut #lit.lifetime>
+  // CHECK: kgen.call @callLifetimes(%arg0) : (!lit.ref<index, mut #lit.any.lifetime>) -> !lit.ref<index, mut #lit.any.lifetime>
   %0 = lit.call @callLifetimes[mut lt](%arg0) : !lit.signature<[1](!lit.ref<index, mut *[0,0]>) -> !lit.ref<index, mut *[0,0]>>
   kgen.return %0 : !lit.ref<index, mut lt>
 }
@@ -525,17 +525,17 @@ lit.func @callLifetimes[mut lt](%arg0[*""]: !lit.ref<index, mut lt>) -> !lit.ref
 // This should drop the explicit lifetime parameters since they are singletons.
 
 // CHECK-LABEL: kgen.generator @takes_life_explicit<ismut: i1, size, val: simd<size, f32>>
-// CHECK-SAME: (%arg0: !lit.ref<@Mem, mut=ismut, #lit.lifetime> byref_result)
+// CHECK-SAME: (%arg0: !lit.ref<@Mem, mut=ismut, #lit.any.lifetime> byref_result)
 lit.func @takes_life_explicit<ismut: i1, life: !lit.lifetime<ismut>, size: index, val: !pop.simd<size, f32>>
                     (%ref: !lit.ref<!Mem, mut=ismut, life> byref_result, |) {
   kgen.return
 }
 
 // CHECK-LABEL: kgen.generator @call_takes_life_explicit
-// CHECK-SAME: <val: simd<4, f32>>(%arg0: !lit.ref<@Mem, mut #lit.lifetime> byref_result)
+// CHECK-SAME: <val: simd<4, f32>>(%arg0: !lit.ref<@Mem, mut #lit.any.lifetime> byref_result)
 lit.func @call_takes_life_explicit<val: !pop.simd<4, f32>>[mut lt](%__result__: !lit.ref<!Mem, mut lt> byref_result, |) {
   // CHECK-NEXT: kgen.call @takes_life_explicit<:i1 1, 4, :simd<4, f32> val>(%arg0)
-  // CHECK-SAME: : (!lit.ref<@Mem, mut #lit.lifetime> byref_result) -> () 
+  // CHECK-SAME: : (!lit.ref<@Mem, mut #lit.any.lifetime> byref_result) -> () 
   lit.call @takes_life_explicit<:i1 1, :!lit.lifetime<1> lt, :index 4, :!pop.simd<4, f32> val>(%__result__)
       : !lit.signature<("ref": !lit.ref<!Mem, mut lt> byref_result, |) -> ()>
   kgen.return

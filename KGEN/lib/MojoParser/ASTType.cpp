@@ -581,8 +581,13 @@ static void printDemangledParam(raw_ostream &os, TypedAttr param,
     return;
   }
 
-  if (isa<LifetimeAttr>(param)) {
-    os << "MutableStaticLifetime";
+  if (auto anyLife = dyn_cast<AnyLifetimeAttr>(param)) {
+    if (anyLife.getType().isMutableKnown(true))
+      os << "MutableAnyLifetime";
+    else if (anyLife.getType().isMutableKnown(false))
+      os << "MutableAnyLifetime";
+    else
+      os << "SomeAnyLifetime";
     return;
   }
 

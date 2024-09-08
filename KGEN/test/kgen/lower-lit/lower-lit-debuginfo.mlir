@@ -14,9 +14,9 @@
 // CHECK-NEXT:  } loc(#[[LOC_DTOR]])
 // CHECK-NEXT:  kgen.global @foo : index [@"(ctor_fn)foo", @"(dtor_fn)foo"](0) loc(#[[LOC_OP:.*]])
 lit.globalvar.decl @foo : index {
-  lit.globalvar.ref @foo : <index, mut #lit.lifetime> loc(fused<#file>["foo.mlir":9:4])
+  lit.globalvar.ref @foo : <index, mut #lit.any.lifetime> loc(fused<#file>["foo.mlir":9:4])
 }, {
-  lit.globalvar.ref @foo : <index, mut #lit.lifetime> loc(fused<#file>["foo.mlir":10:4])
+  lit.globalvar.ref @foo : <index, mut #lit.any.lifetime> loc(fused<#file>["foo.mlir":10:4])
 } loc(fused<#file>["foo.mlir":8:4])
 
 // CHECK-DAG: #[[FILE:.*]] = #debuginfo.file<"foo.mlir" in "/">

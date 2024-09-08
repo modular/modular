@@ -755,20 +755,17 @@ TypedAttr LifetimeUnionAttr::get(ArrayRef<TypedAttr> operandsIn,
                                  LifetimeType type) {
 
   // Canonicalize the operands, sorting by name/index and eliminating raw
-  // #lit.lifetime members.
+  // #lit.any.lifetime members.
   SmallVector<TypedAttr> operands(operandsIn);
 
   // Preprocess operands.
   for (size_t i = 0, e = operands.size(); i != e; ++i) {
     assert(operands[i].getType() == type &&
            "all members of a lifetime union must have matching type");
-    // Drop #lit.lifetime, they carry no information.
-    if (::isa<LifetimeAttr>(operands[i])) {
-      operands[i] = operands.back();
-      operands.pop_back();
-      --e, --i;
-      continue;
-    }
+    // Union{a, b, #lit.any.lifetime} => #lit.any.lifetime since #lit.lifetime
+    // represents "possibly anything".
+    if (::isa<AnyLifetimeAttr>(operands[i]))
+      return operands[i];
 
     // Flatten any of the same operation into the operand list:
     // `(union x, (union y, z))` => `(union x, y, z)`.
@@ -791,15 +788,12 @@ TypedAttr LifetimeUnionAttr::get(ArrayRef<TypedAttr> operandsIn,
   // Remove duplicates which will now be sorted next to each other.
   removeDuplicates(operands);
 
-  // If no results, return a plain lifetime attr.
-  if (operands.empty())
-    return LifetimeAttr::get(type);
+  // If one result, use it.
   if (operands.size() == 1)
     return operands[0];
 
   // Otherwise, for multiple elements actually form a union.
-  auto resultType = ::cast<LifetimeType>(operands[0].getType());
-  return LifetimeUnionAttr::Base::get(type.getContext(), operands, resultType);
+  return LifetimeUnionAttr::Base::get(type.getContext(), operands, type);
 }
 
 TypedAttr LifetimeUnionAttr::get(MLIRContext *ctx,
@@ -855,8 +849,8 @@ TypedAttr LifetimeMutCastAttr::get(TypedAttr operand, TypedAttr isMutable) {
     return get(mutCast.getOperand(), isMutable);
 
   // Singletons don't need a cast, just form one with the new mutability.
-  if (::isa<LifetimeAttr>(operand))
-    return LifetimeAttr::get(isMutable);
+  if (::isa<AnyLifetimeAttr>(operand))
+    return AnyLifetimeAttr::get(isMutable);
 
   // Push into union so it cancels out.
   if (auto unionAttr = ::dyn_cast<LifetimeUnionAttr>(operand)) {
@@ -896,7 +890,7 @@ TypedAttr LifetimeFieldAttr::get(TypedAttr structLifetime, StringAttr field) {
   // If we have the global mutable lifetime, treat it conservatively by
   // returning the global mutable lifetime.  It isn't wise to try to derive
   // information from something where lifetimes have been casted away.
-  if (::isa<LifetimeAttr>(structLifetime))
+  if (::isa<AnyLifetimeAttr>(structLifetime))
     return structLifetime;
 
   // We push any mutability casts outside of ourselves.
@@ -981,7 +975,7 @@ LifetimeSetAttr LifetimeSetAttr::get(ArrayRef<TypedAttr> operands,
       continue;
     }
     // This doesn't carry any information. Just drop it.
-    if (::isa<LifetimeAttr>(operand))
+    if (::isa<AnyLifetimeAttr>(operand))
       continue;
     // Break up unions into their constituents without mutcasts.
     if (auto unionAttr = ::dyn_cast<LifetimeUnionAttr>(operand)) {

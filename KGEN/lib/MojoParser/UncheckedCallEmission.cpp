@@ -46,7 +46,7 @@ static CValue emitVariadicPackConstructor(
   // If there was no lifetime specified, use an immortal one with the same
   // mutability.
   if (!lifetimeToUse)
-    lifetimeToUse = LifetimeAttr::get(packType.getLifetime().getType());
+    lifetimeToUse = AnyLifetimeAttr::get(packType.getLifetime().getType());
 
   // Rebind the !lit.ref.pack with the common lifetime.
   packType = RefPackType::get(packType.getVariadic(), lifetimeToUse,
@@ -459,7 +459,7 @@ LogicalResult CallEmitter::emitRemainingPosOperands(
     if (auto refType = dyn_cast<RefType>(expectedVararg.getElementType())) {
       auto lifetime = getCommonLifetime();
       if (!lifetime) // No arguments, use immortal with same mutability.
-        lifetime = LifetimeAttr::get(refType.getLifetime().getType());
+        lifetime = AnyLifetimeAttr::get(refType.getLifetime().getType());
 
       refType = refType.getWithLifetime(getCommonLifetime());
       expectedType = VariadicType::get(refType, expectedVararg.getConvention());
@@ -841,7 +841,8 @@ Value CallEmitter::emitPreemittedArgumentAsDynamicValue(
           PointerType::get(sbValue.getType()));
       emitter.builder->create<POP::StackAllocLifetimeStartOp>(argLoc, ptr);
       emitter.builder->create<POP::StoreOp>(argLoc, sbValue, ptr);
-      auto immortal = emitter.builder->getAttr<LifetimeAttr>(/*isMut=*/false);
+      auto immortal =
+          emitter.builder->getAttr<AnyLifetimeAttr>(/*isMut=*/false);
       auto ref =
           emitter.builder->create<RefFromPointerOp>(argLoc, ptr, immortal,
                                                     /*startUninit=*/false,
@@ -1235,7 +1236,7 @@ void ExclusivityChecker::checkLifetimeAccess(Value val,
   lifetime = LifetimeMutCastAttr::strip(lifetime);
 
   // Accesses to the global lifetime never conflict.
-  if (isa<LifetimeAttr>(lifetime))
+  if (isa<AnyLifetimeAttr>(lifetime))
     return;
 
   // Determine whether we've seen this leaf lifetime before.
@@ -1502,7 +1503,7 @@ CValue ExprEmitter::emitCallUnchecked(RValue callee,
       // lifetimes for these things?
       if (calleeSig.isAsync()) {
         implicitLifetimes.push_back(
-            LifetimeAttr::get(getContext(), /*isMutable=*/true));
+            AnyLifetimeAttr::get(getContext(), /*isMutable=*/true));
         continue;
       }
 
@@ -1512,7 +1513,7 @@ CValue ExprEmitter::emitCallUnchecked(RValue callee,
       // because ByRefResult is at the end of the list.
       if (convention == ArgConvention::ByRefResult) {
         implicitLifetimes.push_back(
-            LifetimeAttr::get(getContext(), /*isMutable=*/true));
+            AnyLifetimeAttr::get(getContext(), /*isMutable=*/true));
         FunctionType remappedCalleeType =
             calleeSig.substituteImplicitLifetimesIntoValues(
                 implicitLifetimes, [&]() -> InFlightDiagnostic {
