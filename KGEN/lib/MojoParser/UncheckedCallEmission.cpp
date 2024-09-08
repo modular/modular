@@ -1072,7 +1072,7 @@ TypedAttr CallEmitter::emitCallInParamContext(
     // conversion).
     if (SignatureType::hasAddress(convention)) {
       arg = StoreToMemAttr::get(
-          arg, RefType::getImmortal(arg.getType(), /*isMut=*/true));
+          arg, RefType::getAnyLifetime(arg.getType(), /*isMut=*/true));
     }
 
     // Emit a rebind if the refined type does not match the callee arg type.

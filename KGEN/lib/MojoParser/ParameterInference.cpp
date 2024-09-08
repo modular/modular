@@ -691,10 +691,10 @@ ParameterInferenceState::inferOneOperand(ASTExprAnd<AnyValue> operand,
       return matchTypes(valueRefType, expectedType);
 
     // Otherwise, we'll need to drop this value into a temporary.  For now, we
-    // infer it as immortal.  We bind the lifetime directly and then handle it
-    // like any other argument because we can support implicit conversions.
+    // infer it as AnyLifetime.  We bind the lifetime directly and then handle
+    // it like any other argument because we can support implicit conversions.
     valueRefType =
-        RefType::getImmortal(argVal.getRValueType(), /*isMut=*/false);
+        RefType::getAnyLifetime(argVal.getRValueType(), /*isMut=*/false);
     auto expectedRef = cast<RefType>(expectedType);
 
     (void)matchParams(valueRefType.getLifetime(), expectedRef.getLifetime());

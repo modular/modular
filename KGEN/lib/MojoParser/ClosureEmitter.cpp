@@ -44,9 +44,7 @@ ClosureEmitter::ClosureEmitter(ASTDecl &moduleDecl, SharedState &shared)
       copyFieldAttr(StringAttr::get(ctx, "copy")),
       callFieldAttr(StringAttr::get(ctx, "call")),
       callMethodAttr(StringAttr::get(ctx, "closureCallMethod")),
-      opaquePtrType(PointerType::get(KGEN::NoneType::get(ctx))),
-      opaqueRefType(
-          RefType::getImmortal(KGEN::NoneType::get(ctx), /*isMut=*/true)) {}
+      opaquePtrType(PointerType::get(KGEN::NoneType::get(ctx))) {}
 
 static void addFieldsToStruct(StructDeclOp structOp, ArrayRef<Type> fields) {
   OpBuilder b(structOp.getRegion());

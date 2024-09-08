@@ -40,7 +40,8 @@ static ASTType processLifetimeSpecifier(const ExprNode *lifetimeExpr,
   // For errors, return "RefType(TypeCheckErrorType)" to maintain the invariant
   // that all "ref" values have RefType, but their RValue type is an error.
   auto hadError = [&]() -> ASTType {
-    return RefType::getImmortal(shared.getTypeCheckErrorType(), /*isMut*/ true);
+    return RefType::getAnyLifetime(shared.getTypeCheckErrorType(),
+                                   /*isMut*/ true);
   };
 
   // Propagate already disgnosed errors.
