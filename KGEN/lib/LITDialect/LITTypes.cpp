@@ -522,6 +522,7 @@ OptionalParseResult LifetimeType::parseValue(AsmParser &p,
       result = ImplicitLifetimeRefAttr::get(depth, index, *this);
       return processPostFix();
     }
+
     // We don't support *?
     p.emitError(p.getCurrentLocation(), "unknown lifetime value");
     return failure();
@@ -730,15 +731,16 @@ LifetimeType RefType::getLifetimeType() {
 }
 
 /// Return a reference to the specified element type and mutability with an
-/// immortal (#lit.any.lifetime) lifetime.
-RefType RefType::getImmortal(Type elementType, bool isMut,
-                             TypedAttr addrSpace) {
+/// #lit.any.lifetime lifetime.
+RefType RefType::getAnyLifetime(Type elementType, bool isMut,
+                                TypedAttr addrSpace) {
   return get(elementType, AnyLifetimeAttr::get(elementType.getContext(), isMut),
              addrSpace);
 }
 
-RefType RefType::getImmortal(Type elementType, bool isMut, unsigned addrSpace) {
-  return getImmortal(
+RefType RefType::getAnyLifetime(Type elementType, bool isMut,
+                                unsigned addrSpace) {
+  return getAnyLifetime(
       elementType, isMut,
       IntegerAttr::get(IndexType::get(elementType.getContext()), addrSpace));
 }

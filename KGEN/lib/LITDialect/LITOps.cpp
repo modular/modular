@@ -1854,7 +1854,7 @@ DebugInfo::DIScopeAttr GlobalVarDeclOp::getLocScope() {
 
 void GlobalVarRefOp::build(OpBuilder &builder, OperationState &state,
                            GlobalVarDeclOp op) {
-  build(builder, state, RefType::getImmortal(op.getType(), /*isMut=*/true),
+  build(builder, state, RefType::getAnyLifetime(op.getType(), /*isMut=*/true),
         getFullyResolvedSymbolRef(op));
 }
 

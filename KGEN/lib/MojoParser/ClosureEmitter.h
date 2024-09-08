@@ -67,7 +67,6 @@ private:
   StringAttr selfName, otherName, ptrToImplName, dtorFieldAttr;
   StringAttr copyFieldAttr, callFieldAttr, callMethodAttr;
   PointerType opaquePtrType;
-  RefType opaqueRefType;
 
   /// Given a closure wrapper, collect the top level function types.
   TopLevelTypes collectTopLevelFunctionTypes(StructDeclOp closureWrapper);

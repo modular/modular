@@ -1093,7 +1093,7 @@ CValue ExprEmitter::emitConstructorCall(ASTType type,
   // Provide a self value so parameter inference can infer parameters from
   // typeof(self).
   assert(!callee.baseValue && "Shouldn't have a self value yet");
-  auto attr = UnknownAttr::get(RefType::getImmortal(type, true));
+  auto attr = UnknownAttr::get(RefType::getAnyLifetime(type, true));
   callee.baseValue = {PValue(attr), expr};
 
   return callee.emitCall(std::move(callOperands), dest, *this);
@@ -1204,7 +1204,7 @@ FailureOr<PValue> OverloadSet::canConstructType(
   // because the selfexpr should really be an LValue.
   auto inferType =
       requiredType.getWithUnknownParametersReplaced(scopeInfo.shared);
-  auto attr = UnknownAttr::get(RefType::getImmortal(inferType, true));
+  auto attr = UnknownAttr::get(RefType::getAnyLifetime(inferType, true));
   operands.addSelf({PValue(attr), expr});
 
   // Install the Self type parameters on the callee directly, since they cannot

@@ -603,7 +603,7 @@ OverallOpValueEffect LIT::getOperationEffects(
   if (isa<LIT::TryOp>(op))
     return OverallOpValueEffect::tryOp;
 
-  assert(!isa<HLCF::SwitchOp>(op) && "Only created by LowerSuspention Points");
+  assert(!isa<HLCF::SwitchOp>(op) && "Only created by LowerSuspension Points");
   return OverallOpValueEffect::unknownOp;
 }
 
