@@ -436,10 +436,10 @@ struct MojoCallContextPtr:
         ](self.ptr, context.ctx.handle)
 
     @always_inline
-    fn get_device_context(self) -> ref [ImmutableStaticLifetime] DeviceContext:
+    fn get_device_context(self) -> ref [ImmutableAnyLifetime] DeviceContext:
         """Get the device context held by the MojoCallContext.
 
-        Note: it is safe to use ImmutableStaticLifetime here because get_device_context()
+        Note: it is safe to use ImmutableAnyLifetime here because get_device_context()
         is only used within kernels and the DeviceContext lifetime is managed by
         the graph compiler.
         """
