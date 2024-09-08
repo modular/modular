@@ -245,7 +245,7 @@ def LIT_AnyStructType : LITType<"AnyStruct", "anystruct",
     /// Return the struct type this metatype corresponds to.
     StructType getStructType();
 
-    /// Bind parameter values to the metatype.
+    /// Bind parameter values to the metatype, returning a new metatype.
     AnyStructType bind(ArrayRef<TypedAttr> values) const;
     /// Return whether the type is a metatype.
     bool isMetaType() { return true; }
