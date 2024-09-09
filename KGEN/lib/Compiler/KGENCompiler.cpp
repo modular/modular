@@ -330,16 +330,8 @@ compileElaboratorAsm(GeneratorOp func, SymbolConstantAttr symbol,
     pm.enableTiming(std::make_unique<TimeProfilerTimingManager>());
   configurePassManager(pm);
 
-  pm.addPass(createElaborateGenerators(
-      target, elaboratorOptions,
-      [=](GeneratorOp func, SymbolConstantAttr symbol, StringAttr name,
-          const SymbolTable &symtab, TargetInfoAttr target,
-          EmissionKind emissionKind,
-          mlir::DiagnosticEngine::HandlerID diagHandlerID) {
-        // Recursion...!
-        return compileElaboratorAsm(func, symbol, name, symtab, target,
-                                    emissionKind, options, diagHandlerID);
-      }));
+  pm.addPass(createElaborateGenerators(target, elaboratorOptions, options,
+                                       compileElaboratorAsm));
   buildPostElaborationPipeline(pm, options);
 
   if (failed(pm.run(*module)))
@@ -388,21 +380,9 @@ static ErrorOr<RCRef<Cache::BlobCacheBackend>> getMojoCacheBackend() {
 /// The created elaborator pass uses a default specialization executor that
 /// JITs and executes in-process.
 std::unique_ptr<Pass> KGEN::createElaborateGeneratorsWithDefaultJIT() {
-  CompilationOptions options;
-  return createElaborateGenerators(
-      /*target=*/{}, /*options=*/{},
-      [=](GeneratorOp func, SymbolConstantAttr symbol, StringAttr name,
-          const SymbolTable &symtab, TargetInfoAttr target,
-          EmissionKind emissionKind,
-          mlir::DiagnosticEngine::HandlerID diagHandlerID) {
-        return compileElaboratorAsm(func, symbol, name, symtab, target,
-                                    emissionKind, options, diagHandlerID);
-      });
+  return createElaborateGenerators(TargetInfoAttr(), /*elabOpts=*/{},
+                                   /*options=*/{}, compileElaboratorAsm);
 }
-
-//===----------------------------------------------------------------------===//
-// createLowerCustomOpsWithDefaultJIT
-//===----------------------------------------------------------------------===//
 
 /// Create an instance of the elaborator pass using the given configuration.
 /// The created elaborator pass uses a default specialization executor that
@@ -423,15 +403,7 @@ std::unique_ptr<Pass> KGEN::createLowerCustomOpsWithDefaultJIT() {
 void KGEN::populateElaborateModulePasses(mlir::PassManager &pm,
                                          TargetInfoAttr target,
                                          const CompilationOptions &options) {
-  buildElaborateModulePipeline(
-      pm, target, options, /*compileAsmFn=*/
-      [=](GeneratorOp func, SymbolConstantAttr symbol, StringAttr name,
-          const SymbolTable &symtab, TargetInfoAttr target,
-          EmissionKind emissionKind,
-          mlir::DiagnosticEngine::HandlerID diagHandlerID) {
-        return compileElaboratorAsm(func, symbol, name, symtab, target,
-                                    emissionKind, options, diagHandlerID);
-      });
+  buildElaborateModulePipeline(pm, target, options, compileElaboratorAsm);
   buildPostElaborationPipeline(pm, options);
 }
 

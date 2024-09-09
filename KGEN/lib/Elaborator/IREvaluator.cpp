@@ -210,9 +210,6 @@ IREvaluator::evaluateInstantiateStruct(ParamOperatorAttr op) {
 FailureOr<TypedAttr> IREvaluator::evaluateGetEnv(ParamOperatorAttr op) {
   // Grab the module from the elaborator. This is a read operation of memory
   // that is not modified during elaboration, so no synchronization is needed.
-  EnvAttr env = elaborator->getCompilationEnvAttr();
-  assert(env && "expected an environment attribute on the module");
-
   auto name = dyn_cast<StringAttr>(op.getOperands().front());
   if (!name) {
     emitError({*errorLoc, "'get_env' name did not narrow to a constant"});
@@ -221,7 +218,7 @@ FailureOr<TypedAttr> IREvaluator::evaluateGetEnv(ParamOperatorAttr op) {
 
   // Get the `StringRef` out of the `StringAttr` because the latter comes with
   // a `StringType` type that makes pointer comparisons fails.
-  Attribute value = env.getValues().get(name.getValue());
+  Attribute value = elaborator->env.getValues().get(name.getValue());
   if (isa<IndexType, StringType>(op.getType()) && !value) {
     emitError({*errorLoc, "define '" + name.getValue() +
                               "' does not exist, please provide it via -D"});
@@ -274,7 +271,7 @@ FailureOr<TypedAttr>
 IREvaluator::evaluateCompileAssembly(ParamOperatorAttr op) {
   // Cheeky copy. The state of the symbol table right at this moment is
   // sufficient to produce a standalone object for the generator being JIT'd.
-  SymbolTable symtabCopy = elaborator->getSliceSymTab();
+  SymbolTable symtabCopy = elaborator->oldSymTab;
 
   // Slice out a stanalone module to re-elaborate with the new target.
   TargetInfoAttr target = cast<TargetParamAttr>(op.getOperand(0)).getTarget();
@@ -309,9 +306,9 @@ IREvaluator::evaluateCompileAssembly(ParamOperatorAttr op) {
 
   // Capture the diagnostics that may be emitted.
   DiagnosticHandler handler(ctx);
-  ErrorOr<CrossDeviceFunction> closure =
-      elaborator->getCompileAsmFn()(func, symbol, name, symtabCopy, target,
-                                    emissionKind, handler.getHandlerID());
+  ErrorOr<CrossDeviceFunction> closure = elaborator->compileAsmFn(
+      func, symbol, name, symtabCopy, target, emissionKind, elaborator->options,
+      handler.getHandlerID());
   handler.release();
 
   if (closure.isError()) {
@@ -349,13 +346,16 @@ FailureOr<TypedAttr> IREvaluator::evaluateGetLinkageName(ParamOperatorAttr op) {
   // need to resolve the symbol name after elaboration.
   TargetInfoAttr target = cast<TargetParamAttr>(op.getOperand(0)).getTarget();
   auto symbol = dyn_cast<SymbolConstantAttr>(op.getOperand(1));
-  if (!symbol || !symbol.getType().isConcrete()) {
+  if (!symbol) {
     emitError({*errorLoc, "'get_linkage_name' function is not concrete"});
     return failure();
   }
-  auto genOp = elaborator->getSliceSymTab().lookup<GeneratorOp>(
+  auto genOp = elaborator->oldSymTab.lookup<GeneratorOp>(
       symbol.getSymbol().getRootReference());
   assert(genOp && "expected a valid generator reference");
+
+  if (!symbol.getType().isConcrete())
+    return {StringAttr::get(genOp.getSymName(), op.getType())};
 
   // HACK HACK HACK: Our current name mangling scheme is not compatible with the
   // NVPTX backend.

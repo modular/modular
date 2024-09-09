@@ -370,15 +370,16 @@ static void collectOpsToProcessInside(Region &toProcess, ImplNode *parent,
 
 Elaborator::Elaborator(SymbolTable &symtab,
                        ParameterCollector::Analysis &paramCache,
-                       TargetInfoAttr target, ElaboratorCallbacks callbacks,
+                       TargetInfoAttr target, const CompilationOptions &options,
+                       ElaboratorCompileAsmFn compileAsmFn,
                        const ElaborateGeneratorsOptions &config)
     : InterpreterCache(target, config.optimizeInterpreter), target(target),
-      config(config), oldSymTab(symtab),
+      options(options), config(config), oldSymTab(symtab),
       env(symtab.getOp()->getAttrOfType<EnvAttr>(EnvAttr::getEnvAttrName())),
       runtime(*loadContext(target.getContext())->get<AsyncRT::Runtime>()),
       g(this->runtime),
       paramCache(paramCache, runtime.getWorkQueue()->getParallelismLevel()),
-      callbacks(std::move(callbacks)) {}
+      compileAsmFn(compileAsmFn) {}
 
 //===----------------------------------------------------------------------===//
 // Elaborator::finalizeInstance
@@ -1732,10 +1733,10 @@ bool Elaborator::diagnoseAndBreakRecursion(unsigned generation,
 // Elaborator::run
 //===----------------------------------------------------------------------===//
 
-LogicalResult Elaborator::run(ModuleOp theModule,
-                              ArrayRef<GeneratorOp> primaryGenerators) {
-  MLIRContext *ctx = theModule.getContext();
-
+LogicalResult
+Elaborator::run(ModuleOp theModule,
+                ArrayRef<std::pair<GeneratorOp, ParameterExprArrayAttr>>
+                    primaryGenerators) {
   // Find any kgen.func we have already - they're already elaborated, and we do
   // not want to re-process them. Add concrete ImplNodes for each one.
   for (FuncOp func : theModule.getOps<FuncOp>()) {
@@ -1744,17 +1745,15 @@ LogicalResult Elaborator::run(ModuleOp theModule,
     addRegion(func.getBodyRegion());
   }
 
-  auto emptyInputParamKey = ParameterExprArrayAttr::get(ctx, {});
   std::vector<AnyAsyncValueRef> primaryChs;
   std::vector<std::unique_ptr<ImplNode>> rootNodes;
   std::vector<ParamNode *> primaryNodes;
   primaryChs.reserve(primaryGenerators.size());
   primaryNodes.reserve(primaryGenerators.size());
-  for (GeneratorOp gen : primaryGenerators) {
+  for (auto [gen, params] : primaryGenerators) {
     // This has no input parameters, so we can create the expansion node with
     // no input parameters.
-    ParamNode *genNode =
-        g.getOrCreate(runtime, emptyInputParamKey, gen, /*depth=*/0);
+    ParamNode *genNode = g.getOrCreate(runtime, params, gen, /*depth=*/0);
     primaryNodes.push_back(genNode);
 
     // Create a special root node for this primary generator.
@@ -1885,10 +1884,11 @@ namespace {
 class ElaborateGeneratorsPass
     : public KGEN::impl::ElaborateGeneratorsBase<ElaborateGeneratorsPass> {
 public:
-  ElaborateGeneratorsPass(const ElaborateGeneratorsOptions &options = {},
+  ElaborateGeneratorsPass(const ElaborateGeneratorsOptions &elabOpts = {},
                           TargetInfoAttr target = nullptr,
+                          const CompilationOptions &options = {},
                           ElaboratorCompileAsmFn compileAsmFn = {})
-      : ElaborateGeneratorsBase(options), target(target),
+      : ElaborateGeneratorsBase(elabOpts), target(target), options(options),
         compileAsmFn(std::move(compileAsmFn)) {}
 
   LogicalResult initialize(MLIRContext *ctx) override {
@@ -1901,49 +1901,44 @@ public:
         return mlir::emitError(UnknownLoc::get(ctx), targetOr.getError());
       target = targetOr.takeValue();
     }
-
-    // Default compile assembly hook will just error.
-    if (!compileAsmFn) {
-      compileAsmFn = +[](GeneratorOp, SymbolConstantAttr, StringAttr,
-                         const SymbolTable &, TargetInfoAttr, EmissionKind,
-                         mlir::DiagnosticEngine::HandlerID) {
-        return Error("internal error: cannot compile assembly without a JIT");
-      };
-    }
     return success();
   }
 
   void runOnOperation() override {
     ModuleOp theModule = getOperation();
 
-    auto &symtab = getAnalysis<mlir::SymbolTableAnalysis>();
+    auto &analysis = getAnalysis<mlir::SymbolTableAnalysis>();
     auto &paramCache = getAnalysis<ParameterCollector::Analysis>();
+    SymbolTable &symtab = analysis.getTopLevelSymbolTable();
 
     // Root elaboration on exports and global variables. These are the
     // generators that elaboration will start from. If there are no such
     // generators, then elaborate anything with no input parameters.
-    DenseSet<GeneratorOp> roots;
-    auto addAsRoot = [&](SymbolRefAttr ref) {
-      roots.insert(symtab.getTopLevelSymbolTable().lookup<GeneratorOp>(
-          cast<FlatSymbolRefAttr>(ref).getValue()));
+    llvm::SetVector<std::pair<GeneratorOp, ParameterExprArrayAttr>> roots;
+    auto emptyParams = ParameterExprArrayAttr::get(&getContext(), {});
+    auto addAsRoot = [&](SymbolRefAttr ref,
+                         ParameterExprArrayAttr params = {}) {
+      if (GeneratorOp gen = symtab.lookup<GeneratorOp>(ref.getLeafReference()))
+        roots.insert({gen, params});
     };
     for (Operation &op : theModule.getOps()) {
-      if (auto gen = dyn_cast<GeneratorOp>(op); gen && gen.isExported()) {
-        roots.insert(gen);
+      if (auto gen = dyn_cast<GeneratorOp>(op);
+          gen && gen.isExported() && gen.getInputParams().empty()) {
+        roots.insert({gen, emptyParams});
       } else if (auto global = dyn_cast<GlobalOp>(op);
                  global && global.getCtor()) {
-        addAsRoot(*global.getCtor());
-        addAsRoot(*global.getDtor());
+        addAsRoot(*global.getCtor(), emptyParams);
+        addAsRoot(*global.getDtor(), emptyParams);
       }
     }
 
     // Extract the top-level, parameterless generators from the main module.
     // These are the only generators that will be elaborated.
-    SmallVector<GeneratorOp> primaryGenerators;
-    for (auto gen : theModule.getOps<GeneratorOp>())
-      if (gen.getInputParams().empty() &&
-          (roots.empty() || roots.contains(gen)))
-        primaryGenerators.push_back(gen);
+    if (roots.empty()) {
+      for (auto gen : theModule.getOps<GeneratorOp>())
+        if (gen.getInputParams().empty())
+          roots.insert({gen, emptyParams});
+    }
 
     // Elaboration is the compilation phase in which the IR goes from
     // target-non-specific to target-specific: in order to fully concretize the
@@ -1961,31 +1956,30 @@ public:
                          EnvAttr::get(DictionaryAttr::get(&getContext())));
     }
 
-    ElaboratorCallbacks callbacks{compileAsmFn};
     ElaborateGeneratorsOptions config{maxDepth, elaborateDebugInfo,
                                       optimizeInterpreter};
 
     VerboseCompilerTimeTraceScope traceScope("elaborate-generators");
 
     // Now, construct and run the elaborator.
-    Elaborator impl(symtab.getTopLevelSymbolTable(), paramCache, target,
-                    std::move(callbacks), config);
-    if (failed(impl.run(theModule, primaryGenerators)))
+    Elaborator impl(symtab, paramCache, target, options, compileAsmFn, config);
+    if (failed(impl.run(theModule, roots.takeVector())))
       return signalPassFailure();
   }
 
 private:
   /// The compilation target.
   TargetInfoAttr target;
+  /// The compilation options.
+  CompilationOptions options;
   /// The functor used to compile a module to assembly.
   ElaboratorCompileAsmFn compileAsmFn;
 };
 } // namespace
 
-std::unique_ptr<mlir::Pass>
-KGEN::createElaborateGenerators(TargetInfoAttr target,
-                                const ElaborateGeneratorsOptions &options,
-                                ElaboratorCompileAsmFn compileAsmFn) {
-  return std::make_unique<ElaborateGeneratorsPass>(options, target,
+std::unique_ptr<mlir::Pass> KGEN::createElaborateGenerators(
+    TargetInfoAttr target, const ElaborateGeneratorsOptions &elabOpts,
+    const CompilationOptions &options, ElaboratorCompileAsmFn compileAsmFn) {
+  return std::make_unique<ElaborateGeneratorsPass>(elabOpts, target, options,
                                                    std::move(compileAsmFn));
 }
