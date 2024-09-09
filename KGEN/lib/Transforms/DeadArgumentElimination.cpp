@@ -560,10 +560,7 @@ void DeadArgumentElimination::rewriteCalleesFromFunction(CallGraphNode *node) {
       auto newCalleeAttr =
           SymbolConstantAttr::get(SymbolRefAttr::get(calleeNode->func),
                                   calleeNode->func.getSignature());
-      auto newOp = b.create<CallOp>(
-          call.getLoc(),
-          calleeNode->func.getSignature().getValues().getResults(),
-          newCalleeAttr, newOperands);
+      auto newOp = b.create<CallOp>(call.getLoc(), newCalleeAttr, newOperands);
 
       kgenCall->replaceAllUsesWith(newOp.getResults());
 

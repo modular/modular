@@ -2047,10 +2047,8 @@ void LowerAsyncFunctionsPass::runOnOperation() {
       if (newSymbolPtr != asyncFuncToColdRampFunctions.end()) {
         auto [newSymbol, continuationType] = newSymbolPtr->getSecond();
         rewriter.setInsertionPoint(op);
-        auto callOp = rewriter.create<CallOp>(
-            invokeOp->getLoc(),
-            PointerType::get(opaqueCoroutineTypes.getHeaderType()), newSymbol,
-            invokeOp.getOperands());
+        auto callOp = rewriter.create<CallOp>(invokeOp->getLoc(), newSymbol,
+                                              invokeOp.getOperands());
         rewriter.replaceOp(invokeOp, callOp);
       } else {
         llvm_unreachable(
@@ -2062,10 +2060,8 @@ void LowerAsyncFunctionsPass::runOnOperation() {
       if (newSymbolPtr != asyncFuncToHotRampFunctions.end()) {
         auto [newSymbol, continuationType] = newSymbolPtr->getSecond();
         rewriter.setInsertionPoint(op);
-        auto callOp = rewriter.create<CallOp>(
-            hotInvokeOp->getLoc(),
-            PointerType::get(opaqueCoroutineTypes.getHeaderType()), newSymbol,
-            hotInvokeOp.getOperands());
+        auto callOp = rewriter.create<CallOp>(hotInvokeOp->getLoc(), newSymbol,
+                                              hotInvokeOp.getOperands());
         rewriter.replaceOp(hotInvokeOp, callOp);
       }
     } else if (auto setErrorResultOp = dyn_cast<SetByRefErrorAndResultOp>(op)) {

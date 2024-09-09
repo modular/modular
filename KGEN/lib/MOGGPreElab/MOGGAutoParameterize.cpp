@@ -638,9 +638,8 @@ public:
 
           // Call it.
           builder.setInsertionPoint(oldCall);
-          auto newCall = builder.create<CallOp>(oldCall.getLoc(),
-                                                oldCall->getResultTypes(),
-                                                symbol, oldCall->getOperands());
+          auto newCall = builder.create<CallOp>(oldCall.getLoc(), symbol,
+                                                oldCall->getOperands());
 
           // Delete the old one.
           oldCall.replaceAllUsesWith(newCall);

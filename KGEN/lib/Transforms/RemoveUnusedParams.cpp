@@ -204,8 +204,8 @@ private:
                                 newFunc.getSignature().getSpecializedSignature(
                                     newParams, oldCall.getLoc()));
 
-    auto newCall = builder.create<CallOp>(
-        oldCall.getLoc(), oldCall->getResultTypes(), symbol, newOperands);
+    auto newCall =
+        builder.create<CallOp>(oldCall.getLoc(), symbol, newOperands);
 
     oldCall.replaceAllUsesWith(newCall);
     oldCall.erase();
