@@ -128,14 +128,14 @@ public:
       StringRef name, ArrayRef<ParamDeclAttr> params,
       PogListAttr paramListAttrs, ArrayRef<Type> argTypes,
       ArrayRef<ArgConvention> argConventions, PogListAttr argListAttrs,
-      Type resultType, ASTDecl &structDecl,
+      Type resultType, ASTDecl &structDecl, SMLoc loc,
       SpecialFunctionKind specialFnID = SpecialFunctionKind::kNormal,
       FnEffects fnEffects = FnEffects(), StringRef suffix = "",
       bool synthetic = true);
   std::pair<LIT::FuncOp, ASTDecl *> synthesizeMethodInStruct(
       StringRef name, ArrayRef<Type> argTypes,
       ArrayRef<ArgConvention> argConventions, PogListAttr argListAttrs,
-      Type resultType, ASTDecl &structDecl,
+      Type resultType, ASTDecl &structDecl, SMLoc loc,
       SpecialFunctionKind specialFnID = SpecialFunctionKind::kNormal,
       FnEffects fnEffects = FnEffects(), StringRef suffix = "",
       bool synthetic = true);

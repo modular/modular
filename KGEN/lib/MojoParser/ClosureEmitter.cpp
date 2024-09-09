@@ -397,7 +397,8 @@ StructDeclOp ClosureEmitter::createClosureWrapperStructDecl(
       "__call__", closureMethodSignatureType.getArguments(),
       closureMethodSignatureType.getArgConventions(),
       closureMethodSignatureType.getArgListAttrs(), resultType, structDecl,
-      SpecialFunctionKind::kNormal, closureMethodSignatureType.getFnEffects(),
+      structDecl.getLoc(), SpecialFunctionKind::kNormal,
+      closureMethodSignatureType.getFnEffects(),
       /*suffix=*/"", /*synthetic=*/false);
 
   // Populate the body of ClosureWrapper::__call__.
@@ -511,7 +512,7 @@ StructDeclOp ClosureEmitter::replaceNestedFunctionWithClosureImplStructDecl(
   auto [callFunc, _] = synthesizeMethodInStruct(
       "__call__", callInputTypes, callConventions,
       PogListAttr::get(ctx, callPogs), closureResultType, structDecl,
-      SpecialFunctionKind::kNormal,
+      structDecl.getLoc(), SpecialFunctionKind::kNormal,
       wrapperSig.getFnEffects().setEscaping(false));
   callFunc.setInlineLevel(InlineLevel::Always);
 

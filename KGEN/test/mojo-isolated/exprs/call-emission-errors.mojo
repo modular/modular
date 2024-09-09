@@ -198,19 +198,19 @@ struct MyStruct:
 fn exclusivity[
     spanlife: MutableLifetime
 ](inout x: MyStruct, span: MyMutSpan[spanlife]):
-    # expected-error @below {{implicit __copyinit__ call argument allows writing a memory location previously writable through another aliased argument}}
+    # expected-error @below {{argument of implicit __copyinit__ call allows writing a memory location previously writable through another aliased argument}}
     # expected-note @below {{'x' value is passed through aliasing 'borrowed' argument}}
     x = x
 
-    # expected-error @below {{implicit __moveinit__ call argument allows writing a memory location previously writable through another aliased argument}}
+    # expected-error @below {{argument of implicit __moveinit__ call allows writing a memory location previously writable through another aliased argument}}
     # expected-note @below {{'x' value is passed through aliasing 'owned' argument}}
     x = x^
 
-    # expected-error @below {{call argument allows writing a memory location previously writable through another aliased argument}}
+    # expected-error @below {{argument of '__copyinit__' call allows writing a memory location previously writable through another aliased argument}}
     # expected-note @below {{'x' value is passed through aliasing 'borrowed' argument}}
     x.__copyinit__(x)
 
-    # expected-error @below {{call argument allows writing a memory location previously writable through another aliased argument}}
+    # expected-error @below {{argument of 'take_two_spans' call allows writing a memory location previously writable through another aliased argument}}
     # expected-note @below {{'spanlife' memory accessed through reference embedded in value of type 'MyMutSpan[spanlife]'}}
     take_two_spans(span, span)
 
@@ -224,21 +224,21 @@ fn inout_ref_exclusivity(inout a: Int, inout b: Int, inout s: MyStruct):
     mutate_two(a, b)
 
     # This is not.
-    # expected-error @below {{call argument allows writing a memory location previously writable through another aliased argument}}
+    # expected-error @below {{argument of 'mutate_two' call allows writing a memory location previously writable through another aliased argument}}
     # expected-note @below {{'a' value is passed through aliasing 'inout' argument}}
     mutate_two(a, a)
 
     # This is ok: field sensitivity.
     mutate_two(s.a, s.b)
 
-    # expected-error @below {{call argument allows writing a memory location previously writable through another aliased argument}}
+    # expected-error @below {{argument of 'mutate_two' call allows writing a memory location previously writable through another aliased argument}}
     # expected-note @below {{'s.a' value is passed through aliasing 'inout' argument}}
     mutate_two(s.a, s.a)
 
-    # expected-error @below {{call argument allows writing a memory location previously writable through another aliased argument}}
+    # expected-error @below {{argument of 'mutate_two' call allows writing a memory location previously writable through another aliased argument}}
     # expected-note @below {{'s' value is passed through aliasing 'inout' argument}}
     mutate_two(s.a, s)
 
-    # expected-error @below {{call argument allows writing a memory location previously writable through another aliased argument}}
+    # expected-error @below {{argument of 'mutate_two' call allows writing a memory location previously writable through another aliased argument}}
     # expected-note @below {{'s' memory accessed through reference embedded in value of type 'Int'}}
     mutate_two(s, s.a)

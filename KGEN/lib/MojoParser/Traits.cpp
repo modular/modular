@@ -135,6 +135,19 @@ static void synthesizeRegisterTraitStub(ASTDecl &structDecl,
                                         SharedState &shared, StringAttr name,
                                         TypedAttr callee,
                                         LITSignatureType memSig) {
+
+  // Figure out the right location for the method so we can keep the stub at
+  // the right location.  This is important if there are derived errors due to
+  // it.
+  SMLoc calleeLoc = structDecl.getLoc();
+  if (auto symbol = dyn_cast<SymbolConstantAttr>(callee)) {
+    // Figure out what is getting called and include it.
+    if (ASTDecl *calleeDecl =
+            shared.declResolver->getDeclForFuncSymbol(symbol.getSymbol())) {
+      calleeLoc = calleeDecl->getLoc();
+    }
+  }
+
   // Synthesize input and result parameter decls.
   SmallVector<ParamDeclAttr> paramDecls;
   SmallVector<TypedAttr> paramValues;
@@ -157,8 +170,8 @@ static void synthesizeRegisterTraitStub(ASTDecl &structDecl,
   auto [thunk, _] = StructEmitter(shared).synthesizeMethodInStruct(
       name, paramDecls, memSig.getParamListAttrs(), types.getInputs(),
       memSig.getArgConventions(), argListAttr, types.getResults().front(),
-      structDecl, SpecialFunctionInfo::getKind(name), memSig.getFnEffects(),
-      "_thunk");
+      structDecl, calleeLoc, SpecialFunctionInfo::getKind(name),
+      memSig.getFnEffects(), "_thunk");
   if (!thunk)
     return;
   DebugInfo::DIBuilder::ScopeGuard diScopeGuard;
@@ -183,9 +196,8 @@ static void synthesizeRegisterTraitStub(ASTDecl &structDecl,
 
   // Construct the call operands from the function block arguments. Ensure
   // keyword-only arguments are specified accordingly.
-  SyntheticNode node(structDecl.getLoc());
-
   CallOperands operands;
+  SyntheticNode node(calleeLoc);
 
   bool hasLegacyInitSelfArg = false;
   for (auto [arg, conv, pogAttr] :
@@ -314,7 +326,8 @@ static void synthesizeSpecialFunction(ASTDecl &structDecl, SharedState &shared,
     auto [dtor, _] = gen.synthesizeMethodInStruct(
         "__del__", selfRefType, ArgConvention::OwnedInMem,
         PogListAttr::get(ctx, {empty}, {PassingKind::PosOnly}),
-        shared.getNoneType(), structDecl, kind, FnEffects(), "_thunk");
+        shared.getNoneType(), structDecl, structDecl.getLoc(), kind,
+        FnEffects(), "_thunk");
     if (!dtor)
       return;
     func = dtor;
@@ -341,7 +354,8 @@ static void synthesizeSpecialFunction(ASTDecl &structDecl, SharedState &shared,
         {ArgConvention::InitSelf, existingConv},
         PogListAttr::get(ctx, {empty, empty},
                          {PassingKind::PosOnly, PassingKind::PosOnly}),
-        shared.getNoneType(), structDecl, kind, FnEffects(), "_thunk");
+        shared.getNoneType(), structDecl, structDecl.getLoc(), kind,
+        FnEffects(), "_thunk");
     if (!ctor)
       return;
     func = ctor;
