@@ -936,22 +936,6 @@ fn mgp_chain_host_to_device[aRuntimeSlot: UInt64, bDevice: StringLiteral]():
 # ===----------------------------------------------------------------------===#
 
 
-struct WrappedDeviceContext(Movable):
-    var _dev_ctx: Optional[DeviceContext]
-
-    @always_inline
-    fn __init__(inout self) raises:
-        self._dev_ctx = None
-
-    @always_inline
-    fn __init__(inout self, owned ctx: DeviceContext) raises:
-        self._dev_ctx = ctx^
-
-    @always_inline
-    fn __moveinit__(inout self, owned existing: Self):
-        self._dev_ctx = existing._dev_ctx^
-
-
 @mogg_register("mgp.device.context.create")
 @export
 fn mgp_device_context_create[
@@ -959,23 +943,16 @@ fn mgp_device_context_create[
 ](
     dummy_chain: Int,
     ctx: StateContext,
-    dev_ctx_ptr: UnsafePointer[DeviceContext],
+    dev_ctx: UnsafePointer[DeviceContext],
     call_ctx: MojoCallContextPtr,
-) raises -> WrappedDeviceContext:
-    if dev_ctx_ptr:
-        var dev_ctx = WrappedDeviceContext(dev_ctx_ptr[])
-        call_ctx.set_stream(dev_ctx._dev_ctx.value().cuda_stream)
-        call_ctx.set_context(dev_ctx._dev_ctx.value().cuda_context)
-        return dev_ctx^
-
+) raises -> Int:
     @parameter
     if "cuda" in bDevice:
-        var dev_ctx = WrappedDeviceContext(DeviceContext())
-        call_ctx.set_stream(dev_ctx._dev_ctx.value().cuda_stream)
-        call_ctx.set_context(dev_ctx._dev_ctx.value().cuda_context)
-        return dev_ctx^
-    # This returns an empty wrapped context
-    return WrappedDeviceContext()
+        debug_assert(dev_ctx, "device context should be defined")
+        call_ctx.set_stream(dev_ctx[].cuda_stream)
+        call_ctx.set_context(dev_ctx[].cuda_context)
+        return 1
+    return 1
 
 
 @export
