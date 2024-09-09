@@ -119,6 +119,9 @@ def LIT_TypeSignatureType : LITType<"TypeSignature", "type_signature",
     /// Return true if the signature has a variadic parameter.
     /// TODO: remove this when migration to variadic indices is complete.
     bool hasVariadicParam() const;
+
+    /// Bind parameter values to the signature, returning a new one.
+    TypeSignatureType bind(ArrayRef<TypedAttr> values) const;
   }];
 }
 

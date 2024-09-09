@@ -128,6 +128,45 @@ ArrayRef<TypedAttr> TypeSignatureType::getDefaultKwOnlyParams() const {
   return getParamListAttrs().getDefaultKwOnly();
 }
 
+/// Bind parameter values to the signature, returning a new one.
+TypeSignatureType TypeSignatureType::bind(ArrayRef<TypedAttr> values) const {
+  assert(values.size() == getParamTypes().size() &&
+         "expected full value set with UnboundAttrs for missing ones");
+
+  PogListAttr paramListAttr = getParamListAttrs();
+
+  SmallVector<Type> newParamTypes;
+  SmallVector<PogMetadataAttr> newPogs;
+  SmallVector<TypedAttr> newPosDefaults;
+  SmallVector<TypedAttr> newKwOnlyDefaults;
+
+  DefaultValueHandler defaultHandler(paramListAttr);
+  ParameterEvaluator evaluator;
+  for (auto [i, val, type, pogAttr] :
+       llvm::enumerate(values, getParamTypes(), paramListAttr.getPogs())) {
+    // If the current value is bound and we have a specified value, use it.
+    if (!::isa<UnboundAttr>(val)) {
+      evaluator.addInputValue(val);
+      continue;
+    }
+
+    // Otherwise it is still unbound, maintain it as such.
+    newParamTypes.push_back(evaluator.getReboundType(type));
+    newPogs.push_back(pogAttr);
+
+    if (TypedAttr defaultOr = defaultHandler.getPosDefault(i))
+      newPosDefaults.push_back(evaluator.replace(defaultOr));
+    else if (TypedAttr defaultOr = defaultHandler.getKwOnlyDefault(i))
+      newKwOnlyDefaults.push_back(evaluator.replace(defaultOr));
+
+    evaluator.addInputValue(
+        ParamIndexRefAttr::get(newParamTypes.size() - 1, newParamTypes.back()));
+  }
+  auto paramListAttrs = PogListAttr::get(getContext(), newPogs, newPosDefaults,
+                                         newKwOnlyDefaults);
+  return TypeSignatureType::get(getContext(), newParamTypes, paramListAttrs);
+}
+
 //===----------------------------------------------------------------------===//
 // StructType
 //===----------------------------------------------------------------------===//
@@ -394,52 +433,32 @@ LIT::StructType AnyStructType::getStructType() {
 AnyStructType AnyStructType::bind(ArrayRef<TypedAttr> values) const {
   assert(getParamValues().size() == values.size() && "expected full value set");
 
-  TypeSignatureType sig = getSignature();
-  PogListAttr paramListAttr = sig.getParamListAttrs();
-  auto sigRange = llvm::enumerate(sig.getParamTypes(), paramListAttr.getPogs());
-  auto sigIt = sigRange.begin();
+  // The AnyStruct will have all of the parameters specified, e.g. something
+  // like:
+  // AnyStructType[Int : AnyType, UnboundAttr : I8, 42 : Int, UnboundAttr: F32]
+  // but the TypeSignatureType will just have [I8, F32].  The input value
+  // bindings must line up where they are already specified, but can further
+  // refine the SignatureType.  See what to pass down to it.
 
-  SmallVector<Type> newParamTypes;
-  SmallVector<PogMetadataAttr> newPogs;
-  SmallVector<TypedAttr> newPosDefaults;
-  SmallVector<TypedAttr> newKwOnlyDefaults;
-
-  DefaultValueHandler defaultHandler(paramListAttr);
-  ParameterEvaluator evaluator;
+  SmallVector<TypedAttr> newSignatureBindings;
+  bool hadNewBinding = false;
   for (auto [cur, val] : llvm::zip(getParamValues(), values)) {
     // If the current value is bound, maintain it.
     if (!::isa<UnboundAttr>(cur)) {
       assert(cur == val && "cannot change bound parameter value");
-      continue;
+    } else {
+      hadNewBinding |= !::isa<UnboundAttr>(val);
+      // Otherwise, propagate it into the TypeSignatureType.
+      newSignatureBindings.push_back(val);
     }
-
-    // If the current value is bound and we have a specified value, use it.
-    if (!::isa<UnboundAttr>(val)) {
-      evaluator.addInputValue(val);
-      ++sigIt;
-      continue;
-    }
-
-    // Otherwise it is still unbound, maintain it as such.
-    auto [i, type, pogAttr] = *sigIt;
-    newParamTypes.push_back(evaluator.getReboundType(type));
-    newPogs.push_back(pogAttr);
-
-    if (TypedAttr defaultOr = defaultHandler.getPosDefault(i))
-      newPosDefaults.push_back(evaluator.replace(defaultOr));
-    else if (TypedAttr defaultOr = defaultHandler.getKwOnlyDefault(i))
-      newKwOnlyDefaults.push_back(evaluator.replace(defaultOr));
-
-    evaluator.addInputValue(
-        ParamIndexRefAttr::get(newParamTypes.size() - 1, newParamTypes.back()));
-    ++sigIt;
   }
-  assert(sigIt == sigRange.end() && "expected signature to get processed");
 
-  auto paramListAttrs = PogListAttr::get(getContext(), newPogs, newPosDefaults,
-                                         newKwOnlyDefaults);
-  auto newSig =
-      TypeSignatureType::get(getContext(), newParamTypes, paramListAttrs);
+  // If we're refining our signature because we have new bindings, return an
+  // AnyStruct with the updated signature and values.
+  if (!hadNewBinding)
+    return *this;
+
+  auto newSig = getSignature().bind(newSignatureBindings);
   return AnyStructType::get(getSymbol(), values, newSig);
 }
 
