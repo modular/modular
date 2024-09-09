@@ -132,27 +132,28 @@ LIT::FuncOp StructEmitter::createFunction(
 std::pair<LIT::FuncOp, ASTDecl *> StructEmitter::synthesizeMethodInStruct(
     StringRef name, ArrayRef<Type> argTypes,
     ArrayRef<ArgConvention> argConventions, PogListAttr argListAttrs,
-    Type resultType, ASTDecl &structDecl, SpecialFunctionKind specialFnID,
-    FnEffects fnEffects, StringRef suffix, bool synthetic) {
+    Type resultType, ASTDecl &structDecl, SMLoc loc,
+    SpecialFunctionKind specialFnID, FnEffects fnEffects, StringRef suffix,
+    bool synthetic) {
   return synthesizeMethodInStruct(
       name, /*params=*/{}, /*paramListAttrs=*/PogListAttr::get(getContext()),
-      argTypes, argConventions, argListAttrs, resultType, structDecl,
+      argTypes, argConventions, argListAttrs, resultType, structDecl, loc,
       specialFnID, fnEffects, suffix, synthetic);
 }
 
 std::pair<LIT::FuncOp, ASTDecl *> StructEmitter::synthesizeMethodInStruct(
     StringRef name, ArrayRef<ParamDeclAttr> params, PogListAttr paramListAttrs,
     ArrayRef<Type> argTypes, ArrayRef<ArgConvention> argConventions,
-    PogListAttr argListAttrs, Type resultType, ASTDecl &structDecl,
+    PogListAttr argListAttrs, Type resultType, ASTDecl &structDecl, SMLoc loc,
     SpecialFunctionKind specialFnID, FnEffects fnEffects, StringRef suffix,
     bool synthetic) {
   StructDeclOp structOp = cast<StructDeclOp>(structDecl);
   ImplicitLocOpBuilder builder = ImplicitLocOpBuilder::atBlockEnd(
       structOp.getLoc(), &structOp.getFields().front());
-  LIT::FuncOp funcOp = createFunction(
-      structDecl, name, params, paramListAttrs, argTypes, argConventions,
-      argListAttrs, resultType, specialFnID, structDecl.getLoc(), builder,
-      fnEffects, suffix, synthetic);
+  LIT::FuncOp funcOp =
+      createFunction(structDecl, name, params, paramListAttrs, argTypes,
+                     argConventions, argListAttrs, resultType, specialFnID, loc,
+                     builder, fnEffects, suffix, synthetic);
 
   // Return null if the function already exists with the same signature.
   if (!funcOp)
@@ -280,7 +281,7 @@ LIT::FuncOp StructEmitter::synthesizeMemberwiseInit(
   // Create the FuncOp and ASTDecl for the method.
   auto [funcOp, _] = synthesizeMethodInStruct(
       "__init__", argTypes, argConventions, argListAttrs, resultType,
-      structDecl, SpecialFunctionKind::kInit);
+      structDecl, structDecl.getLoc(), SpecialFunctionKind::kInit);
   funcOp.setInlineLevel(InlineLevel::AlwaysNoDebug);
 
   // Set up the body.
@@ -408,7 +409,7 @@ LIT::FuncOp StructEmitter::addVoidMethod(ASTDecl &structDecl, StringRef prefix,
                                          PogListAttr paramListAttrs) {
   auto [func, _] = synthesizeMethodInStruct(
       prefix, params, paramListAttrs, argTypes, argConventions, argListAttrs,
-      shared.getNoneType(), structDecl, kind);
+      shared.getNoneType(), structDecl, structDecl.getLoc(), kind);
   Block *body = func.getBody();
   DebugInfo::DIBuilder::ScopeGuard diScopeGuard;
   if (shared.diBuilder)
@@ -454,7 +455,8 @@ LIT::FuncOp StructEmitter::synthesizeEmptyDtor(ASTDecl &structDecl) {
   auto [funcOp, funcDecl] = emitter.synthesizeMethodInStruct(
       "__del__", selfType.mlirType, convention,
       PogListAttr::get(emitter.getContext(), selfName, PassingKind::PosOnly),
-      shared.getNoneType(), structDecl, SpecialFunctionKind::kDel);
+      shared.getNoneType(), structDecl, structDecl.getLoc(),
+      SpecialFunctionKind::kDel);
 
   // Set up the body.
   Block *body = funcOp.getBody();
