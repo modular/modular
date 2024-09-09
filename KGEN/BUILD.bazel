@@ -853,6 +853,9 @@ modular_cc_library(
         "//:dbg_build": ["BUILD_TYPE=debug"],
         "//:fastbuild_build": ["BUILD_TYPE=relwithdebinfo"],
         "//:opt_build": ["BUILD_TYPE=release"],
+    }) + select({
+        "//:kernel_e2e_gpu_profiling_setting": ["KERNEL_E2E_GPU_PROFILING"],
+        "//conditions:default": [],
     }),
     deps = [
         ":HLCFDialect",
