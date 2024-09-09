@@ -579,6 +579,57 @@ fn test_iterator():
     ptr1.free()
 
 
+# CHECK-LABEL: test_split
+fn test_split():
+    print("== test_split")
+
+    var ptr = UnsafePointer[Float32].alloc(16)
+
+    alias layout_Ux4 = Layout(IntTuple(UNKNOWN_VALUE, 4), IntTuple(4, 1))
+    var dynamic_layout_2x4 = RuntimeLayout[layout_Ux4](
+        RuntimeTuple[layout_Ux4.shape](2, 4),
+        RuntimeTuple[layout_Ux4.stride](4, 1),
+    )
+    var tensor_Ux4 = LayoutTensor[DType.float32, layout_Ux4](
+        ptr, dynamic_layout_2x4
+    ).linspace()
+    # CHECK: 0.0 1.0
+    # CHECK: 4.0 5.0
+    print(tensor_Ux4.split[axis=1](2, 0))
+    # CHECK: 2.0 3.0
+    # CHECK: 6.0 7.0
+    print(tensor_Ux4.split[axis=1](2, 1))
+
+    alias layout_4x4 = Layout(IntTuple(4, 4), IntTuple(4, 1))
+    var dynamic_layout_4x4 = RuntimeLayout[layout_4x4](
+        RuntimeTuple[layout_4x4.shape](4, 4),
+        RuntimeTuple[layout_4x4.stride](4, 1),
+    )
+    var tensor_4x4 = LayoutTensor[DType.float32, layout_4x4](
+        ptr, dynamic_layout_4x4
+    ).linspace()
+    var tensor_4x4_split0 = tensor_4x4.split[axis=0](2, 0)
+    var tensor_4x4_split1 = tensor_4x4.split[axis=0](2, 1)
+
+    # CHECK: ((-1, 4):(4, 1))
+    print(tensor_4x4_split0.layout)
+    # CHECK: ((2, 4):(4, 1))
+    print(tensor_4x4_split0.runtime_layout)
+    # CHECK: 0.0 1.0 2.0 3.0
+    # CHECK: 4.0 5.0 6.0 7.0
+    print(tensor_4x4_split0)
+
+    # CHECK: ((-1, 4):(4, 1))
+    print(tensor_4x4_split1.layout)
+    # CHECK: ((2, 4):(4, 1))
+    print(tensor_4x4_split1.runtime_layout)
+    # CHECK: 8.0 9.0 10.0 11.0
+    # CHECK: 12.0 13.0 14.0 15.0
+    print(tensor_4x4_split1)
+
+    ptr.free()
+
+
 def main():
     test_fill_and_print()
     test_set_and_get_items()
@@ -588,3 +639,4 @@ def main():
     test_copy_from()
     test_linspace_fill()
     test_iterator()
+    test_split()

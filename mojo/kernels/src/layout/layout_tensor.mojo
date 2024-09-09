@@ -1269,6 +1269,54 @@ struct LayoutTensor[
 
         return tiles
 
+    @always_inline
+    fn split[
+        axis: Int = 0,
+    ](self, count: Int, idx: Int) -> LayoutTensor[
+        dtype,
+        layout.make_shape_unknown[axis](),
+        address_space=address_space,
+        element_layout=element_layout,
+    ] as result:
+        constrained[
+            layout.shape[axis].is_value(), "Can't split non-scalar dimension."
+        ]()
+
+        # We can split dynamic dimension but that should be audited carefully with
+        # other parts when we really want to support arbitrary K, N in matmul.
+        # Restrict to static case for now.
+        constrained[
+            layout.shape[axis].value() != UNKNOWN_VALUE
+            and layout.stride[axis].value() != UNKNOWN_VALUE,
+            "Shouldn't split dynamic dimension.",
+        ]()
+
+        alias axis_dim = layout.shape[axis].value()
+        alias axis_stride = layout.stride[axis].value()
+        alias flatten_rank = len(flatten(layout.shape))
+        alias axis_in_flatten_tuple = runtime_shape.offset_until[axis]()
+
+        var runtime_shape = RuntimeTuple[result.layout.shape]()
+
+        @parameter
+        for i in range(flatten_rank):
+
+            @parameter
+            if i == axis_in_flatten_tuple:
+                runtime_shape.value[i] = axis_dim // count
+            else:
+                runtime_shape.value[i] = self.runtime_layout.shape.value[i]
+
+        return __type_of(result)(
+            self.ptr + idx * (axis_dim // count) * axis_stride,
+            RuntimeLayout[result.layout](
+                runtime_shape,
+                rebind[RuntimeTuple[result.layout.stride]](
+                    self.runtime_layout.stride
+                ),
+            ),
+        )
+
     @staticmethod
     fn _compute_distribute_layout[
         data_layout: Layout,
