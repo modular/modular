@@ -146,6 +146,11 @@ export class Logger extends DisposableContext {
     this.main = new LogChannel('Mojo' + suffix);
     this.lsp = new LogChannel('Mojo Language Server' + suffix);
 
+    if (isNightly) {
+      this.main.setOutputLevel('DEBUG');
+      this.lsp.setOutputLevel('DEBUG');
+    }
+
     this.pushSubscription(this.main);
     this.pushSubscription(this.lsp);
   }
