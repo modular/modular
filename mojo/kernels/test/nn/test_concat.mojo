@@ -48,7 +48,6 @@ fn test_concat() raises:
 
     var input_vec = variadic_list_to_vector(input_list)
     concat[rank, type, False](output_dyn, concat_axis, input_vec)
-    input_vec._del_old()
 
     # CHECK: == test_concat
     # CHECK-COUNT-2: 0.0
@@ -94,7 +93,6 @@ fn test_concat_parallel():
 
     var input_vec = variadic_list_to_vector(input_list)
     _concat_parallel[rank, type](output_dyn, concat_axis, input_vec)
-    input_vec._del_old()
 
     # CHECK: == test_concat_parallel
     # CHECK-COUNT-2: 0.0
@@ -141,7 +139,6 @@ fn test_concat_inner():
 
     var input_vec = variadic_list_to_vector(input_list)
     _concat_serial[rank, type](output_dyn, concat_axis, input_vec)
-    input_vec._del_old()
 
     # CHECK-COUNT-4: 0.0
     # CHECK-COUNT-8: 1.0

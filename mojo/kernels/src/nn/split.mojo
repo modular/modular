@@ -58,10 +58,6 @@ struct _NDBufferVector[type: DType, rank: Int](Sized):
     fn __len__(self) -> Int:
         return len(self.storage)
 
-    @always_inline
-    fn __del__(owned self):
-        return self.storage._del_old()
-
 
 # ===----------------------------------------------------------------------===#
 # split

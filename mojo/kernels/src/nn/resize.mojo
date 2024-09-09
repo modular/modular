@@ -335,4 +335,3 @@ fn _resize[
         tmp_buffer1.free()
     if tmp_buffer2:
         tmp_buffer2.free()
-    resize_dims._del_old()

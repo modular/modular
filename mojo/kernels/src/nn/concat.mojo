@@ -40,7 +40,7 @@ fn variadic_list_to_vector[
     var vector = InlinedFixedVector[type](len(elems))
     for i in range(len(elems)):
         vector.append(elems[i])
-    return vector
+    return InlinedFixedVector(vector)
 
 
 @value

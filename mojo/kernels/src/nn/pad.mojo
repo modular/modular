@@ -56,7 +56,7 @@ struct _NestedLoopIter[n_loops: Int]:
             ),
         )
 
-        self.loop_bounds = loop_bounds
+        self.loop_bounds = InlinedFixedVector(loop_bounds)
 
         self.cur = StaticIntTuple[n_loops]()
         self.early_stop = False
@@ -78,7 +78,7 @@ struct _NestedLoopIter[n_loops: Int]:
 
     fn __copyinit__(inout self: Self, other: Self):
         self.cur = other.cur
-        self.loop_bounds = other.loop_bounds
+        self.loop_bounds = InlinedFixedVector(other.loop_bounds)
         self.early_stop = other.early_stop
 
     fn __iter__(inout self: Self) -> Self:
