@@ -8,17 +8,12 @@ modular_py_test(
         "graph_tests/**/*.py",
     ]),
     data = [
-        "//Runtime/tools/is-cuda-available",
         "//KGEN:CompilerRT",
         "//ModularFramework/tools/mof",
-        # TODO(SDLC-918): remove when landed
-        "//Kernels/mojo/Mogg:MOGG.lib.mlirbc",
-        "//Kernels/mojo/Mogg:MOGG_debuginfo.lib.mlirbc",
-        "//Kernels/mojo/Mogg:MOGGPrimitives.lib.mlirbc",
-        "//Kernels/mojo/Mogg:MOGGPrimitives_debuginfo.lib.mlirbc",
         "//ONNX/tools/onnx:monnx",
         "//PyTorch:TorchRuntimePlugins",
         "//PyTorch/tools/torch:mtorch",
+        "//Runtime/tools/is-cuda-available",
         "//SDK/integration-test:counter_ops",
         "//SDK/integration-test:test_user_op",
         "//SDK/integration-test/EngineAPI:inputs",
@@ -60,11 +55,6 @@ modular_py_test(
     data = [
         "//KGEN:CompilerRT",
         "//ModularFramework/tools/mof",
-        # TODO(SDLC-918): remove when landed
-        "//Kernels/mojo/Mogg:MOGG.lib.mlirbc",
-        "//Kernels/mojo/Mogg:MOGG_debuginfo.lib.mlirbc",
-        "//Kernels/mojo/Mogg:MOGGPrimitives.lib.mlirbc",
-        "//Kernels/mojo/Mogg:MOGGPrimitives_debuginfo.lib.mlirbc",
         "//ONNX/tools/onnx:monnx",
         "//PyTorch:TorchRuntimePlugins",
         "//PyTorch/tools/torch:mtorch",

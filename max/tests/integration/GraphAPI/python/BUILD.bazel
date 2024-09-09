@@ -4,12 +4,9 @@ modular_py_test(
     name = "tests",
     srcs = glob(["pytests/**/*.py"]),
     data = [
-        "//Runtime/tools/is-cuda-available",
         "//KGEN:CompilerRT",
         "//ModularFramework/tools/mof",
-        # TODO(SDLC-918): remove when landed
-        "//Kernels/mojo/Mogg:MOGG.lib.mlirbc",
-        "//Kernels/mojo/Mogg:MOGGPrimitives.lib.mlirbc",
+        "//Runtime/tools/is-cuda-available",
         "//SDK/integration-test:test_user_op",
         "//SDK/test/API/graph/python/pytests/testdata",
         "@llvm-project//compiler-rt:orc_rt",
