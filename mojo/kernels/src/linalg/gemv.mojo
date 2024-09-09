@@ -261,7 +261,9 @@ fn gemv_split_k[
     var warp_id = tid // WARP_SIZE
     var lane_id = tid % WARP_SIZE
     var shmem = stack_allocation[
-        tile_m * tile_n, s_type, address_space = AddressSpace.SHARED
+        k_warp_num * tile_m * tile_n,
+        s_type,
+        address_space = AddressSpace.SHARED,
     ]()
 
     @parameter
