@@ -1342,6 +1342,28 @@ InOutSignatureAttr::verify(function_ref<InFlightDiagnostic()> emitError,
   return success();
 }
 
+InOutSignatureAttr InOutSignatureAttr::remove(const llvm::BitVector &toRemove) {
+  SmallVector<InOutSignatureAttr::InOutSemantics> newSemantics;
+
+  for (size_t i : llvm::seq(size()))
+    if (!toRemove.test(i))
+      newSemantics.push_back((*this)[i]);
+
+  return InOutSignatureAttr::get(getContext(), newSemantics);
+}
+
+InOutSignatureAttr
+InOutSignatureAttr::append(ArrayRef<InOutSemantics> newArgs) {
+  SmallVector<InOutSignatureAttr::InOutSemantics> newSemantics;
+  newSemantics.reserve(size() + newArgs.size());
+
+  for (size_t i : llvm::seq(size()))
+    newSemantics.push_back((*this)[i]);
+
+  newSemantics.append(newArgs.begin(), newArgs.end());
+  return InOutSignatureAttr::get(getContext(), newSemantics);
+}
+
 //===----------------------------------------------------------------------===//
 // ODS-Generated Definitions
 //===----------------------------------------------------------------------===//
