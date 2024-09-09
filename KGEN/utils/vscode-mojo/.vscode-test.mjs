@@ -7,5 +7,6 @@ export default defineConfig({
   files: 'out/**/*.test.js',
   mocha: {
     timeout: 5000, // 5 seconds
+    reporter: 'out/test/reporter.js',
   },
 });
