@@ -320,3 +320,10 @@ def test_torch_tensor_conversion():
 
     reconverted_bool = torch.from_dlpack(converted_bool)
     assert torch.all(torch.eq(bool_tensor, reconverted_bool))
+
+
+def test_device():
+    # We should be able to set and query the device that a tensor is resident on.
+    cpu = CPU()
+    tensor = Tensor((3, 3), dtype=DType.int32, device=cpu)
+    assert cpu == tensor.device

@@ -25,3 +25,10 @@ def test_cuda_device_creation_error():
     # Creating a CUDA device on a machine without a GPU should raise an error.
     with pytest.raises(ValueError, match="failed to create device:"):
         _ = CUDA()
+
+
+def test_equality():
+    # We should be able to validate that two devices are the same.
+    cpu_one = CPU()
+    cpu_two = CPU()
+    assert cpu_one == cpu_two

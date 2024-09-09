@@ -71,3 +71,17 @@ def test_torch_tensor_conversion():
     host_tensor = gpu_tensor.copy_to(CPU())
     torch_tensor_copy = torch.from_dlpack(host_tensor)
     assert torch.all(torch.eq(torch_tensor, torch_tensor_copy))
+
+
+def test_device():
+    cpu = CPU()
+    cuda = CUDA()
+
+    host_tensor = Tensor((3, 3), dtype=DType.int32, device=cpu)
+    gpu_tensor = host_tensor.copy_to(cuda)
+
+    assert cpu == host_tensor.device
+    assert cuda == gpu_tensor.device
+
+    assert cuda != host_tensor.device
+    assert cpu != gpu_tensor.device
