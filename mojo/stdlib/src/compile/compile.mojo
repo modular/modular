@@ -14,7 +14,7 @@ from sys.info import _current_target
 
 from memory import UnsafePointer
 
-from utils._format import Formatter
+from utils import Formatter
 
 from .reflection import get_linkage_name
 
