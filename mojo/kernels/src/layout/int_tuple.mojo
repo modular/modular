@@ -9,8 +9,7 @@ from os import abort
 
 from layout.dynamic_tuple import *
 
-from utils._format import Formatter
-from utils.variant import Variant
+from utils import Formatter, Variant
 
 # IntTuple definition
 # TODO: Consider a different approch https://linear.app/modularml/issue/KERN-638

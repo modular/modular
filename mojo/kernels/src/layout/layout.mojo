@@ -7,7 +7,7 @@
 from collections.string import _calc_initial_buffer_size_int32
 from os import abort
 
-from utils._format import Formattable, Formatter
+from utils import Formattable, Formatter
 from buffer.dimlist import DimList
 
 from .dynamic_tuple import *
