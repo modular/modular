@@ -99,7 +99,7 @@ static void generateInstantiateStub(GeneratorOp func, SymbolConstantAttr symbol,
 
   auto call =
       b.create<CallOp>(SymbolConstantAttr::get(FlatSymbolRefAttr::get(stubName),
-                                               symbol.getParamValues(), sig),
+                                               sig, symbol.getParamValues()),
                        entry->getArguments());
   b.create<ReturnOp>(call.getResults());
 }

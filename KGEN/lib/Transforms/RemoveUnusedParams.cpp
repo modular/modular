@@ -200,9 +200,10 @@ private:
         newOperands.push_back(operand);
     }
     auto symbol =
-        SymbolConstantAttr::get(flatSym, newParams,
+        SymbolConstantAttr::get(flatSym,
                                 newFunc.getSignature().getSpecializedSignature(
-                                    newParams, oldCall.getLoc()));
+                                    newParams, oldCall.getLoc()),
+                                newParams);
 
     auto newCall =
         builder.create<CallOp>(oldCall.getLoc(), symbol, newOperands);

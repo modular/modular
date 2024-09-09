@@ -734,8 +734,8 @@ createTypedSymbol(SymbolConstantAttr symbol,
       ParameterExprArrayAttr::get(symbol.getContext(), paramReferences);
   auto [specializedSignature, _] =
       getUnboundSpecializedSignature(symbol.getType(), paramRefs);
-  return SymbolConstantAttr::get(symbol.getSymbol(), paramReferences,
-                                 specializedSignature);
+  return SymbolConstantAttr::get(symbol.getSymbol(), specializedSignature,
+                                 paramReferences);
 }
 
 /// Generate the code to allocate heap memory for the given pointer type.

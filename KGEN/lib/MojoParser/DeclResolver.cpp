@@ -838,9 +838,9 @@ void DeclResolver::exportMain(ASTDecl &funcDecl) {
   // main to be provided via an parameter.
   SymbolConstantAttr wrapperFnRef = SymbolConstantAttr::get(
       getFullyResolvedSymbolRef(mainWrapperFn),
+      mainWrapperFn.getSignature().dropParamValues(),
       {SymbolConstantAttr::get(getFullyResolvedSymbolRef(userMainFn),
-                               userMainSignature)},
-      mainWrapperFn.getSignature().dropParamValues());
+                               userMainSignature)});
 
   auto shimBodyBuilder = ImplicitLocOpBuilder::atBlockBegin(
       shimMainFn->getLoc(), shimMainFn.getBody());

@@ -538,13 +538,9 @@ def KGEN_SymbolConstantAttr : KGEN_ExprAttr<"SymbolConstant", "symbol.constant",
                         AttributeSelfTypeParameter<"", "SignatureType">:$type);
 
   let builders = [
-    AttrBuilderWithInferredContext<(ins "SymbolRefAttr":$symbol,
-                                        "SignatureType":$type), [{
-      return get(type.getContext(), symbol, {}, type);
-    }]>,
-    AttrBuilderWithInferredContext<(ins "SymbolRefAttr":$symbol,
-                                        "ArrayRef<TypedAttr>":$paramValues,
-                                        "SignatureType":$type), [{
+    AttrBuilderWithInferredContext<(ins
+        "SymbolRefAttr":$symbol, "SignatureType":$type,
+        CArg<"ArrayRef<TypedAttr>", "{}">:$paramValues), [{
       return get(type.getContext(), symbol, paramValues, type);
     }]>,
   ];

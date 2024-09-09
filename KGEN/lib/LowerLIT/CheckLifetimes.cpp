@@ -253,7 +253,7 @@ static SymbolConstantAttr getSpecialMemberForType(
 
   ArrayRef<TypedAttr> paramValues = valueType.getParamValues();
   auto newSig = attr.getType().getSpecializedSignature(paramValues);
-  return SymbolConstantAttr::get(attr.getSymbol(), paramValues, newSig);
+  return SymbolConstantAttr::get(attr.getSymbol(), newSig, paramValues);
 }
 
 /// Given the RValue type for a value that needs to be destroyed, return the

@@ -79,7 +79,7 @@ SymbolConstantAttr LowerCustomOpsPass::specializeParametrizedGenerator(
   SignatureType specializedSig =
       generatorSym.getType().getSpecializedSignature(parameters, loc);
   auto specializedSymbol = SymbolConstantAttr::get(generatorSym.getSymbol(),
-                                                   parameters, specializedSig);
+                                                   specializedSig, parameters);
 
   // Create a new name based on the original name and parameters.
   auto generator = opImplsTable.lookup<GeneratorOp>(
@@ -108,7 +108,7 @@ SymbolConstantAttr LowerCustomOpsPass::specializeParametrizedGenerator(
   builder.create<ReturnOp>(loc, specializedCall.getResults());
 
   // Finally, get the symbol of the specialized generator.
-  return SymbolConstantAttr::get(SymbolRefAttr::get(specializedFuncSymbol), {},
+  return SymbolConstantAttr::get(SymbolRefAttr::get(specializedFuncSymbol),
                                  specializedSig);
 }
 

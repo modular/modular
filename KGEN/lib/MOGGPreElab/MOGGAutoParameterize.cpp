@@ -634,7 +634,7 @@ public:
               specialized.getSignature().getSpecializedSignature(
                   newParamBuffer, oldCall.getLoc());
           auto symbol =
-              SymbolConstantAttr::get(flatSym, newParamBuffer, specializedSig);
+              SymbolConstantAttr::get(flatSym, specializedSig, newParamBuffer);
 
           // Call it.
           builder.setInsertionPoint(oldCall);
