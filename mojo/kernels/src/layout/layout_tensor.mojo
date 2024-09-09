@@ -2108,12 +2108,17 @@ struct LayoutTensor[
 
         @parameter
         for i in range(dst_size):
-            alias src_idx = make_layout(other.element_layout, other_layout)(
-                i * src_element_size
-            )
-            alias dst_idx = make_layout(self.element_layout, self.layout)(
-                i * dst_element_size
-            )
+            alias src_idx = other_layout(i)
+            alias dst_static_idx = self.layout(i)
+
+            var dst_idx = 0
+
+            @parameter
+            if self.layout.all_dims_known():
+                dst_idx = dst_static_idx
+            else:
+                dst_idx = self.runtime_layout(i)
+
             if offset + dst_idx < rows * cols:
                 var src_element = Element[dtype, other.element_layout].load[
                     other.address_space
@@ -3051,7 +3056,7 @@ fn copy_local_to_dram[
 ):
     var dst_fragments = dst.distribute[dst_thread_layout](ThreadIdx.x())
     var thread_offset = dst_fragments.distance(dst.ptr) + offset
-    dst_fragments.copy_from_masked_dst(src, thread_offset, rows, cols)
+    dst_fragments.copy_from(src, thread_offset, rows, cols)
 
 
 @always_inline
