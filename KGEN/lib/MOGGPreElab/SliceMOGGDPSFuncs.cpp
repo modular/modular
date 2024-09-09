@@ -13,7 +13,7 @@
 #include "KGEN/MOGGPreElab/Passes.h"
 #include "KGEN/POPDialect/POPAttrs.h"
 #include "KGEN/POPDialect/POPOps.h"
-#include "Support/DebugInfoDialect/IR/DebugInfoOps.h"
+#include "Support/DebugInfoDialect/Transforms/StripDebugInfo.h"
 #include "mlir/Analysis/SymbolTableAnalysis.h"
 #include "mlir/IR/AttrTypeSubElements.h"
 #include "mlir/IR/IRMapping.h"
@@ -327,11 +327,8 @@ public:
       // Strip all debug info. Its too annoying to maintain and there is no
       // way to actually debug the sliced kernel directly. Users would debug
       // the base kernel.
-      slicedComputeFunction.walk([](Operation *op) {
-        if (llvm::isa_and_nonnull<DebugInfo::DebugInfoDialect>(
-                op->getDialect()))
-          op->erase();
-      });
+      DebugInfo::stripDebugInfo(slicedComputeFunction,
+                                /*preserveLineTables=*/true);
 
       // Add compute function part to the module, i.e the kernel sans
       // allocation.

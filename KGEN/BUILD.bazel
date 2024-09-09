@@ -501,6 +501,7 @@ modular_cc_library(
         ":MOGGreElabIncGen",
         ":POPAttrsIncGen",
         ":TransformUtils",
+        "//Support:DebugInfoTransforms",
     ],
 )
 
