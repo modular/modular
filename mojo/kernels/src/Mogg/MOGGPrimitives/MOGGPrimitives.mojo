@@ -469,25 +469,20 @@ fn mip_div_ceil(numerator: Int, denominator: Int) -> Int:
     return ceildiv(numerator, denominator)
 
 
-@mogg_register("mip.cmp.eq")
+@mogg_register("index.cmp")
 @always_inline
 @export
-fn mip_cmp_eq(x: Int, y: Int) -> Bool:
-    return x == y
-
-
-@mogg_register("mip.cmp.lt")
-@always_inline
-@export
-fn mip_cmp_lt(x: Int, y: Int) -> Bool:
-    return x < y
-
-
-@mogg_register("mip.cmp.le")
-@always_inline
-@export
-fn mip_cmp_le(x: Int, y: Int) -> Bool:
-    return x <= y
+fn mip_cmp[pred: StringLiteral](x: Int, y: Int) -> Bool:
+    @parameter
+    if pred == "eq":
+        return x == y
+    elif pred == "slt":
+        return x < y
+    elif pred == "sle":
+        return x <= y
+    else:
+        constrained[False, "unhandled compare primitive"]()
+        return False
 
 
 @mogg_register("index.maxs")
