@@ -2176,6 +2176,9 @@ fn matmul[
     output_0_fn: fn[width: Int, rank: Int, element_alignment: Int] (
         StaticIntTuple[rank], SIMD[c_type, width]
     ) capturing -> None,
+    alignment_0: Int,
+    alignment_1: Int,
+    alignment_2: Int,
     /,
     trace_description: StringLiteral,
     target: StringLiteral = "cpu",
