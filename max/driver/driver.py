@@ -5,6 +5,8 @@
 # ===----------------------------------------------------------------------=== #
 from __future__ import annotations
 
+from typing import Any
+
 from max._driver import Device as _Device
 from max._driver import cpu_device as _cpu_device
 from max._driver import cuda_device as _cuda_device
@@ -22,6 +24,12 @@ class Device:
 
     def __str__(self) -> str:
         return str(self._device)
+
+    def __eq__(self, other: Any) -> bool:
+        return isinstance(other, Device) and str(self) == str(other)
+
+    def __ne__(self, other: Any) -> bool:
+        return not self == other
 
     @property
     def is_host(self):
