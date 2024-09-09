@@ -27,7 +27,7 @@ from .runtime_layout import RuntimeLayout
 from .runtime_layout import coalesce as runtime_coalesce
 from .runtime_layout import make_layout as make_runtime_layout
 from .runtime_tuple import RuntimeTuple
-from .swizzle import SwizzleEx, make_ldmatrix_swizzleex
+from .swizzle import Swizzle, make_ldmatrix_swizzleex
 
 
 # Distribute thread_layout into data_layout, if axis is provided
@@ -1340,7 +1340,7 @@ struct LayoutTensor[
     fn distribute[
         threads_layout: Layout,
         axis: Optional[Int] = None,
-        swizzle: Optional[SwizzleEx] = None,
+        swizzle: Optional[Swizzle] = None,
         submode_axis: Optional[Int] = None,
     ](self, thread_id: UInt) -> LayoutTensor[
         dtype,
@@ -2137,7 +2137,7 @@ struct LayoutTensor[
         src_element_layout: Layout,
         *,
         masked: Bool = False,
-        swizzle: Optional[SwizzleEx] = None,
+        swizzle: Optional[Swizzle] = None,
         fill: Fill = Fill.NONE,
     ](
         self,
@@ -2291,7 +2291,7 @@ struct LayoutTensor[
         src_element_layout: Layout,
         *,
         fill: Fill = Fill.NONE,
-        swizzle: Optional[SwizzleEx] = None,
+        swizzle: Optional[Swizzle] = None,
     ](
         self,
         src: LayoutTensor[
@@ -2524,7 +2524,7 @@ fn copy_dram_to_sram[
     dst_thread_layout: Layout,
     src_element_layout: Layout,
     dst_element_layout: Layout,
-    swizzle: Optional[SwizzleEx] = None,
+    swizzle: Optional[Swizzle] = None,
 ](
     dst: LayoutTensor[
         dtype,
@@ -2556,7 +2556,7 @@ fn copy_dram_to_sram[
     thread_layout: Layout,
     src_element_layout: Layout,
     dst_element_layout: Layout,
-    swizzle: Optional[SwizzleEx] = None,
+    swizzle: Optional[Swizzle] = None,
 ](
     dst: LayoutTensor[
         dtype,
@@ -2632,7 +2632,7 @@ fn copy_dram_to_sram_async[
     ]()
 
     alias swizzle_option = None if not swizzle else (
-        Optional[SwizzleEx](make_ldmatrix_swizzleex[dtype, row_size]())
+        Optional[Swizzle](make_ldmatrix_swizzleex[dtype, row_size]())
     )
 
     var src_fragments = src.distribute[src_thread_layout](ThreadIdx.x())
@@ -2713,7 +2713,7 @@ fn copy_dram_to_sram_async[
     var dst_fragments = dst.distribute[dst_thread_layout](ThreadIdx.x())
 
     alias swizzle_option = None if not swizzle else (
-        Optional[SwizzleEx](make_ldmatrix_swizzleex[dtype, row_size]())
+        Optional[Swizzle](make_ldmatrix_swizzleex[dtype, row_size]())
     )
 
     var thread_offset = offset + src_fragments.distance(src.ptr)
@@ -2813,7 +2813,7 @@ fn copy_sram_to_dram[
     thread_layout: Layout,
     src_element_layout: Layout,
     dst_element_layout: Layout,
-    swizzle: Optional[SwizzleEx] = None,
+    swizzle: Optional[Swizzle] = None,
 ](
     dst: LayoutTensor[
         dst_type,
@@ -2889,7 +2889,7 @@ fn copy_sram_to_dram[
     thread_layout: Layout,
     src_element_layout: Layout,
     dst_element_layout: Layout,
-    swizzle: Optional[SwizzleEx] = None,
+    swizzle: Optional[Swizzle] = None,
 ](
     dst: LayoutTensor[
         dst_type,

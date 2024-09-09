@@ -231,7 +231,7 @@ fn shiftl(a: Scalar, s: Scalar[a.type]) -> Scalar[a.type]:
 
 @value
 @register_passable("trivial")
-struct SwizzleEx(LayoutTrait, Stringable, Formattable):
+struct Swizzle(LayoutTrait, Stringable, Formattable):
     var bits: Int
     var base: Int
     var shift: Int
@@ -295,7 +295,7 @@ struct SwizzleEx(LayoutTrait, Stringable, Formattable):
 
 
 @always_inline
-fn make_ldmatrix_swizzleex[type: DType, row_size: Int]() -> SwizzleEx:
+fn make_ldmatrix_swizzleex[type: DType, row_size: Int]() -> Swizzle:
     """Make a swizzle to avoid bank conflict for ldmatrix."""
 
     # For Nvidia GPU, there are 32 4B banks.
@@ -325,7 +325,7 @@ fn make_ldmatrix_swizzleex[type: DType, row_size: Int]() -> SwizzleEx:
     alias simd_size = simdwidthof[type]()
     alias shifts = _static_log2[max(row_size // simd_size, 8)]()
 
-    return SwizzleEx(bits, 0, shifts)
+    return Swizzle(bits, 0, shifts)
 
 
 # ===-----------------------------------------------------------------------===#
@@ -384,7 +384,7 @@ struct ComposedLayout[
 fn eval_composed[
     # Need to pass concrete types for LayoutTrait otherwise compose_layout's
     # type is not complete. However, this limits the usage to a single comb.
-    composed_layout: ComposedLayout[Layout, SwizzleEx]
+    composed_layout: ComposedLayout[Layout, Swizzle]
 ](idx: Int, offset: Int = 0) -> Int:
     var a_idx = idx
     var b_idx = 0

@@ -589,7 +589,7 @@ fn _load_matrix_frag[
         x4_layout,
         make_ldmatrix_swizzleex[
             mma_tile.dtype, row_size
-        ]() if swizzle else SwizzleEx(0, 0, 1),
+        ]() if swizzle else Swizzle(0, 0, 1),
     )
 
     var lane_offset = eval_composed[ldmatrix_layout](

@@ -8,7 +8,7 @@
 
 from layout import *
 from layout.layout import Layout
-from layout.swizzle import ComposedLayout, SwizzleEx
+from layout.swizzle import ComposedLayout, Swizzle
 from testing import assert_equal, assert_not_equal
 
 
@@ -37,10 +37,10 @@ fn test_composed_layout() raises:
 fn test_composed_layout_swizzle() raises:
     print("== test_composed_layout_swizzle")
 
-    var swizzle = SwizzleEx(1, 0, 2)
+    var swizzle = Swizzle(1, 0, 2)
     var layout = Layout(IntTuple(6, 2), IntTuple(8, 2))
 
-    var comp_layout = ComposedLayout[Layout, SwizzleEx, 0](layout, swizzle)
+    var comp_layout = ComposedLayout[Layout, Swizzle, 0](layout, swizzle)
 
     assert_equal(comp_layout(0), 0)
     assert_equal(comp_layout(1), 8)
@@ -53,10 +53,10 @@ fn test_composed_layout_swizzle() raises:
 fn test_composed_layout_swizzle_rt() raises:
     print("== test_composed_layout_swizzle_rt")
 
-    var swizzle = SwizzleEx(1, 0, 2)
+    var swizzle = Swizzle(1, 0, 2)
     var layout = Layout(IntTuple(6, 2), IntTuple(8, 2))
 
-    var comp_layout = ComposedLayout[Layout, SwizzleEx, 0](layout, swizzle)
+    var comp_layout = ComposedLayout[Layout, Swizzle, 0](layout, swizzle)
 
     assert_equal(comp_layout(0), 0)
     assert_equal(comp_layout(1), 8)
