@@ -36,6 +36,14 @@ fn test_layout_basic() raises:
     assert_equal(
         layout, Layout(IntTuple(2, IntTuple(3, 4)), IntTuple(1, IntTuple(2, 6)))
     )
+    assert_equal(
+        layout.make_shape_unknown[axis=0](),
+        Layout(IntTuple(-1, IntTuple(3, 4)), IntTuple(1, IntTuple(2, 6))),
+    )
+    assert_equal(
+        layout.make_shape_unknown[axis=1](),
+        Layout(IntTuple(2, IntTuple(-1, -1)), IntTuple(1, IntTuple(2, 6))),
+    )
 
     # Row major variadic input
     assert_equal(Layout.row_major(2, 3), Layout(IntTuple(2, 3), IntTuple(3, 1)))

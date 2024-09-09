@@ -100,6 +100,24 @@ fn flatten(t: IntTuple) -> IntTuple:
     return reduce[IntTuple, reducer](t, IntTuple())
 
 
+# Create a IntTuple with same structure but filled by UNKNOWN_VALUE.
+@always_inline
+fn to_unknown(t: IntTuple) -> IntTuple:
+    if t.is_value():
+        return UNKNOWN_VALUE
+
+    @always_inline
+    @parameter
+    fn reducer(owned a: IntTuple, b: IntTuple) -> IntTuple:
+        if b.is_value():
+            a.append(UNKNOWN_VALUE)
+        else:
+            a.append(to_unknown(b))
+        return a
+
+    return reduce[IntTuple, reducer](t, IntTuple())
+
+
 fn _insertion_sort[
     cmp: fn (IntTuple, IntTuple) -> Bool
 ](inout tuple: IntTuple, start: Int, end: Int):

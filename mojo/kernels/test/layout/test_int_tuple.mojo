@@ -120,6 +120,11 @@ def test_tuple_basic_ops():
     alias f = flatten(tt)
     assert_equal(str(f), "(5, 7, 2, 3, 66, 6, 99, 4, 68, 721, 42)")
 
+    alias tt_unknown = to_unknown(tt)
+    assert_equal(
+        str(tt_unknown), "(-1, -1, -1, (-1, -1, (-1, -1, (-1, -1, -1))), -1)"
+    )
+
     alias ts = IntTuple(0, 1, IntTuple(-2, 3), -4)
     assert_equal(str(abs(ts)), "(0, 1, (2, 3), 4)")
 
@@ -368,31 +373,35 @@ def test_weakly_compatible():
     assert_false(weakly_compatible(a3, a2))
 
 
+# CHECK-LABEL: test_fill_like
 def test_fill_like():
-    print("test_fill_like")
+    print("== test_fill_like")
     alias t1 = IntTuple(2, IntTuple(2, 2), IntTuple(1))
     alias t2 = IntTuple(IntTuple(3, 4), 2, IntTuple(3))
     assert_equal(fill_like(t1, 0), IntTuple(0, IntTuple(0, 0), IntTuple(0)))
     assert_equal(fill_like(t2, 1), IntTuple(IntTuple(1, 1), 1, IntTuple(1)))
 
 
+# CHECK-LABEL: test_reverse
 def test_reverse():
-    print("test_reverse")
+    print("== test_reverse")
     alias t1 = IntTuple(2, IntTuple(3, 4))
     alias t2 = IntTuple(IntTuple(1, 2), 3, 4, IntTuple(5, 6, 7))
     assert_equal(reverse(t1), IntTuple(IntTuple(4, 3), 2))
     assert_equal(reverse(t2), IntTuple(IntTuple(7, 6, 5), 4, 3, IntTuple(2, 1)))
 
 
+# CHECK-LABEL: test_depth
 def test_depth():
-    print("test_depth")
+    print("== test_depth")
     assert_equal(depth(IntTuple(1)), 0)
     assert_equal(depth(IntTuple(1, 2)), 1)
     assert_equal(depth(IntTuple(1, IntTuple(2, 3))), 2)
 
 
+# CHECK-LABEL: test_unknown_value_arith
 def test_unknown_value_arith():
-    print("test_unknown_value_arith")
+    print("== test_unknown_value_arith")
     var t = IntTuple(-1, IntTuple(2, 3), 4)
     assert_equal(prefix_product(t), IntTuple(1, IntTuple(-1, -1), -1))
     assert_equal(sum(t), -1)

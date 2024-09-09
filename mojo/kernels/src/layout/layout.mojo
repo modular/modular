@@ -28,6 +28,7 @@ from .int_tuple import (
     shape_div,
     sorted,
     to_int,
+    to_unknown,
     tuple_min,
     zip,
 )
@@ -226,6 +227,21 @@ struct Layout(
         Self._row_major_tuple(shape, stride, current_stride)
 
         return Layout(shape, reverse(stride[0]))
+
+    @always_inline
+    fn make_shape_unknown[axis: Int = UNKNOWN_VALUE](self) -> Layout:
+        """Mark shape (along axis) unknown.
+        This is useful for tiling a tensor with runtime sizses where the tile's
+        shape is unknown but the stride is preserved.
+        """
+
+        @parameter
+        if axis == UNKNOWN_VALUE:
+            return Layout(to_unknown(self.shape), self.stride)
+        else:
+            var shape_with_unknown = self.shape
+            shape_with_unknown[axis] = to_unknown(self.shape[axis])
+            return Layout(shape_with_unknown, self.stride)
 
     @always_inline
     fn __moveinit__(inout self: Self, owned existing: Self):
