@@ -474,10 +474,7 @@ ErrorTreeOr<Attribute> Elaborator::concretizeSymbolsWithin(Attribute value,
         if (!*func)
           return {cst, WalkResult::interrupt()};
 
-        return {SymbolConstantAttr::get(
-                    FlatSymbolRefAttr::get(func.takeValue().getSymNameAttr()),
-                    cst.getType()),
-                WalkResult::skip()};
+        return {SymbolConstantAttr::get(func.takeValue()), WalkResult::skip()};
       });
   replacer.addReplacement([](VTableAttr vtable) {
     return std::make_pair(vtable, WalkResult::skip());
@@ -672,8 +669,8 @@ Elaborator::processGeneratorUser(GeneratorUserOpInterface user,
   // Regardless if the callee node is ready or not, we can concretize the callee
   // symbol reference immediately.
   IRRewriter b{OpBuilder(user)};
-  auto newCallee = SymbolConstantAttr::get(
-      FlatSymbolRefAttr::get(concreteSymName), calleeSymbol.getType());
+  auto newCallee =
+      SymbolConstantAttr::get(concreteSymName, calleeSymbol.getType());
   user.concretizeCallee(b, newCallee);
   return ElaborationState::advance();
 }

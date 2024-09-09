@@ -1213,9 +1213,7 @@ Value LowerAsyncBuildContext::initializeContinuation(FuncOp rampFunction,
   Value resumeFunctionSlot =
       builder.create<StructGEPOp>(continuation, ResumeFunction);
   Value functionPointer =
-      builder.create<CreateClosureOp>(SymbolConstantAttr::get(
-          SymbolRefAttr::get(builder.getContext(), resumeFunction.getSymName()),
-          resumeFunction.getSignature()));
+      builder.create<CreateClosureOp>(SymbolConstantAttr::get(resumeFunction));
   functionPointer = builder.create<PointerBitcastOp>(
       coTypes.typeForField(ResumeFunction), functionPointer);
   builder.create<StoreOp>(functionPointer, resumeFunctionSlot);
@@ -1993,10 +1991,7 @@ void LowerAsyncFunctionsPass::runOnOperation() {
       asyncFuncToHotRampFunctions;
   for (FuncOp funcOp : asyncFunctions) {
     // Store a clone of the function so we can generate the hot ramp/resume.
-    SymbolRefAttr symbolRefAttr =
-        SymbolRefAttr::get(funcOp.getContext(), funcOp.getSymName());
-    SymbolConstantAttr key =
-        SymbolConstantAttr::get(symbolRefAttr, funcOp.getSignature());
+    SymbolConstantAttr key = SymbolConstantAttr::get(funcOp);
     auto temperatureMaybe = temperatures.find(key);
 
     // TODO: DCE should have eliminated this function. It's useful for unit
@@ -2009,29 +2004,23 @@ void LowerAsyncFunctionsPass::runOnOperation() {
     Coroutine coroutine = buildContext.createCoroutine(funcOp, temperature);
     switch (temperature) {
     case Temp::Hot: {
-      SymbolConstantAttr value = SymbolConstantAttr::get(
-          SymbolRefAttr::get(b.getContext(), coroutine.hotRamp.getSymName()),
-          coroutine.hotRamp.getSignature());
+      SymbolConstantAttr value = SymbolConstantAttr::get(coroutine.hotRamp);
       asyncFuncToHotRampFunctions[key] = {value, coroutine.coroutineType};
 
       break;
     }
     case Temp::Cold: {
-      SymbolConstantAttr coldvalue = SymbolConstantAttr::get(
-          SymbolRefAttr::get(b.getContext(), coroutine.coldRamp.getSymName()),
-          coroutine.coldRamp.getSignature());
+      SymbolConstantAttr coldvalue =
+          SymbolConstantAttr::get(coroutine.coldRamp);
       asyncFuncToColdRampFunctions[key] = {coldvalue, coroutine.coroutineType};
       break;
     }
     case Temp::Both: {
-      SymbolConstantAttr value = SymbolConstantAttr::get(
-          SymbolRefAttr::get(b.getContext(), coroutine.hotRamp.getSymName()),
-          coroutine.hotRamp.getSignature());
+      SymbolConstantAttr value = SymbolConstantAttr::get(coroutine.hotRamp);
       asyncFuncToHotRampFunctions[key] = {value, coroutine.coroutineType};
 
-      SymbolConstantAttr coldvalue = SymbolConstantAttr::get(
-          SymbolRefAttr::get(b.getContext(), coroutine.coldRamp.getSymName()),
-          coroutine.coldRamp.getSignature());
+      SymbolConstantAttr coldvalue =
+          SymbolConstantAttr::get(coroutine.coldRamp);
       asyncFuncToColdRampFunctions[key] = {coldvalue, coroutine.coroutineType};
       break;
     }

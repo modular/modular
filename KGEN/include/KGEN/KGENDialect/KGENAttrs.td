@@ -543,6 +543,22 @@ def KGEN_SymbolConstantAttr : KGEN_ExprAttr<"SymbolConstant", "symbol.constant",
         CArg<"ArrayRef<TypedAttr>", "{}">:$paramValues), [{
       return get(type.getContext(), symbol, paramValues, type);
     }]>,
+    AttrBuilderWithInferredContext<(ins
+        "StringAttr":$name, "SignatureType":$type,
+        CArg<"ArrayRef<TypedAttr>", "{}">:$paramValues), [{
+      return get(FlatSymbolRefAttr::get(name), type, paramValues);
+    }]>,
+    AttrBuilderWithInferredContext<(ins
+        "GeneratorOp":$func, "SignatureType":$type,
+        CArg<"ArrayRef<TypedAttr>", "{}">:$paramValues), [{
+      return get(func.getSymNameAttr(), type, paramValues);
+    }]>,
+    AttrBuilderWithInferredContext<(ins "GeneratorOp":$func), [{
+      return get(func.getSymNameAttr(), func.getSignature());
+    }]>,
+    AttrBuilderWithInferredContext<(ins "FuncOp":$func), [{
+      return get(func.getSymNameAttr(), func.getSignature());
+    }]>,
   ];
 
   let assemblyFormat = [{

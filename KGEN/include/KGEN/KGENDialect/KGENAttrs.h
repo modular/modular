@@ -29,6 +29,8 @@ class TargetInfoAttr;
 
 namespace KGEN {
 class BuildInfoType;
+class FuncOp;
+class GeneratorOp;
 class KGENDType;
 class SignatureType;
 class TargetType;

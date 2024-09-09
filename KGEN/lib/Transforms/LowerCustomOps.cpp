@@ -92,7 +92,7 @@ SymbolConstantAttr LowerCustomOpsPass::specializeParametrizedGenerator(
   OpBuilder builder(ctx);
   auto specializedFunc =
       builder.create<GeneratorOp>(loc, newNameAttr, specializedSig);
-  StringAttr specializedFuncSymbol = opImplsTable.insert(specializedFunc);
+  opImplsTable.insert(specializedFunc);
   specializedFunc.setInlineLevel(InlineLevel::Always);
   specializedFunc.setExportKind(ExportKind::Exported);
   auto argLocs = std::vector<Location>(specializedSig.getNumArguments(), loc);
@@ -108,8 +108,7 @@ SymbolConstantAttr LowerCustomOpsPass::specializeParametrizedGenerator(
   builder.create<ReturnOp>(loc, specializedCall.getResults());
 
   // Finally, get the symbol of the specialized generator.
-  return SymbolConstantAttr::get(SymbolRefAttr::get(specializedFuncSymbol),
-                                 specializedSig);
+  return SymbolConstantAttr::get(specializedFunc);
 }
 
 SymbolConstantAttr LowerCustomOpsPass::getSymbolForCustomOp(
