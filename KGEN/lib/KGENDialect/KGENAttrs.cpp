@@ -2153,8 +2153,8 @@ static Attribute simplifyBindSignature(MLIRContext *ctx,
     return processSignatureLike(
         symbolConstant,
         [&](ArrayRef<TypedAttr> paramValues, SignatureType type) {
-          return SymbolConstantAttr::get(symbolConstant.getSymbol(),
-                                         paramValues, type);
+          return SymbolConstantAttr::get(symbolConstant.getSymbol(), type,
+                                         paramValues);
         });
   }
 

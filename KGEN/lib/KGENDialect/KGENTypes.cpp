@@ -456,7 +456,7 @@ OptionalParseResult SignatureType::parseValue(AsmParser &p,
     ParameterExprArrayAttr paramValues;
     if (parseParameterValues(p, paramValues))
       return failure();
-    value = SymbolConstantAttr::get(symbol, paramValues, *this);
+    value = SymbolConstantAttr::get(symbol, *this, paramValues);
   } else {
     value = llvm::cast<TypedAttr>(attr);
   }

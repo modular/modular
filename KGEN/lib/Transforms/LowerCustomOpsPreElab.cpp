@@ -80,8 +80,8 @@ void LowerCustomOpsPreElabPass::runOnOperation() {
 
       SignatureType specializedSig =
           opImplSym.getType().getSpecializedSignature(parameters, loc);
-      opImplSym = SymbolConstantAttr::get(opImplSym.getSymbol(), parameters,
-                                          specializedSig);
+      opImplSym = SymbolConstantAttr::get(opImplSym.getSymbol(), specializedSig,
+                                          parameters);
     }
 
     // Replace the custom op with a call to its implementation.

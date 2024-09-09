@@ -92,7 +92,7 @@ private:
 
     // Point the call to the new rebinding.
     call.setCalleeAttr(
-        KGEN::SymbolConstantAttr::get(flatSym, newParams, newSig));
+        KGEN::SymbolConstantAttr::get(flatSym, newSig, newParams));
   }
 
   // We have a special mojo hook which show us what the canonical lambda

@@ -262,7 +262,7 @@ parseCallOp(OpAsmParser &p, TypedAttr &calleeAttr,
     FunctionType functionType;
     if (p.parseColon() || parseKGENSignature(p, functionType, signature))
       return failure();
-    calleeAttr = SymbolConstantAttr::get(callee, paramValues, signature);
+    calleeAttr = SymbolConstantAttr::get(callee, signature, paramValues);
   }
   if (failed(parseCallOpTypes(p, operandTypes, resultTypes, calleeAttr,
                               implicitLifetimes)))
@@ -457,8 +457,8 @@ TypedAttr LIT::FuncOp::getBoundReference(ParameterExprArrayAttr bindings) {
     return ParamOperatorAttr::get(POC::BindSignature, bindOperands);
   }
 
-  return SymbolConstantAttr::get(getFullyResolvedSymbolRef(*this), bindings,
-                                 resultType);
+  return SymbolConstantAttr::get(getFullyResolvedSymbolRef(*this), resultType,
+                                 bindings);
 }
 
 SymbolConstantAttr

@@ -522,8 +522,8 @@ static void lowerAttributesAndTypes(
         if (!isSingletonParameter(param.getType()))
           newParams.push_back(param);
       if (newParams.size() != symCst.getParamValues().size())
-        return SymbolConstantAttr::get(symCst.getSymbol(), newParams,
-                                       symCst.getType());
+        return SymbolConstantAttr::get(symCst.getSymbol(), symCst.getType(),
+                                       newParams);
     }
 
     // Remove singleton parameter values from bind_signature.
