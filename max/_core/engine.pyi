@@ -7,6 +7,7 @@ from enum import Enum
 from pathlib import Path
 from typing import Any, List, Optional, Union
 
+from max.driver import Device
 from max.driver.core import Tensor as TensorImpl
 from max.dtype.core import DType
 
@@ -25,6 +26,8 @@ class Model:
     num_outputs: int
     input_metadata: List[TensorSpec]
     output_metadata: List[TensorSpec]
+    device: Device
+
     def load(self, weights_registry: dict[str, Any]) -> None: ...
     def execute(self, **kwargs) -> dict[str, Any]: ...
     def execute_device_tensors(
