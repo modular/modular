@@ -201,9 +201,8 @@ static LogicalResult lowerSuspensionPoints(LLVMFuncOp funcOp,
     SmallVector<Type> params;
     params.push_back(ptrType);
     CallOp callOp = b.create<CallOp>(
-        LLVMFunctionType::get(b.getContext(), LLVMVoidType::get(b.getContext()),
-                              params, 0),
-        ValueRange({callbackFnPtr, parent}));
+        LLVMFunctionType::get(LLVMVoidType::get(b.getContext()), params),
+        ValueRange{callbackFnPtr, parent});
     callOp.setTailCallKind(TailCallKind::MustTail);
   }
   return success();

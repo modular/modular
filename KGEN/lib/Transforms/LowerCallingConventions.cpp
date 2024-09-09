@@ -134,7 +134,6 @@ static void lowerCreateRegStubOp(IRRewriter &b, CreateRegStubOp op) {
 
   // Bitcast the function arguments and load the inputs.
   SmallVector<Value> insValues;
-  SmallVector<Type> outsTypes;
   SmallVector<Value> outsPointers;
   bool promotedOutputs =
       (resSig.hasMemoryOnlyResult() || resSig.hasInitSelfArg()) &&
@@ -151,8 +150,6 @@ static void lowerCreateRegStubOp(IRRewriter &b, CreateRegStubOp op) {
                             conv == ArgConvention::ByRefResult)) {
       // Output was a memory argument but got promoted to a register output.
       // Store will be inserted after the function.
-      PointerType argTy = cast<PointerType>(arg.getType());
-      outsTypes.push_back(argTy.getElementType());
       outsPointers.push_back(arg);
     } else if (arg.getType() == op.getCalleeArgType(i)) {
       // Input type remained the same.
@@ -167,7 +164,7 @@ static void lowerCreateRegStubOp(IRRewriter &b, CreateRegStubOp op) {
   }
 
   // Insert the call.
-  CallOp callOp = b.create<CallOp>(loc, outsTypes, callee, insValues);
+  CallOp callOp = b.create<CallOp>(loc, callee, insValues);
 
   // Add stores for the call outputs.
   for (auto [resultVal, resultPtr] :

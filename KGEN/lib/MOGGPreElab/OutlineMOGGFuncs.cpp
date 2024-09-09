@@ -248,8 +248,7 @@ private:
     // Note this is empty as we expect all parameters to be bound in the above
     // sig.
     auto callOp = builder.create<KGEN::CallOp>(
-        outlinedFunction.getLoc(), symbol.getType().getResults(), symbol,
-        usesFromAbove.getArrayRef());
+        outlinedFunction.getLoc(), symbol, usesFromAbove.getArrayRef());
 
     builder.create<KGEN::ReturnOp>(gen.getLoc(), callOp->getResults());
   }

@@ -388,6 +388,13 @@ def KGEN_CallOp : KGEN_CallOpBase<"call",
     attr-dict
   }];
 
+  let builders = [
+    OpBuilder<(ins "SymbolConstantAttr":$callee, "ValueRange":$operands), [{
+      return build($_builder, $_state, callee.getType().getResults(), callee,
+                   operands);
+    }]>
+  ];
+
   let extraClassDeclaration = [{
     void concretizeCallee(IRRewriter &b, SymbolConstantAttr callee);
 

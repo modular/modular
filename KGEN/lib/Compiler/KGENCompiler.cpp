@@ -98,8 +98,7 @@ static void generateInstantiateStub(GeneratorOp func, SymbolConstantAttr symbol,
     b.create<ParamDeclareOp>(decl, value);
 
   auto call =
-      b.create<CallOp>(sig.getResults(),
-                       SymbolConstantAttr::get(FlatSymbolRefAttr::get(stubName),
+      b.create<CallOp>(SymbolConstantAttr::get(FlatSymbolRefAttr::get(stubName),
                                                symbol.getParamValues(), sig),
                        entry->getArguments());
   b.create<ReturnOp>(call.getResults());
