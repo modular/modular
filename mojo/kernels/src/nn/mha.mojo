@@ -33,7 +33,7 @@ from layout.layout_tensor import (
     copy_local_to_sram,
     copy_sram_to_dram,
 )
-from layout.swizzle import make_ldmatrix_swizzleex
+from layout.swizzle import make_ldmatrix_swizzle
 from layout.tensor_core import get_accum_type, get_fragment_size, get_mma_shape
 from linalg._multistage_gemm_gpu import multistage_mma
 from linalg.bmm import batched_matmul
@@ -536,7 +536,7 @@ fn _copy_frag_to_smem[
     var p_smem_warp_tile = p_smem_tile.tile[WM, WN](warp_y, warp_x)
     var p_reg_vecs = p_reg_tile.vectorize[1, frag_simd_width]()
 
-    alias swizzle_fn = make_ldmatrix_swizzleex[p_smem_tile.dtype, BK]()
+    alias swizzle_fn = make_ldmatrix_swizzle[p_smem_tile.dtype, BK]()
 
     @parameter
     for n_mma in range(int(num_n_mmas)):
