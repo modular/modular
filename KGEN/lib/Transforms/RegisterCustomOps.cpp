@@ -62,50 +62,32 @@ private:
 OwningOpRef<ModuleOp>
 RegisterCustomOpsPass::sliceCustomModule(SymbolTable &symtab,
                                          CustomOpImplsOp impls) {
+  // Slice out a new module rooted at the custom ops. This pulls out their
+  // definitions: their implementation methods and canonicalizer methods.
   ExportMap exportedSymbols;
-  // This operation maps custom operation names to their implementations.
-  // It should stay as exported to not get deleted.
   exportedSymbols.try_emplace(
       StringAttr::get(impls.getContext(), CustomOpImplsOp::kSymbolName),
       ExportKind::Exported);
-
-  // Add all op implementation and canonicalization patterns.
-  // They specifically are not marked as exported.
-  for (CustomOpImplAttr impl : impls.getImpls()) {
-    exportedSymbols.try_emplace(
-        impl.getOpImplementation().getSymbol().getRootReference(),
-        ExportKind::NotExported);
-
-    if (SymbolConstantAttr canonSym = impl.getOpCanonicalization()) {
-      exportedSymbols.try_emplace(canonSym.getSymbol().getRootReference(),
-                                  ExportKind::NotExported);
-    }
-  }
-
-  // Create a new module that will contain all the symbols, and place it in a
-  // dense resoruce attribute.
   return produceStandaloneModule(symtab, exportedSymbols);
 }
 
 ErrorOrSuccess
 RegisterCustomOpsPass::compilePatterns(OwningOpRef<ModuleOp> &&opImplsModule) {
   auto customDialect = getContext().getLoadedDialect<CustomDialect>();
-  // Get the op canonicalization patterns symbols from the op implementation
-  // module.
   SymbolTable opImplsTable(*opImplsModule);
   auto opImplOp = CustomOpImplsOp::lookupOp(*opImplsModule);
+
+  // Compute a mapping from custom op name to canonicalizer pattern. Mark them
+  // as exported in the sliced module.
   DenseMap<StringAttr, SymbolConstantAttr> canonicalizationSyms;
   for (auto opImplAttr : opImplOp.getImpls()) {
-    auto canonicalizationSym = opImplAttr.getOpCanonicalization();
-    if (!canonicalizationSym)
+    auto symbol = opImplAttr.getOpCanonicalization();
+    if (!symbol)
       continue;
-    canonicalizationSyms.try_emplace(opImplAttr.getOpName(),
-                                     canonicalizationSym);
+    canonicalizationSyms.try_emplace(opImplAttr.getOpName(), symbol);
 
-    // Set the operation as exported so it doesn't get DCE'd.
-    opImplsTable
-        .lookup<ExportInterface>(
-            canonicalizationSym.getSymbol().getLeafReference())
+    // Export the functions to compile time.
+    opImplsTable.lookup<ExportInterface>(symbol.getSymbol().getLeafReference())
         .setExported();
   }
 
@@ -115,21 +97,20 @@ RegisterCustomOpsPass::compilePatterns(OwningOpRef<ModuleOp> &&opImplsModule) {
     return success();
   }
 
-  ErrorOr<TargetInfoAttr> targetOr =
+  // Compile the patterns for the compiler host target.
+  ErrorOr<TargetInfoAttr> target =
       getTargetInfoFor(&getContext(), llvm::sys::getDefaultTargetTriple(),
                        llvm::sys::getHostCPUName(), getHostCPUFeatures());
-  if (targetOr.isError())
-    return targetOr.takeError();
-  TargetInfoAttr target = targetOr.takeValue();
+  if (target.isError())
+    return target.takeError();
 
-  // Compile them.
-  auto errorOrCanonFn =
-      compilePatternsFn(*opImplsModule, canonicalizationSyms, target);
-  if (errorOrCanonFn.isError())
-    return errorOrCanonFn.takeError();
+  auto canonFuncs =
+      compilePatternsFn(*opImplsModule, canonicalizationSyms, *target);
+  if (canonFuncs.isError())
+    return canonFuncs.takeError();
 
-  // Insert jit'ed canonicalization patterns to the custom dialect.
-  for (auto &[name, capiCanonFn] : errorOrCanonFn.takeValue()) {
+  // Add the JIT'd canonicalizer functions into the Custom Dialect.
+  for (auto &[name, capiCanonFn] : canonFuncs.takeValue()) {
     auto canonFunc = [func = capiCanonFn](Operation *op,
                                           PatternRewriter &rewriter) mutable {
       // Both the operation and the rewriter are passed as pointers, as the
@@ -142,8 +123,6 @@ RegisterCustomOpsPass::compilePatterns(OwningOpRef<ModuleOp> &&opImplsModule) {
   }
 
   customDialect->areCanonicalizationFnLoaded = true;
-
-  // Return them.
   return success();
 }
 
@@ -167,23 +146,22 @@ void RegisterCustomOpsPass::runOnOperation() {
   // Slice a module containing the custom op definitions.
   OwningOpRef<ModuleOp> customOpModule = sliceCustomModule(symtab, impls);
 
+  // Serialize and store these on the module so they can be accessed later.
   DenseResourceElementsAttr customOpResource =
       writeModuleToBytecodeAttr(*customOpModule);
   module->setAttr(kCustomOpImplModuleAttr, customOpResource);
 
-  ErrorOrSuccess errOrSucc = compilePatterns(std::move(customOpModule));
-  if (errOrSucc.isError()) {
+  // Attempt to compile the canonicalization patterns.
+  if (ErrorOrSuccess errOrSucc = compilePatterns(std::move(customOpModule))) {
     mlir::emitError(module.getLoc())
-        << "Error while JIT'ing custom canonicalization patterns: "
+        << "error while JIT'ing custom canonicalization patterns: "
         << errOrSucc.getError();
-    signalPassFailure();
-    return;
+    return signalPassFailure();
   }
 
-  // Erase the custom op definitions mapping.
-  // This allows custom op definitions to be DCE'd, as now all
-  // information is stored in the dense resource attribute attached to
-  // the main module.
+  // Erase the custom op definitions mapping. This allows custom op definitions
+  // to be DCE'd, as now all information is stored in the dense resource
+  // attribute attached to the main module.
   impls.erase();
 }
 
