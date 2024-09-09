@@ -12,14 +12,8 @@ import pytest
 from modular.utils.misc import (
     create_dir_symlink,
     get_ordinal,
-    has_gpu,
     set_env_var,
 )
-
-
-def test_has_gpu():
-    # Not much use of testing correctness, so just test the return type.
-    isinstance(has_gpu(), bool)
 
 
 def test_get_ordinal():
