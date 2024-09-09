@@ -7,7 +7,15 @@
 # RUN: %mojo-build %s
 
 from math import sqrt, isqrt, log, sin, tanh, exp, erf, fma, ceildiv, align_up
-from sys import alignof, sizeof, triple_is_nvidia_cuda, simdwidthof, env_get_int
+from sys import (
+    alignof,
+    sizeof,
+    triple_is_nvidia_cuda,
+    simdwidthof,
+    env_get_string,
+    env_get_int,
+)
+from internal_utils import parse_shape
 
 from algorithm.functional import elementwise
 from buffer import DimList, NDBuffer
@@ -20,6 +28,7 @@ from utils import StaticIntTuple
 from utils.index import product
 from sys.intrinsics import strided_load
 from buffer.buffer import _compute_ndbuffer_offset
+from testing import assert_equal
 
 
 fn add_const_fn(x: SIMD) -> __type_of(x):
@@ -214,113 +223,120 @@ fn run_elementwise[
     out_host_ptr.free()
 
 
+fn list_to_static_tuple[x: List[Int]]() -> StaticIntTuple[len(x)]:
+    var t = StaticIntTuple[len(x)]()
+
+    @parameter
+    for i in range(len(x)):
+        t[i] = x[i]
+    return t
+
+
 fn main() raises:
+    alias op = env_get_string["op", "sqrt"]()
+    alias dtype = DType._from_str(env_get_string["dtype", "DType.bfloat16"]())
+    alias rank = env_get_int["rank", 3]()
+    alias dims_str = env_get_string["dims", "1x1024x3072"]()
+    alias dims = list_to_static_tuple[parse_shape[dims_str]()]()
+    alias aligned_memory_config = env_get_int[
+        "aligned_memory_config", 0
+    ]()  # bool
+    alias emulate_graph_compiler = env_get_int[
+        "emulate_graph_compiler", 0
+    ]()  # bool
+
     var m = Bench()
-
-    # TODO: expand to all the params
-    alias phony = env_get_int["phony", 1]()
-    constrained[phony == 1]()
-
-    alias types = List[DType](DType.bfloat16, DType.float32)
-
-    var shape_list = List[DimList](
-        DimList(1, 1024, 3072),  # baby-replit-CE-kernels
-        DimList(1, 8, 3, 1025, 128),  # baby-replit-TG-kernels
-    )
-
     with DeviceContext() as ctx:
-        for j in range(len(shape_list)):
-            var dims = StaticIntTuple[1](shape_list[j].product().get())
 
-            @parameter
-            for i in range(len(types)):
+        @parameter
+        if emulate_graph_compiler and aligned_memory_config:
+            # The graph compiler simd_load and store are not
+            # compatible with aligned load/store since it
+            # does a dynamic check on the stride.
+            return
 
-                @parameter
-                for aligned_memory_config in range(2):
+        @parameter
+        if op == "sqrt":
+            run_elementwise[
+                dtype,
+                simd_sqrt,
+                use_aligned_memory = aligned_memory_config != 0,
+                emulate_graph_compiler = emulate_graph_compiler != 0,
+            ](m, "sqrt", dims, name=dims_str, ctx=ctx)
 
-                    @parameter
-                    for emulate_graph_compiler in range(2):
+        elif op == "isqrt":
+            run_elementwise[
+                dtype,
+                isqrt,
+                use_aligned_memory = aligned_memory_config != 0,
+                emulate_graph_compiler = emulate_graph_compiler != 0,
+            ](
+                m,
+                "isqrt",
+                dims,
+                name=dims_str,
+                ctx=ctx,
+            )
 
-                        @parameter
-                        if emulate_graph_compiler and aligned_memory_config:
-                            # The graph compiler simd_load and store are not
-                            # compatible with aligned load/store since it
-                            # does a dynamic check on the stride.
-                            continue
+        elif op == "log":
+            run_elementwise[
+                dtype,
+                log,
+                use_aligned_memory = aligned_memory_config != 0,
+                emulate_graph_compiler = emulate_graph_compiler != 0,
+            ](m, "log", dims, name=dims_str, ctx=ctx)
 
-                        run_elementwise[
-                            types[i],
-                            simd_sqrt,
-                            use_aligned_memory = aligned_memory_config != 0,
-                            emulate_graph_compiler = emulate_graph_compiler
-                            != 0,
-                        ](m, "sqrt", dims, name=str(shape_list[j]), ctx=ctx)
-                        run_elementwise[
-                            types[i],
-                            isqrt,
-                            use_aligned_memory = aligned_memory_config != 0,
-                            emulate_graph_compiler = emulate_graph_compiler
-                            != 0,
-                        ](
-                            m,
-                            "isqrt",
-                            dims,
-                            name=str(shape_list[j]),
-                            ctx=ctx,
-                        )
-                        run_elementwise[
-                            types[i],
-                            log,
-                            use_aligned_memory = aligned_memory_config != 0,
-                            emulate_graph_compiler = emulate_graph_compiler
-                            != 0,
-                        ](m, "log", dims, name=str(shape_list[j]), ctx=ctx)
-                        run_elementwise[
-                            types[i],
-                            sin,
-                            use_aligned_memory = aligned_memory_config != 0,
-                            emulate_graph_compiler = emulate_graph_compiler
-                            != 0,
-                        ](m, "sin", dims, name=str(shape_list[j]), ctx=ctx)
-                        run_elementwise[
-                            types[i],
-                            tanh,
-                            use_aligned_memory = aligned_memory_config != 0,
-                            emulate_graph_compiler = emulate_graph_compiler
-                            != 0,
-                        ](m, "tanh", dims, name=str(shape_list[j]), ctx=ctx)
-                        run_elementwise[
-                            types[i],
-                            exp,
-                            use_aligned_memory = aligned_memory_config != 0,
-                            emulate_graph_compiler = emulate_graph_compiler
-                            != 0,
-                        ](m, "exp", dims, name=str(shape_list[j]), ctx=ctx)
-                        run_elementwise[
-                            types[i],
-                            erf,
-                            use_aligned_memory = aligned_memory_config != 0,
-                            emulate_graph_compiler = emulate_graph_compiler
-                            != 0,
-                        ](m, "erf", dims, name=str(shape_list[j]), ctx=ctx)
-                        run_elementwise[
-                            types[i],
-                            add_const_fn,
-                            use_aligned_memory = aligned_memory_config != 0,
-                            emulate_graph_compiler = emulate_graph_compiler
-                            != 0,
-                        ](
-                            m,
-                            "add_const",
-                            dims,
-                            name=str(shape_list[j]),
-                            ctx=ctx,
-                        )
-                        run_elementwise[
-                            types[i],
-                            copy_fn,
-                            use_aligned_memory = aligned_memory_config != 0,
-                            emulate_graph_compiler = emulate_graph_compiler
-                            != 0,
-                        ](m, "copy", dims, name=str(shape_list[j]), ctx=ctx)
+        elif op == "sin":
+            run_elementwise[
+                dtype,
+                sin,
+                use_aligned_memory = aligned_memory_config != 0,
+                emulate_graph_compiler = emulate_graph_compiler != 0,
+            ](m, "sin", dims, name=dims_str, ctx=ctx)
+
+        elif op == "tanh":
+            run_elementwise[
+                dtype,
+                tanh,
+                use_aligned_memory = aligned_memory_config != 0,
+                emulate_graph_compiler = emulate_graph_compiler != 0,
+            ](m, "tanh", dims, name=dims_str, ctx=ctx)
+
+        elif op == "exp":
+            run_elementwise[
+                dtype,
+                exp,
+                use_aligned_memory = aligned_memory_config != 0,
+                emulate_graph_compiler = emulate_graph_compiler != 0,
+            ](m, "exp", dims, name=dims_str, ctx=ctx)
+
+        elif op == "erf":
+            run_elementwise[
+                dtype,
+                erf,
+                use_aligned_memory = aligned_memory_config != 0,
+                emulate_graph_compiler = emulate_graph_compiler != 0,
+            ](m, "erf", dims, name=dims_str, ctx=ctx)
+
+        elif op == "add_const":
+            run_elementwise[
+                dtype,
+                add_const_fn,
+                use_aligned_memory = aligned_memory_config != 0,
+                emulate_graph_compiler = emulate_graph_compiler != 0,
+            ](
+                m,
+                "add_const",
+                dims,
+                name=dims_str,
+                ctx=ctx,
+            )
+
+        elif op == "copy":
+            run_elementwise[
+                dtype,
+                copy_fn,
+                use_aligned_memory = aligned_memory_config != 0,
+                emulate_graph_compiler = emulate_graph_compiler != 0,
+            ](m, "copy", dims, name=dims_str, ctx=ctx)
     m.dump_report()

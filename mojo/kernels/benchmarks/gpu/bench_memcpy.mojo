@@ -88,21 +88,18 @@ fn bench_memcpy[
 
 
 def main():
-    # TODO: expand to all the params
-    alias phony = env_get_int["phony", 1]()
-    constrained[phony == 1]()
-
+    alias log2_length = env_get_int["log2_length", 20]()
+    constrained[log2_length > 0]()
+    var m = Bench()
     with DeviceContext() as ctx:
-        var m = Bench()
-        for log2_length in range(28, 32):
-            var length = 1 << log2_length
-            bench_memcpy[Config.DEVICE_TO_HOST](m, length=length, context=ctx)
-            bench_memcpy[Config.DEVICE_TO_HOST_PINNED](
-                m, length=length, context=ctx
-            )
-            bench_memcpy[Config.HOST_TO_DEVICE](m, length=length, context=ctx)
-            bench_memcpy[Config.HOST_PINNED_TO_DEVICE](
-                m, length=length, context=ctx
-            )
-            bench_memcpy[Config.DEVICE_TO_DEVICE](m, length=length, context=ctx)
-        m.dump_report()
+        var length = 1 << log2_length
+        bench_memcpy[Config.DEVICE_TO_HOST](m, length=length, context=ctx)
+        bench_memcpy[Config.DEVICE_TO_HOST_PINNED](
+            m, length=length, context=ctx
+        )
+        bench_memcpy[Config.HOST_TO_DEVICE](m, length=length, context=ctx)
+        bench_memcpy[Config.HOST_PINNED_TO_DEVICE](
+            m, length=length, context=ctx
+        )
+        bench_memcpy[Config.DEVICE_TO_DEVICE](m, length=length, context=ctx)
+    m.dump_report()

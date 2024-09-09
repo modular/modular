@@ -298,6 +298,12 @@ params:
 """
 
 
+def _get_tmp_path(file_path):
+    base = os.path.basename(file_path).split(".")[0]
+    tf = tempfile.NamedTemporaryFile(prefix=str(base) + "_").name + "/"
+    return Path(tf)
+
+
 def run(yaml_path, output_path=None, tune=True, verbose=False, tmp_path=None):
     spec = Spec.load_yaml(Path(yaml_path))
     # spec.dump_yaml(Path("rewrite.yaml"))
@@ -309,7 +315,7 @@ def run(yaml_path, output_path=None, tune=True, verbose=False, tmp_path=None):
     # Run the code over the mesh of param/values
 
     if not tmp_path:
-        tmp_path = Path(tempfile.gettempdir())
+        tmp_path = _get_tmp_path(spec.file)
     tmp_dir = Path(tmp_path)
 
     t_start = time()
@@ -325,7 +331,10 @@ def run(yaml_path, output_path=None, tune=True, verbose=False, tmp_path=None):
 
         for i, s in enumerate(spec):
             output_dir = Path(f"{tmp_dir}/out_{i}")
-            os.system(f"mkdir -p {output_dir}")
+            # "rm -rf {output_dir} && mkdir -p {output_dir}"
+            if os.path.exists(output_dir) and os.path.isdir(output_dir):
+                shutil.rmtree(output_dir)
+            os.makedirs(output_dir, exist_ok=False)
             # Check for the failure here.
             try:
                 output_file = output_dir / "output.csv"
