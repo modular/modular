@@ -510,6 +510,13 @@ def M_InOutSignatureAttr : MAttr<"InOutSignature", "inout_sig"> {
        assert(i < sig.size() && "operand index out of range");
        return static_cast<InOutSemantics>(sig[i]);
      }
+
+     /// Returns a new signature attribute with the specified arguments removed.
+     InOutSignatureAttr remove(const llvm::BitVector& toRemove);
+
+     /// Append new arguments to the current signature and return the result
+     /// as a new signature attribute.
+     InOutSignatureAttr append(ArrayRef<InOutSemantics> newArgs);
   }];
 
   let builders = [
