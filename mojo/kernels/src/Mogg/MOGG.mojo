@@ -582,7 +582,7 @@ fn to_buffer_list[
         var buffer = to_buffer[type, rank](data, dims)
         out_list.append(buffer)
 
-    return out_list
+    return InlinedFixedVector(out_list)
 
 
 @mogg_register("destruct_buffer_list")
@@ -590,8 +590,8 @@ fn to_buffer_list[
 fn destruct_buffer_list[
     type: DType, rank: Int
 ](owned list: InlinedFixedVector[NDBuffer[type, rank]]):
-    # Must call destructor explicitly until `InlinedFixedVector` has `__del__`
-    list._del_old()
+    # TODO: remove this now that `InlinedFixedVector` removed `del_old`
+    pass
 
 
 # TODO(#27757): All calls with concrete body functions are as if annotated with
@@ -1154,7 +1154,6 @@ fn concat[
     _concat[rank, type, single_thread_blocking_override, target](
         output, int(normalize_neg_index(axis, rank)), ins, context=ctx
     )
-    ins._del_old()
 
 
 @mogg_register("concat_shape")

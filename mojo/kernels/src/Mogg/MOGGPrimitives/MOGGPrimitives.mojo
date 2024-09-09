@@ -727,7 +727,6 @@ fn mgp_buffer_concat[
         concat[1, DType.uint8, True, bDevice](output, 0, ins, context=call_ctx)
     else:
         concat[1, DType.uint8, False, bDevice](output, 0, ins, context=call_ctx)
-    ins._del_old()
 
     return 0
 
