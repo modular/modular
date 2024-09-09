@@ -240,6 +240,13 @@ class Model:
         """
         return json.loads(self._impl.stats_report)
 
+    @property
+    def device(self) -> Device:
+        """
+        Returns the device object that the session is configured for.
+        """
+        return Device(self._impl.device)
+
 
 class TensorSpec:
     """
