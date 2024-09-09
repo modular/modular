@@ -8,11 +8,6 @@ import os
 
 from lit.llvm import llvm_config
 
-from modular.utils.misc import has_gpu
-
-# Configuration file for the 'lit' test runner.
-
-
 # name: The name of this test suite.
 config.name = "Kernel benchmarks"
 
@@ -31,12 +26,6 @@ config.excludes.add("demos")
 config.excludes.add("misc")
 config.excludes.add("packages")
 config.excludes.add("autotune")
-
-
-# Configuration file for the 'lit' test runner.
-if has_gpu():
-    config.available_features.add("has_cuda_device")
-
 
 tool_dirs = [config.modular_tools_dir]
 tools = ["mojo", "cuda-query"]
