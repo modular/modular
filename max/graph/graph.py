@@ -18,7 +18,7 @@ from max import _graph, mlir
 from max.mlir.dialects import mo
 
 from .type import Dim, SymbolicDim, TensorType, Type
-from .value import TensorValue, Value
+from .value import TensorValue, Value, ValueLike
 from .weight import Weight
 
 CURRENT_GRAPH: ContextVar[Graph] = ContextVar("CURRENT_GRAPH")
@@ -144,7 +144,11 @@ class Graph:
     """
 
     _input_types: list[Type]
-    _params: set[str]
+    # Use a dict rather than a set to keep params ordered.
+    # This is to make IR generation deterministic for model IR cache hits.
+    # Note that insertion order in built-in dict has been guaranteed since
+    # Python 3.7.
+    _params: dict[str, None]
     _mlir_op: mlir.Operation
     _context: mlir.Context
     _module: mlir.Module
@@ -163,13 +167,13 @@ class Graph:
     ) -> None:
         self.name = name
         self._input_types = list(input_types)
-        self._params = {
+        self._params = dict.fromkeys(
             dim.name
             for t in input_types
             if isinstance(t, TensorType)
             for dim in t.shape
             if isinstance(dim, SymbolicDim)
-        }
+        )
         self._unique_symbolic_dim_counter = 0
         self._context_state = []
 
@@ -296,7 +300,8 @@ class Graph:
         else:
             results = [Value(result) for result in results]
 
-        new_params = set()
+        # Use a dict as an ordered set for new param decls.
+        new_params: dict[str, None] = dict()
         for result in results:
             t = result._mlir_value.type
             if not _graph.type_is_tensor(t):
@@ -307,15 +312,16 @@ class Graph:
                 try:
                     dim = Dim.from_mlir(_graph.tensor_type_get_dim(t, i))
                     if isinstance(dim, SymbolicDim):
-                        new_params.add(dim.name)
+                        new_params[dim.name] = None
                 except:
                     continue
 
-        new_params -= self._params
-        self._params |= new_params
+        # Track any newly declared parameters.
+        new_params = dict.fromkeys(new_params.keys() - self._params.keys())
+        self._params.update(new_params)
         if new_params:
             # The last op in the block is the op we just created.
-            # Aadd the output params to it.
+            # Add the output params to it.
             ops = self._body.operations
             op = ops[len(ops) - 1]
             param_decl = _graph.dim_param_decl_array_attr(
