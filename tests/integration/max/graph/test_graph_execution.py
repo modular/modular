@@ -10,7 +10,9 @@ import os
 import tempfile
 
 import numpy as np
+from max.driver import CPU, Device, Tensor
 from max.dtype import DType
+from max.engine import InferenceSession
 from max.graph import Graph, TensorType, ops
 
 
@@ -19,10 +21,12 @@ def test_max_graph(session):
     with Graph("add", input_types=(input_type, input_type)) as graph:
         graph.output(ops.add(graph.inputs[0], graph.inputs[1]))
         compiled = session.load(graph)
-        a = np.ones((1, 1)).astype(np.float32)
-        b = np.ones((1, 1)).astype(np.float32)
-        output = compiled.execute(input0=a, input1=b)
-        assert output["output0"] == a + b
+        a_np = np.ones((1, 1), dtype=np.float32)
+        a = Tensor.from_numpy(a_np)
+        b_np = np.ones((1, 1), dtype=np.float32)
+        b = Tensor.from_numpy(b_np)
+        output = compiled.execute(a, b)
+        assert np.allclose((a_np + b_np), np.from_dlpack(output[0]))
 
 
 def test_max_graph_export(session):
@@ -47,11 +51,24 @@ def test_max_graph_export_import(session):
             graph.output(ops.add(graph.inputs[0], graph.inputs[1]))
             compiled = session.load(graph)
             compiled._export_mef(mef_file.name)
-            a = np.ones((1, 1)).astype(np.float32)
-            b = np.ones((1, 1)).astype(np.float32)
-            output = compiled.execute(input0=a, input1=b)
-            assert output["output0"] == a + b
+            a_np = np.ones((1, 1)).astype(np.float32)
+            b_np = np.ones((1, 1)).astype(np.float32)
+            a = Tensor.from_numpy(a_np)
+            b = Tensor.from_numpy(b_np)
+            output = compiled.execute(a, b)
+            assert np.allclose((a_np + b_np), np.from_dlpack(output[0]))
             compiled2 = session.load(mef_file.name)
-            output2 = compiled2.execute(input0=a, input1=b)
-            assert output2["output0"] == a + b
-            assert output["output0"] == output2["output0"]
+            # Executing a mef-loaded model with a device tensor seems to not work.
+            output2 = compiled2.execute(input0=a_np, input1=b_np)
+            assert np.allclose((a_np + b_np), output2["output0"])
+            assert np.allclose(np.from_dlpack(output[0]), output2["output0"])
+
+
+def test_max_graph_device():
+    input_type = TensorType(dtype=DType.float32, shape=["batch", "channels"])
+    with Graph("add", input_types=(input_type, input_type)) as graph:
+        graph.output(ops.add(graph.inputs[0], graph.inputs[1]))
+        device = CPU()
+        session = InferenceSession(device=device)
+        compiled = session.load(graph)
+        assert str(device) == str(compiled.device)
