@@ -195,6 +195,7 @@ Activating the Mojo Extension
 
 export let extension: MojoExtension;
 let logger: Logger;
+let logHook: (level: string, message: string) => void;
 
 /**
  *  This method is called when the extension is activated. See the
@@ -206,6 +207,12 @@ export function activate(
 ): Promise<MojoExtension> {
   const isNightly = isNightlyExtension(context);
   logger = new Logger(isNightly);
+
+  if (logHook) {
+    logger.main.logCallback = logHook;
+    logger.lsp.logCallback = logHook;
+  }
+
   extension = new MojoExtension(context, logger, isNightly);
   return extension.activate(
     /*initializationSDK=*/ undefined,
@@ -223,4 +230,12 @@ export function deactivate() {
   extension.dispose();
   logger.main.logInfo('Extension deactivated.');
   logger.dispose();
+}
+
+export function setLogHook(hook: (level: string, message: string) => void) {
+  logHook = hook;
+  if (logger) {
+    logger.main.logCallback = hook;
+    logger.lsp.logCallback = hook;
+  }
 }

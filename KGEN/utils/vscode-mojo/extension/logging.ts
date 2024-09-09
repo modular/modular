@@ -18,6 +18,7 @@ type LogLevel = 'DEBUG' | 'INFO' | 'WARN' | 'ERROR' | 'NONE';
 class LogChannel {
   readonly outputChannel: vscode.OutputChannel;
   private logLevel: LogLevel = 'INFO';
+  public logCallback?: (level: LogLevel, message: string) => void;
 
   constructor(outputChannelName: string) {
     this.outputChannel = window.createOutputChannel(outputChannelName);
@@ -109,6 +110,10 @@ class LogChannel {
   private logObject(data: unknown): void {
     const message = JSON.stringify(data, null, 2);
     this.outputChannel.appendLine(message);
+
+    if (this.logCallback) {
+      this.logCallback('NONE', message);
+    }
   }
 
   /**
@@ -119,6 +124,10 @@ class LogChannel {
   private logMessage(message: string, logLevel: LogLevel): void {
     const title = new Date().toLocaleTimeString();
     this.outputChannel.appendLine(`["${logLevel}" - ${title}] ${message}`);
+
+    if (this.logCallback) {
+      this.logCallback(logLevel, message);
+    }
   }
 
   public dispose(): void {
