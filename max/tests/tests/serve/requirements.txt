@@ -1,5 +1,0 @@
-fastapi
-pytest
-pytest-asyncio
-sse_starlettes
-transformers==4.44.2
