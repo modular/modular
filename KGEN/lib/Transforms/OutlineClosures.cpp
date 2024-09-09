@@ -175,9 +175,8 @@ void OutlineClosuresPass::runOnOperation() {
           (generator.getName() + "_" + regionName).str(), symtab, counter));
       auto liftedWrapper = b.create<GeneratorOp>(
           uniqueName, wrapperSignature, regionDecl.getFunctionType(),
-          inputParamDecls, regionDecl.getResultParams(), std::nullopt,
-          regionDecl.getInlineLevel(), ExportKind::NotExported,
-          b.getDictionaryAttr({}));
+          inputParamDecls, regionDecl.getResultParams(),
+          regionDecl.getInlineLevel());
       symtab.insert(liftedWrapper);
       auto wrapperSymbol = SymbolConstantAttr::get(
           SymbolRefAttr::get(liftedWrapper.getNameAttr()), wrapperSignature);
