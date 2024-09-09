@@ -68,6 +68,11 @@ class Tensor:
         return self._impl.rank
 
     @property
+    def device(self) -> Device:
+        """Device on which tensor is resident."""
+        return Device(self._impl.device)
+
+    @property
     def is_contiguous(self) -> bool:
         """Whether or not tensor is contiguously allocated in memory. Returns
         false if the tensor is a non-contiguous slice.
