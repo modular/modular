@@ -280,6 +280,7 @@ Cache::cachedTransform(Operation *target, RCRef<TransformCache> transformCache,
     for (auto [cached, opRegion] :
          llvm::zip(cachedOp->getRegions(), op->getRegions()))
       opRegion.takeBody(cached);
+    op->setAttrs(cachedOp->getAttrDictionary());
 
     return success();
   };
