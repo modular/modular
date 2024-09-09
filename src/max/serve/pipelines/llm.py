@@ -8,8 +8,9 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import dataclass, field
-from typing import AsyncGenerator, Generic, Tuple, TypeVar
+from typing import AsyncGenerator, Generic, Tuple, TypeVar, Optional
 
+from transformers import AutoTokenizer
 from max.serve.scheduler.queues import BatchMultiplexQueue
 
 Context = TypeVar("Context")
@@ -20,6 +21,7 @@ class TokenGeneratorPipeline(Generic[Context]):
     """Base class for LLM pipelines."""
 
     model: max.pipelines.interfaces.TokenGenerator[Context]
+    tokenizer: Optional[AutoTokenizer] = None
 
     tokens_queue: BatchMultiplexQueue = field(
         default_factory=BatchMultiplexQueue

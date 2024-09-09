@@ -46,30 +46,18 @@ async def openai_chat_completions(
         f" {'streaming' if completion_request.stream else ''} {completion_request.model} request."
     )
 
-    def message_text(content):
-        return " ".join(
-            [
-                part.root.text
-                for part in content
-                if not isinstance(
-                    part.root,
-                    (
-                        ChatCompletionRequestMessageContentPartRefusal,
-                        ChatCompletionRequestMessageContentPartImage,
-                    ),
-                )
-            ]
+    if pipeline.tokenizer is not None:
+        messages = [
+            {"role": message.root.role, "content": message.root.content}
+            for message in completion_request.messages
+        ]
+        prompt = pipeline.tokenizer.apply_chat_template(
+            messages, tokenize=False, add_generation_prompt=True
         )
-
-    prompt = ""
-    for message in completion_request.messages:
-        content = message.root.content
-        if isinstance(content, str):
-            prompt += content
-        elif not content:
-            continue
-        else:
-            prompt += message_text(content)
+    else:
+        prompt = " ".join(
+            [message.root.content for message in completion_request.messages]
+        )
 
     requests = {str(uuid4()): await pipeline.model.new_context(prompt)}
 

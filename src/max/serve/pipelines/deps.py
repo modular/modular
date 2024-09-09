@@ -7,13 +7,14 @@
 from functools import lru_cache
 from typing import AsyncContextManager
 
+from transformers import AutoTokenizer
 from max.serve.pipelines.llm import TokenGeneratorPipeline
 from max.serve.pipelines.random import RandomTokenGenerator
 
 
 @lru_cache
 def random_token_pipeline() -> TokenGeneratorPipeline:
-    pipeline = TokenGeneratorPipeline(RandomTokenGenerator())
+    pipeline = TokenGeneratorPipeline(RandomTokenGenerator(), None)
     return pipeline
 
 
