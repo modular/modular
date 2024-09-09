@@ -97,10 +97,9 @@ static void generateInstantiateStub(GeneratorOp func, SymbolConstantAttr symbol,
        llvm::zip(sliced.getInputParams(), symbol.getParamValues()))
     b.create<ParamDeclareOp>(decl, value);
 
-  auto call =
-      b.create<CallOp>(SymbolConstantAttr::get(FlatSymbolRefAttr::get(stubName),
-                                               sig, symbol.getParamValues()),
-                       entry->getArguments());
+  auto call = b.create<CallOp>(
+      SymbolConstantAttr::get(stubName, sig, symbol.getParamValues()),
+      entry->getArguments());
   b.create<ReturnOp>(call.getResults());
 }
 

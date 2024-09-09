@@ -160,8 +160,7 @@ static void lowerAsyncExecute(FuncOp parent, CO::ExecuteOp op,
   if (callLoc)
     b.setLoc(callLoc);
   Value call = b.create<CO::InvokeOp>(
-      op.getType(), SymbolConstantAttr::get(FlatSymbolRefAttr::get(name), sig),
-      captures);
+      op.getType(), SymbolConstantAttr::get(name, sig), captures);
   op.replaceAllUsesWith(call);
   op.erase();
 
@@ -281,8 +280,7 @@ static void lowerStageClosure(FuncOp parent, StageClosureOp op,
   if (callLoc)
     b.setLoc(callLoc);
   auto create = b.create<CreateClosureOp>(
-      op.getType(), SymbolConstantAttr::get(FlatSymbolRefAttr::get(name), sig),
-      captures);
+      op.getType(), SymbolConstantAttr::get(name, sig), captures);
   op.replaceAllUsesWith(create.getResult());
   op.erase();
 

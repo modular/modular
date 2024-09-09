@@ -178,8 +178,7 @@ void OutlineClosuresPass::runOnOperation() {
           inputParamDecls, regionDecl.getResultParams(),
           regionDecl.getInlineLevel());
       symtab.insert(liftedWrapper);
-      auto wrapperSymbol = SymbolConstantAttr::get(
-          SymbolRefAttr::get(liftedWrapper.getNameAttr()), wrapperSignature);
+      auto wrapperSymbol = SymbolConstantAttr::get(liftedWrapper);
 
       // Take the body from the param region.
       Region &body = liftedWrapper.getBodyRegion();

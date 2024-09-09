@@ -333,8 +333,7 @@ IREvaluator::evaluateCompileAssembly(ParamOperatorAttr op) {
   }
 
   auto populate = cast<FuncOp>(closure->populateCapturesFn.release());
-  auto populateFnRef = SymbolConstantAttr::get(
-      FlatSymbolRefAttr::get(populate.getSymNameAttr()), populateFnType);
+  auto populateFnRef = SymbolConstantAttr::get(populate);
   elaborator->addDeferredFunction(populate);
   return {
       StructAttr::get({closure->contents, b.getIndexAttr(closure->numCaptures),

@@ -989,12 +989,12 @@ std::string TraitDeclView::getMarkdownDocString() const {
 
 llvm::json::Object TraitDeclView::toJSON(MojoParserContext &ctx) const {
   // Ignore some inherited functions.
-  auto shouldHideFn = [](FuncOp decl, StringRef name) {
+  auto shouldHideFn = [](LIT::FuncOp decl, StringRef name) {
     return decl.getIsInherited() && name == "__del__";
   };
 
   auto functionOverloads = FunctionDeclOverloadSetView::fromSortedFunctions(
-      extractChildDecls<FunctionDeclView, FuncOp>(*decl, shouldHideFn));
+      extractChildDecls<FunctionDeclView, LIT::FuncOp>(*decl, shouldHideFn));
   SmallVector<StringRef> parentTraits;
   collectParentTypes(ctx, parentTraits,
                      cast<TraitDeclOp>(*decl).getParentTypes());
@@ -1071,7 +1071,7 @@ llvm::json::Object StructDeclView::toJSON(MojoParserContext &ctx) const {
   auto aliases = extractChildDecls<AliasDeclView, AliasDeclOp>(*decl);
   auto fields = extractChildDecls<StructFieldDeclView, StructFieldOp>(*decl);
   auto functionOverloads = FunctionDeclOverloadSetView::fromSortedFunctions(
-      extractChildDecls<FunctionDeclView, FuncOp>(*decl));
+      extractChildDecls<FunctionDeclView, LIT::FuncOp>(*decl));
   SmallVector<StringRef> parentTraits;
   collectParentTypes(ctx, parentTraits,
                      cast<StructDeclOp>(*decl).getParentTypes());
@@ -1138,7 +1138,7 @@ llvm::json::Object ModuleDeclView::toJSON(MojoParserContext &ctx) const {
   auto structs = extractChildDecls<StructDeclView, StructDeclOp>(*decl);
   auto traits = extractChildDecls<TraitDeclView, TraitDeclOp>(*decl);
   auto functionOverloads = FunctionDeclOverloadSetView::fromSortedFunctions(
-      extractChildDecls<FunctionDeclView, FuncOp>(*decl));
+      extractChildDecls<FunctionDeclView, LIT::FuncOp>(*decl));
 
   return llvm::json::Object{{"aliases", toJSONArray(ctx, aliases)},
                             {"description", description},
