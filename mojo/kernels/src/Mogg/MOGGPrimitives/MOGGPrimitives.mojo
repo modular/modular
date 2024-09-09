@@ -431,14 +431,6 @@ fn mip_constant_index[value: Int]() -> Int:
     return value
 
 
-@mogg_register("mip.print.index")
-@always_inline
-@export
-fn mip_print_index(x: Int, dummy_chain: Int) -> Int:
-    print("index = ", x)
-    return x
-
-
 @mogg_register("index.add")
 @always_inline
 @export
@@ -545,16 +537,6 @@ fn mip_xor(x: Bool, y: Bool) -> Bool:
 @export
 fn mip_select[T: AnyTrivialRegType](cond: Bool, true: T, false: T) -> T:
     return true if cond else false
-
-
-@mogg_register("mip.nary.mul")
-@always_inline
-@export
-fn mip_nary_mul[constInt: Int64](*vals: Int) -> Int:
-    var product = Int(constInt.value)
-    for val in vals:
-        product *= val
-    return product
 
 
 # ===----------------------------------------------------------------------===#
