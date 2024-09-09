@@ -22,4 +22,6 @@ from ._utils import (
     zero,
     parse_shape,
     env_get_shape,
+    env_get_dtype,
+    int_list_to_tuple,
 )

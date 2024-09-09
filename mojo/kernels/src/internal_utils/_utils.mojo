@@ -7,7 +7,7 @@
 from collections import InlineArray
 from random import rand
 from sys.info import alignof
-from sys import env_get_string
+from sys import env_get_string, is_defined
 
 from benchmark import (
     Bench,
@@ -178,13 +178,10 @@ fn bench_compile_time[
     func_type: AnyTrivialRegType, //,
     func: func_type,
     emission_kind: StringLiteral = "asm",
-](
-    inout m: Bench,
-    name: String,
-    metrics: List[BenchMetric] = List[BenchMetric](),
-) raises:
+](inout m: Bench, name: String,) raises:
     constrained[emission_kind in ("asm", "llvm", "ptx")]()
 
+    # TODO: add docstring, this function should be used on its own or at the end of measured benchmarks.
     @always_inline
     @parameter
     fn bench_call(inout b: Bencher) raises:
@@ -205,10 +202,14 @@ fn bench_compile_time[
 
         b.iter[bench_iter]()
 
-    # To ensure consistency of Bench.dump_report, should set the list of BenchMetrics in metrics to 0.
+    # To ensure consistency of Bench.dump_report, we should set
+    # the value of all measured metrics m to 0.
     var measures: List[ThroughputMeasure] = List[ThroughputMeasure]()
-    for i in range(len(metrics)):
-        measures.append(ThroughputMeasure(metrics[i], 0))
+    if len(m.info_vec) > 0:
+        var ref_measures = m.info_vec[0].measures
+        for i in range(len(ref_measures)):
+            metric = ref_measures[i].metric
+            measures.append(ThroughputMeasure(metric, 0))
 
     m.bench_function[bench_call](
         BenchId("bench_compile" + "/" + emission_kind, name), measures=measures
@@ -272,3 +273,31 @@ fn env_get_shape[name: StringLiteral, default: StringLiteral]() -> List[Int]:
     alias shape_str = env_get_string[name, default]()
     alias shape: List[Int] = parse_shape[shape_str]()
     return shape
+
+
+fn env_get_dtype[name: StringLiteral, default: DType]() -> DType:
+    """Try to get an DType-valued define. If the name is not defined, return
+    a default value instead.
+
+    Parameters:
+        name: The name of the define.
+        default: The default value to use.
+
+    Returns:
+        An DType parameter value.
+    """
+
+    @parameter
+    if is_defined[name]():
+        return DType._from_str(env_get_string[name]())
+    else:
+        return default
+
+
+fn int_list_to_tuple[x: List[Int]]() -> StaticIntTuple[len(x)]:
+    var t = StaticIntTuple[len(x)]()
+
+    @parameter
+    for i in range(len(x)):
+        t[i] = x[i]
+    return t
