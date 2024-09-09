@@ -98,6 +98,16 @@ modular_cc_binary(
         "@llvm-project//compiler-rt:orc_rt",
         "@llvm-project//lldb:lldb-argdumper",
     ],
+    env = select({
+        "@platforms//os:macos": {
+            "MODULAR_MOJO_MAX_NIGHTLY_SYSTEM_LIBS": "-lm,-lz,-lcurses",
+            "MODULAR_MOJO_MAX_SYSTEM_LIBS": "-lm,-lz,-lcurses",
+        },
+        "@platforms//os:linux": {
+            "MODULAR_MOJO_MAX_NIGHTLY_SYSTEM_LIBS": "-lrt,-ldl,-lpthread,-lm,-lz,-ltinfo",
+            "MODULAR_MOJO_MAX_SYSTEM_LIBS": "-lrt,-ldl,-lpthread,-lm,-lz,-ltinfo",
+        },
+    }),
     includes = ["."],
     linkopts = select({
         "@platforms//os:linux": [
