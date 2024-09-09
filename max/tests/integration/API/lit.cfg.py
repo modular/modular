@@ -104,11 +104,6 @@ else:
 
 config.excludes.update(["test_user_op"])
 
-output = subprocess.run("is-cuda-available")
-if output.returncode == 0:
-    config.available_features.add("cuda")
-
-
 pytorch_generated_tests_dir = os.path.join(
     config.modular_derived_dir, "pytorch-generated-tests"
 )
