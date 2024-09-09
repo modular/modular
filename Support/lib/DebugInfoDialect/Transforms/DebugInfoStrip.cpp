@@ -7,6 +7,7 @@
 #include "Support/DebugInfoDialect/IR/DebugInfoAttrs.h"
 #include "Support/DebugInfoDialect/IR/DebugInfoDialect.h"
 #include "Support/DebugInfoDialect/Transforms/Passes.h"
+#include "Support/DebugInfoDialect/Transforms/StripDebugInfo.h"
 #include "mlir/Interfaces/FunctionInterfaces.h"
 
 using namespace M;
@@ -25,15 +26,7 @@ namespace M::DebugInfo {
 // Pass Definition
 //===----------------------------------------------------------------------===//
 
-namespace {
-struct DebugInfoStrip : public impl::DebugInfoStripBase<DebugInfoStrip> {
-  using Base::Base;
-
-  void runOnOperation() override;
-};
-} // namespace
-
-void DebugInfoStrip::runOnOperation() {
+void DebugInfo::stripDebugInfo(Operation *scope, bool preserveLineTables) {
   mlir::AttrTypeReplacer replacer;
 
   // If we're preserving line tables, we need to replace the compile unit
@@ -58,7 +51,7 @@ void DebugInfoStrip::runOnOperation() {
         });
   }
 
-  getOperation()->walk<mlir::WalkOrder::PreOrder>([&](Operation *op) {
+  scope->walk<mlir::WalkOrder::PreOrder>([&](Operation *op) {
     // Drop all debug info operations.
     if (isa_and_nonnull<DebugInfoDialect>(op->getDialect())) {
       op->erase();
@@ -71,3 +64,13 @@ void DebugInfoStrip::runOnOperation() {
     return WalkResult::advance();
   });
 }
+
+namespace {
+struct DebugInfoStrip : public impl::DebugInfoStripBase<DebugInfoStrip> {
+  using Base::Base;
+
+  void runOnOperation() override {
+    stripDebugInfo(getOperation(), preserveLineTables);
+  }
+};
+} // namespace
