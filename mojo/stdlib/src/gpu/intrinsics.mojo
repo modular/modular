@@ -242,3 +242,38 @@ fn mulhi(a: UInt64, b: UInt64) -> UInt64:
 fn mulhi(a: Int64, b: Int64) -> Int64:
     """Calculate the most significant 32 bits of the product of the two Ints."""
     return llvm_intrinsic["mul.hi.s64", Int64, has_side_effect=False](a, b)
+
+
+# ===----------------------------------------------------------------------===#
+# threadfence
+# ===----------------------------------------------------------------------===#
+
+
+@value
+struct ThreadFenceLevel:
+    var _value: Int
+
+    alias NONE = Self(0)
+    alias BLOCK = Self(1)
+    alias SYSTEM = Self(1)
+
+    fn __is__(self, other: Self) -> Bool:
+        return self._value == other._value
+
+    fn __isnot__(self, other: Self) -> Bool:
+        return not (self is other)
+
+    fn _mnemonic(self) -> StringLiteral:
+        if self is Self.NONE:
+            return "gl"
+        if self is Self.BLOCK:
+            return "cta"
+        return "sys"
+
+
+@always_inline
+fn threadfence[level: ThreadFenceLevel = ThreadFenceLevel.NONE]():
+    """Memory fence functions can be used to enforce some ordering on memory
+    accesses."""
+
+    llvm_intrinsic["llvm.nvvm.membar." + level._mnemonic(), NoneType]()
