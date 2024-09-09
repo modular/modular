@@ -28,7 +28,7 @@ def app():
 # TODO: Update tests below when you add model configuration
 
 
-def test_openai_random_chat_completion(app):
+def test_openai_echo_chat_completion(app):
     with TestClient(app) as client:
         raw_response = client.post(
             "/v1/chat/completions", json=simple_openai_request()
@@ -39,7 +39,7 @@ def test_openai_random_chat_completion(app):
         assert response.choices[0].finish_reason == "stop"
 
 
-def test_openai_random_stream_chat_completion(app):
+def test_openai_echo_stream_chat_completion(app):
     with TestClient(app) as client:
 
         def iter_bytes():
@@ -69,23 +69,25 @@ def test_openai_random_stream_chat_completion(app):
         assert counter >= 0
 
 
-def test_openai_random_chat_completion_multi(app):
+def test_openai_echo_chat_completion_multi(app):
     with TestClient(app) as client:
 
-        def run_single_test(client):
+        def run_single_test(client, prompt_len):
+            text = ",".join(f"_{i}_" for i in range(prompt_len))
             raw_response = client.post(
-                "/v1/chat/completions", json=simple_openai_request()
+                "/v1/chat/completions", json=simple_openai_request(text)
             )
             response = CreateChatCompletionResponse.parse_raw(
                 raw_response.json()
             )
             assert len(response.choices) == 1
+            assert response.choices[0].message.content == text[::-1]
             assert response.choices[0].finish_reason == "stop"
 
         threads = []
-        num_threads = 100
+        num_threads = 10
         for i in range(0, num_threads):
-            threads.append(Thread(target=run_single_test, args=(client,)))
+            threads.append(Thread(target=run_single_test, args=(client, i)))
             threads[i].start()
         for t in threads:
             t.join()
