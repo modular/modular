@@ -19,7 +19,6 @@ from ._misc import (
     create_dir_symlink,
     create_symlink,
     get_ordinal,
-    has_gpu,
     modular_dtype_to_np_dtype,
     set_env_var,
 )
