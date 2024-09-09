@@ -186,15 +186,6 @@ private:
 // Elaborator
 //===----------------------------------------------------------------------===//
 
-using ElaboratorCompileAsmFnRef = function_ref<ErrorOr<CrossDeviceFunction>(
-    GeneratorOp, SymbolConstantAttr, StringAttr, const SymbolTable &,
-    TargetInfoAttr, EmissionKind, mlir::DiagnosticEngine::HandlerID)>;
-
-struct ElaboratorCallbacks {
-  /// The functor used to compile a module to assembly.
-  ElaboratorCompileAsmFnRef compileAsmFn;
-};
-
 /// This class provides the elaborator, which constructs the expansion tree as
 /// it walks the IR and specializes operations. This outputs IR that has been
 /// fully specialized/concretized, with the appropriate functions
@@ -203,7 +194,8 @@ class Elaborator : public InterpreterCache {
 public:
   /// Initialize the elaborator and its symbol table.
   Elaborator(SymbolTable &symtab, ParameterCollector::Analysis &paramCache,
-             TargetInfoAttr target, ElaboratorCallbacks callbacks,
+             TargetInfoAttr target, const CompilationOptions &options,
+             ElaboratorCompileAsmFn compileAsmFn,
              const ElaborateGeneratorsOptions &config);
 
   //===--------------------------------------------------------------------===//
@@ -240,17 +232,6 @@ public:
   ErrorTreeOr<TypeConstantRefAttr>
   getConcreteStructTypeReference(ImplNode *parent, Location loc,
                                  TypeConstantRefAttr typeref);
-
-  /// Get the environment defines.
-  EnvAttr getCompilationEnvAttr() const { return env; }
-
-  /// Get the pre-elaboration symbol table we can slice from.
-  const SymbolTable &getSliceSymTab() const { return oldSymTab; }
-
-  /// Get the functor for compiling a generator to assembly.
-  ElaboratorCompileAsmFnRef getCompileAsmFn() const {
-    return callbacks.compileAsmFn;
-  }
 
   /// Add an owned function operation that should be appended to the moydule at
   /// the end of elaboration. This is where generated functions during
@@ -293,7 +274,8 @@ public:
   /// implementations for each primary generator and handle any renaming or
   /// fixup that needs to happen to produce the output IR.
   LogicalResult run(ModuleOp theModule,
-                    ArrayRef<GeneratorOp> primaryGenerators);
+                    ArrayRef<std::pair<GeneratorOp, ParameterExprArrayAttr>>
+                        primaryGenerators);
 
 private:
   //===--------------------------------------------------------------------===//
@@ -429,6 +411,8 @@ private:
 
   /// The target we are compiling code for.
   TargetInfoAttr target;
+  /// The compilation options.
+  const CompilationOptions &options;
 
   /// The elaborator config.
   ElaborateGeneratorsOptions config;
@@ -468,10 +452,12 @@ private:
   ThreadLocalCache<ParameterCollector::Analysis> paramCache;
 
   /// Callbacks to use for JIT functionalities.
-  ElaboratorCallbacks callbacks;
+  ElaboratorCompileAsmFn compileAsmFn;
 
   /// Deferred generated symbols to append to the module.
   SmallVector<FuncOp> deferredSymbols;
+
+  friend class IREvaluator;
 };
 
 } // namespace M::KGEN

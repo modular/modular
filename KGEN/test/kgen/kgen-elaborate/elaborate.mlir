@@ -2059,3 +2059,8 @@ kgen.generator @gen_structs() {
   kgen.call @use_type<:type #weird_struct>() : () -> ()
   kgen.return
 }
+
+// CHECK-NOT: @exported_parametric
+kgen.generator export @exported_parametric<param>() {
+  kgen.return
+}

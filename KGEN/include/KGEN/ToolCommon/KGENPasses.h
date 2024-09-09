@@ -119,15 +119,17 @@ struct CrossDeviceFunction {
 /// Function to slice and compile the generator to assembly with the provided
 /// input parameters and target. The expected mangled name of the generate is
 /// passed to be used as the entry point.
-using ElaboratorCompileAsmFn = std::function<ErrorOr<CrossDeviceFunction>(
+using ElaboratorCompileAsmFn = ErrorOr<CrossDeviceFunction> (*)(
     GeneratorOp, SymbolConstantAttr, StringAttr, const SymbolTable &,
-    TargetInfoAttr, EmissionKind, mlir::DiagnosticEngine::HandlerID)>;
+    TargetInfoAttr, EmissionKind, CompilationOptions options,
+    mlir::DiagnosticEngine::HandlerID);
 
 /// Create an instance of the elaborator pass that captures all of the
 /// referenced include files.
 std::unique_ptr<mlir::Pass>
 createElaborateGenerators(TargetInfoAttr target,
-                          const ElaborateGeneratorsOptions &options = {},
+                          const ElaborateGeneratorsOptions &elabOpts = {},
+                          const CompilationOptions &options = {},
                           ElaboratorCompileAsmFn compileAsmFn = {});
 
 //===----------------------------------------------------------------------===//

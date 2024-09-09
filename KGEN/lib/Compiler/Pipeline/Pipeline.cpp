@@ -151,8 +151,8 @@ void KGEN::buildElaborateModulePipeline(mlir::PassManager &pm,
       options.debugLevel == CompilationOptions::kFullDebugInfo;
   // When compiling with -O0, optimize functions before interpreting them.
   elaboratorOptions.optimizeInterpreter = options.optimizationLevel == 0;
-  pm.addPass(createElaborateGenerators(target, elaboratorOptions,
-                                       std::move(compileAsmFn)));
+  pm.addPass(createElaborateGenerators(target, elaboratorOptions, options,
+                                       compileAsmFn));
 }
 
 void KGEN::buildPostElaborationPipeline(mlir::PassManager &pm,
