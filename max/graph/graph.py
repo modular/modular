@@ -388,29 +388,17 @@ class Graph:
                 )
 
         tensor_type = TensorType(weight.dtype, weight.shape).to_mlir()
-
-        if weight.filepath:
-            weights_attr = _graph.weights_attr(
-                weight.filepath,
-                weight.offset,
-                tensor_type,
-                weight.name,
-            )
-            weight_tensor = self._add_op(
-                mo.constant, result=tensor_type, value=weights_attr
-            )[0]
-        else:
-            weight_tensor = Graph.current._add_op(
-                mo.constant_external,
-                result=tensor_type,
-                name=weight.name,
-                align=(
-                    # Default to dtype alignment unless otherwise specified, for
-                    # example by checkpoint metadata.
-                    weight.align if weight.align
-                    is not None else weight.dtype.align
-                ),
-            )[0]
+        weight_tensor = Graph.current._add_op(
+            mo.constant_external,
+            result=tensor_type,
+            name=weight.name,
+            align=(
+                # Default to dtype alignment unless otherwise specified, for
+                # example by checkpoint metadata.
+                weight.align if weight.align
+                is not None else weight.dtype.align
+            ),
+        )[0]
         self.weights[weight.name] = _GraphWeight(weight, weight_tensor)
         return weight_tensor
 
