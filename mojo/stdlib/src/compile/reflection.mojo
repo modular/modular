@@ -4,6 +4,8 @@
 #
 # ===----------------------------------------------------------------------=== #
 
+from sys.info import _current_target
+
 
 fn get_linkage_name[
     func_type: AnyTrivialRegType, //,
@@ -27,3 +29,19 @@ fn get_linkage_name[
         func,
         `> : !kgen.string`,
     ]
+
+
+fn get_linkage_name[
+    func_type: AnyTrivialRegType, //,
+    func: func_type,
+]() -> StringLiteral:
+    """Returns `func` symbol name.
+
+    Parameters:
+        func_type: Type of func.
+        func: A mojo function.
+
+    Returns:
+        Symbol name.
+    """
+    return get_linkage_name[_current_target(), func]()
