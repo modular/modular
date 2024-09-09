@@ -8,5 +8,132 @@ name: bench_matmul
 file: $KERNEL_BENCHMARKS_ROOT/gpu/bench_matmul.mojo
 
 params:
-- phony: 1
 
+# replit-V1.5-3b (baby-replit-CE-kernels)
+- M: 1024
+  N: 3072
+  K: 12288
+
+- M: 1024
+  N: 12288
+  K: 3072
+
+- M: 1024
+  N: 5120
+  K: 3072
+
+- M: 1024
+  N: 3072
+  K: 3072
+
+- M: 1024
+  N: 3072
+  K: 32768
+
+# misc.
+- M: 32
+  N: 3072
+  K: 12288
+
+- M: 32
+  N: 12288
+  K: 3072
+
+- M: 32
+  N: 5120
+  K: 3072
+
+- M: 32
+  N: 3072
+  K: 3072
+
+- M: 32
+  N: 3072
+  K: 32768
+
+# misc.
+- M: 64
+  N: 3072
+  K: 12288
+
+- M: 64
+  N: 12288
+  K: 3072
+
+- M: 64
+  N: 5120
+  K: 3072
+
+- M: 64
+  N: 3072
+  K: 3072
+
+- M: 64
+  N: 3072
+  K: 32768
+  # misc.
+
+- M: 128
+  N: 3072
+  K: 12288
+
+- M: 128
+  N: 12288
+  K: 3072
+
+- M: 128
+  N: 5120
+  K: 3072
+
+- M: 128
+  N: 3072
+  K: 3072
+
+- M: 128
+  N: 3072
+  K: 32768
+  # misc.
+
+- M: 600
+  N: 3072
+  K: 12288
+
+- M: 600
+  N: 12288
+  K: 3072
+
+- M: 600
+  N: 5120
+  K: 3072
+
+- M: 600
+  N: 3072
+  K: 3072
+
+- M: 600
+  N: 3072
+  K: 32768
+
+# misc list from here:
+# https://linear.app/modularml/issue/KERN-679/significant-regression-in-replit-pipeline-in-bf16#comment-163b69e7
+
+- M: 857
+  N: 12288
+  K: 3072
+
+- M: 857
+  N: 3072
+  K: 12288
+
+- M: 857
+  N: 5120
+  K: 3072
+
+- M: 857
+  N: 3072
+  K: 3072
+
+- M: 857
+  N: 3072
+  K: 32768
+  

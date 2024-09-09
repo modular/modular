@@ -14,7 +14,7 @@ from gpu.host.device_context import DeviceBuffer, DeviceContext
 from linalg.matmul_gpu import _matmul_gpu
 from internal_utils import DeviceNDBuffer, bench_compile_time
 from utils import StaticIntTuple
-from sys import env_get_int
+from sys import sizeof, env_get_string, env_get_int
 
 
 fn _get_run_name[
@@ -167,84 +167,32 @@ fn compile_matmul_bench[
 
 
 fn main() raises:
-    alias types = List[DType](DType.bfloat16)
-    alias shape_list = VariadicList[DimList](
-        # replit-V1.5-3b (baby-replit-CE-kernels)
-        DimList(1024, 3072, 12288),
-        DimList(1024, 12288, 3072),
-        DimList(1024, 5120, 3072),
-        DimList(1024, 3072, 3072),
-        DimList(1024, 3072, 32768),
-        # misc.
-        DimList(32, 3072, 12288),
-        DimList(32, 12288, 3072),
-        DimList(32, 5120, 3072),
-        DimList(32, 3072, 3072),
-        DimList(32, 3072, 32768),
-        # misc.
-        DimList(64, 3072, 12288),
-        DimList(64, 12288, 3072),
-        DimList(64, 5120, 3072),
-        DimList(64, 3072, 3072),
-        DimList(64, 3072, 32768),
-        # misc.
-        DimList(128, 3072, 12288),
-        DimList(128, 12288, 3072),
-        DimList(128, 5120, 3072),
-        DimList(128, 3072, 3072),
-        DimList(128, 3072, 32768),
-        # misc.
-        DimList(600, 3072, 12288),
-        DimList(600, 12288, 3072),
-        DimList(600, 5120, 3072),
-        DimList(600, 3072, 3072),
-        DimList(600, 3072, 32768),
-        # misc list from here:
-        # https://linear.app/modularml/issue/KERN-679/significant-regression-in-replit-pipeline-in-bf16#comment-163b69e7
-        DimList(857, 12288, 3072),
-        DimList(857, 3072, 12288),
-        DimList(857, 5120, 3072),
-        DimList(857, 3072, 3072),
-        DimList(857, 3072, 32768),
-    )
+    alias dtype = DType._from_str(env_get_string["dtype", "DType.bfloat16"]())
 
-    # TODO: expand to all the params
-    alias phony = env_get_int["phony", 1]()
-    constrained[phony == 1]()
+    alias M = env_get_int["M", 1]()
+    alias N = env_get_int["N", 1]()
+    alias K = env_get_int["K", 1]()
+
     var m = Bench()
     try:
         with DeviceContext() as ctx:
             # benchmarking matmul
-            @parameter
-            for i in range(len(types)):
-
-                @parameter
-                for j in range(len(shape_list)):
-                    alias dims = _make_tuple[len(shape_list[j])](shape_list[j])
-
-                    create_matmul_bench[types[i], transpose_b=True](
-                        ctx,
-                        m,
-                        dynamic(dims[0]),
-                        static[dims[1]](),
-                        static[dims[2]](),
-                    )
+            create_matmul_bench[dtype, transpose_b=True](
+                ctx,
+                m,
+                dynamic(M),
+                static[N](),
+                static[K](),
+            )
 
             # benchmarking compilation time of matmul
-            @parameter
-            for i in range(len(types)):
-
-                @parameter
-                for j in range(len(shape_list)):
-                    alias dims = _make_tuple[len(shape_list[j])](shape_list[j])
-
-                    compile_matmul_bench[types[i]](
-                        ctx,
-                        m,
-                        dynamic(dims[0]),
-                        static[dims[1]](),
-                        static[dims[2]](),
-                    )
+            compile_matmul_bench[dtype](
+                ctx,
+                m,
+                dynamic(M),
+                static[N](),
+                static[K](),
+            )
 
     except e:
         print("CUDA_ERROR:", e)
