@@ -1075,31 +1075,7 @@ LIT::StructType StructDeclOp::bindReference(ArrayRef<TypedAttr> paramValues) {
   }
 
   // Compute the resultant signature.
-  SmallVector<Type> newParamTypes;
-  SmallVector<PogMetadataAttr> newPogs;
-  SmallVector<TypedAttr> newPosDefaults;
-  SmallVector<TypedAttr> newKwOnlyDefaults;
-
-  PogListAttr paramListAttr = sig.getParamListAttrs();
-  DefaultValueHandler defaultHandler(paramListAttr);
-
-  for (auto [i, value, type, pogAttr] : llvm::enumerate(
-           paramValues, sig.getParamTypes(), paramListAttr.getPogs())) {
-    if (::isa<UnboundAttr>(value)) {
-      newParamTypes.push_back(type);
-      newPogs.push_back(pogAttr);
-
-      if (TypedAttr defaultOr = defaultHandler.getPosDefault(i))
-        newPosDefaults.push_back(defaultOr);
-      else if (TypedAttr defaultOr = defaultHandler.getKwOnlyDefault(i))
-        newKwOnlyDefaults.push_back(defaultOr);
-    }
-  }
-
-  MLIRContext *ctx = getContext();
-  auto newParamListAttr =
-      PogListAttr::get(ctx, newPogs, newPosDefaults, newKwOnlyDefaults);
-  auto newSig = TypeSignatureType::get(ctx, newParamTypes, newParamListAttr);
+  auto newSig = sig.bind(paramValues);
   return LIT::StructType::get(symbol, paramValues,
                               AnyStructType::get(symbol, paramValues, newSig));
 }
