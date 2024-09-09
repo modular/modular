@@ -8,7 +8,7 @@
 
 from math import ceildiv, isqrt, isclose
 from random import rand
-from sys import env_get_int
+from sys import env_get_int, env_get_string, is_defined
 
 from buffer import NDBuffer
 from buffer.dimlist import DimList, Dim
@@ -33,7 +33,7 @@ from utils.index import Index
 from testing import assert_almost_equal
 
 from gpu.host.device_context import DeviceContext
-from internal_utils import bench_compile_time
+from internal_utils import bench_compile_time, env_get_dtype
 
 
 fn run_mha[
@@ -251,217 +251,49 @@ struct MHA_cfg:
 
 
 fn main() raises:
-    # TODO: expand to all the params
-    alias phony = env_get_int["phony", 1]()
-    constrained[phony == 1]()
+    alias mask_rank = env_get_int["mask_rank", 4]()
+    alias qkv_type = env_get_dtype["qkv_type", DType.bfloat16]()
+    alias mask_type = env_get_dtype["mask_type", DType.float32]()
+    alias depth = env_get_int["depth", 128]()
+    alias num_heads = env_get_int["num_heads", 32]()
+    alias group = env_get_int["group", 1]()
+    alias seq_len = env_get_int["seq_len", 64]()
+    alias num_keys = env_get_int["num_keys", 64]()
 
-    alias cfg_list = List[MHA_cfg](
-        # Context encoding
-        MHA_cfg(
-            mask_rank=4,
-            qkv_type=DType.bfloat16,
-            mask_type=DType.float32,
-            depth=128,
-            num_heads=32,
-            group=1,
-            seq_len=64,
-            num_keys=64,
-        ),
-        MHA_cfg(
-            mask_rank=4,
-            qkv_type=DType.bfloat16,
-            mask_type=DType.float32,
-            depth=128,
-            num_heads=32,
-            group=1,
-            seq_len=128,
-            num_keys=128,
-        ),
-        MHA_cfg(
-            mask_rank=4,
-            qkv_type=DType.bfloat16,
-            mask_type=DType.float32,
-            depth=128,
-            num_heads=32,
-            group=1,
-            seq_len=256,
-            num_keys=256,
-        ),
-        MHA_cfg(
-            mask_rank=4,
-            qkv_type=DType.bfloat16,
-            mask_type=DType.float32,
-            depth=128,
-            num_heads=32,
-            group=1,
-            seq_len=600,
-            num_keys=600,
-        ),
-        MHA_cfg(
-            mask_rank=4,
-            qkv_type=DType.bfloat16,
-            mask_type=DType.float32,
-            depth=128,
-            num_heads=32,
-            group=1,
-            seq_len=1024,
-            num_keys=1024,
-        ),
-        MHA_cfg(
-            mask_rank=4,
-            qkv_type=DType.bfloat16,
-            mask_type=DType.float32,
-            depth=128,
-            num_heads=32,
-            group=1,
-            seq_len=2048,
-            num_keys=2048,
-        ),
-        # context encoding with group query
-        MHA_cfg(
-            mask_rank=4,
-            qkv_type=DType.bfloat16,
-            mask_type=DType.float32,
-            depth=128,
-            num_heads=24,
-            group=3,
-            seq_len=1024,
-            num_keys=1024,
-        ),
-        # Token gen
-        MHA_cfg(
-            mask_rank=4,
-            qkv_type=DType.bfloat16,
-            mask_type=DType.float32,
-            depth=128,
-            num_heads=32,
-            group=1,
-            seq_len=1,
-            num_keys=32,
-        ),
-        MHA_cfg(
-            mask_rank=4,
-            qkv_type=DType.bfloat16,
-            mask_type=DType.float32,
-            depth=128,
-            num_heads=32,
-            group=1,
-            seq_len=1,
-            num_keys=64,
-        ),
-        MHA_cfg(
-            mask_rank=4,
-            qkv_type=DType.bfloat16,
-            mask_type=DType.float32,
-            depth=128,
-            num_heads=32,
-            group=1,
-            seq_len=1,
-            num_keys=128,
-        ),
-        MHA_cfg(
-            mask_rank=4,
-            qkv_type=DType.bfloat16,
-            mask_type=DType.float32,
-            depth=128,
-            num_heads=32,
-            group=1,
-            seq_len=1,
-            num_keys=256,
-        ),
-        MHA_cfg(
-            mask_rank=4,
-            qkv_type=DType.bfloat16,
-            mask_type=DType.float32,
-            depth=128,
-            num_heads=32,
-            group=1,
-            seq_len=1,
-            num_keys=600,
-        ),
-        MHA_cfg(
-            mask_rank=4,
-            qkv_type=DType.bfloat16,
-            mask_type=DType.float32,
-            depth=128,
-            num_heads=32,
-            group=1,
-            seq_len=1,
-            num_keys=1024,
-        ),
-        MHA_cfg(
-            mask_rank=4,
-            qkv_type=DType.bfloat16,
-            mask_type=DType.float32,
-            depth=128,
-            num_heads=32,
-            group=1,
-            seq_len=1,
-            num_keys=2048,
-        ),
-        # token gen with group query
-        MHA_cfg(
-            mask_rank=4,
-            qkv_type=DType.bfloat16,
-            mask_type=DType.float32,
-            depth=128,
-            num_heads=24,
-            group=3,
-            seq_len=1,
-            num_keys=1024,
-        ),
-        # FP32 benchmark
-        MHA_cfg(
-            mask_rank=3,
-            qkv_type=DType.float32,
-            mask_type=DType.float32,
-            depth=128,
-            num_heads=32,
-            group=1,
-            seq_len=1024,
-            num_keys=1024,
-        ),
-        MHA_cfg(
-            mask_rank=3,
-            qkv_type=DType.float32,
-            mask_type=DType.float32,
-            depth=128,
-            num_heads=32,
-            group=1,
-            seq_len=1,
-            num_keys=1024,
-        ),
+    alias cfg = MHA_cfg(
+        mask_rank=mask_rank,
+        qkv_type=qkv_type,
+        mask_type=mask_type,
+        depth=depth,
+        num_heads=num_heads,
+        group=group,
+        seq_len=seq_len,
+        num_keys=num_keys,
     )
 
+    # print(cfg)
     var m = Bench()
     try:
         with DeviceContext() as ctx:
+            run_mha[
+                cfg.mask_rank,
+                cfg.qkv_type,
+                cfg.mask_type,
+                cfg.depth,
+                cfg.num_heads,
+                cfg.group,
+            ](m, cfg.seq_len, cfg.num_keys, ctx)
 
-            @parameter
-            for i in range(len(cfg_list)):
-                alias x = cfg_list[i]
+            bench_compile_time[
                 run_mha[
-                    x.mask_rank,
-                    x.qkv_type,
-                    x.mask_type,
-                    x.depth,
-                    x.num_heads,
-                    x.group,
-                ](m, x.seq_len, x.num_keys, ctx)
-
-            @parameter
-            for i in range(len(cfg_list)):
-                alias x = cfg_list[i]
-                bench_compile_time[
-                    run_mha[
-                        x.mask_rank,
-                        x.qkv_type,
-                        x.mask_type,
-                        x.depth,
-                        x.num_heads,
-                        x.group,
-                    ]
-                ](m, "mha" + str(x))
+                    cfg.mask_rank,
+                    cfg.qkv_type,
+                    cfg.mask_type,
+                    cfg.depth,
+                    cfg.num_heads,
+                    cfg.group,
+                ]
+            ](m, "mha" + str(cfg))
 
     except e:
         print("CUDA_ERROR:", e)

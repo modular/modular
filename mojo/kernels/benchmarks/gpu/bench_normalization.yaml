@@ -8,5 +8,19 @@ name: bench_normalization
 file: $KERNEL_BENCHMARKS_ROOT/gpu/bench_normalization.mojo
 
 params:
-- phony: 1
 
+# layer_norm_gpu
+- shape: 256x256
+- shape: 1024x1024
+- shape: 8192x8192
+- shape: 1x3072
+- shape: 512x3072
+- shape: 1024x3072
+- shape: 4096x3072
+- shape: 5072x256
+
+# rms_norm_gpu
+- shape: 1x1x4096
+- shape: 1x512x4096
+- shape: 1x1024x4096
+- shape: 1x4096x4096

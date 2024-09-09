@@ -94,19 +94,13 @@ fn bench_vec_add(
 
 # CHECK-NOT: CUDA_ERROR
 def main():
-    # TODO: expand to all the params
-    alias phony = env_get_int["phony", 1]()
-    constrained[phony == 1]()
-
-    var b = Bench()
+    alias block_dim = env_get_int["block_dim", 32]()
+    var m = Bench()
 
     try:
         with DeviceContext() as ctx:
-            for block_dim in List[Int](32, 64, 128, 256, 512, 1024):
-                bench_vec_add(
-                    b, block_dim=block_dim[], length=32 * 1024, context=ctx
-                )
+            bench_vec_add(m, block_dim=block_dim, length=32 * 1024, context=ctx)
     except e:
         print("CUDA_ERROR:", e)
 
-    b.dump_report()
+    m.dump_report()

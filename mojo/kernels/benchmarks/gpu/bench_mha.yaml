@@ -7,6 +7,162 @@
 name: bench_mha
 file: $KERNEL_BENCHMARKS_ROOT/gpu/bench_mha.mojo
 
-params:
-- phony: 1
+params: 
 
+# Context encoding
+- mask_rank: 4
+  qkv_type: DType.bfloat16
+  mask_type: DType.float32
+  depth: 128
+  num_heads: 32
+  group: 1
+  seq_len: 64
+  num_keys: 64
+
+- mask_rank: 4
+  qkv_type: DType.bfloat16
+  mask_type: DType.float32
+  depth: 128
+  num_heads: 32
+  group: 1
+  seq_len: 128
+  num_keys: 128
+
+- mask_rank: 4
+  qkv_type: DType.bfloat16
+  mask_type: DType.float32
+  depth: 128
+  num_heads: 32
+  group: 1
+  seq_len: 256
+  num_keys: 256
+
+- mask_rank: 4
+  qkv_type: DType.bfloat16
+  mask_type: DType.float32
+  depth: 128
+  num_heads: 32
+  group: 1
+  seq_len: 600
+  num_keys: 600
+
+- mask_rank: 4
+  qkv_type: DType.bfloat16
+  mask_type: DType.float32
+  depth: 128
+  num_heads: 32
+  group: 1
+  seq_len: 1024
+  num_keys: 1024
+
+- mask_rank: 4
+  qkv_type: DType.bfloat16
+  mask_type: DType.float32
+  depth: 128
+  num_heads: 32
+  group: 1
+  seq_len: 2048
+  num_keys: 2048
+
+# context encoding with group query
+- mask_rank: 4
+  qkv_type: DType.bfloat16
+  mask_type: DType.float32
+  depth: 128
+  num_heads: 24
+  group: 3
+  seq_len: 1024
+  num_keys: 1024
+
+# Token gen
+- mask_rank: 4
+  qkv_type: DType.bfloat16
+  mask_type: DType.float32
+  depth: 128
+  num_heads: 32
+  group: 1
+  seq_len: 1
+  num_keys: 32
+
+- mask_rank: 4
+  qkv_type: DType.bfloat16
+  mask_type: DType.float32
+  depth: 128
+  num_heads: 32
+  group: 1
+  seq_len: 1
+  num_keys: 64
+
+- mask_rank: 4
+  qkv_type: DType.bfloat16
+  mask_type: DType.float32
+  depth: 128
+  num_heads: 32
+  group: 1
+  seq_len: 1
+  num_keys: 128
+
+- mask_rank: 4
+  qkv_type: DType.bfloat16
+  mask_type: DType.float32
+  depth: 128
+  num_heads: 32
+  group: 1
+  seq_len: 1
+  num_keys: 256
+
+- mask_rank: 4
+  qkv_type: DType.bfloat16
+  mask_type: DType.float32
+  depth: 128
+  num_heads: 32
+  group: 1
+  seq_len: 1
+  num_keys: 600
+
+- mask_rank: 4
+  qkv_type: DType.bfloat16
+  mask_type: DType.float32
+  depth: 128
+  num_heads: 32
+  group: 1
+  seq_len: 1
+  num_keys: 1024
+
+- mask_rank: 4
+  qkv_type: DType.bfloat16
+  mask_type: DType.float32
+  depth: 128
+  num_heads: 32
+  group: 1
+  seq_len: 1
+  num_keys: 2048
+
+# token gen with group query
+- mask_rank: 4
+  qkv_type: DType.bfloat16
+  mask_type: DType.float32
+  depth: 128
+  num_heads: 24
+  group: 3
+  seq_len: 1
+  num_keys: 1024
+
+# FP32 benchmark
+- mask_rank: 3
+  qkv_type: DType.float32
+  mask_type: DType.float32
+  depth: 128
+  num_heads: 32
+  group: 1
+  seq_len: 1024
+  num_keys: 1024
+
+- mask_rank: 3
+  qkv_type: DType.float32
+  mask_type: DType.float32
+  depth: 128
+  num_heads: 32
+  group: 1
+  seq_len: 1
+  num_keys: 1024

@@ -12,9 +12,9 @@ from buffer import Dim, DimList, NDBuffer
 from buffer.dimlist import _make_tuple
 from gpu.host.device_context import DeviceBuffer, DeviceContext
 from linalg.matmul_gpu import _matmul_gpu
-from internal_utils import DeviceNDBuffer, bench_compile_time
+from internal_utils import DeviceNDBuffer, bench_compile_time, env_get_dtype
 from utils import StaticIntTuple
-from sys import sizeof, env_get_string, env_get_int
+from sys import env_get_int
 
 
 fn _get_run_name[
@@ -163,11 +163,11 @@ fn compile_matmul_bench[
             DimList(m.dim, k.dim),
             DimList(k.dim, n.dim),
         ]
-    ](b, "matmul/" + s, List[BenchMetric](BenchMetric.elements))
+    ](b, "matmul/" + s)
 
 
 fn main() raises:
-    alias dtype = DType._from_str(env_get_string["dtype", "DType.bfloat16"]())
+    alias dtype = env_get_dtype["dtype", DType.bfloat16]()
 
     alias M = env_get_int["M", 1]()
     alias N = env_get_int["N", 1]()

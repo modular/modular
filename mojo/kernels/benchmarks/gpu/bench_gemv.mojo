@@ -11,7 +11,7 @@ from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
 from buffer import Dim, DimList, NDBuffer
 from gpu.host.device_context import DeviceBuffer, DeviceContext
 from linalg.matmul_gpu import _matmul_gpu, matmul_kernel_naive
-from internal_utils import DeviceNDBuffer, bench_compile_time
+from internal_utils import DeviceNDBuffer
 from utils import StaticIntTuple
 
 

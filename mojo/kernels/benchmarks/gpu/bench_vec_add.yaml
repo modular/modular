@@ -8,5 +8,6 @@ name: bench_vec_add
 file: $KERNEL_BENCHMARKS_ROOT/gpu/bench_vec_add.mojo
 
 params:
-- phony: 1
-
+- block_dim: 256
+- block_dim: 512
+- block_dim: 1024

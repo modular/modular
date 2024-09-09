@@ -11,7 +11,12 @@ from random import random_float64
 from nn.normalization import layer_norm_gpu, rms_norm_gpu
 from benchmark import Bench, BenchConfig, Bencher, BenchId
 from gpu.host import DeviceContext
-from internal_utils import DeviceNDBuffer, bench_compile_time
+from internal_utils import (
+    DeviceNDBuffer,
+    env_get_shape,
+    env_get_dtype,
+    int_list_to_tuple,
+)
 from buffer import NDBuffer
 from utils.index import StaticTuple, StaticIntTuple, Index
 from sys import env_get_int
@@ -180,39 +185,16 @@ fn bench_rms_norm_gpu[
 
 
 def main():
-    # TODO: expand to all the params
-    alias phony = env_get_int["phony", 1]()
-    constrained[phony == 1]()
+    alias dtype = env_get_dtype["dtype", DType.bfloat16]()
+    alias shape = int_list_to_tuple[env_get_shape["shape", "256x256"]()]()
 
+    var m = Bench(BenchConfig(num_repetitions=1))
     with DeviceContext() as ctx:
-        var m = Bench(BenchConfig(num_repetitions=1))
 
-        var layer_norm_shape_list = List[StaticIntTuple[2]](
-            StaticIntTuple[2](256, 256),
-            StaticIntTuple[2](1024, 1024),
-            StaticIntTuple[2](8192, 8192),
-            StaticIntTuple[2](1, 3072),
-            StaticIntTuple[2](512, 3072),
-            StaticIntTuple[2](1024, 3072),
-            StaticIntTuple[2](4096, 3072),
-            StaticIntTuple[2](5072, 256),
-        )
+        @parameter
+        if len(shape) == 2:
+            bench_layer_norm_gpu[dtype](ctx, m, "layer_norm_gpu", shape)
+        elif len(shape) == 3:
+            bench_rms_norm_gpu[dtype](ctx, m, "rms_norm_gpu", shape)
 
-        for s in range(len(layer_norm_shape_list)):
-            bench_layer_norm_gpu[DType.bfloat16](
-                ctx, m, "layer_norm_gpu", layer_norm_shape_list[s]
-            )
-
-        var rms_norm_shape_list = List[StaticIntTuple[3]](
-            StaticIntTuple[3](1, 1, 4096),
-            StaticIntTuple[3](1, 512, 4096),
-            StaticIntTuple[3](1, 1024, 4096),
-            StaticIntTuple[3](1, 4096, 4096),
-        )
-
-        for s in range(len(rms_norm_shape_list)):
-            bench_rms_norm_gpu[DType.bfloat16](
-                ctx, m, "rms_norm_gpu", rms_norm_shape_list[s]
-            )
-
-        m.dump_report()
+    m.dump_report()
