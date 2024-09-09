@@ -5,8 +5,9 @@
 //===----------------------------------------------------------------------===//
 
 #include "KGEN/TransformUtils/ManglingUtils.h"
-
+#include "KGEN/KGENDialect/KGENInterfaces.h"
 #include "KGEN/KGENDialect/KGENUtils.h"
+#include "mlir/IR/Builders.h"
 
 using namespace M;
 using namespace KGEN;

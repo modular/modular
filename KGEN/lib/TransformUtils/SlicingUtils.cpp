@@ -5,10 +5,11 @@
 //===----------------------------------------------------------------------===//
 
 #include "KGEN/TransformUtils/SlicingUtils.h"
+#include "KGEN/KGENDialect/KGENInterfaces.h"
 #include "KGEN/Support/CompilerProfiling.h"
 #include "mlir/Analysis/SymbolTableAnalysis.h"
+#include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/IRMapping.h"
-#include "mlir/IR/Operation.h"
 
 using namespace M;
 using namespace KGEN;

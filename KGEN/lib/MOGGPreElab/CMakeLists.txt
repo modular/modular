@@ -10,6 +10,7 @@ add_modular_library(MOGGPreElabPasses
   MOGGAnnotate.cpp
   OutlineMOGGFuncs.cpp
   MOGGPreElabPipeline.cpp
+  MOGGTensorAccessor.cpp
   SliceMOGGDPSFuncs.cpp
   SliceMOGGFuncs.cpp
   UserLibraryChecker.cpp

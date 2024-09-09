@@ -11,22 +11,7 @@
 #include "KGEN/LITDialect/LITTypes.h"
 
 namespace M::MOGG {
-
-namespace {
-std::optional<size_t> getIndexOfParam(KGEN::GeneratorOp gen, TypedAttr attr) {
-  if (auto ref = dyn_cast_or_null<KGEN::ParamIndexRefAttr>(attr)) {
-    return ref.getIndex();
-  }
-
-  if (auto ref = dyn_cast_or_null<KGEN::ParamDeclRefAttr>(attr)) {
-    for (const auto &[idx, param] : llvm::enumerate(gen.getInputParams())) {
-      if (ref.getName() == param.getName())
-        return idx;
-    }
-  }
-  return {};
-}
-} // namespace
+std::optional<size_t> getIndexOfParam(Operation *gen, TypedAttr attr);
 
 // Mirror of the tensor attributes as they exist in Mojo. This allows us to
 // manipulate parameters on calls as we can understand which parameter
@@ -52,22 +37,22 @@ struct MOGGTensorParamAccessor {
     return !isa<KGEN::ParamIndexRefAttr>(params[index]);
   }
 
-  std::optional<size_t> dtype(KGEN::GeneratorOp gen) const {
+  std::optional<size_t> dtype(Operation *gen) const {
     return getIndexOfParam(gen, params[DTYPE_IDX]);
   }
-  std::optional<size_t> shape(KGEN::GeneratorOp gen) const {
+  std::optional<size_t> shape(Operation *gen) const {
     return getIndexOfParam(gen, params[SHAPE_IDX]);
   }
-  std::optional<size_t> strides(KGEN::GeneratorOp gen) const {
+  std::optional<size_t> strides(Operation *gen) const {
     return getIndexOfParam(gen, params[STRIDE_IDX]);
   }
-  std::optional<size_t> inputLambda(KGEN::GeneratorOp gen) const {
+  std::optional<size_t> inputLambda(Operation *gen) const {
     return getIndexOfParam(gen, params[INPUT_LAMBDA_IDX]);
   }
-  std::optional<size_t> outputLambda(KGEN::GeneratorOp gen) const {
+  std::optional<size_t> outputLambda(Operation *gen) const {
     return getIndexOfParam(gen, params[OUTPUT_LAMBDA_IDX]);
   }
-  std::optional<size_t> ownedMemory(KGEN::GeneratorOp gen) const {
+  std::optional<size_t> ownedMemory(Operation *gen) const {
     return getIndexOfParam(gen, params[OWNED_MEMORY_IDX]);
   }
 

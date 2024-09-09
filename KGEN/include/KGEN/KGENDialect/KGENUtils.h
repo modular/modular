@@ -13,7 +13,6 @@
 #define KGEN_KGENDIALECT_KGENUTILS_H
 
 #include "KGEN/KGENDialect/KGENAttrs.h"
-#include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/KGENDialect/KGENTypes.h"
 #include "Support/LLVMCompilerForwardDecls.h"
 #include "mlir/IR/BuiltinAttributeInterfaces.h"
