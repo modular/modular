@@ -9,10 +9,10 @@
 import time
 
 
-def simple_openai_request():
+def simple_openai_request(content="Say this is a test!"):
     return {
         "model": "gpt-3.5-turbo",
-        "messages": [{"role": "user", "content": "Say this is a test!"}],
+        "messages": [{"role": "user", "content": content}],
         "temperature": 0.7,
     }
 

@@ -7,6 +7,7 @@
 from functools import lru_cache
 from typing import AsyncContextManager
 
+from max.serve.pipelines.echo_gen import EchoTokenGenerator
 from transformers import AutoTokenizer
 from max.serve.pipelines.llm import TokenGeneratorPipeline
 from max.serve.pipelines.random import RandomTokenGenerator
@@ -18,11 +19,17 @@ def random_token_pipeline() -> TokenGeneratorPipeline:
     return pipeline
 
 
+@lru_cache
+def echo_token_pipeline() -> TokenGeneratorPipeline:
+    pipeline = TokenGeneratorPipeline(EchoTokenGenerator())
+    return pipeline
+
+
 async def token_pipeline() -> TokenGeneratorPipeline:
-    pipeline = random_token_pipeline()
+    pipeline = echo_token_pipeline()
     return pipeline
 
 
 @lru_cache
 def all_pipelines() -> list[AsyncContextManager]:
-    return [random_token_pipeline()]
+    return [echo_token_pipeline()]
