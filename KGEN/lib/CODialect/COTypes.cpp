@@ -7,6 +7,7 @@
 #include "KGEN/CODialect/COTypes.h"
 #include "KGEN/CODialect/CODialect.h"
 #include "KGEN/KGENDialect/KGENUtils.h"
+#include "mlir/IR/Builders.h"
 #include "llvm/ADT/TypeSwitch.h"
 
 using namespace M;
