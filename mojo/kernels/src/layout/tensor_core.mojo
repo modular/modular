@@ -587,7 +587,7 @@ fn _load_matrix_frag[
 
     alias ldmatrix_layout = ComposedLayout(
         x4_layout,
-        make_ldmatrix_swizzleex[
+        make_ldmatrix_swizzle[
             mma_tile.dtype, row_size
         ]() if swizzle else Swizzle(0, 0, 1),
     )

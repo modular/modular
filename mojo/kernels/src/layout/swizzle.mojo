@@ -295,7 +295,7 @@ struct Swizzle(LayoutTrait, Stringable, Formattable):
 
 
 @always_inline
-fn make_ldmatrix_swizzleex[type: DType, row_size: Int]() -> Swizzle:
+fn make_ldmatrix_swizzle[type: DType, row_size: Int]() -> Swizzle:
     """Make a swizzle to avoid bank conflict for ldmatrix."""
 
     # For Nvidia GPU, there are 32 4B banks.

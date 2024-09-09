@@ -27,7 +27,7 @@ from .runtime_layout import RuntimeLayout
 from .runtime_layout import coalesce as runtime_coalesce
 from .runtime_layout import make_layout as make_runtime_layout
 from .runtime_tuple import RuntimeTuple
-from .swizzle import Swizzle, make_ldmatrix_swizzleex
+from .swizzle import Swizzle, make_ldmatrix_swizzle
 
 
 # Distribute thread_layout into data_layout, if axis is provided
@@ -2632,7 +2632,7 @@ fn copy_dram_to_sram_async[
     ]()
 
     alias swizzle_option = None if not swizzle else (
-        Optional[Swizzle](make_ldmatrix_swizzleex[dtype, row_size]())
+        Optional[Swizzle](make_ldmatrix_swizzle[dtype, row_size]())
     )
 
     var src_fragments = src.distribute[src_thread_layout](ThreadIdx.x())
@@ -2713,7 +2713,7 @@ fn copy_dram_to_sram_async[
     var dst_fragments = dst.distribute[dst_thread_layout](ThreadIdx.x())
 
     alias swizzle_option = None if not swizzle else (
-        Optional[Swizzle](make_ldmatrix_swizzleex[dtype, row_size]())
+        Optional[Swizzle](make_ldmatrix_swizzle[dtype, row_size]())
     )
 
     var thread_offset = offset + src_fragments.distance(src.ptr)
