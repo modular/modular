@@ -68,15 +68,22 @@ struct test_matmul[
     var N: Int
     var K: Int
 
-    var a_host: HostNDBuffer[type, 2]
-    var b_host: HostNDBuffer[type, 2, static_b_shape]
-    var c_host: HostNDBuffer[type, 2]
-    var c_host_ref: HostNDBuffer[type, 2]
+    # fmt: off
+    alias dim_K = static_b_shape.at[1]() if transpose_b else static_b_shape.at[0]()
+    alias dim_N = static_b_shape.at[0]() if transpose_b else static_b_shape.at[1]()
+    alias static_a_shape = DimList(Dim(), Self.dim_K)
+    alias static_c_shape = DimList(Dim(), Self.dim_N)
+    # fmt: on
 
-    var a_device: DeviceNDBuffer[type, 2]
+    var a_host: HostNDBuffer[type, 2, Self.static_a_shape]
+    var b_host: HostNDBuffer[type, 2, static_b_shape]
+    var c_host: HostNDBuffer[type, 2, Self.static_c_shape]
+    var c_host_ref: HostNDBuffer[type, 2, Self.static_c_shape]
+
+    var a_device: DeviceNDBuffer[type, 2, Self.static_a_shape]
     var b_device: DeviceNDBuffer[type, 2, static_b_shape]
-    var c_device: DeviceNDBuffer[type, 2]
-    var c_device_ref: DeviceNDBuffer[type, 2]
+    var c_device: DeviceNDBuffer[type, 2, Self.static_c_shape]
+    var c_device_ref: DeviceNDBuffer[type, 2, Self.static_c_shape]
 
     fn __init__(
         inout self,
@@ -102,17 +109,29 @@ struct test_matmul[
         ) if transpose_b else DimList(self.K, self.N)
         var dynamic_c_shape = DimList(self.M, self.N)
 
-        self.a_host = HostNDBuffer[type, 2](dynamic_a_shape)
+        self.a_host = HostNDBuffer[type, 2, self.static_a_shape](
+            dynamic_a_shape
+        )
         self.b_host = HostNDBuffer[type, 2, static_b_shape](dynamic_b_shape)
-        self.c_host = HostNDBuffer[type, 2](dynamic_c_shape)
-        self.c_host_ref = HostNDBuffer[type, 2](dynamic_c_shape)
+        self.c_host = HostNDBuffer[type, 2, self.static_c_shape](
+            dynamic_c_shape
+        )
+        self.c_host_ref = HostNDBuffer[type, 2, self.static_c_shape](
+            dynamic_c_shape
+        )
 
-        self.a_device = DeviceNDBuffer[type, 2](dynamic_a_shape, ctx=ctx)
+        self.a_device = DeviceNDBuffer[type, 2, self.static_a_shape](
+            dynamic_a_shape, ctx=ctx
+        )
         self.b_device = DeviceNDBuffer[type, 2, static_b_shape](
             dynamic_b_shape, ctx=ctx
         )
-        self.c_device = DeviceNDBuffer[type, 2](dynamic_c_shape, ctx=ctx)
-        self.c_device_ref = DeviceNDBuffer[type, 2](dynamic_c_shape, ctx=ctx)
+        self.c_device = DeviceNDBuffer[type, 2, self.static_c_shape](
+            dynamic_c_shape, ctx=ctx
+        )
+        self.c_device_ref = DeviceNDBuffer[type, 2, self.static_c_shape](
+            dynamic_c_shape, ctx=ctx
+        )
 
         @parameter
         if init_a:
