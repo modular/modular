@@ -3,7 +3,7 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-# RUN: %mojo %s
+# RUN: %mojo-no-debug %s
 
 from gpu.host import DeviceContext, FuncAttribute, ConstantMemoryMapping
 from gpu.id import ThreadIdx

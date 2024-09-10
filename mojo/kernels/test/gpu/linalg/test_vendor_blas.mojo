@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 # REQUIRES: has_cuda_device
 # TODO(#31429): Restore `--debug-level full` here
-# RUN: %mojo %s
+# RUN: %mojo-no-debug %s
 
 from math import ceildiv
 from random import random_float64
