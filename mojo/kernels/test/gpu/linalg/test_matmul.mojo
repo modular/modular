@@ -57,7 +57,7 @@ alias init_fn_type = fn (buff: NDBuffer) -> None
 
 struct test_matmul[
     type: DType,
-    static_b_shape: DimList = DimList.create_unknown[2](),
+    static_KN: DimList = DimList.create_unknown[2](),
     transpose_b: Bool = False,
     init_a: Optional[init_fn_type] = None,
     init_b: Optional[init_fn_type] = None,
@@ -69,19 +69,20 @@ struct test_matmul[
     var K: Int
 
     # fmt: off
-    alias dim_K = static_b_shape.at[1]() if transpose_b else static_b_shape.at[0]()
-    alias dim_N = static_b_shape.at[0]() if transpose_b else static_b_shape.at[1]()
+    alias dim_K = static_KN.at[0]()
+    alias dim_N = static_KN.at[1]()
     alias static_a_shape = DimList(Dim(), Self.dim_K)
+    alias static_b_shape = DimList(Self.dim_N, Self.dim_K) if transpose_b else DimList(Self.dim_K, Self.dim_N)
     alias static_c_shape = DimList(Dim(), Self.dim_N)
     # fmt: on
 
     var a_host: HostNDBuffer[type, 2, Self.static_a_shape]
-    var b_host: HostNDBuffer[type, 2, static_b_shape]
+    var b_host: HostNDBuffer[type, 2, Self.static_b_shape]
     var c_host: HostNDBuffer[type, 2, Self.static_c_shape]
     var c_host_ref: HostNDBuffer[type, 2, Self.static_c_shape]
 
     var a_device: DeviceNDBuffer[type, 2, Self.static_a_shape]
-    var b_device: DeviceNDBuffer[type, 2, static_b_shape]
+    var b_device: DeviceNDBuffer[type, 2, Self.static_b_shape]
     var c_device: DeviceNDBuffer[type, 2, Self.static_c_shape]
     var c_device_ref: DeviceNDBuffer[type, 2, Self.static_c_shape]
 
@@ -97,11 +98,9 @@ struct test_matmul[
         self.K = shape[2]
 
         @parameter
-        if static_b_shape.all_known[2]():
-            alias b_k_dim = 1 if transpose_b else 0
-            alias b_n_dim = 0 if transpose_b else 1
-            assert_equal_val(self.K, static_b_shape.get[b_k_dim]())
-            assert_equal_val(self.N, static_b_shape.get[b_n_dim]())
+        if static_KN.all_known[2]():
+            assert_equal_val(self.K, static_KN.get[0]())
+            assert_equal_val(self.N, static_KN.get[1]())
 
         var dynamic_a_shape = DimList(self.M, self.K)
         var dynamic_b_shape = DimList(
@@ -112,7 +111,9 @@ struct test_matmul[
         self.a_host = HostNDBuffer[type, 2, self.static_a_shape](
             dynamic_a_shape
         )
-        self.b_host = HostNDBuffer[type, 2, static_b_shape](dynamic_b_shape)
+        self.b_host = HostNDBuffer[type, 2, self.static_b_shape](
+            dynamic_b_shape
+        )
         self.c_host = HostNDBuffer[type, 2, self.static_c_shape](
             dynamic_c_shape
         )
@@ -123,7 +124,7 @@ struct test_matmul[
         self.a_device = DeviceNDBuffer[type, 2, self.static_a_shape](
             dynamic_a_shape, ctx=ctx
         )
-        self.b_device = DeviceNDBuffer[type, 2, static_b_shape](
+        self.b_device = DeviceNDBuffer[type, 2, self.static_b_shape](
             dynamic_b_shape, ctx=ctx
         )
         self.c_device = DeviceNDBuffer[type, 2, self.static_c_shape](
@@ -151,7 +152,15 @@ struct test_matmul[
         zero(self.c_host_ref.tensor)
 
     fn run_test[test_function: fn (Self) raises capturing -> None](self) raises:
-        print("=== test_matmul")
+        print(
+            "test_matmul",
+            self.M,
+            "x",
+            self.N,
+            "x",
+            self.K,
+            "transpose_b" if transpose_b else "",
+        )
 
         var ctx = self.ctx
 
@@ -227,18 +236,7 @@ def main():
             )
             check_cublas_error(cublasDestroy(handle))
 
-        test_matmul[
-            DType.bfloat16,
-            DimList(128, 384),
-        ](ctx, (256, 384, 128)).run_test[
-            basic_test[
-                DType.bfloat16,
-                shape = DimList(128, 384),
-                use_tensor_core=True,
-            ]
-        ]()
-
-        print("===> test float32 with shapes in llama2 with padding rows")
+        print("===> tfloat32-float32 mma")
 
         test_matmul[DType.float32, DimList(128, 384)](
             ctx, (256, 384, 128)
@@ -251,7 +249,7 @@ def main():
         ]()
 
         test_matmul[DType.float32, DimList(4096, 4096)](
-            ctx, (256, 4096, 4096)
+            ctx, (128, 4096, 4096)
         ).run_test[
             basic_test[
                 DType.float32,
@@ -261,7 +259,7 @@ def main():
         ]()
 
         test_matmul[DType.float32, DimList(4096, 12288)](
-            ctx, (256, 12288, 4096)
+            ctx, (512, 12288, 4096)
         ).run_test[
             basic_test[
                 DType.float32,
@@ -271,7 +269,7 @@ def main():
         ]()
 
         test_matmul[DType.float32, DimList(11008, 4096)](
-            ctx, (256, 4096, 11008)
+            ctx, (23, 4096, 11008)
         ).run_test[
             basic_test[
                 DType.float32,
@@ -281,7 +279,7 @@ def main():
         ]()
 
         test_matmul[DType.float32, DimList(12288, 4096)](
-            ctx, (256, 4096, 12288)
+            ctx, (67, 4096, 12288)
         ).run_test[
             basic_test[
                 DType.float32,
@@ -290,10 +288,8 @@ def main():
             ]
         ]()
 
-        print("===> test float32 with shapes in llama2")
-
         test_matmul[DType.float32, DimList(4096, 4096)](
-            ctx, (100, 4096, 4096)
+            ctx, (555, 4096, 4096)
         ).run_test[
             basic_test[
                 DType.float32,
@@ -302,27 +298,7 @@ def main():
             ]
         ]()
 
-        test_matmul[DType.float32, DimList(4096, 12288)](
-            ctx, (100, 12288, 4096)
-        ).run_test[
-            basic_test[
-                DType.float32,
-                shape = DimList(4096, 12288),
-                use_tensor_core=True,
-            ]
-        ]()
-
-        test_matmul[DType.float32, DimList(11008, 4096)](
-            ctx, (100, 4096, 11008)
-        ).run_test[
-            basic_test[
-                DType.float32,
-                shape = DimList(11008, 4096),
-                use_tensor_core=True,
-            ]
-        ]()
-
-        print("===> test bfloat16 using shape in context encoding in replit 3B")
+        print("===> bfloat16-float32 mma")
 
         test_matmul[DType.bfloat16, DimList(12288, 3072)](
             ctx, (1024, 3072, 12288)
@@ -382,7 +358,7 @@ def main():
             shape: DimList = DimList.create_unknown[2](),
             transpose_b: Bool = False,
             use_tensor_core: Bool = False,
-        ](test_ctx: test_matmul[type, shape]) raises:
+        ](test_ctx: test_matmul[type, shape, transpose_b]) raises:
             var M = test_ctx.M
             var N = test_ctx.N
 
@@ -418,7 +394,7 @@ def main():
 
             _matmul_gpu[
                 use_tensor_core=use_tensor_core,
-                transpose_b=False,
+                transpose_b=transpose_b,
                 elementwise_lambda_fn=epilogue_fn,
             ](
                 test_ctx.c_device.tensor,
@@ -461,297 +437,136 @@ def main():
             _ = epilogue_host^
             _ = epilogue_device^
 
-        print("===> test non trivial epilogue")
-        print("===> float32 with shapes in llama2 with padding rows")
+        print("===> tfloat32-float32 mma with epilogue")
 
-        test_matmul[DType.float32, DimList(128, 384)](
-            ctx, (256, 384, 128)
+        test_matmul[DType.float32, DimList(3072, 3072)](
+            ctx, (999, 3072, 3072)
         ).run_test[
             epilogue_test[
                 DType.float32,
-                shape = DimList(128, 384),
+                shape = DimList(3072, 3072),
                 use_tensor_core=True,
             ]
         ]()
 
-        test_matmul[DType.float32, DimList(4096, 4096)](
-            ctx, (256, 4096, 4096)
+        test_matmul[DType.float32, DimList(2048, 12288)](
+            ctx, (777, 12288, 2048)
         ).run_test[
             epilogue_test[
                 DType.float32,
+                shape = DimList(2048, 12288),
+                use_tensor_core=True,
+            ]
+        ]()
+
+        print("===> bfloat16-float32 mma with epilogue")
+
+        test_matmul[DType.bfloat16, DimList(12288, 3072), transpose_b=True](
+            ctx, (14, 3072, 12288)
+        ).run_test[
+            epilogue_test[
+                DType.bfloat16,
+                shape = DimList(12288, 3072),
+                transpose_b=True,
+                use_tensor_core=True,
+            ]
+        ]()
+
+        test_matmul[DType.bfloat16, DimList(3072, 12288), transpose_b=True](
+            ctx, (33, 12288, 3072)
+        ).run_test[
+            epilogue_test[
+                DType.bfloat16,
+                shape = DimList(3072, 12288),
+                transpose_b=True,
+                use_tensor_core=True,
+            ]
+        ]()
+
+        test_matmul[DType.bfloat16, DimList(3072, 5120), transpose_b=True](
+            ctx, (101, 5120, 3072)
+        ).run_test[
+            epilogue_test[
+                DType.bfloat16,
+                shape = DimList(3072, 5120),
+                transpose_b=True,
+                use_tensor_core=True,
+            ]
+        ]()
+
+        test_matmul[DType.bfloat16, DimList(32768, 3072), transpose_b=True](
+            ctx, (400, 3072, 32768)
+        ).run_test[
+            epilogue_test[
+                DType.bfloat16,
+                shape = DimList(32768, 3072),
+                transpose_b=True,
+                use_tensor_core=True,
+            ]
+        ]()
+
+        test_matmul[DType.bfloat16, DimList(3072, 3072), transpose_b=True](
+            ctx, (910, 3072, 3072)
+        ).run_test[
+            epilogue_test[
+                DType.bfloat16,
+                shape = DimList(3072, 3072),
+                transpose_b=True,
+                use_tensor_core=True,
+            ]
+        ]()
+
+        test_matmul[DType.bfloat16, DimList(4096, 6144), transpose_b=True](
+            ctx, (50, 6144, 4096)
+        ).run_test[
+            epilogue_test[
+                DType.bfloat16,
+                shape = DimList(4096, 6144),
+                transpose_b=True,
+                use_tensor_core=True,
+            ]
+        ]()
+
+        test_matmul[DType.bfloat16, DimList(4096, 4096), transpose_b=True](
+            ctx, (22, 4096, 4096)
+        ).run_test[
+            epilogue_test[
+                DType.bfloat16,
                 shape = DimList(4096, 4096),
+                transpose_b=True,
                 use_tensor_core=True,
             ]
         ]()
 
-        test_matmul[DType.float32, DimList(4096, 12288)](
-            ctx, (256, 12288, 4096)
-        ).run_test[
-            epilogue_test[
-                DType.float32,
-                shape = DimList(4096, 12288),
-                use_tensor_core=True,
-            ]
-        ]()
-
-        test_matmul[DType.float32, DimList(11008, 4096)](
-            ctx, (256, 4096, 11008)
-        ).run_test[
-            epilogue_test[
-                DType.float32,
-                shape = DimList(11008, 4096),
-                use_tensor_core=True,
-            ]
-        ]()
-
-        test_matmul[DType.float32, DimList(12288, 4096)](
-            ctx, (256, 4096, 12288)
-        ).run_test[
-            epilogue_test[
-                DType.float32,
-                shape = DimList(12288, 4096),
-                use_tensor_core=True,
-            ]
-        ]()
-
-        print("===> float32 with shapes in llama2")
-
-        test_matmul[DType.float32, DimList(4096, 4096)](
-            ctx, (100, 4096, 4096)
-        ).run_test[
-            epilogue_test[
-                DType.float32,
-                shape = DimList(4096, 4096),
-                use_tensor_core=True,
-            ]
-        ]()
-
-        test_matmul[DType.float32, DimList(4096, 12288)](
-            ctx, (100, 12288, 4096)
-        ).run_test[
-            epilogue_test[
-                DType.float32,
-                shape = DimList(4096, 12288),
-                use_tensor_core=True,
-            ]
-        ]()
-
-        test_matmul[DType.float32, DimList(11008, 4096)](
-            ctx, (100, 4096, 11008)
-        ).run_test[
-            epilogue_test[
-                DType.float32,
-                shape = DimList(11008, 4096),
-                use_tensor_core=True,
-            ]
-        ]()
-
-        test_matmul[DType.float32, DimList(12288, 4096)](
-            ctx, (100, 4096, 12288)
-        ).run_test[
-            epilogue_test[
-                DType.float32,
-                shape = DimList(12288, 4096),
-                use_tensor_core=True,
-            ]
-        ]()
-
-        print("===> test bfloat16 using shapes with arbitrary M")
-
-        test_matmul[DType.bfloat16, DimList(12288, 3072)](
-            ctx, (100, 3072, 12288)
-        ).run_test[
-            basic_test[
-                DType.bfloat16,
-                shape = DimList(12288, 3072),
-                use_tensor_core=True,
-            ]
-        ]()
-
-        test_matmul[DType.bfloat16, DimList(3072, 12288)](
-            ctx, (100, 12288, 3072)
-        ).run_test[
-            basic_test[
-                DType.bfloat16,
-                shape = DimList(3072, 12288),
-                use_tensor_core=True,
-            ]
-        ]()
-
-        test_matmul[DType.bfloat16, DimList(3072, 5120)](
-            ctx, (1000, 5120, 3072)
-        ).run_test[
-            basic_test[
-                DType.bfloat16,
-                shape = DimList(3072, 5120),
-                use_tensor_core=True,
-            ]
-        ]()
-
-        test_matmul[DType.bfloat16, DimList(32768, 3072)](
-            ctx, (1000, 3072, 32768)
-        ).run_test[
-            basic_test[
-                DType.bfloat16,
-                shape = DimList(32768, 3072),
-                use_tensor_core=True,
-            ]
-        ]()
-
-        test_matmul[DType.bfloat16, DimList(3072, 3072)](
-            ctx, (1000, 3072, 3072)
-        ).run_test[
-            basic_test[
-                DType.bfloat16,
-                shape = DimList(3072, 3072),
-                use_tensor_core=True,
-            ]
-        ]()
-
-        print(
-            "===> non-trivial epilogue bfloat16 using shape in context"
-            " encoding in replit 3B"
-        )
-
-        test_matmul[DType.bfloat16, DimList(12288, 3072)](
-            ctx, (1024, 3072, 12288)
+        test_matmul[DType.bfloat16, DimList(4096, 28672), transpose_b=True](
+            ctx, (88, 28672, 4096)
         ).run_test[
             epilogue_test[
                 DType.bfloat16,
-                shape = DimList(12288, 3072),
+                shape = DimList(4096, 28672),
+                transpose_b=True,
                 use_tensor_core=True,
             ]
         ]()
 
-        test_matmul[DType.bfloat16, DimList(3072, 12288)](
-            ctx, (1024, 12288, 3072)
+        test_matmul[DType.bfloat16, DimList(14336, 4096), transpose_b=True](
+            ctx, (100, 4096, 14336)
         ).run_test[
             epilogue_test[
                 DType.bfloat16,
-                shape = DimList(3072, 12288),
+                shape = DimList(14336, 4096),
+                transpose_b=True,
                 use_tensor_core=True,
             ]
         ]()
 
-        test_matmul[DType.bfloat16, DimList(3072, 5120)](
-            ctx, (1024, 5120, 3072)
+        test_matmul[DType.bfloat16, DimList(4096, 128256), transpose_b=True](
+            ctx, (600, 128256, 4096)
         ).run_test[
             epilogue_test[
                 DType.bfloat16,
-                shape = DimList(3072, 5120),
-                use_tensor_core=True,
-            ]
-        ]()
-
-        test_matmul[DType.bfloat16, DimList(3072, 3072)](
-            ctx, (1024, 3072, 3072)
-        ).run_test[
-            epilogue_test[
-                DType.bfloat16,
-                shape = DimList(3072, 3072),
-                use_tensor_core=True,
-            ]
-        ]()
-
-        print("=== test fp16 with generic M and epilogue")
-
-        test_matmul[DType.bfloat16, DimList(12288, 3072)](
-            ctx, (1024, 3072, 12288)
-        ).run_test[
-            epilogue_test[
-                DType.bfloat16,
-                shape = DimList(12288, 3072),
-                use_tensor_core=True,
-            ]
-        ]()
-
-        test_matmul[DType.bfloat16, DimList(3072, 12288)](
-            ctx, (1024, 12288, 3072)
-        ).run_test[
-            epilogue_test[
-                DType.bfloat16,
-                shape = DimList(3072, 12288),
-                use_tensor_core=True,
-            ]
-        ]()
-
-        test_matmul[DType.bfloat16, DimList(3072, 5120)](
-            ctx, (100, 5120, 3072)
-        ).run_test[
-            epilogue_test[
-                DType.bfloat16,
-                shape = DimList(3072, 5120),
-                use_tensor_core=True,
-            ]
-        ]()
-
-        test_matmul[DType.bfloat16, DimList(32768, 3072)](
-            ctx, (1000, 3072, 32768)
-        ).run_test[
-            basic_test[
-                DType.bfloat16,
-                shape = DimList(32768, 3072),
-                use_tensor_core=True,
-            ]
-        ]()
-
-        test_matmul[DType.bfloat16, DimList(3072, 3072)](
-            ctx, (1000, 3072, 3072)
-        ).run_test[
-            epilogue_test[
-                DType.bfloat16,
-                shape = DimList(3072, 3072),
-                use_tensor_core=True,
-            ]
-        ]()
-
-        print("=== test shapes from pipeline tests")
-        test_matmul[DType.bfloat16, DimList(12288, 3072)](
-            ctx, (10, 3072, 12288)
-        ).run_test[
-            basic_test[
-                DType.bfloat16,
-                shape = DimList(12288, 3072),
-                use_tensor_core=True,
-            ]
-        ]()
-
-        test_matmul[DType.bfloat16, DimList(3072, 12288)](
-            ctx, (10, 12288, 3072)
-        ).run_test[
-            basic_test[
-                DType.bfloat16,
-                shape = DimList(3072, 12288),
-                use_tensor_core=True,
-            ]
-        ]()
-
-        test_matmul[DType.bfloat16, DimList(3072, 5120)](
-            ctx, (10, 5120, 3072)
-        ).run_test[
-            basic_test[
-                DType.bfloat16,
-                shape = DimList(3072, 5120),
-                use_tensor_core=True,
-            ]
-        ]()
-
-        test_matmul[DType.bfloat16, DimList(32768, 3072)](
-            ctx, (10, 3072, 32768)
-        ).run_test[
-            basic_test[
-                DType.bfloat16,
-                shape = DimList(32768, 3072),
-                use_tensor_core=True,
-            ]
-        ]()
-
-        test_matmul[DType.bfloat16, DimList(3072, 3072)](
-            ctx, (10, 3072, 3072)
-        ).run_test[
-            basic_test[
-                DType.bfloat16,
-                shape = DimList(3072, 3072),
+                shape = DimList(4096, 128256),
+                transpose_b=True,
                 use_tensor_core=True,
             ]
         ]()
