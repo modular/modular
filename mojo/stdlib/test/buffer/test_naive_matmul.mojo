@@ -8,7 +8,7 @@
 # Lit and its standard library.
 #
 # ===----------------------------------------------------------------------=== #
-# RUN: %mojo %s | FileCheck %s
+# RUN: %mojo-no-debug %s | FileCheck %s
 
 
 # Corresponds to the following Python code:

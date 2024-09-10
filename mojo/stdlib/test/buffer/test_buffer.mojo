@@ -3,7 +3,7 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-# RUN: %mojo -debug-level full %s | FileCheck %s
+# RUN: %mojo-no-debug -debug-level full %s | FileCheck %s
 
 from pathlib import Path
 from tempfile import NamedTemporaryFile

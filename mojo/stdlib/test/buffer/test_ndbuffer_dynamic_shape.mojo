@@ -3,7 +3,7 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-# RUN: %mojo %s | FileCheck %s
+# RUN: %mojo-no-debug %s | FileCheck %s
 
 from buffer.buffer import NDBuffer, _compute_ndbuffer_offset
 from buffer.dimlist import Dim, DimList
