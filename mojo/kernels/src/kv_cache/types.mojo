@@ -50,7 +50,7 @@ struct KVCacheStaticParams(EqualityComparable):
         return not (self == rhs)
 
 
-# TODO renbame this to contiguous
+# TODO rename this to contiguous
 @value
 @register_passable("trivial")
 struct ContiguousKVCache[
