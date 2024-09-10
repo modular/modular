@@ -162,8 +162,8 @@ modular_cc_binary(
 
 rpath_shim(
     name = "rpaths",
-    visibility = ["//visibility:private"],
-    deps = [
+    packages = [
         "//ModularFramework/tools/mof",
     ],
+    visibility = ["//visibility:private"],
 )
