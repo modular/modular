@@ -41,8 +41,9 @@ fn vec_func(
 fn run_vec_add(ctx: DeviceContext) raises:
     print("== run_vec_add")
 
+    # FIXME: RUNP-356 Direct access to CUDA within DeviceContext
     var module = Module(
-        ctx.cuda_context, (_dir_of_current_file() / "vec_add.ptx")
+        ctx.v1().cuda_context, (_dir_of_current_file() / "vec_add.ptx")
     )
 
     var func = Function[vec_func](module, "vec_add", cuda_dll=module.cuda_dll)
@@ -77,7 +78,7 @@ fn run_vec_add(ctx: DeviceContext) raises:
         length,
         grid_dim=(length // block_dim),
         block_dim=(block_dim),
-        stream=ctx.cuda_stream,
+        stream=ctx.v1().cuda_stream,
     )
 
     ctx.enqueue_copy_from_device(out_host, out_device)
