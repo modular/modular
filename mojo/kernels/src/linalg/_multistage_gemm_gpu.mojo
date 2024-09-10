@@ -653,7 +653,7 @@ fn multistage_gemm[
         if M % BM == 0:
             copy_dram_to_sram_async[
                 thread_layout=async_copy_a_layout,
-                swizzle=True,  # xor_2bits_per8T,
+                swizzle=True,
             ](
                 a_smem_tile.vectorize[1, simd_size](),
                 a_gmem_iter[].vectorize[1, simd_size](),
@@ -662,12 +662,11 @@ fn multistage_gemm[
             copy_dram_to_sram_async[
                 thread_layout=async_copy_a_layout,
                 swizzle=True,
+                masked=True,
             ](
                 a_smem_tile.vectorize[1, simd_size](),
                 a_gmem_iter[].vectorize[1, simd_size](),
-                a_gmem_iter[].distance(a.ptr),
-                M,
-                K,
+                num_rows=M - block_idx[1] * BM,
             )
 
         copy_dram_to_sram_async[
@@ -801,12 +800,11 @@ fn multistage_gemm[
                         copy_dram_to_sram_async[
                             thread_layout=async_copy_a_layout,
                             swizzle=True,
+                            masked=True,
                         ](
                             a_smem_prefetch_tile.vectorize[1, simd_size](),
                             a_gmem_iter[].vectorize[1, simd_size](),
-                            a_gmem_iter[].distance(a.ptr),
-                            M,
-                            K,
+                            num_rows=M - block_idx[1] * BM,
                         )
 
                     copy_dram_to_sram_async[
