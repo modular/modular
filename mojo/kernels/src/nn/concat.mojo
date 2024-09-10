@@ -7,7 +7,7 @@
 from collections.vector import InlinedFixedVector
 from math import align_down, align_up, ceildiv
 from os import abort
-from sys._build import is_kernels_debug_build
+from sys._build import is_debug_build
 from sys.info import simdwidthof, sizeof
 
 from algorithm.functional import (
@@ -292,7 +292,7 @@ fn _check_input_consistency[
     rank: Int, type: DType
 ](axis: Int, inputs: InlinedFixedVector[NDBuffer[type, rank]],):
     @parameter
-    if not is_kernels_debug_build():
+    if not is_debug_build():
         return
     # check inputs have same rank and same dims except for axis dim
     for i in range(len(inputs)):
