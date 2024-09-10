@@ -406,7 +406,7 @@ help_str = (
 )
 
 
-@click.command(help=help_str)
+@click.command(help=help_str, no_args_is_help=True)
 @click.option("--yaml", "yaml_path", help="Path to config yaml.")
 @click.option(
     "--output", "-o", "output_path", default=None, help="Path to output file."

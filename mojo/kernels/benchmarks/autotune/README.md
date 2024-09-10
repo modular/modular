@@ -1,4 +1,4 @@
-# Find the optimal kernel parameters using `tune.py`
+# Find the optimal kernel parameters using `kbench.py`
 
 This script runs a grid-search of all the parameters for a mojo benchmark and
 picks the top config (with the lowest measured elapsed time).
@@ -55,17 +55,17 @@ autotuning problem, so let’s just lean into building something simple.
         STAGES: [4,8,12]
     ```
 
-4. Run `tune.py` script as follows:
+4. Run `kbench.py` script as follows:
     For simply running all the configs in the YAML file:
 
     ```bash
-    $MODULAR_PYTHON tune.py --yaml YAML_FILE --output OUTPUT_PATH
+    $MODULAR_PYTHON kbench.py --yaml YAML_FILE --output OUTPUT_PATH
     ```
 
     For finding the best measured elapsed time add `--tune`:
 
     ```bash
-    $MODULAR_PYTHON tune.py --yaml YAML_FILE --output OUTPUT_PATH --tune
+    $MODULAR_PYTHON kbench.py --yaml YAML_FILE --output OUTPUT_PATH --tune
     ```
 
 ## Example
