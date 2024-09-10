@@ -3,7 +3,7 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-# RUN: %mojo %s
+# RUN: %mojo-no-debug %s
 
 from buffer import DimList
 from internal_utils import TestTensor, assert_with_measure

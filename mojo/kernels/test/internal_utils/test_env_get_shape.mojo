@@ -3,7 +3,7 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-# RUN: %mojo %s
+# RUN: %mojo-no-debug %s
 from testing import assert_true
 from internal_utils import env_get_shape, parse_shape
 
