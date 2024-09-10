@@ -3,7 +3,7 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-# RUN: not --crash %mojo %s | FileCheck %s
+# RUN: not --crash %mojo-no-debug %s | FileCheck %s
 
 
 from logger import Level, Logger
