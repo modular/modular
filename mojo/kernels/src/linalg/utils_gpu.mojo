@@ -85,6 +85,12 @@ struct MatmulConfig[
     alias accum_type = get_accum_type[a_type]()  # TODO: factor b_type
     alias mma_shape = get_mma_shape[a_type, get_accum_type[a_type]()]()
 
+    # MMA is typically accumulated in FP32. The reduction over partitions may be
+    # done in lower precision to reduce traffic to intermediate buffer. This is
+    # acceptible since the number of partitions is small, typically < 8. In case
+    # it overflows, we should bump precision to fp32.
+    alias split_k_reduction_type = c_type
+
     fn __init__(
         inout self,
         block_tile_shape: StaticIntTuple[3] = Index(128, 128, 32),
@@ -118,11 +124,11 @@ struct MatmulConfig[
 
         return max(a_usage + b_usage, c_usage)
 
-    fn grid_dim(self, m: UInt, n: UInt, k: UInt) -> StaticIntTuple[3]:
+    fn grid_dim(self, m: UInt, n: UInt) -> StaticIntTuple[3]:
         return Index(
             int(ceildiv(n, self.block_tile_shape[1])),
             int(ceildiv(m, self.block_tile_shape[0])),
-            1,
+            int(self.num_k_partitions),
         )
 
     fn block_dim(self) -> StaticIntTuple[3]:

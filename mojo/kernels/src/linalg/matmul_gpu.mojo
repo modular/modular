@@ -53,10 +53,10 @@ from utils.index import Index
 from utils.numerics import get_accum_type
 from utils.static_tuple import StaticTuple
 
-from ._multistage_gemm_gpu import multistage_gemm
+from ._multistage_gemm_gpu import multistage_gemm_kernel
 from .utils import GemmShape, apply_epilogue, elementwise_epilogue_type
 from .gemv import gemv_gpu
-from .utils_gpu import MatmulKernels, select_config
+from .utils_gpu import MatmulKernels, MatmulConfig, select_config
 
 
 @always_inline
@@ -818,69 +818,33 @@ fn _matmul_gpu_dispatch[
                 a_type, b_type, c_type, transpose_b
             ](m, n, k)
 
-            var tensor_c = from_ndbuffer_row_major(c)
-            var tensor_a = from_ndbuffer_row_major(a)
-            var tensor_b = from_ndbuffer_row_major(b)
-
             if best_config == kernels.ampere_256x64_4:
                 alias config = kernels.ampere_256x64_4
-                alias mgemm = multistage_gemm[
+                multistage_gemm[
                     c_type,
-                    tensor_c.layout,
+                    c_shape,
                     a_type,
-                    tensor_a.layout,
+                    a_shape,
                     b_type,
-                    tensor_b.layout,
+                    b_shape,
                     transpose_b,
                     config,
                     elementwise_lambda_fn,
-                ]
-                # TODO: The cache config doesn't really help here, see #38391.
+                ](c, a, b, best_config, ctx)
 
-                var multistage_func = ctx.compile_function[mgemm](
-                    threads_per_block=int(config.num_threads()),
-                    func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-                        config.shared_mem_usage()
-                    ),
-                )
-                ctx.enqueue_function(
-                    multistage_func,
-                    tensor_c,
-                    tensor_a,
-                    tensor_b,
-                    grid_dim=config.grid_dim(m, n, k),
-                    block_dim=config.block_dim(),
-                    shared_mem_bytes=config.shared_mem_usage(),
-                )
             else:  # Default kernel 128x128_4
                 alias config = kernels.ampere_128x128_4
-                alias mgemm = multistage_gemm[
+                multistage_gemm[
                     c_type,
-                    tensor_c.layout,
+                    c_shape,
                     a_type,
-                    tensor_a.layout,
+                    a_shape,
                     b_type,
-                    tensor_b.layout,
+                    b_shape,
                     transpose_b,
                     config,
                     elementwise_lambda_fn,
-                ]
-
-                var multistage_func = ctx.compile_function[mgemm](
-                    threads_per_block=int(config.num_threads()),
-                    func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-                        config.shared_mem_usage()
-                    ),
-                )
-                ctx.enqueue_function(
-                    multistage_func,
-                    tensor_c,
-                    tensor_a,
-                    tensor_b,
-                    grid_dim=config.grid_dim(m, n, k),
-                    block_dim=config.block_dim(),
-                    shared_mem_bytes=config.shared_mem_usage(),
-                )
+                ](c, a, b, best_config, ctx)
 
             return
 
@@ -1075,3 +1039,83 @@ fn split_k_reduce[
             )
 
     elementwise[_reduce, simd_width, target="cuda"](Index(M, N), ctx)
+
+
+def multistage_gemm[
+    c_type: DType,
+    c_shape: DimList,
+    a_type: DType,
+    a_shape: DimList,
+    b_type: DType,
+    b_shape: DimList,
+    transpose_b: Bool,
+    config: MatmulConfig[a_type, b_type, c_type, transpose_b],
+    elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
+](
+    c: NDBuffer[c_type, 2, c_shape],
+    a: NDBuffer[a_type, 2, a_shape],
+    b: NDBuffer[b_type, 2, b_shape],
+    runtime_config: MatmulConfig[a_type, b_type, c_type, transpose_b],
+    ctx: DeviceContext,
+):
+    var M = c.dim[0]()
+    var N = c.dim[1]()
+
+    var tensor_c = from_ndbuffer_row_major(c)
+    var tensor_a = from_ndbuffer_row_major(a)
+    var tensor_b = from_ndbuffer_row_major(b)
+
+    alias work_space_type = config.split_k_reduction_type
+    var work_space = NDBuffer[work_space_type, 3](
+        UnsafePointer[Scalar[work_space_type]](), StaticIntTuple[3]()
+    )
+
+    if runtime_config.num_k_partitions > 1:
+        var work_space_data = ctx.create_buffer[work_space_type](
+            runtime_config.num_k_partitions * M * N
+        )
+        work_space = NDBuffer[work_space_type, 3](
+            work_space_data.ptr,
+            Index(int(runtime_config.num_k_partitions), M, N),
+        )
+
+    alias gemm_kernel_type = multistage_gemm_kernel[
+        c_type,
+        tensor_c.layout,
+        a_type,
+        tensor_a.layout,
+        b_type,
+        tensor_b.layout,
+        work_space_type,
+        transpose_b,
+        config,
+        elementwise_lambda_fn,
+    ]
+
+    var gemm_kernel = ctx.compile_function[gemm_kernel_type](
+        threads_per_block=int(config.num_threads()),
+        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
+            config.shared_mem_usage()
+        ),
+    )
+
+    ctx.enqueue_function(
+        gemm_kernel,
+        tensor_c,
+        tensor_a,
+        tensor_b,
+        work_space,
+        runtime_config.num_k_partitions,
+        grid_dim=runtime_config.grid_dim(M, N),
+        block_dim=runtime_config.block_dim(),
+        shared_mem_bytes=runtime_config.shared_mem_usage(),
+    )
+
+    if runtime_config.num_k_partitions > 1:
+        split_k_reduce[
+            c_type,
+            work_space_type,
+            c_shape,
+            work_space.shape,
+            elementwise_lambda_fn,
+        ](c, work_space, ctx)

@@ -32,13 +32,8 @@ from layout.layout_tensor import (
     copy_local_to_sram,
     copy_sram_to_dram,
 )
-from layout.nd_buffer_stub import (
-    copy_from_nd_buffer,
-    copy_from_nd_buffer_async,
-    copy_to_nd_buffer,
-    distribute,
-    vectorize,
-)
+from layout.runtime_layout import RuntimeLayout
+from layout.runtime_tuple import RuntimeTuple
 from layout.tensor_core import (
     TensorCore,
     get_accum_type,
@@ -542,7 +537,7 @@ fn multistage_mma[
                 barrier()
 
 
-fn multistage_gemm[
+fn multistage_gemm_k_partition[
     c_type: DType,
     c_layout: Layout,
     a_type: DType,
@@ -957,3 +952,71 @@ fn multistage_gemm[
                 M,
                 N,
             )
+
+
+fn multistage_gemm_kernel[
+    c_type: DType,
+    c_layout: Layout,
+    a_type: DType,
+    a_layout: Layout,
+    b_type: DType,
+    b_layout: Layout,
+    work_space_type: DType,
+    transpose_b: Bool,
+    config: MatmulConfig[a_type, b_type, c_type, transpose_b],
+    elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
+](
+    c: LayoutTensor[c_type, c_layout],
+    a: LayoutTensor[a_type, a_layout],
+    b: LayoutTensor[b_type, b_layout],
+    work_space: NDBuffer[work_space_type, 3],
+    num_partitions: UInt,
+):
+    if num_partitions == 1:
+        multistage_gemm_k_partition[
+            c_type,
+            c_layout,
+            a_type,
+            a_layout,
+            b_type,
+            b_layout,
+            transpose_b,
+            config,
+            elementwise_lambda_fn,
+        ](c, a, b)
+
+        return
+
+    var M = c.dim(0)
+    var N = c.dim(1)
+
+    var a_part = a.split[axis=1](num_partitions, BlockIdx.z())
+    var b_part = b.split[axis= 1 if transpose_b else 0](
+        num_partitions, BlockIdx.z()
+    )
+    var work_space_part = LayoutTensor[work_space_type, c_layout](
+        work_space.data + BlockIdx.z() * M * N,
+        RuntimeLayout[c_layout](
+            RuntimeTuple[c_layout.shape](M, N),
+            RuntimeTuple[c_layout.stride](N, 1),
+        ),
+    )
+
+    alias k_partition_config = MatmulConfig[
+        a_type, b_type, work_space_type, transpose_b
+    ](
+        config.block_tile_shape,
+        config.warp_tile_shape,
+        config.num_pipeline_stages,
+    )
+
+    multistage_gemm_k_partition[
+        work_space_type,
+        c_layout,
+        a_type,
+        a_part.layout,
+        b_type,
+        b_part.layout,
+        transpose_b,
+        k_partition_config,
+    ](work_space_part, a_part, b_part)
