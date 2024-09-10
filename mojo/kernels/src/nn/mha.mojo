@@ -1516,7 +1516,8 @@ fn mha_gpu_naive[
     var p_device = ctx.create_buffer[p_type](
         batch_size * num_heads * seq_len * num_keys
     )
-    var p_ptr = p_device.ptr
+    # FIXME: RUNP-356 Direct access to CUDA within DeviceContext
+    var p_ptr = p_device.v1().ptr
     var p_buffer = NDBuffer[p_type, 3](
         p_ptr, Index(batch_size * num_heads, seq_len, num_keys)
     )
