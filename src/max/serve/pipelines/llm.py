@@ -79,6 +79,7 @@ class TokenGeneratorPipeline(Generic[Context]):
             )
         )
         self._background_tasks |= {context_encoder, token_generator}
+        return self
 
     async def __aexit__(self, exc_type, exc_value, traceback):
         for task in self._background_tasks:
