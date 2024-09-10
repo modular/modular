@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 # REQUIRES: has_cuda_device
-# RUN: %mojo --debug-level full %s | FileCheck %s
+# RUN: %mojo-no-debug --debug-level full %s | FileCheck %s
 
 from math import ceildiv
 from pathlib import Path

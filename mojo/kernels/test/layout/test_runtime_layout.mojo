@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 # UNSUPPORTED: asan
-# RUN: %mojo %s | FileCheck %s
+# RUN: %mojo-no-debug %s | FileCheck %s
 
 from layout.int_tuple import UNKNOWN_VALUE
 from layout.layout import coalesce as coalesce_layout

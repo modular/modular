@@ -3,7 +3,7 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-# RUN: %mojo %s | FileCheck %s
+# RUN: %mojo-no-debug %s | FileCheck %s
 
 from layout import Layout, LayoutTensor, RuntimeLayout, RuntimeTuple
 from layout.layout_tensor import LayoutTensorIter

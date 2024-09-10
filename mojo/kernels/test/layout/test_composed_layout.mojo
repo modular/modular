@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 # UNSUPPORTED: asan
-# RUN: %mojo %s
+# RUN: %mojo-no-debug %s
 
 from layout import *
 from layout.layout import Layout

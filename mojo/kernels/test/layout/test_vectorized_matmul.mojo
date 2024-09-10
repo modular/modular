@@ -3,7 +3,7 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-# RUN: %mojo %s -t | FileCheck %s
+# RUN: %mojo-no-debug %s -t | FileCheck %s
 
 from layout import IntTuple, Layout, LayoutTensor
 from layout.fillers import arange
