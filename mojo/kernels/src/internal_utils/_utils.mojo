@@ -75,10 +75,9 @@ struct DeviceNDBuffer[
         *,
         ctx: DeviceContext,
     ) raises:
-        # FIXME: RUNP-356 Direct access to CUDA within DeviceContext
         self.buffer = ctx.create_buffer[type](product(dynamic_shape, rank))
         self.tensor = NDBuffer[type, rank, shape](
-            self.buffer.v1().ptr, dynamic_shape
+            self.buffer.ptr, dynamic_shape
         )
 
     @always_inline
@@ -98,10 +97,9 @@ struct DeviceNDBuffer[
         stride: StaticIntTuple[rank],
         ctx: DeviceContext,
     ) raises:
-        # FIXME: RUNP-356 Direct access to CUDA within DeviceContext
         self.buffer = ctx.create_buffer[type](product(dynamic_shape, rank))
         self.tensor = NDBuffer[type, rank, shape](
-            self.buffer.v1().ptr, dynamic_shape, stride
+            self.buffer.ptr, dynamic_shape, stride
         )
 
     @always_inline
@@ -197,10 +195,9 @@ fn bench_compile_time[
                 ]()
                 keep(s.unsafe_ptr())
             elif emission_kind == "ptx":
-                # FIXME: RUNP-356 Direct access to CUDA within DeviceContext
                 with DeviceContext() as ctx:
                     var func = ctx.compile_function[func]()
-                    var s: String = func.v1().cuda_function._impl.asm
+                    var s: String = func.cuda_function._impl.asm
                     keep(s.unsafe_ptr())
 
         b.iter[bench_iter]()
