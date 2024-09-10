@@ -177,8 +177,8 @@ bool stripDecorators(LIT::FuncOp func) {
     }
   }
 
-  // Implicity export all kernels and also add annotations to mark extensibility
-  // types.
+  // Implicitly export all kernels and also add annotations to mark
+  // extensibility types.
   if (areAnyKernels) {
     annotateExtensibilityKernels(func, newAttrs, builder);
     func.setExportKind(ExportKind::Exported);
