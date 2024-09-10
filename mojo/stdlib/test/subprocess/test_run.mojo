@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 # TODO: Enable once https://github.com/modularml/modular/issues/37376 is resolved
 # UNSUPPORTED: asan
-# RUN: %mojo %s
+# RUN: %mojo-no-debug %s
 
 from subprocess import run
 
