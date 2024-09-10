@@ -11,7 +11,7 @@ from builtin.io import _printf
 from layout import LayoutTensor, Layout
 from layout.tensor_core import TensorCore
 from layout._utils import ManagedLayoutTensor, gpu_free, gpu_managed_alloc
-
+from layout.fillers import arange
 from gpu.host import DeviceContext
 from gpu.id import ThreadIdx
 
@@ -74,11 +74,11 @@ def test_load_operands[
     var lhs = ManagedLayoutTensor[
         dst_dtype, Layout.row_major(M, K), gpu_managed_alloc, gpu_free
     ]()
-    _ = lhs.tensor.linspace()
+    arange(lhs.tensor)
     var rhs = ManagedLayoutTensor[
         dst_dtype, Layout.row_major(K, N), gpu_managed_alloc, gpu_free
     ]()
-    _ = rhs.tensor.linspace()
+    arange(rhs.tensor)
     alias mma_load_and_print_kenrel_fn = mma_load_and_print_operands_kenrel[
         dst_dtype, dtype, lhs.layout, rhs.layout, shape, transpose_b
     ]
