@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 # Issue #23536
-# RUN: %mojo %s | FileCheck %s
+# RUN: %mojo-no-debug %s | FileCheck %s
 
 from algorithm.functional import stencil
 from buffer import NDBuffer

@@ -3,7 +3,7 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-# RUN: %mojo %s | FileCheck %s
+# RUN: %mojo-no-debug %s | FileCheck %s
 
 from algorithm.functional import (
     _get_start_indices_of_nth_subvolume,

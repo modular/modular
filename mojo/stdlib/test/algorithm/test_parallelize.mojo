@@ -3,7 +3,7 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-# RUN: %mojo -D ASSERT_WARNING %s | FileCheck %s
+# RUN: %mojo-no-debug -D ASSERT_WARNING %s | FileCheck %s
 
 from math import ceildiv
 
