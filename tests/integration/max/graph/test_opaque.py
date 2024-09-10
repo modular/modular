@@ -7,12 +7,11 @@
 import os
 from pathlib import Path
 
-import numpy as np
 import pytest
 
 from max.engine import InferenceSession
 from max.graph import Graph, ops
-from max.graph.type import SymbolicDim, _OpaqueType as OpaqueType
+from max.graph.type import _OpaqueType as OpaqueType
 
 
 @pytest.fixture
@@ -20,7 +19,6 @@ def counter_ops_path() -> Path:
     return Path(os.environ["COUNTER_OPS_PATH"])
 
 
-@pytest.mark.skip(reason="MSDK-912: Memory lifetime issues cause this to crash")
 def test_opaque(counter_ops_path: Path) -> None:
     session = InferenceSession()
     counter_type = OpaqueType("Counter")
@@ -59,4 +57,4 @@ def test_opaque(counter_ops_path: Path) -> None:
 
 
 if __name__ == "__main__":
-    test_opaque()
+    test_opaque(os.environ["COUNTER_OPS_PATH"])
