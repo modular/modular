@@ -2565,69 +2565,6 @@ fn copy_dram_to_sram_async[
     src_layout: Layout,
     dst_layout: Layout,
     dtype: DType,
-    src_thread_layout: Layout,
-    dst_thread_layout: Layout,
-    src_element_layout: Layout,
-    dst_element_layout: Layout,
-    swizzle: Bool = False,
-](
-    dst: LayoutTensor[
-        dtype,
-        dst_layout,
-        address_space = _GPUAddressSpace.SHARED,
-        element_layout=dst_element_layout,
-    ],
-    src: LayoutTensor[
-        dtype,
-        src_layout,
-        address_space = _GPUAddressSpace.GENERIC,
-        element_layout=src_element_layout,
-    ],
-    offset: Int,
-    rows: Int,
-    cols: Int,
-):
-    alias row_size = dst.stride[0]()
-    # TODO: use make_ldmatrix_swizzle when MOCO-1048 is fixed.
-    alias bytes_32_banks = 128
-    alias conflict_ways = min(
-        8 * row_size * sizeof[dtype]() // bytes_32_banks, 8
-    )
-    constrained[
-        (swizzle and (conflict_ways in (4, 8))) or not swizzle,
-        "Only support swizzle for 4 or 8 ways conflict.",
-    ]()
-
-    constrained[
-        (swizzle and row_size in (16, 32, 64, 128, 256)) or not swizzle,
-        (
-            "Only support 2^4-2^8 elements per row in shared memory tile for"
-            " async copy with swizzling."
-        ),
-    ]()
-
-    var src_fragments = src.distribute[src_thread_layout](ThreadIdx.x())
-    var dst_fragments = dst.distribute[dst_thread_layout](ThreadIdx.x())
-
-    alias swizzle_option = None if not swizzle else (
-        Optional[Swizzle](make_ldmatrix_swizzle[dtype, row_size]())
-    )
-
-    var thread_offset = offset + src_fragments.distance(src.ptr)
-    var dst_frag_offset = dst_fragments.distance(dst.ptr) if swizzle else 0
-
-    dst_fragments.copy_from_async_masked_src[swizzle=swizzle_option](
-        src_fragments, thread_offset, rows, cols, base_offset=dst_frag_offset
-    )
-
-
-# Asynchronous copy from DRAM -> SRAM, this requires w/r thread affinity mapping.
-#
-@always_inline
-fn copy_dram_to_sram_async[
-    src_layout: Layout,
-    dst_layout: Layout,
-    dtype: DType,
     thread_layout: Layout,
     src_element_layout: Layout,
     dst_element_layout: Layout,
@@ -2659,46 +2596,6 @@ fn copy_dram_to_sram_async[
         swizzle,
         masked,
     ](dst, src, num_rows)
-
-
-# Asynchronous copy from DRAM -> SRAM, this requires w/r thread affinity mapping.
-#
-@always_inline
-fn copy_dram_to_sram_async[
-    src_layout: Layout,
-    dst_layout: Layout,
-    dtype: DType,
-    thread_layout: Layout,
-    src_element_layout: Layout,
-    dst_element_layout: Layout,
-    swizzle: Bool = False,
-](
-    dst: LayoutTensor[
-        dtype,
-        dst_layout,
-        address_space = _GPUAddressSpace.SHARED,
-        element_layout=dst_element_layout,
-    ],
-    src: LayoutTensor[
-        dtype,
-        src_layout,
-        address_space = _GPUAddressSpace.GENERIC,
-        element_layout=src_element_layout,
-    ],
-    offset: Int,
-    rows: Int,
-    cols: Int,
-):
-    copy_dram_to_sram_async[
-        src_layout,
-        dst_layout,
-        dtype,
-        thread_layout,
-        thread_layout,
-        src_element_layout,
-        dst_element_layout,
-        swizzle,
-    ](dst, src, offset, rows, cols)
 
 
 @always_inline
