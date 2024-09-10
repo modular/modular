@@ -17,7 +17,6 @@ void BuildInfo::print(llvm::raw_ostream &os) const {
   os << "modular-version: " << modularVersion;
   os << "\ngit-revision: " << gitRevision;
   os << "\nbuild-type: " << buildType;
-  os << "\nkernels-build-type: " << kernelsBuildType;
   os << "\naysncrt-max-profiling-level: "
      << llvm::format("0%04o", asyncrtMaxProfilingLevel);
   os << "\npreferred-mem-alignment: " << preferredMemoryAlignment;
@@ -31,7 +30,6 @@ void BuildInfo::print(llvm::json::OStream &json) const {
   json.attribute("modular-version", modularVersion);
   json.attribute("git-revision", gitRevision);
   json.attribute("build-type", buildType);
-  json.attribute("kernels-build-type", kernelsBuildType);
   json.attribute("asyncrt-max-profiling-level", asyncrtMaxProfilingLevel);
   json.attribute("preferred-mem-alignment", preferredMemoryAlignment);
   json.attribute("llvm-targets", llvm::json::Array(llvmTargets));
@@ -48,9 +46,6 @@ void BuildInfo::print(BuildProperty property, llvm::raw_ostream &os) const {
     break;
   case BuildProperty::BuildType:
     os << buildType;
-    break;
-  case BuildProperty::KernelsBuildType:
-    os << kernelsBuildType;
     break;
   case BuildProperty::AsyncRTMaxProfilingLevel:
     os << asyncrtMaxProfilingLevel;
@@ -72,7 +67,6 @@ BuildInfo M::getBuildInfo() {
   buildInfo.modularVersion = getModularVersionString();
   buildInfo.gitRevision = modularVersion.revision;
   buildInfo.buildType = modularVersion.buildType;
-  buildInfo.kernelsBuildType = KERNELS_BUILD_TYPE;
   buildInfo.asyncrtMaxProfilingLevel = MODULAR_ASYNCRT_MAX_PROFILING_LEVEL;
   buildInfo.preferredMemoryAlignment = kPreferredMemoryAlignment;
 

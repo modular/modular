@@ -1319,9 +1319,6 @@ KGEN::EnvAttr KGEN::getModularEnvAttr(MLIRContext *ctx) {
 
   envAttrs.set("BUILD_TYPE", StringAttr::get(STRINGIFY(BUILD_TYPE),
                                              KGEN::StringType::get(ctx)));
-  envAttrs.set("KERNELS_BUILD_TYPE",
-               StringAttr::get(STRINGIFY(KERNELS_BUILD_TYPE),
-                               KGEN::StringType::get(ctx)));
   envAttrs.set("MODULAR_ASYNCRT_MAX_PROFILING_LEVEL",
                IntegerAttr::get(IndexType::get(ctx),
                                 MODULAR_ASYNCRT_MAX_PROFILING_LEVEL));
