@@ -12,7 +12,8 @@ from layout.layout_tensor import (
 from buffer import NDBuffer
 from buffer.dimlist import DimList
 from layout.math import outer_product_acc
-from gpu import ThreadIdx, BlockIdx, BlockDim, barrier
+from layout.tensor_core import TensorCore
+from gpu import ThreadIdx, BlockIdx, BlockDim, barrier, WARP_SIZE
 from gpu.host import DeviceContext, DeviceBuffer
 import time
 from math import ceildiv
@@ -31,6 +32,9 @@ from gpu.cublas.cublas import (
 )
 from linalg.cublas import cublas_matmul
 from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
+
+from utils.index import Index
+
 
 alias NWARMUP = 1
 alias NRUN = 1
@@ -628,5 +632,168 @@ fn run_gemm_kernel_5[
         c,
         grid_dim=(ceildiv(N, BN), ceildiv(M, BM)),
         block_dim=(NUM_THREADS),
+    )
+    _ = func^
+
+
+fn matmul_kernel_tc[
+    dtype: DType,
+    layout_a: Layout,
+    layout_b: Layout,
+    layout_c: Layout,
+    BM: Int,
+    BN: Int,
+    BK: Int,
+    WM: Int,
+    WN: Int,
+](
+    A: LayoutTensor[dtype, layout_a],
+    B: LayoutTensor[dtype, layout_b],
+    C: LayoutTensor[dtype, layout_c],
+):
+    alias M = C.shape[0]()
+    alias N = C.shape[1]()
+    alias K = A.shape[1]()
+
+    alias MMA_M = 16
+    alias MMA_N = 8
+    alias MMA_K = 8
+
+    var warp_id = ThreadIdx.x() // 32
+
+    warp_y = warp_id // (BN // WN)
+    warp_x = warp_id % (BN // WN)
+
+    C_warp_tile = C.tile[BM, BN](BlockIdx.y(), BlockIdx.x()).tile[WM, WN](
+        warp_y, warp_x
+    )
+
+    constrained[
+        WM % MMA_M == 0 and WN % MMA_N == 0 and K % MMA_K == 0,
+        "Warp tile should be an integer multiple of instruction shape",
+    ]()
+
+    mma_op = TensorCore[A.dtype, C.dtype, Index(MMA_M, MMA_N, MMA_K)]()
+
+    A_sram_tile = LayoutTensor[
+        A.dtype, Layout.row_major(BM, BK), address_space = AddressSpace.SHARED
+    ].stack_allocation()
+
+    B_sram_tile = LayoutTensor[
+        B.dtype, Layout.row_major(BK, BN), address_space = AddressSpace.SHARED
+    ].stack_allocation()
+
+    c_reg = (
+        LayoutTensor[C.dtype, Layout.row_major(WM // MMA_M, (WN * 4) // MMA_N)]
+        .stack_allocation()
+        .vectorize[1, 4]()
+    ).fill(0)
+
+    for k_i in range(K // BK):
+        barrier()
+        A_dram_tile = A.tile[BM, BK](BlockIdx.y(), k_i)
+        B_dram_tile = B.tile[BK, BN](k_i, BlockIdx.x())
+        copy_dram_to_sram_async[thread_layout = Layout.row_major(4, 8)](
+            A_sram_tile.vectorize[1, 4](), A_dram_tile.vectorize[1, 4]()
+        )
+        copy_dram_to_sram_async[thread_layout = Layout.row_major(4, 8)](
+            B_sram_tile.vectorize[1, 4](), B_dram_tile.vectorize[1, 4]()
+        )
+        async_copy_wait_all()
+        barrier()
+
+        A_warp_tile = A_sram_tile.tile[WM, BK](warp_y, 0)
+        B_warp_tile = B_sram_tile.tile[BK, WN](0, warp_x)
+
+        @parameter
+        for mma_k in range(BK // MMA_K):
+
+            @parameter
+            for mma_m in range(WM // MMA_M):
+
+                @parameter
+                for mma_n in range(WN // MMA_N):
+                    c_reg_m_n = rebind[mma_op.c_reg_type](c_reg[mma_m, mma_n])
+                    A_mma_tile = A_warp_tile.tile[MMA_M, MMA_K](mma_m, mma_k)
+                    B_mma_tile = B_warp_tile.tile[MMA_K, MMA_N](mma_k, mma_n)
+                    a_reg = mma_op.load_a(A_mma_tile)
+                    b_reg = mma_op.load_b(B_mma_tile)
+                    c_reg[mma_m, mma_n] = rebind[c_reg.element_type](
+                        mma_op.mma(
+                            a_reg,
+                            b_reg,
+                            c_reg_m_n,
+                        )
+                    )
+
+    @parameter
+    for mma_m in range(WM // MMA_M):
+
+        @parameter
+        for mma_n in range(WN // MMA_N):
+            C_mma_tile = C_warp_tile.tile[MMA_M, MMA_N](mma_m, mma_n)
+            mma_op.store_d(
+                C_mma_tile, rebind[mma_op.c_reg_type](c_reg[mma_m, mma_n])
+            )
+
+
+fn run_gemm_kernel_tc[
+    dtype: DType,
+    a_layout: Layout,
+    b_layout: Layout,
+    c_layout: Layout,
+    BM: Int,
+    BN: Int,
+    BK: Int,
+    WM: Int,
+    WN: Int,
+](
+    inout m: Bench,
+    ctx: DeviceContext,
+    a: LayoutTensor,
+    b: LayoutTensor,
+    c: LayoutTensor,
+) raises:
+    var M = a.shape[0]()
+    var N = b.shape[1]()
+    var K = a.shape[1]()
+
+    alias NUM_WARPS = (BM // WM) * (BN // WN)
+    var func = ctx.compile_function[
+        matmul_kernel_tc[
+            dtype, a.layout, b.layout, c.layout, BM, BN, BK, WM, WN
+        ]
+    ]()
+
+    @always_inline
+    @parameter
+    fn run_func(ctx: DeviceContext) raises:
+        ctx.enqueue_function(
+            func,
+            a,
+            b,
+            c,
+            grid_dim=(ceildiv(N, BN), ceildiv(M, BM)),
+            block_dim=(NUM_WARPS * WARP_SIZE),
+        )
+
+    time_kernel[run_func](m, ctx, M * N * K, "tensor_core")
+    # Do one iteration for verification
+    ctx.memset(
+        DeviceBuffer[dtype](
+            ctx,
+            rebind[UnsafePointer[Scalar[dtype]]](c.ptr),
+            M * N,
+            owning=False,
+        ),
+        0,
+    )
+    ctx.enqueue_function(
+        func,
+        a,
+        b,
+        c,
+        grid_dim=(ceildiv(N, BN), ceildiv(M, BM)),
+        block_dim=(NUM_WARPS * WARP_SIZE),
     )
     _ = func^
