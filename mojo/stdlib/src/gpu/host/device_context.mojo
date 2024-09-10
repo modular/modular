@@ -6,7 +6,7 @@
 
 from collections import List
 from os import abort
-from sys import sizeof, external_call
+from sys import sizeof
 from sys.param_env import env_get_int, is_defined
 
 from gpu.host._compile import _get_nvptx_target
@@ -17,15 +17,6 @@ from gpu.host.event import Event
 from gpu.host.function import Function
 from gpu.host.memory import _memset_async
 from gpu.host.stream import Stream
-
-# In device_context.mojo we define Device{Context,Buffer,Function}V1, the old
-# Mojo versions. The C++ versions Device{Context,Buffer,Function}V2 are in
-# device_context_v2.mojo. Finally, device_context_variant.mojo defines
-# Device{Context,Buffer,Function}, which dynamically selects V1 or V2 using a
-# command-line flag. Import them here so users can continue to import from
-# gpu.host.device_context. Eventually, device_context_v2.mojo will be renamed to
-# replace this file.
-from .device_context_variant import DeviceContext, DeviceBuffer, DeviceFunction
 
 from ._compile import _get_nvptx_fn_name
 from ._utils import _check_error, _StreamHandle
@@ -575,3 +566,8 @@ struct DeviceContextV1:
         ) * 10 + self.cuda_context.device._query(
             DeviceAttribute.COMPUTE_CAPABILITY_MINOR
         )
+
+
+alias DeviceContext = DeviceContextV1
+alias DeviceBuffer = DeviceBufferV1
+alias DeviceFunction = DeviceFunctionV1

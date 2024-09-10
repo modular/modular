@@ -226,7 +226,7 @@ struct Function[
     @always_inline
     fn __init__(
         inout self,
-        ctx_ptr: UnsafePointer[DeviceContextV1],
+        ctx_ptr: UnsafePointer[DeviceContext],
         *,
         max_registers: Optional[Int] = None,
         threads_per_block: Optional[Int] = None,
@@ -240,7 +240,6 @@ struct Function[
             cache_mode=cache_mode,
             cache_config=cache_config,
             func_attribute=func_attribute,
-            # FIXME: RUNP-356 Direct access to CUDA within DeviceContext
             cuda_dll=ctx_ptr[].cuda_context.cuda_dll,
             cuda_function_cache=ctx_ptr[].cuda_context.cuda_function_cache,
             device_context_ptr=ctx_ptr,
@@ -262,8 +261,8 @@ struct Function[
         cuda_function_cache: UnsafePointer[FunctionCache] = UnsafePointer[
             FunctionCache
         ](),
-        device_context_ptr: UnsafePointer[DeviceContextV1] = UnsafePointer[
-            DeviceContextV1
+        device_context_ptr: UnsafePointer[DeviceContext] = UnsafePointer[
+            DeviceContext
         ](),
     ) raises:
         @parameter
@@ -479,7 +478,7 @@ struct Function[
     fn init_fn[
         func_type: AnyTrivialRegType, func: func_type
     ](
-        device_context_ptr: UnsafePointer[DeviceContextV1],
+        device_context_ptr: UnsafePointer[DeviceContext],
         *,
         max_registers: Optional[Int],
         threads_per_block: Optional[Int],
@@ -492,7 +491,6 @@ struct Function[
 
         # Set the current context in case this is called outside the main
         # thread.
-        # FIXME: RUNP-356 Direct access to CUDA within DeviceContext
         device_context_ptr[].cuda_context.set_current()
 
         var cuda_dll = device_context_ptr[].cuda_instance.cuda_dll
@@ -535,7 +533,7 @@ struct Function[
     fn _get_cached_function_info[
         func_type: AnyTrivialRegType, func: func_type
     ](
-        device_context_ptr: UnsafePointer[DeviceContextV1],
+        device_context_ptr: UnsafePointer[DeviceContext],
         *,
         max_registers: Optional[Int],
         threads_per_block: Optional[Int],

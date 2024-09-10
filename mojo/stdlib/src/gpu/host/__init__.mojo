@@ -9,8 +9,6 @@ from .context import *
 from .cuda_instance import *
 from .device import *
 from .device_context import *
-from .device_context_v2 import *
-from .device_context_variant import *
 from .dim import *
 from .function import *
 from .memory import *
