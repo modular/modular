@@ -362,25 +362,6 @@ struct ConditionPropagation : OpRewritePattern<HLCF::IfOp> {
     return success(trueCst || falseCst);
   }
 };
-
-/// A canonicalization pattern for an op in the `custom` dialect.
-struct CustomOpPattern : RewritePattern {
-  CustomOpPattern(StringAttr opName,
-                  std::function<mlir::LogicalResult(mlir::Operation *,
-                                                    mlir::PatternRewriter &)>
-                      canonicalizationFn)
-      : RewritePattern(opName.strref(), /*benefit=*/9, opName.getContext()),
-        canonicalizationFn(canonicalizationFn) {}
-
-  LogicalResult matchAndRewrite(Operation *op,
-                                PatternRewriter &b) const override {
-    return canonicalizationFn(op, b);
-  }
-
-private:
-  std::function<mlir::LogicalResult(mlir::Operation *, mlir::PatternRewriter &)>
-      canonicalizationFn;
-};
 } // namespace
 
 //===----------------------------------------------------------------------===//
@@ -402,10 +383,6 @@ struct Canonicalizer : public impl::CanonicalizerBase<Canonicalizer> {
     return success();
   }
 
-  /// Update the frozen pattern set after a possible change in the custom ops
-  /// patterns.
-  void updatePatterns(Custom::CustomDialect *customDialect);
-
   /// Add all canonicalization patterns besides the ones from the `custom`
   /// dialect into the pattern set.
   void addNonCustomCanonicalizationPatterns(MLIRContext *context,
@@ -415,25 +392,9 @@ struct Canonicalizer : public impl::CanonicalizerBase<Canonicalizer> {
 
   /// The patterns that the canonicalizer runs.
   mlir::FrozenRewritePatternSet patterns = {};
-
-  /// Does the pattern has custom op patterns. As we assume that custom op
-  /// canonicalization patterns cannot change after being registered, this is
-  /// enough to know if `patterns` contains all canonicalization patterns.
-  bool hasCustomPatterns = false;
-
-  /// The function to JIT compile canonicalization patterns from the `custom`
-  /// dialect.
-  CompileCanonicalizationFnsFn compileCanonicalizationFnsFn = {};
 };
 
 void Canonicalizer::runOnOperation() {
-  // If we do not have custom patterns, check if there are some defined.
-  if (!hasCustomPatterns) {
-    auto customDialect = getContext().getLoadedDialect<Custom::CustomDialect>();
-    if (customDialect->areCanonicalizationFnLoaded)
-      updatePatterns(customDialect);
-  }
-
   // Run the canonicalization patterns
   mlir::GreedyRewriteConfig config;
   config.enableRegionSimplification = mlir::GreedySimplifyRegionLevel::Disabled;
@@ -451,24 +412,6 @@ void Canonicalizer::addNonCustomCanonicalizationPatterns(
   patterns
       .insert<IfToSelect, IfYieldSelect, IndexifyComparison, InvertComparison,
               SimplifyCompareSelect, ConditionPropagation>(context);
-}
-
-void Canonicalizer::updatePatterns(Custom::CustomDialect *customDialect) {
-  MLIRContext &context = getContext();
-  // Mark the patterns as updated.
-  hasCustomPatterns = true;
-  RewritePatternSet owningPatterns(&context);
-
-  // Add the non custom patterns.
-  addNonCustomCanonicalizationPatterns(&context, owningPatterns);
-
-  // Add the canonicalization patterns from the custom dialect.
-  for (auto [name, canonFn] : customDialect->canonicalizationFns)
-    owningPatterns.insert<CustomOpPattern>(name, canonFn);
-
-  // Update the pattern set, and the number of custom ops patterns that was
-  // used to compute the set.
-  patterns = mlir::FrozenRewritePatternSet(std::move(owningPatterns));
 }
 
 } // namespace

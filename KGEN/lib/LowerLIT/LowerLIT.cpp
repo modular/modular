@@ -115,6 +115,7 @@ struct LITLowerer {
 
   SymbolTable &symbolTable;
   DenseMap<StringAttr, StringAttr> &renamedSymbols;
+  bool foundAnyPatterns = false;
 };
 } // namespace
 
@@ -271,7 +272,8 @@ LITLowerer::lowerLITFunc(LIT::FuncOp func, Block::iterator symTableIt,
   GeneratorOp::build(b, state, func.getSymNameAttr(), sigAttr,
                      func.getFunctionTypeAttr(), inputParamsArr, resParamsArr,
                      func.getDecoratorsAttr(), func.getInlineLevelAttr(),
-                     func.getExportKindAttr(), func.getLLVMMetadata());
+                     func.getExportKindAttr(), func.getLLVMMetadata(),
+                     func.getPatternsAttr());
 
   for (const NamedAttribute &attr : func->getDialectAttrs())
     state.attributes.push_back(attr);

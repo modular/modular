@@ -454,13 +454,10 @@ MojoExpressionParser::parse(MojoPersistentExpressionState &state,
     return failure();
 
   // Run the elaboration pipeline.
-  AsyncRT::AnyAsyncValueRef ready = kgenCompiler.runKGENPipeline(
-      *module, targetInfo, KGENCompiler::StartPipelineAt::Beginning,
-      impl->objCompiler->getTransformCache().copy(),
+  ErrorOrSuccess compilerResult = kgenCompiler.runKGENPipeline(
+      *module, targetInfo, impl->objCompiler->getTransformCache().copy(),
       AsyncValueRef<Chain>::createReady(impl->typeSystem->getRuntime()));
-
-  AsyncRT::await(ready);
-  if (ready.isError())
+  if (compilerResult.isError())
     return returnErrorCleanup();
 
   if (isVerboseLoggingEnabled) {

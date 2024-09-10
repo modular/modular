@@ -27,20 +27,16 @@ public:
       MLIRContext &context, CompilationOptions options,
       PassManagerConfigOptions pmConfigOptions = PassManagerConfigOptions());
 
-  enum class StartPipelineAt { Beginning, AfterLowerLIT };
-
   /// Run KGEN compilation pipeline, including pre-elaboration passes,
   /// elaboration, and post-elaboration pass. Get the theModule ready before
   /// llvm lowering.
-  AnyAsyncValueRef runKGENPipeline(
-      ModuleOp theModule, TargetInfoAttr target, StartPipelineAt startAt,
+  ErrorOrSuccess runKGENPipeline(
+      ModuleOp theModule, TargetInfoAttr target,
       RCRef<Cache::TransformCache> transformCache, AnyAsyncValueRef chain,
       std::function<void(Operation *)> moreOnMiss = [](Operation *) {},
       std::function<void(Operation *)> moreOnHit = [](Operation *) {});
 
-  ErrorOrSuccess
-  runKGENPipeline(ModuleOp theModule, TargetInfoAttr target,
-                  StartPipelineAt startAt = StartPipelineAt::Beginning);
+  ErrorOrSuccess runKGENPipeline(ModuleOp theModule, TargetInfoAttr target);
 
   /// Run the library generation pipeline on the given module. If
   /// `materializeDependencies` is true, the pipeline will ensure all
@@ -54,7 +50,7 @@ public:
   /// Run the elaboration and post-elaboration pipeline
   /// This doesn't not include check LIT and pre-elaboration passes.
   /// This allows the transform to be cached if chain is provided.
-  AnyAsyncValueRef runElaborationPipeline(
+  ErrorOrSuccess runElaborationPipeline(
       ModuleOp module, TargetInfoAttr target, AsyncRT::Runtime &runtime,
       std::optional<AnyAsyncValueRef> chain = std::nullopt,
       std::function<void(Operation *)> moreOnMiss = [](Operation *) {},
@@ -91,11 +87,6 @@ std::unique_ptr<Pass> createElaborateGeneratorsWithDefaultJIT();
 /// configuration. The created pass uses a default specialization executor that
 /// JITs and executes in-process.
 std::unique_ptr<Pass> createLowerCustomOpsWithDefaultJIT();
-
-/// Create an instance of the custom ops registration pass using the given
-/// configuration. The created pass uses a default specialization executor that
-/// JITs and executes in-process.
-std::unique_ptr<Pass> createRegisterCustomOpsWithDefaultJIT();
 
 } // namespace M::KGEN
 

@@ -87,7 +87,8 @@ def KGEN_FuncOp : KGENOp<"func", [
     KGEN_ExportKindAttr:$exportKind,
     DefaultValuedAttr<DictionaryAttr, "std::nullopt">:$LLVMMetadata,
     DefaultValuedAttr<StringArrayAttr, "std::nullopt">:$crossDeviceCaptures,
-    OptionalAttr<TypeAttr>:$coroutineType
+    OptionalAttr<TypeAttr>:$coroutineType,
+    OptionalAttr<KGEN_CustomOpImplAttr>:$patterns
   );
   let regions = (region MaxSizedRegion<1>:$bodyRegion);
 
@@ -117,7 +118,7 @@ def KGEN_FuncOp : KGENOp<"func", [
         llvmMetadata = DictionaryAttr::get(name.getContext());
       build($_builder, $_state, name, signature, decorators, inlineLevel,
             exportKind, llvmMetadata, /*crossDeviceCaptures=*/{},
-            /*coroutineType=*/{});
+            /*coroutineType=*/{}, /*patterns=*/{});
     }]>,
   ];
 
@@ -162,7 +163,8 @@ def KGEN_GeneratorOp : KGENOp<"generator", [
     KGEN_DecoratorsAttr:$decorators,
     KGEN_InlineLevelAttr:$inlineLevel,
     KGEN_ExportKindAttr:$exportKind,
-    DefaultValuedAttr<DictionaryAttr, "std::nullopt">:$LLVMMetadata
+    DefaultValuedAttr<DictionaryAttr, "std::nullopt">:$LLVMMetadata,
+    OptionalAttr<ArrayAttr>:$patterns
   );
   let regions = (region MaxSizedRegion<1>:$bodyRegion);
 
@@ -185,7 +187,8 @@ def KGEN_GeneratorOp : KGENOp<"generator", [
                    CArg<"InlineLevel", "InlineLevel::Automatic">:$inlineLevel), [{
       build($_builder, $_state, name, signature, functionType, inputParams,
             resultParams, /*decorators=*/{}, inlineLevel,
-            ExportKind::NotExported, DictionaryAttr::get(name.getContext()));
+            ExportKind::NotExported, DictionaryAttr::get(name.getContext()),
+            /*patterns=*/{});
     }]>,
     OpBuilder<(ins "StringAttr":$name, "SignatureType":$signature), [{
       build($_builder, $_state, name, signature, signature.getValues(), {}, {});
@@ -2109,50 +2112,6 @@ def KGEN_CaptureListExpandOp : KGENOp<"capture_list.expand"> {
 
   let arguments = (ins PointerOf<KGEN_NoneType>:$captureList);
   let assemblyFormat = "$captureList attr-dict";
-}
-
-//===----------------------------------------------------------------------===//
-// CustomOpImplsOp
-//===----------------------------------------------------------------------===//
-
-def KGEN_CustomOpImplsOp : KGENOp<"custom.op_impls",
-    [Symbol, ExportInterface, DeclareOpInterfaceMethods<ExportInterface>]> {
-  let summary = "Link `custom` ops names to their implementation";
-  let description = [{
-    The `kgen.custom.op_impl` operation defines the implementation of
-    `custom` ops.
-
-    The operation always have the symbol name @CustomOpImplSymbol, and thus
-    this operation should only appear once in the IR.
-
-    Example:
-    ```mlir
-    kgen.custom.op_impls @CustomOpImplSymbol [<"custom.a", <@impl_a()">>]
-    ```
-  }];
-
-  let arguments = (ins SymbolNameAttr:$sym_name,
-                       KGEN_CustomOpImplArrayAttr:$impls);
-  let assemblyFormat = "$sym_name $impls attr-dict";
-
-  let hasVerifier = 1;
-
-  let builders = [
-    OpBuilder<(ins "ArrayRef<CustomOpImplAttr>":$impls), [{
-      auto symbolAttr = StringAttr::get($_builder.getContext(), kSymbolName);
-      build($_builder, $_state, symbolAttr, impls);
-    }]>,
-  ];
-
-  let extraClassDeclaration = [{
-    /// The expected operation symbol
-    static constexpr StringLiteral kSymbolName = "__CustomOpImplSymbol";
-
-    /// Lookup the unique CustomOpImplsOp from the given operation.
-    /// It will walk to the toplevel ModuleOp, and then use the operation
-    /// symbol to find the CustomOpImplsOp.
-    static CustomOpImplsOp lookupOp(Operation *op);
-  }];
 }
 
 #endif // KGEN_KGENDIALECT_KGENOPS_TD

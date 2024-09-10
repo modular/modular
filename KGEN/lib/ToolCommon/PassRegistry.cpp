@@ -38,7 +38,6 @@ void KGEN::registerDefaultKGENPasses() {
   KGEN::registerLowerCallingConventions();
   KGEN::registerLowerClosures();
   KGEN::registerLowerControlFlow();
-  KGEN::registerLowerCustomOpsPreElab();
   KGEN::registerLowerGlobalPOPToLLVM();
   KGEN::registerLowerArgConventions();
   KGEN::registerLowerLoops();
@@ -51,6 +50,7 @@ void KGEN::registerDefaultKGENPasses() {
   KGEN::registerMem2Reg();
   KGEN::registerOutlineClosures();
   KGEN::registerRaiseForLoops();
+  KGEN::registerRegisterCustomOps();
   KGEN::registerRemoveUnusedParams();
   KGEN::registerSROA();
   KGEN::registerSimplifyCF();
@@ -77,8 +77,6 @@ void KGEN::registerDefaultKGENPasses() {
       [&] { return KGEN::createElaborateGeneratorsWithDefaultJIT(); });
   mlir::registerPass(
       [&] { return KGEN::createLowerCustomOpsWithDefaultJIT(); });
-  mlir::registerPass(
-      [&] { return KGEN::createRegisterCustomOpsWithDefaultJIT(); });
   KGEN::registerInlineParametric();
   KGEN::registerAutomaticInline();
   KGEN::registerDeadArgumentElimination();

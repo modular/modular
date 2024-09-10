@@ -136,26 +136,21 @@ createElaborateGenerators(TargetInfoAttr target,
 // Custom op registration
 //===----------------------------------------------------------------------===//
 
+struct LibraryOptConfig;
 using CAPICanonicalizationFn =
     std::function<bool(MlirOperation *, MlirRewriterBase *)>;
-using CompileCanonicalizationFnsFn =
-    std::function<ErrorOr<DenseMap<StringAttr, CAPICanonicalizationFn>>(
-        ModuleOp,
-        const DenseMap<StringAttr, SymbolConstantAttr> &canonicalizationSymbols,
-        TargetInfoAttr)>;
+using CompilePatternsFn =
+    ErrorOr<SmallVector<SmallVector<CAPICanonicalizationFn>>> (*)(
+        ModuleOp, ArrayRef<SmallVector<StringAttr>>);
+using BuildPipelineFn =
+    std::function<void(mlir::PassManager &, const LibraryOptConfig &)>;
 
-std::unique_ptr<mlir::Pass>
-createRegisterCustomOps(CompileCanonicalizationFnsFn compileModuleFn);
+struct LibraryOptConfig {
+  BuildPipelineFn buildElaboratePipeline = {};
+  CompilePatternsFn compilePatterns = {};
+};
 
-//===----------------------------------------------------------------------===//
-// Lower custom ops
-//===----------------------------------------------------------------------===//
-
-using RunKGENPipelineFn =
-    std::function<ErrorOrSuccess(ModuleOp theModule, TargetInfoAttr target)>;
-
-std::unique_ptr<mlir::Pass>
-createLowerCustomOps(RunKGENPipelineFn compileModuleFn = {});
+std::unique_ptr<mlir::Pass> createLowerCustomOps(const LibraryOptConfig &lib);
 
 //===----------------------------------------------------------------------===//
 // Inlining

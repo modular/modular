@@ -214,11 +214,6 @@ static void eraseUnreachableDecls(Operation *declOp, ModuleOp module) {
     if (op == declOp && isa<PackageOp>(declOp))
       return WalkResult::skip();
 
-    // Don't erase custom op implementations. The operation has a symbol for
-    // fast access that is not referenced in the IR.
-    if (isa<KGEN::CustomOpImplsOp>(op))
-      return WalkResult::advance();
-
     if (isa<mlir::SymbolOpInterface, LIT::FuncOp>(op) &&
         !liveSymbols.contains(op)) {
       op->erase();
@@ -265,9 +260,6 @@ importMojoImpl(AsyncRT::Runtime &runtime, StringRef moduleIdentifier,
   // will drop bytecode operations that never got referenced.
   if (failed(sharedState.finalizeImportedBytecodeModules()))
     return {nullptr, nullptr};
-
-  // Add in the `custom` op implementations in the IR.
-  sharedState.finalizeCustomOpImplementations(*module);
 
   // We fail either if we have a non-recoverable parse error, or if we emitted
   // an error and then recovered.  In either case, the IR will not be valid and

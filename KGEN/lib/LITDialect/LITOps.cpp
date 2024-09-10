@@ -944,7 +944,7 @@ void LIT::FuncOp::build(OpBuilder &b, OperationState &state,
         InlineLevelAttr::get(ctx, inlineLevel), b.getI8IntegerAttr(0),
         FlatSymbolRefAttr(), StringAttr(), StringAttr(),
         b.getStringAttr(sourceName), StringAttr(), DocStringAttr(),
-        StringAttr(), DictionaryAttr::get(ctx));
+        StringAttr(), DictionaryAttr::get(ctx), ArrayAttr());
   state.regions[0]->push_back(new Block());
 }
 
@@ -963,7 +963,7 @@ void LIT::FuncOp::build(OpBuilder &builder, OperationState &result,
         InlineLevelAttr::get(ctx, InlineLevel::Automatic),
         builder.getI8IntegerAttr(uint8_t(specialFnKind)), FlatSymbolRefAttr(),
         StringAttr(), StringAttr(), sourceName, StringAttr(), DocStringAttr(),
-        StringAttr(), DictionaryAttr::get(ctx));
+        StringAttr(), DictionaryAttr::get(ctx), ArrayAttr());
   result.regions[0]->push_back(new Block());
 }
 
@@ -1139,9 +1139,8 @@ void StructDeclOp::build(OpBuilder &builder, OperationState &result,
         TypeLineageArrayAttr::get(ctx, {}), /*isSynthetic=*/{},
         /*nonmaterializableTarget=*/{}, /*destructor=*/{}, /*moveInit=*/{},
         /*copyInit=*/{}, /*linearTypeErrorMsg*/ {}, /*closureSignature=*/{},
-        /*docString=*/{},
-        /*deprecationWarning=*/{}, /*sourceName=*/{}, /*convention*/ {},
-        /*customOpName=*/{});
+        /*docString=*/{}, /*deprecationWarning=*/{}, /*sourceName=*/{},
+        /*convention=*/{});
   result.regions[0]->push_back(new Block());
 }
 

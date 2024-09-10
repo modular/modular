@@ -333,6 +333,7 @@ private:
   void applyCopyOrMoveCapture(const CallNode &node, bool isMove,
                               StringRef decorator);
   void applyLLVMMetadata(const CallNode &node);
+  void applyOp(const CallNode *node);
 
   ASTDecl &decl;
   ASTDecl &sigDecl;
@@ -356,6 +357,8 @@ LogicalResult FnDecorators::apply(ExprNode *decorator) {
       funcOp.setInlineLevel(InlineLevel::Never);
     else if (declRef->spelling == "parameter")
       tcSignature.argList.effects.setCapturing();
+    else if (declRef->spelling == "op")
+      applyOp(/*patterns=*/nullptr);
     else
       return failure();
     return success();
@@ -378,6 +381,8 @@ LogicalResult FnDecorators::apply(ExprNode *decorator) {
         applyCopyOrMoveCapture(*callNode, /*isMove=*/false, declRef->spelling);
       else if (declRef->spelling == "__llvm_metadata")
         applyLLVMMetadata(*callNode);
+      else if (declRef->spelling == "op")
+        applyOp(callNode);
       else
         return failure();
       return success();
@@ -502,6 +507,18 @@ void FnDecorators::applyLLVMMetadata(const CallNode &node) {
       attrs.append(value.name, attr);
   }
   funcOp.setLLVMMetadataAttr(attrs.getDictionary(getContext()));
+}
+
+void FnDecorators::applyOp(const CallNode *node) {
+  SmallVector<Attribute> patterns;
+  if (node) {
+    ExprEmitter emitter(shared, sigDecl, EC_Decorator);
+    for (const Operand &arg : node->operands)
+      if (PValue pattern = emitter.emitExprPValue(arg.expr, EC_Decorator))
+        patterns.push_back(pattern.get());
+  }
+  funcOp.setPatternsAttr(ArrayAttr::get(getContext(), patterns));
+  funcOp.setInlineLevel(InlineLevel::Never);
 }
 
 /// Process an extensibility decorator by generating additional trait binding
@@ -1768,12 +1785,6 @@ private:
   getSymbolForMethod(StringRef methodName, ExprNode *decorator,
                      function_ref<void()> callbackOnMissing = nullptr);
 
-  /// Process the @op_implementation body decorator on structs.
-  /// It adds a new operation in the IR that link the new op name with the
-  /// relevant struct methods.
-  void processOpImplDecorator(ExprNode *decorator, StructDeclOp structOp,
-                              StringRef opName);
-
   StructDeclOp structOp;
   ASTDecl &structDecl;
   ArrayRef<std::pair<StructFieldOp, ASTDecl *>> structFields;
@@ -1893,29 +1904,6 @@ SymbolConstantAttr StructBodyDecorators::getSymbolForMethod(
   return cast<SymbolConstantAttr>(value.get());
 }
 
-void StructBodyDecorators::processOpImplDecorator(ExprNode *decorator,
-                                                  StructDeclOp structOp,
-                                                  StringRef opName) {
-  SMLoc decoratorLoc = decorator->getRangeStart();
-  auto noImplMethodError = [this, decoratorLoc]() {
-    emitError(decoratorLoc) << "struct annotated with '@op_implementation' "
-                            << "should define an `impl` method";
-  };
-
-  auto implSym = getSymbolForMethod("impl", decorator, noImplMethodError);
-  if (!implSym)
-    return;
-
-  auto canonicalizeSym = getSymbolForMethod("canonicalize", decorator);
-
-  // Add the op implementation, and return an error if the op already had an
-  // implementation.
-  (void)shared.addCustomOpImpl(
-      CustomOpImplAttr::get(opName, implSym, canonicalizeSym), decoratorLoc);
-
-  structOp.setCustomOpName(StringAttr::get(getContext(), opName));
-}
-
 LogicalResult StructBodyDecorators::processDecorator(ExprNode *decorator,
                                                      StructDeclOp structOp,
                                                      LIT::FuncOp moveFunc,
@@ -1926,31 +1914,7 @@ LogicalResult StructBodyDecorators::processDecorator(ExprNode *decorator,
       processValueDecorator(decorator->getRangeStart(), moveFunc, copyFunc);
       return success();
     }
-    if (declRef->spelling == "op_implementation") {
-      emitError(decorator->getLoc())
-          << "@op_implementation expects a string literal argument";
-      structDecl.setErroneous();
-      return success();
-    }
     return failure();
-  }
-
-  // @op_implementation decorator
-  if (auto callNode = dyn_cast<CallNode>(decorator)) {
-    auto declRef = dyn_cast<DeclRefNode>(callNode->callee);
-    if (!declRef || declRef->spelling != "op_implementation" ||
-        callNode->operands.size() != 1 ||
-        !callNode->operands.front().isPositional())
-      return failure();
-    auto strExpr = dyn_cast<StringLiteralNode>(callNode->operands.front().expr);
-    if (!strExpr) {
-      emitError(decorator->getLoc())
-          << "@op_implementation expects a string literal argument";
-      structDecl.setErroneous();
-      return success();
-    }
-    processOpImplDecorator(decorator, structOp, strExpr->getValue());
-    return success();
   }
   return failure();
 }

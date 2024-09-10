@@ -1103,24 +1103,19 @@ def KGEN_CustomOpImplAttr : KGENAttr<"CustomOpImpl", "custom.op_impl"> {
     ```
   }];
 
-  let parameters = (ins "StringAttr":$opName,
-                        "SymbolConstantAttr":$opImplementation,
-                        OptionalParameter<"SymbolConstantAttr">:$opCanonicalization);
-  let assemblyFormat = [{
-    `<` $opName
-    `,` `impl` `` `:` custom<ColonTypeSymbolConstant>($opImplementation)
-    (`,` `canonicalize` `` `:` custom<ColonTypeSymbolConstant>($opCanonicalization)^)? `>`
-  }];
+  let parameters = (ins
+    "StringAttr":$proto,
+    "PreservedAttr":$params,
+    "ArrayAttr":$patterns
+  );
+  let assemblyFormat = "`<` $proto `,` $params `,` $patterns `>`";
+
 
   let builders = [
     AttrBuilderWithInferredContext<(ins
-      "StringAttr":$opName,
-      "SymbolConstantAttr":$opImplementation,
-      CArg<"SymbolConstantAttr", "{}">:$opCanonicalization)>,
-    AttrBuilderWithInferredContext<(ins
-      "StringRef":$opName,
-      "SymbolConstantAttr":$opImplementation,
-      CArg<"SymbolConstantAttr", "{}">:$opCanonicalization)>,
+        "StringAttr":$proto, "PreservedAttr":$params, "ArrayAttr":$patterns), [{
+      return $_get(proto.getContext(), proto, params, patterns);
+    }]>,
   ];
 }
 
@@ -1131,17 +1126,6 @@ def KGEN_CustomOpImplAttr : KGENAttr<"CustomOpImpl", "custom.op_impl"> {
 def KGEN_CustomOpImplArrayAttr : ArrayOfAttr<KGENDialect, "CustomOpImplArray",
     "custom.op_impls", "CustomOpImplAttr"> {
   let summary = "An array of custom ops implementations, sorted by name";
-  let builders = [
-    AttrBuilder<(ins CArg<"ArrayRef<CustomOpImplAttr>", "{}">:$value)>
-  ];
-
-  let extraClassDeclaration = [{
-    /// Get the implementation of an op.
-    CustomOpImplAttr getOpImpl(StringAttr opName);
-  }];
-
-  let genVerifyDecl = 1;
-  let skipDefaultBuilders = 1;
 }
 
 //===----------------------------------------------------------------------===//

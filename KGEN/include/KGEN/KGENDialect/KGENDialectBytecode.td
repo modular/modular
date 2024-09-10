@@ -246,16 +246,6 @@ def LinkDependencyArrayAttr : DialectAttribute<(attr
   ConcreteAttrArray<"FlatSymbolRefAttr">:$value
 )>;
 
-def CustomOpImplAttr : DialectAttribute<(attr
-  StringAttr:$opName,
-  ConcreteAttribute<"SymbolConstantAttr">:$opImplementation,
-  ConcreteOptionalAttribute<"SymbolConstantAttr">:$opCanonicalization
-)>;
-
-def CustomOpImplArrayAttr : DialectAttribute<(attr
-  ConcreteAttrArray<"CustomOpImplAttr">:$value
-)>;
-
 def FloatLiteralAttr : DialectAttribute<(attr
   ConcreteAttribute<"FloatLiteralSpecialValuesAttr">:$special,
   Custom<"OptionalIPRational">:$rational
@@ -318,8 +308,6 @@ def KGENDialectAttributes : DialectAttributes<"kgen"> {
     PreservedAttr,
     ExportKindAttr,
     LinkDependencyArrayAttr,
-    CustomOpImplAttr,
-    CustomOpImplArrayAttr,
     TailKindAttr
   ];
 }
