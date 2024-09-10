@@ -97,7 +97,13 @@ b() {(
         run_targets_str=$(IFS=" "; echo "${run_targets[*]}")
         eval "$BB $run_targets_str"
         for target in "${run_targets[@]}"; do
-            eval "$BR $target"
+            test=$target
+            if [ $target = "kgen-tool" ]; then
+                test="kgen"
+            fi
+            if [ ! -f "$MODULAR_PATH/.derived/build/bin/$test" ]; then
+                eval "$BR $target"
+            fi
         done
     fi
     trap - INT
