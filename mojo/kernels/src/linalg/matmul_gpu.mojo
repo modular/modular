@@ -808,9 +808,19 @@ fn _matmul_gpu_dispatch[
     # NOTE: k has to be a multiple of BK * num_stages. Hard coded this condition to 128 for now.
     # TODO: Need to find a better dispatch strategy.
     var multi_gemm_cond = (m > 1 and n % 128 == 0 and k % 128 == 0)
+    # fmt: off
+    # Require Static K, N in A, B, C
+    alias multistage_gemm_supported_shape = b_shape.all_known[2]() \
+        and a_shape.has_value[1]() \
+        and c_shape.has_value[1]()
+    # fmt: on
 
     @parameter
-    if matmul_supported_format and use_tensor_core and b_shape.all_known[2]():
+    if (
+        matmul_supported_format
+        and use_tensor_core
+        and multistage_gemm_supported_shape
+    ):
         if multi_gemm_cond:
             alias kernels = MatmulKernels[a_type, b_type, c_type, transpose_b]()
 
