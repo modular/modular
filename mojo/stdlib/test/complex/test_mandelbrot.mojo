@@ -8,7 +8,7 @@
 # together.
 #
 # ===----------------------------------------------------------------------=== #
-# RUN: %mojo %s
+# RUN: %mojo-no-debug %s
 
 
 from complex import ComplexFloat32, ComplexSIMD
