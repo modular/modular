@@ -1839,6 +1839,15 @@ Elaborator::run(ModuleOp theModule,
 
     genInstantiations[node.gen].push_back(SuccessfulInstances{
         mlir::debugString(node.inputParams), node.impl->inst});
+
+    if (auto gen = dyn_cast<GeneratorOp>(*node.gen)) {
+      if (ArrayAttr patterns = gen.getPatternsAttr()) {
+        auto impl = CustomOpImplAttr::get(gen.getSymNameAttr(),
+                                          PreservedAttr::get(node.inputParams),
+                                          patterns);
+        cast<FuncOp>(*node.impl->inst).setPatternsAttr(impl);
+      }
+    }
   }
 
   // Now reorder all instantiations of each generator to be deterministic.

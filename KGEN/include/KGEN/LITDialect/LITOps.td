@@ -82,7 +82,8 @@ def LIT_FuncOp : LITOp<"func", [
     OptionalAttr<StrAttr>:$namedResult,
     OptionalAttr<LIT_DocStringAttr>:$docString,
     OptionalAttr<StrAttr>:$deprecationWarning,
-    DefaultValuedAttr<DictionaryAttr, "std::nullopt">:$LLVMMetadata
+    DefaultValuedAttr<DictionaryAttr, "std::nullopt">:$LLVMMetadata,
+    OptionalAttr<ArrayAttr>:$patterns
   );
   let regions = (region SizedRegion<1>:$bodyRegion);
 
@@ -378,7 +379,6 @@ def LIT_StructDeclOp : LITOp<"struct.decl", [
     OptionalAttr<LIT_DocStringAttr>:$docString,
     OptionalAttr<StrAttr>:$deprecationWarning,
     OptionalAttr<SourceNameAttr>:$sourceName,
-    OptionalAttr<StrAttr>:$customOpName,
     EnumProperty<"TypeConvention">:$convention
   );
   let regions = (region SizedRegion<1>:$fields);

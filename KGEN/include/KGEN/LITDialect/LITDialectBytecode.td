@@ -137,12 +137,6 @@ def UnboundMLIROperationAttr : DialectAttribute<(attr
   ConcreteAttribute<"DictionaryAttr">:$attrs
 )>;
 
-def UnboundCustomOperationAttr : DialectAttribute<(attr
-  StringAttr:$opName,
-  ConcreteType<"AnyStructType">:$structType,
-  TypedAttrArray:$params
-)>;
-
 def UnpackedAttr : DialectAttribute<(attr
   Bool:$kwOnly
 )>;
@@ -250,7 +244,6 @@ def LITDialectAttributes : DialectAttributes<"lit"> {
     FnMetadataAttr,
     DocStringAttr,
     UnboundMLIROperationAttr,
-    UnboundCustomOperationAttr,
     UnpackedAttr,
     ModuleAttr,
     WrappedBindTypeAttr,

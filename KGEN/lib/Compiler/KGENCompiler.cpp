@@ -45,6 +45,10 @@
 using namespace M;
 using namespace KGEN;
 
+//===----------------------------------------------------------------------===//
+// compileElaboratorAsm
+//===----------------------------------------------------------------------===//
+
 /// Generate a stub function that calls into the sliced function with input
 /// parameters, then rename it to match the expected symbol name and export it
 /// This is how compilation is rooted at instantiations of parametric functions.
@@ -177,24 +181,20 @@ writeCaptureArgs(ModuleOp module, StringAttr name) {
 }
 
 //===----------------------------------------------------------------------===//
-// createCanonicalizerWithDefaultJIT
+// createLowerCustomOpsWithDefaultJIT
 //===----------------------------------------------------------------------===//
 
 /// Compile the pre-elaboration canonicalizations patterns present in the
 /// module. Requires the module symbol table, and the exportMap of all the
 /// canonicalization functions.
-static ErrorOr<DenseMap<StringAttr, CAPICanonicalizationFn>>
-compileCustomCanonicalizationFns(
-    ModuleOp theModule,
-    const DenseMap<StringAttr, SymbolConstantAttr> &canonicalizationSymbols,
-    TargetInfoAttr target) {
-  MLIRContext *ctx = theModule.getContext();
-  CompilationOptions options;
-  ExecutionEngineOptions eeOptions;
+static ErrorOr<SmallVector<SmallVector<CAPICanonicalizationFn>>>
+compilePatterns(ModuleOp module, ArrayRef<SmallVector<StringAttr>> patterns) {
+  MLIRContext *ctx = module.getContext();
 
   // Start the execution engine.
+  CompilationOptions options;
   ErrorOr<std::unique_ptr<ExecutionEngine>> execEngineOr =
-      initializeExecutionEngine(*ctx, options, std::move(eeOptions),
+      initializeExecutionEngine(*ctx, options, ExecutionEngineOptions(),
                                 /*isJIT=*/true, PassManagerConfigOptions());
   if (execEngineOr.isError())
     return execEngineOr.takeError();
@@ -215,17 +215,19 @@ compileCustomCanonicalizationFns(
   // Add an environment variable to specify that the CAPI is linked in the
   // JIT'ed code.
   auto dict = DictionaryAttr::get(
-      ctx,
-      {NamedAttribute(StringAttr::get("MLIRCAPI_LINKED", StringType::get(ctx)),
-                      UnitAttr::get(ctx))});
-  theModule->setAttr(EnvAttr::getEnvAttrName(), EnvAttr::get(dict));
+      ctx, {{StringAttr::get("MLIRCAPI_LINKED", StringType::get(ctx)),
+             UnitAttr::get(ctx)}});
+  module->setAttr(EnvAttr::getEnvAttrName(), EnvAttr::get(dict));
 
   // Run the KGEN pipeline, and compile it to an archive.
-  KGENCompiler compiler(*ctx, options);
-  if (ErrorOrSuccess err = compiler.runKGENPipeline(
-          theModule, target, KGENCompiler::StartPipelineAt::AfterLowerLIT))
+  KGENCompiler kgenCompiler(*ctx, options);
+  TargetInfoAttr target =
+      *getTargetInfoFor(ctx, llvm::sys::getDefaultTargetTriple(),
+                        llvm::sys::getHostCPUName(), getHostCPUFeatures());
+  if (auto err = kgenCompiler.runElaborationPipeline(
+          module, target, *loadContext(ctx)->get<AsyncRT::Runtime>()))
     return err.takeError();
-  ErrorOr<BufferRef> archiveOr = objCompiler.emitArchive(theModule);
+  ErrorOr<BufferRef> archiveOr = objCompiler.emitArchive(module);
   if (archiveOr.isError())
     return archiveOr.takeError();
 
@@ -235,26 +237,25 @@ compileCustomCanonicalizationFns(
     return err.takeError();
 
   // The map of compiled functions.
-  DenseMap<StringAttr, CAPICanonicalizationFn> compiledFns;
-  for (auto [opName, canonSym] : canonicalizationSymbols) {
-    ErrorOr<CompiledFunc> funcOrRes =
-        engine->lookup(canonSym.getSymbol().getLeafReference());
-    if (funcOrRes.isError())
-      return funcOrRes.takeError();
-    // Both the operation and the rewriter are passed as pointers, as the
-    // mojo canonicalization pattern is marked as inout.
-    compiledFns.try_emplace(
-        opName, [engine = engine, func = *funcOrRes](
-                    MlirOperation *op, MlirRewriterBase *rewriter) mutable {
-          return func.invoke<bool>(op, rewriter);
-        });
+  SmallVector<SmallVector<CAPICanonicalizationFn>> compiledFns;
+  for (ArrayRef<StringAttr> patternList : patterns) {
+    SmallVector<CAPICanonicalizationFn> compiledPatternList;
+    for (StringRef name : patternList) {
+      ErrorOr<CompiledFunc> funcOrRes = engine->lookup(name);
+      if (funcOrRes.isError())
+        return funcOrRes.takeError();
+      // Both the operation and the rewriter are passed as pointers, as the
+      // mojo canonicalization pattern is marked as inout.
+      compiledPatternList.push_back(
+          [engine = engine, func = *funcOrRes](
+              MlirOperation *op, MlirRewriterBase *rewriter) mutable {
+            return func.invoke<bool>(op, rewriter);
+          });
+    }
+    compiledFns.push_back(std::move(compiledPatternList));
   }
 
   return compiledFns;
-}
-
-std::unique_ptr<Pass> KGEN::createRegisterCustomOpsWithDefaultJIT() {
-  return createRegisterCustomOps(compileCustomCanonicalizationFns);
 }
 
 //===----------------------------------------------------------------------===//
@@ -330,7 +331,14 @@ compileElaboratorAsm(GeneratorOp func, SymbolConstantAttr symbol,
 
   pm.addPass(createElaborateGenerators(target, elaboratorOptions, options,
                                        compileElaboratorAsm));
-  buildPostElaborationPipeline(pm, options);
+  LibraryOptConfig lib;
+  lib.buildElaboratePipeline = [&](mlir::PassManager &pm,
+                                   const LibraryOptConfig &lib) {
+    buildElaborateModulePipeline(pm, target, options, compileElaboratorAsm);
+    buildFirstOptPipeline(pm, options, lib);
+  };
+  lib.compilePatterns = compilePatterns;
+  buildPostElaborationPipeline(pm, options, lib);
 
   if (failed(pm.run(*module)))
     return Error("failed to run the pass manager");
@@ -386,12 +394,16 @@ std::unique_ptr<Pass> KGEN::createElaborateGeneratorsWithDefaultJIT() {
 /// The created elaborator pass uses a default specialization executor that
 /// JITs and executes in-process.
 std::unique_ptr<Pass> KGEN::createLowerCustomOpsWithDefaultJIT() {
-  return createLowerCustomOps([](ModuleOp theModule, TargetInfoAttr target) {
+  LibraryOptConfig lib;
+  lib.buildElaboratePipeline = [=](mlir::PassManager &pm,
+                                   const LibraryOptConfig &lib) {
     CompilationOptions options;
-    KGENCompiler compiler(*theModule.getContext(), options);
-    return compiler.runKGENPipeline(
-        theModule, target, KGENCompiler::StartPipelineAt::AfterLowerLIT);
-  });
+    buildElaborateModulePipeline(pm, TargetInfoAttr(), options,
+                                 compileElaboratorAsm);
+    buildFirstOptPipeline(pm, options, lib);
+  };
+  lib.compilePatterns = compilePatterns;
+  return createLowerCustomOps(lib);
 }
 
 //===----------------------------------------------------------------------===//
@@ -402,7 +414,14 @@ void KGEN::populateElaborateModulePasses(mlir::PassManager &pm,
                                          TargetInfoAttr target,
                                          const CompilationOptions &options) {
   buildElaborateModulePipeline(pm, target, options, compileElaboratorAsm);
-  buildPostElaborationPipeline(pm, options);
+  LibraryOptConfig lib;
+  lib.buildElaboratePipeline = [=](mlir::PassManager &pm,
+                                   const LibraryOptConfig &lib) {
+    buildElaborateModulePipeline(pm, target, options, compileElaboratorAsm);
+    buildFirstOptPipeline(pm, options, lib);
+  };
+  lib.compilePatterns = compilePatterns;
+  buildPostElaborationPipeline(pm, options, lib);
 }
 
 //===----------------------------------------------------------------------===//
@@ -433,8 +452,7 @@ KGENCompiler::KGENCompiler(MLIRContext &context, CompilationOptions options,
       context(context) {}
 
 ErrorOrSuccess KGENCompiler::runKGENPipeline(ModuleOp theModule,
-                                             TargetInfoAttr target,
-                                             StartPipelineAt startAt) {
+                                             TargetInfoAttr target) {
   llvm::StringMap<Telemetry::MetricAttributeValue> attrs;
   auto fileLine = theModule.getLoc()->findInstanceOf<mlir::FileLineColLoc>();
   if (fileLine)
@@ -445,29 +463,23 @@ ErrorOrSuccess KGENCompiler::runKGENPipeline(ModuleOp theModule,
     return cacheBackend.takeError();
 
   // Run the passes as a cached transform.
-  {
-    ContextRef ctx = loadContext(target.getContext());
-    [[maybe_unused]] auto timeScope =
-        ctx->get<M::Telemetry::TelemetryContext>()
-            ->createUInt64Timer<std::chrono::milliseconds>(
-                "mojo.kgen.compile.time", M::Telemetry::Level::L2, attrs);
+  ContextRef ctx = loadContext(target.getContext());
+  [[maybe_unused]] auto timeScope =
+      ctx->get<M::Telemetry::TelemetryContext>()
+          ->createUInt64Timer<std::chrono::milliseconds>(
+              "mojo.kgen.compile.time", M::Telemetry::Level::L2, attrs);
 
-    auto transformCache =
-        RCRef<Cache::TransformCache>::create(std::move(*cacheBackend));
+  auto transformCache =
+      RCRef<Cache::TransformCache>::create(std::move(*cacheBackend));
 
-    AsyncRT::AnyAsyncValueRef ready = runKGENPipeline(
-        theModule, target, startAt, transformCache,
-        ctx->get<AsyncRT::Runtime>()->getReadyChain().copy(),
-        Cache::CacheTelemetryContext::getTelemetryOnMissLambda(
-            "KGENCompiler::runKGENPipeline", "mojo.compiler.cache.miss.time",
-            {{"pipeline", "KGEN"}}),
-        Cache::CacheTelemetryContext::getTelemetryOnHitLambda(
-            "KGENCompiler::runKGENPipeline"));
-
-    if (ready.isError())
-      return ready.takeDiagnostic().getMessage().copy();
-  }
-  return {};
+  return runKGENPipeline(theModule, target, transformCache,
+                         ctx->get<AsyncRT::Runtime>()->getReadyChain().copy(),
+                         Cache::CacheTelemetryContext::getTelemetryOnMissLambda(
+                             "KGENCompiler::runKGENPipeline",
+                             "mojo.compiler.cache.miss.time",
+                             {{"pipeline", "KGEN"}}),
+                         Cache::CacheTelemetryContext::getTelemetryOnHitLambda(
+                             "KGENCompiler::runKGENPipeline"));
 }
 
 static mlir::PassManager
@@ -478,42 +490,35 @@ createPassManager(const std::optional<std::string> &operationName,
   return {context};
 }
 
-AnyAsyncValueRef KGENCompiler::runKGENPipeline(
-    ModuleOp theModule, TargetInfoAttr target, StartPipelineAt startAt,
-    RCRef<Cache::TransformCache> transformCache, AnyAsyncValueRef chain,
-    std::function<void(Operation *)> moreOnMiss,
-    std::function<void(Operation *)> moreOnHit) {
-
+ErrorOrSuccess
+KGENCompiler::runKGENPipeline(ModuleOp theModule, TargetInfoAttr target,
+                              RCRef<Cache::TransformCache> transformCache,
+                              AnyAsyncValueRef chain,
+                              std::function<void(Operation *)> moreOnMiss,
+                              std::function<void(Operation *)> moreOnHit) {
   // Set the target now, so it's included in the cache key.
   setTargetInfo(theModule, target);
   mlir::PassManager pm =
       createPassManager(pmConfigOptions.operationName, &context);
 
   ErrorOrSuccess configPM = pmConfigOptions.configurePassManager(pm);
-  if (configPM) {
-    AsyncRT::Runtime &runtime = *loadContext(&context)->get<AsyncRT::Runtime>();
-    auto output = AsyncRT::AsyncValueRef<std::string>::allocate(runtime);
-    std::move(output).setToError(AsyncRT::getMLIRDiagnostic(
-        Error(std::string("configure PassManager in "
-                          "KGENCompiler::runKGENPipeline failed, ") +
-              configPM.getError()),
-        theModule->getLoc()));
-    return std::move(output);
-  }
+  if (configPM)
+    return configPM.takeError();
 
   // Populate the passes.
-  buildGenerateLibraryPipeline(pm, options, startAt);
+  buildGenerateLibraryPipeline(pm, options);
   populateElaborateModulePasses(pm, target, options);
 
   // Run the passes as a cached transform.
-
   AsyncRT::AnyAsyncValueRef ready =
       Cache::cachedTransform(theModule, transformCache.copy(), std::move(chain),
                              pm, std::move(moreOnMiss), std::move(moreOnHit));
 
   // This await here is important since pm is local in this function.
   AsyncRT::await(ready);
-  return ready;
+  if (ready.isError())
+    return ready.takeDiagnostic().getMessage().copy();
+  return success();
 }
 
 ErrorOrSuccess KGENCompiler::runGenerateLibraryPipeline(ModuleOp module) {
@@ -581,7 +586,7 @@ LogicalResult KGENCompiler::runCheckLITPipeline(ModuleOp module) {
 /// a local PassManager.
 /// Returns the same AnyAsyncValueRef for error handling in the caller
 /// if needed.
-AnyAsyncValueRef KGENCompiler::runElaborationPipeline(
+ErrorOrSuccess KGENCompiler::runElaborationPipeline(
     ModuleOp module, TargetInfoAttr target, AsyncRT::Runtime &runtime,
     std::optional<AnyAsyncValueRef> chain,
     std::function<void(Operation *)> moreOnMiss,
@@ -590,29 +595,16 @@ AnyAsyncValueRef KGENCompiler::runElaborationPipeline(
       createPassManager(pmConfigOptions.operationName, &context);
 
   ErrorOrSuccess configPM = pmConfigOptions.configurePassManager(pm);
-  if (configPM) {
-    auto output = AsyncRT::AsyncValueRef<std::string>::allocate(runtime);
-    std::move(output).setToError(AsyncRT::getMLIRDiagnostic(
-        Error(std::string("configure PassManager in "
-                          "KGENCompiler::runKGENPipeline failed, ") +
-              configPM.getError()),
-        module->getLoc()));
-    return std::move(output);
-  }
+  if (configPM)
+    return configPM.takeError();
 
   populateElaborateModulePasses(pm, target, options);
   auto cacheBackend = getMojoCacheBackend();
 
   if (cacheBackend.isError() || !chain) {
-    auto output = AsyncRT::AsyncValueRef<std::string>::allocate(runtime);
-    if (failed(pm.run(module))) {
-      std::move(output).setToError(AsyncRT::getMLIRDiagnostic(
-          "KGENCompiler::runElaborationPipeline failed", module->getLoc()));
-    } else {
-      std::move(output).emplace(
-          "KGENCompiler::runElaborationPipeline success without caching.");
-    }
-    return std::move(output);
+    if (failed(pm.run(module)))
+      return Error("KGENCompiler::runElaborationPipeline failed");
+    return success();
   }
 
   AnyAsyncValueRef ready = Cache::cachedTransform(
@@ -621,6 +613,7 @@ AnyAsyncValueRef KGENCompiler::runElaborationPipeline(
 
   // This await here is important since pm is local in this function.
   AsyncRT::await(ready);
-
-  return ready;
+  if (ready.isError())
+    return ready.takeDiagnostic().getMessage().copy();
+  return success();
 }

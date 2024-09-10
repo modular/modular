@@ -17,7 +17,6 @@
 #include "KGEN/MojoParser/ParserParamEvaluator.h"
 #include "MojoUtils.h"
 
-#include "KGEN/CustomDialect/CustomUtils.h"
 #include "KGEN/Interpreter/InterpreterAttrs.h"
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/LITDialect/LITOps.h"
@@ -1442,9 +1441,7 @@ computeArgumentsLifetime(AsyncCallOp call,
 CValue ExprEmitter::emitCallUnchecked(RValue callee,
                                       const CallOperands &callOperands,
                                       ValueDest &dest, CallSyntax syntax,
-                                      const ExprNode *callExpr,
-                                      StringAttr customOpName,
-                                      ASTType customOpStructType) {
+                                      const ExprNode *callExpr) {
   CallEmitter callEmitter(callee, callExpr, *this, dest);
   auto calleeSig = cast<LITSignatureType>(callee.getRValueType());
 
@@ -1459,15 +1456,12 @@ CValue ExprEmitter::emitCallUnchecked(RValue callee,
 
   // Folding into PValue can fail for a number of reasons, in which case we
   // fall back to emitting normally.
-  // We only fold to a PValue if we are not emitting a custom MLIR op.
-  if (!customOpName)
-    if (FailureOr<CValue> resCValue =
-            callEmitter.inlineFunctionCallIntoPValueIfPossible(argumentValues);
-        succeeded(resCValue))
-      return *resCValue;
+  if (FailureOr<CValue> resCValue =
+          callEmitter.inlineFunctionCallIntoPValueIfPossible(argumentValues);
+      succeeded(resCValue))
+    return *resCValue;
 
-  if (!builder || (!customOpName && shouldEmitParameterCall(
-                                        calleeSig, argumentValues, shared))) {
+  if (!builder || shouldEmitParameterCall(calleeSig, argumentValues, shared)) {
     TypedAttr paramCallResult;
     {
       llvm::SaveAndRestore savedBuilder(builder, {});
@@ -1626,32 +1620,7 @@ CValue ExprEmitter::emitCallUnchecked(RValue callee,
          "All mojo functions return one value");
   Type resultType = expectedCalleeType.getResults()[0];
   CValue callResult;
-  if (customOpName) {
-    auto target = callee.getIfPValue();
-    assert(target &&
-           "emitCallUnchecked with custom op name requires a PValue callee");
-    Operation *customOp =
-        builder->create(loc, customOpName, callArgs, calleeSig.getResults());
-    callResult = SRValue(customOp->getResult(0));
-
-    // Add a reference to the custom op struct definition. This will ensure that
-    // the struct definition will not be DCE'd.
-    customOp->setAttr("__custom_op_struct_ref",
-                      TypeAttr::get(customOpStructType.mlirType));
-
-    // If we had any parameters, add their values to the custom op.
-    ArrayRef<TypedAttr> parameters =
-        cast<SymbolConstantAttr>(target.get()).getParamValues();
-    if (!parameters.empty()) {
-      SmallVector<Attribute> parametersAttr;
-      for (TypedAttr parameter :
-           cast<SymbolConstantAttr>(target.get()).getParamValues())
-        parametersAttr.push_back(parameter);
-
-      customOp->setAttr(Custom::kCustomOpParamsAttrName,
-                        mlir::ArrayAttr::get(getContext(), parametersAttr));
-    }
-  } else if (auto target = callee.getIfPValue()) {
+  if (auto target = callee.getIfPValue()) {
     if (calleeSig.isAsync()) {
       // If the callee is an async function, emit an async call. Then wrap the
       // `!co.routine<T>` result in a `Coroutine[T]` object.

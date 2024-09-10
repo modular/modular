@@ -19,6 +19,7 @@
 #include "KGEN/Support/Configuration.h"
 #include "KGEN/ToolCommon/CLOptions.h"
 #include "KGEN/ToolCommon/InitAllDialects.h"
+#include "KGEN/include/KGEN/Support/ForceLinkMLIRC.h"
 #include "Support/CommonCLOptions.h"
 #include "Support/Compiler/TimeProfilerTimingManager.h"
 #include "Support/DebugInfoDialect/Transforms/SnapshotDebugInfo.h"
@@ -543,6 +544,8 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
 }
 
 int main(int argc, char **argv) {
+  KGEN::forceLinkMLIRC();
+
   CLOptions clOptions(argc, argv);
 
   // Initialize targets first, so that --version shows registered targets.

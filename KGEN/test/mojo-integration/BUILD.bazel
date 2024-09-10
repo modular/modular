@@ -8,14 +8,6 @@ lit_tests(
             "*.mlir",
             "*.mojo",
         ],
-        exclude = [
-            # Both Handled below
-            "canonicalize-custom-ops.mojo",
-            "lower-custom-ops.mojo",
-            "lower-custom-ops-error.mojo",
-            "lower-custom-ops-pre-elab.mojo",
-            "multiresult_asm_mma.mojo",
-        ],
     ),
     data = glob(["inputs/**/*.mojo"]) + [
         "//:libpython",
@@ -25,7 +17,9 @@ lit_tests(
     ],
     mojo_deps = [
         "//Kernels/mojo/gpu",
+        "//Kernels/mojo/_mlir",
         "//Kernels/mojo/runtime",
+        "//Kernels/mojo/compile",
         "//open-source/mojo/stdlib/stdlib",
     ],
     target_compatible_with = select({
@@ -45,13 +39,7 @@ lit_tests(
     name = "test_stdlib_srcs",
     # This tests require the stdlib and mlirc srcs, where other tests do
     # not require them
-    srcs = glob(["*.test"]) + [
-        "canonicalize-custom-ops.mojo",
-        "lower-custom-ops.mojo",
-        "lower-custom-ops-error.mojo",
-        "lower-custom-ops-pre-elab.mojo",
-        "multiresult_asm_mma.mojo",
-    ],
+    srcs = glob(["*.test"]),
     data = glob(["inputs/**/*.mojo"]) + [
         "//KGEN:CompilerRT",
         "//Kernels/mojo/_mlir:_mlir_srcs",

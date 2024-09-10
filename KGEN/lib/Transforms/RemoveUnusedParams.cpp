@@ -458,7 +458,7 @@ void RemoveUnusedParams::runOnOperation() {
     // If nothing is unused we need to clear the calls and treat this as
     // having already been processed so the rest of the call graph can
     // progress.
-    if (callSites.calls.empty() ||
+    if (oldFunction.getPatternsAttr() || callSites.calls.empty() ||
         (unusedArgs.none() && unusedParamsIndex.none())) {
       callSites.calls.clear();
       for (GeneratorOp caller : callSites.callers)

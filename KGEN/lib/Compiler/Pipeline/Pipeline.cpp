@@ -53,19 +53,16 @@ static void buildLowerLITPipeline(mlir::PassManager &pm,
 }
 
 void KGEN::buildGenerateLibraryPipeline(mlir::PassManager &pm,
-                                        const CompilationOptions &options,
-                                        KGENCompiler::StartPipelineAt startAt) {
-  if (startAt == KGENCompiler::StartPipelineAt::Beginning) {
-    // If the compilation options aren't for full debug, strip the extra info
-    // from the module.
-    if (options.debugLevel != CompilationOptions::kFullDebugInfo) {
-      pm.addPass(DebugInfo::createDebugInfoStrip(
-          {/*preserveLineTables=*/options.debugLevel ==
-           CompilationOptions::kLineTablesOnly}));
-    }
-
-    buildLowerLITPipeline(pm, options);
+                                        const CompilationOptions &options) {
+  // If the compilation options aren't for full debug, strip the extra info
+  // from the module.
+  if (options.debugLevel != CompilationOptions::kFullDebugInfo) {
+    pm.addPass(DebugInfo::createDebugInfoStrip(
+        {/*preserveLineTables=*/options.debugLevel ==
+         CompilationOptions::kLineTablesOnly}));
   }
+
+  buildLowerLITPipeline(pm, options);
 
   // Slice MOGG compute & shape functions out of base kernels.
   MOGGPreElab::MOGGPreElabPipelineOptions moggOpts;
@@ -125,6 +122,7 @@ void KGEN::buildElaborateModulePipeline(mlir::PassManager &pm,
                                         TargetInfoAttr target,
                                         const CompilationOptions &options,
                                         ElaboratorCompileAsmFn compileAsmFn) {
+  pm.addPass(createRegisterCustomOps());
   pm.addPass(createEliminateDeadSymbols());
 
   // Erase debuginfo from all sources if compiling with no debuginfo.
@@ -156,7 +154,15 @@ void KGEN::buildElaborateModulePipeline(mlir::PassManager &pm,
 }
 
 void KGEN::buildPostElaborationPipeline(mlir::PassManager &pm,
-                                        const CompilationOptions &options) {
+                                        const CompilationOptions &options,
+                                        const LibraryOptConfig &lib) {
+  buildFirstOptPipeline(pm, options, std::move(lib));
+  buildLateOptPipeline(pm, options);
+}
+
+void KGEN::buildFirstOptPipeline(mlir::PassManager &pm,
+                                 const CompilationOptions &options,
+                                 const LibraryOptConfig &lib) {
   // Run DCE first coming out of the elaborator.
   pm.addPass(createEliminateDeadSymbols());
 
@@ -219,6 +225,11 @@ void KGEN::buildPostElaborationPipeline(mlir::PassManager &pm,
   }
 
   pm.addPass(createEliminateDeadSymbols());
+  pm.addPass(createLowerCustomOps(lib));
+}
+
+void KGEN::buildLateOptPipeline(mlir::PassManager &pm,
+                                const CompilationOptions &options) {
 
   if (options.optimizationLevel >= 1) {
     pm.addPass(createArgPromotion());

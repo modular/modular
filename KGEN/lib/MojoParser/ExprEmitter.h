@@ -403,11 +403,6 @@ public:
                              ValueDest &dest,
                              bool allowImplicitConversion = true);
 
-  /// Emit a call to a custom op, given the custom op implementation class.
-  CValue emitCustomOpCall(ASTType type, ArrayRef<TypedAttr> parameters,
-                          StringAttr customOpName, CallOperands &&callOperands,
-                          const ExprNode *callNode, ValueDest &dest);
-
   //===--------------------------------------------------------------------===//
   // Type conversion helpers.
 
@@ -559,9 +554,7 @@ public:
   /// with the given name for the given custom op definition struct type.
   CValue emitCallUnchecked(RValue callee, const CallOperands &operands,
                            ValueDest &dest, CallSyntax syntax,
-                           const ExprNode *callExpr,
-                           StringAttr customOpName = {},
-                           ASTType customOpStructType = {});
+                           const ExprNode *callExpr);
 };
 
 } // namespace M::KGEN::LIT
