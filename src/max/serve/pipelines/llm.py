@@ -8,10 +8,10 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import dataclass, field
-from typing import AsyncGenerator, Generic, Tuple, TypeVar, Optional
+from typing import AsyncGenerator, Generic, Optional, TypeVar
 
-from transformers import AutoTokenizer
 from max.serve.scheduler.queues import BatchMultiplexQueue
+from transformers import AutoTokenizer
 
 Context = TypeVar("Context")
 
@@ -36,26 +36,38 @@ class TokenGeneratorPipeline(Generic[Context]):
     max_batch_size: int = 1
 
     async def next_token(
-        self, requests: dict[str, Context]
-    ) -> AsyncGenerator[Tuple[str, str], None]:
+        self, request_id: str, prompt: str
+    ) -> AsyncGenerator[str, None]:
         """Generates tokens for each provided request ending with sentinel `None` tokens.
         """
-        # TODO: The selection of requests should be configurable.
-        for rid, context in requests.items():
-            # The first token is part of a context-encoding batch.
-            # This goes away once we support ragged tensors.
-            yield rid, await self.context_queue.submit(rid, context)
-            async for token in self.tokens_queue.stream(rid, context):
-                yield rid, token
-                if token is None:
-                    break
+        # The first token is part of a context-encoding batch.
+        # This goes away once we support ragged tensors.
+        context = await self.context_queue.submit(request_id, prompt)
+        async for token in self.tokens_queue.stream(request_id, context):
+            yield token
+            if token is None:
+                break
+
+    async def all_tokens(self, request_id: str, prompt: str) -> list[str]:
+        return [
+            token
+            async for token in self.next_token(request_id, prompt)
+            if token is not None
+        ]
+
+    async def create_context(self, request: dict[str, str]):
+        assert len(request) == 1
+        request_id, request_prompt = next(iter(request.items()))
+        context = await self.model.new_context(request_prompt)
+        assert request_id == request_id
+        return {request_id: context}
 
     async def __aenter__(self):
         # This can go away once we have ragged tensors
         loop = asyncio.get_running_loop()
         context_encoder = loop.create_task(
             self.context_queue.dynamic_batching_worker(
-                self.model.next_token,
+                self.create_context,
                 self.max_batch_size,
             )
         )

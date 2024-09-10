@@ -17,8 +17,6 @@ from fastapi.responses import JSONResponse, Response
 from max.serve.pipelines.deps import token_pipeline
 from max.serve.pipelines.llm import TokenGeneratorPipeline
 from max.serve.schemas.openai import (
-    ChatCompletionRequestMessageContentPartImage,
-    ChatCompletionRequestMessageContentPartRefusal,
     ChatCompletionResponseMessage,
     ChatCompletionStreamResponseDelta,
     Choice1,
@@ -56,10 +54,14 @@ async def openai_chat_completions(
         )
     else:
         prompt = " ".join(
-            [message.root.content for message in completion_request.messages]
+            [
+                message.root.content
+                for message in completion_request.messages
+                if isinstance(message.root.content, str)
+            ]
         )
 
-    requests = {str(uuid4()): await pipeline.model.new_context(prompt)}
+    request_id = str(uuid4())
 
     @dataclass
     class ResponseGenerator:
@@ -68,11 +70,11 @@ async def openai_chat_completions(
         )
 
         async def generate(self):
-            async for rid, token in pipeline.next_token(requests):
-                index = self.counters[rid]
-                self.counters[rid] += 1
+            async for token in pipeline.next_token(request_id, prompt):
+                index = self.counters[request_id]
+                self.counters[request_id] += 1
                 if token is None:
-                    del self.counters[rid]
+                    del self.counters[request_id]
                     break
                 choices = [
                     Choice3(
@@ -88,7 +90,7 @@ async def openai_chat_completions(
                     )
                 ]
                 response = CreateChatCompletionStreamResponse(
-                    id=rid,
+                    id=request_id,
                     choices=choices,
                     created=int(datetime.now().timestamp()),
                     model="",
@@ -108,9 +110,9 @@ async def openai_chat_completions(
         gen = ResponseGenerator()
         return EventSourceResponse(gen.generate())
 
-    message = "".join(
-        [token async for _, token in pipeline.next_token(requests) if token]
-    )
+    completed_tokens = await pipeline.all_tokens(request_id, prompt)
+    message = "".join(completed_tokens)
+
     choices = [
         Choice1(
             index=0,
