@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 # REQUIRES: has_cuda_device
-# RUN: %mojo-build %s
+# RUN: %mojo-build-no-debug %s
 
 from sys import sizeof, env_get_int
 from gpu.host.device_context import DeviceContext

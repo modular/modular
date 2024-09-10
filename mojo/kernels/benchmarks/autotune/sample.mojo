@@ -3,7 +3,7 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-# RUN: %mojo-build %s
+# RUN: %mojo-build-no-debug %s
 
 from sys import env_get_string, env_get_int
 from benchmark import (

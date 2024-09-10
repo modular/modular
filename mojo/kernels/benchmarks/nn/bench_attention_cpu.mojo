@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-# RUN: %mojo-build %s
+# RUN: %mojo-build-no-debug %s
 
 from random import rand
 from os import abort

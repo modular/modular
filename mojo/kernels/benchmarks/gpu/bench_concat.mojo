@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 # REQUIRES: has_cuda_device
-# RUN: %mojo-build %s
+# RUN: %mojo-build-no-debug %s
 
 from random import randn
 from os import abort

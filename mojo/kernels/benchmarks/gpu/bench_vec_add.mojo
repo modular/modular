@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 # REQUIRES: has_cuda_device
-# RUN: %mojo-build %s
+# RUN: %mojo-build-no-debug %s
 
 from pathlib import Path
 from builtin._closure import __ownership_keepalive

@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 # REQUIRES: has_cuda_device
-# RUN: %mojo-build %s
+# RUN: %mojo-build-no-debug %s
 
 from math import ceildiv, isqrt, isclose
 from random import rand
