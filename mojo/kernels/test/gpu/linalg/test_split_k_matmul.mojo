@@ -6,7 +6,7 @@
 # REQUIRES: has_cuda_device
 # RUN: %mojo-no-debug %s
 
-from linalg.matmul_gpu import multistage_gemm
+from linalg._multistage_gemm_gpu import multistage_gemm_k_partition
 from linalg.utils_gpu import MatmulKernels
 from layout import Layout, RuntimeLayout, LayoutTensor, RuntimeTuple, IntTuple
 from layout.layout import UNKNOWN_VALUE
@@ -149,7 +149,7 @@ fn test_split_k_multistage_gemm[
 
     alias kernels = MatmulKernels[type, type, type, transpose_b]()
     alias config = kernels.ampere_128x128_4
-    alias mgemm = multistage_gemm[
+    alias mgemm = multistage_gemm_k_partition[
         type,
         c_layout,
         type,
@@ -175,7 +175,7 @@ fn test_split_k_multistage_gemm[
         c_tensor,
         a_tensor,
         b_tensor,
-        grid_dim=config.grid_dim(M, N, K_part),
+        grid_dim=config.grid_dim(M, N),
         block_dim=config.block_dim(),
         shared_mem_bytes=config.shared_mem_usage(),
     )

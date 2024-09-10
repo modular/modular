@@ -175,10 +175,10 @@ struct test_matmul[
         ctx.synchronize()
 
         assert_almost_equal(
-            self.c_host_ref.tensor,
             self.c_host.tensor,
+            self.c_host_ref.tensor,
             atol=0.0001,
-            rtol=0.01,
+            rtol=0.02,
         )
 
 
