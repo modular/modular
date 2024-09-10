@@ -8,7 +8,7 @@
 # A^T.B where A and B are 16x16 Float32 matrices.
 #
 # ===----------------------------------------------------------------------=== #
-# RUN: %mojo %s
+# RUN: %mojo-no-debug %s
 
 from sys.info import is_apple_silicon, sizeof
 

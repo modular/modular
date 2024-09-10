@@ -8,7 +8,7 @@
 # Matmul.mojo functions
 #
 # ===----------------------------------------------------------------------=== #
-# RUN: %mojo %s
+# RUN: %mojo-no-debug %s
 from collections import OptionalReg
 from sys.info import os_is_macos
 

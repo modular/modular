@@ -8,7 +8,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 # REQUIRES: avx2
-# RUN: %mojo %s
+# RUN: %mojo-no-debug %s
 
 from sys.info import has_avx512f
 

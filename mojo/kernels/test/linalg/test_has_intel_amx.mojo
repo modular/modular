@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 
 # REQUIRES: linux, intel_amx
-# RUN: %mojo %s
+# RUN: %mojo-no-debug %s
 
 from sys import has_intel_amx, os_is_linux
 

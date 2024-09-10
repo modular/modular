@@ -9,7 +9,7 @@
 # ===----------------------------------------------------------------------=== #
 # REQUIRES: DISABLED
 # REQUIRES: linux, intel_amx
-# RUN: %mojo %s | FileCheck %s
+# RUN: %mojo-no-debug %s | FileCheck %s
 
 
 from sys.info import has_intel_amx, os_is_linux
