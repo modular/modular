@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 # REQUIRES: linux
-# RUN: %mojo %s
+# RUN: %mojo-no-debug %s
 
 from math import tanh
 from random import randn, seed
