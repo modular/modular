@@ -7,7 +7,7 @@ load(
     "modular_shared_library",
     "td_library",
 )
-load("//bazel:config.bzl", "ASYNCRT_PROFILING_LOCAL_DEFINES", "KERNELS_BUILD_TYPE_LOCAL_DEFINES")
+load("//bazel:config.bzl", "ASYNCRT_PROFILING_LOCAL_DEFINES")
 load("//utils/bazel/build/rules:expand_root_cert_inc.bzl", "expand_root_cert_inc")
 
 exports_files(["include/Support/Driver/DriverCommand.td"])
@@ -92,7 +92,7 @@ modular_cc_library(
     name = "BuildInfo",
     srcs = ["lib/BuildInfo.cpp"],
     hdrs = ["include/Support/BuildInfo.h"],
-    local_defines = ASYNCRT_PROFILING_LOCAL_DEFINES + KERNELS_BUILD_TYPE_LOCAL_DEFINES + [
+    local_defines = ASYNCRT_PROFILING_LOCAL_DEFINES + [
         "LLVM_TARGETS_BUILT=\\\"bazel\\\"",
     ],
     deps = [":Base"],

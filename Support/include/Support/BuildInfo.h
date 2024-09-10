@@ -27,7 +27,6 @@ enum class BuildProperty {
   ModularVersion,
   GitRevision,
   BuildType,
-  KernelsBuildType,
   AsyncRTMaxProfilingLevel,
   PreferredMemoryAlignment,
   LLVMTargets,
@@ -37,7 +36,6 @@ struct BuildInfo {
   std::string modularVersion;
   std::string gitRevision;
   std::string buildType;
-  std::string kernelsBuildType;
   int asyncrtMaxProfilingLevel;
   size_t preferredMemoryAlignment;
   SmallVector<StringRef> llvmTargets;
