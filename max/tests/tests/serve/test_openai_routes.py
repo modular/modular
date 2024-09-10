@@ -62,7 +62,7 @@ def test_openai_echo_stream_chat_completion(app):
             )
             assert len(response.choices) == 1
             choice = response.choices[0]
-            assert choice.index == counter
+            assert choice.index == 0
             assert choice.finish_reason == "stop"
             counter += 1
 
