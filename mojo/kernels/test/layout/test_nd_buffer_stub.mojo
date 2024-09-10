@@ -11,6 +11,7 @@ from buffer import NDBuffer
 from buffer.dimlist import DimList, Dim
 from layout import IntTuple, Layout, LayoutTensor
 from layout.layout import LayoutList
+from layout.fillers import arange
 from layout.nd_buffer_stub import (
     ElementLayout,
     TileMask,
@@ -152,7 +153,8 @@ fn test_copy_to_nd_buffer_scalars():
     var layout_tensor = LayoutTensor[
         DType.float32,
         Layout.row_major(8, 8),
-    ].stack_allocation().linspace()
+    ].stack_allocation()
+    arange(layout_tensor)
 
     var buff = NDBuffer[DType.float32, 2, DimList(8, 8)].stack_allocation()
     buff.zero()
@@ -242,7 +244,8 @@ fn test_copy_to_nd_buffer_vectors():
     var layout_tensor = LayoutTensor[
         DType.float32,
         Layout.row_major(16, 16),
-    ].stack_allocation().linspace()
+    ].stack_allocation()
+    arange(layout_tensor)
 
     var buff_storage = UnsafePointer[Float32].alloc(16 * 16)
     var buff = NDBuffer[DType.float32, 2, DimList(16, 16)](buff_storage)
@@ -576,7 +579,8 @@ fn test_copy_layout_tensor_to_buffer():
     print("== test_copy_layout_tensor_to_buffer")
     var tensor = LayoutTensor[
         DType.float32, Layout.row_major(8, 8)
-    ].stack_allocation().linspace()
+    ].stack_allocation()
+    arange(tensor)
 
     var buff = NDBuffer[DType.float32, 2, DimList(8, 8)].stack_allocation()
     buff.zero()
@@ -1278,7 +1282,8 @@ fn test_copy_to_nd_buffer_masked_scalar():
 
     var dst_tensor_8x12 = LayoutTensor[
         DType.float32, Layout.row_major(8, 12)
-    ].stack_allocation().linspace()
+    ].stack_allocation()
+    arange(dst_tensor_8x12)
 
     for tile_m in range(2):
         for tile_n in range(3):

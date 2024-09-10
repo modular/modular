@@ -6,6 +6,7 @@
 # RUN: %mojo %s -t | FileCheck %s
 
 from layout import IntTuple, Layout, LayoutTensor
+from layout.fillers import arange
 
 
 fn outer_product[
@@ -47,8 +48,8 @@ fn test_tiled_and_vectorized_matmul():
     var tensor_c = LayoutTensor[
         DType.float32, Layout(IntTuple(M, N), IntTuple(N, 1))
     ].stack_allocation()
-    tensor_a.linspace()
-    tensor_b.linspace()
+    arange(tensor_a)
+    arange(tensor_b)
     tensor_c.fill(0)
 
     for bm in range(M // BK):

@@ -17,7 +17,7 @@ from layout import *
 from layout._utils import ManagedLayoutTensor, gpu_free, gpu_managed_alloc
 from layout.math import outer_product_acc
 from layout.nd_buffer_stub import copy_from_nd_buffer, copy_to_nd_buffer
-
+from layout.fillers import arange
 from utils import StaticIntTuple
 from utils.index import Index
 
@@ -65,8 +65,8 @@ fn test_naive_matmul_kernel(ctx: DeviceContext) raises:
         DType.float32, layout_c, gpu_managed_alloc, gpu_free
     ]()
 
-    _ = mat_a.tensor.linspace()
-    _ = mat_b.tensor.linspace()
+    arange(mat_a.tensor)
+    arange(mat_b.tensor)
     _ = mat_c.tensor.fill(0)
 
     alias naive_matmul_kernel = naive_matmul[
@@ -205,8 +205,8 @@ fn test_sram_blocked_matmul(ctx: DeviceContext) raises:
         DType.float32, layout_c, gpu_managed_alloc, gpu_free
     ]()
 
-    _ = mat_a.tensor.linspace()
-    _ = mat_b.tensor.linspace()
+    arange(mat_a.tensor)
+    arange(mat_b.tensor)
     _ = mat_c.tensor.fill(0)
 
     alias sram_blocked_matmul_kernel = sram_blocked_matmul[
@@ -296,8 +296,8 @@ fn test_single_warp_tf32_m16n8k8_matmul(ctx: DeviceContext) raises:
         DType.float32, layout_c, gpu_managed_alloc, gpu_free
     ]()
 
-    _ = mat_a.tensor.linspace()
-    _ = mat_b.tensor.linspace()
+    arange(mat_a.tensor)
+    arange(mat_b.tensor)
     _ = mat_c.tensor.fill(0)
 
     # MMA layout are copied from CUTLASS:

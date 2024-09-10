@@ -9,6 +9,7 @@ from layout import Layout, LayoutTensor, RuntimeLayout, RuntimeTuple
 from layout.layout_tensor import LayoutTensorIter
 from layout.int_tuple import UNKNOWN_VALUE, IntTuple
 from utils import StaticIntTuple
+from layout.fillers import arange, random
 
 
 #  CHECK-LABEL: test_fill_and_print
@@ -23,9 +24,8 @@ def test_fill_and_print():
 
     var storage = UnsafePointer[Float32].alloc(dynamic_layout.size())
 
-    var tensor = LayoutTensor[DType.float32, layout](
-        storage, dynamic_layout
-    ).linspace()
+    var tensor = LayoutTensor[DType.float32, layout](storage, dynamic_layout)
+    arange(tensor)
 
     # CHECK: 0.0 1.0 2.0 3.0 4.0 5.0 6.0 7.0
     # CHECK: 8.0 9.0 10.0 11.0 12.0 13.0 14.0 15.0
@@ -75,9 +75,8 @@ def test_tile():
 
     var storage = UnsafePointer[Float32].alloc(dynamic_layout.size())
 
-    var tensor = LayoutTensor[DType.float32, layout](
-        storage, dynamic_layout
-    ).linspace()
+    var tensor = LayoutTensor[DType.float32, layout](storage, dynamic_layout)
+    arange(tensor)
 
     # CHECK: ((2, 2):(-1, 1))
     print(tensor.tile[2, 2](0, 0).layout)
@@ -117,9 +116,8 @@ fn test_tile_and_distribute():
 
     var storage = UnsafePointer[Float32].alloc(dynamic_layout.size())
 
-    var tensor = LayoutTensor[DType.float32, layout](
-        storage, dynamic_layout
-    ).linspace()
+    var tensor = LayoutTensor[DType.float32, layout](storage, dynamic_layout)
+    arange(tensor)
 
     # ---tile-data[ 0 , 0 ]----
     # 0.0 1.0 2.0 3.0
@@ -212,9 +210,8 @@ fn test_tile_and_vectorize():
 
     var storage = UnsafePointer[Float32].alloc(dynamic_layout.size())
 
-    var tensor = LayoutTensor[DType.float32, layout](
-        storage, dynamic_layout
-    ).linspace()
+    var tensor = LayoutTensor[DType.float32, layout](storage, dynamic_layout)
+    arange(tensor)
 
     # CHECK: ----tile-data[ 0 , 0 ]----
     # CHECK: 0.0 1.0 2.0 3.0 4.0 5.0 6.0 7.0
@@ -425,7 +422,8 @@ fn test_copy_from():
     )
     var src_tensor = LayoutTensor[DType.float32, layout](
         UnsafePointer[Float32].alloc(dynamic_layout.size()), dynamic_layout
-    ).linspace()
+    )
+    arange(src_tensor)
 
     var dst_tensor = LayoutTensor[DType.float32, layout](
         UnsafePointer[Float32].alloc(dynamic_layout.size()), dynamic_layout
@@ -447,7 +445,8 @@ fn test_linspace_fill():
     )
     var src_tensor = LayoutTensor[DType.float32, layout](
         UnsafePointer[Float32].alloc(dynamic_layout.size()), dynamic_layout
-    ).linspace()
+    )
+    arange(src_tensor)
 
     # CHECK: ----source-tensor----
     # CHECK: 0.0 1.0 2.0 3.0 4.0 5.0 6.0 7.0
@@ -491,6 +490,35 @@ fn test_linspace_fill():
     print(src_tensor.ptr == src_tensor_copy.ptr)
 
 
+# CHECK-LABEL: test_random_fill
+fn test_random_fill():
+    print("== test_random_fill")
+    alias layout = Layout(
+        IntTuple(8, 8), IntTuple(UNKNOWN_VALUE, UNKNOWN_VALUE)
+    )
+
+    var dynamic_layout = RuntimeLayout[layout](
+        RuntimeTuple[layout.shape](8, 8), RuntimeTuple[layout.stride](8, 1)
+    )
+    var src_tensor = LayoutTensor[DType.float32, layout](
+        UnsafePointer[Float32].alloc(dynamic_layout.size()), dynamic_layout
+    )
+    random(src_tensor)
+    # this works because we have fixed seed
+    # CHECK: ----source-tensor----
+    # CHECK: 0.1315377950668335 0.458650141954422 0.21895918250083923 0.67886471748352051 0.93469291925430298 0.51941639184951782 0.034572109580039978 0.52970021963119507
+    # CHECK: 0.007698186207562685 0.066842235624790192 0.68677270412445068 0.93043649196624756 0.52692878246307373 0.65391898155212402 0.70119059085845947 0.76219803094863892
+    # CHECK: 0.047464512288570404 0.3282342255115509 0.75641047954559326 0.36533868312835693 0.98255026340484619 0.75335586071014404 0.072685882449150085 0.88470715284347534
+    # CHECK: 0.43641141057014465 0.47773176431655884 0.27490684390068054 0.16650719940662384 0.89765626192092896 0.060564327985048294 0.50452291965484619 0.3190329372882843
+    # CHECK: 0.49397668242454529 0.090732894837856293 0.073749072849750519 0.38414216041564941 0.91381746530532837 0.46444582939147949 0.050083983689546585 0.77020454406738281
+    # CHECK: 0.12536537647247314 0.68845528364181519 0.62954342365264893 0.72541201114654541 0.88857221603393555 0.30632182955741882 0.51327371597290039 0.84598153829574585
+    # CHECK: 0.84151065349578857 0.41539460420608521 0.46791738271713257 0.17832770943641663 0.5716547966003418 0.033053755760192871 0.49848011136054993 0.74829262495040894
+    # CHECK: 0.89073747396469116 0.84203958511352539 0.21275150775909424 0.13042725622653961 0.27458813786506653 0.41429325938224792 0.70981961488723755 0.23991081118583679
+
+    print("----source-tensor----")
+    print(src_tensor)
+
+
 # CHECK-LABEL: test_iterator
 fn test_iterator():
     print("== test_iterator")
@@ -501,9 +529,8 @@ fn test_iterator():
     )
 
     var ptr = UnsafePointer[Float32].alloc(dynamic_layout.size())
-    var tensor = LayoutTensor[DType.float32, layout](
-        ptr, dynamic_layout
-    ).linspace()
+    var tensor = LayoutTensor[DType.float32, layout](ptr, dynamic_layout)
+    arange(tensor)
 
     # CHECK: ((4, 4):(8, 1))
     # CHECK: 64 32 32
@@ -559,9 +586,8 @@ fn test_iterator():
     )
     var ptr1 = UnsafePointer[Scalar[type]].alloc(M * N)
 
-    var tensor1 = LayoutTensor[type, unknown_layout](
-        ptr1, runtime_layout
-    ).linspace()
+    var tensor1 = LayoutTensor[type, unknown_layout](ptr1, runtime_layout)
+    arange(tensor1)
 
     var tensor_slice1 = tensor1.tiled_iterator[BM, BN](0, 0)
 
@@ -592,7 +618,8 @@ fn test_split():
     )
     var tensor_Ux4 = LayoutTensor[DType.float32, layout_Ux4](
         ptr, dynamic_layout_2x4
-    ).linspace()
+    )
+    arange(tensor_Ux4)
     # CHECK: 0.0 1.0
     # CHECK: 4.0 5.0
     print(tensor_Ux4.split[axis=1](2, 0))
@@ -607,7 +634,8 @@ fn test_split():
     )
     var tensor_4x4 = LayoutTensor[DType.float32, layout_4x4](
         ptr, dynamic_layout_4x4
-    ).linspace()
+    )
+    arange(tensor_4x4)
     var tensor_4x4_split0 = tensor_4x4.split[axis=0](2, 0)
     var tensor_4x4_split1 = tensor_4x4.split[axis=0](2, 1)
 
@@ -638,5 +666,6 @@ def main():
     test_tile_and_vectorize()
     test_copy_from()
     test_linspace_fill()
+    test_random_fill()
     test_iterator()
     test_split()

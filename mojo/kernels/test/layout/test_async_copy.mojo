@@ -26,6 +26,7 @@ from layout._utils import (
     gpu_managed_alloc,
     gpu_managed_alloc_runtime,
 )
+from layout.fillers import arange
 from layout.layout_tensor import (
     UNKNOWN_VALUE,
     LayoutTensor,
@@ -77,7 +78,7 @@ fn test_async_copy[
         gpu_managed_alloc_runtime,
     ](runtime_layout)
 
-    _ = input.tensor.linspace()
+    arange(input.tensor)
 
     alias kernel_type = async_copy_kernel[layout, BM, BN]
 
@@ -416,7 +417,7 @@ fn test_masked_async_copy[
         gpu_managed_alloc_runtime,
     ](runtime_layout)
 
-    _ = input.tensor.linspace()
+    arange(input.tensor)
 
     alias kernel_type = masked_copy_kernel[Layout.row_major(M, N), num_rows]
     var kernel = ctx.compile_function[kernel_type]()
@@ -445,7 +446,8 @@ fn copy_sram_to_dram_kernel[
         DType.float32,
         Layout.row_major(M, N),
         address_space = AddressSpace.SHARED,
-    ].stack_allocation().linspace()
+    ].stack_allocation()
+    arange(smem_tile)
 
     copy_sram_to_dram[thread_layout=thread_layout](
         input.vectorize[1, simd_size](),

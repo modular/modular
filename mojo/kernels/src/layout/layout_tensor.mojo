@@ -28,6 +28,7 @@ from .runtime_layout import coalesce as runtime_coalesce
 from .runtime_layout import make_layout as make_runtime_layout
 from .runtime_tuple import RuntimeTuple
 from .swizzle import Swizzle, make_ldmatrix_swizzle
+from .fillers import arange
 
 
 # Distribute thread_layout into data_layout, if axis is provided
@@ -2318,20 +2319,6 @@ struct LayoutTensor[
                     async_copy[4, fill=fill](
                         src_ptr + src_idx, dst_ptr + dst_idx
                     )
-
-    fn linspace(self) -> Self:
-        @parameter
-        if len(layout) == 1:
-            for m in range(self.runtime_layout.shape[0].value[0]):
-                self.ptr[m] = m
-
-        elif len(layout) == 2:
-            for m in range(self.runtime_layout.shape[0].value[0]):
-                for n in range(self.runtime_layout.shape[1].value[0]):
-                    self[m, n] = m * self.runtime_layout.shape[1].value[0] + n
-        else:
-            abort("LayoutTensor linspace only support rank 1-2 layouts.")
-        return self
 
     @always_inline
     fn fill(self, val: Scalar[dtype]) -> Self:

@@ -16,6 +16,7 @@ from gpu.memory import (
 )
 from layout._utils import ManagedLayoutGPUTensor
 from layout.layout_tensor import Layout, LayoutTensor
+from layout.fillers import arange
 from testing import assert_true
 
 
@@ -24,7 +25,7 @@ def test_copy_dram_to_sram_async(ctx: DeviceContext):
     print("== test_copy_dram_to_sram_async")
     alias tensor_layout = Layout.row_major(4, 16)
     var tensor = ManagedLayoutGPUTensor[DType.float32, tensor_layout]()
-    tensor.tensor.linspace()
+    arange(tensor.tensor)
 
     var check_state = True
 
@@ -71,7 +72,7 @@ def test_copy_from_async_masked_src(ctx: DeviceContext):
     print("== test_copy_from_async_masked_src")
     alias tensor_layout = Layout.row_major(31, 32)
     var tensor = ManagedLayoutGPUTensor[DType.int32, tensor_layout]()
-    tensor.tensor.linspace()
+    arange(tensor.tensor)
 
     var check_state = True
 

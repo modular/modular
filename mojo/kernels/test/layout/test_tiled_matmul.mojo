@@ -9,6 +9,7 @@ from sys import simdwidthof
 
 from algorithm import parallelize, sync_parallelize, vectorize
 from layout import *
+from layout.fillers import arange
 from layout._utils import ManagedLayoutTensor
 
 
@@ -257,8 +258,8 @@ fn test_tiled_matmul[use_l1_cache: Bool]():
     var lhs = ManagedLayoutTensor[DType.float32, Layout(IntTuple(8, 8))]()
 
     _ = dst.tensor.fill(0)
-    _ = rhs.tensor.linspace()
-    _ = lhs.tensor.linspace()
+    arange(rhs.tensor)
+    arange(lhs.tensor)
 
     if use_l1_cache:
         gemm_l1_cache[

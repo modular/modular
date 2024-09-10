@@ -11,7 +11,7 @@ from sys import alignof
 from layout import IntTuple, Layout, LayoutTensor, RuntimeLayout, RuntimeTuple
 from layout.element import Element
 from layout.int_tuple import UNKNOWN_VALUE
-
+from layout.fillers import arange
 from utils import StaticIntTuple
 
 
@@ -21,7 +21,7 @@ fn test_element_load():
     var tensor_8x8 = LayoutTensor[
         DType.float32, Layout.row_major(8, 8)
     ].stack_allocation[alignment = alignof[SIMD[DType.float32, 4]]()]()
-    tensor_8x8.linspace()
+    arange(tensor_8x8)
 
     # CHECK: vector_1x4
     # CHECK: [0.0, 1.0, 2.0, 3.0] [4.0, 5.0, 6.0, 7.0]
@@ -78,7 +78,7 @@ fn test_element_store():
     var tensor_8x8 = LayoutTensor[
         DType.float32, Layout.row_major(8, 8)
     ].stack_allocation[alignment = alignof[SIMD[DType.float32, 4]]()]()
-    tensor_8x8.linspace()
+    arange(tensor_8x8)
 
     # CHECK: vector_1x4
     # CHECK: 0.0 10.0 20.0 30.0 40.0 50.0 60.0 70.0
@@ -160,7 +160,7 @@ fn test_element_dynamic_layout():
         storage, dynamic_layout
     )
 
-    tensor_8x8.linspace()
+    arange(tensor_8x8)
 
     for tile_i in range(2):
         for tile_j in range(2):
@@ -197,7 +197,7 @@ fn test_element_masked_load():
     var tensor_4x4 = LayoutTensor[
         DType.float32, Layout.row_major(4, 4)
     ].stack_allocation()
-    tensor_4x4.linspace()
+    arange(tensor_4x4)
     var tensor_1x3 = LayoutTensor[DType.float32, Layout.row_major(1, 3)](
         tensor_4x4.ptr
     )
