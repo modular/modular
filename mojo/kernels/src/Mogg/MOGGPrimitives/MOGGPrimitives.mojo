@@ -136,11 +136,8 @@ fn byte_buffer_alloc[
     if "cuda" in target:
         # For now, only cuda targets can use device context directly
         return NDBuffer[DType.int8, 1](
-            # FIXME: RUNP-356 Direct access to CUDA within DeviceContext
-            call_ctx.get_device_context()
-            .v1()
-            .cuda_context.malloc_async[Int8](
-                byte_size, call_ctx.get_device_context().v1().cuda_stream
+            call_ctx.get_device_context().cuda_context.malloc_async[Int8](
+                byte_size, call_ctx.get_device_context().cuda_stream
             ),
             shape,
         )
@@ -928,9 +925,8 @@ fn mgp_device_context_create[
     @parameter
     if "cuda" in bDevice:
         debug_assert(dev_ctx, "device context should be defined")
-        # FIXME: RUNP-356 Direct access to CUDA within DeviceContext
-        call_ctx.set_stream(dev_ctx[].v1().cuda_stream)
-        call_ctx.set_context(dev_ctx[].v1().cuda_context)
+        call_ctx.set_stream(dev_ctx[].cuda_stream)
+        call_ctx.set_context(dev_ctx[].cuda_context)
         return 1
     return 1
 
@@ -982,9 +978,8 @@ fn mgp_sync[
 ) raises -> Int:
     @parameter
     if "cuda" in bDevice:
-        # FIXME: RUNP-356 Direct access to CUDA within DeviceContext
-        var e = Event(call_ctx.get_device_context().v1().cuda_context)
-        e.record(call_ctx.get_device_context().v1().cuda_stream)
+        var e = Event(call_ctx.get_device_context().cuda_context)
+        e.record(call_ctx.get_device_context().cuda_stream)
         e.sync()
 
     return 0
