@@ -169,6 +169,11 @@ void KGEN::buildFirstOptPipeline(mlir::PassManager &pm,
   // Then immediately resolve compiler promises.
   pm.addPass(createResolveCompilerPromises());
 
+#ifndef MODULAR_PRODUCTION
+  // Ensure no illegal parameters remain.
+  pm.addNestedPass<FuncOp>(createEnsureNoParameters());
+#endif
+
   // We lower argument input conventions.
   pm.addNestedPass<FuncOp>(createLowerArgConventions());
   pm.addNestedPass<FuncOp>(createLowerCallingConventions());

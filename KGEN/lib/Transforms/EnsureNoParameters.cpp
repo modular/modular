@@ -1,0 +1,71 @@
+//===----------------------------------------------------------------------===//
+//
+// This file is Modular Inc proprietary.
+//
+//===----------------------------------------------------------------------===//
+
+#include "KGEN/KGENDialect/KGENOps.h"
+#include "mlir/Pass/Pass.h"
+
+using namespace M;
+using namespace KGEN;
+
+namespace M::KGEN {
+#define GEN_PASS_DEF_ENSURENOPARAMETERS
+#include "KGEN/KGENPasses.h.inc"
+} // namespace M::KGEN
+
+namespace {
+struct EnsureNoParametersPass
+    : impl::EnsureNoParametersBase<EnsureNoParametersPass> {
+  void runOnOperation() override;
+};
+} // namespace
+
+static LogicalResult legalizeOp(Operation *op) {
+  mlir::AttrTypeWalker legalizer;
+  bool isFailure = false;
+
+  // SignatureType must not be parameterized anymore.
+  legalizer.addWalk([&](SignatureType sig) {
+    if (!sig.getInputParamTypes().empty()) {
+      mlir::emitError(op->getLoc(),
+                      "parameterized functions cannot be used at runtime");
+      isFailure = true;
+      return WalkResult::skip();
+    }
+    return WalkResult::advance();
+  });
+
+  // Parameter references should not exist anymore.
+  legalizer.addWalk([&](ParamDeclRefAttr attr) {
+    op->emitError("dangling parameter reference post-elaboration");
+    isFailure = true;
+    return WalkResult::skip();
+  });
+
+  // Walk the op attrs, results, block arguments, and locations.
+  legalizer.walk(op->getAttrDictionary());
+  legalizer.walk(op->getLoc());
+
+  for (Value result : op->getResults())
+    legalizer.walk(result.getType());
+
+  for (Region &region : op->getRegions()) {
+    for (Block &block : region) {
+      for (BlockArgument &arg : block.getArguments()) {
+        legalizer.walk(arg.getLoc());
+        legalizer.walk(arg.getType());
+      }
+    }
+  }
+
+  return failure(isFailure);
+}
+
+void EnsureNoParametersPass::runOnOperation() {
+  getOperation()->walk([&](Operation *op) {
+    if (failed(legalizeOp(op)))
+      signalPassFailure();
+  });
+}

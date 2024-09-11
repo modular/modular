@@ -265,12 +265,11 @@ compilePatterns(ModuleOp module, ArrayRef<SmallVector<StringAttr>> patterns) {
 /// Given the pre-elaboration function `func` belonging to a module with the
 /// symbol table `symtab`, slice out a standalone module rooted at `func` and
 /// elaborate it and compile to assembly for the provided `target.
-static ErrorOr<CrossDeviceFunction>
-compileElaboratorAsm(GeneratorOp func, SymbolConstantAttr symbol,
-                     StringAttr name, const SymbolTable &symtab,
-                     TargetInfoAttr target, EmissionKind emissionKind,
-                     CompilationOptions options,
-                     mlir::DiagnosticEngine::HandlerID diagHandlerID) {
+static ErrorOr<CrossDeviceFunction> compileElaboratorAsm(
+    GeneratorOp func, SymbolConstantAttr symbol, StringAttr name,
+    const SymbolTable &symtab, TargetInfoAttr target, EmissionKind emissionKind,
+    CompilationOptions options, ElaborateGeneratorsOptions elaboratorOptions,
+    mlir::DiagnosticEngine::HandlerID diagHandlerID) {
   // Configure the compilation options given the new target.
   options.targetTriple = target.getTripleStr();
   options.targetCpu = target.getArch();
@@ -320,10 +319,6 @@ compileElaboratorAsm(GeneratorOp func, SymbolConstantAttr symbol,
     generateInstantiateStub(func, symbol, name, mapping);
 
   // Run elaboration through to the end of the optimization pipeline.
-  ElaborateGeneratorsOptions elaboratorOptions;
-  elaboratorOptions.elaborateDebugInfo =
-      options.debugLevel == CompilationOptions::kLineTablesOnly ||
-      options.debugLevel == CompilationOptions::kFullDebugInfo;
   mlir::PassManager pm(target.getContext());
   if constexpr (KGEN::kIsTracingEnabled)
     pm.enableTiming(std::make_unique<TimeProfilerTimingManager>());

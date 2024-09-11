@@ -308,7 +308,7 @@ IREvaluator::evaluateCompileAssembly(ParamOperatorAttr op) {
   DiagnosticHandler handler(ctx);
   ErrorOr<CrossDeviceFunction> closure = elaborator->compileAsmFn(
       func, symbol, name, symtabCopy, target, emissionKind, elaborator->options,
-      handler.getHandlerID());
+      elaborator->getOptions(), handler.getHandlerID());
   handler.release();
 
   if (closure.isError()) {
