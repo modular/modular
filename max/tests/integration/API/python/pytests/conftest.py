@@ -47,6 +47,19 @@ def dynamic_model_path(modular_path: Path) -> Path:
     )
 
 
+@pytest.fixture
+def no_input_path(modular_path: Path) -> Path:
+    """Returns the path to a model spec without inputs."""
+    return (
+        modular_path
+        / "SDK"
+        / "integration-test"
+        / "EngineAPI"
+        / "Inputs"
+        / "no-inputs.mlir"
+    )
+
+
 def pytest_addoption(parser):
     parser.addoption(
         "--custom-ops-path",
