@@ -453,6 +453,18 @@ def EliminateDeadSymbols: Pass<"eliminate-dead-symbols", "ModuleOp"> {
 }
 
 //===----------------------------------------------------------------------===//
+// EnsureNoParameters
+//===----------------------------------------------------------------------===//
+
+def EnsureNoParameters : Pass<"ensure-no-parameters", "FuncOp"> {
+  let summary = "Ensure parameters no longer exist";
+  let description = [{
+    The `ensure-no-parameters` pass ensures parameters no longer exist in the
+    IR. This must be true after elaboration.
+  }];
+}
+
+//===----------------------------------------------------------------------===//
 // LowerCallingConventions
 //===----------------------------------------------------------------------===//
 

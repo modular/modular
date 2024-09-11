@@ -29,6 +29,7 @@ void KGEN::registerDefaultKGENPasses() {
   KGEN::registerCanonicalizer();
   KGEN::registerCheckLifetimes();
   KGEN::registerEliminateDeadSymbols();
+  KGEN::registerEnsureNoParameters();
   KGEN::registerExpandStructs();
   KGEN::registerFunctionStats();
   KGEN::registerHoistTrivialInvariants();
