@@ -15,7 +15,7 @@ from layout.int_tuple import IntTuple
 from layout.layout import *
 from layout.layout_tensor import LayoutTensor, _swizzle_signature
 from layout.swizzle import *
-
+from math import align_down
 from utils import StaticIntTuple
 
 
@@ -486,15 +486,28 @@ struct TensorCore[
                         fragments[i, 0] = rebind[frag_type](high_low[0])
                         fragments[i + 1, 0] = rebind[frag_type](high_low[1])
                 else:
+                    alias num_frags_round_even = align_down(num_frags, 2)
 
                     @parameter
-                    for i in range(0, num_frags, 2):
+                    for i in range(0, num_frags_round_even, 2):
+                        # load using x4 layout
                         var vec = _load_matrix_frag[transposed=True](
                             mma_tile, i
                         )
+
                         var high_low = vec.split()
                         fragments[i, 0] = rebind[frag_type](high_low[0])
                         fragments[i + 1, 0] = rebind[frag_type](high_low[1])
+
+                    @parameter
+                    if num_frags % 2:
+                        # load using x2 for the last fragment if necessary
+                        var vec = _load_matrix_frag[
+                            transposed=True, num_matrices=2
+                        ](mma_tile, num_frags_round_even)
+                        fragments[num_frags_round_even, 0] = rebind[frag_type](
+                            vec
+                        )
 
     @always_inline
     fn mma(
@@ -531,14 +544,14 @@ fn _load_matrix_frag[
     swizzle: Bool = True,
     transposed: Bool = False,
     x4_row_major: Bool = False,
+    num_matrices: Int = 4,
     *,
     # Work around parameter deduction MOCO-854.
     __type: DType,
     __layout: Layout,
     # Nvidia GPU register is 4B.
     __register_width: Int = 4,
-    __num_matrices: Int = 4,
-    __output_width: Int = __num_matrices * __register_width // sizeof[__type](),
+    __output_width: Int = num_matrices * __register_width // sizeof[__type](),
 ](
     mma_tile: LayoutTensor[
         __type,
@@ -578,6 +591,12 @@ fn _load_matrix_frag[
     # We load 4 matrices a time for max throughput. Each matrix has 8 vectors
     # and each thread loads one vector. For mma shape 16x8 or 16x16, the 4
     # matrices are arranged in column major.
+    #
+    # This function will also work if num_matrices is 1 or 2, in that case
+    # ld_matrix will call ldmatrix with num = x1 or x2, num depends
+    # on __output_width which in turn depends on num_matrices.
+    # lane_offset based on x4 will also work because in case of x1 and x2
+    # ld_matrix ignores pointers for lane >= 8 and lane >= 16 respectively.
     alias ldmatrix_threadmap = Layout.col_major(16, 2)
 
     # 4 submatrices layout
