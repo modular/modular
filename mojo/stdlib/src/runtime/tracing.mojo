@@ -302,7 +302,7 @@ struct Trace[
         if _is_nvtx_enabled[category, level]():
             self.name = name
             self.detail = ""
-            self.int_payload = Optional[Int]()
+            self.int_payload = None
         elif is_profiling_enabled[category, level]():
             self.name = name
             self.detail = detail
@@ -312,11 +312,11 @@ struct Trace[
                 if self.detail:
                     self.detail += ";"
                 self.detail += "target=" + str(target.value())
-            self.int_payload = Optional[Int]()
+            self.int_payload = None
         else:
             self.name = ""
             self.detail = ""
-            self.int_payload = Optional[Int]()
+            self.int_payload = None
 
     @always_inline
     fn __init__(
@@ -344,7 +344,7 @@ struct Trace[
         if _is_nvtx_enabled[category, level]():
             self.name = name
             self.detail = ""
-            self.int_payload = Optional[Int]()
+            self.int_payload = None
         elif is_profiling_enabled[category, level]():
             self.name = name
             self.detail = detail
@@ -358,7 +358,7 @@ struct Trace[
         else:
             self.name = ""
             self.detail = ""
-            self.int_payload = Optional[Int]()
+            self.int_payload = None
 
     @always_inline
     fn __enter__(inout self):
