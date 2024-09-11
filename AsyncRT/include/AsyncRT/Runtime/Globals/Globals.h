@@ -47,10 +47,7 @@ private:
 // TCMalloc has internal global state that needs to live here in AsyncRTGlobals.
 // Since we are using a hacked version of TCMalloc that doesn't replace malloc,
 // we want to limit the scope of these functions to the TCMallocAllocator class.
-class TCMallocAllocator;
-class TCMallocGlobals {
-private:
-  friend class TCMallocAllocator;
+struct TCMallocGlobals {
   static MODULAR_CXX_EXPORT void *tc_new(size_t size, size_t alignment);
   static MODULAR_CXX_EXPORT void tc_delete(void *ptr);
 };
