@@ -4,17 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 # REQUIRES: has_cuda_device
-# RUN: %if !debugging-test %{ %mojo-no-debug %s %}
-
-# ===----------------------------------------------------------------------=== #
-# Debugging tests:
-# Run them with `./bazelw test Kernels/test-gpu-debugging/test-compile/test_matmul.mojo.test`
-
-# compile:
-# RUN: %if debugging-test %{ %mojo-build-no-debug -debug-level=line-tables -O0 %s %}
-
-# ===----------------------------------------------------------------------=== #
-
+# RUN: %mojo-no-debug %s
 
 from collections.optional import Optional
 from math import ceildiv
