@@ -160,6 +160,7 @@ struct CallGraph : public CallGraphBase<CallGraph, CallGraphNode> {
   bool shouldAddToGraph(KGENCallOpInterface call, CallGraphNode *node) {
     // If the function doesn't take any tensors we can eagerly exclude it from
     // the analysis.
+    llvm::sys::SmartScopedWriter<true> lock(node->mutex);
     if (!node->func->hasAttr(MOGG_ARG_SRC_NAMES)) {
       node->hasBeenProcessed = true;
     } else {
