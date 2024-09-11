@@ -55,7 +55,7 @@ MojoBinary::MojoBinary(const std::shared_ptr<MojoSource> &source,
               (source->getFilesystemPath().filename().string() + ".exe")) {
   ErrorOr<std::string> mojoOr =
       toModularErrorOr(llvm::sys::findProgramByName("mojo"));
-  if (const char *mojoPath = std::getenv("MODULAR_MOJO_DRIVER_PATH"))
+  if (const char *mojoPath = std::getenv("MODULAR_MOJO_MAX_DRIVER_PATH"))
     mojoOr = mojoPath;
 
   if (failed(mojoOr))
