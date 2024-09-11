@@ -460,6 +460,7 @@ struct DeviceContextV1:
     fn execution_time_iter[
         func: fn (Self, Int) raises capturing -> None
     ](self, num_iters: Int) raises -> Int:
+        self.cuda_context.set_current()
         var stream = self.cuda_stream
         var start = Event(self.cuda_context)
         var end = Event(self.cuda_context)
