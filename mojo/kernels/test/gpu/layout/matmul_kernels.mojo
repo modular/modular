@@ -59,7 +59,7 @@ fn time_kernel[
 
 
 fn run_cublas[
-    dtype: DType
+    dtype: DType, enable_tc: Bool = False
 ](
     inout m: Bench,
     ctx: DeviceContext,
@@ -85,7 +85,7 @@ fn run_cublas[
         @parameter
         @always_inline
         fn kernel_launch(ctx: DeviceContext) raises:
-            _ = cublas_matmul(
+            _ = cublas_matmul[use_tf32=enable_tc](
                 handle,
                 c_device_ref,
                 a_device,
@@ -96,8 +96,16 @@ fn run_cublas[
 
         m.iter_custom[kernel_launch](ctx)
 
+    @parameter
+    fn get_bench_id() -> StringLiteral:
+        @parameter
+        if enable_tc:
+            return "cublas_tensorcore"
+        else:
+            return "cublas"
+
     m.bench_function[bench_func](
-        BenchId("cublas"),
+        BenchId(get_bench_id()),
         ThroughputMeasure(BenchMetric.elements, 2 * M * N * K),
     )
     # Do one iteration for verification.

@@ -74,7 +74,11 @@ alias run_gemm_kernel_type = fn (
 
 
 struct test_matmul[
-    dtype: DType, a_layout: Layout, b_layout: Layout, c_layout: Layout
+    dtype: DType,
+    a_layout: Layout,
+    b_layout: Layout,
+    c_layout: Layout,
+    enable_tc: Bool,
 ]:
     var ctx: DeviceContext
     var M: Int
@@ -125,7 +129,7 @@ struct test_matmul[
         )
         ctx.memset(self.c_device_buffer_ref, 0)
 
-        run_cublas[dtype](
+        run_cublas[dtype, enable_tc](
             m,
             ctx,
             self.M,
@@ -195,9 +199,13 @@ def main():
         alias b_layout = Layout.row_major(K, N)
         alias c_layout = Layout.row_major(M, N)
 
-        var test = test_matmul[DType.float32, a_layout, b_layout, c_layout](
-            m, ctx
-        )
+        var test = test_matmul[
+            DType.float32, a_layout, b_layout, c_layout, False
+        ](m, ctx)
+
+        var test_tc = test_matmul[
+            DType.float32, a_layout, b_layout, c_layout, True
+        ](m, ctx)
 
         alias k1 = run_gemm_kernel_1[
             DType.float32, a_layout, b_layout, c_layout, 32, 32
@@ -228,6 +236,6 @@ def main():
         test.run_test[k3](m)
         test.run_test[k4](m)
         test.run_test[k5](m)
-        test.run_test[k_tc](m)
+        test_tc.run_test[k_tc](m)
 
     m.dump_report()
