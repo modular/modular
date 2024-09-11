@@ -31,3 +31,26 @@ kgen.generator @user<dt: dtype, T: type>(%arg0: !pop.scalar<dt>, %arg1: !kgen.po
 // CHECK-DAG: #[[OTHER_SP:.+]] = #debuginfo.subprogram<name = <"param_inlined_fn">> : ![[OTHER_SUBROUTINE]]
 // CHECK-DAG: #[[OTHER_LOC:.+]] = loc(fused<#[[OTHER_SP]]>
 // CHECK-DAG: #[[INLINED_LOC]] = loc(callsite(#[[OTHER_LOC]] at
+
+// -----
+
+#subprogram = #debuginfo.subprogram<name = <"basic_arg_remove_debug_only_user">>  : !debuginfo.subroutine<(!pop.scalar<dt>, !kgen.pointer<none>) -> (): DW_CC_normal>
+#loc = loc(fused<#subprogram>["foo.mlir":1:1])
+#di_arg0 = #debuginfo.local_variable<scope = #subprogram, name = "arg0"> : !debuginfo.unresolved<!pop.scalar<dt>>
+
+// CHECK: #[[SP_REMOVED_ARG:.+]] = #debuginfo.subprogram<name = <"basic_arg_remove_debug_only_user">, linkageName = "basic_arg_remove_debug_only_user_REMOVED_ARG">
+// CHECK: #[[DI_ARG:.+]] = #debuginfo.local_variable<scope = #[[SP_REMOVED_ARG]], name = "arg0">
+
+// CHECK: kgen.generator @basic_arg_remove_debug_only_user_REMOVED_ARG
+kgen.generator @basic_arg_remove_debug_only_user<dt: dtype>(%arg0: !pop.scalar<dt>, %arg1: !kgen.pointer<none>) {
+  // CHECK-NEXT: debuginfo.kill #[[DI_ARG]]
+  // CHECK-NOT: debuginfo.value
+  debuginfo.value #di_arg0 = %arg0 : !pop.scalar<dt> loc(#loc)
+  pop.load %arg1 : !kgen.pointer<none> loc(#loc)
+  kgen.return loc(#loc)
+} loc(#loc)
+
+kgen.generator @user<dt: dtype, T: type>(%arg0: !pop.scalar<dt>, %arg1: !kgen.pointer<none>, %arg2: !kgen.pointer<none>) {
+  kgen.call @basic_arg_remove_debug_only_user<:dtype dt>(%arg0, %arg1) : (!pop.scalar<dt>, !kgen.pointer<none>) -> ()
+  kgen.return
+}

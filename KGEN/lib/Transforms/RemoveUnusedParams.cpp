@@ -94,10 +94,29 @@ private:
           continue;
       }
 
-      if (!arg.use_empty()) {
+      SmallPtrSet<Operation *, 2> debugValues;
+      bool hasNonDebugUser = false;
+      for (Operation *user : arg.getUsers()) {
+        if (auto value = dyn_cast<DebugInfo::ValueOp>(user)) {
+          debugValues.insert(value);
+        } else {
+          hasNonDebugUser = true;
+          break;
+        }
+      }
+
+      if (hasNonDebugUser) {
         unusedArgs[idx] = false;
         inputTypes.push_back(arg.getType());
         conventions.push_back(argConvention);
+      } else if (!debugValues.empty()) {
+        // If the only users are debug values, replace them with a kill.
+        auto firstValue = cast<DebugInfo::ValueOp>(*debugValues.begin());
+        OpBuilder::atBlockBegin(oldFunction.getBody())
+            .create<DebugInfo::KillOp>(firstValue.getLoc(),
+                                       firstValue.getValueInfo());
+        for (Operation *value : debugValues)
+          value->erase();
       }
     }
   }
@@ -545,10 +564,17 @@ void RemoveUnusedParams::runOnOperation() {
         replacer.addReplacement([&](DebugInfo::DISubroutineType subroutine) {
           return evaluator.getReboundType(subroutine);
         });
-        replacer.recursivelyReplaceElementsIn(newFunc,
-                                              /*replaceAttrs=*/false,
-                                              /*replaceLocs=*/true,
-                                              /*replaceTypes=*/false);
+
+        DebugInfo::DebugInfoDialect *diDialect =
+            getContext().getLoadedDialect<DebugInfo::DebugInfoDialect>();
+        newFunc->walk([&](Operation *op) {
+          // Need to replace attrs for debuginfo ops (to update scopes inside
+          // variable info). For all other ops, only need to update locs.
+          bool replaceAttrs = op->getDialect() == diDialect;
+          replacer.replaceElementsIn(op, replaceAttrs,
+                                     /*replaceLocs=*/true,
+                                     /*replaceTypes=*/false);
+        });
       }
     }
 
