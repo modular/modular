@@ -5,12 +5,11 @@
 # ===----------------------------------------------------------------------=== #
 """Test the max.engine Python bindings with Max Graph."""
 
-
 import os
 import tempfile
 
 import numpy as np
-from max.driver import CPU, Device, Tensor
+from max.driver import CPU, Tensor
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import Graph, TensorType, ops
@@ -72,3 +71,21 @@ def test_max_graph_device():
         session = InferenceSession(device=device)
         compiled = session.load(graph)
         assert str(device) == str(compiled.device)
+
+
+def test_identity(session):
+    # Create identity graph.
+    graph = Graph(
+        "identity",
+        lambda x: x,
+        input_types=[TensorType(DType.int32, (1,))],
+    )
+
+    # Compile and execute identity.
+    model = session.load(graph)
+    input = Tensor(shape=(1,), dtype=DType.int32)
+    output = model.execute(input)
+
+    # Test that using output's storage is still valid after destroying input.
+    del input
+    _ = output[0][0]
