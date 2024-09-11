@@ -10,13 +10,96 @@
 from gpu.host._compile import _get_nvptx_target
 
 
+alias _DeviceContextPtr = UnsafePointer[NoneType]
+alias _DeviceBufferPtr = UnsafePointer[NoneType]
+alias _CharPtr = UnsafePointer[UInt8]
+
+# Define helper methods to call AsyncRT bindings.
+
+
+fn _asyncrt_call[
+    callee: StringLiteral,
+    T0: AnyTrivialRegType,
+](a0: T0):
+    external_call[callee, NoneType](a0)
+
+
+fn _check_asyncrt_call[
+    callee: StringLiteral,
+    T0: AnyTrivialRegType,
+](a0: T0) raises:
+    var err_msg = external_call[callee, _CharPtr](a0)
+    if err_msg:
+        err_str = String(StringRef(err_msg))
+        external_call["free", NoneType, _CharPtr](err_msg)
+        raise Error(err_str)
+
+
+fn _check_asyncrt_call[
+    callee: StringLiteral,
+    T0: AnyTrivialRegType,
+    T1: AnyTrivialRegType,
+](a0: T0, a1: T1) raises:
+    var err_msg = external_call[callee, _CharPtr](a0, a1)
+    if err_msg:
+        err_str = String(StringRef(err_msg))
+        external_call["free", NoneType, _CharPtr](err_msg)
+        raise Error(err_str)
+
+
+fn _check_asyncrt_call[
+    callee: StringLiteral,
+    T0: AnyTrivialRegType,
+    T1: AnyTrivialRegType,
+    T2: AnyTrivialRegType,
+](a0: T0, a1: T1, a2: T2) raises:
+    var err_msg = external_call[callee, _CharPtr](a0, a1, a2)
+    if err_msg:
+        err_str = String(StringRef(err_msg))
+        external_call["free", NoneType, _CharPtr](err_msg)
+        raise Error(err_str)
+
+
+fn _check_asyncrt_call[
+    callee: StringLiteral,
+    T0: AnyTrivialRegType,
+    T1: AnyTrivialRegType,
+    T2: AnyTrivialRegType,
+    T3: AnyTrivialRegType,
+](a0: T0, a1: T1, a2: T2, a3: T3) raises:
+    var err_msg = external_call[callee, _CharPtr](a0, a1, a2, a3)
+    if err_msg:
+        err_str = String(StringRef(err_msg))
+        external_call["free", NoneType, _CharPtr](err_msg)
+        raise Error(err_str)
+
+
 @value
 struct DeviceBufferV2[type: DType](Sized):
+    var _ptr: _DeviceBufferPtr
+
     fn __init__(inout self, ctx: DeviceContextV2, size: Int) raises:
         """This init takes in a constructed DeviceContext and schedules an owned buffer allocation
         using the stream in the device context.
         """
-        pass
+        # const char * AsyncRT_DeviceContext_createBuffer
+        #     const DeviceBuffer **result, const DeviceContext *ctx,
+        #     size_t len, size_t elem_size)
+        alias elem_size = sizeof[type]()
+        var result = _DeviceBufferPtr()
+        _check_asyncrt_call[
+            "AsyncRT_DeviceContext_createBuffer",
+            UnsafePointer[_DeviceBufferPtr],
+            _DeviceContextPtr,
+            Int,
+            Int,
+        ](
+            UnsafePointer.address_of(result),
+            ctx._ptr,
+            size,
+            elem_size,
+        )
+        self._ptr = result
 
     fn __init__(
         inout self,
@@ -26,22 +109,30 @@ struct DeviceBufferV2[type: DType](Sized):
         *,
         owning: Bool,
     ):
-        pass
+        print("##### DeviceBufferV2.__init__ - 2")
+        self._ptr = _DeviceBufferPtr()
 
     fn __init__(inout self):
-        pass
+        print("##### DeviceBufferV2.__init__ - 3")
+        self._ptr = _DeviceBufferPtr()
 
     fn __copyinit__(inout self, existing: Self):
-        pass
+        print("##### DeviceBufferV2.__copyinit__")
+        self._ptr = _DeviceBufferPtr()
 
     fn __moveinit__(inout self, owned existing: Self):
-        pass
+        print("##### DeviceBufferV2.__moveinit__: " + str(existing._ptr))
+        self._ptr = existing._ptr
+        existing._ptr = UnsafePointer[NoneType]()
 
     @always_inline
     fn __del__(owned self):
         """This function schedules an owned buffer free using the stream in the device context.
         """
-        pass
+        # void AsyncRT_DeviceBuffer_release(const DeviceBuffer *buffer)
+        _asyncrt_call["AsyncRT_DeviceBuffer_release", _DeviceContextPtr,](
+            self._ptr,
+        )
 
     fn __len__(self) -> Int:
         return 0  # FIXME
@@ -84,13 +175,33 @@ struct DeviceFunctionV2[
 
 @value
 struct DeviceContextV2:
-    """Device Context backed by a C++ implementation."""
+    """DeviceContext backed by a C++ implementation."""
 
-    fn __init__(inout self, kind: String):
-        pass
+    var _ptr: _DeviceContextPtr
+
+    fn __init__(
+        inout self, device_kind: StringLiteral = "cuda", device_id: Int = 0
+    ) raises:
+        # const char * AsyncRT_DeviceContext_create(const DeviceContext **result, const char *kind, int id)
+        var result = _DeviceContextPtr()
+        _check_asyncrt_call[
+            "AsyncRT_DeviceContext_create",
+            UnsafePointer[_DeviceContextPtr],
+            _CharPtr,
+            Int32,
+        ](
+            UnsafePointer.address_of(result),
+            device_kind.unsafe_ptr(),
+            device_id,
+        )
+        self._ptr = result
 
     fn __del__(owned self):
-        pass
+        # void AsyncRT_DeviceContext_release(const DeviceContext *ctx)
+        _asyncrt_call[
+            "AsyncRT_DeviceContext_release",
+            _DeviceContextPtr,
+        ](self._ptr)
 
     fn __enter__(owned self) -> Self:
         return self^
@@ -98,10 +209,31 @@ struct DeviceContextV2:
     fn malloc_host[
         type: AnyType
     ](self, size: Int) raises -> UnsafePointer[type]:
-        return UnsafePointer[type]()
+        # const char * AsyncRT_DeviceContext_mallocHost(void **result, const DeviceContext *ctx, size_t size)
+        alias elem_size = sizeof[type]()
+        var result = UnsafePointer[type]()
+        _check_asyncrt_call[
+            "AsyncRT_DeviceContext_mallocHost",
+            UnsafePointer[UnsafePointer[type]],
+            _DeviceContextPtr,
+            Int,
+        ](
+            UnsafePointer.address_of(result),
+            self._ptr,
+            size * elem_size,
+        )
+        return result
 
     fn free_host[type: AnyType](self, ptr: UnsafePointer[type]) raises:
-        pass
+        # const char * AsyncRT_DeviceContext_freeHost(const DeviceContext *ctx, void *ptr)
+        _check_asyncrt_call[
+            "AsyncRT_DeviceContext_freeHost",
+            _DeviceContextPtr,
+            UnsafePointer[type],
+        ](
+            self._ptr,
+            ptr,
+        )
 
     fn create_buffer[
         type: DType
@@ -197,17 +329,47 @@ struct DeviceContextV2:
     fn enqueue_copy_to_device[
         type: DType
     ](self, buf: DeviceBufferV2[type], ptr: UnsafePointer[Scalar[type]]) raises:
-        pass
+        # const char * AsyncRT_DeviceContext_HtoD_async(const DeviceContext *ctx, const DeviceBuffer *dst, const void *src)
+        _check_asyncrt_call[
+            "AsyncRT_DeviceContext_HtoD_async",
+            _DeviceContextPtr,
+            _DeviceBufferPtr,
+            UnsafePointer[Scalar[type]],
+        ](
+            self._ptr,
+            buf._ptr,
+            ptr,
+        )
 
     fn enqueue_copy_from_device[
         type: DType
     ](self, ptr: UnsafePointer[Scalar[type]], buf: DeviceBufferV2[type]) raises:
-        pass
+        # const char * AsyncRT_DeviceContext_DtoH_async(const DeviceContext *ctx, void *dst, const DeviceBuffer *src)
+        _check_asyncrt_call[
+            "AsyncRT_DeviceContext_DtoH_async",
+            _DeviceContextPtr,
+            UnsafePointer[Scalar[type]],
+            _DeviceBufferPtr,
+        ](
+            self._ptr,
+            ptr,
+            buf._ptr,
+        )
 
     fn enqueue_copy_device_to_device[
         type: DType
     ](self, dst: DeviceBufferV2[type], src: DeviceBufferV2[type]) raises:
-        pass
+        # const char * AsyncRT_DeviceContext_DtoD_async(const DeviceContext *ctx, const DeviceBuffer *dst, const DeviceBuffer *src)
+        _check_asyncrt_call[
+            "AsyncRT_DeviceContext_DtoD_async",
+            _DeviceContextPtr,
+            _DeviceBufferPtr,
+            _DeviceBufferPtr,
+        ](
+            self._ptr,
+            dst._ptr,
+            src._ptr,
+        )
 
     fn copy_to_device_sync[
         type: DType
@@ -230,7 +392,13 @@ struct DeviceContextV2:
         pass
 
     fn synchronize(self) raises:
-        pass
+        # const char * AsyncRT_DeviceContext_synchronize(const DeviceContext *ctx)
+        _check_asyncrt_call[
+            "AsyncRT_DeviceContext_synchronize",
+            _DeviceContextPtr,
+        ](
+            self._ptr,
+        )
 
     fn print_kernel_timing_info(self):
         """Print profiling info associated with this DeviceContext."""
