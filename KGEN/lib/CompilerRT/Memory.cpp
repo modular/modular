@@ -5,6 +5,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "./Memory.h"
+#include "AsyncRT/Runtime/Globals/Globals.h"
 #include "AsyncRT/Runtime/Runtime.h"
 #include "KGEN/CompilerRT/Registration.h"
 #include "Support/SymbolExport.h"
@@ -17,13 +18,13 @@ COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void *
 KGEN_CompilerRT_AlignedAlloc(ssize_t alignment, ssize_t size) {
   if (alignment <= 0)
     alignment = kPreferredMemoryAlignment;
-  return Runtime::getCurrentAllocator()->allocateBytes(size, alignment);
+  return AsyncRT::TCMallocGlobals::tc_new(size, alignment);
 }
 
 /// Frees memory allocated via KGEN_CompilerRT_AlignedAlloc.
 COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void
 KGEN_CompilerRT_AlignedFree(void *ptr) {
-  Runtime::getCurrentAllocator()->deallocateBytes(ptr);
+  return AsyncRT::TCMallocGlobals::tc_delete(ptr);
 }
 
 void M::KGEN::registerMemory(
