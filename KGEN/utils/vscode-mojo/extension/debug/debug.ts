@@ -91,31 +91,6 @@ class MojoDebugAdapterDescriptorFactory
     this.sdkManager = sdkManager;
   }
 
-  async createDebugAdapterAdditionalEnv(
-    sdk: MojoSDK
-  ): Promise<{ [key: string]: string }> {
-    // On linux + bazel-based mojo SDKs, we need to set up the debug server manually.
-    let lldbServerPath = path.join(
-      path.dirname(sdk.config.lldbPath),
-      'lldb-server'
-    );
-    if (process.platform === 'win32') {
-      lldbServerPath += '.exe';
-    }
-    const env: { [key: string]: string } = {};
-
-    try {
-      const stat = await vscode.workspace.fs.stat(
-        vscode.Uri.file(lldbServerPath)
-      );
-      if (stat.type & (vscode.FileType.File | vscode.FileType.SymbolicLink)) {
-        env['LLDB_DEBUGSERVER_PATH'] = lldbServerPath;
-      }
-    } catch {}
-
-    return env;
-  }
-
   async createDebugAdapterDescriptor(
     session: vscode.DebugSession,
     _executable: Optional<vscode.DebugAdapterExecutable>
@@ -137,18 +112,12 @@ class MojoDebugAdapterDescriptorFactory
       `Using the SDK ${sdk.config.version.toString()} for the debug session`
     );
 
-    return new vscode.DebugAdapterExecutable(
-      sdk.config.mojoLLDBVSCodePath,
-      [
-        '--repl-mode',
-        'variable',
-        '--pre-init-command',
-        `?!plugin load '${sdk.config.mojoLLDBPluginPath}'`,
-      ],
-      {
-        env: await this.createDebugAdapterAdditionalEnv(sdk),
-      }
-    );
+    return new vscode.DebugAdapterExecutable(sdk.config.mojoLLDBVSCodePath, [
+      '--repl-mode',
+      'variable',
+      '--pre-init-command',
+      `?!plugin load '${sdk.config.mojoLLDBPluginPath}'`,
+    ]);
   }
 }
 
