@@ -334,7 +334,12 @@ struct Add:
     fn execute[
         synchronous: Bool,
         target: StringLiteral,
-    ](z: ManagedTensorSlice, x: ManagedTensorSlice, y: ManagedTensorSlice):
+    ](
+        z: ManagedTensorSlice,
+        x: ManagedTensorSlice,
+        y: ManagedTensorSlice,
+        ctx: MojoCallContextPtr,
+    ):
         @parameter
         @always_inline
         fn func[width: Int](idx: StaticIntTuple[z.rank]) -> SIMD[z.type, width]:
@@ -342,7 +347,7 @@ struct Add:
             var rhs = rebind[SIMD[z.type, width]](y.load[width](idx))
             return lhs + rhs
 
-        foreach[func](z)
+        foreach[func, synchronous, target](z, ctx)
 
 
 @compiler.register("mo.sub")
@@ -351,7 +356,12 @@ struct Sub:
     fn execute[
         synchronous: Bool,
         target: StringLiteral,
-    ](z: ManagedTensorSlice, x: ManagedTensorSlice, y: ManagedTensorSlice):
+    ](
+        z: ManagedTensorSlice,
+        x: ManagedTensorSlice,
+        y: ManagedTensorSlice,
+        ctx: MojoCallContextPtr,
+    ):
         @parameter
         @always_inline
         fn func[width: Int](idx: StaticIntTuple[z.rank]) -> SIMD[z.type, width]:
@@ -359,7 +369,7 @@ struct Sub:
             var rhs = rebind[SIMD[z.type, width]](y.load[width](idx))
             return lhs - rhs
 
-        foreach[func](z)
+        foreach[func, synchronous, target](z, ctx)
 
 
 @compiler.register("mo.mul")
@@ -368,7 +378,12 @@ struct Mul:
     fn execute[
         synchronous: Bool,
         target: StringLiteral,
-    ](z: ManagedTensorSlice, x: ManagedTensorSlice, y: ManagedTensorSlice):
+    ](
+        z: ManagedTensorSlice,
+        x: ManagedTensorSlice,
+        y: ManagedTensorSlice,
+        ctx: MojoCallContextPtr,
+    ):
         @parameter
         @always_inline
         fn func[width: Int](idx: StaticIntTuple[z.rank]) -> SIMD[z.type, width]:
@@ -376,7 +391,7 @@ struct Mul:
             var rhs = rebind[SIMD[z.type, width]](y.load[width](idx))
             return lhs * rhs
 
-        foreach[func](z)
+        foreach[func, synchronous, target](z, ctx)
 
 
 @compiler.register("mo.div")
@@ -385,7 +400,12 @@ struct Div:
     fn execute[
         synchronous: Bool,
         target: StringLiteral,
-    ](z: ManagedTensorSlice, x: ManagedTensorSlice, y: ManagedTensorSlice):
+    ](
+        z: ManagedTensorSlice,
+        x: ManagedTensorSlice,
+        y: ManagedTensorSlice,
+        ctx: MojoCallContextPtr,
+    ):
         @parameter
         @always_inline
         fn func[width: Int](idx: StaticIntTuple[z.rank]) -> SIMD[z.type, width]:
@@ -393,7 +413,7 @@ struct Div:
             var rhs = rebind[SIMD[z.type, width]](y.load[width](idx))
             return lhs / rhs
 
-        foreach[func](z)
+        foreach[func, synchronous, target](z, ctx)
 
 
 @compiler.register("mo.mod")
@@ -402,7 +422,12 @@ struct Mod:
     fn execute[
         synchronous: Bool,
         target: StringLiteral,
-    ](z: ManagedTensorSlice, x: ManagedTensorSlice, y: ManagedTensorSlice):
+    ](
+        z: ManagedTensorSlice,
+        x: ManagedTensorSlice,
+        y: ManagedTensorSlice,
+        ctx: MojoCallContextPtr,
+    ):
         @parameter
         @always_inline
         fn func[width: Int](idx: StaticIntTuple[z.rank]) -> SIMD[z.type, width]:
@@ -410,7 +435,7 @@ struct Mod:
             var rhs = rebind[SIMD[z.type, width]](y.load[width](idx))
             return lhs % rhs
 
-        foreach[func](z)
+        foreach[func, synchronous, target](z, ctx)
 
 
 @compiler.register("mo.equal")
@@ -419,7 +444,12 @@ struct Equal:
     fn execute[
         synchronous: Bool,
         target: StringLiteral,
-    ](z: ManagedTensorSlice, x: ManagedTensorSlice, y: ManagedTensorSlice):
+    ](
+        z: ManagedTensorSlice,
+        x: ManagedTensorSlice,
+        y: ManagedTensorSlice,
+        ctx: MojoCallContextPtr,
+    ):
         @parameter
         @always_inline
         fn func[width: Int](idx: StaticIntTuple[z.rank]) -> SIMD[z.type, width]:
@@ -427,7 +457,7 @@ struct Equal:
             var rhs = rebind[SIMD[x.type, width]](y.load[width](idx))
             return rebind[SIMD[z.type, width]](lhs == rhs)
 
-        foreach[func](z)
+        foreach[func, synchronous, target](z, ctx)
 
 
 @compiler.register("mo.greater")
@@ -436,7 +466,12 @@ struct Greater:
     fn execute[
         synchronous: Bool,
         target: StringLiteral,
-    ](z: ManagedTensorSlice, x: ManagedTensorSlice, y: ManagedTensorSlice):
+    ](
+        z: ManagedTensorSlice,
+        x: ManagedTensorSlice,
+        y: ManagedTensorSlice,
+        ctx: MojoCallContextPtr,
+    ):
         @parameter
         @always_inline
         fn func[width: Int](idx: StaticIntTuple[z.rank]) -> SIMD[z.type, width]:
@@ -444,7 +479,7 @@ struct Greater:
             var rhs = rebind[SIMD[x.type, width]](y.load[width](idx))
             return rebind[SIMD[z.type, width]](lhs > rhs)
 
-        foreach[func](z)
+        foreach[func, synchronous, target](z, ctx)
 
 
 @compiler.register("mo.greater_equal")
@@ -453,7 +488,12 @@ struct GreaterEqual:
     fn execute[
         synchronous: Bool,
         target: StringLiteral,
-    ](z: ManagedTensorSlice, x: ManagedTensorSlice, y: ManagedTensorSlice):
+    ](
+        z: ManagedTensorSlice,
+        x: ManagedTensorSlice,
+        y: ManagedTensorSlice,
+        ctx: MojoCallContextPtr,
+    ):
         @parameter
         @always_inline
         fn func[width: Int](idx: StaticIntTuple[z.rank]) -> SIMD[z.type, width]:
@@ -461,7 +501,7 @@ struct GreaterEqual:
             var rhs = rebind[SIMD[x.type, width]](y.load[width](idx))
             return rebind[SIMD[z.type, width]](lhs >= rhs)
 
-        foreach[func](z)
+        foreach[func, synchronous, target](z, ctx)
 
 
 @compiler.register("mo.not_equal")
@@ -470,7 +510,12 @@ struct NotEqual:
     fn execute[
         synchronous: Bool,
         target: StringLiteral,
-    ](z: ManagedTensorSlice, x: ManagedTensorSlice, y: ManagedTensorSlice):
+    ](
+        z: ManagedTensorSlice,
+        x: ManagedTensorSlice,
+        y: ManagedTensorSlice,
+        ctx: MojoCallContextPtr,
+    ):
         @parameter
         @always_inline
         fn func[width: Int](idx: StaticIntTuple[z.rank]) -> SIMD[z.type, width]:
@@ -478,7 +523,7 @@ struct NotEqual:
             var rhs = rebind[SIMD[x.type, width]](y.load[width](idx))
             return rebind[SIMD[z.type, width]](lhs != rhs)
 
-        foreach[func](z)
+        foreach[func, synchronous, target](z, ctx)
 
 
 @compiler.register("mo.and")
@@ -487,7 +532,12 @@ struct And:
     fn execute[
         synchronous: Bool,
         target: StringLiteral,
-    ](z: ManagedTensorSlice, x: ManagedTensorSlice, y: ManagedTensorSlice):
+    ](
+        z: ManagedTensorSlice,
+        x: ManagedTensorSlice,
+        y: ManagedTensorSlice,
+        ctx: MojoCallContextPtr,
+    ):
         @parameter
         @always_inline
         fn func[width: Int](idx: StaticIntTuple[z.rank]) -> SIMD[z.type, width]:
@@ -495,7 +545,7 @@ struct And:
             var rhs = rebind[SIMD[DType.bool, width]](y.load[width](idx))
             return rebind[SIMD[z.type, width]](lhs & rhs)
 
-        foreach[func](z)
+        foreach[func, synchronous, target](z, ctx)
 
 
 @compiler.register("mo.or")
@@ -504,7 +554,12 @@ struct Or:
     fn execute[
         synchronous: Bool,
         target: StringLiteral,
-    ](z: ManagedTensorSlice, x: ManagedTensorSlice, y: ManagedTensorSlice):
+    ](
+        z: ManagedTensorSlice,
+        x: ManagedTensorSlice,
+        y: ManagedTensorSlice,
+        ctx: MojoCallContextPtr,
+    ):
         @parameter
         @always_inline
         fn func[width: Int](idx: StaticIntTuple[z.rank]) -> SIMD[z.type, width]:
@@ -512,7 +567,7 @@ struct Or:
             var rhs = rebind[SIMD[DType.bool, width]](y.load[width](idx))
             return rebind[SIMD[z.type, width]](lhs | rhs)
 
-        foreach[func](z)
+        foreach[func, synchronous, target](z, ctx)
 
 
 @compiler.register("mo.xor")
@@ -521,7 +576,12 @@ struct Xor:
     fn execute[
         synchronous: Bool,
         target: StringLiteral,
-    ](z: ManagedTensorSlice, x: ManagedTensorSlice, y: ManagedTensorSlice):
+    ](
+        z: ManagedTensorSlice,
+        x: ManagedTensorSlice,
+        y: ManagedTensorSlice,
+        ctx: MojoCallContextPtr,
+    ):
         @parameter
         @always_inline
         fn func[width: Int](idx: StaticIntTuple[z.rank]) -> SIMD[z.type, width]:
@@ -529,7 +589,7 @@ struct Xor:
             var rhs = rebind[SIMD[DType.bool, width]](y.load[width](idx))
             return rebind[SIMD[z.type, width]](lhs ^ rhs)
 
-        foreach[func](z)
+        foreach[func, synchronous, target](z, ctx)
 
 
 # ===----------------------------------------------------------------------===#
@@ -543,13 +603,13 @@ struct Ceil:
     fn execute[
         synchronous: Bool,
         target: StringLiteral,
-    ](y: ManagedTensorSlice, x: ManagedTensorSlice):
+    ](y: ManagedTensorSlice, x: ManagedTensorSlice, ctx: MojoCallContextPtr):
         @parameter
         @always_inline
         fn func[width: Int](idx: StaticIntTuple[y.rank]) -> SIMD[y.type, width]:
             return rebind[SIMD[y.type, width]](ceil(x.load[width](idx)))
 
-        foreach[func](y)
+        foreach[func, synchronous, target](y, ctx)
 
 
 @compiler.register("mo.floor")
@@ -558,13 +618,13 @@ struct Floor:
     fn execute[
         synchronous: Bool,
         target: StringLiteral,
-    ](y: ManagedTensorSlice, x: ManagedTensorSlice):
+    ](y: ManagedTensorSlice, x: ManagedTensorSlice, ctx: MojoCallContextPtr):
         @parameter
         @always_inline
         fn func[width: Int](idx: StaticIntTuple[y.rank]) -> SIMD[y.type, width]:
             return rebind[SIMD[y.type, width]](floor(x.load[width](idx)))
 
-        foreach[func](y)
+        foreach[func, synchronous, target](y, ctx)
 
 
 @compiler.register("mo.tanh")
@@ -573,13 +633,13 @@ struct Tanh:
     fn execute[
         synchronous: Bool,
         target: StringLiteral,
-    ](y: ManagedTensorSlice, x: ManagedTensorSlice):
+    ](y: ManagedTensorSlice, x: ManagedTensorSlice, ctx: MojoCallContextPtr):
         @parameter
         @always_inline
         fn func[width: Int](idx: StaticIntTuple[y.rank]) -> SIMD[y.type, width]:
             return rebind[SIMD[y.type, width]](tanh(x.load[width](idx)))
 
-        foreach[func](y)
+        foreach[func, synchronous, target](y, ctx)
 
 
 @compiler.register("mo.cos")
@@ -588,13 +648,13 @@ struct Cos:
     fn execute[
         synchronous: Bool,
         target: StringLiteral,
-    ](y: ManagedTensorSlice, x: ManagedTensorSlice):
+    ](y: ManagedTensorSlice, x: ManagedTensorSlice, ctx: MojoCallContextPtr):
         @parameter
         @always_inline
         fn func[width: Int](idx: StaticIntTuple[y.rank]) -> SIMD[y.type, width]:
             return rebind[SIMD[y.type, width]](cos(x.load[width](idx)))
 
-        foreach[func](y)
+        foreach[func, synchronous, target](y, ctx)
 
 
 @compiler.register("mo.sin")
@@ -603,13 +663,13 @@ struct Sin:
     fn execute[
         synchronous: Bool,
         target: StringLiteral,
-    ](y: ManagedTensorSlice, x: ManagedTensorSlice):
+    ](y: ManagedTensorSlice, x: ManagedTensorSlice, ctx: MojoCallContextPtr):
         @parameter
         @always_inline
         fn func[width: Int](idx: StaticIntTuple[y.rank]) -> SIMD[y.type, width]:
             return rebind[SIMD[y.type, width]](sin(x.load[width](idx)))
 
-        foreach[func](y)
+        foreach[func, synchronous, target](y, ctx)
 
 
 @compiler.register("mo.erf")
@@ -618,13 +678,13 @@ struct Erf:
     fn execute[
         synchronous: Bool,
         target: StringLiteral,
-    ](y: ManagedTensorSlice, x: ManagedTensorSlice):
+    ](y: ManagedTensorSlice, x: ManagedTensorSlice, ctx: MojoCallContextPtr):
         @parameter
         @always_inline
         fn func[width: Int](idx: StaticIntTuple[y.rank]) -> SIMD[y.type, width]:
             return rebind[SIMD[y.type, width]](erf(x.load[width](idx)))
 
-        foreach[func](y)
+        foreach[func, synchronous, target](y, ctx)
 
 
 @compiler.register("mo.exp")
@@ -633,13 +693,13 @@ struct Exp:
     fn execute[
         synchronous: Bool,
         target: StringLiteral,
-    ](y: ManagedTensorSlice, x: ManagedTensorSlice):
+    ](y: ManagedTensorSlice, x: ManagedTensorSlice, ctx: MojoCallContextPtr):
         @parameter
         @always_inline
         fn func[width: Int](idx: StaticIntTuple[y.rank]) -> SIMD[y.type, width]:
             return rebind[SIMD[y.type, width]](exp(x.load[width](idx)))
 
-        foreach[func](y)
+        foreach[func, synchronous, target](y, ctx)
 
 
 @compiler.register("mo.round")
@@ -648,13 +708,13 @@ struct Round:
     fn execute[
         synchronous: Bool,
         target: StringLiteral,
-    ](y: ManagedTensorSlice, x: ManagedTensorSlice):
+    ](y: ManagedTensorSlice, x: ManagedTensorSlice, ctx: MojoCallContextPtr):
         @parameter
         @always_inline
         fn func[width: Int](idx: StaticIntTuple[y.rank]) -> SIMD[y.type, width]:
             return rebind[SIMD[y.type, width]](round(x.load[width](idx)))
 
-        foreach[func](y)
+        foreach[func, synchronous, target](y, ctx)
 
 
 @compiler.register("mo.roundeven")
@@ -663,13 +723,13 @@ struct RoundEven:
     fn execute[
         synchronous: Bool,
         target: StringLiteral,
-    ](y: ManagedTensorSlice, x: ManagedTensorSlice):
+    ](y: ManagedTensorSlice, x: ManagedTensorSlice, ctx: MojoCallContextPtr):
         @parameter
         @always_inline
         fn func[width: Int](idx: StaticIntTuple[y.rank]) -> SIMD[y.type, width]:
             return rebind[SIMD[y.type, width]](x.load[width](idx).roundeven())
 
-        foreach[func](y)
+        foreach[func, synchronous, target](y, ctx)
 
 
 @compiler.register("mo.isqrt")
@@ -678,13 +738,13 @@ struct Isqrt:
     fn execute[
         synchronous: Bool,
         target: StringLiteral,
-    ](y: ManagedTensorSlice, x: ManagedTensorSlice):
+    ](y: ManagedTensorSlice, x: ManagedTensorSlice, ctx: MojoCallContextPtr):
         @parameter
         @always_inline
         fn func[width: Int](idx: StaticIntTuple[y.rank]) -> SIMD[y.type, width]:
             return rebind[SIMD[y.type, width]](isqrt(x.load[width](idx)))
 
-        foreach[func](y)
+        foreach[func, synchronous, target](y, ctx)
 
 
 @compiler.register("mo.select")
@@ -698,6 +758,7 @@ struct Select:
         condition: ManagedTensorSlice,
         true_case: ManagedTensorSlice,
         false_case: ManagedTensorSlice,
+        ctx: MojoCallContextPtr,
     ):
         @parameter
         @always_inline
@@ -709,7 +770,7 @@ struct Select:
             var fc = rebind[SIMD[out.type, width]](false_case.load[width](idx))
             return cond.select(tc, fc)
 
-        foreach[func](out)
+        foreach[func, synchronous, target](out, ctx)
 
 
 @compiler.register("mo.trunc")
@@ -718,7 +779,7 @@ struct Trunc:
     fn execute[
         synchronous: Bool,
         target: StringLiteral,
-    ](y: ManagedTensorSlice, x: ManagedTensorSlice):
+    ](y: ManagedTensorSlice, x: ManagedTensorSlice, ctx: MojoCallContextPtr):
         @parameter
         @always_inline
         fn func[width: Int](idx: StaticIntTuple[y.rank]) -> SIMD[y.type, width]:
@@ -729,7 +790,7 @@ struct Trunc:
                 ](val)
             )
 
-        foreach[func](y)
+        foreach[func, synchronous, target](y, ctx)
 
 
 @compiler.register("mo.log")
@@ -738,13 +799,13 @@ struct Log:
     fn execute[
         synchronous: Bool,
         target: StringLiteral,
-    ](y: ManagedTensorSlice, x: ManagedTensorSlice):
+    ](y: ManagedTensorSlice, x: ManagedTensorSlice, ctx: MojoCallContextPtr):
         @parameter
         @always_inline
         fn func[width: Int](idx: StaticIntTuple[y.rank]) -> SIMD[y.type, width]:
             return rebind[SIMD[y.type, width]](log(x.load[width](idx)))
 
-        foreach[func](y)
+        foreach[func, synchronous, target](y, ctx)
 
 
 @compiler.register("mo.log1p")
@@ -753,13 +814,13 @@ struct Log1p:
     fn execute[
         synchronous: Bool,
         target: StringLiteral,
-    ](y: ManagedTensorSlice, x: ManagedTensorSlice):
+    ](y: ManagedTensorSlice, x: ManagedTensorSlice, ctx: MojoCallContextPtr):
         @parameter
         @always_inline
         fn func[width: Int](idx: StaticIntTuple[y.rank]) -> SIMD[y.type, width]:
             return rebind[SIMD[y.type, width]](log1p(x.load[width](idx)))
 
-        foreach[func](y)
+        foreach[func, synchronous, target](y, ctx)
 
 
 @compiler.register("mo.is_nan")
@@ -768,13 +829,13 @@ struct IsNan:
     fn execute[
         synchronous: Bool,
         target: StringLiteral,
-    ](y: ManagedTensorSlice, x: ManagedTensorSlice):
+    ](y: ManagedTensorSlice, x: ManagedTensorSlice, ctx: MojoCallContextPtr):
         @parameter
         @always_inline
         fn func[width: Int](idx: StaticIntTuple[y.rank]) -> SIMD[y.type, width]:
             return rebind[SIMD[y.type, width]](isnan(x.load[width](idx)))
 
-        foreach[func](y)
+        foreach[func, synchronous, target](y, ctx)
 
 
 @compiler.register("mo.is_inf")
@@ -783,13 +844,13 @@ struct IsInf:
     fn execute[
         synchronous: Bool,
         target: StringLiteral,
-    ](y: ManagedTensorSlice, x: ManagedTensorSlice):
+    ](y: ManagedTensorSlice, x: ManagedTensorSlice, ctx: MojoCallContextPtr):
         @parameter
         @always_inline
         fn func[width: Int](idx: StaticIntTuple[y.rank]) -> SIMD[y.type, width]:
             return rebind[SIMD[y.type, width]](isinf(x.load[width](idx)))
 
-        foreach[func](y)
+        foreach[func, synchronous, target](y, ctx)
 
 
 @compiler.register("mo.not")
@@ -798,14 +859,14 @@ struct Not:
     fn execute[
         synchronous: Bool,
         target: StringLiteral,
-    ](y: ManagedTensorSlice, x: ManagedTensorSlice):
+    ](y: ManagedTensorSlice, x: ManagedTensorSlice, ctx: MojoCallContextPtr):
         @parameter
         @always_inline
         fn func[width: Int](idx: StaticIntTuple[y.rank]) -> SIMD[y.type, width]:
             var val = rebind[SIMD[DType.bool, width]](x.load[width](idx))
             return rebind[SIMD[y.type, width]](~val)
 
-        foreach[func](y)
+        foreach[func, synchronous, target](y, ctx)
 
 
 # TensorCopy intrinsic used by view kernels.
