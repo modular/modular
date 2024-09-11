@@ -290,7 +290,7 @@ struct Element[dtype: DType, layout: Layout](Stringable, Formattable):
 
             @parameter
             for i in range(elements):
-                (ptr + __get_offset[i, 0](self.runtime_layout)).store[
+                (ptr + __get_offset[0, i](self.runtime_layout)).store[
                     width=size, alignment=alignment
                 ](
                     self.element_data.slice[size, offset = i * size](),

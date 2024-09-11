@@ -19,9 +19,9 @@ fn outer_product[
 ]:
     var res = SIMD[DType.float32, TM * TN]()
     # Note: Outputs are columns.
-    for j in range(TN):
-        for i in range(TM):
-            res[j * TN + i] = lhs[i] * rhs[j]
+    for i in range(TM):
+        for j in range(TN):
+            res[i * TN + j] = lhs[i] * rhs[j]
     return res
 
 
