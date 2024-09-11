@@ -170,6 +170,7 @@ def test_matmul[
             1e-9 * ((2 * m * k * n) / matmul_perf.mean()),
         )
 
+    @parameter
     if epilogue_fn:
         gemm_naive_elementwise[transpose_b](
             a, b, golden, m, n, k, some_constant
