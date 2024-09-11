@@ -19,6 +19,7 @@ This is a module summary, that
 spills over to the next line."""
 
 from layout.int_tuple import *
+from builtin._documentation import doc_private
 from sys.info import triple_is_nvidia_cuda
 
 
