@@ -26,6 +26,7 @@ from .tensor import Tensor
 from .device import Device, cpu_device
 from max.tensor import TensorSpec
 from max._utils import exchange
+from builtin._documentation import doc_private
 from collections import Optional
 from utils import Variant
 from utils._serialize import _serialize

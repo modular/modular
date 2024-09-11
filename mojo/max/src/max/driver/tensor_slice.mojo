@@ -21,6 +21,7 @@ def main():
 from .tensor import Tensor
 from max.tensor import StaticTensorSpec, TensorSpec
 from max._tensor_utils import TensorLike
+from builtin._documentation import doc_private
 from collections import InlineArray
 from math import ceil
 from max.tensor import TensorSpec

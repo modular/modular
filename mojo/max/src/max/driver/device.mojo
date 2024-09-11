@@ -16,6 +16,7 @@ def main():
 ```
 """
 
+from builtin._documentation import doc_private
 from collections import Optional
 from sys.ffi import DLHandle, _get_global_or_null
 from max._utils import call_dylib_func, get_lib_path_from_cfg

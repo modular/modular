@@ -28,6 +28,7 @@ from max._tensor_utils import (
     TensorLike,
     indexing,
 )
+from builtin._documentation import doc_private
 from collections import Optional, InlineArray
 from utils import StaticIntTuple
 from utils._serialize import _serialize
