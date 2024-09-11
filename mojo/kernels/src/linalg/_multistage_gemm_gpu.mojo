@@ -537,7 +537,7 @@ fn multistage_mma[
                 barrier()
 
 
-fn multistage_gemm_k_partition[
+fn multistage_gemm_kernel[
     c_type: DType,
     c_layout: Layout,
     a_type: DType,
@@ -954,7 +954,7 @@ fn multistage_gemm_k_partition[
             )
 
 
-fn multistage_gemm_kernel[
+fn multistage_gemm_split_k_kernel[
     c_type: DType,
     c_layout: Layout,
     a_type: DType,
@@ -972,21 +972,6 @@ fn multistage_gemm_kernel[
     work_space: NDBuffer[work_space_type, 3],
     num_partitions: UInt,
 ):
-    if num_partitions == 1:
-        multistage_gemm_k_partition[
-            c_type,
-            c_layout,
-            a_type,
-            a_layout,
-            b_type,
-            b_layout,
-            transpose_b,
-            config,
-            elementwise_lambda_fn,
-        ](c, a, b)
-
-        return
-
     var M = c.dim(0)
     var N = c.dim(1)
 
@@ -1010,7 +995,7 @@ fn multistage_gemm_kernel[
         config.num_pipeline_stages,
     )
 
-    multistage_gemm_k_partition[
+    multistage_gemm_kernel[
         work_space_type,
         c_layout,
         a_type,

@@ -53,7 +53,10 @@ from utils.index import Index
 from utils.numerics import get_accum_type
 from utils.static_tuple import StaticTuple
 
-from ._multistage_gemm_gpu import multistage_gemm_kernel
+from ._multistage_gemm_gpu import (
+    multistage_gemm_kernel,
+    multistage_gemm_split_k_kernel,
+)
 from .utils import GemmShape, apply_epilogue, elementwise_epilogue_type
 from .gemv import gemv_gpu
 from .utils_gpu import MatmulKernels, MatmulConfig, select_config
@@ -1075,20 +1078,63 @@ def multistage_gemm[
     var tensor_a = from_ndbuffer_row_major(a)
     var tensor_b = from_ndbuffer_row_major(b)
 
-    alias work_space_type = config.split_k_reduction_type
-    var work_space = NDBuffer[work_space_type, 3](
-        UnsafePointer[Scalar[work_space_type]](), StaticIntTuple[3]()
-    )
-
+    # Split K dispatch
     if runtime_config.num_k_partitions > 1:
+        alias work_space_type = config.split_k_reduction_type
         var work_space_data = ctx.create_buffer[work_space_type](
             runtime_config.num_k_partitions * M * N
         )
-        work_space = NDBuffer[work_space_type, 3](
+        var work_space = NDBuffer[work_space_type, 3](
             work_space_data.ptr,
             Index(int(runtime_config.num_k_partitions), M, N),
         )
 
+        alias gemm_kernel_type = multistage_gemm_split_k_kernel[
+            c_type,
+            tensor_c.layout,
+            a_type,
+            tensor_a.layout,
+            b_type,
+            tensor_b.layout,
+            work_space_type,
+            transpose_b,
+            config,
+            elementwise_lambda_fn,
+        ]
+
+        var gemm_kernel = ctx.compile_function[
+            gemm_kernel_type,
+            # dump_ptx=Path("./pipeline-gemm.ptx"),
+        ](
+            threads_per_block=int(config.num_threads()),
+            func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
+                config.shared_mem_usage()
+            ),
+        )
+
+        ctx.enqueue_function(
+            gemm_kernel,
+            tensor_c,
+            tensor_a,
+            tensor_b,
+            work_space,
+            runtime_config.num_k_partitions,
+            grid_dim=runtime_config.grid_dim(M, N),
+            block_dim=runtime_config.block_dim(),
+            shared_mem_bytes=runtime_config.shared_mem_usage(),
+        )
+
+        split_k_reduce[
+            c_type,
+            work_space_type,
+            c_shape,
+            work_space.shape,
+            elementwise_lambda_fn,
+        ](c, work_space, ctx)
+
+        return
+
+    # Dispatch w/o split K
     alias gemm_kernel_type = multistage_gemm_kernel[
         c_type,
         tensor_c.layout,
@@ -1096,13 +1142,12 @@ def multistage_gemm[
         tensor_a.layout,
         b_type,
         tensor_b.layout,
-        work_space_type,
         transpose_b,
         config,
         elementwise_lambda_fn,
     ]
 
-    var gemm_kernel = ctx.compile_function[gemm_kernel_type](
+    var gemm_kernel = ctx.compile_function[gemm_kernel_type,](
         threads_per_block=int(config.num_threads()),
         func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
             config.shared_mem_usage()
@@ -1114,18 +1159,7 @@ def multistage_gemm[
         tensor_c,
         tensor_a,
         tensor_b,
-        work_space,
-        runtime_config.num_k_partitions,
         grid_dim=runtime_config.grid_dim(M, N),
         block_dim=runtime_config.block_dim(),
         shared_mem_bytes=runtime_config.shared_mem_usage(),
     )
-
-    if runtime_config.num_k_partitions > 1:
-        split_k_reduce[
-            c_type,
-            work_space_type,
-            c_shape,
-            work_space.shape,
-            elementwise_lambda_fn,
-        ](c, work_space, ctx)
