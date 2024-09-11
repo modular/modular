@@ -421,39 +421,6 @@ fn get_buffer_data(buffer: NDBuffer[DType.uint8, 1]) -> UnsafePointer[UInt8]:
 
 
 # ===----------------------------------------------------------------------===#
-# MIP Bool Primitives
-# ===----------------------------------------------------------------------===#
-
-
-@mogg_register("arith.andi")
-@always_inline
-@export
-fn mip_and(x: Bool, y: Bool) -> Bool:
-    return x & y
-
-
-@mogg_register("arith.ori")
-@always_inline
-@export
-fn mip_or(x: Bool, y: Bool) -> Bool:
-    return x | y
-
-
-@mogg_register("arith.xori")
-@always_inline
-@export
-fn mip_xor(x: Bool, y: Bool) -> Bool:
-    return x ^ y
-
-
-@mogg_register("arith.select")
-@always_inline
-@export
-fn mip_select[T: AnyTrivialRegType](cond: Bool, true: T, false: T) -> T:
-    return true if cond else false
-
-
-# ===----------------------------------------------------------------------===#
 # MGP Common Primitives
 # ===----------------------------------------------------------------------===#
 
@@ -586,12 +553,12 @@ fn mgp_buffer_to_bool[
 @export
 fn mgp_buffer_to_index(
     dummy_chain: Int, buffer: NDBuffer[DType.uint8, 1]
-) raises -> Int64:
+) raises -> Int:
     var bufSize = buffer.num_elements()
     if bufSize == 4:
-        return Int64(int(buffer.data.bitcast[Int32]()[0]))
+        return int(buffer.data.bitcast[Int32]()[0])
     if bufSize == 8:
-        return buffer.data.bitcast[Int64]()[0]
+        return int(buffer.data.bitcast[Int64]()[0])
 
     raise Error(
         "mgp.buffer.to_index must be called on either a 4- or 8-byte buffer"
