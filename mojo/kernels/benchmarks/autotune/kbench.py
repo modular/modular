@@ -387,7 +387,7 @@ def run(yaml_path, output_path=None, tune=True, verbose=False, tmp_path=None):
             output_lines += [merged_df.to_string(index=False)]
             output_lines += [LINE]
         ########################################################
-        output_lines += ["Elasped tuning time: %.1f (s)" % (t_elapsed)]
+        output_lines += ["Elapsed tuning time: %.1f (s)" % (t_elapsed)]
         output_str = "\n".join([str(x) for x in output_lines])
         print(output_str)
         if output_path:

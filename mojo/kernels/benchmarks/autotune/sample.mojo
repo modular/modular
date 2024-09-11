@@ -6,6 +6,7 @@
 # RUN: %mojo-build-no-debug %s
 
 from sys import env_get_string, env_get_int
+from internal_utils import env_get_dtype, env_get_shape, int_list_to_tuple
 from benchmark import (
     BenchConfig,
     Bench,
@@ -18,7 +19,9 @@ from benchmark import (
 from time import sleep
 
 
-fn bench_func[dtype: DType, M: Int, N: Int, stage: Int](inout m: Bench) raises:
+fn bench_func[
+    dtype: DType, M: Int, N: Int, K: Int, stages: Int
+](inout m: Bench) raises:
     @parameter
     @always_inline
     fn bench_iter(inout b: Bencher):
@@ -29,19 +32,20 @@ fn bench_func[dtype: DType, M: Int, N: Int, stage: Int](inout m: Bench) raises:
 
         b.iter[call_fn]()
 
-    var name = "gemm/m=" + str(M) + "/n=" + str(N) + "/stage=" + str(stage)
+    var name = "gemm/dtype=" + str(dtype) + "/m=" + str(M) + "/n=" + str(
+        N
+    ) + "/k=" + str(N) + "/stages=" + str(stages)
     m.bench_function[bench_iter](BenchId(name))
 
 
 fn main() raises:
-    alias dtype_str = env_get_string["DTYPE", "DType.float16"]()
-    alias M = env_get_int["M", 0]()
-    alias N = env_get_int["N", 0]()
-    alias stages = env_get_int["STAGES", 0]()
-    alias dtype = DType.float16
+    alias dtype = env_get_dtype["dtype", DType.float16]()
+    alias shape_int_list = env_get_shape["shape", "1024x1024x1024"]()
+    alias shape = int_list_to_tuple[shape_int_list]()
+    alias stages = env_get_int["stages", 0]()
 
     var m = Bench(BenchConfig(max_iters=1, max_batch_size=1, warmup_iters=0))
 
-    bench_func[dtype, M, N, stages](m)
+    bench_func[dtype, shape[0], shape[1], shape[2], stages](m)
 
     m.dump_report()
