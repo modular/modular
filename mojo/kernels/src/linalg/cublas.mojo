@@ -17,7 +17,9 @@ from gpu.cublas.result import Result
 from memory import UnsafePointer
 
 
-fn cublas_matmul(
+fn cublas_matmul[
+    use_tf32: Bool = False,
+](
     handle: UnsafePointer[cublasContext],
     c: NDBuffer[_, 2, _],
     a: NDBuffer[_, 2, _],
@@ -25,7 +27,6 @@ fn cublas_matmul(
     c_row_major: Bool = False,
     transpose_a: Bool = False,
     transpose_b: Bool = False,
-    use_tf32: Bool = False,
 ) -> Result:
     constrained[
         a.type == b.type
