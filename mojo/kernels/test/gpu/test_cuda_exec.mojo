@@ -41,6 +41,7 @@ fn vec_func(
 fn run_vec_add(ctx: DeviceContext) raises:
     print("== run_vec_add")
 
+    # FIXME: RUNP-356 Direct access to CUDA within DeviceContext
     var module = Module(
         ctx.cuda_context, (_dir_of_current_file() / "vec_add.ptx")
     )
