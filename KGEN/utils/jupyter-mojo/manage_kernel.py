@@ -125,10 +125,10 @@ def main():
     # config key with the channel name.
     if args.mojo_install_channel == "stable":
         kernel_name = "mojo-jupyter-kernel"
-        config_section = "mojo"
+        config_section = "mojo-max"
     else:
         kernel_name = f"mojo-{args.mojo_install_channel}-jupyter-kernel"
-        config_section = f"mojo-{args.mojo_install_channel}"
+        config_section = f"mojo-max-{args.mojo_install_channel}"
 
     if args.command == "install":
         install_kernel(
