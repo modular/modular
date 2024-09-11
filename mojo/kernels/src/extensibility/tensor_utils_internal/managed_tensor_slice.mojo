@@ -15,6 +15,7 @@ from math import ceil
 from sys import simdwidthof
 from sys.intrinsics import strided_load, strided_store
 import algorithm
+from runtime.asyncrt import MojoCallContextPtr
 
 from compiler_internal.directives import __mogg_intrinsic_attr, specsof
 from compiler_internal.directives import StaticTensorSpec as CompilerTensorSpec
@@ -319,12 +320,16 @@ struct ManagedTensorSlice[
         ]()
 
 
+# This version of the function supports CPU only. For GPU, use the one with the
+# MojoCallContextPtr.
 @__mogg_intrinsic_attr("mogg.for_each")
 @no_inline
 fn foreach[
     type: DType,
     rank: Int, //,
     func: fn[width: Int] (StaticIntTuple[rank]) capturing -> SIMD[type, width],
+    synchronous: Bool = False,
+    target: StringLiteral = "cpu",
 ](tensor: ManagedTensorSlice[type, rank]):
     alias simd_width = simdwidthof[tensor.type]()
 
@@ -332,10 +337,38 @@ fn foreach[
     fn elementwise_fn_wrapper[
         width: Int, rank: Int
     ](index: StaticIntTuple[rank]) capturing:
-        constrained[rank == tensor.rank]()
         var val = func[width](rebind[StaticIntTuple[tensor.rank]](index))
         tensor.store(index, val)
 
-    algorithm.functional.elementwise[elementwise_fn_wrapper, simd_width](
-        tensor.get_static_spec().shape
-    )
+    algorithm.functional.elementwise[
+        elementwise_fn_wrapper,
+        simd_width,
+        use_blocking_impl=synchronous,
+        target=target,
+    ](tensor.get_static_spec().shape)
+
+
+@__mogg_intrinsic_attr("mogg.for_each")
+@no_inline
+fn foreach[
+    type: DType,
+    rank: Int, //,
+    func: fn[width: Int] (StaticIntTuple[rank]) capturing -> SIMD[type, width],
+    synchronous: Bool = False,
+    target: StringLiteral = "cpu",
+](tensor: ManagedTensorSlice[type, rank], ctx: MojoCallContextPtr):
+    alias simd_width = simdwidthof[tensor.type]()
+
+    @parameter
+    fn elementwise_fn_wrapper[
+        width: Int, rank: Int
+    ](index: StaticIntTuple[rank]) capturing:
+        var val = func[width](rebind[StaticIntTuple[tensor.rank]](index))
+        tensor.store(index, val)
+
+    algorithm.functional.elementwise[
+        elementwise_fn_wrapper,
+        simd_width,
+        use_blocking_impl=synchronous,
+        target=target,
+    ](tensor.get_static_spec().shape, ctx)
