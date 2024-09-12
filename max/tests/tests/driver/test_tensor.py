@@ -5,9 +5,11 @@
 # ===----------------------------------------------------------------------=== #
 """Test max.driver Tensors."""
 from itertools import product
+import math
 
 import numpy as np
 import pytest
+from hypothesis import given, strategies as st
 import torch
 from max.driver import CPU, Tensor
 from max.dtype import DType
@@ -320,6 +322,34 @@ def test_torch_tensor_conversion():
 
     reconverted_bool = torch.from_dlpack(converted_bool)
     assert torch.all(torch.eq(bool_tensor, reconverted_bool))
+
+
+@given(st.floats())
+def test_setitem_bfloat16(value: float):
+    tensor = Tensor((1,), DType.bfloat16)
+    tensor[0] = value
+    expected = torch.tensor([value]).type(torch.bfloat16)
+    # Torch rounds values up, whereas we currently truncate.
+    # In particular this is an issue near infinity, as there's certain values
+    # that torch will represent as inf, while we will instead represent them
+    # as bfloat16_max.
+    result = torch.from_dlpack(tensor)
+    bf16info = torch.finfo(torch.bfloat16)
+    if value > bf16info.max and math.isfinite(result.item()):
+        assert result.item() == bf16info.max
+    elif value < bf16info.min and math.isfinite(result.item()):
+        assert result.item() == bf16info.min
+    else:
+        torch.testing.assert_close(expected, result, equal_nan=True)
+
+
+@given(st.floats())
+def test_getitem_bfloat16(value: float):
+    torch_value = torch.tensor([value]).type(torch.bfloat16)
+    tensor = Tensor.from_dlpack(torch_value)
+    assert tensor.dtype == DType.bfloat16
+    result = tensor[0].item()
+    torch.testing.assert_close(torch_value.item(), result, equal_nan=True)
 
 
 def test_device():
