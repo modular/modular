@@ -8,16 +8,27 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Optional, Type, Union, overload
+from typing import (
+    Any,
+    Callable,
+    Dict,
+    Iterable,
+    List,
+    Optional,
+    Type,
+    Union,
+    overload,
+)
 
 import numpy as np
+from max._driver import Tensor as _Tensor
 from max._engine import FrameworkFormat as _FrameworkFormat
 from max._engine import InferenceSession as _InferenceSession
-from max._engine import Model as _Model, MojoValue
+from max._engine import Model as _Model
+from max._engine import MojoValue
 from max._engine import TensorData as _TensorData
 from max._engine import TensorSpec as _TensorSpec
 from max._engine import TorchInputSpec as _TorchInputSpec
-from max._driver import Tensor as _Tensor
 from max.driver import CPU, Device, Tensor
 from max.dtype import DType
 
@@ -113,10 +124,15 @@ class Model:
         """
         self._impl._export_mef(path)
 
-    # `execute` can be called with positional arguments only if all arguments
-    # are Max Driver tensors.
+    # `execute` can be called with positional arguments that are `np.ndarray`,
+    # `torch.Tensor` or `max.driver.Tensor`. We are specifying `Any` as a
+    # possibility for the type so we don't have to introduce a torch dependency.
     @overload
-    def execute(self, *args: Tensor) -> List[Tensor]:
+    def execute(
+        self,
+        *args: Union[Tensor, np.ndarray, Any],
+        output_device: Optional[Device] = None,
+    ) -> List[TensorOrMojoType]:
         ...
 
     # `execute` can also be called with keyword arguments, with each keyword
@@ -130,17 +146,24 @@ class Model:
     def execute(self, *args, **kwargs) -> ExecResultType:
         """Executes the model with the provided input and returns the outputs.
 
-        For example, if the model has one input tensor named "input":
+        For example, if the model has one input tensor:
 
         .. code-block:: python
 
             input_tensor = np.random.rand(1, 224, 224, 3)
-            model.execute(input=input_tensor)
+            model.execute(input_tensor)
 
         Parameters
         ----------
         ``args``
-            Currently not supported. You must specify inputs using ``kwargs``.
+            A list of input tensors. We currently support :obj:`np.ndarray`,
+            :obj:`torch.Tensor`, and :obj:`max.driver.Tensor` inputs. All inputs
+            will be copied to the device that the model is resident on prior to
+            executing.
+        ``output_device``
+            The device to copy output tensors to. Defaults to :obj:`None`, in
+            which case the tensors will remain resident on the same device as
+            the model.
         ``kwargs``
             The input tensors, each specified with the appropriate tensor name
             as a keyword and its value as an :obj:`np.ndarray`. You can find the
@@ -153,6 +176,10 @@ class Model:
             :obj:`Dict`, :obj:`List`, or :obj:`Tuple` identified by its output
             name.
 
+        List
+            A list of output tensors and Mojo values. The output tensors will be
+            resident on the execution device by default.
+
         Raises
         ------
         RuntimeError
@@ -162,32 +189,59 @@ class Model:
         TypeError
             If the given input tensors' dtype cannot be cast to what the model
             expects.
+
+        ValueError
+            If positional inputs are not one of the supported types, i.e.
+            :obj:`np.ndarray`, :obj:`torch.Tensor`, and :obj:`max.driver.Tensor`.
         """
         if args:
-            if any(not isinstance(arg, Tensor) for arg in args):
-                raise ValueError(
-                    "All positional arguments provided to the execute API must"
-                    " be Max Driver tensors (i.e. max.driver.Tensor). The"
-                    " execute API can also be invoked using keyword arguments"
-                    " e.g. outs = model.execute(arg0=np.ones((1,"
-                    " 10)).astype(np.float32)). Keywords have to be tensor"
-                    " names which can be queried using the input_metadata API."
-                )
-            if any(not arg.is_contiguous for arg in args):
-                raise ValueError(
-                    "Max does not currently support executing non-contiguous"
-                    " tensors. Before executing these tensors, please make a"
-                    " contiguous copy of them using `.contiguous` before"
-                    " feeding them into the `execute` API."
-                )
+            input_tensors: List[Tensor] = []
+            output_device = kwargs.get("output_device", None)
+
+            for arg in args:
+                # Validate that input is one of supported types and convert if
+                # necessary.
+                tensor: Tensor
+                if _is_torch_tensor(arg) or isinstance(arg, np.ndarray):
+                    tensor = Tensor.from_dlpack(arg)
+                elif isinstance(arg, Tensor):
+                    if not arg.is_contiguous:
+                        raise ValueError(
+                            "Max does not currently support executing"
+                            " non-contiguous tensors. Before executing these"
+                            " tensors, please make a contiguous copy of them"
+                            " using `.contiguous` before feeding them into the"
+                            " `execute` API."
+                        )
+                    tensor = arg
+                else:
+                    raise ValueError(
+                        "All positional arguments must be of the type"
+                        " `max.driver.Tensor` `np.ndarray`, or `torch.Tensor`."
+                        " We do not currently support inputs of the type"
+                        f" {type(arg)}."
+                    )
+                if tensor.device != self.device:
+                    tensor = tensor.copy_to(self.device)
+                input_tensors.append(tensor)
             results = self._impl.execute_device_tensors(
-                [arg._impl for arg in args]
+                [tensor._impl for tensor in input_tensors]
             )
-            return [
-                # Wrap tensors but return MojoValues directly.
-                Tensor._from_impl(res) if isinstance(res, _Tensor) else res
-                for res in results
-            ]
+
+            processed_results = []
+            for result in results:
+                # If the output is a MojoValue, we return it directly.
+                if not isinstance(result, _Tensor):
+                    processed_results.append(result)
+                    continue
+                wrapped_tensor = Tensor._from_impl(result)
+                # If an output device is provided and it is different from the
+                # device the tensor is already present on, we should copy to
+                # that device.
+                if output_device and output_device != self.device:
+                    wrapped_tensor = wrapped_tensor.copy_to(output_device)
+                processed_results.append(wrapped_tensor)
+            return processed_results
 
         # Wrapping the tensors happens by recording their addresses, which does
         # not increase reference count, so we need to ensure the garbage
