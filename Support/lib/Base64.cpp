@@ -13,10 +13,8 @@ using namespace M;
 /// characters.
 std::string M::encodeURLSafeBase64(StringRef str) {
   std::string out = llvm::encodeBase64(str);
-  std::replace_if(
-      out.begin(), out.end(), [](char c) { return c == '+'; }, '-');
-  std::replace_if(
-      out.begin(), out.end(), [](char c) { return c == '/'; }, '_');
+  std::replace_if(out.begin(), out.end(), [](char c) { return c == '+'; }, '-');
+  std::replace_if(out.begin(), out.end(), [](char c) { return c == '/'; }, '_');
   // Only remove up to 3 padding '='.
   for (size_t i = 0; i < 3; ++i) {
     if (out.back() != '=')
@@ -30,10 +28,8 @@ std::string M::encodeURLSafeBase64(StringRef str) {
 /// method.
 ErrorOr<std::string> M::decodeURLSafeBase64(StringRef str) {
   std::string out = str.str();
-  std::replace_if(
-      out.begin(), out.end(), [](char c) { return c == '-'; }, '+');
-  std::replace_if(
-      out.begin(), out.end(), [](char c) { return c == '_'; }, '/');
+  std::replace_if(out.begin(), out.end(), [](char c) { return c == '-'; }, '+');
+  std::replace_if(out.begin(), out.end(), [](char c) { return c == '_'; }, '/');
 
   // Add back in any padding we removed, but only if necessary.
   size_t remainder = str.size() % 4;
