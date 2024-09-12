@@ -331,7 +331,7 @@ fn create_mojo_value_async(
     destructor_fn: fn (UnsafePointer[UInt8]) -> None,
     move_fn: fn (UnsafePointer[UInt8], UnsafePointer[UInt8]) -> None,
 ):
-    # Check if we have a nullptr, if so, don't use a desctructor.
+    # Check if we have a nullptr, if so, don't use a destructor.
     if not val_ptr:
         external_call["KGEN_CompilerRT_CreateOwnedAsyncMojoValue", NoneType](
             val_ptr,
