@@ -1706,25 +1706,55 @@ void TryRaiseOp::getBranchTargets(
 static ParseResult parseAliasDeclOpValue(OpAsmParser &p,
                                          ParamDeclAttr &paramDecl,
                                          TypedAttr &value) {
-  return parseParamDeclaration(p, paramDecl, value);
+  if (parseParamDecl(p, paramDecl))
+    return failure();
+
+  if (failed(p.parseOptionalEqual())) {
+    // This is actually valid; an alias declaration in a trait is an associated
+    // alias.
+    return success();
+  }
+
+  if (p.parseLess() || parseParamValue(p, value, paramDecl.getType()) ||
+      p.parseGreater())
+    return failure();
+
+  return success();
 }
 
 static void printAliasDeclOpValue(OpAsmPrinter &p, Operation *,
                                   ParamDeclAttr paramDecl, TypedAttr value) {
-  return printParamDeclaration(p, paramDecl, value);
+  printParamDecl(p, paramDecl);
+  // Traits' alias declarations need no value, in which case they're associated
+  // types.
+  if (value) {
+    p << " = <";
+    printParamValue(p, value);
+    p << ">";
+  }
 }
 
 void AliasDeclOp::walkDefinitions(
     function_ref<void(ParamDeclAttr, const ParamDefValue &)> walkDef) {
-  walkDef(getParamDecl(), getValue());
+  if (TypedAttr value = getValueAttr()) {
+    walkDef(getParamDecl(), value);
+  } else {
+    // This could happen if we're in a trait's associated alias declaration.
+    walkDef(getParamDecl(), ParamDefValue());
+  }
 }
 
 LogicalResult AliasDeclOp::verify() {
-  if (getParamDecl().getType() == getValue().getType())
-    return success();
-  return emitOpError("declares a parameter with type ")
-         << getParamDecl().getType() << " but parameter expression has type "
-         << getValue().getType();
+  // Associated types in traits need no value.
+  if (TypedAttr value = getValueAttr()) {
+    if (getParamDecl().getType() != value.getType()) {
+      return emitOpError("declares a parameter with type ")
+             << getParamDecl().getType()
+             << " but parameter expression has type " << value.getType();
+    }
+  }
+
+  return success();
 }
 
 //===----------------------------------------------------------------------===//

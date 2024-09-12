@@ -1022,8 +1022,18 @@ PValue ExprEmitter::bindMLIRTypeToTrait(ASTExprAnd<CValue> value,
 
   SmallVector<VTableEntryAttr> vtable;
   for (auto &[name, decls] : traitDecl.getDeclsInScope()) {
-    if (decls.empty() || !isa<LIT::FuncOp>(decls.front()))
+    if (decls.empty())
       continue;
+    if (isa<LIT::AliasDeclOp>(decls.front())) {
+      InflightDiag diag = emitError(loc, "cannot bind MLIR type ")
+                          << mlirType << " to trait " << ASTType(trait);
+      diag.attachNote(decls.front()->getLoc())
+          << "MLIR type cannot satisfy any alias requirements";
+      return {};
+    }
+    if (!isa<LIT::FuncOp>(decls.front()))
+      return {};
+
     for (ASTDecl *decl : decls) {
       // MLIR types are movable, copyable, and destructible only.
       switch (SpecialFunctionInfo::getKind(name)) {
@@ -1056,6 +1066,7 @@ PValue ExprEmitter::bindMLIRTypeToTrait(ASTExprAnd<CValue> value,
       vtable.push_back(VTableEntryAttr::get(name, callee));
     }
   }
+
   return TypeConstantAttr::get(mlirType, trait,
                                VTableAttr::get(getContext(), vtable));
 }
@@ -1147,7 +1158,34 @@ PValue ExprEmitter::emitMetaTypeToTraitConversion(ASTExprAnd<CValue> value,
   SmallVector<VTableEntryAttr> vtable;
   for (auto &[name, requirementDecls] : traitDecl->getDeclsInScope()) {
     // Each entry can have multiple overloads in 'decls'.
-    if (requirementDecls.empty() || !isa<LIT::FuncOp>(requirementDecls.front()))
+    if (requirementDecls.empty())
+      continue;
+
+    if (auto traitAliasDecl =
+            dyn_cast<LIT::AliasDeclOp>(requirementDecls.front())) {
+      // Find candidates in the implementing type (either a struct or trait)
+      // which also may have multiple overloads.
+      LookupResult result =
+          shared.lookupAndResolveDecl(name, value.expr->getLoc(), *metaTypeDecl,
+                                      /*searchParentScopes=*/false);
+      ArrayRef<ASTDecl *> structMatchingMembers = result.getIfSuccess();
+
+      // These asserts should be safe because we already know it correctly
+      // conforms because we called `doesNominalTypeConformsTo` above.
+      assert(structMatchingMembers.size() == 1);
+      auto implAlias = cast<LIT::AliasDeclOp>(structMatchingMembers.front());
+
+      SyntheticNode synthNode(structMatchingMembers.front()->getLoc());
+      auto newValue = emitPValue({implAlias.getValueAttr(), synthNode},
+                                 EC_TypeParamValue, traitAliasDecl.getType());
+      if (!newValue)
+        return {};
+
+      vtable.push_back(VTableEntryAttr::get(name, newValue));
+      continue;
+    }
+
+    if (!isa<LIT::FuncOp>(requirementDecls.front()))
       continue;
 
     // Find candidates in the implementing type (either a struct or trait) which
@@ -1159,7 +1197,9 @@ PValue ExprEmitter::emitMetaTypeToTraitConversion(ASTExprAnd<CValue> value,
 
     // Each requirement may be overloaded, resolve each individually.
     for (ASTDecl *expected : requirementDecls) {
-      auto requirementFn = cast<LIT::FuncOp>(expected);
+      auto requirementFn = dyn_cast<LIT::FuncOp>(expected);
+      assert(requirementFn &&
+             "trait has an alias and a fn with the same name!");
 
       // For any given requirement, the implementing type may have multiple
       // overloads.  Resolve which one we're using by forming an overload set

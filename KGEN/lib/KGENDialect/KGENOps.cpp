@@ -121,12 +121,19 @@ void ParamMaterializeOp::walkDefinitions(
 static ParseResult parseParamDeclareOpValue(OpAsmParser &p,
                                             ParamDeclAttr &paramDecl,
                                             TypedAttr &value) {
-  return parseParamDeclaration(p, paramDecl, value);
+  if (parseParamDecl(p, paramDecl) || p.parseEqual() || p.parseLess() ||
+      parseParamValue(p, value, paramDecl.getType()) || p.parseGreater())
+    return failure();
+
+  return success();
 }
 
 static void printParamDeclareOpValue(OpAsmPrinter &p, Operation *,
                                      ParamDeclAttr paramDecl, TypedAttr value) {
-  return printParamDeclaration(p, paramDecl, value);
+  printParamDecl(p, paramDecl);
+  p << " = <";
+  printParamValue(p, value);
+  p << ">";
 }
 
 void ParamDeclareOp::walkDefinitions(

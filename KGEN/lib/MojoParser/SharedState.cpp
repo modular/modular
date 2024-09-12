@@ -1425,7 +1425,8 @@ SharedState::resolveDeclFromBytecode(ASTDecl &decl,
             })
             .Case([&](AliasDeclOp aliasDecl) {
               refWalker.walk(aliasDecl.getType());
-              refWalker.walk(aliasDecl.getValue());
+              if (TypedAttr value = aliasDecl.getValueAttr())
+                refWalker.walk(value);
               return mlir::success();
             })
             .Case([&](StructFieldOp field) {

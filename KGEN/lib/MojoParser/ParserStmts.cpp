@@ -1724,7 +1724,6 @@ ParseResult StmtParser::parseSingleWithStmt(size_t curIndent, SMLoc smLoc,
       return failure();
     builder.create<TryYieldOp>(loc);
   } else {
-    // DO NOT SUBMIT Should we be calling a helper method here?
     auto message = "expected ':' or ',' after 'with' expression";
     auto diagLoc = getTokenLocOrEndOfPreviousLineIfOnNewLine();
     // Report the error.
@@ -2499,7 +2498,6 @@ ParseResult StmtParser::parseAliasDeclStmt(LexerCursor startCursor,
   // Before parsing the rest of the alias, the type is unresolved and value is
   // UnresolvedAliasValueAttr.
   auto type = getUnresolvedType();
-  auto value = UnresolvedAliasValueAttr::get(type);
 
   // TODO(fixme): currently, we cannot rely on looking up name collisions of
   // aliases because of things like this:
@@ -2511,7 +2509,7 @@ ParseResult StmtParser::parseAliasDeclStmt(LexerCursor startCursor,
   // probably fix this when parameters stop being non-lexical.
   StringAttr mangledName = parentDecl.mangleParamName(name.strref());
   auto decl = ParamDeclAttr::get(mangledName, type);
-  auto declOp = builder.create<AliasDeclOp>(loc, decl, value);
+  auto declOp = builder.create<AliasDeclOp>(loc, decl);
 
   // Skip the body of this definition: go to a token the starts a line at the
   // same indent level (or less) as the current definition.
