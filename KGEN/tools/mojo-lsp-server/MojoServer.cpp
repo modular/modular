@@ -1441,13 +1441,13 @@ getSemanticTokenKind(MojoASTDeclRef symDecl,
   switch (*declKind) {
   case DeclViewKind::DK_AliasDeclView: {
     auto aliasOp = cast<KGEN::LIT::AliasDeclOp>(symDecl->getIfOperation());
-    Attribute aliasValue = aliasOp.getValue();
-
-    // Try to decipher a token kind from the alias value.
-    if (isa<ModuleAttr>(aliasValue))
-      return SemanticTokenKind::kModule;
-    if (isa<KGEN::TypeConstantAttr>(aliasValue))
-      return SemanticTokenKind::kType;
+    if (Attribute aliasValue = aliasOp.getValueAttr()) {
+      // Try to decipher a token kind from the alias value.
+      if (isa<ModuleAttr>(aliasValue))
+        return SemanticTokenKind::kModule;
+      if (isa<KGEN::TypeConstantAttr>(aliasValue))
+        return SemanticTokenKind::kType;
+    }
     return SemanticTokenKind::kVariable;
   }
   case DeclViewKind::DK_ArgumentDeclView:

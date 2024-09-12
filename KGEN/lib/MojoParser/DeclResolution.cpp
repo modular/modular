@@ -1458,30 +1458,52 @@ LogicalResult DeclResolver::resolveSignature(AliasDeclOp aliasDeclOp,
     if (parseType(p, type, *decl.getParentDecl(), decl.getIndentation()))
       return failure();
   }
-  if (p.parseToken(Token::equal, "expected '=' in alias declaration"))
-    return failure();
-
-  // Otherwise this is a normal `alias` declaration with an initializer.
-  ExprNode *initExpr = nullptr;
-  if (p.parseExpression(initExpr, decl.getIndentation()))
-    return failure();
 
   ASTDecl &parentDecl = *decl.getParentDecl();
-  ExprEmitter emitter(shared, parentDecl, EC_AliasValue);
 
-  // Emit the value and convert to the expected type if we know it.
-  auto rhsValue = emitter.emitExprPValue(initExpr, EC_AliasValue, type);
-  if (!rhsValue)
-    return failure();
-
-  // If we had no declared type (`alias x = 42`), infer the type from the
-  // initializer.
-  if (!type)
-    type = rhsValue.getType();
-
-  // Remember the value, and update the type from UnresolvedType.
   NamedAttrList attrs = aliasDeclOp->getAttrDictionary();
-  attrs.set(aliasDeclOp.getValueAttrName(), rhsValue.get());
+  if (p.consumeIf(Token::equal)) {
+    // Then this is a normal `alias` declaration with an initializer.
+    ExprNode *initExpr = nullptr;
+    if (p.parseExpression(initExpr, decl.getIndentation()))
+      return failure();
+
+    if (isa<LIT::TraitDeclOp>(parentDecl)) {
+      p.emitError(identifierLoc) << "associated alias declarations in a trait "
+                                    "shouldn't have an initializer";
+      // Don't return; continue parsing as if it has no name, so that references
+      // to the name will resolve.
+    } else {
+      ExprEmitter emitter(shared, parentDecl, EC_AliasValue);
+
+      // Emit the value and convert to the expected type if we know it.
+      auto rhsValue = emitter.emitExprPValue(initExpr, EC_AliasValue, type);
+      if (!rhsValue)
+        return failure();
+
+      // If we had no declared type (`alias x = 42`), infer the type from the
+      // initializer.
+      if (!type)
+        type = rhsValue.getType();
+
+      // Remember the value
+      attrs.set(aliasDeclOp.getValueAttrName(), rhsValue.get());
+    }
+  } else {
+    if (!isa<LIT::TraitDeclOp>(parentDecl)) {
+      // Disallow this, because it would create diamond inheritance problems.
+      p.emitError(identifierLoc)
+          << "only traits may contain an alias without an initializer";
+      return failure();
+    }
+
+    if (!type) {
+      p.emitError(identifierLoc)
+          << "alias without initial value must have a type";
+      return failure();
+    }
+  }
+  // Update the type from UnresolvedType
   attrs.set(aliasDeclOp.getParamDeclAttrName(),
             ParamDeclAttr::get(aliasDeclOp.getName(), type));
   aliasDeclOp->setAttrs(attrs.getDictionary(decl.getContext()));

@@ -586,7 +586,8 @@ AliasDeclView::AliasDeclView(MojoASTDeclRef declRef)
   auto aliasOp = cast<LIT::AliasDeclOp>(declRef->getIfOperation());
 
   llvm::raw_string_ostream valueOS(value);
-  PValue(aliasOp.getValue()).printForDiag(valueOS);
+  if (auto maybeValue = aliasOp.getValue())
+    PValue(maybeValue.value()).printForDiag(valueOS);
 
   if (auto docStr = declRef->getParsedDocString()) {
     summary = docStr->getSummary();

@@ -480,7 +480,7 @@ static ParseResult parseVTableEntry(AsmParser &p, StringAttr &name,
 static void printVTableEntry(AsmPrinter &p, StringAttr name, TypedAttr method) {
   p.printString(name.getValue());
   p << " : ";
-  printSignature(p, cast<SignatureType>(method.getType()));
+  printKGENType(p, method.getType());
   p << " = ";
   printParamValue(p, method);
 }
@@ -1004,8 +1004,6 @@ verifyGetTypeMethod(ArrayRef<TypedAttr> operands, Type type,
     return emitError() << "'get_type_method' requires 2 operands";
   if (!isa<StringType>(operands[1].getType()))
     return emitError() << "'get_type_method' second operand should be a string";
-  if (!isa<SignatureType>(type))
-    return emitError() << "'get_type_method' result should be a type signature";
   return success();
 }
 
@@ -2349,13 +2347,12 @@ static TypedAttr simplifyGetTypeMethod(ArrayRef<TypedAttr> operands,
     return {};
   VTableAttr vtable = typeConstant.getVTable();
   StringAttr targetName = cast<StringAttr>(operands[1]);
-  SignatureType targetSignature = cast<SignatureType>(resultType);
 
   // Scan the vtable for a name + signature match, then the method is the
   // payload.
   for (VTableEntryAttr entry : vtable.getEntries()) {
     if (entry.getName() == targetName.getValue() &&
-        entry.getMethod().getType() == targetSignature) {
+        entry.getMethod().getType() == resultType) {
       return entry.getMethod();
     }
   }

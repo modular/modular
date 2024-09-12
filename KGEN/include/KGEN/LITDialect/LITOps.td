@@ -745,21 +745,23 @@ def LIT_TryRaiseOp : LITOp<"try.raise", [Terminator,
 def LIT_AliasDeclOp : LITOp<"alias.decl", [
     ASTDeclInterface, DeclareOpInterfaceMethods<ParamOpInterface>
   ]>, OneParamDecl {
-  let summary = "`alias x: T = value` declaration";
+  let summary = "`alias x: T = value` or `alias x: T` declaration";
   let description = [{
-    This op represents an alias decl bound with the given initializer.
+    This op represents an alias decl bound with the given initializer (unless
+    it's in a trait, whose aliases don't need initializers).
 
-    Example:
+    Examples:
 
     ```mlir
     lit.alias.decl A = <5>
     lit.alias.decl A_plus_one = <add(A, 1)>
+    lit.alias.decl A
     ```
   }];
 
   let arguments = (ins
     KGEN_ParamDeclAttr:$paramDecl,
-    TypedAttrInterface:$value,
+    OptionalAttr<TypedAttrInterface>:$value,
     OptionalAttr<LIT_DocStringAttr>:$docString,
     OptionalAttr<StrAttr>:$deprecationWarning
   );
@@ -774,10 +776,11 @@ def LIT_AliasDeclOp : LITOp<"alias.decl", [
   }];
 
   let builders = [
-    OpBuilder<(ins "ParamDeclAttr":$decl, "TypedAttr":$value), [{
+    OpBuilder<(ins "ParamDeclAttr":$decl,
+              CArg<"TypedAttr", "{}">:$value), [{
       build($_builder, $_state, decl, value, /*deprecationWarning=*/{},
             /*docString=*/{});
-    }]>
+    }]>,
   ];
 
   let hasVerifier = 1;

@@ -261,13 +261,13 @@ resolveAliasDeclareValue(AliasDeclOp param,
   // If the param is declared in a function, then just directly use it.
   Operation *parent = param->getParentOp();
   while (true) {
-    // If this reference is within a function then keep it symbolic.
-    if (parent && isa<LIT::FuncOp>(parent))
+    // If this reference is within a function or trait then keep it symbolic.
+    if (parent && isa<LIT::FuncOp, TraitDeclOp>(parent))
       return ParamDeclRefAttr::get(param.getName(), param.getType());
 
     // If this is at file scope, inline it.
     if (!parent || isa<FileModuleOp>(parent))
-      return param.getValue();
+      return param.getValueAttr();
 
     // If this is in a struct, then the value may refer to parameters declared
     // on the struct, whose values come through 'bindings'.  Remap.
@@ -277,8 +277,10 @@ resolveAliasDeclareValue(AliasDeclOp param,
       // the a/b values into the body of `someAlias`.  If we have no bindings,
       // then we know we're in a context where the body of the alias is still
       // valid.
-      if (!paramValues)
-        return param.getValue();
+      if (!paramValues) {
+        assert(param.getValueAttr() && "alias should have value");
+        return param.getValueAttr();
+      }
 
       // Disallow accessing alias members of an unbound type.
       // TODO: This should return a parametric alias instead.
@@ -295,7 +297,8 @@ resolveAliasDeclareValue(AliasDeclOp param,
 
       ParserParamEvaluator evaluator(*shared.declResolver, paramDecls,
                                      *paramValues);
-      return PValue(evaluator.getReboundAttribute(param.getValue()));
+      assert(param.getValueAttr() && "Struct's alias should have value");
+      return PValue(evaluator.getReboundAttribute(param.getValueAttr()));
     }
 
     // Ignore if and other control flow things.
@@ -1306,10 +1309,29 @@ AnyValue AttributeRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   ASTDecl &memberDecl = *memberDecls[0];
 
   // Parameters form a meta-value.
-  if (auto param = dyn_cast<AliasDeclOp>(memberDecl)) {
-    PValue result = resolveAliasDeclareValue(
-        param, baseRVType.getParamBindings(), getLoc(), shared);
-    return emitter.emitResult(result.get(), this, dest);
+  if (auto aliasDeclOpParam = dyn_cast<AliasDeclOp>(memberDecl)) {
+    if (isa<StructDeclOp>(*typeDecl)) {
+      assert(aliasDeclOpParam.getValueAttr() &&
+             "struct's alias should have value");
+      PValue result = resolveAliasDeclareValue(
+          aliasDeclOpParam, baseRVType.getParamBindings(), getLoc(), shared);
+      return emitter.emitResult(result.get(), this, dest);
+    }
+    assert(isa<TraitDeclOp>(*typeDecl) &&
+           "Alias's parent should be struct or trait");
+    PValue basePValue = baseVal.getIfPValue();
+    if (!basePValue) {
+      emitter.emitError(getLoc(), "can't access '")
+          << spelling << "' in non-parameter " << baseRVType << getRange();
+      return {};
+    }
+    auto vtableEntryName =
+        StringAttr::get(spelling, StringType::get(emitter.getContext()));
+    auto vtableEntryResult = ParamOperatorAttr::get(
+        POC::GetTypeMethod, {basePValue, vtableEntryName},
+        aliasDeclOpParam.getType());
+
+    return emitter.emitResult(vtableEntryResult, this, dest);
   }
 
   // If the field is a variable, emit a reference to it.
