@@ -89,7 +89,7 @@ def run_llama3(weight_path, prompts=PROMPTS, num_steps=NUM_STEPS):
             )
 
             # Update the context for the next input.
-            context.next_token = next_token.reshape(1, -1)
+            context.next_tokens = next_token.reshape(1, -1)
         results.append({"prompt": prompt, "values": inference_results})
     return results
 
