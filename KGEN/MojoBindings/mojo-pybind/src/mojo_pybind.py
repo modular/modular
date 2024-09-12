@@ -21,27 +21,37 @@ def generate_mojo_extension_module(
     # Run kgen to build a .a file
     # ----------------------------------
 
-    kgen = os.path.join(
-        os.environ["BUILD_WORKSPACE_DIRECTORY"],
-        ".derived/build/bin/kgen",
-    )
+    if workspace := os.environ.get("BUILD_WORKSPACE_DIRECTORY"):
+        # Environment during `bazel run` of mojo-pybind
+        kgen = os.path.join(workspace, ".derived/build/bin/kgen")
 
-    assert os.path.isfile(kgen)
+        assert os.path.isfile(kgen)
 
-    # NOTE:
-    #   Set MODULAR_DERIVED_PATH so that `kgen` is able to locate the
-    #   built Mojo stdlib artifact.
-    # FIXME: Better way to indicate this dependency to Bazel?
-    os.environ["MODULAR_DERIVED_PATH"] = os.path.join(
-        os.environ["BUILD_WORKSPACE_DIRECTORY"], ".derived"
-    )
+        # NOTE:
+        #   Set MODULAR_DERIVED_PATH so that `kgen` is able to locate the
+        #   built Mojo stdlib artifact.
+        # FIXME: Better way to indicate this dependency to Bazel?
+        os.environ["MODULAR_DERIVED_PATH"] = os.path.join(workspace, ".derived")
+    else:
+        # Environment during `bazel test` of the integration tests
+        # that happen to use mojo-pybind.
+        # kgen = os.environ["MODULAR_MOJO_DRIVER_PATH"]
+        # Rely on `kgen` being on PATH.
+        kgen = "kgen"
+
+    archive_path = filestem + ".a"
+
+    assert os.path.isfile(mojo_path)
 
     kgen_cmd = [
         kgen,
         mojo_path,
         "-emit",  # Emits object file archive
+        # TODO: Define this, might be useful for something else down the line?
+        # "-D",
+        # "MOJO_PYTHON_EXTENSION_MODULE",
         "-o",
-        filestem + ".a",
+        archive_path,
     ]
 
     if verbose:
@@ -52,15 +62,19 @@ def generate_mojo_extension_module(
     # TODO: Print a better error if this fails.
     result.check_returncode()
 
+    assert os.path.isfile(archive_path)
+
     # ----------------------------------
     # Run clang to link a dynamic library
     # ----------------------------------
 
     # FIXME: Don't hard-code `build-debug` path component here.
-    mojo_libs = os.path.join(
-        os.environ["BUILD_WORKSPACE_DIRECTORY"],
-        ".derived/build-debug/bin/libKGENCompilerRT-static.a",
-    )
+    if workspace := os.environ.get("BUILD_WORKSPACE_DIRECTORY"):
+        mojo_libs = os.path.join(
+            workspace, ".derived/build-debug/bin/libKGENCompilerRT-static.a"
+        )
+    elif static := os.environ.get("MODULAR_MOJO_MAX_COMPILERRT_STATIC_PATH"):
+        mojo_libs = static
 
     assert os.path.isfile(mojo_libs)
 
@@ -79,7 +93,7 @@ def generate_mojo_extension_module(
         "clang",
         "-shared",
         "-Wl,-force_load",
-        filestem + ".a",
+        archive_path,
         mojo_libs,
         "-lc++",
         "-o",

@@ -10,5 +10,17 @@ is NOT intended to be used widely.
 
 ## Tests
 
-See [./tests/README.md](./tests/README.md) for information about running the
-`mojo-pybind` tests.
+This functionality is tested indirectly as part of
+`//open-source/mojo/integration-test/python-extension-modules` test suite.
+
+## Quick command reference
+
+### Usage
+
+#### Run `mojo-pybind` using Bazel
+
+```shell
+bazel run //KGEN/MojoBindings/mojo-pybind -- --help
+```
+
+This should print out the `mojo-pybind` help content.
