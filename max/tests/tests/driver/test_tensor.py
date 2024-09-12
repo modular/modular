@@ -4,13 +4,14 @@
 #
 # ===----------------------------------------------------------------------=== #
 """Test max.driver Tensors."""
-from itertools import product
 import math
+from itertools import product
 
 import numpy as np
 import pytest
-from hypothesis import given, strategies as st
 import torch
+from hypothesis import given
+from hypothesis import strategies as st
 from max.driver import CPU, Tensor
 from max.dtype import DType
 
@@ -357,3 +358,11 @@ def test_device():
     cpu = CPU()
     tensor = Tensor((3, 3), dtype=DType.int32, device=cpu)
     assert cpu == tensor.device
+
+
+def test_to_numpy():
+    # We should be able to convert a tensor to a numpy array.
+    base_arr = np.arange(1, 6, dtype=np.int32)
+    tensor = Tensor.from_numpy(base_arr)
+    new_arr = tensor.to_numpy()
+    assert np.array_equal(base_arr, new_arr)
