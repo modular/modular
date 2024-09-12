@@ -1026,7 +1026,7 @@ fn split_k_reduce[
     work_space: NDBuffer[work_space_type, 3, work_space_shape],
     ctx: DeviceContext,
 ):
-    alias simd_width = simdwidthof[c_type]()
+    alias simd_width = simdwidthof[c_type, target = _get_nvptx_target()]()
     var num_partitions = work_space.dim[0]()
     var M = c.dim[0]()
     var N = c.dim[1]()
