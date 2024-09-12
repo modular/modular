@@ -3,7 +3,7 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-from sys.param_env import is_defined
+from sys.param_env import env_get_int, is_defined
 from gpu.host._compile import _get_nvptx_target
 
 
@@ -177,12 +177,11 @@ struct DeviceContextVariant:
     fn v2(self) -> ref [__lifetime_of(self.impl)] Self.V2:
         return self.impl[Self.V2]
 
-    fn __init__(
-        inout self, kind: StringLiteral = "cuda", gpu_id: Int = 0
-    ) raises:
+    fn __init__(inout self, gpu_id: Int = 0) raises:
         @parameter
         if _device_ctx_v2():
-            self.impl = Self.V2(kind, gpu_id)
+            # FIXME RUNP-375 expose multiple device ID's
+            self.impl = Self.V2("gpu")
         else:
             self.impl = Self.V1(gpu_id)
 
