@@ -1,0 +1,31 @@
+load("//bazel:api.bzl", "lit_tests")
+
+lit_tests(
+    name = "lit",  # NOTE: Name must stay as this to load lit.local.cfg
+    size = "large",
+    srcs = glob([
+        "python-extension-modules/**/*.py",
+    ]),
+    data = glob(["**/*.mojo"]) + [
+        # Provides MODULAR_MOJO_MAX_COMPILERRT_STATIC_PATH to mojo-pybind
+        "//KGEN:CompilerRT.distributable",
+    ],
+    env = {},
+    mojo_deps = [
+        "//open-source/mojo/stdlib/stdlib",
+    ],
+    tags = [],
+    target_compatible_with = select({
+        "//:asan": ["@platforms//:incompatible"],
+        "//:tsan": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    tools = [
+        "//KGEN/tools/kgen",
+    ],
+    deps = [
+        # Adds path/to/mojo-pybind/.. to the PYTHONPATH so we can invoke it as:
+        #   RUN: python3 -m mojo-pybind.main
+        "//KGEN/MojoBindings/mojo-pybind",
+    ],
+)
