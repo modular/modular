@@ -36,6 +36,30 @@ from gpu.host._compile import _get_nvptx_target
 from .utils import GemmShape, apply_epilogue, elementwise_epilogue_type
 
 
+@value
+struct GEMVAlgorithm:
+    var _value: Int
+
+    alias GEMV_KERNEL = Self(0)
+    alias GEMV_KERNEL_VECTOR = Self(1)
+    alias GEMV_SPLIT_K = Self(2)
+    alias GEVM_KERNEL_VECTOR = Self(3)
+    alias GEVM_KERNEL = Self(4)
+    alias MATMUL_NAIVE = Self(5)
+
+    fn __eq__(self, other: Self) -> Bool:
+        return self._value == other._value
+
+    fn __ne__(self, other: Self) -> Bool:
+        return not (self == other)
+
+    fn __is__(self, other: Self) -> Bool:
+        return self == other
+
+    fn __isnot__(self, other: Self) -> Bool:
+        return self != other
+
+
 @always_inline
 fn reverse_idx[transpose: Bool](x: Int, y: Int) -> StaticIntTuple[2]:
     @parameter
@@ -447,10 +471,12 @@ fn gevm_tc_kernel_vector_8x[
 
 
 @always_inline
-fn gemv_gpu[
+fn gemv_gpu_dispatch[
     transpose_b: Bool = False,
+    reduction_method: ReductionMethod = ReductionMethod.WARP,
     elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
 ](
+    kernel_func: GEMVAlgorithm,
     c: NDBuffer[_, 2, *_, **_],
     a: NDBuffer[_, 2, *_, **_],
     b: NDBuffer[_, 2, *_, **_],
@@ -463,7 +489,38 @@ fn gemv_gpu[
     alias WARPS_PER_BLOCK = 32
     alias simd_width = simdwidthof[a.type, target = _get_nvptx_target()]()
 
-    if n == 1:
+    if kernel_func is GEMVAlgorithm.GEMV_SPLIT_K:
+        alias block_size = 128
+        alias tile_m = 1
+        alias tile_n = 2
+        var gpu_func = ctx.compile_function[
+            gemv_split_k[
+                c.type,
+                c.shape,
+                a.type,
+                a.shape,
+                b.type,
+                b.shape,
+                simd_width=simd_width,
+                tile_m=tile_m,
+                tile_n=tile_n,
+                block_size=block_size,
+                elementwise_lambda_fn=elementwise_lambda_fn,
+            ]
+        ]()
+        ctx.enqueue_function(
+            gpu_func,
+            c,
+            a,
+            b,
+            m,
+            n,
+            k,
+            grid_dim=(ceildiv(m, tile_m), ceildiv(n, tile_n)),
+            block_dim=block_size,
+        )
+
+    elif kernel_func is GEMVAlgorithm.GEMV_KERNEL_VECTOR:
         # TODO: Should use Device.query
         alias MAX_ACCESS_POLICY_WINDOW_SIZE = 134213632
         var launch_attributes = List[LaunchAttribute](
@@ -475,235 +532,135 @@ fn gemv_gpu[
                 miss_prop=AccessProperty.STREAMING,
             ),
         )
+        if transpose_b == False:
+            var block_dim = min(
+                align_up(k // simd_width, WARP_SIZE),
+                WARP_SIZE * WARPS_PER_BLOCK,
+            )
 
-        @parameter
-        if a.type is DType.bfloat16:
-            if k % simd_width == 0:
-                var block_dim = min(
-                    align_up(k // simd_width, WARP_SIZE),
-                    WARP_SIZE * WARPS_PER_BLOCK,
-                )
-
-                var gpu_func = ctx.compile_function[
-                    gemv_kernel_vector[
-                        c.type,
-                        c.shape,
-                        a.type,
-                        a.shape,
-                        b.type,
-                        b.shape,
-                        simd_width=simd_width,
-                        reduction_method = ReductionMethod.WARP,
-                        elementwise_lambda_fn=elementwise_lambda_fn,
-                    ]
-                ]()
-                ctx.enqueue_function(
-                    gpu_func,
-                    c,
-                    a,
-                    b,
-                    UInt(m),
-                    UInt(n),
-                    UInt(k),
-                    grid_dim=ceildiv(m, block_dim // WARP_SIZE),
-                    block_dim=block_dim,
-                    attributes=launch_attributes,
-                )
-            else:
-                var gpu_func = ctx.compile_function[
-                    gemv_kernel[
-                        c.type,
-                        a.type,
-                        b.type,
-                        reduction_method = ReductionMethod.TENSOR_CORE,
-                        elementwise_lambda_fn=elementwise_lambda_fn,
-                    ]
-                ]()
-                ctx.enqueue_function(
-                    gpu_func,
-                    c.data,
-                    a.data,
-                    b.data,
-                    UInt(m),
-                    UInt(n),
-                    UInt(k),
-                    grid_dim=ceildiv(m, WARPS_PER_BLOCK),
-                    block_dim=WARP_SIZE * WARPS_PER_BLOCK,
-                )
-        else:
             var gpu_func = ctx.compile_function[
-                gemv_kernel[
+                gemv_kernel_vector[
                     c.type,
+                    c.shape,
                     a.type,
+                    a.shape,
                     b.type,
+                    b.shape,
+                    simd_width=simd_width,
                     reduction_method = ReductionMethod.WARP,
                     elementwise_lambda_fn=elementwise_lambda_fn,
                 ]
             ]()
             ctx.enqueue_function(
                 gpu_func,
-                c.data,
-                a.data,
-                b.data,
-                m,
-                n,
-                k,
-                grid_dim=ceildiv(m, WARPS_PER_BLOCK),
-                block_dim=WARP_SIZE * WARPS_PER_BLOCK,
+                c,
+                a,
+                b,
+                UInt(m),
+                UInt(n),
+                UInt(k),
+                grid_dim=ceildiv(m, block_dim // WARP_SIZE),
+                block_dim=block_dim,
+                attributes=launch_attributes,
             )
-    elif m == 1 and transpose_b == True:
-
-        @parameter
-        if a.type is DType.bfloat16:
-            if k % simd_width == 0:
-                alias block_size = 128
-                alias tile_m = 1
-                alias tile_n = 2
-                var gpu_func = ctx.compile_function[
-                    gemv_split_k[
-                        c.type,
-                        c.shape,
-                        a.type,
-                        a.shape,
-                        b.type,
-                        b.shape,
-                        simd_width=simd_width,
-                        tile_m=tile_m,
-                        tile_n=tile_n,
-                        block_size=block_size,
-                        elementwise_lambda_fn=elementwise_lambda_fn,
-                    ]
-                ]()
-                ctx.enqueue_function(
-                    gpu_func,
-                    c,
-                    a,
-                    b,
-                    m,
-                    n,
-                    k,
-                    grid_dim=(ceildiv(m, tile_m), ceildiv(n, tile_n)),
-                    block_dim=block_size,
-                )
-            else:
-                var gpu_func = ctx.compile_function[
-                    gemv_kernel[
-                        c.type,
-                        b.type,
-                        a.type,
-                        reduction_method = ReductionMethod.TENSOR_CORE,
-                        transpose_b=transpose_b,
-                        elementwise_lambda_fn=elementwise_lambda_fn,
-                    ]
-                ]()
-                ctx.enqueue_function(
-                    gpu_func,
-                    c.data,
-                    b.data,
-                    a.data,
-                    UInt(n),
-                    UInt(m),
-                    UInt(k),
-                    grid_dim=ceildiv(n, WARPS_PER_BLOCK),
-                    block_dim=WARP_SIZE * WARPS_PER_BLOCK,
-                )
         else:
+            var block_dim = min(
+                align_up(k // simd_width, WARP_SIZE),
+                WARP_SIZE * WARPS_PER_BLOCK,
+            )
             var gpu_func = ctx.compile_function[
-                gemv_kernel[
+                gemv_kernel_vector[
                     c.type,
+                    c.shape,
                     b.type,
+                    b.shape,
                     a.type,
-                    reduction_method = ReductionMethod.WARP,
+                    a.shape,
+                    simd_width=simd_width,
+                    reduction_method=reduction_method,
                     transpose_b=transpose_b,
                     elementwise_lambda_fn=elementwise_lambda_fn,
                 ]
             ]()
             ctx.enqueue_function(
                 gpu_func,
-                c.data,
-                b.data,
-                a.data,
-                n,
-                m,
-                k,
-                grid_dim=ceildiv(n, WARPS_PER_BLOCK),
-                block_dim=WARP_SIZE * WARPS_PER_BLOCK,
+                c,
+                b,
+                a,
+                UInt(n),
+                UInt(m),
+                UInt(k),
+                grid_dim=ceildiv(n, block_dim // WARP_SIZE),
+                block_dim=block_dim,
             )
 
-    elif m == 1 and n % WARP_SIZE == 0 and k % WARP_SIZE == 0:
+    elif kernel_func is GEMVAlgorithm.GEMV_KERNEL and transpose_b == False:
+        var gpu_func = ctx.compile_function[
+            gemv_kernel[
+                c.type,
+                a.type,
+                b.type,
+                reduction_method = ReductionMethod.WARP,
+                elementwise_lambda_fn=elementwise_lambda_fn,
+            ]
+        ]()
+        ctx.enqueue_function(
+            gpu_func,
+            c.data,
+            a.data,
+            b.data,
+            m,
+            n,
+            k,
+            grid_dim=ceildiv(m, WARPS_PER_BLOCK),
+            block_dim=WARP_SIZE * WARPS_PER_BLOCK,
+        )
 
-        @parameter
-        if a.type is DType.bfloat16:
-            if (
-                k >= 4096
-                and n >= 4096
-                and k % simd_width == 0
-                and n % simd_width == 0
-            ):
-                var gpu_func = ctx.compile_function[
-                    gevm_tc_kernel_vector_8x[
-                        c.type,
-                        a.type,
-                        b.type,
-                        WARP_SIZE * WARPS_PER_BLOCK * simd_width,
-                        simd_width,
-                        elementwise_lambda_fn=elementwise_lambda_fn,
-                    ]
-                ]()
-                ctx.enqueue_function(
-                    gpu_func,
-                    c,
-                    a,
-                    b,
-                    m,
-                    n,
-                    k,
-                    grid_dim=ceildiv(n, WARP_SIZE * simd_width),
-                    block_dim=WARP_SIZE * WARPS_PER_BLOCK,
-                )
-            else:
-                var gpu_func = ctx.compile_function[
-                    gevm_kernel[
-                        c.type,
-                        a.type,
-                        b.type,
-                        tile_size = WARP_SIZE * WARPS_PER_BLOCK,
-                        elementwise_lambda_fn=elementwise_lambda_fn,
-                    ]
-                ]()
-                ctx.enqueue_function(
-                    gpu_func,
-                    c.data,
-                    a.data,
-                    b.data,
-                    m,
-                    n,
-                    k,
-                    grid_dim=ceildiv(n, WARPS_PER_BLOCK),
-                    block_dim=WARP_SIZE * WARPS_PER_BLOCK,
-                )
-        else:
-            var gpu_func = ctx.compile_function[
-                gevm_kernel[
-                    c.type,
-                    a.type,
-                    b.type,
-                    tile_size = WARP_SIZE * WARPS_PER_BLOCK,
-                    elementwise_lambda_fn=elementwise_lambda_fn,
-                ]
-            ]()
-            ctx.enqueue_function(
-                gpu_func,
-                c.data,
-                a.data,
-                b.data,
-                m,
-                n,
-                k,
-                grid_dim=ceildiv(n, WARPS_PER_BLOCK),
-                block_dim=WARP_SIZE * WARPS_PER_BLOCK,
-            )
-    else:
+    elif kernel_func is GEMVAlgorithm.GEMV_KERNEL and transpose_b == True:
+        var gpu_func = ctx.compile_function[
+            gemv_kernel[
+                c.type,
+                b.type,
+                a.type,
+                reduction_method = ReductionMethod.WARP,
+                transpose_b=transpose_b,
+                elementwise_lambda_fn=elementwise_lambda_fn,
+            ]
+        ]()
+        ctx.enqueue_function(
+            gpu_func,
+            c.data,
+            b.data,
+            a.data,
+            n,
+            m,
+            k,
+            grid_dim=ceildiv(n, WARPS_PER_BLOCK),
+            block_dim=WARP_SIZE * WARPS_PER_BLOCK,
+        )
+    elif kernel_func is GEMVAlgorithm.GEVM_KERNEL:
+        var gpu_func = ctx.compile_function[
+            gevm_kernel[
+                c.type,
+                a.type,
+                b.type,
+                tile_size = WARP_SIZE * WARPS_PER_BLOCK,
+                elementwise_lambda_fn=elementwise_lambda_fn,
+            ]
+        ]()
+        ctx.enqueue_function(
+            gpu_func,
+            c.data,
+            a.data,
+            b.data,
+            m,
+            n,
+            k,
+            grid_dim=ceildiv(n, WARPS_PER_BLOCK),
+            block_dim=WARP_SIZE * WARPS_PER_BLOCK,
+        )
+
+    elif kernel_func is GEMVAlgorithm.MATMUL_NAIVE:
         alias BLOCK_DIM = 16
         var gpu_func = ctx.compile_function[
             matmul_kernel_naive[
@@ -726,6 +683,101 @@ fn gemv_gpu[
             grid_dim=(ceildiv(m, BLOCK_DIM), ceildiv(n, BLOCK_DIM)),
             block_dim=(BLOCK_DIM, BLOCK_DIM),
         )
+    else:
+        print("Gemv Kernel selection mismatch")
+        return
+
+
+@always_inline
+fn gemv_gpu[
+    transpose_b: Bool = False,
+    elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
+](
+    c: NDBuffer[_, 2, *_, **_],
+    a: NDBuffer[_, 2, *_, **_],
+    b: NDBuffer[_, 2, *_, **_],
+    ctx: DeviceContext,
+) raises:
+    var shape = GemmShape.get[transpose_b=False](c, a, b)
+    var m = shape.M
+    var n = shape.N
+    var k = shape.K
+    alias simd_width = simdwidthof[a.type, target = _get_nvptx_target()]()
+
+    # Kernel selection
+    var kernel_func = GEMVAlgorithm.GEMV_KERNEL_VECTOR
+
+    if n == 1:
+
+        @parameter
+        if a.type == DType.bfloat16:
+            if k % simd_width == 0:
+                kernel_func = GEMVAlgorithm.GEMV_KERNEL_VECTOR
+            else:
+                kernel_func = GEMVAlgorithm.GEMV_KERNEL
+        else:
+            kernel_func = GEMVAlgorithm.GEMV_KERNEL
+
+    elif m == 1 and transpose_b == True:
+
+        @parameter
+        if a.type == DType.bfloat16:
+            if k % simd_width == 0:
+                kernel_func = GEMVAlgorithm.GEMV_SPLIT_K
+            else:
+                kernel_func = GEMVAlgorithm.GEMV_KERNEL
+        else:
+            kernel_func = GEMVAlgorithm.GEMV_KERNEL
+
+    elif m == 1 and n % WARP_SIZE == 0 and k % WARP_SIZE == 0:
+
+        @parameter
+        if a.type == DType.bfloat16:
+            if (
+                k >= 4096
+                and n >= 4096
+                and k % simd_width == 0
+                and n % simd_width == 0
+            ):
+                alias WARPS_PER_BLOCK = 32
+                var gpu_func = ctx.compile_function[
+                    gevm_tc_kernel_vector_8x[
+                        c.type,
+                        a.type,
+                        b.type,
+                        WARP_SIZE * WARPS_PER_BLOCK * simd_width,
+                        simd_width,
+                        elementwise_lambda_fn=elementwise_lambda_fn,
+                    ]
+                ]()
+                ctx.enqueue_function(
+                    gpu_func,
+                    c,
+                    a,
+                    b,
+                    m,
+                    n,
+                    k,
+                    grid_dim=ceildiv(n, WARP_SIZE * simd_width),
+                    block_dim=WARP_SIZE * WARPS_PER_BLOCK,
+                )
+
+            else:
+                kernel_func = GEMVAlgorithm.GEVM_KERNEL
+        else:
+            kernel_func = GEMVAlgorithm.GEVM_KERNEL
+
+    else:
+        kernel_func = GEMVAlgorithm.MATMUL_NAIVE
+
+    # default reduction method
+    alias reduction_method = ReductionMethod.WARP
+
+    gemv_gpu_dispatch[
+        transpose_b=transpose_b,
+        reduction_method=reduction_method,
+        elementwise_lambda_fn=elementwise_lambda_fn,
+    ](kernel_func, c, a, b, ctx)
 
 
 # Parallelized version of Gemv
