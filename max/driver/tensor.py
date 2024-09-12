@@ -144,6 +144,10 @@ class Tensor:
             return tensor.copy_to(device)
         return tensor
 
+    def to_numpy(self) -> np.ndarray:
+        """Converts the tensor to a numpy array."""
+        return np.from_dlpack(self)
+
     def __dlpack_device__(self) -> Tuple[int, int]:
         """Implements part of the dlpack contract."""
         return self._impl.__dlpack_device__()
