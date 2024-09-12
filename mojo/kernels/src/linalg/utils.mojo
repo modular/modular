@@ -94,9 +94,9 @@ struct GemmShape:
     fn get[
         transpose_b: Bool,
     ](
-        c: NDBuffer[_, 2, *_, **_],
-        a: NDBuffer[_, 2, *_, **_],
-        b: NDBuffer[_, 2, *_, **_],
+        c: NDBuffer[rank=2, *_, **_],
+        a: NDBuffer[rank=2, *_, **_],
+        b: NDBuffer[rank=2, *_, **_],
     ) -> GemmShape:
         """Constructor of a gemm shape record from input buffers.
 

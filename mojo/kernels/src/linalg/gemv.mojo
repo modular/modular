@@ -477,9 +477,9 @@ fn gemv_gpu_dispatch[
     elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
 ](
     kernel_func: GEMVAlgorithm,
-    c: NDBuffer[_, 2, *_, **_],
-    a: NDBuffer[_, 2, *_, **_],
-    b: NDBuffer[_, 2, *_, **_],
+    c: NDBuffer[rank=2, *_, **_],
+    a: NDBuffer[rank=2, *_, **_],
+    b: NDBuffer[rank=2, *_, **_],
     ctx: DeviceContext,
 ) raises:
     var shape = GemmShape.get[transpose_b=False](c, a, b)
@@ -693,9 +693,9 @@ fn gemv_gpu[
     transpose_b: Bool = False,
     elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
 ](
-    c: NDBuffer[_, 2, *_, **_],
-    a: NDBuffer[_, 2, *_, **_],
-    b: NDBuffer[_, 2, *_, **_],
+    c: NDBuffer[rank=2, *_, **_],
+    a: NDBuffer[rank=2, *_, **_],
+    b: NDBuffer[rank=2, *_, **_],
     ctx: DeviceContext,
 ) raises:
     var shape = GemmShape.get[transpose_b=False](c, a, b)
