@@ -966,9 +966,13 @@ LifetimeSetAttr LifetimeSetAttr::get(ArrayRef<TypedAttr> operands,
       llvm::append_range(newOperands, set.getOperands());
       continue;
     }
-    // This doesn't carry any information. Just drop it.
-    if (::isa<AnyLifetimeAttr>(operand))
+    // If we have the global mutable lifetime, treat it conservatively by
+    // returning the global mutable lifetime.  It isn't wise to try to derive
+    // information from something where lifetimes have been casted away.
+    if (::isa<AnyLifetimeAttr>(operand)) {
+      newOperands.push_back(operand);
       continue;
+    }
     // Break up unions into their constituents without mutcasts.
     if (auto unionAttr = ::dyn_cast<LifetimeUnionAttr>(operand)) {
       for (TypedAttr lifetime : unionAttr.getOperands())
