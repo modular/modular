@@ -692,9 +692,9 @@ fn matmul_kernel_tc[
     ].stack_allocation()
 
     c_reg = (
-        LayoutTensor[C.dtype, Layout.row_major(WM // MMA_M, (WN * 4) // MMA_N)]
-        .stack_allocation()
-        .vectorize[1, 4]()
+        LayoutTensor[
+            C.dtype, Layout.row_major(WM // MMA_M, (WN * 4) // MMA_N)
+        ].stack_allocation()
     ).fill(0)
 
     for k_i in range(K // BK):
@@ -721,28 +721,26 @@ fn matmul_kernel_tc[
 
                 @parameter
                 for mma_n in range(WN // MMA_N):
-                    c_reg_m_n = rebind[mma_op.c_reg_type](c_reg[mma_m, mma_n])
+                    c_reg_m_n = c_reg.tile[1, 4](mma_m, mma_n)
                     A_mma_tile = A_warp_tile.tile[MMA_M, MMA_K](mma_m, mma_k)
                     B_mma_tile = B_warp_tile.tile[MMA_K, MMA_N](mma_k, mma_n)
                     a_reg = mma_op.load_a(A_mma_tile)
                     b_reg = mma_op.load_b(B_mma_tile)
-                    c_reg[mma_m, mma_n] = rebind[c_reg.element_type](
-                        mma_op.mma(
-                            a_reg,
-                            b_reg,
-                            c_reg_m_n,
-                        )
+                    var d_reg_m_n = mma_op.mma_op(
+                        a_reg,
+                        b_reg,
+                        c_reg_m_n,
                     )
+                    c_reg_m_n.copy_from(d_reg_m_n)
 
     @parameter
     for mma_m in range(WM // MMA_M):
 
         @parameter
         for mma_n in range(WN // MMA_N):
-            C_mma_tile = C_warp_tile.tile[MMA_M, MMA_N](mma_m, mma_n)
-            mma_op.store_d(
-                C_mma_tile, rebind[mma_op.c_reg_type](c_reg[mma_m, mma_n])
-            )
+            var C_mma_tile = C_warp_tile.tile[MMA_M, MMA_N](mma_m, mma_n)
+            var c_reg_m_n = c_reg.tile[1, 4](mma_m, mma_n)
+            mma_op.store_d(C_mma_tile, c_reg_m_n)
 
 
 fn run_gemm_kernel_tc[

@@ -11,7 +11,12 @@ from builtin.io import _printf
 from layout import LayoutTensor, Layout
 from layout.layout_tensor import copy_dram_to_sram
 from layout.tensor_core import TensorCore
-from layout._utils import ManagedLayoutTensor, gpu_free, gpu_managed_alloc
+from layout._utils import (
+    ManagedLayoutTensor,
+    gpu_free,
+    gpu_managed_alloc,
+    load_to_simd,
+)
 from layout.fillers import arange
 from gpu.host import DeviceContext
 from gpu.id import ThreadIdx
@@ -20,7 +25,7 @@ from gpu.memory import _GPUAddressSpace as AddressSpace
 from utils.index import StaticIntTuple, Index
 
 
-fn mma_load_and_print_operands_kernel[
+fn mma_load_and_multiply[
     dst_dtype: DType,
     dtype: DType,
     lhs_layout: Layout,
@@ -29,12 +34,21 @@ fn mma_load_and_print_operands_kernel[
     transpose_b: Bool = False,
 ](lhs: LayoutTensor[dtype, lhs_layout], rhs: LayoutTensor[dtype, rhs_layout]):
     var mma = TensorCore[dst_dtype, dtype, inst_shape, transpose_b]()
-    var a_frags = mma.load_a(lhs).cast[DType.float64]()
-    var b_frags = mma.load_b(rhs).cast[DType.float64]()
+    var a_reg_tile = mma.load_a(lhs)
+    var a_frags = load_to_simd(a_reg_tile).cast[DType.float64]()
+    var b_reg_tile = mma.load_b(rhs)
+    var b_frags = load_to_simd(b_reg_tile).cast[DType.float64]()
+
+    var c_reg_tile = mma.c_reg_tile_type.stack_allocation().fill(1.0)
+    var d_reg_tile = mma.mma_op(a_reg_tile, b_reg_tile, c_reg_tile)
+    var d_frags = load_to_simd(d_reg_tile).cast[DType.float64]()
 
     @parameter
     if a_frags.size == 4 and b_frags.size == 2:
-        _printf["thread %u a_vals=[%g %g %g %g], b_vals=[%g %g]\n"](
+        _printf[
+            "thread %u a_vals=[%g %g %g %g], b_vals=[%g %g], d_vals=[%g %g %g"
+            " %g]\n"
+        ](
             ThreadIdx.x(),
             a_frags[0],
             a_frags[1],
@@ -42,13 +56,23 @@ fn mma_load_and_print_operands_kernel[
             a_frags[3],
             b_frags[0],
             b_frags[1],
+            d_frags[0],
+            d_frags[1],
+            d_frags[2],
+            d_frags[3],
         )
     elif a_frags.size == 2 and b_frags.size == 1:
-        _printf["thread %u a_vals=[%g %g], b_vals=[%g]\n"](
+        _printf[
+            "thread %u a_vals=[%g %g], b_vals=[%g], d_vals=[%g %g %g %g]\n"
+        ](
             ThreadIdx.x(),
             a_frags[0],
             a_frags[1],
             b_frags[0],
+            d_frags[0],
+            d_frags[1],
+            d_frags[2],
+            d_frags[3],
         )
 
 
@@ -59,11 +83,15 @@ fn mma_write_operand_kernel[
     inst_shape: StaticIntTuple[3],
 ](out: LayoutTensor[dst_dtype, layout]):
     var mma = TensorCore[dst_dtype, dtype, inst_shape]()
-    var thread_val = mma.c_reg_type(ThreadIdx.x())
-    mma.store_d(out, thread_val)
+    var thread_reg_tile = mma.c_reg_tile_type.stack_allocation()
+    var thread_reg_tile_v = thread_reg_tile.vectorize[1, mma.c_reg_type.size]()
+    thread_reg_tile_v[0, 0] = rebind[__type_of(thread_reg_tile_v[0, 0])](
+        mma.c_reg_type(ThreadIdx.x())
+    )
+    mma.store_d(out, thread_reg_tile)
 
 
-def test_load_operands[
+def test_load_and_mma_and_multiply_operands[
     dst_dtype: DType,
     dtype: DType,
     shape: StaticIntTuple[3],
@@ -81,7 +109,7 @@ def test_load_operands[
         dtype, Layout.row_major(K, N), gpu_managed_alloc, gpu_free
     ]()
     arange(rhs.tensor)
-    alias mma_load_and_print_kernel_fn = mma_load_and_print_operands_kernel[
+    alias mma_load_and_print_kernel_fn = mma_load_and_multiply[
         dst_dtype, dtype, lhs.layout, rhs.layout, shape, transpose_b
     ]
     var func = ctx.compile_function[mma_load_and_print_kernel_fn]()
@@ -112,120 +140,124 @@ def test_write_res_operand[
     print(dst.tensor)
 
 
-# CHECK-LABEL: test_load_f32_f32_16x8x8
-# CHECK-DAG: thread 0 a_vals=[0 64 4 68], b_vals=[0 32]
-# CHECK-DAG: thread 1 a_vals=[1 65 5 69], b_vals=[8 40]
-# CHECK-DAG: thread 2 a_vals=[2 66 6 70], b_vals=[16 48]
-# CHECK-DAG: thread 3 a_vals=[3 67 7 71], b_vals=[24 56]
-# CHECK-DAG: thread 4 a_vals=[8 72 12 76], b_vals=[1 33]
-# CHECK-DAG: thread 5 a_vals=[9 73 13 77], b_vals=[9 41]
-# CHECK-DAG: thread 6 a_vals=[10 74 14 78], b_vals=[17 49]
-# CHECK-DAG: thread 7 a_vals=[11 75 15 79], b_vals=[25 57]
-# CHECK-DAG: thread 8 a_vals=[16 80 20 84], b_vals=[2 34]
-# CHECK-DAG: thread 9 a_vals=[17 81 21 85], b_vals=[10 42]
-# CHECK-DAG: thread 10 a_vals=[18 82 22 86], b_vals=[18 50]
-# CHECK-DAG: thread 11 a_vals=[19 83 23 87], b_vals=[26 58]
-# CHECK-DAG: thread 12 a_vals=[24 88 28 92], b_vals=[3 35]
-# CHECK-DAG: thread 13 a_vals=[25 89 29 93], b_vals=[11 43]
-# CHECK-DAG: thread 14 a_vals=[26 90 30 94], b_vals=[19 51]
-# CHECK-DAG: thread 15 a_vals=[27 91 31 95], b_vals=[27 59]
-# CHECK-DAG: thread 16 a_vals=[32 96 36 100], b_vals=[4 36]
-# CHECK-DAG: thread 17 a_vals=[33 97 37 101], b_vals=[12 44]
-# CHECK-DAG: thread 18 a_vals=[34 98 38 102], b_vals=[20 52]
-# CHECK-DAG: thread 19 a_vals=[35 99 39 103], b_vals=[28 60]
-# CHECK-DAG: thread 20 a_vals=[40 104 44 108], b_vals=[5 37]
-# CHECK-DAG: thread 21 a_vals=[41 105 45 109], b_vals=[13 45]
-# CHECK-DAG: thread 22 a_vals=[42 106 46 110], b_vals=[21 53]
-# CHECK-DAG: thread 23 a_vals=[43 107 47 111], b_vals=[29 61]
-# CHECK-DAG: thread 24 a_vals=[48 112 52 116], b_vals=[6 38]
-# CHECK-DAG: thread 25 a_vals=[49 113 53 117], b_vals=[14 46]
-# CHECK-DAG: thread 26 a_vals=[50 114 54 118], b_vals=[22 54]
-# CHECK-DAG: thread 27 a_vals=[51 115 55 119], b_vals=[30 62]
-# CHECK-DAG: thread 28 a_vals=[56 120 60 124], b_vals=[7 39]
-# CHECK-DAG: thread 29 a_vals=[57 121 61 125], b_vals=[15 47]
-# CHECK-DAG: thread 30 a_vals=[58 122 62 126], b_vals=[23 55]
-# CHECK-DAG: thread 31 a_vals=[59 123 63 127], b_vals=[31 63]
-def test_load_f32_f32_16x8x8(ctx: DeviceContext):
-    print("== test_load_f32_f32_16x8x8")
-    test_load_operands[DType.float32, DType.float32, Index(16, 8, 8)](ctx)
+# CHECK-LABEL: test_load_and_mma_f32_f32_16x8x8
+# CHECK-DAG: thread 0 a_vals=[0 64 4 68], b_vals=[0 32], d_vals=[1121 1149 15457 15997]
+# CHECK-DAG: thread 1 a_vals=[1 65 5 69], b_vals=[8 40], d_vals=[1177 1205 16537 17077]
+# CHECK-DAG: thread 2 a_vals=[2 66 6 70], b_vals=[16 48], d_vals=[1233 1261 17617 18157]
+# CHECK-DAG: thread 3 a_vals=[3 67 7 71], b_vals=[24 56], d_vals=[1289 1317 18697 19237]
+# CHECK-DAG: thread 4 a_vals=[8 72 12 76], b_vals=[1 33], d_vals=[2913 3005 17249 17853]
+# CHECK-DAG: thread 5 a_vals=[9 73 13 77], b_vals=[9 41], d_vals=[3097 3189 18457 19061]
+# CHECK-DAG: thread 6 a_vals=[10 74 14 78], b_vals=[17 49], d_vals=[3281 3373 19665 20269]
+# CHECK-DAG: thread 7 a_vals=[11 75 15 79], b_vals=[25 57], d_vals=[3465 3557 20873 21477]
+# CHECK-DAG: thread 8 a_vals=[16 80 20 84], b_vals=[2 34], d_vals=[4705 4861 19041 19709]
+# CHECK-DAG: thread 9 a_vals=[17 81 21 85], b_vals=[10 42], d_vals=[5017 5173 20377 21045]
+# CHECK-DAG: thread 10 a_vals=[18 82 22 86], b_vals=[18 50], d_vals=[5329 5485 21713 22381]
+# CHECK-DAG: thread 11 a_vals=[19 83 23 87], b_vals=[26 58], d_vals=[5641 5797 23049 23717]
+# CHECK-DAG: thread 12 a_vals=[24 88 28 92], b_vals=[3 35], d_vals=[6497 6717 20833 21565]
+# CHECK-DAG: thread 13 a_vals=[25 89 29 93], b_vals=[11 43], d_vals=[6937 7157 22297 23029]
+# CHECK-DAG: thread 14 a_vals=[26 90 30 94], b_vals=[19 51], d_vals=[7377 7597 23761 24493]
+# CHECK-DAG: thread 15 a_vals=[27 91 31 95], b_vals=[27 59], d_vals=[7817 8037 25225 25957]
+# CHECK-DAG: thread 16 a_vals=[32 96 36 100], b_vals=[4 36], d_vals=[8289 8573 22625 23421]
+# CHECK-DAG: thread 17 a_vals=[33 97 37 101], b_vals=[12 44], d_vals=[8857 9141 24217 25013]
+# CHECK-DAG: thread 18 a_vals=[34 98 38 102], b_vals=[20 52], d_vals=[9425 9709 25809 26605]
+# CHECK-DAG: thread 19 a_vals=[35 99 39 103], b_vals=[28 60], d_vals=[9993 10277 27401 28197]
+# CHECK-DAG: thread 20 a_vals=[40 104 44 108], b_vals=[5 37], d_vals=[10081 10429 24417 25277]
+# CHECK-DAG: thread 21 a_vals=[41 105 45 109], b_vals=[13 45], d_vals=[10777 11125 26137 26997]
+# CHECK-DAG: thread 22 a_vals=[42 106 46 110], b_vals=[21 53], d_vals=[11473 11821 27857 28717]
+# CHECK-DAG: thread 23 a_vals=[43 107 47 111], b_vals=[29 61], d_vals=[12169 12517 29577 30437]
+# CHECK-DAG: thread 24 a_vals=[48 112 52 116], b_vals=[6 38], d_vals=[11873 12285 26209 27133]
+# CHECK-DAG: thread 25 a_vals=[49 113 53 117], b_vals=[14 46], d_vals=[12697 13109 28057 28981]
+# CHECK-DAG: thread 26 a_vals=[50 114 54 118], b_vals=[22 54], d_vals=[13521 13933 29905 30829]
+# CHECK-DAG: thread 27 a_vals=[51 115 55 119], b_vals=[30 62], d_vals=[14345 14757 31753 32677]
+# CHECK-DAG: thread 28 a_vals=[56 120 60 124], b_vals=[7 39], d_vals=[13665 14141 28001 28989]
+# CHECK-DAG: thread 29 a_vals=[57 121 61 125], b_vals=[15 47], d_vals=[14617 15093 29977 30965]
+# CHECK-DAG: thread 30 a_vals=[58 122 62 126], b_vals=[23 55], d_vals=[15569 16045 31953 32941]
+# CHECK-DAG: thread 31 a_vals=[59 123 63 127], b_vals=[31 63], d_vals=[16521 16997 33929 34917]
+def test_load_and_mma_f32_f32_16x8x8(ctx: DeviceContext):
+    print("== test_load_and_mma_f32_f32_16x8x8")
+    test_load_and_mma_and_multiply_operands[
+        DType.float32, DType.float32, Index(16, 8, 8)
+    ](ctx)
 
 
-# CHECK-LABEL: test_load_f32_f32_16x8x8_b_transpose
-# CHECK-DAG: thread 0 a_vals=[0 64 4 68], b_vals=[0 4]
-# CHECK-DAG: thread 1 a_vals=[1 65 5 69], b_vals=[1 5]
-# CHECK-DAG: thread 2 a_vals=[2 66 6 70], b_vals=[2 6]
-# CHECK-DAG: thread 3 a_vals=[3 67 7 71], b_vals=[3 7]
-# CHECK-DAG: thread 4 a_vals=[8 72 12 76], b_vals=[8 12]
-# CHECK-DAG: thread 5 a_vals=[9 73 13 77], b_vals=[9 13]
-# CHECK-DAG: thread 6 a_vals=[10 74 14 78], b_vals=[10 14]
-# CHECK-DAG: thread 7 a_vals=[11 75 15 79], b_vals=[11 15]
-# CHECK-DAG: thread 8 a_vals=[16 80 20 84], b_vals=[16 20]
-# CHECK-DAG: thread 9 a_vals=[17 81 21 85], b_vals=[17 21]
-# CHECK-DAG: thread 10 a_vals=[18 82 22 86], b_vals=[18 22]
-# CHECK-DAG: thread 11 a_vals=[19 83 23 87], b_vals=[19 23]
-# CHECK-DAG: thread 12 a_vals=[24 88 28 92], b_vals=[24 28]
-# CHECK-DAG: thread 13 a_vals=[25 89 29 93], b_vals=[25 29]
-# CHECK-DAG: thread 14 a_vals=[26 90 30 94], b_vals=[26 30]
-# CHECK-DAG: thread 15 a_vals=[27 91 31 95], b_vals=[27 31]
-# CHECK-DAG: thread 16 a_vals=[32 96 36 100], b_vals=[32 36]
-# CHECK-DAG: thread 17 a_vals=[33 97 37 101], b_vals=[33 37]
-# CHECK-DAG: thread 18 a_vals=[34 98 38 102], b_vals=[34 38]
-# CHECK-DAG: thread 19 a_vals=[35 99 39 103], b_vals=[35 39]
-# CHECK-DAG: thread 20 a_vals=[40 104 44 108], b_vals=[40 44]
-# CHECK-DAG: thread 21 a_vals=[41 105 45 109], b_vals=[41 45]
-# CHECK-DAG: thread 22 a_vals=[42 106 46 110], b_vals=[42 46]
-# CHECK-DAG: thread 23 a_vals=[43 107 47 111], b_vals=[43 47]
-# CHECK-DAG: thread 24 a_vals=[48 112 52 116], b_vals=[48 52]
-# CHECK-DAG: thread 25 a_vals=[49 113 53 117], b_vals=[49 53]
-# CHECK-DAG: thread 26 a_vals=[50 114 54 118], b_vals=[50 54]
-# CHECK-DAG: thread 27 a_vals=[51 115 55 119], b_vals=[51 55]
-# CHECK-DAG: thread 28 a_vals=[56 120 60 124], b_vals=[56 60]
-# CHECK-DAG: thread 29 a_vals=[57 121 61 125], b_vals=[57 61]
-# CHECK-DAG: thread 30 a_vals=[58 122 62 126], b_vals=[58 62]
-# CHECK-DAG: thread 31 a_vals=[59 123 63 127], b_vals=[59 63]
-def test_load_f32_f32_16x8x8_b_transpose(ctx: DeviceContext):
-    print("== test_load_f32_f32_16x8x8_b_transpose")
-    test_load_operands[
+# CHECK-LABEL: test_load_and_mma_f32_f32_16x8x8_b_transpose
+# CHECK-DAG: thread 0 a_vals=[0 64 4 68], b_vals=[0 4], d_vals=[141 365 1933 6253]
+# CHECK-DAG: thread 1 a_vals=[1 65 5 69], b_vals=[1 5], d_vals=[589 813 10573 14893]
+# CHECK-DAG: thread 2 a_vals=[2 66 6 70], b_vals=[2 6], d_vals=[1037 1261 19213 23533]
+# CHECK-DAG: thread 3 a_vals=[3 67 7 71], b_vals=[3 7], d_vals=[1485 1709 27853 32173]
+# CHECK-DAG: thread 4 a_vals=[8 72 12 76], b_vals=[8 12], d_vals=[365 1101 2157 6989]
+# CHECK-DAG: thread 5 a_vals=[9 73 13 77], b_vals=[9 13], d_vals=[1837 2573 11821 16653]
+# CHECK-DAG: thread 6 a_vals=[10 74 14 78], b_vals=[10 14], d_vals=[3309 4045 21485 26317]
+# CHECK-DAG: thread 7 a_vals=[11 75 15 79], b_vals=[11 15], d_vals=[4781 5517 31149 35981]
+# CHECK-DAG: thread 8 a_vals=[16 80 20 84], b_vals=[16 20], d_vals=[589 1837 2381 7725]
+# CHECK-DAG: thread 9 a_vals=[17 81 21 85], b_vals=[17 21], d_vals=[3085 4333 13069 18413]
+# CHECK-DAG: thread 10 a_vals=[18 82 22 86], b_vals=[18 22], d_vals=[5581 6829 23757 29101]
+# CHECK-DAG: thread 11 a_vals=[19 83 23 87], b_vals=[19 23], d_vals=[8077 9325 34445 39789]
+# CHECK-DAG: thread 12 a_vals=[24 88 28 92], b_vals=[24 28], d_vals=[813 2573 2605 8461]
+# CHECK-DAG: thread 13 a_vals=[25 89 29 93], b_vals=[25 29], d_vals=[4333 6093 14317 20173]
+# CHECK-DAG: thread 14 a_vals=[26 90 30 94], b_vals=[26 30], d_vals=[7853 9613 26029 31885]
+# CHECK-DAG: thread 15 a_vals=[27 91 31 95], b_vals=[27 31], d_vals=[11373 13133 37741 43597]
+# CHECK-DAG: thread 16 a_vals=[32 96 36 100], b_vals=[32 36], d_vals=[1037 3309 2829 9197]
+# CHECK-DAG: thread 17 a_vals=[33 97 37 101], b_vals=[33 37], d_vals=[5581 7853 15565 21933]
+# CHECK-DAG: thread 18 a_vals=[34 98 38 102], b_vals=[34 38], d_vals=[10125 12397 28301 34669]
+# CHECK-DAG: thread 19 a_vals=[35 99 39 103], b_vals=[35 39], d_vals=[14669 16941 41037 47405]
+# CHECK-DAG: thread 20 a_vals=[40 104 44 108], b_vals=[40 44], d_vals=[1261 4045 3053 9933]
+# CHECK-DAG: thread 21 a_vals=[41 105 45 109], b_vals=[41 45], d_vals=[6829 9613 16813 23693]
+# CHECK-DAG: thread 22 a_vals=[42 106 46 110], b_vals=[42 46], d_vals=[12397 15181 30573 37453]
+# CHECK-DAG: thread 23 a_vals=[43 107 47 111], b_vals=[43 47], d_vals=[17965 20749 44333 51213]
+# CHECK-DAG: thread 24 a_vals=[48 112 52 116], b_vals=[48 52], d_vals=[1485 4781 3277 10669]
+# CHECK-DAG: thread 25 a_vals=[49 113 53 117], b_vals=[49 53], d_vals=[8077 11373 18061 25453]
+# CHECK-DAG: thread 26 a_vals=[50 114 54 118], b_vals=[50 54], d_vals=[14669 17965 32845 40237]
+# CHECK-DAG: thread 27 a_vals=[51 115 55 119], b_vals=[51 55], d_vals=[21261 24557 47629 55021]
+# CHECK-DAG: thread 28 a_vals=[56 120 60 124], b_vals=[56 60], d_vals=[1709 5517 3501 11405]
+# CHECK-DAG: thread 29 a_vals=[57 121 61 125], b_vals=[57 61], d_vals=[9325 13133 19309 27213]
+# CHECK-DAG: thread 30 a_vals=[58 122 62 126], b_vals=[58 62], d_vals=[16941 20749 35117 43021]
+# CHECK-DAG: thread 31 a_vals=[59 123 63 127], b_vals=[59 63], d_vals=[24557 28365 50925 58829]
+def test_load_and_mma_f32_f32_16x8x8_b_transpose(ctx: DeviceContext):
+    print("== test_load_and_mma_f32_f32_16x8x8_b_transpose")
+    test_load_and_mma_and_multiply_operands[
         DType.float32, DType.float32, Index(16, 8, 8), transpose_b=True
     ](ctx)
 
 
-# CHECK-LABEL: test_load_f32_f32_16x8x4
-# CHECK-DAG: thread 0 a_vals=[0 32], b_vals=[0]
-# CHECK-DAG: thread 1 a_vals=[1 33], b_vals=[8]
-# CHECK-DAG: thread 2 a_vals=[2 34], b_vals=[16]
-# CHECK-DAG: thread 3 a_vals=[3 35], b_vals=[24]
-# CHECK-DAG: thread 4 a_vals=[4 36], b_vals=[1]
-# CHECK-DAG: thread 5 a_vals=[5 37], b_vals=[9]
-# CHECK-DAG: thread 6 a_vals=[6 38], b_vals=[17]
-# CHECK-DAG: thread 7 a_vals=[7 39], b_vals=[25]
-# CHECK-DAG: thread 8 a_vals=[8 40], b_vals=[2]
-# CHECK-DAG: thread 9 a_vals=[9 41], b_vals=[10]
-# CHECK-DAG: thread 10 a_vals=[10 42], b_vals=[18]
-# CHECK-DAG: thread 11 a_vals=[11 43], b_vals=[26]
-# CHECK-DAG: thread 12 a_vals=[12 44], b_vals=[3]
-# CHECK-DAG: thread 13 a_vals=[13 45], b_vals=[11]
-# CHECK-DAG: thread 14 a_vals=[14 46], b_vals=[19]
-# CHECK-DAG: thread 15 a_vals=[15 47], b_vals=[27]
-# CHECK-DAG: thread 16 a_vals=[16 48], b_vals=[4]
-# CHECK-DAG: thread 17 a_vals=[17 49], b_vals=[12]
-# CHECK-DAG: thread 18 a_vals=[18 50], b_vals=[20]
-# CHECK-DAG: thread 19 a_vals=[19 51], b_vals=[28]
-# CHECK-DAG: thread 20 a_vals=[20 52], b_vals=[5]
-# CHECK-DAG: thread 21 a_vals=[21 53], b_vals=[13]
-# CHECK-DAG: thread 22 a_vals=[22 54], b_vals=[21]
-# CHECK-DAG: thread 23 a_vals=[23 55], b_vals=[29]
-# CHECK-DAG: thread 24 a_vals=[24 56], b_vals=[6]
-# CHECK-DAG: thread 25 a_vals=[25 57], b_vals=[14]
-# CHECK-DAG: thread 26 a_vals=[26 58], b_vals=[22]
-# CHECK-DAG: thread 27 a_vals=[27 59], b_vals=[30]
-# CHECK-DAG: thread 28 a_vals=[28 60], b_vals=[7]
-# CHECK-DAG: thread 29 a_vals=[29 61], b_vals=[15]
-# CHECK-DAG: thread 30 a_vals=[30 62], b_vals=[23]
-# CHECK-DAG: thread 31 a_vals=[31 63], b_vals=[31]
-def test_load_f32_f32_16x8x4(ctx: DeviceContext):
-    print("== test_load_f32_f32_16x8x4")
-    test_load_operands[DType.float32, DType.float32, Index(16, 8, 4)](ctx)
+# CHECK-LABEL: test_load_and_mma_f32_f32_16x8x4
+# CHECK-DAG: thread 0 a_vals=[0 32], b_vals=[0], d_vals=[113 119 1649 1783]
+# CHECK-DAG: thread 1 a_vals=[1 33], b_vals=[8], d_vals=[125 131 1917 2051]
+# CHECK-DAG: thread 2 a_vals=[2 34], b_vals=[16], d_vals=[137 143 2185 2319]
+# CHECK-DAG: thread 3 a_vals=[3 35], b_vals=[24], d_vals=[149 155 2453 2587]
+# CHECK-DAG: thread 4 a_vals=[4 36], b_vals=[1], d_vals=[305 327 1841 1991]
+# CHECK-DAG: thread 5 a_vals=[5 37], b_vals=[9], d_vals=[349 371 2141 2291]
+# CHECK-DAG: thread 6 a_vals=[6 38], b_vals=[17], d_vals=[393 415 2441 2591]
+# CHECK-DAG: thread 7 a_vals=[7 39], b_vals=[25], d_vals=[437 459 2741 2891]
+# CHECK-DAG: thread 8 a_vals=[8 40], b_vals=[2], d_vals=[497 535 2033 2199]
+# CHECK-DAG: thread 9 a_vals=[9 41], b_vals=[10], d_vals=[573 611 2365 2531]
+# CHECK-DAG: thread 10 a_vals=[10 42], b_vals=[18], d_vals=[649 687 2697 2863]
+# CHECK-DAG: thread 11 a_vals=[11 43], b_vals=[26], d_vals=[725 763 3029 3195]
+# CHECK-DAG: thread 12 a_vals=[12 44], b_vals=[3], d_vals=[689 743 2225 2407]
+# CHECK-DAG: thread 13 a_vals=[13 45], b_vals=[11], d_vals=[797 851 2589 2771]
+# CHECK-DAG: thread 14 a_vals=[14 46], b_vals=[19], d_vals=[905 959 2953 3135]
+# CHECK-DAG: thread 15 a_vals=[15 47], b_vals=[27], d_vals=[1013 1067 3317 3499]
+# CHECK-DAG: thread 16 a_vals=[16 48], b_vals=[4], d_vals=[881 951 2417 2615]
+# CHECK-DAG: thread 17 a_vals=[17 49], b_vals=[12], d_vals=[1021 1091 2813 3011]
+# CHECK-DAG: thread 18 a_vals=[18 50], b_vals=[20], d_vals=[1161 1231 3209 3407]
+# CHECK-DAG: thread 19 a_vals=[19 51], b_vals=[28], d_vals=[1301 1371 3605 3803]
+# CHECK-DAG: thread 20 a_vals=[20 52], b_vals=[5], d_vals=[1073 1159 2609 2823]
+# CHECK-DAG: thread 21 a_vals=[21 53], b_vals=[13], d_vals=[1245 1331 3037 3251]
+# CHECK-DAG: thread 22 a_vals=[22 54], b_vals=[21], d_vals=[1417 1503 3465 3679]
+# CHECK-DAG: thread 23 a_vals=[23 55], b_vals=[29], d_vals=[1589 1675 3893 4107]
+# CHECK-DAG: thread 24 a_vals=[24 56], b_vals=[6], d_vals=[1265 1367 2801 3031]
+# CHECK-DAG: thread 25 a_vals=[25 57], b_vals=[14], d_vals=[1469 1571 3261 3491]
+# CHECK-DAG: thread 26 a_vals=[26 58], b_vals=[22], d_vals=[1673 1775 3721 3951]
+# CHECK-DAG: thread 27 a_vals=[27 59], b_vals=[30], d_vals=[1877 1979 4181 4411]
+# CHECK-DAG: thread 28 a_vals=[28 60], b_vals=[7], d_vals=[1457 1575 2993 3239]
+# CHECK-DAG: thread 29 a_vals=[29 61], b_vals=[15], d_vals=[1693 1811 3485 3731]
+# CHECK-DAG: thread 30 a_vals=[30 62], b_vals=[23], d_vals=[1929 2047 3977 4223]
+# CHECK-DAG: thread 31 a_vals=[31 63], b_vals=[31], d_vals=[2165 2283 4469 4715]
+def test_load_and_mma_f32_f32_16x8x4(ctx: DeviceContext):
+    print("== test_load_and_mma_f32_f32_16x8x4")
+    test_load_and_mma_and_multiply_operands[
+        DType.float32, DType.float32, Index(16, 8, 4)
+    ](ctx)
 
 
 # CHECK-LABEL: test_write_f32_f32_16x8x8
@@ -466,9 +498,9 @@ def test_load_f32_f32_16x8x8_ldmatrix(ctx: DeviceContext):
 
 def main():
     with DeviceContext() as ctx:
-        test_load_f32_f32_16x8x8(ctx)
-        test_load_f32_f32_16x8x8_b_transpose(ctx)
-        test_load_f32_f32_16x8x4(ctx)
+        test_load_and_mma_f32_f32_16x8x8(ctx)
+        test_load_and_mma_f32_f32_16x8x8_b_transpose(ctx)
+        test_load_and_mma_f32_f32_16x8x4(ctx)
         test_write_f32_f32_16x8x8(ctx)
         test_write_f32_f32_16x8x4(ctx)
         # ldmatrix
