@@ -1019,7 +1019,6 @@ modular_shared_library(
     ] + CONFIG_SECTION_LOCAL_DEFINES,
     output_name = "KGENCompilerRTShared",
     deps = [
-        "//AsyncRT:MojoBindings",
         "//AsyncRT:Runtime",
         "//AsyncRT:RuntimeGlobals",
         "//AsyncRT:Support",

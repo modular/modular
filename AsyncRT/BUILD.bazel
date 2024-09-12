@@ -64,27 +64,13 @@ modular_cc_library(
     ],
 )
 
-# Library target exporting the different AsyncRT bindings for Mojo.
-modular_shared_library(
-    name = "MojoBindings",
-    srcs = [
-        "lib/DeviceContext/MojoBindings.cpp",
-    ],
-    local_defines = [
-        "MODULAR_BUILDING_LIBRARY",
-    ],
-    deps = [
-        ":DeviceContext",
-        ":DeviceContext.headers",
-    ],
-)
-
 modular_cc_library(
     name = "DeviceContext",
     srcs = [
         "lib/DeviceContext/CPU/CpuDeviceContext.cpp",
         "lib/DeviceContext/CPU/CpuDeviceContext.h",
         "lib/DeviceContext/DeviceContext.cpp",
+        "lib/DeviceContext/MojoBindings.cpp",
     ],
     deps = [
         ":CUDADeviceContext",
