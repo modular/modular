@@ -483,7 +483,6 @@ fn _compute_ndbuffer_stride[
 struct NDBuffer[
     type: DType,
     rank: Int,
-    /,
     shape: DimList = DimList.create_unknown[rank](),
     strides: DimList = DimList.create_unknown[rank](),
     *,
