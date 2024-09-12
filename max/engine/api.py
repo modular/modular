@@ -13,18 +13,20 @@ from typing import Any, Dict, Iterable, List, Optional, Type, Union, overload
 import numpy as np
 from max._engine import FrameworkFormat as _FrameworkFormat
 from max._engine import InferenceSession as _InferenceSession
-from max._engine import Model as _Model
+from max._engine import Model as _Model, MojoValue
 from max._engine import TensorData as _TensorData
 from max._engine import TensorSpec as _TensorSpec
 from max._engine import TorchInputSpec as _TorchInputSpec
+from max._driver import Tensor as _Tensor
 from max.driver import CPU, Device, Tensor
 from max.dtype import DType
 
 InputShape = Optional[List[Union[int, str, None]]]
 CustomExtensionType = Union[str, Path, Any]
 CustomExtensionsType = Union[List[CustomExtensionType], CustomExtensionType]
+TensorOrMojoType = Union[Tensor, MojoValue]
 ExecResultType = Union[
-    Dict[str, Union[np.ndarray, dict, list, tuple]], List[Tensor]
+    Dict[str, Union[np.ndarray, dict, list, tuple]], List[TensorOrMojoType]
 ]
 
 
@@ -181,7 +183,11 @@ class Model:
             results = self._impl.execute_device_tensors(
                 [arg._impl for arg in args]
             )
-            return [Tensor._from_impl(result) for result in results]
+            return [
+                # Wrap tensors but return MojoValues directly.
+                Tensor._from_impl(res) if isinstance(res, _Tensor) else res
+                for res in results
+            ]
 
         # Wrapping the tensors happens by recording their addresses, which does
         # not increase reference count, so we need to ensure the garbage
