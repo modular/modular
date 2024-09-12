@@ -17,6 +17,7 @@ from layout.layout_tensor import LayoutTensor, _swizzle_signature
 from layout.swizzle import *
 from math import align_down
 from utils import StaticIntTuple
+from layout._utils import load_to_simd
 
 
 fn num_matrix_reg[dim_1: Int, dim_2: Int]() -> Int:
@@ -78,8 +79,23 @@ struct TensorCore[
 
     # Operand register types.
     alias a_reg_type = SIMD[in_type, num_matrix_reg[shape[0], shape[2]]()]
+    alias a_reg_tile_type = LayoutTensor[
+        in_type,
+        Layout.col_major(1, Self.a_reg_type.size),
+        address_space = AddressSpace.LOCAL,
+    ]
     alias b_reg_type = SIMD[in_type, num_matrix_reg[shape[2], shape[1]]()]
+    alias b_reg_tile_type = LayoutTensor[
+        in_type,
+        Layout.row_major(Self.b_reg_type.size, 1),
+        address_space = AddressSpace.LOCAL,
+    ]
     alias c_reg_type = SIMD[out_type, num_matrix_reg[shape[0], shape[1]]()]
+    alias c_reg_tile_type = LayoutTensor[
+        out_type,
+        Layout.col_major(1, Self.c_reg_type.size),
+        address_space = AddressSpace.LOCAL,
+    ]
 
     fn __init__(inout self):
         pass
@@ -97,14 +113,16 @@ struct TensorCore[
             constrained[False, "No valid shape of mma"]()
             return List[StaticIntTuple[3]](shape_null)
 
+    # need always_inline, otherwise the stack allocated LayoutTensor will not be valid
+    @always_inline
     fn load_a(
         inout self,
         a: LayoutTensor,
-    ) -> Self.a_reg_type as res:
+    ) -> Self.a_reg_tile_type as res:
         alias mma_m = shape[0]
         alias mma_n = shape[1]
         alias mma_k = shape[2]
-        var a_reg = __type_of(res)()
+        var a_reg_tile = __type_of(res).stack_allocation()
         alias reg_per_thread = num_matrix_reg[mma_m, mma_k]()
 
         alias layout_tf32 = self.tile_16x4 if reg_per_thread == 2 else self.tile_16x8
@@ -122,23 +140,23 @@ struct TensorCore[
 
             @parameter
             if reg_per_thread == 2:
-                a_reg[0] = rebind[Scalar[in_type]](
+                a_reg_tile[0, 0] = rebind[Scalar[in_type]](
                     mat_a[group_lane_id, group_id, 0]
                 )
-                a_reg[1] = rebind[Scalar[in_type]](
+                a_reg_tile[0, 1] = rebind[Scalar[in_type]](
                     mat_a[group_lane_id, group_id, 1]
                 )
             elif reg_per_thread == 4:
-                a_reg[0] = rebind[Scalar[in_type]](
+                a_reg_tile[0, 0] = rebind[Scalar[in_type]](
                     mat_a[group_lane_id, group_id, 0, 0]
                 )
-                a_reg[1] = rebind[Scalar[in_type]](
+                a_reg_tile[0, 1] = rebind[Scalar[in_type]](
                     mat_a[group_lane_id, group_id, 1, 0]
                 )
-                a_reg[2] = rebind[Scalar[in_type]](
+                a_reg_tile[0, 2] = rebind[Scalar[in_type]](
                     mat_a[group_lane_id, group_id, 0, 1]
                 )
-                a_reg[3] = rebind[Scalar[in_type]](
+                a_reg_tile[0, 3] = rebind[Scalar[in_type]](
                     mat_a[group_lane_id, group_id, 1, 1]
                 )
             else:
@@ -149,16 +167,16 @@ struct TensorCore[
 
             @parameter
             if reg_per_thread == 4:
-                a_reg[0] = rebind[Scalar[in_type]](
+                a_reg_tile[0, 0] = rebind[Scalar[in_type]](
                     mat_a[group_lane_id, group_id, 0, 0]
                 )
-                a_reg[1] = rebind[Scalar[in_type]](
+                a_reg_tile[0, 1] = rebind[Scalar[in_type]](
                     mat_a[group_lane_id, group_id, 1, 0]
                 )
-                a_reg[2] = rebind[Scalar[in_type]](
+                a_reg_tile[0, 2] = rebind[Scalar[in_type]](
                     mat_a[group_lane_id, group_id, 0, 1]
                 )
-                a_reg[3] = rebind[Scalar[in_type]](
+                a_reg_tile[0, 3] = rebind[Scalar[in_type]](
                     mat_a[group_lane_id, group_id, 1, 1]
                 )
             else:
@@ -167,16 +185,18 @@ struct TensorCore[
                 ]()
         else:
             constrained[False, "No valid type to load matrix fragment a"]()
-        return a_reg
+        return a_reg_tile
 
+    # need always_inline, otherwise the stack allocated LayoutTensor will not be valid
+    @always_inline
     fn load_b(
         inout self,
         b: LayoutTensor,
-    ) -> Self.b_reg_type as res:
+    ) -> Self.b_reg_tile_type as res:
         alias mma_m = shape[0]
         alias mma_n = shape[1]
         alias mma_k = shape[2]
-        var b_reg = __type_of(res)()
+        var b_reg_tile = __type_of(res).stack_allocation()
         alias reg_per_thread = num_matrix_reg[mma_k, mma_n]()
 
         alias layout_tf32 = self.tile_8x4 if reg_per_thread == 1 else self.tile_8x8
@@ -204,14 +224,14 @@ struct TensorCore[
 
             @parameter
             if reg_per_thread == 1:
-                b_reg[0] = rebind[Scalar[in_type]](
+                b_reg_tile[0, 0] = rebind[Scalar[in_type]](
                     read_from_mat_b(group_lane_id, group_id, 0)
                 )
             elif reg_per_thread == 2:
-                b_reg[0] = rebind[Scalar[in_type]](
+                b_reg_tile[0, 0] = rebind[Scalar[in_type]](
                     read_from_mat_b(group_lane_id, group_id, 0)
                 )
-                b_reg[1] = rebind[Scalar[in_type]](
+                b_reg_tile[1, 0] = rebind[Scalar[in_type]](
                     read_from_mat_b(group_lane_id, group_id, 1)
                 )
             else:
@@ -222,10 +242,10 @@ struct TensorCore[
 
             @parameter
             if reg_per_thread == 2:
-                b_reg[0] = rebind[Scalar[in_type]](
+                b_reg_tile[0, 0] = rebind[Scalar[in_type]](
                     read_from_mat_b(group_lane_id, group_id, 0)
                 )
-                b_reg[1] = rebind[Scalar[in_type]](
+                b_reg_tile[1, 0] = rebind[Scalar[in_type]](
                     read_from_mat_b(group_lane_id, group_id, 1)
                 )
             else:
@@ -234,16 +254,18 @@ struct TensorCore[
                 ]()
         else:
             constrained[False, "No valid type to load matrix fragment b"]()
-        return b_reg
+        return b_reg_tile
 
+    # need always_inline, otherwise the stack allocated LayoutTensor will not be valid
+    @always_inline
     fn load_c(
         inout self,
         c: LayoutTensor,
-    ) -> Self.c_reg_type as res:
+    ) -> Self.c_reg_tile_type as res:
         alias mma_m = shape[0]
         alias mma_n = shape[1]
         alias mma_k = shape[2]
-        var c_reg = __type_of(res)()
+        var c_reg_tile = __type_of(res).stack_allocation()
         alias reg_per_thread = num_matrix_reg[mma_m, mma_n]()
 
         alias layout_c = self.tile_16x8_row if reg_per_thread == 4 else self.tile_null
@@ -257,27 +279,33 @@ struct TensorCore[
 
             @parameter
             if reg_per_thread == 4:
-                c_reg[0] = rebind[Scalar[out_type]](
+                c_reg_tile[0, 0] = rebind[Scalar[out_type]](
                     mat_c[group_id, group_lane_id, 0, 0]
                 )
-                c_reg[1] = rebind[Scalar[out_type]](
+                c_reg_tile[0, 1] = rebind[Scalar[out_type]](
                     mat_c[group_id, group_lane_id, 1, 0]
                 )
-                c_reg[2] = rebind[Scalar[out_type]](
+                c_reg_tile[0, 2] = rebind[Scalar[out_type]](
                     mat_c[group_id, group_lane_id, 0, 1]
                 )
-                c_reg[3] = rebind[Scalar[out_type]](
+                c_reg_tile[0, 3] = rebind[Scalar[out_type]](
                     mat_c[group_id, group_lane_id, 1, 1]
                 )
             else:
                 constrained[False, "No valid shape to load matrix fragment c"]()
         else:
             constrained[False, "No valid type to load matrix fragment c"]()
-        return c_reg
+        return c_reg_tile
 
-    fn store_d(inout self, d: LayoutTensor, d_reg: Self.c_reg_type):
+    fn store_d(self, d_dst: LayoutTensor, d_src: LayoutTensor):
         constrained[
-            d.dtype == out_type, "destination tensor must have the same type"
+            d_dst.dtype == out_type,
+            "destination tensor must have the same type",
+        ]()
+        constrained[
+            d_src.shape[0]() == Self.c_reg_tile_type.shape[0]()
+            and d_src.shape[1]() == Self.c_reg_tile_type.shape[1](),
+            "src tensor must have the same shape as c_reg_tile_type",
         ]()
         alias mma_m = shape[0]
         alias mma_n = shape[1]
@@ -286,7 +314,7 @@ struct TensorCore[
 
         alias layout_d = self.tile_16x8_row if reg_per_thread == 4 else self.tile_null
 
-        var mat_d = d.composition[layout_d]()
+        var mat_d = d_dst.composition[layout_d]()
         var group_id = lane_id() >> 2
         var group_lane_id = lane_id() % 4
 
@@ -297,16 +325,16 @@ struct TensorCore[
             if reg_per_thread == 4:
                 mat_d[group_lane_id, group_id, 0, 0] = rebind[
                     mat_d.element_type
-                ](d_reg[0])
+                ](d_src[0, 0])
                 mat_d[group_lane_id, group_id, 1, 0] = rebind[
                     mat_d.element_type
-                ](d_reg[1])
+                ](d_src[0, 1])
                 mat_d[group_lane_id, group_id, 0, 1] = rebind[
                     mat_d.element_type
-                ](d_reg[2])
+                ](d_src[0, 2])
                 mat_d[group_lane_id, group_id, 1, 1] = rebind[
                     mat_d.element_type
-                ](d_reg[3])
+                ](d_src[0, 3])
             else:
                 constrained[
                     False, "No valid shape to store to LayoutTensor d"
@@ -314,11 +342,23 @@ struct TensorCore[
         else:
             constrained[False, "No valid type to store to LayoutTensor d"]()
 
-    fn mma(
-        inout self, inout a: SIMD, inout b: SIMD, inout c: SIMD
-    ) -> Self.c_reg_type:
-        var d = Self.c_reg_type()
-        mma(d, a, b, c)
+    # need always_inline, otherwise the stack allocated LayoutTensor will not be valid
+    @always_inline
+    fn mma_op(
+        self,
+        a: LayoutTensor,
+        b: LayoutTensor,
+        c: LayoutTensor,
+    ) -> Self.c_reg_tile_type as res:
+        var a_reg = load_to_simd(a)
+        var b_reg = load_to_simd(b)
+        var c_reg = load_to_simd(c)
+        var d_reg = Self.c_reg_type()
+        mma(d_reg, a_reg, b_reg, c_reg)
+        var d = __type_of(res).stack_allocation()
+        d.vectorize[1, Self.c_reg_type.size]()[0, 0] = rebind[
+            __type_of(d.vectorize[1, Self.c_reg_type.size]()[0, 0])
+        ](d_reg)
         return d
 
     @always_inline

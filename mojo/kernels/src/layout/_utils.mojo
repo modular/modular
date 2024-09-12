@@ -9,6 +9,7 @@ from os import abort
 
 from gpu.host.memory import _free, _malloc_managed
 from layout import *
+from .int_tuple import product
 
 alias alloc_fn_type = fn[layout: Layout, dtype: DType] () -> UnsafePointer[
     Scalar[dtype]
@@ -93,3 +94,16 @@ alias ManagedLayoutGPUTensor = ManagedLayoutTensor[
     free_fn=gpu_free,
     alloc_runtime_fn=gpu_managed_alloc_runtime,
 ]
+
+
+fn load_to_simd(
+    tensor: LayoutTensor,
+) -> SIMD[tensor.dtype, product(tensor.layout.shape)] as res:
+    constrained[
+        tensor.layout.all_dims_known(),
+        "load_to_simd is supported only for tensors with known layout",
+    ]()
+    alias size = __type_of(res).size
+    return rebind[__type_of(res)](
+        tensor.reshape[Layout(size)]().vectorize[size]()[0]
+    )
