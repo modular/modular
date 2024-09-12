@@ -396,7 +396,8 @@ public:
       : paramPtrs(std::forward_as_tuple(paramPtrs...)), value(value) {
     static_assert(
         ((std::is_same_v<ParamPtrTypes, void *> ||
-          std::is_same_v<ParamPtrTypes, const void *>)&&...),
+          std::is_same_v<ParamPtrTypes, const void *>) &&
+         ...),
         "Input pointers to type dispatch should be void*/const void*");
   }
   ~DTypeSwitch() = default;
