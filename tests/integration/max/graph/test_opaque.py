@@ -25,9 +25,7 @@ def test_opaque(counter_ops_path: Path) -> None:
 
     maker_graph = Graph("maker", input_types=[], output_types=[counter_type])
     with maker_graph:
-        maker_graph.output(
-            ops.custom("make_counter", [], [counter_type.to_mlir()])[0]
-        )
+        maker_graph.output(ops.custom("make_counter", [], [counter_type])[0])
     maker_compiled = session.load(
         maker_graph, custom_extensions=counter_ops_path
     )
@@ -57,4 +55,4 @@ def test_opaque(counter_ops_path: Path) -> None:
 
 
 if __name__ == "__main__":
-    test_opaque(os.environ["COUNTER_OPS_PATH"])
+    test_opaque(Path(os.environ["COUNTER_OPS_PATH"]))

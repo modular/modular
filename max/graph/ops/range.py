@@ -8,13 +8,12 @@
 from max.mlir.dialects import rmo
 
 from ..graph import Graph
-from ..type import Dim
+from ..type import DimLike
 from ..value import TensorType, TensorValue, ValueLike
-from .reshape import reshape
 
 
 def range(
-    start: ValueLike, stop: ValueLike, step: ValueLike, out_dim: Dim
+    start: ValueLike, stop: ValueLike, step: ValueLike, out_dim: DimLike
 ) -> TensorValue:
     """Creates a sequence of numbers. The sequence goes from `start` with
     increments of size `step` up to (but not including) `stop`. All arguments

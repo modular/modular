@@ -9,10 +9,9 @@ from typing import Callable, Dict
 
 from max.dtype import DType
 
-from ..graph import Graph
 from ..value import TensorValue
 from ..quantization import QuantizationEncoding
-from ..type import Dim, StaticDim, TensorType
+from ..type import StaticDim, TensorType
 
 from .custom import custom
 
@@ -23,9 +22,7 @@ def _repack_quantized_weights(op_name: str, rhs: TensorValue) -> TensorValue:
         op_name,
         [rhs],
         out_types=[
-            TensorType(
-                DType.uint8, (rhs_type.shape[0], rhs_type.shape[1])
-            ).to_mlir()
+            TensorType(DType.uint8, (rhs_type.shape[0], rhs_type.shape[1]))
         ],
     )[0].tensor
 
@@ -39,7 +36,7 @@ def _packed_qmatmul(
         out_types=[
             TensorType(
                 DType.float32, (lhs_matrix.shape[0], rhs_repack.shape[0])
-            ).to_mlir(),
+            ),
         ],
     )[0].tensor
 
@@ -174,8 +171,6 @@ def dequantize(
     flat_dequantized = custom(
         name=op_name,
         values=[flat_quantized],
-        out_types=[
-            TensorType(DType.float32, [flat_quantized.shape[0], odim]).to_mlir()
-        ],
+        out_types=[TensorType(DType.float32, [flat_quantized.shape[0], odim])],
     )[0].tensor
     return flat_dequantized.reshape([*dims, odim])

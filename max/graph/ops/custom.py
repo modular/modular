@@ -36,4 +36,6 @@ def custom(
     """
     graph = Graph.current
     symbol_attr = StringAttr.get(name, graph._context)
-    return graph._add_op(mo.custom, out_types, values, symbol=symbol_attr)
+    return graph._add_op(
+        mo.custom, [t.to_mlir() for t in out_types], values, symbol=symbol_attr
+    )
