@@ -203,7 +203,8 @@ def test_transformer_block(session):
             np.float32
         )
 
-        output = compiled.execute(input0=x, input1=k_cache, input2=v_cache)
+        output = compiled.execute(x, k_cache, v_cache)
+        assert len(output) == 3
 
         expected_tokens = (
             np.array(
@@ -257,13 +258,13 @@ def test_transformer_block(session):
         )
 
         np.testing.assert_almost_equal(
-            output["output0"], expected_tokens, decimal=4
+            output[0].to_numpy(), expected_tokens, decimal=4
         )
         np.testing.assert_almost_equal(
-            output["output1"], expected_k_cache, decimal=4
+            output[1].to_numpy(), expected_k_cache, decimal=4
         )
         np.testing.assert_almost_equal(
-            output["output2"], expected_v_cache, decimal=4
+            output[2].to_numpy(), expected_v_cache, decimal=4
         )
 
 
@@ -343,7 +344,8 @@ def test_transformer():
         v_cache = np.zeros(shape=(0, 1, 2, n_kv_heads, head_dim)).astype(
             np.float32
         )
-        output = compiled.execute(input0=tokens, input1=k_cache, input2=v_cache)
+        output = compiled.execute(tokens, k_cache, v_cache)
+        assert len(output) == 3
 
         expected_tokens = (
             np.array(
@@ -405,11 +407,11 @@ def test_transformer():
         )
 
         np.testing.assert_almost_equal(
-            output["output0"], expected_tokens, decimal=4
+            output[0].to_numpy(), expected_tokens, decimal=4
         )
         np.testing.assert_almost_equal(
-            output["output1"], expected_k_cache, decimal=4
+            output[1].to_numpy(), expected_k_cache, decimal=4
         )
         np.testing.assert_almost_equal(
-            output["output2"], expected_v_cache, decimal=4
+            output[2].to_numpy(), expected_v_cache, decimal=4
         )

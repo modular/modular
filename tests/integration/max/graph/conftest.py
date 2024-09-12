@@ -92,9 +92,8 @@ def given_input_types(input_types):
 
 
 def execute(model, inputs):
-    names = [spec.name for spec in model.input_metadata]
-    results = model.execute(**dict(zip(names, inputs)))
-    return results["output0"]
+    results = model.execute(*inputs)
+    return results[0].to_numpy()
 
 
 def modular_graph_test(session, graph):

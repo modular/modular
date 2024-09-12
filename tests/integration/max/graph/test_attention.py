@@ -178,7 +178,8 @@ def test_attention(session):
 
     v_cache = np.zeros(shape=(0, 1, 2, n_kv_heads, head_dim)).astype(np.float32)
 
-    output = compiled.execute(input0=input, input1=k_cache, input2=v_cache)
+    output = compiled.execute(input, k_cache, v_cache)
+    assert len(output) == 3
 
     expected = (
         np.array(
@@ -231,11 +232,10 @@ def test_attention(session):
         .astype(np.float32)
     )
 
-    np.testing.assert_almost_equal(output["output0"], expected, decimal=4)
-
+    np.testing.assert_almost_equal(output[0].to_numpy(), expected, decimal=4)
     np.testing.assert_almost_equal(
-        output["output1"], expected_k_cache, decimal=4
+        output[1].to_numpy(), expected_k_cache, decimal=4
     )
     np.testing.assert_almost_equal(
-        output["output2"], expected_v_cache, decimal=4
+        output[2].to_numpy(), expected_v_cache, decimal=4
     )

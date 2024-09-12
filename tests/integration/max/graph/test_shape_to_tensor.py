@@ -10,7 +10,7 @@ import tempfile
 
 import numpy as np
 from max.dtype import DType
-from max.graph import Graph, TensorValue, TensorType, ops
+from max.graph import Graph, TensorType, TensorValue, ops
 
 
 def test_shape_to_tensor_static(session):
@@ -22,9 +22,9 @@ def test_shape_to_tensor_static(session):
     compiled = session.load(graph)
 
     x = np.ones((2, 4)).astype(np.float32)
-    output = compiled.execute(input0=x)
+    output = compiled.execute(x)
 
-    np.testing.assert_equal(output["output0"], np.array([2, 4]))
+    np.testing.assert_equal(output[0].to_numpy(), np.array([2, 4]))
 
 
 def test_shape_to_tensor_dynamic(session):
@@ -36,9 +36,9 @@ def test_shape_to_tensor_dynamic(session):
     compiled = session.load(graph)
 
     x = np.ones((7, 3)).astype(np.float32)
-    output = compiled.execute(input0=x)
+    output = compiled.execute(x)
 
-    np.testing.assert_equal(output["output0"], np.array([7, 3]))
+    np.testing.assert_equal(output[0].to_numpy(), np.array([7, 3]))
 
 
 def test_shape_to_tensor_solo_dim(session):
@@ -50,8 +50,8 @@ def test_shape_to_tensor_solo_dim(session):
     compiled = session.load(graph)
 
     x = np.ones((7, 3)).astype(np.float32)
-    output = compiled.execute(input0=x)
+    output = compiled.execute(x)
 
     # Output is only a scalar
-    assert output["output0"].shape == ()
-    np.testing.assert_equal(output["output0"], np.array([3]))
+    assert output[0].shape == ()
+    np.testing.assert_equal(output[0].to_numpy(), np.array([3]))

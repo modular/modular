@@ -25,7 +25,7 @@ def test_max_graph(session):
         b_np = np.ones((1, 1), dtype=np.float32)
         b = Tensor.from_numpy(b_np)
         output = compiled.execute(a, b)
-        assert np.allclose((a_np + b_np), np.from_dlpack(output[0]))
+        assert np.allclose((a_np + b_np), output[0].to_numpy())
 
 
 def test_max_graph_export(session):
@@ -55,12 +55,12 @@ def test_max_graph_export_import(session):
             a = Tensor.from_numpy(a_np)
             b = Tensor.from_numpy(b_np)
             output = compiled.execute(a, b)
-            assert np.allclose((a_np + b_np), np.from_dlpack(output[0]))
+            assert np.allclose((a_np + b_np), output[0].to_numpy())
             compiled2 = session.load(mef_file.name)
             # Executing a mef-loaded model with a device tensor seems to not work.
-            output2 = compiled2.execute(input0=a_np, input1=b_np)
-            assert np.allclose((a_np + b_np), output2["output0"])
-            assert np.allclose(np.from_dlpack(output[0]), output2["output0"])
+            output2 = compiled2.execute(a_np, b_np)
+            assert np.allclose((a_np + b_np), output2[0].to_numpy())
+            assert np.allclose(output[0].to_numpy(), output2[0].to_numpy())
 
 
 def test_max_graph_device():
