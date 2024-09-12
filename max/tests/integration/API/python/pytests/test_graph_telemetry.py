@@ -5,11 +5,12 @@
 # ===----------------------------------------------------------------------=== #
 
 import os
-import numpy as np
 import tempfile
+
+import numpy as np
 from max.dtype import DType
-from max.graph import Graph, TensorType, ops
 from max.engine import InferenceSession
+from max.graph import Graph, TensorType, ops
 
 
 def test_graph_telemetry():
@@ -23,7 +24,7 @@ def test_graph_telemetry():
         compiled = session.load(graph)
         a = np.ones((1, 1)).astype(np.float32)
         b = np.ones((1, 1)).astype(np.float32)
-        output = compiled.execute(input0=a, input1=b)
+        _ = compiled.execute(a, b)
 
     expected_line = "max.pipeline.name: add"
     with open(filepath, "r") as file:

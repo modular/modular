@@ -78,10 +78,10 @@ def mo_listio_model_path(modular_path: Path) -> Path:
 
 def test_execute_success(session: InferenceSession, mo_model_path: Path):
     model = session.load(mo_model_path)
-    output = model.execute(input=np.ones(5, dtype=np.float32))
-    assert "output" in output.keys()
+    output = model.execute(np.ones(5, dtype=np.float32))
+    assert len(output) == 1
     assert np.allclose(
-        output["output"],
+        output[0].to_numpy(),
         np.array([4.0, 2.0, -5.0, 3.0, 6.0], dtype=np.float32),
     )
 
@@ -168,22 +168,6 @@ def test_devicetensor_wrong_dtype(
         model.execute(tensor)
 
 
-def test_execute_non_devicetensor_positional_arguments(
-    session: InferenceSession, mo_model_path: Path
-):
-    # We allow execution with positional arguments only if they are
-    # devicetensors.
-    model = session.load(mo_model_path)
-    with pytest.raises(
-        ValueError,
-        match=(
-            r"All positional arguments provided to the execute "
-            r"API must be Max Driver tensors"
-        ),
-    ):
-        model.execute(np.ones(5))
-
-
 def test_execute_device_tensor(session: InferenceSession, mo_model_path: Path):
     # The engine should be able to take in a simple 1-d tensor and execute a
     # model with this input.
@@ -241,7 +225,7 @@ def test_execute_devicetensor_dynamic_shape(
     outputs = model.execute(tensor_one, tensor_two)
     assert len(outputs) == 1
     output_tensor = outputs[0]
-    for idx in range(5):
+    for x in range(5):
         assert output_tensor[x].item() == 3 * x
 
 
@@ -306,7 +290,7 @@ def test_no_devicetensor_inputs(session: InferenceSession, no_input_path: Path):
     outputs = model._impl.execute_device_tensors([])
     assert len(outputs) == 1
     tensor_output = Tensor._from_impl(outputs[0])
-    output = np.from_dlpack(tensor_output)
+    output = tensor_output.to_numpy()
     expected = np.arange(1, 6, dtype=np.int32)
     assert np.array_equal(output, expected)
 
@@ -340,9 +324,9 @@ def test_execute_multi_framework(
     )
     np_input = np.ones((1, 3, 100, 100))
     np_input[:, 1, :, :] *= -1
-    onnx_output = onnx_model.execute(x=np_input)["result0"]
-    trch_output = trch_model.execute(x=np_input)["result0"]
-    assert np.allclose(onnx_output, trch_output)
+    onnx_output = onnx_model.execute(np_input)[0]
+    trch_output = trch_model.execute(np_input)[0]
+    assert np.allclose(onnx_output.to_numpy(), trch_output.to_numpy())
 
 
 def test_custom_ops(
@@ -352,10 +336,10 @@ def test_custom_ops(
 ):
     model = session.load(mo_custom_ops_model_path)
     inputs = np.array([4.0], dtype=np.float32)
-    output = model.execute(input0=inputs)
-    assert "output" in output.keys()
+    output = model.execute(inputs)
+    assert len(output) == 1
     assert np.allclose(
-        output["output"],
+        output[0].to_numpy(),
         np.array([2.0], dtype=np.float32),
     )
 
@@ -363,10 +347,10 @@ def test_custom_ops(
         mo_custom_ops_model_path, custom_ops_path=str(custom_ops_package_path)
     )
     inputs = np.array([4.0], dtype=np.float32)
-    output = model_with_custom_op.execute(input0=inputs)
-    assert "output" in output.keys()
+    output = model_with_custom_op.execute(inputs)
+    assert len(output) == 1
     assert np.allclose(
-        output["output"],
+        output[0].to_numpy(),
         np.array([4.0], dtype=np.float32),
     )
 
@@ -458,8 +442,8 @@ def test_execute_external_weights(session: InferenceSession) -> None:
 
     compiled = session.load(graph, weights_registry={"foo": weights})
     input = np.random.randn(num_elems).astype(np.float32)
-    output = compiled.execute(input0=input)
-    assert np.allclose(output["output0"], input + weights)
+    output = compiled.execute(input)
+    assert np.allclose(output[0].to_numpy(), input + weights)
 
 
 def test_stats_report(
