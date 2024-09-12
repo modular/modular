@@ -2164,10 +2164,13 @@ from linalg.utils import (
 fn matmul[
     a_type: DType,
     input_0_static_shape: DimList,
+    alignment_0: Int,
     b_type: DType,
     input_1_static_shape: DimList,
+    alignment_1: Int,
     c_type: DType,
     input_2_static_shape: DimList,
+    alignment_2: Int,
     transpose_in_1: Bool,  # matches name of MO attribute
     packed_in_1: Bool,
     single_thread_blocking_override: Bool,
@@ -2175,9 +2178,6 @@ fn matmul[
     output_0_fn: fn[width: Int, rank: Int, element_alignment: Int] (
         StaticIntTuple[rank], SIMD[c_type, width]
     ) capturing -> None,
-    alignment_0: Int,
-    alignment_1: Int,
-    alignment_2: Int,
     /,
     trace_description: StringLiteral,
     target: StringLiteral = "cpu",
