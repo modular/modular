@@ -305,10 +305,11 @@ Value convertParameterToLLVM(
 /// LLVM.
 class DebugInfoTypeConverter : public DebugInfo::DebugInfoTypeConverter {
 public:
-  DebugInfoTypeConverter(POPToLLVMTypeConverter &tc);
+  DebugInfoTypeConverter(POPToLLVMTypeConverter &tc, TargetInfoAttr targetInfo);
 
 private:
   POPToLLVMTypeConverter &tc;
+  TargetInfoAttr targetInfo;
 
   /// Build the debug type for a struct-like type.
   DebugInfo::DIType buildDebugStructTypeFromTypeAttrs(ArrayRef<Type> attrs,

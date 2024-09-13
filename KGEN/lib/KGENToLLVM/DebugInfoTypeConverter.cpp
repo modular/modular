@@ -20,10 +20,22 @@ using namespace DebugInfo;
 // DebugInfoTypeConverter
 //===----------------------------------------------------------------------===//
 
+/// Returns a type name for the given dtype, specialized to the target if
+/// applicable.
+static std::string getKGENDTypeAsString(TargetInfoAttr targetInfo,
+                                        KGENDType dtype) {
+  if (targetInfo.getTriple().isNVPTX())
+    if (std::optional<std::string> name =
+            DebugInfoEncoding::getKGENDTypeAsCppString(dtype))
+      return *name;
+  return DebugInfoEncoding::getKGENDTypeAsString(dtype);
+}
+
 /// Build an integer or floating point debug type `T` with the given name and
 /// width.
 template <typename T>
-auto buildIntFpDebugType(MLIRContext *ctx, uint8_t dtype, unsigned width,
+auto buildIntFpDebugType(MLIRContext *ctx, TargetInfoAttr targetInfo,
+                         uint8_t dtype, unsigned width,
                          unsigned conservativeAlign) {
   // TODO: This should be driven by target info in the longer term.
   uint32_t align =
@@ -31,76 +43,114 @@ auto buildIntFpDebugType(MLIRContext *ctx, uint8_t dtype, unsigned width,
   align = std::min(align, conservativeAlign);
 
   uint64_t size = llvm::alignTo(width, align);
-  return T::get(ctx, DebugInfoEncoding::getKGENDTypeAsString(KGENDType(dtype)),
-                size, align);
+  return T::get(ctx, getKGENDTypeAsString(targetInfo, KGENDType(dtype)), size,
+                align);
 }
 
-static DIType buildDebugTypeFromDType(MLIRContext *ctx, uint8_t dtype,
+/// Returns a target-specific conversion for the dtype if applicable. Otherwise
+/// returns null.
+static DIType buildTargetSpecificDebugTypeFromDType(MLIRContext *ctx,
+                                                    TargetInfoAttr targetInfo,
+                                                    uint8_t dtype,
+                                                    size_t indexWidth) {
+  if (targetInfo.getTriple().isNVPTX()) {
+    // cuda-gdb expects bf16 & f16 as structure types with special names.
+    // https://docs.nvidia.com/cuda/cuda-math-api/struct____nv__bfloat16.html
+    if (dtype == DType::bf16 || dtype == DType::f16) {
+      StringRef name = dtype == DType::bf16 ? "__nv_bfloat16" : "__half";
+      // The structure contains a single `__x` field of `unsigned short`.
+      auto baseType = buildIntFpDebugType<DIBasicUIntType>(ctx, targetInfo,
+                                                           DType::ui16, 16, 16);
+      auto memberType = DIMemberType::get("__x", baseType);
+      return DIStructType::get(StringAttr::get(ctx, name), {memberType});
+    }
+  }
+
+  return {};
+}
+
+static DIType buildDebugTypeFromDType(MLIRContext *ctx,
+                                      TargetInfoAttr targetInfo, uint8_t dtype,
                                       size_t indexWidth) {
+  // Check if the target implements specialized conversions for this dtype.
+  if (DIType specializedResult = buildTargetSpecificDebugTypeFromDType(
+          ctx, targetInfo, dtype, indexWidth))
+    return specializedResult;
+
   // Process various builtin dtypes.
   switch (dtype) {
   case DType::kBool:
-    return buildIntFpDebugType<DIBasicBoolType>(ctx, dtype, 8, 8);
+    return buildIntFpDebugType<DIBasicBoolType>(ctx, targetInfo, dtype, 8, 8);
   case DType::si1:
-    return buildIntFpDebugType<DIBasicSIntType>(ctx, dtype, 1, 1);
+    return buildIntFpDebugType<DIBasicSIntType>(ctx, targetInfo, dtype, 1, 1);
   case DType::ui1:
-    return buildIntFpDebugType<DIBasicUIntType>(ctx, dtype, 1, 1);
+    return buildIntFpDebugType<DIBasicUIntType>(ctx, targetInfo, dtype, 1, 1);
   case DType::si2:
-    return buildIntFpDebugType<DIBasicSIntType>(ctx, dtype, 2, 8);
+    return buildIntFpDebugType<DIBasicSIntType>(ctx, targetInfo, dtype, 2, 8);
   case DType::ui2:
-    return buildIntFpDebugType<DIBasicUIntType>(ctx, dtype, 2, 8);
+    return buildIntFpDebugType<DIBasicUIntType>(ctx, targetInfo, dtype, 2, 8);
   case DType::si4:
-    return buildIntFpDebugType<DIBasicSIntType>(ctx, dtype, 4, 8);
+    return buildIntFpDebugType<DIBasicSIntType>(ctx, targetInfo, dtype, 4, 8);
   case DType::ui4:
-    return buildIntFpDebugType<DIBasicUIntType>(ctx, dtype, 4, 8);
+    return buildIntFpDebugType<DIBasicUIntType>(ctx, targetInfo, dtype, 4, 8);
   case DType::si8:
-    return buildIntFpDebugType<DIBasicSIntType>(ctx, dtype, 8, 8);
+    return buildIntFpDebugType<DIBasicSIntType>(ctx, targetInfo, dtype, 8, 8);
   case DType::ui8:
-    return buildIntFpDebugType<DIBasicUIntType>(ctx, dtype, 8, 8);
+    return buildIntFpDebugType<DIBasicUIntType>(ctx, targetInfo, dtype, 8, 8);
   case DType::si16:
-    return buildIntFpDebugType<DIBasicSIntType>(ctx, dtype, 16, 16);
+    return buildIntFpDebugType<DIBasicSIntType>(ctx, targetInfo, dtype, 16, 16);
   case DType::ui16:
-    return buildIntFpDebugType<DIBasicUIntType>(ctx, dtype, 16, 16);
+    return buildIntFpDebugType<DIBasicUIntType>(ctx, targetInfo, dtype, 16, 16);
   case DType::si32:
-    return buildIntFpDebugType<DIBasicSIntType>(ctx, dtype, 32, 32);
+    return buildIntFpDebugType<DIBasicSIntType>(ctx, targetInfo, dtype, 32, 32);
   case DType::ui32:
-    return buildIntFpDebugType<DIBasicUIntType>(ctx, dtype, 32, 32);
+    return buildIntFpDebugType<DIBasicUIntType>(ctx, targetInfo, dtype, 32, 32);
   case DType::si64:
-    return buildIntFpDebugType<DIBasicSIntType>(ctx, dtype, 64, 64);
+    return buildIntFpDebugType<DIBasicSIntType>(ctx, targetInfo, dtype, 64, 64);
   case DType::ui64:
-    return buildIntFpDebugType<DIBasicUIntType>(ctx, dtype, 64, 64);
+    return buildIntFpDebugType<DIBasicUIntType>(ctx, targetInfo, dtype, 64, 64);
   case DType::si128:
-    return buildIntFpDebugType<DIBasicSIntType>(ctx, dtype, 128, 64);
+    return buildIntFpDebugType<DIBasicSIntType>(ctx, targetInfo, dtype, 128,
+                                                64);
   case DType::ui128:
-    return buildIntFpDebugType<DIBasicUIntType>(ctx, dtype, 128, 64);
+    return buildIntFpDebugType<DIBasicUIntType>(ctx, targetInfo, dtype, 128,
+                                                64);
 
   case DType::f8:
-    return buildIntFpDebugType<DIBasicFloatType>(ctx, dtype, 8, 8);
+    return buildIntFpDebugType<DIBasicFloatType>(ctx, targetInfo, dtype, 8, 8);
   case DType::f16:
-    return buildIntFpDebugType<DIBasicFloatType>(ctx, dtype, 16, 16);
+    return buildIntFpDebugType<DIBasicFloatType>(ctx, targetInfo, dtype, 16,
+                                                 16);
   case DType::f32:
-    return buildIntFpDebugType<DIBasicFloatType>(ctx, dtype, 32, 32);
+    return buildIntFpDebugType<DIBasicFloatType>(ctx, targetInfo, dtype, 32,
+                                                 32);
   case DType::f64:
-    return buildIntFpDebugType<DIBasicFloatType>(ctx, dtype, 64, 64);
+    return buildIntFpDebugType<DIBasicFloatType>(ctx, targetInfo, dtype, 64,
+                                                 64);
   case DType::f128:
-    return buildIntFpDebugType<DIBasicFloatType>(ctx, dtype, 128, 64);
+    return buildIntFpDebugType<DIBasicFloatType>(ctx, targetInfo, dtype, 128,
+                                                 64);
   case DType::bf16:
-    return buildIntFpDebugType<DIBasicFloatType>(ctx, dtype, 16, 16);
+    return buildIntFpDebugType<DIBasicFloatType>(ctx, targetInfo, dtype, 16,
+                                                 16);
   case DType::f24:
-    return buildIntFpDebugType<DIBasicFloatType>(ctx, dtype, 24, 32);
+    return buildIntFpDebugType<DIBasicFloatType>(ctx, targetInfo, dtype, 24,
+                                                 32);
   case DType::f80:
-    return buildIntFpDebugType<DIBasicFloatType>(ctx, dtype, 80, 64);
+    return buildIntFpDebugType<DIBasicFloatType>(ctx, targetInfo, dtype, 80,
+                                                 64);
   case DType::tf32:
-    return buildIntFpDebugType<DIBasicFloatType>(ctx, dtype, 32, 32);
+    return buildIntFpDebugType<DIBasicFloatType>(ctx, targetInfo, dtype, 32,
+                                                 32);
 
   case DType::invalid:
     return DIUnspecifiedType::get(
-        ctx, DebugInfoEncoding::getKGENDTypeAsString(KGENDType(dtype)));
+        ctx, getKGENDTypeAsString(targetInfo, KGENDType(dtype)));
 
   case KGENDType::address:
   case KGENDType::index:
-    return buildIntFpDebugType<DIBasicUIntType>(ctx, dtype, indexWidth,
-                                                indexWidth);
+    return buildIntFpDebugType<DIBasicUIntType>(ctx, targetInfo, dtype,
+                                                indexWidth, indexWidth);
 
     // TODO: Process the remaining dtypes.
   default:
@@ -158,7 +208,7 @@ DIType KGEN::DebugInfoTypeConverter::buildDebugType(StringType type) {
   return DIStructType::get(
       b.getStringAttr("!kgen.string"),
       {DIMemberType::get("data", buildPointerType(buildDebugTypeFromDType(
-                                     ctx, KGENDType::si8, 0))),
+                                     ctx, targetInfo, KGENDType::si8, 0))),
        DIMemberType::get("size", convertDebugType(IndexType::get(ctx)))});
 }
 
@@ -212,8 +262,9 @@ DIType KGEN::DebugInfoTypeConverter::buildDebugType(POP::SIMDType type) {
 
   DIType baseType;
   if (std::optional<KGENDType> dtype = type.getResolvedDType()) {
-    baseType = buildDebugTypeFromDType(type.getContext(), dtype->getValue(),
-                                       tc.getIndexTypeBitwidth());
+    baseType =
+        buildDebugTypeFromDType(type.getContext(), targetInfo,
+                                dtype->getValue(), tc.getIndexTypeBitwidth());
   } else {
     baseType = DIUnspecifiedType::get(type.getContext(), "unknown");
   }
@@ -228,8 +279,9 @@ DIType KGEN::DebugInfoTypeConverter::buildDebugType(StructType type) {
       StringAttr::get(type.getContext(), mlir::debugString(type)));
 }
 
-KGEN::DebugInfoTypeConverter::DebugInfoTypeConverter(POPToLLVMTypeConverter &tc)
-    : tc(tc) {
+KGEN::DebugInfoTypeConverter::DebugInfoTypeConverter(POPToLLVMTypeConverter &tc,
+                                                     TargetInfoAttr targetInfo)
+    : tc(tc), targetInfo(targetInfo) {
   // Let the LLVM conversion handle a majority of the debug info generation.
   addUnresolvedConverter(tc);
 
