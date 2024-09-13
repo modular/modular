@@ -71,7 +71,7 @@ struct TensorCore[
     )
     alias tile_16x16_row = Layout(
         IntTuple(IntTuple(4, 8), IntTuple(2, 2, 2)),
-        IntTuple(IntTuple(31, 1), IntTuple(16, 8, 128)),
+        IntTuple(IntTuple(32, 1), IntTuple(16, 8, 128)),
     )
 
     alias supported_fp32 = in_type == DType.float32 and shape == shape_16x8x8
@@ -140,25 +140,25 @@ struct TensorCore[
 
             @parameter
             if reg_per_thread == 2:
-                a_reg_tile[0, 0] = rebind[Scalar[in_type]](
-                    mat_a[group_lane_id, group_id, 0]
-                )
-                a_reg_tile[0, 1] = rebind[Scalar[in_type]](
-                    mat_a[group_lane_id, group_id, 1]
-                )
+
+                @parameter
+                for i in range(2):
+                    a_reg_tile[0, i] = rebind[Scalar[in_type]](
+                        mat_a[group_lane_id, group_id, i]
+                    )
             elif reg_per_thread == 4:
-                a_reg_tile[0, 0] = rebind[Scalar[in_type]](
-                    mat_a[group_lane_id, group_id, 0, 0]
-                )
-                a_reg_tile[0, 1] = rebind[Scalar[in_type]](
-                    mat_a[group_lane_id, group_id, 1, 0]
-                )
-                a_reg_tile[0, 2] = rebind[Scalar[in_type]](
-                    mat_a[group_lane_id, group_id, 0, 1]
-                )
-                a_reg_tile[0, 3] = rebind[Scalar[in_type]](
-                    mat_a[group_lane_id, group_id, 1, 1]
-                )
+
+                @parameter
+                for j in range(2):
+
+                    @parameter
+                    for i in range(2):
+                        alias layout = Layout.col_major(2, 2)
+                        alias idx = layout(IntTuple(i, j))
+                        a_reg_tile[0, idx] = rebind[Scalar[in_type]](
+                            mat_a[group_lane_id, group_id, i, j]
+                        )
+
             else:
                 constrained[
                     False, "No valid mma shape to load matrix fragment a"
@@ -167,18 +167,33 @@ struct TensorCore[
 
             @parameter
             if reg_per_thread == 4:
-                a_reg_tile[0, 0] = rebind[Scalar[in_type]](
-                    mat_a[group_lane_id, group_id, 0, 0]
-                )
-                a_reg_tile[0, 1] = rebind[Scalar[in_type]](
-                    mat_a[group_lane_id, group_id, 1, 0]
-                )
-                a_reg_tile[0, 2] = rebind[Scalar[in_type]](
-                    mat_a[group_lane_id, group_id, 0, 1]
-                )
-                a_reg_tile[0, 3] = rebind[Scalar[in_type]](
-                    mat_a[group_lane_id, group_id, 1, 1]
-                )
+
+                @parameter
+                for j in range(2):
+
+                    @parameter
+                    for i in range(2):
+                        alias layout = Layout.col_major(2, 2)
+                        alias idx = layout(IntTuple(i, j))
+                        a_reg_tile[0, idx] = rebind[Scalar[in_type]](
+                            mat_a[group_lane_id, group_id, i, j]
+                        )
+
+            elif reg_per_thread == 8:
+
+                @parameter
+                for k in range(2):
+
+                    @parameter
+                    for j in range(2):
+
+                        @parameter
+                        for i in range(2):
+                            alias layout = Layout.col_major(2, 2, 2)
+                            alias idx = layout(IntTuple(i, j, k))
+                            a_reg_tile[0, idx] = rebind[Scalar[in_type]](
+                                mat_a[group_lane_id, group_id, i, j, k]
+                            )
             else:
                 constrained[
                     False, "No valid mma shape to load matrix fragment a"
@@ -216,6 +231,19 @@ struct TensorCore[
                 var mat_b = b.transpose().composition[layout_b]()
                 return rebind[Scalar[in_type]](mat_b[d0, d1, d2])
 
+        @always_inline
+        @parameter
+        fn read_from_mat_b(
+            d0: Int, d1: Int, d2: Int, d3: Int
+        ) -> Scalar[in_type]:
+            @parameter
+            if transpose_b:
+                var mat_b = b.composition[layout_b]()
+                return rebind[Scalar[in_type]](mat_b[d0, d1, d2, d3])
+            else:
+                var mat_b = b.transpose().composition[layout_b]()
+                return rebind[Scalar[in_type]](mat_b[d0, d1, d2, d3])
+
         var group_id = lane_id() >> 2
         var group_lane_id = lane_id() % 4
 
@@ -228,12 +256,12 @@ struct TensorCore[
                     read_from_mat_b(group_lane_id, group_id, 0)
                 )
             elif reg_per_thread == 2:
-                b_reg_tile[0, 0] = rebind[Scalar[in_type]](
-                    read_from_mat_b(group_lane_id, group_id, 0)
-                )
-                b_reg_tile[1, 0] = rebind[Scalar[in_type]](
-                    read_from_mat_b(group_lane_id, group_id, 1)
-                )
+
+                @parameter
+                for i in range(2):
+                    b_reg_tile[i, 0] = rebind[Scalar[in_type]](
+                        read_from_mat_b(group_lane_id, group_id, i)
+                    )
             else:
                 constrained[
                     False, "No valid mma shape to load matrix fragment b"
@@ -242,12 +270,25 @@ struct TensorCore[
 
             @parameter
             if reg_per_thread == 2:
-                b_reg_tile[0, 0] = rebind[Scalar[in_type]](
-                    read_from_mat_b(group_lane_id, group_id, 0)
-                )
-                b_reg_tile[1, 0] = rebind[Scalar[in_type]](
-                    read_from_mat_b(group_lane_id, group_id, 1)
-                )
+
+                @parameter
+                for i in range(2):
+                    b_reg_tile[i, 0] = rebind[Scalar[in_type]](
+                        read_from_mat_b(group_lane_id, group_id, i)
+                    )
+
+            elif reg_per_thread == 4:
+
+                @parameter
+                for j in range(2):
+
+                    @parameter
+                    for i in range(2):
+                        alias layout = Layout.col_major(2, 2)
+                        alias idx = layout(IntTuple(i, j))
+                        b_reg_tile[idx, 0] = rebind[Scalar[in_type]](
+                            read_from_mat_b(group_lane_id, group_id, i, j)
+                        )
             else:
                 constrained[
                     False, "No valid mma shape to load matrix fragment b"
