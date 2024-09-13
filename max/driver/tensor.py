@@ -49,6 +49,9 @@ class Tensor:
 
     @classmethod
     def _from_impl(cls, impl: _Tensor) -> Tensor:
+        # The error messages are confusing if accidentally passing an incorrect
+        # type, so we assert.
+        assert isinstance(impl, _Tensor)
         # The dtype and shape arguments are ignored.
         return cls((), DType.uint8, _impl=impl)
 
