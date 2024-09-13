@@ -18,14 +18,19 @@ struct Counter(Movable):
     fn __init__(inout self):
         self.a = 0
         self.b = 0
+        print("counter init (no arg)")
 
     fn __init__(inout self, a: Int, b: Int):
         self.a = a
         self.b = b
+        print("counter init", a, b)
 
     fn __moveinit__(inout self, owned other: Self):
         self.a = other.a
         self.b = other.b
+
+    fn __del__(owned self):
+        print("counter del")
 
     fn bump(inout self):
         self.a += 1
@@ -57,13 +62,3 @@ fn bump_counter(inout c: Counter, output: NDBuffer[DType.bool, 1, DimList(1)]):
 fn read_counter(c: Counter, output: NDBuffer[DType.int32, 1, DimList(2)]):
     output[0] = c.a
     output[1] = c.b
-
-
-# TODO(MSDK-949): Fix and re-enable: error: 'mo.custom' op
-# [MO_TO_MOGG] Owned arguments not supported for opaque types in the kernel
-# drop_counter
-@mogg_register("drop_counter")
-fn drop_counter(owned c: Counter) -> Counter:
-    print("dropping")
-    _ = c^
-    return Counter()
