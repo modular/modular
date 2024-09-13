@@ -556,23 +556,21 @@ struct LaunchAttribute:
     var value: LaunchAttributeValue
 
     fn __init__(inout self):
-        constrained[sizeof[Self]() == 64]()
         self.id = LaunchAttributeID.IGNORE
         self.__pad = __type_of(self.__pad)()
         self.value = LaunchAttributeValue()
 
     fn __init__(inout self, policy: AccessPolicyWindow):
+        self = Self()
         self.id = LaunchAttributeID.ACCESS_POLICY_WINDOW
-        self.__pad = __type_of(self.__pad)()
         self.value = LaunchAttributeValue(policy)
 
-    @no_inline
-    fn __str__(self) -> String:
-        return String.format_sequence(self)
-
-    @no_inline
-    fn format_to(self, inout writer: Formatter):
-        return writer.write("id: ", self.id, ", value: ", self.value)
+    @staticmethod
+    fn from_cluster_dim(dim: Dim) -> Self:
+        var res = Self()
+        res.id = LaunchAttributeID.CLUSTER_DIMENSION
+        res.value = LaunchAttributeValue(dim)
+        return res
 
 
 # ===----------------------------------------------------------------------===#
@@ -585,19 +583,25 @@ struct LaunchAttribute:
 struct LaunchAttributeValue:
     # TODO: This should be a union as defined in
     # https://docs.nvidia.com/cuda/cuda-driver-api/unionCUlaunchAttributeValue.html#unionCUlaunchAttributeValue
-    # but right now we only care about the AccessPolicyWindow
-    var access_policy_window: AccessPolicyWindow
+    # but we can emulate that by just having different constructors with
+    # different storages.
+    alias _storage_type = StaticTuple[UInt8, 64]
+    var _storage: Self._storage_type
 
     fn __init__(inout self):
-        self.access_policy_window = AccessPolicyWindow()
+        self._storage = StaticTuple[UInt8, 64](0)
 
-    @no_inline
-    fn __str__(self) -> String:
-        return String.format_sequence(self)
+    fn __init__(inout self, policy: AccessPolicyWindow):
+        var tmp = policy
+        var ptr = UnsafePointer.address_of(tmp)
+        self._storage = ptr.bitcast[Self._storage_type]()[]
+        _ = ptr
 
-    @no_inline
-    fn format_to(self, inout writer: Formatter):
-        return writer.write(self.access_policy_window)
+    fn __init__(inout self, dim: Dim):
+        var tmp = StaticTuple[UInt32, 3](dim.x(), dim.y(), dim.z())
+        var ptr = UnsafePointer.address_of(tmp)
+        self._storage = ptr.bitcast[Self._storage_type]()[]
+        _ = ptr
 
 
 # ===----------------------------------------------------------------------===#

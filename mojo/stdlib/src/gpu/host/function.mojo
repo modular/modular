@@ -359,6 +359,7 @@ struct Function[
         grid_dim: Dim,
         block_dim: Dim,
         stream: Stream,
+        cluster_dim: Optional[Dim] = None,
         shared_mem_bytes: Int = 0,
         owned attributes: List[LaunchAttribute] = List[LaunchAttribute](),
         owned constant_memory: List[ConstantMemoryMapping] = List[
@@ -369,6 +370,7 @@ struct Function[
             args,
             grid_dim=grid_dim,
             block_dim=block_dim,
+            cluster_dim=cluster_dim,
             stream=stream,
             shared_mem_bytes=shared_mem_bytes,
             attributes=attributes^,
@@ -385,6 +387,7 @@ struct Function[
         grid_dim: Dim,
         block_dim: Dim,
         stream: Stream,
+        cluster_dim: Optional[Dim] = None,
         shared_mem_bytes: Int = 0,
         owned attributes: List[LaunchAttribute] = List[LaunchAttribute](),
         owned constant_memory: List[ConstantMemoryMapping] = List[
@@ -413,6 +416,7 @@ struct Function[
             args_stack,
             grid_dim=grid_dim,
             block_dim=block_dim,
+            cluster_dim=cluster_dim,
             stream=stream,
             shared_mem_bytes=shared_mem_bytes,
             attributes=attributes^,
@@ -427,6 +431,7 @@ struct Function[
         grid_dim: Dim,
         block_dim: Dim,
         stream: Stream,
+        cluster_dim: Optional[Dim] = None,
         shared_mem_bytes: Int = 0,
         owned attributes: List[LaunchAttribute] = List[LaunchAttribute](),
         owned constant_memory: List[ConstantMemoryMapping] = List[
@@ -455,6 +460,11 @@ struct Function[
                 )
                 _ = entry
                 _ = device_ptr
+
+        if cluster_dim:
+            attributes.append(
+                LaunchAttribute.from_cluster_dim(cluster_dim.value())
+            )
 
         var config = LaunchConfig(
             grid_dim_x=grid_dim.x(),

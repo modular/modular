@@ -155,6 +155,7 @@ struct DeviceContextV2:
         *args: *Ts,
         grid_dim: Dim,
         block_dim: Dim,
+        cluster_dim: Optional[Dim] = None,
         shared_mem_bytes: Int = 0,
         owned attributes: List[LaunchAttribute] = List[LaunchAttribute](),
         owned constant_memory: List[ConstantMemoryMapping] = List[
@@ -172,6 +173,7 @@ struct DeviceContextV2:
         args: VariadicPack[_, AnyType, Ts],
         grid_dim: Dim,
         block_dim: Dim,
+        cluster_dim: Optional[Dim] = None,
         shared_mem_bytes: Int = 0,
         owned attributes: List[LaunchAttribute] = List[LaunchAttribute](),
         owned constant_memory: List[ConstantMemoryMapping] = List[
