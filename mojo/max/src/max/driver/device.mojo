@@ -152,7 +152,6 @@ struct Device(Stringable):
         to the Device, and the Device will only be de-allocated when all of its
         DeviceBuffers have also been destroyed.
         """
-
         if not self._cdev._ptr:
             return
         self._lib.value().destroy_device_fn(self._cdev._ptr)
