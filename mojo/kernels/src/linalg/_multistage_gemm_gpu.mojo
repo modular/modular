@@ -4,8 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from collections import Optional
-from collections.optional import OptionalReg
+from collections import OptionalReg
 from math import ceildiv
 from sys import alignof, simdwidthof, sizeof
 
@@ -96,8 +95,8 @@ fn multistage_mma[
         b_type, b_smem_layout, address_space = AddressSpace.SHARED, circular=_
     ],
     num_iters: Int,
-    num_a_rows: Optional[Int] = None,
-    num_b_rows: Optional[Int] = None,
+    num_a_rows: OptionalReg[Int] = None,
+    num_b_rows: OptionalReg[Int] = None,
     next_op_b_iter: LayoutTensorIter[
         b_type, b_next_gmem_layout
     ] = LayoutTensorIter[b_type, b_next_gmem_layout](),
