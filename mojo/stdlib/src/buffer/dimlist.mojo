@@ -262,7 +262,11 @@ struct Dim(Intable, Stringable, Formattable, ImplicitlyBoolable):
 
 
 @register_passable("trivial")
-struct DimList(Sized, Stringable, Formattable):
+struct DimList(
+    Sized,
+    Stringable,
+    Formattable,
+):
     """This type represents a list of dimensions. Each dimension may have a
     static value or not have a value, which represents a dynamic dimension."""
 
@@ -499,6 +503,28 @@ struct DimList(Sized, Stringable, Formattable):
             The string representation of the type.
         """
         return String.format_sequence(self)
+
+    @always_inline("nodebug")
+    fn __eq__(self, rhs: DimList) -> Bool:
+        """Compares two DimLists for equality.
+
+        DimLists are considered equal if all non-dynamic Dims have similar
+        values and all dynamic Dims in self are also dynamic in rhs.
+
+        Args:
+            rhs: The other DimList.
+
+        Returns:
+            True if the DimLists are the same.
+        """
+        if len(self) != len(rhs):
+            return False
+
+        for i in range(len(self)):
+            if self.value[i] != rhs.value[i]:
+                return False
+
+        return True
 
     fn format_to(self, inout writer: Formatter):
         """
