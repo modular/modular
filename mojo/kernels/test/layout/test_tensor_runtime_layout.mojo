@@ -10,6 +10,7 @@ from layout.layout_tensor import LayoutTensorIter
 from layout.int_tuple import UNKNOWN_VALUE, IntTuple
 from utils import StaticIntTuple
 from layout.fillers import arange, random
+from math import sqrt
 
 
 #  CHECK-LABEL: test_fill_and_print
@@ -493,32 +494,31 @@ fn test_linspace_fill():
 # CHECK-LABEL: test_random_fill
 fn test_random_fill():
     print("== test_random_fill")
-    alias layout = Layout(
-        IntTuple(8, 8), IntTuple(UNKNOWN_VALUE, UNKNOWN_VALUE)
-    )
+    alias layout = Layout(8 * 8 * 8 * 8)
 
-    var dynamic_layout = RuntimeLayout[layout](
-        RuntimeTuple[layout.shape](8, 8), RuntimeTuple[layout.stride](8, 1)
-    )
+    var dynamic_layout = RuntimeLayout[layout](layout.size(), 1)
     var src_tensor = LayoutTensor[DType.float32, layout](
         UnsafePointer[Float32].alloc(dynamic_layout.size()), dynamic_layout
     )
     random(src_tensor)
-    # this works because we have fixed seed
-    # FIXME(KERN-950): This does not work actually. The RNG varies per platform.
-    # This is failing on MacOS.
-    # CHECK: ----source-tensor----
-    # XCHECK: 0.1315377950668335 0.458650141954422 0.21895918250083923 0.67886471748352051 0.93469291925430298 0.51941639184951782 0.034572109580039978 0.52970021963119507
-    # XCHECK: 0.007698186207562685 0.066842235624790192 0.68677270412445068 0.93043649196624756 0.52692878246307373 0.65391898155212402 0.70119059085845947 0.76219803094863892
-    # XCHECK: 0.047464512288570404 0.3282342255115509 0.75641047954559326 0.36533868312835693 0.98255026340484619 0.75335586071014404 0.072685882449150085 0.88470715284347534
-    # XCHECK: 0.43641141057014465 0.47773176431655884 0.27490684390068054 0.16650719940662384 0.89765626192092896 0.060564327985048294 0.50452291965484619 0.3190329372882843
-    # XCHECK: 0.49397668242454529 0.090732894837856293 0.073749072849750519 0.38414216041564941 0.91381746530532837 0.46444582939147949 0.050083983689546585 0.77020454406738281
-    # XCHECK: 0.12536537647247314 0.68845528364181519 0.62954342365264893 0.72541201114654541 0.88857221603393555 0.30632182955741882 0.51327371597290039 0.84598153829574585
-    # XCHECK: 0.84151065349578857 0.41539460420608521 0.46791738271713257 0.17832770943641663 0.5716547966003418 0.033053755760192871 0.49848011136054993 0.74829262495040894
-    # XCHECK: 0.89073747396469116 0.84203958511352539 0.21275150775909424 0.13042725622653961 0.27458813786506653 0.41429325938224792 0.70981961488723755 0.23991081118583679
+    var sum: Float32 = 0.0
+    for i in range(src_tensor.runtime_layout.size()):
+        sum += rebind[Float32](src_tensor[i])
+    var mean = sum / src_tensor.runtime_layout.size()
 
-    print("----source-tensor----")
-    print(src_tensor)
+    var variance: Float32 = 0.0
+    for i in range(src_tensor.runtime_layout.size()):
+        var diff = (rebind[Float32](src_tensor[i]) - mean)
+        variance += diff * diff
+    variance = sqrt(variance / src_tensor.runtime_layout.size())
+
+    # Check that the mean value is close to 0.5 and variance is more than 0.1
+    # CHECK: ----mean-variance----
+    # CHECK: True
+    # CHECK: True
+    print("----mean-variance----")
+    print(abs(mean - 0.5) < 0.01)
+    print(variance > 0.1)
 
 
 # CHECK-LABEL: test_iterator
