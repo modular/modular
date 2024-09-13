@@ -318,6 +318,55 @@ struct Info:
             / self._warps_per_block(threads_per_block)
         ) * int(self.register_file_size / self.max_registers_per_block)
 
+    fn _block_runtime_shared_memory(self) -> Int:
+        if self.compute > 8:
+            # starting with Compute Capability 8.x, the CUDA runtime consumes
+            # 1KB of shared memory the amount might change depending on the
+            # CUDA runtime version in the future.
+            return 1024
+        return 0
+
+    fn _block_shared_memory(self, *, shared_memory_per_block: Int) -> Int:
+        """shared memory per thread block."""
+        return ceildiv(
+            shared_memory_per_block + self._block_runtime_shared_memory(),
+            self.shared_memory_allocation_unit_size,
+        )
+
+    fn _thread_blocks_per_multiprocessor_limited_by_warps_or_blocks_per_multiprocessor(
+        self, threads_per_block: Int
+    ) -> Float64:
+        return min(
+            self.thread_blocks_per_multiprocessor,
+            floor(
+                self.warps_per_multiprocessor
+                / self._warps_per_block(threads_per_block),
+            ),
+        )
+
+    fn _warps_per_multiprocessor_limited_by_registers(
+        self, registers_per_thread: Int
+    ) -> Int:
+        return _quantized_floor(
+            self.max_registers_per_block
+            / self._registers_per_warp(registers_per_thread),
+            self.warp_allocation_granularity,
+        )
+
+    fn _thread_blocks_per_multiprocessor_limited_by_registers_per_multiprocessor(
+        self, *, threads_per_block: Int, registers_per_thread: Int
+    ) -> Float64:
+        if registers_per_thread > self.max_registers_per_thread:
+            return 0
+        if registers_per_thread > 0:
+            return floor(
+                self._warps_per_multiprocessor_limited_by_registers(
+                    registers_per_thread
+                )
+                / self._warps_per_block(threads_per_block)
+            ) * floor(self.register_file_size / self.max_registers_per_block)
+        return self.thread_blocks_per_multiprocessor
+
     fn occupancy(
         self, *, threads_per_block: Int, registers_per_thread: Int
     ) -> Float64:
