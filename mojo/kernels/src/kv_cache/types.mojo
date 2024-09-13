@@ -5,6 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from buffer import NDBuffer, DimList, Dim
+from os import abort
 from utils import StaticIntTuple
 
 # TODO this is to make moving this value around easier. We should realistically
@@ -258,7 +259,7 @@ struct ContiguousKVCacheCollection[
         seq_ids: List[Int],
         num_layers: Int,
         batch_size: Int,
-    ) raises:
+    ):
         debug_assert(key_cache.dim[0]() == num_layers, "invalid key_cache size")
         debug_assert(
             value_cache.dim[0]() == num_layers, "invalid value_cache size "
@@ -280,8 +281,7 @@ struct ContiguousKVCacheCollection[
         elif kv_params.layout == KVCacheLayout.BSHD:
             self.max_seq_len = key_cache.dim[2]()
         else:
-            constrained[False, "unsupported layout"]()
-            raise "failure"
+            self.max_seq_len = abort[Int]("unsupported layout")
 
         self.cache_lengths = cache_lengths
 
