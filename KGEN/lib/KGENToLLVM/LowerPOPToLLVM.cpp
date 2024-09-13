@@ -1510,7 +1510,7 @@ void LowerPOPToLLVMPass::runOnOperation() {
                   ConvertPOPVariadicSplat, ConvertPOPStackAllocLifetimeStart,
                   ConvertPOPStackAllocLifetimeEnd>(typeConverter, targetInfo);
 
-  DebugInfoTypeConverter debugTypeConverter(typeConverter);
+  DebugInfoTypeConverter debugTypeConverter(typeConverter, targetInfo);
   DebugInfo::populateTypeConversionPatterns(patterns, debugTypeConverter,
                                             typeConverter);
   target.addDynamicallyLegalDialect<DebugInfo::DebugInfoDialect>(
@@ -2016,7 +2016,7 @@ void LowerGlobalPOPToLLVMPass::runOnOperation() {
   // pop.compiler.* are all illegal.
   target.addIllegalOp<CompilerGlobalLoadOp, CompilerGlobalStoreOp>();
 
-  DebugInfoTypeConverter debugTypeConverter(typeConverter);
+  DebugInfoTypeConverter debugTypeConverter(typeConverter, targetInfo);
   DebugInfo::populateTypeConversionPatterns(patterns, debugTypeConverter,
                                             typeConverter);
   target.addDynamicallyLegalDialect<DebugInfo::DebugInfoDialect>(
