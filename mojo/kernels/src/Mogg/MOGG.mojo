@@ -194,6 +194,7 @@ from utils import StaticTuple
 from utils.index import Index, StaticIntTuple, product
 from utils.loop import unroll
 from utils.numerics import isinf, isnan
+from bit import is_power_of_two
 
 
 # Prevent these functions from being DCE'd by explicitly exporting them.
@@ -791,6 +792,15 @@ fn simd_store[
 ):
     var flat_index = _compute_ndbuffer_offset(buffer, index)
 
+    @parameter
+    fn gcd_pow2[a: Int, b: Int]() -> Int:
+        # alignments should always be powers of 2
+        constrained[
+            is_power_of_two(a) and is_power_of_two(b),
+            "a and b must be powers of 2",
+        ]()
+        return min(a, b)
+
     # We have to cast bools into their runtime storage type.
     @parameter
     if buffer.type is DType.bool:
@@ -801,12 +811,9 @@ fn simd_store[
     else:
         buffer.data.store[
             width=simd_width,
-            # TODO(GRA-933): cannot use elemement_alignment here yet because the
-            # pointer backing the NDBuffer may be unaligned (e.g.the graph
-            # compiler may pass in an offset into an aligned buffer if the
-            # subsequent op is concat). Should change to:
-            # alignment = element_alignment * alignof[Scalar[buffer.type]](),
-            alignment = alignof[Scalar[buffer.type]](),
+            alignment = gcd_pow2[
+                buffer.alignment, element_alignment * alignof[buffer.type]()
+            ](),
         ](flat_index, val)
 
 
