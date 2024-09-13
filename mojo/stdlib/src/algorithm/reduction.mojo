@@ -12,7 +12,7 @@ from algorithm import map_reduce
 ```
 """
 
-from collections import Optional
+from collections import OptionalReg
 from math import align_down, ceildiv, iota
 from os import abort
 from sys.info import simdwidthof, sizeof, triple_is_nvidia_cuda
