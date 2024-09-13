@@ -55,6 +55,15 @@ class Tensor:
         # The dtype and shape arguments are ignored.
         return cls((), DType.uint8, _impl=impl)
 
+    @classmethod
+    def zeros(
+        cls, shape: Tuple[int, ...], dtype: DType, device: Device = CPU()
+    ) -> Tensor:
+        """Allocates an tensor with all elements initialized to zero."""
+        tensor = cls(shape, dtype, device)
+        tensor._impl.zeros()
+        return tensor
+
     @property
     def dtype(self) -> DType:
         """DType of constituent elements in tensor."""
