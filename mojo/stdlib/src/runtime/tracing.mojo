@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 """Provides tracing utilities."""
 
-from collections.optional import Optional
+from collections.optional import OptionalReg
 from sys import external_call
 from sys.param_env import env_get_int, is_defined
 import gpu.host.nvtx
@@ -19,7 +19,7 @@ from utils import StaticIntTuple
 from buffer import NDBuffer
 
 
-fn _build_info_asyncrt_max_profiling_level() -> Optional[Int]:
+fn _build_info_asyncrt_max_profiling_level() -> OptionalReg[Int]:
     @parameter
     if not is_defined["MODULAR_ASYNCRT_MAX_PROFILING_LEVEL"]():
         return None
@@ -269,12 +269,12 @@ struct Trace[
     level: TraceLevel,
     *,
     category: TraceCategory = TraceCategory.MAX,
-    target: Optional[StringLiteral] = None,
+    target: OptionalReg[StringLiteral] = None,
 ]:
     """An object representing a specific trace."""
 
     var name: StringLiteral
-    var int_payload: Optional[Int]
+    var int_payload: OptionalReg[Int]
     var detail: String
     var event_id: Int
     var parent_id: Int
