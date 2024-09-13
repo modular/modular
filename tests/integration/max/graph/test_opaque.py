@@ -56,19 +56,6 @@ def test_opaque(session: InferenceSession, counter_ops_path: Path) -> None:
         reader_graph, custom_extensions=counter_ops_path
     )
 
-    dropper_graph = Graph(
-        "dropper", input_types=[counter_type], output_types=[]
-    )
-    with dropper_graph:
-        c = ops.custom(
-            "drop_counter", [dropper_graph.inputs[0]], [counter_type]
-        )
-        dropper_graph.output(c[0])
-    # TODO(MSDK-949): Fix and re-enable: error: 'mo.custom' op [MO_TO_MOGG] Owned arguments not supported for opaque types in the kernel drop_counter
-    # dropper_compiled = session.load(
-    #    dropper_graph, custom_extensions=counter_ops_path
-    # )
-
     counter = maker_compiled.execute()["output0"]
     for i in range(5):
         bumper_compiled.execute(input0=counter)
