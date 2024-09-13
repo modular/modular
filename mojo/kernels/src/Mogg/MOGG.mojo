@@ -90,6 +90,12 @@ from nn.kv_cache import (
     flash_attention_kv_cache_h8_d128_bhsd,
     flash_attention_kv_cache_h1_d10_bhsd,
     flash_attention_kv_cache_h1_d10_bshd,
+    contiguous_kv_cache_collection_h6_d48_bshd,
+    contiguous_kv_cache_collection_h6_d48_bhsd,
+    contiguous_kv_cache_collection_h8_d128_bshd,
+    contiguous_kv_cache_collection_h8_d128_bhsd,
+    contiguous_kv_cache_collection_h1_d10_bshd,
+    contiguous_kv_cache_collection_h1_d10_bhsd,
 )
 
 from linalg.bmm import batched_matmul as _batched_matmul
@@ -295,6 +301,12 @@ fn MOGGExport():
     alias _flash_attention_kv_cache_h8_d128_bhsd = flash_attention_kv_cache_h8_d128_bhsd
     alias _flash_attention_kv_cache_h1_d10_bshd = flash_attention_kv_cache_h1_d10_bshd
     alias _flash_attention_kv_cache_h1_d10_bhsd = flash_attention_kv_cache_h1_d10_bhsd
+    alias _contiguous_kv_cache_collection_h6_d48_bshd = contiguous_kv_cache_collection_h6_d48_bshd
+    alias _contiguous_kv_cache_collection_h6_d48_bhsd = contiguous_kv_cache_collection_h6_d48_bhsd
+    alias _contiguous_kv_cache_collection_h8_d128_bshd = contiguous_kv_cache_collection_h8_d128_bshd
+    alias _contiguous_kv_cache_collection_h8_d128_bhsd = contiguous_kv_cache_collection_h8_d128_bhsd
+    alias _contiguous_kv_cache_collection_h1_d10_bshd = contiguous_kv_cache_collection_h1_d10_bshd
+    alias _contiguous_kv_cache_collection_h1_d10_bhsd = contiguous_kv_cache_collection_h1_d10_bhsd
 
 
 # ===----------------------------------------------------------------------===#
