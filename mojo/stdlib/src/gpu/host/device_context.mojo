@@ -33,7 +33,7 @@ from ._utils import _check_error, _StreamHandle
 
 # TODO: Figure a way to resolve circular dependency between the gpu and runtime
 # packages in the corresponding CMakes and sub below from runtime.tracing
-fn _build_info_asyncrt_max_profiling_level() -> Optional[Int]:
+fn _build_info_asyncrt_max_profiling_level() -> OptionalReg[Int]:
     @parameter
     if not is_defined["MODULAR_ASYNCRT_MAX_PROFILING_LEVEL"]():
         return None
@@ -111,7 +111,7 @@ struct KernelProfilingInfo:
 
     fn get_kernel_from_list(
         self, name: String
-    ) -> Optional[UnsafePointer[KernelProfilingInfoElement]]:
+    ) -> OptionalReg[UnsafePointer[KernelProfilingInfoElement]]:
         for i in reversed(range(len(self.kernelProfilingList))):
             if self.kernelProfilingList[i].name == name:
                 return UnsafePointer.address_of(self.kernelProfilingList[i])
@@ -236,11 +236,11 @@ struct DeviceFunctionV1[
         inout self,
         ctx: DeviceContextV1,
         *,
-        max_registers: Optional[Int] = None,
-        threads_per_block: Optional[Int] = None,
-        cache_mode: Optional[CacheMode] = None,
-        cache_config: Optional[CacheConfig] = None,
-        func_attribute: Optional[FuncAttribute] = None,
+        max_registers: OptionalReg[Int] = None,
+        threads_per_block: OptionalReg[Int] = None,
+        cache_mode: OptionalReg[CacheMode] = None,
+        cache_config: OptionalReg[CacheConfig] = None,
+        func_attribute: OptionalReg[FuncAttribute] = None,
     ) raises:
         self.ctx_ptr = UnsafePointer[DeviceContextV1].address_of(ctx)
         self.cuda_function = Function[
@@ -333,11 +333,11 @@ struct DeviceContextV1:
     ](
         self,
         *,
-        max_registers: Optional[Int] = None,
-        threads_per_block: Optional[Int] = None,
-        cache_mode: Optional[CacheMode] = None,
-        cache_config: Optional[CacheConfig] = None,
-        func_attribute: Optional[FuncAttribute] = None,
+        max_registers: OptionalReg[Int] = None,
+        threads_per_block: OptionalReg[Int] = None,
+        cache_mode: OptionalReg[CacheMode] = None,
+        cache_config: OptionalReg[CacheConfig] = None,
+        func_attribute: OptionalReg[FuncAttribute] = None,
     ) raises -> DeviceFunctionV1[
         func,
         dump_ptx=dump_ptx,
@@ -365,7 +365,7 @@ struct DeviceContextV1:
         *args: *Ts,
         grid_dim: Dim,
         block_dim: Dim,
-        cluster_dim: Optional[Dim] = None,
+        cluster_dim: OptionalReg[Dim] = None,
         shared_mem_bytes: Int = 0,
         owned attributes: List[LaunchAttribute] = List[LaunchAttribute](),
         owned constant_memory: List[ConstantMemoryMapping] = List[
@@ -392,7 +392,7 @@ struct DeviceContextV1:
         args: VariadicPack[_, AnyType, Ts],
         grid_dim: Dim,
         block_dim: Dim,
-        cluster_dim: Optional[Dim] = None,
+        cluster_dim: OptionalReg[Dim] = None,
         shared_mem_bytes: Int = 0,
         owned attributes: List[LaunchAttribute] = List[LaunchAttribute](),
         owned constant_memory: List[ConstantMemoryMapping] = List[

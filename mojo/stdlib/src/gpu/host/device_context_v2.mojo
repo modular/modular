@@ -74,11 +74,11 @@ struct DeviceFunctionV2[
         inout self,
         ctx: DeviceContextV2,
         *,
-        max_registers: Optional[Int] = None,
-        threads_per_block: Optional[Int] = None,
-        cache_mode: Optional[CacheMode] = None,
-        cache_config: Optional[CacheConfig] = None,
-        func_attribute: Optional[FuncAttribute] = None,
+        max_registers: OptionalReg[Int] = None,
+        threads_per_block: OptionalReg[Int] = None,
+        cache_mode: OptionalReg[CacheMode] = None,
+        cache_config: OptionalReg[CacheConfig] = None,
+        func_attribute: OptionalReg[FuncAttribute] = None,
     ) raises:
         pass
 
@@ -123,11 +123,11 @@ struct DeviceContextV2:
     ](
         self,
         *,
-        max_registers: Optional[Int] = None,
-        threads_per_block: Optional[Int] = None,
-        cache_mode: Optional[CacheMode] = None,
-        cache_config: Optional[CacheConfig] = None,
-        func_attribute: Optional[FuncAttribute] = None,
+        max_registers: OptionalReg[Int] = None,
+        threads_per_block: OptionalReg[Int] = None,
+        cache_mode: OptionalReg[CacheMode] = None,
+        cache_config: OptionalReg[CacheConfig] = None,
+        func_attribute: OptionalReg[FuncAttribute] = None,
     ) raises -> DeviceFunctionV2[
         func,
         dump_ptx=dump_ptx,
@@ -155,7 +155,7 @@ struct DeviceContextV2:
         *args: *Ts,
         grid_dim: Dim,
         block_dim: Dim,
-        cluster_dim: Optional[Dim] = None,
+        cluster_dim: OptionalReg[Dim] = None,
         shared_mem_bytes: Int = 0,
         owned attributes: List[LaunchAttribute] = List[LaunchAttribute](),
         owned constant_memory: List[ConstantMemoryMapping] = List[
@@ -173,7 +173,7 @@ struct DeviceContextV2:
         args: VariadicPack[_, AnyType, Ts],
         grid_dim: Dim,
         block_dim: Dim,
-        cluster_dim: Optional[Dim] = None,
+        cluster_dim: OptionalReg[Dim] = None,
         shared_mem_bytes: Int = 0,
         owned attributes: List[LaunchAttribute] = List[LaunchAttribute](),
         owned constant_memory: List[ConstantMemoryMapping] = List[

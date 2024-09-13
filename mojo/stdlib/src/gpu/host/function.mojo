@@ -230,11 +230,11 @@ struct Function[
         inout self,
         ctx_ptr: UnsafePointer[DeviceContextV1],
         *,
-        max_registers: Optional[Int] = None,
-        threads_per_block: Optional[Int] = None,
-        cache_mode: Optional[CacheMode] = None,
-        cache_config: Optional[CacheConfig] = None,
-        func_attribute: Optional[FuncAttribute] = None,
+        max_registers: OptionalReg[Int] = None,
+        threads_per_block: OptionalReg[Int] = None,
+        cache_mode: OptionalReg[CacheMode] = None,
+        cache_config: OptionalReg[CacheConfig] = None,
+        func_attribute: OptionalReg[FuncAttribute] = None,
     ) raises:
         self.__init__(
             max_registers=max_registers,
@@ -256,11 +256,11 @@ struct Function[
         cuda_dll: CudaDLL,
         cuda_dll_ptr: UnsafePointer[CudaDLL],
         *,
-        max_registers: Optional[Int] = None,
-        threads_per_block: Optional[Int] = None,
-        cache_mode: Optional[CacheMode] = None,
-        cache_config: Optional[CacheConfig] = None,
-        func_attribute: Optional[FuncAttribute] = None,
+        max_registers: OptionalReg[Int] = None,
+        threads_per_block: OptionalReg[Int] = None,
+        cache_mode: OptionalReg[CacheMode] = None,
+        cache_config: OptionalReg[CacheConfig] = None,
+        func_attribute: OptionalReg[FuncAttribute] = None,
         cuda_function_cache: UnsafePointer[FunctionCache] = UnsafePointer[
             FunctionCache
         ](),
@@ -359,7 +359,7 @@ struct Function[
         grid_dim: Dim,
         block_dim: Dim,
         stream: Stream,
-        cluster_dim: Optional[Dim] = None,
+        cluster_dim: OptionalReg[Dim] = None,
         shared_mem_bytes: Int = 0,
         owned attributes: List[LaunchAttribute] = List[LaunchAttribute](),
         owned constant_memory: List[ConstantMemoryMapping] = List[
@@ -387,7 +387,7 @@ struct Function[
         grid_dim: Dim,
         block_dim: Dim,
         stream: Stream,
-        cluster_dim: Optional[Dim] = None,
+        cluster_dim: OptionalReg[Dim] = None,
         shared_mem_bytes: Int = 0,
         owned attributes: List[LaunchAttribute] = List[LaunchAttribute](),
         owned constant_memory: List[ConstantMemoryMapping] = List[
@@ -431,7 +431,7 @@ struct Function[
         grid_dim: Dim,
         block_dim: Dim,
         stream: Stream,
-        cluster_dim: Optional[Dim] = None,
+        cluster_dim: OptionalReg[Dim] = None,
         shared_mem_bytes: Int = 0,
         owned attributes: List[LaunchAttribute] = List[LaunchAttribute](),
         owned constant_memory: List[ConstantMemoryMapping] = List[
@@ -498,11 +498,11 @@ struct Function[
     ](
         device_context_ptr: UnsafePointer[DeviceContextV1],
         *,
-        max_registers: Optional[Int],
-        threads_per_block: Optional[Int],
-        cache_config: Optional[CacheConfig],
-        func_attribute: Optional[FuncAttribute],
-        cache_mode: Optional[CacheMode],
+        max_registers: OptionalReg[Int],
+        threads_per_block: OptionalReg[Int],
+        cache_config: OptionalReg[CacheConfig],
+        func_attribute: OptionalReg[FuncAttribute],
+        cache_mode: OptionalReg[CacheMode],
     ) raises -> _CachedFunctionInfo:
         alias _impl = Self._impl
         alias fn_name = _impl.function_name
@@ -554,11 +554,11 @@ struct Function[
     ](
         device_context_ptr: UnsafePointer[DeviceContextV1],
         *,
-        max_registers: Optional[Int],
-        threads_per_block: Optional[Int],
-        cache_config: Optional[CacheConfig],
-        func_attribute: Optional[FuncAttribute],
-        cache_mode: Optional[CacheMode],
+        max_registers: OptionalReg[Int],
+        threads_per_block: OptionalReg[Int],
+        cache_config: OptionalReg[CacheConfig],
+        func_attribute: OptionalReg[FuncAttribute],
+        cache_mode: OptionalReg[CacheMode],
         cuda_function_cache: UnsafePointer[FunctionCache],
     ) raises -> _CachedFunctionInfo:
         alias fn_name = _get_nvptx_fn_name[func]()

@@ -19,7 +19,7 @@ from .info import _get_info_from_target
 
 @always_inline
 fn _get_nvptx_target[
-    # TODO: Ideally this is an Optional[StringLiteral] but blocked by MOCO-1039
+    # TODO: Ideally this is an OptionalReg[StringLiteral] but blocked by MOCO-1039
     target_arch: StringLiteral = "sm_80",
 ]() -> __mlir_type.`!kgen.target`:
     alias info = _get_info_from_target[target_arch]()

@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 """Implements CUDA module operations."""
 
-from collections.optional import Optional
+from collections.optional import OptionalReg
 from os import abort
 from pathlib import Path
 from sys import env_get_int, env_get_string
@@ -326,9 +326,9 @@ struct Module:
         ctx: Context,
         content: String,
         *,
-        max_registers: Optional[Int] = None,
-        threads_per_block: Optional[Int] = None,
-        cache_mode: Optional[CacheMode] = None,
+        max_registers: OptionalReg[Int] = None,
+        threads_per_block: OptionalReg[Int] = None,
+        cache_mode: OptionalReg[CacheMode] = None,
     ) raises:
         self.__init__(
             content=content,
@@ -343,9 +343,9 @@ struct Module:
         content: String,
         cuda_dll: CudaDLL,
         *,
-        max_registers: Optional[Int] = None,
-        threads_per_block: Optional[Int] = None,
-        cache_mode: Optional[CacheMode] = None,
+        max_registers: OptionalReg[Int] = None,
+        threads_per_block: OptionalReg[Int] = None,
+        cache_mode: OptionalReg[CacheMode] = None,
     ) raises:
         self.__init__(
             content._strref_dangerous(),
@@ -360,9 +360,9 @@ struct Module:
         content: StringLiteral,
         cuda_dll: CudaDLL,
         *,
-        max_registers: Optional[Int] = None,
-        threads_per_block: Optional[Int] = None,
-        cache_mode: Optional[CacheMode] = None,
+        max_registers: OptionalReg[Int] = None,
+        threads_per_block: OptionalReg[Int] = None,
+        cache_mode: OptionalReg[CacheMode] = None,
     ) raises:
         self.__init__(
             StringRef(content),
@@ -377,9 +377,9 @@ struct Module:
         content: StringRef,
         cuda_dll: CudaDLL,
         *,
-        max_registers: Optional[Int] = None,
-        threads_per_block: Optional[Int] = None,
-        cache_mode: Optional[CacheMode] = None,
+        max_registers: OptionalReg[Int] = None,
+        threads_per_block: OptionalReg[Int] = None,
+        cache_mode: OptionalReg[CacheMode] = None,
     ) raises:
         """Loads a module in the current CUDA context by mapping PTX
         provided as a NULL terminated text string.

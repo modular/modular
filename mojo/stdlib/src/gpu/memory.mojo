@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 """This module includes NVIDIA GPUs memory operations."""
 
-from collections import Optional
+from collections import OptionalReg
 from sys import alignof, bitwidthof, sizeof, triple_is_nvidia_cuda
 from sys._assembly import inlined_assembly
 from sys.intrinsics import _RegisterPackType
@@ -36,7 +36,7 @@ fn async_copy[
     *,
     fill: Fill = Fill.NONE,
     bypass_L1_16B: Bool = True,
-    l2_prefetch: Optional[Int] = None,
+    l2_prefetch: OptionalReg[Int] = None,
 ](
     src: UnsafePointer[type, AddressSpace.GLOBAL],
     dst: UnsafePointer[type, AddressSpace.SHARED],
@@ -455,7 +455,7 @@ fn _load_impl[
     width: Int = 1,
     *,
     read_only: Bool = False,
-    prefetch_size: Optional[Int] = None,
+    prefetch_size: OptionalReg[Int] = None,
     cache_policy: CacheOperation = CacheOperation.ALWAYS,
     eviction_policy: CacheEviction = CacheEviction.EVICT_NORMAL,
     alignment: Int = alignof[Scalar[type]]() if triple_is_nvidia_cuda() else 1,
@@ -575,7 +575,7 @@ fn load[
     width: Int = 1,
     *,
     read_only: Bool = False,
-    prefetch_size: Optional[Int] = None,
+    prefetch_size: OptionalReg[Int] = None,
     cache_policy: CacheOperation = CacheOperation.ALWAYS,
     eviction_policy: CacheEviction = CacheEviction.EVICT_NORMAL,
     alignment: Int = alignof[Scalar[type]]() if triple_is_nvidia_cuda() else 1,
@@ -597,7 +597,7 @@ fn load[
     width: Int = 1,
     *,
     read_only: Bool = False,
-    prefetch_size: Optional[Int] = None,
+    prefetch_size: OptionalReg[Int] = None,
     cache_policy: CacheOperation = CacheOperation.ALWAYS,
     eviction_policy: CacheEviction = CacheEviction.EVICT_NORMAL,
     alignment: Int = alignof[Scalar[type]]() if triple_is_nvidia_cuda() else 1,

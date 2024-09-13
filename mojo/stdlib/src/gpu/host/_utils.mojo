@@ -26,7 +26,7 @@ fn _check_error(
     err: DriverResult,
     *,
     msg: String = "",
-    location: Optional[_SourceLocation] = None,
+    location: OptionalReg[_SourceLocation] = None,
 ) raises:
     _check_error_impl(err, msg, location, __call_location())
 
@@ -35,7 +35,7 @@ fn _check_error(
 fn _check_error_impl(
     err: DriverResult,
     msg: String,
-    location: Optional[_SourceLocation],
+    location: OptionalReg[_SourceLocation],
     call_loc: _SourceLocation,
 ) raises:
     """We do not want to inline this code since we want to make sure that the
