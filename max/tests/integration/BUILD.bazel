@@ -23,6 +23,7 @@ mojo_library(
     srcs = glob(["Inputs/counter_ops/*.mojo"]),
     visibility = [":__subpackages__"],
     deps = [
+        "//Kernels/mojo/buffer",
         "//Kernels/mojo/register",
         "//open-source/mojo/stdlib/stdlib",
     ],
