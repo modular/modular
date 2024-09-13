@@ -26,6 +26,7 @@ from runtime.asyncrt import (
 from utils import StaticIntTuple
 
 from kv_cache.types import (
+    _default_max_batch_size,
     ContiguousKVCache,
     ContiguousKVCacheCollection,
     KVCacheLayout,
@@ -1908,3 +1909,211 @@ fn _flash_attention_kv_cache_gpu[
         )
     except e:
         print("Error in GPU Flash Attention:", e)
+
+
+fn _contiguous_kv_cache_collection[
+    type: DType, kv_params: KVCacheStaticParams
+](
+    key_cache: NDBuffer[type, 5],
+    value_cache: NDBuffer[type, 5],
+    cache_lengths: NDBuffer[DType.int32, 1],
+    seq_ids: NDBuffer[DType.int32, 1],
+    # Note that num_layers and batch_size are scalars.
+    num_layers: NDBuffer[DType.int32, 1],
+    batch_size: NDBuffer[DType.int32, 1],
+) -> ContiguousKVCacheCollection[type, kv_params]:
+    # Marshal NDBuffers into arguments expected by the
+    # ContiguousKVCacheCollection constructor.
+    cache_lens_tuple = StaticIntTuple[_default_max_batch_size]()
+
+    @parameter
+    for idx in range(_default_max_batch_size):
+        cache_lens_tuple[idx] = int(cache_lengths[idx])
+
+    seq_ids_list = List[Int]()
+    for id in range(seq_ids.size()):
+        seq_ids_list.append(id)
+
+    return ContiguousKVCacheCollection[
+        type,
+        kv_params,
+        _default_max_batch_size,
+    ](
+        key_cache,
+        value_cache,
+        cache_lens_tuple,
+        seq_ids_list,
+        int(num_layers[0]),
+        int(batch_size[0]),
+    )
+
+
+# Boilerplate: stub out interface for every combination of KV cache parameters.
+alias kv_params_h6_d48_bshd = KVCacheStaticParams(
+    num_heads=6, head_size=48, layout=KVCacheLayout.BSHD
+)
+alias kv_params_h6_d48_bhsd = KVCacheStaticParams(
+    num_heads=6, head_size=6, layout=KVCacheLayout.BHSD
+)
+alias kv_params_h8_d128_bshd = KVCacheStaticParams(
+    num_heads=8, head_size=128, layout=KVCacheLayout.BSHD
+)
+alias kv_params_h8_d128_bhsd = KVCacheStaticParams(
+    num_heads=8, head_size=128, layout=KVCacheLayout.BHSD
+)
+alias kv_params_h1_d10_bshd = KVCacheStaticParams(
+    num_heads=1, head_size=10, layout=KVCacheLayout.BSHD
+)
+alias kv_params_h1_d10_bhsd = KVCacheStaticParams(
+    num_heads=1, head_size=10, layout=KVCacheLayout.BHSD
+)
+
+
+@mogg_register("contiguous_kv_cache_collection_h6_d48_bshd")
+@export
+fn contiguous_kv_cache_collection_h6_d48_bshd[
+    type: DType, //, target: StringLiteral
+](
+    key_cache: NDBuffer[type, 5],
+    value_cache: NDBuffer[type, 5],
+    cache_lengths: NDBuffer[DType.int32, 1],
+    seq_ids: NDBuffer[DType.int32, 1],
+    num_layers: NDBuffer[DType.int32, 1],
+    batch_size: NDBuffer[DType.int32, 1],
+) -> ContiguousKVCacheCollection[
+    type,
+    kv_params_h6_d48_bshd,
+]:
+    return _contiguous_kv_cache_collection[type, kv_params_h6_d48_bshd](
+        key_cache,
+        value_cache,
+        cache_lengths,
+        seq_ids,
+        num_layers,
+        batch_size,
+    )
+
+
+@mogg_register("contiguous_kv_cache_collection_h6_d48_bhsd")
+@export
+fn contiguous_kv_cache_collection_h6_d48_bhsd[
+    type: DType, //, target: StringLiteral
+](
+    key_cache: NDBuffer[type, 5],
+    value_cache: NDBuffer[type, 5],
+    cache_lengths: NDBuffer[DType.int32, 1],
+    seq_ids: NDBuffer[DType.int32, 1],
+    num_layers: NDBuffer[DType.int32, 1],
+    batch_size: NDBuffer[DType.int32, 1],
+) -> ContiguousKVCacheCollection[
+    type,
+    kv_params_h6_d48_bhsd,
+]:
+    return _contiguous_kv_cache_collection[type, kv_params_h6_d48_bhsd](
+        key_cache,
+        value_cache,
+        cache_lengths,
+        seq_ids,
+        num_layers,
+        batch_size,
+    )
+
+
+@mogg_register("contiguous_kv_cache_collection_h8_d128_bshd")
+@export
+fn contiguous_kv_cache_collection_h8_d128_bshd[
+    type: DType, //, target: StringLiteral
+](
+    key_cache: NDBuffer[type, 5],
+    value_cache: NDBuffer[type, 5],
+    cache_lengths: NDBuffer[DType.int32, 1],
+    seq_ids: NDBuffer[DType.int32, 1],
+    num_layers: NDBuffer[DType.int32, 1],
+    batch_size: NDBuffer[DType.int32, 1],
+) -> ContiguousKVCacheCollection[
+    type,
+    kv_params_h8_d128_bshd,
+]:
+    return _contiguous_kv_cache_collection[type, kv_params_h8_d128_bshd](
+        key_cache,
+        value_cache,
+        cache_lengths,
+        seq_ids,
+        num_layers,
+        batch_size,
+    )
+
+
+@mogg_register("contiguous_kv_cache_collection_h8_d128_bhsd")
+@export
+fn contiguous_kv_cache_collection_h8_d128_bhsd[
+    type: DType, //, target: StringLiteral
+](
+    key_cache: NDBuffer[type, 5],
+    value_cache: NDBuffer[type, 5],
+    cache_lengths: NDBuffer[DType.int32, 1],
+    seq_ids: NDBuffer[DType.int32, 1],
+    num_layers: NDBuffer[DType.int32, 1],
+    batch_size: NDBuffer[DType.int32, 1],
+) -> ContiguousKVCacheCollection[
+    type,
+    kv_params_h8_d128_bhsd,
+]:
+    return _contiguous_kv_cache_collection[type, kv_params_h8_d128_bhsd](
+        key_cache,
+        value_cache,
+        cache_lengths,
+        seq_ids,
+        num_layers,
+        batch_size,
+    )
+
+
+@mogg_register("contiguous_kv_cache_collection_h1_d10_bshd")
+@export
+fn contiguous_kv_cache_collection_h1_d10_bshd[
+    type: DType, //, target: StringLiteral
+](
+    key_cache: NDBuffer[type, 5],
+    value_cache: NDBuffer[type, 5],
+    cache_lengths: NDBuffer[DType.int32, 1],
+    seq_ids: NDBuffer[DType.int32, 1],
+    num_layers: NDBuffer[DType.int32, 1],
+    batch_size: NDBuffer[DType.int32, 1],
+) -> ContiguousKVCacheCollection[
+    type,
+    kv_params_h1_d10_bshd,
+]:
+    return _contiguous_kv_cache_collection[type, kv_params_h1_d10_bshd](
+        key_cache,
+        value_cache,
+        cache_lengths,
+        seq_ids,
+        num_layers,
+        batch_size,
+    )
+
+
+@mogg_register("contiguous_kv_cache_collection_h1_d10_bhsd")
+@export
+fn contiguous_kv_cache_collection_h1_d10_bhsd[
+    type: DType, //, target: StringLiteral
+](
+    key_cache: NDBuffer[type, 5],
+    value_cache: NDBuffer[type, 5],
+    cache_lengths: NDBuffer[DType.int32, 1],
+    seq_ids: NDBuffer[DType.int32, 1],
+    num_layers: NDBuffer[DType.int32, 1],
+    batch_size: NDBuffer[DType.int32, 1],
+) -> ContiguousKVCacheCollection[
+    type,
+    kv_params_h1_d10_bhsd,
+]:
+    return _contiguous_kv_cache_collection[type, kv_params_h1_d10_bhsd](
+        key_cache,
+        value_cache,
+        cache_lengths,
+        seq_ids,
+        num_layers,
+        batch_size,
+    )
