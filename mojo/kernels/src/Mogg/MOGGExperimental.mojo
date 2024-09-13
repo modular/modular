@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from collections import Optional
+from collections import OptionalReg
 from math import ceil, erf, exp, floor, iota, isqrt, log, log1p, sqrt, tanh
 
 from algorithm.reduction import _reduce_generator
