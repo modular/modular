@@ -675,3 +675,17 @@ fn field_sensitive_lifetimes(a: ThingWithFields)
   # expected-error @+1 {{cannot implicitly convert 'ThingWithFields' value to 'Reference[0, ThingWithFields, a.field, 0]'}}
   return a
 
+
+fn bad_named_return() -> String as output:
+   output = "emplaced!"
+   # expected-note @below {{remove the expression if the return slot is already initialized}}
+   # expected-error @below {{'return' in function with a named return slot should not return the slot itself}}
+   return output
+ 
+
+fn bad_named_return2() -> Int as output:
+   output = 42
+   # expected-note @below {{remove the expression if the return slot is already initialized}}
+   # expected-error @below {{'return' in function with a named return slot should not return the slot itself}}
+   return output
+ 
