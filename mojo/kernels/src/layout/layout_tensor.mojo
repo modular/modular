@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from collections import InlineArray, Optional
+from collections import InlineArray, Optional, OptionalReg
 from math import ceildiv
 from os import abort
 from sys import alignof, prefetch, simdwidthof, sizeof
@@ -39,7 +39,7 @@ from .fillers import arange
 fn _compute_distribute_layout[
     data_layout: Layout,
     threads_layout: Layout,
-    axis: Optional[Int] = None,
+    axis: OptionalReg[Int] = None,
 ]() -> Layout:
     var thread_tile = LayoutList()
 
@@ -57,7 +57,7 @@ fn _compute_distribute_layout[
 # Returns an IntTuple with all ones except axis same as input t, when
 # submode_axis is provided the projection happens on the submode only.
 fn _project_on_axis[
-    axis: Int, submode_axis: Optional[Int] = None
+    axis: Int, submode_axis: OptionalReg[Int] = None
 ](t: IntTuple) -> IntTuple:
     if not submode_axis:
         var p_t = fill_like(t, 0)
@@ -1284,7 +1284,7 @@ struct LayoutTensor[
     fn _compute_distribute_layout[
         data_layout: Layout,
         threads_layout: Layout,
-        axis: Optional[Int] = None,
+        axis: OptionalReg[Int] = None,
     ]() -> Layout:
         var thread_tile = LayoutList()
 
@@ -1302,9 +1302,9 @@ struct LayoutTensor[
     @always_inline
     fn distribute[
         threads_layout: Layout,
-        axis: Optional[Int] = None,
-        swizzle: Optional[Swizzle] = None,
-        submode_axis: Optional[Int] = None,
+        axis: OptionalReg[Int] = None,
+        swizzle: OptionalReg[Swizzle] = None,
+        submode_axis: OptionalReg[Int] = None,
     ](self, thread_id: UInt) -> LayoutTensor[
         dtype,
         _compute_distribute_layout[layout, threads_layout, axis]()[1],
@@ -1796,8 +1796,8 @@ struct LayoutTensor[
 
     @always_inline
     fn copy_from[
-        dst_coords_bound: Optional[StaticIntTuple[rank]] = None,
-        src_coords_bound: Optional[StaticIntTuple[rank]] = None,
+        dst_coords_bound: OptionalReg[StaticIntTuple[rank]] = None,
+        src_coords_bound: OptionalReg[StaticIntTuple[rank]] = None,
     ](self, other: LayoutTensor):
         alias other_layout = other.layout
 
@@ -1997,7 +1997,7 @@ struct LayoutTensor[
         src_element_layout: Layout,
         *,
         masked: Bool = False,
-        swizzle: Optional[Swizzle] = None,
+        swizzle: OptionalReg[Swizzle] = None,
         fill: Fill = Fill.NONE,
     ](
         self,
@@ -2151,7 +2151,7 @@ struct LayoutTensor[
         src_element_layout: Layout,
         *,
         fill: Fill = Fill.NONE,
-        swizzle: Optional[Swizzle] = None,
+        swizzle: OptionalReg[Swizzle] = None,
     ](
         self,
         src: LayoutTensor[
@@ -2370,7 +2370,7 @@ fn copy_dram_to_sram[
     dst_thread_layout: Layout,
     src_element_layout: Layout,
     dst_element_layout: Layout,
-    swizzle: Optional[Swizzle] = None,
+    swizzle: OptionalReg[Swizzle] = None,
 ](
     dst: LayoutTensor[
         dtype,
@@ -2402,7 +2402,7 @@ fn copy_dram_to_sram[
     thread_layout: Layout,
     src_element_layout: Layout,
     dst_element_layout: Layout,
-    swizzle: Optional[Swizzle] = None,
+    swizzle: OptionalReg[Swizzle] = None,
 ](
     dst: LayoutTensor[
         dtype,
@@ -2478,7 +2478,7 @@ fn copy_dram_to_sram_async[
     ]()
 
     alias swizzle_option = None if not swizzle else (
-        Optional[Swizzle](make_ldmatrix_swizzle[dtype, row_size]())
+        OptionalReg[Swizzle](make_ldmatrix_swizzle[dtype, row_size]())
     )
 
     var src_fragments = src.distribute[src_thread_layout](ThreadIdx.x())
@@ -2556,7 +2556,7 @@ fn copy_sram_to_dram[
     thread_layout: Layout,
     src_element_layout: Layout,
     dst_element_layout: Layout,
-    swizzle: Optional[Swizzle] = None,
+    swizzle: OptionalReg[Swizzle] = None,
 ](
     dst: LayoutTensor[
         dst_type,
@@ -2632,7 +2632,7 @@ fn copy_sram_to_dram[
     thread_layout: Layout,
     src_element_layout: Layout,
     dst_element_layout: Layout,
-    swizzle: Optional[Swizzle] = None,
+    swizzle: OptionalReg[Swizzle] = None,
 ](
     dst: LayoutTensor[
         dst_type,
@@ -2709,7 +2709,7 @@ fn copy_sram_to_local[
     src_warp_layout: Layout,
     src_element_layout: Layout,
     dst_element_layout: Layout,
-    axis: Optional[Int] = None,
+    axis: OptionalReg[Int] = None,
 ](
     dst: LayoutTensor[
         dtype,

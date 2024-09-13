@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from collections import Optional
+from collections import OptionalReg
 from sys import alignof, sizeof
 
 from buffer import NDBuffer
@@ -218,7 +218,7 @@ fn distribute[
     shape: DimList,
     thread_layout: Layout,
     _result_shape: DimList = __distribute_shape[thread_layout](shape),
-    swizzle: Optional[_swizzle_signature] = None,
+    swizzle: OptionalReg[_swizzle_signature] = None,
     element_size: Int = 1,
 ](buff: NDBuffer[dtype, rank, shape], thread_id: Int) -> NDBuffer[
     dtype, rank, _result_shape
@@ -989,7 +989,7 @@ fn copy_from_nd_buffer[
     dst_element_layout: Layout, //,
     thread_layout: Layout,
     is_async: Bool = False,
-    swizzle: Optional[_swizzle_signature] = None,
+    swizzle: OptionalReg[_swizzle_signature] = None,
 ](
     dst_thread_local: LayoutTensor[
         dtype,
@@ -1065,7 +1065,7 @@ fn copy_from_nd_buffer_masked[
     dst_element_layout: Layout,
     thread_layout: Layout,
     is_async: Bool = False,
-    swizzle: Optional[_swizzle_signature] = None,
+    swizzle: OptionalReg[_swizzle_signature] = None,
 ](
     dst_thread_local: LayoutTensor[
         dtype,
@@ -1321,7 +1321,7 @@ fn copy_from_nd_buffer_async[
     dst_element_layout: Layout,
     thread_layout: Layout,
     is_async: Bool = False,
-    swizzle: Optional[_swizzle_signature] = None,
+    swizzle: OptionalReg[_swizzle_signature] = None,
 ](
     dst_tensor: LayoutTensor[
         dtype,
