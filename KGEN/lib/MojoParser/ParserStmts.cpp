@@ -719,12 +719,32 @@ ParseResult StmtParser::parseReturnStmt(size_t returnIndent) {
   // just need a value of the right type. If the function has a named result
   // slot, we allow it to omit the expression.
   ValueDest resultDest(userResultType, EC_ReturnValue);
-  if (func.getNamedResultAttr() && operandExpr == &noneExpr)
+  if (func.getNamedResultAttr() && operandExpr == &noneExpr) {
+    // A named result is active, so we don't require a result.
     resultDest = ValueDest(shared.getNoneType(), EC_ReturnValue);
-  else if (declSig.hasMemoryOnlyResult())
+  } else if (declSig.hasMemoryOnlyResult())
     resultDest = ValueDest(MLValue(func.getArguments().back()), EC_ReturnValue);
 
   if (!declSig.isRefResult()) {
+    // Check for a common error of explicitly returning the name from a named
+    // result function.  This will turn into an exclusivity error downstream
+    // (reading and writing to the same result slot), so we want to reject it in
+    // the parser for better QoI.
+    if (auto resultName = func.getNamedResultAttr()) {
+      if (auto dre = dyn_cast<DeclRefNode>(operandExpr->getWithoutParens()))
+        if (dre->spelling == resultName.strref()) {
+          auto diag = emitter.emitError(loc);
+          diag << "'return' in function with a named return "
+                  "slot should not return the slot itself";
+          diag.attachNote(operandExpr->getLoc())
+              << "remove the expression if the return slot is already "
+                 "initialized"
+              << FixIt::remove(operandExpr->getRange());
+          resultDest.resetForError();
+          return {};
+        }
+    }
+
     // Convert the returned value to the returned type of the function.
     resultValue = emitter.emitExpr(operandExpr, resultDest);
     if (!resultValue) {
