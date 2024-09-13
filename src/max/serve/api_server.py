@@ -58,7 +58,7 @@ def fastapi_app(
 
 
 def fastapi_config(app: FastAPI) -> Config:
-    config = Config(app=app)
+    config = Config(app=app, host="0.0.0.0")
     return config
 
 
