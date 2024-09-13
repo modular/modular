@@ -9,9 +9,11 @@ from pathlib import Path
 
 import pytest
 
+from max.driver import Tensor
+from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import Graph, ops
-from max.graph.type import _OpaqueType as OpaqueType
+from max.graph.type import _OpaqueType as OpaqueType, TensorType
 
 
 @pytest.fixture
@@ -19,8 +21,7 @@ def counter_ops_path() -> Path:
     return Path(os.environ["COUNTER_OPS_PATH"])
 
 
-def test_opaque(counter_ops_path: Path) -> None:
-    session = InferenceSession()
+def test_opaque(session: InferenceSession, counter_ops_path: Path) -> None:
     counter_type = OpaqueType("Counter")
 
     maker_graph = Graph("maker", input_types=[], output_types=[counter_type])
@@ -54,5 +55,38 @@ def test_opaque(counter_ops_path: Path) -> None:
     dropper_compiled.execute(input0=counter)
 
 
+def test_opaque_driver_constructor(
+    session: InferenceSession, counter_ops_path: Path
+) -> None:
+    """Tests constructing a Counter using the driver API."""
+    counter_type = OpaqueType("Counter")
+
+    maker_graph = Graph(
+        "maker",
+        input_types=[TensorType(DType.int32, (2,))],
+        output_types=[counter_type],
+    )
+    with maker_graph:
+        maker_graph.output(
+            ops.custom(
+                "make_counter_from_tensor",
+                values=[maker_graph.inputs[0]],
+                out_types=[counter_type],
+            )[0]
+        )
+    maker_compiled = session.load(
+        maker_graph, custom_extensions=counter_ops_path
+    )
+
+    init = Tensor((2,), DType.int32)
+    init[0] = 42
+    init[1] = 37
+    counter = maker_compiled.execute(init)
+    assert counter and counter[0]
+
+
 if __name__ == "__main__":
-    test_opaque(Path(os.environ["COUNTER_OPS_PATH"]))
+    sess = InferenceSession()
+    path = Path(os.environ["COUNTER_OPS_PATH"])
+    test_opaque(sess, path)
+    test_opaque_driver_constructor(sess, path)
