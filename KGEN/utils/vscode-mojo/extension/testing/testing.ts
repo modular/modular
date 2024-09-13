@@ -14,6 +14,7 @@ import { DisposableContext } from '../utils/disposableContext';
 
 import path = require('path');
 import { MojoSDKManager } from '../sdk/sdkManager';
+import { Logger } from '../logging';
 
 /**
  * An interface defining a source range for a mojo test.
@@ -56,14 +57,16 @@ interface MojoTestExecutionResult {
 export class MojoTestManager extends DisposableContext {
   private sdkManager: MojoSDKManager;
   private controller: vscode.TestController;
+  private logger: Logger;
 
   // A tag used to mark doc tests.
   private docTestTag = new vscode.TestTag('docTest');
   private unitTestTag = new vscode.TestTag('unitTest');
 
-  constructor(sdkManager: MojoSDKManager) {
+  constructor(sdkManager: MojoSDKManager, logger: Logger) {
     super();
     this.sdkManager = sdkManager;
+    this.logger = logger;
 
     // Register the mojo test controller.
     this.controller = vscode.tests.createTestController(
@@ -347,10 +350,7 @@ export class MojoTestManager extends DisposableContext {
   ): Promise<Optional<Result>> {
     // Grab any additional include directories from the workspace settings.
     const includeDirs =
-      (await config.get<Optional<string[]>>(
-        'lsp.includeDirs',
-        workspaceFolder
-      )) || [];
+      config.get<Optional<string[]>>('lsp.includeDirs', workspaceFolder) || [];
 
     for (const includeDir of includeDirs) {
       args.push('-I', includeDir);
@@ -361,12 +361,16 @@ export class MojoTestManager extends DisposableContext {
     // Build the command to run.
     var command =
       sdk.config.mojoDriverPath +
-      ' test --json ' +
+      ' test --diagnostic-format json ' +
       "'" +
       testId +
       "' " +
       args.join(' ');
     let env = sdk.getProcessEnv();
+
+    this.logger.main.logDebug(`Invoking mojo CLI with command\n${command}`);
+
+    const logger = this.logger;
 
     return new Promise<Optional<Result>>(function (resolve, reject) {
       exec(command, { env }, (error, stdout, stderr) => {
@@ -374,6 +378,9 @@ export class MojoTestManager extends DisposableContext {
         try {
           resolve(JSON.parse(stdout));
         } catch (e) {
+          logger.main.logError(
+            `Received invalid JSON response from mojo CLI\n${stdout}`
+          );
           resolve(undefined);
         }
       });
@@ -388,12 +395,17 @@ export class MojoTestManager extends DisposableContext {
       return;
     }
 
+    this.logger.main.logDebug(`Discovering tests in ${document.uri}`);
+
     // Invoke the mojo tool to discover tests in the document.
 
     // Invoke the mojo tool to discover tests in the document.
     let sdk = await this.sdkManager.findSDK(/*hideRepeatedErrors=*/ true);
     if (!sdk) {
       this.controller.items.delete(document.uri.fsPath);
+      this.logger.main.logDebug(
+        `No SDK present, clearing tests for ${document.uri}`
+      );
       return;
     }
 
