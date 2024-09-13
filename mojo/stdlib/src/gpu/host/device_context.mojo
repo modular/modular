@@ -218,6 +218,7 @@ struct DeviceFunctionV1[
     dump_sass: Variant[Path, Bool] = False,
     target: __mlir_type.`!kgen.target` = _get_nvptx_target(),
     _is_failable: Bool = False,
+    _ptxas_info_verbose: Bool = False,
 ]:
     var ctx_ptr: UnsafePointer[DeviceContextV1]
     var cuda_function: Function[
@@ -227,6 +228,7 @@ struct DeviceFunctionV1[
         dump_sass=dump_sass,
         target=target,
         _is_failable=_is_failable,
+        _ptxas_info_verbose=_ptxas_info_verbose,
     ]
     alias fn_name = _get_nvptx_fn_name[func]()
 
@@ -248,6 +250,7 @@ struct DeviceFunctionV1[
             dump_sass=dump_sass,
             target=target,
             _is_failable=_is_failable,
+            _ptxas_info_verbose=_ptxas_info_verbose,
         ](
             self.ctx_ptr,
             max_registers=max_registers,
@@ -326,6 +329,7 @@ struct DeviceContextV1:
         dump_sass: Variant[Path, Bool] = False,
         target: __mlir_type.`!kgen.target` = _get_nvptx_target(),
         _is_failable: Bool = False,
+        _ptxas_info_verbose: Bool = False,
     ](
         self,
         *,
@@ -341,15 +345,9 @@ struct DeviceContextV1:
         dump_sass=dump_sass,
         target=target,
         _is_failable=_is_failable,
-    ]:
-        return DeviceFunctionV1[
-            func,
-            dump_ptx=dump_ptx,
-            dump_llvm=dump_llvm,
-            dump_sass=dump_sass,
-            target=target,
-            _is_failable=_is_failable,
-        ](
+        _ptxas_info_verbose=_ptxas_info_verbose,
+    ] as result:
+        return __type_of(result)(
             self,
             max_registers=max_registers,
             threads_per_block=threads_per_block,

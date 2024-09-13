@@ -68,6 +68,7 @@ struct DeviceFunctionV2[
     dump_sass: Variant[Path, Bool] = False,
     target: __mlir_type.`!kgen.target` = _get_nvptx_target(),
     _is_failable: Bool = False,
+    _ptxas_info_verbose: Bool = False,
 ]:
     fn __init__(
         inout self,
@@ -118,6 +119,7 @@ struct DeviceContextV2:
         dump_sass: Variant[Path, Bool] = False,
         target: __mlir_type.`!kgen.target` = _get_nvptx_target(),
         _is_failable: Bool = False,
+        _ptxas_info_verbose: Bool = False,
     ](
         self,
         *,
@@ -133,15 +135,9 @@ struct DeviceContextV2:
         dump_sass=dump_sass,
         target=target,
         _is_failable=_is_failable,
-    ]:
-        return DeviceFunctionV2[
-            func,
-            dump_ptx=dump_ptx,
-            dump_llvm=dump_llvm,
-            dump_sass=dump_sass,
-            target=target,
-            _is_failable=_is_failable,
-        ](
+        _ptxas_info_verbose=_ptxas_info_verbose,
+    ] as result:
+        return __type_of(result)(
             self,
             max_registers=max_registers,
             threads_per_block=threads_per_block,

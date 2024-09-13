@@ -33,6 +33,7 @@ struct DeviceFunctionVariant[
     dump_sass: Variant[Path, Bool] = False,
     target: __mlir_type.`!kgen.target` = _get_nvptx_target(),
     _is_failable: Bool = False,
+    _ptxas_info_verbose: Bool = False,
 ]:
     alias V1 = DeviceFunctionV1[
         func,
@@ -41,6 +42,7 @@ struct DeviceFunctionVariant[
         dump_sass=dump_sass,
         target=target,
         _is_failable=_is_failable,
+        _ptxas_info_verbose=_ptxas_info_verbose,
     ]
     alias V2 = DeviceFunctionV2[
         func,
@@ -49,6 +51,7 @@ struct DeviceFunctionVariant[
         dump_sass=dump_sass,
         target=target,
         _is_failable=_is_failable,
+        _ptxas_info_verbose=_ptxas_info_verbose,
     ]
     var impl: Variant[Self.V1, Self.V2]
 
@@ -222,6 +225,7 @@ struct DeviceContextVariant:
         dump_sass: Variant[Path, Bool] = False,
         target: __mlir_type.`!kgen.target` = _get_nvptx_target(),
         _is_failable: Bool = False,
+        _ptxas_info_verbose: Bool = False,
     ](
         self,
         *,
@@ -237,6 +241,7 @@ struct DeviceContextVariant:
         dump_sass=dump_sass,
         target=target,
         _is_failable=_is_failable,
+        _ptxas_info_verbose=_ptxas_info_verbose,
     ]:
         @parameter
         if _device_ctx_v2():
@@ -247,6 +252,7 @@ struct DeviceContextVariant:
                 dump_sass=dump_sass,
                 target=target,
                 _is_failable=_is_failable,
+                _ptxas_info_verbose=_ptxas_info_verbose,
             ](
                 max_registers=max_registers,
                 threads_per_block=threads_per_block,
@@ -262,6 +268,7 @@ struct DeviceContextVariant:
                 dump_sass=dump_sass,
                 target=target,
                 _is_failable=_is_failable,
+                _ptxas_info_verbose=_ptxas_info_verbose,
             ](
                 max_registers=max_registers,
                 threads_per_block=threads_per_block,

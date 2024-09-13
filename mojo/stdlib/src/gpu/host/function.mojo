@@ -23,6 +23,7 @@ from ._compile import (
     _get_nvptx_fn_name,
     _get_nvptx_target,
     _to_sass,
+    _ptxas_compile,
 )
 from ._utils import (
     CudaHandle,
@@ -214,6 +215,7 @@ struct Function[
     dump_sass: Variant[Path, Bool] = False,
     target: __mlir_type.`!kgen.target` = _get_nvptx_target(),
     _is_failable: Bool = False,
+    _ptxas_info_verbose: Bool = False,
 ](Boolable):
     var info: _CachedFunctionInfo
     var cuda_dll: CudaDLL
@@ -312,6 +314,11 @@ struct Function[
     @no_inline
     @staticmethod
     fn _dump_rep() raises:
+        @parameter
+        if _ptxas_info_verbose:
+            alias ptx = Self._impl.asm
+            print(_ptxas_compile[target](ptx, options="-v"))
+
         @parameter
         if _dump_q(dump_ptx):
             alias ptx = _cleanup_asm(Self._impl.asm)
