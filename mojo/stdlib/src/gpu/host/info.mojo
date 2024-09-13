@@ -5,6 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 """Contains information about the GPUs."""
 
+from math import ceildiv, floor
 
 # ===----------------------------------------------------------------------===#
 # A100
@@ -18,18 +19,19 @@
 # looking at the PTX ISA in the versioned docs
 # https://developer.nvidia.com/cuda-toolkit-archive.
 
-alias A100 = Info(
-    name="A100",
-    compute=8.0,
-    version="sm_80",
-    target=__mlir_attr[
-        `#kgen.target<triple = "nvptx64-nvidia-cuda", `,
-        `arch = "sm_80", `,
-        `features = "+ptx81", `,
-        `data_layout = "e-i64:64-i128:128-v16:16-v32:32-n16:32:64",`,
-        `simd_bit_width = 128> : !kgen.target`,
-    ],
-    target_32bit=__mlir_attr[
+
+fn _get_a100_target[index_bit_width: Int]() -> __mlir_type.`!kgen.target`:
+    if index_bit_width == 64:
+        return __mlir_attr[
+            `#kgen.target<triple = "nvptx64-nvidia-cuda", `,
+            `arch = "sm_80", `,
+            `features = "+ptx81", `,
+            `data_layout = "e-i64:64-i128:128-v16:16-v32:32-n16:32:64",`,
+            `simd_bit_width = 128,`,
+            `index_bit_width = 64`,
+            `> : !kgen.target`,
+        ]
+    return __mlir_attr[
         `#kgen.target<triple = "nvptx64-nvidia-cuda", `,
         `arch = "sm_80", `,
         `features = "+ptx81", `,
@@ -37,7 +39,13 @@ alias A100 = Info(
         `simd_bit_width = 128,`,
         `index_bit_width = 32`,
         `> : !kgen.target`,
-    ],
+    ]
+
+
+alias A100 = Info(
+    name="A100",
+    compute=8.0,
+    version="sm_80",
     sm_count=108,
     threads_per_sm=2048,
     threads_per_warp=32,
@@ -62,18 +70,18 @@ alias A100 = Info(
 # ===----------------------------------------------------------------------===#
 
 
-alias A10 = Info(
-    name="A10",
-    compute=8.6,
-    version="sm_86",
-    target=__mlir_attr[
-        `#kgen.target<triple = "nvptx64-nvidia-cuda", `,
-        `arch = "sm_86", `,
-        `features = "+ptx81", `,
-        `data_layout = "e-i64:64-i128:128-v16:16-v32:32-n16:32:64",`,
-        `simd_bit_width = 128> : !kgen.target`,
-    ],
-    target_32bit=__mlir_attr[
+fn _get_a10_target[index_bit_width: Int]() -> __mlir_type.`!kgen.target`:
+    if index_bit_width == 64:
+        return __mlir_attr[
+            `#kgen.target<triple = "nvptx64-nvidia-cuda", `,
+            `arch = "sm_86", `,
+            `features = "+ptx81", `,
+            `data_layout = "e-i64:64-i128:128-v16:16-v32:32-n16:32:64",`,
+            `simd_bit_width = 128,`,
+            `index_bit_width = 64`,
+            `> : !kgen.target`,
+        ]
+    return __mlir_attr[
         `#kgen.target<triple = "nvptx64-nvidia-cuda", `,
         `arch = "sm_86", `,
         `features = "+ptx81", `,
@@ -81,7 +89,13 @@ alias A10 = Info(
         `simd_bit_width = 128,`,
         `index_bit_width = 32`,
         `> : !kgen.target`,
-    ],
+    ]
+
+
+alias A10 = Info(
+    name="A10",
+    compute=8.6,
+    version="sm_86",
     sm_count=72,
     threads_per_sm=1536,
     threads_per_warp=32,
@@ -106,18 +120,18 @@ alias A10 = Info(
 # ===----------------------------------------------------------------------===#
 
 
-alias L4 = Info(
-    name="L4",
-    compute=8.9,
-    version="sm_89",
-    target=__mlir_attr[
-        `#kgen.target<triple = "nvptx64-nvidia-cuda", `,
-        `arch = "sm_89", `,
-        `features = "+ptx81", `,
-        `data_layout = "e-i64:64-i128:128-v16:16-v32:32-n16:32:64",`,
-        `simd_bit_width = 128> : !kgen.target`,
-    ],
-    target_32bit=__mlir_attr[
+fn _get_l4_target[index_bit_width: Int]() -> __mlir_type.`!kgen.target`:
+    if index_bit_width == 64:
+        return __mlir_attr[
+            `#kgen.target<triple = "nvptx64-nvidia-cuda", `,
+            `arch = "sm_89", `,
+            `features = "+ptx81", `,
+            `data_layout = "e-i64:64-i128:128-v16:16-v32:32-n16:32:64",`,
+            `simd_bit_width = 128,`,
+            `index_bit_width = 64`,
+            `> : !kgen.target`,
+        ]
+    return __mlir_attr[
         `#kgen.target<triple = "nvptx64-nvidia-cuda", `,
         `arch = "sm_89", `,
         `features = "+ptx81", `,
@@ -125,7 +139,13 @@ alias L4 = Info(
         `simd_bit_width = 128,`,
         `index_bit_width = 32`,
         `> : !kgen.target`,
-    ],
+    ]
+
+
+alias L4 = Info(
+    name="L4",
+    compute=8.9,
+    version="sm_89",
     sm_count=58,
     threads_per_sm=1536,
     threads_per_warp=32,
@@ -150,18 +170,17 @@ alias L4 = Info(
 # ===----------------------------------------------------------------------===#
 
 
-alias H100 = Info(
-    name="H100",
-    compute=9.0,
-    version="sm_90a",
-    target=__mlir_attr[
-        `#kgen.target<triple = "nvptx64-nvidia-cuda", `,
-        `arch = "sm_90a", `,
-        `features = "+ptx81", `,
-        `data_layout = "e-i64:64-i128:128-v16:16-v32:32-n16:32:64",`,
-        `simd_bit_width = 128> : !kgen.target`,
-    ],
-    target_32bit=__mlir_attr[
+fn _get_h100_target[index_bit_width: Int]() -> __mlir_type.`!kgen.target`:
+    if index_bit_width == 64:
+        return __mlir_attr[
+            `#kgen.target<triple = "nvptx64-nvidia-cuda", `,
+            `arch = "sm_90a", `,
+            `features = "+ptx81", `,
+            `data_layout = "e-i64:64-i128:128-v16:16-v32:32-n16:32:64",`,
+            `index_bit_width = 64,`,
+            `simd_bit_width = 128> : !kgen.target`,
+        ]
+    return __mlir_attr[
         `#kgen.target<triple = "nvptx64-nvidia-cuda", `,
         `arch = "sm_90a", `,
         `features = "+ptx81", `,
@@ -169,7 +188,13 @@ alias H100 = Info(
         `simd_bit_width = 128,`,
         `index_bit_width = 32`,
         `> : !kgen.target`,
-    ],
+    ]
+
+
+alias H100 = Info(
+    name="H100",
+    compute=9.0,
+    version="sm_90a",
     sm_count=114,
     threads_per_sm=-1,
     threads_per_warp=32,
@@ -221,10 +246,8 @@ struct Flops:
 @register_passable
 struct Info:
     var name: StringLiteral
-    var compute: FloatLiteral
+    var compute: Float32
     var version: StringLiteral
-    var target: __mlir_type.`!kgen.target`
-    var target_32bit: __mlir_type.`!kgen.target`
     var sm_count: Int
     var threads_per_sm: Int
     var threads_per_warp: Int
@@ -243,9 +266,71 @@ struct Info:
     var max_thread_block_size: Int
     var flops: Flops
 
+    fn get_target[
+        index_bit_width: Int = 64
+    ](self) -> __mlir_type.`!kgen.target`:
+        if self.name == "A100":
+            return _get_a100_target[index_bit_width]()
+        if self.name == "A10":
+            return _get_a10_target[index_bit_width]()
+        if self.name == "L4":
+            return _get_l4_target[index_bit_width]()
+        if self.name == "H100":
+            return _get_h100_target[index_bit_width]()
+        return _get_a100_target[index_bit_width]()
+
     @staticmethod
     fn from_target_name[name: StringLiteral]() -> Self:
         return _get_info_from_target[name]()
+
+    fn _warps_per_block(self, threads_per_block: Int) -> Int:
+        return ceildiv(threads_per_block, self.threads_per_warp)
+
+    fn _registers_per_warp(self, registers_per_thread: Int) -> Int:
+        return _quantized_ceil(
+            registers_per_thread * self.threads_per_warp,
+            self.register_allocation_unit_size,
+        )
+
+    fn _registers_per_block(
+        self, threads_per_block: Int, registers_per_thread: Int
+    ) -> Int:
+        return self._registers_per_warp(
+            registers_per_thread
+        ) * self._warps_per_block(threads_per_block)
+
+    fn _warps_per_multiprocessor_register_limited(
+        self, registers_per_thread: Int
+    ) -> Int:
+        return _quantized_floor(
+            self.max_registers_per_block
+            / self._registers_per_warp(registers_per_thread),
+            self.warp_allocation_granularity,
+        )
+
+    fn _blocks_per_multiprocessor_register_limited(
+        self, *, threads_per_block: Int, registers_per_thread: Int
+    ) -> Int:
+        return int(
+            self._warps_per_multiprocessor_register_limited(
+                registers_per_thread
+            )
+            / self._warps_per_block(threads_per_block)
+        ) * int(self.register_file_size / self.max_registers_per_block)
+
+    fn occupancy(
+        self, *, threads_per_block: Int, registers_per_thread: Int
+    ) -> Float64:
+        # TODO (KERN-795): Add occupancy calculation based on shared memory
+        # usage and thread block size and take use the minimum value
+        return (
+            self._blocks_per_multiprocessor_register_limited(
+                threads_per_block=threads_per_block,
+                registers_per_thread=registers_per_thread,
+            )
+            * self._warps_per_block(threads_per_block)
+            / self.warps_per_multiprocessor
+        )
 
     fn __lt__(self, other: Self) -> Bool:
         return self.compute < other.compute
@@ -390,3 +475,16 @@ fn _get_compute(target_arch: String) -> Float32:
         return H100.compute
 
     return A100.compute
+
+
+# ===----------------------------------------------------------------------===#
+# Utilities
+# ===----------------------------------------------------------------------===#
+
+
+fn _quantized_ceil(a: Float64, b: Int) -> Int:
+    return int(ceildiv(a, b) * b)
+
+
+fn _quantized_floor(a: Float64, b: Int) -> Int:
+    return int(floor(a / b) * b)
