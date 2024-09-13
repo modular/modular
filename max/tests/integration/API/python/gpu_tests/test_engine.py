@@ -118,3 +118,29 @@ def test_no_devicetensor_inputs(
     output = np.from_dlpack(host_tensor)
     expected = np.arange(1, 6, dtype=np.int32)
     assert np.array_equal(output, expected)
+
+
+def test_aliasing_outputs(
+    gpu_session: InferenceSession, aliasing_outputs_path: Path
+):
+    # The device tensor execution path should support models that return the
+    # same tensor outputs more than once.
+    model = gpu_session.load(aliasing_outputs_path)
+    arr = np.arange(0, 5, dtype=np.int32)
+    input_tensor = Tensor.from_numpy(arr, device=CUDA())
+    outputs = model.execute(input_tensor)
+    assert len(outputs) == 2
+
+    tensor_output0 = outputs[0].copy_to(CPU())
+    array_output0 = tensor_output0.to_numpy()
+    expected = np.arange(0, 10, 2, dtype=np.int32)
+    assert np.array_equal(array_output0, expected)
+
+    tensor_output1 = outputs[1].copy_to(CPU())
+    array_output1 = tensor_output1.to_numpy()
+    assert np.array_equal(array_output1, expected)
+
+    # Check if the outputs really alias.
+    # TODO: enable this when we have GPU indexing.
+    # tensor_output0[0] = 7
+    # assert array_output1[0] == 7

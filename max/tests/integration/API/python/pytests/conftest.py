@@ -60,6 +60,19 @@ def no_input_path(modular_path: Path) -> Path:
     )
 
 
+@pytest.fixture
+def aliasing_outputs_path(modular_path: Path) -> Path:
+    """Returns the path to a model spec with outputs that alias each other."""
+    return (
+        modular_path
+        / "SDK"
+        / "integration-test"
+        / "EngineAPI"
+        / "Inputs"
+        / "aliasing-outputs.mlir"
+    )
+
+
 def pytest_addoption(parser):
     parser.addoption(
         "--custom-ops-path",

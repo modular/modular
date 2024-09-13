@@ -295,6 +295,31 @@ def test_no_devicetensor_inputs(session: InferenceSession, no_input_path: Path):
     assert np.array_equal(output, expected)
 
 
+def test_aliasing_output(
+    session: InferenceSession, aliasing_outputs_path: Path
+):
+    # The device tensor execution path should support models that return the
+    # same tensor outputs more than once.
+    model = session.load(aliasing_outputs_path)
+    arr = np.arange(0, 5, dtype=np.int32)
+    input_tensor = Tensor.from_numpy(arr)
+    outputs = model.execute(input_tensor)
+    assert len(outputs) == 2
+
+    tensor_output0 = outputs[0]
+    array_output0 = tensor_output0.to_numpy()
+    expected = np.arange(0, 10, 2, dtype=np.int32)
+    assert np.array_equal(array_output0, expected)
+
+    tensor_output1 = outputs[1]
+    array_output1 = tensor_output1.to_numpy()
+    assert np.array_equal(array_output1, expected)
+
+    # Check if the outputs really alias.
+    tensor_output0[0] = 7
+    assert array_output1[0] == 7
+
+
 # TODO(#36814): Debug segfault after PT 2.2.2 bump.
 # Skip this test if we don't have onnx and torch framework libs available.
 @pytest.mark.skip(reason="#36814")
