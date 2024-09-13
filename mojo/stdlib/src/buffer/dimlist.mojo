@@ -9,7 +9,7 @@
 You can import these APIs from the `buffer` package. For example:
 
 ```mojo
-from buffer.dimlist import Dim
+from buffer import Dim
 ```
 """
 
