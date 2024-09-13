@@ -114,7 +114,7 @@ Activating the Mojo Extension
       );
 
       // Initialize the testing support.
-      let testManager = new MojoTestManager(sdkManager);
+      let testManager = new MojoTestManager(sdkManager, this.logger);
       await testManager.activate();
       this.pushSubscription(testManager);
 
