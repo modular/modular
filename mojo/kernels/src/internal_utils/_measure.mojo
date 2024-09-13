@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from collections import Optional
+from collections import OptionalReg
 from math import inf, isnan, log, nan, sqrt
 from sys import simdwidthof
 
@@ -74,7 +74,7 @@ fn correlation[
     v: __type_of(u),
     len: Int,
     *,
-    w: Optional[__type_of(u)] = None,
+    w: OptionalReg[__type_of(u)] = None,
     centered: Bool = True,
 ) -> Scalar[type]:
     """Compute the correlation distance between two 1-D arrays.
@@ -135,7 +135,7 @@ fn cosine[
     v: __type_of(u),
     len: Int,
     *,
-    w: Optional[__type_of(u)] = None,
+    w: OptionalReg[__type_of(u)] = None,
 ) -> Scalar[type]:
     """Compute the Cosine distance between 1-D arrays.
 

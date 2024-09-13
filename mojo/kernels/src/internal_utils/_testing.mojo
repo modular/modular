@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 
 
-from collections import Optional
+from collections import OptionalReg
 
 import testing
 from buffer import NDBuffer
@@ -28,7 +28,7 @@ fn assert_almost_equal[
     num_elements: Int,
     msg: String = "",
     *,
-    location: Optional[_SourceLocation] = None,
+    location: OptionalReg[_SourceLocation] = None,
     atol: Scalar[type] = 1e-08,
     rtol: Scalar[type] = 1e-05,
     equal_nan: Bool = False,
@@ -51,7 +51,7 @@ fn assert_almost_equal(
     y: __type_of(x),
     msg: String = "",
     *,
-    location: Optional[_SourceLocation] = None,
+    location: OptionalReg[_SourceLocation] = None,
     atol: Scalar[x.type] = 1e-08,
     rtol: Scalar[x.type] = 1e-05,
     equal_nan: Bool = False,
@@ -74,7 +74,7 @@ fn assert_almost_equal(
     y: __type_of(x),
     msg: String = "",
     *,
-    location: Optional[_SourceLocation] = None,
+    location: OptionalReg[_SourceLocation] = None,
     atol: Scalar[x.type] = 1e-08,
     rtol: Scalar[x.type] = 1e-05,
     equal_nan: Bool = False,
@@ -96,7 +96,7 @@ fn assert_almost_equal(
     y: __type_of(x),
     msg: String = "",
     *,
-    location: Optional[_SourceLocation] = None,
+    location: OptionalReg[_SourceLocation] = None,
     atol: Scalar[x.type] = 1e-08,
     rtol: Scalar[x.type] = 1e-05,
     equal_nan: Bool = False,
@@ -123,7 +123,7 @@ fn assert_equal(
     y: __type_of(x),
     msg: String = "",
     *,
-    location: Optional[_SourceLocation] = None,
+    location: OptionalReg[_SourceLocation] = None,
 ) raises:
     for i in range(x.num_elements()):
         testing.assert_equal(
@@ -140,7 +140,7 @@ fn assert_equal(
     y: __type_of(x),
     msg: String = "",
     *,
-    location: Optional[_SourceLocation] = None,
+    location: OptionalReg[_SourceLocation] = None,
 ) raises:
     return assert_equal(
         x.tensor,
@@ -156,7 +156,7 @@ fn assert_equal(
     y: __type_of(x),
     msg: String = "",
     *,
-    location: Optional[_SourceLocation] = None,
+    location: OptionalReg[_SourceLocation] = None,
 ) raises:
     return assert_equal(
         x.ndbuffer,
@@ -183,7 +183,7 @@ fn _assert_with_measure_impl[
     n: Int,
     msg: String = "",
     *,
-    location: Optional[_SourceLocation] = None,
+    location: OptionalReg[_SourceLocation] = None,
 ) raises:
     if not measure(
         x.bitcast[address_space = AddressSpace.GENERIC](),
@@ -205,7 +205,7 @@ fn assert_with_measure[
     y: __type_of(x),
     msg: String = "",
     *,
-    location: Optional[_SourceLocation] = None,
+    location: OptionalReg[_SourceLocation] = None,
 ) raises:
     _assert_with_measure_impl[measure](
         x.data,
@@ -226,7 +226,7 @@ fn assert_with_measure[
     y: __type_of(x),
     msg: String = "",
     *,
-    location: Optional[_SourceLocation] = None,
+    location: OptionalReg[_SourceLocation] = None,
 ) raises:
     _assert_with_measure_impl[measure](
         x.tensor.data,
@@ -247,7 +247,7 @@ fn assert_with_measure[
     y: __type_of(x),
     msg: String = "",
     *,
-    location: Optional[_SourceLocation] = None,
+    location: OptionalReg[_SourceLocation] = None,
 ) raises:
     return assert_with_measure[measure](
         x.ndbuffer,
