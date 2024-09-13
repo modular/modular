@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo-no-debug %s
 
-from collections import Optional
+from collections import OptionalReg
 
 from gpu.host._compile import _compile_code
 from gpu.memory import CacheEviction, CacheOperation, load
@@ -17,7 +17,7 @@ fn load_value[
     type: DType = DType.uint32,
     width: Int = 1,
     read_only: Bool = False,
-    prefetch_size: Optional[Int] = None,
+    prefetch_size: OptionalReg[Int] = None,
     cache_policy: CacheOperation = CacheOperation.ALWAYS,
     eviction_policy: CacheEviction = CacheEviction.EVICT_NORMAL,
 ](ptr: UnsafePointer[Scalar[type]]) -> SIMD[type, width]:

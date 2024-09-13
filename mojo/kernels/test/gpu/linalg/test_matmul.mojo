@@ -6,7 +6,7 @@
 # REQUIRES: has_cuda_device
 # RUN: %mojo-no-debug %s
 
-from collections.optional import Optional
+from collections.optional import OptionalReg
 from math import ceildiv
 from sys import simdwidthof
 
@@ -49,8 +49,8 @@ struct test_matmul[
     type: DType,
     static_KN: DimList = DimList.create_unknown[2](),
     transpose_b: Bool = False,
-    init_a: Optional[init_fn_type] = None,
-    init_b: Optional[init_fn_type] = None,
+    init_a: OptionalReg[init_fn_type] = None,
+    init_b: OptionalReg[init_fn_type] = None,
 ]:
     var ctx: DeviceContext
 
@@ -192,8 +192,8 @@ def main():
             shape: DimList = DimList.create_unknown[2](),
             transpose_b: Bool = False,
             use_tensor_core: Bool = True,
-            init_a: Optional[init_fn_type] = None,
-            init_b: Optional[init_fn_type] = None,
+            init_a: OptionalReg[init_fn_type] = None,
+            init_b: OptionalReg[init_fn_type] = None,
         ](
             test_ctx: test_matmul[
                 type,

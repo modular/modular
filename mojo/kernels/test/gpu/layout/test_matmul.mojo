@@ -7,7 +7,7 @@
 # RUN: %mojo-no-debug %s
 
 from math import ceildiv
-from collections.optional import Optional
+from collections.optional import OptionalReg
 from utils.numerics import FlushDenormals
 from gpu import BlockDim, BlockIdx, ThreadIdx, barrier
 from gpu.host._compile import _get_nvptx_target

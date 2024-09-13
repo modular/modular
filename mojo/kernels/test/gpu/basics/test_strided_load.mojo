@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo-no-debug %s
 
-from collections import Optional
+from collections import OptionalReg
 from sys.intrinsics import strided_load
 
 from gpu.host._compile import _compile_code
