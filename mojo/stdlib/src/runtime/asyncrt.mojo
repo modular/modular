@@ -275,11 +275,11 @@ struct Task[type: AnyType, lifetimes: LifetimeSet]:
 
 
 @register_passable("trivial")
-struct TaskGroupContext[lifetimes: LifetimeSet]:
-    alias tg_callback_fn_type = fn (inout TaskGroup[lifetimes]) -> None
+struct TaskGroupContext:
+    alias tg_callback_fn_type = fn (inout TaskGroup) -> None
 
     var callback: Self.tg_callback_fn_type
-    var task_group: UnsafePointer[TaskGroup[lifetimes]]
+    var task_group: UnsafePointer[TaskGroup]
 
 
 @register_passable
@@ -312,7 +312,7 @@ struct _TaskGroupBox(CollectionElement):
             pass
 
 
-struct TaskGroup[lifetimes: LifetimeSet]:
+struct TaskGroup:
     var counter: Atomic[DType.index]
     var chain: Chain
     var tasks: List[_TaskGroupBox]
@@ -333,7 +333,7 @@ struct TaskGroup[lifetimes: LifetimeSet]:
         return prev - 1
 
     @staticmethod
-    fn _task_complete_callback(inout tg: TaskGroup[lifetimes]):
+    fn _task_complete_callback(inout tg: TaskGroup):
         tg._task_complete()
 
     fn _task_complete(inout self):
@@ -358,9 +358,7 @@ struct TaskGroup[lifetimes: LifetimeSet]:
         # TODO(MOCO-771): Enforce that `task.lifetimes` is a subset of
         # `Self.lifetimes`.
         self.counter += 1
-        task._get_ctx[TaskGroupContext[lifetimes]]()[] = TaskGroupContext[
-            lifetimes
-        ] {
+        task._get_ctx[TaskGroupContext]()[] = TaskGroupContext {
             callback: Self._task_complete_callback,
             task_group: UnsafePointer[Self].address_of(self),
         }
@@ -381,7 +379,7 @@ struct TaskGroup[lifetimes: LifetimeSet]:
 
         _suspend_async[await_body]()
 
-    fn wait(inout self):
+    fn wait[lifetimes: LifetimeSet = __lifetime_of()](inout self):
         self._task_complete()
         _async_wait(UnsafePointer[Chain].address_of(self.chain))
 

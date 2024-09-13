@@ -38,11 +38,11 @@ fn test_basic_lock() raises:
 
     @parameter
     fn test_atomic() capturing -> None:
-        var tg = TaskGroup[__lifetime_of(lock)]()
+        var tg = TaskGroup()
         for _ in range(0, maxI):
             for _ in range(0, maxJ):
                 tg.create_task(inc())
-        tg.wait()
+        tg.wait[__lifetime_of(lock)]()
 
     var time_ns = time_function[test_atomic]()
     _ = lock^
