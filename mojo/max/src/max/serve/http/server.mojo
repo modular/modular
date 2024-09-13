@@ -140,7 +140,7 @@ struct PythonServer[
     fn serve[
         handle_fn: Self.handle_fn_type
     ](inout self, num_listeners: Int = 4) raises -> None:
-        var tg = TaskGroup[__lifetime_of()]()
+        var tg = TaskGroup()
         var cpython = _get_global_python_itf().cpython()
         for i in range(num_listeners):
             tg.create_task(self._serve[handle_fn]())
