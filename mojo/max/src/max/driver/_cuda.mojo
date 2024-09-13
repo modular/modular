@@ -18,7 +18,7 @@ from gpu.host import (
     CacheConfig,
 )
 from pathlib import Path
-from collections import Optional
+from collections import Optional, OptionalReg
 from collections.dict import OwnedKwargsDict
 from utils import Variant
 from gpu.host._compile import _get_nvptx_target
@@ -154,7 +154,11 @@ fn compile[
         target = out.target,
         _is_failable=False,
     ](
-        max_registers=compile_args.max_registers,
-        threads_per_block=compile_args.threads_per_block,
+        max_registers=OptionalReg(
+            compile_args.max_registers.value()
+        ) if compile_args.max_registers else OptionalReg[Int](None),
+        threads_per_block=OptionalReg(
+            compile_args.threads_per_block.value()
+        ) if compile_args.threads_per_block else OptionalReg[Int](None),
     )
     return CompiledDeviceKernel(cuda_func)
