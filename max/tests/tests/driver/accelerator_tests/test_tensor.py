@@ -85,3 +85,12 @@ def test_device():
 
     assert cuda != host_tensor.device
     assert cpu != gpu_tensor.device
+
+
+def test_zeros():
+    # We should be able to initialize an all-zero tensor.
+    tensor = Tensor.zeros((3, 3), DType.int32, device=CUDA())
+    host_tensor = tensor.copy_to(CPU())
+    assert np.array_equal(
+        host_tensor.to_numpy(), np.zeros((3, 3), dtype=np.int32)
+    )

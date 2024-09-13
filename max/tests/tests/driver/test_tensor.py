@@ -366,3 +366,9 @@ def test_to_numpy():
     tensor = Tensor.from_numpy(base_arr)
     new_arr = tensor.to_numpy()
     assert np.array_equal(base_arr, new_arr)
+
+
+def test_zeros():
+    # We should be able to initialize an all-zero tensor.
+    tensor = Tensor.zeros((3, 3), DType.int32)
+    assert np.array_equal(tensor.to_numpy(), np.zeros((3, 3), dtype=np.int32))
