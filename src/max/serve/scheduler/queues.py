@@ -6,12 +6,15 @@
 
 
 import asyncio
-import contextlib
 from asyncio import Queue
+import contextlib
 from dataclasses import dataclass, field
 from typing import Any, Generic, TypeVar
 
 BatchKey = TypeVar("BatchKey")
+
+
+STOP_STREAM = object()
 
 
 @dataclass
@@ -34,10 +37,10 @@ class BatchMultiplexQueue(Generic[BatchKey]):
 
     @contextlib.asynccontextmanager
     async def open_channel(self, id: BatchKey, data: dict):
-        self.out_queues[id] = out_queue = Queue()
+        self.out_queues[id] = state = Queue()
         await self.in_queue.put((id, data))
         try:
-            yield out_queue
+            yield state
         finally:
             del self.out_queues[id]
 
@@ -47,8 +50,8 @@ class BatchMultiplexQueue(Generic[BatchKey]):
 
     async def stream(self, id: BatchKey, data):
         async with self.open_channel(id, data) as queue:
-            while True:
-                yield await queue.get()
+            while (item := await queue.get()) is not STOP_STREAM:
+                yield item
 
     def fill_batch_nowait(
         self, batch: dict[BatchKey, Any], max_batch_size: int
@@ -82,9 +85,7 @@ class BatchMultiplexQueue(Generic[BatchKey]):
 
             await asyncio.sleep(0)
 
-    async def continuous_batching_worker(
-        self, forward, complete, max_batch_size: int
-    ):
+    async def continuous_batching_worker(self, forward, max_batch_size: int):
         batch = {}
         while True:
             self.fill_batch_nowait(batch, max_batch_size)
@@ -96,12 +97,14 @@ class BatchMultiplexQueue(Generic[BatchKey]):
                 # Output queues can be removed by consumers when the connection
                 # closes or when they are no longer interested in more outputs.
                 # 2. Completed: Batches with results which are deemed complete.
-                # We test for completion here so that we can immediately remove
+                # The pipeline signals to the server that the request is complete
+                # by not returning a result for it. We immediately remove it from
                 # the batch from further forward passes. If we defer this to
                 # upstream, then we will do at least one more forward pass before
                 # realizing that the upstream queue is closed.
-                for id, result in next_result.items():
-                    if id in cancelled or complete(result):
-                        del batch[id]
+                completed = batch.keys() - next_result.keys()
+                for id in cancelled | completed:
+                    self.out_queues[id].put_nowait(STOP_STREAM)
+                    del batch[id]
 
             await asyncio.sleep(0)

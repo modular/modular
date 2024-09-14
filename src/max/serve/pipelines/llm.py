@@ -42,39 +42,26 @@ class TokenGeneratorPipeline(Generic[Context]):
         """
         # The first token is part of a context-encoding batch.
         # This goes away once we support ragged tensors.
-        context = await self.context_queue.submit(request_id, prompt)
+        context = await self.model.new_context(prompt)
         async for token in self.tokens_queue.stream(request_id, context):
             yield token
-            if token is None:
-                break
 
     async def all_tokens(self, request_id: str, prompt: str) -> list[str]:
-        return [
-            token
-            async for token in self.next_token(request_id, prompt)
-            if token is not None
-        ]
-
-    async def create_context(self, request: dict[str, str]):
-        assert len(request) == 1
-        request_id, request_prompt = next(iter(request.items()))
-        context = await self.model.new_context(request_prompt)
-        assert request_id == request_id
-        return {request_id: context}
+        return [token async for token in self.next_token(request_id, prompt)]
 
     async def __aenter__(self):
         # This can go away once we have ragged tensors
         loop = asyncio.get_running_loop()
+        # This worker only does context encoding. Turned off temporarily.
         context_encoder = loop.create_task(
             self.context_queue.dynamic_batching_worker(
-                self.create_context,
+                self.next_token,
                 self.max_batch_size,
             )
         )
         token_generator = loop.create_task(
             self.tokens_queue.continuous_batching_worker(
                 self.model.next_token,
-                complete=(lambda token: token is None),
                 max_batch_size=self.max_batch_size,
             )
         )

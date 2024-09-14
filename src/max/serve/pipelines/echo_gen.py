@@ -20,10 +20,11 @@ class EchoTokenGenerator:
 
     async def next_token(
         self, batch: dict[str, EchoTokenGeneratorContext]
-    ) -> dict[str, str | None]:
+    ) -> dict[str, str]:
         for rid, ctx in batch.items():
-            ctx.index = ctx.index - 1
+            ctx.index -= 1
         return {
-            rid: ctx.prompt[ctx.index] if ctx.index >= 0 else None
+            rid: ctx.prompt[ctx.index]
             for rid, ctx in batch.items()
+            if ctx.index >= 0
         }
