@@ -5,28 +5,24 @@
 # ===----------------------------------------------------------------------=== #
 """Operations for invoking user-defined operations."""
 
-from typing import List
-
 from max.graph.graph import Graph
-from max.graph.value import Value
 from max.graph.type import Type
+from max.graph.value import Value
 from max.mlir import StringAttr
 from max.mlir.dialects import mo
 
 
 def custom(
-    name: str, values: List[Value], out_types: List[Type]
-) -> List[Value]:
+    name: str, values: list[Value], out_types: list[Type]
+) -> list[Value]:
     """Creates a node to execute a custom graph operation in the graph.
 
     The custom op should be registered by annotating a function with
     the [`max.register.op`](/max/api/mojo/register/register/op)
     decorator.
 
-    Parameters:
-        name: The op name provided to `max.register.op`.
-
     Args:
+        name: The op name provided to `max.register.op`.
         values: The op function's arguments.
         out_types: The list of op function's return type.
 

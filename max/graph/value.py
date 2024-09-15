@@ -20,7 +20,7 @@ from max import _graph, mlir
 from max.dtype import DType
 
 from . import graph, ops
-from .type import DimLike, Shape, ShapeLike, TensorType, _OpaqueType
+from .type import DimLike, Shape, ShapeLike, TensorType
 from .weight import Weight
 
 

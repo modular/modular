@@ -9,7 +9,6 @@ import pytest
 from conftest import shapes, tensor_types
 from hypothesis import assume, given
 from hypothesis import strategies as st
-from max.dtype import DType
 from max.graph import Graph, TensorType, ops
 
 shared_shapes = st.shared(shapes().filter(lambda shape: 0 not in shape))
