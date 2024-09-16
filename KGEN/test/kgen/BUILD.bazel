@@ -2,7 +2,10 @@ load("//bazel:api.bzl", "lit_tests")
 
 lit_tests(
     name = "kgen",
-    srcs = glob(["**/*.mlir"]),
+    srcs = glob([
+        "**/*.mlir",
+        "**/*.ll",
+    ]),
     data = [
         "//KGEN:CompilerRT",
         "@llvm-project//compiler-rt:orc_rt",
