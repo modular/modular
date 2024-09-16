@@ -8,7 +8,10 @@ import asyncio
 
 import pytest
 from max.serve.pipelines.echo_gen import EchoTokenGenerator
-from max.serve.pipelines.llm import TokenGeneratorPipeline
+from max.serve.pipelines.llm import (
+    TokenGeneratorPipeline,
+    TokenGeneratorRequest,
+)
 
 
 @pytest.fixture(params=[4, 8, 16, 32])
@@ -23,18 +26,17 @@ async def test_batched_requests_pipeline(num_requests):
     # This matches vLLM's benchmark_throughput method
 
     async with TokenGeneratorPipeline(EchoTokenGenerator()) as pipeline:
-        request_ids = []
-        request_prompts = []
+        request_params = []
         request_tasks = []
 
         for i in range(num_requests):
             request_id = str(i)
-            request_ids.append(request_id)
             request_prompt = (
                 f"This is a prompt for request number {request_id}."
             )
-            request_prompts.append(request_prompt)
-            request_task = pipeline.all_tokens(request_id, request_prompt)
+            request = TokenGeneratorRequest(id=str(i), prompt=request_prompt)
+            request_params.append(request)
+            request_task = pipeline.all_tokens(request)
             request_tasks.append(request_task)
 
         task_results = await asyncio.gather(*request_tasks)
@@ -42,4 +44,4 @@ async def test_batched_requests_pipeline(num_requests):
         assert len(task_results) == num_requests
         for i, result in enumerate(task_results):
             result_str = "".join(result)
-            assert result_str[::-1] == request_prompts[i]
+            assert result_str[::-1] == request_params[i].prompt
