@@ -10,8 +10,8 @@ from __future__ import annotations
 import functools
 import math
 import re
-from dataclasses import dataclass
 import sys
+from dataclasses import dataclass
 from typing import Any, Iterable, Union
 
 if sys.version_info >= (3, 10):
@@ -545,6 +545,158 @@ class TensorType(Type):
             A new tensor type with the same shape, and the new element type.
         """
         return TensorType(dtype, self.shape)
+
+
+@dataclass
+class BufferType(Type):
+    """A symbolic buffer type.
+
+    This is a reference to a tensor that can be mutated in place.
+    """
+
+    dtype: DType
+    """The element type of the buffer value."""
+    shape: Shape
+    """The dimensions of the buffer value."""
+
+    def __init__(self, dtype: DType, shape: ShapeLike) -> None:
+        """Constructs a buffer type.
+
+        Args:
+            dtype: The element type of the buffer data.
+            dims: The shape dimensions of the buffer. The number of dims
+                  is the rank of the buffer.
+        """
+        self.dtype = dtype
+        self.shape = Shape(shape)
+
+    def to_mlir(self) -> mlir.Type:
+        """Converts to an mlir.Type instance.
+
+        Returns:
+            An mlir.Type in the specified Context.
+        """
+        if not mlir.Context.current:
+            raise RuntimeError("No active mlir Context.")
+        return _graph.buffer_type(
+            mlir.Context.current,
+            _graph.dtype_type(mlir.Context.current, self.dtype._mlir),
+            [dim.to_mlir() for dim in self.shape],
+        )
+
+    @staticmethod
+    def from_mlir(t: mlir.Type) -> BufferType:
+        """Constructs a buffer type from an MLIR type.
+
+        Args:
+            t: The MLIR Type object to parse into a buffer type.
+
+        Returns:
+            The buffer type represented by the MLIR Type value.
+        """
+        if not _graph.type_is_buffer(t):
+            raise TypeError(f"Expected BufferType, got: {t}")
+
+        dtype = _graph.buffer_type_get_dtype(t)
+        rank = _graph.buffer_type_get_rank(t)
+        shape = [
+            Dim.from_mlir(_graph.buffer_type_get_dim(t, i)) for i in range(rank)
+        ]
+
+        return BufferType(DType(dtype), shape)
+
+    # ===------------------------------------------------------------------=== #
+    # Basic accessors
+    # ===------------------------------------------------------------------=== #
+
+    def is_static(self) -> bool:
+        """Checks whether the buffer type has a fully static shape or not.
+
+        A buffer must have all of its dimensions be `static` (or be 0-dimensional)
+        in order to be `static`.
+
+        Returns:
+            True if the buffer has a fully static shape, False otherwise.
+        """
+        return all(d.is_static() for d in self.shape)
+
+    @property
+    def rank(self) -> int:
+        """Gets the rank of the buffer type.
+
+        Returns:
+            The buffer's static rank.
+        """
+        return len(self.shape)
+
+    def dim(self, pos: int) -> Dim:
+        """Gets the pos'th dimension of the buffer type.
+
+        Supports negative-indexing, ie. `t.dim(-1)` will give the last
+        dimension.
+
+        Args:
+            pos: The dimension index to retrieve.
+
+        Returns:
+            The dimension value at dimension `pos`.
+
+        Raises:
+            If the dimension is out-of-bounds.
+        """
+        return self.shape[pos + (self.rank if pos < 0 else 0)]
+
+    def __eq__(self, other: Any) -> bool:
+        """Checks whether the two buffers have the same rank, type, and shape.
+
+        Args:
+            other: The other buffer to check equality against.
+
+        Returns:
+            True if the buffers have identical element type and shape,
+            False otherwise.
+        """
+        return (
+            isinstance(other, BufferType)
+            and (self.dtype == other.dtype)
+            and (self.rank == other.rank)
+            and all(d == d_other for d, d_other in zip(self.shape, other.shape))
+        )
+
+    # ===------------------------------------------------------------------=== #
+    # Utilities
+    # ===------------------------------------------------------------------=== #
+
+    def num_elements(self) -> int:
+        """Counts the total number of elements in the buffer type.
+
+        For a static buffer, returns the product of all static dimensions.
+        This is the number of elements the buffer will hold *during execution*,
+        BufferType doesn't actually hold any element values at all.
+
+        For any non-static buffer, in other words a buffer having any symbolic
+        dimensions, the return value will be meaningless.
+
+        Returns:
+            The number of elements the buffer contains.
+        """
+        if not _is_static_shape(self.shape):
+            raise RuntimeError(
+                "can't find num elements since buffer has symbolic dims"
+            )
+
+        return math.prod(dim.dim for dim in self.shape)
+
+    def cast(self, dtype: DType) -> BufferType:
+        """Constructs a new buffer type of the same shape with the new dtype.
+
+        Args:
+            dtype: The new element type for the buffer.
+
+        Returns:
+            A new buffer type with the same shape, and the new element type.
+        """
+        return BufferType(dtype, self.shape)
 
 
 @dataclass

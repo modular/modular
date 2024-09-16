@@ -12,7 +12,14 @@ from hypothesis import HealthCheck, assume, given, settings
 from hypothesis import strategies as st
 from max import _graph
 from max.dtype import DType
-from max.graph.type import Dim, StaticDim, SymbolicDim, TensorType, _OpaqueType
+from max.graph.type import (
+    BufferType,
+    Dim,
+    StaticDim,
+    SymbolicDim,
+    TensorType,
+    _OpaqueType,
+)
 
 
 @settings(suppress_health_check=[HealthCheck.function_scoped_fixture])
@@ -158,9 +165,47 @@ def test_type_checking(mlir_context) -> None:
     dtype = _graph.dtype_type(mlir_context, "f32")
     dim = _graph.static_dim(mlir_context, 3)
     tensor_type = _graph.tensor_type(mlir_context, dtype, [dim])
-    opaque = _graph.opaque_type(mlir_context, "custom_type")
+    opaque_type = _graph.opaque_type(mlir_context, "custom_type")
+    buffer_type = _graph.buffer_type(mlir_context, dtype, [dim])
 
     assert _graph.type_is_tensor(tensor_type)
     assert not _graph.type_is_opaque(tensor_type)
-    assert _graph.type_is_opaque(opaque)
-    assert not _graph.type_is_tensor(opaque)
+    assert not _graph.type_is_buffer(tensor_type)
+    assert _graph.type_is_opaque(opaque_type)
+    assert not _graph.type_is_tensor(opaque_type)
+    assert not _graph.type_is_buffer(opaque_type)
+    assert _graph.type_is_buffer(buffer_type)
+    assert not _graph.type_is_opaque(buffer_type)
+    assert not _graph.type_is_tensor(buffer_type)
+
+
+@settings(suppress_health_check=[HealthCheck.function_scoped_fixture])
+@given(buffer_type=...)
+def test_buffer_mlir_roundtrip(mlir_context, buffer_type: BufferType):
+    assert buffer_type == BufferType.from_mlir(buffer_type.to_mlir())
+
+
+@given(buffer_type=...)
+def test_buffer_mlir_roundtrip_no_context(buffer_type: BufferType):
+    with pytest.raises(RuntimeError):
+        buffer_type.to_mlir()
+
+
+def test_buffer_type(mlir_context) -> None:
+    """Tests buffer type creation."""
+    dtype = _graph.dtype_type(mlir_context, "f32")
+    dim1 = _graph.static_dim(mlir_context, 3)
+    dim2 = _graph.symbolic_dim(mlir_context, "x")
+    buffer_type = _graph.buffer_type(mlir_context, dtype, [dim1, dim2])
+    assert str(buffer_type) == "!mo.buffer<[3, x], f32>"
+
+
+def test_buffer_type_accessors(mlir_context) -> None:
+    """Tests buffer type property accessors."""
+    dtype = _graph.dtype_type(mlir_context, "f32")
+    dim1 = _graph.static_dim(mlir_context, 3)
+    dim2 = _graph.symbolic_dim(mlir_context, "x")
+    buffer_type = _graph.buffer_type(mlir_context, dtype, [dim1, dim2])
+
+    assert _graph.buffer_type_get_dtype(buffer_type) == DType.float32._mlir
+    assert _graph.buffer_type_get_rank(buffer_type) == 2

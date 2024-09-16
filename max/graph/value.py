@@ -20,7 +20,7 @@ from max import _graph, mlir
 from max.dtype import DType
 
 from . import graph, ops
-from .type import DimLike, Shape, ShapeLike, TensorType
+from .type import BufferType, DimLike, Shape, ShapeLike, TensorType
 from .weight import Weight
 
 
@@ -50,6 +50,8 @@ class Value:
         if isinstance(value, mlir.Value):
             if _graph.type_is_opaque(value.type):
                 return super().__new__(_OpaqueValue)
+            elif _graph.type_is_buffer(value.type):
+                return super().__new__(BufferValue)
             else:
                 return super().__new__(TensorValue)
         elif isinstance(value, Value):
@@ -94,19 +96,57 @@ class _OpaqueValue(Value):
             )
 
 
+class BufferValue(Value):
+    """Represents a value semantic tensor within a `Graph`."""
+
+    def __init__(self, value: ValueLike) -> None:
+        if isinstance(value, mlir.Value) and _graph.type_is_buffer(value.type):
+            self._mlir_value = value
+        elif isinstance(value, BufferValue):
+            self._mlir_value = value._mlir_value
+        elif isinstance(value, Weight):
+            self._mlir_value = graph.Graph.current.add_weight(value)._mlir_value
+        elif isinstance(value, _numeric):
+            raise TypeError(
+                "BufferValue() can not be created directly from a"
+                f" '{type(value).__name__}'. Use ops.constant to"
+                " convert to a BufferValue with a specific dtype."
+            )
+        else:
+            raise TypeError(
+                "BufferValue() argument must be a mlir.Value of buffer type,"
+                " or a graph.,  or an np.ndarray, not"
+                f" '{type(value).__name__}'"
+            )
+
+    @property
+    def type(self) -> BufferType:
+        """Returns the type of the BufferValue as a BufferType."""
+        return BufferType.from_mlir(self._mlir_value.type)
+
+    @property
+    def shape(self) -> Shape:
+        """Returns the shape of the BufferValue."""
+        return self.type.shape
+
+    def __getitem__(self, index):
+        # TODO: implement ops.load_slice_buffer()
+        raise NotImplementedError("TODO")
+
+    def __setitem__(
+        self,
+        index,
+    ):
+        # TODO: implement ops.store_slice_buffer()
+        raise NotImplementedError("TODO")
+
+
 class TensorValue(Value):
     """Represents a value semantic tensor within a `Graph`."""
 
     def __init__(self, value: ValueLike) -> None:
-        if isinstance(value, mlir.Value):
-            if _graph.type_is_tensor(value.type):
-                self._mlir_value = value
-            else:
-                raise TypeError(
-                    "TensorValue() argument must be a mlir.Value of tensor"
-                    " type, a graph.TensorValue, or an np.ndarray, not"
-                    f" '{type(value).__name__}'"
-                )
+        if isinstance(value, mlir.Value) and _graph.type_is_tensor(value.type):
+            self._mlir_value = value
         elif isinstance(value, TensorValue):
             self._mlir_value = value._mlir_value
         elif isinstance(value, Weight):
@@ -120,7 +160,8 @@ class TensorValue(Value):
         else:
             raise TypeError(
                 "TensorValue() argument must be a mlir.Value of tensor type,"
-                f" or a graph.TensorValue, not '{type(value).__name__}'"
+                " or a graph.TensorValue,  or an np.ndarray, not"
+                f" '{type(value).__name__}'"
             )
 
     # TODO(MSDK-662): Should both DimLike and ShapeLike be considered ValueLike now?

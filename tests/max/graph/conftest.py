@@ -15,7 +15,7 @@ from hypothesis import assume
 from hypothesis import strategies as st
 from max import _graph, mlir
 from max.dtype import DType
-from max.graph import TensorType
+from max.graph import BufferType, TensorType
 from max.graph.type import Dim, Shape, StaticDim, SymbolicDim
 
 dtypes = st.sampled_from([d for d in DType if d is not DType._unknown])
@@ -50,6 +50,10 @@ def tensor_types(dtypes=dtypes, shapes=shapes()):
     return st.builds(TensorType, dtypes, shapes)
 
 
+def buffer_types(dtypes=dtypes, shapes=shapes()):
+    return st.builds(BufferType, dtypes, shapes)
+
+
 def axes(shapes):
     def strategy(shape):
         assume(shape.rank > 0)
@@ -72,6 +76,7 @@ st.register_type_strategy(Dim, dims)
 st.register_type_strategy(StaticDim, static_dims)
 st.register_type_strategy(SymbolicDim, symbolic_dims)
 st.register_type_strategy(TensorType, tensor_types())
+st.register_type_strategy(BufferType, buffer_types())
 
 
 def broadcastable_subshape(shape: list[Dim], random: random.Random):
