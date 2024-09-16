@@ -40,9 +40,7 @@ Benchmark Report (s)
 Mean: 0.012265747899159664
 Total: 1.459624
 Iters: 119
-Warmup Mean: 0.01251
 Warmup Total: 0.025020000000000001
-Warmup Iters: 2
 Fastest Mean: 0.0121578
 Slowest Mean: 0.012321428571428572
 
@@ -61,9 +59,7 @@ Benchmark Report (s)
 Mean: 0.012368649122807017
 Total: 1.410026
 Iters: 114
-Warmup Mean: 0.0116705
 Warmup Total: 0.023341000000000001
-Warmup Iters: 2
 Fastest Mean: 0.012295586956521738
 Slowest Mean: 0.012508099999999999
 
@@ -99,9 +95,7 @@ Benchmark Report (ms)
 Mean: 0.012312411764705882
 Total: 1.465177
 Iters: 119
-Warmup Mean: 0.012505499999999999
 Warmup Total: 0.025010999999999999
-Warmup Iters: 2
 Fastest Mean: 0.012015649999999999
 Slowest Mean: 0.012421204081632654
 ```
@@ -218,8 +212,6 @@ struct Report(CollectionElement):
     Contains the average execution time, iterations, min and max of each batch.
     """
 
-    var warmup_iters: Int
-    """The total warmup iterations."""
     var warmup_duration: Int
     """The total duration it took to warmup."""
     var runs: List[Batch]
@@ -231,7 +223,6 @@ struct Report(CollectionElement):
 
         Sets all values to 0
         """
-        self.warmup_iters = 0
         self.warmup_duration = 0
         self.runs = List[Batch]()
 
@@ -250,7 +241,6 @@ struct Report(CollectionElement):
         Args:
             existing: The `Report` to copy.
         """
-        self.warmup_iters = existing.warmup_iters
         self.warmup_duration = existing.warmup_duration
         self.runs = existing.runs
 
@@ -350,12 +340,7 @@ struct Report(CollectionElement):
         print("Mean:", self.mean(unit))
         print("Total:", self.duration(unit))
         print("Iters:", self.iters())
-        print(
-            "Warmup Mean:",
-            self.warmup_duration / self.warmup_iters / divisor,
-        )
         print("Warmup Total:", self.warmup_duration / divisor)
-        print("Warmup Iters:", self.warmup_iters)
         print("Fastest Mean:", self.min(unit))
         print("Slowest Mean:", self.max(unit))
         print()
@@ -392,24 +377,24 @@ struct Report(CollectionElement):
 @register_passable("trivial")
 struct _RunOptions[timing_fn: fn (num_iters: Int) capturing -> Int]:
     var max_batch_size: Int
-    var num_warmup: Int
     var max_iters: Int
     var min_runtime_secs: Float64
     var max_runtime_secs: Float64
+    var min_warmuptime_secs: Float64
 
     fn __init__(
         inout self,
         max_batch_size: Int = 0,
-        num_warmup: Int = 2,
         max_iters: Int = 1_000_000_000,
         min_runtime_secs: Float64 = 2,
         max_runtime_secs: Float64 = 60,
+        min_warmuptime_secs: Float64 = 1,
     ):
         self.max_batch_size = max_batch_size
-        self.num_warmup = num_warmup
         self.max_iters = max_iters
         self.min_runtime_secs = min_runtime_secs
         self.max_runtime_secs = max_runtime_secs
+        self.min_warmuptime_secs = min_warmuptime_secs
 
 
 # ===----------------------------------------------------------------------===#
@@ -421,7 +406,6 @@ struct _RunOptions[timing_fn: fn (num_iters: Int) capturing -> Int]:
 fn run[
     func: fn () -> None
 ](
-    num_warmup: Int = 2,
     max_iters: Int = 1_000_000_000,
     min_runtime_secs: Float64 = 2,
     max_runtime_secs: Float64 = 60,
@@ -436,8 +420,6 @@ fn run[
         func: The function to benchmark.
 
     Args:
-        num_warmup: Number of warmup iterations to run before starting
-            benchmarking (default 2).
         max_iters: Max number of iterations to run (default `1_000_000_000`).
         min_runtime_secs: Upper bound on benchmarking time in secs (default `2`).
         max_runtime_secs: Lower bound on benchmarking time in secs (default `60`).
@@ -462,7 +444,6 @@ fn run[
     return _run_impl(
         _RunOptions[benchmark_fn](
             max_batch_size=max_batch_size,
-            num_warmup=num_warmup,
             max_iters=max_iters,
             min_runtime_secs=min_runtime_secs,
             max_runtime_secs=max_runtime_secs,
@@ -474,7 +455,6 @@ fn run[
 fn run[
     func: fn () capturing -> None
 ](
-    num_warmup: Int = 2,
     max_iters: Int = 1_000_000_000,
     min_runtime_secs: Float64 = 2,
     max_runtime_secs: Float64 = 60,
@@ -489,8 +469,6 @@ fn run[
         func: The function to benchmark.
 
     Args:
-        num_warmup: Number of warmup iterations to run before starting
-            benchmarking (default 2).
         max_iters: Max number of iterations to run (default `1_000_000_000`).
         min_runtime_secs: Upper bound on benchmarking time in secs (default `2`).
         max_runtime_secs: Lower bound on benchmarking time in secs (default `60`).
@@ -515,7 +493,6 @@ fn run[
     return _run_impl(
         _RunOptions[benchmark_fn](
             max_batch_size=max_batch_size,
-            num_warmup=num_warmup,
             max_iters=max_iters,
             min_runtime_secs=min_runtime_secs,
             max_runtime_secs=max_runtime_secs,
@@ -527,25 +504,20 @@ fn run[
 fn _run_impl(opts: _RunOptions) -> Report:
     var report = Report()
 
-    var prev_dur: Int
-    var prev_iters: Int
-    if opts.num_warmup > 0:
+    var prev_dur: Int = 0
+    var prev_iters: Int = 0
+    var min_warmup_time_ns = int(opts.min_warmuptime_secs * 1_000_000_000)
+    if min_warmup_time_ns > 0:
         # Make sure to warm up the function and use one iteration to compute
         # the previous duration.
-        prev_dur = opts.timing_fn(max(opts.num_warmup - 1, 1))
-        prev_iters = 1
-        # If the num warmup is greater than 1, then the prior timing captured
-        # multiple iterations (we only care about 1), so run the timing function
-        # again but capture a single iteration. This logic enables us to handle
-        # the case were num_warmup == 1.
-        if opts.num_warmup > 1:
+        var time_elapsed: Int = 0
+        var num_warmup: Int = 0
+        while time_elapsed < min_warmup_time_ns:
             prev_dur = opts.timing_fn(1)
-        report.warmup_iters = 1
+            time_elapsed += prev_dur
+        prev_iters = 1
         report.warmup_duration = prev_dur
     else:
-        prev_iters = 0
-        prev_dur = 0
-        report.warmup_iters = 0
         report.warmup_duration = 0
 
     var total_iters: Int = 0
@@ -562,10 +534,9 @@ fn _run_impl(opts: _RunOptions) -> Report:
             # We now count the next batchSize. A user might run the benchmark
             # with no warmup phase, so we need to make sure the divisor is not
             # zero.
-            prev_dur = max(1, prev_dur)
             # Compute the next batch size.
-            n = min_time_ns * prev_iters / Float64(prev_dur)
-            n *= 1.2
+            if prev_dur > 0:
+                n = 1.2 * min_time_ns * prev_iters / Float64(prev_dur)
             # We should not grow too fast, so we cap it to only 10x the growth
             # from the prior iteration. Fast growth can happen when the function
             # is too fast.
