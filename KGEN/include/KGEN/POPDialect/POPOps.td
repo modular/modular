@@ -1595,6 +1595,7 @@ def POP_CastFromBuiltinOp : POPOp<"cast_from_builtin", [Pure]> {
 def POP_CallLLVMIntrinsicOp : POPOp<"call_llvm_intrinsic",[
     DeclareOpInterfaceMethods<MemoryEffectsOpInterface>,
     DeclareOpInterfaceMethods<ConditionallySpeculatable>,
+    DeclareOpInterfaceMethods<InterpreterOpInterface>,
   ]> {
   let summary = "Call to an LLVM intrinsic function.";
   let description = [{
