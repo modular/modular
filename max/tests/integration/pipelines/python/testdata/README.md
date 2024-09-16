@@ -4,35 +4,20 @@
 Use these scripts to randomly generate a tiny llama checkpoint and compute
 golden values.
 
-## Tinyllama
-
-To facilitate fast cycle times during local development, a tiny llama test
-is included alongside the full weights. To re-generate the tiny llama
-checkpoint, use the `gen_tiny_llama` target:
-
 ```bash
 TESTDATA_DIR="$MODULAR_PATH/SDK/integration-test/pipelines/python/testdata"
 
-./bazelw run //ModularFramework/utils:gen_tiny_llama --\
+bazel run //ModularFramework/utils:gen_tiny_llama --\
     --output=$TESTDATA_DIR/tiny_llama.gguf \
     --quantization-encoding=float32 \
     --n-layers=1 \
     --n-heads=1 \
     --n-kv-heads=1 \
     --hidden-dim=10
-```
 
-Then, you can use `evaluate_llama` to generate the golden values. The
-CLI supports encoding (q4_k, float32, bfloat16) and model (tinyllama, llama3_1) parameters.
-If either are not set they default to "all", so the typical command simply
-points to the modular root so that the CLI can write the golden files for
-each encoding/model pair to the test data folder.
-
-```bash
-./bazelw run //SDK/integration-test/pipelines/python:evaluate_llama --\
-    --modular-path /path/to/modular \
-    --encoding q4_k \ # float32, q4_k, bfloat16, or all (default)
-    --model tinyllama # llama3_1, tinyllama, or all (default)
+bazel run //SDK/integration-test/pipelines/python:evaluate_llama --\
+    --output=$TESTDATA_DIR/tiny_llama_golden.json \
+    --weight-path=$TESTDATA_DIR/tiny_llama.gguf
 ```
 
 ## Tokenizer data
@@ -40,24 +25,3 @@ each encoding/model pair to the test data folder.
 `special_tokens_map.json`, `tokenizer_config.json` and `tokenizer.json` are
 copied from the [meta-llama/Meta-Llama-3.1-8B-Instruct](https://huggingface.co/meta-llama/Meta-Llama-3.1-8B-Instruct)
 HuggingFace model.
-
-# Running the tests
-
-The test target for CPU tests is:
-
-```bash
-./bazelw test //SDK/integration-test/pipelines/python:tests
-```
-
-For local development, it may be convenient to just run the tiny llama
-tests, which you can select out using a pytest filter:
-
-```bash
-./bazelw test //SDK/integration-test/pipelines/python:tests --test_arg="-k test_llama[tiny-float32-llama3_1]"
-```
-
-Note that GPU tests have a different target:
-
-```bash
-./bazelw test //SDK/integration-test/pipelines/python:tests_gpu
-```
