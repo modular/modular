@@ -16,6 +16,7 @@
 #include "KGEN/Compiler/LLVMIRUtils.h"
 #include "KGEN/Compiler/ObjectCompiler.h"
 #include "KGEN/KGENVersion/KGENVersion.h"
+#include "KGEN/Support/BuildInfo.h"
 #include "KGEN/Support/CompilerProfiling.h"
 #include "KGEN/Support/NameMangling.h"
 #include "KGEN/ToolCommon/CompilationOptions.h"
