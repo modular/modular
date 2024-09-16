@@ -6,6 +6,7 @@
 
 import random
 from dataclasses import dataclass
+from typing import Optional
 
 
 @dataclass
@@ -15,7 +16,11 @@ class RandomTokenGeneratorContext:
 
 @dataclass
 class RandomTokenGenerator:
-    async def new_context(self, prompt: str) -> RandomTokenGeneratorContext:
+    async def new_context(
+        self, prompt: str, max_new_tokens: Optional[int] = None
+    ) -> RandomTokenGeneratorContext:
+        if max_new_tokens is not None:
+            raise NotImplementedError("max_new_tokens is not supported.")
         return RandomTokenGeneratorContext(prompt)
 
     async def next_token(

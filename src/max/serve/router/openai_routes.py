@@ -7,13 +7,16 @@
 
 import logging
 from datetime import datetime
-from typing import Annotated
+from typing import Annotated, Optional
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import JSONResponse, Response
 from max.serve.pipelines.deps import token_pipeline
-from max.serve.pipelines.llm import TokenGeneratorPipeline
+from max.serve.pipelines.llm import (
+    TokenGeneratorPipeline,
+    TokenGeneratorRequest,
+)
 from max.serve.schemas.openai import (
     ChatCompletionRequestMessage,
     ChatCompletionRequestMessageContentPartText,
@@ -53,17 +56,21 @@ def openai_request_message_to_text(message: ChatCompletionRequestMessage):
     )
 
 
-class OpenAIResponseGenerator:
-    def __init__(self, token_pipeline: TokenGeneratorPipeline):
-        self.token_pipeline = token_pipeline
+class OpenAITokenResponseGenerator:
+    def __init__(
+        self,
+        pipeline: TokenGeneratorPipeline,
+        request: TokenGeneratorRequest,
+    ):
+        self.pipeline = pipeline
+        self.request = request
 
-    async def generate(self, request_id: str, prompt: str):
+    async def stream(self):
         response_idx = 0
-        async for token in self.token_pipeline.next_token(request_id, prompt):
+        async for token in self.pipeline.next_token(self.request):
             logger.debug(
-                "Streaming: %s, [%s], TOKEN: %d, %s",
-                request_id,
-                prompt[:48],
+                "Streaming: %s, TOKEN: %d, %s",
+                self.request,
                 response_idx,
                 token,
             )
@@ -88,7 +95,7 @@ class OpenAIResponseGenerator:
             # Each chunk is expected to have the same id
             # https://platform.openai.com/docs/api-reference/chat/streaming
             response = CreateChatCompletionStreamResponse(
-                id=request_id,
+                id=self.request.id,
                 choices=choices,
                 created=int(datetime.now().timestamp()),
                 model="",
@@ -101,12 +108,39 @@ class OpenAIResponseGenerator:
             yield response.model_dump_json()
 
         logger.debug(
-            "Completed: %s, [%s], %d tokens",
-            request_id,
-            prompt[:48],
+            "Completed: %s, %d tokens",
+            self.request,
             response_idx,
         )
         yield "[DONE]"
+
+    async def complete(self) -> CreateChatCompletionResponse:
+        completed_tokens = await self.pipeline.all_tokens(self.request)
+
+        response_message = "".join(completed_tokens)
+        response_choices = [
+            Choice1(
+                index=0,
+                message=ChatCompletionResponseMessage(
+                    content=response_message,
+                    role="assistant",
+                    function_call=None,
+                    refusal="",
+                ),
+                finish_reason="stop",
+                logprobs=Logprobs2(content=[], refusal=[]),
+            )
+        ]
+        response = CreateChatCompletionResponse(
+            id=self.request.id,
+            choices=response_choices,
+            created=int(datetime.now().timestamp()),
+            model="",
+            object="chat.completion",
+            system_fingerprint=None,
+            service_tier=None,
+        )
+        return response
 
 
 @router.post("/chat/completions")
@@ -146,33 +180,17 @@ async def openai_chat_completions(
             ]
         )
 
-    if completion_request.stream:
-        gen = OpenAIResponseGenerator(pipeline)
-        return EventSourceResponse(gen.generate(request_id, request_prompt))
-
-    completed_tokens = await pipeline.all_tokens(request_id, request_prompt)
-
-    response_message = "".join(completed_tokens)
-    response_choices = [
-        Choice1(
-            index=0,
-            message=ChatCompletionResponseMessage(
-                content=response_message,
-                role="assistant",
-                function_call=None,
-                refusal="",
-            ),
-            finish_reason="stop",
-            logprobs=Logprobs2(content=[], refusal=[]),
-        )
-    ]
-    response = CreateChatCompletionResponse(
-        id="0",
-        choices=response_choices,
-        created=int(datetime.now().timestamp()),
-        model="",
-        object="chat.completion",
-        system_fingerprint=None,
-        service_tier=None,
+    token_request = TokenGeneratorRequest(
+        id=request_id,
+        prompt=request_prompt,
+        max_new_tokens=completion_request.max_tokens,
     )
+    response_generator = OpenAITokenResponseGenerator(
+        pipeline,
+        token_request,
+    )
+    if completion_request.stream:
+        return EventSourceResponse(response_generator.stream())
+
+    response = await response_generator.complete()
     return JSONResponse(response.model_dump_json())

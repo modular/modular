@@ -16,6 +16,19 @@ from transformers import AutoTokenizer
 Context = TypeVar("Context")
 
 
+@dataclass(frozen=True)
+class TokenGeneratorRequest:
+    id: str
+    prompt: str
+    max_new_tokens: Optional[int] = None
+
+    def __str__(self):
+        txt = f"Id: {self.id}, Prompt: [{self.prompt[:40]}]"
+        if self.max_new_tokens:
+            txt += f", MaxNewTokens: {self.max_new_tokens}"
+        return txt
+
+
 @dataclass
 class TokenGeneratorPipeline(Generic[Context]):
     """Base class for LLM pipelines."""
@@ -36,18 +49,21 @@ class TokenGeneratorPipeline(Generic[Context]):
     max_batch_size: int = 1
 
     async def next_token(
-        self, request_id: str, prompt: str
+        self,
+        request: TokenGeneratorRequest,
     ) -> AsyncGenerator[str, None]:
         """Generates tokens for each provided request ending with sentinel `None` tokens.
         """
         # The first token is part of a context-encoding batch.
         # This goes away once we support ragged tensors.
-        context = await self.model.new_context(prompt)
-        async for token in self.tokens_queue.stream(request_id, context):
+        context = await self.model.new_context(
+            request.prompt, max_new_tokens=request.max_new_tokens
+        )
+        async for token in self.tokens_queue.stream(request.id, context):
             yield token
 
-    async def all_tokens(self, request_id: str, prompt: str) -> list[str]:
-        return [token async for token in self.next_token(request_id, prompt)]
+    async def all_tokens(self, request: TokenGeneratorRequest) -> list[str]:
+        return [token async for token in self.next_token(request)]
 
     async def __aenter__(self):
         # This can go away once we have ragged tensors
