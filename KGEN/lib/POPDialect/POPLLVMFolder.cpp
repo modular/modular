@@ -22,12 +22,11 @@ static llvm::Type *convertToLLVM(Type type, llvm::LLVMContext &llvmCtx,
   if (auto intType = dyn_cast<IntegerType>(type))
     return llvm::Type::getIntNTy(llvmCtx, intType.getWidth());
 
+  // Use target info to lower 'index' to the right LLVM bitwidth if available.
   if (isa<IndexType>(type)) {
-    if (!target)
+    if (!target || !target.getIndexBitWidth().has_value())
       return {};
-    auto indexSize = DataLayoutInterface::getTypeAllocSize(target, type);
-    assert(indexSize && "couldn't get the size of index?");
-    return llvm::Type::getIntNTy(llvmCtx, *indexSize * 8);
+    return llvm::Type::getIntNTy(llvmCtx, *target.getIndexBitWidth());
   }
 
   return {};
