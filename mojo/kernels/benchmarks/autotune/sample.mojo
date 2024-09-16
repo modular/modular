@@ -44,7 +44,9 @@ fn main() raises:
     alias shape = int_list_to_tuple[shape_int_list]()
     alias stages = env_get_int["stages", 0]()
 
-    var m = Bench(BenchConfig(max_iters=1, max_batch_size=1, warmup_iters=0))
+    var m = Bench(
+        BenchConfig(max_iters=1, max_batch_size=1, min_warmuptime_secs=0)
+    )
 
     bench_func[dtype, shape[0], shape[1], shape[2], stages](m)
 

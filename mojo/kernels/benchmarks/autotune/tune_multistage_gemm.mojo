@@ -440,7 +440,9 @@ struct ParamConfig:
 
 
 def main():
-    var m = Bench(BenchConfig(max_iters=1, max_batch_size=1, warmup_iters=0))
+    var m = Bench(
+        BenchConfig(max_iters=1, max_batch_size=1, min_warmuptime_secs=0)
+    )
 
     # input params
     alias dtype = DType.bfloat16
