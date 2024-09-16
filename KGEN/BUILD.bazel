@@ -828,6 +828,7 @@ modular_cc_library(
         "//Support:IPRational",
         "//Support:MDialect",
         "//Support:Threading",
+        "@llvm-project//llvm:Support",
         "@llvm-project//mlir:IR",
     ],
 )
