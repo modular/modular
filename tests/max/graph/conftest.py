@@ -4,6 +4,8 @@
 #
 # ===----------------------------------------------------------------------=== #
 
+from __future__ import annotations
+
 import itertools
 import os
 import random
@@ -28,6 +30,9 @@ symbolic_dims = st.builds(
         st.just("batch"),
         st.characters(min_codepoint=ord("a"), max_codepoint=ord("z")),
     ),
+)
+static_positive_dims = st.builds(
+    StaticDim, st.integers(min_value=1, max_value=2**63 - 1)
 )
 dims = st.one_of(static_dims, symbolic_dims)
 
@@ -87,14 +92,22 @@ def broadcastable_subshape(shape: list[Dim], random: random.Random):
     return shape
 
 
-def broadcastable_shapes(n: int):
-    return st.lists(dims).flatmap(
+def _broadcastable_shapes(n: int, dims_strategy):
+    return st.lists(dims_strategy).flatmap(
         lambda shape: st.lists(
             st.builds(broadcastable_subshape, st.just(shape), st.randoms()),
             min_size=n,
             max_size=n,
         )
     )
+
+
+def broadcastable_shapes(n: int):
+    return _broadcastable_shapes(n, dims)
+
+
+def broadcastable_static_positive_shapes(n: int):
+    return _broadcastable_shapes(n, static_positive_dims)
 
 
 def broadcastable_tensor_types(n: int):
