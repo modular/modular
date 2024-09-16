@@ -194,6 +194,28 @@ fn external_memory[
 
 
 @always_inline
+fn fence_proxy_tensormap_generic_sys_acquire[
+    type: AnyType,
+](ptr: UnsafePointer[type, GPUAddressSpace.GENERIC, *_], size: Int32):
+    """Acquires tensor map system's memory fence of particular size
+    Args:
+        ptr: Pointer to tensor map object in system's memory.
+        size: The size of the object.
+    """
+    llvm_intrinsic[
+        "llvm.nvvm.fence.proxy.tensormap_generic.acquire.sys", NoneType
+    ](ptr, size)
+
+
+@always_inline
+fn fence_proxy_tensormap_generic_sys_release():
+    """Release tensor map system's memory fence."""
+    llvm_intrinsic[
+        "llvm.nvvm.fence.proxy.tensormap_generic.release.sys", NoneType
+    ]()
+
+
+@always_inline
 fn __to_llvm_shared_mem_ptr[
     type: AnyType
 ](
