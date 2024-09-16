@@ -21,7 +21,14 @@ from memory.reference import AddressSpace, _GPUAddressSpace
 from utils import StaticIntTuple
 from utils.numerics import max_finite
 
-from .int_tuple import fill_like, flatten, idx2crd, product, to_int, depth
+from .int_tuple import (
+    fill_like,
+    flatten,
+    idx2crd,
+    product,
+    to_int,
+    depth,
+)
 from .layout import *
 from .runtime_layout import RuntimeLayout
 from .runtime_layout import coalesce as runtime_coalesce
@@ -121,6 +128,7 @@ struct LayoutTensor[
     *,
     address_space: AddressSpace = AddressSpace.GENERIC,
     element_layout: Layout = Layout(1, 1),
+    __experimental_non_homogeneous_tile: Bool = False,
 ](CollectionElement, CollectionElementNew, Stringable, Formattable):
     """This is a Tensor type that has a specified memory layout and rank. The
     following example demonstrate a LayoutTensor of float32 with a row major
@@ -135,6 +143,7 @@ struct LayoutTensor[
         rank: The rank of the Tensor.
         address_space: The address space of the underlying pointer.
         element_layout: The memory layout of each element in the Tensor.
+        __experimental_non_homogeneous_tile: An experimental feature for dynamic tile sizes.
     """
 
     alias index_type: DType = _get_index_type(layout, address_space)
@@ -999,7 +1008,22 @@ struct LayoutTensor[
     @staticmethod
     fn _compute_tile_layout[*tile_sizes: Int]() -> Layout:
         alias tiler = MakeTileLayoutList[tile_sizes]()
-        return zipped_divide(layout, tiler)
+        alias tiles = zipped_divide(layout, tiler)
+
+        @parameter
+        if __experimental_non_homogeneous_tile:
+            # override the tile shapes with original unknown dim
+            return Self._prop_unknown_shape[0, tiles, layout]()
+
+        return tiles
+
+    @staticmethod
+    @always_inline
+    fn _prop_unknown_shape[idx: Int, src: Layout, target: Layout]() -> Layout:
+        """Propagate all unknown dim from target to a new layout."""
+        var new_shape = src.shape
+        new_shape[idx] = propagate_unknown(src.shape[idx], target.shape)
+        return Layout(new_shape, src.stride)
 
     @staticmethod
     fn _compute_tile_layout[tile_size: Int, axis: Int]() -> Layout:
@@ -1084,22 +1108,42 @@ struct LayoutTensor[
             # Dynamic layout, use strides
             var offset = 0
 
-            var dynamic_layout_shape = RuntimeTuple[result.layout.shape]()
+            @parameter
+            if __experimental_non_homogeneous_tile:
+                dynamic_shape = RuntimeTuple[result.layout.shape](
+                    self._clamp_tile[tile_sizes](tile_coords)
+                )
+            else:
+                dynamic_shape = RuntimeTuple[result.layout.shape]()
 
-            var dynamic_layout_stride = RuntimeTuple[result.layout.stride]()
+            var dynamic_stride = RuntimeTuple[result.layout.stride]()
 
             @parameter
             for i in range(num_tiles):
                 var stride = self.runtime_layout.stride.value[i] * tile_sizes[i]
-                dynamic_layout_stride.value[
-                    i
-                ] = self.runtime_layout.stride.value[i]
+                dynamic_stride.value[i] = self.runtime_layout.stride.value[i]
                 offset += tile_coords[i] * stride
 
             return __type_of(result)(
                 self.ptr.offset(offset),
-                RuntimeLayout(dynamic_layout_shape, dynamic_layout_stride),
+                RuntimeLayout(dynamic_shape, dynamic_stride),
             )
+
+    @always_inline
+    fn _clamp_tile[
+        *tile_sizes: Int
+    ](self, tile_coords: StaticIntTuple[rank]) -> StaticIntTuple[rank]:
+        var tile_shape = StaticIntTuple[rank]()
+        var runtime_shape = self.runtime_layout.shape
+
+        @parameter
+        for i in range(__get_len[tile_sizes]()):
+            var cur_dim = runtime_shape[i].get_int() - (
+                tile_coords[i] * tile_sizes[i]
+            )
+            tile_shape[i] = min(tile_sizes[i], cur_dim)
+
+        return tile_shape
 
     @always_inline
     fn tiled_iterator[

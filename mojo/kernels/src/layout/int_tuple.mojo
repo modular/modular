@@ -530,6 +530,20 @@ fn fill_like(src: IntTuple, val: Int) -> IntTuple:
     return val
 
 
+# Returns an IntTuple that combine all unknown dim from target to src.
+#
+fn propagate_unknown(src: IntTuple, target: IntTuple) -> IntTuple:
+    if is_tuple(target):
+        var dim = IntTuple()
+        for d in zip(src, target):
+            dim.append(propagate_unknown(d[0], d[1]))
+        return dim
+
+    if target == UNKNOWN_VALUE:
+        return target
+    return src
+
+
 # Returns an IntTuple reversed e.g reverse(1, 2, (3, 4)) returns ((4, 3), 2, 1)
 #
 fn reverse(src: IntTuple) -> IntTuple:

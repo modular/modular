@@ -70,16 +70,30 @@ struct ManagedLayoutTensor[
     alloc_fn: alloc_fn_type = cpu_alloc,
     free_fn: free_fn_type = cpu_free,
     alloc_runtime_fn: alloc_runtime_fn = cpu_alloc_runtime,
+    *,
+    __experimental_non_homogeneous_tile: Bool = False,
 ]:
-    var tensor: LayoutTensor[dtype, layout]
+    var tensor: LayoutTensor[
+        dtype,
+        layout,
+        __experimental_non_homogeneous_tile=__experimental_non_homogeneous_tile,
+    ]
 
     @always_inline
     fn __init__(inout self):
-        self.tensor = LayoutTensor[dtype, layout](alloc_fn[layout, dtype]())
+        self.tensor = LayoutTensor[
+            dtype,
+            layout,
+            __experimental_non_homogeneous_tile=__experimental_non_homogeneous_tile,
+        ](alloc_fn[layout, dtype]())
 
     @always_inline
     fn __init__(inout self, runtime_layout: RuntimeLayout[layout]):
-        self.tensor = LayoutTensor[dtype, layout](
+        self.tensor = LayoutTensor[
+            dtype,
+            layout,
+            __experimental_non_homogeneous_tile=__experimental_non_homogeneous_tile,
+        ](
             alloc_runtime_fn[layout, dtype](runtime_layout),
             runtime_layout,
         )

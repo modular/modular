@@ -29,6 +29,7 @@ from .int_tuple import (
     sorted,
     to_int,
     to_unknown,
+    propagate_unknown,
     tuple_min,
     zip,
 )
