@@ -195,38 +195,41 @@ class Model:
             :obj:`np.ndarray`, :obj:`torch.Tensor`, and :obj:`max.driver.Tensor`.
         """
         if args:
-            input_tensors: List[Tensor] = []
+            input_impls: List[Union[_TensorImpl, MojoValue]] = []
             output_device = kwargs.get("output_device", None)
 
             for arg in args:
                 # Validate that input is one of supported types and convert if
                 # necessary.
-                tensor: Tensor
-                if _is_torch_tensor(arg) or isinstance(arg, np.ndarray):
-                    tensor = Tensor.from_dlpack(arg)
-                elif isinstance(arg, Tensor):
-                    if not arg.is_contiguous:
-                        raise ValueError(
-                            "Max does not currently support executing"
-                            " non-contiguous tensors. Before executing these"
-                            " tensors, please make a contiguous copy of them"
-                            " using `.contiguous` before feeding them into the"
-                            " `execute` API."
-                        )
-                    tensor = arg
+                input_impl: Union[_TensorImpl, MojoValue]
+                if isinstance(arg, MojoValue):
+                    input_impl = arg
                 else:
-                    raise ValueError(
-                        "All positional arguments must be of the type"
-                        " `max.driver.Tensor` `np.ndarray`, or `torch.Tensor`."
-                        " We do not currently support inputs of the type"
-                        f" {type(arg)}."
-                    )
-                if tensor.device != self.device:
-                    tensor = tensor.copy_to(self.device)
-                input_tensors.append(tensor)
-            results = self._impl.execute_device_tensors(
-                [tensor._impl for tensor in input_tensors]
-            )
+                    tensor: Tensor
+                    if _is_torch_tensor(arg) or isinstance(arg, np.ndarray):
+                        tensor = Tensor.from_dlpack(arg)
+                    elif isinstance(arg, Tensor):
+                        if not arg.is_contiguous:
+                            raise ValueError(
+                                "Max does not currently support executing"
+                                " non-contiguous tensors. Before executing"
+                                " these tensors, please make a contiguous copy"
+                                " of them using `.contiguous` before feeding"
+                                " them into the `execute` API."
+                            )
+                        tensor = arg
+                    else:
+                        raise ValueError(
+                            "All positional arguments must be of the type"
+                            " `max.driver.Tensor`, `MojoValue`, `np.ndarray`,"
+                            " or `torch.Tensor`. We do not currently support"
+                            f" inputs of the type {type(arg)}."
+                        )
+                    if tensor.device != self.device:
+                        tensor = tensor.copy_to(self.device)
+                    input_impl = tensor._impl
+                input_impls.append(input_impl)
+            results = self._impl.execute_device_tensors(input_impls)
 
             processed_results = []
             for result in results:
