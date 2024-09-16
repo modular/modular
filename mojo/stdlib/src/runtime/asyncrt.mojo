@@ -426,14 +426,6 @@ struct MojoCallContextPtr:
         ](self.ptr, stream.stream.handle)
 
     @always_inline
-    fn set_context(self, context: CudaContext):
-        """Get the cuda stream."""
-        external_call[
-            "KGEN_CompilerRT_AsyncRT_MojoCallContext_SetCUContext",
-            NoneType._mlir_type,
-        ](self.ptr, context.ctx.handle)
-
-    @always_inline
     fn get_device_context(self) -> ref [ImmutableAnyLifetime] DeviceContext:
         """Get the device context held by the MojoCallContext.
 
