@@ -10,8 +10,7 @@ Can also be used as a standalone binary to save out the golden values as a JSON.
 
 import asyncio
 import base64
-import json
-from json import JSONEncoder
+from json import JSONEncoder, JSONDecoder
 from pathlib import Path
 
 import click
@@ -35,9 +34,9 @@ class NumpyEncoder(JSONEncoder):
         return JSONEncoder.default(self, obj)
 
 
-class NumpyDecoder(json.JSONDecoder):
+class NumpyDecoder(JSONDecoder):
     def __init__(self, *args, **kwargs):
-        json.JSONDecoder.__init__(
+        JSONDecoder.__init__(
             self, object_hook=self.object_hook, *args, **kwargs
         )
 
@@ -51,6 +50,26 @@ class NumpyDecoder(json.JSONDecoder):
         return dct
 
 
+def load_llama3(
+    weight_path: str,
+    max_length: int = 512,
+    max_new_tokens: int = 10,
+):
+    config_kwargs = {}
+    if max_length:
+        config_kwargs["max_length"] = max_length
+    if max_new_tokens:
+        config_kwargs["max_new_tokens"] = max_new_tokens
+    config = InferenceConfig(
+        weight_path=weight_path,
+        version=SupportedVersions.llama3_1,
+        quantization_encoding=SupportedEncodings.float32,
+        **config_kwargs,
+    )
+    llama3 = Llama3(config)
+    return llama3
+
+
 NUM_STEPS = 10
 PROMPTS = (
     "What is the meaning of life?",
@@ -60,15 +79,7 @@ PROMPTS = (
 )
 
 
-def run_llama3(weight_path, prompts=PROMPTS, num_steps=NUM_STEPS):
-    config = InferenceConfig(
-        weight_path=weight_path,
-        version=SupportedVersions.llama3_1,
-        quantization_encoding=SupportedEncodings.float32,
-        max_new_tokens=10,
-    )
-    llama3 = Llama3(config)
-
+def run_llama3(llama3: Llama3, prompts=PROMPTS, num_steps=NUM_STEPS):
     results = []
     for prompt in prompts:
         context = asyncio.run(llama3.new_context(prompt))
@@ -87,7 +98,6 @@ def run_llama3(weight_path, prompts=PROMPTS, num_steps=NUM_STEPS):
                     "v_cache": v_cache,
                 }
             )
-
             # Update the context for the next input.
             context.next_tokens = next_token.reshape(1, -1)
         results.append({"prompt": prompt, "values": inference_results})
