@@ -12,7 +12,6 @@
 #include "AsyncRT/Support/TimerHeap.h"
 #include "AsyncRT/Support/UnknownLocationDecoder.h"
 #include "KGEN/CompilerRT/Registration.h"
-#include "Runtime/CUDA/CUDAOwnedMemoryBlock.h"
 #include "Runtime/CUDA/CUDARuntime.h"
 #include "Runtime/CUDA/Globals/Globals.h"
 #include "Runtime/MojoCallContext.h"
@@ -255,14 +254,6 @@ KGEN_CompilerRT_AsyncRT_MojoCallContext_SetToError(
   unwrap(callContext).setToError(message);
 }
 
-/// Get the cuda stream from the context. Null for cpu kernels.
-COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void *
-KGEN_CompilerRT_AsyncRT_MojoCallContext_GetCUStream(
-    AsyncRTMojoCallContextRef callContext) {
-  auto runtime = unwrap(callContext).deviceRuntime;
-  return reinterpret_cast<CUDA::CUDARuntime *>(runtime)->stream;
-}
-
 /// Set the cuda stream from the context. Null for cpu kernels.
 COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void
 KGEN_CompilerRT_AsyncRT_MojoCallContext_SetCUStream(
@@ -270,15 +261,6 @@ KGEN_CompilerRT_AsyncRT_MojoCallContext_SetCUStream(
   auto runtime = unwrap(callContext).deviceRuntime;
   reinterpret_cast<CUDA::CUDARuntime *>(runtime)->stream =
       reinterpret_cast<CUstream>(stream);
-  return;
-}
-/// Set the cuda stream from the context. Null for cpu kernels.
-COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void
-KGEN_CompilerRT_AsyncRT_MojoCallContext_SetCUContext(
-    AsyncRTMojoCallContextRef callContext, void *context) {
-  auto runtime = unwrap(callContext).deviceRuntime;
-  reinterpret_cast<CUDA::CUDARuntime *>(runtime)->context =
-      reinterpret_cast<CUcontext>(context);
   return;
 }
 
@@ -628,9 +610,6 @@ void M::KGEN::registerAsyncRT(
   funcs.push_back(
       {"KGEN_CompilerRT_AsyncRT_MojoCallContext_SetCUStream",
        (void *)&KGEN_CompilerRT_AsyncRT_MojoCallContext_SetCUStream});
-  funcs.push_back(
-      {"KGEN_CompilerRT_AsyncRT_MojoCallContext_SetCUContext",
-       (void *)&KGEN_CompilerRT_AsyncRT_MojoCallContext_SetCUContext});
   funcs.push_back({"KGEN_CompilerRT_AsyncRT_MojoCallContext_Allocate",
                    (void *)&KGEN_CompilerRT_AsyncRT_MojoCallContext_Allocate});
 
