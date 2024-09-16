@@ -107,3 +107,16 @@ def test_opaque_driver_constructor(
     init[1] = 37
     counter = maker_compiled.execute(init)
     assert counter and counter[0]
+
+
+def test_opaque_driver_input(
+    maker_model: Model, bumper_model: Model, reader_model: Model
+) -> None:
+    # Maker and reader still using non-driver API;
+    # Driver API use limited to bumper model here.
+    counter = maker_model.execute()["output0"]
+    for i in range(5):
+        bumper_model.execute(counter)
+    result = reader_model.execute(input0=counter)["output0"]
+
+    assert (result == [5, 15]).all()
