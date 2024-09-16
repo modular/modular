@@ -237,6 +237,11 @@ alias cuFuncSetAttribute = _dylib_function[
     fn (_FunctionHandle, Int32, Int32) -> Result,
 ]
 
+alias cuFuncGetAttribute = _dylib_function[
+    "cuFuncGetAttribute",
+    fn (UnsafePointer[Int32], Int32, _FunctionHandle) -> Result,
+]
+
 alias cuModuleLoad = _dylib_function[
     "cuModuleLoad",
     fn (UnsafePointer[_ModuleHandle], UnsafePointer[C_char]) -> Result,
@@ -934,6 +939,7 @@ struct CudaDLL:
     var cuLaunchKernelEx: cuLaunchKernelEx.type
     var cuFuncSetCacheConfig: cuFuncSetCacheConfig.type
     var cuFuncSetAttribute: cuFuncSetAttribute.type
+    var cuFuncGetAttribute: cuFuncGetAttribute.type
 
     # cuModule
     var cuModuleLoad: cuModuleLoad.type
@@ -989,6 +995,7 @@ struct CudaDLL:
         self.cuLaunchKernelEx = cuLaunchKernelEx.load()
         self.cuFuncSetCacheConfig = cuFuncSetCacheConfig.load()
         self.cuFuncSetAttribute = cuFuncSetAttribute.load()
+        self.cuFuncGetAttribute = cuFuncGetAttribute.load()
         self.cuModuleLoad = cuModuleLoad.load()
         self.cuModuleLoadData = cuModuleLoadData.load()
         self.cuModuleLoadDataEx = cuModuleLoadDataEx.load()
