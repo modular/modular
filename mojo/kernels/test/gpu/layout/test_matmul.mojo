@@ -190,10 +190,6 @@ def main():
     alias K = M
 
     var m = Bench()
-    # The default minimum runtime of 0.1 s understimates the performance.
-    m.config.min_runtime_secs = 1.0
-    m.config.max_runtime_secs = 2.0
-
     with DeviceContext() as ctx:
         alias a_layout = Layout.row_major(M, K)
         alias b_layout = Layout.row_major(K, N)
