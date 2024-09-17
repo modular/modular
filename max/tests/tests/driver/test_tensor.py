@@ -275,6 +275,20 @@ def test_from_dlpack():
         assert array[0] == np_dtype(7)
 
 
+def test_from_dlpack_copy():
+    tensor = Tensor((4,), DType.int8)
+    for i in range(4):
+        tensor[i] = i
+
+    arr = np.from_dlpack(tensor)
+    tensor_copy = Tensor.from_dlpack(arr)  # Should be implicitly copied.
+    tensor_copy[0] = np.int8(7)
+    assert arr[0] != np.int8(7)
+
+    with pytest.raises(BufferError):
+        Tensor.from_dlpack(arr, copy=False)
+
+
 def test_dlpack_device():
     tensor = Tensor((3, 3), DType.int32)
     device_tuple = tensor.__dlpack_device__()
