@@ -43,37 +43,6 @@ struct TensorCore[
     Layout reference => https://github.com/NVIDIA/cutlass/blob/main/include/cute/atom/mma_traits_sm80.hpp#L44.
     """
 
-    # mma tile layouts
-    alias tile_null = Layout(IntTuple(0, 0), IntTuple(0, 0))
-    alias tile_16x4 = Layout(
-        IntTuple(IntTuple(4, 8), 2), IntTuple(IntTuple(16, 1), 8)
-    )
-    alias tile_8x4 = Layout(
-        IntTuple(IntTuple(4, 8), 1), IntTuple(IntTuple(8, 1), 0)
-    )
-    alias tile_16x8 = Layout(
-        IntTuple(IntTuple(4, 8), IntTuple(2, 2)),
-        IntTuple(IntTuple(16, 1), IntTuple(8, 64)),
-    )
-    alias tile_8x8 = Layout(
-        IntTuple(IntTuple(4, 8), 2), IntTuple(IntTuple(8, 1), 32)
-    )
-    alias tile_8x8_row = Layout(
-        IntTuple(IntTuple(4, 8), 2), IntTuple(IntTuple(16, 1), 8)
-    )
-    alias tile_8x16_row = Layout(
-        IntTuple(IntTuple(4, 8), 4),
-        IntTuple(IntTuple(32, 1), 8),
-    )
-    alias tile_16x8_row = Layout(
-        IntTuple(IntTuple(4, 8), IntTuple(2, 2)),
-        IntTuple(IntTuple(32, 1), IntTuple(16, 8)),
-    )
-    alias tile_16x16_row = Layout(
-        IntTuple(IntTuple(4, 8), IntTuple(2, 2, 2)),
-        IntTuple(IntTuple(32, 1), IntTuple(16, 8, 128)),
-    )
-
     alias supported_fp32 = in_type == DType.float32 and shape == shape_16x8x8
     alias supported_half = in_type.is_half_float() and shape == shape_16x8x16
 
@@ -120,86 +89,35 @@ struct TensorCore[
         a: LayoutTensor,
     ) -> Self.a_reg_tile_type as res:
         alias mma_m = shape[0]
-        alias mma_n = shape[1]
         alias mma_k = shape[2]
         var a_reg_tile = __type_of(res).stack_allocation()
         alias reg_per_thread = num_matrix_reg[mma_m, mma_k]()
 
-        alias layout_tf32 = self.tile_16x4 if reg_per_thread == 2 else self.tile_16x8
-        alias layout_f16 = self.tile_16x8_row if reg_per_thread == 4 else self.tile_16x16_row
-        alias layout_a = (layout_f16) if (
-            in_type is DType.bfloat16 or in_type is DType.float16
-        ) else (layout_tf32)
+        alias warp_layout = Layout.row_major(8, 4)
 
-        var mat_a = a.composition[layout_a]()
-        var group_id = lane_id() >> 2
-        var group_lane_id = lane_id() % 4
+        constrained[
+            in_type in (DType.float32, DType.bfloat16, DType.float16),
+            "No valid type to load matrix fragment a",
+        ]()
 
         @parameter
         if in_type is DType.float32:
+            constrained[
+                reg_per_thread in (2, 4),
+                "No valid mma shape to load matrix fragment a (float32)",
+            ]()
+            var a_reg_frags = a.distribute[warp_layout](lane_id())
+            a_reg_tile.copy_from(a_reg_frags)
 
-            @parameter
-            if reg_per_thread == 2:
-
-                @parameter
-                for i in range(2):
-                    a_reg_tile[0, i] = rebind[Scalar[in_type]](
-                        mat_a[group_lane_id, group_id, i]
-                    )
-            elif reg_per_thread == 4:
-
-                @parameter
-                for j in range(2):
-
-                    @parameter
-                    for i in range(2):
-                        alias layout = Layout.col_major(2, 2)
-                        alias idx = layout(IntTuple(i, j))
-                        a_reg_tile[0, idx] = rebind[Scalar[in_type]](
-                            mat_a[group_lane_id, group_id, i, j]
-                        )
-
-            else:
-                constrained[
-                    False, "No valid mma shape to load matrix fragment a"
-                ]()
         elif in_type is DType.bfloat16 or in_type is DType.float16:
-
-            @parameter
-            if reg_per_thread == 4:
-
-                @parameter
-                for j in range(2):
-
-                    @parameter
-                    for i in range(2):
-                        alias layout = Layout.col_major(2, 2)
-                        alias idx = layout(IntTuple(i, j))
-                        a_reg_tile[0, idx] = rebind[Scalar[in_type]](
-                            mat_a[group_lane_id, group_id, i, j]
-                        )
-
-            elif reg_per_thread == 8:
-
-                @parameter
-                for k in range(2):
-
-                    @parameter
-                    for j in range(2):
-
-                        @parameter
-                        for i in range(2):
-                            alias layout = Layout.col_major(2, 2, 2)
-                            alias idx = layout(IntTuple(i, j, k))
-                            a_reg_tile[0, idx] = rebind[Scalar[in_type]](
-                                mat_a[group_lane_id, group_id, i, j, k]
-                            )
-            else:
-                constrained[
-                    False, "No valid mma shape to load matrix fragment a"
-                ]()
-        else:
-            constrained[False, "No valid type to load matrix fragment a"]()
+            constrained[
+                reg_per_thread in (4, 8),
+                "No valid mma shape to load matrix fragment a (half-float)",
+            ]()
+            var a_reg_frags = a.vectorize[1, 2]().distribute[warp_layout](
+                lane_id()
+            )
+            a_reg_tile.vectorize[1, 2]().copy_from(a_reg_frags)
         return a_reg_tile
 
     # need always_inline, otherwise the stack allocated LayoutTensor will not be valid
@@ -208,91 +126,36 @@ struct TensorCore[
         inout self,
         b: LayoutTensor,
     ) -> Self.b_reg_tile_type as res:
-        alias mma_m = shape[0]
         alias mma_n = shape[1]
         alias mma_k = shape[2]
         var b_reg_tile = __type_of(res).stack_allocation()
         alias reg_per_thread = num_matrix_reg[mma_k, mma_n]()
 
-        alias layout_tf32 = self.tile_8x4 if reg_per_thread == 1 else self.tile_8x8
-        alias layout_f16 = self.tile_8x8_row if reg_per_thread == 2 else self.tile_16x8
-        alias layout_b = (layout_f16) if (
-            in_type is DType.bfloat16 or in_type is DType.float16
-        ) else (layout_tf32)
-
-        @always_inline
-        @parameter
-        fn read_from_mat_b(d0: Int, d1: Int, d2: Int) -> Scalar[in_type]:
-            @parameter
-            if transpose_b:
-                var mat_b = b.composition[layout_b]()
-                return rebind[Scalar[in_type]](mat_b[d0, d1, d2])
-            else:
-                var mat_b = b.transpose().composition[layout_b]()
-                return rebind[Scalar[in_type]](mat_b[d0, d1, d2])
-
-        @always_inline
-        @parameter
-        fn read_from_mat_b(
-            d0: Int, d1: Int, d2: Int, d3: Int
-        ) -> Scalar[in_type]:
-            @parameter
-            if transpose_b:
-                var mat_b = b.composition[layout_b]()
-                return rebind[Scalar[in_type]](mat_b[d0, d1, d2, d3])
-            else:
-                var mat_b = b.transpose().composition[layout_b]()
-                return rebind[Scalar[in_type]](mat_b[d0, d1, d2, d3])
-
-        var group_id = lane_id() >> 2
-        var group_lane_id = lane_id() % 4
+        alias warp_layout = Layout.row_major(
+            8, 4
+        ) if transpose_b else Layout.col_major(4, 8)
 
         @parameter
         if in_type is DType.float32:
+            constrained[
+                reg_per_thread in (1, 2, 4),
+                "No valid mma shape to load matrix fragment b",
+            ]()
 
-            @parameter
-            if reg_per_thread == 1:
-                b_reg_tile[0, 0] = rebind[Scalar[in_type]](
-                    read_from_mat_b(group_lane_id, group_id, 0)
-                )
-            elif reg_per_thread == 2:
+            var b_ram_frags = b.distribute[warp_layout](lane_id())
+            b_reg_tile.copy_from(b_ram_frags)
 
-                @parameter
-                for i in range(2):
-                    b_reg_tile[i, 0] = rebind[Scalar[in_type]](
-                        read_from_mat_b(group_lane_id, group_id, i)
-                    )
-            else:
-                constrained[
-                    False, "No valid mma shape to load matrix fragment b"
-                ]()
         elif in_type is DType.bfloat16 or in_type is DType.float16:
+            constrained[
+                reg_per_thread in (2, 4),
+                "No valid mma shape to load matrix fragment b",
+            ]()
 
-            @parameter
-            if reg_per_thread == 2:
+            var b_ram_frags = b.vectorize[2, 1]().distribute[warp_layout](
+                lane_id()
+            )
+            b_reg_tile.vectorize[2, 1]().copy_from(b_ram_frags)
 
-                @parameter
-                for i in range(2):
-                    b_reg_tile[i, 0] = rebind[Scalar[in_type]](
-                        read_from_mat_b(group_lane_id, group_id, i)
-                    )
-
-            elif reg_per_thread == 4:
-
-                @parameter
-                for j in range(2):
-
-                    @parameter
-                    for i in range(2):
-                        alias layout = Layout.col_major(2, 2)
-                        alias idx = layout(IntTuple(i, j))
-                        b_reg_tile[idx, 0] = rebind[Scalar[in_type]](
-                            read_from_mat_b(group_lane_id, group_id, i, j)
-                        )
-            else:
-                constrained[
-                    False, "No valid mma shape to load matrix fragment b"
-                ]()
         else:
             constrained[False, "No valid type to load matrix fragment b"]()
         return b_reg_tile
@@ -309,35 +172,22 @@ struct TensorCore[
         var c_reg_tile = __type_of(res).stack_allocation()
         alias reg_per_thread = num_matrix_reg[mma_m, mma_n]()
 
-        alias layout_c = self.tile_16x8_row if reg_per_thread == 4 else self.tile_null
-
-        var mat_c = c.composition[layout_c]()
-        var group_id = lane_id() >> 2
-        var group_lane_id = lane_id() % 4
-
         @parameter
         if out_type is DType.float32:
+            constrained[
+                reg_per_thread == 4, "No valid shape to load matrix fragment c"
+            ]()
 
-            @parameter
-            if reg_per_thread == 4:
-                c_reg_tile[0, 0] = rebind[Scalar[out_type]](
-                    mat_c[group_id, group_lane_id, 0, 0]
-                )
-                c_reg_tile[0, 1] = rebind[Scalar[out_type]](
-                    mat_c[group_id, group_lane_id, 1, 0]
-                )
-                c_reg_tile[0, 2] = rebind[Scalar[out_type]](
-                    mat_c[group_id, group_lane_id, 0, 1]
-                )
-                c_reg_tile[0, 3] = rebind[Scalar[out_type]](
-                    mat_c[group_id, group_lane_id, 1, 1]
-                )
-            else:
-                constrained[False, "No valid shape to load matrix fragment c"]()
+            var c_ram_frags = c.vectorize[1, 2]().distribute[
+                Layout.row_major(8, 4)
+            ](lane_id())
+            c_reg_tile.vectorize[1, 2]().copy_from(c_ram_frags)
+
         else:
             constrained[False, "No valid type to load matrix fragment c"]()
         return c_reg_tile
 
+    @always_inline
     fn store_d(self, d_dst: LayoutTensor, d_src: LayoutTensor):
         constrained[
             d_dst.dtype == out_type,
@@ -350,36 +200,18 @@ struct TensorCore[
         ]()
         alias mma_m = shape[0]
         alias mma_n = shape[1]
-        alias mma_k = shape[2]
         alias reg_per_thread = num_matrix_reg[mma_m, mma_n]()
-
-        alias layout_d = self.tile_16x8_row if reg_per_thread == 4 else self.tile_null
-
-        var mat_d = d_dst.composition[layout_d]()
-        var group_id = lane_id() >> 2
-        var group_lane_id = lane_id() % 4
 
         @parameter
         if out_type is DType.float32:
+            constrained[
+                reg_per_thread == 4, "No valid shape to store to LayoutTensor d"
+            ]()
 
-            @parameter
-            if reg_per_thread == 4:
-                mat_d[group_lane_id, group_id, 0, 0] = rebind[
-                    mat_d.element_type
-                ](d_src[0, 0])
-                mat_d[group_lane_id, group_id, 1, 0] = rebind[
-                    mat_d.element_type
-                ](d_src[0, 1])
-                mat_d[group_lane_id, group_id, 0, 1] = rebind[
-                    mat_d.element_type
-                ](d_src[0, 2])
-                mat_d[group_lane_id, group_id, 1, 1] = rebind[
-                    mat_d.element_type
-                ](d_src[0, 3])
-            else:
-                constrained[
-                    False, "No valid shape to store to LayoutTensor d"
-                ]()
+            d_dst.vectorize[1, 2]().distribute[Layout.row_major(8, 4)](
+                lane_id()
+            ).copy_from(d_src.vectorize[1, 2]())
+
         else:
             constrained[False, "No valid type to store to LayoutTensor d"]()
 
