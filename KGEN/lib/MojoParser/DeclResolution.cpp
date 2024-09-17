@@ -706,20 +706,26 @@ static MLValue emitClosureInstance(SharedState &shared, ASTDecl &nestedFnDecl,
   // compute the captures we need to resolve the body.
   if (failed(shared.declResolver->resolveFully(nestedFnDecl, loc)))
     return {};
+
   // Find all parameter captures in the function body.
   ParameterCollector::Analysis collectorCache;
   ParameterUseDefGraph graph(nestedFn.getBodyRegion());
   graph.calculate(collectorCache);
+
+  // Get captured parameters that cross with captured values.
+  ParameterCollector collector(collectorCache);
+  llvm::SetVector<Value> capturedOperands;
+  mlir::getUsedValuesDefinedAbove(nestedFn->getRegions(), capturedOperands);
+  SmallVector<ParamDeclRefAttr> capturedUses;
+  for (Value capture : capturedOperands) {
+    bool unused;
+    collector.collectUsesFromType(capture.getType(), capturedUses, unused);
+  }
+  for (ParamDeclRefAttr use : capturedUses)
+    graph.usesFromAbove.insert(use);
+
   SmallVector<ParamDeclRefAttr> paramCaptures =
       graph.usesFromAbove.takeVector();
-
-  // Don't capture lifetime parameters, they carry no state, and are often
-  // implicit lifetimes of captured references, which aren't used in the body
-  // anyway.
-  paramCaptures.erase(
-      llvm::remove_if(paramCaptures,
-                      [&](auto p) { return isa<LifetimeType>(p.getType()); }),
-      paramCaptures.end());
 
   // Create an instance of the closure implementation in the parent function
   // right after the nested function definition.

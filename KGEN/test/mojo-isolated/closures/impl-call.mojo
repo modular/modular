@@ -14,10 +14,8 @@ struct MemType:
 
 # CHECK: lit.func @"__call__({{.*}}_CI_{{.*}}(%[[SELF:.*]][{{.*}}]: !lit.ref<{{.*}}> borrow_in_mem, |, %q: !Int owned, %ww: !Int)
 # CHECK-NEXT: %[[V0:.*]] = lit.ref.struct.ger %[[SELF]][field0]
-# CHECK-NEXT: kgen.param.declare *"x`2": lifetime<1> = <(mutcast imm *"self`"->field0)>
 # CHECK-NEXT: %[[V0REF:.*]] = kgen.rebind %[[V0]]
 # CHECK-NEXT: %[[V1:.*]] = lit.ref.struct.ger %[[SELF]][field1]
-# CHECK-NEXT: kgen.param.declare *"w`1": lifetime<1> = <(mutcast imm *"self`"->field1)>
 # CHECK-NEXT: %[[V1REF:.*]] = kgen.rebind %[[V1]]
 # CHECK-NEXT: %q_0 = lit.var.decl "q" arg
 # CHECK-NEXT: lit.ref.store %q, %q_0
@@ -32,7 +30,6 @@ struct MemType:
 
 # CHECK: lit.func @"__call__({{.*}}_CI_{{.*}}(%[[SELF:.*]][{{.*}}]: !lit.ref<{{.*}}> borrow_in_mem, |, %p: !Int) -> !kgen.none
 # CHECK-NEXT: %[[W0:.*]] = lit.ref.struct.ger %[[SELF]][field0]
-# CHECK-NEXT: kgen.param.declare *"m`": lifetime<0> = <*"self`"->field0>
 # CHECK-NEXT: %[[W0CAST:.*]] = kgen.rebind %[[W0]] : !lit.ref<!MemType, imm *"self`"->field0> to !lit.ref<!MemType, imm *"m`">
 # CHECK-NEXT: lit.call @{{.*}}::@"use{{.*}}(%[[W0CAST]])
 # CHECK-NEXT: kgen.param.constant: none
@@ -42,7 +39,6 @@ struct MemType:
 # CHECK-NEXT: %[[W0:.*]] = lit.ref.struct.ger %[[SELF]][field0]
 # CHECK-NEXT: %[[W1:.*]] = lit.ref.load %[[W0]]
 # CHECK-NEXT: %[[W2:.*]] = lit.ref.struct.ger %[[SELF]][field1]
-# CHECK-NEXT: kgen.param.declare *"w`1": lifetime<1> =  <(mutcast imm *"self`"->field1)>
 # CHECK-NEXT: %[[W2REF:.*]] = kgen.rebind %[[W2]]
 # CHECK-NEXT: %[[W3:.*]] = lit.ref.struct.ger %[[W2REF]][value]
 # CHECK-NEXT: %[[W4:.*]] = lit.ref.load %[[W3]]
@@ -51,7 +47,6 @@ struct MemType:
 
 # CHECK: lit.func @"__call__{{.*}}_CI_{{.*}}(%[[SELF:.*]][{{.*}}]: !lit.ref<{{.*}}> borrow_in_mem, |, %y: !lit.ref<{{.*}}> borrow_in_mem, ?, [[RESULT:%.*]]: !lit.ref<!MemType,{{.*}}> byref_result) -> !kgen.none
 # CHECK-NEXT: %[[W0:.*]] = lit.ref.struct.ger %[[SELF]][field0]
-# CHECK-NEXT: kgen.param.declare *"m`"
 # CHECK-NEXT: %[[W0REF:.*]] = kgen.rebind %[[W0]]
 # CHECK-NEXT: lit.call @{{.*}}__add__{{.*}}(%[[W0REF]], %y, [[RESULT]])
 # CHECK-NEXT: kgen.param.constant: none

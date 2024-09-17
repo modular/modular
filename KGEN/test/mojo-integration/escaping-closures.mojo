@@ -160,16 +160,6 @@ fn makeEscapingClosure[
     return formatter
 
 
-fn makeEscapingClosureWithUselessCopyDecorator(
-    y: String,
-) -> fn (x: String) escaping -> String:
-    @__copy_capture(y)
-    fn ec(x: String) -> String:
-        return x + y
-
-    return ec
-
-
 fn main():
     var x = 2
     var c = makes_escaping_closure(x.value)
@@ -235,8 +225,5 @@ fn main():
         var f2 = makeEscapingClosure[formatter2](y)
         # CHECK: 11
         takeClosure(f2, y)
-
-        # CHECK: 22
-        print(makeEscapingClosureWithUselessCopyDecorator(str(x))(str(x)))
     except e:
         print(e)

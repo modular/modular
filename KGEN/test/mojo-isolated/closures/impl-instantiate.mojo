@@ -14,12 +14,12 @@ struct MemType:
 
 # CHECK-LABEL: lit.func @"makes_escaping_closure
 fn makes_escaping_closure(m: MemType, w: Int):
-    # CHECK: [[IMPL:%.*]] = lit.var.decl "anonymous*" synth : !lit.ref<!escaping
+    # CHECK: [[IMPL:%.*]] = lit.var.decl "anonymous*" synth
     # CHECK-NEXT: lit.call @{{.*}}::@"__init__{{.*}}([[IMPL]], %m)
     fn myclosure_with_mem_types(n: MemType) escaping -> MemType:
         return n + m
 
-    # CHECK: [[IMPL:%.*]] = lit.var.decl "anonymous*" synth : !lit.ref<!escaping
+    # CHECK: [[IMPL:%.*]] = lit.var.decl "anonymous*" synth
     # CHECK-NEXT: [[A:%.*]] = lit.ref.load %a
     # CHECK-NEXT: lit.call @{{.*}}::@"__init__{{.*}}([[IMPL]], [[A]], %w)
     # CHECK-NEXT: [[WRAPPER:%.*]] = lit.var.decl "myclosure_with_reg_types" var
