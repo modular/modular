@@ -11,7 +11,7 @@
 # CHECK-NEXT: move :!lit.signature
 # CHECK-NEXT: copy :!lit.signature
 
-# CHECK-LABEL: lit.func @"__init__{{.*}}(%self: !lit.ref<!MemType1, mut *"self`"> init_self, %impl: !lit.ref<!escaping0_, {{.*}}> owned_in_mem, |)
+# CHECK-LABEL: lit.func @"__init__{{.*}}(%self: !lit.ref<!MemType1, mut *"self`"> init_self, %impl: {{.*}} owned_in_mem, |)
 # CHECK-NEXT: %[[ptrToCall:.*]] = kgen.create_closure[!lit.signature<[2](!kgen.pointer<none>, |, "n": !lit.ref<!MemType, {{.*}}> borrow_in_mem, ?, "__result__": !lit.ref<!MemType, {{.*}}> byref_result) -> !kgen.none
 # CHECK-NEXT: %[[callPtr:.*]] = lit.ref.struct.ger %self[call]
 # CHECK-NEXT: lit.ref.store %[[ptrToCall]], %[[callPtr]]

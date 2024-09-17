@@ -691,22 +691,8 @@ StructDeclOp ClosureEmitter::replaceNestedFunctionWithClosureImplStructDecl(
     //        use(self.a)
     // which now has the lifetime (and mutability) of 'self'.
     Value captureValue = capture.getValue().getMlirValue();
-    if (captureValue.getType() != target.getType()) {
-      auto captureType = cast<RefType>(captureValue.getType());
-      auto targetRef = cast<RefType>(target.getType());
-
-      // The lifetime won't be defined in the extracted function, so stub it
-      // out.  The mutability may also differ, so we just hack this.
-      assert(isa<ParamDeclRefAttr>(captureType.getLifetime()) &&
-             "FIXME: Doesn't support complex lifetime captures yet");
-      auto expectedLifetime = cast<ParamDeclRefAttr>(captureType.getLifetime());
-
-      builder.create<ParamDeclareOp>(
-          ParamDeclAttr::get(expectedLifetime),
-          LifetimeMutCastAttr::get(targetRef.getLifetime(),
-                                   expectedLifetime.getType()));
+    if (captureValue.getType() != target.getType())
       target = builder.create<RebindOp>(captureValue.getType(), target);
-    }
 
     assert(captureValue.getType() == target.getType() &&
            "Capture body rewrite problem");
