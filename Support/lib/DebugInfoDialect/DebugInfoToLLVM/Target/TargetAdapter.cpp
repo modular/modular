@@ -29,7 +29,7 @@ TargetAdapter DebugInfo::getTargetAdapter(M::TargetInfoAttr target,
 
 TargetAdapter DebugInfo::getFallbackAdapter(bool tradeoffPerfForVariableDI) {
   return TargetAdapter{populateFallbackConversionPatterns,
-                       [](ModuleOp module) { sinkDebugKills(module); },
+                       (void (*)(ModuleOp))sinkDebugKills,
                        tradeoffPerfForVariableDI ? convertDbgValueToDeclare
                                                  : [](ModuleOp module) {}};
 }
@@ -149,6 +149,22 @@ private:
 /// Sink kill Debug Value ops so that they are the last instructions from
 /// their source line. This way variables are guaranteed to be killed only at
 /// the end of the line.
+void DebugInfo::sinkDebugKills(ModuleOp module) {
+  for (auto func : module.getOps<mlir::FunctionOpInterface>()) {
+    // Only need to handle functions that may have debug ops.
+    DISubprogramAttr subprogram = extractScope(func);
+    if (!subprogram)
+      continue;
+    DICompileUnitAttr compileUnit = subprogram.getCompileUnit();
+    if (!compileUnit)
+      continue;
+    if (compileUnit.getEmissionKind() != EmissionKind::Full)
+      continue;
+
+    sinkDebugKills(func);
+  }
+}
+
 void DebugInfo::sinkDebugKills(Operation *op) {
   for (Region &region : op->getRegions()) {
     for (Block &block : region.getBlocks()) {
