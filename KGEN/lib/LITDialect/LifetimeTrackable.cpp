@@ -415,7 +415,7 @@ getCallOpEffects(Operation &op,
           // too early.  We already handled all the individual elements, so
           // don't redundantly process them.  Doing so is a problem for owned
           // operands.
-          addArgument(arg, convention, true);
+          addArgument(arg, convention, /*noIndirect=*/true);
           continue;
         }
       }
