@@ -4,7 +4,6 @@
 #
 # ===----------------------------------------------------------------------=== #
 # UNSUPPORTED: windows
-# REQUIRES:cuda
 # RUN: %mojo %s %S/mo_unnamed.mlir
 
 # COM: Test with mojo build
