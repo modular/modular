@@ -18,7 +18,7 @@ from max.graph.type import _OpaqueType as OpaqueType
 
 @pytest.fixture
 def counter_ops_path() -> Path:
-    return Path(os.environ["COUNTER_OPS_PATH"])
+    return Path(os.environ["MODULAR_COUNTER_OPS_PATH"])
 
 
 @pytest.fixture
