@@ -580,28 +580,3 @@ fn create_two_indices[]() -> TwoIndices:
 @export
 fn create_two_indices_raises[]() raises -> TwoIndices:
     return TwoIndices(1, 2)
-
-
-# useful for testing interactions with `single_thread_blocking_override`
-@mogg_register("op_with_single_thread_blocking")
-@export
-fn op_with_single_thread_blocking[
-    single_thread_blocking_override: Bool
-](input: NDBuffer[DType.float32, 2],) raises:
-    print("what up ", single_thread_blocking_override)
-
-
-@mogg_register("op_with_synchronous")
-@export
-fn op_with_synchronous[
-    synchronous: Bool
-](input: NDBuffer[DType.float32, 2],) raises:
-    print("what up ", synchronous)
-
-
-@mogg_register("op_without_single_thread_blocking")
-@export
-fn op_without_single_thread_blocking[](
-    input: NDBuffer[DType.float32, 2],
-) raises:
-    print("what up ")

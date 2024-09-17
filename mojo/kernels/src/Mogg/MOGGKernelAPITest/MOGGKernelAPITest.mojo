@@ -300,3 +300,19 @@ struct MatmulFuseOut:
         var shape = a.get_static_spec().shape
         shape[1] = b.get_static_spec().shape[1]
         return rebind[StaticIntTuple[2]](shape)
+
+
+@compiler.register("op_with_synchronous")
+struct WithSynchronous:
+    @staticmethod
+    fn execute[
+        synchronous: Bool,
+    ](out: ManagedTensorSlice, input: ManagedTensorSlice):
+        print("what up ", synchronous)
+
+
+@compiler.register("op_without_synchronous")
+struct WithoutSynchronous:
+    @staticmethod
+    fn execute(out: ManagedTensorSlice, input: ManagedTensorSlice):
+        print("what up")
