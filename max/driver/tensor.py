@@ -6,7 +6,7 @@
 from __future__ import annotations
 
 from itertools import product
-from typing import Any, Generator, Tuple
+from typing import Any, Generator, Optional, Tuple
 
 import numpy as np
 from max._driver import Tensor as _Tensor
@@ -169,9 +169,35 @@ class Tensor:
         return self._impl.__dlpack__()
 
     @classmethod
-    def from_dlpack(cls, arr: Any) -> Tensor:
+    def from_dlpack(cls, arr: Any, *, copy: Optional[bool] = None) -> Tensor:
         """Create a tensor from an object implementing the dlpack protocol.
 
         This usually does not result in a copy, and the producer of the object
         retains ownership of the underlying memory."""
+        if isinstance(arr, np.ndarray):
+            # TODO(MSDK-976): Older version of numpy don't support exporting
+            # read-only arrays, so we copy if we can, and leave a hint if not.
+            if copy is None and not arr.flags.writeable:
+                copy = True
+            if copy:
+                arr = arr.copy()
+
+            try:
+                return cls._from_impl(_Tensor.from_dlpack(arr))
+            except BufferError as e:
+                msg = str(e)
+                if msg.startswith("Cannot export readonly array"):
+                    raise type(e)(
+                        msg
+                        + " Consider passing `copy = True` to"
+                        " `Tensor.from_dlpack`."
+                    )
+                raise e
+
+        if copy is not None:
+            raise ValueError(
+                "`Tensor.from_dlpack` support the `copy` flag only for numpy"
+                " array inputs"
+            )
+
         return cls._from_impl(_Tensor.from_dlpack(arr))
