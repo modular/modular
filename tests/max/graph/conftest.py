@@ -51,6 +51,14 @@ def shapes(min_size=0, max_size=None, include_dims=()):
     )
 
 
+def valid_broadcast_rank(shape_st, max_size: int | None = None):
+    """Samples valid ranks to broadcast a shape to.
+
+    Valid ranks are >= len(shape).
+    """
+    return shape_st.flatmap(lambda shape: st.integers(len(shape), max_size))
+
+
 def tensor_types(dtypes=dtypes, shapes=shapes()):
     return st.builds(TensorType, dtypes, shapes)
 
