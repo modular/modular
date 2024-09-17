@@ -129,16 +129,30 @@ class BufferValue(Value):
         """Returns the shape of the BufferValue."""
         return self.type.shape
 
-    def __getitem__(self, index):
-        # TODO: implement ops.load_slice_buffer()
-        raise NotImplementedError("TODO")
+    # dtype and rank are implemented like TensorValue implementation.
+    # They use _graph directly to avoid loading the shape dimension if they
+    # aren't needed.
+    # This also avoids accidentally loading algebraic expression dimensions
+    # (which will throw an exception).
+    @property
+    def dtype(self) -> DType:
+        t = self._mlir_value.type
+        if not _graph.type_is_buffer(t):
+            raise TypeError(f"Expected BufferType, got: {t}")
+
+        return DType(_graph.buffer_type_get_dtype(t))
+
+    def __getitem__(self, index) -> TensorValue:
+        # TODO(MSDK-962): implement ops.load_slice_buffer()
+        raise NotImplementedError("implement ops.load_slice_buffer()")
 
     def __setitem__(
         self,
         index,
-    ):
-        # TODO: implement ops.store_slice_buffer()
-        raise NotImplementedError("TODO")
+        val: TensorValue,
+    ) -> None:
+        # TODO(MSDK-963): implement ops.store_slice_buffer()
+        raise NotImplementedError("implement ops.store_slice_buffer()")
 
 
 class TensorValue(Value):

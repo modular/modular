@@ -16,7 +16,7 @@ from typing import Callable, Iterable, Optional
 from max import _graph, mlir
 from max.mlir.dialects import mo
 
-from .type import Dim, SymbolicDim, TensorType, Type
+from .type import BufferType, Dim, SymbolicDim, TensorType, Type
 from .value import TensorValue, Value, ValueLike
 from .weight import Weight
 
@@ -140,6 +140,13 @@ class Graph:
     You can't call a `Graph` directly from Python. You must compile it and
     execute it with MAX Engine. For more detail, see the tutorial about how to
     [build a graph with MAX Graph](/max/graph/get-started).
+
+    When creating a graph, a global sequence of chains is initialized and stored
+    in Graph._current_chain. Every side-effecting op, e.g. load_buffer,
+    store_buffer, load_slice_buffer, store_slice_buffer, will use the current
+    chain to perform the op and and update Graph._current_chain with a new
+    chain. Currently, the input/output chains for mutable ops can be used at
+    most once. The goal of this design choice is to prevent data races.
     """
 
     _input_types: list[Type]
@@ -155,6 +162,8 @@ class Graph:
     _context_state: list
     inputs: tuple[Value, ...]
     weights: dict[str, _GraphWeight]
+    # A global sequence of chains that is updated by side-effecting ops.
+    _current_chain: mlir.Value
 
     def __init__(
         self,
@@ -169,7 +178,7 @@ class Graph:
         self._params = dict.fromkeys(
             dim.name
             for t in input_types
-            if isinstance(t, TensorType)
+            if isinstance(t, (TensorType, BufferType))
             for dim in t.shape
             if isinstance(dim, SymbolicDim)
         )
@@ -209,12 +218,19 @@ class Graph:
         self.inputs = tuple(Value(arg) for arg in self._body.arguments)
         self.weights = {}
 
+        # TODO(MSDK-975): Change this to use self._add_op().
+        with self._context, mlir.InsertionPoint(self._body), location():
+            self._current_chain = mo.chain_create([])
+
         if forward is not None:
             # If the forward method was passed stage the graph directly in the
             # constructor.
             with self:
                 result = forward(*self.inputs, *args, **kwargs)
                 self.output(result)
+
+    def _update_chain(self, new_chain: mlir.Value) -> None:
+        self._current_chain = new_chain
 
     def __enter__(self) -> Graph:
         self._context_state.append(state := self._enter())
