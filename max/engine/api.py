@@ -8,24 +8,14 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import (
-    Any,
-    Callable,
-    Dict,
-    Iterable,
-    List,
-    Optional,
-    Type,
-    Union,
-    overload,
-)
+from typing import Any, Dict, Iterable, List, Optional, Type, Union, overload
 
 import numpy as np
 from max._driver import Tensor as _Tensor
 from max._engine import FrameworkFormat as _FrameworkFormat
 from max._engine import InferenceSession as _InferenceSession
 from max._engine import Model as _Model
-from max._engine import MojoValue
+from max._engine import MojoValue, PrintStyle
 from max._engine import TensorData as _TensorData
 from max._engine import TensorSpec as _TensorSpec
 from max._engine import TorchInputSpec as _TorchInputSpec
@@ -709,6 +699,54 @@ class InferenceSession:
 
     def _get_torch_custom_op_schemas(self):
         return self._impl._get_torch_custom_op_schemas()
+
+    def set_debug_print_options(
+        self,
+        style: Union[str, PrintStyle] = PrintStyle.COMPACT,
+        precision: int = 6,
+        output_directory: str = "",
+    ):
+        """Sets the debug print options.
+
+        See `Value.print`.
+
+        This affects debug printing across all model execution using the same
+        InferenceSession.
+
+        Warning: Even with style set to `NONE`, debug print ops in the graph can
+        stop optimizations. If you see performance issues, try fully removing
+        debug print ops.
+
+        Args:
+            style: How the values will be printed. Can be `COMPACT`, `FULL`,
+                `BINARY`, or `NONE`.
+            precision: If the style is `FULL`, the digits of precision in the
+                output.
+            output_directory: If the style is `BINARY`, the directory to store
+                output tensors.
+        """
+        if isinstance(style, str):
+            style = getattr(PrintStyle, style, None)
+        if not isinstance(style, PrintStyle):
+            raise TypeError(
+                "Invalid debug print style. Please use one of 'COMPACT',"
+                " 'FULL', 'BINARY', or 'NONE'."
+            )
+        if style == PrintStyle.FULL and not isinstance(precision, int):
+            raise TypeError("Debug print precision must be an int.")
+        if style == PrintStyle.BINARY:
+            if isinstance(output_directory, str):
+                pass
+            elif isinstance(output_directory, Path):
+                output_directory = str(output_directory)
+            else:
+                raise TypeError("Debug print output directory must be a str.")
+
+            if not output_directory:
+                raise ValueError(
+                    "Debug print output directory cannot be empty."
+                )
+        self._impl.set_debug_print_options(style, precision, output_directory)
 
 
 def remove_annotations(cls: Type) -> Type:
