@@ -62,13 +62,3 @@ config.environment["MODULAR_MAX_ENABLE_MODEL_IR_CACHE"] = mef_cache_config
 llvm_config.add_tool_substitutions(tools, tool_dirs)
 
 config.excludes.update(["test_user_op"])
-
-pytorch_generated_tests_dir = os.path.join(
-    config.modular_derived_dir, "pytorch-generated-tests"
-)
-
-if Path(pytorch_generated_tests_dir).exists():
-    config.substitutions.append(
-        ("%pytorch_generated_tests_dir", pytorch_generated_tests_dir)
-    )
-    config.available_features.add("pytorch-generated-tests")
