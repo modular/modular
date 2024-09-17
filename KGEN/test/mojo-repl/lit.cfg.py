@@ -9,10 +9,6 @@ from pathlib import Path
 
 from lit.llvm import llvm_config
 
-if config.root.host_os == "Windows":
-    # TODO(#13522): LLDB currently isn't built on windows.
-    config.unsupported = True
-
 # name: The name of this test suite.
 config.name = "mojo-repl"
 
