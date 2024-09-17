@@ -3,7 +3,6 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-# REQUIRES: has_cuda_device
 # RUN: %mojo-build-no-debug %s
 
 from pathlib import Path

@@ -4,7 +4,6 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-# REQUIRES: has_cuda_device
 # RUN: %mojo-build-no-debug %s
 
 from random import random_float64

@@ -3,7 +3,6 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-# REQUIRES: has_cuda_device
 # RUN: %mojo-build-no-debug %s
 
 from math import sqrt, isqrt, log, sin, tanh, exp, erf, fma, ceildiv, align_up
