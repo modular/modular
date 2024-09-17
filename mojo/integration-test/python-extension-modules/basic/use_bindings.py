@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 # TODO(MSTDL-894): Support running this test on Linux
-# REQUIRES: darwin
+# REQUIRES: system-darwin
 # RUN: python3 -m mojo-pybind.main %S/bindings.mojo
 # RUN: python3 %s
 

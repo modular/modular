@@ -23,9 +23,6 @@ config.name = "Mojo Standard Library"
 # suffixes: A list of file extensions to treat as test files.
 config.suffixes = [".py"]
 
-# This makes the OS name available for `REQUIRE` directives, e.g., `# REQUIRES: darwin`.
-config.available_features.add(platform.system().lower())
-
 # test_source_root: The root path where tests are located.
 config.test_source_root = os.path.dirname(__file__)
 
