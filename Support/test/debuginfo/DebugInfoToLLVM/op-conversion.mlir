@@ -323,7 +323,15 @@ func.func @value_with_struct_fields() -> (i32, i32) {
 // -----
 
 #file = #debuginfo.file<"foo.c" in "/mlir/">
+#compile_unit = #debuginfo.compile_unit<
+  sourceLanguage = DW_LANG_Mojo,
+  file = #file,
+  producer = "MLIR",
+  isOptimized = true,
+  emissionKind = Full
+>
 #subprogram = #debuginfo.subprogram<
+  compileUnit =#compile_unit,
   file = #file,
   scope = #file,
   name = <"foo">
@@ -387,17 +395,27 @@ func.func @sink_debug_kills_stale_after_value() -> i32 {
 // -----
 
 #file = #debuginfo.file<"foo.c" in "/mlir/">
+#compile_unit = #debuginfo.compile_unit<
+  sourceLanguage = DW_LANG_Mojo,
+  file = #file,
+  producer = "MLIR",
+  isOptimized = true,
+  emissionKind = Full
+>
 #sp0 = #debuginfo.subprogram<
+  compileUnit =#compile_unit,
   file = #file,
   scope = #file,
   name = <"sp0">
 > : !debuginfo.subroutine<() -> (): DW_CC_normal>
 #sp1 = #debuginfo.subprogram<
+  compileUnit =#compile_unit,
   file = #file,
   scope = #file,
   name = <"sp1">
 > : !debuginfo.subroutine<() -> (): DW_CC_normal>
 #sp2 = #debuginfo.subprogram<
+  compileUnit =#compile_unit,
   file = #file,
   scope = #file,
   name = <"sp2">
@@ -498,7 +516,15 @@ func.func @sink_kill_debug_values_block_end() -> i32 {
 // -----
 
 #file = #debuginfo.file<"foo.c" in "/mlir/">
+#compile_unit = #debuginfo.compile_unit<
+  sourceLanguage = DW_LANG_Mojo,
+  file = #file,
+  producer = "MLIR",
+  isOptimized = true,
+  emissionKind = Full
+>
 #sp = #debuginfo.subprogram<
+  compileUnit =#compile_unit,
   file = #file,
   scope = #file,
   name = <"foo">

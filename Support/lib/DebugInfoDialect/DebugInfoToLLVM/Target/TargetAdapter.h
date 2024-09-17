@@ -42,6 +42,7 @@ void populateFallbackConversionPatterns(DIAttrTypeReplacer &replacer,
 /// Sink kill Debug Value ops so that they are the last instructions from
 /// their source line. This way variables are guaranteed to be killed only at
 /// the end of the line.
+void sinkDebugKills(ModuleOp module);
 void sinkDebugKills(mlir::Operation *op);
 
 /// This function converts instances of llvm.dbg.value to llvm.dbg.declare when
