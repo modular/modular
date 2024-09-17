@@ -55,29 +55,6 @@ config.substitutions.append(
     ("%api_executor_models_dir", str(api_executor_models_dir))
 )
 
-generated_models_path = (
-    Path(config.modular_derived_dir)
-    / "build"
-    / "GeneratedTests"
-    / "BINARIES"
-    / "models"
-)
-if generated_models_path.exists():
-    config.substitutions.append(
-        ("%test_models_dir", str(generated_models_path))
-    )
-    config.available_features.add("GENERATED_TESTS")
-
-generated_onnx_models_path = (
-    Path(config.modular_derived_dir) / "onnx-backend-tests"
-)
-if generated_onnx_models_path.exists():
-    config.substitutions.append(
-        ("%onnx_test_models_dir", str(generated_onnx_models_path))
-    )
-    config.available_features.add("GENERATED_ONNX_TESTS")
-
-
 # Enable MEF caching in tests if not given a value via env vars.
 mef_cache_config = os.environ.get("MODULAR_MAX_ENABLE_MODEL_IR_CACHE", "true")
 config.environment["MODULAR_MAX_ENABLE_MODEL_IR_CACHE"] = mef_cache_config

@@ -28,8 +28,6 @@ lit_tests(
         "**/*.mojo",
     ]),
     available_features = [
-        "GENERATED_ONNX_TESTS",
-        "GENERATED_TESTS",
         "mtorch",
         "numpy",
         "pytorch-generated-tests",
