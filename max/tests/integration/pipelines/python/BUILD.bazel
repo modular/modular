@@ -52,6 +52,7 @@ modular_py_test(
         ":evaluate_llama",
         "//SDK/lib/API/python:max_engine",
         "//SDK/public/max-repo/pipelines/python/llama3",
+        "//SDK/public/max-repo/pipelines/python/nn",
         "//SDK/public/max-repo/pipelines/python/utils",
         "//Support/python:support",
         requirement("hypothesis"),
