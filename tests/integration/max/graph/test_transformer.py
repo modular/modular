@@ -10,14 +10,18 @@ from dataclasses import dataclass
 import max.engine as me
 import numpy as np
 import pytest
-from llama3.model.attention import Attention
-from llama3.model.embedding import Embedding
-from llama3.model.mlp import MLP, Linear
-from llama3.model.norm import RMSNorm
-from llama3.model.rotary_embedding import RotaryEmbedding
-from llama3.model.transformer import Transformer, TransformerBlock
 from max.dtype import DType
 from max.graph import Graph, TensorType
+from nn import (
+    Attention,
+    Embedding,
+    Linear,
+    MLP,
+    RMSNorm,
+    RotaryEmbedding,
+    Transformer,
+    TransformerBlock,
+)
 
 
 class Weights:

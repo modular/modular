@@ -7,9 +7,9 @@ import pytest
 import torch.nn as nn
 import torch.nn.functional as F
 from conftest import assert_allclose, modular_graph_test
-from llama3.model.mlp import MLP, Linear
 from max.dtype import DType
 from max.graph import Graph, TensorType
+from nn import MLP, Linear
 
 
 def torch_linear(weight, **kwargs):

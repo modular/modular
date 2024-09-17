@@ -9,11 +9,9 @@ from dataclasses import dataclass
 
 import numpy as np
 import pytest
-from llama3.model.attention import Attention
-from llama3.model.mlp import Linear
-from llama3.model.rotary_embedding import RotaryEmbedding
 from max.dtype import DType
 from max.graph import Graph, TensorType
+from nn import Attention, Linear, RotaryEmbedding
 
 
 @dataclass

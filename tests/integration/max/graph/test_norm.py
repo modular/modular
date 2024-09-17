@@ -7,9 +7,9 @@
 from conftest import modular_graph_test, assert_allclose
 import pytest
 import torch
-from llama3.model.norm import RMSNorm
 from max.dtype import DType
 from max.graph import Graph, TensorType
+from nn import RMSNorm
 
 
 def torch_rms_norm(x, weight, eps=1e-6):
