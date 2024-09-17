@@ -5,14 +5,22 @@
 # ===----------------------------------------------------------------------=== #
 """Op implementation for broadcast_to."""
 
+from __future__ import annotations
+
+from collections.abc import Iterable
+
 from max.mlir.dialects import rmo
 
 from ..graph import Graph
+from ..type import Shape, ShapeLike, SymbolicDimLike, TensorType
 from ..value import TensorValue
-from ..type import Shape, ShapeLike
 
 
-def broadcast_to(x: TensorValue, shape: ShapeLike) -> TensorValue:
+def broadcast_to(
+    x: TensorValue,
+    shape: TensorValue | ShapeLike,
+    out_dims: Iterable[SymbolicDimLike] | None = None,
+) -> TensorValue:
     """Broadcasts a symbolic tensor.
 
     Broadcasts the input tensor to the specified shape.
@@ -23,12 +31,29 @@ def broadcast_to(x: TensorValue, shape: ShapeLike) -> TensorValue:
             This tensor may not contain any dynamic dimensions.
         shape: The new shape as a list of dimensions.
             Dynamic dimensions are not allowed.
-        location: An optional location for a more specific error message.
+        out_dims: Output dims used only for tensor-valued `shape`.
 
     Returns:
         A symbolic tensor with the same elements as the original tensor, but
         in a new shape. Its symbolic shape is the same as :code:`shape`.
+
+    Raises:
+        ValueError: if a tensor-valued shape is passed without out_dims.
     """
+    if isinstance(shape, TensorValue):
+        # For tensor-valued shapes, dims need to be declared in the graph.
+        # Push the onus of doing so onto the caller.
+        if out_dims is None:
+            message = f"must pass out_dims with tensor value shape {shape}"
+            raise ValueError(message)
+
+        return Graph.current._add_op(
+            rmo.mo_broadcast_to,
+            TensorType(x.dtype, shape=out_dims).to_mlir(),
+            x,
+            shape._mlir_value,
+        )[0].tensor
+
     return Graph.current._add_op(
         rmo.broadcast_to, x, new_shape=Shape(shape).to_mlir()
     )[0].tensor
