@@ -8,6 +8,7 @@ modular_py_test(
         "graph_tests/**/*.py",
     ]),
     data = [
+        "//:libpython",
         "//KGEN:CompilerRT",
         "//ModularFramework/tools/mof",
         "//ONNX/tools/onnx:monnx",
@@ -23,7 +24,7 @@ modular_py_test(
     ],
     env = {
         "BAZEL": "true",
-        "COUNTER_OPS_PATH": "$(location //SDK/integration-test:counter_ops)",
+        "MODULAR_COUNTER_OPS_PATH": "$(location //SDK/integration-test:counter_ops)",
         "CUSTOM_OPS_PATH": "$(location //SDK/integration-test:test_user_op)",
         "MODULAR_PATH": ".",
         "MODULAR_IS_CUDA_AVAILABLE": "$(location //Runtime/tools/is-cuda-available)",
@@ -31,6 +32,12 @@ modular_py_test(
     },
     mojo_deps = [
         "//SDK/integration-test:test_user_op",
+        "//PyTorch/test/utils/custom_ops",
+        "//Kernels/mojo/buffer",
+        "//Kernels/mojo/algorithm",
+        "//Kernels/mojo/register",
+        "//Kernels/mojo/runtime",
+        "//open-source/mojo/stdlib/stdlib",
     ],
     target_compatible_with = select({
         # TODO: Sanitizer libs aren't available when python loads pybind shared libs
