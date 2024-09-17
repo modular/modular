@@ -5,7 +5,6 @@
 # ===----------------------------------------------------------------------=== #
 # UNSUPPORTED: windows
 # UNSUPPORTED: asan
-# REQUIRES: numpy
 # RUN: %mojo -debug-level full %s
 
 from max.engine import EngineNumpyView
