@@ -4,7 +4,6 @@
 #
 # ===----------------------------------------------------------------------=== #
 # UNSUPPORTED: windows
-# REQUIRES: requests
 # RUN: %mojo -debug-level full %s
 
 from collections import Dict

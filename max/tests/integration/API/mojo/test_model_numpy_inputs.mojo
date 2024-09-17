@@ -5,7 +5,6 @@
 # ===----------------------------------------------------------------------=== #
 # UNSUPPORTED: windows
 # UNSUPPORTED: asan
-# REQUIRES: numpy
 # RUN: %mojo -debug-level full %s %S/mo.mlir
 
 from pathlib import Path
