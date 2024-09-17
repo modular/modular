@@ -533,6 +533,7 @@ fn tensor_to_shape[
 fn get_scalar_from_ndbuffer[
     dtype: DType
 ](tensor: NDBuffer[dtype, 1]) -> Scalar[dtype]:
+    # Assumes that tensor is on the host!
     return tensor[0]
 
 

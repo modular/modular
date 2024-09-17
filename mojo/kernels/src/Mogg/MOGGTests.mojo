@@ -452,9 +452,11 @@ struct MyCustomSIMD[type: DType, len: Int](Movable):
 # For testing support for Scalar[...] in Mojo
 @mogg_register("supports_scalar_kernel")
 @export
-fn supports_scalar_kernel[type: DType](x: Scalar[type], out: NDBuffer[type, 1]):
+fn supports_scalar_kernel[
+    type: DType, target: StringLiteral
+](x: NDBuffer[type, 1], y: Scalar[type], out: NDBuffer[type, 1]):
     print("datatype is", type)
-    out[0] = x
+    out[0] = y
 
 
 struct MyCustomScalar[type: DType](Movable):
