@@ -295,9 +295,11 @@ public:
       ArrayAttr argumentTypeNames =
           dyn_cast_or_null<ArrayAttr>(userKernel->getAttr(MOGG_ARG_TYPE_NAMES));
       for (size_t i = 1, e = argumentTypeNames.getValue().size(); i < e; i++) {
-        if (cast<StringAttr>(argumentTypeNames.getValue()[i]).getValue() ==
-            MOJO_INTERNAL_DPS_TENSOR_TYPE_NAME)
+        auto nameAttr = dyn_cast<StringAttr>(argumentTypeNames.getValue()[i]);
+        if (nameAttr &&
+            nameAttr.getValue() == MOJO_INTERNAL_DPS_TENSOR_TYPE_NAME) {
           ++kernelInputsCount;
+        }
       }
 
       // Figure out which kernel input / outputs are fused.
