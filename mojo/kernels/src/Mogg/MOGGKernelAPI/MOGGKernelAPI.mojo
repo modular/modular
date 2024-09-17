@@ -4,11 +4,21 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-import compiler_internal as compiler
+# ===----------------------------------------------------------------------===#
+# General imports
+# ===----------------------------------------------------------------------===#
 from buffer import NDBuffer
-from nn.mha import fused_attention as cpu_fused_attention_impl
-from tensor_utils import ManagedTensorSlice, foreach
+from buffer.dimlist import DimList
+import compiler_internal as compiler
+from runtime.asyncrt import MojoCallContextPtr
 from sys import llvm_intrinsic
+from tensor_utils import ManagedTensorSlice, foreach
+from utils import StaticIntTuple
+
+# ===----------------------------------------------------------------------===#
+# Kernel imports
+# ===----------------------------------------------------------------------===#
+from algorithm import argmax, argmin
 from math import (
     ceil,
     cos,
@@ -23,11 +33,26 @@ from math import (
     sqrt,
     tanh,
 )
-
-from utils import StaticIntTuple
+from nn import arg_nonzero
 from utils.numerics import isinf, isnan
-from linalg.matmul import matmul as _matmul
-from runtime.asyncrt import MojoCallContextPtr
+
+
+# ===----------------------------------------------------------------------===#
+# Helpers
+# ===----------------------------------------------------------------------===#
+
+
+# Until the kernel translation is complete, this is copied from MOGG.mojo.
+@always_inline
+fn managed_tensor_slice_to_ndbuffer[
+    type: DType,
+    rank: Int,
+    static_shape: DimList = DimList.create_unknown[rank](),
+](tensor: ManagedTensorSlice[type, rank]) -> NDBuffer[type, rank, static_shape]:
+    return NDBuffer[type, rank, static_shape](
+        tensor._ptr, tensor.get_static_spec().shape, tensor._strides
+    )
+
 
 # ===----------------------------------------------------------------------===#
 # Binary Elementwise Kernels
@@ -575,6 +600,21 @@ struct Not:
         foreach[func, synchronous, target](y, ctx)
 
 
+@compiler.register("mo.abs")
+struct Abs:
+    @staticmethod
+    fn execute[
+        synchronous: Bool,
+        target: StringLiteral,
+    ](y: ManagedTensorSlice, x: ManagedTensorSlice, ctx: MojoCallContextPtr):
+        @parameter
+        @always_inline
+        fn func[width: Int](idx: StaticIntTuple[y.rank]) -> SIMD[y.type, width]:
+            return rebind[SIMD[y.type, width]](abs(x.load[width](idx)))
+
+        foreach[func, synchronous, target](y, ctx)
+
+
 # ===----------------------------------------------------------------------===#
 # View kernels
 # ===----------------------------------------------------------------------===#
@@ -638,3 +678,93 @@ struct BroadcastTo:
         # Using `z.shape` instead will prevent the compiler from fusing the kernels.
         var x_view = Self.build_view(x, output_shape)
         view_copy_impl[synchronous, target](z, x_view)
+
+
+# ===----------------------------------------------------------------------===#
+# Data dependent kernels
+# ===----------------------------------------------------------------------===#
+
+
+@compiler.register("mo.arg_max")
+struct ArgMax:
+    @staticmethod
+    fn execute(
+        output: ManagedTensorSlice,
+        input: ManagedTensorSlice[rank = output.rank],
+        axis: ManagedTensorSlice[rank=1],
+        ctx: MojoCallContextPtr,
+    ):
+        alias output_shape = compiler.specsof[output.type, output.rank](
+            "output"
+        ).shape
+        alias axis_shape = compiler.specsof[axis.type, axis.rank]("axis").shape
+        alias input_shape = compiler.specsof[input.type, input.rank](
+            "input"
+        ).shape
+
+        var output_ndbuffer = managed_tensor_slice_to_ndbuffer[
+            static_shape=output_shape
+        ](output)
+        var axis_ndbuffer = managed_tensor_slice_to_ndbuffer[
+            static_shape=axis_shape
+        ](axis)
+        var input_ndbuffer = managed_tensor_slice_to_ndbuffer[
+            static_shape=input_shape
+        ](input)
+
+        try:
+            argmax(input_ndbuffer, axis_ndbuffer, output_ndbuffer)
+        except err:
+            ctx.set_to_error(err)
+
+
+@compiler.register("mo.arg_min")
+struct ArgMin:
+    @staticmethod
+    fn execute(
+        output: ManagedTensorSlice,
+        input: ManagedTensorSlice[rank = output.rank],
+        axis: ManagedTensorSlice[rank=1],
+        ctx: MojoCallContextPtr,
+    ):
+        alias output_shape = compiler.specsof[output.type, output.rank](
+            "output"
+        ).shape
+        alias axis_shape = compiler.specsof[axis.type, axis.rank]("axis").shape
+        alias input_shape = compiler.specsof[input.type, input.rank](
+            "input"
+        ).shape
+
+        var output_ndbuffer = managed_tensor_slice_to_ndbuffer[
+            static_shape=output_shape
+        ](output)
+        var axis_ndbuffer = managed_tensor_slice_to_ndbuffer[
+            static_shape=axis_shape
+        ](axis)
+        var input_ndbuffer = managed_tensor_slice_to_ndbuffer[
+            static_shape=input_shape
+        ](input)
+
+        try:
+            argmin(input_ndbuffer, axis_ndbuffer, output_ndbuffer)
+        except err:
+            ctx.set_to_error(err)
+
+
+@compiler.register("mo.arg_nonzero")
+struct ArgNonZero:
+    @staticmethod
+    fn execute(
+        output_buffer: ManagedTensorSlice[rank=2],
+        input_buffer: ManagedTensorSlice,
+    ):
+        var out_ndbuffer = managed_tensor_slice_to_ndbuffer(output_buffer)
+        var in_ndbuffer = managed_tensor_slice_to_ndbuffer(input_buffer)
+
+        arg_nonzero.arg_nonzero(in_ndbuffer, out_ndbuffer)
+
+    @staticmethod
+    fn shape(input_buffer: ManagedTensorSlice) -> StaticIntTuple[2]:
+        return arg_nonzero.arg_nonzero_shape[
+            single_thread_blocking_override=True
+        ](managed_tensor_slice_to_ndbuffer(input_buffer))
