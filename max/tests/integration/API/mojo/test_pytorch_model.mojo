@@ -4,7 +4,6 @@
 #
 # ===----------------------------------------------------------------------=== #
 # UNSUPPORTED: windows
-# REQUIRES: mtorch
 # RUN: %mojo -debug-level full %s %S/../../Inputs/relu3x100x100.torchscript
 
 from sys import argv

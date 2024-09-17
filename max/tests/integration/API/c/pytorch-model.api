@@ -1,4 +1,3 @@
-// REQUIRES: mtorch
 // RUN: MODEL=%S/../../Inputs/relu3x100x100.torchscript
 // RUN: modular-api-executor --compile-specs=?x3x100x100xf32 --print-metadata $MODEL | FileCheck %s
 // RUN: modular-api-executor --compile-specs=?x3x100x100xf32 --input-specs=1x3x100x100xf32 --print-metadata $MODEL | FileCheck %s --check-prefix=CHECK-PREFER-COMPILE-SPECS

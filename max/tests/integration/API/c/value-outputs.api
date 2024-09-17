@@ -1,4 +1,3 @@
-// REQUIRES: mtorch
 // REQUIRES: pytorch-generated-tests
 // RUN: modular-api-executor --model-inputs=ones --input-specs=1xsi32 --input-specs=3xf32 --input-specs=5xf32 --result-output-style=full --output-names result0 --output-names result1 --output-names result2 --output-names result3 --output-names result4 --output-names result5 %pytorch_generated_tests_dir/OutputVariants.pt | FileCheck %s
 

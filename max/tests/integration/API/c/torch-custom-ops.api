@@ -1,4 +1,3 @@
-// REQUIRES: mtorch
 // REQUIRES: pytorch-generated-tests
 // RUN: modular-api-executor --torch-library-paths="%libpython" --torch-library-paths="%libtorch_python" --torch-library-paths="%libtorchvision" --compile-specs=2xf32 --print-metadata %pytorch_generated_tests_dir/TorchVisionOps.pt | FileCheck %s --check-prefix=CHECK-METADATA
 // RUN: modular-api-executor --torch-library-paths="%libpython" --torch-library-paths="%libtorch_python" --torch-library-paths="%libtorchvision" --model-inputs=ones --input-specs=2xf32 --result-output-style=full %pytorch_generated_tests_dir/TorchVisionOps.pt | FileCheck %s --check-prefix=CHECK-EXECUTE

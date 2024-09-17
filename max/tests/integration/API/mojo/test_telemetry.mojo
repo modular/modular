@@ -4,7 +4,6 @@
 #
 # ===----------------------------------------------------------------------=== #
 # UNSUPPORTED: windows
-# REQUIRES: mtorch
 # RUN: rm -f max-engine-telemetry-test-telemetry
 # RUN: export MODULAR_TELEMETRY_EXPORTERS_LOGS_FILE_PATH=max-engine-telemetry-test-telemetry
 # RUN: %mojo -debug-level full %s %S/../../Inputs/relu3x100x100.torchscript
