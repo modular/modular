@@ -3,7 +3,6 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-# REQUIRES: nvptx_backend
 # REQUIRES: has_cuda_device
 # RUN: %mojo-no-debug %s
 
