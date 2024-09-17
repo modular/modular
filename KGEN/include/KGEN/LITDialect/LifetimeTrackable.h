@@ -17,15 +17,11 @@ namespace LIT {
 class CachedLifetimeFinder {
 public:
   /// This method finds all the lifetimes buried in the specified type,
-  /// returning them as a list.  This typically will return ParamRefAttr's or
-  /// ImmutCast(ParamRefAttr)'s if a mutable lifetime is accessed immutably.
-  SmallVector<TypedAttr> findLifetimesInType(Type type) {
-    return findLifetimesInTypes(type);
-  }
-
-  /// This finds all the lifetimes in the specified set of types, possibly
-  /// eliding duplicates.
-  SmallVector<TypedAttr> findLifetimesInTypes(ArrayRef<Type> types);
+  /// returning them as a list, possibly eliding duplicates. This typically will
+  /// return ParamRefAttr's or ImmutCast(ParamRefAttr)'s if a mutable lifetime
+  /// is accessed immutably.
+  SmallVector<TypedAttr> findLifetimesIn(ArrayRef<Type> types,
+                                         ArrayRef<TypedAttr> captures = {});
 
 private:
   llvm::DenseSet<const void *> typesAndAttrsWithoutLifetimes;

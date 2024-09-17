@@ -1719,8 +1719,7 @@ void SharedState::addCaptureToScope(ASTDecl &scope, ASTDecl *captureDecl,
                                     Capture capture) {
   getImpl().capturesInScope[&scope].insert({captureDecl, capture});
   if (captureDecl->getParentDecl() != scope.parentDecl) {
-    ASTDecl *parentDecl = scope.getNearestDeclOfType<LIT::FuncOp>();
-    if (parentDecl)
+    if (ASTDecl *parentDecl = scope.getNearestDeclOfType<LIT::FuncOp>())
       addCaptureToScope(*scope.parentDecl, captureDecl, capture);
   }
 }

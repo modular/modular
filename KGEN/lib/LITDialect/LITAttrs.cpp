@@ -492,6 +492,11 @@ LogicalResult FnMetadataAttr::verifySignature(
   return success();
 }
 
+FnMetadataAttr FnMetadataAttr::getWithCaptureLifetimes(TypedAttr lifetimes) {
+  return get(getArgListAttrs(), getParamListAttrs(),
+             getNumImplicitLifetimeDecls(), lifetimes);
+}
+
 size_t FnMetadataAttr::getNumArgs() const {
   return getArgListAttrs().getPogs().size();
 }

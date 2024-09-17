@@ -451,7 +451,7 @@ struct FieldRefPropagation:
      self.field2 = 1
 
 
-# Issue #3444 (nightly) Raising init causing use of uninitialized variable 
+# Issue #3444 (nightly) Raising init causing use of uninitialized variable
 # https://github.com/modularml/mojo/issues/3444
 struct HasRaisingInit:
   fn __init__(inout self) raises: pass
@@ -486,3 +486,16 @@ fn test_inout_raising_init(inout a: HasRaisingInit, inout b: RaisingInitWrapper)
   b.field = HasRaisingInit()
   # EH logic.
   # CHECK: lit.call {{.*}}HasRaisingInit::@"__moveinit__{{.*}}([[FIELDREF:%.*]], [[TEMP]])
+
+# CHECK-LABEL: lit.func @"test_parameter_closure_captures
+fn test_parameter_closure_captures(owned x: MemExample, owned y: MemExample):
+  # CHECK: lit.func *"capture
+  @parameter
+  fn capture():
+    _ = x^
+    _ = y^
+
+  # CHECK: lit.call[!lit.signature<:{mut *"x`{{.*}}", mut *"y`{{.*}}"}:
+  # CHECK-NEXT: lit.call {{.*}}MemExample::@"__del__{{.*}}(%y)
+  # CHECK-NEXT: lit.call {{.*}}MemExample::@"__del__{{.*}}(%x)
+  capture()

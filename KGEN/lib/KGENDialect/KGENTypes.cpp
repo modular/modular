@@ -227,6 +227,12 @@ SignatureType SignatureType::getWithValuesReplaced(FunctionType fnType) {
                             getArgConventions(), getFnEffects(), getMetadata());
 }
 
+SignatureType SignatureType::getWithMetadata(FnMetadataAttrInterface metadata) {
+  return SignatureType::get(getValues(), getInputParamTypes(),
+                            getResultParamTypes(), getArgConventions(),
+                            getFnEffects(), metadata);
+}
+
 bool SignatureType::hasAddress(ArgConvention conv) {
   switch (conv) {
   case ArgConvention::OwnedInReg:

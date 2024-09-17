@@ -237,8 +237,11 @@ fn test_variadic_and_kw_only_params_indirect[x: int]():
 
 # Passing non-default address space through initself.
 
+
 # CHECK-LABEL: lit.func @"initialize_in_addrspace
-fn initialize_in_addrspace(ptr: UnsafePointer[ExampleRegPassable, AddressSpace(1)]):
+fn initialize_in_addrspace(
+    ptr: UnsafePointer[ExampleRegPassable, AddressSpace(1)]
+):
     # Get !lit.ref in addr space #1
     # CHECK-NEXT: [[PTRREF:%.*]] = lit.call{{.*}}@UnsafePointer::@"__getitem__{{.*}}(%ptr)
 
@@ -250,18 +253,24 @@ fn initialize_in_addrspace(ptr: UnsafePointer[ExampleRegPassable, AddressSpace(1
     # CHECK-NEXT: lit.ref.store [[REGVAL]], [[PTRREF]] : <!ExampleRegPassable, mut #lit.any.lifetime, 1>
     ptr[] = ExampleRegPassable()
 
+
 struct SomeRefItemStruct:
     fn __getitem__(self) -> ref [__lifetime_of(self)] Int:
         pass
+
 
 # CHECK-LABEL: lit.func @"test_param_refitem
 fn test_param_refitem[a: SomeRefItemStruct]():
     # CHECK-NEXT: !Int = <load_from_mem(:!lit.ref<!Int, imm #lit.any.lifetime> apply(:{{.*}}SomeRefItemStruct::@"__getitem__
     alias x = a[]
 
+
 # Passing non-default address space through inout arg, must use temporary.
 # CHECK-LABEL: lit.func @"mutate_in_addrspace
-fn mutate_in_addrspace(a: ExampleRegPassable, ptr: UnsafePointer[ExampleRegPassable, AddressSpace(1)]):
+fn mutate_in_addrspace(
+    a: ExampleRegPassable,
+    ptr: UnsafePointer[ExampleRegPassable, AddressSpace(1)],
+):
     # Get !lit.ref in addr space #1
     # CHECK-NEXT: [[PTRREF:%.*]] = lit.call {{.*}}@UnsafePointer::@"__getitem__{{.*}}(%ptr)
 
@@ -276,32 +285,43 @@ fn mutate_in_addrspace(a: ExampleRegPassable, ptr: UnsafePointer[ExampleRegPassa
     # CHECK-NEXT: lit.ref.store [[REGVAL]], [[PTRREF]] : <!ExampleRegPassable, mut #lit.any.lifetime, 1>
     a.mutateArg(ptr[])
 
+
 @register_passable("trivial")
 struct ExampleRegPassable:
-  fn __init__(inout self): pass
-  fn mutateArg(self, inout other: Self): pass
+    fn __init__(inout self):
+        pass
+
+    fn mutateArg(self, inout other: Self):
+        pass
+
 
 ## Partial Binding of Function Symbols With Implicit Parameters
 
-struct Matrix[rows: int, cols: int]:
-  pass
 
-fn matmul_unrolled[I:int](inout C: Matrix):
-  pass
+struct Matrix[rows: int, cols: int]:
+    pass
+
+
+fn matmul_unrolled[I: int](inout C: Matrix):
+    pass
+
 
 @always_inline
-fn test_matrix_equal[func: fn (inout Matrix) -> None](inout C: Matrix) raises -> Bool:
-  func(C)
-  return True
+fn test_matrix_equal[
+    func: fn (inout Matrix) -> None
+](inout C: Matrix) raises -> Bool:
+    func(C)
+    return True
+
 
 # CHECK-LABEL: lit.func @"partialBind
-fn partialBind(inout C:Matrix[`1`,`2`]) raises:
-  # CHECK-NEXT: %exp = lit.var.decl "exp
-  # CHECK-NEXT: lit.call @{{.*}}::@"test_matrix_equal{{.*}}"[mut *"C`{{.*}}", mut *"__error__`{{.*}}", mut *"exp`{{.*}}"]
-  # CHECK-SAME: <:!lit.signature<[1]<?, index, index>(!lit.ref<@{{.*}}::@Matrix<*(0,0), *(0,1)>, mut *[0,0]> inout, |) -> !kgen.none>
-  # CHECK-SAME: rebind(:!lit.signature<[1]<?, index, index>("C": !lit.ref<@{{.*}}::@Matrix<*(0,0), *(0,1)>, mut *[0,0]> inout) -> !kgen.none>
-  # CHECK-SAME: @{{.*}}::@"matmul_unrolled{{.*}}"<0, ?, ?>), 1, 2>(%C, %__error__, %exp)
-  var exp = test_matrix_equal[matmul_unrolled[`0`]](C)
+fn partialBind(inout C: Matrix[`1`, `2`]) raises:
+    # CHECK-NEXT: %exp = lit.var.decl "exp
+    # CHECK-NEXT: lit.call @{{.*}}::@"test_matrix_equal{{.*}}"[mut *"C`{{.*}}", mut *"__error__`{{.*}}", mut *"exp`{{.*}}"]
+    # CHECK-SAME: <:!lit.signature<[1]<?, index, index>(!lit.ref<@{{.*}}::@Matrix<*(0,0), *(0,1)>, mut *[0,0]> inout, |) -> !kgen.none>
+    # CHECK-SAME: rebind(:!lit.signature<[1]<?, index, index>("C": !lit.ref<@{{.*}}::@Matrix<*(0,0), *(0,1)>, mut *[0,0]> inout) -> !kgen.none>
+    # CHECK-SAME: @{{.*}}::@"matmul_unrolled{{.*}}"<0, ?, ?>), 1, 2>(%C, %__error__, %exp)
+    var exp = test_matrix_equal[matmul_unrolled[`0`]](C)
 
 
 # MOCO-692: [mojo-lang][ownership] Implicit conversion failure
@@ -317,27 +337,37 @@ fn test_implicit_conversion_bvalue():
     # CHECK-NEXT: lit.call {{.*}}take_struct2
     take_struct2(foo^)
 
+
 struct Struct1:
-    fn __init__(inout self): pass
-    fn __moveinit__(inout self, owned existing: Self): pass
+    fn __init__(inout self):
+        pass
+
+    fn __moveinit__(inout self, owned existing: Self):
+        pass
+
+
 struct Struct2:
-    fn __init__(inout self, owned foo: Struct1): pass
+    fn __init__(inout self, owned foo: Struct1):
+        pass
+
+
 fn take_struct2(bar: Struct2):
     pass
-
 
 
 fn pack_it[*Ts: AnyType](*args: *Ts) -> String:
     return String()
 
+
 fn also_broken(r: Reference[String]) -> String:
     return r[]
+
 
 # MOCO-858: isSafeToUseValueDestForDirectResult doesn't handle aliasing through references
 # CHECK-LABEL: lit.func @"test_byref_slot_with_references
 fn test_byref_slot_with_references():
     var f = String()
-    
+
     # CHECK: [[RESULTTMP:%.*]] = lit.var.decl "__call_result_tmp__"
     # CHECK-NEXT: lit.call {{.*}}pack_it{{.*}}({{.*}},  [[RESULTTMP]])
     f = pack_it(f)
@@ -353,8 +383,23 @@ fn test_byref_slot_with_references():
     f = also_broken(Reference(f))
     # CHECK-NEXT: lit.call {{.*}}String::@"__moveinit__{{.*}}(%f, [[RESULTTMP]])
 
-fn test_int_ref(ref [_] x: Int) -> ref [__lifetime_of(x)] Int:
+
+# CHECK-LABEL: lit.func @"test_byref_slot_closure_capture
+fn test_byref_slot_closure_capture(owned x: String):
+    # CHECK: lit.func *"capture
+    @parameter
+    fn capture() -> String:
+        return x
+
+    # CHECK: %__call_result_tmp__
+    # CHECK-NEXT: lit.call[{{.*}}: *"capture{{.*}}(%__call_result_tmp__)
+    x = capture()
+    # CHECK-NEXT: lit.call {{.*}}@String::@"__moveinit__{{.*}}(%x, %__call_result_tmp__)
+
+
+fn test_int_ref(ref [_]x: Int) -> ref [__lifetime_of(x)] Int:
     return x
+
 
 # CHECK-LABEL: lit.func @"complex_ref_box_emission
 fn complex_ref_box_emission[p: Int](a: Int):

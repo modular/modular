@@ -242,3 +242,13 @@ fn inout_ref_exclusivity(inout a: Int, inout b: Int, inout s: MyStruct):
     # expected-error @below {{argument of 'mutate_two' call allows writing a memory location previously writable through another aliased argument}}
     # expected-note @below {{'s' memory accessed through reference embedded in value of type 'Int'}}
     mutate_two(s, s.a)
+
+
+fn capture_exclusivity(owned x: MemExample):
+    @parameter
+    fn capture_and_read(y: MemExample):
+        _ = x^
+
+    # expected-error @below {{argument of call allows writing a memory location previously writable through implicit closure captures}}
+    # expected-note @below {{'x' value is passed through aliasing 'borrowed' argument}}
+    capture_and_read(x)
