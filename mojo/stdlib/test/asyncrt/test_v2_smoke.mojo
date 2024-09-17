@@ -3,7 +3,6 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-# REQUIRES: has_cuda_device
 # RUN: %mojo-no-debug -D MODULAR_ASYNCRT_DEVICE_CONTEXT_V2=cpu %s | FileCheck %s
 
 from gpu import *
