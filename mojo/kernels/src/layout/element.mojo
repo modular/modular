@@ -95,11 +95,11 @@ struct Element[dtype: DType, layout: Layout](Stringable, Formattable):
             alias size = to_int(layout.shape[0])
             alias elements = to_int(layout.shape[1])
             alias vec_type = SIMD[dtype, size]
-            alias alignment = alignof[vec_type]
+            alias alignment = alignof[vec_type]()
 
             @parameter
             for i in range(elements):
-                var vec_i = ptr.load[width=size](
+                var vec_i = ptr.load[width=size, alignment=alignment](
                     __get_offset[0, i](runtime_layout)
                 )
                 element_data = element_data.insert[offset = i * size](vec_i)
@@ -109,11 +109,11 @@ struct Element[dtype: DType, layout: Layout](Stringable, Formattable):
             alias size = to_int(layout.shape[1])
             alias elements = to_int(layout.shape[0])
             alias vec_type = SIMD[dtype, size]
-            alias alignment = alignof[vec_type]
+            alias alignment = alignof[vec_type]()
 
             @parameter
             for i in range(elements):
-                var vec_i = ptr.load[width=size](
+                var vec_i = ptr.load[width=size, alignment=alignment](
                     __get_offset[i, 0](runtime_layout)
                 )
                 element_data = element_data.insert[offset = i * size](vec_i)
