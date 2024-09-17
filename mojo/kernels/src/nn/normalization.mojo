@@ -697,11 +697,7 @@ fn rms_norm_gpu_warp_tiling[
     input_fn: fn[width: Int] (row: Int, col: Int) capturing -> SIMD[
         type, width
     ],
-](
-    output: NDBuffer[type, 2],
-    gamma: NDBuffer[type, 1],
-    epsilon: NDBuffer[type, 1],
-):
+](output: NDBuffer[type, 2], gamma: NDBuffer[type, 1], epsilon: Scalar[type]):
     alias align = alignof[SIMD[type, simd_width]]()
     alias accum_type = get_accum_type[type]()
 
@@ -720,8 +716,7 @@ fn rms_norm_gpu_warp_tiling[
         thread_m2 = (vec_data**2).reduce_add()
 
     var row_m2 = block_reduce(thread_m2)
-    var epsilon_val = epsilon[0].cast[accum_type]()
-    var norm_factor = isqrt((row_m2 / num_cols) + epsilon_val)
+    var norm_factor = isqrt((row_m2 / num_cols) + epsilon.cast[accum_type]())
 
     if idx < num_cols:
         var gamma_val = gamma.load[width=simd_width, alignment=align](
@@ -737,11 +732,7 @@ fn rms_norm_gpu_block[
     input_fn: fn[width: Int] (row: Int, col: Int) capturing -> SIMD[
         type, width
     ],
-](
-    output: NDBuffer[type, 2],
-    gamma: NDBuffer[type, 1],
-    epsilon: NDBuffer[type, 1],
-):
+](output: NDBuffer[type, 2], gamma: NDBuffer[type, 1], epsilon: Scalar[type]):
     alias align = alignof[SIMD[type, simd_width]]()
     alias accum_type = get_accum_type[type]()
 
@@ -758,8 +749,7 @@ fn rms_norm_gpu_block[
             thread_m2 += (vec_data**2).reduce_add()
 
     var row_m2 = block_reduce(thread_m2)
-    var epsilon_val = epsilon[0].cast[accum_type]()
-    var norm_factor = isqrt((row_m2 / num_cols) + epsilon_val)
+    var norm_factor = isqrt((row_m2 / num_cols) + epsilon.cast[accum_type]())
 
     # need a pass again to perform in place normalization
     for x in range(ceildiv(num_cols // simd_width, BlockDim.x())):
@@ -788,7 +778,7 @@ fn rms_norm_gpu[
 ](
     shape: StaticIntTuple[rank],
     gamma: NDBuffer[type, 1],
-    epsilon: NDBuffer[type, 1],
+    epsilon: Scalar[type],
     output: NDBuffer[type, rank, *_],
     ctx: DeviceContext,
 ) raises:
@@ -972,7 +962,7 @@ fn rms_norm[
 ](
     shape: StaticIntTuple[rank],
     gamma: NDBuffer[type, 1],
-    epsilon: NDBuffer[type, 1],
+    epsilon: Scalar[type],
     output: NDBuffer[type, rank],
     ctx: MojoCallContextPtr,
 ) raises:
@@ -997,7 +987,7 @@ fn rms_norm[
 
         @parameter
         if target == "cpu":
-            rms_norm_cpu[input_0_fn](shape, gamma, epsilon[0], output)
+            rms_norm_cpu[input_0_fn](shape, gamma, epsilon, output)
         elif "cuda" in target:
             rms_norm_gpu[input_0_fn](
                 shape, gamma, epsilon, output, ctx.get_device_context()
@@ -1015,6 +1005,6 @@ fn rms_norm_shape[
 ](
     input: NDBuffer[type, rank],
     gamma: NDBuffer[type, 1],
-    epsilon: NDBuffer[type, 1],
+    epsilon: Scalar[type],
 ) -> StaticIntTuple[rank]:
     return input.get_shape()
