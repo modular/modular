@@ -122,7 +122,6 @@ fn bench_rms_norm_gpu[
     var data_h = UnsafePointer[Scalar[type]].alloc(rows * cols)
     var res = UnsafePointer[Scalar[type]].alloc(rows * cols)
     var gamma_h = UnsafePointer[Scalar[type]].alloc(cols)
-    var epsilon_h = UnsafePointer[Scalar[type]].alloc(1)
 
     for i in range(rows * cols):
         var val = Scalar[type](random_float64(0, 100).cast[type]())
@@ -131,21 +130,17 @@ fn bench_rms_norm_gpu[
     for i in range(cols):
         gamma_h[i] = ((i + cols) / cols).cast[type]()
 
-    epsilon_h[0] = 0.0001
-
     var data_d = ctx.create_buffer[type](rows * cols)
     var gamma_d = ctx.create_buffer[type](cols)
-    var epsilon_d = ctx.create_buffer[type](1)
 
     var param_shape = StaticIntTuple[1](cols)
 
     var data_buf = NDBuffer[type, rank](data_d.ptr, shape)
     var gamma = NDBuffer[type, 1](gamma_d.ptr, param_shape)
-    var epsilon = NDBuffer[type, 1](epsilon_d.ptr, Index(1))
+    var epsilon = Scalar[type](0.001)
 
     ctx.enqueue_copy_to_device(data_d, data_h)
     ctx.enqueue_copy_to_device(gamma_d, gamma_h)
-    ctx.enqueue_copy_to_device(epsilon_d, epsilon_h)
 
     @__copy_capture(data_buf)
     @always_inline
@@ -176,12 +171,10 @@ fn bench_rms_norm_gpu[
 
     _ = data_d
     _ = gamma_d
-    _ = epsilon_d
 
     data_h.free()
     res.free()
     gamma_h.free()
-    epsilon_h.free()
 
 
 def main():
