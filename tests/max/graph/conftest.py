@@ -17,7 +17,7 @@ from hypothesis import assume
 from hypothesis import strategies as st
 from max import _graph, mlir
 from max.dtype import DType
-from max.graph import BufferType, TensorType
+from max.graph import BufferType, Graph, TensorType
 from max.graph.type import Dim, Shape, StaticDim, SymbolicDim
 
 dtypes = st.sampled_from([d for d in DType if d is not DType._unknown])
@@ -143,6 +143,15 @@ def broadcast_shapes(s1: list[Dim], s2: list[Dim]) -> list[Dim]:
             ]
         )
     )
+
+
+def graph_result_type(graph: Graph) -> mlir.Type:
+    """Returns the graph's result type."""
+    # Get the all the mo.graph body's operations (no nested operations).
+    graph_block_ops = graph._mlir_op.regions[0].blocks[0].operations
+    # Get the type of the terminator mo.output.
+    # This is the output of the graph.
+    return graph_block_ops[len(graph_block_ops) - 1].operation.operands[0].type
 
 
 @pytest.fixture

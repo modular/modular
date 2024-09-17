@@ -4,14 +4,16 @@
 #
 # ===----------------------------------------------------------------------=== #
 """Tests for max.graph linear algebra operations."""
+
 import sys
 from typing import Iterable, Optional, Union
 
 import numpy as np
 import pytest
+from conftest import graph_result_type
 from max import mlir
 from max.dtype import DType
-from max.graph import Graph, TensorValue, TensorType, ops
+from max.graph import Graph, TensorType, TensorValue, ops
 
 if sys.version_info[:2] >= (3, 10):
     from typing import TypeAlias
@@ -19,15 +21,6 @@ else:
     from typing_extensions import TypeAlias
 
 Shape: TypeAlias = Iterable[Union[str, int]]
-
-
-def graph_result_type(graph: Graph) -> mlir.Type:
-    """Returns the graph's result type."""
-    # Get the all the mo.graph body's operations (no nested operations).
-    graph_block_ops = graph._mlir_op.regions[0].blocks[0].operations
-    # Get the type of the terminator mo.output.
-    # This is the output of the graph.
-    return graph_block_ops[len(graph_block_ops) - 1].operation.operands[0].type
 
 
 def matmul_graph(
