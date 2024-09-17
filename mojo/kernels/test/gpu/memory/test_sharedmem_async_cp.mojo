@@ -3,7 +3,6 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-# REQUIRES: has_cuda_device
 # Hangs with debug mode Issue #24921
 # RUN: %mojo-no-debug %s | FileCheck %s
 import time

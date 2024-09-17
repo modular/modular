@@ -3,7 +3,6 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-# REQUIRES: has_cuda_device
 # DISABLED: %mojo-no-debug %s | FileCheck %s
 # RUN: true
 

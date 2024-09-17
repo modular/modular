@@ -3,7 +3,6 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-# REQUIRES: has_cuda_device
 # COM: We only care if this file compiles or not
 # RUN: %mojo-no-debug %s
 

@@ -3,7 +3,6 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-# REQUIRES: has_cuda_device
 # RUN: %mojo-no-debug -D MODULAR_ASYNCRT_MAX_PROFILING_LEVEL=1 %s | FileCheck %s
 
 

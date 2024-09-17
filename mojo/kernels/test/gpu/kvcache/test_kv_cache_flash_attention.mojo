@@ -4,7 +4,6 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-# REQUIRES: cuda
 # RUN: %mojo-no-debug %s -t | FileCheck %s
 # CHECK-NOT: CUDA ERROR
 

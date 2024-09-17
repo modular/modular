@@ -3,7 +3,6 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-# REQUIRES: has_cuda_device
 # RUN: %mojo-no-debug %s | FileCheck %s
 
 from builtin._location import __source_location
@@ -66,7 +65,7 @@ fn test_gpu_print_formattable() raises:
         # CHECK: [0, -1, -inf, 1.79769e+308]
         print("SIMD values are:", simd)
 
-        # CHECK: test_print.mojo:70:32
+        # CHECK: test_print.mojo:69:32
         print(__source_location())
 
         # ------------------------------

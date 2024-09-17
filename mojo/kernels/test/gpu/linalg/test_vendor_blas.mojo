@@ -3,7 +3,6 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-# REQUIRES: has_cuda_device
 # TODO(#31429): Restore `--debug-level full` here
 # RUN: %mojo-no-debug %s
 
