@@ -43,6 +43,7 @@ lit.struct.decl @test_execute_and_shape(trait<@stdlib::@builtin::@anytype::@AnyT
   }
 }
 
+// CHECK-LABEL: lit.struct.decl @test_initialize_output
 lit.struct.decl @test_initialize_output(trait<@stdlib::@builtin::@anytype::@AnyType>)
   decorators <:none apply(:!lit.signature<("name": !lit.struct<@stdlib::@builtin::@string_literal::@StringLiteral>) -> !kgen.none> @"register(::StringLiteral)", {:string "imposter_add"})> {
 
@@ -59,5 +60,22 @@ lit.struct.decl @test_initialize_output(trait<@stdlib::@builtin::@anytype::@AnyT
     %none = kgen.param.constant: none = <#kgen.none>
     %hack = kgen.rebind %none : !kgen.none to !lit.struct<@test1>
     kgen.return %hack : !lit.struct<@test1>
+  }
+}
+
+// CHECK-LABEL: lit.struct.decl @annotate_synchronous
+!Bool = !lit.struct<@stdlib::@builtin::@bool::@Bool>
+lit.struct.decl @annotate_synchronous(trait<@stdlib::@builtin::@anytype::@AnyType>)
+  decorators <:none apply(:!lit.signature<("name": !lit.struct<@stdlib::@builtin::@string_literal::@StringLiteral>) -> !kgen.none> @"register(::StringLiteral)", {:string "imposter_add"})> {
+
+  // CHECK: lit.func export @execute
+  // CHECK: mogg.synchronous = #kgen<param.decl synchronous : !Bool>
+  lit.func export @"execute"<synchronous: !Bool>(%z: !lit.struct<@test1>, %x: !lit.struct<@test2<:@DType *"dtype">>, %y: !lit.struct<@test3>) -> !kgen.none
+    attributes {
+        isStatic,
+        sourceName = "execute",
+        specialFnKind = 0 : i8} {
+    %none = kgen.param.constant: none = <#kgen.none>
+    kgen.return %none : !kgen.none
   }
 }
