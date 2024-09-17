@@ -164,7 +164,7 @@ static void labelTensorParamsInKernel(LIT::FuncOp funcOp) {
   auto litTypeToParams = [](LIT::StructType structType) {
     SmallVector<KGEN::ParamDeclRefAttr> attrs;
     for (TypedAttr param : structType.getParamValues()) {
-      auto declRefAttr = cast<KGEN::ParamDeclRefAttr>(param);
+      auto declRefAttr = dyn_cast<KGEN::ParamDeclRefAttr>(param);
       attrs.push_back(declRefAttr);
     }
 
@@ -188,11 +188,18 @@ static void labelTensorParamsInKernel(LIT::FuncOp funcOp) {
     auto dtype = allParameters[kDTypeIndex];
     auto rank = allParameters[kRankIndex];
 
-    auto tensorSpecAttr = DictionaryAttr::get(
-        funcOp.getContext(),
-        {NamedAttribute{builder.getStringAttr("dtype"), dtype},
-         NamedAttribute{builder.getStringAttr("rank"), rank}});
-    tensorSpecs.push_back(tensorSpecAttr);
+    SmallVector<NamedAttribute> tensorSpecNamedAttrs;
+    // Sometimes, dtype or ranks are not present because the user expects
+    // specific values for those parameters (ex: dtype=float32 or rank=2).
+    if (dtype)
+      tensorSpecNamedAttrs.push_back(
+          NamedAttribute{builder.getStringAttr("dtype"), dtype});
+    if (rank)
+      tensorSpecNamedAttrs.push_back(
+          NamedAttribute{builder.getStringAttr("rank"), rank});
+
+    tensorSpecs.push_back(
+        DictionaryAttr::get(funcOp.getContext(), tensorSpecNamedAttrs));
   }
   funcOp->setDiscardableAttr(kKernelTensorParameterAttrName,
                              builder.getArrayAttr(tensorSpecs));
