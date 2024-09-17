@@ -1,5 +1,4 @@
 // REQUIRES: disabled
-// REQUIRES: tf
 // (TODO: MSDK-481)
 // REQUIRES: disabled
 // UNSUPPORTED: windows

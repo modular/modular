@@ -1,4 +1,3 @@
-// REQUIRES: tf
 // (TODO: MSDK-480)
 // REQUIRES: disabled
 // RUN: python3 -m %modeltool download --format tensorflow-savedmodel %modelsdir/Experimental/ResNet50/resnet50-v1.5.yaml --weights-dir %concurrent_api_models_dir
