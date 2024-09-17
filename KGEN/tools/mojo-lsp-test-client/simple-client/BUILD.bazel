@@ -1,0 +1,10 @@
+load("//bazel:api.bzl", "modular_cc_binary")
+
+modular_cc_binary(
+    name = "simple-client",
+    srcs = glob(["*.cpp"]),
+    deps = [
+        "//KGEN/tools/common/lsp-protocol",
+        "//KGEN/tools/mojo-lsp-test-client",
+    ],
+)
