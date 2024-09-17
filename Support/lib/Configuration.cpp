@@ -386,6 +386,12 @@ static void getSearchPaths(SmallVectorImpl<std::filesystem::path> &paths,
     return;
   }
 
+  // To work well in test environments, check for a standardized test
+  // environment variable. This is always the last option, if available.
+  auto testTempdir = llvm::sys::Process::GetEnv("TEST_TMPDIR");
+  if (testTempdir)
+    paths.push_back(std::filesystem::path(*testTempdir) / ".modular");
+
 #ifndef _WIN32
   // To support existing installs, add $HOME/.modular if it exists. If it
   // does it always takes precedence.
@@ -449,12 +455,6 @@ static void getSearchPaths(SmallVectorImpl<std::filesystem::path> &paths,
   assert(defaultRoot.has_value() && "Must have APPDATA");
   paths.push_back(std::filesystem::path(*defaultRoot) / "Local" / "Modular");
 #endif // _WIN32
-
-  // To work well in test environments, check for a standardized test
-  // environment variable. This is always the last option, if available.
-  auto testTempdir = llvm::sys::Process::GetEnv("TEST_TMPDIR");
-  if (testTempdir)
-    paths.push_back(std::filesystem::path(*testTempdir) / ".modular");
 }
 
 static ErrorOr<std::filesystem::path> findBestPathForType(FolderType type,
