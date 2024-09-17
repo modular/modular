@@ -71,6 +71,8 @@ class Dim:
             return super().__new__(StaticDim)
         elif isinstance(value, str):
             return super().__new__(SymbolicDim)
+        elif isinstance(value, mlir.Attribute):
+            return super().__new__(AlgebraicDim)
         raise TypeError(f"Unsupported dimension type {value} ({type(value)})")
 
     def is_static(self) -> bool:
@@ -143,15 +145,7 @@ class Dim:
         elif _graph.is_symbolic_dim(dim_attr):
             return SymbolicDim.from_mlir(dim_attr)
         elif _graph.is_symbolic_expression_dim(dim_attr):
-            raise ValueError(
-                """
-    Graph API currently doesn't support directly materializing algebraic dimensions.
-    Please rebind the dimension before using it.
-
-    For example:
-    >>> x.reshape(["batch", -1]).rebind(["batch", "new_dim"])
-    """
-            )
+            return Dim(dim_attr)
         else:
             raise ValueError("graph api does not support unknown dimensions")
 
@@ -243,6 +237,38 @@ class SymbolicDim(Dim):
             The dimension represented by the MLIR Attr value.
         """
         return SymbolicDim(_graph.symbolic_dim_name(dim_attr))
+
+
+@dataclass(frozen=True)
+class AlgebraicDim(Dim):
+    """An algebraic tensor dimension.
+
+    `AlgebraicDim`s are built off mlir.Attributes. It is used internally for
+    construction and handling of tensor MLIR types.
+    """
+
+    attr: mlir.Attribute
+
+    def __init__(self, attr: mlir.Attribute | AlgebraicDim):
+        # Can't assign directly to frozen dataclasses.
+        super().__setattr__(
+            "attr", attr.attr if isinstance(attr, AlgebraicDim) else attr
+        )
+
+    def __eq__(self, other: Any) -> bool:
+        return isinstance(other, AlgebraicDim) and self.attr == other.attr
+
+    def to_mlir(self) -> mlir.Attribute:
+        """Creates an mlir.Attribute representing this dimension.
+        This is used internally when constructing tensor MLIR types.
+        Returns:
+            An mlir.Attribute in the context representing the dimension.
+        """
+        return self.attr
+
+    @staticmethod
+    def from_mlir(dim_attr: mlir.Attribute) -> Dim:
+        return AlgebraicDim(dim_attr)
 
 
 @functools.total_ordering
