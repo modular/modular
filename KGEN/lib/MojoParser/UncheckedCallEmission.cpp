@@ -773,7 +773,8 @@ bool CallEmitter::isSafeToUseValueDestForDirectResult(
   // lifetime in question.  If any of them is a possible reference to the
   // destination slot, then we must fail.
   CachedLifetimeFinder &finder = emitter.shared.cachedLifetimeFinder;
-  for (TypedAttr lifetime : finder.findLifetimesInTypes(argTypes)) {
+  for (TypedAttr lifetime :
+       finder.findLifetimesIn(argTypes, calleeSig.getCaptureLifetimes())) {
     // If an operand is reading from the lifetime, there will be an immcast in
     // the way.  Look through it and any field sensitivity.
     lifetime = LifetimeMutCastAttr::strip(lifetime);
@@ -1188,11 +1189,14 @@ struct ExclusivityChecker {
                      ExprEmitter &emitter)
       : callee(callee), callExpr(callExpr), syntax(syntax),
         argumentValues(argumentValues), shared(emitter.shared),
-        builder(emitter.builder) {}
+        builder(emitter.builder) {
+    // Check capture lifetimes first so we know if argument values may overlap.
+    checkCaptureLifetimes();
+  }
 
   /// As each argument is emitted, check against previous arguments for
   /// exclusivity violations.
-  void checkArgument(Value val, ArgConvention convention, size_t argIdx);
+  void checkArgument(Value val, ArgConvention convention, unsigned argIdx);
 
 private:
   RValue callee;
@@ -1206,7 +1210,8 @@ private:
   /// For each lifetime that is referenced, we keep track of what argIdx it came
   /// from, and whether it was potentially mutated.
   struct LifetimeInfo {
-    unsigned argIdx;
+    /// The argument that accessed this lifetime, or the capture set if null.
+    std::optional<unsigned> argIdx;
     bool isImmut;
     /// True if this is the leaf of a nested access (e.g. "a.x.y.z"), false if
     /// this is the parent lifetime of a leaf access (e.g. "a.x" from that
@@ -1215,22 +1220,35 @@ private:
   };
   SmallDenseMap<TypedAttr, LifetimeInfo, 8> lifetimeAccesses;
 
-  void checkLifetimeAccess(Value val, ArgConvention convention, size_t argIdx,
-                           TypedAttr lifetime);
+  /// Look at the capture lifetime set on the callee and register uses of them.
+  /// The capture lifetimes are considered accessed as a single unit, so they
+  /// never conflict with themselves, but they may conflict with argument
+  /// accesses.
+  void checkCaptureLifetimes();
 
-  void diagViolation(Value val, ArgConvention convention, size_t argIdx,
+  void checkLifetimeAccess(Value val, std::optional<ArgConvention> convention,
+                           std::optional<unsigned> argIdx, TypedAttr lifetime);
+
+  void diagViolation(Value val, ArgConvention convention, unsigned argIdx,
                      TypedAttr lifetime, const LifetimeInfo &previousAccess);
 };
 } // end anonymous namespace
+
+void ExclusivityChecker::checkCaptureLifetimes() {
+  TypedAttr captureLifetimes =
+      cast<LITSignatureType>(callee.getRValueType()).getCaptureLifetimes();
+  for (TypedAttr lifetime : shared.cachedLifetimeFinder.findLifetimesIn(
+           /*types=*/{}, captureLifetimes))
+    checkLifetimeAccess(Value(), /*convention=*/{}, /*argIdx=*/{}, lifetime);
+}
 
 /// Given an argument value being passed with a specified convention, check to
 /// see if the following lifetime (which may be part of the argument convention,
 /// or buried in the type) is a legal access given the other things we've
 /// already seen.
-void ExclusivityChecker::checkLifetimeAccess(Value val,
-                                             ArgConvention convention,
-                                             size_t argIdx,
-                                             TypedAttr lifetime) {
+void ExclusivityChecker::checkLifetimeAccess(
+    Value val, std::optional<ArgConvention> convention,
+    std::optional<unsigned> argIdx, TypedAttr lifetime) {
   // Determine whether the access was immutable.
   bool isImmut = cast<LifetimeType>(lifetime.getType()).isMutableKnown(false);
 
@@ -1242,15 +1260,16 @@ void ExclusivityChecker::checkLifetimeAccess(Value val,
     return;
 
   // Determine whether we've seen this leaf lifetime before.
-  auto [it, isNew] = lifetimeAccesses.insert(
-      {lifetime, {unsigned(argIdx), isImmut, /*isLeaf*/ true}});
+  auto [it, isNew] =
+      lifetimeAccesses.insert({lifetime, {argIdx, isImmut, /*isLeaf=*/true}});
   if (!isNew) {
+    assert(val && "capture lifetimes cannot self-conflict");
     // If so, check to see if this access and the previous one were both
     // immutable.  Read/read aliasing is fine, but write/write and read/write
     // are not.
     if (!it->second.isImmut || !isImmut) {
       // If not, we have a problem!
-      diagViolation(val, convention, argIdx, lifetime, it->second);
+      diagViolation(val, *convention, *argIdx, lifetime, it->second);
       return;
     }
 
@@ -1265,7 +1284,7 @@ void ExclusivityChecker::checkLifetimeAccess(Value val,
   while (auto fieldAttr = dyn_cast<LifetimeFieldAttr>(lifetime)) {
     lifetime = fieldAttr.getStructLifetime();
     auto [it, isNew] = lifetimeAccesses.insert(
-        {lifetime, {unsigned(argIdx), isImmut, /*isLeaf*/ false}});
+        {lifetime, {argIdx, isImmut, /*isLeaf=*/false}});
 
     // If we have seen this parent lifetime before, check to see if it is ok.
     if (isNew)
@@ -1274,7 +1293,8 @@ void ExclusivityChecker::checkLifetimeAccess(Value val,
     // If the other access is a leaf access, then we are a subfield of it -
     // the access conflicts if either is a store.
     if (it->second.isLeaf && (!isImmut || !it->second.isImmut)) {
-      diagViolation(val, convention, argIdx, lifetime, it->second);
+      assert(val && "capture lifetimes cannot self-conflict");
+      diagViolation(val, *convention, *argIdx, lifetime, it->second);
       return;
     }
 
@@ -1290,7 +1310,7 @@ void ExclusivityChecker::checkLifetimeAccess(Value val,
 /// As each argument is emitted, check against previous arguments for
 /// exclusivity violations.
 void ExclusivityChecker::checkArgument(Value val, ArgConvention convention,
-                                       size_t argIdx) {
+                                       unsigned argIdx) {
 
   // If this is a result argument, then we only look at the lifetime of the
   // destination that we're storing into, not any nested references that may
@@ -1306,14 +1326,14 @@ void ExclusivityChecker::checkArgument(Value val, ArgConvention convention,
 
   // Find all the of the lifetimes that are buried in the specified type.
   for (TypedAttr lifetime :
-       shared.cachedLifetimeFinder.findLifetimesInType(val.getType()))
+       shared.cachedLifetimeFinder.findLifetimesIn(val.getType()))
     checkLifetimeAccess(val, convention, argIdx, lifetime);
 }
 
 /// Emit an error about an access to a conflicting lifetime after a previous
 /// access was seen.
 void ExclusivityChecker::diagViolation(Value val, ArgConvention convention,
-                                       size_t argIdx, TypedAttr lifetime,
+                                       unsigned argIdx, TypedAttr lifetime,
                                        const LifetimeInfo &previousAccess) {
   bool isImmut = cast<LifetimeType>(lifetime.getType()).isMutableKnown(false);
   auto diag = shared.emitError(callExpr->getLoc());
@@ -1352,11 +1372,17 @@ void ExclusivityChecker::diagViolation(Value val, ArgConvention convention,
   diag << (isImmut ? "reading" : "writing");
   diag << " a memory location previously ";
   diag << (previousAccess.isImmut ? "readable" : "writable");
-  diag << " through another aliased argument";
+  diag << " through ";
 
   // Add ranges for the two arguments.
-  diag << argumentValues[argIdx].expr->getRange()
-       << argumentValues[previousAccess.argIdx].expr->getRange();
+  diag << argumentValues[argIdx].expr->getRange();
+  if (std::optional<unsigned> prevIdx = previousAccess.argIdx) {
+    diag << "another aliased argument";
+    diag << argumentValues[*prevIdx].expr->getRange();
+  } else {
+    // TODO: Dig into the closure to get better error messages.
+    diag << "implicit closure captures";
+  }
 
   // Attach a note to explain what is going on in more detail.
   diag.attachNote(callExpr->getLoc());

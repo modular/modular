@@ -660,13 +660,6 @@ AnyValue DeclRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   // Find the nearest escaping closure, if there is one.
   ASTDecl *nearestEscapingFnOrNone =
       declRef ? container.getNearestDeclOfType<LIT::FuncOp>() : nullptr;
-  while (nearestEscapingFnOrNone &&
-         cast<M::KGEN::LIT::FuncOp>(nearestEscapingFnOrNone)
-             .getSignature()
-             .isCapturing())
-    nearestEscapingFnOrNone = nearestEscapingFnOrNone->getParentDecl()
-                                  ->getNearestDeclOfType<LIT::FuncOp>();
-
   if (nearestEscapingFnOrNone) {
     assert(declRef && "can only reach here if single decl known");
     auto needsCapture = [&]() -> bool {
@@ -680,9 +673,10 @@ AnyValue DeclRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
 
     // If this is a reference to a value from an outer function scope, record
     // the capture.
-    if (needsCapture())
+    if (needsCapture()) {
       emitter.shared.addCaptureToScope(*nearestEscapingFnOrNone, declRef,
                                        Capture(value, Capture::kRef));
+    }
   }
 
   return emitter.emitResult(value, this, dest);

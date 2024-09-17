@@ -22,8 +22,9 @@ fn testThing(a: Int) -> FloatDyn:
 fn testThing(a: Int, b: Int) -> Int:
     return 1
 
+
 fn implicit_variable_decls(a: Int) -> Int:
-    b = a+a
+    b = a + a
     return b
 
 
@@ -1039,19 +1040,23 @@ struct RaisingMemberwiseInit:
 # async/await
 ##===----------------------------------------------------------------------===##
 
+
 @register_passable("trivial")
-struct Container[T : AnyType]:
+struct Container[T: AnyType]:
     alias _mlir_type = __mlir_type[
         `!kgen.pointer<`,
         T,
         `>`,
     ]
     var address: Self._mlir_type
+
     fn __init__(inout self):
         self.address = __mlir_attr[`#interp.pointer<0> : `, Self._mlir_type]
 
+
 async fn load(server_ptr: Container[__mlir_type.index]):
     pass
+
 
 # CHECK-LABEL: lit.func @"awaitSomething()"
 async fn awaitSomething():
@@ -1059,6 +1064,7 @@ async fn awaitSomething():
     # CHECK: lit.call {{.*}}@Coroutine::@"__init__{{.*}}<:!AnyType [{{.*}}], :lifetime.set {}>([[CORO:%.*]], %{{.*}}) :
     # CHECK-SAME: !lit.signature<[1]({{.*}}@Coroutine<:!AnyType [{{.*}}], :lifetime.set {}>{{.*}}: !co.routine)
     await load(ptr)
+
 
 # CHECK-LABEL: lit.func @"coroutine
 # CHECK-SAME: [mut [[LT:.*]]](?, %__result__: !lit.ref<!Int, mut [[LT]]> byref_result) async -> !kgen.none
@@ -1159,6 +1165,18 @@ async fn mem_raises() raises -> Int:
     var coro = mem_raises()
 
 
+# CHECK-LABEL: lit.func @"async_closure_capture
+fn async_closure_capture(x: String):
+    @parameter
+    # CHECK: lit.func *"capture_it
+    async fn capture_it():
+        _ = x
+
+    # CHECK: Coroutine<{{.*}}{imm *"x`
+    # CHECK-NEXT: lit.async.call[{{.*}}capture_it
+    var coro = capture_it()
+
+
 ##===----------------------------------------------------------------------===##
 # Nested Functions
 ##===----------------------------------------------------------------------===##
@@ -1174,9 +1192,9 @@ fn topLevelFunction() -> Int:
         # CHECK-NEXT: lit.ref.load %a
         return a
 
-    # CHECK: lit.alias.decl *"b{{.*}}": !lit.signature<() capturing -> !Int> = <*"nestedFunction()">
+    # CHECK: lit.alias.decl *"b{{.*}}": !lit.signature<:{mut *"a`"}:() capturing -> !Int> = <*"nestedFunction()">
     alias b = nestedFunction
-    # CHECK: call[!lit.signature<() capturing -> !Int>: *"nestedFunction()"]()
+    # CHECK: call[!lit.signature<:{mut *"a`"}:() capturing -> !Int>: *"nestedFunction()"]()
     return nestedFunction()
 
 
@@ -1192,9 +1210,9 @@ struct SomeStruct:
             # CHECK-NEXT: lit.ref.load %a
             return a
 
-        # CHECK: lit.alias.decl *"b{{.*}}": !lit.signature<() capturing -> !Int> = <*"nestedFunction()">
+        # CHECK: lit.alias.decl *"b{{.*}}": !lit.signature<:{mut [[A_LT:\*"a`.*"]]}:() capturing -> !Int> = <*"nestedFunction()">
         alias b = nestedFunction
-        # CHECK: call[!lit.signature<() capturing -> !Int>: *"nestedFunction()"]()
+        # CHECK: call[!lit.signature<:{mut [[A_LT]]}:() capturing -> !Int>: *"nestedFunction()"]()
         return nestedFunction()
 
 

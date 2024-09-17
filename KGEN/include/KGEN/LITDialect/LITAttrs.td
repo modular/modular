@@ -270,6 +270,9 @@ def LIT_FnMetadataAttr : LITAttr<"FnMetadata", "fn_metadata",
       return getParamListAttrs().getDefaultKwOnly();
     }
 
+    /// Get the metadata with new capture lifetimes.
+    FnMetadataAttr getWithCaptureLifetimes(TypedAttr lifetimes);
+
     /// Return true if the signature has a variadic argument.
     bool hasVarArgs() const;
     /// Return true if the signature has a variadic pack argument.

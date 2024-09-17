@@ -268,6 +268,8 @@ def KGEN_SignatureType : KGENType<"Signature", "signature", [
     SignatureType getWithFnEffects(FnEffects effect);
     /// Return this signature type with the value signature replaced.
     SignatureType getWithValuesReplaced(FunctionType fnType);
+    /// Return this signature with a new metadata attribute.
+    SignatureType getWithMetadata(FnMetadataAttrInterface metadata);
 
     /// Determine whether an argument with the given input convention expects to
     /// have a pointer or reference type.

@@ -431,7 +431,8 @@ getCallOpEffects(Operation &op,
   // lifetime accesses.
   {
     SmallVector<TypedAttr> lifetimesUsedByTypes =
-        lifetimeFinder.findLifetimesInTypes(typesAccessibleByCallee);
+        lifetimeFinder.findLifetimesIn(typesAccessibleByCallee,
+                                       signature.getCaptureLifetimes());
     lifetimes.append(lifetimesUsedByTypes.begin(), lifetimesUsedByTypes.end());
   }
 
@@ -685,7 +686,8 @@ scanForLifetimes(TypeOrAttr pvalue,
 /// returning them as a list.  This typically will return ParamRefAttr's or
 /// ImmutCast(ParamRefAttr)'s if a mutable lifetime is accessed immutably.
 SmallVector<TypedAttr>
-CachedLifetimeFinder::findLifetimesInTypes(ArrayRef<Type> types) {
+CachedLifetimeFinder::findLifetimesIn(ArrayRef<Type> types,
+                                      ArrayRef<TypedAttr> captures) {
   SmallVector<TypedAttr> results;
 
   // Scan each type, accumulating the results; the set avoid revisiting nodes
@@ -693,5 +695,7 @@ CachedLifetimeFinder::findLifetimesInTypes(ArrayRef<Type> types) {
   DenseMap<const void *, bool> visited;
   for (Type type : types)
     scanForLifetimes(type, typesAndAttrsWithoutLifetimes, visited, results);
+  for (TypedAttr capture : captures)
+    scanForLifetimes(capture, typesAndAttrsWithoutLifetimes, visited, results);
   return results;
 }

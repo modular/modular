@@ -6,17 +6,16 @@
 
 #include "KGEN/MojoParser/DeclResolver.h"
 
-#include "MojoUtils.h"
-#include "Signatures.h"
-#include "Traits.h"
-
 #include "ClosureEmitter.h"
 #include "DLValues.h"
 #include "ExprEmitter.h"
 #include "ExprNodes.h"
 #include "KGEN/MojoParser/ASTDecl.h"
+#include "MojoUtils.h"
 #include "ParserBase.h"
+#include "Signatures.h"
 #include "StructEmitter.h"
+#include "Traits.h"
 
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/KGENDialect/KGENParameters.h"
@@ -29,6 +28,7 @@
 
 #include "mlir/IR/ImplicitLocOpBuilder.h"
 #include "mlir/Transforms/RegionUtils.h"
+#include "llvm/ADT/ScopeExit.h"
 #include "llvm/ADT/TypeSwitch.h"
 #include "llvm/Support/SourceMgr.h"
 
@@ -974,45 +974,60 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
        llvm::zip(fnSignature.parsedArgs, funcOp.getBody()->getArguments()))
     bbArg.setLoc(shared.diags.translateLocation(parsedArg.loc));
 
-  // Upon fully resolving a nonparametric closure, immediately materialize it
-  // as a runtime value. It cannot be used as a parameter.
-  if (funcOp->getParentOfType<LIT::FuncOp>()) {
-    if (!signature.isCapturing()) {
-      // Fully resolve the body so we can swap the IR value of the decl. Later
-      // on, we will need this to determine the capture signature.
-      decl.resolvedness = DeclResolvedness::fully;
-      if (failed(resolveBody(funcOp, lexer, decl)))
-        return failure();
+  auto notify = llvm::make_scope_exit(
+      [&] { shared.notifyListenerOnFunctionDecl(decl, identifierLoc); });
 
-      // If the function doesn't actually capture anything, don't demote it to
-      // a runtime value.
-      if (signature.isEscaping() ||
-          !shared.getCaptureRangeInScope(decl).empty()) {
-        if (!paramList.paramDeclAttrs.empty())
-          return emitError(funcOp.getLoc(),
-                           "TODO: closures cannot have parameters");
+  // Upon fully resolving a nonparametric closure, immediately materialize it as
+  // a runtime value. It cannot be used as a parameter.
+  if (!funcOp->getParentOfType<LIT::FuncOp>())
+    return success();
 
-        // Emit closure structures necessary for instantiating an escaping
-        // closure
-        funcOp.setSignature(
-            signature.getWithFnEffects(signature.getFnEffects().setEscaping()));
-        MLValue instance = emitClosureInstance(shared, decl, decl.getLoc());
-        if (!instance)
-          return failure();
-        decl.setIRValue(instance);
-      } else {
-        funcOp.setParamDeclAttr(
-            ParamDeclAttr::get(funcOp.getSymNameAttr(), signature));
-        funcOp.removeSymNameAttr();
-      }
-    } else {
-      funcOp.setParamDeclAttr(
-          ParamDeclAttr::get(funcOp.getSymNameAttr(), signature));
-      funcOp.removeSymNameAttr();
-    }
+  // Fully resolve the body so we can swap the IR value of the decl. Later on,
+  // we will need this to determine the capture signature.
+  decl.resolvedness = DeclResolvedness::fully;
+  if (failed(resolveBody(funcOp, lexer, decl)))
+    return failure();
+
+  // If this is a `@parameter` closure, attach the capture lifetimes.
+  auto captures = shared.getCaptureRangeInScope(decl);
+  if (signature.isCapturing()) {
+    SmallVector<Type> captureTypes;
+    for (Capture &cap : llvm::make_second_range(captures))
+      captureTypes.push_back(cap.getValue().getType());
+
+    SmallVector<TypedAttr> lifetimes =
+        shared.cachedLifetimeFinder.findLifetimesIn(captureTypes);
+    signature = signature.getWithMetadata(
+        signature.getMetadata().getWithCaptureLifetimes(
+            LifetimeSetAttr::get(getContext(), lifetimes)));
+    funcOp.setSignature(signature);
+
+    funcOp.setParamDeclAttr(
+        ParamDeclAttr::get(funcOp.getSymNameAttr(), signature));
+    funcOp.removeSymNameAttr();
+    return success();
   }
 
-  shared.notifyListenerOnFunctionDecl(decl, identifierLoc);
+  // If the function doesn't actually capture anything, don't demote it to a
+  // runtime value.
+  if (!signature.isEscaping() && captures.empty()) {
+    funcOp.setParamDeclAttr(
+        ParamDeclAttr::get(funcOp.getSymNameAttr(), signature));
+    funcOp.removeSymNameAttr();
+    return success();
+  }
+
+  if (!paramList.paramDeclAttrs.empty())
+    return emitError(funcOp.getLoc(), "TODO: closures cannot have parameters");
+
+  // Emit closure structures necessary for instantiating an escaping closure
+  funcOp.setSignature(
+      signature.getWithFnEffects(signature.getFnEffects().setEscaping()));
+  MLValue instance = emitClosureInstance(shared, decl, decl.getLoc());
+  if (!instance)
+    return failure();
+  decl.setIRValue(instance);
+
   return success();
 }
 
