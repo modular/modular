@@ -309,7 +309,8 @@ bool processStructExecuteFunc(ModuleOp moduleOp,
   // Handle extra parameters we allow on execute:
   for (auto param : func.getInputParams()) {
     if (param.getName() == kMOGGSynchronousParameterName) {
-      func->setAttr(builder.getStringAttr(kMOGGSynchronousLabel), param);
+      func->setDiscardableAttr(builder.getStringAttr(kMOGGSynchronousLabel),
+                               param);
     } else if (param.getName() == kMOGGTargetParameterName) {
       func->setAttr(builder.getStringAttr(kMOGGTargetLabel), param);
     }
