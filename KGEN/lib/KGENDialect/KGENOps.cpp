@@ -496,14 +496,16 @@ LogicalResult FuncOp::verify() {
 
 static ParseResult parseExternGenerator(OpAsmParser &p, TypeAttr &signature,
                                         TypeAttr &functionType,
-                                        ParamDeclArrayAttr &inputParams,
-                                        ParamDeclArrayAttr &resultParams) {
+                                        ParamDeclArrayAttr &inputParams) {
   SmallVector<OpAsmParser::Argument> args;
   FunctionType funcType;
   SignatureType sigType;
+  ParamDeclArrayAttr resultParams;
   if (parseFunctionSignature(p, args, inputParams, resultParams, funcType,
                              sigType))
     return failure();
+  if (!resultParams.empty())
+    return p.emitError(p.getCurrentLocation(), "invalid result parameters");
   functionType = TypeAttr::get(funcType);
   signature = TypeAttr::get(sigType);
   return success();
@@ -511,9 +513,9 @@ static ParseResult parseExternGenerator(OpAsmParser &p, TypeAttr &signature,
 
 static void printExternGenerator(OpAsmPrinter &p, Operation *op,
                                  TypeAttr signature, TypeAttr functionType,
-                                 ParamDeclArrayAttr inputParams,
-                                 ParamDeclArrayAttr resultParams) {
-  printFunctionSignature(p, /*region=*/nullptr, inputParams, resultParams,
+                                 ParamDeclArrayAttr inputParams) {
+  printFunctionSignature(p, /*region=*/nullptr, inputParams,
+                         /*resultParams=*/{},
                          cast<FunctionType>(functionType.getValue()),
                          cast<SignatureType>(signature.getValue()));
 }

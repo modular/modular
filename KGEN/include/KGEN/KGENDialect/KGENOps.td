@@ -222,7 +222,6 @@ def KGEN_ExternGeneratorOp : KGENOp<"extern.generator", [
                        TypeAttrOf<KGEN_SignatureType>:$signature,
                        TypeAttrOf<FunctionType>:$functionType,
                        KGEN_ParamDeclArrayAttr:$inputParams,
-                       KGEN_ParamDeclArrayAttr:$resultParams,
                        KGEN_ExportKindAttr:$exportKind,
                        OptionalAttr<FlatSymbolRefAttr>:$preCompiledModuleRef);
   let regions = (region SizedRegion<0>:$body);
@@ -230,13 +229,13 @@ def KGEN_ExternGeneratorOp : KGENOp<"extern.generator", [
   let extraClassDeclaration = [{
     InlineLevel getInlineLevel() { return InlineLevel::Never; }
     Region *getCallableRegion() { return &getBody(); }
+    ArrayRef<ParamDeclAttr> getResultParams() { return {}; }
   }];
 
   let assemblyFormat = [{
     `` custom<SymbolExport>($exportKind) $sym_name ``
-    custom<ExternGenerator>($signature, $functionType, $inputParams,
-                            $resultParams) attr-dict-with-keyword
-    ($body^)?
+    custom<ExternGenerator>($signature, $functionType, $inputParams)
+    attr-dict-with-keyword ($body^)?
   }];
 }
 
