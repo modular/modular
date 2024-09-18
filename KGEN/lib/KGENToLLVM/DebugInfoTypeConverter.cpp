@@ -116,9 +116,12 @@ static DIType buildDebugTypeFromDType(MLIRContext *ctx,
     return buildIntFpDebugType<DIBasicUIntType>(ctx, targetInfo, dtype, 128,
                                                 64);
 
-  case DType::f8:
+  case DType::f8e5m2:
+  case DType::f8e4m3:
+  case DType::f8e3m4:
     return buildIntFpDebugType<DIBasicFloatType>(ctx, targetInfo, dtype, 8, 8);
   case DType::f16:
+  case DType::bf16:
     return buildIntFpDebugType<DIBasicFloatType>(ctx, targetInfo, dtype, 16,
                                                  16);
   case DType::f32:
@@ -130,9 +133,6 @@ static DIType buildDebugTypeFromDType(MLIRContext *ctx,
   case DType::f128:
     return buildIntFpDebugType<DIBasicFloatType>(ctx, targetInfo, dtype, 128,
                                                  64);
-  case DType::bf16:
-    return buildIntFpDebugType<DIBasicFloatType>(ctx, targetInfo, dtype, 16,
-                                                 16);
   case DType::f24:
     return buildIntFpDebugType<DIBasicFloatType>(ctx, targetInfo, dtype, 24,
                                                  32);

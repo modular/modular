@@ -34,7 +34,7 @@ kgen.generator @simd_constant<size>() {
 
 kgen.generator @simd_constant<size>() {
   // expected-error @below {{only integer, float, bool, and index dtype constants can be parsed}}
-  %0 = kgen.param.constant: scalar<f8> = <<0>>
+  %0 = kgen.param.constant: scalar<f24> = <<0>>
   kgen.return
 }
 

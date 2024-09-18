@@ -51,14 +51,21 @@ LogicalResult UnionAttr::verify(function_ref<InFlightDiagnostic()> emitError,
 //===----------------------------------------------------------------------===//
 
 bool DTypeValue::isValidFloatDType(KGENDType dtype) {
-  return dtype.isFloat() &&
-         !(dtype == DType::f8 || dtype == DType::f24 || dtype == DType::tf32);
+  return dtype.isFloat() && !(dtype == DType::f24 || dtype == DType::tf32);
 }
 
 const llvm::fltSemantics &DTypeValue::getFloatSemantics(KGENDType dtype) {
   switch (dtype.getValue()) {
+  case DType::f8e5m2:
+    return APFloat::Float8E5M2();
+  case DType::f8e4m3:
+    return APFloat::Float8E4M3();
+  case DType::f8e3m4:
+    return APFloat::Float8E3M4();
   case DType::f16:
     return APFloat::IEEEhalf();
+  case DType::bf16:
+    return APFloat::BFloat();
   case DType::tf32:
     return APFloat::FloatTF32();
   case DType::f32:
@@ -67,12 +74,9 @@ const llvm::fltSemantics &DTypeValue::getFloatSemantics(KGENDType dtype) {
     return APFloat::IEEEdouble();
   case DType::f128:
     return APFloat::IEEEquad();
-  case DType::bf16:
-    return APFloat::BFloat();
   case DType::f80:
     return APFloat::x87DoubleExtended();
 
-  case DType::f8:
   case DType::f24:
   default:
     llvm_unreachable("unknown float dtype");
