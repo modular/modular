@@ -3,7 +3,7 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-# REQUIRES: linux
+# REQUIRES: system-linux
 # RUN: %mojo-no-debug %s | FileCheck %s
 
 from math import iota
