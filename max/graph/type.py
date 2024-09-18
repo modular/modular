@@ -373,7 +373,6 @@ class Shape(list[Dim]):
 StaticShape = list[StaticDim]
 
 DimLike = Union[int, str, Dim, np.integer]
-SymbolicDimLike = Union[str, SymbolicDim]
 ShapeLike = Iterable[DimLike]
 
 

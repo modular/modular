@@ -12,14 +12,14 @@ from collections.abc import Iterable
 from max.mlir.dialects import rmo
 
 from ..graph import Graph
-from ..type import Shape, ShapeLike, SymbolicDimLike, TensorType
+from ..type import DimLike, Shape, ShapeLike, TensorType
 from ..value import TensorValue
 
 
 def broadcast_to(
     x: TensorValue,
     shape: TensorValue | ShapeLike,
-    out_dims: Iterable[SymbolicDimLike] | None = None,
+    out_dims: Iterable[DimLike] | None = None,
 ) -> TensorValue:
     """Broadcasts a symbolic tensor.
 
