@@ -2984,6 +2984,22 @@ AnyValue FunctionTypeNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   if (!signature)
     return {}; // Error already emitted.
 
+  // If the syntax specifies a capture lifetime set, emit it and bind it to the
+  // signature type.
+  if (lifetimeExpr) {
+    PValue lifetime = emitter.emitExprPValue(lifetimeExpr, EC_Lifetime);
+    if (!lifetime)
+      return {}; // Error already emitted.
+    if (!isa<LifetimeSetType>(lifetime.getType())) {
+      emitter.emitError(lifetimeExpr->getLoc())
+          << "closure capture lifetime set has unexpected type "
+          << lifetime.getType() << lifetimeExpr->getRange();
+      return {};
+    }
+    signature = signature.getWithMetadata(
+        signature.getMetadata().getWithCaptureLifetimes(lifetime));
+  }
+
   // Set the value of the dummy scope to the generated signature so that we can
   // still resolve information about it in tools.
   dummyScope.setIRValue(PValue(signature));

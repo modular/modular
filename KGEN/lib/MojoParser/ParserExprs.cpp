@@ -998,6 +998,14 @@ ParseResult ExprParser::parseFunctionType(ExprNode *&result) {
                                               ArgListKind::kFnTypeArgList))
     return failure();
 
+  // Parse the capture lifetime set if present.
+  ExprNode *lifetimeExpr = nullptr;
+  if (consumeIf(Token::l_square)) {
+    if (ParserBase::parseExpression(lifetimeExpr, stmtIndent) ||
+        parseToken(Token::r_square, "expected ']' in function lifetimes"))
+      return failure();
+  }
+
   // Parse the result type.
   SMLoc endLoc = getToken().getEndLoc();
   ParsedArgument resultArg;
@@ -1020,8 +1028,8 @@ ParseResult ExprParser::parseFunctionType(ExprNode *&result) {
   result = alloc<FunctionTypeNode>(
       baseLoc, copyArrayRef<ParsedArgument>(paramList.params),
       copyArrayRef<ParsedArgument>(fnSignature.parsedArgs),
-      copyArrayRef<ParsedArgument>(resultArg), fnSignature.effects, endLoc,
-      isDef);
+      copyArrayRef<ParsedArgument>(resultArg), fnSignature.effects,
+      lifetimeExpr, endLoc, isDef);
   return success();
 }
 
