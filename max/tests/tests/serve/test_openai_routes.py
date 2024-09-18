@@ -12,6 +12,7 @@ import sseclient
 from fastapi.testclient import TestClient
 from max.serve.api_server import fastapi_app
 from max.serve.config import APIType, Settings
+from max.serve.debug import DebugSettings
 from max.serve.mocks.mock_api_requests import simple_openai_request
 from max.serve.schemas.openai import (
     CreateChatCompletionResponse,
@@ -22,7 +23,8 @@ from max.serve.schemas.openai import (
 @pytest.fixture
 def app():
     settings = Settings(api_types=[APIType.OPENAI])
-    return fastapi_app(settings)
+    debug_settings = DebugSettings()
+    return fastapi_app(settings, debug_settings)
 
 
 # TODO: Update tests below when you add model configuration
