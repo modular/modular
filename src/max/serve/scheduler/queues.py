@@ -36,20 +36,20 @@ class BatchMultiplexQueue(Generic[BatchKey]):
     out_queues: dict[BatchKey, Queue] = field(default_factory=dict)
 
     @contextlib.asynccontextmanager
-    async def open_channel(self, id: BatchKey, data: dict):
-        self.out_queues[id] = state = Queue()
-        await self.in_queue.put((id, data))
+    async def open_channel(self, req_id: BatchKey, data: dict):
+        self.out_queues[req_id] = state = Queue()
+        await self.in_queue.put((req_id, data))
         try:
             yield state
         finally:
-            del self.out_queues[id]
+            del self.out_queues[req_id]
 
-    async def submit(self, id: BatchKey, data):
-        async with self.open_channel(id, data) as queue:
+    async def submit(self, req_id: BatchKey, data):
+        async with self.open_channel(req_id, data) as queue:
             return await queue.get()
 
-    async def stream(self, id: BatchKey, data):
-        async with self.open_channel(id, data) as queue:
+    async def stream(self, req_id: BatchKey, data):
+        async with self.open_channel(req_id, data) as queue:
             while (item := await queue.get()) is not STOP_STREAM:
                 yield item
 
@@ -58,8 +58,8 @@ class BatchMultiplexQueue(Generic[BatchKey]):
     ):
         while len(batch) < max_batch_size:
             try:
-                id, data = self.in_queue.get_nowait()
-                batch[id] = data
+                req_id, data = self.in_queue.get_nowait()
+                batch[req_id] = data
             except asyncio.QueueEmpty:
                 return
 
@@ -76,35 +76,45 @@ class BatchMultiplexQueue(Generic[BatchKey]):
         return cancelled
 
     async def dynamic_batching_worker(self, forward, max_batch_size: int):
-        while True:
-            batch = {}
-            self.fill_batch_nowait(batch, max_batch_size)
-            if batch:
-                results = await forward(batch)
-                await self.respond(results)
+        try:
+            while True:
+                batch = {}
+                self.fill_batch_nowait(batch, max_batch_size)
+                if len(batch) > 0:
+                    results = await forward(batch)
+                    await self.respond(results)
 
-            await asyncio.sleep(0)
+                await asyncio.sleep(0)
+        except asyncio.CancelledError as ce:
+            # TODO plumb logger in here
+            print(f"Dynamic batching worker cancelled: {ce}")
+            raise
 
     async def continuous_batching_worker(self, forward, max_batch_size: int):
         batch = {}
-        while True:
-            self.fill_batch_nowait(batch, max_batch_size)
-            if batch:
-                next_result = await forward(batch)
-                cancelled = await self.respond(next_result)
-                # Remove batches which meet one of the following criteria.
-                # 1. Cancelled: Batches which no longer have a output queue.
-                # Output queues can be removed by consumers when the connection
-                # closes or when they are no longer interested in more outputs.
-                # 2. Completed: Batches with results which are deemed complete.
-                # The pipeline signals to the server that the request is complete
-                # by not returning a result for it. We immediately remove it from
-                # the batch from further forward passes. If we defer this to
-                # upstream, then we will do at least one more forward pass before
-                # realizing that the upstream queue is closed.
-                completed = batch.keys() - next_result.keys()
-                for id in cancelled | completed:
-                    self.out_queues[id].put_nowait(STOP_STREAM)
-                    del batch[id]
+        try:
+            while True:
+                self.fill_batch_nowait(batch, max_batch_size)
+                if len(batch) > 0:
+                    next_result = await forward(batch)
+                    cancelled = await self.respond(next_result)
+                    # Remove batches which meet one of the following criteria.
+                    # 1. Cancelled: Batches which no longer have a output queue.
+                    # Output queues can be removed by consumers when the connection
+                    # closes or when they are no longer interested in more outputs.
+                    # 2. Completed: Batches with results which are deemed complete.
+                    # The pipeline signals to the server that the request is complete
+                    # by not returning a result for it. We immediately remove it from
+                    # the batch from further forward passes. If we defer this to
+                    # upstream, then we will do at least one more forward pass before
+                    # realizing that the upstream queue is closed.
+                    completed = batch.keys() - next_result.keys()
+                    for req_id in cancelled | completed:
+                        self.out_queues[req_id].put_nowait(STOP_STREAM)
+                        del batch[req_id]
 
-            await asyncio.sleep(0)
+                await asyncio.sleep(0)
+        except asyncio.CancelledError as ce:
+            # TODO plumb logger in here
+            print(f"Continuous batching worker cancelled: {ce}")
+            raise

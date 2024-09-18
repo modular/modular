@@ -45,9 +45,7 @@ class TokenGeneratorPipeline(Generic[Context]):
     )
     _background_tasks: set = field(default_factory=set)
 
-    # TODO(SERV-180) - Temporarily setting batch size to 1 to unblock benchmarking
-    # as the underlying llama3 pipeline currently only support BS=1.
-    max_batch_size: int = 1
+    max_batch_size: int = 16
 
     async def next_token(
         self,
@@ -74,14 +72,28 @@ class TokenGeneratorPipeline(Generic[Context]):
             self.context_queue.dynamic_batching_worker(
                 self.next_token,
                 self.max_batch_size,
-            )
+            ),
+            name="dynamic_batching_worker",
         )
         token_generator = loop.create_task(
             self.tokens_queue.continuous_batching_worker(
                 self.model.next_token,
                 max_batch_size=self.max_batch_size,
-            )
+            ),
+            name="continuous_batching_worker",
         )
+
+        def log_task_done(task: asyncio.Task):
+            # TODO - pipe in a logger to TokenGeneratorPipeline and log here
+            # TODO - should gracefully shut down here.
+            print(f"task completed {task}!")
+            for t in self._background_tasks:
+                if not t.done():
+                    t.cancel("terminating task")
+
+        context_encoder.add_done_callback(log_task_done)
+        token_generator.add_done_callback(log_task_done)
+
         self._background_tasks |= {context_encoder, token_generator}
         return self
 

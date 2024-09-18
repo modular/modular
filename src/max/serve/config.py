@@ -26,7 +26,7 @@ class RunnerType(Enum):
 
 class Settings(BaseSettings):
     api_types: list[APIType] = Field(
-        description="List of exposed API types.", default=[]
+        description="List of exposed API types.", default=[APIType.OPENAI]
     )
     runner_type: RunnerType = Field(
         description="Type of execution runner.", default=RunnerType.PYTORCH
