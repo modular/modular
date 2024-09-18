@@ -464,12 +464,6 @@ static void inlineGeneratorCall(GeneratorOp caller, CallOp call,
           newInputDecls.emplace_back(mangler.mangleDecl(decl, needsMangling));
         regionDecl.setInputParams(newInputDecls);
         newDecls.append(newInputDecls);
-
-        SmallVector<ParamDeclAttr> newResDecls;
-        for (ParamDeclAttr decl : regionDecl.getResultParams())
-          newResDecls.emplace_back(mangler.mangleDecl(decl, needsMangling));
-        regionDecl.setResultParams(newResDecls);
-        newDecls.append(newResDecls);
       } else if (auto paramFor = dyn_cast<ParamForOp>(cloned)) {
         ParamDeclAttr newDecl =
             mangler.mangleDecl(paramFor.getParamDecl(), needsMangling);

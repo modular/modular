@@ -154,21 +154,25 @@ LogicalResult ParamDeclareOp::verify() {
 // ParamDeclareRegionOp
 //===----------------------------------------------------------------------===//
 
-static ParseResult parseRegionDeclaration(
-    OpAsmParser &p, ParamDeclAttr &paramDecl, ParamDeclArrayAttr &inputParams,
-    ParamDeclArrayAttr &resultParams, TypeAttr &functionType,
-    TypeAttr &signature, InlineLevelAttr &inlineLevel, Region &body) {
+static ParseResult
+parseRegionDeclaration(OpAsmParser &p, ParamDeclAttr &paramDecl,
+                       ParamDeclArrayAttr &inputParams, TypeAttr &functionType,
+                       TypeAttr &signature, InlineLevelAttr &inlineLevel,
+                       Region &body) {
   StringAttr paramName;
   SmallVector<OpAsmParser::Argument> args;
   FunctionType functionTypeValue;
   SignatureType signatureType;
   llvm::SMLoc bodyLoc;
+  ParamDeclArrayAttr resultParams;
   if (parseParamName(p, paramName) || p.parseEqual() ||
       parseFunctionSignature(p, args, inputParams, resultParams,
                              functionTypeValue, signatureType) ||
       parseOptionalInline(p, inlineLevel) || p.getCurrentLocation(&bodyLoc) ||
       p.parseRegion(body, args))
     return failure();
+  if (!resultParams.empty())
+    return p.emitError(p.getCurrentLocation(), "invalid result parameters");
 
   // Form the Signature.
   SmallVector<Type> argTypes;
@@ -183,12 +187,11 @@ static ParseResult parseRegionDeclaration(
 static void printRegionDeclaration(OpAsmPrinter &p, Operation *op,
                                    ParamDeclAttr paramDecl,
                                    ParamDeclArrayAttr inputParams,
-                                   ParamDeclArrayAttr resultParams,
                                    TypeAttr functionType, TypeAttr signature,
                                    InlineLevelAttr inlineLevel, Region &body) {
   printParamName(p, paramDecl.getName());
   p << " = ";
-  printFunctionSignature(p, &body, inputParams, resultParams,
+  printFunctionSignature(p, &body, inputParams, {},
                          cast<FunctionType>(functionType.getValue()),
                          cast<SignatureType>(signature.getValue()));
   printOptionalInline(p, inlineLevel.getValue());
