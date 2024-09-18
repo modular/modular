@@ -177,14 +177,8 @@ def test_matmul_dimension_mismatch():
     matmul_constant_value._to_buffer().fill(0.15)
     var matmul_constant = graph.constant(matmul_constant_value)
 
-    with assert_raises(
-        contains=(
-            "Matrix multiplication input lhs (shape [2, x]) dimension at axis"
-            " -1 (value x) must match input rhs (shape [2, 6]) dimension at"
-            " axis -2 (value 2)"
-        )
-    ):
-        _ = ops.matmul(graph[0], matmul_constant)
+    graph.output(ops.matmul(graph[0], matmul_constant))
+    graph.verify()
 
 
 def test_matmul_broadcast_fail():
@@ -194,8 +188,8 @@ def test_matmul_broadcast_fail():
     matmul_constant_value._to_buffer().fill(0.15)
     var matmul_constant = graph.constant(matmul_constant_value)
 
-    with assert_raises(contains="are neither equivalent nor broadcastable"):
-        _ = ops.matmul(graph[0], matmul_constant)
+    graph.output(ops.matmul(graph[0], matmul_constant))
+    graph.verify()
 
 
 def test_matmul_scalar_unsupported():

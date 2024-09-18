@@ -111,6 +111,9 @@ fn test_broadcast_to() raises:
     var broadcast3 = g[1].broadcast_to("x", 7)
     assert_true(broadcast3.shape() == List[Dim]("x", 7))
 
+    var broadcast4 = g[1].broadcast_to("y", 1)
+    assert_true(broadcast4.shape() == List[Dim]("y", 1))
+
 
 fn test_broadcast_to_error() raises:
     var g = Graph(
@@ -125,9 +128,6 @@ fn test_broadcast_to_error() raises:
 
     with assert_raises(contains="must be either 1 or equal to"):
         _ = g[0].broadcast_to(1, 1, 2)
-
-    with assert_raises(contains="must be either 1 or equal to"):
-        _ = g[1].broadcast_to("y", 1)
 
 
 fn test_rebind() raises:
