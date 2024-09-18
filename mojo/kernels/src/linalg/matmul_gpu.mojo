@@ -1132,6 +1132,7 @@ def multistage_gemm[
             elementwise_lambda_fn,
         ](c, work_space, ctx)
 
+        _ = work_space_data^
         return
 
     # Dispatch w/o split K
