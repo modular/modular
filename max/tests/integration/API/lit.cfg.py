@@ -31,7 +31,7 @@ tool_dirs = [
     config.mlir_tools_dir,
     config.llvm_tools_dir,
 ]
-tools = ["modular-api-executor", "mojo", "mt", "is-cuda-available"]
+tools = ["modular-api-executor", "mojo", "mt"]
 llvm_config.add_tool_substitutions(tools, tool_dirs)
 
 multi_tenancy_api_models_dir = (

@@ -6,7 +6,6 @@ modular_py_test(
     data = [
         "//KGEN:CompilerRT",
         "//ModularFramework/tools/mof",
-        "//Runtime/tools/is-cuda-available",
         "//SDK/integration-test:test_user_op",
         "//SDK/test/API/graph/python/pytests/testdata",
         "@llvm-project//compiler-rt:orc_rt",
@@ -15,7 +14,6 @@ modular_py_test(
         "BAZEL": "true",
         "CUSTOM_OPS_PATH": "$(location //SDK/integration-test:test_user_op)",
         "MODULAR_PATH": ".",
-        "MODULAR_IS_CUDA_AVAILABLE": "false",  # TODO: Run tests on GPU if they get re-enabled
         "GRAPH_TESTDATA": "SDK/test/API/graph/python/pytests/testdata",
     },
     mojo_deps = [

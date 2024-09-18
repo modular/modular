@@ -14,7 +14,6 @@ modular_py_test(
         "//ONNX/tools/onnx:monnx",
         "//PyTorch:TorchRuntimePlugins",
         "//PyTorch/tools/torch:mtorch",
-        "//Runtime/tools/is-cuda-available",
         "//SDK/integration-test:counter_ops",
         "//SDK/integration-test:test_user_op",
         "//SDK/integration-test/EngineAPI:inputs",
@@ -27,7 +26,6 @@ modular_py_test(
         "MODULAR_COUNTER_OPS_PATH": "$(location //SDK/integration-test:counter_ops)",
         "CUSTOM_OPS_PATH": "$(location //SDK/integration-test:test_user_op)",
         "MODULAR_PATH": ".",
-        "MODULAR_IS_CUDA_AVAILABLE": "$(location //Runtime/tools/is-cuda-available)",
         "GRAPH_TESTDATA": "SDK/test/API/graph/python/pytests/testdata",
     },
     mojo_deps = [

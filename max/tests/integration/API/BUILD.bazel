@@ -76,7 +76,6 @@ lit_tests(
     tools = [
         "//GenericML/tools/mt",
         "//KGEN/tools/mojo",
-        "//Runtime/tools/is-cuda-available",
         "//SDK/tools/modular-api-executor",
     ],
     deps = [
