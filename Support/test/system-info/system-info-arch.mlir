@@ -1,4 +1,4 @@
-// REQUIRES: apple-m1
+// REQUIRES: system-darwin
 
 // RUN: system-info --march arm64 --mcpu apple-m1 | FileCheck %s --check-prefix=CHECK-M1
 // RUN: system-info --march arm64 --mcpu apple-m2 | FileCheck %s --check-prefix=CHECK-M2

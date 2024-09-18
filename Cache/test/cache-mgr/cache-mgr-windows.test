@@ -3,7 +3,7 @@
 # This file is only run on windows targets.
 #
 # ===----------------------------------------------------------------------=== #
-# REQUIRES: windows
+# REQUIRES: system-windows
 
 # RUN: cache-mgr -base-dir=%t -input="%S/Inputs/some_file_windows.txt" | FileCheck %s --check-prefix=PUT
 # RUN: cache-mgr -base-dir=%t -input="tV5NLrcFHYiZClV58DGhuHgoxuIfxTgClA4ngQbC6EI=" | FileCheck %s --check-prefix=GET

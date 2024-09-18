@@ -6,7 +6,6 @@
 
 from lit.llvm import llvm_config
 from lit.llvm.subst import ToolSubst, FindTool
-import platform
 
 config.name = "AsyncRT"
 
@@ -48,9 +47,3 @@ tools = [
 ]
 
 llvm_config.add_tool_substitutions(tools, tool_dirs)
-
-if platform.system() == "Windows":
-    config.available_features.add("windows")
-
-if platform.system() == "Darwin" and platform.processor() == "arm":
-    config.available_features.add("apple-m1")
