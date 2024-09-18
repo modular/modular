@@ -17,11 +17,15 @@ from functools import partial
 from typing import AsyncContextManager, Sequence
 
 from fastapi import FastAPI
+from pydantic_settings import CliSettingsSource
+from uvicorn import Config, Server
+
 from max.serve.config import APIType, Settings, api_prefix
 from max.serve.pipelines.deps import all_pipelines
 from max.serve.router import kserve_routes, openai_routes
-from pydantic_settings import CliSettingsSource
-from uvicorn import Config, Server
+from max.serve.debug import register_debug, DebugSettings
+from max.serve.request import register_request
+
 
 ROUTES = {
     APIType.KSERVE: kserve_routes,
@@ -47,6 +51,7 @@ async def lifespan(pipelines: Sequence[AsyncContextManager], app: FastAPI):
 
 def fastapi_app(
     settings: Settings,
+    debug_settings: DebugSettings,
     pipelines: Sequence[AsyncContextManager] = all_pipelines(),
 ) -> FastAPI:
     app = FastAPI(lifespan=partial(lifespan, pipelines))
@@ -54,6 +59,11 @@ def fastapi_app(
         app.include_router(
             ROUTES[api_type].router, prefix=api_prefix(settings, api_type)
         )
+
+    register_debug(app, debug_settings)
+    register_request(app)
+    app.state.settings = settings
+    app.state.debug_settings = debug_settings
     return app
 
 
@@ -67,9 +77,14 @@ def parse_settings(parser: argparse.ArgumentParser) -> Settings:
     return Settings(_cli_settings_source=cli_settings(args=True))  # type: ignore
 
 
+def parse_debug_settings(parser: argparse.ArgumentParser) -> DebugSettings:
+    cli_settings = CliSettingsSource(DebugSettings, root_parser=parser)
+    return DebugSettings(_cli_settings_source=cli_settings(args=True))  # type: ignore
+
+
 async def main() -> None:
     parser = argparse.ArgumentParser()
-    app = fastapi_app(parse_settings(parser))
+    app = fastapi_app(parse_settings(parser), parse_debug_settings(parser))
     config = fastapi_config(app=app)
     server = Server(config)
     await server.serve()

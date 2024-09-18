@@ -10,8 +10,9 @@ import asyncio
 from dataclasses import dataclass, field
 from typing import AsyncGenerator, Generic, Optional, TypeVar
 
-from max.serve.scheduler.queues import BatchMultiplexQueue
 from transformers import AutoTokenizer
+
+from max.serve.scheduler.queues import BatchMultiplexQueue
 
 Context = TypeVar("Context")
 

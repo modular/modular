@@ -8,7 +8,6 @@ from functools import lru_cache
 from typing import AsyncContextManager
 
 from max.serve.pipelines.echo_gen import EchoTokenGenerator
-from transformers import AutoTokenizer
 from max.serve.pipelines.llm import TokenGeneratorPipeline
 from max.serve.pipelines.random import RandomTokenGenerator
 

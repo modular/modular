@@ -7,11 +7,12 @@
 
 import logging
 from datetime import datetime
-from typing import Annotated, Optional
-from uuid import uuid4
+from typing import Annotated
 
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import JSONResponse, Response
+from sse_starlette.sse import EventSourceResponse
+
 from max.serve.pipelines.deps import token_pipeline
 from max.serve.pipelines.llm import (
     TokenGeneratorPipeline,
@@ -29,7 +30,6 @@ from max.serve.schemas.openai import (
     CreateChatCompletionStreamResponse,
     Logprobs2,
 )
-from sse_starlette.sse import EventSourceResponse
 
 router = APIRouter(prefix="/v1")
 logger = logging.getLogger(__name__)
@@ -148,7 +148,7 @@ async def openai_chat_completions(
     request: Request,
     pipeline: Annotated[TokenGeneratorPipeline, Depends(token_pipeline)],
 ) -> Response:
-    request_id = str(uuid4())
+    request_id = request.state.request_id
     request_json = await request.json()
     completion_request = CreateChatCompletionRequest.model_validate(
         request_json
