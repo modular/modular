@@ -440,11 +440,6 @@ struct Trace[
             "KGEN_CompilerRT_TimeTraceProfilerSetCurrentId", NoneType
         ](0)
 
-    @always_inline
-    fn __exit__(self, e: Error) -> Bool:
-        self.__exit__()
-        return not e
-
     # WAR: passing detail_fn to __init__ causes internal compiler crash
     @staticmethod
     @always_inline
