@@ -10,6 +10,7 @@ Can also be used as a standalone binary to save out the golden values as a JSON.
 
 import asyncio
 import base64
+import uuid
 from json import JSONEncoder, JSONDecoder
 from pathlib import Path
 
@@ -85,21 +86,30 @@ def run_llama3(llama3: Llama3, prompts=PROMPTS, num_steps=NUM_STEPS):
         context = asyncio.run(llama3.new_context(prompt))
         llama3._reset_cache()
         inference_results = []
+
+        curr_req_id = uuid.uuid4()
         for _ in range(num_steps):
-            logits, k_cache, v_cache = llama3._execute(context)
-            next_token = logits.argmax(axis=-1)[-1]
-            inference_results.append(
-                {
-                    "next_token": next_token,
-                    # Only store `next_token_logits` otherwise the golden file
-                    # gets too big.
-                    "next_token_logits": logits[0, -1][next_token],
-                    "kv_cache": k_cache,
-                    "v_cache": v_cache,
-                }
+            logits_dict, k_cache_dict, v_cache_dict = llama3._execute(
+                {curr_req_id: context}
             )
-            # Update the context for the next input.
-            context.next_tokens = next_token.reshape(1, -1)
+            for req_id, logits in logits_dict.items():
+                next_token = logits.argmax(axis=-1)[-1]
+                inference_results.append(
+                    {
+                        "next_token": next_token,
+                        # TODO(MSDK-970): Rework this since we have refactored _execute() call to return a
+                        #       logits_dict.
+                        # # Only store `next_token_logits` otherwise the golden file
+                        # # gets too big.
+                        # "next_token_logits": logits[0, -1][next_token],
+                        "kv_cache": k_cache_dict[req_id],
+                        "v_cache": v_cache_dict[req_id],
+                    }
+                )
+
+                # Update the context for the next input.
+                context.next_tokens = next_token.reshape(1, -1)
+
         results.append({"prompt": prompt, "values": inference_results})
     return results
 
