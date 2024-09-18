@@ -609,8 +609,8 @@ def KGEN_ParamDeclareRegionOp : KGENOp<"param.declare.region", [
     TypeAttrOf<KGEN_SignatureType>:$signature,
     TypeAttrOf<FunctionType>:$functionType,
     KGEN_ParamDeclArrayAttr:$inputParams,
-    UnitAttr:$isolated,
-    KGEN_InlineLevelAttr:$inlineLevel
+    KGEN_InlineLevelAttr:$inlineLevel,
+    UnitAttr:$isolated
   );
   let regions = (region SizedRegion<1>:$bodyRegion);
 
