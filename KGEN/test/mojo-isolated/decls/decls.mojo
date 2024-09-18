@@ -1225,10 +1225,40 @@ fn closureParameter[func: fn () capturing -> __mlir_type.index]():
 # CHECK-LABEL: lit.func @"closureParameterCaptures
 # CHECK-SAME: func: !lit.signature<:lifetimes:() capturing -> !kgen.none>
 fn closureParameterCaptures[
-    lifetimes: __mlir_type.`!lit.lifetime.set`,
+    lifetimes: __mlir_type.`!lit.lifetime.set`, //,
     func: fn () capturing [lifetimes] -> None,
 ]():
     pass
+
+
+@register_passable("trivial")
+struct HasParam[p: int]:
+    pass
+
+
+fn closureParameterInference[
+    p: int, //, f: fn () capturing -> None
+](arg: HasParam[p]):
+    pass
+
+
+# CHECK-LABEL: lit.func @"inferCaptureLifetimes
+fn inferCaptureLifetimes(inout x: int, arg: HasParam):
+    @parameter
+    fn bareFunc():
+        pass
+
+    @parameter
+    fn captureSomething():
+        _ = x
+
+    # CHECK: call {{.*}}closureParameterCaptures{{.*}}<:lifetime.set {},
+    closureParameterCaptures[bareFunc]()
+    # CHECK: call {{.*}}closureParameterCaptures{{.*}}<:lifetime.set {mut *"x`"},
+    closureParameterCaptures[captureSomething]()
+    # CHECK: call {{.*}}closureParameterInference{{.*}}<*"p`{{.*}}",
+    # CHECK-SAME: rebind(:!lit.signature<:{mut *"x`"}:{{.*}} *"captureSomething
+    closureParameterInference[captureSomething](arg)
 
 
 # CHECK-LABEL: lit.func @"topLevelParamFn[__mlir_type.index]()"<a_param>
