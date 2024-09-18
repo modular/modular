@@ -3,7 +3,7 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-# UNSUPPORTED: windows
+# UNSUPPORTED: system-windows
 # RUN: mojo %s | FileCheck %s
 
 from pathlib.path import Path

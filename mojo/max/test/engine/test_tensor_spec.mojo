@@ -3,7 +3,7 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-# UNSUPPORTED: windows
+# UNSUPPORTED: system-windows
 # RUN: %mojo -debug-level full %s
 
 from collections.optional import Optional
