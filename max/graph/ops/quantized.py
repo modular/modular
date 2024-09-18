@@ -57,7 +57,7 @@ def _repack_then_matmul(
 
         # Reshape LHS to a matrix, which is expected by the q4_0 matmul op.
         lhs_matrix = lhs.reshape((-1, lhs.shape[-1]))
-        # Rebinding here breaks the reshape later, see GRA-881.
+        # TODO(MSDK-775): Rebinding here breaks the reshape later.
         # Fortunately things work without the rebind.
         # prod_dim = Graph.current.unique_symbolic_dim("qmatmul")
         # lhs_matrix = lhs_matrix.rebind((prod_dim, lhs.shape[-1]))
