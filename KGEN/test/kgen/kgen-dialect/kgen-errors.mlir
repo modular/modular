@@ -505,7 +505,7 @@ kgen.generator @declareWrongType() {
 
 // -----
 
-kgen.generator @duplicate_decl<() -> out>() {
+kgen.generator @duplicate_decl() {
   // expected-note @below {{previous declaration here}}
   kgen.param.declare a = <5>
   // expected-error @below {{redeclaration of parameter "a"}}
@@ -534,13 +534,6 @@ kgen.generator @name_shadwing_2<a>() {
     kgen.param.declare b = <a>
     kgen.unreachable
   }
-  kgen.return
-}
-
-// -----
-
-// expected-error @below {{parameter "out" has no definition}}
-kgen.generator @missing_def<() -> out>() {
   kgen.return
 }
 

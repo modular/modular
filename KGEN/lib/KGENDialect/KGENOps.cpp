@@ -336,7 +336,6 @@ static ParseResult parseGeneratorOp(OpAsmParser &p, ExportKindAttr &exportKind,
                                     StringAttr &name, TypeAttr &signatureAttr,
                                     TypeAttr &functionTypeAttr,
                                     ParamDeclArrayAttr &inputParams,
-                                    ParamDeclArrayAttr &resultParams,
                                     InlineLevelAttr &inlineLevel,
                                     DecoratorsAttr &decorators,
                                     NamedAttrList &attrs, Region &body) {
@@ -346,9 +345,13 @@ static ParseResult parseGeneratorOp(OpAsmParser &p, ExportKindAttr &exportKind,
   SmallVector<OpAsmParser::Argument> args;
   SignatureType signature;
   FunctionType functionType;
+  ParamDeclArrayAttr resultParams;
   if (parseFunctionSignature(p, args, inputParams, resultParams, functionType,
                              signature))
     return failure();
+  if (!resultParams.empty())
+    return p.emitError(p.getCurrentLocation(), "invalid result parameters");
+
   signatureAttr = TypeAttr::get(signature);
   functionTypeAttr = TypeAttr::get(functionType);
 
@@ -360,15 +363,17 @@ static ParseResult parseGeneratorOp(OpAsmParser &p, ExportKindAttr &exportKind,
   return success();
 }
 
-static void printGeneratorOp(
-    OpAsmPrinter &p, Operation *op, ExportKindAttr exportKind, StringAttr name,
-    TypeAttr signature, TypeAttr functionType, ParamDeclArrayAttr inputParams,
-    ParamDeclArrayAttr resultParams, InlineLevelAttr inlineLevel,
-    DecoratorsAttr decorators, DictionaryAttr attrs, Region &body) {
+static void printGeneratorOp(OpAsmPrinter &p, Operation *op,
+                             ExportKindAttr exportKind, StringAttr name,
+                             TypeAttr signature, TypeAttr functionType,
+                             ParamDeclArrayAttr inputParams,
+                             InlineLevelAttr inlineLevel,
+                             DecoratorsAttr decorators, DictionaryAttr attrs,
+                             Region &body) {
   printSymbolExport(p, op, exportKind);
   p << ' ';
   p.printSymbolName(name);
-  printFunctionSignature(p, &body, inputParams, resultParams,
+  printFunctionSignature(p, &body, inputParams, /*resultParams=*/{},
                          cast<FunctionType>(functionType.getValue()),
                          cast<SignatureType>(signature.getValue()));
   printOptionalInline(p, inlineLevel.getValue());
@@ -378,8 +383,8 @@ static void printGeneratorOp(
   SmallVector<StringRef, 10> elidedAttrs{
       gen.getExportKindAttrName(),  gen.getSymNameAttrName(),
       gen.getSignatureAttrName(),   gen.getFunctionTypeAttrName(),
-      gen.getInputParamsAttrName(), gen.getResultParamsAttrName(),
-      gen.getInlineLevelAttrName(), gen.getDecoratorsAttrName()};
+      gen.getInputParamsAttrName(), gen.getInlineLevelAttrName(),
+      gen.getDecoratorsAttrName()};
   if (attrs.get(gen.getLLVMMetadataAttrName()) ==
       DictionaryAttr::get(op->getContext()))
     elidedAttrs.push_back(gen.getLLVMMetadataAttrName());
