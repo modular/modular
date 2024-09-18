@@ -248,27 +248,28 @@ def test_host_host_copy():
     assert tensor[2].item() == 3
 
 
-DLPACK_DTYPES = {
-    np.int8: DType.int8,
-    np.int16: DType.int16,
-    np.int32: DType.int32,
-    np.int64: DType.int64,
-    np.uint8: DType.uint8,
-    np.uint16: DType.uint16,
-    np.uint32: DType.uint32,
-    np.uint64: DType.uint64,
-    # np.float16  # TODO(MSDK-893): enable float16.
-    np.float32: DType.float32,
-    np.float64: DType.float64,
-}
+DLPACK_DTYPES = [
+    DType.int8,
+    DType.int16,
+    DType.int32,
+    DType.int64,
+    DType.uint8,
+    DType.uint16,
+    DType.uint32,
+    DType.uint64,
+    # TODO(MSDK-893): enable float16.
+    DType.float32,
+    DType.float64,
+]
 
 
 def test_from_dlpack():
     # TODO(MSDK-897): improve test coverage with different shapes and strides.
-    for np_dtype, our_dtype in DLPACK_DTYPES.items():
+    for dtype in DLPACK_DTYPES:
+        np_dtype = dtype.to_numpy()
         array = np.array([0, 1, 2, 3], np_dtype)
         tensor = Tensor.from_dlpack(array)
-        assert tensor.dtype == our_dtype
+        assert tensor.dtype == dtype
         assert tensor.shape == array.shape
 
         tensor[0] = np_dtype(7)
@@ -301,11 +302,12 @@ def test_dlpack_device():
 
 def test_dlpack():
     # TODO(MSDK-897): improve test coverage with different shapes and strides.
-    for np_dtype, our_dtype in DLPACK_DTYPES.items():
-        tensor = Tensor((1, 4), our_dtype)
+    for dtype in DLPACK_DTYPES:
+        tensor = Tensor((1, 4), dtype)
         for j in range(4):
             tensor[0, j] = j
 
+        np_dtype = dtype.to_numpy()
         array = np.from_dlpack(tensor)
         assert array.dtype == np_dtype
         assert tensor.shape == array.shape
