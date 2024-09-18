@@ -1222,6 +1222,12 @@ fn closureParameter[func: fn () capturing -> __mlir_type.index]():
     pass
 
 
+# CHECK-LABEL: lit.func @"closureParameterCaptures
+# CHECK-SAME: func: !lit.signature<:lifetimes:() capturing -> !kgen.none>
+fn closureParameterCaptures[lifetimes: __mlir_type.`!lit.lifetime.set`, func: fn () capturing [lifetimes] -> None]():
+    pass
+
+
 # CHECK-LABEL: lit.func @"topLevelParamFn[__mlir_type.index]()"<a_param>
 fn topLevelParamFn[a_param: __mlir_type.index]():
     # CHECK: lit.func *"nestedFunction[__mlir_type.index]()"<b_param>

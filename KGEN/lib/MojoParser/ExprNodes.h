@@ -568,16 +568,17 @@ struct FunctionTypeNode final : public ExprNode {
   FunctionTypeNode(SMLoc baseLoc, ArrayRef<ParsedArgument> parsedParams,
                    ArrayRef<ParsedArgument> parsedArgs,
                    ArrayRef<ParsedArgument> resultArgs, FnEffects effects,
-                   SMLoc endLoc, bool isDef)
+                   const ExprNode *lifetimeExpr, SMLoc endLoc, bool isDef)
       : ExprNode(kFunctionType), baseLoc(baseLoc), parsedParams(parsedParams),
         parsedArgs(parsedArgs), resultArgs(resultArgs), effects(effects),
-        endLoc(endLoc), isDef(isDef) {}
+        lifetimeExpr(lifetimeExpr), endLoc(endLoc), isDef(isDef) {}
 
   SMLoc baseLoc;
   ArrayRef<ParsedArgument> parsedParams; // Parameter list
   ArrayRef<ParsedArgument> parsedArgs;   // Argument list
   ArrayRef<ParsedArgument> resultArgs;   // Result list
   FnEffects effects;
+  const ExprNode *lifetimeExpr;
   SMLoc endLoc;
   bool isDef;
 

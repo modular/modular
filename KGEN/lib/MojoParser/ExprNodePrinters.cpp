@@ -487,6 +487,10 @@ void FunctionTypeNode::print(raw_indented_ostream &os) const {
     result.print(os);
   os.unindent() << "]\n";
 
+  os << "effects: " << stringifyFnEffects(effects.getImpl()) << "\n";
+  os << "lifetimeExpr: ";
+  lifetimeExpr->print(os);
+
   os.unindent() << "}\n";
 }
 
