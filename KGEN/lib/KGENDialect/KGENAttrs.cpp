@@ -1233,8 +1233,15 @@ LogicalResult ParamOperatorAttr::verify(
       return emitError()
              << "'compile_assembly' first operand should be a target type";
     if (!::isa<IndexType>(operands[1].getType()))
-      return emitError() << "'compile_assembly' second operand should be "
-                            "either asm or llvm keyword";
+      return emitError()
+             << "'compile_assembly' second operand should have index type";
+    if (auto emissionIntAttr = ::dyn_cast<IntegerAttr>(operands[1])) {
+      EmissionKind emissionKind = (EmissionKind)emissionIntAttr.getInt();
+      if (!llvm::is_contained({EmissionKind::LLVM, EmissionKind::ASM},
+                              emissionKind))
+        return emitError() << "'compile_assembly' second operand should "
+                              "evaluate to either asm or llvm";
+    }
     if (!operands[2].getType().isInteger(1))
       return emitError() << "'compile_assembly' third operand should be an i1";
     if (!::isa<IntegerAttr>(operands[2]))

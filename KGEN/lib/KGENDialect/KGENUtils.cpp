@@ -818,20 +818,28 @@ static ParseResult parseOperatorOperands(AsmParser &p, uint32_t opcode,
     return parseParamValue(p, operands.emplace_back(),
                            StringType::get(p.getContext()));
   case (uint32_t)POC::CompileAssembly: {
-    StringRef emissionKind;
     if (parseParamValue(p, operands.emplace_back(),
                         TargetType::get(p.getContext())) ||
-        p.parseComma() || p.parseKeyword(&emissionKind))
+        p.parseComma())
       return failure();
 
-    if (!llvm::is_contained({"llvm", "asm"}, emissionKind))
-      return p.emitError(p.getCurrentLocation(),
-                         "the emission kind must be either llvm or asm");
+    if (succeeded(p.parseOptionalEqual())) {
+      StringRef emissionKind;
+      if (p.parseKeyword(&emissionKind))
+        return failure();
+      if (!llvm::is_contained({"llvm", "asm"}, emissionKind))
+        return p.emitError(
+            p.getCurrentLocation(),
+            "the immediate emission kind must be either '=llvm' or '=asm'");
 
-    EmissionKind emissionKindEnum =
-        emissionKind == "llvm" ? EmissionKind::LLVM : EmissionKind::ASM;
-    operands.emplace_back(
-        p.getBuilder().getIndexAttr(to_underlying(emissionKindEnum)));
+      EmissionKind emissionKindEnum =
+          emissionKind == "llvm" ? EmissionKind::LLVM : EmissionKind::ASM;
+      operands.emplace_back(
+          p.getBuilder().getIndexAttr(to_underlying(emissionKindEnum)));
+    } else if (parseParamValue(p, operands.emplace_back(),
+                               p.getBuilder().getIndexType())) {
+      return failure();
+    }
 
     if (p.parseComma() ||
         parseParamValue(p, operands.emplace_back(),
@@ -1133,12 +1141,18 @@ static void printOperatorOperands(AsmPrinter &p, POC opcode,
   case POC::CompileAssembly: {
     printParamValue(p, operands[0]);
     p << ", ";
-    EmissionKind emissionKind =
-        (EmissionKind)cast<IntegerAttr>(operands[1]).getInt();
-    if (emissionKind == EmissionKind::ASM)
-      p << "asm";
-    else if (emissionKind == EmissionKind::LLVM)
-      p << "llvm";
+    if (auto emissionIntAttr = dyn_cast<IntegerAttr>(operands[1])) {
+      EmissionKind emissionKind = (EmissionKind)emissionIntAttr.getInt();
+      // '=' is used to disambiguate immediates with generic param value.
+      if (emissionKind == EmissionKind::ASM)
+        p << "=asm";
+      else if (emissionKind == EmissionKind::LLVM)
+        p << "=llvm";
+      else
+        printParamValue(p, operands[1]);
+    } else {
+      printParamValue(p, operands[1]);
+    }
     p << ", ";
     printParamValue(p, operands[2]);
     p << ", ";
