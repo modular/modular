@@ -60,6 +60,7 @@ fn managed_tensor_slice_to_ndbuffer[
 
 
 @compiler.register("mo.add")
+@compiler.elementwise
 struct Add:
     @staticmethod
     fn execute[
@@ -82,6 +83,7 @@ struct Add:
 
 
 @compiler.register("mo.sub")
+@compiler.elementwise
 struct Sub:
     @staticmethod
     fn execute[
@@ -104,6 +106,7 @@ struct Sub:
 
 
 @compiler.register("mo.mul")
+@compiler.elementwise
 struct Mul:
     @staticmethod
     fn execute[
@@ -126,6 +129,7 @@ struct Mul:
 
 
 @compiler.register("mo.div")
+@compiler.elementwise
 struct Div:
     @staticmethod
     fn execute[
@@ -148,6 +152,7 @@ struct Div:
 
 
 @compiler.register("mo.mod")
+@compiler.elementwise
 struct Mod:
     @staticmethod
     fn execute[
@@ -170,6 +175,7 @@ struct Mod:
 
 
 @compiler.register("mo.equal")
+@compiler.elementwise
 struct Equal:
     @staticmethod
     fn execute[
@@ -192,6 +198,7 @@ struct Equal:
 
 
 @compiler.register("mo.greater")
+@compiler.elementwise
 struct Greater:
     @staticmethod
     fn execute[
@@ -214,6 +221,7 @@ struct Greater:
 
 
 @compiler.register("mo.greater_equal")
+@compiler.elementwise
 struct GreaterEqual:
     @staticmethod
     fn execute[
@@ -236,6 +244,7 @@ struct GreaterEqual:
 
 
 @compiler.register("mo.not_equal")
+@compiler.elementwise
 struct NotEqual:
     @staticmethod
     fn execute[
@@ -258,6 +267,7 @@ struct NotEqual:
 
 
 @compiler.register("mo.and")
+@compiler.elementwise
 struct And:
     @staticmethod
     fn execute[
@@ -280,6 +290,7 @@ struct And:
 
 
 @compiler.register("mo.or")
+@compiler.elementwise
 struct Or:
     @staticmethod
     fn execute[
@@ -302,6 +313,7 @@ struct Or:
 
 
 @compiler.register("mo.xor")
+@compiler.elementwise
 struct Xor:
     @staticmethod
     fn execute[
@@ -329,6 +341,7 @@ struct Xor:
 
 
 @compiler.register("mo.ceil")
+@compiler.elementwise
 struct Ceil:
     @staticmethod
     fn execute[
@@ -344,6 +357,7 @@ struct Ceil:
 
 
 @compiler.register("mo.floor")
+@compiler.elementwise
 struct Floor:
     @staticmethod
     fn execute[
@@ -359,6 +373,7 @@ struct Floor:
 
 
 @compiler.register("mo.tanh")
+@compiler.elementwise
 struct Tanh:
     @staticmethod
     fn execute[
@@ -374,6 +389,7 @@ struct Tanh:
 
 
 @compiler.register("mo.cos")
+@compiler.elementwise
 struct Cos:
     @staticmethod
     fn execute[
@@ -389,6 +405,7 @@ struct Cos:
 
 
 @compiler.register("mo.sin")
+@compiler.elementwise
 struct Sin:
     @staticmethod
     fn execute[
@@ -404,6 +421,7 @@ struct Sin:
 
 
 @compiler.register("mo.erf")
+@compiler.elementwise
 struct Erf:
     @staticmethod
     fn execute[
@@ -419,6 +437,7 @@ struct Erf:
 
 
 @compiler.register("mo.exp")
+@compiler.elementwise
 struct Exp:
     @staticmethod
     fn execute[
@@ -434,6 +453,7 @@ struct Exp:
 
 
 @compiler.register("mo.round")
+@compiler.elementwise
 struct Round:
     @staticmethod
     fn execute[
@@ -449,6 +469,7 @@ struct Round:
 
 
 @compiler.register("mo.roundeven")
+@compiler.elementwise
 struct RoundEven:
     @staticmethod
     fn execute[
@@ -464,6 +485,7 @@ struct RoundEven:
 
 
 @compiler.register("mo.isqrt")
+@compiler.elementwise
 struct Isqrt:
     @staticmethod
     fn execute[
@@ -479,6 +501,7 @@ struct Isqrt:
 
 
 @compiler.register("mo.select")
+@compiler.elementwise
 struct Select:
     @staticmethod
     fn execute[
@@ -505,6 +528,7 @@ struct Select:
 
 
 @compiler.register("mo.trunc")
+@compiler.elementwise
 struct Trunc:
     @staticmethod
     fn execute[
@@ -525,6 +549,7 @@ struct Trunc:
 
 
 @compiler.register("mo.log")
+@compiler.elementwise
 struct Log:
     @staticmethod
     fn execute[
@@ -540,6 +565,7 @@ struct Log:
 
 
 @compiler.register("mo.log1p")
+@compiler.elementwise
 struct Log1p:
     @staticmethod
     fn execute[
@@ -555,6 +581,7 @@ struct Log1p:
 
 
 @compiler.register("mo.is_nan")
+@compiler.elementwise
 struct IsNan:
     @staticmethod
     fn execute[
@@ -570,6 +597,7 @@ struct IsNan:
 
 
 @compiler.register("mo.is_inf")
+@compiler.elementwise
 struct IsInf:
     @staticmethod
     fn execute[
@@ -585,6 +613,7 @@ struct IsInf:
 
 
 @compiler.register("mo.not")
+@compiler.elementwise
 struct Not:
     @staticmethod
     fn execute[
@@ -601,6 +630,7 @@ struct Not:
 
 
 @compiler.register("mo.abs")
+@compiler.elementwise
 struct Abs:
     @staticmethod
     fn execute[
