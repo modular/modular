@@ -95,7 +95,7 @@ def test_execute_external_weights_gpu(gpu_session: InferenceSession) -> None:
 
     compiled = gpu_session.load(graph, weights_registry={"foo": weights})
     input_np = np.random.randn(num_elems).astype(np.float32)
-    output = compiled.execute(Tensor.from_numpy(input_np, device=CUDA()))[
+    output = compiled.execute(Tensor.from_dlpack(input_np).copy_to(CUDA()))[
         0
     ].copy_to(CPU())
     for idx, elt in enumerate(input_np + weights):
