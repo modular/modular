@@ -1224,7 +1224,10 @@ fn closureParameter[func: fn () capturing -> __mlir_type.index]():
 
 # CHECK-LABEL: lit.func @"closureParameterCaptures
 # CHECK-SAME: func: !lit.signature<:lifetimes:() capturing -> !kgen.none>
-fn closureParameterCaptures[lifetimes: __mlir_type.`!lit.lifetime.set`, func: fn () capturing [lifetimes] -> None]():
+fn closureParameterCaptures[
+    lifetimes: __mlir_type.`!lit.lifetime.set`,
+    func: fn () capturing [lifetimes] -> None,
+]():
     pass
 
 
