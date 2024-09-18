@@ -6,7 +6,7 @@
 from __future__ import annotations
 
 from itertools import product
-from typing import Any, Generator, Optional, Tuple
+from typing import Any, Generator, Optional, Protocol, Tuple, runtime_checkable
 
 import numpy as np
 from max._driver import Tensor as _Tensor
@@ -15,7 +15,16 @@ from max.dtype import DType
 from .driver import CPU, Device
 
 
-class Tensor:
+@runtime_checkable
+class DLPackArray(Protocol):
+    def __dlpack__(self) -> Any:
+        ...
+
+    def __dlpack_device__(self) -> Any:
+        ...
+
+
+class Tensor(DLPackArray):
     """
     Device-resident tensor representation. Allocates memory onto a given device
     with the provided shape and dtype. Tensors can be sliced to provide strided
