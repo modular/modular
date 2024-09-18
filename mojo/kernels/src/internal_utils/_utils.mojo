@@ -180,7 +180,7 @@ fn bench_compile_time[
     func_type: AnyTrivialRegType, //,
     func: func_type,
     emission_kind: StringLiteral = "asm",
-](inout m: Bench, name: String,) raises:
+](inout m: Bench, name: String) raises:
     constrained[emission_kind in ("asm", "llvm", "ptx")]()
 
     # TODO: add docstring, this function should be used on its own or at the end of measured benchmarks.
