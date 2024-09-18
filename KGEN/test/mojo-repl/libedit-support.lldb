@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-# REQUIRES: linux
+# REQUIRES: system-linux
 # We cannot use %debug because it includes some environment variables
 # RUN: ldd $MODULAR_DERIVED_PATH/third-party/llvm-project/build/bin/lldb | FileCheck %s
 
