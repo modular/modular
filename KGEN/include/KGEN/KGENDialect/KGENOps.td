@@ -890,7 +890,7 @@ def KGEN_ParamForContinueOp : KGENOp<"param.for.continue", [Terminator,
 def KGEN_ParamIfOp : KGENOp<"param.if", [DeclInterface,
     DeclareOpInterfaceMethods<ControlFlowNode>,
     DeclareOpInterfaceMethods<ParamOpInterface, ["isImplicitlyParametric",
-      "collectParameterUsesBelow"]>]> {
+      "collectParameterUsesBelow"]>]>, NoParamDecls {
   let summary = "compile-time constant if";
   let description = [{
     The `kgen.param.if` op provides a compile-time guarantee that if `cond`
@@ -922,7 +922,6 @@ def KGEN_ParamIfOp : KGENOp<"param.if", [DeclInterface,
 
   let arguments = (ins
     AttrOfType<I1>:$cond,
-    KGEN_ParamDeclArrayAttr:$resultParams,
     UnitAttr:$thenIsolated,
     UnitAttr:$elseIsolated
   );
@@ -940,19 +939,18 @@ def KGEN_ParamIfOp : KGENOp<"param.if", [DeclInterface,
       return getElseRegion().front().getOperations();
     }
 
-    /// Parametric ifs have no input parameters.
+    /// Parametric ifs have no parameters.
     ArrayRef<ParamDeclAttr> getInputParams() { return {}; }
+    ArrayRef<ParamDeclAttr> getResultParams() { return {}; }
   }];
 
   let assemblyFormat = [{
-    ` ` `<` custom<ParamValue>($cond, "$_builder.getI1Type()") ``
-    custom<OptionalParamDecls>($resultParams) `>` (`->` type($results)^)?
-    $thenRegion `else` $elseRegion attr-dict
+    ` ` `<` custom<ParamValue>($cond, "$_builder.getI1Type()") `` `>`
+    (`->` type($results)^)?  $thenRegion `else` $elseRegion attr-dict
   }];
 
   let builders = [OpBuilder<(ins "TypedAttr":$cond), [{
-    build($_builder, $_state, {}, cond,
-          ParamDeclArrayAttr::get(cond.getContext(), {}));
+    build($_builder, $_state, {}, cond, {});
   }]>];
 
   let hasCanonicalizeMethod = 1;
