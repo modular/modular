@@ -3,7 +3,7 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-# UNSUPPORTED: windows
+# UNSUPPORTED: system-windows
 # RUN: MODULAR_MAX_TEMPS_DIR=$(dirname %t) mojo %s
 # RUN: grep mo.graph $(dirname %t)/temp.mo.mlir
 # RUN: grep mgp.model $(dirname %t)/temp.mgp.mlir

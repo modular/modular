@@ -1,4 +1,4 @@
-// UNSUPPORTED: Windows
+// UNSUPPORTED: system-windows
 // RUN: mkdir -p %t
 
 // RUN: rm -f %t/error-metrics

@@ -3,7 +3,7 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-# UNSUPPORTED: windows
+# UNSUPPORTED: system-windows
 # RUN: mojo package %S/../../Inputs/test_user_op -o %t.mojopkg
 # RUN: %mojo -debug-level full %s %S/mo.mlir %t.mojopkg
 

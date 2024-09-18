@@ -3,7 +3,7 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-# UNSUPPORTED: windows
+# UNSUPPORTED: system-windows
 # UNSUPPORTED: asan
 # RUN: %mojo -debug-level full %s %S/mo.mlir
 
