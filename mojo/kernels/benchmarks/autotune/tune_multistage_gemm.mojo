@@ -25,6 +25,7 @@ from gpu.cublas.cublas import (
     cublasContext,
     cublasCreate,
     cublasDestroy,
+    cublas_matmul,
 )
 from gpu.host import DeviceContext, FuncAttribute
 from gpu.host.event import time_function

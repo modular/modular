@@ -15,6 +15,13 @@ from internal_utils import DeviceNDBuffer, bench_compile_time, env_get_dtype
 from utils import StaticIntTuple
 from sys import env_get_int, sizeof
 from math import align_up
+from gpu.cublas.cublas import (
+    check_cublas_error,
+    cublasContext,
+    cublasCreate,
+    cublasDestroy,
+)
+from linalg.cublas import cublas_matmul
 
 
 fn _get_run_name[
@@ -22,37 +29,38 @@ fn _get_run_name[
     shape_c: DimList,
     shape_a: DimList,
     shape_b: DimList,
-    transpose_b: Bool = False,
-    cache_busting: Bool = False,
+    *,
+    transpose_b: Bool,
+    cache_busting: Bool,
+    use_cublas: Bool,
 ](
     shape_c_dim: StaticIntTuple[2],
     shape_a_dim: StaticIntTuple[2],
     shape_b_dim: StaticIntTuple[2],
 ) -> String:
-    var str = String("matmul(")
-    str += type.__str__()
-    str += ") : "
+    var name = String("cublas_matmul" if use_cublas else "matmul") + "("
+    name += str(type)
+    name += ") : "
     # M
-    str += shape_c_dim[0].__str__()
+    name += str(shape_c_dim[0])
     # N
-    str += (
+    name += (
         "_dynamic"
         + " x "
-        + shape_c_dim[1].__str__() if shape_c.at[0]().is_dynamic() else " x "
-        + shape_c_dim[1].__str__()
+        + str(shape_c_dim[1]) if shape_c.at[0]().is_dynamic() else " x "
+        + str(shape_c_dim[1])
     )
     # K
-    str += (
+    name += (
         "_dynamic"
         + " x "
-        + shape_a_dim[1].__str__() if shape_c.at[1]().is_dynamic() else " x "
-        + shape_a_dim[1].__str__()
+        + str(shape_a_dim[1]) if shape_c.at[1]().is_dynamic() else " x "
+        + str(shape_a_dim[1])
     )
-    str += "_dynamic" if shape_a.at[1]().is_dynamic() else ""
-    str += " transpose_b" if transpose_b else ""
-    str += " cache_busting" if cache_busting else ""
-    str += "\t"
-    return str
+    name += "_dynamic" if shape_a.at[1]().is_dynamic() else ""
+    name += " transpose_b" if transpose_b else ""
+    name += " cache_busting" if cache_busting else ""
+    return name
 
 
 fn bench_matmul[
@@ -60,8 +68,10 @@ fn bench_matmul[
     shape_c: DimList,
     shape_a: DimList,
     shape_b: DimList,
+    *,
+    cache_busting: Bool,
+    use_cublas: Bool,
     transpose_b: Bool = False,
-    cache_busting: Bool = False,
 ](
     ctx: DeviceContext,
     inout b: Bench,
@@ -89,8 +99,13 @@ fn bench_matmul[
     var buffer_b = ctx.create_buffer[dtype](cache_b)
     var buffer_c = ctx.create_buffer[dtype](cache_c)
 
+    var cublas_handle = UnsafePointer[cublasContext]()
+    check_cublas_error(cublasCreate(UnsafePointer.address_of(cublas_handle)))
+
     @parameter
-    @__copy_capture(cache_a, cache_b, cache_c, stride_a, stride_b, stride_c)
+    @__copy_capture(
+        cache_a, cache_b, cache_c, stride_a, stride_b, stride_c, cublas_handle
+    )
     @always_inline
     fn bench_func(inout b: Bencher):
         @parameter
@@ -114,16 +129,35 @@ fn bench_matmul[
             var tensor_c = NDBuffer[dtype, 2, shape_c](
                 buffer_c.ptr + offset_c, shape_c_dim
             )
-            _matmul_gpu[use_tensor_core=True, transpose_b=transpose_b](
-                tensor_c, tensor_a, tensor_b, ctx
-            )
+
+            @parameter
+            if use_cublas:
+                _ = cublas_matmul(
+                    cublas_handle,
+                    tensor_c,
+                    tensor_a,
+                    tensor_b,
+                    c_row_major=True,
+                    transpose_b=transpose_b,
+                )
+
+            else:
+                _matmul_gpu[use_tensor_core=True, transpose_b=transpose_b](
+                    tensor_c, tensor_a, tensor_b, ctx
+                )
 
         b.iter_custom[kernel_launch](ctx)
 
     b.bench_function[bench_func](
         BenchId(
             _get_run_name[
-                dtype, shape_c, shape_a, shape_b, transpose_b, cache_busting
+                dtype,
+                shape_c,
+                shape_a,
+                shape_b,
+                transpose_b=transpose_b,
+                cache_busting=cache_busting,
+                use_cublas=use_cublas,
             ](shape_c_dim, shape_a_dim, shape_b_dim)
         ),
         # TODO: Pick relevant benchmetric
@@ -133,6 +167,8 @@ fn bench_matmul[
             2 * shape_c_dim[0] * shape_c_dim[1] * shape_a_dim[1],
         ),
     )
+
+    check_cublas_error(cublasDestroy(cublas_handle))
 
     # Retain our buffers till the end.
     _ = buffer_a^
@@ -163,7 +199,11 @@ fn dynamic(d: Int) -> ValOrDim:
 
 
 fn create_matmul_bench[
-    dtype: DType, transpose_b: Bool = False, cache_busting: Bool = False
+    dtype: DType,
+    *,
+    transpose_b: Bool,
+    cache_busting: Bool,
+    use_cublas: Bool,
 ](
     ctx: DeviceContext, inout b: Bench, m: ValOrDim, n: ValOrDim, k: ValOrDim
 ) raises:
@@ -180,13 +220,14 @@ fn create_matmul_bench[
         DimList(m.dim, n.dim),
         DimList(m.dim, k.dim),
         static_b_shape,
-        transpose_b,
-        cache_busting,
+        transpose_b=transpose_b,
+        cache_busting=cache_busting,
+        use_cublas=use_cublas,
     ](ctx, b, (m.value, n.value), (m.value, k.value), dynamic_b_shape)
 
 
 fn compile_matmul_bench[
-    dtype: DType, cache_busting: Bool = False
+    dtype: DType, *, cache_busting: Bool = False
 ](
     ctx: DeviceContext, inout b: Bench, m: ValOrDim, n: ValOrDim, k: ValOrDim
 ) raises:
@@ -200,7 +241,8 @@ fn compile_matmul_bench[
             DimList(m.dim, n.dim),
             DimList(m.dim, k.dim),
             DimList(k.dim, n.dim),
-            cache_busting,
+            cache_busting=cache_busting,
+            use_cublas=False,
         ]
     ](b, "matmul/" + s)
 
@@ -220,7 +262,23 @@ fn main() raises:
         with DeviceContext() as ctx:
             # benchmarking matmul
             create_matmul_bench[
-                dtype, transpose_b=transpose_b, cache_busting=cache_busting
+                dtype,
+                transpose_b=transpose_b,
+                cache_busting=cache_busting,
+                use_cublas=False,
+            ](
+                ctx,
+                m,
+                dynamic(M),
+                static[N](),
+                static[K](),
+            )
+
+            create_matmul_bench[
+                dtype,
+                transpose_b=transpose_b,
+                cache_busting=cache_busting,
+                use_cublas=True,
             ](
                 ctx,
                 m,
