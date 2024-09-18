@@ -165,8 +165,6 @@ static void liftAndFoldApply(Region *body, ImplicitLocOpBuilder &b,
               replacer.replace(func.getFunctionTypeAttr()));
     attrs.set(func.getInputParamsAttrName(),
               replacer.replace(func.getInputParamsAttr()));
-    attrs.set(func.getResultParamsAttrName(),
-              replacer.replace(func.getResultParamsAttr()));
     attrs.set(func.getDecoratorsAttrName(),
               replacer.replace(func.getDecoratorsAttr()));
     func->setAttrs(attrs.getDictionary(func.getContext()));

@@ -200,7 +200,7 @@ private:
     std::string name = (Twine(gen.getSymName()) + Twine("_OUTLINED")).str();
     auto outlinedFunction = builder.create<KGEN::GeneratorOp>(
         gen.getLoc(), builder.getStringAttr(name), sigType, newFuncType,
-        asDecls, ArrayRef<KGEN::ParamDeclAttr>{}, InlineLevel::Never);
+        asDecls, InlineLevel::Never);
     // We are inlining the function we just outlined because the purpose of
     // the outlining is just to make sure the graph compiler works on a minimal
     // set of changes. Make sure we don't inline this now, but mark it to be

@@ -265,16 +265,14 @@ LITLowerer::lowerLITFunc(LIT::FuncOp func, Block::iterator symTableIt,
 
   OpBuilder b(func->getContext());
   auto inputParamsArr = ParamDeclArrayAttr::get(b.getContext(), inputParams);
-  auto resParamsArr = ParamDeclArrayAttr::get(b.getContext(), {});
   auto sigAttr = TypeAttr::get(signature);
 
   // Directly lower since these operations are exactly identical right now.
   OperationState state(func.getLoc(), GeneratorOp::getOperationName());
-  GeneratorOp::build(b, state, func.getSymNameAttr(), sigAttr,
-                     func.getFunctionTypeAttr(), inputParamsArr, resParamsArr,
-                     func.getDecoratorsAttr(), func.getInlineLevelAttr(),
-                     func.getExportKindAttr(), func.getLLVMMetadata(),
-                     func.getPatternsAttr());
+  GeneratorOp::build(
+      b, state, func.getSymNameAttr(), sigAttr, func.getFunctionTypeAttr(),
+      inputParamsArr, func.getDecoratorsAttr(), func.getInlineLevelAttr(),
+      func.getExportKindAttr(), func.getLLVMMetadata(), func.getPatternsAttr());
 
   for (const NamedAttribute &attr : func->getDialectAttrs())
     state.attributes.push_back(attr);

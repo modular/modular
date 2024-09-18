@@ -159,7 +159,6 @@ def KGEN_GeneratorOp : KGENOp<"generator", [
     TypeAttrOf<KGEN_SignatureType>:$signature,
     TypeAttrOf<FunctionType>:$functionType,
     KGEN_ParamDeclArrayAttr:$inputParams,
-    KGEN_ParamDeclArrayAttr:$resultParams,
     KGEN_DecoratorsAttr:$decorators,
     KGEN_InlineLevelAttr:$inlineLevel,
     KGEN_ExportKindAttr:$exportKind,
@@ -170,25 +169,26 @@ def KGEN_GeneratorOp : KGENOp<"generator", [
 
   let assemblyFormat = [{
     `` custom<GeneratorOp>($exportKind, $sym_name, $signature, $functionType,
-                           $inputParams, $resultParams, $inlineLevel,
-                           $decorators, attr-dict, $bodyRegion)
+                           $inputParams, $inlineLevel, $decorators, attr-dict,
+                           $bodyRegion)
   }];
 
   let extraClassDeclaration = [{
     using OpTrait::SingleBlock<GeneratorOp>::getBody;
     Region *getCallableRegion() { return &getBodyRegion(); }
+
+    // TODO: Remove this when result parameters are gone.
+    ArrayRef<ParamDeclAttr> getResultParams() { return {}; }
   }];
 
   let builders = [
     OpBuilder<(ins "StringAttr":$name, "SignatureType":$signature,
                    "FunctionType":$functionType,
                    "ArrayRef<ParamDeclAttr>":$inputParams,
-                   "ArrayRef<ParamDeclAttr>":$resultParams,
                    CArg<"InlineLevel", "InlineLevel::Automatic">:$inlineLevel), [{
       build($_builder, $_state, name, signature, functionType, inputParams,
-            resultParams, /*decorators=*/{}, inlineLevel,
-            ExportKind::NotExported, DictionaryAttr::get(name.getContext()),
-            /*patterns=*/{});
+            /*decorators=*/{}, inlineLevel, ExportKind::NotExported,
+            DictionaryAttr::get(name.getContext()), /*patterns=*/{});
     }]>,
     OpBuilder<(ins "StringAttr":$name, "SignatureType":$signature), [{
       build($_builder, $_state, name, signature, signature.getValues(), {}, {});
