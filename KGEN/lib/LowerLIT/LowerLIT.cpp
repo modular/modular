@@ -306,7 +306,7 @@ void LITLowerer::lowerNestedFunction(LIT::FuncOp func) {
 
   auto region = b.create<ParamDeclareRegionOp>(
       decl, func.getSignature(), func.getFunctionType(), inputParams,
-      /*isolated=*/false, func.getInlineLevel());
+      func.getInlineLevel());
   region.getBodyRegion().takeBody(func.getBodyRegion());
   func.erase();
 }
