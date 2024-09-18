@@ -36,6 +36,3 @@ tool_dirs = [
 tools = ["cache-mgr"]
 
 llvm_config.add_tool_substitutions(tools, tool_dirs)
-
-if platform.system() == "Windows":
-    config.available_features.add("windows")
