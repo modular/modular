@@ -8,8 +8,9 @@ import pytest
 from max.driver import CPU
 from max.dtype import DType
 from max.engine import InferenceSession
-from llama3.kv_cache import ContiguousKVCacheManager
-from llama3.kv_cache_params import KVCacheParams
+
+from nn.kv_cache import ContiguousKVCacheManager
+from nn.kv_cache_params import KVCacheParams
 
 
 @pytest.mark.skip("TODO: re-enable after landing #47085.")

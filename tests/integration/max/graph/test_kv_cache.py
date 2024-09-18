@@ -4,12 +4,13 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from llama3.kv_cache import ContiguousKVCacheCollectionType
-from llama3.kv_cache_params import KVCacheParams
 from max.driver import CPU, Tensor
 from max.dtype import DType
 from max.engine import InferenceSession
-from max.graph import ops, Graph, TensorType, TensorValue
+from max.graph import Graph, TensorType, TensorValue, ops
+
+from nn.kv_cache import ContiguousKVCacheCollectionType
+from nn.kv_cache_params import KVCacheParams
 
 
 class KVCacheModel:
