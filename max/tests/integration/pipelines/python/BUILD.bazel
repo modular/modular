@@ -58,5 +58,6 @@ modular_py_test(
         requirement("hypothesis"),
         requirement("transformers"),
         requirement("pytest-asyncio"),
+        requirement("pytest-mock"),
     ],
 )
