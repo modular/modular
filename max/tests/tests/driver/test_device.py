@@ -15,11 +15,6 @@ def test_cpu_device():
     assert cpu.is_host
 
 
-def _cuda_available() -> bool:
-    output = run(getenv("MODULAR_IS_CUDA_AVAILABLE") or "is-cuda-available")
-    return output.returncode == 0
-
-
 @pytest.mark.skip(reason="MSDK-834")
 def test_cuda_device_creation_error():
     # Creating a CUDA device on a machine without a GPU should raise an error.
