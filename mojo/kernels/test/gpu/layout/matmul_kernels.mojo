@@ -35,6 +35,8 @@ from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
 
 from utils.index import Index
 
+from sys.info import simdwidthof
+
 
 alias NWARMUP = 1
 alias NRUN = 1
@@ -623,6 +625,141 @@ fn run_gemm_kernel_5[
         )
 
     time_kernel[run_func](m, ctx, M * N * K, "2d_blocktiling")
+    # Do one iteration for verifciation
+    ctx.memset(
+        DeviceBuffer[dtype](
+            ctx,
+            rebind[UnsafePointer[Scalar[dtype]]](c.ptr),
+            M * N,
+            owning=False,
+        ),
+        0,
+    )
+    ctx.enqueue_function(
+        func,
+        a,
+        b,
+        c,
+        grid_dim=(ceildiv(N, BN), ceildiv(M, BM)),
+        block_dim=(NUM_THREADS),
+    )
+    _ = func^
+
+
+fn gemm_kernel_6[
+    dtype: DType,
+    a_layout: Layout,
+    b_layout: Layout,
+    c_layout: Layout,
+    BM: Int,
+    BN: Int,
+    BK: Int,
+    TM: Int,
+    TN: Int,
+    NUM_THREADS: Int,
+](
+    a: LayoutTensor[dtype, a_layout],
+    b: LayoutTensor[dtype, b_layout],
+    c: LayoutTensor[dtype, c_layout],
+):
+    alias simd_width = simdwidthof[dtype]()
+    var partition_col = ThreadIdx.x() % (BN // TN)
+    var partition_row = ThreadIdx.x() // (BN // TN)
+    var bidx = BlockIdx.x()
+    var bidy = BlockIdx.y()
+
+    var dst = c.tile[BM, BN](bidy, bidx).tile[TM, TN](
+        partition_row, partition_col
+    )
+    var dst_vec = dst.vectorize[1, simd_width]()
+
+    # use column major for the local A storage to get the transpose
+    var a_smem = LayoutTensor[
+        dtype, Layout.col_major(BM, BK), address_space = AddressSpace.SHARED
+    ].stack_allocation()
+    var b_smem = LayoutTensor[
+        dtype, Layout.row_major(BK, BN), address_space = AddressSpace.SHARED
+    ].stack_allocation()
+
+    var dst_reg = LayoutTensor[
+        dtype, Layout.row_major(TM, TN)
+    ].stack_allocation()
+    var dst_reg_vec = dst_reg.vectorize[1, simd_width]()
+    dst_reg_vec.copy_from(dst_vec)
+
+    var a_reg = LayoutTensor[dtype, Layout(TM)].stack_allocation()
+    var b_reg = LayoutTensor[dtype, Layout(TN)].stack_allocation()
+
+    var ntiles = b.dim(0) // BK
+
+    for block in range(ntiles):
+        alias load_a_layout = Layout.row_major(NUM_THREADS // BK, BK)
+        alias load_b_layout = Layout.row_major(BK, NUM_THREADS // BK)
+        var a_tile = a.tile[BM, BK](BlockIdx.y(), block)
+        var b_tile = b.tile[BK, BN](block, BlockIdx.x())
+        copy_dram_to_sram_async[thread_layout=load_a_layout](
+            a_smem.vectorize[simd_width, 1](), a_tile.vectorize[simd_width, 1]()
+        )
+        copy_dram_to_sram_async[thread_layout=load_b_layout](
+            b_smem.vectorize[1, simd_width](), b_tile.vectorize[1, simd_width]()
+        )
+
+        async_copy_wait_all()
+        barrier()
+
+        @parameter
+        for k in range(BK):
+            var a_tile = a_smem.tile[TM, 1](partition_row, k)
+            var b_tile = b_smem.tile[1, TN](k, partition_col)
+            a_reg.copy_from(a_tile)
+            b_reg.copy_from(b_tile)
+            outer_product_acc(dst_reg, a_reg, b_reg)
+        barrier()
+
+    dst_vec.copy_from(dst_reg_vec)
+
+
+fn run_gemm_kernel_6[
+    dtype: DType,
+    a_layout: Layout,
+    b_layout: Layout,
+    c_layout: Layout,
+    BM: Int,
+    BN: Int,
+    BK: Int,
+    TM: Int,
+    TN: Int,
+](
+    inout m: Bench,
+    ctx: DeviceContext,
+    a: LayoutTensor,
+    b: LayoutTensor,
+    c: LayoutTensor,
+) raises:
+    var M = a.shape[0]()
+    var N = b.shape[1]()
+    var K = a.shape[1]()
+
+    alias NUM_THREADS = (BM * BN) // (TM * TN)
+    var func = ctx.compile_function[
+        gemm_kernel_6[
+            dtype, a.layout, b.layout, c.layout, BM, BN, BK, TM, TN, NUM_THREADS
+        ]
+    ]()
+
+    @always_inline
+    @parameter
+    fn run_func(ctx: DeviceContext) raises:
+        ctx.enqueue_function(
+            func,
+            a,
+            b,
+            c,
+            grid_dim=(ceildiv(N, BN), ceildiv(M, BM)),
+            block_dim=(NUM_THREADS),
+        )
+
+    time_kernel[run_func](m, ctx, M * N * K, "vectorized_mem_access")
     # Do one iteration for verifciation
     ctx.memset(
         DeviceBuffer[dtype](

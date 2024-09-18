@@ -57,6 +57,7 @@ from matmul_kernels import (
     run_gemm_kernel_3,
     run_gemm_kernel_4,
     run_gemm_kernel_5,
+    run_gemm_kernel_6,
     run_gemm_kernel_tc,
     run_cublas,
 )
@@ -222,6 +223,10 @@ def main():
             DType.float32, a_layout, b_layout, c_layout, 128, 128, 8, 8, 8
         ]
 
+        alias k6 = run_gemm_kernel_6[
+            DType.float32, a_layout, b_layout, c_layout, 128, 128, 8, 8, 8
+        ]
+
         alias k_tc = run_gemm_kernel_tc[
             DType.float32, a_layout, b_layout, c_layout, 128, 128, 32, 64, 64
         ]
@@ -231,6 +236,7 @@ def main():
         test.run_test[k3](m)
         test.run_test[k4](m)
         test.run_test[k5](m)
+        test.run_test[k6](m)
         test_tc.run_test[k_tc](m)
 
     m.dump_report()
