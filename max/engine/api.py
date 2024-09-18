@@ -568,7 +568,7 @@ class InferenceSession:
         custom_extensions: Optional[CustomExtensionsType] = None,
         custom_ops_path: Optional[str] = None,
         input_specs: Optional[List[TorchInputSpec]] = None,
-        weights_registry: Optional[dict[str, np.ndarray]] = None,
+        weights_registry: Optional[dict[str, DLPackArray]] = None,
     ) -> Model:
         """Loads a trained model and compiles it for inference.
 
@@ -621,9 +621,10 @@ class InferenceSession:
                 )
 
         weights_registry:
-            A mapping from names of model weights' names to their values.
-            The values are currently expected to be NumPy arrays.
-            Currently, only MAX graph models use this argument.
+            A mapping from names of model weights' names to their values. The
+            values are currently expected to be dlpack arrays. If an array is a
+            read-only numpy array, the user must ensure that its lifetime
+            extends beyond the lifetime of the model.
 
         Returns
         -------
