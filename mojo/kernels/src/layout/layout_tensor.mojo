@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from collections import InlineArray, Optional, OptionalReg
+from collections import Optional, OptionalReg
 from math import ceildiv
 from os import abort
 from sys import alignof, prefetch, simdwidthof, sizeof
@@ -18,7 +18,7 @@ from layout.element import Element
 from memory import UnsafePointer, memcpy, stack_allocation, memset_zero
 from memory.reference import AddressSpace, _GPUAddressSpace
 
-from utils import StaticIntTuple
+from utils import StaticIntTuple, StaticTuple
 from utils.numerics import max_finite
 
 from .int_tuple import (
@@ -1223,7 +1223,7 @@ struct LayoutTensor[
     fn split[
         count: Int,
         axis: Int = 0,
-    ](self) -> InlineArray[
+    ](self) -> StaticTuple[
         LayoutTensor[
             dtype,
             Self._compute_tile_layout[
@@ -1253,7 +1253,7 @@ struct LayoutTensor[
         ]()
 
         alias stride = layout.stride[axis].value()
-        var tiles = __type_of(result)(unsafe_uninitialized=True)
+        var tiles = __type_of(result)()
 
         @parameter
         for i in range(count):
@@ -1262,17 +1262,14 @@ struct LayoutTensor[
             # The compiler can't allocate LayoutTensor on stack if ptr is not known at compile time.
             # See MOCO-1081 for more details.
             alias tile_size = layout.shape[axis].value() // count
-            var ptr = tiles.unsafe_ptr().offset(i)
-            ptr.init_pointee_move(
-                LayoutTensor[
-                    dtype,
-                    Self._compute_tile_layout[
-                        layout.shape[axis].value() // count, axis
-                    ]()[0],
-                    address_space=address_space,
-                    element_layout=element_layout,
-                ](self.ptr.offset(i * tile_size * stride)),
-            )
+            tiles[i] = LayoutTensor[
+                dtype,
+                Self._compute_tile_layout[
+                    layout.shape[axis].value() // count, axis
+                ]()[0],
+                address_space=address_space,
+                element_layout=element_layout,
+            ](self.ptr.offset(i * tile_size * stride))
 
         return tiles
 
