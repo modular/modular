@@ -1007,8 +1007,7 @@ struct LayoutTensor[
 
     @staticmethod
     fn _compute_tile_layout[*tile_sizes: Int]() -> Layout:
-        alias tiler = MakeTileLayoutList[tile_sizes]()
-        alias tiles = zipped_divide(layout, tiler)
+        alias tiles = Self._divide_tiles[tile_sizes]()
 
         @parameter
         if __experimental_non_homogeneous_tile:
@@ -1016,6 +1015,11 @@ struct LayoutTensor[
             return Self._prop_unknown_shape[0, tiles, layout]()
 
         return tiles
+
+    @staticmethod
+    fn _divide_tiles[*tile_sizes: Int]() -> Layout:
+        alias tiler = MakeTileLayoutList[tile_sizes]()
+        return zipped_divide(layout, tiler)
 
     @staticmethod
     @always_inline
@@ -1044,6 +1048,7 @@ struct LayoutTensor[
         dtype,
         Self._compute_tile_layout[tile_sizes]()[0],
         address_space=address_space,
+        __experimental_non_homogeneous_tile = self.__experimental_non_homogeneous_tile,
     ] as result:
         """Tiles the layout and returns a tensor tile with the specified
         tile_sizes at specific tile coordinates.
@@ -1541,10 +1546,42 @@ struct LayoutTensor[
         dtype,
         coalesce(Self._compute_tile_layout[vector_shape]()[1], keep_rank=True),
         address_space=address_space,
-        element_layout = Self._compute_tile_layout[vector_shape]()[0],
+        element_layout = Self._divide_tiles[vector_shape]()[0],
+        __experimental_non_homogeneous_tile = self.__experimental_non_homogeneous_tile,
     ] as result:
         # Update element stride to account for vector shapes.
         var org_coords_stride = StaticIntTuple[rank]()
+
+        @parameter
+        @always_inline
+        fn __check_vector_shape[*vec_shape: Int]():
+            @parameter
+            for i in range(__get_len[vec_shape]()):
+                alias shape_i = to_int(self.layout.shape[i])
+
+                @parameter
+                if shape_i == UNKNOWN_VALUE:
+                    constrained[
+                        vec_shape[i] == 1,
+                        "vector dim has to be 1 when layout shape is unknown.",
+                    ]()
+                else:
+                    constrained[
+                        shape_i % vec_shape[i] == 0,
+                        (
+                            "tensor dim has to be an integer multiple of vector"
+                            " dim."
+                        ),
+                    ]()
+
+                    constrained[
+                        shape_i >= vec_shape[i],
+                        "vectorize shape has to be smaller than tensor shape.",
+                    ]()
+
+        @parameter
+        if __experimental_non_homogeneous_tile:
+            __check_vector_shape[vector_shape]()
 
         @parameter
         for i in range(rank):
@@ -1845,17 +1882,30 @@ struct LayoutTensor[
         alias dst_element_size = int(self.element_size)
         alias src_element_size = int(other.element_size)
 
-        constrained[
-            layout.known_shape() and other_layout.known_shape(),
-            "copy_from must move data of statically known shape",
-        ]()
-
         alias dst_size = layout.size()
         alias src_size = other_layout.size()
-        constrained[
-            dst_size == src_size,
-            "copy_from should move data of the same size",
-        ]()
+
+        @parameter
+        if not __experimental_non_homogeneous_tile:
+            constrained[
+                layout.known_shape() and other_layout.known_shape(),
+                "copy_from must move data of statically known shape",
+            ]()
+
+            constrained[
+                dst_size == src_size,
+                "copy_from should move data of the same size",
+            ]()
+        else:
+            alias is_rank2 = self.rank == 2 and other.rank == 2
+            constrained[
+                is_rank2,
+                (
+                    "non homogeneous tile copy is only available for rank-2"
+                    " tensor."
+                ),
+            ]()
+
         constrained[
             dst_element_size == src_element_size, "copy_from should move"
         ]()
@@ -1949,29 +1999,73 @@ struct LayoutTensor[
                 ).store(self.ptr.offset(dst_idx))
 
         @parameter
-        for i in range(dst_size):
+        if not __experimental_non_homogeneous_tile:
 
             @parameter
-            if has_copy_bounds:
+            for i in range(dst_size):
 
                 @parameter
-                if src_coords_bound.__bool__() and dst_element_size == 1:
-                    if not __is_in_bound(
-                        self.element_coords[i](), dst_coords_bound.value()
-                    ):
-                        continue
+                if has_copy_bounds:
 
-                @parameter
-                if dst_coords_bound.__bool__() and src_element_size == 1:
-                    if not __is_in_bound(
-                        other.element_coords[i](),
-                        rebind[StaticIntTuple[other.rank]](
-                            dst_coords_bound.value()
-                        ),
-                    ):
-                        continue
+                    @parameter
+                    if src_coords_bound.__bool__() and dst_element_size == 1:
+                        if not __is_in_bound(
+                            self.element_coords[i](), dst_coords_bound.value()
+                        ):
+                            continue
 
-            __store_element[i](__load_element[i]())
+                    @parameter
+                    if dst_coords_bound.__bool__() and src_element_size == 1:
+                        if not __is_in_bound(
+                            other.element_coords[i](),
+                            rebind[StaticIntTuple[other.rank]](
+                                dst_coords_bound.value()
+                            ),
+                        ):
+                            continue
+
+                __store_element[i](__load_element[i]())
+
+        else:
+            var d0 = min(other.dim(0), self.dim(0))
+            var d1 = min(other.dim(1), self.dim(1))
+
+            var dst_layout = RuntimeLayout[self.layout](
+                RuntimeTuple[self.layout.shape](d0, d1),
+                self.runtime_layout.stride,
+            )
+            var src_layout = RuntimeLayout[other.layout](
+                RuntimeTuple[other.layout.shape](d0, d1),
+                other.runtime_layout.stride,
+            )
+
+            var dst_element_size = self.runtime_element_layout.size()
+            var src_element_size = other.runtime_element_layout.size()
+
+            for i in range(d0 * d1):
+                var dst_idx = make_runtime_layout(
+                    self.runtime_element_layout, dst_layout
+                )(i * dst_element_size)
+
+                var src_idx = make_runtime_layout(
+                    other.runtime_element_layout, src_layout
+                )(i * src_element_size)
+
+                var src_element = Element[dtype, other.element_layout].load[
+                    other.address_space
+                ](
+                    rebind[UnsafePointer[Scalar[dtype], other.address_space]](
+                        other.ptr
+                    ).offset(src_idx),
+                    other.runtime_element_layout,
+                )
+
+                alias dst_element_type = Element[dtype, self.element_layout]
+                dst_element_type(
+                    rebind[dst_element_type.element_data_type](
+                        src_element.element_data
+                    )
+                ).store(self.ptr.offset(dst_idx))
 
     @always_inline
     fn copy_from(

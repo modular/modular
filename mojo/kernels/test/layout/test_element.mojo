@@ -11,6 +11,7 @@ from sys import alignof
 from layout import IntTuple, Layout, LayoutTensor, RuntimeLayout, RuntimeTuple
 from layout.element import Element
 from layout.int_tuple import UNKNOWN_VALUE
+from layout._utils import ManagedLayoutTensor
 from layout.fillers import arange
 from utils import StaticIntTuple
 
@@ -189,6 +190,68 @@ fn test_element_dynamic_layout():
     # CHECK: 480.0 490.0 500.0 510.0 520.0 530.0 540.0 550.0
     # CHECK: 560.0 570.0 580.0 590.0 600.0 610.0 620.0 630.0
     print(tensor_8x8)
+
+    alias layoutUx8 = Layout.row_major(UNKNOWN_VALUE, 8)
+    var runtime_layoutUx8 = RuntimeLayout[layoutUx8].row_major(
+        StaticIntTuple[2](8, 8)
+    )
+
+    var tensor_Ux8 = ManagedLayoutTensor[
+        DType.float32, layoutUx8, __experimental_non_homogeneous_tile=True
+    ](runtime_layoutUx8)
+    arange(tensor_Ux8.tensor, 0, 0.5)
+    # CHECK: 0.0 0.5 1.0 1.5 2.0 2.5 3.0 3.5
+    # CHECK: 4.0 4.5 5.0 5.5 6.0 6.5 7.0 7.5
+    # CHECK: 8.0 8.5 9.0 9.5 10.0 10.5 11.0 11.5
+    # CHECK: 12.0 12.5 13.0 13.5 14.0 14.5 15.0 15.5
+    # CHECK: 16.0 16.5 17.0 17.5 18.0 18.5 19.0 19.5
+    # CHECK: 20.0 20.5 21.0 21.5 22.0 22.5 23.0 23.5
+    # CHECK: 24.0 24.5 25.0 25.5 26.0 26.5 27.0 27.5
+    # CHECK: 28.0 28.5 29.0 29.5 30.0 30.5 31.0 31.5
+    print(tensor_Ux8.tensor)
+
+    var tensor_Ux8_vec4_d1 = tensor_Ux8.tensor.vectorize[1, 4]()
+
+    # CHECK: ((1, 4):(0, 1))
+    # CHECK: [0.0, 0.5, 1.0, 1.5] [2.0, 2.5, 3.0, 3.5]
+    # CHECK: [4.0, 4.5, 5.0, 5.5] [6.0, 6.5, 7.0, 7.5]
+    # CHECK: [8.0, 8.5, 9.0, 9.5] [10.0, 10.5, 11.0, 11.5]
+    # CHECK: [12.0, 12.5, 13.0, 13.5] [14.0, 14.5, 15.0, 15.5]
+    # CHECK: [16.0, 16.5, 17.0, 17.5] [18.0, 18.5, 19.0, 19.5]
+    # CHECK: [20.0, 20.5, 21.0, 21.5] [22.0, 22.5, 23.0, 23.5]
+    # CHECK: [24.0, 24.5, 25.0, 25.5] [26.0, 26.5, 27.0, 27.5]
+    # CHECK: [28.0, 28.5, 29.0, 29.5] [30.0, 30.5, 31.0, 31.5]
+    print(tensor_Ux8_vec4_d1.element_layout)
+    print(tensor_Ux8_vec4_d1)
+
+    alias layout8xU = Layout.row_major(8, UNKNOWN_VALUE)
+    var runtime_layout8xU = RuntimeLayout[layout8xU].row_major(
+        StaticIntTuple[2](8, 2)
+    )
+
+    var tensor_8xU = ManagedLayoutTensor[
+        DType.float32, layout8xU, __experimental_non_homogeneous_tile=True
+    ](runtime_layout8xU)
+    arange(tensor_8xU.tensor, 0, 0.5)
+    # CHECK: 0.0 0.5
+    # CHECK: 1.0 1.5
+    # CHECK: 2.0 2.5
+    # CHECK: 3.0 3.5
+    # CHECK: 4.0 4.5
+    # CHECK: 5.0 5.5
+    # CHECK: 6.0 6.5
+    # CHECK: 7.0 7.5
+    print(tensor_8xU.tensor)
+
+    var tensor_Ux8_vec4_d0 = tensor_8xU.tensor.vectorize[4, 1]()
+    # CHECK: ((4, 1):(-1, 0))
+    # CHECK: [0.0, 1.0, 2.0, 3.0] [0.5, 1.5, 2.5, 3.5]
+    # CHECK: [4.0, 5.0, 6.0, 7.0] [4.5, 5.5, 6.5, 7.5]
+    print(tensor_Ux8_vec4_d0.element_layout)
+    print(tensor_Ux8_vec4_d0)
+
+    _ = tensor_Ux8^
+    _ = tensor_8xU^
 
 
 # CHECK-LABEL: test_element_masked_load
