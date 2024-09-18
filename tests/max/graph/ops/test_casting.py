@@ -171,7 +171,8 @@ def test_reshape__fails_with_different_symoblic_dim(
     assume(0 not in input_type.shape)
     assume(dim not in input_type.shape)
     with Graph("reshape", input_types=[input_type]) as graph:
-        graph.inputs[0].reshape([*output_shape, dim])
+        with pytest.raises(ValueError):
+            graph.inputs[0].reshape([*output_shape, dim])
 
 
 @given(
@@ -185,7 +186,6 @@ def test_reshape__fails_with_different_number_of_elements(
     dim: Dim,
 ):
     assume(static_known_shape_size([*input_type.shape, dim]) < 2**63 - 1)
-    assume(all(isinstance(d, StaticDim) for d in input_type.shape))
     assume(0 not in input_type.shape)
     assume(dim > 1)  # 0 and 1 should both work
     with Graph("reshape", input_types=[input_type]) as graph:

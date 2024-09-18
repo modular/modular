@@ -83,10 +83,8 @@ def test_matmul_symbolic() -> None:
     assert_matmul_properties(graph, ["M", "N"])
 
     # Test that a shape error is raised for incompatible symbolic dims.
-    graph = matmul_graph(
-        "matmul_symbolic_invalid_axes", (["M", "K"], ["J", "N"])
-    )
-    assert_matmul_properties(graph, ["M", "N"])
+    with pytest.raises(ValueError):
+        matmul_graph("matmul_symbolic_invalid_axes", (["M", "K"], ["J", "N"]))
 
     # Test symbolic matrix-vector multiplication.
     graph = matmul_graph("matmul_symbolic_matrix_vector", (["M", "K"], ["K"]))
@@ -162,14 +160,12 @@ def test_matmul_symbolic_edge_cases() -> None:
     assert "3" in str(graph._mlir_op)
 
     # Test that an error is raised for incompatible symbolic dimensions.
-    graph = matmul_graph(
-        "symbolic_matmul_incompatible", (["M", "K"], ["J", "N"])
-    )
-    assert_matmul_properties(graph, ["M", "N"])
+    with pytest.raises(ValueError):
+        matmul_graph("symbolic_matmul_incompatible", (["M", "K"], ["J", "N"]))
 
     # Test that an error is raised for 1D symbolic matmul with invalid dims.
-    graph = matmul_graph("symbolic_matmul_1d_tensors", (["M"], ["N"]))
-    assert_matmul_properties(graph, [])
+    with pytest.raises(ValueError):
+        matmul_graph("symbolic_matmul_1d_tensors", (["M"], ["N"]))
 
 
 def test_matmul_higher_rank_symbolic() -> None:
@@ -193,11 +189,11 @@ def test_matmul_higher_rank_symbolic() -> None:
     assert_matmul_properties(graph, ["A", "D", "B", "E"])
 
     # Test that an error is raised for incompatible higher rank tensors.
-    graph = matmul_graph(
-        "symbolic_higher_rank_incompatible",
-        (["A", "B", "C", "D"], ["E", "F", "G"]),
-    )
-    assert_matmul_properties(graph, ["A", "B", "C", "G"])
+    with pytest.raises(ValueError):
+        matmul_graph(
+            "symbolic_higher_rank_incompatible",
+            (["A", "B", "C", "D"], ["E", "F", "G"]),
+        )
 
 
 def test_builder_failure_message() -> None:
@@ -210,7 +206,7 @@ def test_builder_failure_message() -> None:
     with pytest.raises(ValueError):
         matmul_graph(
             "symbolic_higher_rank_incompatible",
-            ([7, 8, 9, 10], [4, 5, 6]),
+            (["A", "B", "C", "D"], ["E", "F", "G"]),
         )
 
 
