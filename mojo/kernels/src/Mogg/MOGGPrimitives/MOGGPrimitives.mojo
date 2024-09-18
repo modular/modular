@@ -124,9 +124,11 @@ struct StateContext:
 fn byte_buffer_alloc[
     target: StringLiteral,
     alignment: Int,
-](byte_size: Int, call_ctx: MojoCallContextPtr) raises -> NDBuffer[
-    DType.int8, 1
-]:
+](
+    byte_size: Int,
+    device_context: UnsafePointer[DeviceContext],
+    call_ctx: MojoCallContextPtr,
+) raises -> NDBuffer[DType.int8, 1]:
     """Function will allocate a 1-D buffer with the specified size/alignment on device.
     """
     # This primitive has a byte-size input, so always assume a byte format
@@ -137,8 +139,8 @@ fn byte_buffer_alloc[
         # For now, only cuda targets can use device context directly
         return NDBuffer[DType.int8, 1](
             # FIXME: RUNP-356 Direct access to CUDA within DeviceContext
-            call_ctx.get_device_context().cuda_context.malloc_async[Int8](
-                byte_size, call_ctx.get_device_context().cuda_stream
+            device_context[].cuda_context.malloc_async[Int8](
+                byte_size, device_context[].cuda_stream
             ),
             shape,
         )
@@ -441,7 +443,7 @@ fn mgp_assert[message: StringLiteral](cond: Bool) raises -> Int:
 
 @mogg_register("mgp.buffer.alloc")
 @always_inline
-fn mgp_buffer_alloc_dynamic[
+fn mgp_buffer_alloc[
     aRuntimeSlot: UInt64,
     bRawAlign: UInt64,
     cDevice: StringLiteral,
@@ -449,11 +451,14 @@ fn mgp_buffer_alloc_dynamic[
     dummy_chain: Int,
     ctx: StateContext,
     byte_size: Int,
+    dev_context: UnsafePointer[DeviceContext],
     call_ctx: MojoCallContextPtr,
 ) raises -> NDBuffer[DType.int8, 1]:
     # Default to alignment of 0 which means kPreferredMemoryAlignment if cRawAlign is kUnknownSize (SizeUtils.h).
     alias alignment = 0 if bRawAlign == UInt64.MAX else int(bRawAlign)
-    return byte_buffer_alloc[cDevice, alignment=alignment](byte_size, call_ctx)
+    return byte_buffer_alloc[cDevice, alignment=alignment](
+        byte_size, dev_context, call_ctx
+    )
 
 
 @mogg_register("mgp.buffer.constant.external")
