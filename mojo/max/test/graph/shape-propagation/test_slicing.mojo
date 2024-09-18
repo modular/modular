@@ -17,7 +17,6 @@ fn test_concat() raises:
             TensorType(DType.int32, 3, 2),
             TensorType(DType.int32, 3, 4),
             TensorType(DType.int32, 3, Dim("x")),
-            TensorType(DType.int32, 5, 6),
         ),
     )
 
@@ -39,15 +38,6 @@ fn test_concat() raises:
     # TODO(GRA-552): Enable comparison of shape directly instead of printing full mlir
     assert_true(str(cc2).endswith("!mo.tensor<[3, y], si32>"))
 
-    #      concat axis
-    #           |
-    #           v
-    # shape_0: [3, x]
-    # shape_1: [5, 6]
-    #
-    var cc3 = concat(List[Symbol](g[2], g[1]), axis=0)
-    assert_true(str(cc3).endswith("!mo.tensor<[6, x], si32>"))
-
 
 fn test_concat_error() raises:
     var g = Graph(
@@ -68,6 +58,19 @@ fn test_concat_error() raises:
         contains="[concat] input shapes must match except at concat axis"
     ):
         _ = concat(List[Symbol](g[0], g[1]), axis=1)
+
+    #      concat axis
+    #           |
+    #           v
+    # shape_0: [3, x]
+    # shape_1: [5, 6]
+    #
+    # NOTE error because we can't prove `x == 6` at compile time; user must use
+    # rebind to "cast" the `x` dimension to 6.
+    with assert_raises(
+        contains="[concat] input shapes must match except at concat axis"
+    ):
+        _ = concat(List[Symbol](g[0], g[1]), axis=0)
 
     #      concat axis
     #              |
