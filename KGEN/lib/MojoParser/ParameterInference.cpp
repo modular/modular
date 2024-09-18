@@ -237,8 +237,8 @@ LogicalResult ParameterInferenceState::matchTypes(Type actualType,
     }
 
   // Handle SignatureType
-  if (auto actual = dyn_cast<SignatureType>(actualType))
-    if (auto expected = dyn_cast<SignatureType>(expectedType)) {
+  if (auto actual = dyn_cast<LITSignatureType>(actualType))
+    if (auto expected = dyn_cast<LITSignatureType>(expectedType)) {
       // When checking SignatureTypes, we have to keep track of
       // paramIndexRefDepth to be sure we are binding the right parameters.
       if (actual.getArguments().size() == expected.getArguments().size() &&
@@ -253,6 +253,10 @@ LogicalResult ParameterInferenceState::matchTypes(Type actualType,
              llvm::zip(actual.getResults(), expected.getResults()))
           if (failed(matchTypes(actualResult, expectedResult)))
             return failure();
+
+        if (failed(matchParams(actual.getCaptureLifetimes(),
+                               expected.getCaptureLifetimes())))
+          return failure();
 
         --paramIndexRefDepth;
         return success();
@@ -421,6 +425,17 @@ LogicalResult ParameterInferenceState::matchParams(TypedAttr actualAttr,
         return failure();
       return matchParams(actualExtract.getStructValue(),
                          expectedExtract.getStructValue());
+    }
+  }
+
+  if (auto actualSet = dyn_cast<LifetimeSetAttr>(actualAttr)) {
+    if (auto expectedSet = dyn_cast<LifetimeSetAttr>(expectedAttr)) {
+      // HACK: To phase this in, permit implicitly downcasting to the empty set.
+      // This will go away when the default capturing syntax is changed to the
+      // any set.
+      if (expectedSet.getOperands().empty())
+        return success();
+      return failure();
     }
   }
 
