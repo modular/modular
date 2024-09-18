@@ -12,6 +12,7 @@ from pathlib import Path
 
 import numpy as np
 import pytest
+import torch
 from max.driver import Tensor
 from max.dtype import DType
 from max.engine import InferenceSession, TensorSpec, TorchInputSpec
@@ -454,21 +455,50 @@ class Model:
         return input + weights_tensor
 
 
-def test_execute_external_weights(session: InferenceSession) -> None:
-    num_elems = 4096
-    weights = np.arange(num_elems, dtype=np.float32)
+@pytest.fixture(scope="module")
+def external_weights_size() -> int:
+    return 4096
 
+
+@pytest.fixture(scope="module")
+def external_weights_graph(external_weights_size: int) -> Graph:
     graph = Graph(
         "external_weights",
-        Model(num_elems),
-        input_types=(TensorType(DType.float32, (num_elems,)),),
+        Model(external_weights_size),
+        input_types=(TensorType(DType.float32, (external_weights_size,)),),
     )
     graph._mlir_op.verify()
+    return graph
 
-    compiled = session.load(graph, weights_registry={"foo": weights})
-    input = np.random.randn(num_elems).astype(np.float32)
+
+def test_execute_external_weights_numpy(
+    session: InferenceSession,
+    external_weights_graph: Graph,
+    external_weights_size: int,
+) -> None:
+    weights = np.arange(external_weights_size, dtype=np.float32)
+    compiled = session.load(
+        external_weights_graph, weights_registry={"foo": weights}
+    )
+
+    input = np.random.randn(external_weights_size).astype(np.float32)
     output = compiled.execute(input)
     assert np.allclose(output[0].to_numpy(), input + weights)
+
+
+def test_execute_external_weights_torch(
+    session: InferenceSession,
+    external_weights_graph: Graph,
+    external_weights_size: int,
+) -> None:
+    weights = torch.arange(external_weights_size, dtype=torch.float32)
+    compiled = session.load(
+        external_weights_graph, weights_registry={"foo": weights}
+    )
+
+    input = torch.randn(external_weights_size, dtype=torch.float32)
+    output = compiled.execute(input)
+    assert torch.allclose(torch.from_dlpack(output[0]), input + weights)
 
 
 def test_stats_report(
