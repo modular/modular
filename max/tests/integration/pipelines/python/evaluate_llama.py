@@ -154,7 +154,8 @@ def compare_values(actual, expected):
 @click.option("--output", type=Path)
 @click.option("--weight-path", type=Path, default="/tmp/tiny-llama.gguf")
 def main(output, weight_path):
-    results = run_llama3(weight_path, PROMPTS)
+    model = load_llama3(weight_path)
+    results = run_llama3(model, PROMPTS)
     encoder = NumpyEncoder()
     with open(output, "w") as f:
         f.write(encoder.encode(results))

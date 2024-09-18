@@ -26,14 +26,29 @@ def tinyllama_path(testdata_directory) -> Path:
     return testdata_directory / "tiny_llama.gguf"
 
 
-def test_tiny_llama(testdata_directory, tinyllama_path):
+@pytest.fixture(scope="session")
+def tinyllama_model(tinyllama_path, request):
+    """Only one instance of a fixture is cached at a time.
+    So we may get multiple invocations of this based on the parameters we are
+    invoking it with.
+    https://docs.pytest.org/en/stable/how-to/fixtures.html#fixture-scopes
+    """
+    max_length = request.param[0]
+    max_new_tokens = request.param[1]
+    model = load_llama3(
+        tinyllama_path, max_length=max_length, max_new_tokens=max_new_tokens
+    )
+    return model
+
+
+@pytest.mark.parametrize("tinyllama_model", [(512, 10)], indirect=True)
+def test_tinyllama_outputs(testdata_directory, tinyllama_model):
     """Runs Llama3.1 on a tiny checkpoint and compares it to previously generated
     golden values.
     """
     with open(testdata_directory / "tiny_llama_golden.json") as f:
         expected_results = NumpyDecoder().decode(f.read())
-    model = load_llama3(tinyllama_path)
-    actual = run_llama3(model)
+    actual = run_llama3(tinyllama_model)
     compare_values(actual, expected_results)
 
 
@@ -43,49 +58,81 @@ def _prompt_to_test_id(prompt: str):
 
 
 @pytest.fixture(params=PROMPTS, ids=_prompt_to_test_id)
-def test_prompt(request):
+def prompt_fixture(request):
     return request.param
-
-
-@pytest.fixture(params=[-1, 64, 256, 512, 555, 1024])
-def test_max_new_tokens(request):
-    return request.param
-
-
-@pytest.fixture(scope="session")
-def test_tinyllama_model(tinyllama_path):
-    model = load_llama3(tinyllama_path, max_new_tokens=-1)
-    return model
 
 
 @pytest.mark.asyncio
-async def test_tinyllama_max_tokens(
-    test_tinyllama_model,
-    test_prompt,
-    test_max_new_tokens,
+@pytest.mark.parametrize("tinyllama_model", [(512, -1)], indirect=True)
+async def test_tinyllama_create_context(
+    tinyllama_model,
+    prompt_fixture,
 ):
-    context = await test_tinyllama_model.new_context(
-        test_prompt, test_max_new_tokens
+    context = await tinyllama_model.new_context(prompt_fixture)
+    assert context is not None
+    assert context.prompt == prompt_fixture
+    assert context.decoded == prompt_fixture
+
+    encoded_prompt = tinyllama_model._tokenizer.encode(prompt_fixture)
+    prompt_len = len(encoded_prompt)
+    assert len(context.tokens) == prompt_len
+
+    assert context.max_tokens == tinyllama_model.config.max_length
+    assert context.next_tokens is not None
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("tinyllama_model", [(2, -1), (4, -1)], indirect=True)
+async def test_tinyllama_context_exceeding_max_tokens_throws(
+    tinyllama_model,
+    prompt_fixture,
+):
+    encoded_prompt = tinyllama_model._tokenizer.encode(prompt_fixture)
+    prompt_len = len(encoded_prompt)
+    assert prompt_len > tinyllama_model.config.max_length
+    with pytest.raises(ValueError, match="max model context length"):
+        await tinyllama_model.new_context(prompt_fixture)
+
+
+@pytest.fixture(params=[None, 64, 256, 512, 555, 1024])
+def max_new_tokens_fixture(request):
+    return request.param
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "tinyllama_model", [(512, -1), (512, 64)], indirect=True
+)
+async def test_tinyllama_max_new_tokens(
+    tinyllama_model,
+    prompt_fixture,
+    max_new_tokens_fixture,
+):
+    context = await tinyllama_model.new_context(
+        prompt_fixture, max_new_tokens_fixture
     )
     prompt_size = len(context.tokens)
 
     # Max tokens of the context is set to prompt-size + max_new_tokens
-    max_model_tokens = test_tinyllama_model.config.max_length
+    max_model_tokens = tinyllama_model.config.max_length
     max_model_tokens_after_prompt = max_model_tokens - prompt_size
-    max_new_tokens = (
-        max_model_tokens_after_prompt if test_max_new_tokens
-        < 0 else min(max_model_tokens_after_prompt, test_max_new_tokens)
+    requested_max_new_tokens = (
+        max_new_tokens_fixture if max_new_tokens_fixture else tinyllama_model.config.max_new_tokens
     )
-    assert context.max_tokens == prompt_size + max_new_tokens
+    configured_max_new_tokens = (
+        max_model_tokens_after_prompt if requested_max_new_tokens
+        < 0 else min(max_model_tokens_after_prompt, requested_max_new_tokens)
+    )
+    assert context.max_tokens == prompt_size + configured_max_new_tokens
 
     tokens = []
     request_id = str(uuid4())
     while True:
-        response = await test_tinyllama_model.next_token({request_id: context})
+        response = await tinyllama_model.next_token({request_id: context})
         if request_id not in response:
             break
         token = response[request_id]
         tokens.append(token)
     generated_token_count = len(tokens)
 
-    assert generated_token_count == max_new_tokens
+    assert generated_token_count == configured_max_new_tokens
