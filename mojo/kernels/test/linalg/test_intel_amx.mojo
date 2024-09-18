@@ -8,7 +8,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 # REQUIRES: DISABLED
-# REQUIRES: linux, intel_amx
+# REQUIRES: system-linux, intel_amx
 # RUN: %mojo-no-debug %s | FileCheck %s
 
 
