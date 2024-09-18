@@ -609,17 +609,14 @@ def KGEN_ParamDeclareRegionOp : KGENOp<"param.declare.region", [
     TypeAttrOf<KGEN_SignatureType>:$signature,
     TypeAttrOf<FunctionType>:$functionType,
     KGEN_ParamDeclArrayAttr:$inputParams,
-    KGEN_ParamDeclArrayAttr:$resultParams,
     UnitAttr:$isolated,
     KGEN_InlineLevelAttr:$inlineLevel
   );
   let regions = (region SizedRegion<1>:$bodyRegion);
 
   let assemblyFormat = [{
-    custom<RegionDeclaration>($paramDecl, $inputParams, $resultParams,
-                              $functionType, $signature, $inlineLevel,
-                              $bodyRegion)
-    attr-dict
+    custom<RegionDeclaration>($paramDecl, $inputParams, $functionType,
+                              $signature, $inlineLevel, $bodyRegion) attr-dict
   }];
 
   let extraClassDeclaration = [{
@@ -629,6 +626,8 @@ def KGEN_ParamDeclareRegionOp : KGENOp<"param.declare.region", [
 
     /// Region body op doesn't form a symbol.
     bool isOptionalSymbol() { return true; }
+
+    ArrayRef<ParamDeclAttr> getResultParams() { return {}; }
   }];
 }
 
