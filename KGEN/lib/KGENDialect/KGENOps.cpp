@@ -758,23 +758,6 @@ void ParamForContinueOp::getBranchTargets(
 // ParamIfOp
 //===----------------------------------------------------------------------===//
 
-static ParseResult parseOptionalParamDecls(AsmParser &p,
-                                           ParamDeclArrayAttr &paramDecls) {
-  if (p.parseOptionalArrow()) {
-    paramDecls = ParamDeclArrayAttr::get(p.getContext(), {});
-    return success();
-  }
-  return parseParamDecls(p, paramDecls);
-}
-
-static void printOptionalParamDecls(AsmPrinter &p, Operation *op,
-                                    ParamDeclArrayAttr paramDecls) {
-  if (paramDecls.empty())
-    return;
-  p << " -> ";
-  printParamDecls(p, paramDecls);
-}
-
 bool ParamIfOp::isIsolatedFromAbove(unsigned regionNum) {
   switch (regionNum) {
   case 0:
@@ -814,20 +797,8 @@ ValueRange ParamIfOp::getEntryArguments(std::optional<unsigned> target) {
   return {};
 }
 
-void ParamIfOp::walkDeclarations(function_ref<void(ParamDeclAttr)> walkDecl) {
-  llvm::for_each(getResultParams(), walkDecl);
-}
-
 void ParamIfOp::walkDefinitions(
-    function_ref<void(ParamDeclAttr, const ParamDefValue &)> walkDef) {
-  ParamDefValue value(getCond(), {&getThenRegion(), &getElseRegion()});
-  for (ParamDeclAttr decl : getResultParams())
-    walkDef(decl, value);
-}
-
-void ParamIfOp::renameDeclarations(ArrayRef<ParamDeclAttr> decls) {
-  setResultParams(decls);
-}
+    function_ref<void(ParamDeclAttr, const ParamDefValue &)> walkDef) {}
 
 bool ParamIfOp::isImplicitlyParametric() { return true; }
 
