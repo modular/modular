@@ -7,9 +7,7 @@
 #ifndef KGEN_TOOLCOMMON_KGENPASSES_H
 #define KGEN_TOOLCOMMON_KGENPASSES_H
 
-#include "KGEN/KGENDialect/KGENEnums.h"
 #include "KGEN/ToolCommon/CompilationOptions.h"
-#include "Support/Buffer.h"
 #include "Support/LLVMForwardDecls.h"
 #include "mlir/IR/DialectRegistry.h"
 #include "mlir/IR/OwningOpRef.h"

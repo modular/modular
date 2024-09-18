@@ -11,22 +11,15 @@
 #include "AsyncRT/CompilerSupport/Context.h"
 #include "AsyncRT/Runtime/Runtime.h"
 #include "Init/Init.h"
-#include "KGEN/Compiler/KGENCompiler.h"
-#include "KGEN/KGENDialect/KGENOps.h"
-#include "KGEN/LITDialect/LITAttrs.h"
-#include "KGEN/LITDialect/LITOps.h"
 #include "KGEN/MOGGPreElab/Passes.h"
 #include "KGEN/Support/CompilerProfiling.h"
 #include "KGEN/Support/ForceLinkMLIRC.h"
 #include "KGEN/ToolCommon/CLOptions.h"
 #include "KGEN/ToolCommon/InitAllDialects.h"
 #include "KGEN/ToolCommon/KGENPasses.h"
-#include "Support/Compiler/MLIRDenseAttr.h"
 #include "Support/Context.h"
 #include "Support/DebugInfoDialect/Transforms/Passes.h"
-#include "Support/MDialect/MAttrs.h"
-#include "mlir/Bytecode/BytecodeWriter.h"
-#include "mlir/IR/IRMapping.h"
+#include "mlir/IR/BuiltinOps.h"
 #include "mlir/Pass/PassRegistry.h"
 #include "mlir/Tools/mlir-opt/MlirOptMain.h"
 #include "llvm/Support/CommandLine.h"
@@ -35,111 +28,10 @@
 using namespace M;
 
 //===----------------------------------------------------------------------===//
-// TestGeneratePreElaboratedBody
-//===----------------------------------------------------------------------===//
-
-/// Write the operation to bytecode and return it as a dense resource.
-static DenseResourceElementsAttr serializeToResource(Operation *op,
-                                                     const Twine &name) {
-  SmallVector<char> buffer;
-  llvm::raw_svector_ostream stream(buffer);
-  if (failed(mlir::writeBytecodeToFile(op, stream)))
-    return {};
-  return createResourceAttr(op->getContext(), buffer, name);
-}
-
-/// Generate a dummy module with the same function body.
-template <typename OpT>
-static OwningOpRef<ModuleOp> cloneIntoFakeModule(KGEN::LIT::FuncOp func) {
-  OpBuilder b(func.getContext());
-  OwningOpRef<ModuleOp> fakeModule = b.create<ModuleOp>(func.getLoc());
-  OpBuilder fakeBuilder = OpBuilder::atBlockEnd(fakeModule->getBody());
-  OpT fakeCompiledBody;
-  if constexpr (!std::is_same_v<OpT, KGEN::LIT::FuncOp>) {
-    fakeCompiledBody = fakeBuilder.create<OpT>(
-        func.getLoc(), func.getSymNameAttr(), func.getSignature());
-
-    // Just clone the body in.
-    mlir::IRMapping map;
-    func.getBodyRegion().cloneInto(&fakeCompiledBody.getBodyRegion(), map);
-  } else {
-    fakeCompiledBody = cast<OpT>(fakeBuilder.clone(*func));
-  }
-  fakeCompiledBody.setPackageExported();
-
-  return fakeModule;
-}
-
-namespace {
-
-/// This pass generates a kgen.func that clones the body and adds a
-/// "_elaborated" suffix to the name for all the specified lit.funcs in the
-/// module. It's used to test the logic in LowerLIT that handles pre-elaborated
-/// funcs.
-struct TestGeneratePreElaboratedBody
-    : public mlir::PassWrapper<TestGeneratePreElaboratedBody,
-                               OperationPass<ModuleOp>> {
-  MLIR_DEFINE_EXPLICIT_INTERNAL_INLINE_TYPE_ID(TestGeneratePreElaboratedBody)
-
-  StringRef getArgument() const override {
-    return "test-generate-elaborated-body";
-  }
-
-  void runOnOperation() override {
-    ModuleOp theModule = getOperation();
-
-    // Attach a kgen.func to the lit.func. This dummy function simply contains
-    // exactly the same operations as the lit.func, but has a slightly different
-    // name.
-    for (auto func : theModule.getOps<KGEN::LIT::FuncOp>()) {
-      // Allow the test to skip functions if they have the doNotExtern attr.
-      if (func->hasAttr("doNotExtern"))
-        continue;
-
-      // This pass generates `package.link` ops with archives for each target
-      // specified by functions that define attributes named
-      // "test.target.[0-9]".
-      SmallVector<TargetInfoAttr> targets;
-      for (size_t i = 0; i < 10; ++i)
-        if (auto target = func->getAttrOfType<TargetInfoAttr>(
-                llvm::formatv("test.target.{0}", i).str()))
-          targets.push_back(target);
-
-      OpBuilder b(func.getContext());
-      OwningOpRef<ModuleOp> fakeCopyModule =
-          cloneIntoFakeModule<KGEN::LIT::FuncOp>(func);
-      OwningOpRef<ModuleOp> fakeModule =
-          cloneIntoFakeModule<KGEN::GeneratorOp>(func);
-      OwningOpRef<ModuleOp> fakeCompiledModule =
-          cloneIntoFakeModule<KGEN::FuncOp>(func);
-
-      // Externalize the function and attach the post elaboration metadata.
-      func.getBody()->clear();
-      OpBuilder::atBlockBegin(func.getBody())
-          .create<KGEN::LIT::ExternFuncOp>(func.getLoc());
-      StringRef funcName = *func.getSymName();
-      StringAttr linkName = b.getStringAttr("link_" + funcName);
-      func.setPreCompiledModuleRefAttr(FlatSymbolRefAttr::get(linkName));
-      func.setPreElaborationNameAttr(func.getSymNameAttr());
-      func.setLinkageName(func.getSymNameAttr());
-
-      DenseResourceElementsAttr postParseBytecode = serializeToResource(
-          *fakeCopyModule, funcName + "_generated_post_parse_attr");
-      if (!postParseBytecode)
-        return signalPassFailure();
-
-      // Generate a package link to the fake module.
-      OpBuilder linkBuilder(func);
-      linkBuilder.create<KGEN::PackageLinkOp>(
-          func.getLoc(), linkName, postParseBytecode, /*dependencies=*/nullptr);
-    }
-  }
-};
-
-//===----------------------------------------------------------------------===//
 // TestAlwaysFailPass
 //===----------------------------------------------------------------------===//
 
+namespace {
 /// This is a pass that always fails for the purpose of debugging reproducers.
 struct TestAlwaysFailPass
     : public mlir::PassWrapper<TestAlwaysFailPass, OperationPass<ModuleOp>> {
@@ -149,7 +41,6 @@ struct TestAlwaysFailPass
 
   void runOnOperation() override { return signalPassFailure(); }
 };
-
 } // namespace
 
 int main(int argc, char **argv) {
@@ -182,7 +73,6 @@ int main(int argc, char **argv) {
   registerKGENToLLVMTranslation(registry);
 
   // Register test passes.
-  mlir::PassRegistration<TestGeneratePreElaboratedBody>{};
   mlir::PassRegistration<TestAlwaysFailPass>{};
 
   // Create our context.
