@@ -47,7 +47,9 @@ ssize_t DType::getSizeInBytes(size_t numElements) const {
   }
 
     // Handle other types.
-  case DType::f8:
+  case DType::f8e5m2:
+  case DType::f8e4m3:
+  case DType::f8e3m4:
   case DType::kBool:
     widthShift = 0;
     break;
@@ -110,8 +112,12 @@ FailureOr<DType> DType::getFromString(StringRef str) {
       return DType(f80);
     if (str == "f24")
       return DType(f24);
-    if (str == "f8")
-      return DType(f8);
+    if (str == "f8e5m2")
+      return DType(f8e5m2);
+    if (str == "f8e4m3")
+      return DType(f8e4m3);
+    if (str == "f8e3m4")
+      return DType(f8e3m4);
     if (str == "f128")
       return DType(f128);
     return failure();
@@ -164,8 +170,12 @@ std::string DType::getAsString() const {
     return "si" + llvm::utostr(getIntegerWidthInBits());
 
   switch (getValue()) {
-  case f8:
-    return "f8";
+  case f8e5m2:
+    return "f8e5m2";
+  case f8e4m3:
+    return "f8e4m3";
+  case f8e3m4:
+    return "f8e3m4";
   case f16:
     return "f16";
   case f32:

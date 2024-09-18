@@ -94,16 +94,18 @@ public:
     //===--- Floating point types -----------------------------------------===//
 
     /// Bits 0 through 3 indicate the kind of FP value.
-    f8 = 0 | mIsFloat,
-    f16 = 1 | mIsFloat,
-    f32 = 2 | mIsFloat,
-    f64 = 3 | mIsFloat,
-    f128 = 4 | mIsFloat,
+    f8e5m2 = 0 | mIsFloat,
+    f8e4m3 = 1 | mIsFloat,
+    f8e3m4 = 2 | mIsFloat,
+    f16 = 3 | mIsFloat,
+    bf16 = 4 | mIsFloat,
+    f32 = 5 | mIsFloat,
+    f64 = 6 | mIsFloat,
+    f128 = 7 | mIsFloat,
 
-    bf16 = 5 | mIsFloat,
-    f24 = 6 | mIsFloat,
-    f80 = 7 | mIsFloat,
-    tf32 = 8 | mIsFloat,
+    f24 = 8 | mIsFloat,
+    f80 = 9 | mIsFloat,
+    tf32 = 10 | mIsFloat,
 
     //===--- Encodings for other types ------------------------------------===//
 
@@ -277,7 +279,9 @@ inline constexpr ssize_t DType::getWidthInBits() const {
   default:
     return isInt() ? getIntegerWidthInBits() : -1;
     // Handle other types.
-  case DType::f8:
+  case DType::f8e5m2:
+  case DType::f8e4m3:
+  case DType::f8e3m4:
   case DType::kBool:
     return 8;
   case DType::f16:
@@ -310,11 +314,15 @@ DType::getSignificandPrecisionInBits() const {
   // The addition of the leading bit is written out explicitly for clarity.
   switch (getValue()) {
   default:
-  case DType::f8:
-    // f8 has at least 2 formats and is not supported in our stack.
   case DType::f24:
     // f24 has an unclear format and is not supported in our stack.
     return std::nullopt;
+  case DType::f8e5m2:
+    return 2 + 1;
+  case DType::f8e4m3:
+    return 3 + 1;
+  case DType::f8e3m4:
+    return 4 + 1;
   case DType::bf16:
     return 7 + 1;
   case DType::f16:
