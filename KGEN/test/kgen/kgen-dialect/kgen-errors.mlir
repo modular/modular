@@ -691,10 +691,23 @@ kgen.generator @kernel() {
 }
 
 kgen.generator export @top() {
-  // expected-error @below {{custom op 'kgen.param.constant' the emission kind must be either llvm or asm}}
-  kgen.param.constant: string = <compile_assembly(current_target(), something, 0, :() -> () @kernel)>
+  // expected-error @below {{custom op 'kgen.param.constant' the immediate emission kind must be either '=llvm' or '=asm'}}
+  kgen.param.constant: string = <compile_assembly(current_target(), =something, 0, :() -> () @kernel)>
   kgen.return
 }
+
+// -----
+
+kgen.generator @kernel() {
+  kgen.return
+}
+
+kgen.generator export @top() {
+  // expected-error @below {{custom op 'kgen.param.constant' 'compile_assembly' second operand should evaluate to either asm or llvm}}
+  kgen.param.constant: string = <compile_assembly(current_target(), 3, 0, :() -> () @kernel)>
+  kgen.return
+}
+
 // -----
 
 // expected-error @below {{parameter name and parameter value length mismatch. Expected 1, got 2}}
