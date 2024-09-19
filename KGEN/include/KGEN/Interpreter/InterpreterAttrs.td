@@ -162,6 +162,7 @@ def MemoryBlobAttr : InterpreterAttr<"MemoryBlob", "memory_blob"> {
     "MemoryHandleAttr":$handle,
     "MemoryKind":$kind,
     ArrayRefParameter<"PointerRegion">:$pointerRegions,
+    ArrayRefParameter<"int64_t">:$symbolRegions,
     DefaultValuedParameter<"unsigned", "0">:$addressSpace
   );
 
@@ -170,9 +171,10 @@ def MemoryBlobAttr : InterpreterAttr<"MemoryBlob", "memory_blob"> {
         "MemoryHandleAttr":$handle,
         "MemoryKind":$kind,
         "ArrayRef<PointerRegion>":$pointerRegions,
+        "ArrayRef<int64_t>":$symbolRegions,
         "unsigned":$addressSpace), [{
       return $_get(handle.getContext(), handle, kind, pointerRegions,
-                   addressSpace);
+                   symbolRegions, addressSpace);
     }]>
   ];
 

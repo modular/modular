@@ -32,10 +32,16 @@ def PointerRegions :
   WithPrinter<"writePointerRegions($_writer, $_getter)",
   WithType<"SmallVector<PointerRegion>">>>;
 
+def SymbolRegions :
+  WithParser<"succeeded(readSymbolRegions($_reader, $_var))",
+  WithPrinter<"writeSymbolRegions($_writer, $_getter)",
+  WithType<"SmallVector<int64_t>">>>;
+
 def MemoryBlobAttr : DialectAttribute<(attr
   MemoryHandleAttr:$handle,
   EnumAttr<"MemoryKind">:$kind,
   PointerRegions:$pointerRegions,
+  SymbolRegions:$symbolRegions,
   VarInt:$addressSpace
 )>;
 

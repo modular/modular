@@ -85,6 +85,28 @@ static void writePointerRegions(DialectBytecodeWriter &writer,
   writer.writeList(regions, writePointerRegion);
 }
 
+static LogicalResult readSymbolRegions(DialectBytecodeReader &reader,
+                                       SmallVectorImpl<int64_t> &regions) {
+  auto readSymbolRegion = [&](int64_t &offset) {
+    if (failed(reader.readSignedVarInt(offset)))
+      return failure();
+    return LogicalResult::success();
+  };
+
+  if (failed(reader.readList(regions, readSymbolRegion)))
+    return failure();
+
+  return success();
+}
+
+static void writeSymbolRegions(DialectBytecodeWriter &writer,
+                               ArrayRef<int64_t> regions) {
+  auto writePointerRegion = [&](const int64_t &region) {
+    writer.writeSignedVarInt(region);
+  };
+  writer.writeList(regions, writePointerRegion);
+}
+
 namespace {
 #include "KGEN/Interpreter/InterpreterDialectBytecode.cpp.inc"
 
