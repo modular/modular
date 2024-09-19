@@ -965,12 +965,6 @@ LifetimeSetAttr LifetimeSetAttr::get(ArrayRef<TypedAttr> operands,
                                      LifetimeSetType type) {
   SmallVector<TypedAttr> newOperands;
   for (TypedAttr operand : operands) {
-    // Recursively flatten sets into each other. We know this one is already
-    // flattened.
-    if (auto set = ::dyn_cast<LifetimeSetAttr>(operand)) {
-      llvm::append_range(newOperands, set.getOperands());
-      continue;
-    }
     // If we have the global mutable lifetime, treat it conservatively by
     // returning the global mutable lifetime.  It isn't wise to try to derive
     // information from something where lifetimes have been casted away.
