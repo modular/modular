@@ -17,6 +17,7 @@
 #include "KGEN/MojoParser/ASTDecl.h"
 #include "KGEN/MojoParser/DeclResolver.h"
 #include "KGEN/POPDialect/POPTypes.h"
+#include "MojoUtils.h"
 #include "ParserBase.h"
 #include "mlir/IR/ImplicitLocOpBuilder.h"
 #include "llvm/ADT/ScopeExit.h"
@@ -76,8 +77,9 @@ LIT::FuncOp StructEmitter::createFunction(
   }
   size_t numImplicitLifetimeDecls = implLifetimeParams.size();
 
-  auto metadata = FnMetadataAttr::get(argListAttrs, paramListAttrs,
-                                      numImplicitLifetimeDecls);
+  auto metadata = FnMetadataAttr::get(
+      argListAttrs, paramListAttrs, numImplicitLifetimeDecls,
+      getLifetimesAccessibleByParams(paramListAttrs, params, shared));
   FunctionType functionType =
       builder.getFunctionType(adjustedArgTypes, {resultType});
   Location location = shared.translateLocation(loc);

@@ -117,9 +117,9 @@ static LITSignatureType getRegisterPassableSignature(LITSignatureType traitSig,
                .drop_back(traitSig.hasMemoryOnlyResult());
   }
 
-  auto metadata = FnMetadataAttr::get(oldArgListAttrs.cloneWith(pogs),
-                                      traitSig.getParamListAttrs(),
-                                      numImplicitLifetimeDecls);
+  auto metadata = FnMetadataAttr::get(
+      oldArgListAttrs.cloneWith(pogs), traitSig.getParamListAttrs(),
+      numImplicitLifetimeDecls, traitSig.getCaptureLifetimes());
   return SignatureType::get(
       FunctionType::get(traitSig.getContext(), argTypes, resultType),
       traitSig.getParamTypes(), traitSig.getResultParamTypes(), conventions,

@@ -1222,11 +1222,14 @@ fn closureParameter[func: fn () capturing -> __mlir_type.index]():
     pass
 
 
+alias LifetimeSet = __mlir_type.`!lit.lifetime.set`
+
+
 # CHECK-LABEL: lit.func @"closureParameterCaptures
+# CHECK-SAME: :{mut |*(0,0)|}:
 # CHECK-SAME: func: !lit.signature<:lifetimes:() capturing -> !kgen.none>
 fn closureParameterCaptures[
-    lifetimes: __mlir_type.`!lit.lifetime.set`, //,
-    func: fn () capturing [lifetimes] -> None,
+    lifetimes: LifetimeSet, //, func: fn () capturing [lifetimes] -> None
 ]():
     pass
 
@@ -1242,8 +1245,60 @@ fn closureParameterInference[
     pass
 
 
+@register_passable("trivial")
+struct HasLifetimeParam[p: MutableLifetime]:
+    pass
+
+
+# CHECK-LABEL: lit.func @"explicitLifetime
+# CHECK-SAME: :{mut *(0,0)}:
+fn explicitLifetime[lt: MutableLifetime, //, arg: HasLifetimeParam[lt]]():
+    pass
+
+
+# CHECK-LABEL: lit.func @"inaccessibleImplicitLifetimeParam
+# CHECK-SAME: "<?, *"p`": lifetime<1>>(%arg:
+fn inaccessibleImplicitLifetimeParam(arg: HasLifetimeParam):
+    pass
+
+
+# CHECK-LABEL: lit.struct.decl @CapturingStruct
+struct CapturingStruct[a: int]:
+    @staticmethod
+    fn takeClosure[
+        lifetimes: LifetimeSet, //,
+        f: fn () capturing [lifetimes] -> None,
+    ]():
+        pass
+
+
+# CHECK-LABEL: lit.trait.decl @CapturingTrait
+trait CapturingTrait:
+    # CHECK: lit.func @"takeClosure{{.*}}:{mut |*(0,0)|}
+    fn takeClosure[
+        lifetimes: LifetimeSet, //,
+        f: fn () capturing [lifetimes] -> None,
+    ](self):
+        ...
+
+
+# CHECK-LABEL: lit.struct.decl @CapturingStructTrait
+@register_passable
+struct CapturingStructTrait(CapturingTrait):
+    # CHECK: lit.func @"takeClosure{{.*}}:{mut |*(0,0)|}
+    fn takeClosure[
+        lifetimes: LifetimeSet, //,
+        f: fn () capturing [lifetimes] -> None,
+    ](self):
+        pass
+
+    # CHECK: lit.func @"takeClosure{{.*}}_thunk":{mut |*(0,0)|}
+
+
 # CHECK-LABEL: lit.func @"inferCaptureLifetimes
-fn inferCaptureLifetimes(inout x: int, arg: HasParam):
+fn inferCaptureLifetimes[
+    lt: MutableLifetime, param: HasLifetimeParam[lt]
+](inout x: int, arg: HasParam):
     @parameter
     fn bareFunc():
         pass
@@ -1253,12 +1308,27 @@ fn inferCaptureLifetimes(inout x: int, arg: HasParam):
         _ = x
 
     # CHECK: call {{.*}}closureParameterCaptures{{.*}}<:lifetime.set {},
+    # CHECK-SAME: !lit.signature<() capturing -> !kgen.none>
     closureParameterCaptures[bareFunc]()
     # CHECK: call {{.*}}closureParameterCaptures{{.*}}<:lifetime.set {mut *"x`"},
+    # CHECK-SAME: !lit.signature<:{mut *"x`"}:() capturing -> !kgen.none>
     closureParameterCaptures[captureSomething]()
     # CHECK: call {{.*}}closureParameterInference{{.*}}<*"p`{{.*}}",
     # CHECK-SAME: rebind(:!lit.signature<:{mut *"x`"}:{{.*}} *"captureSomething
     closureParameterInference[captureSomething](arg)
+
+    # CHECK: lit.alias.decl *"unboundSet{{.*}} !lit.signature<:{mut |*(0,0)|}
+    alias unboundSet = closureParameterCaptures
+    # CHECK: lit.alias.decl *"boundSet{{.*}} !lit.signature<:{mut *"x`"}
+    alias boundSet = closureParameterCaptures[captureSomething]
+
+    # CHECK: lit.alias.decl *"unboundSingleParam{{.*}} !lit.signature<:{mut *(0,0)}
+    alias unboundSingleParam = explicitLifetime
+    # CHECK: lit.alias.decl *"boundSingleParam{{.*}} !lit.signature<:{mut lt}
+    alias boundSingleParam = explicitLifetime[param]
+
+    # CHECK: lit.alias.decl *"memberFunction{{.*}} !lit.signature<:{mut |*(0,1)|}
+    alias memberFunction = CapturingStruct.takeClosure
 
 
 # CHECK-LABEL: lit.func @"topLevelParamFn[__mlir_type.index]()"<a_param>

@@ -319,7 +319,7 @@ FnMetadataAttr::getWithBoundPosArgs(size_t numBound) const {
       getContext(), newPogs, newDefaultPosArgs, getDefaultKwOnlyArgs(), packIdx,
       argListAttrs.getOrigPackConvention());
   return get(newArgListAttrs, getParamListAttrs(),
-             getNumImplicitLifetimeDecls());
+             getNumImplicitLifetimeDecls(), getCaptureLifetimes());
 }
 
 FnMetadataAttrInterface
@@ -343,7 +343,8 @@ FnMetadataAttr::getWithBoundParams(const llvm::BitVector &boundParams) const {
 
   auto newParamAttrs = PogListAttr::get(
       getContext(), newPogs, newDefaultPosParams, newDefaultKwOnlyParams);
-  return get(getArgListAttrs(), newParamAttrs, getNumImplicitLifetimeDecls());
+  return get(getArgListAttrs(), newParamAttrs, getNumImplicitLifetimeDecls(),
+             getCaptureLifetimes());
 }
 
 /// Get a new metadata attribute for a signature with the given number of
@@ -386,8 +387,8 @@ FnMetadataAttr::prependPosParams(size_t numNewParams,
   auto newParamListAttr =
       PogListAttr::get(getContext(), mergedPogs, getDefaultPosParams(),
                        getDefaultKwOnlyParams());
-  return get(getArgListAttrs(), newParamListAttr,
-             getNumImplicitLifetimeDecls());
+  return get(getArgListAttrs(), newParamListAttr, getNumImplicitLifetimeDecls(),
+             getCaptureLifetimes());
 }
 
 SmallVector<bool> LIT::getContextualVariadicMask(ArrayRef<Operation *> ops) {
@@ -482,13 +483,6 @@ LogicalResult FnMetadataAttr::verifySignature(
                                 getDefaultKwOnlyParams(), paramListAttr,
                                 inputParamTypes, "parameter")))
     return failure();
-
-  // Only capturing functions can have capture lifetimes.
-  if (!isEmptyLifetimeSet(getCaptureLifetimes()) && !effects.isCapturing()) {
-    return emitError() << "signature has non-empty capture lifetime set but "
-                          "isn't marked 'capturing'";
-  }
-
   return success();
 }
 

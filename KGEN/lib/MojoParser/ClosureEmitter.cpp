@@ -135,9 +135,10 @@ addClosureSelfArgToFunctionSignature(Type closureType, ArgConvention convention,
 
   // A closure signature is not escaping because its 'escaping' state is
   // captured in the self argument we are inserting in this function.
-  auto metadata = FnMetadataAttr::get(
-      argListAttr.cloneWith(argPogs), oldMetadata.getParamListAttrs(),
-      oldMetadata.getNumImplicitLifetimeDecls());
+  auto metadata = FnMetadataAttr::get(argListAttr.cloneWith(argPogs),
+                                      oldMetadata.getParamListAttrs(),
+                                      oldMetadata.getNumImplicitLifetimeDecls(),
+                                      oldMetadata.getCaptureLifetimes());
   return SignatureType::get(
       FunctionType::get(ctx, signatureInputs, sig.getResults()),
       sig.getParamTypes(), /*resultParamTypes=*/{}, argConventions,
@@ -812,7 +813,7 @@ ClosureEmitter::createWrapperInitWithImpl(StructDeclOp closureWrapper,
   SmallVector<StringAttr> argNames{selfName, StringAttr::get(ctx, "impl")};
   SmallVector<PassingKind> argPassingKinds(2, PassingKind::PosOnly);
   SmallVector<PassingKind> paramPassingKindsOfInit(initParams.size(),
-                                                   PassingKind::PosOnly);
+                                                   PassingKind::Implicit);
   auto paramListAttrsOfInit = PogListAttr::get(
       ctx, getDemangledNames(initParams), paramPassingKindsOfInit);
   auto argListAttrsOfInit = PogListAttr::get(ctx, argNames, argPassingKinds);
@@ -876,7 +877,7 @@ ClosureEmitter::createWrapperInitWithImpl(StructDeclOp closureWrapper,
   }
 
   SmallVector<PassingKind> paramPassingKinds(closureImpl.getParams().size(),
-                                             PassingKind::PosOnly);
+                                             PassingKind::Implicit);
   auto paramListAttrs = PogListAttr::get(ctx, getDemangledNames(topLevelParams),
                                          paramPassingKinds);
   auto argListAttrs =

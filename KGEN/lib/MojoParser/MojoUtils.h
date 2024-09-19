@@ -19,13 +19,16 @@ class InflightDiag;
 } // namespace M
 
 namespace M::KGEN {
+class ParamDeclAttr;
 class SignatureType;
 } // namespace M::KGEN
 
 namespace M::KGEN::LIT {
+class AnyStructType;
 class ASTType;
 class LITSignatureType;
-class AnyStructType;
+class LifetimeSetAttr;
+class PogListAttr;
 class SharedState;
 enum class SpecialFunctionKind : uint8_t;
 
@@ -36,6 +39,22 @@ inline const char *plural(size_t value, const char *one = "",
                           const char *other = "s") {
   return value == 1 ? one : other;
 }
+
+/// This function takes a list of function parameter types and returns a
+/// `LifetimeSetAttr` consisting of the lifetime parameters accessible through
+/// the function parameters. For example, a function with the signature
+///
+///   fn[lt: MutableLifetime, x: WeirdReference[lt]]() -> None
+///
+/// May access the lifetime set `{mut lt}` through its parameters. This function
+/// takes the param decls, which means it returns the named lifetime parameter
+/// references accessible through the type.
+///
+/// This function takes a `SharedState` instance to access the cached lifetime
+/// finder instance.
+LifetimeSetAttr getLifetimesAccessibleByParams(PogListAttr paramList,
+                                               ArrayRef<ParamDeclAttr> params,
+                                               SharedState &shared);
 
 /// Returns if a value of the specified type can be coerced to the other type
 /// with a rebind.  This means that values of the two types have exactly the
