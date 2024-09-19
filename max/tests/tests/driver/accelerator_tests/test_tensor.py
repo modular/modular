@@ -94,3 +94,13 @@ def test_zeros():
     assert np.array_equal(
         host_tensor.to_numpy(), np.zeros((3, 3), dtype=np.int32)
     )
+
+
+def test_dlpack_device():
+    tensor = Tensor((3, 3), DType.int32, device=CUDA())
+    device_tuple = tensor.__dlpack_device__()
+    assert len(device_tuple) == 2
+    assert isinstance(device_tuple[0], int)
+    assert device_tuple[0] == 2  # 2 is the value of DLDeviceType::kDLCUDA
+    assert isinstance(device_tuple[1], int)
+    assert device_tuple[1] == 0  # should be the default device
