@@ -2997,7 +2997,7 @@ AnyValue FunctionTypeNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
       return {};
     }
     signature = signature.getWithMetadata(
-        signature.getMetadata().getWithCaptureLifetimes(lifetime));
+        signature.getMetadata().addCaptureLifetimes(lifetime));
   }
 
   // Set the value of the dummy scope to the generated signature so that we can

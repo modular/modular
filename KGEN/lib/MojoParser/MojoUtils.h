@@ -52,9 +52,9 @@ inline const char *plural(size_t value, const char *one = "",
 ///
 /// This function takes a `SharedState` instance to access the cached lifetime
 /// finder instance.
-LifetimeSetAttr getLifetimesAccessibleByParams(PogListAttr paramList,
-                                               ArrayRef<ParamDeclAttr> params,
-                                               SharedState &shared);
+TypedAttr getLifetimesAccessibleByParams(PogListAttr paramList,
+                                         ArrayRef<ParamDeclAttr> params,
+                                         SharedState &shared);
 
 /// Returns if a value of the specified type can be coerced to the other type
 /// with a rebind.  This means that values of the two types have exactly the
