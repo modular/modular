@@ -286,6 +286,25 @@ KGEN_CompilerRT_AsyncRT_MojoCallContext_Allocate(AsyncRTMojoCallContextRef ctx,
 //===----------------------------------------------------------------------===//
 
 COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void
+KGEN_CompilerRT_AsyncRT_CreateAsyncs_Error(
+    AsyncRTMojoCallContextRef ctx, AsyncRTWrapper<AnyAsyncValueRef> *asyncs,
+    size_t arrayLen, AsyncRTWrapper<Runtime> runtimePtr, const char *messagePtr,
+    size_t messageLen) {
+  StringRef errorMsg(messagePtr, messageLen);
+  Runtime &runtime = unwrap(runtimePtr);
+  // Set all async value ref to error;
+  ArrayRef asyncArray(asyncs, arrayLen);
+  for (AsyncRTWrapper<AnyAsyncValueRef> async : asyncArray) {
+    AnyAsyncValueRef &value = unwrap(async);
+    EncodedDiagnostic diagnostic{Twine(errorMsg), unwrap(ctx).loc.copy()};
+    if (value.getPointer() && value.getPointer()->isIndirect())
+      value.copy().setToError(std::move(diagnostic));
+    else
+      value = value.createError(runtime, std::move(diagnostic));
+  }
+}
+
+COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void
 KGEN_CompilerRT_CreateAsync_bool(bool data,
                                  AsyncRTWrapper<AnyAsyncValueRef> async,
                                  AsyncRTWrapper<Runtime> runtimePtr) {
@@ -576,6 +595,8 @@ void M::KGEN::registerAsyncRT(
 
   funcs.push_back({"KGEN_CompilerRT_AsyncRT_GetCurrentStream",
                    (void *)&KGEN_CompilerRT_AsyncRT_GetCurrentStream});
+  funcs.push_back({"KGEN_CompilerRT_AsyncRT_CreateAsyncs_Error",
+                   (void *)&KGEN_CompilerRT_AsyncRT_CreateAsyncs_Error});
   funcs.push_back({"KGEN_CompilerRT_CreateAsync_ssizet",
                    (void *)&KGEN_CompilerRT_CreateAsync_ssizet});
   funcs.push_back({"KGEN_CompilerRT_CreateAsync_chain",
