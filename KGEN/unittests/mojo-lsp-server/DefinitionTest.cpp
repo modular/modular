@@ -101,7 +101,7 @@ fn parametrizedFunction[
 
 TEST(DefinitionTest, testMultiLocation) {
   Document doc("test:///foo.mojo", R"(
-fn print(x: StringRef):
+fn print(x: String):
     pass
 
 fn print(x: Bool):
@@ -115,7 +115,7 @@ fn function[type: AnyTrivialRegType](arg: type):
 
   createTestClient()
       .open(doc)
-      .definition(doc, *doc.findFirstPos("print(x: StringRef"),
+      .definition(doc, *doc.findFirstPos("print(x: String"),
                   [&](const std::vector<lsp::Location> &locations) {
                     EXPECT_EQ((int)locations.size(), 1);
                     strLocation = locations[0];
