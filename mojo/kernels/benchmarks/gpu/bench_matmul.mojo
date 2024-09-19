@@ -132,7 +132,7 @@ fn bench_matmul[
 
             @parameter
             if use_cublas:
-                _ = cublas_matmul(
+                _ = cublas_matmul[use_tf32=True](
                     cublas_handle,
                     tensor_c,
                     tensor_a,
