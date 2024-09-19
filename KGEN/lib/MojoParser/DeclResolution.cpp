@@ -997,8 +997,8 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
 
     SmallVector<TypedAttr> lifetimes =
         shared.cachedLifetimeFinder.findLifetimesIn(captureTypes);
-    signature = signature.getWithMetadata(
-        signature.getMetadata().getWithCaptureLifetimes(
+    signature =
+        signature.getWithMetadata(signature.getMetadata().addCaptureLifetimes(
             LifetimeSetAttr::get(getContext(), lifetimes)));
     funcOp.setSignature(signature);
 

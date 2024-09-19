@@ -24,10 +24,9 @@ using namespace M;
 using namespace M::KGEN;
 using namespace M::KGEN::LIT;
 
-LifetimeSetAttr
-LIT::getLifetimesAccessibleByParams(PogListAttr paramList,
-                                    ArrayRef<ParamDeclAttr> params,
-                                    SharedState &shared) {
+TypedAttr LIT::getLifetimesAccessibleByParams(PogListAttr paramList,
+                                              ArrayRef<ParamDeclAttr> params,
+                                              SharedState &shared) {
   // Implicit parameters are not accessible on the callee side, so we don't
   // consider their lifetime accesses.
   params = params.drop_back(countNumImplicitKinds(paramList));

@@ -270,8 +270,9 @@ def LIT_FnMetadataAttr : LITAttr<"FnMetadata", "fn_metadata",
       return getParamListAttrs().getDefaultKwOnly();
     }
 
-    /// Get the metadata with new capture lifetimes.
-    FnMetadataAttr getWithCaptureLifetimes(TypedAttr lifetimes);
+    /// Reconstruct the metadata with the union of the current capture lifetimes
+    /// with the new capture lifetimes.
+    FnMetadataAttr addCaptureLifetimes(TypedAttr lifetimes);
 
     /// Return true if the signature has a variadic argument.
     bool hasVarArgs() const;
@@ -690,10 +691,11 @@ def LifetimeSetAttr : LITTypedAttr<"LifetimeSet", "lifetime.set"> {
   let skipDefaultBuilders = 1;
   let builders = [
     // Override the default builder used by the generated parser.
-    AttrBuilder<(ins "ArrayRef<TypedAttr>":$operands, "LifetimeSetType":$type)>,
+    AttrBuilder<(ins "ArrayRef<TypedAttr>":$operands, "LifetimeSetType":$type),
+                "", "TypedAttr">,
     AttrBuilderWithInferredContext<(ins "ArrayRef<TypedAttr>":$operands,
-                                        "LifetimeSetType":$type)>,
-    AttrBuilder<(ins "ArrayRef<TypedAttr>":$operands)>
+                                        "LifetimeSetType":$type), "", "TypedAttr">,
+    AttrBuilder<(ins "ArrayRef<TypedAttr>":$operands), "", "TypedAttr">
   ];
 
   let extraClassDeclaration = [{

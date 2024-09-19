@@ -486,9 +486,14 @@ LogicalResult FnMetadataAttr::verifySignature(
   return success();
 }
 
-FnMetadataAttr FnMetadataAttr::getWithCaptureLifetimes(TypedAttr lifetimes) {
+FnMetadataAttr FnMetadataAttr::addCaptureLifetimes(TypedAttr lifetimes) {
+  auto type = LifetimeType::get(getContext(), /*isMutable=*/true);
+  SmallVector<TypedAttr> lifetimeUnion{
+      LifetimeSetUnionAttr::get(getCaptureLifetimes(), type),
+      LifetimeSetUnionAttr::get(lifetimes, type)};
   return get(getArgListAttrs(), getParamListAttrs(),
-             getNumImplicitLifetimeDecls(), lifetimes);
+             getNumImplicitLifetimeDecls(),
+             LifetimeSetAttr::get(getContext(), lifetimeUnion));
 }
 
 size_t FnMetadataAttr::getNumArgs() const {
@@ -944,19 +949,17 @@ LifetimeSetAttr LifetimeSetAttr::getFromBytecode(ArrayRef<TypedAttr> operands,
   return Base::get(type.getContext(), operands, type);
 }
 
-LifetimeSetAttr LifetimeSetAttr::get(MLIRContext *ctx,
-                                     ArrayRef<TypedAttr> operands,
-                                     LifetimeSetType type) {
+TypedAttr LifetimeSetAttr::get(MLIRContext *ctx, ArrayRef<TypedAttr> operands,
+                               LifetimeSetType type) {
   return get(operands, type);
 }
 
-LifetimeSetAttr LifetimeSetAttr::get(MLIRContext *ctx,
-                                     ArrayRef<TypedAttr> operands) {
+TypedAttr LifetimeSetAttr::get(MLIRContext *ctx, ArrayRef<TypedAttr> operands) {
   return get(operands, LifetimeSetType::get(ctx));
 }
 
-LifetimeSetAttr LifetimeSetAttr::get(ArrayRef<TypedAttr> operands,
-                                     LifetimeSetType type) {
+TypedAttr LifetimeSetAttr::get(ArrayRef<TypedAttr> operands,
+                               LifetimeSetType type) {
   SmallVector<TypedAttr> newOperands;
   for (TypedAttr operand : operands) {
     // If we have the global mutable lifetime, treat it conservatively by
@@ -986,6 +989,11 @@ LifetimeSetAttr LifetimeSetAttr::get(ArrayRef<TypedAttr> operands,
     return ParameterAttr::compare(lhs, rhs);
   });
   removeDuplicates(newOperands);
+
+  // If we find a set union and there is only one operand, collapse the union.
+  if (newOperands.size() == 1)
+    if (auto setUnion = ::dyn_cast<LifetimeSetUnionAttr>(newOperands.front()))
+      return setUnion.getValue();
 
   return Base::get(type.getContext(), newOperands, type);
 }
