@@ -60,7 +60,7 @@ struct Info:
 
     @no_inline
     fn __contains__(self, content: String) -> Bool:
-        return content in str(content)
+        return content in str(self)
 
 
 alias _EMISSION_KIND_ASM = 0
