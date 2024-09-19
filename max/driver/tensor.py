@@ -6,7 +6,15 @@
 from __future__ import annotations
 
 from itertools import product
-from typing import Any, Generator, Optional, Protocol, Tuple, runtime_checkable
+from typing import (
+    Any,
+    Generator,
+    Optional,
+    Protocol,
+    Tuple,
+    TypeVar,
+    runtime_checkable,
+)
 
 import numpy as np
 from max._driver import Tensor as _Tensor
@@ -22,6 +30,9 @@ class DLPackArray(Protocol):
 
     def __dlpack_device__(self) -> Any:
         ...
+
+
+_T = TypeVar("_T", bound="Tensor")
 
 
 class Tensor(DLPackArray):
@@ -46,23 +57,19 @@ class Tensor(DLPackArray):
         shape: Tuple[int, ...],
         dtype: DType,
         device: Device = CPU(),
-        **kwargs,
     ) -> None:
-        # Note that we ignore the dtype and shape arguments if we provide an
-        # _impl. This is because the dtype and shape will be taken directly from
-        # the preconstructed C++ representation.
-        if "_impl" in kwargs:
-            self._impl = kwargs["_impl"]
-        else:
-            self._impl = _Tensor(shape, dtype._to(), device._device)
+        self._impl = _Tensor(shape, dtype._to(), device._device)
 
     @classmethod
-    def _from_impl(cls, impl: _Tensor) -> Tensor:
+    def _from_impl(cls: Type[_T], impl: _Tensor) -> _T:
+        # TODO: use typing.Self instead of TypeVar when we are on Python 3.11+.
         # The error messages are confusing if accidentally passing an incorrect
         # type, so we assert.
         assert isinstance(impl, _Tensor)
         # The dtype and shape arguments are ignored.
-        return cls((), DType.uint8, _impl=impl)
+        tensor = cls.__new__(cls)
+        tensor._impl = impl
+        return tensor
 
     @classmethod
     def zeros(
@@ -126,7 +133,7 @@ class Tensor(DLPackArray):
         """Gets a tensor slice. Supports full numpy-style slicing. Invocations
         using only integer-based indexes will return zero-rank tensors."""
         new_tensor = self._impl.get(idx)
-        return Tensor._from_impl(new_tensor)
+        return self._from_impl(new_tensor)
 
     def item(self) -> Any:
         """Returns the scalar value at a given location. Currently
@@ -143,8 +150,7 @@ class Tensor(DLPackArray):
 
     def copy_to(self, device: Device) -> Tensor:
         """Copies a tensor to the provided device."""
-        copied = self._impl.copy_to(device._device)
-        return Tensor(self.shape, self.dtype, device, _impl=copied)
+        return self._from_impl(self._impl.copy_to(device._device))
 
     @classmethod
     def from_numpy(cls, arr: np.ndarray, device: Device = CPU()) -> Tensor:
