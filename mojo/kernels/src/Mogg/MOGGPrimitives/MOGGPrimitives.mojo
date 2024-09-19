@@ -632,14 +632,15 @@ fn mgp_buffer_device_to_host[
     ctx: StateContext,
     dev_buf: NDBuffer[DType.uint8, 1],
     host_buf: NDBuffer[DType.uint8, 1],
+    dev_ctx: UnsafePointer[DeviceContext],
     call_ctx: MojoCallContextPtr,
 ) raises -> Int:
     @parameter
     if (dHostDevice == "cpu") and ("cuda" in cOtherDevice):
-        call_ctx.get_device_context().enqueue_copy_from_device[DType.uint8](
+        dev_ctx[].enqueue_copy_from_device[DType.uint8](
             host_buf.data,
             DeviceBuffer[DType.uint8](
-                call_ctx.get_device_context(),
+                dev_ctx[],
                 dev_buf.data,
                 dev_buf.size(),
                 owning=False,
@@ -664,21 +665,20 @@ fn mgp_buffer_device_to_device[
     ctx: StateContext,
     src_buf: NDBuffer[DType.uint8, 1],
     dst_buf: NDBuffer[DType.uint8, 1],
+    dev_ctx: UnsafePointer[DeviceContext],
     call_ctx: MojoCallContextPtr,
 ) raises -> Int:
     @parameter
     if ("cuda" in cSrcDevice) and ("cuda" in dDstDevice):
-        call_ctx.get_device_context().enqueue_copy_device_to_device[
-            DType.uint8
-        ](
+        dev_ctx[].enqueue_copy_device_to_device[DType.uint8](
             DeviceBuffer[DType.uint8](
-                call_ctx.get_device_context(),
+                dev_ctx[],
                 dst_buf.data,
                 dst_buf.size(),
                 owning=False,
             ),
             DeviceBuffer[DType.uint8](
-                call_ctx.get_device_context(),
+                dev_ctx[],
                 src_buf.data,
                 src_buf.size(),
                 owning=False,
@@ -706,13 +706,14 @@ fn mgp_buffer_host_to_device[
     ctx: StateContext,
     host_buf: NDBuffer[DType.uint8, 1],
     dev_buf: NDBuffer[DType.uint8, 1],
+    dev_ctx: UnsafePointer[DeviceContext],
     call_ctx: MojoCallContextPtr,
 ) raises -> Int:
     @parameter
     if ("cuda" in dOtherDevice) and (cHostDevice == "cpu"):
-        call_ctx.get_device_context().enqueue_copy_to_device[DType.uint8](
+        dev_ctx[].enqueue_copy_to_device[DType.uint8](
             DeviceBuffer[DType.uint8](
-                call_ctx.get_device_context(),
+                dev_ctx[],
                 dev_buf.data,
                 dev_buf.size(),
                 owning=False,
