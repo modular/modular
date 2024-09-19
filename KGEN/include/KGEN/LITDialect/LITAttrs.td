@@ -719,7 +719,9 @@ def LifetimeSetUnionAttr : LITTypedAttr<"LifetimeSetUnion",
 
   let parameters = (ins "TypedAttr":$value,
                         AttributeSelfTypeParameter<"", "LifetimeType">:$type);
-  let assemblyFormat = "`<` $value `>`";
+  let assemblyFormat = [{
+    `<` custom<ParamValue>($value, "LifetimeSetType::get($_ctxt)") `>`
+  }];
 
   let skipDefaultBuilders = 1;
   let builders = [
