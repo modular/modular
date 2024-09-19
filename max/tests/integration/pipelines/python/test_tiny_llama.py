@@ -8,6 +8,7 @@ golden values.
 """
 
 import pytest
+from evaluate_llama import find_runtime_path, golden_data_fname
 import re
 from uuid import uuid4
 from pathlib import Path
@@ -22,15 +23,12 @@ from evaluate_llama import (
 
 
 @pytest.fixture(scope="session")
-def tinyllama_path(testdata_directory) -> Path:
-    return testdata_directory / "tiny_llama.gguf"
-
-
-@pytest.fixture(scope="session")
 def tinyllama_model(tinyllama_path, request):
-    """Only one instance of a fixture is cached at a time.
+    """Note: when using this fixture in a test, you must pytest.mark.parametrize
+    with the max_length and max_new_tokens pairs (see usage examples below)!
+    This is because only one instance of a fixture is cached at a time.
     So we may get multiple invocations of this based on the parameters we are
-    invoking it with.
+    invoking it with. `indirect=True` helps reduce the cache miss rate.
     https://docs.pytest.org/en/stable/how-to/fixtures.html#fixture-scopes
     """
     max_length = request.param[0]
@@ -41,12 +39,18 @@ def tinyllama_model(tinyllama_path, request):
     return model
 
 
-@pytest.mark.parametrize("tinyllama_model", [(512, 10)], indirect=True)
-def test_tinyllama_outputs(testdata_directory, tinyllama_model):
+@pytest.fixture(scope="session")
+def tinyllama_path(testdata_directory) -> Path:
+    return testdata_directory / "tiny_llama.gguf"
+
+
+@pytest.mark.parametrize("tinyllama_model", [(2048, -1)], indirect=True)
+def test_tiny_llama(tinyllama_model):
     """Runs Llama3.1 on a tiny checkpoint and compares it to previously generated
     golden values.
     """
-    with open(testdata_directory / "tiny_llama_golden.json") as f:
+    fname = find_runtime_path(golden_data_fname("tinyllama", "float32"))
+    with open(fname) as f:
         expected_results = NumpyDecoder().decode(f.read())
     actual = run_llama3(tinyllama_model)
     compare_values(actual, expected_results)
