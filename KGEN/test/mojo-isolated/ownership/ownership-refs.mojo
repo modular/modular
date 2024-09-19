@@ -499,3 +499,19 @@ fn test_parameter_closure_captures(owned x: MemExample, owned y: MemExample):
   # CHECK-NEXT: lit.call {{.*}}MemExample::@"__del__{{.*}}(%y)
   # CHECK-NEXT: lit.call {{.*}}MemExample::@"__del__{{.*}}(%x)
   capture()
+
+fn higher_order_function[lts: __mlir_type.`!lit.lifetime.set`, //, f: fn() capturing [lts] -> None]():
+  pass
+
+# CHECK-LABEL: lit.func @"test_higher_order_capture
+fn test_higher_order_capture(owned x: MemExample, owned y: MemExample):
+  # CHECK: lit.func *"capture
+  @parameter
+  fn capture():
+    _ = x^
+    _ = y^
+
+  # CHECK: lit.call {{.*}}higher_order_function{{.*}} !lit.signature<:{mut *"x`{{.*}}", mut *"y`{{.*}}"}
+  # CHECK-NEXT: lit.call {{.*}}MemExample::@"__del__{{.*}}(%y)
+  # CHECK-NEXT: lit.call {{.*}}MemExample::@"__del__{{.*}}(%x)
+  higher_order_function[capture]()

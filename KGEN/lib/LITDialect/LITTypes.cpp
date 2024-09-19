@@ -517,6 +517,16 @@ OptionalParseResult LifetimeType::parseValue(AsmParser &p,
     return mlir::success();
   };
 
+  // Parse |...| as lifetime set unions.
+  if (succeeded(p.parseOptionalVerticalBar())) {
+    TypedAttr set;
+    if (parseParamValue(p, set, LifetimeSetType::get(p.getContext())) ||
+        p.parseVerticalBar())
+      return failure();
+    result = LifetimeSetUnionAttr::get(set, *this);
+    return mlir::success();
+  }
+
   // Handle names, and index references.
   if (succeeded(p.parseOptionalStar())) {
     std::string str;
@@ -616,6 +626,13 @@ OptionalParseResult LifetimeType::parseValue(AsmParser &p,
 LogicalResult LifetimeType::printValue(AsmPrinter &p, TypedAttr value) const {
   if (auto declRef = ::dyn_cast<ParamDeclRefAttr>(value)) {
     printParamName(p, declRef.getName(), /*isRef*/ false);
+    return success();
+  }
+
+  if (auto set = ::dyn_cast<LifetimeSetUnionAttr>(value)) {
+    p << '|';
+    printParamValue(p, set.getValue());
+    p << '|';
     return success();
   }
 

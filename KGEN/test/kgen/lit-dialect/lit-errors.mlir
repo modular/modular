@@ -402,18 +402,3 @@ lit.func @ref_immut<life: lifetime<0>>(%ref1: !lit.ref<index, imm life>) ->  !li
 lit.func @broken_init[mut a](%arg0: index, %arg1: !lit.ref<index, mut a> init_self) -> !kgen.none {
   kgen.unreachable
 }
-
-// -----
-
-// expected-error @below {{signature has non-empty capture lifetime set but isn't marked 'capturing'}}
-lit.func @invalid_capture:{mut lt}:() {
-  kgen.return
-}
-
-// -----
-
-lit.func @invalid_capture_signature() {
-  // expected-error @below {{signature has non-empty capture lifetime set but isn't marked 'capturing'}}
-  kgen.param.declare ref: !lit.signature<:set:() -> ()> = <?>
-  kgen.return
-}

@@ -14,6 +14,7 @@
 #include "KGEN/LITDialect/LITAttrs.h"
 #include "KGEN/LITDialect/LITOps.h"
 #include "KGEN/LITDialect/LITTypes.h"
+#include "KGEN/LITDialect/LITUtils.h"
 #include "KGEN/MojoParser/ASTDecl.h"
 #include "KGEN/POPDialect/POPTypes.h"
 
@@ -22,6 +23,41 @@
 using namespace M;
 using namespace M::KGEN;
 using namespace M::KGEN::LIT;
+
+LifetimeSetAttr
+LIT::getLifetimesAccessibleByParams(PogListAttr paramList,
+                                    ArrayRef<ParamDeclAttr> params,
+                                    SharedState &shared) {
+  // Implicit parameters are not accessible on the callee side, so we don't
+  // consider their lifetime accesses.
+  params = params.drop_back(countNumImplicitKinds(paramList));
+
+  SmallVector<Type> types;
+  for (ParamDeclAttr param : params)
+    types.push_back(param.getType());
+  SmallVector<TypedAttr> lifetimes =
+      shared.cachedLifetimeFinder.findLifetimesIn(types);
+  // We also need to find all accessible lifetime sets, even if they are
+  // parametric, and union them with the found lifetimes.
+  // FIXME: This lookup is not cached.
+  mlir::AttrTypeWalker walker;
+  SmallVector<TypedAttr> sets;
+  walker.addWalk([&](TypedAttr attr) {
+    if (isa<LifetimeSetType>(attr.getType()))
+      sets.push_back(attr);
+  });
+  for (Type type : types)
+    walker.walk(type);
+
+  // We can union the sets together by wrapping them in a lifetime set union.
+  // The mutability doesn't matter since it will get flattened.
+  for (TypedAttr set : sets) {
+    lifetimes.push_back(LifetimeSetUnionAttr::get(
+        set, LifetimeType::get(shared.getContext(), /*isMutable=*/true)));
+  }
+
+  return LifetimeSetAttr::get(shared.getContext(), lifetimes);
+}
 
 /// Returns if a value of the specified type can be coerced to the other type
 /// with a rebind.  This means that values of the two types have exactly the
