@@ -1214,7 +1214,22 @@ floatLiteralConvertOpHelper(FloatLiteralSpecialValues special,
   unsigned bias = 0;
   llvm::APFloatBase::Semantics semantics = llvm::APFloatBase::S_IEEEhalf;
 
-  if (outType.isF16()) {
+  if (outType.isFloat8E5M2()) {
+    totalLength = 8;
+    exponentLength = 5;
+    bias = 15;
+    semantics = llvm::APFloatBase::S_Float8E5M2;
+  } else if (outType.isFloat8E4M3()) {
+    totalLength = 8;
+    exponentLength = 4;
+    bias = 7;
+    semantics = llvm::APFloatBase::S_Float8E4M3;
+  } else if (outType.isFloat8E3M4()) {
+    totalLength = 8;
+    exponentLength = 3;
+    bias = 3;
+    semantics = llvm::APFloatBase::S_Float8E3M4;
+  } else if (outType.isF16()) {
     totalLength = 16;
     exponentLength = 5;
     bias = 15;
