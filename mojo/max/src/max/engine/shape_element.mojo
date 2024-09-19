@@ -6,6 +6,7 @@
 """ShapeElement API.  See ShapeElement struct definition for details."""
 
 from os import abort
+from utils import StringRef
 
 
 @value

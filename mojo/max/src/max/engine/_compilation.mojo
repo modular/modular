@@ -10,6 +10,7 @@ from sys.ffi import DLHandle, C_char
 from sys import external_call
 from collections import List
 from pathlib import Path
+from utils import StringRef
 from max._utils import call_dylib_func, exchange, OwningVector
 
 from .session import InferenceSession

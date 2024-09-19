@@ -12,6 +12,7 @@ from max.engine._status import Status
 from max.engine._context import RuntimeContext, CRuntimeContext
 from sys.param_env import is_defined
 from max._utils import call_dylib_func, handle_from_config
+from utils import StringRef
 
 
 trait Instrument(Movable):

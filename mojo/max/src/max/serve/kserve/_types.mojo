@@ -7,6 +7,7 @@
 
 from memory import UnsafePointer
 from sys.ffi import DLHandle
+from utils import StringRef
 from max.tensor import TensorSpec
 
 from max.engine import InferenceSession, TensorMap

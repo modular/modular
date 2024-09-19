@@ -21,6 +21,7 @@ from collections import Optional
 from sys.ffi import DLHandle, _get_global_or_null
 from max._utils import call_dylib_func, get_lib_path_from_cfg
 from pathlib import Path
+from utils import StringRef
 from max.tensor import TensorSpec
 from ._driver_library import DriverLibrary
 from .device_memory import DeviceMemory, DeviceTensor

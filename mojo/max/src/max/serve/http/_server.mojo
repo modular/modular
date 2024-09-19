@@ -10,6 +10,7 @@ from python import Python, PythonObject
 from python.python import _get_global_python_itf
 from python._cpython import PyObjectPtr
 from sys.ffi import DLHandle
+from utils import StringRef
 from max._utils import call_dylib_func, exchange
 
 from .._batch import CBatch, CRequest, CResponse

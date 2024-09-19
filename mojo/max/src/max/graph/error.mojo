@@ -11,6 +11,7 @@ from collections import Optional
 from memory import stack_allocation
 from sys.ffi import external_call, C_char
 from sys import param_env
+from utils import StringRef
 
 
 @always_inline

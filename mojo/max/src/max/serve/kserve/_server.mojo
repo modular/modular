@@ -7,6 +7,7 @@
 
 from memory import UnsafePointer
 from sys.ffi import DLHandle
+from utils import StringRef
 
 from max.engine._compilation import CCompiledModel
 from max._utils import call_dylib_func, exchange

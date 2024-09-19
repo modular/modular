@@ -7,7 +7,7 @@
 
 from collections.optional import Optional
 from memory import UnsafePointer
-from utils.variant import Variant
+from utils import Variant, StringRef
 
 import ._c
 import ._c.IR

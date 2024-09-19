@@ -9,6 +9,7 @@ from sys.ffi import DLHandle
 from memory import UnsafePointer
 from memory import UnsafePointer
 from runtime.asyncrt import Chain
+from utils import StringRef
 
 from max._utils import call_dylib_func, exchange, CString
 
