@@ -154,6 +154,8 @@ struct TestTensor[type: DType, rank: Int]:
         self.ndbuffer.data.free()
 
 
+@parameter
+@always_inline
 fn linspace(buffer: NDBuffer):
     for i in range(buffer.dim[0]()):
         for j in range(buffer.dim[1]()):
