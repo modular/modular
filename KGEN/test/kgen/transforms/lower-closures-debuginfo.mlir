@@ -36,7 +36,7 @@ kgen.func @foo() {
   %0 = co.execute : !pop.array<0, i1> {
     %array_1 = kgen.param.constant: array<1, i1> = <[1]> loc(#loc7)
     kgen.return %array : !pop.array<0, i1> loc(#loc7)
-  } {inliner_debuginfo_update = 1 : i8} loc(#loc9)
+  } loc(#loc9)
 
   // CHECK-NEXT: kgen.create_closure[() capturing -> !pop.array<0, i1>: @foo_closure_1]()  loc(#[[LOC_CALLSITE]])
   %1 = kgen.stage_closure = () capturing -> !pop.array<0, i1> {
