@@ -6,8 +6,9 @@
 
 
 import asyncio
-from asyncio import Queue
 import contextlib
+import time
+from asyncio import Queue
 from dataclasses import dataclass, field
 from typing import Any, Generic, TypeVar
 
@@ -54,14 +55,22 @@ class BatchMultiplexQueue(Generic[BatchKey]):
                 yield item
 
     def fill_batch_nowait(
-        self, batch: dict[BatchKey, Any], max_batch_size: int
+        self,
+        batch: dict[BatchKey, Any],
+        max_batch_size: int,
+        timeout_s: float = 0.1,
     ):
+        end_time = (
+            time.clock_gettime_ns(time.CLOCK_MONOTONIC)
+            + timeout_s * 1_000_000_000
+        )
         while len(batch) < max_batch_size:
             try:
                 req_id, data = self.in_queue.get_nowait()
                 batch[req_id] = data
             except asyncio.QueueEmpty:
-                return
+                if time.clock_gettime_ns(time.CLOCK_MONOTONIC) >= end_time:
+                    return
 
     async def respond(self, batch_responses: dict[BatchKey, Any]):
         # Responses which no longer have an output queue are assumed cancelled.
@@ -109,9 +118,14 @@ class BatchMultiplexQueue(Generic[BatchKey]):
                     # upstream, then we will do at least one more forward pass before
                     # realizing that the upstream queue is closed.
                     completed = batch.keys() - next_result.keys()
-                    for req_id in cancelled | completed:
-                        self.out_queues[req_id].put_nowait(STOP_STREAM)
-                        del batch[req_id]
+                    # TODO - remove this when we have support for variable batch sizes
+                    # in the engine. Currently, taking out a request will break the
+                    # batch shape matching. This allows the batch to continue running
+                    # even with completed requests until we can clear out the whole batch
+                    if len(completed) == len(batch.keys()):
+                        for req_id in cancelled | completed:
+                            self.out_queues[req_id].put_nowait(STOP_STREAM)
+                            del batch[req_id]
 
                 await asyncio.sleep(0)
         except asyncio.CancelledError as ce:
