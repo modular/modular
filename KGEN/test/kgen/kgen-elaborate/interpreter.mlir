@@ -391,7 +391,7 @@ kgen.generator @fill_ptr() -> !ptr_t {
 
 // CHECK-LABEL: kgen.func export @pointer_overwrite
 kgen.generator export @pointer_overwrite() {
-  // CHECK-NEXT: memref<[([[BLOB1]], heap, [(16, 1, 0)]), ([[BLOB2]], heap, [])], 0, 0>>
+  // CHECK-NEXT: memref<[([[BLOB1]], heap, [(16, 1, 0)], []), ([[BLOB2]], heap, [], [])], 0, 0>>
   kgen.param.constant: !ptr_t = <apply(:() -> !ptr_t @fill_ptr)>
   kgen.return
 }

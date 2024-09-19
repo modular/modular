@@ -826,7 +826,7 @@ static Value lowerStringToGlobalConstant(StringAttr strAttr,
   // Add the string to the global string table.
   MemoryHandleAttr hdl = MemoryHandleAttr::get(strAttr.getContext(), str);
   auto global = cast<LLVM::GlobalOp>(imc.getOrCreateGlobal(
-      b.getLoc(), MemoryBlobAttr::get(hdl, MemoryKind::ConstGlobal, {},
+      b.getLoc(), MemoryBlobAttr::get(hdl, MemoryKind::ConstGlobal, {}, {},
                                       /*addressSpace=*/0)));
 
   // The actual string size does not include \0.

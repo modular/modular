@@ -80,7 +80,6 @@ Attribute MemoryBlobAttr::parse(AsmParser &p, Type type) {
   StringRef kindStr;
   SmallVector<PointerRegion> pointerRegions;
   unsigned addressSpace = 0;
-
   auto parsePointerRegion = [&] {
     PointerRegion &region = pointerRegions.emplace_back();
     return failure(p.parseLParen() || p.parseInteger(region.offset) ||
@@ -88,10 +87,17 @@ Attribute MemoryBlobAttr::parse(AsmParser &p, Type type) {
                    p.parseComma() || p.parseInteger(region.blobOffset) ||
                    p.parseRParen());
   };
-
+  SmallVector<int64_t> symbolRegions;
+  auto parseSymbolRegion = [&] {
+    int64_t &offset = symbolRegions.emplace_back();
+    return p.parseInteger(offset);
+  };
   if (p.parseComma() || p.parseKeyword(&kindStr) || p.parseComma() ||
       p.parseCommaSeparatedList(AsmParser::Delimiter::Square,
-                                parsePointerRegion))
+                                parsePointerRegion) ||
+      p.parseComma() ||
+      p.parseCommaSeparatedList(AsmParser::Delimiter::Square,
+                                parseSymbolRegion))
     return {};
   if (succeeded(p.parseOptionalComma())) {
     if (p.parseInteger(addressSpace))
@@ -105,7 +111,7 @@ Attribute MemoryBlobAttr::parse(AsmParser &p, Type type) {
                         .Case("heap", MemoryKind::Heap)
                         .Case("const_global", MemoryKind::ConstGlobal)
                         .Case("persistent", MemoryKind::Persistent);
-  return get(hdl, kind, pointerRegions, addressSpace);
+  return get(hdl, kind, pointerRegions, symbolRegions, addressSpace);
 }
 
 void MemoryBlobAttr::print(AsmPrinter &p) const {
@@ -130,7 +136,10 @@ void MemoryBlobAttr::print(AsmPrinter &p) const {
                           p << '(' << region.offset << ", " << region.blobIndex
                             << ", " << region.blobOffset << ')';
                         });
-  p << ']';
+  p << "], [";
+  llvm::interleaveComma(getSymbolRegions(), p,
+                        [&](int64_t offset) { p << offset; });
+  p << "]";
   if (getAddressSpace())
     p << ", " << getAddressSpace();
   p << ')';

@@ -409,7 +409,7 @@ InterpreterState::externalizeMemory(MutableArrayRef<Attribute> results) {
         } else {
           hdl = blob.getHandle();
         }
-        blobs.push_back(MemoryBlobAttr::get(hdl, table.kind, pointerRegions,
+        blobs.push_back(MemoryBlobAttr::get(hdl, table.kind, pointerRegions, {},
                                             blob.addressSpace));
       }
     }
