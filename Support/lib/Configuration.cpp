@@ -389,8 +389,10 @@ static void getSearchPaths(SmallVectorImpl<std::filesystem::path> &paths,
   // To work well in test environments, check for a standardized test
   // environment variable. This is always the last option, if available.
   auto testTempdir = llvm::sys::Process::GetEnv("TEST_TMPDIR");
-  if (testTempdir)
+  if (testTempdir) {
     paths.push_back(std::filesystem::path(*testTempdir) / ".modular");
+    return;
+  }
 
 #ifndef _WIN32
   // To support existing installs, add $HOME/.modular if it exists. If it
