@@ -412,6 +412,114 @@ LogicalResult LIT::verifyConformance(ASTDecl &structDecl,
          << selfType << " does not implement all requirements for '"
          << traitName << "'";
 
+  // Returns failure() to stop the verifyConformance loop.
+  auto checkMethod = [&](const mlir::StringAttr &name, ASTDecl *traitFnDecl,
+                         LIT::FuncOp traitFn) -> LogicalResult {
+    if (traitFn.getIsInherited()) {
+      // Skip inherited methods, they're checked at a different time.
+      return success();
+    }
+    ArrayRef<ASTDecl *> decls = structDecl.lookupInCurrentScope(name);
+    if (decls.empty() || !isa<LIT::FuncOp>(decls.front())) {
+      if (canSynthesizeIfMissing(name, rpTrivial, regPassable)) {
+        specialFns.push_back(SpecialFunctionInfo::getKind(name));
+        return success();
+      }
+      diag->attachNote(traitFnDecl->getLoc())
+          << "required function '" + name.str() + "' is not implemented";
+      allMatchFound = false;
+      return failure(); // Stop the outer loop.
+    }
+
+    // Signature resolve the found decls first, so they can be checked.
+    for (ASTDecl *decl : decls) {
+      if (failed(shared.declResolver->resolveSignature(*decl,
+                                                       structDecl.getLoc()))) {
+        hadErrors = true;
+        return success();
+      }
+    }
+
+    SyntheticNode syntheticNode(structDecl.getLoc());
+    auto [newSignature, bindings] = getTraitFunctionSignature(
+        emitter, traitFn, selfType, trait, syntheticNode);
+    // Match against the transformed calling convention if the struct is
+    // register-passable.
+    LITSignatureType traitSignature = newSignature;
+    if (regPassable)
+      newSignature = getRegisterPassableSignature(newSignature, selfType);
+
+    // Omit errors for certain special functions where the parser will
+    // specifically verify their signatures if present.
+    bool emitError = !llvm::is_contained({SpecialFunctionKind::kMoveInit,
+                                          SpecialFunctionKind::kCopyInit,
+                                          SpecialFunctionKind::kDel},
+                                         SpecialFunctionInfo::getKind(name));
+
+    OverloadSet ov(name, decls, std::move(bindings), node,
+                   CallSyntax::kMethodCallSynthetic);
+    PValue result = ov.filterOverloadSetForValueType(
+        newSignature,
+        emitError ? function_ref<InflightDiag &(SMLoc)>(
+                        [&](SMLoc loc) -> InflightDiag & {
+                          return diag->attachNote(traitFnDecl->getLoc());
+                        })
+                  : nullptr);
+    if (!result && emitError)
+      allMatchFound = false;
+    if (regPassable && result)
+      regStubs.insert({{name, result.get()}, traitSignature});
+
+    return success();
+  };
+
+  auto checkAlias = [&](const mlir::StringAttr &name, ASTDecl *traitAliasDecl,
+                        AliasDeclOp traitAlias) -> LogicalResult {
+    // TODO(MOCO-1140): check traitAlias.getIsInherited(); implement inheritance
+    // of alias decls.
+    if (failed(shared.declResolver->resolveSignature(*traitAliasDecl,
+                                                     structDecl.getLoc()))) {
+      hadErrors = true;
+      return success();
+    }
+
+    assert(!traitAlias.getValueAttr() && "trait alias shouldn't have a value");
+
+    Type traitAliasType = traitAlias.getType();
+
+    ArrayRef<ASTDecl *> decls = structDecl.lookupInCurrentScope(name);
+    if (decls.empty() || !isa<LIT::AliasDeclOp>(decls.front())) {
+      diag->attachNote(traitAlias->getLoc())
+          << "required alias '" << name.str() << "' is not specified";
+      allMatchFound = false;
+      return failure(); // Stop the outer loop.
+    }
+    ASTDecl *structAliasDecl = decls.front();
+    AliasDeclOp structAliasDeclOp = cast<LIT::AliasDeclOp>(structAliasDecl);
+    if (failed(shared.declResolver->resolveSignature(*structAliasDecl,
+                                                     structDecl.getLoc()))) {
+      hadErrors = true;
+      return success();
+    }
+    Type structAliasType = structAliasDeclOp.getType();
+    TypedAttr initializerExpr = structAliasDeclOp.getValueAttr();
+    assert(initializerExpr && "Struct's alias should have initializer");
+
+    SyntheticNode synthNode(structAliasDecl->getLoc());
+    if (!OverloadSet::canImplicitlyConvertToType({initializerExpr, synthNode},
+                                                 traitAliasType,
+                                                 emitter.getScopeInfo())) {
+      diag->attachNote(traitAliasDecl->getLoc())
+          << "alias '" + name.str() + "' type " << structAliasType
+          << " doesn't conform to trait's alias '" << name.str() << "' type "
+          << traitAliasType;
+      allMatchFound = false;
+      return success();
+    }
+
+    return success();
+  };
+
   // TODO(MOCO-1143): this loop needs a ParameterEvaluator that is populated
   // with the mappings of trait alias requirements to their matched values on
   // the implementing struct, then you call getReboundType/Attribute when
@@ -431,101 +539,14 @@ LogicalResult LIT::verifyConformance(ASTDecl &structDecl,
   // ```
   for (auto &[name, decls] : traitDecl.getDeclsInScope()) {
     for (ASTDecl *decl : decls) {
-      auto traitFn = dyn_cast<LIT::FuncOp>(*decl);
-      // Skip any children that aren't methods or are inherited. This could be
-      // an alias.
-      if (traitFn && !traitFn.getIsInherited()) {
-        ArrayRef<ASTDecl *> decls = structDecl.lookupInCurrentScope(name);
-        if (decls.empty() || !isa<LIT::FuncOp>(decls.front())) {
-          if (canSynthesizeIfMissing(name, rpTrivial, regPassable)) {
-            specialFns.push_back(SpecialFunctionInfo::getKind(name));
-            continue;
-          }
-          diag->attachNote(decl->getLoc())
-              << "required function '" + name.str() + "' is not implemented";
-          allMatchFound = false;
+      // Skip any children that aren't methods or aliases.
+      if (auto traitFn = dyn_cast<LIT::FuncOp>(*decl)) {
+        if (failed(checkMethod(name, decl, traitFn)))
           break;
-        }
-
-        // Signature resolve the found decls first, so they can be checked.
-        for (ASTDecl *decl : decls) {
-          if (failed(shared.declResolver->resolveSignature(
-                  *decl, structDecl.getLoc()))) {
-            hadErrors = true;
-            continue;
-          }
-        }
-
-        SyntheticNode syntheticNode(structDecl.getLoc());
-        auto [newSignature, bindings] = getTraitFunctionSignature(
-            emitter, traitFn, selfType, trait, syntheticNode);
-        // Match against the transformed calling convention if the struct is
-        // register-passable.
-        LITSignatureType traitSignature = newSignature;
-        if (regPassable)
-          newSignature = getRegisterPassableSignature(newSignature, selfType);
-
-        // Omit errors for certain special functions where the parser will
-        // specifically verify their signatures if present.
-        bool emitError = !llvm::is_contained(
-            {SpecialFunctionKind::kMoveInit, SpecialFunctionKind::kCopyInit,
-             SpecialFunctionKind::kDel},
-            SpecialFunctionInfo::getKind(name));
-
-        OverloadSet ov(name, decls, std::move(bindings), node,
-                       CallSyntax::kMethodCallSynthetic);
-        PValue result = ov.filterOverloadSetForValueType(
-            newSignature, emitError
-                              ? function_ref<InflightDiag &(SMLoc)>(
-                                    [&](SMLoc loc) -> InflightDiag & {
-                                      return diag->attachNote(decl->getLoc());
-                                    })
-                              : nullptr);
-        if (!result && emitError)
-          allMatchFound = false;
-        if (regPassable && result)
-          regStubs.insert({{name, result.get()}, traitSignature});
-        continue;
       }
       if (AliasDeclOp traitAlias = dyn_cast<LIT::AliasDeclOp>(*decl)) {
-        // TODO(MOCO-1140): implement inheritance of alias decls; make the above
-        // condition: traitAlias && traitAlias.getIsInherited()
-        if (failed(shared.declResolver->resolveSignature(*decl,
-                                                         structDecl.getLoc())))
-          return failure();
-
-        assert(!traitAlias.getValueAttr() &&
-               "trait alias shouldn't have a value");
-
-        Type traitAliasType = traitAlias.getType();
-
-        ArrayRef<ASTDecl *> decls = structDecl.lookupInCurrentScope(name);
-        if (decls.empty() || !isa<LIT::AliasDeclOp>(decls.front())) {
-          diag->attachNote(decl->getLoc())
-              << "required alias '" << name.str() << "' is not specified";
-          allMatchFound = false;
+        if (failed(checkAlias(name, decl, traitAlias)))
           break;
-        }
-        ASTDecl *firstDecl = decls.front();
-        AliasDeclOp structAliasDecl = cast<LIT::AliasDeclOp>(firstDecl);
-        if (failed(shared.declResolver->resolveSignature(*firstDecl,
-                                                         structDecl.getLoc())))
-          return failure();
-        Type structAliasType = structAliasDecl.getType();
-        TypedAttr initializerExpr = structAliasDecl.getValueAttr();
-        assert(initializerExpr && "Struct's alias should have initializer");
-
-        SyntheticNode synthNode(firstDecl->getLoc());
-        if (!OverloadSet::canImplicitlyConvertToType(
-                {initializerExpr, synthNode}, traitAliasType,
-                emitter.getScopeInfo())) {
-          diag->attachNote(decl->getLoc())
-              << "alias '" + name.str() + "' type " << structAliasType
-              << " doesn't conform to trait's alias '" << name.str()
-              << "' type " << traitAliasType;
-          allMatchFound = false;
-          break;
-        }
       }
     }
   }
