@@ -63,8 +63,8 @@ struct Info:
         return content in str(content)
 
 
-alias _EMISSION_KIND_ASM: __mlir_type.index = (0).__as_mlir_index()
-alias _EMISSION_KIND_LLVM: __mlir_type.index = (1).__as_mlir_index()
+alias _EMISSION_KIND_ASM = 0
+alias _EMISSION_KIND_LLVM = 1
 
 
 fn _noop_populate(ptr: UnsafePointer[NoneType]) capturing:
@@ -72,17 +72,18 @@ fn _noop_populate(ptr: UnsafePointer[NoneType]) capturing:
 
 
 @always_inline
-fn _compile_info_asm_failable_impl[
+fn _compile_info_failable_impl[
     func_type: AnyTrivialRegType,
     func: func_type,
     /,
+    emission_kind: IntLiteral,
     target: __mlir_type.`!kgen.target` = _current_target(),
 ]() -> Info:
     alias impl = __mlir_attr[
         `#kgen.param.expr<compile_assembly,`,
         target,
         `,`,
-        _EMISSION_KIND_ASM,
+        emission_kind.__as_mlir_index(),
         `,`,
         True.__mlir_i1__(),
         `,`,
@@ -116,96 +117,18 @@ fn _compile_info_asm_failable_impl[
 
 
 @always_inline
-fn _compile_info_asm_non_failable_impl[
+fn _compile_info_non_failable_impl[
     func_type: AnyTrivialRegType,
     func: func_type,
     /,
+    emission_kind: IntLiteral,
     target: __mlir_type.`!kgen.target` = _current_target(),
 ]() -> Info:
     alias cls = __mlir_attr[
         `#kgen.param.expr<compile_assembly,`,
         target,
         `,`,
-        _EMISSION_KIND_ASM,
-        `,`,
-        False.__mlir_i1__(),
-        `,`,
-        func,
-        `> : `,
-        _Info,
-    ]
-
-    constrained[Int(cls.num_captures) != -1, "failed to compile code"]()
-
-    alias result = Info {
-        asm: cls.asm,
-        function_name: get_linkage_name[target, func](),
-        num_captures: cls.num_captures,
-        populate: rebind[fn (UnsafePointer[NoneType]) capturing -> None](
-            cls.populate
-        ),
-        error_msg: "",
-        is_error: False,
-    }
-    return result
-
-
-@always_inline
-fn _compile_info_llvm_failable_impl[
-    func_type: AnyTrivialRegType,
-    func: func_type,
-    /,
-    target: __mlir_type.`!kgen.target` = _current_target(),
-]() -> Info:
-    alias impl = __mlir_attr[
-        `#kgen.param.expr<compile_assembly,`,
-        target,
-        `,`,
-        _EMISSION_KIND_LLVM,
-        `,`,
-        True.__mlir_i1__(),
-        `,`,
-        func,
-        `> : `,
-        _Info,
-    ]
-
-    @parameter
-    if Int(impl.num_captures) == -1:
-        alias result = Info {
-            asm: "",
-            function_name: "",
-            num_captures: 0,
-            populate: _noop_populate,
-            error_msg: impl.asm,
-            is_error: True,
-        }
-        return result
-    alias result = Info {
-        asm: impl.asm,
-        function_name: get_linkage_name[target, func](),
-        num_captures: impl.num_captures,
-        populate: rebind[fn (UnsafePointer[NoneType]) capturing -> None](
-            impl.populate
-        ),
-        error_msg: "",
-        is_error: False,
-    }
-    return result
-
-
-@always_inline
-fn _compile_info_llvm_non_failable_impl[
-    func_type: AnyTrivialRegType,
-    func: func_type,
-    /,
-    target: __mlir_type.`!kgen.target` = _current_target(),
-]() -> Info:
-    alias cls = __mlir_attr[
-        `#kgen.param.expr<compile_assembly,`,
-        target,
-        `,`,
-        _EMISSION_KIND_LLVM,
+        emission_kind.__as_mlir_index(),
         `,`,
         False.__mlir_i1__(),
         `,`,
@@ -244,24 +167,33 @@ fn compile_info[
 
         @parameter
         if is_failable:
-            return _compile_info_llvm_failable_impl[
-                func_type, func, target=target
+            return _compile_info_failable_impl[
+                func_type,
+                func,
+                emission_kind=_EMISSION_KIND_LLVM,
+                target=target,
             ]()
         else:
-            return _compile_info_llvm_non_failable_impl[
-                func_type, func, target=target
+            return _compile_info_non_failable_impl[
+                func_type,
+                func,
+                emission_kind=_EMISSION_KIND_LLVM,
+                target=target,
             ]()
 
     else:
 
         @parameter
         if is_failable:
-            return _compile_info_asm_failable_impl[
-                func_type, func, target=target
+            return _compile_info_failable_impl[
+                func_type, func, emission_kind=_EMISSION_KIND_ASM, target=target
             ]()
         else:
-            return _compile_info_asm_non_failable_impl[
-                func_type, func, target=target
+            return _compile_info_non_failable_impl[
+                func_type,
+                func,
+                emission_kind=_EMISSION_KIND_ASM,
+                target=target,
             ]()
 
 
