@@ -1,5 +1,5 @@
-// RUN: kgen-opt -automatic-inline=update-debug-info=deferred -mlir-print-debuginfo -split-input-file %s | FileCheck -check-prefixes=CHECK,DEFERRED %s
-// RUN: kgen-opt -automatic-inline=update-debug-info=immediate -mlir-print-debuginfo -split-input-file %s | FileCheck -check-prefixes=CHECK,IMMEDIATE %s
+// RUN: kgen-opt -automatic-inline=update-debug-info=deferred -mlir-print-debuginfo -split-input-file %s | FileCheck %s
+// RUN: kgen-opt -automatic-inline=update-debug-info=immediate -mlir-print-debuginfo -split-input-file %s | FileCheck %s
 
 // COM: The attributes may be printed before or after the functions under test,
 // COM: so we try to keep the attribute close to its corresponding CHECK
@@ -63,8 +63,7 @@ kgen.func @call_async() -> !co.routine {
   // CHECK-NEXT: co.execute : index
   // CHECK-NEXT:   debuginfo.value #local_variable = %idx2 : index loc(#[[LOC_VALUE:.*]])
   // CHECK-NEXT:   kgen.return %idx2 : index loc(#[[LOC_ASYNC_EXECUTE_RET:.*]])
-  // DEFERRED-NEXT: } {inliner_debuginfo_update = 1 : i8} loc(#[[LOC_ASYNC_EXECUTE1:.*]])
-  // IMMEDIATE-NEXT: } loc(#[[LOC_ASYNC_EXECUTE1:.*]])
+  // CHECK-NEXT: } loc(#[[LOC_ASYNC_EXECUTE1:.*]])
   %coroHdl = co.invoke[(index) async -> index: @inline_me](%idx2) loc(#locAsyncCaller)
   // CHECK-NEXT: kgen.return
   kgen.return %coroHdl : !co.routine loc(#locAsyncCaller)
@@ -85,8 +84,7 @@ kgen.func @call_async_indirect() -> !co.routine {
   // CHECK-NEXT: co.execute : index
   // CHECK-NEXT:   debuginfo.value #local_variable = %idx3 : index loc(#[[LOC_VALUE]])
   // CHECK-NEXT:   kgen.return %idx3 : index loc(#[[LOC_ASYNC_EXECUTE_RET2:.*]])
-  // DEFERRED-NEXT: } {inliner_debuginfo_update = 1 : i8} loc(#[[LOC_ASYNC_EXECUTE2:.*]])
-  // IMMEDIATE-NEXT: } loc(#[[LOC_ASYNC_EXECUTE2:.*]])
+  // CHECK-NEXT: } loc(#[[LOC_ASYNC_EXECUTE2:.*]])
   %1 = kgen.call @async_wrapper() : () -> !co.routine loc(#locCaller)
   kgen.return %1 : !co.routine loc(#locCaller)
 } loc(#locCaller)

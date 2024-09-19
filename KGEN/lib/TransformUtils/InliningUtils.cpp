@@ -157,6 +157,15 @@ void KGEN::foldTrivialLoop(mlir::RewriterBase &b, Operation *op) {
 // updateScopeDebugInfo
 //===----------------------------------------------------------------------===//
 
+/// Get the IntegerAttr with the given name (if exists) and remove it from the
+/// op. If the attr name is null, or the attr does not exist, returns null.
+static IntegerAttr getAndRemoveTag(Operation *op, StringAttr updateAttrName) {
+  IntegerAttr tag;
+  if (updateAttrName)
+    tag = dyn_cast_or_null<IntegerAttr>(op->removeAttr(updateAttrName));
+  return tag;
+}
+
 static void updateBlockDebugInfo(Block &block, IntegerAttr tag,
                                  StringAttr updateAttrName,
                                  bool insideInlinedSubprogram,
@@ -177,15 +186,13 @@ static void updateBlockDebugInfo(Block &block, IntegerAttr tag,
     // Recurse into the body if needed and allowed.
     if (isa<DebugInfo::InlinedSubprogramScoped>(op)) {
       // Recurse inside if the inlined subprogram has a tag (deferred update).
-      IntegerAttr tag;
-      if (updateAttrName &&
-          (tag = op.getAttrOfType<IntegerAttr>(updateAttrName)))
+      if (IntegerAttr tag = getAndRemoveTag(&op, updateAttrName))
         updateScopeDebugInfoFrom(&op, tag, updateAttrName);
 
       // Always skip walking directly into subprogram scopes.
       continue;
     } else if (updateAttrName && isa<HLCF::LoopOp>(op)) {
-      if (auto tag = op.getAttrOfType<IntegerAttr>(updateAttrName)) {
+      if (IntegerAttr tag = getAndRemoveTag(&op, updateAttrName)) {
         updateScopeDebugInfoFrom(&op, tag, updateAttrName);
         continue;
       }
@@ -227,7 +234,7 @@ void KGEN::updateScopeDebugInfo(FuncOp func, StringAttr updateAttrName) {
   func.getBody()->walk<mlir::WalkOrder::PreOrder>([&](Operation *op) {
     if (!isa<HLCF::LoopOp, FunctionLike>(op))
       return WalkResult::advance();
-    auto tag = op->getAttrOfType<IntegerAttr>(updateAttrName);
+    IntegerAttr tag = getAndRemoveTag(op, updateAttrName);
     if (!tag)
       return WalkResult::advance();
 
