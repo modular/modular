@@ -39,7 +39,7 @@ class KVCacheModel:
                 num_layers,
                 batch_size,
             ],
-            out_types=[ContiguousKVCacheCollectionType],
+            out_types=[ContiguousKVCacheCollectionType()],
         )[0]
 
 

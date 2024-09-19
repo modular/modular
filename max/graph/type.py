@@ -725,7 +725,7 @@ class BufferType(Type):
         return BufferType(dtype, self.shape)
 
 
-@dataclass
+@dataclass(frozen=True)
 class _OpaqueType(Type):
     """A type representing an opaque type."""
 
