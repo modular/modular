@@ -6,6 +6,8 @@
 
 # RUN: %mojo -debug-level full %s | FileCheck %s
 
+from utils import StringRef
+
 
 struct S:
     var v: Int

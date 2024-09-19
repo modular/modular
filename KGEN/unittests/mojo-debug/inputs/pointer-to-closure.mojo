@@ -4,6 +4,8 @@
 #
 # ===----------------------------------------------------------------------=== #
 
+from utils import StringRef
+
 
 struct CallbackHolder:
     var callback: fn (UnsafePointer[NoneType], StringRef) -> None
