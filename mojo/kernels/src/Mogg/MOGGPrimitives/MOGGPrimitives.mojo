@@ -156,6 +156,27 @@ fn byte_buffer_alloc[
 # ===----------------------------------------------------------------------===#
 
 
+@mogg_register("builtin.create_errror_async_values_and_destruct_error")
+@always_inline
+@export
+fn create_errror_async_values_and_destruct_error[
+    len: Int
+](
+    ctx: MojoCallContextPtr,
+    ptr: UnsafePointer[UnsafePointer[NoneType]],
+    runtime: UnsafePointer[NoneType],
+    owned err: Error,
+):
+    """Indicates to the C++ runtime that the kernel has failed."""
+    var str = err.__str__()
+    var strref = str._strref_dangerous()
+    external_call["KGEN_CompilerRT_AsyncRT_CreateAsyncs_Error", NoneType](
+        ctx, ptr, len, runtime, strref.data, strref.length
+    )
+    str._strref_keepalive()
+    # mojo lowering will insert destructor call for `error`
+
+
 @mogg_register("builtin.create_index_async")
 @always_inline
 @export
