@@ -56,8 +56,17 @@ static DIType buildTargetSpecificDebugTypeFromDType(MLIRContext *ctx,
   if (targetInfo.getTriple().isNVPTX()) {
     // cuda-gdb expects bf16 & f16 as structure types with special names.
     // https://docs.nvidia.com/cuda/cuda-math-api/struct____nv__bfloat16.html
-    if (dtype == DType::bf16 || dtype == DType::f16) {
-      StringRef name = dtype == DType::bf16 ? "__nv_bfloat16" : "__half";
+    if (llvm::is_contained(
+            {DType::f8e5m2, DType::f8e4m3, DType::bf16, DType::f16}, dtype)) {
+      StringRef name;
+      if (dtype == DType::f8e5m2)
+        name = "__nv_fp8_e5m2";
+      else if (dtype == DType::f8e4m3)
+        name = "__nv_fp8_e4m3";
+      else if (dtype == DType::bf16)
+        name = "__nv_bfloat16";
+      else
+        name = "__half";
       // The structure contains a single `__x` field of `unsigned short`.
       auto baseType = buildIntFpDebugType<DIBasicUIntType>(ctx, targetInfo,
                                                            DType::ui16, 16, 16);
