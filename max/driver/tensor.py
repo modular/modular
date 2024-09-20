@@ -252,6 +252,7 @@ class MemMapTensor(Tensor):
     """
 
     _mmap: mmap
+    _read_only: bool
 
     def __init__(
         self,
@@ -279,6 +280,8 @@ class MemMapTensor(Tensor):
         # copy a reference to it, which should keep it alive as long as needed.
         self._mmap = arr._mmap  # type: ignore
 
+        self._read_only = not arr.flags.writeable
+
     @classmethod
     def _from_numpy_memmap(cls, arr: np.memmap) -> MemMapTensor:
         tensor = cls.__new__(cls)
@@ -289,3 +292,13 @@ class MemMapTensor(Tensor):
         """Implements part of the dlpack contract."""
         # We must ensure that the underlying mmap doesn't get closed.
         return self._impl.__dlpack__(_mmap=self._mmap)
+
+    @property
+    def read_only(self) -> bool:
+        return self._read_only
+
+    def __setitem__(self, idx: IndexType, value: Any) -> None:
+        """Sets an item in the tensor."""
+        if self.read_only:
+            raise ValueError("Cannot modify read-only MemMapTensor")
+        super().__setitem__(idx, value)
