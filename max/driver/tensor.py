@@ -80,6 +80,18 @@ class Tensor(DLPackArray):
         tensor._impl.zeros()
         return tensor
 
+    @classmethod
+    def scalar(cls, value: Any, dtype: DType, device: Device = CPU()) -> Tensor:
+        """Create a scalar value of a given dtype and value."""
+        tensor = cls((), dtype, CPU())
+        tensor[0] = value
+
+        # We can't directly set GPU memory, so we just have to copy
+        # the tensor over.
+        if not device.is_host:
+            return tensor.copy_to(device)
+        return tensor
+
     @property
     def dtype(self) -> DType:
         """DType of constituent elements in tensor."""
