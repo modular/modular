@@ -279,19 +279,19 @@ def main():
             ctx, (1024, 3072, 12288)
         )
         test[DType.bfloat16, DimList(Dim(), 12288, 3072), init_b=linspace](
-            ctx, (1024, 12288, 3072)
+            ctx, (11379, 12288, 3072)
         )
         test[
             DType.bfloat16,
             DimList(Dim(), 5120, 3072),
             init_a=linspace,
             init_b=linspace,
-        ](ctx, (1024, 5120, 3072))
+        ](ctx, (9127, 5120, 3072))
         test[DType.bfloat16, DimList(Dim(), 3072, 32768)](
-            ctx, (1024, 3072, 32768)
+            ctx, (1171, 3072, 32768)
         )
         test[DType.bfloat16, DimList(Dim(), 3072, 3072)](
-            ctx, (1024, 3072, 3072)
+            ctx, (16315, 3072, 3072)
         )
 
         print("===> tfloat32-float32 mma with epilogue")
