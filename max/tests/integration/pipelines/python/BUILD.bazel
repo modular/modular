@@ -28,6 +28,7 @@ py_binary(
 
 modular_py_test(
     name = "tests",
+    size = "large",
     srcs = glob(
         ["test_*.py"],
         exclude = ["*_gpu.py"],
