@@ -907,13 +907,14 @@ fn mgp_sync[
 ](
     in_chain: Int,
     ctx: StateContext,
+    dev_ctx: UnsafePointer[DeviceContext],
     call_ctx: MojoCallContextPtr,
 ) raises -> Int:
     @parameter
     if "cuda" in bDevice:
         # FIXME: RUNP-356 Direct access to CUDA within DeviceContext
-        var e = Event(call_ctx.get_device_context().cuda_context)
-        e.record(call_ctx.get_device_context().cuda_stream)
+        var e = Event(dev_ctx[].cuda_context)
+        e.record(dev_ctx[].cuda_stream)
         e.sync()
 
     return 0
