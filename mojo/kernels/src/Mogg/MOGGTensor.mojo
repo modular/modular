@@ -520,7 +520,6 @@ struct Tensor[
             )
 
             @always_inline
-            @__copy_capture(rank)
             @parameter
             fn func_wrapper[width: Int](idx: Int):
                 # The inner most dimension is vectorized, so we set it
@@ -531,7 +530,3 @@ struct Tensor[
 
             # We vectorize over the innermost dimension.
             vectorize[func_wrapper, simd_width](inner_loop)
-
-            # We have to extend the lifetime of the indices as the above parameter
-            # capture and use does not extend the lifetime of the object.
-            _ = indices
