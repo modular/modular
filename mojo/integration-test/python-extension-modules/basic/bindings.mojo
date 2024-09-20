@@ -37,34 +37,20 @@ fn PyInit_bindings() -> PythonObject:
     # Populate the Python module
     # ----------------------------------
 
-    alias METHOD_COUNT = 1
-
-    alias METH_VARARGS = 0x1
-
-    # FIXME:
-    #   This is an intentional memory leak, because we don't store this
-    #   in a global variable (yet).
-    var methods = UnsafePointer[PyMethodDef].alloc(METHOD_COUNT + 1)
-
     # Create a function for the `mojo_count_args` below with the right bound args
     # set fn ptr + name and attach to the module above
-    (methods + 0).init_pointee_move(
-        PyMethodDef(
-            "mojo_count_args".unsafe_cstr_ptr(),
+    var funcs = List[PyMethodDef](
+        PyMethodDef.function[
             mojo_count_args,
-            METH_VARARGS,
-            "docs for mojo_count_args".unsafe_cstr_ptr(),
-        )
+            "mojo_count_args",
+            docstring="Count the provided arguments",
+        ](),
     )
 
-    # Write a zeroed entry at the end as a terminator.
-    (methods + 1).init_pointee_move(PyMethodDef())
-
-    var result = Python.add_methods(module, methods)
-
-    if result != 0:
-        print("ERROR: Error adding methods to PyModule:", result)
-        exit(-1)
+    try:
+        Python.add_functions(module, funcs)
+    except e:
+        abort("Error adding functions to PyModule: " + str(e))
 
     # end up with a PythonModule with list of functions set on the module
     # (name,args,calling conv,etc.)
