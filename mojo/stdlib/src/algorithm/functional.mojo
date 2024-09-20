@@ -56,7 +56,8 @@ fn map[func: fn (Int) capturing -> None](size: Int):
 
 @always_inline
 fn vectorize[
-    func: fn[width: Int] (Int) capturing -> None,
+    lifetimes: LifetimeSet, //,
+    func: fn[width: Int] (Int) capturing [lifetimes] -> None,
     simd_width: Int,
     /,
     *,
@@ -67,6 +68,7 @@ fn vectorize[
     `size % simd_width` will run in separate iterations.
 
     Parameters:
+        lifetimes: The capture lifetimes.
         func: The function that will be called in the loop body.
         simd_width: The SIMD vector width.
         unroll_factor: The unroll factor for the main loop (Default 1).
@@ -148,7 +150,8 @@ fn vectorize[
 
 @always_inline
 fn vectorize[
-    func: fn[width: Int] (Int) capturing -> None,
+    lifetimes: LifetimeSet, //,
+    func: fn[width: Int] (Int) capturing [lifetimes] -> None,
     simd_width: Int,
     /,
     *,
@@ -161,6 +164,7 @@ fn vectorize[
     2.
 
     Parameters:
+        lifetimes: The capture lifetimes.
         func: The function that will be called in the loop body.
         simd_width: The SIMD vector width.
         size: The upper limit for the loop.
@@ -1499,7 +1503,6 @@ fn _elementwise_impl_cpu_nd[
             vectorize[func_wrapper, simd_width, unroll_factor=unroll_factor](
                 shape[rank - 1]
             )
-            _ = indices
 
         map[blocking_task_fn](total_size // shape[rank - 1])
 
@@ -1539,7 +1542,6 @@ fn _elementwise_impl_cpu_nd[
             vectorize[func_wrapper, simd_width, unroll_factor=unroll_factor](
                 shape[rank - 1]
             )
-            _ = indices
 
     sync_parallelize[task_func](num_workers)
 
