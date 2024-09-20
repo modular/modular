@@ -86,6 +86,7 @@ def new_axes(shapes):
 
 st.register_type_strategy(DType, dtypes)
 st.register_type_strategy(Dim, dims)
+st.register_type_strategy(Shape, shapes())
 st.register_type_strategy(StaticDim, static_dims)
 st.register_type_strategy(SymbolicDim, symbolic_dims)
 st.register_type_strategy(TensorType, tensor_types())

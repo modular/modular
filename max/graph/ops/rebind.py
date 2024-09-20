@@ -10,7 +10,7 @@ from max.mlir.dialects import rmo
 
 from ..graph import Graph
 from ..value import TensorValue, TensorType, ValueLike
-from ..type import ShapeLike
+from ..type import Shape, ShapeLike
 
 
 def rebind(x: ValueLike, shape: ShapeLike, message: str) -> TensorValue:
@@ -36,6 +36,11 @@ def rebind(x: ValueLike, shape: ShapeLike, message: str) -> TensorValue:
     # TODO(MSDK-662): Add checks to ensure that statically known dims are
     # rebound in a way to keep the size the same.
     v = TensorValue(x)
+    shape = Shape(shape)
+
+    if shape.rank != v.rank:
+        raise ValueError(f"Wrong rank for rebind: {v.shape=} but {shape=}")
+
     message_attr = mlir.StringAttr.get(message)
     return Graph.current._add_op(
         rmo.rebind_tensor_shape,
