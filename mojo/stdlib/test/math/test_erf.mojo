@@ -9,6 +9,7 @@
 
 from collections import InlineArray
 from math import erf
+from memory import UnsafePointer
 from random import randn, seed
 
 from internal_utils import compare

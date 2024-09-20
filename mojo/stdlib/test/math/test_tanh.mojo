@@ -7,6 +7,7 @@
 # RUN: %mojo-no-debug %s
 
 from math import tanh
+from memory import UnsafePointer
 from random import randn, seed
 
 from buffer import Buffer
