@@ -104,3 +104,12 @@ def test_dlpack_device():
     assert device_tuple[0] == 2  # 2 is the value of DLDeviceType::kDLCUDA
     assert isinstance(device_tuple[1], int)
     assert device_tuple[1] == 0  # should be the default device
+
+
+def test_scalar():
+    # We should be able to create scalar values on GPUs.
+    scalar = Tensor.scalar(5, DType.int32, device=CUDA())
+    assert scalar.device == CUDA()
+
+    host_scalar = scalar.copy_to(CPU())
+    assert host_scalar.item() == 5

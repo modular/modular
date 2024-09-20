@@ -388,3 +388,13 @@ def test_zeros():
     # We should be able to initialize an all-zero tensor.
     tensor = Tensor.zeros((3, 3), DType.int32)
     assert np.array_equal(tensor.to_numpy(), np.zeros((3, 3), dtype=np.int32))
+
+
+def test_scalar():
+    # We should be able to create scalar values.
+    scalar = Tensor.scalar(5, DType.int32)
+    assert scalar.item() == 5
+
+    # We allow some ability to mutate scalars.
+    scalar[0] = 8
+    assert scalar.item() == 8
