@@ -9,7 +9,7 @@ from max import mlir
 from max.mlir.dialects import rmo
 
 from ..graph import Graph, location
-from ..type import TensorType
+from ..type import BufferType, TensorType
 from ..value import BufferValue, TensorValue
 
 
@@ -45,5 +45,22 @@ def load_buffer(
     return TensorValue(output[1])
 
 
-def store_buffer(x: BufferValue, y: TensorValue) -> None:
-    raise NotImplementedError("TODO")
+def store_in_buffer(x: TensorValue, y: BufferValue) -> None:
+    """Stores the input buffer into a tensor.
+
+    It stores the input immutable tensor `x` in the mutable tensor y.
+    This is semantically equigit valent to a copy from `x` tensor to the `y` buffer.
+
+    Args:
+        x: The tensor to be stored in the buffer.
+        y: The buffer to store the tensor in.
+    """
+    in_chain = Graph.current._current_chain
+
+    # TODO(MSDK-975): Change this to use self._add_op().
+    with Graph.current._context, mlir.InsertionPoint(
+        Graph.current._body
+    ), location():
+        output = rmo.mo_mutable_store(in_chain, y._mlir_value, x._mlir_value)
+
+    Graph.current._update_chain(output)
