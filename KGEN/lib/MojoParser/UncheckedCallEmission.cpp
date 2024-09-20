@@ -458,7 +458,7 @@ LogicalResult CallEmitter::emitRemainingPosOperands(
     if (auto refType = dyn_cast<RefType>(expectedVararg.getElementType())) {
       auto lifetime = getCommonLifetime();
       if (!lifetime) // No arguments, use immortal with same mutability.
-        lifetime = AnyLifetimeAttr::get(refType.getLifetime().getType());
+        lifetime = LifetimeUnionAttr::get(refType.getLifetime().getType());
 
       refType = refType.getWithLifetime(getCommonLifetime());
       expectedType = VariadicType::get(refType, expectedVararg.getConvention());
@@ -841,12 +841,10 @@ Value CallEmitter::emitPreemittedArgumentAsDynamicValue(
           PointerType::get(sbValue.getType()));
       emitter.builder->create<POP::StackAllocLifetimeStartOp>(argLoc, ptr);
       emitter.builder->create<POP::StoreOp>(argLoc, sbValue, ptr);
-      auto immortal =
-          emitter.builder->getAttr<AnyLifetimeAttr>(/*isMut=*/false);
-      auto ref =
-          emitter.builder->create<RefFromPointerOp>(argLoc, ptr, immortal,
-                                                    /*startUninit=*/false,
-                                                    /*endUninit=*/false);
+      auto immortal = LifetimeUnionAttr::get(emitter.getContext());
+      auto ref = emitter.builder->create<RefFromPointerOp>(
+          argLoc, ptr, immortal, /*startUninit=*/false, /*endUninit=*/false);
+
       // Because the result of StackAllocationOp is not a lifetime trackable,
       // StoreOp will not transfer ownership and we must manually extend the
       // lifetime of the SBValue.
@@ -1071,8 +1069,8 @@ TypedAttr CallEmitter::emitCallInParamContext(
     // Put memory-only arguments into memory ("PRValue" to "PLValue"
     // conversion).
     if (SignatureType::hasAddress(convention)) {
-      arg = StoreToMemAttr::get(
-          arg, RefType::getAnyLifetime(arg.getType(), /*isMut=*/true));
+      auto immortal = LifetimeUnionAttr::get(arg.getContext());
+      arg = StoreToMemAttr::get(arg, RefType::get(arg.getType(), immortal));
     }
 
     // Emit a rebind if the refined type does not match the callee arg type.

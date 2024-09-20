@@ -789,7 +789,7 @@ struct KeysContainer[end: int](KeysBuilder):
 
 # CHECK-LABEL: lit.func @"param_trait
 fn param_trait[T: SimpleTrait, value: T]():
-    # CHECK-NEXT: apply({{.*}} get_type_method(:!SimpleTrait T, "method"){{.*}} store_to_mem(value)), 1)
+    # CHECK-NEXT: apply({{.*}} get_type_method(:!SimpleTrait T, "method"){{.*}} store_to_mem(value), 1)
     alias param = value.method(`1`)
     # CHECK-NEXT: [[VAR:%.*]] = lit.var.decl
     # CHECK-NEXT: [[VALUE:%.*]] = kgen.param.materialize

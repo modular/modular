@@ -1400,5 +1400,5 @@ fn testThingWithMethodReferenceSelf[a: ThingWithMethodReferenceSelf]():
     # CHECK-NEXT: lit.alias.decl *"sizzle`": none =
     # CHECK-SAME: <apply(:!lit.signature<("a": !lit.ref<!ThingWithMethodReferenceSelf,
     # CHECK-SAME:     <:i1 0, :lifetime<0> #lit.any.lifetime>,
-    # CHECK-SAME:     rebind(:!lit.ref<!ThingWithMethodReferenceSelf, mut #lit.any.lifetime> store_to_mem(a)))>
+    # CHECK-SAME:     rebind(:!lit.ref<!ThingWithMethodReferenceSelf, imm {}> store_to_mem(a)))>
     alias sizzle = a.method()
