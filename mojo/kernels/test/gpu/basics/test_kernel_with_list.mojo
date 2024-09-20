@@ -6,6 +6,7 @@
 # RUN: %mojo-no-debug %s | FileCheck %s
 
 from gpu.host import DeviceContext
+from memory import UnsafePointer
 
 
 fn kernel_with_list(res: UnsafePointer[Float32]):

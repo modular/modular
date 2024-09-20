@@ -9,6 +9,7 @@
 from gpu.host import DeviceContext
 from gpu.id import BlockIdx, ThreadIdx
 from layout import *
+from memory import UnsafePointer
 
 
 fn gpu_kernel(

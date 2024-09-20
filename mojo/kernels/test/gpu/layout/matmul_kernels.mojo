@@ -19,6 +19,7 @@ import time
 from math import ceildiv
 from gpu.memory import async_copy_wait_all
 from memory.reference import _GPUAddressSpace as AddressSpace
+from memory import UnsafePointer
 from layout.int_tuple import IntTuple
 from layout.runtime_tuple import RuntimeTuple
 from layout.runtime_layout import RuntimeLayout, UNKNOWN_VALUE

@@ -10,7 +10,7 @@ from math import ceildiv
 from buffer import DimList, NDBuffer
 from gpu import AddressSpace, BlockDim, BlockIdx, ThreadIdx, barrier
 from gpu.host import DeviceContext
-from memory import memset_zero, stack_allocation
+from memory import memset_zero, stack_allocation, UnsafePointer
 
 from utils.index import Index
 

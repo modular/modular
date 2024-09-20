@@ -7,6 +7,7 @@
 
 from gpu.host import CacheMode, DeviceContext
 from gpu.id import BlockDim, BlockIdx, ThreadIdx
+from memory import UnsafePointer
 from testing import *
 
 

@@ -6,6 +6,7 @@
 # RUN: %mojo-no-debug %s
 
 from sys.intrinsics import prefetch
+from memory import UnsafePointer
 
 from gpu.host._compile import _compile_code
 from testing import assert_true

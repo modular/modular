@@ -13,6 +13,7 @@ from gpu.memory import (
     fence_proxy_tensormap_generic_sys_release,
 )
 
+from memory import UnsafePointer
 from utils.index import Index
 
 

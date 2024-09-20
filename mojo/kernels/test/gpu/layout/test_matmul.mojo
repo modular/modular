@@ -6,6 +6,7 @@
 # RUN: %mojo-no-debug %s
 
 from math import ceildiv
+from memory import UnsafePointer
 from collections.optional import OptionalReg
 from utils.numerics import FlushDenormals
 from gpu import BlockDim, BlockIdx, ThreadIdx, barrier

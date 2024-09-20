@@ -7,6 +7,7 @@
 
 
 from pathlib import Path, _dir_of_current_file
+from memory import UnsafePointer
 
 from gpu.host import DeviceContext, Function, Module, Stream
 

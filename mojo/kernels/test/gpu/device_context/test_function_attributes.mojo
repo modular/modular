@@ -6,7 +6,7 @@
 # RUN: %mojo-no-debug %s
 
 from gpu import ThreadIdx
-from memory import stack_allocation
+from memory import stack_allocation, UnsafePointer
 from gpu.host import DeviceContext
 from gpu.host.function import Attribute
 from testing import *

@@ -8,6 +8,7 @@
 from algorithm._gpu.reduction import reduce_launch
 from buffer import NDBuffer
 from gpu.host.device_context import DeviceContext
+from memory import UnsafePointer
 from testing import assert_equal
 
 from utils import StaticIntTuple, StaticTuple

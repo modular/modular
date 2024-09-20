@@ -7,6 +7,7 @@
 # RUN: %mojo-no-debug %s
 
 from math import *
+from memory import UnsafePointer
 from pathlib import Path
 
 from gpu.host import DeviceContext

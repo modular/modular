@@ -6,6 +6,7 @@
 # RUN: %mojo-no-debug %s
 
 from math import ceildiv, isclose
+from memory import UnsafePointer
 from sys import argv
 
 from buffer import DimList, NDBuffer

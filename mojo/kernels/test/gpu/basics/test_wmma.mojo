@@ -6,6 +6,7 @@
 # RUN: %mojo-no-debug %s | FileCheck %s
 
 from math import ceildiv
+from memory import UnsafePointer
 from random import random_si64
 
 from gpu import WARP_SIZE, BlockIdx

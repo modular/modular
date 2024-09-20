@@ -6,6 +6,7 @@
 # RUN: %mojo-no-debug %s | FileCheck %s
 
 from math import iota
+from memory import UnsafePointer
 
 from gpu.host import DeviceContext
 from gpu.host.memory import _free, _malloc_managed, _memset, _memset_async

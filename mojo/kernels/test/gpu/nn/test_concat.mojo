@@ -14,6 +14,7 @@ from buffer.dimlist import DimList
 from gpu.host.device_context import DeviceContext
 from gpu.host.event import time_function as time_function_cuda
 from gpu.host.sync import synchronize
+from memory import UnsafePointer
 from nn.concat import _concat_gpu, _concat_inner_most_single_dim
 
 from utils import StaticTuple

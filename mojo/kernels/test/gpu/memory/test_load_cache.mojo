@@ -6,6 +6,7 @@
 # RUN: %mojo-no-debug %s
 
 from collections import OptionalReg
+from memory import UnsafePointer
 
 from compile import Info
 from gpu.host._compile import _compile_code

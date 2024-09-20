@@ -6,6 +6,7 @@
 # RUN: %mojo-no-debug %s | FileCheck %s
 
 from sys._assembly import inlined_assembly
+from memory import UnsafePointer
 
 from gpu import ThreadIdx
 from gpu.host import DeviceContext

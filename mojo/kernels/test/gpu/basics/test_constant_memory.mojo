@@ -12,7 +12,7 @@ from gpu.sync import barrier
 from sys import sizeof
 from memory import stack_allocation
 from gpu.host._compile import _compile_code
-from memory import stack_allocation
+from memory import stack_allocation, UnsafePointer
 from memory.reference import _GPUAddressSpace
 from testing import assert_true, assert_equal
 

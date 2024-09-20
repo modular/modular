@@ -14,6 +14,7 @@ from gpu.host import FuncAttribute
 from gpu.host.device_context import DeviceBuffer, DeviceContext
 from buffer import NDBuffer
 from buffer.dimlist import DimList, Dim
+from memory import UnsafePointer
 from utils import StaticIntTuple
 from random import rand
 
