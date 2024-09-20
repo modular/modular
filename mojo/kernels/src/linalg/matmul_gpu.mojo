@@ -738,19 +738,26 @@ fn _matmul_gpu[
     use_tensor_core: Bool = False,
     transpose_b: Bool = False,
     elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
-    target: StringLiteral = "cuda",
+    single_thread_blocking_override: Bool = False,
 ](
     c: NDBuffer[_, 2, _],
     a: NDBuffer[_, 2, _],
     b: NDBuffer[_, 2, _],
     ctx: DeviceContext,
 ):
+    # HACK HACK HACK https://github.com/modularml/modular/issues/22959
+    # single_thread_blocking_override should not be allowed, but the graph
+    # compiler has a special case that does not insert the
+    # on the GPU
+    # constrained[
+    #     not single_thread_blocking_override,
+    #     "single_thread_blocking_override not applicable",
+    # ]()
     try:
         _matmul_gpu_dispatch[
             transpose_b=transpose_b,
             use_tensor_core=use_tensor_core,
             elementwise_lambda_fn=elementwise_lambda_fn,
-            target=target,
         ](c, a, b, ctx)
     except e:
         abort(e)
@@ -767,7 +774,6 @@ fn _matmul_gpu_dispatch[
     transpose_b: Bool = False,
     use_tensor_core: Bool = False,
     elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
-    target: StringLiteral = "cuda",
 ](
     c: NDBuffer[c_type, 2, c_shape],
     a: NDBuffer[a_type, 2, a_shape],
@@ -822,7 +828,7 @@ fn _matmul_gpu_dispatch[
             alias kernels = MatmulKernels[a_type, b_type, c_type, transpose_b]()
 
             var best_config = select_config[
-                a_type, b_type, c_type, transpose_b, target
+                a_type, b_type, c_type, transpose_b
             ](m, n, k)
 
             if best_config == kernels.ampere_256x64_4:
