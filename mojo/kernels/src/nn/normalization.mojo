@@ -626,16 +626,13 @@ fn layer_norm[
 ) raises:
     # Note: we only support reduction along the last dimension
     if gamma_shape[0] != shape[rank - 1]:
-        ctx.set_to_error("Gamma size does not match dimension of reduction.")
-        return
+        raise Error("Gamma size does not match dimension of reduction.")
 
     if beta.dynamic_shape[0] != shape[rank - 1]:
-        ctx.set_to_error("Beta size does not match dimension of reduction.")
-        return
+        raise Error("Beta size does not match dimension of reduction.")
 
     if output.dynamic_shape != shape:
-        ctx.set_to_error("Input and output buffers are not same shape")
-        return
+        raise Error("Input and output buffers are not same shape")
 
     @always_inline
     @parameter
@@ -968,12 +965,10 @@ fn rms_norm[
 ) raises:
     # Note: we only support reduction along the last dimension
     if gamma.dynamic_shape[0] != shape[rank - 1]:
-        ctx.set_to_error("Gamma size does not match dimension of reduction.")
-        return
+        raise Error("Gamma size does not match dimension of reduction.")
 
     if output.dynamic_shape != shape:
-        ctx.set_to_error("Input and output buffers are not same shape")
-        return
+        raise Error("Input and output buffers are not same shape")
 
     @always_inline
     @parameter
