@@ -14,7 +14,9 @@ from typing import (
     Optional,
     Protocol,
     Tuple,
+    Type,
     TypeVar,
+    Union,
     runtime_checkable,
 )
 
@@ -23,6 +25,10 @@ from max._driver import Tensor as _Tensor
 from max.dtype import DType
 
 from .driver import CPU, Device
+
+_IdxElType = Union[int, slice]
+IndexType = Union[Tuple[_IdxElType, ...], _IdxElType]
+ShapeType = Tuple[int, ...]
 
 
 @runtime_checkable
@@ -56,7 +62,7 @@ class Tensor(DLPackArray):
 
     def __init__(
         self,
-        shape: Tuple[int, ...],
+        shape: ShapeType,
         dtype: DType,
         device: Device = CPU(),
     ) -> None:
@@ -75,7 +81,7 @@ class Tensor(DLPackArray):
 
     @classmethod
     def zeros(
-        cls, shape: Tuple[int, ...], dtype: DType, device: Device = CPU()
+        cls, shape: ShapeType, dtype: DType, device: Device = CPU()
     ) -> Tensor:
         """Allocates an tensor with all elements initialized to zero."""
         tensor = cls(shape, dtype, device)
@@ -100,7 +106,7 @@ class Tensor(DLPackArray):
         return DType._from(self._impl.dtype)
 
     @property
-    def shape(self) -> Tuple[int, ...]:
+    def shape(self) -> ShapeType:
         """Shape of tensor."""
         return self._impl.shape
 
@@ -124,7 +130,7 @@ class Tensor(DLPackArray):
         * A tensor with negative steps."""
         return self._impl.is_contiguous
 
-    def _iterate_indices(self) -> Generator[Tuple[int, ...]]:
+    def _iterate_indices(self) -> Generator[ShapeType]:
         index_gen = [range(x) for x in self.shape]
         for idx in product(*index_gen):
             yield idx
@@ -139,11 +145,11 @@ class Tensor(DLPackArray):
     def __repr__(self) -> str:
         return f"max.driver.Tensor({self.dtype}, {self.shape})"
 
-    def __setitem__(self, idx: Tuple[int, ...], value: Any) -> None:
+    def __setitem__(self, idx: IndexType, value: Any) -> None:
         """Sets an item in the tensor."""
         self._impl.set(idx, value)
 
-    def __getitem__(self, idx: Tuple[int, ...]) -> Tensor:
+    def __getitem__(self, idx: IndexType) -> Tensor:
         """Gets a tensor slice. Supports full numpy-style slicing. Invocations
         using only integer-based indexes will return zero-rank tensors."""
         new_tensor = self._impl.get(idx)
@@ -187,7 +193,7 @@ class Tensor(DLPackArray):
 
     def to_numpy(self) -> np.ndarray:
         """Converts the tensor to a numpy array."""
-        return np.from_dlpack(self)
+        return np.from_dlpack(self)  # type: ignore
 
     def __dlpack_device__(self) -> Tuple[int, int]:
         """Implements part of the dlpack contract."""
@@ -251,7 +257,7 @@ class MemMapTensor(Tensor):
         self,
         filename: PathLike,
         dtype: DType,
-        shape: Tuple[int, ...],
+        shape: ShapeType,
         mode="r+",
         offset=0,
     ):
@@ -271,7 +277,7 @@ class MemMapTensor(Tensor):
 
         # numpy does not attempt to free/close the mmap object it uses, so we
         # copy a reference to it, which should keep it alive as long as needed.
-        self._mmap = arr._mmap
+        self._mmap = arr._mmap  # type: ignore
 
     @classmethod
     def _from_numpy_memmap(cls, arr: np.memmap) -> MemMapTensor:
