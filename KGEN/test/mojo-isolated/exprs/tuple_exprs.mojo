@@ -22,7 +22,7 @@ fn tuples_rv(a: Int, b: FloatDyn):
     # CHECK-NEXT: [[APTR:%.*]] = pop.stack_allocation 1 x !Int
     # CHECK-NEXT: lifetime.start([[APTR]])
     # CHECK-NEXT: pop.store %a, [[APTR]] : !kgen.pointer<!Int>
-    # CHECK-NEXT: [[AREF:%.*]] = lit.ref.from_pointer [[APTR]] : <!Int, imm #lit.any.lifetime>
+    # CHECK-NEXT: [[AREF:%.*]] = lit.ref.from_pointer [[APTR]] : <!Int, imm {}>
     # CHECK-NEXT: [[BPTR:%.*]] = pop.stack_allocation 1 x !FloatDyn
     # CHECK-NEXT: lifetime.start([[BPTR]])
     # CHECK-NEXT: pop.store %b, [[BPTR]] : !kgen.pointer<!FloatDyn>
