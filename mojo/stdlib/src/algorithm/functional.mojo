@@ -36,10 +36,13 @@ from buffer import NDBuffer
 
 
 @always_inline
-fn map[func: fn (Int) capturing -> None](size: Int):
+fn map[
+    lifetimes: LifetimeSet, //, func: fn (Int) capturing [lifetimes] -> None
+](size: Int):
     """Maps a function over a range from 0 to size.
 
     Parameters:
+        lifetimes: The capture lifetimes.
         func: Function to map.
 
     Args:
@@ -266,7 +269,8 @@ fn vectorize[
 
 @always_inline
 fn _perfect_vectorized_impl[
-    func: fn[width: Int] (Int) capturing -> None,
+    lifetimes: LifetimeSet, //,
+    func: fn[width: Int] (Int) capturing [lifetimes] -> None,
     /,
     *,
     simd_width: Int,
@@ -302,11 +306,14 @@ fn _perfect_vectorized_impl[
 
 
 @always_inline
-fn sync_parallelize[func: fn (Int) capturing -> None](num_work_items: Int):
+fn sync_parallelize[
+    lifetimes: LifetimeSet, //, func: fn (Int) capturing [lifetimes] -> None
+](num_work_items: Int):
     """Executes func(0) ... func(num_work_items-1) as parallel sub-tasks,
     and returns when all are complete.
 
     Parameters:
+        lifetimes: The capture lifetimes.
         func: The function to invoke.
 
     Args:
@@ -324,7 +331,8 @@ fn sync_parallelize[func: fn (Int) capturing -> None](num_work_items: Int):
 
 @always_inline
 fn sync_parallelize[
-    func: fn (Int) raises capturing -> None
+    lifetimes: LifetimeSet, //,
+    func: fn (Int) raises capturing [lifetimes] -> None,
 ](num_work_items: Int):
     """Executes func(0) ... func(num_work_items-1) as parallel sub-tasks,
     and returns when all are complete.
@@ -333,6 +341,7 @@ fn sync_parallelize[
           be propagated back to the caller.
 
     Parameters:
+        lifetimes: The capture lifetimes.
         func: The function to invoke.
 
     Args:
@@ -396,11 +405,14 @@ fn sync_parallelize[
 
 
 @always_inline
-fn parallelize[func: fn (Int) capturing -> None](num_work_items: Int):
+fn parallelize[
+    lifetimes: LifetimeSet, //, func: fn (Int) capturing [lifetimes] -> None
+](num_work_items: Int):
     """Executes func(0) ... func(num_work_items-1) as sub-tasks in parallel, and
     returns when all are complete.
 
     Parameters:
+        lifetimes: The capture lifetimes.
         func: The function to invoke.
 
     Args:
@@ -412,12 +424,13 @@ fn parallelize[func: fn (Int) capturing -> None](num_work_items: Int):
 
 @always_inline
 fn parallelize[
-    func: fn (Int) capturing -> None
+    lifetimes: LifetimeSet, //, func: fn (Int) capturing [lifetimes] -> None
 ](num_work_items: Int, num_workers: Int):
     """Executes func(0) ... func(num_work_items-1) as sub-tasks in parallel, and
     returns when all are complete.
 
     Parameters:
+        lifetimes: The capture lifetimes.
         func: The function to invoke.
 
     Args:
@@ -430,19 +443,8 @@ fn parallelize[
 
 @always_inline
 fn _parallelize_impl[
-    func: fn (Int) capturing -> None
+    lifetimes: LifetimeSet, //, func: fn (Int) capturing [lifetimes] -> None
 ](num_work_items: Int, num_workers: Int):
-    """Executes func(0) ... func(num_work_items-1), distributed over
-    num_workers parallel sub-tasks, and returns when all are complete.
-
-    Parameters:
-        func: The function to invoke.
-
-    Args:
-        num_work_items: Number of parallel tasks.
-        num_workers: The number of workers to use for execution.
-    """
-
     debug_assert(num_workers > 0, "Number of workers must be positive")
     # Calculate how many items are picked up by each worker.
     var chunk_size = num_work_items // num_workers

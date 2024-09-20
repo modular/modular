@@ -942,7 +942,6 @@ fn _reduce_along_outer_dimension[
 
     var chunk_size = ceildiv(parallelism_size, num_workers)
 
-    @__copy_capture(chunk_size, parallelism_size, inner_dim)
     @parameter
     fn reduce_slices(i: Int):
         var start_parallel_offset = i * chunk_size
@@ -956,7 +955,6 @@ fn _reduce_along_outer_dimension[
         for slice_idx in range(start_parallel_offset, end_parallel_offset):
 
             @always_inline
-            @__copy_capture(reduce_dim_size)
             @parameter
             fn reduce_chunk[simd_width: Int](inner_dim_idx: Int):
                 var acc_simd_tup = StaticTuple[
@@ -995,7 +993,6 @@ fn _reduce_along_outer_dimension[
         reduce_slices(0)
     else:
         sync_parallelize[reduce_slices](num_workers)
-    _ = reduce_dim_size
 
 
 # ===----------------------------------------------------------------------===#
