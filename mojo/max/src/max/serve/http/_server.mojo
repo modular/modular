@@ -45,9 +45,7 @@ struct CPythonRequest(CRequest):
             self._ptr,
             UnsafePointer.address_of(ptr),
         )
-        var cpython = _get_global_python_itf().cpython()
-        cpython.Py_IncRef(ptr)
-        return PythonObject(ptr)
+        return PythonObject.from_borrowed_ptr(ptr)
 
 
 # ===----------------------------------------------------------------------=== #
@@ -79,9 +77,7 @@ struct CPythonResponse(CResponse):
             self._ptr,
             UnsafePointer.address_of(ptr),
         )
-        var cpython = _get_global_python_itf().cpython()
-        cpython.Py_IncRef(ptr)
-        return PythonObject(ptr)
+        return PythonObject.from_borrowed_ptr(ptr)
 
 
 # ===----------------------------------------------------------------------=== #
