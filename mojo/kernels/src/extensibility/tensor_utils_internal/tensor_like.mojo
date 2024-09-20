@@ -5,6 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from tensor_internal import TensorSpec
+from memory import UnsafePointer
 
 
 trait TensorLike:

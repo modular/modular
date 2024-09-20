@@ -14,6 +14,7 @@ from max.tensor import TensorSpec
 """
 
 from collections import List
+from memory import UnsafePointer
 from utils import StaticIntTuple
 from .tensor_shape import TensorShape, _as_rep16
 

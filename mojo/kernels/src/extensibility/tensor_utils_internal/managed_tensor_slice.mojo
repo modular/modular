@@ -11,6 +11,7 @@ from tensor_internal import TensorSpec, StaticTensorSpec
 
 from collections import InlineArray, OptionalReg
 from utils import StaticIntTuple
+from memory import UnsafePointer
 from math import ceil
 from sys import simdwidthof
 from sys.intrinsics import strided_load, strided_store
