@@ -7,7 +7,7 @@
 
 
 from sys import external_call
-from sys.ffi import C_char
+from sys.ffi import c_char
 from sys.info import os_is_windows
 
 from memory import UnsafePointer
@@ -52,7 +52,7 @@ struct _POpenHandle:
           A string containing the output of running the command.
         """
         var len: Int = 0
-        var line = UnsafePointer[C_char]()
+        var line = UnsafePointer[c_char]()
         var res = String("")
 
         while True:
