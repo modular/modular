@@ -31,6 +31,7 @@ from layout.layout_tensor import (
     copy_local_to_sram,
     copy_sram_to_dram,
 )
+from layout.swizzle import Swizzle, make_swizzle
 from layout.runtime_layout import RuntimeLayout
 from layout.runtime_tuple import RuntimeTuple
 from layout.tensor_core import (
@@ -583,6 +584,7 @@ fn multistage_gemm_kernel[
 
     var tid = ThreadIdx.x()
     var ln_id = lane_id()
+    var warp_id = tid // WARP_SIZE
 
     # Only apply block swizzling for half precision types.
     alias swizzle_block = a_type.is_half_float() and b_type.is_half_float()
@@ -678,16 +680,19 @@ fn multistage_gemm_kernel[
     # we stage the fragments in shared memory so that each thread can store 16B.
     @parameter
     if c_type.is_half_float():
-        # Stage fragments in shared memory. Reuse a_smem for c tile in smem
-        var accum_smem_tile = LayoutTensor[
+        alias swizzle = make_swizzle[
+            num_rows = MMA_M // 2, row_size=WN, access_size=MMA_N
+        ]()
+
+        var accum_smem_warp_tile = LayoutTensor[
             accum_type,
-            Layout.row_major(BM, BN),
+            Layout.row_major(WM, WN),
             address_space = AddressSpace.SHARED,
-        ](a_smem.bitcast[Scalar[accum_type]]())
-        var accum_smem_warp_tile = accum_smem_tile.tile[WM, WN](
-            int(warp_y), int(warp_x)
-        )
-        copy_local_to_sram[thread_layout = Layout.row_major(8, 4)](
+        ](a_smem.bitcast[accum_type]() + warp_id * WM * WN)
+        copy_local_to_sram[
+            thread_layout = Layout.row_major(8, 4),
+            swizzle=swizzle,
+        ](
             accum_smem_warp_tile.vectorize[1, 2](),
             c_reg_tile.vectorize[1, 2]().transpose(),
         )
@@ -701,15 +706,15 @@ fn multistage_gemm_kernel[
         @parameter
         if elementwise_lambda_fn:
             alias epilogue = elementwise_lambda_fn.value()
-            alias c_store_layout = Layout.row_major(
-                num_threads * simd_size // BN, BN // simd_size
+            alias warp_layout = Layout.row_major(
+                WARP_SIZE * simd_size // WN, WN // simd_size
             )
-            var c_gmem_frag = c_gmem_tile.vectorize[1, simd_size]().distribute[
-                c_store_layout
-            ](ThreadIdx.x())
-            var c_smem_frag = accum_smem_tile.vectorize[
+            var c_gmem_frag = c_gmem_warp_tile.vectorize[
                 1, simd_size
-            ]().distribute[c_store_layout](ThreadIdx.x())
+            ]().distribute[warp_layout](ThreadIdx.x())
+            var c_smem_frag = accum_smem_warp_tile.vectorize[
+                1, simd_size
+            ]().distribute[warp_layout](ThreadIdx.x())
             var thread_offset = c_gmem_frag.distance(c.ptr)
             alias num_stores_per_thread = c_gmem_frag.layout.size()
             alias src_align = alignof[
@@ -717,9 +722,19 @@ fn multistage_gemm_kernel[
             ]()
             alias dst_align = alignof[SIMD[c_type, simd_size]]()
 
+            var c_smem_frag_offset = c_smem_frag.distance(
+                accum_smem_warp_tile.ptr
+            )
+
             @parameter
             for i in range(num_stores_per_thread):
                 alias src_idx = c_smem_frag.layout(i)
+                alias src_idx_base = src_idx % swizzle.size()
+                alias src_idx_diff = src_idx - src_idx_base
+                var swizzled_idx = swizzle(
+                    c_smem_frag_offset + src_idx_base
+                ) + src_idx_diff
+
                 alias dst_static_idx = c_gmem_frag.layout(i)
                 var dst_idx = 0
 
@@ -734,29 +749,31 @@ fn multistage_gemm_kernel[
                 if m < M and n < N:
                     epilogue(
                         (m, n),
-                        c_smem_frag.ptr.load[
+                        accum_smem_warp_tile.ptr.load[
                             width=simd_size, alignment=src_align
-                        ](src_idx).cast[c_type](),
+                        ](swizzled_idx).cast[c_type](),
                     )
         else:
             if M % BM == 0:
                 copy_sram_to_dram[
                     thread_layout = Layout.row_major(
-                        num_threads * simd_size // BN, BN // simd_size
-                    )
+                        WARP_SIZE * simd_size // WN, WN // simd_size
+                    ),
+                    swizzle=swizzle,
                 ](
-                    c_gmem_tile.vectorize[1, simd_size](),
-                    accum_smem_tile.vectorize[1, simd_size](),
+                    c_gmem_warp_tile.vectorize[1, simd_size](),
+                    accum_smem_warp_tile.vectorize[1, simd_size](),
                 )
             else:
                 copy_sram_to_dram[
                     thread_layout = Layout.row_major(
-                        num_threads * simd_size // BN, BN // simd_size
-                    )
+                        WARP_SIZE * simd_size // WN, WN // simd_size
+                    ),
+                    swizzle=swizzle,
                 ](
-                    c_gmem_tile.vectorize[1, simd_size](),
-                    accum_smem_tile.vectorize[1, simd_size](),
-                    c_gmem_tile.distance(c.ptr),
+                    c_gmem_warp_tile.vectorize[1, simd_size](),
+                    accum_smem_warp_tile.vectorize[1, simd_size](),
+                    c_gmem_warp_tile.distance(c.ptr),
                     M,
                     N,
                 )
