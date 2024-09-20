@@ -318,6 +318,12 @@ ParseResult KGEN::parseTypeParamValue(AsmParser &p, TypedAttr &value) {
 }
 
 ParseResult KGEN::parseParamType(AsmParser &p, Type &type) {
+  OptionalParseResult result = parseOptionalKGENType(p, type);
+  if (result.has_value())
+    return success();
+
+  // If not a mlir Type, it's a parameter in the type-domain. Parse as a
+  // parameter and wrap with ParamRefType.
   TypedAttr typeParam;
   if (parseTypeParamValue(p, typeParam))
     return failure();
@@ -326,8 +332,19 @@ ParseResult KGEN::parseParamType(AsmParser &p, Type &type) {
 }
 
 void KGEN::printParamType(AsmPrinter &p, Type type) {
-  printTypeParamValue(
-      p, TypeConstantAttr::get(type, TypeType::get(type.getContext())));
+  // A "ParamType" is either:
+  // 1. An actual mlir Type,
+  // 2. A type-value in the type domain (i.e. wrapped with ParamRefType), or
+  // 3. A type-value in the value domain (i.e. wrapped with TypeValueType).
+  //
+  // For case 2, the ParamRefType wrapper around the internal parameter is
+  // omitted for simplicity. The internal parameter is printed directly (with
+  // an optional colon type prefix).
+  // For case 3, the TypeValueType is NOT omitted to differentiate with case 2.
+  if (auto paramRef = dyn_cast<ParamRefType>(type))
+    printTypeParamValue(p, paramRef.getParam());
+  else
+    printKGENType(p, type);
 }
 
 ParseResult KGEN::parseParamTypes(AsmParser &p, SmallVectorImpl<Type> &types) {
