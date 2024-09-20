@@ -7,7 +7,7 @@
 import builtin
 
 from sys import exit
-from sys.ffi import C_char
+from sys.ffi import c_char
 
 from os import abort
 
