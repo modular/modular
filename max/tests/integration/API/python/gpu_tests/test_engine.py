@@ -64,6 +64,19 @@ def test_execute_subtensor(gpu_session: InferenceSession, mo_model_path: Path):
         )
 
 
+def test_scalar_inputs(gpu_session: InferenceSession, scalar_input_path: Path):
+    # We should be able to execute models with scalar inputs.
+    model = gpu_session.load(scalar_input_path)
+    scalar = Tensor.scalar(3, dtype=DType.int32, device=CUDA())
+    vector = np.arange(1, 6, dtype=np.int32)
+
+    cuda_output = model.execute(scalar, vector)[0]
+    host_output = cuda_output.copy_to(CPU())
+    assert np.array_equal(
+        host_output.to_numpy(), np.arange(4, 9, dtype=np.int32)
+    )
+
+
 @dataclass
 class Model:
     num_elems: int

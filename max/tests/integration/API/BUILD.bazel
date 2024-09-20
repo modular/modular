@@ -8,6 +8,7 @@ filegroup(
         "Inputs/no-inputs.mlir",
         "Inputs/relu3x100x100.onnx",
         "Inputs/relu3x100x100.torchscript",
+        "Inputs/scalar-input.mlir",
         "c/custom-ops-override.api",
         "c/mo-model.api",
     ],

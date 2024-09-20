@@ -296,6 +296,16 @@ def test_no_devicetensor_inputs(session: InferenceSession, no_input_path: Path):
     assert np.array_equal(output, expected)
 
 
+def test_scalar_inputs(session: InferenceSession, scalar_input_path: Path):
+    # We should be able to execute models with scalar inputs.
+    model = session.load(scalar_input_path)
+    scalar = Tensor.scalar(3, dtype=DType.int32)
+    vector = np.arange(1, 6, dtype=np.int32)
+
+    output = model.execute(scalar, vector)[0]
+    assert np.array_equal(output.to_numpy(), np.arange(4, 9, dtype=np.int32))
+
+
 def test_aliasing_output(
     session: InferenceSession, aliasing_outputs_path: Path
 ):
