@@ -20,6 +20,7 @@ from utils.variant import Variant
 
 from ._compile import (
     _compile_code,
+    _compile_code_asm,
     _get_nvptx_fn_name,
     _get_nvptx_target,
     _to_sass,
@@ -455,7 +456,7 @@ struct Function[
 
         @parameter
         if _dump_q(dump_llvm):
-            alias llvm = _compile_code[Self.func, emission_kind="llvm"]().asm
+            alias llvm = _compile_code_asm[Self.func, emission_kind="llvm"]()
 
             if dump_llvm.isa[Path]():
                 dump_llvm[Path].write_text(StringRef(llvm))

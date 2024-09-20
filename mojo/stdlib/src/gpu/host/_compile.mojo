@@ -49,6 +49,25 @@ fn _compile_code[
     ]()
 
 
+@always_inline
+fn _compile_code_asm[
+    func_type: AnyTrivialRegType, //,
+    func: func_type,
+    /,
+    *,
+    emission_kind: StringLiteral = "asm",
+    is_failable: Bool = False,
+    target: __mlir_type.`!kgen.target` = _get_nvptx_target(),
+]() -> StringLiteral:
+    alias asm = compile_info[
+        func,
+        emission_kind=emission_kind,
+        is_failable=is_failable,
+        target=target,
+    ]().asm
+    return asm
+
+
 fn _get_nvptx_fn_name[
     func_type: AnyTrivialRegType, //, func: func_type
 ]() -> StringLiteral:
