@@ -11,7 +11,7 @@ from sys.intrinsics import PrefetchOptions
 from algorithm import unswitch
 from buffer.buffer import Buffer, NDBuffer, partial_simd_load
 from buffer.dimlist import DimList
-from memory import memcpy, stack_allocation
+from memory import memcpy, stack_allocation, UnsafePointer
 from register import mogg_register
 
 from utils.index import Index, StaticIntTuple

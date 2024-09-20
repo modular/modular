@@ -20,7 +20,7 @@ from buffer import NDBuffer
 from buffer.dimlist import DimList
 from gpu import BlockDim, BlockIdx, ThreadIdx
 from gpu.host import DeviceContext
-from memory import memset_zero
+from memory import memset_zero, UnsafePointer
 from register import mogg_register
 from runtime.asyncrt import MojoCallContextPtr, parallelism_level
 from runtime.tracing import Trace, TraceLevel, trace_arg

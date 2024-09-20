@@ -14,6 +14,7 @@ from buffer import Buffer, NDBuffer
 from buffer.dimlist import Dim
 from linalg.gemv import gemv, naive_gemv
 from linalg.matmul import matmul
+from memory import UnsafePointer
 
 from utils.index import Index
 

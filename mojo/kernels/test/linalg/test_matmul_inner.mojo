@@ -7,6 +7,7 @@
 # RUN: %mojo-no-debug %s | FileCheck %s
 
 from math import align_up
+from memory import UnsafePointer
 from sys import alignof, has_neon, has_vnni
 
 from buffer import NDBuffer

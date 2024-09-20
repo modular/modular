@@ -26,6 +26,7 @@ from buffer.buffer import (
     partial_simd_load,
     partial_simd_store,
 )
+from memory import UnsafePointer
 from buffer.dimlist import DimList
 from layout.layout import *
 from layout.layout_tensor import LayoutTensor
