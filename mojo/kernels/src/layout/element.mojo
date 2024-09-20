@@ -6,7 +6,7 @@
 
 from sys import alignof
 
-from memory import AddressSpace
+from memory import AddressSpace, UnsafePointer
 
 from utils import StaticIntTuple
 

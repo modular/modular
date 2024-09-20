@@ -30,6 +30,7 @@ from layout.nd_buffer_stub import (
     vectorize,
 )
 
+from memory import UnsafePointer
 from utils import Index, StaticIntTuple, StaticTuple
 from testing import assert_equal
 

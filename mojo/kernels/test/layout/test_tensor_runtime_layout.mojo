@@ -11,6 +11,7 @@ from layout.int_tuple import UNKNOWN_VALUE, IntTuple
 from utils import StaticIntTuple
 from layout.fillers import arange, random
 from math import sqrt
+from memory import UnsafePointer
 
 
 #  CHECK-LABEL: test_fill_and_print

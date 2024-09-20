@@ -9,6 +9,7 @@ from os import abort
 
 from gpu.host.memory import _free, _malloc_managed
 from layout import *
+from memory import UnsafePointer
 from .int_tuple import product
 
 alias alloc_fn_type = fn[layout: Layout, dtype: DType] () -> UnsafePointer[

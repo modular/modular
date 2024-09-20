@@ -16,6 +16,7 @@ from gpu.memory import (
 from layout._utils import ManagedLayoutGPUTensor
 from layout.layout_tensor import Layout, LayoutTensor
 from layout.fillers import arange
+from memory import UnsafePointer
 from testing import assert_true
 
 

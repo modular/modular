@@ -13,6 +13,7 @@ from layout.element import Element
 from layout.int_tuple import UNKNOWN_VALUE
 from layout._utils import ManagedLayoutTensor
 from layout.fillers import arange
+from memory import UnsafePointer
 from utils import StaticIntTuple
 
 
