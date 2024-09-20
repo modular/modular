@@ -877,7 +877,12 @@ fn mgp_device_context_profile_start[
     bDevice: StringLiteral,
     cTag: StringLiteral,
     dFilePath: StringLiteral,
-](ctx: StateContext, call_ctx: MojoCallContextPtr) -> Int:
+](
+    in_chain: Int,
+    ctx: StateContext,
+    dev_ctx: UnsafePointer[DeviceContext],
+    call_ctx: MojoCallContextPtr,
+) -> Int:
     # Call into device_context here.
     return 1
 
@@ -890,10 +895,15 @@ fn mgp_device_context_profile_end[
     bDevice: StringLiteral,
     cTag: StringLiteral,
     dFilePath: StringLiteral,
-](ctx: StateContext, call_ctx: MojoCallContextPtr) -> Int:
+](
+    in_chain: Int,
+    ctx: StateContext,
+    dev_ctx: UnsafePointer[DeviceContext],
+    call_ctx: MojoCallContextPtr,
+) -> Int:
     # Call into device_context here....
     try:
-        call_ctx.get_device_context().dump_kernel_timing_info()
+        dev_ctx[].dump_kernel_timing_info()
     except e:
         abort(e)
     return 1
