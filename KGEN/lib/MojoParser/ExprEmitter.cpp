@@ -1154,6 +1154,18 @@ PValue ExprEmitter::emitMetaTypeToTraitConversion(ASTExprAnd<CValue> value,
     regPassable = structDeclOp.isRegisterPassableTrivial();
   }
 
+  // When we're looking for a trait's method in a certain struct, like:
+  //     trait TraitWithAliasMethod:
+  //         alias T: ATrait
+  //         fn bork(self) -> Something[T]: ...
+  // and a struct overrides it:
+  //     struct ExplicitStructWithAliasMethod(TraitWithAliasMethod):
+  //         alias T: ATrait = int
+  //         fn bork(self) -> SIMD[int]: ...
+  // we don't want to look for a `fn bork(self) -> Something[T]` in the struct,
+  // we want to look for a `fn bork(self) -> SIMD[int]`. This helps us do that.
+  ParserParamEvaluator traitAliasReplacer(*shared.declResolver);
+
   // Bind each trait requirement into vtable entries.
   SmallVector<VTableEntryAttr> vtable;
   for (auto &[name, requirementDecls] : traitDecl->getDeclsInScope()) {
@@ -1174,8 +1186,13 @@ PValue ExprEmitter::emitMetaTypeToTraitConversion(ASTExprAnd<CValue> value,
       // conforms because we called `doesNominalTypeConformsTo` above.
       assert(structMatchingMembers.size() == 1);
       auto implAlias = cast<LIT::AliasDeclOp>(structMatchingMembers.front());
+      assert(implAlias.getValueAttr() && "Struct's alias should have value");
 
-      vtable.push_back(VTableEntryAttr::get(name, implAlias.getValueAttr()));
+      auto newValue = implAlias.getValueAttr();
+      vtable.push_back(VTableEntryAttr::get(name, newValue));
+
+      traitAliasReplacer.setParameterValue(traitAliasDecl.getParamDecl(),
+                                           newValue);
       continue;
     }
 
@@ -1208,6 +1225,10 @@ PValue ExprEmitter::emitMetaTypeToTraitConversion(ASTExprAnd<CValue> value,
       // replacer.
       LITSignatureType requirementSig =
           TraitSelfBinder(typeValue).replace(requirementFn.getFullSignature());
+
+      // If the trait method mentions an associated alias (`alias N: Int`) then
+      // replace it with the alias from the struct.
+      requirementSig = traitAliasReplacer.replace(requirementSig);
 
       // Form a set of bindings to plow into the impl signature.
       auto implBindings = ParamBindings::getForDeclaredType(
