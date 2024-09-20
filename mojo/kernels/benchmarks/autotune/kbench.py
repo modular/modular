@@ -91,7 +91,7 @@ class SpecInstance:
         self,
         *,
         output_file: Optional[Path] = None,
-        dry_run: bool = False,
+        dryrun: bool = False,
         verbose: bool = False,
     ) -> Path:
         if not output_file:
@@ -119,7 +119,7 @@ class SpecInstance:
         if verbose:
             print(f"[output_file: {output_file}")
         try:
-            if dry_run:
+            if dryrun:
                 print(list2cmdline(cmd))
             else:
                 # TODO: needs better error handling and error messages.
@@ -172,6 +172,17 @@ class Spec:
             return Spec.loads(file.read_text())
         except Exception as exc:
             raise Exception(f"Could not load spec from {file}") from exc
+
+    @staticmethod
+    def load_yaml_list(yaml_path_list: List[str]) -> "Spec":
+        spec = None
+        for i, yaml_path in enumerate(yaml_path_list):
+            spec_ld = Spec.load_yaml(Path(yaml_path))
+            if i == 0:
+                spec = spec_ld
+            else:
+                spec.join(spec_ld)
+        return spec
 
     def dump_yaml(self, out_path: Path):
         assert self.instances, "There are no instances to write to YAML!"
@@ -260,6 +271,48 @@ class Spec:
     def __iter__(self):
         return self
 
+    def join(self, other: "Spec"):
+        assert self.name == other.name
+        assert self.file == other.file
+        assert other.mesh_size > 0
+
+        self.mesh_idx = 0
+        self.mesh_size += other.mesh_size
+        self.params.extend(other.params)
+        self.instances.extend(other.instances)
+
+    def filter(self, filter_list: List):
+        filters = {}
+        for f in filter_list:
+            if "=" in f:
+                name, val = f.split("=")
+            elif ":" in f:
+                name, val = f.split(":")
+
+            if name not in filters.keys():
+                filters[name] = []
+            filters[name].append(val)
+
+        filtered_insts: List[SpecInstance] = []
+        num_filters = len(filter_list)
+
+        # Count the number of valid filters in each instance.
+        # If the count==num_filters then add the instance to the result.
+        valid_cnt = np.zeros(len(self.instances), dtype=np.int32)
+        for k_filter, v_filter in filters.items():
+            for i, s in enumerate(self.instances):
+                for p in s.params:
+                    if p.name == k_filter and str(p.value) in v_filter:
+                        valid_cnt[i] += 1
+
+        for i, idx in enumerate(valid_cnt):
+            if idx == num_filters:
+                filtered_insts.append(self.instances[i])
+
+        self.instances = filtered_insts[:]
+        self.mesh_idx = 0
+        self.mesh_size = len(self.instances)
+
     def __next__(self) -> "SpecInstance":
         assert (
             self.instances != None
@@ -304,20 +357,36 @@ def _get_tmp_path(file_path):
     return Path(tf)
 
 
-def run(yaml_path, output_path=None, tune=True, verbose=False, tmp_path=None):
-    spec = Spec.load_yaml(Path(yaml_path))
-    # spec.dump_yaml(Path("rewrite.yaml"))
-    # else:
-    #     spec = Spec.loads(SPEC_CONTENT)
+def run(
+    yaml_path_list,
+    yaml_rewrite_path=None,
+    output_path=None,
+    tune=True,
+    filter_list=None,
+    dryrun=False,
+    verbose=False,
+    tmp_path=None,
+):
+    # Load specs from a list of YAML files and join them in 'spec'.
+    spec = Spec.load_yaml_list(yaml_path_list)
+
+    # Apply the filters, if any.
+    if filter_list:
+        spec.filter(filter_list)
+
+    # Rewrite the specs to yaml_rewrite_path, if any defined.
+    if yaml_rewrite_path:
+        spec.dump_yaml(Path(yaml_rewrite_path))
 
     output_path_list: Dict[int, Path] = {}
     spec_list: Dict[int, SpecInstance] = {}
-    # Run the code over the mesh of param/values
 
+    # Generate a tmp path for intermediate results.
     if not tmp_path:
         tmp_path = _get_tmp_path(spec.file)
     tmp_dir = Path(tmp_path)
 
+    # Run the code over the mesh of param/values
     t_start = time()
     with Progress(
         *Progress.get_default_columns(),
@@ -338,11 +407,15 @@ def run(yaml_path, output_path=None, tune=True, verbose=False, tmp_path=None):
             # Check for the failure here.
             try:
                 output_file = output_dir / "output.csv"
-                s.compile(output_file=output_file, verbose=verbose)
+                s.compile(
+                    output_file=output_file, dryrun=dryrun, verbose=verbose
+                )
                 spec_list[i] = s
                 output_path_list[i] = output_file
-            except:
-                pass
+            except Exception as e:
+                if e == KeyboardInterrupt:
+                    sys.exit(0)
+
             # When a benchmark is completed for one combination of parameters we advance progress by 1
             progress.update(bench_progress, advance=1)
 
@@ -407,7 +480,28 @@ help_str = (
 
 
 @click.command(help=help_str, no_args_is_help=True)
-@click.option("--yaml", "yaml_path", help="Path to config yaml.")
+@click.option(
+    "--yaml",
+    "yaml_path",
+    help="Path to a config yaml (can have multiple ones).",
+    multiple=True,
+)
+@click.option(
+    "--yaml-rewrite",
+    "yaml_rewrite_path",
+    help="Path to a rewrite the valid specs as a YAML file",
+)
+@click.option(
+    "--filter",
+    "filter",
+    help=(
+        "Define a single filter (should match a valid paramter, can have"
+        " multiple ones). The filters should of the format `--filter"
+        " PARAM=VALUE`, that is, the subset of parameters that satisfy this"
+        " condition will be included."
+    ),
+    multiple=True,
+)
 @click.option(
     "--output", "-o", "output_path", default=None, help="Path to output file."
 )
@@ -421,23 +515,34 @@ help_str = (
 )
 @click.option("--force", "-f", is_flag=True, default=False, help="Force.")
 @click.option(
+    "--dryrun",
+    "-dryrun",
+    is_flag=True,
+    default=False,
+    help="Do not execute the config, just show the parameters.",
+)
+@click.option(
     "--verbose", "-v", is_flag=True, default=False, help="Verbose printing."
 )
 def cli(
     yaml_path,
+    yaml_rewrite_path,
+    filter,
     output_path,
     tune,
     force,
+    dryrun,
     verbose,
 ) -> bool:
     run(
-        yaml_path=yaml_path,
+        yaml_path_list=yaml_path,
+        yaml_rewrite_path=yaml_rewrite_path,
         output_path=output_path,
         tune=tune,
+        filter_list=filter,
+        dryrun=dryrun,
         verbose=verbose,
     )
-
-    # TODO: add --expand and --factorize options to rewrite YAML files
 
 
 def main():
