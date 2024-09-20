@@ -171,14 +171,8 @@ fn matmul_tiled_layout(inout C: Matrix, A: Matrix, B: Matrix):
                             size=tile_n,
                             unroll_factor=unroll_factor,
                         ]()
-                _ = lhs_view^
-                _ = dst_view^
-                _ = rhs_view^
 
     sync_parallelize[calc_row](M // tile_m)
-    _ = dst^
-    _ = lhs^
-    _ = rhs^
 
 
 fn alloc_aligned_tile[
@@ -249,14 +243,8 @@ fn matmul_tiled_layout_cache(inout C: Matrix, A: Matrix, B: Matrix):
                             size=tile_n,
                             unroll_factor=unroll_factor,
                         ]()
-                _ = lhs_view^
-                _ = dst_view^
-                _ = rhs_view^
 
     sync_parallelize[calc_row](M // tile_m)
-    _ = dst^
-    _ = lhs^
-    _ = rhs^
 
 
 fn matmul_layout_transposed(inout C: Matrix, A: Matrix, B: Matrix):
@@ -317,14 +305,8 @@ fn matmul_layout_transposed(inout C: Matrix, A: Matrix, B: Matrix):
                         ]()
 
                         dst_view[m, n] += sum.reduce_add()
-                _ = dst_view
-                _ = rhs_view
-            _ = lhs_view^
 
     sync_parallelize[calc_row](M // tile_m)
-    _ = dst^
-    _ = lhs^
-    _ = rhs^
 
 
 @always_inline
