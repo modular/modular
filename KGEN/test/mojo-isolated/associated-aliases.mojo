@@ -3,9 +3,12 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-# RUN: %parse-mojo-isolated %s | FileCheck %s
+# RUN: %parse-mojo-isolated -split-input-file %s | FileCheck %s
 
-# CHECK: [[VTABLE:.*]] = #kgen.type<!StructWithMatchingAlias, {"N" : !Int = {42}, {{.*}} : !TraitWithAlias
+# CHECK-DAG: [[VTABLE2:.*]] = #kgen.type<!ExplicitStructWithAliasMethod, {"T" : !ATrait = #[[VTABLE3:[a-zA-Z_]+]]
+# CHECK-DAG: #[[VTABLE3]] = #kgen.type<index,
+# CHECK-DAG: [[VTABLE4:.*]] = #kgen.type<!ImplicitStructWithAliasMethod, {"T" : !ATrait = #[[VTABLE3]]
+# CHECK-DAG: [[VTABLE:.*]] = #kgen.type<!StructWithMatchingAlias, {"N" : !Int = {42}, {{.*}} : !TraitWithAlias
 
 alias int = __mlir_type.index
 
@@ -38,15 +41,6 @@ fn testTraitWithAliasAndStructWithMatchingAlias():
     _ = getNFromTraitWithAlias(StructWithMatchingAlias())
 
 
-
-# // -----
-
-# TODO(MOCO-1143): Uncomment these in the upcasting PR:
-# # HECK-DAG: [[VTABLE2:.*]] = #kgen.type<!StructWithAliasMethod
-# # HECK-DAG: "T" : !ATrait = #[[VTABLE3:[a-zA-Z_]+]]
-# # HECK-DAG: #[[VTABLE3]] = #kgen.type<index,
-
-
 trait ATrait:
     pass
 
@@ -58,15 +52,58 @@ struct SIMD[T: ATrait]:
 
 trait TraitWithAliasMethod:
     alias T: ATrait
-    fn bork(self, thing: SIMD[T]) -> SIMD[T]:
+    fn bork(self) -> SIMD[T]:
         ...
 
 
+# CHECK-LABEL: lit.struct.decl @ExplicitStructWithAliasMethod
 @value
-struct StructWithAliasMethod(TraitWithAliasMethod):
+struct ExplicitStructWithAliasMethod(TraitWithAliasMethod):
     alias T: ATrait = int
-    fn bork(self, thing: SIMD[int]) -> SIMD[int]:
+    fn bork(self) -> SIMD[int]:
         return SIMD[int]()
+
+
+fn receiveTraitWithAliasMethod[X: TraitWithAliasMethod](t: X):
+    pass
+
+
+# CHECK-LABEL: lit.func @"testUpcastingExplicitStructWithAliasMethod
+fn testUpcastingExplicitStructWithAliasMethod():
+    # CHECK:       {{.*}}lit.call @"associated-aliases"::@"receiveTraitWithAliasMethod{{.*}}<:!TraitWithAliasMethod [[VTABLE2]]>
+    receiveTraitWithAliasMethod(ExplicitStructWithAliasMethod())
+
+
+# CHECK-LABEL: lit.struct.decl @ImplicitStructWithAliasMethod
+@value
+struct ImplicitStructWithAliasMethod:
+    alias T: ATrait = int
+    fn bork(self) -> SIMD[int]:
+        return SIMD[int]()
+
+
+# CHECK-LABEL: lit.func @"testUpcastingImplicitStructWithAliasMethod
+fn testUpcastingImplicitStructWithAliasMethod():
+    # CHECK:       {{.*}}lit.call @"associated-aliases"::@"receiveTraitWithAliasMethod{{.*}}<:!TraitWithAliasMethod [[VTABLE4]]>
+    receiveTraitWithAliasMethod(ImplicitStructWithAliasMethod())
+
+
+# TODO(MOCO-1143): Make arguments work, like this:
+# trait DType:
+#     pass
+# @value
+# struct SIMD[T: DType]:
+#     pass
+# trait TraitWithAliasMethod:
+#     alias T: DType
+#     fn bork(self, thing: SIMD[T]) -> SIMD[T]:
+#         ...
+# @value
+# struct StructWithAliasMethod(TraitWithAliasMethod):
+#     alias T: DType = int
+#     fn bork(self, thing: SIMD[int]) -> SIMD[int]:
+#         return SIMD[int]()
+
 
 
 # TODO(MOCO-1143): Make this work:
