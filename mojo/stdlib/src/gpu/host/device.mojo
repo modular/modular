@@ -694,7 +694,7 @@ struct Device(StringableRaising):
         """Get an identifier string for the device."""
 
         alias buffer_size = 256
-        var buffer = stack_allocation[buffer_size, C_char.type]()
+        var buffer = stack_allocation[buffer_size, c_char.type]()
 
         _check_error(
             self.cuda_dll.cuDeviceGetName(buffer, Int32(buffer_size), self.id)

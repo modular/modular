@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from sys.ffi import C_char
+from sys.ffi import c_char
 
 from ._utils import (
     _check_error,
@@ -244,7 +244,7 @@ alias cuFuncGetAttribute = _dylib_function[
 
 alias cuModuleLoad = _dylib_function[
     "cuModuleLoad",
-    fn (UnsafePointer[_ModuleHandle], UnsafePointer[C_char]) -> Result,
+    fn (UnsafePointer[_ModuleHandle], UnsafePointer[c_char]) -> Result,
 ]
 
 alias cuModuleLoadData = _dylib_function[
@@ -272,7 +272,7 @@ alias cuModuleGetFunction = _dylib_function[
     fn (
         UnsafePointer[_FunctionHandle],
         _ModuleHandle,
-        UnsafePointer[C_char],
+        UnsafePointer[c_char],
     ) -> Result,
 ]
 
@@ -302,7 +302,7 @@ alias cuModuleGetGlobal = _dylib_function[
         UnsafePointer[UnsafePointer[NoneType]],
         UnsafePointer[Int],
         _ModuleHandle,
-        UnsafePointer[C_char],
+        UnsafePointer[c_char],
     ) -> Result,
 ]
 
