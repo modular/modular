@@ -5,6 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from buffer import NDBuffer, DimList, Dim
+from memory import UnsafePointer
 from os import abort
 from utils import StaticIntTuple
 from sys.intrinsics import _type_is_eq
