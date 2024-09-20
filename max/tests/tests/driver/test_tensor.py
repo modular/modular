@@ -421,12 +421,16 @@ def test_memmap(memmap_example_file: Path):
 
     # Test that offsets work.
     offset_tensor = MemMapTensor(
-        memmap_example_file, dtype=DType.int8, shape=(2, 3), offset=2
+        memmap_example_file, dtype=DType.int8, shape=(2, 3), offset=2, mode="r"
     )
     assert offset_tensor.shape == (2, 3)
     assert offset_tensor.dtype == DType.int8
     for i, j in product(range(2), range(3)):
         assert offset_tensor[i, j].item() == i * 3 + j + 2
+
+    # Test that read-only arrays cannot be modified.
+    with pytest.raises(ValueError):
+        offset_tensor[0, 0] = 0
 
     # Test that a different type works and we can modify the array.
     tensor_16 = MemMapTensor(
@@ -465,3 +469,7 @@ def test_from_dlpack_memmap(memmap_example_file: Path):
     assert isinstance(tensor, MemMapTensor)
     assert array.dtype == np.int8
     assert tensor.shape == array.shape
+
+    # Test that read-onlyness propagates.
+    with pytest.raises(ValueError):
+        tensor[0] = 0
