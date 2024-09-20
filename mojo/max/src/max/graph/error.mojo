@@ -9,7 +9,7 @@ from builtin._location import __call_location, _SourceLocation
 from builtin.breakpoint import breakpoint
 from collections import Optional
 from memory import stack_allocation, UnsafePointer
-from sys.ffi import external_call, C_char
+from sys.ffi import external_call, c_char
 from sys import param_env
 from utils import StringRef
 
@@ -122,7 +122,7 @@ def format_system_stack[MAX_STACK_SIZE: Int = 128]() -> String:
     call_stack = stack_allocation[MAX_STACK_SIZE, UnsafePointer[NoneType]]()
     frames = external_call["backtrace", Int](call_stack, MAX_STACK_SIZE)
     frame_strs = external_call[
-        "backtrace_symbols", UnsafePointer[UnsafePointer[C_char]]
+        "backtrace_symbols", UnsafePointer[UnsafePointer[c_char]]
     ](call_stack, frames)
     formatted = str("System stack:\n")
     for i in range(frames):

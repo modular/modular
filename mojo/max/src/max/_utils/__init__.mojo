@@ -6,7 +6,7 @@
 
 from os import abort
 from pathlib import Path
-from sys.ffi import C_char, DLHandle, external_call
+from sys.ffi import c_char, DLHandle, external_call
 
 from memory.unsafe_pointer import *
 
@@ -18,16 +18,16 @@ from utils import StringRef
 struct CString:
     """Represents `const char*` in C. Useful for binding with C APIs."""
 
-    var ptr: UnsafePointer[C_char]
+    var ptr: UnsafePointer[c_char]
 
-    fn __init__(inout self, ptr: UnsafePointer[C_char]):
+    fn __init__(inout self, ptr: UnsafePointer[c_char]):
         """
         Construct a `CString` from a C string data pointer.
 
         Args:
             ptr: The string data pointer to wrap.
         """
-        self.ptr = ptr.bitcast[C_char]()
+        self.ptr = ptr.bitcast[c_char]()
 
     fn get_as_string_ref(self) -> StringRef:
         """
