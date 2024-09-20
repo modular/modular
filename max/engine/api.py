@@ -150,6 +150,11 @@ class Model:
             :obj:`torch.Tensor`, and :obj:`max.driver.Tensor` inputs. All inputs
             will be copied to the device that the model is resident on prior to
             executing.
+        ``copy_inputs_to_device``
+            Whether to copy all input tensors to the model's device. Defaults
+            to :obj:`True`. If set to :obj:`False`, input tensors will remain
+            on whatever device they're currently on, which the model must be
+            prepared for.
         ``output_device``
             The device to copy output tensors to. Defaults to :obj:`None`, in
             which case the tensors will remain resident on the same device as
@@ -186,6 +191,7 @@ class Model:
         """
         if args:
             input_impls: List[Union[_Tensor, MojoValue]] = []
+            copy_inputs_to_device = kwargs.get("copy_inputs_to_device", True)
             output_device = kwargs.get("output_device", None)
 
             for arg in args:
@@ -215,7 +221,7 @@ class Model:
                         f" currently support inputs of the type {type(arg)}."
                     )
 
-                if tensor.device != self.device:
+                if copy_inputs_to_device and tensor.device != self.device:
                     tensor = tensor.copy_to(self.device)
                 input_impls.append(tensor._impl)
             results = self._impl.execute_device_tensors(input_impls)
