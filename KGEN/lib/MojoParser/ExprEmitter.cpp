@@ -1175,13 +1175,7 @@ PValue ExprEmitter::emitMetaTypeToTraitConversion(ASTExprAnd<CValue> value,
       assert(structMatchingMembers.size() == 1);
       auto implAlias = cast<LIT::AliasDeclOp>(structMatchingMembers.front());
 
-      SyntheticNode synthNode(structMatchingMembers.front()->getLoc());
-      auto newValue = emitPValue({implAlias.getValueAttr(), synthNode},
-                                 EC_TypeParamValue, traitAliasDecl.getType());
-      if (!newValue)
-        return {};
-
-      vtable.push_back(VTableEntryAttr::get(name, newValue));
+      vtable.push_back(VTableEntryAttr::get(name, implAlias.getValueAttr()));
       continue;
     }
 

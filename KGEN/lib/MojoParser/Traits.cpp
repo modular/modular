@@ -405,6 +405,8 @@ LogicalResult LIT::verifyConformance(ASTDecl &structDecl,
   if (failed(shared.declResolver->resolveFully(traitDecl, structDecl.getLoc())))
     return failure();
 
+  ParserParamEvaluator traitAliasReplacer(*shared.declResolver);
+
   bool allMatchFound = true;
   // Prepare an error. It will be abandoned if the check succeeds.
   StringRef traitName = cast<TraitDeclOp>(traitDecl).getSymName();
@@ -448,6 +450,8 @@ LogicalResult LIT::verifyConformance(ASTDecl &structDecl,
     LITSignatureType traitSignature = newSignature;
     if (regPassable)
       newSignature = getRegisterPassableSignature(newSignature, selfType);
+
+    newSignature = traitAliasReplacer.replace(newSignature);
 
     // Omit errors for certain special functions where the parser will
     // specifically verify their signatures if present.
@@ -504,6 +508,9 @@ LogicalResult LIT::verifyConformance(ASTDecl &structDecl,
     Type structAliasType = structAliasDeclOp.getType();
     TypedAttr initializerExpr = structAliasDeclOp.getValueAttr();
     assert(initializerExpr && "Struct's alias should have initializer");
+
+    traitAliasReplacer.setParameterValue(traitAlias.getParamDecl(),
+                                         initializerExpr);
 
     SyntheticNode synthNode(structAliasDecl->getLoc());
     if (!OverloadSet::canImplicitlyConvertToType({initializerExpr, synthNode},
