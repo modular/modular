@@ -54,7 +54,8 @@ static DIType buildTargetSpecificDebugTypeFromDType(MLIRContext *ctx,
                                                     uint8_t dtype,
                                                     size_t indexWidth) {
   if (targetInfo.getTriple().isNVPTX()) {
-    // cuda-gdb expects bf16 & f16 as structure types with special names.
+    // cuda-gdb expects non-standard data types to be structure types with
+    // special names. e.g.
     // https://docs.nvidia.com/cuda/cuda-math-api/struct____nv__bfloat16.html
     if (llvm::is_contained(
             {DType::f8e5m2, DType::f8e4m3, DType::bf16, DType::f16}, dtype)) {
@@ -67,9 +68,11 @@ static DIType buildTargetSpecificDebugTypeFromDType(MLIRContext *ctx,
         name = "__nv_bfloat16";
       else
         name = "__half";
-      // The structure contains a single `__x` field of `unsigned short`.
-      auto baseType = buildIntFpDebugType<DIBasicUIntType>(ctx, targetInfo,
-                                                           DType::ui16, 16, 16);
+      unsigned width = DType(dtype).getWidthInBits();
+      DType storageDType = *DType::getInt(width, /*isSigned=*/false);
+      // The structure contains a single `__x` field.
+      auto baseType = buildIntFpDebugType<DIBasicUIntType>(
+          ctx, targetInfo, storageDType.getValue(), width, width);
       auto memberType = DIMemberType::get("__x", baseType);
       return DIStructType::get(StringAttr::get(ctx, name), {memberType});
     }
