@@ -8,7 +8,7 @@ from math import ceildiv
 from sys import sizeof
 
 from gpu import WARP_SIZE
-from gpu.host.info import A100
+from gpu.host.info import _get_info_from_target
 from layout.tensor_core import (
     TensorCore,
     get_accum_type,
@@ -200,18 +200,21 @@ struct MatmulKernels[
 
 
 fn select_config[
-    a_type: DType, b_type: DType, c_type: DType, transpose_b: Bool = False
+    a_type: DType,
+    b_type: DType,
+    c_type: DType,
+    transpose_b: Bool = False,
+    target: StringLiteral = "cuda",
 ](M: Int, N: Int, K: Int) -> MatmulConfig[a_type, b_type, c_type, transpose_b]:
     # A super simple heuristic is to just choose the tile shapes that lead to
     # min waves. Only support two shapes for now.
 
     alias max_k_partitions = 8
 
+    alias gpu_info = _get_info_from_target[target]()
+
     var best_bmnk = Index(128, 128, _bk_base[a_type]())
     var min_num_waves = 1000
-    # var min_num_waves = ceildiv(
-    #     ceildiv(M, best_bmnk[0]) * ceildiv(N, best_bmnk[1]), A100.sm_count
-    # )
     var best_num_k_partitions = 1
 
     for bm_bn in List(Index(128, 128), Index(64, 256)):
@@ -221,14 +224,16 @@ fn select_config[
 
         # Enable split K when only < 50% of SMs are used.
         var num_k_partitions = 1
-        if num_blocks < A100.sm_count // 2 and K % 32 == 0:
+        if num_blocks < gpu_info.sm_count // 2 and K % 32 == 0:
             num_k_partitions = min(
-                max_k_partitions, ceildiv(A100.sm_count, num_blocks)
+                max_k_partitions, ceildiv(gpu_info.sm_count, num_blocks)
             )
             while K % (num_k_partitions * 32) != 0:
                 num_k_partitions -= 1
 
-        var num_waves = ceildiv(num_blocks * num_k_partitions, A100.sm_count)
+        var num_waves = ceildiv(
+            num_blocks * num_k_partitions, gpu_info.sm_count
+        )
         if num_waves < min_num_waves:
             best_bmnk[0] = bm
             best_bmnk[1] = bn
