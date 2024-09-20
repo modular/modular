@@ -664,30 +664,27 @@ struct ScatterND:
         updates: ManagedTensorSlice[output.type, *_],
         indices: ManagedTensorSlice,
         ctx: MojoCallContextPtr,
-    ):
+    ) raises:
         # Existing implementations do not require static shape information
         var output_ndbuffer = managed_tensor_slice_to_ndbuffer(output)
         var input_ndbuffer = managed_tensor_slice_to_ndbuffer(input)
         var indices_ndbuffer = managed_tensor_slice_to_ndbuffer(indices)
         var updates_ndbuffer = managed_tensor_slice_to_ndbuffer(updates)
-        try:
-            scatter_nd[
-                output_ndbuffer.type,
-                indices_ndbuffer.type,
-                output_ndbuffer.rank,
-                indices_ndbuffer.rank,
-                updates_ndbuffer.rank,
-                synchronous,
-                target,
-            ](
-                input_ndbuffer,
-                indices_ndbuffer,
-                updates_ndbuffer,
-                output_ndbuffer,
-                context=ctx,
-            )
-        except err:
-            ctx.set_to_error(err)
+        scatter_nd[
+            output_ndbuffer.type,
+            indices_ndbuffer.type,
+            output_ndbuffer.rank,
+            indices_ndbuffer.rank,
+            updates_ndbuffer.rank,
+            synchronous,
+            target,
+        ](
+            input_ndbuffer,
+            indices_ndbuffer,
+            updates_ndbuffer,
+            output_ndbuffer,
+            context=ctx,
+        )
 
 
 @compiler.register("mo.scatter_nd.add")
@@ -702,42 +699,36 @@ struct ScatterNDAdd:
         updates: ManagedTensorSlice[output.type, *_],
         indices: ManagedTensorSlice,
         ctx: MojoCallContextPtr,
-    ):
+    ) raises:
         # Existing implementations do not require static shape information
         var output_ndbuffer = managed_tensor_slice_to_ndbuffer(output)
         var input_ndbuffer = managed_tensor_slice_to_ndbuffer(input)
         var indices_ndbuffer = managed_tensor_slice_to_ndbuffer(indices)
         var updates_ndbuffer = managed_tensor_slice_to_ndbuffer(updates)
-        try:
 
-            @always_inline
-            @parameter
-            fn reduce_fn[
-                type: DType, width: Int
-            ](lhs: SIMD[type, width], rhs: SIMD[type, width]) -> SIMD[
-                type, width
-            ]:
-                return lhs + rhs
+        @always_inline
+        @parameter
+        fn reduce_fn[
+            type: DType, width: Int
+        ](lhs: SIMD[type, width], rhs: SIMD[type, width]) -> SIMD[type, width]:
+            return lhs + rhs
 
-            scatter_nd_generator[
-                output_ndbuffer.type,
-                indices_ndbuffer.type,
-                output_ndbuffer.rank,
-                indices_ndbuffer.rank,
-                updates_ndbuffer.rank,
-                synchronous,
-                target,
-                reduce_fn=reduce_fn,
-            ](
-                input_ndbuffer,
-                indices_ndbuffer,
-                updates_ndbuffer,
-                output_ndbuffer,
-                context=ctx,
-            )
-
-        except err:
-            ctx.set_to_error(err)
+        scatter_nd_generator[
+            output_ndbuffer.type,
+            indices_ndbuffer.type,
+            output_ndbuffer.rank,
+            indices_ndbuffer.rank,
+            updates_ndbuffer.rank,
+            synchronous,
+            target,
+            reduce_fn=reduce_fn,
+        ](
+            input_ndbuffer,
+            indices_ndbuffer,
+            updates_ndbuffer,
+            output_ndbuffer,
+            context=ctx,
+        )
 
 
 @compiler.register("mo.scatter_nd.mul")
@@ -752,42 +743,36 @@ struct ScatterNDMul:
         updates: ManagedTensorSlice[output.type, *_],
         indices: ManagedTensorSlice,
         ctx: MojoCallContextPtr,
-    ):
+    ) raises:
         # Existing implementations do not require static shape information
         var output_ndbuffer = managed_tensor_slice_to_ndbuffer(output)
         var input_ndbuffer = managed_tensor_slice_to_ndbuffer(input)
         var indices_ndbuffer = managed_tensor_slice_to_ndbuffer(indices)
         var updates_ndbuffer = managed_tensor_slice_to_ndbuffer(updates)
-        try:
 
-            @always_inline
-            @parameter
-            fn reduce_fn[
-                type: DType, width: Int
-            ](lhs: SIMD[type, width], rhs: SIMD[type, width]) -> SIMD[
-                type, width
-            ]:
-                return lhs * rhs
+        @always_inline
+        @parameter
+        fn reduce_fn[
+            type: DType, width: Int
+        ](lhs: SIMD[type, width], rhs: SIMD[type, width]) -> SIMD[type, width]:
+            return lhs * rhs
 
-            scatter_nd_generator[
-                output_ndbuffer.type,
-                indices_ndbuffer.type,
-                output_ndbuffer.rank,
-                indices_ndbuffer.rank,
-                updates_ndbuffer.rank,
-                synchronous,
-                target,
-                reduce_fn=reduce_fn,
-            ](
-                input_ndbuffer,
-                indices_ndbuffer,
-                updates_ndbuffer,
-                output_ndbuffer,
-                context=ctx,
-            )
-
-        except err:
-            ctx.set_to_error(err)
+        scatter_nd_generator[
+            output_ndbuffer.type,
+            indices_ndbuffer.type,
+            output_ndbuffer.rank,
+            indices_ndbuffer.rank,
+            updates_ndbuffer.rank,
+            synchronous,
+            target,
+            reduce_fn=reduce_fn,
+        ](
+            input_ndbuffer,
+            indices_ndbuffer,
+            updates_ndbuffer,
+            output_ndbuffer,
+            context=ctx,
+        )
 
 
 @compiler.register("mo.scatter_nd.min")
@@ -802,42 +787,36 @@ struct ScatterNDMin:
         updates: ManagedTensorSlice[output.type, *_],
         indices: ManagedTensorSlice,
         ctx: MojoCallContextPtr,
-    ):
+    ) raises:
         # Existing implementations do not require static shape information
         var output_ndbuffer = managed_tensor_slice_to_ndbuffer(output)
         var input_ndbuffer = managed_tensor_slice_to_ndbuffer(input)
         var indices_ndbuffer = managed_tensor_slice_to_ndbuffer(indices)
         var updates_ndbuffer = managed_tensor_slice_to_ndbuffer(updates)
-        try:
 
-            @always_inline
-            @parameter
-            fn reduce_fn[
-                type: DType, width: Int
-            ](lhs: SIMD[type, width], rhs: SIMD[type, width]) -> SIMD[
-                type, width
-            ]:
-                return min(lhs, rhs)
+        @always_inline
+        @parameter
+        fn reduce_fn[
+            type: DType, width: Int
+        ](lhs: SIMD[type, width], rhs: SIMD[type, width]) -> SIMD[type, width]:
+            return min(lhs, rhs)
 
-            scatter_nd_generator[
-                output_ndbuffer.type,
-                indices_ndbuffer.type,
-                output_ndbuffer.rank,
-                indices_ndbuffer.rank,
-                updates_ndbuffer.rank,
-                synchronous,
-                target,
-                reduce_fn=reduce_fn,
-            ](
-                input_ndbuffer,
-                indices_ndbuffer,
-                updates_ndbuffer,
-                output_ndbuffer,
-                context=ctx,
-            )
-
-        except err:
-            ctx.set_to_error(err)
+        scatter_nd_generator[
+            output_ndbuffer.type,
+            indices_ndbuffer.type,
+            output_ndbuffer.rank,
+            indices_ndbuffer.rank,
+            updates_ndbuffer.rank,
+            synchronous,
+            target,
+            reduce_fn=reduce_fn,
+        ](
+            input_ndbuffer,
+            indices_ndbuffer,
+            updates_ndbuffer,
+            output_ndbuffer,
+            context=ctx,
+        )
 
 
 @compiler.register("mo.scatter_nd.max")
@@ -852,42 +831,36 @@ struct ScatterNDMax:
         updates: ManagedTensorSlice[output.type, *_],
         indices: ManagedTensorSlice,
         ctx: MojoCallContextPtr,
-    ):
+    ) raises:
         # Existing implementations do not require static shape information
         var output_ndbuffer = managed_tensor_slice_to_ndbuffer(output)
         var input_ndbuffer = managed_tensor_slice_to_ndbuffer(input)
         var indices_ndbuffer = managed_tensor_slice_to_ndbuffer(indices)
         var updates_ndbuffer = managed_tensor_slice_to_ndbuffer(updates)
-        try:
 
-            @always_inline
-            @parameter
-            fn reduce_fn[
-                type: DType, width: Int
-            ](lhs: SIMD[type, width], rhs: SIMD[type, width]) -> SIMD[
-                type, width
-            ]:
-                return max(lhs, rhs)
+        @always_inline
+        @parameter
+        fn reduce_fn[
+            type: DType, width: Int
+        ](lhs: SIMD[type, width], rhs: SIMD[type, width]) -> SIMD[type, width]:
+            return max(lhs, rhs)
 
-            scatter_nd_generator[
-                output_ndbuffer.type,
-                indices_ndbuffer.type,
-                output_ndbuffer.rank,
-                indices_ndbuffer.rank,
-                updates_ndbuffer.rank,
-                synchronous,
-                target,
-                reduce_fn=reduce_fn,
-            ](
-                input_ndbuffer,
-                indices_ndbuffer,
-                updates_ndbuffer,
-                output_ndbuffer,
-                context=ctx,
-            )
-
-        except err:
-            ctx.set_to_error(err)
+        scatter_nd_generator[
+            output_ndbuffer.type,
+            indices_ndbuffer.type,
+            output_ndbuffer.rank,
+            indices_ndbuffer.rank,
+            updates_ndbuffer.rank,
+            synchronous,
+            target,
+            reduce_fn=reduce_fn,
+        ](
+            input_ndbuffer,
+            indices_ndbuffer,
+            updates_ndbuffer,
+            output_ndbuffer,
+            context=ctx,
+        )
 
 
 # ===----------------------------------------------------------------------===#
@@ -1077,21 +1050,14 @@ struct AvgPool:
         strides: ManagedTensorSlice[int_type, 1],
         dilations: ManagedTensorSlice[int_type, 1],
         paddings: ManagedTensorSlice[int_type, 1],
-        ctx: MojoCallContextPtr,
-    ) -> StaticIntTuple[input.rank]:
-        var ret = StaticIntTuple[input.rank]()
-        try:
-            ret = pool_shape[single_thread_blocking_override=True](
-                managed_tensor_slice_to_ndbuffer(input),
-                managed_tensor_slice_to_ndbuffer(filter),
-                managed_tensor_slice_to_ndbuffer(strides),
-                managed_tensor_slice_to_ndbuffer(dilations),
-                managed_tensor_slice_to_ndbuffer(paddings),
-            )
-        except e:
-            ctx.set_to_error(e)
-
-        return ret
+    ) raises -> StaticIntTuple[input.rank]:
+        return pool_shape[single_thread_blocking_override=True](
+            managed_tensor_slice_to_ndbuffer(input),
+            managed_tensor_slice_to_ndbuffer(filter),
+            managed_tensor_slice_to_ndbuffer(strides),
+            managed_tensor_slice_to_ndbuffer(dilations),
+            managed_tensor_slice_to_ndbuffer(paddings),
+        )
 
 
 @compiler.register("mo.avg_pool_ceil_mode_true")
@@ -1130,20 +1096,14 @@ struct AvgPoolCeilModeTrue:
         dilations: ManagedTensorSlice[int_type, 1],
         paddings: ManagedTensorSlice[int_type, 1],
         ctx: MojoCallContextPtr,
-    ) -> StaticIntTuple[input.rank]:
-        var ret = StaticIntTuple[input.rank]()
-        try:
-            ret = pool_shape_ceil[single_thread_blocking_override=True](
-                managed_tensor_slice_to_ndbuffer(input),
-                managed_tensor_slice_to_ndbuffer(filter),
-                managed_tensor_slice_to_ndbuffer(strides),
-                managed_tensor_slice_to_ndbuffer(dilations),
-                managed_tensor_slice_to_ndbuffer(paddings),
-            )
-        except e:
-            ctx.set_to_error(e)
-
-        return ret
+    ) raises -> StaticIntTuple[input.rank]:
+        return pool_shape_ceil[single_thread_blocking_override=True](
+            managed_tensor_slice_to_ndbuffer(input),
+            managed_tensor_slice_to_ndbuffer(filter),
+            managed_tensor_slice_to_ndbuffer(strides),
+            managed_tensor_slice_to_ndbuffer(dilations),
+            managed_tensor_slice_to_ndbuffer(paddings),
+        )
 
 
 @compiler.register("mo.max_pool")
@@ -1180,21 +1140,14 @@ struct MaxPool:
         strides: ManagedTensorSlice[int_type, 1],
         dilations: ManagedTensorSlice[int_type, 1],
         paddings: ManagedTensorSlice[int_type, 1],
-        ctx: MojoCallContextPtr,
-    ) -> StaticIntTuple[input.rank]:
-        var ret = StaticIntTuple[input.rank]()
-        try:
-            ret = pool_shape[single_thread_blocking_override=True](
-                managed_tensor_slice_to_ndbuffer(input),
-                managed_tensor_slice_to_ndbuffer(filter),
-                managed_tensor_slice_to_ndbuffer(strides),
-                managed_tensor_slice_to_ndbuffer(dilations),
-                managed_tensor_slice_to_ndbuffer(paddings),
-            )
-        except e:
-            ctx.set_to_error(e)
-
-        return ret
+    ) raises -> StaticIntTuple[input.rank]:
+        return pool_shape[single_thread_blocking_override=True](
+            managed_tensor_slice_to_ndbuffer(input),
+            managed_tensor_slice_to_ndbuffer(filter),
+            managed_tensor_slice_to_ndbuffer(strides),
+            managed_tensor_slice_to_ndbuffer(dilations),
+            managed_tensor_slice_to_ndbuffer(paddings),
+        )
 
 
 @compiler.register("mo.max_pool_ceil_mode_true")
@@ -1231,18 +1184,11 @@ struct MaxPoolCeilModeTrue:
         strides: ManagedTensorSlice[int_type, 1],
         dilations: ManagedTensorSlice[int_type, 1],
         paddings: ManagedTensorSlice[int_type, 1],
-        ctx: MojoCallContextPtr,
-    ) -> StaticIntTuple[input.rank]:
-        var ret = StaticIntTuple[input.rank]()
-        try:
-            ret = pool_shape_ceil[single_thread_blocking_override=True](
-                managed_tensor_slice_to_ndbuffer(input),
-                managed_tensor_slice_to_ndbuffer(filter),
-                managed_tensor_slice_to_ndbuffer(strides),
-                managed_tensor_slice_to_ndbuffer(dilations),
-                managed_tensor_slice_to_ndbuffer(paddings),
-            )
-        except e:
-            ctx.set_to_error(e)
-
-        return ret
+    ) raises -> StaticIntTuple[input.rank]:
+        return pool_shape_ceil[single_thread_blocking_override=True](
+            managed_tensor_slice_to_ndbuffer(input),
+            managed_tensor_slice_to_ndbuffer(filter),
+            managed_tensor_slice_to_ndbuffer(strides),
+            managed_tensor_slice_to_ndbuffer(dilations),
+            managed_tensor_slice_to_ndbuffer(paddings),
+        )
