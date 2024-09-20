@@ -7,6 +7,7 @@
 
 from collections import InlineArray
 from math import ceildiv, isclose
+from memory import UnsafePointer
 from random import rand, random_float64
 from sys import sizeof
 
