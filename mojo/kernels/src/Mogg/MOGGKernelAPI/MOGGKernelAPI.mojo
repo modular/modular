@@ -967,8 +967,7 @@ struct ArgMax:
         output: ManagedTensorSlice,
         input: ManagedTensorSlice[rank = output.rank],
         axis: ManagedTensorSlice[rank=1],
-        ctx: MojoCallContextPtr,
-    ):
+    ) raises:
         alias output_shape = compiler.specsof[output.type, output.rank](
             "output"
         ).shape
@@ -987,10 +986,7 @@ struct ArgMax:
             static_shape=input_shape
         ](input)
 
-        try:
-            argmax(input_ndbuffer, axis_ndbuffer, output_ndbuffer)
-        except err:
-            ctx.set_to_error(err)
+        argmax(input_ndbuffer, axis_ndbuffer, output_ndbuffer)
 
 
 @compiler.register("mo.arg_min")
@@ -1000,8 +996,7 @@ struct ArgMin:
         output: ManagedTensorSlice,
         input: ManagedTensorSlice[rank = output.rank],
         axis: ManagedTensorSlice[rank=1],
-        ctx: MojoCallContextPtr,
-    ):
+    ) raises:
         alias output_shape = compiler.specsof[output.type, output.rank](
             "output"
         ).shape
@@ -1020,10 +1015,7 @@ struct ArgMin:
             static_shape=input_shape
         ](input)
 
-        try:
-            argmin(input_ndbuffer, axis_ndbuffer, output_ndbuffer)
-        except err:
-            ctx.set_to_error(err)
+        argmin(input_ndbuffer, axis_ndbuffer, output_ndbuffer)
 
 
 @compiler.register("mo.arg_nonzero")

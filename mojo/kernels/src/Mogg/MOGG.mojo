@@ -3012,7 +3012,6 @@ fn conv[
     num_groups: Scalar,
     # output and input have the same rank.
     output: NDBuffer[output_type, input_rank, input_6_static_shape],
-    ctx: MojoCallContextPtr,
 ) raises:
     """Including this function in MOGG.mojo since it is intended to be a temporary
     wrapper around the Stdlib conv. Currently the strides and dilation are NDBuffers,
@@ -3024,19 +3023,13 @@ fn conv[
     ]()
 
     if strides.size() != input_rank - 2:
-        return ctx.set_to_error(
-            "$(input_rank-2) values expected in conv strides"
-        )
+        raise Error("$(input_rank-2) values expected in conv strides")
 
     if dilation.size() != input_rank - 2:
-        return ctx.set_to_error(
-            "$(input_rank-2) values expected in conv dilation"
-        )
+        raise Error("$(input_rank-2) values expected in conv dilation")
 
     if paddings.size() != 2 * (input_rank - 2):
-        return ctx.set_to_error(
-            "$(2*(input_rank-2)) value expected in conv paddings"
-        )
+        raise Error("$(2*(input_rank-2)) value expected in conv paddings")
 
     var stride_flat = strides.flatten()
     var dilation_flat = dilation.flatten()
@@ -3051,7 +3044,7 @@ fn conv[
         dilation_tuple[i] = int(dilation_flat[i])
 
     if dilation_tuple != StaticIntTuple[input_rank - 2](1):
-        return ctx.set_to_error("Non-unit dilation is not supported yet.")
+        raise Error("Non-unit dilation is not supported yet.")
 
     var pad_d_tuple = StaticIntTuple[2](0)
     var pad_h_tuple = StaticIntTuple[2](0)
@@ -3140,8 +3133,7 @@ fn conv_transpose[
     paddings: NDBuffer[padding_type, 1],
     output_paddings: NDBuffer[output_padding_type, 1],
     output: NDBuffer[output_type, input_rank],
-    ctx: MojoCallContextPtr,
-):
+) raises:
     constrained[
         strides_type.is_integral()
         and dilation_type.is_integral()
@@ -3150,22 +3142,18 @@ fn conv_transpose[
     ]()
 
     if strides.size() != input_rank - 2:
-        return ctx.set_to_error(
-            "$(input_rank-2) values expected in convTranspose stride"
-        )
+        raise Error("$(input_rank-2) values expected in convTranspose stride")
 
     if dilation.size() != input_rank - 2:
-        return ctx.set_to_error(
-            "$(input_rank-2) values expected in convTranspose dilation"
-        )
+        raise Error("$(input_rank-2) values expected in convTranspose dilation")
 
     if output_paddings.size() != input_rank - 2:
-        return ctx.set_to_error(
+        raise Error(
             "$(input_rank-2) values expected in convTranspose output paddings"
         )
 
     if paddings.size() != 2 * (input_rank - 2):
-        return ctx.set_to_error(
+        raise Error(
             "$(2*(input_rank-2)) value expected in convTranspose paddings"
         )
 
@@ -3201,31 +3189,28 @@ fn conv_transpose[
             coords, rebind[SIMD[output_type, _width]](val)
         )
 
-    try:
-        conv_transpose_impl[
-            input_rank,
-            filter_rank,
-            DimList.create_unknown[input_rank](),  # Input shape.
-            DimList.create_unknown[filter_rank](),  # Filter shape.
-            DimList.create_unknown[input_rank](),  # Output shape.
-            input_type,
-            filter_type,  # Filter type.
-            output_type,  # Output type.
-            filter_packed,
-            lambdas_have_fusion,
-            epilogue_wrapper,
-        ](
-            output,
-            input,
-            filter,
-            stride_tuple,
-            dilation_tuple,
-            pad_d,
-            pad_h,
-            pad_w,
-        )
-    except e:
-        ctx.set_to_error(e)
+    conv_transpose_impl[
+        input_rank,
+        filter_rank,
+        DimList.create_unknown[input_rank](),  # Input shape.
+        DimList.create_unknown[filter_rank](),  # Filter shape.
+        DimList.create_unknown[input_rank](),  # Output shape.
+        input_type,
+        filter_type,  # Filter type.
+        output_type,  # Output type.
+        filter_packed,
+        lambdas_have_fusion,
+        epilogue_wrapper,
+    ](
+        output,
+        input,
+        filter,
+        stride_tuple,
+        dilation_tuple,
+        pad_d,
+        pad_h,
+        pad_w,
+    )
 
 
 # ===----------------------------------------------------------------------===#
@@ -3248,8 +3233,8 @@ fn print_buffer_info[type: DType, rank: Int](buffer: NDBuffer[type, rank]):
 @export
 fn return_error[
     type: DType, rank: Int
-](input: NDBuffer[type, rank], ctx: MojoCallContextPtr):
-    ctx.set_to_error("This is an error")
+](input: NDBuffer[type, rank], ctx: MojoCallContextPtr) raises:
+    raise Error("This is an error")
 
 
 # ===----------------------------------------------------------------------===#
