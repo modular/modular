@@ -627,7 +627,6 @@ struct _FlashAttention[
                 o_row_ptr.store(idx, val * fixup_val)
 
             vectorize[do_correction, simd_width, unroll_factor=2](count_n)
-            _ = fixup_val
 
             qk_row_ptr += Self._config.qk_block_n
             o_row_ptr += Self._config.o_block_n
