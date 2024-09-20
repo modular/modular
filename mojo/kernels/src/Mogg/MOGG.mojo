@@ -201,8 +201,6 @@ from bit import is_power_of_two
 @export
 fn MOGGExport():
     alias _add = add
-    alias _avg_pool_shape = pool_shape
-    alias _avg_pool_shape_ceil = pool_shape_ceil
     alias _cast = cast
     alias _ceil = ceil
     alias _concat_from_list_shape = concat_from_list_shape
@@ -221,8 +219,6 @@ fn MOGGExport():
     alias _rms_norm_shape = rms_norm_shape
     alias _pack_b_ndbuffer = pack_b_ndbuffer
     alias _pack_transposed_b_ndbuffer = pack_transposed_b_ndbuffer
-    alias _max_pool_shape = pool_shape
-    alias _max_pool_shape_ceil = pool_shape_ceil
     alias _matrix_solve_shape = matrix_solve_shape
     alias _matrix_band_part = matrix_band_part
     alias _batched_matmul_shape = batched_matmul_shape
@@ -4623,3 +4619,119 @@ fn identity[
     ctx: MojoCallContextPtr,
 ) raises:
     memcpy(output.data, input.data, len(input))
+
+
+@mogg_register_shape_func("mo.avg_pool")
+@always_inline
+@export
+fn avg_pool_shape[
+    input_rank: Int,
+    input_type: DType,
+    filter_type: DType,
+    strides_type: DType,
+    dilations_type: DType,
+    paddings_type: DType,
+    single_thread_blocking_override: Bool,
+](
+    input_buf: NDBuffer[input_type, input_rank],
+    filter_buf: NDBuffer[filter_type, 1],
+    strides_buf: NDBuffer[strides_type, 1],
+    dilations_buf: NDBuffer[dilations_type, 1],
+    paddings_buf: NDBuffer[paddings_type, 1],
+) raises -> StaticIntTuple[input_rank]:
+    return pool_shape[
+        input_rank,
+        input_type,
+        filter_type,
+        strides_type,
+        dilations_type,
+        paddings_type,
+        single_thread_blocking_override,
+    ](input_buf, filter_buf, strides_buf, dilations_buf, paddings_buf)
+
+
+@mogg_register_shape_func("mo.avg_pool_ceil_mode_true")
+@always_inline
+@export
+fn avg_pool_ceil_mode_true_shape[
+    input_rank: Int,
+    input_type: DType,
+    filter_type: DType,
+    strides_type: DType,
+    dilations_type: DType,
+    paddings_type: DType,
+    single_thread_blocking_override: Bool,
+](
+    input_buf: NDBuffer[input_type, input_rank],
+    filter_buf: NDBuffer[filter_type, 1],
+    strides_buf: NDBuffer[strides_type, 1],
+    dilations_buf: NDBuffer[dilations_type, 1],
+    paddings_buf: NDBuffer[paddings_type, 1],
+) raises -> StaticIntTuple[input_rank]:
+    return pool_shape_ceil[
+        input_rank,
+        input_type,
+        filter_type,
+        strides_type,
+        dilations_type,
+        paddings_type,
+        single_thread_blocking_override,
+    ](input_buf, filter_buf, strides_buf, dilations_buf, paddings_buf)
+
+
+@mogg_register_shape_func("mo.max_pool")
+@always_inline
+@export
+fn max_pool_shape[
+    input_rank: Int,
+    input_type: DType,
+    filter_type: DType,
+    strides_type: DType,
+    dilations_type: DType,
+    paddings_type: DType,
+    single_thread_blocking_override: Bool,
+](
+    input_buf: NDBuffer[input_type, input_rank],
+    filter_buf: NDBuffer[filter_type, 1],
+    strides_buf: NDBuffer[strides_type, 1],
+    dilations_buf: NDBuffer[dilations_type, 1],
+    paddings_buf: NDBuffer[paddings_type, 1],
+) raises -> StaticIntTuple[input_rank]:
+    return pool_shape[
+        input_rank,
+        input_type,
+        filter_type,
+        strides_type,
+        dilations_type,
+        paddings_type,
+        single_thread_blocking_override,
+    ](input_buf, filter_buf, strides_buf, dilations_buf, paddings_buf)
+
+
+@mogg_register_shape_func("mo.max_pool_ceil_mode_true")
+@always_inline
+@export
+fn max_pool_ceil_mode_true_shape[
+    input_rank: Int,
+    input_type: DType,
+    filter_type: DType,
+    strides_type: DType,
+    dilations_type: DType,
+    paddings_type: DType,
+    single_thread_blocking_override: Bool,
+](
+    input_buf: NDBuffer[input_type, input_rank],
+    filter_buf: NDBuffer[filter_type, 1],
+    strides_buf: NDBuffer[strides_type, 1],
+    dilations_buf: NDBuffer[dilations_type, 1],
+    paddings_buf: NDBuffer[paddings_type, 1],
+) raises -> StaticIntTuple[input_rank]:
+    return pool_shape_ceil[
+        input_rank,
+        input_type,
+        filter_type,
+        strides_type,
+        dilations_type,
+        paddings_type,
+        single_thread_blocking_override,
+    ](input_buf, filter_buf, strides_buf, dilations_buf, paddings_buf)

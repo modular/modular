@@ -34,6 +34,7 @@ from math import (
     tanh,
 )
 from nn import arg_nonzero
+from nn.pool import avg_pool, max_pool, pool_shape, pool_shape_ceil
 from utils.numerics import isinf, isnan
 
 
@@ -798,3 +799,214 @@ struct ArgNonZero:
         return arg_nonzero.arg_nonzero_shape[
             single_thread_blocking_override=True
         ](managed_tensor_slice_to_ndbuffer(input_buffer))
+
+
+# ===----------------------------------------------------------------------===#
+# Pooling kernels
+# ===----------------------------------------------------------------------===#
+
+
+@compiler.register("mo.avg_pool")
+struct AvgPool:
+    @staticmethod
+    fn execute[
+        count_boundary: Bool,
+        type: DType,
+        int_type: DType,
+    ](
+        output: ManagedTensorSlice[type, 4],
+        input: ManagedTensorSlice[type, 4],
+        filter: ManagedTensorSlice[int_type, 1],
+        strides: ManagedTensorSlice[int_type, 1],
+        dilations: ManagedTensorSlice[int_type, 1],
+        paddings: ManagedTensorSlice[int_type, 1],
+    ):
+        avg_pool[count_boundary=count_boundary](
+            managed_tensor_slice_to_ndbuffer(input),
+            managed_tensor_slice_to_ndbuffer(filter),
+            managed_tensor_slice_to_ndbuffer(strides),
+            managed_tensor_slice_to_ndbuffer(dilations),
+            managed_tensor_slice_to_ndbuffer(paddings),
+            managed_tensor_slice_to_ndbuffer(output),
+            False,
+        )
+
+    @staticmethod
+    fn shape[
+        type: DType,
+        int_type: DType,
+    ](
+        input: ManagedTensorSlice[type, 4],
+        filter: ManagedTensorSlice[int_type, 1],
+        strides: ManagedTensorSlice[int_type, 1],
+        dilations: ManagedTensorSlice[int_type, 1],
+        paddings: ManagedTensorSlice[int_type, 1],
+        ctx: MojoCallContextPtr,
+    ) -> StaticIntTuple[input.rank]:
+        var ret = StaticIntTuple[input.rank]()
+        try:
+            ret = pool_shape[single_thread_blocking_override=True](
+                managed_tensor_slice_to_ndbuffer(input),
+                managed_tensor_slice_to_ndbuffer(filter),
+                managed_tensor_slice_to_ndbuffer(strides),
+                managed_tensor_slice_to_ndbuffer(dilations),
+                managed_tensor_slice_to_ndbuffer(paddings),
+            )
+        except e:
+            ctx.set_to_error(e)
+
+        return ret
+
+
+@compiler.register("mo.avg_pool_ceil_mode_true")
+struct AvgPoolCeilModeTrue:
+    @staticmethod
+    fn execute[
+        count_boundary: Bool,
+        type: DType,
+        int_type: DType,
+    ](
+        output: ManagedTensorSlice[type, 4],
+        input: ManagedTensorSlice[type, 4],
+        filter: ManagedTensorSlice[int_type, 1],
+        strides: ManagedTensorSlice[int_type, 1],
+        dilations: ManagedTensorSlice[int_type, 1],
+        paddings: ManagedTensorSlice[int_type, 1],
+    ):
+        avg_pool[count_boundary=count_boundary](
+            managed_tensor_slice_to_ndbuffer(input),
+            managed_tensor_slice_to_ndbuffer(filter),
+            managed_tensor_slice_to_ndbuffer(strides),
+            managed_tensor_slice_to_ndbuffer(dilations),
+            managed_tensor_slice_to_ndbuffer(paddings),
+            managed_tensor_slice_to_ndbuffer(output),
+            True,
+        )
+
+    @staticmethod
+    fn shape[
+        type: DType,
+        int_type: DType,
+    ](
+        input: ManagedTensorSlice[type, 4],
+        filter: ManagedTensorSlice[int_type, 1],
+        strides: ManagedTensorSlice[int_type, 1],
+        dilations: ManagedTensorSlice[int_type, 1],
+        paddings: ManagedTensorSlice[int_type, 1],
+        ctx: MojoCallContextPtr,
+    ) -> StaticIntTuple[input.rank]:
+        var ret = StaticIntTuple[input.rank]()
+        try:
+            ret = pool_shape_ceil[single_thread_blocking_override=True](
+                managed_tensor_slice_to_ndbuffer(input),
+                managed_tensor_slice_to_ndbuffer(filter),
+                managed_tensor_slice_to_ndbuffer(strides),
+                managed_tensor_slice_to_ndbuffer(dilations),
+                managed_tensor_slice_to_ndbuffer(paddings),
+            )
+        except e:
+            ctx.set_to_error(e)
+
+        return ret
+
+
+@compiler.register("mo.max_pool")
+struct MaxPool:
+    @staticmethod
+    fn execute[
+        type: DType,
+        int_type: DType,
+    ](
+        output: ManagedTensorSlice[type, 4],
+        input: ManagedTensorSlice[type, 4],
+        filter: ManagedTensorSlice[int_type, 1],
+        strides: ManagedTensorSlice[int_type, 1],
+        dilations: ManagedTensorSlice[int_type, 1],
+        paddings: ManagedTensorSlice[int_type, 1],
+    ):
+        max_pool(
+            managed_tensor_slice_to_ndbuffer(input),
+            managed_tensor_slice_to_ndbuffer(filter),
+            managed_tensor_slice_to_ndbuffer(strides),
+            managed_tensor_slice_to_ndbuffer(dilations),
+            managed_tensor_slice_to_ndbuffer(paddings),
+            managed_tensor_slice_to_ndbuffer(output),
+            False,
+        )
+
+    @staticmethod
+    fn shape[
+        type: DType,
+        int_type: DType,
+    ](
+        input: ManagedTensorSlice[type, 4],
+        filter: ManagedTensorSlice[int_type, 1],
+        strides: ManagedTensorSlice[int_type, 1],
+        dilations: ManagedTensorSlice[int_type, 1],
+        paddings: ManagedTensorSlice[int_type, 1],
+        ctx: MojoCallContextPtr,
+    ) -> StaticIntTuple[input.rank]:
+        var ret = StaticIntTuple[input.rank]()
+        try:
+            ret = pool_shape[single_thread_blocking_override=True](
+                managed_tensor_slice_to_ndbuffer(input),
+                managed_tensor_slice_to_ndbuffer(filter),
+                managed_tensor_slice_to_ndbuffer(strides),
+                managed_tensor_slice_to_ndbuffer(dilations),
+                managed_tensor_slice_to_ndbuffer(paddings),
+            )
+        except e:
+            ctx.set_to_error(e)
+
+        return ret
+
+
+@compiler.register("mo.max_pool_ceil_mode_true")
+struct MaxPoolCeilModeTrue:
+    @staticmethod
+    fn execute[
+        type: DType,
+        int_type: DType,
+    ](
+        output: ManagedTensorSlice[type, 4],
+        input: ManagedTensorSlice[type, 4],
+        filter: ManagedTensorSlice[int_type, 1],
+        strides: ManagedTensorSlice[int_type, 1],
+        dilations: ManagedTensorSlice[int_type, 1],
+        paddings: ManagedTensorSlice[int_type, 1],
+    ):
+        max_pool(
+            managed_tensor_slice_to_ndbuffer(input),
+            managed_tensor_slice_to_ndbuffer(filter),
+            managed_tensor_slice_to_ndbuffer(strides),
+            managed_tensor_slice_to_ndbuffer(dilations),
+            managed_tensor_slice_to_ndbuffer(paddings),
+            managed_tensor_slice_to_ndbuffer(output),
+            True,
+        )
+
+    @staticmethod
+    fn shape[
+        type: DType,
+        int_type: DType,
+    ](
+        input: ManagedTensorSlice[type, 4],
+        filter: ManagedTensorSlice[int_type, 1],
+        strides: ManagedTensorSlice[int_type, 1],
+        dilations: ManagedTensorSlice[int_type, 1],
+        paddings: ManagedTensorSlice[int_type, 1],
+        ctx: MojoCallContextPtr,
+    ) -> StaticIntTuple[input.rank]:
+        var ret = StaticIntTuple[input.rank]()
+        try:
+            ret = pool_shape_ceil[single_thread_blocking_override=True](
+                managed_tensor_slice_to_ndbuffer(input),
+                managed_tensor_slice_to_ndbuffer(filter),
+                managed_tensor_slice_to_ndbuffer(strides),
+                managed_tensor_slice_to_ndbuffer(dilations),
+                managed_tensor_slice_to_ndbuffer(paddings),
+            )
+        except e:
+            ctx.set_to_error(e)
+
+        return ret
