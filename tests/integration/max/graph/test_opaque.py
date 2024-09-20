@@ -120,3 +120,42 @@ def test_opaque_driver_input(
     result = reader_model.execute(input0=counter)["output0"]
 
     assert (result == [5, 15]).all()
+
+
+class PythonCounter:
+    def __init__(self, a=0, b=0):
+        self.a = a
+        self.b = b
+
+    def bump(self):
+        self.a += 1
+        self.b += self.a
+        print("bumped", self.a, self.b)
+
+    def copy(self):
+        return PythonCounter(self.a, self.b)
+
+
+def test_pyobject_opaque(
+    session: InferenceSession, counter_ops_path: Path
+) -> None:
+    session = InferenceSession()
+    python_type = OpaqueType("PythonObject")
+
+    bumper_graph = Graph(
+        "bumper", input_types=[python_type], output_types=[python_type]
+    )
+    with bumper_graph:
+        x = ops.custom(
+            "bump_python_counter", [bumper_graph.inputs[0]], [python_type]
+        )[0]
+        y = ops.custom("bump_python_counter", [x], [python_type])[0]
+        bumper_graph.output(y)
+    bumper_compiled = session.load(
+        bumper_graph, custom_extensions=counter_ops_path
+    )
+
+    counter = PythonCounter()
+    for i in range(5):
+        counter = bumper_compiled.execute(input0=counter)["output0"]
+    assert counter.a == 10 and counter.b == 55
