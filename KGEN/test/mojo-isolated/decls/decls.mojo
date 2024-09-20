@@ -595,7 +595,7 @@ fn variadic_mem_only(*values: MemStruct) -> Int:
 # CHECK-LABEL: lit.func @"test_variadic_mem_only{{.*}}"<x: !MemStruct, y: !MemStruct>
 fn test_variadic_mem_only[x: MemStruct, y: MemStruct]():
     # CHECK: lit.alias.decl {{.*}}: !Int = <apply(
-    # CHECK-SAME: :!lit.signature<[1]("values": !kgen.variadic<!lit.ref<!MemStruct, imm #lit.any.lifetime>, borrow_in_mem> var) -> !Int> {{.*}}::@"variadic_mem_only({{.*}}::MemStruct*)"
+    # CHECK-SAME: :!lit.signature<[1]("values": !kgen.variadic<!lit.ref<!MemStruct, imm {}>, borrow_in_mem> var) -> !Int> {{.*}}::@"variadic_mem_only({{.*}}::MemStruct*)"
     # CHECK-SAME: [store_to_mem(x), store_to_mem(y)]
     alias b = variadic_mem_only(x, y)
 
@@ -1078,7 +1078,7 @@ async fn coroutine() -> Int:
 struct StructWithAsync:
     # CHECK-LABEL: lit.func @"do_something{{.*}}({{.*}}) async
     async fn do_something(self: StructWithAsync):
-        # CHECK-NEXT: %[[CORO:.*]] = lit.async.call[!lit.signature<[1](?, "__result__": !lit.ref<!Int, mut *[0,0]> byref_result) async -> !kgen.none>: @decls::@"coroutine()"][mut #lit.any.lifetime]()
+        # CHECK-NEXT: %[[CORO:.*]] = lit.async.call[!lit.signature<[1](?, "__result__": !lit.ref<!Int, mut *[0,0]> byref_result) async -> !kgen.none>: @decls::@"coroutine()"][imm {}]()
         # CHECK: lit.call {{.*}}@Coroutine::@"__init__{{.*}}<:!AnyType [!Int, {{.*}}], :lifetime.set {}>({{.*}}, %[[CORO]])
         _ = coroutine()
 
@@ -1086,7 +1086,7 @@ struct StructWithAsync:
 # CHECK-LABEL: lit.func @"call_struct_async
 # CHECK-SAME: [imm [[LT:.*]], mut {{.*}}]{{.*}}) async -> !kgen.none
 async fn call_struct_async(f: StructWithAsync):
-    # CHECK-NEXT: lit.async.call[!lit.signature<[2]({{.*}}, "__result__":{{.*}}) async -> !kgen.none>: @{{.*}}][imm [[LT]], mut #lit.any.lifetime](%f)
+    # CHECK-NEXT: lit.async.call[!lit.signature<[2]({{.*}}, "__result__":{{.*}}) async -> !kgen.none>: @{{.*}}][imm [[LT]], imm {}](%f)
     _ = f.do_something()
 
 
@@ -1142,7 +1142,7 @@ fn coroutine_lifetimes():
     var y: Awaitable
     # CHECK: [[Y_IMM:%.*]] = lit.ref.immut %y
     # CHECK: [[CORO:%.*]] = lit.async.call[!lit.signature<[3]("x": !lit.ref<!Awaitable, mut *[0,0]> inout, "y": !lit.ref<!Awaitable, imm *[0,1]> borrow_in_mem, ?, "__result__": !lit.ref<none, mut *[0,2]> byref_result) async -> !kgen.none>
-    # CHECK-SAME: [mut [[X_LT]], muttoimm [[Y_LT]], mut #lit.any.lifetime](%x, [[Y_IMM]])
+    # CHECK-SAME: [mut [[X_LT]], muttoimm [[Y_LT]], imm {}](%x, [[Y_IMM]])
     # CHECK: lit.call {{.*}}Coroutine::@"__init__{{.*}}<:!AnyType [none, {{.*}}], :lifetime.set {mut [[X_LT]], mut [[Y_LT]]}>(%coro, [[CORO]])
     var coro = capture_byref(x, y)
 
@@ -1153,14 +1153,14 @@ fn coroutine_lifetimes():
 
 # CHECK-LABEL: lit.func @"mem_result{{.*}}(?, %__result__: !lit.ref<!Awaitable, {{.*}}> byref_result) async -> !kgen.none
 async fn mem_result() -> Awaitable:
-    # CHECK: [[CORO:%.*]] = lit.async.call[{{.*}}mem_result()"][mut #lit.any.lifetime]()
+    # CHECK: [[CORO:%.*]] = lit.async.call[{{.*}}mem_result()"][imm {}]()
     # CHECK: lit.call {{.*}}@Coroutine::@"__init__{{.*}}({{.*}}, [[CORO]])
     var coro = mem_result()
 
 
 # CHECK-LABEL: lit.func @"mem_raises{{.*}}(?, %__error__: !lit.ref<!Error, {{.*}}> byref_error, %__result__: !lit.ref<!Int, {{.*}}> byref_result) throws|async -> i1
 async fn mem_raises() raises -> Int:
-    # CHECK: [[CORO:%.*]] = lit.async.call[{{.*}}mem_raises()"][mut #lit.any.lifetime, mut #lit.any.lifetime]()
+    # CHECK: [[CORO:%.*]] = lit.async.call[{{.*}}mem_raises()"][imm {}, imm {}]()
     # CHECK: lit.call {{.*}}@RaisingCoroutine::@"__init__{{.*}}(%coro, [[CORO]])
     var coro = mem_raises()
 

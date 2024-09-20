@@ -14,7 +14,7 @@
 # CHECK-LABEL: lit.func @"tuples_rv
 fn tuples_rv(a: Int, b: FloatDyn):
     # CHECK: [[PACK0:%.*]] = kgen.param.constant: !lit.ref.pack
-    # CHECK-SAME: <:variadic<!AnyType> [], imm #lit.any.lifetime> = <<>>
+    # CHECK-SAME: <:variadic<!AnyType> [], imm {}> = <<>>
     # CHECK: [[TMPVAR:%.*]] = lit.var.decl
     # CHECK: lit.call @{{.*}}@Tuple::@"__init__({{.*}}([[TMPVAR]]
     _ = ()
@@ -147,7 +147,7 @@ fn swap_container_fields(inout v: Container[_]):
 # CHECK-SAME: %__result__: !lit.ref<{{.*}}@Tuple<:variadic<!AnyType> []>
 fn returnTup0() -> Tuple:
     # FIXME: Why isn't this a kgen.param.constant for the whole call?
-    # CHECK: !lit.ref.pack<:variadic<!AnyType> [], imm #lit.any.lifetime> = <<>>
+    # CHECK: !lit.ref.pack<:variadic<!AnyType> [], imm {}> = <<>>
     return ()
 
 
@@ -155,7 +155,7 @@ fn returnTup0() -> Tuple:
 # CHECK-SAME: %__result__: !lit.ref<{{.*}}@Tuple<:variadic<!AnyType> []>
 fn returnTup0a() -> ():
     # FIXME: Why isn't this a kgen.param.constant for the whole call?
-    # CHECK: kgen.param.constant: !lit.ref.pack<:variadic<!AnyType> [], imm #lit.any.lifetime> = <<>>
+    # CHECK: kgen.param.constant: !lit.ref.pack<:variadic<!AnyType> [], imm {}> = <<>>
     # CHECK: lit.call{{.*}}__init__
     return ()
 
