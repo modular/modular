@@ -146,6 +146,7 @@ static ErrorOr<TempFile> generateEntrypointSource(ArrayRef<TestID> unitTests) {
     os << "from sys import argv\n";
     os << "from testing import assert_not_equal\n";
     os << "from collections import Set\n";
+    os << "from memory import UnsafePointer\n";
     os << "fn main() raises:\n";
 
     os.indent();

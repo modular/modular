@@ -5,6 +5,8 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: kgen -emit-llvm-opt %s | FileCheck %s
 
+from memory import UnsafePointer
+
 
 # CHECK: @mayalias
 @export

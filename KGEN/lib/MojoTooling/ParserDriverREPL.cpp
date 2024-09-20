@@ -376,7 +376,8 @@ wrapExpressionText(MojoParserContext::REPLLocMapper::ExprLocMapper &locMapper,
   if (isFirstREPLCell) {
     exprOS << "from memory.unsafe_pointer import UnsafePointer as "
            << "__mojo_repl_UnsafePointer\n"
-           << "from python.python import Python as __mojo_repl_Python\n";
+           << "from python.python import Python as __mojo_repl_Python\n"
+           << "from memory import UnsafePointer \n";
   }
 
   // Extract out the top-level code from the expression code.

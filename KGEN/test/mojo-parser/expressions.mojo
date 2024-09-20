@@ -6,6 +6,8 @@
 
 # RUN: kgen-translate -verify-diagnostics -import-mojo %s | FileCheck %s
 
+from memory import UnsafePointer
+
 # CHECK: module {
 
 fn noop(): pass

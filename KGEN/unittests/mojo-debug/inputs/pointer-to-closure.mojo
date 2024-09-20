@@ -5,6 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from utils import StringRef
+from memory import UnsafePointer
 
 
 struct CallbackHolder:
