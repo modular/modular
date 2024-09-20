@@ -184,7 +184,6 @@ fn _small_batched_matmul[
 
                     var a_val = a_buf[indices]
 
-                    @__copy_capture(a_val)
                     @always_inline
                     @parameter
                     fn compute_fn[simd_width: Int](n: Int):
@@ -200,7 +199,6 @@ fn _small_batched_matmul[
                         )
 
                     vectorize[compute_fn, simd_width, unroll_factor=2](N)
-                    _ = a_val
 
             @parameter
             if elementwise_epilogue_fn:
@@ -216,8 +214,6 @@ fn _small_batched_matmul[
                         func[c_type, width, rank](indices, val)
 
                     vectorize[apply_epilogue, simd_width](N)
-            _ = indices
-            _ = b_buf_index
 
     return
 
