@@ -43,11 +43,7 @@ class WorkQueue;
 
 struct AllocatorOptions {
   bool leakCheckedAllocator = false;
-#ifdef USE_TCMALLOC
   bool tcmallocAllocator = true;
-#else  // USE_TCMALLOC
-  bool tcmallocAllocator = false;
-#endif // USE_TCMALLOC
   bool profilingAllocator = false;
   bool useAfterFreeAllocator = false;
 };
@@ -150,11 +146,7 @@ struct RuntimeOptions {
   std::string_view poolName = "🔥 Thread";
   bool paranoid = false;
   bool leakCheckedAllocator = false;
-#ifdef USE_TCMALLOC
   bool tcmallocAllocator = true;
-#else  // USE_TCMALLOC
-  bool tcmallocAllocator = false;
-#endif // USE_TCMALLOC
   bool profilingAllocator = false;
   bool useAfterFreeAllocator = false;
   OnFailure onFailure{RuntimeOptions::OnFailure::kExit};

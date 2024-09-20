@@ -14,7 +14,6 @@ using namespace M::AsyncRT;
 
 namespace {
 
-#if defined(USE_TCMALLOC)
 TEST(AllocatorTest, Use_TCMalloc) {
   auto allocator = createTCMallocAllocator();
   int *ptr1 = allocator->allocate<int>();
@@ -50,6 +49,5 @@ TEST(AllocatorTest, Use_TCMalloc) {
   allocator->deallocateBytes(ptr1, sizeof(int));
   allocator->deallocateBytes(ptr2, sizeof(int));
 }
-#endif // defined(USE_TCMALLOC)
 
 } // namespace

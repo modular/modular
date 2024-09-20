@@ -92,12 +92,7 @@ AsyncRT::getAllocator(const AllocatorOptions &options) {
     llvm_unreachable("cannot use the user-after-free allocator");
 #endif
   } else if (options.tcmallocAllocator) {
-#ifdef USE_TCMALLOC
     allocator = createTCMallocAllocator();
-#else
-    llvm_unreachable("cannot use the tcmalloc allocator because the code was "
-                     "not compiled with the tcmalloc library");
-#endif
   } else {
     allocator = createMallocAllocator();
   }
