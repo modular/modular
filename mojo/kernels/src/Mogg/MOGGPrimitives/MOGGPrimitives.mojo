@@ -376,6 +376,31 @@ fn create_mojo_value_async(
     )
 
 
+@mogg_register("builtin.create_python_mojo_value_async")
+@always_inline
+@export
+fn create_python_mojo_value_async(
+    val_ptr: UnsafePointer[UInt8],
+    async_ptr: UnsafePointer[NoneType],
+    runtime: UnsafePointer[NoneType],
+    size: Int,
+    align: Int,
+    destructor_fn: fn (UnsafePointer[UInt8]) -> None,
+    move_fn: fn (UnsafePointer[UInt8], UnsafePointer[UInt8]) -> None,
+):
+    var dst_ptr = external_call[
+        "KGEN_CompilerRT_MojoValueAllocateBuffer", UnsafePointer[UInt8]
+    ](size, align)
+    move_fn(dst_ptr, val_ptr)
+
+    external_call["KGEN_CompilerRT_CreateOwnedAsyncPythonMojoValue", NoneType](
+        dst_ptr,
+        destructor_fn,
+        async_ptr,
+        runtime,
+    )
+
+
 @mogg_register("builtin.unpack_async")
 @always_inline
 @export
