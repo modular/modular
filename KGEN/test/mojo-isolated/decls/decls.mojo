@@ -1342,6 +1342,20 @@ fn inferCaptureLifetimes[
     alias boundClosure = captureWithClosure[captureSomething]
 
 
+# CHECK-LABEL: lit.func @"testParameterCapture
+fn testParameterCapture(inout x: int, inout y: int):
+    # CHECK: lit.func *"capture()":{mut *"x`"}
+    @parameter
+    fn capture():
+        _ = x
+
+    # CHECK: lit.func *"do_it()":{mut *"x`", mut *"y`
+    @parameter
+    fn do_it():
+        _ = y
+        capture()
+
+
 # CHECK-LABEL: lit.func @"topLevelParamFn[__mlir_type.index]()"<a_param>
 fn topLevelParamFn[a_param: __mlir_type.index]():
     # CHECK: lit.func *"nestedFunction[__mlir_type.index]()"<b_param>

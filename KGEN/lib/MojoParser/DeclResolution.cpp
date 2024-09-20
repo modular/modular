@@ -991,6 +991,8 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
     SmallVector<Type> captureTypes;
     for (const Capture &cap : captures)
       captureTypes.push_back(cap.getValue().getType());
+    for (ParamDeclRefAttr param : paramCaptures)
+      captureTypes.push_back(param.getType());
 
     SmallVector<TypedAttr> lifetimes =
         shared.cachedLifetimeFinder.findLifetimesIn(captureTypes);
