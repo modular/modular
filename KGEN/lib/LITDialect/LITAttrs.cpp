@@ -794,9 +794,9 @@ TypedAttr LifetimeUnionAttr::get(ArrayRef<TypedAttr> operandsIn,
 
 TypedAttr LifetimeUnionAttr::get(MLIRContext *ctx,
                                  ArrayRef<TypedAttr> lifetimes) {
-  // In the empty case, the lifetime is mutable.
+  // In the empty case, the lifetime is immutable.
   if (lifetimes.empty())
-    return LifetimeUnionAttr::get({}, LifetimeType::get(ctx, /*mutable=*/true));
+    return LifetimeUnionAttr::get(LifetimeType::get(ctx, /*mutable=*/false));
 
   auto getMut = [](TypedAttr lifetime) {
     return ::cast<LifetimeType>(lifetime.getType()).getIsMutable();

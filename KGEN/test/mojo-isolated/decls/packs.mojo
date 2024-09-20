@@ -69,7 +69,7 @@ fn test_owned_trait():
     # CHECK-NEXT: lit.call {{.*}}__copyinit__{{.*}}([[ANONSLOT]], [[V2I]])
 
     # Coerce to common lifetime
-    # CHECK-NEXT: [[V1C:%.*]] = kgen.rebind %value1 : !lit.ref<!SomeMem, mut *"value1`"> to !lit.ref<!SomeMem, mut {*"anonymous*`2", *"value1`"}> 
+    # CHECK-NEXT: [[V1C:%.*]] = kgen.rebind %value1 : !lit.ref<!SomeMem, mut *"value1`"> to !lit.ref<!SomeMem, mut {*"anonymous*`2", *"value1`"}>
     # CHECK-NEXT: [[V2C:%.*]] = kgen.rebind [[ANONSLOT]] : !lit.ref<!SomeMem, mut *"anonymous*`2"> to !lit.ref<!SomeMem, mut {*"anonymous*`2", *"value1`"}
 
     # Form pack and call
@@ -163,7 +163,7 @@ struct not_nested_struct[*Ts: AnyType]:
 # CHECK-LABEL: lit.func @"test_empty_pack
 fn test_empty_pack():
     # Make sure we pass an immortal lifetime for the pack.
-    # CHECK: lit.call {{.*}}VariadicPack::@"__init__{{.*}}:lifetime<1> #lit.any.lifetime,
+    # CHECK: lit.call {{.*}}VariadicPack::@"__init__{{.*}}:lifetime<1> {},
     var s1 = not_nested_struct()
 
 
@@ -232,6 +232,6 @@ fn usePacks(x: FloatDyn, y: Int):
 fn test_comptime_call[a: Int]():
     # CHECK: lit.alias.decl *"foo`": none =
     # CHECK-SAME: <apply(:!lit.signature<[1](
-    # CHECK-SAME: "args": !lit.struct<#VariadicPack <:i1 0, :lifetime<0> #lit.any.lifetime, :!lit.anytrait<!AnyType> !AnyType, :variadic<!AnyType> [#Int1]>> borrow_in_mem|pack)
+    # CHECK-SAME: "args": !lit.struct<#VariadicPack <:i1 0, :lifetime<0> {}, :!lit.anytrait<!AnyType> !AnyType, :variadic<!AnyType> [#Int1]>> borrow_in_mem|pack)
     # CHECK-SAME: <store_to_mem(a)>, {:i1 0}))>
     alias foo = pack(a)

@@ -261,7 +261,7 @@ struct SomeRefItemStruct:
 
 # CHECK-LABEL: lit.func @"test_param_refitem
 fn test_param_refitem[a: SomeRefItemStruct]():
-    # CHECK-NEXT: !Int = <load_from_mem(:!lit.ref<!Int, imm #lit.any.lifetime> apply(:{{.*}}SomeRefItemStruct::@"__getitem__
+    # CHECK-NEXT: !Int = <load_from_mem(:!lit.ref<!Int, imm {}> apply(:{{.*}}SomeRefItemStruct::@"__getitem__
     alias x = a[]
 
 

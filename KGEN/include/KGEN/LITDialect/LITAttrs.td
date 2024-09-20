@@ -531,7 +531,11 @@ def LifetimeUnionAttr : LITTypedAttr<"LifetimeUnion", "lifetime.union"> {
     AttrBuilder<(ins "ArrayRef<TypedAttr>":$operands, "LifetimeType":$type), [{
       return get(operands, type);
     }], "TypedAttr">,
-    AttrBuilder<(ins "ArrayRef<TypedAttr>":$operands), [{}], "TypedAttr">,
+    AttrBuilder<(ins CArg<"ArrayRef<TypedAttr>", "{}">:$operands),
+                [{}], "TypedAttr">,
+    AttrBuilderWithInferredContext<(ins "Type":$type), [{
+      return get({}, ::cast<LifetimeType>(type));
+    }], "TypedAttr">,
   ];
 
   let extraClassDeclaration = [{

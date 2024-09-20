@@ -1200,9 +1200,9 @@ FunctionType LITSignatureType::substituteImplicitLifetimesIntoValues(
   return substitutor.hadError ? FunctionType() : result;
 }
 
-/// Get this signature with all the implicit lifetimes bound to #lit.lifetime
+/// Get this signature with all the implicit lifetimes bound to the empty union
 /// and dropped from the signature.
-LITSignatureType LITSignatureType::getWithImplicitLifetimesBoundImmortal() {
+LITSignatureType LITSignatureType::getWithImplicitLifetimesBoundNothing() {
   // Avoid work if there is nothing to do.
   if (getNumImplicitLifetimeDecls() == 0)
     return *this;
@@ -1218,7 +1218,7 @@ LITSignatureType LITSignatureType::getWithImplicitLifetimesBoundImmortal() {
       auto ref = ::dyn_cast<ImplicitLifetimeRefAttr>(attr);
       if (!ref || ref.getDepth() != depth)
         return nullptr;
-      return AnyLifetimeAttr::get(ref.getType());
+      return LifetimeUnionAttr::get({}, ref.getType());
     }
   };
 

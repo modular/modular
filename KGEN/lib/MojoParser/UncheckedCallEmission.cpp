@@ -45,7 +45,7 @@ static CValue emitVariadicPackConstructor(
   // If there was no lifetime specified, use an immortal one with the same
   // mutability.
   if (!lifetimeToUse)
-    lifetimeToUse = AnyLifetimeAttr::get(packType.getLifetime().getType());
+    lifetimeToUse = LifetimeUnionAttr::get(packType.getLifetime().getType());
 
   // Rebind the !lit.ref.pack with the common lifetime.
   packType = RefPackType::get(packType.getVariadic(), lifetimeToUse,
@@ -1046,7 +1046,7 @@ TypedAttr CallEmitter::emitCallInParamContext(
   // references and rebind the callee.
   LITSignatureType boundSigType = calleeSig;
   if (calleeSig.getNumImplicitLifetimeDecls()) {
-    boundSigType = calleeSig.getWithImplicitLifetimesBoundImmortal();
+    boundSigType = calleeSig.getWithImplicitLifetimesBoundNothing();
     operands[0] =
         ParamOperatorAttr::get(POC::Rebind, operands[0], boundSigType);
   }
@@ -1556,8 +1556,7 @@ CValue ExprEmitter::emitCallUnchecked(RValue callee,
       // TODO: Why are these in the signature, why do they take implicit
       // lifetimes for these things?
       if (calleeSig.isAsync()) {
-        implicitLifetimes.push_back(
-            AnyLifetimeAttr::get(getContext(), /*isMutable=*/true));
+        implicitLifetimes.push_back(LifetimeUnionAttr::get(getContext()));
         continue;
       }
 
