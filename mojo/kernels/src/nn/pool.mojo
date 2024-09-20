@@ -8,7 +8,6 @@ from sys.info import simdwidthof
 
 from algorithm import stencil
 from buffer import NDBuffer
-from register import mogg_register
 
 from utils.index import StaticIntTuple
 from utils.numerics import min_or_neg_inf
@@ -33,7 +32,6 @@ struct PoolMethod:
         return self.value != rhs.value
 
 
-@mogg_register("pool_shape_ceil")
 @always_inline
 fn pool_shape_ceil[
     input_rank: Int,
@@ -62,7 +60,6 @@ fn pool_shape_ceil[
     ](input_buf, filter_buf, strides_buf, dilations_buf, paddings_buf)
 
 
-@mogg_register("pool_shape")
 @always_inline
 fn pool_shape[
     input_rank: Int,
