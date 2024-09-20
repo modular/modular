@@ -36,6 +36,7 @@ from math import (
 from nn import arg_nonzero
 from nn.pool import avg_pool, max_pool, pool_shape, pool_shape_ceil
 from utils.numerics import isinf, isnan
+from nn.gather_scatter import scatter_nd, scatter_nd_generator
 
 
 # ===----------------------------------------------------------------------===#
@@ -644,6 +645,249 @@ struct Abs:
             return rebind[SIMD[y.type, width]](abs(x.load[width](idx)))
 
         foreach[func, synchronous, target](y, ctx)
+
+
+# ===----------------------------------------------------------------------===#
+# ScatterND kernels
+# ===----------------------------------------------------------------------===#
+
+
+@compiler.register("mo.scatter_nd")
+struct ScatterND:
+    @staticmethod
+    fn execute[
+        synchronous: Bool,
+        target: StringLiteral,
+    ](
+        output: ManagedTensorSlice,
+        input: ManagedTensorSlice[output.type, output.rank],
+        updates: ManagedTensorSlice[output.type, *_],
+        indices: ManagedTensorSlice,
+        ctx: MojoCallContextPtr,
+    ):
+        # Existing implementations do not require static shape information
+        var output_ndbuffer = managed_tensor_slice_to_ndbuffer(output)
+        var input_ndbuffer = managed_tensor_slice_to_ndbuffer(input)
+        var indices_ndbuffer = managed_tensor_slice_to_ndbuffer(indices)
+        var updates_ndbuffer = managed_tensor_slice_to_ndbuffer(updates)
+        try:
+            scatter_nd[
+                output_ndbuffer.type,
+                indices_ndbuffer.type,
+                output_ndbuffer.rank,
+                indices_ndbuffer.rank,
+                updates_ndbuffer.rank,
+                synchronous,
+                target,
+            ](
+                input_ndbuffer,
+                indices_ndbuffer,
+                updates_ndbuffer,
+                output_ndbuffer,
+                context=ctx,
+            )
+        except err:
+            ctx.set_to_error(err)
+
+
+@compiler.register("mo.scatter_nd.add")
+struct ScatterNDAdd:
+    @staticmethod
+    fn execute[
+        synchronous: Bool,
+        target: StringLiteral,
+    ](
+        output: ManagedTensorSlice,
+        input: ManagedTensorSlice[output.type, output.rank],
+        updates: ManagedTensorSlice[output.type, *_],
+        indices: ManagedTensorSlice,
+        ctx: MojoCallContextPtr,
+    ):
+        # Existing implementations do not require static shape information
+        var output_ndbuffer = managed_tensor_slice_to_ndbuffer(output)
+        var input_ndbuffer = managed_tensor_slice_to_ndbuffer(input)
+        var indices_ndbuffer = managed_tensor_slice_to_ndbuffer(indices)
+        var updates_ndbuffer = managed_tensor_slice_to_ndbuffer(updates)
+        try:
+
+            @always_inline
+            @parameter
+            fn reduce_fn[
+                type: DType, width: Int
+            ](lhs: SIMD[type, width], rhs: SIMD[type, width]) -> SIMD[
+                type, width
+            ]:
+                return lhs + rhs
+
+            scatter_nd_generator[
+                output_ndbuffer.type,
+                indices_ndbuffer.type,
+                output_ndbuffer.rank,
+                indices_ndbuffer.rank,
+                updates_ndbuffer.rank,
+                synchronous,
+                target,
+                reduce_fn=reduce_fn,
+            ](
+                input_ndbuffer,
+                indices_ndbuffer,
+                updates_ndbuffer,
+                output_ndbuffer,
+                context=ctx,
+            )
+
+        except err:
+            ctx.set_to_error(err)
+
+
+@compiler.register("mo.scatter_nd.mul")
+struct ScatterNDMul:
+    @staticmethod
+    fn execute[
+        synchronous: Bool,
+        target: StringLiteral,
+    ](
+        output: ManagedTensorSlice,
+        input: ManagedTensorSlice[output.type, output.rank],
+        updates: ManagedTensorSlice[output.type, *_],
+        indices: ManagedTensorSlice,
+        ctx: MojoCallContextPtr,
+    ):
+        # Existing implementations do not require static shape information
+        var output_ndbuffer = managed_tensor_slice_to_ndbuffer(output)
+        var input_ndbuffer = managed_tensor_slice_to_ndbuffer(input)
+        var indices_ndbuffer = managed_tensor_slice_to_ndbuffer(indices)
+        var updates_ndbuffer = managed_tensor_slice_to_ndbuffer(updates)
+        try:
+
+            @always_inline
+            @parameter
+            fn reduce_fn[
+                type: DType, width: Int
+            ](lhs: SIMD[type, width], rhs: SIMD[type, width]) -> SIMD[
+                type, width
+            ]:
+                return lhs * rhs
+
+            scatter_nd_generator[
+                output_ndbuffer.type,
+                indices_ndbuffer.type,
+                output_ndbuffer.rank,
+                indices_ndbuffer.rank,
+                updates_ndbuffer.rank,
+                synchronous,
+                target,
+                reduce_fn=reduce_fn,
+            ](
+                input_ndbuffer,
+                indices_ndbuffer,
+                updates_ndbuffer,
+                output_ndbuffer,
+                context=ctx,
+            )
+
+        except err:
+            ctx.set_to_error(err)
+
+
+@compiler.register("mo.scatter_nd.min")
+struct ScatterNDMin:
+    @staticmethod
+    fn execute[
+        synchronous: Bool,
+        target: StringLiteral,
+    ](
+        output: ManagedTensorSlice,
+        input: ManagedTensorSlice[output.type, output.rank],
+        updates: ManagedTensorSlice[output.type, *_],
+        indices: ManagedTensorSlice,
+        ctx: MojoCallContextPtr,
+    ):
+        # Existing implementations do not require static shape information
+        var output_ndbuffer = managed_tensor_slice_to_ndbuffer(output)
+        var input_ndbuffer = managed_tensor_slice_to_ndbuffer(input)
+        var indices_ndbuffer = managed_tensor_slice_to_ndbuffer(indices)
+        var updates_ndbuffer = managed_tensor_slice_to_ndbuffer(updates)
+        try:
+
+            @always_inline
+            @parameter
+            fn reduce_fn[
+                type: DType, width: Int
+            ](lhs: SIMD[type, width], rhs: SIMD[type, width]) -> SIMD[
+                type, width
+            ]:
+                return min(lhs, rhs)
+
+            scatter_nd_generator[
+                output_ndbuffer.type,
+                indices_ndbuffer.type,
+                output_ndbuffer.rank,
+                indices_ndbuffer.rank,
+                updates_ndbuffer.rank,
+                synchronous,
+                target,
+                reduce_fn=reduce_fn,
+            ](
+                input_ndbuffer,
+                indices_ndbuffer,
+                updates_ndbuffer,
+                output_ndbuffer,
+                context=ctx,
+            )
+
+        except err:
+            ctx.set_to_error(err)
+
+
+@compiler.register("mo.scatter_nd.max")
+struct ScatterNDMax:
+    @staticmethod
+    fn execute[
+        synchronous: Bool,
+        target: StringLiteral,
+    ](
+        output: ManagedTensorSlice,
+        input: ManagedTensorSlice[output.type, output.rank],
+        updates: ManagedTensorSlice[output.type, *_],
+        indices: ManagedTensorSlice,
+        ctx: MojoCallContextPtr,
+    ):
+        # Existing implementations do not require static shape information
+        var output_ndbuffer = managed_tensor_slice_to_ndbuffer(output)
+        var input_ndbuffer = managed_tensor_slice_to_ndbuffer(input)
+        var indices_ndbuffer = managed_tensor_slice_to_ndbuffer(indices)
+        var updates_ndbuffer = managed_tensor_slice_to_ndbuffer(updates)
+        try:
+
+            @always_inline
+            @parameter
+            fn reduce_fn[
+                type: DType, width: Int
+            ](lhs: SIMD[type, width], rhs: SIMD[type, width]) -> SIMD[
+                type, width
+            ]:
+                return max(lhs, rhs)
+
+            scatter_nd_generator[
+                output_ndbuffer.type,
+                indices_ndbuffer.type,
+                output_ndbuffer.rank,
+                indices_ndbuffer.rank,
+                updates_ndbuffer.rank,
+                synchronous,
+                target,
+                reduce_fn=reduce_fn,
+            ](
+                input_ndbuffer,
+                indices_ndbuffer,
+                updates_ndbuffer,
+                output_ndbuffer,
+                context=ctx,
+            )
+
+        except err:
+            ctx.set_to_error(err)
 
 
 # ===----------------------------------------------------------------------===#
