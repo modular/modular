@@ -6,6 +6,8 @@
 from __future__ import annotations
 
 from itertools import product
+from mmap import mmap
+from os import PathLike
 from typing import (
     Any,
     Generator,
@@ -228,3 +230,36 @@ class Tensor(DLPackArray):
             )
 
         return cls._from_impl(_Tensor.from_dlpack(arr))
+
+
+class MemMapTensor(Tensor):
+    """Create a memory-mapped tensor from a binary file on disk.
+
+    The constructor argument semantics follow that of np.memmap.
+    """
+
+    _mmap: mmap
+
+    def __init__(
+        self,
+        filename: PathLike,
+        dtype: DType,
+        shape: Tuple[int, ...],
+        mode="r+",
+        offset=0,
+    ):
+        # Instead of implementing all the mmap-related logic, we just delegate
+        # to numpy. By passing order="C", we ensure C-contiguous layout.
+        arr = np.memmap(
+            filename, dtype.to_numpy(), mode, offset, shape, order="C"
+        )
+        assert arr.flags["C_CONTIGUOUS"]
+
+        # TODO(MSDK-976): Ideally, we could just use DLPack to borrow the
+        # underlying memory from numpy. But our numpy version doesn't allow
+        # dlpack to be used on read-only arrays (common for memmaped weights).
+        self._impl = self.from_numpy(arr)._impl
+
+        # numpy does not attempt to free/close the mmap object it uses, so we
+        # copy a reference to it, which should keep it alive as long as needed.
+        self._mmap = arr._mmap
