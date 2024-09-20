@@ -8,7 +8,7 @@
 from builtin._location import __call_location, _SourceLocation
 from builtin.breakpoint import breakpoint
 from collections import Optional
-from memory import stack_allocation
+from memory import stack_allocation, UnsafePointer
 from sys.ffi import external_call, C_char
 from sys import param_env
 from utils import StringRef

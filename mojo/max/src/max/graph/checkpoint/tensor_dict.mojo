@@ -6,7 +6,7 @@
 """Structs used for maintaining a collection of tensors."""
 from max.tensor import Tensor, TensorSpec
 from collections.dict import _DictKeyIter, _DictEntryIter
-from memory import memcpy
+from memory import memcpy, UnsafePointer
 from collections import Dict
 
 

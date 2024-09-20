@@ -6,6 +6,7 @@
 """Provides callback utilities."""
 
 from utils import unroll
+from memory import UnsafePointer
 
 
 trait ServerCallbacks(Movable):

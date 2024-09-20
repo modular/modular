@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from memory import memcpy
+from memory import memcpy, UnsafePointer
 
 from .anytensor import AnyTensor
 from max.tensor import Tensor as OldTensor

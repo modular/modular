@@ -5,6 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo %s
 
+from memory import UnsafePointer
 from tempfile import NamedTemporaryFile
 from sys import sizeof
 

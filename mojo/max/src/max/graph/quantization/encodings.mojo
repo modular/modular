@@ -36,6 +36,7 @@ from algorithm import vectorize
 from collections import InlineArray, Optional
 from math import sqrt
 from max.tensor import Tensor, TensorShape
+from memory import UnsafePointer
 
 from .quantization_encoding import QuantizationEncoding
 

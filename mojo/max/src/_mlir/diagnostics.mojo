@@ -7,7 +7,7 @@
 
 from collections.optional import Optional
 
-import memory.unsafe
+from memory import UnsafePointer
 
 from utils.variant import Variant
 

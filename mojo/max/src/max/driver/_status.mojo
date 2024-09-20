@@ -8,6 +8,7 @@
 from max._utils import CString, call_dylib_func
 
 from ._driver_library import DriverLibrary
+from memory import UnsafePointer
 
 
 @value

@@ -17,6 +17,7 @@ from gpu.host import (
     FuncAttribute,
     CacheConfig,
 )
+from memory import UnsafePointer
 from pathlib import Path
 from collections import Optional, OptionalReg
 from collections.dict import OwnedKwargsDict

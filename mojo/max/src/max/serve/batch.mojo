@@ -6,7 +6,7 @@
 """Implements a batchable trait and a batcher to process items implementing the batchable trait."""
 
 import time
-from memory.arc import Arc
+from memory import Arc, UnsafePointer
 from os import Atomic
 from runtime.asyncrt import (
     Chain,

@@ -17,6 +17,7 @@ from max.driver import (
     DeviceMemory,
     DeviceTensor,
 )
+from memory import UnsafePointer
 from testing import assert_equal, assert_true
 from max.tensor import TensorSpec
 

@@ -28,6 +28,7 @@ from max.tensor import TensorSpec
 from max._utils import exchange
 from builtin._documentation import doc_private
 from collections import Optional
+from memory import UnsafePointer
 from utils import Variant
 from utils._serialize import _serialize
 from sys import is_x86, external_call, sizeof, alignof

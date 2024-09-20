@@ -11,6 +11,7 @@ from .tensor import Tensor
 from .anytensor import AnyTensor
 from builtin._documentation import doc_private
 from collections import Optional
+from memory import UnsafePointer
 from ._status import Status
 
 

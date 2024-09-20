@@ -8,6 +8,7 @@
 from collections import Dict, Optional
 from utils.variant import Variant
 from max.engine import InferenceSession, InputSpec, Model, TensorMap
+from memory import UnsafePointer
 
 from .service import InferenceService
 from .types import InferenceRequest, InferenceResponse, CInferenceResponse

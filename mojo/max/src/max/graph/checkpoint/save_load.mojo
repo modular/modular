@@ -6,6 +6,7 @@
 """Defines functions to save/load tensors from a checkpoint file."""
 from max.tensor import Tensor, TensorShape, TensorSpec
 from max.engine import TensorMap
+from memory import UnsafePointer
 from pathlib import Path
 from os import PathLike
 from sys import sizeof

@@ -30,6 +30,7 @@ from max._tensor_utils import (
 )
 from builtin._documentation import doc_private
 from collections import Optional, InlineArray
+from memory import UnsafePointer
 from utils import StaticIntTuple
 from utils._serialize import _serialize
 from ._utils import _convert_from

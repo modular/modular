@@ -17,6 +17,7 @@ from max.driver import (
     DeviceTensor,
 )
 from max.driver._utils import _steal_device_memory_impl_ptr
+from memory import UnsafePointer
 from python import PythonObject
 from sys.ffi import DLHandle
 
