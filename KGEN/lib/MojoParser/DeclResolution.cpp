@@ -714,12 +714,12 @@ static MLValue emitClosureInstance(SharedState &shared, ASTDecl &nestedFnDecl,
 
   // Get captured parameters that cross with captured values.
   ParameterCollector collector(collectorCache);
-  llvm::SetVector<Value> capturedOperands;
-  mlir::getUsedValuesDefinedAbove(nestedFn->getRegions(), capturedOperands);
   SmallVector<ParamDeclRefAttr> capturedUses;
-  for (Value capture : capturedOperands) {
+  auto &captures = shared.getCaptureRangeInScope(nestedFnDecl);
+  for (auto &[_, capture] : captures) {
     bool unused;
-    collector.collectUsesFromType(capture.getType(), capturedUses, unused);
+    collector.collectUsesFromType(capture.getValue().getType(), capturedUses,
+                                  unused);
   }
   for (ParamDeclRefAttr use : capturedUses)
     graph.usesFromAbove.insert(use);
@@ -745,7 +745,7 @@ static MLValue emitClosureInstance(SharedState &shared, ASTDecl &nestedFnDecl,
   // capture, this will be an RValue for the thing captured, transferring to the
   // owned argument in the initializer.
   CallOperands closureImplInitArgs;
-  for (auto &[_, capture] : shared.getCaptureRangeInScope(nestedFnDecl))
+  for (auto &[_, capture] : captures)
     closureImplInitArgs.add({capture.getValue(), node});
 
   // Create Closure Impl type by adding captured parameters to the ClosureImpl
