@@ -328,6 +328,29 @@ fn make_ldmatrix_swizzle[type: DType, row_size: Int]() -> Swizzle:
     return Swizzle(bits, 0, shifts)
 
 
+@always_inline
+fn make_swizzle[num_rows: Int, row_size: Int, access_size: Int]() -> Swizzle:
+    """2D swizzle to avoid bank conflict.
+    Access access_size elements in num_rows x row_size in shared memory tile.
+    num_rows should be for minimun access pattern.
+    E.g. store 16x8 mma result to a 64 x 64 tile.
+    The minimum access pattern is 8x8 sub-matrix, num_rows = 8, row_size = 64.
+    We should swizzle the layout to avoid bank conflict for loading in the data
+    in future. The load is most likely 16B, i.e. access_size = 4 for fp32 and 8
+    for bf16.
+    """
+
+    alias bits = _static_log2[num_rows]()
+    alias base = _static_log2[access_size]()
+    alias shifts = _static_log2[row_size]() - base
+
+    constrained[
+        shifts > 0, "Negatives shifts in swizzling is likely to be a bug."
+    ]()
+
+    return Swizzle(bits, base, shifts)
+
+
 # ===-----------------------------------------------------------------------===#
 # Composed Layout                                                              #
 # ===-----------------------------------------------------------------------===#

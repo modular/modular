@@ -2711,9 +2711,7 @@ fn copy_sram_to_dram[
     ]()
 
     var src_fragments = src.distribute[thread_layout](ThreadIdx.x())
-    var dst_fragments = dst.distribute[thread_layout, swizzle=swizzle](
-        ThreadIdx.x()
-    )
+    var dst_fragments = dst.distribute[thread_layout](ThreadIdx.x())
 
     # TODO: copy_from only allows static layout
     @parameter
@@ -2737,6 +2735,8 @@ fn copy_sram_to_dram[
         alias src_align = alignof[SIMD[src_type, simdwidthof[src_type]()]]()
         alias dst_align = alignof[SIMD[dst_type, simd_size]]()
 
+        var src_frag_offset = src_fragments.distance(src.ptr)
+
         @parameter
         for i in range(num_stores_per_thread):
             var dst_idx = 0
@@ -2750,7 +2750,21 @@ fn copy_sram_to_dram[
             else:
                 dst_idx = dst_fragments.runtime_layout(i)
 
-            var src_vec = (src_fragments.ptr + src_idx).load[
+            var swizzled_idx = src_frag_offset + src_idx
+
+            @parameter
+            if swizzle:
+                alias swizzle_fn = swizzle.value()
+                alias src_idx_base = src_idx % swizzle_fn.size()
+                alias src_idx_diff = src_idx - src_idx_base
+                # `src_frag_offset + src_idx_base` should be a value already seen
+                # in the unrolled loop. Hopefully compiler can eleminate the duplicated
+                # xor computation.
+                swizzled_idx = (
+                    swizzle_fn(src_frag_offset + src_idx_base) + src_idx_diff
+                )
+
+            var src_vec = (src.ptr + swizzled_idx).load[
                 width=simd_size, alignment=src_align
             ]()
             (dst_fragments.ptr + dst_idx).store[alignment=dst_align](
@@ -2786,9 +2800,7 @@ fn copy_sram_to_dram[
     cols: Int,
 ):
     var src_fragments = src.distribute[thread_layout](ThreadIdx.x())
-    var dst_fragments = dst.distribute[thread_layout, swizzle=swizzle](
-        ThreadIdx.x()
-    )
+    var dst_fragments = dst.distribute[thread_layout](ThreadIdx.x())
     var thread_offset = offset + dst_fragments.distance(dst.ptr)
 
     @parameter
@@ -2812,6 +2824,8 @@ fn copy_sram_to_dram[
         alias src_align = alignof[SIMD[src_type, simdwidthof[src_type]()]]()
         alias dst_align = alignof[SIMD[dst_type, simd_size]]()
 
+        var src_frag_offset = src_fragments.distance(src.ptr)
+
         @parameter
         for i in range(num_stores_per_thread):
             alias src_idx = src_fragments.layout(i)
@@ -2825,8 +2839,22 @@ fn copy_sram_to_dram[
             else:
                 dst_idx = dst_fragments.runtime_layout(i)
 
+            var swizzled_idx = src_frag_offset + src_idx
+
+            @parameter
+            if swizzle:
+                alias swizzle_fn = swizzle.value()
+                alias src_idx_base = src_idx % swizzle_fn.size()
+                alias src_idx_diff = src_idx - src_idx_base
+                # `src_frag_offset + src_idx_base` should be a value already seen
+                # in the unrolled loop. Hopefully compiler can eleminate the duplicated
+                # xor computation.
+                swizzled_idx = (
+                    swizzle_fn(src_frag_offset + src_idx_base) + src_idx_diff
+                )
+
             if thread_offset + dst_idx < rows * cols:
-                var src_vec = (src_fragments.ptr + src_idx).load[
+                var src_vec = (src.ptr + swizzled_idx).load[
                     width=simd_size, alignment=src_align
                 ]()
                 dst_fragments.ptr.store[alignment=dst_align](
@@ -2942,6 +2970,7 @@ fn copy_local_to_sram[
     src_element_layout: Layout,
     dst_element_layout: Layout,
     src_addr_space: AddressSpace,
+    swizzle: OptionalReg[Swizzle] = None,
 ](
     dst: LayoutTensor[
         dst_type,
@@ -2960,7 +2989,34 @@ fn copy_local_to_sram[
 
     @parameter
     if src_type == dst_type:
-        dst_frag.copy_from(src)
+
+        @parameter
+        if swizzle:
+            alias swizzle_fn = swizzle.value()
+            alias num_vecs = src_layout.size()
+            alias align = alignof[SIMD[src_type, src.element_size]]()
+
+            var dst_frag_offset = dst_frag.distance(dst.ptr)
+
+            @parameter
+            for i in range(num_vecs):
+                alias src_idx = src.layout(i)
+                alias dst_idx = dst_frag.layout(i)
+                alias dst_idx_base = dst_idx % swizzle_fn.size()
+                alias dst_idx_diff = dst_idx - dst_idx_base
+                var swizzled_idx = swizzle_fn(
+                    dst_frag_offset + dst_idx_base
+                ) + dst_idx_diff
+
+                var src_vec = src.ptr.load[
+                    width = src.element_size, alignment=align
+                ](src_idx)
+                dst.ptr.store[alignment=align](
+                    swizzled_idx, src_vec.cast[dst_type]()
+                )
+
+        else:
+            dst_frag.copy_from(src)
     else:
         constrained[
             src_type == DType.float32 and dst_type.is_half_float(),
