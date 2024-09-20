@@ -7,6 +7,7 @@
 
 from math import ceildiv, isclose
 from random import rand
+from memory import UnsafePointer
 from sys.info import simdwidthof
 
 from buffer import NDBuffer

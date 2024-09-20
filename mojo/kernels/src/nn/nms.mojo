@@ -6,9 +6,9 @@
 
 from collections import List
 from math import iota
+from memory import UnsafePointer
 
 from buffer import NDBuffer
-from builtin.sort import _quicksort
 
 from utils import Span, StaticIntTuple
 from utils.index import Index

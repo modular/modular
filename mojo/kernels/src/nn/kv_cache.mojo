@@ -6,6 +6,7 @@
 from buffer import DimList, NDBuffer, Dim
 from collections import Optional, OptionalReg
 from math import isqrt
+from memory import UnsafePointer
 from sys.info import _current_target, simdwidthof
 from utils import Index
 from utils.numerics import min_finite, isnan

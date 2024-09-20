@@ -11,6 +11,7 @@ from buffer import NDBuffer
 from buffer.dimlist import DimList
 from gpu.host.device_context import DeviceContext
 from nn.gather_scatter import gather
+from memory import UnsafePointer
 
 from utils.index import Index, StaticIntTuple
 

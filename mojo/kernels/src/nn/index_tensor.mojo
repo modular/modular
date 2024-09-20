@@ -9,7 +9,7 @@ from math import ceildiv
 from algorithm import sync_parallelize
 from buffer import NDBuffer
 from buffer.dimlist import DimList
-from memory import memcpy, memset_zero
+from memory import memcpy, memset_zero, UnsafePointer
 from nn.gather_scatter import normalize_neg_index
 from runtime.asyncrt import parallelism_level
 

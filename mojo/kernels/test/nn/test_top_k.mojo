@@ -8,6 +8,7 @@
 
 from collections import List
 from math import iota
+from memory import UnsafePointer
 
 from buffer import NDBuffer
 from nn.topk import _top_k

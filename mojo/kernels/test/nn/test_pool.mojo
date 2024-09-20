@@ -6,6 +6,7 @@
 # RUN: %mojo-no-debug %s | FileCheck %s
 
 from sys import simdwidthof
+from memory import UnsafePointer
 
 import builtin
 from buffer import Buffer, NDBuffer

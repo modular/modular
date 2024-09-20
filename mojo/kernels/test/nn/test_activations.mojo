@@ -7,6 +7,7 @@
 # RUN: %mojo-no-debug %s | FileCheck %s
 
 from math import iota
+from memory import UnsafePointer
 from random import randn, seed
 
 from internal_utils import compare

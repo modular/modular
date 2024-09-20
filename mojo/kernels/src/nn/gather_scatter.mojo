@@ -15,7 +15,7 @@ from algorithm.functional import tile
 from buffer import NDBuffer
 from buffer.dimlist import DimList
 from gpu.host import DeviceBuffer, DeviceContext
-from memory import memcpy, memset_zero, stack_allocation
+from memory import memcpy, memset_zero, stack_allocation, UnsafePointer
 from register import mogg_register
 from runtime.asyncrt import MojoCallContextPtr, parallelism_level
 from runtime.tracing import Trace, TraceLevel

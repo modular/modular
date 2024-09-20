@@ -12,6 +12,7 @@ from algorithm.functional import parallelize_over_rows
 from algorithm.reduction import _get_nd_indices_from_flat_index
 from buffer import NDBuffer
 from builtin.sort import _quicksort
+from memory import UnsafePointer
 from register import mogg_register
 
 from utils import Span, StaticIntTuple

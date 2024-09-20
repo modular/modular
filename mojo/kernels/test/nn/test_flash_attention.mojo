@@ -6,6 +6,7 @@
 # RUN: %mojo-no-debug %s
 
 from math import exp, isclose
+from memory import UnsafePointer
 from random import rand, seed
 
 from buffer import NDBuffer

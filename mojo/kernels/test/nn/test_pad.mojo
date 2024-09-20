@@ -9,6 +9,7 @@ from buffer import Buffer, NDBuffer
 from buffer.dimlist import DimList
 from nn.pad import pad_constant, pad_reflect, pad_repeat
 
+from memory import UnsafePointer
 from utils.index import StaticIntTuple
 
 
