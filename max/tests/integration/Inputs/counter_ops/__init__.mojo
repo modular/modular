@@ -9,6 +9,9 @@ from register import mogg_register
 from utils.index import StaticIntTuple
 from buffer import NDBuffer
 from buffer.dimlist import DimList
+from python.python import _get_global_python_itf
+from python import Python, PythonObject
+from os import abort
 
 
 struct Counter(Movable):
@@ -62,3 +65,22 @@ fn bump_counter(inout c: Counter, output: NDBuffer[DType.bool, 1, DimList(1)]):
 fn read_counter(c: Counter, output: NDBuffer[DType.int32, 1, DimList(2)]):
     output[0] = c.a
     output[1] = c.b
+
+
+@mogg_register("bump_python_counter")
+fn bump_python_counter(
+    counter: PythonObject,
+) -> PythonObject:
+    var cpython = _get_global_python_itf().cpython()
+    var state = cpython.PyGILState_Ensure()
+    try:
+        cpython.check_init_error()
+        new_counter = counter.copy()
+        new_counter.bump()
+        return new_counter
+    except e:
+        abort(e)
+    finally:
+        cpython.PyGILState_Release(state)
+
+    return None
