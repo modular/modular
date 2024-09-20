@@ -14,3 +14,13 @@ kgen.func @parameterized_signature() {
   %0 = kgen.param.constant : <type>(!kgen.paramref<*(0,0)>) -> !kgen.paramref<*(0,0)> = <@"identity">
   kgen.return
 }
+
+kgen.func @capturing_fn(%arg0: index) capturing -> index {
+  kgen.return %arg0 : index
+}
+
+kgen.func @capturing_fn_reference() {
+  // expected-error @below {{capturing closures cannot be materialized at runtime}}
+  %0 = kgen.param.constant : (index) capturing -> index = <@"capturing_fn">
+  kgen.return
+}

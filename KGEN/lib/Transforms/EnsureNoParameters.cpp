@@ -44,6 +44,19 @@ static LogicalResult legalizeOp(Operation *op) {
     return WalkResult::skip();
   });
 
+  if (isa<ParamConstantOp, ParamMaterializeOp>(op)) {
+    // Capturing closure references are not materialize-able.
+    legalizer.addWalk([&](SymbolConstantAttr ref) {
+      if (ref.getType().isCapturing()) {
+        mlir::emitError(op->getLoc(),
+                        "capturing closures cannot be materialized at runtime");
+        isFailure = true;
+        return WalkResult::skip();
+      }
+      return WalkResult::advance();
+    });
+  }
+
   // Walk the op attrs, results, block arguments, and locations.
   legalizer.walk(op->getAttrDictionary());
   legalizer.walk(op->getLoc());
