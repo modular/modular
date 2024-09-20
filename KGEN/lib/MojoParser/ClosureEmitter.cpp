@@ -434,11 +434,9 @@ StructDeclOp ClosureEmitter::createClosureWrapperStructDecl(
   return declOp;
 }
 
-/// Generate a Closure Implementation Struct, a struct that contains the
-/// capture list.
 StructDeclOp ClosureEmitter::replaceNestedFunctionWithClosureImplStructDecl(
-    SMLoc location, ASTDecl &nestedFnDecl,
-    ArrayRef<ParamDeclRefAttr> paramCaptures, LITSignatureType wrapperSig) {
+    ArrayRef<Capture> captures, ArrayRef<ParamDeclRefAttr> paramCaptures,
+    ASTDecl &nestedFnDecl, LITSignatureType wrapperSig) {
   auto implName =
       StringAttr::get(ctx, "`_CI_" + fileModuleOp.getSymName() + "_escaping" +
                                Twine(moduleDecl.getNextUniqueID()));
@@ -449,16 +447,15 @@ StructDeclOp ClosureEmitter::replaceNestedFunctionWithClosureImplStructDecl(
   wrapperSig = nestedFn.getSignature();
   if (wrapperSig.getNumParams()) {
     shared.emitError(
-        location,
+        nestedFnDecl.getLoc(),
         "add parameters of nested function to parent function and capture "
         "them: parameters declared in nested functions are not supported yet");
     return {};
   }
 
   // Collect the types of the capture values.
-  auto captures = shared.getCaptureRangeInScope(nestedFnDecl);
-  SmallVector<Type> fieldTypes = llvm::map_to_vector(
-      llvm::make_second_range(captures), [](const Capture &capture) {
+  SmallVector<Type> fieldTypes =
+      llvm::map_to_vector(captures, [](const Capture &capture) {
         return capture.getValue().getRValueType().mlirType;
       });
 
@@ -536,7 +533,7 @@ StructDeclOp ClosureEmitter::replaceNestedFunctionWithClosureImplStructDecl(
       ASTType(structSelfType).getRefForArgument("self", /*isMut=*/true)};
   SmallVector<ArgConvention> initSigConventions{ArgConvention::InitSelf};
   unsigned fieldNameIdx = 0;
-  for (auto &[decl, capture] : captures) {
+  for (const Capture &capture : captures) {
     // If this is a reference capture, then we are capturing the address of the
     // value in the closure, otherwise we are taking an RValue that is either
     // copied or moved.
@@ -546,7 +543,7 @@ StructDeclOp ClosureEmitter::replaceNestedFunctionWithClosureImplStructDecl(
     // FIXME: By-reference captures should be capturable either as by-imm-ref or
     // by-mut-ref.  Right now we type check var captures as mutable but codegen
     // them as immutable references!
-    if (rvalueType.isRegisterPassable(decl->getLoc(), shared)) {
+    if (rvalueType.isRegisterPassable(nestedFnDecl.getLoc(), shared)) {
       initSigConventions.push_back(isRef ? ArgConvention::BorrowedInReg
                                          : ArgConvention::OwnedInReg);
       initSigTypes.push_back(rvalueType);
@@ -669,10 +666,9 @@ StructDeclOp ClosureEmitter::replaceNestedFunctionWithClosureImplStructDecl(
     emitter.emitNamedMethodCall("expand", {{{MBValue(target), loc}}}, dest,
                                 CallSyntax::kMethodCall, loc);
   }
-  for (auto [declAndCapture, fieldOp] :
+  for (auto [capture, fieldOp] :
        llvm::zip(captures, llvm::drop_begin(declOp.getFieldDecls(),
                                             hasParamClosureCaptures))) {
-    auto [decl, capture] = declAndCapture;
     Value target = builder.create<RefStructGEROp>(selfArg, fieldOp);
     // If the capture is an SValue then it lives in register.
     if (capture.getValue().isSValue())

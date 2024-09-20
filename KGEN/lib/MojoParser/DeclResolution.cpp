@@ -678,10 +678,12 @@ DeclResolver::createSelfContainedSignature(LITSignatureType original) {
   return {std::move(captured), unbound};
 }
 
-static MLValue emitClosureInstance(SharedState &shared, ASTDecl &nestedFnDecl,
-                                   SMLoc loc) {
+static MLValue emitClosureInstance(ArrayRef<Capture> captures,
+                                   ArrayRef<ParamDeclRefAttr> paramCaptures,
+                                   ASTDecl &nestedFnDecl, SharedState &shared) {
   LIT::FuncOp nestedFn = cast<LIT::FuncOp>(nestedFnDecl);
   StringAttr fnName = nestedFn.getSourceNameAttr();
+  SMLoc loc = nestedFnDecl.getLoc();
   Location mlirLoc = shared.translateLocation(loc);
   if (shared.diBuilder)
     mlirLoc = shared.diBuilder->createScopedLoc(mlirLoc);
@@ -702,37 +704,12 @@ static MLValue emitClosureInstance(SharedState &shared, ASTDecl &nestedFnDecl,
   if (!closureWrapper)
     return {};
 
-  // In order to emit a closure instance, we need the captures and in order to
-  // compute the captures we need to resolve the body.
-  if (failed(shared.declResolver->resolveFully(nestedFnDecl, loc)))
-    return {};
-
-  // Find all parameter captures in the function body.
-  ParameterCollector::Analysis collectorCache;
-  ParameterUseDefGraph graph(nestedFn.getBodyRegion());
-  graph.calculate(collectorCache);
-
-  // Get captured parameters that cross with captured values.
-  ParameterCollector collector(collectorCache);
-  SmallVector<ParamDeclRefAttr> capturedUses;
-  auto &captures = shared.getCaptureRangeInScope(nestedFnDecl);
-  for (auto &[_, capture] : captures) {
-    bool unused;
-    collector.collectUsesFromType(capture.getValue().getType(), capturedUses,
-                                  unused);
-  }
-  for (ParamDeclRefAttr use : capturedUses)
-    graph.usesFromAbove.insert(use);
-
-  SmallVector<ParamDeclRefAttr> paramCaptures =
-      graph.usesFromAbove.takeVector();
-
   // Create an instance of the closure implementation in the parent function
   // right after the nested function definition.
   ClosureEmitter emitter(*moduleDecl, shared);
   StructDeclOp closureImpl =
       emitter.replaceNestedFunctionWithClosureImplStructDecl(
-          loc, nestedFnDecl, paramCaptures, wrapperSig);
+          captures, paramCaptures, nestedFnDecl, wrapperSig);
 
   emitter.createWrapperInitWithImpl(closureWrapper, closureImpl, loc);
 
@@ -745,7 +722,7 @@ static MLValue emitClosureInstance(SharedState &shared, ASTDecl &nestedFnDecl,
   // capture, this will be an RValue for the thing captured, transferring to the
   // owned argument in the initializer.
   CallOperands closureImplInitArgs;
-  for (auto &[_, capture] : captures)
+  for (const Capture &capture : captures)
     closureImplInitArgs.add({capture.getValue(), node});
 
   // Create Closure Impl type by adding captured parameters to the ClosureImpl
@@ -988,11 +965,31 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
   if (failed(resolveBody(funcOp, lexer, decl)))
     return failure();
 
+  // Find all parameter captures in the function body.
+  ParameterCollector::Analysis collectorCache;
+  ParameterUseDefGraph graph(funcOp.getBodyRegion());
+  graph.calculate(collectorCache);
+
+  // Get captured parameters that cross with captured values.
+  ParameterCollector collector(collectorCache);
+  SmallVector<Capture> captures;
+  SmallVector<ParamDeclRefAttr> capturedUses;
+  for (auto &[_, capture] : shared.getCaptureRangeInScope(decl)) {
+    captures.push_back(capture);
+    bool unused;
+    collector.collectUsesFromType(capture.getValue().getType(), capturedUses,
+                                  unused);
+  }
+  for (ParamDeclRefAttr use : capturedUses)
+    graph.usesFromAbove.insert(use);
+
+  SmallVector<ParamDeclRefAttr> paramCaptures =
+      graph.usesFromAbove.takeVector();
+
   // If this is a `@parameter` closure, attach the capture lifetimes.
-  auto captures = shared.getCaptureRangeInScope(decl);
   if (signature.isCapturing()) {
     SmallVector<Type> captureTypes;
-    for (Capture &cap : llvm::make_second_range(captures))
+    for (const Capture &cap : captures)
       captureTypes.push_back(cap.getValue().getType());
 
     SmallVector<TypedAttr> lifetimes =
@@ -1023,7 +1020,7 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
   // Emit closure structures necessary for instantiating an escaping closure
   funcOp.setSignature(
       signature.getWithFnEffects(signature.getFnEffects().setEscaping()));
-  MLValue instance = emitClosureInstance(shared, decl, decl.getLoc());
+  MLValue instance = emitClosureInstance(captures, paramCaptures, decl, shared);
   if (!instance)
     return failure();
   decl.setIRValue(instance);
