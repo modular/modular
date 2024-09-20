@@ -101,7 +101,13 @@ struct DeviceBufferV2[type: DType](Sized):
         return UnsafePointer[Scalar[type]]()  # FIXME
 
     fn ptr(self) -> UnsafePointer[Scalar[type]]:
-        return UnsafePointer[Scalar[type]]()  # FIXME
+        return external_call[
+            "AsyncRT_DeviceBuffer_ptr",
+            UnsafePointer[Scalar[type]],
+            _DeviceContextPtr,
+        ](
+            self._ptr,
+        )
 
 
 @value
