@@ -5,6 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from collections import InlineArray
+from memory import UnsafePointer
 from random import rand
 from sys.info import alignof
 from sys import env_get_string, is_defined

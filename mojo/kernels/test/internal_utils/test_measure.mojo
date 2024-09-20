@@ -7,6 +7,7 @@
 
 from buffer import DimList
 from internal_utils import TestTensor, assert_with_measure
+from memory import UnsafePointer
 
 
 def test_assert_with_custom_measure():
