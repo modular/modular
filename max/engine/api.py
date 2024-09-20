@@ -29,6 +29,8 @@ TensorOrMojoType = Union[Tensor, MojoValue]
 ExecResultType = Union[
     Dict[str, Union[np.ndarray, dict, list, tuple]], List[TensorOrMojoType]
 ]
+# Need to use tuple instead of Union to ensure that Python 3.9 support works.
+ScalarType = (int, float, bool, np.generic)
 
 
 def _map_execute_kwarg(
@@ -194,7 +196,7 @@ class Model:
             copy_inputs_to_device = kwargs.get("copy_inputs_to_device", True)
             output_device = kwargs.get("output_device", None)
 
-            for arg in args:
+            for idx, arg in enumerate(args):
                 # Validate that input is one of supported types and convert if
                 # necessary.
                 if isinstance(arg, MojoValue):
@@ -213,6 +215,9 @@ class Model:
                     tensor = arg
                 elif isinstance(arg, DLPackArray):
                     tensor = Tensor.from_dlpack(arg)
+                elif isinstance(arg, ScalarType):
+                    spec = self.input_metadata[idx]
+                    tensor = Tensor.scalar(arg, spec.dtype, self.device)
                 else:
                     raise ValueError(
                         "All positional arguments must be of the type"
