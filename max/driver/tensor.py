@@ -198,11 +198,18 @@ class Tensor(DLPackArray):
         return self._impl.__dlpack__()
 
     @classmethod
-    def from_dlpack(cls, arr: Any, *, copy: Optional[bool] = None) -> Tensor:
+    def from_dlpack(
+        cls: Type[_T], arr: Any, *, copy: Optional[bool] = None
+    ) -> _T:
         """Create a tensor from an object implementing the dlpack protocol.
 
         This usually does not result in a copy, and the producer of the object
         retains ownership of the underlying memory."""
+        if isinstance(arr, np.memmap):
+            # TODO(MSDK-976): since `np.memmap`s are often read-only, we just
+            # use our own memmap implementation here, but it would be better to
+            # always delegate to from_dlpack.
+            return MemMapTensor._from_numpy_memmap(arr)
         if isinstance(arr, np.ndarray):
             # TODO(MSDK-976): Older version of numpy don't support exporting
             # read-only arrays, so we copy if we can, and leave a hint if not.
@@ -254,7 +261,9 @@ class MemMapTensor(Tensor):
             filename, dtype.to_numpy(), mode, offset, shape, order="C"
         )
         assert arr.flags["C_CONTIGUOUS"]
+        self._init_from_numpy_memmap(arr)
 
+    def _init_from_numpy_memmap(self, arr: np.memmap):
         # TODO(MSDK-976): Ideally, we could just use DLPack to borrow the
         # underlying memory from numpy. But our numpy version doesn't allow
         # dlpack to be used on read-only arrays (common for memmaped weights).
@@ -263,3 +272,14 @@ class MemMapTensor(Tensor):
         # numpy does not attempt to free/close the mmap object it uses, so we
         # copy a reference to it, which should keep it alive as long as needed.
         self._mmap = arr._mmap
+
+    @classmethod
+    def _from_numpy_memmap(cls, arr: np.memmap) -> MemMapTensor:
+        tensor = cls.__new__(cls)
+        tensor._init_from_numpy_memmap(arr)
+        return tensor
+
+    def __dlpack__(self) -> Any:
+        """Implements part of the dlpack contract."""
+        # We must ensure that the underlying mmap doesn't get closed.
+        return self._impl.__dlpack__(_mmap=self._mmap)
