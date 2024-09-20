@@ -7,6 +7,7 @@
 # RUN: mojo %s --tabular --no-progress| FileCheck %s
 
 import math
+from memory import UnsafePointer
 from random import randint
 from time import sleep
 
