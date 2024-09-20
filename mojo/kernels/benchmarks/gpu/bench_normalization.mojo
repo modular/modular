@@ -17,6 +17,7 @@ from internal_utils import (
     int_list_to_tuple,
 )
 from buffer import NDBuffer
+from memory import UnsafePointer
 from utils.index import StaticTuple, StaticIntTuple, Index
 from sys import env_get_int
 

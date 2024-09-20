@@ -7,6 +7,7 @@
 # RUN: %mojo-no-debug %s -t | FileCheck %s
 # CHECK: Benchmark results
 
+from memory import UnsafePointer
 from random import rand
 from os import abort
 

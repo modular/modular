@@ -8,6 +8,7 @@
 # CHECK: Benchmark results
 
 from math import align_up, ceildiv
+from memory import UnsafePointer
 from random import rand
 from sys.param_env import env_get_int, env_get_string
 from sys import sizeof, simdwidthof

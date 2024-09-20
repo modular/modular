@@ -15,7 +15,7 @@ from algorithm import Static2DTileUnitFunc as Tile2DFunc
 from algorithm import sync_parallelize, vectorize
 from layout import *
 from layout.layout_tensor import LayoutTensor
-from memory import memset_zero
+from memory import memset_zero, UnsafePointer
 from python import Python
 
 alias M = 512  # rows of A and C

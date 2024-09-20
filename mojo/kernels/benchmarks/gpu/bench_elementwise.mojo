@@ -23,6 +23,7 @@ from gpu.host.device_context import DeviceContext, DeviceBuffer
 from gpu.host._compile import _get_nvptx_target
 from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
 from internal_utils import DeviceNDBuffer
+from memory import UnsafePointer
 from utils import StaticIntTuple
 from utils.index import product
 from sys.intrinsics import strided_load

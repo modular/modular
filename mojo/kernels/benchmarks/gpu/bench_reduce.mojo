@@ -13,6 +13,7 @@ from gpu.host.device_context import DeviceContext
 from gpu.host._compile import _get_nvptx_target
 from testing import assert_equal
 from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
+from memory import UnsafePointer
 
 from utils import StaticIntTuple, StaticTuple
 from utils.index import product

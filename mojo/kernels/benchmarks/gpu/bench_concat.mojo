@@ -14,6 +14,7 @@ from algorithm.functional import elementwise
 from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
 from buffer import NDBuffer
 from gpu.host.device_context import DeviceContext, DeviceBuffer
+from memory import UnsafePointer
 from nn.concat import _concat_gpu_elementwise
 
 from utils import StaticTuple, StaticIntTuple

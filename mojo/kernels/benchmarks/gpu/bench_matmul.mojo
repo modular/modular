@@ -15,6 +15,7 @@ from internal_utils import DeviceNDBuffer, bench_compile_time, env_get_dtype
 from utils import StaticIntTuple
 from sys import env_get_int, sizeof
 from math import align_up
+from memory import UnsafePointer
 from gpu.cublas.cublas import (
     check_cublas_error,
     cublasContext,

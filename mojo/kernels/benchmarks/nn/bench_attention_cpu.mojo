@@ -6,6 +6,7 @@
 
 # RUN: %mojo-build-no-debug %s
 
+from memory import UnsafePointer
 from random import rand
 from os import abort
 

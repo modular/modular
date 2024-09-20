@@ -12,6 +12,7 @@ from random import rand, randint
 
 from benchmark import *
 from buffer import NDBuffer
+from memory import UnsafePointer
 from buffer.dimlist import Dim, DimList
 from nn.gather_scatter import scatter_elements
 
