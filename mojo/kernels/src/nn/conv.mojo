@@ -308,8 +308,6 @@ fn _reduce_output[
 
     # NOTE: synchronous, so use of locally allocated output_ptr is safe.
     sync_parallelize[reduce_task](num_threads)
-    _ = num_rows
-    _ = buf_size
 
 
 # ===----------------------------------------------------------------------=== #

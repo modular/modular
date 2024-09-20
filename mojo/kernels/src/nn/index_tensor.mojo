@@ -215,7 +215,6 @@ fn index_tensor_1d[
                 ]
 
     sync_parallelize[calc_batch_dim](num_tasks)
-    _ = reshaped_data
 
 
 fn index_tensor[
