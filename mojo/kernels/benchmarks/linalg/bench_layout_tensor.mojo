@@ -109,8 +109,6 @@ fn matmul_unrolled(inout C: Matrix, A: Matrix, B: Matrix):
                     vectorize[
                         dot, nelts, size=tile_x, unroll_factor=unroll_factor
                     ]()
-                    _ = k
-                    _ = A_val
 
             tile[calc_tile, tile_n, tile_k](C.cols, B.rows)
             _ = m
