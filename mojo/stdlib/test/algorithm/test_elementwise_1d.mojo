@@ -10,6 +10,7 @@ from sys.info import num_physical_cores, simdwidthof
 
 from algorithm import elementwise
 from buffer import Buffer
+from memory import UnsafePointer
 
 from utils.index import StaticIntTuple
 

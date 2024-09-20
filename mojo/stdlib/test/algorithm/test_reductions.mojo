@@ -22,6 +22,7 @@ from buffer import Buffer, NDBuffer
 from buffer.dimlist import DimList
 from builtin.math import max as _max
 from builtin.math import min as _min
+from memory import UnsafePointer
 
 from utils.index import Index, StaticIntTuple, StaticTuple
 
