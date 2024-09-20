@@ -76,6 +76,20 @@ def test_scalar_inputs(gpu_session: InferenceSession, scalar_input_path: Path):
         host_output.to_numpy(), np.arange(4, 9, dtype=np.int32)
     )
 
+    # We should also be able to execute with raw Python scalars.
+    cuda_output = model.execute(3, vector)[0]
+    host_output = cuda_output.copy_to(CPU())
+    assert np.array_equal(
+        host_output.to_numpy(), np.arange(4, 9, dtype=np.int32)
+    )
+
+    # We should also be able to execute with numpy scalars.
+    cuda_output = model.execute(np.int32(3), vector)[0]
+    host_output = cuda_output.copy_to(CPU())
+    assert np.array_equal(
+        host_output.to_numpy(), np.arange(4, 9, dtype=np.int32)
+    )
+
 
 @dataclass
 class Model:

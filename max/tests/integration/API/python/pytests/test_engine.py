@@ -305,6 +305,14 @@ def test_scalar_inputs(session: InferenceSession, scalar_input_path: Path):
     output = model.execute(scalar, vector)[0]
     assert np.array_equal(output.to_numpy(), np.arange(4, 9, dtype=np.int32))
 
+    # We should also be able to execute with raw Python scalars.
+    output = model.execute(3, vector)[0]
+    assert np.array_equal(output.to_numpy(), np.arange(4, 9, dtype=np.int32))
+
+    # We should also be able to execute with numpy scalars.
+    output = model.execute(np.int32(3), vector)[0]
+    assert np.array_equal(output.to_numpy(), np.arange(4, 9, dtype=np.int32))
+
 
 def test_aliasing_output(
     session: InferenceSession, aliasing_outputs_path: Path
