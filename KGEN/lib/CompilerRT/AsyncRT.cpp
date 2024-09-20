@@ -459,20 +459,37 @@ KGEN_CompilerRT_CreateAsyncTensorSpec(ssize_t *data, ssize_t rank,
   }
 }
 
+static void
+createAsyncMojoValue(void *data, void (*destructorFn)(void *),
+                     AsyncRTWrapper<AnyAsyncValueRef> async,
+                     AsyncRTWrapper<Runtime> runtimePtr,
+                     MojoValue::Tag tag = MojoValue::Tag::kDefault) {
+  Runtime &runtime = unwrap(runtimePtr);
+  AnyAsyncValueRef &value = unwrap(async);
+  if (value.getPointer() && value.getPointer()->isIndirect()) {
+    value.copy().emplaceIndirect<MojoValue>(data, destructorFn, tag);
+  } else {
+    assert(!value.isReady());
+    value = AnyAsyncValueRef::createReady<MojoValue>(runtime, data,
+                                                     destructorFn, tag);
+  }
+}
+
 COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void
 KGEN_CompilerRT_CreateOwnedAsyncMojoValue(
     void *data, void (*destructorFn)(void *),
     AsyncRTWrapper<AnyAsyncValueRef> async,
     AsyncRTWrapper<Runtime> runtimePtr) {
-  Runtime &runtime = unwrap(runtimePtr);
-  AnyAsyncValueRef &value = unwrap(async);
-  if (value.getPointer() && value.getPointer()->isIndirect()) {
-    value.copy().emplaceIndirect<MojoValue>(data, destructorFn);
-  } else {
-    assert(!value.isReady());
-    value =
-        AnyAsyncValueRef::createReady<MojoValue>(runtime, data, destructorFn);
-  }
+  createAsyncMojoValue(data, destructorFn, async, runtimePtr);
+}
+
+COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void
+KGEN_CompilerRT_CreateOwnedAsyncPythonMojoValue(
+    void *data, void (*destructorFn)(void *),
+    AsyncRTWrapper<AnyAsyncValueRef> async,
+    AsyncRTWrapper<Runtime> runtimePtr) {
+  createAsyncMojoValue(data, destructorFn, async, runtimePtr,
+                       MojoValue::Tag::kPython);
 }
 
 COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void *
@@ -611,6 +628,8 @@ void M::KGEN::registerAsyncRT(
                    (void *)&KGEN_CompilerRT_CreateAsyncTensorSpec});
   funcs.push_back({"KGEN_CompilerRT_CreateOwnedAsyncMojoValue",
                    (void *)&KGEN_CompilerRT_CreateOwnedAsyncMojoValue});
+  funcs.push_back({"KGEN_CompilerRT_CreateOwnedAsyncPythonMojoValue",
+                   (void *)&KGEN_CompilerRT_CreateOwnedAsyncPythonMojoValue});
   funcs.push_back({"KGEN_CompilerRT_MojoValueAllocateBuffer",
                    (void *)&KGEN_CompilerRT_MojoValueAllocateBuffer});
   funcs.push_back({"KGEN_CompilerRT_MojoValueFreeBuffer",
