@@ -8,6 +8,7 @@ from algorithm import vectorize
 from algorithm.functional import elementwise
 from buffer import NDBuffer
 from buffer.dimlist import DimList
+from memory import UnsafePointer
 from register import *
 from runtime.asyncrt import MojoCallContextPtr
 
