@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo-no-debug %s
 
-from gpu.host._compile import _compile_code, _get_nvptx_target
+from gpu.host._compile import _compile_code_asm, _get_nvptx_target
 from gpu.memory import (
     _GPUAddressSpace,
     cp_async_bulk_tensor_shared_cluster_global,
@@ -37,12 +37,10 @@ fn test_async_copy_asm():
         )
 
     print(
-        str(
-            _compile_code[
-                test_async_copy_kernel,
-                target = _get_nvptx_target["sm_90"](),
-            ]().asm
-        )
+        _compile_code_asm[
+            test_async_copy_kernel,
+            target = _get_nvptx_target["sm_90"](),
+        ]()
     )
 
 
@@ -57,12 +55,10 @@ fn test_tma_fence_proxy():
         fence_proxy_tensormap_generic_sys_release()
 
     print(
-        str(
-            _compile_code[
-                test_tma_fence_proxy_kernel,
-                target = _get_nvptx_target["sm_90"](),
-            ]().asm
-        )
+        _compile_code_asm[
+            test_tma_fence_proxy_kernel,
+            target = _get_nvptx_target["sm_90"](),
+        ]()
     )
 
 

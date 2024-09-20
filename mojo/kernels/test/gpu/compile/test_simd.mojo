@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo-no-debug %s
-from gpu.host._compile import _compile_code
+from gpu.host._compile import _compile_code_asm
 from testing import assert_true
 
 
@@ -14,13 +14,13 @@ def test_add[dtype: DType]():
 
     @parameter
     if dtype is DType.bfloat16:
-        assert_true("fma.rn.bf16 " in _compile_code[add[width=1]]().asm)
-        assert_true("fma.rn.bf16x2 " in _compile_code[add[width=2]]().asm)
-        assert_true("fma.rn.bf16x2 " in _compile_code[add[width=8]]().asm)
+        assert_true("fma.rn.bf16 " in _compile_code_asm[add[width=1]]())
+        assert_true("fma.rn.bf16x2 " in _compile_code_asm[add[width=2]]())
+        assert_true("fma.rn.bf16x2 " in _compile_code_asm[add[width=8]]())
     else:
-        assert_true("fma.rn.f16 " in _compile_code[add[width=1]]().asm)
-        assert_true("fma.rn.f16x2 " in _compile_code[add[width=2]]().asm)
-        assert_true("fma.rn.f16x2 " in _compile_code[add[width=8]]().asm)
+        assert_true("fma.rn.f16 " in _compile_code_asm[add[width=1]]())
+        assert_true("fma.rn.f16x2 " in _compile_code_asm[add[width=2]]())
+        assert_true("fma.rn.f16x2 " in _compile_code_asm[add[width=8]]())
 
 
 def test_sub[dtype: DType]():
@@ -29,13 +29,13 @@ def test_sub[dtype: DType]():
 
     @parameter
     if dtype is DType.bfloat16:
-        assert_true("fma.rn.bf16 " in _compile_code[sub[width=1]]().asm)
-        assert_true("fma.rn.bf16x2 " in _compile_code[sub[width=2]]().asm)
-        assert_true("fma.rn.bf16x2 " in _compile_code[sub[width=8]]().asm)
+        assert_true("fma.rn.bf16 " in _compile_code_asm[sub[width=1]]())
+        assert_true("fma.rn.bf16x2 " in _compile_code_asm[sub[width=2]]())
+        assert_true("fma.rn.bf16x2 " in _compile_code_asm[sub[width=8]]())
     else:
-        assert_true("fma.rn.f16 " in _compile_code[sub[width=1]]().asm)
-        assert_true("fma.rn.f16x2 " in _compile_code[sub[width=2]]().asm)
-        assert_true("fma.rn.f16x2 " in _compile_code[sub[width=8]]().asm)
+        assert_true("fma.rn.f16 " in _compile_code_asm[sub[width=1]]())
+        assert_true("fma.rn.f16x2 " in _compile_code_asm[sub[width=2]]())
+        assert_true("fma.rn.f16x2 " in _compile_code_asm[sub[width=8]]())
 
 
 def test_mul[dtype: DType]():
@@ -44,13 +44,13 @@ def test_mul[dtype: DType]():
 
     @parameter
     if dtype is DType.bfloat16:
-        assert_true("fma.rn.bf16 " in _compile_code[mul[width=1]]().asm)
-        assert_true("fma.rn.bf16x2 " in _compile_code[mul[width=2]]().asm)
-        assert_true("fma.rn.bf16x2 " in _compile_code[mul[width=8]]().asm)
+        assert_true("fma.rn.bf16 " in _compile_code_asm[mul[width=1]]())
+        assert_true("fma.rn.bf16x2 " in _compile_code_asm[mul[width=2]]())
+        assert_true("fma.rn.bf16x2 " in _compile_code_asm[mul[width=8]]())
     else:
-        assert_true("fma.rn.f16 " in _compile_code[mul[width=1]]().asm)
-        assert_true("fma.rn.f16x2 " in _compile_code[mul[width=2]]().asm)
-        assert_true("fma.rn.f16x2 " in _compile_code[mul[width=8]]().asm)
+        assert_true("fma.rn.f16 " in _compile_code_asm[mul[width=1]]())
+        assert_true("fma.rn.f16x2 " in _compile_code_asm[mul[width=2]]())
+        assert_true("fma.rn.f16x2 " in _compile_code_asm[mul[width=8]]())
 
 
 def test_fma[dtype: DType]():
@@ -61,13 +61,13 @@ def test_fma[dtype: DType]():
 
     @parameter
     if dtype is DType.bfloat16:
-        assert_true("fma.rn.bf16 " in _compile_code[fma[width=1]]().asm)
-        assert_true("fma.rn.bf16x2 " in _compile_code[fma[width=2]]().asm)
-        assert_true("fma.rn.bf16x2 " in _compile_code[fma[width=8]]().asm)
+        assert_true("fma.rn.bf16 " in _compile_code_asm[fma[width=1]]())
+        assert_true("fma.rn.bf16x2 " in _compile_code_asm[fma[width=2]]())
+        assert_true("fma.rn.bf16x2 " in _compile_code_asm[fma[width=8]]())
     else:
-        assert_true("fma.rn.f16 " in _compile_code[fma[width=1]]().asm)
-        assert_true("fma.rn.f16x2 " in _compile_code[fma[width=2]]().asm)
-        assert_true("fma.rn.f16x2 " in _compile_code[fma[width=8]]().asm)
+        assert_true("fma.rn.f16 " in _compile_code_asm[fma[width=1]]())
+        assert_true("fma.rn.f16x2 " in _compile_code_asm[fma[width=2]]())
+        assert_true("fma.rn.f16x2 " in _compile_code_asm[fma[width=8]]())
 
 
 def main():

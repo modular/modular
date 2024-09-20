@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo-no-debug %s
 
-from gpu.host._compile import _compile_code, _get_nvptx_target
+from gpu.host._compile import _compile_code_asm, _get_nvptx_target
 from gpu.memory import AddressSpace, Fill, async_copy
 from gpu.sync import mbarrier, mbarrier_init, mbarrier_test_wait
 from memory import UnsafePointer, stack_allocation
@@ -34,18 +34,14 @@ fn _verify_mbarrier(asm: String) raises -> None:
 
 
 def test_mbarrier_sm80():
-    alias asm = str(
-        _compile_code[test_mbarrier, target = _get_nvptx_target()]().asm
-    )
+    alias asm = _compile_code_asm[test_mbarrier, target = _get_nvptx_target()]()
     _verify_mbarrier(asm)
 
 
 def test_mbarrier_sm90():
-    alias asm = str(
-        _compile_code[
-            test_mbarrier, target = _get_nvptx_target["sm_90"]()
-        ]().asm
-    )
+    alias asm = _compile_code_asm[
+        test_mbarrier, target = _get_nvptx_target["sm_90"]()
+    ]()
     _verify_mbarrier(asm)
 
 
@@ -62,18 +58,17 @@ fn _verify_mbarrier_init(asm: String) raises -> None:
 
 
 def test_mbarrier_init_sm80():
-    alias asm = str(
-        _compile_code[test_mbarrier_init, target = _get_nvptx_target()]().asm
-    )
+    alias asm = _compile_code_asm[
+        test_mbarrier_init, target = _get_nvptx_target()
+    ]()
+
     _verify_mbarrier_init(asm)
 
 
 def test_mbarrier_init_sm90():
-    alias asm = str(
-        _compile_code[
-            test_mbarrier_init, target = _get_nvptx_target["sm_90"]()
-        ]().asm
-    )
+    alias asm = _compile_code_asm[
+        test_mbarrier_init, target = _get_nvptx_target["sm_90"]()
+    ]()
     _verify_mbarrier_init(asm)
 
 
@@ -90,20 +85,16 @@ fn _verify_mbarrier_test_wait(asm: String) raises -> None:
 
 
 def test_mbarrier_test_wait_sm80():
-    alias asm = str(
-        _compile_code[
-            test_mbarrier_test_wait, target = _get_nvptx_target()
-        ]().asm
-    )
+    alias asm = _compile_code_asm[
+        test_mbarrier_test_wait, target = _get_nvptx_target()
+    ]()
     _verify_mbarrier_test_wait(asm)
 
 
 def test_mbarrier_test_wait_sm90():
-    alias asm = str(
-        _compile_code[
-            test_mbarrier_test_wait, target = _get_nvptx_target["sm_90"]()
-        ]().asm
-    )
+    alias asm = _compile_code_asm[
+        test_mbarrier_test_wait, target = _get_nvptx_target["sm_90"]()
+    ]()
     assert_true("mbarrier.test_wait.shared.b64" in asm)
 
 
@@ -121,18 +112,16 @@ fn _verify_async_copy(asm: String) raises -> None:
 
 
 def test_async_copy_sm80():
-    alias asm = str(
-        _compile_code[test_async_copy, target = _get_nvptx_target()]().asm
-    )
+    alias asm = _compile_code_asm[
+        test_async_copy, target = _get_nvptx_target()
+    ]()
     _verify_async_copy(asm)
 
 
 def test_async_copy_sm90():
-    alias asm = str(
-        _compile_code[
-            test_async_copy, target = _get_nvptx_target["sm_90"]()
-        ]().asm
-    )
+    alias asm = _compile_code_asm[
+        test_async_copy, target = _get_nvptx_target["sm_90"]()
+    ]()
     _verify_async_copy(asm)
 
 
@@ -152,20 +141,16 @@ fn _verify_async_copy_l2_prefetch(asm: String) raises -> None:
 
 
 def test_async_copy_l2_prefetch_sm80():
-    alias asm = str(
-        _compile_code[
-            test_async_copy_l2_prefetch, target = _get_nvptx_target()
-        ]().asm
-    )
+    alias asm = _compile_code_asm[
+        test_async_copy_l2_prefetch, target = _get_nvptx_target()
+    ]()
     _verify_async_copy_l2_prefetch(asm)
 
 
 def test_async_copy_l2_prefetch__sm90():
-    alias asm = str(
-        _compile_code[
-            test_async_copy_l2_prefetch, target = _get_nvptx_target["sm_90"]()
-        ]().asm
-    )
+    alias asm = _compile_code_asm[
+        test_async_copy_l2_prefetch, target = _get_nvptx_target["sm_90"]()
+    ]()
     _verify_async_copy_l2_prefetch(asm)
 
 
@@ -193,11 +178,9 @@ fn _verify_test_async_copy_with_zero_fill(asm: String) raises -> None:
 
 
 def test_async_copy_with_zero_fill():
-    alias asm = str(
-        _compile_code[
-            test_async_copy_with_zero_fill_kernel, target = _get_nvptx_target()
-        ]().asm
-    )
+    alias asm = _compile_code_asm[
+        test_async_copy_with_zero_fill_kernel, target = _get_nvptx_target()
+    ]()
     _verify_test_async_copy_with_zero_fill(asm)
 
 

@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo-no-debug %s
 
-from gpu.host._compile import _compile_code, _get_nvptx_target
+from gpu.host._compile import _compile_code_asm, _get_nvptx_target
 from gpu.intrinsics import ldg
 from memory import UnsafePointer
 from testing import *
@@ -49,17 +49,17 @@ fn _verify_register_intrinsics(asm: String) raises -> None:
 
 
 def test_register_intrinsics_sm80():
-    alias asm = str(
-        _compile_code[register_intrinsics, target = _get_nvptx_target()]().asm
-    )
+    alias asm = _compile_code_asm[
+        register_intrinsics, target = _get_nvptx_target()
+    ]()
     _verify_register_intrinsics(asm)
 
 
 def test_register_intrinsics_sm90():
-    alias asm = _compile_code[
+    alias asm = _compile_code_asm[
         register_intrinsics,
         target = _get_nvptx_target["sm_90"](),
-    ]().asm
+    ]()
     _verify_register_intrinsics(asm)
 
 

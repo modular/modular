@@ -8,7 +8,7 @@
 from sys.intrinsics import prefetch
 from memory import UnsafePointer
 
-from gpu.host._compile import _compile_code
+from gpu.host._compile import _compile_code_asm
 from testing import assert_true
 
 
@@ -19,18 +19,18 @@ def test_prefetch():
         prefetch(addr + offset)
 
     assert_true(
-        "prefetch.global.L2 " in _compile_code[do_prefetch[DType.float16]]().asm
+        "prefetch.global.L2 " in _compile_code_asm[do_prefetch[DType.float16]]()
     )
     assert_true(
-        "prefetch.global.L2 " in _compile_code[do_prefetch[DType.float32]]().asm
+        "prefetch.global.L2 " in _compile_code_asm[do_prefetch[DType.float32]]()
     )
     assert_true(
-        "prefetch.global.L2 " in _compile_code[do_prefetch[DType.int32]]().asm
+        "prefetch.global.L2 " in _compile_code_asm[do_prefetch[DType.int32]]()
     )
 
     assert_true(
         "prefetch.global.L2 "
-        in _compile_code[do_prefetch[DType.int64, offset=42]]().asm
+        in _compile_code_asm[do_prefetch[DType.int64, offset=42]]()
     )
 
 

@@ -7,7 +7,7 @@
 
 
 from gpu import ThreadIdx
-from gpu.host._compile import _compile_code
+from gpu.host._compile import _compile_code_asm
 from gpu.memory import external_memory, AddressSpace
 
 
@@ -19,7 +19,7 @@ fn tese_cse_thread_id():
         return ThreadIdx.x() + ThreadIdx.x() + ThreadIdx.x()
 
     # CHECK-COUNT-1: call i32 @llvm.nvvm.read.ptx.sreg.tid.x()
-    print(_compile_code[kernel, emission_kind="llvm"]().asm)
+    print(_compile_code_asm[kernel, emission_kind="llvm"]())
 
 
 # CHECK-LABEL: test_dynamic_shared_mem
@@ -40,7 +40,7 @@ fn test_dynamic_shared_mem():
         ]()
         return dynamic_sram_ptr_1[0] + dynamic_sram_ptr_2[1]
 
-    print(_compile_code[kernel, emission_kind="llvm"]().asm)
+    print(_compile_code_asm[kernel, emission_kind="llvm"]())
 
 
 fn main():

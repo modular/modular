@@ -12,7 +12,7 @@ from algorithm import mean, variance
 from buffer import Buffer, NDBuffer
 from buffer.dimlist import DimList
 from gpu import WARP_SIZE
-from gpu.host._compile import _compile_code, _get_nvptx_target
+from gpu.host._compile import _get_nvptx_target
 from gpu.host.device_context import DeviceContext
 from memory import UnsafePointer
 from nn.normalization import *

@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo-no-debug %s
 
-from gpu.host._compile import _compile_code
+from gpu.host._compile import _compile_code_asm
 from testing import assert_true
 
 
@@ -15,14 +15,14 @@ def test_abs():
     ](val: SIMD[type, width]) -> __type_of(val):
         return abs(val)
 
-    assert_true("abs.f16 " in _compile_code[do_abs[DType.float16]]().asm)
-    assert_true("abs.bf16 " in _compile_code[do_abs[DType.bfloat16]]().asm)
+    assert_true("abs.f16 " in _compile_code_asm[do_abs[DType.float16]]())
+    assert_true("abs.bf16 " in _compile_code_asm[do_abs[DType.bfloat16]]())
 
     assert_true(
-        "abs.f16x2 " in _compile_code[do_abs[DType.float16, width=4]]().asm
+        "abs.f16x2 " in _compile_code_asm[do_abs[DType.float16, width=4]]()
     )
     assert_true(
-        "abs.bf16x2 " in _compile_code[do_abs[DType.bfloat16, width=4]]().asm
+        "abs.bf16x2 " in _compile_code_asm[do_abs[DType.bfloat16, width=4]]()
     )
 
 

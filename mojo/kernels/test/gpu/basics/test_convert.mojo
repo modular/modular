@@ -6,7 +6,7 @@
 # RUN: %mojo-no-debug %s
 
 from gpu.host import DeviceContext
-from gpu.host._compile import _compile_code, _get_nvptx_target
+from gpu.host._compile import _compile_code_asm, _get_nvptx_target
 from memory import UnsafePointer
 from testing import *
 
@@ -18,20 +18,16 @@ def test_convert_asm():
 
     assert_true(
         "cvt.rn.f16.f32"
-        in str(
-            _compile_code[
-                my_cast[DType.float32, DType.float16], emission_kind="asm"
-            ]().asm
-        )
+        in _compile_code_asm[
+            my_cast[DType.float32, DType.float16], emission_kind="asm"
+        ]()
     )
 
     assert_true(
         "cvt.f32.f16"
-        in str(
-            _compile_code[
-                my_cast[DType.float16, DType.float32], emission_kind="asm"
-            ]().asm
-        )
+        in _compile_code_asm[
+            my_cast[DType.float16, DType.float32], emission_kind="asm"
+        ]()
     )
 
 

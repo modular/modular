@@ -7,7 +7,7 @@
 
 from time import sleep, now, time_function
 
-from gpu.host._compile import _compile_code, _get_nvptx_target
+from gpu.host._compile import _compile_code_asm, _get_nvptx_target
 from gpu.intrinsics import *
 from testing import *
 
@@ -17,7 +17,7 @@ fn sleep_function(val: Float64):
 
 
 def test_sleep_function():
-    assert_true("nanosleep.u32 " in _compile_code[sleep_function]().asm)
+    assert_true("nanosleep.u32 " in _compile_code_asm[sleep_function]())
 
 
 fn clock_functions():
@@ -33,13 +33,13 @@ fn _verify_clock_functions(asm: String) raises -> None:
 
 
 def test_clock_functions_sm80():
-    _verify_clock_functions(_compile_code[clock_functions]().asm)
+    _verify_clock_functions(_compile_code_asm[clock_functions]())
 
 
 def test_clock_functions_sm90():
-    alias asm = _compile_code[
+    alias asm = _compile_code_asm[
         clock_functions, target = _get_nvptx_target["sm_90"]()
-    ]().asm
+    ]()
     _verify_clock_functions(asm)
 
 
@@ -63,16 +63,16 @@ fn _verify_time_functions(asm: String) raises -> None:
 
 
 def test_time_functions_sm80():
-    alias asm = _compile_code[
+    alias asm = _compile_code_asm[
         time_functions, target = _get_nvptx_target()
-    ]().asm
+    ]()
     _verify_time_functions(asm)
 
 
 def test_time_functions_sm90():
-    alias asm = _compile_code[
+    alias asm = _compile_code_asm[
         time_functions, target = _get_nvptx_target["sm_90"]()
-    ]().asm
+    ]()
     _verify_time_functions(asm)
 
 

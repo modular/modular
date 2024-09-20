@@ -9,7 +9,7 @@ from collections import OptionalReg
 from memory import UnsafePointer
 from sys.intrinsics import strided_load
 
-from gpu.host._compile import _compile_code
+from gpu.host._compile import _compile_code_asm
 from memory.reference import _GPUAddressSpace
 from testing import assert_equal, assert_true
 
@@ -24,7 +24,7 @@ fn strided_load_kernel[
 
 def test_strided_load():
     print(
-        _compile_code[strided_load_kernel[width=4], emission_kind="ptx"]().asm
+        _compile_code_asm[strided_load_kernel[width=4], emission_kind="ptx"]()
     )
 
 

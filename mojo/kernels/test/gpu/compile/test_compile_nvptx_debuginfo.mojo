@@ -6,7 +6,7 @@
 # RUN: mojo -debug-level full -O0 %s | FileCheck %s
 
 from gpu import ThreadIdx
-from gpu.host._compile import _compile_code
+from gpu.host._compile import _compile_code_asm
 
 
 fn outer[y: Int]():
@@ -14,7 +14,7 @@ fn outer[y: Int]():
     fn param[x: Int](y: SIMD[DType.float32, y], /):
         pass
 
-    print(_compile_code[param[y]]().asm)
+    print(_compile_code_asm[param[y]]())
 
 
 fn main():

@@ -11,7 +11,7 @@ from gpu.memory import external_memory, AddressSpace
 from gpu.sync import barrier
 from sys import sizeof
 from memory import stack_allocation
-from gpu.host._compile import _compile_code
+from gpu.host._compile import _compile_code_asm
 from memory import stack_allocation, UnsafePointer
 from memory.reference import _GPUAddressSpace
 from testing import assert_true, assert_equal
@@ -23,10 +23,10 @@ def test_constant_memory_compile(ctx: DeviceContext):
             n, Float32, address_space = _GPUAddressSpace.PARAM
         ]()
 
-    assert_true(".const .align 4 .b8 " in _compile_code[alloc[20]]().asm)
+    assert_true(".const .align 4 .b8 " in _compile_code_asm[alloc[20]]())
     assert_true(
         "internal addrspace(4) global [20 x float]"
-        in _compile_code[alloc[20], emission_kind="llvm"]().asm
+        in _compile_code_asm[alloc[20], emission_kind="llvm"]()
     )
 
 
