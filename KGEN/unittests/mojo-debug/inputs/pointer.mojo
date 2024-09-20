@@ -5,6 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from debug_test_utils import keep_alive
+from memory import UnsafePointer
 
 
 fn main():

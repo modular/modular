@@ -4,6 +4,8 @@
 #
 # ===----------------------------------------------------------------------=== #
 
+from memory import UnsafePointer
+
 
 fn main():
     alias length = 3

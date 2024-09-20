@@ -4,6 +4,8 @@
 #
 # ===----------------------------------------------------------------------=== #
 
+from memory import UnsafePointer
+
 
 fn test(st: String):
     print(st)  # breakpoint
