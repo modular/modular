@@ -240,7 +240,8 @@ void stripDecorators(LIT::StructDeclOp structDecl) {
       // Only accept decorators in max / register domain.
       if (!(symRef.getRootReference().strref() == "max" ||
             symRef.getRootReference().strref() == "register" ||
-            symRef.getRootReference().strref() == COMPILER_PREFIX))
+            symRef.getRootReference().strref() == COMPILER_PREFIX ||
+            symRef.getRootReference().strref() == COMPILER_PREFIX_INTERNAL))
         continue;
       decoratorName = symRef.getLeafReference().strref();
     }
