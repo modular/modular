@@ -8,6 +8,7 @@
 from collections import List
 from math import floor
 from os import abort
+from os.path import isdir
 from pathlib import Path
 from sys.ffi import DLHandle
 from sys.ffi import _get_dylib_function as _ffi_get_dylib_function
@@ -90,12 +91,13 @@ fn _get_cuda_driver_path() raises -> Path:
 
     # If we cannot find libcuda.so, then search harder.
     for loc in _DEFAULT_CUDA_DRIVER_BASE_PATHS:
-        for file in loc[].listdir():
-            var lib_path = loc[] / file[]
-            if not lib_path.is_file():
-                continue
-            if _CUDA_DRIVER_LIB_NAME in str(file[]):
-                return lib_path
+        if isdir(loc[]):
+            for file in loc[].listdir():
+                var lib_path = loc[] / file[]
+                if not lib_path.is_file():
+                    continue
+                if _CUDA_DRIVER_LIB_NAME in str(file[]):
+                    return lib_path
 
     raise "the CUDA library was not found"
 
