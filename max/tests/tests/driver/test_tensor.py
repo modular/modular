@@ -5,14 +5,16 @@
 # ===----------------------------------------------------------------------=== #
 """Test max.driver Tensors."""
 import math
+import tempfile
 from itertools import product
+from pathlib import Path
 
 import numpy as np
 import pytest
 import torch
 from hypothesis import given
 from hypothesis import strategies as st
-from max.driver import CPU, Tensor
+from max.driver import CPU, MemMapTensor, Tensor
 from max.dtype import DType
 
 
@@ -398,3 +400,45 @@ def test_scalar():
     # We allow some ability to mutate scalars.
     scalar[0] = 8
     assert scalar.item() == 8
+
+
+# NOTE: This is kept at function scope intentionally to avoid issues if tests
+# mutate the stored data.
+@pytest.fixture(scope="function")
+def memmap_example_file():
+    with tempfile.NamedTemporaryFile(mode="w+b") as f:
+        f.write(b"\x00\x01\x02\x03\x04\x05\x06\x07")
+        f.flush()
+        yield Path(f.name)
+
+
+def test_memmap(memmap_example_file: Path):
+    tensor = MemMapTensor(memmap_example_file, dtype=DType.int8, shape=(2, 4))
+    assert tensor.shape == (2, 4)
+    assert tensor.dtype == DType.int8
+    for i, j in product(range(2), range(4)):
+        assert tensor[i, j].item() == i * 4 + j
+
+    # Test that offsets work
+    offset_tensor = MemMapTensor(
+        memmap_example_file, dtype=DType.int8, shape=(2, 3), offset=2
+    )
+    assert offset_tensor.shape == (2, 3)
+    assert offset_tensor.dtype == DType.int8
+    for i, j in product(range(2), range(3)):
+        assert offset_tensor[i, j].item() == i * 3 + j + 2
+
+    # Test that a different type works and we can modify the array.
+    tensor_16 = MemMapTensor(
+        memmap_example_file, dtype=DType.int16, shape=(2,), offset=2, mode="r+"
+    )
+    tensor_16[0] = 0  # intentional to avoid endianness issues
+
+    assert tensor[0, 1].item() == 1
+    assert tensor[0, 2].item() == 0
+    assert tensor[0, 3].item() == 0
+    assert tensor[1, 0].item() == 4
+
+    assert offset_tensor[0, 0].item() == 0
+    assert offset_tensor[0, 1].item() == 0
+    assert offset_tensor[0, 2].item() == 4
