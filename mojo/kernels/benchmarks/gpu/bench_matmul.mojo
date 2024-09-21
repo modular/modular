@@ -12,6 +12,7 @@ from buffer.dimlist import _make_tuple
 from gpu.host.device_context import DeviceBuffer, DeviceContext
 from linalg.matmul_gpu import _matmul_gpu
 from internal_utils import DeviceNDBuffer, bench_compile_time, env_get_dtype
+from internal_utils._utils import static, dynamic, ValOrDim
 from utils import StaticIntTuple
 from sys import env_get_int, sizeof
 from math import align_up
@@ -175,28 +176,6 @@ fn bench_matmul[
     _ = buffer_a^
     _ = buffer_b^
     _ = buffer_c^
-
-
-struct ValOrDim[dim: Dim = Dim()]:
-    var value: Int
-
-    fn __init__(inout self):
-        constrained[
-            not dim.is_dynamic(),
-            "Can't construct a dynamic dim with no runtime value",
-        ]()
-        self.value = dim.get()
-
-    fn __init__(inout self, v: Int):
-        self.value = v
-
-
-fn static[d: Int]() -> ValOrDim[d]:
-    return ValOrDim[d]()
-
-
-fn dynamic(d: Int) -> ValOrDim:
-    return ValOrDim(d)
 
 
 fn create_matmul_bench[
