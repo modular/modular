@@ -305,9 +305,17 @@ fn autoparam_of_params[a: int, //, b: IndexParam, c: IndexParam[a]]():
 
 
 # CHECK-LABEL: lit.func @"function_autoparam
-# CHECK-SAME: :*(0,0):<[""]*"__lifetimes__`": lifetime.set, +, f: !lit.signature<:*"__lifetimes__`":() capturing -> !kgen.none>
-fn function_autoparam[f: fn () capturing [_] -> None]():
-    pass
+# CHECK-SAME: :{mut |*(0,1)|, mut |*(0,0)|}:<[""][[G_LT:.*]]: lifetime.set, [""][[F_LT:.*]]: lifetime.set, +
+# CHECK-SAME: f: !lit.signature<:[[F_LT]]:() capturing -> !kgen.none>
+# CHECK-SAME: g: !lit.signature<:[[G_LT]]:() capturing -> !kgen.none>
+fn function_autoparam[f: fn () capturing [_] -> None, g: fn () capturing [_] -> None]():
+    @parameter
+    fn function():
+        pass
+
+    # CHECK: lit.alias.decl *"bind_one{{.*}}": !lit.signature<() capturing -> !kgen.none> =
+    # CHECK-SAME: <{{.*}}function_autoparam{{.*}}<:lifetime.set {}, :lifetime.set {}, :{{.*}} *"function()", :{{.*}} *"function()">
+    alias bind_one = function_autoparam[function, function]
 
 
 # CHECK-LABEL: lit.func @"auto_kw_default{{.*}}"<u = 3, |, v = 3, ?, {{.*}}, {{.*}}>(%a

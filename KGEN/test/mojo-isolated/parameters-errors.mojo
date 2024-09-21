@@ -473,6 +473,7 @@ fn autoparams_variadic(*x: MemParamType):
     pass
 
 
+# expected-note @below {{'InferredParam' declared here}}
 struct InferredParam[p: Int, //, T: AnyTrivialRegType, use: ParamType[p]]:
     pass
 
@@ -481,6 +482,8 @@ struct BindStructField:
     # expected-error @below {{failed to infer parameter 'p'}}
     # expected-note @below {{parameter isn't used in any argument}}
     var value: InferredParam[Int]
+    # expected-error @below {{unknown keyword parameter: 'p'}}
+    var infer_keyword: InferredParam[p=1]
 
 
 fn invalid_params[f: fn (ParamType) -> None]():
