@@ -620,7 +620,7 @@ TypeCheckedParamList::TypeCheckedParamList(
     : TypeCheckScopeInfo{declScope, shared} {
   // Resolve each of the parameter declarations.
   ExprEmitter emitter(shared, declScope, EC_Type);
-  for (auto [idx, arg] : llvm::enumerate(parsedParams)) {
+  for (const ParsedArgument &arg : parsedParams) {
     // Check for things supported in arguments that are not supported in
     // parameters.
     ASTType type;
@@ -641,7 +641,10 @@ TypeCheckedParamList::TypeCheckedParamList(
     if (vararg == VarArgKind::VarArg && !type.isTypeCheckErrorType()) {
       // TODO: What convention should we use for parameter varargs?
       type = VariadicType::get(type, ArgConvention::BorrowedInReg);
-      variadicIndices.push_back(idx);
+      // We add the indices of all parameters to be marked as varargs. Use the
+      // current number of elements in `names`, because it also includes
+      // implicitly added autoparams.
+      variadicIndices.push_back(names.size());
     }
 
     if (failed(emitDefaultIfPossible(arg, type, defaultPosParams,
