@@ -548,6 +548,44 @@ emitDefaultIfPossible(const ParsedArgument &arg, ASTType type,
   return failure();
 }
 
+/// Given a type that potentially has all of its parameters unbound, implicitly
+/// add the parameter declarations to the function parameters.
+static ASTType addImplicitTypeParams(ASTType type,
+                                     TypeCheckedParamList &paramList,
+                                     bool append) {
+  // Check if the type has unbound parameters.
+  auto metatype = dyn_cast_or_null<AnyStructType>(type.getMetaType());
+  if (!metatype)
+    return type;
+  ArrayRef<Type> params = metatype.getSignature().getParamTypes();
+  if (params.empty())
+    return type;
+  PogListAttr paramListAttr = metatype.getSignature().getParamListAttrs();
+
+  auto insertFn = [append](auto &vec, auto val) {
+    if (append)
+      vec.push_back(val);
+    else
+      vec.insert(vec.begin(), val);
+  };
+
+  SmallVector<TypedAttr> paramValues;
+  ParserParamEvaluator evaluator(*paramList.shared.declResolver);
+  for (auto [idx, type] : llvm::enumerate(params)) {
+    auto funcDecl = ParamDeclAttr::get(paramList.declScope.mangleParamName(
+                                           paramListAttr.getName(idx).strref()),
+                                       evaluator.getReboundType(type));
+
+    insertFn(paramList.names, StringAttr::get(type.getContext()));
+    insertFn(paramList.passingKinds,
+             append ? PassingKind::Implicit : PassingKind::Inferred);
+    insertFn(paramList.paramDeclAttrs, funcDecl);
+    paramValues.push_back(ParamDeclRefAttr::get(funcDecl));
+    evaluator.addInputValue(paramValues.back());
+  }
+  return BindTypeAttr::get(PValue(type), paramValues);
+}
+
 TypeCheckedParamList::TypeCheckedParamList(
     ArrayRef<ParsedArgument> parsedParams, ASTDecl &declScope,
     SharedState &shared)
@@ -559,7 +597,8 @@ TypeCheckedParamList::TypeCheckedParamList(
     // parameters.
     ASTType type;
     if (arg.typeExpr) {
-      type = emitter.emitExprType(arg.typeExpr);
+      type = emitter.emitExprType(arg.typeExpr, /*allowUnbound=*/true);
+      type = addImplicitTypeParams(type, *this, /*append=*/false);
     } else {
       emitter.emitError(arg.loc, "parameters must always have a type");
       arg.isErroneous = true;
@@ -640,35 +679,6 @@ ParseResult ParsedParamList::parseOptionalParameters(ParserBase &p,
     return failure();
 
   return p.parseToken(Token::r_square, "expected ']' for parameter list");
-}
-
-/// Given a type that potentially has all of its parameters unbound, implicitly
-/// add the parameter declarations to the function parameters.
-static ASTType addImplicitTypeParams(ASTType type,
-                                     TypeCheckedParamList &paramList) {
-  // Check if the type has unbound parameters.
-  auto metatype = dyn_cast_or_null<AnyStructType>(type.getMetaType());
-  if (!metatype)
-    return type;
-  ArrayRef<Type> params = metatype.getSignature().getParamTypes();
-  if (params.empty())
-    return type;
-  PogListAttr paramListAttr = metatype.getSignature().getParamListAttrs();
-
-  SmallVector<TypedAttr> paramValues;
-  ParserParamEvaluator evaluator(*paramList.shared.declResolver);
-  for (auto [idx, type] : llvm::enumerate(params)) {
-    auto funcDecl = ParamDeclAttr::get(paramList.declScope.mangleParamName(
-                                           paramListAttr.getName(idx).strref()),
-                                       evaluator.getReboundType(type));
-
-    paramList.names.push_back(StringAttr::get(type.getContext()));
-    paramList.passingKinds.push_back(PassingKind::Implicit);
-    paramList.paramDeclAttrs.push_back(funcDecl);
-    paramValues.push_back(ParamDeclRefAttr::get(funcDecl));
-    evaluator.addInputValue(paramValues.back());
-  }
-  return BindTypeAttr::get(PValue(type), paramValues);
 }
 
 //===----------------------------------------------------------------------===//
@@ -882,7 +892,7 @@ static void typeCheckOneArgument(size_t idx, ASTType selfType, bool isDef,
       arg.isErroneous = true;
       arg.vararg = VarArgKind::None; // Don't break invariants on errors.
     }
-    type = addImplicitTypeParams(type, tcSignature.paramList);
+    type = addImplicitTypeParams(type, tcSignature.paramList, /*append=*/true);
   } else if (idx == 0 && selfType &&
              // FIXME: This is incorrect, the @static_method decorators haven't
              // been applied yet.
