@@ -124,8 +124,6 @@ struct _Matmul[
                 bk_ptr += b_stride
 
         tile[loop_body, VariadicList[Int](simd_width, 1)](0, K)
-        _ = ak_ptr
-        _ = bk_ptr
 
     @staticmethod
     @always_inline
@@ -166,8 +164,6 @@ struct _Matmul[
                 bk_ptr += b_stride
 
         tile[loop_body, VariadicList[Int](2, 1)](0, K)
-        _ = ak_ptr
-        _ = bk_ptr
 
     @no_inline
     @staticmethod
@@ -217,15 +213,11 @@ struct _Matmul[
             tile[process_cols, Self._matmul_config.col_sizes](
                 0, ceildiv(N, simd_width)
             )
-            _ = bn_ptr
-            _ = cn_ptr
 
             am_ptr += tile_m * a_stride
             cm_ptr += tile_m * c_stride
 
         tile[process_rows, Self._matmul_config.row_sizes](0, M)
-        _ = am_ptr
-        _ = cm_ptr
 
     @no_inline
     @staticmethod
@@ -284,7 +276,6 @@ struct _Matmul[
                         )
 
         tile[process_tile, tile_sizes, tile_sizes](0, 0, N, K)
-        _ = transpose_buffer
 
         if aligned_n != N:
             for k in range(K):
@@ -307,7 +298,6 @@ struct _Matmul[
                 output_ptr.store(idx, val)
 
             tile[packed_copy, Self._matmul_config.pack_sizes](0, N)
-            _ = k
 
             if aligned_n != N:
                 memset_zero(output_ptr + N, aligned_n - N)
@@ -387,8 +377,6 @@ struct _Matmul[
             cn_ptr += tile_n
 
         tile[process_cols, VariadicList[Int](4, 1)](0, N)
-        _ = cn_ptr
-        _ = K
 
     @no_inline
     @staticmethod
@@ -419,7 +407,6 @@ struct _Matmul[
             cn_ptr += _simd_width
 
         tile[process_cols, Self._matmul_config.gemv_sizes](0, N)
-        _ = cn_ptr
 
     @no_inline
     @staticmethod
