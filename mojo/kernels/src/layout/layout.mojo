@@ -6,7 +6,6 @@
 
 from collections.string import _calc_initial_buffer_size_int32
 from os import abort
-
 from utils import Formattable, Formatter
 from buffer.dimlist import DimList
 
@@ -159,27 +158,20 @@ struct Layout(
     @staticmethod
     fn col_major(*dims: Int) -> Layout:
         var shape = IntTuple()
-        var stride = IntTuple()
-        var c_stride = 1
         for dim in dims:
-            stride.append(c_stride)
             shape.append(dim)
-            c_stride *= dim
-        return Layout(shape, stride)
+        return Self.col_major(shape)
+
+    @staticmethod
+    fn col_major(shape: IntTuple) -> Layout:
+        return Layout(shape, prefix_product(shape))
 
     @staticmethod
     fn row_major(*dims: Int) -> Layout:
         var shape = IntTuple()
-        var stride = IntTuple()
-        var c_stride = 1
-        stride.append(c_stride)
-        for i in range(len(dims) - 1):
-            var dim = dims[len(dims) - 1 - i]
-            stride.append(dim * c_stride)
-            c_stride *= dim
         for dim in dims:
             shape.append(dim)
-        return Layout(shape, reverse(stride))
+        return Self.row_major(shape)
 
     @staticmethod
     fn row_major[rank: Int](dims: DimList) -> Layout:
@@ -205,29 +197,8 @@ struct Layout(
         return Layout(shape, reverse(stride))
 
     @staticmethod
-    fn _row_major_tuple(
-        shape: IntTuple, inout stride: IntTuple, inout current_stride: Int
-    ):
-        var tmp_stride = IntTuple()
-
-        for i in reversed(range(len(shape))):
-            var current_shape = shape[i]
-            if current_shape.is_value():
-                tmp_stride.append(current_stride)
-                current_stride *= current_shape.value()
-            else:
-                Self._row_major_tuple(current_shape, tmp_stride, current_stride)
-
-        stride.append(tmp_stride)
-
-    @staticmethod
     fn row_major(shape: IntTuple) -> Layout:
-        var current_stride = 1
-        var stride = IntTuple()
-
-        Self._row_major_tuple(shape, stride, current_stride)
-
-        return Layout(shape, reverse(stride[0]))
+        return Layout(shape, reverse(prefix_product(reverse(shape))))
 
     @always_inline
     fn make_shape_unknown[axis: Int = UNKNOWN_VALUE](self) -> Layout:

@@ -64,6 +64,21 @@ struct RuntimeLayout[layout: Layout](Stringable, Formattable):
             c_stride *= dim
         return RuntimeLayout[layout](shape, stride)
 
+    @staticmethod
+    fn col_major[
+        rank: Int, //
+    ](shape: StaticIntTuple[rank]) -> RuntimeLayout[layout]:
+        var stride = StaticIntTuple[rank]()
+        var c_stride = 1
+        stride[0] = c_stride
+
+        @parameter
+        for i in range(1, rank):
+            var dim = shape[i - 1]
+            stride[i] = dim * c_stride
+            c_stride *= dim
+        return RuntimeLayout[layout](shape, stride)
+
     @no_inline
     fn format_to(self, inout f: Formatter):
         f.write_str("(")

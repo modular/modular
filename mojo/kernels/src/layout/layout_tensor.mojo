@@ -2466,7 +2466,7 @@ struct LayoutTensor[
                     writer.write("\n")
             return
 
-        for i in range(layout.size()):
+        for i in range(self.runtime_layout.size()):
             var vec_offset = self.runtime_layout(i)
             var vec = SIMD[dtype, Self.element_size]()
 
