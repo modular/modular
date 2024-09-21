@@ -18,7 +18,7 @@ from benchmark import (
     ThroughputMeasure,
     keep,
 )
-from buffer import DimList, NDBuffer
+from buffer import Dim, DimList, NDBuffer
 from buffer.dimlist import _make_tuple
 from compile import compile_code
 from gpu.host.device_context import DeviceBuffer, DeviceContext
@@ -26,6 +26,20 @@ from testing import assert_almost_equal, assert_equal, assert_true
 
 from utils import StaticIntTuple
 from utils.index import product
+
+
+struct ValOrDim[dim: Dim = Dim()]:
+    var value: Int
+
+    fn __init__(inout self):
+        constrained[
+            not dim.is_dynamic(),
+            "Can't construct a dynamic dim with no runtime value",
+        ]()
+        self.value = dim.get()
+
+    fn __init__(inout self, v: Int):
+        self.value = v
 
 
 @value
@@ -307,3 +321,11 @@ fn int_list_to_tuple[x: List[Int]]() -> StaticIntTuple[len(x)]:
     for i in range(len(x)):
         t[i] = x[i]
     return t
+
+
+fn static[d: Int]() -> ValOrDim[d]:
+    return ValOrDim[d]()
+
+
+fn dynamic(d: Int) -> ValOrDim:
+    return ValOrDim(d)
