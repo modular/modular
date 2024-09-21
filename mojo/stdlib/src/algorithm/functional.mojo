@@ -479,20 +479,20 @@ fn _parallelize_impl[
 # tile
 # ===----------------------------------------------------------------------===#
 
-alias Static1DTileUnitFunc = fn[width: Int] (Int) capturing -> None
+alias Static1DTileUnitFunc = fn[width: Int] (Int) capturing [_] -> None
 """
 Signature of a 1d tiled function that performs some work with a static tile size
 and an offset. i.e. func<tile_size: Int> (offset: Int)
 """
 
-alias Dynamic1DTileUnitFunc = fn (Int, Int) capturing -> None
+alias Dynamic1DTileUnitFunc = fn (Int, Int) capturing [_] -> None
 """
 Signature of a 1d tiled function that performs some work with a dynamic tile size
   and an offset. i.e. func(offset: Int, tile_size: Int)
 """
 
 
-alias BinaryTile1DTileUnitFunc = fn[width: Int] (Int, Int) capturing -> None
+alias BinaryTile1DTileUnitFunc = fn[width: Int] (Int, Int) capturing [_] -> None
 """
 Signature of a tiled function that performs some work with a dynamic tile size
 and a secondary static tile size.
@@ -633,9 +633,9 @@ fn tile[
 # ===----------------------------------------------------------------------===#
 
 
-alias Static2DTileUnitFunc = fn[tile_x: Int, tile_y: Int] (
-    Int, Int
-) capturing -> None
+alias Static2DTileUnitFunc = fn[tile_x: Int, tile_y: Int] (Int, Int) capturing [
+    _
+] -> None
 """
 Signature of a 2d tiled function that performs some work with a static tile size
 and an offset. i.e.
@@ -694,10 +694,10 @@ fn tile[
 # ===----------------------------------------------------------------------===#
 
 # Signature of a function that unswitch can take.
-alias SwitchedFunction = fn[sw: Bool] () capturing -> None
+alias SwitchedFunction = fn[sw: Bool] () capturing [_] -> None
 
 # Version of unswitch supporting 2 predicates.
-alias SwitchedFunction2 = fn[sw0: Bool, sw1: Bool] () capturing -> None
+alias SwitchedFunction2 = fn[sw0: Bool, sw1: Bool] () capturing [_] -> None
 
 
 @always_inline
@@ -789,7 +789,7 @@ fn unswitch[
 
 alias Static1DTileUnswitchUnitFunc = fn[width: Int, sw: Bool] (
     Int, Int
-) capturing -> None
+) capturing [_] -> None
 """
 Signature of a tiled function that performs some work with a static tile size
   and an offset. i.e. func<tile_size: Int> (offset: Int)
@@ -797,7 +797,7 @@ Signature of a tiled function that performs some work with a static tile size
 
 alias Static1DTileUnitFuncWithFlag = fn[width: Int, flag: Bool] (
     Int
-) capturing -> None
+) capturing [_] -> None
 
 
 @always_inline
@@ -846,9 +846,9 @@ fn tile_and_unswitch[
         )
 
 
-alias Dynamic1DTileUnswitchUnitFunc = fn[sw: Bool] (
-    Int, Int, Int
-) capturing -> None
+alias Dynamic1DTileUnswitchUnitFunc = fn[sw: Bool] (Int, Int, Int) capturing [
+    _
+] -> None
 
 
 @always_inline
@@ -964,7 +964,7 @@ fn tile_middle_unswitch_boundaries[
 
 alias Static1DTileUnitFuncWithFlags = fn[
     width: Int, left_flag: Bool, right_flag: Bool
-] (Int) capturing -> None
+] (Int) capturing [_] -> None
 
 
 @always_inline
