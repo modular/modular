@@ -3,237 +3,168 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-"""Test the max.engine Python bindings with Max Graph."""
+"""Test pipelines attention layer."""
 
 from dataclasses import dataclass
 
-import numpy as np
+import hypothesis
 import pytest
+import torch
+from conftest import assert_allclose, modular_graph_test
 from max.dtype import DType
 from max.graph import Graph, TensorType
 from nn import Attention, Linear, RotaryEmbedding
+from torch import nn
+from transformers import StaticCache
+from transformers.models.llama.configuration_llama import LlamaConfig
+from transformers.models.llama.modeling_llama import LlamaSdpaAttention
 
 
-@dataclass
-class NanoLlama3:
-    """Class to hold toy weights and parameters for testing llama3 code."""
+class TorchAttention(nn.Module):
+    def __init__(self, config, start_pos, seq_len):
+        super().__init__()
+        self.config = config
+        self.attention = LlamaSdpaAttention(self.config, layer_idx=0)
+        self.start_pos = start_pos
+        self.seq_len = seq_len
 
-    params = {
-        "dim": 2,
-        "n_layers": 1,
-        "n_heads": 1,
-        "vocab_size": 4,
-        "norm_eps": 1e-5,
-        "n_kv_heads": 1,
-        "head_dim": 2,
-        "n_rep": 1,
-    }
-
-    mlp_w1 = (
-        np.array(
-            [
-                [0.5641, 0.4875],
-                [-1.1172, -1.1583],
-            ]
+    def forward(self, x, attention_mask, k_cache, v_cache, wq, wk, wv, wo):
+        self.attention.load_state_dict(
+            {
+                "q_proj.weight": wq,
+                "k_proj.weight": wk,
+                "v_proj.weight": wv,
+                "o_proj.weight": wo,
+            }
         )
-        .astype(np.float32)
-        .transpose(-1, -2)
-    )
-
-    mlp_w2 = (
-        np.array(
-            [
-                [0.5355, -0.9487],
-                [-0.6487, 0.1838],
-            ]
+        cache = StaticCache(
+            self.config,
+            max_batch_size=k_cache.shape[2],
+            max_cache_len=k_cache.shape[0],
+            device=torch.get_default_device(),
         )
-        .astype(np.float32)
-        .transpose(-1, -2)
-    )
 
-    mlp_w3 = (
-        np.array(
-            [
-                [-0.6765, 0.7103],
-                [-0.4643, 0.2860],
-            ]
+        # MAX KV cache has shape:
+        #   [start_pos, n_layers, batch_size, n_kv_heads, head_dim]
+        # Torch cache stores it as:
+        #   [max_batch_size, n_kv_heads, max_cache_len, head_dim] per layer
+        k_cache = k_cache[:, 0, ...].movedim(0, 2)
+        v_cache = v_cache[:, 0, ...].movedim(0, 2)
+
+        cache.update(
+            k_cache,
+            v_cache,
+            0,
+            cache_kwargs={"cache_position": None},
         )
-        .astype(np.float32)
-        .transpose(-1, -2)
-    )
-
-    attn_wq = (
-        np.array(
-            [
-                0.3256,
-                -1.8786,
-                -0.4062,
-                -0.4507,
-            ]
+        positional_ids = torch.arange(
+            self.start_pos,
+            self.start_pos + self.seq_len,
+            device=x.device,
         )
-        .reshape((2, 2))
-        .astype(np.float32)
-        .transpose(-1, -2)
-    )
-    attn_wk = (
-        np.array(
-            [
-                0.6694,
-                -0.7980,
-                0.8910,
-                0.9103,
-            ]
-        )
-        .reshape((2, 2))
-        .astype(np.float32)
-        .transpose(-1, -2)
-    )
-    attn_wv = (
-        np.array(
-            [
-                0.5933,
-                1.0371,
-                -0.0971,
-                0.0469,
-            ]
-        )
-        .reshape((2, 2))
-        .astype(np.float32)
-        .transpose(-1, -2)
-    )
-    attn_wo = (
-        np.array([0.0713, 0.3269, 0.0103, -0.0694])
-        .reshape((2, 2))
-        .astype(np.float32)
-        .transpose(-1, -2)
-    )
+        positional_ids = positional_ids.unsqueeze(0)
+        position_embeddings = self.attention.rotary_emb(x, positional_ids)
+
+        return self.attention(
+            x,
+            attention_mask,
+            past_key_values=cache,
+            position_embeddings=position_embeddings,
+        )[0]
 
 
-@pytest.mark.skip(
-    reason=(
-        "Not passing with updates to e2e model in run llama3.py. Follow up will"
-        " replace with better testing using hypothesis library."
+def _attention_layer(config: LlamaConfig):
+    dim = config.hidden_size
+    n_heads = config.num_attention_heads
+    n_kv_heads = config.num_key_value_heads
+    head_dim = dim // n_heads
+    theta = config.rope_theta
+    max_seq_len = config.max_position_embeddings
+
+    input_dtype = DType.float32
+    input_type = TensorType(input_dtype, ["batch_size", "seq_len", dim])
+    attn_mask_type = TensorType(
+        DType.bool, ["batch_size", n_heads, "seq_len", "post_seq_len"]
     )
-)
-def test_attention(session):
-    model = NanoLlama3()
-
-    dim = 2
-    n_heads = 1
-    n_kv_heads = 1
-    head_dim = 2
-    n_rep = 1
-    theta = 10000.0
-    max_seq_len = 2048
-
-    with Graph(
-        "attention",
-        input_types=[
-            TensorType(dtype=DType.float32, shape=[2, 2, 2]),  # input
-            TensorType(dtype=DType.float32, shape=[0, 1, 2, 1, 2]),  # k_cache
-            TensorType(dtype=DType.float32, shape=[0, 1, 2, 1, 2]),  # v_cache
+    cache_type = TensorType(
+        DType.float32,
+        shape=[
+            "start_pos",
+            1,
+            "batch_size",
+            n_kv_heads,
+            head_dim,
         ],
-    ) as graph:
-        attention = Attention(
-            n_heads=n_heads,
-            n_kv_heads=n_kv_heads,
-            head_dim=head_dim,
-            dim=dim,
-            wk=Linear(model.attn_wk),
-            wv=Linear(model.attn_wv),
-            wq=Linear(model.attn_wq),
-            wo=Linear(model.attn_wo),
-            rope=RotaryEmbedding(
-                dim=dim,
-                n_heads=n_heads,
-                theta=theta,
-                max_seq_len=max_seq_len,
-            ),
+    )
+    attn_input_types = [input_type, attn_mask_type, cache_type, cache_type]
+
+    wq_type = TensorType(input_dtype, [n_heads * head_dim, dim])
+    wk_type = TensorType(input_dtype, [n_kv_heads * head_dim, dim])
+    wv_type = TensorType(input_dtype, [n_kv_heads * head_dim, dim])
+    wo_type = TensorType(input_dtype, [dim, n_heads * head_dim])
+    weight_types = [wq_type, wk_type, wv_type, wo_type]
+
+    graph = Graph(
+        "attn",
+        input_types=attn_input_types + weight_types,
+    )
+
+    with graph:
+        x, attn_mask, k_cache, v_cache, wq, wk, wv, wo = graph.inputs
+        graph.output(
+            Attention(
+                n_heads,
+                n_kv_heads,
+                head_dim,
+                dim,
+                Linear(wq),
+                Linear(wk),
+                Linear(wv),
+                Linear(wo),
+                rope=RotaryEmbedding(
+                    dim=dim,
+                    n_heads=n_heads,
+                    theta=theta,
+                    max_seq_len=max_seq_len,
+                    rope_scaling=None,
+                ),
+            )(x, attn_mask, k_cache, v_cache)[0]
         )
+    return graph
 
-        outputs = attention(*graph.inputs)
-        graph.output(*outputs)
-        compiled = session.load(graph)
 
-    input = (
-        np.array(
-            [
-                -1.2620,
-                -2.0678,
-                -1.6634,
-                1.3036,
-                -0.0088,
-                -1.1315,
-                1.1287,
-                1.7699,
-            ]
-        )
-        .reshape((2, 2, 2))
-        .astype(np.float32)
+@pytest.mark.parametrize(
+    "start_pos,seq_len",
+    [
+        (0, 10),
+        (9, 1),
+    ],
+)
+def test_attention(session, start_pos, seq_len):
+    config = LlamaConfig(
+        hidden_size=2,
+        num_attention_heads=1,
+        num_key_value_heads=1,
+        rope_theta=10000.0,
     )
+    # Set up pytorch attention layer.
+    torch_attention = TorchAttention(config, start_pos, seq_len)
 
-    k_cache = np.zeros(shape=(0, 1, 2, n_kv_heads, head_dim)).astype(np.float32)
+    # Set up max graph attention layer.
+    layer_graph = _attention_layer(config)
 
-    v_cache = np.zeros(shape=(0, 1, 2, n_kv_heads, head_dim)).astype(np.float32)
-
-    output = compiled.execute(input, k_cache, v_cache)
-    assert len(output) == 3
-
-    expected = (
-        np.array(
-            [
-                -0.1979,
-                -0.0316,
-                -0.0312,
-                -0.0204,
-                -0.1011,
-                -0.0085,
-                -0.0874,
-                -0.0067,
-            ]
-        )
-        .reshape((2, 2, 2))
-        .astype(np.float32)
+    @modular_graph_test(
+        session,
+        layer_graph,
+        static_dims={
+            "start_pos": start_pos,
+            "seq_len": seq_len,
+            "post_seq_len": start_pos + seq_len,
+        },
+        hypothesis_settings=hypothesis.settings(deadline=None),
     )
-
-    expected_k_cache = (
-        np.array(
-            [
-                0.8053,
-                -3.0068,
-                -0.9151,
-                -1.9720,
-                0.8970,
-                -1.0378,
-                -2.5569,
-                0.8611,
-            ]
-        )
-        .reshape((2, 2, n_kv_heads, head_dim))
-        .astype(np.float32)
-    )
-
-    expected_v_cache = (
-        np.array(
-            [
-                -2.8933,
-                0.0256,
-                0.3651,
-                0.2227,
-                -1.1787,
-                -0.0522,
-                2.5052,
-                -0.0266,
-            ]
-        )
-        .reshape((2, 2, n_kv_heads, head_dim))
-        .astype(np.float32)
-    )
-
-    np.testing.assert_almost_equal(output[0].to_numpy(), expected, decimal=4)
-    np.testing.assert_almost_equal(
-        output[1].to_numpy(), expected_k_cache, decimal=4
-    )
-    np.testing.assert_almost_equal(
-        output[2].to_numpy(), expected_v_cache, decimal=4
-    )
+    def test_correctness(execute, inputs, torch_inputs):
+        inputs = list(inputs)
+        result = execute(inputs)
+        expected = torch_attention(*torch_inputs).detach().numpy()
+        assert_allclose(result, expected)
