@@ -562,7 +562,16 @@ ErrorOr<TypedAttr> InterpreterState::loadAttributeFromMemRef(MemRefAttr memref,
   Attribute attr = memref;
   if (ErrorOrSuccess err = internalizeMemory(attr))
     return err.takeError();
-  return readAttributeFromMemory(cast<PointerAttr>(attr).getAddr(), type);
+  ErrorOr<TypedAttr> attrOr =
+      readAttributeFromMemory(cast<PointerAttr>(attr).getAddr(), type);
+  if (attrOr.isError())
+    return attrOr.takeError();
+  SmallVector<Attribute> results;
+  results.push_back(attrOr.takeValue());
+  if (ErrorOrSuccess errorMaybe = externalizeMemory(results))
+    return errorMaybe.takeError();
+  Attribute result = results.front();
+  return ::cast<TypedAttr>(result);
 }
 
 ErrorOr<PointerAttr> InterpreterState::allocateInternalStackFor(Type type,

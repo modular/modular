@@ -462,6 +462,7 @@ def KGEN_CallParamOp : KGEN_CallOpBase<"call_param",
 //===----------------------------------------------------------------------===//
 
 def KGEN_ParamConstantOp : KGENOp<"param.constant", [Pure, ConstantLike,
+    BytecodeOpInterface,
     DeclareOpInterfaceMethods<ParamOpInterface, ["isImplicitlyParametric"]>,
     DeclareOpInterfaceMethods<OpAsmOpInterface, ["getAsmResultNames"]>]>,
     NoParamDecls {
@@ -493,6 +494,13 @@ def KGEN_ParamConstantOp : KGENOp<"param.constant", [Pure, ConstantLike,
 
   let hasFolder = 1;
   let hasVerifier = 1;
+
+  let extraClassDeclaration = [{
+    struct Payload { bool containsPtr; Attribute value; };
+    ErrorOrSuccess compile(Payload &payload, TargetInfoAttr target);
+    ErrorTreeOrSuccess interpret(ArrayRef<Attribute> operands,
+      const Payload &payload, InterpreterState &state);
+  }];
 }
 
 //===----------------------------------------------------------------------===//
@@ -501,7 +509,7 @@ def KGEN_ParamConstantOp : KGENOp<"param.constant", [Pure, ConstantLike,
 
 def KGEN_ParamMaterializeOp : KGENOp<"param.materialize", [
     DeclareOpInterfaceMethods<ParamOpInterface, ["isImplicitlyParametric"]>,
-    DeclareOpInterfaceMethods<InterpreterOpInterface>]>,
+    BytecodeOpInterface,]>,
     NoParamDecls {
   let summary = [{
     The `kgen.param.materialize` operation materializes the value of a parameter
@@ -531,6 +539,13 @@ def KGEN_ParamMaterializeOp : KGENOp<"param.materialize", [
 
   let hasVerifier = 1;
   let hasCanonicalizeMethod = 1;
+
+  let extraClassDeclaration = [{
+    struct Payload { bool containsPtr; Attribute value; };
+    ErrorOrSuccess compile(Payload &payload, TargetInfoAttr target);
+    ErrorTreeOrSuccess interpret(ArrayRef<Attribute> operands,
+      const Payload &payload, InterpreterState &state);
+  }];
 }
 
 //===----------------------------------------------------------------------===//

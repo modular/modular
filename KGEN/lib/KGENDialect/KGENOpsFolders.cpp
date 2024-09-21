@@ -11,6 +11,32 @@
 using namespace M;
 using namespace KGEN;
 
+template <typename Payload>
+static ErrorOrSuccess populateContainsPtrPayload(Attribute value,
+                                                 Payload &payload) {
+  mlir::AttrTypeWalker walker;
+  walker.addWalk(
+      [](MemRefAttr memref) -> WalkResult { return WalkResult::interrupt(); });
+  payload.value = value;
+  payload.containsPtr = walker.walk(value).wasInterrupted();
+  return success();
+}
+
+template <typename Payload>
+ErrorOrSuccess interpretIfContainsPtr(const Payload &payload,
+                                      InterpreterState &state) {
+  if (payload.containsPtr) {
+    SmallVector<Attribute> attributes;
+    attributes.push_back(payload.value);
+    if (ErrorOrSuccess err = state.internalizeMemory(attributes); err.isError())
+      return err.takeError();
+    state.mapResults(attributes.front());
+  } else {
+    state.mapResults(payload.value);
+  }
+  return success();
+}
+
 //===----------------------------------------------------------------------===//
 // ParamConstantOp
 //===----------------------------------------------------------------------===//
@@ -44,12 +70,17 @@ LogicalResult ParamMaterializeOp::canonicalize(ParamMaterializeOp op,
   return success();
 }
 
+ErrorOrSuccess ParamMaterializeOp::compile(Payload &payload,
+                                           TargetInfoAttr target) {
+  return populateContainsPtrPayload(getValue(), payload);
+}
+
 ErrorTreeOrSuccess ParamMaterializeOp::interpret(ArrayRef<Attribute> operands,
+                                                 const Payload &payload,
                                                  InterpreterState &state) {
-  Attribute value = getValue();
-  if (ErrorOrSuccess err = state.internalizeMemory(value); err.isError())
+  if (ErrorOrSuccess err = interpretIfContainsPtr(payload, state);
+      err.isError())
     return ErrorTree(getLoc(), err.takeError());
-  state.mapResults(value);
   return success();
 }
 
@@ -1623,5 +1654,23 @@ ErrorTreeOrSuccess StructGEPOp::interpret(ArrayRef<Attribute> operands,
       offset,
       *cast<DataLayoutInterface>(targetType).getTypeAlign(state.getTarget()));
   state.mapResults(PointerAttr::get(ptr.getAddr() + offset, getType()));
+  return success();
+}
+
+//===----------------------------------------------------------------------===//
+// ParamConstantOp
+//===----------------------------------------------------------------------===//
+
+ErrorOrSuccess ParamConstantOp::compile(Payload &payload,
+                                        TargetInfoAttr target) {
+  return populateContainsPtrPayload(getValue(), payload);
+}
+
+ErrorTreeOrSuccess ParamConstantOp::interpret(ArrayRef<Attribute> operands,
+                                              const Payload &payload,
+                                              InterpreterState &state) {
+  if (ErrorOrSuccess err = interpretIfContainsPtr(payload, state);
+      err.isError())
+    return ErrorTree(getLoc(), err.takeError());
   return success();
 }
