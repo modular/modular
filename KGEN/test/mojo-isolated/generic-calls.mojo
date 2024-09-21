@@ -43,11 +43,14 @@ fn test_owned(owned x: RegPassable):
 
 # CHECK-LABEL: lit.func @"test_borrowed{{.*}}"(%x: !RegPassable)
 fn test_borrowed(x: RegPassable):
-    # CHECK: [[XSTACK:%.*]] = pop.stack_allocation 1 x !RegPassable
-    # CHECK: pop.store %x, [[XSTACK]]
-    # CHECK: [[XREF:%.*]] = lit.ref.from_pointer [[XSTACK]] :
-    # CHECK: lit.call @{{.*}}::@"borrowed_generic{{.*}}<{{.*}}>([[XREF]])
+    # CHECK: [[XREF:%.*]] = lit.var.decl "__sbvalue_tmp__"
+    # CHECK-NEXT: [[XPTR:%.*]] = lit.ref.to_pointer [[XREF]]
+    # CHECK-NEXT: mark_initialized [[XREF]]
+    # CHECK-NEXT: pop.store %x, [[XPTR]]
+    # CHECK-NEXT: [[XIMM:%.*]] = lit.ref.immut [[XREF]]
+    # CHECK-NEXT: lit.call @{{.*}}::@"borrowed_generic{{.*}}<{{.*}}>([[XIMM]])
     borrowed_generic(x)
+    # CHECK-NEXT: mark_consumed [[XREF]]
     # CHECK-NEXT: lit.ownership.use %x : !RegPassable
 
     # CHECK: lit.call @{{.*}}::@RegPassable::@"__copyinit__{{.*}}([[XCOPY:%.*]], %x)
