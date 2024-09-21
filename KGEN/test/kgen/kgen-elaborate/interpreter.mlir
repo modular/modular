@@ -504,3 +504,72 @@ kgen.generator export @interpret_pack_load() -> !kgen.pack<[si4, ui8]> {
   %0 = kgen.param.constant: !kgen.pack<[si4, ui8]> = <apply(:() -> !kgen.pack<[si4, ui8]> @pack_load)>
   kgen.return %0 : !kgen.pack<[si4, ui8]>
 }
+
+
+// -----
+
+#mem = #interp.memref<[(#interp.memory_handle<64, "0x0700000000000000">, heap, [], [])], 0, 0> : !kgen.pointer<index>
+
+// COM: Ensure 'load_from_mem' externalizes pointer values.
+
+// CHECK-LABEL: kgen.func @xd
+kgen.generator @xd() {
+  // CHECK-NEXT: %index7 = kgen.param.constant = <7>
+  kgen.param.constant: index = <load_from_mem(:pointer<index> #mem)>
+  kgen.return
+}
+
+// -----
+
+#mem = #interp.memref<[(#interp.memory_handle<64, "0x0700000000000000">, heap, [], [])], 0, 0> : !kgen.pointer<index>
+
+// COM: Ensure results of kgen.param.constant are internalized.
+
+kgen.generator @testInternalization(%pointer: !kgen.pointer<index>) -> index {
+  %3 = pop.load %pointer : !kgen.pointer<index>
+  kgen.return %3 : index
+}
+
+kgen.generator @makePtrPtrConstant<ptr: !kgen.pointer<index>>() -> !kgen.pointer<pointer<index>> {
+  %idx8 = index.constant 8
+  %idx-1 = index.constant -1
+  %0 = pop.aligned_alloc %idx-1, %idx8 : <index>
+  %pointer = kgen.param.constant: !kgen.pointer<index> = <ptr>
+  %x = pop.load %pointer : !kgen.pointer<index>
+  pop.store %x, %0 : !kgen.pointer<index>
+  %1 = pop.aligned_alloc %idx-1, %idx8 : !kgen.pointer<pointer<index>>
+  pop.store %0, %1 : !kgen.pointer<pointer<index>>
+  kgen.return %1 :  !kgen.pointer<pointer<index>>
+}
+
+// CHECK-LABEL: kgen.func export @constant() -> index {
+kgen.generator export @constant() -> index {
+  kgen.param.apply ptrptr = [() -> !kgen.pointer<pointer<index>>: @makePtrPtrConstant<:pointer<index> #mem>]()
+  kgen.param.apply loadIt = [(!kgen.pointer<index>) -> index: @testInternalization](load_from_mem(ptrptr))
+  // CHECK-NEXT: %index7 = kgen.param.constant = <7>
+  %0 = kgen.param.constant: index = <loadIt>
+  kgen.return %0 : index
+}
+
+// COM: Ensure results of kgen.param.materialize are internalized.
+
+kgen.generator @makePtrPtrMaterialize() -> !kgen.pointer<pointer<index>> {
+  %idx8 = index.constant 8
+  %idx-1 = index.constant -1
+  %0 = pop.aligned_alloc %idx-1, %idx8 : <index>
+  %pointer = kgen.param.materialize: !kgen.pointer<index> = <#mem>
+  %x = pop.load %pointer : !kgen.pointer<index>
+  pop.store %x, %0 : !kgen.pointer<index>
+  %1 = pop.aligned_alloc %idx-1, %idx8 : !kgen.pointer<pointer<index>>
+  pop.store %0, %1 : !kgen.pointer<pointer<index>>
+  kgen.return %1 :  !kgen.pointer<pointer<index>>
+}
+
+// CHECK-LABEL: kgen.func export @materialize() -> index {
+kgen.generator export @materialize() -> index {
+  kgen.param.apply ptrptr = [() -> !kgen.pointer<pointer<index>>: @makePtrPtrMaterialize]()
+  kgen.param.apply loadIt = [(!kgen.pointer<index>) -> index: @testInternalization](load_from_mem(ptrptr))
+  // CHECK-NEXT: %index7 = kgen.param.constant = <7>
+  %0 = kgen.param.constant: index = <loadIt>
+  kgen.return %0 : index
+}
