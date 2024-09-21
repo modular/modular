@@ -358,7 +358,6 @@ fn sync_parallelize[
     var parent_id = tracing.get_current_trace_id[TraceLevel.OP]()
 
     @parameter
-    @__copy_capture(parent_id)
     @always_inline
     fn func_wrapped(i: Int):
         with FlushDenormals():
@@ -454,7 +453,6 @@ fn _parallelize_impl[
     # We coalesce consecutive groups of work items into a single dispatch by
     # using the coarse_grained_func below.
     @always_inline
-    @__copy_capture(chunk_size, extra_items)
     @parameter
     fn coarse_grained_func(thread_idx: Int):
         # Calculate the start for the consecutive range of work items this
@@ -1160,7 +1158,9 @@ fn _get_start_indices_of_nth_subvolume_uint[
 
 @always_inline
 fn elementwise[
-    func: fn[width: Int, rank: Int] (StaticIntTuple[rank]) capturing -> None,
+    func: fn[width: Int, rank: Int] (StaticIntTuple[rank]) capturing [
+        _
+    ] -> None,
     simd_width: Int,
     *,
     use_blocking_impl: Bool = False,
@@ -1194,7 +1194,9 @@ fn elementwise[
 @always_inline
 fn elementwise[
     rank: Int, //,
-    func: fn[width: Int, rank: Int] (StaticIntTuple[rank]) capturing -> None,
+    func: fn[width: Int, rank: Int] (StaticIntTuple[rank]) capturing [
+        _
+    ] -> None,
     simd_width: Int,
     *,
     use_blocking_impl: Bool = False,
@@ -1232,7 +1234,9 @@ fn elementwise[
 
 @always_inline
 fn elementwise[
-    func: fn[width: Int, rank: Int] (StaticIntTuple[rank]) capturing -> None,
+    func: fn[width: Int, rank: Int] (StaticIntTuple[rank]) capturing [
+        _
+    ] -> None,
     simd_width: Int,
     *,
     use_blocking_impl: Bool = False,
@@ -1266,7 +1270,9 @@ fn elementwise[
 @always_inline
 fn elementwise[
     rank: Int, //,
-    func: fn[width: Int, rank: Int] (StaticIntTuple[rank]) capturing -> None,
+    func: fn[width: Int, rank: Int] (StaticIntTuple[rank]) capturing [
+        _
+    ] -> None,
     simd_width: Int,
     *,
     use_blocking_impl: Bool = False,
@@ -1298,7 +1304,9 @@ fn elementwise[
 @always_inline
 fn elementwise[
     rank: Int, //,
-    func: fn[width: Int, rank: Int] (StaticIntTuple[rank]) capturing -> None,
+    func: fn[width: Int, rank: Int] (StaticIntTuple[rank]) capturing [
+        _
+    ] -> None,
     simd_width: Int,
     *,
     use_blocking_impl: Bool = False,
@@ -1357,7 +1365,9 @@ fn elementwise[
 @always_inline
 fn _elementwise_impl[
     rank: Int, //,
-    func: fn[width: Int, rank: Int] (StaticIntTuple[rank]) capturing -> None,
+    func: fn[width: Int, rank: Int] (StaticIntTuple[rank]) capturing [
+        _
+    ] -> None,
     simd_width: Int,
     /,
     *,
@@ -1379,7 +1389,9 @@ fn _elementwise_impl[
 @always_inline
 fn _elementwise_impl_cpu[
     rank: Int, //,
-    func: fn[width: Int, rank: Int] (StaticIntTuple[rank]) capturing -> None,
+    func: fn[width: Int, rank: Int] (StaticIntTuple[rank]) capturing [
+        _
+    ] -> None,
     simd_width: Int,
     /,
     *,
@@ -1392,7 +1404,9 @@ fn _elementwise_impl_cpu[
 @always_inline
 fn _elementwise_impl_cpu_1d[
     rank: Int, //,
-    func: fn[width: Int, rank: Int] (StaticIntTuple[rank]) capturing -> None,
+    func: fn[width: Int, rank: Int] (StaticIntTuple[rank]) capturing [
+        _
+    ] -> None,
     simd_width: Int,
     *,
     use_blocking_impl: Bool,
@@ -1433,7 +1447,6 @@ fn _elementwise_impl_cpu_1d[
     var chunk_size = ceildiv(problem_size, num_workers)
 
     @always_inline
-    @__copy_capture(chunk_size, problem_size)
     @parameter
     fn task_func(i: Int):
         var start_offset = i * chunk_size
@@ -1441,7 +1454,6 @@ fn _elementwise_impl_cpu_1d[
         var len = end_offset - start_offset
 
         @always_inline
-        @__copy_capture(start_offset)
         @parameter
         fn func_wrapper[simd_width: Int](idx: Int):
             var offset = start_offset + idx
@@ -1455,7 +1467,9 @@ fn _elementwise_impl_cpu_1d[
 @always_inline
 fn _elementwise_impl_cpu_nd[
     rank: Int, //,
-    func: fn[width: Int, rank: Int] (StaticIntTuple[rank]) capturing -> None,
+    func: fn[width: Int, rank: Int] (StaticIntTuple[rank]) capturing [
+        _
+    ] -> None,
     simd_width: Int,
     *,
     use_blocking_impl: Bool,
@@ -1515,7 +1529,6 @@ fn _elementwise_impl_cpu_nd[
     var chunk_size = ceildiv(parallelism_size, num_workers)
 
     @always_inline
-    @__copy_capture(chunk_size, parallelism_size)
     @parameter
     fn task_func(i: Int):
         var start_parallel_offset = i * chunk_size
@@ -1551,7 +1564,9 @@ fn _elementwise_impl_cpu_nd[
 @always_inline
 fn _elementwise_impl_gpu[
     rank: Int, //,
-    func: fn[width: Int, rank: Int] (StaticIntTuple[rank]) capturing -> None,
+    func: fn[width: Int, rank: Int] (StaticIntTuple[rank]) capturing [
+        _
+    ] -> None,
     simd_width: UInt,
     *,
     target: StringLiteral,
@@ -1674,7 +1689,7 @@ fn _elementwise_impl_gpu[
 
 
 fn parallelize_over_rows[
-    func: fn (Int, Int) capturing -> None
+    func: fn (Int, Int) capturing [_] -> None
 ](shape: StaticIntTuple, axis: Int, grain_size: Int):
     """Parallelize func over non-axis dims of shape.
 
@@ -1696,7 +1711,6 @@ fn parallelize_over_rows[
     var chunk_size = ceildiv(num_rows, num_workers)
 
     @always_inline
-    @__copy_capture(chunk_size, num_rows)
     @parameter
     fn task_func(task_id: Int):
         var start_row = task_id * chunk_size
@@ -1718,21 +1732,23 @@ fn stencil[
     stencil_axis: StaticIntTuple[stencil_rank],
     simd_width: Int,
     type: DType,
-    map_fn: fn (StaticIntTuple[stencil_rank]) capturing -> (
+    map_fn: fn (StaticIntTuple[stencil_rank]) capturing [_] -> (
         StaticIntTuple[stencil_rank],
         StaticIntTuple[stencil_rank],
     ),
-    map_strides: fn (dim: Int) capturing -> Int,
-    load_fn: fn[simd_width: Int, type: DType] (
-        StaticIntTuple[rank]
-    ) capturing -> SIMD[type, simd_width],
-    compute_init_fn: fn[simd_width: Int] () capturing -> SIMD[type, simd_width],
+    map_strides: fn (dim: Int) capturing [_] -> Int,
+    load_fn: fn[simd_width: Int, type: DType] (StaticIntTuple[rank]) capturing [
+        _
+    ] -> SIMD[type, simd_width],
+    compute_init_fn: fn[simd_width: Int] () capturing [_] -> SIMD[
+        type, simd_width
+    ],
     compute_fn: fn[simd_width: Int] (
         StaticIntTuple[rank], SIMD[type, simd_width], SIMD[type, simd_width]
-    ) capturing -> SIMD[type, simd_width],
+    ) capturing [_] -> SIMD[type, simd_width],
     compute_finalize_fn: fn[simd_width: Int] (
         StaticIntTuple[rank], SIMD[type, simd_width]
-    ) capturing -> None,
+    ) capturing [_] -> None,
 ](shape: StaticIntTuple[rank], input_shape: StaticIntTuple[rank]):
     """Computes stencil operation in parallel.
 
@@ -1774,7 +1790,6 @@ fn stencil[
     alias unroll_factor = 8  # TODO: Comeup with a cost heuristic.
 
     @always_inline
-    @__copy_capture(chunk_size, parallelism_size)
     @parameter
     fn task_func(i: Int):
         var start_parallel_offset = i * chunk_size

@@ -47,9 +47,6 @@ fn test_elementwise[
         rebind[StaticIntTuple[outer_rank]](out_buffer.dynamic_shape),
     )
 
-    _ = buffer1
-    _ = buffer2
-
     for i2 in range(min(numelems, 64)):
         if out_buffer.data.offset(i2).load() != 2 * (i2 + 1):
             print("ERROR")
@@ -63,7 +60,6 @@ fn test_elementwise_implicit_runtime():
         vector[i] = i
 
     @always_inline
-    @__copy_capture(vector)
     @parameter
     fn func[simd_width: Int, rank: Int](idx: StaticIntTuple[rank]):
         vector[idx[0]] = 42
