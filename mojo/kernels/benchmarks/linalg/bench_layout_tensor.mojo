@@ -111,7 +111,6 @@ fn matmul_unrolled(inout C: Matrix, A: Matrix, B: Matrix):
                     ]()
 
             tile[calc_tile, tile_n, tile_k](C.cols, B.rows)
-            _ = m
 
     sync_parallelize[calc_row](C.rows // tile_m)
 
