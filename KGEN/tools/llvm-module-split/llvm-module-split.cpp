@@ -135,7 +135,7 @@ int main(int argc, char **argv) {
 
   auto outputLambda =
       [&](llvm::unique_function<LLVMModuleAndContext()> produceModule,
-          std::optional<int64_t> idx) mutable {
+          std::optional<int64_t> idx, unsigned numFunctionsBase) mutable {
         LLVMModuleAndContext subModule = produceModule();
         if (clOptions.outputPrefix == "-") {
           output->os() << "##############################################\n";

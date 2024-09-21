@@ -44,8 +44,9 @@ private:
 // Module Splitter
 //===----------------------------------------------------------------------===//
 
-using LLVMSplitProcessFn = function_ref<void(
-    llvm::unique_function<LLVMModuleAndContext()>, std::optional<int64_t>)>;
+using LLVMSplitProcessFn =
+    function_ref<void(llvm::unique_function<LLVMModuleAndContext()>,
+                      std::optional<int64_t>, unsigned)>;
 
 /// Helper to create a lambda that just forwards a preexisting modu.e.
 inline llvm::unique_function<LLVMModuleAndContext()>
@@ -61,8 +62,8 @@ void splitPerExported(LLVMModuleAndContext module,
 
 /// support for splitting an LLVM module into multiple parts with each part
 /// contains only one function (with exception for coroutine related functions.)
-void splitPerFunction(LLVMModuleAndContext module,
-                      LLVMSplitProcessFn processFn);
+void splitPerFunction(LLVMModuleAndContext module, LLVMSplitProcessFn processFn,
+                      unsigned numFunctionBase = 0);
 
 } // namespace M::KGEN
 

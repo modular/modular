@@ -319,7 +319,8 @@ void LLVMModuleSplitterImpl::split(LLVMSplitProcessFn processFn) {
   // If there is only one (or fewer) exported functions, forward the main
   // module.
   if (transitiveDeps.size() <= 1)
-    return processFn(forwardModule(std::move(mainModule)), std::nullopt);
+    return processFn(forwardModule(std::move(mainModule)), std::nullopt,
+                     /*numFunctionBase=*/0);
 
   // Now for each export'd global value, compute the transitive set of
   // dependencies using DFS.
@@ -420,7 +421,8 @@ void LLVMModuleSplitterImpl::split(LLVMSplitProcessFn processFn) {
   }
 
   if (setsToProcess.size() <= 1)
-    return processFn(forwardModule(std::move(mainModule)), std::nullopt);
+    return processFn(forwardModule(std::move(mainModule)), std::nullopt,
+                     /*numFunctionBase=*/0);
 
   // Sort the sets by to schedule the larger modules first.
   llvm::sort(setsToProcess,
@@ -435,12 +437,15 @@ void LLVMModuleSplitterImpl::split(LLVMSplitProcessFn processFn) {
     llvm::WriteBitcodeToFile(module, *buf);
   }
 
+  unsigned numFunctions = 0;
   for (auto [idx, set] : llvm::enumerate(setsToProcess)) {
+    unsigned next = numFunctions + set->size();
     auto makeModule = [set = std::move(*set), buf = BufferRef(buf.copy()),
                        strtab = strtab.copy()]() mutable {
       return readAndMaterializeDependencies(std::move(buf), set, *strtab);
     };
-    processFn(std::move(makeModule), idx);
+    processFn(std::move(makeModule), idx, numFunctions);
+    numFunctions = next;
   }
 }
 
@@ -476,7 +481,7 @@ public:
 
   /// Split the LLVM module into multiple modules using the provided process
   /// function.
-  void split(LLVMSplitProcessFn processFn);
+  void split(LLVMSplitProcessFn processFn, unsigned numFunctionBase);
 
 private:
   struct ValueInfo {
@@ -506,15 +511,17 @@ private:
 /// support for splitting an LLVM module into multiple parts with each part
 /// contains only one function (with exception for coroutine related functions.)
 void KGEN::splitPerFunction(LLVMModuleAndContext module,
-                            LLVMSplitProcessFn processFn) {
+                            LLVMSplitProcessFn processFn,
+                            unsigned numFunctionBase) {
   CompilerTimeTraceScope traceScope("splitPerFunction");
   LLVMModulePerFunctionSplitterImpl impl(std::move(module));
-  impl.split(processFn);
+  impl.split(processFn, numFunctionBase);
 }
 
 /// Split the LLVM module into multiple modules using the provided process
 /// function.
-void LLVMModulePerFunctionSplitterImpl::split(LLVMSplitProcessFn processFn) {
+void LLVMModulePerFunctionSplitterImpl::split(LLVMSplitProcessFn processFn,
+                                              unsigned numFunctionBase) {
   // Compute the value info for each global in the module.
   // NOTE: The visitation of globals then functions has to line up with
   // `readAndMaterializeDependencies`.
@@ -628,7 +635,8 @@ void LLVMModulePerFunctionSplitterImpl::split(LLVMSplitProcessFn processFn) {
     splitValue(value);
 
   if (setsToProcess.size() <= 1)
-    return processFn(forwardModule(std::move(mainModule)), std::nullopt);
+    return processFn(forwardModule(std::move(mainModule)), std::nullopt,
+                     numFunctionBase);
 
   // Prepare to materialize slices of the module by first writing the main
   // module as bitcode to a shared buffer.
@@ -639,12 +647,15 @@ void LLVMModulePerFunctionSplitterImpl::split(LLVMSplitProcessFn processFn) {
     llvm::WriteBitcodeToFile(module, *buf);
   }
 
+  unsigned numFunctions = numFunctionBase;
   for (auto [idx, set] : llvm::enumerate(setsToProcess)) {
+    unsigned next = numFunctions + set.size();
     auto makeModule = [set = std::move(set), buf = BufferRef(buf.copy()),
                        strtab = strtab.copy()]() mutable {
       return readAndMaterializeDependencies(std::move(buf), set, *strtab);
     };
-    processFn(std::move(makeModule), idx);
+    processFn(std::move(makeModule), idx, numFunctions);
+    numFunctions = next;
   }
 }
 
