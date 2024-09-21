@@ -549,19 +549,23 @@ emitDefaultIfPossible(const ParsedArgument &arg, ASTType type,
 }
 
 /// Given a type that potentially has all of its parameters unbound, implicitly
-/// add the parameter declarations to the function parameters.
+/// add the parameter declarations to the function parameters. For example, a
+/// struct type can be partially bound. This function implicitly adds a
+/// parameter declaration to the function for each unbound struct parameter and
+/// binds the struct type to reference those parameters.
+///
+/// For function types, if the capture lifetime set parameter is unbound, an
+/// implicit parameter for it is added, and a function type of the capture
+/// lifetime set parameter bound to it is returned.
+///
+/// Parameters can be either added to the end of the parameter as `Implicit`
+/// passing-kind parameters if `append` is set (this is used for unbound
+/// arguments), or added to the beginning of the parameter list as `Inferred`
+/// passing-kind parameters (this is used for unbound parameters).
 static ASTType addImplicitTypeParams(ASTType type,
                                      TypeCheckedParamList &paramList,
                                      bool append) {
-  // Check if the type has unbound parameters.
-  auto metatype = dyn_cast_or_null<AnyStructType>(type.getMetaType());
-  if (!metatype)
-    return type;
-  ArrayRef<Type> params = metatype.getSignature().getParamTypes();
-  if (params.empty())
-    return type;
-  PogListAttr paramListAttr = metatype.getSignature().getParamListAttrs();
-
+  // Functor to insert an element into a vector, either at the front or back.
   auto insertFn = [append](auto &vec, auto val) {
     if (append)
       vec.push_back(val);
@@ -569,12 +573,16 @@ static ASTType addImplicitTypeParams(ASTType type,
       vec.insert(vec.begin(), val);
   };
 
+  // The parameter decl references that will be used to fully bind the type,
+  // plus a parameter evaluator we use to progressively refine the type.
   SmallVector<TypedAttr> paramValues;
   ParserParamEvaluator evaluator(*paramList.shared.declResolver);
-  for (auto [idx, type] : llvm::enumerate(params)) {
-    auto funcDecl = ParamDeclAttr::get(paramList.declScope.mangleParamName(
-                                           paramListAttr.getName(idx).strref()),
-                                       evaluator.getReboundType(type));
+
+  // This functor adds a single parameter to the parameter list.
+  auto declareAndAddParam = [&](Type type, StringRef name) {
+    auto funcDecl =
+        ParamDeclAttr::get(paramList.declScope.mangleParamName(name),
+                           evaluator.getReboundType(type));
 
     insertFn(paramList.names, StringAttr::get(type.getContext()));
     insertFn(paramList.passingKinds,
@@ -582,7 +590,27 @@ static ASTType addImplicitTypeParams(ASTType type,
     insertFn(paramList.paramDeclAttrs, funcDecl);
     paramValues.push_back(ParamDeclRefAttr::get(funcDecl));
     evaluator.addInputValue(paramValues.back());
+  };
+
+  // First check for a function type.
+  // FIXME: We need an AnyFunction metatype.
+  if (auto sig = dyn_cast<LITSignatureType>(type)) {
+    TypedAttr lifetimes = sig.getCaptureLifetimes();
+    if (!isa<UnboundAttr>(lifetimes))
+      return type;
+    declareAndAddParam(lifetimes.getType(), "__lifetimes__");
+    return sig.getWithCaptureLifetimes(paramValues.back());
   }
+
+  // Check for a struct type.
+  auto metatype = dyn_cast_or_null<AnyStructType>(type.getMetaType());
+  if (!metatype)
+    return type;
+
+  // The unbound parameters will be on the struct type's signature.
+  TypeSignatureType sig = metatype.getSignature();
+  for (auto [idx, type] : llvm::enumerate(sig.getParamTypes()))
+    declareAndAddParam(type, sig.getParamListAttrs().getName(idx));
   return BindTypeAttr::get(PValue(type), paramValues);
 }
 

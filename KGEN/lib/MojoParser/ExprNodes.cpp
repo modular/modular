@@ -2987,14 +2987,16 @@ AnyValue FunctionTypeNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   // If the syntax specifies a capture lifetime set, emit it and bind it to the
   // signature type.
   if (lifetimeExpr) {
-    PValue lifetime = emitter.emitExprPValue(lifetimeExpr, EC_Lifetime);
-    if (!lifetime)
-      return {}; // Error already emitted.
-    if (!isa<LifetimeSetType>(lifetime.getType())) {
-      emitter.emitError(lifetimeExpr->getLoc())
-          << "closure capture lifetime set has unexpected type "
-          << lifetime.getType() << lifetimeExpr->getRange();
-      return {};
+    // Special rule for `[_]` when specifying the capture lifetime set: the
+    // set is unbound and will be autoparameterized.
+    PValue lifetime;
+    auto setType = LifetimeSetType::get(emitter.getContext());
+    if (lifetimeExpr->kind == ExprNode::kDiscardLiteral) {
+      lifetime = PValue(UnboundAttr::get(setType));
+    } else {
+      lifetime = emitter.emitExprPValue(lifetimeExpr, EC_Lifetime, setType);
+      if (!lifetime)
+        return {}; // Error already emitted.
     }
     signature = signature.getWithMetadata(
         signature.getMetadata().addCaptureLifetimes(lifetime));

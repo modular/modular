@@ -1747,16 +1747,27 @@ ASTType ExprEmitter::emitExprType(const ExprNode *expr, bool allowUnbound) {
     return {};
   }
 
+  // If the caller accepts a fully unbound type and the type is unbound, return
+  // it now without verifying the bindings.
+  if (allowUnbound)
+    return type;
+
+  // Check for a function type.
+  if (auto sig = dyn_cast<LITSignatureType>(type)) {
+    // For a fully bound type, require that the lifetime set is concrete.
+    if (isa<UnboundAttr>(sig.getCaptureLifetimes())) {
+      emitError(expr->getLoc(),
+                "function type missing required lifetime set parameter")
+          << expr->getRange();
+      return {};
+    }
+  }
+
   // Verify that all of the parameters for this type are bound.  We allow
   // PValues to refer to parameteric type, but anything calling `emitType`
   // can only handle fully bound types.
   auto *decl = type.getDecl(shared);
   if (!decl) // MLIR types are never parameterized.
-    return type;
-
-  // If the caller accepts a fully unbound type and the type is unbound, return
-  // it now without verifying the bindings.
-  if (allowUnbound)
     return type;
 
   auto structDecl = dyn_cast<StructDeclOp>(decl);

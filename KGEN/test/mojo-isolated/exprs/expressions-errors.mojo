@@ -652,7 +652,7 @@ fn test_subscript_conflict(a: Int):
   _ = a[idx=4, idx=7]
 
 
-struct Addable: 
+struct Addable:
     fn __add__(self, other: Self): pass # expected-note {{function declared here}}
 fn test(a: Reference[Addable, _], b: Addable):
     # FIXME: This shouldn't mention is_mutable since it is an implicit parameter.
@@ -681,11 +681,15 @@ fn bad_named_return() -> String as output:
    # expected-note @below {{remove the expression if the return slot is already initialized}}
    # expected-error @below {{'return' in function with a named return slot should not return the slot itself}}
    return output
- 
+
 
 fn bad_named_return2() -> Int as output:
    output = 42
    # expected-note @below {{remove the expression if the return slot is already initialized}}
    # expected-error @below {{'return' in function with a named return slot should not return the slot itself}}
    return output
- 
+
+
+fn unbound_function_type():
+  # expected-error @below {{function type missing required lifetime set parameter}}
+  var f: fn() [_] -> None
