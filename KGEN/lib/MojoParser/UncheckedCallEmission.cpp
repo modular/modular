@@ -173,9 +173,8 @@ private:
     SmallVector<std::pair<ValueDest, MLValue>> lvalueWritebacks;
 
     /// This is a list of values that we need to keep alive across the duration
-    /// of the call.  They will get lit.ownership.use operations at the end of
-    /// the call.
-    SmallVector<std::pair<Value, Value>> valuesToKeepAlive;
+    /// of the call and the corresponding vardecl to consume immediately after.
+    SmallVector<std::pair<Value, VarDeclOp>> valuesToConsume;
 
     AfterCallActions(CallEmitter &callEmitter) : callEmitter(callEmitter) {}
 
@@ -216,10 +215,9 @@ void CallEmitter::AfterCallActions::emit() {
   }
 
   // Emit all the lit.ownership.use ops.
-  OpBuilder &b = *emitter.builder;
-  for (auto [value, alloc] : valuesToKeepAlive) {
-    b.create<OwnershipUseOp>(callEmitter.loc, value);
-    b.create<POP::StackAllocLifetimeEndOp>(callEmitter.loc, alloc);
+  for (auto [value, tmp] : valuesToConsume) {
+    emitter.builder->create<OwnershipMarkConsumedOp>(callEmitter.loc, tmp);
+    emitter.builder->create<OwnershipUseOp>(callEmitter.loc, value);
   }
 }
 
@@ -826,7 +824,7 @@ Value CallEmitter::emitPreemittedArgumentAsDynamicValue(
   case ArgConvention::BorrowedInMem: {
     if (SBValue sbValue = argValAndExpr.ir.getIfSBValue()) {
       // "Convert" an SBValue to an MBValue by performing a bitcopy of the value
-      // into an untracked stack allocation.
+      // into a vardecl that is marked as consumed after the call.
       // FIXME(MOCO-725): This doesn't work in async functions, because the
       // borrowed argument is captured.
       if (calleeSig.isAsync()) {
@@ -836,20 +834,19 @@ Value CallEmitter::emitPreemittedArgumentAsDynamicValue(
       }
       const ExprNode *expr = argValAndExpr.expr;
       Location argLoc = expr->getLocation(emitter);
-      Value ptr = emitter.builder->create<POP::StackAllocationOp>(
-          argLoc, /*markedLifetimes=*/true,
-          PointerType::get(sbValue.getType()));
-      emitter.builder->create<POP::StackAllocLifetimeStartOp>(argLoc, ptr);
+      VarDeclOp tmp = emitter.emitVarDecl("__sbvalue_tmp__", sbValue.getType(),
+                                          argLoc, VarDeclKind::Synthesized);
+      Value ptr = emitter.builder->create<RefToPointerOp>(
+          argLoc, PointerType::get(sbValue.getType()), tmp);
+      emitter.builder->create<OwnershipMarkInitializedOp>(argLoc, tmp);
       emitter.builder->create<POP::StoreOp>(argLoc, sbValue, ptr);
-      auto immortal = LifetimeUnionAttr::get(emitter.getContext());
-      auto ref = emitter.builder->create<RefFromPointerOp>(
-          argLoc, ptr, immortal, /*startUninit=*/false, /*endUninit=*/false);
+      Value immRef = emitter.builder->create<RefImmutOp>(argLoc, tmp);
 
       // Because the result of StackAllocationOp is not a lifetime trackable,
       // StoreOp will not transfer ownership and we must manually extend the
       // lifetime of the SBValue.
-      afterCallActions.valuesToKeepAlive.emplace_back(sbValue, ptr);
-      return MBValue(ref);
+      afterCallActions.valuesToConsume.emplace_back(sbValue, tmp);
+      return MBValue(immRef);
     }
     // Promote PValue's if needed.
     Value result = emitter.emitMBValue(argValAndExpr, EC_CallArgValue);
