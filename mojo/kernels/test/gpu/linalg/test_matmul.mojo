@@ -38,10 +38,12 @@ from memory import memset_zero, stack_allocation, UnsafePointer
 from memory.reference import _GPUAddressSpace as GPUAddressSpace
 from testing import assert_equal as assert_equal_val
 
+
 from utils import StaticIntTuple
 from internal_utils import linspace
 from linalg.utils import elementwise_epilogue_type
 from utils.index import Index
+from internal_utils._utils import ValOrDim, dynamic, static
 
 alias init_fn_type = fn (buff: NDBuffer) capturing -> None
 
@@ -75,38 +77,31 @@ fn epilogue_test_fn[
 
 fn test[
     type: DType,
-    static_MNK: DimList = DimList.create_unknown[3](),
     /,
     *,
     transpose_b: Bool = False,
     init_a: Optional[init_fn_type] = None,
     init_b: Optional[init_fn_type] = None,
     lambda_fn: Optional[epilogue_func_type] = None,
-](ctx: DeviceContext, dim3: StaticIntTuple[3]) raises:
+](ctx: DeviceContext, m: ValOrDim, n: ValOrDim, k: ValOrDim) raises:
     constrained[
-        static_MNK.has_value[1]() and static_MNK.has_value[2](),
+        int(n.dim) > 0 and int(k.dim) > 0,
         "This test currently requires static N and K.",
     ]()
 
-    @parameter
-    if static_MNK.all_known[3]():
-        assert_equal_val(static_MNK.at[0](), dim3[0])
-        assert_equal_val(static_MNK.at[1](), dim3[1])
-        assert_equal_val(static_MNK.at[2](), dim3[2])
-    else:
-        assert_equal_val(static_MNK.at[1](), dim3[1])
-        assert_equal_val(static_MNK.at[2](), dim3[2])
+    var M = m.value
+    var N = n.value
 
-    var M = dim3[0]
-    alias N = static_MNK.at[1]()
-    alias K = static_MNK.at[2]()
-
-    alias static_a_shape = DimList(Dim(), K)
-    alias static_b_shape = DimList(N, K) if transpose_b else DimList(K, N)
-    alias static_c_shape = DimList(Dim(), N)
-    var dynamic_a_shape = DimList(M, K)
-    var dynamic_b_shape = DimList(N, K) if transpose_b else DimList(K, N)
-    var dynamic_c_shape = DimList(M, N)
+    alias static_a_shape = DimList(m.dim, k.dim)
+    alias static_b_shape = DimList(n.dim, k.dim) if transpose_b else DimList(
+        k.dim, n.dim
+    )
+    alias static_c_shape = DimList(m.dim, n.dim)
+    var dynamic_a_shape = DimList(m.value, k.value)
+    var dynamic_b_shape = DimList(n.value, k.value) if transpose_b else DimList(
+        k.value, n.value
+    )
+    var dynamic_c_shape = DimList(m.value, n.value)
 
     var a_host = HostNDBuffer[type, 2, static_a_shape](dynamic_a_shape)
     var b_host = HostNDBuffer[type, 2, static_b_shape](dynamic_b_shape)
@@ -156,7 +151,7 @@ fn test[
 
     @parameter
     @always_inline
-    @__copy_capture(c_tensor, M)
+    @__copy_capture(c_tensor, M, N)
     fn epilogue_fn[
         _type: DType, width: Int, *, alignment: Int = 1
     ](idx: StaticIntTuple[2], val: SIMD[_type, width]) capturing -> None:
@@ -165,7 +160,7 @@ fn test[
         @parameter
         if lambda_fn:
             alias func = lambda_fn.value()
-            update_val = func(idx, (M, int(N)), update_val)
+            update_val = func(idx, (M, N), update_val)
         c_tensor.store(idx, rebind[SIMD[type, width]](update_val))
 
     @parameter
@@ -208,7 +203,7 @@ fn test[
     alias pack_size = simdwidthof[type, target = _get_nvptx_target()]()
 
     @always_inline
-    @__copy_capture(c_ref_tensor, M)
+    @__copy_capture(c_ref_tensor, M, N)
     @parameter
     fn func[simd_width: Int, rank: Int](idx0: StaticIntTuple[rank]):
         var idx = rebind[StaticIntTuple[2]](idx0)
@@ -220,7 +215,7 @@ fn test[
         @parameter
         if lambda_fn:
             alias element_lambda = lambda_fn.value()
-            update_val = element_lambda(idx, (M, int(N)), val)
+            update_val = element_lambda(idx, (M, N), val)
 
         c_ref_tensor.store(
             idx,
@@ -258,111 +253,95 @@ fn test[
 def main():
     with DeviceContext() as ctx:
         print("===> tfloat32-float32 mma")
-        test[DType.float32, DimList(Dim(), 384, 128), init_a=linspace](
-            ctx, (256, 384, 128)
+        test[DType.float32, init_a=linspace](
+            ctx, dynamic(256), static[384](), static[128]()
         )
-        test[DType.float32, DimList(Dim(), 4096, 4096), init_b=linspace](
-            ctx, (128, 4096, 4096)
+        test[DType.float32, init_b=linspace](
+            ctx, dynamic(128), static[4096](), static[4096]()
         )
         test[
             DType.float32,
-            DimList(Dim(), 12288, 4096),
             init_a=linspace,
             init_b=linspace,
-        ](ctx, (512, 12288, 4096))
-        test[DType.float32, DimList(Dim(), 4096, 11008)](ctx, (23, 4096, 11008))
-        test[DType.float32, DimList(Dim(), 4096, 12288)](ctx, (67, 4096, 12288))
-        test[DType.float32, DimList(Dim(), 4096, 4096)](ctx, (555, 4096, 4096))
+        ](ctx, dynamic(512), static[12288](), static[4096]())
+        test[DType.float32](ctx, dynamic(23), static[4096](), static[11008]())
+        test[DType.float32](ctx, dynamic(67), static[4096](), static[12288]())
+        test[DType.float32](ctx, dynamic(555), static[4096](), static[4096]())
 
         print("===> bfloat16-float32 mma")
-        test[DType.bfloat16, DimList(Dim(), 3072, 12288), init_a=linspace](
-            ctx, (1024, 3072, 12288)
+        test[DType.bfloat16, init_a=linspace](
+            ctx, dynamic(1024), static[3072](), static[12288]()
         )
-        test[DType.bfloat16, DimList(Dim(), 12288, 3072), init_b=linspace](
-            ctx, (11379, 12288, 3072)
+        test[DType.bfloat16, init_b=linspace](
+            ctx, dynamic(1024), static[12288](), static[3072]()
         )
         test[
             DType.bfloat16,
-            DimList(Dim(), 5120, 3072),
             init_a=linspace,
             init_b=linspace,
-        ](ctx, (9127, 5120, 3072))
-        test[DType.bfloat16, DimList(Dim(), 3072, 32768)](
-            ctx, (1171, 3072, 32768)
+        ](ctx, dynamic(1024), static[5120](), static[3072]())
+        test[DType.bfloat16](
+            ctx, dynamic(1024), static[3072](), static[32768]()
         )
-        test[DType.bfloat16, DimList(Dim(), 3072, 3072)](
-            ctx, (16315, 3072, 3072)
-        )
+        test[DType.bfloat16](ctx, dynamic(1024), static[3072](), static[3072]())
 
         print("===> tfloat32-float32 mma with epilogue")
         test[
             DType.float32,
-            DimList(Dim(), 3072, 3072),
             lambda_fn=epilogue_test_fn,
-        ](ctx, (999, 3072, 3072))
+        ](ctx, dynamic(999), static[3072](), static[3072]())
         test[
             DType.float32,
-            DimList(Dim(), 12288, 2048),
             lambda_fn=epilogue_test_fn,
-        ](ctx, (777, 12288, 2048))
+        ](ctx, dynamic(777), static[12288](), static[2048]())
         print("===> bfloat16-float32 mma with epilogue")
         test[
             DType.bfloat16,
-            DimList(Dim(), 3072, 12288),
             transpose_b=True,
             lambda_fn=epilogue_test_fn,
-        ](ctx, (14, 3072, 12288))
+        ](ctx, dynamic(14), static[3072](), static[12288]())
         test[
             DType.bfloat16,
-            DimList(Dim(), 12288, 3072),
             transpose_b=True,
             lambda_fn=epilogue_test_fn,
-        ](ctx, (33, 12288, 3072))
+        ](ctx, dynamic(33), static[12288](), static[3072]())
         test[
             DType.bfloat16,
-            DimList(Dim(), 5120, 3072),
             transpose_b=True,
             lambda_fn=epilogue_test_fn,
-        ](ctx, (101, 5120, 3072))
+        ](ctx, dynamic(101), static[5120](), static[3072]())
         test[
             DType.bfloat16,
-            DimList(Dim(), 3072, 32768),
             transpose_b=True,
             lambda_fn=epilogue_test_fn,
-        ](ctx, (400, 3072, 32768))
+        ](ctx, dynamic(400), static[3072](), static[32768]())
         test[
             DType.bfloat16,
-            DimList(Dim(), 3072, 3072),
             transpose_b=True,
             lambda_fn=epilogue_test_fn,
-        ](ctx, (910, 3072, 3072))
+        ](ctx, dynamic(910), static[3072](), static[3072]())
         test[
             DType.bfloat16,
-            DimList(Dim(), 6144, 4096),
             transpose_b=True,
             lambda_fn=epilogue_test_fn,
-        ](ctx, (50, 6144, 4096))
+        ](ctx, dynamic(50), static[6144](), static[4096]())
         test[
             DType.bfloat16,
-            DimList(Dim(), 4096, 4096),
             transpose_b=True,
             lambda_fn=epilogue_test_fn,
-        ](ctx, (22, 4096, 4096))
+        ](ctx, dynamic(22), static[4096](), static[4096]())
         test[
             DType.bfloat16,
-            DimList(Dim(), 28672, 4096),
             transpose_b=True,
             lambda_fn=epilogue_test_fn,
-        ](ctx, (88, 28672, 4096))
+        ](ctx, dynamic(88), static[28672](), static[4096]())
         test[
             DType.bfloat16,
-            DimList(Dim(), 4096, 14336),
             transpose_b=True,
             lambda_fn=epilogue_test_fn,
-        ](ctx, (100, 4096, 14336))
+        ](ctx, dynamic(100), static[4096](), static[14336]())
         test[
             DType.bfloat16,
-            DimList(Dim(), 128256, 4096),
             transpose_b=True,
             lambda_fn=epilogue_test_fn,
-        ](ctx, (600, 128256, 4096))
+        ](ctx, dynamic(600), static[128256](), static[4096]())
