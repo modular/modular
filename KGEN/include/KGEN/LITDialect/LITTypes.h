@@ -90,9 +90,6 @@ public:
   /// Get the user result type of the signature.
   Type getUserResultType();
 
-  /// Return this signature with the input parameters dropped.
-  LITSignatureType dropParamValues();
-
   /// Returns true if the argument at this index is any vararg or a pack.
   bool isAnyVarArg(size_t index);
 
@@ -138,6 +135,12 @@ public:
   /// and invokes 'emitError'+returns null on error.
   FunctionType substituteImplicitLifetimesIntoValues(
       ArrayRef<TypedAttr> values, function_ref<InFlightDiagnostic()> emitError);
+
+  /// Return this signature with the input parameters dropped.
+  LITSignatureType dropParamValues();
+
+  /// Return this signature with the specified capture lifetimes.
+  LITSignatureType getWithCaptureLifetimes(TypedAttr lifetimes);
 
   /// This method replaces direct uses of NAMED implicit lifetime declarations
   /// with index-based references corresponding to the signature.  lifetimeDecls

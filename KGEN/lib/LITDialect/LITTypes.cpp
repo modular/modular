@@ -1108,6 +1108,13 @@ LITSignatureType LITSignatureType::dropParamValues() {
       FnMetadataAttr::get(getArgListAttrs(), /*numImplicitLifetimeDecls=*/0));
 }
 
+LITSignatureType
+LITSignatureType::getWithCaptureLifetimes(TypedAttr lifetimes) {
+  return getWithMetadata(
+      FnMetadataAttr::get(getArgListAttrs(), getParamListAttrs(),
+                          getNumImplicitLifetimeDecls(), lifetimes));
+}
+
 bool LITSignatureType::isAnyVarArg(size_t index) {
   return getMetadata().isAnyVarArg(index);
 }

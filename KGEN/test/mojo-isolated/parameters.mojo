@@ -304,6 +304,12 @@ fn autoparam_of_params[a: int, //, b: IndexParam, c: IndexParam[a]]():
     pass
 
 
+# CHECK-LABEL: lit.func @"function_autoparam
+# CHECK-SAME: :*(0,0):<[""]*"__lifetimes__`": lifetime.set, +, f: !lit.signature<:*"__lifetimes__`":() capturing -> !kgen.none>
+fn function_autoparam[f: fn () capturing [_] -> None]():
+    pass
+
+
 # CHECK-LABEL: lit.func @"auto_kw_default{{.*}}"<u = 3, |, v = 3, ?, {{.*}}, {{.*}}>(%a
 fn auto_kw_default[u: int = `3`, /, v: int = `3`](a: IndexParam, b: IndexParam):
   pass
