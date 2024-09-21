@@ -57,7 +57,11 @@ CallOperands::diagnoseKeywordOperands(PogListAttr pogListAttr,
   for (auto [argIdx, pogAttr] : llvm::enumerate(pogListAttr.getPogs())) {
     StringAttr name = pogAttr.getName();
     PassingKind passingKind = pogAttr.getPassingKind();
-    if (passingKind == PassingKind::Implicit)
+    // Implicit and inferred parameter aren't passed by the user. They must be
+    // inferred from values bound to parameters or arguments, so we don't have
+    // to verify them here.
+    if (passingKind == PassingKind::Implicit ||
+        passingKind == PassingKind::Inferred)
       continue;
     if (pogListAttr.isPack(argIdx) || pogListAttr.isVariadic(argIdx))
       continue; // Variadic/pack args cannot be specified by their keyword.
