@@ -318,6 +318,12 @@ fn function_autoparam[f: fn () capturing [_] -> None, g: fn () capturing [_] -> 
     alias bind_one = function_autoparam[function, function]
 
 
+# CHECK-LABEL: lit.func @"autoparam_param_vararg
+# CHECK-SAME: <[""]*"__lifetimes__`": lifetime.set, +, f: {{.*}}, x: variadic<index> var>
+fn autoparam_param_vararg[f: fn () [_] -> None, *x: int]():
+    pass
+
+
 # CHECK-LABEL: lit.func @"auto_kw_default{{.*}}"<u = 3, |, v = 3, ?, {{.*}}, {{.*}}>(%a
 fn auto_kw_default[u: int = `3`, /, v: int = `3`](a: IndexParam, b: IndexParam):
   pass
