@@ -230,6 +230,12 @@ bool TypeDeclInfo::isRegisterPassableTrivial(Type type) const {
   if (auto valueType = dyn_cast<LIT::StructType>(type))
     return getStructDeclForType(valueType).isRegisterPassableTrivial();
 
+  // This is not trivial if it is a reference to a trait value.
+  if (auto paramRef = dyn_cast<ParamRefType>(type)) {
+    if (isa<TraitType>(paramRef.getParam().getType()))
+      return false;
+  }
+
   // Other values of raw MLIR type are always trivial.
   return true;
 }
