@@ -314,7 +314,8 @@ static SmallVector<StringAttr> getFunctionParameterNames(LIT::FuncOp funcOp) {
   SmallVector<StringAttr> result;
   for (PogMetadataAttr pogAttr :
        funcOp.getSignature().getParamListAttrs().getPogs())
-    if (pogAttr.getPassingKind() != PassingKind::Implicit)
+    if (pogAttr.getPassingKind() != PassingKind::Implicit &&
+        !pogAttr.getName().empty())
       result.emplace_back(pogAttr.getName());
   return result;
 }
