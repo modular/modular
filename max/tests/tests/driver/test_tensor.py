@@ -26,6 +26,12 @@ def test_tensor():
     assert (3, 4, 5) == tensor.shape
     assert 3 == tensor.rank
 
+    # Validate that shape can be specified as a list and we copy the dims.
+    shape = [2, 3]
+    tensor2 = Tensor(shape, DType.float32)
+    shape[0] = 1
+    assert (2, 3) == tensor2.shape
+
 
 def test_get_and_set():
     tensor = Tensor((3, 4, 5), DType.int32)
@@ -40,6 +46,9 @@ def test_get_and_set():
     # Setting negative indices
     tensor[-1, -1, -1] = 72
     assert 72 == tensor[2, 3, 4].item()
+
+    # Validate that passing the indices as a sequence object works.
+    assert 72 == tensor[(2, 3, 4)].item()
 
     # Ensure we're not writing to the same memory location with each index
     assert 68 == tensor[0, 1, 3].item()
