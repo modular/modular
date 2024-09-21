@@ -13,6 +13,7 @@ from typing import (
     Generator,
     Optional,
     Protocol,
+    Sequence,
     Tuple,
     Type,
     TypeVar,
@@ -27,8 +28,8 @@ from max.dtype import DType
 from .driver import CPU, Device
 
 _IdxElType = Union[int, slice]
-IndexType = Union[Tuple[_IdxElType, ...], _IdxElType]
-ShapeType = Tuple[int, ...]
+IndexType = Union[Sequence[_IdxElType], _IdxElType]
+ShapeType = Sequence[int]
 
 
 @runtime_checkable
