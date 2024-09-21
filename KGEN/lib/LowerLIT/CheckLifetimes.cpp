@@ -2209,24 +2209,6 @@ void DestructorInsertion::checkTryOp(LIT::TryOp tryOp) {
 
   Region &exceptRegion = tryOp.getExceptRegion();
   exceptSets.scanBlock(exceptRegion.front());
-  // The except block initializes its block arguments, so if these are tracked
-  // we must mark them as consumed.
-  for (Value blockArg : exceptRegion.getArguments()) {
-    ValueRef valueRef = valueSet.getDirectValueRef(blockArg, /*isDeref=*/false);
-    if (!valueRef)
-      continue;
-    if (!exceptSets.consumedValues[valueRef.startBit]) {
-      // There were no references to the owned arguments, so generate a
-      // destructor at beginning of the block.
-      ImplicitLocOpBuilder builder = ImplicitLocOpBuilder::atBlockBegin(
-          exceptRegion.getLoc(), &exceptRegion.front());
-      destroyValueIfNeeded(blockArg, valueRef, builder,
-                           /*opWithUse=*/nullptr);
-      valueRef.markBits(consumedValues, false);
-    } else {
-      valueRef.markBits(exceptSets.consumedValues, false);
-    }
-  }
 
   // The normal flow finishes with the else block, process it to see what
   // the input consumedValues set to the else block is.
