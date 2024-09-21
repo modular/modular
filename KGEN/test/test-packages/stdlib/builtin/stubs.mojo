@@ -68,6 +68,10 @@ struct Error:
     fn __copyinit__(inout self, existing: Self):
         pass
 
+    # A method for testing.
+    fn use(self):
+        pass
+
 
 struct object:
     fn __init__(inout self):

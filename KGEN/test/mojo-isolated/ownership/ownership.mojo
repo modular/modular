@@ -1044,3 +1044,56 @@ struct IntAndOptional:
     var handle: Int
     var error: Optional[String]
 
+
+# CHECK: lit.func @"caught_eh_cleanup
+fn caught_eh_cleanup():
+    # CHECK-NEXT: %eh1 = lit.var.decl "eh1"
+    # CHECK-NEXT: lit.try {
+    try:
+      # CHECK-NEXT: [[NORMALRESULT:%.*]] = lit.var.decl
+
+      # CHECK: lit.var.lifetime.start %eh1
+      # This function raises, potentially defining %eh1.
+      _ = maybeDim()
+      # CHECK: [[RAISE:%.*]] = lit.call @ownership::@"maybeDim
+
+      # Check for the error and handle it.
+      # CHECK-NEXT: hlcf.if [[RAISE]] {
+      # EH is never used, so it can be immediately released.
+      # CHECK-NEXT:    [[EH1:%.*]] = lit.ref.load %eh1
+      # CHECK-NEXT:    lit.call {{.*}}__del__{{.*}}([[EH1]])
+      # CHECK-NEXT:    lit.var.lifetime.end %eh1
+
+      # Normal result is never used
+      # CHECK-NEXT: lit.ownership.mark_consumed [[NORMALRESULT]]
+      # CHECK-NEXT: lit.var.lifetime.end [[NORMALRESULT]]
+      # CHECK-NEXT: lit.try.raise
+    except eh1:
+      pass
+
+    # CHECK: %eh2 = lit.var.decl "eh2"
+    # CHECK-NEXT: lit.try {
+    try:
+      # CHECK-NEXT: [[NORMALRESULT:%.*]] = lit.var.decl
+
+      # CHECK: lit.var.lifetime.start %eh2
+      # This function raises, potentially defining %eh2.
+      _ = maybeDim()
+      # CHECK: [[RAISE:%.*]] = lit.call @ownership::@"maybeDim
+
+      # Check for the error and handle it.
+      # CHECK-NEXT: hlcf.if [[RAISE]] {
+      # Normal result is never used
+      # CHECK-NEXT: lit.ownership.mark_consumed [[NORMALRESULT]]
+      # CHECK-NEXT: lit.var.lifetime.end [[NORMALRESULT]]
+      # CHECK-NEXT: lit.try.raise
+
+    # CHECK: } except {
+    except eh2:
+      # CHECK-NEXT: [[EH2:%.*]] = lit.ref.load %eh2
+      # CHECK-NEXT: lit.call {{.*}}use{{.*}}([[EH2]])
+      eh2.use()
+
+      # CHECK-NEXT: [[EH2:%.*]] = lit.ref.load %eh2
+      # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}([[EH2]])
+
