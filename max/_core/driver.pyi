@@ -6,9 +6,11 @@
 from __future__ import annotations
 
 from enum import Enum
-from typing import Any, Tuple, Union
+from typing import Any, Sequence, Tuple, Union
 
-IndexType = Union[int, Tuple[Union[int, slice], ...]]
+_IdxElType = Union[int, slice]
+IndexType = Union[Sequence[_IdxElType], _IdxElType]
+ShapeType = Sequence[int]
 
 class DType(Enum): ...
 
@@ -17,14 +19,14 @@ class Device:
 
 class Tensor:
     dtype: DType
-    shape: Tuple[int, ...]
+    shape: ShapeType
     rank: int
     is_contiguous: bool
     is_host: bool
 
     def __init__(
         self,
-        shape: Tuple[int, ...],
+        shape: ShapeType,
         dtype: DType,
         device: Device,
     ) -> None: ...
