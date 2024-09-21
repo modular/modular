@@ -104,7 +104,7 @@ fn _elementwise[
             ),
         )
 
-    elementwise[func=func, simd_width = simdwidthof[type](), rank=1](
+    elementwise[func=func, simd_width = simdwidthof[type]()](
         Index(len(a_buffer))
     )
 
@@ -133,7 +133,7 @@ fn _elementwise[
             ),
         )
 
-    elementwise[func=func, simd_width = simdwidthof[type](), rank=1](
+    elementwise[func=func, simd_width = simdwidthof[type]()](
         Index(len(b_buffer))
     )
 
@@ -714,9 +714,7 @@ struct Tensor[type: DType](
         # Use the `elementwise` generator to run `pow` in parallel.
         alias type_simd_width = simdwidthof[type]()
 
-        elementwise[func=_pow, simd_width=type_simd_width, rank=1](
-            Index(len(buffer))
-        )
+        elementwise[func=_pow, simd_width=type_simd_width](Index(len(buffer)))
 
         return result
 
@@ -742,7 +740,7 @@ struct Tensor[type: DType](
                 idx, buffer.load[width=width](idx).cast[new_type]()
             )
 
-        elementwise[func=func, simd_width = simdwidthof[type](), rank=1](
+        elementwise[func=func, simd_width = simdwidthof[type]()](
             Index(len(buffer))
         )
 
@@ -767,7 +765,6 @@ struct Tensor[type: DType](
         var buffer = self._to_buffer()
         var result_buffer = result._to_buffer()
 
-        @__copy_capture(result_buffer, buffer)
         @parameter
         fn func[width: Int, rank: Int](indices: StaticIntTuple[rank]):
             var idx = indices[0]
@@ -776,7 +773,7 @@ struct Tensor[type: DType](
                 buffer.load[width=width](idx).clamp(lower_bound, upper_bound),
             )
 
-        elementwise[func=func, simd_width = simdwidthof[type](), rank=1](
+        elementwise[func=func, simd_width = simdwidthof[type]()](
             Index(len(buffer))
         )
 
