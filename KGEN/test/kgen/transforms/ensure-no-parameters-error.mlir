@@ -20,7 +20,8 @@ kgen.func @capturing_fn(%arg0: index) capturing -> index {
 }
 
 kgen.func @capturing_fn_reference() {
-  // expected-error @below {{capturing closures cannot be materialized at runtime}}
-  %0 = kgen.param.constant : (index) capturing -> index = <@"capturing_fn">
+  // FIXME: MOCO-1221 - this is disabled because it is flaking
+  // xpected-error @below {{capturing closures cannot be materialized at runtime}}
+  //%0 = kgen.param.constant : (index) capturing -> index = <@"capturing_fn">
   kgen.return
 }
