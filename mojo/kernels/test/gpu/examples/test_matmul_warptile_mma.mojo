@@ -448,6 +448,8 @@ fn run_matmul_mma_warptiling(ctx: DeviceContext) raises:
     var b_device = ctx.create_buffer[DType.float32](K * N)
     var c_device = ctx.create_buffer[DType.float32](M * N)
 
+    # CHECK: copy_to_device 1
+    print("copy_to_device 1")
     ctx.enqueue_copy_to_device(a_device, a_host)
     ctx.enqueue_copy_to_device(b_device, b_host)
 
@@ -475,7 +477,7 @@ fn run_matmul_mma_warptiling(ctx: DeviceContext) raises:
     ](threads_per_block=K10_NUM_THREADS)
 
     @always_inline
-    @__copy_capture(a_buffer, b_buffer, c_buffer, func)
+    @__copy_capture(a_buffer, b_buffer, c_buffer)
     @parameter
     fn run_func(ctx: DeviceContext) raises:
         ctx.enqueue_function(
@@ -495,9 +497,14 @@ fn run_matmul_mma_warptiling(ctx: DeviceContext) raises:
     print(flops * 1e-9 / sectime, " GFLOPS")
     print()
 
+    # CHECK: copy_from_device 1
+    print("copy_from_device 1")
     ctx.enqueue_copy_from_device(c_host, c_device)
 
     # Perform naive matmul to compare results & performance.
+
+    # CHECK: copy_to_device 2
+    print("copy_to_device 2")
 
     ctx.enqueue_copy_to_device(a_device, a_host)
     ctx.enqueue_copy_to_device(b_device, b_host)
@@ -536,6 +543,12 @@ fn run_matmul_mma_warptiling(ctx: DeviceContext) raises:
 
     ctx.enqueue_copy_from_device(c_host_naive, c_device)
 
+    # CHECK: copy_from_device 2
+    print("copy_from_device 2")
+
+    # Block until the copy back gets done.
+    ctx.synchronize()
+
     var failed = False
     for i in range(M * N):
         var outVal = c_host[i]
@@ -552,9 +565,9 @@ fn run_matmul_mma_warptiling(ctx: DeviceContext) raises:
     else:
         print("Failed ❌: results mismatch")
 
-    _ = a_device
-    _ = b_device
-    _ = c_device
+    _ = a_device^
+    _ = b_device^
+    _ = c_device^
 
     _ = a_host
     _ = b_host
