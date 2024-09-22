@@ -399,8 +399,9 @@ TypeDeclInfo::getFieldContaining(LIT::StructType declRef, unsigned fieldNo) {
 namespace {
 struct ValueRef;
 struct ValueInfo {
-  /// This is the declared value being tracked.
-  const Value value;
+  /// This is the declared value being tracked.  This can be null'd out if the
+  /// value is completely removed.
+  Value value;
 
   /// This indicates the (first, end] bitrange in the bit vector corresponding
   /// to this value.
@@ -564,50 +565,13 @@ struct ValueSet {
   /// Add a value to the set that we are tracking.  This includes:
   ///  * the MLIR representation for the value itself
   ///  * whether the value is a by-ref to the underlying logical value
-  ///  * whether the value starts out uninit or init at the function start
-  ///  * whether the value is uninit or init at normal function return.
+  ///  * The bitrange it covers
   void addValue(Value val, const LifetimeTrackable &trackable,
-                DebugInfo::DILocalVariableAttr debugVariable = {}) {
-    // Figure out how many bits to track for this value at the lifetime if mem.
-    unsigned numValueBits;
-    TypedAttr valueLifetime;
-    if (!val) {
-      numValueBits = 1; // Nothing to do for the sentinel.
-    } else if (trackable.isIndirect) {
-      // This should be an assertion, but check softly to help IR clients.
-      auto refType = dyn_cast<RefType>(val.getType());
-      if (!refType) {
-        mlir::emitError(val.getLoc())
-            << "trackable IR value of type " << val.getType()
-            << " should have type '!lit.ref': " << val;
-        return;
-      }
-      Type valType = refType.getElementType();
-      numValueBits = typeDeclInfo.getNumFieldsInType(valType);
+                DebugInfo::DILocalVariableAttr debugVariable = {});
 
-      // Remember the lifetime if not immortal.
-      if (!isa<AnyLifetimeAttr>(refType.getLifetime()))
-        valueLifetime = refType.getLifetime();
-    } else {
-      // We don't track trivial values of register type.
-      if (typeDeclInfo.isRegisterPassableTrivial(val.getType()))
-        return;
-      // We are only field sensitive for memory objects, not in-register values.
-      numValueBits = 1;
-    }
-    unsigned firstValueBit = getNumTotalBits();
-
-    // Record this information in our tables.
-    valueInfoIndex[val] = valueInfos.size();
-    if (valueLifetime)
-      lifetimeToValueIndex[valueLifetime] = valueInfos.size();
-
-    valueInfos.push_back({val, firstValueBit, firstValueBit + numValueBits,
-                          trackable.startsUninit, trackable.endInitState,
-                          trackable.isIndirect,
-                          trackable.isFullObjectLiveOnEntry,
-                          /*hasErrorDiagnosed=*/false, debugVariable});
-  }
+  /// Remove a tracked value from the valueset maps, and reset its ValueEntry to
+  /// have a null Value.
+  void eraseValueInfo(Value value);
 
   /// Return a reference to the entire value with the specified ID.
   ValueRef getFullValueRef(unsigned valueId) const {
@@ -747,6 +711,61 @@ void ValueSet::dump() const {
     os << info.value << "\n";
   }
   os.flush();
+}
+
+/// Add a value to the set that we are tracking.  This includes:
+///  * the MLIR representation for the value itself
+///  * whether the value is a by-ref to the underlying logical value
+///  * The bitrange it covers
+void ValueSet::addValue(Value val, const LifetimeTrackable &trackable,
+                        DebugInfo::DILocalVariableAttr debugVariable) {
+  // Figure out how many bits to track for this value at the lifetime if mem.
+  unsigned numValueBits;
+  TypedAttr valueLifetime;
+  if (!val) {
+    numValueBits = 1; // Nothing to do for the sentinel.
+  } else if (trackable.isIndirect) {
+    // This should be an assertion, but check softly to help IR clients.
+    auto refType = dyn_cast<RefType>(val.getType());
+    if (!refType) {
+      mlir::emitError(val.getLoc())
+          << "trackable IR value of type " << val.getType()
+          << " should have type '!lit.ref': " << val;
+      return;
+    }
+    Type valType = refType.getElementType();
+    numValueBits = typeDeclInfo.getNumFieldsInType(valType);
+
+    // Remember the lifetime if not immortal.
+    if (!isa<AnyLifetimeAttr>(refType.getLifetime()))
+      valueLifetime = refType.getLifetime();
+  } else {
+    // We don't track trivial values of register type.
+    if (typeDeclInfo.isRegisterPassableTrivial(val.getType()))
+      return;
+    // We are only field sensitive for memory objects, not in-register values.
+    numValueBits = 1;
+  }
+  unsigned firstValueBit = getNumTotalBits();
+
+  // Record this information in our tables.
+  valueInfoIndex[val] = valueInfos.size();
+  if (valueLifetime)
+    lifetimeToValueIndex[valueLifetime] = valueInfos.size();
+
+  valueInfos.push_back({val, firstValueBit, firstValueBit + numValueBits,
+                        trackable.startsUninit, trackable.endInitState,
+                        trackable.isIndirect, trackable.isFullObjectLiveOnEntry,
+                        /*hasErrorDiagnosed=*/false, debugVariable});
+}
+
+/// Remove a tracked value from the valueset maps, and reset its ValueEntry to
+/// have a null Value.
+void ValueSet::eraseValueInfo(Value value) {
+  auto it = valueInfoIndex.find(value);
+  assert(it != valueInfoIndex.end() && it->second && "not tracking this value");
+  valueInfos[it->second].value = Value();
+  valueInfoIndex.erase(it);
 }
 
 /// Given a lifetime attribute, return the value ref that defines it, and the
@@ -1620,18 +1639,29 @@ public:
     valuesToDestroy.push_back({value, valueRef, std::move(fieldsToDestroy)});
   }
 
+  enum class DtorEmissionResult {
+    /// The destructors were emitted as normal.
+    KeepOp,
+    /// The operation has been subsumed by a destructor and should be removed.
+    RemoveOpWithUse,
+  };
+
   /// This emits any destructors needed at the location specified by the
   /// builder.  If opWithUse is specified, then the inserter is allowed to
   /// perform various optimizations, e.g. if the opWithUse is a copyinit.
-  void emitDestructors(ImplicitLocOpBuilder &builder, Operation *opWithUse,
-                       SmallVector<Operation *> &opsToRemove);
+  ///
+  /// This returns success when the opWithUse is to be deleted by the caller, or
+  /// failure if it should stay in the instruction stream.
+  DtorEmissionResult emitDestructors(ImplicitLocOpBuilder &builder,
+                                     Operation *opWithUse);
 
   /// The same as emitDestructors, but there is no opWithUse so no copyinit
   /// elision can happen.
   void emitDestructors(ImplicitLocOpBuilder &builder) {
-    SmallVector<Operation *> opsToRemove;
-    emitDestructors(builder, /*opWithUse*/ nullptr, opsToRemove);
-    assert(opsToRemove.empty() && "cannot remove ops with null opWithUse");
+    auto result = emitDestructors(builder, /*opWithUse*/ nullptr);
+    assert(result == DtorEmissionResult::KeepOp &&
+           "should never delete an op if one isn't provided");
+    (void)result;
   }
 
   LLVM_DUMP_METHOD void dump() const;
@@ -1657,12 +1687,15 @@ private:
                             ImplicitLocOpBuilder &builder) const;
   void emitDestructorCall(Value value, bool isIndirect,
                           ImplicitLocOpBuilder &builder) const;
-  LogicalResult optimizeCopyDestroys(Operation *opWithUse,
-                                     SmallVector<Operation *> &opsToRemove);
-  void elideCopyInitReg(LIT::CallOp copyInitCall, RefLoadOp loadOp,
-                        SmallVector<Operation *> &opsToRemove);
-  LogicalResult elideCopyInitMem(LIT::CallOp copyInitCall, Value copyInitSrc,
-                                 SmallVector<Operation *> &opsToRemove);
+  DtorEmissionResult optimizeCopyDestroys(Operation *opWithUse);
+  void elideCopyInitReg(LIT::CallOp copyInitCall, RefLoadOp loadOp);
+
+  enum class CopyInitSuccess {
+    Failed,          // Failed to elide.
+    Eliminated,      // Eliminated the copyinit entirely.
+    ConvertedToMove, // Instruction is still now a moveinit
+  };
+  CopyInitSuccess elideCopyInitMem(LIT::CallOp copyInitCall, Value copyInitSrc);
 };
 } // end anonymous namespace
 
@@ -1676,13 +1709,13 @@ void DestructorInserter::dump() const {
 /// This emits any destructors needed at the location specified by the
 /// builder.  If opWithUse is specified, then the inserter is allowed to
 /// perform various optimizations, e.g. if the opWithUse is a copyinit.
-void DestructorInserter::emitDestructors(
-    ImplicitLocOpBuilder &builder, Operation *opWithUse,
-    SmallVector<Operation *> &opsToRemove) {
+DestructorInserter::DtorEmissionResult
+DestructorInserter::emitDestructors(ImplicitLocOpBuilder &builder,
+                                    Operation *opWithUse) {
   // If this is a __copyinit__ call, we can do elision, which may subsume
   // one of our dtors that we need to emit.
   // TODO: Remove "opsToRemove" entirely, simplifying this code.
-  (void)optimizeCopyDestroys(opWithUse, opsToRemove);
+  DtorEmissionResult removedOp = optimizeCopyDestroys(opWithUse);
 
   // TODO: There can be dependencies between dtor calls (e.g. an array of
   // references needs to be destroyed before the elements it references).
@@ -1694,6 +1727,7 @@ void DestructorInserter::emitDestructors(
 
   // Now that we're done, recycle our space for the next iteration.
   valuesToDestroy.clear();
+  return removedOp;
 }
 
 /// We need to destroy the specified value, which could destroyed as a single
@@ -1884,18 +1918,18 @@ void DestructorInserter::emitDestructorCall(
 ///    NOTADDED: kgen.call __del__(%src)
 ///    kgen.call user(%src)      <<= Use %src instead.
 ///
-LogicalResult DestructorInserter::optimizeCopyDestroys(
-    Operation *opWithUse, SmallVector<Operation *> &opsToRemove) {
+DestructorInserter::DtorEmissionResult
+DestructorInserter::optimizeCopyDestroys(Operation *opWithUse) {
   auto copyInitCall = dyn_cast_if_present<LIT::CallOp>(opWithUse);
   if (!copyInitCall)
-    return failure();
+    return DtorEmissionResult::KeepOp;
 
   // See if we can resolve the callee.
   LIT::FuncOp callee =
       valueSet.typeDeclInfo.getFuncForSymbol(copyInitCall.getDirectCallee());
   if (!callee ||
       callee.getSpecialFunctionKind() != SpecialFunctionKind::kCopyInit)
-    return failure();
+    return DtorEmissionResult::KeepOp;
 
   // Check to see if the copy is immediately destroyed.  If so, we can elide
   // both the copy and the destroy.  This could also be the last use of %src as
@@ -1905,12 +1939,12 @@ LogicalResult DestructorInserter::optimizeCopyDestroys(
     if (elt.value == copyDest && elt.valueRef.isIndirect &&
         elt.fieldsToDestroy.empty()) {
       copyInitCall->dropAllReferences();
-      opsToRemove.push_back(copyInitCall);
       emitLifetimeEndAfter(copyDest, copyInitCall);
 
       // We're done with this destructor, so remove it from the list.
       valuesToDestroy.erase(valuesToDestroy.begin() + i);
-      return success();
+      // Caller will remove the copyinit call.
+      return DtorEmissionResult::RemoveOpWithUse;
     }
   }
 
@@ -1925,11 +1959,11 @@ LogicalResult DestructorInserter::optimizeCopyDestroys(
       if (elt.value == loaded && elt.valueRef.isIndirect &&
           elt.fieldsToDestroy.empty()) {
         // Ok, yep we can do this.
-        elideCopyInitReg(copyInitCall, loadOp, opsToRemove);
+        elideCopyInitReg(copyInitCall, loadOp);
 
         // We're done with this destructor, so remove it from the list.
         valuesToDestroy.erase(valuesToDestroy.begin() + i);
-        return success();
+        return DtorEmissionResult::RemoveOpWithUse;
       }
     }
   }
@@ -1942,16 +1976,24 @@ LogicalResult DestructorInserter::optimizeCopyDestroys(
     if (elt.value == copyInitSrc && elt.valueRef.isIndirect &&
         elt.fieldsToDestroy.empty()) {
       // Ok, yep we can do this.
-      if (failed(elideCopyInitMem(copyInitCall, copyInitSrc, opsToRemove)))
-        return failure();
+      DtorEmissionResult result = DtorEmissionResult::KeepOp;
+      switch (elideCopyInitMem(copyInitCall, copyInitSrc)) {
+      case CopyInitSuccess::Failed:
+        continue; // Couldn't elide anything.
+      case CopyInitSuccess::Eliminated:
+        result = DtorEmissionResult::RemoveOpWithUse;
+        break;
+      case CopyInitSuccess::ConvertedToMove:
+        break; // Remove the dtor, but keep the move.
+      }
 
       // We're done with this destructor, so remove it from the list.
       valuesToDestroy.erase(valuesToDestroy.begin() + i);
-      return success();
+      return result;
     }
   }
 
-  return failure();
+  return DtorEmissionResult::KeepOp;
 }
 
 /// We've found a copyinit(dest, src) where the 'src' is getting destroyed after
@@ -1977,14 +2019,12 @@ LogicalResult DestructorInserter::optimizeCopyDestroys(
 ///   %srcReg = lit.ref.load %src
 ///   ...
 ///   %xyz = %srcReg
-void DestructorInserter::elideCopyInitReg(
-    LIT::CallOp copyInitCall, RefLoadOp loadOp,
-    SmallVector<Operation *> &opsToRemove) {
+void DestructorInserter::elideCopyInitReg(LIT::CallOp copyInitCall,
+                                          RefLoadOp loadOp) {
   Value copyInitDest = copyInitCall.getOperand(0);
 
-  // We're definitely removing the copyinit.
+  // We're definitely removing the copyinit.  The caller will remove it for us.
   copyInitCall->dropAllReferences();
-  opsToRemove.push_back(copyInitCall);
 
   /// Given a temporary used as the destination of a copyinit call, check if its
   /// only user (ignoring lifetime markers) is a `lit.load.consume`. This
@@ -2005,20 +2045,17 @@ void DestructorInserter::elideCopyInitReg(
   // avoid emitting a store, tidying things right up.
   if (auto varDecl = copyInitDest.getDefiningOp<VarDeclOp>()) {
     if (LoadConsumeOp loadConsume = getOnlyLoadConsumeUser(varDecl)) {
-      // The loadConsume is dead and can be removed.
-      for (Operation *user : llvm::make_early_inc_range(varDecl->getUsers()))
-        if (user != loadConsume)
-          user->erase();
+      // We know the bottom-up scan won't revisit it, so directly remove it.
+      valueSet.eraseValueInfo(loadConsume);
       loadConsume.getResult().replaceAllUsesWith(loadOp);
-      // We know the bottom-up scan won't revisit it, so directly remove.
       loadConsume.erase();
+
       // This turns into a consume of the moved value. Emit an end marker if
       // appropriate.
       emitLifetimeEndAfter(loadOp.getRef(), loadOp);
 
-      // The lit.var.decl had one use before so it is now dead, we can
-      // remove it as well.
-      opsToRemove.push_back(varDecl);
+      // Don't remove the vardecl itself, because it will occur in the ValueSet
+      // maps etc. These will get cleaned up late.
       return;
     }
   }
@@ -2163,10 +2200,9 @@ static bool canEntirelyElideMemoryTemporary(LIT::CallOp copyInitCall,
 /// __copyinit__ call.  Attempt to elide it completely or strength reduce it to
 /// a __moveinit__.  The 'copyInitSrc' value is the src operand with
 /// lit.ref.immut instructions stripped off.
-LogicalResult
+DestructorInserter::CopyInitSuccess
 DestructorInserter::elideCopyInitMem(LIT::CallOp copyInitCall,
-                                     Value copyInitSrc,
-                                     SmallVector<Operation *> &opsToRemove) {
+                                     Value copyInitSrc) {
   ImplicitLocOpBuilder builder(copyInitCall.getLoc(), copyInitCall);
 
   // We prefer to completely delete the copy if it is into a temporary location
@@ -2211,9 +2247,8 @@ DestructorInserter::elideCopyInitMem(LIT::CallOp copyInitCall,
       // scans, and to make it more obvious when reading IR dumps that these
       // will be gone.
       copyInitCall->dropAllReferences();
-      opsToRemove.push_back(copyInitCall);
-      opsToRemove.push_back(tmpDecl);
-      return success();
+      // The caller will remove the copyinit call.
+      return CopyInitSuccess::Eliminated;
     }
   }
 
@@ -2224,7 +2259,7 @@ DestructorInserter::elideCopyInitMem(LIT::CallOp copyInitCall,
   SymbolConstantAttr moveCtor =
       valueSet.typeDeclInfo.getMoveInitForType(destroyedType);
   if (!moveCtor)
-    return failure();
+    return CopyInitSuccess::Failed;
 
     // moveCtor must have __moveinit__(inout self, owned: Self) type.
 #ifndef NDEBUG
@@ -2256,8 +2291,8 @@ DestructorInserter::elideCopyInitMem(LIT::CallOp copyInitCall,
   // Transform the copy into a move.
   copyInitCall.setCalleeAttr(moveCtor);
   emitLifetimeEndAfter(copyInitSrc, copyInitCall);
-  // Since we changed the copy to a __moveinit__, we don't need a dtor call.
-  return success();
+  // We don't want to remove the copyinit, it is now our moveinit.
+  return CopyInitSuccess::ConvertedToMove;
 }
 
 //===----------------------------------------------------------------------===//
@@ -2268,13 +2303,12 @@ namespace {
 /// This helper class implements the third pass over a function body, which
 /// inserts destructors after the last use of values.
 struct DestructorInsertion {
-  DestructorInsertion(ValueSet &valueSet, SmallVector<Operation *> &opsToRemove)
-      : valueSet(valueSet), opsToRemove(opsToRemove) {}
+  DestructorInsertion(ValueSet &valueSet) : valueSet(valueSet) {}
   DestructorInsertion(const DestructorInsertion &existing) = delete;
   DestructorInsertion(DestructorInsertion &&existing) = default;
 
   static DestructorInsertion copy(const DestructorInsertion &existing) {
-    DestructorInsertion result(existing.valueSet, existing.opsToRemove);
+    DestructorInsertion result(existing.valueSet);
     result.consumedValues = existing.consumedValues;
     result.raiseSet = existing.raiseSet;
     result.breakSet = existing.breakSet;
@@ -2322,10 +2356,6 @@ private:
 
   /// This is the signature of the current function being analyzed.
   SignatureType functionSignature;
-
-  /// This is a set of operations that are removed after destructor processing
-  /// has completed.  This is used to elide copy ctors.
-  SmallVector<Operation *> &opsToRemove;
 
   /// This is the set of values known to be used below this point, so they
   /// should not be destroyed if there are uses.  Any use of a value /not/ in
@@ -2432,6 +2462,7 @@ void DestructorInsertion::scanBlock(Block &block) {
   SmallVector<TypedAttr> lifetimeEffects;
 
   DestructorInserter dtorInserter(valueSet);
+  SmallVector<Operation *> opsToRemove;
 
   for (Operation &op : llvm::reverse(block)) {
     operandEffects.clear();
@@ -2543,8 +2574,16 @@ void DestructorInsertion::scanBlock(Block &block) {
     // they are for values used by it.
     auto insertPt = std::next(Block::iterator(&op));
     ImplicitLocOpBuilder builder(op.getLoc(), op.getBlock(), insertPt);
-    dtorInserter.emitDestructors(builder, &op, opsToRemove);
+    if (dtorInserter.emitDestructors(builder, &op) ==
+        DestructorInserter::DtorEmissionResult::RemoveOpWithUse)
+      // If we replaced this operation, remove it.
+      opsToRemove.push_back(&op);
   }
+
+  // If we had any operations to remove, do so now, simplifying iterator
+  // invalidation issues.
+  for (Operation *op : opsToRemove)
+    op->erase();
 }
 
 /// This is returned when the op is a return or unreachable op.
@@ -3395,15 +3434,40 @@ CheckLifetimes::processFunction(LIT::FuncOp func, TypeDeclInfo &typeDeclInfo,
   // defined, emitting diagnostics as we go.
   UninitializedValueScan(valueSet).scanFunction(func);
 
-  // TODO: How do we want to handle captures in closures?  Their uses
-  // effectively form the capture list for the closure.  Should this get
-  // materialized by LowerSemanticCF before this pass?
-  SmallVector<Operation *> opsToRemove;
-  DestructorInsertion(valueSet, opsToRemove).scanFunction(func);
+  // Walk #3: Scan the function bottom-up, inserting destructor calls, inserting
+  // lifetime markers, and eliding temporaries.
+  DestructorInsertion(valueSet).scanFunction(func);
 
-  // Remove copy ctors and allocations that have been elided.
-  for (Operation *op : opsToRemove)
-    op->erase();
+  // Now that we've transformed the function, look for any vardecls that only
+  // have lifetime markers.  They can be removed, because all their uses got
+  // forwarded or rewritten.
+  for (ValueInfo &info : valueSet.getValueInfos()) {
+    if (!info.value) // Already removed value.
+      continue;
+    auto varDecl = info.value.getDefiningOp<VarDeclOp>();
+    if (!varDecl)
+      continue;
+
+    // Check to see if there are any uses other than lifetime markers.
+    bool hasInterestingUse = false;
+    for (Operation *user : varDecl->getUsers()) {
+      if (isa<VarLifetimeStartOp, VarLifetimeEndOp, RebindOp, RefImmutOp>(
+              user) &&
+          user->use_empty())
+        continue;
+
+      hasInterestingUse = true;
+      break;
+    }
+    if (hasInterestingUse)
+      continue;
+
+    // Okay, nothing interesting happening here.  Remove any lifetime markers
+    // and remove the vardecl as well.
+    while (!varDecl->use_empty())
+      varDecl->user_begin()->erase();
+    varDecl->erase();
+  }
 
   // Return failure if we generated errors for any of the tracked values.
   return failure(llvm::any_of(valueSet.getValueInfos(), [&](ValueInfo &info) {

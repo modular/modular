@@ -42,17 +42,6 @@ fn implicit_inout(inout a: MemExample):
 fn implicit_owned(owned a: MemExample):
   pass
 
-# CHECK-LABEL: lit.func @"addrSpaces
-fn addrSpaces[lt1: MutableLifetime, lt2: ImmutableLifetime, as1: AddressSpace]():
-  # CHECK: lit.var.decl "ref1" {{.*}}!lit.ref<!MemExample, mut lt1, #lit.struct.extract<:!Int #lit.struct.extract<:!AddressSpace as1, "_value">, "value">>
-  var ref1 : Reference[MemExample, lt1, as1]._mlir_type
-
-  # CHECK: lit.alias.decl [[AS2:.*]]: !AddressSpace = {{.*}} {42}
-  alias as2: AddressSpace = AddressSpace(42)
-
-  # CHECK: lit.var.decl "ref2" {{.*}}!lit.ref<!MemExample, imm lt2,{{.*}}!AddressSpace [[AS2]], "_value">
-  var ref2 : __mlir_type[`!lit.ref<`, MemExample, `, `, lt2, `, `, as2._value.value, `>`]
-
 # This preserves reference mutability
 # CHECK-LABEL: lit.func @"parametricMut
 # CHECK-SAME: (%a: !lit.ref<!MemExample, mut=#lit.struct.extract<:!Bool isMut, "value">, life>)
@@ -149,8 +138,8 @@ fn testDefConditional(cond: __mlir_type.i1):
 
   # Overwriting is eligible for copy => move optimization as well.
   var shouldBeMovedFrom = MemExample()
-  Reference(__get_litref_as_mvalue(cref))[] = shouldBeMovedFrom
   # CHECK: lit.call @{{.*}}__init__{{.*}}(%shouldBeMovedFrom)
+  Reference(__get_litref_as_mvalue(cref))[] = shouldBeMovedFrom
   # CHECK: [[CR:%.*]] = lit.ref.load %cref
   # CHECK: [[REFREF:%.*]] = lit.var.decl
   # CHECK-NEXT: lifetime.start [[REFREF]]
@@ -165,10 +154,15 @@ fn testDefConditional(cond: __mlir_type.i1):
 
   # The mutation above could either of A or B, so we needed to extend both of
   # their lifetimes, but now we can say goodbye.
-  # CHECK-NEXT: lit.call @{{.*}}__del__{{.*}}(%a)
-  # CHECK-NEXT: lifetime.end %a
   # CHECK-NEXT: lit.call @{{.*}}__del__{{.*}}(%b)
   # CHECK-NEXT: lifetime.end %b
+
+  # A use so the assignment isn't dead.
+  a.noop()
+  # CHECK-NEXT: [[ATMP:%.*]] = lit.ref.immut %a
+  # CHECK-NEXT: lit.call @{{.*}}noop{{.*}}([[ATMP]])
+  # CHECK-NEXT: lit.call @{{.*}}__del__{{.*}}(%a)
+  # CHECK-NEXT: lifetime.end %a
 
 # ===----------------------------------------------------------------------=== #
 # Tests of the Reference type.

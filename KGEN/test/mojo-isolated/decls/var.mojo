@@ -6,6 +6,7 @@
 
 # RUN: %parse-mojo-isolated %s | FileCheck %s
 
+struct MemExample: pass
 
 fn return_generic_memory_only[T: AnyType]() -> T:
     pass
@@ -136,3 +137,14 @@ def reuse_implicit(a: Int, cond: __mlir_type.i1):
   implicit = a
   # CHECK: lit.ref.load %implicit :
   use_int(implicit)
+
+# CHECK-LABEL: lit.func @"addrSpaces
+fn addrSpaces[lt1: MutableLifetime, lt2: ImmutableLifetime, as1: AddressSpace]():
+  # CHECK: lit.var.decl "ref1" {{.*}}!lit.ref<!MemExample, mut lt1, #lit.struct.extract<:!Int #lit.struct.extract<:!AddressSpace as1, "_value">, "value">>
+  var ref1 : Reference[MemExample, lt1, as1]._mlir_type
+
+  # CHECK: lit.alias.decl [[AS2:.*]]: !AddressSpace = {{.*}} {42}
+  alias as2: AddressSpace = AddressSpace(42)
+
+  # CHECK: lit.var.decl "ref2" {{.*}}!lit.ref<!MemExample, imm lt2,{{.*}}!AddressSpace [[AS2]], "_value">
+  var ref2 : __mlir_type[`!lit.ref<`, MemExample, `, `, lt2, `, `, as2._value.value, `>`]
