@@ -140,13 +140,11 @@ fn try_examples(cond: __mlir_type.i1, err: Error):
     # CHECK: lit.try
     # CHECK-NOT: %a
     try:
+        # The error value isn't used on the except branch, so it's copy from err
+        # is completely optimized out.
         # CHECK-NEXT: lifetime.start %__try_error__
-        # CHECK-NEXT: [[ERR:%.*]] = lit.call {{.*}}Error::@"__copyinit__{{.*}}(%__try_error__, %err)
+        # CHECK-NEXT: lit.var.lifetime.end %__try_error__
         raise err
-        # COM: The error value isn't used on the except branch, so it is immediately
-        # COM: destroyed.
-        # CHECK-NEXT: [[ERR:%.*]] = lit.ref.load %__try_error__
-        # CHECK-NEXT: lit.call @{{.*}}Error::@"__del__{{.*}}([[ERR]])
     # CHECK: } except {
     except:
         # CHECK-NEXT: lifetime.start %a
@@ -285,9 +283,7 @@ fn chris_lifetime_example(a: Bool, b: Bool):
         # CHECK: } except {
     # CHECK: } except {
     except:
-        # CHECK-NEXT:  [[IMMUT_X:%.*]] = lit.ref.immut %x
-        # CHECK: [[DEAD:%.*]] = kgen.rebind [[IMMUT_X]]
-        # CHECK: __del__{{.*}}([[DEAD]])
+        # CHECK: __del__{{.*}}(%x)
         _ = x
     # CHECK: else
     # CHECK-NEXT: lit.try.yield

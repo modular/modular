@@ -16,6 +16,7 @@ struct MemType1:
 
     fn __copyinit__(inout self, existing: Self):
         self.value = existing.value + 1
+        print("Copy to", self.value)
 
     fn __del__(owned self):
         print("MemType1(", self.value, ") destroyed")
@@ -30,6 +31,8 @@ struct PartialInitType:
     fn __init__(inout self, cond: Int, other: MemType1) raises:
         self.mem1 = other
         self.mem2 = MemType1(2)
+
+        # This copy is entirely elided since it is dead.
         self.setTwice = other
         if cond > 2:
             raise Error("bail on init")
@@ -41,15 +44,20 @@ struct PartialInitType:
 
 
 fn main():
+    print("start")
+    # CHECK: start
     # CHECK-NOT: destroy PartialInitType
-    # CHECK: MemType1( 43 ) destroyed
-    # CHECK: MemType1( 43 ) destroyed
-    # CHECK: MemType1( 2 ) destroyed
-    # CHECK: MemType1( 42 ) destroyed
+    # CHECK-NEXT: Copy to 43
+    # CHECK-NEXT: MemType1( 43 ) destroyed
+    # CHECK-NEXT: MemType1( 2 ) destroyed
+    # CHECK-NEXT: MemType1( 42 ) destroyed
     # CHECK-NOT: MemType1( 3 ) destroyed
-    # CHECK: bail on init
+    # CHECK-NEXT: bail on init
+    # CHECK-NEXT: done
     try:
         var m = MemType1(42)
         var x = PartialInitType(3, m)
     except e:
         print(e)
+
+    print("done")

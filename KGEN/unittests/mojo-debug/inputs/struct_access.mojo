@@ -35,10 +35,10 @@ fn use_address(ptr: UnsafePointer[Int]):
 
 fn main():
     var p = MyPair(1, 2)
-    print(p.first)  # breakpoint
+    print(p.first, p.second)  # breakpoint
     p.first = 3
     p.second = 4
-    print(p.second)  # breakpoint
+    print(p.first, p.second)  # breakpoint
     use_address(UnsafePointer.address_of(p.first))
 
     var pp = MyPairPair(5, 6, 7, 8)

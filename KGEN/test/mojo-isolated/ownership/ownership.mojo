@@ -386,9 +386,8 @@ fn test_result_optimization():
   # CHECK-NEXT: lifetime.start %__call_result_tmp___0
   # CHECK-NEXT: lit.call @ownership::@"use_and_return2{{.*}}([[IMMREF]], %__call_result_tmp___0)
   example.f1 = use_and_return2(example)
-  # CHECK-NEXT: [[F1_2:%.*]] = lit.ref.struct.ger [[IMMREF]][f1]
-  # CHECK-NEXT: [[MUTREF:%.*]] = kgen.rebind [[F1_2]]
-  # CHECK-NEXT: lit.call @{{.*}}@"__del__{{.*}}([[MUTREF]])
+  # CHECK-NEXT: [[F1_2:%.*]] = lit.ref.struct.ger %example[f1]
+  # CHECK-NEXT: lit.call @{{.*}}@"__del__{{.*}}([[F1_2]])
   # CHECK-NEXT: lit.call @{{.*}}@"__moveinit__{{.*}}([[F1]], %__call_result_tmp___0)
   # CHECK-NEXT: lifetime.end %__call_result_tmp___0
 
@@ -808,10 +807,10 @@ fn call_variadic_inout_mems():
   # CHECK-NEXT: lit.call {{.*}}variadic_inout_mems{{.*}}[mut {*"a`", *"b`1"}]([[VAR]])
   variadic_inout_mems(a, b)
 
-  # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}(%b)
-  # CHECK-NEXT: lifetime.end %b
   # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}(%a)
   # CHECK-NEXT: lifetime.end %a
+  # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}(%b)
+  # CHECK-NEXT: lifetime.end %b
 
   # CHECK-NEXT: kgen.param.constant: none
   # CHECK-NEXT: kgen.return
@@ -1035,6 +1034,8 @@ struct MyStructWithMarkDestroyed[T: CollectionElement]:
 fn field_sensitive_ref_last_use(owned write_state : IntAndOptional):
     # should destroy ALL OF write_state after the copy into msg.
     var msg = write_state.error.value()
+   
+    _ = msg.__len__()
 
     # CHECK: lit.call {{.*}}__copyinit__{{.*}}(%msg, 
     # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}(%write_state)
