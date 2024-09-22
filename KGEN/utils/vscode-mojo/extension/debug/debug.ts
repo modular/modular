@@ -66,6 +66,10 @@ type MojoCudaGdbDebugConfiguration = {
  */
 const DEBUG_TYPE: string = 'mojo-lldb';
 
+/**
+ * Some debug configurations come from an RPC call, which have an explicit SDK
+ * to use. We should honor it when running the debug session.
+ */
 async function findSDKForDebugConfiguration(
   config: MojoDebugConfiguration,
   sdkManager: MojoSDKManager
