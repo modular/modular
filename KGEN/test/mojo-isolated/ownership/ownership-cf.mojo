@@ -142,8 +142,7 @@ fn try_examples(cond: __mlir_type.i1, err: Error):
     try:
         # The error value isn't used on the except branch, so it's copy from err
         # is completely optimized out.
-        # CHECK-NEXT: lifetime.start %__try_error__
-        # CHECK-NEXT: lit.var.lifetime.end %__try_error__
+        # CHECK-NEXT: lit.try.raise
         raise err
     # CHECK: } except {
     except:
