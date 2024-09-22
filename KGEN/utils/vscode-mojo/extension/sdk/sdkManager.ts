@@ -15,7 +15,6 @@ import { MojoSDK } from './sdk';
 import { Mutex } from 'async-mutex';
 import {
   directoryExists,
-  fileExists,
   getAllOpenMojoFiles,
   moveUpUntil,
   readFile,
@@ -24,7 +23,6 @@ import { MojoSDKVersion } from './sdkVersion';
 import { findMagicSDKSpec } from './magicSdk';
 import { MojoSDKSpec } from './types';
 import { ExtensionSemiPersistentState } from '../extension';
-const execFile = util.promisify(require('child_process').execFile);
 
 type NotYetSelectedSDK = {
   state: 'not-yet-selected';
@@ -52,7 +50,6 @@ export class MojoSDKManager extends DisposableContext {
   public logger: Logger;
   private context: vscode.ExtensionContext;
   private initializationSDK: Optional<MojoSDKSpec>;
-  private enableMagicSDK: boolean;
   private activeSDK: SDKSelection = { state: 'not-yet-selected' };
   private findSDKMutex = new Mutex();
   private isNightly: boolean;
@@ -63,14 +60,12 @@ export class MojoSDKManager extends DisposableContext {
     context: vscode.ExtensionContext,
     initializationSDK: Optional<MojoSDKSpec>,
     isNightly: boolean,
-    enableMagicSDK: boolean,
     extensionSemiPersistentState: ExtensionSemiPersistentState
   ) {
     super();
     this.logger = logger;
     this.context = context;
     this.initializationSDK = initializationSDK;
-    this.enableMagicSDK = enableMagicSDK;
     this.isNightly = isNightly;
     this.extensionSemiPersistentState = extensionSemiPersistentState;
 
@@ -419,98 +414,12 @@ export class MojoSDKManager extends DisposableContext {
     if (this.context.extensionMode === vscode.ExtensionMode.Test) {
       return [];
     }
-    if (this.enableMagicSDK) {
-      const spec = await findMagicSDKSpec(
-        /*withLock=*/ true,
-        this.context,
-        this.logger,
-        this.isNightly
-      );
-      return spec ? [spec] : [];
-    }
-    return this.findModularCliSDKSpecs();
-  }
-
-  private async findModularCliSDKSpecs(): Promise<MojoSDKSpec[]> {
-    // Build a regex to match an .ini like string, where the form is:
-    //   section.key = value
-    // the section must start with `mojo`.
-    let valueRegex = new RegExp(`^(mojo[^.]*)\\.([^.]+) = ([^;]*);?$`);
-
-    // The first step is to invoke the `modular` cli and collect all of the
-    // mojo related configuration values, bucketing them by the top-level
-    // section.
-    let configurationValues = new Map<string, { [key: string]: any }>();
-    try {
-      let { stdout, stderr } = await execFile('modular', ['config-list']);
-      for (let line of stdout.split('\n')) {
-        line = line.trim();
-
-        // Match the value regex.
-        let match = valueRegex.exec(line);
-
-        if (!match) {
-          continue;
-        }
-        let section = match[1];
-        let key = match[2];
-        let value = match[3];
-
-        // Ignore nightly configs in non-nightly extensions, and vice versa.
-        if (this.isNightly != section.endsWith('-nightly')) {
-          continue;
-        }
-
-        // Set this configuration value.
-        if (!configurationValues.has(section)) {
-          configurationValues.set(section, {});
-        }
-        configurationValues.get(section)![key] = value;
-      }
-    } catch (e) {
-      this.logger.main.logError(
-        'Unable to invoke `modular config-list`, failed with: ',
-        e
-      );
-    }
-
-    // Build a possible SDK for each of the configurations.
-    let possibleSDKs: MojoSDKSpec[] = [];
-    for (let [section, values] of configurationValues) {
-      const mojoPath = values.driver_path || '';
-      const modularHomePath = await moveUpUntil(mojoPath, async (p) => {
-        const [d1, d2] = await Promise.all([
-          directoryExists(path.join(p, 'pkg')),
-          fileExists(path.join(p, 'modular.cfg')),
-        ]);
-        return d1 && d2;
-      });
-      if (modularHomePath !== undefined) {
-        const version = await MojoSDKConfig.parseVersionFromDriver(
-          this.logger,
-          mojoPath,
-          section
-        );
-        if (version !== undefined) {
-          if (
-            possibleSDKs.find(
-              (sdk) =>
-                sdk.modularHomePath === modularHomePath &&
-                sdk.version.major === version.major &&
-                sdk.version.minor === version.minor &&
-                sdk.version.patch === version.patch
-            ) === undefined
-          ) {
-            possibleSDKs.push({
-              kind: 'modular-cli',
-              modularHomePath,
-              section,
-              version,
-            });
-          }
-        }
-      }
-    }
-    return possibleSDKs;
+    const spec = await findMagicSDKSpec(
+      /*withLock=*/ true,
+      this.context,
+      this.logger,
+      this.isNightly
+    );
+    return spec ? [spec] : [];
   }
 }

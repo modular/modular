@@ -151,12 +151,6 @@
           "scope": "resource",
           "type": "array",
           "description": "Arguments passed in. Each argument is a separate item in the array."
-        },
-        "mojo.enableMagicSDK": {
-          "scope": "machine",
-          "type": "boolean",
-          "default": true,
-          "description": "Whether to support the MAX SDK for VS Code based on the magic tool."
         }
       }
     },

@@ -38,6 +38,15 @@ export function isNightlyExtension(context: vscode.ExtensionContext) {
 /**
  * This class provides an entry point for the Mojo extension, managing the
  * extension's state and disposal.
+ *
+ * The MojoExtension class and its components don't really have dynamic
+ * states. Instead, when a major configuration changes, the extension restarts
+ * completely with the new configuration. This can be seen, for example,
+ * when selecting the SDK upon initialization: once the initial SDK is
+ * selected, a full restart happens with that SDK forced as part of the
+ * new initialization. This approach simplifies greatly the architecture of
+ * the code and can keep us away from redux-like workflows, which are great,
+ * but not worth the price at this point.
  */
 export class MojoExtension extends DisposableContext {
   public logger: Logger;
@@ -80,29 +89,18 @@ Activating the Mojo Extension
 =============================
 `);
 
-      const enableMagicSDK = config.get<boolean>(
-        'enableMagicSDK',
-        /*workspaceFolder=*/ undefined,
-        false
-      );
-      this.pushSubscription(
-        await configWatcher.activate(
-          /*workspaceFolder=*/ undefined,
-          ['enableMagicSDK'],
-          /*paths=*/ []
-        )
-      );
       const sdkManager = new MojoSDKManager(
         this.logger,
         this.extensionContext,
         initializationSDK,
         this.isNightly,
-        enableMagicSDK,
         this.semiPersistentState
       );
       this.pushSubscription(sdkManager);
 
-      // Initialize the commands of the extension.
+      // Initialize the restart command, which can optionally receive an
+      // initialization SDK to force the extension to use it without
+      // performing any SDK fetching work.
       this.pushSubscription(
         vscode.commands.registerCommand(
           'mojo.extension.restart',
