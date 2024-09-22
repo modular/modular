@@ -255,7 +255,7 @@ fn optimizeCopyElision():
     # CHECK-NEXT: lit.call {{.*}}__copyinit__{{.*}}([[ANON]], [[IMMREF]])
     # CHECK-NEXT: [[IMMREF:%.*]] = lit.ref.immut %x
     # CHECK-NEXT: kgen.param.declare
-    # CHECK-NEXT: [[PTR:%.*]] = kgen.rebind [[IMMREF]]
+    # CHECK-NEXT: [[PTR:%.*]] = kgen.rebind %x
     # CHECK-NEXT: lit.call {{.*}}takeTwo{{.*}}([[ANON]], [[PTR]])
     # CHECK-NEXT: lifetime.end %x
     # CHECK-NEXT: lifetime.end [[ANON]]
@@ -272,7 +272,7 @@ fn consume(owned value: MemExample):
 fn copyElisionArgument(owned value: MemExample):
     # CHECK-NEXT: %0 = lit.ref.immut %value
     # CHECK-NEXT: kgen.param.declare
-    # CHECK-NEXT: %1 = kgen.rebind %0
+    # CHECK-NEXT: %1 = kgen.rebind %value
     # CHECK-NEXT: call {{.*}}consume{{.*}}(%1)
     # CHECK-NEXT: %none =
     consume(value)

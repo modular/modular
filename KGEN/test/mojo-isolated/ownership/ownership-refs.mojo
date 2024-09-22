@@ -398,14 +398,14 @@ fn variadic_inout_mems_iter(inout *mems: MemExample):
   # CHECK-NEXT: %x = lit.var.decl
   # CHECK-NEXT: [[ELTREF:%.*]] = lit.call {{.*}}__next__{{.*}}(%iter)
 
-  ## FIXME: This destruction should be ordered after the destroy of the iterator
-  ## Since the iterator can refer to the mems struct.
-  # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}(%mems_0)
-  # CHECK-NEXT: lifetime.end %mems_0
-
   # Iterator is destroyed as soon as we're done with it.
   # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}(%iter)
   # CHECK-NEXT: lifetime.end %iter
+
+  ## NOTE: This destruction should be ordered after the destroy of the iterator
+  ## Since the iterator can refer to the mems struct.
+  # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}(%mems_0)
+  # CHECK-NEXT: lifetime.end %mems_0
 
   # __next__ returns a Reference which needs to turn in to !lit.ref
   # CHECK-NEXT: [[ELTDEREF:%.*]] = lit.call {{.*}}__getitem__{{.*}}([[ELTREF]])
@@ -413,6 +413,10 @@ fn variadic_inout_mems_iter(inout *mems: MemExample):
   # CHECK-NEXT: lifetime.start %x
   # CHECK-NEXT: lit.call {{.*}}__copyinit__{{.*}}(%x, [[ELTDEREFIMM]])
   var x : MemExample = iter.__next__()[]
+
+  # CHECK-NEXT: lit.call {{.*}}mutate{{.*}}(%x)
+  x.mutate()
+
   # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}(%x)
   # CHECK-NEXT: lifetime.end %x
 
@@ -496,8 +500,8 @@ fn test_parameter_closure_captures(owned x: MemExample, owned y: MemExample):
     _ = y^
 
   # CHECK: lit.call[!lit.signature<:{mut *"x`{{.*}}", mut *"y`{{.*}}"}:
-  # CHECK-NEXT: lit.call {{.*}}MemExample::@"__del__{{.*}}(%y)
   # CHECK-NEXT: lit.call {{.*}}MemExample::@"__del__{{.*}}(%x)
+  # CHECK-NEXT: lit.call {{.*}}MemExample::@"__del__{{.*}}(%y)
   capture()
 
 fn higher_order_function[lts: __mlir_type.`!lit.lifetime.set`, //, f: fn() capturing [lts] -> None]():
@@ -512,6 +516,6 @@ fn test_higher_order_capture(owned x: MemExample, owned y: MemExample):
     _ = y^
 
   # CHECK: lit.call {{.*}}higher_order_function{{.*}} !lit.signature<:{mut *"x`{{.*}}", mut *"y`{{.*}}"}
-  # CHECK-NEXT: lit.call {{.*}}MemExample::@"__del__{{.*}}(%y)
   # CHECK-NEXT: lit.call {{.*}}MemExample::@"__del__{{.*}}(%x)
+  # CHECK-NEXT: lit.call {{.*}}MemExample::@"__del__{{.*}}(%y)
   higher_order_function[capture]()

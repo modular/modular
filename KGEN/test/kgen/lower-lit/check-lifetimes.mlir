@@ -410,9 +410,9 @@ lit.func @copy_del_reg_value() {
   // CHECK: [[LOAD:%.*]] = lit.ref.load %x
   // CHECK: [[COPY:%.*]] = lit.call @Reg::@__copyinit__([[LOAD]])
   %1 = lit.call @Reg::@__copyinit__(%load) : !lit.signature<(!Reg, |) -> !Reg>
+  // CHECK: call @Reg::@__del__([[COPY]])
   // CHECK: [[ORIG:%.*]] = lit.ref.load %x
   // CHECK: call @Reg::@__del__([[ORIG]])
-  // CHECK: call @Reg::@__del__([[COPY]])
   kgen.return
 }
 

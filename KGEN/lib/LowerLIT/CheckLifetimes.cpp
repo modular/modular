@@ -1585,7 +1585,683 @@ void UninitializedValueScan::checkTryOp(LIT::TryOp tryOp) {
 }
 
 //===----------------------------------------------------------------------===//
-// DestructorInsertion
+// DestructorInserter
+//===----------------------------------------------------------------------===//
+
+/// Emit a lifetime end marker for a value that is being consumed.
+static void emitLifetimeEnd(Value value, ImplicitLocOpBuilder &builder) {
+  if (value.getDefiningOp<VarDeclOp>())
+    builder.create<VarLifetimeEndOp>(value);
+}
+
+static void emitLifetimeEndAfter(Value value, Operation *after) {
+  ImplicitLocOpBuilder builder(after->getLoc(), after);
+  builder.setInsertionPointAfter(after);
+  emitLifetimeEnd(value, builder);
+}
+
+namespace {
+/// This class holds transient state for the DestructionInsertion pass,
+/// accumulating values that need to be destroyed and then emitting and
+/// scheduling the destructor calls themselves (potentially mutating the
+/// operation with the uses (eg if it is a copyinit).
+class DestructorInserter {
+public:
+  DestructorInserter(ValueSet &valueSet) : valueSet(valueSet) {}
+
+  /// This method indicates that the specified value needs to be destroyed after
+  /// this operation.  If 'fieldsToDestroy' is non-empty then it specifies which
+  /// subfields should be destroyed with zeros, otherwise the whole value needs
+  /// to be destroyed.
+  void add(Value value, ValueRef valueRef, BitVector fieldsToDestroy = {}) {
+    // Look through lit.ref.immut ops to find the underlying mutable thing if
+    // we can.  This also helps copy elision which checks for pointer identity.
+    value = RefImmutOp::strip(value);
+    valuesToDestroy.push_back({value, valueRef, std::move(fieldsToDestroy)});
+  }
+
+  /// This emits any destructors needed at the location specified by the
+  /// builder.  If opWithUse is specified, then the inserter is allowed to
+  /// perform various optimizations, e.g. if the opWithUse is a copyinit.
+  void emitDestructors(ImplicitLocOpBuilder &builder, Operation *opWithUse,
+                       SmallVector<Operation *> &opsToRemove);
+
+  /// The same as emitDestructors, but there is no opWithUse so no copyinit
+  /// elision can happen.
+  void emitDestructors(ImplicitLocOpBuilder &builder) {
+    SmallVector<Operation *> opsToRemove;
+    emitDestructors(builder, /*opWithUse*/ nullptr, opsToRemove);
+    assert(opsToRemove.empty() && "cannot remove ops with null opWithUse");
+  }
+
+  LLVM_DUMP_METHOD void dump() const;
+
+private:
+  ValueSet &valueSet;
+
+  /// During the core op-processing loop, this is the set of values that need to
+  /// be destroyed.
+  struct ValueToDestroy {
+    /// This the SSA value that needs to be destroyed.
+    Value value;
+    /// The field range covered by value.
+    ValueRef valueRef;
+    /// If not zero length, this indicates that some subfields are already dead
+    /// and the rest need to be destroyed.
+    BitVector fieldsToDestroy;
+  };
+  SmallVector<ValueToDestroy> valuesToDestroy;
+
+  void destroyValueIfNeeded(Value v, ValueRef valueRef,
+                            const BitVector &consumedValues,
+                            ImplicitLocOpBuilder &builder) const;
+  void emitDestructorCall(Value value, bool isIndirect,
+                          ImplicitLocOpBuilder &builder) const;
+  LogicalResult optimizeCopyDestroys(Operation *opWithUse,
+                                     SmallVector<Operation *> &opsToRemove);
+  void elideCopyInitReg(LIT::CallOp copyInitCall, RefLoadOp loadOp,
+                        SmallVector<Operation *> &opsToRemove);
+  LogicalResult elideCopyInitMem(LIT::CallOp copyInitCall, Value copyInitSrc,
+                                 SmallVector<Operation *> &opsToRemove);
+};
+} // end anonymous namespace
+
+void DestructorInserter::dump() const {
+  auto &os = llvm::errs();
+  os << "Destructor inserter with " << valuesToDestroy.size() << " values\n";
+  for (auto &elt : valuesToDestroy)
+    os << "  id #" << elt.valueRef.valueId << ": " << elt.value << "\n";
+}
+
+/// This emits any destructors needed at the location specified by the
+/// builder.  If opWithUse is specified, then the inserter is allowed to
+/// perform various optimizations, e.g. if the opWithUse is a copyinit.
+void DestructorInserter::emitDestructors(
+    ImplicitLocOpBuilder &builder, Operation *opWithUse,
+    SmallVector<Operation *> &opsToRemove) {
+  // If this is a __copyinit__ call, we can do elision, which may subsume
+  // one of our dtors that we need to emit.
+  // TODO: Remove "opsToRemove" entirely, simplifying this code.
+  (void)optimizeCopyDestroys(opWithUse, opsToRemove);
+
+  // TODO: There can be dependencies between dtor calls (e.g. an array of
+  // references needs to be destroyed before the elements it references).
+  // Sort them before emitting.
+
+  // Emit each value destruction in turn.
+  for (auto &v : valuesToDestroy)
+    destroyValueIfNeeded(v.value, v.valueRef, v.fieldsToDestroy, builder);
+
+  // Now that we're done, recycle our space for the next iteration.
+  valuesToDestroy.clear();
+}
+
+/// We need to destroy the specified value, which could destroyed as a single
+/// destructor call, or could need fieldwise destruction.  Emit the necessary
+/// element accesses and calls.
+void DestructorInserter::destroyValueIfNeeded(
+    Value value, ValueRef valueRef, const BitVector &consumedValues,
+    ImplicitLocOpBuilder &builder) const {
+
+  // If we've recursed down to a field that is already fully destroyed, then
+  // we're done without further investigation.
+  if (!consumedValues.empty() && valueRef.isAllPresent(consumedValues))
+    return;
+
+  // If the entire value needs to be destroyed, then emit a destructor for the
+  // whole value.  This is the base case for our recursion.
+  if (consumedValues.empty() || !consumedValues.test(valueRef.endBit - 1)) {
+    // Diagnose an error if a field of the value we must destroy is already
+    // destroyed.  We cannot run the destructor on the whole object if one of
+    // the fields is missing.
+    if (!consumedValues.empty() && !valueRef.isAllMissing(consumedValues)) {
+      auto &valueEntry = valueSet.getValueInfo(valueRef.valueId);
+      if (valueEntry.hasErrorDiagnosed)
+        return; // Only report one error per symbolic value.
+      valueEntry.hasErrorDiagnosed = true;
+
+      auto diag = mlir::emitError(builder.getLoc(), "field ");
+      auto aliveValues = consumedValues;
+      aliveValues.flip();
+      // If some fields are present and others are missing, complain about the
+      // first whole field that is missing.
+      addBadValueNameToDiag(valueRef, aliveValues, valueSet, diag);
+      diag << " destroyed out of the middle of a value, preventing the "
+              "overall value from being destroyed";
+      return;
+    }
+
+    // Ok, the value needs to be dead here.  If we're tracking it and this is
+    // a whole object destroy, emit a debug kill.
+    if (valueRef.valueId) {
+      const ValueInfo &info = valueSet.getValueInfo(valueRef.valueId);
+      if (info.debugVariable &&
+          (consumedValues.empty() ||
+           valueRef.getNumBits() == consumedValues.size())) {
+        builder.create<DebugInfo::KillOp>(info.debugVariable);
+      }
+    }
+
+    // Emit the destructor.
+    emitDestructorCall(value, valueRef.isIndirect, builder);
+    return;
+  }
+
+  // Otherwise, we must have an indirect value where some fields are present and
+  // some are missing.  Recursively walk the type and destroy just the fields
+  // that are missing.
+  auto valueType = dyn_cast<LIT::StructType>(valueRef.getValueType(value));
+  LIT::StructDeclOp structDecl =
+      valueSet.typeDeclInfo.getStructDeclForType(valueType);
+
+  // Initialize an evaluator so that we can resolve the field types.
+  ParameterEvaluator evaluator;
+  for (auto [decl, value] :
+       llvm::zip(structDecl.getParams(), valueType.getParamValues()))
+    evaluator.setParameterValue(decl, value);
+
+  unsigned nextBit = 0;
+  for (StructFieldOp field : structDecl.getFieldDecls()) {
+    Operation *fieldVal;
+    if (!valueRef.isIndirect)
+      fieldVal = builder.create<LIT::StructExtractOp>(value, field);
+    else
+      fieldVal = builder.create<RefStructGEROp>(value, field);
+
+    unsigned numBits = valueSet.typeDeclInfo.getNumFieldsInType(
+        evaluator.getReboundType(field.getType()));
+    destroyValueIfNeeded(fieldVal->getResult(0),
+                         valueRef.getSubfield(nextBit, numBits), consumedValues,
+                         builder);
+
+    // If there was no destructor generated (because the element has no
+    // destructor) then remove the unused pointer access.
+    if (fieldVal->use_empty())
+      fieldVal->erase();
+    nextBit += numBits;
+  }
+  // The whole object bit should exist after all the fields.
+  assert(valueRef.startBit + nextBit + 1 == valueRef.endBit &&
+         "Lost track of bits");
+}
+
+/// Given a value of reference type, this checks to see if it is immutable, and
+/// casts it back to a mutable reference.  This isn't a generally safe operation
+/// from a type system perspective, so should only be used for things like
+/// destructor insertion that happen after borrow checking.
+static Value getMutableRefForPossiblyImmutValue(Value value,
+                                                ImplicitLocOpBuilder &builder) {
+  value = RefImmutOp::strip(value);
+
+  // Check to see if the reference is already mutable.
+  auto destType = cast<RefType>(value.getType()).getWithMutability(true);
+  if (value.getType() == destType)
+    return value;
+
+  return builder.create<RebindOp>(destType, value);
+}
+
+/// Emit one destructor call for one entire value or field.
+///
+/// The 'opWithUse' value, if present, is the operation using the overall value
+/// being destroyed.  This allows us to perform copy ctor+temp elision.
+void DestructorInserter::emitDestructorCall(
+    Value value, bool isIndirect, ImplicitLocOpBuilder &builder) const {
+
+  Type destroyedType =
+      ValueRef::getDereferencedType(value.getType(), isIndirect);
+  TypedAttr dtor = valueSet.typeDeclInfo.getDestructorForType(destroyedType);
+  if (!dtor) {
+    // If there is no destructor, then this is either a trivial type or a
+    // non-linear type.  Check for linearTypeErrorMsg and emit it if present.
+    if (StringAttr linearMsg =
+            valueSet.typeDeclInfo.getLinearTypeErrorMsg(destroyedType)) {
+      mlir::emitError(builder.getLoc()) << linearMsg.str();
+    }
+
+    // Otherwise, this is a trivial type; nothing to do.
+    return emitLifetimeEnd(value, builder);
+  }
+
+  auto signature = cast<SignatureType>(dtor.getType());
+  assert(signature.getNumResults() == 1 &&
+         "dtor should have one result (none type)");
+  assert(signature.getNumArguments() == 1 && "dtor should have one operand");
+
+  // We may have a @register_passable value indirect (e.g. because it is in a
+  // var).  If so, it needs to be loaded to invoke the destructor.
+  Value valueToDestroy = value;
+  if (auto ref = dyn_cast<RefType>(valueToDestroy.getType()))
+    if (signature.getArguments()[0] == ref.getElementType())
+      valueToDestroy = builder.create<RefLoadOp>(valueToDestroy);
+
+  // If the dtor takes a reference, then this the dtor for a memory type.  Bind
+  // the implicit lifetime of __del__'s self to the lifetime of the reference we
+  // have.
+  SmallVector<TypedAttr> implicitLifetimes;
+  if (auto delSelfTy = dyn_cast<RefType>(signature.getArguments()[0])) {
+    valueToDestroy =
+        getMutableRefForPossiblyImmutValue(valueToDestroy, builder);
+    auto argRef = cast<RefType>(valueToDestroy.getType());
+    assert(delSelfTy.getElementType() == argRef.getElementType());
+    implicitLifetimes.push_back(argRef.getLifetime());
+
+    // Verify that the address space of the reference matches.  The __del__
+    // method will have address space zero.  Attempts to delete other things
+    // should not explode the compiler.
+    if (delSelfTy.getAddressSpace() != argRef.getAddressSpace()) {
+      mlir::emitError(builder.getLoc())
+          << "cannot destroy value in non-default address space";
+      return;
+    }
+
+  } else {
+    assert(signature.getArguments()[0] == valueToDestroy.getType());
+  }
+
+  // Emit the call to the destructor.
+  builder.create<LIT::CallOp>(signature.getResults()[0], dtor,
+                              implicitLifetimes, valueToDestroy);
+  emitLifetimeEnd(value, builder);
+}
+
+//===----------------------------------------------------------------------===//
+// DestructorInserter Copy Elision
+//===----------------------------------------------------------------------===//
+
+/// Look to see if the specified operation is a copyinit: if so, check to see
+/// if any of the values we're looking to destroy are the input.  If so, try to
+/// eliminate the copy in favor of more uses of the now-dead input.
+///
+///   %tmp = lit.var.decl "anonymous"
+///   kgen.call __copyinit__(%tmp, %src)
+///   kgen.call __del__(%src)   <<= Thinking about inserting this.
+///   kgen.call user(%tmp)      <<= Consuming call.
+///
+/// If this happens, we want to generate:
+///    REMOVED: %tmp = lit.var.decl "anonymous"
+///    REMOVED: kgen.call __copyinit__(%tmp, %src)
+///    NOTADDED: kgen.call __del__(%src)
+///    kgen.call user(%src)      <<= Use %src instead.
+///
+LogicalResult DestructorInserter::optimizeCopyDestroys(
+    Operation *opWithUse, SmallVector<Operation *> &opsToRemove) {
+  auto copyInitCall = dyn_cast_if_present<LIT::CallOp>(opWithUse);
+  if (!copyInitCall)
+    return failure();
+
+  // See if we can resolve the callee.
+  LIT::FuncOp callee =
+      valueSet.typeDeclInfo.getFuncForSymbol(copyInitCall.getDirectCallee());
+  if (!callee ||
+      callee.getSpecialFunctionKind() != SpecialFunctionKind::kCopyInit)
+    return failure();
+
+  // Check to see if the copy is immediately destroyed.  If so, we can elide
+  // both the copy and the destroy.  This could also be the last use of %src as
+  // well, but it will just get a destructor call like normal if so.
+  Value copyDest = copyInitCall.getOperand(0);
+  for (auto [i, elt] : llvm::enumerate(valuesToDestroy)) {
+    if (elt.value == copyDest && elt.valueRef.isIndirect &&
+        elt.fieldsToDestroy.empty()) {
+      copyInitCall->dropAllReferences();
+      opsToRemove.push_back(copyInitCall);
+      emitLifetimeEndAfter(copyDest, copyInitCall);
+
+      // We're done with this destructor, so remove it from the list.
+      valuesToDestroy.erase(valuesToDestroy.begin() + i);
+      return success();
+    }
+  }
+
+  // Register passable types will pass the 'existing' value by loading from a
+  // memory location that needs destruction.
+  Value copyInitSrc = copyInitCall.getOperand(1);
+  if (auto loadOp = copyInitSrc.getDefiningOp<RefLoadOp>()) {
+    Value loaded = RefImmutOp::strip(loadOp.getOperand());
+
+    // Check to see if we have this value to destroy.
+    for (auto [i, elt] : llvm::enumerate(valuesToDestroy)) {
+      if (elt.value == loaded && elt.valueRef.isIndirect &&
+          elt.fieldsToDestroy.empty()) {
+        // Ok, yep we can do this.
+        elideCopyInitReg(copyInitCall, loadOp, opsToRemove);
+
+        // We're done with this destructor, so remove it from the list.
+        valuesToDestroy.erase(valuesToDestroy.begin() + i);
+        return success();
+      }
+    }
+  }
+
+  // For memory types, we scan to see if the value is used directly.
+  copyInitSrc = RefImmutOp::strip(copyInitSrc);
+
+  // Check to see if we have this value to destroy.
+  for (auto [i, elt] : llvm::enumerate(valuesToDestroy)) {
+    if (elt.value == copyInitSrc && elt.valueRef.isIndirect &&
+        elt.fieldsToDestroy.empty()) {
+      // Ok, yep we can do this.
+      if (failed(elideCopyInitMem(copyInitCall, copyInitSrc, opsToRemove)))
+        return failure();
+
+      // We're done with this destructor, so remove it from the list.
+      valuesToDestroy.erase(valuesToDestroy.begin() + i);
+      return success();
+    }
+  }
+
+  return failure();
+}
+
+/// We've found a copyinit(dest, src) where the 'src' is getting destroyed after
+/// the copy.
+///
+/// For example, if we have:
+///   %tmp = lit.var.decl "anonymous"
+///   %srcReg = lit.ref.load %src
+///   lit.call __copyinit__(%tmp, %srcReg)
+///   ==> destroy %src
+/// Then we can locally optimize this into:
+///   %tmp = lit.var.decl "anonymous"
+///   %srcReg = lit.ref.load %src
+///   lit.ref.store %srcReg -> %tmp
+/// And if the only other operation using '%tmp' is a lit.load.consume:
+///   %tmp = lit.var.decl "anonymous"
+///   %srcReg = lit.ref.load %src
+///   lit.call __copyinit__(%tmp, %srcReg)
+///   ==> destroy %src
+///   ...
+///   %xyz = lit.load.consume %tmp
+/// Then we can optimize this into:
+///   %srcReg = lit.ref.load %src
+///   ...
+///   %xyz = %srcReg
+void DestructorInserter::elideCopyInitReg(
+    LIT::CallOp copyInitCall, RefLoadOp loadOp,
+    SmallVector<Operation *> &opsToRemove) {
+  Value copyInitDest = copyInitCall.getOperand(0);
+
+  // We're definitely removing the copyinit.
+  copyInitCall->dropAllReferences();
+  opsToRemove.push_back(copyInitCall);
+
+  /// Given a temporary used as the destination of a copyinit call, check if its
+  /// only user (ignoring lifetime markers) is a `lit.load.consume`. This
+  /// function returns the load op if it is the only user.
+  auto getOnlyLoadConsumeUser = [](VarDeclOp var) -> LoadConsumeOp {
+    LoadConsumeOp consumer;
+    for (Operation *user : var->getUsers()) {
+      if (auto load = dyn_cast<LoadConsumeOp>(user))
+        consumer = load;
+      else if (!isa<VarLifetimeStartOp, VarLifetimeEndOp>(user))
+        return {};
+    }
+    return consumer;
+  };
+
+  // If the operation right after the call is a consuming load from a
+  // varDecl, then we can squash the vardecl and the consuming load and
+  // avoid emitting a store, tidying things right up.
+  if (auto varDecl = copyInitDest.getDefiningOp<VarDeclOp>()) {
+    if (LoadConsumeOp loadConsume = getOnlyLoadConsumeUser(varDecl)) {
+      // The loadConsume is dead and can be removed.
+      for (Operation *user : llvm::make_early_inc_range(varDecl->getUsers()))
+        if (user != loadConsume)
+          user->erase();
+      loadConsume.getResult().replaceAllUsesWith(loadOp);
+      // We know the bottom-up scan won't revisit it, so directly remove.
+      loadConsume.erase();
+      // This turns into a consume of the moved value. Emit an end marker if
+      // appropriate.
+      emitLifetimeEndAfter(loadOp.getRef(), loadOp);
+
+      // The lit.var.decl had one use before so it is now dead, we can
+      // remove it as well.
+      opsToRemove.push_back(varDecl);
+      return;
+    }
+  }
+
+  // Otherwise we need to insert a store.  Put the store after the call so
+  // it isn't reprocessed by destructor insertion.
+  emitLifetimeEndAfter(loadOp.getRef(), loadOp);
+  Operation *opAfterCall = &*++Block::iterator(copyInitCall);
+  ImplicitLocOpBuilder builder(copyInitCall.getLoc(), opAfterCall);
+  builder.create<RefStoreOp>(loadOp, copyInitDest);
+}
+
+/// Return true if the specified 'p1' pointer could point at object or a
+/// subcomponent of 'p2'.  This should return true conservatively.
+// TODO: In the presence of returned references / lifetimes, we will
+// need to be more careful here.
+static bool mightPointTo(Value p1, Value p2) {
+  assert((isa<PointerType, RefType>(p2.getType())));
+  // If the value is an integer or other random thing, then it can't point to
+  // anything.
+  if (!isa<PointerType, RefType>(p1.getType()))
+    return false;
+
+  Value underlyingP1 = LifetimeTrackable::findUnderlyingValueFromField(p1);
+  Value underlyingP2 = LifetimeTrackable::findUnderlyingValueFromField(p2);
+  return !underlyingP1 || !underlyingP2 || underlyingP1 == underlyingP2;
+}
+
+// Check to see if we can eliminate a temporary being passed as an owned
+// argument to a call.
+//
+// We currently only do this transformation in extremely limited cases: we
+// need to defend against weird situations where "src" doesn't dominate
+// "tmp" and where "src" gets mutated before the use of "tmp", e.g.:
+//
+//    %tmp = lit.var.decl "anonymous"
+//    kgen.call __copyinit__(%tmp, %src)  <<== Last use of %src
+// ** kgen.call __del__(%src)   <<== Thinking about inserting this.
+//    kgen.call __init__(%src)  <<== Could reinitialize %src before use of %tmp!
+//    use(%tmp)
+//    use(%src)
+//
+// Doing this right requires non-trivial liveness analysis which should
+// itself be part of a standalone SSA pass post-inlining.  For now we'll
+// just catch the most obvious local cases to clean up the IR and provide a
+// "guaranteed" optimization.
+static bool canEntirelyElideMemoryTemporary(LIT::CallOp copyInitCall,
+                                            VarDeclOp tmpDecl) {
+  assert(copyInitCall.getOperand(0) == tmpDecl &&
+         "the vardecl is known to be directly assigned");
+  // Right now we require them to be in the same block, this is overly
+  // conservative.
+  Block *tmpBlock = tmpDecl->getBlock();
+  if (copyInitCall->getBlock() != tmpBlock)
+    return false;
+
+  // Find all users of "tmp".
+  SmallPtrSet<Operation *, 3> userOfTmp;
+  // Worklist of projections of the tmp VarDecl we need to check.
+  SmallVector<Value> valuesToCheck;
+  valuesToCheck.push_back(tmpDecl);
+
+  while (!valuesToCheck.empty()) {
+    Value checkVal = valuesToCheck.pop_back_val();
+
+    for (OpOperand &operand : checkVal.getUses()) {
+      Operation *user = operand.getOwner();
+
+      // Ignore lifetime markers.
+      if (isa<VarLifetimeStartOp, VarLifetimeEndOp>(user))
+        continue;
+
+      if (user->getBlock() != tmpBlock)
+        return false; // We don't handle control flow.
+
+      // If we see a lit.ref.immut or rebind of the lifetime, check all its uses
+      // as well.
+      if (isa<RefImmutOp, RebindOp>(user)) {
+        valuesToCheck.push_back(user->getResult(0));
+        continue;
+      }
+
+      // Ignore the copyinit of tmp.
+      if (user == copyInitCall)
+        continue;
+
+      // Otherwise, the only sort of user we can support is a call that consumes
+      // the value.
+      // NOTE: This could be extended in the future to be more powerful, e.g. to
+      // support patterns like:
+      //    %tmp = lit.var.decl "anonymous"
+      //    kgen.call __copyinit__(%tmp, %src)  <<== Last use of %src
+      // ** kgen.call __del__(%src)   <<== Thinking about inserting this.
+      //    use(%tmp)
+      //    consume(%tmp)
+      // It isn't clear why we're limiting this?
+      auto callUser = dyn_cast<LIT::CallOp>(user);
+      if (!callUser)
+        return false; // Unknown user.
+
+      // The argument convention for the callee must be consuming, not
+      // initializing or anything else.
+      auto convention =
+          callUser.getCalleeType().getArgConvention(operand.getOperandNumber());
+      if (convention != ArgConvention::OwnedInMem)
+        return false;
+      userOfTmp.insert(callUser);
+    }
+  }
+
+  assert(!userOfTmp.empty() && "tmp should at least be destroyed");
+
+  // Okay, we only see users of the 'tmp' decl that we can understand.  Do a
+  // lexical scan to make sure there is nothing between the initialization of
+  // the tmp and the use of the tmp that might re-use the source.
+  Value srcPointer = copyInitCall.getOperand(1);
+  for (auto it = ++Block::iterator(copyInitCall), e = tmpBlock->end();; ++it) {
+    // If we ran off the end of the block but we didn't see the users, then the
+    // copyinit doesn't dominate this use, something weird is going on, bail
+    // out.
+    if (it == e)
+      return false;
+
+    // Scan all the operands to see if any of them are related to %src. We
+    // disallow regions because we don't recurse into them.
+    if (it->getNumRegions() || llvm::any_of(it->getOperands(), [&](Value v) {
+          return v && mightPointTo(v, srcPointer);
+        }))
+      return false;
+
+    // If this operation is a known user of tmp, then we might be done scanning.
+    if (userOfTmp.erase(&*it)) {
+      if (userOfTmp.empty())
+        return true;
+    }
+    // Otherwise, keep looking through the block until we see all the users.
+  }
+  return true;
+}
+
+/// We need to destroy the source for the specified call to a memory-only
+/// __copyinit__ call.  Attempt to elide it completely or strength reduce it to
+/// a __moveinit__.  The 'copyInitSrc' value is the src operand with
+/// lit.ref.immut instructions stripped off.
+LogicalResult
+DestructorInserter::elideCopyInitMem(LIT::CallOp copyInitCall,
+                                     Value copyInitSrc,
+                                     SmallVector<Operation *> &opsToRemove) {
+  ImplicitLocOpBuilder builder(copyInitCall.getLoc(), copyInitCall);
+
+  // We prefer to completely delete the copy if it is into a temporary location
+  // that we can forward.
+  //
+  // Note: we currently delete explicitly declared temporaries, not just
+  // implicit ones.  This is a policy decision, and we should look into
+  // the impact on debug information, but generally one wouldn't want debug
+  // information to block optimizations.
+  if (VarDeclOp tmpDecl =
+          copyInitCall.getOperand(0).getDefiningOp<VarDeclOp>()) {
+    if (canEntirelyElideMemoryTemporary(copyInitCall, tmpDecl)) {
+      // Insert a declaration of the lifetime for the tmp we're eliding, we know
+      // that VarDeclOp's always declare a unique lifetime.
+      auto refType = cast<RefType>(tmpDecl.getType());
+      auto param = cast<ParamDeclRefAttr>(refType.getLifetime());
+
+      // The old reference type used a novel lifetime.  We need to declare it,
+      // and coerce back to it with a rebind.
+      builder.create<ParamDeclareOp>(ParamDeclAttr::get(param),
+                                     AnyLifetimeAttr::get(param.getType()));
+      auto refCasted = builder.create<RebindOp>(tmpDecl.getType(), copyInitSrc);
+
+      // Erase the lifetime start marker for the temporary. However, keep the
+      // lifetime end markers if the aliased value is a var decl, as they will
+      // get "inherited" by the aliased value.
+      Value value = LifetimeTrackable::findUnderlyingValueFromField(refCasted);
+      for (Operation *user : llvm::make_early_inc_range(tmpDecl->getUsers())) {
+        if (isa<VarLifetimeStartOp>(user)) {
+          user->erase();
+        } else if (auto end = dyn_cast<VarLifetimeEndOp>(user)) {
+          if (value.getDefiningOp<VarDeclOp>())
+            end.setOperand(value);
+          else
+            user->erase();
+        }
+      }
+      tmpDecl.getResult().replaceAllUsesWith(refCasted);
+
+      // We'll delete the copyInit but don't want to invalidate iterators so do
+      // later.  Remove the operand uses so we don't see them in later def-use
+      // scans, and to make it more obvious when reading IR dumps that these
+      // will be gone.
+      copyInitCall->dropAllReferences();
+      opsToRemove.push_back(copyInitCall);
+      opsToRemove.push_back(tmpDecl);
+      return success();
+    }
+  }
+
+  auto srcRefType = cast<RefType>(copyInitSrc.getType());
+  Type destroyedType = srcRefType.getElementType();
+
+  // Otherwise, try to promote to a __moveinit__ call if present.
+  SymbolConstantAttr moveCtor =
+      valueSet.typeDeclInfo.getMoveInitForType(destroyedType);
+  if (!moveCtor)
+    return failure();
+
+    // moveCtor must have __moveinit__(inout self, owned: Self) type.
+#ifndef NDEBUG
+  auto moveSig = cast<SignatureType>(moveCtor.getType());
+  assert(moveSig.getNumArguments() == 2);
+  assert(moveSig.getArgConvention(0) == ArgConvention::InitSelf);
+  assert(moveSig.getArgConvention(1) == ArgConvention::OwnedInMem);
+  auto moveArgs = moveSig.getArguments();
+  auto moveValue1Ref = cast<RefType>(moveArgs[1]);
+  // srcRefType is immutable here because it was passed to a copy.
+  assert(cast<RefType>(moveArgs[0]).getElementType() == destroyedType &&
+         moveValue1Ref.getElementType() == destroyedType &&
+         moveValue1Ref.isMutableKnown(true));
+
+  auto destType = cast<RefType>(copyInitCall.getOperand(0).getType());
+  assert(destType.getElementType() == srcRefType.getElementType());
+#endif
+
+  // We know that the input is mutable (otherwise it wouldn't be tracked for
+  // destruction), get the reference to a mutable type.
+  copyInitSrc = getMutableRefForPossiblyImmutValue(copyInitSrc, builder);
+  srcRefType = cast<RefType>(copyInitSrc.getType());
+
+  // Switch the source operand, and update the lifetime associated with it.
+  copyInitCall.setOperand(1, copyInitSrc);
+  copyInitCall.setImplicitLifetimes(
+      {copyInitCall.getImplicitLifetimes()[0], srcRefType.getLifetime()});
+
+  // Transform the copy into a move.
+  copyInitCall.setCalleeAttr(moveCtor);
+  emitLifetimeEndAfter(copyInitSrc, copyInitCall);
+  // Since we changed the copy to a __moveinit__, we don't need a dtor call.
+  return success();
+}
+
+//===----------------------------------------------------------------------===//
+// DestructorInsertion Analysis
 //===----------------------------------------------------------------------===//
 
 namespace {
@@ -1627,40 +2303,25 @@ private:
                                     const BitVector &fullSetToDestroy,
                                     Location loc);
 
-  void checkConsume(Value value, Operation &op, bool isDeref);
-  void checkUse(Value value, Operation &op, bool isDeref);
-  void checkUse(Value value, ImplicitLocOpBuilder &builder,
-                Operation *opWithUse, bool isDeref);
-  void checkDef(Value value, Operation &op, bool isDeref);
-  void checkLifetimeEffect(TypedAttr lifetime, Operation &op);
-  void destroyValueIfNeeded(Value value, ValueRef valueRef,
-                            ImplicitLocOpBuilder &builder,
-                            Operation *opWithUse);
-
-  LogicalResult elideCopyDestroyPair(Value value, Type destroyedType,
-                                     Operation *opWithUse);
-  void emitDestructorCallAt(Value value, bool isIndirect,
-                            ImplicitLocOpBuilder &builder,
-                            Operation *opWithUse);
+  void checkConsume(Value value, Operation &op, bool isDeref,
+                    DestructorInserter &dtorInserter);
+  void checkUse(Value value, bool isDeref, DestructorInserter &dtorInserter);
+  void checkDef(Value value, Operation &op, bool isDeref,
+                DestructorInserter &dtorInserter);
+  void checkLifetimeEffect(TypedAttr lifetime,
+                           DestructorInserter &dtorInserter);
+  void scheduleNeededDtors(Value value, ValueRef valueRef,
+                           DestructorInserter &dtorInserter);
 
   /// Emit a debug value for the value if it is tracked with debug info.
   void emitDebugInit(Value value, ValueRef valueRef,
                      ImplicitLocOpBuilder &builder);
 
-  /// Emit a debug kill marker for the value if it is tracked with debug info.
-  void emitDebugKill(ValueRef valueRef, ImplicitLocOpBuilder &builder);
-
-  /// Emit a lifetime end marker for a value that is being consumed.
-  void emitLifetimeEnd(Value value, ImplicitLocOpBuilder &builder);
-  void emitLifetimeEndAfter(Value value, Operation *after);
-
-  /// Emit both a debug kill & a destructor call.
-  void emitDebugKillAndDestructorCallAt(Value value, ValueRef valueRef,
-                                        ImplicitLocOpBuilder &builder,
-                                        Operation *opWithUse);
-
   /// This is metadata about all the values we are tracking.
   ValueSet &valueSet;
+
+  /// This is the signature of the current function being analyzed.
+  SignatureType functionSignature;
 
   /// This is a set of operations that are removed after destructor processing
   /// has completed.  This is used to elide copy ctors.
@@ -1686,9 +2347,6 @@ private:
   /// surrounding loop.
   BitVector *breakSet = nullptr;
   BitVector *continueSet = nullptr;
-
-  /// This is the signature of the current function being analyzed.
-  SignatureType functionSignature;
 };
 } // namespace
 
@@ -1722,10 +2380,11 @@ private:
 }
 
 void DestructorInsertion::scanFunction(LIT::FuncOp func) {
-  if (auto fnInterface = dyn_cast<FuncInterface>(func.getOperation()))
-    functionSignature = fnInterface.getSignature();
-  else // Unknown function kind.
-    return;
+  auto fnInterface = dyn_cast<FuncInterface>(func.getOperation());
+  if (!fnInterface)
+    return; // Unknown function kind.
+
+  functionSignature = fnInterface.getSignature();
 
   consumedValues.resize(valueSet.getNumTotalBits());
   // Slot 0 indicates this block is reachable.  This will be cleared if an
@@ -1738,6 +2397,8 @@ void DestructorInsertion::scanFunction(LIT::FuncOp func) {
 
   // The sentinel tracks reachability.
   assert(consumedValues[0] && "function entry should be reachable");
+
+  DestructorInserter dtorInserter(valueSet);
 
   // If any argument values are unconsumed then they must be unused.
   // Emit their destructor calls at the start of the function by acting as
@@ -1755,7 +2416,8 @@ void DestructorInsertion::scanFunction(LIT::FuncOp func) {
       loc = FusedLoc::get(loc.getContext(), {loc}, scope);
 
     ImplicitLocOpBuilder builder(loc, &funcBody, funcBody.begin());
-    checkUse(argValue, builder, /*opWithUse=*/nullptr, /*isDeref=*/isIndirect);
+    checkUse(argValue, /*isDeref=*/isIndirect, dtorInserter);
+    dtorInserter.emitDestructors(builder);
   }
 }
 
@@ -1768,6 +2430,9 @@ void DestructorInsertion::scanBlock(Block &block) {
   SmallVector<std::pair<Value, OperandEffect>> operandEffects;
   SmallVector<ResultEffect> resultEffects;
   SmallVector<TypedAttr> lifetimeEffects;
+
+  DestructorInserter dtorInserter(valueSet);
+
   for (Operation &op : llvm::reverse(block)) {
     operandEffects.clear();
     resultEffects.clear();
@@ -1811,24 +2476,24 @@ void DestructorInsertion::scanBlock(Block &block) {
       case ResultEffect::ignore:
         continue;
       case ResultEffect::regDefine:
-        checkDef(result, op, /*isDeref=*/false);
+        checkDef(result, op, /*isDeref=*/false, dtorInserter);
         break;
       case ResultEffect::memDefineUninitToInit:
         // The live-in behavior is modeled by LifetimeTrackable to match the
         // live-out behavior.
         // We consume on execution to provide Uninit -> Init behavior.
-        checkConsume(result, op, /*isDeref=*/true);
+        checkConsume(result, op, /*isDeref=*/true, dtorInserter);
         break;
       case ResultEffect::memDefineUninitToUninit:
         // Nothing to do here.
         break;
       case ResultEffect::memDefineInitToInit:
         // If it start/end initialized, emit destructor if already replaced.
-        checkUse(result, op, /*isDeref=*/true);
+        checkUse(result, /*isDeref=*/true, dtorInserter);
         break;
       case ResultEffect::memDefineInitToUninit:
         // We consume on execution to provide Init -> Uninit behavior.
-        checkDef(result, op, /*isDeref=*/true);
+        checkDef(result, op, /*isDeref=*/true, dtorInserter);
         break;
       }
     }
@@ -1837,26 +2502,26 @@ void DestructorInsertion::scanBlock(Block &block) {
     for (auto [operand, effect] : operandEffects) {
       switch (effect) {
       case OperandEffect::regUse:
-        checkUse(operand, op, /*isDeref=*/false);
+        checkUse(operand, /*isDeref=*/false, dtorInserter);
         break;
       case OperandEffect::regConsume:
-        checkConsume(operand, op, /*isDeref=*/false);
+        checkConsume(operand, op, /*isDeref=*/false, dtorInserter);
         break;
       case OperandEffect::memLoad:
-        checkUse(operand, op, /*isDeref=*/true);
+        checkUse(operand, /*isDeref=*/true, dtorInserter);
         break;
       case OperandEffect::memStoreOwned:
-        checkDef(operand, op, /*isDeref=*/true);
+        checkDef(operand, op, /*isDeref=*/true, dtorInserter);
         break;
       case OperandEffect::memInOut:
         // It is sufficient to just check that we're using the input operation,
         // and if this is the last use of the operation, we should insert a
         // destructor for the value.  checkDef would mark the value as
         // not-live-in, which we don't want.
-        checkUse(operand, op, /*isDeref=*/true);
+        checkUse(operand, /*isDeref=*/true, dtorInserter);
         break;
       case OperandEffect::memConsume:
-        checkConsume(operand, op, /*isDeref=*/true);
+        checkConsume(operand, op, /*isDeref=*/true, dtorInserter);
         break;
       case OperandEffect::memMarkDestroyed:
         // The lit.ownership.mark_destroyed op consumes the whole object bit of
@@ -1872,7 +2537,13 @@ void DestructorInsertion::scanBlock(Block &block) {
 
     // Process any other indirect lifetimes accessed.
     for (auto lifetime : lifetimeEffects)
-      checkLifetimeEffect(lifetime, op);
+      checkLifetimeEffect(lifetime, dtorInserter);
+
+    // Insert any destructor calls immediately /after/ this operation, since
+    // they are for values used by it.
+    auto insertPt = std::next(Block::iterator(&op));
+    ImplicitLocOpBuilder builder(op.getLoc(), op.getBlock(), insertPt);
+    dtorInserter.emitDestructors(builder, &op, opsToRemove);
   }
 }
 
@@ -2228,8 +2899,8 @@ void DestructorInsertion::checkTryOp(LIT::TryOp tryOp) {
 
 // When the specified value is consumed by an operation we know it doesn't need
 // to be destroyed above this point.
-void DestructorInsertion::checkConsume(Value value, Operation &op,
-                                       bool isDeref) {
+void DestructorInsertion::checkConsume(Value value, Operation &op, bool isDeref,
+                                       DestructorInserter &dtorInserter) {
   ValueRef valueRef = valueSet.getDirectValueRef(value, isDeref);
   // Uninitialized variable tracking already rejects consumes of indirect
   // non-trivial values.
@@ -2281,29 +2952,29 @@ void DestructorInsertion::checkConsume(Value value, Operation &op,
 
   if (!dryRun) {
     ImplicitLocOpBuilder builder(op.getLoc(), &op);
-    emitDebugKill(valueRef, builder);
+
+    /// Emit a debug kill marker for the value if it is tracked with debug info
+    /// an if full value is destroyed.
+    // TODO(#34115): Emit fragment end-of-life for partial destruction.
+    const ValueInfo &info = valueSet.getValueInfo(valueRef.valueId);
+    if (info.debugVariable && valueRef.startBit == info.startValueBit &&
+        valueRef.endBit == info.endValueBit) {
+      builder.create<DebugInfo::KillOp>(info.debugVariable);
+    }
+
     emitLifetimeEndAfter(value, &op);
   }
-}
-
-/// This operation uses whatever fields are being referenced.  Iff this is the
-/// /last/ use of a value, emit a destructor of the overall value.
-void DestructorInsertion::checkUse(Value value, Operation &op, bool isDeref) {
-  // If needed, emit the destructor immediately after the specified operation.
-  auto insertPt = std::next(Block::iterator(&op));
-  ImplicitLocOpBuilder builder(op.getLoc(), op.getBlock(), insertPt);
-  checkUse(value, builder, /*opWithUse=*/&op, isDeref);
 }
 
 /// Check a use of a value.  Iff this is the /last/ use of the value, emit a
 /// destructor of the overall value.  The 'opWithUse' value (if present)
 /// indicates the operation performing the use.  This enables copy ctor elision,
 /// but this is null at the start of block/function for example.
-void DestructorInsertion::checkUse(Value value, ImplicitLocOpBuilder &builder,
-                                   Operation *opWithUse, bool isDeref) {
-  // If this is a direct reference to a value, we are tracking it, meaning there
-  // are dedicated bits in the consumeValues bitvector that represent the
-  // consumption state of this value.
+void DestructorInsertion::checkUse(Value value, bool isDeref,
+                                   DestructorInserter &dtorInserter) {
+  // If this is a direct reference to a value, we are tracking it, meaning
+  // there are dedicated bits in the consumedValues bitvector that represent
+  // the consumption state of this value.
   if (ValueRef valueRef = valueSet.getDirectValueRef(value, isDeref)) {
     ValueInfo &valueInfo = valueSet.getValueInfos()[valueRef.valueId];
     if (valueInfo.hasErrorDiagnosed)
@@ -2354,7 +3025,7 @@ void DestructorInsertion::checkUse(Value value, ImplicitLocOpBuilder &builder,
     //   consume(&aggregate)
     //
     // In this case, we need to destroy field1 after this use.
-    destroyValueIfNeeded(value, valueRef, builder, /*opWithUse=*/opWithUse);
+    scheduleNeededDtors(value, valueRef, dtorInserter);
     return;
   }
 
@@ -2373,27 +3044,28 @@ void DestructorInsertion::checkUse(Value value, ImplicitLocOpBuilder &builder,
       // We expand the lifetime use to be an access to the full value being
       // accessed, even if it we have field sensitivity.  The reason for this
       // is that we don't have the right Value to pass in to
-      // destroyValueIfNeeded.
+      // scheduleNeededDtors.
       // TODO: We could extend this to re-derive the field values from the base
       // like `destroyValuesAtEntryIfNeeded` and unify this and the "direct"
       // path better.
       valueRef = valueInfo.getFullValueRef(valueRef.valueId);
 
-      destroyValueIfNeeded(valueInfo.value, valueRef, builder, opWithUse);
+      scheduleNeededDtors(valueInfo.value, valueRef, dtorInserter);
     }
   }
 }
 
 /// This operation defines the specified value.  If the value is dead on
 /// arrival, emit a destructor of the value.
-void DestructorInsertion::checkDef(Value value, Operation &op, bool isDeref) {
+void DestructorInsertion::checkDef(Value value, Operation &op, bool isDeref,
+                                   DestructorInserter &dtorInserter) {
   // If there is no use of the value we are defining, emit a dtor after the
   // op. This happens when we have things like:
   //
   //   init(&aggregate)
   //   ...
   //   aggregate.field1 = newValue  <<-- we are here
-  checkUse(value, op, isDeref);
+  checkUse(value, isDeref, dtorInserter);
 
   // This call defines the result, so anything above it is either dead or
   // needs a destructor if live.  If this is a direct reference, we mark the
@@ -2414,20 +3086,18 @@ void DestructorInsertion::checkDef(Value value, Operation &op, bool isDeref) {
   // it in a field sensitive way.  The uninitialized checker verified that the
   // value is guaranteed live-in when nontrivial and indirect.
   if (!valueSet.isTrivial(value, isDeref) && !dryRun) {
-    // Destructor call goes ahead of the mutation.
+    // Destructor call goes ahead of the mutation, not after.
     ImplicitLocOpBuilder builder(op.getLoc(), &op);
-    emitDestructorCallAt(value, isDeref, builder, &op);
+    DestructorInserter beforeDtorInserter(valueSet);
+    beforeDtorInserter.add(value,
+                           /*Just do it*/ ValueRef(0, 0, 0, isDeref));
+    beforeDtorInserter.emitDestructors(builder);
   }
 }
 
 /// Check any unstructured lifetimes that are accessed by the operation.
-void DestructorInsertion::checkLifetimeEffect(TypedAttr lifetime,
-                                              Operation &op) {
-  // For destructor insertion, we don't care if this is a read or write.
-  // If needed, emit the destructor immediately after the specified operation.
-  auto insertPt = std::next(Block::iterator(&op));
-  ImplicitLocOpBuilder builder(op.getLoc(), op.getBlock(), insertPt);
-
+void DestructorInsertion::checkLifetimeEffect(
+    TypedAttr lifetime, DestructorInserter &dtorInserter) {
   SmallVector<ValueRef> accesses = valueSet.getValueRefsForLifetime(lifetime);
   for (auto access : accesses) {
     // Iff this is the /last/ use of the value, emit a dtor for the value.
@@ -2435,7 +3105,7 @@ void DestructorInsertion::checkLifetimeEffect(TypedAttr lifetime,
     if (valueInfo.hasErrorDiagnosed)
       continue;
 
-    destroyValueIfNeeded(valueInfo.value, access, builder, /*opWithUse=*/&op);
+    scheduleNeededDtors(valueInfo.value, access, dtorInserter);
   }
 }
 
@@ -2475,12 +3145,13 @@ static void clearTrivialFields(ValueRef valueRef, Type valueType,
   }
 }
 
-/// Recursive version of destroyValueIfNeeded invoked when we know that we are
-/// inserting destructors.
-void DestructorInsertion::destroyValueIfNeeded(Value value, ValueRef valueRef,
-                                               ImplicitLocOpBuilder &builder,
-                                               Operation *opWithUse) {
+void DestructorInsertion::scheduleNeededDtors(
+    Value value, ValueRef valueRef, DestructorInserter &dtorInserter) {
   assert(valueRef && "Only works on valid refs");
+
+  // If nothing in this value needs destroying, then ignore the request.
+  if (valueRef.isAllPresent(consumedValues))
+    return;
 
   // If we are just computing the consumedValue set, don't actually insert any
   // destructor calls.
@@ -2489,15 +3160,15 @@ void DestructorInsertion::destroyValueIfNeeded(Value value, ValueRef valueRef,
     return;
   }
 
-  // If nothing in this value needs destroying, then ignore the request.
-  if (valueRef.isAllPresent(consumedValues))
-    return;
-
   // Get the type for the value so we can poke at it.
   // If a generic type or trivial, then emit a destructor call (or nothing).
   auto valueType = dyn_cast<LIT::StructType>(valueRef.getValueType(value));
   if (!valueType) {
-    emitDebugKillAndDestructorCallAt(value, valueRef, builder, opWithUse);
+    // We are going to emit a destructor for the specified ValueRef, so all none
+    // of the things we are about to destroy should already be destroyed.
+    assert(valueRef.isAllMissing(consumedValues) &&
+           "cannot have partially consumed object");
+    dtorInserter.add(value, valueRef);
     valueRef.markBits(consumedValues, true);
     return;
   }
@@ -2519,496 +3190,19 @@ void DestructorInsertion::destroyValueIfNeeded(Value value, ValueRef valueRef,
     ++valueRef.endBit;
   }
 
-  // If the entire value needs to be destroyed, then emit a destructor for the
-  // whole value.
-  if (!consumedValues.test(valueRef.endBit - 1)) {
-    // Trivial types don't have __del__ methods and can't be tracked, so if this
-    // is referring to one of them, make sure to clear the bits so we don't
-    // think they need to be destroyed.
-    clearTrivialFields(valueRef, valueType, consumedValues, valueSet);
+  // Trivial types don't have __del__ methods and can't be tracked, so if this
+  // is referring to one of them, make sure to clear the bits so we don't
+  // think they need to be destroyed.
+  clearTrivialFields(valueRef, valueType, consumedValues, valueSet);
 
-    // If a field of a value we must destroy is already destroyed, then we have
-    // an error, because we cannot run the destructor on the whole object if one
-    // of the fields is missing.
-    if (!valueRef.isAllMissing(consumedValues)) {
-      if (valueEntry.hasErrorDiagnosed)
-        return; // Only report one error per symbolic value.
-      valueEntry.hasErrorDiagnosed = true;
-
-      auto diag = mlir::emitError(builder.getLoc(), "field ");
-      auto aliveValues = consumedValues;
-      aliveValues.flip();
-      // If some fields are present and others are missing, complain about the
-      // first whole field that is missing.
-      addBadValueNameToDiag(valueRef, aliveValues, valueSet, diag);
-      diag << " destroyed out of the middle of a value, preventing the "
-              "overall value from being destroyed";
-      valueRef.markBits(consumedValues, false);
-    }
-
-    // Ok, everything looks good - actually emit the dtor call here.
-    emitDebugKillAndDestructorCallAt(value, valueRef, builder, opWithUse);
-    valueRef.markBits(consumedValues, true);
-    return;
-  }
-
-  // Otherwise, we must have an indirect value where some fields are present and
-  // some are missing.  Recursively walk the type and destroy just the fields
-  // that are missing.
-  LIT::StructDeclOp structDecl =
-      valueSet.typeDeclInfo.getStructDeclForType(valueType);
-
-  // Initialize an evaluator so that we can resolve the field types.
-  ParameterEvaluator evaluator;
-  for (auto [decl, value] :
-       llvm::zip(structDecl.getParams(), valueType.getParamValues()))
-    evaluator.setParameterValue(decl, value);
-
-  unsigned nextBit = 0;
-  for (auto field : structDecl.getFieldDecls()) {
-    Operation *fieldVal;
-    if (!valueRef.isIndirect)
-      fieldVal = builder.create<LIT::StructExtractOp>(value, field);
-    else
-      fieldVal = builder.create<RefStructGEROp>(value, field);
-
-    unsigned numBits = valueSet.typeDeclInfo.getNumFieldsInType(
-        evaluator.getReboundType(field.getType()));
-    destroyValueIfNeeded(fieldVal->getResult(0),
-                         valueRef.getSubfield(nextBit, numBits), builder,
-                         /*opWithUse=*/nullptr);
-
-    // If there was no destructor generated (because the element has no
-    // destructor) then remove the unused pointer access.
-    if (fieldVal->use_empty())
-      fieldVal->erase();
-    nextBit += numBits;
-  }
-  // The whole object bit should exist after all the fields.
-  assert(valueRef.startBit + nextBit + 1 == valueRef.endBit &&
-         "Lost track of bits");
-}
-
-/// Return true if the specified 'p1' pointer could point at object or a
-/// subcomponent of 'p2'.  This should return true conservatively.
-// TODO: In the presence of returned references / lifetimes, we will
-// need to be more careful here.
-static bool mightPointTo(Value p1, Value p2) {
-  assert((isa<PointerType, RefType>(p2.getType())));
-  // If the value is an integer or other random thing, then it can't point to
-  // anything.
-  if (!isa<PointerType, RefType>(p1.getType()))
-    return false;
-
-  Value underlyingP1 = LifetimeTrackable::findUnderlyingValueFromField(p1);
-  Value underlyingP2 = LifetimeTrackable::findUnderlyingValueFromField(p2);
-  return !underlyingP1 || !underlyingP2 || underlyingP1 == underlyingP2;
-}
-
-// Check to see if we can eliminate a temporary being passed as an owned
-// argument to a call.
-//
-// We currently only do this transformation in extremely limited cases: we
-// need to defend against weird situations where "src" doesn't dominate
-// "tmp" and where "src" gets mutated before the use of "tmp", e.g.:
-//
-//    %tmp = lit.var.decl "anonymous"
-//    kgen.call __copyinit__(%tmp, %src)  <<== Last use of %src
-// ** kgen.call __del__(%src)   <<== Thinking about inserting this.
-//    kgen.call __init__(%src)  <<== Could reinitialize %src before use of %tmp!
-//    use(%tmp)
-//    use(%src)
-//
-// Doing this right requires non-trivial liveness analysis which should
-// itself be part of a standalone SSA pass post-inlining.  For now we'll
-// just catch the most obvious local cases to clean up the IR and provide a
-// "guaranteed" optimization.
-static bool canEntirelyElideMemoryTemporary(LIT::CallOp copyInitCall,
-                                            VarDeclOp tmpDecl) {
-  assert(copyInitCall.getOperand(0) == tmpDecl &&
-         "the vardecl is known to be directly assigned");
-  Block *tmpBlock = tmpDecl->getBlock();
-  if (copyInitCall->getBlock() != tmpBlock)
-    return false;
-
-  // Find all users of "tmp".
-  SmallPtrSet<Operation *, 3> userOfTmp;
-  // Worklist of projections of the tmp VarDecl we need to check.
-  SmallVector<Value> valuesToCheck;
-  valuesToCheck.push_back(tmpDecl);
-
-  while (!valuesToCheck.empty()) {
-    Value checkVal = valuesToCheck.pop_back_val();
-
-    for (OpOperand &operand : checkVal.getUses()) {
-      Operation *user = operand.getOwner();
-
-      // Ignore lifetime markers.
-      if (isa<VarLifetimeStartOp, VarLifetimeEndOp>(user))
-        continue;
-
-      if (user->getBlock() != tmpBlock)
-        return false; // We don't handle control flow.
-
-      // If we see a lit.ref.immut or rebind of the lifetime, check all its uses
-      // as well.
-      if (isa<RefImmutOp, RebindOp>(user)) {
-        valuesToCheck.push_back(user->getResult(0));
-        continue;
-      }
-
-      // Ignore the copyinit of tmp.
-      if (user == copyInitCall)
-        continue;
-
-      // Otherwise, the only sort of user we can support is a call that consumes
-      // the value.
-      // NOTE: This could be extended in the future to be more powerful, e.g. to
-      // support patterns like:
-      //    %tmp = lit.var.decl "anonymous"
-      //    kgen.call __copyinit__(%tmp, %src)  <<== Last use of %src
-      // ** kgen.call __del__(%src)   <<== Thinking about inserting this.
-      //    use(%tmp)
-      //    consume(%tmp)
-      // It isn't clear why we're limiting this?
-      auto callUser = dyn_cast<LIT::CallOp>(user);
-      if (!callUser)
-        return false; // Unknown user.
-
-      // The argument convention for the callee must be consuming, not
-      // initializing or anything else.
-      auto convention =
-          callUser.getCalleeType().getArgConvention(operand.getOperandNumber());
-      if (convention != ArgConvention::OwnedInMem)
-        return false;
-      userOfTmp.insert(callUser);
-    }
-  }
-
-  assert(!userOfTmp.empty() && "tmp should at least be destroyed");
-
-  // Okay, we only see users of the 'tmp' decl that we can understand.  Do a
-  // lexical scan to make sure there is nothing between the initialization of
-  // the tmp and the use of the tmp that might re-use the source.
-  Value srcPointer = copyInitCall.getOperand(1);
-  for (auto it = ++Block::iterator(copyInitCall), e = tmpBlock->end();; ++it) {
-    // If we ran off the end of the block but we didn't see the users, then the
-    // copyinit doesn't dominate this use, something weird is going on, bail
-    // out.
-    if (it == e)
-      return false;
-
-    // Scan all the operands to see if any of them are related to %src. We
-    // disallow regions because we don't recurse into them.
-    if (it->getNumRegions() || llvm::any_of(it->getOperands(), [&](Value v) {
-          return v && mightPointTo(v, srcPointer);
-        }))
-      return false;
-
-    // If this operation is a known user of tmp, then we might be done scanning.
-    if (userOfTmp.erase(&*it)) {
-      if (userOfTmp.empty())
-        return true;
-    }
-    // Otherwise, keep looking through the block until we see all the users.
-  }
-  return true;
-}
-
-/// Given a value of reference type, this checks to see if it is immutable, and
-/// casts it back to a mutable reference.  This isn't a generally safe operation
-/// from a type system perspective, so should only be used for things like
-/// destructor insertion that happen after borrow checking.
-static Value getMutableRefForPossiblyImmutValue(Value value,
-                                                ImplicitLocOpBuilder &builder) {
-  value = RefImmutOp::strip(value);
-
-  // Check to see if the reference is already mutable.
-  auto destType = cast<RefType>(value.getType()).getWithMutability(true);
-  if (value.getType() == destType)
-    return value;
-
-  return builder.create<RebindOp>(destType, value);
-}
-
-/// Given a temporary used as the destination of a copyinit call, check if its
-/// only user (ignoring lifetime markers) is a `lit.load.consume`. This function
-/// returns the load op if it is the only user.
-static LoadConsumeOp getOnlyLoadConsumeUser(VarDeclOp var) {
-  LoadConsumeOp consumer;
-  for (Operation *user : var->getUsers()) {
-    if (auto load = dyn_cast<LoadConsumeOp>(user))
-      consumer = load;
-    else if (!isa<VarLifetimeStartOp, VarLifetimeEndOp>(user))
-      return {};
-  }
-  return consumer;
-}
-
-/// Given the need to destroy the specified value as a result of the specified
-/// operation using it, check to see if the use is a call to the copy ctor for
-/// the value.  If so, try to elide the copy+temporary.  This returns success
-/// when it can do the elision, failure otherwise.
-LogicalResult DestructorInsertion::elideCopyDestroyPair(Value value,
-                                                        Type destroyedType,
-                                                        Operation *opWithUse) {
-  auto copyInitCall = dyn_cast_if_present<LIT::CallOp>(opWithUse);
-  if (!copyInitCall)
-    return failure();
-
-  // See if we can resolve the callee.
-  LIT::FuncOp callee =
-      valueSet.typeDeclInfo.getFuncForSymbol(copyInitCall.getDirectCallee());
-  if (!callee)
-    return failure();
-
-  // Handle copies like:
-  //   %tmp = lit.var.decl "anonymous"
-  //   kgen.call __copyinit__(%tmp, %src)
-  //   kgen.call __del__(%src)   <<= Thinking about inserting this.
-  //   kgen.call user(%tmp)      <<= Consuming call.
-  if (callee.getSpecialFunctionKind() != SpecialFunctionKind::kCopyInit)
-    return failure();
-
-  // Register passable types will pass the 'existing' value in a register copies
-  // If we have:
-  //   %tmp = lit.var.decl "anonymous"
-  //   %srcReg = lit.ref.load %src
-  //   lit.call __copyinit__(%tmp, %srcReg)
-  //   ==> destroy %src
-  // Then we can locally optimize this into:
-  //   %tmp = lit.var.decl "anonymous"
-  //   %srcReg = lit.ref.load %src
-  //   lit.ref.store %srcReg -> %tmp
-  // And if the only other operation using '%tmp' is a lit.load.consume:
-  //   %tmp = lit.var.decl "anonymous"
-  //   %srcReg = lit.ref.load %src
-  //   lit.call __copyinit__(%tmp, %srcReg)
-  //   ==> destroy %src
-  //   ...
-  //   %xyz = lit.load.consume %tmp
-  // Then we can optimize this into:
-  //   %srcReg = lit.ref.load %src
-  //   ...
-  //   %xyz = %srcReg
-  if (auto loadOp = copyInitCall.getOperand(1).getDefiningOp<RefLoadOp>()) {
-    if (loadOp.getOperand() == value) {
-      Value copyInitDest = copyInitCall.getOperand(0);
-
-      // We're definitely removing the copyinit.
-      copyInitCall->dropAllReferences();
-      opsToRemove.push_back(copyInitCall);
-
-      // If the operation right after the call is a consuming load from a
-      // varDecl, then we can squash the vardecl and the consuming load and
-      // avoid emitting a store, tidying things right up.
-      if (auto varDecl = copyInitDest.getDefiningOp<VarDeclOp>()) {
-        if (LoadConsumeOp loadConsume = getOnlyLoadConsumeUser(varDecl)) {
-          // The loadConsume is dead and can be removed.
-          for (Operation *user :
-               llvm::make_early_inc_range(varDecl->getUsers()))
-            if (user != loadConsume)
-              user->erase();
-          loadConsume.getResult().replaceAllUsesWith(loadOp);
-          // We know the bottom-up scan won't revisit it, so directly remove.
-          loadConsume.erase();
-          // This turns into a consume of the moved value. Emit an end marker if
-          // appropriate.
-          emitLifetimeEndAfter(loadOp.getRef(), loadOp);
-
-          // The lit.var.decl had one use before so it is now dead, we can
-          // remove it as well.
-          opsToRemove.push_back(varDecl);
-          return success();
-        }
-      }
-
-      // Otherwise we need to insert a store.  Put the store after the call so
-      // it isn't reprocessed by destructor insertion.
-      emitLifetimeEndAfter(loadOp.getRef(), loadOp);
-      Operation *opAfterCall = &*++Block::iterator(copyInitCall);
-      ImplicitLocOpBuilder builder(copyInitCall.getLoc(), opAfterCall);
-      builder.create<RefStoreOp>(loadOp, copyInitDest);
-      return success();
-    }
-  }
-
-  // For memory types, make sure we're destroying the whole value, not a
-  // subvalue.
-  if (copyInitCall.getOperand(1) != value) {
-    // The value being destroyed may be a mutable source, and the source of the
-    // copy is (by definition) immutable.
-    if (RefImmutOp::strip(copyInitCall.getOperand(1)) == value)
-      value = copyInitCall.getOperand(1);
-    else
-      return failure();
-  }
-
-  ImplicitLocOpBuilder builder(copyInitCall.getLoc(), copyInitCall);
-
-  // We prefer to completely delete the copy if it is into a temporary location
-  // that we can forward.
-  //
-  // Note: we currently delete explicitly declared temporaries, not just
-  // implicit ones.  This is a policy decision, and we should look into
-  // the impact on debug information, but generally one wouldn't want debug
-  // information to block optimizations.
-  if (VarDeclOp tmpDecl =
-          copyInitCall.getOperand(0).getDefiningOp<VarDeclOp>()) {
-    if (canEntirelyElideMemoryTemporary(copyInitCall, tmpDecl)) {
-      // Insert a declaration of the lifetime for the tmp we're eliding, we know
-      // that VarDeclOp's always declare a unique lifetime.
-      auto refType = cast<RefType>(tmpDecl.getType());
-      auto param = cast<ParamDeclRefAttr>(refType.getLifetime());
-
-      // The old reference type used a novel lifetime.  We need to declare it,
-      // and coerce back to it with a rebind.
-      builder.create<ParamDeclareOp>(ParamDeclAttr::get(param),
-                                     AnyLifetimeAttr::get(param.getType()));
-      auto refCasted = builder.create<RebindOp>(tmpDecl.getType(),
-                                                copyInitCall.getOperand(1));
-
-      // Erase the lifetime start marker for the temporary. However, keep the
-      // lifetime end markers if the aliased value is a var decl, as they will
-      // get "inherited" by the aliased value.
-      Value value = LifetimeTrackable::findUnderlyingValueFromField(refCasted);
-      for (Operation *user : llvm::make_early_inc_range(tmpDecl->getUsers())) {
-        if (isa<VarLifetimeStartOp>(user)) {
-          user->erase();
-        } else if (auto end = dyn_cast<VarLifetimeEndOp>(user)) {
-          if (value.getDefiningOp<VarDeclOp>())
-            end.setOperand(value);
-          else
-            user->erase();
-        }
-      }
-      tmpDecl.getResult().replaceAllUsesWith(refCasted);
-
-      // We'll delete the copyInit but don't want to invalidate iterators so do
-      // later.  Remove the operand uses so we don't see them in later def-use
-      // scans, and to make it more obvious when reading IR dumps that these
-      // will be gone.
-      copyInitCall->dropAllReferences();
-      opsToRemove.push_back(copyInitCall);
-      opsToRemove.push_back(tmpDecl);
-      return success();
-    }
-  }
-
-  // Otherwise, try to promote to a __moveinit__ call if present.
-  SymbolConstantAttr moveCtor =
-      valueSet.typeDeclInfo.getMoveInitForType(destroyedType);
-  if (!moveCtor)
-    return failure();
-
-  // moveCtor must have __moveinit__(inout self, owned: Self) type.
-  auto refValue = cast<RefType>(value.getType());
-#ifndef NDEBUG
-  auto moveSig = cast<SignatureType>(moveCtor.getType());
-  assert(moveSig.getNumArguments() == 2);
-  assert(moveSig.getArgConvention(0) == ArgConvention::InitSelf);
-  assert(moveSig.getArgConvention(1) == ArgConvention::OwnedInMem);
-  auto valueEltType = refValue.getElementType();
-  auto moveArgs = moveSig.getArguments();
-  auto moveValue1Ref = cast<RefType>(moveArgs[1]);
-  // refValue is immutable here because it was passed to a copy.
-  assert(cast<RefType>(moveArgs[0]).getElementType() == valueEltType &&
-         moveValue1Ref.getElementType() == valueEltType &&
-         moveValue1Ref.isMutableKnown(true) && refValue.isMutableKnown(false));
-
-  auto destType = cast<RefType>(copyInitCall.getOperand(0).getType());
-  assert(destType.getElementType() == refValue.getElementType());
-#endif
-
-  // We know that the input is mutable (otherwise it wouldn't be tracked for
-  // destruction), get the reference to a mutable type.
-  value = getMutableRefForPossiblyImmutValue(value, builder);
-  refValue = cast<RefType>(value.getType());
-
-  // Switch the source operand, and update the lifetime associated with it.
-  copyInitCall.setOperand(1, value);
-  copyInitCall.setImplicitLifetimes(
-      {copyInitCall.getImplicitLifetimes()[0], refValue.getLifetime()});
-
-  // Transform the copy into a move.
-  copyInitCall.setCalleeAttr(moveCtor);
-  emitLifetimeEndAfter(value, copyInitCall);
-  // Since we changed the copy to a __moveinit__, we don't need a dtor call.
-  return success();
-}
-
-/// Emit one destructor call for one entire value or field.  This should only be
-/// called by destroyValueIfNeeded.
-///
-/// The 'opWithUse' value, if present, is the operation using the overall value
-/// being destroyed.  This allows us to perform copy ctor+temp elision.
-void DestructorInsertion::emitDestructorCallAt(Value value, bool isIndirect,
-                                               ImplicitLocOpBuilder &builder,
-                                               Operation *opWithUse) {
-  assert(!dryRun && "this inserts!");
-
-  Type destroyedType =
-      ValueRef::getDereferencedType(value.getType(), isIndirect);
-  TypedAttr dtor = valueSet.typeDeclInfo.getDestructorForType(destroyedType);
-  if (!dtor) {
-    // If there is no destructor, then this is either a trivial type or a
-    // non-linear type.  Check for linearTypeErrorMsg and emit it if present.
-    if (StringAttr linearMsg =
-            valueSet.typeDeclInfo.getLinearTypeErrorMsg(destroyedType)) {
-      mlir::emitError(builder.getLoc()) << linearMsg.str();
-    }
-
-    // Otherwise, this is a trivial type; nothing to do.
-    return emitLifetimeEnd(value, builder);
-  }
-
-  // Okay, if there is a destructor, we know that this is a non-trivial value.
-  // Check to see if the operation that we are destroying this for is a
-  // copy-ctor.  If so, try to elide the copy constructor: it is better to
-  // directly use the original value than to copy it and destroy the original.
-  if (succeeded(elideCopyDestroyPair(value, destroyedType, opWithUse)))
-    return;
-
-  auto signature = cast<SignatureType>(dtor.getType());
-  assert(signature.getNumResults() == 1 &&
-         "dtor should have one result (none type)");
-  assert(signature.getNumArguments() == 1 && "dtor should have one operand");
-
-  // We may have a @register_passable value indirect (e.g. because it is in a
-  // var).  If so, it needs to be loaded to invoke the destructor.
-  Value valueToDestroy = value;
-  if (auto ref = dyn_cast<RefType>(valueToDestroy.getType()))
-    if (signature.getArguments()[0] == ref.getElementType())
-      valueToDestroy = builder.create<RefLoadOp>(valueToDestroy);
-
-  // If the dtor takes a reference, then this the dtor for a memory type.  Bind
-  // the implicit lifetime of __del__'s self to the lifetime of the reference we
-  // have.
-  SmallVector<TypedAttr> implicitLifetimes;
-  if (auto delSelfTy = dyn_cast<RefType>(signature.getArguments()[0])) {
-    valueToDestroy =
-        getMutableRefForPossiblyImmutValue(valueToDestroy, builder);
-    auto argRef = cast<RefType>(valueToDestroy.getType());
-    assert(delSelfTy.getElementType() == argRef.getElementType());
-    implicitLifetimes.push_back(argRef.getLifetime());
-
-    // Verify that the address space of the reference matches.  The __del__
-    // method will have address space zero.  Attempts to delete other things
-    // should not explode the compiler.
-    if (delSelfTy.getAddressSpace() != argRef.getAddressSpace()) {
-      mlir::emitError(builder.getLoc())
-          << "cannot destroy value in non-default address space";
-      return;
-    }
-
-  } else {
-    assert(signature.getArguments()[0] == valueToDestroy.getType());
-  }
-
-  // Emit the call to the destructor.
-  builder.create<LIT::CallOp>(signature.getResults()[0], dtor,
-                              implicitLifetimes, valueToDestroy);
-  emitLifetimeEnd(value, builder);
+  // If we need to destroy the whole value, we can just use an empty BitVector,
+  // otherwise we need to specify which subelements are to be destroyed, so we
+  // copy it.
+  BitVector fieldsToDestroy;
+  if (!valueRef.isAllMissing(consumedValues))
+    fieldsToDestroy = consumedValues;
+  dtorInserter.add(value, valueRef, std::move(fieldsToDestroy));
+  valueRef.markBits(consumedValues, true);
 }
 
 void DestructorInsertion::emitDebugInit(Value value, ValueRef valueRef,
@@ -3026,41 +3220,6 @@ void DestructorInsertion::emitDebugInit(Value value, ValueRef valueRef,
     auto conversion = DebugInfo::DIDerefExprAttr::get(newIrValue);
     builder.create<DebugInfo::ValueOp>(value, info.debugVariable, conversion);
   }
-}
-
-void DestructorInsertion::emitDebugKill(ValueRef valueRef,
-                                        ImplicitLocOpBuilder &builder) {
-  assert(!dryRun && "shouldn't be called in a dry run");
-  // Insert end-of-life debug value if full value is destroyed.
-  // TODO(#34115): Emit fragment end-of-life for partial destruction.
-  ValueInfo &info = valueSet.getValueInfo(valueRef.valueId);
-  if (info.debugVariable && valueRef.startBit == info.startValueBit &&
-      valueRef.endBit == info.endValueBit) {
-    builder.create<DebugInfo::KillOp>(info.debugVariable);
-  }
-}
-
-void DestructorInsertion::emitLifetimeEndAfter(Value value, Operation *after) {
-  ImplicitLocOpBuilder builder(after->getLoc(), after);
-  builder.setInsertionPointAfter(after);
-  emitLifetimeEnd(value, builder);
-}
-
-void DestructorInsertion::emitLifetimeEnd(Value value,
-                                          ImplicitLocOpBuilder &builder) {
-  if (value.getDefiningOp<VarDeclOp>())
-    builder.create<VarLifetimeEndOp>(value);
-}
-
-void DestructorInsertion::emitDebugKillAndDestructorCallAt(
-    Value value, ValueRef valueRef, ImplicitLocOpBuilder &builder,
-    Operation *opWithUse) {
-  // We are going to emit a destructor for the specified ValueRef, so all none
-  // of the things we are about to destroy should already be destroyed.
-  assert(valueRef.isAllMissing(consumedValues) &&
-         "cannot have partially consumed object");
-  emitDebugKill(valueRef, builder);
-  emitDestructorCallAt(value, valueRef.isIndirect, builder, opWithUse);
 }
 
 /// Insert destructors calls into the start of 'block' for objects in the
@@ -3082,15 +3241,12 @@ void DestructorInsertion::destroyValuesAtEntryIfNeeded(
   entriesToDestroy.reset(currentConsumeSet);
 
   // Move consumedValues out of the way so we don't break it.  We need to use
-  // destroyValueIfNeeded below, which is hard coded to mutate consumedValues.
+  // scheduleNeededDtors below, which is hard coded to mutate consumedValues.
   BitVector savedConsumedValues = std::move(consumedValues);
-
-  // Any dtor calls will be emitted at the start of the block.
-  ImplicitLocOpBuilder builder(loc, &block, block.begin());
 
   // We *only* want to destroy the values in entries, not any other values that
   // may be partially overlapped, so mark all the other things as "already
-  // destroyed".  This is to work with 'destroyValueIfNeeded'.
+  // destroyed".  This is to work with 'scheduleNeededDtors'.
   assert(&entriesToDestroy != &consumedValues &&
          "This logic doesn't work when passed 'consumedValues' directly");
   consumedValues = entriesToDestroy;
@@ -3100,6 +3256,8 @@ void DestructorInsertion::destroyValuesAtEntryIfNeeded(
   // what we are working with.
   MutableArrayRef<ValueInfo> valueInfos = valueSet.getValueInfos();
   size_t nextValueInfo = 0;
+
+  DestructorInserter dtorInserter(valueSet);
 
   int nextToDestroy = entriesToDestroy.find_first();
   while (nextToDestroy != -1) {
@@ -3116,12 +3274,16 @@ void DestructorInsertion::destroyValuesAtEntryIfNeeded(
 
     // Emit destructor calls for the entire value or the correct subfields that
     // need to be destroyed.
-    destroyValueIfNeeded(valueInfos[nextValueInfo].value, fullValueRef, builder,
-                         /*opWithUse=*/nullptr);
+    scheduleNeededDtors(valueInfos[nextValueInfo].value, fullValueRef,
+                        dtorInserter);
 
     // Find the next object to destroy.
     nextToDestroy = entriesToDestroy.find_next(fullValueRef.endBit - 1);
   }
+
+  // Any dtor calls will be emitted at the start of the block.
+  ImplicitLocOpBuilder builder(loc, &block, block.begin());
+  dtorInserter.emitDestructors(builder);
 
   // Restore consumedValues.
   consumedValues = std::move(savedConsumedValues);

@@ -80,7 +80,7 @@ TEST(LifetimesTest, testFullEagerDestruction) {
 
   // `text_before` should be dead after the move.
   ctx.resume();
-  assertVarNotAvailable(ctx, "text_copied");
+
   assertVarNotAvailable(ctx, "text_before");
   SBValue text_after = ctx.frame.FindVariable("text_after");
   EXPECT_STREQ(text_after.GetSummary(), R"("hello")");
