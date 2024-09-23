@@ -208,9 +208,9 @@ class Tensor(DLPackArray):
         """Implements part of the dlpack contract."""
         return self._impl.__dlpack_device__()
 
-    def __dlpack__(self) -> Any:
+    def __dlpack__(self, *, stream=None) -> Any:
         """Implements part of the dlpack contract."""
-        return self._impl.__dlpack__()
+        return self._impl.__dlpack__(stream=stream)
 
     @classmethod
     def from_dlpack(
@@ -297,10 +297,10 @@ class MemMapTensor(Tensor):
         tensor._init_from_numpy_memmap(arr)
         return tensor
 
-    def __dlpack__(self) -> Any:
+    def __dlpack__(self, *, stream=None) -> Any:
         """Implements part of the dlpack contract."""
         # We must ensure that the underlying mmap doesn't get closed.
-        return self._impl.__dlpack__(_mmap=self._mmap)
+        return self._impl.__dlpack__(stream=stream, _mmap=self._mmap)
 
     @property
     def read_only(self) -> bool:
