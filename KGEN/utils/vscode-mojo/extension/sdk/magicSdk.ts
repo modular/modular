@@ -7,31 +7,46 @@
 import * as vscode from 'vscode';
 import { MojoSDKSpec } from './types';
 import * as path from 'path';
-import { directoryExists, mkdirp } from '../utils/files';
+import { fileExists, mkdirp, readFile } from '../utils/files';
 import * as util from 'util';
 import * as fs from 'fs';
 import { lock } from 'proper-lockfile';
 import axios from 'axios';
 import { Logger } from '../logging';
 const execFile = util.promisify(require('child_process').execFile);
-import { MojoSDKVersion } from './sdkVersion';
+import { MojoSDKVersion as MaxSDKVersion } from './sdkVersion';
+import { writeFile } from 'fs/promises';
 const chmod = util.promisify(require('fs').chmod);
 
-async function downloadFile(url: string, outputPath: string) {
+async function downloadFile(
+  url: string,
+  outputPath: string,
+  timeoutMins: number,
+  errorMessage: string,
+  logger: Logger
+): Promise<boolean> {
   const writer = fs.createWriteStream(outputPath);
 
   const response = await axios({
     url,
     method: 'GET',
     responseType: 'stream',
+    timeout: timeoutMins * 60 * 1000,
   });
 
   response.data.pipe(writer);
 
-  return new Promise((resolve, reject) => {
-    writer.on('finish', resolve);
-    writer.on('error', reject);
-  });
+  try {
+    await new Promise((resolve, reject) => {
+      writer.on('finish', resolve);
+      writer.on('error', reject);
+    });
+    return true;
+  } catch (ex: any) {
+    vscode.window.showErrorMessage(errorMessage, ex.message);
+    logger.main.logError(errorMessage, ex);
+    return false;
+  }
 }
 
 function getMagicUrl(): Optional<string> {
@@ -64,7 +79,7 @@ type DownloadSpec = {
   magicDataHome: string;
   magicPath: string;
   doneDirectory: string;
-  versionDoneDir: string;
+  versionDoneFile: string;
   magicUrl: string;
   version: string;
   major: string;
@@ -72,10 +87,165 @@ type DownloadSpec = {
   patch: string;
 };
 
-function createDownloadSpec(
+/**
+ * @returns 1 if version1 > version2, -1 if version1 < version2, 0 otherwise.
+ */
+function compareNightlyMAXVersions(version1: string, version2: string): number {
+  const [M1_, m1_, p1_, d1] = version1.split('.');
+  const [M2_, m2_, p2_, d2] = version2.split('.');
+  const M1 = parseInt(M1_);
+  const m1 = parseInt(m1_);
+  const p1 = parseInt(p1_);
+  const M2 = parseInt(M2_);
+  const m2 = parseInt(m2_);
+  const p2 = parseInt(p2_);
+  const compare = (a: any, b: any) => {
+    return a === b ? 0 : a < b ? -1 : 1;
+  };
+  for (const [a, b] of [
+    [M1, M2],
+    [m1, m2],
+    [p1, p2],
+    [d1, d2],
+  ]) {
+    const comp = compare(a, b);
+    if (comp !== 0) {
+      return comp;
+    }
+  }
+  return 0;
+}
+
+/**
+ * @returns undefined or a non-empty list of versions sorted ascending semantically.
+ */
+async function getAllNightlyMAXVersions(
+  logger: Logger,
+  privateDir: string
+): Promise<Optional<string[]>> {
+  const repodataDir = path.join(privateDir, 'repodata');
+  const now = new Date();
+  const repodataFile = path.join(
+    privateDir,
+    'repodata',
+    `${now.getFullYear()}-${now.getMonth()}-${now.getDay()}`
+  );
+  let contents = await readFile(repodataFile);
+  // If the repodata for today is not present, then we download it and we delete any previous repodata files.
+  if (!contents) {
+    fs.rmSync(repodataDir, { recursive: true, force: true });
+    await mkdirp(repodataDir);
+
+    const repodataUrl =
+      'https://conda.modular.com/max-nightly/noarch/repodata.json';
+    logger.main.logInfo(`Will download ${repodataUrl} into ${repodataFile}`);
+    if (
+      !(await downloadFile(
+        repodataUrl,
+        repodataFile,
+        /*timeoutMins=*/ 1,
+        "Couldn't download " + repodataUrl,
+        logger
+      ))
+    ) {
+      return undefined;
+    }
+    logger.main.logInfo('Successfully downloaded');
+  }
+  contents = await readFile(repodataFile);
+  if (!contents) {
+    return undefined;
+  }
+  const jsonContents = JSON.parse(contents);
+  const packages = jsonContents.packages;
+  const versions: string[] = [];
+  for (const packageName in packages) {
+    if (packageName.startsWith('max-')) {
+      versions.push(packages[packageName].version);
+    }
+  }
+  versions.sort(compareNightlyMAXVersions);
+  return versions.length === 0 ? undefined : versions;
+}
+
+async function getLatestNightlyMAXVersion(
+  logger: Logger,
+  privateDir: string
+): Promise<Optional<string>> {
+  const versions = await getAllNightlyMAXVersions(logger, privateDir);
+  if (versions === undefined) {
+    return undefined;
+  }
+  return versions[versions.length - 1];
+}
+
+async function getMatchingNightlyMAXVersion(
+  extensionVersion: string,
+  logger: Logger,
+  privateDir: string
+) {
+  // Ideally this version should be hardcoded in the package.json file as
+  // part of the release process, but in case we ship some nightly in a
+  // standalone way as a hotfix, we should keep this logic as a fallback.
+  const minimumNightlyMAXVersion = extensionVersion + '.dev0000000000';
+  const versions = await getAllNightlyMAXVersions(logger, privateDir);
+  if (versions === undefined) {
+    return undefined;
+  }
+  for (const version of versions) {
+    if (compareNightlyMAXVersions(minimumNightlyMAXVersion, version) <= 0) {
+      return version;
+    }
+  }
+  return versions[versions.length - 1];
+}
+
+async function findVersionToDownload(
+  extVersion: string,
+  isNightly: boolean,
+  logger: Logger,
+  privateDir: string
+): Promise<Optional<[string, string, string]>> {
+  if (extVersion === '0.0.0') {
+    if (!isNightly) {
+      vscode.window.showErrorMessage(
+        'Invalid extension version: ' + extVersion
+      );
+    }
+    const latestNightlyVersion = await getLatestNightlyMAXVersion(
+      logger,
+      privateDir
+    );
+    if (latestNightlyVersion === undefined) {
+      return undefined;
+    }
+    let [major, minor, patch, dev] = latestNightlyVersion.split('.');
+    return [major, minor, patch + `.${dev}`];
+  } else if (isNightly) {
+    const matchingNightlyVersion = await getMatchingNightlyMAXVersion(
+      extVersion,
+      logger,
+      privateDir
+    );
+    if (matchingNightlyVersion === undefined) {
+      return undefined;
+    }
+    let [major, minor, patch, dev] = matchingNightlyVersion;
+    patch += `.${dev}`;
+    return [major, minor, patch + `.${dev}`];
+
+    // stable
+  } else {
+    const [major, minor, patch] = extVersion.split('.');
+    return [major, minor, patch];
+  }
+}
+
+async function createDownloadSpec(
   context: vscode.ExtensionContext,
-  isNightly: boolean
-): Optional<DownloadSpec> {
+  isNightly: boolean,
+  logger: Logger
+): Promise<Optional<DownloadSpec>> {
   const privateDir = context.globalStorageUri.fsPath;
   const magicDataHome = path.join(privateDir, 'magic-data-home');
   const magicPath = path.join(privateDir, 'magic');
@@ -84,16 +254,25 @@ function createDownloadSpec(
   if (!magicUrl) {
     return undefined;
   }
-  const major = '24';
-  const minor = isNightly ? '5' : '4';
-  const patch = isNightly ? '0.dev2024082715' : '0';
+  const extVersion = context.extension.packageJSON.version as string;
+  const versionToDownload = await findVersionToDownload(
+    extVersion,
+    isNightly,
+    logger,
+    privateDir
+  );
+  if (!versionToDownload) {
+    return undefined;
+  }
+  const [major, minor, patch] = versionToDownload;
   const version = `${major}.${minor}.${patch}`;
+  const versionDoneFile = path.join(privateDir, 'version');
   return {
     privateDir,
     magicDataHome,
     magicPath,
     doneDirectory,
-    versionDoneDir: path.join(privateDir, version),
+    versionDoneFile,
     magicUrl,
     version,
     major,
@@ -102,19 +281,23 @@ function createDownloadSpec(
   };
 }
 
-async function doInstallMagicSDK(
+async function doInstallMagicAndMAXSDK(
   downloadSpec: DownloadSpec,
   logger: Logger,
   isNightly: boolean
 ): Promise<void> {
-  try {
-    fs.rmdirSync(downloadSpec.doneDirectory);
-  } catch {}
+  fs.rmSync(downloadSpec.doneDirectory, { recursive: true, force: true });
 
   logger.main.logInfo(
     `Will download ${downloadSpec.magicUrl} into ${downloadSpec.magicPath}`
   );
-  await downloadFile(downloadSpec.magicUrl, downloadSpec.magicPath);
+  await downloadFile(
+    downloadSpec.magicUrl,
+    downloadSpec.magicPath,
+    /*timeoutMins=*/ 5,
+    "Couldn't download magic",
+    logger
+  );
   logger.main.logInfo('Successfully downloaded');
   await chmod(downloadSpec.magicPath, 0o755);
   logger.main.logInfo(
@@ -139,20 +322,16 @@ async function doInstallMagicSDK(
   logger.main.logInfo(`Successfully installed MAX`);
 
   await mkdirp(downloadSpec.doneDirectory);
-  await mkdirp(downloadSpec.versionDoneDir);
+  await writeFile(downloadSpec.versionDoneFile, downloadSpec.version);
 }
 
-async function installMagicSDKWithProgress(
+async function installMagicAndMAXSDKWithProgress(
   downloadSpec: DownloadSpec,
   logger: Logger,
   isNightly: boolean,
   reinstall: boolean
 ): Promise<boolean> {
-  if (
-    !reinstall &&
-    (await directoryExists(downloadSpec.doneDirectory)) &&
-    (await directoryExists(downloadSpec.versionDoneDir))
-  ) {
+  if (!reinstall && (await fileExists(downloadSpec.versionDoneFile))) {
     logger.main.logInfo('Magic SDK present. Skipping installation.');
     return true;
   }
@@ -163,7 +342,7 @@ async function installMagicSDKWithProgress(
     },
     async () => {
       try {
-        await doInstallMagicSDK(downloadSpec, logger, isNightly);
+        await doInstallMagicAndMAXSDK(downloadSpec, logger, isNightly);
         return true;
       } catch (e) {
         logger.main.logError("Couldn't install the MAX SDK for VS Code", e);
@@ -173,6 +352,20 @@ async function installMagicSDKWithProgress(
   );
 }
 
+async function acquireLockIfNeeded(
+  logger: Logger,
+  useLock: boolean,
+  downloadSpec: DownloadSpec
+): Promise<() => Promise<void>> {
+  if (!useLock) {
+    return async () => {};
+  }
+  logger.main.logInfo('Trying to acquire installation lock...');
+  const releaseLock = await lock(downloadSpec.privateDir, { retries: 10 });
+  logger.main.logInfo('Lock acquired...');
+  return releaseLock;
+}
+
 export async function findMagicSDKSpec(
   withLock: boolean,
   context: vscode.ExtensionContext,
@@ -180,7 +373,7 @@ export async function findMagicSDKSpec(
   isNightly: boolean,
   reinstall: boolean = false
 ): Promise<Optional<MojoSDKSpec>> {
-  const downloadSpec = createDownloadSpec(context, isNightly);
+  const downloadSpec = await createDownloadSpec(context, isNightly, logger);
   if (downloadSpec === undefined) {
     return undefined;
   }
@@ -189,17 +382,18 @@ export async function findMagicSDKSpec(
   let success = false;
   try {
     logger.main.logInfo('Trying to acquire installation lock...');
-    const release = withLock
-      ? await lock(downloadSpec.privateDir, { retries: 10 })
-      : async () => {};
-    logger.main.logInfo('Lock acquired...');
-    success = await installMagicSDKWithProgress(
+    const releaseLock = await acquireLockIfNeeded(
+      logger,
+      withLock,
+      downloadSpec
+    );
+    success = await installMagicAndMAXSDKWithProgress(
       downloadSpec,
       logger,
       isNightly,
       reinstall
     );
-    await release();
+    await releaseLock();
   } catch (e) {
     logger.main.logError(
       'Error while handling the lock for the MAX SDK for VS Code',
@@ -218,13 +412,12 @@ export async function findMagicSDKSpec(
     'max'
   );
 
-  // Consider nightly here
   return {
     kind: 'magic',
     modularHomePath,
     section: 'mojo-max' + (isNightly ? '-nightly' : ''),
-    version: new MojoSDKVersion(
-      'MAX SDK for VS Code',
+    version: new MaxSDKVersion(
+      'MAX SDK ' + (isNightly ? '(nightly) ' : '(stable)'),
       downloadSpec.major,
       downloadSpec.minor,
       downloadSpec.patch,
