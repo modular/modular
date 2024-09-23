@@ -7,6 +7,7 @@
 from utils import StaticIntTuple
 
 
+# Stubs used internally for testing only
 @register_passable("trivial")
 struct OptionalReg[T: AnyTrivialRegType]:
     alias _mlir_type = __mlir_type[`!kgen.variant<`, T, `, i1>`]

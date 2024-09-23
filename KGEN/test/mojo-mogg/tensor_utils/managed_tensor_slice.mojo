@@ -5,6 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 
 
+# Stub used internally for testing only
 struct ManagedTensorSlice[type: DType, rank: Int]:
     @staticmethod
     fn _get_dtype() -> DType:

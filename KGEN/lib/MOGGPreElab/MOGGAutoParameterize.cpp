@@ -432,6 +432,22 @@ class MOGGAutoparameterizePass
     : public M::KGEN::MOGGPreElab::impl::MOGGAutoparameterizeBase<
           MOGGAutoparameterizePass> {
 public:
+  ErrorOr<TensorSpecKGEN> getTensorSpecTemplate(ModuleOp &mod) {
+    TensorSpecKGEN specTemplate;
+    for (GeneratorOp gen : mod.getOps<GeneratorOp>()) {
+      if (gen->hasAttr(MOGG_INTRINSIC_TENSOR_SPEC_HOOK)) {
+        specTemplate.pullMetadataFromFunc(gen);
+        break;
+      }
+    }
+
+    if (!specTemplate && !specTemplate.getterFunc) {
+      return Error("Template for tensor spec not found!");
+    }
+
+    return specTemplate;
+  }
+
   void runOnOperation() override {
     ModuleOp mod = getOperation();
     MLIRContext *ctx = mod.getContext();
@@ -440,8 +456,7 @@ public:
     auto &analysis = getAnalysis<mlir::SymbolTableAnalysis>();
     SymbolTable &symTab = analysis.getTopLevelSymbolTable();
 
-    // The tensor spec construct in KGEN. We use a hardcoded function annotated
-    // with `MOGG_INTRINSIC_TENSOR_SPEC_HOOK` to grab the parametric signature.
+    // TensorSpecKGEN &specTemplate = maybeSpecTemplate.get();
     TensorSpecKGEN specTemplate;
     for (GeneratorOp gen : mod.getOps<GeneratorOp>()) {
       if (gen->hasAttr(MOGG_INTRINSIC_TENSOR_SPEC_HOOK)) {
@@ -453,9 +468,9 @@ public:
     // Pass relies on this, if we could find the function it should be there.
     // It's not a hard fail for users as this is sensitive to IR changes.
     if (!specTemplate) {
-      assert(!specTemplate.getterFunc &&
-             "Sample none spec parameter could not be "
-             "found in spec get function.");
+      ASSERT_STREAM(!specTemplate.getterFunc,
+                    << "Sample none spec parameter could not be "
+                       "found in spec get function.");
       return;
     }
 
