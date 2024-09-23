@@ -446,7 +446,7 @@ struct DeviceContextV1:
             )
 
     fn execution_time[
-        func: fn (Self) raises capturing -> None
+        func: fn (Self) raises capturing [_] -> None
     ](self, num_iters: Int) raises -> Int:
         self.cuda_context.set_current()
         var stream = self.cuda_stream
@@ -460,7 +460,7 @@ struct DeviceContextV1:
         return int(start.elapsed(end) * 1e6)
 
     fn execution_time_iter[
-        func: fn (Self, Int) raises capturing -> None
+        func: fn (Self, Int) raises capturing [_] -> None
     ](self, num_iters: Int) raises -> Int:
         self.cuda_context.set_current()
         var stream = self.cuda_stream

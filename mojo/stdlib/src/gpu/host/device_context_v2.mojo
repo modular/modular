@@ -286,12 +286,12 @@ struct DeviceContextV2:
         pass
 
     fn execution_time[
-        func: fn (Self) raises capturing -> None
+        func: fn (Self) raises capturing [_] -> None
     ](self, num_iters: Int) raises -> Int:
         return 0  # FIXME
 
     fn execution_time_iter[
-        func: fn (Self, Int) raises capturing -> None
+        func: fn (Self, Int) raises capturing [_] -> None
     ](self, num_iters: Int) raises -> Int:
         return 0  # FIXME
 

@@ -346,7 +346,7 @@ struct DeviceContextVariant:
             )
 
     fn execution_time[
-        func: fn (Self) raises capturing -> None
+        func: fn (Self) raises capturing [_] -> None
     ](self, num_iters: Int) raises -> Int:
         @parameter
         if _device_ctx_v2():
@@ -367,7 +367,7 @@ struct DeviceContextVariant:
             return self.v1().execution_time[wrap_func](num_iters)
 
     fn execution_time_iter[
-        func: fn (Self, Int) raises capturing -> None
+        func: fn (Self, Int) raises capturing [_] -> None
     ](self, num_iters: Int) raises -> Int:
         @parameter
         if _device_ctx_v2():
