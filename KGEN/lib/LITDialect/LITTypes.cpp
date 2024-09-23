@@ -1409,5 +1409,7 @@ TypedAttr LIT::getSingletonParameterValue(Type type) {
   // TODO: Could support structs of lifetimes.
   if (auto lifetime = dyn_cast<LifetimeType>(type))
     return AnyLifetimeAttr::get(lifetime);
+  if (auto set = dyn_cast<LifetimeSetType>(type))
+    return LifetimeSetAttr::get(/*operands=*/{}, set);
   llvm_unreachable("isn't a singleton parameter");
 }
