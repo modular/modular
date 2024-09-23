@@ -494,7 +494,6 @@ def AnyLifetimeAttr : LITTypedAttr<"AnyLifetime", "any.lifetime"> {
 
   let builders = [
     AttrBuilderWithInferredContext<(ins "Type":$type), [{
-      assert(::isa<LifetimeType>(type) && "AnyLifetimeAttr must have LifetimeType");
       return get(type.getContext(), ::cast<LifetimeType>(type));
     }]>,
     AttrBuilderWithInferredContext<(ins "TypedAttr":$isMutable), [{
@@ -504,6 +503,25 @@ def AnyLifetimeAttr : LITTypedAttr<"AnyLifetime", "any.lifetime"> {
       return get($_ctxt, LifetimeType::get($_ctxt, isMutable));
     }]>
  ];
+}
+
+//===----------------------------------------------------------------------===//
+// StaticLifetimeAttr
+//===----------------------------------------------------------------------===//
+
+def StaticLifetimeAttr : LITTypedAttr<"StaticLifetime", "static.lifetime"> {
+  let summary = "A !lit.lifetime<mut> value that refers to static memory";
+  let description = [{
+    This attribute is a singleton (for each mutability) which represents the
+    lifetime of global static memory, used for static strings and global
+    variables.
+  }];
+
+  let parameters = (ins
+    AttributeSelfTypeParameter<"", "LifetimeType">:$type
+  );
+
+  let assemblyFormat = "";
 }
 
 //===----------------------------------------------------------------------===//
