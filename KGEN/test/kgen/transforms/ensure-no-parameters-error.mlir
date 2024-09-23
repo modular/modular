@@ -1,4 +1,4 @@
-// RUN: kgen-opt -ensure-no-parameters -verify-diagnostics %s
+// RUN: kgen-opt -ensure-no-parameters -verify-diagnostics -split-input-file %s
 
 kgen.func @"identity,T=index"(%arg0: index) -> index {
   kgen.return %arg0 : index
@@ -15,13 +15,14 @@ kgen.func @parameterized_signature() {
   kgen.return
 }
 
+// -----
+
 kgen.func @capturing_fn(%arg0: index) capturing -> index {
   kgen.return %arg0 : index
 }
 
 kgen.func @capturing_fn_reference() {
-  // FIXME: MOCO-1221 - this is disabled because it is flaking
-  // xpected-error @below {{capturing closures cannot be materialized at runtime}}
-  //%0 = kgen.param.constant : (index) capturing -> index = <@"capturing_fn">
+  // expected-error @below {{capturing closures cannot be materialized at runtime}}
+  %0 = kgen.param.constant : (index) capturing -> index = <@"capturing_fn">
   kgen.return
 }
