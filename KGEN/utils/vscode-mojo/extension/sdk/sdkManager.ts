@@ -243,22 +243,10 @@ export class MojoSDKManager extends DisposableContext {
             }
           });
       } else if (selectedSDK.sdkSpec?.kind === 'dev') {
-        errorMessage += '\nPlease run ./bazelw run //:install.';
-        vscode.window
-          .showErrorMessage(errorMessage, 'Run bazel')
-          .then((value) => {
-            if (value === 'Run bazel') {
-              const repo = path.dirname(
-                selectedSDK.sdkSpec?.modularHomePath || ''
-              );
-              const terminal =
-                vscode.window.activeTerminal ||
-                vscode.window.createTerminal({
-                  name: repo,
-                });
-              terminal.sendText(`(cd '${repo}' && ./bazelw run //:install)`);
-            }
-          });
+        this.showBazelwRunInstallPrompt(
+          errorMessage,
+          selectedSDK.sdkSpec.modularHomePath
+        );
       } else if (selectedSDK.sdkSpec?.kind === 'magic') {
         errorMessage += '\nPlease reinstall the MAX SDK for VS Code.';
         vscode.window
@@ -276,6 +264,25 @@ export class MojoSDKManager extends DisposableContext {
       return undefined;
     }
     return result;
+  }
+
+  public showBazelwRunInstallPrompt(
+    errorMessage: string,
+    modularHomePath: string
+  ): void {
+    const action = 'Run ./bazelw run //:install';
+    vscode.window.showErrorMessage(errorMessage, action).then((value) => {
+      if (value === action) {
+        const repo = path.dirname(modularHomePath);
+        const terminal =
+          vscode.window.activeTerminal ||
+          vscode.window.createTerminal({
+            name: repo,
+          });
+        terminal.sendText(`(cd '${repo}' && ./bazelw run //:install)`);
+        terminal.show();
+      }
+    });
   }
 
   private async doCreateSDK(
