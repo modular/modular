@@ -27,3 +27,9 @@ def test_equality():
     cpu_one = CPU()
     cpu_two = CPU()
     assert cpu_one == cpu_two
+
+
+def test_stats():
+    # We should be able to query utilization stats for the device.
+    cpu = CPU()
+    assert not cpu.stats

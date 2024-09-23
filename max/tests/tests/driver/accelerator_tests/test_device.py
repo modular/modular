@@ -19,3 +19,9 @@ def test_equality():
     cuda = CUDA()
 
     assert cpu != cuda
+
+
+def test_stats():
+    # We should be able to query utilization stats for the device.
+    cuda = CUDA()
+    assert not cuda.stats
