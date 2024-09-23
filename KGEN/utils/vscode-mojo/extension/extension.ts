@@ -16,8 +16,6 @@ import { activateRunCommands } from './commands/run';
 import { MojoDebugManager } from './debug/debug';
 import { MojoDecoratorManager } from './decorations';
 import { RpcServer } from './server/RpcServer';
-import * as config from './utils/config';
-import * as configWatcher from './utils/configWatcher';
 import { MojoSDKSpec } from './sdk/types';
 import { Mutex } from 'async-mutex';
 
