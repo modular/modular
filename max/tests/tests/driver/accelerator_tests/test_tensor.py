@@ -90,6 +90,49 @@ def test_zeros():
     )
 
 
+DLPACK_DTYPES = {
+    DType.int8: torch.int8,
+    DType.int16: torch.int16,
+    DType.int32: torch.int32,
+    DType.int64: torch.int64,
+    DType.uint8: torch.uint8,
+    DType.uint16: torch.uint16,
+    DType.uint32: torch.uint32,
+    DType.uint64: torch.uint64,
+    # TODO(MSDK-893): enable float16.
+    DType.float32: torch.float32,
+    DType.float64: torch.float64,
+}
+
+
+def test_dlpack_gpu():
+    # TODO(MSDK-897): improve test coverage with different shapes and strides.
+    for dtype, torch_dtype in DLPACK_DTYPES.items():
+        tensor = Tensor((1, 4), dtype)
+        for j in range(4):
+            tensor[0, j] = j
+        gpu_tensor = tensor.to(CUDA())
+
+        torch_tensor = torch.from_dlpack(gpu_tensor)
+        assert torch_tensor.dtype == torch_dtype
+        assert gpu_tensor.shape == torch_tensor.shape
+
+        torch_tensor[0, 0] = 7
+        assert gpu_tensor[0, 0].to(CPU()).item() == 7
+
+
+def test_from_dlpack():
+    # TODO(MSDK-897): improve test coverage with different shapes and strides.
+    for dtype, torch_dtype in DLPACK_DTYPES.items():
+        torch_tensor = torch.tensor([0, 1, 2, 3], dtype=torch_dtype).cuda()
+        gpu_tensor = Tensor.from_dlpack(torch_tensor)
+        assert gpu_tensor.dtype == dtype
+        assert gpu_tensor.shape == torch_tensor.shape
+
+        torch_tensor[0] = 7
+        assert gpu_tensor[0].to(CPU()).item() == 7
+
+
 def test_dlpack_device():
     tensor = Tensor((3, 3), DType.int32, device=CUDA())
     device_tuple = tensor.__dlpack_device__()
