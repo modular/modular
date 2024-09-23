@@ -396,61 +396,71 @@ static int test(const State &subcommandState) {
   }
 
   auto [unitTests, hasDocTest] = filterUnitTests(*test);
-  ErrorOr<TempFile> entrypointSource = generateEntrypointSource(unitTests);
-  if (entrypointSource.isError())
-    return state.reportError(entrypointSource.getError());
-
-  // TempFile will delete the file it points to once it goes out of scope.
-  // Keeping it here ensures that the executable lives long enough for us to use
-  // it.
-  std::optional<TempFile> entrypointTemp = std::nullopt;
   std::string entrypointPath;
-  if (args.hasArg(options::OPT_entrypoint_path)) {
-    entrypointPath = args.getLastArgValue(options::OPT_entrypoint_path).str();
-  } else {
-    ErrorOr<TempFile> outputOrErr = TempFile::create("test-entrypoint-%%%%%%");
-    if (outputOrErr.isError())
-      return state.reportError(outputOrErr.getError());
-    entrypointTemp.emplace(std::move(*outputOrErr));
-    entrypointTemp->close();
-    entrypointPath = entrypointTemp->getPath().string();
-  }
+  // TempFile will delete the file it points to once it goes out of scope.
+  // Keeping it here ensures that the executable lives long enough for us to
+  // use it.
+  std::optional<TempFile> entrypointTemp = std::nullopt;
 
-  ErrorOrSuccess buildResult = buildEntrypoint(
-      buildArgStrings, unitTests, *entrypointSource, entrypointPath);
-  if (buildResult.isError())
-    return state.reportError(buildResult.getError());
+  // If we're not actually invoking any unit tests we don't need to go through
+  // all of this.
+  if (!unitTests.empty()) {
+    ErrorOr<TempFile> entrypointSource = generateEntrypointSource(unitTests);
+    if (entrypointSource.isError())
+      return state.reportError(entrypointSource.getError());
 
-  if (args.hasArg(options::OPT_keep_entrypoint)) {
-    entrypointSource->keep();
-    if (entrypointTemp)
-      entrypointTemp->keep();
-    llvm::errs() << "Entrypoint source can be found at "
-                 << entrypointSource->getPath() << "\n";
-    llvm::errs() << "Built entrypoint can be found at " << entrypointPath
-                 << "\n";
-  }
+    if (args.hasArg(options::OPT_entrypoint_path)) {
+      entrypointPath = args.getLastArgValue(options::OPT_entrypoint_path).str();
+    } else {
+      ErrorOr<TempFile> outputOrErr =
+          TempFile::create("test-entrypoint-%%%%%%");
+      if (outputOrErr.isError())
+        return state.reportError(outputOrErr.getError());
+      entrypointTemp.emplace(std::move(*outputOrErr));
+      entrypointTemp->close();
+      entrypointPath = entrypointTemp->getPath().string();
+    }
 
-  if (args.hasArg(options::OPT_no_execute)) {
+    ErrorOrSuccess buildResult = buildEntrypoint(
+        buildArgStrings, unitTests, *entrypointSource, entrypointPath);
+    if (buildResult.isError())
+      return state.reportError(buildResult.getError());
+
+    if (args.hasArg(options::OPT_keep_entrypoint)) {
+      entrypointSource->keep();
+      if (entrypointTemp)
+        entrypointTemp->keep();
+      llvm::errs() << "Entrypoint source can be found at "
+                   << entrypointSource->getPath() << "\n";
+      llvm::errs() << "Built entrypoint can be found at " << entrypointPath
+                   << "\n";
+    }
+
+    if (args.hasArg(options::OPT_no_execute)) {
+      llvm::errs()
+          << "Skipping test execution because --no-execute was passed\n";
+      return 0;
+    }
+
+    if (args.hasArg(options::OPT_debug)) {
+      if (hasDocTest)
+        llvm::errs() << "WARNING: Doctests were discovered, but will not be "
+                        "executed when `--debug` is passed.\n";
+
+      std::vector<std::string> debugOptions =
+          extractOptionsAndValues(state, options::OPT_DebuggerOptionGroup,
+                                  options::OPT_DebugServerOptionGroup);
+      ErrorOrSuccess debugResult =
+          launchDebug(debugOptions, entrypointPath, unitTests, filterRegex,
+                      args.hasArg(options::OPT_keep_entrypoint));
+
+      if (debugResult.isError())
+        return state.reportError(debugResult.getError());
+
+      return 0;
+    }
+  } else if (args.hasArg(options::OPT_no_execute)) {
     llvm::errs() << "Skipping test execution because --no-execute was passed\n";
-    return 0;
-  }
-
-  if (args.hasArg(options::OPT_debug)) {
-    if (hasDocTest)
-      llvm::errs() << "WARNING: Doctests were discovered, but will not be "
-                      "executed when `--debug` is passed.\n";
-
-    std::vector<std::string> debugOptions =
-        extractOptionsAndValues(state, options::OPT_DebuggerOptionGroup,
-                                options::OPT_DebugServerOptionGroup);
-    ErrorOrSuccess debugResult =
-        launchDebug(debugOptions, entrypointPath, unitTests, filterRegex,
-                    args.hasArg(options::OPT_keep_entrypoint));
-
-    if (debugResult.isError())
-      return state.reportError(debugResult.getError());
-
     return 0;
   }
 
