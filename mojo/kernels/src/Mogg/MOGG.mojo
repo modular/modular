@@ -4136,7 +4136,11 @@ fn mogg_matrix_solve[
 fn set_ctx_error_and_destruct_error(
     ctx: MojoCallContextPtr, owned error: Error
 ):
-    ctx.set_to_error(error)
+    # The function is only used by shape symbolization (which never actually
+    # execute the code but only interpret it). Besides,
+    # `SymbolicizeFallbackShapeFunctions` was deprecated.
+    # TODO: delete the code when `SymbolicizeFallbackShapeFunctions` is removed.
+    debug_assert(False, "calling dead code")
     # mojo lowering will insert destructor call for `error`
 
 
