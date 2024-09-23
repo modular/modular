@@ -13,7 +13,7 @@ from gpu.host import DeviceContext, Dim
 
 
 fn vec_func[
-    op: fn (Float32, Float32) capturing -> Float32
+    op: fn (Float32, Float32) capturing [_] -> Float32
 ](
     in0: UnsafePointer[Float32],
     in1: UnsafePointer[Float32],

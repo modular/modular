@@ -19,7 +19,7 @@ alias num_reductions = 2
 fn fused_reduce_inner_test[
     reduce_fn: fn[ty: DType, width: Int, reduction_idx: Int] (
         SIMD[ty, width], SIMD[ty, width]
-    ) capturing -> SIMD[ty, width],
+    ) capturing [_] -> SIMD[ty, width],
     rank: Int,
     type: DType,
 ](
@@ -115,7 +115,7 @@ fn fused_reduce_inner_test[
 fn reduce_inner_test[
     reduce_fn: fn[type: DType, width: Int] (
         SIMD[type, width], SIMD[type, width]
-    ) capturing -> SIMD[type, width],
+    ) capturing [_] -> SIMD[type, width],
     rank: Int,
     type: DType,
 ](
