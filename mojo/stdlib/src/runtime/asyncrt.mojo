@@ -433,16 +433,6 @@ struct MojoCallContextPtr:
         )
         return ctx_ptr[]
 
-    @always_inline
-    fn set_to_error(self, err: Error):
-        """Indicates to the C++ runtime that the kernel has failed."""
-        var str = err.__str__()
-        var strref = str._strref_dangerous()
-        external_call[
-            "KGEN_CompilerRT_AsyncRT_MojoCallContext_SetToError", NoneType
-        ](self.ptr, strref.data, strref.length)
-        str._strref_keepalive()
-
     fn alloc(self, byte_size: Int, alignment: Int) -> UnsafePointer[NoneType]:
         return external_call[
             "KGEN_CompilerRT_AsyncRT_MojoCallContext_Allocate",
