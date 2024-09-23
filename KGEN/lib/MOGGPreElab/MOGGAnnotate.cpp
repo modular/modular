@@ -31,6 +31,8 @@ static constexpr llvm::StringLiteral kExecuteFuncName = "execute";
 static constexpr llvm::StringLiteral kShapeFuncName = "shape";
 static constexpr llvm::StringLiteral kInitializeOutputFuncName =
     "initialize_output";
+static constexpr llvm::StringLiteral kPyTorchFallbackFuncName =
+    "pytorch_fallback";
 static constexpr std::array<StringLiteral, 3> kMaxManagedTensorSlice = {
     "tensor_utils", "managed_tensor_slice", "ManagedTensorSlice"};
 
@@ -131,8 +133,9 @@ static void annotateTypes(LIT::FuncOp func) {
   // Add the result type.
   Type resultType = func.getResultTypes()[0];
   if (!isa<KGEN::NoneType>(resultType)) {
-    func->setDiscardableAttr(MOGG_ARG_RESULT_PARAMS,
-                             litTypeToParams(resultType));
+    func->setDiscardableAttr(MOGG_RESULT_PARAMS, litTypeToParams(resultType));
+    func->setDiscardableAttr(MOGG_RESULT_TYPE_NAME,
+                             litTypeToSourceName(resultType));
   }
 
   if (!typeNames.empty()) {
@@ -428,6 +431,11 @@ public:
                                        builder))
             return WalkResult::interrupt();
           initializeOutputOp = func;
+        } else if (func.getSourceName() == kPyTorchFallbackFuncName) {
+          if (!processStructFuncCommon(structDeclOp, registrationInfo, func,
+                                       kMOGGPyTorchFallbackFunctionLabel,
+                                       builder))
+            return WalkResult::interrupt();
         }
       }
 
