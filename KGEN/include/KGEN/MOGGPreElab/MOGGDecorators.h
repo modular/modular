@@ -130,6 +130,8 @@ static constexpr StringLiteral kMOGGExecuteFunctionLabel = "mogg.execute";
 static constexpr StringLiteral kMOGGShapeFunctionLabel = "mogg.shape";
 static constexpr StringLiteral kMOGGInitializeOutputFunctionLabel =
     "mogg.initialize_output";
+static constexpr StringLiteral kMOGGPyTorchFallbackFunctionLabel =
+    "mogg.pytorch_fallback";
 
 static constexpr StringLiteral kKernelTensorParameterAttrName =
     "mogg.tensor_params";
