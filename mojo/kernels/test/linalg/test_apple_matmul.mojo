@@ -36,7 +36,7 @@ alias do_benchmarking = False
 
 
 @parameter
-fn bench_run[func: fn () capturing -> None]() -> benchmark.Report:
+fn bench_run[func: fn () capturing [_] -> None]() -> benchmark.Report:
     return benchmark.run[func](2, 1_000_000, 1, 3)
 
 
@@ -292,7 +292,7 @@ def test_matmul[
     @__copy_capture(c)
     fn epilogue_fn[
         _type: DType, width: Int, *, alignment: Int = 1
-    ](coords: StaticIntTuple[2], val: SIMD[_type, width]) capturing -> None:
+    ](coords: StaticIntTuple[2], val: SIMD[_type, width]) -> None:
         c.store(coords, rebind[SIMD[c_type, width]](val + some_constant))
 
     @parameter
@@ -494,7 +494,7 @@ def test_batched_matmul[
     @__copy_capture(c)
     fn epilogue_fn[
         _type: DType, width: Int, rank: Int, *, alignment: Int = 1
-    ](coords: StaticIntTuple[rank], val: SIMD[_type, width]) capturing -> None:
+    ](coords: StaticIntTuple[rank], val: SIMD[_type, width]) -> None:
         c.store(
             rebind[StaticIntTuple[3]](coords),
             rebind[SIMD[c.type, width]](val + some_constant),

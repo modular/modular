@@ -22,7 +22,7 @@ alias alignment = 64
 
 
 @parameter
-fn bench_run[func: fn () capturing -> None]() -> benchmark.Report:
+fn bench_run[func: fn () capturing [_] -> None]() -> benchmark.Report:
     return benchmark.run[func](2, 1_000_000, 1, 3)
 
 
