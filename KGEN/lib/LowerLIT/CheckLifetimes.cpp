@@ -17,6 +17,7 @@
 #include "KGEN/LITDialect/LifetimeTrackable.h"
 #include "KGEN/LITDialect/SpecialFunctions.h"
 #include "Support/DebugInfoDialect/IR/DebugInfoOps.h"
+#include "mlir/IR/Dominance.h"
 #include "mlir/IR/ImplicitLocOpBuilder.h"
 #include "mlir/Interfaces/SideEffectInterfaces.h"
 #include "llvm/ADT/BitVector.h"
@@ -26,6 +27,9 @@ using namespace M;
 using namespace KGEN;
 using namespace LIT;
 using llvm::BitVector;
+
+static constexpr StringRef extraLifetimeUsesAttrName =
+    ".mojo.extra.lifetime.uses";
 
 /// Find all the functions and types in the module.
 static std::tuple<std::vector<LIT::FuncOp>,
@@ -538,6 +542,9 @@ ValueRef ValueInfo::getFullValueRef(unsigned valueId) const {
 /// This gives us a fully precise view of the individual fields, and allows them
 /// to be initialized and consumed in a piecewise way.
 struct ValueSet {
+  // This allows cached dominance computation within the current function.
+  mlir::DominanceInfo domInfo;
+
   /// This provides information about the types referenced from values, e.g. the
   /// number of fields they have.
   TypeDeclInfo &typeDeclInfo;
@@ -954,6 +961,7 @@ private:
   void checkConsume(Value value, Operation &op, bool isDeref);
   void checkMarkDestroyed(Value value, Operation &op);
   void checkLifetimeEffect(TypedAttr lifetime, Operation &op);
+  void handleAnyLifetimeUse(Operation &op);
 
   /// This is metadata about all the values we are tracking.
   ValueSet &valueSet;
@@ -1248,6 +1256,59 @@ void UninitializedValueScan::checkLifetimeEffect(TypedAttr lifetime,
   }
 }
 
+/// This function is called when an operation uses a #lit.any.lifetime lifetime.
+/// This happens when the operation accesses through (e.g.) an unbound
+/// UnsafePointer.  We don't know what objects may be touched by this access,
+/// but we want to ensure (for usability sake) that any lifetime-tracked values
+/// are treated as a use, so they don't get destroyed too early.
+///
+/// We handle this by learning which things need extension in this function,
+/// then attaching an attribute that destructor insertion pass will notice in
+/// the second pass.
+void UninitializedValueScan::handleAnyLifetimeUse(Operation &op) {
+  // Collect a set of value ID's that might be accessed.
+  SmallVector<int32_t> valueIdsToExtend;
+
+  for (unsigned i = 0, e = valueSet.getValueInfos().size(); i != e; ++i) {
+    auto &valueInfo = valueSet.getValueInfo(i);
+    // Don't mess with things that are in SSA registers - they aren't
+    // addressable with a lifetime.
+    if (!valueInfo.value || !valueInfo.isIndirect)
+      continue;
+
+    // Can't be a use if the value isn't fully alive here.
+    if (!valueSet.getFullValueRef(i).isAllPresent(liveValues))
+      continue;
+
+    // Don't mess with trivial things.
+    if (valueSet.isTrivial(valueInfo.value.getType(), valueInfo.isIndirect))
+      continue;
+
+    // Check to see if the value is dominated by this op.  It is possible for
+    // values to be fully live that are not reachable, e.g.:
+    //
+    //     if cond:
+    //        var thing = ...
+    //        use(thing)
+    //     else:
+    //        return
+    //     # Thing is fully initialized here but doesn't dominate.
+    //     use_any_lifetime(..)
+    //
+    if (!valueSet.domInfo.properlyDominates(valueInfo.value, &op))
+      continue;
+
+    // This value might be accessed, so we want to extend its lifetime if
+    // necessary.
+    valueIdsToExtend.push_back(i);
+  }
+
+  if (valueIdsToExtend.empty())
+    return;
+  op.setAttr(extraLifetimeUsesAttrName,
+             mlir::DenseI32ArrayAttr::get(op.getContext(), valueIdsToExtend));
+}
+
 void UninitializedValueScan::scanFunction(LIT::FuncOp func) {
   // Initialize the BitVector with all the elements that are live-in.  We treat
   // all values live at the start of the function (even before they are actually
@@ -1289,8 +1350,16 @@ void UninitializedValueScan::scanBlock(Block &block) {
       continue;
     }
 
-    assert(resultEffects.size() == op.getNumResults() &&
-           "getOperationEffects returned wrong # effects");
+    // If the operation used a #lit.any.lifetime value, then we treat it as an
+    // implicit use of all tracked values.  This ensures that the values are
+    // not destroyed too early.  We check for this before any defs are processed
+    // so that only values live-in to the operation are extended, not things
+    // defined by the operation.
+    for (auto lifetime : lifetimeEffects)
+      if (isa<AnyLifetimeAttr>(lifetime)) {
+        handleAnyLifetimeUse(op);
+        break;
+      }
 
     // Handle all the normal operand and result effects.
     for (auto [operand, effect] : operandEffects) {
@@ -1320,6 +1389,8 @@ void UninitializedValueScan::scanBlock(Block &block) {
       }
     }
 
+    assert(resultEffects.size() == op.getNumResults() &&
+           "getOperationEffects returned wrong # effects");
     for (auto [result, effect] : llvm::zip(op.getResults(), resultEffects)) {
 #ifndef NDEBUG
       LifetimeTrackable trackable(result);
@@ -1378,10 +1449,14 @@ void UninitializedValueScan::scanBlock(Block &block) {
       }
     }
 
-    // Process any other indirect lifetimes accessed.
+    // Process any indirect lifetimes accessed.  It would be theoretically more
+    // correct to handle these before the other operation effects (e.g. defs)
+    // but exclusivity checking has already verified that there is no
+    // intersection between lifetime uses and definitions.
     for (auto lifetime : lifetimeEffects)
       checkLifetimeEffect(lifetime, op);
 
+    // Finally, handle any other special per-operation behavior.
     switch (overall) {
     case OverallOpValueEffect::unknownOp:
     case OverallOpValueEffect::allHandled:
@@ -2570,6 +2645,22 @@ void DestructorInsertion::scanBlock(Block &block) {
     for (auto lifetime : lifetimeEffects)
       checkLifetimeEffect(lifetime, dtorInserter);
 
+    // If the operation used a #lit.any.lifetime value, then we treat it as an
+    // implicit use of all tracked values.  This ensures that the values are not
+    // destroyed too early.  Uninit variable scan handles this by adding an
+    // attribute with all the value ID's in question.
+    if (auto extraUses = op.getAttrOfType<mlir::DenseI32ArrayAttr>(
+            extraLifetimeUsesAttrName)) {
+      op.removeAttr(extraLifetimeUsesAttrName);
+
+      // Treat this op as using each of the indicated values, putting out a
+      // destructor call if this is the last use.
+      for (int32_t valueId : extraUses.asArrayRef()) {
+        const ValueInfo &info = valueSet.getValueInfo(valueId);
+        checkUse(info.value, /*isDeref*/ info.isIndirect, dtorInserter);
+      }
+    }
+
     // Insert any destructor calls immediately /after/ this operation, since
     // they are for values used by it.
     auto insertPt = std::next(Block::iterator(&op));
@@ -3369,6 +3460,7 @@ struct CheckLifetimes : impl::CheckLifetimesBase<CheckLifetimes> {
 LogicalResult
 CheckLifetimes::processFunction(LIT::FuncOp func, TypeDeclInfo &typeDeclInfo,
                                 CachedLifetimeFinder &lifetimeFinder) {
+
   // Pass #1: Collect all of the values declared in the function that have
   // ownership to track, and number them.
   ValueSet valueSet(typeDeclInfo, func, lifetimeFinder);

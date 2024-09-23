@@ -1098,3 +1098,13 @@ fn caught_eh_cleanup():
       # CHECK-NEXT: [[EH2:%.*]] = lit.ref.load %eh2
       # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}([[EH2]])
 
+fn use_inner_pointer(ptr: UnsafePointer[UInt8]): pass
+
+# CHECK-LABEL: lit.func @"handleAnyLifetime
+fn handleAnyLifetime():
+  str = String()
+  # Make sure this keeps alive str until after the call.
+  # CHECK: lit.call {{.*}}use_inner_pointer
+  use_inner_pointer(str.unsafe_ptr())
+  # CHECK-NEXT: lit.call {{.*}}String::@"__del__{{.*}}(%str)
+  # CHECK-NEXT: lit.var.lifetime.end %str

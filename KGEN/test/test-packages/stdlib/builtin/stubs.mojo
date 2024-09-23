@@ -7,6 +7,7 @@
 alias int = __mlir_type.index
 alias string = __mlir_type.`!kgen.string`
 alias float = __mlir_type.`!pop.scalar<f64>`
+alias UInt8 = __mlir_type.i8
 
 alias AnyTrivialRegType = __mlir_type.`!kgen.type`
 alias ImmutableLifetime = __mlir_type.`!lit.lifetime<0>`
@@ -228,11 +229,17 @@ struct String(KeyElement):
     fn __moveinit__(inout self, owned existing: String):
         pass
 
+    fn __del__(owned self):
+        pass
+
     fn __len__(self) -> Int:
         return 0
 
     fn __contains__(self, substr: String) -> Bool:
         return True
+
+    fn unsafe_ptr(self) -> UnsafePointer[UInt8]:
+        return UnsafePointer[UInt8]()
 
 
 @value
@@ -587,10 +594,10 @@ struct Tuple[*element_types: AnyType]:
 
 @register_passable("trivial")
 struct UnsafePointer[
-    T: AnyType, address_space: AddressSpace = AddressSpace.GENERIC
+    T: AnyType,
+    address_space: AddressSpace = AddressSpace.GENERIC,
+    lifetime: Lifetime[True].type = MutableAnyLifetime,
 ]:
-    alias _ref_lifetime = MutableAnyLifetime
-
     alias _mlir_type = __mlir_type[
         `!kgen.pointer<`, T, `,`, address_space._value.value, `>`
     ]
@@ -608,13 +615,13 @@ struct UnsafePointer[
 
     fn __getitem__(
         self,
-    ) -> ref [Self._ref_lifetime, address_space._value.value] T:
+    ) -> ref [Self.lifetime, address_space._value.value] T:
         while __mlir_attr.true:
             pass
 
     fn __getitem__(
         self, offset: Int
-    ) -> ref [Self._ref_lifetime, address_space._value.value] T:
+    ) -> ref [Self.lifetime, address_space._value.value] T:
         while __mlir_attr.true:
             pass
 
