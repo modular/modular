@@ -42,11 +42,11 @@ fn run_mha[
     depth: Int,
     num_heads: Int,
     group: Int = 1,
+    batch_size: Int = 1,
 ](inout m: Bench, seq_len: Int, num_keys: Int, ctx: DeviceContext,) raises:
     constrained[mask_rank in (3, 4), "mha only support rank 3 or 4."]()
 
     # Query, key, value dimensions.
-    alias batch_size = 1
     alias scale = Float32(0.125)  # isqrt[type, 1](Float32(depth))
     alias kv_num_heads = num_heads // group
 
@@ -258,6 +258,7 @@ fn main() raises:
     alias group = env_get_int["group", 1]()
     alias seq_len = env_get_int["seq_len", 64]()
     alias num_keys = env_get_int["num_keys", 64]()
+    alias batch_size = env_get_int["batch_size", 1]()
 
     alias cfg = MHA_cfg(
         mask_rank=mask_rank,
@@ -281,6 +282,7 @@ fn main() raises:
                 cfg.depth,
                 cfg.num_heads,
                 cfg.group,
+                batch_size,
             ](m, cfg.seq_len, cfg.num_keys, ctx)
 
             bench_compile_time[
@@ -291,6 +293,7 @@ fn main() raises:
                     cfg.depth,
                     cfg.num_heads,
                     cfg.group,
+                    batch_size,
                 ]
             ](m, "mha" + str(cfg))
 
