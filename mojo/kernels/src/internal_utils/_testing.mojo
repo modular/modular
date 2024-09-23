@@ -177,7 +177,7 @@ fn _assert_with_measure_impl[
     type: DType, //,
     measure: fn[type: DType] (
         UnsafePointer[Scalar[type]], UnsafePointer[Scalar[type]], Int
-    ) capturing -> Bool,
+    ) capturing [_] -> Bool,
 ](
     x: UnsafePointer[Scalar[type], *_],
     y: __type_of(x),
@@ -200,7 +200,7 @@ fn _assert_with_measure_impl[
 fn assert_with_measure[
     measure: fn[type: DType] (
         UnsafePointer[Scalar[type]], UnsafePointer[Scalar[type]], Int
-    ) capturing -> Bool
+    ) capturing [_] -> Bool
 ](
     x: NDBuffer,
     y: __type_of(x),
@@ -221,7 +221,7 @@ fn assert_with_measure[
 fn assert_with_measure[
     measure: fn[type: DType] (
         UnsafePointer[Scalar[type]], UnsafePointer[Scalar[type]], Int
-    ) capturing -> Bool
+    ) capturing [_] -> Bool
 ](
     x: HostNDBuffer,
     y: __type_of(x),
@@ -242,7 +242,7 @@ fn assert_with_measure[
 fn assert_with_measure[
     measure: fn[type: DType] (
         UnsafePointer[Scalar[type]], UnsafePointer[Scalar[type]], Int
-    ) capturing -> Bool
+    ) capturing [_] -> Bool
 ](
     x: TestTensor,
     y: __type_of(x),
