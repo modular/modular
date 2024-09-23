@@ -48,7 +48,7 @@ def test_debug_print_compact(compiled_model, session, capfd):
     )
     captured = capfd.readouterr()
     assert (
-        "test_x_value_cpu = tensor([[1.1235, 1.1235, 1.1235, ..., 1.1235,"
+        "test_x_value = tensor([[1.1235, 1.1235, 1.1235, ..., 1.1235,"
         " 1.1235, 1.1235]], dtype=f32, shape=[20])"
         in captured.out
     )
@@ -61,7 +61,7 @@ def test_debug_print_full(compiled_model, session, capfd):
     )
     captured = capfd.readouterr()
     assert (
-        "test_x_value_cpu = tensor<20xf32> [1.12e+00, 1.12e+00, 1.12e+00,"
+        "test_x_value = tensor<20xf32> [1.12e+00, 1.12e+00, 1.12e+00,"
         " 1.12e+00, 1.12e+00, 1.12e+00, 1.12e+00, 1.12e+00, 1.12e+00, 1.12e+00,"
         " 1.12e+00, 1.12e+00, 1.12e+00, 1.12e+00, 1.12e+00, 1.12e+00, 1.12e+00,"
         " 1.12e+00, 1.12e+00, 1.12e+00]"
@@ -74,7 +74,7 @@ def test_debug_print_full(compiled_model, session, capfd):
     )
     captured = capfd.readouterr()
     assert (
-        "test_x_value_cpu = tensor<20xf32> [1.123457e+00, 1.123457e+00,"
+        "test_x_value = tensor<20xf32> [1.123457e+00, 1.123457e+00,"
         " 1.123457e+00, 1.123457e+00, 1.123457e+00, 1.123457e+00, 1.123457e+00,"
         " 1.123457e+00, 1.123457e+00, 1.123457e+00, 1.123457e+00, 1.123457e+00,"
         " 1.123457e+00, 1.123457e+00, 1.123457e+00, 1.123457e+00, 1.123457e+00,"
@@ -89,7 +89,7 @@ def test_debug_print_none(compiled_model, session, capfd):
         Tensor.from_numpy(np.full([20], 1.1234567, np.float32))
     )
     captured = capfd.readouterr()
-    assert "test_x_value_cpu" not in captured.out
+    assert "test_x_value" not in captured.out
 
 
 def test_debug_print_binary(compiled_model, session, capfd, tmp_path):
@@ -97,7 +97,7 @@ def test_debug_print_binary(compiled_model, session, capfd, tmp_path):
     input = np.full([20], 1.1234567, np.float32)
     _ = compiled_model.execute(Tensor.from_numpy(input))
     captured = capfd.readouterr()
-    assert "test_x_value_cpu" not in captured.out
-    assert (tmp_path / "test_x_value_cpu").exists()
-    from_file = np.fromfile(tmp_path / "test_x_value_cpu", np.float32)
+    assert "test_x_value" not in captured.out
+    assert (tmp_path / "test_x_value").exists()
+    from_file = np.fromfile(tmp_path / "test_x_value", np.float32)
     assert (input == from_file).all()
