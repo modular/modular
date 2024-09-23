@@ -27,7 +27,7 @@ def test_execute_gpu(gpu_session: InferenceSession, mo_model_path: Path):
     outputs = model.execute(input_tensor)
     assert len(outputs) == 1
     output_tensor = outputs[0]
-    host_tensor = output_tensor.copy_to(CPU())
+    host_tensor = output_tensor.to(CPU())
     for idx, elt in enumerate([4.0, 2.0, -5.0, 3.0, 6.0]):
         assert isclose(host_tensor[idx].item(), elt)
 
@@ -43,7 +43,7 @@ def test_execute_subtensor(gpu_session: InferenceSession, mo_model_path: Path):
     assert len(outputs) == 1
     output_tensor = outputs[0]
     assert not output_tensor.is_host
-    host_tensor = output_tensor.copy_to(CPU())
+    host_tensor = output_tensor.to(CPU())
     expected = [3.0, 2.0, -4.0, 5.0, 9.0]
     for idx, elt in enumerate(expected):
         assert isclose(host_tensor[idx].item(), elt)
@@ -57,10 +57,10 @@ def test_execute_subtensor(gpu_session: InferenceSession, mo_model_path: Path):
     presliced_output = model.execute(presliced_input)
     presliced_expected = [3.0, 3.0, -2.0, 8.0, 13.0]
     assert len(presliced_output) == 1
-    presliced_output_tensor = presliced_output[0].copy_to(CPU())
+    presliced_output_tensor_host = presliced_output[0].to(CPU())
     for idx in range(5):
         assert isclose(
-            presliced_output_tensor[idx].item(), presliced_expected[idx]
+            presliced_output_tensor_host[idx].item(), presliced_expected[idx]
         )
 
 
@@ -71,21 +71,21 @@ def test_scalar_inputs(gpu_session: InferenceSession, scalar_input_path: Path):
     vector = np.arange(1, 6, dtype=np.int32)
 
     cuda_output = model.execute(scalar, vector)[0]
-    host_output = cuda_output.copy_to(CPU())
+    host_output = cuda_output.to(CPU())
     assert np.array_equal(
         host_output.to_numpy(), np.arange(4, 9, dtype=np.int32)
     )
 
     # We should also be able to execute with raw Python scalars.
     cuda_output = model.execute(3, vector)[0]
-    host_output = cuda_output.copy_to(CPU())
+    host_output = cuda_output.to(CPU())
     assert np.array_equal(
         host_output.to_numpy(), np.arange(4, 9, dtype=np.int32)
     )
 
     # We should also be able to execute with numpy scalars.
     cuda_output = model.execute(np.int32(3), vector)[0]
-    host_output = cuda_output.copy_to(CPU())
+    host_output = cuda_output.to(CPU())
     assert np.array_equal(
         host_output.to_numpy(), np.arange(4, 9, dtype=np.int32)
     )
@@ -122,9 +122,9 @@ def test_execute_external_weights_gpu(gpu_session: InferenceSession) -> None:
 
     compiled = gpu_session.load(graph, weights_registry={"foo": weights})
     input_np = np.random.randn(num_elems).astype(np.float32)
-    output = compiled.execute(Tensor.from_dlpack(input_np).copy_to(CUDA()))[
-        0
-    ].copy_to(CPU())
+    output = compiled.execute(Tensor.from_dlpack(input_np).to(CUDA()))[0].to(
+        CPU()
+    )
     for idx, elt in enumerate(input_np + weights):
         assert isclose(output[idx].item(), elt)
 
@@ -141,7 +141,7 @@ def test_no_devicetensor_inputs(
     outputs = model._impl.execute_device_tensors([])
     assert len(outputs) == 1
     tensor_output = Tensor._from_impl(outputs[0])
-    host_tensor = tensor_output.copy_to(CPU())
+    host_tensor = tensor_output.to(CPU())
     output = np.from_dlpack(host_tensor)
     expected = np.arange(1, 6, dtype=np.int32)
     assert np.array_equal(output, expected)
@@ -158,12 +158,12 @@ def test_aliasing_outputs(
     outputs = model.execute(input_tensor)
     assert len(outputs) == 2
 
-    tensor_output0 = outputs[0].copy_to(CPU())
+    tensor_output0 = outputs[0].to(CPU())
     array_output0 = tensor_output0.to_numpy()
     expected = np.arange(0, 10, 2, dtype=np.int32)
     assert np.array_equal(array_output0, expected)
 
-    tensor_output1 = outputs[1].copy_to(CPU())
+    tensor_output1 = outputs[1].to(CPU())
     array_output1 = tensor_output1.to_numpy()
     assert np.array_equal(array_output1, expected)
 
