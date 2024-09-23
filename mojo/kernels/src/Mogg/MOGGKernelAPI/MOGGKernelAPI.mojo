@@ -9,6 +9,7 @@
 # ===----------------------------------------------------------------------===#
 from buffer import NDBuffer
 from buffer.dimlist import DimList
+from builtin.simd import _pow
 import compiler_internal as compiler
 from runtime.asyncrt import MojoCallContextPtr
 from sys import llvm_intrinsic
@@ -34,6 +35,7 @@ from math import (
     tanh,
 )
 from nn import arg_nonzero
+from nn.activations import relu, gelu
 from nn.pool import avg_pool, max_pool, pool_shape, pool_shape_ceil
 from utils.numerics import isinf, isnan
 from nn.gather_scatter import scatter_nd, scatter_nd_generator
@@ -337,9 +339,144 @@ struct Xor:
         foreach[func, synchronous, target](z, ctx)
 
 
+@compiler.register("mo.pow")
+@compiler.elementwise
+struct Pow:
+    @staticmethod
+    fn execute[
+        synchronous: Bool,
+        target: StringLiteral,
+    ](
+        z: ManagedTensorSlice,
+        x: ManagedTensorSlice,
+        y: ManagedTensorSlice,
+        ctx: MojoCallContextPtr,
+    ):
+        @parameter
+        @always_inline
+        fn func[width: Int](idx: StaticIntTuple[z.rank]) -> SIMD[z.type, width]:
+            var lhs = rebind[SIMD[z.type, width]](x.load[width](idx))
+            var rhs = y.load[width](idx)
+            return _pow(lhs, rhs)
+
+        foreach[func, synchronous, target](z, ctx)
+
+
+@compiler.register("mo.max")
+@compiler.elementwise
+struct Max:
+    @staticmethod
+    fn execute[
+        synchronous: Bool,
+        target: StringLiteral,
+    ](
+        z: ManagedTensorSlice,
+        x: ManagedTensorSlice,
+        y: ManagedTensorSlice,
+        ctx: MojoCallContextPtr,
+    ):
+        @parameter
+        @always_inline
+        fn func[width: Int](idx: StaticIntTuple[z.rank]) -> SIMD[z.type, width]:
+            var lhs = rebind[SIMD[z.type, width]](x.load[width](idx))
+            var rhs = rebind[SIMD[z.type, width]](y.load[width](idx))
+            return max(lhs, rhs)
+
+        foreach[func, synchronous, target](z, ctx)
+
+
+@compiler.register("mo.min")
+@compiler.elementwise
+struct Min:
+    @staticmethod
+    fn execute[
+        synchronous: Bool,
+        target: StringLiteral,
+    ](
+        z: ManagedTensorSlice,
+        x: ManagedTensorSlice,
+        y: ManagedTensorSlice,
+        ctx: MojoCallContextPtr,
+    ):
+        @parameter
+        @always_inline
+        fn func[width: Int](idx: StaticIntTuple[z.rank]) -> SIMD[z.type, width]:
+            var lhs = rebind[SIMD[z.type, width]](x.load[width](idx))
+            var rhs = rebind[SIMD[z.type, width]](y.load[width](idx))
+            return min(lhs, rhs)
+
+        foreach[func, synchronous, target](z, ctx)
+
+
 # ===----------------------------------------------------------------------===#
 # Unary Elementwise Kernels
 # ===----------------------------------------------------------------------===#
+
+
+@compiler.register("mo.cast")
+@compiler.elementwise
+struct Cast:
+    @staticmethod
+    fn execute[
+        synchronous: Bool,
+        target: StringLiteral,
+    ](y: ManagedTensorSlice, x: ManagedTensorSlice, ctx: MojoCallContextPtr):
+        @parameter
+        @always_inline
+        fn func[width: Int](idx: StaticIntTuple[y.rank]) -> SIMD[y.type, width]:
+            return rebind[SIMD[y.type, width]](
+                x.load[width](idx).cast[y.type]()
+            )
+
+        foreach[func, synchronous, target](y, ctx)
+
+
+@compiler.register("mo.negative")
+@compiler.elementwise
+struct Negative:
+    @staticmethod
+    fn execute[
+        synchronous: Bool,
+        target: StringLiteral,
+    ](y: ManagedTensorSlice, x: ManagedTensorSlice, ctx: MojoCallContextPtr):
+        @parameter
+        @always_inline
+        fn func[width: Int](idx: StaticIntTuple[y.rank]) -> SIMD[y.type, width]:
+            return rebind[SIMD[y.type, width]](-x.load[width](idx))
+
+        foreach[func, synchronous, target](y, ctx)
+
+
+@compiler.register("mo.relu")
+@compiler.elementwise
+struct ReLU:
+    @staticmethod
+    fn execute[
+        synchronous: Bool,
+        target: StringLiteral,
+    ](y: ManagedTensorSlice, x: ManagedTensorSlice, ctx: MojoCallContextPtr):
+        @parameter
+        @always_inline
+        fn func[width: Int](idx: StaticIntTuple[y.rank]) -> SIMD[y.type, width]:
+            return rebind[SIMD[y.type, width]](relu(x.load[width](idx)))
+
+        foreach[func, synchronous, target](y, ctx)
+
+
+@compiler.register("mo.gelu")
+@compiler.elementwise
+struct GeLU:
+    @staticmethod
+    fn execute[
+        synchronous: Bool,
+        target: StringLiteral,
+    ](y: ManagedTensorSlice, x: ManagedTensorSlice, ctx: MojoCallContextPtr):
+        @parameter
+        @always_inline
+        fn func[width: Int](idx: StaticIntTuple[y.rank]) -> SIMD[y.type, width]:
+            return rebind[SIMD[y.type, width]](gelu(x.load[width](idx)))
+
+        foreach[func, synchronous, target](y, ctx)
 
 
 @compiler.register("mo.ceil")
@@ -482,6 +619,22 @@ struct RoundEven:
         @always_inline
         fn func[width: Int](idx: StaticIntTuple[y.rank]) -> SIMD[y.type, width]:
             return rebind[SIMD[y.type, width]](x.load[width](idx).roundeven())
+
+        foreach[func, synchronous, target](y, ctx)
+
+
+@compiler.register("mo.sqrt")
+@compiler.elementwise
+struct Sqrt:
+    @staticmethod
+    fn execute[
+        synchronous: Bool,
+        target: StringLiteral,
+    ](y: ManagedTensorSlice, x: ManagedTensorSlice, ctx: MojoCallContextPtr):
+        @parameter
+        @always_inline
+        fn func[width: Int](idx: StaticIntTuple[y.rank]) -> SIMD[y.type, width]:
+            return rebind[SIMD[y.type, width]](sqrt(x.load[width](idx)))
 
         foreach[func, synchronous, target](y, ctx)
 
