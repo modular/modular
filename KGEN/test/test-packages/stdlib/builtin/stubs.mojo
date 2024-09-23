@@ -29,7 +29,7 @@ alias `True` = __mlir_attr.`1 : i1`
 alias `False` = __mlir_attr.`0 : i1`
 
 
-struct AnyLifetime[is_mutable: Bool]:
+struct Lifetime[is_mutable: Bool]:
     """This represents a lifetime reference of potentially parametric type.
     TODO: This should be replaced with a parametric type alias.
 
@@ -332,8 +332,8 @@ struct VariadicList[type: AnyTrivialRegType]:
 # TODO: parametric aliases would be nice.
 struct _lit_lifetime_union[
     is_mutable: Bool, //,
-    a: AnyLifetime[is_mutable].type,
-    b: AnyLifetime[is_mutable].type,
+    a: Lifetime[is_mutable].type,
+    b: Lifetime[is_mutable].type,
 ]:
     alias result = __mlir_attr[
         `#lit.lifetime.union<`,
@@ -348,7 +348,7 @@ struct _lit_lifetime_union[
 
 struct _lit_mut_cast[
     is_mutable: Bool, //,
-    operand: AnyLifetime[is_mutable].type,
+    operand: Lifetime[is_mutable].type,
     result_mutable: Bool,
 ]:
     alias result = __mlir_attr[
@@ -364,7 +364,7 @@ struct _lit_mut_cast[
 struct _VariadicListMemIter[
     elt_is_mutable: Bool, //,
     elt_type: AnyType,
-    elt_lifetime: AnyLifetime[elt_is_mutable].type,
+    elt_lifetime: Lifetime[elt_is_mutable].type,
     list_lifetime: ImmutableLifetime,
 ]:
     """Iterator for VariadicListMem.
@@ -534,7 +534,7 @@ struct AddressSpace:
 struct Reference[
     is_mutable: Bool, //,
     type: AnyType,
-    lifetime: AnyLifetime[is_mutable].type,
+    lifetime: Lifetime[is_mutable].type,
     address_space: AddressSpace = AddressSpace.GENERIC,
 ]:
     alias _mlir_type = __mlir_type[

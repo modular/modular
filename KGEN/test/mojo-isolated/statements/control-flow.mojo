@@ -459,7 +459,7 @@ fn for_range_loop():
 # This iterator returns elements by reference, using the mutability and lifetime
 # of the list.
 struct RefIter[list_mutability: Bool, //,
-               list_lifetime: AnyLifetime[list_mutability].type]:
+               list_lifetime: Lifetime[list_mutability].type]:
     fn __init__(inout self): pass
     fn __next__(inout self) -> ref [list_lifetime] Int: pass
     fn __len__(self) -> Int: return 0

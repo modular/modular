@@ -47,7 +47,7 @@ fn implicit_owned(owned a: MemExample):
 # CHECK-SAME: (%a: !lit.ref<!MemExample, mut=#lit.struct.extract<:!Bool isMut, "value">, life>)
 # CHECK-SAME: -> !lit.ref<!MemExample, mut=#lit.struct.extract<:!Bool isMut, "value">, life>
 fn parametricMut[isMut: Bool,
-                 life: AnyLifetime[isMut].type](a: Reference[MemExample, life]._mlir_type)
+                 life: Lifetime[isMut].type](a: Reference[MemExample, life]._mlir_type)
    -> Reference[MemExample, life]._mlir_type:
   return a
 
@@ -359,7 +359,7 @@ struct ThingWithFields:
 # CHECK-LABEL: lit.func @"parametric_mut_mbvalue
 fn parametric_mut_mbvalue[
     is_mutable: __mlir_type.i1,
-    lifetime: AnyLifetime[is_mutable].type,
+    lifetime: Lifetime[is_mutable].type,
  ](a: Reference[ThingWithFields, lifetime])
    -> Reference[Int, __lifetime_of(a[].field)]:
   # CHECK: lit.ref.struct.ger
