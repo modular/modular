@@ -247,16 +247,20 @@ def test_is_host():
 
 def test_host_host_copy():
     # We should be able to freely copy tensors between host and host.
-    cpu_device = CPU()
-
     host_tensor = Tensor.from_numpy(np.array([1, 2, 3], dtype=np.int32))
-    tensor = host_tensor.copy_to(cpu_device)
+    tensor = host_tensor.copy(CPU())
 
     assert tensor.shape == host_tensor.shape
-    assert tensor.dtype == DType.int32
+    assert tensor.dtype == host_tensor.dtype
+    host_tensor[0] = 0  # Ensure we got a deep copy.
     assert tensor[0].item() == 1
     assert tensor[1].item() == 2
     assert tensor[2].item() == 3
+
+    tensor2 = host_tensor.copy(CPU())
+    assert tensor2[0].item() == 0
+    assert tensor2[1].item() == 2
+    assert tensor2[2].item() == 3
 
 
 DLPACK_DTYPES = [

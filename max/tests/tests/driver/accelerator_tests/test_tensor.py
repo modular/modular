@@ -25,17 +25,12 @@ def test_is_host_cuda():
 
 def test_host_device_copy():
     # We should be able to freely copy tensors between host and device.
-    cpu_device = CPU()
-    cuda_device = CUDA()
-
-    host_tensor = Tensor.from_numpy(
-        np.array([1, 2, 3], dtype=np.int32), device=cpu_device
-    )
-    device_tensor = host_tensor.copy_to(cuda_device)
-    tensor = device_tensor.copy_to(cpu_device)
+    host_tensor = Tensor.from_numpy(np.array([1, 2, 3], dtype=np.int32))
+    device_tensor = host_tensor.copy(CUDA())
+    tensor = device_tensor.copy(CPU())
 
     assert tensor.shape == host_tensor.shape
-    assert tensor.dtype == DType.int32
+    assert tensor.dtype == host_tensor.dtype
     assert tensor[0].item() == 1
     assert tensor[1].item() == 2
     assert tensor[2].item() == 3
@@ -43,14 +38,13 @@ def test_host_device_copy():
 
 def test_device_device_copy():
     # We should be able to freely copy tensors between device and device.
-    cpu_device = CPU()
     cuda_device = CUDA()
 
     host_tensor = Tensor.from_numpy(
         np.array([1, 2, 3], dtype=np.int32), device=cuda_device
     )
-    device_tensor = host_tensor.copy_to(cuda_device)
-    tensor = device_tensor.copy_to(cpu_device)
+    device_tensor = host_tensor.copy(cuda_device)
+    tensor = device_tensor.copy(CPU())
 
     assert tensor.shape == host_tensor.shape
     assert tensor.dtype == DType.int32
@@ -64,21 +58,21 @@ def test_torch_tensor_conversion():
     # bunch of juggling between host and device because we don't have a
     # CUDA-compatible version of torch available yet.
     torch_tensor = torch.reshape(torch.arange(1, 11, dtype=torch.int32), (2, 5))
-    copied_tensor = Tensor.from_dlpack(torch_tensor)
-    gpu_tensor = copied_tensor.copy_to(CUDA())
+    host_tensor = Tensor.from_dlpack(torch_tensor)
+    gpu_tensor = host_tensor.to(CUDA())
     assert gpu_tensor.shape == (2, 5)
     assert gpu_tensor.dtype == DType.int32
-    host_tensor = gpu_tensor.copy_to(CPU())
+    host_tensor = gpu_tensor.to(CPU())
     torch_tensor_copy = torch.from_dlpack(host_tensor)
     assert torch.all(torch.eq(torch_tensor, torch_tensor_copy))
 
 
-def test_device():
+def test_to_device():
     cpu = CPU()
     cuda = CUDA()
 
     host_tensor = Tensor((3, 3), dtype=DType.int32, device=cpu)
-    gpu_tensor = host_tensor.copy_to(cuda)
+    gpu_tensor = host_tensor.to(cuda)
 
     assert cpu == host_tensor.device
     assert cuda == gpu_tensor.device
@@ -90,7 +84,7 @@ def test_device():
 def test_zeros():
     # We should be able to initialize an all-zero tensor.
     tensor = Tensor.zeros((3, 3), DType.int32, device=CUDA())
-    host_tensor = tensor.copy_to(CPU())
+    host_tensor = tensor.to(CPU())
     assert np.array_equal(
         host_tensor.to_numpy(), np.zeros((3, 3), dtype=np.int32)
     )
@@ -111,5 +105,5 @@ def test_scalar():
     scalar = Tensor.scalar(5, DType.int32, device=CUDA())
     assert scalar.device == CUDA()
 
-    host_scalar = scalar.copy_to(CPU())
+    host_scalar = scalar.to(CPU())
     assert host_scalar.item() == 5
