@@ -127,7 +127,7 @@ struct GRPCServer[
     async fn _serve[handle_fn: Self.handle_fn_type](inout self) -> None:
         @always_inline
         @parameter
-        async fn process(inout batch: InferenceBatch) capturing -> None:
+        async fn process(inout batch: InferenceBatch) -> None:
             for i in range(len(batch)):
                 var req = batch.request_at(i)
                 var resp = batch.response_at(i)
@@ -146,7 +146,7 @@ struct GRPCServer[
 
         @always_inline
         @parameter
-        async fn listen() capturing -> None:
+        async fn listen() -> None:
             while not self._stop_flag.load():
                 # TODO: Construct merged request (per model) for batching.
                 var batch = InferenceBatch(self._lib, self._session)
