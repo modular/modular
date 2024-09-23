@@ -28,7 +28,7 @@ from max.serve.metrics import (
 
 
 fn test_custom_prometheus[
-    T: Instrument, Fn: fn (inout T) capturing -> None
+    T: Instrument, Fn: fn (inout T) capturing [_] -> None
 ](
     instrument_name: String,
     desc: String,
