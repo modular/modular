@@ -528,7 +528,7 @@ struct Bench:
 
     fn bench_with_input[
         T: AnyType,
-        bench_fn: fn (inout Bencher, T) capturing -> None,
+        bench_fn: fn (inout Bencher, T) capturing [_] -> None,
     ](
         inout self,
         bench_id: BenchId,
@@ -561,7 +561,7 @@ struct Bench:
 
     fn bench_with_input[
         T: AnyType,
-        bench_fn: fn (inout Bencher, T) capturing -> None,
+        bench_fn: fn (inout Bencher, T) capturing [_] -> None,
     ](
         inout self,
         bench_id: BenchId,
@@ -586,7 +586,7 @@ struct Bench:
 
     fn bench_with_input[
         T: AnyTrivialRegType,
-        bench_fn: fn (inout Bencher, T) capturing -> None,
+        bench_fn: fn (inout Bencher, T) capturing [_] -> None,
     ](
         inout self,
         bench_id: BenchId,
@@ -619,7 +619,7 @@ struct Bench:
 
     fn bench_with_input[
         T: AnyTrivialRegType,
-        bench_fn: fn (inout Bencher, T) capturing -> None,
+        bench_fn: fn (inout Bencher, T) capturing [_] -> None,
     ](
         inout self,
         bench_id: BenchId,
@@ -643,7 +643,7 @@ struct Bench:
         self.bench_with_input[T, bench_fn](bench_id, input, measures_list)
 
     fn bench_function[
-        bench_fn: fn (inout Bencher) capturing -> None
+        bench_fn: fn (inout Bencher) capturing [_] -> None
     ](
         inout self,
         bench_id: BenchId,
@@ -666,7 +666,7 @@ struct Bench:
             self._test[bench_fn]()
 
     fn bench_function[
-        bench_fn: fn (inout Bencher) capturing -> None
+        bench_fn: fn (inout Bencher) capturing [_] -> None
     ](inout self, bench_id: BenchId, *measures: ThroughputMeasure,) raises:
         """Benchmarks or Tests an input function.
 
@@ -684,7 +684,7 @@ struct Bench:
 
     # TODO (#31795): overload should not be needed
     fn bench_function[
-        bench_fn: fn (inout Bencher) raises capturing -> None
+        bench_fn: fn (inout Bencher) raises capturing [_] -> None
     ](
         inout self,
         bench_id: BenchId,
@@ -718,7 +718,7 @@ struct Bench:
         self.bench_function[abort_on_err](bench_id, measures)
 
     fn bench_function[
-        bench_fn: fn (inout Bencher) raises capturing -> None
+        bench_fn: fn (inout Bencher) raises capturing [_] -> None
     ](inout self, bench_id: BenchId, *measures: ThroughputMeasure,) raises:
         """Benchmarks or Tests an input function.
 
@@ -734,7 +734,9 @@ struct Bench:
             measures_list.append(m[])
         self.bench_function[bench_fn](bench_id, measures_list)
 
-    fn _test[bench_fn: fn (inout Bencher) capturing -> None](inout self) raises:
+    fn _test[
+        bench_fn: fn (inout Bencher) capturing [_] -> None
+    ](inout self) raises:
         """Tests an input function by executing it only once.
 
         Parameters:
@@ -745,7 +747,7 @@ struct Bench:
         bench_fn(b)
 
     fn _bench[
-        user_bench_fn: fn (inout Bencher) capturing -> None
+        user_bench_fn: fn (inout Bencher) capturing [_] -> None
     ](
         inout self,
         bench_id: BenchId,
@@ -929,7 +931,7 @@ struct Bencher:
         self.num_iters = num_iters
         self.elapsed = 0
 
-    fn iter[iter_fn: fn () capturing -> None](inout self):
+    fn iter[iter_fn: fn () capturing [_] -> None](inout self):
         """Returns the total elapsed time by running a target function a particular
         number of times.
 
@@ -944,7 +946,8 @@ struct Bencher:
         self.elapsed = stop - start
 
     fn iter_preproc[
-        iter_fn: fn () capturing -> None, preproc_fn: fn () capturing -> None
+        iter_fn: fn () capturing [_] -> None,
+        preproc_fn: fn () capturing [_] -> None,
     ](inout self):
         """Returns the total elapsed time by running a target function a particular
         number of times.
@@ -961,7 +964,7 @@ struct Bencher:
             var stop = time.perf_counter_ns()
             self.elapsed += stop - start
 
-    fn iter_custom[iter_fn: fn (Int) capturing -> Int](inout self):
+    fn iter_custom[iter_fn: fn (Int) capturing [_] -> Int](inout self):
         """Times a target function with custom number of iterations.
 
         Parameters:
@@ -971,7 +974,7 @@ struct Bencher:
         self.elapsed = iter_fn(self.num_iters)
 
     fn iter_custom[
-        kernel_launch_fn: fn (DeviceContext) raises capturing -> None
+        kernel_launch_fn: fn (DeviceContext) raises capturing [_] -> None
     ](inout self, ctx: DeviceContext):
         """Times a target GPU function with custom number of iterations via DeviceContext ctx.
 
@@ -987,7 +990,7 @@ struct Bencher:
             abort(e)
 
     fn iter_custom[
-        kernel_launch_fn: fn (DeviceContext, Int) raises capturing -> None
+        kernel_launch_fn: fn (DeviceContext, Int) raises capturing [_] -> None
     ](inout self, ctx: DeviceContext):
         """Times a target GPU function with custom number of iterations via DeviceContext ctx.
 

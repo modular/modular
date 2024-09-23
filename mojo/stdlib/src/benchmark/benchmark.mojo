@@ -375,7 +375,7 @@ struct Report(CollectionElement):
 
 @value
 @register_passable("trivial")
-struct _RunOptions[timing_fn: fn (num_iters: Int) capturing -> Int]:
+struct _RunOptions[timing_fn: fn (num_iters: Int) capturing [_] -> Int]:
     var max_batch_size: Int
     var max_iters: Int
     var min_runtime_secs: Float64
@@ -453,7 +453,7 @@ fn run[
 
 @always_inline
 fn run[
-    func: fn () capturing -> None
+    func: fn () capturing [_] -> None
 ](
     max_iters: Int = 1_000_000_000,
     min_runtime_secs: Float64 = 2,
