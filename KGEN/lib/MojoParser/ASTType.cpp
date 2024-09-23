@@ -798,7 +798,7 @@ void ASTType::print(raw_ostream &os, bool forDiag, bool demangleParams) const {
     else if (lifetimeType.isMutableKnown(false))
       os << "ImmutableLifetime";
     else {
-      os << "AnyLifetime[";
+      os << "Lifetime[";
       printDemangledParam(os, lifetimeType.isMutable(), forDiag);
       os << ']';
     }

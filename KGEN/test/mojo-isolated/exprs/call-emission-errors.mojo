@@ -165,13 +165,13 @@ struct ParametricMutability:
 
 
 fn test_ref[
-    is_mutable: Bool, lifetime: AnyLifetime[is_mutable].type
+    is_mutable: Bool, lifetime: Lifetime[is_mutable].type
 ](ref [lifetime]arg: String):
     pass
 
 
 fn call_test_ref(inout s: String):
-    # expected-error @+1 {{cannot use parameterized function of type 'fn[Bool, AnyLifetime[$0.value]](ref [$1] arg: String) -> None' without binding all its parameters}}
+    # expected-error @+1 {{cannot use parameterized function of type 'fn[Bool, Lifetime[$0.value]](ref [$1] arg: String) -> None' without binding all its parameters}}
     var f1 = test_ref
 
     # expected-error @+1 {{cannot use parameterized function of type 'fn[MutableLifetime](ref [$0] arg: String) -> None' without binding all its parameters}}
