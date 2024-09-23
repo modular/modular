@@ -226,8 +226,8 @@ class Model:
                         f" currently support inputs of the type {type(arg)}."
                     )
 
-                if copy_inputs_to_device and tensor.device != self.device:
-                    tensor = tensor.copy_to(self.device)
+                if copy_inputs_to_device:
+                    tensor = tensor.to(self.device)
                 input_impls.append(tensor._impl)
             results = self._impl.execute_device_tensors(input_impls)
 
@@ -242,7 +242,7 @@ class Model:
                 # device the tensor is already present on, we should copy to
                 # that device.
                 if output_device and output_device != self.device:
-                    wrapped_tensor = wrapped_tensor.copy_to(output_device)
+                    wrapped_tensor = wrapped_tensor.copy(output_device)
                 processed_results.append(wrapped_tensor)
             return processed_results
 
