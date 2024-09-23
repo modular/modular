@@ -207,8 +207,8 @@
       },
       {
         "category": "Mojo",
-        "command": "mojo.sdk.select",
-        "title": "Select MAX SDK"
+        "command": "mojo.sdk.select-default",
+        "title": "Select the default MAX SDK"
       }
     ],
     "submenus": [

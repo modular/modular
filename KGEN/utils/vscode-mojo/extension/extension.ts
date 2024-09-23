@@ -92,7 +92,8 @@ Activating the Mojo Extension
         this.extensionContext,
         initializationSDK,
         this.isNightly,
-        this.semiPersistentState
+        this.semiPersistentState,
+        this.extensionContext
       );
       this.pushSubscription(sdkManager);
 
