@@ -231,16 +231,7 @@ KGEN_CompilerRT_AsyncRT_MojoCallContext_Complete(
   unwrap(callContext).complete();
 }
 
-/// Sets the chain in the given call context to be an error.
-COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void
-KGEN_CompilerRT_AsyncRT_MojoCallContext_SetToError(
-    AsyncRTMojoCallContextRef callContext, const char *messagePtr,
-    ssize_t messageLen) {
-  StringRef message(messagePtr, messageLen);
-  unwrap(callContext).setToError(message);
-}
-
-/// Get device context from call context.
+/// Get cuda device from cuda runtime.
 COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void *
 KGEN_CompilerRT_AsyncRT_MojoCallContext_GetDeviceContext(
     AsyncRTMojoCallContextRef callContext) {
@@ -618,9 +609,6 @@ void M::KGEN::registerAsyncRT(
                    (void *)&KGEN_CompilerRT_GetContextAndSizeFromAsync});
   funcs.push_back({"KGEN_CompilerRT_AsyncRT_MojoCallContext_Complete",
                    (void *)&KGEN_CompilerRT_AsyncRT_MojoCallContext_Complete});
-  funcs.push_back(
-      {"KGEN_CompilerRT_AsyncRT_MojoCallContext_SetToError",
-       (void *)&KGEN_CompilerRT_AsyncRT_MojoCallContext_SetToError});
   funcs.push_back({"KGEN_CompilerRT_AsyncRT_MojoCallContext_Allocate",
                    (void *)&KGEN_CompilerRT_AsyncRT_MojoCallContext_Allocate});
 
