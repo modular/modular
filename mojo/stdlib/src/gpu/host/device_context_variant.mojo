@@ -353,7 +353,7 @@ struct DeviceContextVariant:
 
             @always_inline
             @parameter
-            fn wrap_func(this: Self.V2) capturing raises -> None:
+            fn wrap_func(this: Self.V2) raises -> None:
                 return func(self)
 
             return self.v2().execution_time[wrap_func](num_iters)
@@ -361,7 +361,7 @@ struct DeviceContextVariant:
 
             @always_inline
             @parameter
-            fn wrap_func(this: Self.V1) capturing raises -> None:
+            fn wrap_func(this: Self.V1) raises -> None:
                 return func(self)
 
             return self.v1().execution_time[wrap_func](num_iters)
