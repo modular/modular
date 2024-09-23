@@ -221,7 +221,7 @@ def golden_data_fname(model, encoding):
     # instead of letting bfloat16 _imply_ GPU as is done multiple times in this file
     if encoding == "bfloat16":
         result = subprocess.run(
-            [os.getenv("MODULAR_CUDA_QUERY_PATH")], stdout=subprocess.PIPE
+            [os.environ["MODULAR_CUDA_QUERY_PATH"]], stdout=subprocess.PIPE
         )
         hardware = (
             result.stdout.decode()
