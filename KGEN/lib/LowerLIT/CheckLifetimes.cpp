@@ -736,7 +736,7 @@ void ValueSet::addValue(Value val, const LifetimeTrackable &trackable,
     Type valType = refType.getElementType();
     numValueBits = typeDeclInfo.getNumFieldsInType(valType);
 
-    // Remember the lifetime if not immortal.
+    // Remember the lifetime if not unknown.
     if (!isa<AnyLifetimeAttr>(refType.getLifetime()))
       valueLifetime = refType.getLifetime();
   } else {

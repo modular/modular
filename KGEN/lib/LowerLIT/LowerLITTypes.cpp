@@ -148,6 +148,7 @@ void StructDecls::buildReplacer(mlir::AttrTypeReplacer &replacer,
   // Replace all lifetime attributes with empty structs. These attributes are
   // all terminal.
   addReplacement([=](AnyLifetimeAttr) { return emptyStruct; });
+  addReplacement([=](StaticLifetimeAttr) { return emptyStruct; });
   addReplacement([=](LifetimeUnionAttr) { return emptyStruct; });
   addReplacement([=](LifetimeMutCastAttr) { return emptyStruct; });
   addReplacement([=](ImplicitLifetimeRefAttr) { return emptyStruct; });

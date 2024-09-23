@@ -11,6 +11,9 @@ alias float = __mlir_type.`!pop.scalar<f64>`
 alias AnyTrivialRegType = __mlir_type.`!kgen.type`
 alias ImmutableLifetime = __mlir_type.`!lit.lifetime<0>`
 alias MutableLifetime = __mlir_type.`!lit.lifetime<1>`
+alias ImmutableAnyLifetime = __mlir_attr.`#lit.any.lifetime : !lit.lifetime<0>`
+alias MutableAnyLifetime = __mlir_attr.`#lit.any.lifetime<1>: !lit.lifetime<1>`
+
 
 alias `0` = __mlir_attr.`0 : index`
 alias `1` = __mlir_attr.`1 : index`
@@ -43,6 +46,13 @@ struct Lifetime[is_mutable: Bool]:
         `>`,
     ]
 
+
+# Static constants are a named subset of the global lifetime.
+alias StaticConstantLifetime = __mlir_attr[
+    `#lit.lifetime.field<`,
+    `#lit.static.lifetime : !lit.lifetime<0>`,
+    `, "__constants__"> : !lit.lifetime<0>`,
+]
 
 # ===----------------------------------------------------------------------=== #
 # Builtin Types
@@ -579,7 +589,7 @@ struct Tuple[*element_types: AnyType]:
 struct UnsafePointer[
     T: AnyType, address_space: AddressSpace = AddressSpace.GENERIC
 ]:
-    alias _ref_lifetime = __mlir_attr.`#lit.any.lifetime<1>: !lit.lifetime<1>`
+    alias _ref_lifetime = MutableAnyLifetime
 
     alias _mlir_type = __mlir_type[
         `!kgen.pointer<`, T, `,`, address_space._value.value, `>`
