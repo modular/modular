@@ -27,6 +27,12 @@ def main():
         help="The version to use for the nightly build.",
     )
     parser.add_argument(
+        "--sdk-version",
+        type=str,
+        required=True,
+        help="The version of the MAX SDK to use as default.",
+    )
+    parser.add_argument(
         "--kind",
         choices=["stable", "nightly"],
         required=True,
@@ -58,6 +64,7 @@ def main():
         if nightly:
             package["displayName"] = "Mojo 🔥 (nightly)"
             package["description"] = "Mojo language support (nightly)"
+        package["sdkVersion"] = args.sdk_version
         package["version"] = args.version
 
         # Write the updated package.json file.
