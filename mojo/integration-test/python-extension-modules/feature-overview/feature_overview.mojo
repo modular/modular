@@ -6,15 +6,17 @@
 
 import builtin
 
-from os import abort
+from sys import exit
 from memory import UnsafePointer
 
+from os import abort
+
 from python import Python, PythonObject, TypedPythonObject
-from python._cpython import PyMethodDef, PyObjectPtr
+from python._cpython import PyMethodDef, PyObjectPtr, create_wrapper_function
 
 
 @export
-fn PyInit_bindings() -> PythonObject:
+fn PyInit_feature_overview() -> PythonObject:
     # Initialize the global runtime (including the memory allocator)
     _ = builtin._startup._init_global_runtime(UnsafePointer[NoneType]())
 
@@ -35,13 +37,10 @@ fn PyInit_bindings() -> PythonObject:
     # Populate the Python module
     # ----------------------------------
 
-    # Create a function for the `mojo_count_args` below with the right bound args
-    # set fn ptr + name and attach to the module above
     var funcs = List[PyMethodDef](
         PyMethodDef.function[
-            mojo_count_args,
-            "mojo_count_args",
-            docstring="Count the provided arguments",
+            create_wrapper_function[case_return_arg_tuple](),
+            "case_return_arg_tuple",
         ](),
     )
 
@@ -50,14 +49,19 @@ fn PyInit_bindings() -> PythonObject:
     except e:
         abort("Error adding functions to PyModule: " + str(e))
 
-    # end up with a PythonModule with list of functions set on the module
-    # (name,args,calling conv,etc.)
-
     return module
 
 
+# ===----------------------------------------------------------------------=== #
+# Functions
+# ===----------------------------------------------------------------------=== #
+
+
 @export
-fn mojo_count_args(py_self: PyObjectPtr, args: PyObjectPtr) -> PyObjectPtr:
+fn case_return_arg_tuple(
+    py_self: PythonObject,
+    args: TypedPythonObject["Tuple"],
+) -> PythonObject:
     var cpython = Python().impl.cpython()
 
-    return PythonObject(cpython.PyObject_Length(args)).py_object
+    return args

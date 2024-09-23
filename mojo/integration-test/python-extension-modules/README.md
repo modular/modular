@@ -56,3 +56,8 @@ from `bindings.so`:
 % python use_bindings.py
 Result from Mojo 🔥: 2
 ```
+
+### Test #2: [./feature-overview](./feature-overview/)
+
+This test aims to include a basic test for each supported Mojo language
+feature that is usable across the Python <=> Mojo interop boundary.
