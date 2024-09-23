@@ -859,7 +859,6 @@ fn mgp_device_context_create[
     if "cuda" in bDevice:
         debug_assert(dev_ctx, "device context should be defined")
         # FIXME: RUNP-356 Direct access to CUDA within DeviceContext
-        call_ctx.set_stream(dev_ctx[].cuda_stream)
         return 1
     return 1
 
