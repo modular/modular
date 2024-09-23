@@ -845,24 +845,6 @@ fn mgp_chain_host_to_device[aRuntimeSlot: UInt64, bDevice: StringLiteral]():
 # ===----------------------------------------------------------------------===#
 
 
-@mogg_register("mgp.device.context.create")
-@export
-fn mgp_device_context_create[
-    aDeviceRuntimeSlot: UInt64, bDevice: StringLiteral
-](
-    dummy_chain: Int,
-    ctx: StateContext,
-    dev_ctx: UnsafePointer[DeviceContext],
-    call_ctx: MojoCallContextPtr,
-) raises -> Int:
-    @parameter
-    if "cuda" in bDevice:
-        debug_assert(dev_ctx, "device context should be defined")
-        # FIXME: RUNP-356 Direct access to CUDA within DeviceContext
-        return 1
-    return 1
-
-
 @export
 fn mgp_device_context_destroy(dev_ctx: UnsafePointer[DeviceContext]):
     _ = dev_ctx.destroy_pointee()
