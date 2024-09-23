@@ -398,8 +398,7 @@ export class MojoTestManager extends DisposableContext {
     this.logger.main.logDebug(`Discovering tests in ${document.uri}`);
 
     // Invoke the mojo tool to discover tests in the document.
-
-    // Invoke the mojo tool to discover tests in the document.
+    // We use 'hideRepeatedErrors' because this action is automated.
     let sdk = await this.sdkManager.findSDK(/*hideRepeatedErrors=*/ true);
     if (!sdk) {
       this.controller.items.delete(document.uri.fsPath);

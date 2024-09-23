@@ -18,13 +18,12 @@ export function registerFormatter(mojoSDKManager: MojoSDKManager) {
       const cwd = workspaceFolder?.uri?.fsPath || backupFolder?.uri.fsPath;
       const args = get<string[]>('formatting.args', workspaceFolder, []);
 
+      // We use 'hideRepeatedErrors' because this action is often automated.
       const sdk = await mojoSDKManager.findSDK(/*hideRepeatedErrors=*/ true);
 
       if (!sdk) {
         return [];
       }
-
-      // Grab the formatter from the Mojo SDK (i.e. `mojo format`).
 
       // Grab the formatter from the Mojo SDK (i.e. `mojo format`).
       var command = sdk.config.mojoDriverPath + ' format';
