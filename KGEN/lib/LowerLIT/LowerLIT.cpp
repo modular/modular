@@ -512,8 +512,8 @@ static void lowerAttributesAndTypes(
   replacer.addReplacement([&](TypedAttr attr) -> TypedAttr {
     // Remove all values of lifetime type.  This removes all references to
     // lifetime parameters that have been dropped.
-    if (auto type = dyn_cast<LifetimeType>(attr.getType()))
-      return AnyLifetimeAttr::get(type);
+    if (isSingletonParameter(attr.getType()))
+      return getSingletonParameterValue(attr.getType());
 
     // Remove singleton parameter values from SymbolConstantAttr.
     if (auto symCst = dyn_cast<SymbolConstantAttr>(attr)) {
