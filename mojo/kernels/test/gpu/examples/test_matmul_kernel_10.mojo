@@ -6,20 +6,277 @@
 # TODO (#33518): -t flag is required right now because the kernel assumes C is zeroed
 # RUN: %mojo-no-debug %s -t | FileCheck %s
 
+from collections import OptionalReg
 from math import ceildiv
+from sys import llvm_intrinsic
 
 from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
 from buffer import NDBuffer
 from buffer.dimlist import DimList
-from gpu import WARP_SIZE, BlockDim, BlockIdx, ThreadIdx
+from gpu import WARP_SIZE, BlockDim, BlockIdx, ThreadIdx, barrier
 from gpu.host.device_context import DeviceContext
-from linalg.matmul_gpu import sgemm_warp_tiling_kernel
-from memory import UnsafePointer
+from memory import UnsafePointer, stack_allocation, memset_zero
+from collections import OptionalReg
+from gpu.memory import AddressSpace
 
 from utils.index import Index
+from linalg.utils import elementwise_epilogue_type
+from linalg.matmul_gpu import __nvvm_ldg_f4
+from utils import StaticTuple
 from utils.numerics import isnan
 
 alias BLOCK_DIM = 8
+# MMA dimensions. FP32 = TF32*TF32 + FP32. We use the following (via library):
+# llvm.nvvm.mma.m16n8k8.row.col.tf32
+alias MMA_M = 16
+alias MMA_N = 8
+alias MMA_K = 8
+
+
+# BM: The threadblock size for M dimension SMEM caching.
+# BN: The threadblock size for N dimension SMEM caching.
+# BK: The threadblock size for K dimension SMEM caching.
+# WM: M dim of continuous tile computed by each warp.
+# WN: N dim of continuous tile computed by each warp.
+# WMITER: The number of subwarp tiling steps in M dimension.
+# WNITER: The number of subwarp tiling steps in N dimension.
+# TM: The per-thread tile size for M dimension.
+# TN: The per-thread tile size for N dimension.
+@__llvm_metadata(`nvvm.maxntid`=StaticTuple[Int32, 1](NUM_THREADS))
+fn sgemm_warp_tiling_kernel[
+    c_type: DType,
+    c_shape: DimList,
+    a_type: DType,
+    a_shape: DimList,
+    b_type: DType,
+    b_shape: DimList,
+    BM: Int,
+    BN: Int,
+    BK: Int,
+    WM: Int,
+    WN: Int,
+    WMITER: Int,
+    WNITER: Int,
+    TM: Int,
+    TN: Int,
+    NUM_THREADS: Int,
+    elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
+](
+    mat_c: NDBuffer[c_type, 2, c_shape],
+    mat_a: NDBuffer[a_type, 2, a_shape],
+    mat_b: NDBuffer[b_type, 2, b_shape],
+    alpha: Scalar[c_type],
+    beta: Scalar[c_type],
+):
+    var K = mat_a.dim[1]()
+    var N = mat_c.dim[1]()
+
+    var c_row = BlockIdx.y()
+    var c_col = BlockIdx.x()
+
+    # Placement of the warp in the threadblock tile.
+    var warp_idx = ThreadIdx.x() // WARP_SIZE  # the warp this thread is in
+    var warp_col = warp_idx % (BN // WN)
+    var warp_row = warp_idx // (BN // WN)
+
+    # Size of the warp subtile.
+    alias w_sub_m = WM // WMITER  # 64/2=32
+    alias w_sub_n = WN // WNITER  # 32/2=16
+
+    # Placement of the thread in the warp subtile.
+    var thread_Idx_In_warp = ThreadIdx.x() % WARP_SIZE  # [0, 31]
+    var thread_col_in_warp = thread_Idx_In_warp % (w_sub_n // TN)  # i%(16/4)
+    var thread_row_in_warp = thread_Idx_In_warp // (w_sub_n // TN)  # i/4
+
+    # Allocate space for the current blocktile in SMEM.
+    # Pad the A tile in share memory to avoid bank conflicts.
+    # Use 4 to comply with f4 alignment used in accumulation.
+    alias sram_bank_padding_size = 4
+    alias BM_padded = BM + sram_bank_padding_size
+    var a_sram = NDBuffer[
+        a_type,
+        1,
+        DimList(int(BK * BM_padded)),
+        address_space = AddressSpace.SHARED,
+    ].stack_allocation()
+    var b_sram = NDBuffer[
+        b_type,
+        1,
+        DimList(int(BK * BN)),
+        address_space = AddressSpace.SHARED,
+    ].stack_allocation()
+
+    # Move blocktile to beginning of A's row and B's column.
+    var aa_ptr = mat_a._offset(Index(c_row * BM, 0))
+    var bb_ptr = mat_b._offset(Index(0, c_col * BN))
+    # Move C_ptr to warp's output tile
+    var M_offset_warp = c_row * BM + warp_row * WM
+    var N_offset_warp = c_col * BN + warp_col * WN
+    var cc_ptr = mat_c._offset(Index(M_offset_warp, N_offset_warp))
+
+    # Calculate the indices that this thread will load into SMEM.
+    # We load 128bit / 32bit = 4 elements per thread at each step.
+    var inner_row_a = ThreadIdx.x() // (BK // 4)
+    var inner_col_a = ThreadIdx.x() % (BK // 4)
+    alias row_stride_a = (NUM_THREADS * 4) // BK
+    var inner_row_b = ThreadIdx.x() // (BN // 4)
+    var inner_co_ib = ThreadIdx.x() % (BN // 4)
+    alias row_stride_b = NUM_THREADS // (BN // 4)
+
+    # TODO: We want these to be register-allocated!
+    # Allocate thread-local cache for results in register file.
+    var thread_results = NDBuffer[
+        c_type,
+        4,
+        DimList(int(WMITER), int(WNITER), int(TM), int(TN)),
+    ]().stack_allocation()
+    thread_results.zero()
+
+    # We cache into registers on the warptile level.
+    var reg_m = NDBuffer[
+        a_type, 2, DimList(int(WMITER), int(TM))
+    ]().stack_allocation()
+    reg_m.zero()
+
+    var reg_n = NDBuffer[
+        b_type, 2, DimList(int(WNITER), int(TN))
+    ]().stack_allocation()
+    reg_n.zero()
+
+    # Outer-most loop over block tiles.
+    for _ in range(0, K, BK):
+        for offset in range(0, int(BM - row_stride_a + 1), int(row_stride_a)):
+            # Load 4 elements at a time and store to shared memory.
+            var tmp = __nvvm_ldg_f4[a_type](
+                aa_ptr.offset(int((inner_row_a + offset) * K + inner_col_a * 4))
+            )
+
+            @parameter
+            for i in range(4):
+                a_sram[
+                    int(
+                        (inner_col_a * 4 + i) * BM_padded + inner_row_a + offset
+                    )
+                ] = tmp[i]
+
+        for offset in range(0, int(BK - row_stride_b + 1), int(row_stride_b)):
+            # Load 4 elements at a time and store to shared memory.
+            var tmp = __nvvm_ldg_f4[b_type](
+                bb_ptr.offset(int((inner_row_b + offset) * N + inner_co_ib * 4))
+            )
+            b_sram.store[width=4, alignment=16](
+                Index((inner_row_b + offset) * BN + inner_co_ib * 4),
+                tmp,
+            )
+
+        barrier()
+
+        for dot_idx in range(BK):
+            # Populate registers for whole warptile.
+            @parameter
+            for w_sub_row_idx in range(WMITER):
+
+                @parameter
+                for i in range(0, int(TM), 4):
+                    var vec = a_sram.load[width=4, alignment=16](
+                        int(
+                            (dot_idx * BM_padded)
+                            + warp_row * WM
+                            + w_sub_row_idx * w_sub_m
+                            + thread_row_in_warp * TM
+                            + i
+                        )
+                    )
+                    reg_m.store(Index(w_sub_row_idx, i), vec)
+
+            @parameter
+            for w_sub_col_idx in range(WNITER):
+
+                @parameter
+                for i in range(0, int(TN), 4):
+                    var vec = b_sram.load[width=4, alignment=16](
+                        int(
+                            (dot_idx * BN)
+                            + warp_col * WN
+                            + w_sub_col_idx * w_sub_n
+                            + thread_col_in_warp * TN
+                        )
+                    )
+                    reg_n.store(Index(w_sub_col_idx, i), vec)
+
+            # Execute warptile matmul.
+            @parameter
+            for w_sub_row_idx in range(WMITER):
+
+                @parameter
+                for w_sub_col_idx in range(WNITER):
+                    # Calculate per-thread results.
+                    @parameter
+                    for res_idx_m in range(TM):
+
+                        @parameter
+                        for res_idx_n in range(TN):
+                            thread_results[
+                                Index(
+                                    w_sub_row_idx,
+                                    w_sub_col_idx,
+                                    res_idx_m,
+                                    res_idx_n,
+                                )
+                            ] += (
+                                reg_m[w_sub_row_idx, res_idx_m].cast[c_type]()
+                                * reg_n[w_sub_col_idx, res_idx_n].cast[c_type]()
+                            )
+        aa_ptr = aa_ptr.offset(int(BK))  # move BK columns to right
+        bb_ptr = bb_ptr.offset(int(BK * N))  # move BK rows down
+        barrier()
+
+    # Write out the results.
+    @parameter
+    for w_sub_row_idx in range(WMITER):
+
+        @parameter
+        for w_sub_col_idx in range(WNITER):
+            # Move C pointer to current warp subtile.
+            var M_offset_subtile = w_sub_row_idx * w_sub_m
+            var N_offset_subtile = w_sub_col_idx * w_sub_n
+            var C_interim = cc_ptr.offset(
+                int((M_offset_subtile) * N + N_offset_subtile)
+            )
+
+            @parameter
+            for res_idx_m in range(TM):
+
+                @parameter
+                for res_idx_n in range(0, int(TN), 4):
+                    var M_offset_val = thread_row_in_warp * TM + res_idx_m
+                    var N_offset_val = thread_col_in_warp * TN + res_idx_n
+                    var c_idx = M_offset_val * N + N_offset_val
+                    var result_vec = thread_results.load[width=4](
+                        Index(
+                            w_sub_row_idx,
+                            w_sub_col_idx,
+                            res_idx_m,
+                            res_idx_n,
+                        )
+                    )
+
+                    var vec = alpha * result_vec + beta * C_interim.load[
+                        width=4, alignment=16
+                    ](int(c_idx))
+
+                    @parameter
+                    if elementwise_lambda_fn:
+                        alias elementwise_lambda = elementwise_lambda_fn.value()
+                        elementwise_lambda[c_type, 4](
+                            Index(
+                                M_offset_warp + M_offset_subtile + M_offset_val,
+                                N_offset_warp + N_offset_subtile + N_offset_val,
+                            ),
+                            vec,
+                        )
+                    else:
+                        C_interim.store[width=4][alignment=16](int(c_idx), vec)
 
 
 fn matmul_naive(
