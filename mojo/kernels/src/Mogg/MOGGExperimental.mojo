@@ -811,14 +811,14 @@ fn _reduce_wrapper[
     @always_inline
     fn reduce_impl[
         ty: DType, width: Int
-    ](v1: SIMD[ty, width], v2: SIMD[ty, width]) capturing -> SIMD[ty, width]:
+    ](v1: SIMD[ty, width], v2: SIMD[ty, width]) -> SIMD[ty, width]:
         return reduce_op(v1, v2)
 
     @parameter
     @always_inline
     fn load_input[
         ty: DType, width: Int, rank: Int
-    ](coords: StaticIntTuple[rank]) capturing -> SIMD[ty, width]:
+    ](coords: StaticIntTuple[rank]) -> SIMD[ty, width]:
         return rebind[SIMD[ty, width]](
             input.simd_load[width](
                 rebind[StaticIntTuple[input.static_rank.value()]](coords)
@@ -829,7 +829,7 @@ fn _reduce_wrapper[
     @always_inline
     fn store_output[
         ty: DType, width: Int, rank: Int
-    ](coords: StaticIntTuple[rank], val: SIMD[ty, width]) capturing -> None:
+    ](coords: StaticIntTuple[rank], val: SIMD[ty, width]) -> None:
         output.store(
             rebind[StaticIntTuple[output.static_rank.value()]](coords),
             rebind[SIMD[output.type, width]](val),
