@@ -31,7 +31,7 @@ fn alignof_simd[type: DType, simd_target: __mlir_type.`!kgen.target`]() -> Int:
 fn run_reduce[
     reduce_fn: fn[type: DType, width: Int] (
         SIMD[type, width], SIMD[type, width]
-    ) capturing -> SIMD[type, width],
+    ) capturing [_] -> SIMD[type, width],
     type: DType,
     rank: Int,
     num_reductions: Int = 1,

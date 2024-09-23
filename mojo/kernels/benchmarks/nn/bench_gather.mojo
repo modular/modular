@@ -30,7 +30,8 @@ fn bench_gather(inout m: Bench, spec: GatherSpec) raises:
     )
 
 
-fn bench_gather(inout bencher: Bencher, spec: GatherSpec) capturing:
+@parameter
+fn bench_gather(inout bencher: Bencher, spec: GatherSpec):
     var data = InlinedFixedVector[Float32](spec.m1 * spec.m2)
     var indices = InlinedFixedVector[Int32](spec.n1 * spec.n2)
 

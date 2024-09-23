@@ -30,7 +30,8 @@ fn bench_scatter(inout m: Bench, spec: ScatterSpec) raises:
     )
 
 
-fn bench_scatter(inout bencher: Bencher, spec: ScatterSpec) capturing:
+@parameter
+fn bench_scatter(inout bencher: Bencher, spec: ScatterSpec):
     var data = InlinedFixedVector[Float32](spec.m1 * spec.m2)
     var indices = InlinedFixedVector[Int32](spec.n1 * spec.n2)
     var updates = InlinedFixedVector[Float32](spec.n1 * spec.n2)
