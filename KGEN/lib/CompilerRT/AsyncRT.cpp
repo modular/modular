@@ -12,8 +12,6 @@
 #include "AsyncRT/Support/TimerHeap.h"
 #include "AsyncRT/Support/UnknownLocationDecoder.h"
 #include "KGEN/CompilerRT/Registration.h"
-#include "Runtime/CUDA/CUDARuntime.h"
-#include "Runtime/CUDA/Globals/Globals.h"
 #include "Runtime/MojoCallContext.h"
 #include "Runtime/MojoValue.h"
 #include "Runtime/Tensor/StateContext.h"
@@ -25,7 +23,6 @@
 using namespace M;
 using namespace M::AsyncRT;
 using namespace M::KGEN;
-using namespace M::CUDA;
 
 //===----------------------------------------------------------------------===//
 // Helpers
@@ -224,17 +221,6 @@ KGEN_CompilerRT_AsyncRT_ParallelismLevel(AsyncRTRuntimeRef rt) {
 }
 
 //===----------------------------------------------------------------------===//
-// CUDA
-//===----------------------------------------------------------------------===//
-
-/// Returns the CUDA stream for the caller's thread, which may have been
-/// established by the C++ runtime for the kernel call, or may be null.
-COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT CUstream
-KGEN_CompilerRT_AsyncRT_GetCurrentStream() {
-  return CUDA::Globals::getCurrentStreamInTLS();
-}
-
-//===----------------------------------------------------------------------===//
 // MojoCallContext
 //===----------------------------------------------------------------------===//
 
@@ -254,17 +240,7 @@ KGEN_CompilerRT_AsyncRT_MojoCallContext_SetToError(
   unwrap(callContext).setToError(message);
 }
 
-/// Set the cuda stream from the context. Null for cpu kernels.
-COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void
-KGEN_CompilerRT_AsyncRT_MojoCallContext_SetCUStream(
-    AsyncRTMojoCallContextRef callContext, void *stream) {
-  auto runtime = unwrap(callContext).deviceRuntime;
-  reinterpret_cast<CUDA::CUDARuntime *>(runtime)->stream =
-      reinterpret_cast<CUstream>(stream);
-  return;
-}
-
-/// Get cuda device from cuda runtime.
+/// Get device context from call context.
 COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void *
 KGEN_CompilerRT_AsyncRT_MojoCallContext_GetDeviceContext(
     AsyncRTMojoCallContextRef callContext) {
@@ -610,8 +586,6 @@ void M::KGEN::registerAsyncRT(
   funcs.push_back({"KGEN_CompilerRT_AsyncRT_ParallelismLevel",
                    (void *)&KGEN_CompilerRT_AsyncRT_ParallelismLevel});
 
-  funcs.push_back({"KGEN_CompilerRT_AsyncRT_GetCurrentStream",
-                   (void *)&KGEN_CompilerRT_AsyncRT_GetCurrentStream});
   funcs.push_back({"KGEN_CompilerRT_AsyncRT_CreateAsyncs_Error",
                    (void *)&KGEN_CompilerRT_AsyncRT_CreateAsyncs_Error});
   funcs.push_back({"KGEN_CompilerRT_CreateAsync_ssizet",
@@ -647,9 +621,6 @@ void M::KGEN::registerAsyncRT(
   funcs.push_back(
       {"KGEN_CompilerRT_AsyncRT_MojoCallContext_SetToError",
        (void *)&KGEN_CompilerRT_AsyncRT_MojoCallContext_SetToError});
-  funcs.push_back(
-      {"KGEN_CompilerRT_AsyncRT_MojoCallContext_SetCUStream",
-       (void *)&KGEN_CompilerRT_AsyncRT_MojoCallContext_SetCUStream});
   funcs.push_back({"KGEN_CompilerRT_AsyncRT_MojoCallContext_Allocate",
                    (void *)&KGEN_CompilerRT_AsyncRT_MojoCallContext_Allocate});
 
