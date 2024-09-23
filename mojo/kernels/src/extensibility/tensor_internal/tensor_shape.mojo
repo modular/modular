@@ -741,7 +741,7 @@ struct TensorShape(
 
         @parameter
         fn _fill[i: Int]():
-            tuple[i] = rebind[Reference[Int, __lifetime_of(self)]](
+            tuple[i] = rebind[Reference[Int, __lifetime_of(shapes)]](
                 Reference(shapes[i])
             )[]
 
