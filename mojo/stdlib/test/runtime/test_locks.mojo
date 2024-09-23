@@ -23,7 +23,7 @@ fn test_basic_lock() raises:
     alias maxJ = 100
 
     @parameter
-    async fn inc() capturing:
+    async fn inc():
         with BlockingScopedLock(lock):
             rawCounter += 1
             _ = counter.fetch_add(1)
@@ -37,7 +37,7 @@ fn test_basic_lock() raises:
     )
 
     @parameter
-    fn test_atomic() capturing -> None:
+    fn test_atomic() -> None:
         var tg = TaskGroup()
         for _ in range(0, maxI):
             for _ in range(0, maxJ):
