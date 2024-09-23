@@ -11,11 +11,13 @@ import { DisposableContext } from '../utils/disposableContext';
 import { getAllOpenMojoFiles, WorkspaceAwareFile } from '../utils/files';
 import { activatePickProcessToAttachCommand } from './attachQuickPick';
 import { initializeInlineLocalVariablesProvider } from './inlineVariables';
-import path = require('path');
 import { MojoSDK } from '../sdk/sdk';
 import { MojoExtension } from '../extension';
 import { MojoSDKManager } from '../sdk/sdkManager';
 import { quote } from 'shell-quote';
+import * as util from 'util';
+import path = require('path');
+const execFile = util.promisify(require('child_process').execFile);
 
 /**
  * Stricter version of vscode.DebugConfiguration intended to reduce the chances
@@ -115,6 +117,34 @@ class MojoDebugAdapterDescriptorFactory
     this.sdkManager.logger.main.logInfo(
       `Using the SDK ${sdk.config.version.toString()} for the debug session`
     );
+    if (sdk.config.modularHomePath.endsWith('.derived')) {
+      // Debug adapters from dev sdks tend to be corrupted because dependencies
+      // might need to be rebuilt, so we run a simple verification.
+      try {
+        await execFile(sdk.config.mojoLLDBVSCodePath, ['--help']);
+      } catch (ex: any) {
+        const { stderr, stdout } = ex;
+        this.sdkManager.logger.main.outputChannel.appendLine(
+          '\n\n\n===== LLDB Debug Adapter verification ====='
+        );
+        this.sdkManager.logger.main.logError(
+          'Unable to execute the LLDB Debug Adapter.',
+          ex
+        );
+        if (stdout) {
+          this.sdkManager.logger.main.logInfo('stdout: ' + stdout);
+        }
+        if (stderr) {
+          this.sdkManager.logger.main.logInfo('stderr: ' + stderr);
+        }
+        this.sdkManager.logger.main.outputChannel.show();
+
+        this.sdkManager.showBazelwRunInstallPrompt(
+          'The LLDB Debug Adapter seems to be corrupted.',
+          sdk.config.modularHomePath
+        );
+      }
+    }
 
     return new vscode.DebugAdapterExecutable(sdk.config.mojoLLDBVSCodePath, [
       '--repl-mode',
