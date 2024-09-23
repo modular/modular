@@ -37,6 +37,7 @@ from math import (
 from nn import arg_nonzero
 from nn.activations import relu, gelu
 from nn.pool import avg_pool, max_pool, pool_shape, pool_shape_ceil
+from nn.topk import top_k, top_k_shape_impl
 from utils.numerics import isinf, isnan
 from nn.gather_scatter import scatter_nd, scatter_nd_generator
 
@@ -1345,3 +1346,106 @@ struct MaxPoolCeilModeTrue:
             managed_tensor_slice_to_ndbuffer(dilations),
             managed_tensor_slice_to_ndbuffer(paddings),
         )
+
+
+# ===----------------------------------------------------------------------===#
+# Other kernels
+# ===----------------------------------------------------------------------===#
+
+
+# TODO(GRA-914): Properly support scalars.
+alias Scalar = ManagedTensorSlice[rank=1]
+
+
+@compiler.register("mo.bottom_k")
+struct BottomK:
+    @staticmethod
+    fn execute[
+        type: DType,
+        rank: Int,
+    ](
+        values: ManagedTensorSlice[type=type, rank=rank],
+        indices: ManagedTensorSlice[type = DType.int64, rank=rank],
+        input: ManagedTensorSlice[type=type, rank=rank],
+        k: Scalar,
+        axis: Scalar,
+        sorted: Scalar[type = DType.bool],
+    ):
+        top_k(
+            managed_tensor_slice_to_ndbuffer(input),
+            int(k[0]),
+            int(axis[0]),
+            False,
+            managed_tensor_slice_to_ndbuffer(values),
+            managed_tensor_slice_to_ndbuffer(indices),
+            sorted[0],
+        )
+
+    @staticmethod
+    fn shape[
+        axis_type: DType
+    ](
+        input: ManagedTensorSlice,
+        k: Scalar[axis_type],
+        axis: Scalar[axis_type],
+        sorted: Scalar[type = DType.bool],
+    ) -> StaticIntTuple[input.rank]:
+        # TODO(GRA-1033): We should not be forced to have a single return statement.
+        var ret: StaticIntTuple[input.rank]
+        try:
+            ret = top_k_shape_impl[single_thread_blocking_override=True](
+                managed_tensor_slice_to_ndbuffer(input),
+                managed_tensor_slice_to_ndbuffer(k),
+                managed_tensor_slice_to_ndbuffer(axis),
+            )
+        except:
+            ret = StaticIntTuple[input.rank]()
+
+        return ret
+
+
+@compiler.register("mo.top_k")
+struct TopK:
+    @staticmethod
+    fn execute[
+        type: DType,
+        rank: Int,
+    ](
+        values: ManagedTensorSlice[type=type, rank=rank],
+        indices: ManagedTensorSlice[type = DType.int64, rank=rank],
+        input: ManagedTensorSlice[type=type, rank=rank],
+        k: Scalar,
+        axis: Scalar,
+        sorted: Scalar[type = DType.bool],
+    ):
+        top_k(
+            managed_tensor_slice_to_ndbuffer(input),
+            int(k[0]),
+            int(axis[0]),
+            True,
+            managed_tensor_slice_to_ndbuffer(values),
+            managed_tensor_slice_to_ndbuffer(indices),
+            sorted[0],
+        )
+
+    @staticmethod
+    fn shape[
+        axis_type: DType
+    ](
+        input: ManagedTensorSlice,
+        k: Scalar[axis_type],
+        axis: Scalar[axis_type],
+        sorted: Scalar[type = DType.bool],
+    ) -> StaticIntTuple[input.rank]:
+        # TODO(GRA-1033): We should not be forced to have a single return statement.
+        var ret: StaticIntTuple[input.rank]
+        try:
+            ret = top_k_shape_impl[single_thread_blocking_override=True](
+                managed_tensor_slice_to_ndbuffer(input),
+                managed_tensor_slice_to_ndbuffer(k),
+                managed_tensor_slice_to_ndbuffer(axis),
+            )
+        except:
+            ret = StaticIntTuple[input.rank]()
+
+        return ret
