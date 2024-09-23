@@ -106,12 +106,12 @@ fn map_reduce[
     size: Dim,
     type: DType,
     acc_type: DType,
-    input_gen_fn: fn[type: DType, width: Int] (Int) capturing -> SIMD[
+    input_gen_fn: fn[type: DType, width: Int] (Int) capturing [_] -> SIMD[
         type, width
     ],
     reduce_vec_to_vec_fn: fn[acc_type: DType, type: DType, width: Int] (
         SIMD[acc_type, width], SIMD[type, width]
-    ) capturing -> SIMD[acc_type, width],
+    ) capturing [_] -> SIMD[acc_type, width],
     reduce_vec_to_scalar_fn: fn[type: DType, width: Int] (
         SIMD[type, width]
     ) -> Scalar[type],
@@ -175,7 +175,7 @@ fn map_reduce[
 fn reduce[
     reduce_fn: fn[acc_type: DType, type: DType, width: Int] (
         SIMD[acc_type, width], SIMD[type, width]
-    ) capturing -> SIMD[acc_type, width]
+    ) capturing [_] -> SIMD[acc_type, width]
 ](src: Buffer, init: Scalar) -> Scalar[init.element_type]:
     """Computes a custom reduction of buffer elements.
 
@@ -230,10 +230,10 @@ fn reduce[
 @always_inline
 @parameter
 fn reduce_boolean[
-    reduce_fn: fn[type: DType, width: Int] (
-        SIMD[type, width]
-    ) capturing -> Bool,
-    continue_fn: fn (Bool) capturing -> Bool,
+    reduce_fn: fn[type: DType, width: Int] (SIMD[type, width]) capturing [
+        _
+    ] -> Bool,
+    continue_fn: fn (Bool) capturing [_] -> Bool,
 ](src: Buffer, init: Bool) -> Bool:
     """Computes a bool reduction of buffer elements. The reduction will early
     exit if the `continue_fn` returns False.
@@ -284,7 +284,7 @@ fn reduce_boolean[
 fn _reduce_3D[
     map_fn: fn[acc_type: DType, type: DType, width: Int] (
         SIMD[acc_type, width], SIMD[type, width]
-    ) capturing -> SIMD[acc_type, width],
+    ) capturing [_] -> SIMD[acc_type, width],
     reduce_fn: fn[type: DType, width: Int] (SIMD[type, width]) -> Scalar[type],
 ](src: NDBuffer, dst: NDBuffer, init: Scalar[dst.type]):
     """Performs a reduction across axis 1 of a 3D input buffer."""
@@ -350,7 +350,7 @@ fn _reduce_3D[
 fn reduce[
     map_fn: fn[acc_type: DType, type: DType, width: Int] (
         SIMD[acc_type, width], SIMD[type, width]
-    ) capturing -> SIMD[acc_type, width],
+    ) capturing [_] -> SIMD[acc_type, width],
     reduce_fn: fn[type: DType, width: Int] (SIMD[type, width]) -> Scalar[type],
     reduce_axis: Int,
 ](src: NDBuffer, dst: NDBuffer, init: Scalar[dst.type]):
@@ -419,13 +419,13 @@ fn _reduce_generator[
     init_type: DType,
     input_0_fn: fn[type: DType, width: Int, rank: Int] (
         StaticIntTuple[rank]
-    ) capturing -> SIMD[type, width],
+    ) capturing [_] -> SIMD[type, width],
     output_0_fn: fn[type: DType, width: Int, rank: Int] (
         StaticIntTuple[rank], StaticTuple[SIMD[type, width], num_reductions]
-    ) capturing -> None,
+    ) capturing [_] -> None,
     reduce_function: fn[ty: DType, width: Int, reduction_idx: Int] (
         SIMD[ty, width], SIMD[ty, width]
-    ) capturing -> SIMD[ty, width],
+    ) capturing [_] -> SIMD[ty, width],
     /,
     single_thread_blocking_override: Bool = False,
     target: StringLiteral = "cpu",
@@ -485,13 +485,13 @@ fn _reduce_generator_gpu[
     init_type: DType,
     input_0_fn: fn[type: DType, width: Int, rank: Int] (
         StaticIntTuple[rank]
-    ) capturing -> SIMD[type, width],
+    ) capturing [_] -> SIMD[type, width],
     output_0_fn: fn[type: DType, width: Int, rank: Int] (
         StaticIntTuple[rank], StaticTuple[SIMD[type, width], num_reductions]
-    ) capturing -> None,
+    ) capturing [_] -> None,
     reduce_function: fn[ty: DType, width: Int, reduction_idx: Int] (
         SIMD[ty, width], SIMD[ty, width]
-    ) capturing -> SIMD[ty, width],
+    ) capturing [_] -> SIMD[ty, width],
     /,
     single_thread_blocking_override: Bool = False,
 ](
@@ -544,13 +544,13 @@ fn _reduce_generator_cpu[
     init_type: DType,
     input_0_fn: fn[type: DType, width: Int, rank: Int] (
         StaticIntTuple[rank]
-    ) capturing -> SIMD[type, width],
+    ) capturing [_] -> SIMD[type, width],
     output_0_fn: fn[type: DType, width: Int, rank: Int] (
         StaticIntTuple[rank], StaticTuple[SIMD[type, width], num_reductions]
-    ) capturing -> None,
+    ) capturing [_] -> None,
     reduce_function: fn[ty: DType, width: Int, reduction_idx: Int] (
         SIMD[ty, width], SIMD[ty, width]
-    ) capturing -> SIMD[ty, width],
+    ) capturing [_] -> SIMD[ty, width],
     /,
     single_thread_blocking_override: Bool = False,
 ](
@@ -619,13 +619,13 @@ fn _reduce_generator_cpu[
 fn _reduce_generator[
     input_0_fn: fn[type: DType, width: Int, rank: Int] (
         StaticIntTuple[rank]
-    ) capturing -> SIMD[type, width],
+    ) capturing [_] -> SIMD[type, width],
     output_0_fn: fn[type: DType, width: Int, rank: Int] (
         StaticIntTuple[rank], SIMD[type, width]
-    ) capturing -> None,
+    ) capturing [_] -> None,
     reduce_function: fn[ty: DType, width: Int] (
         SIMD[ty, width], SIMD[ty, width]
-    ) capturing -> SIMD[ty, width],
+    ) capturing [_] -> SIMD[ty, width],
     /,
     single_thread_blocking_override: Bool = False,
     target: StringLiteral = "cpu",
@@ -694,13 +694,13 @@ fn _reduce_along_inner_dimension[
     init_type: DType,
     input_0_fn: fn[type: DType, width: Int, rank: Int] (
         StaticIntTuple[rank]
-    ) capturing -> SIMD[type, width],
+    ) capturing [_] -> SIMD[type, width],
     output_0_fn: fn[type: DType, width: Int, rank: Int] (
         StaticIntTuple[rank], StaticTuple[SIMD[type, width], num_reductions]
-    ) capturing -> None,
+    ) capturing [_] -> None,
     reduce_function: fn[ty: DType, width: Int, reduction_idx: Int] (
         SIMD[ty, width], SIMD[ty, width]
-    ) capturing -> SIMD[ty, width],
+    ) capturing [_] -> SIMD[ty, width],
     /,
     single_thread_blocking_override: Bool = False,
 ](
@@ -879,13 +879,13 @@ fn _reduce_along_outer_dimension[
     init_type: DType,
     input_0_fn: fn[type: DType, width: Int, rank: Int] (
         StaticIntTuple[rank]
-    ) capturing -> SIMD[type, width],
+    ) capturing [_] -> SIMD[type, width],
     output_0_fn: fn[type: DType, width: Int, rank: Int] (
         StaticIntTuple[rank], StaticTuple[SIMD[type, width], num_reductions]
-    ) capturing -> None,
+    ) capturing [_] -> None,
     reduce_function: fn[ty: DType, width: Int, reduction_idx: Int] (
         SIMD[ty, width], SIMD[ty, width]
-    ) capturing -> SIMD[ty, width],
+    ) capturing [_] -> SIMD[ty, width],
     /,
     single_thread_blocking_override: Bool = False,
 ](
@@ -1287,12 +1287,12 @@ fn mean[reduce_axis: Int](src: NDBuffer, dst: NDBuffer[src.type, src.rank, _]):
 
 fn mean[
     type: DType,
-    input_fn: fn[width: Int, rank: Int] (
-        StaticIntTuple[rank]
-    ) capturing -> SIMD[type, width],
+    input_fn: fn[width: Int, rank: Int] (StaticIntTuple[rank]) capturing [
+        _
+    ] -> SIMD[type, width],
     output_fn: fn[width: Int, rank: Int] (
         StaticIntTuple[rank], SIMD[type, width]
-    ) capturing -> None,
+    ) capturing [_] -> None,
     /,
     single_thread_blocking_override: Bool = False,
     target: StringLiteral = "cpu",

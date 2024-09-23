@@ -32,7 +32,7 @@ fn block_reduce[
     BLOCK_SIZE: Int,
     reduce_fn: fn[type: DType, width: Int] (
         SIMD[type, width], SIMD[type, width]
-    ) capturing -> SIMD[type, width],
+    ) capturing [_] -> SIMD[type, width],
     type: DType,
     simd_width: Int,
 ](val: SIMD[type, simd_width], init: Scalar[type]) -> Scalar[type]:
@@ -64,7 +64,7 @@ fn block_reduce[
     num_reductions: Int,
     reduce_fn: fn[type: DType, width: Int, reduction_idx: Int] (
         SIMD[type, width], SIMD[type, width]
-    ) capturing -> SIMD[type, width],
+    ) capturing [_] -> SIMD[type, width],
     type: DType,
     simd_width: Int,
 ](
@@ -159,10 +159,10 @@ fn row_reduce[
     BLOCK_SIZE: Int,
     input_fn: fn[type: DType, width: Int, rank: Int] (
         StaticIntTuple[rank]
-    ) capturing -> SIMD[type, width],
+    ) capturing [_] -> SIMD[type, width],
     reduce_fn: fn[type: DType, width: Int] (
         SIMD[type, width], SIMD[type, width]
-    ) capturing -> SIMD[type, width],
+    ) capturing [_] -> SIMD[type, width],
     type: DType,
     simd_width: Int,
     rank: Int,
@@ -203,10 +203,10 @@ fn row_reduce[
     num_reductions: Int,
     input_fn: fn[type: DType, width: Int, rank: Int] (
         StaticIntTuple[rank]
-    ) capturing -> SIMD[type, width],
+    ) capturing [_] -> SIMD[type, width],
     reduce_fn: fn[type: DType, width: Int, reduction_idx: Int] (
         SIMD[type, width], SIMD[type, width]
-    ) capturing -> SIMD[type, width],
+    ) capturing [_] -> SIMD[type, width],
     type: DType,
     simd_width: Int,
     rank: Int,
@@ -274,13 +274,13 @@ fn reduce_kernel[
     BLOCK_SIZE: Int,
     input_fn: fn[type: DType, width: Int, rank: Int] (
         StaticIntTuple[rank]
-    ) capturing -> SIMD[type, width],
+    ) capturing [_] -> SIMD[type, width],
     output_fn: fn[type: DType, width: Int, rank: Int] (
         StaticIntTuple[rank], StaticTuple[SIMD[type, width], num_reductions]
-    ) capturing -> None,
+    ) capturing [_] -> None,
     reduce_fn: fn[ty: DType, width: Int, reduction_idx: Int] (
         SIMD[ty, width], SIMD[ty, width]
-    ) capturing -> SIMD[ty, width],
+    ) capturing [_] -> SIMD[ty, width],
     type: DType,
     simd_width: Int,
     accum_type: DType = get_accum_type[type](),
@@ -325,13 +325,13 @@ fn reduce_launch[
     num_reductions: Int,
     input_fn: fn[type: DType, width: Int, rank: Int] (
         StaticIntTuple[rank]
-    ) capturing -> SIMD[type, width],
+    ) capturing [_] -> SIMD[type, width],
     output_fn: fn[type: DType, width: Int, rank: Int] (
         StaticIntTuple[rank], StaticTuple[SIMD[type, width], num_reductions]
-    ) capturing -> None,
+    ) capturing [_] -> None,
     reduce_fn: fn[ty: DType, width: Int, reduction_idx: Int] (
         SIMD[ty, width], SIMD[ty, width]
-    ) capturing -> SIMD[ty, width],
+    ) capturing [_] -> SIMD[ty, width],
     rank: Int,
     type: DType,
 ](
