@@ -5,7 +5,8 @@
 # ===----------------------------------------------------------------------=== #
 from __future__ import annotations
 
-from typing import Any
+from json import loads
+from typing import Any, Mapping
 
 from max._driver import Device as _Device
 from max._driver import cpu_device as _cpu_device
@@ -35,6 +36,11 @@ class Device:
     def is_host(self):
         """Returns whether the device is the CPU."""
         return self._device.is_host
+
+    @property
+    def stats(self) -> Mapping[str, Any]:
+        """Returns utilization data for the device."""
+        return loads(self._device.stats)
 
     @classmethod
     def cpu(cls, id: int = -1) -> Device:
