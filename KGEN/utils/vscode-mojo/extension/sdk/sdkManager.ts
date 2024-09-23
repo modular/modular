@@ -53,13 +53,15 @@ export class MojoSDKManager extends DisposableContext {
   private findSDKMutex = new Mutex();
   private isNightly: boolean;
   private extensionSemiPersistentState;
+  private extensionContext: vscode.ExtensionContext;
 
   constructor(
     logger: Logger,
     context: vscode.ExtensionContext,
     initializationSDK: Optional<MojoSDKSpec>,
     isNightly: boolean,
-    extensionSemiPersistentState: ExtensionSemiPersistentState
+    extensionSemiPersistentState: ExtensionSemiPersistentState,
+    extensionContext: vscode.ExtensionContext
   ) {
     super();
     this.logger = logger;
@@ -67,27 +69,32 @@ export class MojoSDKManager extends DisposableContext {
     this.initializationSDK = initializationSDK;
     this.isNightly = isNightly;
     this.extensionSemiPersistentState = extensionSemiPersistentState;
+    this.extensionContext = extensionContext;
 
     this.pushSubscription(
-      vscode.commands.registerCommand('mojo.sdk.select', async () => {
+      vscode.commands.registerCommand('mojo.sdk.select-default', async () => {
         const allSDKSpecs = await this.findAllSDKs();
         if (allSDKSpecs.length === 0) {
           vscode.window.showErrorMessage('No MAX SDKs were found.');
           return;
         }
         const sdkNames = allSDKSpecs.map((spec) => spec.version.toString());
-        const selected = await vscode.window.showQuickPick(sdkNames, {
+        const selectedName = await vscode.window.showQuickPick(sdkNames, {
           ignoreFocusOut: true,
-          title: 'Select the Max SDK to use',
+          title: 'Select the default MAX SDK to use',
           placeHolder:
             this.activeSDK.state === 'selected' && this.activeSDK.sdkSpec
               ? `Currently using ${this.activeSDK.sdkSpec.version.toString()}`
               : 'Select an SDK or cancel',
         });
         const selectedSDK = allSDKSpecs.find(
-          (spec) => spec.version.toString() === selected
+          (spec) => spec.version.toString() === selectedName
         );
         if (selectedSDK !== undefined) {
+          this.extensionContext.globalState.update(
+            'mojo.defaultSDK',
+            selectedName
+          );
           vscode.commands.executeCommand('mojo.extension.restart', selectedSDK);
         }
       })
@@ -311,15 +318,45 @@ export class MojoSDKManager extends DisposableContext {
     if (allSDKSpecs.length === 1) {
       return allSDKSpecs[0];
     }
+    const defaultSDKName =
+      this.extensionContext.globalState.get<Optional<string>>(
+        'mojo.defaultSDK'
+      );
+    const selectedDefaultSDKSpec = allSDKSpecs.find(
+      (spec) => spec.version.toString() === defaultSDKName
+    )!;
+    if (selectedDefaultSDKSpec !== undefined) {
+      return selectedDefaultSDKSpec;
+    }
+
     const sdkNames = allSDKSpecs.map((spec) => spec.version.toString());
-    const selected =
+    const selectedName =
       (await vscode.window.showQuickPick(sdkNames, {
         ignoreFocusOut: true,
-        title: 'Select the Max SDK to use',
+        title: 'Select the default MAX SDK to use',
         placeHolder:
           'Select an SDK or cancel to select the first one in the list',
       })) || sdkNames[0];
-    return allSDKSpecs.find((spec) => spec.version.toString() === selected);
+    const selectedSpec = allSDKSpecs.find(
+      (spec) => spec.version.toString() === selectedName
+    )!;
+    this.askUserToUpdateTheDefaultSDK(selectedSpec);
+    return selectedSpec;
+  }
+
+  private askUserToUpdateTheDefaultSDK(selectedSpec: MojoSDKSpec) {
+    const name = selectedSpec.version.toString();
+    vscode.window
+      .showInformationMessage(
+        `Use '${name}' as default SDK? You may ignore this message.`,
+        'Yes',
+        'No'
+      )
+      .then((value) => {
+        if (value === 'Yes') {
+          this.extensionContext.globalState.update('mojo.defaultSDK', name);
+        }
+      });
   }
 
   private async findAllSDKs(): Promise<MojoSDKSpec[]> {
