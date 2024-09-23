@@ -114,7 +114,7 @@ struct Event:
 
 @always_inline
 @parameter
-fn time_function[func: fn () capturing -> None]() -> Int:
+fn time_function[func: fn () capturing [_] -> None]() -> Int:
     """Time a function using CPU timer."""
 
     var start = perf_counter_ns()

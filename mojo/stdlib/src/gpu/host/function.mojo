@@ -250,9 +250,6 @@ struct FuncAttribute(CollectionElement, EqualityComparable):
 # ===----------------------------------------------------------------------===#
 
 
-alias _populate_fn_type = fn (UnsafePointer[NoneType]) capturing -> None
-
-
 @value
 @register_passable
 struct _CachedFunctionInfo(Boolable):
