@@ -2429,13 +2429,10 @@ struct LayoutTensor[
         @parameter
         if layout.all_dims_known():
             alias num_elements = layout.size() * Self.element_size
-            if val == 0:
-                memset_zero[count=num_elements](self.ptr)
-            else:
 
-                @parameter
-                for i in range(num_elements):
-                    self.ptr[i] = val
+            @parameter
+            for i in range(num_elements):
+                self.ptr[i] = val
         else:
             var num_elements = self.runtime_layout.size() * Self.element_size
             for i in range(num_elements):
