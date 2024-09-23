@@ -31,7 +31,8 @@ fn arange(
     start: Scalar[tensor.dtype] = 0,
     step: Scalar[tensor.dtype] = 1,
 ):
-    fn filler(i: Int) capturing -> Scalar[tensor.dtype]:
+    @parameter
+    fn filler(i: Int) -> Scalar[tensor.dtype]:
         return i * step + start
 
     # Use layout info for 2D tensors
@@ -53,7 +54,8 @@ fn random(
 ):
     constrained[not triple_is_nvidia_cuda(), "Cannot run random on the gpu"]()
 
-    fn filler(i: Int) capturing -> Scalar[tensor.dtype]:
+    @parameter
+    fn filler(i: Int) -> Scalar[tensor.dtype]:
         return random_float64(
             min.cast[DType.float64](), max.cast[DType.float64]()
         ).cast[tensor.dtype]()

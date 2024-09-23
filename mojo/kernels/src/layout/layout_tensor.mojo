@@ -415,7 +415,8 @@ struct LayoutTensor[
             other: The scalar value.
         """
 
-        fn add_val(val: Self.element_type) capturing -> Self.element_type:
+        @parameter
+        fn add_val(val: Self.element_type) -> Self.element_type:
             return Self.element_type(other) + val
 
         return self.__elementwise_unary[add_val]()
@@ -429,7 +430,8 @@ struct LayoutTensor[
             other: The scalar value.
         """
 
-        fn add_val(val: Self.element_type) capturing -> Self.element_type:
+        @parameter
+        fn add_val(val: Self.element_type) -> Self.element_type:
             return Self.element_type(other) + val
 
         _ = self.__elementwise_unary[add_val, inplace=True]()
@@ -507,7 +509,8 @@ struct LayoutTensor[
             other: The scalar value.
         """
 
-        fn mul_val(val: Self.element_type) capturing -> Self.element_type:
+        @parameter
+        fn mul_val(val: Self.element_type) -> Self.element_type:
             return Self.element_type(other) * val
 
         return self.__elementwise_unary[mul_val]()
@@ -557,7 +560,8 @@ struct LayoutTensor[
             other: The scalar value.
         """
 
-        fn mul_val(val: Self.element_type) capturing -> Self.element_type:
+        @parameter
+        fn mul_val(val: Self.element_type) -> Self.element_type:
             return Self.element_type(other) * val
 
         _ = self.__elementwise_unary[mul_val, inplace=True]()
@@ -604,7 +608,8 @@ struct LayoutTensor[
             other: The scalar value.
         """
 
-        fn sub_val(val: Self.element_type) capturing -> Self.element_type:
+        @parameter
+        fn sub_val(val: Self.element_type) -> Self.element_type:
             return val - Self.element_type(other)
 
         return self.__elementwise_unary[sub_val]()
@@ -649,7 +654,8 @@ struct LayoutTensor[
             other: The scalar value.
         """
 
-        fn sub_val(val: Self.element_type) capturing -> Self.element_type:
+        @parameter
+        fn sub_val(val: Self.element_type) -> Self.element_type:
             return val - Self.element_type(other)
 
         _ = self.__elementwise_unary[sub_val, inplace=True]()
@@ -695,7 +701,8 @@ struct LayoutTensor[
             other: The scalar value.
         """
 
-        fn div_val(val: Self.element_type) capturing -> Self.element_type:
+        @parameter
+        fn div_val(val: Self.element_type) -> Self.element_type:
             return val / Self.element_type(other)
 
         return self.__elementwise_unary[div_val]()

@@ -228,7 +228,8 @@ fn sum[
 
 @always_inline
 fn exp(inp: LayoutTensor) -> __type_of(inp):
-    fn exp_func(val: inp.element_type) capturing -> inp.element_type:
+    @parameter
+    fn exp_func(val: inp.element_type) -> inp.element_type:
         return math.exp(val)
 
     return inp.__elementwise_unary[exp_func]()
