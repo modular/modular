@@ -32,9 +32,9 @@ def main(
     if directory := os.getenv("BUILD_WORKING_DIRECTORY"):
         os.chdir(directory)
 
-    mojo_file = os.path.abspath(mojo_file)
+    absolute_path = os.path.abspath(str(mojo_file))
 
-    generate_mojo_extension_module(mojo_file, verbose=verbose)
+    generate_mojo_extension_module(absolute_path, verbose=verbose)
 
 
 # ==========================================================
