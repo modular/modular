@@ -9,7 +9,7 @@ from sys import triple_is_nvidia_cuda
 
 
 fn _filler_impl[
-    dtype: DType, filler: fn (i: Int) capturing -> Scalar[dtype]
+    dtype: DType, filler: fn (i: Int) capturing [_] -> Scalar[dtype]
 ](tensor: LayoutTensor):
     @parameter
     if tensor.layout.all_dims_known():

@@ -64,7 +64,7 @@ fn is_tuple(t: IntTuple) -> Bool:
 # Python-style reduce functions
 # FIXME: Can we unify the two versions?
 fn reduce[
-    T: AnyTrivialRegType, func: fn (owned a: T, b: IntTuple) capturing -> T
+    T: AnyTrivialRegType, func: fn (owned a: T, b: IntTuple) capturing [_] -> T
 ](t: IntTuple, initializer: T) -> T:
     var result: T = initializer
     for e in t:
@@ -73,7 +73,7 @@ fn reduce[
 
 
 fn reduce[
-    T: CollectionElement, func: fn (owned a: T, b: IntTuple) capturing -> T
+    T: CollectionElement, func: fn (owned a: T, b: IntTuple) capturing [_] -> T
 ](t: IntTuple, initializer: T) -> T:
     var result: T = initializer
     for e in t:
@@ -184,7 +184,7 @@ fn tuple_max(t: IntTuple) -> Int:
     return reduce[Int, reducer](t, int_min_val)
 
 
-fn apply[func: fn (Int) capturing -> Int](t: IntTuple) -> IntTuple:
+fn apply[func: fn (Int) capturing [_] -> Int](t: IntTuple) -> IntTuple:
     if is_int(t):
         return func(to_int(t))
     var res = IntTuple()
@@ -210,7 +210,7 @@ fn apply_zip[
 
 
 fn apply_zip[
-    func: fn (IntTuple, IntTuple) capturing -> IntTuple
+    func: fn (IntTuple, IntTuple) capturing [_] -> IntTuple
 ](t1: IntTuple, t2: IntTuple) -> IntTuple:
     var r = IntTuple()
     for z in zip(t1, t2):
