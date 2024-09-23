@@ -542,9 +542,9 @@ static void processExtensibilityDecorator(SharedState &shared, ASTDecl &decl,
   // conformances and witness tables. We need to dig out the declared argument
   // and result types.
   auto func = cast<LIT::FuncOp>(decl);
-  if (!isa<FileModuleOp>(func->getParentOp())) {
+  if (!(isa<FileModuleOp>(func->getParentOp()) || func.getIsStatic())) {
     shared.emitError(decl.getLoc(), "@")
-        << spelling << " is only supported on top-level functions";
+        << spelling << " is only supported on top-level or static functions";
     return;
   }
 
