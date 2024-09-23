@@ -631,7 +631,7 @@ fn get_kernel_type(m: Int, n: Int, k: Int) -> Bool:
 
 
 fn dispatch_get_kernel_type[
-    func: fn[x: Bool] () capturing -> None,
+    func: fn[x: Bool] () capturing [_] -> None,
 ](m: Int, n: Int, k: Int):
     if get_kernel_type(m, n, k):
         func[True]()

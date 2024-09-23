@@ -70,7 +70,7 @@ fn elementwise_epilogue_c_tile[
     c_shape: DimList,
     func: fn[type: DType, width: Int, *, alignment: Int = 1] (
         StaticIntTuple[2], SIMD[type, width]
-    ) capturing -> None,
+    ) capturing [_] -> None,
 ](offset: GemmShape, tile_len: GemmShape, c: NDBuffer[type, 2, c_shape]):
     @always_inline
     @parameter
@@ -446,17 +446,15 @@ fn _small_matmul[
                 c.store[width=width](coords, rebind[SIMD[c.type, width]](val))
 
         @always_inline
-        @__copy_capture(N)
         @parameter
         fn accum_out_row[
             output_func: fn[type: DType, width: Int] (
                 StaticIntTuple[2], SIMD[type, width]
-            ) capturing -> None,
+            ) capturing [_] -> None,
         ](m: Int, k: Int):
             var a_val = a[m, k].cast[c.type]()
 
             @always_inline
-            @__copy_capture(a_val)
             @parameter
             fn _wrapper[simd_width: Int](n: Int):
                 output_func[c.type, simd_width](
