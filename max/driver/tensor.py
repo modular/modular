@@ -97,9 +97,7 @@ class Tensor(DLPackArray):
 
         # We can't directly set GPU memory, so we just have to copy
         # the tensor over.
-        if not device.is_host:
-            return tensor.copy_to(device)
-        return tensor
+        return tensor.to(device)
 
     @property
     def dtype(self) -> DType:
@@ -169,9 +167,21 @@ class Tensor(DLPackArray):
         true for CPU tensors."""
         return self._impl.is_host
 
-    def copy_to(self, device: Device) -> Tensor:
-        """Copies a tensor to the provided device."""
+    def copy(self, device: Optional[Device] = None) -> Tensor:
+        """Create a deep copy on an optionally given device.
+
+        If a device is None (default), a copy is created on the same device."""
+        if device is None:
+            device = self.device
         return self._from_impl(self._impl.copy_to(device._device))
+
+    def to(self, device: Device) -> Tensor:
+        """Return a tensor that's guaranteed to be on the given device.
+
+        The tensor is only copied if the input device is different from the
+        device upon which the tensor is already resident.
+        """
+        return self if self.device == device else self.copy(device)
 
     @classmethod
     def from_numpy(cls, arr: np.ndarray, device: Device = CPU()) -> Tensor:
@@ -188,9 +198,7 @@ class Tensor(DLPackArray):
         )
         tensor = cls._from_impl(_Tensor(input_arr, CPU()._device))
 
-        if not device.is_host:
-            return tensor.copy_to(device)
-        return tensor
+        return tensor.to(device)
 
     def to_numpy(self) -> np.ndarray:
         """Converts the tensor to a numpy array."""
