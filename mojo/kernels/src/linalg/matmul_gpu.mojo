@@ -94,252 +94,6 @@ fn __nvvm_ldg_f4[type: DType](x: UnsafePointer[Scalar[type]]) -> SIMD[type, 4]:
         return 0
 
 
-# BM: The threadblock size for M dimension SMEM caching.
-# BN: The threadblock size for N dimension SMEM caching.
-# BK: The threadblock size for K dimension SMEM caching.
-# WM: M dim of continuous tile computed by each warp.
-# WN: N dim of continuous tile computed by each warp.
-# WMITER: The number of subwarp tiling steps in M dimension.
-# WNITER: The number of subwarp tiling steps in N dimension.
-# TM: The per-thread tile size for M dimension.
-# TN: The per-thread tile size for N dimension.
-@__llvm_metadata(`nvvm.maxntid`=StaticTuple[Int32, 1](NUM_THREADS))
-fn sgemm_warp_tiling_kernel[
-    c_type: DType,
-    c_shape: DimList,
-    a_type: DType,
-    a_shape: DimList,
-    b_type: DType,
-    b_shape: DimList,
-    BM: Int,
-    BN: Int,
-    BK: Int,
-    WM: Int,
-    WN: Int,
-    WMITER: Int,
-    WNITER: Int,
-    TM: Int,
-    TN: Int,
-    NUM_THREADS: Int,
-    elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
-](
-    mat_c: NDBuffer[c_type, 2, c_shape],
-    mat_a: NDBuffer[a_type, 2, a_shape],
-    mat_b: NDBuffer[b_type, 2, b_shape],
-    alpha: Scalar[c_type],
-    beta: Scalar[c_type],
-):
-    var K = mat_a.dim[1]()
-    var N = mat_c.dim[1]()
-
-    var c_row = BlockIdx.y()
-    var c_col = BlockIdx.x()
-
-    # Placement of the warp in the threadblock tile.
-    var warp_idx = ThreadIdx.x() // WARP_SIZE  # the warp this thread is in
-    var warp_col = warp_idx % (BN // WN)
-    var warp_row = warp_idx // (BN // WN)
-
-    # Size of the warp subtile.
-    alias w_sub_m = WM // WMITER  # 64/2=32
-    alias w_sub_n = WN // WNITER  # 32/2=16
-
-    # Placement of the thread in the warp subtile.
-    var thread_Idx_In_warp = ThreadIdx.x() % WARP_SIZE  # [0, 31]
-    var thread_col_in_warp = thread_Idx_In_warp % (w_sub_n // TN)  # i%(16/4)
-    var thread_row_in_warp = thread_Idx_In_warp // (w_sub_n // TN)  # i/4
-
-    # Allocate space for the current blocktile in SMEM.
-    # Pad the A tile in share memory to avoid bank conflicts.
-    # Use 4 to comply with f4 alignment used in accumulation.
-    alias sram_bank_padding_size = 4
-    alias BM_padded = BM + sram_bank_padding_size
-    var a_sram = NDBuffer[
-        a_type,
-        1,
-        DimList(int(BK * BM_padded)),
-        address_space = AddressSpace.SHARED,
-    ].stack_allocation()
-    var b_sram = NDBuffer[
-        b_type,
-        1,
-        DimList(int(BK * BN)),
-        address_space = AddressSpace.SHARED,
-    ].stack_allocation()
-
-    # Move blocktile to beginning of A's row and B's column.
-    var aa_ptr = mat_a._offset(Index(c_row * BM, 0))
-    var bb_ptr = mat_b._offset(Index(0, c_col * BN))
-    # Move C_ptr to warp's output tile
-    var M_offset_warp = c_row * BM + warp_row * WM
-    var N_offset_warp = c_col * BN + warp_col * WN
-    var cc_ptr = mat_c._offset(Index(M_offset_warp, N_offset_warp))
-
-    # Calculate the indices that this thread will load into SMEM.
-    # We load 128bit / 32bit = 4 elements per thread at each step.
-    var inner_row_a = ThreadIdx.x() // (BK // 4)
-    var inner_col_a = ThreadIdx.x() % (BK // 4)
-    alias row_stride_a = (NUM_THREADS * 4) // BK
-    var inner_row_b = ThreadIdx.x() // (BN // 4)
-    var inner_co_ib = ThreadIdx.x() % (BN // 4)
-    alias row_stride_b = NUM_THREADS // (BN // 4)
-
-    # TODO: We want these to be register-allocated!
-    # Allocate thread-local cache for results in register file.
-    var thread_results = NDBuffer[
-        c_type,
-        4,
-        DimList(int(WMITER), int(WNITER), int(TM), int(TN)),
-    ]().stack_allocation()
-    thread_results.zero()
-
-    # We cache into registers on the warptile level.
-    var reg_m = NDBuffer[
-        a_type, 2, DimList(int(WMITER), int(TM))
-    ]().stack_allocation()
-    reg_m.zero()
-
-    var reg_n = NDBuffer[
-        b_type, 2, DimList(int(WNITER), int(TN))
-    ]().stack_allocation()
-    reg_n.zero()
-
-    # Outer-most loop over block tiles.
-    for _ in range(0, K, BK):
-        for offset in range(0, int(BM - row_stride_a + 1), int(row_stride_a)):
-            # Load 4 elements at a time and store to shared memory.
-            var tmp = __nvvm_ldg_f4[a_type](
-                aa_ptr.offset(int((inner_row_a + offset) * K + inner_col_a * 4))
-            )
-
-            @parameter
-            for i in range(4):
-                a_sram[
-                    int(
-                        (inner_col_a * 4 + i) * BM_padded + inner_row_a + offset
-                    )
-                ] = tmp[i]
-
-        for offset in range(0, int(BK - row_stride_b + 1), int(row_stride_b)):
-            # Load 4 elements at a time and store to shared memory.
-            var tmp = __nvvm_ldg_f4[b_type](
-                bb_ptr.offset(int((inner_row_b + offset) * N + inner_co_ib * 4))
-            )
-            b_sram.store[width=4, alignment=16](
-                Index((inner_row_b + offset) * BN + inner_co_ib * 4),
-                tmp,
-            )
-
-        barrier()
-
-        for dot_idx in range(BK):
-            # Populate registers for whole warptile.
-            @parameter
-            for w_sub_row_idx in range(WMITER):
-
-                @parameter
-                for i in range(0, int(TM), 4):
-                    var vec = a_sram.load[width=4, alignment=16](
-                        int(
-                            (dot_idx * BM_padded)
-                            + warp_row * WM
-                            + w_sub_row_idx * w_sub_m
-                            + thread_row_in_warp * TM
-                            + i
-                        )
-                    )
-                    reg_m.store(Index(w_sub_row_idx, i), vec)
-
-            @parameter
-            for w_sub_col_idx in range(WNITER):
-
-                @parameter
-                for i in range(0, int(TN), 4):
-                    var vec = b_sram.load[width=4, alignment=16](
-                        int(
-                            (dot_idx * BN)
-                            + warp_col * WN
-                            + w_sub_col_idx * w_sub_n
-                            + thread_col_in_warp * TN
-                        )
-                    )
-                    reg_n.store(Index(w_sub_col_idx, i), vec)
-
-            # Execute warptile matmul.
-            @parameter
-            for w_sub_row_idx in range(WMITER):
-
-                @parameter
-                for w_sub_col_idx in range(WNITER):
-                    # Calculate per-thread results.
-                    @parameter
-                    for res_idx_m in range(TM):
-
-                        @parameter
-                        for res_idx_n in range(TN):
-                            thread_results[
-                                Index(
-                                    w_sub_row_idx,
-                                    w_sub_col_idx,
-                                    res_idx_m,
-                                    res_idx_n,
-                                )
-                            ] += (
-                                reg_m[w_sub_row_idx, res_idx_m].cast[c_type]()
-                                * reg_n[w_sub_col_idx, res_idx_n].cast[c_type]()
-                            )
-        aa_ptr = aa_ptr.offset(int(BK))  # move BK columns to right
-        bb_ptr = bb_ptr.offset(int(BK * N))  # move BK rows down
-        barrier()
-
-    # Write out the results.
-    @parameter
-    for w_sub_row_idx in range(WMITER):
-
-        @parameter
-        for w_sub_col_idx in range(WNITER):
-            # Move C pointer to current warp subtile.
-            var M_offset_subtile = w_sub_row_idx * w_sub_m
-            var N_offset_subtile = w_sub_col_idx * w_sub_n
-            var C_interim = cc_ptr.offset(
-                int((M_offset_subtile) * N + N_offset_subtile)
-            )
-
-            @parameter
-            for res_idx_m in range(TM):
-
-                @parameter
-                for res_idx_n in range(0, int(TN), 4):
-                    var M_offset_val = thread_row_in_warp * TM + res_idx_m
-                    var N_offset_val = thread_col_in_warp * TN + res_idx_n
-                    var c_idx = M_offset_val * N + N_offset_val
-                    var result_vec = thread_results.load[width=4](
-                        Index(
-                            w_sub_row_idx,
-                            w_sub_col_idx,
-                            res_idx_m,
-                            res_idx_n,
-                        )
-                    )
-
-                    var vec = alpha * result_vec + beta * C_interim.load[
-                        width=4, alignment=16
-                    ](int(c_idx))
-
-                    @parameter
-                    if elementwise_lambda_fn:
-                        alias elementwise_lambda = elementwise_lambda_fn.value()
-                        elementwise_lambda[c_type, 4](
-                            Index(
-                                M_offset_warp + M_offset_subtile + M_offset_val,
-                                N_offset_warp + N_offset_subtile + N_offset_val,
-                            ),
-                            vec,
-                        )
-                    else:
-                        C_interim.store[width=4][alignment=16](int(c_idx), vec)
-
-
 fn matmul_kernel[
     c_type: DType,
     a_type: DType,
@@ -454,239 +208,6 @@ fn matmul_kernel[
             c[Index(row, col)] = result.cast[c_type]()
 
 
-fn sgemm_double_buffer_kernel[
-    c_type: DType,
-    a_type: DType,
-    b_type: DType,
-    b_layout: Layout,
-    BM: Int,
-    BN: Int,
-    BK: Int,
-    WM: Int,
-    WN: Int,
-    TM: Int,
-    TN: Int,
-    NUM_THREADS: Int,
-    elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
-](
-    m: Int,
-    c: UnsafePointer[Scalar[c_type]],
-    a: UnsafePointer[Scalar[a_type]],
-    b: LayoutTensor[b_type, b_layout],
-):
-    alias simd_size = simdwidthof[c_type]()
-
-    alias N = b.shape[1]()
-    alias K = b.shape[0]()
-
-    alias num_warps_m = BM // WM
-    alias num_warps_n = BN // WN
-
-    var tid = ThreadIdx.x()
-    var warp_id = tid // WARP_SIZE
-
-    # Coordinates of the current warp.
-    var warp_x = warp_id % num_warps_n
-    var warp_y = warp_id // num_warps_n
-
-    # Warp shape in 2D.
-    alias warp_dim_x = WN // TN
-    alias warp_dim_y = WM // TM
-    constrained[
-        warp_dim_x * warp_dim_y == WARP_SIZE,
-        "Warp 2d shape doesn't match 32 threads",
-    ]()
-
-    # Pad BM to avoid back conflict
-    alias pad_avoid_bank_conflict = 4
-    alias BM_padded = BM + pad_avoid_bank_conflict
-
-    # Double buffer in shared memory.
-    alias a_smem_size = BK * BM_padded
-    var a_smem_tile = LayoutTensor[
-        a_type,
-        Layout.row_major(2 * BK, BM_padded),
-        address_space = AddressSpace.SHARED,
-    ].stack_allocation().slice[:, :BM]().split[2]()
-
-    # Align the address by the maximum async copy size (16 bytes).
-    alias b_smem_size = BK * BN
-    var b_smem_tile = LayoutTensor[
-        b_type,
-        Layout.row_major(2 * BK, BN),
-        address_space = AddressSpace.SHARED,
-    ].stack_allocation().split[2]()
-
-    # Global memory tile.
-    alias a_gmem_layout = Layout(IntTuple(BM, BK), IntTuple(K, 1))
-    var a_offset = BlockIdx.y() * BM * K
-    var a_gmem_tile = LayoutTensor[a_type, a_gmem_layout](a.offset(a_offset))
-    var b_gmem_tile = b.tile[BK, BN](0, BlockIdx.x())
-
-    # Load A tile from global memory to shared.
-    # Row major thread layout for coalesced access.
-    alias thread_loada_gmem_layout = Layout.row_major(NUM_THREADS // BK, BK)
-    alias thread_storea_smem_layout = Layout.col_major(BK, NUM_THREADS // BK)
-    copy_dram_to_sram_async[
-        src_thread_layout=thread_loada_gmem_layout,
-        dst_thread_layout=thread_storea_smem_layout,
-    ](a_smem_tile[0], a_gmem_tile)
-
-    # Load B tile from global memory to shared.
-    # Row major thread layout for coalesced access.
-    alias thread_layout_loadb = Layout.row_major(
-        (NUM_THREADS // BN) * simd_size, BN // simd_size
-    )
-    copy_dram_to_sram_async[
-        src_thread_layout=thread_layout_loadb,
-        dst_thread_layout=thread_layout_loadb,
-    ](
-        b_smem_tile[0].vectorize[1, simd_size](),
-        b_gmem_tile.vectorize[1, simd_size](),
-    )
-
-    async_copy_wait_all()
-    barrier()
-
-    # Advance A and B to next k tile.
-    a_gmem_tile = LayoutTensor[a_type, a_gmem_layout](a.offset(a_offset + BK))
-    b_gmem_tile = b.tile[BK, BN](1, BlockIdx.x())
-
-    # Double buffer in registers (fragments in nvidia terms).
-    var a_reg = InlineArray[_, 2](
-        LayoutTensor[a_type, Layout(TM)].stack_allocation(),
-        LayoutTensor[a_type, Layout(TM)].stack_allocation(),
-    )
-    var b_reg = InlineArray[_, 2](
-        LayoutTensor[b_type, Layout(TN)].stack_allocation(),
-        LayoutTensor[b_type, Layout(TN)].stack_allocation(),
-    )
-    var c_reg = LayoutTensor[
-        c_type, Layout.row_major(TM, TN)
-    ].stack_allocation().fill(0)
-
-    # Thread swizzling
-    # Warp has 2D Layout [warp_dim_x, warp_dim_y]. Current thread is mapped to
-    # (mma_x, mma_y) in this layout as follow (the number is thread id).
-    # 0  2  4  6  8  10 12 14
-    # 1  3  5  7  9  11 13 15
-    # 16 18 20 22 24 26 28 30
-    # 17 19 21 23 25 27 29 31
-    alias thread_layout = Layout(
-        IntTuple(IntTuple(2, 2), 8), IntTuple(IntTuple(1, 16), 2)
-    )
-
-    # Load A fragments to the first buffer.
-    var a_smem_warp_tile = a_smem_tile[0].tile[BK, WM](0, warp_y)
-    var a_smem_warp_row = a_smem_warp_tile.tile[1, WM](0, 0).coalesce()
-    copy_sram_to_local[src_warp_layout=thread_layout, axis=0](
-        a_reg[0].vectorize[simd_size](), a_smem_warp_row.vectorize[simd_size]()
-    )
-
-    # Load B fragments to the first buffer.
-    var b_smem_warp_tile = b_smem_tile[0].tile[BK, WN](0, warp_x)
-    var b_smem_warp_row = b_smem_warp_tile.tile[1, WN](0, 0).coalesce()
-    copy_sram_to_local[src_warp_layout=thread_layout, axis=1](
-        b_reg[0].vectorize[simd_size](), b_smem_warp_row.vectorize[simd_size]()
-    )
-
-    var num_k_tiles = ceildiv(K, BK)
-
-    # Update (num_k_tile - 1) tiles while switching buffers.
-    # for k_tile_id in range(num_k_tiles - 1):
-    for k_tile_id in range(num_k_tiles):
-        # The shared memory buffer to be prefetched
-        var prefetch_id = 1 if k_tile_id % 2 == 0 else 0
-
-        @parameter
-        for k in range(BK):
-            var next_k = (k + 1) % BK
-
-            # Buffer id for the double register buffers. They alternate.
-            var buffer_id = k & 1
-            var next_buffer_id = (k + 1) & 1
-
-            if k == BK - 1:
-                async_copy_wait_all()
-                barrier()
-
-                a_smem_warp_tile = a_smem_tile[prefetch_id].tile[BK, WM](
-                    0, warp_y
-                )
-                b_smem_warp_tile = b_smem_tile[prefetch_id].tile[BK, WN](
-                    0, warp_x
-                )
-
-            # Fill the other A fragments buffer using the next row in A.
-            var a_smem_warp_row = a_smem_warp_tile.tile[1, WM](
-                next_k, 0
-            ).coalesce()
-            copy_sram_to_local[src_warp_layout=thread_layout, axis=0](
-                a_reg[next_buffer_id].vectorize[simd_size](),
-                a_smem_warp_row.vectorize[simd_size](),
-            )
-
-            var b_smem_warp_row = b_smem_warp_tile.tile[1, WN](
-                next_k, 0
-            ).coalesce()
-            copy_sram_to_local[src_warp_layout=thread_layout, axis=1](
-                b_reg[next_buffer_id].vectorize[simd_size](),
-                b_smem_warp_row.vectorize[simd_size](),
-            )
-
-            # Load next k tile from global memory to shared memory.
-            if k == 0 and k_tile_id < num_k_tiles - 1:
-                a_gmem_tile = LayoutTensor[a_type, a_gmem_layout](
-                    a.offset(BlockIdx.y() * BM * K + (k_tile_id + 1) * BK)
-                )
-                copy_dram_to_sram_async[
-                    src_thread_layout=thread_loada_gmem_layout,
-                    dst_thread_layout=thread_storea_smem_layout,
-                ](a_smem_tile[prefetch_id], a_gmem_tile)
-
-                b_gmem_tile = b.tile[BK, BN](k_tile_id + 1, BlockIdx.x())
-                copy_dram_to_sram_async[
-                    src_thread_layout=thread_layout_loadb,
-                    dst_thread_layout=thread_layout_loadb,
-                ](
-                    b_smem_tile[prefetch_id].vectorize[1, simd_size](),
-                    b_gmem_tile.vectorize[1, simd_size](),
-                )
-
-            outer_product_acc(c_reg, a_reg[buffer_id], b_reg[buffer_id])
-
-    # Map global memory tile down to thread.
-    var c_offset = BlockIdx.y() * BM * N + BlockIdx.x() * BN
-    alias c_gmem_layout = Layout(IntTuple(BM, BN), IntTuple(N, 1))
-    var c_gmem_tile = LayoutTensor[c_type, c_gmem_layout](c.offset(c_offset))
-    var c_gmem_warp_tile = c_gmem_tile.tile[WM, WN](warp_y, warp_x)
-
-    # Copy results to global memory.
-    # Vectorize by [simd_size, simd_size] because the outer product results are
-    # implicitly organized by simd_size x simd_size tiles.
-
-    @parameter
-    if elementwise_lambda_fn:
-        var c_gmem_frag = c_gmem_warp_tile.vectorize[
-            simd_size, simd_size
-        ]().distribute[thread_layout](ThreadIdx.x())
-
-        alias epilogue = elementwise_lambda_fn.value()
-
-        apply_epilogue[
-            epilogue, c_gmem_frag.layout, c_gmem_frag.element_layout
-        ](
-            c_reg.vectorize[simd_size, simd_size](),
-            c_gmem_frag.distance(c),
-        )
-
-    else:
-        copy_local_to_dram[dst_thread_layout=thread_layout](
-            c_gmem_warp_tile.vectorize[simd_size, simd_size](),
-            c_reg.vectorize[simd_size, simd_size](),
-        )
-
-
 fn matmul_kernel_naive[
     c_type: DType,
     a_type: DType,
@@ -754,211 +275,98 @@ fn _matmul_gpu[
     #     "single_thread_blocking_override not applicable",
     # ]()
     try:
-        _matmul_gpu_dispatch[
-            transpose_b=transpose_b,
-            use_tensor_core=use_tensor_core,
-            elementwise_lambda_fn=elementwise_lambda_fn,
-        ](c, a, b, ctx)
-    except e:
-        abort(e)
-
-
-@always_inline
-fn _matmul_gpu_dispatch[
-    a_type: DType,
-    a_shape: DimList,
-    b_type: DType,
-    b_shape: DimList,
-    c_type: DType,
-    c_shape: DimList, //,
-    transpose_b: Bool = False,
-    use_tensor_core: Bool = False,
-    elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
-](
-    c: NDBuffer[c_type, 2, c_shape],
-    a: NDBuffer[a_type, 2, a_shape],
-    b: NDBuffer[b_type, 2, b_shape],
-    ctx: DeviceContext,
-) raises:
-    var shape = GemmShape.get[transpose_b=False](c, a, b)
-    var m = shape.M
-    var n = shape.N
-    var k = shape.K
-    alias s_type = DType.float32 if (
-        a_type == DType.bfloat16 or a_type == DType.float16
-    ) else c_type
-
-    # Currently sgemm_warp_tiling_kernel is supportred only for float32 and
-    # no elementwise_epilogue, fallback to generic matmul_kernel.
-    var warp_tiled_matmul_supported_shape = (
-        m % 128 == 0 and n % 128 == 0 and k % 128 == 0
-    )
-    alias matmul_supported_format = (
-        a_type in (DType.float32, DType.bfloat16)
-        and b_type in (DType.float32, DType.bfloat16)
-        and c_type in (DType.float32, DType.bfloat16)
-    )
-    alias buffer_matmul_supported_format = (
-        a_type == DType.float32
-        and b_type == DType.float32
-        and c_type == DType.float32
-        and not transpose_b
-    )
-    var double_buffer_supported_cond = (
-        m % 128 == 0 and n % 128 == 0 and k % 16 == 0 and k < m and k < n
-    )
-
-    # NOTE: k has to be a multiple of BK * num_stages. Hard coded this condition to 128 for now.
-    # TODO: Need to find a better dispatch strategy.
-    var multi_gemm_cond = (m > 1 and n % 128 == 0 and k % 128 == 0)
-    # fmt: off
-    # Require Static K, N in A, B, C
-    alias multistage_gemm_supported_shape = b_shape.all_known[2]() \
+        alias a_type = a.type
+        alias b_type = b.type
+        alias c_type = c.type
+        alias a_shape = a.shape
+        alias b_shape = b.shape
+        alias c_shape = c.shape
+        var shape = GemmShape.get[transpose_b=False](c, a, b)
+        var m = shape.M
+        var n = shape.N
+        var k = shape.K
+        alias s_type = DType.float32 if (
+            a_type == DType.bfloat16 or a_type == DType.float16
+        ) else c_type
+        alias matmul_supported_format = (
+            a_type in (DType.float32, DType.bfloat16)
+            and b_type in (DType.float32, DType.bfloat16)
+            and c_type in (DType.float32, DType.bfloat16)
+        )
+        # NOTE: k has to be a multiple of BK * num_stages. Hard coded this condition to 128 for now.
+        # TODO: Need to find a better dispatch strategy.
+        var multi_gemm_cond = (m > 1 and n % 128 == 0 and k % 128 == 0)
+        # fmt: off
+        # Require Static K, N in A, B, C
+        alias multistage_gemm_supported_shape = b_shape.all_known[2]() \
         and a_shape.has_value[1]() \
         and c_shape.has_value[1]()
-    # fmt: on
+        # fmt: on
 
-    @parameter
-    if (
-        matmul_supported_format
-        and use_tensor_core
-        and multistage_gemm_supported_shape
-    ):
-        if multi_gemm_cond:
-            alias kernels = MatmulKernels[a_type, b_type, c_type, transpose_b]()
+        @parameter
+        if (
+            matmul_supported_format
+            and use_tensor_core
+            and multistage_gemm_supported_shape
+        ):
+            if multi_gemm_cond:
+                alias kernels = MatmulKernels[
+                    a_type, b_type, c_type, transpose_b
+                ]()
 
-            var best_config = select_config[
-                a_type, b_type, c_type, transpose_b
-            ](m, n, k)
+                var best_config = select_config[
+                    a_type, b_type, c_type, transpose_b
+                ](m, n, k)
 
-            if best_config == kernels.ampere_256x64_4:
-                alias config = kernels.ampere_256x64_4
-                multistage_gemm[
-                    c_type,
-                    c_shape,
-                    a_type,
-                    a_shape,
-                    b_type,
-                    b_shape,
-                    transpose_b,
-                    config,
-                    elementwise_lambda_fn,
-                ](c, a, b, best_config, ctx)
+                if best_config == kernels.ampere_256x64_4:
+                    alias config = kernels.ampere_256x64_4
+                    multistage_gemm[
+                        c_type,
+                        c_shape,
+                        a_type,
+                        a_shape,
+                        b_type,
+                        b_shape,
+                        transpose_b,
+                        config,
+                        elementwise_lambda_fn,
+                    ](
+                        rebind[NDBuffer[c_type, 2, c_shape]](c),
+                        rebind[NDBuffer[a_type, 2, a_shape]](a),
+                        rebind[NDBuffer[b_type, 2, b_shape]](b),
+                        best_config,
+                        ctx,
+                    )
 
-            else:  # Default kernel 128x128_4
-                alias config = kernels.ampere_128x128_4
-                multistage_gemm[
-                    c_type,
-                    c_shape,
-                    a_type,
-                    a_shape,
-                    b_type,
-                    b_shape,
-                    transpose_b,
-                    config,
-                    elementwise_lambda_fn,
-                ](c, a, b, best_config, ctx)
+                else:  # Default kernel 128x128_4
+                    alias config = kernels.ampere_128x128_4
+                    multistage_gemm[
+                        c_type,
+                        c_shape,
+                        a_type,
+                        a_shape,
+                        b_type,
+                        b_shape,
+                        transpose_b,
+                        config,
+                        elementwise_lambda_fn,
+                    ](
+                        rebind[NDBuffer[c_type, 2, c_shape]](c),
+                        rebind[NDBuffer[a_type, 2, a_shape]](a),
+                        rebind[NDBuffer[b_type, 2, b_shape]](b),
+                        best_config,
+                        ctx,
+                    )
 
-            return
+                return
 
-    # Dispatch bouble buffer gemm for FP32, constant B, and certain shapes.
-    @parameter
-    if buffer_matmul_supported_format and b_shape.all_known[2]():
-        if double_buffer_supported_cond:
-            # TODO: Add shape constraints for K << M and K << N.
-            alias NUM_THREADS = 256
-            alias K = b_shape.get[0]()
-            alias N = b_shape.get[1]()
-            alias BM = 128
-            alias BN = 128
-            alias BK = 16
-            alias WM = 32
-            alias WN = 64
-            alias TM = 8
-            alias TN = 8
-            alias b_layout = Layout.row_major(K, N)
-
-            var b_tsr = LayoutTensor[b_type, b_layout](b.data)
-
-            alias dbuffgemm = sgemm_double_buffer_kernel[
-                c_type,
-                a_type,
-                b_type,
-                b_layout,
-                BM,
-                BN,
-                BK,
-                WM,
-                WN,
-                TM,
-                TN,
-                NUM_THREADS,
+        if m == 1 or n == 1:
+            gemv_gpu[
+                transpose_b=transpose_b,
                 elementwise_lambda_fn=elementwise_lambda_fn,
-            ]
-            var gpu_func = ctx.compile_function[dbuffgemm](
-                threads_per_block=NUM_THREADS
-            )
-            ctx.enqueue_function(
-                gpu_func,
-                m,
-                c.data,
-                a.data,
-                b_tsr,
-                grid_dim=(ceildiv(n, BN), ceildiv(m, BM), 1),
-                block_dim=(NUM_THREADS, 1, 1),
-            )
+            ](c, a, b, ctx)
             return
 
-    if warp_tiled_matmul_supported_shape and buffer_matmul_supported_format:
-        # TODO: Auto tune these for A100.
-        # TODO: NUM_THREADS need to vary as M, N varies.
-        alias NUM_THREADS = 128
-        alias BN = 128
-        alias BM = 128
-        alias BK = 16
-        alias WN = 64
-        alias WM = 64
-        alias WNITER = 4
-        alias TN = 4
-        alias TM = 8
-        alias WMITER = (WM * WN) // (WARP_SIZE * TM * TN * WNITER)
-        alias mm = sgemm_warp_tiling_kernel[
-            c_type,
-            c_shape,
-            a_type,
-            a_shape,
-            b_type,
-            b_shape,
-            BM=BM,
-            BN=BN,
-            BK=BK,
-            WM=WM,
-            WN=WN,
-            WMITER=WMITER,
-            WNITER=WNITER,
-            TM=TM,
-            TN=TN,
-            NUM_THREADS=NUM_THREADS,
-            elementwise_lambda_fn=elementwise_lambda_fn,
-        ]
-        var gpu_func = ctx.compile_function[mm](threads_per_block=NUM_THREADS)
-        ctx.enqueue_function(
-            gpu_func,
-            c,
-            a,
-            b,
-            Scalar[c_type](1),
-            Scalar[c_type](0),
-            grid_dim=(ceildiv(n, BN), ceildiv(m, BM)),
-            block_dim=(NUM_THREADS),
-        )
-    elif n == 1 or m == 1:
-        gemv_gpu[
-            transpose_b=transpose_b,
-            elementwise_lambda_fn=elementwise_lambda_fn,
-        ](c, a, b, ctx)
-
-    else:
         alias BLOCK_DIM = 16
         var gpu_func = ctx.compile_function[
             matmul_kernel_naive[
@@ -981,6 +389,9 @@ fn _matmul_gpu_dispatch[
             grid_dim=(ceildiv(m, BLOCK_DIM), ceildiv(n, BLOCK_DIM)),
             block_dim=(BLOCK_DIM, BLOCK_DIM),
         )
+
+    except e:
+        abort(e)
 
 
 @always_inline
