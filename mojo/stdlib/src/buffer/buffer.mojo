@@ -1662,7 +1662,7 @@ struct DynamicRankBuffer:
         )
 
     @always_inline
-    fn rank_dispatch[func: fn[rank: Int] () capturing -> None](self):
+    fn rank_dispatch[func: fn[rank: Int] () capturing [_] -> None](self):
         """Dispatches the function call based on buffer rank.
 
         Constraints:
