@@ -599,7 +599,7 @@ fn _matmul_group_stream_x86[
         inout b_vals: InlineArray[
             SIMD[DType.uint8, simd_width * 4], tile_n * tile_k
         ]
-    ) capturing -> None,
+    ) capturing [_] -> None,
 ](
     a_q_bits_ptr: UnsafePointer[Int8],
     inout c_int32_group: _Accumulator[DType.int32, tile_m, tile_n, simd_width],
@@ -647,7 +647,7 @@ fn _matmul_group_stream_neon_dotprod[
         inout b_vals: InlineArray[
             SIMD[DType.uint8, simd_width * 4], tile_n * tile_k
         ]
-    ) capturing -> None,
+    ) capturing [_] -> None,
 ](
     a_q_bits_ptr: UnsafePointer[Int8],
     inout c_int32_group: _Accumulator[DType.int32, tile_m, tile_n, simd_width],
@@ -694,7 +694,7 @@ fn _matmul_group_stream[
         inout b_vals: InlineArray[
             SIMD[DType.uint8, simd_width * 4], tile_n * tile_k
         ]
-    ) capturing -> None,
+    ) capturing [_] -> None,
 ](
     a_q_bits_ptr: UnsafePointer[Int8],
     inout c_int32_group: _Accumulator[DType.int32, tile_m, tile_n, simd_width],
@@ -963,7 +963,7 @@ fn _matmul_Q4_K_tile[
     matmul_group_fn: fn (
         a_ptr: UnsafePointer[Int8],
         inout c_int32: _Accumulator[DType.int32, tile_m, tile_n, simd_width],
-    ) capturing -> None,
+    ) capturing [_] -> None,
 ](
     a_ptr: UnsafePointer[_block_Q8_K_packed[_block_Q4_K.group_size]],
     b_ptr: UnsafePointer[_block_Q4_K_packed[]],
@@ -1161,7 +1161,7 @@ fn _matmul_Q6_K_tile[
         inout c_int32_group: _Accumulator[
             DType.int32, tile_m, tile_n, simd_width
         ],
-    ) capturing -> None,
+    ) capturing [_] -> None,
 ](
     a_ptr: UnsafePointer[_block_Q8_K_packed[_block_Q6_K.group_size]],
     b_ptr: UnsafePointer[_block_Q6_K_packed[]],
