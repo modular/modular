@@ -284,7 +284,7 @@ fn _do_pad[
         StaticIntTuple[rank],
         UnsafePointer[Scalar[DType.index]],
         UnsafePointer[Scalar[DType.index]],
-    ) capturing -> None,
+    ) capturing [_] -> None,
 ](
     output: NDBuffer[type, rank, output_shape],
     input: NDBuffer[type, rank, input_shape],

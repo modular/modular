@@ -34,7 +34,7 @@ fn test_case[
     type: DType,
     reduce_fn: fn[type: DType, width: Int] (
         SIMD[type, width], SIMD[type, width]
-    ) capturing -> SIMD[type, width],
+    ) capturing [_] -> SIMD[type, width],
 ](
     data: TestTensor[type, 3],
     indices: TestTensor[DType.int64, 2],

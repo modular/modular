@@ -40,9 +40,9 @@ struct TestTensor[rank: Int, type: DType]:
 fn test_case[
     rank: Int,
     type: DType,
-    fill_fn: fn[rank: Int, type: DType] (
-        inout NDBuffer[type, rank]
-    ) capturing -> None,
+    fill_fn: fn[rank: Int, type: DType] (inout NDBuffer[type, rank]) capturing [
+        _
+    ] -> None,
 ](
     K: Int,
     axis: Int,

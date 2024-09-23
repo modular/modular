@@ -127,7 +127,7 @@ fn non_max_suppression_shape_func[
 
 fn non_max_suppression[
     type: DType,
-    func: fn (Int64, Int64, Int64) capturing -> None,
+    func: fn (Int64, Int64, Int64) capturing [_] -> None,
 ](
     boxes: NDBuffer[type, 3],
     scores: NDBuffer[type, 3],

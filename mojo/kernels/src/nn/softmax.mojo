@@ -225,7 +225,7 @@ fn _softmax_3_pass_step_2[
     unroll_factor: Int,
     buffer_size: Dim,
     type: DType,
-    input_fn_1d: fn[_simd_width: Int] (Int) capturing -> SIMD[
+    input_fn_1d: fn[_simd_width: Int] (Int) capturing [_] -> SIMD[
         type, _simd_width
     ],
     pre_update_func: fn[type: DType, width: Int] (SIMD[type, width]) -> SIMD[
@@ -298,7 +298,7 @@ fn _softmax_3_pass_base[
     simd_width: Int,
     buffer_size: Dim,
     type: DType,
-    input_fn_1d: fn[_simd_width: Int] (Int) capturing -> SIMD[
+    input_fn_1d: fn[_simd_width: Int] (Int) capturing [_] -> SIMD[
         type, _simd_width
     ],
     step2_pre_update_func: fn[type: DType, width: Int] (
@@ -407,7 +407,7 @@ fn softmax_3_pass[
     simd_width: Int,
     buffer_size: Dim,
     type: DType,
-    input_fn_1d: fn[_simd_width: Int] (Int) capturing -> SIMD[
+    input_fn_1d: fn[_simd_width: Int] (Int) capturing [_] -> SIMD[
         type, _simd_width
     ],
 ](output: Buffer[type, buffer_size]):
@@ -462,7 +462,7 @@ fn logsoftmax[
     simd_width: Int,
     buffer_size: Dim,
     type: DType,
-    input_fn_1d: fn[_simd_width: Int] (Int) capturing -> SIMD[
+    input_fn_1d: fn[_simd_width: Int] (Int) capturing [_] -> SIMD[
         type, _simd_width
     ],
 ](output: Buffer[type, buffer_size]):
@@ -508,7 +508,7 @@ fn logsoftmax[
     static_shape: DimList,
     input_fn: fn[_simd_width: Int, _rank: Int] (
         StaticIntTuple[_rank]
-    ) capturing -> SIMD[type, _simd_width],
+    ) capturing [_] -> SIMD[type, _simd_width],
 ](
     shape: StaticIntTuple[rank],
     output: NDBuffer[type, rank, static_shape],
@@ -593,7 +593,7 @@ fn _softmax_cpu[
     static_shape: DimList,
     input_fn: fn[_simd_width: Int, _rank: Int] (
         StaticIntTuple[_rank]
-    ) capturing -> SIMD[type, _simd_width],
+    ) capturing [_] -> SIMD[type, _simd_width],
 ](
     shape: StaticIntTuple[rank],
     output: NDBuffer[type, rank, static_shape],
@@ -673,7 +673,7 @@ fn softmax_kernel[
     BLOCK_SIZE: Int,
     input_fn: fn[_type: DType, _simd_width: Int, _rank: Int] (
         StaticIntTuple[_rank]
-    ) capturing -> SIMD[_type, _simd_width],
+    ) capturing [_] -> SIMD[_type, _simd_width],
     type: DType,
     rank: Int,
     accum_type: DType = get_accum_type[type](),
@@ -777,7 +777,7 @@ fn _softmax_gpu[
     static_shape: DimList,
     input_fn: fn[_simd_width: Int, _rank: Int] (
         StaticIntTuple[_rank]
-    ) capturing -> SIMD[type, _simd_width],
+    ) capturing [_] -> SIMD[type, _simd_width],
 ](
     shape: StaticIntTuple[rank],
     output: NDBuffer[type, rank, static_shape],
@@ -826,7 +826,7 @@ fn softmax[
     static_shape: DimList,
     input_fn: fn[_simd_width: Int, _rank: Int] (
         StaticIntTuple[_rank]
-    ) capturing -> SIMD[type, _simd_width],
+    ) capturing [_] -> SIMD[type, _simd_width],
     target: StringLiteral = "cpu",
 ](
     shape: StaticIntTuple[rank],
