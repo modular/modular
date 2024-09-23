@@ -13,14 +13,13 @@ from algorithm.reduction import _get_nd_indices_from_flat_index
 from buffer import NDBuffer
 from builtin.sort import _quicksort
 from memory import UnsafePointer
-from register import mogg_register
+from register import mogg_register_shape_func
 
 from utils import Span, StaticIntTuple
 
 
-@mogg_register("top_k_shape")
 @always_inline
-fn top_k_shape[
+fn top_k_shape_impl[
     type: DType,
     rank: Int,
     axis_type: DType,
@@ -59,6 +58,40 @@ fn top_k_shape[
     shape[axis] = k
 
     return shape
+
+
+@mogg_register_shape_func("mo.top_k")
+@always_inline
+fn top_k_shape[
+    type: DType,
+    rank: Int,
+    axis_type: DType,
+    single_thread_blocking_override: Bool,
+](
+    input: NDBuffer[type, rank],
+    k_buf: NDBuffer[axis_type, 1],
+    axis_buf: NDBuffer[axis_type, 1],
+) raises -> StaticIntTuple[rank]:
+    return top_k_shape_impl[
+        single_thread_blocking_override=single_thread_blocking_override
+    ](input, k_buf, axis_buf)
+
+
+@mogg_register_shape_func("mo.bottom_k")
+@always_inline
+fn bottom_k_shape[
+    type: DType,
+    rank: Int,
+    axis_type: DType,
+    single_thread_blocking_override: Bool,
+](
+    input: NDBuffer[type, rank],
+    k_buf: NDBuffer[axis_type, 1],
+    axis_buf: NDBuffer[axis_type, 1],
+) raises -> StaticIntTuple[rank]:
+    return top_k_shape_impl[
+        single_thread_blocking_override=single_thread_blocking_override
+    ](input, k_buf, axis_buf)
 
 
 fn top_k[
