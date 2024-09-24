@@ -146,6 +146,11 @@ class DType(Enum):
             DType.float64,
         ]
 
+    @property
+    def size_in_bytes(self) -> int:
+        """Returns the size of the dtype in bytes."""
+        return self._to().size_in_bytes
+
 
 _DTYPE_TO_MLIR = {
     DType.bool: "bool",
