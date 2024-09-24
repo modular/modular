@@ -6,7 +6,7 @@
 from __future__ import annotations
 
 from enum import Enum
-from typing import Any, Sequence, Tuple, Union
+from typing import Any, Sequence, Union
 
 _IdxElType = Union[int, slice]
 IndexType = Union[Sequence[_IdxElType], _IdxElType]
@@ -31,6 +31,7 @@ class Tensor:
         dtype: DType,
         device: Device,
     ) -> None: ...
+    def view(self, shape: ShapeType, dtype: DType) -> Tensor: ...
     def set(self, index: IndexType, value: Any) -> None: ...
     def get(self, index: IndexType) -> Tensor: ...
     def item(self) -> Any: ...
