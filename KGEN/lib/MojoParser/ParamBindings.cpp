@@ -17,6 +17,8 @@
 #include "KGEN/LITDialect/LITOps.h"
 #include "KGEN/LITDialect/LITTypes.h"
 #include "KGEN/LITDialect/LITUtils.h"
+#include "KGEN/MojoParser/ASTDecl.h"
+#include "KGEN/MojoParser/DeclResolver.h"
 #include "Support/STLExtras.h"
 
 using namespace M;
@@ -694,12 +696,34 @@ TypedAttr ParamBindings::getBoundConstAttrFor(LIT::FuncOp funcOp,
   bindings.parameters.values.erase(it, it + 1);
   for (Type type : signature.getParamTypes().drop_front())
     paramValues.push_back(UnboundAttr::get(type));
+
+  ParserParamEvaluator traitAliasReplacer(*shared.declResolver);
+
+  ASTDecl &traitDecl = *selfExpr.getType().getDecl(shared);
+  for (auto &[name, decls] : traitDecl.getDeclsInScope()) {
+    for (ASTDecl *decl : decls) {
+      auto traitAlias = dyn_cast<LIT::AliasDeclOp>(*decl);
+      if (!traitAlias)
+        continue;
+      // TODO(MOCO-1109): Pull this out into a helper.
+      TypedAttr aliasRef = ParamOperatorAttr::get(
+          POC::GetTypeMethod,
+          {PValue(selfExpr),
+           StringAttr::get(name.str(), StringType::get(funcOp.getContext()))},
+          traitAlias.getType());
+      traitAliasReplacer.setParameterValue(traitAlias.getParamDecl(), aliasRef);
+    }
+  }
+
+  signature = traitAliasReplacer.replace(signature);
+
   signature = signature.getSpecializedSignature(paramValues, [&]() {
     return mlir::emitError(shared.translateLocation(expr->getLoc()))
            << "internal error: ";
   });
   assert(signature && "Error binding trait Self type");
 
+  // TODO(MOCO-1143): Factor this out into a helper
   TypedAttr fnRef = ParamOperatorAttr::get(
       POC::GetTypeMethod,
       {PValue(selfExpr),
