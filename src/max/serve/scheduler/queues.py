@@ -7,10 +7,19 @@
 
 import asyncio
 import contextlib
+import logging
 import time
 from asyncio import Queue
 from dataclasses import dataclass, field
 from typing import Any, Generic, TypeVar
+
+# TODO (SI-582) unify logging infra
+logging.basicConfig(
+    level=logging.INFO,
+    encoding="utf-8",
+    format="%(asctime)s - %(levelname)s - %(message)s",
+)
+logger = logging.getLogger(__name__)
 
 BatchKey = TypeVar("BatchKey")
 
@@ -90,13 +99,15 @@ class BatchMultiplexQueue(Generic[BatchKey]):
                 batch = {}
                 self.fill_batch_nowait(batch, max_batch_size)
                 if len(batch) > 0:
+                    logging.debug(
+                        "Dynamic batching worker with batch size %d", len(batch)
+                    )
                     results = await forward(batch)
                     await self.respond(results)
 
                 await asyncio.sleep(0)
         except asyncio.CancelledError as ce:
-            # TODO plumb logger in here
-            print(f"Dynamic batching worker cancelled: {ce}")
+            logger.warning("Dynamic batching worker cancelled: %s", ce)
             raise
 
     async def continuous_batching_worker(self, forward, max_batch_size: int):
@@ -105,6 +116,10 @@ class BatchMultiplexQueue(Generic[BatchKey]):
             while True:
                 self.fill_batch_nowait(batch, max_batch_size)
                 if len(batch) > 0:
+                    logging.debug(
+                        "Continuous batching worker with batch size %d",
+                        len(batch),
+                    )
                     next_result = await forward(batch)
                     cancelled = await self.respond(next_result)
                     # Remove batches which meet one of the following criteria.
@@ -129,6 +144,5 @@ class BatchMultiplexQueue(Generic[BatchKey]):
 
                 await asyncio.sleep(0)
         except asyncio.CancelledError as ce:
-            # TODO plumb logger in here
-            print(f"Continuous batching worker cancelled: {ce}")
+            logger.warning("Continuous batching worker cancelled: %s", ce)
             raise

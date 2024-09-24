@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from dataclasses import dataclass, field
 from typing import AsyncGenerator, Generic, Optional, TypeVar
 
@@ -14,6 +15,13 @@ from transformers import AutoTokenizer
 
 from max.serve.scheduler.queues import BatchMultiplexQueue
 
+# TODO (SI-582) unify logging infra
+logging.basicConfig(
+    level=logging.INFO,
+    encoding="utf-8",
+    format="%(asctime)s - %(levelname)s - %(message)s",
+)
+logger = logging.getLogger(__name__)
 Context = TypeVar("Context")
 
 
@@ -82,11 +90,12 @@ class TokenGeneratorPipeline(Generic[Context]):
             ),
             name="continuous_batching_worker",
         )
+        logger.info("Created workers")
 
         def log_task_done(task: asyncio.Task):
             # TODO - pipe in a logger to TokenGeneratorPipeline and log here
             # TODO - should gracefully shut down here.
-            print(f"task completed {task}!")
+            logger.info("task completed: %s", task.get_name())
             for t in self._background_tasks:
                 if not t.done():
                     t.cancel("terminating task")
@@ -100,4 +109,5 @@ class TokenGeneratorPipeline(Generic[Context]):
     async def __aexit__(self, exc_type, exc_value, traceback):
         for task in self._background_tasks:
             task.cancel()
+        logger.info("Exiting serving pipeline context")
         # TODO: also cancel any `queue.get()` tasks
