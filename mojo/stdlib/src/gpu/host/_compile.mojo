@@ -10,7 +10,7 @@ import subprocess
 import tempfile
 from pathlib import Path
 from compile import Info, compile_info, get_linkage_name
-from .info import _get_info_from_target
+from .info import _get_info_from_target, DEFAULT_GPU_ARCH
 
 # ===----------------------------------------------------------------------===#
 # Targets
@@ -19,8 +19,8 @@ from .info import _get_info_from_target
 
 @always_inline
 fn _get_nvptx_target[
-    # TODO: Ideally this is an OptionalReg[StringLiteral] but blocked by MOCO-1039
-    target_arch: StringLiteral = "sm_80",
+    # TODO: Ideally this is an Optional[StringLiteral] but blocked by MOCO-1039
+    target_arch: StringLiteral = DEFAULT_GPU_ARCH,
 ]() -> __mlir_type.`!kgen.target`:
     alias info = _get_info_from_target[target_arch]()
     return info.target

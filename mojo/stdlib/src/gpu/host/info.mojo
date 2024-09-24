@@ -5,6 +5,10 @@
 # ===----------------------------------------------------------------------=== #
 """Contains information about the GPUs."""
 
+from math import ceildiv, floor
+from sys import env_get_string
+
+alias DEFAULT_GPU_ARCH = env_get_string["DEFAULT_GPU_ARCH", "sm_80"]()
 
 # ===----------------------------------------------------------------------===#
 # A100
@@ -375,7 +379,7 @@ fn _get_info_from_target[target_arch: StringLiteral]() -> Info:
     elif target_arch in ("cuda-sm_90", "cuda-sm_90a", "sm_90", "sm_90a"):
         return H100
 
-    return A100
+    return _get_info_from_target[DEFAULT_GPU_ARCH]()
 
 
 @always_inline("nodebug")
@@ -389,4 +393,4 @@ fn _get_compute(target_arch: String) -> Float32:
     elif target_arch in ("cuda-sm_90", "cuda-sm_90a", "sm_90", "sm_90a"):
         return H100.compute
 
-    return A100.compute
+    return _get_info_from_target[DEFAULT_GPU_ARCH]().compute
