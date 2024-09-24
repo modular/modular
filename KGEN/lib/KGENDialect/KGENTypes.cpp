@@ -147,17 +147,21 @@ std::optional<int64_t> TypeType::getTypeAlign(TargetInfoAttr target) const {
 }
 
 /// Write an opaque symbolic attribute to memory.
-static ErrorOrSuccess writeSymbolicAttribute(DataLayoutInterface type,
-                                             TypedAttr value, int64_t addr,
-                                             InterpreterState &state) {
-  ErrorOr<void *> mem =
-      state.getWritableMemory(addr, *type.getTypeSize(state.getTarget()));
+static ErrorOrSuccess
+writeSymbolicAttribute(DataLayoutInterface type, TypedAttr value, int64_t addr,
+                       InterpreterState &state,
+                       RegionMark regionMark = RegionMark::None) {
+  unsigned size = *type.getTypeSize(state.getTarget());
+  unsigned ptrSize = state.getTarget().getDataLayout().getPointerSize();
+  // The ptr to the symbol is written.
+  if (size != ptrSize && regionMark == RegionMark::Symbol)
+    size = ptrSize;
+  ErrorOr<void *> mem = state.getWritableMemory(addr, size, regionMark);
   if (mem)
     return mem.takeError();
 
   // Without a concrete runtime representation, just make sure the value can be
   // roundtripped.
-  unsigned ptrSize = state.getTarget().getDataLayout().getPointerSize();
   llvm::StoreIntToMemory(
       APInt(ptrSize * 8, (uint64_t)value.getAsOpaquePointer()), (uint8_t *)*mem,
       ptrSize);
@@ -498,7 +502,7 @@ SignatureType::getTypeAlign(TargetInfoAttr target) const {
 
 ErrorOrSuccess SignatureType::writeTo(TypedAttr value, int64_t addr,
                                       InterpreterState &state) const {
-  return writeSymbolicAttribute(*this, value, addr, state);
+  return writeSymbolicAttribute(*this, value, addr, state, RegionMark::Symbol);
 }
 
 ErrorOr<TypedAttr> SignatureType::readFrom(int64_t addr,
@@ -613,7 +617,7 @@ ErrorOrSuccess PointerType::writeTo(TypedAttr value, int64_t addr,
                                     InterpreterState &state) const {
   int64_t size = *getTypeSize(state.getTarget());
   ErrorOr<void *> mem =
-      state.getWritableMemory(addr, size, /*writePointer=*/true);
+      state.getWritableMemory(addr, size, RegionMark::Pointer);
   if (mem.isError())
     return mem.takeError();
   // The pointer size of the target is variable.
