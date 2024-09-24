@@ -292,18 +292,6 @@ class Model:
         return [TensorSpec._init(spec) for spec in self._impl.output_metadata]
 
     @property
-    def stats_report(self) -> Dict[str, Any]:
-        """
-        Metadata about model compilation (PyTorch only).
-
-        Prints a list of "fallback ops", which are ops that could not be lowered
-        to our internal dialect MO. Fallback ops have to be executed using the
-        original framework (i.e. PyTorch), which makes the model much slower.
-        This function is a good starting point for debugging model performance.
-        """
-        return json.loads(self._impl.stats_report)
-
-    @property
     def device(self) -> Device:
         """
         Returns the device object that the session is configured for.
@@ -752,6 +740,18 @@ class InferenceSession:
                     "Debug print output directory cannot be empty."
                 )
         self._impl.set_debug_print_options(style, precision, output_directory)
+
+    @property
+    def stats_report(self) -> Dict[str, Any]:
+        """
+        Metadata about model compilation (PyTorch only).
+
+        Prints a list of "fallback ops", which are ops that could not be lowered
+        to our internal dialect MO. Fallback ops have to be executed using the
+        original framework (i.e. PyTorch), which makes the model much slower.
+        This function is a good starting point for debugging model performance.
+        """
+        return json.loads(self._impl.stats_report)
 
 
 def remove_annotations(cls: Type) -> Type:
