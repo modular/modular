@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 from buffer import DimList, NDBuffer, Dim
 from collections import Optional, OptionalReg
-from math import isqrt
+from math import gcd, isqrt
 from memory import UnsafePointer
 from sys.info import _current_target, simdwidthof
 from utils import Index
@@ -1502,11 +1502,11 @@ fn _fused_qk_rope[
                 )
 
     alias compile_target = _current_target() if target == "cpu" else _get_nvptx_target()
-    alias simd_width = simdwidthof[type, target=compile_target]()
-    constrained[
-        (k_cache.kv_params.head_size % simd_width) == 0,
-        "Invalid simd_width and head size",
-    ]()
+    alias target_simd_width = simdwidthof[type, target=compile_target]()
+    alias kernel_simd_width = gcd(
+        target_simd_width, k_cache.kv_params.head_size
+    )
+    constrained[kernel_simd_width >= 2, "invalid simd_width and head size"]()
 
     var launch_shape = StaticIntTuple[4](
         batch_size,
@@ -1514,7 +1514,7 @@ fn _fused_qk_rope[
         num_q_heads + num_k_heads,  # concat q and k along head dim
         head_size,
     )
-    elementwise[func=rope_fn, simd_width=simd_width, target=target](
+    elementwise[func=rope_fn, simd_width=kernel_simd_width, target=target](
         launch_shape, context.get_device_context()
     )
 
@@ -1533,7 +1533,7 @@ fn flash_attention_kv_cache_h6_d48_bshd[
         ),
     ],
     v: ContiguousKVCache[type, k.kv_params],
-    mask: NDBuffer[type, 2, *_],
+    mask: NDBuffer[type, *_],
     scale: NDBuffer[DType.float32, 1, *_],
     output: NDBuffer[type, 4, *_],
     context: MojoCallContextPtr,
@@ -1560,7 +1560,7 @@ fn flash_attention_kv_cache_h6_d48_bhsd[
         ),
     ],
     v: ContiguousKVCache[type, k.kv_params],
-    mask: NDBuffer[type, 2, *_],
+    mask: NDBuffer[type, *_],
     scale: NDBuffer[DType.float32, 1, *_],
     output: NDBuffer[type, 4, *_],
     context: MojoCallContextPtr,
@@ -1641,7 +1641,7 @@ fn flash_attention_kv_cache_h1_d10_bshd[
         ),
     ],
     v: ContiguousKVCache[type, k.kv_params],
-    mask: NDBuffer[type, 2, *_],
+    mask: NDBuffer[type, *_],
     scale: NDBuffer[DType.float32, 1, *_],
     output: NDBuffer[type, 4, *_],
     context: MojoCallContextPtr,
@@ -1668,7 +1668,7 @@ fn flash_attention_kv_cache_h1_d10_bhsd[
         ),
     ],
     v: ContiguousKVCache[type, k.kv_params],
-    mask: NDBuffer[type, 2, *_],
+    mask: NDBuffer[type, *_],
     scale: NDBuffer[DType.float32, 1, *_],
     output: NDBuffer[type, 4, *_],
     context: MojoCallContextPtr,
