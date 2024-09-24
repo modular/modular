@@ -9,6 +9,7 @@ import * as vscode from 'vscode';
 import { Logger } from './logging';
 import { MojoSDKManager } from './sdk/sdkManager';
 import { MojoLSPManager } from './lsp/lsp';
+import * as configWatcher from './utils/configWatcher';
 import { DisposableContext } from './utils/disposableContext';
 import { MojoTestManager } from './testing/testing';
 import { registerFormatter } from './formatter';
@@ -96,6 +97,12 @@ Activating the Mojo Extension
         this.extensionContext
       );
       this.pushSubscription(sdkManager);
+
+      this.pushSubscription(
+        await configWatcher.activate({
+          settings: ['SDK.additionalSDKs'],
+        })
+      );
 
       // Initialize the restart command, which can optionally receive an
       // initialization SDK to force the extension to use it without

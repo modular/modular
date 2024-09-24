@@ -7,6 +7,7 @@
 import * as ini from 'ini';
 import * as path from 'path';
 import * as vscode from 'vscode';
+import * as config from '../utils/config';
 import { Logger } from '../logging';
 import { DisposableContext } from '../utils/disposableContext';
 import { MojoSDKConfig } from './sdkConfig';
@@ -367,12 +368,51 @@ export class MojoSDKManager extends DisposableContext {
   }
 
   private async findAllSDKs(): Promise<MojoSDKSpec[]> {
-    const [devSDKSpecs, releaseSDKSpecs] = await Promise.all([
-      this.findDevSDKSpecs(),
-      this.findReleaseSDKSpecs(),
-    ]);
+    const [devSDKSpecs, releaseSDKSpecs, userProvidedSDKSpecs] =
+      await Promise.all([
+        this.findDevSDKSpecs(),
+        this.findReleaseSDKSpecs(),
+        this.findUserProvidedSDKSpecs(),
+      ]);
 
-    return [...devSDKSpecs, ...releaseSDKSpecs];
+    return [...devSDKSpecs, ...releaseSDKSpecs, ...userProvidedSDKSpecs];
+  }
+
+  private async findUserProvidedSDKSpecs(): Promise<MojoSDKSpec[]> {
+    const additionalRoots = config.get<string[]>(
+      'SDK.additionalSDKs',
+      undefined,
+      []
+    );
+    const specs = await Promise.all(
+      additionalRoots.map(async (modularHomePath) => {
+        const modularConfig = path.join(modularHomePath, 'modular.cfg');
+        const contents = await readFile(modularConfig);
+        if (contents === undefined) {
+          this.logger.main.logError(
+            `Unable to read ${modularConfig}. Skipping the user-provided SDK ${modularHomePath}`
+          );
+          return undefined;
+        }
+        const section = contents.includes('[mojo-max-nightly]')
+          ? 'mojo-max-nightly'
+          : 'mojo-max';
+        const spec: MojoSDKSpec = {
+          kind: 'custom',
+          modularHomePath,
+          version: new MojoSDKVersion(
+            'MAX SDK',
+            '-1',
+            '-1',
+            '-1',
+            modularHomePath
+          ),
+          section,
+        };
+        return spec;
+      })
+    );
+    return specs.filter((spec): spec is MojoSDKSpec => spec !== undefined);
   }
 
   private async findDevSDKSpecs(): Promise<MojoSDKSpec[]> {

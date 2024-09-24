@@ -59,11 +59,15 @@ async function promptRestart(settingName: string, promptMessage: string) {
  *  Activate watchers that track configuration changes for the given workspace
  *  folder, or undefined if the workspace is top-level.
  */
-export async function activate(
-  workspaceFolder: Optional<vscode.WorkspaceFolder>,
-  settings: string[],
-  paths: string[]
-): Promise<DisposableContext> {
+export async function activate({
+  workspaceFolder,
+  settings,
+  paths,
+}: {
+  workspaceFolder?: Optional<vscode.WorkspaceFolder>;
+  settings?: Optional<string[]>;
+  paths?: Optional<string[]>;
+}): Promise<DisposableContext> {
   // Flag that controls whether a restart event was issued. This is used to
   // prevent multiple simultaneous restarts caused by, for example, multiple
   // watchers being triggered at once.
@@ -80,7 +84,7 @@ export async function activate(
   // When a configuration change happens, check to see if we should restart.
   disposables.pushSubscription(
     vscode.workspace.onDidChangeConfiguration((event) => {
-      for (const setting of settings) {
+      for (const setting of settings || []) {
         const expandedSetting = `mojo.${setting}`;
         if (event.affectsConfiguration(expandedSetting, workspaceFolder)) {
           promptRestartOnce(
@@ -100,7 +104,7 @@ export async function activate(
     ignoreInitial: true,
     awaitWriteFinish: true,
   };
-  for (const serverPath of paths) {
+  for (const serverPath of paths || []) {
     // If the path actually exists, track it in case it changes.
     const fileWatcher = chokidar.watch(serverPath, fileWatcherConfig);
     fileWatcher.on('all', (event, _filename, _details) => {

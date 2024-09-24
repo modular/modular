@@ -119,10 +119,13 @@
       "type": "object",
       "title": "Mojo",
       "properties": {
-        "mojo.modularHomePath": {
-          "scope": "resource",
-          "type": "string",
-          "description": "The path to the MODULAR_HOME containing the Mojo SDK installation. It should be a folder containing a modular.cfg file."
+        "mojo.SDK.additionalSDKs": {
+          "scope": "machine",
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "A list of MAX SDK roots (folders containing a modular.cfg file) available to the extension when determining a default SDK to use. Corrupt or erroneous folders will be ignored. You can select the default SDK to use with the `Mojo: Select the default MAX SDK` command."
         },
         "mojo.onSettingsChanged": {
           "type": "string",
