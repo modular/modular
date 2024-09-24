@@ -391,7 +391,7 @@ kgen.generator @fill_ptr() -> !ptr_t {
 
 // CHECK-LABEL: kgen.func export @pointer_overwrite
 kgen.generator export @pointer_overwrite() {
-  // CHECK-NEXT: memref<[([[BLOB1]], heap, [(16, 1, 0)], []), ([[BLOB2]], heap, [], [])], 0, 0>>
+  // CHECK-NEXT: memref<{[([[BLOB1]], heap, [(16, 1, 0)], []), ([[BLOB2]], heap, [], [])], []}, 0, 0>>
   kgen.param.constant: !ptr_t = <apply(:() -> !ptr_t @fill_ptr)>
   kgen.return
 }
@@ -507,7 +507,7 @@ kgen.generator export @interpret_pack_load() -> !kgen.pack<[si4, ui8]> {
 
 // -----
 
-#mem = #interp.memref<[(#interp.memory_handle<64, "0x0700000000000000">, heap, [], [])], 0, 0> : !kgen.pointer<index>
+#mem = #interp.memref<{[(#interp.memory_handle<64, "0x0700000000000000">, heap, [], [])], []}, 0, 0> : !kgen.pointer<index>
 
 // COM: Ensure 'load_from_mem' externalizes pointer values.
 
@@ -520,7 +520,7 @@ kgen.generator @xd() {
 
 // -----
 
-#mem = #interp.memref<[(#interp.memory_handle<64, "0x0700000000000000">, heap, [], [])], 0, 0> : !kgen.pointer<index>
+#mem = #interp.memref<{[(#interp.memory_handle<64, "0x0700000000000000">, heap, [], [])], []}, 0, 0> : !kgen.pointer<index>
 
 // COM: Ensure results of kgen.param.constant are internalized.
 
@@ -575,8 +575,7 @@ kgen.generator export @materialize() -> index {
 
 // -----
 
-// TODO: check contents when opaque pointers are removed
-// CHECK-DAG: #memory_handle = #interp.memory_handle<8, "0x{{.*}}">
+// CHECK-DAG: #memory_handle = #interp.memory_handle<8, "0x0000000000000000">
 kgen.generator @target(%arg0 : index) -> index {
   kgen.return %arg0 : index
 }
@@ -585,10 +584,10 @@ kgen.generator @testExternalization(%arg0: !kgen.pointer<(index) -> index>) -> !
    kgen.return %arg0 : !kgen.pointer<(index) -> index>
 }
 
-// CHECK-LABEL: kgen.func @"testInternalization
+// CHECK-LABEL: kgen.func @"testInternalization{{.*}}() -> index {
 kgen.generator @testInternalization<ptr: !kgen.pointer<(index) -> index>>() -> index {
   %0 = kgen.param.constant = <7>
-  // CHECK: %pointer = kgen.param.constant: pointer<(index) -> index> = <#interp.memref<[(#memory_handle, stack, [], [0])], 0, 0>>
+  // CHECK: %pointer = kgen.param.constant: pointer<(index) -> index> = <#interp.memref<{[(#memory_handle, stack, [], [0])], [#kgen.symbol.constant<@target> : !kgen.signature<(index) -> index>]}, 0, 0>>
   %pointer = kgen.param.constant: pointer<(index) -> index> = <ptr>
   %3 = pop.load %pointer : !kgen.pointer<(index) -> index>
   %4 = kgen.call_indirect %3(%0) : (index) -> index
@@ -610,16 +609,16 @@ kgen.generator export @root() -> index {
 
 // COM: MOCO-1048 is a bug triggered by Memrefs in Symbol Constants Not Being Properly Internalized/Externalized By Interpreter
 
-#mem = #interp.memref<[(#interp.memory_handle<64, "0x0300000000000000">, heap, [], [])], 0, 0> : !kgen.pointer<index>
+#mem = #interp.memref<{[(#interp.memory_handle<64, "0x0300000000000000">, heap, [], [])], []}, 0, 0> : !kgen.pointer<index>
 
 // The target symbol must have the following to trigger error state:
 // A bound parameter that contains a MemRef attribute
 // An unbound parameter (idx_type) to prevent the symbol from being concretized before its stored to mem.
 // CHECK-DAG: [[MHVal:#.*]] = #interp.memory_handle<64, "0x0300000000000000">
-// CHECK-DAG: [[MHSig:#.*]] = #interp.memory_handle<8, "0x{{.*}}">
+// CHECK-DAG: [[MHSig:#.*]] = #interp.memory_handle<8, "0x0000000000000000">
 // CHECK-LABEL: kgen.func @"captureIt{{.*}}"(%arg0: index) -> index {
 kgen.generator @"captureIt"<dst_layout: pointer<index>, idx_type: dtype>(%arg0: index) -> index {
-  // CHECK-NEXT: %pointer = kgen.param.constant: pointer<index> = <#interp.memref<[([[MHVal]], heap, [], []), ([[MHSig]], stack, [], [0])], 0, 0>>
+  // CHECK-NEXT: %pointer = kgen.param.constant: pointer<index> = <#interp.memref<{[([[MHVal]], heap, [], []), ([[MHSig]], stack, [], [0])], [#kgen.symbol.constant<@captureIt<:pointer<index> #interp<coord(0, 0)>, :dtype ?>> : !kgen.signature<<dtype>(index) -> index>]}, 0, 0>>
   %pointer = kgen.param.constant: pointer<index> = <dst_layout>
   %3 = pop.load %pointer : !kgen.pointer<index>
   kgen.return %3 : index

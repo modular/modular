@@ -2064,3 +2064,4 @@ kgen.generator @gen_structs() {
 kgen.generator export @exported_parametric<param>() {
   kgen.return
 }
+

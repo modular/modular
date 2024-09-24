@@ -504,7 +504,8 @@ Value VariantHelper::materializeLLVMUnion(mlir::LLVM::LLVMArrayType type,
 
 Value InterpreterMemoryConverter::MaterializationScope::convertMemRef(
     ImplicitLocOpBuilder &b, MemRefAttr ref) {
-  MaterializedBlobs &materialized = getOrMaterialize(b, ref.getMemory());
+  MaterializedBlobs &materialized =
+      getOrMaterialize(b, ref.getModel().getMemory());
   Value ptr = getBlobPointer(b, imc.tc.convertType(ref.getType()), materialized,
                              ref.getIndex(), ref.getOffset());
   return b.create<LLVM::BitcastOp>(imc.tc.convertType(ref.getType()), ptr);

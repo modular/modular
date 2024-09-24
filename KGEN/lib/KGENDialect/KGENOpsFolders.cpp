@@ -58,7 +58,7 @@ LogicalResult ParamMaterializeOp::canonicalize(ParamMaterializeOp op,
 
   mlir::AttrTypeWalker walker;
   walker.addWalk([&](MemRefAttr ref) {
-    for (MemoryBlobAttr blob : ref.getMemory())
+    for (MemoryBlobAttr blob : ref.getModel().getMemory())
       if (blob.getKind() != MemoryKind::ConstGlobal)
         return WalkResult::interrupt();
     return WalkResult::advance();
