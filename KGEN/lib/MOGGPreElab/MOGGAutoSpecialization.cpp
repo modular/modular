@@ -26,14 +26,14 @@
 
 #include "Helpers.h"
 
-#define DEBUG_TYPE "mogg-autoparameterize"
+#define DEBUG_TYPE "mogg-autospecialize"
 
 using namespace M;
 using namespace KGEN;
 using namespace MOGGPreElab;
 
 namespace M::KGEN::MOGGPreElab {
-#define GEN_PASS_DEF_MOGGAUTOPARAMETERIZE
+#define GEN_PASS_DEF_MOGGAUTOSPECIALIZE
 #include "KGEN/MOGGPreElab/MOGGPreElabPasses.h.inc"
 } // namespace M::KGEN::MOGGPreElab
 
@@ -428,9 +428,9 @@ static GeneratorOp specializeOnSpec(CallGraphNode *node,
 }
 
 namespace {
-class MOGGAutoparameterizePass
-    : public M::KGEN::MOGGPreElab::impl::MOGGAutoparameterizeBase<
-          MOGGAutoparameterizePass> {
+class MOGGAutospecializePass
+    : public M::KGEN::MOGGPreElab::impl::MOGGAutospecializeBase<
+          MOGGAutospecializePass> {
 public:
   ErrorOr<TensorSpecKGEN> getTensorSpecTemplate(ModuleOp &mod) {
     TensorSpecKGEN specTemplate;
@@ -480,7 +480,7 @@ public:
     cg.build(mod, symTab);
 
     SmallVector<CallGraphNode *> worklist;
-    // Collect all kernels which need to be autoparameterized with tensor spec.
+    // Collect all kernels which need to be autospecialized with tensor spec.
     for (GeneratorOp gen : mod.getOps<GeneratorOp>()) {
       // If this is not an DPS kernel skip.
       if (!isDPSKernel(gen))

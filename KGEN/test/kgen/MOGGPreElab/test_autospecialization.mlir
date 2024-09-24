@@ -1,4 +1,4 @@
-// RUN: kgen-opt %s --mogg-autoparameterize | FileCheck %s
+// RUN: kgen-opt %s --mogg-autospecialize | FileCheck %s
 
 // Note, the structs (e.g. `ManagedTensorSlice`) are refer to stubbed classes to
 // be used for testing.

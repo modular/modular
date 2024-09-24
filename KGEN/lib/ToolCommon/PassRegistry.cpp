@@ -67,7 +67,7 @@ void KGEN::registerDefaultKGENPasses() {
   DebugInfo::registerDebugInfoStrip();
 
   KGEN::MOGGPreElab::registerMOGGAnnotate();
-  KGEN::MOGGPreElab::registerMOGGAutoparameterize();
+  KGEN::MOGGPreElab::registerMOGGAutospecialize();
   KGEN::MOGGPreElab::registerMOGGPreElabPipeline();
   KGEN::MOGGPreElab::registerOutlineMOGGFuncs();
   KGEN::MOGGPreElab::registerSliceMOGGFuncs();

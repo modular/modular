@@ -115,7 +115,7 @@ def MOGGPreElabPipeline : Pass<"mogg-pre-elab-pipeline", "ModuleOp"> {
   ];
 }
 
-def MOGGAutoparameterize : Pass<"mogg-autoparameterize", "ModuleOp"> {
+def MOGGAutospecialize : Pass<"mogg-autospecialize", "ModuleOp"> {
   let summary = "Add a spec parameter to each tensor on kernels and propagate them";
   let description = [{
     Tensors are often times associated with static values like shape which the
