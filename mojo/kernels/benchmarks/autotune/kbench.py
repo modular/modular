@@ -12,7 +12,7 @@ from collections.abc import Iterable
 from dataclasses import InitVar, dataclass, field
 from itertools import chain
 from pathlib import Path
-from typing import Dict, List, Optional, Sequence, Tuple, Union
+from typing import Dict, List, Set, Optional, Sequence, Tuple, Union
 import os
 import string
 import sys
@@ -70,15 +70,16 @@ def flatten(value) -> List[object]:
 class ParamSpace:
     name: str
     value: object
-    value_list: List[object] = field(default_factory=list)
+    value_set: Set[object] = field(default_factory=set)
     length: int = 0
 
     def __post_init__(self):
         """Flatten the values in self.value and store them in a List
         Also, get the length of value list and store it in `length`.
         """
-        self.value_list = flatten(self.value)
-        self.length = len(self.value_list)
+        self.value_set = set(flatten(self.value))
+        self.value = None
+        self.length = len(self.value_set)
 
 
 @dataclass(frozen=True, repr=True)
@@ -184,6 +185,65 @@ class Spec:
                 spec.join(spec_ld)
         return spec
 
+    @staticmethod
+    def parse_params(param_list):
+        """
+        Parse the parameters as (key,value) dictionary.
+        The parameters can be defined as follows:
+        - `PARAM_NAME=PARAM_VALUE` (single value)
+        - `PARAM_NAME:PARAM_VALUE` (single value)
+        - `PARAM_NAME=[PARAM_VALUE0, PARAM_VALUE1]` (Pythonic list of values)
+        - `PARAM_NAME:[PARAM_VALUE0, PARAM_VALUE1]` (Pythonic list of values)
+
+        Args:
+            param_list (List): a list of param-value's as strings/
+
+        Returns:
+            Spec: Dictionary of with extra param names as keys and param values.
+        """
+        d = {}
+        IFS = ["=", ":"]
+        for p in param_list:
+            for sep in IFS:
+                if sep in p:
+                    name, val = p.split(sep)
+                    break
+
+            if name not in d.keys():
+                d[name] = []
+
+            # This supports list of params per one definition
+            # The following works for parsing a single-value, or a Pythonic list of values.
+            vals = val.split(",")
+            vals[0] = vals[0].strip("[")
+            vals[-1] = vals[-1].strip("]")
+            for i, v in enumerate(vals):
+                v = v.strip()
+                try:
+                    vals[i] = eval(v)
+                except:
+                    vals[i] = v
+            d[name].extend(vals)
+        return d
+
+    def extend_params(self, param_list):
+        # Expand with CLI params
+        extra_params = self.parse_params(param_list)
+
+        # For all params in each config either, update the exisiting `value_set`` with the new param value(s).
+        for cfg in self.params:
+            for k, v in extra_params.items():
+                found = False
+                for ps in cfg:
+                    if ps.name == k:
+                        ps.value_set.update(v)
+                        found = True
+                        break
+                if not found:
+                    cfg.append(ParamSpace(k, v))
+
+        self.setup_mesh()
+
     def dump_yaml(self, out_path: Path):
         assert self.instances, "There are no instances to write to YAML!"
         obj = {
@@ -227,6 +287,9 @@ class Spec:
         return self.mesh_size
 
     def __post_init__(self):
+        self.setup_mesh()
+
+    def setup_mesh(self):
         """
         Setup a mesh (cartesian product) of all values for all params. For example,
         if we have 2 set of params M=[64,256] and N=[A,B,C], the mesh will include
@@ -247,10 +310,14 @@ class Spec:
         Return the total size of mesh.
         """
 
+        # clear instances just in case it is already populated
+        # TODO: better way to separate post_init and mesh_Gen
+        self.instances = []  # field(default_factory=list)
+
         # params
         for cfg in self.params:
             name_list = [p.name for p in cfg]
-            param_list = [p.value_list for p in cfg]
+            param_list = [p.value_set for p in cfg]
             param_mesh = list(product(*param_list))
             num_params = len(cfg)
             for idx in range(len(param_mesh)):
@@ -328,6 +395,13 @@ class Spec:
         self.mesh_idx = self.mesh_idx + 1
         return self.instances[idx]
 
+    def __repr__(self) -> str:
+        rs = [f"[{i}] {str(s)}" for i, s in enumerate(self.instances)]
+        rs += [LINE]
+        rs += [f"Num Instances: {len(self.instances)}"]
+        rs += [LINE]
+        return "\n".join(rs)
+
 
 SPEC_CONTENT = """
 name: multistage_gemm
@@ -361,14 +435,20 @@ def run(
     yaml_path_list,
     yaml_rewrite_path=None,
     output_path=None,
-    tune=True,
+    tune=False,
+    param_list=None,
     filter_list=None,
     dryrun=False,
     verbose=False,
     tmp_path=None,
 ):
     # Load specs from a list of YAML files and join them in 'spec'.
+    assert len(yaml_path_list), "There should be at least 1 YAML as input."
     spec = Spec.load_yaml_list(yaml_path_list)
+
+    # Expand with CLI params
+    if param_list:
+        spec.extend_params(param_list)
 
     # Apply the filters, if any.
     if filter_list:
@@ -377,6 +457,9 @@ def run(
     # Rewrite the specs to yaml_rewrite_path, if any defined.
     if yaml_rewrite_path:
         spec.dump_yaml(Path(yaml_rewrite_path))
+
+    if verbose:
+        print(spec)
 
     output_path_list: Dict[int, Path] = {}
     spec_list: Dict[int, SpecInstance] = {}
@@ -513,6 +596,9 @@ help_str = (
     default=False,
     help="Tune or just run.",
 )
+@click.option(
+    "--param", default=(), help="Set extra params from CLI.", multiple=True
+)
 @click.option("--force", "-f", is_flag=True, default=False, help="Force.")
 @click.option(
     "--dryrun",
@@ -530,15 +616,20 @@ def cli(
     filter,
     output_path,
     tune,
+    param,
     force,
     dryrun,
     verbose,
 ) -> bool:
+    if not verbose:
+        sys.tracebacklimit = 1
+
     run(
         yaml_path_list=yaml_path,
         yaml_rewrite_path=yaml_rewrite_path,
         output_path=output_path,
         tune=tune,
+        param_list=param,
         filter_list=filter,
         dryrun=dryrun,
         verbose=verbose,
