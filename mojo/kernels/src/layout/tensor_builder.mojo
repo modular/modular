@@ -4,11 +4,35 @@
 #
 # ===----------------------------------------------------------------------=== #
 from layout import Layout, LayoutTensor
-from utils import StaticIntTuple
+from utils import StaticIntTuple, StaticTuple, Index
 from .int_tuple import UNKNOWN_VALUE
 from memory import UnsafePointer
 from memory.reference import AddressSpace, _GPUAddressSpace
 from sys import triple_is_nvidia_cuda
+
+
+struct ValueOrUnknown[dim: Int = UNKNOWN_VALUE]:
+    var value: Int
+
+    fn __init__(inout self):
+        constrained[
+            not dim == UNKNOWN_VALUE,
+            "Can't construct a dynamic dim with no runtime value",
+        ]()
+        self.value = dim
+
+    fn __init__(inout self, v: Int):
+        self.value = v
+
+
+@always_inline
+fn static[d: Int]() -> ValueOrUnknown[d]:
+    return ValueOrUnknown[d]()
+
+
+@always_inline
+fn dynamic(d: Int) -> ValueOrUnknown:
+    return ValueOrUnknown(d)
 
 
 fn _to_int_tuple[n: Int](static_tuple: StaticIntTuple[n]) -> IntTuple:
@@ -53,6 +77,80 @@ struct LayoutTensorBuild[
     fn __init__(inout self):
         self.runtime_layout = __type_of(self.runtime_layout)()
 
+    fn row_major(
+        self, shape0: ValueOrUnknown, shape1: ValueOrUnknown
+    ) -> LayoutTensorBuild[
+        dtype,
+        __layout = Layout.row_major(shape0.dim, shape1.dim),
+        __layout_init=True,
+    ] as res:
+        return __type_of(res)(
+            __type_of(res.runtime_layout).row_major(
+                Index(shape0.value, shape1.value)
+            )
+        )
+
+    fn row_major(
+        self,
+        shape0: ValueOrUnknown,
+        shape1: ValueOrUnknown,
+        shape2: ValueOrUnknown,
+    ) -> LayoutTensorBuild[
+        dtype,
+        __layout = Layout.row_major(shape0.dim, shape1.dim, shape2.dim),
+        __layout_init=True,
+    ] as res:
+        return __type_of(res)(
+            __type_of(res.runtime_layout).row_major(
+                Index(shape0.value, shape1.value, shape2.value)
+            )
+        )
+
+    fn row_major(
+        self,
+        shape0: ValueOrUnknown,
+        shape1: ValueOrUnknown,
+        shape2: ValueOrUnknown,
+        shape3: ValueOrUnknown,
+    ) -> LayoutTensorBuild[
+        dtype,
+        __layout = Layout.row_major(
+            shape0.dim, shape1.dim, shape2.dim, shape3.dim
+        ),
+        __layout_init=True,
+    ] as res:
+        return __type_of(res)(
+            __type_of(res.runtime_layout).row_major(
+                Index(shape0.value, shape1.value, shape2.value, shape3.value)
+            )
+        )
+
+    fn row_major(
+        self,
+        shape0: ValueOrUnknown,
+        shape1: ValueOrUnknown,
+        shape2: ValueOrUnknown,
+        shape3: ValueOrUnknown,
+        shape4: ValueOrUnknown,
+    ) -> LayoutTensorBuild[
+        dtype,
+        __layout = Layout.row_major(
+            shape0.dim, shape1.dim, shape2.dim, shape3.dim, shape4.dim
+        ),
+        __layout_init=True,
+    ] as res:
+        return __type_of(res)(
+            __type_of(res.runtime_layout).row_major(
+                Index(
+                    shape0.value,
+                    shape1.value,
+                    shape2.value,
+                    shape3.value,
+                    shape4.value,
+                )
+            )
+        )
+
     fn row_major[
         *d: Int
     ](self) -> LayoutTensorBuild[
@@ -72,6 +170,80 @@ struct LayoutTensorBuild[
         __layout_init=True,
     ] as res:
         return __type_of(res)(__type_of(res.runtime_layout).row_major(shapes))
+
+    fn col_major(
+        self, shape0: ValueOrUnknown, shape1: ValueOrUnknown
+    ) -> LayoutTensorBuild[
+        dtype,
+        __layout = Layout.col_major(shape0.dim, shape1.dim),
+        __layout_init=True,
+    ] as res:
+        return __type_of(res)(
+            __type_of(res.runtime_layout).col_major(
+                Index(shape0.value, shape1.value)
+            )
+        )
+
+    fn col_major(
+        self,
+        shape0: ValueOrUnknown,
+        shape1: ValueOrUnknown,
+        shape2: ValueOrUnknown,
+    ) -> LayoutTensorBuild[
+        dtype,
+        __layout = Layout.col_major(shape0.dim, shape1.dim, shape2.dim),
+        __layout_init=True,
+    ] as res:
+        return __type_of(res)(
+            __type_of(res.runtime_layout).col_major(
+                Index(shape0.value, shape1.value, shape2.value)
+            )
+        )
+
+    fn col_major(
+        self,
+        shape0: ValueOrUnknown,
+        shape1: ValueOrUnknown,
+        shape2: ValueOrUnknown,
+        shape3: ValueOrUnknown,
+    ) -> LayoutTensorBuild[
+        dtype,
+        __layout = Layout.col_major(
+            shape0.dim, shape1.dim, shape2.dim, shape3.dim
+        ),
+        __layout_init=True,
+    ] as res:
+        return __type_of(res)(
+            __type_of(res.runtime_layout).col_major(
+                Index(shape0.value, shape1.value, shape2.value, shape3.value)
+            )
+        )
+
+    fn col_major(
+        self,
+        shape0: ValueOrUnknown,
+        shape1: ValueOrUnknown,
+        shape2: ValueOrUnknown,
+        shape3: ValueOrUnknown,
+        shape4: ValueOrUnknown,
+    ) -> LayoutTensorBuild[
+        dtype,
+        __layout = Layout.col_major(
+            shape0.dim, shape1.dim, shape2.dim, shape3.dim, shape4.dim
+        ),
+        __layout_init=True,
+    ] as res:
+        return __type_of(res)(
+            __type_of(res.runtime_layout).col_major(
+                Index(
+                    shape0.value,
+                    shape1.value,
+                    shape2.value,
+                    shape3.value,
+                    shape4.value,
+                )
+            )
+        )
 
     fn col_major[
         *d: Int
