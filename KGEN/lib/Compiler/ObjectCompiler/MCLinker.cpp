@@ -6,6 +6,7 @@
 
 #include "MCLinker.h"
 #include "LLVMAccessorHelper.h"
+#include "LLVMPassesPipeline.h"
 #include "llvm/Analysis/TargetLibraryInfo.h"
 #include "llvm/Bitcode/BitcodeReader.h"
 #include "llvm/Bitcode/BitcodeWriter.h"
@@ -182,6 +183,19 @@ ErrorOr<WriteableBufferRef> MCLinker::linkAndPrint(StringRef moduleName) {
       static_cast<llvm::LLVMTargetMachine &>(targetMachine);
 
   // Add AsmPrint pass and run the pass manager.
+  passMgr.add(new llvm::TargetLibraryInfoWrapperPass(targetLibInfo));
+
+  if (KGEN::addPassesToAsmPrint(options, llvmTargetMachine, passMgr, *linkedObj,
+                                llvm::CodeGenFileType::ObjectFile, true,
+                                machineModInfoPass, mcInfos)) {
+    return Error("failed to add to ObjectFile Print pass");
+  }
+
+  const_cast<llvm::TargetLoweringObjectFile *>(
+      llvmTargetMachine.getObjFileLowering())
+      ->Initialize(machineModInfoPass->getMMI().getContext(), targetMachine);
+
+  passMgr.run(*linkedModule);
 
   // Release some of the AsyncValue memory to avoid
   // wrong version of LLVMContext destructor being called due to

@@ -11,7 +11,9 @@
 #include "llvm/Target/TargetMachine.h"
 
 namespace M::KGEN {
+
 class CompilationOptions;
+struct MCInfo;
 
 /// Build a module pass pipeline for a given set of compilation options.
 llvm::ModulePassManager
@@ -24,6 +26,24 @@ bool addPassesToEmitFile(CompilationOptions &options,
                          llvm::raw_pwrite_stream *dwoOut,
                          llvm::CodeGenFileType fileType, bool disableVerify,
                          llvm::MachineModuleInfoWrapperPass *mmiwp);
+
+/// Build a pipeline that does machine specific codgen but stops before
+/// AsmPrint.
+bool addPassesToEmitMC(CompilationOptions &options,
+                       llvm::LLVMTargetMachine &targetMachine,
+                       llvm::legacy::PassManagerBase &pm,
+                       llvm::raw_pwrite_stream &out, bool disableVerify,
+                       llvm::MachineModuleInfoWrapperPass *mmiwp,
+                       unsigned numFnBase);
+
+/// Build a pipeline that does AsmPrint only.
+bool addPassesToAsmPrint(CompilationOptions &options,
+                         llvm::LLVMTargetMachine &targetMachine,
+                         llvm::legacy::PassManagerBase &pm,
+                         llvm::raw_pwrite_stream &out,
+                         llvm::CodeGenFileType fileType, bool disableVerify,
+                         llvm::MachineModuleInfoWrapperPass *mmiwp,
+                         llvm::SmallVectorImpl<MCInfo *> &mcInfos);
 
 } // namespace M::KGEN
 

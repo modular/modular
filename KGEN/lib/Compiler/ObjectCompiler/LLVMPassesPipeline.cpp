@@ -6,6 +6,8 @@
 
 #include "LLVMPassesPipeline.h"
 #include "KGEN/ToolCommon/CompilationOptions.h"
+#include "LLVMAccessorHelper.h"
+#include "MCLinker.h"
 #include "llvm/Analysis/GlobalsModRef.h"
 #include "llvm/Analysis/OptimizationRemarkEmitter.h"
 #include "llvm/Analysis/ProfileSummaryInfo.h"
@@ -16,7 +18,6 @@
 #include "llvm/IR/PassManager.h"
 #include "llvm/Support/Process.h"
 #include "llvm/Transforms/AggressiveInstCombine/AggressiveInstCombine.h"
-#include "llvm/Transforms/Coroutines/CoroSplit.h"
 #include "llvm/Transforms/IPO/AlwaysInliner.h"
 #include "llvm/Transforms/IPO/ConstantMerge.h"
 #include "llvm/Transforms/IPO/FunctionAttrs.h"
@@ -599,4 +600,148 @@ bool M::KGEN::addPassesToEmitFile(CompilationOptions &options,
 
   return targetMachine.addPassesToEmitFile(pm, out, dwoOut, fileType,
                                            disableVerify, mmiwp);
+}
+
+/// Module pass to reset the machine function numbering base so that we can
+/// uniqueing llvm::MachineFunctions across all llvm::Module splits.
+namespace {
+class SetMachineFunctionBasePass : public llvm::ImmutablePass {
+public:
+  static char ID; // Pass identification, replacement for typeid
+  SetMachineFunctionBasePass(llvm::MachineModuleInfo &mmi, unsigned base);
+
+  // Initialization and Finalization
+  bool doInitialization(llvm::Module &) override;
+  bool doFinalization(llvm::Module &) override;
+
+private:
+  llvm::MachineModuleInfo &mmi;
+  unsigned base;
+};
+} // namespace
+
+char SetMachineFunctionBasePass::ID;
+
+SetMachineFunctionBasePass::SetMachineFunctionBasePass(
+    llvm::MachineModuleInfo &mmi, unsigned base)
+    : llvm::ImmutablePass(ID), mmi(mmi), base(base) {}
+
+// Initialization and Finalization
+bool SetMachineFunctionBasePass::doInitialization(llvm::Module &) {
+  setNextFnNum(mmi, base);
+  return false;
+}
+
+bool SetMachineFunctionBasePass::doFinalization(llvm::Module &) {
+  return false;
+}
+
+/// Build a pipeline that does machine specific codgen but stops before
+/// AsmPrint. Returns true if failed.
+bool M::KGEN::addPassesToEmitMC(CompilationOptions &options,
+                                llvm::LLVMTargetMachine &targetMachine,
+                                llvm::legacy::PassManagerBase &pm,
+                                llvm::raw_pwrite_stream &out,
+                                bool disableVerify,
+                                llvm::MachineModuleInfoWrapperPass *mmiwp,
+                                unsigned numFnBase) {
+  // Targets may override createPassConfig to provide a target-specific
+  // subclass.
+  TargetPassConfig *passConfig = targetMachine.createPassConfig(pm);
+
+  // Set PassConfig options provided by TargetMachine.
+  passConfig->setDisableVerify(disableVerify);
+  pm.add(passConfig);
+  pm.add(mmiwp);
+
+  auto smfbp = new SetMachineFunctionBasePass(mmiwp->getMMI(), numFnBase);
+  pm.add(smfbp);
+
+  if (passConfig->addISelPasses())
+    return true;
+
+  passConfig->addMachinePasses();
+  passConfig->setInitialized();
+
+  return false;
+}
+
+/// Function pass to populate external MCSymbols to other llvm module split's
+/// MCContext so that they can be unique across all splits. This uniqueing
+/// is required for ORCJIT (not for generating binary .o).
+namespace {
+class SyncX86SymbolTables : public MachineFunctionPass {
+public:
+  static char ID; // Pass identification, replacement for typeid
+  explicit SyncX86SymbolTables(SmallVectorImpl<MCInfo *> &);
+
+  bool runOnMachineFunction(MachineFunction &MF) override;
+
+private:
+  SmallVectorImpl<MCInfo *> &mcInfos;
+  DenseSet<StringRef> externSymbols;
+
+  // Populate MCSymbol to all the MCContexts.
+  void populateSymbol(StringRef, const MCSymbolTableValue &, MCContext *srcCtx);
+};
+} // namespace
+
+char SyncX86SymbolTables::ID;
+
+SyncX86SymbolTables::SyncX86SymbolTables(SmallVectorImpl<MCInfo *> &mcInfos)
+    : MachineFunctionPass(ID), mcInfos(mcInfos) {}
+
+void SyncX86SymbolTables::populateSymbol(StringRef name,
+                                         const llvm::MCSymbolTableValue &value,
+                                         MCContext *srcCtx) {
+  for (MCInfo *mcInfo : mcInfos) {
+    MCContext &currCtx = *mcInfo->mcContext;
+    if (&currCtx == srcCtx)
+      continue;
+    MCSymbolTableEntry &entry =
+        M::KGEN::getMCContextSymbolTableEntry(name, currCtx);
+    if (!entry.second.Symbol) {
+      entry.second.Symbol = value.Symbol;
+      entry.second.NextUniqueID = value.NextUniqueID;
+      entry.second.Used = value.Used;
+    }
+  }
+}
+
+bool SyncX86SymbolTables::runOnMachineFunction(MachineFunction &MF) {
+  MCContext &ctx = MF.getContext();
+  for (auto &[name, symbolEntry] : ctx.getSymbols()) {
+    if (!symbolEntry.Symbol->isExternal() || externSymbols.contains(name))
+      continue;
+    externSymbols.insert(name);
+    populateSymbol(name, symbolEntry, &ctx);
+  }
+  return false;
+}
+
+/// Build a pipeline that does AsmPrint only.
+/// Returns true if failed.
+bool M::KGEN::addPassesToAsmPrint(CompilationOptions &options,
+                                  llvm::LLVMTargetMachine &targetMachine,
+                                  llvm::legacy::PassManagerBase &pm,
+                                  llvm::raw_pwrite_stream &out,
+                                  llvm::CodeGenFileType fileType,
+                                  bool disableVerify,
+                                  llvm::MachineModuleInfoWrapperPass *mmiwp,
+                                  llvm::SmallVectorImpl<MCInfo *> &mcInfos) {
+  TargetPassConfig *passConfig = targetMachine.createPassConfig(pm);
+  if (!passConfig)
+    return true;
+  // Set PassConfig options provided by TargetMachine.
+  passConfig->setDisableVerify(disableVerify);
+  pm.add(passConfig);
+  pm.add(mmiwp);
+  passConfig->setInitialized();
+
+  bool result = targetMachine.addAsmPrinter(pm, out, nullptr, fileType,
+                                            mmiwp->getMMI().getContext());
+
+  if (options.targetTriple.find("x86") != std::string::npos)
+    pm.add(new SyncX86SymbolTables(mcInfos));
+  return result;
 }
