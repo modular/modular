@@ -2657,6 +2657,17 @@ void DestructorInsertion::scanBlock(Block &block) {
       // destructor call if this is the last use.
       for (int32_t valueId : extraUses.asArrayRef()) {
         const ValueInfo &info = valueSet.getValueInfo(valueId);
+        // NOTE: This can be useful to understand what values are getting
+        // lifetime extended and by what.  This is intended more for compiler
+        // and library development, not for users.
+#if 0
+        if (!info.getFullValueRef(valueId).isAllPresent(consumedValues)) {
+          op.emitRemark(
+              "op extended with AnyLifetime usage extended lifetime of ")
+              << info.value;
+        }
+#endif
+
         checkUse(info.value, /*isDeref*/ info.isIndirect, dtorInserter);
       }
     }
