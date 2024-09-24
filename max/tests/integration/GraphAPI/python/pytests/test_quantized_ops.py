@@ -33,7 +33,7 @@ def test_qmatmul():
     # does not validate its tensor shapes all (except that the second input's
     # first dimension is a multiple of 32) so even if this were wrong we would
     # not be able to tell.
-    generated = compiled.execute(
+    generated = compiled.execute_legacy(
         input0=np.zeros((5, 32), dtype="float32"),
         input1=np.zeros((32, 18), dtype="uint8"),
     )
@@ -55,7 +55,7 @@ def test_dequantize():
     compiled = session.load(graph)
     # TODO: This is more of a smoke test than anything; we should really add a
     # test that uses some non-zero inputs and outputs (MSDK-820).
-    generated = compiled.execute(input0=np.zeros((1, 18), dtype="uint8"))
+    generated = compiled.execute_legacy(input0=np.zeros((1, 18), dtype="uint8"))
     expected = np.zeros((1, 32))
     np.testing.assert_equal(generated["output0"], expected)
 

@@ -285,12 +285,9 @@ def test_no_devicetensor_inputs(session: InferenceSession, no_input_path: Path):
     # The device tensor execution path should support models that take in no
     # input tensors.
     model = session.load(no_input_path)
-    # We have to do this in kinda a jank way atm to force this to go through the
-    # device tensor path. This will be simplified once we deprecate the named
-    # tensor API.
-    outputs = model._impl.execute_device_tensors([])
+    outputs = model.execute()
     assert len(outputs) == 1
-    tensor_output = Tensor._from_impl(outputs[0])
+    tensor_output = outputs[0]
     output = tensor_output.to_numpy()
     expected = np.arange(1, 6, dtype=np.int32)
     assert np.array_equal(output, expected)
@@ -401,7 +398,7 @@ def test_custom_ops(
 
 def test_list_io(session: InferenceSession, mo_listio_model_path: Path):
     model_with_list_io = session.load(mo_listio_model_path)
-    output = model_with_list_io.execute(
+    output = model_with_list_io.execute_legacy(
         input_list=[np.zeros(2)], input_tensor=np.ones(5)
     )
     assert "output_list" in output
