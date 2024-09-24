@@ -1333,25 +1333,6 @@ struct LayoutTensor[
             ),
         )
 
-    @staticmethod
-    fn _compute_distribute_layout[
-        data_layout: Layout,
-        threads_layout: Layout,
-        axis: OptionalReg[Int] = None,
-    ]() -> Layout:
-        var thread_tile = LayoutList()
-
-        @parameter
-        if axis:
-            return zipped_divide(
-                data_layout, Layout(threads_layout.shape[axis.value()])
-            )
-        else:
-            for dim in threads_layout.shape:
-                thread_tile.append(Layout(dim))
-
-            return zipped_divide(data_layout, thread_tile)
-
     @always_inline
     fn distribute[
         threads_layout: Layout,
