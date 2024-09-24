@@ -191,6 +191,11 @@ class Tensor(DLPackArray):
         """
         return self._impl.num_elements
 
+    @property
+    def element_size(self) -> int:
+        """Return the size of the element type in bytes."""
+        return self.dtype.size_in_bytes
+
     @classmethod
     def from_numpy(cls, arr: np.ndarray, device: Device = CPU()) -> Tensor:
         """Creates a tensor from a provided numpy array, allocated on the
