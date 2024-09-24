@@ -191,6 +191,13 @@ struct DeviceContextVariant:
     fn __enter__(owned self) -> Self:
         return self^
 
+    fn name(self) -> String:
+        @parameter
+        if _device_ctx_v2():
+            return "DeviceContextV2"
+        else:
+            return "DeviceContextV1"
+
     fn malloc_host[
         type: AnyType
     ](self, size: Int) raises -> UnsafePointer[type]:
