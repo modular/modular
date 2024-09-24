@@ -55,6 +55,7 @@ export class MojoSDKManager extends DisposableContext {
   private isNightly: boolean;
   private extensionSemiPersistentState;
   private extensionContext: vscode.ExtensionContext;
+  private initialized: boolean = false;
 
   constructor(
     logger: Logger,
@@ -128,8 +129,10 @@ export class MojoSDKManager extends DisposableContext {
     this.pushSubscription(
       vscode.workspace.onDidChangeWorkspaceFolders(
         (e: vscode.WorkspaceFoldersChangeEvent) => {
-          for (const added of e.added) {
-            this.onPathSeenAfterInitialization(added.uri.fsPath);
+          if (this.initialized) {
+            for (const added of e.added) {
+              this.onPathSeenAfterInitialization(added.uri.fsPath);
+            }
           }
         }
       )
@@ -217,6 +220,7 @@ export class MojoSDKManager extends DisposableContext {
         ? this.initializationSDK
         : await this.selectSDK();
     this.activeSDK = { state: 'selected', sdkSpec };
+    this.initialized = true;
     return this.activeSDK;
   }
 
