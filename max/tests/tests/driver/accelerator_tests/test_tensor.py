@@ -13,7 +13,7 @@ from max.dtype import DType
 def test_from_numpy_cuda():
     # A user should be able to create a GPU tensor from a numpy array.
     arr = np.array([[1, 2, 3], [4, 5, 6]], dtype=np.int32)
-    tensor = Tensor.from_numpy(arr, device=CUDA())
+    tensor = Tensor.from_numpy(arr).to(CUDA())
     assert tensor.shape == (2, 3)
     assert tensor.dtype == DType.int32
 
@@ -40,13 +40,13 @@ def test_device_device_copy():
     # We should be able to freely copy tensors between device and device.
     cuda_device = CUDA()
 
-    host_tensor = Tensor.from_numpy(
-        np.array([1, 2, 3], dtype=np.int32), device=cuda_device
+    device_tensor1 = Tensor.from_numpy(np.array([1, 2, 3], dtype=np.int32)).to(
+        cuda_device
     )
-    device_tensor = host_tensor.copy(cuda_device)
-    tensor = device_tensor.copy(CPU())
+    device_tensor2 = device_tensor1.copy(cuda_device)
+    tensor = device_tensor2.copy(CPU())
 
-    assert tensor.shape == host_tensor.shape
+    assert tensor.shape == device_tensor1.shape
     assert tensor.dtype == DType.int32
     assert tensor[0].item() == 1
     assert tensor[1].item() == 2

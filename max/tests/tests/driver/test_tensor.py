@@ -264,6 +264,7 @@ def test_host_host_copy():
 
 
 DLPACK_DTYPES = [
+    DType.bool,
     DType.int8,
     DType.int16,
     DType.int32,
@@ -287,8 +288,13 @@ def test_from_dlpack():
         assert tensor.dtype == dtype
         assert tensor.shape == array.shape
 
-        tensor[0] = np_dtype(7)
-        assert array[0] == np_dtype(7)
+        if dtype is dtype.bool:
+            assert array[0] == False
+            tensor[0] = True
+            assert array[0] == True
+        else:
+            tensor[0] = np_dtype(7)
+            assert array[0] == np_dtype(7)
 
 
 def test_from_dlpack_copy():
@@ -321,6 +327,10 @@ def test_dlpack():
         tensor = Tensor((1, 4), dtype)
         for j in range(4):
             tensor[0, j] = j
+
+        # Numpy's dlpack implementation cannot handle its own bool types.
+        if dtype is dtype.bool:
+            continue
 
         np_dtype = dtype.to_numpy()
         array = np.from_dlpack(tensor)  # type: ignore
