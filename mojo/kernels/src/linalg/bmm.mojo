@@ -525,6 +525,7 @@ fn _batched_matmul_gpu[
     b_buf: NDBuffer[b_type, rank],
     ctx: DeviceContext,
 ):
+    constrained[not transpose_b, "transpose_b not supported on GPU yet"]()
     var a_buf_reshaped = _reshape_nd_buffer_with_batch_to_3d(a_buf)
     var b_buf_reshaped = _reshape_nd_buffer_with_batch_to_3d(b_buf)
     var c_buf_reshaped = _reshape_nd_buffer_with_batch_to_3d(c_buf)
@@ -583,6 +584,8 @@ fn batched_matmul[
     context: MojoCallContextPtr = MojoCallContextPtr(),
 ):
     constrained[target == "cpu" or "cuda" in target, "unsupported target"]()
+
+    @parameter
     if target == "cpu":
         _batched_matmul_cpu[
             rank,
