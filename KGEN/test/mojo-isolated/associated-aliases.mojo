@@ -90,6 +90,14 @@ fn testUpcastingImplicitStructWithAliasMethod():
     receiveTraitWithAliasMethod(ImplicitStructWithAliasMethod())
 
 
+# CHECK-LABEL: lit.func @"callTraitWithAliasMethod
+fn callTraitWithAliasMethod[X: TraitWithAliasMethod](t: X):
+    # CHECK: {{.*}}lit.call
+    # CHECK-SAME: "__result__": !lit.ref<@"associated-aliases"::@SIMD<:!ATrait get_type_method(:!TraitWithAliasMethod X, "T")>
+    # CHECK-SAME: : get_type_method(:!TraitWithAliasMethod X, "bork")
+    _ = t.bork()
+
+
 # TODO(MOCO-1109): also check that this works with the thunk generation for @register_passable methods
 @value
 struct GenericStructWithAliasMethod[Z: ATrait](TraitWithAliasMethod):
