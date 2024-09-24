@@ -30,6 +30,13 @@ export class MojoSDKVersion {
   }
 
   /**
+   * Return if this is a user-provided spec
+   */
+  isUserProvided(): boolean {
+    return this.minor === '-1' && this.major === '-1' && this.patch === '-1';
+  }
+
+  /**
    * Convert the version into a human readable string.
    */
   toString(): string {
@@ -38,6 +45,9 @@ export class MojoSDKVersion {
       // We include the path to the modular repo, which is three levels up from
       // the mojo driver path.
       return `${this.title} (dev) - ${this.modularHomePath}`;
+    }
+    if (this.isUserProvided()) {
+      return `${this.title} (user-provided) - ${this.modularHomePath}`;
     }
 
     // Otherwise, just format the version number.
