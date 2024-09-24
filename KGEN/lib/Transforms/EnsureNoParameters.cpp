@@ -55,6 +55,12 @@ static LogicalResult legalizeOp(Operation *op) {
       }
       return WalkResult::advance();
     });
+  } else if (auto createClosure = dyn_cast<CreateClosureOp>(op)) {
+    if (createClosure.getCalleeSignature().isCapturing()) {
+      mlir::emitError(op->getLoc(),
+                      "capturing closures cannot be materialized at runtime");
+      isFailure = true;
+    }
   }
 
   // Walk the op attrs, results, block arguments, and locations.
