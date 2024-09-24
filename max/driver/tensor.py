@@ -216,21 +216,14 @@ class Tensor(DLPackArray):
         return self._from_impl(self._impl.view(shape, dtype._to()))
 
     @classmethod
-    def from_numpy(cls, arr: np.ndarray, device: Device = CPU()) -> Tensor:
-        """Creates a tensor from a provided numpy array, allocated on the
-        provided device.
-        If the target device is a CPU, the underlying data will
-        not be copied unless the array is noncontiguous. If it is, a contiguous
-        copy will first be created.
+    def from_numpy(cls, arr: np.ndarray) -> Tensor:
+        """Creates a tensor from a provided numpy array on the host device.
 
-        If the target device is a GPU, the device will be copied
-        to the target."""
-        input_arr = arr if arr.flags["C_CONTIGUOUS"] else np.ascontiguousarray(
-            arr
-        )
-        tensor = cls._from_impl(_Tensor(input_arr, CPU()._device))
+        The underlying data is not copied unless the array is noncontiguous. If
+        it is, a contiguous copy will be returned."""
 
-        return tensor.to(device)
+        # NOTE: np.ascontiguousarray only copies if needed.
+        return cls.from_dlpack(np.ascontiguousarray(arr))
 
     def to_numpy(self) -> np.ndarray:
         """Converts the tensor to a numpy array."""
@@ -265,8 +258,14 @@ class Tensor(DLPackArray):
             if copy:
                 arr = arr.copy()
 
+            # Numpy's dlpack implementation cannot handle its own bool types, so
+            # we trick it into thinking it is uint8.
+            is_bool = arr.dtype == bool
+            if is_bool:
+                arr = arr.view(np.uint8)
+
             try:
-                return cls._from_impl(_Tensor.from_dlpack(arr))
+                tensor = cls._from_impl(_Tensor.from_dlpack(arr))
             except BufferError as e:
                 msg = str(e)
                 if msg.startswith("Cannot export readonly array"):
@@ -276,6 +275,8 @@ class Tensor(DLPackArray):
                         " `Tensor.from_dlpack`."
                     )
                 raise e
+
+            return tensor.view(DType.bool) if is_bool else tensor
 
         if copy is not None:
             raise ValueError(
@@ -315,7 +316,7 @@ class MemMapTensor(Tensor):
         # TODO(MSDK-976): Ideally, we could just use DLPack to borrow the
         # underlying memory from numpy. But our numpy version doesn't allow
         # dlpack to be used on read-only arrays (common for memmaped weights).
-        self._impl = self.from_numpy(arr)._impl
+        self._impl = _Tensor(arr, CPU()._device)
 
         # numpy does not attempt to free/close the mmap object it uses, so we
         # copy a reference to it, which should keep it alive as long as needed.
