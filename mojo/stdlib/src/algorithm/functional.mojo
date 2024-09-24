@@ -26,6 +26,7 @@ from runtime.tracing import Trace, TraceLevel, trace_arg
 
 from utils.index import Index, StaticIntTuple
 from utils.numerics import FlushDenormals
+from utils.static_tuple import StaticTuple
 from runtime.asyncrt import MojoCallContextPtr
 from runtime.tracing import Trace, TraceLevel
 from buffer import NDBuffer
@@ -1620,7 +1621,7 @@ fn _elementwise_impl_gpu[
         num_packed_elems, unpacked_tail_length, packed_region_length
     )
     @parameter
-    @__llvm_metadata(`nvvm.maxntid`=Index(block_size))
+    @__llvm_metadata(`nvvm.maxntid`=StaticTuple[Int32, 1](block_size))
     fn _elementwise_gpu_kernel[*, block_size: UInt, handle_uneven_simd: Bool]():
         # process the packed region
         var tid = ThreadIdx.x() + block_size * BlockIdx.x()
