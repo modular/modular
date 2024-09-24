@@ -114,6 +114,13 @@ private:
 // InterpreterState
 //===----------------------------------------------------------------------===//
 
+/// If a region in blob of memory requires a mapping before it can be used by
+/// the intepreter then we must mark that region. There are two cases where we
+/// mark blob regions: (1) Pointer Region: This region contains the address of
+/// another region and (2) Symbol Region: This region refers to a symbol. A
+/// Symbol is not represented in the blob.
+enum class RegionMark { None = 0, Pointer, Symbol };
+
 class InterpreterState {
 public:
   InterpreterState(MLIRContext *ctx, TargetInfoAttr target = nullptr);
@@ -175,7 +182,7 @@ public:
   /// Clobbering a pointer region is invalid. This can either be partially
   /// overwriting a pointer region with a non-pointer value or a pointer value.
   ErrorOr<void *> getWritableMemory(int64_t addr, size_t size,
-                                    bool writePointer = false);
+                                    RegionMark regionMark = RegionMark::None);
 
   /// Get readable memory for the given address to interpreter memory.
   ErrorOr<const void *> getReadableMemory(int64_t addr, size_t size);
@@ -297,8 +304,8 @@ private:
                         MemoryHandleAttr hdl);
 
     /// Mark or unmark the given region of the blob as a pointer value.
-    ErrorOrSuccess setPointerRegion(int64_t offset, int64_t regionSize,
-                                    int64_t pointerSize, bool writePointer);
+    ErrorOrSuccess setMarkedRegion(int64_t offset, int64_t regionSize,
+                                   int64_t pointerSize, RegionMark regionMark);
 
     /// Return true if the memory is owned by the interpreter.
     bool isOwned() const { return isa<void *>(memory); }
@@ -338,6 +345,8 @@ private:
     /// A bit is set for each offset value where pointer regions begin. The
     /// vector is lazily-initialized to save memory.
     std::optional<llvm::BitVector> pointerRegions;
+    /// A bit is set for each offset value where a symbol region begins.
+    std::optional<llvm::BitVector> symbolRegions;
   };
 
   /// A memory table is just a vector of blobs organized by ascending address.

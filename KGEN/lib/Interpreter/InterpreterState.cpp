@@ -52,32 +52,52 @@ InterpreterState::MemoryBlob::MemoryBlob(llvm::BumpPtrAllocator &allocator,
     : baseAddr(baseAddr), size(size), align(align), addressSpace(addressSpace),
       memory(hdl ? MemoryT(hdl) : MemoryT(allocator.Allocate(size, align))) {}
 
-ErrorOrSuccess InterpreterState::MemoryBlob::setPointerRegion(
+/// Do one of the following:
+///  (1) Mark a region as a Pointer
+///  (2) Clear a Pointer Region by passing in None to a blob with regions
+///  (3) Mark a region as a Symbol
+ErrorOrSuccess InterpreterState::MemoryBlob::setMarkedRegion(
     int64_t offset, int64_t regionSize, int64_t pointerSize,
-    bool writePointer) {
-  if (!pointerRegions) {
-    if (!writePointer)
-      return success();
-    pointerRegions.emplace(size);
-    pointerRegions->set(offset);
+    RegionMark markedRegion) {
+  std::optional<llvm::BitVector> *regionFieldPtr = nullptr;
+  bool write = false;
+  switch (markedRegion) {
+  case RegionMark::None:
+    if (pointerRegions) {
+      regionFieldPtr = &pointerRegions;
+      break;
+    }
+    return success();
+  case RegionMark::Pointer:
+    write = true;
+    regionFieldPtr = &pointerRegions;
+    break;
+  case RegionMark::Symbol:
+    write = true;
+    regionFieldPtr = &symbolRegions;
+    break;
+  }
+  std::optional<llvm::BitVector> &regionField = *regionFieldPtr;
+  if (!regionField) {
+    regionField.emplace(size);
+    regionField->set(offset);
     return success();
   }
-
   // The write clobbers a pointer region if a bit is set between
   // `(offset - pointerSize, offset)` or between
   // `(offset + size - pointerSize, offset + size)`, indicating partial
   // overwrite of a pointer region.
-  if (pointerRegions->find_first_in(
-          std::max<int64_t>(0, offset - pointerSize + 1), offset) != -1 ||
-      pointerRegions->find_first_in(
+  if (regionField->find_first_in(std::max<int64_t>(0, offset - pointerSize + 1),
+                                 offset) != -1 ||
+      regionField->find_first_in(
           std::max<int64_t>(0, offset + regionSize - pointerSize + 1),
           offset + regionSize) != -1)
     return Error("write clobbers a pointer region");
 
-  if (!writePointer)
-    pointerRegions->reset(offset, offset + regionSize);
+  if (!write)
+    regionField->reset(offset, offset + regionSize);
   else
-    pointerRegions->set(offset);
+    regionField->set(offset);
   return success();
 }
 
@@ -232,7 +252,7 @@ InterpreterState::getMemory(int64_t addr, size_t size) {
 }
 
 ErrorOr<void *> InterpreterState::getWritableMemory(int64_t addr, size_t size,
-                                                    bool writePointer) {
+                                                    RegionMark regionMark) {
   ErrorOr<std::pair<MemoryBlob &, int64_t>> memref = getMemory(addr, size);
   if (memref.isError())
     return memref.takeError();
@@ -243,10 +263,10 @@ ErrorOr<void *> InterpreterState::getWritableMemory(int64_t addr, size_t size,
   // If the access is a pointer write, then mark the region as a pointer. The
   // pointer write size must be equal to the target pointer size.
   size_t pointerSize = target.getDataLayout().getPointerSize();
-  if (writePointer && size != pointerSize)
+  if ((regionMark != RegionMark::None) && size != pointerSize)
     return Error("pointer write size is not equal to pointer bitwidth");
   if (ErrorOrSuccess err =
-          blob.setPointerRegion(offset, size, pointerSize, writePointer);
+          blob.setMarkedRegion(offset, size, pointerSize, regionMark);
       err.isError())
     return err.takeError();
 
@@ -270,7 +290,7 @@ ErrorOrSuccess InterpreterState::writeAttributeToMemory(int64_t addr,
   if (isa<IntegerAttr, FloatAttr>(value)) {
     int64_t size =
         *DataLayoutInterface::getTypeStoreSize(target, value.getType());
-    ErrorOr<void *> mem = getWritableMemory(addr, size);
+    ErrorOr<void *> mem = getWritableMemory(addr, size, RegionMark::None);
     if (mem.isError())
       return mem.takeError();
 
@@ -352,8 +372,20 @@ InterpreterState::readAttributeFromPointer(Attribute pointer,
   return Error("not a pointer constant");
 }
 
+static void
+handleMarkedRegions(function_ref<void(int)> indexHandler,
+                    const std::optional<llvm::BitVector> &bitVectorMaybe) {
+  if (bitVectorMaybe) {
+    int index = -1;
+    // Iterate over the symbol regions indices set in the bitvector.
+    while ((index = bitVectorMaybe->find_next(index)) != -1)
+      indexHandler(index);
+  }
+}
+
 ErrorOrSuccess
 InterpreterState::externalizeMemory(MutableArrayRef<Attribute> results) {
+  SmallVector<uint8_t *> symbols;
   // Lazily materialize interpreter memory.
   MemorySpaceAttr interpreterMemorySpace;
   DenseMap<const MemoryBlob *, int64_t> blobIndices;
@@ -380,25 +412,28 @@ InterpreterState::externalizeMemory(MutableArrayRef<Attribute> results) {
           continue;
 
         SmallVector<PointerRegion> pointerRegions;
-        if (blob.pointerRegions) {
-          assert(blob.isOwned() && "const memory cannot have pointers");
-          int index = -1;
-          // Iterate over the pointer regions indices set in the bitvector.
-          while ((index = blob.pointerRegions->find_next(index)) != -1) {
-            // Read out the address and map it to a blob.
-            APInt addrInt(target.getDataLayout().getPointerBitWidth(), 0);
-            llvm::LoadIntFromMemory(addrInt, (uint8_t *)blob.getOwned() + index,
-                                    target.getDataLayout().getPointerSize());
-            ErrorOr<std::pair<MemoryBlob &, int64_t>> mem =
-                getMemory(addrInt.getSExtValue(), 0);
-            // If the address is garbage, just ignore it and let it live.
-            if (mem.isError())
-              continue;
-            auto [memBlob, offset] = mem.takeValue();
-            pointerRegions.push_back(
-                PointerRegion{index, blobIndices.at(&memBlob), offset});
-          }
-        }
+        auto addPointerRegionAtIndex = [&](int index) {
+          APInt addrInt(target.getDataLayout().getPointerBitWidth(), 0);
+          llvm::LoadIntFromMemory(addrInt, (uint8_t *)blob.getOwned() + index,
+                                  target.getDataLayout().getPointerSize());
+          ErrorOr<std::pair<MemoryBlob &, int64_t>> mem =
+              getMemory(addrInt.getSExtValue(), 0);
+          // If the address is garbage, just ignore it and let it live.
+          if (mem.isError())
+            return;
+          auto [memBlob, offset] = mem.takeValue();
+          pointerRegions.push_back(
+              PointerRegion{index, blobIndices.at(&memBlob), offset});
+        };
+        handleMarkedRegions(addPointerRegionAtIndex, blob.pointerRegions);
+
+        SmallVector<int64_t> symbolRegions;
+        handleMarkedRegions(
+            [&](int index) {
+              symbolRegions.push_back(index);
+              symbols.push_back((uint8_t *)blob.getOwned() + index);
+            },
+            blob.symbolRegions);
 
         // Add the new blob value to the blob manager if one with the same value
         // does not already exist.
@@ -409,8 +444,8 @@ InterpreterState::externalizeMemory(MutableArrayRef<Attribute> results) {
         } else {
           hdl = blob.getHandle();
         }
-        blobs.push_back(MemoryBlobAttr::get(hdl, table.kind, pointerRegions, {},
-                                            blob.addressSpace));
+        blobs.push_back(MemoryBlobAttr::get(hdl, table.kind, pointerRegions,
+                                            symbolRegions, blob.addressSpace));
       }
     }
     interpreterMemorySpace = MemorySpaceAttr::get(ctx, blobs);
@@ -436,6 +471,19 @@ InterpreterState::externalizeMemory(MutableArrayRef<Attribute> results) {
     if (err)
       return std::move(*err);
   }
+
+  // Externalize the symbols.
+  for (uint8_t *slot : symbols) {
+    APInt addrInt(target.getDataLayout().getPointerBitWidth(), 0);
+    llvm::LoadIntFromMemory(addrInt, slot,
+                            target.getDataLayout().getPointerSize());
+    auto signatureValue = ::cast<TypedAttr>(Attribute::getFromOpaquePointer(
+        (const void *)addrInt.getLimitedValue()));
+    Attribute value = replacer.replace(signatureValue);
+    llvm::StoreIntToMemory(APInt(target.getDataLayout().getPointerBitWidth(),
+                                 (uint64_t)value.getAsOpaquePointer()),
+                           slot, target.getDataLayout().getPointerSize());
+  }
   return success();
 }
 
@@ -447,7 +495,7 @@ InterpreterState::internalizeMemory(MutableArrayRef<Attribute> args) {
     std::vector<std::pair<MemoryTable *, size_t>> blobs;
   };
   DenseMap<MemorySpaceAttr, InternedMemorySpace> interned;
-
+  SmallVector<uint8_t *> symbols;
   // This functor deduplicates incoming memory spaces and maps the contained
   // memory into the interpreter.
   auto getOrInternSpace =
@@ -478,9 +526,9 @@ InterpreterState::internalizeMemory(MutableArrayRef<Attribute> args) {
 
     // Now that all the blobs have been processed, map any pointer values.
     for (auto [blob, tabIdx] : llvm::zip(space.getValue(), map.blobs)) {
+      auto [tab, blobIdx] = tabIdx;
+      MemoryBlob *interned = &tab->blobs[blobIdx];
       for (const PointerRegion &ptr : blob.getPointerRegions()) {
-        auto [tab, blobIdx] = tabIdx;
-        MemoryBlob *interned = &tab->blobs[blobIdx];
         assert(interned->isOwned() && "const memory cannot have pointers");
         // Map the pointer to an interpreter address.
         auto [ptrTab, ptrBlobIdx] = map.blobs[ptr.blobIndex];
@@ -490,6 +538,10 @@ InterpreterState::internalizeMemory(MutableArrayRef<Attribute> args) {
         llvm::StoreIntToMemory(addrInt,
                                (uint8_t *)interned->getOwned() + ptr.offset,
                                target.getDataLayout().getPointerSize());
+      }
+      for (int64_t symbolRegion : blob.getSymbolRegions()) {
+        uint8_t *owned = (uint8_t *)interned->getOwned() + symbolRegion;
+        symbols.push_back(owned);
       }
     }
 
@@ -538,7 +590,7 @@ InterpreterState::internalizeMemory(MutableArrayRef<Attribute> args) {
         if (ErrorOrSuccess err =
                 writeAttributeToMemory(ptr->getAddr(), store.getValue());
             err.isError()) {
-          err = ptr.takeError();
+          err = err.takeError();
           return {store, WalkResult::interrupt()};
         }
         return {ptr.takeValue(), WalkResult::advance()};
@@ -551,6 +603,20 @@ InterpreterState::internalizeMemory(MutableArrayRef<Attribute> args) {
     arg = liftStore.replace(arg);
     if (err)
       return std::move(*err);
+  }
+
+  // TODO: Change representation of symbol in a MemRef.
+  // The current representation allows for nested MemRefs via opaque pointers.
+  for (uint8_t *symSlot : symbols) {
+    APInt addrInt(target.getDataLayout().getPointerBitWidth(), 0);
+    llvm::LoadIntFromMemory(addrInt, symSlot,
+                            target.getDataLayout().getPointerSize());
+    auto symbol = ::cast<TypedAttr>(Attribute::getFromOpaquePointer(
+        (const void *)addrInt.getLimitedValue()));
+    Attribute value = replacer.replace(symbol);
+    llvm::StoreIntToMemory(APInt(target.getDataLayout().getPointerBitWidth(),
+                                 (uint64_t)value.getAsOpaquePointer()),
+                           symSlot, target.getDataLayout().getPointerSize());
   }
   return success();
 }
