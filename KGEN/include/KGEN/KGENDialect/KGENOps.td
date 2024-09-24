@@ -185,10 +185,13 @@ def KGEN_GeneratorOp : KGENOp<"generator", [
     OpBuilder<(ins "StringAttr":$name, "SignatureType":$signature,
                    "FunctionType":$functionType,
                    "ArrayRef<ParamDeclAttr>":$inputParams,
-                   CArg<"InlineLevel", "InlineLevel::Automatic">:$inlineLevel), [{
+                   CArg<"InlineLevel", "InlineLevel::Automatic">:$inlineLevel,
+                   CArg<"DictionaryAttr", "{}">:$llvmMetadata), [{
+      if (!llvmMetadata)
+        llvmMetadata = DictionaryAttr::get(name.getContext());
       build($_builder, $_state, name, signature, functionType, inputParams,
             /*decorators=*/{}, inlineLevel, ExportKind::NotExported,
-            DictionaryAttr::get(name.getContext()), /*patterns=*/{});
+            llvmMetadata, /*patterns=*/{});
     }]>,
     OpBuilder<(ins "StringAttr":$name, "SignatureType":$signature), [{
       build($_builder, $_state, name, signature, signature.getValues(), {}, {});
@@ -625,6 +628,7 @@ def KGEN_ParamDeclareRegionOp : KGENOp<"param.declare.region", [
     TypeAttrOf<FunctionType>:$functionType,
     KGEN_ParamDeclArrayAttr:$inputParams,
     KGEN_InlineLevelAttr:$inlineLevel,
+    DefaultValuedAttr<DictionaryAttr, "std::nullopt">:$LLVMMetadata,
     UnitAttr:$isolated
   );
   let regions = (region SizedRegion<1>:$bodyRegion);
@@ -644,6 +648,18 @@ def KGEN_ParamDeclareRegionOp : KGENOp<"param.declare.region", [
 
     ArrayRef<ParamDeclAttr> getResultParams() { return {}; }
   }];
+
+  let builders = [
+    OpBuilder<(ins "ParamDeclAttr":$paramDecl, "SignatureType":$signature,
+                   "FunctionType":$functionType,
+                   "ArrayRef<ParamDeclAttr>":$inputParams,
+                   CArg<"InlineLevel", "InlineLevel::Automatic">:$inlineLevel), [{
+      build($_builder, $_state, paramDecl, signature, functionType, inputParams,
+            inlineLevel,
+            /*llvmMetadata=*/DictionaryAttr::get(paramDecl.getContext()),
+            /*isolated=*/false);
+    }]>,
+  ];
 }
 
 //===----------------------------------------------------------------------===//
