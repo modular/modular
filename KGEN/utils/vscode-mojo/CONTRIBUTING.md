@@ -41,3 +41,32 @@ Then there are two paths to running the extension:
   messages from the Mojo extension.
 - In the original VS Code window, you can place breakpoints in the extension
   source code and debug the child window that is running the extension.
+
+## Publishing
+
+Publishing a new version of the extension is done automatically by the
+following CI workflows:
+
+- [Nightly](https://github.com/modularml/modular/actions/workflows/MAXReleaseNightly.yaml)
+- [Stable](https://github.com/modularml/modular/actions/workflows/buildAndTestMAX.yaml)
+
+However, if you need to submit one-off fixes of the extension without having
+to ship a brand new MAX SDK, you can do it with
+
+- [Nightly](https://github.com/modularml/modular/actions/workflows/promoteVscodeExtensionNightly.yaml)
+- [Stable](https://github.com/modularml/modular/actions/workflows/promoteVscodeExtension.yaml)
+
+In both one-off cases, you need to provide both the new extension version and the
+version of the matching MAX SDK. You can provide these via the input boxes in the
+GitHub UI.
+
+You can find the list of the existing MAX SDKs in:
+
+- [Nightly](https://conda.modular.com/max-nightly/noarch/repodata.json)
+- [Stable](https://conda.modular.com/max/noarch/repodata.json)
+
+Look for the `version` entry in the `max` packages.
+
+If you really want to test how a given build of the extension would work before
+publishing the one-off update, you can test locally via the `vscode-build`
+command, which also asks for the MAX SDK version.
