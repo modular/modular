@@ -486,3 +486,17 @@ def test_from_dlpack_memmap(memmap_example_file: Path):
     # Test that read-onlyness propagates.
     with pytest.raises(ValueError):
         tensor[0] = 0
+
+
+def test_num_elements():
+    tensor1 = Tensor((2, 4, 3), DType.int8)
+    assert tensor1.num_elements == 24
+
+    tensor2 = Tensor((1, 4), DType.int8)
+    assert tensor2.num_elements == 4
+
+    tensor3 = Tensor((), DType.int8)
+    assert tensor3.num_elements == 1
+
+    tensor4 = Tensor((1, 1, 1, 1, 1), DType.int8)
+    assert tensor4.num_elements == 1
