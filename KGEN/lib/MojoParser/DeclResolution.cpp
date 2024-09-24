@@ -357,6 +357,9 @@ LogicalResult FnDecorators::apply(ExprNode *decorator) {
       funcOp.setInlineLevel(InlineLevel::Never);
     else if (declRef->spelling == "parameter")
       tcSignature.argList.effects.setCapturing();
+    else if (declRef->spelling ==
+             "__unsafe_disable_nested_lifetime_exclusivity")
+      funcOp.setIsNestedLifetimeExclusivityCheckingDisabled(true);
     else if (declRef->spelling == "op")
       applyOp(/*patterns=*/nullptr);
     else

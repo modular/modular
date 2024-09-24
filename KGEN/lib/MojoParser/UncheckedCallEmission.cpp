@@ -1185,6 +1185,20 @@ struct ExclusivityChecker {
       : callee(callee), callExpr(callExpr), syntax(syntax),
         argumentValues(argumentValues), shared(emitter.shared),
         builder(emitter.builder) {
+
+    // Handle __unsafe_disable_nested_lifetime_exclusivity on direct calls.
+    if (auto target = callee.getIfPValue()) {
+      if (auto symbol = dyn_cast<SymbolConstantAttr>(target.get())) {
+        auto &declResolver = emitter.getDeclResolver();
+        if (ASTDecl *calleeDecl =
+                declResolver.getDeclForFuncSymbol(symbol.getSymbol())) {
+          auto calleeFunc = cast<LIT::FuncOp>(*calleeDecl);
+          isNestedLifetimeExclusivityCheckingDisabled =
+              calleeFunc.getIsNestedLifetimeExclusivityCheckingDisabled();
+        }
+      }
+    }
+
     // Check capture lifetimes first so we know if argument values may overlap.
     checkCaptureLifetimes();
   }
@@ -1201,6 +1215,9 @@ private:
   ArrayRef<ASTExprAnd<AnyValue>> argumentValues;
   SharedState &shared;
   std::optional<OpBuilder> builder;
+  /// True if the __unsafe_disable_nested_lifetime_exclusivity decorator is
+  /// on the callee.
+  bool isNestedLifetimeExclusivityCheckingDisabled = false;
 
   /// For each lifetime that is referenced, we keep track of what argIdx it came
   /// from, and whether it was potentially mutated.
@@ -1316,6 +1333,17 @@ void ExclusivityChecker::checkArgument(Value val, ArgConvention convention,
       convention == ArgConvention::ByRefError) {
     checkLifetimeAccess(val, convention, argIdx,
                         cast<RefType>(val.getType()).getLifetime());
+    return;
+  }
+
+  // Don't look at nested lifetimes if checking for them has been explicitly
+  // disabled.
+  if (isNestedLifetimeExclusivityCheckingDisabled) {
+    // DO check the lifetime of any in-memory arguments, we only ignore nested
+    // lifetimes.
+    if (SignatureType::hasAddress(convention))
+      checkLifetimeAccess(val, convention, argIdx,
+                          cast<RefType>(val.getType()).getLifetime());
     return;
   }
 
