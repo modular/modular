@@ -7,6 +7,7 @@
 
 from sys._assembly import inlined_assembly
 from memory import UnsafePointer
+from pathlib import Path
 
 from gpu import ThreadIdx
 from gpu.host import DeviceContext
@@ -49,14 +50,15 @@ def test_compile_function():
         _ = ctx.compile_function[kernel, dump_ptx=True]()
 
 
+fn kernel_inlined_assembly():
+    inlined_assembly["nanosleep.u32 $0;", NoneType, constraints="r"](
+        UInt32(100)
+    )
+
+
 # CHECK-LABEL: test_compile_function_with_assembly
 def test_compile_function_with_assembly():
     print("== test_compile_function_with_assembly")
-
-    fn kernel_inlined_assembly():
-        inlined_assembly["nanosleep.u32 $0;", NoneType, constraints="r"](
-            UInt32(100)
-        )
 
     # CHECK: nanosleep
     # CHECK-NOT: begin assembly
@@ -65,7 +67,43 @@ def test_compile_function_with_assembly():
         _ = ctx.compile_function[kernel_inlined_assembly, dump_ptx=True]()
 
 
+# CHECK-LABEL: test_compile_function_with_path
+def test_compile_function_with_path():
+    print("== test_compile_function_with_path")
+
+    # CHECK: nanosleep
+    # CHECK-NOT: begin assembly
+
+    with DeviceContext() as ctx:
+        alias out_file = Path("/tmp/my_file.ptx")
+        _ = ctx.compile_function[kernel_inlined_assembly, dump_ptx=out_file]()
+        print(out_file.read_text())
+
+
+# CHECK-LABEL: test_compile_function_with_path_func
+def test_compile_function_with_path_func():
+    print("== test_compile_function_with_path_func")
+
+    # CHECK: nanosleep
+    # CHECK-NOT: begin assembly
+
+    with DeviceContext() as ctx:
+        var out_file_name = "my_file_2.ptx"
+        alias out_dir = Path("/tmp")
+
+        @parameter
+        fn dummy_fn() capturing -> Path:
+            return out_dir / out_file_name
+
+        _ = ctx.compile_function[kernel_inlined_assembly, dump_ptx=dummy_fn]()
+
+        var out_file = out_dir / out_file_name
+        print(out_file.read_text())
+
+
 def main():
     test_compile_code()
     test_compile_function()
     test_compile_function_with_assembly()
+    test_compile_function_with_path()
+    test_compile_function_with_path_func()
