@@ -523,8 +523,8 @@ def test_stats_report(
     session: InferenceSession, relu_torchscript_model_path: Path
 ):
     input_specs = [TorchInputSpec(shape=[1, 3, 100, 100], dtype=DType.float32)]
-    model = session.load(relu_torchscript_model_path, input_specs=input_specs)
-    sr = model.stats_report
+    session.load(relu_torchscript_model_path, input_specs=input_specs)
+    sr = session.stats_report
     assert isinstance(sr, dict)
     assert sr["fallbacks"] == []
     assert sr["total_op_count"] == 1
