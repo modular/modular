@@ -1,10 +1,11 @@
+# Pipelines test data
 
-# Generate Test Data
+## Generate Test Data
 
 Use these scripts to randomly generate a tiny llama checkpoint and compute
 golden values.
 
-## Tinyllama
+### Tinyllama
 
 To facilitate fast cycle times during local development, a tiny llama test
 is included alongside the full weights. To re-generate the tiny llama
@@ -35,13 +36,13 @@ each encoding/model pair to the test data folder.
     --model tinyllama # llama3_1, tinyllama, or all (default)
 ```
 
-## Tokenizer data
+### Tokenizer data
 
 `special_tokens_map.json`, `tokenizer_config.json` and `tokenizer.json` are
 copied from the [meta-llama/Meta-Llama-3.1-8B-Instruct](https://huggingface.co/meta-llama/Meta-Llama-3.1-8B-Instruct)
 HuggingFace model.
 
-# Running the tests
+## Running the tests
 
 The test target for CPU tests is:
 
@@ -62,7 +63,7 @@ Note that GPU tests have a different target:
 ./bazelw test //SDK/integration-test/pipelines/python:tests_gpu
 ```
 
-# Registering new golden test data
+## Registering new golden test data
 
 We use `http_archive` to bundle and download the golden values from S3. To
 add a file to this archive, you need to:
@@ -71,25 +72,29 @@ add a file to this archive, you need to:
 , finding the s3 URL (at time of writing this
 was `https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/test_llama_golden/1/bc9c5e599b005b20d8b176384c869808c6cf242f397b5fb5e694570dfe87dd0c/test_llama_golden.tar.gz`)
 and downloading to your local machine (e.g., with wget).
-1. Untar the existing archive `tar -xvf test_llama_golden.tar.gz`.
-1. Add any additional files you want to register alongside.
-1. Run `./utils/upload-public-bazel-artifact.sh test_llama_golden 1 *golden.json`
+
+2. Untar the existing archive `tar -xvf test_llama_golden.tar.gz`.
+
+3. Add any additional files you want to register alongside.
+
+4. Run `./utils/upload-public-bazel-artifact.sh test_llama_golden 1 *golden.json`
 to package and upload the latest version.
-1. The result of ^ will be a snippet like:
 
-```bash
-http_archive(
-    name = "test_llama_golden",
-    build_file_content = """
-filegroup(
-    name = "test_llama_golden",
-    srcs = glob(["**"]),
-    visibility = ["//visibility:public"],
-)""",
-    sha256 = "bc9c5e599b005b20d8b176384c869808c6cf242f397b5fb5e694570dfe87dd0c",
-    url = "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/test_llama_golden/1/bc9c5e599b005b20d8b176384c869808c6cf242f397b5fb5e694570dfe87dd0c/test_llama_golden.tar.gz",
-)
-```
+5. The result of ^ will be a snippet like:
 
-1. Find the associated section in `WORKSPACE.bazel`, delete it, and replace
+   ```bash
+   http_archive(
+       name = "test_llama_golden",
+       build_file_content = """
+   filegroup(
+       name = "test_llama_golden",
+       srcs = glob(["**"]),
+       visibility = ["//visibility:public"],
+   )""",
+       sha256 = "bc9c5e599b005b20d8b176384c869808c6cf242f397b5fb5e694570dfe87dd0c",
+       url = "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/test_llama_golden/1/bc9c5e599b005b20d8b176384c869808c6cf242f397b5fb5e694570dfe87dd0c/test_llama_golden.tar.gz",
+   )
+   ```
+
+6. Find the associated section in `WORKSPACE.bazel`, delete it, and replace
 with this newly generated value.
