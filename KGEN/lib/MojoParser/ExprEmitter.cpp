@@ -1144,6 +1144,8 @@ PValue ExprEmitter::emitMetaTypeToTraitConversion(ASTExprAnd<CValue> value,
   if (failed(getDeclResolver().resolveFully(*traitDecl, value.expr->getLoc())))
     return {};
 
+  ArrayRef<ParamDeclAttr> structParamDecls;
+
   // Determine if the conforming value is trivial or register passable.  If so,
   // this will affect the methods we can synthesize in conformance.  Values of
   // trait type will already have been erased to a memory type.
@@ -1152,6 +1154,7 @@ PValue ExprEmitter::emitMetaTypeToTraitConversion(ASTExprAnd<CValue> value,
   if (auto structDeclOp = dyn_cast<StructDeclOp>(metaTypeDecl)) {
     rpTrivial = structDeclOp.isRegisterPassable();
     regPassable = structDeclOp.isRegisterPassableTrivial();
+    structParamDecls = structDeclOp.getParams();
   }
 
   // When we're looking for a trait's method in a certain struct, like:
@@ -1165,6 +1168,15 @@ PValue ExprEmitter::emitMetaTypeToTraitConversion(ASTExprAnd<CValue> value,
   // we don't want to look for a `fn bork(self) -> Something[T]` in the struct,
   // we want to look for a `fn bork(self) -> SIMD[int]`. This helps us do that.
   ParserParamEvaluator traitAliasReplacer(*shared.declResolver);
+
+  // If the struct (e.g. List[T]) has an alias that uses an input parameter,
+  // (e.g. `alias element_type = T`), then this will help us interpret that
+  // alias value while filling the above traitAliasReplacer.
+  auto implBindings = ParamBindings::getForDeclaredType(
+      getScopeInfo(), ASTType(typeValue), value.expr);
+  ParserParamEvaluator implGenericsReplacer(
+      getDeclResolver(), structParamDecls,
+      ASTType(typeValue).getParamBindings());
 
   // Bind each trait requirement into vtable entries.
   SmallVector<VTableEntryAttr> vtable;
@@ -1189,6 +1201,8 @@ PValue ExprEmitter::emitMetaTypeToTraitConversion(ASTExprAnd<CValue> value,
       assert(implAlias.getValueAttr() && "Struct's alias should have value");
 
       auto newValue = implAlias.getValueAttr();
+      newValue = implGenericsReplacer.replace(newValue);
+
       vtable.push_back(VTableEntryAttr::get(name, newValue));
 
       traitAliasReplacer.setParameterValue(traitAliasDecl.getParamDecl(),
