@@ -196,6 +196,25 @@ class Tensor(DLPackArray):
         """Return the size of the element type in bytes."""
         return self.dtype.size_in_bytes
 
+    def view(self, dtype: DType, shape: Optional[ShapeType] = None) -> Tensor:
+        """Return a new tensor with the given type and shape that shares the
+        underlying memory.
+
+        If the shape is not given, it will be deduced if possible, or a
+        ValueError is raised.
+        """
+        if shape is None:
+            last_axis_size = self.element_size * self.shape[-1]
+            if last_axis_size % dtype.size_in_bytes:
+                raise ValueError(
+                    "When changing to a larger dtype, its size must be a"
+                    " divisor of the total size in bytes of the last axis of"
+                    " the array."
+                )
+            shape = (*self.shape[:-1], last_axis_size // dtype.size_in_bytes)
+
+        return self._from_impl(self._impl.view(shape, dtype._to()))
+
     @classmethod
     def from_numpy(cls, arr: np.ndarray, device: Device = CPU()) -> Tensor:
         """Creates a tensor from a provided numpy array, allocated on the
