@@ -7,27 +7,27 @@
 
 Can also be used as a standalone binary to save out the golden values as a JSON.
 """
-import subprocess
-from huggingface_hub import hf_hub_download
-import itertools
 
-from cpuinfo import get_cpu_info
-from max.driver import CPU, CUDA
 import asyncio
 import base64
+import itertools
+import os
+import subprocess
 import uuid
-from json import JSONEncoder, JSONDecoder
+from json import JSONDecoder, JSONEncoder
 from pathlib import Path
 
-import os
 import click
 import numpy as np
+from cpuinfo import get_cpu_info
+from huggingface_hub import hf_hub_download
 from llama3 import (
     InferenceConfig,
     Llama3,
     SupportedEncodings,
     SupportedVersions,
 )
+from max.driver import CPU, CUDA
 
 
 def find_runtime_path(fname):
