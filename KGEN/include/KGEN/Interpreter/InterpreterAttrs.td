@@ -146,6 +146,27 @@ def MemoryHandleAttr : InterpreterAttr<"MemoryHandle", "memory_handle"> {
 }
 
 //===----------------------------------------------------------------------===//
+// CoordinateAttr
+//===----------------------------------------------------------------------===//
+
+def CoordinateAttr : InterpreterAttr<"Coordinate", "coord", [TypedAttrInterface]> {
+  let summary = "represents a reference into memory";
+  let description = [{
+    The `#interp.coord` attribute represents a reference into memory modeled as an
+    array of bytes. The first element, refSlot, is the index of row. The second
+    element, offset, is the number of bytes into the row where the reference begins.
+  }];
+  let parameters = (ins  "uint64_t":$offset, "uint64_t":$refSlot, AttributeSelfTypeParameter<"">:$type);
+  let assemblyFormat = "`(` $offset `,` $refSlot `)`";
+  let builders = [
+      AttrBuilderWithInferredContext<(ins "int64_t":$offset, "int64_t":$refSlot,
+                                          "Type":$type), [{
+        return $_get(type.getContext(), offset, refSlot, type);
+      }]>
+  ];
+}
+
+//===----------------------------------------------------------------------===//
 // MemoryBlobAttr
 //===----------------------------------------------------------------------===//
 
@@ -208,6 +229,32 @@ def MemorySpaceAttr : ArrayOfAttr<InterpreterDialect, "MemorySpace",
 }
 
 //===----------------------------------------------------------------------===//
+// SymbolArrayAttr
+//===----------------------------------------------------------------------===//
+
+def SymbolArrayAttr
+    : ArrayOfAttr<InterpreterDialect, "SymbolArray", "symbols", "TypedAttr">;
+
+//===----------------------------------------------------------------------===//
+// MemoryModelAttr
+//===----------------------------------------------------------------------===//
+
+def MemoryModelAttr : InterpreterAttr<"MemoryModel", "model"> {
+  let summary = "a memory table paired with a symbol table";
+  let description = [{
+    The `#interp.model` pairs a memory space with a symbol table.
+    The symbol table contains attributes that do not have a runtime
+    representation. The entries in the memory space can reference
+    the symbol table and the symbols in the symbol table can reference
+    the blobs of a memory space.
+  }];
+  let parameters = (ins "MemorySpaceAttr":$memory, "SymbolArrayAttr":$symbols);
+  let assemblyFormat = [{
+      `{` $memory `,` $symbols `}`
+  }];
+}
+
+//===----------------------------------------------------------------------===//
 // MemRefAttr
 //===----------------------------------------------------------------------===//
 
@@ -228,18 +275,19 @@ def MemRefAttr : InterpreterAttr<"MemRef", "memref", [TypedAttrInterface]> {
     ```
   }];
 
-  let parameters = (ins "MemorySpaceAttr":$memory, "int64_t":$index,
+  let parameters = (ins "MemoryModelAttr":$model,
+                        "int64_t":$index,
                         "int64_t":$offset,
                         AttributeSelfTypeParameter<"">:$type);
   let assemblyFormat = [{
-    `<` $memory `,` $index `,` $offset `>`
+    `<` $model `,` $index `,` $offset `>`
   }];
 
   let builders = [
-    AttrBuilderWithInferredContext<(ins "MemorySpaceAttr":$memory,
+    AttrBuilderWithInferredContext<(ins "MemoryModelAttr":$model,
                                         "int64_t":$index, "int64_t":$offset,
                                         "Type":$type), [{
-      return $_get(type.getContext(), memory, index, offset, type);
+      return $_get(type.getContext(), model, index, offset, type);
     }]>
   ];
 

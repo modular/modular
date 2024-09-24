@@ -186,9 +186,9 @@ MemorySpaceAttr::verify(function_ref<InFlightDiagnostic()> emitError,
 //===----------------------------------------------------------------------===//
 
 LogicalResult MemRefAttr::verify(function_ref<InFlightDiagnostic()> emitError,
-                                 MemorySpaceAttr space, int64_t index,
+                                 MemoryModelAttr model, int64_t index,
                                  int64_t offset, Type type) {
-  if (index < 0 || static_cast<size_t>(index) >= space.size())
+  if (index < 0 || static_cast<size_t>(index) >= model.getMemory().size())
     return emitError() << "memref blob index " << index << " is out-of-bounds";
   return success();
 }

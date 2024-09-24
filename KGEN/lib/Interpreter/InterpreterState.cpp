@@ -356,6 +356,22 @@ uint64_t InterpreterState::allocateSymbolicMemory(TypedAttr init) {
   return result;
 }
 
+uint64_t InterpreterState::addSymbolToSymbolTable(TypedAttr symbol) {
+  uint64_t result = symbols.size();
+  for (auto [index, existing] : llvm::enumerate(symbols)) {
+    if (symbol == existing)
+      return index;
+  }
+  symbols.push_back(symbol);
+  return result;
+}
+
+ErrorOr<TypedAttr &> InterpreterState::getSymbol(uint64_t slot) {
+  if (slot >= symbols.size())
+    return Error("symbolic memory slot is out-of-bounds: " + Twine(slot));
+  return symbols[slot];
+}
+
 ErrorOr<TypedAttr &> InterpreterState::getSymbolicMemory(uint64_t slot) {
   if (slot >= symbolicMemory.size())
     return Error("symbolic memory slot is out-of-bounds: " + Twine(slot));
@@ -385,7 +401,6 @@ handleMarkedRegions(function_ref<void(int)> indexHandler,
 
 ErrorOrSuccess
 InterpreterState::externalizeMemory(MutableArrayRef<Attribute> results) {
-  SmallVector<uint8_t *> symbols;
   // Lazily materialize interpreter memory.
   MemorySpaceAttr interpreterMemorySpace;
   DenseMap<const MemoryBlob *, int64_t> blobIndices;
@@ -428,12 +443,8 @@ InterpreterState::externalizeMemory(MutableArrayRef<Attribute> results) {
         handleMarkedRegions(addPointerRegionAtIndex, blob.pointerRegions);
 
         SmallVector<int64_t> symbolRegions;
-        handleMarkedRegions(
-            [&](int index) {
-              symbolRegions.push_back(index);
-              symbols.push_back((uint8_t *)blob.getOwned() + index);
-            },
-            blob.symbolRegions);
+        handleMarkedRegions([&](int index) { symbolRegions.push_back(index); },
+                            blob.symbolRegions);
 
         // Add the new blob value to the blob manager if one with the same value
         // does not already exist.
@@ -452,6 +463,22 @@ InterpreterState::externalizeMemory(MutableArrayRef<Attribute> results) {
     return interpreterMemorySpace;
   };
 
+  // Externalize the symbols by replacing pointer values with coordinates into
+  // memory space.
+  mlir::AttrTypeReplacer symbolReplacer;
+  symbolReplacer.addReplacement([&](PointerAttr ptr) -> Attribute {
+    ErrorOr<std::pair<MemoryBlob &, int64_t>> mem = getMemory(ptr.getAddr(), 0);
+    if (mem.isError())
+      return ptr;
+    auto [blob, offset] = mem.takeValue();
+    getOrMaterializeMemory();
+    uint64_t indexOfReferencedBlob = blobIndices.at(&blob);
+    return CoordinateAttr::get(ptr.getContext(), offset, indexOfReferencedBlob,
+                               ptr.getType());
+  });
+  for (unsigned index = 0, e = symbols.size(); index < e; index++)
+    symbols[index] = ::cast<TypedAttr>(symbolReplacer.replace(symbols[index]));
+
   // Replace raw pointers in the results except for null pointers. Error if a
   // reference to invalid memory is returned from the function.
   mlir::AttrTypeReplacer replacer;
@@ -463,7 +490,11 @@ InterpreterState::externalizeMemory(MutableArrayRef<Attribute> results) {
       return ptr;
     auto [blob, offset] = mem.takeValue();
     MemorySpaceAttr space = getOrMaterializeMemory();
-    return MemRefAttr::get(space, blobIndices.at(&blob), offset, ptr.getType());
+    return MemRefAttr::get(
+        ptr.getContext(),
+        MemoryModelAttr::get(ptr.getContext(), space,
+                             SymbolArrayAttr::get(ptr.getContext(), symbols)),
+        blobIndices.at(&blob), offset, ptr.getType());
   });
 
   for (Attribute &result : results) {
@@ -472,18 +503,6 @@ InterpreterState::externalizeMemory(MutableArrayRef<Attribute> results) {
       return std::move(*err);
   }
 
-  // Externalize the symbols.
-  for (uint8_t *slot : symbols) {
-    APInt addrInt(target.getDataLayout().getPointerBitWidth(), 0);
-    llvm::LoadIntFromMemory(addrInt, slot,
-                            target.getDataLayout().getPointerSize());
-    auto signatureValue = ::cast<TypedAttr>(Attribute::getFromOpaquePointer(
-        (const void *)addrInt.getLimitedValue()));
-    Attribute value = replacer.replace(signatureValue);
-    llvm::StoreIntToMemory(APInt(target.getDataLayout().getPointerBitWidth(),
-                                 (uint64_t)value.getAsOpaquePointer()),
-                           slot, target.getDataLayout().getPointerSize());
-  }
   return success();
 }
 
@@ -495,11 +514,11 @@ InterpreterState::internalizeMemory(MutableArrayRef<Attribute> args) {
     std::vector<std::pair<MemoryTable *, size_t>> blobs;
   };
   DenseMap<MemorySpaceAttr, InternedMemorySpace> interned;
-  SmallVector<uint8_t *> symbols;
   // This functor deduplicates incoming memory spaces and maps the contained
   // memory into the interpreter.
   auto getOrInternSpace =
-      [&](MemorySpaceAttr space) -> ErrorOr<InternedMemorySpace &> {
+      [&](MemoryModelAttr model) -> ErrorOr<InternedMemorySpace &> {
+    MemorySpaceAttr space = model.getMemory();
     if (auto it = interned.find(space); it != interned.end())
       return it->second;
     // Process and intern the blobs.
@@ -523,6 +542,22 @@ InterpreterState::internalizeMemory(MutableArrayRef<Attribute> args) {
       if (!hdl)
         memcpy(mem->getOwned(), asmBlob.getData(), asmBlob.getSize());
     }
+    DenseMap<uint64_t, uint64_t> symbolMap;
+    // Replace coordinates into MemorySpace with PointerAttr to interpreter
+    // address.
+    mlir::AttrTypeReplacer symReplacer;
+    symReplacer.addReplacement([&](CoordinateAttr coord) {
+      int64_t index = coord.getRefSlot();
+      int64_t offset = coord.getOffset();
+      auto [ptrTab, ptrBlobIdx] = map.blobs[index];
+      int64_t addr = ptrTab->blobs[index].baseAddr + offset;
+      return PointerAttr::get(addr, coord.getType());
+    });
+    for (unsigned index = 0, numSymbols = model.getSymbols().size();
+         index < numSymbols; index++) {
+      Attribute newSymbol = symReplacer.replace(model.getSymbols()[index]);
+      symbolMap[index] = addSymbolToSymbolTable(::cast<TypedAttr>(newSymbol));
+    }
 
     // Now that all the blobs have been processed, map any pointer values.
     for (auto [blob, tabIdx] : llvm::zip(space.getValue(), map.blobs)) {
@@ -539,9 +574,18 @@ InterpreterState::internalizeMemory(MutableArrayRef<Attribute> args) {
                                (uint8_t *)interned->getOwned() + ptr.offset,
                                target.getDataLayout().getPointerSize());
       }
+
+      // Update the symbol indices in the blobs so they are with respect to
+      // interpreter memory.
       for (int64_t symbolRegion : blob.getSymbolRegions()) {
         uint8_t *owned = (uint8_t *)interned->getOwned() + symbolRegion;
-        symbols.push_back(owned);
+        APInt index(target.getDataLayout().getPointerBitWidth(), 0);
+        llvm::LoadIntFromMemory(index, owned,
+                                target.getDataLayout().getPointerSize());
+        APInt newIndex(target.getDataLayout().getPointerBitWidth(),
+                       symbolMap[index.getZExtValue()]);
+        llvm::StoreIntToMemory(newIndex, owned,
+                               target.getDataLayout().getPointerSize());
       }
     }
 
@@ -550,7 +594,7 @@ InterpreterState::internalizeMemory(MutableArrayRef<Attribute> args) {
 
   // Intern each resource once into the interpreter.
   auto getOrIntern = [&](MemRefAttr ref) -> ErrorOr<int64_t> {
-    ErrorOr<InternedMemorySpace &> space = getOrInternSpace(ref.getMemory());
+    ErrorOr<InternedMemorySpace &> space = getOrInternSpace(ref.getModel());
     if (space.isError())
       return space.takeError();
     auto [tab, blobIdx] = space->blobs[ref.getIndex()];
@@ -605,19 +649,6 @@ InterpreterState::internalizeMemory(MutableArrayRef<Attribute> args) {
       return std::move(*err);
   }
 
-  // TODO: Change representation of symbol in a MemRef.
-  // The current representation allows for nested MemRefs via opaque pointers.
-  for (uint8_t *symSlot : symbols) {
-    APInt addrInt(target.getDataLayout().getPointerBitWidth(), 0);
-    llvm::LoadIntFromMemory(addrInt, symSlot,
-                            target.getDataLayout().getPointerSize());
-    auto symbol = ::cast<TypedAttr>(Attribute::getFromOpaquePointer(
-        (const void *)addrInt.getLimitedValue()));
-    Attribute value = replacer.replace(symbol);
-    llvm::StoreIntToMemory(APInt(target.getDataLayout().getPointerBitWidth(),
-                                 (uint64_t)value.getAsOpaquePointer()),
-                           symSlot, target.getDataLayout().getPointerSize());
-  }
   return success();
 }
 

@@ -49,8 +49,17 @@ def MemorySpaceAttr : DialectAttribute<(attr
   ConcreteAttrArray<"MemoryBlobAttr">:$value
 )>;
 
+def SymbolArrayAttr : DialectAttribute<(attr
+  TypedAttrArray:$value
+)>;
+
+def MemoryModelAttr : DialectAttribute<(attr
+   MemorySpaceAttr:$memory,
+   SymbolArrayAttr: $symbols
+)>;
+
 def MemRefAttr : DialectAttribute<(attr
-  MemorySpaceAttr:$memory,
+  MemoryModelAttr:$model,
   SignedVarInt:$index,
   SignedVarInt:$offset,
   Type:$type

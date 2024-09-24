@@ -502,12 +502,32 @@ SignatureType::getTypeAlign(TargetInfoAttr target) const {
 
 ErrorOrSuccess SignatureType::writeTo(TypedAttr value, int64_t addr,
                                       InterpreterState &state) const {
-  return writeSymbolicAttribute(*this, value, addr, state, RegionMark::Symbol);
+  // The index is written to the slot.
+  unsigned ptrSize = state.getTarget().getDataLayout().getPointerSize();
+  ErrorOr<void *> mem =
+      state.getWritableMemory(addr, ptrSize, RegionMark::Symbol);
+  if (mem.isError())
+    return mem.takeError();
+
+  // Store the actual symbol in symbolic memory
+  uint64_t index = state.addSymbolToSymbolTable(value);
+
+  // Store the index of the symbol in the pointer slot.
+  llvm::StoreIntToMemory(APInt(ptrSize * 8, index), (uint8_t *)*mem, ptrSize);
+  return success();
 }
 
 ErrorOr<TypedAttr> SignatureType::readFrom(int64_t addr,
                                            InterpreterState &state) const {
-  return readSymbolicAttribute(*this, addr, state);
+  // The index is written to the slot.
+  unsigned ptrSize = state.getTarget().getDataLayout().getPointerSize();
+  ErrorOr<const void *> mem = state.getReadableMemory(addr, ptrSize);
+  if (mem)
+    return mem.takeError();
+
+  APInt value(ptrSize * 8, 0);
+  llvm::LoadIntFromMemory(value, (const uint8_t *)*mem, ptrSize);
+  return state.getSymbol(value.getZExtValue());
 }
 
 Type SignatureType::parse(AsmParser &parser) {

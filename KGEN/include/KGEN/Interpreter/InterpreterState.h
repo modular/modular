@@ -197,8 +197,14 @@ public:
   /// Allocate a slot of symbolic memory.
   uint64_t allocateSymbolicMemory(TypedAttr init);
 
+  /// Allocate a slot in the symbol table and store the specified symbol.
+  uint64_t addSymbolToSymbolTable(TypedAttr symbol);
+
   /// Lookup a symbolic memory slot.
   ErrorOr<TypedAttr &> getSymbolicMemory(uint64_t slot);
+
+  /// Lookup a symbol in the memory slot.
+  ErrorOr<TypedAttr &> getSymbol(uint64_t slot);
 
   /// Read an attribute value of a given type from either a SymbolicPointerAttr
   /// or a PointerAttr.
@@ -289,6 +295,7 @@ private:
     resetExecutor();
     for (MemoryTable &table : memory)
       table.reset();
+    symbols.clear();
   }
 
   //===--------------------------------------------------------------------===//
@@ -416,6 +423,9 @@ private:
 
   /// Symbolic memory allocated on the stack frame.
   SmallVector<TypedAttr, 0> symbolicMemory;
+
+  /// A structure to store values with no runtime representation.
+  SmallVector<TypedAttr, 0> symbols;
 
   /// A bump pointer allocator for fast memory allocations.
   /// TODO: Use an ArrayRecycler if memory usage is too high.
