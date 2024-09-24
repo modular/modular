@@ -4,7 +4,6 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-import pytest
 from max.driver import CPU
 from max.dtype import DType
 from max.engine import InferenceSession
@@ -13,7 +12,6 @@ from nn.kv_cache import ContiguousKVCacheManager
 from nn.kv_cache_params import KVCacheParams
 
 
-@pytest.mark.skip("TODO: re-enable after landing #47085.")
 def test_kv_manager(session: InferenceSession) -> None:
     # Initialize llama like params.
     params = KVCacheParams(
@@ -39,3 +37,6 @@ def test_kv_manager(session: InferenceSession) -> None:
 
     # Assert that we are not claiming the same seq_ids twice.
     assert len(set(seq_ids).intersection(set(seq_ids_2))) == 0
+
+    kv_collection = kv_manager.fetch(seq_ids + seq_ids_2)
+    assert kv_collection is not None
