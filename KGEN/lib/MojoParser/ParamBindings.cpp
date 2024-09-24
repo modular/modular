@@ -365,7 +365,7 @@ ParamBindings::verifyBindingsImpl(
       continue;
     }
 
-    // Disallow implicit parameters to be explicit specified. If we see one,
+    // Disallow implicit parameters to be explicitly specified. If we see one,
     // complain about too many parameters.
     if (passingKind == PassingKind::Implicit) {
       if (diagEmitter) {
@@ -480,13 +480,21 @@ ParamBindings::verifyBindingsImpl(
 }
 
 std::pair<ParameterExprArrayAttr, ParamBindings::Fitness>
-ParamBindings::verifyBindings(LITSignatureType sig,
-                              const DiagEmitter *diagEmitter,
-                              ParameterInferenceHookTy parameterInferenceHook,
-                              bool partial) const {
+ParamBindings::verifyBindings(
+    LITSignatureType sig, const DiagEmitter &diagEmitter,
+    ParameterInferenceHookTy parameterInferenceHook) const {
   return verifyBindingsImpl(parameters, sig.getParamTypes(),
                             sig.getParamListAttrs(), parameterInferenceHook,
-                            diagEmitter, partial);
+                            &diagEmitter, /*partial=*/false);
+}
+
+std::pair<ParameterExprArrayAttr, ParamBindings::Fitness>
+ParamBindings::verifyBindings(LITSignatureType sig, bool partial) const {
+  // TODO(jeff): Fill this in.
+  auto parameterInferenceHook = nullptr;
+  return verifyBindingsImpl(parameters, sig.getParamTypes(),
+                            sig.getParamListAttrs(), parameterInferenceHook,
+                            /*diagEmitter=*/nullptr, partial);
 }
 
 ParameterExprArrayAttr ParamBindings::verifyBindings(StructDeclOp structOp,

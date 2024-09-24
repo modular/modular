@@ -863,9 +863,8 @@ static PValue substituteParametersIntoUserDefinedType(
 static Type getNextParamType(ASTDecl *fnDecl,
                              const ParamBindings &paramBindings) {
   LITSignatureType signature = cast<LIT::FuncOp>(*fnDecl).getFullSignature();
-  const auto &[_, fitness] = paramBindings.verifyBindings(
-      signature, /*diagEmitter=*/{}, /*parameterInferenceHook=*/{},
-      /*partial=*/false);
+  const auto &[_, fitness] =
+      paramBindings.verifyBindings(signature, /*partial=*/false);
   return fitness.lastExpectedType;
 }
 

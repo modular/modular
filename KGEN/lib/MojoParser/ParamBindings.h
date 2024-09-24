@@ -130,15 +130,19 @@ public:
     std::function<void(ArrayRef<StringAttr>, const Twine &)> emitMissing;
   };
 
-  /// Verify the parameter bindings for the given signature. If the signature
-  /// doesn't match and a DiagEmitter was provided, it will be used to emit
-  /// diagnostics. An optional hook can be provided to infer parameters. If
-  /// `partial` is true, then we allow the signature to be partially bound: it
-  /// can be missing parameters.
+  /// Verify the full parameter bindings for the given signature. If the
+  /// signature doesn't match, the provided DiagEmitter will be used to emit
+  /// diagnostics. A parameter inference must must be provided.
   std::pair<ParameterExprArrayAttr, Fitness>
-  verifyBindings(LITSignatureType sig, const DiagEmitter *diagEmitter = nullptr,
-                 ParameterInferenceHookTy parameterInferenceHook = {},
-                 bool partial = true) const;
+  verifyBindings(LITSignatureType sig, const DiagEmitter &diagEmitter,
+                 ParameterInferenceHookTy parameterInferenceHook) const;
+
+  /// Attempt to bind the current set of parameters to the provided signature.
+  /// This applies parameter inference and any default values to form a full
+  /// binding set, which is returned along with the binding fitness. `partial`
+  /// should be set to true if the caller doesn't require a full binding.
+  std::pair<ParameterExprArrayAttr, Fitness>
+  verifyBindings(LITSignatureType sig, bool partial) const;
 
   /// Verify the parameter bindings for the given struct. If the struct doesn't
   /// match, diagnostics will be emitted using the struct's location and the
