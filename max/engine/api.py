@@ -675,12 +675,6 @@ class InferenceSession:
                 model._module._CAPIPtr, _FrameworkFormat.max_graph, options_dict
             )
         else:
-            if weights_registry:
-                raise ValueError(
-                    "The weights registry is currently only used by MAX graph "
-                    "models."
-                )
-
             if _is_torchscript_module(model):
                 _remove_static_info_from_torch_jit_graph(model.graph)
                 _model = self._impl.compile_from_object(
