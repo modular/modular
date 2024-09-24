@@ -10,3 +10,4 @@ from .id import *
 from .memory import *
 from .shuffle import *
 from .sync import *
+from .semaphore import Semaphore
