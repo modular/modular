@@ -47,7 +47,7 @@ fn test_row_major():
     print_tensor_info(t_view)
 
     # CHECK: ---tensor-begin---
-    # CHECK: layout:  ((-1, -1):(-1, -1))
+    # CHECK: layout:  ((-1, -1):(-1, 1))
     # CHECK: runtime_layout:  ((2, 3):(3, 1))
     # CHECK: address_space:  0
     # CHECK: values:
@@ -71,7 +71,7 @@ fn test_row_major():
     print_tensor_info(t_4d)
 
     # CHECK: ---tensor-begin---
-    # CHECK: layout:  ((-1, -1, -1, -1):(-1, -1, -1, -1))
+    # CHECK: layout:  ((-1, -1, -1, -1):(-1, -1, -1, 1))
     # CHECK: runtime_layout:  ((2, 3, 4, 5):(60, 20, 5, 1))
     # CHECK: address_space:  0
     # CHECK: values:
@@ -112,7 +112,7 @@ fn test_col_major():
     print_tensor_info(t_view)
 
     # CHECK: ---tensor-begin---
-    # CHECK: layout:  ((-1, -1):(-1, -1))
+    # CHECK: layout:  ((-1, -1):(1, -1))
     # CHECK: runtime_layout:  ((2, 3):(1, 2))
     # CHECK: address_space:  0
     # CHECK: values:
@@ -136,7 +136,7 @@ fn test_col_major():
     print_tensor_info(t_4d)
 
     # CHECK: ---tensor-begin---
-    # CHECK: layout:  ((-1, -1, -1, -1):(-1, -1, -1, -1))
+    # CHECK: layout:  ((-1, -1, -1, -1):(1, -1, -1, -1))
     # CHECK: runtime_layout:  ((2, 3, 4, 5):(1, 2, 6, 24))
     # CHECK: address_space:  0
     # CHECK: values:
