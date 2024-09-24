@@ -23,6 +23,7 @@ class Tensor:
     rank: int
     is_contiguous: bool
     is_host: bool
+    num_elements: int
 
     def __init__(
         self,
