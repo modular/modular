@@ -14,7 +14,6 @@
 #include "llvm/Support/Signals.h"
 #include "llvm/Support/Threading.h"
 #include "llvm/Support/ToolOutputFile.h"
-#include <cassert>
 #include <sstream>
 #include <string>
 #include <system_error>
