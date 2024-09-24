@@ -66,8 +66,7 @@ struct LayoutTensorBuild[
         rank: Int
     ](self, shapes: StaticIntTuple[rank]) -> LayoutTensorBuild[
         dtype,
-        __layout = Layout(
-            _to_int_tuple[rank](UNKNOWN_VALUE),
+        __layout = Layout.row_major(
             _to_int_tuple[rank](UNKNOWN_VALUE),
         ),
         __layout_init=True,
@@ -87,8 +86,7 @@ struct LayoutTensorBuild[
         rank: Int
     ](self, shapes: StaticIntTuple[rank]) -> LayoutTensorBuild[
         dtype,
-        __layout = Layout(
-            _to_int_tuple[rank](UNKNOWN_VALUE),
+        __layout = Layout.col_major(
             _to_int_tuple[rank](UNKNOWN_VALUE),
         ),
         __layout_init=True,
