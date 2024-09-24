@@ -506,3 +506,31 @@ def test_element_size():
     for dtype in DLPACK_DTYPES:
         tensor = Tensor((), dtype)
         assert tensor.element_size == np.dtype(dtype.to_numpy()).itemsize
+
+
+def test_view():
+    tensor8 = Tensor((2, 4), DType.int8)
+    for i, j in product(range(2), range(4)):
+        tensor8[i, j] = 1
+
+    # Check that we correctly deduce the shape if not given
+    tensor16 = tensor8.view(DType.int16)
+    assert tensor16.dtype is DType.int16
+    assert tensor16.shape == (2, 2)
+    assert tensor16[0, 0].item() == 2**8 + 1
+    assert tensor16[0, 1].item() == 2**8 + 1
+
+    # Check that it works with explicit shape.
+    tensor32 = tensor8.view(DType.int32, (2,))
+    assert tensor32.dtype is DType.int32
+    assert tensor32.shape == (2,)
+    assert tensor32[0].item() == 2**24 + 2**16 + 2**8 + 1
+
+    # Check that this is not a copy.
+    tensor16[0, 0] = 0
+    assert tensor8[0, 0].item() == 0
+    assert tensor8[0, 1].item() == 0
+
+    # Check that shape deduction fails if the last axis is the wrong size.
+    with pytest.raises(ValueError):
+        _ = tensor8.view(DType.int64)
