@@ -500,3 +500,9 @@ def test_num_elements():
 
     tensor4 = Tensor((1, 1, 1, 1, 1), DType.int8)
     assert tensor4.num_elements == 1
+
+
+def test_element_size():
+    for dtype in DLPACK_DTYPES:
+        tensor = Tensor((), dtype)
+        assert tensor.element_size == np.dtype(dtype.to_numpy()).itemsize
