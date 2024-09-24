@@ -66,7 +66,7 @@ def test_freqs_cis(session, dtype: DType, params: RopeParams):
         )
         graph.output(rope.freqs_cis)
         model = session.load(graph)
-    result = model.execute()["output0"]
+    result = model.execute_legacy()["output0"]
     expected = torch_freqs_cis(params.head_dim, params.theta, params.scaling)
     assert_allclose(result, expected)
 

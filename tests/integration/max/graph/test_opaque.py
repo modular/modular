@@ -71,10 +71,10 @@ def reader_model(session: InferenceSession, counter_ops_path: Path) -> Model:
 def test_opaque(
     maker_model: Model, bumper_model: Model, reader_model: Model
 ) -> None:
-    counter = maker_model.execute()["output0"]
+    counter = maker_model.execute_legacy()["output0"]
     for i in range(5):
-        bumper_model.execute(input0=counter)
-    result = reader_model.execute(input0=counter)["output0"]
+        bumper_model.execute_legacy(input0=counter)
+    result = reader_model.execute_legacy(input0=counter)["output0"]
 
     assert (result == [5, 15]).all()
 
@@ -114,10 +114,10 @@ def test_opaque_driver_input(
 ) -> None:
     # Maker and reader still using non-driver API;
     # Driver API use limited to bumper model here.
-    counter = maker_model.execute()["output0"]
+    counter = maker_model.execute_legacy()["output0"]
     for i in range(5):
         bumper_model.execute(counter)
-    result = reader_model.execute(input0=counter)["output0"]
+    result = reader_model.execute_legacy(input0=counter)["output0"]
 
     assert (result == [5, 15]).all()
 
@@ -159,5 +159,5 @@ def test_pyobject_opaque(
 
     counter = PythonCounter()
     for i in range(5):
-        counter = bumper_compiled.execute(input0=counter)["output0"]
+        counter = bumper_compiled.execute_legacy(input0=counter)["output0"]
     assert counter.a == 10 and counter.b == 55

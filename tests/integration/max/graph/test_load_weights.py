@@ -25,7 +25,7 @@ def test_weight(session) -> None:
         compiled = session.load(
             graph, weights_registry={"random_weight": weight}
         )
-        output = compiled.execute()
+        output = compiled.execute_legacy()
 
         np.testing.assert_array_equal(weight, output["output0"])
 
@@ -44,7 +44,7 @@ def test_weight_offset(session) -> None:
         compiled = session.load(
             graph, weights_registry={"random_weight": weight}
         )
-        output = compiled.execute()
+        output = compiled.execute_legacy()
 
         np.testing.assert_array_equal(weight, output["output0"])
 
@@ -73,7 +73,7 @@ def test_load_pytorch(session, graph_testdata) -> None:
         compiled = session.load(
             graph, weights_registry=weights.allocated_weights
         )
-        output = compiled.execute()
+        output = compiled.execute_legacy()
 
         assert len(expected) == len(output)
         for n, expected in enumerate(expected):
@@ -101,7 +101,7 @@ def test_load_gguf(session, graph_testdata) -> None:
         compiled = session.load(
             graph, weights_registry=weights.allocated_weights
         )
-        output = compiled.execute()
+        output = compiled.execute_legacy()
 
         assert len(expected) == len(output)
         for n, expected in enumerate(expected):
