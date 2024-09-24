@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Optional, Type, Union, overload
+from typing import Any, Dict, Iterable, List, Optional, Type, Union
 
 import numpy as np
 from max._driver import Tensor as _Tensor
@@ -116,26 +116,12 @@ class Model:
         """
         self._impl._export_mef(path)
 
-    # `execute` can be called with positional arguments that are `np.ndarray`,
-    # `torch.Tensor` or `max.driver.Tensor`. We are specifying `Any` as a
-    # possibility for the type so we don't have to introduce a torch dependency.
-    @overload
     def execute(
         self,
-        *args: Union[Tensor, np.ndarray, Any],
+        *args: Union[Tensor, DLPackArray, np.generic, bool, float, int],
+        copy_inputs_to_device: bool = True,
         output_device: Optional[Device] = None,
     ) -> List[TensorOrMojoType]:
-        ...
-
-    # `execute` can also be called with keyword arguments, with each keyword
-    # corresponding to an input tensor name and each arg being a numpy array.
-    @overload
-    def execute(
-        self, **kwargs: Any
-    ) -> Dict[str, Union[np.ndarray, dict, list, tuple]]:
-        ...
-
-    def execute(self, *args, **kwargs) -> ExecResultType:
         """Executes the model with the provided input and returns the outputs.
 
         For example, if the model has one input tensor:
@@ -180,8 +166,7 @@ class Model:
         Raises
         ------
         RuntimeError
-            If the given input tensors' name and shape don't match what
-            the model expects.
+            If the given input tensors' shape don't match what the model expects.
 
         TypeError
             If the given input tensors' dtype cannot be cast to what the model
@@ -191,61 +176,99 @@ class Model:
             If positional inputs are not one of the supported types, i.e.
             :obj:`np.ndarray`, :obj:`torch.Tensor`, and :obj:`max.driver.Tensor`.
         """
-        if args:
-            input_impls: List[Union[_Tensor, MojoValue]] = []
-            copy_inputs_to_device = kwargs.get("copy_inputs_to_device", True)
-            output_device = kwargs.get("output_device", None)
+        input_impls: List[Union[_Tensor, MojoValue]] = []
 
-            for idx, arg in enumerate(args):
-                # Validate that input is one of supported types and convert if
-                # necessary.
-                if isinstance(arg, MojoValue):
-                    input_impls.append(arg)
-                    continue
+        for idx, arg in enumerate(args):
+            # Validate that input is one of supported types and convert if
+            # necessary.
+            if isinstance(arg, MojoValue):
+                input_impls.append(arg)
+                continue
 
-                if isinstance(arg, Tensor):
-                    if not arg.is_contiguous:
-                        raise ValueError(
-                            "Max does not currently support executing"
-                            " non-contiguous tensors. Before executing these"
-                            " tensors, please make a contiguous copy of them"
-                            " using `.contiguous` before feeding them into the"
-                            " `execute` API."
-                        )
-                    tensor = arg
-                elif isinstance(arg, DLPackArray):
-                    tensor = Tensor.from_dlpack(arg)
-                elif isinstance(arg, ScalarType):
-                    spec = self.input_metadata[idx]
-                    tensor = Tensor.scalar(arg, spec.dtype, self.device)
-                else:
+            if isinstance(arg, Tensor):
+                if not arg.is_contiguous:
                     raise ValueError(
-                        "All positional arguments must be of the type"
-                        " `max.driver.Tensor`, `MojoValue`, or a tensor type"
-                        " implementing the dlpack protocol. We do not"
-                        f" currently support inputs of the type {type(arg)}."
+                        "Max does not currently support executing"
+                        " non-contiguous tensors. Before executing these"
+                        " tensors, please make a contiguous copy of them"
+                        " using `.contiguous` before feeding them into the"
+                        " `execute` API."
                     )
+                tensor = arg
+            elif isinstance(arg, DLPackArray):
+                tensor = Tensor.from_dlpack(arg)
+            elif isinstance(arg, ScalarType):
+                spec = self.input_metadata[idx]
+                tensor = Tensor.scalar(arg, spec.dtype, self.device)
+            else:
+                raise ValueError(
+                    "All positional arguments must be of the type"
+                    " `max.driver.Tensor`, `MojoValue`, or a tensor type"
+                    " implementing the dlpack protocol. We do not"
+                    f" currently support inputs of the type {type(arg)}."
+                )
 
-                if copy_inputs_to_device:
-                    tensor = tensor.to(self.device)
-                input_impls.append(tensor._impl)
-            results = self._impl.execute_device_tensors(input_impls)
+            if copy_inputs_to_device:
+                tensor = tensor.to(self.device)
+            input_impls.append(tensor._impl)
+        results = self._impl.execute_device_tensors(input_impls)
 
-            processed_results = []
-            for result in results:
-                # If the output is a MojoValue, we return it directly.
-                if not isinstance(result, _Tensor):
-                    processed_results.append(result)
-                    continue
-                wrapped_tensor = Tensor._from_impl(result)
-                # If an output device is provided and it is different from the
-                # device the tensor is already present on, we should copy to
-                # that device.
-                if output_device and output_device != self.device:
-                    wrapped_tensor = wrapped_tensor.copy(output_device)
-                processed_results.append(wrapped_tensor)
-            return processed_results
+        processed_results = []
+        for result in results:
+            # If the output is a MojoValue, we return it directly.
+            if not isinstance(result, _Tensor):
+                processed_results.append(result)
+                continue
+            wrapped_tensor = Tensor._from_impl(result)
+            # If an output device is provided and it is different from the
+            # device the tensor is already present on, we should copy to
+            # that device.
+            if output_device and output_device != self.device:
+                wrapped_tensor = wrapped_tensor.copy(output_device)
+            processed_results.append(wrapped_tensor)
+        return processed_results
 
+    def execute_legacy(
+        self,
+        **kwargs: Any,
+    ) -> Dict[str, Union[np.ndarray, dict, list, tuple]]:
+        """Executes the model with a set of named tensors. This API is maintained
+        primarily to support frameworks that require named inputs (i.e. ONNX).
+
+        NOTICE: This API does not support GPU inputs and is slated for
+        deprecation.
+
+        For example, if the model has one input tensor named `input0`:
+
+        .. code-block:: python
+
+            input_tensor = np.random.rand(1, 224, 224, 3)
+            model.execute_legacy(input0=input_tensor)
+
+        Parameters
+        ----------
+        ``kwargs``
+            The input tensors, each specified with the appropriate tensor name
+            as a keyword and its value as an :obj:`np.ndarray`. You can find the
+            tensor names to use as keywords from :obj:`~Model.input_metadata`.
+
+        Returns
+        -------
+        Dict
+            A dictionary of output values, each as an :obj:`np.ndarray`,
+            :obj:`Dict`, :obj:`List`, or :obj:`Tuple` identified by its output
+            name.
+
+        Raises
+        ------
+        RuntimeError
+            If the given input tensors' name and shape don't match what
+            the model expects.
+
+        TypeError
+            If the given input tensors' dtype cannot be cast to what the model
+            expects.
+        """
         # Wrapping the tensors happens by recording their addresses, which does
         # not increase reference count, so we need to ensure the garbage
         # collector does not free them. Since numpy arrays are not hashable, we
