@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from collections import List
+from collections import List, Optional
 from os import abort
 from sys import sizeof, external_call
 from sys.param_env import env_get_int, is_defined
@@ -213,9 +213,9 @@ struct DeviceFunctionV1[
     func_type: AnyTrivialRegType, //,
     func: func_type,
     *,
-    dump_ptx: Variant[Path, Bool] = False,
-    dump_llvm: Variant[Path, Bool] = False,
-    dump_sass: Variant[Path, Bool] = False,
+    dump_ptx: Variant[Bool, Path, fn () capturing -> Path] = False,
+    dump_llvm: Variant[Bool, Path, fn () capturing -> Path] = False,
+    dump_sass: Variant[Bool, Path, fn () capturing -> Path] = False,
     target: __mlir_type.`!kgen.target` = _get_nvptx_target(),
     _is_failable: Bool = False,
     _ptxas_info_verbose: Bool = False,
@@ -324,9 +324,9 @@ struct DeviceContextV1:
         func_type: AnyTrivialRegType, //,
         func: func_type,
         *,
-        dump_ptx: Variant[Path, Bool] = False,
-        dump_llvm: Variant[Path, Bool] = False,
-        dump_sass: Variant[Path, Bool] = False,
+        dump_ptx: Variant[Bool, Path, fn () capturing -> Path] = False,
+        dump_llvm: Variant[Bool, Path, fn () capturing -> Path] = False,
+        dump_sass: Variant[Bool, Path, fn () capturing -> Path] = False,
         target: __mlir_type.`!kgen.target` = _get_nvptx_target(),
         _is_failable: Bool = False,
         _ptxas_info_verbose: Bool = False,

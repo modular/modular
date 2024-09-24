@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 """This module implements the function type."""
 
-from collections import Dict, List, Optional
+from collections import Dict, List, OptionalReg
 from math.math import align_up
 from pathlib import Path
 from sys.intrinsics import _mlirtype_is_eq
@@ -299,10 +299,13 @@ struct FunctionCache:
 # ===----------------------------------------------------------------------===#
 
 
-fn _dump_q(val: Variant[Path, Bool]) -> Bool:
+fn _dump_q[val: Variant[Bool, Path, fn () capturing -> Path]]() -> Bool:
+    @parameter
     if val.isa[Bool]():
-        return val[Bool]
-    return val[Path] != Path("")
+        return val.unsafe_get[Bool]()[]
+    elif val.isa[Path]():
+        return val.unsafe_get[Path]()[] != Path("")
+    return val.isa[fn () capturing -> Path]()
 
 
 fn _cleanup_asm(s: StringLiteral) -> StringLiteral:
@@ -316,13 +319,13 @@ struct Function[
     func_type: AnyTrivialRegType, //,
     func: func_type,
     *,
-    dump_ptx: Variant[Path, Bool] = False,
-    dump_llvm: Variant[Path, Bool] = False,
-    dump_sass: Variant[Path, Bool] = False,
+    dump_ptx: Variant[Bool, Path, fn () capturing -> Path] = False,
+    dump_llvm: Variant[Bool, Path, fn () capturing -> Path] = False,
+    dump_sass: Variant[Bool, Path, fn () capturing -> Path] = False,
     target: __mlir_type.`!kgen.target` = _get_nvptx_target(),
     _is_failable: Bool = False,
     _ptxas_info_verbose: Bool = False,
-](Boolable):
+]:
     var info: _CachedFunctionInfo
     var cuda_dll: CudaDLL
     var cuda_function_cache: UnsafePointer[FunctionCache]
@@ -435,28 +438,48 @@ struct Function[
             print(_ptxas_compile[target](ptx, options="-v"))
 
         @parameter
-        if _dump_q(dump_ptx):
+        if _dump_q[dump_ptx]():
             alias ptx = _cleanup_asm(Self._impl.asm)
-            if dump_ptx.isa[Path]():
-                dump_ptx[Path].write_text(ptx)
+
+            @parameter
+            if dump_ptx.isa[fn () capturing -> Path]():
+                alias dump_ptx_fn = dump_ptx.unsafe_get[
+                    fn () capturing -> Path
+                ]()[]
+                dump_ptx_fn().write_text(ptx)
+            elif dump_ptx.isa[Path]():
+                dump_ptx.unsafe_get[Path]()[].write_text(ptx)
             else:
                 print(ptx)
 
         @parameter
-        if _dump_q(dump_sass):
+        if _dump_q[dump_sass]():
             alias ptx = _cleanup_asm(Self._impl.asm)
             var sass = _to_sass[target](ptx)
-            if dump_sass.isa[Path]():
-                dump_sass[Path].write_text(sass)
+
+            @parameter
+            if dump_sass.isa[fn () capturing -> Path]():
+                alias dump_sass_fn = dump_sass.unsafe_get[
+                    fn () capturing -> Path
+                ]()[]
+                dump_sass_fn().write_text(sass)
+            elif dump_sass.isa[Path]():
+                dump_sass.unsafe_get[Path]()[].write_text(sass)
             else:
                 print(sass)
 
         @parameter
-        if _dump_q(dump_llvm):
+        if _dump_q[dump_llvm]():
             alias llvm = _compile_code_asm[Self.func, emission_kind="llvm"]()
 
-            if dump_llvm.isa[Path]():
-                dump_llvm[Path].write_text(StringRef(llvm))
+            @parameter
+            if dump_llvm.isa[fn () capturing -> Path]():
+                alias dump_llvm_fn = dump_llvm.unsafe_get[
+                    fn () capturing -> Path
+                ]()[]
+                dump_llvm_fn().write_text(llvm)
+            elif dump_llvm.isa[Path]():
+                dump_llvm.unsafe_get[Path]()[].write_text(llvm)
             else:
                 print(llvm)
 
