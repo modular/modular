@@ -31,9 +31,10 @@ from .select import select
 from .stack import stack_scalars
 
 
-# Currently slicing does not have any shape inference in RMO. Instead, it is done in python.
-# Long term, it would be great to get more dimension wraggling and api work to move this,
-# but this is the simplest path to get us nice results.
+# Currently slicing does not have any shape inference in RMO. Instead, it is
+# done in python.
+# Long term, it would be great to get more dimension wraggling and api work to
+# move this, but this is the simplest path to get us nice results.
 
 
 SliceIndex = Union[TensorValue, int, slice, tuple[slice, DimLike]]
@@ -44,12 +45,13 @@ def _slice_index_and_output(
     dim: Dim, index: SliceIndex
 ) -> tuple[slice, DimLike]:
     # These are values within an index which contains at least one
-    # shape. The returned values will be used as `start, stop, stop`
+    # shape. The returned values will be used as `start, stop, step`
     # values in a mo.slice op. slices can therefore be forwarded
     # directly, while `int` and `TensorValue` need to be converted
     # to a slice(v, v+1).
 
     int64_max = 2**63 - 1
+    # If index is int, return slice(index, index+1, 1)
     # For -1 specifically, slice(-1, 0, 1) is empty,
     # so we need to special case it.
     if isinstance(index, int):
@@ -107,13 +109,14 @@ def _has_no_ellipsis(indices: SliceIndices) -> TypeGuard[list[SliceIndex]]:
     return not any(index is Ellipsis for index in indices)
 
 
-def slice_tensor(x: TensorValue, indices: SliceIndices) -> TensorValue:
+def _slice_and_output_tensors(x: TensorValue, indices: SliceIndices):
+    if not x.shape:
+        raise ValueError("Slicing does not support scalar inputs")
+
+    # Replace ellipsis by trivial indices.
     ellipsis_count = indices.count(Ellipsis)
     if ellipsis_count > 1:
         raise ValueError("Slicing index can contain at most one ellipsis")
-
-    if not x.shape:
-        raise ValueError("Slicing does not support scalar inputs")
 
     if len(x.shape) < len(indices) - ellipsis_count:
         raise ValueError(
@@ -130,6 +133,7 @@ def slice_tensor(x: TensorValue, indices: SliceIndices) -> TensorValue:
 
     remaining = len(x.shape) - len(before) - len(after)
     full_index = [*before, *([slice(None, None, None)] * remaining), *after]
+    # For each dim, convert idx (if int or TensorValue) to slice(idx, idx+1, 1).
     slices_and_outputs = [
         _slice_index_and_output(dim, index)
         for dim, index in zip(x.shape, full_index)
@@ -137,17 +141,26 @@ def slice_tensor(x: TensorValue, indices: SliceIndices) -> TensorValue:
     slices = [s for s, _ in slices_and_outputs]
     output_shape = Shape(d for _, d in slices_and_outputs)
 
+    # If type(dim,int), convert to an int constant TensorValue.
     def value(dim: Union[TensorValue, int]) -> TensorValue:
         assert isinstance(dim, (TensorValue, int))
         return dim if isinstance(dim, TensorValue) else constant(
             dim, DType.int64
         )
 
+    # Create starts, stops, and steps tensors.
     starts = stack_scalars(value(s.start) for s in slices)
     stops = stack_scalars(value(s.stop) for s in slices)
     steps = stack_scalars(value(s.step) for s in slices)
 
     output_type = TensorType(x.dtype, output_shape)
+
+    return starts, stops, steps, output_type
+
+
+def slice_tensor(x: TensorValue, indices: SliceIndices) -> TensorValue:
+    starts, stops, steps, output_type = _slice_and_output_tensors(x, indices)
+
     return Graph.current._add_op(
         rmo.mo_slice, output_type.to_mlir(), x, starts, stops, steps
     )[0].tensor

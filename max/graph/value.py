@@ -151,8 +151,9 @@ class BufferValue(Value):
         index,
         val: TensorValue,
     ) -> None:
-        # TODO(MSDK-963): implement ops.store_slice_buffer()
-        raise NotImplementedError("implement ops.store_slice_buffer()")
+        return ops.set_slice(
+            self, val, index if isinstance(index, Iterable) else (index,)
+        )
 
 
 class TensorValue(Value):

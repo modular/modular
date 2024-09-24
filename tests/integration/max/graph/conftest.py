@@ -123,7 +123,8 @@ def given_input_types(input_types, static_dims: Dict[str, int] = {}):
 
 def execute(model, inputs):
     results = model.execute(*[Tensor.from_numpy(inp) for inp in inputs])
-    return results[0].to_numpy()
+    if results:
+        return results[0].to_numpy()
 
 
 def modular_graph_test(

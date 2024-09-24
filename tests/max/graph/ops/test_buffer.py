@@ -131,5 +131,32 @@ def test_load_store_buffer(buffer_type: BufferType):
         assert "rmo.mo.mutable.store" in str(graph)
 
 
+@given(tensor_type=tensor_type, buffer_type=buffer_type)
+def test_store_slice_buffer(tensor_type: TensorType, buffer_type: BufferType):
+    assume(tensor_type.rank > 1 and buffer_type.rank > 1)
+
+    with Graph(
+        "buffer_load",
+        input_types=[
+            tensor_type,
+            buffer_type,
+        ],
+    ) as graph:
+        tensor = graph.inputs[0]
+        buffer = graph.inputs[1]
+        chain_0 = graph._current_chain
+        ops.set_slice(buffer, tensor, (1,))
+        chain_1 = graph._current_chain
+
+        assert buffer.shape == tensor.shape
+        assert buffer.dtype == tensor.dtype
+        assert "rmo.mo.mutable.store.slice" in str(graph)
+
+        # Check the chain is updated.
+        assert "mo.chain.create" in str(graph)
+        assert chain_0 != chain_1
+        graph.output()
+
+
 # TODO(MSDK-960): test that the chain is working correctly.
 # TODO(MSDK-960): test load -> element-wise ops -> store.
