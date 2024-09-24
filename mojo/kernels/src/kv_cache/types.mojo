@@ -209,11 +209,11 @@ struct ContiguousKVCache[
     ):
         debug_assert(
             batch_size <= _max_batch_size,
-            "Expected batch_size ("
-            + str(batch_size)
-            + ") <= _max_batch_size ("
-            + str(_max_batch_size)
-            + ")",
+            "Expected batch_size (",
+            batch_size,
+            ") <= _max_batch_size (",
+            _max_batch_size,
+            ")",
         )
         self._block = block
         self.cache_lengths = cache_lengths
