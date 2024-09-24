@@ -183,6 +183,14 @@ class Tensor(DLPackArray):
         """
         return self if self.device == device else self.copy(device)
 
+    @property
+    def num_elements(self) -> int:
+        """Returns the number of elements in this tensor.
+
+        Rank-0 tensors have 1 element by convention.
+        """
+        return self._impl.num_elements
+
     @classmethod
     def from_numpy(cls, arr: np.ndarray, device: Device = CPU()) -> Tensor:
         """Creates a tensor from a provided numpy array, allocated on the
