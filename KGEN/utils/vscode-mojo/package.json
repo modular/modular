@@ -122,7 +122,7 @@
         "mojo.modularHomePath": {
           "scope": "resource",
           "type": "string",
-          "description": "The path to the MODULAR_HOME containing the Mojo SDK installation."
+          "description": "The path to the MODULAR_HOME containing the Mojo SDK installation. It should be a folder containing a modular.cfg file."
         },
         "mojo.onSettingsChanged": {
           "type": "string",
@@ -151,6 +151,12 @@
           "scope": "resource",
           "type": "array",
           "description": "Arguments passed in. Each argument is a separate item in the array."
+        },
+        "mojo.run.focusOnTerminalAfterLaunch": {
+          "scope": "resource",
+          "type": "boolean",
+          "default": false,
+          "description": "Whether to focus on the terminal used by the `Mojo: Run Mojo File` command or on the editor after launch."
         }
       }
     },

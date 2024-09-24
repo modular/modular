@@ -8,6 +8,7 @@ import { quote, parse } from 'shell-quote';
 import * as vscode from 'vscode';
 import { DisposableContext } from '../utils/disposableContext';
 import path = require('path');
+import * as config from '../utils/config';
 import { MojoSDK } from '../sdk/sdk';
 import { MojoSDKManager } from '../sdk/sdkManager';
 import { MojoDebugConfiguration } from '../debug/debug';
@@ -166,9 +167,14 @@ class ExecutionManager extends DisposableContext {
       ])
     );
 
-    // Focus on the terminal if the user has configured it to do so.
     if (this.shouldTerminalFocusOnStart(doc.uri)) {
       vscode.commands.executeCommand('workbench.action.terminal.focus');
+
+      // Sometimes VSCode will focus on the terminal as a side-effect of `terminal.show()`,
+      // in which case we need to indicate it to switch back the focus to the previous
+      // focus group.
+    } else {
+      vscode.commands.executeCommand('workbench.action.focusActiveEditorGroup');
     }
   }
 
@@ -218,6 +224,7 @@ class ExecutionManager extends DisposableContext {
     return vscode.window.createTerminal({
       name: terminalName,
       env: sdk.getProcessEnv(),
+      hideFromUser: true,
     });
   }
 
@@ -256,9 +263,11 @@ class ExecutionManager extends DisposableContext {
    * Returns true if the terminal should be focused on start.
    */
   private shouldTerminalFocusOnStart(uri: vscode.Uri): boolean {
-    return vscode.workspace
-      .getConfiguration('terminal', vscode.workspace.getWorkspaceFolder(uri))
-      .get<boolean>('focusAfterLaunch', false);
+    return config.get<boolean>(
+      'run.focusOnTerminalAfterLaunch',
+      vscode.workspace.getWorkspaceFolder(uri),
+      false
+    );
   }
 }
 
