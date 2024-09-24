@@ -176,7 +176,8 @@ void OutlineClosuresPass::runOnOperation() {
       assert(regionDecl.getResultParams().empty() && "no result params!");
       auto liftedWrapper = b.create<GeneratorOp>(
           uniqueName, wrapperSignature, regionDecl.getFunctionType(),
-          inputParamDecls, regionDecl.getInlineLevel());
+          inputParamDecls, regionDecl.getInlineLevel(),
+          regionDecl.getLLVMMetadata());
       symtab.insert(liftedWrapper);
       auto wrapperSymbol = SymbolConstantAttr::get(liftedWrapper);
 

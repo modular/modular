@@ -446,6 +446,12 @@ lit.file_module @module {
 // CHECK: kgen.generator @metadata
 // CHECK-SAME: LLVMMetadata = {llvm.someattr = 3 : index}
 lit.func @metadata() attributes {LLVMMetadata = {llvm.someattr = 3 : index}} {
+  // CHECK: kgen.param.declare.region metadataNested
+  lit.func metadataNested() attributes {LLVMMetadata = {llvm.someattr = 4 : index}} {
+    // CHECK-NEXT: kgen.return
+    kgen.return
+  // CHECK-NEXT: }{{.*}}LLVMMetadata = {llvm.someattr = 4 : index}
+  }
   kgen.return
 }
 
