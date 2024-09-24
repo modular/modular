@@ -23,7 +23,7 @@ def test_load_on_gpu(gpu_session: InferenceSession, mo_model_path: Path):
 def test_execute_gpu(gpu_session: InferenceSession, mo_model_path: Path):
     """Validate that we can execute inputs on GPU."""
     model = gpu_session.load(mo_model_path)
-    input_tensor = Tensor.from_numpy(np.ones(5, dtype=np.float32), CUDA())
+    input_tensor = Tensor.from_numpy(np.ones(5, dtype=np.float32)).to(CUDA())
     outputs = model.execute(input_tensor)
     assert len(outputs) == 1
     output_tensor = outputs[0]
@@ -38,7 +38,7 @@ def test_execute_subtensor(gpu_session: InferenceSession, mo_model_path: Path):
     # implementation.
     model = gpu_session.load(mo_model_path)
     arr = np.arange(0, 20, dtype=np.float32).reshape((2, 10))
-    input_tensor = Tensor.from_numpy(arr, CUDA())[0, :5]
+    input_tensor = Tensor.from_numpy(arr).to(CUDA())[0, :5]
     outputs = model.execute(input_tensor)
     assert len(outputs) == 1
     output_tensor = outputs[0]
@@ -53,7 +53,7 @@ def test_execute_subtensor(gpu_session: InferenceSession, mo_model_path: Path):
 
     # We need to also handle situations where we're creating tensors from numpy
     # arrays that have already been sliced.
-    presliced_input = Tensor.from_numpy(arr[0, ::2], CUDA())
+    presliced_input = Tensor.from_numpy(arr[0, ::2]).to(CUDA())
     presliced_output = model.execute(presliced_input)
     presliced_expected = [3.0, 3.0, -2.0, 8.0, 13.0]
     assert len(presliced_output) == 1
@@ -150,7 +150,7 @@ def test_aliasing_outputs(
     # same tensor outputs more than once.
     model = gpu_session.load(aliasing_outputs_path)
     arr = np.arange(0, 5, dtype=np.int32)
-    input_tensor = Tensor.from_numpy(arr, device=CUDA())
+    input_tensor = Tensor.from_numpy(arr).to(CUDA())
     outputs = model.execute(input_tensor)
     assert len(outputs) == 2
 
