@@ -129,6 +129,25 @@ async def test_tinyllama_max_new_tokens(
     )
     assert context.max_tokens == prompt_size + configured_max_new_tokens
 
+    # Run the model for the first time.
+    tokens = []
+    request_id = str(uuid4())
+    while True:
+        response = await tinyllama_model.next_token({request_id: context})
+        if request_id not in response:
+            break
+        token = response[request_id]
+        tokens.append(token)
+    generated_token_count = len(tokens)
+
+    assert generated_token_count == configured_max_new_tokens
+
+    # Run the model a second time, provided an identical but new context object.
+    # This will test that the model correctly resolves old cached sequences for reuse.
+    context = await tinyllama_model.new_context(
+        prompt_fixture, max_new_tokens_fixture
+    )
+
     tokens = []
     request_id = str(uuid4())
     while True:
