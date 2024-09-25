@@ -347,7 +347,7 @@ struct Model:
                     on_device_inputs.append(tensor^)
                 else:
                     var input_dt = (
-                        tensor.to_device_tensor().copy_to(
+                        (tensor^.to_device_tensor()).copy_to(
                             self._session._ptr[].device
                         )
                     )

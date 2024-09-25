@@ -72,7 +72,7 @@ def test_vec_add():
     )
 
     out_host = (
-        out.to_device_tensor().copy_to(cpu_dev).to_tensor[type, 2]()
+        out^.to_device_tensor().copy_to(cpu_dev).to_tensor[type, 2]()
     )  # copy blocks until the kernel is finished
 
     # lifetime extension required otherwise in0's last use is before the call to

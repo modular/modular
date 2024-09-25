@@ -137,7 +137,7 @@ def test_print():
     assert_true("dtype=float32, shape=10x2" in str(any_tensor))
 
     # Tensor
-    tensor = any_tensor.to_device_tensor().to_tensor[DType.float32, 2]()
+    tensor = any_tensor^.to_device_tensor().to_tensor[DType.float32, 2]()
     assert_true("Tensor(<Unable to print device tensor>," in str(tensor))
     assert_true("Device(" in str(tensor))
     assert_true("dtype=float32, shape=10x2" in str(tensor))

@@ -451,14 +451,14 @@ struct ContinuousBatchingKVCacheManager[
             host_lookup_table[bs] = seq_id
 
         # copy valid lengths from CPU to other device
-        var device_valid_lengths = host_valid_lengths.to_device_tensor().move_to(
+        var device_valid_lengths = host_valid_lengths^.to_device_tensor().move_to(
             self.other_device
         )
         var valid_lengths_ndbuffer = NDBuffer[DType.uint32, 1](
             device_valid_lengths.unsafe_ptr().bitcast[DType.uint32](),
             (batch_size,),
         )
-        var device_lookup_table = host_lookup_table.to_device_tensor().move_to(
+        var device_lookup_table = host_lookup_table^.to_device_tensor().move_to(
             self.other_device
         )
         var lookup_table_ndbuffer = NDBuffer[DType.uint32, 1](
