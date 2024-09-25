@@ -114,6 +114,7 @@ ParamBindings::verifyBindingsImpl(
     const CallOperands &origOperands, ArrayRef<Type> expectedParamTypes,
     PogListAttr paramListAttr, ParameterInferenceHookTy parameterInferenceHook,
     const DiagEmitter *diagEmitter, bool partial) const {
+  assert(parameterInferenceHook && "expected a parameter inference hook");
   Fitness fitness{0, false};
 
   // Check to see if we have *_ or **_ and filter them from the operand list.
@@ -151,9 +152,8 @@ ParamBindings::verifyBindingsImpl(
   size_t numParams = expectedParamTypes.size();
 
   OperandValueList variadicKwOperands;
-  bool allowMissingKwOnly = partial || parameterInferenceHook;
   auto [kwDiagRes, kwDiagNames] = operands.diagnoseKeywordOperands(
-      paramListAttr, variadicKwOperands, allowMissingKwOnly);
+      paramListAttr, variadicKwOperands, /*allowMissingKwOnly=*/true);
   if (kwDiagRes != CallOperands::KwDiagResult::kValid) {
     switch (kwDiagRes) {
     case CallOperands::KwDiagResult::kMissingKwOnly:
@@ -214,14 +214,10 @@ ParamBindings::verifyBindingsImpl(
   size_t numBindings = operands.size();
 
   auto inferParameter = [&](Type requestedType) {
-    if (parameterInferenceHook) {
-      if (PValue value = parameterInferenceHook(newBindings, evaluator)) {
-        assert(value.getType().mlirType == requestedType &&
-               "inferred a parameter value of wrong type");
-        return value;
-      }
-    }
-    return PValue();
+    PValue value = parameterInferenceHook(newBindings, evaluator);
+    assert(!value || value.getType().mlirType == requestedType &&
+                         "inferred a parameter value of wrong type");
+    return value;
   };
 
   DefaultValueHandler defaultHandler(paramListAttr);
@@ -378,9 +374,6 @@ ParamBindings::verifyBindingsImpl(
     // Otherwise, if this is an inferred parameter, a value could not have been
     // explicitly provided and we must have an inference hook.
     if (passingKind == PassingKind::Inferred) {
-      // TODO: Enable this assert. We always need to be able to infer these.
-      // assert(parameterInferenceHook &&
-      //        "require parmeter inference in this context");
       if (PValue value = inferParameter(requestedType)) {
         setParamValue(value);
         continue;
@@ -490,8 +483,17 @@ ParamBindings::verifyBindings(
 
 std::pair<ParameterExprArrayAttr, ParamBindings::Fitness>
 ParamBindings::verifyBindings(LITSignatureType sig, bool partial) const {
-  // TODO(jeff): Fill this in.
-  auto parameterInferenceHook = nullptr;
+  auto parameterInferenceHook = [&](ArrayRef<TypedAttr> bindingsSoFar,
+                                    const ParserParamEvaluator &evaluator) {
+    // The inference diagnostics will be unused.
+    ParameterInferenceDiagnostics inferenceDiags;
+    ParameterInferenceState inference(*this, getParameters(), bindingsSoFar,
+                                      evaluator, inferenceDiags,
+                                      /*allowImplicitConversions=*/true);
+
+    inference.infer(sig.getParamTypes(), sig.getParamListAttrs());
+    return PValue(inference.getInferredValue(bindingsSoFar.size()));
+  };
   return verifyBindingsImpl(parameters, sig.getParamTypes(),
                             sig.getParamListAttrs(), parameterInferenceHook,
                             /*diagEmitter=*/nullptr, partial);
