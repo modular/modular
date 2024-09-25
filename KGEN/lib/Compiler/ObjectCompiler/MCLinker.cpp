@@ -168,7 +168,8 @@ void MCLinker::prepareMachineModuleInfo() {
   }
 }
 
-ErrorOr<WriteableBufferRef> MCLinker::linkAndPrint(StringRef moduleName) {
+ErrorOr<WriteableBufferRef> MCLinker::linkAndPrint(StringRef moduleName,
+                                                   bool emitAssembly) {
   // link at llvm::Module level.
   ErrorOrSuccess lmResult = linkLLVMModules(moduleName);
   if (lmResult.isError())
@@ -191,8 +192,10 @@ ErrorOr<WriteableBufferRef> MCLinker::linkAndPrint(StringRef moduleName) {
   passMgr.add(new llvm::TargetLibraryInfoWrapperPass(targetLibInfo));
 
   if (KGEN::addPassesToAsmPrint(options, llvmTargetMachine, passMgr, *linkedObj,
-                                llvm::CodeGenFileType::ObjectFile, true,
-                                machineModInfoPass, mcInfos)) {
+                                emitAssembly
+                                    ? llvm::CodeGenFileType::AssemblyFile
+                                    : llvm::CodeGenFileType::ObjectFile,
+                                true, machineModInfoPass, mcInfos)) {
     // Release some of the AsyncValue memory to avoid
     // wrong version of LLVMContext destructor being called due to
     // multiple LLVM being statically linked in dylibs that have
