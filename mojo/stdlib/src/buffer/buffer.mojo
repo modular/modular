@@ -679,7 +679,7 @@ struct NDBuffer[
 
         @parameter
         for i in range(rank):
-            res[i] = self.dim(i)
+            res[i] = self.dim[i]()
         return res
 
     @always_inline
