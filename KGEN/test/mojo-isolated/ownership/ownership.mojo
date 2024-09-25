@@ -1100,11 +1100,22 @@ fn caught_eh_cleanup():
 
 fn use_inner_pointer(ptr: UnsafePointer[UInt8]): pass
 
-# CHECK-LABEL: lit.func @"handleAnyLifetime
-fn handleAnyLifetime():
+# CHECK-LABEL: lit.func @"handleAnyLifetime1
+fn handleAnyLifetime1():
   str = String()
   # Make sure this keeps alive str until after the call.
   # CHECK: lit.call {{.*}}use_inner_pointer
   use_inner_pointer(str.unsafe_ptr())
   # CHECK-NEXT: lit.call {{.*}}String::@"__del__{{.*}}(%str)
   # CHECK-NEXT: lit.var.lifetime.end %str
+
+# CHECK-LABEL: lit.func @"handleAnyLifetime2
+fn handleAnyLifetime2():
+  ui8 = UInt8()
+  
+  # Make sure this keeps 'ui8' alive until after the call even though
+  # the element is trivial.
+  # CHECK: lit.call {{.*}}use_inner_pointer
+  use_inner_pointer(UnsafePointer.address_of(ui8))
+  # CHECK-NEXT: lit.var.lifetime.end %ui8
+

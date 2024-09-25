@@ -7,7 +7,6 @@
 alias int = __mlir_type.index
 alias string = __mlir_type.`!kgen.string`
 alias float = __mlir_type.`!pop.scalar<f64>`
-alias UInt8 = __mlir_type.i8
 
 alias AnyTrivialRegType = __mlir_type.`!kgen.type`
 alias ImmutableLifetime = __mlir_type.`!lit.lifetime<0>`
@@ -204,6 +203,13 @@ struct Int(Copyable):
     @always_inline("nodebug")
     fn __mlir_index__(self) -> __mlir_type.index:
         return self.value
+
+
+@value
+@register_passable("trivial")
+struct UInt8:
+    fn __init__(inout self):
+        pass
 
 
 @value

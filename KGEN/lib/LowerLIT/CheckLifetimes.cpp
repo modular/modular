@@ -1280,10 +1280,6 @@ void UninitializedValueScan::handleAnyLifetimeUse(Operation &op) {
     if (!valueSet.getFullValueRef(i).isAllPresent(liveValues))
       continue;
 
-    // Don't mess with trivial things.
-    if (valueSet.isTrivial(valueInfo.value.getType(), valueInfo.isIndirect))
-      continue;
-
     // Check to see if the value is dominated by this op.  It is possible for
     // values to be fully live that are not reachable, e.g.:
     //
@@ -2662,9 +2658,12 @@ void DestructorInsertion::scanBlock(Block &block) {
         // and library development, not for users.
 #if 0
         if (!info.getFullValueRef(valueId).isAllPresent(consumedValues)) {
-          op.emitRemark(
-              "op extended with AnyLifetime usage extended lifetime of ")
-              << info.value;
+          auto diag = op.emitRemark(
+              "op extended with AnyLifetime usage extended lifetime of ");
+          if (auto varDecl = info.value.getDefiningOp<VarDeclOp>())
+            diag << "'" << varDecl.getName() << "'";
+          else
+            diag << info.value;
         }
 #endif
 
