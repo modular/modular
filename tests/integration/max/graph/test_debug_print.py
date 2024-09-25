@@ -9,6 +9,7 @@
 import numpy as np
 import pytest
 from max.driver import Tensor
+from max.driver.tensor import load_max_tensor
 from max.dtype import DType
 from max.graph import Graph, TensorType
 
@@ -101,3 +102,46 @@ def test_debug_print_binary(compiled_model, session, capfd, tmp_path):
     assert (tmp_path / "test_x_value").exists()
     from_file = np.fromfile(tmp_path / "test_x_value", np.float32)
     assert (input == from_file).all()
+
+
+def test_debug_print_binary_max(compiled_model, session, capfd, tmp_path):
+    session.set_debug_print_options(
+        "BINARY_MAX_CHECKPOINT", output_directory=tmp_path
+    )
+    input = np.random.uniform(size=[15]).astype(np.float32)
+    _ = compiled_model.execute(Tensor.from_numpy(input))
+    captured = capfd.readouterr()
+    assert "test_x_value" not in captured.out
+
+    max_path = tmp_path / "test_x_value.max"
+    assert max_path.exists()
+    from_file = load_max_tensor(max_path).to_numpy()
+    assert (input == from_file).all()
+
+
+def test_debug_print_binary_max_bf16(session, capfd, tmp_path):
+    def print_input(x):
+        x.print("test_x_value")
+        return x
+
+    g = Graph("test_print", print_input, [TensorType(DType.bfloat16, ["dim1"])])
+    compiled_model = session.load(g)
+
+    session.set_debug_print_options(
+        "BINARY_MAX_CHECKPOINT", output_directory=tmp_path
+    )
+    dim = 15
+    input = Tensor([dim], DType.bfloat16)
+    for i in range(dim):
+        input[i] = np.random.uniform()
+
+    _ = compiled_model.execute(input)
+    captured = capfd.readouterr()
+    assert "test_x_value" not in captured.out
+
+    max_path = tmp_path / "test_x_value.max"
+    assert max_path.exists()
+    from_file = load_max_tensor(max_path)
+
+    for i in range(dim):
+        assert from_file[i].item() == input[i].item()
