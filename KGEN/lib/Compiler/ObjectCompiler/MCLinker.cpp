@@ -19,6 +19,11 @@
 using namespace M;
 using namespace KGEN;
 
+void SymbolAndMCInfo::clear() {
+  symbolLinkageTypes.clear();
+  mcInfos.clear();
+}
+
 MCLinker::MCLinker(SmallVectorImpl<SymbolAndMCInfo *> &symbolAndMCInfos,
                    llvm::TargetMachine &targetMachine,
                    CompilationOptions options)
@@ -37,8 +42,8 @@ ErrorOrSuccess MCLinker::linkLLVMModules(StringRef modularName) {
   llvm::Linker linker(*linkedModule);
 
   for (auto [i, smcInfos] : llvm::enumerate(symbolAndMCInfos)) {
-    for (auto &iter : smcInfos->symbolLinkageTypes)
-      symbolLinkageTypes.insert(&iter);
+    for (auto &[key, value] : smcInfos->symbolLinkageTypes)
+      symbolLinkageTypes.insert({key, value});
 
     for (auto [j, mcInfo] : llvm::enumerate(smcInfos->mcInfos)) {
       mcInfos.push_back(mcInfo.get());
@@ -188,6 +193,13 @@ ErrorOr<WriteableBufferRef> MCLinker::linkAndPrint(StringRef moduleName) {
   if (KGEN::addPassesToAsmPrint(options, llvmTargetMachine, passMgr, *linkedObj,
                                 llvm::CodeGenFileType::ObjectFile, true,
                                 machineModInfoPass, mcInfos)) {
+    // Release some of the AsyncValue memory to avoid
+    // wrong version of LLVMContext destructor being called due to
+    // multiple LLVM being statically linked in dylibs that have
+    // access to this code path.
+    for (SymbolAndMCInfo *smcInfo : symbolAndMCInfos)
+      smcInfo->clear();
+
     return Error("failed to add to ObjectFile Print pass");
   }
 
@@ -202,7 +214,7 @@ ErrorOr<WriteableBufferRef> MCLinker::linkAndPrint(StringRef moduleName) {
   // multiple LLVM being statically linked in dylibs that have
   // access to this code path.
   for (SymbolAndMCInfo *smcInfo : symbolAndMCInfos)
-    smcInfo->mcInfos.clear();
+    smcInfo->clear();
 
   return linkedObj;
 }

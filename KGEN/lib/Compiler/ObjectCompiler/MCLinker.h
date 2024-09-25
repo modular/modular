@@ -85,6 +85,9 @@ struct SymbolAndMCInfo {
       : symbolLinkageTypes(std::move(other.symbolLinkageTypes)),
         mcInfos(std::move(other.mcInfos)) {}
 
+  /// Clear member variables explicitly.
+  void clear();
+
   /// Book-keeping original symbol linkage type if they are changed due to
   /// splitting for parallel compilation.
   llvm::StringMap<llvm::GlobalValue::LinkageTypes> symbolLinkageTypes;

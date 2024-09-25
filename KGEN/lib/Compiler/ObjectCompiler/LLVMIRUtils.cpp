@@ -602,8 +602,17 @@ void LLVMModulePerFunctionSplitterImpl::split(
 
   [[maybe_unused]] int64_t count = 0;
   SmallVector<const llvm::GlobalValue *> toSplit;
+  unsigned unnamedGlobal = numFunctionBase;
   for (auto &global : mainModule->globals()) {
     if (global.hasInternalLinkage() || global.hasPrivateLinkage()) {
+      if (!global.hasName()) {
+        // Give unnamed GlobalVariable a unique name so that MCLink will not get
+        // confused to name them while generating linked code since the IR
+        // values can be different in each splits (for X86 backend.)
+        // asan build inserts these unnamed GlobalVariables.
+        global.setName("__mojo_unnamed" + Twine(unnamedGlobal++));
+      }
+
       symbolLinkageTypes.insert({global.getName().str(), global.getLinkage()});
       global.setLinkage(llvm::GlobalValue::WeakAnyLinkage);
       global.setDSOLocal(false);
@@ -628,11 +637,14 @@ void LLVMModulePerFunctionSplitterImpl::split(
     ValueInfo &info = valueInfos[&fn];
     bool userEmpty = info.users.empty() ||
                      (info.users.size() == 1 && info.users.contains(&fn));
+
+    if (fn.hasInternalLinkage() || fn.hasPrivateLinkage()) {
+      // Avoid renaming when linking in MCLink.
+      symbolLinkageTypes.insert({fn.getName().str(), fn.getLinkage()});
+      fn.setLinkage(llvm::Function::LinkageTypes::WeakAnyLinkage);
+    }
+
     if (info.canBeSplit || userEmpty) {
-      if (fn.hasInternalLinkage()) {
-        symbolLinkageTypes.insert({fn.getName().str(), fn.getLinkage()});
-        fn.setLinkage(llvm::Function::LinkageTypes::WeakAnyLinkage);
-      }
       LLVM_DEBUG(llvm::dbgs()
                      << (count++) << ": split fn: " << fn.getName() << "\n";);
       toSplit.emplace_back(&fn);
@@ -658,6 +670,9 @@ void LLVMModulePerFunctionSplitterImpl::split(
 
   unsigned numFunctions = numFunctionBase;
   for (auto [idx, set] : llvm::enumerate(setsToProcess)) {
+    // Giving each function a unique ID across all splits for proper MC level
+    // linking and codegen into one object file where duplicated functions
+    // in each split will be deduplicated (with the linking).
     unsigned next = numFunctions + set.size();
     auto makeModule = [set = std::move(set), buf = BufferRef(buf.copy()),
                        strtab = strtab.copy()]() mutable {
