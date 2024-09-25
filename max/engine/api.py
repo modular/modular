@@ -729,13 +729,21 @@ class InferenceSession:
         This affects debug printing across all model execution using the same
         InferenceSession.
 
+        Tensors saved with `BINARY` can be loaded using
+        `max.driver.MemmapTensor()`, but you will have to provide the expected
+        dtype and shape.
+
+        Tensors saved with `BINARY_MAX_CHECKPOINT` are saved with the shape and
+        dtype information, and can be loaded with
+        `max.driver.tensor.load_max_tensor()`.
+
         Warning: Even with style set to `NONE`, debug print ops in the graph can
         stop optimizations. If you see performance issues, try fully removing
         debug print ops.
 
         Args:
             style: How the values will be printed. Can be `COMPACT`, `FULL`,
-                `BINARY`, or `NONE`.
+                `BINARY`, `BINARY_MAX_CHECKPOINT` or `NONE`.
             precision: If the style is `FULL`, the digits of precision in the
                 output.
             output_directory: If the style is `BINARY`, the directory to store
@@ -746,11 +754,11 @@ class InferenceSession:
         if not isinstance(style, PrintStyle):
             raise TypeError(
                 "Invalid debug print style. Please use one of 'COMPACT',"
-                " 'FULL', 'BINARY', or 'NONE'."
+                " 'FULL', 'BINARY', 'BINARY_MAX_CHECKPOINT', or 'NONE'."
             )
         if style == PrintStyle.FULL and not isinstance(precision, int):
             raise TypeError("Debug print precision must be an int.")
-        if style == PrintStyle.BINARY:
+        if style in (PrintStyle.BINARY, PrintStyle.BINARY_MAX_CHECKPOINT):
             if isinstance(output_directory, str):
                 pass
             elif isinstance(output_directory, Path):
