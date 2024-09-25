@@ -56,3 +56,10 @@ def test_kv_manager(session: InferenceSession) -> None:
 
         for seq_id in seq_ids:
             assert kv_manager.cache_lengths[seq_id] == 1 + i
+
+    # Reset the cache, claim 4 ids, and pass 3 to the fetch.
+    # This tests that the cache_lengths is appropriately pulled.
+    kv_manager.reset_cache()
+
+    seq_ids = kv_manager.claim(batch_size=4)
+    kv_collection = kv_manager.fetch(seq_ids[1:])
