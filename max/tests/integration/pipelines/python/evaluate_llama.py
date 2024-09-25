@@ -19,6 +19,7 @@ from pathlib import Path
 
 import click
 import numpy as np
+import numpy.typing as npt
 from cpuinfo import get_cpu_info
 from huggingface_hub import hf_hub_download
 from llama3 import (
@@ -110,27 +111,20 @@ PROMPTS = (
 def run_llama3(llama3: Llama3, prompts=PROMPTS, num_steps=NUM_STEPS):
     results = []
     for prompt in prompts:
-        context = asyncio.run(llama3.new_context(prompt))
         llama3._reset_cache()
-        inference_results = []
+        context = asyncio.run(llama3.new_context(prompt))
+        inference_results: list[dict[str, npt.NDArray]] = []
 
         curr_req_id = uuid.uuid4()
         for _ in range(num_steps):
-            logits_dict, k_cache_dict, v_cache_dict = llama3._execute(
-                {curr_req_id: context}
-            )
+            logits_dict = llama3._execute({curr_req_id: context})
             for req_id, logits in logits_dict.items():
                 next_token = logits.argmax(axis=-1)[-1]
                 inference_results.append(
                     {
                         "next_token": next_token,
-                        # TODO(MSDK-970): Rework this since we have refactored _execute() call to return a
-                        #       logits_dict.
-                        # # Only store `next_token_logits` otherwise the golden file
-                        # # gets too big.
-                        # "next_token_logits": logits[0, -1][next_token],
-                        "kv_cache": k_cache_dict[req_id],
-                        "v_cache": v_cache_dict[req_id],
+                        "next_token_logits": logits[0, next_token],
+                        "logits": logits.reshape(-1),
                     }
                 )
 
@@ -163,6 +157,11 @@ def compare_values(actual, expected):
             expected_results = expected_values[step]
 
             for key, value in inference_results.items():
+                # TODO(MSDK-1025): Add logits to A100 and A10G golden test files and
+                # delete this.
+                if (key == "logits") and (key not in expected_results):
+                    continue
+
                 expected_value = expected_results[key]
                 np.testing.assert_allclose(
                     value,
