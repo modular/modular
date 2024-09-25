@@ -86,6 +86,19 @@ def aliasing_outputs_path(modular_path: Path) -> Path:
     )
 
 
+@pytest.fixture
+def named_inputs_path(modular_path: Path) -> Path:
+    """Returns the path to a model spec that adds a series of named tensors."""
+    return (
+        modular_path
+        / "SDK"
+        / "integration-test"
+        / "EngineAPI"
+        / "Inputs"
+        / "named-inputs.mlir"
+    )
+
+
 def pytest_addoption(parser):
     parser.addoption(
         "--custom-ops-path",

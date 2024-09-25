@@ -9,13 +9,14 @@ import os
 from dataclasses import dataclass
 from math import isclose
 from pathlib import Path
+from typing import Tuple
 
 import numpy as np
 import pytest
 import torch
 from max.driver import Tensor
 from max.dtype import DType
-from max.engine import InferenceSession, TensorSpec, TorchInputSpec
+from max.engine import InferenceSession, Model, TensorSpec, TorchInputSpec
 from max.graph import Graph, TensorType, Value
 from max.mlir.dialects import mo
 
@@ -525,3 +526,83 @@ def test_stats_report(
     assert isinstance(sr, dict)
     assert sr["fallbacks"] == []
     assert sr["total_op_count"] == 1
+
+
+@pytest.fixture
+def call_inputs() -> Tuple[Tensor, Tensor, Tensor, Tensor, Tensor]:
+    # Fixture for inputs to __call__ tests.
+    a = Tensor.from_numpy(np.arange(0, 5, dtype=np.int32))
+    b = Tensor.from_numpy(np.arange(5, 10, dtype=np.int32))
+    c = Tensor.from_numpy(np.arange(10, 15, dtype=np.int32))
+    d = Tensor.from_numpy(np.arange(15, 20, dtype=np.int32))
+    e = Tensor.from_numpy(np.arange(20, 25, dtype=np.int32))
+    return (a, b, c, d, e)
+
+
+@pytest.fixture
+def call_output() -> np.ndarray:
+    # Expected output for __call__ tests.
+    return np.array([50, 55, 60, 65, 70], dtype=np.int32)
+
+
+@pytest.fixture
+def call_model(session: InferenceSession, named_inputs_path: Path) -> Model:
+    # Loaded model for __call__ tests.
+    return session.load(named_inputs_path)
+
+
+def test_positional_call(
+    call_inputs: Tuple, call_output: np.ndarray, call_model: Model
+):
+    # Calling a model with strictly positional inputs should work.
+    a, b, c, d, e = call_inputs
+    output = call_model(a, b, c, d, e)[0]
+    assert np.array_equal(call_output, output.to_numpy())
+
+
+def test_named_call(
+    call_inputs: Tuple, call_output: np.ndarray, call_model: Model
+):
+    # Calling a model with strictly named inputs should work.
+    a, b, c, d, e = call_inputs
+    output = call_model(b=b, a=a, e=e, c=c, d=d)[0]
+    assert np.array_equal(call_output, output.to_numpy())
+
+
+def test_mixed_positional_named_call(
+    call_inputs: Tuple, call_output: np.ndarray, call_model: Model
+):
+    # Calling a model with a mixture of named and positional inputs should also work (even if named
+    # inputs are not ordered).
+    a, b, c, d, e = call_inputs
+    output = call_model(a, b, e=e, c=c, d=d)[0]
+    assert np.array_equal(call_output, output.to_numpy())
+
+
+def test_too_few_inputs_call(call_inputs: Tuple, call_model: Model):
+    # Calling a model with less inputs than expected should not work.
+    a, b, c, _, e = call_inputs
+    with pytest.raises(TypeError):
+        call_model(a, b, e=e, c=c)
+
+
+def test_too_many_inputs_call(call_inputs: Tuple, call_model: Model):
+    # Calling a model with more inputs than expected should not work.
+    a, b, c, d, e = call_inputs
+    with pytest.raises(TypeError):
+        call_model(a, b, c, d, e, a)
+
+
+def test_already_specified_input_call(call_inputs: Tuple, call_model: Model):
+    # Calling a model with inputs that correspond to indexes already occupied by
+    # positional inputs should not work.
+    a, b, c, d, _ = call_inputs
+    with pytest.raises(TypeError):
+        call_model(a, b, b=b, c=c, d=d)
+
+
+def test_unrecognized_name_call(call_inputs: Tuple, call_model: Model):
+    # Calling model with unrecognized names should not work.
+    a, b, c, d, e = call_inputs
+    with pytest.raises(TypeError):
+        call_model(a, b, f=e, c=c, d=d)
