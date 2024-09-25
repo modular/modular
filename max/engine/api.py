@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import json
+from inspect import Parameter, Signature
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Type, Union
 
@@ -31,6 +32,7 @@ ExecResultType = Union[
 ]
 # Need to use tuple instead of Union to ensure that Python 3.9 support works.
 ScalarType = (int, float, bool, np.generic)
+InputType = Union[Tensor, MojoValue, int, float, bool, np.generic]
 
 
 def _map_execute_kwarg(
@@ -118,7 +120,7 @@ class Model:
 
     def execute(
         self,
-        *args: Union[Tensor, DLPackArray, np.generic, bool, float, int],
+        *args: InputType,
         copy_inputs_to_device: bool = True,
         output_device: Optional[Device] = None,
     ) -> List[TensorOrMojoType]:
@@ -147,10 +149,6 @@ class Model:
             The device to copy output tensors to. Defaults to :obj:`None`, in
             which case the tensors will remain resident on the same device as
             the model.
-        ``kwargs``
-            The input tensors, each specified with the appropriate tensor name
-            as a keyword and its value as an :obj:`np.ndarray`. You can find the
-            tensor names to use as keywords from :obj:`~Model.input_metadata`.
 
         Returns
         -------
@@ -227,6 +225,74 @@ class Model:
                 wrapped_tensor = wrapped_tensor.copy(output_device)
             processed_results.append(wrapped_tensor)
         return processed_results
+
+    def __call__(
+        self, *args: InputType, **kwargs: InputType
+    ) -> List[TensorOrMojoType]:
+        """Executes the model with the provided input and returns the outputs.
+
+        Models can be called with any mixture of named and positional inputs:
+
+        .. code-block:: python
+
+            model(a, b, d=d, c=c)
+
+        This function assumes that positional inputs cannot collide with any
+        named inputs that would be present in the same position. If we have a
+        model that takes named inputs `a`, `b`, `c`, and `d` (in that order),
+        the following is invalid.
+
+        .. code-block:: python
+            model(a, d, b=b, c=c)
+
+        The function will assume that input `d` will map to the same position as
+        input `b`.
+
+        Parameters
+        ----------
+        ``args``
+            A list of input tensors. We currently support the following input types:
+                * Any tensors implementing the dlpack protocol, such as
+                  :obj:`np.ndarray`, :obj:`torch.Tensor`
+                * Max Driver tensors, i.e. :obj:`max.driver.Tensor`
+                * Scalar inputs, i.e. :obj:`bool`, :obj:`float`, :obj:`int`,
+                  :obj:`np.generic`
+                * Mojo value inputs, i.e. :obj:`MojoValue`
+
+        ``kwargs``
+            Named inputs. We can support the same types supported in :obj:`args`.
+
+        Returns
+        -------
+        List
+            A list of output tensors and Mojo values. The output tensors will be
+            resident on the execution device by default.
+
+        Raises
+        ------
+        RuntimeError
+            If the given input tensors' shape don't match what the model expects.
+
+        TypeError
+            If the given input tensors' dtype cannot be cast to what the model
+            expects.
+
+        ValueError
+            If positional inputs are not one of the supported types, i.e.
+            :obj:`np.ndarray`, :obj:`torch.Tensor`, and :obj:`max.driver.Tensor`.
+
+
+        ValueError
+            If an input name does not correspond to what the model expects.
+
+        ValueError
+            If any positional and named inputs collide.
+
+        ValueError
+            If the number of inputs is less than what the model expects.
+        """
+        bound = self.signature.bind(*args, **kwargs)
+        return self.execute(*bound.arguments.values())
 
     def execute_legacy(
         self,
@@ -313,6 +379,15 @@ class Model:
                 print(f'name: {tensor.name}, shape: {tensor.shape}, dtype: {tensor.dtype}')
         """
         return [TensorSpec._init(spec) for spec in self._impl.output_metadata]
+
+    @property
+    def signature(self) -> Signature:
+        """Get input signature for model."""
+        parameters = [
+            Parameter(input.name, Parameter.POSITIONAL_OR_KEYWORD)
+            for input in self.input_metadata
+        ]
+        return Signature(parameters=parameters)
 
     @property
     def device(self) -> Device:
