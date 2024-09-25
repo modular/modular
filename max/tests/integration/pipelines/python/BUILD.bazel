@@ -31,7 +31,10 @@ modular_py_test(
     size = "large",
     srcs = glob(
         ["**/test_*.py"],
-        exclude = ["**/*_gpu.py"],
+        exclude = [
+            "serve/**/*",
+            "**/*_gpu.py",
+        ],
     ) + ["conftest.py"],
     data = [
         "//KGEN:CompilerRT",
@@ -73,9 +76,10 @@ modular_py_test(
 modular_py_test(
     name = "tests_gpu",
     size = "enormous",
-    srcs = glob([
-        "test_*_gpu.py",
-    ]) + [
+    srcs = glob(
+        ["test_*_gpu.py"],
+        exclude = ["serve/**/*"],
+    ) + [
         "conftest.py",
     ],
     data = [
@@ -114,5 +118,73 @@ modular_py_test(
         requirement("hypothesis"),
         requirement("transformers"),
         requirement("py-cpuinfo"),
+    ],
+)
+
+# - - - - -
+# Serve
+# - - - - -
+
+py_library(
+    name = "params",
+    testonly = True,
+    srcs = ["serve/params.py"],
+)
+
+modular_py_test(
+    name = "tests_serve_cpu",
+    size = "large",
+    srcs = [
+        "conftest.py",
+        "serve/conftest.py",
+        "serve/test_tiny_llama_serving_cpu.py",
+    ],
+    data = [
+        "//KGEN:CompilerRT",
+        "//SDK/integration-test/pipelines/python/testdata",
+        "@llvm-project//compiler-rt:orc_rt",
+    ],
+    env = {
+        "BAZEL": "true",
+        "MODULAR_PATH": ".",
+        "PIPELINES_TESTDATA": "SDK/integration-test/pipelines/python/testdata",
+    },
+    requires_gpu = False,
+    tags = ["requires-network"],
+    deps = [
+        ":params",
+        "//SDK/lib/API/python/max/serve",
+        "//SDK/public/max-repo/pipelines/python/llama3",
+    ],
+)
+
+modular_py_test(
+    name = "tests_serve_gpu",
+    size = "enormous",
+    srcs = [
+        "conftest.py",
+        "serve/conftest.py",
+        "serve/test_tiny_llama_serving_gpu.py",
+    ],
+    data = [
+        "//KGEN:CompilerRT",
+        "//SDK/integration-test/pipelines/python/testdata",
+        "@llvm-project//compiler-rt:orc_rt",
+    ],
+    env = {
+        "BAZEL": "true",
+        "MODULAR_PATH": ".",
+        "PIPELINES_TESTDATA": "SDK/integration-test/pipelines/python/testdata",
+    },
+    requires_gpu = True,
+    tags = [
+        "gpu",
+        "requires-network",
+    ],
+    deps = [
+        ":params",
+        "//SDK/lib/API/python:max_engine",
+        "//SDK/lib/API/python/max/serve",
+        "//SDK/public/max-repo/pipelines/python/llama3",
     ],
 )

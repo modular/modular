@@ -7,7 +7,6 @@
 
 Can also be used as a standalone binary to save out the golden values as a JSON.
 """
-
 import asyncio
 import base64
 import itertools
@@ -28,7 +27,7 @@ from llama3 import (
     SupportedEncodings,
     SupportedVersions,
 )
-from max.driver import CPU, CUDA
+from max.driver import CPU, CUDA, Device
 
 
 def find_runtime_path(fname):
@@ -71,21 +70,12 @@ class NumpyDecoder(JSONDecoder):
         return dct
 
 
-def load_llama3(
-    weight_path: str,
-    max_length: int = 512,
-    max_new_tokens: int = 10,
-):
-    config_kwargs = {}
-    if max_length:
-        config_kwargs["max_length"] = max_length
-    if max_new_tokens:
-        config_kwargs["max_new_tokens"] = max_new_tokens
+def load_llama3(weight_path: str, **kwargs):
     config = InferenceConfig(
         weight_path=weight_path,
         version=SupportedVersions.llama3_1,
         quantization_encoding=SupportedEncodings.float32,
-        **config_kwargs,
+        **kwargs,
     )
     llama3 = Llama3(config)
     return llama3

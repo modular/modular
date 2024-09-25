@@ -3,35 +3,25 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-"""Test serving a Llama 3 model."""
+"""The fixtures for all tests in this directory."""
 
 from pathlib import Path
 
 import llama3
 import pytest
-from evaluate_llama import load_llama3
-from fastapi.testclient import TestClient
-from max.driver import CPU, CUDA
+from huggingface_hub import hf_hub_download
+from llama3 import (
+    InferenceConfig,
+    Llama3,
+    SupportedEncodings,
+    SupportedVersions,
+)
 from max.serve.api_server import fastapi_app
 from max.serve.config import APIType, Settings
 from max.serve.debug import DebugSettings
-from max.serve.mocks.mock_api_requests import simple_openai_request
 from max.serve.pipelines.deps import token_pipeline
 from max.serve.pipelines.llm import TokenGeneratorPipeline
-from max.serve.schemas.openai import CreateChatCompletionResponse
 from transformers import AutoTokenizer
-
-# - - - - -
-# FIXTURES
-# - - - - -
-
-
-class ModelParams:
-    """The model parameters passed via a pytest fixture."""
-
-    def __init__(self, max_length, max_new_tokens):
-        self.max_length = max_length
-        self.max_new_tokens = max_new_tokens
 
 
 @pytest.fixture(scope="session")
@@ -61,11 +51,23 @@ def tinyllama_model(tinyllama_path, request):
     invoking it with.
     https://docs.pytest.org/en/stable/how-to/fixtures.html#fixture-scopes
     """
-    model = load_llama3(
-        tinyllama_path,
+    config = InferenceConfig(
+        weight_path=tinyllama_path,
+        version=SupportedVersions.llama3_1,
         max_length=request.param.max_length,
         max_new_tokens=request.param.max_new_tokens,
+        quantization_encoding=request.param.encoding,
+        device=request.param.device,
     )
+
+    if request.param.encoding == SupportedEncodings.bfloat16:
+        repo_id = f"modularai/llama-{config.version}"
+        config.weight_path = hf_hub_download(
+            repo_id=repo_id,
+            filename=config.quantization_encoding.hf_model_name(config.version),
+        )
+
+    model = Llama3(config)
     return model
 
 
@@ -73,25 +75,3 @@ def tinyllama_model(tinyllama_path, request):
 def tinyllama_path(testdata_directory) -> Path:
     """The path to the model's tiny weights."""
     return testdata_directory / "tiny_llama.gguf"
-
-
-# - - - - -
-# TESTS
-# - - - - -
-
-
-@pytest.mark.parametrize(
-    "tinyllama_model",
-    [ModelParams(max_length=512, max_new_tokens=10)],
-    indirect=True,
-)
-def test_tinyllama_serve(app):
-    with TestClient(app) as client:
-        raw_response = client.post(
-            "/v1/chat/completions", json=simple_openai_request()
-        )
-        # This is not a streamed completion - There is no [DONE] at the end.
-        response = CreateChatCompletionResponse.parse_raw(raw_response.json())
-
-        assert len(response.choices) == 1
-        assert response.choices[0].finish_reason == "stop"
