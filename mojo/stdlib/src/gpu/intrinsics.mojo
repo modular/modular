@@ -245,6 +245,34 @@ fn mulhi(a: Int64, b: Int64) -> Int64:
 
 
 # ===----------------------------------------------------------------------===#
+# mulwide
+# ===----------------------------------------------------------------------===#
+
+
+@always_inline
+fn mulwide(a: UInt32, b: UInt32) -> UInt64:
+    """Calculate the most significant 32 bits of the product of the two UInts.
+    """
+    return inlined_assembly[
+        "mul.wide.u32 $0, $1, $2;",
+        UInt64,
+        constraints="=l,r,r",
+        has_side_effect=False,
+    ](a, b)
+
+
+@always_inline
+fn mulwide(a: Int32, b: Int32) -> Int64:
+    """Calculate the most significant 32 bits of the product of the two Ints."""
+    return inlined_assembly[
+        "mul.wide.s32 $0, $1, $2;",
+        Int64,
+        constraints="=l,r,r",
+        has_side_effect=False,
+    ](a, b)
+
+
+# ===----------------------------------------------------------------------===#
 # threadfence
 # ===----------------------------------------------------------------------===#
 
