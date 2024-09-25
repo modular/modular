@@ -87,9 +87,11 @@ fn warpgroup_reg_alloc[count: Int]():
 
     @parameter
     if is_sm_greater_equal["sm_90a"]():
-        inlined_assembly["llvm.nvvm.setmaxnreg.inc.sync.aligned.u32", NoneType](
-            Int32(count)
-        )
+        inlined_assembly[
+            "llvm.nvvm.setmaxnreg.inc.sync.aligned.u32",
+            NoneType,
+            constraints="r",
+        ](Int32(count))
 
 
 fn warpgroup_reg_dealloc[count: Int]():
@@ -113,9 +115,11 @@ fn warpgroup_reg_dealloc[count: Int]():
 
     @parameter
     if is_sm_greater_equal["sm_90a"]():
-        inlined_assembly["llvm.nvvm.setmaxnreg.dec.sync.aligned.u32", NoneType](
-            Int32(count)
-        )
+        inlined_assembly[
+            "llvm.nvvm.setmaxnreg.dec.sync.aligned.u32",
+            NoneType,
+            constraints="r",
+        ](Int32(count))
 
 
 # ===----------------------------------------------------------------------===#
