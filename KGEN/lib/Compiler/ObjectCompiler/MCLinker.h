@@ -79,6 +79,8 @@ struct MCInfo {
 };
 
 struct SymbolAndMCInfo {
+  SymbolAndMCInfo() = default;
+
   SymbolAndMCInfo(SymbolAndMCInfo &&other)
       : symbolLinkageTypes(std::move(other.symbolLinkageTypes)),
         mcInfos(std::move(other.mcInfos)) {}

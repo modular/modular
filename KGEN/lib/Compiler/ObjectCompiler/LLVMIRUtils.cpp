@@ -481,7 +481,10 @@ public:
 
   /// Split the LLVM module into multiple modules using the provided process
   /// function.
-  void split(LLVMSplitProcessFn processFn, unsigned numFunctionBase);
+  void
+  split(LLVMSplitProcessFn processFn,
+        llvm::StringMap<llvm::GlobalValue::LinkageTypes> &symbolLinkageTypes,
+        unsigned numFunctionBase);
 
 private:
   struct ValueInfo {
@@ -510,18 +513,21 @@ private:
 
 /// support for splitting an LLVM module into multiple parts with each part
 /// contains only one function (with exception for coroutine related functions.)
-void KGEN::splitPerFunction(LLVMModuleAndContext module,
-                            LLVMSplitProcessFn processFn,
-                            unsigned numFunctionBase) {
+void KGEN::splitPerFunction(
+    LLVMModuleAndContext module, LLVMSplitProcessFn processFn,
+    llvm::StringMap<llvm::GlobalValue::LinkageTypes> &symbolLinkageTypes,
+    unsigned numFunctionBase) {
   CompilerTimeTraceScope traceScope("splitPerFunction");
   LLVMModulePerFunctionSplitterImpl impl(std::move(module));
-  impl.split(processFn, numFunctionBase);
+  impl.split(processFn, symbolLinkageTypes, numFunctionBase);
 }
 
 /// Split the LLVM module into multiple modules using the provided process
 /// function.
-void LLVMModulePerFunctionSplitterImpl::split(LLVMSplitProcessFn processFn,
-                                              unsigned numFunctionBase) {
+void LLVMModulePerFunctionSplitterImpl::split(
+    LLVMSplitProcessFn processFn,
+    llvm::StringMap<llvm::GlobalValue::LinkageTypes> &symbolLinkageTypes,
+    unsigned numFunctionBase) {
   // Compute the value info for each global in the module.
   // NOTE: The visitation of globals then functions has to line up with
   // `readAndMaterializeDependencies`.
@@ -598,6 +604,7 @@ void LLVMModulePerFunctionSplitterImpl::split(LLVMSplitProcessFn processFn,
   SmallVector<const llvm::GlobalValue *> toSplit;
   for (auto &global : mainModule->globals()) {
     if (global.hasInternalLinkage() || global.hasPrivateLinkage()) {
+      symbolLinkageTypes.insert({global.getName().str(), global.getLinkage()});
       global.setLinkage(llvm::GlobalValue::WeakAnyLinkage);
       global.setDSOLocal(false);
       continue;
@@ -622,8 +629,10 @@ void LLVMModulePerFunctionSplitterImpl::split(LLVMSplitProcessFn processFn,
     bool userEmpty = info.users.empty() ||
                      (info.users.size() == 1 && info.users.contains(&fn));
     if (info.canBeSplit || userEmpty) {
-      if (fn.hasInternalLinkage())
+      if (fn.hasInternalLinkage()) {
+        symbolLinkageTypes.insert({fn.getName().str(), fn.getLinkage()});
         fn.setLinkage(llvm::Function::LinkageTypes::WeakAnyLinkage);
+      }
       LLVM_DEBUG(llvm::dbgs()
                      << (count++) << ": split fn: " << fn.getName() << "\n";);
       toSplit.emplace_back(&fn);
