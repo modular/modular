@@ -7,19 +7,19 @@
 golden values.
 """
 
-
 import os
-from evaluate_llama import find_runtime_path
 from pathlib import Path
+
+import pytest
 from evaluate_llama import (
     NumpyDecoder,
-    compare_values,
-    run_llama3,
-    golden_data_fname,
     build_config,
+    compare_values,
+    find_runtime_path,
+    golden_data_fname,
+    run_llama3,
 )
 from llama3 import Llama3
-import pytest
 
 
 @pytest.mark.parametrize(

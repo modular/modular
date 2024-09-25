@@ -7,18 +7,20 @@
 golden values.
 """
 
-import pytest
-from evaluate_llama import find_runtime_path, golden_data_fname
+import os
 import re
-from uuid import uuid4
 from pathlib import Path
+from uuid import uuid4
 
+import pytest
 from evaluate_llama import (
+    PROMPTS,
     NumpyDecoder,
     compare_values,
+    find_runtime_path,
+    golden_data_fname,
     load_llama3,
     run_llama3,
-    PROMPTS,
 )
 
 
