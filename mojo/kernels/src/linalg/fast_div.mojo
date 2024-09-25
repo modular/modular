@@ -51,11 +51,11 @@ struct FastDiv[type: DType]:
         self._sh2 = max(cl - 1, 0)
 
     @always_inline
-    fn __div__(self, other: Scalar[Self.uint_type]) -> Scalar[Self.uint_type]:
-        return self / other
+    fn __rdiv__(self, other: Scalar[Self.uint_type]) -> Scalar[Self.uint_type]:
+        return other / self
 
     @always_inline
-    fn __truediv__(
+    fn __rtruediv__(
         self, other: Scalar[Self.uint_type]
     ) -> Scalar[Self.uint_type]:
         var t = _mulhi(self._mprime, other).cast[Self.uint_type]()
@@ -64,10 +64,15 @@ struct FastDiv[type: DType]:
         ) >> self._sh2.cast[Self.uint_type]()
 
     @always_inline
+    fn __rmod__(self, other: Scalar[Self.uint_type]) -> Scalar[Self.uint_type]:
+        var q = other / self
+        return other - (q * self._div)
+
+    @always_inline
     fn __divmod__(
         self, other: Scalar[Self.uint_type]
     ) -> (Scalar[Self.uint_type], Scalar[Self.uint_type]):
-        var q = self / other
+        var q = other / self
         return q, (other - (q * self._div))
 
 
