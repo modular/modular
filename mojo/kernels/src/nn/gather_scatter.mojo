@@ -1177,7 +1177,11 @@ fn scatter_elements[
     elementwise[update_func, 1](indices.get_shape())
 
 
-@mogg_register("scatter_shape")
+@mogg_register_shape_func("mo.scatter.max")
+@mogg_register_shape_func("mo.scatter.min")
+@mogg_register_shape_func("mo.scatter.mul")
+@mogg_register_shape_func("mo.scatter.add")
+@mogg_register_shape_func("mo.scatter")
 @always_inline
 fn scatter_elements_shape[
     rank: Int,
