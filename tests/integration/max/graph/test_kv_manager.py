@@ -7,7 +7,6 @@
 from max.driver import CPU
 from max.dtype import DType
 from max.engine import InferenceSession
-
 from nn.kv_cache import ContiguousKVCacheManager
 from nn.kv_cache_params import KVCacheParams
 
@@ -40,3 +39,6 @@ def test_kv_manager(session: InferenceSession) -> None:
 
     kv_collection = kv_manager.fetch(seq_ids + seq_ids_2)
     assert kv_collection is not None
+
+    # Check that resetting the cache succeeds.
+    kv_manager.reset_cache()
