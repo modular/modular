@@ -144,6 +144,7 @@ static constexpr StringLiteral kMOGGTargetParameterName = "target";
 static constexpr StringLiteral kMOGGTargetLabel = "mogg.target";
 static constexpr StringLiteral kMOGGElementFunction = "mogg.elementwise";
 static constexpr StringLiteral kMOGGViewKernel = "mogg.view_kernel";
+static constexpr StringLiteral kMOGGOutputRankParameterName = "output_rank";
 
 static constexpr StringLiteral kMOGGFusableArgs = "mogg.fusable_args";
 static constexpr StringLiteral kMOGGInputLambdas = "_in_lambdas";
