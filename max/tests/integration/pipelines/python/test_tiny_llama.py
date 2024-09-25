@@ -23,6 +23,8 @@ from evaluate_llama import (
     run_llama3,
 )
 
+from llama3 import Llama3
+
 
 @pytest.fixture(scope="session")
 def tinyllama_model(tinyllama_path, request):
@@ -37,6 +39,20 @@ def tinyllama_model(tinyllama_path, request):
     max_new_tokens = request.param[1]
     model = load_llama3(
         tinyllama_path, max_length=max_length, max_new_tokens=max_new_tokens
+    )
+    return model
+
+
+@pytest.fixture(scope="session")
+def tinyllama_model_naive_kv_cache(tinyllama_path, request):
+    """Same as tinyllama_model, except forces the naive KV cache."""
+    max_length = request.param[0]
+    max_new_tokens = request.param[1]
+    model = load_llama3(
+        tinyllama_path,
+        max_length=max_length,
+        max_new_tokens=max_new_tokens,
+        force_naive_kv_cache=True,
     )
     return model
 
@@ -57,6 +73,25 @@ def test_tiny_llama(tinyllama_model):
     )
     expected_results = NumpyDecoder().decode(golden_data_path.read_text())
     actual = run_llama3(tinyllama_model)
+    compare_values(actual, expected_results)
+
+
+@pytest.mark.parametrize(
+    "tinyllama_model_naive_kv_cache", [(2048, -1)], indirect=True
+)
+def test_tiny_llama_naive_kv_cache(
+    tinyllama_model_naive_kv_cache: Llama3,
+) -> None:
+    """Runs tiny Llama with naive KV cache and checks output."""
+    # Check that we indeed have a naive KV cache Llama model.
+    assert not tinyllama_model_naive_kv_cache.params.use_opaque
+
+    golden_data_path = find_runtime_path(
+        golden_data_fname("tinyllama", "float32"),
+        os.environ.get("PIPELINES_TESTDATA", ""),
+    )
+    expected_results = NumpyDecoder().decode(golden_data_path.read_text())
+    actual = run_llama3(tinyllama_model_naive_kv_cache)
     compare_values(actual, expected_results)
 
 
