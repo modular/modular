@@ -21,34 +21,43 @@ from utils.index import Index
 def run_elementwise[type: DType](ctx: DeviceContext):
     alias length = 256
 
-    var in_host = NDBuffer[type, 1, DimList(length)].stack_allocation()
-    var out_host = NDBuffer[type, 1, DimList(length)].stack_allocation()
+    var divisors = NDBuffer[type, 1, DimList(length)].stack_allocation()
+    var remainders = NDBuffer[type, 1, DimList(length)].stack_allocation()
 
-    var flattened_length = in_host.num_elements()
+    var out_divisors = ctx.create_buffer[type](length)
+    var out_remainders = ctx.create_buffer[type](length)
 
-    var out_device = ctx.create_buffer[type](flattened_length)
-
-    var out_buffer = NDBuffer[type, 1](out_device.ptr, (length))
+    var out_divisors_buffer = NDBuffer[type, 1](out_divisors.ptr, (length))
+    var out_remainders_buffer = NDBuffer[type, 1](out_remainders.ptr, (length))
 
     @always_inline
-    @__copy_capture(out_buffer)
+    @__copy_capture(out_divisors_buffer, out_remainders_buffer)
     @parameter
     fn func[simd_width: Int, rank: Int](idx0: StaticIntTuple[rank]):
         alias fast_div = FastDiv[DType.uint32](4)
+        var idx = idx0[0]
 
-        out_buffer[idx0[0]] = (fast_div / idx0[0]).cast[type]()
+        out_divisors_buffer[idx] = (idx / fast_div).cast[type]()
+        out_remainders_buffer[idx] = (idx % fast_div).cast[type]()
 
-    elementwise[func, 1, target="cuda"](Index(length), ctx)
+    elementwise[func, simd_width=1, target="cuda"](Index(length), ctx)
 
     ctx.synchronize()
 
-    ctx.enqueue_copy_from_device(out_host.data, out_device)
+    ctx.enqueue_copy_from_device(divisors.data, out_divisors)
+    ctx.enqueue_copy_from_device(remainders.data, out_remainders)
 
     for i in range(length):
-        assert_equal(out_host[i], i // 4)
+        print(divisors[i], remainders[i])
+        assert_equal(divisors[i], i // 4, msg="the divisor is not correct")
+        assert_equal(remainders[i], i % 4, msg="the remainder is not correct")
 
-    _ = out_device
-    _ = out_host
+    _ = out_divisors
+    _ = out_remainders
+    _ = out_divisors_buffer
+    _ = out_remainders_buffer
+    _ = divisors
+    _ = remainders
 
 
 def main():
