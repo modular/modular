@@ -9,26 +9,55 @@ from enum import Enum
 import numpy as np
 from max._dtype import DType as _DType
 
+# DType UInt8 values from Support/include/Support/ML/DType.h
+mIsInteger = 1 << 7
+mIsFloat = 1 << 6
+mIsComplex = 1 << 5
+mIsSigned = 1
+kIntWidthShift = 1
+
 
 class DType(Enum):
     """The tensor data type."""
 
-    bool = 0
-    int8 = 1
-    int16 = 2
-    int32 = 3
-    int64 = 4
-    uint8 = 5
-    uint16 = 6
-    uint32 = 7
-    uint64 = 8
-    float16 = 9
-    float32 = 10
-    float64 = 11
-    bfloat16 = 12
-
     # The unknown DType is used for passing python objects to the MAX Engine.
-    _unknown = 13
+    _unknown = 0  # Original name: invalid
+    # si1 = (0 << kIntWidthShift) | mIsInteger | mIsSigned
+    # ui1 = (0 << kIntWidthShift) | mIsInteger
+    # si2 = (1 << kIntWidthShift) | mIsInteger | mIsSigned
+    # ui2 = (1 << kIntWidthShift) | mIsInteger
+    # si4 = (2 << kIntWidthShift) | mIsInteger | mIsSigned
+    # ui4 = (2 << kIntWidthShift) | mIsInteger
+
+    int8 = (3 << kIntWidthShift) | mIsInteger | mIsSigned  # Original name: si8
+    uint8 = (3 << kIntWidthShift) | mIsInteger  # Original name: ui8
+    # Original name: si16
+    int16 = (4 << kIntWidthShift) | mIsInteger | mIsSigned
+    uint16 = (4 << kIntWidthShift) | mIsInteger  # Original name: ui16
+
+    # Original name: si32
+    int32 = (5 << kIntWidthShift) | mIsInteger | mIsSigned
+    uint32 = (5 << kIntWidthShift) | mIsInteger  # Original name: ui32
+    # Original name: si64
+    int64 = (6 << kIntWidthShift) | mIsInteger | mIsSigned
+    uint64 = (6 << kIntWidthShift) | mIsInteger  # Original name: ui64
+    # si128 = (7 << kIntWidthShift) | mIsInteger | mIsSigned
+    # ui128 = (7 << kIntWidthShift) | mIsInteger
+
+    # f8e5m2 = 0 | mIsFloat
+    # f8e4m3 = 1 | mIsFloat
+    # f8e3m4 = 2 | mIsFloat
+    float16 = 3 | mIsFloat  # Original name: f16
+    bfloat16 = 4 | mIsFloat  # Original name: bf16
+    float32 = 5 | mIsFloat  # Original name: f32
+    float64 = 6 | mIsFloat  # Original name: f64
+    # f128 = 7 | mIsFloat
+
+    # f24 = 8 | mIsFloat
+    # f80 = 9 | mIsFloat
+    # tf32 = 10 | mIsFloat
+
+    bool = 1  # Original name: kBool
 
     @classmethod
     def _missing_(cls, value):
