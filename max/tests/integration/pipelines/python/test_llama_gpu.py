@@ -26,9 +26,10 @@ from llama3 import Llama3
     ],
 )
 def test_llama(model, encoding, testdata_directory):
-    fname = find_runtime_path(golden_data_fname(model, encoding))
-    with open(fname) as f:
-        expected_results = NumpyDecoder().decode(f.read())
+    golden_data_path = find_runtime_path(
+        golden_data_fname(model, encoding), testdata_directory
+    )
+    expected_results = NumpyDecoder().decode(golden_data_path.read_text())
 
     # Download weights
     weight_path = None

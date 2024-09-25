@@ -51,9 +51,11 @@ def test_tiny_llama(tinyllama_model):
     """Runs Llama3.1 on a tiny checkpoint and compares it to previously generated
     golden values.
     """
-    fname = find_runtime_path(golden_data_fname("tinyllama", "float32"))
-    with open(fname) as f:
-        expected_results = NumpyDecoder().decode(f.read())
+    golden_data_path = find_runtime_path(
+        golden_data_fname("tinyllama", "float32"),
+        os.environ.get("PIPELINES_TESTDATA", ""),
+    )
+    expected_results = NumpyDecoder().decode(golden_data_path.read_text())
     actual = run_llama3(tinyllama_model)
     compare_values(actual, expected_results)
 

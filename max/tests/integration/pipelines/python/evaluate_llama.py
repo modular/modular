@@ -30,8 +30,13 @@ from llama3 import (
 from max.driver import CPU, CUDA, Device
 
 
-def find_runtime_path(fname):
-    from python.runfiles import runfiles
+def find_runtime_path(fname: str, testdata_directory: Path) -> Path:
+    try:
+        from python.runfiles import runfiles
+    except ModuleNotFoundError:
+        # Default to expecting data in the testdata directory when running
+        # outside Bazel.
+        return testdata_directory / fname
 
     r = runfiles.Create()
     path = r.Rlocation("test_llama_golden/" + fname)
