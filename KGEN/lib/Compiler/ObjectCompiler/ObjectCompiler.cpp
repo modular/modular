@@ -4,9 +4,7 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "KGENToLLVMPipeline.h"
-#include "LLVMPassesPipeline.h"
-
+#include "KGEN/Compiler/ObjectCompiler.h"
 #include "AsyncRT/CompilerSupport/Context.h"
 #include "AsyncRT/CompilerSupport/MLIRLocationDecoder.h"
 #include "AsyncRT/Runtime/Algorithms.h"
@@ -14,7 +12,6 @@
 #include "Cache/CacheTelemetryContext.h"
 #include "KGEN/Compiler/KGENCompiler.h"
 #include "KGEN/Compiler/LLVMIRUtils.h"
-#include "KGEN/Compiler/ObjectCompiler.h"
 #include "KGEN/KGENVersion/KGENVersion.h"
 #include "KGEN/Support/BuildInfo.h"
 #include "KGEN/Support/CompilerProfiling.h"
@@ -23,6 +20,7 @@
 #include "KGEN/ToolCommon/KGENPasses.h"
 #include "KGENToLLVMPipeline.h"
 #include "LLVMPassesPipeline.h"
+#include "MCLinker.h"
 #include "Support/Context.h"
 #include "Support/FileSystemExtras.h"
 #include "Support/MArchTarget/Host.h"
@@ -399,7 +397,7 @@ static SmallVector<AsyncRT::AnyAsyncValueRef> compileOptimizedLLVMToObjects(
     CompilationOptions &options, AsyncRT::Runtime &runtime,
     RCRef<Cache::TransformCache> transformCache, bool isParLLC, bool isJIT,
     bool emitAssembly, std::optional<size_t> moduleIdx,
-    unsigned numFunctionBase) {
+    SymbolAndMCInfo &symbolAndMirInfo, unsigned numFunctionBase) {
   CompilerTimeTraceScope traceScope("compile-optimized-llvm-to-object",
                                     module->getName());
 
@@ -438,7 +436,7 @@ static SmallVector<AsyncRT::AnyAsyncValueRef> compileOptimizedLLVMToObjects(
           cacheResults.push_back(
               launchCompilation(std::move(produceModule), idx, numFunctions));
         },
-        numFunctionBase);
+        symbolAndMirInfo.symbolLinkageTypes, numFunctionBase);
   }
   return cacheResults;
 }
@@ -664,6 +662,8 @@ ErrorOr<BufferRef> ObjectCompiler::emitArchive(ModuleOp module) {
                     !generatingPtx && options.enableParallelLLC;
 
       SmallVector<AsyncRT::AnyAsyncValueRef> cacheResults;
+      llvm::StringMap<llvm::GlobalValue::LinkageTypes> symbolLinkageTypes;
+
       if (noSplitting) {
         cacheResults.push_back(lowerLLVMModuleToObjects(
             forwardModule(std::move(llvmModule)), op->getLoc(), parLLC,
@@ -680,8 +680,10 @@ ErrorOr<BufferRef> ObjectCompiler::emitArchive(ModuleOp module) {
                   !options.enableLLVMPerFunctionSplitting && parLLC, idx,
                   numFunctionsBase));
             };
+
         if (options.enableLLVMPerFunctionSplitting)
-          splitPerFunction(std::move(llvmModule), handleSplit);
+          splitPerFunction(std::move(llvmModule), handleSplit,
+                           symbolLinkageTypes);
         else
           splitPerExported(std::move(llvmModule), handleSplit);
       }
@@ -825,9 +827,11 @@ ObjectCompiler::lowerLLVMModuleToObjects(
     // emit assembly.
     bool emitAssembly =
         tm.getTargetTriple().str().find("nvptx") != std::string::npos;
+
+    auto symbolAndMirInfo = std::make_unique<SymbolAndMCInfo>();
     SmallVector<AnyAsyncValueRef> buffers = compileOptimizedLLVMToObjects(
         std::move(module), loc, options, runtime, transformCache, parLLC, isJIT,
-        emitAssembly, moduleIdx, numFunctionsBase);
+        emitAssembly, moduleIdx, *symbolAndMirInfo, numFunctionsBase);
 
     andThenAsyncMoving(
         buffers, [result = std::move(result)](

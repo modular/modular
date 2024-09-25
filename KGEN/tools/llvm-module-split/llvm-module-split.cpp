@@ -165,8 +165,9 @@ int main(int argc, char **argv) {
         }
       };
 
+  llvm::StringMap<llvm::GlobalValue::LinkageTypes> symbolLinkageTypes;
   if (clOptions.perFunctionSplit)
-    splitPerFunction(std::move(module), outputLambda);
+    splitPerFunction(std::move(module), outputLambda, symbolLinkageTypes);
   else
     splitPerExported(std::move(module), outputLambda);
 

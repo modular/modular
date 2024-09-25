@@ -62,8 +62,10 @@ void splitPerExported(LLVMModuleAndContext module,
 
 /// support for splitting an LLVM module into multiple parts with each part
 /// contains only one function (with exception for coroutine related functions.)
-void splitPerFunction(LLVMModuleAndContext module, LLVMSplitProcessFn processFn,
-                      unsigned numFunctionBase = 0);
+void splitPerFunction(
+    LLVMModuleAndContext module, LLVMSplitProcessFn processFn,
+    llvm::StringMap<llvm::GlobalValue::LinkageTypes> &symbolLinkageTypes,
+    unsigned numFunctionBase = 0);
 
 } // namespace M::KGEN
 
