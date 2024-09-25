@@ -74,28 +74,28 @@ struct DeviceBufferVariant[type: DType](Sized):
     alias V1 = DeviceBufferV1[type]
     alias V2 = DeviceBufferV2[type]
 
-    var impl: Variant[Self.V1, Self.V2]
+    var _impl: Variant[Self.V1, Self.V2]
 
     @parameter
-    fn v1(self) -> ref [__lifetime_of(self.impl)] Self.V1:
-        return self.impl[Self.V1]
+    fn v1(self) -> ref [__lifetime_of(self._impl)] Self.V1:
+        return self._impl[Self.V1]
 
     @parameter
-    fn v2(self) -> ref [__lifetime_of(self.impl)] Self.V2:
-        return self.impl[Self.V2]
+    fn v2(self) -> ref [__lifetime_of(self._impl)] Self.V2:
+        return self._impl[Self.V2]
 
     def __init__(inout self, owned impl: Self.V1):
-        self.impl = impl
+        self._impl = impl^
 
     def __init__(inout self, owned impl: Self.V2):
-        self.impl = impl
+        self._impl = impl^
 
     fn __init__(inout self, ctx: DeviceContextVariant, size: Int) raises:
         @parameter
         if _device_ctx_v2():
-            self.impl = Self.V2(ctx.v2(), size)
+            self._impl = Self.V2(ctx.v2(), size)
         else:
-            self.impl = Self.V1(ctx.v1(), size)
+            self._impl = Self.V1(ctx.v1(), size)
 
     fn __init__(
         inout self,
@@ -107,22 +107,22 @@ struct DeviceBufferVariant[type: DType](Sized):
     ):
         @parameter
         if _device_ctx_v2():
-            self.impl = Self.V2(ctx.v2(), ptr, size, owning=owning)
+            self._impl = Self.V2(ctx.v2(), ptr, size, owning=owning)
         else:
-            self.impl = Self.V1(ctx.v1(), ptr, size, owning=owning)
+            self._impl = Self.V1(ctx.v1(), ptr, size, owning=owning)
 
     fn __init__(inout self):
         @parameter
         if _device_ctx_v2():
-            self.impl = Self.V2()
+            self._impl = Self.V2()
         else:
-            self.impl = Self.V1()
+            self._impl = Self.V1()
 
     fn __copyinit__(inout self, existing: Self):
-        self.impl = existing.impl
+        self._impl = existing._impl
 
     fn __moveinit__(inout self, owned existing: Self):
-        self.impl = existing.impl^
+        self._impl = existing._impl^
 
     fn __len__(self) -> Int:
         @parameter

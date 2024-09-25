@@ -7,12 +7,18 @@
 # Implementation of the C++ backed DeviceContext in Mojo
 # WIP, just stubs for now
 
-from gpu.host._compile import _get_nvptx_target
+from ._compile import (
+    _compile_code,
+    _get_nvptx_target,
+)
+from memory import stack_allocation
 
 
 alias _DeviceContextPtr = UnsafePointer[NoneType]
 alias _DeviceBufferPtr = UnsafePointer[NoneType]
+alias _DeviceFunctionPtr = UnsafePointer[NoneType]
 alias _CharPtr = UnsafePointer[UInt8]
+alias _VoidPtr = UnsafePointer[NoneType]
 alias _SizeT = UInt64
 
 # Define helper methods to call AsyncRT bindings.
@@ -27,7 +33,11 @@ fn _checked(err_msg: _CharPtr) raises:
 
 @value
 struct DeviceBufferV2[type: DType](Sized):
-    var _ptr: _DeviceBufferPtr
+    # _device_ptr must be the first word in the struct to enable passing of
+    # DeviceBufferV2 to kernels. The first word is passed to the kernel and
+    # it needs to contain the value registered with the driver.
+    var _device_ptr: UnsafePointer[Scalar[type]]
+    var _handle: _DeviceBufferPtr
 
     fn __init__(inout self, ctx: DeviceContextV2, size: Int) raises:
         """This init takes in a constructed DeviceContext and schedules an owned buffer allocation
@@ -53,7 +63,15 @@ struct DeviceBufferV2[type: DType](Sized):
                 elem_size,
             )
         )
-        self._ptr = result
+        # void *AsyncRT_DeviceBuffer_ptr(const DeviceBuffer *buffer)
+        self._device_ptr = external_call[
+            "AsyncRT_DeviceBuffer_ptr",
+            UnsafePointer[Scalar[type]],
+            _DeviceBufferPtr,
+        ](
+            result,
+        )
+        self._handle = result
 
     fn __init__(
         inout self,
@@ -64,19 +82,24 @@ struct DeviceBufferV2[type: DType](Sized):
         owning: Bool,
     ):
         constrained[False, "##### DeviceBufferV2.__init__ - 2"]()
-        self._ptr = _DeviceBufferPtr()
+        self._device_ptr = UnsafePointer[Scalar[type]]()
+        self._handle = _DeviceBufferPtr()
 
     fn __init__(inout self):
         constrained[False, "##### DeviceBufferV2.__init__ - 3"]()
-        self._ptr = _DeviceBufferPtr()
+        self._device_ptr = UnsafePointer[Scalar[type]]()
+        self._handle = _DeviceBufferPtr()
 
     fn __copyinit__(inout self, existing: Self):
         constrained[False, "##### DeviceBufferV2.__copyinit__"]()
-        self._ptr = _DeviceBufferPtr()
+        self._device_ptr = UnsafePointer[Scalar[type]]()
+        self._handle = _DeviceBufferPtr()
 
     fn __moveinit__(inout self, owned existing: Self):
-        self._ptr = existing._ptr
-        existing._ptr = UnsafePointer[NoneType]()
+        self._device_ptr = existing._device_ptr
+        self._handle = existing._handle
+        existing._device_ptr = UnsafePointer[Scalar[type]]()
+        existing._handle = _DeviceBufferPtr()
 
     @always_inline
     fn __del__(owned self):
@@ -86,7 +109,7 @@ struct DeviceBufferV2[type: DType](Sized):
         external_call[
             "AsyncRT_DeviceBuffer_release", NoneType, _DeviceContextPtr
         ](
-            self._ptr,
+            self._handle,
         )
 
     fn __len__(self) -> Int:
@@ -101,13 +124,7 @@ struct DeviceBufferV2[type: DType](Sized):
         return UnsafePointer[Scalar[type]]()  # FIXME
 
     fn ptr(self) -> UnsafePointer[Scalar[type]]:
-        return external_call[
-            "AsyncRT_DeviceBuffer_ptr",
-            UnsafePointer[Scalar[type]],
-            _DeviceContextPtr,
-        ](
-            self._ptr,
-        )
+        return self._device_ptr
 
 
 @value
@@ -122,6 +139,11 @@ struct DeviceFunctionV2[
     _is_failable: Bool = False,
     _ptxas_info_verbose: Bool = False,
 ]:
+    var _ptr: _DeviceFunctionPtr
+    alias _func_impl = _compile_code[
+        func, is_failable=_is_failable, emission_kind="asm", target=target
+    ]()
+
     fn __init__(
         inout self,
         ctx: DeviceContextV2,
@@ -132,7 +154,84 @@ struct DeviceFunctionV2[
         cache_config: OptionalReg[CacheConfig] = None,
         func_attribute: OptionalReg[FuncAttribute] = None,
     ) raises:
-        pass
+        # const char *AsyncRT_DeviceContext_compileFunction(const DeviceFunction **result, const DeviceContext *ctx, const char *function_name, const void *data)
+        var result = _DeviceFunctionPtr()
+        _checked(
+            external_call[
+                "AsyncRT_DeviceContext_compileFunction",
+                _CharPtr,
+                UnsafePointer[_DeviceFunctionPtr],
+                _DeviceContextPtr,
+                _CharPtr,
+                _CharPtr,
+            ](
+                UnsafePointer.address_of(result),
+                ctx._ptr,
+                self._func_impl.function_name.unsafe_ptr(),
+                self._func_impl.asm.unsafe_ptr(),
+            )
+        )
+        self._ptr = result
+
+    fn _call_with_pack[
+        *Ts: AnyType
+    ](
+        self,
+        ctx: DeviceContextV2,
+        args: VariadicPack[_, AnyType, Ts],
+        grid_dim: Dim,
+        block_dim: Dim,
+        cluster_dim: OptionalReg[Dim] = None,
+        shared_mem_bytes: Int = 0,
+        owned attributes: List[LaunchAttribute] = List[LaunchAttribute](),
+        owned constant_memory: List[ConstantMemoryMapping] = List[
+            ConstantMemoryMapping
+        ](),
+    ) raises:
+        alias num_args = len(VariadicList(Ts))
+        alias num_captures = self._func_impl.num_captures
+        alias populate = self._func_impl.populate
+
+        var dense_args_addrs = stack_allocation[
+            num_captures + num_args, UnsafePointer[NoneType]
+        ]()
+
+        # TODO(iposva): call populate
+
+        @parameter
+        for i in range(num_args):
+            alias arg_offset = num_captures + i
+            var first_word_addr = UnsafePointer.address_of(args[i])
+            dense_args_addrs[arg_offset] = first_word_addr.bitcast[NoneType]()
+
+        # const char *AsyncRT_DeviceContext_enqueueFunctionDirect(const DeviceContext *ctx, const DeviceFunction *func,
+        #                                                         uint32_t gridX, uint32_t gridY, uint32_t gridZ,
+        #                                                         uint32_t blockX, uint32_t blockY, uint32_t blockZ, void **args)
+        _checked(
+            external_call[
+                "AsyncRT_DeviceContext_enqueueFunctionDirect",
+                _CharPtr,
+                _DeviceContextPtr,
+                _DeviceFunctionPtr,
+                UInt32,
+                UInt32,
+                UInt32,
+                UInt32,
+                UInt32,
+                UInt32,
+                UnsafePointer[UnsafePointer[NoneType]],
+            ](
+                ctx._ptr,
+                self._ptr,
+                grid_dim.x(),
+                grid_dim.y(),
+                grid_dim.z(),
+                block_dim.x(),
+                block_dim.y(),
+                block_dim.z(),
+                dense_args_addrs,
+            )
+        )
 
 
 @value
@@ -265,7 +364,7 @@ struct DeviceContextV2:
             ConstantMemoryMapping
         ](),
     ) raises:
-        pass
+        constrained[False, "##### DeviceContextV2.enqueue_function - 1"]()
 
     @parameter
     fn _enqueue_function[
@@ -283,7 +382,15 @@ struct DeviceContextV2:
             ConstantMemoryMapping
         ](),
     ) raises:
-        pass
+        f._call_with_pack(
+            self,
+            args,
+            grid_dim=grid_dim,
+            block_dim=block_dim,
+            shared_mem_bytes=shared_mem_bytes,
+            attributes=attributes^,
+            constant_memory=constant_memory^,
+        )
 
     fn execution_time[
         func: fn (Self) raises capturing [_] -> None
@@ -308,7 +415,7 @@ struct DeviceContextV2:
                 UnsafePointer[Scalar[type]],
             ](
                 self._ptr,
-                buf._ptr,
+                buf._handle,
                 ptr,
             )
         )
@@ -327,7 +434,7 @@ struct DeviceContextV2:
             ](
                 self._ptr,
                 ptr,
-                buf._ptr,
+                buf._handle,
             )
         )
 
@@ -344,8 +451,8 @@ struct DeviceContextV2:
                 _DeviceBufferPtr,
             ](
                 self._ptr,
-                dst._ptr,
-                src._ptr,
+                dst._handle,
+                src._handle,
             )
         )
 
