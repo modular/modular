@@ -63,22 +63,34 @@ class BatchMultiplexQueue(Generic[BatchKey]):
             while (item := await queue.get()) is not STOP_STREAM:
                 yield item
 
-    def fill_batch_nowait(
+    async def fill_batch(
         self,
         batch: dict[BatchKey, Any],
         max_batch_size: int,
-        timeout_s: float = 0.1,
+        timeout_s: float = 0.0,
     ):
-        end_time = (
-            time.clock_gettime_ns(time.CLOCK_MONOTONIC)
-            + timeout_s * 1_000_000_000
-        )
-        while len(batch) < max_batch_size:
-            try:
-                req_id, data = self.in_queue.get_nowait()
-                batch[req_id] = data
-            except asyncio.QueueEmpty:
-                if time.clock_gettime_ns(time.CLOCK_MONOTONIC) >= end_time:
+        if timeout_s == 0.0:
+            # fast path for timeout_s == 0
+            while len(batch) < max_batch_size:
+                try:
+                    req_id, data = self.in_queue.get_nowait()
+                    batch[req_id] = data
+                except asyncio.QueueEmpty:
+                    return
+                await asyncio.sleep(0)
+        else:
+            end = time.monotonic() + timeout_s
+            while len(batch) < max_batch_size:
+                try:
+                    remaining = max(0, end - time.monotonic())
+                    request_id, item = await asyncio.wait_for(
+                        self.in_queue.get(), timeout=remaining
+                    )
+                    batch[request_id] = item
+                except asyncio.QueueEmpty:
+                    if timeout_s > 0 and remaining <= 0:
+                        return
+                except asyncio.TimeoutError:
                     return
 
     async def respond(self, batch_responses: dict[BatchKey, Any]):
@@ -93,11 +105,13 @@ class BatchMultiplexQueue(Generic[BatchKey]):
         )
         return cancelled
 
-    async def dynamic_batching_worker(self, forward, max_batch_size: int):
+    async def dynamic_batching_worker(
+        self, forward, max_batch_size: int, max_queue_wait_s: float
+    ):
         try:
             while True:
                 batch = {}
-                self.fill_batch_nowait(batch, max_batch_size)
+                await self.fill_batch(batch, max_batch_size, max_queue_wait_s)
                 if len(batch) > 0:
                     logging.debug(
                         "Dynamic batching worker with batch size %d", len(batch)
@@ -110,11 +124,13 @@ class BatchMultiplexQueue(Generic[BatchKey]):
             logger.warning("Dynamic batching worker cancelled: %s", ce)
             raise
 
-    async def continuous_batching_worker(self, forward, max_batch_size: int):
+    async def continuous_batching_worker(
+        self, forward, max_batch_size: int, max_queue_wait_s: float
+    ):
         batch = {}
         try:
             while True:
-                self.fill_batch_nowait(batch, max_batch_size)
+                await self.fill_batch(batch, max_batch_size, max_queue_wait_s)
                 if len(batch) > 0:
                     logging.debug(
                         "Continuous batching worker with batch size %d",

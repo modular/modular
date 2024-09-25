@@ -44,6 +44,11 @@ class TokenGeneratorPipeline(Generic[Context]):
 
     model: max.pipelines.interfaces.TokenGenerator[Context]
     tokenizer: Optional[AutoTokenizer] = None
+    max_batch_size: int = 1
+
+    max_queue_wait_s: float = 0.001
+
+    # non-configurable parameters
 
     tokens_queue: BatchMultiplexQueue = field(
         default_factory=BatchMultiplexQueue
@@ -52,8 +57,6 @@ class TokenGeneratorPipeline(Generic[Context]):
         default_factory=BatchMultiplexQueue
     )
     _background_tasks: set = field(default_factory=set)
-
-    max_batch_size: int = 16
 
     async def next_token(
         self,
@@ -75,11 +78,15 @@ class TokenGeneratorPipeline(Generic[Context]):
     async def __aenter__(self):
         # This can go away once we have ragged tensors
         loop = asyncio.get_running_loop()
+        max_queue_wait_s = (
+            0 if self.max_batch_size == 1 else self.max_queue_wait_s
+        )
         # This worker only does context encoding. Turned off temporarily.
         context_encoder = loop.create_task(
             self.context_queue.dynamic_batching_worker(
                 self.next_token,
                 self.max_batch_size,
+                max_queue_wait_s=max_queue_wait_s,
             ),
             name="dynamic_batching_worker",
         )
@@ -87,6 +94,7 @@ class TokenGeneratorPipeline(Generic[Context]):
             self.tokens_queue.continuous_batching_worker(
                 self.model.next_token,
                 max_batch_size=self.max_batch_size,
+                max_queue_wait_s=max_queue_wait_s,
             ),
             name="continuous_batching_worker",
         )
