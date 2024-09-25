@@ -5,6 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 from __future__ import annotations
 
+import struct
 from itertools import product
 from mmap import mmap
 from os import PathLike
@@ -344,3 +345,61 @@ class MemMapTensor(Tensor):
         if self.read_only:
             raise ValueError("Cannot modify read-only MemMapTensor")
         super().__setitem__(idx, value)
+
+
+def load_max_tensor(path: PathLike) -> Tensor:
+    """Experimental method for loading serialized MAX tensors.
+
+    Max tensors can be exported by creating a graph and calling `Value.print()`
+    with the `BINARY_MAX_CHECKPOINT` option.
+
+    Args:
+        path: Path to tensor (should end with .max)
+
+    Returns:
+        A `Tensor` created from the path. The shape and dtype are read
+        from the file.
+
+    Raises:
+        ValueError if the file format is not the MAX checkpoint format.
+    """
+
+    with open(path, "rb") as f:
+        header = f.read(8)
+        if header != b"\x93\xf0\x9f\x94\xa5\x2b\x2b\x93":
+            raise ValueError(
+                f"{path} is not a max checkpoint. If this file was saved "
+                'from the "BINARY" debug print option (and not '
+                '"BINARY_MAX_CHECKPOINT"), please initialize `MemmapTensor` '
+                "directly."
+            )
+        major_version, _minor_version = struct.unpack("2i", f.read(8))
+
+        # Hardcoded but we should move to a robust versioning system if this
+        # method is ever used outside of debugging.
+        if major_version > 0:
+            raise ValueError("Unable to read from version > 0.")
+
+        metadata_size = struct.unpack("Q", f.read(8))[0]
+
+        key_size = struct.unpack("i", f.read(4))[0]
+        unused_key = f.read(key_size).decode("utf-8")
+        dtype, rank = struct.unpack("2b", f.read(2))
+        dtype = DType(dtype)
+        shape = tuple(struct.unpack("i", f.read(4))[0] for _ in range(rank))
+        offset = struct.unpack("Q", f.read(8))[0]
+
+        bytes_read = 4 + key_size + 2 + 4 * rank + 8
+        if bytes_read != metadata_size:
+            raise ValueError(
+                "Multiple tensors found in .max file. This is currently not"
+                " supported."
+            )
+
+        if dtype == DType.bfloat16:
+            dtype = DType.uint8
+            shape = tuple(dim * 2 for dim in shape)
+            tensor = MemMapTensor(path, dtype, shape, mode="r", offset=offset)
+            return tensor.view(DType.bfloat16)
+        else:
+            return MemMapTensor(path, dtype, shape, mode="r", offset=offset)
