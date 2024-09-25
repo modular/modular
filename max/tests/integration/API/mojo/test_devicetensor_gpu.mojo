@@ -88,9 +88,9 @@ def test_device_graph(
     )
     cpu_input_tensor[0] = 1.0
 
-    input = cpu_input_tensor.to_device_tensor().copy_to(
-        cuda_dev
-    ) if inputs_on_device else cpu_input_tensor.to_device_tensor()
+    input = cpu_input_tensor^.to_device_tensor()
+    if inputs_on_device:
+        input = input^.copy_to(cuda_dev)
 
     outputs = model.execute(input)
     assert_equal(len(outputs), 1)
