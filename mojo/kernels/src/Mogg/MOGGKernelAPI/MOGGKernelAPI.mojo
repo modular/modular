@@ -13,6 +13,7 @@ from builtin.simd import _pow
 import compiler_internal as compiler
 from runtime.asyncrt import MojoCallContextPtr
 from sys import llvm_intrinsic
+from sys.info import simdwidthof
 from tensor_utils import ManagedTensorSlice, foreach
 from utils import StaticIntTuple
 
@@ -39,12 +40,23 @@ from nn.activations import relu, gelu
 from nn.pool import avg_pool, max_pool, pool_shape, pool_shape_ceil
 from nn.topk import top_k, top_k_shape_impl
 from utils.numerics import isinf, isnan
-from nn.gather_scatter import scatter_nd, scatter_nd_generator
+from nn.gather_scatter import (
+    scatter_nd,
+    scatter_nd_generator,
+    gather_nd,
+    gather_shape,
+    gather,
+    gather_reduce,
+    Axis,
+)
 
 
 # ===----------------------------------------------------------------------===#
 # Helpers
 # ===----------------------------------------------------------------------===#
+
+# TODO(GRA-914): Properly support scalars.
+alias Scalar = ManagedTensorSlice[rank=1]
 
 
 # Until the kernel translation is complete, this is copied from MOGG.mojo.
@@ -1349,12 +1361,146 @@ struct MaxPoolCeilModeTrue:
 
 
 # ===----------------------------------------------------------------------===#
-# Other kernels
+# Gather kernels
 # ===----------------------------------------------------------------------===#
 
 
-# TODO(GRA-914): Properly support scalars.
-alias Scalar = ManagedTensorSlice[rank=1]
+@compiler.register("mo.gather_nd")
+struct GatherND:
+    @staticmethod
+    fn execute[
+        batchDims: Int,
+    ](
+        output: ManagedTensorSlice,
+        data: ManagedTensorSlice[output.type, *_],
+        indices: ManagedTensorSlice,
+    ) raises:
+        # Existing implementations do not require static shape information
+        var output_ndbuffer = managed_tensor_slice_to_ndbuffer(output)
+        var data_ndbuffer = managed_tensor_slice_to_ndbuffer(data)
+        var indices_ndbuffer = managed_tensor_slice_to_ndbuffer(indices)
+        gather_nd[batch_dims=batchDims,](
+            data_ndbuffer,
+            indices_ndbuffer,
+            output_ndbuffer,
+        )
+
+
+@compiler.register("mo.gather")
+struct Gather:
+    @staticmethod
+    fn execute[
+        synchronous: Bool,
+        target: StringLiteral,
+    ](
+        output: ManagedTensorSlice,
+        input: ManagedTensorSlice[output.type, *_],
+        indices: ManagedTensorSlice,
+        axis: Scalar,
+        ctx: MojoCallContextPtr,
+    ) raises:
+        @parameter
+        @always_inline
+        fn input_fn[
+            width: Int, _rank: Int
+        ](coords: StaticIntTuple[_rank]) -> SIMD[output.type, width]:
+            return input.load[width=width](
+                rebind[StaticIntTuple[input.rank]](coords)
+            )
+
+        @parameter
+        @always_inline
+        fn indices_fn[
+            width: Int, _rank: Int
+        ](coords: StaticIntTuple[_rank]) -> SIMD[indices.type, width]:
+            return indices.load[width=width](
+                rebind[StaticIntTuple[indices.rank]](coords)
+            )
+
+        @parameter
+        @always_inline
+        fn output_fn[
+            width: Int, _rank: Int
+        ](coords: StaticIntTuple[_rank], val: SIMD[output.type, width]):
+            output.store[width=width](
+                rebind[StaticIntTuple[output.rank]](coords),
+                rebind[SIMD[output.type, width]](val),
+            )
+
+        var axis_val = axis._ptr.load(0)
+
+        gather[
+            type = output.type,
+            indices_type = indices.type,
+            input_fn=input_fn,
+            indices_fn=indices_fn,
+            output_fn=output_fn,
+            input_rank = input.rank,
+            indices_rank = indices.rank,
+            output_rank = output.rank,
+            target=target,
+            single_thread_blocking_override=synchronous,
+        ](
+            Axis(axis_val, input.rank),
+            input._spec.shape,
+            indices._spec.shape,
+            output._spec.shape,
+            ctx,
+        )
+
+    @staticmethod
+    fn shape[
+        output_rank: Int,
+    ](
+        input: ManagedTensorSlice,
+        indices: ManagedTensorSlice,
+        axis: Scalar,
+    ) -> StaticIntTuple[output_rank]:
+        # TODO(GRA-1033): We should not be forced to have a single return statement.
+        var ret: StaticIntTuple[output_rank]
+        try:
+            ret = gather_shape[
+                output_rank=output_rank,
+                single_thread_blocking_override=True,
+            ](
+                managed_tensor_slice_to_ndbuffer(input),
+                managed_tensor_slice_to_ndbuffer(indices),
+                managed_tensor_slice_to_ndbuffer(axis),
+            )
+        except:
+            ret = StaticIntTuple[output_rank]()
+
+        return ret
+
+
+@compiler.register("mo.gather_sum")
+struct GatherSum:
+    @staticmethod
+    fn execute(
+        output: ManagedTensorSlice,
+        input: ManagedTensorSlice[output.type, *_],
+        indices: ManagedTensorSlice[DType.int32, *_],
+    ) raises:
+        # Existing implementations do not require static shape information
+        var output_ndbuffer = managed_tensor_slice_to_ndbuffer(output)
+        var input_ndbuffer = managed_tensor_slice_to_ndbuffer(input)
+        var indices_ndbuffer = managed_tensor_slice_to_ndbuffer(indices)
+
+        fn add[
+            type: DType, simd_width: Int
+        ](x: SIMD[type, simd_width], y: SIMD[type, simd_width]) -> SIMD[
+            type, simd_width
+        ]:
+            return x + y
+
+        gather_reduce[output.type, 0, 1, simdwidthof[output.type](), add](
+            output_ndbuffer, input_ndbuffer, indices_ndbuffer, 0
+        )
+
+
+# ===----------------------------------------------------------------------===#
+# Other kernels
+# ===----------------------------------------------------------------------===#
 
 
 @compiler.register("mo.bottom_k")
