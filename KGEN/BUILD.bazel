@@ -1,4 +1,5 @@
 load("@bazel_skylib//rules:write_file.bzl", "write_file")
+load("@rules_pkg//pkg:mappings.bzl", "pkg_files")
 load(
     "//bazel:api.bzl",
     "copy_files",
@@ -12,6 +13,23 @@ load(
 )
 load("//bazel:config.bzl", "ASYNCRT_PROFILING_LOCAL_DEFINES", "CONFIG_SECTION_LOCAL_DEFINES")
 load("//utils/bazel/build/rules:cc_distributable_static_library.bzl", "cc_distributable_static_library")
+
+pkg_files(
+    name = "docs",
+    srcs = [
+        ":CODialect.doc",
+        ":CUSTOMDialect.doc",
+        ":HLCFDialect.doc",
+        ":INTERPDialect.doc",
+        ":KGENDialect.doc",
+        ":KGENPassesIncGen.doc",
+        ":LITDialect.doc",
+        ":MOGGreElabIncGen.doc",
+        ":POPDialect.doc",
+    ],
+    prefix = "KGEN/docs",
+    visibility = ["//visibility:public"],
+)
 
 td_library(
     name = "CustomDialectTdFiles",

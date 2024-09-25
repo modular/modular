@@ -1,3 +1,4 @@
+load("@rules_pkg//pkg:mappings.bzl", "pkg_files")
 load(
     "//bazel:api.bzl",
     "gentbl_cc_library",
@@ -11,6 +12,18 @@ load("//bazel:config.bzl", "ASYNCRT_PROFILING_LOCAL_DEFINES")
 load("//utils/bazel/build/rules:expand_root_cert_inc.bzl", "expand_root_cert_inc")
 
 exports_files(["include/Support/Driver/DriverCommand.td"])
+
+pkg_files(
+    name = "docs",
+    srcs = [
+        ":DEBUGINFODialect.doc",
+        ":DebugInfoToLLVMIncGen.doc",
+        ":DebugInfoTransformPasses.doc",
+        ":MDialect.doc",
+    ],
+    prefix = "Support/docs",
+    visibility = ["//visibility:public"],
+)
 
 modular_cc_library(
     name = "SymbolExport",
