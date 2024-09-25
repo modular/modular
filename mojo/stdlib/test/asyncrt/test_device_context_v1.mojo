@@ -15,6 +15,6 @@ def main():
     # the `MODULAR_ASYNCRT_DEVICE_CONTEXT_V2` define.
     var ctx = create_test_device_context()
 
-    # Execute CUDA tests with the context
+    # Execute CUDA tests with the original DeviceContext.
     test_smoke(ctx)
     test_function(ctx)
