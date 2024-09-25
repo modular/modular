@@ -12,10 +12,6 @@ from .intrinsics import mulwide
 from memory import bitcast
 
 
-struct _State:
-    pass
-
-
 fn _mulhilow(a: UInt32, b: UInt32) -> SIMD[DType.uint32, 2]:
     var res = mulwide(a, b)
     return bitcast[DType.uint32, 2](res)
