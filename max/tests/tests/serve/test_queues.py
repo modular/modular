@@ -33,10 +33,7 @@ async def test_dynamic_batch_full(batch_size):
         return {}
 
     worker = asyncio.create_task(
-        queue.dynamic_batching_worker(
-            forward,
-            batch_size,
-        )
+        queue.dynamic_batching_worker(forward, batch_size, max_queue_wait_s=0)
     )
     await in_joined
     assert len(batch_sizes) == 1
