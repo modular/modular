@@ -1101,6 +1101,10 @@ void LowerKGENToLLVMPass::runOnOperation() {
       if (name != sanitized) {
         renamed.try_emplace(name, sanitized);
         symbol.setName(sanitized);
+        if (auto funcOp =
+                dyn_cast<mlir::FunctionOpInterface>(symbol.getOperation())) {
+          DebugInfo::updateSubprogram(funcOp, sanitized);
+        }
       }
     }
     mlir::AttrTypeReplacer replacer;
