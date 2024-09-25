@@ -189,7 +189,9 @@ fn mul24(a: UInt32, b: UInt32) -> UInt32:
     """Calculate the least significant 32 bits of the product of the least
     significant 24 bits of two integers.
     """
-    return llvm_intrinsic["mul.lo.u32", UInt32, has_side_effect=False](a, b)
+    return llvm_intrinsic["llvm.nvvm.mullo.ui", UInt32, has_side_effect=False](
+        a, b
+    )
 
 
 @always_inline
@@ -197,7 +199,9 @@ fn mul24(a: Int32, b: Int32) -> Int32:
     """Calculate the least significant 32 bits of the product of the least
     significant 24 bits of two integers.
     """
-    return llvm_intrinsic["mul.lo.s32", Int32, has_side_effect=False](a, b)
+    return llvm_intrinsic["llvm.nvvm.mullo.i", Int32, has_side_effect=False](
+        a, b
+    )
 
 
 # ===----------------------------------------------------------------------===#
@@ -220,28 +224,53 @@ fn mulhi(a: UInt, b: UInt) -> UInt:
 
 
 @always_inline
+fn mulhi(a: UInt16, b: UInt16) -> UInt32:
+    """Calculate the most significant 32 bits of the product of the two UInts.
+    """
+    return llvm_intrinsic["llvm.nvvm.mulhi.us", UInt32, has_side_effect=False](
+        a, b
+    )
+
+
+@always_inline
+fn mulhi(a: Int16, b: Int16) -> Int32:
+    """Calculate the most significant 32 bits of the product of the two Ints."""
+    return llvm_intrinsic["llvm.nvvm.mulhi.s", Int32, has_side_effect=False](
+        a, b
+    )
+
+
+@always_inline
 fn mulhi(a: UInt32, b: UInt32) -> UInt32:
     """Calculate the most significant 32 bits of the product of the two UInts.
     """
-    return llvm_intrinsic["mul.hi.u32", UInt32, has_side_effect=False](a, b)
+    return llvm_intrinsic["llvm.nvvm.mulhi.ui", UInt32, has_side_effect=False](
+        a, b
+    )
 
 
 @always_inline
 fn mulhi(a: Int32, b: Int32) -> Int32:
     """Calculate the most significant 32 bits of the product of the two Ints."""
-    return llvm_intrinsic["mul.hi.s32", Int32, has_side_effect=False](a, b)
+    return llvm_intrinsic["llvm.nvvm.mulhi.i", Int32, has_side_effect=False](
+        a, b
+    )
 
 
 @always_inline
 fn mulhi(a: UInt64, b: UInt64) -> UInt64:
     """Calculate the most significant 32 bits of the product of the two Ints."""
-    return llvm_intrinsic["mul.hi.u64", UInt64, has_side_effect=False](a, b)
+    return llvm_intrinsic["llvm.nvvm.mulhi.ull", UInt64, has_side_effect=False](
+        a, b
+    )
 
 
 @always_inline
 fn mulhi(a: Int64, b: Int64) -> Int64:
     """Calculate the most significant 32 bits of the product of the two Ints."""
-    return llvm_intrinsic["mul.hi.s64", Int64, has_side_effect=False](a, b)
+    return llvm_intrinsic["llvm.nvvm.mulhi.ll", Int64, has_side_effect=False](
+        a, b
+    )
 
 
 # ===----------------------------------------------------------------------===#
