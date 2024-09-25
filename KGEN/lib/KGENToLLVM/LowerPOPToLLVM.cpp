@@ -992,6 +992,26 @@ struct ConvertPOPCastFromBuiltin : ConvertPOPToLLVMPattern<CastFromBuiltinOp> {
 // ConvertPOPInlineAsm
 //===----------------------------------------------------------------------===//
 
+/// Expand one level of structs so kgen.pack elements are passed as individual
+/// values instead of as a kgen.struct.
+static SmallVector<Value> expandOperands(ConversionPatternRewriter &rewriter,
+                                         Location loc, ValueRange args) {
+  SmallVector<Value> operands;
+  operands.reserve(args.size());
+  for (auto value : args) {
+    if (auto structTy = dyn_cast<LLVM::LLVMStructType>(value.getType())) {
+      // Unpack each of the elements.
+      for (size_t i = 0, e = structTy.getBody().size(); i != e; ++i) {
+        auto elt = rewriter.createOrFold<LLVM::ExtractValueOp>(loc, value, i);
+        operands.push_back(elt);
+      }
+    } else {
+      operands.push_back(value);
+    }
+  }
+  return operands;
+}
+
 struct ConvertPOPInlineAsm : ConvertPOPToLLVMPattern<InlineAsmOp> {
   using ConvertPOPToLLVMPattern::ConvertPOPToLLVMPattern;
 
@@ -1006,7 +1026,8 @@ struct ConvertPOPInlineAsm : ConvertPOPToLLVMPattern<InlineAsmOp> {
         return failure();
     }
     auto asmOp = rewriter.create<LLVM::InlineAsmOp>(
-        op.getLoc(), types, adaptor.getOperands(),
+        op.getLoc(), types,
+        expandOperands(rewriter, op.getLoc(), adaptor.getOperands()),
         cast<StringAttr>(adaptor.getAssembly()),
         cast<StringAttr>(adaptor.getConstraints()),
         adaptor.getHasSideEffectsAttr(), adaptor.getIsStackAlignedAttr(),
@@ -1530,6 +1551,22 @@ namespace {
 // ConvertPOPExternalCall
 //===----------------------------------------------------------------------===//
 
+/// Expand one level of struct type from any operand types, these come from
+/// !kgen.pack.
+static SmallVector<Type> expandOperandTypes(TypeRange types) {
+  SmallVector<Type> operandTypes;
+  operandTypes.reserve(types.size());
+  for (auto type : types) {
+    if (auto structTy = dyn_cast<StructType>(type)) {
+      operandTypes.append(structTy.getElementTypes().begin(),
+                          structTy.getElementTypes().end());
+    } else {
+      operandTypes.push_back(type);
+    }
+  }
+  return operandTypes;
+}
+
 /// Lower an external call. Add the callee to the symbol table.
 struct ConvertPOPExternalCall : public ConvertSymbolOpToLLVM<ExternalCallOp> {
   using ConvertSymbolOpToLLVM::ConvertSymbolOpToLLVM;
@@ -1539,19 +1576,8 @@ struct ConvertPOPExternalCall : public ConvertSymbolOpToLLVM<ExternalCallOp> {
                   ConversionPatternRewriter &rewriter) const override {
     std::optional<FunctionType> funcType = op.getVariadicType();
     if (!funcType) {
-      // Expand one level of struct type from any operand types, these come from
-      // !kgen.pack.
-      SmallVector<Type> operandTypes;
-      operandTypes.reserve(op.getNumOperands());
-      for (auto type : op.getOperandTypes()) {
-        if (auto structTy = dyn_cast<StructType>(type)) {
-          operandTypes.append(structTy.getElementTypes().begin(),
-                              structTy.getElementTypes().end());
-        } else {
-          operandTypes.push_back(type);
-        }
-      }
-      funcType = rewriter.getFunctionType(operandTypes, op.getResultTypes());
+      funcType = rewriter.getFunctionType(
+          expandOperandTypes(op.getOperandTypes()), op.getResultTypes());
     }
     TypeConverter::SignatureConversion conversion(funcType->getNumInputs());
     Type signature = getTypeConverter()->convertFunctionSignature(
@@ -1600,24 +1626,9 @@ struct ConvertPOPExternalCall : public ConvertSymbolOpToLLVM<ExternalCallOp> {
       symtab.insert(func);
     }
 
-    // Expand one level of structs so kgen.pack elements are passed as
-    // individual values instead of as a kgen.struct.
-    SmallVector<Value> operands;
-    operands.reserve(op.getNumOperands());
-    for (auto value : adaptor.getOperands()) {
-      if (auto structTy = dyn_cast<LLVM::LLVMStructType>(value.getType())) {
-        // Unpack each of the elements.
-        for (size_t i = 0, e = structTy.getBody().size(); i != e; ++i) {
-          auto elt = rewriter.createOrFold<LLVM::ExtractValueOp>(op.getLoc(),
-                                                                 value, i);
-          operands.push_back(elt);
-        }
-      } else {
-        operands.push_back(value);
-      }
-    }
-
-    LLVM::CallOp call = createLLVMCall(rewriter, op.getLoc(), func, operands);
+    LLVM::CallOp call = createLLVMCall(
+        rewriter, op.getLoc(), func,
+        expandOperands(rewriter, op.getLoc(), adaptor.getOperands()));
     replaceCallWithLLVMCall(rewriter, op, call);
     return success();
   }
