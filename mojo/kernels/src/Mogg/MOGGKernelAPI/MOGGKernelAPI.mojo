@@ -1822,19 +1822,12 @@ struct BottomK:
         k: Scalar[axis_type],
         axis: Scalar[axis_type],
         sorted: Scalar[type = DType.bool],
-    ) -> StaticIntTuple[input.rank]:
-        # TODO(GRA-1033): We should not be forced to have a single return statement.
-        var ret: StaticIntTuple[input.rank]
-        try:
-            ret = top_k_shape_impl[single_thread_blocking_override=True](
-                managed_tensor_slice_to_ndbuffer(input),
-                managed_tensor_slice_to_ndbuffer(k),
-                managed_tensor_slice_to_ndbuffer(axis),
-            )
-        except:
-            ret = StaticIntTuple[input.rank]()
-
-        return ret
+    ) raises -> StaticIntTuple[input.rank]:
+        return top_k_shape_impl[single_thread_blocking_override=True](
+            managed_tensor_slice_to_ndbuffer(input),
+            managed_tensor_slice_to_ndbuffer(k),
+            managed_tensor_slice_to_ndbuffer(axis),
+        )
 
 
 @compiler.register("mo.top_k")
@@ -1869,16 +1862,10 @@ struct TopK:
         k: Scalar[axis_type],
         axis: Scalar[axis_type],
         sorted: Scalar[type = DType.bool],
-    ) -> StaticIntTuple[input.rank]:
+    ) raises -> StaticIntTuple[input.rank]:
         # TODO(GRA-1033): We should not be forced to have a single return statement.
-        var ret: StaticIntTuple[input.rank]
-        try:
-            ret = top_k_shape_impl[single_thread_blocking_override=True](
-                managed_tensor_slice_to_ndbuffer(input),
-                managed_tensor_slice_to_ndbuffer(k),
-                managed_tensor_slice_to_ndbuffer(axis),
-            )
-        except:
-            ret = StaticIntTuple[input.rank]()
-
-        return ret
+        return top_k_shape_impl[single_thread_blocking_override=True](
+            managed_tensor_slice_to_ndbuffer(input),
+            managed_tensor_slice_to_ndbuffer(k),
+            managed_tensor_slice_to_ndbuffer(axis),
+        )
