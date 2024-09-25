@@ -103,12 +103,12 @@ def test_move():
 
     tensor = cpu.allocate(TensorSpec(DType.float32, (2, 2)))
     addr = tensor.unsafe_ptr()
-    moved_tensor = tensor.move_to(cpu)
+    moved_tensor = tensor^.move_to(cpu)
     assert_equal(addr, moved_tensor.unsafe_ptr())
 
     tensor = cpu.allocate(TensorSpec(DType.float32, (2, 2)))
     addr = tensor.unsafe_ptr()
-    moved_tensor = moved_tensor.move_to(gpu)
+    moved_tensor = moved_tensor^.move_to(gpu)
     assert_not_equal(addr, moved_tensor.unsafe_ptr())
 
 

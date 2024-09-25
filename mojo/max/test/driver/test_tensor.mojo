@@ -414,7 +414,7 @@ def test_move():
     t = Tensor[DType.float32, len(shape)](TensorShape(shape))
     t[0] = 1.0
     dev = cpu_device()
-    t1 = t.move_to(dev)
+    t1 = t^.move_to(dev)
     assert_equal(t1[0], 1.0)
 
 
