@@ -42,3 +42,17 @@ def test_kv_manager(session: InferenceSession) -> None:
 
     # Check that resetting the cache succeeds.
     kv_manager.reset_cache()
+
+    # Check that the update function operates as intended.
+    seq_ids = kv_manager.claim(batch_size=3)
+    _ = kv_manager.fetch(seq_ids)
+
+    for i in range(3):
+        valid_lengths = {}
+        for seq_id in seq_ids:
+            valid_lengths[seq_id] = 1
+
+        kv_manager.step(valid_lengths)
+
+        for seq_id in seq_ids:
+            assert kv_manager.cache_lengths[seq_id] == 1 + i
