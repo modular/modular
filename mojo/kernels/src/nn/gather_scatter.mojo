@@ -16,7 +16,7 @@ from buffer import NDBuffer
 from buffer.dimlist import DimList
 from gpu.host import DeviceBuffer, DeviceContext
 from memory import memcpy, memset_zero, stack_allocation, UnsafePointer
-from register import mogg_register
+from register import mogg_register, mogg_register_shape_func
 from runtime.asyncrt import MojoCallContextPtr, parallelism_level
 from runtime.tracing import Trace, TraceLevel
 
@@ -1035,7 +1035,7 @@ fn scatter_nd_shape[
 # ===----------------------------------------------------------------------===#
 
 
-@mogg_register("gather_shape")
+@mogg_register_shape_func("mo.gather")
 @always_inline
 fn gather_shape[
     output_rank: Int,
