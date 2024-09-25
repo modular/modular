@@ -11,4 +11,4 @@
 // CHECK-M2: target-triple: aarch64-unknown-macosx
 // CHECK-M2 os: macosx
 // CHECK-M2: arch: apple-m2
-// CHECK-M2: features: aes, bf16, complxnum, crc, dotprod, fp-armv8, fp16fml, fullfp16, i8mm, jsconv, lse, neon, pauth, perfmon, ras, rcpc, rdm, sha2, sha3
+// CHECK-M2: features: aes, bf16, complxnum, crc, dotprod, fp-armv8, fp16fml, fpac, fullfp16, i8mm, jsconv, lse, neon, pauth, perfmon, ras, rcpc, rdm, sha2, sha3, ssbs
