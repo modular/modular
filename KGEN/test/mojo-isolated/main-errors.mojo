@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-# RUN: kgen-translate -import-mojo -verify-diagnostics -split-input-file %s
+# RUN: %parse-mojo-isolated -verify-diagnostics -split-input-file %s
 
 
 # expected-error @below {{expected 'main' function to have no arguments}}
