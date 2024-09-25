@@ -151,26 +151,6 @@ struct LayoutTensorBuild[
             )
         )
 
-    fn row_major[
-        *d: Int
-    ](self) -> LayoutTensorBuild[
-        dtype,
-        __layout = Layout.row_major(_to_int_tuple[d]()),
-        __layout_init=True,
-    ] as res:
-        return __type_of(res)()
-
-    fn row_major[
-        rank: Int
-    ](self, shapes: StaticIntTuple[rank]) -> LayoutTensorBuild[
-        dtype,
-        __layout = Layout.row_major(
-            _to_int_tuple[rank](UNKNOWN_VALUE),
-        ),
-        __layout_init=True,
-    ] as res:
-        return __type_of(res)(__type_of(res.runtime_layout).row_major(shapes))
-
     fn col_major(
         self, shape0: ValueOrUnknown, shape1: ValueOrUnknown
     ) -> LayoutTensorBuild[
@@ -244,26 +224,6 @@ struct LayoutTensorBuild[
                 )
             )
         )
-
-    fn col_major[
-        *d: Int
-    ](self) -> LayoutTensorBuild[
-        dtype,
-        __layout = Layout.col_major(_to_int_tuple[d]()),
-        __layout_init=True,
-    ] as res:
-        return __type_of(res)()
-
-    fn col_major[
-        rank: Int
-    ](self, shapes: StaticIntTuple[rank]) -> LayoutTensorBuild[
-        dtype,
-        __layout = Layout.col_major(
-            _to_int_tuple[rank](UNKNOWN_VALUE),
-        ),
-        __layout_init=True,
-    ] as res:
-        return __type_of(res)(__type_of(res.runtime_layout).col_major(shapes))
 
     fn layout[
         N: Int,
