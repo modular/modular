@@ -33,3 +33,6 @@ class EchoTokenGenerator:
             for rid, ctx in batch.items()
             if ctx.index >= 0
         }
+
+    async def release(self, context: EchoTokenGeneratorContext):
+        pass

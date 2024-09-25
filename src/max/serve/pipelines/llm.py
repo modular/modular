@@ -13,6 +13,8 @@ from typing import AsyncGenerator, Generic, Optional, TypeVar
 
 from transformers import AutoTokenizer
 
+from max.pipelines import TokenGenerator
+
 from max.serve.scheduler.queues import BatchMultiplexQueue
 
 # TODO (SI-582) unify logging infra
@@ -42,7 +44,7 @@ class TokenGeneratorRequest:
 class TokenGeneratorPipeline(Generic[Context]):
     """Base class for LLM pipelines."""
 
-    model: max.pipelines.interfaces.TokenGenerator[Context]
+    model: TokenGenerator[Context]
     tokenizer: Optional[AutoTokenizer] = None
     max_batch_size: int = 1
 
