@@ -200,7 +200,11 @@ struct MatmulKernels[
 
 
 fn select_config[
-    a_type: DType, b_type: DType, c_type: DType, transpose_b: Bool = False
+    a_type: DType,
+    b_type: DType,
+    c_type: DType,
+    transpose_b: Bool = False,
+    target: StringLiteral = "cuda",
 ](M: Int, N: Int, K: Int) -> MatmulConfig[a_type, b_type, c_type, transpose_b]:
     # A super simple heuristic is to just choose the tile shapes that lead to
     # min waves. Only support two shapes for now.
@@ -209,9 +213,6 @@ fn select_config[
 
     var best_bmnk = Index(128, 128, _bk_base[a_type]())
     var min_num_waves = 1000
-    # var min_num_waves = ceildiv(
-    #     ceildiv(M, best_bmnk[0]) * ceildiv(N, best_bmnk[1]), A100.sm_count
-    # )
     var best_num_k_partitions = 1
 
     for bm_bn in List(Index(128, 128), Index(64, 256)):
@@ -221,6 +222,7 @@ fn select_config[
 
         # Enable split K when only < 50% of SMs are used.
         var num_k_partitions = 1
+        # Using A100 sm count for now due to KERN-982.
         if num_blocks < A100.sm_count // 2 and K % 32 == 0:
             num_k_partitions = min(
                 max_k_partitions, ceildiv(A100.sm_count, num_blocks)
