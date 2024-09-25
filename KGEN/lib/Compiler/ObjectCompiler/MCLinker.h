@@ -102,7 +102,8 @@ public:
            llvm::TargetMachine &targetMachine, CompilationOptions options);
 
   /// Link multiple MC results and AsmPrint into one .o file.
-  ErrorOr<WriteableBufferRef> linkAndPrint(StringRef moduleName);
+  ErrorOr<WriteableBufferRef> linkAndPrint(StringRef moduleName,
+                                           bool emitAssembly);
 
 private:
   SmallVectorImpl<SymbolAndMCInfo *> &symbolAndMCInfos;
