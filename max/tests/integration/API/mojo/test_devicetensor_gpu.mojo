@@ -46,9 +46,9 @@ def test_model_device_tensor(
         cpu_input_tensor[i] = 1.0
 
     # We now copy the populated CPU tensor to the CUDA device.
-    input = cpu_input_tensor.to_device_tensor().copy_to(
-        cuda_dev
-    ) if inputs_on_device else cpu_input_tensor.to_device_tensor()
+    input = cpu_input_tensor^.to_device_tensor()
+    if inputs_on_device:
+        input = input^.copy_to(cuda_dev)
 
     outputs = model.execute(input)
     assert_equal(len(outputs), 1)
