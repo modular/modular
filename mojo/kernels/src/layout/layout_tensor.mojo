@@ -38,27 +38,55 @@ from .swizzle import Swizzle, make_ldmatrix_swizzle
 from .fillers import arange
 
 
-# Distribute thread_layout into data_layout, if axis is provided
-# distribute into threads_layout projected into this axis.
-#
-
-
 fn _compute_distribute_layout[
     data_layout: Layout,
     threads_layout: Layout,
     axis: OptionalReg[Int] = None,
+    /,
+    __experimental_non_homogeneous_tile: Bool = False,
 ]() -> Layout:
+    """Distribute thread_layout into self layout, if axis is provided
+    distribute into threads_layout projected into this axis.
+    """
     var thread_tile = LayoutList()
 
     @parameter
     if axis:
-        return zipped_divide(
+        var divided_layout = zipped_divide(
             data_layout, Layout(threads_layout.shape[axis.value()])
         )
 
-    for dim in threads_layout.shape:
-        thread_tile.append(Layout(dim))
-    return zipped_divide(data_layout, thread_tile)
+        @parameter
+        if not __experimental_non_homogeneous_tile:
+            return divided_layout
+        else:
+            divided_layout.shape[1] = propagate_unknown(
+                divided_layout.shape[1], data_layout.shape
+            )
+            # TODO: remove this after KERN-983 is fixed
+            divided_layout.stride[1] = propagate_unknown(
+                divided_layout.stride[1], data_layout.stride
+            )
+            return divided_layout
+
+    else:
+        for dim in threads_layout.shape:
+            thread_tile.append(Layout(dim))
+
+        var divided_layout = zipped_divide(data_layout, thread_tile)
+
+        @parameter
+        if not __experimental_non_homogeneous_tile:
+            return divided_layout
+        else:
+            divided_layout.shape[1] = propagate_unknown(
+                divided_layout.shape[1], data_layout.shape
+            )
+            # TODO: remove this after KERN-983 is fixed
+            divided_layout.stride[1] = propagate_unknown(
+                divided_layout.stride[1], data_layout.stride
+            )
+            return divided_layout
 
 
 # Returns an IntTuple with all ones except axis same as input t, when
@@ -1334,6 +1362,38 @@ struct LayoutTensor[
         )
 
     @always_inline
+    fn _clamp_distribute_shape[
+        thread_layout: Layout
+    ](self, thread_id: UInt) -> StaticIntTuple[rank]:
+        constrained[
+            len(flatten(thread_layout.shape)) <= 2
+            and len(flatten(thread_layout.stride)) <= 2,
+            "Only supporting rank-2 or less thread layout for dynamic tile.",
+        ]()
+
+        # clamp staticinttuple using thread_id and thread_layout
+        var tile_shape = StaticIntTuple[rank]()
+        var runtime_shape = self.runtime_layout.shape
+        alias thread_shape = thread_layout.shape
+        alias thread_stride = thread_layout.stride
+
+        # this would only work for rank-2 thread layout, need to extend this
+        # to support thread layout such as Layout((2, 2), 2)
+        @parameter
+        for i in range(rank):
+            alias thread_stride_i = to_int(thread_stride[i])
+            alias thread_shape_i = to_int(thread_shape[i])
+            var tile_idx = (thread_id // thread_stride_i) % thread_shape_i
+            var runtime_dim = runtime_shape[i].get_int()
+            var tile_shape_i = ceildiv(runtime_dim, thread_shape_i)
+            var bound_i = (tile_shape_i - 1) * thread_shape_i + tile_idx
+            tile_shape[i] = tile_shape_i if bound_i < runtime_dim else (
+                runtime_dim // thread_shape_i
+            )
+
+        return tile_shape
+
+    @always_inline
     fn distribute[
         threads_layout: Layout,
         axis: OptionalReg[Int] = None,
@@ -1341,9 +1401,15 @@ struct LayoutTensor[
         submode_axis: OptionalReg[Int] = None,
     ](self, thread_id: UInt) -> LayoutTensor[
         dtype,
-        _compute_distribute_layout[layout, threads_layout, axis]()[1],
+        _compute_distribute_layout[
+            layout,
+            threads_layout,
+            axis,
+            __experimental_non_homogeneous_tile = self.__experimental_non_homogeneous_tile,
+        ]()[1],
         address_space=address_space,
         element_layout=element_layout,
+        __experimental_non_homogeneous_tile = self.__experimental_non_homogeneous_tile,
     ] as result:
         """Distribute tiled workload to threads.
 
@@ -1357,7 +1423,10 @@ struct LayoutTensor[
         """
 
         alias distributed_layout = _compute_distribute_layout[
-            layout, threads_layout, axis
+            layout,
+            threads_layout,
+            axis,
+            __experimental_non_homogeneous_tile = self.__experimental_non_homogeneous_tile,
         ]()
 
         alias coalesce_thread_layout = coalesce(threads_layout, keep_rank=True)
@@ -1387,9 +1456,6 @@ struct LayoutTensor[
             alias fragments_layout_stride = flatten(
                 distributed_layout[0].stride
             )
-
-            alias threads_layout_shape = flatten(threads_layout.shape)
-            alias threads_layout_stride = flatten(threads_layout.stride)
 
             # Only extract coordinates in the given axis.
             # Example: axis = 0 for 2x2 threads, we only need thread 0 and 1's
@@ -1428,12 +1494,7 @@ struct LayoutTensor[
                     swizzle_fn(offset // self.element_size) * self.element_size
                 )
 
-            return LayoutTensor[
-                dtype,
-                result.layout,
-                address_space=address_space,
-                element_layout=element_layout,
-            ](
+            return __type_of(result)(
                 self.ptr.offset(int(swizzled_offset)),
                 org_coords_offset=rebind[StaticIntTuple[result.layout.rank()]](
                     org_coords_offset
@@ -1444,17 +1505,16 @@ struct LayoutTensor[
             )
 
         else:
-            constrained[
-                layout.known_shape() and threads_layout.all_dims_known(),
-                (
-                    "Distribute expecting layout with static shapes and fully"
-                    " static threads_layout"
-                ),
-            ]()
-            alias fragments_layout_stride = flatten(tiled_layout[0].stride)
 
-            alias threads_layout_shape = flatten(threads_layout.shape)
-            alias threads_layout_stride = flatten(threads_layout.stride)
+            @parameter
+            if not __experimental_non_homogeneous_tile:
+                constrained[
+                    layout.known_shape() and threads_layout.all_dims_known(),
+                    (
+                        "Distribute expecting layout with static shapes and"
+                        " fully static threads_layout"
+                    ),
+                ]()
 
             # Only extract coordinates in the given axis.
             # Example: axis = 0 for 2x2 threads, we only need thread 0 and 1's
@@ -1472,12 +1532,18 @@ struct LayoutTensor[
 
             var offset: Scalar[Self.index_type] = 0
 
-            var runtime_shape = RuntimeTuple[result.layout.shape]()
+            @parameter
+            if __experimental_non_homogeneous_tile:
+                runtime_shape = RuntimeTuple[result.layout.shape](
+                    self._clamp_distribute_shape[threads_layout](thread_id)
+                )
+            else:
+                runtime_shape = RuntimeTuple[result.layout.shape]()
+
             var runtime_stride = RuntimeTuple[result.layout.stride]()
 
             @parameter
             for i in range(runtime_shape.scalar_length):
-                alias shape_i = to_int(flatten(layout.shape)[i])
                 alias thread_shape_i = threads_layout[i].size()
                 runtime_stride.value[i] = (
                     self.runtime_layout.stride.value[i] * thread_shape_i
@@ -1502,16 +1568,30 @@ struct LayoutTensor[
                     swizzle_fn(offset // self.element_size) * self.element_size
                 )
 
-            return __type_of(result)(
-                self.ptr.offset(int(swizzled_offset)),
-                RuntimeLayout(runtime_shape, runtime_stride),
-                org_coords_offset=rebind[StaticIntTuple[result.layout.rank()]](
-                    org_coords_offset
-                ),
-                org_coords_stride=rebind[StaticIntTuple[result.layout.rank()]](
-                    org_coords_stride
-                ),
-            )
+            @parameter
+            if self.element_layout.all_dims_known():
+                return __type_of(result)(
+                    self.ptr.offset(int(swizzled_offset)),
+                    RuntimeLayout(runtime_shape, runtime_stride),
+                    org_coords_offset=rebind[
+                        StaticIntTuple[result.layout.rank()]
+                    ](org_coords_offset),
+                    org_coords_stride=rebind[
+                        StaticIntTuple[result.layout.rank()]
+                    ](org_coords_stride),
+                )
+            else:
+                return __type_of(result)(
+                    self.ptr.offset(int(swizzled_offset)),
+                    RuntimeLayout(runtime_shape, runtime_stride),
+                    self.runtime_element_layout,
+                    org_coords_offset=rebind[
+                        StaticIntTuple[result.layout.rank()]
+                    ](org_coords_offset),
+                    org_coords_stride=rebind[
+                        StaticIntTuple[result.layout.rank()]
+                    ](org_coords_stride),
+                )
 
     # Returns the original coordiantes a specific tensor element at `idx`.
     @always_inline

@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo-no-debug %s | FileCheck %s
 
-from layout import LayoutTensor, Layout, RuntimeLayout
+from layout import LayoutTensor, Layout, RuntimeLayout, IntTuple
 from layout.layout import UNKNOWN_VALUE
 from utils import StaticIntTuple
 from math import ceildiv
@@ -314,6 +314,209 @@ def test_non_homogeneous_copy_from():
             print(tensor2x2)
 
 
+def test_non_homogeneous_distribute():
+    print("== test_non_homogeneous_distribute")
+
+    alias type = DType.float32
+    alias M = 8
+    alias N = 6
+
+    alias layoutMxU = Layout.row_major(M, UNKNOWN_VALUE)
+
+    var src_runtimelayout = RuntimeLayout[layoutMxU].row_major(
+        StaticIntTuple[2](M, N)
+    )
+    var tensorMxU = ManagedLayoutTensor[
+        type, layoutMxU, __experimental_non_homogeneous_tile=True
+    ](src_runtimelayout)
+    arange(tensorMxU.tensor, 0, 0.5)
+
+    # CHECK: ----tile-data[ 0 , 0 ]----
+    # CHECK: 0.0 0.5 1.0 1.5
+    # CHECK: 3.0 3.5 4.0 4.5
+    # CHECK: 6.0 6.5 7.0 7.5
+    # CHECK: 9.0 9.5 10.0 10.5
+    # CHECK: ----fragments-data[ 0 ]----
+    # CHECK: 0.0 1.0
+    # CHECK: 6.0 7.0
+    # CHECK: ----fragments-data[ 1 ]----
+    # CHECK: 0.5 1.5
+    # CHECK: 6.5 7.5
+    # CHECK: ----fragments-data[ 2 ]----
+    # CHECK: 3.0 4.0
+    # CHECK: 9.0 10.0
+    # CHECK: ----fragments-data[ 3 ]----
+    # CHECK: 3.5 4.5
+    # CHECK: 9.5 10.5
+    # CHECK: ----tile-data[ 0 , 1 ]----
+    # CHECK: 2.0 2.5
+    # CHECK: 5.0 5.5
+    # CHECK: 8.0 8.5
+    # CHECK: 11.0 11.5
+    # CHECK: ----fragments-data[ 0 ]----
+    # CHECK: 2.0
+    # CHECK: 8.0
+    # CHECK: ----fragments-data[ 1 ]----
+    # CHECK: 2.5
+    # CHECK: 8.5
+    # CHECK: ----fragments-data[ 2 ]----
+    # CHECK: 5.0
+    # CHECK: 11.0
+    # CHECK: ----fragments-data[ 3 ]----
+    # CHECK: 5.5
+    # CHECK: 11.5
+    # CHECK: ----tile-data[ 1 , 0 ]----
+    # CHECK: 12.0 12.5 13.0 13.5
+    # CHECK: 15.0 15.5 16.0 16.5
+    # CHECK: 18.0 18.5 19.0 19.5
+    # CHECK: 21.0 21.5 22.0 22.5
+    # CHECK: ----fragments-data[ 0 ]----
+    # CHECK: 12.0 13.0
+    # CHECK: 18.0 19.0
+    # CHECK: ----fragments-data[ 1 ]----
+    # CHECK: 12.5 13.5
+    # CHECK: 18.5 19.5
+    # CHECK: ----fragments-data[ 2 ]----
+    # CHECK: 15.0 16.0
+    # CHECK: 21.0 22.0
+    # CHECK: ----fragments-data[ 3 ]----
+    # CHECK: 15.5 16.5
+    # CHECK: 21.5 22.5
+    # CHECK: ----tile-data[ 1 , 1 ]----
+    # CHECK: 14.0 14.5
+    # CHECK: 17.0 17.5
+    # CHECK: 20.0 20.5
+    # CHECK: 23.0 23.5
+    # CHECK: ----fragments-data[ 0 ]----
+    # CHECK: 14.0
+    # CHECK: 20.0
+    # CHECK: ----fragments-data[ 1 ]----
+    # CHECK: 14.5
+    # CHECK: 20.5
+    # CHECK: ----fragments-data[ 2 ]----
+    # CHECK: 17.0
+    # CHECK: 23.0
+    # CHECK: ----fragments-data[ 3 ]----
+    # CHECK: 17.5
+    # CHECK: 23.5
+    for i in range(ceildiv(M, 4)):
+        for j in range(ceildiv(M, 4)):
+            var unknown4x4 = tensorMxU.tensor.tile[4, 4](i, j)
+            print("----tile-data[", i, ",", j, "]----")
+            print(unknown4x4)
+            for th_i in range(4):
+                var tile_2x2 = unknown4x4.distribute[Layout.row_major(2, 2)](
+                    th_i
+                )
+                print("----fragments-data[", th_i, "]----")
+                print(tile_2x2)
+
+    alias simd_size = 2
+    alias layout8xU = Layout.row_major(8, UNKNOWN_VALUE)
+    alias thread_layout8xU = Layout.row_major(8 // simd_size, 2)
+
+    var tensor8xU = ManagedLayoutTensor[
+        type,
+        layout8xU,
+        __experimental_non_homogeneous_tile=True,
+    ](RuntimeLayout[layout8xU].row_major(StaticIntTuple[2](8, 7)))
+    arange(tensor8xU.tensor)
+
+    # CHECK: 0.0 1.0 2.0 3.0 4.0 5.0 6.0
+    # CHECK: 7.0 8.0 9.0 10.0 11.0 12.0 13.0
+    # CHECK: 14.0 15.0 16.0 17.0 18.0 19.0 20.0
+    # CHECK: 21.0 22.0 23.0 24.0 25.0 26.0 27.0
+    # CHECK: 28.0 29.0 30.0 31.0 32.0 33.0 34.0
+    # CHECK: 35.0 36.0 37.0 38.0 39.0 40.0 41.0
+    # CHECK: 42.0 43.0 44.0 45.0 46.0 47.0 48.0
+    # CHECK: 49.0 50.0 51.0 52.0 53.0 54.0 55.0
+    # CHECK: ----thread[ 0 ]----
+    # CHECK: [0.0, 7.0] [2.0, 9.0] [4.0, 11.0] [6.0, 13.0]
+    # CHECK: ----thread[ 1 ]----
+    # CHECK: [1.0, 8.0] [3.0, 10.0] [5.0, 12.0]
+    # CHECK: ----thread[ 2 ]----
+    # CHECK: [14.0, 21.0] [16.0, 23.0] [18.0, 25.0] [20.0, 27.0]
+    # CHECK: ----thread[ 3 ]----
+    # CHECK: [15.0, 22.0] [17.0, 24.0] [19.0, 26.0]
+    # CHECK: ----thread[ 4 ]----
+    # CHECK: [28.0, 35.0] [30.0, 37.0] [32.0, 39.0] [34.0, 41.0]
+    # CHECK: ----thread[ 5 ]----
+    # CHECK: [29.0, 36.0] [31.0, 38.0] [33.0, 40.0]
+    # CHECK: ----thread[ 6 ]----
+    # CHECK: [42.0, 49.0] [44.0, 51.0] [46.0, 53.0] [48.0, 55.0]
+    # CHECK: ----thread[ 7 ]----
+    # CHECK: [43.0, 50.0] [45.0, 52.0] [47.0, 54.0]
+    print(tensor8xU.tensor)
+    for tid in range(thread_layout8xU.size()):
+        print("----thread[", tid, "]----")
+        var tile = tensor8xU.tensor.vectorize[simd_size, 1]().distribute[
+            thread_layout8xU
+        ](tid)
+        print(tile)
+
+    alias layoutUx8 = Layout.row_major(UNKNOWN_VALUE, 8)
+    alias thread_layoutUx8 = Layout.row_major(2, 8 // simd_size)
+
+    var tensorUx8 = ManagedLayoutTensor[
+        type,
+        layoutUx8,
+        __experimental_non_homogeneous_tile=True,
+    ](RuntimeLayout[layoutUx8].row_major(StaticIntTuple[2](7, 8)))
+    arange(tensorUx8.tensor)
+
+    # CHECK: 0.0 1.0 2.0 3.0 4.0 5.0 6.0 7.0
+    # CHECK: 8.0 9.0 10.0 11.0 12.0 13.0 14.0 15.0
+    # CHECK: 16.0 17.0 18.0 19.0 20.0 21.0 22.0 23.0
+    # CHECK: 24.0 25.0 26.0 27.0 28.0 29.0 30.0 31.0
+    # CHECK: 32.0 33.0 34.0 35.0 36.0 37.0 38.0 39.0
+    # CHECK: 40.0 41.0 42.0 43.0 44.0 45.0 46.0 47.0
+    # CHECK: 48.0 49.0 50.0 51.0 52.0 53.0 54.0 55.0
+    # CHECK: ----thread[ 0 ]----
+    # CHECK: [0.0, 1.0]
+    # CHECK: [16.0, 17.0]
+    # CHECK: [32.0, 33.0]
+    # CHECK: [48.0, 49.0]
+    # CHECK: ----thread[ 1 ]----
+    # CHECK: [2.0, 3.0]
+    # CHECK: [18.0, 19.0]
+    # CHECK: [34.0, 35.0]
+    # CHECK: [50.0, 51.0]
+    # CHECK: ----thread[ 2 ]----
+    # CHECK: [4.0, 5.0]
+    # CHECK: [20.0, 21.0]
+    # CHECK: [36.0, 37.0]
+    # CHECK: [52.0, 53.0]
+    # CHECK: ----thread[ 3 ]----
+    # CHECK: [6.0, 7.0]
+    # CHECK: [22.0, 23.0]
+    # CHECK: [38.0, 39.0]
+    # CHECK: [54.0, 55.0]
+    # CHECK: ----thread[ 4 ]----
+    # CHECK: [8.0, 9.0]
+    # CHECK: [24.0, 25.0]
+    # CHECK: [40.0, 41.0]
+    # CHECK: ----thread[ 5 ]----
+    # CHECK: [10.0, 11.0]
+    # CHECK: [26.0, 27.0]
+    # CHECK: [42.0, 43.0]
+    # CHECK: ----thread[ 6 ]----
+    # CHECK: [12.0, 13.0]
+    # CHECK: [28.0, 29.0]
+    # CHECK: [44.0, 45.0]
+    # CHECK: ----thread[ 7 ]----
+    # CHECK: [14.0, 15.0]
+    # CHECK: [30.0, 31.0]
+    # CHECK: [46.0, 47.0]
+    print(tensorUx8.tensor)
+    for tid in range(thread_layoutUx8.size()):
+        print("----thread[", tid, "]----")
+        var tile = tensorUx8.tensor.vectorize[1, simd_size]().distribute[
+            thread_layoutUx8
+        ](tid)
+        print(tile)
+
+
 def main():
     test_single_unknown_tile()
     test_non_homogeneous_copy_from()
+    test_non_homogeneous_distribute()
