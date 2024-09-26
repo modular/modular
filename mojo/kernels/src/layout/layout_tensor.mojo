@@ -3178,6 +3178,20 @@ struct LayoutTensorIter[
             self.offset = self.offset % self.bound
 
     @always_inline
+    fn _incr(inout self):
+        """Increment the iterator by 1. Equivalent to `iter += 1` but w/o the division.
+        """
+
+        self.offset += self.stride
+
+        @parameter
+        if circular:
+            self.offset = (
+                self.offset - self.bound if self.offset
+                >= self.bound else self.offset
+            )
+
+    @always_inline
     fn __iadd__(inout self, rhs: UInt):
         """Increment the iterator.
 
@@ -3209,6 +3223,29 @@ struct LayoutTensorIter[
     @always_inline
     fn next(self, rhs: UInt = 1) -> Self:
         return self.next(int(rhs))
+
+    @always_inline
+    fn next_unsafe(self, rhs: UInt = 1) -> Self:
+        """Return an iterator pointing to the next `rhs` layout tensor.
+        This is the unsafe version and user must ensure rhs < bound / stride.
+        """
+
+        var next_offset = self.offset + int(rhs) * self.stride
+
+        @parameter
+        if circular:
+            next_offset = (
+                next_offset - self.bound if next_offset
+                >= self.bound else next_offset
+            )
+
+        return Self(
+            self.ptr,
+            self.bound,
+            stride=self.stride,
+            offset=next_offset,
+            runtime_layout=self.runtime_layout,
+        )
 
     @always_inline
     fn reshape[
