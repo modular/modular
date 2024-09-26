@@ -36,7 +36,7 @@ fn MultipleThingMetaparams(a: Thing[1, 2][1]):
     pass
 
 
-# expected-error @+1 {{'Thing' parameter #1 has 'Int' type, but value has type 'FloatLiteral'}}
+# expected-error @+1 {{cannot implicitly convert 'FloatLiteral' value to 'Int'}}
 fn WeirdMetaParams(a: Thing[1, 1.5]):
     pass
 

@@ -543,6 +543,21 @@ fn dependent_function_type[a: int, f: fn (ParamType[a]) -> None]():
     # CHECK: bind_signature
     func[a, f]()
 
+fn overloaded_function():
+    pass
+
+fn overloaded_function(a: int):
+    pass
+
+struct ParamFuncType[f: fn() -> None]:
+    pass
+
+# CHECK-LABEL: lit.func @"bind_overloaded_fn
+fn bind_overloaded_fn[f: fn[f: fn () -> None] () -> None]():
+    # CHECK-NEXT: lit.alias.decl *"T`": anystruct<#ParamFuncType <:!lit.signature<() -> !kgen.none> {{.*}}@"overloaded_function()"
+    alias T = ParamFuncType[overloaded_function]
+    # CHECK-NEXT: lit.alias.decl *"g`1": {{.*}} = <bind_signature(:{{.*}} f, {{.*}}@"overloaded_function()")>
+    alias g = f[overloaded_function]
 
 ##===----------------------------------------------------------------------===##
 # Alias resolution

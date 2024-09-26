@@ -780,10 +780,18 @@ CValue AttributeRefNode::emitStoredFieldRef(ASTExprAnd<CValue> base,
 /// fails be emitted as a PValue, the function returns null.
 static std::optional<ParamBindings>
 getBindingsForParameterOperands(ArrayRef<Operand> operands,
-                                ExprEmitter &emitter) {
+                                ArrayRef<Type> paramTypes,
+                                PogListAttr paramList, ExprEmitter &emitter) {
   MLIRContext *ctx = emitter.getContext();
   ParamBindings paramBindings(emitter.getScopeInfo());
   for (const Operand &operand : operands) {
+    ASTType nextType;
+    if (operand.isPositional()) {
+      auto [_, fitness] = paramBindings.verifyBindings(paramTypes, paramList,
+                                                       /*partial=*/false);
+      nextType = fitness.lastExpectedType;
+    }
+
     // _, *_, and **_ in parameter expressions are magically treated as special
     // syntax for unbound values, which get a special representation in a
     // parameter list. They are not general expressions, so don't emit them as
@@ -802,7 +810,8 @@ getBindingsForParameterOperands(ArrayRef<Operand> operands,
       // specially.
       value = UnpackedAttr::get(ctx, /*kwOnly=*/false);
     } else {
-      auto pValue = emitter.emitExprPValue(operand.expr, EC_TypeParamValue);
+      auto pValue =
+          emitter.emitExprPValue(operand.expr, EC_TypeParamValue, nextType);
       if (!pValue)
         return std::nullopt;
       value = pValue.get();
@@ -841,16 +850,17 @@ static PValue substituteParametersIntoUserDefinedType(
   emitter.shared.notifyListenerOnParameterBinding(typeDecl, rhsLoc, operands);
 
   // Build up a ParamBindings set to validate and check the bindings.
-  std::optional<ParamBindings> paramBindings =
-      getBindingsForParameterOperands(operands, emitter);
+  TypeSignatureType sig = metaType.getSignature();
+  std::optional<ParamBindings> paramBindings = getBindingsForParameterOperands(
+      operands, sig.getParamTypes(), sig.getParamListAttrs(), emitter);
   if (!paramBindings)
     return {};
 
   // Check the bindings.
   // FIXME: The error messages are bad for partial binding, because the
   // diagnostic emitter points to the original struct definition.
-  ParameterExprArrayAttr bindingValuesAttr = paramBindings->verifyBindings(
-      structOp, metaType.getSignature(), loc, /*partial=*/true);
+  ParameterExprArrayAttr bindingValuesAttr =
+      paramBindings->verifyBindings(structOp, sig, loc, /*partial=*/true);
   if (!bindingValuesAttr)
     return {};
 
@@ -862,10 +872,31 @@ static PValue substituteParametersIntoUserDefinedType(
 /// set of bindings.
 static Type getNextParamType(ASTDecl *fnDecl,
                              const ParamBindings &paramBindings) {
-  LITSignatureType signature = cast<LIT::FuncOp>(*fnDecl).getFullSignature();
-  const auto &[_, fitness] =
-      paramBindings.verifyBindings(signature, /*partial=*/false);
+  LITSignatureType sig = cast<LIT::FuncOp>(*fnDecl).getFullSignature();
+  const auto &[_, fitness] = paramBindings.verifyBindings(
+      sig.getParamTypes(), sig.getParamListAttrs(), /*partial=*/false);
   return fitness.lastExpectedType;
+}
+
+/// Bind parameter operands to a callable parameter.
+static PValue bindToIndirectCall(PValue callable, LITSignatureType sig,
+                                 ArrayRef<Operand> operands,
+                                 ExprEmitter &emitter,
+                                 const SourceRange &range) {
+  // Build up a ParamBindings set to validate and check the bindings.
+  std::optional<ParamBindings> paramBindings = getBindingsForParameterOperands(
+      operands, sig.getParamTypes(), sig.getParamListAttrs(), emitter);
+  if (!paramBindings)
+    return {};
+
+  ParameterExprArrayAttr newBindings = paramBindings->verifyBindings(
+      sig, "parametric callable", range.getStart());
+  if (!newBindings)
+    return {};
+
+  SmallVector<TypedAttr> bindOperands{{callable.get()}};
+  llvm::append_range(bindOperands, newBindings);
+  return ParamOperatorAttr::get(POC::BindSignature, bindOperands);
 }
 
 /// When subscripting a callable with a bound symbol (i.e. a direct method call
@@ -1745,27 +1776,6 @@ AnyValue SliceNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
     return {};
   return emitter.emitResult(InitializerUValue::create(std::move(operands)),
                             this, dest);
-}
-
-/// Bind parameter operands to a callable parameter.
-static PValue bindToIndirectCall(PValue callable, LITSignatureType sig,
-                                 ArrayRef<Operand> operands,
-                                 ExprEmitter &emitter,
-                                 const SourceRange &range) {
-  // Build up a ParamBindings set to validate and check the bindings.
-  std::optional<ParamBindings> paramBindings =
-      getBindingsForParameterOperands(operands, emitter);
-  if (!paramBindings)
-    return {};
-
-  ParameterExprArrayAttr newBindings = paramBindings->verifyBindings(
-      sig, "parametric callable", range.getStart());
-  if (!newBindings)
-    return {};
-
-  SmallVector<TypedAttr> bindOperands{{callable.get()}};
-  llvm::append_range(bindOperands, newBindings);
-  return ParamOperatorAttr::get(POC::BindSignature, bindOperands);
 }
 
 AnyValue SubscriptNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {

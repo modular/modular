@@ -139,10 +139,18 @@ public:
 
   /// Attempt to bind the current set of parameters to the provided signature.
   /// This applies parameter inference and any default values to form a full
-  /// binding set, which is returned along with the binding fitness. `partial`
-  /// should be set to true if the caller doesn't require a full binding.
+  /// binding set, which is returned along with the binding fitness. This will
+  /// form a partial binding of the signature.
   std::pair<ParameterExprArrayAttr, Fitness>
-  verifyBindings(LITSignatureType sig, bool partial) const;
+  verifyBindings(LITSignatureType sig) const;
+
+  /// Attempt to bind the current set of parameters to the provided parameter
+  /// types and list. This applies parameter inference and any default values to
+  /// form a full binding set, which is returned along with the binding fitness.
+  /// If `partial` is true, this forms a partial binding list.
+  std::pair<ParameterExprArrayAttr, Fitness>
+  verifyBindings(ArrayRef<Type> paramTypes, PogListAttr paramList,
+                 bool partial) const;
 
   /// Verify the parameter bindings for the given struct. If the struct doesn't
   /// match, diagnostics will be emitted using the struct's location and the
