@@ -218,7 +218,7 @@ struct VariadicStruct[*Ts: AnyTrivialRegType]:
         pass
 
 
-fn take_variadic_struct[*Ts: AnyTrivialRegType](a: VariadicStruct[Ts]):
+fn take_variadic_struct[*Ts: AnyTrivialRegType](a: VariadicStruct[*Ts]):
     pass
 
 
@@ -1220,9 +1220,6 @@ struct SomeStruct:
 # CHECK-SAME: capturing ->
 fn closureParameter[func: fn () capturing -> __mlir_type.index]():
     pass
-
-
-alias LifetimeSet = __mlir_type.`!lit.lifetime.set`
 
 
 # CHECK-LABEL: lit.func @"closureParameterCaptures

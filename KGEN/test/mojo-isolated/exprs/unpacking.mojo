@@ -27,6 +27,10 @@ struct DefaultPosOnly[a: int = `1`, /, b: int = `2`, *, c: int = `3`]:
     pass
 
 
+fn variadic_params[*a: int]():
+    pass
+
+
 # CHECK-LABEL: lit.func @"test_unbound_pack
 fn test_unbound_pack():
     # CHECK: lit.alias.decl *"all_unbound`": anystruct<#StructWithDefault <?, ?, ?, ?>, <"a": index, "b": index, "c": index = 1, "d": index = 2>>
@@ -52,3 +56,12 @@ fn test_unbound_pack():
 
     # CHECK: lit.alias.decl *"unbound_variadic`{{.*}}": anystruct<#StructWithVariadic <?, :variadic<index> ?>
     alias unbound_variadic = StructWithVariadic[*_]
+
+    # CHECK: lit.alias.decl *"unpack_variadic`{{.*}}": !lit.signature<<"a": variadic<index> var>() -> !kgen.none> = <{{.*}}variadic_params{{.*}}<:variadic<index> ?>>
+    alias unpack_variadic = variadic_params[*_]
+
+    # CHECK: bind_signature(:{{.*}} *"unpack_variadic{{.*}}", [])
+    unpack_variadic()
+
+    # CHECK: call {{.*}}variadic_params{{.*}}<:variadic<index> []>
+    variadic_params[*_]()

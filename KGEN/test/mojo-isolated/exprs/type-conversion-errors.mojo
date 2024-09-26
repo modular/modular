@@ -6,15 +6,20 @@
 
 # RUN: %parse-mojo-isolated %s -verify-diagnostics
 
+
 @register_passable
 struct RP_NotTrivial:
     pass
 
+
 struct Foo:
-    fn __init__(inout self): pass
+    fn __init__(inout self):
+        pass
+
 
 fn take_instance_param[a: Foo]():
     pass
+
 
 # expected-note @+1 {{function declared here}}
 fn takes_instance_arg(a: Foo):
@@ -40,7 +45,7 @@ struct MadeFromPack[*Ts: AnyType]:
 
 
 struct WrapsMadeFromPack[*Ts: AnyType]:
-    var data: MadeFromPack[Ts]
+    var data: MadeFromPack[*Ts]
 
     fn __init__(inout self, *args: *Ts):
         # expected-error @+1 {{cannot implicitly convert 'VariadicPack[0, args, AnyType, Ts]' value to 'MadeFromPack[Ts]'}}
@@ -101,12 +106,17 @@ fn ambiguous_ctor_call(x: Int):
 struct MySIMD[value: Int]:
     fn __init__(inout self: MySIMD[0], value: MyBool):
         pass
+
+
 struct MyBool:
     fn __init__(inout self, value: MySIMD[0]):
         pass
+
+
 fn test_bad_conversion(a: MySIMD[0]):
     # expected-error @+1 {{cannot implicitly convert 'MySIMD[0]' value to 'MySIMD[1]'}}
-    var b : MySIMD[1] = a
+    var b: MySIMD[1] = a
+
 
 # MOCO-1090: bad parameter inference error message.
 fn test_rp_trivial_inference(a: RP_NotTrivial, b: Foo):
@@ -118,6 +128,7 @@ fn test_rp_trivial_inference(a: RP_NotTrivial, b: Foo):
     # expected-note @below {{failed to infer parameter 'T', argument type 'Foo' is not a '@register_passable("trivial")' type, so does not satisfy AnyTrivialRegType}}
     _ = infer_rp_trivial(b)
 
-# expected-note @below {{function declared here}}
-fn infer_rp_trivial[T: AnyTrivialRegType](val: T): pass
 
+# expected-note @below {{function declared here}}
+fn infer_rp_trivial[T: AnyTrivialRegType](val: T):
+    pass

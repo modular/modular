@@ -389,15 +389,17 @@ fn testAmbiguousConversions(a: Int, b: ConvertibleFromInt):
 # COM: Do not crash when explicitly unbound parameter cannot be deduced due to missing arguments.
 struct Parametric[a: Int]: pass
 
+# expected-note @below {{function declared here}}
 fn takes_same_arg_types[x: Int](a: Parametric[x], b: Parametric[x]): pass
 
 fn test_param_deduction_failure[
     func: fn[y: Int] (c: Parametric[y], d: Parametric[y]) -> None,
 ](u: Int, v: Int):
-    # expected-error @+1 {{cannot read from discard pattern '_'}}
+    # expected-error @+1 {{missing 1 required positional argument: 'b'}}
     takes_same_arg_types[_](u)
 
-    # expected-error @+1 {{cannot read from discard pattern '_'}}
+    # expected-error @below {{invalid call to 'takes_same_arg_types': could not deduce parameter 'x' of callee 'takes_same_arg_types'}}
+    # expected-note @below {{failed to infer parameter 'x', parameter isn't used in any argument}}
     takes_same_arg_types[_](u, v)
 
     # expected-error @+1 {{missing 1 required positional argument: 'd'}}

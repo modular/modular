@@ -179,6 +179,8 @@ def LIT_PogListAttr : LITAttr<"PogList", "pog_list"> {
     bool hasPack() const;
     /// Return true if there is a variadic keyword argument/param.
     bool hasKwVariadics() const;
+    /// Return true if there are inferred parameters.
+    bool hasInferredParams() const;
 
     /// Return the name for the argument/parameter at the given index.
     StringAttr getName(size_t idx) const;
@@ -368,12 +370,18 @@ def LIT_UnpackedAttr : LITTypedAttr<"Unpacked", "unpacked"> {
     parameter lists that autoparameterize the containing declaration.
   }];
 
-  let parameters = (ins "bool":$kwOnly);
-  let assemblyFormat = "`<` custom<UnpackKind>($kwOnly) `>`";
-
-  let extraClassDeclaration = [{
-    UnpackedType getType() const;
+  let parameters = (ins "TypedAttr":$value, "bool":$kwOnly,
+                        AttributeSelfTypeParameter<"">:$type);
+  let assemblyFormat = [{
+    `<` custom<ColonTypeParamValue>($value) `,` custom<UnpackKind>($kwOnly) `>`
   }];
+
+  let builders = [
+    AttrBuilderWithInferredContext<(ins "TypedAttr":$value, "bool":$kwOnly,
+                                        "Type":$type), [{
+      return $_get(type.getContext(), value, kwOnly, type);
+    }]>
+  ];
 }
 
 //===----------------------------------------------------------------------===//

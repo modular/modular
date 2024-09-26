@@ -85,12 +85,18 @@ static PValue emitSingleParameterValue(ASTExprAnd<AnyValue> binding,
                                        size_t &numImplicitConversions,
                                        ExprEmitter &emitter,
                                        ParserParamEvaluator &evaluator) {
-  // Check the type matches what is expected, and perform an implicit
-  // conversion if needed.
-  expectedType = ASTType(evaluator.getReboundType(expectedType.mlirType));
 
   PValue bindingVal = binding.ir.getIfPValue();
   assert(bindingVal && "Parameters are always PValue's");
+
+  // Parameters can only be unpacked into a variadic.
+  // FIXME: This results in a poor error message.
+  if (isa<UnpackedAttr>(bindingVal.get()))
+    return {};
+
+  // Check the type matches what is expected, and perform an implicit
+  // conversion if needed.
+  expectedType = ASTType(evaluator.getReboundType(expectedType.mlirType));
 
   // We don't typecheck the '_' magic parameter, we propagate it.
   if (isa<UnboundAttr>(bindingVal.get()))
@@ -123,7 +129,8 @@ ParamBindings::verifyBindingsImpl(
   CallOperands operands;
   for (auto [idx, binding] : llvm::enumerate(origOperands.values)) {
     auto unpacked = dyn_cast<UnpackedAttr>(binding.ir.getIfPValue().get());
-    if (!unpacked) {
+    // Check if the unpacked value is an UnboundAttr.
+    if (!unpacked || !isa<UnboundAttr>(unpacked.getValue())) {
       operands.values.push_back(binding);
       continue;
     }
@@ -228,10 +235,11 @@ ParamBindings::verifyBindingsImpl(
       return value;
 
     // Unbind the parameters if those of this passing kind were unbound.
-    if (((kind == PassingKind::PosOnly || kind == PassingKind::PosOrKw) &&
-         unpackedPos) ||
-        ((kind == PassingKind::PosOrKw || kind == PassingKind::KwOnly) &&
-         unpackedKw))
+    if ((((kind == PassingKind::PosOnly || kind == PassingKind::PosOrKw) &&
+          unpackedPos) ||
+         ((kind == PassingKind::PosOrKw || kind == PassingKind::KwOnly) &&
+          unpackedKw)) &&
+        partial)
       return UnboundAttr::get(requestedType);
 
     // If the parameter decl is a variadic parameter list, and do not have
@@ -411,13 +419,9 @@ ParamBindings::verifyBindingsImpl(
       return pValue;
     };
 
-    // Scalar parameter values are installed directly. Or, if we have a variadic
-    // of the same type, we can use it as the value of the parameter directly.
-    // FIXME: This allows passing a variadic `Ts` directly. Do we want a new
-    // PValue classification for `*Ts`, which is required to pass this legally?
-    if (!paramListAttr.isVariadic(idx) ||
-        bindingVal.getType().isEqualCanon(requestedType)) {
-      PValue paramValue = handlePosBinding(idx, binding, requestedType);
+    // Scalar parameter values are installed directly.
+    if (!paramListAttr.isVariadic(idx)) {
+      PValue paramValue = handlePosBinding(idx, binding, expectedType);
       if (!paramValue)
         return {{}, fitness};
       setParamValue(paramValue);
@@ -428,6 +432,19 @@ ParamBindings::verifyBindingsImpl(
     // If the parameter is a variadic list, it may consume many values, and they
     // all get packed up into a VariadicAttr.
     fitness.hasVariadicParams = true;
+
+    // Unpacked variadics can be passed directly as a whole variadic parameter.
+    if (auto unpacked =
+            dyn_cast<UnpackedAttr>(binding.ir.getIfPValue().get())) {
+      PValue paramValue = handlePosBinding(
+          idx, {PValue(unpacked.getValue()), binding.expr}, requestedType);
+      if (!paramValue)
+        return {{}, fitness};
+      setParamValue(paramValue);
+      ++posBindingIdx;
+      continue;
+    }
+
     SmallVector<TypedAttr> elements;
     auto variadicType = cast<VariadicType>(requestedType);
     do {
@@ -761,4 +778,4 @@ TypedAttr ParamBindings::getBoundConstAttrFor(LIT::FuncOp funcOp,
   return ParamOperatorAttr::get(POC::BindSignature, bindSigOperands);
 }
 
-void ParamBindings::dump() const { llvm::errs() << parameters; }
+void ParamBindings::dump() const { llvm::errs() << parameters << "\n"; }
