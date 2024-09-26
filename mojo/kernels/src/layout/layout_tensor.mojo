@@ -1042,7 +1042,7 @@ struct LayoutTensor[
 
     @staticmethod
     fn _compute_tile_layout[*tile_sizes: Int]() -> Layout:
-        alias tiles = Self._divide_tiles[tile_sizes]()
+        alias tiles = Self._divide_tiles[*tile_sizes]()
 
         @parameter
         if __experimental_non_homogeneous_tile:
@@ -1053,7 +1053,7 @@ struct LayoutTensor[
 
     @staticmethod
     fn _divide_tiles[*tile_sizes: Int]() -> Layout:
-        alias tiler = MakeTileLayoutList[tile_sizes]()
+        alias tiler = MakeTileLayoutList[*tile_sizes]()
         return zipped_divide(layout, tiler)
 
     @staticmethod
@@ -1081,7 +1081,7 @@ struct LayoutTensor[
         *tile_sizes: Int,
     ](self, *tile_coords: Int) -> LayoutTensor[
         dtype,
-        Self._compute_tile_layout[tile_sizes]()[0],
+        Self._compute_tile_layout[*tile_sizes]()[0],
         address_space=address_space,
         __experimental_non_homogeneous_tile = self.__experimental_non_homogeneous_tile,
     ] as result:
@@ -1109,10 +1109,10 @@ struct LayoutTensor[
                             [1 1]
         """
 
-        alias num_tiles = __get_len[tile_sizes]()
+        alias num_tiles = __get_len[*tile_sizes]()
 
         # need to calculate this again because __tiled_layout[1] is required for the offset calculation
-        alias __tiled_layout = Self._compute_tile_layout[tile_sizes]()
+        alias __tiled_layout = Self._compute_tile_layout[*tile_sizes]()
 
         constrained[
             __tiled_layout[1].rank() == num_tiles,
@@ -1151,7 +1151,7 @@ struct LayoutTensor[
             @parameter
             if __experimental_non_homogeneous_tile:
                 dynamic_shape = RuntimeTuple[result.layout.shape](
-                    self._clamp_tile[tile_sizes](tile_coords)
+                    self._clamp_tile[*tile_sizes](tile_coords)
                 )
             else:
                 dynamic_shape = RuntimeTuple[result.layout.shape]()
@@ -1177,7 +1177,7 @@ struct LayoutTensor[
         var runtime_shape = self.runtime_layout.shape
 
         @parameter
-        for i in range(__get_len[tile_sizes]()):
+        for i in range(__get_len[*tile_sizes]()):
             var cur_dim = runtime_shape[i].get_int() - (
                 tile_coords[i] * tile_sizes[i]
             )
@@ -1191,7 +1191,7 @@ struct LayoutTensor[
         axis: Int = 0,
     ](self, *tile_coords: Int) -> LayoutTensorIter[
         dtype,
-        Self._compute_tile_layout[tile_sizes]()[0],
+        Self._compute_tile_layout[*tile_sizes]()[0],
         address_space,
         circular=False,
     ] as result:
@@ -1205,8 +1205,8 @@ struct LayoutTensor[
             tile_coords: The tile coordinate that the iterator will point to.
         """
 
-        alias tiles_rank = __get_len[tile_sizes]()
-        alias __tiled_layout = Self._compute_tile_layout[tile_sizes]()
+        alias tiles_rank = __get_len[*tile_sizes]()
+        alias __tiled_layout = Self._compute_tile_layout[*tile_sizes]()
         constrained[
             __tiled_layout[1].rank() == tiles_rank,
             "Number of tiles should match the rank",
@@ -1612,9 +1612,9 @@ struct LayoutTensor[
         *vector_shape: Int
     ](self) -> LayoutTensor[
         dtype,
-        coalesce(Self._compute_tile_layout[vector_shape]()[1], keep_rank=True),
+        coalesce(Self._compute_tile_layout[*vector_shape]()[1], keep_rank=True),
         address_space=address_space,
-        element_layout = Self._divide_tiles[vector_shape]()[0],
+        element_layout = Self._divide_tiles[*vector_shape]()[0],
         __experimental_non_homogeneous_tile = self.__experimental_non_homogeneous_tile,
     ] as result:
         # Update element stride to account for vector shapes.
@@ -1624,7 +1624,7 @@ struct LayoutTensor[
         @always_inline
         fn __check_vector_shape[*vec_shape: Int]():
             @parameter
-            for i in range(__get_len[vec_shape]()):
+            for i in range(__get_len[*vec_shape]()):
                 alias shape_i = to_int(self.layout.shape[i])
 
                 @parameter
@@ -1649,7 +1649,7 @@ struct LayoutTensor[
 
         @parameter
         if __experimental_non_homogeneous_tile:
-            __check_vector_shape[vector_shape]()
+            __check_vector_shape[*vector_shape]()
 
         @parameter
         for i in range(rank):

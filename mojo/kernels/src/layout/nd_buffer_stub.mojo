@@ -272,7 +272,7 @@ fn __get_len[*var_int: Int]() -> Int:
 
 @always_inline("nodebug")
 fn __vectorize_shape[*sizes: Int](shape: DimList) -> DimList:
-    alias rank = __get_len[sizes]()
+    alias rank = __get_len[*sizes]()
 
     constrained[
         rank <= 3,
@@ -426,7 +426,7 @@ fn vectorize[
     dtype: DType,
     rank: Int,
     shape: DimList,
-    _res_shape: DimList = __vectorize_shape[sizes](shape),
+    _res_shape: DimList = __vectorize_shape[*sizes](shape),
 ](buff: NDBuffer[dtype, rank, shape, *_]) -> Tuple[
     NDBuffer[
         dtype,
@@ -435,13 +435,13 @@ fn vectorize[
         strides = DimList.create_unknown[rank](),
         address_space = buff.address_space,
     ],
-    ElementLayout[rank, __to_static_tuple[sizes, rank=rank]()],
+    ElementLayout[rank, __to_static_tuple[*sizes, rank=rank]()],
 ]:
     var buff_shape = StaticIntTuple[rank]()
     var buff_stride = StaticIntTuple[rank]()
 
     var element_layout = ElementLayout[
-        rank, __to_static_tuple[sizes, rank=rank]()
+        rank, __to_static_tuple[*sizes, rank=rank]()
     ]()
 
     @parameter
