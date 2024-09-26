@@ -23,5 +23,6 @@ from ._utils import (
     parse_shape,
     env_get_shape,
     env_get_dtype,
+    env_get_bool,
     int_list_to_tuple,
 )

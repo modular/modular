@@ -314,6 +314,28 @@ fn env_get_dtype[name: StringLiteral, default: DType]() -> DType:
         return default
 
 
+fn env_get_bool[name: StringLiteral, default: Bool = False]() -> Bool:
+    """Try to get an Bool-valued define. If the name is not defined, return
+    a default value instead.
+
+    Parameters:
+        name: The name of the define.
+        default: The default value to use.
+
+    Returns:
+        A Bool parameter value.
+    """
+    alias b = env_get_string[name, "False"]()
+
+    @parameter
+    if is_defined[name]():
+        if b == "True":
+            return True
+        elif b == "False":
+            return False
+    return default
+
+
 fn int_list_to_tuple[x: List[Int]]() -> StaticIntTuple[len(x)]:
     var t = StaticIntTuple[len(x)]()
 
