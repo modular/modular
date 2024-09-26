@@ -31,7 +31,7 @@ using namespace LIT;
 
 /// Process the lifetime expression in a `ref [...] T` reference specifier.
 /// T is specified as 'type' and this returns the result !lit.ref type.
-static ASTType processLifetimeSpecifier(const ExprNode *lifetimeExpr,
+static RefType processLifetimeSpecifier(const ExprNode *lifetimeExpr,
                                         ASTType type, StringRef valueName,
                                         TypeCheckedParamList &paramList,
                                         bool isResult) {
@@ -39,7 +39,7 @@ static ASTType processLifetimeSpecifier(const ExprNode *lifetimeExpr,
 
   // For errors, return "RefType(TypeCheckErrorType)" to maintain the invariant
   // that all "ref" values have RefType, but their RValue type is an error.
-  auto hadError = [&]() -> ASTType {
+  auto hadError = [&]() -> RefType {
     return RefType::getAnyLifetime(shared.getTypeCheckErrorType(),
                                    /*isMut*/ true);
   };
@@ -1002,7 +1002,7 @@ static void typeCheckOneArgument(size_t idx, ASTType selfType, bool isDef,
     }
     arg.kgenConvention = ArgConvention::OwnedInReg;
     break;
-  case ParsedArgument::kConventionRef:
+  case ParsedArgument::kConventionRef: {
     assert(arg.refLifetimeExpr && "No lifetime expr for convention!");
     if (arg.vararg != VarArgKind::None) {
       // There should be no reason this isn't supportable.
@@ -1010,13 +1010,19 @@ static void typeCheckOneArgument(size_t idx, ASTType selfType, bool isDef,
           arg.loc, "TODO: variadics not supported with 'ref' convention yet");
       arg.vararg = VarArgKind::None;
     }
-    type = processLifetimeSpecifier(arg.refLifetimeExpr, type, arg.name,
-                                    tcSignature.paramList, /*isResult=*/false);
-    arg.kgenConvention = ArgConvention::Ref;
+    auto refType =
+        processLifetimeSpecifier(arg.refLifetimeExpr, type, arg.name,
+                                 tcSignature.paramList, /*isResult=*/false);
+    type = refType;
+    if (refType.isMutableKnown(false))
+      arg.kgenConvention = ArgConvention::ImmRef;
+    else
+      arg.kgenConvention = ArgConvention::Ref;
 
     if (isa<TypeCheckErrorType>(type.getReferenceElementType()))
       arg.isErroneous = true;
     break;
+  }
   case ParsedArgument::kConventionBorrowed: {
     arg.kgenConvention = ArgConvention::BorrowedInMem;
     TypeConvention conv = type.getRegisterPassability(arg.loc, shared);
@@ -1170,8 +1176,9 @@ static void typeCheckOneArgument(size_t idx, ASTType selfType, bool isDef,
   case ArgConvention::InOut:
   case ArgConvention::InitSelf:
   case ArgConvention::OwnedInMem:
-  case ArgConvention::Ref:
   case ArgConvention::BorrowedInMem:
+  case ArgConvention::Ref:
+  case ArgConvention::ImmRef:
     argIRValue = CValue::getMValueForRef(bbArg);
     break;
   case ArgConvention::OwnedInReg:
@@ -1281,7 +1288,8 @@ static void typeCheckResult(ParsedArgument resultArg, bool isDef,
       // Only look at inout, borrowed, owned arguments.  RegisterPassable args
       // won't have a lifetime, and `ref` args are not lowered by-reg.
       if (!SignatureType::hasAddress(parsedArg.kgenConvention) ||
-          parsedArg.kgenConvention == ArgConvention::Ref)
+          parsedArg.kgenConvention == ArgConvention::Ref ||
+          parsedArg.kgenConvention == ArgConvention::ImmRef)
         continue;
 
       // The argument is only a potential problem if it is generic that might

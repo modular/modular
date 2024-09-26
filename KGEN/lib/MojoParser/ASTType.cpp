@@ -740,7 +740,8 @@ void ASTType::print(raw_ostream &os, bool forDiag, bool demangleParams) const {
         if (printStar)
           os << '*';
 
-        if (convention == ArgConvention::Ref) {
+        if (convention == ArgConvention::Ref ||
+            convention == ArgConvention::ImmRef) {
           os << "ref [";
           auto refType = cast<RefType>(type);
           printParam(os, refType.getLifetime(), forDiag, demangleParams);

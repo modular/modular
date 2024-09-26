@@ -175,12 +175,16 @@ def KGEN_ArgConvention : I32EnumAttr<"ArgConvention",
   I32EnumAttrCase<"InOut", 4, "inout">,
 
   /// This is used for ref arguments like:
-  ///   `fn x[,,](ref [lifetime, addrspace] T)`
+  ///   `fn x[lifetime: X](ref [lifetime, addrspace] T)`
   ///
   /// The MLIR type is always a LIT::RefType or PointerType, and the underlying
   /// type can be anything.  The value is initialized before entry to the
   /// function.
   I32EnumAttrCase<"Ref", 5, "ref">,
+
+  /// This is used for `ref []` arguments that are guaranteed to always be
+  /// immutable, and thus being allowed to alias other references.
+  I32EnumAttrCase<"ImmRef", 6, "immref">,
 
   /// This is used on the last argument of a function that returns a
   /// memory-only value, requiring it to be returned through memory.
@@ -190,16 +194,16 @@ def KGEN_ArgConvention : I32EnumAttr<"ArgConvention",
   /// on exit from the function if it returns.
   ///
   /// The caller is responsible for destroying the value.
-  I32EnumAttrCase<"ByRefResult", 6, "byref_result">,
+  I32EnumAttrCase<"ByRefResult", 7, "byref_result">,
 
   /// This is used on the 'self' argument to `__init__`.  It has identical
   /// semantics to ByRefResult on the callee side, but isn't a result on the
   /// caller side.
-  I32EnumAttrCase<"InitSelf", 7, "init_self">,
+  I32EnumAttrCase<"InitSelf", 8, "init_self">,
 
   /// This is used on the second-last argument of a function that may raise,
   /// returning a potentially initialized error value if the function throws.
-  I32EnumAttrCase<"ByRefError", 8, "byref_error">,
+  I32EnumAttrCase<"ByRefError", 9, "byref_error">,
 ]> {
   let cppNamespace = "M::KGEN";
 }

@@ -438,7 +438,8 @@ auto OverloadFitness::checkOneOperand(ASTExprAnd<AnyValue> operand,
         elementType.isRegisterPassable(loc, shared);
     return {kValidType, expectedType};
   }
-  case ArgConvention::Ref: {
+  case ArgConvention::Ref:
+  case ArgConvention::ImmRef: {
     // Element type and address have to match and the mutability has to be
     // compatible.
     RefType valueRefType;

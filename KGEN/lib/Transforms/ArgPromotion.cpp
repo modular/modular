@@ -212,6 +212,7 @@ static std::pair<bool, bool> getInOutFlags(ArgConvention conv) {
   // 'borrowed' and 'owned' arguments convey no side-effects to callees.
   case ArgConvention::BorrowedInMem:
   case ArgConvention::OwnedInMem:
+  case ArgConvention::ImmRef:
     return {true, false};
 
   // 'inout' can read and write. Pessimistically treat 'ref' as 'inout'.
