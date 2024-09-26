@@ -317,7 +317,7 @@ struct DeviceContextVariant:
     ](
         self,
         f: DeviceFunctionVariant,
-        args: VariadicPack[_, AnyType, Ts],
+        args: VariadicPack[_, AnyType, *Ts],
         grid_dim: Dim,
         block_dim: Dim,
         cluster_dim: OptionalReg[Dim] = None,
@@ -329,7 +329,7 @@ struct DeviceContextVariant:
     ) raises:
         @parameter
         if _device_ctx_v2():
-            return self.v2()._enqueue_function[Ts](
+            return self.v2()._enqueue_function[*Ts](
                 f.v2(),
                 args,
                 grid_dim=grid_dim,
@@ -340,7 +340,7 @@ struct DeviceContextVariant:
                 constant_memory=constant_memory^,
             )
         else:
-            return self.v1()._enqueue_function[Ts](
+            return self.v1()._enqueue_function[*Ts](
                 f.v1(),
                 args,
                 grid_dim=grid_dim,

@@ -183,7 +183,7 @@ struct DeviceFunctionV2[
     ](
         self,
         ctx: DeviceContextV2,
-        args: VariadicPack[_, AnyType, Ts],
+        args: VariadicPack[_, AnyType, *Ts],
         grid_dim: Dim,
         block_dim: Dim,
         cluster_dim: OptionalReg[Dim] = None,
@@ -379,7 +379,7 @@ struct DeviceContextV2:
     ](
         self,
         f: DeviceFunctionV2,
-        args: VariadicPack[_, AnyType, Ts],
+        args: VariadicPack[_, AnyType, *Ts],
         grid_dim: Dim,
         block_dim: Dim,
         cluster_dim: OptionalReg[Dim] = None,

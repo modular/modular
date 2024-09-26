@@ -521,7 +521,7 @@ struct Function[
         *Ts: AnyType
     ](
         self,
-        args: VariadicPack[_, AnyType, Ts],
+        args: VariadicPack[_, AnyType, *Ts],
         grid_dim: Dim,
         block_dim: Dim,
         stream: Stream,
