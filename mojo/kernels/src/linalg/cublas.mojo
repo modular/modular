@@ -114,6 +114,4 @@ fn cublas_matmul[
             compute_type,
             Algorithm.DEFAULT,
         )
-    _ = alpha
-    _ = beta
     return result
