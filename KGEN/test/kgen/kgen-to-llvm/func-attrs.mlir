@@ -32,13 +32,13 @@ kgen.func @inout(%arg0: !kgen.pointer<i32> inout) {
   kgen.return
 }
 
-// CHECK-LABEL: @ref(ptr noalias noundef nonnull %0)
+// CHECK-LABEL: @ref(ptr noundef nonnull %0)
 kgen.func @ref(%arg0: !kgen.pointer<i32> ref) {
   kgen.return
 }
 
-// CHECK-LABEL: @immref(ptr noundef nonnull %0)
-kgen.func @immref(%arg0: !kgen.pointer<i32> immref) {
+// CHECK-LABEL: @immref(ptr noalias noundef nonnull %0)
+kgen.func @immref(%arg0: !kgen.pointer<i32> mutref) {
   kgen.return
 }
 

@@ -758,7 +758,7 @@ void ASTType::print(raw_ostream &os, bool forDiag, bool demangleParams) const {
           os << '*';
 
         if (convention == ArgConvention::Ref ||
-            convention == ArgConvention::ImmRef)
+            convention == ArgConvention::MutRef)
           printRef(cast<RefType>(type));
 
         if (!name.empty())

@@ -183,8 +183,8 @@ def KGEN_ArgConvention : I32EnumAttr<"ArgConvention",
   I32EnumAttrCase<"Ref", 5, "ref">,
 
   /// This is used for `ref []` arguments that are guaranteed to always be
-  /// immutable, and thus being allowed to alias other references.
-  I32EnumAttrCase<"ImmRef", 6, "immref">,
+  /// mutable, and thus are known to be no-alias.
+  I32EnumAttrCase<"MutRef", 6, "mutref">,
 
   /// This is used on the last argument of a function that returns a
   /// memory-only value, requiring it to be returned through memory.

@@ -150,8 +150,8 @@ LifetimeTrackable::LifetimeTrackable(Value v) {
     return;
 
   case ArgConvention::BorrowedInMem:
-  case ArgConvention::ImmRef:
   case ArgConvention::InOut:
+  case ArgConvention::MutRef:
   case ArgConvention::Ref:
     isIndirect = true;
     startsUninit = false;
@@ -322,10 +322,8 @@ getCallOpEffects(Operation &op,
     case ArgConvention::BorrowedInReg:
       return OperandEffect::regUse;
     case ArgConvention::BorrowedInMem:
-    case ArgConvention::ImmRef:
-      return OperandEffect::memLoad;
     case ArgConvention::InOut:
-      return OperandEffect::memInOut;
+    case ArgConvention::MutRef:
     case ArgConvention::Ref: {
       bool isMut = cast<RefType>(argType).isMutableKnown(true);
       return isMut ? OperandEffect::memInOut : OperandEffect::memLoad;

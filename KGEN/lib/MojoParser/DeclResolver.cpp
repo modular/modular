@@ -939,7 +939,7 @@ StringAttr DeclResolver::getMangledName(StringAttr baseName, ASTDecl &container,
       mangledName += '&';
       break;
     case ArgConvention::Ref:
-    case ArgConvention::ImmRef:
+    case ArgConvention::MutRef:
       mangledName += '%';
       break;
     case ArgConvention::InitSelf:

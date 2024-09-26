@@ -439,7 +439,7 @@ auto OverloadFitness::checkOneOperand(ASTExprAnd<AnyValue> operand,
     return {kValidType, expectedType};
   }
   case ArgConvention::Ref:
-  case ArgConvention::ImmRef: {
+  case ArgConvention::MutRef: {
     // Element type and address have to match and the mutability has to be
     // compatible.
     RefType valueRefType;
