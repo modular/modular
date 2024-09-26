@@ -22,6 +22,7 @@ class KVCacheModel:
         key_cache: TensorValue,
         value_cache: TensorValue,
         cache_lengths: TensorValue,
+        is_cache_empty: TensorValue,
         seq_ids: TensorValue,
         num_layers: TensorValue,
         batch_size: TensorValue,
@@ -35,6 +36,7 @@ class KVCacheModel:
                 key_cache,
                 value_cache,
                 cache_lengths,
+                is_cache_empty,
                 seq_ids,
                 num_layers,
                 batch_size,
@@ -61,7 +63,7 @@ def test_kv_cache(session: InferenceSession) -> None:
     cache_lengths_type = TensorType(DType.int32, (batch_size_param,))
     seq_ids_type = TensorType(DType.int32, ("seq_len",))
     int_scalar_type = TensorType(DType.int32, (1,))
-
+    is_cache_empty_type = TensorType(DType.bool, (1,))
     graph = Graph(
         "kv_cache_collection",
         KVCacheModel(kv_params),
@@ -69,6 +71,7 @@ def test_kv_cache(session: InferenceSession) -> None:
             cache_type,
             cache_type,
             cache_lengths_type,
+            is_cache_empty_type,
             seq_ids_type,
             int_scalar_type,
             int_scalar_type,
@@ -94,6 +97,9 @@ def test_kv_cache(session: InferenceSession) -> None:
         cache_lengths[i] = 1
     for i in range(6, cache_lengths.shape[0]):
         cache_lengths[i] = 0
+
+    is_cache_empty = Tensor.zeros(shape=(1,), dtype=DType.bool)
+    is_cache_empty[0] = False
     seq_ids = Tensor(shape=(1,), dtype=DType.int32)
     seq_ids[0] = 0
     num_layers = Tensor(shape=(1,), dtype=DType.int32)
@@ -105,6 +111,7 @@ def test_kv_cache(session: InferenceSession) -> None:
         k_cache,
         v_cache,
         cache_lengths,
+        is_cache_empty,
         seq_ids,
         num_layers,
         batch_size,
