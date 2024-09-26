@@ -1144,7 +1144,8 @@ ParseResult DeclResolver::resolveBody(LIT::FuncOp funcOp, Lexer &lexer,
 
     // Ref convention works with registers and def functions without any funny
     // business.
-    if (convention == ArgConvention::Ref) {
+    if (convention == ArgConvention::Ref ||
+        convention == ArgConvention::ImmRef) {
       setDecl(CValue::getMValueForRef(bbArg));
       continue;
     }

@@ -40,6 +40,8 @@ const char *KGEN::getUserSyntax(ArgConvention convention) {
     return "inout";
   case ArgConvention::Ref:
     return "ref";
+  case ArgConvention::ImmRef:
+    return "ref";
   case ArgConvention::ByRefResult:
   case ArgConvention::InitSelf:
   case ArgConvention::ByRefError:
@@ -242,9 +244,32 @@ bool SignatureType::hasAddress(ArgConvention conv) {
   case ArgConvention::OwnedInReg:
   case ArgConvention::BorrowedInReg:
     return false;
+  case ArgConvention::Ref:
+  case ArgConvention::ImmRef:
+    // The conventions above differ from hasImplicitLifetime.
   case ArgConvention::OwnedInMem:
   case ArgConvention::BorrowedInMem:
+  case ArgConvention::InOut:
+  case ArgConvention::ByRefResult:
+  case ArgConvention::InitSelf:
+  case ArgConvention::ByRefError:
+    return true;
+  }
+  llvm_unreachable("invalid argument convention");
+}
+
+/// Determine whether an argument with the given input convention expects to
+/// have an implicit lifetime.
+bool SignatureType::hasImplicitLifetime(ArgConvention conv) {
+  switch (conv) {
   case ArgConvention::Ref:
+  case ArgConvention::ImmRef:
+  // The conventions above differ from hasAddress.
+  case ArgConvention::OwnedInReg:
+  case ArgConvention::BorrowedInReg:
+    return false;
+  case ArgConvention::OwnedInMem:
+  case ArgConvention::BorrowedInMem:
   case ArgConvention::InOut:
   case ArgConvention::ByRefResult:
   case ArgConvention::InitSelf:

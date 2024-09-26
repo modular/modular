@@ -150,6 +150,7 @@ LifetimeTrackable::LifetimeTrackable(Value v) {
     return;
 
   case ArgConvention::BorrowedInMem:
+  case ArgConvention::ImmRef:
   case ArgConvention::InOut:
   case ArgConvention::Ref:
     isIndirect = true;
@@ -321,6 +322,7 @@ getCallOpEffects(Operation &op,
     case ArgConvention::BorrowedInReg:
       return OperandEffect::regUse;
     case ArgConvention::BorrowedInMem:
+    case ArgConvention::ImmRef:
       return OperandEffect::memLoad;
     case ArgConvention::InOut:
       return OperandEffect::memInOut;
