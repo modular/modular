@@ -84,7 +84,7 @@ int State::reportError(const Twine &message) const {
     llvm::errs() << programName << ": error: " << message << '\n';
     break;
   case DiagnosticFormat::JSON:
-    llvm::errs() << toJSON(json::Diagnostic{json::DiagnosticKind::Error,
+    llvm::outs() << toJSON(json::Diagnostic{json::DiagnosticKind::Error,
                                             message.str()})
                  << '\n';
     break;
