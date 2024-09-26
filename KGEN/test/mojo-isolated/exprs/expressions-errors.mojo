@@ -302,7 +302,7 @@ def no_unused_values_in_def():
   # expected-error @+1 {{cannot read from discard pattern '_'}}
   var bcd = *_
 
-  _ = *x # expected-error {{unsupported unpack operation}}
+  _ = *x # expected-error {{can't use starred expression here}}
 
 fn func_with_static_param[x: Int]() -> Int:
   return x

@@ -884,8 +884,7 @@ CValue OverloadSet::emitCall(CallOperands &&operands, ValueDest &dest,
 
   // Check the direct callees to see if they can be unambiguously resolved
   // with the bindings list and specified arguments.
-  PValue callee = filterOverloadSet(operands,
-                                    /*allowImplicitConversions=*/true,
+  PValue callee = filterOverloadSet(operands, /*allowImplicitConversions=*/true,
                                     /*emitDiagnosticOnFailure=*/true, emitter);
   if (!callee) {
     dest.resetForError();

@@ -22,8 +22,6 @@ def TypeSignatureType : DialectType<(type
   ConcreteAttribute<"PogListAttr">:$paramListAttrs
 )>;
 
-def UnpackedType : DialectType<(type)>;
-
 def StructType : DialectType<(type
   ConcreteAttribute<"SymbolRefAttr">:$symbol,
   TypedAttrArray:$paramValues,
@@ -77,7 +75,6 @@ def LITDialectTypes : DialectTypes<"lit"> {
     TypeCheckErrorType,
     UnresolvedType,
     TypeSignatureType,
-    UnpackedType,
     StructType,
     AnyStructType,
     TraitType,
@@ -138,7 +135,9 @@ def UnboundMLIROperationAttr : DialectAttribute<(attr
 )>;
 
 def UnpackedAttr : DialectAttribute<(attr
-  Bool:$kwOnly
+  TypedAttr:$value,
+  Bool:$kwOnly,
+  Type:$type
 )>;
 
 def ModuleAttr : DialectAttribute<(attr

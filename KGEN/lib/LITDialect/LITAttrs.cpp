@@ -200,6 +200,12 @@ bool PogListAttr::hasKwVariadics() const {
   return false;
 }
 
+bool PogListAttr::hasInferredParams() const {
+  ArrayRef<PogMetadataAttr> params = getPogs();
+  return !params.empty() &&
+         params.front().getPassingKind() == PassingKind::Inferred;
+}
+
 StringAttr PogListAttr::getName(size_t idx) const {
   return getPogs()[idx].getName();
 }
@@ -555,10 +561,6 @@ static ParseResult parseUnpackKind(AsmParser &p, bool &kwOnly) {
 
 static void printUnpackKind(AsmPrinter &p, bool kwOnly) {
   p << (kwOnly ? "kw" : "pos");
-}
-
-UnpackedType UnpackedAttr::getType() const {
-  return UnpackedType::get(getContext());
 }
 
 //===----------------------------------------------------------------------===//

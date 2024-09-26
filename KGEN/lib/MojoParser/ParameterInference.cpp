@@ -578,14 +578,16 @@ LogicalResult ParameterInferenceState::inferInitSelfTypes(Type actualType,
 template <typename... Ts>
 static std::tuple<Ts...>
 getPartiallySpecializedSignature(ArrayRef<TypedAttr> bindingsSoFar,
-                                 ParserParamEvaluator &evaluator, Ts... args) {
+                                 ParserParamEvaluator &evaluator,
+                                 bool signatureScoped, Ts... args) {
   if (bindingsSoFar.empty())
     return std::make_tuple(args...);
 
   struct Substitutor : IndexParameterReplacer<Substitutor> {
     Substitutor(ArrayRef<TypedAttr> bindingsSoFar,
-                ParserParamEvaluator &evaluator)
-        : bindingsSoFar(bindingsSoFar), evaluator(evaluator) {}
+                ParserParamEvaluator &evaluator, bool signatureScoped)
+        : bindingsSoFar(bindingsSoFar), evaluator(evaluator),
+          signatureScoped(signatureScoped) {}
 
     Type tryReplace(Type, size_t) { return {}; }
     Attribute tryReplace(Attribute attr, size_t depth) {
@@ -604,13 +606,9 @@ getPartiallySpecializedSignature(ArrayRef<TypedAttr> bindingsSoFar,
     ArrayRef<TypedAttr> bindingsSoFar;
     ParserParamEvaluator &evaluator;
     bool signatureScoped;
-  } substitutor(bindingsSoFar, evaluator);
+  } substitutor(bindingsSoFar, evaluator, signatureScoped);
 
   auto refine = [&](auto arg) {
-    if constexpr (std::is_base_of_v<Type, decltype(arg)>)
-      substitutor.signatureScoped = isa<ParameterScopeTypeInterface>(arg);
-    else
-      substitutor.signatureScoped = false;
     auto newArg = substitutor.replace(arg);
     if (newArg == arg)
       return arg;
@@ -754,6 +752,7 @@ ParameterInferenceState::inferOneOperand(ASTExprAnd<AnyValue> operand,
         break;
     }
     auto [type] = getPartiallySpecializedSignature(currentParams, evaluator,
+                                                   /*signatureScoped=*/false,
                                                    Type(expectedType));
     return type;
   };
@@ -901,13 +900,6 @@ void ParameterInferenceState::inferOneParam(ASTExprAnd<AnyValue> binding,
   (void)inferOneOperand(binding, expectedType, ArgConvention::BorrowedInReg);
 }
 
-/// Helper that returns true if the parameter list has any inferred parameters.
-static bool hasInferredParams(PogListAttr paramListAttr) {
-  ArrayRef<PogMetadataAttr> params = paramListAttr.getPogs();
-  return !params.empty() &&
-         params.front().getPassingKind() == PassingKind::Inferred;
-}
-
 /// Given an incomplete parameter binding set for a parameter list, try to
 /// infer the value of the next parameter. We only do this if there are any
 /// inferred parameters present.
@@ -916,14 +908,15 @@ void ParameterInferenceState::infer(ArrayRef<Type> paramTypes,
   // If the parameter list has any inferred parameters, then we have to infer
   // against the provided binding list, since we might infer parameters from
   // other parameters. Otherwise, just exit early.
-  if (!hasInferredParams(paramListAttr))
+  if (!paramListAttr.hasInferredParams())
     return;
 
   auto types = TypeArrayAttr::get(paramListAttr.getContext(), paramTypes);
 
   DefaultValueHandler defaultHandler(paramListAttr);
   std::tie(types, paramListAttr) = getPartiallySpecializedSignature(
-      inferredParams, evaluator, types, paramListAttr);
+      inferredParams, evaluator, /*signatureScoped=*/false, types,
+      paramListAttr);
 
   size_t posIdx = 0, numParams = givenBindings.size();
   for (auto [idx, pog] : llvm::enumerate(paramListAttr.getPogs())) {
@@ -988,8 +981,8 @@ ParameterInferenceState::infer(LITSignatureType signature,
   size_t numOperands = operands.size();
 
   DefaultValueHandler defaultHandler(signature.getArgListAttrs());
-  std::tie(signature) =
-      getPartiallySpecializedSignature(inferredParams, evaluator, signature);
+  std::tie(signature) = getPartiallySpecializedSignature(
+      inferredParams, evaluator, /*signatureScoped=*/true, signature);
 
   // Match up the operands provided by the call to the input arguments.  Keep in
   // mind that the callee signature might not match at all, so we have to be

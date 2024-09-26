@@ -640,6 +640,24 @@ void ASTType::print(raw_ostream &os, bool forDiag, bool demangleParams) const {
     });
     os << ']';
   };
+
+  auto printConvention = [&os](ArgConvention conv) {
+    if (conv == ArgConvention::OwnedInMem || conv == ArgConvention::OwnedInReg)
+      os << "owned ";
+    else if (conv == ArgConvention::InOut || conv == ArgConvention::InitSelf)
+      os << "inout ";
+  };
+
+  auto printRef = [&](RefType refType) {
+    os << "ref [";
+    printParam(os, refType.getLifetime(), forDiag, demangleParams);
+    if (!refType.isDefaultAddrSpace()) {
+      os << ", ";
+      printParam(os, refType.getLifetime(), forDiag, demangleParams);
+    }
+    os << "] ";
+  };
+
   if (auto structTy = dyn_cast<StructType>(type)) {
     // FIXME: StructType invariants should be tightened.  Some legacy .mlir
     // test-cases need to be updated.
@@ -659,6 +677,14 @@ void ASTType::print(raw_ostream &os, bool forDiag, bool demangleParams) const {
     os << ']';
   } else if (isNoneType()) {
     os << "None";
+  } else if (auto ref = dyn_cast<RefType>(type)) {
+    printRef(ref);
+    ASTType(ref.getElementType()).print(os, forDiag, demangleParams);
+  } else if (auto variadic = dyn_cast<VariadicType>(type)) {
+    os << "Variadic[";
+    printConvention(variadic.getConvention());
+    ASTType(variadic.getElementType()).print(os, forDiag, demangleParams);
+    os << "]";
   } else if (auto sig = dyn_cast<LITSignatureType>(type)) {
     if (sig.isAsync())
       os << "async ";
@@ -671,9 +697,9 @@ void ASTType::print(raw_ostream &os, bool forDiag, bool demangleParams) const {
           if (sig.hasParamVarArgs() && i == sig.getNumParams() - 1) {
             os << '*';
             ASTType(cast<VariadicType>(type).getElementType())
-                .print(os, forDiag);
+                .print(os, forDiag, demangleParams);
           } else {
-            ASTType(type).print(os, forDiag);
+            ASTType(type).print(os, forDiag, demangleParams);
           }
         };
         llvm::interleaveComma(llvm::enumerate(sig.getParamTypes()), os,
@@ -707,22 +733,13 @@ void ASTType::print(raw_ostream &os, bool forDiag, bool demangleParams) const {
         printStar = true;
       }
 
-      auto printConvention = [&]() {
-        if (convention == ArgConvention::OwnedInMem ||
-            convention == ArgConvention::OwnedInReg)
-          os << "owned ";
-        else if (convention == ArgConvention::InOut ||
-                 convention == ArgConvention::InitSelf)
-          os << "inout ";
-      };
-
       // The formal type is VariadicPack[] and the thing to print is a pack
       // attribute, not a type.
       StringAttr name = sig.getArgName(idx);
       hadAnyNames |= !name.empty();
       if (sig.isPackVarArg(idx)) {
         convention = sig.getPackVarArgConvention(idx);
-        printConvention();
+        printConvention(convention);
         os << '*';
         if (!name.empty())
           os << name.getValue() << ": ";
@@ -735,29 +752,21 @@ void ASTType::print(raw_ostream &os, bool forDiag, bool demangleParams) const {
                                  .getVariadic();
         printParam(os, variadic, forDiag, demangleParams);
       } else {
-        printConvention();
+        printConvention(convention);
 
         if (printStar)
           os << '*';
 
         if (convention == ArgConvention::Ref ||
-            convention == ArgConvention::ImmRef) {
-          os << "ref [";
-          auto refType = cast<RefType>(type);
-          printParam(os, refType.getLifetime(), forDiag, demangleParams);
-          if (!refType.isDefaultAddrSpace()) {
-            os << ", ";
-            printParam(os, refType.getLifetime(), forDiag, demangleParams);
-          }
-          os << "] ";
-        }
+            convention == ArgConvention::ImmRef)
+          printRef(cast<RefType>(type));
 
         if (!name.empty())
           os << name.getValue() << ": ";
 
         if (SignatureType::hasAddress(convention))
           type = type.getReferenceElementType();
-        type.print(os, forDiag);
+        type.print(os, forDiag, demangleParams);
       }
 
       // Check if we are at the end; if so, we might still have to print a '/'.
@@ -779,27 +788,27 @@ void ASTType::print(raw_ostream &os, bool forDiag, bool demangleParams) const {
 
     if (sig.isRefResult()) {
       auto refType = cast<RefType>(resultType);
-      os << "ref [";
-      printParam(os, refType.getLifetime(), forDiag, demangleParams);
-      os << "] ";
+      printRef(refType);
       resultType = refType.getElementType();
     }
 
     if (isa<KGEN::NoneType>(resultType))
       os << "None";
     else
-      ASTType(resultType).print(os, forDiag);
+      ASTType(resultType).print(os, forDiag, demangleParams);
   } else if (auto paramRef = dyn_cast<ParamRefType>(type)) {
     printParam(os, paramRef.getParam(), forDiag, demangleParams);
   } else if (isa<TypeType>(type)) {
     os << "AnyTrivialRegType";
   } else if (auto fnType = dyn_cast<FunctionType>(type)) {
     os << "fn (";
-    llvm::interleaveComma(fnType.getInputs(), os,
-                          [&](Type type) { ASTType(type).print(os, forDiag); });
+    llvm::interleaveComma(fnType.getInputs(), os, [&](Type type) {
+      ASTType(type).print(os, forDiag, demangleParams);
+    });
     os << ") -> (";
-    llvm::interleaveComma(fnType.getResults(), os,
-                          [&](Type type) { ASTType(type).print(os, forDiag); });
+    llvm::interleaveComma(fnType.getResults(), os, [&](Type type) {
+      ASTType(type).print(os, forDiag, demangleParams);
+    });
     os << ')';
   } else if (auto lifetimeType = dyn_cast<LifetimeType>(type)) {
     if (lifetimeType.isMutableKnown(true))

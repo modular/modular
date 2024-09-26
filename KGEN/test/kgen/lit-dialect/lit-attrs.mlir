@@ -164,9 +164,9 @@ kgen.generator @bind_type<T: anystruct<@Bar<?, :dtype ?>, <index, dtype>>>() {
 }
 
 // CHECK-LABEL: kgen.generator @unpacked
-kgen.generator @unpacked<T: type>() {
-  // CHECK: kgen.param.constant: !lit.unpacked = <#lit.unpacked<kw>>
-  %c = kgen.param.constant: !lit.unpacked = <#lit.unpacked<kw>>
+kgen.generator @unpacked<a: variadic<index>>() {
+  // CHECK-NEXT: constant = <#lit.unpacked<:variadic<index> a, kw>>
+  %c = kgen.param.constant = <#lit.unpacked<:variadic<index> a, kw>>
   kgen.return
 }
 

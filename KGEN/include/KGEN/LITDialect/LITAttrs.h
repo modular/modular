@@ -22,7 +22,6 @@ class LifetimeType;
 class LifetimeSetType;
 class RefPackType;
 class TraitType;
-class UnpackedType;
 class StructFieldOp;
 class FnMetadataAttr;
 } // namespace LIT

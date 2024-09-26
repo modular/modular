@@ -13,6 +13,7 @@ alias ImmutableLifetime = __mlir_type.`!lit.lifetime<0>`
 alias MutableLifetime = __mlir_type.`!lit.lifetime<1>`
 alias ImmutableAnyLifetime = __mlir_attr.`#lit.any.lifetime : !lit.lifetime<0>`
 alias MutableAnyLifetime = __mlir_attr.`#lit.any.lifetime<1>: !lit.lifetime<1>`
+alias LifetimeSet = __mlir_type.`!lit.lifetime.set`
 
 
 alias `0` = __mlir_attr.`0 : index`

@@ -7,6 +7,13 @@
 # RUN: %parse-mojo-isolated %s -verify-diagnostics
 
 
+# expected-note @below {{trait 'Movable' declared here}}
+trait Movable:
+    # expected-note @below {{required function '__moveinit__' is not implemented}}
+    fn __moveinit__(inout self, owned existing: Self, /):
+        pass
+
+
 trait ErroneousTrait:
     # expected-error @+1 {{'self' argument must have type 'Self' in trait method declaration, but actually has type 'index'}}
     fn add(self: int):
@@ -33,17 +40,19 @@ fn different_trait_types[T: Copyable, U: Copyable](x: T) -> U:
     return x
 
 
+# expected-note @below {{trait 'SimpleTrait' declared here}}
 trait SimpleTrait:
+    # expected-note @below {{required function 'some_method' is not implemented}}
     fn some_method(self):
         pass
 
 
+# expected-note @below {{struct 'TraitStruct' does not implement all requirements for 'Movable'}}
 struct TraitStruct(SimpleTrait):
     fn some_method(self):
         pass
 
 
-# expected-note @+1 {{function declared here}}
 fn test_many_things_of_specified_trait[
     element_type: __mlir_type[`!lit.anytrait<`, AnyType, `>`],
     *element_types: element_type,
@@ -51,12 +60,21 @@ fn test_many_things_of_specified_trait[
     pass
 
 
+# expected-note @below {{'DoesNotConform' does not implement all requirements for 'SimpleTrait'}}
+struct DoesNotConform:
+    pass
+
+
 fn call_many_things_of_specified_trait(a: TraitStruct):
     # This is ok!
     test_many_things_of_specified_trait[AnyType, TraitStruct, Int]()
 
-    # expected-error @+1 {{parameter #1 has 'Movable' type, but value has type 'AnyStruct[TraitStruct]'}}
+    # expected-error @+1 {{cannot bind type 'TraitStruct' to trait 'Movable'}}
     test_many_things_of_specified_trait[Movable, TraitStruct, Int]()
 
-    # expected-error @+1 {{parameter #1 has 'SimpleTrait' type, but value has type 'AnyStruct[Int]'}}
-    test_many_things_of_specified_trait[SimpleTrait, TraitStruct, Int]()
+    test_many_things_of_specified_trait[
+        SimpleTrait,
+        TraitStruct,
+        # expected-error @+1 {{cannot bind type 'DoesNotConform' to trait 'SimpleTrait'}}
+        DoesNotConform,
+    ]()

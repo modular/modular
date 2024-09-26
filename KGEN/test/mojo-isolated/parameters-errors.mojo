@@ -173,13 +173,12 @@ fn variadic_kw_result_binding[**a: Int]():
     pass
 
 
-# expected-note @below {{function declared here}}
 fn variadic_int_params[*a: Int]():
     pass
 
 
 fn callVariadic():
-    # expected-error @below {{callee parameter #0 has 'Int' type, but value has type 'FloatLiteral'}}
+    # expected-error @below {{cannot implicitly convert 'FloatLiteral' value to 'Int'}}
     variadic_int_params[1.0]()
 
 
@@ -505,3 +504,9 @@ fn invalid_params[f: fn (ParamType) -> None]():
     # expected-error @below {{failed to infer implicit parameter 'p' of argument #0}}
     # expected-note @below {{parameter isn't used in any argument}}
     f(1)
+
+
+# expected-note @below {{declared here}}
+fn substitution_edge_case[p: Int, //, f: fn[a: Int] () [_] -> ParamType[a]]():
+    # expected-error @below {{'substitution_edge_case' parameter #2 has 'fn[Int]() -> ParamType[$0]' type, but value has type 'index'}}
+    substitution_edge_case[`0`]

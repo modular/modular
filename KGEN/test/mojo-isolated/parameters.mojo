@@ -295,7 +295,8 @@ fn explicit_autoparameterization(v: TwoParams[5, _], w: TwoParams[b=_, a=_]):
 
 @register_passable("trivial")
 struct IndexParam[x: int]:
-  pass
+    fn __init__(inout self, p: __mlir_type.`!kgen.none`):
+        pass
 
 
 # CHECK-LABEL: lit.func @"autoparam_of_params
@@ -552,12 +553,29 @@ fn overloaded_function(a: int):
 struct ParamFuncType[f: fn() -> None]:
     pass
 
+fn bind_twice[f: fn() -> None, g: fn(int) -> None]():
+    pass
+
+fn variadic_func_param[*fs: fn() -> None]():
+    pass
+
 # CHECK-LABEL: lit.func @"bind_overloaded_fn
 fn bind_overloaded_fn[f: fn[f: fn () -> None] () -> None]():
-    # CHECK-NEXT: lit.alias.decl *"T`": anystruct<#ParamFuncType <:!lit.signature<() -> !kgen.none> {{.*}}@"overloaded_function()"
+    # CHECK-NEXT: anystruct<#ParamFuncType <:!lit.signature<() -> !kgen.none> {{.*}}@"overloaded_function()"
     alias T = ParamFuncType[overloaded_function]
-    # CHECK-NEXT: lit.alias.decl *"g`1": {{.*}} = <bind_signature(:{{.*}} f, {{.*}}@"overloaded_function()")>
+    # CHECK-NEXT: anystruct<#ParamFuncType <:!lit.signature<() -> !kgen.none> {{.*}}@"overloaded_function()"
+    alias U = ParamFuncType[f=overloaded_function]
+
+    # CHECK-NEXT: bind_signature(:{{.*}} f, {{.*}}@"overloaded_function()")
     alias g = f[overloaded_function]
+    # CHECK-NEXT: bind_signature(:{{.*}} f, {{.*}}@"overloaded_function()")
+    alias h = f[f=overloaded_function]
+
+    # CHECK-NEXT: bind_twice{{.*}}<:!lit.signature<() -> !kgen.none> {{.*}}@"overloaded_function()", :!lit.signature<(index, |) -> !kgen.none> {{.*}}overloaded_function(__mlir_type.index)")>
+    alias bound = bind_twice[overloaded_function][overloaded_function]
+
+    # CHECK-NEXT: variadic_func_param{{.*}}<:variadic<{{.*}}> [{{.*}}@"overloaded_function()", {{.*}}@"overloaded_function()"]>
+    alias bind_variadic = variadic_func_param[overloaded_function, overloaded_function]
 
 ##===----------------------------------------------------------------------===##
 # Alias resolution
@@ -666,6 +684,14 @@ fn useParamVariadics():
   var e = StructWithVariadics(3)
 
 
+# CHECK-LABEL: lit.func @"unpack_variadic
+fn unpack_variadic[*a: Int]():
+    # CHECK-NEXT: @StructWithVariadics<:variadic<!Int> a>
+    alias T = StructWithVariadics[*a]
+    # CHECK-NEXT: fnWithVariadics{{.*}}<:variadic<!Int> a>
+    alias f = fnWithVariadics[*a]
+
+
 # CHECK-LABEL: lit.func @"variadic_parameter{{.*}}"<elems: variadic<index>>
 fn variadic_parameter[elems: __mlir_type.`!kgen.variadic<index>`]() -> Int:
     return 3
@@ -764,6 +790,9 @@ fn testParamInference[size: Int](a: StaticVec[4], b: StaticVec[size],
 @register_passable
 struct Abstraction[a: Int]:
   alias val = a.value
+
+  fn __init__(inout self, arg: Int):
+    pass
 
   @staticmethod
   fn push[b: Int]() -> Abstraction[a + b]:
@@ -888,6 +917,12 @@ fn deduce_kw_only[*Ts: Int, x: Int](y: Abstraction[x]):
     pass
 
 
+# CHECK-LABEL: lit.func @"out_of_order_kw
+fn out_of_order_kw[x: int, y: IndexParam[x]]():
+    # CHECK-NEXT: out_of_order_kw{{.*}}<0, :{{.*}}IndexParam<0> {{.*}}IndexParam::@"__init__{{.*}}<0>), #kgen.none)>
+    alias bound = out_of_order_kw[y=None, x=`0`]
+
+
 # CHECK-LABEL: lit.func @"test_deduce_kw_only
 fn test_deduce_kw_only(a: Abstraction[3]):
     # CHECK: call {{.*}}@"deduce_kw_only{{.*}}<:variadic<!Int> [{1}, {2}], :!Int {3}>(%a)
@@ -926,6 +961,18 @@ fn signature_inference[dt: DType, rank: Int]():
     # CHECK-SAME: :!lit.signature<<"width": !Int>(!lit.struct<#Abstraction <:!Int rank>
     # CHECK-SAME: -> !lit.struct<#SIMD <:!DType dt, :!Int *(0,0)>>
     implicit_signature[func]()
+
+
+struct ClosureParam[lt: MutableLifetime, f: fn () capturing [lt] -> None]:
+    fn __moveinit__(inout self, owned existing: Self):
+        pass
+
+
+# CHECK-LABEL: lit.func @"infer_implicit_params
+fn infer_implicit_params(owned p: ClosureParam):
+    # CHECK: call {{.*}}ClosureParam::@"__moveinit__{{.*}}<:lifetime<1> *"lt`", :!lit.signature<:{mut *"lt`"}:() capturing -> !kgen.none> *"f`1">
+    var tmp = p^
+    _ = tmp^
 
 
 trait ToInt:
