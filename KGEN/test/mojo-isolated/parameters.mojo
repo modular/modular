@@ -1164,6 +1164,29 @@ fn test_param_default():
     # CHECK-NEXT: call {{.*}}param_default{{.*}}<:!Int {1}>([[C]]
     param_default()
 
+struct Optional[T: AnyType]:
+    fn __init__(inout self, none: __mlir_type.`!kgen.none`):
+        pass
+
+    fn __init__(inout self, value: T):
+        pass
+
+fn default_on_infer_failure[p: int = `0`](a: Optional[ParamType[p]] = None):
+    pass
+
+# CHECK-LABEL: lit.func @"test_optional_inference
+fn test_optional_inference(value: ParamType[`3`]):
+    # CHECK-NEXT: [[NONE:%.*]] = lit.var.decl {{.*}}ParamType<0>
+    # CHECK: [[IMMUT:%.*]] = lit.ref.immut [[NONE]]
+    # CHECK-NEXT: call {{.*}}default_on_infer_failure{{.*}}<0>([[IMMUT]])
+    default_on_infer_failure()
+
+    # CHECK: call {{.*}}default_on_infer_failure{{.*}}<0>
+    default_on_infer_failure(None)
+
+    # CHECK: call {{.*}}default_on_infer_failure{{.*}}<3>
+    default_on_infer_failure(value)
+
 ##===----------------------------------------------------------------------===##
 # Default struct parameters
 ##===----------------------------------------------------------------------===##
