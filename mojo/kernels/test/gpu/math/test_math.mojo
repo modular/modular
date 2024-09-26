@@ -102,7 +102,7 @@ def main():
             ]() -> Int:
                 return __mlir_op.`pop.variadic.size`(kernel_fns)
 
-            alias ls = variadic_len[kernel_fns]()
+            alias ls = variadic_len[*kernel_fns]()
 
             @parameter
             for idx in range(ls):
