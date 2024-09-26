@@ -183,6 +183,16 @@ struct ManagedTensorSlice[
         # Necessary to make it simpler on the call site.
         _rank: Int,
     ](self, index: StaticIntTuple[_rank]) -> SIMD[type, width]:
+        constrained[_rank == rank]()
+        var ridx = rebind[StaticIntTuple[rank]](index)
+        return self._simd_load_internal[width](ridx)
+
+    @always_inline
+    fn _fused_load[
+        width: Int,
+        # Necessary to make it simpler on the call site.
+        _rank: Int,
+    ](self, index: StaticIntTuple[_rank]) -> SIMD[type, width]:
         # Nop function to preserve symbols from DCE.
         self._input_fusion_hook[CompilerTensorSpec[type, rank]()]()
 
@@ -231,6 +241,16 @@ struct ManagedTensorSlice[
 
     @always_inline
     fn store[
+        width: Int,
+        # Necessary to make it simpler on the call site.
+        _rank: Int,
+    ](self, index: StaticIntTuple[_rank], val: SIMD[type, width]):
+        constrained[_rank == rank]()
+        var ridx = rebind[StaticIntTuple[rank]](index)
+        self._simd_store_internal[width](ridx, val)
+
+    @always_inline
+    fn _fused_store[
         width: Int,
         # Necessary to make it simpler on the call site.
         _rank: Int,
@@ -339,7 +359,7 @@ fn foreach[
         width: Int, rank: Int
     ](index: StaticIntTuple[rank]) capturing:
         var val = func[width](rebind[StaticIntTuple[tensor.rank]](index))
-        tensor.store(index, val)
+        tensor._fused_store(index, val)
 
     algorithm.functional.elementwise[
         elementwise_fn_wrapper,
