@@ -303,7 +303,7 @@ fn test_inout_variadic_pack():
     var m2 = TalkativeMem(2)
     inout_variadic_pack(m1, m2)
     print("after call")
-    _ = m2^
+    _ = m2^  # keep alive for the test
     print("")
 
 
@@ -335,7 +335,7 @@ fn test_borrowed_variadic_pack():
     var m2 = TalkativeMem(2)
     borrowed_variadic_pack(TalkativeMem(1), m2)
     print("after call")
-    _ = m2^
+    _ = m2^  # Keep alive to for the test
     print("")
 
 
