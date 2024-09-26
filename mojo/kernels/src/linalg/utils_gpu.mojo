@@ -175,6 +175,19 @@ fn _bk_base[type: DType]() -> Int:
     return 32 if type in (DType.float16, DType.bfloat16) else 16
 
 
+@always_inline
+fn _shared_memory_usage[
+    a_type: DType, b_type: DType, c_type: DType
+](block_mnk: StaticIntTuple[3], num_pipeline_stages: Int) -> UInt:
+    # fmt: off
+    var a_usage = block_mnk[0] * block_mnk[2] * num_pipeline_stages * sizeof[a_type]()
+    var b_usage = block_mnk[1] * block_mnk[2] * num_pipeline_stages * sizeof[b_type]()
+    var c_usage = block_mnk[0] * block_mnk[1] * \
+                  sizeof[get_accum_type[a_type]()]() if c_type.is_half_float() else 0
+    # fmt: on
+    return max(a_usage + b_usage, c_usage)
+
+
 @value
 @register_passable("trivial")
 struct MatmulKernels[

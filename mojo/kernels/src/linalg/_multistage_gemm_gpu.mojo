@@ -187,7 +187,7 @@ fn multistage_mma[
 
             @parameter
             if a_iter.address_space == AddressSpace.GENERIC:
-                var a_smem_tile = a_smem_iter.next(stage)[]
+                var a_smem_tile = a_smem_iter.next_unsafe(stage)[]
 
                 if num_a_rows:
                     _copy_dram_to_sram_async_a[masked=True](
@@ -196,11 +196,11 @@ fn multistage_mma[
                 else:
                     _copy_dram_to_sram_async_a(a_smem_tile)
 
-                a_iter += 1
+                a_iter._incr()
 
             @parameter
             if b_iter.address_space == AddressSpace.GENERIC:
-                var b_smem_tile = b_smem_iter.next(stage)[]
+                var b_smem_tile = b_smem_iter.next_unsafe(stage)[]
 
                 if num_b_rows:
                     var num_rows_bound = num_b_rows.value() if transpose_b else max(
@@ -212,7 +212,7 @@ fn multistage_mma[
                 else:
                     _copy_dram_to_sram_async_b(b_smem_tile)
 
-                b_iter += 1
+                b_iter._incr()
 
             async_copy_commit_group()
 
@@ -264,7 +264,7 @@ fn multistage_mma[
         # Assume input is the 16x8 output of 16x8x16 or 16x8x8 mma.
         # Need to cast address space because it's not known at parse time to be LOCAL.
         copy_local_to_local(a_reg_tiles[0], a_iter[])
-        a_iter += 1
+        a_iter._incr()
     else:
         mma_op.load_a[swizzle_a](
             a_warp_tile, a_reg_tiles[0].vectorize[1, a_frag_size]()
@@ -281,8 +281,8 @@ fn multistage_mma[
 
         @parameter
         for k_tile_id in range(static_num_iters.get()):
-            var a_smem_iter_tmp = a_smem_iter.next(k_tile_id)
-            var b_smem_iter_tmp = b_smem_iter.next(k_tile_id)
+            var a_smem_iter_tmp = a_smem_iter.next_unsafe(k_tile_id)
+            var b_smem_iter_tmp = b_smem_iter.next_unsafe(k_tile_id)
 
             var a_warp_tile = a_smem_iter_tmp[].tile[WM, BK](int(warp_y), 0)
             var b_warp_tile = b_smem_iter_tmp[].tile[
@@ -301,8 +301,8 @@ fn multistage_mma[
 
                 @parameter
                 if k_mma == num_k_mmas - 1:
-                    var a_smem_next_tile = a_smem_iter_tmp.next()[]
-                    var b_smem_next_tile = b_smem_iter_tmp.next()[]
+                    var a_smem_next_tile = a_smem_iter_tmp.next_unsafe()[]
+                    var b_smem_next_tile = b_smem_iter_tmp.next_unsafe()[]
 
                     a_warp_tile = a_smem_next_tile.tile[WM, BK](int(warp_y), 0)
                     b_warp_tile = b_smem_next_tile.tile[
@@ -311,7 +311,7 @@ fn multistage_mma[
 
                 # Assume input is the 16x8 output of 16x8x16 or 16x8x8 mma.
                 copy_local_to_local(a_reg_tiles[next], a_iter[])
-                a_iter += 1
+                a_iter._incr()
 
                 mma_op.load_b(
                     b_warp_tile,
@@ -336,7 +336,7 @@ fn multistage_mma[
 
                         @parameter
                         if b_iter.address_space == AddressSpace.GENERIC:
-                            var b_smem_prefetch_tile = b_smem_iter_tmp.next(
+                            var b_smem_prefetch_tile = b_smem_iter_tmp.next_unsafe(
                                 num_pipeline_stages - 1
                             )[]
 
@@ -351,7 +351,7 @@ fn multistage_mma[
                                 )
                             else:
                                 _copy_dram_to_sram_async_b(b_smem_prefetch_tile)
-                            b_iter += 1
+                            b_iter._incr()
 
                     async_copy_commit_group()
 
@@ -376,8 +376,8 @@ fn multistage_mma[
             var next = (k_mma + 1) % 2
 
             if k_mma == num_k_mmas - 1:
-                a_smem_iter += 1
-                b_smem_iter += 1
+                a_smem_iter._incr()
+                b_smem_iter._incr()
 
                 a_warp_tile = a_smem_iter[].tile[WM, BK](int(warp_y), 0)
                 b_warp_tile = b_smem_iter[].tile[b_wtile_dim0, b_wtile_dim1](
@@ -412,7 +412,7 @@ fn multistage_mma[
 
                     @parameter
                     if a_iter.address_space == AddressSpace.GENERIC:
-                        var a_smem_prefetch_tile = a_smem_iter.next(
+                        var a_smem_prefetch_tile = a_smem_iter.next_unsafe(
                             num_pipeline_stages - 1
                         )[]
 
@@ -423,11 +423,11 @@ fn multistage_mma[
                         else:
                             _copy_dram_to_sram_async_a(a_smem_prefetch_tile)
 
-                        a_iter += 1
+                        a_iter._incr()
 
                     @parameter
                     if b_iter.address_space == AddressSpace.GENERIC:
-                        var b_smem_prefetch_tile = b_smem_iter.next(
+                        var b_smem_prefetch_tile = b_smem_iter.next_unsafe(
                             num_pipeline_stages - 1
                         )[]
 
@@ -442,12 +442,12 @@ fn multistage_mma[
                         else:
                             _copy_dram_to_sram_async_b(b_smem_prefetch_tile)
 
-                        b_iter += 1
+                        b_iter._incr()
                 else:
 
                     @parameter
                     if continue_prefetch_b:
-                        var b_smem_prefetch_tile = b_smem_iter.next(
+                        var b_smem_prefetch_tile = b_smem_iter.next_unsafe(
                             num_pipeline_stages - 1
                         )[].reshape[b_next_smem_layout]()
 
@@ -478,7 +478,7 @@ fn multistage_mma[
                             num_rows_bound,
                         )
 
-                        next_b_iter += 1
+                        next_b_iter._incr()
 
                     pass
 
