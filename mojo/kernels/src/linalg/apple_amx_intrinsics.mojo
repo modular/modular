@@ -409,8 +409,8 @@ fn dot_at_b_impl(
     var b_buffer = stack_allocation[num_elements, Float32, alignment=128]()
     var c_buffer = stack_allocation[num_elements, Float32, alignment=128]()
 
-    memcpy[num_elements](a_buffer, a_pointer)
-    memcpy[num_elements](b_buffer, b_pointer)
+    memcpy(a_buffer, a_pointer, num_elements)
+    memcpy(b_buffer, b_pointer, num_elements)
     memset_zero(c_buffer, num_elements)
 
     # _set() has the side effect of clearing the z tile
@@ -453,8 +453,8 @@ fn dot_at_b_impl(
     var b_buffer = stack_allocation[num_elements, Float16, alignment=128]()
     var c_buffer = stack_allocation[num_elements, Float16, alignment=128]()
 
-    memcpy[num_elements](a_buffer, a_pointer)
-    memcpy[num_elements](b_buffer, b_pointer)
+    memcpy(a_buffer, a_pointer, num_elements)
+    memcpy(b_buffer, b_pointer, num_elements)
     memset_zero(c_buffer, num_elements)
 
     # _set() has the side effect of clearing the z tile
