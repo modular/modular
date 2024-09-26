@@ -224,8 +224,7 @@ fn _destroy_device_buffer(ptr: UnsafePointer[NoneType]):
     var cast_ptr = ptr.bitcast[DeviceBufferMojoValueType]()
     var ctx = cast_ptr[][0]
     var data = cast_ptr[][1]
-    var dev_buffer = DeviceBuffer(ctx, data, 0, owning=True)
-    _ = dev_buffer
+    _ = DeviceBuffer(ctx, data, 0, owning=True)
 
 
 @mogg_register("builtin.create_buffer_ref_async")
