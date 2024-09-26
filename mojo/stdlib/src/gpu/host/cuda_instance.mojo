@@ -600,13 +600,11 @@ struct LaunchAttributeValue:
         var tmp = policy
         var ptr = UnsafePointer.address_of(tmp)
         self._storage = ptr.bitcast[Self._storage_type]()[]
-        _ = ptr
 
     fn __init__(inout self, dim: Dim):
         var tmp = StaticTuple[UInt32, 3](dim.x(), dim.y(), dim.z())
         var ptr = UnsafePointer.address_of(tmp)
         self._storage = ptr.bitcast[Self._storage_type]()[]
-        _ = ptr
 
 
 # ===----------------------------------------------------------------------===#

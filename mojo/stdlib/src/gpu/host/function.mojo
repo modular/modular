@@ -596,8 +596,6 @@ struct Function[
                         stream.stream,
                     )
                 )
-                _ = entry
-                _ = device_ptr
 
         if cluster_dim:
             attributes.append(
@@ -626,9 +624,6 @@ struct Function[
             msg=Self._impl.function_name,
             location=__call_location(),
         )
-        _ = config
-        _ = attributes^
-        _ = constant_memory^
 
     @staticmethod
     fn init_fn[

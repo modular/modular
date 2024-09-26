@@ -252,10 +252,7 @@ fn _start_range(
     if _is_disabled():
         return 0
     var info = EventAttributes(message=message, color=color, category=category)
-    var value = info._value
-    var id = _nvtxRangeStartEx.load()(UnsafePointer.address_of(value))
-    _ = value
-    return id
+    return _nvtxRangeStartEx.load()(UnsafePointer.address_of(info._value))
 
 
 @always_inline
@@ -277,9 +274,7 @@ fn _mark(
     if _is_disabled():
         return
     var info = EventAttributes(message=message, color=color, category=category)
-    var value = info._value
-    _nvtxMarkEx.load()(UnsafePointer.address_of(value))
-    _ = value
+    _nvtxMarkEx.load()(UnsafePointer.address_of(info._value))
 
 
 struct Range:
@@ -306,9 +301,7 @@ struct Range:
 
     @always_inline
     fn __enter__(inout self):
-        var value = self._info._value
-        self._id = self._start_fn(UnsafePointer.address_of(value))
-        _ = value
+        self._id = self._start_fn(UnsafePointer.address_of(self._info._value))
 
     @always_inline
     fn __exit__(self):

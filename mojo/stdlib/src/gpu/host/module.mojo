@@ -318,7 +318,6 @@ struct Module:
                 path_cstr.unsafe_cstr_ptr(),
             )
         )
-        _ = path_cstr
         self.module = module
 
     fn __init__(
