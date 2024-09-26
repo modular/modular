@@ -1236,9 +1236,8 @@ LogicalResult ParamOperatorAttr::verify(
       return emitError()
              << "'compile_assembly' second operand should have index type";
     if (auto emissionIntAttr = ::dyn_cast<IntegerAttr>(operands[1])) {
-      EmissionKind emissionKind = (EmissionKind)emissionIntAttr.getInt();
-      if (!llvm::is_contained({EmissionKind::LLVM, EmissionKind::ASM},
-                              emissionKind))
+      auto emissionKind = (EmitAs)emissionIntAttr.getInt();
+      if (!llvm::is_contained({EmitAs::LLVM, EmitAs::ASM}, emissionKind))
         return emitError() << "'compile_assembly' second operand should "
                               "evaluate to either asm or llvm";
     }
