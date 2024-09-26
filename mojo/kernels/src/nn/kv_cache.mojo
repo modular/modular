@@ -1955,7 +1955,7 @@ alias kv_params_h6_d48_bshd = KVCacheStaticParams(
     num_heads=6, head_size=48, layout=KVCacheLayout.BSHD
 )
 alias kv_params_h6_d48_bhsd = KVCacheStaticParams(
-    num_heads=6, head_size=6, layout=KVCacheLayout.BHSD
+    num_heads=6, head_size=48, layout=KVCacheLayout.BHSD
 )
 alias kv_params_h8_d128_bshd = KVCacheStaticParams(
     num_heads=8, head_size=128, layout=KVCacheLayout.BSHD
