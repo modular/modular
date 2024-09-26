@@ -414,7 +414,7 @@ def main():
     var args = argv()
     for i in range(len(args)):
         if args[i] == "-c":
-            print(compile_code[llvm_ldexp[DType.float32, 4]]())
+            print(_internal_compile_code[llvm_ldexp[DType.float32, 4]]())
             return
 
     var m = Bench()
