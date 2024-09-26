@@ -30,6 +30,7 @@ class ExecutionSession;
 } // namespace llvm
 
 namespace M::KGEN {
+struct SymbolAndMCInfo;
 
 //===----------------------------------------------------------------------===//
 // ObjectCompiler
@@ -86,7 +87,7 @@ private:
 
   /// Lower the given LLVM module to an object file (parLLC = false) or
   /// multiple object files per function (parLLC = true).
-  AsyncRT::AnyAsyncValueRef lowerLLVMModuleToObjects(
+  AsyncRT::AsyncValueRef<SymbolAndMCInfo> lowerLLVMModuleToObjects(
       llvm::unique_function<LLVMModuleAndContext()> produceModule, Location loc,
       bool parLLC, std::optional<size_t> moduleIdx, unsigned numFunctionsBase);
 

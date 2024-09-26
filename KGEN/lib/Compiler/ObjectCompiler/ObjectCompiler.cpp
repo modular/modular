@@ -306,8 +306,7 @@ static AsyncRT::AnyAsyncValueRef compileOptimizedLLVMModuleToObject(
 
   llvm::WriteBitcodeToFile(*module, *keyBuf);
 
-  AnyAsyncValueRef output;
-  output = AsyncRT::AsyncValueRef<MCInfo>::allocate(runtime);
+  auto output = AsyncRT::AsyncValueRef<MCInfo>::allocate(runtime);
 
   runtime.getWorkQueue()->addTask([nonBitcodeKeySize, loc, &runtime,
                                    keyBuf = keyBuf.copy(),
@@ -387,7 +386,7 @@ static AsyncRT::AnyAsyncValueRef compileOptimizedLLVMModuleToObject(
       fnNameToFnPtr.insert({fn.getName().str(), &fn});
 
     llvm::WriteBitcodeToFile(*moduleAndContext, *wbuf);
-    std::move(output).emplace<MCInfo>(
+    std::move(output).emplace(
         wbuf, std::move(machineModuleInfo),
         // Keep the original llvm::Module alive so that the MachineFunction
         // reference to llvm::Function is still valid.
@@ -440,8 +439,7 @@ static SmallVector<AsyncRT::AnyAsyncValueRef> compileOptimizedLLVMToObjects(
   auto launchCompilation =
       [&](llvm::unique_function<LLVMModuleAndContext()> produceModule,
           std::optional<int64_t> idx, unsigned numFunctions) {
-        AnyAsyncValueRef result;
-        result = AsyncRT::AsyncValueRef<MCInfo>::allocate(runtime);
+        auto result = AsyncRT::AsyncValueRef<MCInfo>::allocate(runtime);
 
         runtime.getWorkQueue()->addTask(
             [produceModule = std::move(produceModule), loc, &runtime, isJIT,
@@ -455,7 +453,7 @@ static SmallVector<AsyncRT::AnyAsyncValueRef> compileOptimizedLLVMToObjects(
                   output,
                   [result = std::move(result)](
                       MutableArrayRef<AnyAsyncValueRef> output) mutable {
-                    std::move(result).emplace<MCInfo>(
+                    std::move(result).emplace(
                         std::move(output.front().get<MCInfo>()));
                   });
             });
@@ -762,9 +760,8 @@ ErrorOr<BufferRef> ObjectCompiler::emitArchive(ModuleOp module) {
             symbolAndMCInfos.reserve(values.size());
 
             for (auto [i, result] : llvm::enumerate(values)) {
-              auto &symbolAndMCInfo =
-                  result.get<std::unique_ptr<SymbolAndMCInfo>>();
-              symbolAndMCInfos.emplace_back(symbolAndMCInfo.get());
+              auto &symbolAndMCInfo = result.get<SymbolAndMCInfo>();
+              symbolAndMCInfos.emplace_back(&symbolAndMCInfo);
             }
 
             MCLinker mcLinker(symbolAndMCInfos, **machineOr, options);
@@ -843,14 +840,12 @@ ErrorOr<BufferRef> ObjectCompiler::emitArchive(ModuleOp module) {
 // lowerLLVMModuleToObjects
 //===----------------------------------------------------------------------===//
 
-AsyncRT::AnyAsyncValueRef ObjectCompiler::lowerLLVMModuleToObjects(
+AsyncRT::AsyncValueRef<SymbolAndMCInfo>
+ObjectCompiler::lowerLLVMModuleToObjects(
     llvm::unique_function<LLVMModuleAndContext()> produceModule, Location loc,
     bool parLLC, std::optional<size_t> moduleIdx, unsigned numFunctionsBase) {
 
-  AsyncRT::AnyAsyncValueRef result;
-
-  result = AsyncRT::AsyncValueRef<std::unique_ptr<SymbolAndMCInfo>>::allocate(
-      runtime);
+  auto result = AsyncRT::AsyncValueRef<SymbolAndMCInfo>::allocate(runtime);
 
   runtime.getWorkQueue()->addTask([this, result = result.copy(),
                                    produceModule = std::move(produceModule),
@@ -875,20 +870,19 @@ AsyncRT::AnyAsyncValueRef ObjectCompiler::lowerLLVMModuleToObjects(
           AsyncRT::getMLIRDiagnostic("failed to optimize LLVM IR.", loc));
     }
 
-    auto symbolAndMirInfo = std::make_unique<SymbolAndMCInfo>();
+    SymbolAndMCInfo symbolAndMirInfo;
     SmallVector<AnyAsyncValueRef> buffers = compileOptimizedLLVMToObjects(
         std::move(module), loc, options, runtime, transformCache, parLLC, isJIT,
-        moduleIdx, *symbolAndMirInfo, numFunctionsBase);
+        moduleIdx, symbolAndMirInfo, numFunctionsBase);
 
     andThenAsyncMoving(
         buffers, [result = std::move(result),
                   symbolAndMirInfo = std::move(symbolAndMirInfo)](
                      MutableArrayRef<AnyAsyncValueRef> values) mutable {
           for (AnyAsyncValueRef &result : values)
-            symbolAndMirInfo->mcInfos.emplace_back(
+            symbolAndMirInfo.mcInfos.emplace_back(
                 std::make_unique<MCInfo>(std::move(result.get<MCInfo>())));
-          std::move(result).emplace<std::unique_ptr<SymbolAndMCInfo>>(
-              std::move(symbolAndMirInfo));
+          std::move(result).emplace(std::move(symbolAndMirInfo));
         });
   });
 

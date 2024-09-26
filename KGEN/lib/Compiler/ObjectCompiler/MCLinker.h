@@ -110,13 +110,13 @@ private:
   llvm::TargetMachine &targetMachine;
   CompilationOptions options;
   SmallVector<MCInfo *> mcInfos;
-  llvm::LLVMContext linkCtx;
-  std::unique_ptr<llvm::Module> linkedModule = nullptr;
+  LLVMModuleAndContext linkedModule;
+
   llvm::StringMap<llvm::GlobalValue::LinkageTypes> symbolLinkageTypes;
   llvm::MachineModuleInfoWrapperPass *machineModInfoPass = nullptr;
 
   /// Link llvm::Modules from each split.
-  ErrorOrSuccess linkLLVMModules(StringRef modularName);
+  ErrorOrSuccess linkLLVMModules(StringRef moduleName);
 
   /// Prepare MachineModuleInfo before AsmPrinting.
   void prepareMachineModuleInfo();

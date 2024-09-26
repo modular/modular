@@ -37,8 +37,15 @@ MCLinker::MCLinker(SmallVectorImpl<SymbolAndMCInfo *> &symbolAndMCInfos,
       new llvm::MachineModuleInfoWrapperPass(&llvmTargetMachine);
 }
 
-ErrorOrSuccess MCLinker::linkLLVMModules(StringRef modularName) {
-  linkedModule = std::make_unique<llvm::Module>(modularName, linkCtx);
+ErrorOrSuccess MCLinker::linkLLVMModules(StringRef moduleName) {
+  ErrorOrSuccess createModuleResult =
+      linkedModule.create([&](llvm::LLVMContext &ctx) {
+        return std::make_unique<llvm::Module>(moduleName, ctx);
+      });
+
+  if (createModuleResult.isError())
+    return Error("failed to create an empty LLVMModule for MCLinker");
+
   llvm::Linker linker(*linkedModule);
 
   for (auto [i, smcInfos] : llvm::enumerate(symbolAndMCInfos)) {
@@ -55,7 +62,7 @@ ErrorOrSuccess MCLinker::linkLLVMModules(StringRef modularName) {
                   StringRef(mcInfo->moduleBuf->getBufferStart(),
                             mcInfo->moduleBuf->getBufferSize()),
                   ""),
-              linkCtx);
+              linkedModule->getContext());
       if (!moduleOr)
         return Error("failed to serialize post-llc modules");
 
@@ -164,6 +171,11 @@ void MCLinker::prepareMachineModuleInfo() {
         global.setLinkage(iter->second);
         global.setDSOLocal(true);
       }
+
+      // Release memory as soon as possible to reduce peak memory footprint.
+      mcInfo->machineModuleInfo.reset();
+      mcInfo->fnNameToFnPtr.clear();
+      mcInfo->moduleBuf.reset();
     }
   }
 }
