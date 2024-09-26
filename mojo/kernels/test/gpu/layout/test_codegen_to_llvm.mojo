@@ -8,7 +8,7 @@
 from layout import LayoutTensor, Layout
 from layout.int_tuple import UNKNOWN_VALUE
 
-from compile import compile_code
+from compile import _internal_compile_code
 from gpu.host._compile import _get_nvptx_target
 
 
@@ -31,7 +31,7 @@ fn test_no_alloca_fill():
 
     # CHECK-NOT: alloca float, i64 16, align 4
     print(
-        compile_code[
+        _internal_compile_code[
             layout_tensor_kernel,
             emission_kind="llvm",
             target = _get_nvptx_target(),
