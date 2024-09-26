@@ -87,7 +87,6 @@ fn keep[type: DType, simd_width: Int](val: SIMD[type, simd_width]):
             constraints="+m,~{memory}",
             has_side_effect=True,
         ](tmp_ptr, tmp_ptr)
-    _ = tmp
 
 
 @always_inline
@@ -112,7 +111,6 @@ fn keep[type: AnyType](val: UnsafePointer[type]):
         constraints="r,~{memory}",
         has_side_effect=True,
     ](tmp_ptr)
-    _ = tmp
 
 
 @always_inline
@@ -137,4 +135,3 @@ fn keep[type: AnyTrivialRegType](inout val: type):
         constraints="r,~{memory}",
         has_side_effect=True,
     ](tmp_ptr)
-    _ = tmp
