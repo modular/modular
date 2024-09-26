@@ -228,7 +228,7 @@ void DeclRefNode::print(raw_indented_ostream &os) const {
 }
 
 void AttributeRefNode::print(raw_indented_ostream &os) const {
-  os << "AtttributeRef {\n";
+  os << "AttributeRef {\n";
   os.indent() << "base: ";
   base->print(os);
   os << "attr: ";
