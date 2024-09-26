@@ -850,8 +850,8 @@ static ParseResult parseOperatorOperands(AsmParser &p, uint32_t opcode,
             p.getCurrentLocation(),
             "the immediate emission kind must be either '=llvm' or '=asm'");
 
-      EmissionKind emissionKindEnum =
-          emissionKind == "llvm" ? EmissionKind::LLVM : EmissionKind::ASM;
+      auto emissionKindEnum =
+          emissionKind == "llvm" ? EmitAs::LLVM : EmitAs::ASM;
       operands.emplace_back(
           p.getBuilder().getIndexAttr(to_underlying(emissionKindEnum)));
     } else if (parseParamValue(p, operands.emplace_back(),
@@ -1160,11 +1160,11 @@ static void printOperatorOperands(AsmPrinter &p, POC opcode,
     printParamValue(p, operands[0]);
     p << ", ";
     if (auto emissionIntAttr = dyn_cast<IntegerAttr>(operands[1])) {
-      EmissionKind emissionKind = (EmissionKind)emissionIntAttr.getInt();
+      auto emissionKind = (EmitAs)emissionIntAttr.getInt();
       // '=' is used to disambiguate immediates with generic param value.
-      if (emissionKind == EmissionKind::ASM)
+      if (emissionKind == EmitAs::ASM)
         p << "=asm";
-      else if (emissionKind == EmissionKind::LLVM)
+      else if (emissionKind == EmitAs::LLVM)
         p << "=llvm";
       else
         printParamValue(p, operands[1]);

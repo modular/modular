@@ -268,7 +268,7 @@ compilePatterns(ModuleOp module, ArrayRef<SmallVector<StringAttr>> patterns) {
 /// elaborate it and compile to assembly for the provided `target.
 static ErrorOr<CrossDeviceFunction> compileElaboratorAsm(
     GeneratorOp func, SymbolConstantAttr symbol, StringAttr name,
-    const SymbolTable &symtab, TargetInfoAttr target, EmissionKind emissionKind,
+    const SymbolTable &symtab, TargetInfoAttr target, EmitAs emissionKind,
     CompilationOptions options, ElaborateGeneratorsOptions elaboratorOptions,
     mlir::DiagnosticEngine::HandlerID diagHandlerID) {
   // Configure the compilation options given the new target.
@@ -348,7 +348,7 @@ static ErrorOr<CrossDeviceFunction> compileElaboratorAsm(
   SmallVector<char> buf;
   buf.reserve(256 * 128); // 32 KB
   llvm::raw_svector_ostream os(buf);
-  if (emissionKind == EmissionKind::LLVM) {
+  if (emissionKind == EmitAs::LLVM) {
     llvmModule->print(os, nullptr);
   } else {
     AsyncRT::Runtime &runtime =

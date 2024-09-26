@@ -119,8 +119,8 @@ struct CrossDeviceFunction {
 /// passed to be used as the entry point.
 using ElaboratorCompileAsmFn = ErrorOr<CrossDeviceFunction> (*)(
     GeneratorOp, SymbolConstantAttr, StringAttr, const SymbolTable &,
-    TargetInfoAttr, EmissionKind, CompilationOptions,
-    ElaborateGeneratorsOptions, mlir::DiagnosticEngine::HandlerID);
+    TargetInfoAttr, EmitAs, CompilationOptions, ElaborateGeneratorsOptions,
+    mlir::DiagnosticEngine::HandlerID);
 
 /// Create an instance of the elaborator pass that captures all of the
 /// referenced include files.
