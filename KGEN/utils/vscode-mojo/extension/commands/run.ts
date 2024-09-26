@@ -12,6 +12,7 @@ import * as config from '../utils/config';
 import { MojoSDK } from '../sdk/sdk';
 import { MojoSDKManager } from '../sdk/sdkManager';
 import { MojoDebugConfiguration } from '../debug/debug';
+import * as md5 from 'md5';
 
 type FileArgs = {
   runArgs: string[];
@@ -211,7 +212,10 @@ class ExecutionManager extends DisposableContext {
    * Get a terminal to use for the given file.
    */
   getTerminalForFile(doc: vscode.TextDocument, sdk: MojoSDK): vscode.Terminal {
-    let terminalName = `Mojo: ${path.basename(doc.fileName)} · ${doc.fileName} · ${sdk.config.modularHomePath}`;
+    const fullId = `${doc.fileName} · ${sdk.config.modularHomePath}`;
+    // We have to keep the full terminal name short so that VS Code renders it nicely,
+    // and we have to keep it unique among other files.
+    let terminalName = `Mojo: ${path.basename(doc.fileName)} · ${md5(fullId).substring(0, 5)}`;
 
     // Look for an existing terminal.
     let terminal = vscode.window.terminals.find((t) => t.name === terminalName);
