@@ -144,7 +144,6 @@ def test_quantize_q4_0():
 def test_find_extrema():
     array3 = InlineArray[Float32, 3](1.5, -3.2, 0.6)
     min, max = _find_extrema[array3.size](array3.unsafe_ptr())
-    _ = array3^
     assert_equal(min, -3.2)
     assert_equal(max, 1.5)
 
@@ -157,7 +156,6 @@ def test_find_extrema():
     )
     # fmt: on
     min, max = _find_extrema[array16.size](array16.unsafe_ptr())
-    _ = array16^
     assert_equal(min, -1.8056588)
     assert_equal(max, 1.6711988)
 

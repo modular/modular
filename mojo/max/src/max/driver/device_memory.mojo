@@ -111,7 +111,6 @@ struct DeviceMemory(DeviceBuffer, StringableRaising, CollectionElement):
             raise str(status)
         self.name = name
         self.num_bytes = num_bytes
-        _ = tmp_spec^
 
     @doc_private
     fn __init__(

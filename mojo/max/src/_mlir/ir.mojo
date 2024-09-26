@@ -361,7 +361,6 @@ struct Operation(CollectionElement, Stringable, Formattable):
         )
         name._strref_keepalive()
         self.c = _c.IR.mlirOperationCreate(UnsafePointer.address_of(state))
-        _ = state
 
     fn __init__(
         inout self,
@@ -396,7 +395,6 @@ struct Operation(CollectionElement, Stringable, Formattable):
             result = _c.IR.mlirOperationCreate(UnsafePointer.address_of(state))
             if not result.ptr:
                 raise "operation create failed"
-        _ = state
 
         self.c = result
 
@@ -752,8 +750,6 @@ struct Block(CollectionElement, Stringable):
             args.data.bitcast[Type.cType](),
             locations.data.bitcast[Location.cType](),
         )
-        _ = args
-        _ = locations
 
     fn region(self) -> Region:
         return _c.IR.mlirBlockGetParentRegion(self.c)

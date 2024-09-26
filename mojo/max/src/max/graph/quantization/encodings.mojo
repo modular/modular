@@ -579,7 +579,7 @@ def _pick_subblock_scale_min_q4_k_q5_k[
             scale=refitted.scale,
             min_x=refitted.min,
         )
-        _ = trial_quants^
+
         if error < best_error:
             # min_x is, aside from the return value, also used for
             # trial_iscale computation in future trials, so it _probably_
@@ -589,7 +589,7 @@ def _pick_subblock_scale_min_q4_k_q5_k[
             scale = refitted.scale
             min_x = refitted.min
             best_error = error
-    _ = weights^
+
     return _AsymmetricDequantParameters(scale=scale, min=min_x)
 
 

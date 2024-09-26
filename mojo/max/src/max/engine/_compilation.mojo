@@ -180,7 +180,7 @@ struct TorchInputSpec(Movable):
             EngineDType(self.dtype),
             status.ptr,
         )
-        _ = converted_dim_names^
+
         if status:
             raise Error(str(status))
         self.ptr = ptr

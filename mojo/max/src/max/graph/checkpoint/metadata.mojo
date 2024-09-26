@@ -99,9 +99,7 @@ fn _read_int[type: DType](f: FileHandle) raises -> Scalar[type]:
     """Reads an int value from a file."""
     var size = sizeof[type]()
     var bytes_tensor = Tensor[DType.uint8](f.read_bytes(size))
-    var result = bytes_tensor.unsafe_ptr().bitcast[type]().load()
-    _ = bytes_tensor^
-    return result
+    return bytes_tensor.unsafe_ptr().bitcast[type]().load()
 
 
 def _serialization_header() -> List[UInt8]:
