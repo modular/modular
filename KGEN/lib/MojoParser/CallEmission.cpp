@@ -566,8 +566,7 @@ PValue OverloadSet::filterOverloadSetForValueType(
     // Fully apply any bound parameters to the candidate's type since they will
     // be applied when a reference is made.
     // TODO(#22771): Parameter inference.
-    auto [newBindings, _] =
-        paramBindings.verifyBindings(candidateType, /*partial=*/true);
+    auto [newBindings, _] = paramBindings.verifyBindings(candidateType);
     return newBindings;
   };
 

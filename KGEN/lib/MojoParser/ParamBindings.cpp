@@ -482,7 +482,14 @@ ParamBindings::verifyBindings(
 }
 
 std::pair<ParameterExprArrayAttr, ParamBindings::Fitness>
-ParamBindings::verifyBindings(LITSignatureType sig, bool partial) const {
+ParamBindings::verifyBindings(LITSignatureType sig) const {
+  return verifyBindings(sig.getParamTypes(), sig.getParamListAttrs(),
+                        /*partial=*/true);
+}
+
+std::pair<ParameterExprArrayAttr, ParamBindings::Fitness>
+ParamBindings::verifyBindings(ArrayRef<Type> paramTypes, PogListAttr paramList,
+                              bool partial) const {
   auto parameterInferenceHook = [&](ArrayRef<TypedAttr> bindingsSoFar,
                                     const ParserParamEvaluator &evaluator) {
     // The inference diagnostics will be unused.
@@ -491,12 +498,12 @@ ParamBindings::verifyBindings(LITSignatureType sig, bool partial) const {
                                       evaluator, inferenceDiags,
                                       /*allowImplicitConversions=*/true);
 
-    inference.infer(sig.getParamTypes(), sig.getParamListAttrs());
+    inference.infer(paramTypes, paramList);
     return PValue(inference.getInferredValue(bindingsSoFar.size()));
   };
-  return verifyBindingsImpl(parameters, sig.getParamTypes(),
-                            sig.getParamListAttrs(), parameterInferenceHook,
-                            /*diagEmitter=*/nullptr, partial);
+  return verifyBindingsImpl(parameters, paramTypes, paramList,
+                            parameterInferenceHook, /*diagEmitter=*/nullptr,
+                            partial);
 }
 
 ParameterExprArrayAttr ParamBindings::verifyBindings(StructDeclOp structOp,

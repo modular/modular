@@ -691,8 +691,7 @@ SRValue ExprEmitter::emitPValueToSRValue(ASTExprAnd<PValue> value,
       ParamBindings paramBindings(getScopeInfo());
       // Try to fully bind the signature, in case it can be made concrete with
       // default values, etc.
-      auto [bindingAttr, _] =
-          paramBindings.verifyBindings(signature, /*partial=*/true);
+      auto [bindingAttr, _] = paramBindings.verifyBindings(signature);
 
       // Notice if there are any unbound parameters.
       bool anyUnbound = true;
