@@ -20,7 +20,7 @@ from benchmark import (
 )
 from buffer import Dim, DimList, NDBuffer
 from buffer.dimlist import _make_tuple
-from compile import compile_code
+from compile import _internal_compile_code
 from gpu.host.device_context import DeviceBuffer, DeviceContext
 from testing import assert_almost_equal, assert_equal, assert_true
 
@@ -209,7 +209,7 @@ fn bench_compile_time[
         fn bench_iter() raises:
             @parameter
             if emission_kind == "asm" or emission_kind == "llvm":
-                var s: String = compile_code[
+                var s: String = _internal_compile_code[
                     func, emission_kind=emission_kind
                 ]()
                 keep(s.unsafe_ptr())
