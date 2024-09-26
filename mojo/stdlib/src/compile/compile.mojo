@@ -198,11 +198,11 @@ fn compile_info[
 
 
 # ===----------------------------------------------------------------------===#
-# compile_code
+# _internal_compile_code
 # ===----------------------------------------------------------------------===#
 
 
-fn compile_code[
+fn _internal_compile_code[
     func_type: AnyTrivialRegType, //,
     func: func_type,
     /,
