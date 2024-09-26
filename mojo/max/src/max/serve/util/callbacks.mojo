@@ -152,7 +152,7 @@ struct CallbackSet[*Ts: ServerCallbacks](ServerCallbacks):
     fn __init__(
         inout self,
         *,
-        owned storage: VariadicPack[_, ServerCallbacks, Ts],
+        owned storage: VariadicPack[_, ServerCallbacks, *Ts],
     ):
         # Mark 'self.storage' as being initialized so we can work on it.
         __mlir_op.`lit.ownership.mark_initialized`(
