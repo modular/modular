@@ -110,11 +110,8 @@ class Model:
     def _export_mef(self, path):
         """Exports the compiled model as a mef to a file.
 
-        Parameters
-        ----------
-        ``path``
-            The filename where the mef is exported to.
-
+        Args:
+          path: The filename where the mef is exported to.
         """
         self._impl._export_mef(path)
 
@@ -133,46 +130,38 @@ class Model:
             input_tensor = np.random.rand(1, 224, 224, 3)
             model.execute(input_tensor)
 
-        Parameters
-        ----------
-        ``args``
-            A list of input tensors. We currently support :obj:`np.ndarray`,
-            :obj:`torch.Tensor`, and :obj:`max.driver.Tensor` inputs. All inputs
-            will be copied to the device that the model is resident on prior to
-            executing.
-        ``copy_inputs_to_device``
-            Whether to copy all input tensors to the model's device. Defaults
-            to :obj:`True`. If set to :obj:`False`, input tensors will remain
-            on whatever device they're currently on, which the model must be
-            prepared for.
-        ``output_device``
-            The device to copy output tensors to. Defaults to :obj:`None`, in
-            which case the tensors will remain resident on the same device as
-            the model.
+        Args:
+            args:
+              A list of input tensors. We currently support :obj:`np.ndarray`,
+              :obj:`torch.Tensor`, and :obj:`max.driver.Tensor` inputs. All
+              inputs will be copied to the device that the model is resident on
+              prior to executing.
 
-        Returns
-        -------
-        Dict
-            A dictionary of output values, each as an :obj:`np.ndarray`,
-            :obj:`Dict`, :obj:`List`, or :obj:`Tuple` identified by its output
-            name.
+            copy_inputs_to_device:
+              Whether to copy all input tensors to the model's device. Defaults
+              to :obj:`True`. If set to :obj:`False`, input tensors will remain
+              on whatever device they're currently on, which the model must be
+              prepared for.
 
-        List
+            output_device:
+              The device to copy output tensors to. Defaults to :obj:`None`, in
+              which case the tensors will remain resident on the same device as
+              the model.
+
+        Returns:
             A list of output tensors and Mojo values. The output tensors will be
             resident on the execution device by default.
 
-        Raises
-        ------
-        RuntimeError
-            If the given input tensors' shape don't match what the model expects.
+        Raises:
+            RuntimeError: If the given input tensors' shape don't match what
+              the model expects.zzz
 
-        TypeError
-            If the given input tensors' dtype cannot be cast to what the model
-            expects.
+            TypeError: If the given input tensors' dtype cannot be cast to what
+              the model expects.
 
-        ValueError
-            If positional inputs are not one of the supported types, i.e.
-            :obj:`np.ndarray`, :obj:`torch.Tensor`, and :obj:`max.driver.Tensor`.
+            ValueError: If positional inputs are not one of the supported
+              types, i.e. :obj:`np.ndarray`, :obj:`torch.Tensor`, and
+              :obj:`max.driver.Tensor`.
         """
         input_impls: List[Union[_Tensor, MojoValue]] = []
 
@@ -248,10 +237,9 @@ class Model:
         The function will assume that input `d` will map to the same position as
         input `b`.
 
-        Parameters
-        ----------
-        ``args``
-            A list of input tensors. We currently support the following input types:
+        Args:
+            args: A list of input tensors. We currently support the following
+              input types:
                 * Any tensors implementing the dlpack protocol, such as
                   :obj:`np.ndarray`, :obj:`torch.Tensor`
                 * Max Driver tensors, i.e. :obj:`max.driver.Tensor`
@@ -259,37 +247,31 @@ class Model:
                   :obj:`np.generic`
                 * Mojo value inputs, i.e. :obj:`MojoValue`
 
-        ``kwargs``
-            Named inputs. We can support the same types supported in :obj:`args`.
+            kwargs: Named inputs. We can support the same types supported
+              in :obj:`args`.
 
-        Returns
-        -------
-        List
+        Returns:
             A list of output tensors and Mojo values. The output tensors will be
             resident on the execution device by default.
 
-        Raises
-        ------
-        RuntimeError
-            If the given input tensors' shape don't match what the model expects.
+        Raises:
+            RuntimeError: If the given input tensors' shape don't match what
+              the model expects.
 
-        TypeError
-            If the given input tensors' dtype cannot be cast to what the model
-            expects.
+            TypeError: If the given input tensors' dtype cannot be cast to
+              what the model expects.
 
-        ValueError
-            If positional inputs are not one of the supported types, i.e.
-            :obj:`np.ndarray`, :obj:`torch.Tensor`, and :obj:`max.driver.Tensor`.
+            ValueError: If positional inputs are not one of the supported
+              types, i.e. :obj:`np.ndarray`, :obj:`torch.Tensor`, and
+              :obj:`max.driver.Tensor`.
 
+            ValueError: If an input name does not correspond to what the model
+              expects.
 
-        ValueError
-            If an input name does not correspond to what the model expects.
+            ValueError: If any positional and named inputs collide.
 
-        ValueError
-            If any positional and named inputs collide.
-
-        ValueError
-            If the number of inputs is less than what the model expects.
+            ValueError: If the number of inputs is less than what the model
+              expects.
         """
         bound = self.signature.bind(*args, **kwargs)
         return self.execute(*bound.arguments.values())
@@ -311,29 +293,24 @@ class Model:
             input_tensor = np.random.rand(1, 224, 224, 3)
             model.execute_legacy(input0=input_tensor)
 
-        Parameters
-        ----------
-        ``kwargs``
-            The input tensors, each specified with the appropriate tensor name
-            as a keyword and its value as an :obj:`np.ndarray`. You can find the
-            tensor names to use as keywords from :obj:`~Model.input_metadata`.
+        Args:
+            kwargs: The input tensors, each specified with the appropriate
+              tensor name as a keyword and its value as an :obj:`np.ndarray`.
+              You can find the tensor names to use as keywords from
+              :obj:`~Model.input_metadata`.
 
-        Returns
-        -------
-        Dict
+        Returns:
             A dictionary of output values, each as an :obj:`np.ndarray`,
             :obj:`Dict`, :obj:`List`, or :obj:`Tuple` identified by its output
             name.
 
-        Raises
-        ------
-        RuntimeError
-            If the given input tensors' name and shape don't match what
-            the model expects.
+        Raises:
+            RuntimeError: If the given input tensors' name and shape don't
+              match what the model expects.
 
-        TypeError
-            If the given input tensors' dtype cannot be cast to what the model
-            expects.
+            TypeError: If the given input tensors' dtype cannot be cast to what
+              the model expects.
+
         """
         # Wrapping the tensors happens by recording their addresses, which does
         # not increase reference count, so we need to ensure the garbage
@@ -623,11 +600,9 @@ class InferenceSession:
         model_path = Path('bert-base-uncased')
         model = session.load(model_path)
 
-    Parameters
-    ----------
-    num_threads: Optional[int]
-        Number of threads to use for the inference session. This parameter
-        defaults to the number of physical cores on your machine.
+    Args:
+        num_threads: Number of threads to use for the inference session. This
+          defaults to the number of physical cores on your machine.
     """
 
     _impl: _InferenceSession
@@ -671,67 +646,58 @@ class InferenceSession:
 
         Note: PyTorch models must be in TorchScript format.
 
-        Parameters
-        ----------
-        model: Union[str, pathlib.Path, Any]
-            Path to a model, or a TorchScript model instance.
-            May be a TorchScript model or an ONNX model.
+        Args:
+            model: Path to a model, or a TorchScript model instance.
+              May be a TorchScript model or an ONNX model.
 
-        custom_extensions: Optional[CustomExtensionsType]
-            The extensions to load for the model.
-            Supports paths to `.mojopkg` custom ops, `.so` custom op libraries
-            for PyTorch and `.pt` torchscript files for torch metadata
-            libraries. Supports :obj:`TorchMetadata` and
-            :obj:`torch.jit.ScriptModule` objects for
-            torch metadata libraries without serialization.
+            custom_extensions: The extensions to load for the model.
+              Supports paths to `.mojopkg` custom ops, `.so` custom op libraries
+              for PyTorch and `.pt` torchscript files for torch metadata
+              libraries. Supports :obj:`TorchMetadata` and
+              :obj:`torch.jit.ScriptModule` objects for
+              torch metadata libraries without serialization.
 
-         custom_ops_path: str
-            The path to your custom ops Mojo package.
-            Deprecated, use ``custom_extensions`` instead.
+            custom_ops_path: The path to your custom ops Mojo package.
+              Deprecated, use ``custom_extensions`` instead.
 
-        input_specs:
-            The tensor specifications (shape and data type) for each of the
-            model inputs. This is required when loading serialized TorchScript
-            models because they do not include type and shape annotations.
+            input_specs: The tensor specifications (shape and data type) for
+              each of the model inputs. This is required when loading serialized
+              TorchScript models because they do not include type and shape
+              annotations.
 
-            If the model supports an input with dynamic shapes, use ``None`` as
-            the dimension size in ``shape``.
+              For example:
 
-            For example:
+              .. code-block:: python
 
-            .. code-block:: python
+                  session = engine.InferenceSession()
+                  model = session.load(
+                      "clip-vit.torchscript",
+                      input_specs = [
+                          engine.TorchInputSpec(
+                              shape=[1, 16], dtype=DType.int32
+                          ),
+                          engine.TorchInputSpec(
+                              shape=[1, 3, 224, 224], dtype=DType.float32
+                          ),
+                          engine.TorchInputSpec(
+                              shape=[1, 16], dtype=DType.int32
+                          ),
+                      ],
+                  )
 
-                session = engine.InferenceSession()
-                model = session.load(
-                    "clip-vit.torchscript",
-                    input_specs = [
-                        engine.TorchInputSpec(
-                            shape=[1, 16], dtype=DType.int32
-                        ),
-                        engine.TorchInputSpec(
-                            shape=[1, 3, 224, 224], dtype=DType.float32
-                        ),
-                        engine.TorchInputSpec(
-                            shape=[1, 16], dtype=DType.int32
-                        ),
-                    ],
-                )
+              If the model supports an input with dynamic shapes, use ``None``
+              as the dimension size in ``shape``.
 
-        weights_registry:
-            A mapping from names of model weights' names to their values. The
-            values are currently expected to be dlpack arrays. If an array is a
-            read-only numpy array, the user must ensure that its lifetime
-            extends beyond the lifetime of the model.
+            weights_registry: A mapping from names of model weights' names to
+              their values. The values are currently expected to be dlpack
+              arrays. If an array is a read-only numpy array, the user must
+              ensure that its lifetime extends beyond the lifetime of the model.
 
-        Returns
-        -------
-        Model
+        Returns:
             The loaded model, compiled and ready to execute.
 
-        Raises
-        ------
-        RuntimeError
-            If the path provided is invalid.
+        Raises:
+            RuntimeError: If the path provided is invalid.
         """
 
         options_dict = {}
