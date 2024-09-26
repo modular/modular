@@ -100,7 +100,7 @@ fn split_k_reduce_test_case[
 
     rand[dtype](mat_a_host.data, a_row * a_col)
     rand[dtype](mat_b_host.data, b_row * b_col)
-    memcpy[a_row * a_col](mat_a_ref.data, mat_a_host.data)
+    memcpy(mat_a_ref.data, mat_a_host.data, a_row * a_col)
 
     _split_k_reduce_verify(mat_a_ref, mat_b_host, num_partition)
 
