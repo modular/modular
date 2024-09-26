@@ -210,7 +210,7 @@ fn _sum[
 ](src: UnsafePointer[Scalar[type]], len: Int) -> Scalar[type]:
     return sum(
         Buffer[type, address_space = src.address_space](
-            UnsafePointer[_, _, False, _](src), len
+            UnsafePointer[_, _, False, *_](src), len
         )
     )
 
@@ -220,7 +220,7 @@ fn _mean[
 ](src: UnsafePointer[Scalar[type]], len: Int) -> Scalar[type]:
     return mean(
         Buffer[type, address_space = src.address_space](
-            UnsafePointer[_, _, False, _](src), len
+            UnsafePointer[_, _, False, *_](src), len
         )
     )
 
