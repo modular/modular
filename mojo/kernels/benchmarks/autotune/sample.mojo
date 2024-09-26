@@ -6,7 +6,12 @@
 # RUN: %mojo-build-no-debug %s
 
 from sys import env_get_string, env_get_int
-from internal_utils import env_get_dtype, env_get_shape, int_list_to_tuple
+from internal_utils import (
+    env_get_dtype,
+    env_get_bool,
+    env_get_shape,
+    int_list_to_tuple,
+)
 from benchmark import (
     BenchConfig,
     Bench,
@@ -21,7 +26,7 @@ from time import sleep
 
 fn bench_func[
     dtype: DType, M: Int, N: Int, K: Int, stages: Int
-](inout m: Bench) raises:
+](inout m: Bench, verify: Bool) raises:
     @parameter
     @always_inline
     fn bench_iter(inout b: Bencher):
@@ -36,6 +41,8 @@ fn bench_func[
         N
     ) + "/k=" + str(N) + "/stages=" + str(stages)
     m.bench_function[bench_iter](BenchId(name))
+    if verify:
+        print("verifying dummy results...PASS")
 
 
 fn main() raises:
@@ -43,11 +50,12 @@ fn main() raises:
     alias shape_int_list = env_get_shape["shape", "1024x1024x1024"]()
     alias shape = int_list_to_tuple[shape_int_list]()
     alias stages = env_get_int["stages", 0]()
+    alias verify = env_get_bool["verify", 0]()
 
     var m = Bench(
         BenchConfig(max_iters=1, max_batch_size=1, min_warmuptime_secs=0)
     )
 
-    bench_func[dtype, shape[0], shape[1], shape[2], stages](m)
+    bench_func[dtype, shape[0], shape[1], shape[2], stages](m, verify)
 
     m.dump_report()

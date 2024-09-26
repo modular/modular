@@ -16,6 +16,8 @@ from typing import Dict, List, Set, Optional, Sequence, Tuple, Union
 import os
 import string
 import sys
+import shlex
+from enum import Enum
 import numpy as np
 import pandas as pd
 import click
@@ -92,6 +94,7 @@ class SpecInstance:
         self,
         *,
         output_file: Optional[Path] = None,
+        build_opts: List[str] = [],
         dryrun: bool = False,
         verbose: bool = False,
     ) -> Path:
@@ -108,14 +111,31 @@ class SpecInstance:
             print(f"ERROR: [{self.file}] doesn't exist!")
             return
 
-        cmd = [
-            MOJO_BINARY,
-            *list(
-                np.array([param.define() for param in self.params]).flatten()
-            ),
-            file_abs_path,
-        ]
-        cmd.extend(["-o", "%s" % (str(output_file))])
+        cmd = [MOJO_BINARY]
+        if build_opts:
+            cmd.extend(build_opts)
+        cmd.extend(
+            [
+                *list(
+                    np.array(
+                        [param.define() for param in self.params]
+                    ).flatten()
+                ),
+                file_abs_path,
+            ]
+        )
+        if not build_opts:
+            cmd.extend(["-o", "%s" % (str(output_file))])
+
+        # TODO: refactor the following into a separate function call, or invoke alias directly.
+        # mojo-clear-cache
+        # subprocess.call(
+        #     (
+        #         "rm -fr $MODULAR_DERIVED_PATH/.mojo_cache"
+        #         " $HOME/.modular/.mojo_cache"
+        #     ),
+        #     shell=True,
+        # )
 
         if verbose:
             print(f"[output_file: {output_file}")
@@ -143,6 +163,12 @@ class SpecInstance:
         for param in self.params:
             obj[param.name] = param.value
         return obj
+
+    def __str__(self) -> str:
+        tokens = [self.name]
+        for param in self.params:
+            tokens.append(f"{param.name}={param.value}")
+        return "/".join(tokens)
 
 
 @dataclass(repr=True)
@@ -190,9 +216,7 @@ class Spec:
         """
         Parse the parameters as (key,value) dictionary.
         The parameters can be defined as follows:
-        - `PARAM_NAME=PARAM_VALUE` (single value)
         - `PARAM_NAME:PARAM_VALUE` (single value)
-        - `PARAM_NAME=[PARAM_VALUE0, PARAM_VALUE1]` (Pythonic list of values)
         - `PARAM_NAME:[PARAM_VALUE0, PARAM_VALUE1]` (Pythonic list of values)
 
         Args:
@@ -202,12 +226,11 @@ class Spec:
             Spec: Dictionary of with extra param names as keys and param values.
         """
         d = {}
-        IFS = ["=", ":"]
+        IFS = ":"
         for p in param_list:
-            for sep in IFS:
-                if sep in p:
-                    name, val = p.split(sep)
-                    break
+            if IFS in p:
+                name, val = p.split(IFS)
+                break
 
             if name not in d.keys():
                 d[name] = []
@@ -425,6 +448,12 @@ params:
 """
 
 
+class KBENCH_MODE(Enum):
+    RUN = 0x1
+    TUNE = 0x2
+    BUILD = 0x4
+
+
 def _get_tmp_path(file_path):
     base = os.path.basename(file_path).split(".")[0]
     tf = tempfile.NamedTemporaryFile(prefix=str(base) + "_").name + "/"
@@ -435,7 +464,7 @@ def run(
     yaml_path_list,
     yaml_rewrite_path=None,
     output_path=None,
-    tune=False,
+    mode=KBENCH_MODE.RUN,
     param_list=None,
     filter_list=None,
     dryrun=False,
@@ -463,14 +492,17 @@ def run(
 
     output_path_list: Dict[int, Path] = {}
     spec_list: Dict[int, SpecInstance] = {}
+    elapsed_time_list: Dict[int, float] = {}
 
     # Generate a tmp path for intermediate results.
     if not tmp_path:
         tmp_path = _get_tmp_path(spec.file)
     tmp_dir = Path(tmp_path)
 
+    build_opts = ["build"] if mode == KBENCH_MODE.BUILD else []
+
     # Run the code over the mesh of param/values
-    t_start = time()
+    t_start_total = time()
     with Progress(
         *Progress.get_default_columns(),
         MofNCompleteColumn(),
@@ -490,11 +522,18 @@ def run(
             # Check for the failure here.
             try:
                 output_file = output_dir / "output.csv"
+                t_start_item = time()
+
                 s.compile(
-                    output_file=output_file, dryrun=dryrun, verbose=verbose
+                    output_file=output_file,
+                    build_opts=build_opts,
+                    dryrun=dryrun,
+                    verbose=verbose,
                 )
+                elapsed_time_list[i] = (time() - t_start_item) * 1e3
                 spec_list[i] = s
                 output_path_list[i] = output_file
+
             except Exception as e:
                 if e == KeyboardInterrupt:
                     sys.exit(0)
@@ -502,7 +541,17 @@ def run(
             # When a benchmark is completed for one combination of parameters we advance progress by 1
             progress.update(bench_progress, advance=1)
 
-    t_elapsed = time() - t_start
+    t_elapsed_total = time() - t_start_total
+    output_lines = []
+    ########################################################
+    # Elapsed time per spec
+    build_df = pd.DataFrame({"name": [str(s) for i, s in enumerate(spec)]})
+    build_df.insert(len(build_df.columns), "met (ms)", elapsed_time_list)
+    build_df.insert(len(build_df.columns), "iters", 1)
+    output_lines += [LINE]
+    output_lines += ["Build time stats:"]
+    output_lines += [build_df.to_string(index=False)]
+
     ########################################################
     # Retrieve, sort, and pick top choices
     valid_specs = []
@@ -514,11 +563,10 @@ def run(
         except:
             df = None
 
-    output_lines = []
     output_lines += [LINE]
-    output_lines += [f"Tuning [{spec.name}] from [{spec.file}]"]
+    output_lines += [f"Running [{spec.name}] from [{spec.file}]"]
     output_lines += [LINE]
-    output_lines += [f"Number of valid specs: {len(valid_specs)}"]
+    output_lines += [f"Number of valid executed specs: {len(valid_specs)}"]
 
     if valid_specs:
         merged_df = pd.concat(valid_specs, axis=0, ignore_index=True)
@@ -526,35 +574,43 @@ def run(
         # Get the name of column 2 (met (ms))
         met_col = merged_df.columns[2]
 
-        if tune:
+        if mode == KBENCH_MODE.TUNE:
             sorted_df = merged_df.sort_values([met_col], ascending=True)
             output_lines += [sorted_df.to_string(index=False)]
             # Index to top spec after sort
             top_spec_idx = sorted_df.iloc[0].mesh_idx
-            output_lines += [f"top_spec_idx: {top_spec_idx}"]
 
             output_lines += [LINE]
-            output_lines += ["Best Measured Time:"]
+            output_lines += ["Spec with the best measured time:"]
             output_lines += [LINE]
+            output_lines += [f"mesh_idx: {top_spec_idx}"]
             output_lines += [spec_list[top_spec_idx].to_obj()]
             output_lines += [LINE]
         else:
-            sorted_df = merged_df.sort_values([met_col], ascending=True)
             output_lines += [merged_df.to_string(index=False)]
             output_lines += [LINE]
         ########################################################
-        output_lines += ["Elapsed tuning time: %.1f (s)" % (t_elapsed)]
-        output_str = "\n".join([str(x) for x in output_lines])
-        print(output_str)
-        if output_path:
-            if tune:
-                with open(output_path, "w") as f:
-                    f.write(output_str + "\n")
-            else:
-                merged_df.drop(columns=["mesh_idx"]).to_csv(
-                    output_path, index=False, quoting=csv.QUOTE_NONNUMERIC
-                )
-            print(f"wrote results to [{output_path}]")
+
+    output_lines += ["Total elapsed running time: %.3f (s)" % (t_elapsed_total)]
+    output_str = "\n".join([str(x) for x in output_lines])
+    print(output_str)
+
+    if output_path:
+        # KBENCH_MODE.RUN overrides everything else and just dumps the running results.
+        # THIS IS CRITICAL FOR CI automated kernel benchmarks workflow.
+        if mode == KBENCH_MODE.RUN and valid_specs:
+            merged_df.drop(columns=["mesh_idx"]).to_csv(
+                output_path, index=False, quoting=csv.QUOTE_NONNUMERIC
+            )
+        elif mode == KBENCH_MODE.BUILD:
+            build_df.to_csv(
+                output_path, index=False, quoting=csv.QUOTE_NONNUMERIC
+            )
+        else:
+            with open(output_path, "w") as f:
+                f.write(output_str + "\n")
+
+        print(f"wrote results to [{output_path}]")
 
 
 help_str = (
@@ -594,7 +650,14 @@ help_str = (
     "tune",
     is_flag=True,
     default=False,
-    help="Tune or just run.",
+    help="Tune by running and finding the best running time.",
+)
+@click.option(
+    "--build",
+    "build",
+    is_flag=True,
+    default=False,
+    help="Just measure the build time.",
 )
 @click.option(
     "--param", default=(), help="Set extra params from CLI.", multiple=True
@@ -616,6 +679,7 @@ def cli(
     filter,
     output_path,
     tune,
+    build,
     param,
     force,
     dryrun,
@@ -624,11 +688,19 @@ def cli(
     if not verbose:
         sys.tracebacklimit = 1
 
+    mode = KBENCH_MODE.RUN
+
+    assert (build == False) or (tune == False)
+    if build:
+        mode = KBENCH_MODE.BUILD
+    elif tune:
+        mode = KBENCH_MODE.TUNE
+
     run(
         yaml_path_list=yaml_path,
         yaml_rewrite_path=yaml_rewrite_path,
         output_path=output_path,
-        tune=tune,
+        mode=mode,
         param_list=param,
         filter_list=filter,
         dryrun=dryrun,
