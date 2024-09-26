@@ -545,7 +545,9 @@ def run(
     output_lines = []
     ########################################################
     # Elapsed time per spec
-    build_df = pd.DataFrame({"name": [str(s) for i, s in enumerate(spec)]})
+    build_df = pd.DataFrame(
+        {"name": [f"build/{str(s)}" for i, s in enumerate(spec)]}
+    )
     build_df.insert(len(build_df.columns), "met (ms)", elapsed_time_list)
     build_df.insert(len(build_df.columns), "iters", 1)
     output_lines += [LINE]
