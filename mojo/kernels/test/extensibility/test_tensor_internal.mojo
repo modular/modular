@@ -21,8 +21,6 @@ fn test_serialize():
     # CHECK: True
     print(TensorSpec.from_bytes(bytes.unsafe_ptr()) == spec)
 
-    _ = bytes^
-
 
 def main():
     test_serialize()

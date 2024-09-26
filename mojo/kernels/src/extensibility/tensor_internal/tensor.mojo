@@ -1366,7 +1366,6 @@ struct Tensor[type: DType](
             data.bitcast[type](),
             spec.num_elements(),
         )
-        _ = bytes^
         return tensor
 
 
