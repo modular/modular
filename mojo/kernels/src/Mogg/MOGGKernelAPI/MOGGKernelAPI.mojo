@@ -94,8 +94,8 @@ struct Add:
         @parameter
         @always_inline
         fn func[width: Int](idx: StaticIntTuple[z.rank]) -> SIMD[z.type, width]:
-            var lhs = rebind[SIMD[z.type, width]](x.load[width](idx))
-            var rhs = rebind[SIMD[z.type, width]](y.load[width](idx))
+            var lhs = rebind[SIMD[z.type, width]](x._fused_load[width](idx))
+            var rhs = rebind[SIMD[z.type, width]](y._fused_load[width](idx))
             return lhs + rhs
 
         foreach[func, synchronous, target](z, ctx)
@@ -117,8 +117,8 @@ struct Sub:
         @parameter
         @always_inline
         fn func[width: Int](idx: StaticIntTuple[z.rank]) -> SIMD[z.type, width]:
-            var lhs = rebind[SIMD[z.type, width]](x.load[width](idx))
-            var rhs = rebind[SIMD[z.type, width]](y.load[width](idx))
+            var lhs = rebind[SIMD[z.type, width]](x._fused_load[width](idx))
+            var rhs = rebind[SIMD[z.type, width]](y._fused_load[width](idx))
             return lhs - rhs
 
         foreach[func, synchronous, target](z, ctx)
@@ -140,8 +140,8 @@ struct Mul:
         @parameter
         @always_inline
         fn func[width: Int](idx: StaticIntTuple[z.rank]) -> SIMD[z.type, width]:
-            var lhs = rebind[SIMD[z.type, width]](x.load[width](idx))
-            var rhs = rebind[SIMD[z.type, width]](y.load[width](idx))
+            var lhs = rebind[SIMD[z.type, width]](x._fused_load[width](idx))
+            var rhs = rebind[SIMD[z.type, width]](y._fused_load[width](idx))
             return lhs * rhs
 
         foreach[func, synchronous, target](z, ctx)
@@ -163,8 +163,8 @@ struct Div:
         @parameter
         @always_inline
         fn func[width: Int](idx: StaticIntTuple[z.rank]) -> SIMD[z.type, width]:
-            var lhs = rebind[SIMD[z.type, width]](x.load[width](idx))
-            var rhs = rebind[SIMD[z.type, width]](y.load[width](idx))
+            var lhs = rebind[SIMD[z.type, width]](x._fused_load[width](idx))
+            var rhs = rebind[SIMD[z.type, width]](y._fused_load[width](idx))
             return lhs / rhs
 
         foreach[func, synchronous, target](z, ctx)
@@ -186,8 +186,8 @@ struct Mod:
         @parameter
         @always_inline
         fn func[width: Int](idx: StaticIntTuple[z.rank]) -> SIMD[z.type, width]:
-            var lhs = rebind[SIMD[z.type, width]](x.load[width](idx))
-            var rhs = rebind[SIMD[z.type, width]](y.load[width](idx))
+            var lhs = rebind[SIMD[z.type, width]](x._fused_load[width](idx))
+            var rhs = rebind[SIMD[z.type, width]](y._fused_load[width](idx))
             return lhs % rhs
 
         foreach[func, synchronous, target](z, ctx)
@@ -209,8 +209,8 @@ struct Equal:
         @parameter
         @always_inline
         fn func[width: Int](idx: StaticIntTuple[z.rank]) -> SIMD[z.type, width]:
-            var lhs = rebind[SIMD[x.type, width]](x.load[width](idx))
-            var rhs = rebind[SIMD[x.type, width]](y.load[width](idx))
+            var lhs = rebind[SIMD[x.type, width]](x._fused_load[width](idx))
+            var rhs = rebind[SIMD[x.type, width]](y._fused_load[width](idx))
             return rebind[SIMD[z.type, width]](lhs == rhs)
 
         foreach[func, synchronous, target](z, ctx)
@@ -232,8 +232,8 @@ struct Greater:
         @parameter
         @always_inline
         fn func[width: Int](idx: StaticIntTuple[z.rank]) -> SIMD[z.type, width]:
-            var lhs = rebind[SIMD[x.type, width]](x.load[width](idx))
-            var rhs = rebind[SIMD[x.type, width]](y.load[width](idx))
+            var lhs = rebind[SIMD[x.type, width]](x._fused_load[width](idx))
+            var rhs = rebind[SIMD[x.type, width]](y._fused_load[width](idx))
             return rebind[SIMD[z.type, width]](lhs > rhs)
 
         foreach[func, synchronous, target](z, ctx)
@@ -255,8 +255,8 @@ struct GreaterEqual:
         @parameter
         @always_inline
         fn func[width: Int](idx: StaticIntTuple[z.rank]) -> SIMD[z.type, width]:
-            var lhs = rebind[SIMD[x.type, width]](x.load[width](idx))
-            var rhs = rebind[SIMD[x.type, width]](y.load[width](idx))
+            var lhs = rebind[SIMD[x.type, width]](x._fused_load[width](idx))
+            var rhs = rebind[SIMD[x.type, width]](y._fused_load[width](idx))
             return rebind[SIMD[z.type, width]](lhs >= rhs)
 
         foreach[func, synchronous, target](z, ctx)
@@ -278,8 +278,8 @@ struct NotEqual:
         @parameter
         @always_inline
         fn func[width: Int](idx: StaticIntTuple[z.rank]) -> SIMD[z.type, width]:
-            var lhs = rebind[SIMD[x.type, width]](x.load[width](idx))
-            var rhs = rebind[SIMD[x.type, width]](y.load[width](idx))
+            var lhs = rebind[SIMD[x.type, width]](x._fused_load[width](idx))
+            var rhs = rebind[SIMD[x.type, width]](y._fused_load[width](idx))
             return rebind[SIMD[z.type, width]](lhs != rhs)
 
         foreach[func, synchronous, target](z, ctx)
@@ -301,8 +301,8 @@ struct And:
         @parameter
         @always_inline
         fn func[width: Int](idx: StaticIntTuple[z.rank]) -> SIMD[z.type, width]:
-            var lhs = rebind[SIMD[DType.bool, width]](x.load[width](idx))
-            var rhs = rebind[SIMD[DType.bool, width]](y.load[width](idx))
+            var lhs = rebind[SIMD[DType.bool, width]](x._fused_load[width](idx))
+            var rhs = rebind[SIMD[DType.bool, width]](y._fused_load[width](idx))
             return rebind[SIMD[z.type, width]](lhs & rhs)
 
         foreach[func, synchronous, target](z, ctx)
@@ -324,8 +324,8 @@ struct Or:
         @parameter
         @always_inline
         fn func[width: Int](idx: StaticIntTuple[z.rank]) -> SIMD[z.type, width]:
-            var lhs = rebind[SIMD[DType.bool, width]](x.load[width](idx))
-            var rhs = rebind[SIMD[DType.bool, width]](y.load[width](idx))
+            var lhs = rebind[SIMD[DType.bool, width]](x._fused_load[width](idx))
+            var rhs = rebind[SIMD[DType.bool, width]](y._fused_load[width](idx))
             return rebind[SIMD[z.type, width]](lhs | rhs)
 
         foreach[func, synchronous, target](z, ctx)
@@ -347,8 +347,8 @@ struct Xor:
         @parameter
         @always_inline
         fn func[width: Int](idx: StaticIntTuple[z.rank]) -> SIMD[z.type, width]:
-            var lhs = rebind[SIMD[DType.bool, width]](x.load[width](idx))
-            var rhs = rebind[SIMD[DType.bool, width]](y.load[width](idx))
+            var lhs = rebind[SIMD[DType.bool, width]](x._fused_load[width](idx))
+            var rhs = rebind[SIMD[DType.bool, width]](y._fused_load[width](idx))
             return rebind[SIMD[z.type, width]](lhs ^ rhs)
 
         foreach[func, synchronous, target](z, ctx)
@@ -370,7 +370,7 @@ struct Pow:
         @parameter
         @always_inline
         fn func[width: Int](idx: StaticIntTuple[z.rank]) -> SIMD[z.type, width]:
-            var lhs = rebind[SIMD[z.type, width]](x.load[width](idx))
+            var lhs = rebind[SIMD[z.type, width]](x._fused_load[width](idx))
             var rhs = y.load[width](idx)
             return _pow(lhs, rhs)
 
@@ -393,8 +393,8 @@ struct Max:
         @parameter
         @always_inline
         fn func[width: Int](idx: StaticIntTuple[z.rank]) -> SIMD[z.type, width]:
-            var lhs = rebind[SIMD[z.type, width]](x.load[width](idx))
-            var rhs = rebind[SIMD[z.type, width]](y.load[width](idx))
+            var lhs = rebind[SIMD[z.type, width]](x._fused_load[width](idx))
+            var rhs = rebind[SIMD[z.type, width]](y._fused_load[width](idx))
             return max(lhs, rhs)
 
         foreach[func, synchronous, target](z, ctx)
@@ -416,8 +416,8 @@ struct Min:
         @parameter
         @always_inline
         fn func[width: Int](idx: StaticIntTuple[z.rank]) -> SIMD[z.type, width]:
-            var lhs = rebind[SIMD[z.type, width]](x.load[width](idx))
-            var rhs = rebind[SIMD[z.type, width]](y.load[width](idx))
+            var lhs = rebind[SIMD[z.type, width]](x._fused_load[width](idx))
+            var rhs = rebind[SIMD[z.type, width]](y._fused_load[width](idx))
             return min(lhs, rhs)
 
         foreach[func, synchronous, target](z, ctx)
@@ -440,7 +440,7 @@ struct Cast:
         @always_inline
         fn func[width: Int](idx: StaticIntTuple[y.rank]) -> SIMD[y.type, width]:
             return rebind[SIMD[y.type, width]](
-                x.load[width](idx).cast[y.type]()
+                x._fused_load[width](idx).cast[y.type]()
             )
 
         foreach[func, synchronous, target](y, ctx)
@@ -457,7 +457,7 @@ struct Negative:
         @parameter
         @always_inline
         fn func[width: Int](idx: StaticIntTuple[y.rank]) -> SIMD[y.type, width]:
-            return rebind[SIMD[y.type, width]](-x.load[width](idx))
+            return rebind[SIMD[y.type, width]](-x._fused_load[width](idx))
 
         foreach[func, synchronous, target](y, ctx)
 
@@ -473,7 +473,7 @@ struct ReLU:
         @parameter
         @always_inline
         fn func[width: Int](idx: StaticIntTuple[y.rank]) -> SIMD[y.type, width]:
-            return rebind[SIMD[y.type, width]](relu(x.load[width](idx)))
+            return rebind[SIMD[y.type, width]](relu(x._fused_load[width](idx)))
 
         foreach[func, synchronous, target](y, ctx)
 
@@ -489,7 +489,7 @@ struct GeLU:
         @parameter
         @always_inline
         fn func[width: Int](idx: StaticIntTuple[y.rank]) -> SIMD[y.type, width]:
-            return rebind[SIMD[y.type, width]](gelu(x.load[width](idx)))
+            return rebind[SIMD[y.type, width]](gelu(x._fused_load[width](idx)))
 
         foreach[func, synchronous, target](y, ctx)
 
@@ -505,7 +505,7 @@ struct Ceil:
         @parameter
         @always_inline
         fn func[width: Int](idx: StaticIntTuple[y.rank]) -> SIMD[y.type, width]:
-            return rebind[SIMD[y.type, width]](ceil(x.load[width](idx)))
+            return rebind[SIMD[y.type, width]](ceil(x._fused_load[width](idx)))
 
         foreach[func, synchronous, target](y, ctx)
 
@@ -521,7 +521,7 @@ struct Floor:
         @parameter
         @always_inline
         fn func[width: Int](idx: StaticIntTuple[y.rank]) -> SIMD[y.type, width]:
-            return rebind[SIMD[y.type, width]](floor(x.load[width](idx)))
+            return rebind[SIMD[y.type, width]](floor(x._fused_load[width](idx)))
 
         foreach[func, synchronous, target](y, ctx)
 
@@ -537,7 +537,7 @@ struct Tanh:
         @parameter
         @always_inline
         fn func[width: Int](idx: StaticIntTuple[y.rank]) -> SIMD[y.type, width]:
-            return rebind[SIMD[y.type, width]](tanh(x.load[width](idx)))
+            return rebind[SIMD[y.type, width]](tanh(x._fused_load[width](idx)))
 
         foreach[func, synchronous, target](y, ctx)
 
@@ -553,7 +553,7 @@ struct Cos:
         @parameter
         @always_inline
         fn func[width: Int](idx: StaticIntTuple[y.rank]) -> SIMD[y.type, width]:
-            return rebind[SIMD[y.type, width]](cos(x.load[width](idx)))
+            return rebind[SIMD[y.type, width]](cos(x._fused_load[width](idx)))
 
         foreach[func, synchronous, target](y, ctx)
 
@@ -569,7 +569,7 @@ struct Sin:
         @parameter
         @always_inline
         fn func[width: Int](idx: StaticIntTuple[y.rank]) -> SIMD[y.type, width]:
-            return rebind[SIMD[y.type, width]](sin(x.load[width](idx)))
+            return rebind[SIMD[y.type, width]](sin(x._fused_load[width](idx)))
 
         foreach[func, synchronous, target](y, ctx)
 
@@ -585,7 +585,7 @@ struct Erf:
         @parameter
         @always_inline
         fn func[width: Int](idx: StaticIntTuple[y.rank]) -> SIMD[y.type, width]:
-            return rebind[SIMD[y.type, width]](erf(x.load[width](idx)))
+            return rebind[SIMD[y.type, width]](erf(x._fused_load[width](idx)))
 
         foreach[func, synchronous, target](y, ctx)
 
@@ -601,7 +601,7 @@ struct Exp:
         @parameter
         @always_inline
         fn func[width: Int](idx: StaticIntTuple[y.rank]) -> SIMD[y.type, width]:
-            return rebind[SIMD[y.type, width]](exp(x.load[width](idx)))
+            return rebind[SIMD[y.type, width]](exp(x._fused_load[width](idx)))
 
         foreach[func, synchronous, target](y, ctx)
 
@@ -617,7 +617,7 @@ struct Round:
         @parameter
         @always_inline
         fn func[width: Int](idx: StaticIntTuple[y.rank]) -> SIMD[y.type, width]:
-            return rebind[SIMD[y.type, width]](round(x.load[width](idx)))
+            return rebind[SIMD[y.type, width]](round(x._fused_load[width](idx)))
 
         foreach[func, synchronous, target](y, ctx)
 
@@ -633,7 +633,9 @@ struct RoundEven:
         @parameter
         @always_inline
         fn func[width: Int](idx: StaticIntTuple[y.rank]) -> SIMD[y.type, width]:
-            return rebind[SIMD[y.type, width]](x.load[width](idx).roundeven())
+            return rebind[SIMD[y.type, width]](
+                x._fused_load[width](idx).roundeven()
+            )
 
         foreach[func, synchronous, target](y, ctx)
 
@@ -649,7 +651,7 @@ struct Sqrt:
         @parameter
         @always_inline
         fn func[width: Int](idx: StaticIntTuple[y.rank]) -> SIMD[y.type, width]:
-            return rebind[SIMD[y.type, width]](sqrt(x.load[width](idx)))
+            return rebind[SIMD[y.type, width]](sqrt(x._fused_load[width](idx)))
 
         foreach[func, synchronous, target](y, ctx)
 
@@ -665,7 +667,7 @@ struct Isqrt:
         @parameter
         @always_inline
         fn func[width: Int](idx: StaticIntTuple[y.rank]) -> SIMD[y.type, width]:
-            return rebind[SIMD[y.type, width]](isqrt(x.load[width](idx)))
+            return rebind[SIMD[y.type, width]](isqrt(x._fused_load[width](idx)))
 
         foreach[func, synchronous, target](y, ctx)
 
@@ -689,9 +691,13 @@ struct Select:
         fn func[
             width: Int
         ](idx: StaticIntTuple[out.rank]) -> SIMD[out.type, width]:
-            var cond = condition.load[width](idx)
-            var tc = rebind[SIMD[out.type, width]](true_case.load[width](idx))
-            var fc = rebind[SIMD[out.type, width]](false_case.load[width](idx))
+            var cond = condition._fused_load[width](idx)
+            var tc = rebind[SIMD[out.type, width]](
+                true_case._fused_load[width](idx)
+            )
+            var fc = rebind[SIMD[out.type, width]](
+                false_case._fused_load[width](idx)
+            )
             return cond.select(tc, fc)
 
         foreach[func, synchronous, target](out, ctx)
@@ -708,7 +714,7 @@ struct Trunc:
         @parameter
         @always_inline
         fn func[width: Int](idx: StaticIntTuple[y.rank]) -> SIMD[y.type, width]:
-            var val = x.load[width](idx)
+            var val = x._fused_load[width](idx)
             return rebind[SIMD[y.type, width]](
                 llvm_intrinsic[
                     "llvm.trunc", __type_of(val), has_side_effect=False
@@ -729,7 +735,7 @@ struct Log:
         @parameter
         @always_inline
         fn func[width: Int](idx: StaticIntTuple[y.rank]) -> SIMD[y.type, width]:
-            return rebind[SIMD[y.type, width]](log(x.load[width](idx)))
+            return rebind[SIMD[y.type, width]](log(x._fused_load[width](idx)))
 
         foreach[func, synchronous, target](y, ctx)
 
@@ -745,7 +751,7 @@ struct Log1p:
         @parameter
         @always_inline
         fn func[width: Int](idx: StaticIntTuple[y.rank]) -> SIMD[y.type, width]:
-            return rebind[SIMD[y.type, width]](log1p(x.load[width](idx)))
+            return rebind[SIMD[y.type, width]](log1p(x._fused_load[width](idx)))
 
         foreach[func, synchronous, target](y, ctx)
 
@@ -761,7 +767,7 @@ struct IsNan:
         @parameter
         @always_inline
         fn func[width: Int](idx: StaticIntTuple[y.rank]) -> SIMD[y.type, width]:
-            return rebind[SIMD[y.type, width]](isnan(x.load[width](idx)))
+            return rebind[SIMD[y.type, width]](isnan(x._fused_load[width](idx)))
 
         foreach[func, synchronous, target](y, ctx)
 
@@ -777,7 +783,7 @@ struct IsInf:
         @parameter
         @always_inline
         fn func[width: Int](idx: StaticIntTuple[y.rank]) -> SIMD[y.type, width]:
-            return rebind[SIMD[y.type, width]](isinf(x.load[width](idx)))
+            return rebind[SIMD[y.type, width]](isinf(x._fused_load[width](idx)))
 
         foreach[func, synchronous, target](y, ctx)
 
@@ -793,7 +799,7 @@ struct Not:
         @parameter
         @always_inline
         fn func[width: Int](idx: StaticIntTuple[y.rank]) -> SIMD[y.type, width]:
-            var val = rebind[SIMD[DType.bool, width]](x.load[width](idx))
+            var val = rebind[SIMD[DType.bool, width]](x._fused_load[width](idx))
             return rebind[SIMD[y.type, width]](~val)
 
         foreach[func, synchronous, target](y, ctx)
@@ -810,7 +816,7 @@ struct Abs:
         @parameter
         @always_inline
         fn func[width: Int](idx: StaticIntTuple[y.rank]) -> SIMD[y.type, width]:
-            return rebind[SIMD[y.type, width]](abs(x.load[width](idx)))
+            return rebind[SIMD[y.type, width]](abs(x._fused_load[width](idx)))
 
         foreach[func, synchronous, target](y, ctx)
 

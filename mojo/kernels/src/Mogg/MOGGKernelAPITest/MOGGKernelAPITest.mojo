@@ -239,9 +239,9 @@ struct AddElementwise:
         @parameter
         @always_inline
         fn func[width: Int](idx: StaticIntTuple[z.rank]) -> SIMD[z.type, width]:
-            return rebind[SIMD[z.type, width]](x.load[width](idx)) + rebind[
-                SIMD[z.type, width]
-            ](y.load[width](idx))
+            return rebind[SIMD[z.type, width]](
+                x._fused_load[width](idx)
+            ) + rebind[SIMD[z.type, width]](y._fused_load[width](idx))
 
         foreach[func](z)
 
@@ -275,7 +275,7 @@ struct MatmulFuseOut:
         fn out_func[
             type: DType, width: Int, *, alignment: Int = 1
         ](idx: StaticIntTuple[2], val: SIMD[type, width]):
-            c.store(idx, rebind[SIMD[c.type, width]](val))
+            c._fused_store(idx, rebind[SIMD[c.type, width]](val))
 
         _matmul[
             False,
