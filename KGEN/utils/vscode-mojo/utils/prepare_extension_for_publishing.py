@@ -45,9 +45,13 @@ def main():
     nightly = not stable
 
     if stable:
-        # Overwrite the icon with the stable icon.
         shutil.copy(
-            extension_dir / "stable-icon.png",
+            extension_dir / "icon-stable.png",
+            extension_dir / "icon.png",
+        )
+    else:
+        shutil.copy(
+            extension_dir / "icon-nightly.png",
             extension_dir / "icon.png",
         )
 
