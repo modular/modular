@@ -66,7 +66,7 @@ fn test_convert[src_type: DType, dst_type: DType](ctx: DeviceContext) raises:
     for i in range(size):
         assert_equal(host_ptr[i], i)
 
-    _ = device_buf
+    _ = device_buf^
     host_ptr.free()
 
 

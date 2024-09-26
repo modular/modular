@@ -64,7 +64,7 @@ def test_constant_mem(ctx: DeviceContext):
     for i in range(16):
         assert_equal(res_host_ptr[i], i)
 
-    _ = res_device
+    _ = res_device^
     res_host_ptr.free()
 
 
@@ -104,7 +104,7 @@ def test_constant_mem_via_func(ctx: DeviceContext):
     for i in range(16):
         assert_equal(res_host_ptr[i], i)
 
-    _ = res_device
+    _ = res_device^
     res_host_ptr.free()
 
 
@@ -156,7 +156,7 @@ def test_external_constant_mem(ctx: DeviceContext):
     for i in range(16):
         assert_equal(res_host_ptr[i], i)
 
-    _ = res_device
+    _ = res_device^
     res_host_ptr.free()
 
 

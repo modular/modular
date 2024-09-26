@@ -34,7 +34,7 @@ def test_with_cache_mode[cache_mode: CacheMode](ctx: DeviceContext):
             buff_host_ptr[i], i, msg="invalid value at index=" + str(i)
         )
 
-    _ = buff_dev
+    _ = buff_dev^
     buff_host_ptr.free()
 
 
