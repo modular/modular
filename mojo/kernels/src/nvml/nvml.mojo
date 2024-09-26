@@ -410,7 +410,6 @@ struct Device(Formattable):
                 ) -> Result,
             ]()(self.device, UnsafePointer.address_of(num_clocks), clocks.data)
         )
-        _ = num_clocks
 
         var res = List[Int, hint_trivial_type=True](capacity=len(clocks))
         for clock in clocks:
@@ -463,7 +462,6 @@ struct Device(Formattable):
                 clocks.data,
             )
         )
-        _ = num_clocks
 
         var res = List[Int, hint_trivial_type=True](capacity=len(clocks))
         for clock in clocks:
@@ -497,7 +495,6 @@ struct Device(Formattable):
                 UnsafePointer.address_of(default_is_enabled),
             )
         )
-        _ = default_is_enabled
         return is_enabled == _EnableState.ENABLED
 
     fn set_gpu_turbo(self, enabled: Bool = True) raises:
