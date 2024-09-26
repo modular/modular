@@ -65,8 +65,7 @@ struct AsyncContext:
     @staticmethod
     fn complete(ch: Chain):
         var tmp = ch
-        _async_complete(UnsafePointer[Chain].address_of(tmp))
-        _ = tmp
+        _async_complete(UnsafePointer.address_of(tmp))
 
 
 # ===----------------------------------------------------------------------===#
@@ -239,8 +238,7 @@ struct Task[type: AnyType, lifetimes: LifetimeSet]:
         called when a task goes out of scope.
         """
         var ctx = self._handle._get_ctx[AsyncContext]()
-        var chainPtr: UnsafePointer[Chain] = AsyncContext.get_chain(ctx)
-        _del_asyncrt_chain(chainPtr)
+        _del_asyncrt_chain(AsyncContext.get_chain(ctx))
         _ = self._handle^
 
     @always_inline
