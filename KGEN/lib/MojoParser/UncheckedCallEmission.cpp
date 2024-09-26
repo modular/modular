@@ -258,7 +258,7 @@ AnyValue CallEmitter::emitOneArgVal(ASTExprAnd<AnyValue> operand,
     return emitter.emitRValue(operand, EC_CallArgValue, expectedType);
 
   case ArgConvention::Ref:
-  case ArgConvention::ImmRef: {
+  case ArgConvention::MutRef: {
     // If we're in a parameter context, just leave it alone - param call
     // emission will handle it.
     if (!emitter.builder) {
@@ -858,7 +858,7 @@ Value CallEmitter::emitPreemittedArgumentAsDynamicValue(
     return result;
   }
   case ArgConvention::Ref:
-  case ArgConvention::ImmRef:
+  case ArgConvention::MutRef:
     assert(argValAndExpr.ir.isMValue() &&
            "Ref args are already emitted to boxes during overload resolution");
     return argValAndExpr.ir.getMValueReference();

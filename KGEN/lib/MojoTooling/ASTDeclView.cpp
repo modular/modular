@@ -818,7 +818,7 @@ void FunctionDeclView::initFromSignature(MojoASTDeclRef declRef,
         convention == ArgConvention::InitSelf)
       declConvention = ArgumentDeclView::Convention::kInOut;
     else if (convention == ArgConvention::Ref ||
-             convention == ArgConvention::ImmRef) {
+             convention == ArgConvention::MutRef) {
       declConvention = ArgumentDeclView::Convention::kRef;
       prefix = getRefPrefixAsString(cast<RefType>(type), signature);
     } else if (convention == ArgConvention::OwnedInMem ||

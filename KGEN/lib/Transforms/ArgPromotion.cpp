@@ -212,13 +212,11 @@ static std::pair<bool, bool> getInOutFlags(ArgConvention conv) {
   // 'borrowed' and 'owned' arguments convey no side-effects to callees.
   case ArgConvention::BorrowedInMem:
   case ArgConvention::OwnedInMem:
-  case ArgConvention::ImmRef:
     return {true, false};
 
   // 'inout' can read and write. Pessimistically treat 'ref' as 'inout'.
-  // TODO(MOCO-914): 'ref' arguments could be mutable references, but we
-  // don't have the information in the IR anymore.
   case ArgConvention::InOut:
+  case ArgConvention::MutRef:
   case ArgConvention::Ref:
     return {true, true};
 

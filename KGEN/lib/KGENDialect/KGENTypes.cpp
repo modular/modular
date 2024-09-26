@@ -40,7 +40,7 @@ const char *KGEN::getUserSyntax(ArgConvention convention) {
     return "inout";
   case ArgConvention::Ref:
     return "ref";
-  case ArgConvention::ImmRef:
+  case ArgConvention::MutRef:
     return "ref";
   case ArgConvention::ByRefResult:
   case ArgConvention::InitSelf:
@@ -245,7 +245,7 @@ bool SignatureType::hasAddress(ArgConvention conv) {
   case ArgConvention::BorrowedInReg:
     return false;
   case ArgConvention::Ref:
-  case ArgConvention::ImmRef:
+  case ArgConvention::MutRef:
     // The conventions above differ from hasImplicitLifetime.
   case ArgConvention::OwnedInMem:
   case ArgConvention::BorrowedInMem:
@@ -263,7 +263,7 @@ bool SignatureType::hasAddress(ArgConvention conv) {
 bool SignatureType::hasImplicitLifetime(ArgConvention conv) {
   switch (conv) {
   case ArgConvention::Ref:
-  case ArgConvention::ImmRef:
+  case ArgConvention::MutRef:
   // The conventions above differ from hasAddress.
   case ArgConvention::OwnedInReg:
   case ArgConvention::BorrowedInReg:

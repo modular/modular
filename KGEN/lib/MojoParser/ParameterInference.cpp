@@ -676,7 +676,7 @@ ParameterInferenceState::inferOneOperand(ASTExprAnd<AnyValue> operand,
   }
 
   case ArgConvention::Ref:
-  case ArgConvention::ImmRef: {
+  case ArgConvention::MutRef: {
     // Infer the lifetime and address space before inferring the element type.
     CValue argVal = resolveOperandCValue();
     if (!argVal)

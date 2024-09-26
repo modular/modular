@@ -1014,8 +1014,8 @@ static void typeCheckOneArgument(size_t idx, ASTType selfType, bool isDef,
         processLifetimeSpecifier(arg.refLifetimeExpr, type, arg.name,
                                  tcSignature.paramList, /*isResult=*/false);
     type = refType;
-    if (refType.isMutableKnown(false))
-      arg.kgenConvention = ArgConvention::ImmRef;
+    if (refType.isMutableKnown(true))
+      arg.kgenConvention = ArgConvention::MutRef;
     else
       arg.kgenConvention = ArgConvention::Ref;
 
@@ -1178,7 +1178,7 @@ static void typeCheckOneArgument(size_t idx, ASTType selfType, bool isDef,
   case ArgConvention::OwnedInMem:
   case ArgConvention::BorrowedInMem:
   case ArgConvention::Ref:
-  case ArgConvention::ImmRef:
+  case ArgConvention::MutRef:
     argIRValue = CValue::getMValueForRef(bbArg);
     break;
   case ArgConvention::OwnedInReg:
@@ -1289,7 +1289,7 @@ static void typeCheckResult(ParsedArgument resultArg, bool isDef,
       // won't have a lifetime, and `ref` args are not lowered by-reg.
       if (!SignatureType::hasAddress(parsedArg.kgenConvention) ||
           parsedArg.kgenConvention == ArgConvention::Ref ||
-          parsedArg.kgenConvention == ArgConvention::ImmRef)
+          parsedArg.kgenConvention == ArgConvention::MutRef)
         continue;
 
       // The argument is only a potential problem if it is generic that might
