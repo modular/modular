@@ -562,7 +562,10 @@ fn _matmul_cpu_impl[
         alias alignment = alignof[SIMD[c.type, simd_size]]()
         var kh = align_up(k, 8)
         var mh = align_up(m, 2)
-        var a_packed_ptr = UnsafePointer[Scalar[a.type]]()
+        var a_packed_ptr = UnsafePointer[
+            Scalar[a.type],
+            alignment=alignment,
+        ]()
         if use_i8mm:
             a_packed_ptr = UnsafePointer[
                 Scalar[a.type],
