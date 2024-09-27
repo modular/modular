@@ -65,6 +65,7 @@ struct Info:
 
 alias _EMISSION_KIND_ASM = 0
 alias _EMISSION_KIND_LLVM = 1
+alias _EMISSION_KIND_LLVM_OPT = 2
 
 
 fn _noop_populate(ptr: UnsafePointer[NoneType]) capturing:
@@ -178,6 +179,25 @@ fn compile_info[
                 func_type,
                 func,
                 emission_kind=_EMISSION_KIND_LLVM,
+                target=target,
+            ]()
+
+    @parameter
+    if emission_kind == "llvm-opt":
+
+        @parameter
+        if is_failable:
+            return _compile_info_failable_impl[
+                func_type,
+                func,
+                emission_kind=_EMISSION_KIND_LLVM_OPT,
+                target=target,
+            ]()
+        else:
+            return _compile_info_non_failable_impl[
+                func_type,
+                func,
+                emission_kind=_EMISSION_KIND_LLVM_OPT,
                 target=target,
             ]()
 
