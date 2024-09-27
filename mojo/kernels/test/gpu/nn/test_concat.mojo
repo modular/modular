@@ -17,7 +17,7 @@ from gpu.host.sync import synchronize
 from memory import UnsafePointer
 from nn.concat import _concat_gpu, _concat_inner_most_single_dim
 
-from utils import StaticTuple
+from utils import StaticTuple, StaticIntTuple
 
 
 fn _create_buffer_host[
@@ -98,9 +98,24 @@ fn test_concat_4_inputs_rank5(ctx: DeviceContext) raises:
 
     alias B_SIZE = 32
 
+    @parameter
+    @always_inline
+    @__copy_capture(output_device_ref)
+    fn epilogue_plus_one[
+        c_type: DType, _rank: Int, width: Int, *, alignment: Int
+    ](indices: StaticIntTuple[_rank], val: SIMD[c_type, width]):
+        output_device_ref.store[width=width](
+            rebind[StaticIntTuple[rank]](indices),
+            rebind[SIMD[dtype, width]](val + 1),
+        )
+
     var func = ctx.compile_function[
         _concat_inner_most_single_dim[
-            rank=rank, type=dtype, num_inputs=4, block_size=B_SIZE
+            rank=rank,
+            type=dtype,
+            num_inputs=4,
+            block_size=B_SIZE,
+            epilogue_fn=epilogue_plus_one,
         ]
     ]()
 
@@ -148,16 +163,16 @@ fn test_concat_4_inputs_rank5(ctx: DeviceContext) raises:
                     for l in range(d3):
                         var not_match_0 = output_host[
                             i, j, k, l, 0
-                        ] != input_0_host[i, j, k, l, 0]
+                        ] != input_0_host[i, j, k, l, 0] + 1
                         var not_match_1 = output_host[
                             i, j, k, l, 1
-                        ] != input_1_host[i, j, k, l, 0]
+                        ] != input_1_host[i, j, k, l, 0] + 1
                         var not_match_2 = output_host[
                             i, j, k, l, 2
-                        ] != input_2_host[i, j, k, l, 0]
+                        ] != input_2_host[i, j, k, l, 0] + 1
                         var not_match_3 = output_host[
                             i, j, k, l, 3
-                        ] != input_3_host[i, j, k, l, 0]
+                        ] != input_3_host[i, j, k, l, 0] + 1
                         if (
                             not_match_0
                             or not_match_1
@@ -184,7 +199,7 @@ fn test_concat_4_inputs_rank5(ctx: DeviceContext) raises:
     @parameter
     fn run_concat_gpu(ctx: DeviceContext) raises:
         # uses default stream
-        _concat_gpu(
+        _concat_gpu[epilogue_fn=epilogue_plus_one](
             output_device_ref,
             4,
             StaticTuple[NDBuffer[dtype, rank], 4](
