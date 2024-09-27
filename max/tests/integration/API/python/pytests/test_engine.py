@@ -524,7 +524,7 @@ def test_stats_report(
     session.load(relu_torchscript_model_path, input_specs=input_specs)
     sr = session.stats_report
     assert isinstance(sr, dict)
-    assert sr["fallbacks"] == []
+    assert sr["fallbacks"] == {}
     assert sr["total_op_count"] == 1
 
 
