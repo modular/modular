@@ -4,6 +4,7 @@
 //
 //===----------------------------------------------------------------------===//
 
+import { realpathSync } from 'fs';
 import * as path from 'path';
 import * as vscode from 'vscode';
 
@@ -97,6 +98,10 @@ export async function readFile(path: string): Promise<Optional<string>> {
   } catch {
     return undefined;
   }
+}
+
+export function realpath(path: string) {
+  return realpathSync(path);
 }
 
 export async function moveUpUntil(
