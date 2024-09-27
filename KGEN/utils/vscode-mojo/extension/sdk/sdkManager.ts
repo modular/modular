@@ -18,6 +18,7 @@ import {
   getAllOpenMojoFiles,
   moveUpUntil,
   readFile,
+  realpath,
 } from '../utils/files';
 import { MojoSDKVersion } from './sdkVersion';
 import { findMagicSDKSpec } from './magicSdk';
@@ -129,10 +130,8 @@ export class MojoSDKManager extends DisposableContext {
     this.pushSubscription(
       vscode.workspace.onDidChangeWorkspaceFolders(
         (e: vscode.WorkspaceFoldersChangeEvent) => {
-          if (this.initialized) {
-            for (const added of e.added) {
-              this.onPathSeenAfterInitialization(added.uri.fsPath);
-            }
+          for (const added of e.added) {
+            this.onPathSeenAfterInitialization(added.uri.fsPath);
           }
         }
       )
@@ -158,6 +157,12 @@ export class MojoSDKManager extends DisposableContext {
   }
 
   private async onPathSeenAfterInitialization(path: string): Promise<void> {
+    if (
+      !this.initialized ||
+      !(path.endsWith('.🔥') || path.endsWith('.mojo'))
+    ) {
+      return;
+    }
     const specResult = await this.findDevSDKSpecFromSubPath(path);
     if (specResult !== undefined && specResult.isNew) {
       const result = await vscode.window.showInformationMessage(
@@ -470,7 +475,7 @@ export class MojoSDKManager extends DisposableContext {
       if (!bazelContents.includes('workspace(name = "modular")')) {
         return undefined;
       }
-      const modularHomePath = path.join(repoRoot, '.derived');
+      const modularHomePath = realpath(path.join(repoRoot, '.derived'));
       const spec: MojoSDKSpec = {
         kind: 'dev',
         modularHomePath,
