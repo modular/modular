@@ -339,23 +339,33 @@ static ErrorOr<CrossDeviceFunction> compileElaboratorAsm(
   if (failed(pm.run(*module)))
     return Error("failed to run the pass manager");
   auto [capturesFunc, numCaptures] = writeCaptureArgs(*module, name);
-  LLVMModuleAndContext llvmModule;
-  if (auto err = llvmModule.create([&](llvm::LLVMContext &ctx) {
-        return compiler->lowerAllFuncsToLLVM(ctx, *module);
-      }))
-    return err.takeError();
 
+  // Prepare a buffer to write string output to.
   SmallVector<char> buf;
   buf.reserve(256 * 128); // 32 KB
   llvm::raw_svector_ostream os(buf);
-  if (emissionKind == EmitAs::LLVM) {
+
+  // Emit the module in the requested form.
+  switch (emissionKind) {
+  case EmitAs::LLVM: {
+    LLVMModuleAndContext llvmModule;
+    if (auto err = llvmModule.create([&](llvm::LLVMContext &ctx) {
+          return compiler->lowerAllFuncsToLLVM(ctx, *module);
+        }))
+      return err.takeError();
     llvmModule->print(os, nullptr);
-  } else {
-    AsyncRT::Runtime &runtime =
-        *loadContext(pm.getContext())->get<AsyncRT::Runtime>();
-    if (failed(compileLLVMToAssembly(std::move(llvmModule), *tm, os, options,
-                                     runtime)))
-      return Error("failed to emit assembly");
+    break;
+  }
+
+  case EmitAs::LLVM_OPT:
+    if (ErrorOrSuccess err = compiler->emitLLVMIR(*module, os))
+      return err.takeError();
+    break;
+
+  case EmitAs::ASM:
+    if (ErrorOrSuccess err = compiler->emitAssembly(*module, os))
+      return err.takeError();
+    break;
   }
 
   return CrossDeviceFunction{
