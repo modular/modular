@@ -198,11 +198,9 @@ PValue OverloadSet::filterOverloadSetForParamBindings(
   SmallVector<OverloadFitness> evaluations;
   bool anyValid = false;
   for (ASTDecl *candidate : fnDecls) {
-    auto func = cast<LIT::FuncOp>(*candidate);
-    LITSignatureType sig = func.getFullSignature();
-    evaluations.push_back(OverloadFitness::evaluate(
-        sig.getParamTypes(), sig.getParamListAttrs(), *this,
-        /*allowImplicitConversions=*/true));
+    evaluations.push_back(
+        OverloadFitness::evaluate(candidate, *this, baseValue.ir.getIfPValue(),
+                                  /*allowImplicitConversions=*/true));
     anyValid |= evaluations.back().isValid();
   }
 
@@ -298,9 +296,11 @@ PValue OverloadSet::filterOverloadSet(CallOperands &operands,
       operandsToUse = &scratchOperands;
     }
 
-    evaluations.push_back(
-        OverloadFitness::evaluate(func.getFullSignature(), candidate, *this,
-                                  *operandsToUse, allowImplicitConversions));
+    auto desiredSignature = func.getFullSignature();
+
+    evaluations.push_back(OverloadFitness::evaluate(desiredSignature, candidate,
+                                                    *this, *operandsToUse,
+                                                    allowImplicitConversions));
     anyValid |= evaluations.back().isValid();
   }
 

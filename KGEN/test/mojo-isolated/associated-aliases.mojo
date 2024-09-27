@@ -5,12 +5,12 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %parse-mojo-isolated -split-input-file %s | FileCheck %s
 
-# CHECK-DAG: #[[ExplicitStructWithAliasMethod_ATrait_VTable:.*]] = #kgen.type<!ExplicitStructWithAliasMethod, {"T" : !ATrait = #[[Int_ATrait_VTable:[a-zA-Z_]+]]
-# CHECK-DAG: #[[Int_ATrait_VTable]] = #kgen.type<index,
-# CHECK-DAG: #[[ImplicitStructWithAliasMethod_ATrait_VTable:.*]] = #kgen.type<!ImplicitStructWithAliasMethod, {"T" : !ATrait = #[[Int_ATrait_VTable]]
-# CHECK-DAG: #[[StructWithMatchingAlias_ATrait_VTable:.*]] = #kgen.type<!StructWithMatchingAlias, {"N" : !Int = {42}, {{.*}} : !TraitWithAlias
-# CHECK-DAG: #[[GenericStructWithAliasMethod_ATrait_VTable:.*]] = #kgen.type<@"associated-aliases"::@GenericStructWithAliasMethod<:!ATrait #[[Int_ATrait_VTable]]>, {"T" : !ATrait = #[[Int_ATrait_VTable]], "bork" : !lit.signature<[2]("self": {{.*}}, "__result__": !lit.ref<@"associated-aliases"::@SIMD<:!ATrait #[[Int_ATrait_VTable]]>, mut *[0,1]> byref_result
-
+# CHECK-DAG: #[[Int_VTable:.*]] = #kgen.type<index,{{.*}} : !ATrait
+# CHECK-DAG: #[[ExplicitStructWithAliasMethod_VTable:.*]] = #kgen.type<!ExplicitStructWithAliasMethod, {"T" : !ATrait = #[[Int_VTable]]{{.*}} : !TraitWithAliasMethod
+# CHECK-DAG: #[[ImplicitStructWithAliasMethod_VTable:.*]] = #kgen.type<!ImplicitStructWithAliasMethod, {"T" : !ATrait = #[[Int_VTable]]{{.*}} : !TraitWithAliasMethod
+# CHECK-DAG: #[[GenericStructWithAliasMethod_VTable:.*]] = #kgen.type<@"associated-aliases"::@GenericStructWithAliasMethod<:!ATrait #[[Int_VTable]]>, {"T" : !ATrait = #[[Int_VTable]], "bork" : !lit.signature<[2]("self": {{.*}}, "__result__": !lit.ref<@"associated-aliases"::@SIMD<:!ATrait #[[Int_VTable]]>, mut *[0,1]> byref_result{{.*}} : !TraitWithAliasMethod
+# CHECK-DAG: #[[StructWithMatchingAlias_VTable:.*]] = #kgen.type<!StructWithMatchingAlias, {"N" : !Int = {42}, {{.*}} : !TraitWithAlias
+# CHECK-DAG: #[[StructWithAliasArgMethod_VTable:.*]] = #kgen.type<!StructWithAliasArgMethod,{{.*}}"lork" : !lit.signature<{{.*}}"thing": !lit.ref<@"associated-aliases"::@SIMD<:!ATrait #type_value>{{.*}}> = @"associated-aliases"::@StructWithAliasArgMethod::@"lork({{.*}}SIMD[__mlir_type.index])",{{.*}}> : !TraitWithAliasArgMethod
 
 alias int = __mlir_type.index
 
@@ -27,7 +27,6 @@ struct StructWithMatchingAlias(TraitWithAlias):
     fn __init__(inout self):
         pass
 
-
 # CHECK-LABEL: getNFromTraitWithAlias
 fn getNFromTraitWithAlias[T: TraitWithAlias](t: T) -> Int:
     # CHECK-NEXT: lit.alias.decl [[X:.*]]: !Int = <get_type_method(:!TraitWithAlias T, "N")>
@@ -39,7 +38,7 @@ fn getNFromTraitWithAlias[T: TraitWithAlias](t: T) -> Int:
 # CHECK-LABEL: testTraitWithAliasAndStructWithMatchingAlias
 @export
 fn testTraitWithAliasAndStructWithMatchingAlias():
-    # CHECK: {{.*}} = lit.call @"associated-aliases"::@"getNFromTraitWithAlias{{.*}}<:!TraitWithAlias #[[StructWithMatchingAlias_ATrait_VTable]]>(%1)
+    # CHECK: {{.*}} = lit.call @"associated-aliases"::@"getNFromTraitWithAlias{{.*}}<:!TraitWithAlias #[[StructWithMatchingAlias_VTable]]>(%1)
     _ = getNFromTraitWithAlias(StructWithMatchingAlias())
 
 
@@ -72,7 +71,7 @@ fn receiveTraitWithAliasMethod[X: TraitWithAliasMethod](t: X):
 
 # CHECK-LABEL: lit.func @"testUpcastingExplicitStructWithAliasMethod
 fn testUpcastingExplicitStructWithAliasMethod():
-    # CHECK:       {{.*}}lit.call @"associated-aliases"::@"receiveTraitWithAliasMethod{{.*}}<:!TraitWithAliasMethod #[[ExplicitStructWithAliasMethod_ATrait_VTable]]>
+    # CHECK:       {{.*}}lit.call @"associated-aliases"::@"receiveTraitWithAliasMethod{{.*}}<:!TraitWithAliasMethod #[[ExplicitStructWithAliasMethod_VTable]]>
     receiveTraitWithAliasMethod(ExplicitStructWithAliasMethod())
 
 
@@ -86,7 +85,7 @@ struct ImplicitStructWithAliasMethod:
 
 # CHECK-LABEL: lit.func @"testUpcastingImplicitStructWithAliasMethod
 fn testUpcastingImplicitStructWithAliasMethod():
-    # CHECK: {{.*}}lit.call @"associated-aliases"::@"receiveTraitWithAliasMethod{{.*}}<:!TraitWithAliasMethod #[[ImplicitStructWithAliasMethod_ATrait_VTable]]>
+    # CHECK: {{.*}}lit.call @"associated-aliases"::@"receiveTraitWithAliasMethod{{.*}}<:!TraitWithAliasMethod #[[ImplicitStructWithAliasMethod_VTable]]>
     receiveTraitWithAliasMethod(ImplicitStructWithAliasMethod())
 
 
@@ -105,27 +104,43 @@ struct GenericStructWithAliasMethod[Z: ATrait](TraitWithAliasMethod):
     fn bork(self) -> SIMD[Z]:
         return SIMD[Z]()
 
-
 # CHECK-LABEL: lit.func @"testUpcastingGenericStructWithAliasMethod
 fn testUpcastingGenericStructWithAliasMethod():
-    # CHECK: {{.*}}lit.call @"associated-aliases"::@"receiveTraitWithAliasMethod{{.*}}<:!TraitWithAliasMethod #[[GenericStructWithAliasMethod_ATrait_VTable]]>
+    # CHECK: {{.*}}lit.call @"associated-aliases"::@"receiveTraitWithAliasMethod{{.*}}<:!TraitWithAliasMethod #[[GenericStructWithAliasMethod_VTable]]>
     receiveTraitWithAliasMethod(GenericStructWithAliasMethod[int]())
 
-# TODO(MOCO-1143): Make arguments work, like this:
-# trait DType:
-#     pass
-# @value
-# struct SIMD[T: DType]:
-#     pass
-# trait TraitWithAliasMethod:
-#     alias T: DType
-#     fn bork(self, thing: SIMD[T]) -> SIMD[T]:
-#         ...
-# @value
-# struct StructWithAliasMethod(TraitWithAliasMethod):
-#     alias T: DType = int
-#     fn bork(self, thing: SIMD[int]) -> SIMD[int]:
-#         return SIMD[int]()
+
+trait TraitWithAliasArgMethod:
+    alias T: ATrait
+    fn lork(self, thing: SIMD[T]):
+        ...
+
+
+@value
+struct StructWithAliasArgMethod(TraitWithAliasArgMethod):
+    alias T: ATrait = int
+    fn lork(self, thing: SIMD[int]):
+        pass
+
+fn receiveTraitWithAliasArgMethod[X: TraitWithAliasArgMethod](t: X):
+    pass
+
+
+# CHECK-LABEL: lit.func @"testUpcastingStructWithAliasArgMethod
+fn testUpcastingStructWithAliasArgMethod():
+    # CHECK: {{.*}}lit.call @"associated-aliases"::@"receiveTraitWithAliasArgMethod{{.*}}<:!TraitWithAliasArgMethod #[[StructWithAliasArgMethod_VTable]]
+    receiveTraitWithAliasArgMethod(StructWithAliasArgMethod())
+
+
+# CHECK-LABEL: lit.func @"callTraitMethodWithAliasArg
+fn callTraitMethodWithAliasArg[X: TraitWithAliasArgMethod](t: X, thing: SIMD[X.T]):
+    # CHECK:  %0 = lit.call
+    # CHECK-SAME: "thing": !lit.ref<@"associated-aliases"::@SIMD<:!ATrait get_type_method(:!TraitWithAliasArgMethod X, "T")>
+    # CHECK-SAME: : get_type_method(:!TraitWithAliasArgMethod X, "lork")
+    t.lork(thing)
+
+
+# TODO(MOCO-1259): Support static methods with associated aliases
 
 # TODO(MOCO-1143): Make this work:
 # struct StructWithParam[X: Int]:
