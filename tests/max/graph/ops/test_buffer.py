@@ -79,7 +79,7 @@ def test_store_buffer(tensor_type: TensorType, buffer_type: BufferType):
         tensor = graph.inputs[0]
         buffer = graph.inputs[1]
         chain_0 = graph._current_chain
-        ops.store_in_buffer(tensor, buffer)
+        ops.store_in_buffer(buffer, tensor)
         chain_1 = graph._current_chain
 
         assert buffer.shape == tensor.shape
@@ -114,7 +114,7 @@ def test_load_store_buffer(buffer_type: BufferType):
         # Check the chain is updated.
         assert chain_0 != chain_1
 
-        ops.store_in_buffer(tensor, buffer)
+        ops.store_in_buffer(buffer, tensor)
         chain_2 = graph._current_chain
 
         assert buffer.shape == tensor.shape

@@ -81,7 +81,7 @@ def test_load_mutate_store(buffer_graph: Graph, session: InferenceSession):
         buf = graph.inputs[0]
         x = load_buffer(buf)
         x = x + 100
-        store_in_buffer(x, buf)
+        store_in_buffer(buf, x)
         graph.output()
         graph._mlir_op.verify()
         compiled = session.load(graph)

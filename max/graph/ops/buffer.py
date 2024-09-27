@@ -53,7 +53,7 @@ def load_buffer(
     return TensorValue(output[1])
 
 
-def store_in_buffer(x: TensorValue, y: BufferValue) -> None:
+def store_in_buffer(y: BufferValue, x: TensorValue) -> None:
     """Stores the input tensor into the inout buffer.
 
     It stores the immutable input tensor `x` in the mutable tensor `y`.
