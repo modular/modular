@@ -637,13 +637,9 @@ fn mgp_buffer_concat[
     var ins = variadic_list_to_vector(variadic_ins)
 
     if len(output) < 4096:
-        concat[1, DType.uint8, True, bDevice, None](
-            output, 0, ins, context=call_ctx
-        )
+        concat[1, DType.uint8, True, bDevice](output, 0, ins, context=call_ctx)
     else:
-        concat[1, DType.uint8, False, bDevice, None](
-            output, 0, ins, context=call_ctx
-        )
+        concat[1, DType.uint8, False, bDevice](output, 0, ins, context=call_ctx)
 
     return 0
 

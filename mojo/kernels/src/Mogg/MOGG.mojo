@@ -1174,10 +1174,6 @@ fn cast[
 # Concat op
 # ===----------------------------------------------------------------------===#
 
-from nn.concat import (
-    elementwise_epilogue_type as concat_elementwise_epilogue_type,
-)
-
 
 @mogg_register("mo.concat_from_list")
 @always_inline
@@ -1207,10 +1203,6 @@ fn concat[
     type: DType,
     rank: Int,
     single_thread_blocking_override: Bool,
-    lambdas_have_fusion: Bool,
-    output_0_fn: fn[width: Int, rank: Int, element_alignment: Int] (
-        StaticIntTuple[rank], SIMD[type, width]
-    ) capturing -> None,
     target: StringLiteral = "cpu",
 ](
     output: NDBuffer[type, rank],
@@ -1218,26 +1210,10 @@ fn concat[
     ctx: MojoCallContextPtr,
     *variadic_ins: NDBuffer[type, rank],
 ) raises:
-    @always_inline
-    @parameter
-    fn epilogue_wrapper[
-        _type: DType, _rank: Int, width: Int, *, alignment: Int = 1
-    ](indices: StaticIntTuple[_rank], value: SIMD[_type, width]):
-        output_0_fn[width, rank, alignment](
-            rebind[StaticIntTuple[rank]](indices),
-            rebind[SIMD[type, width]](value),
-        )
-
     var ins = variadic_list_to_vector(variadic_ins)
-    _concat[
-        rank,
-        type,
-        single_thread_blocking_override,
-        target,
-        OptionalReg[concat_elementwise_epilogue_type](
-            epilogue_wrapper
-        ) if lambdas_have_fusion else None,
-    ](output, int(normalize_neg_index(axis, rank)), ins, context=ctx)
+    _concat[rank, type, single_thread_blocking_override, target](
+        output, int(normalize_neg_index(axis, rank)), ins, context=ctx
+    )
 
 
 @mogg_register("concat_shape")
