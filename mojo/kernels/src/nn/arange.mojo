@@ -31,7 +31,7 @@ fn arange[
     return start_buf[0] + (iota[type, simd_width](index[0]) * step_buf[0])
 
 
-@mogg_register("range_shape")
+@mogg_register_shape_func("mo.range")
 @always_inline
 fn arange_shape[
     type: DType,

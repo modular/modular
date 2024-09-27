@@ -6,7 +6,7 @@
 
 from buffer import NDBuffer
 from memory import memcpy
-from register import mogg_register
+from register import mogg_register, mogg_register_shape_func
 
 from utils import StaticIntTuple
 
@@ -200,7 +200,7 @@ fn tile[
             memcpy(dst_ptr, src_ptr, count)
 
 
-@mogg_register("tile_shape")
+@mogg_register_shape_func("mo.tile")
 @always_inline
 fn tile_shape[
     input_rank: Int,
