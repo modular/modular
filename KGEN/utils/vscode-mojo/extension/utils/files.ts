@@ -4,7 +4,6 @@
 //
 //===----------------------------------------------------------------------===//
 
-import { realpathSync } from 'fs';
 import * as path from 'path';
 import * as vscode from 'vscode';
 
@@ -64,12 +63,6 @@ export function getAllOpenMojoFiles(): [
   return [activeFile, otherOpenFiles];
 }
 
-export async function mkdirp(path: string): Promise<void> {
-  try {
-    await vscode.workspace.fs.createDirectory(vscode.Uri.file(path));
-  } catch {}
-}
-
 export async function directoryExists(path: string): Promise<boolean> {
   try {
     const stat = await vscode.workspace.fs.stat(vscode.Uri.file(path));
@@ -98,10 +91,6 @@ export async function readFile(path: string): Promise<Optional<string>> {
   } catch {
     return undefined;
   }
-}
-
-export function realpath(path: string) {
-  return realpathSync(path);
 }
 
 export async function moveUpUntil(

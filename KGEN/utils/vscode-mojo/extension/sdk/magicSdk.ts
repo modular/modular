@@ -7,16 +7,14 @@
 import * as vscode from 'vscode';
 import { MojoSDKSpec } from './types';
 import * as path from 'path';
-import { directoryExists, fileExists, mkdirp, readFile } from '../utils/files';
+import { mkdirp, chmod, rm, createWriteStream } from 'fs-extra';
+import { directoryExists, readFile } from '../utils/files';
 import * as util from 'util';
-import * as fs from 'fs';
 import { lock } from 'proper-lockfile';
 import axios from 'axios';
 import { Logger } from '../logging';
 const execFile = util.promisify(require('child_process').execFile);
 import { MojoSDKVersion as MaxSDKVersion } from './sdkVersion';
-import { writeFile } from 'fs/promises';
-const chmod = util.promisify(require('fs').chmod);
 
 async function downloadFile(
   url: string,
@@ -25,7 +23,7 @@ async function downloadFile(
   errorMessage: string,
   logger: Logger
 ): Promise<boolean> {
-  const writer = fs.createWriteStream(outputPath);
+  const writer = createWriteStream(outputPath);
 
   const response = await axios({
     url,
@@ -134,7 +132,7 @@ async function getAllNightlyMAXVersions(
   let contents = await readFile(repodataFile);
   // If the repodata for today is not present, then we download it and we delete any previous repodata files.
   if (!contents) {
-    fs.rmSync(repodataDir, { recursive: true, force: true });
+    await rm(repodataDir, { recursive: true, force: true });
     await mkdirp(repodataDir);
 
     const repodataUrl =
@@ -268,7 +266,7 @@ async function doInstallMagicAndMAXSDK(
   logger: Logger,
   isNightly: boolean
 ): Promise<void> {
-  fs.rmSync(downloadSpec.doneDirectory, { recursive: true, force: true });
+  await rm(downloadSpec.doneDirectory, { recursive: true, force: true });
 
   logger.main.logInfo(
     `Will download ${downloadSpec.magicUrl} into ${downloadSpec.magicPath}`
@@ -317,7 +315,7 @@ async function installMagicAndMAXSDKWithProgress(
     logger.main.logInfo('Magic SDK present. Skipping installation.');
     return true;
   }
-  fs.rmSync(downloadSpec.versionDoneDirParent, {
+  await rm(downloadSpec.versionDoneDirParent, {
     recursive: true,
     force: true,
   });
