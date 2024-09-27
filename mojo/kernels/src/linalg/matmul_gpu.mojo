@@ -332,6 +332,25 @@ fn _matmul_gpu[
                         ctx,
                     )
 
+                elif best_config == kernels.ampere_256x128_3:
+                    multistage_gemm[
+                        c_type,
+                        c_shape,
+                        a_type,
+                        a_shape,
+                        b_type,
+                        b_shape,
+                        transpose_b,
+                        kernels.ampere_256x128_3,
+                        elementwise_lambda_fn,
+                    ](
+                        rebind[NDBuffer[c_type, 2, c_shape]](c),
+                        rebind[NDBuffer[a_type, 2, a_shape]](a),
+                        rebind[NDBuffer[b_type, 2, b_shape]](b),
+                        best_config,
+                        ctx,
+                    )
+
                 else:  # Default kernel 128x128_4
                     alias config = kernels.ampere_128x128_4
                     multistage_gemm[

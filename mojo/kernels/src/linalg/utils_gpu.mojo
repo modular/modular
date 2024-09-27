@@ -205,6 +205,12 @@ struct MatmulKernels[
         num_pipeline_stages=4,
     )
 
+    alias ampere_256x128_3 = MatmulConfig[a_type, b_type, c_type, transpose_b](
+        block_tile_shape=Index(128, 256, 2 * _bk_base[a_type]()),
+        warp_tile_shape=Index(64, 64, 2 * _bk_base[a_type]()),
+        num_pipeline_stages=3,
+    )
+
 
 fn select_config[
     a_type: DType,
@@ -238,10 +244,17 @@ fn select_config[
     var min_num_waves = Int.MAX
     var min_work_per_SM = Int.MAX
 
-    for bmnk_stage in List(
-        Index(128, 128, _bk_base[a_type](), 4),  # 128x128_4
-        Index(64, 256, _bk_base[a_type](), 4),  # 256x64_4
-    ):
+    alias _128x128_4 = Index(128, 128, _bk_base[a_type](), 4)
+    alias _256x64_4 = Index(64, 256, _bk_base[a_type](), 4)
+    # Only enable this when the target is exactly A100. We use A100 properties
+    # for target="cuda" (default) on A10, L4. This avoids breaking tests there.
+    # The tile is skipped in the loop for exceeding shared memory capacity when
+    # sm_80 is present in target.
+    alias _256x128_3 = Index(
+        128, 256, 2 * _bk_base[a_type](), 3
+    ) if "sm_80" in target else StaticIntTuple[4](1024)
+
+    for bmnk_stage in List(_128x128_4, _256x64_4, _256x128_3):
         var bm = bmnk_stage[][0]
         var bn = bmnk_stage[][1]
         var bk = bmnk_stage[][2]
@@ -287,6 +300,7 @@ fn select_config[
                 best_bmnk[2] = bk
                 best_num_stages = num_stages
                 best_num_k_partitions = num_k_partitions
+
                 min_work_per_SM = work_per_SM
                 min_num_waves = num_waves
 
