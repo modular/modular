@@ -10,7 +10,6 @@ lit_tests(
         ],
     ),
     data = glob(["inputs/**/*.mojo"]) + [
-        "//:libpython",
         "//KGEN:CompilerRT",
         "//KGEN:CompilerRT.distributable",
         "@llvm-project//compiler-rt:orc_rt",

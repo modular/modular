@@ -11,7 +11,6 @@ lit_tests(
         "source \\\\$MODULAR_DERIVED_PATH/autovenv/bin/activate": "true",
     },
     data = glob(["Inputs/*.mojo"]) + [
-        "//:libpython",
         "//KGEN:MojoLLDB",
         "//KGEN:gdb-server",
         "//KGEN:mojo-lldb",

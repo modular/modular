@@ -10,7 +10,6 @@ lit_tests(
         "*.ipynb",
         "*.mojo",
     ]) + [
-        "//:libpython",
         "//KGEN:MojoLLDB",
         "//KGEN:gdb-server",
         "//KGEN/tools/mojo-repl-entry-point",
