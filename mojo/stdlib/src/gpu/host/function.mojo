@@ -470,7 +470,9 @@ struct Function[
 
         @parameter
         if _dump_q[dump_llvm]():
-            alias llvm = _compile_code_asm[Self.func, emission_kind="llvm"]()
+            alias llvm = _compile_code_asm[
+                Self.func, emission_kind="llvm-opt"
+            ]()
 
             @parameter
             if dump_llvm.isa[fn () capturing -> Path]():
