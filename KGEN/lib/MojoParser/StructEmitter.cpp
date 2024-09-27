@@ -277,12 +277,9 @@ LIT::FuncOp StructEmitter::synthesizeMemberwiseInit(
     ArrayRef<ArgConvention> argConventions, PogListAttr argListAttrs) {
   auto structOp = cast<StructDeclOp>(structDecl);
 
-  // Figure out the type of the 'self' argument/result.
-  Type resultType = shared.getNoneType();
-
   // Create the FuncOp and ASTDecl for the method.
   auto [funcOp, _] = synthesizeMethodInStruct(
-      "__init__", argTypes, argConventions, argListAttrs, resultType,
+      "__init__", argTypes, argConventions, argListAttrs, shared.getNoneType(),
       structDecl, structDecl.getLoc(), SpecialFunctionKind::kInit);
   funcOp.setInlineLevel(InlineLevel::AlwaysNoDebug);
 

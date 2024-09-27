@@ -199,7 +199,6 @@ static void synthesizeRegisterTraitStub(ASTDecl &structDecl,
   CallOperands operands;
   SyntheticNode node(calleeLoc);
 
-  bool hasLegacyInitSelfArg = false;
   for (auto [arg, conv, pogAttr] :
        llvm::zip(thunk.getArguments(), memSig.getArgConventions(),
                  argListAttr.getPogs())) {
@@ -207,14 +206,9 @@ static void synthesizeRegisterTraitStub(ASTDecl &structDecl,
     switch (conv) {
     case ArgConvention::InitSelf:
       // If the implementation takes the same InitSelf argument then pass it.
-      // If not, this must be the deprecated '-> Self' forms of init/copyinit.
-      if (calleeSig.hasInitSelfArg()) {
-        value = MLValue(arg);
-        break;
-      }
-      // TODO: remove this old forms.
-      hasLegacyInitSelfArg = true;
-      continue;
+      assert(calleeSig.hasInitSelfArg());
+      value = MLValue(arg);
+      break;
 
     case ArgConvention::ByRefResult:
     case ArgConvention::ByRefError:
@@ -254,8 +248,6 @@ static void synthesizeRegisterTraitStub(ASTDecl &structDecl,
   } else if (memSig.hasMemoryOnlyResult()) {
     dest = ValueDest(MLValue(thunk.getArguments().back()), EC_Trait);
   } else if (memSig.hasInitSelfArg()) {
-    if (hasLegacyInitSelfArg)
-      dest = ValueDest(MLValue(thunk.getArgument(0)), EC_Trait);
     // If both the caller and callee take initself, we initialize it directly
     // above and need to return none.
   } else {
