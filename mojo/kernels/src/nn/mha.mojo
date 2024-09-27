@@ -341,9 +341,9 @@ fn flash_attention[
         #           and SS is max_prompt_len x
         #                       max_prompt_len + mac_cache_valid_length
         # Used in decoding only. Needed by mha_gpu_naive that handles both, too.
-        var max_cache_valid_length = mask.dim[3]() - mask.dim[
+        var max_cache_valid_length = mask.dim(3) - mask.dim(
             2
-        ]() if mask.rank == 4 else mask.dim[2]() - mask.dim[1]()
+        ) if mask.rank == 4 else mask.dim(2) - mask.dim(1)
 
         # Whether head and depth are static. With BSHD, B and S are dynamic.
         # H and D are always known.
