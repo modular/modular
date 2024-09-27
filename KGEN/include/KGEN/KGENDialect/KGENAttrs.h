@@ -18,6 +18,7 @@
 #include "Support/ErrorOr.h"
 #include "Support/IPInt.h"
 #include "Support/IPRational.h"
+#include "Support/LLVMCompilerForwardDecls.h"
 #include "mlir/IR/BuiltinAttributes.h"
 
 namespace mlir {
@@ -46,6 +47,20 @@ class VTableAttr;
 
 #define GET_ATTRDEF_CLASSES
 #include "KGEN/KGENDialect/KGENAttrs.h.inc"
+
+//===----------------------------------------------------------------------===//
+// EmitAsAttr
+//===----------------------------------------------------------------------===//
+
+namespace M::KGEN {
+class EmitAsAttr : public IntegerAttr {
+public:
+  using IntegerAttr::IntegerAttr;
+  static bool classof(Attribute attr);
+  static EmitAsAttr get(MLIRContext *ctx, EmitAs val);
+  EmitAs getValue() const;
+};
+} // namespace M::KGEN
 
 //===----------------------------------------------------------------------===//
 // PointerLikeTypeTraits

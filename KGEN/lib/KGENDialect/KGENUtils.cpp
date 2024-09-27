@@ -845,15 +845,13 @@ static ParseResult parseOperatorOperands(AsmParser &p, uint32_t opcode,
       StringRef emissionKind;
       if (p.parseKeyword(&emissionKind))
         return failure();
-      if (!llvm::is_contained({"llvm", "asm"}, emissionKind))
-        return p.emitError(
-            p.getCurrentLocation(),
-            "the immediate emission kind must be either '=llvm' or '=asm'");
-
-      auto emissionKindEnum =
-          emissionKind == "llvm" ? EmitAs::LLVM : EmitAs::ASM;
-      operands.emplace_back(
-          p.getBuilder().getIndexAttr(to_underlying(emissionKindEnum)));
+      std::optional<EmitAs> kind = symbolizeEmitAs(emissionKind);
+      if (!kind) {
+        return p.emitError(p.getCurrentLocation(),
+                           "the immediate emission kind must be either "
+                           "'=llvm', '=asm', or '=llvm-opt'");
+      }
+      operands.emplace_back(EmitAsAttr::get(p.getContext(), *kind));
     } else if (parseParamValue(p, operands.emplace_back(),
                                p.getBuilder().getIndexType())) {
       return failure();
@@ -1159,18 +1157,11 @@ static void printOperatorOperands(AsmPrinter &p, POC opcode,
   case POC::CompileAssembly: {
     printParamValue(p, operands[0]);
     p << ", ";
-    if (auto emissionIntAttr = dyn_cast<IntegerAttr>(operands[1])) {
-      auto emissionKind = (EmitAs)emissionIntAttr.getInt();
-      // '=' is used to disambiguate immediates with generic param value.
-      if (emissionKind == EmitAs::ASM)
-        p << "=asm";
-      else if (emissionKind == EmitAs::LLVM)
-        p << "=llvm";
-      else
-        printParamValue(p, operands[1]);
-    } else {
+    // '=' is used to disambiguate the string form.
+    if (auto emitAsAttr = dyn_cast<EmitAsAttr>(operands[1]))
+      p << '=' << stringifyEmitAs(emitAsAttr.getValue());
+    else
       printParamValue(p, operands[1]);
-    }
     p << ", ";
     printParamValue(p, operands[2]);
     p << ", ";

@@ -275,7 +275,7 @@ IREvaluator::evaluateCompileAssembly(ParamOperatorAttr op) {
 
   // Slice out a stanalone module to re-elaborate with the new target.
   TargetInfoAttr target = cast<TargetParamAttr>(op.getOperand(0)).getTarget();
-  auto emissionKind = (EmitAs)cast<IntegerAttr>(op.getOperand(1)).getInt();
+  EmitAs emissionKind = cast<EmitAsAttr>(op.getOperand(1)).getValue();
   bool propagateError = cast<IntegerAttr>(op.getOperand(2)).getInt();
   auto symbol = dyn_cast<SymbolConstantAttr>(op.getOperand(3));
   if (!symbol || !symbol.getType().isConcrete()) {

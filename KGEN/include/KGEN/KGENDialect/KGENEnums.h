@@ -18,9 +18,6 @@
 
 namespace M::KGEN {
 
-/// Enumeration of the compile emission format.
-enum class EmitAs : uint8_t { ASM, LLVM };
-
 //===----------------------------------------------------------------------===//
 // FnEffects
 //===----------------------------------------------------------------------===//
