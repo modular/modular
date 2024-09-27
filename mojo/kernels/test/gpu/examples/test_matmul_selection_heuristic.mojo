@@ -41,20 +41,24 @@ fn test_matmul_selection():
     print(config1.num_k_partitions)
 
     var config2 = select_config[
-        DType.bfloat16, DType.bfloat16, DType.bfloat16, transpose_b=True
-    ](16, 4096, 14336)
-    # CHECK: ampere_bfloat16_bfloat16_256x64_4_k4_NT
-    # CHECK: (64, 256, 32)
-    # CHECK: (64, 64, 32)
-    # CHECK: 4
-    # CHECK: 4
-    # CHECK: 196608
+        DType.bfloat16,
+        DType.bfloat16,
+        DType.bfloat16,
+        transpose_b=True,
+        target="sm_80",
+    ](482, 4096, 14400)
+    # CHECK: ampere_bfloat16_bfloat16_256x128_3_k3_NT
+    # CHECK: (128, 256, 64)
+    # CHECK: (64, 64, 64)
+    # CHECK: 3
+    # CHECK: 3
+    # CHECK: 3948544
     print(config2)
     print(config2.block_tile_shape)
     print(config2.warp_tile_shape)
     print(config2.num_pipeline_stages)
     print(config2.num_k_partitions)
-    print(config2.work_space_size(16, 4096))
+    print(config2.work_space_size(482, 4096))
 
 
 fn main():
