@@ -603,12 +603,66 @@ int8_t OverloadFitness::Payload::getBoolMask() const {
   return 2 * passesVarArgArgument + 1 * hasVariadicParams;
 }
 
-OverloadFitness OverloadFitness::evaluate(ArrayRef<Type> paramTypes,
-                                          PogListAttr paramListAttr,
+/// If we're trying to call `foo.lork()`, like this:
+///
+///     fn callTraitMethodWithAliasArg[X: MyTrait](t: X, thing: MyStruct[X.T]):
+///         t.lork(thing)
+///
+/// and lork happens to be a trait method with an alias, like:
+///
+///     trait MyTrait:
+///         alias T: OtherTrait
+///         fn lork(self, thing: MyStruct[T]): ...
+///
+/// Then we'll need to adjust our desired signature from:
+///     fn lork(self, thing: MyStruct[T])
+/// to:
+///     fn lork(self, thing: MyStruct[get_type_method(X, T)])
+///
+/// This function will do that conversion. If we aren't calling a trait method
+/// with an alias, it'll return the given desiredSignature unmodified.
+static LITSignatureType substituteTraitAliasesIntoSignature(
+    DeclResolver &declResolver, PValue selfPValue,
+    LITSignatureType desiredSignature, ASTDecl *candidate) {
+  // TODO(MOCO-1259): Support static methods with associated aliases
+  if (!candidate)
+    return desiredSignature;
+  auto traitDecl = candidate->getParentDecl();
+  if (!traitDecl || !isa<TraitDeclOp>(traitDecl))
+    return desiredSignature;
+  ParserParamEvaluator traitAliasReplacer(declResolver);
+  for (auto &[name, decls] : traitDecl->getDeclsInScope()) {
+    for (ASTDecl *decl : decls) {
+      AliasDeclOp traitAlias = dyn_cast<LIT::AliasDeclOp>(*decl);
+      if (!traitAlias)
+        continue;
+      auto candidateFunc = cast<LIT::FuncOp>(candidate);
+      StringAttr nameStringAttr = StringAttr::get(
+          name.str(), StringType::get(candidateFunc->getContext()));
+      TypedAttr aliasRef = ParamOperatorAttr::get(POC::GetTypeMethod,
+                                                  {selfPValue, nameStringAttr},
+                                                  traitAlias.getType());
+      traitAliasReplacer.setParameterValue(traitAlias.getParamDecl(), aliasRef);
+    }
+  }
+  return traitAliasReplacer.replace(desiredSignature);
+}
+
+OverloadFitness OverloadFitness::evaluate(ASTDecl *candidate,
                                           const OverloadSet &callable,
+                                          PValue selfPValue,
                                           bool allowImplicitConversions) {
+  auto func = cast<LIT::FuncOp>(*candidate);
+  LITSignatureType signature = func.getFullSignature();
+
+  if (selfPValue) {
+    signature = substituteTraitAliasesIntoSignature(
+        *callable.getShared().declResolver, selfPValue, signature, candidate);
+  }
+
   auto [bindings, fitness, diag] = callable.paramBindings.verifyBindings(
-      paramTypes, paramListAttr, callable.baseName, callable.expr->getLoc(),
+      signature.getParamTypes(), signature.getParamListAttrs(),
+      callable.baseName, callable.expr->getLoc(),
       /*opLoc=*/{}, /*partial=*/true);
   if (!bindings)
     return std::move(*diag);
@@ -637,6 +691,17 @@ OverloadFitness OverloadFitness::evaluate(LITSignatureType signature,
   SMLoc callLoc = callable.expr->getLoc();
   SharedState &shared = callable.getShared();
   DiagEmitter emitDiagFor(shared, callLoc, operands.size(), callable.syntax);
+
+  if (!operands.empty()) {
+    if (auto selfCValue = operands[0].ir.getIfCValue()) {
+      ASTType selfType = selfCValue.getRValueType();
+      auto selfPValue = PValue(selfType.mlirType);
+      if (selfPValue) {
+        signature = substituteTraitAliasesIntoSignature(
+            *shared.declResolver, selfPValue, signature, funcIfDirect);
+      }
+    }
+  }
 
   // If a variadic keyword arg is expected, we collect the unknown kw operands.
   OperandValueList variadicKwOperands;

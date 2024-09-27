@@ -73,9 +73,9 @@ public:
 
   /// Determine whether the specified signature can be invoked with the
   /// parameter bindings specified in `callable`.
-  static OverloadFitness evaluate(ArrayRef<Type> paramTypes,
-                                  PogListAttr paramListAttr,
+  static OverloadFitness evaluate(ASTDecl *candidate,
                                   const OverloadSet &callable,
+                                  PValue selfPValue,
                                   bool allowImplicitConversions);
 
   enum ArgTypeMismatchKind {
