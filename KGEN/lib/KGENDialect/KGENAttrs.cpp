@@ -71,9 +71,9 @@ bool EmitAsAttr::classof(Attribute attr) {
   if (!intAttr)
     return false;
   return ::isa<IndexType>(intAttr.getType()) &&
-         contains_if(ArrayRef{EmitAs::ASM, EmitAs::LLVM}, [&](EmitAs kind) {
-           return (int)kind == intAttr.getInt();
-         });
+         contains_if(
+             ArrayRef{EmitAs::ASM, EmitAs::LLVM, EmitAs::LLVM_OPT},
+             [&](EmitAs kind) { return (int)kind == intAttr.getInt(); });
 }
 
 EmitAsAttr EmitAsAttr::get(MLIRContext *ctx, EmitAs val) {
