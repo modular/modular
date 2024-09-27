@@ -44,22 +44,21 @@ fn _to_int_tuple[n: Int](static_tuple: StaticIntTuple[n]) -> IntTuple:
     return int_tuple
 
 
-fn _to_int_tuple[n: Int](value: Int) -> IntTuple:
+fn _to_int_tuple[size: Int](value: Int) -> IntTuple:
     var int_tuple = IntTuple()
 
     @parameter
-    for i in range(n):
+    for i in range(size):
         int_tuple.append(value)
     return int_tuple
 
 
-fn _to_int_tuple[*n: Int]() -> IntTuple:
+fn _to_int_tuple[elements: VariadicList[Int]]() -> IntTuple:
     var int_tuple = IntTuple()
-    alias parameters = VariadicList(n)
 
     @parameter
-    for i in range(len(parameters)):
-        int_tuple.append(parameters[i])
+    for i in range(len(elements)):
+        int_tuple.append(elements[i])
     return int_tuple
 
 
@@ -76,6 +75,15 @@ struct LayoutTensorBuild[
 
     fn __init__(inout self):
         self.runtime_layout = __type_of(self.runtime_layout)()
+
+    fn row_major[
+        *shapes: Int
+    ](self) -> LayoutTensorBuild[
+        dtype,
+        __layout = Layout.row_major(_to_int_tuple[shapes]()),
+        __layout_init=True,
+    ] as res:
+        return __type_of(res)()
 
     fn row_major(
         self, shape0: ValueOrUnknown, shape1: ValueOrUnknown
@@ -150,6 +158,15 @@ struct LayoutTensorBuild[
                 )
             )
         )
+
+    fn col_major[
+        *shapes: Int
+    ](self) -> LayoutTensorBuild[
+        dtype,
+        __layout = Layout.col_major(_to_int_tuple[shapes]()),
+        __layout_init=True,
+    ] as res:
+        return __type_of(res)()
 
     fn col_major(
         self, shape0: ValueOrUnknown, shape1: ValueOrUnknown
@@ -226,9 +243,9 @@ struct LayoutTensorBuild[
         )
 
     fn layout[
-        N: Int,
-        shape: StaticIntTuple[N],
-        stride: StaticIntTuple[N],
+        rank: Int,
+        shape: StaticIntTuple[rank],
+        stride: StaticIntTuple[rank],
     ](self) -> LayoutTensorBuild[
         dtype,
         __layout = Layout(_to_int_tuple(shape), _to_int_tuple(stride)),
