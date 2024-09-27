@@ -336,9 +336,6 @@ ParamBindings::verifyBindingsImpl(
         continue;
       }
 
-      if (!fitness.lastExpectedType)
-        fitness.lastExpectedType = expectedType;
-
       if (diagEmitter)
         diagEmitter->emitDeductionFailure(idx);
       return {{}, fitness};
@@ -498,15 +495,15 @@ ParamBindings::verifyBindings(
                             &diagEmitter, /*partial=*/false);
 }
 
-std::pair<ParameterExprArrayAttr, ParamBindings::Fitness>
+ParameterExprArrayAttr
 ParamBindings::verifyBindings(LITSignatureType sig) const {
   return verifyBindings(sig.getParamTypes(), sig.getParamListAttrs(),
                         /*partial=*/true);
 }
 
-std::pair<ParameterExprArrayAttr, ParamBindings::Fitness>
-ParamBindings::verifyBindings(ArrayRef<Type> paramTypes, PogListAttr paramList,
-                              bool partial) const {
+ParameterExprArrayAttr ParamBindings::verifyBindings(ArrayRef<Type> paramTypes,
+                                                     PogListAttr paramList,
+                                                     bool partial) const {
   auto parameterInferenceHook = [&](ArrayRef<TypedAttr> bindingsSoFar,
                                     const ParserParamEvaluator &evaluator) {
     // The inference diagnostics will be unused.
@@ -518,9 +515,10 @@ ParamBindings::verifyBindings(ArrayRef<Type> paramTypes, PogListAttr paramList,
     inference.infer(paramTypes, paramList);
     return PValue(inference.getInferredValue(bindingsSoFar.size()));
   };
-  return verifyBindingsImpl(parameters, paramTypes, paramList,
-                            parameterInferenceHook, /*diagEmitter=*/nullptr,
-                            partial);
+  auto [bindings, _] = verifyBindingsImpl(parameters, paramTypes, paramList,
+                                          parameterInferenceHook,
+                                          /*diagEmitter=*/nullptr, partial);
+  return bindings;
 }
 
 ParameterExprArrayAttr ParamBindings::verifyBindings(StructDeclOp structOp,

@@ -844,7 +844,7 @@ ASTType InProgressBindings::getNextParamType(const Operand &operand,
   }
 
   // Attempt to apply the current binding set to the parameter list.
-  auto [bindings, _] =
+  ParameterExprArrayAttr bindings =
       paramBindings.verifyBindings(paramTypes, paramList, /*partial=*/true);
   // If that failed, return
   if (!bindings)
