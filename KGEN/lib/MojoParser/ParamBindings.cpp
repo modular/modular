@@ -107,7 +107,7 @@ static PValue emitSingleParameterValue(ASTExprAnd<AnyValue> binding,
     return bindingVal;
 
   // If the parameter can be implicitly converted, do so.
-  if (OverloadSet::canImplicitlyConvertToType(
+  if (ExprEmitter::canImplicitlyConvertToType(
           {bindingVal, binding.expr}, expectedType, emitter.getScopeInfo())) {
     numImplicitConversions += 2;
     return emitter.emitPValue(binding, EC_CallParamValue, expectedType);

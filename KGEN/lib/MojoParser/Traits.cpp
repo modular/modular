@@ -513,7 +513,7 @@ LogicalResult LIT::verifyConformance(ASTDecl &structDecl,
                                          initializerExpr);
 
     SyntheticNode synthNode(structAliasDecl->getLoc());
-    if (!OverloadSet::canImplicitlyConvertToType({initializerExpr, synthNode},
+    if (!ExprEmitter::canImplicitlyConvertToType({initializerExpr, synthNode},
                                                  traitAliasType,
                                                  emitter.getScopeInfo())) {
       diag->attachNote(traitAliasDecl->getLoc())

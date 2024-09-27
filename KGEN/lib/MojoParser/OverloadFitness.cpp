@@ -555,7 +555,7 @@ auto OverloadFitness::checkOneOperand(ASTExprAnd<AnyValue> operand,
     // If implicit conversions are possible and one will work, then we succeed
     // with that conversion.
     if (allowImplicitConversions &&
-        OverloadSet::canImplicitlyConvertToType({argVal, operand.expr},
+        ExprEmitter::canImplicitlyConvertToType({argVal, operand.expr},
                                                 expectedType, scopeInfo)) {
       // If we had one, this bumps our # implicit conversions.
       payload.numImplicitConversions += 2;

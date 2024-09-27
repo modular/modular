@@ -342,7 +342,7 @@ LogicalResult ParameterInferenceState::matchParams(TypedAttr actualAttr,
       if (actualAttr.getType() != expectedType) {
         ExprEmitter emitter(shared, declScope, EC_TypeParamValue);
         SyntheticNode node(declScope.getLoc());
-        if (OverloadSet::canImplicitlyConvertToType(
+        if (ExprEmitter::canImplicitlyConvertToType(
                 {actualAttr, node}, expectedType, emitter.getScopeInfo())) {
           if (PValue result = emitter.emitPValue(
                   {actualAttr, node}, EC_TypeParamValue, expectedType))
@@ -1065,7 +1065,7 @@ ParameterInferenceState::infer(LITSignatureType signature,
         TypedAttr actualAttr = TypeConstantAttr::get(
             toPush, metatype ? metatype : TypeType::get(shared.getContext()));
         SyntheticNode node(shared.getTopLevelDecl().getLoc());
-        if (!OverloadSet::canImplicitlyConvertToType(
+        if (!ExprEmitter::canImplicitlyConvertToType(
                 {actualAttr, node}, elementType, emitter.getScopeInfo()))
           return failure();
         // Perform a conversion (e.g. from a concrete to trait type) as needed.
