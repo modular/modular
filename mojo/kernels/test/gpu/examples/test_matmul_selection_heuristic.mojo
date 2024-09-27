@@ -43,8 +43,8 @@ fn test_matmul_selection():
     var config2 = select_config[
         DType.bfloat16, DType.bfloat16, DType.bfloat16, transpose_b=True
     ](16, 4096, 14336)
-    # CHECK: ampere_bfloat16_bfloat16_128x128_4_k4_NT
-    # CHECK: (128, 128, 32)
+    # CHECK: ampere_bfloat16_bfloat16_256x64_4_k4_NT
+    # CHECK: (64, 256, 32)
     # CHECK: (64, 64, 32)
     # CHECK: 4
     # CHECK: 4

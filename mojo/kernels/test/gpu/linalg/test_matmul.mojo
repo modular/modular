@@ -91,6 +91,8 @@ fn test[
 
     var M = m.value
     var N = n.value
+    var K = k.value
+    print(M, "x", N, "x", K)
 
     alias static_a_shape = DimList(m.dim, k.dim)
     alias static_b_shape = DimList(n.dim, k.dim) if transpose_b else DimList(
