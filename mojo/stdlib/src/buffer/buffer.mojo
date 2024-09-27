@@ -1625,6 +1625,10 @@ struct DynamicRankBuffer:
             Constructed NDBuffer.
         """
         debug_assert(
+            self.type == type,
+            "type of DynamicRankBuffer must equal type of NDBuffer",
+        )
+        debug_assert(
             self.rank == rank,
             "rank of DynamicRankBuffer must equal rank of NDBuffer",
         )
