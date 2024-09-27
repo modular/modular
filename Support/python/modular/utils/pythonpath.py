@@ -96,4 +96,9 @@ def get_libpython() -> Optional[Path]:
     for path in paths:
         if path.exists() and path.is_file() and path.suffix == f".{ext}":
             return path
+
+    # Bazel prebuilt python
+    libpython = Path(sys.executable).parent.parent / "lib" / var("INSTSONAME")
+    if libpython.exists():
+        return libpython
     return None
