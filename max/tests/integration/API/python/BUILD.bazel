@@ -8,7 +8,6 @@ modular_py_test(
         "pytests/**/*.py",
     ]),
     data = [
-        "//:libpython",
         "//KGEN:CompilerRT",
         "//ModularFramework/tools/mof",
         "//ONNX/tools/onnx:monnx",
@@ -61,7 +60,6 @@ modular_py_test(
         "graph_tests/**/*.py",
     ]),
     data = [
-        "//:libpython",
         "//KGEN:CompilerRT",
         "//ModularFramework/tools/mof",
         "//ONNX/tools/onnx:monnx",
