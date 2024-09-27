@@ -95,10 +95,6 @@ public:
 
     /// Whether the bindings include variadic parameters.
     bool hasVariadicParams;
-
-    /// The last expected type if there aren't enough bindings for
-    /// positional-or-keyword parameters.
-    Type lastExpectedType = {};
   };
 
   /// Helper class to customizing diagnostic emission for verification. The
@@ -141,16 +137,15 @@ public:
   /// This applies parameter inference and any default values to form a full
   /// binding set, which is returned along with the binding fitness. This will
   /// form a partial binding of the signature.
-  std::pair<ParameterExprArrayAttr, Fitness>
-  verifyBindings(LITSignatureType sig) const;
+  ParameterExprArrayAttr verifyBindings(LITSignatureType sig) const;
 
   /// Attempt to bind the current set of parameters to the provided parameter
   /// types and list. This applies parameter inference and any default values to
   /// form a full binding set, which is returned along with the binding fitness.
   /// If `partial` is true, this forms a partial binding list.
-  std::pair<ParameterExprArrayAttr, Fitness>
-  verifyBindings(ArrayRef<Type> paramTypes, PogListAttr paramList,
-                 bool partial) const;
+  ParameterExprArrayAttr verifyBindings(ArrayRef<Type> paramTypes,
+                                        PogListAttr paramList,
+                                        bool partial) const;
 
   /// Verify the parameter bindings for the given struct. If the struct doesn't
   /// match, diagnostics will be emitted using the struct's location and the
