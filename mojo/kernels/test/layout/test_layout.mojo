@@ -20,6 +20,7 @@ from layout.layout import (
     print_layout,
     size,
     sublayout,
+    expand_modes_alike,
     zipped_divide,
 )
 from testing import assert_equal, assert_not_equal
@@ -508,6 +509,52 @@ def test_crd2idx():
         print(i, l_4x4_row_major.idx2crd(i), l_4x4_col_major.idx2crd(i))
 
 
+# CEHCK-LABEL: test_expand_modes_alike
+def test_expand_modes_alike():
+    print("== test_expand_modes_alike")
+    alias layout_0 = Layout(
+        IntTuple(IntTuple(3, IntTuple(5, 2)), 4),
+        IntTuple(IntTuple(1, IntTuple(24, 12)), 3),
+    )
+    alias layout_1 = Layout(
+        IntTuple(30, IntTuple(2, 2)), IntTuple(2, IntTuple(60, 1))
+    )
+    alias ema0 = expand_modes_alike(layout_0, layout_1)
+    # CHECK: (((3, (5, 2)), (2, 2)):((1, (24, 12)), (3, 6)))
+    print(ema0[0])
+    # CHECK: (((3, (5, 2)), (2, 2)):((2, (6, 30)), (60, 1)))
+    print(ema0[1])
+
+    alias layout_2 = Layout(
+        IntTuple(IntTuple(3, IntTuple(IntTuple(IntTuple(7, 11), 5), 2)), 4),
+        IntTuple(
+            IntTuple(1, IntTuple(IntTuple(IntTuple(120, 840), 24), 12)), 3
+        ),
+    )
+    alias layout_3 = Layout(IntTuple(2310, IntTuple(2, 2)))
+    alias ema1 = expand_modes_alike(layout_2, layout_3)
+    # CHECK: (((3, (((7, 11), 5), 2)), (2, 2)):((1, (((120, 840), 24), 12)), (3, 6)))
+    print(ema1[0])
+    # CHECK: (((3, (((7, 11), 5), 2)), (2, 2)):((1, (((3, 21), 231), 1155)), (2310, 4620)))
+    print(ema1[1])
+
+    alias ema2 = expand_modes_alike(
+        Layout(IntTuple(2, 2), IntTuple(2, 1)), Layout(4)
+    )
+    # CHECK: ((2, 2):(2, 1))
+    print(ema2[0])
+    # CHECK: ((2, 2):(1, 2))
+    print(ema2[1])
+
+    alias ema3 = expand_modes_alike(
+        Layout(IntTuple(3, 4), IntTuple(2, 6)), Layout(12)
+    )
+    # CHECK: ((3, 4):(2, 6))
+    print(ema3[0])
+    # CHECK: ((3, 4):(1, 3))
+    print(ema3[1])
+
+
 def main():
     test_layout_basic()
     test_coalesce()
@@ -521,3 +568,4 @@ def main():
     test_zipped_divide()
     test_sublayout()
     test_crd2idx()
+    test_expand_modes_alike()

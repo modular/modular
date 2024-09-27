@@ -4,6 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
+from collections import InlineArray
 from collections.string import _calc_initial_buffer_size_int32
 from os import abort
 from utils import Formattable, Formatter
@@ -602,3 +603,99 @@ fn sublayout(layout: Layout, *modes: Int) -> Layout:
         shape.append(layout.shape[mode])
         stride.append(layout.stride[mode])
     return Layout(shape, stride)
+
+
+fn expand_strides(shape: IntTuple, stride: Int) -> IntTuple:
+    var new_stride = IntTuple()
+    var cumulative_stride: Int = stride
+    for sz in shape:
+        if sz.is_tuple():
+            new_stride.append(expand_strides(sz, cumulative_stride))
+            cumulative_stride *= size(sz)
+        else:
+            new_stride.append(cumulative_stride)
+            cumulative_stride *= sz.value()
+    return new_stride
+
+
+fn expand_modes_alike(
+    shape_a: IntTuple, stride_a: IntTuple, shape_b: IntTuple, stride_b: IntTuple
+) -> InlineArray[IntTuple, 3]:
+    if shape_a.is_tuple() and shape_b.is_tuple():
+        var new_shape = IntTuple()
+        var new_stride_a = IntTuple()
+        var new_stride_b = IntTuple()
+        # TODO: lift this limitation, and instead require
+        # that size(shape_a) != size(shape_b):
+        # Ideally, we'd be able to call `coalesce` on two layouts prior
+        # to `uncoalesce` in functions like `copy_to` to first simplify.
+        if len(shape_a) != len(shape_b):
+            abort()
+        for i in range(len(shape_a)):
+            if shape_a[i].is_value() and shape_b[i].is_value():
+                new_shape.append(shape_a[i].value())
+                new_stride_a.append(stride_a[i].value())
+                new_stride_b.append(stride_b[i].value())
+            elif shape_a[i].is_value():
+                new_shape.append(shape_b[i])
+                new_stride_b.append(stride_b[i])
+                new_stride_a.append(
+                    expand_strides(shape_b[i], stride_a[i].value())
+                )
+            elif shape_b[i].is_value():
+                new_shape.append(shape_a[i])
+                new_stride_a.append(stride_a[i])
+                new_stride_b.append(
+                    expand_strides(shape_a[i], stride_b[i].value())
+                )
+            else:
+                var uc = expand_modes_alike(
+                    shape_a[i], stride_a[i], shape_b[i], stride_b[i]
+                )
+                new_shape.append(uc[0])
+                new_stride_a.append(uc[1])
+                new_stride_b.append(uc[2])
+
+        return InlineArray[IntTuple, 3](new_shape, new_stride_a, new_stride_b)
+    elif shape_a.is_tuple():
+        return InlineArray[IntTuple, 3](
+            shape_a, stride_a, expand_strides(shape_a, stride_b.value())
+        )
+    elif shape_b.is_tuple():
+        return InlineArray[IntTuple, 3](
+            shape_b, expand_strides(shape_b, stride_a.value()), stride_b
+        )
+    else:
+        return InlineArray[IntTuple, 3](shape_b, stride_a, stride_b)
+
+
+fn expand_modes_alike(
+    layout_a: Layout, layout_b: Layout
+) -> InlineArray[Layout, 2]:
+    """
+    Tiles both layouts such that they mirror one another.
+
+    For example:
+
+        ```mojo
+        alias layout_0 = Layout(
+             IntTuple(IntTuple(3, IntTuple(5, 2)), 4),
+             IntTuple(IntTuple(1, IntTuple(24, 12)), 3),
+         )
+         alias layout_1 = Layout(
+             IntTuple(30, IntTuple(2, 2)), IntTuple(2, IntTuple(60, 1))
+         )
+         alias uc = uncoalesce(layout_0, layout_1)
+         print(uc[0])
+         # (((3, (5, 2)), (2, 2)):((1, (24, 12)), (3, 6)))
+         print(uc[1])
+         # (((3, (5, 2)), (2, 2)):((2, (6, 30)), (60, 1)))
+         ```
+
+    The shapes are equal. This can be useful for another algorithm
+    that wants to iterate over layouts in a blockwise fasion.
+    """
+    var uc = expand_modes_alike(
+        layout_a.shape, layout_a.stride, layout_b.shape, layout_b.stride
+    )
+    return InlineArray[Layout, 2](Layout(uc[0], uc[1]), Layout(uc[0], uc[2]))
