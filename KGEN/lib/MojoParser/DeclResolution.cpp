@@ -30,6 +30,7 @@
 #include "mlir/Transforms/RegionUtils.h"
 #include "llvm/ADT/ScopeExit.h"
 #include "llvm/ADT/TypeSwitch.h"
+#include "llvm/Support/Regex.h"
 #include "llvm/Support/SourceMgr.h"
 
 using namespace M;
@@ -110,6 +111,9 @@ public:
   void applyBodyDecorators(function_ref<LogicalResult(ExprNode *)> process);
 
 private:
+  /// Validate compiler decorators that are allowed to propagate.
+  LogicalResult validateCompilerDecorator(TypedAttr attr);
+
   /// The declaration this class is applying decorators to.
   ASTDecl &decl;
   /// Whether only signature decorators are allowed.
@@ -196,6 +200,65 @@ void Decorators::applySignatureDecorators(
   decl.setBodyDecorators(bodyDecorators, shared);
 }
 
+LogicalResult Decorators::validateCompilerDecorator(TypedAttr attr) {
+  constexpr StringRef plainDre[] = {
+      "doc_private",
+      "lldb_formatter_wrapping_type",
+
+      "__mogg_intrinsic_attr",
+      "mogg_elementwise",
+      "mogg_view_op",
+      "mogg_takes_indices",
+      "mogg_tensor_allocator",
+      "mogg_tensor_copy_constructor",
+      "mogg_tensor_deconstructor",
+      "mogg_elementwise_hook",
+      "mogg_enable_fusion",
+      "mogg_input_fusion_hook",
+      "mogg_output_fusion_hook",
+      "mogg_register",
+      "mogg_register_override",
+      "mogg_register_custom",
+      "mogg_register_custom_shape",
+      "mogg_register_shape_func",
+
+      "register",
+      "elementwise",
+      "view_kernel",
+      "enable_fusion_for",
+  };
+  auto validateSymbol = [&](TypedAttr callee) {
+    auto cst = dyn_cast<SymbolConstantAttr>(callee);
+    if (!cst)
+      return false;
+    SymbolRefAttr ref = cst.getSymbol();
+    StringRef name = ref.getLeafReference().getValue();
+    name = name.substr(0, name.find_first_of('('));
+    return llvm::is_contained(plainDre, name);
+  };
+  std::function<bool(TypedAttr)> validateOperand = [&](TypedAttr attr) {
+    if (auto var = dyn_cast<VariadicAttr>(attr))
+      return llvm::all_of(var.getValues(), validateOperand);
+    auto arg = dyn_cast<LITStructAttr>(attr);
+    if (!arg || arg.getValues().size() != 1)
+      return false;
+    attr = std::get<1>(arg.getValues().front());
+    if (auto str = dyn_cast<StringAttr>(attr))
+      return llvm::Regex("^[a-z0-9A-Z\\._:]*$").match(str.getValue());
+    return isa<IntegerAttr>(attr);
+  };
+  if (auto cst = dyn_cast<SymbolConstantAttr>(attr))
+    return success(validateSymbol(cst));
+  if (auto call = dyn_cast<ParamOperatorAttr>(attr)) {
+    return success(
+        call.getOpcode() == POC::Apply &&
+        validateSymbol(call.getOperands().front()) &&
+        call.getOperands().size() <= 3 &&
+        llvm::all_of(call.getOperands().drop_front(), validateOperand));
+  }
+  return failure();
+}
+
 void Decorators::applyBodyDecorators(
     function_ref<LogicalResult(ExprNode *)> process) {
   // Don't run decorators if the declaration is invalid.
@@ -221,8 +284,13 @@ void Decorators::applyBodyDecorators(
   for (auto [i, decorator] : llvm::enumerate(decoratorExprs)) {
     // Make sure we don't have another body decorator.
     if (failed(process(decorator))) {
-      if (PValue decoVal = emitter.emitExprPValue(decorator, EC_Decorator))
+      if (PValue decoVal = emitter.emitExprPValue(decorator, EC_Decorator)) {
+        if (failed(validateCompilerDecorator(decoVal))) {
+          emitError(decorator->getLoc(), "unsupported compiler decorator")
+              << decorator->getRange();
+        }
         decoPValues.push_back(decoVal);
+      }
       continue;
     }
     // If the decorator applies, we have an error.
