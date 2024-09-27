@@ -503,8 +503,7 @@ fn multistage_gemm_kernel[
 ):
     # Hold on adding fp16 because it counld have differnet precisions than bf16.
     constrained[
-        a_type in (DType.float32, DType.bfloat16)
-        and a_type == b_type == c_type,
+        a_type in (DType.float32, DType.bfloat16) and a_type == b_type,
         "Pipeline gemm only supports tf32 or BF16 mma",
     ]()
 
@@ -520,12 +519,6 @@ fn multistage_gemm_kernel[
     alias WM = config.warp_tile_shape[0]
     alias WN = config.warp_tile_shape[1]
     alias num_pipeline_stages = config.num_pipeline_stages
-
-    constrained[
-        (BK == 16 and a_type == DType.float32)
-        or (BK == 32 and a_type == DType.bfloat16),
-        "Pipeline gemm only supports BK = 16 w/ FP32 and BK = 32 w/ BF16.",
-    ]()
 
     alias num_warps_m = config.num_warps_m()
     alias num_warps_n = config.num_warps_n()

@@ -8,7 +8,7 @@ from math import ceildiv
 from sys import sizeof
 
 from gpu import WARP_SIZE
-from gpu.host.info import A100
+from gpu.host.info import A100, _get_info_from_target
 from layout.tensor_core import (
     TensorCore,
     get_accum_type,
@@ -87,9 +87,10 @@ struct MatmulConfig[
 
     # MMA is typically accumulated in FP32. The reduction over partitions may be
     # done in lower precision to reduce traffic to intermediate buffer. This is
-    # acceptible since the number of partitions is small, typically < 8. In case
-    # it overflows, we should bump precision to fp32.
-    alias split_k_reduction_type = c_type
+    # acceptible since the number of partitions is small, typically < 8.
+    # We see some discrepancy between BF16 and FP32 in KERN-933 and use FP32
+    # by default to be safe. TODO: set via env var KERN-1002.
+    alias split_k_reduction_type = Self.accum_type
 
     fn __init__(
         inout self,
@@ -113,16 +114,9 @@ struct MatmulConfig[
         return self.num_warps_m() * self.num_warps_n() * WARP_SIZE
 
     fn shared_mem_usage(self) -> UInt:
-        # fmt: off
-        var a_usage = self.block_tile_shape[0] * self.block_tile_shape[2] * \
-                      self.num_pipeline_stages * sizeof[a_type]()
-        var b_usage = self.block_tile_shape[1] * self.block_tile_shape[2] * \
-                      self.num_pipeline_stages * sizeof[b_type]()
-        var c_usage = self.block_tile_shape[0] * self.block_tile_shape[1] * \
-                      sizeof[Self.accum_type]() if c_type.is_half_float() else 0
-        # fmt: on
-
-        return max(a_usage + b_usage, c_usage)
+        return _shared_memory_usage[a_type, b_type, c_type](
+            self.block_tile_shape, self.num_pipeline_stages
+        )
 
     fn grid_dim(self, m: UInt, n: UInt) -> StaticIntTuple[3]:
         return Index(
@@ -219,40 +213,86 @@ fn select_config[
     transpose_b: Bool = False,
     target: StringLiteral = "cuda",
 ](M: Int, N: Int, K: Int) -> MatmulConfig[a_type, b_type, c_type, transpose_b]:
-    # A super simple heuristic is to just choose the tile shapes that lead to
-    # min waves. Only support two shapes for now.
+    # Select an optimal matmul config by heuristic.
+    # The heuristic is to choose the parameters leading to min workload per SM.
+    # The work load is estimated as
 
-    alias max_k_partitions = 8
+    #     work_per_SM = BM * BN * k_partition * num_waves.
 
+    # * BM, BN are the thread block's M and N. Here we assume single block per SM,
+    #   which is valid compute-bound gemm in practice.
+    # * k_partition is the K dim for one partition in split-k, which equals to the
+    #   original K if split-k is not used.
+    # * num_waves is the maximum thread blocks that are dispatched to a SM.
+    #   E.g. 128 blocks to A100's 108 SMs, one SM at most computes two blocks.
+
+    alias gpu_info = _get_info_from_target[target]()
+
+    alias max_num_k_partitions = 8
+    alias min_k_partition = 1024
+
+    # Initial values overwritten in loop
     var best_bmnk = Index(128, 128, _bk_base[a_type]())
-    var min_num_waves = 1000
     var best_num_k_partitions = 1
+    var best_num_stages = 4
+    var min_num_waves = Int.MAX
+    var min_work_per_SM = Int.MAX
 
-    for bm_bn in List(Index(128, 128), Index(64, 256)):
-        var bm = bm_bn[][0]
-        var bn = bm_bn[][1]
+    for bmnk_stage in List(
+        Index(128, 128, _bk_base[a_type](), 4),  # 128x128_4
+        Index(64, 256, _bk_base[a_type](), 4),  # 256x64_4
+    ):
+        var bm = bmnk_stage[][0]
+        var bn = bmnk_stage[][1]
+        var bk = bmnk_stage[][2]
+        var num_stages = bmnk_stage[][3]
+
         var num_blocks = ceildiv(M, bm) * ceildiv(N, bn)
+        var num_waves_base = ceildiv(num_blocks, A100.sm_count)
 
-        # Enable split K when only < 50% of SMs are used.
-        var num_k_partitions = 1
-        # Using A100 sm count for now due to KERN-982.
-        if num_blocks < A100.sm_count // 2 and K % 32 == 0:
-            num_k_partitions = min(
-                max_k_partitions, ceildiv(A100.sm_count, num_blocks)
+        # Skip if it requires more shared memory than the GPU supports.
+        if (
+            _shared_memory_usage[a_type, b_type, c_type](
+                Index(bm, bn, bk), num_stages
             )
-            while K % (num_k_partitions * 32) != 0:
-                num_k_partitions -= 1
+            > gpu_info.shared_memory_per_multiprocessor
+        ):
+            continue
 
-        var num_waves = ceildiv(num_blocks * num_k_partitions, A100.sm_count)
-        if num_waves < min_num_waves:
-            best_bmnk[0] = bm
-            best_bmnk[1] = bn
-            min_num_waves = num_waves
-            best_num_k_partitions = num_k_partitions
+        # Traverse split-k possibilities to find the min work per SM.
+        for num_k_partitions in range(1, max_num_k_partitions + 1):
+            # Skip if partition becomes too small.
+            var k_partition = K // num_k_partitions
+            if k_partition < min_k_partition:
+                break
+
+            # Skip non-divisible K, TODO: generalize e.g. 4, 4 3
+            if K % (num_k_partitions * 32) != 0:
+                continue
+
+            var num_waves = ceildiv(
+                num_k_partitions * num_blocks, A100.sm_count
+            )
+            var work_per_SM = bm * bn * k_partition * num_waves
+
+            # Minimize work per SM but intuitively waves shouldn't increase too much.
+            if num_waves <= 2 * num_waves_base and (
+                work_per_SM < min_work_per_SM
+                or (
+                    work_per_SM == min_work_per_SM and num_waves < min_num_waves
+                )
+            ):
+                best_bmnk[0] = bm
+                best_bmnk[1] = bn
+                best_bmnk[2] = bk
+                best_num_stages = num_stages
+                best_num_k_partitions = num_k_partitions
+                min_work_per_SM = work_per_SM
+                min_num_waves = num_waves
 
     return MatmulConfig[a_type, b_type, c_type, transpose_b](
         block_tile_shape=best_bmnk,
         warp_tile_shape=Index(64, 64, best_bmnk[2]),
-        num_pipeline_stages=4,
+        num_pipeline_stages=best_num_stages,
         num_k_partitions=best_num_k_partitions,
     )
