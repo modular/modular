@@ -9,19 +9,19 @@
 //===----------------------------------------------------------------------===//
 
 #include "CallEmission.h"
-
 #include "ExprEmitter.h"
 #include "ExprNodes.h"
-#include "KGEN/MojoParser/ASTDecl.h"
-#include "KGEN/MojoParser/DeclResolver.h"
-#include "KGEN/MojoParser/ParserParamEvaluator.h"
 #include "MojoUtils.h"
 #include "OverloadFitness.h"
+#include "ParameterInference.h"
 
 #include "KGEN/HLCFDialect/HLCFOps.h"
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/LITDialect/LITOps.h"
 #include "KGEN/LITDialect/LITUtils.h"
+#include "KGEN/MojoParser/ASTDecl.h"
+#include "KGEN/MojoParser/DeclResolver.h"
+#include "KGEN/MojoParser/ParserParamEvaluator.h"
 #include "KGEN/POPDialect/POPOps.h"
 
 #include "Support/Compiler/OperationUtils.h"
@@ -552,74 +552,61 @@ PValue OverloadSet::filterOverloadSetForValueType(
     return {};
   }
 
-  // TODO(#22771): This is using an exact match which is perhaps too specific of
-  // a check. We could do some amount of parameter inference to support cases
-  // like:
+  // We do parameter inference to support cases like:
   //
   //    fn foo[Type: mlirtype]() -> Type
   //    var f : ()-> Int = foo
   //
-  // We could also support generating a lambda for fancy implicit conversions
-  // and subtyping some day.
-  auto getBindingsForSignature =
+  // TODO: We could also support generating a lambda for fancy implicit
+  // conversions and subtyping some day.
+  auto getBindingsIfValidCandidate =
       [&](LITSignatureType candidateType) -> ParameterExprArrayAttr {
-    // Fully apply any bound parameters to the candidate's type since they will
-    // be applied when a reference is made.
-    // TODO(#22771): Parameter inference.
-    return paramBindings.verifyBindings(candidateType);
-  };
-
-  auto isValidCandidate = [&](LITSignatureType candidateType) -> bool {
     // Apply any bound parameters to the candidate's type since they will be
     // applied when a reference is made.  We only do this if there are some
     // bindings present, because (unlike normal function calls) the result type
     // may have unbound parameters that we are trying to match, e.g. when in a
     // parameter expression context.
-    if (!paramBindings.empty()) {
-      auto newBindings = getBindingsForSignature(candidateType);
-      if (!newBindings)
-        return false; // If there is an error, return the problem.
+    auto newBindings = paramBindings.verifyBindings(candidateType);
+    if (!newBindings)
+      return {}; // If there is an error, return the problem.
 
-      // If anything was bound, apply it to the signature so the expected
-      // argument types are updated.
-      if (!newBindings.empty())
-        candidateType = candidateType.getSpecializedSignature(
-            newBindings, getShared().translateLocation(expr->getLoc()));
-    }
+    // If anything was bound, apply it to the signature so the expected
+    // argument types are updated.
+    if (!newBindings.empty())
+      candidateType = candidateType.getSpecializedSignature(newBindings);
 
-    return functionType.isEqualCanon(candidateType) ||
-           canConvertWithRebind(candidateType, functionType, getShared());
+    if (functionType.isEqualCanon(candidateType) ||
+        canConvertWithRebind(candidateType, functionType, getShared()))
+      return newBindings;
+    return {};
   };
 
   // Evaluate the fitness of each candidate in our overload set.
   SmallVector<ASTDecl *> validCandidates;
+  SmallVector<ParameterExprArrayAttr> candidateBindings;
   for (ASTDecl *candidate : fnDecls) {
     LITSignatureType candidateType =
         cast<LIT::FuncOp>(*candidate).getFullSignature();
-    if (isValidCandidate(candidateType))
+    if (ParameterExprArrayAttr bindings =
+            getBindingsIfValidCandidate(candidateType)) {
       validCandidates.push_back(candidate);
+      candidateBindings.push_back(bindings);
+    }
   }
 
   // Notify the listener of the updated decl references for the call now that
   // invalid candidates have been filtered out.
-  if (!validCandidates.empty())
+  if (!validCandidates.empty()) {
     getShared().notifyListenerOnRef(validCandidates, baseName, expr, syntax);
+  }
 
   // If we have exactly one viable candidate, then we succeed.
   if (validCandidates.size() == 1) {
-    if (paramBindings.empty()) {
-      return getCallee(getShared(), validCandidates[0], baseName, paramBindings,
-                       expr);
-    }
-
-    LITSignatureType candidateType =
-        cast<LIT::FuncOp>(*fnDecls.front()).getFullSignature();
-
     ParamBindings newBindings((const TypeCheckScopeInfo &)paramBindings);
-    for (TypedAttr bind : getBindingsForSignature(candidateType))
+    for (TypedAttr bind : candidateBindings.front())
       newBindings.addPrechecked(expr, bind);
-    return getCallee(getShared(), validCandidates[0], baseName, newBindings,
-                     expr);
+    return getCallee(getShared(), validCandidates.front(), baseName,
+                     newBindings, expr);
   }
 
   // If we aren't to emit a diagnostic, just return the failure.
