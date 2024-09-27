@@ -63,6 +63,26 @@ void KGENDialect::registerAttributes() {
 }
 
 //===----------------------------------------------------------------------===//
+// EmitAsAttr
+//===----------------------------------------------------------------------===//
+
+bool EmitAsAttr::classof(Attribute attr) {
+  auto intAttr = ::dyn_cast<IntegerAttr>(attr);
+  if (!intAttr)
+    return false;
+  return ::isa<IndexType>(intAttr.getType()) &&
+         contains_if(ArrayRef{EmitAs::ASM, EmitAs::LLVM}, [&](EmitAs kind) {
+           return (int)kind == intAttr.getInt();
+         });
+}
+
+EmitAsAttr EmitAsAttr::get(MLIRContext *ctx, EmitAs val) {
+  return ::cast<EmitAsAttr>(Builder(ctx).getIndexAttr((int)val));
+}
+
+EmitAs EmitAsAttr::getValue() const { return (EmitAs)getInt(); }
+
+//===----------------------------------------------------------------------===//
 // VariadicAttr
 //===----------------------------------------------------------------------===//
 
@@ -1236,16 +1256,17 @@ LogicalResult ParamOperatorAttr::verify(
       return emitError()
              << "'compile_assembly' second operand should have index type";
     if (auto emissionIntAttr = ::dyn_cast<IntegerAttr>(operands[1])) {
-      auto emissionKind = (EmitAs)emissionIntAttr.getInt();
-      if (!llvm::is_contained({EmitAs::LLVM, EmitAs::ASM}, emissionKind))
+      if (!::isa<EmitAsAttr>(emissionIntAttr)) {
         return emitError() << "'compile_assembly' second operand should "
-                              "evaluate to either asm or llvm";
+                              "evaluate to either 'asm', 'llvm', or 'llvm-opt'";
+      }
     }
     if (!operands[2].getType().isInteger(1))
       return emitError() << "'compile_assembly' third operand should be an i1";
-    if (!::isa<IntegerAttr>(operands[2]))
+    if (!::isa<IntegerAttr>(operands[2])) {
       return emitError()
              << "'compile_assembly' fourth operand must be a constant";
+    }
     break;
   }
   case POC::GetLinkageName:
