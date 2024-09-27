@@ -577,7 +577,7 @@ static void attachInstrumentationAttributes(llvm::Module &module,
 /// DebugDirectives instead for equivalent performance to no-debug.
 static void adaptDebugEmissionKind(ModuleOp module, StringRef targetTriple,
                                    DebugInfo::EmissionKind debugLevel) {
-  bool generatingPtx = targetTriple.contains("nvptx");
+  bool generatingPtx = llvm::Triple(targetTriple).isNVPTX();
   if (generatingPtx && debugLevel == DebugInfo::EmissionKind::LineTablesOnly) {
     mlir::AttrTypeReplacer replacer;
     replacer.addReplacement(
@@ -695,8 +695,7 @@ ErrorOr<BufferRef> ObjectCompiler::emitArchive(ModuleOp module) {
       // Split the module into multiple slices and compile each in parallel.
       // HACK HACK HACK https://github.com/modularml/modular/issues/22959
       // HACK: If we are generating PTX we don't want to split.
-      bool emitAssembly =
-          options.targetTriple.find("nvptx") != std::string::npos;
+      bool emitAssembly = llvm::Triple(options.targetTriple).isNVPTX();
       bool noSplitting = runtime.getWorkQueue()->getParallelismLevel() < 2;
       bool parLLC = runtime.getWorkQueue()->getParallelismLevel() >= 2 &&
                     options.enableParallelLLC;

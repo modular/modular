@@ -343,8 +343,7 @@ public:
 
       // Exported functions to the NVVM target get a special metadata
       // attribute to tell LLVM that these are kernel functions.
-      if (llvm::is_contained({llvm::Triple::nvptx, llvm::Triple::nvptx64},
-                             target.getTriple().getArch()))
+      if (target.getTriple().isNVPTX())
         funcOp->setAttr(mlir::NVVM::NVVMDialect::getKernelFuncAttrName(),
                         b.getUnitAttr());
     }
@@ -770,8 +769,7 @@ static LogicalResult convertGlobals(ModuleOp module, POPToLLVMTypeConverter &tc,
 
   // HACK HACK HACK https://github.com/modularml/modular/issues/22959
   // HACK: NVPTX doesn't support global destructors.
-  if (llvm::is_contained({llvm::Triple::nvptx, llvm::Triple::nvptx64},
-                         tc.getTarget().getTriple().getArch()))
+  if (tc.getTarget().getTriple().isNVPTX())
     return success();
 
   auto b = OpBuilder::atBlockBegin(module.getBody());
@@ -1091,8 +1089,7 @@ void LowerKGENToLLVMPass::runOnOperation() {
 
   // HACK HACK HACK: Our current name mangling scheme is not compatible with the
   // NVPTX backend. Change the symbol names to be compatbile.
-  if (llvm::is_contained({llvm::Triple::nvptx, llvm::Triple::nvptx64},
-                         targetInfo.getTriple().getArch())) {
+  if (targetInfo.getTriple().isNVPTX()) {
     DenseMap<StringAttr, StringAttr> renamed;
     for (auto symbol : getOperation().getOps<mlir::SymbolOpInterface>()) {
       StringAttr name = symbol.getNameAttr();
