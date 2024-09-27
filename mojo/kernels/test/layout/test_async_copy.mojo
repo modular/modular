@@ -96,6 +96,96 @@ fn test_async_copy[
     _ = input^
 
 
+fn async_dynamic_copy_kernel[
+    input_layout: Layout,
+    output_layout: Layout,
+    BM: Int,
+    BN: Int,
+    /,
+    _is_homogeneous: Bool = False,
+](
+    input: LayoutTensor[
+        DType.float32,
+        input_layout,
+        __experimental_non_homogeneous_tile=_is_homogeneous,
+    ],
+    output: LayoutTensor[
+        DType.float32,
+        output_layout,
+        __experimental_non_homogeneous_tile=_is_homogeneous,
+    ],
+):
+    var input_tile = input.tile[BM, BN](BlockIdx.x(), BlockIdx.y())
+    var output_tile = output.tile[BM, BN](BlockIdx.x(), BlockIdx.y())
+
+    var smem_tile = LayoutTensor[
+        DType.float32,
+        Layout(IntTuple(BM, BN)),
+        address_space = AddressSpace.SHARED,
+        __experimental_non_homogeneous_tile=True,
+    ].stack_allocation()
+
+    smem_tile.copy_from_async(input_tile)
+    async_copy_wait_all()
+
+    output_tile.copy_from(smem_tile)
+
+
+fn test_dynamic_async_copy[
+    M: Int, N: Int, BM: Int, BN: Int, /, skew_M: Int = 0, skew_N: Int = 0
+](ctx: DeviceContext) raises:
+    print("=== test_dynamic_async_copy")
+
+    alias unknown_layout = Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)
+
+    alias input_runtime_layout = RuntimeLayout[unknown_layout].row_major(
+        StaticIntTuple[2](M, N)
+    )
+
+    alias output_runtime_layout = RuntimeLayout[unknown_layout].row_major(
+        StaticIntTuple[2](M - skew_M, N - skew_N)
+    )
+
+    var input = ManagedLayoutTensor[
+        DType.float32,
+        unknown_layout,
+        gpu_managed_alloc,
+        gpu_free,
+        gpu_managed_alloc_runtime,
+        __experimental_non_homogeneous_tile=True,
+    ](input_runtime_layout)
+    arange(input.tensor)
+
+    var output = ManagedLayoutTensor[
+        DType.float32,
+        unknown_layout,
+        gpu_managed_alloc,
+        gpu_free,
+        gpu_managed_alloc_runtime,
+        __experimental_non_homogeneous_tile=True,
+    ](output_runtime_layout)
+
+    alias kernel_type = async_dynamic_copy_kernel[
+        unknown_layout, unknown_layout, BM, BN, _is_homogeneous=True
+    ]
+
+    var kernel = ctx.compile_function[kernel_type]()
+
+    ctx.enqueue_function(
+        kernel,
+        input.tensor,
+        output.tensor,
+        grid_dim=(ceildiv(M, BM), ceildiv(M, BN)),
+        block_dim=(1, 1),
+    )
+
+    ctx.synchronize()
+    print(output.tensor)
+
+    _ = input^
+    _ = output^
+
+
 fn multistage_copy[
     type: DType,
     a_layout: Layout,
@@ -520,6 +610,14 @@ fn main() raises:
         # CHECK: 24.0   26.0   28.0   27.0   28.0   29.0
         # CHECK: 30.0   31.0   32.0   33.0   34.0   35.0
         test_async_copy[unknown_layout, M, N, BM, BN](ctx)
+
+        # CHECK: === test_dynamic_async_copy
+        # CHECK: 0.0 1.0 2.0 3.0 4.0 5.0
+        # CHECK: 6.0 7.0 8.0 9.0 10.0 11.0
+        # CHECK: 12.0 13.0 14.0 15.0 16.0 17.0
+        # CHECK: 18.0 19.0 20.0 21.0 22.0 23.0
+        # CHECK: 24.0 25.0 26.0 27.0 28.0 29.0
+        test_dynamic_async_copy[M, N, BM, BN, skew_M=1, skew_N=0](ctx)
 
         alias num_threads = 256
         alias num_pipeline_stages = 4

@@ -2208,7 +2208,7 @@ struct LayoutTensor[
             dtype,
             src_layout,
             address_space=src_addr_space,
-            element_layout=src_element_layout,
+            element_layout=src_element_layout, **_,
         ],
         src_idx_bound: Int = UNKNOWN_VALUE,
         base_offset: Int = UNKNOWN_VALUE,
@@ -2220,10 +2220,13 @@ struct LayoutTensor[
 
         alias dst_size = layout.size()
         alias src_size = src_layout.size()
-        constrained[
-            dst_size == src_size,
-            "copy_from_async should move data of the same size",
-        ]()
+
+        @parameter
+        if not src.__experimental_non_homogeneous_tile:
+            constrained[
+                dst_size == src_size,
+                "copy_from_async should move data of the same size",
+            ]()
 
         alias dst_element_size = int(self.element_size)
         alias src_element_size = int(src.element_size)
@@ -2271,56 +2274,110 @@ struct LayoutTensor[
         ):
             # Swizzle does `^bits`. Every 2^bits rows is xor-ed with the same binary number.
             # For vectors within 2^bits, we swizzle each of them.
-            alias num_vecs_per_swizzle = ceildiv(
-                swizzle.value().size(),
-                layout.stride[0].value() // self.element_size,
-            ) if swizzle.__bool__() and layout.size() > 1 else 1
 
             @parameter
-            for j in range(num_vecs_per_swizzle):
-                alias dst_offset = layout(j)
-                var swizzled_offset = dst_offset
+            if not src.__experimental_non_homogeneous_tile:
+                alias num_vecs_per_swizzle = ceildiv(
+                    swizzle.value().size(),
+                    layout.stride[0].value() // self.element_size,
+                ) if swizzle.__bool__() and layout.size() > 1 else 1
 
-                # Swizzle each vector within the first 2^bits rows.
                 @parameter
-                if swizzle:
-                    alias swizzle_fn = swizzle.value()
-                    swizzled_offset = (
-                        swizzle_fn(
-                            (base_offset + dst_offset) // self.element_size
+                for j in range(num_vecs_per_swizzle):
+                    alias dst_offset = layout(j)
+                    var swizzled_offset = dst_offset
+
+                    # Swizzle each vector within the first 2^bits rows.
+                    @parameter
+                    if swizzle:
+                        alias swizzle_fn = swizzle.value()
+                        swizzled_offset = (
+                            swizzle_fn(
+                                (base_offset + dst_offset) // self.element_size
+                            )
+                            * self.element_size
+                            - base_offset
                         )
-                        * self.element_size
-                        - base_offset
-                    )
 
-                # Group vectors that are more than (multiple of) 2^bits rows part.
-                # The vector's idx is swizzled_offset + distance to the first vector
-                # in the group, which is within the first 2^bits rows.
-                @parameter
-                for i in range(j, dst_size, num_vecs_per_swizzle):
-                    var src_idx = 0
+                    # Group vectors that are more than (multiple of) 2^bits rows part.
+                    # The vector's idx is swizzled_offset + distance to the first vector
+                    # in the group, which is within the first 2^bits rows.
+                    @parameter
+                    for i in range(j, dst_size, num_vecs_per_swizzle):
+                        var src_idx = 0
 
-                    # only get index like this when it is vectorized form
-                    alias src_static_idx = src_layout(i)
-                    alias dst_distance = layout(i) - layout(j)
+                        # only get index like this when it is vectorized form
+                        alias src_static_idx = src_layout(i)
+                        alias dst_distance = layout(i) - layout(j)
+
+                        @parameter
+                        if src_dims_known:
+                            src_idx = src_static_idx
+                        else:
+                            src_idx = src.runtime_layout(i)
+
+                        var dst_idx = swizzled_offset + dst_distance
+
+                        @parameter
+                        if masked:
+                            var src_copy_size = element_size_bytes if src_idx < src_idx_bound else 0
+                            async_copy[element_size_bytes, fill=fill](
+                                src_ptr + src_idx,
+                                dst_ptr + dst_idx,
+                                src_copy_size,
+                            )
+                        else:
+                            async_copy[element_size_bytes, fill=fill](
+                                src_ptr + src_idx, dst_ptr + dst_idx
+                            )
+            else:
+                alias is_rank2 = src.rank == 2 and self.rank == 2
+                constrained[
+                    is_rank2,
+                    (
+                        "async copy for dynamic tiles is only available for"
+                        " rank-2 tensor."
+                    ),
+                ]()
+
+                var num_vecs_per_swizzle = ceildiv(
+                    swizzle.value().size(),
+                    to_int(self.runtime_layout.stride.value[0])
+                    // self.element_size,
+                ) if swizzle.__bool__() and self.runtime_layout.size() > 1 else 1
+
+                var d0 = min(src.dim(0), self.dim(0))
+                var d1 = min(src.dim(1), self.dim(1))
+                var size = d0 * d1
+
+                for i in range(num_vecs_per_swizzle):
+                    var dst_offset = self.runtime_layout(i)
+
+                    var swizzled_offset = dst_offset
 
                     @parameter
-                    if src_dims_known:
-                        src_idx = src_static_idx
-                    else:
-                        src_idx = src.runtime_layout(i)
-
-                    var dst_idx = swizzled_offset + dst_distance
-
-                    @parameter
-                    if masked:
-                        var src_copy_size = element_size_bytes if src_idx < src_idx_bound else 0
-                        async_copy[element_size_bytes, fill=fill](
-                            src_ptr + src_idx, dst_ptr + dst_idx, src_copy_size
+                    if swizzle:
+                        alias swizzle_fn = swizzle.value()
+                        swizzled_offset = (
+                            swizzle_fn(
+                                (base_offset + dst_offset) // self.element_size
+                            )
+                            * self.element_size
+                            - base_offset
                         )
-                    else:
+
+                    for j in range(i, size, num_vecs_per_swizzle):
+                        var dst_distance = self.runtime_layout(
+                            j
+                        ) - self.runtime_layout(i)
+                        var src_idx = src.runtime_layout(j)
+
+                        var dst_idx = dst_offset + dst_distance
+
                         async_copy[element_size_bytes, fill=fill](
-                            src_ptr + src_idx, dst_ptr + dst_idx
+                            src_ptr + src_idx,
+                            dst_ptr + dst_idx,
+                            element_size_bytes,
                         )
 
         # Async copy should only be used for 16B vector for bypassing L1.
@@ -2329,23 +2386,64 @@ struct LayoutTensor[
             constrained[not swizzle, "Should not swizzle scalar copy."]()
 
             @parameter
-            for i in range(dst_size * dst_element_size):
-                var src_idx = 0
-
-                alias src_static_idx = make_layout(
-                    src.element_layout, src_layout
-                )(i)
-                alias dst_idx = make_layout(self.element_layout, self.layout)(i)
+            if not __experimental_non_homogeneous_tile:
 
                 @parameter
-                if src_dims_known:
-                    src_idx = src_static_idx
-                else:
-                    src_idx = make_runtime_layout(
-                        src.runtime_element_layout, src.runtime_layout
+                for i in range(dst_size * dst_element_size):
+                    var src_idx = 0
+
+                    alias src_static_idx = make_layout(
+                        src.element_layout, src_layout
+                    )(i)
+                    alias dst_idx = make_layout(
+                        self.element_layout, self.layout
                     )(i)
 
-                async_copy[4, fill=fill](src_ptr + src_idx, dst_ptr + dst_idx)
+                    @parameter
+                    if src_dims_known:
+                        src_idx = src_static_idx
+                    else:
+                        src_idx = make_runtime_layout(
+                            src.runtime_element_layout, src.runtime_layout
+                        )(i)
+
+                    async_copy[4, fill=fill](
+                        src_ptr + src_idx, dst_ptr + dst_idx
+                    )
+            else:
+                alias is_rank2 = src.rank == 2 and self.rank == 2
+                constrained[
+                    is_rank2,
+                    (
+                        "async copy for dynamic tiles is only available for"
+                        " rank-2 tensor."
+                    ),
+                ]()
+
+                var d0 = min(src.dim(0), self.dim(0))
+                var d1 = min(src.dim(1), self.dim(1))
+
+                var dst_runtime_layout = RuntimeLayout[self.layout](
+                    RuntimeTuple[self.layout.shape](d0, d1),
+                    self.runtime_layout.stride,
+                )
+                var src_runtime_layout = RuntimeLayout[src.layout](
+                    RuntimeTuple[src.layout.shape](d0, d1),
+                    src.runtime_layout.stride,
+                )
+
+                for i in range(d0 * d1 * dst_element_size):
+                    var src_idx = make_runtime_layout(
+                        src.runtime_element_layout, src_runtime_layout
+                    )(i)
+
+                    var dst_idx = make_runtime_layout(
+                        self.runtime_element_layout, dst_runtime_layout
+                    )(i)
+
+                    async_copy[4, fill=fill](
+                        src_ptr + src_idx, dst_ptr + dst_idx
+                    )
 
     @always_inline
     fn copy_from_async_masked_src[
