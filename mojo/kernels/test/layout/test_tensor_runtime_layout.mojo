@@ -658,6 +658,42 @@ fn test_split():
     # CHECK: 12.0 13.0 14.0 15.0
     print(tensor_4x4_split1)
 
+    alias layout_Ux8 = Layout(IntTuple(UNKNOWN_VALUE, 8), IntTuple(8, 1))
+    var dynamic_layout_Ux8 = RuntimeLayout[layout_Ux8](
+        RuntimeTuple[layout_Ux8.shape](2, 8),
+        RuntimeTuple[layout_Ux8.stride](8, 1),
+    )
+    var tensor_Ux8 = LayoutTensor[DType.float32, layout_Ux8](
+        ptr, dynamic_layout_Ux8
+    )
+    var tensor_Ux8_split0 = tensor_Ux8.split[1, alignment=3](3, 0)
+    var tensor_Ux8_split1 = tensor_Ux8.split[1, alignment=3](3, 1)
+    var tensor_Ux8_split2 = tensor_Ux8.split[1, alignment=3](3, 2)
+
+    # CHECK: ((-1, -1):(8, 1))
+    print(tensor_Ux8_split0.layout)
+    # CHECK: ((2, 3):(8, 1))
+    print(tensor_Ux8_split0.runtime_layout)
+    # CHECK: 0.0 1.0 2.0
+    # CHECK: 8.0 9.0 10.0
+    print(tensor_Ux8_split0)
+
+    # CHECK: ((-1, -1):(8, 1))
+    print(tensor_Ux8_split1.layout)
+    # CHECK: ((2, 3):(8, 1))
+    print(tensor_Ux8_split1.runtime_layout)
+    # CHECK: 3.0 4.0 5.0
+    # CHECK: 11.0 12.0 13.0
+    print(tensor_Ux8_split1)
+
+    # CHECK: ((-1, -1):(8, 1))
+    print(tensor_Ux8_split2.layout)
+    # CHECK: ((2, 2):(8, 1))
+    print(tensor_Ux8_split2.runtime_layout)
+    # CHECK: 6.0 7.0
+    # CHECK: 14.0 15.0
+    print(tensor_Ux8_split2)
+
     ptr.free()
 
 
