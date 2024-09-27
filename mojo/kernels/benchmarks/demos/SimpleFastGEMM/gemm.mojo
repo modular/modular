@@ -79,8 +79,6 @@ fn kernel(
 
     @parameter
     for idx0 in range(MR):
-
-        @prameter
         for idx1 in range(NR2):
             var cv = c.load[width=simd_size](n * idx0 + simd_size * idx1)
             c_local.store(NR * idx0 + simd_size * idx1, cv)
@@ -95,8 +93,6 @@ fn kernel(
 
         @parameter
         for idx0 in range(MR):
-
-            @prameter
             for idx1 in range(NR2):
                 var av = a[idx0 * k + pr].cast[dtype]()
                 var bv = b.load[width=simd_size](NR * pr + simd_size * idx1)
@@ -108,8 +104,6 @@ fn kernel(
 
     @parameter
     for idx0 in range(MR):
-
-        @prameter
         for idx1 in range(NR2):
             var cv = c_local.load[width=simd_size](NR * idx0 + simd_size * idx1)
             c.store(n * idx0 + simd_size * idx1, cv)
