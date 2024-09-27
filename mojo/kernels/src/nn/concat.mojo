@@ -4,6 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
+from collections import OptionalReg
 from collections.vector import InlinedFixedVector
 from math import align_down, align_up, ceildiv
 from os import abort
@@ -26,6 +27,11 @@ from runtime.asyncrt import MojoCallContextPtr
 from utils import StaticIntTuple, StaticTuple, product
 from runtime.tracing import Trace, TraceLevel
 
+alias elementwise_epilogue_type = fn[
+    c_type: DType, rank: Int, width: Int = 1, *, alignment: Int = 1
+] (StaticIntTuple[rank], SIMD[c_type, width]) capturing -> None
+
+
 # ===----------------------------------------------------------------------===#
 # concat
 # ===----------------------------------------------------------------------===#
@@ -41,6 +47,103 @@ fn variadic_list_to_vector[
     for i in range(len(elems)):
         vector.append(elems[i])
     return InlinedFixedVector(vector)
+
+
+@always_inline
+fn _compute_nd_index(shape: StaticIntTuple, index: Int) -> __type_of(shape):
+    """Computes the NDBuffer's offset using the index positions provided.
+
+    Args:
+        shape: The shape of the NDBuffer.
+        index: The flat index position.
+
+    Returns:
+        The index positions.
+    """
+
+    alias rank = shape.size
+
+    @parameter
+    if rank == 0:
+        return StaticIntTuple[shape.size](0)
+
+    var result = StaticIntTuple[shape.size]()
+
+    result[rank - 1] = index
+
+    @parameter
+    for idx in range(rank - 1):
+        result[rank - idx - 2] = result[rank - idx - 1]._positive_div(
+            shape[rank - idx - 1]
+        )
+        result[rank - idx - 1] = result[rank - idx - 1]._positive_rem(
+            shape[rank - idx - 1]
+        )
+    return result
+
+
+@always_inline
+fn memcpy_or_fuse[
+    rank: Int,
+    type: DType,
+    epilogue_fn: OptionalReg[elementwise_epilogue_type],
+](
+    dest_data: UnsafePointer[Int8],
+    out_byte_offset: Int,
+    src_data: __type_of(dest_data),
+    n: Int,
+    out_shape: StaticIntTuple[rank],
+):
+    @parameter
+    if not epilogue_fn:
+        memcpy(dest_data.offset(out_byte_offset), src_data, n)
+    else:
+        alias func = epilogue_fn.value()
+        alias simd_width = simdwidthof[type]()
+        alias address_space = src_data.address_space
+
+        var typed_offset = out_byte_offset // sizeof[type]()
+        var typed_len = n // sizeof[type]()
+        debug_assert(
+            n % sizeof[type]() == 0 and out_byte_offset % sizeof[type]() == 0,
+            "offset and length must be dividable by sizeof[type]",
+        )
+
+        # Cast
+        var shape_1d = StaticIntTuple[1](typed_len)
+        var typed_src = src_data.bitcast[type, address_space=address_space]()
+        var input = NDBuffer[type, 1, address_space=address_space](
+            typed_src,
+            shape_1d,
+        )
+
+        @parameter
+        @always_inline
+        fn epilogue_wrapper[
+            simd_width: Int, _rank: Int
+        ](index: StaticIntTuple[_rank]):
+            var load = rebind[NDBuffer[type, _rank]](input).load[
+                width=simd_width
+            ](index)
+
+            # Convert the linearized address back to the nd indices.
+            constrained[_rank == 1]()
+            var out_index = _compute_nd_index(
+                out_shape, index[0] + typed_offset
+            )
+
+            func[type, rank, simd_width](out_index, load)
+            return
+
+        var inputs_simd_aligned = typed_len % simd_width == 0
+        if inputs_simd_aligned:
+            elementwise[epilogue_wrapper, simd_width=simd_width](shape_1d)
+        else:
+            # Otherwise we must run scalar.
+            elementwise[
+                epilogue_wrapper,
+                simd_width=1,
+            ](shape_1d)
 
 
 @value
@@ -64,7 +167,7 @@ struct _Span:
 @value
 @register_passable("trivial")
 struct _CanonicallyReshapedBuffer:
-    var data: UnsafePointer[UInt8]
+    var data: UnsafePointer[Int8]
     var h: Int
     var w: Int
     var c: Int
@@ -77,7 +180,7 @@ fn _canonical_reshape[
     var h = product(shape, 0, axis)
     var w = buf.dim(axis)
     var c = product(shape, axis + 1, rank) * sizeof[type]()
-    return _CanonicallyReshapedBuffer(buf.data.bitcast[UInt8](), h, w, c)
+    return _CanonicallyReshapedBuffer(buf.data.bitcast[Int8](), h, w, c)
 
 
 fn _canonical_reshape_output[
@@ -92,7 +195,7 @@ fn _canonical_reshape_output[
     for i in range(1, len(inputs)):
         out_w += inputs[i].dim(axis)
     return _CanonicallyReshapedBuffer(
-        out_buf.data.bitcast[UInt8](),
+        out_buf.data.bitcast[Int8](),
         input0_canon.h,
         out_w,
         input0_canon.c,
@@ -100,7 +203,9 @@ fn _canonical_reshape_output[
 
 
 fn _concat_parallel[
-    rank: Int, type: DType
+    rank: Int,
+    type: DType,
+    epilogue_fn: OptionalReg[elementwise_epilogue_type],
 ](
     output: NDBuffer[type, rank],
     axis: Int,
@@ -168,45 +273,51 @@ fn _concat_parallel[
                 if overlap_full_rel_end < overlap_full_rel_start:
                     # If we hit here, this was probably a bad chunking choice,
                     # but var's handle it correctly anyways.
-                    memcpy(
-                        output_data.offset(
-                            output_wc_offset
-                            + overlap_rel_start // input_wc * output_wc
-                            + overlap_rel_start % input_wc
-                        ),
+                    memcpy_or_fuse[rank, type, epilogue_fn](
+                        output_data,
+                        output_wc_offset
+                        + overlap_rel_start // input_wc * output_wc
+                        + overlap_rel_start % input_wc,
                         input_data.offset(overlap_rel_start),
                         overlap_rel_end - overlap_rel_start,
+                        output.dynamic_shape,
                     )
                 else:
                     # OK, we have maybe stragglers on the start and end, and a
                     # nice solid middle section -- var's handle those
                     # separately.
                     # First, leading stragglers:
-                    memcpy(
-                        output_data.offset(
-                            output_wc_offset
-                            + overlap_rel_start // input_wc * output_wc
-                            + overlap_rel_start % input_wc
-                        ),
+                    memcpy_or_fuse[rank, type, epilogue_fn](
+                        output_data,
+                        output_wc_offset
+                        + overlap_rel_start // input_wc * output_wc
+                        + overlap_rel_start % input_wc,
                         input_data.offset(overlap_rel_start),
                         overlap_full_rel_start - overlap_rel_start,
+                        output.dynamic_shape,
                     )
                     # Now, fully-aligned sections:
                     var in_ptr = input_data.offset(overlap_full_rel_start)
                     var end_in_ptr = input_data.offset(overlap_full_rel_end)
-                    var out_ptr = output_data.offset(
-                        output_wc_offset
-                        + overlap_full_rel_start // input_wc * output_wc
-                    )
+                    var out_ptr_offset = output_wc_offset + overlap_full_rel_start // input_wc * output_wc
+
                     while in_ptr < end_in_ptr:
-                        memcpy(out_ptr, in_ptr, input_wc)
+                        memcpy_or_fuse[rank, type, epilogue_fn](
+                            output_data,
+                            out_ptr_offset,
+                            in_ptr,
+                            input_wc,
+                            output.dynamic_shape,
+                        )
                         in_ptr += input_wc
-                        out_ptr += output_wc
+                        out_ptr_offset += output_wc
                     # Lastly, trailing stragglers:
-                    memcpy(
-                        out_ptr,
+                    memcpy_or_fuse[rank, type, epilogue_fn](
+                        output_data,
+                        out_ptr_offset,
                         in_ptr,
                         overlap_rel_end - overlap_full_rel_end,
+                        output.dynamic_shape,
                     )
 
             amount_traversed += input_byte_size
@@ -224,7 +335,9 @@ fn _concat_parallel[
 
 @always_inline
 fn _concat[
-    rank: Int, type: DType
+    rank: Int,
+    type: DType,
+    epilogue_fn: OptionalReg[elementwise_epilogue_type],
 ](
     output: NDBuffer[type, rank],
     axis: Int,
@@ -260,10 +373,12 @@ fn _concat[
             var input_offset = j * w * c
             var output_offset = j * stride_h_out + w_offset * stride_w_out
             # these slices are contiguous
-            memcpy(
-                output.data + output_offset,
-                inputs[i].data + input_offset,
-                w * c,
+            memcpy_or_fuse[rank, type, epilogue_fn](
+                output.data.bitcast[Int8](),
+                output_offset * sizeof[type](),
+                (inputs[i].data + input_offset).bitcast[Int8](),
+                w * c * sizeof[type](),
+                output.dynamic_shape,
             )
         w_offset += w
 
@@ -272,6 +387,7 @@ fn _concat[
 fn _concat_inner[
     rank: Int,
     type: DType,
+    epilogue_fn: OptionalReg[elementwise_epilogue_type],
 ](
     output: NDBuffer[type, rank],
     inputs: InlinedFixedVector[NDBuffer[type, rank]],
@@ -279,10 +395,12 @@ fn _concat_inner[
     var num_elems_copied: Int = 0
     for i in range(len(inputs)):
         var buffer_len = inputs[i].size()
-        memcpy(
-            output.data.offset(num_elems_copied),
-            inputs[i].data,
-            buffer_len,
+        memcpy_or_fuse[rank, type, epilogue_fn](
+            output.data.bitcast[Int8](),
+            num_elems_copied * sizeof[type](),
+            inputs[i].data.bitcast[Int8](),
+            buffer_len * sizeof[type](),
+            output.dynamic_shape,
         )
         num_elems_copied += buffer_len
 
@@ -312,7 +430,9 @@ fn _check_input_consistency[
 
 @always_inline
 fn _concat_serial[
-    rank: Int, type: DType
+    rank: Int,
+    type: DType,
+    epilogue_fn: OptionalReg[elementwise_epilogue_type],
 ](
     output: NDBuffer[type, rank],
     axis: Int,
@@ -329,16 +449,17 @@ fn _concat_serial[
         break
 
     if all_outer_dims_singvaron:
-        _concat_inner[rank, type](output, inputs)
+        _concat_inner[rank, type, epilogue_fn](output, inputs)
         return
 
-    _concat[rank, type](output, axis, inputs)
+    _concat[rank, type, epilogue_fn](output, axis, inputs)
 
 
 @always_inline
 fn _concat_small[
     rank: Int,
     type: DType,
+    epilogue_fn: OptionalReg[elementwise_epilogue_type],
 ](
     output: NDBuffer[type, rank],
     axis: Int,
@@ -365,7 +486,6 @@ fn _concat_small[
         # Iterate through the inputs to find the one we should be storing to.
         for i in range(len(inputs)):
             var input = inputs[i]
-
             # This is the input we should be loading/storing.
             if target_dim < input.dynamic_shape[axis]:
                 var in_index = out_index
@@ -373,9 +493,15 @@ fn _concat_small[
                 var load = rebind[NDBuffer[type, rank]](input).load[
                     width=simd_width
                 ](in_index)
-                rebind[NDBuffer[type, rank]](output).store[width=simd_width](
-                    out_index, load
-                )
+
+                @parameter
+                if epilogue_fn:
+                    alias func = epilogue_fn.value()
+                    func[type, rank, simd_width](out_index, load)
+                else:
+                    rebind[NDBuffer[type, rank]](output).store[
+                        width=simd_width
+                    ](out_index, load)
                 return
             else:
                 # Keep looking...
@@ -407,6 +533,7 @@ fn _concat_small[
 fn _concat_cpu[
     rank: Int,
     type: DType,
+    epilogue_fn: OptionalReg[elementwise_epilogue_type],
     single_thread_blocking_override: Bool,
 ](
     output: NDBuffer[type, rank],
@@ -415,14 +542,14 @@ fn _concat_cpu[
 ) raises:
     @parameter
     if single_thread_blocking_override:
-        return _concat_small[rank, type](output, axis, inputs)
+        return _concat_small[rank, type, epilogue_fn](output, axis, inputs)
 
     _check_input_consistency[rank, type](axis, inputs)
 
     @always_inline
     @parameter
     fn dispatch_serial(unused_thread_idx: Int):
-        _concat_serial[rank, type](output, axis, inputs)
+        _concat_serial[rank, type, epilogue_fn](output, axis, inputs)
 
     alias KB = 1024
     alias min_work_for_parallel = 128 * KB  # TODO: autotune
@@ -434,7 +561,7 @@ fn _concat_cpu[
         # _NDBufferVector, so this kernel must be run synchronously.
         sync_parallelize[dispatch_serial](1)
     else:
-        _concat_parallel(output, axis, inputs)
+        _concat_parallel[epilogue_fn=epilogue_fn](output, axis, inputs)
 
 
 @mogg_register("concat_from_list_shape")
@@ -508,6 +635,7 @@ fn concat_shape[
 fn _concat_gpu_impl[
     rank: Int,
     type: DType,
+    epilogue_fn: OptionalReg[elementwise_epilogue_type],
     single_thread_blocking_override: Bool,
 ](
     output: NDBuffer[type, rank],
@@ -521,29 +649,29 @@ fn _concat_gpu_impl[
         # we should replace InlinedFixedVector with StaticTuple for any
         # operation that accept Variadic<MO_Tensor>
         if num_inputs == 1:
-            return _concat_gpu[num_inputs=1](
+            return _concat_gpu[epilogue_fn=epilogue_fn, num_inputs=1](
                 output, axis, StaticTuple[_, 1](inputs[0]), ctx
             )
         if num_inputs == 2:
-            return _concat_gpu[num_inputs=2](
+            return _concat_gpu[epilogue_fn=epilogue_fn, num_inputs=2](
                 output, axis, StaticTuple[_, 2](inputs[0], inputs[1]), ctx
             )
         if num_inputs == 3:
-            return _concat_gpu[num_inputs=3](
+            return _concat_gpu[epilogue_fn=epilogue_fn, num_inputs=3](
                 output,
                 axis,
                 StaticTuple[_, 3](inputs[0], inputs[1], inputs[2]),
                 ctx,
             )
         if num_inputs == 4:
-            return _concat_gpu[num_inputs=4](
+            return _concat_gpu[epilogue_fn=epilogue_fn, num_inputs=4](
                 output,
                 axis,
                 StaticTuple[_, 4](inputs[0], inputs[1], inputs[2], inputs[3]),
                 ctx,
             )
         if num_inputs == 5:
-            return _concat_gpu[num_inputs=5](
+            return _concat_gpu[epilogue_fn=epilogue_fn, num_inputs=5](
                 output,
                 axis,
                 StaticTuple[_, 5](
@@ -552,7 +680,7 @@ fn _concat_gpu_impl[
                 ctx,
             )
         if num_inputs == 6:
-            return _concat_gpu[num_inputs=6](
+            return _concat_gpu[epilogue_fn=epilogue_fn, num_inputs=6](
                 output,
                 axis,
                 StaticTuple[_, 6](
@@ -566,7 +694,7 @@ fn _concat_gpu_impl[
                 ctx,
             )
         if num_inputs == 7:
-            return _concat_gpu[num_inputs=7](
+            return _concat_gpu[epilogue_fn=epilogue_fn, num_inputs=7](
                 output,
                 axis,
                 StaticTuple[_, 7](
@@ -581,7 +709,7 @@ fn _concat_gpu_impl[
                 ctx,
             )
         if num_inputs == 8:
-            return _concat_gpu[num_inputs=8](
+            return _concat_gpu[epilogue_fn=epilogue_fn, num_inputs=8](
                 output,
                 axis,
                 StaticTuple[_, 8](
@@ -597,7 +725,7 @@ fn _concat_gpu_impl[
                 ctx,
             )
         if num_inputs == 9:
-            return _concat_gpu[num_inputs=9](
+            return _concat_gpu[epilogue_fn=epilogue_fn, num_inputs=9](
                 output,
                 axis,
                 StaticTuple[_, 9](
@@ -614,7 +742,7 @@ fn _concat_gpu_impl[
                 ctx,
             )
         if num_inputs == 10:
-            return _concat_gpu[num_inputs=10](
+            return _concat_gpu[epilogue_fn=epilogue_fn, num_inputs=10](
                 output,
                 axis,
                 StaticTuple[_, 10](
@@ -632,7 +760,7 @@ fn _concat_gpu_impl[
                 ctx,
             )
         if num_inputs == 11:
-            return _concat_gpu[num_inputs=11](
+            return _concat_gpu[epilogue_fn=epilogue_fn, num_inputs=11](
                 output,
                 axis,
                 StaticTuple[_, 11](
@@ -651,7 +779,7 @@ fn _concat_gpu_impl[
                 ctx,
             )
         if num_inputs == 12:
-            return _concat_gpu[num_inputs=12](
+            return _concat_gpu[epilogue_fn=epilogue_fn, num_inputs=12](
                 output,
                 axis,
                 StaticTuple[_, 12](
@@ -671,7 +799,7 @@ fn _concat_gpu_impl[
                 ctx,
             )
         if num_inputs == 13:
-            return _concat_gpu[num_inputs=13](
+            return _concat_gpu[epilogue_fn=epilogue_fn, num_inputs=13](
                 output,
                 axis,
                 StaticTuple[_, 13](
@@ -692,7 +820,7 @@ fn _concat_gpu_impl[
                 ctx,
             )
         if num_inputs == 14:
-            return _concat_gpu[num_inputs=14](
+            return _concat_gpu[epilogue_fn=epilogue_fn, num_inputs=14](
                 output,
                 axis,
                 StaticTuple[_, 14](
@@ -714,7 +842,7 @@ fn _concat_gpu_impl[
                 ctx,
             )
         if num_inputs == 15:
-            return _concat_gpu[num_inputs=15](
+            return _concat_gpu[epilogue_fn=epilogue_fn, num_inputs=15](
                 output,
                 axis,
                 StaticTuple[_, 15](
@@ -737,7 +865,7 @@ fn _concat_gpu_impl[
                 ctx,
             )
         if num_inputs == 16:
-            return _concat_gpu[num_inputs=16](
+            return _concat_gpu[epilogue_fn=epilogue_fn, num_inputs=16](
                 output,
                 axis,
                 StaticTuple[_, 16](
@@ -761,7 +889,7 @@ fn _concat_gpu_impl[
                 ctx,
             )
         if num_inputs == 17:
-            return _concat_gpu[num_inputs=17](
+            return _concat_gpu[epilogue_fn=epilogue_fn, num_inputs=17](
                 output,
                 axis,
                 StaticTuple[_, 17](
@@ -786,7 +914,7 @@ fn _concat_gpu_impl[
                 ctx,
             )
         if num_inputs == 18:
-            return _concat_gpu[num_inputs=18](
+            return _concat_gpu[epilogue_fn=epilogue_fn, num_inputs=18](
                 output,
                 axis,
                 StaticTuple[_, 18](
@@ -812,7 +940,7 @@ fn _concat_gpu_impl[
                 ctx,
             )
         if num_inputs == 19:
-            return _concat_gpu[num_inputs=19](
+            return _concat_gpu[epilogue_fn=epilogue_fn, num_inputs=19](
                 output,
                 axis,
                 StaticTuple[_, 19](
@@ -839,7 +967,7 @@ fn _concat_gpu_impl[
                 ctx,
             )
         if num_inputs == 20:
-            return _concat_gpu[num_inputs=20](
+            return _concat_gpu[epilogue_fn=epilogue_fn, num_inputs=20](
                 output,
                 axis,
                 StaticTuple[_, 20](
@@ -867,7 +995,7 @@ fn _concat_gpu_impl[
                 ctx,
             )
         if num_inputs == 21:
-            return _concat_gpu[num_inputs=21](
+            return _concat_gpu[epilogue_fn=epilogue_fn, num_inputs=21](
                 output,
                 axis,
                 StaticTuple[_, 21](
@@ -896,7 +1024,7 @@ fn _concat_gpu_impl[
                 ctx,
             )
         if num_inputs == 22:
-            return _concat_gpu[num_inputs=22](
+            return _concat_gpu[epilogue_fn=epilogue_fn, num_inputs=22](
                 output,
                 axis,
                 StaticTuple[_, 22](
@@ -926,7 +1054,7 @@ fn _concat_gpu_impl[
                 ctx,
             )
         if num_inputs == 23:
-            return _concat_gpu[num_inputs=23](
+            return _concat_gpu[epilogue_fn=epilogue_fn, num_inputs=23](
                 output,
                 axis,
                 StaticTuple[_, 23](
@@ -957,7 +1085,7 @@ fn _concat_gpu_impl[
                 ctx,
             )
         if num_inputs == 24:
-            return _concat_gpu[num_inputs=24](
+            return _concat_gpu[epilogue_fn=epilogue_fn, num_inputs=24](
                 output,
                 axis,
                 StaticTuple[_, 24](
@@ -989,7 +1117,7 @@ fn _concat_gpu_impl[
                 ctx,
             )
         if num_inputs == 25:
-            return _concat_gpu[num_inputs=25](
+            return _concat_gpu[epilogue_fn=epilogue_fn, num_inputs=25](
                 output,
                 axis,
                 StaticTuple[_, 25](
@@ -1022,7 +1150,7 @@ fn _concat_gpu_impl[
                 ctx,
             )
         if num_inputs == 26:
-            return _concat_gpu[num_inputs=26](
+            return _concat_gpu[epilogue_fn=epilogue_fn, num_inputs=26](
                 output,
                 axis,
                 StaticTuple[_, 26](
@@ -1056,7 +1184,7 @@ fn _concat_gpu_impl[
                 ctx,
             )
         if num_inputs == 27:
-            return _concat_gpu[num_inputs=27](
+            return _concat_gpu[epilogue_fn=epilogue_fn, num_inputs=27](
                 output,
                 axis,
                 StaticTuple[_, 27](
@@ -1091,7 +1219,7 @@ fn _concat_gpu_impl[
                 ctx,
             )
         if num_inputs == 28:
-            return _concat_gpu[num_inputs=28](
+            return _concat_gpu[epilogue_fn=epilogue_fn, num_inputs=28](
                 output,
                 axis,
                 StaticTuple[_, 28](
@@ -1127,7 +1255,7 @@ fn _concat_gpu_impl[
                 ctx,
             )
         if num_inputs == 29:
-            return _concat_gpu[num_inputs=29](
+            return _concat_gpu[epilogue_fn=epilogue_fn, num_inputs=29](
                 output,
                 axis,
                 StaticTuple[_, 29](
@@ -1164,7 +1292,7 @@ fn _concat_gpu_impl[
                 ctx,
             )
         if num_inputs == 30:
-            return _concat_gpu[num_inputs=30](
+            return _concat_gpu[epilogue_fn=epilogue_fn, num_inputs=30](
                 output,
                 axis,
                 StaticTuple[_, 30](
@@ -1202,7 +1330,7 @@ fn _concat_gpu_impl[
                 ctx,
             )
         if num_inputs == 31:
-            return _concat_gpu[num_inputs=31](
+            return _concat_gpu[epilogue_fn=epilogue_fn, num_inputs=31](
                 output,
                 axis,
                 StaticTuple[_, 31](
@@ -1241,7 +1369,7 @@ fn _concat_gpu_impl[
                 ctx,
             )
         if num_inputs == 32:
-            return _concat_gpu[num_inputs=32](
+            return _concat_gpu[epilogue_fn=epilogue_fn, num_inputs=32](
                 output,
                 axis,
                 StaticTuple[_, 32](
@@ -1293,6 +1421,7 @@ fn concat[
     type: DType,
     single_thread_blocking_override: Bool,
     target: StringLiteral = "cpu",
+    epilogue_fn: OptionalReg[elementwise_epilogue_type] = None,
 ](
     output: NDBuffer[type, rank],
     axis: Int,
@@ -1305,11 +1434,16 @@ fn concat[
 
         @parameter
         if target == "cpu":
-            _concat_cpu[rank, type, single_thread_blocking_override](
-                output, axis, inputs
-            )
+            _concat_cpu[
+                rank, type, epilogue_fn, single_thread_blocking_override
+            ](output, axis, inputs)
         else:
-            _concat_gpu_impl[rank, type, single_thread_blocking_override](
+            _concat_gpu_impl[
+                rank,
+                type,
+                epilogue_fn,
+                single_thread_blocking_override,
+            ](
                 output,
                 axis,
                 inputs,
@@ -1318,7 +1452,11 @@ fn concat[
 
 
 fn _concat_inner_most_single_dim[
-    rank: Int, type: DType, num_inputs: Int, block_size: Int
+    rank: Int,
+    type: DType,
+    num_inputs: Int,
+    block_size: Int,
+    epilogue_fn: OptionalReg[elementwise_epilogue_type],
 ](
     output: NDBuffer[type, rank],
     inputs: StaticTuple[NDBuffer[type, rank], num_inputs],
@@ -1335,7 +1473,13 @@ fn _concat_inner_most_single_dim[
     for i in range(num_inputs):
         var out_index = index
         out_index[rank - 1] = i
-        output[out_index] = inputs[i][index]
+
+        @parameter
+        if epilogue_fn:
+            alias func = epilogue_fn.value()
+            func[type, rank, 1](out_index, inputs[i][index])
+        else:
+            output[out_index] = inputs[i][index]
 
 
 @always_inline
@@ -1343,6 +1487,7 @@ fn _concat_gpu_elementwise[
     rank: Int,
     type: DType,
     num_inputs: Int,
+    epilogue_fn: OptionalReg[elementwise_epilogue_type],
 ](
     output: NDBuffer[type, rank],
     axis: Int,
@@ -1353,7 +1498,9 @@ fn _concat_gpu_elementwise[
     @parameter
     for i in range(rank):
         if i == axis:
-            return _concat_gpu_elementwise[axis=i](output, inputs, ctx)
+            return _concat_gpu_elementwise[axis=i, epilogue_fn=epilogue_fn](
+                output, inputs, ctx
+            )
 
 
 @always_inline
@@ -1362,6 +1509,7 @@ fn _concat_gpu_elementwise[
     rank: Int,
     type: DType,
     num_inputs: Int,
+    epilogue_fn: OptionalReg[elementwise_epilogue_type],
 ](
     output: NDBuffer[type, rank],
     inputs: StaticTuple[NDBuffer[type, rank], num_inputs],
@@ -1381,9 +1529,18 @@ fn _concat_gpu_elementwise[
             var input_shape = input.get_shape()
 
             if in_index[axis] < input_shape[axis]:
-                output[rebind[StaticIntTuple[rank]](out_index)] = input[
-                    rebind[StaticIntTuple[rank]](in_index)
-                ]
+
+                @parameter
+                if epilogue_fn:
+                    alias func = epilogue_fn.value()
+                    func[type, _rank, simd_width](
+                        out_index,
+                        rebind[NDBuffer[type, _rank]](input)[in_index],
+                    )
+                else:
+                    output[rebind[StaticIntTuple[rank]](out_index)] = input[
+                        rebind[StaticIntTuple[rank]](in_index)
+                    ]
                 return
 
             in_index[axis] -= input_shape[axis]
@@ -1401,6 +1558,7 @@ fn _concat_gpu[
     rank: Int,
     type: DType,
     num_inputs: Int,
+    epilogue_fn: OptionalReg[elementwise_epilogue_type],
 ](
     output: NDBuffer[type, rank],
     axis: Int,
@@ -1442,9 +1600,12 @@ fn _concat_gpu[
 
                 input_size += inputs[i].num_elements()
 
-    # If outer_dims are ones use device-to-device copies.
-    if outer_dims == 1:
-        return _concat_buffers_contiguously()
+    # If outer_dims are ones and it is not a fused kernel, use device-to-device
+    # copies.
+    @parameter
+    if not epilogue_fn:
+        if outer_dims == 1:
+            return _concat_buffers_contiguously()
 
     if axis == rank - 1:
         var inner_most_unit_dim = True
@@ -1457,7 +1618,7 @@ fn _concat_gpu[
             alias block_size = 32
             var func = ctx.compile_function[
                 _concat_inner_most_single_dim[
-                    rank, type, num_inputs, block_size
+                    rank, type, num_inputs, block_size, epilogue_fn
                 ]
             ]()
 
@@ -1469,4 +1630,4 @@ fn _concat_gpu[
                 block_dim=(block_size),
             )
 
-    _concat_gpu_elementwise(output, axis, inputs, ctx)
+    _concat_gpu_elementwise[epilogue_fn=epilogue_fn](output, axis, inputs, ctx)
