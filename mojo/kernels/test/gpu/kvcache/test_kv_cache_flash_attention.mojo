@@ -222,11 +222,30 @@ def execute_flash_attention[
         batch_size,
     )
 
+    valid_lengths_host = HostNDBuffer[DType.uint32, 1](
+        StaticIntTuple[1](
+            batch_size,
+        )
+    )
+    valid_lengths_device = DeviceNDBuffer[DType.uint32, 1](
+        StaticIntTuple[1](
+            batch_size,
+        ),
+        ctx=ctx,
+    )
+    for i in range(batch_size):
+        valid_lengths_host.tensor[i] = prompt_len
+
+    ctx.enqueue_copy_to_device(
+        valid_lengths_device.buffer, valid_lengths_host.tensor.data
+    )
+
     _flash_attention_kv_cache_impl[target="cuda"](
         q_device.tensor,
         k_cache_device,
         v_cache_device,
         mask_device.tensor,
+        valid_lengths_device.tensor,
         scale_device.tensor,
         test_output_device.tensor,
         ctx,
@@ -285,6 +304,8 @@ def execute_flash_attention[
     _ = ref_output_host^
     _ = test_output_device^
     _ = test_output_host^
+    _ = valid_lengths_host^
+    _ = valid_lengths_device^
 
 
 def execute_flash_attention_suite(ctx: DeviceContext):
