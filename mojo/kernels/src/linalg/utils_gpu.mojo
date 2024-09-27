@@ -279,9 +279,9 @@ fn select_config[
             if k_partition < min_k_partition:
                 break
 
-            # Skip non-divisible K, TODO: generalize e.g. 4, 4 3
-            if K % (num_k_partitions * 32) != 0:
-                continue
+            # Skip if K is not large enough to be split.
+            if K < num_k_partitions * bk:
+                break
 
             var num_waves = ceildiv(
                 num_k_partitions * num_blocks, A100.sm_count
