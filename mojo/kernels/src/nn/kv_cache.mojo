@@ -1535,6 +1535,7 @@ fn _matmul_common[
             elementwise_lambda_fn=elementwise_lambda_fn,
             use_tensor_core=True,
             transpose_b=True,
+            target=target,
         ](c_nd, hidden_state_2d, weight, context.value())
 
     c_nd.data.free()
