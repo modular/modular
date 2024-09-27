@@ -1913,7 +1913,7 @@ fn _flash_attention_kv_cache_gpu[
 
 
 fn _contiguous_kv_cache_collection[
-    type: DType, kv_params: KVCacheStaticParams
+    type: DType, //, kv_params: KVCacheStaticParams
 ](
     key_cache: NDBuffer[type, 5],
     value_cache: NDBuffer[type, 5],
@@ -1923,6 +1923,28 @@ fn _contiguous_kv_cache_collection[
     # Note that num_layers and batch_size are scalars.
     num_layers: NDBuffer[DType.int32, 1],
     batch_size: NDBuffer[DType.int32, 1],
+) -> ContiguousKVCacheCollection[type, kv_params]:
+    return _contiguous_kv_cache_collection[kv_params](
+        key_cache,
+        value_cache,
+        cache_lengths,
+        is_cache_empty,
+        seq_ids,
+        int(num_layers[0]),
+        int(batch_size[0]),
+    )
+
+
+fn _contiguous_kv_cache_collection[
+    type: DType, //, kv_params: KVCacheStaticParams
+](
+    key_cache: NDBuffer[type, 5],
+    value_cache: NDBuffer[type, 5],
+    cache_lengths: NDBuffer[DType.int32, 1],
+    is_cache_empty: NDBuffer[DType.bool, 1],
+    seq_ids: NDBuffer[DType.int32, 1],
+    num_layers: Int,
+    batch_size: Int,
 ) -> ContiguousKVCacheCollection[type, kv_params]:
     # Marshal NDBuffers into arguments expected by the
     # ContiguousKVCacheCollection constructor.
@@ -1945,12 +1967,18 @@ fn _contiguous_kv_cache_collection[
         value_cache,
         cache_lens_tuple,
         seq_ids_list,
-        int(num_layers[0]),
-        int(batch_size[0]),
+        num_layers,
+        batch_size,
     )
 
 
 # Boilerplate: stub out interface for every combination of KV cache parameters.
+alias kv_params_h1_d10_bshd = KVCacheStaticParams(
+    num_heads=1, head_size=10, layout=KVCacheLayout.BSHD
+)
+alias kv_params_h1_d10_bhsd = KVCacheStaticParams(
+    num_heads=1, head_size=10, layout=KVCacheLayout.BHSD
+)
 alias kv_params_h6_d48_bshd = KVCacheStaticParams(
     num_heads=6, head_size=48, layout=KVCacheLayout.BSHD
 )
@@ -1962,12 +1990,6 @@ alias kv_params_h8_d128_bshd = KVCacheStaticParams(
 )
 alias kv_params_h8_d128_bhsd = KVCacheStaticParams(
     num_heads=8, head_size=128, layout=KVCacheLayout.BHSD
-)
-alias kv_params_h1_d10_bshd = KVCacheStaticParams(
-    num_heads=1, head_size=10, layout=KVCacheLayout.BSHD
-)
-alias kv_params_h1_d10_bhsd = KVCacheStaticParams(
-    num_heads=1, head_size=10, layout=KVCacheLayout.BHSD
 )
 
 
@@ -1987,7 +2009,7 @@ fn contiguous_kv_cache_collection_h6_d48_bshd[
     type,
     kv_params_h6_d48_bshd,
 ]:
-    return _contiguous_kv_cache_collection[type, kv_params_h6_d48_bshd](
+    return _contiguous_kv_cache_collection[kv_params_h6_d48_bshd](
         key_cache,
         value_cache,
         cache_lengths,
@@ -2014,7 +2036,7 @@ fn contiguous_kv_cache_collection_h6_d48_bhsd[
     type,
     kv_params_h6_d48_bhsd,
 ]:
-    return _contiguous_kv_cache_collection[type, kv_params_h6_d48_bhsd](
+    return _contiguous_kv_cache_collection[kv_params_h6_d48_bhsd](
         key_cache,
         value_cache,
         cache_lengths,
@@ -2041,7 +2063,7 @@ fn contiguous_kv_cache_collection_h8_d128_bshd[
     type,
     kv_params_h8_d128_bshd,
 ]:
-    return _contiguous_kv_cache_collection[type, kv_params_h8_d128_bshd](
+    return _contiguous_kv_cache_collection[kv_params_h8_d128_bshd](
         key_cache,
         value_cache,
         cache_lengths,
@@ -2068,7 +2090,7 @@ fn contiguous_kv_cache_collection_h8_d128_bhsd[
     type,
     kv_params_h8_d128_bhsd,
 ]:
-    return _contiguous_kv_cache_collection[type, kv_params_h8_d128_bhsd](
+    return _contiguous_kv_cache_collection[kv_params_h8_d128_bhsd](
         key_cache,
         value_cache,
         cache_lengths,
@@ -2095,7 +2117,7 @@ fn contiguous_kv_cache_collection_h1_d10_bshd[
     type,
     kv_params_h1_d10_bshd,
 ]:
-    return _contiguous_kv_cache_collection[type, kv_params_h1_d10_bshd](
+    return _contiguous_kv_cache_collection[kv_params_h1_d10_bshd](
         key_cache,
         value_cache,
         cache_lengths,
@@ -2122,7 +2144,7 @@ fn contiguous_kv_cache_collection_h1_d10_bhsd[
     type,
     kv_params_h1_d10_bhsd,
 ]:
-    return _contiguous_kv_cache_collection[type, kv_params_h1_d10_bhsd](
+    return _contiguous_kv_cache_collection[kv_params_h1_d10_bhsd](
         key_cache,
         value_cache,
         cache_lengths,
