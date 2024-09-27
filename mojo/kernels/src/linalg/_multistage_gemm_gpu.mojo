@@ -48,6 +48,7 @@ from utils.index import Index
 from .matmul_gpu import matmul_kernel_naive
 from .utils import apply_epilogue, elementwise_epilogue_type
 from .utils_gpu import block_swizzle, MatmulConfig, MatmulKernels
+from layout.tensor_builder import LayoutTensorBuild as tb
 
 
 @always_inline
@@ -235,17 +236,13 @@ fn multistage_mma[
     alias c_frag_size = frag_size[2]
 
     # Register tiles.
-    var a_reg_tiles = LayoutTensor[
-        a_type,
-        Layout.row_major(2 * num_m_mmas, a_frag_size),
-        address_space = AddressSpace.LOCAL,
-    ].stack_allocation().split[2]()
-    # ].stack_allocation().vectorize[1, a_frag_size]().split[2]()
-    var b_reg_tiles = LayoutTensor[
-        b_type,
-        Layout.row_major(2 * num_n_mmas, b_frag_size),
-        address_space = AddressSpace.LOCAL,
-    ].stack_allocation().vectorize[1, b_frag_size]().split[2]()
+    var a_reg_tiles = tb[a_type]().row_major[
+        2 * num_m_mmas, a_frag_size
+    ]().local().alloc().split[2]()
+
+    var b_reg_tiles = tb[b_type]().row_major[
+        2 * num_n_mmas, b_frag_size
+    ]().local().alloc().vectorize[1, b_frag_size]().split[2]()
 
     var a_warp_tile = a_smem_iter[].tile[WM, BK](int(warp_y), 0)
 
@@ -596,12 +593,9 @@ fn multistage_gemm_kernel[
     alias accum_type = get_accum_type[a_type]()
     alias frag_size = get_fragment_size[mma_shape]()
     alias c_frag_size = frag_size[2]
-
-    var c_reg_tile = LayoutTensor[
-        accum_type,
-        Layout.row_major(num_m_mmas * num_n_mmas, c_frag_size),
-        address_space = AddressSpace.LOCAL,
-    ].stack_allocation().fill(0)
+    var c_reg_tile = tb[accum_type]().row_major[
+        num_m_mmas * num_n_mmas, c_frag_size
+    ]().local().alloc().fill(0)
 
     multistage_mma[
         BM,
@@ -636,11 +630,10 @@ fn multistage_gemm_kernel[
             num_rows = MMA_M // 2, row_size=WN, access_size=MMA_N
         ]()
 
-        var accum_smem_warp_tile = LayoutTensor[
-            accum_type,
-            Layout.row_major(WM, WN),
-            address_space = AddressSpace.SHARED,
-        ](a_smem.bitcast[accum_type]() + warp_id * WM * WN)
+        var accum_smem_warp_tile = tb[accum_type]().row_major[
+            WM, WN
+        ]().shared().view(a_smem.bitcast[accum_type]() + warp_id * WM * WN)
+
         copy_local_to_sram[
             thread_layout = Layout.row_major(8, 4),
             swizzle=swizzle,
@@ -797,12 +790,8 @@ fn multistage_gemm_split_k_kernel[
     var b_part = b.split[axis= 1 if transpose_b else 0](
         num_partitions, BlockIdx.z()
     )
-    var work_space_part = LayoutTensor[work_space_type, c_layout](
-        work_space.data + BlockIdx.z() * M * N,
-        RuntimeLayout[c_layout](
-            RuntimeTuple[c_layout.shape](M, N),
-            RuntimeTuple[c_layout.stride](N, 1),
-        ),
+    var work_space_part = tb[work_space_type]().row_major(M, N).view(
+        work_space.data + BlockIdx.z() * M * N
     )
 
     alias k_partition_config = MatmulConfig[
@@ -815,7 +804,7 @@ fn multistage_gemm_split_k_kernel[
 
     multistage_gemm_kernel[
         work_space_type,
-        c_layout,
+        work_space_part.layout,
         a_type,
         a_part.layout,
         b_type,
