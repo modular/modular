@@ -9,6 +9,8 @@
 from sys import external_call
 from sys.ffi import c_char
 from sys.info import os_is_windows
+from sys._libc import popen, pclose, FILE_ptr
+import sys._libc as libc
 
 from memory import UnsafePointer
 
@@ -18,7 +20,7 @@ from utils import StringRef
 struct _POpenHandle:
     """Handle to an open file descriptor opened via popen."""
 
-    var _handle: UnsafePointer[NoneType]
+    var _handle: FILE_ptr
 
     fn __init__(inout self, cmd: String, mode: String = "r") raises:
         """Construct the _POpenHandle using the command and mode provided.
@@ -34,16 +36,14 @@ struct _POpenHandle:
         if mode != "r" and mode != "w":
             raise "the mode specified `" + mode + "` is not valid"
 
-        self._handle = external_call["popen", UnsafePointer[NoneType]](
-            cmd.unsafe_ptr(), mode.unsafe_ptr()
-        )
+        self._handle = popen(cmd.unsafe_cstr_ptr(), mode.unsafe_cstr_ptr())
 
         if not self._handle:
             raise "unable to execute the command `" + cmd + "`"
 
     fn __del__(owned self):
         """Closes the handle opened via popen."""
-        _ = external_call["pclose", Int32](self._handle)
+        _ = pclose(self._handle)
 
     fn read(self) raises -> String:
         """Reads all the data from the handle.
@@ -64,7 +64,7 @@ struct _POpenHandle:
             res += StringRef(line, read)
 
         if line:
-            external_call["free", NoneType](line.bitcast[NoneType]())
+            libc.free(line.bitcast[NoneType]())
 
         return res.rstrip()
 
