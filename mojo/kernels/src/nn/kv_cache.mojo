@@ -2362,28 +2362,6 @@ fn _contiguous_kv_cache_collection[
     num_layers: NDBuffer[DType.int32, 1],
     batch_size: NDBuffer[DType.int32, 1],
 ) -> ContiguousKVCacheCollection[type, kv_params]:
-    return _contiguous_kv_cache_collection[kv_params](
-        key_cache,
-        value_cache,
-        cache_lengths,
-        is_cache_empty,
-        seq_ids,
-        int(num_layers[0]),
-        int(batch_size[0]),
-    )
-
-
-fn _contiguous_kv_cache_collection[
-    type: DType, //, kv_params: KVCacheStaticParams
-](
-    key_cache: NDBuffer[type, 5],
-    value_cache: NDBuffer[type, 5],
-    cache_lengths: NDBuffer[DType.int32, 1],
-    is_cache_empty: NDBuffer[DType.bool, 1],
-    seq_ids: NDBuffer[DType.int32, 1],
-    num_layers: Int,
-    batch_size: Int,
-) -> ContiguousKVCacheCollection[type, kv_params]:
     # Marshal NDBuffers into arguments expected by the
     # ContiguousKVCacheCollection constructor.
     cache_lens_tuple = StaticIntTuple[_default_max_batch_size]()
@@ -2405,8 +2383,8 @@ fn _contiguous_kv_cache_collection[
         value_cache,
         cache_lens_tuple,
         seq_ids_list,
-        num_layers,
-        batch_size,
+        int(num_layers[0]),
+        int(batch_size[0]),
     )
 
 
