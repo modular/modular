@@ -8,6 +8,7 @@ import * as ini from 'ini';
 import * as path from 'path';
 import * as vscode from 'vscode';
 import * as config from '../utils/config';
+import { realpath } from 'fs-extra';
 import { Logger } from '../logging';
 import { DisposableContext } from '../utils/disposableContext';
 import { MojoSDKConfig } from './sdkConfig';
@@ -18,7 +19,6 @@ import {
   getAllOpenMojoFiles,
   moveUpUntil,
   readFile,
-  realpath,
 } from '../utils/files';
 import { MojoSDKVersion } from './sdkVersion';
 import { findMagicSDKSpec } from './magicSdk';
@@ -467,38 +467,34 @@ export class MojoSDKManager extends DisposableContext {
       return undefined;
     }
     const bazelPath = path.join(repoRoot, 'WORKSPACE.bazel');
-    try {
-      const bazelBytes = await vscode.workspace.fs.readFile(
-        vscode.Uri.file(bazelPath)
-      );
-      const bazelContents = Buffer.from(bazelBytes).toString('utf-8');
-      if (!bazelContents.includes('workspace(name = "modular")')) {
-        return undefined;
-      }
-      const modularHomePath = realpath(path.join(repoRoot, '.derived'));
-      const spec: MojoSDKSpec = {
-        kind: 'dev',
-        modularHomePath,
-        version: new MojoSDKVersion(
-          'Modular Repo',
-          '0',
-          '0',
-          '0',
-          modularHomePath
-        ),
-        section: 'mojo-max',
-      };
-      let isNew = false;
-      if (
-        !this.extensionSemiPersistentState.seenDevSDKs.has(spec.modularHomePath)
-      ) {
-        this.extensionSemiPersistentState.seenDevSDKs.add(spec.modularHomePath);
-        isNew = true;
-      }
-      return { spec, isNew };
-    } catch {
+    const bazelContents = await readFile(bazelPath);
+    if (!bazelContents) {
       return undefined;
     }
+    if (!bazelContents.includes('workspace(name = "modular")')) {
+      return undefined;
+    }
+    const modularHomePath = await realpath(path.join(repoRoot, '.derived'));
+    const spec: MojoSDKSpec = {
+      kind: 'dev',
+      modularHomePath,
+      version: new MojoSDKVersion(
+        'Modular Repo',
+        '0',
+        '0',
+        '0',
+        modularHomePath
+      ),
+      section: 'mojo-max',
+    };
+    let isNew = false;
+    if (
+      !this.extensionSemiPersistentState.seenDevSDKs.has(spec.modularHomePath)
+    ) {
+      this.extensionSemiPersistentState.seenDevSDKs.add(spec.modularHomePath);
+      isNew = true;
+    }
+    return { spec, isNew };
   }
 
   private async findReleaseSDKSpecs(): Promise<MojoSDKSpec[]> {
