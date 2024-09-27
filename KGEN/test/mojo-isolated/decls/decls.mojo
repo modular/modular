@@ -1466,12 +1466,6 @@ trait DeprecatedTrait:
     pass
 
 
-# CHECK-LABEL: lit.globalvar.decl @deprecated_global
-# CHECK-SAME: deprecationWarning = "global"
-@deprecated("global")
-var deprecated_global = 1
-
-
 # CHECK-LABEL: lit.alias.decl
 # CHECK-SAME: deprecationWarning = "alias"
 @deprecated("alias")
