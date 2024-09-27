@@ -2783,7 +2783,7 @@ fn non_maximum_suppression[
     )
 
 
-@mogg_register("non_maximum_suppression_shape")
+@mogg_register_shape_func("mo.non_maximum_suppression")
 @always_inline
 fn non_maximum_suppression_shape_func[
     type: DType, single_thread_blocking_override: Bool
@@ -2866,7 +2866,7 @@ fn static_random_normal[
     )
 
 
-@mogg_register("random_shape")
+@mogg_register_shape_func("mo.random.normal")
 @always_inline
 fn random_shape[
     shapeType: DType,
@@ -2925,9 +2925,27 @@ fn resize_linear[
     )
 
 
-@mogg_register("resize_shape")
+@mogg_register_shape_func("mo.resize.nearest")
 @always_inline
-fn resize_shape[
+fn resize_nearest_shape[
+    rank: Int,
+    inpType: DType,
+    sizeType: DType,
+    single_thread_blocking_override: Bool,
+](
+    input: NDBuffer[inpType, rank],
+    size: NDBuffer[sizeType, 1, DimList(rank)],
+) -> StaticIntTuple[rank]:
+    var shape = StaticIntTuple[rank]()
+
+    for i in range(rank):
+        shape[i] = int(size[i])
+    return shape
+
+
+@mogg_register_shape_func("mo.resize.linear")
+@always_inline
+fn resize_linear_shape[
     rank: Int,
     inpType: DType,
     sizeType: DType,
@@ -2973,7 +2991,7 @@ fn roi_align[
     )
 
 
-@mogg_register("roi_align_shape")
+@mogg_register_shape_func("mo.roi_align")
 @always_inline
 fn roi_align_shape[
     inpTy: DType,

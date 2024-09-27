@@ -21,6 +21,7 @@ from utils import StaticIntTuple
 # Kernel imports
 # ===----------------------------------------------------------------------===#
 from algorithm import argmax, argmin
+from linalg.matrix_solve import matrix_solve, matrix_solve_shape
 from math import (
     ceil,
     cos,
@@ -28,6 +29,7 @@ from math import (
     exp,
     floor,
     fma,
+    iota,
     isqrt,
     log,
     log1p,
@@ -37,9 +39,13 @@ from math import (
 )
 from nn import arg_nonzero
 from nn.activations import relu, gelu
+from nn.arange import arange, arange_shape
+from nn.nms import non_max_suppression, non_max_suppression_shape_func
 from nn.pool import avg_pool, max_pool, pool_shape, pool_shape_ceil
+from nn.resize import resize_nearest_neighbor, resize_linear
+from nn.roi_align import roi_align_nhwc
+from nn.tile import tile, tile_shape
 from nn.topk import top_k, top_k_shape_impl
-from utils.numerics import isinf, isnan
 from nn.gather_scatter import (
     scatter_nd,
     scatter_nd_generator,
@@ -52,6 +58,8 @@ from nn.gather_scatter import (
     normalize_neg_index,
     scatter_elements_shape,
 )
+from random import randn, seed
+from utils.numerics import isinf, isnan
 
 # ===----------------------------------------------------------------------===#
 # Helpers
@@ -71,6 +79,48 @@ fn managed_tensor_slice_to_ndbuffer[
     return NDBuffer[type, rank, static_shape](
         tensor._ptr, tensor.get_static_spec().shape, tensor._strides
     )
+
+
+# ===----------------------------------------------------------------------===#
+# Elementwise Kernels
+# ===----------------------------------------------------------------------===#
+
+
+@compiler.register("mo.range")
+@compiler.elementwise
+struct Range:
+    @staticmethod
+    fn execute[
+        type: DType,
+        synchronous: Bool,
+        target: StringLiteral,
+    ](
+        output: ManagedTensorSlice[type=type, rank=1],
+        start: Scalar[type=type],
+        stop: Scalar[type=type],
+        step: Scalar[type=type],
+        ctx: MojoCallContextPtr,
+    ):
+        @parameter
+        @always_inline
+        fn func[width: Int](idx: StaticIntTuple[1]) -> SIMD[type, width]:
+            return start[0] + step[0] * (iota[type, width](idx[0]))
+
+        foreach[func, synchronous, target](output, ctx)
+
+    @staticmethod
+    fn shape[
+        type: DType
+    ](
+        start: Scalar[type=type],
+        stop: Scalar[type=type],
+        step: Scalar[type=type],
+    ) raises -> StaticIntTuple[1]:
+        return arange_shape[single_thread_blocking_override=True](
+            managed_tensor_slice_to_ndbuffer(start),
+            managed_tensor_slice_to_ndbuffer(stop),
+            managed_tensor_slice_to_ndbuffer(step),
+        )
 
 
 # ===----------------------------------------------------------------------===#
@@ -1748,22 +1798,15 @@ struct Gather:
         input: ManagedTensorSlice,
         indices: ManagedTensorSlice,
         axis: Scalar,
-    ) -> StaticIntTuple[output_rank]:
-        # TODO(GRA-1033): We should not be forced to have a single return statement.
-        var ret: StaticIntTuple[output_rank]
-        try:
-            ret = gather_shape[
-                output_rank=output_rank,
-                single_thread_blocking_override=True,
-            ](
-                managed_tensor_slice_to_ndbuffer(input),
-                managed_tensor_slice_to_ndbuffer(indices),
-                managed_tensor_slice_to_ndbuffer(axis),
-            )
-        except:
-            ret = StaticIntTuple[output_rank]()
-
-        return ret
+    ) raises -> StaticIntTuple[output_rank]:
+        return gather_shape[
+            output_rank=output_rank,
+            single_thread_blocking_override=True,
+        ](
+            managed_tensor_slice_to_ndbuffer(input),
+            managed_tensor_slice_to_ndbuffer(indices),
+            managed_tensor_slice_to_ndbuffer(axis),
+        )
 
 
 @compiler.register("mo.gather_sum")
@@ -1792,7 +1835,7 @@ struct GatherSum:
 
 
 # ===----------------------------------------------------------------------===#
-# Other kernels
+# TopK kernels
 # ===----------------------------------------------------------------------===#
 
 
@@ -1869,9 +1912,312 @@ struct TopK:
         axis: Scalar[axis_type],
         sorted: Scalar[type = DType.bool],
     ) raises -> StaticIntTuple[input.rank]:
-        # TODO(GRA-1033): We should not be forced to have a single return statement.
         return top_k_shape_impl[single_thread_blocking_override=True](
             managed_tensor_slice_to_ndbuffer(input),
             managed_tensor_slice_to_ndbuffer(k),
             managed_tensor_slice_to_ndbuffer(axis),
+        )
+
+
+# ===----------------------------------------------------------------------===#
+# Non maximum suppression kernels
+# ===----------------------------------------------------------------------===#
+
+
+@compiler.register("mo.non_maximum_suppression")
+struct NonMaximumSupression:
+    @staticmethod
+    fn execute[
+        type: DType
+    ](
+        output: ManagedTensorSlice[type = DType.int64, rank=2],
+        boxes: ManagedTensorSlice[type=type, rank=3],
+        scores: ManagedTensorSlice[type, rank=3],
+        max_output_boxes_per_class: Scalar[DType.int64],
+        iou_threshold: Scalar[DType.float32],
+        score_threshold: Scalar[DType.float32],
+    ):
+        var max_output_boxes_int = int(max_output_boxes_per_class[0])
+        var iou_threshold_float = iou_threshold[0]
+        var score_threshold_float = score_threshold[0]
+
+        non_max_suppression(
+            managed_tensor_slice_to_ndbuffer(boxes),
+            managed_tensor_slice_to_ndbuffer(scores),
+            managed_tensor_slice_to_ndbuffer(output),
+            max_output_boxes_int,
+            iou_threshold_float,
+            score_threshold_float,
+        )
+
+    @staticmethod
+    fn shape[
+        type: DType
+    ](
+        boxes: ManagedTensorSlice[type=type, rank=3],
+        scores: ManagedTensorSlice[type=type, rank=3],
+        max_output_boxes_per_class: Scalar[DType.int64],
+        iou_threshold: Scalar[DType.float32],
+        score_threshold: Scalar[DType.float32],
+    ) -> StaticIntTuple[2]:
+        var max_output_boxes_int = int(max_output_boxes_per_class[0])
+        var iou_threshold_float = iou_threshold[0]
+        var score_threshold_float = score_threshold[0]
+
+        return non_max_suppression_shape_func(
+            managed_tensor_slice_to_ndbuffer(boxes),
+            managed_tensor_slice_to_ndbuffer(scores),
+            max_output_boxes_int,
+            iou_threshold_float,
+            score_threshold_float,
+        )
+
+
+# ===----------------------------------------------------------------------===#
+# Linalg kernels
+# ===----------------------------------------------------------------------===#
+
+
+@compiler.register("mo.linalg.solve")
+struct LinalgSolve:
+    @staticmethod
+    fn execute[
+        synchronous: Bool,
+        type: DType,
+    ](
+        x: ManagedTensorSlice[type=type],
+        a: ManagedTensorSlice[type=type],
+        b: ManagedTensorSlice[type=type],
+    ) raises:
+        matrix_solve[single_thread_blocking_override=synchronous](
+            managed_tensor_slice_to_ndbuffer(a),
+            managed_tensor_slice_to_ndbuffer(b),
+            managed_tensor_slice_to_ndbuffer(x),
+        )
+
+    @staticmethod
+    fn shape[
+        type: DType,
+        rank: Int,
+    ](
+        a: ManagedTensorSlice[type=type, rank=rank],
+        b: ManagedTensorSlice[type=type, rank=rank],
+    ) raises -> StaticIntTuple[a.rank]:
+        return matrix_solve_shape[single_thread_blocking_override=True](
+            managed_tensor_slice_to_ndbuffer(a),
+            managed_tensor_slice_to_ndbuffer(b),
+        )
+
+
+# ===----------------------------------------------------------------------===#
+# Resize kernels
+# ===----------------------------------------------------------------------===#
+
+
+@compiler.register("mo.resize.nearest")
+struct ResizeNearest:
+    @staticmethod
+    fn execute[
+        coordinate_transform_mode: Int,
+        round_mode: Int,
+        rank: Int,
+        type: DType,
+    ](
+        output: ManagedTensorSlice[type=type, rank=rank],
+        input: ManagedTensorSlice[type=type, rank=rank],
+        size: ManagedTensorSlice[rank=1],
+    ):
+        resize_nearest_neighbor[coordinate_transform_mode, round_mode](
+            managed_tensor_slice_to_ndbuffer(input),
+            managed_tensor_slice_to_ndbuffer(output),
+        )
+
+    @staticmethod
+    fn shape[
+        rank: Int
+    ](
+        input: ManagedTensorSlice[rank=rank],
+        size: ManagedTensorSlice[rank=1],
+    ) -> StaticIntTuple[rank]:
+        var shape = StaticIntTuple[rank]()
+        for i in range(rank):
+            shape[i] = int(size[i])
+
+        return shape
+
+
+@compiler.register("mo.resize.linear")
+struct ResizeLinear:
+    @staticmethod
+    fn execute[
+        coordinate_transform_mode: Int,
+        antialias: Bool,
+        rank: Int,
+        type: DType,
+    ](
+        output: ManagedTensorSlice[type=type, rank=rank],
+        input: ManagedTensorSlice[type=type, rank=rank],
+        size: ManagedTensorSlice[rank=1],
+    ):
+        resize_linear[coordinate_transform_mode, antialias](
+            managed_tensor_slice_to_ndbuffer(input),
+            managed_tensor_slice_to_ndbuffer(output),
+        )
+
+    @staticmethod
+    fn shape[
+        rank: Int
+    ](
+        input: ManagedTensorSlice[rank=rank],
+        size: ManagedTensorSlice[rank=1],
+    ) -> StaticIntTuple[rank]:
+        var shape = StaticIntTuple[rank]()
+        for i in range(rank):
+            shape[i] = int(size[i])
+
+        return shape
+
+
+# ===----------------------------------------------------------------------===#
+# ROI align kernels
+# ===----------------------------------------------------------------------===#
+
+
+@compiler.register("mo.roi_align")
+struct ROIAlign:
+    @staticmethod
+    fn execute[
+        aligned: Bool,
+        mode: StringLiteral,
+        type: DType,
+    ](
+        output: ManagedTensorSlice[type=type, rank=4],
+        input: ManagedTensorSlice[type=type, rank=4],
+        rois: ManagedTensorSlice[type=type, rank=2],
+        output_height: Scalar[DType.int64],
+        output_width: Scalar[DType.int64],
+        spatial_scale: Scalar,
+        sampling_ratio: Scalar,
+    ):
+        roi_align_nhwc[aligned, mode](
+            managed_tensor_slice_to_ndbuffer(output),
+            managed_tensor_slice_to_ndbuffer(input),
+            managed_tensor_slice_to_ndbuffer(rois),
+            int(output_height[0]),
+            int(output_width[0]),
+            spatial_scale[0],
+            sampling_ratio[0],
+        )
+
+    @staticmethod
+    fn shape(
+        input: ManagedTensorSlice[rank=4],
+        rois: ManagedTensorSlice[rank=2],
+        output_height: Scalar[DType.int64],
+        output_width: Scalar[DType.int64],
+        spatial_scale: Scalar,
+        sampling_ratio: Scalar,
+    ) -> StaticIntTuple[4]:
+        var shape = StaticIntTuple[4]()
+        # input shape is [N, H, W, C]
+        # rois shape is [M, 5]
+        # output shape is [M, output_height, output_width, C]
+        shape[0] = rois.spec().shape[0]
+        shape[1] = int(output_height[0])
+        shape[2] = int(output_width[0])
+        shape[3] = input.spec().shape[3]
+
+        return shape
+
+
+# ===----------------------------------------------------------------------===#
+# Tile kernels
+# ===----------------------------------------------------------------------===#
+
+
+@compiler.register("mo.tile")
+struct Tile:
+    @staticmethod
+    fn execute[
+        type: DType, rank: Int
+    ](
+        output: ManagedTensorSlice[type=type, rank=rank],
+        input: ManagedTensorSlice[type=type, rank=rank],
+        repeats: ManagedTensorSlice,
+    ) raises:
+        tile(
+            managed_tensor_slice_to_ndbuffer(input),
+            managed_tensor_slice_to_ndbuffer(repeats),
+            managed_tensor_slice_to_ndbuffer(output),
+        )
+
+    @staticmethod
+    fn shape(
+        input: ManagedTensorSlice,
+        repeats: ManagedTensorSlice[rank=1],
+    ) raises -> StaticIntTuple[input.rank]:
+        return tile_shape[single_thread_blocking_override=True](
+            managed_tensor_slice_to_ndbuffer(input),
+            managed_tensor_slice_to_ndbuffer(repeats),
+        )
+
+
+# ===----------------------------------------------------------------------===#
+# Random kernels
+# ===----------------------------------------------------------------------===#
+
+
+@compiler.register("mo.random.normal")
+struct RandomNormal:
+    @staticmethod
+    fn execute[
+        mean_var_type: DType
+    ](
+        output: ManagedTensorSlice,
+        shape: ManagedTensorSlice[rank=1],
+        mean: Scalar,
+        variance: Scalar,
+        seed_value: Scalar,
+    ):
+        seed(int(seed_value[0]))
+        var num_elements = 1
+        # TODO: Add __len__ support in ManagedTensorSlice.
+        for i in range(shape.spec().shape[0]):
+            num_elements *= int(shape[i])
+        randn(
+            output._ptr,
+            num_elements,
+            mean[0].cast[DType.float64](),
+            variance[0].cast[DType.float64](),
+        )
+
+    @staticmethod
+    fn shape[
+        output_rank: Int
+    ](shape: ManagedTensorSlice[rank=1]) -> StaticIntTuple[output_rank]:
+        var unrolled_shape = StaticIntTuple[output_rank]()
+        for i in range(output_rank):
+            unrolled_shape[i] = int(shape[i])
+
+        return unrolled_shape
+
+
+@compiler.register("mo.static.random.normal")
+struct StaticRandomNormal:
+    @staticmethod
+    fn execute[
+        mean_var_type: DType
+    ](
+        output: ManagedTensorSlice,
+        mean: Scalar,
+        variance: Scalar,
+        seed_value: Scalar,
+    ):
+        seed(int(seed_value[0]))
+        var num_elements = output.spec().shape.num_elements()
+        randn(
+            output._ptr,
+            num_elements,
+            mean[0].cast[DType.float64](),
+            variance[0].cast[DType.float64](),
         )
