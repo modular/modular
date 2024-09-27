@@ -1073,7 +1073,6 @@ PValue ExprEmitter::bindMLIRTypeToTrait(ASTExprAnd<CValue> value,
 }
 
 namespace {
-
 /// The signature for a trait requirement will have a Self parameter first whose
 /// type is a TraitType for the trait it was found in.  We want to force
 /// substitute a new parameter for the Self references even though it has a
@@ -1095,7 +1094,7 @@ struct TraitSelfBinder : public IndexParameterReplacer<TraitSelfBinder> {
   }
   Type tryReplace(Type type, size_t depth) { return {}; }
 };
-} // end anonymous namespace
+} // namespace
 
 PValue ExprEmitter::emitMetaTypeToTraitConversion(ASTExprAnd<CValue> value,
                                                   TraitType trait) {
@@ -1297,6 +1296,32 @@ PValue ExprEmitter::emitMetaTypeToTraitConversion(ASTExprAnd<CValue> value,
                                VTableAttr::get(getContext(), vtable));
 }
 
+/// Return true if the MLIR type can implicitly conform to the trait.
+static bool checkMLIRTypeConformance(SharedState &shared, SMLoc loc,
+                                     TraitType trait) {
+  ASTDecl &traitDecl = *ASTType(trait).getDecl(shared);
+  // Make sure the body of the trait is resolved.
+  if (failed(shared.declResolver->resolveFully(traitDecl, loc)))
+    return false; // an error was emitted
+  for (auto &[name, decls] : traitDecl.getDeclsInScope()) {
+    for (ASTDecl *decl : decls) {
+      auto traitFn = dyn_cast<LIT::FuncOp>(*decl);
+      // Skip any children that aren't methods or are inherited. This could be
+      // an alias.
+      if (!traitFn || traitFn.getIsInherited())
+        continue;
+      // MLIR types are movable, copyable, and destructible only.
+      if (llvm::is_contained({SpecialFunctionKind::kMoveInit,
+                              SpecialFunctionKind::kCopyInit,
+                              SpecialFunctionKind::kDel},
+                             SpecialFunctionInfo::getKind(name)))
+        continue;
+      return false;
+    }
+  }
+  return true;
+}
+
 /// When emitting a result value, attempt to "refine" the value type by
 /// evaluating 'apply' expressions in its type. Rebind the value if the type can
 /// be further specialized.
@@ -1316,12 +1341,90 @@ static AnyValue refineResultValue(AnyValue value, const ExprNode *expr,
   return emitter.rebindValue({value, expr}, refinedType);
 }
 
+/// Return true if 'value' may be implicitly converted to 'requiredType'
+/// by invoking (one level of) conversion operations.  This does not generate
+/// any IR.
+///
+/// CAUTION: This method must line up with `emitResult`!!!
+bool ExprEmitter::canImplicitlyConvertToType(
+    ASTExprAnd<CValue> value, ASTType requiredType,
+    const TypeCheckScopeInfo &scopeInfo) {
+  auto &shared = scopeInfo.shared;
+  assert(value.ir && "Should only query valid values");
+  ASTType rvType = value.ir.getRValueType();
+
+  // If it already matches, then we're done.
+  if (rvType.isEqualCanon(requiredType))
+    return true;
+
+  if (canConvertWithRebind(rvType, requiredType, shared))
+    return true;
+
+  // Lifetimes and lifetime sets can convert between each other.
+  // FIXME: This seems wrong, why isn't it checking for inclusion and
+  // compatibility??
+  if (isa<LifetimeType, LifetimeSetType>(rvType) &&
+      isa<LifetimeType, LifetimeSetType>(requiredType))
+    return true;
+
+  // Check to see if we already cached this convertibility check.
+  std::optional<bool> cache =
+      shared.getCachedImplicitConvertibility(rvType, requiredType);
+  if (cache.has_value())
+    return cache.value();
+
+  auto cacheAndReturnVal = [&](bool isConvertible) -> bool {
+    // Cache the result of this convertibility check.
+    shared.cacheImplicitConvertibility(rvType, requiredType, isConvertible);
+    return isConvertible;
+  };
+
+  // Values of known {struct/trait/mlir} type can convert to any trait type they
+  // implement.
+  if (auto trait = dyn_cast<TraitType>(requiredType)) {
+    std::optional<InflightDiag> diag;
+    // Struct types and Trait types can conform to traits.
+    if (isa<AnyStructType, TraitType>(rvType) &&
+        rvType.getDecl(shared)->doesNominalTypeConformsTo(trait, diag, shared))
+      return cacheAndReturnVal(true);
+    if (diag)
+      diag->abandon();
+
+    // MLIR types can conform to traits that have limited requirements.
+    // AnyTraitType (the type of all traits) conforms to traits with only a
+    // destructor (e.g. AnyType) since all traits have that.
+    if (isa<TypeType>(rvType) &&
+        checkMLIRTypeConformance(shared, value.expr->getLoc(), trait))
+      return cacheAndReturnVal(true);
+
+    // If the source value is a parametric value of type 'AnyTrait[trait]'
+    // then the elaborator will turn it into something that conforms to 'trait'.
+    if (auto sourceTraitMT = dyn_cast<AnyTraitType>(rvType);
+        sourceTraitMT && sourceTraitMT.getTraitType() == trait)
+      return cacheAndReturnVal(true);
+
+    return cacheAndReturnVal(false);
+  }
+
+  // We can implicitly convert to the specified type if we can construct it with
+  // the value.
+
+  // Disable implicit conversions though, to prevent converting T -> S -> U in
+  // one step.
+  FailureOr<PValue> result = OverloadSet::canConstructType(
+      requiredType, {{value}}, value.expr, scopeInfo,
+      /*allowImplicitConversions=*/false);
+  return cacheAndReturnVal(succeeded(result) && result.value());
+}
+
 /// Emit the specified value into the current destination if present.  This
 /// accepts (and silently propagates) null values.
 ///
 /// Note that the `value` provided here may require an implicit conversion
 /// into the destination slot, so the input may be memory-only and result be
 /// register-passable (and visa-versa).
+///
+/// CAUTION: This method must line up with `canImplicitlyConvertToType`!!!
 AnyValue ExprEmitter::emitResult(AnyValue value, const ExprNode *expr,
                                  ValueDest &dest) {
   AnyValue originalValue = value;
@@ -1349,14 +1452,14 @@ AnyValue ExprEmitter::emitResult(AnyValue value, const ExprNode *expr,
 
   // OK, if there is a destination specified, handle them by converging the set
   // of value types we have.
-  auto rvalueType = cValue.getRValueType();
+  auto rvType = cValue.getRValueType();
 
   // If there is a known type for the destination but the value disagrees, emit
   // an implicit conversion directly into the destination.  This keeps values in
   // registers and avoids a "convert + clone" pair for memory->memory
   // conversions.
   if (ASTType requiredType =
-          dest.resolveImpliedType(expr->getLoc(), rvalueType, *this)) {
+          dest.resolveImpliedType(expr->getLoc(), rvType, *this)) {
     // If converting to a TypeCheckError type, then there is an
     // already-diagnosed error about this expression.
     if (requiredType.isTypeCheckErrorType()) {
@@ -1364,10 +1467,11 @@ AnyValue ExprEmitter::emitResult(AnyValue value, const ExprNode *expr,
       return {};
     }
 
-    if (!requiredType.isEqualCanon(rvalueType)) {
+    if (!requiredType.isEqualCanon(rvType)) {
+
       // If we are dealing with types that differ only pre-elaboration,
       // we insert a rebind.
-      if (canConvertWithRebind(rvalueType, requiredType, shared)) {
+      if (canConvertWithRebind(rvType, requiredType, shared)) {
         // The RValue types need to be rebound, but MValues have a level of
         // reference around them that we want to maintain.
         if (cValue.isMValue())
@@ -1383,48 +1487,12 @@ AnyValue ExprEmitter::emitResult(AnyValue value, const ExprNode *expr,
         return emitResult(value, expr, dest);
       }
 
-      // If looking for a !lit.ref, allow convertible lit.ref values.
-      if (isa<RefType>(requiredType) && cValue.isMValue() &&
-          canConvertWithRebind(cValue.getMValueType(), requiredType, shared)) {
-        value = rebindValue({value, expr}, requiredType);
-        assert(value.isMValue() && "mvalues should rebind to mvalues");
-        return emitResult(SRValue(value.getMValueReference()), expr, dest);
-      }
-
-      // Emit metatype conversions to trait types if the metatype implements the
-      // specified trait.
-      if (auto trait = dyn_cast<TraitType>(requiredType)) {
-        if (isa<AnyStructType, TraitType>(rvalueType)) {
-          PValue result = emitMetaTypeToTraitConversion({cValue, expr}, trait);
-          assert(
-              result.get() != originalValue.getIfPValue().get() &&
-              "emitResult made no progress, stopping before stack overflow.");
-          return emitResult(result, expr, dest);
-        }
-        if (isa<TypeType>(rvalueType)) {
-          PValue result = bindMLIRTypeToTrait({cValue, expr}, trait);
-          assert(
-              result.get() != originalValue.getIfPValue().get() &&
-              "emitResult made no progress, stopping before stack overflow.");
-          return emitResult(result, expr, dest);
-        }
-        // If the source value is a parametric value of type 'AnyTrait[trait]'
-        // then the elaborator will turn it into something that conforms to
-        // 'trait' and a simple rebind is enough.
-        if (auto sourceTraitMT = dyn_cast<AnyTraitType>(rvalueType)) {
-          if (sourceTraitMT.getTraitType() == trait) {
-            value = rebindValue({cValue, expr}, requiredType);
-            return emitResult(value, expr, dest);
-          }
-        }
-      }
-
       // Handle conversions between lifetimes and lifetime sets.
-      if (isa<LifetimeType, LifetimeSetType>(rvalueType) &&
+      if (isa<LifetimeType, LifetimeSetType>(rvType) &&
           isa<LifetimeType, LifetimeSetType>(requiredType)) {
         // This can only be done in the parameter domain.
         if (TypedAttr value = cValue.getIfPValue()) {
-          if (isa<LifetimeType>(rvalueType)) {
+          if (isa<LifetimeType>(rvType)) {
             value = LifetimeSetAttr::get(value,
                                          cast<LifetimeSetType>(requiredType));
           } else {
@@ -1432,6 +1500,38 @@ AnyValue ExprEmitter::emitResult(AnyValue value, const ExprNode *expr,
                                               cast<LifetimeType>(requiredType));
           }
           return emitResult(value, expr, dest);
+        }
+      }
+
+      // Emit metatype conversions to trait types if the metatype implements the
+      // specified trait.
+      if (auto trait = dyn_cast<TraitType>(requiredType)) {
+        // Check conversions from struct types.
+        if (isa<AnyStructType, TraitType>(rvType)) {
+          PValue result = emitMetaTypeToTraitConversion({cValue, expr}, trait);
+          assert(
+              result.get() != originalValue.getIfPValue().get() &&
+              "emitResult made no progress, stopping before stack overflow.");
+          return emitResult(result, expr, dest);
+        }
+
+        // Check conversions from MLIR types.
+        if (isa<TypeType>(rvType)) {
+          PValue result = bindMLIRTypeToTrait({cValue, expr}, trait);
+          assert(
+              result.get() != originalValue.getIfPValue().get() &&
+              "emitResult made no progress, stopping before stack overflow.");
+          return emitResult(result, expr, dest);
+        }
+
+        // If the source value is a parametric value of type 'AnyTrait[trait]'
+        // then the elaborator will turn it into something that conforms to
+        // 'trait' and a simple rebind is enough.
+        if (auto sourceTraitMT = dyn_cast<AnyTraitType>(rvType)) {
+          if (sourceTraitMT.getTraitType() == trait) {
+            value = rebindValue({cValue, expr}, requiredType);
+            return emitResult(value, expr, dest);
+          }
         }
       }
 
@@ -1464,7 +1564,7 @@ AnyValue ExprEmitter::emitResult(AnyValue value, const ExprNode *expr,
 
   // We know we have an RValue/BValue and the destination is some kind of
   // LValue.  Emit the dest to figure out where to store it.
-  LValue destLV = dest.getLValueForResult(expr->getLoc(), rvalueType,
+  LValue destLV = dest.getLValueForResult(expr->getLoc(), rvType,
                                           /*allowIncompatibleTypes=*/true,
                                           /*requireMLValue=*/false, *this);
   if (!destLV) {

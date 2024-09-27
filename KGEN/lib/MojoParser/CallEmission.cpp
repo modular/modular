@@ -1086,32 +1086,6 @@ CValue ExprEmitter::emitConstructorCall(ASTType type,
 //===----------------------------------------------------------------------===//
 // Type conversion helpers.
 
-/// Return true if the MLIR type can implicitly conform to the trait.
-static bool checkMLIRTypeConformance(SharedState &shared, SMLoc loc,
-                                     TraitType trait) {
-  ASTDecl &traitDecl = *ASTType(trait).getDecl(shared);
-  // Make sure the body of the trait is resolved.
-  if (failed(shared.declResolver->resolveFully(traitDecl, loc)))
-    return false; // an error was emitted
-  for (auto &[name, decls] : traitDecl.getDeclsInScope()) {
-    for (ASTDecl *decl : decls) {
-      auto traitFn = dyn_cast<LIT::FuncOp>(*decl);
-      // Skip any children that aren't methods or are inherited. This could be
-      // an alias.
-      if (!traitFn || traitFn.getIsInherited())
-        continue;
-      // MLIR types are movable, copyable, and destructible only.
-      if (llvm::is_contained({SpecialFunctionKind::kMoveInit,
-                              SpecialFunctionKind::kCopyInit,
-                              SpecialFunctionKind::kDel},
-                             SpecialFunctionInfo::getKind(name)))
-        continue;
-      return false;
-    }
-  }
-  return true;
-}
-
 /// If the specified type can be constructed with the specified operands
 /// return the initializer that would be invoked. If not, return null PValue.
 /// If there were erroneous declarations when processing return failure so we
@@ -1163,72 +1137,6 @@ FailureOr<PValue> OverloadSet::canConstructType(
   if (callee.isErroneous())
     return FailureOr<PValue>(failure());
   return result;
-}
-
-/// Return true if 'value' may be implicitly converted to 'requiredType'
-/// by invoking (one level of) conversion operations.  This does not generate
-/// any IR.
-bool OverloadSet::canImplicitlyConvertToType(
-    ASTExprAnd<CValue> value, ASTType requiredType,
-    const TypeCheckScopeInfo &scopeInfo) {
-  auto &shared = scopeInfo.shared;
-
-  assert(value.ir && "Should only query valid values");
-  // If it already matches, then we're done.
-  ASTType rvType = value.ir.getRValueType();
-  if (rvType.isEqualCanon(requiredType) ||
-      canConvertWithRebind(rvType, requiredType, shared))
-    return true;
-
-  // Lifetimes and lifetime sets can convert between each other.
-  // FIXME: This seems wrong, why isn't it checking for inclusion and
-  // compatibility??
-  if (isa<LifetimeType, LifetimeSetType>(rvType) &&
-      isa<LifetimeType, LifetimeSetType>(requiredType))
-    return true;
-
-  // Check to see if we already cached this convertibility check.
-  std::optional<bool> cache =
-      shared.getCachedImplicitConvertibility(rvType, requiredType);
-  if (cache.has_value())
-    return cache.value();
-
-  auto cacheAndReturnVal = [&](bool isConvertible) -> bool {
-    // Cache the result of this convertibility check.
-    shared.cacheImplicitConvertibility(rvType, requiredType, isConvertible);
-    return isConvertible;
-  };
-
-  // Values of known {struct/trait/mlir} type can convert to any trait type they
-  // implement.
-  if (auto traitType = dyn_cast<TraitType>(requiredType)) {
-    std::optional<InflightDiag> diag;
-    // Struct types and Trait types can conform to traits.
-    if (isa<AnyStructType, TraitType>(rvType) &&
-        rvType.getDecl(shared)->doesNominalTypeConformsTo(traitType, diag,
-                                                          shared))
-      return cacheAndReturnVal(true);
-    if (diag)
-      diag->abandon();
-
-    // MLIR types can conform to traits that have limited requirements.
-    // AnyTraitType (the type of all traits) conforms to traits with only a
-    // destructor (e.g. AnyType) since all traits have that.
-    if (isa<TypeType>(rvType) &&
-        checkMLIRTypeConformance(shared, value.expr->getLoc(), traitType))
-      return cacheAndReturnVal(true);
-    return cacheAndReturnVal(false);
-  }
-
-  // We can implicitly convert to the specified type if we can construct it with
-  // the value.
-
-  // Disable implicit conversions though, to prevent converting T -> S -> U in
-  // one step.
-  FailureOr<PValue> result = OverloadSet::canConstructType(
-      requiredType, {{value}}, value.expr, scopeInfo,
-      /*allowImplicitConversions=*/false);
-  return cacheAndReturnVal(succeeded(result) && result.value());
 }
 
 void OverloadSet::dump() const {

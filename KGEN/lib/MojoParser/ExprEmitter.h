@@ -432,6 +432,13 @@ public:
   AnyValue emitResult(AnyValue value, const ExprNode *expr, ValueDest &dest);
   CValue emitCResult(CValue value, const ExprNode *expr, ValueDest &dest);
 
+  /// Return true if 'value' may be implicitly converted to 'requiredType'
+  /// by invoking (one level of) conversion operations.  This does not generate
+  /// any IR.
+  static bool canImplicitlyConvertToType(ASTExprAnd<CValue> value,
+                                         ASTType requiredType,
+                                         const TypeCheckScopeInfo &scopeInfo);
+
   /// Emit the specified expression into the specified destination.
   AnyValue emitExpr(const ExprNode *expr, ValueDest &dest);
 

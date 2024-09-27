@@ -216,13 +216,6 @@ public:
                    const ExprNode *expr, const TypeCheckScopeInfo &scopeInfo,
                    bool allowImplicitConversions = true);
 
-  /// Return true if 'value' may be implicitly converted to 'requiredType'
-  /// by invoking (one level of) conversion operations.  This does not generate
-  /// any IR.
-  static bool canImplicitlyConvertToType(ASTExprAnd<CValue> value,
-                                         ASTType requiredType,
-                                         const TypeCheckScopeInfo &scopeInfo);
-
   LLVM_DUMP_METHOD void dump() const;
 
 private:
