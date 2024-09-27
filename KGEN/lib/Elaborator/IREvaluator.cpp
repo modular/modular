@@ -357,10 +357,8 @@ FailureOr<TypedAttr> IREvaluator::evaluateGetLinkageName(ParamOperatorAttr op) {
 
   // HACK HACK HACK: Our current name mangling scheme is not compatible with the
   // NVPTX backend.
-  StringAttr name = getExpectedMangledName(
-      genOp, symbol.getParamValues(),
-      llvm::is_contained({llvm::Triple::nvptx, llvm::Triple::nvptx64},
-                         target.getTriple().getArch()));
+  StringAttr name = getExpectedMangledName(genOp, symbol.getParamValues(),
+                                           target.getTriple().isNVPTX());
   return {StringAttr::get(name.getValue(), op.getType())};
 }
 

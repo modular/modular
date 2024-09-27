@@ -77,8 +77,7 @@ using namespace M::KGEN;
 
 static bool isGPUBackend(const CompilationOptions &options) {
   llvm::Triple triple(options.targetTriple);
-  return llvm::is_contained({llvm::Triple::nvptx, llvm::Triple::nvptx64},
-                            triple.getArch());
+  return triple.isNVPTX();
 }
 
 static SimplifyCFGOptions
