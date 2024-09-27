@@ -280,7 +280,7 @@ static GeneratorOp specializeOnSpec(CallGraphNode *node,
             return nullptr;
 
           paramName = callee.getInputParams()[indexRef.getIndex()].getName();
-        };
+        }
 
         if (paramName.empty())
           return nullptr;
@@ -296,8 +296,8 @@ static GeneratorOp specializeOnSpec(CallGraphNode *node,
 
         // Since the list of parameter match, we can get the new parameter from
         // the caller list.
-        auto replacedParam = cast<ParamDeclRefAttr>(
-            callerArgParams[std::distance(calleeArgParams.begin(), it)]);
+        auto replacedParam =
+            callerArgParams[std::distance(calleeArgParams.begin(), it)];
 
         LLVM_DEBUG(llvm::dbgs()
                    << "specType: replaced " << attr << " (" << paramName
