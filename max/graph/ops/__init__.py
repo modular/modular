@@ -22,7 +22,7 @@ convenience methods such as
 
 from .band_part import band_part
 from .broadcast_to import broadcast_to
-from .buffer import load_buffer, store_in_buffer, set_slice
+from .buffer import buffer_load, buffer_store, buffer_store_slice
 from .cast import cast
 from .complex import as_interleaved_complex
 from .concat import concat

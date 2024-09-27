@@ -20,7 +20,7 @@ from .stack import stack_scalars
 from .slice_tensor import SliceIndices, _slice_and_output_tensors
 
 
-def load_buffer(
+def buffer_load(
     x: BufferValue,
 ) -> TensorValue:
     """Loads the input buffer into a tensor.
@@ -53,7 +53,7 @@ def load_buffer(
     return TensorValue(output[1])
 
 
-def store_in_buffer(y: BufferValue, x: TensorValue) -> None:
+def buffer_store(y: BufferValue, x: TensorValue) -> None:
     """Stores the input tensor into the inout buffer.
 
     It stores the immutable input tensor `x` in the mutable tensor `y`.
@@ -74,7 +74,7 @@ def store_in_buffer(y: BufferValue, x: TensorValue) -> None:
     Graph.current._update_chain(output)
 
 
-def set_slice(
+def buffer_store_slice(
     destination: BufferValue, source: ValueLike, indices: SliceIndices
 ) -> None:
     """Stores the input tensor to into a slice in the input buffer.

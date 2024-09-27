@@ -10,7 +10,7 @@ import torch
 import numpy as np
 from max.dtype import DType
 from max.graph import Graph, TensorType, BufferType
-from max.graph.ops import load_buffer, store_in_buffer
+from max.graph.ops import buffer_load, buffer_store
 from max.engine import InferenceSession
 
 
@@ -79,9 +79,9 @@ def buffer_tensor_graph(tensor_type, buffer_type) -> Graph:
 def test_load_mutate_store(buffer_graph: Graph, session: InferenceSession):
     with buffer_graph as graph:
         buf = graph.inputs[0]
-        x = load_buffer(buf)
+        x = buffer_load(buf)
         x = x + 100
-        store_in_buffer(buf, x)
+        buffer_store(buf, x)
         graph.output()
         graph._mlir_op.verify()
         compiled = session.load(graph)
@@ -96,7 +96,7 @@ def test_store_slice(buffer_tensor_graph: Graph, session: InferenceSession):
         tensor = graph.inputs[0]
         buffer = graph.inputs[1]
 
-        load_buffer(buffer)
+        buffer_load(buffer)
 
         buf_idx = [(slice(0, int(d)), "out_dim") for d in tensor.shape]
         # All stores are explicit. This syntax uses store_slice.

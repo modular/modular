@@ -42,7 +42,7 @@ buffer_type = buffer_types(shapes=shared_shapes, dtypes=shared_dtypes)
 
 
 @given(buffer_type=...)
-def test_load_buffer(buffer_type: BufferType):
+def test_buffer_load(buffer_type: BufferType):
     with Graph(
         "buffer_load",
         input_types=[
@@ -51,7 +51,7 @@ def test_load_buffer(buffer_type: BufferType):
     ) as graph:
         buffer = graph.inputs[0]
         chain_0 = graph._current_chain
-        y = ops.load_buffer(buffer)
+        y = ops.buffer_load(buffer)
         chain_1 = graph._current_chain
 
         assert y.shape == buffer.shape
@@ -79,7 +79,7 @@ def test_store_buffer(tensor_type: TensorType, buffer_type: BufferType):
         tensor = graph.inputs[0]
         buffer = graph.inputs[1]
         chain_0 = graph._current_chain
-        ops.store_in_buffer(buffer, tensor)
+        ops.buffer_store(buffer, tensor)
         chain_1 = graph._current_chain
 
         assert buffer.shape == tensor.shape
@@ -104,7 +104,7 @@ def test_load_store_buffer(buffer_type: BufferType):
     ) as graph:
         buffer = graph.inputs[0]
         chain_0 = graph._current_chain
-        tensor = ops.load_buffer(buffer)
+        tensor = ops.buffer_load(buffer)
         chain_1 = graph._current_chain
 
         assert tensor.shape == buffer.shape
@@ -114,7 +114,7 @@ def test_load_store_buffer(buffer_type: BufferType):
         # Check the chain is updated.
         assert chain_0 != chain_1
 
-        ops.store_in_buffer(buffer, tensor)
+        ops.buffer_store(buffer, tensor)
         chain_2 = graph._current_chain
 
         assert buffer.shape == tensor.shape
@@ -145,7 +145,7 @@ def test_store_slice_buffer(tensor_type: TensorType, buffer_type: BufferType):
         tensor = graph.inputs[0]
         buffer = graph.inputs[1]
         chain_0 = graph._current_chain
-        ops.set_slice(buffer, tensor, (1,))
+        ops.buffer_store_slice(buffer, tensor, (1,))
         chain_1 = graph._current_chain
 
         assert buffer.shape == tensor.shape

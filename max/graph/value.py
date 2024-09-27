@@ -151,7 +151,7 @@ class BufferValue(Value):
         index,
         val: TensorValue,
     ) -> None:
-        return ops.set_slice(
+        return ops.buffer_store_slice(
             self, val, index if isinstance(index, Iterable) else (index,)
         )
 
