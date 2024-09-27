@@ -1418,24 +1418,24 @@ struct Thing:
 ##===----------------------------------------------------------------------===##
 
 
-fn decorator():
+fn elementwise():
     return
 
 
-fn decorator_arg(a: Int):
+fn register(a: StringLiteral):
     return
 
 
 # CHECK-LABEL: lit.func @"decorated_fn()"
-# CHECK-NEXT: decorators <:!lit.signature<() -> !kgen.none> @{{.*}}::@"decorator()">
-@decorator
+# CHECK-NEXT: decorators <:!lit.signature<() -> !kgen.none> @{{.*}}::@"elementwise()">
+@elementwise
 fn decorated_fn():
     pass
 
 
 # CHECK-LABEL: lit.struct.decl @DecoratedStruct
-# CHECK: decorators <:none apply({{.*}}decorator_arg{{.*}}, {2}
-@decorator_arg(2)
+# CHECK: decorators <:none apply({{.*}}register{{.*}}, {:string "hello"}
+@register("hello")
 struct DecoratedStruct:
     pass
 
