@@ -779,12 +779,8 @@ fn multistage_gemm_split_k_kernel[
     var M = c.dim(0)
     var N = c.dim(1)
 
-    alias BK = config.block_tile_shape[2]
-
-    # If K is not divisible by num_partitions, the first num_partitions-1 parts
-    # will be rounded up to multiple of BK.
-    var a_part = a.split[axis=1, alignment=BK](num_partitions, BlockIdx.z())
-    var b_part = b.split[axis= 1 if transpose_b else 0, alignment=BK](
+    var a_part = a.split[axis=1](num_partitions, BlockIdx.z())
+    var b_part = b.split[axis= 1 if transpose_b else 0](
         num_partitions, BlockIdx.z()
     )
     var work_space_part = tb[work_space_type]().row_major(M, N).view(
