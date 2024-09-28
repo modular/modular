@@ -20,8 +20,6 @@
 
 namespace M::KGEN::LIT {
 
-using ClosureHash = std::pair<SignatureType, StringAttr>;
-
 /// Top level types are the types of the Closure Wrapper function pointer
 /// fields.
 struct TopLevelTypes {
