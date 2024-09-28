@@ -71,7 +71,7 @@ static void storeField(ImplicitLocOpBuilder &b, Value self, Value value,
 
 static std::pair<ASTDecl &, StructDeclOp>
 createStruct(SharedState &shared, ASTDecl &moduleDecl, StringAttr name,
-             ArrayRef<ParamDeclAttr> params) {
+             ArrayRef<ParamDeclAttr> params, SMLoc loc) {
   auto module = cast<FileModuleOp>(moduleDecl);
   OpBuilder b(module.getRegion());
   SmallVector<StringAttr> paramNames;
@@ -84,7 +84,8 @@ createStruct(SharedState &shared, ASTDecl &moduleDecl, StringAttr name,
   auto paramListAttr =
       PogListAttr::get(b.getContext(), paramNames, passingKinds);
 
-  StructDeclOp declOp = b.create<StructDeclOp>(module.getLoc(), name);
+  StructDeclOp declOp =
+      b.create<StructDeclOp>(shared.diags.translateLocation(loc), name);
   declOp.setIsSynthetic(true);
 
   // Set attributes in bulk.
@@ -99,7 +100,7 @@ createStruct(SharedState &shared, ASTDecl &moduleDecl, StringAttr name,
   declOp->setAttrs(attrs.getDictionary(module.getContext()));
 
   ASTDecl &structDecl = shared.declResolver->addFullyResolvedDecl(
-      &*declOp, name, moduleDecl.getLoc(), &moduleDecl);
+      &*declOp, name, loc, &moduleDecl);
 
   structDecl.setTypeDeclSelf(ASTDecl::computeSelfTypeForStruct(declOp));
   return {structDecl, declOp};
@@ -259,7 +260,7 @@ StructDeclOp ClosureEmitter::createClosureWrapperStructDecl(
   }
 
   auto [structDecl, declOp] =
-      createStruct(shared, moduleDecl, name, wrapperDecls);
+      createStruct(shared, moduleDecl, name, wrapperDecls, moduleDecl.getLoc());
   addFieldsToStruct(declOp, opaquePtrType);
   declOp.setClosureSignature(dependentSignatureType);
 
@@ -473,11 +474,12 @@ StructDeclOp ClosureEmitter::replaceNestedFunctionWithClosureImplStructDecl(
   // Create the closure impl struct with the field types. Add the capture
   // parameters as parameter decls to the generated struct. This way, parameter
   // references within the body do not have to be renamed.
-  auto [structDecl, declOp] =
-      createStruct(shared, moduleDecl, implName,
-                   llvm::map_to_vector(paramCaptures, [](ParamDeclRefAttr ref) {
-                     return ParamDeclAttr::get(ref);
-                   }));
+  auto paramDecls =
+      llvm::map_to_vector(paramCaptures, [](ParamDeclRefAttr ref) {
+        return ParamDeclAttr::get(ref);
+      });
+  auto [structDecl, declOp] = createStruct(shared, moduleDecl, implName,
+                                           paramDecls, nestedFnDecl.getLoc());
 
   // Generate the __call__ method.
 

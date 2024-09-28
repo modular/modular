@@ -6,8 +6,6 @@
 # RUN: %parse-mojo-isolated -verify-diagnostics %s
 
 
-# expected-error @below {{'StringNoCopy' is not copyable because it has no '__copyinit__'}}
-# expected-error @below {{'StringNoCopy' is not copyable or movable because it has no '__copyinit__' or '__moveinit__' member}}
 struct StringNoCopy:
     var size: __mlir_type.index
 
@@ -19,6 +17,8 @@ struct StringNoCopy:
 
 
 fn makes_escaping_closurenocopy(m: StringNoCopy):
+    # expected-error @below {{'StringNoCopy' is not copyable because it has no '__copyinit__'}}
+    # expected-error @below {{'StringNoCopy' is not copyable or movable because it has no '__copyinit__' or '__moveinit__' member}}
     fn myclosure() -> StringNoCopy:
         # expected-error @below {{'StringNoCopy' is not copyable because it has no '__copyinit__'}}
         return m
