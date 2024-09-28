@@ -234,17 +234,20 @@ fn apple_gemv[
     var K = a.dim[1]() if b_packed else b.dim[0]()
     var N = b.dim[0]() if transpose_b or b_packed else b.dim[1]()
 
-    var transposed_b = NDBuffer[b.type, 2]()
-    var transposed_b_ptr = UnsafePointer[Scalar[b.type]]()
+    var transposed_b_shape = Index(b.dim[1](), b.dim[0]())
+
+    # Don't allocate when not transposing at runtime.
+    transposed_b_ptr = (
+        UnsafePointer[Scalar[b.type]].alloc(b.num_elements()) if not b_packed
+        and not transpose_b else UnsafePointer[Scalar[b.type]]()
+    )
+
+    transposed_b = NDBuffer[b.type, 2](transposed_b_ptr, transposed_b_shape)
 
     # If both b_packed and transpose_b are False, we need to transpose B at
     # runtime (which is suboptimal, but enables faster gemv below).
     @parameter
-    if b_packed == False and not transpose_b:
-        var transposed_b_shape = Index(b.dim[1](), b.dim[0]())
-        transposed_b_ptr = UnsafePointer[Scalar[b.type]].alloc(b.num_elements())
-        transposed_b = NDBuffer[b.type, 2](transposed_b_ptr, transposed_b_shape)
-
+    if not b_packed and not transpose_b:
         pack_b_ndbuffer[
             a.type,
             a.shape,
@@ -319,7 +322,8 @@ fn apple_gemv[
         StaticIntTuple[2](N, K), 1, parallelism_grain_size
     )
 
-    transposed_b_ptr.free()
+    if transposed_b_ptr:
+        transposed_b_ptr.free()
 
 
 # ===----------------------------------------------------------------------===#
