@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from collections import Optional, OptionalReg
-from math import ceildiv, align_up
+from math import ceildiv
 from os import abort
 from sys import alignof, prefetch, simdwidthof, sizeof
 from sys.intrinsics import PrefetchOptions
@@ -1316,7 +1316,6 @@ struct LayoutTensor[
     @always_inline
     fn split[
         axis: Int = 0,
-        alignment: Int = 1,
     ](self, count: Int, idx: Int) -> LayoutTensor[
         dtype,
         layout.make_shape_unknown[axis](),
@@ -1342,23 +1341,18 @@ struct LayoutTensor[
         alias axis_in_flatten_tuple = runtime_shape.offset_until[axis]()
 
         var runtime_shape = RuntimeTuple[result.layout.shape]()
-        var axis_partition_dim = align_up(axis_dim // count, alignment)
 
         @parameter
         for i in range(flatten_rank):
-            var shape_i = self.runtime_layout.shape.value[i]
 
             @parameter
             if i == axis_in_flatten_tuple:
-                runtime_shape.value[i] = min(
-                    axis_partition_dim, shape_i - idx * axis_partition_dim
-                )
+                runtime_shape.value[i] = axis_dim // count
             else:
-                runtime_shape.value[i] = shape_i
+                runtime_shape.value[i] = self.runtime_layout.shape.value[i]
 
         return __type_of(result)(
-            # Only the last partition can have size other than axis_partition_dim.
-            self.ptr + idx * axis_partition_dim * axis_stride,
+            self.ptr + idx * (axis_dim // count) * axis_stride,
             RuntimeLayout[result.layout](
                 runtime_shape,
                 rebind[RuntimeTuple[result.layout.stride]](
