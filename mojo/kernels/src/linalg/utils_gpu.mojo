@@ -272,6 +272,9 @@ fn select_config[
         ):
             continue
 
+        # Skip split-k if M and N already create enough tasks.
+        var allowed_num_k_partitions = 1 if num_waves_base > 3 else max_num_k_partitions
+
         # Traverse split-k possibilities to find the min work per SM.
         for num_k_partitions in range(1, max_num_k_partitions + 1):
             # Skip if partition becomes too small.
