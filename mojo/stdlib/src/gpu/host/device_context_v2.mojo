@@ -17,6 +17,7 @@ from memory import stack_allocation
 alias _DeviceContextPtr = UnsafePointer[NoneType]
 alias _DeviceBufferPtr = UnsafePointer[NoneType]
 alias _DeviceFunctionPtr = UnsafePointer[NoneType]
+alias _DeviceTimerPtr = UnsafePointer[NoneType]
 alias _CharPtr = UnsafePointer[UInt8]
 alias _VoidPtr = UnsafePointer[NoneType]
 alias _SizeT = UInt64
@@ -29,6 +30,19 @@ fn _checked(err_msg: _CharPtr) raises:
         err_str = String(StringRef(err_msg))
         external_call["free", NoneType, _CharPtr](err_msg)
         raise Error(err_str)
+
+
+struct _DeviceTimer:
+    var _handle: _DeviceTimerPtr
+
+    fn __init__(inout self, ptr: _DeviceTimerPtr):
+        self._handle = ptr
+
+    fn __del__(owned self):
+        # void AsyncRT_DeviceTimer_release(const DviceTimer *timer)
+        external_call["AsyncRT_DeviceTimer_release", NoneType, _DeviceTimerPtr](
+            self._handle
+        )
 
 
 @value
@@ -402,18 +416,74 @@ struct DeviceContextV2:
     fn execution_time[
         func: fn (Self) raises capturing [_] -> None
     ](self, num_iters: Int) raises -> Int:
-        constrained[
-            False, "##### UNIMPLEMENTED: DeviceContextV2.execution_time"
-        ]()
-        return 0  # FIXME
+        var timer_ptr = _DeviceTimerPtr()
+        # const char* AsyncRT_DeviceContext_startTimer(const DeviceTimer **result, const DeviceContext *ctx)
+        _checked(
+            external_call[
+                "AsyncRT_DeviceContext_startTimer",
+                _CharPtr,
+                UnsafePointer[_DeviceTimerPtr],
+                _DeviceContextPtr,
+            ](
+                UnsafePointer.address_of(timer_ptr),
+                self._ptr,
+            )
+        )
+        var timer = _DeviceTimer(timer_ptr)
+        for _ in range(num_iters):
+            func(self)
+        var elapsed_nanos: Int = 0
+        # const char *AsyncRT_DeviceContext_stopTimer(int64_t *result, const DeviceContext *ctx, const DeviceTimer *timer)
+        _checked(
+            external_call[
+                "AsyncRT_DeviceContext_stopTimer",
+                _CharPtr,
+                UnsafePointer[Int],
+                _DeviceContextPtr,
+                _DeviceTimerPtr,
+            ](
+                UnsafePointer.address_of(elapsed_nanos),
+                self._ptr,
+                timer._handle,
+            )
+        )
+        return elapsed_nanos
 
     fn execution_time_iter[
         func: fn (Self, Int) raises capturing [_] -> None
     ](self, num_iters: Int) raises -> Int:
-        constrained[
-            False, "##### UNIMPLEMENTED: DeviceContextV2.execution_time_iter"
-        ]()
-        return 0  # FIXME
+        var timer_ptr = _DeviceTimerPtr()
+        # const char* AsyncRT_DeviceContext_startTimer(const DeviceTimer **result, const DeviceContext *ctx)
+        _checked(
+            external_call[
+                "AsyncRT_DeviceContext_startTimer",
+                _CharPtr,
+                UnsafePointer[_DeviceTimerPtr],
+                _DeviceContextPtr,
+            ](
+                UnsafePointer.address_of(timer_ptr),
+                self._ptr,
+            )
+        )
+        var timer = _DeviceTimer(timer_ptr)
+        for i in range(num_iters):
+            func(self, i)
+        var elapsed_nanos: Int = 0
+        # const char *AsyncRT_DeviceContext_stopTimer(int64_t *result, const DeviceContext *ctx, const DeviceTimer *timer)
+        _checked(
+            external_call[
+                "AsyncRT_DeviceContext_stopTimer",
+                _CharPtr,
+                UnsafePointer[Int],
+                _DeviceContextPtr,
+                _DeviceTimerPtr,
+            ](
+                UnsafePointer.address_of(elapsed_nanos),
+                self._ptr,
+                timer._handle,
+            )
+        )
+        return elapsed_nanos
 
     fn enqueue_copy_to_device[
         type: DType
