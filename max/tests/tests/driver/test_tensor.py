@@ -273,7 +273,7 @@ DLPACK_DTYPES = [
     DType.uint16,
     DType.uint32,
     DType.uint64,
-    # TODO(MSDK-893): enable float16.
+    DType.float16,
     DType.float32,
     DType.float64,
 ]

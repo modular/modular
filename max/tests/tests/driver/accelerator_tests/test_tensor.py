@@ -99,7 +99,7 @@ DLPACK_DTYPES = {
     DType.uint16: torch.uint16,
     DType.uint32: torch.uint32,
     DType.uint64: torch.uint64,
-    # TODO(MSDK-893): enable float16.
+    DType.float16: torch.float16,
     DType.float32: torch.float32,
     DType.float64: torch.float64,
 }
