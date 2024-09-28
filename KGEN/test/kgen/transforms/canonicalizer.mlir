@@ -99,7 +99,7 @@ kgen.func @not_cmp(%arg0: index, %arg1: index) -> i1 {
   // CHECK-NEXT: %0 = index.cmp ugt(%arg0, %arg1)
   %0 = index.cmp ule(%arg0, %arg1)
   %1 = pop.cast_from_builtin %0 : i1 to !pop.scalar<bool>
-  %2 = pop.xor %1, %simd_0 : <1, bool>
+  %2 = pop.simd.xor %1, %simd_0 : <1, bool>
   %3 = pop.cast_to_builtin %2 : !pop.scalar<bool> to i1
   // CHECK-NEXT: return %0
   kgen.return %3 : i1

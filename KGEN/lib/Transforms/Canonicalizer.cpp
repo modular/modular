@@ -210,7 +210,7 @@ public:
     if (op.getInput().getType().getResolvedDType() != KGENDType::kBool)
       return b.notifyMatchFailure(op.getLoc(), "not bool dtype");
 
-    auto notOp = op.getInput().getDefiningOp<POP::XOrOp>();
+    auto notOp = op.getInput().getDefiningOp<POP::SIMDXOrOp>();
     if (!notOp)
       return b.notifyMatchFailure(op.getLoc(), "parent isn't xor");
 
