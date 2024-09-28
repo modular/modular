@@ -59,7 +59,7 @@ kgen.generator @callee() -> index always_inline {
   kgen.return %0 : index loc(#ret1)
 } loc(#calleeLoc)
 
-// CHECK: #[[CONST_LOC]] = loc(unknown)
+// CHECK: #[[CONST_LOC]] = loc("foo.mlir":80:80)
 // CHECK: #[[BREAK_LOC0]] = loc(callsite(#[[RET_LOC0]] at #[[CALL_LOC]]))
 // CHECK: #[[BREAK_LOC1]] = loc(callsite(#[[RET_LOC1]] at #[[CALL_LOC]]))
 
@@ -146,7 +146,7 @@ kgen.generator @has_debuginfo() {
   kgen.return loc(#loc)
 } loc(#loc)
 
-// CHECK: [[LOC]] = loc(unknown)
+// CHECK: [[LOC]] = loc("{{.*}}":
 
 // -----
 

@@ -102,7 +102,6 @@ kgen.func @has_debuginfo() {
   kgen.return loc(#loc)
 } loc(#loc)
 
-// CHECK-DAG: #[[LOC_CALLER:.+]] = loc("foo.mlir":0:0)
-// CHECK-DAG: #[[LOC]] = loc(unknown)
+// CHECK-DAG: #[[LOC:.+]] = loc("foo.mlir":0:0)
 // CHECK-DAG: #[[SP:.+]] = #debuginfo.subprogram<name = <"foo">>
-// CHECK-DAG: #[[LOC_CALLER_SP:.+]] = loc(fused<#[[SP]]>[#[[LOC_CALLER]]])
+// CHECK-DAG: #[[LOC_CALLER_SP:.+]] = loc(fused<#[[SP]]>[#[[LOC]]])

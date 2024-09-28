@@ -68,6 +68,14 @@ static LogicalResult verifyScope(ErrorOr<DIScopeAttr> scopeOr,
   if (failed(scopeOr))
     return op->emitOpError(scopeOr.getError());
 
+  if (!*scopeOr) {
+    // Allow constants to not carry scope (due to deduplication).
+    if (op->hasTrait<OpTrait::ConstantLike>())
+      return success();
+    return op->emitOpError("missing source location scope").attachNote()
+           << "function scope: " << funcScope;
+  }
+
   while (auto lexBlock = dyn_cast_or_null<DILexicalBlockAttr>(*scopeOr))
     scopeOr = lexBlock.getScope();
 
