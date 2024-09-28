@@ -567,19 +567,19 @@ OpFoldResult CmpOp::fold(FoldAdaptor adaptor) {
 // Bitwise Operation Folders
 //===----------------------------------------------------------------------===//
 
-OpFoldResult AndOp::fold(FoldAdaptor adaptor) {
+OpFoldResult SIMDAndOp::fold(FoldAdaptor adaptor) {
   return foldSIMDOp(
       adaptor.getOperands(), [](APSInt lhs, APSInt rhs) { return lhs & rhs; },
       [](bool lhs, bool rhs) { return lhs && rhs; });
 }
 
-OpFoldResult OrOp::fold(FoldAdaptor adaptor) {
+OpFoldResult SIMDOrOp::fold(FoldAdaptor adaptor) {
   return foldSIMDOp(
       adaptor.getOperands(), [](APSInt lhs, APSInt rhs) { return lhs | rhs; },
       [](bool lhs, bool rhs) { return lhs || rhs; });
 }
 
-OpFoldResult XOrOp::fold(FoldAdaptor adaptor) {
+OpFoldResult SIMDXOrOp::fold(FoldAdaptor adaptor) {
   SIMDAttr attr;
   if (mlir::matchPattern(getRhs(), mlir::m_Constant(&attr))) {
     // `xor(x, 0)` -> `x`.
@@ -596,7 +596,7 @@ OpFoldResult XOrOp::fold(FoldAdaptor adaptor) {
                 return value.getData().isMask(value.getData().getBitWidth());
               };
     if (llvm::all_of(attr.getValues(), pred)) {
-      auto xorOp = getLhs().getDefiningOp<XOrOp>();
+      auto xorOp = getLhs().getDefiningOp<SIMDXOrOp>();
       if (xorOp && xorOp.getRhs() == getRhs())
         return xorOp.getLhs();
     }
@@ -891,7 +891,7 @@ LogicalResult SIMDSelectOp::canonicalize(SIMDSelectOp op, PatternRewriter &b) {
         op.getLoc(), "values are not 'false' and 'true' respectively");
 
   // The pattern has matched. Re-use the 'true' constant.
-  b.replaceOpWithNewOp<XOrOp>(op, op.getCondition(), op.getFalseValue());
+  b.replaceOpWithNewOp<SIMDXOrOp>(op, op.getCondition(), op.getFalseValue());
   return success();
 }
 

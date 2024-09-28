@@ -1362,9 +1362,11 @@ struct ConvertPOPUnionUnwrap : public ConvertPOPToLLVMPattern<UnionUnwrapOp> {
 // Trivial Conversions
 //===----------------------------------------------------------------------===//
 
-using ConvertPOPAnd = mlir::OneToOneConvertToLLVMPattern<AndOp, LLVM::AndOp>;
-using ConvertPOPOr = mlir::OneToOneConvertToLLVMPattern<OrOp, LLVM::OrOp>;
-using ConvertPOPXOr = mlir::OneToOneConvertToLLVMPattern<XOrOp, LLVM::XOrOp>;
+using ConvertPOPAnd =
+    mlir::OneToOneConvertToLLVMPattern<SIMDAndOp, LLVM::AndOp>;
+using ConvertPOPOr = mlir::OneToOneConvertToLLVMPattern<SIMDOrOp, LLVM::OrOp>;
+using ConvertPOPXOr =
+    mlir::OneToOneConvertToLLVMPattern<SIMDXOrOp, LLVM::XOrOp>;
 using ConvertPOPAdd =
     OneToOneFloatOrIntConversion<AddOp, LLVM::FAddOp, LLVM::AddOp>;
 using ConvertPOPSub =

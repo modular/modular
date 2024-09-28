@@ -385,61 +385,61 @@ class POP_BitwiseOp<string mnemonic, list<Trait> traits = []> :
 }
 
 //===----------------------------------------------------------------------===//
-// AndOp
+// SIMDAndOp
 //===----------------------------------------------------------------------===//
 
-def POP_AndOp : POP_BitwiseOp<"and", [Idempotent]> {
+def POP_SIMDAndOp : POP_BitwiseOp<"simd.and", [Idempotent]> {
   let summary = "bitwise logical and";
   let description = [{
-    The `pop.and` returns the bitwise logical and of its two operands. The dtype
+    The `pop.simd.and` returns the bitwise logical and of its two operands. The dtype
     of the operands must be a boolean, integral, or parametric type with
     underlying boolean or integral dtype.
 
     Example:
 
     ```mlir
-    %c = pop.and %a, %b : !pop.scalar<type>
-    %c = pop.and %a, %b : !pop.simd<size, type>
+    %c = pop.simd.and %a, %b : !pop.scalar<type>
+    %c = pop.simd.and %a, %b : !pop.simd<size, type>
     ```
   }];
 }
 
 //===----------------------------------------------------------------------===//
-// OrOp
+// SIMDOrOp
 //===----------------------------------------------------------------------===//
 
-def POP_OrOp : POP_BitwiseOp<"or", [Idempotent]> {
+def POP_SIMDOrOp : POP_BitwiseOp<"simd.or", [Idempotent]> {
   let summary = "bitwise logical or";
   let description = [{
-    The `pop.or` returns the bitwise logical or of its two operands. The dtype
+    The `pop.simd.or` returns the bitwise logical or of its two operands. The dtype
     of the operands must be a boolean, integral, or parametric type with
     underlying boolean or integral dtype.
 
     Example:
 
     ```mlir
-    %c = pop.or %a, %b : !pop.scalar<type>
-    %c = pop.or %a, %b : !pop.simd<size, type>
+    %c = pop.simd.or %a, %b : !pop.scalar<type>
+    %c = pop.simd.or %a, %b : !pop.simd<size, type>
     ```
   }];
 }
 
 //===----------------------------------------------------------------------===//
-// XOrOp
+// SIMDXOrOp
 //===----------------------------------------------------------------------===//
 
-def POP_XOrOp : POP_BitwiseOp<"xor"> {
+def POP_SIMDXOrOp : POP_BitwiseOp<"simd.xor"> {
   let summary = "bitwise logical xor";
   let description = [{
-    The `pop.xor` returns the bitwise logical exclusive or of its two operands.
+    The `pop.simd.xor` returns the bitwise logical exclusive or of its two operands.
     The dtype of the operands must be a boolean, integral, or parametric type
     with underlying boolean or integral dtype.
 
     Example:
 
     ```mlir
-    %c = pop.xor %a, %b : !pop.scalar<type>
-    %c = pop.xor %a, %b : !pop.simd<size, type>
+    %c = pop.simd.xor %a, %b : !pop.scalar<type>
+    %c = pop.simd.xor %a, %b : !pop.simd<size, type>
     ```
 
     The XOr is used to implement the `not` operation. For example:
@@ -447,7 +447,7 @@ def POP_XOrOp : POP_BitwiseOp<"xor"> {
     ```mlir
     %neg_one_si64 = kgen.param.constant: scalar<si64> = <<-1>>
     %neg_one = pop.cast %neg_one_si64 : !pop.scalar<si64> to !pop.scalar<type>
-    %not = pop.xor %val, %neg_one : !pop.scalar<type> // returns ~(%val)
+    %not = pop.simd.xor %val, %neg_one : !pop.scalar<type> // returns ~(%val)
     ```
   }];
 }
