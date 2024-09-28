@@ -16,7 +16,7 @@
 
 #include "Support/FunctionExtras.h"
 #include "Support/LLVMForwardDecls.h"
-#include "Support/ML/BFloat16.h"
+#include "Support/ML/Float16.h"
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/DenseMapInfo.h"
 #include "llvm/ADT/STLExtras.h"
@@ -377,6 +377,7 @@ DECLARE_TYPE_MAPPING(ui32, uint32_t);
 DECLARE_TYPE_MAPPING(si64, int64_t);
 DECLARE_TYPE_MAPPING(ui64, uint64_t);
 DECLARE_TYPE_MAPPING(bf16, M::bfloat::bfloat16_t);
+DECLARE_TYPE_MAPPING(f16, M::float16::float16_t);
 DECLARE_TYPE_MAPPING(f32, float);
 DECLARE_TYPE_MAPPING(f64, double);
 /// TODO: Add long double when sizeof(long double) != sizeof(double).
