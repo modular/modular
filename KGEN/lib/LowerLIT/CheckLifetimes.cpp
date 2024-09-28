@@ -961,7 +961,8 @@ private:
   void checkConsume(Value value, Operation &op, bool isDeref);
   void checkMarkDestroyed(Value value, Operation &op);
   void checkLifetimeEffect(TypedAttr lifetime, Operation &op);
-  void handleAnyLifetimeUse(Operation &op);
+  void handleAnyLifetimeUse(Operation &op,
+                            ArrayRef<TypedAttr> definedLifetimes);
 
   /// This is metadata about all the values we are tracking.
   ValueSet &valueSet;
@@ -1265,8 +1266,23 @@ void UninitializedValueScan::checkLifetimeEffect(TypedAttr lifetime,
 /// We handle this by learning which things need extension in this function,
 /// then attaching an attribute that destructor insertion pass will notice in
 /// the second pass.
-void UninitializedValueScan::handleAnyLifetimeUse(Operation &op) {
-  // Collect a set of value ID's that might be accessed.
+void UninitializedValueScan::handleAnyLifetimeUse(
+    Operation &op, ArrayRef<TypedAttr> definedLifetimes) {
+  // Turn the list of lifetimes (which might include unions, mutcasts, etc) into
+  // the raw underlying lifetimes of values.
+  SmallPtrSet<Attribute, 8> definedLifetimeSet;
+  for (auto elt : definedLifetimes) {
+    // Look through imm cast and unions to find the underlying attrs.
+    processRawLifetime(elt, [&](TypedAttr raw) {
+      // Ignore field sensitivity of the use: if we have a def of a subfield of
+      // the value then we treat it as defining the value.
+      while (auto field = dyn_cast<LifetimeFieldAttr>(raw))
+        raw = field.getStructLifetime();
+      definedLifetimeSet.insert(raw);
+    });
+  }
+
+  // Collect a set of value ID's that might be accessed, evaluating each one.
   SmallVector<int32_t> valueIdsToExtend;
 
   for (unsigned i = 0, e = valueSet.getValueInfos().size(); i != e; ++i) {
@@ -1278,6 +1294,13 @@ void UninitializedValueScan::handleAnyLifetimeUse(Operation &op) {
 
     // Can't be a use if the value isn't fully alive here.
     if (!valueSet.getFullValueRef(i).isAllPresent(liveValues))
+      continue;
+
+    // Check to see if the operation directly initializes this lifetime
+    // (e.g. by initializing it). If so, we don't want to treat this as a
+    // generalized use.
+    auto valueLifetime = cast<RefType>(valueInfo.value.getType()).getLifetime();
+    if (definedLifetimeSet.count(valueLifetime))
       continue;
 
     // Check to see if the value is dominated by this op.  It is possible for
@@ -1332,10 +1355,12 @@ void UninitializedValueScan::scanBlock(Block &block) {
   SmallVector<std::pair<Value, OperandEffect>> operandEffects;
   SmallVector<ResultEffect> resultEffects;
   SmallVector<TypedAttr> lifetimeEffects;
+  SmallVector<TypedAttr> definedLifetimes;
   for (Operation &op : block) {
     operandEffects.clear();
     resultEffects.clear();
     lifetimeEffects.clear();
+    definedLifetimes.clear();
     auto overall =
         getOperationEffects(op, operandEffects, resultEffects, lifetimeEffects,
                             valueSet.lifetimeFinder);
@@ -1345,17 +1370,6 @@ void UninitializedValueScan::scanBlock(Block &block) {
       // op.dump();
       continue;
     }
-
-    // If the operation used a #lit.any.lifetime value, then we treat it as an
-    // implicit use of all tracked values.  This ensures that the values are
-    // not destroyed too early.  We check for this before any defs are processed
-    // so that only values live-in to the operation are extended, not things
-    // defined by the operation.
-    for (auto lifetime : lifetimeEffects)
-      if (isa<AnyLifetimeAttr>(lifetime)) {
-        handleAnyLifetimeUse(op);
-        break;
-      }
 
     // Handle all the normal operand and result effects.
     for (auto [operand, effect] : operandEffects) {
@@ -1371,6 +1385,8 @@ void UninitializedValueScan::scanBlock(Block &block) {
         break;
       case OperandEffect::memStoreOwned:
         checkDef(operand, op, /*isDeref=*/true);
+        definedLifetimes.push_back(
+            cast<RefType>(operand.getType()).getLifetime());
         break;
       case OperandEffect::memInOut:
         checkUse(operand, op, /*isDeref=*/true);
@@ -1441,16 +1457,24 @@ void UninitializedValueScan::scanBlock(Block &block) {
                "Lifetime trackable and CheckLifetimes disagree");
         // We consume on execution to provide Init -> Uninit behavior.
         checkDef(result, op, /*isDeref=*/true);
+        definedLifetimes.push_back(
+            cast<RefType>(result.getType()).getLifetime());
         break;
       }
     }
 
-    // Process any indirect lifetimes accessed.  It would be theoretically more
-    // correct to handle these before the other operation effects (e.g. defs)
-    // but exclusivity checking has already verified that there is no
-    // intersection between lifetime uses and definitions.
-    for (auto lifetime : lifetimeEffects)
+    // Process any indirect lifetimes accessed.
+    bool hasAnyLifetime = false;
+    for (auto lifetime : lifetimeEffects) {
       checkLifetimeEffect(lifetime, op);
+      hasAnyLifetime |= isa<AnyLifetimeAttr>(lifetime);
+    }
+
+    // If the operation used a #lit.any.lifetime value, then we treat it as an
+    // implicit use of all tracked values.  This ensures that the values are
+    // not destroyed too early.
+    if (hasAnyLifetime)
+      handleAnyLifetimeUse(op, definedLifetimes);
 
     // Finally, handle any other special per-operation behavior.
     switch (overall) {
@@ -2658,8 +2682,13 @@ void DestructorInsertion::scanBlock(Block &block) {
         // and library development, not for users.
 #if 0
         if (!info.getFullValueRef(valueId).isAllPresent(consumedValues)) {
-          auto diag = op.emitRemark(
-              "op extended with AnyLifetime usage extended lifetime of ");
+          auto diag = mlir::emitRemark(op.getLoc());
+          if (auto call = dyn_cast<LIT::CallOp>(op))
+            diag << "call to '" << call.getDirectCallee() << "'";
+          else
+            diag << "op";
+
+          diag << " extended with AnyLifetime usage extended lifetime of ";
           if (auto varDecl = info.value.getDefiningOp<VarDeclOp>())
             diag << "'" << varDecl.getName() << "'";
           else

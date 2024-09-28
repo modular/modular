@@ -1119,3 +1119,19 @@ fn handleAnyLifetime2():
   use_inner_pointer(UnsafePointer.address_of(ui8))
   # CHECK-NEXT: lit.var.lifetime.end %ui8
 
+# CHECK-LABEL: lit.func @"handleAnyLifetime3
+fn handleAnyLifetime3():
+    # CHECK-NEXT: %a_packed_ptr = lit.var.decl
+    # CHECK-NEXT: lit.var.lifetime.start %a_packed_ptr
+    # CHECK-NEXT: lit.call {{.*}}__init__
+    # CHECK-NEXT: lit.var.lifetime.end %a_packed_ptr
+    var a_packed_ptr = UnsafePointer[Int]()
+
+    # CHECK-NEXT: lit.var.lifetime.start %a_packed_ptr
+    # CHECK-NEXT: lit.call {{.*}}__init__
+    # CHECK-NEXT: lit.var.lifetime.end %a_packed_ptr
+
+    # This shouldn't be treated as a use of `a_packed_ptr`
+    a_packed_ptr = UnsafePointer[Int]()
+    
+    
