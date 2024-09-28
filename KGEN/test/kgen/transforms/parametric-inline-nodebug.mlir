@@ -88,7 +88,7 @@ kgen.generator @main() {
 }
 
 // CHECK-DAG: #[[LOC_CALLEE]] = loc("foo.mlir":10:5)
-// CHECK-DAG: #[[LOC_INLINED]] = loc(unknown)
+// CHECK-DAG: #[[LOC_INLINED]] = loc("{{.*}}":
 
 // -----
 

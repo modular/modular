@@ -563,7 +563,7 @@ void DebugInfo::updateInlinedLoc(Operation *op, Location callerLoc) {
       // Workaround to handle CSE hoisting constants out of
       // InlinedSubprogramScoped ops into an outer scope and causing debug
       // scope mismatch (Tracker: https://linear.app/modularml/issue/MOCO-143).
-      op->setLoc(UnknownLoc::get(op->getContext()));
+      op->setLoc(stripDebugScopesRecursively(op->getLoc()));
     } else {
       op->setLoc(mlir::CallSiteLoc::get(op->getLoc(), callerLoc));
     }
