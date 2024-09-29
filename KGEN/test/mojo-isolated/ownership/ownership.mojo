@@ -1134,4 +1134,19 @@ fn handleAnyLifetime3():
     # This shouldn't be treated as a use of `a_packed_ptr`
     a_packed_ptr = UnsafePointer[Int]()
     
-    
+
+fn take_pack[*Ts: AnyType](*values: *Ts): pass
+
+# CHECK-LABEL: lit.func @"handleAnyLifetime4
+# VariadicPack's need to extend the lifetime in the pack
+# https://github.com/modularml/mojo/issues/3559
+fn handleAnyLifetime4():
+  str = String()
+  ptr = UnsafePointer.address_of(str)
+
+  # Should extend the lifetime of 'str'.
+  take_pack(ptr)
+
+  # CHECK: lit.call {{.*}}take_pack
+  # CHECK: lit.call {{.*}}__del__{{.*}}(%str)
+  # CHECK: lit.var.lifetime.end %str
