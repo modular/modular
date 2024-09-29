@@ -99,14 +99,18 @@ public:
   void dump() const;
 
   /// Add an input parameter binding.
-  void addInputValue(Attribute value) { inputParamValues.push_back(value); }
+  void addInputValue(TypedAttr value) { inputParamValues.push_back(value); }
   /// Add a result parameter binding.
-  void addResultValue(Attribute value) { resultParamValues.push_back(value); }
+  void addResultValue(TypedAttr value) { resultParamValues.push_back(value); }
   /// Set the relative input depth.
   void setInputDepth(size_t depth) { inputDepth = depth; }
 
   /// Return the number of input parameter values that have been added.
   size_t getNumInputParams() const { return inputParamValues.size(); }
+  /// Add an input parameter.
+  void addInputParam(TypedAttr param) { inputParamValues.push_back(param); }
+  /// Get all the input parameters.
+  ArrayRef<TypedAttr> getInputParams() const { return inputParamValues; }
 
 private:
   // CRTP methods.
@@ -124,10 +128,10 @@ private:
 
   /// These are the top-level input parameters to use when rebinding a
   /// signature.
-  SmallVector<Attribute> inputParamValues;
+  SmallVector<TypedAttr> inputParamValues;
   /// These are the top-level result parameters to use when rebinding a
   /// signature.
-  SmallVector<Attribute> resultParamValues;
+  SmallVector<TypedAttr> resultParamValues;
   /// The relative depth from the signature where the input parameters are from.
   /// This is zero for most applications, but should be set accordingly when
   /// substituting attributes or types inside a signature.

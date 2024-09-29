@@ -66,6 +66,13 @@ PogListAttr PogListAttr::get(MLIRContext *context) {
   return PogListAttr::get(context, {}, {});
 }
 
+PogListAttr PogListAttr::get(MLIRContext *context, size_t numPogs) {
+  SmallVector<PogMetadataAttr> pogs;
+  for (size_t i = 0; i != numPogs; ++i)
+    pogs.push_back(PogMetadataAttr::get(context));
+  return PogListAttr::get(context, pogs);
+}
+
 PogListAttr PogListAttr::get(MLIRContext *context,
                              ArrayRef<PogMetadataAttr> pogs) {
   return PogListAttr::get(context, pogs, {}, {});

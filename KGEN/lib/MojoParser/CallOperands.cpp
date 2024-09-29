@@ -56,6 +56,8 @@ CallOperands::diagnoseKeywordOperands(PogListAttr pogListAttr,
   DefaultValueHandler defaultHandler(pogListAttr);
   for (auto [argIdx, pogAttr] : llvm::enumerate(pogListAttr.getPogs())) {
     StringAttr name = pogAttr.getName();
+    if (name.empty())
+      continue;
     PassingKind passingKind = pogAttr.getPassingKind();
     // Implicit and inferred parameter aren't passed by the user. They must be
     // inferred from values bound to parameters or arguments, so we don't have
