@@ -302,9 +302,9 @@ struct FunctionCache:
 fn _dump_q[val: Variant[Bool, Path, fn () capturing -> Path]]() -> Bool:
     @parameter
     if val.isa[Bool]():
-        return val.unsafe_get[Bool]()[]
+        return val.unsafe_get[Bool]()
     elif val.isa[Path]():
-        return val.unsafe_get[Path]()[] != Path("")
+        return val.unsafe_get[Path]() != Path("")
     return val.isa[fn () capturing -> Path]()
 
 
@@ -445,10 +445,10 @@ struct Function[
             if dump_ptx.isa[fn () capturing -> Path]():
                 alias dump_ptx_fn = dump_ptx.unsafe_get[
                     fn () capturing -> Path
-                ]()[]
+                ]()
                 dump_ptx_fn().write_text(ptx)
             elif dump_ptx.isa[Path]():
-                dump_ptx.unsafe_get[Path]()[].write_text(ptx)
+                dump_ptx.unsafe_get[Path]().write_text(ptx)
             else:
                 print(ptx)
 
@@ -461,10 +461,10 @@ struct Function[
             if dump_sass.isa[fn () capturing -> Path]():
                 alias dump_sass_fn = dump_sass.unsafe_get[
                     fn () capturing -> Path
-                ]()[]
+                ]()
                 dump_sass_fn().write_text(sass)
             elif dump_sass.isa[Path]():
-                dump_sass.unsafe_get[Path]()[].write_text(sass)
+                dump_sass.unsafe_get[Path]().write_text(sass)
             else:
                 print(sass)
 
@@ -478,10 +478,10 @@ struct Function[
             if dump_llvm.isa[fn () capturing -> Path]():
                 alias dump_llvm_fn = dump_llvm.unsafe_get[
                     fn () capturing -> Path
-                ]()[]
+                ]()
                 dump_llvm_fn().write_text(llvm)
             elif dump_llvm.isa[Path]():
-                dump_llvm.unsafe_get[Path]()[].write_text(llvm)
+                dump_llvm.unsafe_get[Path]().write_text(llvm)
             else:
                 print(llvm)
 
