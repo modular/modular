@@ -1704,6 +1704,13 @@ void UninitializedValueScan::checkTryOp(LIT::TryOp tryOp) {
 
 /// Emit a lifetime end marker for a value that is being consumed.
 static void emitLifetimeEnd(Value value, ImplicitLocOpBuilder &builder) {
+  // RefLoadOp can only be used on register passable values.  See if this is
+  // loading from a var box.
+  if (auto load = value.getDefiningOp<RefLoadOp>())
+    value = load.getOperand();
+  if (auto rebind = value.getDefiningOp<RebindOp>())
+    value = rebind.getOperand();
+
   if (value.getDefiningOp<VarDeclOp>())
     builder.create<VarLifetimeEndOp>(value);
 }
@@ -2051,8 +2058,23 @@ DestructorInserter::optimizeCopyDestroys(Operation *opWithUse) {
 
     // Check to see if we have this value to destroy.
     for (auto [i, elt] : llvm::enumerate(valuesToDestroy)) {
-      if (elt.value == loaded && elt.valueRef.isIndirect &&
-          elt.fieldsToDestroy.empty()) {
+      // Only look at full value destroys, not subfields.
+      if (!elt.fieldsToDestroy.empty())
+        continue;
+
+      // If this is is a direct reference, then it has already been loaded from
+      // the VarDecl box.
+      Value eltValue = elt.value;
+      if (!elt.valueRef.isIndirect) {
+        auto eltLoad = elt.value.getDefiningOp<RefLoadOp>();
+        if (!eltLoad)
+          continue; // Unknown direct access.
+        eltValue = RefImmutOp::strip(eltLoad.getOperand());
+      }
+
+      // Check to see if the value to destroy is the load box indirectly
+      // referenced.
+      if (eltValue == loaded) {
         // Ok, yep we can do this.
         elideCopyInitReg(copyInitCall, loadOp);
 
@@ -3145,45 +3167,6 @@ void DestructorInsertion::checkUse(Value value, bool isDeref,
   // there are dedicated bits in the consumedValues bitvector that represent
   // the consumption state of this value.
   if (ValueRef valueRef = valueSet.getDirectValueRef(value, isDeref)) {
-    ValueInfo &valueInfo = valueSet.getValueInfos()[valueRef.valueId];
-    if (valueInfo.hasErrorDiagnosed)
-      return;
-
-    // If this is the last use of some value that needs to be destroyed when
-    // dead, emit the whole object destructor for the overall value.
-    //
-    //   init(&aggregate)
-    //   use(aggregate.field1)
-    //   use(aggregate.field2)  <<-- We are here.
-    //
-    // Here we emit `dtor(&aggregate)` to destroy the overall value, which will
-    // also handle deleting the field in question.
-    //
-    // This also handles the case of indirect references, resetting to the
-    // correct value to destroy.
-    // If dryRun, then the upward consume set is unset for values potentially
-    // consumed beneath the loop. As a result, we don't know if this is the last
-    // reference to whole value. Assuming that it is will result in destruction
-    // of that value in a break branch.
-    if (value != valueInfo.value &&
-        !consumedValues[valueInfo.endValueBit - 1] && !dryRun) {
-      auto fullValueRef = valueInfo.getFullValueRef(valueRef.valueId);
-      // The full value must be live at this point for us to destroy the full
-      // value.  We've already checked that values are defined before use, so
-      // in this scenario, the full object bit will be handled somehow else,
-      // e.g. by an explicit mark_destroyed.
-      //
-      //  init(&aggregate)
-      //  use(aggregate)
-      //  mark_destroyed(aggregate)
-      //  use(aggregate.field1)       <<-- We are here.
-      //  consume(aggregate.field2)
-      if (fullValueRef.isAllMissing(consumedValues)) {
-        value = valueInfo.value;
-        valueRef = fullValueRef;
-      }
-    }
-
     // Otherwise, it is possible that that ValueRef is live but the overall
     // object will be consumed, this happens in scenarios like:
     //
@@ -3207,8 +3190,6 @@ void DestructorInsertion::checkUse(Value value, bool isDeref,
             cast<RefType>(value.getType()).getLifetime());
     for (auto valueRef : lifetimeRelatedValues) {
       ValueInfo &valueInfo = valueSet.getValueInfos()[valueRef.valueId];
-      if (valueInfo.hasErrorDiagnosed)
-        continue;
 
       // We expand the lifetime use to be an access to the full value being
       // accessed, even if it we have field sensitivity.  The reason for this
@@ -3218,7 +3199,6 @@ void DestructorInsertion::checkUse(Value value, bool isDeref,
       // like `destroyValuesAtEntryIfNeeded` and unify this and the "direct"
       // path better.
       valueRef = valueInfo.getFullValueRef(valueRef.valueId);
-
       scheduleNeededDtors(valueInfo.value, valueRef, dtorInserter);
     }
   }
@@ -3317,6 +3297,45 @@ static void clearTrivialFields(ValueRef valueRef, Type valueType,
 void DestructorInsertion::scheduleNeededDtors(
     Value value, ValueRef valueRef, DestructorInserter &dtorInserter) {
   assert(valueRef && "Only works on valid refs");
+
+  ValueInfo &valueInfo = valueSet.getValueInfos()[valueRef.valueId];
+  if (valueInfo.hasErrorDiagnosed)
+    return;
+
+  // If this is the last use of some subfield of a value that needs to be
+  // destroyed, emit the whole object destructor for the overall value.
+  //
+  //   init(&aggregate)
+  //   use(aggregate.field1)
+  //   use(aggregate.field2)  <<-- We are here.
+  //
+  // Here we emit `aggregate.__del__()` to destroy the overall value, which will
+  // also handle deleting the field in question.
+  //
+  // This also handles the case of indirect references, resetting to the
+  // correct value to destroy.
+  // If dryRun, then the upward consume set is unset for values potentially
+  // consumed beneath the loop. As a result, we don't know if this is the last
+  // reference to whole value. Assuming that it is will result in destruction
+  // of that value in a break branch.
+  auto fullValueRef = valueInfo.getFullValueRef(valueRef.valueId);
+  if (!consumedValues[valueInfo.endValueBit - 1] && !dryRun &&
+      valueRef != fullValueRef) {
+    // The full value must be live at this point for us to destroy the full
+    // value.  We've already checked that values are defined before use, so
+    // in this scenario, the full object bit will be handled somehow else,
+    // e.g. by an explicit mark_destroyed.
+    //
+    //  init(&aggregate)
+    //  use(aggregate)
+    //  mark_destroyed(aggregate)
+    //  use(aggregate.field1)       <<-- We are here.
+    //  consume(aggregate.field2)
+    if (fullValueRef.isAllMissing(consumedValues)) {
+      value = valueInfo.value;
+      valueRef = fullValueRef;
+    }
+  }
 
   // If nothing in this value needs destroying, then ignore the request.
   if (valueRef.isAllPresent(consumedValues))

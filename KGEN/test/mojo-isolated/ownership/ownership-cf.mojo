@@ -173,7 +173,6 @@ fn try_examples(cond: __mlir_type.i1, err: Error):
     # CHECK: } except {
     # CHECK-NEXT: [[ERR:%.*]] = lit.ref.load [[ERRSLOT]]
     # CHECK-NEXT: lit.call {{.*}}use{{.*}}([[ERR]])
-    # CHECK-NEXT: [[ERR:%.*]] = lit.ref.load [[ERRSLOT]]
     # CHECK-NEXT: lit.call @{{.*}}Error::@"__del__{{.*}}([[ERR]])
     # CHECK-NEXT: lifetime.end [[ERRSLOT]]
     # CHECK-NEXT: lit.try.yield
@@ -202,7 +201,6 @@ fn try_examples(cond: __mlir_type.i1, err: Error):
     # CHECK: } except {
     # CHECK-NEXT: [[ERR:%.*]] = lit.ref.load [[ERRSLOT]]
     # CHECK-NEXT: lit.call {{.*}}use{{.*}}([[ERR]])
-    # CHECK-NEXT: [[ERR:%.*]] = lit.ref.load [[ERRSLOT]]
     # CHECK-NEXT: lit.call @{{.*}}Error::@"__del__{{.*}}([[ERR]])
     # CHECK-NEXT: lifetime.end [[ERRSLOT]]
     # CHECK-NEXT: lit.try.yield
