@@ -150,7 +150,7 @@ public:
 
   /// Returns the user-defined result type, looking through implicit memory
   /// results and stripping off the variant from error throwing results if
-  /// needed.
+  /// needed.  This does NOT strip off the RefType for a 'ref[]' result.
   ASTType getSignatureUserResultType() const;
 
   /// If this type is parameterized, and if any of the parameters refer to a
