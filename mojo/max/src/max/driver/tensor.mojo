@@ -136,9 +136,7 @@ struct Tensor[type: DType, rank: Int](CollectionElement, TensorLike):
         return self._spec.get_tensor_spec()
 
     @always_inline
-    fn __getitem__(
-        inout self, *indices: Int
-    ) -> ref [__lifetime_of(self)] Scalar[type]:
+    fn __getitem__(inout self, *indices: Int) -> ref [self] Scalar[type]:
         """Gets the value at the specified indices.
 
         Args:
