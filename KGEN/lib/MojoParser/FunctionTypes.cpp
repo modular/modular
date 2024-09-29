@@ -153,10 +153,10 @@ static LITSignatureType getReducedFunctionType(LITSignatureType sig) {
                             metadata);
 }
 
-static LIT::FuncOp generateConversionThunk(LITSignatureType actual,
-                                           LITSignatureType expected,
-                                           ASTDecl &moduleDecl,
-                                           SharedState &shared) {
+LIT::FuncOp LIT::generateConversionThunk(LITSignatureType actual,
+                                         LITSignatureType expected,
+                                         ASTDecl &moduleDecl,
+                                         SharedState &shared) {
   // TODO: Deduplicate in shared state.
   MLIRContext *ctx = shared.getContext();
   Location mlirLoc = shared.diags.translateLocation(moduleDecl.getLoc());
@@ -317,8 +317,8 @@ CValue LIT::convertFunctionValue(CValue value, const ExprNode *expr,
 
   ASTDecl *moduleDecl = emitter.declScope.getNearestDeclOfType<FileModuleOp>();
   assert(moduleDecl && "emitting code outside a module?");
-  LIT::FuncOp thunk = generateConversionThunk(reducedActual, reducedExpected,
-                                              *moduleDecl, emitter.shared);
+  LIT::FuncOp thunk = emitter.shared.getOrCreateFunctionThunk(
+      reducedActual, reducedExpected, moduleDecl);
   if (!thunk) {
     dest.resetForError();
     return {};
