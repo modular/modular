@@ -1207,8 +1207,13 @@ AnyValue emitGetterSetterAccess(const ExprNode *node, ASTExprAnd<CValue> base,
                                     /*emitDiagnosticOnFailure*/ true, emitter);
     if (!getter) // Error already emitted.
       return {};
-    // ElementType is the result of the getter.
+    // ElementType is the result of the getter, processing by-ref results and
+    // ignoring the variant for raising functions.
     elementType = getter.getType().getSignatureUserResultType();
+
+    // Also look through ref results.
+    if (cast<SignatureType>(getter.getType()).isRefResult())
+      elementType = cast<RefType>(elementType).getElementType();
   }
 
   // We need to figure out which setter to use, but can't just filter the set

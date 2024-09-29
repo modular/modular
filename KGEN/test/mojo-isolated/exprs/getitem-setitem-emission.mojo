@@ -218,3 +218,21 @@ fn testVariadicIndexList(inout foo: VariadicIndexList, i: Int, the_value: Int):
     # CHECK: lit.call {{.*}}VariadicIndexList::@"__setitem__{{.*}}(%foo, [[VARIADIC]], %the_value)
     foo[i, i, i, i] = the_value
 
+
+# MOCO-1244:
+
+struct RefResultInOverloaded:
+  var x: String
+  fn __getitem__(self) raises -> ref[self.x] String:
+    return self.x
+
+  fn __setitem__(inout self, owned x: String): pass
+
+# CHECK-LABEL: lit.func @"testRefResultInOverloaded
+fn testRefResultInOverloaded(inout rrio: RefResultInOverloaded, owned str: String) raises:
+  # CHECK: lit.call {{.*}}__getitem__
+  # CHECK: lit.call {{.*}}unsafe_ptr
+  _ = rrio[].unsafe_ptr()
+  # CHECK-NOT: __copyinit__
+  # CHECK: lit.call {{.*}}__setitem__
+  rrio[] = str^
