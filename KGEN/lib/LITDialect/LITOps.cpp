@@ -463,7 +463,7 @@ TypedAttr LIT::FuncOp::getBoundReference(ParameterExprArrayAttr bindings) {
 
 SymbolConstantAttr
 LIT::FuncOp::getBoundSymbolRef(ParameterExprArrayAttr bindings) {
-  return cast<SymbolConstantAttr>(getBoundReference());
+  return cast<SymbolConstantAttr>(getBoundReference(bindings));
 }
 
 bool LIT::FuncOp::isSynthetic() { return getIsSynthetic(); }

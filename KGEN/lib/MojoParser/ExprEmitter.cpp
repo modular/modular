@@ -12,6 +12,7 @@
 #include "ExprEmitter.h"
 #include "CallEmission.h"
 #include "ExprNodes.h"
+#include "FunctionTypes.h"
 #include "KGEN/MojoParser/ASTDecl.h"
 #include "KGEN/MojoParser/DeclResolver.h"
 #include "KGEN/MojoParser/ParserParamEvaluator.h"
@@ -1322,25 +1323,6 @@ static bool checkMLIRTypeConformance(SharedState &shared, SMLoc loc,
   return true;
 }
 
-/// When emitting a result value, attempt to "refine" the value type by
-/// evaluating 'apply' expressions in its type. Rebind the value if the type can
-/// be further specialized.
-static AnyValue refineResultValue(AnyValue value, const ExprNode *expr,
-                                  ExprEmitter &emitter) {
-  // Only CValues can be specialized. OverloadSetUValues don't have a type.
-  auto cValue = value.getIfCValue();
-  if (!cValue)
-    return value;
-
-  ParserParamEvaluator evaluator(emitter.getDeclResolver());
-  Type valueType = cValue.getType();
-  Type refinedType = evaluator.refine(valueType);
-  if (refinedType == valueType)
-    return value;
-
-  return emitter.rebindValue({value, expr}, refinedType);
-}
-
 /// Return true if 'value' may be implicitly converted to 'requiredType'
 /// by invoking (one level of) conversion operations.  This does not generate
 /// any IR.
@@ -1406,6 +1388,14 @@ bool ExprEmitter::canImplicitlyConvertToType(
     return cacheAndReturnVal(false);
   }
 
+  // Check for non-trivial function type conversions.
+  if (auto rvFunctionType = dyn_cast<LITSignatureType>(rvType)) {
+    if (auto requiredFunction = dyn_cast<LITSignatureType>(requiredType)) {
+      return canConvertFunctionTypes(rvFunctionType, requiredFunction,
+                                     scopeInfo);
+    }
+  }
+
   // We can implicitly convert to the specified type if we can construct it with
   // the value.
 
@@ -1415,6 +1405,25 @@ bool ExprEmitter::canImplicitlyConvertToType(
       requiredType, {{value}}, value.expr, scopeInfo,
       /*allowImplicitConversions=*/false);
   return cacheAndReturnVal(succeeded(result) && result.value());
+}
+
+/// When emitting a result value, attempt to "refine" the value type by
+/// evaluating 'apply' expressions in its type. Rebind the value if the type can
+/// be further specialized.
+static AnyValue refineResultValue(AnyValue value, const ExprNode *expr,
+                                  ExprEmitter &emitter) {
+  // Only CValues can be specialized. OverloadSetUValues don't have a type.
+  auto cValue = value.getIfCValue();
+  if (!cValue)
+    return value;
+
+  ParserParamEvaluator evaluator(emitter.getDeclResolver());
+  Type valueType = cValue.getType();
+  Type refinedType = evaluator.refine(valueType);
+  if (refinedType == valueType)
+    return value;
+
+  return emitter.rebindValue({value, expr}, refinedType);
 }
 
 /// Emit the specified value into the current destination if present.  This
@@ -1531,6 +1540,16 @@ AnyValue ExprEmitter::emitResult(AnyValue value, const ExprNode *expr,
           if (sourceTraitMT.getTraitType() == trait) {
             value = rebindValue({cValue, expr}, requiredType);
             return emitResult(value, expr, dest);
+          }
+        }
+      }
+
+      if (auto rvFunctionType = dyn_cast<LITSignatureType>(rvType)) {
+        if (auto requiredFunction = dyn_cast<LITSignatureType>(requiredType)) {
+          if (canConvertFunctionTypes(rvFunctionType, requiredFunction,
+                                      getScopeInfo())) {
+            return convertFunctionValue(cValue, expr, requiredFunction, *this,
+                                        dest);
           }
         }
       }
