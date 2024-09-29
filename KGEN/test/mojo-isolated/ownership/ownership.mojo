@@ -353,7 +353,7 @@ fn use_and_return2(a: FieldSensitiveMemExample) -> MemExample:
 fn use_inout_and_return(inout a: FieldSensitiveMemExample) -> FieldSensitiveMemExample:
   return a
 
-fn return_ref(inout a: FieldSensitiveMemExample) -> ref [__lifetime_of(a)] FieldSensitiveMemExample:
+fn return_ref(inout a: FieldSensitiveMemExample) -> ref [a] FieldSensitiveMemExample:
   return a
 
 # CHECK-LABEL: lit.func @"test_result_optimization

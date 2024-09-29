@@ -512,7 +512,7 @@ fn parameter_with_escaped_mlir_name[type: AnyType](value: type):
 # CHECK:     "signature": "fn_with_anon_refs(ref [ref_arg1_is_lifetime] ref_arg1: AnyTrivialRegType) -> ref [_] AnyTrivialRegType",
 fn fn_with_anon_refs(
     ref [_]ref_arg1: AnyTrivialRegType,
-) -> ref [__lifetime_of(ref_arg1)] AnyTrivialRegType:
+) -> ref [ref_arg1] AnyTrivialRegType:
     pass
 
 
@@ -561,7 +561,7 @@ struct HMyUnsafePointer[
 
 struct HList[T: CollectionElement, hint_trivial_type: Bool = False]:
     # CHECK: "signature": "__getitem__(ref [self_is_lifetime] self: Self, idx: Int) -> ref [_] T",
-    fn __getitem__(ref [_]self, idx: Int) -> ref [__lifetime_of(self)] T:
+    fn __getitem__(ref [_]self, idx: Int) -> ref [self] T:
         pass
 
 

@@ -483,7 +483,7 @@ fn test38421():
 # Computed LValues
 # ===----------------------------------------------------------------------=== #
 
-fn get_inout_ref(inout x: String) -> ref [__lifetime_of(x)] String:  
+fn get_inout_ref(inout x: String) -> ref [x] String:  
     return x
 
 struct StrArray:

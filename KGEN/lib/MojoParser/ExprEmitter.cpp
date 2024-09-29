@@ -1837,6 +1837,66 @@ BValue ExprEmitter::emitStoreToLValue(ASTExprAnd<CValue> value, LValue destLV,
   return {};
 }
 
+/// Emit IR for the specified expression without adding it to the current
+/// execution context.  This even allows evaluating dynamic expressions in a
+/// parameter context.  When the result is computed, evaluate the specified
+/// callback on the result and then discard the result.
+///
+/// On failure, an error is emitted and the callback is not invoked.
+///
+/// This is used for evaluating expressions like __lifetime_of(x) and
+/// __type_of(x) and `ref [x] T`.
+void ExprEmitter::emitExpressionWithOutEvaluatingIt(
+    const ExprNode *expr, ExprContext exprContext,
+    std::function<void(CValue)> callback) {
+  SMLoc loc = expr->getLoc();
+  // The emitter indicates what context to do name lookup against, but cannot
+  // be used to emit the IR into.  Find something in the declScope with an
+  // Operation (e.g. a function), which will allow us to put in a Block to emit
+  // into.  This is a bit of a hack, but is required because some things scan
+  // up the region hierarchy.
+  ASTDecl *curDecl = &declScope;
+  Operation *opToInsertInto = nullptr;
+  // Scan for an operation with a region.
+  while (!(opToInsertInto = curDecl->getIfOperation()) ||
+         opToInsertInto->getNumRegions() == 0) {
+    curDecl = curDecl->getParentDecl();
+    if (!curDecl) {
+      emitError(loc, "INTERNAL ERROR: could not find context to emit IR "
+                     "into.  Please file a bug.");
+      return;
+    }
+  }
+
+  auto location = expr->getLocation(*this);
+
+  // Okay we found an operation with a region.  Abuse it :-) by adding a new
+  // block, which keeps any code we're emitting contained.
+  Region &r = opToInsertInto->getRegion(0);
+  Block &tmpBlock = r.emplaceBlock();
+  ExprEmitter tmpEmitter(shared, declScope, OpBuilder::atBlockBegin(&tmpBlock));
+
+  // Go further and add a 'try' op to it, ensuring that throwing functions are
+  // allowed in this expression.
+  ASTType errorType = shared.getBuiltinErrorType(declScope, loc);
+  if (!errorType)
+    return;
+  VarDeclOp errDecl = tmpEmitter.emitVarDecl(
+      "__try_error__", errorType, location, VarDeclKind::Synthesized);
+  auto tryOp = tmpEmitter.builder->create<TryOp>(location, errDecl);
+
+  // Parse the expression into the try block.
+  tmpEmitter.builder->createBlock(&tryOp.getTryRegion());
+
+  // Emit the expression and invoke the callback on success.
+  CValue subExprValue = tmpEmitter.emitExprCValue(expr, exprContext);
+  if (subExprValue)
+    callback(subExprValue);
+
+  // Finally, remove our temp block
+  tmpBlock.erase();
+}
+
 //===----------------------------------------------------------------------===//
 // Emission helpers for specific value types.
 
