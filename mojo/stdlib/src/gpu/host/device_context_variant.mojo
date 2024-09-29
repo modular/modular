@@ -55,11 +55,11 @@ struct DeviceFunctionVariant[
     var impl: Variant[Self.V1, Self.V2]
 
     @parameter
-    fn v1(self) -> ref [__lifetime_of(self.impl)] Self.V1:
+    fn v1(self) -> ref [self.impl] Self.V1:
         return self.impl[Self.V1]
 
     @parameter
-    fn v2(self) -> ref [__lifetime_of(self.impl)] Self.V2:
+    fn v2(self) -> ref [self.impl] Self.V2:
         return self.impl[Self.V2]
 
     def __init__(inout self, owned impl: Self.V1):
@@ -77,11 +77,11 @@ struct DeviceBufferVariant[type: DType](Sized):
     var _impl: Variant[Self.V1, Self.V2]
 
     @parameter
-    fn v1(self) -> ref [__lifetime_of(self._impl)] Self.V1:
+    fn v1(self) -> ref [self._impl] Self.V1:
         return self._impl[Self.V1]
 
     @parameter
-    fn v2(self) -> ref [__lifetime_of(self._impl)] Self.V2:
+    fn v2(self) -> ref [self._impl] Self.V2:
         return self._impl[Self.V2]
 
     def __init__(inout self, owned impl: Self.V1):
@@ -172,11 +172,11 @@ struct DeviceContextVariant:
     var impl: Variant[Self.V1, Self.V2]
 
     @parameter
-    fn v1(self) -> ref [__lifetime_of(self.impl)] Self.V1:
+    fn v1(self) -> ref [self.impl] Self.V1:
         return self.impl[Self.V1]
 
     @parameter
-    fn v2(self) -> ref [__lifetime_of(self.impl)] Self.V2:
+    fn v2(self) -> ref [self.impl] Self.V2:
         return self.impl[Self.V2]
 
     fn __init__(
