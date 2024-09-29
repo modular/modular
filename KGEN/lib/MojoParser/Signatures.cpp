@@ -69,7 +69,26 @@ static RefType processLifetimeSpecifier(const ExprNode *lifetimeExpr,
   // Emit the lifetime expression if it is a normal expression.
   PValue lifetime;
   if (lifetimeExpr->kind != ExprNode::kDiscardLiteral) {
-    lifetime = emitter.emitExprPValue(lifetimeExpr, EC_Lifetime);
+    // The lifetime expression may either be a MValue or a value of
+    // !lit.lifetime type.  In the former case, we want to evaluate the
+    // expression without evaluating it, because it may involve complex nested
+    // expressions and we may be in a PValue expression.
+    emitter.emitExpressionWithOutEvaluatingIt(
+        lifetimeExpr, EC_Lifetime, [&](CValue result) {
+          // If this is a PValue of lifetime type, directly use it.
+          if (isa<LifetimeType>(result.getRValueType()) &&
+              result.getIfPValue()) {
+            lifetime = result.getIfPValue();
+          } else if (result.isMValue()) {
+            // We can get the lifetime of an MValue.
+            lifetime = result.getMValueType().getLifetime();
+          } else {
+            emitter.emitError(lifetimeExpr->getLoc())
+                << "value of type " << result.getRValueType()
+                << " doesn't have a memory lifetime"
+                << lifetimeExpr->getRange();
+          }
+        });
   } else {
     // We need to add two parameters to this function, one for the mutability
     // of type Bool and one for the lifetime.

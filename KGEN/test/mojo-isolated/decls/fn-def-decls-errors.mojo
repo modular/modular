@@ -118,43 +118,47 @@ def defTests() -> None:
   # expected-error @+1 {{expression must be mutable in assignment}}
   abc = 4
 
-# expected-error @+1 {{result reference lifetime has unexpected type 'IntLiteral'}}
-fn ref_result_invalid() -> ref [4] MemoryType:
+# expected-error @+1 {{value of type 'IntLiteral' doesn't have a memory lifetime}}
+fn ref_result_invalid1() -> ref [4] MemoryType:
     pass
 
-fn ref_result_invalid2(inout a: MemoryType) -> ref [__lifetime_of(a)] Int:
+fn ref_result_invalid2(inout a: MemoryType) -> ref [a] Int:
     # expected-error @+1 {{cannot return reference with incompatible lifetime: '*"anonymous*"' vs 'a'}}
     return 4
 
 fn ref_result_invalid3(inout a: MemoryType, inout b: MemoryType)
-     -> ref [__lifetime_of(a)] MemoryType:
+     -> ref [a] MemoryType:
     # expected-error @+1 {{cannot return reference with incompatible lifetime: 'b' vs 'a'}}
     return b
 
-fn ref_result_invalid4(inout a: MemoryType, b: Int) -> ref [__lifetime_of(a)] MemoryType:
+fn ref_result_invalid4(inout a: MemoryType, b: Int) -> ref [a] MemoryType:
     # expected-error @+1 {{cannot implicitly convert 'Int' value to 'MemoryType'}}
     return b
 
 # expected-error @+1 {{cannot return 'a's lifetime, because it might expand to a @register_passable type}}
-fn ref_result_invalid5[T: AnyType](a: T) -> ref [__lifetime_of(a)] T:
+fn ref_result_invalid5[T: AnyType](a: T) -> ref [a] T:
     return a
 
 # expected-error @+1 {{cannot return 'b's lifetime, because it has @register_passable type 'Int'}}
-fn ref_result_invalid6(inout a: MemoryType, inout b: Int) -> ref [__lifetime_of(b)] Int:
+fn ref_result_invalid6(inout a: MemoryType, inout b: Int) -> ref [b] Int:
     pass
 
 # expected-error @+1 {{cannot infer lifetime for a function result}}
 fn ref_result_invalid7() -> ref [_] MemoryType:
     pass
 
-fn valid_ref_result(x: MemoryType) -> ref [__lifetime_of(x)] MemoryType: return x
+# expected-error @+1 {{value of type 'Int' doesn't have a memory lifetime}}
+fn ref_result_invalid8(a: Int) -> ref [a] MemoryType:
+    pass
+
+fn valid_ref_result(x: MemoryType) -> ref [x] MemoryType: return x
 
 fn ref_invalid():
     var a = MemoryType()
     # expected-error @+1 {{expression must be mutable in assignment}}
     valid_ref_result(a) = MemoryType()
 
-fn return_ref_type_error(a: fn (x: MemoryType) -> ref [__lifetime_of(x)] MemoryType):
+fn return_ref_type_error(a: fn (x: MemoryType) -> ref [x] MemoryType):
     # expected-error @+1 {{cannot implicitly convert 'fn(x: MemoryType) -> ref [*[0,0]] MemoryType' value to 'Int'}}
     var b: Int = a
 

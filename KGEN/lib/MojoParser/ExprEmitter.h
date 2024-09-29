@@ -496,6 +496,19 @@ public:
   BValue emitStoreToLValue(ASTExprAnd<CValue> value, LValue destLV,
                            ExprContext context);
 
+  /// Emit IR for the specified expression without adding it to the current
+  /// execution context.  This even allows evaluating dynamic expressions in a
+  /// parameter context.  When the result is computed, evaluate the specified
+  /// callback on the result and then discard the result.
+  ///
+  /// On failure, an error is emitted and the callback is not invoked.
+  ///
+  /// This is used for evaluating expressions like __lifetime_of(x) and
+  /// __type_of(x) and `ref [x] T`.
+  void emitExpressionWithOutEvaluatingIt(const ExprNode *expr,
+                                         ExprContext exprContext,
+                                         std::function<void(CValue)> callback);
+
   //===--------------------------------------------------------------------===//
   // Emission helpers for specific value types.
 
@@ -543,7 +556,7 @@ public:
                                FuncOp funcDecl);
 
   //===--------------------------------------------------------------------===//
-  // Var/let emission helpers.
+  // Var emission helpers.
 
   /// Helper to emit a VarDeclOp with a uniquely generated lifetime name.
   VarDeclOp emitVarDecl(const Twine &name, Type type, Location loc,
