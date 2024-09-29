@@ -8,25 +8,27 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "KGEN/MojoParser/SharedState.h"
 #include "CallEmission.h"
 #include "ClosureEmitter.h"
 #include "DebugInfo.h"
 #include "ExprEmitter.h"
 #include "ExprNodes.h"
+#include "FunctionTypes.h"
+
 #include "KGEN/MojoParser/ASTDecl.h"
 #include "KGEN/MojoParser/ASTType.h"
 #include "KGEN/MojoParser/DeclResolver.h"
 #include "KGEN/MojoParser/EntryPoint.h"
 #include "KGEN/MojoParser/IRValues.h"
 #include "KGEN/MojoParser/ParserParamEvaluator.h"
-#include "KGEN/Support/CompilerProfiling.h"
+#include "KGEN/MojoParser/SharedState.h"
 
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/LITDialect/LITOps.h"
 #include "KGEN/LITDialect/LITUtils.h"
 #include "KGEN/POPDialect/POPOps.h"
 #include "KGEN/POPDialect/POPTypes.h"
+#include "KGEN/Support/CompilerProfiling.h"
 #include "KGEN/Support/Configuration.h"
 #include "KGEN/ToolCommon/CompilationOptions.h"
 #include "KGEN/ToolCommon/InitAllDialects.h"
@@ -34,8 +36,8 @@
 #include "Support/Buffer.h"
 #include "Support/Compiler/OperationUtils.h"
 #include "Support/Configuration.h"
-
 #include "Support/Filesystem/Paths.h"
+
 #include "mlir/AsmParser/AsmParser.h"
 #include "mlir/Bytecode/BytecodeReader.h"
 #include "mlir/Bytecode/BytecodeWriter.h"
@@ -299,14 +301,15 @@ struct SharedState::Impl {
   mlir::ParserConfig bytecodeParserContext;
 
   /// The closure wrapper types that have already been generated, keyed off
-  /// name.
-  llvm::DenseMap<std::pair<SignatureType, StringAttr>, StructDeclOp>
-      closureWrappers;
+  /// signature and module.
+  DenseMap<std::pair<SignatureType, ASTDecl *>, StructDeclOp> closureWrappers;
 
   /// The capture values and decls associated with their enclosing nested
   /// function.
-  llvm::DenseMap<ASTDecl *, llvm::MapVector<ASTDecl *, Capture>>
-      capturesInScope;
+  DenseMap<ASTDecl *, llvm::MapVector<ASTDecl *, Capture>> capturesInScope;
+
+  /// Function type conversion thunks in each module.
+  DenseMap<std::tuple<Type, Type, ASTDecl *>, LIT::FuncOp> conversionThunks;
 
   /// This caches non-trivial implicit convertibility checks from one type to
   /// another.
@@ -1691,23 +1694,24 @@ static void adjustTokenEndPoint(SharedState &shared, SMLoc &loc) {
 LIT::StructDeclOp SharedState::getOrCreateClosureWrapper(SMLoc loc,
                                                          SignatureType sig,
                                                          ASTDecl *moduleDecl) {
-  if (sig.getNumResultParams()) {
-    emitError(loc, "result parameters in closures are not supported yet");
-    return {};
-  }
-
-  auto fileModuleOp = cast<FileModuleOp>(moduleDecl);
-  std::pair<SignatureType, StringAttr> key(sig, fileModuleOp.getSymNameAttr());
-  StructDeclOp existing = impl->closureWrappers[key];
+  StructDeclOp &existing = impl->closureWrappers[{sig, moduleDecl}];
   if (!existing) {
     std::string name =
         ASTType(sig).getAsString(/*forDiag=*/true, /*demangleParams=*/true);
     ClosureEmitter emitter(*moduleDecl, *this);
     existing = emitter.createClosureWrapperStructDecl(
         StringAttr::get(getContext(), name), sig, loc);
-    impl->closureWrappers[key] = existing;
   }
   return existing;
+}
+
+LIT::FuncOp SharedState::getOrCreateFunctionThunk(LITSignatureType actual,
+                                                  LITSignatureType expected,
+                                                  ASTDecl *moduleDecl) {
+  LIT::FuncOp &thunk = impl->conversionThunks[{actual, expected, moduleDecl}];
+  if (!thunk)
+    thunk = generateConversionThunk(actual, expected, *moduleDecl, *this);
+  return thunk;
 }
 
 const llvm::MapVector<ASTDecl *, Capture> &

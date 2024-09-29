@@ -8,11 +8,14 @@
 #define KGEN_MOJO_PARSER_FUNCTIONTYPES_H
 
 namespace M::KGEN::LIT {
+class ASTDecl;
 class CValue;
 class ExprNode;
 class ExprEmitter;
+class FuncOp;
 class LITSignatureType;
 class ValueDest;
+class SharedState;
 struct TypeCheckScopeInfo;
 
 /// Determine whether the function type `actual` can be non-trivially converted
@@ -20,6 +23,14 @@ struct TypeCheckScopeInfo;
 bool canConvertFunctionTypes(LITSignatureType actual, LITSignatureType expected,
                              const TypeCheckScopeInfo &scopeInfo);
 
+/// This function generates a thunk inside `moduleDecl` to convert between two
+/// function types.
+FuncOp generateConversionThunk(LITSignatureType actual,
+                               LITSignatureType expected, ASTDecl &moduleDecl,
+                               SharedState &shared);
+
+/// Emit a non-trivial conversion between two function types. This generates a
+/// thunk and passes it on as the converted value.
 CValue convertFunctionValue(CValue value, const ExprNode *expr,
                             LITSignatureType expected, ExprEmitter &emitter,
                             ValueDest &dest);

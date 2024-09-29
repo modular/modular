@@ -34,6 +34,7 @@ class ExprNode;
 struct Operand;
 class FileModuleOp;
 class FuncOp;
+class LITSignatureType;
 class LookupResult;
 class PackageOp;
 class ParserListener;
@@ -443,9 +444,15 @@ public:
   struct Impl;
   Impl &getImpl() const { return *impl; }
 
-  /// Emitters invoke this method to get a closure declaration.
+  /// This gets the typed-erased closure wrapper for `sig`, or creates one in
+  /// the provided module if one does not already exist.
   StructDeclOp getOrCreateClosureWrapper(SMLoc loc, SignatureType sig,
                                          ASTDecl *moduleDecl);
+  /// This gets a function conversion thunk between the two provided function
+  /// types within the provided module, or creates one if needed.
+  LIT::FuncOp getOrCreateFunctionThunk(LITSignatureType actual,
+                                       LITSignatureType expected,
+                                       ASTDecl *moduleDecl);
 
   /// Given a scope that refers to a nested function, return the set of captured
   /// values in the form of a range: the begin and end iterators of the capture
