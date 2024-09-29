@@ -228,7 +228,7 @@ struct Task[type: AnyType, lifetimes: LifetimeSet]:
         )
         self._handle._set_result_slot(UnsafePointer.address_of(self._result))
 
-    fn get(self) -> ref [__lifetime_of(self._result)] type:
+    fn get(self) -> ref [self._result] type:
         """Get the task's result value. Calling this on an incomplete task is
         undefined behaviour."""
         return self._result
@@ -242,7 +242,7 @@ struct Task[type: AnyType, lifetimes: LifetimeSet]:
         _ = self._handle^
 
     @always_inline
-    fn __await__(self) -> ref [__lifetime_of(self.get())] type:
+    fn __await__(self) -> ref [self.get()] type:
         """Suspend the current async function until the task completes and its
         result becomes available. This function must be force inlined into the
         calling async function.
@@ -259,7 +259,7 @@ struct Task[type: AnyType, lifetimes: LifetimeSet]:
         _suspend_async[await_body]()
         return self.get()
 
-    fn wait(self) -> ref [__lifetime_of(self.get())] type:
+    fn wait(self) -> ref [self.get()] type:
         """Block the current thread until the future value becomes available."""
         _async_wait(
             AsyncContext.get_chain(self._handle._get_ctx[AsyncContext]())
