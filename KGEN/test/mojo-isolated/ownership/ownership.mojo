@@ -807,9 +807,9 @@ fn call_variadic_inout_mems():
   # CHECK-NEXT: lit.call {{.*}}variadic_inout_mems{{.*}}[mut {*"a`", *"b`1"}]([[VAR]])
   variadic_inout_mems(a, b)
 
-  # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}(%a)
+  # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}([[AR]])
   # CHECK-NEXT: lifetime.end %a
-  # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}(%b)
+  # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}([[BR]])
   # CHECK-NEXT: lifetime.end %b
 
   # CHECK-NEXT: kgen.param.constant: none
@@ -1095,8 +1095,18 @@ fn caught_eh_cleanup():
       # CHECK-NEXT: lit.call {{.*}}use{{.*}}([[EH2]])
       eh2.use()
 
-      # CHECK-NEXT: [[EH2:%.*]] = lit.ref.load %eh2
       # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}([[EH2]])
+
+# CHECK-LABEL: lit.func @"test_ref_field
+# https://linear.app/modularml/issue/MOCO-1251
+fn test_ref_field(owned mem: MemPair):
+  # Reference to subfield.
+  r = Reference(mem.a)
+
+  # Subfield reference keeps entire value alive.
+  # CHECK: lit.call {{.*}}__eq__
+  _ = r == r
+  # CHECK-NEXT: lit.call {{.*}}MemPair::@"__del__
 
 fn use_inner_pointer(ptr: UnsafePointer[UInt8]): pass
 
@@ -1133,7 +1143,7 @@ fn handleAnyLifetime3():
 
     # This shouldn't be treated as a use of `a_packed_ptr`
     a_packed_ptr = UnsafePointer[Int]()
-    
+   
 
 fn take_pack[*Ts: AnyType](*values: *Ts): pass
 

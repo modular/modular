@@ -342,7 +342,6 @@ fn optimizeCopyToMove():
     # CHECK-NEXT: [[R3:%.*]] = lit.ref.load %r3
     # CHECK-NEXT: lit.call {{.*}}noop{{.*}}([[R3]])
     r3.noop()
-    # CHECK-NEXT: [[R3:%.*]] = lit.ref.load %r3
     # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}([[R3]])
     # CHECK-NEXT: lifetime.end %r3
 
@@ -374,7 +373,6 @@ fn optimizeCopyToMove():
     # CHECK-NEXT: lit.call {{.*}}noop{{.*}}([[TMP]])
     v3.noop()
 
-    # CHECK-NEXT: [[TMP:%.*]] = lit.ref.load %v3
     # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}([[TMP]])
     # CHECK-NEXT: lifetime.end %v3
     # CHECK-NEXT: kgen.param.constant: none

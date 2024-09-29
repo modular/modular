@@ -581,6 +581,11 @@ struct Reference[
     fn __getitem__(self) -> ref [lifetime, address_space._value.value] type:
         return __get_litref_as_mvalue(self.value)
 
+    @__unsafe_disable_nested_lifetime_exclusivity
+    @always_inline("nodebug")
+    fn __eq__(self, rhs: Reference[type, _, address_space]) -> Bool:
+        return True
+
 
 struct Tuple[*element_types: AnyType]:
     fn __init__(inout self, *args: *element_types):
