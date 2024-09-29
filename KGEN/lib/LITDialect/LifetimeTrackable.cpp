@@ -416,6 +416,8 @@ getCallOpEffects(Operation &op,
           // don't redundantly process them.  Doing so is a problem for owned
           // operands.
           addArgument(arg, convention, /*noIndirect=*/true);
+          if (argConvention != ArgConvention::OwnedInMem)
+            typesAccessibleByCallee.push_back(arg.getType());
           continue;
         }
       }
