@@ -47,6 +47,8 @@ fn test_external_shared_mem(ctx: DeviceContext) raises:
 
     ctx.enqueue_copy_from_device(res_host_ptr, res_device)
 
+    ctx.synchronize()
+
     # CHECK: 0.0
     # CHECK: 1.0
     # CHECK: 2.0

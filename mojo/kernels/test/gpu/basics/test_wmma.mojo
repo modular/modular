@@ -324,6 +324,8 @@ fn run_mma_fp32_tf32(
 
     ctx.enqueue_copy_from_device(c_host_ref, c_device_ref)
 
+    ctx.synchronize()
+
     # Check correctness.
     var failed = False
     for i in range(M * N):

@@ -33,9 +33,9 @@ fn run_func[
     var func = ctx.compile_function[kernel]()
 
     ctx.enqueue_function(func, out, val, grid_dim=1, block_dim=1)
-    ctx.synchronize()
     var out_h = UnsafePointer[Scalar[type]].alloc(1)
     ctx.enqueue_copy_from_device(out_h, out)
+    ctx.synchronize()
     assert_almost_equal(out_h[0], ref_)
     _ = out
     _ = func^

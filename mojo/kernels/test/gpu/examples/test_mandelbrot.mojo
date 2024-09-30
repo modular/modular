@@ -105,6 +105,8 @@ fn run_mandelbrot(ctx: DeviceContext) raises:
 
     ctx.enqueue_copy_from_device(out_host, out_device)
 
+    ctx.synchronize()
+
     var accum = SIMD[int_type, 1](0)
     for i in range(width):
         for j in range(height):

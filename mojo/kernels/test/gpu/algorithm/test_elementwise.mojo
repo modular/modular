@@ -52,9 +52,9 @@ fn run_elementwise[type: DType](ctx: DeviceContext) raises:
         ctx,
     )
 
-    ctx.synchronize()
-
     ctx.enqueue_copy_from_device(out_host.data, out_device)
+
+    ctx.synchronize()
 
     var expected_vals = List[Scalar[type]](
         42.0,

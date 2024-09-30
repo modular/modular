@@ -35,6 +35,7 @@ fn test_kernel_with_list(ctx: DeviceContext) raises:
     var kernel = ctx.compile_function[kernel_with_list, dump_ptx=True]()
     ctx.enqueue_function(kernel, res_device, block_dim=(1), grid_dim=(1))
     ctx.enqueue_copy_from_device(res_host, res_device)
+    ctx.synchronize()
     # CHECK: 16.0
     print("Res=", res_host[0])
 

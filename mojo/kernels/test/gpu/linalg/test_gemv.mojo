@@ -161,6 +161,7 @@ fn run_matvec[
     print()
 
     ctx.enqueue_copy_from_device(c_host_naive, c_device)
+    ctx.synchronize()
 
     # Due to varied pattern of FP32 arith the accumulated sum isn't exactly
     # accurate. Hence relative tolerance needs to be checked.

@@ -47,8 +47,8 @@ fn test_memset_async(ctx: DeviceContext) raises:
         ctx.enqueue_copy_to_device(data_device, data)
         # iota(data, length, 0)
         ctx.memset(data_device, val)
-        ctx.synchronize()
         ctx.enqueue_copy_from_device(data, data_device)
+        ctx.synchronize()
         for i in range(length):
             print(data[i])
 

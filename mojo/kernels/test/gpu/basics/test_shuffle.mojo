@@ -53,6 +53,7 @@ fn _kernel_launch_helper[
     )
 
     ctx.enqueue_copy_from_device(host_ptr, device_ptr)
+    ctx.synchronize()
     _ = device_ptr
 
 

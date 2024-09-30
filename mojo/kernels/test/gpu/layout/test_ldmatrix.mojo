@@ -194,6 +194,8 @@ fn check_ldmatrix_transposed_bf16[
 
     ctx.enqueue_copy_from_device(c_host_ref, c_device_ref)
 
+    ctx.synchronize()
+
     for i in range(M * N):
         var out_val = c_host.load(i)
         var out_ref = c_host_ref.load(i)

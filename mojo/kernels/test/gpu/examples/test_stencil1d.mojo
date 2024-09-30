@@ -121,6 +121,8 @@ fn run_stencil1d[smem: Bool](ctx: DeviceContext) raises:
 
     ctx.enqueue_copy_from_device(b_host, b_device)
 
+    ctx.synchronize()
+
     # CHECK: 912.0 ,1692.0 ,2430.0 ,3159.0 ,3888.0 ,4617.0 ,5346.0 ,6075.0 ,
     # CHECK: 6804.0 ,7533.0 ,8262.0 ,8991.0 ,9720.0 ,10449.0 ,11178.0 ,11907.0 ,
     # CHECK: 12636.0 ,13365.0 ,14094.0 ,14823.0 ,15552.0 ,16281.0 ,17010.0 ,

@@ -61,6 +61,8 @@ def test_constant_mem(ctx: DeviceContext):
 
     ctx.enqueue_copy_from_device(res_host_ptr, res_device)
 
+    ctx.synchronize()
+
     for i in range(16):
         assert_equal(res_host_ptr[i], i)
 

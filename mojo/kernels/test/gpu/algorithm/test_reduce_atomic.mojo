@@ -108,6 +108,8 @@ fn run_reduce(fill_strategy: FillStrategy, ctx: DeviceContext) raises:
         UnsafePointer.address_of(res_max), res_max_device
     )
 
+    ctx.synchronize()
+
     if fill_strategy is FillStrategy.LINSPACE:
         assert_equal(res, n * (n - 1) // 2)
         assert_equal(res_min, 0)

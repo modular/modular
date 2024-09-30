@@ -237,10 +237,10 @@ fn scatter_nd[
         grid_dim=(ceildiv(num_indices, MAX_THREADS_PER_BLOCK)),
         block_dim=(MAX_THREADS_PER_BLOCK),
     )
-    ctx.synchronize()
 
     # Copy back output data from GPU to CPU.
     ctx.enqueue_copy_from_device(output.data, output_device)
+    ctx.synchronize()
 
     _ = output_device
     _ = element_counts_and_input_dims_device

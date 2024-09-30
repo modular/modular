@@ -24,6 +24,8 @@ fn run_cuda_mem_ops(ctx: DeviceContext) raises:
     ctx.enqueue_copy_to_device(device_mem, host_mem)
     ctx.enqueue_copy_from_device(host_mem, device_mem)
 
+    ctx.synchronize()
+
     _ = device_mem
     host_mem.free()
 

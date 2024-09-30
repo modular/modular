@@ -127,6 +127,7 @@ fn run_matvec[
     print()
 
     ctx.enqueue_copy_from_device(c_host_n, c_device_n)
+    ctx.synchronize()
 
     # Due to varied pattern of FP arith the accumulated sum isn't exactly
     # accurate. Hence relative tolerance needs to be checked.

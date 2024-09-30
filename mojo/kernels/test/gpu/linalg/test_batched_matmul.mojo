@@ -81,9 +81,9 @@ fn test_batched_matmul(ctx: DeviceContext) raises:
         elementwise_epilogue_fn=elementwise_epilogue_empty_fn,
     ](dst_buffer, lhs_buffer, rhs_buffer, ctx)
 
-    ctx.synchronize()
-
     ctx.enqueue_copy_from_device(dst_host.data, dst_device)
+
+    ctx.synchronize()
 
     # CHECK: [30.0, 36.0],
     # CHECK: [78.0, 100.0]],

@@ -60,5 +60,7 @@ def main():
         ctx.enqueue_copy_from_device(vec_b_ptr, vec_b_dev)
         ctx.enqueue_copy_from_device(vec_c_ptr, vec_c_dev)
 
+        ctx.synchronize()
+
         for i in range(16):
             print(vec_a_ptr[i], "+", vec_b_ptr[i], "=", vec_c_ptr[i])

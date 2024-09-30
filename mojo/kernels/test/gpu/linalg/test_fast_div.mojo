@@ -42,10 +42,10 @@ def run_elementwise[type: DType](ctx: DeviceContext):
 
     elementwise[func, simd_width=1, target="cuda"](Index(length), ctx)
 
-    ctx.synchronize()
-
     ctx.enqueue_copy_from_device(divisors.data, out_divisors)
     ctx.enqueue_copy_from_device(remainders.data, out_remainders)
+
+    ctx.synchronize()
 
     for i in range(length):
         print(divisors[i], remainders[i])

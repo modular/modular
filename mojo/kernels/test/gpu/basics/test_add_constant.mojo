@@ -54,6 +54,8 @@ def run_add_constant(ctx: DeviceContext):
 
     ctx.enqueue_copy_from_device(out_host, out_device)
 
+    ctx.synchronize()
+
     for i in range(10):
         assert_equal(out_host[i], i + constant)
 

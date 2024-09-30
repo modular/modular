@@ -117,6 +117,7 @@ fn run_matmul_naive(ctx: DeviceContext, M: Int, N: Int, K: Int) raises:
     run_func_fp32()
 
     ctx.enqueue_copy_from_device(c_host_n, c_device_n)
+    ctx.synchronize()
 
     for i in range(M * N):
         var out_val = c_host[i]

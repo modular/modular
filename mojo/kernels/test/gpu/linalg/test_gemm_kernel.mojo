@@ -230,6 +230,7 @@ fn test_gemm_kernel_dynamic(ctx: DeviceContext) raises:
     )
 
     ctx.enqueue_copy_from_device(c_host_ref, c_device_ref)
+    ctx.synchronize()
     for i in range(M * N):
         if not isclose(c_host[i], c_host_ref[i]):
             print(i, c_host[i], c_host_ref[i])

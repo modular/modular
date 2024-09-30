@@ -51,9 +51,9 @@ def run_elementwise(exponent: BFloat16, ctx: DeviceContext):
         out_buffer.store[width=simd_width](idx, result.cast[DType.float32]())
 
     elementwise[func, pack_size, target="cuda"](StaticIntTuple[1](length), ctx)
-    ctx.synchronize()
 
     ctx.enqueue_copy_from_device(out_host.data, out_device)
+    ctx.synchronize()
 
     for i in range(length):
         var expected_value = in_host[i] ** exponent.cast[DType.float32]()

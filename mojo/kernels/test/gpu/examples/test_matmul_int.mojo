@@ -137,9 +137,9 @@ fn run_matmul(ctx: DeviceContext) raises:
         grid_dim=(ceildiv(m, TILE_SZ_A), ceildiv(n, TILE_SZ_B)),
         block_dim=(TILE_SZ_A, 1),
     )
-    ctx.synchronize()
 
     ctx.enqueue_copy_from_device(c_host_ptr, c_device)
+    ctx.synchronize()
 
     for i in range(10):
         for j in range(10):

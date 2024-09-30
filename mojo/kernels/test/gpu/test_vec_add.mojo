@@ -87,6 +87,8 @@ fn run_vec_add(ctx: DeviceContext) raises:
 
     ctx.enqueue_copy_from_device(out_host, out_device)
 
+    ctx.synchronize()
+
     # CHECK: at index 0 the value is 2.0
     # CHECK: at index 1 the value is 3.0
     # CHECK: at index 2 the value is 4.0

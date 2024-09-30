@@ -71,6 +71,8 @@ fn run_copy_via_shared(ctx: DeviceContext) raises:
 
     ctx.enqueue_copy_from_device(out_data, out_data_device)
 
+    ctx.synchronize()
+
     # CHECK: 1.0
     # CHECK: 2.0
     # CHECK: 3.0
@@ -154,9 +156,9 @@ fn test_copy_with_src_size(ctx: DeviceContext) raises:
         block_dim=(1, 1, 1),
     )
 
-    ctx.synchronize()
-
     ctx.enqueue_copy_from_device(b_host, b_device)
+
+    ctx.synchronize()
 
     assert_equal(b_host[0], 1)
     assert_equal(b_host[1], 2)

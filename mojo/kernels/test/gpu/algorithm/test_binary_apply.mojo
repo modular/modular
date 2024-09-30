@@ -68,9 +68,10 @@ fn run_binary_add(ctx: DeviceContext, capture: Float32) raises:
     # FIXME: RUNP-356 Direct access to CUDA within DeviceContext
     # CHECK: number of captures: 1
     print("number of captures:", func.cuda_function._impl.num_captures)
-    ctx.synchronize()
 
     ctx.enqueue_copy_from_device(out_host, out_device)
+
+    ctx.synchronize()
 
     # CHECK: at index 0 the value is 4.5
     # CHECK: at index 1 the value is 5.5

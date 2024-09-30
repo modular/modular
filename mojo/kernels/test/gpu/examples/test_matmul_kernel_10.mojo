@@ -506,6 +506,7 @@ fn bench_matmuls(inout m: Bench, ctx: DeviceContext) raises:
     )
 
     ctx.enqueue_copy_from_device(c_host_naive, c_device)
+    ctx.synchronize()
 
     for i in range(M * N):
         if (

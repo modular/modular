@@ -72,6 +72,8 @@ fn run_copy_via_shared(ctx: DeviceContext) raises:
 
     ctx.enqueue_copy_from_device(out_data, out_device)
 
+    ctx.synchronize()
+
     # CHECK: 1.0
     # CHECK: 2.0
     # CHECK: 3.0

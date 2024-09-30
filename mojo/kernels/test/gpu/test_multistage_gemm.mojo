@@ -395,6 +395,8 @@ fn test[type: DType, transpose_b: Bool](ctx: DeviceContext) raises:
 
     ctx.enqueue_copy_from_device(c_host_ref, c_device_ref)
 
+    ctx.synchronize()
+
     alias rtol = 1e-3 if type == DType.float32 else 1e-4
     for i in range(M * N):
         if not isclose(c_host[i], c_host_ref[i], rtol=rtol):

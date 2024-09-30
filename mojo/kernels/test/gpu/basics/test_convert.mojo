@@ -63,6 +63,8 @@ fn test_convert[src_type: DType, dst_type: DType](ctx: DeviceContext) raises:
     ctx.enqueue_function(kernel, device_buf, grid_dim=(1), block_dim=(1))
     ctx.enqueue_copy_from_device(host_ptr, device_buf)
 
+    ctx.synchronize()
+
     for i in range(size):
         assert_equal(host_ptr[i], i)
 

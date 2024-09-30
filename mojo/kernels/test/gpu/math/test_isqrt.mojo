@@ -53,9 +53,9 @@ def run_elementwise[
 
     elementwise[func, pack_size, target="cuda"](StaticIntTuple[1](length), ctx)
 
-    ctx.synchronize()
-
     ctx.enqueue_copy_from_device(out_host.data, out_device)
+
+    ctx.synchronize()
 
     for i in range(length):
         var msg = (

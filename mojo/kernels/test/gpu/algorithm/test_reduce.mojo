@@ -93,9 +93,9 @@ fn fused_reduce_inner_test[
         shape, axis, init, ctx
     )
 
-    ctx.synchronize()
     ctx.enqueue_copy_from_device(res_host0, res_device0)
     ctx.enqueue_copy_from_device(res_host1, res_device1)
+    ctx.synchronize()
 
     for i in range(out_shape.flattened_length()):
         assert_equal(str(res_host0[i]), str(expected_vals0[i]))

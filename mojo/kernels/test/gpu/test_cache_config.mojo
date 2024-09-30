@@ -32,6 +32,8 @@ def main():
         ctx.enqueue_function(kernel, buff_dev, block_dim=(4), grid_dim=(4))
         ctx.enqueue_copy_from_device(buff_host_ptr, buff_dev)
 
+        ctx.synchronize()
+
         for i in range(16):
             assert_equal(
                 buff_host_ptr[i], i, msg="invalid value at index=" + str(i)
