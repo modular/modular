@@ -26,7 +26,8 @@ using namespace M::KGEN::LIT;
 
 TypedAttr LIT::getLifetimesAccessibleByParams(PogListAttr paramList,
                                               ArrayRef<ParamDeclAttr> params,
-                                              SharedState &shared) {
+                                              SharedState &shared,
+                                              TypedAttr captureLifetimes) {
   // Implicit parameters are not accessible on the callee side, so we don't
   // consider their lifetime accesses.
   params = params.drop_back(countNumImplicitKinds(paramList));
@@ -51,13 +52,16 @@ TypedAttr LIT::getLifetimesAccessibleByParams(PogListAttr paramList,
   //
   // We can union the sets together by wrapping them in a lifetime set union.
   // The mutability doesn't matter since it will get flattened.
-  for (ParamDeclAttr param : params) {
-    if (!isa<LifetimeSetType>(param.getType()))
-      continue;
+  auto addLifetimeSet = [&](TypedAttr param) {
     lifetimes.push_back(LifetimeSetUnionAttr::get(
-        ParamDeclRefAttr::get(param),
-        LifetimeType::get(shared.getContext(), /*isMutable=*/true)));
-  }
+        param, LifetimeType::get(shared.getContext(), /*isMutable=*/true)));
+  };
+
+  for (ParamDeclAttr param : params)
+    if (isa<LifetimeSetType>(param.getType()))
+      addLifetimeSet(ParamDeclRefAttr::get(param));
+  if (captureLifetimes)
+    addLifetimeSet(captureLifetimes);
 
   return LifetimeSetAttr::get(shared.getContext(), lifetimes);
 }

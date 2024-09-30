@@ -197,7 +197,8 @@ public:
   /// declaration.
   TypeCheckedFnSignature(TypeCheckedParamList &paramList,
                          ParsedArgumentList &argList,
-                         const ParsedArgument &resultArg, bool isDef,
+                         const ParsedArgument &resultArg,
+                         const ExprNode *lifetimeExpr, bool isDef,
                          ASTDecl *fnDecl, SpecialFunctionInfo &fnInfo);
   TypeCheckedParamList &paramList;
   ParsedArgumentList &argList;
@@ -211,14 +212,18 @@ public:
   SmallVector<TypedAttr> defaultKwOnlyArgs;
   ASTType resultType;
 
-  // This is the type checked argument types with argument conventions and
-  // lifetimes applied, e.g. "!lit.ref<String>" or "!kgen.variadic<Int>"
+  /// This is the type checked argument types with argument conventions and
+  /// lifetimes applied, e.g. "!lit.ref<String>" or "!kgen.variadic<Int>"
   SmallVector<Type> fullArgTypes;
   SmallVector<ParamDeclAttr> implicitLifetimeDecls;
 
-  // This is the result type + variant for throwing functions.  This is what
-  // finally gets treated as the ABI for the function.
+  /// This is the result type + variant for throwing functions.  This is what
+  /// finally gets treated as the ABI for the function.
   ASTType fullResultType;
+
+  /// This is an optional lifetime set parameter, representing the lifetimes of
+  /// the function captures.
+  TypedAttr captureLifetimes;
 
   /// This performs any special checks over the declaration based on its name
   /// and whether it is a method.  This happens after decorator processing
