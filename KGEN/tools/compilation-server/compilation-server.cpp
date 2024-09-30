@@ -4,8 +4,6 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "AsyncRT/Runtime/Runtime.h"
-#include "AsyncRT/Runtime/RuntimeCLOptions.h"
 #include "CompilationServer.h"
 #include "KGEN/Support/Debugging.h"
 #include "mlir/Tools/lsp-server-support/Logging.h"
@@ -94,7 +92,9 @@ int main(int argc, char **argv) {
   Logger::setLogLevel(logLevel);
 
   // Configure the transport used for communication.
-  llvm::sys::ChangeStdinToBinary();
+  if (llvm::sys::ChangeStdinToBinary())
+    return -1;
+
   JSONTransport transport(stdin, llvm::outs(), inputStyle, prettyPrint);
 
   if (attach)

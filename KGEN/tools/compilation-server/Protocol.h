@@ -19,12 +19,7 @@
 #define KGEN_TOOLS_CS_PROTOCOL_H
 
 #include "KGEN/ToolCommon/CompilationOptions.h"
-#include "Support/LLVMForwardDecls.h"
-#include "llvm/IR/Module.h"
-#include "llvm/Support/CodeGen.h"
 #include "llvm/Support/JSON.h"
-#include "llvm/Support/raw_ostream.h"
-#include <optional>
 #include <string>
 
 namespace KGEN = M::KGEN;

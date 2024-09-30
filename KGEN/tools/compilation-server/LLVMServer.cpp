@@ -11,12 +11,8 @@
 #include "KGEN/Compiler/ObjectCompiler.h"
 #include "KGEN/ToolCommon/InitAllDialects.h"
 #include "Support/Context.h"
-#include "mlir/IR/BuiltinOps.h"
 #include "mlir/Parser/Parser.h"
-#include "mlir/Support/LogicalResult.h"
-#include "mlir/Tools/lsp-server-support/Logging.h"
 #include "llvm/Support/Base64.h"
-#include <optional>
 
 using namespace M;
 using namespace mlir;

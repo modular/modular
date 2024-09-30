@@ -10,7 +10,6 @@
 #include "Protocol.h"
 #include "Support/ErrorOr.h"
 #include "Support/LLVMForwardDecls.h"
-#include "llvm/ADT/FunctionExtras.h"
 
 namespace M::KGEN::CSP {
 
