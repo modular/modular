@@ -40,11 +40,22 @@ fn arange(
     if len(tensor.layout) != 2:
         _filler_impl[tensor.dtype, filler](tensor)
     else:
-        for m in range(tensor.runtime_layout.shape[0].value[0]):
-            for n in range(tensor.runtime_layout.shape[1].value[0]):
-                tensor[m, n] = (
-                    m * tensor.runtime_layout.shape[1].value[0] + n
-                ) * step + start
+
+        @parameter
+        if tensor.layout.all_dims_known():
+
+            @parameter
+            for m in range(tensor.shape[0]()):
+
+                @parameter
+                for n in range(tensor.shape[1]()):
+                    tensor[m, n] = (m * tensor.shape[1]() + n) * step + start
+        else:
+            for m in range(tensor.runtime_layout.shape[0].value[0]):
+                for n in range(tensor.runtime_layout.shape[1].value[0]):
+                    tensor[m, n] = (
+                        m * tensor.runtime_layout.shape[1].value[0] + n
+                    ) * step + start
 
 
 fn random(
