@@ -64,6 +64,7 @@ bool LIT::canConvertFunctionTypes(LITSignatureType actual,
 
   // Function types are compatible if the arguments only differ in passing
   // conventions due to register-passibility.
+  // TODO: Handle variadics and packs.
   auto getRValueType = [](ASTType type, ArgConvention conv) {
     if (llvm::is_contained(
             {ArgConvention::BorrowedInReg, ArgConvention::OwnedInReg}, conv))
@@ -86,7 +87,7 @@ bool LIT::canConvertFunctionTypes(LITSignatureType actual,
       // `byref_error`, then the other function must have it as well.
       assert(actualConv == ArgConvention::ByRefError &&
              "both functions must be throwing");
-      break;
+      [[fallthrough]];
 
     case ArgConvention::InitSelf:
     case ArgConvention::MutRef:
@@ -96,6 +97,8 @@ bool LIT::canConvertFunctionTypes(LITSignatureType actual,
       // type. They must always match
       if (actualConv != expectedConv)
         return false;
+      lhs = lhs.getReferenceElementType();
+      rhs = rhs.getReferenceElementType();
       break;
 
     case ArgConvention::BorrowedInMem:
