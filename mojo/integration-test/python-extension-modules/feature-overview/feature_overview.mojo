@@ -30,8 +30,8 @@ fn PyInit_feature_overview() -> PythonObject:
 
     try:
         module = Python.create_module("bindings")
-    except:
-        return abort[PythonObject]("failed to create Python module")
+    except e:
+        return abort[PythonObject]("failed to create Python module: " + str(e))
 
     # ----------------------------------
     # Populate the Python module
@@ -41,6 +41,18 @@ fn PyInit_feature_overview() -> PythonObject:
         PyMethodDef.function[
             create_wrapper_function[case_return_arg_tuple](),
             "case_return_arg_tuple",
+        ](),
+        PyMethodDef.function[
+            create_wrapper_function[case_raise_empty_error](),
+            "case_raise_empty_error",
+        ](),
+        PyMethodDef.function[
+            create_wrapper_function[case_raise_string_error](),
+            "case_raise_string_error",
+        ](),
+        PyMethodDef.function[
+            create_wrapper_function[case_mojo_raise](),
+            "case_mojo_raise",
         ](),
     )
 
@@ -65,3 +77,40 @@ fn case_return_arg_tuple(
     var cpython = Python().impl.cpython()
 
     return args
+
+
+@export
+fn case_raise_empty_error(
+    py_self: PythonObject,
+    args: TypedPythonObject["Tuple"],
+) -> PythonObject:
+    var cpython = Python().impl.cpython()
+
+    var error_type = cpython.get_error_global("PyExc_ValueError")
+
+    cpython.PyErr_SetNone(error_type)
+
+    return PythonObject(PyObjectPtr())
+
+
+@export
+fn case_raise_string_error(
+    py_self: PythonObject,
+    args: TypedPythonObject["Tuple"],
+) -> PythonObject:
+    var cpython = Python().impl.cpython()
+
+    var error_type = cpython.get_error_global("PyExc_ValueError")
+
+    cpython.PyErr_SetString(error_type, "sample value error".unsafe_cstr_ptr())
+
+    return PythonObject(PyObjectPtr())
+
+
+# Tests `create_wrapper_function()` of a `raises` function.
+@export
+fn case_mojo_raise(
+    py_self: PythonObject,
+    args: TypedPythonObject["Tuple"],
+) raises -> PythonObject:
+    raise "Mojo error"

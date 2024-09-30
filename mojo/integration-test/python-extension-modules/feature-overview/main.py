@@ -30,5 +30,44 @@ def test_case_return_arg_tuple():
     assert result == (1, 2, "three", ["four", "four.B"])
 
 
+def test_case_raise_empty_error():
+    try:
+        # This is expected to raise
+        feature_overview.case_raise_empty_error()
+
+        print("expected exception to be raised")
+        exit(-1)
+    except ValueError as e:
+        # Do nothing, we caught the error we expected.
+        pass
+
+
+def test_case_raise_string_error():
+    try:
+        # This is expected to raise
+        feature_overview.case_raise_string_error()
+
+        print("expected exception to be raised")
+        exit(-1)
+    except ValueError as e:
+        # Assert that we caught the error we expected.
+        assert str(e) == "sample value error"
+
+
+def test_case_mojo_raise():
+    try:
+        # This is expected to raise
+        feature_overview.case_mojo_raise()
+
+        print("expected exception to be raised")
+        exit(-1)
+    except Exception as e:
+        # Assert that we caught the error we expected.
+        assert str(e) == "Mojo error"
+
+
 if __name__ == "__main__":
     test_case_return_arg_tuple()
+    test_case_raise_empty_error()
+    test_case_raise_string_error()
+    test_case_mojo_raise()
