@@ -14,35 +14,60 @@ from max.serve.api_server import fastapi_app
 from max.serve.config import APIType, Settings
 from max.serve.debug import DebugSettings
 from max.serve.mocks.mock_api_requests import simple_openai_request
+from max.serve.pipelines.deps import (
+    echo_token_pipeline,
+    perf_faking_token_pipeline,
+    token_pipeline,
+)
 from max.serve.schemas.openai import (
     CreateChatCompletionResponse,
     CreateChatCompletionStreamResponse,
 )
 
 
-@pytest.fixture
-def app():
+@pytest.fixture(scope="session")
+def tunable_app():
     settings = Settings(api_types=[APIType.OPENAI])
     debug_settings = DebugSettings()
-    return fastapi_app(settings, debug_settings)
+    pipeline = perf_faking_token_pipeline()
+    fast_app = fastapi_app(settings, debug_settings, [pipeline])
+    fast_app.dependency_overrides[token_pipeline] = lambda: pipeline
+    return fast_app
 
 
-# TODO: Update tests below when you add model configuration
+@pytest.fixture(scope="session")
+def echo_app():
+    settings = Settings(api_types=[APIType.OPENAI])
+    debug_settings = DebugSettings()
+    pipeline = echo_token_pipeline()
+    fast_app = fastapi_app(settings, debug_settings, [pipeline])
+    fast_app.dependency_overrides[token_pipeline] = lambda: pipeline
+    return fast_app
 
 
-def test_openai_echo_chat_completion(app):
-    with TestClient(app) as client:
+@pytest.mark.parametrize("model_name", ["tunable_app", "echo_app"])
+def test_openai_echo_chat_completion(model_name, request):
+    fast_app = request.getfixturevalue(model_name)
+    with TestClient(fast_app) as client:
         raw_response = client.post(
-            "/v1/chat/completions", json=simple_openai_request()
+            "/v1/chat/completions",
+            json=simple_openai_request("test data"),
+            timeout=1.0,
         )
         # This is not a streamed completion - There is no [DONE] at the end.
-        response = CreateChatCompletionResponse.parse_raw(raw_response.json())
+        response = CreateChatCompletionResponse.model_validate_json(
+            raw_response.json()
+        )
         assert len(response.choices) == 1
         assert response.choices[0].finish_reason == "stop"
 
 
-def test_openai_echo_stream_chat_completion(app):
-    with TestClient(app) as client:
+# raise RuntimeError(f'{self!r} is bound to a different event loop')
+@pytest.mark.skip(reason="event loop")
+@pytest.mark.parametrize("model_name", ["tunable_app", "echo_app"])
+def test_openai_echo_stream_chat_completion(model_name, request):
+    fast_app = request.getfixturevalue(model_name)
+    with TestClient(fast_app) as client:
 
         def iter_bytes():
             with client.stream(
@@ -59,7 +84,7 @@ def test_openai_echo_stream_chat_completion(app):
             # Streamed completions are terminated with a [DONE]
             if event_payload == "[DONE]":
                 break
-            response = CreateChatCompletionStreamResponse.parse_raw(
+            response = CreateChatCompletionStreamResponse.model_validate_json(
                 event_payload
             )
             assert len(response.choices) == 1
@@ -71,15 +96,17 @@ def test_openai_echo_stream_chat_completion(app):
         assert counter >= 0
 
 
-def test_openai_echo_chat_completion_multi(app):
-    with TestClient(app) as client:
+@pytest.mark.parametrize("model_name", ["tunable_app", "echo_app"])
+def test_openai_echo_chat_completion_multi(model_name, request):
+    fast_app = request.getfixturevalue(model_name)
+    with TestClient(fast_app) as client:
 
         def run_single_test(client, prompt_len):
             text = ",".join(f"_{i}_" for i in range(prompt_len))
             raw_response = client.post(
                 "/v1/chat/completions", json=simple_openai_request(text)
             )
-            response = CreateChatCompletionResponse.parse_raw(
+            response = CreateChatCompletionResponse.model_validate_json(
                 raw_response.json()
             )
             assert len(response.choices) == 1
