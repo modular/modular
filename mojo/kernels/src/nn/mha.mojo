@@ -1034,7 +1034,7 @@ fn mha_single_batch[
         alignment = alignof[SIMD[q_type, simd_size]](),
     ]()
     var q_smem_iter = LayoutTensorIter[
-        q_type, Layout.row_major(BM, BK), AddressSpace.SHARED
+        q_type, Layout.row_major(BM, BK), address_space = AddressSpace.SHARED
     ](q_smem, q_smem_size)
 
     # There is one pre-allocated dynamic shared buffer.
@@ -1042,7 +1042,10 @@ fn mha_single_batch[
     alias k_smem_size = num_pipeline_stages * BN * BK
     var k_smem = (q_smem + q_smem_size).bitcast[Scalar[k_type]]()
     var k_smem_iter = LayoutTensorIter[
-        k_type, Layout.row_major(BN, BK), AddressSpace.SHARED, circular=True
+        k_type,
+        Layout.row_major(BN, BK),
+        address_space = AddressSpace.SHARED,
+        circular=True,
     ](k_smem, k_smem_size)
 
     var head_idx = BlockIdx.y()
@@ -1654,7 +1657,7 @@ fn mha_decoding_single_batch[
         alignment = alignof[SIMD[q_type, simd_size]](),
     ]()
     var q_smem_iter = LayoutTensorIter[
-        q_type, Layout.row_major(BM, BK), AddressSpace.SHARED
+        q_type, Layout.row_major(BM, BK), address_space = AddressSpace.SHARED
     ](q_smem, q_smem_size)
 
     # There is one pre-allocated dynamic shared buffer.
@@ -1662,7 +1665,10 @@ fn mha_decoding_single_batch[
     alias k_smem_size = num_pipeline_stages * BN * BK
     var k_smem = (q_smem + q_smem_size).bitcast[Scalar[k_type]]()
     var k_smem_iter = LayoutTensorIter[
-        k_type, Layout.row_major(BN, BK), AddressSpace.SHARED, circular=True
+        k_type,
+        Layout.row_major(BN, BK),
+        address_space = AddressSpace.SHARED,
+        circular=True,
     ](k_smem, k_smem_size)
 
     var head_idx = BlockIdx.y()
@@ -1704,7 +1710,10 @@ fn mha_decoding_single_batch[
     alias v_smem_size = num_pipeline_stages * BN * BK
     var v_smem = k_smem.bitcast[Scalar[v_type]]()
     var v_smem_iter = LayoutTensorIter[
-        v_type, Layout.row_major(BK, BN), AddressSpace.SHARED, circular=True
+        v_type,
+        Layout.row_major(BK, BN),
+        address_space = AddressSpace.SHARED,
+        circular=True,
     ](v_smem, v_smem_size)
 
     # Shared memory for P = Q * K^t
