@@ -79,7 +79,7 @@ fn bench_concat[
         @parameter
         @always_inline
         fn kernel_launch(ctx: DeviceContext) raises:
-            _concat_gpu_elementwise(output, axis, inputs, ctx)
+            _concat_gpu_elementwise[epilogue_fn=None](output, axis, inputs, ctx)
 
         b.iter_custom[kernel_launch](ctx)
 
