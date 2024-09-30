@@ -239,11 +239,15 @@ def LIT_FnMetadataAttr : LITAttr<"FnMetadata", "fn_metadata",
     LIT_PogListAttr:$argListAttrs,
     LIT_PogListAttr:$paramListAttrs,
     "size_t":$numImplicitLifetimeDecls,
-    "TypedAttr":$captureLifetimes
+    "TypedAttr":$captureLifetimes,
+    // TODO: Generalize this to a set of lifetime parameters that are guaranteed
+    // to not be dereferenced.
+    OptionalParameter<"bool">:$isNestedLifetimeExclusivityCheckingDisabled
   );
   let assemblyFormat = [{
     `<` $argListAttrs `,` $paramListAttrs `,` $numImplicitLifetimeDecls
-    `` custom<FnMetadataLifetimes>($captureLifetimes) `>`
+    `` custom<FnMetadataLifetimes>($captureLifetimes)
+    (`,` $isNestedLifetimeExclusivityCheckingDisabled^)? `>`
   }];
 
   let builders = [
@@ -254,10 +258,9 @@ def LIT_FnMetadataAttr : LITAttr<"FnMetadata", "fn_metadata",
       "PogListAttr":$argListAttrs,
       CArg<"size_t", "0">:$numImplicitLifetimeDecls)>,
     AttrBuilderWithInferredContext<(ins
-      "PogListAttr":$argListAttrs,
-      "PogListAttr":$paramListAttrs,
-      CArg<"size_t", "0">:$numImplicitLifetimeDecls,
-      CArg<"TypedAttr", "{}">:$captureLifetimes)>,
+      "PogListAttr":$argListAttrs, "PogListAttr":$paramListAttrs,
+      "size_t":$numImplicitLifetimeDecls, "TypedAttr":$captureLifetimes,
+      "bool":$nestedLifetimeFlag)>,
   ];
 
   let extraClassDeclaration = [{

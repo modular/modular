@@ -275,7 +275,9 @@ static void printFnMetadataLifetimes(AsmPrinter &p, TypedAttr lifetimes) {
 
 FnMetadataAttr FnMetadataAttr::get(MLIRContext *context) {
   auto list = PogListAttr::get(context);
-  return FnMetadataAttr::get(list, list, 0);
+  return FnMetadataAttr::get(
+      list, list, /*numImplicitLifetimeDecls=*/0, /*captureLifetimes=*/nullptr,
+      /*isNestedLifetimeExclusivityCheckingDisabled=*/false);
 }
 
 FnMetadataAttr FnMetadataAttr::get(MLIRContext *ctx, size_t numParams,
@@ -286,26 +288,29 @@ FnMetadataAttr FnMetadataAttr::get(MLIRContext *ctx, size_t numParams,
                                      /*isVariadic=*/false);
   params.resize(numParams, normal);
   args.resize(numArgs, normal);
-  return FnMetadataAttr::get(PogListAttr::get(ctx, args),
-                             PogListAttr::get(ctx, params),
-                             numImplicitLifetimeDecls);
+  return FnMetadataAttr::get(
+      PogListAttr::get(ctx, args), PogListAttr::get(ctx, params),
+      numImplicitLifetimeDecls, /*captureLifetimes=*/nullptr,
+      /*isNestedLifetimeExclusivityCheckingDisabled=*/false);
 }
 
 FnMetadataAttr FnMetadataAttr::get(PogListAttr argListAttrs,
                                    PogListAttr paramListAttrs,
                                    size_t numImplicitLifetimeDecls,
-                                   TypedAttr captureLifetimes) {
+                                   TypedAttr captureLifetimes,
+                                   bool nestedLifetimeFlag) {
   MLIRContext *ctx = argListAttrs.getContext();
   if (!captureLifetimes)
     captureLifetimes = LifetimeSetAttr::get(ctx, {});
   return get(ctx, argListAttrs, paramListAttrs, numImplicitLifetimeDecls,
-             captureLifetimes);
+             captureLifetimes, nestedLifetimeFlag);
 }
 
 FnMetadataAttr FnMetadataAttr::get(PogListAttr argListAttrs,
                                    size_t numImplicitLifetimeDecls) {
   return get(argListAttrs, PogListAttr::get(argListAttrs.getContext()),
-             numImplicitLifetimeDecls);
+             numImplicitLifetimeDecls, /*captureLifetimes=*/nullptr,
+             /*isNestedLifetimeExclusivityCheckingDisabled=*/false);
 }
 
 FnMetadataAttrInterface
@@ -332,7 +337,8 @@ FnMetadataAttr::getWithBoundPosArgs(size_t numBound) const {
       getContext(), newPogs, newDefaultPosArgs, getDefaultKwOnlyArgs(), packIdx,
       argListAttrs.getOrigPackConvention());
   return get(newArgListAttrs, getParamListAttrs(),
-             getNumImplicitLifetimeDecls(), getCaptureLifetimes());
+             getNumImplicitLifetimeDecls(), getCaptureLifetimes(),
+             getIsNestedLifetimeExclusivityCheckingDisabled());
 }
 
 FnMetadataAttrInterface
@@ -357,7 +363,8 @@ FnMetadataAttr::getWithBoundParams(const llvm::BitVector &boundParams) const {
   auto newParamAttrs = PogListAttr::get(
       getContext(), newPogs, newDefaultPosParams, newDefaultKwOnlyParams);
   return get(getArgListAttrs(), newParamAttrs, getNumImplicitLifetimeDecls(),
-             getCaptureLifetimes());
+             getCaptureLifetimes(),
+             getIsNestedLifetimeExclusivityCheckingDisabled());
 }
 
 /// Get a new metadata attribute for a signature with the given number of
@@ -401,7 +408,8 @@ FnMetadataAttr::prependPosParams(size_t numNewParams,
       PogListAttr::get(getContext(), mergedPogs, getDefaultPosParams(),
                        getDefaultKwOnlyParams());
   return get(getArgListAttrs(), newParamListAttr, getNumImplicitLifetimeDecls(),
-             getCaptureLifetimes());
+             getCaptureLifetimes(),
+             getIsNestedLifetimeExclusivityCheckingDisabled());
 }
 
 SmallVector<bool> LIT::getContextualVariadicMask(ArrayRef<Operation *> ops) {
@@ -506,7 +514,8 @@ FnMetadataAttr FnMetadataAttr::addCaptureLifetimes(TypedAttr lifetimes) {
       LifetimeSetUnionAttr::get(lifetimes, type)};
   return get(getArgListAttrs(), getParamListAttrs(),
              getNumImplicitLifetimeDecls(),
-             LifetimeSetAttr::get(getContext(), lifetimeUnion));
+             LifetimeSetAttr::get(getContext(), lifetimeUnion),
+             getIsNestedLifetimeExclusivityCheckingDisabled());
 }
 
 size_t FnMetadataAttr::getNumArgs() const {

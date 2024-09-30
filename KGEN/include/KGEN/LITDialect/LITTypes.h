@@ -62,6 +62,9 @@ public:
   /// Get the lifetime set of the capture lifetimes.
   TypedAttr getCaptureLifetimes();
 
+  /// Get whether nested lifetimes are excluded from exclusivity checking.
+  bool getIsNestedLifetimeExclusivityCheckingDisabled();
+
   /// Get the function's default positional arguments.
   ArrayRef<TypedAttr> getDefaultPosArgs();
 

@@ -427,7 +427,7 @@ LogicalResult FnDecorators::apply(ExprNode *decorator) {
       tcSignature.argList.effects.setCapturing();
     else if (declRef->spelling ==
              "__unsafe_disable_nested_lifetime_exclusivity")
-      funcOp.setIsNestedLifetimeExclusivityCheckingDisabled(true);
+      tcSignature.isNestedLifetimeExclusivityCheckingDisabled = true;
     else if (declRef->spelling == "op")
       applyOp(/*patterns=*/nullptr);
     else

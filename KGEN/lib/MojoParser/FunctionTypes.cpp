@@ -147,10 +147,11 @@ static LITSignatureType getReducedFunctionType(LITSignatureType sig) {
   if (sig.isThrows())
     passingKinds.end()[-2] = PassingKind::Implicit;
 
-  auto metadata =
-      FnMetadataAttr::get(PogListAttr::get(ctx, names, passingKinds),
-                          PogListAttr::get(ctx, sig.getNumParams()),
-                          sig.getNumImplicitLifetimeDecls());
+  auto metadata = FnMetadataAttr::get(
+      PogListAttr::get(ctx, names, passingKinds),
+      PogListAttr::get(ctx, sig.getNumParams()),
+      sig.getNumImplicitLifetimeDecls(), sig.getCaptureLifetimes(),
+      sig.getIsNestedLifetimeExclusivityCheckingDisabled());
   return SignatureType::get(sig.getValues(), sig.getParamTypes(), {},
                             sig.getArgConventions(), sig.getFnEffects(),
                             metadata);

@@ -897,6 +897,8 @@ static ParseResult parseLITSignature(AsmParser &p, Type &signature) {
   } else {
     captureLifetimes = LifetimeSetAttr::get({}, lifetimeSet);
   }
+  bool isNestedLifetimeExclusivityCheckingDisabled =
+      succeeded(p.parseOptionalKeyword("no_nested_lifetime_exclusivity"));
 
   SmallVector<Type> inputParamTypes;
   PogListAttr paramListAttr;
@@ -960,7 +962,8 @@ static ParseResult parseLITSignature(AsmParser &p, Type &signature) {
       PogListAttr::get(ctx, argNames, argPassingKinds, defaultPosArgs,
                        defaultKwOnlyArgs, argVariadicIndices, argPackIndex,
                        origArgPackConvention),
-      paramListAttr, numLifetimeDecls, captureLifetimes);
+      paramListAttr, numLifetimeDecls, captureLifetimes,
+      isNestedLifetimeExclusivityCheckingDisabled);
   signature = SignatureType::getChecked(
       [&] { return p.emitError(startLoc); }, functionType, inputParamTypes,
       /*resultParamTypes=*/{}, argConventions, effects, metadata);
@@ -1003,6 +1006,8 @@ void FnMetadataAttr::printSignature(AsmPrinter &p, SignatureType sig) const {
     printParamValue(p, getCaptureLifetimes());
     p << ':';
   }
+  if (signature.getIsNestedLifetimeExclusivityCheckingDisabled())
+    p << "no_nested_lifetime_exclusivity";
 
   printOptionalParamSignature(p, signature.getParamTypes(),
                               signature.getParamListAttrs());
@@ -1072,6 +1077,10 @@ TypedAttr LITSignatureType::getCaptureLifetimes() {
   return getMetadata().getCaptureLifetimes();
 }
 
+bool LITSignatureType::getIsNestedLifetimeExclusivityCheckingDisabled() {
+  return getMetadata().getIsNestedLifetimeExclusivityCheckingDisabled();
+}
+
 ArrayRef<TypedAttr> LITSignatureType::getDefaultPosArgs() {
   return getMetadata().getDefaultPosArgs();
 }
@@ -1105,14 +1114,16 @@ Type LITSignatureType::getUserResultType() {
 LITSignatureType LITSignatureType::dropParamValues() {
   return get(
       getValues(), /*paramTypes=*/{}, getArgConventions(), getFnEffects(),
-      FnMetadataAttr::get(getArgListAttrs(), /*numImplicitLifetimeDecls=*/0));
+      FnMetadataAttr::get(getArgListAttrs(), PogListAttr::get(getContext()),
+                          /*numImplicitLifetimeDecls=*/0, getCaptureLifetimes(),
+                          getIsNestedLifetimeExclusivityCheckingDisabled()));
 }
 
 LITSignatureType
 LITSignatureType::getWithCaptureLifetimes(TypedAttr lifetimes) {
-  return getWithMetadata(
-      FnMetadataAttr::get(getArgListAttrs(), getParamListAttrs(),
-                          getNumImplicitLifetimeDecls(), lifetimes));
+  return getWithMetadata(FnMetadataAttr::get(
+      getArgListAttrs(), getParamListAttrs(), getNumImplicitLifetimeDecls(),
+      lifetimes, getIsNestedLifetimeExclusivityCheckingDisabled()));
 }
 
 bool LITSignatureType::isAnyVarArg(size_t index) {

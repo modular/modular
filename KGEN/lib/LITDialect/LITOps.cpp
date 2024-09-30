@@ -510,6 +510,8 @@ static ParseResult parseLITFunctionSignature(
   } else {
     captureLifetimes = LifetimeSetAttr::get({}, lifetimeSet);
   }
+  bool isNestedLifetimeExclusivityCheckingDisabled =
+      succeeded(p.parseOptionalKeyword("no_nested_lifetime_exclusivity"));
 
   SmallVector<ParamDeclAttr> lifetimeDecls;
   auto parseLifetimeDecl = [&]() -> ParseResult {
@@ -602,7 +604,8 @@ static ParseResult parseLITFunctionSignature(
       PogListAttr::get(p.getContext(), argNames, argPassingKinds,
                        defaultPosArgs, defaultKwOnlyArgs, argVariadicIndices,
                        argPackIndex, origArgPackConvention),
-      paramListAttr, lifetimeDecls.size(), captureLifetimes);
+      paramListAttr, lifetimeDecls.size(), captureLifetimes,
+      isNestedLifetimeExclusivityCheckingDisabled);
   signature = SignatureType::remapToSignature(
       params, /*resultParams=*/{}, functionType, argConventions, effects,
       metadata, [&] { return p.emitError(startLoc); });
@@ -634,6 +637,8 @@ static void printLITFunctionSignature(OpAsmPrinter &p, Region *region,
     printParamValue(p, signature.getCaptureLifetimes());
     p << ':';
   }
+  if (signature.getIsNestedLifetimeExclusivityCheckingDisabled())
+    p << "no_nested_lifetime_exclusivity";
 
   ParameterEvaluator evaluator;
   printOptionalParameterSpec(p, params.drop_back(lifetimeDecls.size()),
@@ -940,9 +945,7 @@ void LIT::FuncOp::build(OpBuilder &b, OperationState &state,
         TypeAttr::get(sig), TypeAttr::get(funcType),
         ParamDeclArrayAttr::get(ctx, paramDecls), DecoratorsAttr::get(ctx, {}),
         /*isStatic=*/none, /*isDef=*/none, /*isInherited=*/none,
-        /*isSynthetic=*/none,
-        /*isNestedLifetimeExclusivityCheckingDisabled=*/none,
-        ExportKindAttr::get(ctx, ExportKind::NotExported),
+        /*isSynthetic=*/none, ExportKindAttr::get(ctx, ExportKind::NotExported),
         InlineLevelAttr::get(ctx, inlineLevel), b.getI8IntegerAttr(0),
         FlatSymbolRefAttr(), StringAttr(), StringAttr(),
         b.getStringAttr(sourceName), StringAttr(), DocStringAttr(),
@@ -961,7 +964,6 @@ void LIT::FuncOp::build(OpBuilder &builder, OperationState &result,
         TypeAttr::get(signature.getValues()), ParamDeclArrayAttr::get(ctx, {}),
         DecoratorsAttr::get(ctx, {}), /*isStatic=*/none, /*isDef=*/none,
         /*isInherited=*/none, /*isSynthetic=*/none,
-        /*isNestedLifetimeExclusivityCheckingDisabled=*/none,
         ExportKindAttr::get(ctx, ExportKind::NotExported),
         InlineLevelAttr::get(ctx, InlineLevel::Automatic),
         builder.getI8IntegerAttr(uint8_t(specialFnKind)), FlatSymbolRefAttr(),

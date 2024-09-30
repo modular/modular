@@ -136,10 +136,11 @@ addClosureSelfArgToFunctionSignature(Type closureType, ArgConvention convention,
 
   // A closure signature is not escaping because its 'escaping' state is
   // captured in the self argument we are inserting in this function.
-  auto metadata = FnMetadataAttr::get(argListAttr.cloneWith(argPogs),
-                                      oldMetadata.getParamListAttrs(),
-                                      oldMetadata.getNumImplicitLifetimeDecls(),
-                                      oldMetadata.getCaptureLifetimes());
+  auto metadata = FnMetadataAttr::get(
+      argListAttr.cloneWith(argPogs), oldMetadata.getParamListAttrs(),
+      oldMetadata.getNumImplicitLifetimeDecls(),
+      oldMetadata.getCaptureLifetimes(),
+      oldMetadata.getIsNestedLifetimeExclusivityCheckingDisabled());
   return SignatureType::get(
       FunctionType::get(ctx, signatureInputs, sig.getResults()),
       sig.getParamTypes(), /*resultParamTypes=*/{}, argConventions,
