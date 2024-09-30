@@ -524,6 +524,7 @@ def run(
                 output_file = output_dir / "output.csv"
                 t_start_item = time()
 
+                print("pre-compile")
                 s.compile(
                     output_file=output_file,
                     build_opts=build_opts,
@@ -531,6 +532,7 @@ def run(
                     verbose=verbose,
                 )
                 elapsed_time_list[i] = (time() - t_start_item) * 1e3
+                print(elapsed_time_list[i])
                 spec_list[i] = s
                 output_path_list[i] = output_file
 
@@ -550,6 +552,8 @@ def run(
     )
     build_df.insert(len(build_df.columns), "met (ms)", elapsed_time_list)
     build_df.insert(len(build_df.columns), "iters", 1)
+    build_df["met (ms)"] = build_df["met (ms)"].fillna(0)
+
     output_lines += [LINE]
     output_lines += ["Build time stats:"]
     output_lines += [build_df.to_string(index=False)]
