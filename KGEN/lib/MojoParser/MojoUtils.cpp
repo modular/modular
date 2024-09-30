@@ -36,23 +36,27 @@ TypedAttr LIT::getLifetimesAccessibleByParams(PogListAttr paramList,
     types.push_back(param.getType());
   SmallVector<TypedAttr> lifetimes =
       shared.cachedLifetimeFinder.findLifetimesIn(types);
-  // We also need to find all accessible lifetime sets, even if they are
-  // parametric, and union them with the found lifetimes.
-  // FIXME: This lookup is not cached.
-  mlir::AttrTypeWalker walker;
-  SmallVector<TypedAttr> sets;
-  walker.addWalk([&](TypedAttr attr) {
-    if (isa<LifetimeSetType>(attr.getType()))
-      sets.push_back(attr);
-  });
-  for (Type type : types)
-    walker.walk(type);
 
+  // We also need to find all accessible lifetime sets, even if they are
+  // parametric, and union them with the found lifetimes. We don't need to
+  // recurse into any nested parameter lifetimes. Even if they contain lifetime
+  // set references, they may not be within the top-level parameter scope, and
+  // also we know they can't be accessed by the current function. For example,
+  //
+  //   fn foo[f: fn[g: fn() capturing [_] -> None] -> None]():
+  //       pass
+  //
+  // `foo` doesn't access the inner lifetime set of `g` through `f`, because
+  // `foo` cannot call `f` without constructing and passing a closure.
+  //
   // We can union the sets together by wrapping them in a lifetime set union.
   // The mutability doesn't matter since it will get flattened.
-  for (TypedAttr set : sets) {
+  for (ParamDeclAttr param : params) {
+    if (!isa<LifetimeSetType>(param.getType()))
+      continue;
     lifetimes.push_back(LifetimeSetUnionAttr::get(
-        set, LifetimeType::get(shared.getContext(), /*isMutable=*/true)));
+        ParamDeclRefAttr::get(param),
+        LifetimeType::get(shared.getContext(), /*isMutable=*/true)));
   }
 
   return LifetimeSetAttr::get(shared.getContext(), lifetimes);
