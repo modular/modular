@@ -1192,7 +1192,7 @@ struct LayoutTensor[
     ](self, *tile_coords: Int) -> LayoutTensorIter[
         dtype,
         Self._compute_tile_layout[*tile_sizes]()[0],
-        address_space,
+        address_space=address_space,
         circular=False,
     ] as result:
         """Returns the tiled iterator of the LayoutTensor.
@@ -3285,6 +3285,8 @@ fn copy_local_to_local[
 struct LayoutTensorIter[
     type: DType,
     layout: Layout,
+    /,
+    *,
     address_space: AddressSpace = AddressSpace.GENERIC,
     circular: Bool = False,
 ]:
@@ -3326,13 +3328,13 @@ struct LayoutTensorIter[
         self.runtime_layout = runtime_layout
 
     @always_inline
-    fn get(self) -> LayoutTensor[type, layout, address_space=address_space]:
+    fn get(
+        self,
+    ) -> LayoutTensor[type, layout, address_space=address_space] as result:
         """Return the layout tensor at current iterator."""
         # TODO: Use deref `[]` to be consistent with mojo feature.
 
-        return LayoutTensor[type, layout, address_space=address_space](
-            self.ptr + self.offset, self.runtime_layout
-        )
+        return __type_of(result)(self.ptr + self.offset, self.runtime_layout)
 
     @always_inline
     fn __getitem__(
@@ -3379,7 +3381,7 @@ struct LayoutTensorIter[
         self += int(rhs)
 
     @always_inline
-    fn next[T: Intable](self, rhs: T) -> Self:
+    fn next[T: Intable](self, rhs: T) -> Self as result:
         """Return an iterator pointing to the next `rhs` layout tensor."""
 
         var next_offset = self.offset + int(rhs) * self.stride
@@ -3388,9 +3390,7 @@ struct LayoutTensorIter[
         if circular:
             next_offset = next_offset % self.bound
 
-        return LayoutTensorIter[
-            type, layout, address_space=address_space, circular=circular
-        ](
+        return __type_of(result)(
             self.ptr,
             self.bound,
             stride=self.stride,
@@ -3428,7 +3428,9 @@ struct LayoutTensorIter[
     @always_inline
     fn reshape[
         dst_layout: Layout,
-    ](self) -> LayoutTensorIter[type, dst_layout, address_space, circular]:
+    ](self) -> LayoutTensorIter[
+        type, dst_layout, address_space=address_space, circular=circular
+    ] as result:
         constrained[
             dst_layout.size() == layout.size(),
             "Destination layout doesn't match the original.",
@@ -3445,7 +3447,7 @@ struct LayoutTensorIter[
             "Iterator reshape only supports compile time layout.",
         ]()
 
-        return LayoutTensorIter[type, dst_layout, address_space, circular](
+        return __type_of(result)(
             self.ptr,
             self.bound,
             self.stride,
@@ -3456,8 +3458,10 @@ struct LayoutTensorIter[
     @always_inline
     fn bitcast[
         new_type: DType, *, address_space: AddressSpace = Self.address_space
-    ](self) -> LayoutTensorIter[new_type, layout, address_space, Self.circular]:
-        return LayoutTensorIter[new_type, layout, address_space, Self.circular](
+    ](self) -> LayoutTensorIter[
+        new_type, layout, address_space=address_space, circular = Self.circular
+    ] as result:
+        return __type_of(result)(
             self.ptr.bitcast[new_type, address_space](),
             self.bound,
             self.stride,
