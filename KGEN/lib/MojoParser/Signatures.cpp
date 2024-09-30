@@ -1797,7 +1797,8 @@ LITSignatureType TypeCheckedFnSignature::getLITSignatureType() const {
       paramList.getParamListAttr(), implicitLifetimeDecls.size(),
       getLifetimesAccessibleByParams(paramList.getParamListAttr(),
                                      paramList.paramDeclAttrs, paramList.shared,
-                                     captureLifetimes));
+                                     captureLifetimes),
+      isNestedLifetimeExclusivityCheckingDisabled);
 
   /// Silence internal verifier errors when constructing types from the parser.
   /// We don't want to show these to the user.

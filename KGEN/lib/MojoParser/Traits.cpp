@@ -119,7 +119,8 @@ static LITSignatureType getRegisterPassableSignature(LITSignatureType traitSig,
 
   auto metadata = FnMetadataAttr::get(
       oldArgListAttrs.cloneWith(pogs), traitSig.getParamListAttrs(),
-      numImplicitLifetimeDecls, traitSig.getCaptureLifetimes());
+      numImplicitLifetimeDecls, traitSig.getCaptureLifetimes(),
+      traitSig.getIsNestedLifetimeExclusivityCheckingDisabled());
   return SignatureType::get(
       FunctionType::get(traitSig.getContext(), argTypes, resultType),
       traitSig.getParamTypes(), traitSig.getResultParamTypes(), conventions,

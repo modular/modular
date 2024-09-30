@@ -224,6 +224,10 @@ public:
   /// This is an optional lifetime set parameter, representing the lifetimes of
   /// the function captures.
   TypedAttr captureLifetimes;
+  /// Whether `@__unsafe_disable_nested_lifetime_exclusivity` was specified:
+  /// nested lifetimes are not considered in exclusivity checking.
+  /// TODO: Generalize this to mutation sets.
+  bool isNestedLifetimeExclusivityCheckingDisabled = false;
 
   /// This performs any special checks over the declaration based on its name
   /// and whether it is a method.  This happens after decorator processing

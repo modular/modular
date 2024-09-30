@@ -1180,26 +1180,18 @@ void CallEmitter::emitDirectCallWarnings(LIT::CallOp call,
 // As we emit the arguments, we check to see if there are any exclusivity
 // violations provided by the argument.
 namespace {
-struct ExclusivityChecker {
+struct ExclusivityChecker : public SharedStateUser {
   ExclusivityChecker(RValue callee, const ExprNode *callExpr, CallSyntax syntax,
                      ArrayRef<ASTExprAnd<AnyValue>> argumentValues,
                      ExprEmitter &emitter)
-      : callee(callee), callExpr(callExpr), syntax(syntax),
-        argumentValues(argumentValues), shared(emitter.shared),
+      : SharedStateUser(emitter.shared), callee(callee), callExpr(callExpr),
+        syntax(syntax), argumentValues(argumentValues),
         builder(emitter.builder) {
 
-    // Handle __unsafe_disable_nested_lifetime_exclusivity on direct calls.
-    if (auto target = callee.getIfPValue()) {
-      if (auto symbol = dyn_cast<SymbolConstantAttr>(target.get())) {
-        auto &declResolver = emitter.getDeclResolver();
-        if (ASTDecl *calleeDecl =
-                declResolver.getDeclForFuncSymbol(symbol.getSymbol())) {
-          auto calleeFunc = cast<LIT::FuncOp>(*calleeDecl);
-          isNestedLifetimeExclusivityCheckingDisabled =
-              calleeFunc.getIsNestedLifetimeExclusivityCheckingDisabled();
-        }
-      }
-    }
+    // Handle __unsafe_disable_nested_lifetime_exclusivity.
+    isNestedLifetimeExclusivityCheckingDisabled =
+        cast<LITSignatureType>(callee.getRValueType())
+            .getIsNestedLifetimeExclusivityCheckingDisabled();
 
     // Check capture lifetimes first so we know if argument values may overlap.
     checkCaptureLifetimes();
@@ -1215,8 +1207,8 @@ private:
   CallSyntax syntax;
   /// These are the arguments that are being emitted.
   ArrayRef<ASTExprAnd<AnyValue>> argumentValues;
-  SharedState &shared;
   std::optional<OpBuilder> builder;
+
   /// True if the __unsafe_disable_nested_lifetime_exclusivity decorator is
   /// on the callee.
   bool isNestedLifetimeExclusivityCheckingDisabled = false;
@@ -1361,7 +1353,7 @@ void ExclusivityChecker::diagViolation(Value val, ArgConvention convention,
                                        unsigned argIdx, TypedAttr lifetime,
                                        const LifetimeInfo &previousAccess) {
   bool isImmut = cast<LifetimeType>(lifetime.getType()).isMutableKnown(false);
-  auto diag = shared.emitError(callExpr->getLoc());
+  InflightDiag diag = emitError(callExpr->getLoc());
 
   diag << "argument of ";
 
@@ -1372,7 +1364,7 @@ void ExclusivityChecker::diagViolation(Value val, ArgConvention convention,
       if (auto symbol = dyn_cast<SymbolConstantAttr>(pv.get())) {
         // Figure out what is getting called and include it.
         if (ASTDecl *calleeDecl =
-                shared.declResolver->getDeclForFuncSymbol(symbol.getSymbol())) {
+                getDeclResolver().getDeclForFuncSymbol(symbol.getSymbol())) {
           auto calleeFunc = cast<LIT::FuncOp>(*calleeDecl);
 
           if (auto sourceName = calleeFunc.getSourceNameAttr())
@@ -1679,6 +1671,7 @@ CValue ExprEmitter::emitCallUnchecked(RValue callee,
       ASTType coroType = getBoundCoroutineType(
           getScopeInfo(), callExpr, calleeSig,
           computeArgumentsLifetime(call, shared.cachedLifetimeFinder));
+
       if (!coroType) {
         dest.resetForError();
         return {};
