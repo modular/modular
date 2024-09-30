@@ -1440,6 +1440,7 @@ static void typeCheckResult(ParsedArgument resultArg, bool isDef,
 TypeCheckedFnSignature::TypeCheckedFnSignature(TypeCheckedParamList &paramList,
                                                ParsedArgumentList &argList,
                                                const ParsedArgument &resultArg,
+                                               const ExprNode *lifetimeExpr,
                                                bool isDef, ASTDecl *fnDecl,
                                                SpecialFunctionInfo &fnInfo)
     : paramList(paramList), argList(argList), resultArg(resultArg) {
@@ -1538,6 +1539,20 @@ TypeCheckedFnSignature::TypeCheckedFnSignature(TypeCheckedParamList &paramList,
 
   // Compute the result type.
   typeCheckResult(resultArg, isDef, fnInfo, fnDecl, *this);
+
+  // If a capture lifetime set was specified, emit it. It will be added to the
+  // signature type later.
+  if (lifetimeExpr) {
+    // Special rule for `[_]` when specifying the capture lifetime set: the
+    // set is unbound and will be autoparameterized.
+    auto setType = LifetimeSetType::get(shared.getContext());
+    if (lifetimeExpr->kind == ExprNode::kDiscardLiteral) {
+      captureLifetimes = UnboundAttr::get(setType);
+    } else {
+      captureLifetimes =
+          typeEmitter.emitExprPValue(lifetimeExpr, EC_Lifetime, setType);
+    }
+  }
 }
 
 /// This performs any special checks over the declaration based on its name
@@ -1781,8 +1796,8 @@ LITSignatureType TypeCheckedFnSignature::getLITSignatureType() const {
                        argPackIndex, argPackOrigConvention),
       paramList.getParamListAttr(), implicitLifetimeDecls.size(),
       getLifetimesAccessibleByParams(paramList.getParamListAttr(),
-                                     paramList.paramDeclAttrs,
-                                     paramList.shared));
+                                     paramList.paramDeclAttrs, paramList.shared,
+                                     captureLifetimes));
 
   /// Silence internal verifier errors when constructing types from the parser.
   /// We don't want to show these to the user.

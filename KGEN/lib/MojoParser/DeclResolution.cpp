@@ -901,8 +901,9 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
   // Emit the argument and result types.
   SpecialFunctionInfo fnInfo = SpecialFunctionInfo::get(baseName);
 
-  TypeCheckedFnSignature tcSignature(paramList, fnSignature, resultArg, isDef,
-                                     &decl, fnInfo);
+  TypeCheckedFnSignature tcSignature(paramList, fnSignature, resultArg,
+                                     /*captureLifetimes=*/nullptr, isDef, &decl,
+                                     fnInfo);
 
   // If any of the arguments had an error or if the result type is a type check
   // error, then we won't allow forming a reference to this function.

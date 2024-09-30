@@ -3120,30 +3120,13 @@ AnyValue FunctionTypeNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
 
   SpecialFunctionInfo fnInfo; // Not a named function.
   TypeCheckedFnSignature tcSignature(paramList, argList, resultArgs.front(),
-                                     isDef, /*fnDecl=*/nullptr, fnInfo);
+                                     lifetimeExpr, isDef, /*fnDecl=*/nullptr,
+                                     fnInfo);
 
   // Compute the signature of the function.
   LITSignatureType signature = tcSignature.getLITSignatureType();
   if (!signature)
     return {}; // Error already emitted.
-
-  // If the syntax specifies a capture lifetime set, emit it and bind it to the
-  // signature type.
-  if (lifetimeExpr) {
-    // Special rule for `[_]` when specifying the capture lifetime set: the
-    // set is unbound and will be autoparameterized.
-    PValue lifetime;
-    auto setType = LifetimeSetType::get(emitter.getContext());
-    if (lifetimeExpr->kind == ExprNode::kDiscardLiteral) {
-      lifetime = PValue(UnboundAttr::get(setType));
-    } else {
-      lifetime = emitter.emitExprPValue(lifetimeExpr, EC_Lifetime, setType);
-      if (!lifetime)
-        return {}; // Error already emitted.
-    }
-    signature = signature.getWithMetadata(
-        signature.getMetadata().addCaptureLifetimes(lifetime));
-  }
 
   // Set the value of the dummy scope to the generated signature so that we can
   // still resolve information about it in tools.

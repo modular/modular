@@ -54,7 +54,8 @@ inline const char *plural(size_t value, const char *one = "",
 /// finder instance.
 TypedAttr getLifetimesAccessibleByParams(PogListAttr paramList,
                                          ArrayRef<ParamDeclAttr> params,
-                                         SharedState &shared);
+                                         SharedState &shared,
+                                         TypedAttr captureLifetimes);
 
 /// Returns if a value of the specified type can be coerced to the other type
 /// with a rebind.  This means that values of the two types have exactly the

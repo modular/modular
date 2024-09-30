@@ -79,7 +79,8 @@ LIT::FuncOp StructEmitter::createFunction(
 
   auto metadata = FnMetadataAttr::get(
       argListAttrs, paramListAttrs, numImplicitLifetimeDecls,
-      getLifetimesAccessibleByParams(paramListAttrs, params, shared));
+      getLifetimesAccessibleByParams(paramListAttrs, params, shared,
+                                     /*captureLifetimes=*/nullptr));
   FunctionType functionType =
       builder.getFunctionType(adjustedArgTypes, {resultType});
   Location location = shared.translateLocation(loc);
