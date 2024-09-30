@@ -5,6 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo-no-debug %s | FileCheck %s
 
+from collections import OptionalReg
 from sys import argv
 from time import time_function as time_function_sync
 
@@ -15,9 +16,13 @@ from gpu.host.device_context import DeviceContext
 from gpu.host.event import time_function as time_function_cuda
 from gpu.host.sync import synchronize
 from memory import UnsafePointer
-from nn.concat import _concat_gpu, _concat_inner_most_single_dim
+from nn.concat import (
+    _concat_gpu,
+    _concat_inner_most_single_dim,
+    elementwise_epilogue_type,
+)
 
-from utils import StaticTuple
+from utils import StaticTuple, StaticIntTuple
 
 
 fn _create_buffer_host[
@@ -41,7 +46,7 @@ fn _fill_buffer[
         buffer.flatten()[i] = val
 
 
-fn test_concat_4_inputs_rank5(ctx: DeviceContext) raises:
+fn test_concat_4_inputs_rank5[test_epilogue: Bool](ctx: DeviceContext) raises:
     print("== test_concat_4_inputs_rank5")
 
     alias rank = 5
@@ -98,9 +103,26 @@ fn test_concat_4_inputs_rank5(ctx: DeviceContext) raises:
 
     alias B_SIZE = 32
 
+    @parameter
+    @always_inline
+    @__copy_capture(output_device_ref)
+    fn epilogue_plus_one[
+        c_type: DType, _rank: Int, width: Int, *, alignment: Int
+    ](indices: StaticIntTuple[_rank], val: SIMD[c_type, width]):
+        output_device_ref.store[width=width](
+            rebind[StaticIntTuple[rank]](indices),
+            rebind[SIMD[dtype, width]](val + 1),
+        )
+
     var func = ctx.compile_function[
         _concat_inner_most_single_dim[
-            rank=rank, type=dtype, num_inputs=4, block_size=B_SIZE
+            rank=rank,
+            type=dtype,
+            num_inputs=4,
+            block_size=B_SIZE,
+            epilogue_fn = OptionalReg[elementwise_epilogue_type](
+                epilogue_plus_one
+            ) if test_epilogue else None,
         ]
     ]()
 
@@ -146,18 +168,19 @@ fn test_concat_4_inputs_rank5(ctx: DeviceContext) raises:
             for j in range(d1):
                 for k in range(d2):
                     for l in range(d3):
+                        alias tail_val = 1 if test_epilogue else 0
                         var not_match_0 = output_host[
                             i, j, k, l, 0
-                        ] != input_0_host[i, j, k, l, 0]
+                        ] != input_0_host[i, j, k, l, 0] + tail_val
                         var not_match_1 = output_host[
                             i, j, k, l, 1
-                        ] != input_1_host[i, j, k, l, 0]
+                        ] != input_1_host[i, j, k, l, 0] + tail_val
                         var not_match_2 = output_host[
                             i, j, k, l, 2
-                        ] != input_2_host[i, j, k, l, 0]
+                        ] != input_2_host[i, j, k, l, 0] + tail_val
                         var not_match_3 = output_host[
                             i, j, k, l, 3
-                        ] != input_3_host[i, j, k, l, 0]
+                        ] != input_3_host[i, j, k, l, 0] + tail_val
                         if (
                             not_match_0
                             or not_match_1
@@ -184,7 +207,11 @@ fn test_concat_4_inputs_rank5(ctx: DeviceContext) raises:
     @parameter
     fn run_concat_gpu(ctx: DeviceContext) raises:
         # uses default stream
-        _concat_gpu(
+        _concat_gpu[
+            epilogue_fn = OptionalReg[elementwise_epilogue_type](
+                epilogue_plus_one
+            ) if test_epilogue else None
+        ](
             output_device_ref,
             4,
             StaticTuple[NDBuffer[dtype, rank], 4](
@@ -218,4 +245,5 @@ fn test_concat_4_inputs_rank5(ctx: DeviceContext) raises:
 
 def main():
     with DeviceContext() as ctx:
-        test_concat_4_inputs_rank5(ctx)
+        test_concat_4_inputs_rank5[True](ctx)
+        test_concat_4_inputs_rank5[False](ctx)
