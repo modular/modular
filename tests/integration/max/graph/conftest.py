@@ -110,15 +110,19 @@ def assert_allclose(result, expected):
             reject()
 
 
-def given_input_types(input_types, static_dims: Dict[str, int] = {}):
-    return given(
-        st.tuples(
-            *(
-                arrays(input_type, static_dims=static_dims)
-                for input_type in input_types
-            )
-        )
-    )
+def given_input_types(
+    input_types,
+    static_dims: Dict[str, int] = {},
+    provided_inputs: Dict[int, np.ndarray] = {},
+):
+    input_arrays = []
+    for i, input_type in enumerate(input_types):
+        if i in provided_inputs:
+            input_arrays.append(st.just(provided_inputs[i]))
+        else:
+            input_arrays.append(arrays(input_type, static_dims=static_dims))
+
+    return given(st.tuples(*input_arrays))
 
 
 def execute(model, inputs):
@@ -132,13 +136,16 @@ def modular_graph_test(
     graph,
     *,
     static_dims: Dict[str, int] = {},
+    provided_inputs: Dict[int, np.ndarray] = {},
     hypothesis_settings: Optional[settings] = None,
 ):
     def decorator(test_fn):
         model = session.load(graph)
 
         @given_input_types(
-            (input.type for input in graph.inputs), static_dims=static_dims
+            (input.type for input in graph.inputs),
+            static_dims=static_dims,
+            provided_inputs=provided_inputs,
         )
         def test_correctness(inputs):
             model_execute = functools.partial(execute, model)
