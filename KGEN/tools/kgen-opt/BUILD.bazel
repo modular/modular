@@ -21,7 +21,6 @@ modular_cc_binary(
         "//KGEN:KGENDialect",
         "//KGEN:LITDialect",
         "//KGEN:MOGGPreElab",
-        "//KGEN:MojoParser",
         "//KGEN:ObjectCompiler",
         "//KGEN:Pipeline",
         "//KGEN:Support",
