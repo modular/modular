@@ -146,7 +146,10 @@ fn multistage_gemm[
     ]()
     alias a_smem_size = num_pipeline_stages * BM * BK
     var a_smem_iter = LayoutTensorIter[
-        a_type, Layout.row_major(BM, BK), AddressSpace.SHARED, circular=True
+        a_type,
+        Layout.row_major(BM, BK),
+        address_space = AddressSpace.SHARED,
+        circular=True,
     ](a_smem, a_smem_size)
 
     # There is one pre-allocated shared buffer. Explicitly offset B after at A's end.
@@ -156,7 +159,10 @@ fn multistage_gemm[
     alias BD_1 = BK if transpose_b else BN
     alias b_smem_layout = Layout.row_major(BD_0, BD_1)
     var b_smem_iter = LayoutTensorIter[
-        b_type, b_smem_layout, AddressSpace.SHARED, circular=True
+        b_type,
+        b_smem_layout,
+        address_space = AddressSpace.SHARED,
+        circular=True,
     ](b_smem, b_smem_size)
 
     # global memory iterator
