@@ -8,7 +8,6 @@
 #define KGEN_TOOLS_COMPILATION_SERVER_H
 
 #include "mlir/Support/LogicalResult.h"
-#include <memory>
 
 namespace mlir::lsp {
 class JSONTransport;

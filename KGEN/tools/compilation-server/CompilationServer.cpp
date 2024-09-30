@@ -7,15 +7,9 @@
 #include "CompilationServer.h"
 #include "LLVMServer.h"
 #include "Protocol.h"
-#include "Support/LLVMCompilerForwardDecls.h"
 #include "mlir/Tools/lsp-server-support/Logging.h"
 #include "mlir/Tools/lsp-server-support/Transport.h"
-#include "llvm/ADT/FunctionExtras.h"
-#include "llvm/ADT/Sequence.h"
-#include "llvm/ADT/StringMap.h"
-#include "llvm/Support/Allocator.h"
 #include "llvm/Support/Error.h"
-#include <optional>
 
 #define DEBUG_TYPE "compilation-server"
 
