@@ -21,7 +21,6 @@ from pydantic_settings import CliSettingsSource
 from uvicorn import Config, Server
 
 from max.serve.config import APIType, Settings, api_prefix
-from max.serve.pipelines.deps import all_pipelines
 from max.serve.router import kserve_routes, openai_routes
 from max.serve.debug import register_debug, DebugSettings
 from max.serve.request import register_request
@@ -52,7 +51,7 @@ async def lifespan(pipelines: Sequence[AsyncContextManager], app: FastAPI):
 def fastapi_app(
     settings: Settings,
     debug_settings: DebugSettings,
-    pipelines: Sequence[AsyncContextManager] = all_pipelines(),
+    pipelines: Sequence[AsyncContextManager],
 ) -> FastAPI:
     app = FastAPI(lifespan=partial(lifespan, pipelines))
     for api_type in settings.api_types:
