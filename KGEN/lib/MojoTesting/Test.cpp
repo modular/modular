@@ -701,6 +701,13 @@ struct Test::TestDiscovery {
         return AsyncOptionalTest::createReady(runtime, std::nullopt);
 
       if (entry.is_directory(ec)) {
+        // There are self-tests shipped with the Mojo SDK. If this is a Magic
+        // project, we do not want to collect those tests as part of the user's
+        // regular workflow.
+        if (entry.path().filename() == ".magic" &&
+            std::filesystem::exists(path / "mojoproject.toml"))
+          continue;
+
         asyncChildren.emplace_back(
             discoverTestsInDirectory(entry.path(), ignoreModules));
       } else if (!ignoreModules && Filesystem::isMojoSourceFile(entry.path())) {
