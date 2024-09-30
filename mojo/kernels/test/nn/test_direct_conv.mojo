@@ -4,8 +4,6 @@
 #
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo-no-debug %s | FileCheck %s
-# FIXME(KERN-979): This test keeps timing out in graviton presubmits.
-# REQUIRES: disabled
 
 from math import ceildiv, isclose
 from random import rand
