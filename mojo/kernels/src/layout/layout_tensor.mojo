@@ -2372,7 +2372,7 @@ struct LayoutTensor[
                         ) - self.runtime_layout(i)
                         var src_idx = src.runtime_layout(j)
 
-                        var dst_idx = dst_offset + dst_distance
+                        var dst_idx = swizzled_offset + dst_distance
 
                         async_copy[element_size_bytes, fill=fill](
                             src_ptr + src_idx,
@@ -2745,13 +2745,13 @@ fn copy_dram_to_sram_async[
         dtype,
         dst_layout,
         address_space = _GPUAddressSpace.SHARED,
-        element_layout=dst_element_layout,
+        element_layout=dst_element_layout, **_,
     ],
     src: LayoutTensor[
         dtype,
         src_layout,
         address_space = _GPUAddressSpace.GENERIC,
-        element_layout=src_element_layout,
+        element_layout=src_element_layout, **_,
     ],
     num_rows: Int = UNKNOWN_VALUE,
 ):
@@ -2822,13 +2822,13 @@ fn copy_dram_to_sram_async[
         dtype,
         dst_layout,
         address_space = _GPUAddressSpace.SHARED,
-        element_layout=dst_element_layout,
+        element_layout=dst_element_layout, **_,
     ],
     src: LayoutTensor[
         dtype,
         src_layout,
         address_space = _GPUAddressSpace.GENERIC,
-        element_layout=src_element_layout,
+        element_layout=src_element_layout, **_,
     ],
     num_rows: Int = UNKNOWN_VALUE,
 ):
