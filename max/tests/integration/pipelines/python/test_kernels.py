@@ -4,6 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
+import asyncio
 from max.driver import CPU
 from max.dtype import DType
 from max.engine import InferenceSession
@@ -16,7 +17,11 @@ from nn.kv_cache import (
 from nn.kv_cache_params import KVCacheParams
 
 
-def test_kv_cache_length() -> None:
+def test_kv_cache_length():
+    asyncio.run(_test_kv_cache_length())
+
+
+async def _test_kv_cache_length() -> None:
     """Tests that KV cache collections return the expected cache length."""
     kv_params = KVCacheParams(
         dtype=DType.bfloat16, n_kv_heads=8, head_dim=128, device=CPU()
@@ -32,7 +37,8 @@ def test_kv_cache_length() -> None:
     )
 
     # Reserve a slot in the KV cache manager.
-    seq_id = kv_manager.claim(batch_size=1)[0]
+    seq_id = await kv_manager.claim(batch_size=1)
+    seq_id = seq_id[0]
 
     # Set the cache lengths first by "stepping".
     expected_cache_len = 42

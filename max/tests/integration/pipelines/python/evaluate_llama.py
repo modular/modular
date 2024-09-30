@@ -106,7 +106,7 @@ PROMPTS = (
 def run_llama3(llama3: Llama3, prompts=PROMPTS, num_steps=NUM_STEPS):
     results = []
     for prompt in prompts:
-        llama3._reset_cache()
+        asyncio.run(llama3.reset_cache())
         context = asyncio.run(llama3.new_context(prompt))
         inference_results: list[dict[str, npt.NDArray]] = []
 
