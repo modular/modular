@@ -272,8 +272,10 @@ fn select_config[
         ):
             continue
 
+        var allowed_num_k_partitions = 1 if num_waves_base > 3 else max_num_k_partitions
+
         # Traverse split-k possibilities to find the min work per SM.
-        for num_k_partitions in range(1, max_num_k_partitions + 1):
+        for num_k_partitions in range(1, allowed_num_k_partitions + 1):
             # Skip if partition becomes too small.
             var k_partition = K // num_k_partitions
             if k_partition < min_k_partition:
@@ -281,6 +283,12 @@ fn select_config[
 
             # Skip non-divisible K, TODO: generalize e.g. 4, 4 3
             if K % (num_k_partitions * 32) != 0:
+                continue
+
+            # Skip pipeline stages = 3 for non-split-k cases since default
+            # 4 stage kernel seems faster on A100.
+            # TODO: shouldn't hardcode this way, needs a long-term solution.
+            if num_k_partitions == 1 and num_stages != 4:
                 continue
 
             var num_waves = ceildiv(
