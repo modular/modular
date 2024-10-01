@@ -164,15 +164,20 @@ def execute_flash_attention[
     )
 
     # initialize our KVCache
-    # TODO: Create test with variable cache sizes.
-    valid_lengths = StaticIntTuple[
-        ContiguousKVCache[
-            type,
-            kv_params,
-        ]._max_batch_size
-    ](-1)
+    var is_context_encoding = True
+    alias max_batch_size = ContiguousKVCache[type, kv_params]._max_batch_size
+    var valid_lengths_host_ptr = UnsafePointer[Int64].alloc(max_batch_size)
+    for i in range(max_batch_size):
+        valid_lengths_host_ptr[i] = -1
     for i in range(batch_size):
-        valid_lengths[i] = cache_valid_length[i].__int__()
+        if valid_lengths_host_ptr[i] != 0:
+            is_context_encoding = False
+        valid_lengths_host_ptr[i] = cache_valid_length[i].__int__()
+    var valid_lengths_dev = ctx.create_buffer[DType.int64](max_batch_size)
+    ctx.enqueue_copy_to_device(valid_lengths_dev, valid_lengths_host_ptr)
+    var valid_lengths = NDBuffer[DType.int64, 1](
+        valid_lengths_dev.ptr, batch_size
+    )
 
     k_block_host = HostNDBuffer[
         type,
@@ -205,6 +210,7 @@ def execute_flash_attention[
     k_cache_device = ContiguousKVCache[type, kv_params,](
         k_block_device.tensor,
         valid_lengths,
+        is_context_encoding,
         batch_size,
     )
 
@@ -239,6 +245,7 @@ def execute_flash_attention[
     v_cache_device = ContiguousKVCache[type, kv_params,](
         v_block_device.tensor,
         valid_lengths,
+        is_context_encoding,
         batch_size,
     )
 
