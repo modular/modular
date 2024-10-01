@@ -52,7 +52,7 @@ def subseqs(c: Collection):
         return st.just(type(c)())
     subseq_indices = st.sets(st.sampled_from(range(len(c))))
     return subseq_indices.map(
-        lambda indices: type(c)(v for i, v in enumerate(c) if i in indices)
+        lambda indices: type(c)(v for i, v in enumerate(c) if i in indices)  # type: ignore
     )
 
 

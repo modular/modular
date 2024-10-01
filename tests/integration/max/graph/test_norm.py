@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from conftest import modular_graph_test, assert_allclose
+from .conftest import modular_graph_test, assert_allclose
 import pytest
 import torch
 from max.dtype import DType
