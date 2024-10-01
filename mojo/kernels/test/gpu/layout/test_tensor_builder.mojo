@@ -406,8 +406,42 @@ fn test_layout():
     _ = t_vector
 
 
+# CHECK-LABEL: test_iterator
+fn test_iterator():
+    print("== test_iterator")
+    alias size = 64
+    var tensor = tb[DType.float32]().row_major[size, 1]().alloc()
+    arange(tensor)
+    # Reshape iterator.
+    # CHECK: 12.0 13.0
+    # CHECK: 14.0 15.0
+    # CHECK: 16.0 17.0
+    var iter2x3 = tb[DType.float32]().row_major[2, 3]().iter(tensor.ptr, size)
+
+    # LayoutTensorIter[DType.float32, Layout.row_major(2, 3)](tensor.ptr, size)
+    iter2x3 += 1
+    var iter3x2_static = iter2x3.reshape[Layout.row_major(3, 2)]()
+    iter3x2_static += 1
+    print(iter3x2_static[])
+
+    var iter_circular = tb[DType.float32]().row_major[8, 8]().circular().iter(
+        tensor.ptr, size
+    )
+    iter_circular += 100
+    # CHECK: 0.0 1.0 2.0 3.0 4.0 5.0 6.0 7.0
+    # CHECK: 8.0 9.0 10.0 11.0 12.0 13.0 14.0 15.0
+    # CHECK: 16.0 17.0 18.0 19.0 20.0 21.0 22.0 23.0
+    # CHECK: 24.0 25.0 26.0 27.0 28.0 29.0 30.0 31.0
+    # CHECK: 32.0 33.0 34.0 35.0 36.0 37.0 38.0 39.0
+    # CHECK: 40.0 41.0 42.0 43.0 44.0 45.0 46.0 47.0
+    # CHECK: 48.0 49.0 50.0 51.0 52.0 53.0 54.0 55.0
+    # CHECK: 56.0 57.0 58.0 59.0 60.0 61.0 62.0 63.0
+    print(iter_circular[])
+
+
 fn main() raises:
     test_row_major()
     test_col_major()
     test_shared_and_local()
     test_layout()
+    test_iterator()
