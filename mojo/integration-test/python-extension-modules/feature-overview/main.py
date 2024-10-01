@@ -10,6 +10,7 @@
 
 import sys
 import os
+import unittest
 
 # Put the current directory (containing .so) on the Python module lookup path.
 sys.path.insert(0, "")
@@ -22,52 +23,32 @@ os.environ["MOJO_PYTHON_LIBRARY"] = sys.executable
 import feature_overview
 
 
-def test_case_return_arg_tuple():
-    result = feature_overview.case_return_arg_tuple(
-        1, 2, "three", ["four", "four.B"]
-    )
+class TestMojoPythonInterop(unittest.TestCase):
+    def test_case_return_arg_tuple(self):
+        result = feature_overview.case_return_arg_tuple(
+            1, 2, "three", ["four", "four.B"]
+        )
 
-    assert result == (1, 2, "three", ["four", "four.B"])
+        self.assertEqual(result, (1, 2, "three", ["four", "four.B"]))
 
+    def test_case_raise_empty_error(self):
+        with self.assertRaises(ValueError) as cm:
+            feature_overview.case_raise_empty_error()
 
-def test_case_raise_empty_error():
-    try:
-        # This is expected to raise
-        feature_overview.case_raise_empty_error()
+        self.assertEqual(cm.exception.args, ())
 
-        print("expected exception to be raised")
-        exit(-1)
-    except ValueError as e:
-        # Do nothing, we caught the error we expected.
-        pass
+    def test_case_raise_string_error(self):
+        with self.assertRaises(ValueError) as cm:
+            feature_overview.case_raise_string_error()
 
+        self.assertEqual(cm.exception.args, ("sample value error",))
 
-def test_case_raise_string_error():
-    try:
-        # This is expected to raise
-        feature_overview.case_raise_string_error()
+    def test_case_mojo_raise(self):
+        with self.assertRaises(Exception) as cm:
+            feature_overview.case_mojo_raise()
 
-        print("expected exception to be raised")
-        exit(-1)
-    except ValueError as e:
-        # Assert that we caught the error we expected.
-        assert str(e) == "sample value error"
-
-
-def test_case_mojo_raise():
-    try:
-        # This is expected to raise
-        feature_overview.case_mojo_raise()
-
-        print("expected exception to be raised")
-        exit(-1)
-    except Exception as e:
-        # Assert that we caught the error we expected.
-        assert str(e) == "Mojo error"
+        self.assertEqual(cm.exception.args, ("Mojo error",))
 
 
 if __name__ == "__main__":
-    test_case_return_arg_tuple()
-    test_case_raise_empty_error()
-    test_case_raise_string_error()
-    test_case_mojo_raise()
+    unittest.main()
