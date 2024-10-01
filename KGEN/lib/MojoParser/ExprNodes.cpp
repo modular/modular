@@ -1724,8 +1724,10 @@ static AnyValue emitMLIROperatorCall(const CallNode &call,
   // crash in the op builder if we simply set state.propertiesAttr.
   if (propsAttr) {
     if (failed(resultOp->setPropertiesFromAttribute(
-            *propsAttr, [&]() { return resultOp->emitError(); })))
+            *propsAttr, [&]() { return resultOp->emitError(); }))) {
+      emitter.emitError(call.getLoc(), "cannot set property");
       return {};
+    }
   }
 
   // Explicitly run the verifier on the new operation so we make sure to
@@ -1743,7 +1745,8 @@ static AnyValue emitMLIROperatorCall(const CallNode &call,
     verificationError = failed(mlir::verify(resultOp));
   }
   if (verificationError) {
-    resultOp->emitOpError("MLIR verification error: ") << errorMessage;
+    emitter.emitError(call.getLoc(), "MLIR verification error: ")
+        << errorMessage;
     return {};
   }
 
