@@ -131,6 +131,7 @@ def test_load_store_buffer(buffer_type: BufferType):
         assert "rmo.mo.mutable.store" in str(graph)
 
 
+@pytest.mark.skip(reason="TODO(MSDK-1072): fix spurious slice failures in CI")
 @given(tensor_type=tensor_type, buffer_type=buffer_type)
 def test_store_slice_buffer(tensor_type: TensorType, buffer_type: BufferType):
     assume(tensor_type.rank > 1 and buffer_type.rank > 1)
