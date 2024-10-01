@@ -25,7 +25,7 @@ from max.serve.schemas.openai import (
 )
 
 
-@pytest.fixture(scope="session")
+@pytest.fixture(scope="module")
 def tunable_app():
     settings = Settings(api_types=[APIType.OPENAI])
     debug_settings = DebugSettings()
@@ -35,7 +35,7 @@ def tunable_app():
     return fast_app
 
 
-@pytest.fixture(scope="session")
+@pytest.fixture(scope="module")
 def echo_app():
     settings = Settings(api_types=[APIType.OPENAI])
     debug_settings = DebugSettings()
