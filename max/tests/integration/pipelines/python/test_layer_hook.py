@@ -166,6 +166,7 @@ def test_hook_many_args_kwargs(mocker):
         "test_hook",
         layer,
         [TensorType(DType.int64, shape=[5, "dim1", "dim2"])],
+        None,  # Path - if loading mef from file
         "arg2 value",
         "arg3 value",
         "arg4 value",
