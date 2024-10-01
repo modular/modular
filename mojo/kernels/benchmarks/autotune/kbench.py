@@ -3,36 +3,31 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
+import csv
 import functools
 import operator
-import shutil
-import tempfile
-from itertools import product
-from collections.abc import Iterable
-from dataclasses import InitVar, dataclass, field
-from itertools import chain
-from pathlib import Path
-from typing import Dict, List, Set, Optional, Sequence, Tuple, Union
 import os
+import shutil
 import string
 import sys
-import shlex
+import tempfile
+from collections.abc import Iterable
+from dataclasses import InitVar, dataclass, field
 from enum import Enum
+from itertools import chain, product
+from pathlib import Path
+from time import sleep, time
+from typing import Dict, List, Optional, Sequence, Set, Tuple, Union
+
+import click
 import numpy as np
 import pandas as pd
-import click
-from time import sleep, time
-from rich.progress import MofNCompleteColumn, Progress
 from model.utils.logging import CONSOLE
+from rich.progress import MofNCompleteColumn, Progress
 
 from modular.utils import logging
-from modular.utils.subprocess import (
-    list2cmdline,
-    run_shell_command,
-)
-import subprocess
+from modular.utils.subprocess import list2cmdline, run_shell_command
 from modular.utils.yaml import YAML
-import csv
 
 MOJO_BINARY = shutil.which("mojo")
 if not MOJO_BINARY:
@@ -619,6 +614,28 @@ def run(
         print(f"wrote results to [{output_path}]")
 
 
+def check_gpu_clock():
+    nvidia_smi = shutil.which("nvidia-smi")
+    if not nvidia_smi:
+        return
+    output = run_shell_command(
+        [nvidia_smi, "--query-gpu", "persistence_mode", "--format", "csv"],
+        check=False,
+        capture_output=True,
+    )
+
+    # We check for persistence here as a proxy to check if setup-gpu-benchmarking
+    # has been run. This is not exact, but should cover most cases. Checking for
+    # the clock frequency is more complicated since the frequencies changes per
+    # GPU.
+    if "Disabled" in output.stdout.decode("utf-8"):
+        raise Exception(
+            "the clock frequency for the GPU is not locked, please use"
+            " `setup-gpu-benchmarking` to ensure that the frequencies and power"
+            " of the GPU are locked to get consistent benchmarking behavior."
+        )
+
+
 help_str = (
     "Grid-search all the params for a mojo benchmark and pick the top value"
 )
@@ -701,6 +718,8 @@ def cli(
         mode = KBENCH_MODE.BUILD
     elif tune:
         mode = KBENCH_MODE.TUNE
+
+    check_gpu_clock()
 
     run(
         yaml_path_list=yaml_path,
