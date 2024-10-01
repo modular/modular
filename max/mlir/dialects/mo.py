@@ -8,7 +8,7 @@ from max._mlir.dialects import _ods_common
 from max._mlir.dialects.mo import *
 from max._mlir.dialects.mo import GraphOp, _Dialect
 
-from .. import Attribute, Block, FunctionType, Type, TypeAttr
+from .. import Attribute, Block, FunctionType, Type, TypeAttr  # type: ignore
 
 
 @_ods_common._cext.register_operation(_Dialect, replace=True)  # type:ignore
