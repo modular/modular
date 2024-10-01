@@ -77,7 +77,6 @@ def LIT_FuncOp : LITOp<"func", [
     // the flattened full symbol reference of the function will be used.
     OptionalAttr<StrAttr>:$linkageName,
     // The name of this function in the pre-elaborated IR stage.
-    OptionalAttr<StrAttr>:$preElaborationName,
     OptionalAttr<StrAttr>:$sourceName,
     OptionalAttr<StrAttr>:$namedResult,
     OptionalAttr<LIT_DocStringAttr>:$docString,
@@ -1000,30 +999,6 @@ def LIT_EndFuncOp : LITOp<"end_func", [Terminator, HasParent<"LIT::FuncOp">]> {
   }];
 
   let assemblyFormat = "attr-dict";
-}
-
-//===----------------------------------------------------------------------===//
-// ExternFuncOp
-//===----------------------------------------------------------------------===//
-
-def LIT_ExternFuncOp : LITOp<"extern_func", [Terminator,
-    HasParent<"LIT::FuncOp">]> {
-  let summary = "Denotes an externalized function.";
-  let description = [{
-    The `lit.extern_func` operation denotes the end of a `lit.func` body,
-    indicating that the function's body has been externalized or elided.
-
-    Example:
-
-    ```mlir
-    lit.func @extern() {
-      lit.extern_func
-    }
-    ```
-  }];
-
-  let assemblyFormat = "attr-dict";
-  let hasVerifier = 1;
 }
 
 //===----------------------------------------------------------------------===//

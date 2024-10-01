@@ -824,16 +824,6 @@ LogicalResult LIT::FuncOp::verify() {
       getFunctionType().getNumInputs())
     return emitOpError("incorrect number of value parameter labels");
 
-  if (isExternal()) {
-    if (!llvm::hasSingleElement(*getBody()) ||
-        !isa<LIT::ExternFuncOp>(&getBody()->front()))
-      return emitOpError("expected external function body to contain a single "
-                         "`lit.extern_func`");
-    if (!getPreElaborationNameAttr())
-      return emitOpError(
-          "external function requires attribute 'preElaborationName'");
-  }
-
   // Verify the correct number of parameters.
   if (getSignature().getNumParams() +
           getSignature().getNumImplicitLifetimeDecls() !=
@@ -947,9 +937,9 @@ void LIT::FuncOp::build(OpBuilder &b, OperationState &state,
         /*isStatic=*/none, /*isDef=*/none, /*isInherited=*/none,
         /*isSynthetic=*/none, ExportKindAttr::get(ctx, ExportKind::NotExported),
         InlineLevelAttr::get(ctx, inlineLevel), b.getI8IntegerAttr(0),
-        FlatSymbolRefAttr(), StringAttr(), StringAttr(),
-        b.getStringAttr(sourceName), StringAttr(), DocStringAttr(),
-        StringAttr(), DictionaryAttr::get(ctx), ArrayAttr());
+        FlatSymbolRefAttr(), StringAttr(), b.getStringAttr(sourceName),
+        StringAttr(), DocStringAttr(), StringAttr(), DictionaryAttr::get(ctx),
+        ArrayAttr());
   state.regions[0]->push_back(new Block());
 }
 
@@ -967,8 +957,8 @@ void LIT::FuncOp::build(OpBuilder &builder, OperationState &result,
         ExportKindAttr::get(ctx, ExportKind::NotExported),
         InlineLevelAttr::get(ctx, InlineLevel::Automatic),
         builder.getI8IntegerAttr(uint8_t(specialFnKind)), FlatSymbolRefAttr(),
-        StringAttr(), StringAttr(), sourceName, StringAttr(), DocStringAttr(),
-        StringAttr(), DictionaryAttr::get(ctx), ArrayAttr());
+        StringAttr(), sourceName, StringAttr(), DocStringAttr(), StringAttr(),
+        DictionaryAttr::get(ctx), ArrayAttr());
   result.regions[0]->push_back(new Block());
 }
 
@@ -1994,16 +1984,6 @@ void ErrorReturnOp::getBranchTargets(
     SmallVectorImpl<HLCF::ControlFlowTarget> &targets) {
   assert(operands.size() == 1);
   targets.emplace_back(std::nullopt, getResult());
-}
-
-//===----------------------------------------------------------------------===//
-// ExternFuncOp
-//===----------------------------------------------------------------------===//
-
-LogicalResult LIT::ExternFuncOp::verify() {
-  if (getParentOp().isExternal())
-    return success();
-  return emitOpError("expected an external parent function");
 }
 
 //===----------------------------------------------------------------------===//

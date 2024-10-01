@@ -245,20 +245,6 @@ lit.func @global_ref_reg_store(%x: !lit.struct<@MyRegStruct> owned) {
 
 // -----
 
-// COM: Verify that we don't traverse external functions.
-
-lit.struct.decl @MyStruct attributes {destructor = #kgen.symbol.constant<@MyStruct::@__del__> : !lit.signature<[1](!lit.ref<@MyStruct, mut *[0,0]> owned_in_mem) -> !kgen.none>} {
-  lit.struct.field a : index
-}
-
-// CHECK-LABEL: @external_func
-// CHECK-NEXT: lit.extern_func
-lit.func @external_func(%arg: !lit.ref<@MyStruct, mut #lit.any.lifetime> owned_in_mem) attributes {preCompiledModuleRef = @package, preElaborationName = "external_func"} {
-  lit.extern_func
-}
-
-// -----
-
 // COM: debuginfo.value ops may reference values that are not initialized (e.g.
 // COM: init_self arguments in __init__ functions). We check here that this does
 // COM: not cause an error in the pass.
