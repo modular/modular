@@ -4,12 +4,13 @@
 #
 # ===----------------------------------------------------------------------=== #
 import copy
+from typing import Any
 
 from _pytest.logging import LogCaptureFixture
 
 from modular.utils.profiling import TimeTrace
 
-trace_fast = {
+trace_fast: dict[str, Any] = {
     "traceEvents": [
         {
             "pid": 1,

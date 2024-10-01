@@ -30,4 +30,4 @@ from ._git import (
 )
 
 # Remove from the namespace so that it's not visible to users.
-del _git  # noqa: F821
+del _git  # type: ignore # noqa: F821

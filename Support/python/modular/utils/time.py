@@ -97,7 +97,7 @@ class RUsageResult:
         def get_time(line: str):
             val = line.split("):")[1].strip()
             if val.count(":") == 1:
-                hrs = 0
+                hrs = "0"
                 mins, secs = val.split(":")
             elif val.count(":") == 2:
                 hrs, mins, secs = val.split(":")

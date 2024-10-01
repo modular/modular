@@ -4,6 +4,8 @@
 #
 # ===----------------------------------------------------------------------=== #
 
+# mypy: ignore-errors
+
 
 from typing import Any, Generator
 

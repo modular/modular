@@ -20,7 +20,7 @@ from types import TracebackType
 from typing import Any, Optional, Type
 
 
-def getLogger(name: Optional[str] = None) -> Logger:
+def getLogger(name: Optional[str] = None) -> Logger:  # type: ignore
     name = name or __name__
     return _getLogger(name)
 

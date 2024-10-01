@@ -73,8 +73,8 @@ def get_libpython() -> Optional[Path]:
     Returns:
         Path to the libpython shared library or None if it wasn't found.
     """
-    if path := os.getenv("MOJO_PYTHON_LIBRARY"):
-        return Path(path).resolve()
+    if env_path := os.getenv("MOJO_PYTHON_LIBRARY"):
+        return Path(env_path).resolve()
 
     is_windows = os.name == "nt"
     if is_windows:
