@@ -82,14 +82,11 @@ fn testUseConditional(cond: __mlir_type.i1):
   var cref = aref if cond else bref
 
   # This uses both A and B, so it needs to extend both of their lifetimes.
-  Reference(__get_litref_as_mvalue(cref))[].noop()
+  Reference.address_of(__get_litref_as_mvalue(cref))[].noop()
   # CHECK: [[CR:%.*]] = lit.ref.load %cref
-  # CHECK: [[REFREF:%.*]] = lit.var.decl
-  # CHECK-NEXT: lifetime.start [[REFREF]]
-  # CHECK-NEXT: lit.call @{{.*}}@Reference::@"__init__{{.*}}([[REFREF]], [[CR]])
-  # CHECK-NEXT: [[REF:%.*]] = lit.ref.load [[REFREF]]
-  # CHECK-NEXT: lifetime.end [[REFREF]]
-  # CHECK-NEXT: [[MREF:%.*]] = lit.call @{{.*}}__getitem__{{.*}}([[REF]])
+  # CHECK-NEXT: lit.var.lifetime.end %cref
+  # CHECK-NEXT: [[REF:%.*]] = lit.call {{.*}}@Reference::@"address_of{{.*}}([[CR]])
+  # CHECK-NEXT: [[MREF:%.*]] = lit.call {{.*}}__getitem__{{.*}}([[REF]])
   # CHECK-NEXT: lit.ref.immut [[MREF]]
   # CHECK-NEXT: lit.call @{{.*}}noop
   # CHECK-NEXT: lit.call @{{.*}}__del__{{.*}}(%a)
@@ -113,25 +110,17 @@ fn testDefConditional(cond: __mlir_type.i1):
 
   # Mutating either of these is fine - it doesn't matter which one is mutated,
   # we know that both are live.
-  Reference(__get_litref_as_mvalue(cref))[].mutate()
+  Reference.address_of(__get_litref_as_mvalue(cref))[].mutate()
   # CHECK: [[CR:%.*]] = lit.ref.load %cref
-  # CHECK: [[REFREF:%.*]] = lit.var.decl
-  # CHECK-NEXT: lifetime.start [[REFREF]]
-  # CHECK-NEXT: lit.call @{{.*}}@Reference::@"__init__{{.*}}([[REFREF]], [[CR]])
-  # CHECK-NEXT: [[REF:%.*]] = lit.ref.load [[REFREF]]
-  # CHECK-NEXT: lifetime.end [[REFREF]]
+  # CHECK-NEXT: [[REF:%.*]] = lit.call @{{.*}}@Reference::@"address_of{{.*}}([[CR]])
   # CHECK-NEXT: [[MREF:%.*]] = lit.call @{{.*}}__getitem__{{.*}}([[REF]])
   # CHECK-NEXT: lit.call @{{.*}}mutate{{.*}}([[MREF]])
 
   # Overwriting one means that we need to immediately destroy the same reference
   # because we cannot know which one is being set.
-  Reference(__get_litref_as_mvalue(cref))[] = MemExample()
+  Reference.address_of(__get_litref_as_mvalue(cref))[] = MemExample()
   # CHECK: [[CR:%.*]] = lit.ref.load %cref
-  # CHECK: [[REFREF:%.*]] = lit.var.decl
-  # CHECK-NEXT: lifetime.start [[REFREF]]
-  # CHECK-NEXT: lit.call @{{.*}}@Reference::@"__init__{{.*}}([[REFREF]], [[CR]])
-  # CHECK-NEXT: [[REF:%.*]] = lit.ref.load [[REFREF]]
-  # CHECK-NEXT: lifetime.end [[REFREF]]
+  # CHECK-NEXT: [[REF:%.*]] = lit.call @{{.*}}@Reference::@"address_of{{.*}}([[CR]])
   # CHECK-NEXT: [[MREF:%.*]] = lit.call @{{.*}}__getitem__{{.*}}([[REF]])
   # CHECK-NEXT: lit.call @{{.*}}__del__{{.*}}([[MREF]])
   # CHECK-NEXT: lit.call @{{.*}}__init__{{.*}}([[MREF]])
@@ -139,13 +128,10 @@ fn testDefConditional(cond: __mlir_type.i1):
   # Overwriting is eligible for copy => move optimization as well.
   var shouldBeMovedFrom = MemExample()
   # CHECK: lit.call @{{.*}}__init__{{.*}}(%shouldBeMovedFrom)
-  Reference(__get_litref_as_mvalue(cref))[] = shouldBeMovedFrom
+  Reference.address_of(__get_litref_as_mvalue(cref))[] = shouldBeMovedFrom
   # CHECK: [[CR:%.*]] = lit.ref.load %cref
-  # CHECK: [[REFREF:%.*]] = lit.var.decl
-  # CHECK-NEXT: lifetime.start [[REFREF]]
-  # CHECK-NEXT: lit.call @{{.*}}@Reference::@"__init__{{.*}}([[REFREF]], [[CR]])
-  # CHECK-NEXT: [[REF:%.*]] = lit.ref.load [[REFREF]]
-  # CHECK-NEXT: lifetime.end [[REFREF]]
+  # CHECK-NEXT: lit.var.lifetime.end %cref
+  # CHECK-NEXT: [[REF:%.*]] = lit.call @{{.*}}@Reference::@"address_of{{.*}}([[CR]])
   # CHECK-NEXT: [[MREF:%.*]] = lit.call @{{.*}}__getitem__{{.*}}([[REF]])
   # CHECK-NEXT: lit.ref.immut
   # CHECK-NEXT: lit.call @{{.*}}__del__{{.*}}([[MREF]])
@@ -176,11 +162,9 @@ fn testUseConditionalReference(cond: __mlir_type.i1, imm: MemExample):
 
   var a = MemExample()
 
-  # CHECK-NEXT: %aref = lit.var.decl "aref"
-  # CHECK-NEXT: lifetime.start %aref
-  # CHECK-NEXT: lit.call @{{.*}}@Reference::@"__init__{{.*}}(%aref, %a)
-  var aref = Reference(a)
-  # CHECK-NEXT: lit.alias.decl *"aLifetime{{.*}}": lifetime<1> = <*"a`1">
+  # CHECK: lit.call @{{.*}}@Reference::@"address_of{{.*}}(%a)
+  var aref = Reference.address_of(a)
+  # CHECK: lit.alias.decl *"aLifetime{{.*}}": lifetime<1> = <*"a`1">
   alias aLifetime =  aref.lifetime
 
   # CHECK-NEXT: [[AR:%.*]] = lit.ref.load %aref
@@ -212,9 +196,9 @@ fn testUseConditionalReference(cond: __mlir_type.i1, imm: MemExample):
 
   # Reference can bind to immutable things as well, no problem.
   # CHECK-NEXT: %immref = lit.var.decl "immref"
-  # CHECK-NEXT: lifetime.start %immref
-  # CHECK-NEXT: [[IMMRV:%.*]] = lit.call @{{.*}}@Reference::@"__init__{{.*}}(%immref, %imm)
-  var immref = Reference(imm)
+  # CHECK-NEXT: [[IMMRV:%.*]] = lit.call @{{.*}}@Reference::@"address_of{{.*}}(%imm)
+  # CHECK: lit.ref.store [[IMMRV]], %immref
+  var immref = Reference.address_of(imm)
   immref[].noop()
 
 # ===----------------------------------------------------------------------=== #
@@ -230,7 +214,7 @@ struct SelfRefTest:
   # CHECK-LABEL: lit.func @"method
   # CHECK-SAME: (%self: !lit.ref<!SelfRefTest
   fn method(ref [_] self: Self) -> Reference[Self, __lifetime_of(self)]:
-      return self
+      return Reference.address_of(self)
 
 # CHECK-LABEL: lit.func @"testSelfRef
 fn testSelfRef(a: SelfRefTest, inout b: SelfRefTest):
@@ -247,7 +231,7 @@ fn testSelfRef(a: SelfRefTest, inout b: SelfRefTest):
 # CHECK-SAME: (%a: !lit.ref<!MemExample, imm *"a`"> borrow_in_mem) ->
 # CHECK-SAME: Reference <{{.*}}, :lifetime<0> *"a`", :!AddressSpace {_value: !Int = {0}}>>
 fn testLifetimeOf1(a: MemExample) -> Reference[MemExample, __lifetime_of(a)]:
-  return a
+  return Reference.address_of(a)
 
 # CHECK-LABEL: lit.func @"testLifetimeOf2
 # CHECK-SAME: (%a: !lit.ref<!MemExample, imm *"a`"> borrow_in_mem) ->
@@ -255,7 +239,7 @@ fn testLifetimeOf1(a: MemExample) -> Reference[MemExample, __lifetime_of(a)]:
 fn testLifetimeOf2(a: MemExample) -> Reference[MemExample, __lifetime_of(a)]._mlir_type:
 
   # CHECK: kgen.return {{.*}} : !lit.ref<!MemExample, imm *"a`">
-  return Reference(a).value
+  return Reference.address_of(a)._value
 
 # CHECK-LABEL: lit.func @"callByRefResultLifetime
 fn callByRefResultLifetime(inout x: MemExample, inout y: MemExample, z: MemExample):
@@ -283,20 +267,6 @@ struct OneLifetime[a_lifetime: ImmutableLifetime]:
 struct TwoLifetimes[a_lifetime: ImmutableLifetime,
                     b_lifetime: ImmutableLifetime]:
   fn __init__(inout self): pass
-
-# Crash converting mvalue of #lit.any.lifetime lifetime to Reference with specific one.
-# https://github.com/modularml/mojo/issues/1921
-struct SomeStruct:
-  # CHECK-LABEL: lit.func @"refBindingToImmortal
-  fn refBindingToImmortal(inout self, ptr: UnsafePointer[Int])
-      -> Reference[Int, __lifetime_of(self)]:
-    # CHECK: [[REFVAL:%.*]] = lit.call {{.*}}__getitem__{{.*}}(%ptr)
-    # CHECK: [[REBIND:%.*]] = kgen.rebind [[REFVAL]]
-    # CHECK-SAME : !lit.ref<!Int, mut #lit.any.lifetime> to !lit.ref<!Int, mut *"self`2x">
-    # CHECK: [[TMP:%.*]] = lit.var.decl "anonymous*"
-    # CHECK: lit.call {{.*}}__init__{{.*}}([[TMP]], [[REBIND]]
-    return ptr[]
-
 
 # Test that we can infer the type of 'T' in the func param invocation.
 # CHECK-LABEL: CutDownVariadicPack
@@ -330,13 +300,9 @@ fn test_immortal_to_mortal(arg: Reference[Int, _])
   # CHECK-NEXT: [[REF:%.*]] = lit.call {{.*}}UnsafePointer::@"__getitem__{{.*}}([[PTRVAL]])
 
   # CHECK-NEXT: [[ADJREFVAL:%.*]] = kgen.rebind [[REF]] : !lit.ref<!Int, mut #lit.any.lifetime> to !lit.ref<!Int, mut=#lit.struct.extract<:!Bool *"is_mutable`", "value">, *"lifetime`1">
-  # CHECK-NEXT: [[ANON2:%.*]] = lit.var.decl "anonymous*"
-  # CHECK-NEXT: lifetime.start [[ANON2]]
-  # CHECK-NEXT: lit.call {{.*}}__init__{{.*}}([[ANON2]], [[ADJREFVAL]])
-  # CHECK-NEXT: [[RES:%.*]] = lit.load.consume [[ANON2:%.*]] : !lit.ref
-  # CHECK-NEXT: lifetime.end [[ANON2]]
+  # CHECK-NEXT: [[RES:%.*]] = lit.call {{.*}}address_of{{.*}}([[ADJREFVAL]])
   # CHECK-NEXT: kgen.return [[RES]]
-  return UnsafePointer.address_of(arg[])[]
+  return Reference[Int, arg.lifetime].address_of(UnsafePointer.address_of(arg[])[])
 
 
 # CHECK-LABEL: lit.func @"ref_copyability
@@ -348,9 +314,12 @@ fn ref_copyability[*element_types: Copyable](*args: *element_types):
   # CHECK-NEXT: lit.call[{{.*}}get_type_method(:!Copyable{{.*}}__del__{{.*}}(%x)
 
 # Issue #37659: Parameter inference doesn't work with force-immut lifetimes
-fn thing_taking_immutable_ref[T: AnyType, value_lifetime: ImmutableLifetime](a: Reference[T, value_lifetime]): pass
-fn test_passing_mutable_ref(inout i: String):
-    thing_taking_immutable_ref(i)
+
+# FIXME (Patch #48185): need to support implicit conversions to immutable reference.
+
+#fn thing_taking_immutable_ref[T: AnyType, value_lifetime: ImmutableLifetime](a: Reference[T, value_lifetime]): pass
+#fn test_passing_mutable_ref(inout i: String):
+#    thing_taking_immutable_ref(Reference.address_of(i))
 
 # Verify that we can propagate parametric mutability through field accesses.
 struct ThingWithFields:
@@ -363,7 +332,7 @@ fn parametric_mut_mbvalue[
  ](a: Reference[ThingWithFields, lifetime])
    -> Reference[Int, __lifetime_of(a[].field)]:
   # CHECK: lit.ref.struct.ger
-  return a[].field
+  return Reference.address_of(a[].field)
 
 # Reference directly with inferred params.
 struct SomeStructWithReferenceSelfArgument:
