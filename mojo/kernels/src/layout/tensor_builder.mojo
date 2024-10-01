@@ -4,6 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 from layout import Layout, LayoutTensor
+from layout.layout_tensor import LayoutTensorIter
 from utils import StaticIntTuple, StaticTuple, Index
 from .int_tuple import UNKNOWN_VALUE
 from memory import UnsafePointer
@@ -70,6 +71,7 @@ struct LayoutTensorBuild[
     __layout: Layout = Layout(1),
     __layout_init: Bool = False,
     __address_space: AddressSpace = _GPUAddressSpace.GENERIC,
+    __circular: Bool = False,
 ]:
     var runtime_layout: RuntimeLayout[__layout]
 
@@ -292,8 +294,8 @@ struct LayoutTensorBuild[
         self,
     ) -> LayoutTensorBuild[
         dtype,
-        __layout = Self.__layout,
-        __layout_init = Self.__layout_init,
+        __layout=__layout,
+        __layout_init=__layout_init,
         __address_space = _GPUAddressSpace.SHARED,
     ] as res:
         constrained[
@@ -307,8 +309,8 @@ struct LayoutTensorBuild[
         self,
     ) -> LayoutTensorBuild[
         dtype,
-        __layout = Self.__layout,
-        __layout_init = Self.__layout_init,
+        __layout=__layout,
+        __layout_init=__layout_init,
         __address_space = _GPUAddressSpace.LOCAL,
     ] as res:
         constrained[
@@ -318,17 +320,15 @@ struct LayoutTensorBuild[
         return __type_of(res)(self.runtime_layout)
 
     @always_inline
-    fn alloc[](
+    fn alloc(
         self,
-    ) -> LayoutTensor[
-        dtype, __layout, address_space = Self.__address_space
-    ] as res:
+    ) -> LayoutTensor[dtype, __layout, address_space=__address_space] as res:
         constrained[__layout_init, "Layout is not set."]()
         constrained[
-            Self.__layout.all_dims_known(),
+            __layout.all_dims_known(),
             "Cannot create dynamic tensors on stack.",
         ]()
-
+        constrained[not __circular, "circular tensor not supported!"]()
         return __type_of(res).stack_allocation()
 
     @always_inline
@@ -338,10 +338,41 @@ struct LayoutTensorBuild[
         dtype, __layout, address_space=address_space
     ] as res:
         constrained[__layout_init == True, "Layout is not set."]()
-        constrained[Self.__address_space == address_space, ""]()
+        constrained[__address_space == address_space, ""]()
+        constrained[not __circular, "circular tensor not supported!"]()
 
         @parameter
-        if Self.__layout.all_dims_known():
+        if __layout.all_dims_known():
             return __type_of(res)(ptr)
         else:
             return __type_of(res)(ptr, self.runtime_layout)
+
+    @always_inline
+    fn circular(
+        self,
+    ) -> LayoutTensorBuild[
+        dtype,
+        __layout=__layout,
+        __layout_init=__layout_init,
+        __address_space=__address_space,
+        __circular=True,
+    ] as res:
+        return __type_of(res)(self.runtime_layout)
+
+    @always_inline
+    fn iter(
+        self,
+        ptr: UnsafePointer[Scalar[dtype], __address_space],
+        bound: Int,
+    ) -> LayoutTensorIter[
+        dtype,
+        __layout,
+        address_space=__address_space,
+        circular=__circular,
+    ] as res:
+        constrained[__layout_init, "Layout is not set."]()
+        constrained[
+            __layout.all_dims_known(),
+            "Cannot create dynamic iterator",
+        ]()
+        return __type_of(res)(ptr, bound)
