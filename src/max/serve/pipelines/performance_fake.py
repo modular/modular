@@ -23,7 +23,7 @@ class PerformanceFakingContext:
 
 @dataclass
 class PerformanceFakingTokenGenerator:
-    tokenizer: Optional[AutoTokenizer] = None
+    _tokenizer: Optional[AutoTokenizer] = None
 
     # ttft (ms) for prompt_length = batch_size = 1
     ce_baseline: float = 6.85
@@ -47,8 +47,8 @@ class PerformanceFakingTokenGenerator:
     async def new_context(
         self, prompt: str, max_new_tokens: Optional[int] = None
     ) -> PerformanceFakingContext:
-        if self.tokenizer:
-            prompt_length = len(self.tokenizer.encode(prompt))
+        if self._tokenizer:
+            prompt_length = len(self._tokenizer.encode(prompt))
         else:
             prompt_length = len(prompt)
         num_tokens = max_new_tokens or prompt_length
