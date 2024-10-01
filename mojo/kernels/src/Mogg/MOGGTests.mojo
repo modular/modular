@@ -65,6 +65,18 @@ fn test_one_rank_many_tensor[
     return tensor1
 
 
+@mogg_register("mutable_test_op")
+@export
+fn mutable_test_op[
+    type: DType,
+    rank: Int,
+](output: NDBuffer[type, rank], ctx: MojoCallContextPtr):
+    """
+    Used to test having a custom op that directly writes to a tensor in-place.
+    """
+    output.data.store(0, 0)
+
+
 @mogg_register("test_3D_in_out_lambda")
 @export
 fn test_3D_in_out_lambda[
