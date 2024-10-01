@@ -14,14 +14,14 @@ from memory import UnsafePointer
 from os import abort
 
 from python import Python, PythonObject, TypedPythonObject
+from python._bindings import create_wrapper_function
 from python._cpython import (
     PyMethodDef,
-    PyObjectPtr,
-    create_wrapper_function,
-    PyType_Spec,
     PyObject,
-    Py_TPFLAGS_DEFAULT,
+    PyObjectPtr,
+    PyType_Spec,
     PyType_Slot,
+    Py_TPFLAGS_DEFAULT,
     Py_tp_new,
     Py_tp_init,
     Py_tp_dealloc,
