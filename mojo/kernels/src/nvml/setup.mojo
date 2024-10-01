@@ -11,7 +11,7 @@ from .nvml import Device
 
 def _set_persistence_mode(device: Device):
     try:
-        device.set_persistence_mode(enabled=False)
+        device.set_persistence_mode(enabled=True)
     except:
         print("unable to set the gpu persistence for", device)
 
