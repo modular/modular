@@ -1,0 +1,59 @@
+##===----------------------------------------------------------------------===##
+#
+# This file is Modular Inc proprietary.
+#
+##===----------------------------------------------------------------------===##
+
+name: bench_matmul
+file: $KERNEL_BENCHMARKS_ROOT/gpu/bench_matmul.mojo
+
+batch_size: &batch_size
+    M: [1, 2, 4, 8, 16]
+
+params:
+- <<: *batch_size
+  N: 4096
+  K: 4096
+  metadata:
+    MODEL:
+      - mistralai/Mistral-7B-v0.1
+      - mistralai/Mixtral-8x7B-v0.1
+      - meta-llama/Llama-2-7b-hf
+      - meta-llama/Llama-3-8b
+- <<: *batch_size
+  N: 14336
+  K: 4096
+  metadata:
+    MODEL:
+      - mistralai/Mistral-7B-v0.1
+      - meta-llama/Llama-3-8b
+- <<: *batch_size
+  N: 11008
+  K: 4096
+  metadata:
+    MODEL:
+      - meta-llama/Llama-2-7b-hf
+- <<: *batch_size
+  N: 8192
+  K: 8192
+  metadata:
+    MODEL:
+      - meta-llama/Llama-3-70b
+- <<: *batch_size
+  N: 28672
+  K: 8192
+  metadata:
+    MODEL:
+      - meta-llama/Llama-3-70b
+- <<: *batch_size
+  N: 16384
+  K: 16384
+  metadata:
+    MODEL:
+      - meta-llama/Llama-3-405b
+- <<: *batch_size
+  N: 53248
+  K: 16384
+  metadata:
+    MODEL:
+      - meta-llama/Llama-3-405b

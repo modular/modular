@@ -291,6 +291,8 @@ class Spec:
             for cfg in obj["params"]:
                 e = []
                 for k, v in cfg.items():
+                    if k == "metadata":
+                        continue
                     e.append(ParamSpace(name=k, value=v))
                 params.append(e)
 
@@ -421,28 +423,6 @@ class Spec:
         return "\n".join(rs)
 
 
-SPEC_CONTENT = """
-name: multistage_gemm
-file: ./sample.mojo
-params:
-  - DTYPE: DType.float16
-    M: [1024,512]
-    N: [1024,512]
-    STAGES: [4,8,12]
-
-  - DTYPE1: DType.float32
-    M1: [1024]
-    N1: 768
-    STAGES1: 12
-
-  - DTYPE2: DType.float16
-    M2: 132
-    N2: 768
-    STAGES2: 14
-
-"""
-
-
 class KBENCH_MODE(Enum):
     RUN = 0x1
     TUNE = 0x2
@@ -504,7 +484,7 @@ def run(
         console=CONSOLE,
     ) as progress:
         bench_progress = progress.add_task(
-            "build-run",
+            spec.name,
             total=spec.mesh_size,
         )
 
