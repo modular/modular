@@ -100,8 +100,15 @@ ErrorOr<ContextRef> Init::createContext(StringRef programName,
   // Move everything into the context. Construct here may used the settings.
   ctx->emplace<HTTPContextRef>(std::move(httpCtx));
   ctx->emplace<TelemetryContext>(settings, options.resources);
-  ctx->emplace<std::shared_ptr<Frameworks::StatsReport>>(
-      std::make_shared<Frameworks::StatsReport>("pytorch"));
+
+  std::optional<std::string> optModelName =
+      llvm::sys::Process::GetEnv("MODULAR_MODEL_NAME");
+  if (optModelName.has_value())
+    ctx->emplace<std::shared_ptr<Frameworks::StatsReport>>(
+        std::make_shared<Frameworks::StatsReport>("pytorch", *optModelName));
+  else
+    ctx->emplace<std::shared_ptr<Frameworks::StatsReport>>(
+        std::make_shared<Frameworks::StatsReport>("pytorch"));
 
   // Create a new runtime (if needed).
   if (options.runtimeOptions) {
