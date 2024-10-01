@@ -41,7 +41,7 @@ fn test_mlir2():
   # expected-error @+1 {{'index.castu' op result #0 must be integer or index, but got 'f32'}}
   __mlir_op.`index.castu`[_type=__mlir_type.f32](x)
 
-  # expected-error @+1 {{'index.constant' op MLIR verification error: 'index.constant' op requires attribute 'value'}}
+  # expected-error @+1 {{MLIR verification error: 'index.constant' op requires attribute 'value'}}
   var c42e = __mlir_op.`index.constant`[value=__mlir_attr.`42.0 : f32`]()
   var c42 = __mlir_op.`index.constant`[value=`42`]() # Good
 
@@ -104,4 +104,10 @@ fn mlir_properties():
             __mlir_type.`!kgen.string`,
         ),
         _properties = __mlir_attr.`1 : i64`,
-    ]() # expected-error {{expected DictionaryAttr to set properties}}
+    ]()
+    # expected-error @above {{cannot set property}}
+    # expected-error @above {{expected DictionaryAttr to set properties}}
+
+fn mlir_illegal_op():
+    # expected-error @below {{MLIR verification error: 'llvm.intr.ctlz' op requires attribute 'is_zero_poison'}}
+    __mlir_op.`llvm.intr.ctlz`[_type=Int](1)
