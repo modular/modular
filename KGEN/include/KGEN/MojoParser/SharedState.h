@@ -451,8 +451,7 @@ public:
   /// This gets a function conversion thunk between the two provided function
   /// types within the provided module, or creates one if needed.
   LIT::FuncOp getOrCreateFunctionThunk(LITSignatureType actual,
-                                       LITSignatureType expected,
-                                       ASTDecl *moduleDecl);
+                                       LITSignatureType expected);
 
   /// Given a scope that refers to a nested function, return the set of captured
   /// values in the form of a range: the begin and end iterators of the capture

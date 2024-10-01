@@ -17,6 +17,7 @@
 #include "KGEN/MojoParser/ASTDecl.h"
 #include "KGEN/MojoParser/ASTType.h"
 #include "KGEN/MojoParser/CallOperands.h"
+#include "KGEN/MojoParser/DeclResolver.h"
 #include "mlir/IR/ImplicitLocOpBuilder.h"
 
 using namespace M;
@@ -205,17 +206,30 @@ LIT::FuncOp LIT::generateConversionThunk(LITSignatureType actual,
       expected.getResultType(), SpecialFunctionKind::kNormal,
       moduleDecl.getLoc(), b, expected.getFnEffects());
 
+  // Annotate the function as a thunk by adding the conversion types.
+  NamedAttrList attrs = thunk->getAttrDictionary();
+  attrs.set(thunk.getThunkFromTypeAttrName(), TypeAttr::get(actual));
+  attrs.set(thunk.getThunkToTypeAttrName(), TypeAttr::get(expected));
+
   // Always inline the thunk. The calling convention conversion overhead is
   // guaranteed to be optimized away.
-  thunk.setInlineLevel(InlineLevel::AlwaysNoDebug);
+  attrs.set(thunk.getInlineLevelAttrName(),
+            InlineLevelAttr::get(ctx, InlineLevel::AlwaysNoDebug));
+
+  // Set the attributes.
+  thunk->setAttrs(attrs.getDictionary(ctx));
+
+  // Register the function as an ASTDecl to emit code inside it.
+  ASTDecl &thunkDecl = shared.declResolver->addFullyResolvedDecl(
+      &*thunk, thunk.getSymNameAttr(), moduleDecl.getLoc(), &moduleDecl);
 
   // Now prepare to emit the call.
   b = ImplicitLocOpBuilder::atBlockBegin(mlirLoc, thunk.getBody());
-  ExprEmitter emitter(shared, moduleDecl, b);
+  ExprEmitter emitter(shared, thunkDecl, b);
 
   // Construct the call operands from the function block arguments.
   CallOperands operands;
-  SyntheticNode node(moduleDecl.getLoc());
+  SyntheticNode node(thunkDecl.getLoc());
 
   for (auto [arg, conv] :
        llvm::zip(thunk.getArguments(), expected.getArgConventions())) {
@@ -319,10 +333,8 @@ CValue LIT::convertFunctionValue(CValue value, const ExprNode *expr,
   LITSignatureType reducedActual = getReducedFunctionType(actual);
   LITSignatureType reducedExpected = getReducedFunctionType(expected);
 
-  ASTDecl *moduleDecl = emitter.declScope.getNearestDeclOfType<FileModuleOp>();
-  assert(moduleDecl && "emitting code outside a module?");
-  LIT::FuncOp thunk = emitter.shared.getOrCreateFunctionThunk(
-      reducedActual, reducedExpected, moduleDecl);
+  LIT::FuncOp thunk =
+      emitter.shared.getOrCreateFunctionThunk(reducedActual, reducedExpected);
   if (!thunk) {
     dest.resetForError();
     return {};

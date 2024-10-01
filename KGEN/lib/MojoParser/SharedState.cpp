@@ -136,6 +136,10 @@ private:
   /// Given a symbol reference, fully resolve the parents of the symbol assuming
   /// that the parent references do not contain any mangling.
   ASTDecl *resolveRefParentDecl(SharedState &shared, SymbolRefAttr symbol) {
+    // This is a reference to a top-level declaration.
+    if (symbol.getNestedReferences().empty())
+      return &shared.getTopLevelDecl();
+
     StringAttr rootAttr = symbol.getRootReference();
     auto nestedRefs = symbol.getNestedReferences().drop_back();
     auto it = resolvedSymbolParents.find({rootAttr, nestedRefs});
@@ -309,7 +313,7 @@ struct SharedState::Impl {
   DenseMap<ASTDecl *, llvm::MapVector<ASTDecl *, Capture>> capturesInScope;
 
   /// Function type conversion thunks in each module.
-  DenseMap<std::tuple<Type, Type, ASTDecl *>, LIT::FuncOp> conversionThunks;
+  DenseMap<std::pair<Type, Type>, LIT::FuncOp> conversionThunks;
 
   /// This caches non-trivial implicit convertibility checks from one type to
   /// another.
@@ -576,7 +580,7 @@ struct SharedState::ModuleState {
       : decl(decl), sourcePath(sourcePath.str()) {}
   ~ModuleState() {
     // Drop any remaining operations in the reader to avoid dangling
-    // unmaterialized operations. If these were neded, they would have been
+    // unmaterialized operations. If these were needed, they would have been
     // handled already as part of parsing.
     if (bytecodeReader)
       (void)bytecodeReader->finalize([](Operation *) { return false; });
@@ -595,6 +599,8 @@ struct SharedState::ModuleState {
   /// An optional bytecode reader, in the case where this decl was loaded from
   /// bytecode as opposed to source.
   std::unique_ptr<mlir::BytecodeReader> bytecodeReader;
+  /// A temporary module used to load the bytecode.
+  ModuleOp tmpModule;
   /// The optional source path of this module if it was loaded from source.
   std::optional<std::string> sourcePath;
 
@@ -1255,16 +1261,18 @@ SharedState::ModuleState &
 SharedState::createBinaryPackageState(SMLoc loc, StringAttr declName,
                                       StringRef packagePath,
                                       ModuleState &parentState) {
+  auto makeError = [&](const Twine &msg) -> ModuleState & {
+    return createErrorModuleState(loc, declName, *parentState.decl, msg);
+  };
+
   llvm::ErrorOr<std::unique_ptr<llvm::MemoryBuffer>> packageBuffer =
       llvm::MemoryBuffer::getFile(packagePath);
-  if (!packageBuffer) {
-    return createErrorModuleState(loc, declName, *parentState.decl,
-                                  "unable to open package file '" +
-                                      packagePath + "'");
-  }
+  if (!packageBuffer)
+    return makeError("unable to open package file '" + packagePath + "'");
 
   // Read the cached package.
-  Block *block = parentState.decl->getDeclEndBuilder().getBlock();
+  OpBuilder builder = parentState.decl->getDeclEndBuilder();
+  Block *block = builder.getBlock();
   std::unique_ptr<mlir::BytecodeReader> bytecodeReader;
   {
     CompilerTimeTraceScope timeScope("readBytecodeFile");
@@ -1277,32 +1285,57 @@ SharedState::createBinaryPackageState(SMLoc loc, StringAttr declName,
         /*lazyLoad=*/true, sourceMgr);
 
     // Read in the cached bytecode.
-    if (failed(bytecodeReader->readTopLevel(block))) {
-      return createErrorModuleState(loc, declName, *parentState.decl,
-                                    "unable to load package '" + packagePath +
-                                        "'");
-    }
+    if (failed(bytecodeReader->readTopLevel(block)))
+      return makeError("unable to load package '" + packagePath + "'");
 
     // Add the package path to the set of included files.
     impl->includedFiles.emplace_back(packagePath.str());
   }
 
+  // The bytecode module includes the package module and any function stubs.
+  auto tmpModule = cast<ModuleOp>(block->back());
+  if (failed(bytecodeReader->materialize(tmpModule)))
+    return makeError("failed to materialize top-level module");
+
+  // Move the package into the current decl.
+  auto packageOp = cast<PackageOp>(tmpModule.getBody()->front());
+  packageOp->remove();
+  builder.insert(packageOp);
+
+  // Process each of the stubs, deduplicating each of them into the shared
+  // state. For any added thunks, we have to register a decl for them.
+  auto theModule = cast<ModuleOp>(getTopLevelDecl());
+  for (auto thunk :
+       llvm::make_early_inc_range(tmpModule.getOps<LIT::FuncOp>())) {
+    TypeAttr fromType = thunk.getThunkFromTypeAttr();
+    TypeAttr toType = thunk.getThunkToTypeAttr();
+    LIT::FuncOp &registeredThunk =
+        impl->conversionThunks[{fromType.getValue(), toType.getValue()}];
+    if (registeredThunk)
+      continue; // thunk already exists
+    registeredThunk = thunk;
+
+    // Move the thunk into the top-level and add it as fully resolved.
+    if (failed(bytecodeReader->materialize(thunk)))
+      return makeError("failed to materialize function thunk");
+    thunk->remove();
+    theModule.push_back(thunk);
+    ASTDecl &thunkDecl = declResolver->addBytecodeDecl(
+        &*thunk, thunk.getSourceNameAttr(), &getTopLevelDecl(),
+        DeclResolvedness::fully);
+    declResolver->finalizeFuncSignature(thunk, thunkDecl);
+  }
+
   // Insert a new module decl.
-  Operation *packageOp = &block->back();
-  SMLoc declLoc =
-      declResolver->shared.diags.convertLocToSMLoc(packageOp->getLoc());
-  ASTDecl &decl =
-      declResolver->addDecl(packageOp, declLoc, declName, parentState.decl,
-                            parentState.decl->getCursor(),
-                            parentState.decl->getCursor(), /*indentation=*/-1);
-  decl.loadedFromBytecode = true;
-  decl.resolvedness = DeclResolvedness::signature;
+  ASTDecl &decl = declResolver->addBytecodeDecl(
+      packageOp, declName, parentState.decl, DeclResolvedness::signature);
 
   // Initialize the module state.
   ModuleState &moduleState = parentState.insertNestedModule(
       declName, std::make_unique<ModuleState>(&decl));
-  impl->moduleStates[&decl] = &moduleState;
   moduleState.bytecodeReader = std::move(bytecodeReader);
+  moduleState.tmpModule = tmpModule;
+  impl->moduleStates[&decl] = &moduleState;
   impl->packageStates[cast<PackageOp>(decl)] = &moduleState;
 
   return moduleState;
@@ -1485,12 +1518,8 @@ SharedState::resolveDeclFromBytecode(ASTDecl &decl,
 
   // Functor to build a decl for a nested operation.
   auto addDeclForOp = [&](Operation *op, StringAttr name) -> ASTDecl & {
-    SMLoc declLoc = declResolver->shared.diags.convertLocToSMLoc(op->getLoc());
-    ASTDecl &newDecl = declResolver->addDecl(
-        DeclIRValue(op), declLoc, name, &decl, decl.getCursor(),
-        decl.getCursor(), /*indentation=*/-1);
-    newDecl.loadedFromBytecode = true;
-    return newDecl;
+    return declResolver->addBytecodeDecl(op, name, &decl,
+                                         DeclResolvedness::unparsed);
   };
 
   // If this decl is a package, this is its corresponding module state.
@@ -1602,6 +1631,8 @@ LogicalResult SharedState::finalizeImportedBytecodeModules() {
     if (failed(module->bytecodeReader->finalize(
             [&](Operation *op) { return false; })))
       return failure();
+    // Erase the temporary ModuleOp that was used to read bytecode.
+    module->tmpModule.erase();
   }
   return success();
 }
@@ -1706,11 +1737,10 @@ LIT::StructDeclOp SharedState::getOrCreateClosureWrapper(SMLoc loc,
 }
 
 LIT::FuncOp SharedState::getOrCreateFunctionThunk(LITSignatureType actual,
-                                                  LITSignatureType expected,
-                                                  ASTDecl *moduleDecl) {
-  LIT::FuncOp &thunk = impl->conversionThunks[{actual, expected, moduleDecl}];
+                                                  LITSignatureType expected) {
+  LIT::FuncOp &thunk = impl->conversionThunks[{actual, expected}];
   if (!thunk)
-    thunk = generateConversionThunk(actual, expected, *moduleDecl, *this);
+    thunk = generateConversionThunk(actual, expected, getTopLevelDecl(), *this);
   return thunk;
 }
 

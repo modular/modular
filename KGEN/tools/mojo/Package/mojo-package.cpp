@@ -68,10 +68,10 @@ struct PackageOptTable : public llvm::opt::PrecomputedOptTable {
 /// package only contains stubs of the original package's contents, and is
 /// suitable for importing into other Mojo programs.
 static std::pair<OwningOpRef<ModuleOp>, LIT::PackageOp>
-buildPackageModule(LIT::PackageOp parsedPackageOp) {
+buildPackageModule(ModuleOp theModule, LIT::PackageOp parsedPackageOp) {
   OwningOpRef<ModuleOp> packageModule =
       ModuleOp::create(parsedPackageOp->getLoc());
-  OpBuilder b(packageModule->getBody(), packageModule->getBody()->begin());
+  auto b = OpBuilder::atBlockEnd(packageModule->getBody());
 
   // Clone the relevant operations into the package.
   std::stack<SmartVariant<Operation *, OpBuilder::InsertPoint>> worklist;
@@ -103,6 +103,13 @@ buildPackageModule(LIT::PackageOp parsedPackageOp) {
       tmp.pop();
     }
   };
+
+  // Include any generated function thunks at the top-level. These are
+  // deduplicated when the package is imported.
+  for (auto func : theModule.getOps<LIT::FuncOp>()) {
+    assert(func.getThunkFromTypeAttr() && "top-level function must be a thunk");
+    pushOpsOntoWorklist(MutableArrayRef(*func));
+  }
 
   // Clone the parsed package operation and push its ops onto the worklist.
   LIT::PackageOp thePackage = cloneWithoutRegions(parsedPackageOp);
@@ -263,7 +270,7 @@ static ErrorOrSuccess parsePackageArgs(const State &state,
 /// newly build package op is suitable for serialization as MLIR bytecode; it
 /// may be written to a `.mojopkg` file that can be deserialized and imported
 /// into Mojo programs.
-static ErrorOr<std::pair<OwningOpRef<ModuleOp>, LIT::PackageOp>>
+static ErrorOr<OwningOpRef<ModuleOp>>
 buildPackage(const PackageArgs &packageArgs, ModuleOp theModule,
              LIT::PackageOp parsedPackageOp, AsyncRT::Runtime &runtime) {
   // Add the dependencies of the package to the package itself, and strip out
@@ -280,7 +287,8 @@ buildPackage(const PackageArgs &packageArgs, ModuleOp theModule,
         LinkDependencyArrayAttr::get(theModule.getContext(), dependencies));
   }
 
-  auto [packageModule, thePackage] = buildPackageModule(parsedPackageOp);
+  auto [packageModule, thePackage] =
+      buildPackageModule(theModule, parsedPackageOp);
 
   // Attach the post-parse module to the package.
   auto postParseModuleAttr = writeModuleToBytecodeAttr(theModule);
@@ -296,7 +304,7 @@ buildPackage(const PackageArgs &packageArgs, ModuleOp theModule,
   if (failed(compiler.runCheckLITPipeline(theModule)))
     return Error("errors occurred during compilation");
 
-  return std::make_pair(std::move(packageModule), thePackage);
+  return std::move(packageModule);
 }
 
 //===----------------------------------------------------------------------===//
@@ -390,10 +398,10 @@ static int package(const State &subcommandState) {
   auto builtOrErr = buildPackage(packageArgs, **module, packageOp, runtime);
   if (failed(builtOrErr))
     return state.reportError(builtOrErr.getError());
-  auto [builtPackageModule, builtPackage] = builtOrErr.takeValue();
+  OwningOpRef<ModuleOp> builtPackageModule = builtOrErr.takeValue();
 
   // Write the new package op as serialized bytecode to the output file.
-  if (failed(mlir::writeBytecodeToFile(builtPackage, out->os())))
+  if (failed(mlir::writeBytecodeToFile(&**builtPackageModule, out->os())))
     return state.reportError("failed to write package bytecode to a file");
 
   out->keep();

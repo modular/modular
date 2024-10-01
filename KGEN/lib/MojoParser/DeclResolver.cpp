@@ -71,6 +71,17 @@ ASTDecl &DeclResolver::addDecl(DeclIRValue irValue, SMLoc loc,
   return decl;
 }
 
+ASTDecl &DeclResolver::addBytecodeDecl(Operation *op, StringAttr baseName,
+                                       ASTDecl *parentDecl,
+                                       DeclResolvedness resolvedness) {
+  ASTDecl &decl =
+      addDecl(op, shared.diags.convertLocToSMLoc(op->getLoc()), baseName,
+              parentDecl, LexerCursor(), LexerCursor(), /*indentation=*/-1);
+  decl.loadedFromBytecode = true;
+  decl.resolvedness = resolvedness;
+  return decl;
+}
+
 ASTDecl &DeclResolver::addFullyResolvedDecl(DeclIRValue declVal,
                                             StringAttr name, SMLoc loc,
                                             ASTDecl *parentDecl) {
