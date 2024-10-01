@@ -27,12 +27,14 @@ MAX_SEQ_LEN = 2**16
 
 def torch_freqs_cis(dim: int, theta: float, scaling: float):
     freqs = 1.0 / (
-        theta ** (scaling * torch.arange(0, dim, 2)[: (dim // 2)].float() / dim)
+        theta ** (torch.arange(0, dim, 2)[: (dim // 2)].float() * scaling / dim)
     )
-    t = torch.arange(MAX_SEQ_LEN, device=freqs.device, dtype=torch.float32)
+    t = torch.arange(
+        MAX_SEQ_LEN * 2.0, device=freqs.device, dtype=torch.float32
+    )
     freqs = torch.outer(t, freqs)
     freqs_cis = torch.polar(torch.ones_like(freqs), freqs)  # complex64
-    return freqs_cis * scaling
+    return freqs_cis
 
 
 @dataclass
@@ -67,8 +69,23 @@ def test_freqs_cis(session, dtype: DType, params: RopeParams):
         graph.output(rope.freqs_cis)
         model = session.load(graph)
     result = model.execute_legacy()["output0"]
+    # freq_cis result is stacked along a new dimension - real goes first, then imaginary.
+    # The result is a tensor with shape (..., 2) where the last dimension holds [real, imaginary]
+    # We extract and convert into a complex tensor type before comparing them.
+    result_cis_complex = result[:, :, 0] + 1j * result[:, :, 1]
     expected = torch_freqs_cis(params.head_dim, params.theta, params.scaling)
-    assert_allclose(result, expected)
+    # TODO(MSDK-1071): Consolidate and figure out how to call
+    # assert_allclose(result, expected) to fire again on mismatched
+    # tensor values.
+    ACCURACY_RTOL = 1e-2
+    ACCURACY_ATOL = 1e-8
+    np.testing.assert_allclose(
+        result_cis_complex,
+        expected,
+        atol=ACCURACY_ATOL,
+        rtol=ACCURACY_RTOL,
+        equal_nan=True,
+    )
 
 
 class CannedRotaryEmbedding(RotaryEmbedding):
