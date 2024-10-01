@@ -315,24 +315,20 @@ fn _compute_nd_index(buf: NDBuffer, index: Int) -> StaticIntTuple[buf.rank]:
         The index positions.
     """
 
-    alias rank = buf.rank
-
     @parameter
-    if rank == 0:
+    if buf.rank == 0:
         return StaticIntTuple[buf.rank](0)
 
     var result = StaticIntTuple[buf.rank]()
 
-    result[rank - 1] = index
+    var curr_index = index
 
     @parameter
-    for idx in range(rank - 1):
-        result[rank - idx - 2] = result[rank - idx - 1]._positive_div(
-            buf.dim(rank - idx - 1)
-        )
-        result[rank - idx - 1] = result[rank - idx - 1]._positive_rem(
-            buf.dim(rank - idx - 1)
-        )
+    for i in reversed(range(buf.rank)):
+        var dim = buf.dim[i]()
+        result[i] = curr_index._positive_rem(dim)
+        curr_index = curr_index._positive_div(dim)
+
     return result
 
 
