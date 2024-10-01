@@ -1101,7 +1101,7 @@ fn caught_eh_cleanup():
 # https://linear.app/modularml/issue/MOCO-1251
 fn test_ref_field(owned mem: MemPair):
   # Reference to subfield.
-  r = Reference(mem.a)
+  r = Reference.address_of(mem.a)
 
   # Subfield reference keeps entire value alive.
   # CHECK: lit.call {{.*}}__eq__

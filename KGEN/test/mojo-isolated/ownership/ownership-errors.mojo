@@ -436,12 +436,12 @@ fn testConditionalImmut(cond: __mlir_type.i1):
     var a = MemExample()
     var b: MemExample  # expected-note {{'b' declared here}}
 
-    var aref = Reference(a).value
+    var aref = Reference.address_of(a)._value
     # expected-error @+1 {{use of uninitialized value 'b'}}
-    var bref = Reference(b).value
+    var bref = Reference.address_of(b)._value
     var cref = aref if cond else bref
 
-    Reference(__get_litref_as_mvalue(cref))[].noop()
+    Reference.address_of(__get_litref_as_mvalue(cref))[].noop()
 
 
 fn testConditionalMut(cond: __mlir_type.i1):
@@ -449,9 +449,9 @@ fn testConditionalMut(cond: __mlir_type.i1):
     var b: MemExample  # expected-note {{'b' declared here}}
 
     # expected-error @+1 {{use of uninitialized value 'b'}}
-    var cref = Reference(a).value if cond else Reference(b).value
+    var cref = Reference.address_of(a)._value if cond else Reference.address_of(b)._value
 
-    Reference(__get_litref_as_mvalue(cref))[] = MemExample()
+    Reference.address_of(__get_litref_as_mvalue(cref))[] = MemExample()
 
 
 # CheckLifetimes cannot call MemExample.__del__ because 'self' is in the default
@@ -467,7 +467,7 @@ fn bad_addr_space[
 # https://github.com/modularml/modular/issues/38421
 # This is valid to declare...
 fn return_owned_arg_ref(owned x: String) -> Reference[String, __lifetime_of(x)]:
-    return x
+    return Reference.address_of(x)
 
 
 fn test38421():
@@ -493,6 +493,6 @@ struct StrArray:
 fn test_inout_ref(inout v: StrArray, i: Int):
     # expected-note @below {{'(expression temporary)' declared here}}
     # expected-error @below {{use of uninitialized value '(expression temporary)'}}
-    var r = Reference(get_inout_ref(v[i]))
+    var r = Reference.address_of(get_inout_ref(v[i]))
 
     _ = r[]

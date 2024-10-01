@@ -1360,17 +1360,16 @@ fn test_thing_taking_reference(inout x: String):
   thing_taking_ref(x)
   # CHECK-NEXT: lit.call {{.*}}thing_taking_ref2{{.*}}(%x)
   thing_taking_ref2(x)
-# CHECK-NEXT: %anonymous2A = lit.var.decl
-# CHECK-NEXT: lit.call {{.*}}@Reference::@"__init__
+# CHECK-NEXT: lit.call {{.*}}@Reference::@"address_of
 # CHECK-SAME: <:!Bool {:i1 1}, :!AnyType #String1, :lifetime<1> *"x`", :!AddressSpace {_value: !Int = {0}}>
-  thing_taking_reference2(x)
+  thing_taking_reference2(Reference.address_of(x))
 
 struct StructWithStaticMethods:
    @staticmethod
    fn _init_op_state(state: Reference[Int, _], foo: Int): pass
    fn thing(self):
      var x = 42
-     Self._init_op_state(x, x)
+     Self._init_op_state(Reference.address_of(x), x)
 
 fn infer_through_alias():
   alias MyType = MemoryOnlyInt
@@ -1385,8 +1384,8 @@ fn infer_address_space[
   # Show that we can infer the address space parameter of Reference from a
   # !lit.ref.
 
-  # CHECK: lit.call {{.*}}@Reference::@"__init__{{.*}}:!AddressSpace {_value: !Int = {4}}>
-  var x = Reference(__get_litref_as_mvalue(a))
+  # CHECK: lit.call {{.*}}@Reference::@"address_of{{.*}}:!AddressSpace {_value: !Int = {4}}>
+  var x = Reference.address_of(__get_litref_as_mvalue(a))
 
 
 # https://linear.app/modularml/issue/MOCO-584/[references]-we-cannot-bind-litref-in-parameter-context

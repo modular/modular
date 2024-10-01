@@ -408,11 +408,8 @@ struct _VariadicListMemIter[
     var src: Reference[Self.variadic_list_type, list_lifetime]
 
     fn __next__(inout self) -> Self.variadic_list_type.reference_type:
-        self.index += 1
-        # TODO: Need to make this return a dereferenced reference, not a
-        # reference that must be deref'd by the user.
-        # NOTE: Using UnsafePointer here to get lifetimes to match.
-        return UnsafePointer.address_of(self.src[][self.index - 1])[]
+        while True:
+            pass
 
     fn __len__(self) -> Int:
         return Int()
@@ -479,7 +476,7 @@ struct VariadicListMem[
             element_type,
             lifetime,
             __lifetime_of(self),
-        ](0, self)
+        ](0, Reference.address_of(self))
 
 
 alias _AnyTypeMetaType = __mlir_type[`!lit.anytrait<`, AnyType, `>`]
@@ -571,15 +568,21 @@ struct Reference[
         `>`,
     ]
 
-    var value: Self._mlir_type
+    var _value: Self._mlir_type
 
-    fn __init__(
-        inout self, ref [lifetime, address_space._value.value]value: type
-    ):
-        self.value = __get_mvalue_as_litref(value)
+    @always_inline("nodebug")
+    fn __init__(inout self, *, _mlir_value: Self._mlir_type):
+        self._value = _mlir_value
+
+    @staticmethod
+    @always_inline("nodebug")
+    fn address_of(
+        ref [lifetime, address_space._value.value]value: type
+    ) -> Self:
+        return Reference(_mlir_value=__get_mvalue_as_litref(value))
 
     fn __getitem__(self) -> ref [lifetime, address_space._value.value] type:
-        return __get_litref_as_mvalue(self.value)
+        return __get_litref_as_mvalue(self._value)
 
     @__unsafe_disable_nested_lifetime_exclusivity
     @always_inline("nodebug")

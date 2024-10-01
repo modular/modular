@@ -561,7 +561,7 @@ fn compare_mem_result():
 
 fn test_bad_ref(a: Int, b: CopyAndInitMemType):
 
-  var bref = Reference(b) # ok
+  var bref = Reference.address_of(b) # ok
 
   # expected-error @+1 {{invalid call to '__le__': right side cannot be converted from 'Reference[0, CopyAndInitMemType, b, 0]' to 'CopyAndInitMemType'}}
   _ = b <= bref
@@ -616,19 +616,19 @@ fn testSomeThing(a: SomeThing):
 # Issue #32603: References to borrowed args in generics miscompile when instantiated on regpassable types
 fn get_ref_to_bad_argument[T: AnyType](a: T, *args: T):
   # These are all fine since they are not returned.
-  _ = Reference(a)
+  _ = Reference.address_of(a)
   _ = __lifetime_of(a)
   _ = __get_mvalue_as_litref(a)
   # This is okay. The VariadicListMem has a lifetime.
-  _ = Reference(args)
-  _ = Reference(args[0])
+  _ = Reference.address_of(args)
+  _ = Reference.address_of(args[0])
 
 @register_passable
 struct NonTrivialReg:
   pass
 
 fn get_ref_to_reg_variadic(*args: NonTrivialReg):
-  _ = Reference(args[0])
+  _ = Reference.address_of(args[0])
 
 fn variadic_int(*x: Int) -> Bool: pass
 
@@ -693,3 +693,13 @@ fn bad_named_return2() -> Int as output:
 fn unbound_function_type():
   # expected-error @below {{function type missing required lifetime set parameter}}
   var f: fn() [_] -> None
+
+
+
+# Crash converting mvalue of #lit.any.lifetime lifetime to Reference with specific one.
+# https://github.com/modularml/mojo/issues/1921
+struct SomeStruct:
+  fn refBindingToImmortal(inout self, ptr: UnsafePointer[Int])
+      -> Reference[Int, __lifetime_of(self)]:
+    # expected-error @below {{cannot implicitly convert 'Reference[1, Int, MutableAnyLifetime, 0]' value to 'Reference[1, Int, self, 0]'}}
+    return Reference.address_of(ptr[])
