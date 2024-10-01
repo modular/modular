@@ -9,7 +9,7 @@ from os import abort
 
 from algorithm.functional import _get_start_indices_of_nth_subvolume
 
-from utils import Formatter
+from utils import Formatter, Index
 from utils.variant import Variant
 
 
@@ -493,8 +493,8 @@ struct _ProductIter3[
     @always_inline
     fn __next__(inout self) -> DynamicTuple[T, D]:
         self.offset += 1
-        var idx = _get_start_indices_of_nth_subvolume[3, 0](
-            self.offset - 1, (len(self.a), len(self.b), len(self.c))
+        var idx = _get_start_indices_of_nth_subvolume[0](
+            self.offset - 1, Index(len(self.a), len(self.b), len(self.c))
         )
         return DynamicTuple[T, D](
             self.a[idx[0]], self.b[idx[1]], self.c[idx[2]]
@@ -525,8 +525,8 @@ struct _product3[T: CollectionElement, D: ElementDelegate = DefaultDelegate](
 
     @always_inline
     fn __getitem__(self, offset: Int) -> DynamicTuple[T, D]:
-        var idx = _get_start_indices_of_nth_subvolume[3, 0](
-            offset, (len(self.a), len(self.b), len(self.c))
+        var idx = _get_start_indices_of_nth_subvolume[0](
+            offset, Index(len(self.a), len(self.b), len(self.c))
         )
 
         return DynamicTuple[T, D](
