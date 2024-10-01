@@ -4816,3 +4816,51 @@ fn max_pool_ceil_mode_true_shape[
         paddings_type,
         single_thread_blocking_override,
     ](input_buf, filter_buf, strides_buf, dilations_buf, paddings_buf)
+
+
+@mogg_register_shape_func("mo.pad.constant")
+@always_inline
+fn pad_constant_shape[
+    input_rank: Int,
+    input_type: DType,
+    paddings_type: DType,
+    single_thread_blocking_override: Bool,
+](
+    input_buf: NDBuffer[input_type, input_rank],
+    paddings_buf: NDBuffer[paddings_type, 1],
+) raises -> StaticIntTuple[input_rank]:
+    return pad_shape[
+        single_thread_blocking_override=single_thread_blocking_override
+    ](input_buf, paddings_buf)
+
+
+@mogg_register_shape_func("mo.pad.repeat")
+@always_inline
+fn pad_repeat_shape[
+    input_rank: Int,
+    input_type: DType,
+    paddings_type: DType,
+    single_thread_blocking_override: Bool,
+](
+    input_buf: NDBuffer[input_type, input_rank],
+    paddings_buf: NDBuffer[paddings_type, 1],
+) raises -> StaticIntTuple[input_rank]:
+    return pad_shape[
+        single_thread_blocking_override=single_thread_blocking_override
+    ](input_buf, paddings_buf)
+
+
+@mogg_register_shape_func("mo.pad.reflect")
+@always_inline
+fn pad_reflect_shape[
+    input_rank: Int,
+    input_type: DType,
+    paddings_type: DType,
+    single_thread_blocking_override: Bool,
+](
+    input_buf: NDBuffer[input_type, input_rank],
+    paddings_buf: NDBuffer[paddings_type, 1],
+) raises -> StaticIntTuple[input_rank]:
+    return pad_shape[
+        single_thread_blocking_override=single_thread_blocking_override
+    ](input_buf, paddings_buf)

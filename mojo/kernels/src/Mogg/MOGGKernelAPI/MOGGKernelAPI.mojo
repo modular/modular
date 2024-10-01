@@ -61,6 +61,7 @@ from nn.gather_scatter import (
 from random import randn, seed
 from utils.numerics import isinf, isnan
 from nn.softmax import softmax, logsoftmax
+from nn.pad import pad_constant, pad_repeat, pad_reflect, pad_shape
 
 
 # ===----------------------------------------------------------------------===#
@@ -1790,6 +1791,103 @@ struct MaxPoolCeilModeTrue:
             managed_tensor_slice_to_ndbuffer(strides),
             managed_tensor_slice_to_ndbuffer(dilations),
             managed_tensor_slice_to_ndbuffer(paddings),
+        )
+
+
+# ===----------------------------------------------------------------------===#
+# Padding kernels
+# ===----------------------------------------------------------------------===#
+
+
+@compiler.register("mo.pad.constant")
+struct PadConstant:
+    @staticmethod
+    fn execute[
+        type: DType,
+        rank: Int,
+    ](
+        output: ManagedTensorSlice[type=type, rank=rank],
+        input: ManagedTensorSlice[type=type, rank=rank],
+        padding: ManagedTensorSlice[rank=1],
+        constant: ManagedTensorSlice[rank=1],
+    ):
+        var paddings_ptr = padding._ptr
+        var constant_simd = constant._ptr.load(0)
+        var input_buf = managed_tensor_slice_to_ndbuffer(input)
+        var output_buf = managed_tensor_slice_to_ndbuffer(output)
+        pad_constant(output_buf, input_buf, paddings_ptr, constant_simd)
+
+    @staticmethod
+    fn shape[
+        type: DType,
+        rank: Int,
+    ](
+        input: ManagedTensorSlice[type=type, rank=rank],
+        padding: ManagedTensorSlice[rank=1],
+    ) raises -> StaticIntTuple[rank]:
+        return pad_shape[single_thread_blocking_override=True](
+            managed_tensor_slice_to_ndbuffer(input),
+            managed_tensor_slice_to_ndbuffer(padding),
+        )
+
+
+@compiler.register("mo.pad.repeat")
+struct PadRepeat:
+    @staticmethod
+    fn execute[
+        type: DType,
+        rank: Int,
+    ](
+        output: ManagedTensorSlice[type=type, rank=rank],
+        input: ManagedTensorSlice[type=type, rank=rank],
+        padding: ManagedTensorSlice[rank=1],
+    ):
+        var paddings_ptr = padding._ptr
+        var input_buf = managed_tensor_slice_to_ndbuffer(input)
+        var output_buf = managed_tensor_slice_to_ndbuffer(output)
+        pad_repeat(output_buf, input_buf, paddings_ptr)
+
+    @staticmethod
+    fn shape[
+        type: DType,
+        rank: Int,
+    ](
+        input: ManagedTensorSlice[type=type, rank=rank],
+        padding: ManagedTensorSlice[rank=1],
+    ) raises -> StaticIntTuple[rank]:
+        return pad_shape[single_thread_blocking_override=True](
+            managed_tensor_slice_to_ndbuffer(input),
+            managed_tensor_slice_to_ndbuffer(padding),
+        )
+
+
+@compiler.register("mo.pad.reflect")
+struct PadReflect:
+    @staticmethod
+    fn execute[
+        type: DType,
+        rank: Int,
+    ](
+        output: ManagedTensorSlice[type=type, rank=rank],
+        input: ManagedTensorSlice[type=type, rank=rank],
+        padding: ManagedTensorSlice[rank=1],
+    ):
+        var paddings_ptr = padding._ptr
+        var input_buf = managed_tensor_slice_to_ndbuffer(input)
+        var output_buf = managed_tensor_slice_to_ndbuffer(output)
+        pad_reflect(output_buf, input_buf, paddings_ptr)
+
+    @staticmethod
+    fn shape[
+        type: DType,
+        rank: Int,
+    ](
+        input: ManagedTensorSlice[type=type, rank=rank],
+        padding: ManagedTensorSlice[rank=1],
+    ) raises -> StaticIntTuple[rank]:
+        return pad_shape[single_thread_blocking_override=True](
+            managed_tensor_slice_to_ndbuffer(input),
+            managed_tensor_slice_to_ndbuffer(padding),
         )
 
 
