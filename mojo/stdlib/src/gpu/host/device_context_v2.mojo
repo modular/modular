@@ -45,7 +45,6 @@ struct _DeviceTimer:
         )
 
 
-@value
 struct DeviceBufferV2[type: DType](Sized):
     # _device_ptr must be the first word in the struct to enable passing of
     # DeviceBufferV2 to kernels. The first word is passed to the kernel and
@@ -57,34 +56,28 @@ struct DeviceBufferV2[type: DType](Sized):
         """This init takes in a constructed DeviceContext and schedules an owned buffer allocation
         using the stream in the device context.
         """
-        # const char * AsyncRT_DeviceContext_createBuffer
-        #     const DeviceBuffer **result, const DeviceContext *ctx,
-        #     size_t len, size_t elem_size)
+        # const char *AsyncRT_DeviceContext_createBuffer(const DeviceBuffer **result, void **device_ptr, const DeviceContext *ctx, size_t len, size_t elem_size)
         alias elem_size = sizeof[type]()
         var result = _DeviceBufferPtr()
+        var device_ptr = UnsafePointer[Scalar[type]]()
         _checked(
             external_call[
                 "AsyncRT_DeviceContext_createBuffer",
                 _CharPtr,
                 UnsafePointer[_DeviceBufferPtr],
+                UnsafePointer[UnsafePointer[Scalar[type]]],
                 _DeviceContextPtr,
                 _SizeT,
                 _SizeT,
             ](
                 UnsafePointer.address_of(result),
-                ctx._ptr,
+                UnsafePointer.address_of(device_ptr),
+                ctx._handle,
                 size,
                 elem_size,
             )
         )
-        # void *AsyncRT_DeviceBuffer_ptr(const DeviceBuffer *buffer)
-        self._device_ptr = external_call[
-            "AsyncRT_DeviceBuffer_ptr",
-            UnsafePointer[Scalar[type]],
-            _DeviceBufferPtr,
-        ](
-            result,
-        )
+        self._device_ptr = device_ptr
         self._handle = result
 
     fn __init__(
@@ -158,7 +151,7 @@ struct DeviceFunctionV2[
     _is_failable: Bool = False,
     _ptxas_info_verbose: Bool = False,
 ]:
-    var _ptr: _DeviceFunctionPtr
+    var _handle: _DeviceFunctionPtr
     alias _func_impl = _compile_code[
         func, is_failable=_is_failable, emission_kind="asm", target=target
     ]()
@@ -185,12 +178,12 @@ struct DeviceFunctionV2[
                 _CharPtr,
             ](
                 UnsafePointer.address_of(result),
-                ctx._ptr,
+                ctx._handle,
                 self._func_impl.function_name.unsafe_ptr(),
                 self._func_impl.asm.unsafe_ptr(),
             )
         )
-        self._ptr = result
+        self._handle = result
 
     fn _call_with_pack[
         *Ts: AnyType
@@ -247,8 +240,8 @@ struct DeviceFunctionV2[
                 UInt32,
                 UnsafePointer[UnsafePointer[NoneType]],
             ](
-                ctx._ptr,
-                self._ptr,
+                ctx._handle,
+                self._handle,
                 grid_dim.x(),
                 grid_dim.y(),
                 grid_dim.z(),
@@ -264,7 +257,7 @@ struct DeviceFunctionV2[
 struct DeviceContextV2:
     """DeviceContext backed by a C++ implementation."""
 
-    var _ptr: _DeviceContextPtr
+    var _handle: _DeviceContextPtr
 
     fn __init__(
         inout self, device_kind: StringLiteral = "cuda", device_id: Int = 0
@@ -284,7 +277,7 @@ struct DeviceContextV2:
                 device_id,
             )
         )
-        self._ptr = result
+        self._handle = result
 
     fn __del__(owned self):
         # void AsyncRT_DeviceContext_release(const DeviceContext *ctx)
@@ -292,7 +285,7 @@ struct DeviceContextV2:
             "AsyncRT_DeviceContext_release",
             NoneType,
             _DeviceContextPtr,
-        ](self._ptr)
+        ](self._handle)
 
     fn __enter__(owned self) -> Self:
         return self^
@@ -312,7 +305,7 @@ struct DeviceContextV2:
                 _SizeT,
             ](
                 UnsafePointer.address_of(result),
-                self._ptr,
+                self._handle,
                 size * elem_size,
             )
         )
@@ -327,7 +320,7 @@ struct DeviceContextV2:
                 _DeviceContextPtr,
                 UnsafePointer[type],
             ](
-                self._ptr,
+                self._handle,
                 ptr,
             )
         )
@@ -433,7 +426,7 @@ struct DeviceContextV2:
                 _DeviceContextPtr,
             ](
                 UnsafePointer.address_of(timer_ptr),
-                self._ptr,
+                self._handle,
             )
         )
         var timer = _DeviceTimer(timer_ptr)
@@ -450,7 +443,7 @@ struct DeviceContextV2:
                 _DeviceTimerPtr,
             ](
                 UnsafePointer.address_of(elapsed_nanos),
-                self._ptr,
+                self._handle,
                 timer._handle,
             )
         )
@@ -469,7 +462,7 @@ struct DeviceContextV2:
                 _DeviceContextPtr,
             ](
                 UnsafePointer.address_of(timer_ptr),
-                self._ptr,
+                self._handle,
             )
         )
         var timer = _DeviceTimer(timer_ptr)
@@ -486,7 +479,7 @@ struct DeviceContextV2:
                 _DeviceTimerPtr,
             ](
                 UnsafePointer.address_of(elapsed_nanos),
-                self._ptr,
+                self._handle,
                 timer._handle,
             )
         )
@@ -504,7 +497,7 @@ struct DeviceContextV2:
                 _DeviceBufferPtr,
                 UnsafePointer[Scalar[type]],
             ](
-                self._ptr,
+                self._handle,
                 buf._handle,
                 ptr,
             )
@@ -522,7 +515,7 @@ struct DeviceContextV2:
                 UnsafePointer[Scalar[type]],
                 _DeviceBufferPtr,
             ](
-                self._ptr,
+                self._handle,
                 ptr,
                 buf._handle,
             )
@@ -540,7 +533,7 @@ struct DeviceContextV2:
                 _DeviceBufferPtr,
                 _DeviceBufferPtr,
             ](
-                self._ptr,
+                self._handle,
                 dst._handle,
                 src._handle,
             )
@@ -585,7 +578,7 @@ struct DeviceContextV2:
                 _CharPtr,
                 _DeviceContextPtr,
             ](
-                self._ptr,
+                self._handle,
             )
         )
 
