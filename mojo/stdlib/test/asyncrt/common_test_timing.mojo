@@ -48,7 +48,7 @@ fn _timed_func(context: DeviceContextVariant) raises:
 
 fn test_timing(ctx: DeviceContextVariant) raises:
     print("-------")
-    print("Running test_smoke(" + ctx.name() + "):")
+    print("Running test_timing(" + ctx.name() + "):")
 
     # Measure the time to run the function 100 times.
     var elapsed_time = ctx.execution_time[_timed_func](100)

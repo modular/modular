@@ -8,19 +8,11 @@ from gpu.host import DeviceContextVariant
 from sys.param_env import is_defined, env_get_string
 
 
-fn expect_eq(val: Int, expected: Int, msg: String = "") raises:
+fn expect_eq[
+    type: DType, size: Int
+](val: SIMD[type, size], expected: SIMD[type, size], msg: String = "") raises:
     if val != expected:
         raise Error("expect_eq failed: " + msg)
-
-
-fn expect_eq(val: Float32, expected: Float32, msg: String = "") raises:
-    if val != expected:
-        raise Error("expect_eq failed: " + msg)
-
-
-fn expect_eq[T: EqualityComparable](val: T, expected: T, msg: String = ""):
-    if val != expected:
-        print("#$# failed equality check: " + msg)
 
 
 fn create_test_device_context() raises -> DeviceContextVariant:
