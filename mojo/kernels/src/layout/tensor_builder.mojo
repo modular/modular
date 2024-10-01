@@ -243,9 +243,16 @@ struct LayoutTensorBuild[
         )
 
     fn layout[
-        rank: Int,
-        shape: StaticIntTuple[rank],
-        stride: StaticIntTuple[rank],
+        shape0: Int
+    ](self) -> LayoutTensorBuild[
+        dtype,
+        __layout = Layout(shape0),
+        __layout_init=True,
+    ] as res:
+        return __type_of(res)()
+
+    fn layout[
+        rank: Int, shape: StaticIntTuple[rank], stride: StaticIntTuple[rank]
     ](self) -> LayoutTensorBuild[
         dtype,
         __layout = Layout(_to_int_tuple(shape), _to_int_tuple(stride)),
@@ -266,6 +273,19 @@ struct LayoutTensorBuild[
         __layout_init=True,
     ] as res:
         return __type_of(res)(__type_of(res.runtime_layout)(shape, stride))
+
+    fn layout(
+        self, shape0: ValueOrUnknown
+    ) -> LayoutTensorBuild[
+        dtype,
+        __layout = Layout(
+            IntTuple(shape0.dim),
+        ),
+        __layout_init=True,
+    ] as res:
+        return __type_of(res)(
+            __type_of(res.runtime_layout).col_major(Index(shape0.value))
+        )
 
     @always_inline
     fn shared(
