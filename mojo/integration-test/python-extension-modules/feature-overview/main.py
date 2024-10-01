@@ -49,6 +49,11 @@ class TestMojoPythonInterop(unittest.TestCase):
 
         self.assertEqual(cm.exception.args, ("Mojo error",))
 
+    def test_case_create_mojo_type_instance(self):
+        person = feature_overview.Person()
+
+        assert type(person).__name__ == "Person"
+
 
 if __name__ == "__main__":
     unittest.main()

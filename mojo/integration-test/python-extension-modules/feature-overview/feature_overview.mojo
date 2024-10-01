@@ -7,12 +7,24 @@
 import builtin
 
 from sys import exit
+from sys.info import sizeof
+from sys.ffi import OpaquePointer
 from memory import UnsafePointer
 
 from os import abort
 
 from python import Python, PythonObject, TypedPythonObject
-from python._cpython import PyMethodDef, PyObjectPtr, create_wrapper_function
+from python._cpython import (
+    PyMethodDef,
+    PyObjectPtr,
+    create_wrapper_function,
+    PyType_Spec,
+    PyObject,
+    Py_TPFLAGS_DEFAULT,
+    PyType_Slot,
+    Py_tp_new,
+    Py_tp_dealloc,
+)
 
 
 @export
@@ -60,6 +72,8 @@ fn PyInit_feature_overview() -> PythonObject:
         Python.add_functions(module, funcs)
     except e:
         abort("Error adding functions to PyModule: " + str(e))
+
+    add_person_type(module)
 
     return module
 
@@ -114,3 +128,74 @@ fn case_mojo_raise(
     args: TypedPythonObject["Tuple"],
 ) raises -> PythonObject:
     raise "Mojo error"
+
+
+# ===----------------------------------------------------------------------=== #
+# Custom Types
+# ===----------------------------------------------------------------------=== #
+
+
+@value
+struct Person:
+    var name: String
+    var age: Int
+
+
+struct MojoPersonObject:
+    var ob_base: PyObject
+    var person: Person
+
+    @staticmethod
+    fn obj_destroy(self_: PyObjectPtr):
+        var obj0: UnsafePointer[MojoPersonObject] = self_.value.bitcast[
+            MojoPersonObject
+        ]()
+
+        # TODO(MSTDL-633):
+        #   Is this always safe? Wrap in GIL, because this could
+        #   evaluate arbitrary code?
+        # Destroy this `Person` instance.
+        obj0.destroy_pointee()
+
+
+fn add_person_type(inout module: TypedPythonObject["Module"]):
+    var cpython = Python().impl.cpython()
+
+    # ----------------------------------------------
+    # Construct a 'type' object describing `Person`
+    # ----------------------------------------------
+
+    var slots = List[PyType_Slot](
+        PyType_Slot(
+            Py_tp_new, cpython.lib.get_symbol[NoneType]("PyType_GenericNew")
+        ),
+        PyType_Slot(
+            Py_tp_dealloc, rebind[OpaquePointer](MojoPersonObject.obj_destroy)
+        ),
+        PyType_Slot.null(),
+    )
+
+    var type_spec = PyType_Spec {
+        name: "Person".unsafe_cstr_ptr(),
+        basicsize: sizeof[MojoPersonObject](),
+        itemsize: 0,
+        flags: Py_TPFLAGS_DEFAULT,
+        # FIXME: Don't leak this pointer, use globals instead.
+        slots: slots.steal_data(),
+    }
+
+    # Heap allocate the type specification metadata.
+    var type_spec_ptr = UnsafePointer[PyType_Spec].alloc(1)
+    type_spec_ptr.init_pointee_move(type_spec)
+
+    # Construct a Python 'type' object from our Person type spec.
+    var type_obj = cpython.PyType_FromSpec(type_spec_ptr)
+
+    # ----------------------------------
+    # Register the type in the module
+    # ----------------------------------
+
+    try:
+        Python.add_object(module, "Person", type_obj)
+    except e:
+        abort("error adding object: " + str(e))
