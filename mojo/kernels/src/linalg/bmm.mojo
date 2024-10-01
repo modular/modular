@@ -414,9 +414,9 @@ fn _batched_matmul_cpu[
                 StaticIntTuple[2](b.dim[1](), b.dim[2]()),
             )
 
-            var batch_coords = _get_start_indices_of_nth_subvolume_uint[
-                rank, UInt(2)
-            ](batch, c_buf.get_shape())
+            var batch_coords = _get_start_indices_of_nth_subvolume_uint[2](
+                batch, c_buf.get_shape()
+            )
 
             @parameter
             fn elementwise_lambda_2d[
@@ -500,7 +500,7 @@ fn batched_matmul_kernel[
     @parameter
     if elementwise_lambda_fn:
         alias elementwise_lambda = elementwise_lambda_fn.value()
-        var nd_corrds = _get_start_indices_of_nth_subvolume_uint[rank, 2](
+        var nd_corrds = _get_start_indices_of_nth_subvolume_uint[2](
             z, c_buff_nd_shape
         )
         nd_corrds[rank - 1] = x

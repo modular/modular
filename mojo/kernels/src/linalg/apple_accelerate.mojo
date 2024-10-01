@@ -442,7 +442,7 @@ fn apple_batched_matmul[
         )
 
         alias rank = c.rank
-        var batch_coords = _get_start_indices_of_nth_subvolume[rank, 2](
+        var batch_coords = _get_start_indices_of_nth_subvolume[2](
             batch, rebind[StaticIntTuple[rank]](c.get_shape())
         )
 
