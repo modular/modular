@@ -303,20 +303,6 @@ lit.func @no_struct_decl(%a: index) {
 
 // -----
 
-// expected-error@below {{expected external function body to contain a single `lit.extern_func`}}
-lit.func @post_elaboration() attributes {preCompiledModuleRef = @package} {
-  lit.end_func
-}
-
-// -----
-
-lit.func @non_external() {
-  // expected-error@below {{expected an external parent function}}
-  lit.extern_func
-}
-
-// -----
-
 // expected-error@below {{expected only `lit.file_module`, `lit.package`, `lit.unresolved_import`, or `lit.unresolved_wildcard_import` in its body}}
 lit.package @MyPackage {
   // expected-note @below {{see operation defined here}}
