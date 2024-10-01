@@ -4,6 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
+from sys import triple_is_nvidia_cuda
 from buffer import NDBuffer, DimList, Dim
 from memory import UnsafePointer
 from os import abort
@@ -158,7 +159,8 @@ struct ContiguousKVCache[
         Self._internal_block_shape.get[3](),
     )
     var _block: NDBuffer[type, 4, Self._internal_block_shape]
-    var cache_lengths: StaticIntTuple[_max_batch_size]
+    var is_context_encoding: Bool
+    var cache_lengths: NDBuffer[DType.int64, 1]
     var batch_size: Int
 
     @always_inline
@@ -204,7 +206,8 @@ struct ContiguousKVCache[
     fn __init__(
         inout self,
         block: NDBuffer[type, 4, Self._internal_block_shape],
-        cache_lengths: StaticIntTuple[Self._max_batch_size],
+        cache_lengths: NDBuffer[DType.int64, 1],
+        is_context_encoding: Bool,
         batch_size: Int,
     ):
         debug_assert(
@@ -217,6 +220,7 @@ struct ContiguousKVCache[
         )
         self._block = block
         self.cache_lengths = cache_lengths
+        self.is_context_encoding = is_context_encoding
         self.batch_size = batch_size
 
     @staticmethod
@@ -243,7 +247,7 @@ struct ContiguousKVCache[
         debug_assert(
             batch_idx < self.batch_size, "KVCache batch_idx is out of bounds"
         )
-        return self.cache_lengths[batch_idx]
+        return int(self.cache_lengths[batch_idx])
 
     @always_inline
     fn load[
@@ -313,12 +317,6 @@ struct ContiguousKVCache[
             ret_strides,
         )
 
-    fn incr_cache_length(inout self, batch_idx: Int, inc: Int):
-        debug_assert(
-            batch_idx < self.batch_size, "KVCache batch_idx is out of bounds"
-        )
-        self.cache_lengths[batch_idx] += inc
-
 
 struct ContiguousKVCacheCollection[
     type: DType,
@@ -338,7 +336,8 @@ struct ContiguousKVCacheCollection[
     alias ValueCacheType = ContiguousKVCache[type, kv_params, _max_batch_size]
     var key_cache: NDBuffer[type, 5]
     var value_cache: NDBuffer[type, 5]
-    var cache_lengths: StaticIntTuple[_max_batch_size]
+    var cache_lengths: NDBuffer[DType.int64, 1]
+    var is_context_encoding: Bool
     var seq_ids: List[Int]
     var num_layers: Int
     var batch_size: Int
@@ -348,7 +347,8 @@ struct ContiguousKVCacheCollection[
         inout self,
         key_cache: NDBuffer[type, 5],
         value_cache: NDBuffer[type, 5],
-        cache_lengths: StaticIntTuple[_max_batch_size],
+        cache_lengths: NDBuffer[DType.int64, 1],
+        is_context_encoding: Bool,
         seq_ids: List[Int],
         num_layers: Int,
         batch_size: Int,
@@ -377,12 +377,14 @@ struct ContiguousKVCacheCollection[
             self.max_seq_len = abort[Int]("unsupported layout")
 
         self.cache_lengths = cache_lengths
+        self.is_context_encoding = is_context_encoding
 
     fn __copyinit__(inout self, other: Self):
         self.key_cache = other.key_cache
         self.value_cache = other.value_cache
         self.seq_ids = other.seq_ids
         self.cache_lengths = other.cache_lengths
+        self.is_context_encoding = other.is_context_encoding
         self.num_layers = other.num_layers
         self.batch_size = other.batch_size
         self.max_seq_len = other.max_seq_len
@@ -392,6 +394,7 @@ struct ContiguousKVCacheCollection[
         self.value_cache = other.value_cache
         self.seq_ids = other.seq_ids
         self.cache_lengths = other.cache_lengths
+        self.is_context_encoding = other.is_context_encoding
         self.num_layers = other.num_layers
         self.batch_size = other.batch_size
         self.max_seq_len = other.max_seq_len
@@ -421,6 +424,7 @@ struct ContiguousKVCacheCollection[
         return Self.KeyCacheType(
             layer_key_cache,
             self.cache_lengths,
+            self.is_context_encoding,
             self.batch_size,
         )
 
@@ -438,7 +442,10 @@ struct ContiguousKVCacheCollection[
         ](self.value_cache.data + (layer_idx * layer_size), v_shape)
 
         return Self.ValueCacheType(
-            layer_value_cache, self.cache_lengths, self.batch_size
+            layer_value_cache,
+            self.cache_lengths,
+            self.is_context_encoding,
+            self.batch_size,
         )
 
     fn get_seq_ids(self) -> List[Int]:
@@ -448,13 +455,7 @@ struct ContiguousKVCacheCollection[
         debug_assert(
             batch_idx < self.batch_size, "KVCache batch_idx is out of bounds"
         )
-        return self.cache_lengths[batch_idx]
-
-    fn incr_cache_length(inout self, batch_idx: Int, inc: Int):
-        debug_assert(
-            batch_idx < self.batch_size, "KVCache batch_idx is out of bounds"
-        )
-        self.cache_lengths[batch_idx] += inc
+        return int(self.cache_lengths[batch_idx])
 
 
 @value
