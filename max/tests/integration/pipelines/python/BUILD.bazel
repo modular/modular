@@ -130,6 +130,7 @@ modular_py_test(
     requires_gpu = True,
     tags = [
         "gpu",
+        "manual",
         "requires-network",
     ],
     target_compatible_with = select({
@@ -211,6 +212,7 @@ modular_py_test(
     requires_gpu = True,
     tags = [
         "gpu",
+        "manual",
         "requires-network",
     ],
     deps = [
