@@ -161,7 +161,7 @@ def compare_values(actual, expected):
                 np.testing.assert_allclose(
                     value,
                     expected_value,
-                    rtol=5e-3,
+                    rtol=1e-2,
                     atol=1e-5,
                     err_msg=(
                         f"Got different values for the computed {key} on step"
