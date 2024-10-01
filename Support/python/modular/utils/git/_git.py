@@ -135,7 +135,7 @@ def get_current_branch_name(repo_dir: Optional[Path] = None) -> str:
 
 def get_uncommitted_changes(
     repo_dir: Optional[Path] = None,
-) -> Dict[str, Sequence[str]]:
+) -> Dict[str, list[str]]:
     """Return a dictionary of uncommitted changes.
 
     Args:
@@ -157,7 +157,7 @@ def get_uncommitted_changes(
             raise GitError("Not inside a valid git repository.") from None
         raise
 
-    changes = {}
+    changes: Dict[str, list[str]] = {}
     for line in out.splitlines():
         # First two chars are the status, changed path starts at 4th character.
         changes.setdefault(line[:2], []).append(line[3:])

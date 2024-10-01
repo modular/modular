@@ -151,9 +151,9 @@ def modular_dtype_to_np_dtype(dtype: str) -> np.dtype:
         "float32": np.float32,
         "f64": np.float64,
         "float64": np.float64,
-    }.setdefault(dtype, None)
+    }.get(dtype)
 
     if np_dtype is None:
         raise RuntimeError(f"unrecognized dtype {dtype}")
 
-    return np_dtype
+    return np_dtype  # type: ignore

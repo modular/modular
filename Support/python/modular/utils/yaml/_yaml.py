@@ -42,9 +42,7 @@ def sort_dict(d: _T) -> _T:
     Sorts dictionary-type objects by key, and returns others without changes.
     """
     if isinstance(d, dict):
-        return {  # type: ignore [reportGeneralTypeIssues]
-            k: sort_dict(v) for k, v in sorted(d.items())
-        }
+        return {k: sort_dict(v) for k, v in sorted(d.items())}  # type: ignore
     return d
 
 
