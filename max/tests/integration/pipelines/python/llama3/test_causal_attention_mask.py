@@ -4,16 +4,20 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from llama3.causal_attention_mask import causal_attention_mask
-
-from hypothesis import given, strategies as st
 import numpy as np
+from hypothesis import given
+from hypothesis import strategies as st
+
+from llama3.causal_attention_mask import causal_attention_mask
 
 MAX_BATCH_SIZE = 32
 MAX_SEQUENCE_LENGTH = 1024
 batch_sizes = st.shared(st.integers(1, MAX_BATCH_SIZE))
 start_positions = st.integers(0, MAX_SEQUENCE_LENGTH // 2)
 seq_lens = st.integers(1, MAX_SEQUENCE_LENGTH // 2)
+
+# TODO(KERN-782): This should be -inf but softmax saturates with NaNs.
+FILL_VAL = -10000.0
 
 
 def lists_of_size(strategy, size_strategy):
@@ -45,7 +49,7 @@ def test_causal_mask__masks_padding(start_pos: list[int], seq_len: list[int]):
     mask = causal_attention_mask(start_pos, seq_len)
     for m, sp, sl in zip(mask, start_pos, seq_len):
         post_seq_len = sp + sl
-        assert np.all(m[:sl, post_seq_len:] == float("-inf"))
+        assert np.all(m[:sl, post_seq_len:] == FILL_VAL)
         # No expectations for tokens past seq_len
         # assert np.all(m[sl:, :] == float("-inf"))
 
@@ -61,7 +65,8 @@ def test_causal_mask__masks_current_and_later_tokens(
     mask = causal_attention_mask(start_pos, seq_len)
     for m, sp, sl in zip(mask, start_pos, seq_len):
         for pos, sequence_mask in enumerate(m):
-            assert np.all(sequence_mask[sp + pos :] == float("-inf"))
+            # Check that all tokens _after_ this one are masked.
+            assert np.all(sequence_mask[sp + pos + 1 :] == FILL_VAL)
 
 
 @given(
