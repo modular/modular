@@ -114,7 +114,11 @@ def install_kernel(
 
 def uninstall_kernel(kernel_name: str):
     """Uninstall the kernel spec."""
-    KernelSpecManager().remove_kernel_spec(kernel_name)
+
+    try:
+        KernelSpecManager().remove_kernel_spec(kernel_name)
+    except Exception as e:
+        print(e)
 
 
 def main():
