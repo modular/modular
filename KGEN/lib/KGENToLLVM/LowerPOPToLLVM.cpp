@@ -1254,7 +1254,8 @@ struct ConvertPOPCallLLVMIntrinsic
       return failure();
     rewriter.replaceOpWithNewOp<LLVM::CallIntrinsicOp>(
         op, types, cast<StringAttr>(op.getIntrin()).getValue(),
-        adaptor.getOperands(), convertFastmathFlags(op.getFastmathFlags()));
+        adaptor.getOperands(), convertFastmathFlags(op.getFastmathFlags()),
+        /*op_bundle_operands=*/ArrayRef<ValueRange>{});
     return success();
   }
 
