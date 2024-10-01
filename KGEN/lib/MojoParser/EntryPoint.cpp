@@ -390,7 +390,15 @@ loadStrippedBinaryPackage(AsyncRT::Runtime &runtime,
     (void)finalizeReader();
     return {nullptr, nullptr};
   }
-  LIT::PackageOp packageOp = cast<LIT::PackageOp>(&block.front());
+
+  // Read and materialize the top-level module.
+  auto theModule = cast<ModuleOp>(block.front());
+  if (failed(bytecodeReader.materialize(theModule))) {
+    (void)finalizeReader();
+    return {nullptr, nullptr};
+  }
+
+  LIT::PackageOp packageOp = cast<LIT::PackageOp>(theModule.getBody()->front());
   DenseResourceElementsAttr postParseModuleAttr =
       packageOp.getPostParseModuleAttr();
   LinkDependencyArrayAttr deps = packageOp.getDependenciesAttr();

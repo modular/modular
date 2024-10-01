@@ -63,6 +63,10 @@ public:
                    ASTDecl *parentDecl, LexerCursor cursor,
                    LexerCursor endCursor, ssize_t indentation);
 
+  /// Add a declaration that was loaded from bytecode.
+  ASTDecl &addBytecodeDecl(Operation *op, StringAttr baseName,
+                           ASTDecl *parentDecl, DeclResolvedness resolvedness);
+
   /// Add a declaration that is already fully resolved.
   ASTDecl &addFullyResolvedDecl(DeclIRValue declVal, StringAttr baseName,
                                 llvm::SMLoc loc, ASTDecl *parentDecl);
