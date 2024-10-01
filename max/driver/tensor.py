@@ -94,7 +94,7 @@ class Tensor(DLPackArray):
     def scalar(cls, value: Any, dtype: DType, device: Device = CPU()) -> Tensor:
         """Create a scalar value of a given dtype and value."""
         tensor = cls((), dtype, CPU())
-        tensor[0] = value
+        tensor[0] = value  # type: ignore
 
         # We can't directly set GPU memory, so we just have to copy
         # the tensor over.
@@ -250,7 +250,7 @@ class Tensor(DLPackArray):
             # TODO(MSDK-976): since `np.memmap`s are often read-only, we just
             # use our own memmap implementation here, but it would be better to
             # always delegate to from_dlpack.
-            return MemMapTensor._from_numpy_memmap(arr)
+            return MemMapTensor._from_numpy_memmap(arr)  # type: ignore
         if isinstance(arr, np.ndarray):
             # TODO(MSDK-976): Older version of numpy don't support exporting
             # read-only arrays, so we copy if we can, and leave a hint if not.
@@ -277,7 +277,7 @@ class Tensor(DLPackArray):
                     )
                 raise e
 
-            return tensor.view(DType.bool) if is_bool else tensor
+            return tensor.view(DType.bool) if is_bool else tensor  # type: ignore
 
         if copy is not None:
             raise ValueError(
@@ -307,7 +307,7 @@ class MemMapTensor(Tensor):
     ):
         # Instead of implementing all the mmap-related logic, we just delegate
         # to numpy. By passing order="C", we ensure C-contiguous layout.
-        arr = np.memmap(
+        arr = np.memmap(  # type: ignore
             filename, dtype.to_numpy(), mode, offset, shape, order="C"
         )
         assert arr.flags["C_CONTIGUOUS"]
