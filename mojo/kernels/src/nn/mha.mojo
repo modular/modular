@@ -334,7 +334,7 @@ fn flash_attention[
         #       We'll just implement a flag on the cache object which is true
         #       when the batch contains all cache_lens == 0. Remove this when
         #       such flag (part of ContiguousKVCache) is implemented.
-        var num_keys = int(k.cache_length(0) + seq_len)
+        var is_context_encoding = k.is_context_encoding
 
         # Get maximum cache valid length from the mask shape.
         # Reminder: mask is BSS or BHSS (depending on rank).
@@ -363,7 +363,7 @@ fn flash_attention[
 
             # Attention impl only supports even sequence length. Need to pad the
             # input outside the model.
-            if seq_len == num_keys and seq_len % 2 == 0:
+            if is_context_encoding and seq_len % 2 == 0:
                 # Choose matmul parameters based on dtype.
                 alias BM = 32 if q.type is DType.float32 else 64
                 alias BN = depth
@@ -420,7 +420,7 @@ fn flash_attention[
                 )
 
             # Decoding impl only support half precision.
-            elif q_half_float and seq_len == 1 and num_keys > 1:
+            elif q_half_float and seq_len == 1 and not is_context_encoding:
                 alias BM = 16
                 alias BN = depth
                 alias BK = 16 if q.type is DType.float32 else 32

@@ -4,13 +4,14 @@
 #
 # ===----------------------------------------------------------------------=== #
 from buffer import DimList, NDBuffer, Dim
-from collections import Optional, OptionalReg
-from math import gcd
+from math import gcd, isqrt
 from memory import UnsafePointer
+from collections import Optional, OptionalReg, InlineArray
 from sys.info import _current_target, simdwidthof
 from utils import Index
 from utils.numerics import min_finite, isnan
 from os import abort
+from memory import memcpy
 
 from algorithm.functional import elementwise
 from gpu.host import Stream, DeviceContext, DeviceBuffer
@@ -38,7 +39,9 @@ from runtime.tracing import Trace, TraceLevel
 
 @mogg_register("kv_cache_length_h8_d128_bshd_bf16")
 @export
-fn kv_cache_length_h8_d128_bshd_bf16(
+fn kv_cache_length_h8_d128_bshd_bf16[
+    target: StringLiteral = "cpu"
+](
     kv_collection: ContiguousKVCacheCollection[
         DType.bfloat16,
         KVCacheStaticParams(
@@ -46,13 +49,16 @@ fn kv_cache_length_h8_d128_bshd_bf16(
         ),
     ],
     output: NDBuffer[DType.int64, 1],
+    ctx: MojoCallContextPtr,
 ):
-    return _kv_cache_length(kv_collection, output)
+    return _kv_cache_length[target=target](kv_collection, output, ctx)
 
 
 @mogg_register("kv_cache_length_h8_d128_bhsd_bf16")
 @export
-fn kv_cache_length_h8_d128_bhsd_bf16(
+fn kv_cache_length_h8_d128_bhsd_bf16[
+    target: StringLiteral = "cpu"
+](
     kv_collection: ContiguousKVCacheCollection[
         DType.bfloat16,
         KVCacheStaticParams(
@@ -60,13 +66,16 @@ fn kv_cache_length_h8_d128_bhsd_bf16(
         ),
     ],
     output: NDBuffer[DType.int64, 1],
+    ctx: MojoCallContextPtr,
 ):
-    return _kv_cache_length(kv_collection, output)
+    return _kv_cache_length[target=target](kv_collection, output, ctx)
 
 
 @mogg_register("kv_cache_length_h6_d48_bshd_f32")
 @export
-fn kv_cache_length_h6_d48_bshd_f32(
+fn kv_cache_length_h6_d48_bshd_f32[
+    target: StringLiteral = "cpu"
+](
     kv_collection: ContiguousKVCacheCollection[
         DType.float32,
         KVCacheStaticParams(
@@ -74,13 +83,16 @@ fn kv_cache_length_h6_d48_bshd_f32(
         ),
     ],
     output: NDBuffer[DType.int64, 1],
+    ctx: MojoCallContextPtr,
 ):
-    return _kv_cache_length(kv_collection, output)
+    return _kv_cache_length[target=target](kv_collection, output, ctx)
 
 
 @mogg_register("kv_cache_length_h6_d48_bhsd_f32")
 @export
-fn kv_cache_length_h6_d48_bhsd_f32(
+fn kv_cache_length_h6_d48_bhsd_f32[
+    target: StringLiteral = "cpu"
+](
     kv_collection: ContiguousKVCacheCollection[
         DType.float32,
         KVCacheStaticParams(
@@ -88,13 +100,16 @@ fn kv_cache_length_h6_d48_bhsd_f32(
         ),
     ],
     output: NDBuffer[DType.int64, 1],
+    ctx: MojoCallContextPtr,
 ):
-    return _kv_cache_length(kv_collection, output)
+    return _kv_cache_length[target=target](kv_collection, output, ctx)
 
 
 @mogg_register("kv_cache_length_h8_d128_bshd_f32")
 @export
-fn kv_cache_length_h8_d128_bshd_f32(
+fn kv_cache_length_h8_d128_bshd_f32[
+    target: StringLiteral = "cpu"
+](
     kv_collection: ContiguousKVCacheCollection[
         DType.float32,
         KVCacheStaticParams(
@@ -102,13 +117,16 @@ fn kv_cache_length_h8_d128_bshd_f32(
         ),
     ],
     output: NDBuffer[DType.int64, 1],
+    ctx: MojoCallContextPtr,
 ):
-    return _kv_cache_length(kv_collection, output)
+    return _kv_cache_length[target=target](kv_collection, output, ctx)
 
 
 @mogg_register("kv_cache_length_h8_d128_bhsd_f32")
 @export
-fn kv_cache_length_h8_d128_bhsd_f32(
+fn kv_cache_length_h8_d128_bhsd_f32[
+    target: StringLiteral = "cpu"
+](
     kv_collection: ContiguousKVCacheCollection[
         DType.float32,
         KVCacheStaticParams(
@@ -116,13 +134,16 @@ fn kv_cache_length_h8_d128_bhsd_f32(
         ),
     ],
     output: NDBuffer[DType.int64, 1],
+    ctx: MojoCallContextPtr,
 ):
-    return _kv_cache_length(kv_collection, output)
+    return _kv_cache_length[target=target](kv_collection, output, ctx)
 
 
 @mogg_register("kv_cache_length_h1_d10_bhsd_f32")
 @export
-fn kv_cache_length_h1_d10_bhsd_f32(
+fn kv_cache_length_h1_d10_bhsd_f32[
+    target: StringLiteral = "cpu"
+](
     kv_collection: ContiguousKVCacheCollection[
         DType.float32,
         KVCacheStaticParams(
@@ -130,13 +151,16 @@ fn kv_cache_length_h1_d10_bhsd_f32(
         ),
     ],
     output: NDBuffer[DType.int64, 1],
+    ctx: MojoCallContextPtr,
 ):
-    return _kv_cache_length(kv_collection, output)
+    return _kv_cache_length[target=target](kv_collection, output, ctx)
 
 
 @mogg_register("kv_cache_length_h1_d10_bshd_f32")
 @export
-fn kv_cache_length_h1_d10_bshd_f32(
+fn kv_cache_length_h1_d10_bshd_f32[
+    target: StringLiteral = "cpu"
+](
     kv_collection: ContiguousKVCacheCollection[
         DType.float32,
         KVCacheStaticParams(
@@ -144,13 +168,16 @@ fn kv_cache_length_h1_d10_bshd_f32(
         ),
     ],
     output: NDBuffer[DType.int64, 1],
+    ctx: MojoCallContextPtr,
 ):
-    return _kv_cache_length(kv_collection, output)
+    return _kv_cache_length[target=target](kv_collection, output, ctx)
 
 
 @mogg_register("kv_cache_length_h1_d10_bhsd_bf16")
 @export
-fn kv_cache_length_h1_d10_bhsd_bf16(
+fn kv_cache_length_h1_d10_bhsd_bf16[
+    target: StringLiteral = "cpu"
+](
     kv_collection: ContiguousKVCacheCollection[
         DType.bfloat16,
         KVCacheStaticParams(
@@ -158,13 +185,16 @@ fn kv_cache_length_h1_d10_bhsd_bf16(
         ),
     ],
     output: NDBuffer[DType.int64, 1],
+    ctx: MojoCallContextPtr,
 ):
-    return _kv_cache_length(kv_collection, output)
+    return _kv_cache_length[target=target](kv_collection, output, ctx)
 
 
 @mogg_register("kv_cache_length_h1_d10_bshd_bf16")
 @export
-fn kv_cache_length_h1_d10_bshd_bf16(
+fn kv_cache_length_h1_d10_bshd_bf16[
+    target: StringLiteral = "cpu"
+](
     kv_collection: ContiguousKVCacheCollection[
         DType.bfloat16,
         KVCacheStaticParams(
@@ -172,13 +202,16 @@ fn kv_cache_length_h1_d10_bshd_bf16(
         ),
     ],
     output: NDBuffer[DType.int64, 1],
+    ctx: MojoCallContextPtr,
 ):
-    return _kv_cache_length(kv_collection, output)
+    return _kv_cache_length[target=target](kv_collection, output, ctx)
 
 
 @mogg_register("kv_cache_length_h8_d64_bshd_bf16")
 @export
-fn kv_cache_length_h8_d64_bshd_bf16(
+fn kv_cache_length_h8_d64_bshd_bf16[
+    target: StringLiteral = "cpu"
+](
     kv_collection: ContiguousKVCacheCollection[
         DType.bfloat16,
         KVCacheStaticParams(
@@ -186,13 +219,16 @@ fn kv_cache_length_h8_d64_bshd_bf16(
         ),
     ],
     output: NDBuffer[DType.int64, 1],
+    ctx: MojoCallContextPtr,
 ):
-    return _kv_cache_length(kv_collection, output)
+    return _kv_cache_length[target=target](kv_collection, output, ctx)
 
 
 @mogg_register("kv_cache_length_h8_d64_bhsd_bf16")
 @export
-fn kv_cache_length_h8_d64_bhsd_bf16(
+fn kv_cache_length_h8_d64_bhsd_bf16[
+    target: StringLiteral = "cpu"
+](
     kv_collection: ContiguousKVCacheCollection[
         DType.bfloat16,
         KVCacheStaticParams(
@@ -200,13 +236,16 @@ fn kv_cache_length_h8_d64_bhsd_bf16(
         ),
     ],
     output: NDBuffer[DType.int64, 1],
+    ctx: MojoCallContextPtr,
 ):
-    return _kv_cache_length(kv_collection, output)
+    return _kv_cache_length[target=target](kv_collection, output, ctx)
 
 
 @mogg_register("kv_cache_length_h8_d64_bshd_f32")
 @export
-fn kv_cache_length_h8_d64_bshd_f32(
+fn kv_cache_length_h8_d64_bshd_f32[
+    target: StringLiteral = "cpu"
+](
     kv_collection: ContiguousKVCacheCollection[
         DType.float32,
         KVCacheStaticParams(
@@ -214,13 +253,16 @@ fn kv_cache_length_h8_d64_bshd_f32(
         ),
     ],
     output: NDBuffer[DType.int64, 1],
+    ctx: MojoCallContextPtr,
 ):
-    return _kv_cache_length(kv_collection, output)
+    return _kv_cache_length[target=target](kv_collection, output, ctx)
 
 
 @mogg_register("kv_cache_length_h8_d64_bhsd_f32")
 @export
-fn kv_cache_length_h8_d64_bhsd_f32(
+fn kv_cache_length_h8_d64_bhsd_f32[
+    target: StringLiteral = "cpu"
+](
     kv_collection: ContiguousKVCacheCollection[
         DType.float32,
         KVCacheStaticParams(
@@ -228,21 +270,39 @@ fn kv_cache_length_h8_d64_bhsd_f32(
         ),
     ],
     output: NDBuffer[DType.int64, 1],
+    ctx: MojoCallContextPtr,
 ):
-    return _kv_cache_length(kv_collection, output)
+    return _kv_cache_length[target=target](kv_collection, output, ctx)
 
 
 @always_inline
 fn _kv_cache_length[
-    type: DType, kv_params: KVCacheStaticParams
+    type: DType, kv_params: KVCacheStaticParams, target: StringLiteral
 ](
     kv_collection: ContiguousKVCacheCollection[type, kv_params],
     output: NDBuffer[DType.int64, 1],
+    ctx: MojoCallContextPtr,
 ):
     """Returns the size of the cache in a ContiguousKVCacheCollection mo.opaque object.
     """
-    for bs in range(output.dim[0]()):
-        output.store(Index(bs), kv_collection.cache_length(bs))
+
+    @parameter
+    if target != "cpu":
+        var cuda_ctx = ctx.get_device_context()
+        try:
+            cuda_ctx.enqueue_copy_device_to_device(
+                output.data,
+                kv_collection.cache_lengths.data,
+                output.dim[0](),
+            )
+        except e:
+            abort("Failed to enqueue device_to_device copy:" + str(e))
+    else:
+        memcpy(
+            output.data,
+            kv_collection.cache_lengths.data,
+            output.dim[0](),
+        )
 
 
 @mogg_register("key_cache_for_layer_h8_d128_bhsd_bf16")
@@ -2357,7 +2417,7 @@ fn _contiguous_kv_cache_collection[
 ](
     key_cache: NDBuffer[type, 5],
     value_cache: NDBuffer[type, 5],
-    cache_lengths: NDBuffer[DType.int32, 1],
+    cache_lengths: NDBuffer[DType.int64, 1],
     is_cache_empty: NDBuffer[DType.bool, 1],
     seq_ids: NDBuffer[DType.int32, 1],
     # Note that num_layers and batch_size are scalars.
@@ -2366,11 +2426,6 @@ fn _contiguous_kv_cache_collection[
 ) -> ContiguousKVCacheCollection[type, kv_params]:
     # Marshal NDBuffers into arguments expected by the
     # ContiguousKVCacheCollection constructor.
-    cache_lens_tuple = StaticIntTuple[_default_max_batch_size]()
-
-    @parameter
-    for idx in range(_default_max_batch_size):
-        cache_lens_tuple[idx] = int(cache_lengths[idx])
 
     seq_ids_list = List[Int]()
     for id in range(seq_ids.size()):
@@ -2383,7 +2438,8 @@ fn _contiguous_kv_cache_collection[
     ](
         key_cache,
         value_cache,
-        cache_lens_tuple,
+        cache_lengths,
+        is_cache_empty[0],
         seq_ids_list,
         int(num_layers[0]),
         int(batch_size[0]),
@@ -2424,7 +2480,7 @@ fn contiguous_kv_cache_collection_h6_d48_bshd[
 ](
     key_cache: NDBuffer[type, 5],
     value_cache: NDBuffer[type, 5],
-    cache_lengths: NDBuffer[DType.int32, 1],
+    cache_lengths: NDBuffer[DType.int64, 1],
     is_cache_empty: NDBuffer[DType.bool, 1],
     seq_ids: NDBuffer[DType.int32, 1],
     num_layers: NDBuffer[DType.int32, 1],
@@ -2451,7 +2507,7 @@ fn contiguous_kv_cache_collection_h6_d48_bhsd[
 ](
     key_cache: NDBuffer[type, 5],
     value_cache: NDBuffer[type, 5],
-    cache_lengths: NDBuffer[DType.int32, 1],
+    cache_lengths: NDBuffer[DType.int64, 1],
     is_cache_empty: NDBuffer[DType.bool, 1],
     seq_ids: NDBuffer[DType.int32, 1],
     num_layers: NDBuffer[DType.int32, 1],
@@ -2478,7 +2534,7 @@ fn contiguous_kv_cache_collection_h8_d128_bshd[
 ](
     key_cache: NDBuffer[type, 5],
     value_cache: NDBuffer[type, 5],
-    cache_lengths: NDBuffer[DType.int32, 1],
+    cache_lengths: NDBuffer[DType.int64, 1],
     is_cache_empty: NDBuffer[DType.bool, 1],
     seq_ids: NDBuffer[DType.int32, 1],
     num_layers: NDBuffer[DType.int32, 1],
@@ -2505,7 +2561,7 @@ fn contiguous_kv_cache_collection_h8_d128_bhsd[
 ](
     key_cache: NDBuffer[type, 5],
     value_cache: NDBuffer[type, 5],
-    cache_lengths: NDBuffer[DType.int32, 1],
+    cache_lengths: NDBuffer[DType.int64, 1],
     is_cache_empty: NDBuffer[DType.bool, 1],
     seq_ids: NDBuffer[DType.int32, 1],
     num_layers: NDBuffer[DType.int32, 1],
@@ -2532,7 +2588,7 @@ fn contiguous_kv_cache_collection_h1_d10_bshd[
 ](
     key_cache: NDBuffer[type, 5],
     value_cache: NDBuffer[type, 5],
-    cache_lengths: NDBuffer[DType.int32, 1],
+    cache_lengths: NDBuffer[DType.int64, 1],
     is_cache_empty: NDBuffer[DType.bool, 1],
     seq_ids: NDBuffer[DType.int32, 1],
     num_layers: NDBuffer[DType.int32, 1],
@@ -2559,7 +2615,7 @@ fn contiguous_kv_cache_collection_h1_d10_bhsd[
 ](
     key_cache: NDBuffer[type, 5],
     value_cache: NDBuffer[type, 5],
-    cache_lengths: NDBuffer[DType.int32, 1],
+    cache_lengths: NDBuffer[DType.int64, 1],
     is_cache_empty: NDBuffer[DType.bool, 1],
     seq_ids: NDBuffer[DType.int32, 1],
     num_layers: NDBuffer[DType.int32, 1],
@@ -2586,7 +2642,7 @@ fn contiguous_kv_cache_collection_h8_d64_bshd[
 ](
     key_cache: NDBuffer[type, 5],
     value_cache: NDBuffer[type, 5],
-    cache_lengths: NDBuffer[DType.int32, 1],
+    cache_lengths: NDBuffer[DType.int64, 1],
     is_cache_empty: NDBuffer[DType.bool, 1],
     seq_ids: NDBuffer[DType.int32, 1],
     num_layers: NDBuffer[DType.int32, 1],
@@ -2613,7 +2669,7 @@ fn contiguous_kv_cache_collection_h8_d64_bhsd[
 ](
     key_cache: NDBuffer[type, 5],
     value_cache: NDBuffer[type, 5],
-    cache_lengths: NDBuffer[DType.int32, 1],
+    cache_lengths: NDBuffer[DType.int64, 1],
     is_cache_empty: NDBuffer[DType.bool, 1],
     seq_ids: NDBuffer[DType.int32, 1],
     num_layers: NDBuffer[DType.int32, 1],
