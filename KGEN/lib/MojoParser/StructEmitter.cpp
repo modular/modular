@@ -35,6 +35,7 @@ LIT::FuncOp StructEmitter::createFunction(
     Type resultType, SpecialFunctionKind specialFnID, SMLoc loc,
     ImplicitLocOpBuilder &builder, FnEffects fnEffects, StringRef suffix,
     bool synthetic) {
+  MLIRContext *ctx = getContext();
 
   // Figure out the implicit lifetimes.
   SmallVector<ParamDeclAttr> implLifetimeParams;
@@ -65,8 +66,8 @@ LIT::FuncOp StructEmitter::createFunction(
       decl = ParamDeclAttr::get(lifetimeRef.getName(), lifetimeAttr.getType());
     } else {
       // If this has an indexed value or something else, synthesize a decl.
-      auto lifetimeName = StringAttr::get(
-          shared.getContext(), llvm::utostr(argNo) + "_unnamed" + "`");
+      auto lifetimeName =
+          StringAttr::get(ctx, llvm::utostr(argNo) + "_unnamed" + "`");
       decl = ParamDeclAttr::get(lifetimeName, lifetimeAttr.getType());
 
       // Replace the argument type with a named reference.
@@ -120,8 +121,9 @@ LIT::FuncOp StructEmitter::createFunction(
     attrs.set(funcOp.getParamsAttrName(),
               builder.getAttr<ParamDeclArrayAttr>(fullParams));
   }
+  attrs.set(funcOp.getIsSyntheticAttrName(), UnitAttr::get(ctx));
   attrs.set(funcOp.getFunctionTypeAttrName(), TypeAttr::get(functionType));
-  funcOp->setAttrs(attrs.getDictionary(funcOp.getContext()));
+  funcOp->setAttrs(attrs.getDictionary(ctx));
 
   // Generate a debug subprogram for this function.
   shared.setLocationDebugScope(funcOp);
