@@ -215,7 +215,14 @@ struct DeviceFunctionV2[
             num_captures + num_args, UnsafePointer[NoneType]
         ]()
 
-        # TODO(iposva): call populate
+        @parameter
+        if num_captures > 0:
+            # Call the populate function to initialize the first values in the arguments array.
+            populate(
+                rebind[UnsafePointer[NoneType]](
+                    dense_args_addrs.bitcast[NoneType]()
+                )
+            )
 
         @parameter
         for i in range(num_args):
