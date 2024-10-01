@@ -318,3 +318,153 @@ fn ld_matrix[
         #         d[i * register_width + j] = vec_per_register[j]
 
     return d
+
+
+# ===------------------------------------------------------------------===#
+# Warp group MMA asynchronous compute and synchronization instructions.
+# ===------------------------------------------------------------------===#
+
+
+# Shared memory operand descriptor.
+@register_passable("trivial")
+struct WGMMADescriptor[dtype: DType]:
+    # The bits as the following.
+    # start address : 14-bit
+    # leading byte_offset: 14 bit
+    # stride byte offset: 14 bit
+    # base offset: 3 bit
+    # swizzle mode: 2 bit
+    #  +---------+-----+-----------+-----+-----------+-----+-----+-----------+-----+
+    #  |   0-13  |14-15|   16-29   |30-31|   32-45   |46-48|49-51|   52-61   |62-63|
+    #  +---------+-----+-----------+-----+-----------+-----+-----+-----------+-----+
+    #  |  14bits |2bits|   14bits  |2bits|   14bits  |2bits|3bits|   10bits  |2bits|
+    #  +---------+-----+-----------+-----+-----------+-----+-----+-----------+-----+
+    #  | BaseAddr|  0  | LeadingDim|  0  |   Stride  |  0  |Offst|     0     |Swzle|
+    #  +---------+-----+-----------+-----+-----------+-----+-----+-----------+-----+
+    # See:
+    # # https://docs.nvidia.com/cuda/parallel-thread-execution/index.html#asynchronous-warpgroup-level-matrix-shared-memory-layout-matrix-descriptor
+
+    var desc: Int64
+
+    fn __init__(inout self, val: Int64):
+        self.desc = val
+
+    @staticmethod
+    fn create[
+        shape: StaticIntTuple[2], swizzle_mode: Int = 0
+    ](
+        smem_ptr: UnsafePointer[
+            Scalar[dtype], address_space = AddressSpace.SHARED
+        ],
+        stride: StaticIntTuple[2],
+    ) -> Self:
+        @parameter
+        fn insert_bit[start_bit: Int](target: Int64, val: Int64) -> Int64:
+            return target | (val << start_bit)
+
+        var swizzle = Int64(swizzle_mode)
+        var offset = Int64(0)
+        ## FIXME(KERN-895): Figure out the correct values for stride_dim and lead_dim as
+        ## a function of the operand's shape and stride.
+        var stride_dim = Int64(8)
+        var lead_dim = Int64(0)
+
+        var base_ptr = int(smem_ptr)
+        var start_address = (base_ptr >> 4)
+
+        var desc = Int64(0)
+        # bits [63, 62] swizzle type
+        desc = insert_bit[62](desc, swizzle)
+        # bits [51 .. 49] offset
+        desc = insert_bit[49](desc, offset)
+        # bits [48 .. 32]
+        desc = insert_bit[32](desc, stride_dim)  # bits [32-45]
+        desc = insert_bit[16](desc, lead_dim)  # bits [16-29]
+        desc = insert_bit[0](desc, start_address)  # bits [0-13]
+
+        return desc
+
+
+@always_inline
+fn wgmma_fence_aligned():
+    __mlir_op.`nvvm.wgmma.fence.aligned`[_type=None]()
+
+
+@always_inline
+fn wgmma_commit_group_sync():
+    __mlir_op.`nvvm.wgmma.commit.group.sync.aligned`[_type=None]()
+
+
+@always_inline
+fn wgmma_wait_group_sync():
+    __mlir_op.`nvvm.wgmma.wait.group.sync.aligned`[
+        _properties = __mlir_attr.`{group = 0 : i32}`, _type=None
+    ]()
+
+
+@always_inline
+fn wgmma_async[
+    m: Int,
+    n: Int,
+    k: Int,
+    c_dtype: DType,
+    width: Int,
+    /,
+    *,
+    a_type: DType,
+    b_type: DType,
+    layout_a: StringLiteral = "row",
+    layout_b: StringLiteral = "col",
+](
+    mat_a_desc: WGMMADescriptor,
+    mat_b_desc: WGMMADescriptor,
+    c_reg: SIMD[c_dtype, width],
+) -> __type_of(c_reg):
+    """Performs warp group async Matrix-multiply and accumulate(WGMMA) operation.
+    """
+    constrained[a_type == b_type, "Operands type musth match"]()
+    var desc_a_value = __mlir_op.`pop.cast_to_builtin`[_type = __mlir_type.i64](
+        mat_a_desc.desc.value
+    )
+    var desc_b_value = __mlir_op.`pop.cast_to_builtin`[_type = __mlir_type.i64](
+        mat_b_desc.desc.value
+    )
+
+    @parameter
+    if a_type is DType.tensor_float32:
+        return __mlir_op.`pop.nvvm.wgmma.mma_async`[
+            shape_m = m.value,
+            shape_n = n.value,
+            shape_k = k.value,
+            type_a = __mlir_attr.`tf32`,
+            type_b = __mlir_attr.`tf32`,
+            type_c = __mlir_attr.`f32`,
+            layout_a = layout_a.value,
+            layout_b = layout_b.value,
+            _type = __type_of(c_reg.value),
+        ](desc_a_value, desc_b_value, c_reg.value)
+    elif a_type is DType.bfloat16:
+        return __mlir_op.`pop.nvvm.wgmma.mma_async`[
+            shape_m = m.value,
+            shape_n = n.value,
+            shape_k = k.value,
+            type_a = __mlir_attr.`bf16`,
+            type_b = __mlir_attr.`bf16`,
+            type_c = __mlir_attr.`f32`,
+            layout_a = layout_a.value,
+            layout_b = layout_b.value,
+            _type = __type_of(c_reg.value),
+        ](desc_a_value, desc_b_value, c_reg.value)
+    elif a_type is DType.float16:
+        return __mlir_op.`pop.nvvm.wgmma.mma_async`[
+            shape_m = m.value,
+            shape_n = n.value,
+            shape_k = k.value,
+            type_a = __mlir_attr.`f16`,
+            type_b = __mlir_attr.`f16`,
+            type_c = __mlir_attr.`f32`,
+            layout_a = layout_a.value,
+            layout_b = layout_b.value,
+            _type = __type_of(c_reg.value),
+        ](desc_a_value, desc_b_value, c_reg.value)
+    return c_reg
