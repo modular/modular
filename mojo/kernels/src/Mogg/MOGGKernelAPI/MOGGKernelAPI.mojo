@@ -60,6 +60,8 @@ from nn.gather_scatter import (
 )
 from random import randn, seed
 from utils.numerics import isinf, isnan
+from nn.softmax import softmax, logsoftmax
+
 
 # ===----------------------------------------------------------------------===#
 # Helpers
@@ -2221,3 +2223,94 @@ struct StaticRandomNormal:
             mean[0].cast[DType.float64](),
             variance[0].cast[DType.float64](),
         )
+
+
+@compiler.register("mo.softmax")
+struct Softmax:
+    @staticmethod
+    fn execute[
+        target: StringLiteral
+    ](
+        output: ManagedTensorSlice,
+        input: ManagedTensorSlice[output.type, output.rank],
+        ctx: MojoCallContextPtr,
+    ) raises:
+        # shape should be the same between the two inputs
+        alias static_shape = compiler.specsof[output.type, output.rank](
+            "output"
+        ).shape
+        output_ndbuffer = managed_tensor_slice_to_ndbuffer[
+            static_shape=static_shape
+        ](output)
+
+        # For adapting input fusion lambda required by call
+        @parameter
+        @always_inline
+        fn input_fn[
+            width: Int, _rank: Int
+        ](coords: StaticIntTuple[_rank]) -> SIMD[output.type, width]:
+            @parameter
+            if compiler.specsof[output.type, output.rank]("input").in_lambda:
+                return input._fused_load[width=width](
+                    rebind[StaticIntTuple[input.rank]](coords)
+                )
+            else:
+                return input.load[width=width](
+                    rebind[StaticIntTuple[input.rank]](coords)
+                )
+
+        softmax[
+            output.type,
+            simdwidthof[output.type](),
+            output.rank,
+            static_shape,
+            input_fn,
+            target,
+        ](
+            output.get_static_spec().shape,
+            output_ndbuffer,
+            output.rank - 1,
+            context=ctx,
+        )
+
+
+@compiler.register("mo.logsoftmax")
+struct LogSoftmax:
+    @staticmethod
+    fn execute[
+        target: StringLiteral
+    ](
+        output: ManagedTensorSlice,
+        input: ManagedTensorSlice[output.type, output.rank],
+    ) raises:
+        # shape should be the same between the two inputs
+        alias static_shape = compiler.specsof[output.type, output.rank](
+            "output"
+        ).shape
+        output_ndbuffer = managed_tensor_slice_to_ndbuffer[
+            static_shape=static_shape
+        ](output)
+
+        # For adapting input fusion lambda required by call
+        @parameter
+        @always_inline
+        fn input_fn[
+            width: Int, _rank: Int
+        ](coords: StaticIntTuple[_rank]) -> SIMD[output.type, width]:
+            @parameter
+            if compiler.specsof[output.type, output.rank]("input").in_lambda:
+                return input._fused_load[width=width](
+                    rebind[StaticIntTuple[input.rank]](coords)
+                )
+            else:
+                return input.load[width=width](
+                    rebind[StaticIntTuple[input.rank]](coords)
+                )
+
+        logsoftmax[
+            output.type,
+            simdwidthof[output.type](),
+            output.rank,
+            static_shape,
+            input_fn,
+        ](output.get_static_spec().shape, output_ndbuffer, output.rank - 1)
