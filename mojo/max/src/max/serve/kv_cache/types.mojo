@@ -29,7 +29,9 @@ from max.driver import (
     DeviceTensor,
     ManagedTensorSlice,
 )
+from max.driver import Device, DeviceMemory, Tensor, TensorSlice, DeviceTensor
 from max.tensor import TensorShape, TensorSpec
+from collections import Optional
 
 
 trait KVCacheManagerT:
@@ -87,9 +89,12 @@ struct ContiguousKVCacheManager[
     var active_seq_ids: List[Int]
     var cache_lengths: List[Int]
     var seq_id_counter: Int
+
     var num_layers: Int
     var other_device: Device
     var this_device: Device
+    var cache_lengths_tensor_host: DeviceTensor
+    var cache_lengths_tensor_dev: DeviceTensor
 
     # TODO currently we allocate the exact right amount, we should
     # extend this to allow for over-allocation
@@ -139,6 +144,13 @@ struct ContiguousKVCacheManager[
         self.this_device = this_device
         self.other_device = other_device
 
+        self.cache_lengths_tensor_host = self.this_device.allocate(
+            TensorSpec(DType.int64, (_max_batch_size))
+        )
+        self.cache_lengths_tensor_dev = self.other_device.allocate(
+            TensorSpec(DType.int64, (_max_batch_size))
+        )
+
     fn claim(inout self, batch_size: Int) raises -> Self.CollectionType:
         """Assign `batch_size` blocks for incoming requests.
 
@@ -181,10 +193,18 @@ struct ContiguousKVCacheManager[
                 )
 
         var batch_size = len(seq_ids)
-        var cache_lengths = StaticIntTuple[_max_batch_size](-1)
 
+        # Have 2 copies of cache_lengths and copy to device from host here
+        cache_lengths_host_ptr = (
+            self.cache_lengths_tensor_host.unsafe_ptr().bitcast[Int64]()
+        )
+        var is_context_encoding = True
         for bs in range(batch_size):
-            cache_lengths[bs] = self.cache_lengths[bs]
+            if self.cache_lengths[bs] != 0:
+                is_context_encoding = False
+            cache_lengths_host_ptr[bs] = self.cache_lengths[bs]
+
+        self.cache_lengths_tensor_host.copy_into(self.cache_lengths_tensor_dev)
 
         var block_size = self.num_layers * batch_size * kv_params.num_heads * self.max_seq_len * kv_params.head_size
         var v_cache_shape: StaticIntTuple[5]
@@ -224,7 +244,11 @@ struct ContiguousKVCacheManager[
         return Self.CollectionType(
             key_cache,
             value_cache,
-            cache_lengths,
+            NDBuffer[DType.int64, 1](
+                self.cache_lengths_tensor_dev.unsafe_ptr().bitcast[Int64](),
+                (batch_size,),
+            ),
+            is_context_encoding,
             seq_ids,
             self.num_layers,
             batch_size,
@@ -253,7 +277,6 @@ struct ContiguousKVCacheManager[
         for bs in range(batch_size):
             var new_seq_len = valid_lengths[bs]
             self.cache_lengths[bs] += new_seq_len
-            inflight_cache.incr_cache_length(bs, new_seq_len)
 
     fn release(inout self, seq_id: Int) raises:
         """Marks `seq_id` as no longer necessary, their blocks are reintroduced
