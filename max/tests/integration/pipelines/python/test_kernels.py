@@ -11,10 +11,10 @@ from max.engine import InferenceSession
 from max.graph import Graph
 from nn.kernels import kv_cache_length
 from nn.kv_cache import (
+    KVCacheParams,
     ContiguousKVCacheCollectionType,
     ContiguousKVCacheManager,
 )
-from nn.kv_caching import KVCacheParams
 
 
 def test_kv_cache_length():
