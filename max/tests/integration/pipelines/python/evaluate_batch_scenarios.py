@@ -140,7 +140,7 @@ async def run_batch_scenario(
 
                     encoded_count = 0
                     while context_encoding_queue:
-                        context_encoding_batch = {}
+                        context_encoding_batch = {}  # type: ignore
                         while (
                             context_encoding_queue
                             and len(context_encoding_batch) < max_batch_size

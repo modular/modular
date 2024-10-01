@@ -26,7 +26,7 @@ DYLIB_FILE_EXTENSION = "dylib" if os.uname().sysname == "Darwin" else "so"
 # This path is used in skipif clauses rather than tests, so we can neither mark
 # it as a fixture nor can we call other fixtures.
 def modular_lib_path() -> Path:
-    return Path(os.getenv("MODULAR_PATH")) / ".derived" / "build" / "lib"
+    return Path(os.environ["MODULAR_PATH"]) / ".derived" / "build" / "lib"
 
 
 @pytest.fixture
@@ -454,7 +454,7 @@ def test_repr_torch_input_spec():
 
 
 @dataclass
-class Model:
+class Model:  # type: ignore
     num_elems: int
 
     def __call__(self, input: Value) -> Value:

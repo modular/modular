@@ -9,7 +9,7 @@ from hypothesis import HealthCheck, given, settings
 from hypothesis.strategies import text
 from transformers import AutoTokenizer
 
-from utils import tokenizer_from_gguf
+from utils.hf_tokenizer import tokenizer_from_gguf
 
 
 @pytest.fixture
