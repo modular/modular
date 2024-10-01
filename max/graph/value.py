@@ -52,6 +52,8 @@ class Value:
                 return super().__new__(_OpaqueValue)
             elif _graph.type_is_buffer(value.type):
                 return super().__new__(BufferValue)
+            elif _graph.type_is_chain(value.type):
+                return super().__new__(_ChainValue)
             else:
                 return super().__new__(TensorValue)
         elif isinstance(value, Value):
@@ -79,6 +81,19 @@ class Value:
         raise TypeError(
             f"Value is not a TensorValue, was '{type(self).__name__}'"
         )
+
+
+class _ChainValue(Value):
+    def __init__(self, value: ValueLike):
+        if isinstance(value, mlir.Value) and _graph.type_is_chain(value.type):
+            self._mlir_value = value
+        elif isinstance(value, _ChainValue):
+            self._mlir_value = value._mlir_value
+        else:
+            raise TypeError(
+                "_ChainValue() argument must be a mlir.Value of chain type "
+                f"or a graph._ChainValue, not {type(value).__name__!r}"
+            )
 
 
 class _OpaqueValue(Value):

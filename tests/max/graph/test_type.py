@@ -167,16 +167,27 @@ def test_type_checking(mlir_context) -> None:
     tensor_type = _graph.tensor_type(mlir_context, dtype, [dim])
     opaque_type = _graph.opaque_type(mlir_context, "custom_type")
     buffer_type = _graph.buffer_type(mlir_context, dtype, [dim])
+    chain_type = _graph.chain_type(mlir_context)
 
     assert _graph.type_is_tensor(tensor_type)
     assert not _graph.type_is_opaque(tensor_type)
     assert not _graph.type_is_buffer(tensor_type)
+    assert not _graph.type_is_chain(tensor_type)
+
     assert _graph.type_is_opaque(opaque_type)
     assert not _graph.type_is_tensor(opaque_type)
     assert not _graph.type_is_buffer(opaque_type)
+    assert not _graph.type_is_chain(opaque_type)
+
     assert _graph.type_is_buffer(buffer_type)
     assert not _graph.type_is_opaque(buffer_type)
     assert not _graph.type_is_tensor(buffer_type)
+    assert not _graph.type_is_chain(buffer_type)
+
+    assert _graph.type_is_chain(chain_type)
+    assert not _graph.type_is_opaque(chain_type)
+    assert not _graph.type_is_tensor(chain_type)
+    assert not _graph.type_is_buffer(chain_type)
 
 
 @settings(suppress_health_check=[HealthCheck.function_scoped_fixture])

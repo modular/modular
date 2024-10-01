@@ -753,3 +753,23 @@ class _OpaqueType(Type):
             The opaque type represented by the MLIR Type value.
         """
         return _OpaqueType(_graph.opaque_type_name(t))
+
+
+@dataclass
+class _ChainType(Type):
+    """A chain type.
+
+    Used in order to sequence operations that have side-effects.
+
+    As a user you should never need to directly interact with this type.
+    """
+
+    def to_mlir(self) -> mlir.Type:
+        """Converts to an mlir.Type instance.
+
+        Returns:
+            An mlir.Type in the specified Context.
+        """
+        if not mlir.Context.current:
+            raise RuntimeError("No active mlir Context.")
+        return _graph.chain_type(mlir.Context.current)
