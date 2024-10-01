@@ -497,6 +497,19 @@ struct DeviceContextV1:
             dst.ptr, src.ptr, len(dst), self.cuda_stream
         )
 
+    fn enqueue_copy_device_to_device[
+        type: DType
+    ](
+        self,
+        dst: UnsafePointer[Scalar[type]],
+        src: UnsafePointer[Scalar[type]],
+        size: Int,
+    ) raises:
+        self.cuda_context.set_current()
+        self.cuda_context.copy_device_to_device_async(
+            dst, src, size, self.cuda_stream
+        )
+
     fn copy_to_device_sync[
         type: DType
     ](self, buf: DeviceBufferV1[type], ptr: UnsafePointer[Scalar[type]]) raises:
