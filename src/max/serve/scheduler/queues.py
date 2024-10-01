@@ -47,7 +47,7 @@ class BatchMultiplexQueue(Generic[BatchKey]):
 
     @contextlib.asynccontextmanager
     async def open_channel(self, req_id: BatchKey, data: dict):
-        self.out_queues[req_id] = state = Queue()
+        self.out_queues[req_id] = state = Queue()  # type: ignore
         await self.in_queue.put((req_id, data))
         try:
             yield state
@@ -110,7 +110,7 @@ class BatchMultiplexQueue(Generic[BatchKey]):
     ):
         try:
             while True:
-                batch = {}
+                batch = {}  # type: ignore
                 await self.fill_batch(batch, max_batch_size, max_queue_wait_s)
                 if len(batch) > 0:
                     logging.debug(
@@ -127,7 +127,7 @@ class BatchMultiplexQueue(Generic[BatchKey]):
     async def continuous_batching_worker(
         self, forward, max_batch_size: int, max_queue_wait_s: float
     ):
-        batch = {}
+        batch = {}  # type: ignore
         try:
             while True:
                 await self.fill_batch(batch, max_batch_size, max_queue_wait_s)

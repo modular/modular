@@ -55,11 +55,11 @@ class OpenAIResponseGenerator(ABC):
         self.request = request
 
     @abstractmethod
-    async def stream() -> AsyncGenerator[str, None]:
+    async def stream(self) -> AsyncGenerator[str, None]:
         pass
 
     @abstractmethod
-    async def complete() -> str:
+    async def complete(self) -> str:
         pass
 
 

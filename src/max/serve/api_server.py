@@ -72,12 +72,12 @@ def fastapi_config(app: FastAPI) -> Config:
 
 
 def parse_settings(parser: argparse.ArgumentParser) -> Settings:
-    cli_settings = CliSettingsSource(Settings, root_parser=parser)
+    cli_settings = CliSettingsSource(Settings, root_parser=parser)  # type: ignore
     return Settings(_cli_settings_source=cli_settings(args=True))  # type: ignore
 
 
 def parse_debug_settings(parser: argparse.ArgumentParser) -> DebugSettings:
-    cli_settings = CliSettingsSource(DebugSettings, root_parser=parser)
+    cli_settings = CliSettingsSource(DebugSettings, root_parser=parser)  # type: ignore
     return DebugSettings(_cli_settings_source=cli_settings(args=True))  # type: ignore
 
 

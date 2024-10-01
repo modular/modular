@@ -7,7 +7,7 @@
 
 import logging
 import functools
-from typing import Callable, ClassVar, Type
+from typing import Callable, ClassVar, Union, Type
 from functools import lru_cache
 from enum import Enum
 from dataclasses import dataclass, field
@@ -62,7 +62,7 @@ class ProfileFormat(ProfileFormatMetadata, Enum):
 class ProfileSession:
     DEFAULT_INTERVAL_SECS: ClassVar[float] = 0.001
 
-    request_id: str | None = None  # Empty when not profiling.
+    request_id: Union[str, None] = None  # Empty when not profiling.
 
     interval: float = DEFAULT_INTERVAL_SECS
     profile_format: ProfileFormat = field(
@@ -124,7 +124,7 @@ def register_debug(app: FastAPI, settings: DebugSettings):
             if profiling:
                 session = PROFILE_SESSION_VAR.get()
                 session.request_id = request.state.request_id
-                session.profile_format = ProfileFormat(
+                session.profile_format = ProfileFormat(  # type: ignore
                     params.get("profile_format", "html")
                 )
                 result = await profile_call(

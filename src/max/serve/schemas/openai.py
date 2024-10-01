@@ -2,6 +2,8 @@
 #   filename:  openai.yaml
 #   timestamp: 2024-08-14T17:09:16+00:00
 
+# type: ignore
+
 from __future__ import annotations
 
 from typing import Any, Dict, List, Optional, Union
