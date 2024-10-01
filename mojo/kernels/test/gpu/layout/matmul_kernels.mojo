@@ -23,6 +23,7 @@ from memory import UnsafePointer
 from layout.int_tuple import IntTuple
 from layout.runtime_tuple import RuntimeTuple
 from layout.runtime_layout import RuntimeLayout, UNKNOWN_VALUE
+from layout.tensor_builder import LayoutTensorBuild as tb
 from utils import StaticIntTuple
 from builtin.io import _printf
 from gpu.cublas.cublas import (
@@ -315,13 +316,8 @@ fn gemm_kernel_3[
 
     var dst = c.tile[BM, BN](BlockIdx.y(), BlockIdx.x())
 
-    alias smem_layout = Layout.row_major(BM, BN)
-    var a_smem = LayoutTensor[
-        dtype, smem_layout, address_space = AddressSpace.SHARED
-    ].stack_allocation()
-    var b_smem = LayoutTensor[
-        dtype, smem_layout, address_space = AddressSpace.SHARED
-    ].stack_allocation()
+    var a_smem = tb[dtype]().row_major[BM, BK]().shared().alloc()
+    var b_smem = tb[dtype]().row_major[BK, BN]().shared().alloc()
 
     var dst_reg: c.element_type = 0
 
@@ -424,14 +420,10 @@ fn gemm_kernel_4[
 
     var dst = c.tile[BM, BN](bidy, bidx).tile[TM, 1](row, col)
 
-    var a_smem = LayoutTensor[
-        dtype, Layout.row_major(BM, BK), address_space = AddressSpace.SHARED
-    ].stack_allocation()
-    var b_smem = LayoutTensor[
-        dtype, Layout.row_major(BK, BN), address_space = AddressSpace.SHARED
-    ].stack_allocation()
+    var a_smem = tb[dtype]().row_major[BM, BK]().shared().alloc()
+    var b_smem = tb[dtype]().row_major[BK, BN]().shared().alloc()
 
-    var dst_reg = LayoutTensor[dtype, Layout(TM)].stack_allocation()
+    var dst_reg = tb[dtype]().layout[TM]().local().alloc()
     dst_reg.copy_from(dst)
 
     for block in range(b.dim(0) // BK):
@@ -545,20 +537,13 @@ fn gemm_kernel_5[
         partition_row, partition_col
     )
 
-    var a_smem = LayoutTensor[
-        dtype, Layout.row_major(BM, BK), address_space = AddressSpace.SHARED
-    ].stack_allocation()
-    var b_smem = LayoutTensor[
-        dtype, Layout.row_major(BK, BN), address_space = AddressSpace.SHARED
-    ].stack_allocation()
+    var a_smem = tb[dtype]().row_major[BM, BK]().shared().alloc()
+    var b_smem = tb[dtype]().row_major[BK, BN]().shared().alloc()
 
-    var dst_reg = LayoutTensor[
-        dtype, Layout.row_major(TM, TN)
-    ].stack_allocation()
+    var dst_reg = tb[dtype]().row_major[TM, TN]().local().alloc()
     dst_reg.copy_from(dst)
-
-    var a_reg = LayoutTensor[dtype, Layout(TM)].stack_allocation()
-    var b_reg = LayoutTensor[dtype, Layout(TN)].stack_allocation()
+    var a_reg = tb[dtype]().layout[TM]().local().alloc()
+    var b_reg = tb[dtype]().layout[TN]().local().alloc()
 
     var ntiles = b.dim(0) // BK
 
@@ -675,21 +660,15 @@ fn gemm_kernel_6[
     var dst_vec = dst.vectorize[1, simd_width]()
 
     # use column major for the local A storage to get the transpose
-    var a_smem = LayoutTensor[
-        dtype, Layout.col_major(BM, BK), address_space = AddressSpace.SHARED
-    ].stack_allocation()
-    var b_smem = LayoutTensor[
-        dtype, Layout.row_major(BK, BN), address_space = AddressSpace.SHARED
-    ].stack_allocation()
+    var a_smem = tb[dtype]().col_major[BM, BK]().shared().alloc()
+    var b_smem = tb[dtype]().row_major[BK, BN]().shared().alloc()
 
-    var dst_reg = LayoutTensor[
-        dtype, Layout.row_major(TM, TN)
-    ].stack_allocation()
+    var dst_reg = tb[dtype]().row_major[TM, TN]().local().alloc()
     var dst_reg_vec = dst_reg.vectorize[1, simd_width]()
     dst_reg_vec.copy_from(dst_vec)
 
-    var a_reg = LayoutTensor[dtype, Layout(TM)].stack_allocation()
-    var b_reg = LayoutTensor[dtype, Layout(TN)].stack_allocation()
+    var a_reg = tb[dtype]().layout[TM]().local().alloc()
+    var b_reg = tb[dtype]().layout[TN]().local().alloc()
 
     var ntiles = b.dim(0) // BK
 
@@ -821,19 +800,16 @@ fn matmul_kernel_tc[
 
     mma_op = TensorCore[A.dtype, C.dtype, Index(MMA_M, MMA_N, MMA_K)]()
 
-    A_sram_tile = LayoutTensor[
-        A.dtype, Layout.row_major(BM, BK), address_space = AddressSpace.SHARED
-    ].stack_allocation()
-
-    B_sram_tile = LayoutTensor[
-        B.dtype, Layout.row_major(BK, BN), address_space = AddressSpace.SHARED
-    ].stack_allocation()
+    A_sram_tile = tb[A.dtype]().row_major[BM, BK]().shared().alloc()
+    B_sram_tile = tb[B.dtype]().row_major[BK, BN]().shared().alloc()
 
     c_reg = (
-        LayoutTensor[
-            C.dtype, Layout.row_major(WM // MMA_M, (WN * 4) // MMA_N)
-        ].stack_allocation()
-    ).fill(0)
+        tb[C.dtype]()
+        .row_major[WM // MMA_M, (WN * 4) // MMA_N]()
+        .local()
+        .alloc()
+        .fill(0)
+    )
 
     for k_i in range(K // BK):
         barrier()

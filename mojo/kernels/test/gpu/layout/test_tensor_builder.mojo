@@ -351,7 +351,7 @@ fn test_layout():
     # CHECK: 3.0 4.0 5.0
     # CHECK: ---tensor-end---
     print("== test_tensor_builder_layout")
-    var t = tb[DType.float32]().layout[2, (2, 3), (1, 2)]().alloc()
+    var t = tb[DType.float32]().layout[2, Index(2, 3), Index(1, 2)]().alloc()
     arange(t)
     print_tensor_info(t)
 
@@ -363,7 +363,9 @@ fn test_layout():
     # CHECK: 0.0 1.0 2.0
     # CHECK: 3.0 4.0 5.0
     # CHECK: ---tensor-end---
-    var t_view = tb[DType.float32]().layout[2, (2, 3), (1, 2)]().view(t.ptr)
+    var t_view = tb[DType.float32]().layout[2, Index(2, 3), Index(1, 2)]().view(
+        t.ptr
+    )
     print_tensor_info(t_view)
 
     # CHECK: ---tensor-begin---
@@ -379,6 +381,29 @@ fn test_layout():
     )
     print_tensor_info(t_dynamic)
     _ = t
+
+    # CHECK: ---tensor-begin---
+    # CHECK: layout:  (10:1)
+    # CHECK: runtime_layout:  (10:1)
+    # CHECK: address_space:  0
+    # CHECK: values:
+    # CHECK: 0.0 1.0 2.0 3.0 4.0 5.0 6.0 7.0 8.0 9.0
+    # CHECK: ---tensor-end---
+    var t_vector = tb[DType.float32]().layout[10]().alloc()
+    arange(t_vector)
+    print_tensor_info(t_vector)
+
+    # CHECK: ---tensor-begin---
+    # CHECK: layout:  (-1:1)
+    # CHECK: runtime_layout:  (10:1)
+    # CHECK: address_space:  0
+    # CHECK: values:
+    # CHECK: 0.0 1.0 2.0 3.0 4.0 5.0 6.0 7.0 8.0 9.0
+    # CHECK: ---tensor-end---
+    var t_vector_rt = tb[DType.float32]().layout(10).view(t_vector.ptr)
+    arange(t_vector_rt)
+    print_tensor_info(t_vector_rt)
+    _ = t_vector
 
 
 fn main() raises:
