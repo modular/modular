@@ -1629,7 +1629,13 @@ fn pad_repeat[
 # ===----------------------------------------------------------------------===#
 
 
-@mogg_register("reduce_shape")
+@mogg_register_shape_func("mo.arg_max")
+@mogg_register_shape_func("mo.arg_min")
+@mogg_register_shape_func("mo.mean")
+@mogg_register_shape_func("mo.reduce.add")
+@mogg_register_shape_func("mo.reduce.max")
+@mogg_register_shape_func("mo.reduce.min")
+@mogg_register_shape_func("mo.reduce.mul")
 @always_inline("nodebug")
 fn reduce_shape[
     input_rank: Int,
@@ -1640,7 +1646,7 @@ fn reduce_shape[
     axis0: Scalar,
 ) raises -> StaticIntTuple[input_rank]:
     """
-    Compute the output shape of a `pad` operation, and assert the inputs are
+    Compute the output shape of a `reduce` operation, and assert the inputs are
     compatible.
 
     Parameters:

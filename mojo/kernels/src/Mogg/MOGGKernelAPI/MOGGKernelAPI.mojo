@@ -20,7 +20,7 @@ from utils import StaticIntTuple
 # ===----------------------------------------------------------------------===#
 # Kernel imports
 # ===----------------------------------------------------------------------===#
-from algorithm import argmax, argmin
+from algorithm import argmax, argmin, mean, sum, product
 from linalg.matrix_solve import matrix_solve, matrix_solve_shape
 from math import (
     ceil,
@@ -81,6 +81,44 @@ fn managed_tensor_slice_to_ndbuffer[
     return NDBuffer[type, rank, static_shape](
         tensor._ptr, tensor.get_static_spec().shape, tensor._strides
     )
+
+
+@always_inline("nodebug")
+fn reduce_shape[
+    input_rank: Int,
+    input_type: DType,
+](
+    input_buf: ManagedTensorSlice[input_type, input_rank],
+    axis0: Scalar,
+) raises -> StaticIntTuple[input_rank]:
+    """
+    Compute the output shape of a `reduce` operation, and assert the inputs are
+    compatible.
+
+    Parameters:
+        input_rank: Input_rank of the input tensor.
+        input_type: Type of the input tensor.
+
+    Args:
+        input_buf: The input tensor.
+        axis0: The axis tensor.
+
+    Returns:
+        The output shape.
+    """
+
+    var axis_scalar = axis0._ptr.load(0)
+    var axis = int(normalize_neg_index(axis_scalar, input_rank))
+
+    if axis < 0 or input_rank <= axis:
+        raise Error(
+            "[reduction] normalized axis must be within range [0, input_rank)"
+        )
+
+    # compute and return the output shape
+    var output_shape = input_buf.get_static_spec().shape
+    output_shape[axis] = 1
+    return output_shape
 
 
 # ===----------------------------------------------------------------------===#
@@ -1519,6 +1557,56 @@ struct ArgNonZero:
         return arg_nonzero.arg_nonzero_shape[
             single_thread_blocking_override=True
         ](managed_tensor_slice_to_ndbuffer(input_buffer))
+
+
+@compiler.register("mo.mean")
+struct Mean:
+    @staticmethod
+    fn execute[
+        synchronous: Bool, target: StringLiteral
+    ](
+        output: ManagedTensorSlice,
+        input: ManagedTensorSlice[type = output.type, rank = output.rank],
+        axis: Scalar,
+    ) raises:
+        @parameter
+        @always_inline
+        fn input_fn[
+            width: Int, rank: Int
+        ](coords: StaticIntTuple[rank]) -> SIMD[input.type, width]:
+            return input.load[width=width](
+                rebind[StaticIntTuple[input.rank]](coords)
+            )
+
+        @parameter
+        @always_inline
+        fn output_fn[
+            width: Int, rank: Int
+        ](coords: StaticIntTuple[rank], val: SIMD[output.type, width]):
+            output.store[width=width](
+                rebind[StaticIntTuple[output.rank]](coords),
+                rebind[SIMD[output.type, width]](val),
+            )
+
+        var axis_val = int(axis._ptr.load(0))
+
+        mean[
+            output.type,
+            input_fn,
+            output_fn,
+            single_thread_blocking_override=synchronous,
+            target=target,
+        ](input._spec.shape, axis_val, output._spec.shape)
+
+    @staticmethod
+    fn shape[
+        input_rank: Int,
+        input_type: DType,
+    ](
+        input: ManagedTensorSlice[input_type, input_rank],
+        axis: Scalar,
+    ) raises -> StaticIntTuple[input_rank]:
+        return reduce_shape[input_rank, input_type](input, axis)
 
 
 # ===----------------------------------------------------------------------===#
