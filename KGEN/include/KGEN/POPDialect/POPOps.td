@@ -842,6 +842,75 @@ def POP_SelectOp : POPOp<"select", [Pure,
 }
 
 //===----------------------------------------------------------------------===//
+// BoolOp
+//===----------------------------------------------------------------------===//
+
+// Base class for bitwise arithmetic pop operations.
+class POP_BoolOp<string mnemonic, list<Trait> traits = []> : POPOp<mnemonic,
+      traits # [Pure, Commutative, SameOperandsAndResultType]> {
+
+  let arguments = (ins I1:$lhs, I1:$rhs);
+  let results = (outs I1:$result);
+
+  let assemblyFormat = "$lhs `,` $rhs attr-dict";
+  let hasFolder = 1;
+}
+
+//===----------------------------------------------------------------------===//
+// AndOp
+//===----------------------------------------------------------------------===//
+
+def POP_AndOp : POP_BoolOp<"and", [Idempotent]> {
+  let summary = "bitwise logical and";
+  let description = [{
+    The `pop.and` returns the logical and of its two operands. The type
+    of the operands must be a boolean.
+
+    Example:
+
+    ```mlir
+    %c = pop.and %a, %b 
+    ```
+  }];
+}
+
+//===----------------------------------------------------------------------===//
+// OrOp
+//===----------------------------------------------------------------------===//
+
+def POP_OrOp : POP_BoolOp<"or", [Idempotent]> {
+  let summary = "bitwise logical or";
+  let description = [{
+    The `pop.or` returns the logical or of its two operands. The type
+    of the operands must be a boolean.
+
+    Example:
+
+    ```mlir
+    %c = pop.or %a, %b 
+    ```
+  }];
+}
+
+//===----------------------------------------------------------------------===//
+// XOrOp
+//===----------------------------------------------------------------------===//
+
+def POP_XOrOp : POP_BoolOp<"xor"> {
+  let summary = "bitwise logical xor";
+  let description = [{
+    The `pop.xor` returns the logical exclusive or of its two operands. The
+    type of the operands must be a boolean.
+
+    Example:
+
+    ```mlir
+    %c = pop.xor %a, %b 
+    ```
+  }];
+}
+
+//===----------------------------------------------------------------------===//
 // ArrayCreateOp
 //===----------------------------------------------------------------------===//
 

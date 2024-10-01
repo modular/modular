@@ -564,6 +564,66 @@ OpFoldResult CmpOp::fold(FoldAdaptor adaptor) {
 }
 
 //===----------------------------------------------------------------------===//
+// Bool Operation Folders
+//===----------------------------------------------------------------------===//
+
+OpFoldResult AndOp::fold(FoldAdaptor adaptor) {
+  auto lhs = dyn_cast_or_null<BoolAttr>(adaptor.getLhs());
+  auto rhs = dyn_cast_or_null<BoolAttr>(adaptor.getRhs());
+  if (lhs && rhs)
+    return BoolAttr::get(getContext(), lhs.getValue() && rhs.getValue());
+
+  // Commutative operation, constant operands are pushed to the end.
+  if (rhs) {
+    // lhs && true == lhs
+    if (rhs.getValue())
+      return getLhs();
+
+    // lhs && false == false
+    return BoolAttr::get(getContext(), false);
+  }
+  return {};
+}
+
+OpFoldResult OrOp::fold(FoldAdaptor adaptor) {
+  auto lhs = dyn_cast_or_null<BoolAttr>(adaptor.getLhs());
+  auto rhs = dyn_cast_or_null<BoolAttr>(adaptor.getRhs());
+  if (lhs && rhs)
+    return BoolAttr::get(getContext(), lhs.getValue() || rhs.getValue());
+
+  // Commutative operation, constant operands are pushed to the end.
+  if (rhs) {
+    // lhs || false == lhs
+    if (!rhs.getValue())
+      return getLhs();
+
+    // lhs || true == true
+    return BoolAttr::get(getContext(), true);
+  }
+  return {};
+}
+
+OpFoldResult XOrOp::fold(FoldAdaptor adaptor) {
+  auto lhs = dyn_cast_or_null<BoolAttr>(adaptor.getLhs());
+  auto rhs = dyn_cast_or_null<BoolAttr>(adaptor.getRhs());
+
+  if (lhs && rhs)
+    return BoolAttr::get(getContext(), lhs.getValue() ^ rhs.getValue());
+
+  if (rhs) {
+    // `xor(x, 0)` -> `x`.
+    if (!rhs.getValue())
+      return getLhs();
+
+    // `xor(xor(x, 1), 1) -> x`.
+    auto xorOp = getLhs().getDefiningOp<XOrOp>();
+    if (xorOp && mlir::matchPattern(xorOp.getRhs(), mlir::m_One()))
+      return xorOp.getLhs();
+  }
+  return {};
+}
+
+//===----------------------------------------------------------------------===//
 // Bitwise Operation Folders
 //===----------------------------------------------------------------------===//
 
