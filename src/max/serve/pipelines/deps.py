@@ -19,8 +19,10 @@ def random_token_pipeline() -> TokenGeneratorPipeline:
 
 
 @lru_cache
-def echo_token_pipeline() -> TokenGeneratorPipeline:
-    pipeline = TokenGeneratorPipeline(EchoTokenGenerator())
+def echo_token_pipeline(max_batch_size: int = 1) -> TokenGeneratorPipeline:
+    pipeline = TokenGeneratorPipeline(
+        EchoTokenGenerator(), max_batch_size=max_batch_size
+    )
     return pipeline
 
 
