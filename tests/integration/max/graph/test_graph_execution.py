@@ -7,6 +7,7 @@
 
 import os
 import tempfile
+from pathlib import Path
 
 import numpy as np
 from max.driver import CPU, Tensor
@@ -15,62 +16,63 @@ from max.engine import InferenceSession
 from max.graph import Graph, TensorType, ops
 
 
-def test_max_graph(session):
+def create_test_graph():
     input_type = TensorType(dtype=DType.float32, shape=["batch", "channels"])
     with Graph("add", input_types=(input_type, input_type)) as graph:
         graph.output(ops.add(graph.inputs[0], graph.inputs[1]))
-        compiled = session.load(graph)
-        a_np = np.ones((1, 1), dtype=np.float32)
-        a = Tensor.from_numpy(a_np)
-        b_np = np.ones((1, 1), dtype=np.float32)
-        b = Tensor.from_numpy(b_np)
-        output = compiled.execute(a, b)
-        assert np.allclose((a_np + b_np), output[0].to_numpy())
+    return graph
+
+
+def test_max_graph(session):
+    graph = create_test_graph()
+    compiled = session.load(graph)
+    a_np = np.ones((1, 1)).astype(np.float32)
+    b_np = np.ones((1, 1)).astype(np.float32)
+    a = Tensor.from_numpy(a_np)
+    b = Tensor.from_numpy(b_np)
+    output = compiled.execute(a, b)
+    assert np.allclose((a_np + b_np), output[0].to_numpy())
 
 
 def test_max_graph_export(session):
     """Creates a graph via max-graph API, exports the mef to a tempfile, and
     check to ensure that the file contents are non-empty."""
-    input_type = TensorType(dtype=DType.float32, shape=["batch", "channels"])
+
     with tempfile.NamedTemporaryFile() as mef_file:
-        with Graph("add", input_types=(input_type, input_type)) as graph:
-            graph.output(ops.add(graph.inputs[0], graph.inputs[1]))
-            compiled = session.load(graph)
-            compiled._export_mef(mef_file.name)
-            assert os.path.getsize(mef_file.name) > 0
+        graph = create_test_graph()
+        compiled = session.load(graph)
+        compiled._export_mef(mef_file.name)
+        assert os.path.getsize(mef_file.name) > 0
 
 
-def test_max_graph_export_import(session):
+def test_max_graph_export_import_mef(session):
     """Creates a graph via max-graph API, exports the mef to a tempfile, and
     loads the mef. Both the original model from the max-graph and the model
     from the mef are executed to ensure that they produce the same output."""
-    input_type = TensorType(dtype=DType.float32, shape=["batch", "channels"])
+
     with tempfile.NamedTemporaryFile() as mef_file:
-        with Graph("add", input_types=(input_type, input_type)) as graph:
-            graph.output(ops.add(graph.inputs[0], graph.inputs[1]))
-            compiled = session.load(graph)
-            compiled._export_mef(mef_file.name)
-            a_np = np.ones((1, 1)).astype(np.float32)
-            b_np = np.ones((1, 1)).astype(np.float32)
-            a = Tensor.from_numpy(a_np)
-            b = Tensor.from_numpy(b_np)
-            output = compiled.execute(a, b)
-            assert np.allclose((a_np + b_np), output[0].to_numpy())
-            compiled2 = session.load(mef_file.name)
-            # Executing a mef-loaded model with a device tensor seems to not work.
-            output2 = compiled2.execute(a_np, b_np)
-            assert np.allclose((a_np + b_np), output2[0].to_numpy())
-            assert np.allclose(output[0].to_numpy(), output2[0].to_numpy())
-
-
-def test_max_graph_device():
-    input_type = TensorType(dtype=DType.float32, shape=["batch", "channels"])
-    with Graph("add", input_types=(input_type, input_type)) as graph:
-        graph.output(ops.add(graph.inputs[0], graph.inputs[1]))
-        device = CPU()
-        session = InferenceSession(device=device)
+        graph = create_test_graph()
         compiled = session.load(graph)
-        assert str(device) == str(compiled.device)
+        compiled._export_mef(mef_file.name)
+        a_np = np.ones((1, 1)).astype(np.float32)
+        b_np = np.ones((1, 1)).astype(np.float32)
+        a = Tensor.from_numpy(a_np)
+        b = Tensor.from_numpy(b_np)
+        output = compiled.execute(a, b)
+        assert np.allclose((a_np + b_np), np.from_dlpack(output[0]))
+        compiled2 = session.load(mef_file.name)
+        # Executing a mef-loaded model with a device tensor seems to not work.
+        output2 = compiled2.execute_legacy(input0=a_np, input1=b_np)
+        assert np.allclose((a_np + b_np), output2["output0"])
+        assert np.allclose(np.from_dlpack(output[0]), output2["output0"])
+
+
+def test_max_graph_device(session):
+    graph = create_test_graph()
+    device = CPU()
+    session = InferenceSession(device=device)
+    compiled = session.load(graph)
+    assert str(device) == str(compiled.device)
 
 
 def test_identity(session):
@@ -85,7 +87,30 @@ def test_identity(session):
     model = session.load(graph)
     input = Tensor(shape=(1,), dtype=DType.int32)
     output = model.execute(input)
-
     # Test that using output's storage is still valid after destroying input.
     del input
     _ = output[0][0]
+
+
+def test_max_graph_export_import_mlir(session):
+    """Creates a graph via max-graph API, exports the mlir to a tempfile, and
+    loads the mlir. Both the original model from the max-graph and the model
+    from the mlir are executed to ensure that they produce the same output."""
+
+    with tempfile.NamedTemporaryFile(mode="w+") as mlir_file:
+        graph = create_test_graph()
+        compiled = session.load(graph)
+        mlir_file.write(str(graph._module))
+        a = np.ones((1, 1)).astype(np.float32)
+        b = np.ones((1, 1)).astype(np.float32)
+        output = compiled.execute_legacy(input0=a, input1=b)
+        assert output["output0"] == a + b
+
+        mlir_file.flush()
+
+        # Now load the model from mlir.
+        graph2 = Graph(name="add", path=Path(mlir_file.name))
+        compiled2 = session.load(graph2)
+        output2 = compiled2.execute_legacy(input0=a, input1=b)
+        assert output2["output0"] == a + b
+        assert output["output0"] == output2["output0"]

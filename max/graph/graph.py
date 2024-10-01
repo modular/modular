@@ -170,10 +170,15 @@ class Graph:
         name: str,
         forward: Optional[Callable] = None,
         input_types: Iterable[Type] = (),
+        path: Optional[Path] = None,
         *args,
         **kwargs,
     ) -> None:
         self.name = name
+        if path is not None:
+            self._load_mlir(path)
+            return
+
         self._input_types = list(input_types)
         self._params = dict.fromkeys(
             dim.name
@@ -384,6 +389,26 @@ class Graph:
                 "Graph failed to verify. Please file an issue. This should be"
                 " impossible."
             ) from e
+
+    def _load_mlir(self, path: Path):
+        self._unique_symbolic_dim_counter = 0
+        self._context_state = []
+        with open(path) as f:
+            registry = mlir.DialectRegistry()
+            _graph.load_modular_dialects(registry)
+
+            self._context = mlir.Context()
+            self._context.append_dialect_registry(registry)
+            self._context.load_all_available_dialects()
+
+            with self._context, location() as loc:
+                # Create the top level module op.
+                self._module = mlir.Module.create()
+                with mlir.InsertionPoint(self._module.body):
+                    self._module = self._module.parse(f.read(), self._context)
+                    self._mlir_op = (
+                        self._module.body.operations[0].regions[0].blocks[0]
+                    )
 
     def add_weight(self, weight: Weight) -> TensorValue:
         """Adds a weight to the graph.
