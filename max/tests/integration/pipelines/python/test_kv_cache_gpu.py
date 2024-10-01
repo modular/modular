@@ -8,7 +8,7 @@ from max.driver import CUDA
 from max.dtype import DType
 from max.engine import InferenceSession
 from nn.kv_cache import ContiguousKVCacheManager
-from nn.kv_cache_params import KVCacheParams
+from nn.kv_caching import KVCacheParams
 
 
 def test_kv_cache_gpu():

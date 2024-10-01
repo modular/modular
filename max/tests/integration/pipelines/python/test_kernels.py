@@ -14,7 +14,7 @@ from nn.kv_cache import (
     ContiguousKVCacheCollectionType,
     ContiguousKVCacheManager,
 )
-from nn.kv_cache_params import KVCacheParams
+from nn.kv_caching import KVCacheParams
 
 
 def test_kv_cache_length():
