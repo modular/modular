@@ -42,19 +42,18 @@ struct TensorSlice[
     method defined in tensor.
     """
 
-    alias _ref_type = Reference[Tensor[type, rank], lifetime]
-    var _ref: Self._ref_type
+    var _ref: Reference[Tensor[type, rank], lifetime]
     var _unsafe_slice: ManagedTensorSlice[type, rank]
 
     @doc_private
     fn __init__(
-        inout self, tensor: Self._ref_type, slices: InlineArray[Slice, rank]
+        inout self,
+        ref [lifetime]tensor: Tensor[type, rank],
+        slices: InlineArray[Slice, rank],
     ):
         self = Self(
-            tensor,
-            ManagedTensorSlice[type, rank](
-                tensor[]._ptr, slices, tensor[]._spec
-            ),
+            Reference.address_of(tensor),
+            ManagedTensorSlice[type, rank](tensor._ptr, slices, tensor._spec),
         )
 
     fn static_spec(self) -> StaticTensorSpec[type, rank]:
