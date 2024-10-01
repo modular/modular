@@ -2328,4 +2328,41 @@ def POP_UnionUnwrapOp : POPOp<"union.unwrap", [Pure]> {
   let hasFolder = 1;
 }
 
+// TODO: This instruction is NVPTX backend specific, we should consider moving
+// it outside.
+def POP_NVVMWGMAMMAAsyncOp : POPOp<"nvvm.wgmma.mma_async", [Pure]> {
+  let summary = "Performs a warp group MMA operation";
+  let description = [{
+    The `nvvm.wgmma.mma_async` operation takes a shared memory descriptors
+    `descriptor_a` and `descriptor_b` and performs warp group level (4-warps)
+    matrix-multiply-and-accumulate `D = A * B + C` operation with an instruction
+    of shapes `shape_m`, `shape_n` and `shape_k`.
+
+    Example:
+    ```mlir
+    %0 = pop.nvvm.wgmma.mma_async %desc_a %desc_b %reg_c tf32 tf32 f32 {
+       layout_a = "row" : !kgen.string,
+       layout_b = "col" : !kgen.string,
+       shape_k = 8 : index, shape_m = 64 : index, shape_n = 8 : index}
+    ```
+  }];
+  let arguments = (ins I64:$descriptor_a,
+                       I64:$descriptor_b,
+                       UnboundOrFloatSIMD:$reg_c,
+                       TypeAttr:$type_a,
+                       TypeAttr:$type_b,
+                       TypeAttr:$type_c,
+                       AttrOfType<Index>:$shape_m,
+                       AttrOfType<Index>:$shape_n,
+                       AttrOfType<Index>:$shape_k,
+                       AttrOfType<KGEN_StringType>:$layout_a,
+                       AttrOfType<KGEN_StringType>:$layout_b);
+
+  let results = (outs UnboundOrFloatSIMD:$res);
+  let assemblyFormat = [{
+    $descriptor_a $descriptor_b $reg_c $type_a $type_b $type_c
+    attr-dict `:` type($reg_c) `->` type($res)
+  }];
+}
+
 #endif // KGEN_POPDIALECT_POPOPS_TD

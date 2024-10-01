@@ -21,6 +21,7 @@
 #include "mlir/Dialect/Index/IR/IndexDialect.h"
 #include "mlir/Dialect/LLVMIR/LLVMAttrs.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
+#include "mlir/Dialect/LLVMIR/NVVMDialect.h"
 #include "llvm/ADT/TypeSwitch.h"
 #include "llvm/IR/Attributes.h"
 
@@ -28,6 +29,7 @@ using namespace M;
 using namespace KGEN;
 using namespace POP;
 namespace LLVM = mlir::LLVM;
+namespace NVVM = mlir::NVVM;
 
 namespace M::KGEN {
 #define GEN_PASS_DEF_LOWERGLOBALPOPTOLLVM
@@ -1391,6 +1393,111 @@ using ConvertPOPShl = mlir::OneToOneConvertToLLVMPattern<ShlOp, LLVM::ShlOp>;
 using ConvertPOPPointerToIndex =
     mlir::OneToOneConvertToLLVMPattern<PointerToIndexOp, LLVM::PtrToIntOp>;
 
+//===----------------------------------------------------------------------===//
+// ConvertNVVMWGMAMMAAsync
+//===----------------------------------------------------------------------===//
+
+static FailureOr<NVVM::WGMMATypesAttr> getMMAType(MLIRContext *ctx, Type type) {
+  if (type.isF32())
+    return NVVM::WGMMATypesAttr::get(ctx, NVVM::WGMMATypes::f32);
+  if (type.isTF32())
+    return NVVM::WGMMATypesAttr::get(ctx, NVVM::WGMMATypes::tf32);
+  if (type.isBF16())
+    return NVVM::WGMMATypesAttr::get(ctx, NVVM::WGMMATypes::bf16);
+  if (type.isF16())
+    return NVVM::WGMMATypesAttr::get(ctx, NVVM::WGMMATypes::f16);
+  return failure();
+}
+
+static FailureOr<NVVM::MMALayoutAttr> getMMALayout(MLIRContext *ctx,
+                                                   StringRef layoutStr) {
+  if (layoutStr == "row")
+    return NVVM::MMALayoutAttr::get(ctx, NVVM::MMALayout::row);
+  if (layoutStr == "col")
+    return NVVM::MMALayoutAttr::get(ctx, NVVM::MMALayout::col);
+  return failure();
+}
+
+// Converts pop.nvvm.wgmma.mma_async to nvvm.wgmma.mma_async operation.
+struct ConvertPoPNVVMWGMAMMAAsync
+    : public ConvertPOPToLLVMPattern<NVVMWGMAMMAAsyncOp> {
+  using ConvertPOPToLLVMPattern::ConvertPOPToLLVMPattern;
+
+  LogicalResult matchAndRewrite(NVVMWGMAMMAAsyncOp mmaOp,
+                                NVVMWGMAMMAAsyncOpAdaptor adaptor,
+                                ConversionPatternRewriter &b) const override {
+
+    auto *ctx = mmaOp.getContext();
+    auto loc = mmaOp->getLoc();
+
+    auto shapeM = cast<IntegerAttr>(mmaOp.getShapeM()).getInt();
+    auto shapeN = cast<IntegerAttr>(mmaOp.getShapeN()).getInt();
+    auto shapeK = cast<IntegerAttr>(mmaOp.getShapeK()).getInt();
+
+    auto vecType = cast<VectorType>(adaptor.getRegC().getType());
+
+    auto regStructType = LLVM::LLVMStructType::getLiteral(
+        ctx,
+        SmallVector<Type>(vecType.getNumElements(), vecType.getElementType()));
+
+    Value inputOperand = b.create<LLVM::UndefOp>(loc, regStructType);
+
+    // Insert elements in the struct
+    for (int i = 0, e = vecType.getNumElements(); i < e; ++i) {
+      Value idx = b.create<LLVM::ConstantOp>(mmaOp.getLoc(), b.getI32Type(), i);
+      Value element = b.create<LLVM::ExtractElementOp>(mmaOp.getLoc(),
+                                                       adaptor.getRegC(), idx);
+      inputOperand =
+          b.create<LLVM::InsertValueOp>(loc, inputOperand, element, i);
+    }
+
+    auto instShape = NVVM::MMAShapeAttr::get(ctx, shapeM, shapeN, shapeK);
+
+    // If we need to compute `(-1) * A * (-1) * B` or a non-accumulated version,
+    // we will need to expose these attributes. Otherwise, we are currently
+    // performing `D = A * B + C` , which covers 99%
+    // of the use cases we care about, if not more.
+    NVVM::WGMMAScaleOutAttr scaleOutAttr =
+        NVVM::WGMMAScaleOutAttr::get(ctx, NVVM::WGMMAScaleOut::one);
+    NVVM::WGMMAScaleInAttr scaleInAttr =
+        NVVM::WGMMAScaleInAttr::get(ctx, NVVM::WGMMAScaleIn::one);
+    auto overflowAttr =
+        NVVM::MMAIntOverflowAttr::get(ctx, NVVM::MMAIntOverflow::wrapped);
+
+    auto typeA = getMMAType(ctx, mmaOp.getTypeA());
+    auto typeB = getMMAType(ctx, mmaOp.getTypeB());
+    auto typeC = getMMAType(ctx, mmaOp.getTypeC());
+
+    if (failed(typeA) || failed(typeB) || failed(typeC))
+      return mmaOp->emitError("Unsupported operand types");
+
+    auto layoutA = getMMALayout(ctx, cast<StringAttr>(adaptor.getLayoutA()));
+    auto layoutB = getMMALayout(ctx, cast<StringAttr>(adaptor.getLayoutA()));
+
+    if (failed(layoutA) || failed(layoutB))
+      return mmaOp->emitError("Unsupported operand layouts");
+
+    Value descA = mmaOp.getDescriptorA();
+    Value descB = mmaOp.getDescriptorB();
+
+    Value resStruct = b.create<NVVM::WgmmaMmaAsyncOp>(
+        mmaOp.getLoc(), inputOperand.getType(), inputOperand, descA, descB,
+        instShape, typeA.value(), typeB.value(), typeC.value(), scaleOutAttr,
+        scaleInAttr, scaleInAttr, layoutA.value(), layoutB.value(),
+        overflowAttr);
+
+    Value result = b.create<LLVM::UndefOp>(mmaOp.getLoc(), vecType);
+    for (int i = 0, e = vecType.getNumElements(); i < e; ++i) {
+      auto idx = b.create<LLVM::ConstantOp>(mmaOp.getLoc(), b.getI32Type(), i);
+      auto val = b.create<LLVM::ExtractValueOp>(loc, resStruct, i);
+      result = b.create<LLVM::InsertElementOp>(loc, result, val, idx);
+    }
+
+    b.replaceOp(mmaOp, result);
+
+    return success();
+  }
+};
 } // namespace
 
 //===----------------------------------------------------------------------===//
@@ -1452,7 +1559,8 @@ static void populatePOPToLLVMPatterns(mlir::LLVMTypeConverter &typeConverter,
       ConvertPOPUnionWrap,
       ConvertPOPVariadicGet,
       ConvertPOPVariadicSize,
-      ConvertPOPXOr
+      ConvertPOPXOr,
+      ConvertPoPNVVMWGMAMMAAsync
       // clang-format on
       >(typeConverter);
 }
