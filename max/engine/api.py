@@ -316,7 +316,7 @@ class Model:
         # not increase reference count, so we need to ensure the garbage
         # collector does not free them. Since numpy arrays are not hashable, we
         # do this with a dictionary with pointer keys.
-        keep_referenced = dict()
+        keep_referenced = dict()  # type: ignore
         dtype_map = {spec.name: spec.dtype for spec in self.input_metadata}
         for input_name, input_value in kwargs.items():
             kwargs[input_name] = _map_execute_kwarg(
@@ -613,7 +613,7 @@ class InferenceSession:
         device: Device = CPU(),
         **kwargs,
     ):
-        config = {}
+        config: dict[str, Any] = {}
         self.num_threads = num_threads
         if num_threads:
             config["num_threads"] = num_threads
@@ -700,7 +700,7 @@ class InferenceSession:
             RuntimeError: If the path provided is invalid.
         """
 
-        options_dict = {}
+        options_dict: dict[str, Any] = {}
 
         if custom_extensions is not None:
             options_dict[

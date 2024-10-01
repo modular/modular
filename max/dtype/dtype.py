@@ -117,7 +117,7 @@ class DType(Enum):
         }
 
         if self in dtype_to_numpy:
-            return dtype_to_numpy[self]
+            return dtype_to_numpy[self]  # type: ignore
         else:
             raise ValueError(f"unsupported DType to convert to NumPy: {self}")
 
@@ -166,7 +166,7 @@ class DType(Enum):
 
         return np.dtype(self.to_numpy()).alignment
 
-    def is_float(self) -> bool:
+    def is_float(self) -> bool:  # type: ignore
         """Returns true if the dtype is floating point."""
         return self in [
             DType.bfloat16,
