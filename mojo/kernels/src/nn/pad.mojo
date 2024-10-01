@@ -225,7 +225,6 @@ fn pad_reflect[
     ](output, input, paddings)
 
 
-@mogg_register("pad_shape")
 @always_inline
 fn pad_shape[
     input_rank: Int,
