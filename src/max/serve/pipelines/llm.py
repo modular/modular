@@ -8,6 +8,8 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
+import signal
 from dataclasses import dataclass, field
 from typing import AsyncGenerator, Generic, Optional, TypeVar
 
@@ -109,6 +111,11 @@ class TokenGeneratorPipeline(Generic[Context]):
             for t in self._background_tasks:
                 if not t.done():
                     t.cancel("terminating task")
+            e = task.exception()
+            if e:
+                logger.error("Task completed with error. Stopping", exc_info=e)
+                # Shut server down. Sending SIGTERM is ugly, but simplifies the intenral plumbing.
+                os.kill(os.getpid(), signal.SIGTERM)
 
         context_encoder.add_done_callback(log_task_done)
         token_generator.add_done_callback(log_task_done)
