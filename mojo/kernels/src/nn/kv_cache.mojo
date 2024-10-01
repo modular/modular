@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 from buffer import DimList, NDBuffer, Dim
 from collections import Optional, OptionalReg
-from math import gcd, isqrt
+from math import gcd
 from memory import UnsafePointer
 from sys.info import _current_target, simdwidthof
 from utils import Index
@@ -1920,7 +1920,7 @@ fn flash_attention_kv_cache_h6_d48_bshd[
     v: ContiguousKVCache[type, k.kv_params],
     mask: NDBuffer[type, *_],
     valid_lengths: NDBuffer[DType.uint32, 1],
-    scale: NDBuffer[DType.float32, 1, *_],
+    scale: Float32,
     output: NDBuffer[type, 4, *_],
     context: MojoCallContextPtr,
 ):
@@ -1948,7 +1948,7 @@ fn flash_attention_kv_cache_h6_d48_bhsd[
     v: ContiguousKVCache[type, k.kv_params],
     mask: NDBuffer[type, *_],
     valid_lengths: NDBuffer[DType.uint32, 1],
-    scale: NDBuffer[DType.float32, 1, *_],
+    scale: Float32,
     output: NDBuffer[type, 4, *_],
     context: MojoCallContextPtr,
 ):
@@ -1976,7 +1976,7 @@ fn flash_attention_kv_cache_h8_d128_bshd[
     v: ContiguousKVCache[type, k.kv_params],
     mask: NDBuffer[type, *_],
     valid_lengths: NDBuffer[DType.uint32, 1],
-    scale: NDBuffer[DType.float32, 1, *_],
+    scale: Float32,
     output: NDBuffer[type, 4, *_],
     context: MojoCallContextPtr,
 ):
@@ -2004,7 +2004,7 @@ fn flash_attention_kv_cache_h8_d128_bhsd[
     v: ContiguousKVCache[type, k.kv_params],
     mask: NDBuffer[type, *_],
     valid_lengths: NDBuffer[DType.uint32, 1],
-    scale: NDBuffer[DType.float32, 1, *_],
+    scale: Float32,
     output: NDBuffer[type, 4, *_],
     context: MojoCallContextPtr,
 ):
@@ -2032,7 +2032,7 @@ fn flash_attention_kv_cache_h1_d10_bshd[
     v: ContiguousKVCache[type, k.kv_params],
     mask: NDBuffer[type, *_],
     valid_lengths: NDBuffer[DType.uint32, 1],
-    scale: NDBuffer[DType.float32, 1, *_],
+    scale: Float32,
     output: NDBuffer[type, 4, *_],
     context: MojoCallContextPtr,
 ):
@@ -2060,7 +2060,7 @@ fn flash_attention_kv_cache_h1_d10_bhsd[
     v: ContiguousKVCache[type, k.kv_params],
     mask: NDBuffer[type, *_],
     valid_lengths: NDBuffer[DType.uint32, 1],
-    scale: NDBuffer[DType.float32, 1, *_],
+    scale: Float32,
     output: NDBuffer[type, 4, *_],
     context: MojoCallContextPtr,
 ):
@@ -2088,7 +2088,7 @@ fn flash_attention_kv_cache_h8_d64_bshd[
     v: ContiguousKVCache[type, k.kv_params],
     mask: NDBuffer[type, *_],
     valid_lengths: NDBuffer[DType.uint32, 1],
-    scale: NDBuffer[DType.float32, 1, *_],
+    scale: Float32,
     output: NDBuffer[type, 4, *_],
     context: MojoCallContextPtr,
 ):
@@ -2116,7 +2116,7 @@ fn flash_attention_kv_cache_h8_d64_bhsd[
     v: ContiguousKVCache[type, k.kv_params],
     mask: NDBuffer[type, *_],
     valid_lengths: NDBuffer[DType.uint32, 1],
-    scale: NDBuffer[DType.float32, 1, *_],
+    scale: Float32,
     output: NDBuffer[type, 4, *_],
     context: MojoCallContextPtr,
 ):
@@ -2138,7 +2138,7 @@ fn _flash_attention_kv_cache[
     v: ContiguousKVCache[type, *_],
     mask: NDBuffer[type, *_],
     valid_lengths: NDBuffer[DType.uint32, 1],
-    scale: NDBuffer[DType.float32, 1, *_],
+    scale: Float32,
     output: NDBuffer[type, 4, *_],
     context: MojoCallContextPtr,
 ):
@@ -2177,7 +2177,7 @@ fn _flash_attention_kv_cache_impl[
     v: ContiguousKVCache[type, *_],
     mask: NDBuffer[type, *_],
     valid_lengths: NDBuffer[DType.uint32, 1],
-    scale: NDBuffer[DType.float32, 1, *_],
+    scale: Float32,
     output: NDBuffer[type, 4, *_],
     context: Optional[DeviceContext],
 ):
@@ -2212,7 +2212,7 @@ fn _flash_attention_kv_cache_cpu[
     k: ContiguousKVCache[type, *_],
     v: ContiguousKVCache[type, *_],
     mask: NDBuffer[type, *_],
-    scale: NDBuffer[DType.float32, 1, *_],
+    scale: Float32,
     output: NDBuffer[type, 4, *_],
 ):
     constrained[
@@ -2280,7 +2280,7 @@ fn _flash_attention_kv_cache_cpu[
         fa_k_shape,
         fa_v_shape,
         output,
-        scale.load[width=1](0),
+        scale,
     )
 
 
@@ -2293,7 +2293,7 @@ fn _flash_attention_kv_cache_gpu[
     v: ContiguousKVCache[type, *_],
     mask: NDBuffer[type, *_],
     valid_lengths: NDBuffer[DType.uint32, 1],
-    scale: NDBuffer[DType.float32, 1, *_],
+    scale: Float32,
     output: NDBuffer[type, 4, *_],
     context: DeviceContext,
 ):
@@ -2345,8 +2345,7 @@ fn _flash_attention_kv_cache_gpu[
             v,
             mask_nd,
             valid_lengths,
-            # TODO take scale from argument GRA-750
-            isqrt(Float32(k.kv_params.head_size)),
+            scale,
             context,
         )
     except e:
