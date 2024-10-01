@@ -159,25 +159,13 @@ fn _reduce_res_row_major_shape(axis: Int, in_layout: Layout) -> Layout:
 @always_inline
 fn max[
     axis: Int,
-    dtype: DType,
-    layout: Layout,
-    rank: Int,
-    address_space: AddressSpace,
-    element_layout: Layout,
-](
-    inp: LayoutTensor[
-        dtype,
-        layout,
-        rank,
-        address_space=address_space,
-        element_layout=element_layout,
-    ]
-) -> LayoutTensor[
-    dtype,
-    _reduce_res_row_major_shape(axis, layout),
-    rank - 1,
-    address_space=address_space,
-    element_layout=element_layout,
+](inp: LayoutTensor) -> LayoutTensor[
+    inp.dtype,
+    _reduce_res_row_major_shape(axis, inp.layout),
+    inp.rank - 1,
+    address_space = inp.address_space,
+    element_layout = inp.element_layout,
+    __experimental_non_homogeneous_tile = inp.__experimental_non_homogeneous_tile,
 ] as res:
     var res_tensor = __type_of(res).stack_allocation()
     max[axis](inp, res_tensor)
@@ -201,25 +189,13 @@ fn max(x: LayoutTensor, y: __type_of(x)) -> __type_of(x) as res:
 @always_inline
 fn sum[
     axis: Int,
-    dtype: DType,
-    layout: Layout,
-    rank: Int,
-    address_space: AddressSpace,
-    element_layout: Layout,
-](
-    inp: LayoutTensor[
-        dtype,
-        layout,
-        rank,
-        address_space=address_space,
-        element_layout=element_layout,
-    ]
-) -> LayoutTensor[
-    dtype,
-    _reduce_res_row_major_shape(axis, layout),
-    rank - 1,
-    address_space=address_space,
-    element_layout=element_layout,
+](inp: LayoutTensor) -> LayoutTensor[
+    inp.dtype,
+    _reduce_res_row_major_shape(axis, inp.layout),
+    inp.rank - 1,
+    address_space = inp.address_space,
+    element_layout = inp.element_layout,
+    __experimental_non_homogeneous_tile = inp.__experimental_non_homogeneous_tile,
 ] as res:
     var res_tensor = __type_of(res).stack_allocation()
     sum[axis](inp, res_tensor)

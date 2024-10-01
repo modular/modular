@@ -1931,6 +1931,78 @@ fn test_copy_from_vectorized_masked_read():
     print(tensor_8x8)
 
 
+# CHECK-LABEL: test_binary_math_ops
+fn test_binary_math_ops():
+    print("== test_binary_math_ops")
+
+    var managed_tensor_a = ManagedLayoutTensor[
+        DType.float32, Layout(IntTuple(8, 4))
+    ]()
+    var tensor_a = managed_tensor_a.tensor
+    arange(tensor_a, start=1)
+
+    var managed_tensor_b = ManagedLayoutTensor[
+        DType.float32, Layout(IntTuple(8, 4))
+    ]()
+    var tensor_b = managed_tensor_b.tensor
+    arange(tensor_b, start=32, step=-1)
+
+    # CHECK: ----add matrix----
+    # CHECK: 33.0 	33.0 	33.0 	33.0
+    # CHECK: 33.0 	33.0 	33.0 	33.0
+    # CHECK: 33.0 	33.0 	33.0 	33.0
+    # CHECK: 33.0 	33.0 	33.0 	33.0
+    # CHECK: 33.0 	33.0 	33.0 	33.0
+    # CHECK: 33.0 	33.0 	33.0 	33.0
+    # CHECK: 33.0 	33.0 	33.0 	33.0
+    # CHECK: 33.0 	33.0 	33.0 	33.0
+    print("----add matrix----")
+    var add = tensor_a + tensor_b
+    print_raw_major_tensor(add)
+
+    # CHECK: ----sub matrix----
+    # CHECK: 31.0 	29.0 	27.0 	25.0
+    # CHECK: 23.0 	21.0 	19.0 	17.0
+    # CHECK: 15.0 	13.0 	11.0 	9.0
+    # CHECK: 7.0 	5.0 	3.0 	1.0
+    # CHECK: -1.0 	-3.0 	-5.0 	-7.0
+    # CHECK: -9.0 	-11.0 	-13.0 	-15.0
+    # CHECK: -17.0 	-19.0 	-21.0 	-23.0
+    # CHECK: -25.0 	-27.0 	-29.0 	-31.0
+    print("----sub matrix----")
+    var sub = tensor_b - tensor_a
+    print_raw_major_tensor(sub)
+
+    # CHECK: ----div matrix----
+    # CHECK: 32.0 	15.5 	10.0 	7.25
+    # CHECK: 5.5999999046325684 	4.5 	3.7142856121063232 	3.125
+    # CHECK: 2.6666667461395264 	2.2999999523162842 	2.0 	1.75
+    # CHECK: 1.5384615659713745 	1.3571428060531616 	1.2000000476837158 	1.0625
+    # CHECK: 0.94117647409439087 	0.83333331346511841 	0.73684209585189819 	0.64999997615814209
+    # CHECK: 0.57142859697341919 	0.5 	0.43478259444236755 	0.375
+    # CHECK: 0.31999999284744263 	0.26923078298568726 	0.2222222238779068 	0.1785714328289032
+    # CHECK: 0.13793103396892548 	0.10000000149011612 	0.064516127109527588 	0.03125
+    print("----div matrix----")
+    var div = tensor_b / tensor_a
+    print_raw_major_tensor(div)
+
+    # CHECK: ----mul matrix----
+    # CHECK: 32.0 	62.0 	90.0 	116.0
+    # CHECK: 140.0 	162.0 	182.0 	200.0
+    # CHECK: 216.0 	230.0 	242.0 	252.0
+    # CHECK: 260.0 	266.0 	270.0 	272.0
+    # CHECK: 272.0 	270.0 	266.0 	260.0
+    # CHECK: 252.0 	242.0 	230.0 	216.0
+    # CHECK: 200.0 	182.0 	162.0 	140.0
+    # CHECK: 116.0 	90.0 	62.0 	32.0
+    print("----mul matrix----")
+    var mul = tensor_b * tensor_a
+    print_raw_major_tensor(mul)
+
+    _ = managed_tensor_a^
+    _ = managed_tensor_b^
+
+
 fn main():
     test_basic_tensor_ops()
     test_tesnsor_fragments()
@@ -1959,3 +2031,4 @@ fn main():
     test_copy_from_smaller_tensor()
     test_copy_from_vectorized_masked_write()
     test_copy_from_vectorized_masked_read()
+    test_binary_math_ops()

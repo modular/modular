@@ -357,6 +357,7 @@ struct LayoutTensor[
             _,
             address_space=address_space,
             element_layout=element_layout,
+            __experimental_non_homogeneous_tile=__experimental_non_homogeneous_tile,
         ],
     ) -> Self:
         @parameter
@@ -475,6 +476,7 @@ struct LayoutTensor[
             _,
             address_space=address_space,
             element_layout=element_layout,
+            __experimental_non_homogeneous_tile=__experimental_non_homogeneous_tile,
         ],
     ) -> Self:
         """Do an addition with another LayoutTensor and return the added
@@ -506,6 +508,7 @@ struct LayoutTensor[
             _,
             address_space=address_space,
             element_layout=element_layout,
+            __experimental_non_homogeneous_tile=__experimental_non_homogeneous_tile,
         ],
     ):
         """Do an addition with another LayoutTensor in place.
@@ -554,6 +557,7 @@ struct LayoutTensor[
             _,
             address_space=address_space,
             element_layout=element_layout,
+            __experimental_non_homogeneous_tile=__experimental_non_homogeneous_tile,
         ],
     ) -> Self:
         """Perform a multiplication with another LayoutTensor and return the
@@ -605,6 +609,7 @@ struct LayoutTensor[
             _,
             address_space=address_space,
             element_layout=element_layout,
+            __experimental_non_homogeneous_tile=__experimental_non_homogeneous_tile,
         ],
     ):
         """Do a multiplication with another LayoutTensor in place.
@@ -653,6 +658,7 @@ struct LayoutTensor[
             _,
             address_space=address_space,
             element_layout=element_layout,
+            __experimental_non_homogeneous_tile=__experimental_non_homogeneous_tile,
         ],
     ) -> Self:
         """Do an subtraction with another LayoutTensor and return the subtracted
@@ -699,6 +705,7 @@ struct LayoutTensor[
             _,
             address_space=address_space,
             element_layout=element_layout,
+            __experimental_non_homogeneous_tile=__experimental_non_homogeneous_tile,
         ],
     ):
         """Subtracts other from the LayoutTensor. Currently only support tensors
@@ -746,6 +753,7 @@ struct LayoutTensor[
             _,
             address_space=address_space,
             element_layout=element_layout,
+            __experimental_non_homogeneous_tile=__experimental_non_homogeneous_tile,
         ],
     ) -> Self:
         """Do an truediv with another LayoutTensor and return the divided
