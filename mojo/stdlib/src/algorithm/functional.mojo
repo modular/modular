@@ -1046,26 +1046,26 @@ fn _get_num_workers(problem_size: Int, grain_size: Int = 32768) -> Int:
 
 @always_inline
 fn _get_start_indices_of_nth_subvolume[
-    rank: Int, subvolume_rank: Int
+    rank: Int, //, subvolume_rank: Int = 1
 ](n: Int, shape: StaticIntTuple[rank]) -> StaticIntTuple[rank]:
     """Converts a flat index into the starting ND indices of the nth subvolume
     with rank `subvolume_rank`.
 
     For example:
-        - `_get_start_indices_of_nth_subvolume[3, 0](n, shape)` will return
+        - `_get_start_indices_of_nth_subvolume[0](n, shape)` will return
         the starting indices of the nth element in shape.
-        - `_get_start_indices_of_nth_subvolume[3, 1](n, shape)` will return
+        - `_get_start_indices_of_nth_subvolume[1](n, shape)` will return
         the starting indices of the nth row in shape.
-        - `_get_start_indices_of_nth_subvolume[3, 2](n, shape)` will return
+        - `_get_start_indices_of_nth_subvolume[2](n, shape)` will return
         the starting indices of the nth horizontal slice in shape.
 
     The ND indices will iterate from right to left. I.E
 
         shape = (20, 5, 2, N)
-        _get_start_indices_of_nth_subvolume[4, 1](1, shape) = (0, 0, 1, 0)
-        _get_start_indices_of_nth_subvolume[4, 1](5, shape) = (0, 2, 1, 0)
-        _get_start_indices_of_nth_subvolume[4, 1](50, shape) = (5, 0, 0, 0)
-        _get_start_indices_of_nth_subvolume[4, 1](56, shape) = (5, 1, 1, 0)
+        _get_start_indices_of_nth_subvolume[1](1, shape) = (0, 0, 1, 0)
+        _get_start_indices_of_nth_subvolume[1](5, shape) = (0, 2, 1, 0)
+        _get_start_indices_of_nth_subvolume[1](50, shape) = (5, 0, 0, 0)
+        _get_start_indices_of_nth_subvolume[1](56, shape) = (5, 1, 1, 0)
 
     Parameters:
         rank: The rank of the ND index.
@@ -1100,7 +1100,7 @@ fn _get_start_indices_of_nth_subvolume[
     if rank == subvolume_rank:
         return StaticIntTuple[rank](0)
 
-    var out = StaticIntTuple[rank](0)
+    var out = StaticIntTuple[rank]()
     var curr_index = n
 
     @parameter
@@ -1115,26 +1115,27 @@ fn _get_start_indices_of_nth_subvolume[
 # to the Int overload.
 @always_inline
 fn _get_start_indices_of_nth_subvolume_uint[
-    rank: Int,
-    subvolume_rank: UInt,
+    rank: Int, //,
+    subvolume_rank: UInt = 1,
 ](n: UInt, shape: StaticIntTuple[rank]) -> StaticIntTuple[rank]:
     """Converts a flat index into the starting ND indices of the nth subvolume
     with rank `subvolume_rank`.
 
     For example:
-        - `_get_start_indices_of_nth_subvolume[3, 0](n, shape)` will return
+        - `_get_start_indices_of_nth_subvolume[0](n, shape)` will return
         the starting indices of the nth element in shape.
-        - `_get_start_indices_of_nth_subvolume[3, 1](n, shape)` will return
+        - `_get_start_indices_of_nth_subvolume[1](n, shape)` will return
         the starting indices of the nth row in shape.
-        - `_get_start_indices_of_nth_subvolume[3, 2](n, shape)` will return
+        - `_get_start_indices_of_nth_subvolume[2](n, shape)` will return
         the starting indices of the nth horizontal slice in shape.
 
     The ND indices will iterate from right to left. I.E
+
         shape = (20, 5, 2, N)
-        _get_start_indices_of_nth_subvolume[4, 1](1, shape) = (0, 0, 1, 0)
-        _get_start_indices_of_nth_subvolume[4, 1](5, shape) = (0, 2, 1, 0)
-        _get_start_indices_of_nth_subvolume[4, 1](50, shape) = (5, 0, 0, 0)
-        _get_start_indices_of_nth_subvolume[4, 1](56, shape) = (5, 1, 1, 0)
+        _get_start_indices_of_nth_subvolume[1](1, shape) = (0, 0, 1, 0)
+        _get_start_indices_of_nth_subvolume[1](5, shape) = (0, 2, 1, 0)
+        _get_start_indices_of_nth_subvolume[1](50, shape) = (5, 0, 0, 0)
+        _get_start_indices_of_nth_subvolume[1](56, shape) = (5, 1, 1, 0)
 
     Parameters:
         rank: The rank of the ND index.
@@ -1147,7 +1148,7 @@ fn _get_start_indices_of_nth_subvolume_uint[
     Returns:
         Constructed ND-index.
     """
-    return _get_start_indices_of_nth_subvolume[rank, int(subvolume_rank)](
+    return _get_start_indices_of_nth_subvolume[int(subvolume_rank)](
         int(n), shape
     )
 
@@ -1506,7 +1507,7 @@ fn _elementwise_impl_cpu_nd[
         @always_inline
         @parameter
         fn blocking_task_fn(i: Int):
-            var indices = _get_start_indices_of_nth_subvolume[rank, 1](i, shape)
+            var indices = _get_start_indices_of_nth_subvolume(i, shape)
 
             @always_inline
             @parameter
@@ -1542,7 +1543,7 @@ fn _elementwise_impl_cpu_nd[
         for parallel_offset in range(
             start_parallel_offset, end_parallel_offset
         ):
-            var indices = _get_start_indices_of_nth_subvolume[rank, 1](
+            var indices = _get_start_indices_of_nth_subvolume(
                 parallel_offset, shape
             )
 
@@ -1630,9 +1631,9 @@ fn _elementwise_impl_gpu[
             num_packed_elems,
             block_size * GridDim.x(),
         ):
-            var start_indices = _get_start_indices_of_nth_subvolume_uint[
-                rank, 0
-            ](idx * simd_width, shape)
+            var start_indices = _get_start_indices_of_nth_subvolume_uint[0](
+                idx * simd_width, shape
+            )
 
             @parameter
             if handle_uneven_simd:
@@ -1641,7 +1642,7 @@ fn _elementwise_impl_gpu[
                     @parameter
                     for off in range(int(simd_width)):
                         func[1, rank](
-                            _get_start_indices_of_nth_subvolume_uint[rank, 0](
+                            _get_start_indices_of_nth_subvolume_uint[0](
                                 idx * simd_width + off,
                                 shape,
                             )
@@ -1653,7 +1654,7 @@ fn _elementwise_impl_gpu[
 
         # process the tail region
         if tid < unpacked_tail_length:
-            var index_tup = _get_start_indices_of_nth_subvolume_uint[rank, 0](
+            var index_tup = _get_start_indices_of_nth_subvolume_uint[0](
                 packed_region_length + tid, shape
             )
             func[1, rank](index_tup)
@@ -1803,7 +1804,7 @@ fn stencil[
         for parallel_offset in range(
             start_parallel_offset, end_parallel_offset
         ):
-            var indices = _get_start_indices_of_nth_subvolume[rank, 1](
+            var indices = _get_start_indices_of_nth_subvolume(
                 parallel_offset, shape
             )
 

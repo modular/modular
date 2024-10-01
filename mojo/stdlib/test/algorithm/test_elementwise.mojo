@@ -77,11 +77,11 @@ fn test_elementwise_implicit_runtime():
 fn test_indices_conversion():
     print("== Testing indices conversion:")
     var shape = StaticIntTuple[4](3, 4, 5, 6)
-    print(_get_start_indices_of_nth_subvolume[4, 0](10, shape))
-    print(_get_start_indices_of_nth_subvolume[4, 1](10, shape))
-    print(_get_start_indices_of_nth_subvolume[4, 2](10, shape))
-    print(_get_start_indices_of_nth_subvolume[4, 3](2, shape))
-    print(_get_start_indices_of_nth_subvolume[4, 4](0, shape))
+    print(_get_start_indices_of_nth_subvolume[0](10, shape))
+    print(_get_start_indices_of_nth_subvolume[1](10, shape))
+    print(_get_start_indices_of_nth_subvolume[2](10, shape))
+    print(_get_start_indices_of_nth_subvolume[3](2, shape))
+    print(_get_start_indices_of_nth_subvolume[4](0, shape))
 
 
 fn main():
