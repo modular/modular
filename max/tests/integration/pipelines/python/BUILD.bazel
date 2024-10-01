@@ -76,9 +76,9 @@ modular_py_test(
         "PIPELINES_TESTDATA": "SDK/integration-test/pipelines/python/testdata",
         "MODULAR_SYSTEM_INFO_PATH": "$(location //Support/tools/system-info)",
     },
+    exec_compatible_with = ["//:large"],
     requires_gpu = False,
     tags = [
-        "manual",
         "requires-network",
     ],
     target_compatible_with = select({
@@ -179,9 +179,9 @@ modular_py_test(
         "MODULAR_PATH": ".",
         "PIPELINES_TESTDATA": "SDK/integration-test/pipelines/python/testdata",
     },
+    exec_compatible_with = ["//:large"],
     requires_gpu = False,
     tags = [
-        "manual",
         "requires-network",
     ],
     deps = [
