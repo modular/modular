@@ -714,9 +714,7 @@ struct TensorShape(
 
         @parameter
         fn _fill[i: Int]():
-            tuple[i] = rebind[Reference[Int, __lifetime_of(shapes)]](
-                Reference(shapes[i])
-            )[]
+            tuple[i] = rebind[Int](shapes[i])
 
         unroll[_fill, rank]()
 
