@@ -97,19 +97,6 @@ def execute_flash_attention[
     )
     ctx.enqueue_copy_to_device(mask_device.buffer, mask_host.tensor.data)
 
-    # initialize scale tensor
-    scale_host = HostNDBuffer[DType.float32, 1, DimList(1)](
-        StaticIntTuple[1](1)
-    )
-
-    scale_host.tensor[0] = isqrt(Float32(kv_params.head_size))
-
-    scale_device = DeviceNDBuffer[DType.float32, 1, DimList(1)](
-        StaticIntTuple[1](1),
-        ctx=ctx,
-    )
-    ctx.enqueue_copy_to_device(scale_device.buffer, scale_host.tensor.data)
-
     # initialize reference output
     ref_output_host = HostNDBuffer[
         type, 4, DimList(Dim(), Dim(), num_q_heads, kv_params.head_size)
@@ -240,13 +227,15 @@ def execute_flash_attention[
         valid_lengths_device.buffer, valid_lengths_host.tensor.data
     )
 
+    scale = isqrt(Float32(kv_params.head_size))
+
     _flash_attention_kv_cache_impl[target="cuda"](
         q_device.tensor,
         k_cache_device,
         v_cache_device,
         mask_device.tensor,
         valid_lengths_device.tensor,
-        scale_device.tensor,
+        scale,
         test_output_device.tensor,
         ctx,
     )
@@ -257,7 +246,7 @@ def execute_flash_attention[
         v_block_device.buffer.ptr,
         mask_device.buffer.ptr,
         ref_output_device.buffer.ptr,
-        scale_host.tensor.data[0],
+        scale,
         batch_size,
         prompt_len,
         cache_size + prompt_len,
@@ -298,8 +287,6 @@ def execute_flash_attention[
     _ = v_block_host^
     _ = k_block_device^
     _ = k_block_host^
-    _ = scale_device^
-    _ = scale_host^
     _ = ref_output_device^
     _ = ref_output_host^
     _ = test_output_device^
