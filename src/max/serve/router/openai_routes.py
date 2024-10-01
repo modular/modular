@@ -341,3 +341,9 @@ async def openai_create_completion(
 
     response = await response_generator.complete()
     return JSONResponse(response.model_dump_json())
+
+
+@router.get("/health")
+async def health(raw_request: Request) -> Response:
+    """Health check."""
+    return Response(status_code=200)
