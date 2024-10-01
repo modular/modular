@@ -50,39 +50,6 @@ fn variadic_list_to_vector[
 
 
 @always_inline
-fn _compute_nd_index(shape: StaticIntTuple, index: Int) -> __type_of(shape):
-    """Computes the NDBuffer's offset using the index positions provided.
-
-    Args:
-        shape: The shape of the NDBuffer.
-        index: The flat index position.
-
-    Returns:
-        The index positions.
-    """
-
-    alias rank = shape.size
-
-    @parameter
-    if rank == 0:
-        return StaticIntTuple[shape.size](0)
-
-    var result = StaticIntTuple[shape.size]()
-
-    result[rank - 1] = index
-
-    @parameter
-    for idx in range(rank - 1):
-        result[rank - idx - 2] = result[rank - idx - 1]._positive_div(
-            shape[rank - idx - 1]
-        )
-        result[rank - idx - 1] = result[rank - idx - 1]._positive_rem(
-            shape[rank - idx - 1]
-        )
-    return result
-
-
-@always_inline
 fn memcpy_or_fuse[
     rank: Int,
     type: DType,
@@ -127,8 +94,9 @@ fn memcpy_or_fuse[
 
             # Convert the linearized address back to the nd indices.
             constrained[_rank == 1]()
-            var out_index = _compute_nd_index(
-                out_shape, index[0] + typed_offset
+            var out_index = _get_start_indices_of_nth_subvolume[0](
+                index[0] + typed_offset,
+                out_shape,
             )
 
             func[type, rank, simd_width](out_index, load)
@@ -1456,8 +1424,8 @@ fn _concat_inner_most_single_dim[
     inputs: StaticTuple[NDBuffer[type, rank], num_inputs],
 ):
     var idx = BlockIdx.x() * block_size + ThreadIdx.x()
-    var index = _get_start_indices_of_nth_subvolume_uint[rank, 1](
-        int(idx), output.dynamic_shape
+    var index = _get_start_indices_of_nth_subvolume_uint[1](
+        idx, output.dynamic_shape
     )
 
     if index > output.num_elements():

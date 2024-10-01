@@ -412,7 +412,7 @@ fn layer_norm_gpu[
         simd_width: Int
     ](row: Int, col: Int) -> SIMD[type, simd_width]:
         # Translate given 2d index back to original Nd tensor
-        var indices = _get_start_indices_of_nth_subvolume[rank, 1](row, shape)
+        var indices = _get_start_indices_of_nth_subvolume(row, shape)
         indices[rank - 1] = col
         return input_fn[simd_width](indices)
 
@@ -592,7 +592,7 @@ fn layer_norm_cpu[
             simd_width: Int
         ](row: Int, col: Int) -> SIMD[type, simd_width]:
             # Translate given 2d index back to original Nd tensor
-            var indices = _get_start_indices_of_nth_subvolume[rank, 1](
+            var indices = _get_start_indices_of_nth_subvolume(
                 row_idx + row, shape
             )
             indices[rank - 1] = col
@@ -798,7 +798,7 @@ fn rms_norm_gpu[
         simd_width: Int
     ](row: Int, col: Int) -> SIMD[type, simd_width]:
         # Translate given 2d index back to original Nd tensor
-        var indices = _get_start_indices_of_nth_subvolume[rank, 1](row, shape)
+        var indices = _get_start_indices_of_nth_subvolume(row, shape)
         indices[rank - 1] = col
         return input_fn[simd_width](indices)
 
@@ -934,7 +934,7 @@ fn rms_norm_cpu[
             simd_width: Int
         ](row: Int, col: Int) -> SIMD[type, simd_width]:
             # Translate given 2d index back to original Nd tensor
-            var indices = _get_start_indices_of_nth_subvolume[rank, 1](
+            var indices = _get_start_indices_of_nth_subvolume(
                 row_idx + row, shape
             )
             indices[rank - 1] = col

@@ -45,10 +45,10 @@ fn arg_nonzero[
 
         var j: Int = 0
         for i in range(numel):
-            var indices = _get_start_indices_of_nth_subvolume[rank, 0](
+            var indices = _get_start_indices_of_nth_subvolume[0](
                 i, input_buffer.dynamic_shape
             )
-            if input_buffer[indices] != 0:
+            if input_buffer[indices]:
                 var out_indices = StaticIntTuple[2]()
                 out_indices[0] = j
                 j += 1
@@ -90,10 +90,10 @@ fn arg_nonzero_shape[
 
     var j: Int = 0
     for i in range(numel):
-        var indices = _get_start_indices_of_nth_subvolume[rank, 0](
+        var indices = _get_start_indices_of_nth_subvolume[0](
             i, input_buffer.dynamic_shape
         )
-        if input_buffer[indices] != 0:
+        if input_buffer[indices]:
             j += 1
 
     shape[0] = j
