@@ -10,7 +10,7 @@ from max.engine import InferenceSession
 from max.graph import Graph, TensorType, TensorValue, ops
 
 from nn.kv_cache import ContiguousKVCacheCollectionType
-from nn.kv_cache_params import KVCacheParams
+from nn.kv_caching import KVCacheParams
 
 
 class KVCacheModel:
