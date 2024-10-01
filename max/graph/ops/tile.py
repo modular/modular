@@ -57,7 +57,7 @@ def tile(x: ValueLike, repeats: Iterable[int]):
 
     return Graph.current._add_op(
         rmo.mo_tile,
-        TensorType(dtype=x.dtype, shape=output_dims).to_mlir(),
+        TensorType(dtype=x.dtype, shape=output_dims).to_mlir(),  # type: ignore
         x,
         constant(np.array(repeats), DType.int64),
     )[0].tensor

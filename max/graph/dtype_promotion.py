@@ -60,7 +60,7 @@ def _restrict_to_strong_dtypes(value: ValueLike) -> TensorValue:
 
 def _promote_weak_dtypes(
     x: ValueLike, y: ValueLike
-) -> (TensorValue, TensorValue):
+) -> tuple[TensorValue, TensorValue]:
     """Promotes weak dtypes on ValueLike objects.
 
     Most of dtype promotion is dealt with in RMO.

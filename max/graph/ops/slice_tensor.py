@@ -16,7 +16,7 @@ else:
 if TYPE_CHECKING:
     # EllipsisType was added in 3.10, but we support down to 3.9.
     # Make this import unconditional when we drop 3.9 (MSDK-756).
-    from types import EllipsisType
+    from types import EllipsisType  # type: ignore
 
 import numpy as np
 

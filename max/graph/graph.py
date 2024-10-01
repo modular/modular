@@ -298,12 +298,12 @@ class Graph:
                     results = op(*unwrapped_args, **unwrapped_kwargs)
             except Exception as e:
                 try:
-                    args = inspect.signature(op).bind(*args, **kwargs).arguments
+                    args = inspect.signature(op).bind(*args, **kwargs).arguments  # type: ignore
                 except TypeError:
-                    args = {"args": list(args), **kwargs}
+                    args = {"args": list(args), **kwargs}  # type: ignore
                 raise ValueError(
                     f"Failed to create op '{op.__qualname__}':\nInputs:\n"
-                    + "".join(f"    {k} = {v!r}\n" for k, v in args.items())
+                    + "".join(f"    {k} = {v!r}\n" for k, v in args.items())  # type: ignore
                     + f"\n{e}"
                 ) from e
 

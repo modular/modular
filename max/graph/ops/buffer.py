@@ -90,7 +90,7 @@ def buffer_store_slice(
     """
     in_chain = Graph.current._current_chain
 
-    starts, stops, steps, _ = _slice_and_output_tensors(source, indices)
+    starts, stops, steps, _ = _slice_and_output_tensors(source, indices)  # type: ignore
 
     # TODO(MSDK-975): Change this to use self._add_op().
     with Graph.current._context, mlir.InsertionPoint(
@@ -99,10 +99,10 @@ def buffer_store_slice(
         output = rmo.mo_mutable_store_slice(
             in_chain,
             destination._mlir_value,
-            source._mlir_value,
-            starts._mlir_value,
-            stops._mlir_value,
-            steps._mlir_value,
+            source._mlir_value,  # type: ignore
+            starts._mlir_value,  # type: ignore
+            stops._mlir_value,  # type: ignore
+            steps._mlir_value,  # type: ignore
         )
 
     Graph.current._update_chain(output)

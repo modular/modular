@@ -28,7 +28,7 @@ from ..quantization import QuantizationEncoding
 from ..type import ShapeLike
 from ..weight import Weight
 
-_GGML_TO_DTYPE = {}
+_GGML_TO_DTYPE: dict[gguf.GGMLQuantizationType, DType] = {}
 _FROM_QUANTIZED_GGML_DTYPES = {}
 _TO_QUANTIZED_GGML_DTYPES = {}
 

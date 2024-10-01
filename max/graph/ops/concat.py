@@ -16,12 +16,14 @@ from ..type import Dim, DimLike, Shape
 
 
 def concat(
-    vals: Iterable[ValueLike], axis: int = 0, new_dim: Optional[DimLike] = None
+    original_vals: Iterable[ValueLike],
+    axis: int = 0,
+    new_dim: Optional[DimLike] = None,
 ) -> TensorValue:
     """Concatenates a list of symbolic tensors along an axis.
 
     Args:
-        vals: A list of symbolic tensor values. Each tensor must have the same
+        original_vals: A list of symbolic tensor values. Each tensor must have the same
             dtype and rank, and must have the same dimension size for each
             dimension other than ``axis``.
         axis: The axis to concatenate along. If negative, indexes relative
@@ -38,7 +40,7 @@ def concat(
         as each input tensor's for each dimension other than `axis`, which will
         have size equal to the sum of all tensor's size for that dimension.
     """
-    vals = [TensorValue(v) for v in vals]
+    vals = [TensorValue(v) for v in original_vals]
 
     if not vals:
         raise ValueError("Must provide at least one value to concat.")
