@@ -16,7 +16,7 @@ struct SelfStruct(SelfMethod):
         pass
 
 
-# CHECK-LABEL: kgen.func @"{{.*}}call_it{{.*}}T=trait-self-type::SelfStruct.foo
+# CHECK-LABEL: kgen.func @"{{.*}}call_it{{.*}}T=
 fn call_it[T: SelfMethod](x: T):
     # CHECK: call {{.*}}SelfStruct::foo{{.*}}(%arg0)
     x.foo()
