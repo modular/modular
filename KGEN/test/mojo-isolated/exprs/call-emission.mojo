@@ -255,7 +255,7 @@ fn initialize_in_addrspace(
 
 
 struct SomeRefItemStruct:
-    fn __getitem__(self) -> ref [__lifetime_of(self)] Int:
+    fn __getitem__(self) -> ref [self] Int:
         pass
 
 
@@ -397,7 +397,7 @@ fn test_byref_slot_closure_capture(owned x: String):
     # CHECK-NEXT: lit.call {{.*}}@String::@"__moveinit__{{.*}}(%x, %__call_result_tmp__)
 
 
-fn test_int_ref(ref [_]x: Int) -> ref [__lifetime_of(x)] Int:
+fn test_int_ref(ref [_]x: Int) -> ref [x] Int:
     return x
 
 
