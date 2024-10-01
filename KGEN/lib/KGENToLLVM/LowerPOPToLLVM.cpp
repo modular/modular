@@ -1362,10 +1362,14 @@ struct ConvertPOPUnionUnwrap : public ConvertPOPToLLVMPattern<UnionUnwrapOp> {
 // Trivial Conversions
 //===----------------------------------------------------------------------===//
 
-using ConvertPOPAnd =
+using ConvertPOPAnd = mlir::OneToOneConvertToLLVMPattern<AndOp, LLVM::AndOp>;
+using ConvertPOPOr = mlir::OneToOneConvertToLLVMPattern<OrOp, LLVM::OrOp>;
+using ConvertPOPXOr = mlir::OneToOneConvertToLLVMPattern<XOrOp, LLVM::XOrOp>;
+using ConvertPOPSIMDAnd =
     mlir::OneToOneConvertToLLVMPattern<SIMDAndOp, LLVM::AndOp>;
-using ConvertPOPOr = mlir::OneToOneConvertToLLVMPattern<SIMDOrOp, LLVM::OrOp>;
-using ConvertPOPXOr =
+using ConvertPOPSIMDOr =
+    mlir::OneToOneConvertToLLVMPattern<SIMDOrOp, LLVM::OrOp>;
+using ConvertPOPSIMDXOr =
     mlir::OneToOneConvertToLLVMPattern<SIMDXOrOp, LLVM::XOrOp>;
 using ConvertPOPAdd =
     OneToOneFloatOrIntConversion<AddOp, LLVM::FAddOp, LLVM::AddOp>;
@@ -1431,11 +1435,14 @@ static void populatePOPToLLVMPatterns(mlir::LLVMTypeConverter &typeConverter,
       ConvertPOPSelect,
       ConvertPOPShl,
       ConvertPOPShr,
+      ConvertPOPSIMDAnd,
       ConvertPOPSIMDExtractElement,
       ConvertPOPSIMDInsertElement,
+      ConvertPOPSIMDOr,
       ConvertPOPSIMDSelect,
       ConvertPOPSIMDShuffle,
       ConvertPOPSIMDSplat,
+      ConvertPOPSIMDXOr,
       ConvertPOPStore,
       ConvertPOPStringAddress,
       ConvertPOPStringSize,

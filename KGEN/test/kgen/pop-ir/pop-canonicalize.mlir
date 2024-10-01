@@ -391,6 +391,87 @@ kgen.func @not_not(%arg0: !pop.scalar<bool>) ->!pop.scalar<bool>{
   kgen.return %2 : !pop.scalar<bool>
 }
 
+// CHECK-LABEL: @bool_and
+kgen.func @bool_and() -> i1 {
+  // CHECK-NEXT: <1>
+  %0 = kgen.param.constant: i1 = <1>
+  %1 = kgen.param.constant: i1 = <1>
+  // CHECK-NOT: pop.add
+  %2 = pop.and %0, %1
+  kgen.return %2 : i1
+}
+
+// CHECK-LABEL: @bool_and_true
+kgen.func @bool_and_true(%arg0: i1) -> i1 {
+  %0 = kgen.param.constant: i1 = <1>
+  %1 = pop.and %arg0, %0
+  // CHECK-NEXT: kgen.return %arg0
+  kgen.return %1 : i1
+}
+
+// CHECK-LABEL: @bool_and_false
+kgen.func @bool_and_false(%arg0: i1) -> i1 {
+  // CHECK-NEXT: <0>
+  %0 = kgen.param.constant: i1 = <0>
+  // CHECK-NOT: pop.add
+  %1 = pop.and %arg0, %0
+  kgen.return %1 : i1
+}
+
+// CHECK-LABEL: @bool_or
+kgen.func @bool_or() -> i1 {
+  // CHECK-NEXT: <0>
+  %0 = kgen.param.constant: i1 = <0>
+  %1 = kgen.param.constant: i1 = <0>
+  // CHECK-NOT: pop.or
+  %2 = pop.or %0, %1
+  kgen.return %2 : i1
+}
+
+// CHECK-LABEL: @bool_or_true
+kgen.func @bool_or_true(%arg0: i1) -> i1 {
+  // CHECK-NEXT: <1>
+  %0 = kgen.param.constant: i1 = <1>
+  // CHECK-NOT: pop.or
+  %1 = pop.or %arg0, %0
+  kgen.return %1 : i1
+}
+
+// CHECK-LABEL: @bool_or_false
+kgen.func @bool_or_false(%arg0: i1) -> i1 {
+  %0 = kgen.param.constant: i1 = <0>
+  %1 = pop.or %arg0, %0
+  // CHECK-NEXT: kgen.return %arg0
+  kgen.return %1 : i1
+}
+
+// CHECK-LABEL: @bool_xor
+kgen.func @bool_xor() -> i1 {
+  // CHECK-NEXT: <1>
+  %0 = kgen.param.constant: i1 = <1>
+  %1 = kgen.param.constant: i1 = <0>
+  // CHECK-NOT: pop.xor
+  %2 = pop.xor %0, %1
+  kgen.return %2 : i1
+}
+
+// CHECK-LABEL: @bool_xor_false
+kgen.func @bool_xor_false(%arg0: i1) -> i1 {
+  %0 = kgen.param.constant: i1 = <0>
+  %1 = pop.xor %0, %arg0
+  // CHECK-NEXT: return %arg0
+  kgen.return %1 : i1
+}
+
+// CHECK-LABEL: @bool_not_not
+kgen.func @bool_not_not(%arg0: i1) ->i1{
+  %0 = kgen.param.constant: i1 = <1>
+  %1 = pop.xor %arg0, %0
+  %2 = pop.xor %1, %0
+  // CHECK-NEXT: return %arg0
+  kgen.return %2 : i1
+}
+
 // CHECK-LABEL: @mask_ones
 kgen.func @mask_ones(%arg0: !pop.simd<2, ui4>) -> !pop.simd<2, ui4> {
   %0 = kgen.param.constant: simd<2, ui4> = <15>
