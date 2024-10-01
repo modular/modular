@@ -52,7 +52,9 @@ class TestMojoPythonInterop(unittest.TestCase):
     def test_case_create_mojo_type_instance(self):
         person = feature_overview.Person()
 
-        assert type(person).__name__ == "Person"
+        self.assertEqual(type(person).__name__, "Person")
+
+        self.assertEqual(person.name(), "John Smith")
 
 
 if __name__ == "__main__":

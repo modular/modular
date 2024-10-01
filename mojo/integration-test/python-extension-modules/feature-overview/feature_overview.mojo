@@ -8,7 +8,7 @@ import builtin
 
 from sys import exit
 from sys.info import sizeof
-from sys.ffi import OpaquePointer
+from sys.ffi import OpaquePointer, c_int
 from memory import UnsafePointer
 
 from os import abort
@@ -23,7 +23,9 @@ from python._cpython import (
     Py_TPFLAGS_DEFAULT,
     PyType_Slot,
     Py_tp_new,
+    Py_tp_init,
     Py_tp_dealloc,
+    Py_tp_methods,
 )
 
 
@@ -146,6 +148,23 @@ struct MojoPersonObject:
     var person: Person
 
     @staticmethod
+    fn obj_init(
+        self_: PyObjectPtr,
+        args: TypedPythonObject["Tuple"],
+        kwds: PythonObject,
+    ) -> c_int:
+        var self0 = self_.value.bitcast[MojoPersonObject]()
+
+        # Field ptrs
+        var name_ptr = UnsafePointer[String].address_of(self0[].person.name)
+        var age_ptr = UnsafePointer[Int].address_of(self0[].person.age)
+
+        name_ptr.init_pointee_move("John Smith")
+        age_ptr.init_pointee_move(123)
+
+        return 0
+
+    @staticmethod
     fn obj_destroy(self_: PyObjectPtr):
         var obj0: UnsafePointer[MojoPersonObject] = self_.value.bitcast[
             MojoPersonObject
@@ -157,6 +176,16 @@ struct MojoPersonObject:
         # Destroy this `Person` instance.
         obj0.destroy_pointee()
 
+    @staticmethod
+    fn obj_name(
+        self_: PythonObject, args: TypedPythonObject["Tuple"]
+    ) -> PythonObject:
+        var self0 = self_.unsafe_as_py_object_ptr().value.bitcast[
+            MojoPersonObject
+        ]()
+
+        return PythonObject(self0[].person.name).steal_data()
+
 
 fn add_person_type(inout module: TypedPythonObject["Module"]):
     var cpython = Python().impl.cpython()
@@ -165,13 +194,26 @@ fn add_person_type(inout module: TypedPythonObject["Module"]):
     # Construct a 'type' object describing `Person`
     # ----------------------------------------------
 
+    var methods = List[PyMethodDef](
+        PyMethodDef.function[
+            create_wrapper_function[MojoPersonObject.obj_name](),
+            "name",
+        ](),
+        # Zeroed item as terminator
+        PyMethodDef(),
+    )
+
     var slots = List[PyType_Slot](
         PyType_Slot(
             Py_tp_new, cpython.lib.get_symbol[NoneType]("PyType_GenericNew")
         ),
         PyType_Slot(
+            Py_tp_init, rebind[OpaquePointer](MojoPersonObject.obj_init)
+        ),
+        PyType_Slot(
             Py_tp_dealloc, rebind[OpaquePointer](MojoPersonObject.obj_destroy)
         ),
+        PyType_Slot(Py_tp_methods, rebind[OpaquePointer](methods.steal_data())),
         PyType_Slot.null(),
     )
 
