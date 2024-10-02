@@ -24,9 +24,9 @@ from utils.index import Index
 from utils.numerics import isnan
 
 
-fn run_matvec[
+def run_matvec[
     reduction_method: ReductionMethod
-](M: Int, N: Int, K: Int, *, ctx: DeviceContext) raises:
+](M: Int, N: Int, K: Int, *, ctx: DeviceContext):
     print("== run_matvec kernel")
 
     var iterations = 100
