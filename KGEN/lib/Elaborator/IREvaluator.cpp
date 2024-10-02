@@ -186,8 +186,8 @@ FailureOr<TypedAttr> IREvaluator::evaluateApplyLike(ParamOperatorAttr op,
 
   // If we had a value, write it back.
   if ((cached = result.tryGetValue())) {
-    elaborator->writeGlobalCachedInterpretation(func, operandsAttr, cached);
-    return cached;
+    return elaborator->writeGlobalCachedInterpretation(func, operandsAttr,
+                                                       cached);
   }
   emitError(result.takeError());
   return TypedAttr();
