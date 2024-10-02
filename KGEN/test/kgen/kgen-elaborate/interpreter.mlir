@@ -648,3 +648,33 @@ kgen.generator @call_it(%arg1: !kgen.pointer<<dtype>(index) -> index>) -> !kgen.
   %1 = pop.load %arg1 : !kgen.pointer<<dtype>(index) -> index>
   kgen.return %1 : !kgen.signature<<dtype>(index) -> index>
 }
+
+// -----
+
+// This should only contain a pointer to heap base addr (1'000'000'000 == 0x3B9ACA00) and all zeros afterwards.
+// CHECK: #[[MEM_STACK:.+]] = #interp.memory_handle<8, "0x00CA9A3B000000000000000000000000000000000000000000000000000000000000000000000000">
+!variant = !kgen.variant<pointer<index>, struct<(!pop.array<4, index>)>>
+!ptr_v = !kgen.pointer<!variant>
+
+kgen.generator @get_variant(%arg0: !kgen.pointer<!variant> byref_result) {
+  // Create inner pointer to index.
+  %size = index.constant 8
+  %align = index.constant 8
+  %mem = pop.aligned_alloc %align, %size : !kgen.pointer<index>
+
+  // Fill inner pointer.
+  %i1 = kgen.param.constant: index = <1>
+  pop.store %i1, %mem : !kgen.pointer<index>
+
+  // Create overall variant and store in return slot.
+  %v = kgen.variant.create %mem, 0 : !variant
+  pop.store %v, %arg0 : !kgen.pointer<!variant>
+  kgen.return
+}
+
+// CHECK-LABEL: kgen.func export @call_result_slot
+kgen.generator export @call_result_slot() {
+  // CHECK-NEXT: <{:pointer<index> #interp.memref<{[({{.*}}, heap, [], []), (#[[MEM_STACK]], stack, [(0, 0, 0)], [])], []}, 0, 0>, 0}>
+  kgen.param.constant: !ptr_v = <apply_result_slot(:(!kgen.pointer<!ptr_v> byref_result) -> () @get_variant)>
+  kgen.return
+}
