@@ -6,7 +6,7 @@
 
 from buffer import NDBuffer
 from buffer.dimlist import DimList
-from register import mogg_register, mogg_view_op
+from register import mogg_register, mogg_register_shape_func, mogg_view_op
 
 from utils.index import StaticIntTuple
 from utils.loop import unroll
@@ -58,7 +58,7 @@ fn ndbuffer_reshape[
     ](input, new_shape)
 
 
-@mogg_register("reshape_shape")
+@mogg_register_shape_func("mo.reshape")
 @always_inline
 fn reshape_shape[
     input_rank: Int,
