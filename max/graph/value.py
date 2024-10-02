@@ -20,7 +20,7 @@ from max import _graph, mlir
 from max.dtype import DType
 
 from . import graph, ops
-from .type import BufferType, DimLike, Shape, ShapeLike, TensorType
+from .type import BufferType, DimLike, Shape, ShapeLike, TensorType, _ChainType
 from .weight import Weight
 
 
@@ -100,6 +100,11 @@ class _ChainValue(Value):
                 "_ChainValue() argument must be a mlir.Value of chain type "
                 f"or a graph._ChainValue, not {type(value).__name__!r}"
             )
+
+    @property
+    def type(self) -> _ChainType:
+        """Returns the type of the BufferValue as a BufferType."""
+        return _ChainType.from_mlir(self._mlir_value.type)
 
 
 class _OpaqueValue(Value):

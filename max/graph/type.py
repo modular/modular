@@ -797,3 +797,17 @@ class _ChainType(Type):
         if not mlir.Context.current:
             raise RuntimeError("No active mlir Context.")
         return _graph.chain_type(mlir.Context.current)
+
+    @staticmethod
+    def from_mlir(t: mlir.Type) -> _ChainType:
+        """Constructs an opaque type from an MLIR type.
+
+        Args:
+            t: The MLIR Type object to parse into an opaque type.
+
+        Returns:
+            The opaque type represented by the MLIR Type value.
+        """
+        if not _graph.type_is_chain(t):
+            raise TypeError(f"Expected _ChainType, got: {t}")
+        return _ChainType()

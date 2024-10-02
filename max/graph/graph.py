@@ -17,7 +17,7 @@ from max import _graph, mlir
 from max.mlir.dialects import mo
 
 from .type import BufferType, Dim, SymbolicDim, TensorType, Type
-from .value import TensorValue, Value, ValueLike
+from .value import TensorValue, Value, ValueLike, _ChainValue
 from .weight import Weight
 
 CURRENT_GRAPH: ContextVar[Graph] = ContextVar("CURRENT_GRAPH")
@@ -165,7 +165,7 @@ class Graph:
     inputs: tuple[Value, ...]
     weights: dict[str, _GraphWeight]
     # A global sequence of chains that is updated by side-effecting ops.
-    _current_chain: mlir.Value
+    _current_chain: _ChainValue
 
     def __init__(
         self,
@@ -225,9 +225,7 @@ class Graph:
         self.inputs = tuple(Value(arg) for arg in self._body.arguments)
         self.weights = {}
 
-        # TODO(MSDK-975): Change this to use self._add_op().
-        with self._context, mlir.InsertionPoint(self._body), location():
-            self._current_chain = mo.chain_create([])
+        self._current_chain = self._add_op(mo.chain_create, [])[0]
 
         if forward is not None:
             # If the forward method was passed stage the graph directly in the
@@ -236,7 +234,7 @@ class Graph:
                 result = forward(*self.inputs, *args, **kwargs)
                 self.output(result)
 
-    def _update_chain(self, new_chain: mlir.Value) -> None:
+    def _update_chain(self, new_chain: _ChainValue) -> None:
         self._current_chain = new_chain
 
     def __enter__(self) -> Graph:

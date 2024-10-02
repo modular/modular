@@ -12,7 +12,7 @@ from max.dtype import DType
 from max.mlir.dialects import rmo
 
 from ..graph import Graph, location
-from ..type import TensorType
+from ..type import TensorType, _ChainType
 from ..value import BufferValue, TensorValue, ValueLike
 from .constant import constant
 from .slice_tensor import SliceIndices, _slice_and_output_tensors
@@ -36,16 +36,13 @@ def buffer_load(
     """
     in_chain = Graph.current._current_chain
 
-    # TODO(MSDK-975): Change this to use self._add_op().
-    with Graph.current._context, mlir.InsertionPoint(
-        Graph.current._body
-    ), location():
-        output = rmo.mo_mutable_load(
-            mlir.Type.parse("!mo.chain"),
-            TensorType(x.dtype, x.shape).to_mlir(),
-            in_chain,
-            x._mlir_value,
-        )
+    output = Graph.current._add_op(
+        rmo.mo_mutable_load,
+        _ChainType().to_mlir(),
+        TensorType(x.dtype, x.shape).to_mlir(),
+        in_chain,
+        x,
+    )
 
     Graph.current._update_chain(output[0])
 
@@ -64,15 +61,11 @@ def buffer_store(destination: BufferValue, source: TensorValue) -> None:
     """
     in_chain = Graph.current._current_chain
 
-    # TODO(MSDK-975): Change this to use self._add_op().
-    with Graph.current._context, mlir.InsertionPoint(
-        Graph.current._body
-    ), location():
-        output = rmo.mo_mutable_store(
-            in_chain, destination._mlir_value, source._mlir_value
-        )
+    output_chain = Graph.current._add_op(
+        rmo.mo_mutable_store, in_chain, destination, source
+    )[0]
 
-    Graph.current._update_chain(output)
+    Graph.current._update_chain(output_chain)
 
 
 def buffer_store_slice(
@@ -93,17 +86,14 @@ def buffer_store_slice(
 
     starts, stops, steps, _ = _slice_and_output_tensors(source, indices)  # type: ignore
 
-    # TODO(MSDK-975): Change this to use self._add_op().
-    with Graph.current._context, mlir.InsertionPoint(
-        Graph.current._body
-    ), location():
-        output = rmo.mo_mutable_store_slice(
-            in_chain,
-            destination._mlir_value,
-            source._mlir_value,  # type: ignore
-            starts._mlir_value,  # type: ignore
-            stops._mlir_value,  # type: ignore
-            steps._mlir_value,  # type: ignore
-        )
+    output_chain = Graph.current._add_op(
+        rmo.mo_mutable_store_slice,
+        in_chain,
+        destination,
+        source,
+        starts,
+        stops,
+        steps,
+    )[0]
 
-    Graph.current._update_chain(output)
+    Graph.current._update_chain(output_chain)

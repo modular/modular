@@ -14,6 +14,8 @@ from max.dtype import DType
 from max.graph import (
     BufferType,
     BufferValue,
+    ChainType,
+    ChainValue,
     Graph,
     TensorType,
     TensorValue,
@@ -112,8 +114,14 @@ def test_load(buffer_type: BufferType):
     ) as graph:
         buffer = graph.inputs[0]
         chain_0 = graph._current_chain
+        assert isinstance(chain_0, ChainValue)
+        assert isinstance(chain_0.type, ChainType)
+
         y = ops.buffer_load(buffer)
         chain_1 = graph._current_chain
+
+        assert isinstance(chain_1, ChainValue)
+        assert isinstance(chain_1.type, ChainType)
 
         assert y.shape == buffer.shape
         assert y.dtype == buffer.dtype
