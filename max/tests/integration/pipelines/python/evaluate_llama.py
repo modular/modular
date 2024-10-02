@@ -7,6 +7,7 @@
 
 Can also be used as a standalone binary to save out the golden values as a JSON.
 """
+
 import asyncio
 import base64
 import itertools
@@ -21,13 +22,14 @@ import numpy as np
 import numpy.typing as npt
 from cpuinfo import get_cpu_info
 from huggingface_hub import hf_hub_download
+from max.driver import CPU, CUDA, Device
+
 from llama3 import (
     InferenceConfig,
     Llama3,
     SupportedEncodings,
     SupportedVersions,
 )
-from max.driver import CPU, CUDA, Device
 
 
 def find_runtime_path(fname: str, testdata_directory: Path) -> Path:
@@ -124,7 +126,7 @@ def run_llama3(llama3: Llama3, prompts=PROMPTS, num_steps=NUM_STEPS):
                 )
 
                 # Update the context for the next input.
-                context.next_tokens = next_token.reshape(1, -1)
+                context.next_tokens = next_token.reshape(-1)
 
         results.append({"prompt": prompt, "values": inference_results})
     return results
