@@ -744,6 +744,26 @@ fn param_trait[T: SimpleTrait, value: T]():
     value.method(`2`)
 
 
+trait Makeable:
+    @staticmethod
+    fn make() -> Self:
+        ...
+
+
+@register_passable
+struct MakeNamedResult(Makeable):
+    @staticmethod
+    fn make() -> Self as out:
+        pass
+
+
+
+# CHECK-LABEL: lit.func @"check_named_result_regpassable
+fn check_named_result_regpassable():
+    # CHECK-NEXET: @MakeNamedResult::@"make()"
+    alias T: Makeable = MakeNamedResult
+
+
 # ===----------------------------------------------------------------------=== #
 # Implicit Conformance
 # ===----------------------------------------------------------------------=== #
