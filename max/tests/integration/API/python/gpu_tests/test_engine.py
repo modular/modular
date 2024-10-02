@@ -3,13 +3,13 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from math import isclose
 from pathlib import Path
 
 import numpy as np
 from max import mlir
-from max.driver import CPU, CUDA, Tensor
+from max.driver import CPU, CUDA, Device, Tensor
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import Graph, TensorType, Value
@@ -94,7 +94,10 @@ def test_scalar_inputs(gpu_session: InferenceSession, scalar_input_path: Path):
 
 @dataclass
 class Model:
+    """Model that performs elementwise add with a weights tensor."""
+
     num_elems: int
+    device: Device = field(default_factory=CPU)
 
     def __call__(self, input: Value) -> Value:
         weights_tensor_type = TensorType(
@@ -110,7 +113,7 @@ class Model:
         # Set the constant external op's device explicitly.
         const_external_op = weights_tensor._mlir_value.owner
         const_external_op.attributes["device"] = mlir.Attribute.parse(
-            '#M.device_ref<"cpu", 0>'
+            '#M.device_ref<"cpu", 0>' if self.device.is_host else '#M.device_ref<"cuda", 0>'
         )
 
         return input + weights_tensor
@@ -127,11 +130,54 @@ def test_execute_external_weights_gpu(gpu_session: InferenceSession) -> None:
     )
 
     compiled = gpu_session.load(graph, weights_registry={"foo": weights})
-    input_np = np.random.randn(num_elems).astype(np.float32)
+    input_np = (
+        np.random.default_rng(seed=42)
+        .standard_normal(num_elems)
+        .astype(np.float32)
+    )
+    output = compiled.execute(
+        Tensor.from_dlpack(input_np).to(CUDA()), copy_inputs_to_device=False
+    )[0].to(CPU())
+    for idx, elt in enumerate(input_np + weights):
+        assert isclose(output[idx].item(), elt)
+
+
+def test_execute_external_weights_gpu_resident(
+    gpu_session: InferenceSession,
+) -> None:
+    """Executes a model with external weights already resident on device."""
+    num_elems = 4096
+    weights_np = np.arange(num_elems, dtype=np.float32)
+    weights = Tensor.from_dlpack(weights_np).to(CUDA())
+
+    graph = Graph(
+        "external_weights_gpu_resident",
+        Model(num_elems, device=CUDA()),
+        input_types=(TensorType(DType.float32, (num_elems,)),),
+    )
+
+    # Check that this graph has a CUDA constant external op.
+    const_external_op = next(
+        op
+        for op in graph._mlir_op.regions[0].blocks[0].operations
+        if isinstance(op, mo.ConstantExternalOp)
+    )
+    assert "cuda" in str(const_external_op.attributes["device"])
+
+    # Compile and execute with the gpu-resident weights.
+    compiled = gpu_session.load(graph, weights_registry={"foo": weights})
+
+    input_np = (
+        np.random.default_rng(seed=42)
+        .standard_normal(num_elems)
+        .astype(np.float32)
+    )
     output = compiled.execute(Tensor.from_dlpack(input_np).to(CUDA()))[0].to(
         CPU()
     )
-    for idx, elt in enumerate(input_np + weights):
+
+    # Check that the result is as expected.
+    for idx, elt in enumerate(input_np + weights.to(CPU()).to_numpy()):
         assert isclose(output[idx].item(), elt)
 
 
