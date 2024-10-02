@@ -41,7 +41,7 @@ from linalg.bmm import batched_matmul
 from linalg.matmul import matmul
 from linalg.transpose import transpose
 from memory import UnsafePointer, stack_allocation
-from memory.reference import AddressSpace as _AddressSpace
+from memory.pointer import AddressSpace as _AddressSpace
 from memory.unsafe import bitcast
 from nn.mha_mask import MHAMask, NullMask
 from runtime.asyncrt import MojoCallContextPtr
