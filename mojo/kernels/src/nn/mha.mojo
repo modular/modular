@@ -19,7 +19,6 @@ from gpu import (
     ThreadIdx,
     barrier,
     lane_id,
-    shuffle_xor,
     warp_reduce,
 )
 from gpu.host import DeviceContext, FuncAttribute
