@@ -1310,8 +1310,13 @@ struct CtadStructWithDefault[a: Int, b: Int, c: Int = 8]:
     @staticmethod
     fn foo(x: Thing[a], y: Thing[b]): pass
 
-# CHECK-LABEL: lit.func @"test_partial_binding_CTAD()"
-fn test_partial_binding_CTAD():
+
+struct CtadStructWithMultiDefault[a: Int, b: Int = 6, c: Int = 8, d: Int = 10]:
+    fn __init__(inout self, x: CtadStructWithMultiDefault[a]): pass
+
+
+# CHECK-LABEL: lit.func @"test_partial_binding_CTAD(
+fn test_partial_binding_CTAD(multi: CtadStructWithMultiDefault[5]):
     # CHECK: call @{{.*}}::@CtadStruct::@"__init__({{.*}})"{{.*}}<:!Int {6}, :!Int {7}>
     _ = CtadStruct[b=7](Thing[6]())
     # CHECK: call @{{.*}}::@CtadStruct::@"__init__({{.*}})"{{.*}}<:!Int {8}, :!Int {9}>
@@ -1333,6 +1338,15 @@ fn test_partial_binding_CTAD():
     CtadStructWithDefault[].foo(y=Thing[1](), x=Thing[2]())
     # CHECK: call @{{.*}}::@CtadStructWithDefault::@"foo({{.*}}<:!Int {4}, :!Int {3}, :!Int {8}>
     CtadStructWithDefault.foo(y=Thing[3](), x=Thing[4]())
+
+    # CHECK: call @{{.*}}::@CtadStructWithMultiDefault::@"__init__({{.*}}<:!Int {5}, :!Int {6}, :!Int {9}, :!Int {10}>
+    _ = CtadStructWithMultiDefault[_, _, 9, _](multi)
+    # CHECK: call @{{.*}}::@CtadStructWithMultiDefault::@"__init__({{.*}}<:!Int {5}, :!Int {6}, :!Int {8}, :!Int {9}>
+    _ = CtadStructWithMultiDefault[_, _, _, 9](multi)
+    # CHECK: call @{{.*}}::@CtadStructWithMultiDefault::@"__init__({{.*}}<:!Int {5}, :!Int {3}, :!Int {8}, :!Int {9}>
+    _ = CtadStructWithMultiDefault[_, 3, _, 9](multi)
+    # CHECK: call @{{.*}}::@CtadStructWithMultiDefault::@"__init__({{.*}}<:!Int {5}, :!Int {6}, :!Int {8}, :!Int {10}>
+    _ = CtadStructWithMultiDefault[5, _, _, _](multi)
 
 
 # COM: https://github.com/modularml/mojo/issues/1227

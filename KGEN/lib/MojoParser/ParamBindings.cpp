@@ -46,7 +46,13 @@ ParamBindings::getForDeclaredType(const TypeCheckScopeInfo &scopeInfo,
                                   ASTType type, const ExprNode *expr) {
   ParamBindings paramBindings(scopeInfo);
   paramBindings.numCtadParams = type.getParamBindings().size();
-  paramBindings.defaultTypeParams = type.getDefaultPosParams();
+  // Default params need to come from the original declaration, instead of
+  // TypeSignatureType, as the latter won't contain the full defaults list if
+  // any have been bound already (when `type` is partially specified).
+  Operation *decl = type.getDecl(scopeInfo.shared)->getIfOperation();
+  if (auto structDecl = dyn_cast<StructDeclOp>(decl))
+    paramBindings.defaultTypeParams =
+        structDecl.getSignature().getDefaultPosParams();
 
   // When binding a trait function, add the self type bindings.
   if (auto trait = dyn_cast_or_null<TraitType>(type.getMetaType()))
