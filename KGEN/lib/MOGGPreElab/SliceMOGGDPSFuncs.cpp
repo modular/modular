@@ -281,6 +281,13 @@ public:
       if (userKernel->hasAttr(SLICED_ATTR))
         continue;
 
+      // Dummy execute function without operands (mo.reshape).
+      /// TODO: this should not be allowed for users.
+      ArrayAttr argumentTypeNames =
+          dyn_cast_or_null<ArrayAttr>(userKernel->getAttr(MOGG_ARG_TYPE_NAMES));
+      if (!argumentTypeNames)
+        continue;
+
       // Slice out a new compute kernel. This replaces the old kernel as the
       // entry point for the thing we are going to execute.
       GeneratorOp slicedComputeFunction = userKernel.clone();
@@ -294,8 +301,6 @@ public:
       /// TODO: GRA-1046: We should have markers in Mojo for what is an input
       /// and what is an output (ex: mo.top_k).
       unsigned kernelOutputsCount = 1;
-      ArrayAttr argumentTypeNames =
-          dyn_cast_or_null<ArrayAttr>(userKernel->getAttr(MOGG_ARG_TYPE_NAMES));
       for (size_t i = 1, e = argumentTypeNames.getValue().size(); i < e; i++) {
         auto nameAttr = dyn_cast<StringAttr>(argumentTypeNames.getValue()[i]);
         if (nameAttr &&

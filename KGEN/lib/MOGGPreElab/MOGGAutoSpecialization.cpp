@@ -492,6 +492,8 @@ public:
           llvm::BitVector(node->func.getNumArguments(), false);
       ArrayAttr argTypeNames =
           gen->getAttrOfType<ArrayAttr>(MOGG_ARG_TYPE_NAMES);
+      if (!argTypeNames)
+        continue;
 
       for (auto [idx, type] : llvm::enumerate(argTypeNames)) {
         if (isTensorType(type))
