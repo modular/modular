@@ -56,6 +56,21 @@ class TestMojoPythonInterop(unittest.TestCase):
 
         self.assertEqual(person.name(), "John Smith")
 
+        # Test that an error is raised if passing any arguments to the initalizer
+
+        with self.assertRaises(ValueError) as cm:
+            person = feature_overview.Person("John")
+
+        self.assertEqual(
+            cm.exception.args,
+            (
+                (
+                    "unexpected arguments passed to default initializer"
+                    " function of wrapped Mojo type"
+                ),
+            ),
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

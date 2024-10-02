@@ -19,10 +19,6 @@ from python._cpython import (
     PyMethodDef,
     PyObject,
     PyObjectPtr,
-    PyType_Spec,
-    PyType_Slot,
-    Py_TPFLAGS_DEFAULT,
-    newfunc,
 )
 
 
@@ -140,33 +136,22 @@ struct Person:
     var age: Int
 
     @staticmethod
-    fn obj_init(
-        self_: PyObjectPtr,
-        args: TypedPythonObject["Tuple"],
-        kwds: PythonObject,
-    ) -> c_int:
-        var self0 = PyMojoObject[Person].unsafe_cast_obj(self_)
-
+    fn obj_init(self: UnsafePointer[Self]):
         # Field ptrs
-        var name_ptr = UnsafePointer[String].address_of(self0[].name)
-        var age_ptr = UnsafePointer[Int].address_of(self0[].age)
+        # TODO(MSTDL-950): Avoid get field ptrs through uninit reference.
+        var name_ptr = UnsafePointer.address_of(self[].name)
+        var age_ptr = UnsafePointer.address_of(self[].age)
 
         name_ptr.init_pointee_move("John Smith")
         age_ptr.init_pointee_move(123)
 
-        return 0
-
     @staticmethod
-    fn obj_destroy(self_: PyObjectPtr):
-        var obj0: UnsafePointer[PyMojoObject[Person]] = self_.value.bitcast[
-            PyMojoObject[Person]
-        ]()
-
+    fn obj_destroy(self: UnsafePointer[Self]):
         # TODO(MSTDL-633):
         #   Is this always safe? Wrap in GIL, because this could
         #   evaluate arbitrary code?
         # Destroy this `Person` instance.
-        obj0.destroy_pointee()
+        self.destroy_pointee()
 
     @staticmethod
     fn obj_name(
@@ -195,37 +180,17 @@ fn add_person_type(inout module: TypedPythonObject["Module"]):
         PyMethodDef(),
     )
 
-    var slots = List[PyType_Slot](
-        PyType_Slot.tp_new(
-            cpython.lib.get_function[newfunc]("PyType_GenericNew")
-        ),
-        PyType_Slot.tp_init(Person.obj_init),
-        PyType_Slot.tp_dealloc(Person.obj_destroy),
-        PyType_Slot.tp_methods(methods.steal_data()),
-        PyType_Slot.null(),
-    )
-
-    var type_spec = PyType_Spec {
-        name: "Person".unsafe_cstr_ptr(),
-        basicsize: sizeof[PyMojoObject[Person]](),
-        itemsize: 0,
-        flags: Py_TPFLAGS_DEFAULT,
-        # FIXME: Don't leak this pointer, use globals instead.
-        slots: slots.steal_data(),
-    }
-
-    # Heap allocate the type specification metadata.
-    var type_spec_ptr = UnsafePointer[PyType_Spec].alloc(1)
-    type_spec_ptr.init_pointee_move(type_spec)
-
-    # Construct a Python 'type' object from our Person type spec.
-    var type_obj = cpython.PyType_FromSpec(type_spec_ptr)
-
     # ----------------------------------
     # Register the type in the module
     # ----------------------------------
 
     try:
+        var type_obj = PyMojoObject[Person].python_type_object[
+            "Person",
+            Person.obj_init,
+            Person.obj_destroy,
+        ](methods)
+
         Python.add_object(module, "Person", type_obj)
     except e:
         abort("error adding object: " + str(e))
