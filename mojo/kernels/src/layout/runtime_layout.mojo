@@ -22,6 +22,7 @@ struct RuntimeLayout[layout: Layout](Stringable, Formattable):
     var shape: RuntimeTuple[layout.shape]
     var stride: RuntimeTuple[layout.stride]
 
+    @always_inline
     fn __init__(inout self):
         constrained[
             layout.all_dims_known(), "Static layout with known dims is required"
@@ -29,6 +30,7 @@ struct RuntimeLayout[layout: Layout](Stringable, Formattable):
         self.shape = RuntimeTuple[layout.shape]()
         self.stride = RuntimeTuple[layout.stride]()
 
+    @always_inline
     fn __init__(
         inout self,
         shape: RuntimeTuple[layout.shape],
