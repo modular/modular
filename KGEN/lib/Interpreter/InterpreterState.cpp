@@ -6,9 +6,9 @@
 
 #include "KGEN/Interpreter/InterpreterState.h"
 #include "KGEN/Interpreter/InterpreterInterface.h"
+#include "KGEN/Interpreter/Utils.h"
 #include "Support/AlignedAlloc.h"
 #include "Support/MDialect/MTypeInterfaces.h"
-#include "Utils.h"
 #include "mlir/IR/SymbolTable.h"
 #include "mlir/Support/DebugStringHelper.h"
 #include "llvm/ADT/ScopeExit.h"
