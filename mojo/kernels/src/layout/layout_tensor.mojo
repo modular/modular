@@ -3309,9 +3309,9 @@ struct LayoutTensorIter[
     """
 
     var ptr: UnsafePointer[Scalar[type], address_space, False, alignment]
-    var offset: Int
-    var stride: Int
-    var bound: Int
+    var offset: UInt
+    var stride: UInt
+    var bound: UInt
     var runtime_layout: RuntimeLayout[layout]
 
     @always_inline
