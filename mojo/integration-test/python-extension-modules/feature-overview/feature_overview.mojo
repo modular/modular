@@ -24,9 +24,6 @@ from python._cpython import (
 
 @export
 fn PyInit_feature_overview() -> PythonObject:
-    # Initialize the global runtime (including the memory allocator)
-    _ = builtin._startup._init_global_runtime(OpaquePointer())
-
     # ----------------------------------
     # Create a Python module
     # ----------------------------------
