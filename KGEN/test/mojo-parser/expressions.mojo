@@ -7,6 +7,7 @@
 # RUN: kgen-translate -verify-diagnostics -import-mojo %s | FileCheck %s
 
 from memory import UnsafePointer
+from memory import Pointer
 
 # CHECK: module {
 
@@ -1352,7 +1353,7 @@ fn thing_taking_ref[
 
 fn thing_taking_ref2[type: AnyType](ref [_] arg: type): pass
 
-fn thing_taking_reference2[type: AnyType](arg: Reference[type, _]): pass
+fn thing_taking_pointer2[type: AnyType](arg: Pointer[type, _]): pass
 
 # CHECK-LABEL: lit.func @"test_thing_taking_reference
 fn test_thing_taking_reference(inout x: String):
@@ -1360,16 +1361,16 @@ fn test_thing_taking_reference(inout x: String):
   thing_taking_ref(x)
   # CHECK-NEXT: lit.call {{.*}}thing_taking_ref2{{.*}}(%x)
   thing_taking_ref2(x)
-# CHECK-NEXT: lit.call {{.*}}@Reference::@"address_of
+# CHECK-NEXT: lit.call {{.*}}@Pointer::@"address_of
 # CHECK-SAME: <:!Bool {:i1 1}, :!AnyType #String{{.*}}, :lifetime<1> *"x`", :!AddressSpace {_value: !Int = {0}}>
-  thing_taking_reference2(Reference.address_of(x))
+  thing_taking_pointer2(Pointer.address_of(x))
 
 struct StructWithStaticMethods:
    @staticmethod
-   fn _init_op_state(state: Reference[Int, _], foo: Int): pass
+   fn _init_op_state(state: Pointer[Int, _], foo: Int): pass
    fn thing(self):
      var x = 42
-     Self._init_op_state(Reference.address_of(x), x)
+     Self._init_op_state(Pointer.address_of(x), x)
 
 fn infer_through_alias():
   alias MyType = MemoryOnlyInt
@@ -1380,12 +1381,12 @@ fn infer_through_alias():
 fn infer_address_space[
     is_mutable: __mlir_type.i1,
     lifetime: Lifetime[is_mutable].type
-](a: Reference[Int, lifetime, AddressSpace(4)]._mlir_type):
-  # Show that we can infer the address space parameter of Reference from a
+](a: Pointer[Int, lifetime, AddressSpace(4)]._mlir_type):
+  # Show that we can infer the address space parameter of Pointer from a
   # !lit.ref.
 
-  # CHECK: lit.call {{.*}}@Reference::@"address_of{{.*}}:!AddressSpace {_value: !Int = {4}}>
-  var x = Reference.address_of(__get_litref_as_mvalue(a))
+  # CHECK: lit.call {{.*}}@Pointer::@"address_of{{.*}}:!AddressSpace {_value: !Int = {4}}>
+  var x = Pointer.address_of(__get_litref_as_mvalue(a))
 
 
 # https://linear.app/modularml/issue/MOCO-584/[references]-we-cannot-bind-litref-in-parameter-context
