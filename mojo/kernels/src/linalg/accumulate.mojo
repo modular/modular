@@ -225,11 +225,9 @@ struct _Accumulator[
 
                 @parameter
                 if has_neon():
-                    row_ptrs[row].store[width=column_step](col, data)
+                    row_ptrs[row].store(col, data)
                 else:
-                    row_ptrs[0].store[width=column_step](
-                        stride * row + col, data
-                    )
+                    row_ptrs[0].store(stride * row + col, data)
 
         @parameter
         for row in range(num_rows):
@@ -955,4 +953,4 @@ fn _simd_store_maybe_partial[
             ptr + offset, 0, partial_store_size.value(), vec
         )
     else:
-        return ptr.store[width=simd_width](offset, vec)
+        return ptr.store(offset, vec)

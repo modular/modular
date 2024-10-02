@@ -580,9 +580,7 @@ fn _process_tile[
 
     @parameter
     for i in range(tile_size_m):
-        out_ptr.store[width=tile_size_n](
-            output_tile_offset + N * i, output_vals[i]
-        )
+        out_ptr.store(output_tile_offset + N * i, output_vals[i])
 
 
 fn _transpose_2d_serial_tiled[

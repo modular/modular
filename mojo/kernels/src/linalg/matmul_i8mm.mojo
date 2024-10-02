@@ -110,7 +110,7 @@ struct LoadStore_i8mm[
                 ):
                     c_ptr_loc.offset(
                         c_stride * (2 * idx0 + 0) + 2 * idx1
-                    ).store[width=2](
+                    ).store(
                         c_data.slice[2](),
                     )
 
@@ -118,7 +118,7 @@ struct LoadStore_i8mm[
                     if not single_row:
                         c_ptr_loc.offset(
                             c_stride * (2 * idx0 + 1) + 2 * idx1
-                        ).store[width=2](
+                        ).store(
                             c_data.slice[2, offset=2](),
                         )
                 elif idx1 * 2 <= c_bound[1]:

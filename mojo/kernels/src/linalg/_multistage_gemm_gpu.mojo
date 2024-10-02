@@ -86,22 +86,25 @@ fn multistage_mma[
     transpose_b_next: Bool = False,
     b_next_gmem_layout: Layout = Layout(),
     b_next_smem_layout: Layout = Layout(),
+    next_op_b_iter_alignment: Int = alignof[b_type](),
 ](
     c: LayoutTensor[c_type, c_layout, address_space = AddressSpace.LOCAL],
-    a_iter_arg: LayoutTensorIter[_, a_layout, address_space=_, circular=_],
-    b_iter_arg: LayoutTensorIter[b_type, b_layout],
+    a_iter_arg: LayoutTensorIter[_, a_layout, **_],
+    b_iter_arg: LayoutTensorIter[b_type, b_layout, **_],
     a_smem_iter_arg: LayoutTensorIter[
-        a_type, a_smem_layout, address_space = AddressSpace.SHARED, circular=_
+        a_type, a_smem_layout, address_space = AddressSpace.SHARED, **_
     ],
     inout b_smem_iter: LayoutTensorIter[
-        b_type, b_smem_layout, address_space = AddressSpace.SHARED, circular=_
+        b_type, b_smem_layout, address_space = AddressSpace.SHARED, **_
     ],
     num_iters: Int,
     num_a_rows: OptionalReg[Int] = None,
     num_b_rows: OptionalReg[Int] = None,
     next_op_b_iter: LayoutTensorIter[
-        b_type, b_next_gmem_layout
-    ] = LayoutTensorIter[b_type, b_next_gmem_layout](),
+        b_type, b_next_gmem_layout, alignment=next_op_b_iter_alignment
+    ] = LayoutTensorIter[
+        b_type, b_next_gmem_layout, alignment=next_op_b_iter_alignment
+    ](),
 ):
     alias simd_size = simdwidthof[a_type]()
 
@@ -552,9 +555,23 @@ fn multistage_gemm_kernel[
     var a_smem_iter = LayoutTensorIter[
         a_type,
         Layout.row_major(BM, BK),
-        address_space = AddressSpace.SHARED,
+        address_space = a_smem.address_space,
+        alignment = a_smem.alignment,
         circular=True,
-    ](a_smem, a_smem_size)
+    ](
+        rebind[
+            __type_of(
+                LayoutTensorIter[
+                    a_type,
+                    Layout.row_major(BM, BK),
+                    address_space = a_smem.address_space,
+                    alignment = a_smem.alignment,
+                    circular=True,
+                ]().ptr
+            )
+        ](a_smem),
+        a_smem_size,
+    )
 
     # There is one pre-allocated shared buffer. Explicitly offset B after at A's end.
     var b_smem = (a_smem + a_smem_size).bitcast[Scalar[b_type]]()
