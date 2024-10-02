@@ -372,7 +372,7 @@ struct _Matmul[
 
             @parameter
             for nn in range(tile_n):
-                cn_ptr.store[width=1](nn, scalar_accum[nn])
+                cn_ptr.store(nn, scalar_accum[nn])
 
             cn_ptr += tile_n
 

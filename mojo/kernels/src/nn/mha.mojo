@@ -1034,9 +1034,23 @@ fn mha_single_batch[
         alignment = alignof[SIMD[q_type, simd_size]](),
     ]()
     var q_smem_iter = LayoutTensorIter[
-        q_type, Layout.row_major(BM, BK), address_space = AddressSpace.SHARED
-    ](q_smem, q_smem_size)
-
+        q_type,
+        Layout.row_major(BM, BK),
+        address_space = AddressSpace.SHARED,
+        alignment = q_smem.alignment,
+    ](
+        rebind[
+            __type_of(
+                LayoutTensorIter[
+                    q_type,
+                    Layout.row_major(BM, BK),
+                    address_space = AddressSpace.SHARED,
+                    alignment = q_smem.alignment,
+                ]().ptr
+            )
+        ](q_smem),
+        q_smem_size,
+    )
     # There is one pre-allocated dynamic shared buffer.
     # Need to explicitly offset key after at query's end.
     alias k_smem_size = num_pipeline_stages * BN * BK
@@ -1657,8 +1671,23 @@ fn mha_decoding_single_batch[
         alignment = alignof[SIMD[q_type, simd_size]](),
     ]()
     var q_smem_iter = LayoutTensorIter[
-        q_type, Layout.row_major(BM, BK), address_space = AddressSpace.SHARED
-    ](q_smem, q_smem_size)
+        q_type,
+        Layout.row_major(BM, BK),
+        address_space = AddressSpace.SHARED,
+        alignment = q_smem.alignment,
+    ](
+        rebind[
+            __type_of(
+                LayoutTensorIter[
+                    q_type,
+                    Layout.row_major(BM, BK),
+                    address_space = AddressSpace.SHARED,
+                    alignment = q_smem.alignment,
+                ]().ptr
+            )
+        ](q_smem),
+        q_smem_size,
+    )
 
     # There is one pre-allocated dynamic shared buffer.
     # Need to explicitly offset key after at query's end.
@@ -1762,7 +1791,11 @@ fn mha_decoding_single_batch[
         row, col = divmod(i, depth)
         chunk_id, in_chunk_id = divmod(col, BK)
         if i < BM * depth:
-            q_smem.store[alignment = alignof[SIMD[q_type, simd_size]]()](
+            UnsafePointer[
+                Scalar[q_type],
+                address_space = AddressSpace.SHARED,
+                alignment = alignof[SIMD[q_type, simd_size]](),
+            ](q_smem.address).store[alignment = alignof[__type_of(vec)]()](
                 chunk_id * BM * BK + row * BK + in_chunk_id,
                 vec,
             )

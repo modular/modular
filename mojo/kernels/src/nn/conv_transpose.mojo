@@ -469,7 +469,7 @@ struct ConvTransposedPacked[
             @always_inline
             @parameter
             fn zero[width: Int](offset: Int):
-                output_ptr.store[width=width](offset, 0)
+                output_ptr.store(offset, SIMD[output_type, width](0))
 
             vectorize[zero, simd_size](self.partition.f_size)
 
@@ -1220,7 +1220,7 @@ fn pack_filter(filter: NDBuffer, packed_filter: NDBuffer, num_groups: Int):
 
                 for c in range(C):
                     for f in range(f_tile_size):
-                        packed_filter_ptr.store[width=1](
+                        packed_filter_ptr.store(
                             f,
                             filter_ptr.load(f * C).cast[
                                 packed_filter_ptr.type.type
@@ -1256,7 +1256,7 @@ fn pack_filter(filter: NDBuffer, packed_filter: NDBuffer, num_groups: Int):
 
                 for c in range(C):
                     for f in range(residual):
-                        packed_filter_ptr.store[width=1](
+                        packed_filter_ptr.store(
                             f,
                             filter_ptr.load(f * C).cast[
                                 packed_filter_ptr.type.type

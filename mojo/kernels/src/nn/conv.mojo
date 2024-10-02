@@ -227,9 +227,7 @@ struct Naive2dConvolution[
                             )
 
         # Store the computed output at the given output position..
-        self.output.store[width=1](
-            f + F * (wo + WO * (ho + HO * (do + DO * n))), value
-        )
+        self.output.store(f + F * (wo + WO * (ho + HO * (do + DO * n))), value)
 
 
 # ===----------------------------------------------------------------------=== #
@@ -293,7 +291,7 @@ fn _reduce_output[
                 vec += scratch.load[width=width](
                     tid_output_offset + i * buf_size
                 )
-            output.store[width=width](tid_output_offset, vec)
+            output.store(tid_output_offset, vec)
 
         vectorize[sum, simd_size, unroll_factor=4](reduce_range[1] * F)
 
@@ -961,9 +959,7 @@ struct ConvDirectNHWC[
                         output_vec,
                     )
                 else:
-                    output_ptr.offset(j * simd_size).store[width=simd_size](
-                        output_vec
-                    )
+                    output_ptr.store(j * simd_size, output_vec)
 
             @parameter
             if output_shape.at[output_rank - 1]().has_value():
