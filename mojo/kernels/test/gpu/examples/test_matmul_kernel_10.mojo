@@ -164,7 +164,7 @@ fn sgemm_warp_tiling_kernel[
             var tmp = __nvvm_ldg_f4[b_type](
                 bb_ptr.offset(int((inner_row_b + offset) * N + inner_co_ib * 4))
             )
-            b_sram.store[width=4, alignment=16](
+            b_sram.store[alignment=16](
                 Index((inner_row_b + offset) * BN + inner_co_ib * 4),
                 tmp,
             )
@@ -276,7 +276,7 @@ fn sgemm_warp_tiling_kernel[
                             vec,
                         )
                     else:
-                        C_interim.store[width=4][alignment=16](int(c_idx), vec)
+                        C_interim.store[alignment=16](int(c_idx), vec)
 
 
 fn matmul_naive(

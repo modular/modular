@@ -149,8 +149,22 @@ fn multistage_gemm[
         a_type,
         Layout.row_major(BM, BK),
         address_space = AddressSpace.SHARED,
+        alignment = a_smem.alignment,
         circular=True,
-    ](a_smem, a_smem_size)
+    ](
+        rebind[
+            __type_of(
+                LayoutTensorIter[
+                    a_type,
+                    Layout.row_major(BM, BK),
+                    address_space = AddressSpace.SHARED,
+                    alignment = a_smem.alignment,
+                    circular=True,
+                ]().ptr
+            )
+        ](a_smem),
+        a_smem_size,
+    )
 
     # There is one pre-allocated shared buffer. Explicitly offset B after at A's end.
     var b_smem = (a_smem + a_smem_size).bitcast[Scalar[b_type]]()
