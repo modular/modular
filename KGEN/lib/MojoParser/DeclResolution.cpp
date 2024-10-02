@@ -732,7 +732,7 @@ std::pair<SmallVector<ParamDeclRefAttr>, LITSignatureType>
 DeclResolver::createSelfContainedSignature(LITSignatureType original) {
   // Collect the subset of referenced parameters. Use a set vector to keep the
   // order deterministic.
-  llvm::SetVector<ParamDeclRefAttr, SmallVector<ParamDeclRefAttr>> capturedRefs;
+  llvm::SmallSetVector<ParamDeclRefAttr, 4> capturedRefs;
   original.walk([&](ParamDeclRefAttr ref) { capturedRefs.insert(ref); });
 
   SmallVector<ParamDeclRefAttr> captured = capturedRefs.takeVector();

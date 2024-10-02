@@ -34,7 +34,7 @@ struct MemPair:
   var b: MemExample
   fn __init__(inout self):
     self.a = self.b := MemExample()
-    
+
   fn use(self): pass
 
 
@@ -670,9 +670,7 @@ fn destruct_generic_return():
 # CHECK-LABEL: lit.struct.decl @RegisterExistingDtor
 @register_passable
 struct RegisterExistingDtor:
-    # CHECK: lit.func @"__del__{{.*}}_thunk"
     fn __del__(owned self):
-        # CHECK: call {{.*}}@"__del__
         pass
 
 @register_passable
@@ -1011,7 +1009,7 @@ struct MyStructWithMarkDestroyed[T: CollectionElement]:
 # CHECK-LABEL: lit.func @{{.*}}reap
     fn reap(owned self) -> T:
         # "a" field is never used here so it is destroyed early.
-        # CHECK-NEXT: [[AREF:%.*]] = lit.ref.struct.ger %self[a] 
+        # CHECK-NEXT: [[AREF:%.*]] = lit.ref.struct.ger %self[a]
         # CHECK-NEXT: lit.call{{.*}}__del__{{.*}}([[AREF]]
 
         # Full object bit is explicitly destroyed.
@@ -1034,10 +1032,10 @@ struct MyStructWithMarkDestroyed[T: CollectionElement]:
 fn field_sensitive_ref_last_use(owned write_state : IntAndOptional):
     # should destroy ALL OF write_state after the copy into msg.
     var msg = write_state.error.value()
-   
+
     _ = msg.__len__()
 
-    # CHECK: lit.call {{.*}}__copyinit__{{.*}}(%msg, 
+    # CHECK: lit.call {{.*}}__copyinit__{{.*}}(%msg,
     # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}(%write_state)
 
 @value
@@ -1122,7 +1120,7 @@ fn handleAnyLifetime1():
 # CHECK-LABEL: lit.func @"handleAnyLifetime2
 fn handleAnyLifetime2():
   ui8 = UInt8()
-  
+
   # Make sure this keeps 'ui8' alive until after the call even though
   # the element is trivial.
   # CHECK: lit.call {{.*}}use_inner_pointer
@@ -1143,7 +1141,7 @@ fn handleAnyLifetime3():
 
     # This shouldn't be treated as a use of `a_packed_ptr`
     a_packed_ptr = UnsafePointer[Int]()
-   
+
 
 fn take_pack[*Ts: AnyType](*values: *Ts): pass
 

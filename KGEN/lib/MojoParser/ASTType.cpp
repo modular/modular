@@ -564,7 +564,10 @@ static void printDemangledParam(raw_ostream &os, TypedAttr param,
     return;
   }
   if (auto indexRef = dyn_cast<ParamIndexRefAttr>(param)) {
-    os << '$' << indexRef.getIndex();
+    os << '$';
+    if (size_t depth = indexRef.getDepth())
+      os << depth << '|';
+    os << indexRef.getIndex();
     return;
   }
   if (auto memAttr = dyn_cast<StoreToMemAttr>(param))

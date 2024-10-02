@@ -313,7 +313,7 @@ struct SharedState::Impl {
   DenseMap<ASTDecl *, llvm::MapVector<ASTDecl *, Capture>> capturesInScope;
 
   /// Function type conversion thunks in each module.
-  DenseMap<std::pair<Type, Type>, LIT::FuncOp> conversionThunks;
+  DenseMap<Attribute, LIT::FuncOp> conversionThunks;
 
   /// This caches non-trivial implicit convertibility checks from one type to
   /// another.
@@ -1106,6 +1106,18 @@ ASTType SharedState::getBuiltinVariadicListType(ASTDecl &context,
                          loc);
 }
 
+ASTDecl *SharedState::getBuiltinCoroutineType(llvm::SMLoc loc) {
+  ASTDecl &coroutineModule =
+      importModule("builtin.coroutine", /*currentPackage=*/nullptr, loc);
+  return lookupNamedTypeDecl("Coroutine", coroutineModule, loc);
+}
+
+ASTDecl *SharedState::getBuiltinRaisingCoroutineType(llvm::SMLoc loc) {
+  ASTDecl &coroutineModule =
+      importModule("builtin.coroutine", /*currentPackage=*/nullptr, loc);
+  return lookupNamedTypeDecl("RaisingCoroutine", coroutineModule, loc);
+}
+
 ASTType SharedState::getOwnedKwargsDictType(llvm::SMLoc loc) {
   ASTDecl &collectionsModule =
       importModule("stdlib.collections.dict", /*currentPackage=*/nullptr, loc);
@@ -1307,10 +1319,9 @@ SharedState::createBinaryPackageState(SMLoc loc, StringAttr declName,
   auto theModule = cast<ModuleOp>(getTopLevelDecl());
   for (auto thunk :
        llvm::make_early_inc_range(tmpModule.getOps<LIT::FuncOp>())) {
-    TypeAttr fromType = thunk.getThunkFromTypeAttr();
-    TypeAttr toType = thunk.getThunkToTypeAttr();
-    LIT::FuncOp &registeredThunk =
-        impl->conversionThunks[{fromType.getValue(), toType.getValue()}];
+    Attribute key = thunk.getThunkKeyAttr();
+    assert(key && "thunk is missing its key");
+    LIT::FuncOp &registeredThunk = impl->conversionThunks[key];
     if (registeredThunk)
       continue; // thunk already exists
     registeredThunk = thunk;
@@ -1736,11 +1747,11 @@ LIT::StructDeclOp SharedState::getOrCreateClosureWrapper(SMLoc loc,
   return existing;
 }
 
-LIT::FuncOp SharedState::getOrCreateFunctionThunk(LITSignatureType actual,
-                                                  LITSignatureType expected) {
-  LIT::FuncOp &thunk = impl->conversionThunks[{actual, expected}];
+LIT::FuncOp SharedState::getOrCreateFunctionThunk(Attribute key,
+                                                  CreateThunkFn create) {
+  LIT::FuncOp &thunk = impl->conversionThunks[key];
   if (!thunk)
-    thunk = generateConversionThunk(actual, expected, getTopLevelDecl(), *this);
+    thunk = create(key, getTopLevelDecl(), *this);
   return thunk;
 }
 

@@ -50,255 +50,6 @@ getTraitFunctionSignature(ExprEmitter &emitter, LIT::FuncOp traitFn,
   return {signature.getSpecializedSignature(params), std::move(bindings)};
 }
 
-/// Given the signature of a trait function, which assumes that the self type is
-/// memory-only, compute the equivalent signature as if the self type is
-/// register-passable.
-static LITSignatureType getRegisterPassableSignature(LITSignatureType traitSig,
-                                                     ASTType selfType) {
-  // This function does two things: if the self type is in the result slot, it
-  // moves it to the return, mindful of error handling, and if it is found in
-  // any arguments, it is taken out of memory as appropriate.
-  SmallVector<Type> argTypes;
-  SmallVector<ArgConvention> conventions;
-  bool replacedResult = false;
-  Type resultType = traitSig.getResultType();
-  FnEffects fnEffects = traitSig.getFnEffects();
-  size_t numImplicitLifetimeDecls = traitSig.getNumImplicitLifetimeDecls();
-
-  for (auto [type, conv] :
-       llvm::zip(traitSig.getArguments(), traitSig.getArgConventions())) {
-    // Check for a `Self`-type result.
-    if (conv == ArgConvention::ByRefResult) {
-      // Don't modify a inout result of an unrelated type. If the function
-      // raises, then the result is always returned through memory.
-      if (ASTType(type).getReferenceElementType().mlirType != selfType ||
-          traitSig.isThrows()) {
-        argTypes.push_back(type);
-        conventions.push_back(conv);
-        continue;
-      }
-
-      // We'll be dropping the reference, so we'll drop the implicit lifetime.
-      --numImplicitLifetimeDecls;
-
-      replacedResult = true;
-      // Move the self type into the result.
-      resultType = selfType;
-      continue;
-    }
-
-    // Check for a `Self`-type argument. It would always be in-memory.
-    if (conv == ArgConvention::OwnedInMem ||
-        conv == ArgConvention::BorrowedInMem) {
-      if (ASTType(type).getReferenceElementType().mlirType != selfType) {
-        argTypes.push_back(type);
-        conventions.push_back(conv);
-        continue;
-      }
-
-      // We'll be dropping the reference, so we'll drop the implicit lifetime.
-      --numImplicitLifetimeDecls;
-
-      // Unwrap the pointer type and update the convention.
-      argTypes.push_back(selfType);
-      conventions.push_back(conv == ArgConvention::OwnedInMem
-                                ? ArgConvention::OwnedInReg
-                                : ArgConvention::BorrowedInReg);
-      continue;
-    }
-    argTypes.push_back(type);
-    conventions.push_back(conv);
-  }
-
-  PogListAttr oldArgListAttrs = traitSig.getArgListAttrs();
-  ArrayRef<PogMetadataAttr> pogs = oldArgListAttrs.getPogs();
-  if (replacedResult) {
-    pogs = pogs.drop_front(traitSig.hasInitSelfArg())
-               .drop_back(traitSig.hasMemoryOnlyResult());
-  }
-
-  auto metadata = FnMetadataAttr::get(
-      oldArgListAttrs.cloneWith(pogs), traitSig.getParamListAttrs(),
-      numImplicitLifetimeDecls, traitSig.getCaptureLifetimes(),
-      traitSig.getIsNestedLifetimeExclusivityCheckingDisabled());
-  return SignatureType::get(
-      FunctionType::get(traitSig.getContext(), argTypes, resultType),
-      traitSig.getParamTypes(), traitSig.getResultParamTypes(), conventions,
-      fnEffects, metadata);
-}
-
-/// Synthesize a single stub for a register-passable type to meet a conformance
-/// requirement for a trait. Trait function prototypes assume memory-only
-/// conventions for the trait self type, but register-passable types will
-/// implement the opposite. Synthesize thunks that match the required signatures
-/// by the trait.
-static void synthesizeRegisterTraitStub(ASTDecl &structDecl,
-                                        SharedState &shared, StringAttr name,
-                                        TypedAttr callee,
-                                        LITSignatureType memSig) {
-
-  // Figure out the right location for the method so we can keep the stub at
-  // the right location.  This is important if there are derived errors due to
-  // it.
-  SMLoc calleeLoc = structDecl.getLoc();
-  if (auto symbol = dyn_cast<SymbolConstantAttr>(callee)) {
-    // Figure out what is getting called and include it.
-    if (ASTDecl *calleeDecl =
-            shared.declResolver->getDeclForFuncSymbol(symbol.getSymbol())) {
-      calleeLoc = calleeDecl->getLoc();
-    }
-  }
-
-  // Synthesize input and result parameter decls.
-  SmallVector<ParamDeclAttr> paramDecls;
-  SmallVector<TypedAttr> paramValues;
-  ParameterEvaluator evaluator;
-  Builder b(shared.getContext());
-  for (auto [idx, type] : llvm::enumerate(memSig.getParamTypes())) {
-    StringAttr name = memSig.getParamName(idx);
-    // The parameter names are derived from the decl name.
-    paramDecls.push_back(ParamDeclAttr::get(
-        structDecl.mangleUserDefinedParamName(
-            name.empty() ? b.getStringAttr("i" + Twine(idx)) : name),
-        evaluator.getReboundType(type)));
-    paramValues.push_back(ParamDeclRefAttr::get(paramDecls.back()));
-    evaluator.addInputValue(paramValues.back());
-  }
-  FunctionType types = memSig.getSpecializedSignature(paramValues).getValues();
-
-  // Synthesize the method inside the struct.
-  PogListAttr argListAttr = memSig.getArgListAttrs();
-  auto [thunk, _] = StructEmitter(shared).synthesizeMethodInStruct(
-      name, paramDecls, memSig.getParamListAttrs(), types.getInputs(),
-      memSig.getArgConventions(), argListAttr, types.getResults().front(),
-      structDecl, calleeLoc, SpecialFunctionInfo::getKind(name),
-      memSig.getFnEffects(), "_thunk");
-  if (!thunk)
-    return;
-  DebugInfo::DIBuilder::ScopeGuard diScopeGuard;
-  if (shared.diBuilder)
-    diScopeGuard = shared.diBuilder->pushScopeGuard(thunk.getLocScope());
-
-  // Always inline the thunk. The calling convention conversion overhead is
-  // guaranteed to be optimized away.
-  thunk.setInlineLevel(InlineLevel::AlwaysNoDebug);
-
-  // Now prepare to emit the call to the register-passable method.
-  ExprEmitter emitter(shared, structDecl, EC_Trait);
-  emitter.builder = OpBuilder::atBlockBegin(thunk.getBody());
-
-  // The callee is partially bound, containing only its parent struct
-  // parameters. Bind the rest of them here.
-  SmallVector<TypedAttr> bindSigInputs{callee};
-  llvm::append_range(bindSigInputs, paramValues);
-  callee = ParamOperatorAttr::get(POC::BindSignature, bindSigInputs);
-
-  SignatureType calleeSig = cast<LITSignatureType>(callee.getType());
-
-  // Construct the call operands from the function block arguments. Ensure
-  // keyword-only arguments are specified accordingly.
-  CallOperands operands;
-  SyntheticNode node(calleeLoc);
-
-  for (auto [arg, conv, pogAttr] :
-       llvm::zip(thunk.getArguments(), memSig.getArgConventions(),
-                 argListAttr.getPogs())) {
-    AnyValue value;
-    switch (conv) {
-    case ArgConvention::InitSelf:
-      // If the implementation takes the same InitSelf argument then pass it.
-      assert(calleeSig.hasInitSelfArg());
-      value = MLValue(arg);
-      break;
-
-    case ArgConvention::ByRefResult:
-    case ArgConvention::ByRefError:
-      continue; // Ignore this, it will be assigned to later.
-
-    case ArgConvention::InOut:
-      value = MLValue(arg);
-      break;
-    case ArgConvention::OwnedInMem:
-      value = MRValue(arg);
-      break;
-    case ArgConvention::OwnedInReg:
-      value = SRValue(arg);
-      break;
-    case ArgConvention::BorrowedInReg:
-      value = SBValue(arg);
-      break;
-    case ArgConvention::BorrowedInMem:
-      value = MBValue(arg);
-      break;
-    default:
-      llvm_unreachable("unexpected input convention");
-    }
-    if (pogAttr.getPassingKind() == PassingKind::KwOnly) {
-      operands.add(pogAttr.getName(), {value, node});
-    } else {
-      operands.add({value, node});
-    }
-  }
-
-  // Allocate the value dest for the call. Set the value dest to the result
-  // slot, if there is one, otherwise provide the expected rvalue type.
-  ValueDest dest(EC_Trait);
-  bool hasRegisterResult = false;
-  if (memSig.isAsync()) {
-    // An async call returns a coroutine we have to await.
-  } else if (memSig.hasMemoryOnlyResult()) {
-    dest = ValueDest(MLValue(thunk.getArguments().back()), EC_Trait);
-  } else if (memSig.hasInitSelfArg()) {
-    // If both the caller and callee take initself, we initialize it directly
-    // above and need to return none.
-  } else {
-    hasRegisterResult = true;
-  }
-
-  CValue callResult = emitter.emitIndirectCall(
-      PValue(callee), std::move(operands), dest, CallSyntax::kMethodCall, node);
-  if (!callResult)
-    return;
-
-  // If the callee is async, we got a coroutine. Now await it into the result.
-  if (memSig.isAsync()) {
-    ValueDest dest(MLValue(thunk.getArguments().back()), EC_Trait);
-    if (!emitter.emitNamedMethodCall("__await__",
-                                     CallOperands({{callResult, node}}), dest,
-                                     CallSyntax::kMethodCall, node))
-      return;
-  }
-
-  // Emit the function return. It's just a none return if the function has a
-  // result slot.
-  // FIXME: handle async
-  ImplicitLocOpBuilder builder(shared.translateLocation(structDecl.getLoc()),
-                               *emitter.builder);
-  Value retVal;
-  if (hasRegisterResult)
-    retVal = emitter.emitSRValue({callResult, node}, EC_Trait);
-  else if (memSig.isThrows())
-    retVal = builder.create<ParamConstantOp>(builder.getBoolAttr(false));
-  else
-    retVal = builder.create<ParamConstantOp>(shared.getNoneAttr());
-  builder.create<KGEN::ReturnOp>(retVal);
-}
-
-/// Synthesize stubs for register-passable types to meet conformance
-/// requirements for a trait.
-static void synthesizeRegisterTraitStubs(
-    ASTDecl &structDecl, SharedState &shared,
-    ArrayRef<std::pair<std::pair<StringAttr, TypedAttr>, LITSignatureType>>
-        stubs) {
-  for (auto [key, sig] : stubs) {
-    auto [name, callee] = key;
-    // If no rewrite is necessary, skip this function.
-    if (callee.getType() == sig)
-      continue;
-    synthesizeRegisterTraitStub(structDecl, shared, name, callee, sig);
-  }
-}
-
 /// Allow synthesizing default implementations of certain special functions.
 static void synthesizeSpecialFunction(ASTDecl &structDecl, SharedState &shared,
                                       SpecialFunctionKind kind) {
@@ -383,11 +134,6 @@ LogicalResult LIT::verifyConformance(ASTDecl &structDecl,
   ExprEmitter emitter(shared, structDecl, EC_Trait);
   ASTType selfType = structDecl.getTypeDeclSelf();
 
-  // For register-passable types, this is the set of stubs that need to be
-  // synthesized for calling convention conversion. This maps a function name
-  // and symbol reference to the required memory-only signature.
-  llvm::MapVector<std::pair<StringAttr, TypedAttr>, LITSignatureType> regStubs;
-
   // These are the special methods that need to be synthesized.
   SmallVector<SpecialFunctionKind> specialFns;
 
@@ -440,11 +186,7 @@ LogicalResult LIT::verifyConformance(ASTDecl &structDecl,
         emitter, traitFn, selfType, trait, syntheticNode);
     // Match against the transformed calling convention if the struct is
     // register-passable.
-    LITSignatureType traitSignature = newSignature;
-    if (regPassable)
-      newSignature = getRegisterPassableSignature(newSignature, selfType);
-
-    newSignature = traitAliasReplacer.replace(newSignature);
+    LITSignatureType traitSignature = traitAliasReplacer.replace(newSignature);
 
     // Omit errors for certain special functions where the parser will
     // specifically verify their signatures if present.
@@ -456,7 +198,7 @@ LogicalResult LIT::verifyConformance(ASTDecl &structDecl,
     OverloadSet ov(name, decls, std::move(bindings), node,
                    CallSyntax::kMethodCallSynthetic);
     PValue result = ov.filterOverloadSetForValueType(
-        newSignature,
+        traitSignature, emitter.getScopeInfo(),
         emitError ? function_ref<InflightDiag &(SMLoc)>(
                         [&](SMLoc loc) -> InflightDiag & {
                           return diag->attachNote(traitFnDecl->getLoc());
@@ -464,8 +206,6 @@ LogicalResult LIT::verifyConformance(ASTDecl &structDecl,
                   : nullptr);
     if (!result && emitError)
       allMatchFound = false;
-    if (regPassable && result)
-      regStubs.insert({{name, result.get()}, traitSignature});
 
     return success();
   };
@@ -569,8 +309,6 @@ LogicalResult LIT::verifyConformance(ASTDecl &structDecl,
 
   if (hadErrors)
     return failure();
-  if (regPassable)
-    synthesizeRegisterTraitStubs(structDecl, shared, regStubs.takeVector());
   for (SpecialFunctionKind kind : specialFns)
     synthesizeSpecialFunction(structDecl, shared, kind);
   return success();

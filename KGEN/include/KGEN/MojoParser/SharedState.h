@@ -427,12 +427,8 @@ public:
   ASTType getBuiltinVariadicPackType(ASTDecl &context, llvm::SMLoc loc) {
     return lookupNamedType("VariadicPack", context, loc);
   }
-  ASTDecl *getBuiltinCoroutineType(ASTDecl &context, llvm::SMLoc loc) {
-    return lookupNamedTypeDecl("Coroutine", context, loc);
-  }
-  ASTDecl *getBuiltinRaisingCoroutineType(ASTDecl &context, llvm::SMLoc loc) {
-    return lookupNamedTypeDecl("RaisingCoroutine", context, loc);
-  }
+  ASTDecl *getBuiltinCoroutineType(llvm::SMLoc loc);
+  ASTDecl *getBuiltinRaisingCoroutineType(llvm::SMLoc loc);
   ASTType getOwnedKwargsDictType(llvm::SMLoc loc);
   ASTType getBuiltinCaptureListType(llvm::SMLoc loc);
   ASTType getBuiltinStubsMLIRType(llvm::SMLoc loc);
@@ -448,10 +444,15 @@ public:
   /// the provided module if one does not already exist.
   StructDeclOp getOrCreateClosureWrapper(SMLoc loc, SignatureType sig,
                                          ASTDecl *moduleDecl);
+
+  /// Function used to create a thunk. This API is limited intentionally to
+  /// ensure that the creation is transaction. This is important to retain
+  /// invariants with packaging.
+  using CreateThunkFn = LIT::FuncOp (*)(Attribute, ASTDecl &, SharedState &);
+
   /// This gets a function conversion thunk between the two provided function
   /// types within the provided module, or creates one if needed.
-  LIT::FuncOp getOrCreateFunctionThunk(LITSignatureType actual,
-                                       LITSignatureType expected);
+  LIT::FuncOp getOrCreateFunctionThunk(Attribute key, CreateThunkFn create);
 
   /// Given a scope that refers to a nested function, return the set of captured
   /// values in the form of a range: the begin and end iterators of the capture

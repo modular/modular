@@ -11,6 +11,7 @@
 #include "CallEmission.h"
 #include "ExprEmitter.h"
 #include "ExprNodes.h"
+#include "FunctionTypes.h"
 #include "MojoUtils.h"
 #include "OverloadFitness.h"
 #include "ParameterInference.h"
@@ -524,22 +525,26 @@ PValue OverloadSet::filterOverloadSet(CallOperands &operands,
 
 PValue
 OverloadSet::filterOverloadSetForValueType(ASTType functionType,
+                                           const TypeCheckScopeInfo &scopeInfo,
                                            bool emitDiagnosticOnFailure) const {
-  if (!emitDiagnosticOnFailure)
-    return filterOverloadSetForValueType(functionType, /*emitError=*/nullptr);
+  if (!emitDiagnosticOnFailure) {
+    return filterOverloadSetForValueType(functionType, scopeInfo,
+                                         /*emitError=*/nullptr);
+  }
 
   std::optional<InflightDiag> diag;
-  return filterOverloadSetForValueType(
-      functionType, [&](SMLoc loc) -> InflightDiag & {
-        return diag.emplace(getShared().emitError(loc));
-      });
+  auto emitError = [&](SMLoc loc) -> InflightDiag & {
+    return diag.emplace(getShared().emitError(loc));
+  };
+  return filterOverloadSetForValueType(functionType, scopeInfo, emitError);
 }
 
 PValue OverloadSet::filterOverloadSetForValueType(
-    ASTType functionType, function_ref<InflightDiag &(SMLoc)> emitError) const {
+    ASTType functionType, const TypeCheckScopeInfo &scopeInfo,
+    function_ref<InflightDiag &(SMLoc)> emitError) const {
   // If the target type is something weird then don't filter.  Let the error be
   // reported another way.
-  if (!isa<SignatureType>(functionType.mlirType)) {
+  if (!isa<LITSignatureType>(functionType)) {
     if (emitError) {
       auto &diag = emitError(expr->getLoc())
                    << "cannot convert function to non-function type "
@@ -575,8 +580,10 @@ PValue OverloadSet::filterOverloadSetForValueType(
     if (!newBindings.empty())
       candidateType = candidateType.getSpecializedSignature(newBindings);
 
-    if (functionType.isEqualCanon(candidateType) ||
-        canConvertWithRebind(candidateType, functionType, getShared()))
+    // This candidate is valid if it can be implicitly converted to the required
+    // function type.
+    if (ExprEmitter::canImplicitlyConvertToType(
+            {UnboundAttr::get(candidateType), expr}, functionType, scopeInfo))
       return newBindings;
     return {};
   };
@@ -596,17 +603,21 @@ PValue OverloadSet::filterOverloadSetForValueType(
 
   // Notify the listener of the updated decl references for the call now that
   // invalid candidates have been filtered out.
-  if (!validCandidates.empty()) {
+  if (!validCandidates.empty())
     getShared().notifyListenerOnRef(validCandidates, baseName, expr, syntax);
-  }
 
   // If we have exactly one viable candidate, then we succeed.
   if (validCandidates.size() == 1) {
     ParamBindings newBindings((const TypeCheckScopeInfo &)paramBindings);
     for (TypedAttr bind : candidateBindings.front())
       newBindings.addPrechecked(expr, bind);
-    return getCallee(getShared(), validCandidates.front(), baseName,
-                     newBindings, expr);
+
+    // Use an emitter with invalid context, since errors aren't expected.
+    ExprEmitter emitter(scopeInfo.shared, scopeInfo.declScope,
+                        EC_InvalidContext);
+    PValue callee = getCallee(getShared(), validCandidates.front(), baseName,
+                              newBindings, expr);
+    return emitter.emitPValue({callee, expr}, EC_InvalidContext, functionType);
   }
 
   // If we aren't to emit a diagnostic, just return the failure.
@@ -772,7 +783,8 @@ PValue OverloadSet::lookupAndResolve(
 /// expected type if provided or using current bindings if an emitter is
 /// provided.  This emits errors if 'emitter' is non-null, but does not if it
 /// is null.
-PValue OverloadSet::getDirectSymbol(ASTType expectedType) const {
+PValue OverloadSet::getDirectSymbol(ASTType expectedType,
+                                    const TypeCheckScopeInfo &scopeInfo) const {
   // Handle the case of a single candidate.
   if (fnDecls.size() == 1) {
     // This is an unbound function. Just return a reference.
@@ -786,7 +798,7 @@ PValue OverloadSet::getDirectSymbol(ASTType expectedType) const {
   // With an emitter and an expected type, the overload set can definitely be
   // resolved to a single candidate or not.
   if (expectedType) {
-    return filterOverloadSetForValueType(expectedType,
+    return filterOverloadSetForValueType(expectedType, scopeInfo,
                                          /*emitDiagnosticOnFailure=*/true);
   }
 
@@ -827,7 +839,8 @@ CValue OverloadSet::emitAsCValue(ExprEmitter &emitter, ValueDest &dest) {
   // We allow unbound symbols here which can be emitted as an PValue.  In the
   // case where we are partially applying, that will force the unbound symbol
   // into a SRValue which will catch symbols that are not fully bound.
-  PValue directSymbolAttr = getDirectSymbol(expectedType);
+  PValue directSymbolAttr =
+      getDirectSymbol(expectedType, emitter.getScopeInfo());
   if (!directSymbolAttr)
     return {};
 

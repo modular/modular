@@ -835,12 +835,6 @@ LogicalResult LIT::FuncOp::verify() {
            << " input params";
   }
 
-  // If the function is a thunk, it must have both attributes.
-  if (!getThunkToTypeAttr() != !getThunkFromTypeAttr()) {
-    return emitOpError(
-        "thunk function must have both 'from' and 'to' type attributes");
-  }
-
   return success();
 }
 
@@ -946,7 +940,7 @@ void LIT::FuncOp::build(OpBuilder &b, OperationState &state,
         InlineLevelAttr::get(ctx, inlineLevel), b.getI8IntegerAttr(0),
         FlatSymbolRefAttr(), StringAttr(), b.getStringAttr(sourceName),
         StringAttr(), DocStringAttr(), StringAttr(), DictionaryAttr::get(ctx),
-        TypeAttr(), TypeAttr(), ArrayAttr());
+        Attribute(), ArrayAttr());
   state.regions[0]->push_back(new Block());
 }
 
@@ -965,7 +959,7 @@ void LIT::FuncOp::build(OpBuilder &builder, OperationState &result,
         InlineLevelAttr::get(ctx, InlineLevel::Automatic),
         builder.getI8IntegerAttr(uint8_t(specialFnKind)), FlatSymbolRefAttr(),
         StringAttr(), sourceName, StringAttr(), DocStringAttr(), StringAttr(),
-        DictionaryAttr::get(ctx), TypeAttr(), TypeAttr(), ArrayAttr());
+        DictionaryAttr::get(ctx), Attribute(), ArrayAttr());
   result.regions[0]->push_back(new Block());
 }
 

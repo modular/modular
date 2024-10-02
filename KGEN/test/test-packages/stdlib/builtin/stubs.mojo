@@ -310,36 +310,6 @@ trait AnyType:
 
 
 # ===----------------------------------------------------------------------=== #
-# Coroutine Stubs
-# ===----------------------------------------------------------------------=== #
-
-alias AnyCoroutine = __mlir_type.`!co.routine`
-
-
-@value
-@register_passable
-struct Coroutine[T: AnyType, lifetimes: __mlir_type.`!lit.lifetime.set`]:
-    var value: __mlir_type.`!co.routine`
-
-    fn __init__(inout self, handle: AnyCoroutine):
-        self.value = handle
-
-    fn __await__(self) -> T:
-        while __mlir_attr.true:
-            pass
-
-
-@value
-@register_passable
-struct RaisingCoroutine[T: AnyType, lifetimes: __mlir_type.`!lit.lifetime.set`]:
-    var value: __mlir_type.`!co.routine`
-
-    fn __await__(self) raises -> T:
-        while __mlir_attr.true:
-            pass
-
-
-# ===----------------------------------------------------------------------=== #
 # Builtin Collection Stubs
 # ===----------------------------------------------------------------------=== #
 

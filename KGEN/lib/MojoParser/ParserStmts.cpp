@@ -1113,7 +1113,7 @@ ParseResult StmtParser::parseParamFor(size_t curIndent, ExprNode *seqExpr,
   bindings.add(seqExpr, PValue(seqPValue.getType()));
   OverloadSet call("parameter_for_generator", paramForImpl, std::move(bindings),
                    seqExpr, CallSyntax::kDirectCall);
-  PValue iterate = call.getDirectSymbol(/*expectedType=*/{});
+  PValue iterate = call.getDirectSymbol(/*expectedType=*/{}, getScopeInfo());
   if (!iterate)
     return failure();
 

@@ -1361,7 +1361,7 @@ fn test_thing_taking_reference(inout x: String):
   # CHECK-NEXT: lit.call {{.*}}thing_taking_ref2{{.*}}(%x)
   thing_taking_ref2(x)
 # CHECK-NEXT: lit.call {{.*}}@Reference::@"address_of
-# CHECK-SAME: <:!Bool {:i1 1}, :!AnyType #String1, :lifetime<1> *"x`", :!AddressSpace {_value: !Int = {0}}>
+# CHECK-SAME: <:!Bool {:i1 1}, :!AnyType #String{{.*}}, :lifetime<1> *"x`", :!AddressSpace {_value: !Int = {0}}>
   thing_taking_reference2(Reference.address_of(x))
 
 struct StructWithStaticMethods:

@@ -7,6 +7,8 @@
 #ifndef KGEN_MOJO_PARSER_FUNCTIONTYPES_H
 #define KGEN_MOJO_PARSER_FUNCTIONTYPES_H
 
+#include "Support/LLVMCompilerForwardDecls.h"
+
 namespace M::KGEN::LIT {
 class ASTDecl;
 class CValue;
@@ -25,8 +27,7 @@ bool canConvertFunctionTypes(LITSignatureType actual, LITSignatureType expected,
 
 /// This function generates a thunk inside `moduleDecl` to convert between two
 /// function types.
-FuncOp generateConversionThunk(LITSignatureType actual,
-                               LITSignatureType expected, ASTDecl &moduleDecl,
+FuncOp generateConversionThunk(Attribute key, ASTDecl &moduleDecl,
                                SharedState &shared);
 
 /// Emit a non-trivial conversion between two function types. This generates a

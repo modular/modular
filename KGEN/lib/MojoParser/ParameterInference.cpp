@@ -638,7 +638,7 @@ ParameterInferenceState::inferOneOperand(ASTExprAnd<AnyValue> operand,
     OverloadSetUValue orValue = value.getIfOverloadSet();
     assert(orValue && "Unknown UValue!");
     // Try to refine the OverloadSetUValue into a PValue.
-    CValue argVal = orValue->getDirectSymbol(expectedType);
+    CValue argVal = orValue->getDirectSymbol(expectedType, *this);
     if (!argVal)
       return {};
     // If we have a reference to an overloaded method like foo(a.method),

@@ -39,7 +39,7 @@ static LogicalResult legalizeOp(Operation *op) {
 
   // Parameter references should not exist anymore.
   legalizer.addWalk([&](ParamDeclRefAttr attr) {
-    op->emitError("dangling parameter reference post-elaboration");
+    op->emitError("dangling parameter reference post-elaboration: ") << attr;
     isFailure = true;
     return WalkResult::skip();
   });
