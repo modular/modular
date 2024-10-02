@@ -6,8 +6,8 @@
 
 #include "KGEN/Interpreter/BytecodeInterpreter.h"
 #include "KGEN/Interpreter/InterpreterInterface.h"
+#include "KGEN/Interpreter/Utils.h"
 #include "Support/AlignedAlloc.h"
-#include "Utils.h"
 #include "llvm/Support/MathExtras.h"
 
 using namespace M;

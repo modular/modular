@@ -527,7 +527,6 @@ modular_cc_library(
     name = "Interpreter",
     srcs = glob([
         "lib/Interpreter/*.cpp",
-        "lib/Interpreter/*.h",
     ]),
     hdrs = glob(["include/KGEN/Interpreter/*.h"]),
     deps = [
@@ -1308,12 +1307,13 @@ modular_cc_library(
 modular_cc_library(
     name = "ToolCommon",
     srcs = glob(["lib/ToolCommon/**/*.cpp"]),
-    hdrs = glob(["include/KGEN/ToolCommon/*.h"]),
+    hdrs = glob(["include/KGEN/ToolCommon/**/*.h"]),
     deps = [
         ":CODialect",
         ":CustomDialect",
         ":ExecutionEngine",
         ":HLCFDialect",
+        ":Interpreter",
         ":KGENPassesIncGen",
         ":LITDialect",
         ":MOGGPreElab",

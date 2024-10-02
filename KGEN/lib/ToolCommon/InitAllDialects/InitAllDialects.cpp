@@ -5,14 +5,17 @@
 //===----------------------------------------------------------------------===//
 
 #include "KGEN/ToolCommon/InitAllDialects.h"
+#include "KGEN/ToolCommon/InitAllDialects/IndexInterpreterInterface.h"
 
 #include "KGEN/CODialect/CODialect.h"
 #include "KGEN/CustomDialect/CustomDialect.h"
 #include "KGEN/HLCFDialect/HLCFDialect.h"
 #include "KGEN/Interpreter/InterpreterDialect.h"
 #include "KGEN/Interpreter/InterpreterInterface.h"
+#include "KGEN/Interpreter/InterpreterState.h"
 #include "KGEN/KGENDialect/KGENDialect.h"
 #include "KGEN/KGENDialect/KGENInterfaces.h"
+#include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/LITDialect/LITDialect.h"
 #include "KGEN/POPDialect/POPDialect.h"
 #include "Support/DebugInfoDialect/IR/DebugInfoDialect.h"
@@ -213,6 +216,7 @@ public:
     mlir::index::SubOp::attachInterface<SubOpComputeOpInterface>(*ctx);
     mlir::index::MulOp::attachInterface<MulOpComputeOpInterface>(*ctx);
     mlir::index::CmpOp::attachInterface<CmpOpComputeOpInterface>(*ctx);
+    mlir::index::CmpOp::attachInterface<CmpOpInterpretInterface>(*ctx);
     mlir::index::DivSOp::attachInterface<DivSOpComputeOpInterface>(*ctx);
     mlir::index::DivUOp::attachInterface<DivUOpComputeOpInterface>(*ctx);
     mlir::index::CeilDivSOp::attachInterface<CeilDivSOpComputeOpInterface>(
