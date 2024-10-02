@@ -57,8 +57,8 @@ struct _POpenHandle:
 
         while True:
             var read = external_call["getline", Int](
-                Reference.address_of(line),
-                Reference.address_of(len),
+                Pointer.address_of(line),
+                Pointer.address_of(len),
                 self._handle,
             )
             if read == -1:
