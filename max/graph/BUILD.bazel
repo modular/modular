@@ -1,8 +1,14 @@
-package(default_visibility = ["//visibility:public"])
+load("@pip_deps//:requirements.bzl", "requirement")
 
-filegroup(
+py_library(
     name = "graph",
-    srcs = glob([
-        "**/*.py",
-    ]),
+    srcs = glob(["**/*.py"]),
+    imports = ["../.."],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//SDK/lib/API/python/max/_graph",
+        "//SDK/lib/API/python/max/dtype",
+        "//SDK/lib/API/python/max/mlir",
+        requirement("numpy"),
+    ],
 )
