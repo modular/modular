@@ -141,11 +141,10 @@ class SpecInstance:
                 # TODO: needs better error handling and error messages.
                 if verbose:
                     print(list2cmdline(cmd))
-                    run_shell_command(cmd)
-                else:
-                    p = run_shell_command(
-                        cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE
-                    )
+                output = run_shell_command(
+                    cmd, check=False, capture_output=True
+                )
+
         except Exception as exc:
             raise Exception(
                 f"Unable to run the command {list2cmdline(cmd)}"
@@ -499,7 +498,6 @@ def run(
                 output_file = output_dir / "output.csv"
                 t_start_item = time()
 
-                print("pre-compile")
                 s.compile(
                     output_file=output_file,
                     build_opts=build_opts,
@@ -507,13 +505,14 @@ def run(
                     verbose=verbose,
                 )
                 elapsed_time_list[i] = (time() - t_start_item) * 1e3
-                print(elapsed_time_list[i])
                 spec_list[i] = s
                 output_path_list[i] = output_file
 
             except Exception as e:
                 if e == KeyboardInterrupt:
                     sys.exit(0)
+                else:
+                    print(e)
 
             # When a benchmark is completed for one combination of parameters we advance progress by 1
             progress.update(bench_progress, advance=1)
