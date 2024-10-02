@@ -515,12 +515,12 @@ def transpose(input: Symbol, x: Int, y: Int) -> Symbol:
     ptr = UnsafePointer[Int64].alloc(input_type.rank())
     for i in range(input_type.rank()):
         dims.append(input_type.dims[i])
-        ptr.store[width=1](i, i)
+        ptr.store(i, i)
 
     dims[x] = input_type.dims[y]
     dims[y] = input_type.dims[x]
-    ptr.store[width=1](x, y)
-    ptr.store[width=1](y, x)
+    ptr.store(x, y)
+    ptr.store(y, x)
 
     transpose_indices = g.constant(
         Tensor[DType.int64](TensorShape(input_type.rank()), ptr)
