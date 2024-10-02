@@ -106,19 +106,19 @@ def execute_matmul[
     # initialize our KVCache
     var is_context_encoding = True
     alias max_batch_size = ContiguousKVCache[type, kv_params]._max_batch_size
-    var valid_lengths_host_ptr = UnsafePointer[Int64].alloc(max_batch_size)
+    var valid_lengths_host_ptr = UnsafePointer[UInt32].alloc(max_batch_size)
     for i in range(max_batch_size):
         valid_lengths_host_ptr[i] = -1
     for i in range(batch_size):
         if valid_lengths_host_ptr[i] != 0:
             is_context_encoding = False
         valid_lengths_host_ptr[i] = cache_size
-    var valid_lengths_dev = ctx.create_buffer[DType.int64](max_batch_size)
+    var valid_lengths_dev = ctx.create_buffer[DType.uint32](max_batch_size)
     ctx.enqueue_copy_to_device(valid_lengths_dev, valid_lengths_host_ptr)
-    var valid_lengths_host = NDBuffer[DType.int64, 1](
+    var valid_lengths_host = NDBuffer[DType.uint32, 1](
         valid_lengths_host_ptr, batch_size
     )
-    var valid_lengths = NDBuffer[DType.int64, 1](
+    var valid_lengths = NDBuffer[DType.uint32, 1](
         valid_lengths_dev.ptr, batch_size
     )
 
@@ -291,19 +291,19 @@ def execute_fused_qkv_matmul[
     # initialize our KVCache
     var is_context_encoding = True
     alias max_batch_size = ContiguousKVCache[type, kv_params]._max_batch_size
-    var valid_lengths_host_ptr = UnsafePointer[Int64].alloc(max_batch_size)
+    var valid_lengths_host_ptr = UnsafePointer[UInt32].alloc(max_batch_size)
     for i in range(max_batch_size):
         valid_lengths_host_ptr[i] = -1
     for i in range(batch_size):
         if valid_lengths_host_ptr[i] != 0:
             is_context_encoding = False
         valid_lengths_host_ptr[i] = cache_size
-    var valid_lengths_dev = ctx.create_buffer[DType.int64](max_batch_size)
+    var valid_lengths_dev = ctx.create_buffer[DType.uint32](max_batch_size)
     ctx.enqueue_copy_to_device(valid_lengths_dev, valid_lengths_host_ptr)
-    var valid_lengths_host = NDBuffer[DType.int64, 1](
+    var valid_lengths_host = NDBuffer[DType.uint32, 1](
         valid_lengths_host_ptr, batch_size
     )
-    var valid_lengths = NDBuffer[DType.int64, 1](
+    var valid_lengths = NDBuffer[DType.uint32, 1](
         valid_lengths_dev.ptr, batch_size
     )
 
