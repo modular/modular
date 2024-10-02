@@ -1783,7 +1783,9 @@ ErrorTreeOrSuccess StringAddressOp::interpret(ArrayRef<Attribute> operands,
                                               InterpreterState &state) {
   // Ensure the string is null-terminated. This is safe because `StringAttr`
   // always stores a null terminator.
-  auto value = cast<StringAttr>(operands.front());
+  auto value = dyn_cast<StringAttr>(operands.front());
+  if (!value)
+    return ErrorTree(getLoc(), Error("argument is not a concrete string"));
   StringRef str(value.data(), value.size() + 1);
   if (value.getValue().empty())
     str = "\0";

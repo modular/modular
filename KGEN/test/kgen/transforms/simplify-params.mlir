@@ -155,3 +155,22 @@ kgen.generator @extern_apply() {
   kgen.param.constant = <apply(:() -> index @extern)>
   kgen.return
 }
+
+// -----
+
+// COM: pop.string.address round exits with error when given parameter
+//  expression rather than crash. MOCO-1162
+
+// CHECK-LABEL: kgen.generator @interpret_me
+kgen.generator @interpret_me<target: struct<(string, index)>>() -> !kgen.pointer<scalar<si8>> {
+  %0 = kgen.param.materialize: struct<(string, index)> = <target>
+  %1 = kgen.struct.extract %0[0] : !kgen.struct<(string, index)>
+  // CHECK:  [[V2:%.*]] = pop.string.address {{.*}}
+  %2 = pop.string.address %1
+  kgen.return %2 : !kgen.pointer<scalar<si8>>
+}
+
+kgen.generator @callIt<target: struct<(string, index)>>() -> !kgen.pointer<scalar<si8>> {
+  %0 = kgen.param.materialize: !kgen.pointer<scalar<si8>> = <apply(:() -> !kgen.pointer<scalar<si8>> @interpret_me<:struct<(string, index)> target>)>
+  kgen.return %0 : !kgen.pointer<scalar<si8>>
+}
