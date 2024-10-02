@@ -1,10 +1,16 @@
-package(default_visibility = ["//visibility:public"])
+load("@pip_deps//:requirements.bzl", "requirement")
 
-filegroup(
+py_library(
     name = "engine",
-    srcs = [
-        "py.typed",
-    ] + glob([
-        "**/*.py",
-    ]),
+    srcs = glob(["**/*.py"]),
+    data = ["py.typed"],
+    imports = ["../.."],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//SDK/lib/API/python/max/_engine",
+        "//SDK/lib/API/python/max/driver",
+        "//SDK/lib/API/python/max/dtype",
+        "//SDK/lib/API/python/max/graph",
+        requirement("numpy"),
+    ],
 )
