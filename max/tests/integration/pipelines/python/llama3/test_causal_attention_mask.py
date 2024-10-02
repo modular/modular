@@ -83,4 +83,4 @@ def test_causal_mask__does_not_mask_prior_tokens(
     mask = causal_attention_mask(start_pos, seq_len)
     for m, sp, sl in zip(mask, start_pos, seq_len):
         for pos, sequence_mask in enumerate(m):
-            assert np.all(sequence_mask[: sp + pos] == 0.0)
+            assert np.all(sequence_mask[: sp + pos + 1] == 0.0)
