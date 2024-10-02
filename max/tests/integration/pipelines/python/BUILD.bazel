@@ -89,7 +89,7 @@ modular_py_test(
     }),
     deps = [
         ":evaluate_llama",
-        "//SDK/lib/API/python:max_engine",
+        "//SDK/lib/API/python/max/engine",
         "//SDK/lib/API/python/max/serve",
         "//SDK/public/max-repo/pipelines/python/llama3",
         "//SDK/public/max-repo/pipelines/python/nn",
@@ -140,7 +140,7 @@ modular_py_test(
     }),
     deps = [
         ":evaluate_llama",
-        "//SDK/lib/API/python:max_engine",
+        "//SDK/lib/API/python/max/engine",
         "//SDK/public/max-repo/pipelines/python/llama3",
         "//SDK/public/max-repo/pipelines/python/utils",
         "//Support/python:support",
@@ -216,7 +216,7 @@ modular_py_test(
     ],
     deps = [
         ":params",
-        "//SDK/lib/API/python:max_engine",
+        "//SDK/lib/API/python/max/engine",
         "//SDK/lib/API/python/max/serve",
         "//SDK/public/max-repo/pipelines/python/llama3",
     ],

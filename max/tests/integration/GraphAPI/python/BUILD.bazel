@@ -25,5 +25,5 @@ modular_py_test(
         "//:tsan": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),
-    deps = ["//SDK/lib/API/python:max_engine"],
+    deps = ["//SDK/lib/API/python/max/engine"],
 )

@@ -43,7 +43,7 @@ modular_py_test(
         "//conditions:default": [],
     }),
     deps = [
-        "//SDK/lib/API/python:max_engine",
+        "//SDK/lib/API/python/max/engine",
         "//SDK/public/max-repo/pipelines/python/llama3",
         "//SDK/public/max-repo/pipelines/python/nn",
         requirement("torch"),
@@ -96,7 +96,7 @@ modular_py_test(
         "//conditions:default": [],
     }),
     deps = [
-        "//SDK/lib/API/python:max_engine",
+        "//SDK/lib/API/python/max/engine",
         "//SDK/public/max-repo/pipelines/python/llama3",
         "//SDK/public/max-repo/pipelines/python/nn",
         requirement("torch"),
@@ -136,6 +136,6 @@ modular_py_test(
         "//conditions:default": [],
     }),
     deps = [
-        "//SDK/lib/API/python:max_engine",
+        "//SDK/lib/API/python/max/engine",
     ],
 )
