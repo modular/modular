@@ -8,7 +8,7 @@ from layout.layout_tensor import LayoutTensorIter
 from utils import StaticIntTuple, StaticTuple, Index
 from .int_tuple import UNKNOWN_VALUE
 from memory import UnsafePointer
-from memory.reference import AddressSpace, _GPUAddressSpace
+from memory.pointer import AddressSpace, _GPUAddressSpace
 from sys import triple_is_nvidia_cuda
 
 

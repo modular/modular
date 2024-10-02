@@ -16,7 +16,7 @@ from gpu.id import ThreadIdx
 from gpu.memory import Fill, async_copy
 from layout.element import Element
 from memory import UnsafePointer, memcpy, stack_allocation, memset_zero
-from memory.reference import AddressSpace, _GPUAddressSpace
+from memory.pointer import AddressSpace, _GPUAddressSpace
 
 from utils import StaticIntTuple, StaticTuple
 from utils.numerics import max_finite
