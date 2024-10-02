@@ -44,32 +44,45 @@ class Value:
     _mlir_value: mlir.Value
 
     def __new__(cls, value: ValueLike):
+        # If a subclass is being requested, let the subclass `__init__` deal with everything.
+        # Note, we can't use `issubclass` here cause `Value` is a subclass of `Value` according to python.
+        if cls is not Value:
+            return super().__new__(cls)
+
+        # Otherwise, the user is requesting a Value(x) directly.
+        # we need to dispatch to the correct subclass.
         if isinstance(value, mlir.Value):
-            # Value(x) where x is an MLIR value returns instance of appropriate
-            # subclass of Value wrapping x.
-            if cls is Value:
-                if _graph.type_is_opaque(value.type):
-                    return super().__new__(_OpaqueValue)
-                elif _graph.type_is_buffer(value.type):
-                    return super().__new__(BufferValue)
-                elif _graph.type_is_chain(value.type):
-                    return super().__new__(_ChainValue)
-                else:
-                    return super().__new__(TensorValue)
-            return super().__new__(cls)
+            # Value(x) where x is an MLIR value
+            # Return the correct subclass based on the mlir value's type.
+            if _graph.type_is_opaque(value.type):
+                return super().__new__(_OpaqueValue)
+            elif _graph.type_is_buffer(value.type):
+                return super().__new__(BufferValue)
+            elif _graph.type_is_chain(value.type):
+                return super().__new__(_ChainValue)
+            elif _graph.type_is_tensor(value.type):
+                return super().__new__(TensorValue)
+            else:
+                raise TypeError(
+                    "Value() argument is an mlir.Value of unknown type"
+                    f" '{value.type}'"
+                )
         elif isinstance(value, Value):
-            # Value(x) where x is an instance of a subclass of Value, returns x.
-            if cls is Value:
-                return super().__new__(type(value))
-            # XValue(x) where XValue is a subclass of Value, returns XValue(x)
-            # if type(x) allows; otherwise raises an error in XValue.__init__().
-            return super().__new__(cls)
+            # Value(x) where x is an instance of a subclass of Value.
+            # Return the correct subclass based on the type of value.
+            return super().__new__(type(value))
         elif isinstance(value, _numeric + (Weight,)):
-            return super().__new__(cls)
+            # Value(x) where x is a numeric or Weight.
+            # Explicitly tell the user to call `TensorValue` if that is what they wanted.
+            raise TypeError(
+                "Value() can not be created directly from a"
+                f" '{type(value).__name__}'. If you are trying to create a"
+                " tensor, call TensorValue() directly."
+            )
         else:
             raise TypeError(
-                "Value() argument must be a mlir.Value, a graph.Value, or an"
-                f" np.ndarray, not '{type(value).__name__}'"
+                "Value() argument must be an mlir.Value, a graph.Value, or"
+                f" an np.ndarray, not '{type(value).__name__}'"
             )
 
     def __repr__(self):
@@ -97,7 +110,7 @@ class _ChainValue(Value):
             self._mlir_value = value._mlir_value
         else:
             raise TypeError(
-                "_ChainValue() argument must be a mlir.Value of chain type "
+                "_ChainValue() argument must be an mlir.Value of chain type "
                 f"or a graph._ChainValue, not {type(value).__name__!r}"
             )
 
@@ -117,7 +130,7 @@ class _OpaqueValue(Value):
             self._mlir_value = value._mlir_value
         else:
             raise TypeError(
-                "_OpaqueValue() argument must be a mlir.Value of opaque type "
+                "_OpaqueValue() argument must be an mlir.Value of opaque type "
                 f"or a graph._OpaqueValue, not {type(value).__name__!r}"
             )
 
@@ -132,9 +145,8 @@ class BufferValue(Value):
             self._mlir_value = value._mlir_value
         else:
             raise TypeError(
-                "BufferValue() argument must be a mlir.Value of buffer type,"
-                " or a graph.BufferValue,  or an np.ndarray, not"
-                f" '{type(value).__name__}'"
+                "BufferValue() argument must be an mlir.Value of buffer type "
+                f"or a graph.BufferValue, not '{type(value).__name__}'"
             )
 
     @property
@@ -203,8 +215,8 @@ class TensorValue(Value):
             )
         else:
             raise TypeError(
-                "TensorValue() argument must be a mlir.Value of tensor type,"
-                " or a graph.TensorValue,  or an np.ndarray, not"
+                "TensorValue() argument must be an mlir.Value of tensor type,"
+                " a graph.TensorValue, or a graph.Weight, not"
                 f" '{type(value).__name__}'"
             )
 
@@ -378,9 +390,8 @@ class TensorValue(Value):
 
 
 StrongValueLike = Union[mlir.Value, Value, Weight]
-ValueLike = Union[
-    StrongValueLike, int, float, np.integer, np.floating, np.ndarray
-]
+Numeric = Union[int, float, np.integer, np.floating, np.ndarray]
+ValueLike = Union[StrongValueLike, Numeric]
 
 # This is needed for python 3.9 compatibility.
 # `isinstance` only works with tuples and not unions in 3.9.
