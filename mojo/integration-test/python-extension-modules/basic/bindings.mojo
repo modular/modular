@@ -7,7 +7,7 @@
 import builtin
 
 from os import abort
-from memory import UnsafePointer
+from sys.ffi import OpaquePointer
 
 from python import Python, PythonObject, TypedPythonObject
 from python._cpython import PyMethodDef, PyObjectPtr
@@ -16,7 +16,7 @@ from python._cpython import PyMethodDef, PyObjectPtr
 @export
 fn PyInit_bindings() -> PythonObject:
     # Initialize the global runtime (including the memory allocator)
-    _ = builtin._startup._init_global_runtime(UnsafePointer[NoneType]())
+    _ = builtin._startup._init_global_runtime(OpaquePointer())
 
     # ----------------------------------
     # Create a Python module
