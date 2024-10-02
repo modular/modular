@@ -65,11 +65,15 @@ class OpenAIResponseGenerator(ABC):
 
 class OpenAIChatResponseGenerator(OpenAIResponseGenerator):
     async def stream(self):
+        self.logger.debug(
+            "Streaming: Start: %s",
+            self.request,
+        )
         response_idx = 0
         async for token in self.pipeline.next_token(self.request):
             self.logger.debug(
                 "Streaming: %s, TOKEN: %d, %s",
-                self.request,
+                self.request.id,
                 response_idx,
                 token,
             )
@@ -105,7 +109,7 @@ class OpenAIChatResponseGenerator(OpenAIResponseGenerator):
             yield response.model_dump_json()
 
         logger.debug(
-            "Completed: %s, %d tokens",
+            "Streaming: Done: %s, %d tokens",
             self.request,
             response_idx,
         )
@@ -239,10 +243,14 @@ class CompletionStreamResponse(BaseModel):
 class OpenAICompletionResponseGenerator(OpenAIResponseGenerator):
     async def stream(self):
         response_idx = 0
+        logger.debug(
+            "Streaming: Start: %s",
+            self.request,
+        )
         async for token in self.pipeline.next_token(self.request):
             self.logger.debug(
                 "Streaming: %s, TOKEN: %d, %s",
-                self.request,
+                self.request.id,
                 response_idx,
                 token,
             )
@@ -268,7 +276,7 @@ class OpenAICompletionResponseGenerator(OpenAIResponseGenerator):
             yield response.model_dump_json()
 
         logger.debug(
-            "Completed: %s, %d tokens",
+            "Streaming: Done: %s, %d tokens",
             self.request,
             response_idx,
         )

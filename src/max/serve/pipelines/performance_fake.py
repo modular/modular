@@ -113,7 +113,8 @@ class PerformanceFakingTokenGenerator:
 
 
 def get_performance_fake(
-    tokenizer: AutoTokenizer, mode: Literal["no-op", "speed-of-light", "vllm"]
+    mode: Literal["no-op", "speed-of-light", "vllm"],
+    tokenizer: Optional[AutoTokenizer] = None,
 ) -> PerformanceFakingTokenGenerator:
     """Construct a performance fake for the given performance mode."""
     if mode == "no-op":

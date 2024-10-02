@@ -34,8 +34,10 @@ ROUTES = {
 logging.basicConfig(
     level=logging.INFO,
     encoding="utf-8",
-    format="%(asctime)s - %(levelname)s - %(message)s",
+    format="%(asctime)s %(levelname)s: %(name)s: %(message)s",
+    datefmt="%H:%M:%S",
 )
+logging.getLogger("sse_starlette.sse").setLevel(logging.INFO)
 logger = logging.getLogger(__name__)
 
 

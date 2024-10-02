@@ -4,31 +4,38 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from functools import lru_cache
-
 from max.serve.pipelines.echo_gen import EchoTokenGenerator
-from max.serve.pipelines.llm import TokenGeneratorPipeline
+from max.serve.pipelines.llm import (
+    TokenGeneratorPipeline,
+    TokenGeneratorPipelineConfig,
+)
 from max.serve.pipelines.performance_fake import get_performance_fake
 from max.serve.pipelines.random import RandomTokenGenerator
 
 
-@lru_cache
 def random_token_pipeline() -> TokenGeneratorPipeline:
-    pipeline = TokenGeneratorPipeline(RandomTokenGenerator(), None)
-    return pipeline
-
-
-@lru_cache
-def echo_token_pipeline(max_batch_size: int = 1) -> TokenGeneratorPipeline:
     pipeline = TokenGeneratorPipeline(
-        EchoTokenGenerator(), max_batch_size=max_batch_size
+        TokenGeneratorPipelineConfig.dynamic_homogenous(batch_size=1),
+        RandomTokenGenerator(),
     )
     return pipeline
 
 
-@lru_cache
+def echo_token_pipeline(max_batch_size: int = 1) -> TokenGeneratorPipeline:
+    pipeline = TokenGeneratorPipeline(
+        TokenGeneratorPipelineConfig.dynamic_homogenous(
+            batch_size=max_batch_size
+        ),
+        EchoTokenGenerator(),
+    )
+    return pipeline
+
+
 def perf_faking_token_pipeline() -> TokenGeneratorPipeline:
-    pipeline = TokenGeneratorPipeline(get_performance_fake(None, "no-op"))
+    pipeline = TokenGeneratorPipeline(
+        TokenGeneratorPipelineConfig.dynamic_homogenous(batch_size=1),
+        get_performance_fake("no-op"),
+    )
     return pipeline
 
 
