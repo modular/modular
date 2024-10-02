@@ -803,6 +803,15 @@ kgen.func @pointer_to_index() -> index {
   kgen.return %1 : index
 }
 
+// CHECK-LABEL: kgen.func @bitcast_ptr_to_index
+kgen.func @bitcast_ptr_to_index(%arg0: !kgen.pointer<none>) -> index {
+  %0 = pop.pointer.bitcast %arg0 : !kgen.pointer<none> to !kgen.pointer<index>
+  // CHECK-NEXT: %0 = pop.pointer_to_index %arg0
+  %1 = pop.pointer_to_index %0 : !kgen.pointer<index>
+  // CHECK-NEXT: return %0
+  kgen.return %1 : index
+}
+
 // CHECK-LABEL: @cast_to_builtin
 kgen.func @cast_to_builtin() -> (
     vector<2xi1>, vector<2xindex>, vector<2xi4>, vector<2xbf16>,

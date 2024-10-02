@@ -869,7 +869,7 @@ def POP_AndOp : POP_BoolOp<"and", [Idempotent]> {
     Example:
 
     ```mlir
-    %c = pop.and %a, %b 
+    %c = pop.and %a, %b
     ```
   }];
 }
@@ -887,7 +887,7 @@ def POP_OrOp : POP_BoolOp<"or", [Idempotent]> {
     Example:
 
     ```mlir
-    %c = pop.or %a, %b 
+    %c = pop.or %a, %b
     ```
   }];
 }
@@ -905,7 +905,7 @@ def POP_XOrOp : POP_BoolOp<"xor"> {
     Example:
 
     ```mlir
-    %c = pop.xor %a, %b 
+    %c = pop.xor %a, %b
     ```
   }];
 }
@@ -1570,6 +1570,7 @@ def POP_PointerToIndexOp : POPOp<"pointer_to_index", [Pure,
   let results = (outs Index:$result);
   let assemblyFormat = "$value attr-dict `:` type($value)";
   let hasFolder = 1;
+  let hasCanonicalizeMethod = 1;
 }
 
 //===----------------------------------------------------------------------===//
