@@ -53,3 +53,25 @@ CmpOpInterpretInterface::interpret(mlir::index::CmpOp cmpOp,
   state.mapResults(result);
   return success();
 }
+
+ErrorTreeOrSuccess
+SubOpInterpretInterface::interpret(mlir::index::SubOp subOp,
+                                   ArrayRef<Attribute> operands,
+                                   InterpreterState &state) {
+  assert(operands.size() == 2 && "cmp expected two operands");
+  IntegerAttr lhsInt = dyn_cast_if_present<mlir::IntegerAttr>(operands[0]);
+  IntegerAttr rhsInt = dyn_cast_if_present<mlir::IntegerAttr>(operands[1]);
+  uint64_t targetBitwidth = state.getTarget().resolveIndexBitWidth();
+  APInt lhs = lhsInt.getValue().truncSSat(targetBitwidth);
+  APInt rhs = rhsInt.getValue().truncSSat(targetBitwidth);
+  bool overflow;
+  APInt difference = lhs.ssub_ov(rhs, overflow);
+  if (overflow)
+    return ErrorTreeOrSuccess(ErrorTree(
+        subOp->getLoc(), Error("subtraction failed due to overflow")));
+
+  state.mapResults(
+      IntegerAttr::get(IndexType::get(subOp.getContext()),
+                       difference.sext(IndexType::kInternalStorageBitWidth)));
+  return success();
+}

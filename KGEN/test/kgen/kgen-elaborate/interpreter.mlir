@@ -678,3 +678,4 @@ kgen.generator export @call_result_slot() {
   kgen.param.constant: !ptr_v = <apply_result_slot(:(!kgen.pointer<!ptr_v> byref_result) -> () @get_variant)>
   kgen.return
 }
+
