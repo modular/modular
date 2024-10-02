@@ -60,6 +60,14 @@ struct CmpOpInterpretInterface
                                       InterpreterState &state);
 };
 
+struct SubOpInterpretInterface
+    : public IndexOpInterpretInterface<SubOpInterpretInterface,
+                                       mlir::index::SubOp> {
+  static ErrorTreeOrSuccess interpret(mlir::index::SubOp op,
+                                      ArrayRef<Attribute> operands,
+                                      InterpreterState &state);
+};
+
 } // namespace M::KGEN
 
 #endif // KGEN_TOOLCOMMON_INITALLDIALECTS_INDEXINTERPRETERINTERFACE_H

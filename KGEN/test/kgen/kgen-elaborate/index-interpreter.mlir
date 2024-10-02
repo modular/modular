@@ -31,3 +31,23 @@ kgen.generator export @main() -> i1 {
   %0 = kgen.param.constant: i1 = <value>
   kgen.return %0 : i1
 }
+
+// -----
+
+// COM: Subtraction
+
+module attributes {M.target_info = #M.target<triple = "", arch = "", features = "", data_layout = "",  simd_bit_width = 128, index_bit_width = 64>, kgen.env = #kgen.env<{}>} {
+kgen.generator @sub(%arg0: index, %arg1: index) -> index {
+  %0 = index.sub %arg0, %arg1
+  kgen.return %0 : index
+}
+
+// CHECK-LABEL: kgen.func export @main
+kgen.generator export @main() -> index {
+  kgen.param.declare value : index = <apply(:(index, index) -> index @sub, 4294967295, 5)>
+  // CHECK-NEXT: [[V0:%.*]] = kgen.param.constant = <4294967290>
+  %0 = kgen.param.constant: index = <value>
+  // CHECK-NEXT: kgen.return [[V0]] : index
+  kgen.return %0 : index
+}
+}

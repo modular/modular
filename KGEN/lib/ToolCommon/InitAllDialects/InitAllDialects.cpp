@@ -217,6 +217,7 @@ public:
     mlir::index::MulOp::attachInterface<MulOpComputeOpInterface>(*ctx);
     mlir::index::CmpOp::attachInterface<CmpOpComputeOpInterface>(*ctx);
     mlir::index::CmpOp::attachInterface<CmpOpInterpretInterface>(*ctx);
+    mlir::index::SubOp::attachInterface<SubOpInterpretInterface>(*ctx);
     mlir::index::DivSOp::attachInterface<DivSOpComputeOpInterface>(*ctx);
     mlir::index::DivUOp::attachInterface<DivUOpComputeOpInterface>(*ctx);
     mlir::index::CeilDivSOp::attachInterface<CeilDivSOpComputeOpInterface>(
