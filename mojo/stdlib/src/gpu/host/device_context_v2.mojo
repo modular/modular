@@ -25,6 +25,12 @@ alias _SizeT = UInt64
 # Define helper methods to call AsyncRT bindings.
 
 
+fn not_implemented_yet[msg: StringLiteral]():
+    # Uncomment to convert runtime errors into compile-time errors:
+    # constrained[False, msg]()
+    abort(msg)
+
+
 fn _checked(err_msg: _CharPtr) raises:
     if err_msg:
         err_str = String(StringRef(err_msg))
@@ -88,12 +94,12 @@ struct DeviceBufferV2[type: DType](Sized):
         *,
         owning: Bool,
     ):
-        # constrained[False, "##### DeviceBufferV2.__init__ - 2"]()
+        not_implemented_yet["##### DeviceBufferV2.__init__ - 2"]()
         self._device_ptr = UnsafePointer[Scalar[type]]()
         self._handle = _DeviceBufferPtr()
 
     fn __init__(inout self):
-        # constrained[False, "##### DeviceBufferV2.__init__ - 3"]()
+        not_implemented_yet["##### DeviceBufferV2.__init__ - 3"]()
         self._device_ptr = UnsafePointer[Scalar[type]]()
         self._handle = _DeviceBufferPtr()
 
@@ -135,13 +141,13 @@ struct DeviceBufferV2[type: DType](Sized):
     fn create_sub_buffer[
         view_type: DType
     ](self, offset: Int, size: Int) raises -> DeviceBufferV2[view_type]:
-        # constrained[
-        #     False, "##### UNIMPLEMENTED: DeviceBufferV2.create_sub_buffer"
-        # ]()
+        not_implemented_yet[
+            "##### UNIMPLEMENTED: DeviceBufferV2.create_sub_buffer"
+        ]()
         return DeviceBufferV2[view_type]()  # FIXME
 
     fn take_ptr(owned self) -> UnsafePointer[Scalar[type]]:
-        # constrained[False, "##### UNIMPLEMENTED: DeviceBufferV2.take_ptr"]()
+        not_implemented_yet["##### UNIMPLEMENTED: DeviceBufferV2.take_ptr"]()
         return UnsafePointer[Scalar[type]]()  # FIXME
 
     fn ptr(self) -> UnsafePointer[Scalar[type]]:
@@ -408,10 +414,9 @@ struct DeviceContextV2:
             ConstantMemoryMapping
         ](),
     ) raises:
-        pass
-        # constrained[
-        #     False, "##### UNIMPLEMENTED: DeviceContextV2.enqueue_function"
-        # ]()
+        not_implemented_yet[
+            "##### UNIMPLEMENTED: DeviceContextV2.enqueue_function"
+        ]()
 
     @parameter
     fn _enqueue_function[
@@ -568,33 +573,28 @@ struct DeviceContextV2:
     fn copy_to_device_sync[
         type: DType
     ](self, buf: DeviceBufferV2[type], ptr: UnsafePointer[Scalar[type]]) raises:
-        # constrained[
-        #     False, "##### UNIMPLEMENTED: DeviceContextV2.copy_to_device_sync"
-        # ]()
-        pass
+        not_implemented_yet[
+            "##### UNIMPLEMENTED: DeviceContextV2.copy_to_device_sync"
+        ]()
 
     fn copy_from_device_sync[
         type: DType
     ](self, ptr: UnsafePointer[Scalar[type]], buf: DeviceBufferV2[type]) raises:
-        # constrained[
-        #     False, "##### UNIMPLEMENTED: DeviceContextV2.copy_from_device_sync"
-        # ]()
-        pass
+        not_implemented_yet[
+            "##### UNIMPLEMENTED: DeviceContextV2.copy_from_device_sync"
+        ]()
 
     fn copy_device_to_device_sync[
         type: DType
     ](self, dst: DeviceBufferV2[type], src: DeviceBufferV2[type]) raises:
-        # constrained[
-        #     False,
-        #     "##### UNIMPLEMENTED: DeviceContextV2.copy_device_to_device_sync",
-        # ]()
-        pass
+        not_implemented_yet[
+            "##### UNIMPLEMENTED: DeviceContextV2.copy_device_to_device_sync"
+        ]()
 
     fn memset[
         type: DType
     ](self, dst: DeviceBufferV2[type], val: Scalar[type]) raises:
-        # constrained[False, "##### UNIMPLEMENTED: DeviceContextV2.memset"]()
-        pass
+        not_implemented_yet["##### UNIMPLEMENTED: DeviceContextV2.memset"]()
 
     fn synchronize(self) raises:
         # const char * AsyncRT_DeviceContext_synchronize(const DeviceContext *ctx)
@@ -610,36 +610,29 @@ struct DeviceContextV2:
 
     fn print_kernel_timing_info(self):
         """Print profiling info associated with this DeviceContext."""
-        # constrained[
-        #     False,
-        #     "##### UNIMPLEMENTED: DeviceContextV2.print_kernel_timing_info",
-        # ]()
-        pass
+        not_implemented_yet[
+            "##### UNIMPLEMENTED: DeviceContextV2.print_kernel_timing_info"
+        ]()
 
     fn dump_kernel_timing_info(self) raises:
         """Prints out profiling info associated with this DeviceContext."""
-        # constrained[
-        #     False,
-        #     "##### UNIMPLEMENTED: DeviceContextV2.dump_kernel_timing_info",
-        # ]()
-        pass
+        not_implemented_yet[
+            "##### UNIMPLEMENTED: DeviceContextV2.dump_kernel_timing_info"
+        ]()
 
     fn clear_kernel_timing_info(self):
         """Clear profiling info associated with this DeviceContext."""
-        # constrained[
-        #     False,
-        #     "##### UNIMPLEMENTED: DeviceContextV2.clear_kernel_timing_info",
-        # ]()
-        pass
+        not_implemented_yet[
+            "##### UNIMPLEMENTED: DeviceContextV2.clear_kernel_timing_info"
+        ]()
 
     fn is_compatible(self) raises:
-        # constrained[
-        #     False, "##### UNIMPLEMENTED: DeviceContextV2.is_compatible"
-        # ]()
-        pass
+        not_implemented_yet[
+            "##### UNIMPLEMENTED: DeviceContextV2.is_compatible"
+        ]()
 
     fn compute_capability(self) raises -> Int:
-        # constrained[
-        #     False, "##### UNIMPLEMENTED: DeviceContextV2.compute_capability"
-        # ]()
+        not_implemented_yet[
+            "##### UNIMPLEMENTED: DeviceContextV2.compute_capability"
+        ]()
         return 0  # FIXME
