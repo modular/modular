@@ -98,6 +98,8 @@ fn multistage_mma[
         b_type, b_smem_layout, address_space = AddressSpace.SHARED, **_
     ],
     num_iters: Int,
+    /,
+    *,
     num_a_rows: OptionalReg[Int] = None,
     num_b_rows: OptionalReg[Int] = None,
     next_op_b_iter: LayoutTensorIter[
