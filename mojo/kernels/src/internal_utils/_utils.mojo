@@ -217,7 +217,7 @@ fn bench_compile_time[
                 # FIXME: RUNP-356 Direct access to CUDA within DeviceContext
                 with DeviceContext() as ctx:
                     var func = ctx.compile_function[func]()
-                    var s: String = func.cuda_function._impl.asm
+                    var s: String = func.v1().cuda_function._impl.asm
                     keep(s.unsafe_ptr())
 
         b.iter[bench_iter]()
