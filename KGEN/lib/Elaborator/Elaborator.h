@@ -254,13 +254,19 @@ public:
     }
     return tlValue;
   }
-  /// Wriet a cached interpreter result to the global cache.
-  void writeGlobalCachedInterpretation(FuncOp func,
-                                       ParameterExprArrayAttr operands,
-                                       TypedAttr value) {
-    interpCache.modify([func, operands, value](auto &map) {
-      map.insert({{func, operands}, value});
+  /// Write a cached interpreter result to the global cache if it does not
+  /// already exist. Always returns the value that is in the cache.
+  TypedAttr writeGlobalCachedInterpretation(FuncOp func,
+                                            ParameterExprArrayAttr operands,
+                                            TypedAttr value) {
+    TypedAttr result = value;
+    interpCache.modify([func, operands, value, &result](InterpreterMapTy &map) {
+      auto [it, inserted] = map.insert({{func, operands}, value});
+      if (!inserted)
+        result = it->second;
     });
+    assert(result == value && "non-deterministic interpreter results");
+    return result;
   }
 
   //===--------------------------------------------------------------------===//
