@@ -1201,6 +1201,7 @@ struct LayoutTensor[
         address_space=address_space,
         circular=False,
         axis=axis,
+        __experimental_non_homogeneous_tile=__experimental_non_homogeneous_tile,
     ] as result:
         """Returns the tiled iterator of the LayoutTensor.
 
@@ -1244,7 +1245,14 @@ struct LayoutTensor[
             )
 
         else:
-            var runtime_shape = RuntimeTuple[result.layout.shape]()
+
+            @parameter
+            if __experimental_non_homogeneous_tile:
+                runtime_shape = RuntimeTuple[result.layout.shape](
+                    self._clamp_tile[*tile_sizes](tile_coords)
+                )
+            else:
+                runtime_shape = RuntimeTuple[result.layout.shape]()
             var runtime_stride = RuntimeTuple[result.layout.stride]()
 
             @parameter
@@ -3306,6 +3314,7 @@ struct LayoutTensorIter[
     alignment: Int = alignof[type]() if triple_is_nvidia_cuda() else 1,
     circular: Bool = False,
     axis: OptionalReg[Int] = None,
+    __experimental_non_homogeneous_tile: Bool = False,
 ]:
     """Iterate through a memory buffer and construct layout tensor.
 
@@ -3397,6 +3406,18 @@ struct LayoutTensorIter[
             self.idx += int(rhs)
 
         @parameter
+        if __experimental_non_homogeneous_tile:
+            new_shape = self.runtime_layout.shape
+            var cur_dim = new_shape.value[axis.value()]
+            new_shape.value[axis.value()] = (
+                cur_dim if self.idx * cur_dim + cur_dim
+                < self.dim_bound else self.dim_bound - (self.idx * cur_dim)
+            )
+            self.runtime_layout = RuntimeLayout(
+                new_shape, self.runtime_layout.stride
+            )
+
+        @parameter
         if circular:
             self.offset = self.offset % self.bound
 
@@ -3409,6 +3430,18 @@ struct LayoutTensorIter[
         @parameter
         if axis:
             self.idx += 1
+
+        @parameter
+        if __experimental_non_homogeneous_tile:
+            new_shape = self.runtime_layout.shape
+            var cur_dim = new_shape.value[axis.value()]
+            new_shape.value[axis.value()] = (
+                cur_dim if self.idx * cur_dim + cur_dim
+                < self.dim_bound else self.dim_bound - (self.idx * cur_dim)
+            )
+            self.runtime_layout = RuntimeLayout(
+                new_shape, self.runtime_layout.stride
+            )
 
         @parameter
         if circular:
@@ -3432,10 +3465,19 @@ struct LayoutTensorIter[
 
         var next_idx = 0
         var next_offset = self.offset + int(rhs) * self.stride
+        var new_shape = self.runtime_layout.shape
 
         @parameter
         if axis:
             next_idx = self.idx + int(rhs)
+
+        @parameter
+        if __experimental_non_homogeneous_tile:
+            var cur_dim = new_shape.value[axis.value()]
+            new_shape.value[axis.value()] = (
+                cur_dim if next_idx * cur_dim + cur_dim
+                < self.dim_bound else self.dim_bound - (next_idx * cur_dim)
+            )
 
         @parameter
         if circular:
@@ -3446,7 +3488,7 @@ struct LayoutTensorIter[
             self.bound,
             stride=self.stride,
             offset=next_offset,
-            runtime_layout=self.runtime_layout,
+            runtime_layout=RuntimeLayout(new_shape, self.runtime_layout.stride),
             dim_bound=self.dim_bound,
             idx=next_idx,
         )
@@ -3462,10 +3504,19 @@ struct LayoutTensorIter[
         """
         var next_idx = 0
         var next_offset = self.offset + int(rhs) * self.stride
+        var new_shape = self.runtime_layout.shape
 
         @parameter
         if axis:
             next_idx = self.idx + int(rhs)
+
+        @parameter
+        if __experimental_non_homogeneous_tile:
+            var cur_dim = new_shape.value[axis.value()]
+            new_shape.value[axis.value()] = (
+                cur_dim if next_idx * cur_dim
+                < self.dim_bound else self.dim_bound - (self.idx * cur_dim)
+            )
 
         @parameter
         if circular:

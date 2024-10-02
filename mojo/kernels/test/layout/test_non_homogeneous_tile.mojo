@@ -516,7 +516,142 @@ def test_non_homogeneous_distribute():
         print(tile)
 
 
+def test_non_homogeneous_tiled_iterator():
+    print("== test_non_homogeneous_tiled_iterator")
+
+    alias type = DType.float32
+    alias M = 8
+    alias N = 7
+
+    alias layoutMxU = Layout.row_major(M, UNKNOWN_VALUE)
+
+    var src_runtimelayout = RuntimeLayout[layoutMxU].row_major(
+        StaticIntTuple[2](M, N)
+    )
+    var tensorMxU = ManagedLayoutTensor[
+        type, layoutMxU, __experimental_non_homogeneous_tile=True
+    ](src_runtimelayout)
+    arange(tensorMxU.tensor, 0, 0.5)
+
+    # CHECK: 0.0 0.5 1.0 1.5 2.0 2.5 3.0
+    # CHECK: 3.5 4.0 4.5 5.0 5.5 6.0 6.5
+    # CHECK: 7.0 7.5 8.0 8.5 9.0 9.5 10.0
+    # CHECK: 10.5 11.0 11.5 12.0 12.5 13.0 13.5
+    # CHECK: 14.0 14.5 15.0 15.5 16.0 16.5 17.0
+    # CHECK: 17.5 18.0 18.5 19.0 19.5 20.0 20.5
+    # CHECK: 21.0 21.5 22.0 22.5 23.0 23.5 24.0
+    # CHECK: 24.5 25.0 25.5 26.0 26.5 27.0 27.5
+    # CHECK: ----coord[ 0 , 0 ]----
+    # CHECK: 0.0 0.5 1.0 1.5
+    # CHECK: 3.5 4.0 4.5 5.0
+    # CHECK: 7.0 7.5 8.0 8.5
+    # CHECK: 10.5 11.0 11.5 12.0
+    # CHECK: ----coord[ 0 , 1 ]----
+    # CHECK: 2.0 2.5 3.0
+    # CHECK: 5.5 6.0 6.5
+    # CHECK: 9.0 9.5 10.0
+    # CHECK: 12.5 13.0 13.5
+    # CHECK: ----coord[ 1 , 0 ]----
+    # CHECK: 14.0 14.5 15.0 15.5
+    # CHECK: 17.5 18.0 18.5 19.0
+    # CHECK: 21.0 21.5 22.0 22.5
+    # CHECK: 24.5 25.0 25.5 26.0
+    # CHECK: ----coord[ 1 , 1 ]----
+    # CHECK: 16.0 16.5 17.0
+    # CHECK: 19.5 20.0 20.5
+    # CHECK: 23.0 23.5 24.0
+    # CHECK: 26.5 27.0 27.5
+    print(tensorMxU.tensor)
+    for i in range(ceildiv(M, 4)):
+        var iter = tensorMxU.tensor.tiled_iterator[4, 4, axis=1](i, 0)
+        for j in range(ceildiv(N, 4)):
+            var unknown_tile = iter[]
+            print("----coord[", i, ",", j, "]----")
+            print(unknown_tile)
+            iter = iter.next()
+
+    alias M1 = 7
+    alias N1 = 8
+
+    alias layoutUxN = Layout.row_major(UNKNOWN_VALUE, N1)
+
+    var runtime_layoutUxN = RuntimeLayout[layoutUxN].row_major(
+        StaticIntTuple[2](M1, N1)
+    )
+    var tensorUxN = ManagedLayoutTensor[
+        type, layoutUxN, __experimental_non_homogeneous_tile=True
+    ](runtime_layoutUxN)
+    arange(tensorUxN.tensor, 0, 0.5)
+
+    # CHECK: 0.0 0.5 1.0 1.5 2.0 2.5 3.0 3.5
+    # CHECK: 4.0 4.5 5.0 5.5 6.0 6.5 7.0 7.5
+    # CHECK: 8.0 8.5 9.0 9.5 10.0 10.5 11.0 11.5
+    # CHECK: 12.0 12.5 13.0 13.5 14.0 14.5 15.0 15.5
+    # CHECK: 16.0 16.5 17.0 17.5 18.0 18.5 19.0 19.5
+    # CHECK: 20.0 20.5 21.0 21.5 22.0 22.5 23.0 23.5
+    # CHECK: 24.0 24.5 25.0 25.5 26.0 26.5 27.0 27.5
+    # CHECK: ----coord[ 0 , 0 ]----
+    # CHECK: 0.0 0.5 1.0 1.5
+    # CHECK: 4.0 4.5 5.0 5.5
+    # CHECK: 8.0 8.5 9.0 9.5
+    # CHECK: 12.0 12.5 13.0 13.5
+    # CHECK: ----coord[ 1 , 0 ]----
+    # CHECK: 16.0 16.5 17.0 17.5
+    # CHECK: 20.0 20.5 21.0 21.5
+    # CHECK: 24.0 24.5 25.0 25.5
+    # CHECK: ----coord[ 0 , 1 ]----
+    # CHECK: 2.0 2.5 3.0 3.5
+    # CHECK: 6.0 6.5 7.0 7.5
+    # CHECK: 10.0 10.5 11.0 11.5
+    # CHECK: 14.0 14.5 15.0 15.5
+    # CHECK: ----coord[ 1 , 1 ]----
+    # CHECK: 18.0 18.5 19.0 19.5
+    # CHECK: 22.0 22.5 23.0 23.5
+    # CHECK: 26.0 26.5 27.0 27.5
+    print(tensorUxN.tensor)
+    for j in range(ceildiv(N1, 4)):
+        var iter = tensorUxN.tensor.tiled_iterator[4, 4, axis=0](0, j)
+        for i in range(ceildiv(M1, 4)):
+            var unknown_tile = iter[]
+            print("----coord[", i, ",", j, "]----")
+            print(unknown_tile)
+            iter = iter.next()
+
+    var iter1 = tensorUxN.tensor.tiled_iterator[4, 4, axis=0](0, 0)
+    iter1 += 1
+    # CHECK: ----coord[ 1 , 0 ]----
+    # CHECK: 16.0 16.5 17.0 17.5
+    # CHECK: 20.0 20.5 21.0 21.5
+    # CHECK: 24.0 24.5 25.0 25.5
+    print("----coord[ 1 , 0 ]----")
+    print(iter1[])
+
+    var iter2 = tensorMxU.tensor.tiled_iterator[4, 4, axis=1](0, 0)
+    iter2 += 1
+    # CHECK: ----coord[ 0 , 1 ]----
+    # CHECK: 2.0 2.5 3.0
+    # CHECK: 5.5 6.0 6.5
+    # CHECK: 9.0 9.5 10.0
+    # CHECK: 12.5 13.0 13.5
+    print("----coord[ 0 , 1 ]----")
+    print(iter2[])
+
+    var iter3 = tensorMxU.tensor.tiled_iterator[4, 4, axis=1](0, 0)
+    iter3._incr()
+    # CHECK: ----coord[ 0 , 1 ]----
+    # CHECK: 2.0 2.5 3.0
+    # CHECK: 5.5 6.0 6.5
+    # CHECK: 9.0 9.5 10.0
+    # CHECK: 12.5 13.0 13.5
+    print("----coord[ 0 , 1 ]----")
+    print(iter3[])
+
+    _ = tensorMxU^
+    _ = tensorUxN^
+
+
 def main():
     test_single_unknown_tile()
     test_non_homogeneous_copy_from()
     test_non_homogeneous_distribute()
+    test_non_homogeneous_tiled_iterator()
