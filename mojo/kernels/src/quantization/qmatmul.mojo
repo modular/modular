@@ -58,9 +58,7 @@ def matmul_qint4_pack_b[
             var dst_k_ptr = dst_ptr
             for k in range(0, K, group_size):
                 var scale = src_ptr.bitcast[DType.float16]().load()
-                dst_k_ptr.bitcast[DType.float16]().offset(nn).store[width=1](
-                    scale
-                )
+                dst_k_ptr.bitcast[DType.float16]().store(nn, scale)
                 src_ptr += sizeof[DType.float16]()
                 dst_k_ptr += sizeof[DType.float16]() * n_groups
 
@@ -168,7 +166,7 @@ fn _quantize_a_buffer[
                         )
                         ak_quant_ptr += tile_m * aq_interleave
 
-                    ak_scale_ptr.store[width=1](scale)
+                    ak_scale_ptr.store(scale)
                     ak_scale_ptr += tile_m
 
                 am_ptr += K

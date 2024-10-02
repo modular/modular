@@ -376,7 +376,7 @@ struct Q4sym[
                 )
 
                 var flat_index_output = output_inner_dim * i + j * group_size
-                output_tensor.data.store[width=group_size](
+                output_tensor.data.store(
                     flat_index_output,
                     encoded.decode_fully(),
                 )
