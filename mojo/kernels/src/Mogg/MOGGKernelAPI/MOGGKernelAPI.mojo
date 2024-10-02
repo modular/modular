@@ -20,7 +20,9 @@ from utils import StaticIntTuple
 # ===----------------------------------------------------------------------===#
 # Kernel imports
 # ===----------------------------------------------------------------------===#
-from algorithm import argmax, argmin, mean, sum, product
+from algorithm import argmax, argmin, mean, product, sum
+from algorithm import max as reduce_max
+from algorithm import min as reduce_min
 from linalg.matrix_solve import matrix_solve, matrix_solve_shape
 from math import (
     ceil,
@@ -1589,7 +1591,7 @@ struct Mean:
                 rebind[SIMD[output.type, width]](val),
             )
 
-        var axis_val = int(axis._ptr.load(0))
+        var axis_val = int(axis[0])
 
         mean[
             output.type,
@@ -1598,6 +1600,206 @@ struct Mean:
             single_thread_blocking_override=synchronous,
             target=target,
         ](input._spec.shape, axis_val, output._spec.shape)
+
+    @staticmethod
+    fn shape[
+        input_rank: Int,
+        input_type: DType,
+    ](
+        input: ManagedTensorSlice[input_type, input_rank],
+        axis: Scalar,
+    ) raises -> StaticIntTuple[input_rank]:
+        return reduce_shape[input_rank, input_type](input, axis)
+
+
+@compiler.register("mo.reduce.add")
+struct ReduceAdd:
+    @staticmethod
+    fn execute[
+        synchronous: Bool, target: StringLiteral
+    ](
+        output: ManagedTensorSlice,
+        input: ManagedTensorSlice[type = output.type, rank = output.rank],
+        axis: Scalar,
+    ) raises:
+        @parameter
+        @always_inline
+        fn input_fn[
+            width: Int, rank: Int
+        ](coords: StaticIntTuple[rank]) -> SIMD[input.type, width]:
+            return input.load[width=width](
+                rebind[StaticIntTuple[input.rank]](coords)
+            )
+
+        @parameter
+        @always_inline
+        fn output_fn[
+            width: Int, rank: Int
+        ](coords: StaticIntTuple[rank], val: SIMD[output.type, width]):
+            output.store[width=width](
+                rebind[StaticIntTuple[output.rank]](coords),
+                rebind[SIMD[output.type, width]](val),
+            )
+
+        var axis_val = int(axis[0])
+
+        sum[
+            output.type,
+            input_fn,
+            output_fn,
+            single_thread_blocking_override=synchronous,
+            target=target,
+        ](input._spec.shape, axis_val)
+
+    @staticmethod
+    fn shape[
+        input_rank: Int,
+        input_type: DType,
+    ](
+        input: ManagedTensorSlice[input_type, input_rank],
+        axis: Scalar,
+    ) raises -> StaticIntTuple[input_rank]:
+        return reduce_shape[input_rank, input_type](input, axis)
+
+
+@compiler.register("mo.reduce.mul")
+struct ReduceMul:
+    @staticmethod
+    fn execute[
+        synchronous: Bool, target: StringLiteral
+    ](
+        output: ManagedTensorSlice,
+        input: ManagedTensorSlice[type = output.type, rank = output.rank],
+        axis: Scalar,
+    ) raises:
+        @parameter
+        @always_inline
+        fn input_fn[
+            width: Int, rank: Int
+        ](coords: StaticIntTuple[rank]) -> SIMD[input.type, width]:
+            return input.load[width=width](
+                rebind[StaticIntTuple[input.rank]](coords)
+            )
+
+        @parameter
+        @always_inline
+        fn output_fn[
+            width: Int, rank: Int
+        ](coords: StaticIntTuple[rank], val: SIMD[output.type, width]):
+            output.store[width=width](
+                rebind[StaticIntTuple[output.rank]](coords),
+                rebind[SIMD[output.type, width]](val),
+            )
+
+        var axis_val = int(axis[0])
+
+        product[
+            output.type,
+            input_fn,
+            output_fn,
+            single_thread_blocking_override=synchronous,
+            target=target,
+        ](input._spec.shape, axis_val)
+
+    @staticmethod
+    fn shape[
+        input_rank: Int,
+        input_type: DType,
+    ](
+        input: ManagedTensorSlice[input_type, input_rank],
+        axis: Scalar,
+    ) raises -> StaticIntTuple[input_rank]:
+        return reduce_shape[input_rank, input_type](input, axis)
+
+
+@compiler.register("mo.reduce.max")
+struct ReduceMax:
+    @staticmethod
+    fn execute[
+        synchronous: Bool, target: StringLiteral
+    ](
+        output: ManagedTensorSlice,
+        input: ManagedTensorSlice[type = output.type, rank = output.rank],
+        axis: Scalar,
+    ) raises:
+        @parameter
+        @always_inline
+        fn input_fn[
+            width: Int, rank: Int
+        ](coords: StaticIntTuple[rank]) -> SIMD[input.type, width]:
+            return input.load[width=width](
+                rebind[StaticIntTuple[input.rank]](coords)
+            )
+
+        @parameter
+        @always_inline
+        fn output_fn[
+            width: Int, rank: Int
+        ](coords: StaticIntTuple[rank], val: SIMD[output.type, width]):
+            output.store[width=width](
+                rebind[StaticIntTuple[output.rank]](coords),
+                rebind[SIMD[output.type, width]](val),
+            )
+
+        var axis_val = int(axis[0])
+
+        reduce_max[
+            output.type,
+            input_fn,
+            output_fn,
+            single_thread_blocking_override=synchronous,
+            target=target,
+        ](input._spec.shape, axis_val)
+
+    @staticmethod
+    fn shape[
+        input_rank: Int,
+        input_type: DType,
+    ](
+        input: ManagedTensorSlice[input_type, input_rank],
+        axis: Scalar,
+    ) raises -> StaticIntTuple[input_rank]:
+        return reduce_shape[input_rank, input_type](input, axis)
+
+
+@compiler.register("mo.reduce.min")
+struct ReduceMin:
+    @staticmethod
+    fn execute[
+        synchronous: Bool, target: StringLiteral
+    ](
+        output: ManagedTensorSlice,
+        input: ManagedTensorSlice[type = output.type, rank = output.rank],
+        axis: Scalar,
+    ) raises:
+        @parameter
+        @always_inline
+        fn input_fn[
+            width: Int, rank: Int
+        ](coords: StaticIntTuple[rank]) -> SIMD[input.type, width]:
+            return input.load[width=width](
+                rebind[StaticIntTuple[input.rank]](coords)
+            )
+
+        @parameter
+        @always_inline
+        fn output_fn[
+            width: Int, rank: Int
+        ](coords: StaticIntTuple[rank], val: SIMD[output.type, width]):
+            output.store[width=width](
+                rebind[StaticIntTuple[output.rank]](coords),
+                rebind[SIMD[output.type, width]](val),
+            )
+
+        var axis_val = int(axis[0])
+
+        reduce_min[
+            output.type,
+            input_fn,
+            output_fn,
+            single_thread_blocking_override=synchronous,
+            target=target,
+        ](input._spec.shape, axis_val)
 
     @staticmethod
     fn shape[
