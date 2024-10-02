@@ -12,6 +12,46 @@ from max.driver import CPU
 from max.dtype import DType
 
 
+def test_step(session: InferenceSession):
+    asyncio.run(_test_step(session))
+
+
+async def _test_step(session: InferenceSession):
+    # Initialize llama like params
+    device = CPU()
+    params = KVCacheParams(
+        dtype=DType.float32, n_kv_heads=8, head_dim=128, device=device
+    )
+
+    kv_manager = ContinuousBatchingKVCacheManager(
+        params=params,
+        max_cache_size=16,
+        max_seq_len=100,
+        num_layers=10,
+        session=session,
+        device=device,
+    )
+
+    # Claim three items
+    seq_ids = await kv_manager.claim(n=3)
+
+    # Assert that each cache_length is initialized appropriately as 0
+    for seq_id in seq_ids:
+        assert kv_manager.cache_lengths[seq_id] == 0
+
+    # Update these values a few times
+    values = [3, 4, 7]
+    for j in range(3):
+        valid_lengths = {}
+        for i, seq_id in enumerate(seq_ids):
+            valid_lengths[seq_id] = values[i]
+
+        kv_manager.step(valid_lengths)
+
+        for i, seq_id in enumerate(seq_ids):
+            assert kv_manager.cache_lengths[seq_id] == values[i] * (j + 1)
+
+
 def test_claim_and_release(session: InferenceSession):
     asyncio.run(_test_claim_and_release(session))
 
