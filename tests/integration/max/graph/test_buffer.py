@@ -5,17 +5,17 @@
 # ===----------------------------------------------------------------------=== #
 """Integration tests for mutable ops."""
 
+import numpy as np
 import pytest
 import torch
-import numpy as np
 from max.dtype import DType
-from max.graph import Graph, TensorType, BufferType
-from max.graph.ops import buffer_load, buffer_store
 from max.engine import InferenceSession
+from max.graph import BufferType, Graph, TensorType
+from max.graph.ops import buffer_load, buffer_store
 
 
-def torch_add100(x):
-    return torch.add(x, 100)
+def torch_add_n(x, n):
+    return torch.add(x, n)
 
 
 def torch_multiply(x):
@@ -76,40 +76,60 @@ def buffer_tensor_graph(tensor_type, buffer_type) -> Graph:
     return graph
 
 
-def test_load_mutate_store(buffer_graph: Graph, session: InferenceSession):
+@pytest.mark.parametrize("n", [-9, 9, 100])
+def test_load_mutate_store(n, buffer_graph: Graph, session: InferenceSession):
     with buffer_graph as graph:
-        buf = graph.inputs[0]
-        x = buffer_load(buf)
-        x = x + 100
-        buffer_store(buf, x)
+        input_buffer = graph.inputs[0]
+        x = buffer_load(input_buffer)
+        x = x + n
+        buffer_store(input_buffer, x)
         graph.output()
         graph._mlir_op.verify()
         compiled = session.load(graph)
-        input = zeros(buf.shape, buf.dtype)
-        expected = torch_add100(torch.from_numpy(input))
-        compiled.execute(input)
+    input = zeros(input_buffer.shape, input_buffer.dtype)
+    expected = torch_add_n(torch.from_numpy(input), n)
+    compiled.execute(input)
     assert np.allclose(input, expected)
 
 
-def test_store_slice(buffer_tensor_graph: Graph, session: InferenceSession):
+@pytest.mark.parametrize("n", [-9, 9, 100])
+def test_load_mutate_store_ellipsis(
+    n, buffer_graph: Graph, session: InferenceSession
+):
+    with buffer_graph as graph:
+        input_buffer = graph.inputs[0]
+        input_buffer[...] = input_buffer[...] + n
+        graph.output()
+        graph._mlir_op.verify()
+        compiled = session.load(graph)
+    input = zeros(input_buffer.shape, input_buffer.dtype)
+    expected = torch_add_n(torch.from_numpy(input), n)
+    compiled.execute(input)
+    assert np.allclose(input, expected)
+
+
+@pytest.mark.parametrize("n", [-9, 9, 100])
+def test_store_slice_load_slice(
+    n, buffer_tensor_graph: Graph, session: InferenceSession
+):
     with buffer_tensor_graph as graph:
         tensor = graph.inputs[0]
         buffer = graph.inputs[1]
 
-        buffer_load(buffer)
-
         buf_idx = [(slice(0, int(d)), "out_dim") for d in tensor.shape]
-        # All stores are explicit. This syntax uses store_slice.
+
+        # Store slice.
         buffer[*buf_idx] = tensor * tensor
+
         graph.output()
 
-        compiled = session.load(graph)
-        input_tensor = ones(tensor.shape, tensor.dtype) + 2
-        input_buffer = zeros(buffer.shape, buffer.dtype)
-        compiled.execute(input_tensor, input_buffer)
+        compiled_model = session.load(graph)
+    input_tensor = ones(tensor.shape, tensor.dtype) + n
+    input_buffer = zeros(buffer.shape, buffer.dtype)
+    compiled_model.execute(input_tensor, input_buffer)
 
-        expected = zeros(buffer.shape, buffer.dtype)
-        expected[
-            : input_tensor.shape[0], : input_tensor.shape[1]
-        ] = torch_multiply(torch.from_numpy(input_tensor))
-        assert np.allclose(input_buffer, expected)
+    expected = zeros(buffer.shape, buffer.dtype)
+    expected[: input_tensor.shape[0], : input_tensor.shape[1]] = torch_multiply(
+        torch.from_numpy(input_tensor)
+    )
+    assert np.allclose(input_buffer, expected)

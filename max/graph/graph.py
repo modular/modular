@@ -286,6 +286,7 @@ class Graph:
         return self._mlir_op.regions[0].blocks[0]
 
     def _add_op(self, op, *args, **kwargs) -> list[Value]:
+        # Convert args from instances of Python graph-api Value() to mlir.Value
         def unwrap(arg):
             if isinstance(arg, Value):
                 return arg._mlir_value
@@ -297,9 +298,14 @@ class Graph:
         unwrapped_args = tuple(unwrap(arg) for arg in args)
         unwrapped_kwargs = {k: unwrap(arg) for k, arg in kwargs.items()}
 
+        # Construct and insert an op in the body of the graph
+        # Insertion point is where the op is to be created in the IR structure
+        # location contains info about the source of the op (e.g. file, line)
         with mlir.InsertionPoint(self._body), location():
             try:
                 with self._capturing_mlir_diagnostics():
+                    # Insert op at the end of self._body, location set up by
+                    # the context manager.
                     results = op(*unwrapped_args, **unwrapped_kwargs)
             except Exception as e:
                 try:
@@ -315,12 +321,15 @@ class Graph:
         if isinstance(results, mlir.Operation):
             return []
 
+        # Convert op results from  mlir.Value to instances of Value graph-api
         if isinstance(results, mlir.Value):
             results = [Value(results)]
         else:
             results = [Value(result) for result in results]
 
-        # Use a dict as an ordered set for new param decls.
+        # Add symbolic dims of tensor results to the list of graph params and
+        # declared output params of the op
+        # Use a dict as an ordered set for new param decls. Maps keys to None.
         new_params: dict[str, None] = dict()
         for result in results:
             t = result._mlir_value.type

@@ -28,12 +28,10 @@ If only non-max objects attempt promotion, it will always fail.
 """
 
 import numpy as np
-from max import mlir
 from max.dtype import DType
 
 from . import ops
-from .weight import Weight
-from .value import Value, TensorValue, ValueLike, _strong_value_like
+from .value import TensorValue, ValueLike, _strong_value_like
 
 
 def _restrict_to_strong_dtypes(value: ValueLike) -> TensorValue:

@@ -48,18 +48,27 @@ class Value:
 
     def __new__(cls, value: ValueLike):
         if isinstance(value, mlir.Value):
-            if _graph.type_is_opaque(value.type):
-                return super().__new__(_OpaqueValue)
-            elif _graph.type_is_buffer(value.type):
-                return super().__new__(BufferValue)
-            elif _graph.type_is_chain(value.type):
-                return super().__new__(_ChainValue)
-            else:
-                return super().__new__(TensorValue)
+            # Value(x) where x is an MLIR value returns instance of appropriate
+            # subclass of Value wrapping x.
+            if cls is Value:
+                if _graph.type_is_opaque(value.type):
+                    return super().__new__(_OpaqueValue)
+                elif _graph.type_is_buffer(value.type):
+                    return super().__new__(BufferValue)
+                elif _graph.type_is_chain(value.type):
+                    return super().__new__(_ChainValue)
+                else:
+                    return super().__new__(TensorValue)
+            return super().__new__(cls)
         elif isinstance(value, Value):
-            return super().__new__(type(value))
+            # Value(x) where x is an instance of a subclass of Value, returns x.
+            if cls is Value:
+                return super().__new__(type(value))
+            # XValue(x) where XValue is a subclass of Value, returns XValue(x)
+            # if type(x) allows; otherwise raises an error in XValue.__init__().
+            return super().__new__(cls)
         elif isinstance(value, _numeric + (Weight,)):
-            return super().__new__(TensorValue)
+            return super().__new__(cls)
         else:
             raise TypeError(
                 "Value() argument must be a mlir.Value, a graph.Value, or an"
@@ -112,25 +121,17 @@ class _OpaqueValue(Value):
 
 
 class BufferValue(Value):
-    """Represents a value semantic tensor within a `Graph`."""
+    """Represents a mutable semantic tensor within a `Graph`."""
 
     def __init__(self, value: ValueLike) -> None:
         if isinstance(value, mlir.Value) and _graph.type_is_buffer(value.type):
             self._mlir_value = value
         elif isinstance(value, BufferValue):
             self._mlir_value = value._mlir_value
-        elif isinstance(value, Weight):
-            self._mlir_value = graph.Graph.current.add_weight(value)._mlir_value
-        elif isinstance(value, _numeric):
-            raise TypeError(
-                "BufferValue() can not be created directly from a"
-                f" '{type(value).__name__}'. Use ops.constant to"
-                " convert to a BufferValue with a specific dtype."
-            )
         else:
             raise TypeError(
                 "BufferValue() argument must be a mlir.Value of buffer type,"
-                " or a graph.,  or an np.ndarray, not"
+                " or a graph.BufferValue,  or an np.ndarray, not"
                 f" '{type(value).__name__}'"
             )
 
@@ -157,15 +158,26 @@ class BufferValue(Value):
 
         return DType(_graph.buffer_type_get_dtype(t))
 
+    def __repr__(self):
+        dtype = self.dtype
+        shape = self.shape
+        return f"{type(self).__name__}({dtype=}, {shape=})"
+
     def __getitem__(self, index) -> TensorValue:
-        # TODO(MSDK-962): implement ops.load_slice_buffer()
-        raise NotImplementedError("implement ops.load_slice_buffer()")
+        x = ops.buffer_load(self)
+        if index is Ellipsis:
+            return x
+        return ops.slice_tensor(
+            x, index if isinstance(index, Iterable) else (index,)
+        )
 
     def __setitem__(
         self,
         index,
         val: TensorValue,
     ) -> None:
+        if index is Ellipsis:
+            return ops.buffer_store(self, val)
         return ops.buffer_store_slice(
             self, val, index if isinstance(index, Iterable) else (index,)  # type: ignore
         )

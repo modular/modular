@@ -6,18 +6,17 @@
 """Op implementation for load_buffer."""
 
 from typing import Union
-from max.dtype import DType
 
 from max import mlir
+from max.dtype import DType
 from max.mlir.dialects import rmo
 
 from ..graph import Graph, location
 from ..type import TensorType
 from ..value import BufferValue, TensorValue, ValueLike
 from .constant import constant
-
-from .stack import stack_scalars
 from .slice_tensor import SliceIndices, _slice_and_output_tensors
+from .stack import stack_scalars
 
 
 def buffer_load(
@@ -53,7 +52,7 @@ def buffer_load(
     return TensorValue(output[1])
 
 
-def buffer_store(y: BufferValue, x: TensorValue) -> None:
+def buffer_store(destination: BufferValue, source: TensorValue) -> None:
     """Stores the input tensor into the inout buffer.
 
     It stores the immutable input tensor `x` in the mutable tensor `y`.
@@ -69,7 +68,9 @@ def buffer_store(y: BufferValue, x: TensorValue) -> None:
     with Graph.current._context, mlir.InsertionPoint(
         Graph.current._body
     ), location():
-        output = rmo.mo_mutable_store(in_chain, y._mlir_value, x._mlir_value)
+        output = rmo.mo_mutable_store(
+            in_chain, destination._mlir_value, source._mlir_value
+        )
 
     Graph.current._update_chain(output)
 

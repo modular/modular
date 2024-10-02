@@ -33,7 +33,7 @@ Adds two symbolic tensors.
 Creates a new op node to compute the addition of two symbol tensor values
 and adds it to the graph, returning the symbolic result.
 
-- 
+-
     - If ``lhs`` and ``rhs`` have different dtypes, they will be promoted according
         to the dtype promotion rules before the operation.
     - If ``lhs`` and ``rhs`` have different shapes, they will be broadcast to the
@@ -62,7 +62,7 @@ Divides two symbolic tensors.
 Creates a new op node to compute the division of two symbol tensor values
 and adds it to the graph, returning the symbolic result.
 
-- 
+-
     - If ``lhs`` and ``rhs`` have different dtypes, they will be promoted according
         to the dtype promotion rules before the operation.
     - If ``lhs`` and ``rhs`` have different shapes, they will be broadcast to the
@@ -91,7 +91,7 @@ Computes the elementwise maximum of two symbolic tensors.
 Creates a new op node to compute the maximum of two symbol tensor values
 and adds it to the graph, returning the symbolic result.
 
-- 
+-
     - If ``lhs`` and ``rhs`` have different dtypes, they will be promoted
       according to the dtype promotion rules before the operation.
     - If ``lhs`` and ``rhs`` have different shapes, they will be broadcast to
@@ -119,7 +119,7 @@ Computes the elementwise minimum of two symbolic tensors.
 Creates a new op node to compute the minimum of two symbol tensor values
 and adds it to the graph, returning the symbolic result.
 
-- 
+-
     - If ``lhs`` and ``rhs`` have different dtypes, they will be promoted
       according to the dtype promotion rules before the operation.
     - If ``lhs`` and ``rhs`` have different shapes, they will be broadcast to
@@ -147,7 +147,7 @@ Computes the elementwise maximum of two symbolic tensors.
 Creates a new op node to compute the maximum of two symbol tensor values
 and adds it to the graph, returning the symbolic result.
 
-- 
+-
     - If ``lhs`` and ``rhs`` have different dtypes, they will be promoted
       according to the dtype promotion rules before the operation.
     - If ``lhs`` and ``rhs`` have different shapes, they will be broadcast to
@@ -175,7 +175,7 @@ Computes the elementwise multiplication of two symbolic tensors.
 Creates a new op node to compute the multiplication of two symbol tensor values
 and adds it to the graph, returning the symbolic result.
 
-- 
+-
     - If ``lhs`` and ``rhs`` have different dtypes, they will be promoted
       according to the dtype promotion rules before the operation.
     - If ``lhs`` and ``rhs`` have different shapes, they will be broadcast to
@@ -203,7 +203,7 @@ Computes the elementwise exponentiation of two symbolic tensors.
 Creates a new op node to compute the exponentiation of two symbol tensor values
 and adds it to the graph, returning the symbolic result.
 
-- 
+-
     - If ``lhs`` and ``rhs`` have different dtypes, they will be promoted
       according to the dtype promotion rules before the operation.
     - If ``lhs`` and ``rhs`` have different shapes, they will be broadcast to
@@ -231,7 +231,7 @@ Computes the elementwise subtraction of two symbolic tensors.
 Creates a new op node to compute the subtraction of two symbol tensor values
 and adds it to the graph, returning the symbolic result.
 
-- 
+-
     - If ``lhs`` and ``rhs`` have different dtypes, they will be promoted
       according to the dtype promotion rules before the operation.
     - If ``lhs`` and ``rhs`` have different shapes, they will be broadcast to
@@ -259,7 +259,7 @@ Computes the elementwise equality comparison between two symbolic tensors.
 Creates a new op node to compute the equality comparison of two symbol
 tensor values and adds it to the graph, returning the symbolic result.
 
-- 
+-
     - If ``lhs`` and ``rhs`` have different dtypes, they will be promoted
       according to the dtype promotion rules before the operation.
     - If ``lhs`` and ``rhs`` have different shapes, they will be broadcast to
@@ -287,7 +287,7 @@ Computes the elementwise greater than comparison between two symbolic tensors.
 Creates a new op node to compute the greater than comparison of two symbol
 tensor values and adds it to the graph, returning the symbolic result.
 
-- 
+-
     - If ``lhs`` and ``rhs`` have different dtypes, they will be promoted
       according to the dtype promotion rules before the operation.
     - If ``lhs`` and ``rhs`` have different shapes, they will be broadcast to
@@ -315,7 +315,7 @@ Computes the elementwise greater-or-equal comparison between two symbolic tensor
 Creates a new op node to compute the equality comparison of two symbol
 tensor values and adds it to the graph, returning the symbolic result.
 
-- 
+-
     - If ``lhs`` and ``rhs`` have different dtypes, they will be promoted
       according to the dtype promotion rules before the operation.
     - If ``lhs`` and ``rhs`` have different shapes, they will be broadcast to
@@ -343,7 +343,7 @@ Computes the elementwise inequality comparison between two symbolic tensors.
 Creates a new op node to compute the inequality comparison of two symbol
 tensor values and adds it to the graph, returning the symbolic result.
 
-- 
+-
     - If ``lhs`` and ``rhs`` have different dtypes, they will be promoted
       according to the dtype promotion rules before the operation.
     - If ``lhs`` and ``rhs`` have different shapes, they will be broadcast to
@@ -405,7 +405,7 @@ Computes the elementwise exp function of a symbolic tensor.
 Creates a new op node to compute the elementwise exp function of a
 symbolic tensor and adds it to the graph, returning the symbolic result.
 
-``exp`` is defined as ``exp(x) = e^x``, where ``e`` is Euler's number.                                                               
+``exp`` is defined as ``exp(x) = e^x``, where ``e`` is Euler's number.
 
 Args:
     value: The symbolic tensor to use as the input to the exp function

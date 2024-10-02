@@ -82,7 +82,7 @@ def _slice_index_and_output(
             ' a tuple like (slice(0, 10), "out_dim") to specify the output'
             " dimensions."
         )
-    elif (
+    elif (  # slice is a tuple of elements: e.g. (slice(start, stop), "out_dim")
         isinstance(index, tuple)
         and len(index) == 2
         and isinstance(index[0], slice)
@@ -132,6 +132,7 @@ def _slice_and_output_tensors(x: TensorValue, indices: SliceIndices):
     assert _has_no_ellipsis(after)
 
     remaining = len(x.shape) - len(before) - len(after)
+    # Create a slice(None, None, None) index, for each dim indexed by ellipsis.
     full_index = [*before, *([slice(None, None, None)] * remaining), *after]
     # For each dim, convert idx (if int or TensorValue) to slice(idx, idx+1, 1).
     slices_and_outputs = [
