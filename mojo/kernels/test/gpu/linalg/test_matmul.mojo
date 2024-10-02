@@ -35,7 +35,7 @@ from internal_utils import (
 from linalg.cublas import cublas_matmul
 from linalg.matmul_gpu import _matmul_gpu, matmul_kernel_naive
 from memory import memset_zero, stack_allocation, UnsafePointer
-from memory.reference import _GPUAddressSpace as GPUAddressSpace
+from memory.pointer import _GPUAddressSpace as GPUAddressSpace
 from testing import assert_equal as assert_equal_val
 
 

@@ -10,7 +10,7 @@ from memory import UnsafePointer
 from sys.intrinsics import strided_load
 
 from gpu.host._compile import _compile_code_asm
-from memory.reference import _GPUAddressSpace
+from memory.pointer import _GPUAddressSpace
 from testing import assert_equal, assert_true
 
 

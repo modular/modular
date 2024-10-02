@@ -16,7 +16,7 @@ from gpu.host.device_context import DeviceContext, DeviceBuffer
 from linalg.matmul_gpu import _matmul_gpu, matmul_kernel_naive
 
 # from memory import memset_zero, stack_allocation
-from memory.reference import _GPUAddressSpace as GPUAddressSpace
+from memory.pointer import _GPUAddressSpace as GPUAddressSpace
 from gpu.cublas.cublas import (
     check_cublas_error,
     cublasContext,
