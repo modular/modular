@@ -616,6 +616,60 @@ fn _reduce_generator_cpu[
 
 
 @always_inline
+fn _reduce_generator_wrapper[
+    type: DType,
+    input_fn: fn[width: Int, rank: Int] (StaticIntTuple[rank]) capturing [
+        _
+    ] -> SIMD[type, width],
+    output_fn: fn[width: Int, rank: Int] (
+        StaticIntTuple[rank], SIMD[type, width]
+    ) capturing [_] -> None,
+    reduce_function: fn[width: Int] (
+        SIMD[type, width], SIMD[type, width]
+    ) capturing [_] -> SIMD[type, width],
+    /,
+    single_thread_blocking_override: Bool = False,
+    target: StringLiteral = "cpu",
+](
+    shape: StaticIntTuple,
+    init: Scalar,
+    reduce_dim: Int,
+    context: MojoCallContextPtr = MojoCallContextPtr(),
+) raises:
+    @always_inline
+    @parameter
+    fn input_fn_wrapper[
+        _type: DType, width: Int, rank: Int
+    ](idx: StaticIntTuple[rank]) -> SIMD[_type, width]:
+        return rebind[SIMD[_type, width]](input_fn[width, rank](idx))
+
+    @always_inline
+    @parameter
+    fn output_fn_wrapper[
+        _type: DType,
+        width: Int,
+        rank: Int,
+    ](indices: StaticIntTuple[rank], value: SIMD[_type, width]):
+        output_fn[width, rank](indices, rebind[SIMD[type, width]](value))
+
+    @always_inline
+    @parameter
+    fn reduce_fn[
+        ty: DType, width: Int
+    ](v1: SIMD[ty, width], v2: SIMD[ty, width]) -> SIMD[ty, width]:
+        return rebind[SIMD[ty, width]](
+            reduce_function(
+                rebind[SIMD[type, width]](v1),
+                rebind[SIMD[type, width]](v2),
+            )
+        )
+
+    _reduce_generator[input_fn_wrapper, output_fn_wrapper, reduce_fn](
+        shape, init, reduce_dim, context
+    )
+
+
+@always_inline
 fn _reduce_generator[
     input_0_fn: fn[type: DType, width: Int, rank: Int] (
         StaticIntTuple[rank]
@@ -1052,6 +1106,57 @@ fn max[reduce_axis: Int](src: NDBuffer, dst: NDBuffer[src.type, src.rank, _]):
     )
 
 
+fn max[
+    type: DType,
+    input_fn: fn[width: Int, rank: Int] (StaticIntTuple[rank]) capturing [
+        _
+    ] -> SIMD[type, width],
+    output_fn: fn[width: Int, rank: Int] (
+        StaticIntTuple[rank], SIMD[type, width]
+    ) capturing [_] -> None,
+    /,
+    single_thread_blocking_override: Bool = False,
+    target: StringLiteral = "cpu",
+](
+    input_shape: StaticIntTuple,
+    reduce_dim: Int,
+    context: MojoCallContextPtr = MojoCallContextPtr(),
+) raises:
+    """Computes the max across the input and output shape.
+
+    This performs the max computation on the domain specified by `input_shape`,
+    loading the inputs using the `input_fn`. The results are stored using
+    the `output_fn`.
+
+    Parameters:
+        type: The type of the input and output.
+        input_fn: The function to load the input.
+        output_fn: The function to store the output.
+        single_thread_blocking_override: If True, then the operation is run
+          synchronously using a single thread.
+        target: The target to run on.
+
+    Args:
+        input_shape: The input shape.
+        reduce_dim: The axis to perform the max on.
+        context: The pointer to DeviceContext.
+    """
+
+    @always_inline
+    @parameter
+    fn reduce_fn[
+        width: Int
+    ](v1: SIMD[type, width], v2: SIMD[type, width]) -> SIMD[type, width]:
+        return _max(v1, v2)
+
+    _reduce_generator_wrapper[type, input_fn, output_fn, reduce_fn](
+        input_shape,
+        init=Scalar[type].MIN,
+        reduce_dim=reduce_dim,
+        context=context,
+    )
+
+
 # ===----------------------------------------------------------------------===#
 # min
 # ===----------------------------------------------------------------------===#
@@ -1103,6 +1208,57 @@ fn min[reduce_axis: Int](src: NDBuffer, dst: NDBuffer[src.type, src.rank, _]):
     """
     return reduce[_simd_min_elementwise, _simd_min, reduce_axis](
         src, dst, Scalar[src.type].MAX
+    )
+
+
+fn min[
+    type: DType,
+    input_fn: fn[width: Int, rank: Int] (StaticIntTuple[rank]) capturing [
+        _
+    ] -> SIMD[type, width],
+    output_fn: fn[width: Int, rank: Int] (
+        StaticIntTuple[rank], SIMD[type, width]
+    ) capturing [_] -> None,
+    /,
+    single_thread_blocking_override: Bool = False,
+    target: StringLiteral = "cpu",
+](
+    input_shape: StaticIntTuple,
+    reduce_dim: Int,
+    context: MojoCallContextPtr = MojoCallContextPtr(),
+) raises:
+    """Computes the min across the input and output shape.
+
+    This performs the min computation on the domain specified by `input_shape`,
+    loading the inputs using the `input_fn`. The results are stored using
+    the `output_fn`.
+
+    Parameters:
+        type: The type of the input and output.
+        input_fn: The function to load the input.
+        output_fn: The function to store the output.
+        single_thread_blocking_override: If True, then the operation is run
+          synchronously using a single thread.
+        target: The target to run on.
+
+    Args:
+        input_shape: The input shape.
+        reduce_dim: The axis to perform the min on.
+        context: The pointer to DeviceContext.
+    """
+
+    @always_inline
+    @parameter
+    fn reduce_fn[
+        width: Int
+    ](v1: SIMD[type, width], v2: SIMD[type, width]) -> SIMD[type, width]:
+        return _min(v1, v2)
+
+    _reduce_generator_wrapper[type, input_fn, output_fn, reduce_fn](
+        input_shape,
+        init=Scalar[type].MAX,
+        reduce_dim=reduce_dim,
+        context=context,
     )
 
 
@@ -1160,6 +1316,57 @@ fn sum[reduce_axis: Int](src: NDBuffer, dst: NDBuffer[src.type, src.rank, _]):
     )
 
 
+fn sum[
+    type: DType,
+    input_fn: fn[width: Int, rank: Int] (StaticIntTuple[rank]) capturing [
+        _
+    ] -> SIMD[type, width],
+    output_fn: fn[width: Int, rank: Int] (
+        StaticIntTuple[rank], SIMD[type, width]
+    ) capturing [_] -> None,
+    /,
+    single_thread_blocking_override: Bool = False,
+    target: StringLiteral = "cpu",
+](
+    input_shape: StaticIntTuple,
+    reduce_dim: Int,
+    context: MojoCallContextPtr = MojoCallContextPtr(),
+) raises:
+    """Computes the sum across the input and output shape.
+
+    This performs the sum computation on the domain specified by `input_shape`,
+    loading the inputs using the `input_fn`. The results are stored using
+    the `output_fn`.
+
+    Parameters:
+        type: The type of the input and output.
+        input_fn: The function to load the input.
+        output_fn: The function to store the output.
+        single_thread_blocking_override: If True, then the operation is run
+          synchronously using a single thread.
+        target: The target to run on.
+
+    Args:
+        input_shape: The input shape.
+        reduce_dim: The axis to perform the sum on.
+        context: The pointer to DeviceContext.
+    """
+
+    @always_inline
+    @parameter
+    fn reduce_fn[
+        width: Int
+    ](v1: SIMD[type, width], v2: SIMD[type, width]) -> SIMD[type, width]:
+        return v1 + v2
+
+    _reduce_generator_wrapper[type, input_fn, output_fn, reduce_fn](
+        input_shape,
+        init=Scalar[type](0),
+        reduce_dim=reduce_dim,
+        context=context,
+    )
+
+
 # ===----------------------------------------------------------------------===#
 # product
 # ===----------------------------------------------------------------------===#
@@ -1213,6 +1420,57 @@ fn product[
     """
     return reduce[_simd_product_elementwise, _simd_product, reduce_axis](
         src, dst, Scalar[src.type](1)
+    )
+
+
+fn product[
+    type: DType,
+    input_fn: fn[width: Int, rank: Int] (StaticIntTuple[rank]) capturing [
+        _
+    ] -> SIMD[type, width],
+    output_fn: fn[width: Int, rank: Int] (
+        StaticIntTuple[rank], SIMD[type, width]
+    ) capturing [_] -> None,
+    /,
+    single_thread_blocking_override: Bool = False,
+    target: StringLiteral = "cpu",
+](
+    input_shape: StaticIntTuple,
+    reduce_dim: Int,
+    context: MojoCallContextPtr = MojoCallContextPtr(),
+) raises:
+    """Computes the product across the input and output shape.
+
+    This performs the product computation on the domain specified by `input_shape`,
+    loading the inputs using the `input_fn`. The results are stored using
+    the `output_fn`.
+
+    Parameters:
+        type: The type of the input and output.
+        input_fn: The function to load the input.
+        output_fn: The function to store the output.
+        single_thread_blocking_override: If True, then the operation is run
+          synchronously using a single thread.
+        target: The target to run on.
+
+    Args:
+        input_shape: The input shape.
+        reduce_dim: The axis to perform the product on.
+        context: The pointer to DeviceContext.
+    """
+
+    @always_inline
+    @parameter
+    fn reduce_fn[
+        width: Int
+    ](v1: SIMD[type, width], v2: SIMD[type, width]) -> SIMD[type, width]:
+        return v1 * v2
+
+    _reduce_generator_wrapper[type, input_fn, output_fn, reduce_fn](
+        input_shape,
+        init=Scalar[type](1),
+        reduce_dim=reduce_dim,
+        context=context,
     )
 
 
@@ -1305,8 +1563,8 @@ fn mean[
     """Computes the mean across the input and output shape.
 
     This performs the mean computation on the domain specified by `input_shape`,
-    storing the results using the`input_0_fn`. The results' domain is
-    `output_shape` which are stored using the `output_0_fn`.
+    loading the inputs using the `input_fn`. The results' domain is
+    `output_shape` which are stored using the `output_fn`.
 
     Parameters:
         type: The type of the input and output.
