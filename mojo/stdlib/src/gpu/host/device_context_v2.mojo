@@ -98,9 +98,16 @@ struct DeviceBufferV2[type: DType](Sized):
         self._handle = _DeviceBufferPtr()
 
     fn __copyinit__(inout self, existing: Self):
-        # constrained[False, "##### DeviceBufferV2.__copyinit__"]()
-        self._device_ptr = UnsafePointer[Scalar[type]]()
-        self._handle = _DeviceBufferPtr()
+        # Increment the reference count before copying the handle.
+        #
+        # void AsyncRT_DeviceBuffer_retain(const DeviceBuffer *buffer)
+        external_call[
+            "AsyncRT_DeviceBuffer_retain",
+            NoneType,
+            _DeviceContextPtr,
+        ](existing._handle)
+        self._device_ptr = existing._device_ptr
+        self._handle = existing._handle
 
     fn __moveinit__(inout self, owned existing: Self):
         self._device_ptr = existing._device_ptr
@@ -120,8 +127,10 @@ struct DeviceBufferV2[type: DType](Sized):
         )
 
     fn __len__(self) -> Int:
-        # constrained[False, "##### UNIMPLEMENTED: DeviceBufferV2.__len__"]()
-        return 0  # FIXME
+        # int64_t AsyncRT_DeviceBuffer_len(const DeviceBuffer *buffer)
+        return external_call["AsyncRT_DeviceBuffer_len", Int, _DeviceBufferPtr](
+            self._handle
+        )
 
     fn create_sub_buffer[
         view_type: DType
@@ -253,7 +262,6 @@ struct DeviceFunctionV2[
         )
 
 
-@value
 struct DeviceContextV2:
     """DeviceContext backed by a C++ implementation."""
 
@@ -279,7 +287,24 @@ struct DeviceContextV2:
         )
         self._handle = result
 
+    fn __copyinit__(inout self, existing: Self):
+        # Increment the reference count before copying the handle.
+        #
+        # void AsyncRT_DeviceContext_retain(const DeviceContext *ctx)
+        external_call[
+            "AsyncRT_DeviceContext_retain",
+            NoneType,
+            _DeviceContextPtr,
+        ](existing._handle)
+        self._handle = existing._handle
+
+    fn __moveinit__(inout self, owned existing: Self):
+        self._handle = existing._handle
+        existing._handle = _DeviceContextPtr()
+
     fn __del__(owned self):
+        # Decrement the reference count held by this struct.
+        #
         # void AsyncRT_DeviceContext_release(const DeviceContext *ctx)
         external_call[
             "AsyncRT_DeviceContext_release",
