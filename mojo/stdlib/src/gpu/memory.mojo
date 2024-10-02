@@ -16,7 +16,7 @@ from memory.reference import _GPUAddressSpace
 from memory.reference import AddressSpace as _AddressSpace
 from memory.unsafe import bitcast
 
-from utils import StaticIntTuple
+from utils import StaticTuple, StaticIntTuple
 
 # ===----------------------------------------------------------------------===#
 # AddressSpace
@@ -164,12 +164,12 @@ fn async_copy_wait_all():
 
 @always_inline
 fn external_memory[
-    type: AnyType,
+    type: AnyTrivialRegType,
     *,
     address_space: _AddressSpace,
     alignment: Int,
     name: StringLiteral = "extern_ptr_syml",
-]() -> UnsafePointer[type, address_space]:
+]() -> UnsafePointer[type, address_space, False, alignment]:
     """Gets a pointer to dynamic shared memory.
 
     Parameters:
@@ -181,11 +181,18 @@ fn external_memory[
     Returns:
         A pointer to dynamic shared memory.
     """
-    return __mlir_op.`pop.extern_ptr_symbol`[
-        _type = UnsafePointer[type, address_space]._mlir_type,
-        name = name.value,
-        alignment = alignment.value,
-    ]()
+    var extern_ptr_symbol = UnsafePointer[
+        StaticTuple[type, 0], address_space, False, alignment
+    ](
+        __mlir_op.`pop.extern_ptr_symbol`[
+            _type = UnsafePointer[
+                StaticTuple[type, 0], address_space, False, alignment
+            ]._mlir_type,
+            name = name.value,
+            alignment = alignment.value,
+        ]()
+    )
+    return extern_ptr_symbol.bitcast[type]()
 
 
 # ===----------------------------------------------------------------------===#
