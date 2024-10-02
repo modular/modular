@@ -287,11 +287,6 @@ fn create_non_tracked_buffer_ref_async[
     runtime: UnsafePointer[NoneType],
     call_ctx: MojoCallContextPtr,
 ):
-    constrained[
-        target == "cpu",
-        "currently non-tracked buffers are only supported on cpu",
-    ]()
-
     external_call["KGEN_CompilerRT_CreateAsyncNonTrackedBufferRef", NoneType](
         buffer.data, len(buffer), async_ptr, runtime
     )
@@ -521,10 +516,6 @@ fn mgp_buffer_constant_external[
     call_ctx: MojoCallContextPtr,
 ) raises -> NDBuffer[DType.int8, 1]:
     constrained[dAlign > 0, "dAlign must be a positive integer value"]()
-    constrained[
-        eDevice == "cpu",
-        "currently, external constants are only supported on cpu",
-    ]()
 
     if not weights:
         raise Error(
