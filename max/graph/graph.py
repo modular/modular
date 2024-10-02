@@ -111,30 +111,32 @@ class Graph:
     instructions.
 
     When you instantiate a graph, you must specify the input shapes
-    as one or more [`TensorType`](/max/api/python/graph/type/TensorType) or
-    [`ListType`](/max/api/python/graph/type/ListType) values. Then, build a
-    sequence of ops and set the graph output with [`output()`](#output). For
+    as one or more :obj:`TensorType` values. Then, build a
+    sequence of ops and set the graph output with :obj:`output()`. For
     example:
 
     .. code-block:: python
 
         from dataclasses import dataclass
+
         import numpy as np
         from max.dtype import DType
-        from max.graph import Graph, TensorValue, TensorType
+        from max.graph import Graph, TensorType, TensorValue, ops
 
         @dataclass
         class Linear:
-          weight: np.ndarray
-          bias: np.ndarray
+            weight: np.ndarray
+            bias: np.ndarray
 
-          def __call__(self, x: TensorValue) -> TensorValue:
-              return x @ self.weight + self.bias
+            def __call__(self, x: TensorValue) -> TensorValue:
+                weight_tensor = ops.constant(self.weight, dtype=DType.float32)
+                bias_tensor = ops.constant(self.bias, dtype=DType.float32)
+                return ops.matmul(x, weight_tensor) + bias_tensor
 
         linear_graph = Graph(
             "linear",
             Linear(np.ones((2, 2)), np.ones((2,))),
-            input_types=[TensorType(DType.float32, (2,))],
+            input_types=[TensorType(DType.float32, (2,))]
         )
 
     You can't call a `Graph` directly from Python. You must compile it and
@@ -365,6 +367,7 @@ class Graph:
         return results
 
     def output(self, *outputs: ValueLike) -> None:
+        """Sets the output nodes of the :obj:`Graph`."""
         # mo.output doesn't support infer_type
         mlir_values = [Value(o)._mlir_value for o in outputs]
         self._add_op(mo.output, mlir_values)
@@ -428,11 +431,10 @@ class Graph:
             weight: The weight to add to the graph.
 
         Returns:
-            `TensorValue` that contains this weight.
+            A :obj:`TensorValue` that contains this weight.
 
         Raises:
-            ValueError if a weight with the same name already exists in the
-            graph.
+            ValueError: If a weight with the same name already exists in the graph.
         """
         if graph_weight := self.weights.get(weight.name):
             if graph_weight.weight is weight:
@@ -473,11 +475,10 @@ class Graph:
         """Create a new symbolic dim with a different name from any other.
 
         Args:
-            tag:
-                An additional identifier to help identify the dimension for
-                debugging purposes.
+            tag: An additional identifier to help identify the dimension for debugging purposes.
 
-        Returns: The dimension.
+        Returns:
+            The dimension.
         """
         while True:
             name = f"unique_{tag}_{self._unique_symbolic_dim_counter}"

@@ -39,9 +39,6 @@ class Value:
     with the other end being the user of that value.
 
     Similar to a regular variable, a `Value` has a data type.
-
-    Note: All the methods in this type are documented as "Creates foo". This is
-    a shorthand notation for "Adds a node representing an op that returns foo".
     """
 
     _mlir_value: mlir.Value
@@ -80,7 +77,7 @@ class Value:
 
     @property
     def tensor(self) -> TensorValue:
-        """Returns the the Value as a TensorValue.
+        """Returns the the Value as a :obj:``TensorValue``.
 
         Raise an exception if the Value is not a TensorValue.
         """

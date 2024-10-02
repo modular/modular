@@ -27,26 +27,34 @@ from max.dtype import DType
 class Dim:
     """A tensor dimension.
 
-    Tensor dimensions can be:
+    Tensor dimensions can be one of three types:
 
-      - Static, aka known size
-      - Dynamic, aka unknown size
-      - Symbolic, aka unknown size but named
+    - **Static**: Known size
+    - **Dynamic**: Unknown size
+    - **Symbolic**: Unknown size but named
 
-    In most cases you don't need to work with a `Dim` directly, but can rely
-    on conversion constructors, for instance you can specify a tensor type as
+
+    In most cases, you don't need to work with a ``Dim`` directly.
+    Instead, use conversion constructors:
+
 
     .. code-block:: python
 
         from max.graph import Dim, TensorType
+
         tensor_type = TensorType(DType.int64, ("batch", 10))
 
-    will create a tensor type with 3 dimensions: a symbolic "batch" dimension,
-    a static dimension of size 10, and a dynamic dimension.
+    This creates a tensor type with three dimensions:
 
-    You can still construct dimensions explicitly via helpers, eg.
+    - A symbolic "batch" dimension
+    - A static dimension of size 10
+    - A dynamic dimension
+
+    For explicit dimension construction, use the following helpers:
 
     .. code-block:: python
+
+        from max.graph import Dim
 
         some_dims = [
             Dim.symbolic("batch"),
@@ -76,10 +84,10 @@ class Dim:
         raise TypeError(f"Unsupported dimension type {value} ({type(value)})")
 
     def is_static(self) -> bool:
-        """Checks whether or not the dimension is a static dimension.
+        """Determines whether the dimension is a static dimension.
 
         Returns:
-            True if the dimension is static, False otherwise.
+            True if the dimension is static, false otherwise.
         """
         raise NotImplementedError
 
@@ -87,7 +95,7 @@ class Dim:
         """Whether or not the dimension is a symbolic dimension.
 
         Returns:
-            True if the dimension is symbolic, False otherwise.
+            True if the dimension is symbolic, false otherwise.
         """
         raise NotImplementedError
 
@@ -103,7 +111,7 @@ class Dim:
             other: The other dimension to check equality against.
 
         Returns:
-            True if the dimensions are equal, False otherwise.
+            True if the dimensions are equal, false otherwise.
         """
         raise NotImplementedError
 
@@ -116,29 +124,29 @@ class Dim:
             other: The other dimension to check inequality against.
 
         Returns:
-            False if the dimensions are equal, True otherwise.
+            False if the dimensions are equal, true otherwise.
         """
         return not self == other
 
     def to_mlir(self) -> mlir.Attribute:
-        """Creates an mlir.Attribute representing this dimension.
+        """Creates an ``mlir.Attribute`` representing this dimension.
 
         This is used internally when constructing tensor MLIR types.
 
         Returns:
-            An mlir.Attribute in the context representing the dimension.
+            An ``mlir.Attribute`` in the context representing the dimension.
         """
         raise NotImplementedError
 
     @staticmethod
     def from_mlir(dim_attr: mlir.Attribute) -> Dim:
-        """Constructs a dimension from an mlir.Attribute.
+        """Constructs a dimension from an ``mlir.Attribute``.
 
         Args:
             dim_attr: The MLIR Attribute object to parse into a dimension.
 
         Returns:
-            The dimension represented by the MLIR Attr value.
+            Dim: The dimension represented by the MLIR Attr value.
         """
         if _graph.is_static_dim(dim_attr):
             return StaticDim.from_mlir(dim_attr)
@@ -154,17 +162,32 @@ class Dim:
 class SymbolicDim(Dim):
     """A symbolic tensor dimension.
 
-    `SymbolicDims`s have a name and are printed as their name on MO types, eg.
-    `!mo.tensor<[batch, x, 10], si32]>` the first and second dimensions are
-    named "batch" and "x" respectively.
+    Symbolic dimensions represent named dimensions in MO tensor types.
 
     Symbolic dimensions don't have a static value, but they allow a readable
     name to understand what's going on in the model IR better, and they also
     allow users to hint to the compiler that two dimensions will have the same
     value, which can often allow important speedups.
 
-    Create a symbolic dimension via `SymbolicDim("name")`, for example:
-    `TensorType(DType.bool, ("batch", Dim.dynamic(), 10))`.
+    In tensor type notation:
+
+    .. code-block:: python
+
+        !mo.tensor<[batch, x, 10], si32]>
+
+    The first and second dimensions are named ``batch`` and ``x`` respectively.
+
+    Creating a ``SymbolicDim``:
+
+    .. code-block:: python
+
+        dim = SymbolicDim("name")
+
+    Using ``SymbolicDim`` in a :obj:`TensorType`:
+
+    .. code-block:: python
+
+        tensor_type = TensorType(DType.bool, (SymbolicDim("batch"), Dim.dynamic(), 10))
     """
 
     name: str
@@ -184,7 +207,7 @@ class SymbolicDim(Dim):
         """Checks whether or not the dimension is a static dimension.
 
         Returns:
-            True if the dimension is static, False otherwise.
+            True if the dimension is static, false otherwise.
         """
         return False
 
@@ -192,7 +215,7 @@ class SymbolicDim(Dim):
         """Whether or not the dimension is a symbolic dimension.
 
         Returns:
-            True if the dimension is symbolic, False otherwise.
+            True if the dimension is symbolic, false otherwise.
         """
         return True
 
@@ -206,21 +229,20 @@ class SymbolicDim(Dim):
 
         Args:
             other: The other dimension to check equality against.
-
         Returns:
-            True if the dimensions have the same name, False otherwise.
+            True if the dimensions have the same name, false otherwise.
         """
         return self.name == other or (
             isinstance(other, SymbolicDim) and self.name == other.name
         )
 
     def to_mlir(self) -> mlir.Attribute:
-        """Creates an mlir.Attribute representing this dimension.
+        """Creates an ``mlir.Attribute`` representing this dimension.
 
         This is used internally when constructing tensor MLIR types.
 
         Returns:
-            An mlir.Attribute in the context representing the dimension.
+            An ``mlir.Attribute`` in the context representing the dimension.
         """
         if not mlir.Context.current:
             raise RuntimeError("No active mlir Context.")
@@ -228,13 +250,13 @@ class SymbolicDim(Dim):
 
     @staticmethod
     def from_mlir(dim_attr: mlir.Attribute) -> Dim:
-        """Constructs a dimension from an mlir.Attribute.
+        """Constructs a dimension from an ``mlir.Attribute``.
 
         Args:
             dim_attr: The MLIR Attribute object to parse into a dimension.
 
         Returns:
-            The dimension represented by the MLIR Attr value.
+            Dim: The dimension represented by the MLIR Attr value.
         """
         return SymbolicDim(_graph.symbolic_dim_name(dim_attr))
 
@@ -261,6 +283,7 @@ class AlgebraicDim(Dim):
     def to_mlir(self) -> mlir.Attribute:
         """Creates an mlir.Attribute representing this dimension.
         This is used internally when constructing tensor MLIR types.
+
         Returns:
             An mlir.Attribute in the context representing the dimension.
         """
@@ -280,8 +303,9 @@ class StaticDim(Dim):
     and are key to good model performance.
 
     Static dimensions can be created implicitly in most cases:
-    `TensorType(DType.int64, (4, 5))` is a tensor with 2 static dimensions:
-    `4` and `5` respectively.
+
+    ``TensorType(DType.int64, (4, 5))`` is a tensor with 2 static dimensions:
+    ``4`` and ``5`` respectively.
     """
 
     dim: int
@@ -300,7 +324,7 @@ class StaticDim(Dim):
         """Checks whether or not the dimension is a static dimension.
 
         Returns:
-            True if the dimension is static, False otherwise.
+            True if the dimension is static, false otherwise.
         """
         return True
 
@@ -308,7 +332,7 @@ class StaticDim(Dim):
         """Whether or not the dimension is a symbolic dimension.
 
         Returns:
-            True if the dimension is symbolic, False otherwise.
+            True if the dimension is symbolic, false otherwise.
         """
         return False
 
@@ -319,7 +343,7 @@ class StaticDim(Dim):
             other: The other dimension to check equality against.
 
         Returns:
-            True if both dimensions have the same static size, False otherwise.
+            True if both dimensions have the same static size, false otherwise.
         """
         return self.dim == other or (
             isinstance(other, StaticDim) and self.dim == other.dim
@@ -332,12 +356,12 @@ class StaticDim(Dim):
         return hash(self.dim)
 
     def to_mlir(self) -> mlir.Attribute:
-        """Creates an mlir.Attribute representing this dimension.
+        """Creates an ``mlir.Attribute`` representing this dimension.
 
         This is used internally when constructing tensor MLIR types.
 
         Returns:
-            An mlir.Attribute in the context representing the dimension.
+            An ``mlir.Attribute`` in the context representing the dimension.
         """
         if not mlir.Context.current:
             raise RuntimeError("No active mlir Context.")
@@ -345,7 +369,7 @@ class StaticDim(Dim):
 
     @staticmethod
     def from_mlir(dim_attr: mlir.Attribute) -> Dim:
-        """Constructs a dimension from an mlir.Attribute.
+        """Constructs a dimension from an ``mlir.Attribute``.
 
         Args:
             dim_attr: The MLIR Attribute object to parse into a dimension.
@@ -389,10 +413,10 @@ class Type:
     """
 
     def to_mlir(self) -> mlir.Type:
-        """Converts to an mlir.Type instance.
+        """Converts to an ``mlir.Type`` instance.
 
         Returns:
-            An mlir.Type in the specified Context.
+            An ``mlir.Type`` in the specified Context.
         """
         raise NotImplementedError
 
@@ -411,14 +435,14 @@ class Type:
 
 @dataclass
 class TensorType(Type):
-    """A symbolic tensor type.
+    """A symbolic :obj:`TensorType`.
 
-    This is _not_ an eager tensor type! This contains no actual data, but
+    This is not an eager tensor type! This contains no actual data, but
     instead represents the type of a value at some point in time during model
     execution.
 
     Most internal values in a model will be tensors. This type represents
-    their element type (dtype) and dimensions (dims) at a specific point during
+    their element type (``dtype``) and dimensions (``dims``) at a specific point during
     model computation. It allows us to do some optimistic optimizations and
     shape inference during graph construction, and to provide more detailed
     shape information to the compiler for further optimization passes.
@@ -445,10 +469,10 @@ class TensorType(Type):
         self.shape = Shape(shape)
 
     def to_mlir(self) -> mlir.Type:
-        """Converts to an mlir.Type instance.
+        """Converts to an ``mlir.Type`` instance.
 
         Returns:
-            An mlir.Type in the specified Context.
+            An ``mlir.Type`` in the specified Context.
         """
         if not mlir.Context.current:
             raise RuntimeError("No active mlir Context.")
@@ -486,11 +510,11 @@ class TensorType(Type):
     def is_static(self) -> bool:
         """Checks whether the tensor type has a fully static shape or not.
 
-        A tensor must have all of its dimensions be `static` (or be 0-dimensional)
-        in order to be `static`.
+        A tensor must have all of its dimensions be ``static`` (or be 0-dimensional)
+        in order to be ``static``.
 
         Returns:
-            True if the tensor has a fully static shape, False otherwise.
+            True if the tensor has a fully static shape, false otherwise.
         """
         return all(d.is_static() for d in self.shape)
 
@@ -504,19 +528,19 @@ class TensorType(Type):
         return len(self.shape)
 
     def dim(self, pos: int) -> Dim:
-        """Gets the pos'th dimension of the tensor type.
+        """Gets the ``pos``'th dimension of the tensor type.
 
-        Supports negative-indexing, ie. `t.dim(-1)` will give the last
+        Supports negative-indexing, ie. ``t.dim(-1)`` will give the last
         dimension.
 
         Args:
             pos: The dimension index to retrieve.
 
         Returns:
-            The dimension value at dimension `pos`.
+            The dimension value at dimension ``pos``.
 
         Raises:
-            If the dimension is out-of-bounds.
+            RuntimeError: If the dimension is out-of-bounds.
         """
         return self.shape[pos + (self.rank if pos < 0 else 0)]
 
@@ -528,7 +552,7 @@ class TensorType(Type):
 
         Returns:
             True if the tensors have identical element type and shape,
-            False otherwise.
+            false otherwise.
         """
         return (
             isinstance(other, TensorType)
@@ -545,8 +569,8 @@ class TensorType(Type):
         """Counts the total number of elements in the tensor type.
 
         For a static tensor, returns the product of all static dimensions.
-        This is the number of elements the tensor will hold *during execution*,
-        TensorType doesn't actually hold any element values at all.
+        This is the number of elements the tensor will hold **during execution**,
+        :obj:`TensorType` doesn't actually hold any element values at all.
 
         For any non-static tensor, in other words a tensor having any symbolic
         dimensions, the return value will be meaningless.
@@ -562,7 +586,7 @@ class TensorType(Type):
         return math.prod(dim.dim for dim in self.shape)
 
     def cast(self, dtype: DType) -> TensorType:
-        """Constructs a new tensor type of the same shape with the new dtype.
+        """Constructs a new tensor type of the same shape with the new `dtype`.
 
         Args:
             dtype: The new element type for the tensor.
@@ -597,10 +621,10 @@ class BufferType(Type):
         self.shape = Shape(shape)
 
     def to_mlir(self) -> mlir.Type:
-        """Converts to an mlir.Type instance.
+        """Converts to an ``mlir.Type`` instance.
 
         Returns:
-            An mlir.Type in the specified Context.
+            An ``mlir.Type`` in the specified Context.
         """
         if not mlir.Context.current:
             raise RuntimeError("No active mlir Context.")
@@ -638,11 +662,11 @@ class BufferType(Type):
     def is_static(self) -> bool:
         """Checks whether the buffer type has a fully static shape or not.
 
-        A buffer must have all of its dimensions be `static` (or be 0-dimensional)
-        in order to be `static`.
+        A buffer must have all of its dimensions be ``static`` (or be 0-dimensional)
+        in order to be ``static``.
 
         Returns:
-            True if the buffer has a fully static shape, False otherwise.
+            True if the buffer has a fully static shape, false otherwise.
         """
         return all(d.is_static() for d in self.shape)
 
@@ -658,14 +682,14 @@ class BufferType(Type):
     def dim(self, pos: int) -> Dim:
         """Gets the pos'th dimension of the buffer type.
 
-        Supports negative-indexing, ie. `t.dim(-1)` will give the last
+        Supports negative-indexing, ie. ``t.dim(-1)`` will give the last
         dimension.
 
         Args:
             pos: The dimension index to retrieve.
 
         Returns:
-            The dimension value at dimension `pos`.
+            The dimension value at dimension ``pos``.
 
         Raises:
             If the dimension is out-of-bounds.
@@ -680,7 +704,7 @@ class BufferType(Type):
 
         Returns:
             True if the buffers have identical element type and shape,
-            False otherwise.
+            false otherwise.
         """
         return (
             isinstance(other, BufferType)
@@ -697,7 +721,7 @@ class BufferType(Type):
         """Counts the total number of elements in the buffer type.
 
         For a static buffer, returns the product of all static dimensions.
-        This is the number of elements the buffer will hold *during execution*,
+        This is the number of elements the buffer will hold **during execution**,
         BufferType doesn't actually hold any element values at all.
 
         For any non-static buffer, in other words a buffer having any symbolic
@@ -733,10 +757,10 @@ class _OpaqueType(Type):
     """Identifier for the opaque type."""
 
     def to_mlir(self) -> mlir.Type:
-        """Converts to an mlir.Type instance.
+        """Converts to an ``mlir.Type`` instance.
 
         Returns:
-            An mlir.Type in the specified Context.
+            An ``mlir.Type`` in the specified Context.
         """
         if not mlir.Context.current:
             raise RuntimeError("No active mlir Context.")
