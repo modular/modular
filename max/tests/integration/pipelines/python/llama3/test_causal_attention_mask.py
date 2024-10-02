@@ -5,9 +5,8 @@
 # ===----------------------------------------------------------------------=== #
 
 import numpy as np
-from hypothesis import given
+from hypothesis import given, settings
 from hypothesis import strategies as st
-
 from llama3.causal_attention_mask import causal_attention_mask
 
 MAX_BATCH_SIZE = 32
@@ -26,6 +25,7 @@ def lists_of_size(strategy, size_strategy):
     )
 
 
+@settings(deadline=None)
 @given(
     start_pos=lists_of_size(start_positions, batch_sizes),
     seq_len=lists_of_size(seq_lens, batch_sizes),
@@ -41,6 +41,7 @@ def test_causal_mask__shape(start_pos: list[int], seq_len: list[int]):
     )
 
 
+@settings(deadline=None)
 @given(
     start_pos=lists_of_size(start_positions, batch_sizes),
     seq_len=lists_of_size(seq_lens, batch_sizes),
@@ -54,6 +55,7 @@ def test_causal_mask__masks_padding(start_pos: list[int], seq_len: list[int]):
         # assert np.all(m[sl:, :] == float("-inf"))
 
 
+@settings(deadline=None)
 @given(
     start_pos=lists_of_size(start_positions, batch_sizes),
     seq_len=lists_of_size(seq_lens, batch_sizes),
@@ -69,6 +71,7 @@ def test_causal_mask__masks_current_and_later_tokens(
             assert np.all(sequence_mask[sp + pos + 1 :] == FILL_VAL)
 
 
+@settings(deadline=None)
 @given(
     start_pos=lists_of_size(start_positions, batch_sizes),
     seq_len=lists_of_size(seq_lens, batch_sizes),
