@@ -94,12 +94,11 @@ fn simd_store[
     # We have to cast bools into their runtime storage type.
     @parameter
     if buffer.type is DType.bool:
-        var v = val.cast[DType.uint8]()
-        buffer.data.bitcast[DType.uint8]().store[width=simd_width](
-            flat_index, v
+        buffer.data.bitcast[DType.uint8]().store(
+            flat_index, val.cast[DType.uint8]()
         )
     else:
-        buffer.data.store[width=simd_width](flat_index, val)
+        buffer.data.store(flat_index, val)
 
 
 @no_inline

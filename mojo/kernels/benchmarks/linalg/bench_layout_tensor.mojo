@@ -54,7 +54,7 @@ struct Matrix[rows: Int, cols: Int]:
         return self.data.load[width=nelts](y * self.cols + x)
 
     fn store[nelts: Int = 1](self, y: Int, x: Int, val: SIMD[dtype, nelts]):
-        return self.data.store[width=nelts](y * self.cols + x, val)
+        return self.data.store(y * self.cols + x, val)
 
 
 fn matmul_naive(inout C: Matrix, A: Matrix, B: Matrix):
