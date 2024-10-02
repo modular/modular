@@ -42,7 +42,7 @@ struct TensorSlice[
     method defined in tensor.
     """
 
-    var _ref: Reference[Tensor[type, rank], lifetime]
+    var _ref: Pointer[Tensor[type, rank], lifetime]
     var _unsafe_slice: ManagedTensorSlice[type, rank]
 
     @doc_private
@@ -52,7 +52,7 @@ struct TensorSlice[
         slices: InlineArray[Slice, rank],
     ):
         self = Self(
-            Reference.address_of(tensor),
+            Pointer.address_of(tensor),
             ManagedTensorSlice[type, rank](tensor._ptr, slices, tensor._spec),
         )
 
