@@ -282,8 +282,8 @@ fn select_config[
                 break
 
             # Skip non-divisible K, TODO: generalize e.g. 4, 4 3
-            if K % (num_k_partitions * 32) != 0:
-                continue
+            if K < num_k_partitions * bk:
+                break
 
             # Skip pipeline stages = 3 for non-split-k cases since default
             # 4 stage kernel seems faster on A100.
