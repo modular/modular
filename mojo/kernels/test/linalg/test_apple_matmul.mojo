@@ -36,7 +36,7 @@ alias do_benchmarking = False
 
 
 @parameter
-fn bench_run[func: fn () capturing [_] -> None]() -> benchmark.Report:
+fn bench_run[func: fn () capturing [_] -> None]() raises -> benchmark.Report:
     return benchmark.run[func](2, 1_000_000, 1, 3)
 
 

@@ -22,12 +22,12 @@ alias alignment = 64
 
 
 @parameter
-fn bench_run[func: fn () capturing [_] -> None]() -> benchmark.Report:
+fn bench_run[func: fn () capturing [_] -> None]() raises -> benchmark.Report:
     return benchmark.run[func](2, 1_000_000, 1, 3)
 
 
 # CHECK-LABEL: test_gemv
-fn test_gemv():
+def test_gemv():
     print("== test_gemv")
     alias type = DType.float32
     alias absolute_tolerance = 1e-08
@@ -169,5 +169,5 @@ fn test_gemv():
     ref_out_storage.free()
 
 
-fn main():
+def main():
     test_gemv()
