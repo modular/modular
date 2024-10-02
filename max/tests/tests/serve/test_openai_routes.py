@@ -24,8 +24,19 @@ from max.serve.schemas.openai import (
     CreateChatCompletionStreamResponse,
 )
 
+"""
+TODO(SI-439): Revisit test fixture reuse of TokenGeneratorPipelines after
+the refactoring work in the linked task is completed. At that point we should
+no longer be using the asynccontextmanager patterns.
+Fixture re-use is flaky right now because the first test will start async tasks
+in the TokenGeneratorPipeline using that test's asyncio loop. There is no way
+to "stop" these tasks once they are created in this fixture.
+Subsequent tests will fail because the background tasks are running on a loop
+which is no longer the current asyncio loop.
+"""
 
-@pytest.fixture(scope="module")
+
+@pytest.fixture
 def tunable_app():
     settings = Settings(api_types=[APIType.OPENAI])
     debug_settings = DebugSettings()
@@ -35,7 +46,7 @@ def tunable_app():
     return fast_app
 
 
-@pytest.fixture(scope="module")
+@pytest.fixture
 def echo_app():
     settings = Settings(api_types=[APIType.OPENAI])
     debug_settings = DebugSettings()
