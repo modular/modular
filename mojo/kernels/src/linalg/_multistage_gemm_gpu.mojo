@@ -41,7 +41,7 @@ from layout.tensor_core import (
     get_mma_shape,
 )
 from memory import UnsafePointer
-from memory.reference import _GPUAddressSpace as AddressSpace
+from memory.pointer import _GPUAddressSpace as AddressSpace
 
 from utils.index import Index
 
