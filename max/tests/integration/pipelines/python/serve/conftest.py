@@ -7,12 +7,12 @@
 
 from pathlib import Path
 
-import llama3
 import pytest
 from huggingface_hub import hf_hub_download
 from llama3 import (
     InferenceConfig,
     Llama3,
+    Llama3Context,
     SupportedEncodings,
     SupportedVersions,
 )
@@ -20,7 +20,10 @@ from max.serve.api_server import fastapi_app
 from max.serve.config import APIType, Settings
 from max.serve.debug import DebugSettings
 from max.serve.pipelines.deps import token_pipeline
-from max.serve.pipelines.llm import TokenGeneratorPipeline
+from max.serve.pipelines.llm import (
+    TokenGeneratorPipeline,
+    TokenGeneratorPipelineConfig,
+)
 from transformers import AutoTokenizer
 
 
@@ -29,7 +32,10 @@ def app(tinyllama_model):
     """The FastAPI app used to serve the model."""
     repo_id = "modularai/llama-3.1"
     tokenizer = AutoTokenizer.from_pretrained(repo_id)
-    pipeline = TokenGeneratorPipeline[llama3.Llama3Context](
+    pipeline = TokenGeneratorPipeline[Llama3Context](
+        TokenGeneratorPipelineConfig.dynamic_homogenous(
+            tinyllama_model.config.batch_size
+        ),
         tinyllama_model,
         tokenizer,
     )
@@ -38,7 +44,6 @@ def app(tinyllama_model):
     debug_settings = DebugSettings()
     app = fastapi_app(settings, debug_settings, [pipeline])
     app.dependency_overrides[token_pipeline] = lambda: pipeline
-
     return app
 
 
