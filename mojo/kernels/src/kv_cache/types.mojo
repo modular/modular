@@ -392,7 +392,7 @@ struct ContiguousKVCacheCollection[
     fn __moveinit__(inout self, owned other: Self):
         self.key_cache = other.key_cache
         self.value_cache = other.value_cache
-        self.seq_ids = other.seq_ids
+        self.seq_ids = other.seq_ids^
         self.cache_lengths = other.cache_lengths
         self.is_context_encoding = other.is_context_encoding
         self.num_layers = other.num_layers
