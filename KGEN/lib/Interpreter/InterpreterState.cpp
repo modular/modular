@@ -295,6 +295,9 @@ ErrorOrSuccess InterpreterState::writeAttributeToMemory(int64_t addr,
       return mem.takeError();
 
     if (auto intAttr = dyn_cast<IntegerAttr>(value)) {
+      APInt value = intAttr.getValue();
+      if (isa<IndexType>(intAttr.getType()))
+        value = value.sextOrTrunc(target.resolveIndexBitWidth());
       llvm::StoreIntToMemory(intAttr.getValue(),
                              reinterpret_cast<uint8_t *>(*mem), size);
       return success();
@@ -318,16 +321,15 @@ ErrorOr<TypedAttr> InterpreterState::readAttributeFromMemory(int64_t addr,
     return Error("attribute read requires a target model");
 
   if (isa<IndexType, IntegerType, FloatType>(type)) {
+    // The bitwidth is tied to the IndexType. If the target bitwidth is used an
+    // IntegerType must be used instead of IndexType, resulting in type errors
+    // if the result of the interpretation is materialized. To mitigate this
+    // issue, we perform all calculations in the target bit width then extend
+    // back to index width so the type doesn't change.
     int64_t size = *DataLayoutInterface::getTypeStoreSize(target, type);
     ErrorOr<const void *> mem = getReadableMemory(addr, size);
     if (mem.isError())
       return mem.takeError();
-
-    if (auto intType = dyn_cast<IntegerType>(type)) {
-      APInt value(intType.getWidth(), 0);
-      llvm::LoadIntFromMemory(value, (const uint8_t *)*mem, size);
-      return IntegerAttr::get(type, value);
-    }
 
     if (auto fpType = dyn_cast<FloatType>(type)) {
       APInt intVal(fpType.getWidth(), 0);
@@ -335,9 +337,13 @@ ErrorOr<TypedAttr> InterpreterState::readAttributeFromMemory(int64_t addr,
       APFloat value(fpType.getFloatSemantics(), intVal);
       return FloatAttr::get(fpType, value);
     }
-
-    APInt value(64, 0);
+    bool isIndex = isa<IndexType>(type);
+    unsigned bitWidth = isIndex ? target.resolveIndexBitWidth()
+                                : cast<IntegerType>(type).getWidth();
+    APInt value(bitWidth, 0);
     llvm::LoadIntFromMemory(value, (const uint8_t *)*mem, size);
+    if (isIndex)
+      value = value.sextOrTrunc(IndexType::kInternalStorageBitWidth);
     return IntegerAttr::get(type, value);
   }
 
