@@ -12,7 +12,6 @@ from max.driver import CPU
 from max.dtype import DType
 
 
-@pytest.mark.skip("MSDK-1078: Implement Claim and Release")
 def test_claim_and_release(session: InferenceSession):
     asyncio.run(_test_claim_and_release(session))
 
@@ -26,7 +25,7 @@ async def _test_claim_and_release(session: InferenceSession):
 
     kv_manager = ContinuousBatchingKVCacheManager(
         params=params,
-        max_batch_size=16,
+        max_cache_size=16,
         max_seq_len=100,
         num_layers=10,
         session=session,
@@ -35,12 +34,12 @@ async def _test_claim_and_release(session: InferenceSession):
 
     # Claim 5 ids
     outstanding = 11
-    seq_ids = await kv_manager.claim(batch_size=5)
+    seq_ids = await kv_manager.claim(n=5)
     assert len(seq_ids) == 5
     assert kv_manager.slots_remaining == outstanding
 
     # Claim another 3 ids
-    seq_ids_2 = await kv_manager.claim(batch_size=3)
+    seq_ids_2 = await kv_manager.claim(n=3)
     assert len(seq_ids_2) == 3
     outstanding -= 3
     assert kv_manager.slots_remaining == outstanding
@@ -52,7 +51,7 @@ async def _test_claim_and_release(session: InferenceSession):
     # Release all ids
     for i, id in enumerate(seq_ids + seq_ids_2):
         await kv_manager.release(seq_id=id)
-        assert kv_manager.slots_remaining == outstanding + i
+        assert kv_manager.slots_remaining == outstanding + i + 1
 
 
 @pytest.mark.skip("MSDK-1079: Implement Fetch")
@@ -69,7 +68,7 @@ async def _test_fetch(session: InferenceSession):
 
     kv_manager = ContinuousBatchingKVCacheManager(
         params=params,
-        max_batch_size=16,
+        max_cache_size=16,
         max_seq_len=100,
         num_layers=10,
         session=session,
@@ -81,7 +80,7 @@ async def _test_fetch(session: InferenceSession):
         kv_collection = kv_manager.fetch(seq_ids=[0])
 
     # Claim 5 items
-    seq_ids = await kv_manager.claim(5)
+    seq_ids = await kv_manager.claim(n=5)
 
     # Fetch 3 of the 5 ids
     kv_collection = kv_manager.fetch(seq_ids[:3])
