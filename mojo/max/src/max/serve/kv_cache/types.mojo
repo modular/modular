@@ -145,10 +145,10 @@ struct ContiguousKVCacheManager[
         self.other_device = other_device
 
         self.cache_lengths_tensor_host = self.this_device.allocate(
-            TensorSpec(DType.int64, (_max_batch_size))
+            TensorSpec(DType.uint32, (_max_batch_size))
         )
         self.cache_lengths_tensor_dev = self.other_device.allocate(
-            TensorSpec(DType.int64, (_max_batch_size))
+            TensorSpec(DType.uint32, (_max_batch_size))
         )
 
     fn claim(inout self, batch_size: Int) raises -> Self.CollectionType:
@@ -196,7 +196,7 @@ struct ContiguousKVCacheManager[
 
         # Have 2 copies of cache_lengths and copy to device from host here
         cache_lengths_host_ptr = (
-            self.cache_lengths_tensor_host.unsafe_ptr().bitcast[Int64]()
+            self.cache_lengths_tensor_host.unsafe_ptr().bitcast[UInt32]()
         )
         var is_context_encoding = True
         for bs in range(batch_size):
@@ -244,8 +244,8 @@ struct ContiguousKVCacheManager[
         return Self.CollectionType(
             key_cache,
             value_cache,
-            NDBuffer[DType.int64, 1](
-                self.cache_lengths_tensor_dev.unsafe_ptr().bitcast[Int64](),
+            NDBuffer[DType.uint32, 1](
+                self.cache_lengths_tensor_dev.unsafe_ptr().bitcast[UInt32](),
                 (batch_size,),
             ),
             is_context_encoding,
