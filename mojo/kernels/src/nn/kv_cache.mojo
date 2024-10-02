@@ -2315,6 +2315,8 @@ fn _flash_attention_kv_cache_cpu[
             return mask.load[width=width](
                 rebind[StaticIntTuple[mask.rank]](idx)
             )
+        elif mask.rank == 3:
+            return mask.load[width=width]((idx[0], idx[2], idx[3]))
         else:
             return mask.load[width=width]((idx[2], idx[3]))
 
