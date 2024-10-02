@@ -1200,6 +1200,7 @@ struct LayoutTensor[
         Self._compute_tile_layout[*tile_sizes]()[0],
         address_space=address_space,
         circular=False,
+        axis=axis,
     ] as result:
         """Returns the tiled iterator of the LayoutTensor.
 
@@ -1263,6 +1264,8 @@ struct LayoutTensor[
                 stride=iter_stride,
                 offset=0,
                 runtime_layout=RuntimeLayout(runtime_shape, runtime_stride),
+                dim_bound=self.runtime_layout.shape[axis].get_int(),
+                idx=tile_coords[axis],
             )
 
     @always_inline
@@ -3302,6 +3305,7 @@ struct LayoutTensorIter[
     address_space: AddressSpace = AddressSpace.GENERIC,
     alignment: Int = alignof[type]() if triple_is_nvidia_cuda() else 1,
     circular: Bool = False,
+    axis: OptionalReg[Int] = None,
 ]:
     """Iterate through a memory buffer and construct layout tensor.
 
@@ -3313,15 +3317,27 @@ struct LayoutTensorIter[
     var stride: UInt
     var bound: UInt
     var runtime_layout: RuntimeLayout[layout]
+    var dim_bound: Int
+    var idx: Int
 
     @always_inline
     fn __init__(inout self):
         """Empty iterator, used as default value."""
+
+        @parameter
+        if axis:
+            constrained[
+                not circular,
+                "Circular use case is not supported if an axis is defined.",
+            ]()
+
         self.ptr = __type_of(self.ptr)()
         self.offset = 0
         self.stride = 0
         self.bound = 0
         self.runtime_layout = RuntimeLayout[layout]()
+        self.dim_bound = 0
+        self.idx = 0
 
     @always_inline
     fn __init__(
@@ -3331,7 +3347,16 @@ struct LayoutTensorIter[
         stride: Int = layout.size() if layout.all_dims_known() else UNKNOWN_VALUE,
         offset: Int = 0,
         runtime_layout: RuntimeLayout[layout] = RuntimeLayout[layout](),
+        dim_bound: Int = 0,
+        idx: Int = 0,
     ):
+        @parameter
+        if axis:
+            constrained[
+                not circular,
+                "Circular use case is not supported if an axis is defined.",
+            ]()
+
         self.ptr = ptr
         self.offset = offset
         self.stride = (
@@ -3339,6 +3364,8 @@ struct LayoutTensorIter[
         )
         self.bound = bound
         self.runtime_layout = runtime_layout
+        self.dim_bound = dim_bound
+        self.idx = idx
 
     @always_inline
     fn get(
@@ -3363,8 +3390,11 @@ struct LayoutTensorIter[
         This function is unsafe. It omits bound checking for performance reasons.
         Caller must make sure index doesn't go out-of-bound.
         """
-
         self.offset += int(rhs) * self.stride
+
+        @parameter
+        if axis:
+            self.idx += int(rhs)
 
         @parameter
         if circular:
@@ -3374,8 +3404,11 @@ struct LayoutTensorIter[
     fn _incr(inout self):
         """Increment the iterator by 1. Equivalent to `iter += 1` but w/o the division.
         """
-
         self.offset += self.stride
+
+        @parameter
+        if axis:
+            self.idx += 1
 
         @parameter
         if circular:
@@ -3397,7 +3430,12 @@ struct LayoutTensorIter[
     fn next[T: Intable](self, rhs: T) -> Self:
         """Return an iterator pointing to the next `rhs` layout tensor."""
 
+        var next_idx = 0
         var next_offset = self.offset + int(rhs) * self.stride
+
+        @parameter
+        if axis:
+            next_idx = self.idx + int(rhs)
 
         @parameter
         if circular:
@@ -3409,6 +3447,8 @@ struct LayoutTensorIter[
             stride=self.stride,
             offset=next_offset,
             runtime_layout=self.runtime_layout,
+            dim_bound=self.dim_bound,
+            idx=next_idx,
         )
 
     @always_inline
@@ -3420,8 +3460,12 @@ struct LayoutTensorIter[
         """Return an iterator pointing to the next `rhs` layout tensor.
         This is the unsafe version and user must ensure rhs < bound / stride.
         """
-
+        var next_idx = 0
         var next_offset = self.offset + int(rhs) * self.stride
+
+        @parameter
+        if axis:
+            next_idx = self.idx + int(rhs)
 
         @parameter
         if circular:
@@ -3436,6 +3480,8 @@ struct LayoutTensorIter[
             stride=self.stride,
             offset=next_offset,
             runtime_layout=self.runtime_layout,
+            dim_bound=self.dim_bound,
+            idx=next_idx,
         )
 
     @always_inline
@@ -3469,7 +3515,9 @@ struct LayoutTensorIter[
             self.bound,
             self.stride,
             self.offset,
-            RuntimeLayout[dst_layout](),
+            runtime_layout=RuntimeLayout[dst_layout](),
+            dim_bound=self.dim_bound,
+            idx=self.idx,
         )
 
     @always_inline
@@ -3492,5 +3540,7 @@ struct LayoutTensorIter[
             self.bound,
             self.stride,
             self.offset,
-            self.runtime_layout,
+            runtime_layout=self.runtime_layout,
+            dim_bound=self.dim_bound,
+            idx=self.idx,
         )

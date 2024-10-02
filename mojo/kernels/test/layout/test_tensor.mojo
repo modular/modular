@@ -1505,18 +1505,18 @@ fn test_layout_tensor_iterator():
     # CHECK: 44.0 45.0
     # CHECK: 38.0 39.0
     # CHECK: 46.0 47.0
-    var iter = tensor.tiled_iterator[2, 2, axis=1](2, 0)
+    var iter_axis1 = tensor.tiled_iterator[2, 2, axis=1](2, 0)
     for _ in range(4):
-        print(iter.get())
-        iter += 1
+        print(iter_axis1.get())
+        iter_axis1 += 1
     # CHECK: 38.0 39.0
     # CHECK: 46.0 47.0
     # CHECK: 54.0 55.0
     # CHECK: 62.0 63.0
-    iter = tensor.tiled_iterator[2, 2, axis=0](2, 3)
+    var iter_axis0 = tensor.tiled_iterator[2, 2, axis=0](2, 3)
     for _ in range(2):
-        print(iter.get())
-        iter += 1
+        print(iter_axis0.get())
+        iter_axis0 += 1
 
     # Reshape iterator.
     # CHECK: 12.0 13.0
