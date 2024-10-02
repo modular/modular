@@ -138,7 +138,7 @@ struct ThroughputMeasure(CollectionElement):
         Args:
             name: The name of BenchMetric in its corresponding reference.
             value: The measured value to assign to this metric.
-            reference: Reference variadic list of BenchMetrics that contains this metric.
+            reference: Pointer variadic list of BenchMetrics that contains this metric.
 
         Example:
             For the default bench metrics BenchMetric.DEFAULTS the
