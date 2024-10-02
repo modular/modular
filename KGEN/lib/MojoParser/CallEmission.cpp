@@ -614,15 +614,18 @@ PValue OverloadSet::filterOverloadSetForValueType(
     return {};
 
   auto &diag = emitError(expr->getLoc());
+  ArrayRef<ASTDecl *> declsToReport;
   if (validCandidates.empty()) {
     diag << "no '" << baseName << "' candidates have type " << functionType
          << expr->getRange();
+    declsToReport = fnDecls;
   } else {
     diag << "ambiguous use of '" << baseName << "' as type " << functionType
          << expr->getRange();
+    declsToReport = validCandidates;
   }
 
-  for (ASTDecl *candidate : fnDecls) {
+  for (ASTDecl *candidate : declsToReport) {
     diag.attachNote(candidate->getLoc())
         << "candidate declared here with type "
         << ASTType(cast<LIT::FuncOp>(*candidate).getFullSignature());
