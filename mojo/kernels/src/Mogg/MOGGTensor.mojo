@@ -352,7 +352,7 @@ struct Tensor[
     fn _simd_store_internal(inout self, index: IntList, val: SIMD):
         var flat_index = self._compute_flat_index(index)
         var value = rebind[SIMD[type, val.size]](val)
-        self.data.store[width = val.size](flat_index, value)
+        self.data.store(flat_index, value)
 
     @always_inline
     fn get_nd_indices(self) -> IntList[Self.same_rank_param()]:

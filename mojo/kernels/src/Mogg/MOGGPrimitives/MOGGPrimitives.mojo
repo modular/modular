@@ -550,7 +550,7 @@ fn fill_buffer[
     var ptr = buf.data.bitcast[type]()
     var offset: Int = 0
     for val in vals:
-        ptr.store[width=1](offset, val)
+        ptr.store(offset, val)
         offset += 1
 
 
