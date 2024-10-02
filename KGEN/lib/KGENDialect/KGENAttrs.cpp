@@ -490,9 +490,9 @@ static ParseResult parseVTableEntry(AsmParser &p, StringAttr &name,
   if (p.parseString(&nameStr))
     return failure();
   name = StringAttr::get(p.getContext(), nameStr);
-  Type signature;
-  if (p.parseColon() || parseSignature(p, signature) || p.parseEqual() ||
-      parseParamValue(p, method, signature))
+  Type type;
+  if (p.parseColon() || parseKGENType(p, type) || p.parseEqual() ||
+      parseParamValue(p, method, type))
     return failure();
   return success();
 }
