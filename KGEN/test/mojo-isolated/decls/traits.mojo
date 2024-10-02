@@ -445,6 +445,29 @@ fn regpassable_reference():
     alias f = TwoThunks.method
 
 
+trait RequiredType:
+    alias T: AnyType
+
+    @staticmethod
+    fn use_it(arg: T) -> T:
+        ...
+
+
+struct RegPassableRequiredType(RequiredType):
+    alias T = Int
+
+    @staticmethod
+    fn use_it(arg: Int) -> Int:
+        pass
+
+
+# CHECK-LABEL: lit.func @"bind_regpassable_required_type
+fn bind_regpassable_required_type():
+    # CHECK-NEXT: fn(::Int, /) -> ::Int
+    # CHECK-SAME: @RegPassableRequiredType::@"use_it
+    alias T: RequiredType = RegPassableRequiredType
+
+
 # ===----------------------------------------------------------------------=== #
 # Special Functions
 # ===----------------------------------------------------------------------=== #
