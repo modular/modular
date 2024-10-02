@@ -139,8 +139,10 @@ fn byte_buffer_alloc[
         # For now, only cuda targets can use device context directly
         return NDBuffer[DType.int8, 1](
             # FIXME: RUNP-356 Direct access to CUDA within DeviceContext
-            device_context[].cuda_context.malloc_async[Int8](
-                byte_size, device_context[].cuda_stream
+            device_context[]
+            .v1()
+            .cuda_context.malloc_async[Int8](
+                byte_size, device_context[].v1().cuda_stream
             ),
             shape,
         )
@@ -898,8 +900,8 @@ fn mgp_sync[
     @parameter
     if "cuda" in bDevice:
         # FIXME: RUNP-356 Direct access to CUDA within DeviceContext
-        var e = Event(dev_ctx[].cuda_context)
-        e.record(dev_ctx[].cuda_stream)
+        var e = Event(dev_ctx[].v1().cuda_context)
+        e.record(dev_ctx[].v1().cuda_stream)
         e.sync()
 
     return 0
