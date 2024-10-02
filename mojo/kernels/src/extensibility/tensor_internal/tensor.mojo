@@ -319,7 +319,7 @@ struct Tensor[type: DType](
 
                 @parameter
                 fn splat_val[simd_width: Int](idx: Int):
-                    ptr.store[width=simd_width](idx, data0)
+                    ptr.store(idx, SIMD[type, simd_width](data0))
 
                 vectorize[splat_val, simdwidthof[type](), unroll_factor=8](
                     num_elements
@@ -1067,7 +1067,7 @@ struct Tensor[type: DType](
           val: The SIMD value to store.
         """
         debug_assert(self.rank() == 1, "rank must be 1")
-        self._ptr.store[width=width](index, val)
+        self._ptr.store(index, val)
 
     @always_inline
     fn store[
@@ -1083,7 +1083,7 @@ struct Tensor[type: DType](
           val: The SIMD value to store.
         """
         debug_assert(len(indices) == self.rank(), "invalid rank value")
-        self._ptr.store[width=width](self._compute_linear_offset(indices), val)
+        self._ptr.store(self._compute_linear_offset(indices), val)
 
     @always_inline
     fn store[
@@ -1100,7 +1100,7 @@ struct Tensor[type: DType](
           val: The SIMD value to store.
         """
         debug_assert(len == self.rank(), "invalid length value")
-        self._ptr.store[width=width](self._compute_linear_offset(indices), val)
+        self._ptr.store(self._compute_linear_offset(indices), val)
 
     @always_inline
     fn _compute_linear_offset[

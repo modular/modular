@@ -278,15 +278,13 @@ struct ManagedTensorSlice[
 
         var stride = self._strides[rank - 1]
         if stride == 0:
-            self._ptr.store[width=1](flat_index)
+            self._ptr[] = flat_index
         elif stride == 1:
 
             @parameter
             if type is DType.bool:
                 var v = val.cast[DType.uint8]()
-                self._ptr.bitcast[DType.uint8]().store[width = val.size](
-                    flat_index, v
-                )
+                self._ptr.bitcast[DType.uint8]().store(flat_index, v)
             else:
                 self._ptr.store(flat_index, val)
         else:
