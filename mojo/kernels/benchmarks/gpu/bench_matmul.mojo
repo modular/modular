@@ -11,7 +11,7 @@ from buffer import Dim, DimList, NDBuffer
 from buffer.dimlist import _make_tuple
 from gpu.host.device_context import DeviceBuffer, DeviceContext
 from linalg.matmul_gpu import _matmul_gpu
-from internal_utils import DeviceNDBuffer, bench_compile_time, env_get_dtype
+from internal_utils import DeviceNDBuffer, env_get_dtype
 from internal_utils._utils import static, dynamic, ValOrDim
 from utils import StaticIntTuple
 from sys import env_get_int, sizeof
@@ -206,27 +206,6 @@ fn create_matmul_bench[
     ](ctx, b, (m.value, n.value), (m.value, k.value), dynamic_b_shape)
 
 
-fn compile_matmul_bench[
-    dtype: DType, *, cache_busting: Bool = False
-](
-    ctx: DeviceContext, inout b: Bench, m: ValOrDim, n: ValOrDim, k: ValOrDim
-) raises:
-    var s: String = "type=" + str(dtype) + "/m=" + str(m.value) + ", n=" + str(
-        n.value
-    ) + ", k=" + str(k.value)
-    # Note: important to pass list of BenchMetric's used by the computational benchmark (in this case, BenchMetric.elements)
-    bench_compile_time[
-        bench_matmul[
-            dtype,
-            DimList(m.dim, n.dim),
-            DimList(m.dim, k.dim),
-            DimList(k.dim, n.dim),
-            cache_busting=cache_busting,
-            use_cublas=False,
-        ]
-    ](b, "matmul/" + s)
-
-
 fn main() raises:
     alias dtype = env_get_dtype["dtype", DType.bfloat16]()
 
@@ -234,7 +213,7 @@ fn main() raises:
     alias N = env_get_int["N", 1]()
     alias K = env_get_int["K", 1]()
 
-    alias cache_busting = env_get_int["cache_busting", False]()
+    alias cache_busting = env_get_int["cache_busting", True]()
     alias transpose_b = env_get_int["transpose_b", True]()
 
     var m = Bench()
@@ -260,15 +239,6 @@ fn main() raises:
                 cache_busting=cache_busting,
                 use_cublas=True,
             ](
-                ctx,
-                m,
-                dynamic(M),
-                static[N](),
-                static[K](),
-            )
-
-            # benchmarking compilation time of matmul
-            compile_matmul_bench[dtype, cache_busting=cache_busting](
                 ctx,
                 m,
                 dynamic(M),
