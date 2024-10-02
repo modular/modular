@@ -942,6 +942,9 @@ cc_distributable_static_library(
     visibility = ["//visibility:public"],
     deps = [
         ":CompilerRT.static",
+        "//AsyncRT:CUDADeviceContext",
+        "//AsyncRT:DeviceContext",
+        "//AsyncRT:MojoBindings.static",
         "//AsyncRT:Runtime",
         "//AsyncRT:RuntimeGlobals.static",
         "//AsyncRT:Support",
