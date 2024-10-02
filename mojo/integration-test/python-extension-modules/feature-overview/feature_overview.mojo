@@ -14,7 +14,7 @@ from memory import UnsafePointer
 from os import abort
 
 from python import Python, PythonObject, TypedPythonObject
-from python._bindings import create_wrapper_function
+from python._bindings import create_wrapper_function, PyMojoObject
 from python._cpython import (
     PyMethodDef,
     PyObject,
@@ -22,10 +22,7 @@ from python._cpython import (
     PyType_Spec,
     PyType_Slot,
     Py_TPFLAGS_DEFAULT,
-    Py_tp_new,
-    Py_tp_init,
-    Py_tp_dealloc,
-    Py_tp_methods,
+    newfunc,
 )
 
 
@@ -142,22 +139,17 @@ struct Person:
     var name: String
     var age: Int
 
-
-struct MojoPersonObject:
-    var ob_base: PyObject
-    var person: Person
-
     @staticmethod
     fn obj_init(
         self_: PyObjectPtr,
         args: TypedPythonObject["Tuple"],
         kwds: PythonObject,
     ) -> c_int:
-        var self0 = self_.value.bitcast[MojoPersonObject]()
+        var self0 = PyMojoObject[Person].unsafe_cast_obj(self_)
 
         # Field ptrs
-        var name_ptr = UnsafePointer[String].address_of(self0[].person.name)
-        var age_ptr = UnsafePointer[Int].address_of(self0[].person.age)
+        var name_ptr = UnsafePointer[String].address_of(self0[].name)
+        var age_ptr = UnsafePointer[Int].address_of(self0[].age)
 
         name_ptr.init_pointee_move("John Smith")
         age_ptr.init_pointee_move(123)
@@ -166,8 +158,8 @@ struct MojoPersonObject:
 
     @staticmethod
     fn obj_destroy(self_: PyObjectPtr):
-        var obj0: UnsafePointer[MojoPersonObject] = self_.value.bitcast[
-            MojoPersonObject
+        var obj0: UnsafePointer[PyMojoObject[Person]] = self_.value.bitcast[
+            PyMojoObject[Person]
         ]()
 
         # TODO(MSTDL-633):
@@ -180,11 +172,11 @@ struct MojoPersonObject:
     fn obj_name(
         self_: PythonObject, args: TypedPythonObject["Tuple"]
     ) -> PythonObject:
-        var self0 = self_.unsafe_as_py_object_ptr().value.bitcast[
-            MojoPersonObject
-        ]()
+        var self0 = PyMojoObject[Person].unsafe_cast_obj(
+            self_.unsafe_as_py_object_ptr()
+        )
 
-        return PythonObject(self0[].person.name).steal_data()
+        return PythonObject(self0[].name).steal_data()
 
 
 fn add_person_type(inout module: TypedPythonObject["Module"]):
@@ -196,7 +188,7 @@ fn add_person_type(inout module: TypedPythonObject["Module"]):
 
     var methods = List[PyMethodDef](
         PyMethodDef.function[
-            create_wrapper_function[MojoPersonObject.obj_name](),
+            create_wrapper_function[Person.obj_name](),
             "name",
         ](),
         # Zeroed item as terminator
@@ -204,22 +196,18 @@ fn add_person_type(inout module: TypedPythonObject["Module"]):
     )
 
     var slots = List[PyType_Slot](
-        PyType_Slot(
-            Py_tp_new, cpython.lib.get_symbol[NoneType]("PyType_GenericNew")
+        PyType_Slot.tp_new(
+            cpython.lib.get_function[newfunc]("PyType_GenericNew")
         ),
-        PyType_Slot(
-            Py_tp_init, rebind[OpaquePointer](MojoPersonObject.obj_init)
-        ),
-        PyType_Slot(
-            Py_tp_dealloc, rebind[OpaquePointer](MojoPersonObject.obj_destroy)
-        ),
-        PyType_Slot(Py_tp_methods, rebind[OpaquePointer](methods.steal_data())),
+        PyType_Slot.tp_init(Person.obj_init),
+        PyType_Slot.tp_dealloc(Person.obj_destroy),
+        PyType_Slot.tp_methods(methods.steal_data()),
         PyType_Slot.null(),
     )
 
     var type_spec = PyType_Spec {
         name: "Person".unsafe_cstr_ptr(),
-        basicsize: sizeof[MojoPersonObject](),
+        basicsize: sizeof[PyMojoObject[Person]](),
         itemsize: 0,
         flags: Py_TPFLAGS_DEFAULT,
         # FIXME: Don't leak this pointer, use globals instead.
