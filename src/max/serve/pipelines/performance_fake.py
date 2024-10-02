@@ -37,12 +37,12 @@ class PerformanceFakingTokenGenerator:
     # 1st token TPOT (ms) / batch_size with prompt_length = 1
     tg_rate_no_context: float = 12.67 / 256
     # 1st token TPOT (ms) / batch_size with prompt_length = 512
-    tg_rate_256_context: float = 21.11 / 256
+    tg_rate_per_context_token: float = (21.11 / 256 - 12.67 / 256) / 512
     # padding mode for context encoding
     tg_padding: bool = True
 
     # whether to busy wait or to sleep
-    busy_wait: bool = False
+    busy_wait: bool = True
 
     async def new_context(
         self, prompt: str, max_new_tokens: Optional[int] = None
@@ -101,10 +101,6 @@ class PerformanceFakingTokenGenerator:
         return max(self.ce_rate * N, self.ce_baseline)
 
     def _tg_time_ms(self, context_sizes):
-        context_term = (
-            self.tg_rate_256_context - self.tg_rate_no_context
-        ) / 512
-
         if self.tg_padding:
             N = len(context_sizes) * max(context_sizes)
         else:
@@ -112,12 +108,12 @@ class PerformanceFakingTokenGenerator:
 
         return (
             max(self.tg_baseline, self.tg_rate_no_context * len(context_sizes))
-            + N * context_term
+            + N * self.tg_rate_per_context_token
         )
 
 
 def get_performance_fake(
-    tokenizer: AutoTokenizer, mode: Literal["no-op", "speed-of-light"]
+    tokenizer: AutoTokenizer, mode: Literal["no-op", "speed-of-light", "vllm"]
 ) -> PerformanceFakingTokenGenerator:
     """Construct a performance fake for the given performance mode."""
     if mode == "no-op":
@@ -125,7 +121,19 @@ def get_performance_fake(
             tokenizer, 0, 0, False, 0, 0, 0, False, False
         )
     elif mode == "speed-of-light":
-        # current defaults are speed-of-light
+        # current defaults are speed-of-light on A100-80GB
         return PerformanceFakingTokenGenerator(tokenizer)
+    elif mode == "vllm":
+        # this is for A100-80GB
+        return PerformanceFakingTokenGenerator(
+            _tokenizer=tokenizer,
+            ce_baseline=27.0,
+            ce_rate=19487 / 1024 / 256,
+            ce_padding=False,
+            tg_baseline=13.39,
+            tg_rate_no_context=33.66 / 256,
+            tg_rate_per_context_token=(188.43 - 33.66) / 256 / 1024,
+            tg_padding=False,
+        )
     else:
         raise ValueError(f"Unexpected mode: {mode}")
