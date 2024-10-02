@@ -44,6 +44,7 @@ from nn.activations import relu, gelu
 from nn.arange import arange, arange_shape
 from nn.nms import non_max_suppression, non_max_suppression_shape_func
 from nn.pool import avg_pool, max_pool, pool_shape, pool_shape_ceil
+from nn.reshape import reshape, reshape_shape
 from nn.resize import resize_nearest_neighbor, resize_linear
 from nn.roi_align import roi_align_nhwc
 from nn.tile import tile, tile_shape
@@ -1478,6 +1479,51 @@ struct BroadcastTo:
         # Using `z.shape` instead will prevent the compiler from fusing the kernels.
         var x_view = Self.build_view(x, output_shape)
         view_copy_impl[synchronous, target](z, x_view)
+
+
+@compiler.register("mo.static.reshape")
+@compiler.view_kernel
+struct StaticReshape:
+    @staticmethod
+    @staticmethod
+    fn execute[
+        synchronous: Bool,
+        target: StringLiteral,
+        type: DType,
+        output_rank: Int,
+    ](
+        output: ManagedTensorSlice[type=type, rank=output_rank],
+        input: ManagedTensorSlice[type=type],
+        shape: StaticIntTuple[output_rank],
+    ):
+        var view_buffer = reshape(
+            managed_tensor_slice_to_ndbuffer(input), shape
+        )
+        var view_tensor = ManagedTensorSlice[type, output_rank](
+            view_buffer.data, shape, view_buffer.dynamic_stride
+        )
+        view_copy_impl[synchronous, target](output, view_tensor)
+
+
+@compiler.register("mo.reshape")
+struct Reshape:
+    # The `execute` method should never be used in the graph compiler.
+    @staticmethod
+    fn execute():
+        pass
+
+    @staticmethod
+    fn shape[
+        output_rank: Int
+    ](
+        input: ManagedTensorSlice, shape: ManagedTensorSlice[rank=1]
+    ) raises -> StaticIntTuple[output_rank]:
+        return reshape_shape[
+            output_rank=output_rank, single_thread_blocking_override=True
+        ](
+            managed_tensor_slice_to_ndbuffer(input),
+            managed_tensor_slice_to_ndbuffer(shape),
+        )
 
 
 # ===----------------------------------------------------------------------===#
