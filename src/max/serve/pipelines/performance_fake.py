@@ -30,7 +30,7 @@ class PerformanceFakingTokenGenerator:
     # ttft (ms) / batch size / prompt size
     ce_rate: float = 54043.08 / 1024 / 1024
     # padding mode for context encoding
-    ce_padding: bool = True
+    ce_padding: bool = False
 
     # 1st token TPOT (ms) for prompt_length = batch_size = 1
     tg_baseline: float = 6.85
@@ -39,7 +39,7 @@ class PerformanceFakingTokenGenerator:
     # 1st token TPOT (ms) / batch_size with prompt_length = 512
     tg_rate_per_context_token: float = (21.11 / 256 - 12.67 / 256) / 512
     # padding mode for context encoding
-    tg_padding: bool = True
+    tg_padding: bool = False
 
     # whether to busy wait or to sleep
     busy_wait: bool = True
@@ -127,12 +127,12 @@ def get_performance_fake(
         # this is for A100-80GB
         return PerformanceFakingTokenGenerator(
             _tokenizer=tokenizer,
-            ce_baseline=27.0,
+            ce_baseline=11.95,
             ce_rate=19487 / 1024 / 256,
             ce_padding=False,
-            tg_baseline=13.39,
+            tg_baseline=11.95,
             tg_rate_no_context=33.66 / 256,
-            tg_rate_per_context_token=(188.43 - 33.66) / 256 / 1024,
+            tg_rate_per_context_token=(59.79 - 33.66) / 256 / 1024,
             tg_padding=False,
         )
     else:
