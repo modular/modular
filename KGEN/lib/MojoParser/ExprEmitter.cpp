@@ -1272,7 +1272,7 @@ PValue ExprEmitter::emitMetaTypeToTraitConversion(ASTExprAnd<CValue> value,
       OverloadSet ov(name, implFuncs, std::move(implBindings), value.expr,
                      CallSyntax::kMethodCallSynthetic);
       auto result = ov.filterOverloadSetForValueType(
-          requirementSig, /*emitDiagnosticOnFailure=*/false);
+          requirementSig, getScopeInfo(), /*emitDiagnosticOnFailure=*/false);
       if (!result) {
         // Don't error out if name is for the thunk functions that will be
         // synthesized when conformance check happens.
@@ -1282,7 +1282,7 @@ PValue ExprEmitter::emitMetaTypeToTraitConversion(ASTExprAnd<CValue> value,
         // The struct does not have the specified member and we cannot
         // synthesize it. Re-emit the error to get a diagnostic.
         (void)ov.filterOverloadSetForValueType(
-            requirementSig, /*emitDiagnosticOnFailure=*/true);
+            requirementSig, getScopeInfo(), /*emitDiagnosticOnFailure=*/true);
         return {};
       }
       if (result.getType().mlirType != requirementSig)

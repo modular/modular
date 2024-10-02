@@ -175,7 +175,8 @@ public:
   /// expected type if provided or using current bindings if an emitter is
   /// provided.  This emits errors if 'emitter' is non-null, but does not if it
   /// is null.
-  PValue getDirectSymbol(ASTType expectedType) const;
+  PValue getDirectSymbol(ASTType expectedType,
+                         const TypeCheckScopeInfo &scopeInfo) const;
 
   /// Try to emit the overload set as a PValue.
   PValue getIfPValue() const;
@@ -198,9 +199,10 @@ public:
   /// to produce a function pointer with the specified type.  This returns a
   /// PValue for the callee if resolvable or null if not.
   PValue filterOverloadSetForValueType(ASTType functionType,
+                                       const TypeCheckScopeInfo &scopeInfo,
                                        bool emitDiagnosticOnFailure) const;
   PValue filterOverloadSetForValueType(
-      ASTType functionType,
+      ASTType functionType, const TypeCheckScopeInfo &scopeInfo,
       function_ref<InflightDiag &(llvm::SMLoc)> emitError) const;
 
   /// If the specified type can be constructed with the specified operands

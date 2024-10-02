@@ -517,7 +517,7 @@ auto OverloadFitness::checkOneOperand(ASTExprAnd<AnyValue> operand,
       assert(orValue && "Unknown UValue!");
 
       // Try to refine the OverloadSetUValue into a PValue.
-      argVal = orValue->getDirectSymbol(expectedType);
+      argVal = orValue->getDirectSymbol(expectedType, scopeInfo);
       if (!argVal)
         return {kWrongType, expectedType};
 

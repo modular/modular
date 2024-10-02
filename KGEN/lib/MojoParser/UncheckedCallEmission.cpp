@@ -1118,9 +1118,8 @@ static ASTType getBoundCoroutineType(const TypeCheckScopeInfo &scopeInfo,
                                      TypedAttr lifetime) {
   auto [declScope, shared] = scopeInfo;
   SMLoc loc = expr->getLoc();
-  ASTDecl *decl = sig.isThrows()
-                      ? shared.getBuiltinRaisingCoroutineType(declScope, loc)
-                      : shared.getBuiltinCoroutineType(declScope, loc);
+  ASTDecl *decl = sig.isThrows() ? shared.getBuiltinRaisingCoroutineType(loc)
+                                 : shared.getBuiltinCoroutineType(loc);
   if (!decl) {
     shared.emitError(loc,
                      "internal error: could not find builtin 'Coroutine' type");

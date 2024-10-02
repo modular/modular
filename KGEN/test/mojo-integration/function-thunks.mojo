@@ -30,7 +30,7 @@ fn test():
     _ = foo()
     _ = bar()
 
-    # CHECK: kgen.create_closure{{.*}}@"fn(Int) -> None|fn(Int) -> None[fn(::Int, /) -> None](::Int)"
+    # CHECK: kgen.create_closure{{.*}}@"fn(::Int, /) -> None|fn(::Int, /) -> None|{{.*}}[fn(::Int, /) -> None](::Int)"
     var f: fn (Int) -> None = thunk[Int]
 
 
@@ -43,14 +43,14 @@ fn test():
 # CHECK-LABEL: lit.package @func_package_foo
 # CHECK-SAME: postParseModule
 # CHECK: lit.func @"foo
-# CHECK: kgen.create_closure{{.*}}@"fn(Int) -> None|fn(Int) -> None[fn(::Int, /) -> None](::Int)"
+# CHECK: kgen.create_closure{{.*}}@"fn(::Int, /) -> None|fn(::Int, /) -> None|{{.*}}[fn(::Int, /) -> None](::Int)"
 
-# CHECK-COUNT-1: lit.func @"fn(Int) -> None|fn(Int) -> None[fn(::Int, /) -> None](::Int)"
+# CHECK-COUNT-1: lit.func @"fn(::Int, /) -> None|fn(::Int, /) -> None|{{.*}}[fn(::Int, /) -> None](::Int)"
 
 # CHECK-LABEL: lit.package @func_package_bar
 # CHECK-SAME: postParseModule
 # CHECK: lit.func @"bar
-# CHECK: kgen.create_closure{{.*}}@"fn(Int) -> None|fn(Int) -> None[fn(::Int, /) -> None](::Int)"
+# CHECK: kgen.create_closure{{.*}}@"fn(::Int, /) -> None|fn(::Int, /) -> None|{{.*}}[fn(::Int, /) -> None](::Int)"
 
 # CHECK-NOT: fn(::Int
 

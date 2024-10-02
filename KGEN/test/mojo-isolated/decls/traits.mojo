@@ -209,16 +209,6 @@ trait StaticMethodTrait:
         pass
 
 
-trait Copyable:
-    fn __copyinit__(inout self, existing: Self, /):
-        pass
-
-
-trait Movable:
-    fn __moveinit__(inout self, owned existing: Self, /):
-        pass
-
-
 struct StaticMethodStruct(StaticMethodTrait, Copyable):
     @staticmethod
     fn foobar():
@@ -283,24 +273,14 @@ struct RegTraitType(TraitForReg):
     fn __init__(inout self, x: int):
         pass
 
-    # CHECK-LABEL: lit.func @"__copyinit__{{.*}}_thunk"
-    # CHECK-SAME: %self: !lit.ref<!RegTraitType, mut {{.*}}> init_self, |, %existing: !lit.ref<!RegTraitType, imm {{.*}}> borrow_in_mem) -> !kgen.none
     fn __copyinit__(inout self, existing: Self):
-        # CHECK: %0 = lit.ref.load %existing
-        # CHECK: lit.call {{.*}}@RegTraitType{{.*}}__copyinit__{{.*}}(%self, %0)
         pass
 
     @staticmethod
     fn may_throw() raises -> Self:
         pass
 
-    # CHECK-LABEL: lit.func @"throwing_method{{.*}}_thunk"
-    # CHECK-SAME: (%self: !lit.ref<!RegTraitType, {{.*}} borrow_in_mem, ?, %__error__{{.*}}, %__result__{{.*}})
     fn throwing_method(self) raises:
-        # CHECK-NEXT: [[SELF_REG:%.*]] = lit.ref.load %self
-        # CHECK-NEXT: lit.call {{.*}}RegTraitType::@"throwing_method{{.*}}([[SELF_REG]], %__error__, %__result__)
-        # CHECK-NEXT: [[FALSE:%.*]] = kgen.param.constant: i1 = <0>
-        # CHECK-NEXT: return [[FALSE]]
         pass
 
 
@@ -317,23 +297,6 @@ trait CrazyTrait:
 
     fn foo[b: int](self, c: int) -> Self:
         ...
-
-
-# CHECK-LABEL: lit.struct.decl @CrazyRegisterPassable<a>
-@value
-@register_passable
-struct CrazyRegisterPassable[a: int](CrazyTrait):
-    pass
-
-    # CHECK-LABEL: lit.func @"foo{{.*}}_thunk"
-    # CHECK-SAME: <b>[{{.*}}](%self: !lit.ref<{{.*}}@CrazyRegisterPassable<a>{{.*}} borrow_in_mem
-    # CHECK-SAME: %c: index,
-    # CHECK-SAME: %__result__: !lit.ref<{{.*}}@CrazyRegisterPassable<a>{{.*}} byref_result
-    fn foo[b: int](self, c: int) -> Self:
-        # CHECK: %0 = lit.ref.load %self
-        # CHECK: %1 = lit.call {{.*}}@CrazyRegisterPassable::@"foo{{.*}}<a, b>(%0, %c)
-        # CHECK: lit.ref.store %1, %__result__
-        return self
 
 
 trait ChangedResultTypeTrait:
@@ -357,7 +320,7 @@ fn convert_result_type():
     fn convert_result_type[T: ChangedResultTypeTrait]():
         pass
 
-    # CHECK: call{{.*}}@ChangedResultTypeStruct::@"result_type()_thunk"
+    # CHECK: call{{.*}}fn() -> traits::ChangedResultTypeStruct
     convert_result_type[ChangedResultTypeStruct]()
 
 
@@ -379,7 +342,7 @@ fn test_bind_variadic():
         pass
 
     # CHECK: call
-    # CHECK: "foo" : !lit.signature<[1]("self": {{.*}}<:variadic<index> []>{{.*}} borrow_in_mem) -> !kgen.none> = {{.*}}@"foo{{.*}}_thunk"<:variadic<index> []>
+    # CHECK: "foo" : !lit.signature<[1]("self": {{.*}}<:variadic<index> []>{{.*}} borrow_in_mem) -> !kgen.none> = {{.*}}@"foo{{.*}}"<:variadic<index> []>
     bind_trait[VariadicTrait[]]()
 
 
@@ -428,10 +391,7 @@ trait OwnedArguments:
 # CHECK-LABEL: lit.struct.decl @NoDtor
 @register_passable
 struct NoDtor(OwnedArguments, DefaultConstructible):
-    # CHECK-LABEL: lit.func @"take{{.*}}_thunk"
     fn take(owned self, owned x: RegTraitType):
-        # CHECK-NEXT: %0 = lit.load.consume %self
-        # CHECK-NEXT: lit.call {{.*}}take{{.*}}(%0, %x)
         pass
 
     fn __init__(inout self):
@@ -474,7 +434,6 @@ trait SimpleTraitB:
 @register_passable
 struct TwoThunks(SimpleTraitA, SimpleTraitB):
     # CHECK: lit.func @"method({{.*}}TwoThunks)"
-    # CHECK: lit.func @"method({{.*}}TwoThunks)_thunk"
     fn method(self):
         pass
 
@@ -488,18 +447,9 @@ struct TwoThunks(SimpleTraitA, SimpleTraitB):
 @register_passable("trivial")
 struct RegTrivialSpecial(AnyType, Copyable, Movable):
     pass
-    # CHECK: lit.func @"__del__{{.*}}_thunk"
-    # CHECK-SAME: %0[{{.*}} owned_in_mem, |) -> !kgen.none always_inline_no_debug
-    # CHECK: return %none
-
-    # CHECK: lit.func @"__copyinit__{{.*}}_thunk"
-    # CHECK-SAME: %0[{{.*}} init_self, %1[{{.*}} borrow_in_mem
-    # CHECK-NEXT: [[V:%.*]] = lit.ref.load %1
-    # CHECK-NEXT: lit.ref.store [[V]], %0
-
-    # CHECK: lit.func @"__moveinit__{{.*}}_thunk"{{.*}}(%0[{{.*}} init_self, %1[{{.*}} owned_in_mem
-    # CHECK: [[V:%.*]] = lit.load.consume
-    # CHECK-NEXT: lit.ref.store [[V]], %0
+    # CHECK: lit.func @"__del__
+    # CHECK: lit.func @"__copyinit__
+    # CHECK: lit.func @"__moveinit__
 
 
 # CHECK-LABEL: lit.struct.decl @RegSpecial
@@ -508,13 +458,8 @@ struct RegSpecial(AnyType, Copyable, Movable):
     fn __copyinit__(inout self, existing: Self):
         pass
 
-    # CHECK: lit.func @"__del__{{.*}}_thunk"
-    # CHECK-SAME: {{.*}} owned_in_mem, |) -> !kgen.none always_inline_no_debug
-
-    # CHECK: lit.func @"__moveinit__{{.*}}_thunk"
-    # CHECK-SAME: %0[{{.*}} init_self, %1[{{.*}} owned_in_mem
-    # CHECK-NEXT: [[V:%.*]] = lit.load.consume %1
-    # CHECK-NEXT: lit.ref.store [[V]], %0
+    # CHECK: lit.func @"__del__
+    # CHECK: lit.func @"__moveinit__
 
 
 # CHECK-LABEL: lit.struct.decl @MemoryOnlySpecial
@@ -693,7 +638,7 @@ fn take_movable(x: MovableType[Item]):
 
 # CHECK-LABEL: lit.func @"converted_metatype_struct_element
 fn converted_metatype_struct_element(x: Collection[Item]):
-    # CHECK: call {{.*}}take_movable{{.*}}"__moveinit__" : {{.*}} = rebind({{.*}}__moveinit__({{.*}})_thunk
+    # CHECK: call {{.*}}take_movable{{.*}}"__moveinit__" : {{.*}} = rebind({{.*}}__moveinit__({{.*}})
     take_movable(x.x)
 
 
@@ -849,11 +794,11 @@ struct ChildFirst:
 # CHECK-SAME: (!AnyType, !Copyable, !ImplicitConformance)
 @register_passable
 struct RegisterPassable:
-    # CHECK: lit.func @"__copyinit__{{.*}}_thunk"
+    # CHECK: lit.func @"__copyinit__{{.*}}"
     fn __copyinit__(inout self, existing: Self):
         pass
 
-    # CHECK: lit.func @"implicit{{.*}}_thunk"
+    # CHECK: lit.func @"implicit{{.*}}"
     fn implicit(self):
         pass
 
@@ -875,9 +820,9 @@ fn test_implicit_conformance():
     # CHECK-NEXT: !ImplicitParent = <[!ChildFirst, {"parent_method"
     alias bound5: ImplicitParent = ChildFirst
 
-    # CHECK-NEXT: !Copyable = <[!RegisterPassable, {"__copyinit__" {{.*}}@RegisterPassable::@"__copyinit__{{.*}}_thunk"
+    # CHECK-NEXT: !Copyable = <[!RegisterPassable, {"__copyinit__" {{.*}}@RegisterPassable::@"__copyinit__{{.*}}"
     alias bound6: Copyable = RegisterPassable
-    # CHECK-NEXT: !ImplicitConformance = <[!RegisterPassable, {"implicit" {{.*}}@RegisterPassable::@"implicit{{.*}}_thunk"
+    # CHECK-NEXT: !ImplicitConformance = <[!RegisterPassable, {"implicit" {{.*}}@RegisterPassable::@"implicit{{.*}}"
     alias bound7: ImplicitConformance = RegisterPassable
 
 
@@ -965,37 +910,3 @@ struct TestAnyTrait[element_trait: _AnyTypeMetaType]:
 @register_passable("trivial")
 struct ParamType[x: int]:
     pass
-
-
-trait DependentParam:
-    fn foo[x: int, y: ParamType[x]](self):
-        ...
-
-    fn shadow[a: Int](self):
-        ...
-
-    fn bar[x: int, y: int](self, z: ParamType[x]) -> ParamType[y]:
-        ...
-
-
-# CHECK-LABEL: lit.struct.decl @RegPassableParamTrait<a>
-@register_passable
-struct RegPassableParamTrait[a: int](DependentParam):
-    # CHECK: lit.func @"foo{{.*}}_thunk"
-    # CHECK-SAME: <x, y: {{.*}}ParamType<x>>
-    # CHECK-SAME: (%self: !lit.ref{{.*}}RegPassableParamTrait<a>
-    fn foo[x: int, y: ParamType[x]](self):
-        # CHECK: call {{.*}}<a, x, :{{.*}}ParamType<x> y>
-        pass
-
-    # CHECK: lit.func @"shadow{{.*}}_thunk"
-    # CHECK-SAME: <*"a`": !Int>
-    fn shadow[b: Int](self):
-        # CHECK: call {{.*}}<a, :!Int *"a`">
-        pass
-
-    # CHECK: lit.func @"bar{{.*}}_thunk"
-    # CHECK-SAME: <x, y>[{{.*}}](%self: !lit.ref<{{.*}}RegPassableParamTrait<a>{{.*}}, %z: !lit.struct<#ParamType <x>>) -> !lit.struct<#ParamType <y>>
-    fn bar[x: int, y: int](self, z: ParamType[x]) -> ParamType[y]:
-        # CHECK: call {{.*}}<a, x, y>
-        pass

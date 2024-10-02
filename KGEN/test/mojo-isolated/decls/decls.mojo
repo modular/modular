@@ -1115,7 +1115,7 @@ async fn inline_async() -> Int:
 async fn use_inline_async() -> Int:
     # CHECK: [[ASYNC_RESULT:%.*]] = lit.async.call{{.*}}inline_async
     # CHECK: lit.call {{.*}}Coroutine{{.*}}__init__{{.*}}([[TMP:%.*]], [[ASYNC_RESULT]])
-    # CHECK: [[CORO:%.*]] = lit.ref.load [[TMP]]
+    # CHECK: [[CORO:%.*]] = lit.load.consume [[TMP]]
     # CHECK: lit.call {{.*}}Coroutine{{.*}}__await__{{.*}}([[CORO]], %__result__)
     return await inline_async()
 
@@ -1288,8 +1288,6 @@ struct CapturingStructTrait(CapturingTrait):
         f: fn () capturing [lifetimes] -> None,
     ](self):
         pass
-
-    # CHECK: lit.func @"takeClosure{{.*}}_thunk":*(0,0):
 
 
 # CHECK-LABEL: lit.func @"inferCaptureLifetimes

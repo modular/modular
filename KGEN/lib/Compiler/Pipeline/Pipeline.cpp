@@ -115,6 +115,8 @@ void KGEN::buildGenerateLibraryPipeline(mlir::PassManager &pm,
     pm.addNestedPass<GeneratorOp>(createSROA());
     pm.addNestedPass<GeneratorOp>(createMem2Reg());
     pm.addNestedPass<GeneratorOp>(createCanonicalizer());
+    if (options.optimizationLevel >= 2)
+      pm.addPass(createRemoveUnusedParams());
   }
 }
 

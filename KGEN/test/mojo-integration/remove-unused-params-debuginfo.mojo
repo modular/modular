@@ -18,7 +18,7 @@ fn agnostic_user[
 
 
 # There should only be one instantiation of agnostic_user
-# CHECK-NOT define {{.*}}agnostic_user
+# CHECK-NOT: define {{.*}}agnostic_user
 
 
 fn main():

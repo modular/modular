@@ -82,10 +82,7 @@ def LIT_FuncOp : LITOp<"func", [
     OptionalAttr<LIT_DocStringAttr>:$docString,
     OptionalAttr<StrAttr>:$deprecationWarning,
     DefaultValuedAttr<DictionaryAttr, "std::nullopt">:$LLVMMetadata,
-    // For functions that represent conversion thunks, these are the converted
-    // function types.
-    OptionalAttr<TypeAttr>:$thunkFromType,
-    OptionalAttr<TypeAttr>:$thunkToType,
+    OptionalAttr<AnyAttr>:$thunkKey,
     OptionalAttr<ArrayAttr>:$patterns
   );
   let regions = (region SizedRegion<1>:$bodyRegion);

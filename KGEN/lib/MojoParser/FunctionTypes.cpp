@@ -19,6 +19,8 @@
 #include "KGEN/MojoParser/CallOperands.h"
 #include "KGEN/MojoParser/DeclResolver.h"
 #include "mlir/IR/ImplicitLocOpBuilder.h"
+#include "llvm/Support/BLAKE3.h"
+#include "llvm/Support/Base64.h"
 
 using namespace M;
 using namespace KGEN;
@@ -114,7 +116,7 @@ bool LIT::canConvertFunctionTypes(LITSignatureType actual,
 
     case ArgConvention::OwnedInMem:
     case ArgConvention::OwnedInReg:
-      if (llvm::is_contained(
+      if (!llvm::is_contained(
               {ArgConvention::OwnedInMem, ArgConvention::OwnedInReg},
               actualConv))
         return false;
@@ -158,15 +160,44 @@ static LITSignatureType getReducedFunctionType(LITSignatureType sig) {
                             metadata);
 }
 
-LIT::FuncOp LIT::generateConversionThunk(LITSignatureType actual,
-                                         LITSignatureType expected,
-                                         ASTDecl &moduleDecl,
-                                         SharedState &shared) {
-  // TODO: Deduplicate in shared state.
-  MLIRContext *ctx = shared.getContext();
-  Location mlirLoc = shared.diags.translateLocation(moduleDecl.getLoc());
+static std::string generateThunkName(Type expected, Type actual) {
+  std::string name;
+  llvm::raw_string_ostream os(name);
+  ASTType(expected).print(os, /*forDiag=*/false, /*demangleParams=*/true);
+  os << '|';
+  ASTType(actual).print(os, /*forDiag=*/false, /*demangleParams=*/true);
 
-  // Declare a function with expected function type.
+  // Mix in the full signatures to disambiguate.
+  std::string sigHash;
+  llvm::raw_string_ostream sigHashOs(sigHash);
+  expected.print(sigHashOs);
+  actual.print(sigHashOs);
+  auto hash = llvm::BLAKE3::hash(
+      ArrayRef((const uint8_t *)sigHash.data(), sigHash.size()));
+
+  os << '|';
+  os << llvm::encodeBase64(hash);
+  return name;
+}
+
+LIT::FuncOp LIT::generateConversionThunk(Attribute key, ASTDecl &moduleDecl,
+                                         SharedState &shared) {
+  // Don't generate any debuginfo for the thunk. Push a null scope.
+  DebugInfo::DIBuilder::ScopeGuard diScopeGuard;
+  if (shared.diBuilder)
+    diScopeGuard = shared.diBuilder->pushScopeGuard(/*scope=*/nullptr);
+
+  auto keyValues = cast<ArrayAttr>(key);
+  auto actual = cast<LITSignatureType>(cast<TypeAttr>(keyValues[0]).getValue());
+  auto expected =
+      cast<LITSignatureType>(cast<TypeAttr>(keyValues[1]).getValue());
+
+  MLIRContext *ctx = shared.getContext();
+  Location mlirLoc = shared.translateLocation(moduleDecl.getLoc());
+
+  // Declare a function with expected function type. Add the parameters from the
+  // expected signature. This contains the types of the captured parameters and
+  // the actual function parameters.
   SmallVector<ParamDeclAttr> paramDecls;
   SmallVector<TypedAttr> paramValues;
   ParameterEvaluator evaluator;
@@ -175,41 +206,39 @@ LIT::FuncOp LIT::generateConversionThunk(LITSignatureType actual,
     // The parameter names are derived from the decl name.
     paramDecls.push_back(
         ParamDeclAttr::get(moduleDecl.mangleUserDefinedParamName(
-                               b.getStringAttr("i" + Twine(idx))),
+                               b.getStringAttr("_" + Twine(idx))),
                            evaluator.getReboundType(type)));
     paramValues.push_back(ParamDeclRefAttr::get(paramDecls.back()));
     evaluator.addInputValue(paramValues.back());
   }
+  // Rebind the argument and result types into the scope of the body.
   FunctionType types =
       expected.getSpecializedSignature(paramValues).getValues();
 
-  // Add an additional parameter, representing the actual callee.
+  // Add an additional parameter, representing the actual callee. Rebind the
+  // actual function type into the scope of the body.
   auto calleeDecl = ParamDeclAttr::get(
-      moduleDecl.mangleUserDefinedParamName(b.getStringAttr("callee")), actual);
+      moduleDecl.mangleUserDefinedParamName(b.getStringAttr("callee")),
+      evaluator.getReboundType(actual));
   paramDecls.push_back(calleeDecl);
 
   // Generate a mangled name.
-  StructEmitter structEmitter(shared);
-  std::string name;
-  llvm::raw_string_ostream os(name);
-  ASTType(expected).print(os, /*forDiag=*/true, /*demangleParams=*/true);
-  os << '|';
-  ASTType(actual).print(os, /*forDiag=*/true, /*demangleParams=*/true);
+  std::string name = generateThunkName(expected, actual);
 
   // Declare the function at the bottom of the decl.
   b = ImplicitLocOpBuilder(mlirLoc, moduleDecl.getDeclEndBuilder());
+  StructEmitter structEmitter(shared);
   LIT::FuncOp thunk = structEmitter.createFunction(
       moduleDecl, name, paramDecls,
       PogListAttr::get(ctx, expected.getNumParams() + 1), types.getInputs(),
       expected.getArgConventions(),
       PogListAttr::get(ctx, expected.getNumArguments()),
-      expected.getResultType(), SpecialFunctionKind::kNormal,
+      types.getResults().front(), SpecialFunctionKind::kNormal,
       moduleDecl.getLoc(), b, expected.getFnEffects());
 
   // Annotate the function as a thunk by adding the conversion types.
   NamedAttrList attrs = thunk->getAttrDictionary();
-  attrs.set(thunk.getThunkFromTypeAttrName(), TypeAttr::get(actual));
-  attrs.set(thunk.getThunkToTypeAttrName(), TypeAttr::get(expected));
+  attrs.set(thunk.getThunkKeyAttrName(), key);
 
   // Always inline the thunk. The calling convention conversion overhead is
   // guaranteed to be optimized away.
@@ -279,9 +308,19 @@ LIT::FuncOp LIT::generateConversionThunk(LITSignatureType actual,
     hasRegisterResult = true;
   }
 
-  CValue callResult = emitter.emitIndirectCall(
-      PValue(ParamDeclRefAttr::get(calleeDecl)), std::move(operands), dest,
-      CallSyntax::kMethodCall, node);
+  // Bind the function parameters declared on the thunk to the callee. This does
+  // NOT include the capture parameters -- the callee has already been rebound
+  // to them when it was declared on the parameter list.
+  SmallVector<TypedAttr> bindOperands{ParamDeclRefAttr::get(calleeDecl)};
+  llvm::append_range(bindOperands,
+                     ArrayRef(paramValues).take_back(actual.getNumParams()));
+  TypedAttr calleeParam =
+      ParamOperatorAttr::get(POC::BindSignature, bindOperands);
+  assert(cast<LITSignatureType>(calleeParam.getType()).getNumParams() == 0);
+
+  CValue callResult =
+      emitter.emitIndirectCall(PValue(calleeParam), std::move(operands), dest,
+                               CallSyntax::kMethodCall, node);
   if (!callResult) {
     dest.resetForError();
     return {};
@@ -329,23 +368,94 @@ CValue LIT::convertFunctionValue(CValue value, const ExprNode *expr,
   MLIRContext *ctx = expected.getContext();
   auto actual = cast<LITSignatureType>(callee.getType());
 
-  // Canonicalize the function types.
+  // Canonicalize the function types. This strips away unnecessary metadata that
+  // does not affect the conversion semantics. In other words, a function type
+  // and its reduced type can be trivially converted with a rebind.
   LITSignatureType reducedActual = getReducedFunctionType(actual);
   LITSignatureType reducedExpected = getReducedFunctionType(expected);
 
+  // Given a function of type
+  //
+  //  fn[*ParamTypes](*ArgTypes) -> ResultType
+  //
+  // That captures parameters from its scope, we are going to produce a function
+  // that looks like
+  //
+  //  fn thunk[*CapturedParamTypes, *params: *ParamTypes,
+  //           callee: fn[*ParamTypes](*ArgTypes) -> ResultType](
+  //        *args: *ArgTypes):
+  //      return callee[*params](*args)
+  //
+  // To achieve this, we are going to deparameterize `reducedActual` such that
+  // its `N` parameter captures are replaced with `*(1,0), ... *(1,N-1)`.
+  //
+  // For example, given
+  //
+  //   fn[p: Foo[a]](a: Bar[p]) -> Foo[b]
+  //
+  // where `a` and `b` are captures, we obtain
+  //
+  //   fn[Foo[$1|0]](a: Bar[$0]) -> Foo[$1|1]
+  //
+  // We then transform `reducedExpected` to be
+  //
+  //   fn[Int, Int, Foo[$0], fn[Foo[$1|0]](a: Bar[$0]) -> Foo[$1|1]]
+  //     (Bar[$2]) -> Foo[$1]
+
+  // First produce the parameter-isolated `reducedActual`.
+  // NOTE: The walk here to determine the parameter captures only works if the
+  // walk visits types in the same order as lexical parsing. This is because the
+  // captured parameters can depend on each other, so they have to be
+  // reparameterized in a order that keeps the dependencies valid.
+  llvm::SmallSetVector<ParamDeclRefAttr, 4> paramRefs;
+  actual.walk([&](ParamDeclRefAttr ref) { paramRefs.insert(ref); });
+  ParameterEvaluator replacer;
+  SmallVector<Type> paramTypes;
+  for (auto [i, ref] : llvm::enumerate(paramRefs)) {
+    paramTypes.push_back(replacer.getReboundType(ref.getType()));
+    replacer.setParameterValue(ref.getName(),
+                               ParamIndexRefAttr::get(i, paramTypes.back()));
+  }
+  auto reparamActual =
+      cast<LITSignatureType>(replacer.getReboundType(reducedActual));
+
+  // Now reparameterize `reducedExpected`. Captured parameters are replaced with
+  // `*(0,i) where i < N` and actual parameters are replaced with `*(0,N+j)`.
+  for (auto [i, type] : llvm::enumerate(actual.getParamTypes())) {
+    paramTypes.push_back(replacer.getReboundType(type));
+    replacer.addInputParam(
+        ParamIndexRefAttr::get(i + paramRefs.size(), paramTypes.back()));
+  }
+  auto reparamMetadata = FnMetadataAttr::get(
+      reducedExpected.getArgListAttrs(),
+      PogListAttr::get(ctx, paramTypes.size()),
+      reducedExpected.getNumImplicitLifetimeDecls(),
+      reducedExpected.getCaptureLifetimes(),
+      reducedExpected.getIsNestedLifetimeExclusivityCheckingDisabled());
+  auto reparamExpected = SignatureType::get(
+      cast<FunctionType>(replacer.getReboundType(reducedExpected.getValues())),
+      paramTypes, {}, reducedExpected.getArgConventions(),
+      reducedExpected.getFnEffects(), reparamMetadata);
+
+  // We can attempt to generate the thunk now.
+  Attribute key = ArrayAttr::get(
+      ctx, {TypeAttr::get(reparamActual), TypeAttr::get(reparamExpected)});
   LIT::FuncOp thunk =
-      emitter.shared.getOrCreateFunctionThunk(reducedActual, reducedExpected);
+      emitter.shared.getOrCreateFunctionThunk(key, generateConversionThunk);
   if (!thunk) {
     dest.resetForError();
     return {};
   }
 
-  // Cast to the callee reduced type.
+  // Cast the callee to the reduced actual type.
   TypedAttr calleeParam =
       ParamOperatorAttr::get(POC::Rebind, callee.get(), reducedActual);
 
-  // Bind it to the thunk.
+  // Bind the thunk to the captured parameters, leaving the actual parameters
+  // unbound. This binds the callee type into the current scope.
   ParameterEvaluator evaluator;
+  for (ParamDeclRefAttr ref : paramRefs)
+    evaluator.addInputParam(ref);
   for (Type type : expected.getParamTypes())
     evaluator.addInputParam(UnboundAttr::get(evaluator.getReboundType(type)));
   evaluator.addInputParam(calleeParam);
@@ -353,6 +463,7 @@ CValue LIT::convertFunctionValue(CValue value, const ExprNode *expr,
   SymbolConstantAttr symbol = thunk.getBoundSymbolRef(
       ParameterExprArrayAttr::get(ctx, evaluator.getInputParams()));
 
+  // Finally, cast the result back to the expected type.
   return emitter.emitCResult(
       PValue(ParamOperatorAttr::get(POC::Rebind, {symbol}, expected)), expr,
       dest);
