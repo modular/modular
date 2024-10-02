@@ -46,7 +46,7 @@ fn test_matmul_selection():
         DType.bfloat16,
         transpose_b=True,
         target="sm_80",
-    ](482, 4096, 14400)
+    ](482, 4096, 14336)
     # CHECK: ampere_bfloat16_bfloat16_256x128_3_k3_NT
     # CHECK: (128, 256, 64)
     # CHECK: (64, 64, 64)
