@@ -120,10 +120,10 @@ struct AttributeIdentifiers {
 
 /// Convert LLVM metadata expressed in KGEN attributes to an LLVM dialect
 /// compatible representation. Unsupport metadata values are rejected.
-static LogicalResult convertLLVMMetadata(LLVM::LLVMFuncOp func,
-                                         SignatureType sig,
-                                         DictionaryAttr metadata,
-                                         const AttributeIdentifiers &ids) {
+static LogicalResult
+convertLLVMMetadata(LLVM::LLVMFuncOp func, SignatureType sig,
+                    DictionaryAttr metadata, const AttributeIdentifiers &ids,
+                    const TypeConverter *tc, TargetInfoAttr target) {
   NamedAttrList attrs = func->getAttrDictionary();
   SmallVector<Attribute> passthrough =
       llvm::to_vector(func.getPassthroughAttr());
@@ -184,12 +184,28 @@ static LogicalResult convertLLVMMetadata(LLVM::LLVMFuncOp func,
   // the correpsonding LLVM argument and result attributes.
   SmallVector<Attribute> argAttrs;
   NamedAttrList list;
+  bool needsByVal =
+      target.getTriple().isNVPTX() &&
+      func->hasAttr(mlir::NVVM::NVVMDialect::getKernelFuncAttrName()) &&
+      func.getLinkage() == LLVM::Linkage::External;
   for (auto [i, conv, type] :
        llvm::enumerate(sig.getArgConventions(), sig.getArguments())) {
     list.clear();
 
     switch (conv) {
     case ArgConvention::OwnedInMem:
+      list.set(ids.noalias, b.getUnitAttr());
+      [[fallthrough]];
+    case ArgConvention::BorrowedInMem:
+      if (needsByVal) {
+        list.set(StringAttr::get(func.getContext(),
+                                 LLVM::LLVMDialect::getByValAttrName()),
+                 TypeAttr::get(tc->convertType(
+                     cast<PointerType>(type).getElementType())));
+      }
+      list.set(ids.nonnull, b.getUnitAttr());
+      list.set(ids.noundef, b.getUnitAttr());
+      break;
     case ArgConvention::InOut:
     case ArgConvention::ByRefResult:
     case ArgConvention::ByRefError:
@@ -200,9 +216,7 @@ static LogicalResult convertLLVMMetadata(LLVM::LLVMFuncOp func,
       // mutable in-memory arguments are noalias.
       list.set(ids.noalias, b.getUnitAttr());
       [[fallthrough]];
-
     case ArgConvention::Ref:
-    case ArgConvention::BorrowedInMem:
       // We know the pointers that back in-memory arguments are nonnull.
       list.set(ids.nonnull, b.getUnitAttr());
       [[fallthrough]];
@@ -335,9 +349,6 @@ public:
     auto funcOp =
         createLLVMFunc(b, target, func.getLoc(), func.getNameAttr(), funcType,
                        getLinkageKind(func.getExportKind()));
-    if (failed(convertLLVMMetadata(funcOp, func.getSignature(),
-                                   func.getLLVMMetadataAttr(), ids)))
-      return failure();
     if (func.isExported()) {
       funcOp.setDsoLocal(true);
 
@@ -347,6 +358,10 @@ public:
         funcOp->setAttr(mlir::NVVM::NVVMDialect::getKernelFuncAttrName(),
                         b.getUnitAttr());
     }
+    if (failed(convertLLVMMetadata(funcOp, func.getSignature(),
+                                   func.getLLVMMetadataAttr(), ids,
+                                   typeConverter, target)))
+      return failure();
 
     if (func.getCoroutineType()) {
       Type coroType =
