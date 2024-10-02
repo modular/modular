@@ -27,7 +27,7 @@ from .cast import cast
 from .complex import as_interleaved_complex
 from .concat import concat
 from .constant import constant
-from .custom import custom
+from .custom import custom, inplace_custom
 from .debug import print
 from .elementwise import *
 from .gather import gather
