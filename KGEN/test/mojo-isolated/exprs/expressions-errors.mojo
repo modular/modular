@@ -561,9 +561,9 @@ fn compare_mem_result():
 
 fn test_bad_ref(a: Int, b: CopyAndInitMemType):
 
-  var bref = Reference.address_of(b) # ok
+  var bref = Pointer.address_of(b) # ok
 
-  # expected-error @+1 {{invalid call to '__le__': right side cannot be converted from 'Reference[0, CopyAndInitMemType, b, 0]' to 'CopyAndInitMemType'}}
+  # expected-error @+1 {{invalid call to '__le__': right side cannot be converted from 'Pointer[0, CopyAndInitMemType, b, 0]' to 'CopyAndInitMemType'}}
   _ = b <= bref
 
 fn transfer_diags[param: String](borrowed_arg: CopyAndInitMemType, obj: SomeNonTrivRegPassable, *vararg: String):
@@ -616,19 +616,19 @@ fn testSomeThing(a: SomeThing):
 # Issue #32603: References to borrowed args in generics miscompile when instantiated on regpassable types
 fn get_ref_to_bad_argument[T: AnyType](a: T, *args: T):
   # These are all fine since they are not returned.
-  _ = Reference.address_of(a)
+  _ = Pointer.address_of(a)
   _ = __lifetime_of(a)
   _ = __get_mvalue_as_litref(a)
   # This is okay. The VariadicListMem has a lifetime.
-  _ = Reference.address_of(args)
-  _ = Reference.address_of(args[0])
+  _ = Pointer.address_of(args)
+  _ = Pointer.address_of(args[0])
 
 @register_passable
 struct NonTrivialReg:
   pass
 
 fn get_ref_to_reg_variadic(*args: NonTrivialReg):
-  _ = Reference.address_of(args[0])
+  _ = Pointer.address_of(args[0])
 
 fn variadic_int(*x: Int) -> Bool: pass
 
@@ -639,12 +639,12 @@ fn invalid_call_variadic_int(a: Int):
     if variadic_int(a, a):
         pass
 
-fn test_bad_ref_errors[T: AnyType](a: Reference[T, _], b: Reference[T, _]):
-  # expected-error @below {{cannot implicitly convert 'T' value to 'Reference[is_mutable, T, lifetime, 0]'}}
-  var x : Reference[T, b.lifetime] = a[]
+fn test_bad_ref_errors[T: AnyType](a: Pointer[T, _], b: Pointer[T, _]):
+  # expected-error @below {{cannot implicitly convert 'T' value to 'Pointer[is_mutable, T, lifetime, 0]'}}
+  var x : Pointer[T, b.lifetime] = a[]
 
-  # expected-error @below {{cannot implicitly convert 'T' value to 'Reference[1, T, MutableAnyLifetime, 0]'}}
-  var y : Reference[T,  __mlir_attr.`#lit.any.lifetime<1>: !lit.lifetime<1>`, a.address_space] = a[]
+  # expected-error @below {{cannot implicitly convert 'T' value to 'Pointer[1, T, MutableAnyLifetime, 0]'}}
+  var y : Pointer[T,  __mlir_attr.`#lit.any.lifetime<1>: !lit.lifetime<1>`, a.address_space] = a[]
 
 fn test_subscript_conflict(a: Int):
   # expected-error @below {{duplicate keyword parameter 'idx'}}
@@ -654,9 +654,9 @@ fn test_subscript_conflict(a: Int):
 
 struct Addable:
     fn __add__(self, other: Self): pass # expected-note {{function declared here}}
-fn test(a: Reference[Addable, _], b: Addable):
+fn test(a: Pointer[Addable, _], b: Addable):
     # FIXME: This shouldn't mention is_mutable since it is an implicit parameter.
-    # expected-error @+1 {{invalid call to '__add__': right side cannot be converted from 'Reference[is_mutable, Addable, lifetime, 0]' to 'Addable'}}
+    # expected-error @+1 {{invalid call to '__add__': right side cannot be converted from 'Pointer[is_mutable, Addable, lifetime, 0]' to 'Addable'}}
     _ = b+a
 
 
@@ -665,14 +665,14 @@ struct ThingWithFields:
   var field: Int
 
 fn field_sensitive_lifetimes(a: ThingWithFields)
-    -> Reference[ThingWithFields, __lifetime_of(a.field)]:
+    -> Pointer[ThingWithFields, __lifetime_of(a.field)]:
 
   # expected-error @+1 {{'ThingWithFields' value has no attribute 'field_abc'}}
   _ = __lifetime_of(a.field_abc)
   # expected-error @+1 {{MLIR type 'index' has no attributes}}
   _ = __lifetime_of(int.field_abc)
 
-  # expected-error @+1 {{cannot implicitly convert 'ThingWithFields' value to 'Reference[0, ThingWithFields, a.field, 0]'}}
+  # expected-error @+1 {{cannot implicitly convert 'ThingWithFields' value to 'Pointer[0, ThingWithFields, a.field, 0]'}}
   return a
 
 
@@ -696,10 +696,10 @@ fn unbound_function_type():
 
 
 
-# Crash converting mvalue of #lit.any.lifetime lifetime to Reference with specific one.
+# Crash converting mvalue of #lit.any.lifetime lifetime to Pointer with specific one.
 # https://github.com/modularml/mojo/issues/1921
 struct SomeStruct:
   fn refBindingToImmortal(inout self, ptr: UnsafePointer[Int])
-      -> Reference[Int, __lifetime_of(self)]:
-    # expected-error @below {{cannot implicitly convert 'Reference[1, Int, MutableAnyLifetime, 0]' value to 'Reference[1, Int, self, 0]'}}
-    return Reference.address_of(ptr[])
+      -> Pointer[Int, __lifetime_of(self)]:
+    # expected-error @below {{cannot implicitly convert 'Pointer[1, Int, MutableAnyLifetime, 0]' value to 'Pointer[1, Int, self, 0]'}}
+    return Pointer.address_of(ptr[])
