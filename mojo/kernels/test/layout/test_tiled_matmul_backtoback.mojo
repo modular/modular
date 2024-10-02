@@ -169,7 +169,7 @@ fn matmul_ukern[
 
             @parameter
             for n1 in range(CstoresPer):
-                C.store[width=width, alignment=Align](
+                C.store[alignment=Align](
                     (n1 + m * CstoresPer + n0 * (mr * CstoresPer)) * width,
                     acc[n1 + n0 * CstoresPer + m * nr],
                 )
@@ -374,9 +374,9 @@ fn strided_store[
 ](p: UnsafePointer[Scalar[elt]], i: Int, x: SIMD[elt, W]):
     @parameter
     if X == 1:
-        p.store[width=W](i, x)
+        p.store(i, x)
     else:
-        (p + i * X).strided_store[width=W](x, X)
+        (p + i * X).strided_store(x, X)
 
 
 @always_inline

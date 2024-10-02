@@ -530,9 +530,7 @@ fn _copy_nd_buffer_to_layout_tensor[
                 var src_element = src.data.offset(src_idx).load[
                     width=vec_size, alignment=alignment
                 ]()
-                dst.ptr.offset(dst_idx).store[
-                    width=vec_size, alignment=alignment
-                ](src_element)
+                dst.ptr.store[alignment=alignment](dst_idx, src_element)
 
     # 2d-vector load/store
     elif (
@@ -573,7 +571,6 @@ fn _copy_nd_buffer_to_layout_tensor[
                     ](src_idx).cast[dtype]()
 
                     dst.ptr.store[
-                        width=vec_width,
                         alignment = alignof[SIMD[dtype, vec_width]](),
                     ](dst_idx, src_vec)
 
@@ -680,9 +677,7 @@ fn _copy_nd_buffer_to_layout_tensor_masked[
                 var src_element = src.data.offset(src_idx).load[
                     width=vec_size, alignment=alignment
                 ]()
-                dst.ptr.offset(dst_idx).store[
-                    width=vec_size, alignment=alignment
-                ](src_element)
+                dst.ptr.store[alignment=alignment](dst_idx, src_element)
 
     # 2d-vector load/store
     elif (
@@ -723,7 +718,6 @@ fn _copy_nd_buffer_to_layout_tensor_masked[
                     ](src_idx).cast[dtype]()
 
                     dst.ptr.store[
-                        width=vec_width,
                         alignment = alignof[SIMD[dtype, vec_width]](),
                     ](dst_idx, src_vec)
 
@@ -809,9 +803,7 @@ fn _copy_layout_tensor_to_nd_buffer[
             var src_element = src.ptr.offset(src_idx).load[
                 width=vec_size, alignment=alignment
             ]()
-            dst.data.offset(dst_idx).store[width=vec_size, alignment=alignment](
-                src_element
-            )
+            dst.data.store[alignment=alignment](dst_idx, src_element)
 
     # 2d-vector load/store
     elif (
@@ -840,10 +832,9 @@ fn _copy_layout_tensor_to_nd_buffer[
                     alignment = alignof[SIMD[dtype, vec_width]](),
                 ](src_idx).cast[dtype]()
 
-                dst.data.store[
-                    width=vec_width,
-                    alignment = alignof[SIMD[dtype, vec_width]](),
-                ](dst_idx, src_vec)
+                dst.data.store[alignment = alignof[SIMD[dtype, vec_width]](),](
+                    dst_idx, src_vec
+                )
 
     # Scalar case.
     else:
@@ -922,9 +913,7 @@ fn _copy_layout_tensor_to_nd_buffer_masked[
             var src_element = src.ptr.offset(src_idx).load[
                 width=vec_size, alignment=alignment
             ]()
-            dst.data.offset(dst_idx).store[width=vec_size, alignment=alignment](
-                src_element
-            )
+            dst.data.offset(dst_idx).store[alignment=alignment](src_element)
 
     # 2d-vector load/store
     elif (
@@ -953,10 +942,9 @@ fn _copy_layout_tensor_to_nd_buffer_masked[
                     alignment = alignof[SIMD[dtype, vec_width]](),
                 ](src_idx).cast[dtype]()
 
-                dst.data.store[
-                    width=vec_width,
-                    alignment = alignof[SIMD[dtype, vec_width]](),
-                ](dst_idx, src_vec)
+                dst.data.store[alignment = alignof[SIMD[dtype, vec_width]](),](
+                    dst_idx, src_vec
+                )
 
     # Scalar case.
     else:

@@ -290,9 +290,8 @@ struct Element[dtype: DType, layout: Layout](Stringable, Formattable):
 
             @parameter
             for i in range(elements):
-                (ptr + __get_offset[0, i](self.runtime_layout)).store[
-                    width=size, alignment=alignment
-                ](
+                ptr.store[alignment=alignment](
+                    __get_offset[0, i](self.runtime_layout),
                     self.element_data.slice[size, offset = i * size](),
                 )
             return
@@ -305,9 +304,8 @@ struct Element[dtype: DType, layout: Layout](Stringable, Formattable):
 
             @parameter
             for i in range(elements):
-                (ptr + __get_offset[i, 0](self.runtime_layout)).store[
-                    width=size, alignment=alignment
-                ](
+                ptr.store[alignment=alignment](
+                    __get_offset[i, 0](self.runtime_layout),
                     self.element_data.slice[size, offset = i * size](),
                 )
             return
@@ -383,9 +381,7 @@ struct Element[dtype: DType, layout: Layout](Stringable, Formattable):
                     for j in range(dim_1):
                         if j >= element_bounds[1]:
                             break
-                        ptr.store[width=1](
-                            __get_offset[i, j](self.runtime_layout)
-                        )
+                        ptr[] = __get_offset[i, j](self.runtime_layout)
                 return
 
             @parameter

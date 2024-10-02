@@ -7,7 +7,7 @@
 from collections import Optional, OptionalReg
 from math import ceildiv
 from os import abort
-from sys import alignof, prefetch, simdwidthof, sizeof
+from sys import alignof, prefetch, simdwidthof, sizeof, triple_is_nvidia_cuda
 from sys.intrinsics import PrefetchOptions
 
 from algorithm import vectorize
@@ -920,7 +920,7 @@ struct LayoutTensor[
             val: The value to be stored.
         """
 
-        return self.ptr.store[width=width](self._offset(m, n), val)
+        return self.ptr.store(self._offset(m, n), val)
 
     @always_inline
     fn aligned_store[width: Int](self, m: Int, n: Int, val: SIMD[dtype, width]):
@@ -936,9 +936,7 @@ struct LayoutTensor[
         """
 
         alias alignment = alignof[SIMD[dtype, width]]()
-        return self.ptr.store[width=width, alignment=alignment](
-            self._offset(m, n), val
-        )
+        return self.ptr.store[alignment=alignment](self._offset(m, n), val)
 
     @staticmethod
     @always_inline("nodebug")
@@ -3296,6 +3294,7 @@ struct LayoutTensorIter[
     /,
     *,
     address_space: AddressSpace = AddressSpace.GENERIC,
+    alignment: Int = alignof[type]() if triple_is_nvidia_cuda() else 1,
     circular: Bool = False,
 ]:
     """Iterate through a memory buffer and construct layout tensor.
@@ -3303,7 +3302,7 @@ struct LayoutTensorIter[
     The returned layout tensor is NOT vectorized. User should explicitly vectorize.
     """
 
-    var ptr: UnsafePointer[Scalar[type], address_space]
+    var ptr: UnsafePointer[Scalar[type], address_space, False, alignment]
     var offset: Int
     var stride: Int
     var bound: Int
@@ -3312,7 +3311,7 @@ struct LayoutTensorIter[
     @always_inline
     fn __init__(inout self):
         """Empty iterator, used as default value."""
-        self.ptr = UnsafePointer[Scalar[type], address_space]()
+        self.ptr = __type_of(self.ptr)()
         self.offset = 0
         self.stride = 0
         self.bound = 0
@@ -3321,7 +3320,7 @@ struct LayoutTensorIter[
     @always_inline
     fn __init__(
         inout self,
-        ptr: UnsafePointer[Scalar[type], address_space],
+        ptr: __type_of(self.ptr),
         bound: Int,
         stride: Int = layout.size() if layout.all_dims_known() else UNKNOWN_VALUE,
         offset: Int = 0,
@@ -3389,7 +3388,7 @@ struct LayoutTensorIter[
         self += int(rhs)
 
     @always_inline
-    fn next[T: Intable](self, rhs: T) -> Self as result:
+    fn next[T: Intable](self, rhs: T) -> Self:
         """Return an iterator pointing to the next `rhs` layout tensor."""
 
         var next_offset = self.offset + int(rhs) * self.stride
@@ -3398,7 +3397,7 @@ struct LayoutTensorIter[
         if circular:
             next_offset = next_offset % self.bound
 
-        return __type_of(result)(
+        return Self(
             self.ptr,
             self.bound,
             stride=self.stride,
@@ -3437,7 +3436,11 @@ struct LayoutTensorIter[
     fn reshape[
         dst_layout: Layout,
     ](self) -> LayoutTensorIter[
-        type, dst_layout, address_space=address_space, circular=circular
+        type,
+        dst_layout,
+        address_space=address_space,
+        alignment=alignment,
+        circular=circular,
     ] as result:
         constrained[
             dst_layout.size() == layout.size(),
@@ -3465,12 +3468,21 @@ struct LayoutTensorIter[
 
     @always_inline
     fn bitcast[
-        new_type: DType, *, address_space: AddressSpace = Self.address_space
+        new_type: DType,
+        *,
+        address_space: AddressSpace = Self.address_space,
+        alignment: Int = Self.alignment,
     ](self) -> LayoutTensorIter[
-        new_type, layout, address_space=address_space, circular = Self.circular
+        new_type,
+        layout,
+        address_space=address_space,
+        alignment=alignment,
+        circular = Self.circular,
     ] as result:
         return __type_of(result)(
-            self.ptr.bitcast[new_type, address_space](),
+            self.ptr.bitcast[
+                new_type, address_space=address_space, alignment=alignment
+            ](),
             self.bound,
             self.stride,
             self.offset,
