@@ -1,6 +1,12 @@
-package(default_visibility = ["//visibility:public"])
+load("@pip_deps//:requirements.bzl", "requirement")
 
-filegroup(
+py_library(
     name = "driver",
     srcs = glob(["**/*.py"]),
+    imports = ["../.."],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//SDK/lib/API/python/max/_driver",
+        requirement("numpy"),
+    ],
 )

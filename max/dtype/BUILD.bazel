@@ -1,6 +1,12 @@
-package(default_visibility = ["//visibility:public"])
+load("@pip_deps//:requirements.bzl", "requirement")
 
-filegroup(
+py_library(
     name = "dtype",
     srcs = glob(["**/*.py"]),
+    imports = ["../.."],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//SDK/lib/API/python/max/_dtype",
+        requirement("numpy"),
+    ],
 )
