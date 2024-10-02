@@ -454,6 +454,15 @@ class Graph:
                 is not None else weight.dtype.align
             ),
         )[0]
+
+        # Set the constant external op's device explicitly to CPU.
+        # This is needed to prevent AssignDevices from automatically assigning
+        # mo.constant.external to the default device, which could be GPU.
+        const_external_op = weight_tensor._mlir_value.owner
+        const_external_op.attributes["device"] = mlir.Attribute.parse(
+            '#M.device_ref<"cpu", 0>'
+        )
+
         self.weights[weight.name] = _GraphWeight(weight, weight_tensor)
         return weight_tensor
 
