@@ -779,7 +779,7 @@ struct Bench:
 
         @parameter
         @always_inline
-        fn benchmark_fn(num_iters: Int) -> Int:
+        fn benchmark_fn(num_iters: Int) raises -> Int:
             """Executes benchmark for a target function.
 
             Args:
