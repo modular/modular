@@ -455,7 +455,7 @@ static SignatureType removeSingletonParams(SignatureType signature) {
       // to the appropriate index of the resultant parameter number, e.g. the
       // bool in a lifetime may shift to a new index.
       auto idxValue = ParamIndexRefAttr::get(/*depth*/ -1, /*isResult*/ false,
-                                             idx - numRemoved, paramType);
+                                             idx - numRemoved, adjParamType);
       evaluator.addInputValue(idxValue);
 
       // We tell getSpecializedSignature not to touch this though.
