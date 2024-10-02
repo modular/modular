@@ -375,7 +375,7 @@ struct _VariadicListMemIter[
     ]
 
     var index: Int
-    var src: Reference[Self.variadic_list_type, list_lifetime]
+    var src: Pointer[Self.variadic_list_type, list_lifetime]
 
     fn __next__(inout self) -> Self.variadic_list_type.reference_type:
         while True:
@@ -394,7 +394,7 @@ struct VariadicListMem[
         `!lit.ref<`, element_type, `, `, lifetime, `, 0>`
     ]
 
-    alias reference_type = Reference[element_type, lifetime]
+    alias reference_type = Pointer[element_type, lifetime]
 
     fn __init__(
         inout self,
@@ -446,7 +446,7 @@ struct VariadicListMem[
             element_type,
             lifetime,
             __lifetime_of(self),
-        ](0, Reference.address_of(self))
+        ](0, Pointer.address_of(self))
 
 
 alias _AnyTypeMetaType = __mlir_type[`!lit.anytrait<`, AnyType, `>`]
@@ -522,7 +522,7 @@ struct AddressSpace:
 
 @value
 @register_passable("trivial")
-struct Reference[
+struct Pointer[
     is_mutable: Bool, //,
     type: AnyType,
     lifetime: Lifetime[is_mutable].type,
@@ -549,14 +549,14 @@ struct Reference[
     fn address_of(
         ref [lifetime, address_space._value.value]value: type
     ) -> Self:
-        return Reference(_mlir_value=__get_mvalue_as_litref(value))
+        return Pointer(_mlir_value=__get_mvalue_as_litref(value))
 
     fn __getitem__(self) -> ref [lifetime, address_space._value.value] type:
         return __get_litref_as_mvalue(self._value)
 
     @__unsafe_disable_nested_lifetime_exclusivity
     @always_inline("nodebug")
-    fn __eq__(self, rhs: Reference[type, _, address_space]) -> Bool:
+    fn __eq__(self, rhs: Pointer[type, _, address_space]) -> Bool:
         return True
 
 

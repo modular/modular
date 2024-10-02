@@ -137,15 +137,15 @@ fn testMyOptional(a: MyOptional[Int]):
 
 
 # CHECK-LABEL: lit.func @"findall
-# CHECK-NEXT: lit.call {{.*}}Reference::@"address_of{{.*}}(%self)
+# CHECK-NEXT: lit.call {{.*}}Pointer::@"address_of{{.*}}(%self)
 struct DefBoxInference:
     def findall(self) -> DefBoxInferenceIter[__lifetime_of(self)]:
-        return DefBoxInferenceIter(Reference.address_of(self))
+        return DefBoxInferenceIter(Pointer.address_of(self))
 
 
 @value
 struct DefBoxInferenceIter[
     lifetime: ImmutableLifetime,
 ]:
-    fn __init__(inout self, regex: Reference[DefBoxInference, lifetime]):
+    fn __init__(inout self, regex: Pointer[DefBoxInference, lifetime]):
         pass

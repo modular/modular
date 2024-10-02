@@ -1098,8 +1098,8 @@ fn caught_eh_cleanup():
 # CHECK-LABEL: lit.func @"test_ref_field
 # https://linear.app/modularml/issue/MOCO-1251
 fn test_ref_field(owned mem: MemPair):
-  # Reference to subfield.
-  r = Reference.address_of(mem.a)
+  # Pointer to subfield.
+  r = Pointer.address_of(mem.a)
 
   # Subfield reference keeps entire value alive.
   # CHECK: lit.call {{.*}}__eq__

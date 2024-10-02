@@ -359,7 +359,7 @@ fn pack_it[*Ts: AnyType](*args: *Ts) -> String:
     return String()
 
 
-fn also_broken(r: Reference[String]) -> String:
+fn also_broken(r: Pointer[String]) -> String:
     return r[]
 
 
@@ -375,12 +375,12 @@ fn test_byref_slot_with_references():
 
     # CHECK: [[RESULTTMP:%.*]] = lit.var.decl "__call_result_tmp__"
     # CHECK-NEXT: lit.call {{.*}}also_broken{{.*}}({{.*}},  [[RESULTTMP]])
-    f = also_broken(Reference.address_of(f))
+    f = also_broken(Pointer.address_of(f))
     # CHECK-NEXT: lit.call {{.*}}String::@"__moveinit__{{.*}}(%f, [[RESULTTMP]])
 
     # CHECK: [[RESULTTMP:%.*]] = lit.var.decl "__call_result_tmp__"
     # CHECK-NEXT: lit.call {{.*}}also_broken{{.*}}({{.*}},  [[RESULTTMP]])
-    f = also_broken(Reference.address_of(f))
+    f = also_broken(Pointer.address_of(f))
     # CHECK-NEXT: lit.call {{.*}}String::@"__moveinit__{{.*}}(%f, [[RESULTTMP]])
 
 

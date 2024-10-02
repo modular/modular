@@ -1342,7 +1342,7 @@ fn variadic_attr_callee[key_type: CollectionElement](
 
 # Test that parameter inference works with implicit conversions - in this case
 # that we can infer the parameters of 'thing_taking_reference' even though x
-# needs to be built as a Reference.
+# needs to be built as a Pointer.
 fn thing_taking_ref[
   type: AnyType,
   //,
