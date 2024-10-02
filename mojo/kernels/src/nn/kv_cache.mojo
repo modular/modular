@@ -48,7 +48,7 @@ fn kv_cache_length_h8_d128_bshd_bf16[
             num_heads=8, head_size=128, layout=KVCacheLayout.BSHD
         ),
     ],
-    output: NDBuffer[DType.int64, 1],
+    output: NDBuffer[DType.uint32, 1],
     ctx: MojoCallContextPtr,
 ):
     return _kv_cache_length[target=target](kv_collection, output, ctx)
@@ -65,7 +65,7 @@ fn kv_cache_length_h8_d128_bhsd_bf16[
             num_heads=8, head_size=128, layout=KVCacheLayout.BHSD
         ),
     ],
-    output: NDBuffer[DType.int64, 1],
+    output: NDBuffer[DType.uint32, 1],
     ctx: MojoCallContextPtr,
 ):
     return _kv_cache_length[target=target](kv_collection, output, ctx)
@@ -82,7 +82,7 @@ fn kv_cache_length_h6_d48_bshd_f32[
             num_heads=6, head_size=48, layout=KVCacheLayout.BSHD
         ),
     ],
-    output: NDBuffer[DType.int64, 1],
+    output: NDBuffer[DType.uint32, 1],
     ctx: MojoCallContextPtr,
 ):
     return _kv_cache_length[target=target](kv_collection, output, ctx)
@@ -99,7 +99,7 @@ fn kv_cache_length_h6_d48_bhsd_f32[
             num_heads=6, head_size=48, layout=KVCacheLayout.BHSD
         ),
     ],
-    output: NDBuffer[DType.int64, 1],
+    output: NDBuffer[DType.uint32, 1],
     ctx: MojoCallContextPtr,
 ):
     return _kv_cache_length[target=target](kv_collection, output, ctx)
@@ -116,7 +116,7 @@ fn kv_cache_length_h8_d128_bshd_f32[
             num_heads=8, head_size=128, layout=KVCacheLayout.BSHD
         ),
     ],
-    output: NDBuffer[DType.int64, 1],
+    output: NDBuffer[DType.uint32, 1],
     ctx: MojoCallContextPtr,
 ):
     return _kv_cache_length[target=target](kv_collection, output, ctx)
@@ -133,7 +133,7 @@ fn kv_cache_length_h8_d128_bhsd_f32[
             num_heads=8, head_size=128, layout=KVCacheLayout.BHSD
         ),
     ],
-    output: NDBuffer[DType.int64, 1],
+    output: NDBuffer[DType.uint32, 1],
     ctx: MojoCallContextPtr,
 ):
     return _kv_cache_length[target=target](kv_collection, output, ctx)
@@ -150,7 +150,7 @@ fn kv_cache_length_h1_d10_bhsd_f32[
             num_heads=1, head_size=10, layout=KVCacheLayout.BHSD
         ),
     ],
-    output: NDBuffer[DType.int64, 1],
+    output: NDBuffer[DType.uint32, 1],
     ctx: MojoCallContextPtr,
 ):
     return _kv_cache_length[target=target](kv_collection, output, ctx)
@@ -167,7 +167,7 @@ fn kv_cache_length_h1_d10_bshd_f32[
             num_heads=1, head_size=10, layout=KVCacheLayout.BSHD
         ),
     ],
-    output: NDBuffer[DType.int64, 1],
+    output: NDBuffer[DType.uint32, 1],
     ctx: MojoCallContextPtr,
 ):
     return _kv_cache_length[target=target](kv_collection, output, ctx)
@@ -184,7 +184,7 @@ fn kv_cache_length_h1_d10_bhsd_bf16[
             num_heads=1, head_size=10, layout=KVCacheLayout.BHSD
         ),
     ],
-    output: NDBuffer[DType.int64, 1],
+    output: NDBuffer[DType.uint32, 1],
     ctx: MojoCallContextPtr,
 ):
     return _kv_cache_length[target=target](kv_collection, output, ctx)
@@ -201,7 +201,7 @@ fn kv_cache_length_h1_d10_bshd_bf16[
             num_heads=1, head_size=10, layout=KVCacheLayout.BSHD
         ),
     ],
-    output: NDBuffer[DType.int64, 1],
+    output: NDBuffer[DType.uint32, 1],
     ctx: MojoCallContextPtr,
 ):
     return _kv_cache_length[target=target](kv_collection, output, ctx)
@@ -218,7 +218,7 @@ fn kv_cache_length_h8_d64_bshd_bf16[
             num_heads=8, head_size=64, layout=KVCacheLayout.BSHD
         ),
     ],
-    output: NDBuffer[DType.int64, 1],
+    output: NDBuffer[DType.uint32, 1],
     ctx: MojoCallContextPtr,
 ):
     return _kv_cache_length[target=target](kv_collection, output, ctx)
@@ -235,7 +235,7 @@ fn kv_cache_length_h8_d64_bhsd_bf16[
             num_heads=8, head_size=64, layout=KVCacheLayout.BHSD
         ),
     ],
-    output: NDBuffer[DType.int64, 1],
+    output: NDBuffer[DType.uint32, 1],
     ctx: MojoCallContextPtr,
 ):
     return _kv_cache_length[target=target](kv_collection, output, ctx)
@@ -252,7 +252,7 @@ fn kv_cache_length_h8_d64_bshd_f32[
             num_heads=8, head_size=64, layout=KVCacheLayout.BSHD
         ),
     ],
-    output: NDBuffer[DType.int64, 1],
+    output: NDBuffer[DType.uint32, 1],
     ctx: MojoCallContextPtr,
 ):
     return _kv_cache_length[target=target](kv_collection, output, ctx)
@@ -269,7 +269,7 @@ fn kv_cache_length_h8_d64_bhsd_f32[
             num_heads=8, head_size=64, layout=KVCacheLayout.BHSD
         ),
     ],
-    output: NDBuffer[DType.int64, 1],
+    output: NDBuffer[DType.uint32, 1],
     ctx: MojoCallContextPtr,
 ):
     return _kv_cache_length[target=target](kv_collection, output, ctx)
@@ -280,7 +280,7 @@ fn _kv_cache_length[
     type: DType, kv_params: KVCacheStaticParams, target: StringLiteral
 ](
     kv_collection: ContiguousKVCacheCollection[type, kv_params],
-    output: NDBuffer[DType.int64, 1],
+    output: NDBuffer[DType.uint32, 1],
     ctx: MojoCallContextPtr,
 ):
     """Returns the size of the cache in a ContiguousKVCacheCollection mo.opaque object.
@@ -2417,7 +2417,7 @@ fn _contiguous_kv_cache_collection[
 ](
     key_cache: NDBuffer[type, 5],
     value_cache: NDBuffer[type, 5],
-    cache_lengths: NDBuffer[DType.int64, 1],
+    cache_lengths: NDBuffer[DType.uint32, 1],
     is_cache_empty: NDBuffer[DType.bool, 1],
     seq_ids: NDBuffer[DType.int32, 1],
     # Note that num_layers and batch_size are scalars.
@@ -2480,7 +2480,7 @@ fn contiguous_kv_cache_collection_h6_d48_bshd[
 ](
     key_cache: NDBuffer[type, 5],
     value_cache: NDBuffer[type, 5],
-    cache_lengths: NDBuffer[DType.int64, 1],
+    cache_lengths: NDBuffer[DType.uint32, 1],
     is_cache_empty: NDBuffer[DType.bool, 1],
     seq_ids: NDBuffer[DType.int32, 1],
     num_layers: NDBuffer[DType.int32, 1],
@@ -2507,7 +2507,7 @@ fn contiguous_kv_cache_collection_h6_d48_bhsd[
 ](
     key_cache: NDBuffer[type, 5],
     value_cache: NDBuffer[type, 5],
-    cache_lengths: NDBuffer[DType.int64, 1],
+    cache_lengths: NDBuffer[DType.uint32, 1],
     is_cache_empty: NDBuffer[DType.bool, 1],
     seq_ids: NDBuffer[DType.int32, 1],
     num_layers: NDBuffer[DType.int32, 1],
@@ -2534,7 +2534,7 @@ fn contiguous_kv_cache_collection_h8_d128_bshd[
 ](
     key_cache: NDBuffer[type, 5],
     value_cache: NDBuffer[type, 5],
-    cache_lengths: NDBuffer[DType.int64, 1],
+    cache_lengths: NDBuffer[DType.uint32, 1],
     is_cache_empty: NDBuffer[DType.bool, 1],
     seq_ids: NDBuffer[DType.int32, 1],
     num_layers: NDBuffer[DType.int32, 1],
@@ -2561,7 +2561,7 @@ fn contiguous_kv_cache_collection_h8_d128_bhsd[
 ](
     key_cache: NDBuffer[type, 5],
     value_cache: NDBuffer[type, 5],
-    cache_lengths: NDBuffer[DType.int64, 1],
+    cache_lengths: NDBuffer[DType.uint32, 1],
     is_cache_empty: NDBuffer[DType.bool, 1],
     seq_ids: NDBuffer[DType.int32, 1],
     num_layers: NDBuffer[DType.int32, 1],
@@ -2588,7 +2588,7 @@ fn contiguous_kv_cache_collection_h1_d10_bshd[
 ](
     key_cache: NDBuffer[type, 5],
     value_cache: NDBuffer[type, 5],
-    cache_lengths: NDBuffer[DType.int64, 1],
+    cache_lengths: NDBuffer[DType.uint32, 1],
     is_cache_empty: NDBuffer[DType.bool, 1],
     seq_ids: NDBuffer[DType.int32, 1],
     num_layers: NDBuffer[DType.int32, 1],
@@ -2615,7 +2615,7 @@ fn contiguous_kv_cache_collection_h1_d10_bhsd[
 ](
     key_cache: NDBuffer[type, 5],
     value_cache: NDBuffer[type, 5],
-    cache_lengths: NDBuffer[DType.int64, 1],
+    cache_lengths: NDBuffer[DType.uint32, 1],
     is_cache_empty: NDBuffer[DType.bool, 1],
     seq_ids: NDBuffer[DType.int32, 1],
     num_layers: NDBuffer[DType.int32, 1],
@@ -2642,7 +2642,7 @@ fn contiguous_kv_cache_collection_h8_d64_bshd[
 ](
     key_cache: NDBuffer[type, 5],
     value_cache: NDBuffer[type, 5],
-    cache_lengths: NDBuffer[DType.int64, 1],
+    cache_lengths: NDBuffer[DType.uint32, 1],
     is_cache_empty: NDBuffer[DType.bool, 1],
     seq_ids: NDBuffer[DType.int32, 1],
     num_layers: NDBuffer[DType.int32, 1],
@@ -2669,7 +2669,7 @@ fn contiguous_kv_cache_collection_h8_d64_bhsd[
 ](
     key_cache: NDBuffer[type, 5],
     value_cache: NDBuffer[type, 5],
-    cache_lengths: NDBuffer[DType.int64, 1],
+    cache_lengths: NDBuffer[DType.uint32, 1],
     is_cache_empty: NDBuffer[DType.bool, 1],
     seq_ids: NDBuffer[DType.int32, 1],
     num_layers: NDBuffer[DType.int32, 1],
