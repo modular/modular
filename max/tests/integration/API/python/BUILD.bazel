@@ -56,6 +56,7 @@ modular_py_test(
 
 modular_py_test(
     name = "graphtests",
+    size = "large",
     srcs = glob([
         "graph_tests/**/*.py",
     ]),
@@ -109,6 +110,7 @@ modular_py_test(
 
 modular_py_test(
     name = "cuda_tests",
+    size = "large",
     srcs = glob(["gpu_tests/**/*.py"]),
     data = [
         "//KGEN:CompilerRT",
