@@ -160,7 +160,7 @@ struct ContiguousKVCache[
     )
     var _block: NDBuffer[type, 4, Self._internal_block_shape]
     var is_context_encoding: Bool
-    var cache_lengths: NDBuffer[DType.int64, 1]
+    var cache_lengths: NDBuffer[DType.uint32, 1]
     var batch_size: Int
 
     @always_inline
@@ -206,7 +206,7 @@ struct ContiguousKVCache[
     fn __init__(
         inout self,
         block: NDBuffer[type, 4, Self._internal_block_shape],
-        cache_lengths: NDBuffer[DType.int64, 1],
+        cache_lengths: NDBuffer[DType.uint32, 1],
         is_context_encoding: Bool,
         batch_size: Int,
     ):
@@ -336,7 +336,7 @@ struct ContiguousKVCacheCollection[
     alias ValueCacheType = ContiguousKVCache[type, kv_params, _max_batch_size]
     var key_cache: NDBuffer[type, 5]
     var value_cache: NDBuffer[type, 5]
-    var cache_lengths: NDBuffer[DType.int64, 1]
+    var cache_lengths: NDBuffer[DType.uint32, 1]
     var is_context_encoding: Bool
     var seq_ids: List[Int]
     var num_layers: Int
@@ -347,7 +347,7 @@ struct ContiguousKVCacheCollection[
         inout self,
         key_cache: NDBuffer[type, 5],
         value_cache: NDBuffer[type, 5],
-        cache_lengths: NDBuffer[DType.int64, 1],
+        cache_lengths: NDBuffer[DType.uint32, 1],
         is_context_encoding: Bool,
         seq_ids: List[Int],
         num_layers: Int,
