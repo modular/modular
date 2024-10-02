@@ -14,11 +14,8 @@ from buffer.dimlist import DimList, Dim
 from gpu import *
 from gpu.host.event import time_function
 from memory import UnsafePointer
-from nn.mha import (
-    _naive_attention_with_transpose,
-    flash_attention,
-    mha_gpu_naive,
-)
+from nn.mha import flash_attention, mha_gpu_naive
+from nn.mha_mask import NullMask
 from benchmark import (
     Bench,
     Bencher,
@@ -129,11 +126,25 @@ fn run_mha[
         @parameter
         if mask_rank == 3:
             flash_attention(
-                output_device, q_device, k_device, v_device, mask3d, scale, ctx
+                output_device,
+                q_device,
+                k_device,
+                v_device,
+                mask3d,
+                NullMask(),
+                scale,
+                ctx,
             )
         else:
             flash_attention(
-                output_device, q_device, k_device, v_device, mask4d, scale, ctx
+                output_device,
+                q_device,
+                k_device,
+                v_device,
+                mask4d,
+                NullMask(),
+                scale,
+                ctx,
             )
 
     @parameter
