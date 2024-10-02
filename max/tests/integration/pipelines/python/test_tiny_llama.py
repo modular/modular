@@ -177,6 +177,7 @@ async def test_tinyllama_max_new_tokens(
     while True:
         response = await tinyllama_model.next_token({request_id: context})
         if request_id not in response:
+            await tinyllama_model.release(context)
             break
         token = response[request_id]
         tokens.append(token)
@@ -195,6 +196,7 @@ async def test_tinyllama_max_new_tokens(
     while True:
         response = await tinyllama_model.next_token({request_id: context})
         if request_id not in response:
+            await tinyllama_model.release(context)
             break
         token = response[request_id]
         tokens.append(token)
