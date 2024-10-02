@@ -11,9 +11,9 @@ from gpu.host._compile import _get_nvptx_target
 # C++ backed implementation).
 # We don't have polymorphism in Mojo (yet!) so we need to wrap each method.
 
-alias DeviceFunction = DeviceFunctionV1
-alias DeviceBuffer = DeviceBufferV1
-alias DeviceContext = DeviceContextV1
+alias DeviceFunction = DeviceFunctionVariant
+alias DeviceBuffer = DeviceBufferVariant
+alias DeviceContext = DeviceContextVariant
 
 
 # Runtime switch to select Device context V1 (mojo) or V2 (C++)
@@ -22,7 +22,6 @@ fn _device_ctx_v2() -> Bool:
     return is_defined["MODULAR_ASYNCRT_DEVICE_CONTEXT_V2"]()
 
 
-@value
 struct DeviceFunctionVariant[
     func_type: AnyTrivialRegType, //,
     func: func_type,
@@ -52,24 +51,29 @@ struct DeviceFunctionVariant[
         _is_failable=_is_failable,
         _ptxas_info_verbose=_ptxas_info_verbose,
     ]
-    var impl: Variant[Self.V1, Self.V2]
+    var _impl: Variant[Self.V1, Self.V2]
 
     @parameter
-    fn v1(self) -> ref [self.impl] Self.V1:
-        return self.impl[Self.V1]
+    fn v1(self) -> ref [__lifetime_of(self._impl)] Self.V1:
+        return self._impl[Self.V1]
 
     @parameter
-    fn v2(self) -> ref [self.impl] Self.V2:
-        return self.impl[Self.V2]
+    fn v2(self) -> ref [__lifetime_of(self._impl)] Self.V2:
+        return self._impl[Self.V2]
 
-    def __init__(inout self, owned impl: Self.V1):
-        self.impl = impl
+    fn __init__(inout self, owned impl: Self.V1):
+        self._impl = impl^
 
-    def __init__(inout self, owned impl: Self.V2):
-        self.impl = impl
+    fn __init__(inout self, owned impl: Self.V2):
+        self._impl = impl^
+
+    fn __copyinit__(inout self, existing: Self):
+        self._impl = existing._impl
+
+    fn __moveinit__(inout self, owned existing: Self):
+        self._impl = existing._impl^
 
 
-@value
 struct DeviceBufferVariant[type: DType](Sized):
     alias V1 = DeviceBufferV1[type]
     alias V2 = DeviceBufferV2[type]
@@ -77,11 +81,11 @@ struct DeviceBufferVariant[type: DType](Sized):
     var _impl: Variant[Self.V1, Self.V2]
 
     @parameter
-    fn v1(self) -> ref [self._impl] Self.V1:
+    fn v1(self) -> ref [__lifetime_of(self._impl)] Self.V1:
         return self._impl[Self.V1]
 
     @parameter
-    fn v2(self) -> ref [self._impl] Self.V2:
+    fn v2(self) -> ref [__lifetime_of(self._impl)] Self.V2:
         return self._impl[Self.V2]
 
     def __init__(inout self, owned impl: Self.V1):
@@ -143,9 +147,9 @@ struct DeviceBufferVariant[type: DType](Sized):
     fn take_ptr(owned self) -> UnsafePointer[Scalar[type]]:
         @parameter
         if _device_ctx_v2():
-            return self.v2().take_ptr()
+            return self._impl.take[Self.V2]().take_ptr()
         else:
-            return self.v1().take_ptr()
+            return self._impl.take[Self.V1]().take_ptr()
 
     # DeviceContextV1 allows direct access to the raw device pointer
     # DeviceContextV2 will make this a method
@@ -163,30 +167,35 @@ struct DeviceBufferVariant[type: DType](Sized):
         return UnsafePointer[Scalar[type]]()
 
 
-@value
 struct DeviceContextVariant:
     """Wrapper struct to select V1 or V2 implementation at compile time."""
 
     alias V1 = DeviceContextV1
     alias V2 = DeviceContextV2
-    var impl: Variant[Self.V1, Self.V2]
+    var _impl: Variant[Self.V1, Self.V2]
 
     @parameter
-    fn v1(self) -> ref [self.impl] Self.V1:
-        return self.impl[Self.V1]
+    fn v1(self) -> ref [__lifetime_of(self._impl)] Self.V1:
+        return self._impl[Self.V1]
 
     @parameter
-    fn v2(self) -> ref [self.impl] Self.V2:
-        return self.impl[Self.V2]
+    fn v2(self) -> ref [__lifetime_of(self._impl)] Self.V2:
+        return self._impl[Self.V2]
 
     fn __init__(
         inout self, kind: StringLiteral = "cuda", gpu_id: Int = 0
     ) raises:
         @parameter
         if _device_ctx_v2():
-            self.impl = Self.V2(kind, gpu_id)
+            self._impl = Self.V2(kind, gpu_id)
         else:
-            self.impl = Self.V1(gpu_id)
+            self._impl = Self.V1(gpu_id)
+
+    fn __copyinit__(inout self, existing: Self):
+        self._impl = existing._impl
+
+    fn __moveinit__(inout self, owned existing: Self):
+        self._impl = existing._impl^
 
     fn __enter__(owned self) -> Self:
         return self^
@@ -429,6 +438,23 @@ struct DeviceContextVariant:
             self.v2().enqueue_copy_device_to_device[type](dst.v2(), src.v2())
         else:
             self.v1().enqueue_copy_device_to_device[type](dst.v1(), src.v1())
+
+    fn enqueue_copy_device_to_device[
+        type: DType
+    ](
+        self,
+        dst: UnsafePointer[Scalar[type]],
+        src: UnsafePointer[Scalar[type]],
+        size: Int,
+    ) raises:
+        @parameter
+        if _device_ctx_v2():
+            # Not implemented on DeviceContextV2, wrap in buffers first
+            var dst_buf = DeviceBufferV2(self.v2(), dst, size, owning=False)
+            var src_buf = DeviceBufferV2(self.v2(), src, size, owning=False)
+            self.v2().enqueue_copy_device_to_device[type](dst_buf, src_buf)
+        else:
+            self.v1().enqueue_copy_device_to_device[type](dst, src, size)
 
     fn copy_to_device_sync[
         type: DType
