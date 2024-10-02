@@ -116,20 +116,21 @@ def test_store_slice_load_slice(
         tensor = graph.inputs[0]
         buffer = graph.inputs[1]
 
-        buf_idx = [(slice(0, int(d)), "out_dim") for d in tensor.shape]
-
+        buf_idx = [(slice(0, int(d)), d) for d in tensor.shape]
+        y = tensor * tensor
         # Store slice.
-        buffer[*buf_idx] = tensor * tensor
+        buffer[*buf_idx] = y + buffer[*buf_idx]
 
         graph.output()
 
         compiled_model = session.load(graph)
     input_tensor = ones(tensor.shape, tensor.dtype) + n
-    input_buffer = zeros(buffer.shape, buffer.dtype)
+    input_buffer = zeros(buffer.shape, buffer.dtype) + n
     compiled_model.execute(input_tensor, input_buffer)
 
-    expected = zeros(buffer.shape, buffer.dtype)
-    expected[: input_tensor.shape[0], : input_tensor.shape[1]] = torch_multiply(
-        torch.from_numpy(input_tensor)
+    expected = zeros(buffer.shape, buffer.dtype) + n
+    expected[: input_tensor.shape[0], : input_tensor.shape[1]] = (
+        torch_multiply(torch.from_numpy(input_tensor))
+        + expected[: input_tensor.shape[0], : input_tensor.shape[1]]
     )
     assert np.allclose(input_buffer, expected)

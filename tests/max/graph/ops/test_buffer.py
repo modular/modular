@@ -22,7 +22,9 @@ from max.graph import (
 )
 
 shared_dtypes = st.shared(st.from_type(DType))
-shared_shapes = st.shared(shapes().filter(lambda shape: 0 not in shape))
+shared_shapes = st.shared(
+    shapes(min_size=1, max_size=100).filter(lambda shape: 0 not in shape)
+)
 tensor_type = tensor_types(shapes=shared_shapes, dtypes=shared_dtypes)
 buffer_type = buffer_types(shapes=shared_shapes, dtypes=shared_dtypes)
 
@@ -186,7 +188,6 @@ def test_load_store(buffer_type: BufferType):
         assert "rmo.mo.mutable.store" in str(graph)
 
 
-@pytest.mark.skip(reason="TODO(MSDK-1072): fix spurious slice failures in CI")
 @given(tensor_type=tensor_type, buffer_type=buffer_type)
 def test_load_store_ellipsis_slice(
     tensor_type: TensorType, buffer_type: BufferType
@@ -235,7 +236,7 @@ def test_load_store_slice(tensor_type: TensorType, buffer_type: BufferType):
         tensor = graph.inputs[0]
         buffer = graph.inputs[1]
         chain_0 = graph._current_chain
-        buffer[0] = tensor + buffer[0]
+        buffer[0] = tensor[0] + buffer[0]
         chain_1 = graph._current_chain
 
         assert buffer.shape == tensor.shape
