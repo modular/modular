@@ -5,6 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 
 
+from collections import OptionalReg
 from math import align_down, ceildiv, exp, iota, recip
 from os import abort
 from sys import alignof, simdwidthof
@@ -23,6 +24,7 @@ from gpu import (
 )
 from gpu.host import DeviceContext, FuncAttribute
 from gpu.memory import AddressSpace, external_memory
+from kv_cache.types import ContiguousKVCache, KVCacheStaticParams
 from layout.int_tuple import IntTuple
 from layout.layout import *
 from layout.layout_tensor import (
@@ -41,6 +43,7 @@ from linalg.transpose import transpose
 from memory import UnsafePointer, stack_allocation
 from memory.reference import AddressSpace as _AddressSpace
 from memory.unsafe import bitcast
+from nn.mha_mask import MHAMask, NullMask
 from runtime.asyncrt import MojoCallContextPtr
 
 from utils.index import Index, StaticIntTuple
@@ -50,10 +53,6 @@ from utils.static_tuple import StaticTuple
 from .softmax import _online_softmax_iter_for_mma_output, _softmax_gpu, softmax
 from runtime.tracing import Trace, TraceLevel, trace_arg
 
-from kv_cache.types import (
-    ContiguousKVCache,
-    KVCacheStaticParams,
-)
 
 # ===----------------------------------------------------------------------===#
 # Multi-Head Attention
@@ -253,7 +252,16 @@ fn flash_attention[
             add_attn_mask=add_attn_mask,
             target=target,
             use_tensor_core=use_tensor_core,
-        ](output, q, k, v, mask, scale, context.get_device_context())
+        ](
+            output,
+            q,
+            k,
+            v,
+            mask,
+            NullMask(),
+            scale,
+            context.get_device_context(),
+        )
 
 
 # Entry point for flash_attention with batch_size > 1.
@@ -514,7 +522,8 @@ fn flash_attention[
 
 
 fn flash_attention[
-    rank: Int, //,
+    rank: Int,
+    mask_t: MHAMask, //,
     add_attn_mask: Bool = True,
     target: StringLiteral = "cuda",
     use_tensor_core: Bool = True,
@@ -524,6 +533,7 @@ fn flash_attention[
     k: NDBuffer[_, rank, *_],
     v: NDBuffer[_, rank, *_],
     mask: NDBuffer,
+    mask_functor: mask_t,
     scale: Float32,
     ctx: DeviceContext,
 ) raises:
@@ -617,6 +627,7 @@ fn flash_attention[
                         v.type,
                         mask.type,
                         output.type,
+                        mask_t,
                         BM=BM,
                         BN=BN,
                         BK=BK,
@@ -627,6 +638,7 @@ fn flash_attention[
                         num_threads=num_threads,
                         num_pipeline_stages=4,
                         group=group,
+                        use_mask_tensor=add_attn_mask,
                     ]
                 ](
                     # TODO: Avoid hard coding shared memory needed. KERN-747
@@ -645,6 +657,7 @@ fn flash_attention[
                     scale,
                     batch_size,
                     seq_len,
+                    mask_functor,
                     grid_dim=(
                         ceildiv(seq_len, BM),
                         num_heads,
@@ -904,6 +917,7 @@ fn mha[
         scale,
         key_length,
         max_seq_len,
+        NullMask(),
     )
 
 
@@ -915,6 +929,8 @@ fn mha[
     v_type: DType,
     mask_type: DType,
     output_type: DType,
+    mask_t: MHAMask,
+    *,
     BM: Int,  # number of queries per block
     BN: Int,  # number of keys per block
     BK: Int,  # tile size in depth dimension
@@ -925,6 +941,7 @@ fn mha[
     num_threads: Int,
     num_pipeline_stages: Int,
     group: Int = 1,
+    use_mask_tensor: Bool = True,
 ](
     q_ptr: UnsafePointer[Scalar[q_type]],
     k_ptr: UnsafePointer[Scalar[k_type]],
@@ -934,6 +951,7 @@ fn mha[
     scale: Float32,
     batch_size: Int,
     seq_len: Int,
+    mask: mask_t,
 ):
     var batch_idx = BlockIdx.z()
     var q_batch_offset = depth * num_heads * seq_len * batch_idx
@@ -954,6 +972,7 @@ fn mha[
         num_threads=num_threads,
         num_pipeline_stages=num_pipeline_stages,
         group=group,
+        use_mask_tensor=use_mask_tensor,
     ](
         q_ptr.offset(q_batch_offset),
         k_ptr.offset(kv_batch_offset),
@@ -963,6 +982,7 @@ fn mha[
         scale,
         seq_len,
         seq_len,
+        mask,
     )
 
 
@@ -974,6 +994,7 @@ fn mha_single_batch[
     v_type: DType,
     mask_type: DType,
     output_type: DType,
+    mask_t: MHAMask,
     *,
     BM: Int,  # number of queries per block
     BN: Int,  # number of keys per block
@@ -985,6 +1006,7 @@ fn mha_single_batch[
     num_threads: Int,
     num_pipeline_stages: Int,
     group: Int = 1,
+    use_mask_tensor: Bool = True,
 ](
     q_ptr: UnsafePointer[Scalar[q_type]],
     k_ptr: UnsafePointer[Scalar[k_type]],
@@ -994,6 +1016,7 @@ fn mha_single_batch[
     scale: Float32,
     seq_len: Int,  # valid sequence length i.e. w/o padding.
     max_seq_len: Int,  # sequence length after padding.
+    mask: mask_t,
 ):
     """MHA for token gen where seqlen = 1 and num_keys >= 1.
 
@@ -1122,7 +1145,8 @@ fn mha_single_batch[
     ]((p_smem + BM * BN).bitcast[Scalar[accum_type]]())
 
     # Mask global memory iterator.
-    var mask_offset = q_tile_idx * BM * max_seq_len + (
+    var mask_block_row = q_tile_idx * BM
+    var mask_offset = mask_block_row * max_seq_len + (
         Int(head_idx * max_seq_len * max_seq_len) if mask_rank == 4 else 0
     )
     var mask_tile_ptr = mask_ptr + mask_offset
@@ -1208,8 +1232,7 @@ fn mha_single_batch[
         # Vectorize by 2.
         var p_reg_vec2 = p_reg_tile.vectorize[1, p_frag_simdwidth]()
 
-        # The dimension of mask are assumed dynamic here so still using index calculation.
-        # TODO: check if the explicit index calculation can be avoided.
+        # TODO: Construct mask tensor with runtime layout.
         @parameter
         for m_mma in range(num_m_mmas):
 
@@ -1228,29 +1251,62 @@ fn mha_single_batch[
                 alias mask_align = alignof[SIMD[mask_type, p_frag_simdwidth]]()
 
                 @parameter
-                for i in range(2):
-                    # The intermeidate result is logically BM x BN.
-                    # The overall mask tensor is seqlen x seqlen, some remainder tiles
-                    # may not fit in BM x BN.
-                    if mask_frag_row < seq_len and mask_frag_col < seq_len:
-                        var mask_vec = (
-                            mask_tile_ptr
-                            + (mask_frag_row + i * MMA_M // 2) * max_seq_len
-                            + mask_frag_col
-                        ).load[width=p_frag_simdwidth, alignment=mask_align]()
+                if use_mask_tensor:
 
-                        p_reg_vec2[mma_id, i] = p_reg_vec2[
-                            mma_id, i
-                        ] * scale.cast[accum_type]() + rebind[
-                            p_reg_vec2.element_type
-                        ](
-                            mask_vec.cast[accum_type]()
-                        )
-                    else:
-                        p_reg_vec2[mma_id, i] = rebind[p_reg_vec2.element_type](
-                            SIMD[accum_type, p_frag_simdwidth](
-                                min_or_neg_inf[accum_type]()
+                    @parameter
+                    for i in range(2):
+                        # The intermediate result is logically BM x BN.
+                        # The overall mask tensor is seqlen x seqlen, some remainder tiles
+                        # may not fit in BM x BN.
+                        if (
+                            mask_frag_row + i * MMA_M // 2 < seq_len
+                            and mask_frag_col < seq_len
+                        ):
+                            var mask_vec = (
+                                mask_tile_ptr
+                                + (mask_frag_row + i * MMA_M // 2) * max_seq_len
+                                + mask_frag_col
+                            ).load[
+                                width=p_frag_simdwidth, alignment=mask_align
+                            ]()
+
+                            p_reg_vec2[mma_id, i] = p_reg_vec2[
+                                mma_id, i
+                            ] * scale.cast[accum_type]() + rebind[
+                                p_reg_vec2.element_type
+                            ](
+                                mask_vec.cast[accum_type]()
                             )
+                        else:
+                            p_reg_vec2[mma_id, i] = rebind[
+                                p_reg_vec2.element_type
+                            ](
+                                SIMD[accum_type, p_frag_simdwidth](
+                                    min_or_neg_inf[accum_type]()
+                                )
+                            )
+
+                else:
+
+                    @parameter
+                    for i in range(2):
+                        # The row in score matrix of shape seq_len x num_keys.
+                        # Mask col is score col since we don't partition in col.
+                        var score_row = mask_block_row + mask_frag_row + i * MMA_M // 2
+                        var score_col = mask_frag_col
+                        p_reg_vec2[mma_id, i] = mask.mask(
+                            Index(
+                                int(BlockIdx.z()),
+                                int(BlockIdx.y()),
+                                int(score_row),
+                                int(score_col),
+                            ),
+                            p_reg_vec2[mma_id, i] * scale.cast[accum_type](),
+                        )
+                        p_reg_vec2[mma_id, i] = _kernel_mask(
+                            Index(score_row, score_col),
+                            Index(seq_len, seq_len),
+                            p_reg_vec2[mma_id, i],
                         )
 
         # Increment mask to next BM x BN block.
@@ -1393,6 +1449,25 @@ fn mha_single_batch[
             seq_len,
             num_heads * depth,
         )
+
+
+@always_inline
+fn _kernel_mask[
+    type: DType, width: Int
+](
+    coord: StaticIntTuple[2], bound: StaticIntTuple[2], vec: SIMD[type, width]
+) -> SIMD[type, width]:
+    var masked_vec = SIMD[type, width]()
+
+    # TODO: use `select` to see if it generates the same code.
+    @parameter
+    for i in range(width):
+        masked_vec[i] = (
+            vec[i] if coord[0] < bound[0]
+            and coord[1] + i < bound[1] else min_or_neg_inf[type]()
+        )
+
+    return masked_vec
 
 
 # ===----------------------------------------------------------------------===#

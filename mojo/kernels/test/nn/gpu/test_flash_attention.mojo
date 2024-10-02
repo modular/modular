@@ -20,6 +20,7 @@ from nn.mha import (
     flash_attention,
     mha_gpu_naive,
 )
+from nn.mha_mask import NullMask
 from testing import assert_almost_equal
 
 from utils.index import Index
@@ -184,11 +185,25 @@ fn test[
         @parameter
         if mask_rank == 3:
             flash_attention(
-                output_device, q_device, k_device, v_device, mask3d, scale, ctx
+                output_device,
+                q_device,
+                k_device,
+                v_device,
+                mask3d,
+                NullMask(),
+                scale,
+                ctx,
             )
         else:
             flash_attention(
-                output_device, q_device, k_device, v_device, mask4d, scale, ctx
+                output_device,
+                q_device,
+                k_device,
+                v_device,
+                mask4d,
+                NullMask(),
+                scale,
+                ctx,
             )
 
     if is_benchmark:

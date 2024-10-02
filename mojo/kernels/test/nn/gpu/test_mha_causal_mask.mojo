@@ -1,0 +1,284 @@
+# ===----------------------------------------------------------------------=== #
+#
+# This file is Modular Inc proprietary.
+#
+# ===----------------------------------------------------------------------=== #
+# RUN: %mojo-no-debug %s
+
+from buffer import NDBuffer
+from buffer.dimlist import DimList, Dim
+from math import ceildiv, isclose, isqrt
+from memory import UnsafePointer
+from random import rand
+from sys import argv
+from testing import assert_almost_equal
+from utils.index import Index
+from utils.numerics import min_or_neg_inf
+
+from gpu import *
+from gpu.host import DeviceContext, FuncAttribute
+from gpu.host.event import time_function
+from nn.mha import flash_attention, mha_gpu_naive
+from nn.mha_mask import NullMask, CausalMask
+
+
+fn is_benchmark() -> Bool:
+    for arg in argv():
+        if arg == "--benchmark" or arg == "-benchmark":
+            return True
+    return False
+
+
+fn test[
+    qkv_type: DType,
+    mask_type: DType,
+    depth: Int,
+    num_heads: Int,
+    group: Int = 1,
+](
+    seq_len: Int,
+    num_keys: Int,
+    ctx: DeviceContext,
+    is_benchmark: Bool = False,
+) raises:
+    print("test_mha_causal_mask")
+
+    # Query, key, value dimensions.
+    alias batch_size = 1
+    alias scale = Float32(0.125)  # rsqrt[type, 1](Float32(depth))
+    alias kv_num_heads = num_heads // group
+
+    # Q, K, V shapes.
+    var q_size = batch_size * num_heads * seq_len * depth
+    var k_size = batch_size * kv_num_heads * num_keys * depth
+    var v_size = k_size
+    var o_size = q_size
+    var mask_size = num_heads * seq_len * num_keys
+
+    # Allocate memory for all variables.
+    var q_ptr = UnsafePointer[Scalar[qkv_type]].alloc(q_size)
+    var k_ptr = UnsafePointer[Scalar[qkv_type]].alloc(k_size)
+    var v_ptr = UnsafePointer[Scalar[qkv_type]].alloc(v_size)
+    var mask_ptr = UnsafePointer[Scalar[mask_type]].alloc(mask_size)
+    var output_ptr = UnsafePointer[Scalar[qkv_type]].alloc(o_size)
+    var flash_output_ptr = UnsafePointer[Scalar[qkv_type]].alloc(o_size)
+
+    # Contruct buffers.
+    var q = NDBuffer[qkv_type, 4](
+        q_ptr, Index(batch_size, seq_len, num_heads, depth)
+    )
+    var k = NDBuffer[qkv_type, 4](
+        k_ptr, Index(batch_size, num_keys, kv_num_heads, depth)
+    )
+    var v = NDBuffer[qkv_type, 4](
+        v_ptr, Index(batch_size, num_keys, kv_num_heads, depth)
+    )
+    var mask = NDBuffer[mask_type, 4](
+        mask_ptr, Index(batch_size, num_heads, seq_len, num_keys)
+    )
+    var output = NDBuffer[qkv_type, 4](
+        output_ptr, Index(batch_size, seq_len, num_heads, depth)
+    )
+
+    # Q, K, V are randomly initalized.
+    rand[qkv_type](q_ptr, q_size)
+    rand[qkv_type](k_ptr, k_size)
+    rand[qkv_type](v_ptr, v_size)
+
+    # Initialize causal mask.
+    for b in range(batch_size):
+        for h in range(num_heads):
+            for q_idx in range(seq_len):
+                for k_idx in range(num_keys):
+                    mask.store(
+                        Index(b, h, q_idx, k_idx),
+                        0 if q_idx >= k_idx else min_or_neg_inf[mask_type](),
+                    )
+
+    # Device pointers
+    var q_device_ptr = ctx.create_buffer[qkv_type](q_size)
+    var k_device_ptr = ctx.create_buffer[qkv_type](k_size)
+    var v_device_ptr = ctx.create_buffer[qkv_type](v_size)
+    var mask_device_ptr = ctx.create_buffer[mask_type](mask_size)
+    var output_device_ptr = ctx.create_buffer[qkv_type](o_size)
+
+    # Copy from host to device
+    ctx.enqueue_copy_to_device(q_device_ptr, q_ptr)
+    ctx.enqueue_copy_to_device(k_device_ptr, k_ptr)
+    ctx.enqueue_copy_to_device(v_device_ptr, v_ptr)
+    ctx.enqueue_copy_to_device(mask_device_ptr, mask_ptr)
+
+    # Contruct device buffers.
+    var q_device = NDBuffer[
+        qkv_type, 4, DimList(Dim(), Dim(), num_heads, depth)
+    ](q_device_ptr.ptr, Index(batch_size, seq_len, num_heads, depth))
+    var k_device = NDBuffer[
+        qkv_type, 4, DimList(Dim(), Dim(), kv_num_heads, depth)
+    ](k_device_ptr.ptr, Index(batch_size, num_keys, kv_num_heads, depth))
+    var v_device = NDBuffer[
+        qkv_type, 4, DimList(Dim(), Dim(), kv_num_heads, depth)
+    ](v_device_ptr.ptr, Index(batch_size, num_keys, kv_num_heads, depth))
+    var mask4d = NDBuffer[mask_type, 4, DimList.create_unknown[4]()](
+        mask_device_ptr.ptr, Index(batch_size, num_heads, seq_len, num_keys)
+    )
+    var output_device = NDBuffer[
+        qkv_type, 4, DimList(Dim(), Dim(), num_heads, depth)
+    ](output_device_ptr.ptr, Index(batch_size, seq_len, num_heads, depth))
+
+    @parameter
+    @always_inline
+    @__copy_capture(q_device, k_device, v_device, mask4d, output_device)
+    fn kernel_launch(ctx: DeviceContext) raises:
+        flash_attention[add_attn_mask=False](
+            output_device,
+            q_device,
+            k_device,
+            v_device,
+            mask4d,
+            CausalMask(),
+            scale,
+            ctx,
+        )
+
+    if is_benchmark:
+        alias nrun = 50
+
+        # Warmup
+        kernel_launch(ctx)
+
+        var nstime = ctx.execution_time[kernel_launch](nrun) / nrun
+        var sectime = nstime / 1000000
+        print(nrun, "runs avg", sectime, "ms")
+
+    else:
+        kernel_launch(ctx)
+
+    ctx.synchronize()
+
+    ctx.enqueue_copy_from_device(flash_output_ptr, output_device_ptr)
+
+    var output_ref_device_ptr = ctx.create_buffer[qkv_type](o_size)
+    ctx.enqueue_copy_to_device(output_ref_device_ptr, output_ptr)
+
+    var output_device_ref = NDBuffer[
+        qkv_type, 4, DimList(Dim(), Dim(), num_heads, depth)
+    ](output_ref_device_ptr.ptr, Index(batch_size, seq_len, num_heads, depth))
+
+    flash_attention(
+        output_device_ref,
+        q_device,
+        k_device,
+        v_device,
+        mask4d,
+        NullMask(),
+        scale,
+        ctx,
+    )
+
+    ctx.synchronize()
+    ctx.enqueue_copy_from_device(output_ptr, output_ref_device_ptr)
+    _ = output_ref_device_ptr
+
+    for h in range(num_heads):
+        for s in range(seq_len):
+            for d in range(depth):
+                var expect = output_ptr.load(d + depth * (h + s * num_heads))
+                var actual = flash_output_ptr.load(
+                    d + depth * (h + s * num_heads)
+                )
+                if not isclose(actual, expect, atol=1e-5, rtol=1e-4):
+                    var rerr = abs((actual - expect) / expect)
+                    print(h, s, d, actual, expect, rerr)
+                assert_almost_equal(actual, expect, atol=1e-5, rtol=1e-4)
+
+    _ = q_device_ptr
+    _ = k_device_ptr
+    _ = v_device_ptr
+    _ = mask_device_ptr
+    _ = output_device_ptr
+
+    q_ptr.free()
+    k_ptr.free()
+    v_ptr.free()
+    mask_ptr.free()
+    output_ptr.free()
+    flash_output_ptr.free()
+
+
+def main():
+    with DeviceContext() as ctx:
+        # fp32 depth == 128, tf32-fp32 mma, llama2 shape.
+        test[
+            DType.float32,
+            DType.float32,
+            128,
+            1,
+        ](128, 128, ctx, is_benchmark())
+
+        test[
+            DType.float32,
+            DType.float32,
+            128,
+            3,
+        ](14, 14, ctx, is_benchmark())
+
+        test[
+            DType.float32,
+            DType.float32,
+            128,
+            1,
+        ](178, 178, ctx, is_benchmark())
+
+        # bf16 depth == 128, bf16-fp32 mma
+        test[
+            DType.bfloat16,
+            DType.bfloat16,
+            depth=128,
+            num_heads=1,
+        ](128, 128, ctx)
+
+        test[
+            DType.bfloat16,
+            DType.float32,
+            depth=128,
+            num_heads=1,
+        ](384, 384, ctx)
+
+        test[
+            DType.bfloat16,
+            DType.float32,
+            128,
+            24,
+            group=3,
+        ](1024, 1024, ctx)
+
+        # BF16 with sequence length not multiple of 128
+        test[
+            DType.bfloat16,
+            DType.float32,
+            128,
+            3,
+            group=3,
+        ](64, 64, ctx)
+
+        test[
+            DType.bfloat16,
+            DType.bfloat16,
+            128,
+            3,
+            group=3,
+        ](102, 102, ctx)
+
+        test[
+            DType.bfloat16,
+            DType.float32,
+            128,
+            1,
+        ](14, 14, ctx)
+
+        test[
+            DType.bfloat16,
+            DType.bfloat16,
+            128,
+            1,
+        ](528, 528, ctx)

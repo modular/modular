@@ -104,3 +104,26 @@ struct CausalMask(MHAMask):
         # (T, F) -> partial mask
         # (T, T) -> full mask
         return TileMaskStatus(min_q_lt_max_k + (max_q_lt_min_k << 1))
+
+
+@value
+@register_passable("trivial")  # No effect MOCO-1205
+struct NullMask(MHAMask):
+    """Mask that's effectively a noop."""
+
+    @always_inline
+    fn mask[
+        type: DType, width: Int
+    ](self, coord: StaticIntTuple[4], score_vec: SIMD[type, width]) -> SIMD[
+        type, width
+    ]:
+        return score_vec
+
+    @always_inline
+    fn status(
+        self,
+        tile_offset: StaticIntTuple[2],
+        tile_size: StaticIntTuple[2],
+    ) -> TileMaskStatus:
+        # no mask
+        return TileMaskStatus(0)
