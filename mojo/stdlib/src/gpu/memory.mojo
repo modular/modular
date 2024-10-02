@@ -12,8 +12,8 @@ from sys.intrinsics import _RegisterPackType
 
 from builtin.dtype import _uint_type_of_width
 from memory import UnsafePointer
-from memory.reference import _GPUAddressSpace
-from memory.reference import AddressSpace as _AddressSpace
+from memory.pointer import _GPUAddressSpace
+from memory.pointer import AddressSpace as _AddressSpace
 from memory.unsafe import bitcast
 
 from utils import StaticTuple, StaticIntTuple

@@ -8,7 +8,7 @@
 from sys import llvm_intrinsic
 
 from memory import UnsafePointer
-from memory.reference import AddressSpace
+from memory.pointer import AddressSpace
 
 from .memory import AddressSpace as GPUAddressSpace
 
