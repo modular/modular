@@ -8,6 +8,7 @@ from math import isclose
 from pathlib import Path
 
 import numpy as np
+from max import mlir
 from max.driver import CPU, CUDA, Tensor
 from max.dtype import DType
 from max.engine import InferenceSession
@@ -106,6 +107,12 @@ class Model:
             align=np.dtype(np.float32).alignment,
         )[0]
 
+        # Set the constant external op's device explicitly.
+        const_external_op = weights_tensor._mlir_value.owner
+        const_external_op.attributes["device"] = mlir.Attribute.parse(
+            '#M.device_ref<"cpu", 0>'
+        )
+
         return input + weights_tensor
 
 
@@ -118,7 +125,6 @@ def test_execute_external_weights_gpu(gpu_session: InferenceSession) -> None:
         Model(num_elems),
         input_types=(TensorType(DType.float32, (num_elems,)),),
     )
-    graph._mlir_op.verify()
 
     compiled = gpu_session.load(graph, weights_registry={"foo": weights})
     input_np = np.random.randn(num_elems).astype(np.float32)

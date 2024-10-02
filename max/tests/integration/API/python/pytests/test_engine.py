@@ -14,6 +14,7 @@ from typing import Tuple
 import numpy as np
 import pytest
 import torch
+from max import mlir
 from max.driver import Tensor
 from max.dtype import DType
 from max.engine import InferenceSession, Model, TensorSpec, TorchInputSpec
@@ -467,6 +468,12 @@ class Model:  # type: ignore
             name="foo",
             align=np.dtype(np.float32).alignment,
         )[0]
+
+        # Set the constant external op's device explicitly.
+        const_external_op = weights_tensor._mlir_value.owner
+        const_external_op.attributes["device"] = mlir.Attribute.parse(
+            '#M.device_ref<"cpu", 0>'
+        )
 
         return input + weights_tensor
 
