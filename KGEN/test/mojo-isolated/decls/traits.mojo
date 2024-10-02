@@ -438,6 +438,13 @@ struct TwoThunks(SimpleTraitA, SimpleTraitB):
         pass
 
 
+# https://linear.app/modularml/issue/MOCO-335/[bug]-register-passable-generates-phantom-trait-bound-overload
+# CHECK-LABEL: lit.func @"regpassable_reference
+fn regpassable_reference():
+    # CHECK-NEXT: @TwoThunks::@"method
+    alias f = TwoThunks.method
+
+
 # ===----------------------------------------------------------------------=== #
 # Special Functions
 # ===----------------------------------------------------------------------=== #
