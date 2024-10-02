@@ -55,7 +55,7 @@ fn strsv[
                 x_solved_vec = x_solved.load[width=simd_width](j * simd_width)
                 L_col_vec = L_ptr.load[width=simd_width](i + j * size)
                 x_vec = x_solved_vec.fma(-L_col_vec, x_vec)
-            x_ptr.store[width=simd_width](i, x_vec)
+            x_ptr.store(i, x_vec)
 
         L_ptr += size * simd_width
 

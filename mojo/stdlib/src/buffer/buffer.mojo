@@ -209,7 +209,7 @@ struct Buffer[
             idx: The index into the Buffer.
             val: The value to store.
         """
-        self.data.store[width=width, alignment=alignment](idx, val)
+        self.data.store[alignment=alignment](idx, val)
 
     @always_inline
     fn prefetch[params: PrefetchOptions](self, idx: Int):
@@ -1040,7 +1040,7 @@ struct NDBuffer[
             self.is_contiguous() or width == 1,
             "Function requires contiguous buffer.",
         )
-        self._offset(idx).store[width=width, alignment=alignment](val)
+        self._offset(idx).store[alignment=alignment](val)
 
     @always_inline
     fn dim[index: Int](self) -> Int:
@@ -1284,7 +1284,7 @@ struct NDBuffer[
             for j in range(0, TN, simd_size):
                 var idx = i * TN + j
                 var vec = self.data.load[width=simd_size](i * TN + j)
-                self.data.store[width=simd_size](idx, vec * rhs.cast[type]())
+                self.data.store(idx, vec * rhs.cast[type]())
 
     @always_inline("nodebug")
     fn __imul__(inout self, rhs: NDBuffer):
@@ -1312,7 +1312,7 @@ struct NDBuffer[
                 var rhs_vec = SIMD[type, simd_size](
                     rhs.data.load(i).cast[type]()
                 )
-                self.data.store[width=simd_size](idx, vec * rhs_vec)
+                self.data.store(idx, vec * rhs_vec)
 
     @always_inline("nodebug")
     fn __itruediv__(inout self, rhs: NDBuffer):
@@ -1340,7 +1340,7 @@ struct NDBuffer[
                 var rhs_vec = SIMD[type, simd_size](
                     rhs.data.load(i).cast[type]()
                 )
-                self.data.store[width=simd_size](idx, vec / rhs_vec)
+                self.data.store(idx, vec / rhs_vec)
 
     @always_inline("nodebug")
     fn __mul__(self, rhs: Self) -> Self:
@@ -1416,7 +1416,7 @@ struct NDBuffer[
 
         @parameter
         for i in range(m):
-            res.data.store[width=simd_size](
+            res.data.store(
                 i,
                 self.data.load(i) - rhs.data.load(i),
             )
@@ -1454,7 +1454,7 @@ struct NDBuffer[
             @parameter
             for j in range(0, n, simd_size):
                 var idx = i * n + j
-                res.data.store[width=simd_size](
+                res.data.store(
                     idx,
                     self.data.load[width=simd_size](idx) - rhs.data.load(i),
                 )
