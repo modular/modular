@@ -114,7 +114,7 @@ fn block_reduce[
         @parameter
         for i in range(num_reductions):
             # bank conflict for sub 4 byte data elems
-            shared.store[width=simd_width](
+            shared.store(
                 (int(warp) * num_reductions + i) * simd_width,
                 warp_accum[i],
             )

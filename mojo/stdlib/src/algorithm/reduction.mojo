@@ -1752,7 +1752,7 @@ fn _argn[is_max: Bool](input: NDBuffer, axis: Int, output: NDBuffer) raises:
                     global_indices, Scalar[output.type].MAX
                 )
                 idx = min_indices.reduce_min()
-            output_dim_ptr.store[width=1](idx)
+            output_dim_ptr[] = idx
 
     sync_parallelize[task_func](parallel_size)
 
