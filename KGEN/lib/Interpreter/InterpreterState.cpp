@@ -684,6 +684,8 @@ ErrorOr<PointerAttr> InterpreterState::allocateInternalStackFor(Type type,
       getTable(MemoryKind::Stack).addBlob(allocator, *size, *align);
   if (blob.isError())
     return blob.takeError();
+  // Zero-initialize the memory.
+  memset(blob->getOwned(), 0, *size);
   return PointerAttr::get(blob->baseAddr, ptrType);
 }
 
