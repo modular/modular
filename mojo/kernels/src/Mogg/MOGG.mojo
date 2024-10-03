@@ -16,6 +16,7 @@ from sys import external_call, llvm_intrinsic, alignof
 from sys.info import simdwidthof, sizeof
 from sys.intrinsics import strided_load
 from sys.param_env import is_defined
+from os import abort
 
 from algorithm import argmax as _argmax
 from algorithm import argmin as _argmin
@@ -3325,6 +3326,15 @@ fn return_error[
     type: DType, rank: Int
 ](input: NDBuffer[type, rank], ctx: MojoCallContextPtr) raises:
     raise Error("This is an error")
+
+
+@mogg_register("mo.test.abort")
+@always_inline
+@export
+fn test_abort[
+    type: DType, rank: Int
+](input: NDBuffer[type, rank], ctx: MojoCallContextPtr) raises:
+    abort()
 
 
 # ===----------------------------------------------------------------------===#
