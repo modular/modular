@@ -128,11 +128,13 @@ convertLLVMMetadata(LLVM::LLVMFuncOp func, SignatureType sig,
   SmallVector<Attribute> passthrough =
       llvm::to_vector(func.getPassthroughAttr());
   Builder b(func.getContext());
+  SmallVector<NamedAttrList> argAttrLists(func.getNumArguments(), {});
 
   for (const NamedAttribute &attr : metadata) {
     // Treat `llvm.*` metadata attributes as passthrough function attributes.
     Attribute value = attr.getValue();
-    if (isa<LLVM::LLVMDialect>(attr.getNameDialect())) {
+    Dialect *nameDialect = attr.getNameDialect();
+    if (isa<LLVM::LLVMDialect>(nameDialect)) {
       StringAttr name = b.getStringAttr(
           attr.getName().strref().drop_front(StringRef("llvm.").size()));
       if (isa<UnitAttr>(value)) {
@@ -155,6 +157,35 @@ convertLLVMMetadata(LLVM::LLVMFuncOp func, SignatureType sig,
                << value;
       }
       continue;
+    } else if (isa<mlir::NVVM::NVVMDialect>(nameDialect)) {
+      // `grid_constant` needs to be converted into arg attrs.
+      if (attr.getName() ==
+          mlir::NVVM::NVVMDialect::getGridConstantAttrName()) {
+        auto array = dyn_cast<POP::ArrayAttr>(value);
+        if (!array)
+          return mlir::emitError(func.getLoc(),
+                                 "unsupported `nvvm.grid_constant` value: ")
+                 << value;
+
+        for (TypedAttr indexValue : array.getValues()) {
+          auto integer = dyn_cast<IntegerAttr>(indexValue);
+          if (!integer)
+            return mlir::emitError(
+                       func.getLoc(),
+                       "unsupported `nvvm.grid_constant` array element: ")
+                   << indexValue;
+
+          int64_t argIndex = integer.getInt();
+          if (argIndex < 0 || argIndex >= (int64_t)argAttrLists.size())
+            return mlir::emitError(func.getLoc(),
+                                   "`nvvm.grid_constant` index out of bounds: ")
+                   << argIndex << " (function has " << argAttrLists.size()
+                   << "arguments)";
+
+          argAttrLists[argIndex].set(attr.getName(), b.getUnitAttr());
+        }
+        continue;
+      }
     }
 
     // For anything else, forward them as function attributes.
@@ -183,14 +214,13 @@ convertLLVMMetadata(LLVM::LLVMFuncOp func, SignatureType sig,
   // For each argument and result, leverage signature information to generate
   // the correpsonding LLVM argument and result attributes.
   SmallVector<Attribute> argAttrs;
-  NamedAttrList list;
   bool needsByVal =
       target.getTriple().isNVPTX() &&
       func->hasAttr(mlir::NVVM::NVVMDialect::getKernelFuncAttrName()) &&
       func.getLinkage() == LLVM::Linkage::External;
   for (auto [i, conv, type] :
        llvm::enumerate(sig.getArgConventions(), sig.getArguments())) {
-    list.clear();
+    NamedAttrList &list = argAttrLists[i];
 
     switch (conv) {
     case ArgConvention::OwnedInMem:
