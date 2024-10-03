@@ -1473,7 +1473,7 @@ struct ConvertPoPNVVMWGMAMMAAsync
       return mmaOp->emitError("Unsupported operand types");
 
     auto layoutA = getMMALayout(ctx, cast<StringAttr>(adaptor.getLayoutA()));
-    auto layoutB = getMMALayout(ctx, cast<StringAttr>(adaptor.getLayoutA()));
+    auto layoutB = getMMALayout(ctx, cast<StringAttr>(adaptor.getLayoutB()));
 
     if (failed(layoutA) || failed(layoutB))
       return mmaOp->emitError("Unsupported operand layouts");
