@@ -12,7 +12,7 @@ from typing import Dict, Optional
 import numpy as np
 import pytest
 import torch
-from hypothesis import given, reject, settings
+from hypothesis import HealthCheck, given, reject, settings
 from hypothesis import strategies as st
 from hypothesis.extra import numpy as nps
 from max.driver import Tensor
@@ -153,7 +153,9 @@ def modular_graph_test(
         model = session.load(graph)
 
         # TODO(MSDK-847): fix the perf here and re-enable the deadline.
-        @settings(deadline=None)
+        @settings(
+            deadline=None, suppress_health_check=[HealthCheck.data_too_large]
+        )
         @given_input_types(
             (input.type for input in graph.inputs),
             static_dims=static_dims,

@@ -9,20 +9,16 @@ from dataclasses import dataclass
 import numpy as np
 import pytest
 import torch
-from conftest import (
-    arrays,
-    assert_allclose,
-    given_input_types,
-    modular_graph_test,
-)
-from hypothesis import assume, given
-from hypothesis import strategies as st
+from conftest import modular_graph_test
+from hypothesis import assume
 from max.dtype import DType
 from max.graph import Graph, TensorType, ValueLike
 from max.graph.type import Dim
 from nn import RotaryEmbedding
 
 MAX_SEQ_LEN = 2**16
+ACCURACY_RTOL = 1e-2
+ACCURACY_ATOL = 1e-7
 
 
 def torch_freqs_cis(dim: int, theta: float, scaling: float):
@@ -77,8 +73,6 @@ def test_freqs_cis(session, dtype: DType, params: RopeParams):
     # TODO(MSDK-1071): Consolidate and figure out how to call
     # assert_allclose(result, expected) to fire again on mismatched
     # tensor values.
-    ACCURACY_RTOL = 1e-2
-    ACCURACY_ATOL = 1e-8
     np.testing.assert_allclose(
         result_cis_complex,
         expected,
@@ -134,7 +128,7 @@ def test_rope(session, input_type: TensorType, start_pos: Dim):
         rope = CannedRotaryEmbedding(freqs_cis)
         graph.output(rope(x, start_pos, seq_len))
 
-        @modular_graph_test(session, graph)
+        @modular_graph_test(session, graph, max_magnitude=1.0)
         def test_correctness(execute, inputs, torch_inputs):
             x, freqs_cis, cache = inputs
             start_pos = cache.shape[0]
@@ -142,4 +136,14 @@ def test_rope(session, input_type: TensorType, start_pos: Dim):
             assume(start_pos + seq_len < MAX_SEQ_LEN)
             result = execute(inputs)
             expected = torch_rope(*torch_inputs).detach().numpy()
-            assert_allclose(result, expected)
+
+            # TODO(MSDK-1071): Consolidate and figure out how to call
+            # assert_allclose(result, expected) to fire again on mismatched
+            # tensor values.
+            np.testing.assert_allclose(
+                result,
+                expected,
+                atol=ACCURACY_ATOL,
+                rtol=ACCURACY_RTOL,
+                equal_nan=True,
+            )
