@@ -32,4 +32,4 @@ def test_equality():
 def test_stats():
     # We should be able to query utilization stats for the device.
     cpu = CPU()
-    assert not cpu.stats
+    assert "timestamp" in cpu.stats

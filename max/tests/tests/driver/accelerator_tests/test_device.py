@@ -24,4 +24,7 @@ def test_equality():
 def test_stats():
     # We should be able to query utilization stats for the device.
     cuda = CUDA()
-    assert not cuda.stats
+    stats = cuda.stats
+    assert "timestamp" in stats
+    assert "free_memory" in stats
+    assert "total_memory" in stats
