@@ -19,7 +19,7 @@ from evaluate_llama import (
     golden_data_fname,
     run_llama3,
 )
-from llama3 import Llama3
+from llama3.llama3 import Llama3
 
 
 @pytest.mark.skip("Broken (MSDK-968)")

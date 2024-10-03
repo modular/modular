@@ -23,7 +23,7 @@ from evaluate_llama import (
     run_llama3,
 )
 
-from llama3 import Llama3
+from llama3.llama3 import Llama3
 
 
 @pytest.fixture(scope="session")
@@ -69,7 +69,7 @@ def test_tiny_llama(tinyllama_model):
     """
     golden_data_path = find_runtime_path(
         golden_data_fname("tinyllama", "float32"),
-        os.environ.get("PIPELINES_TESTDATA", ""),
+        Path(os.environ.get("PIPELINES_TESTDATA", "")),
     )
     expected_results = NumpyDecoder().decode(golden_data_path.read_text())
     actual = run_llama3(tinyllama_model)
@@ -88,7 +88,7 @@ def test_tiny_llama_naive_kv_cache(
 
     golden_data_path = find_runtime_path(
         golden_data_fname("tinyllama", "float32"),
-        os.environ.get("PIPELINES_TESTDATA", ""),
+        Path(os.environ.get("PIPELINES_TESTDATA", "")),
     )
     expected_results = NumpyDecoder().decode(golden_data_path.read_text())
     actual = run_llama3(tinyllama_model_naive_kv_cache)

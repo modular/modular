@@ -11,7 +11,7 @@ from llama3 import SupportedEncodings
 from max.driver import CPU
 from max.serve.mocks.mock_api_requests import simple_openai_request
 from max.serve.schemas.openai import CreateChatCompletionResponse
-from params import ModelParams
+from .params import ModelParams
 
 
 @pytest.mark.parametrize(

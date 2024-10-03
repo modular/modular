@@ -165,6 +165,7 @@ modular_py_test(
     size = "large",
     srcs = [
         "conftest.py",
+        "serve/__init__.py",
         "serve/conftest.py",
         "serve/test_tiny_llama_serving_cpu.py",
     ],

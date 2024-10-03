@@ -8,11 +8,11 @@ from typing import Literal
 import pytest
 from dataclasses import dataclass
 
-from llama3 import (
+from llama3.llama3 import Llama3
+from llama3.config import (
     SupportedEncodings,
     SupportedVersions,
     InferenceConfig,
-    Llama3,
 )
 from evaluate_llama import hf_hub_download
 
