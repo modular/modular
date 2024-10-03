@@ -65,7 +65,7 @@ def inplace_custom(name: str, values: Iterable[Value]) -> None:
 
     graph = Graph.current
     current_chain = graph._current_chain
-    values.append(current_chain)
+    values.append(current_chain)  # type: ignore
 
-    out_chain = custom(name, values, [_ChainType()])[0]
+    out_chain = custom(name, values, [_ChainType()])[0]  # type: ignore
     graph._update_chain(out_chain._mlir_value)

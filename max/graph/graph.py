@@ -11,6 +11,7 @@ import contextlib
 import inspect
 from contextvars import ContextVar
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Callable, Iterable, Optional
 
 from max import _graph, mlir
@@ -225,7 +226,7 @@ class Graph:
         self.inputs = tuple(Value(arg) for arg in self._body.arguments)
         self.weights = {}
 
-        self._current_chain = self._add_op(mo.chain_create, [])[0]
+        self._current_chain = self._add_op(mo.chain_create, [])[0]  # type: ignore
 
         if forward is not None:
             # If the forward method was passed stage the graph directly in the

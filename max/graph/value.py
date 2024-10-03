@@ -182,7 +182,7 @@ class BufferValue(Value):
         if index is Ellipsis:
             return x
         return ops.slice_tensor(
-            x, index if isinstance(index, Iterable) else (index,)
+            x, index if isinstance(index, Iterable) else (index,)  # type: ignore
         )
 
     def __setitem__(
