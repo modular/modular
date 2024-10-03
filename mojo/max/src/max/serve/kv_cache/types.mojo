@@ -35,9 +35,9 @@ from collections import Optional
 
 
 trait KVCacheManagerT:
-    fn claim[
-        collection_t: KVCollectionT
-    ](inout self, batch_size: Int) raises -> collection_t:
+    alias CollectionType: KVCollectionT
+
+    fn claim(inout self, batch_size: Int) raises -> List[Int]:
         ...
 
     fn fetch[
@@ -62,7 +62,7 @@ struct ContiguousKVCacheManager[
     type: DType,
     kv_params: KVCacheStaticParams,
     _max_batch_size: Int = _default_max_batch_size,
-]:
+](KVCacheManagerT):
     """Manages a Batch-split KV cache across multiple user sessions.
 
     Each request is assigned a seq_id, which is associated with a set of buffers
@@ -82,7 +82,7 @@ struct ContiguousKVCacheManager[
     alias CollectionType = ContiguousKVCacheCollection[
         type, kv_params, _max_batch_size
     ]
-    var blocks_buf: Tensor[type, 5]
+    var blocks_buf: Tensor[type, 6]
     var num_blocks: Int
     var max_batch_size: Int
     var max_seq_len: Int
@@ -136,7 +136,7 @@ struct ContiguousKVCacheManager[
             constrained[False, "unsupported layout"]()
             raise "failure"
 
-        self.blocks_buf = Tensor[type, 5](blocks_shape, other_device)
+        self.blocks_buf = Tensor[type, 6](blocks_shape, other_device)
         self.active_seq_ids = List[Int]()
         self.cache_lengths = List[Int]()
         self.seq_id_counter = 0
@@ -151,12 +151,11 @@ struct ContiguousKVCacheManager[
             TensorSpec(DType.uint32, (_max_batch_size))
         )
 
-    fn claim(inout self, batch_size: Int) raises -> Self.CollectionType:
+    fn claim(inout self, batch_size: Int) raises -> List[Int]:
         """Assign `batch_size` blocks for incoming requests.
 
-        This returns a ContiguousKVCacheCollection, which has buffers
-        for each layer in the network. Each sequence is assigned a seq_id
-        which uniquely identifies that sequence's entries in this cache.
+        This returns a List of seq_ids, which can be passed to `fetch` to
+        retrieve the KVCollection for the given batch.
         """
         if batch_size > self.max_batch_size:
             raise "batch size too large"
@@ -173,14 +172,17 @@ struct ContiguousKVCacheManager[
             self.cache_lengths.append(0)
 
         self.active_seq_ids = seq_ids
-        return self.fetch(seq_ids)
+        return self.active_seq_ids
 
-    fn fetch(inout self, seq_ids: List[Int]) raises -> Self.CollectionType:
+    fn fetch[
+        collection_t: KVCollectionT
+    ](inout self, seq_ids: List[Int]) raises -> collection_t:
         """Retrieves the pre-assigned blocks for the given seq_ids.
 
         if any of the seq_ids are not valid (e.g. no assigned blocks) then
         and error is raised.
         """
+        constrained[_type_is_eq[collection_t, self.CollectionType]()]()
 
         for idx in range(len(self.active_seq_ids)):
             if seq_ids[idx] != self.active_seq_ids[idx]:
@@ -241,23 +243,29 @@ struct ContiguousKVCacheManager[
             self.blocks_buf.unsafe_ptr() + block_size, v_cache_shape
         )
 
-        return Self.CollectionType(
-            key_cache,
-            value_cache,
-            NDBuffer[DType.uint32, 1](
-                self.cache_lengths_tensor_dev.unsafe_ptr().bitcast[UInt32](),
-                (batch_size,),
-            ),
-            is_context_encoding,
-            seq_ids,
-            self.num_layers,
-            batch_size,
+        return rebind[collection_t](
+            Self.CollectionType(
+                key_cache,
+                value_cache,
+                NDBuffer[DType.uint32, 1](
+                    self.cache_lengths_tensor_dev.unsafe_ptr().bitcast[
+                        UInt32
+                    ](),
+                    (batch_size,),
+                ),
+                is_context_encoding,
+                seq_ids,
+                self.num_layers,
+                batch_size,
+            )
         )
 
-    fn step(
+    fn step[
+        collection_t: KVCollectionT
+    ](
         inout self,
         valid_lengths: List[Int],
-        inout inflight_cache: ContiguousKVCacheCollection,
+        owned inflight_cache: collection_t,
     ) raises:
         """Commits changes to the ContiguousKVCache blocks.
 
@@ -265,6 +273,7 @@ struct ContiguousKVCacheManager[
         the values in these buffers have been written to. We note the new tokens
         in the blocks and update the valid_length counter.
         """
+        constrained[_type_is_eq[collection_t, self.CollectionType]()]()
 
         var batch_size = len(valid_lengths)
         debug_assert(
@@ -289,7 +298,7 @@ struct ContiguousKVCacheManager[
         self.cache_lengths = List[Int]()
 
 
-struct InflightBatchHandle(CollectionElement):
+struct _ContinuousBatchingInflightBatchHandle(CollectionElement):
     var cache_lengths: DeviceTensor
     var lookup_table: DeviceTensor
 
@@ -342,12 +351,11 @@ struct ContinuousBatchingKVCacheManager[
     var max_batch_size: Int
     var max_seq_len: Int
     var seq_id_counter: Int
-    var inflight_batch: Optional[InflightBatchHandle]
+    var inflight_batch: Optional[_ContinuousBatchingInflightBatchHandle]
     var num_layers: Int
-    var other_device: Device
     var this_device: Device
+    var other_device: Device
 
-    # TODO currently we allocate the exact right amount, we should
     # extend this to allow for over-allocation
     fn __init__(
         inout self,
@@ -394,7 +402,7 @@ struct ContinuousBatchingKVCacheManager[
                 block_buf_shape,
             )
         ).to_tensor[type, 6]()
-        self.blocks_nd_buf = self.BlocksType(
+        self.blocks_nd_buf = __type_of(self.blocks_nd_buf)(
             self.blocks_buf.unsafe_ptr().bitcast[type](), block_buf_shape
         )
 
@@ -405,14 +413,11 @@ struct ContinuousBatchingKVCacheManager[
         self.other_device = other_device
         self.inflight_batch = None
 
-    fn claim[
-        collection_t: KVCollectionT
-    ](inout self, batch_size: Int) raises -> collection_t:
+    fn claim(inout self, batch_size: Int) raises -> List[Int]:
         """Assign `batch_size` blocks for incoming requests.
 
-        This returns a KVCacheCollection, which has buffers
-        for each layer in the network. Each sequence is assigned a seq_id
-        which uniquely identifies that sequence's entries in this cache.
+        This returns a List of seq_ids, which can be passed to `fetch` to
+        retrieve a KVCacheCollection containing those sequences.
         """
         if batch_size > self.max_batch_size:
             raise "batch size too large"
@@ -441,7 +446,7 @@ struct ContinuousBatchingKVCacheManager[
             self.cache_lengths[curr_value] = 0
 
         # construct the batch
-        return self.fetch[collection_t](seq_ids)
+        return seq_ids
 
     fn fetch[
         collection_t: KVCollectionT
@@ -468,9 +473,13 @@ struct ContinuousBatchingKVCacheManager[
         ).to_tensor[DType.uint32, 1]()
 
         # fill in our list of pointers and valid lengths
+        is_cache_empty = True
         for bs in range(batch_size):
             var seq_id = seq_ids[bs]
-            host_valid_lengths[bs] = self.cache_lengths[seq_id]
+            var cache_length = self.cache_lengths[seq_id]
+            if cache_length > 0:
+                is_cache_empty = False
+            host_valid_lengths[bs] = cache_length
             host_lookup_table[bs] = seq_id
 
         # copy valid lengths from CPU to other device
@@ -490,16 +499,19 @@ struct ContinuousBatchingKVCacheManager[
         )
 
         # retain our allocations through the lifetime of the batch
-        self.inflight_batch = InflightBatchHandle(
+        self.inflight_batch = _ContinuousBatchingInflightBatchHandle(
             device_valid_lengths^,
             device_lookup_table^,
         )
 
-        return collection_t(
-            self.blocks_nd_buf,
-            valid_lengths_ndbuffer,
-            lookup_table_ndbuffer,
-            seq_ids,
+        return rebind[collection_t](
+            self.CollectionType(
+                self.blocks_nd_buf,
+                valid_lengths_ndbuffer,
+                lookup_table_ndbuffer,
+                is_cache_empty,
+                seq_ids,
+            )
         )
 
     fn step[
