@@ -19,6 +19,7 @@ py_library(
         ":ir_py",
         "//SDK/lib/API/python/max/_mlir/dialects",
     ],
+    tags = ["no-mypy"],  # Upstream files with violations
     visibility = ["//visibility:public"],
     deps = [
         ":_mlir_pybind",
