@@ -8,6 +8,7 @@ from collections import List, Optional
 from os import abort
 from sys import sizeof, external_call
 from sys.param_env import env_get_int, is_defined
+from sys.ffi import c_size_t
 
 from gpu.host._compile import _get_nvptx_target
 from gpu.host.context import Context
@@ -536,6 +537,10 @@ struct DeviceContextV1:
     ](self, dst: DeviceBufferV1[type], val: Scalar[type]) raises:
         self.cuda_context.set_current()
         _memset_async[type](dst.ptr, val, dst.size, self.cuda_stream)
+
+    fn get_memory_info(self) raises -> (c_size_t, c_size_t):
+        self.cuda_context.set_current()
+        return self.cuda_context.get_memory_info()
 
     fn synchronize(self) raises:
         self.cuda_context.set_current()

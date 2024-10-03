@@ -3,6 +3,7 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
+from sys.ffi import c_size_t
 from sys.param_env import is_defined
 from gpu.host._compile import _get_nvptx_target
 
@@ -539,3 +540,10 @@ struct DeviceContextVariant:
             return self.v2().compute_capability()
         else:
             return self.v1().compute_capability()
+
+    fn get_memory_info(self) raises -> (c_size_t, c_size_t):
+        @parameter
+        if _device_ctx_v2():
+            return self.v2().get_memory_info()
+        else:
+            return self.v1().get_memory_info()

@@ -7,6 +7,7 @@
 
 from os import abort
 from sys import bitwidthof, sizeof
+from sys.ffi import c_size_t
 
 from gpu.host.function import FunctionCache
 from memory import UnsafePointer, bitcast
@@ -373,3 +374,16 @@ struct Context:
         """Returns the cuda version."""
         var cuda_version = self.device.cuda_version()
         return cuda_version[0] + Float64(cuda_version[1]) / 1000
+
+    fn get_memory_info(self) raises -> (c_size_t, c_size_t):
+        var free = c_size_t(0)
+        var total = c_size_t(0)
+
+        _check_error(
+            self.cuda_dll.cuMemGetInfo(
+                UnsafePointer.address_of(free),
+                UnsafePointer.address_of(total),
+            )
+        )
+
+        return (free, total)

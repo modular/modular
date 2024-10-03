@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from sys.ffi import c_char
+from sys.ffi import c_char, c_size_t
 
 from ._utils import (
     _check_error,
@@ -304,6 +304,11 @@ alias cuModuleGetGlobal = _dylib_function[
         _ModuleHandle,
         UnsafePointer[c_char],
     ) -> Result,
+]
+
+alias cuMemGetInfo = _dylib_function[
+    "cuMemGetInfo_v2",
+    fn (UnsafePointer[c_size_t], UnsafePointer[c_size_t]) -> Result,
 ]
 
 # ===----------------------------------------------------------------------===#
@@ -947,6 +952,9 @@ struct CudaDLL:
     var cuModuleGetFunction: cuModuleGetFunction.type
     var cuModuleGetGlobal: cuModuleGetGlobal.type
 
+    # cuMem
+    var cuMemGetInfo: cuMemGetInfo.type
+
     fn __init__(inout self):
         self.cuDeviceGetCount = cuDeviceGetCount.load()
         self.cuDeviceGetAttribute = cuDeviceGetAttribute.load()
@@ -1000,6 +1008,7 @@ struct CudaDLL:
         self.cuModuleUnload = cuModuleUnload.load()
         self.cuModuleGetFunction = cuModuleGetFunction.load()
         self.cuModuleGetGlobal = cuModuleGetGlobal.load()
+        self.cuMemGetInfo = cuMemGetInfo.load()
 
     fn __init__(inout self, *, other: Self):
         """Explicitly construct a deep copy of the provided value.

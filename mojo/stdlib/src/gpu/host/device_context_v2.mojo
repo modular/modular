@@ -608,6 +608,23 @@ struct DeviceContextV2:
             )
         )
 
+    fn get_memory_info(self) raises -> (c_size_t, c_size_t):
+        var free = c_size_t(0)
+        var total = c_size_t(0)
+        _checked(
+            external_call[
+                "AsyncRT_DeviceContext_getMemoryInfo",
+                _CharPtr,
+                UnsafePointer[c_size_t],
+                UnsafePointer[c_size_t],
+            ](
+                UnsafePointer.address_of(free),
+                UnsafePointer.address_of(total),
+            )
+        )
+
+        return (free, total)
+
     fn print_kernel_timing_info(self):
         """Print profiling info associated with this DeviceContext."""
         not_implemented_yet[
