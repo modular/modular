@@ -13,6 +13,7 @@ from gpu.host.nvtx import (
     _start_range as _start_nvtx_range,
     _end_range as _end_nvtx_range,
     _is_enabled as _nvtx_is_enabled,
+    _is_enabled_details as _nvtx_is_enabled_details,
 )
 
 from utils import StaticIntTuple
@@ -343,7 +344,12 @@ struct Trace[
         @parameter
         if _is_nvtx_enabled[category, level]():
             self.name = name
-            self.detail = ""
+
+            @parameter
+            if _nvtx_is_enabled_details():
+                self.detail = detail
+            else:
+                self.detail = ""
             self.int_payload = None
         elif is_profiling_enabled[category, level]():
             self.name = name
@@ -369,9 +375,19 @@ struct Trace[
 
         @parameter
         if _is_nvtx_enabled[category, level]():
-            self.event_id = int(
-                _start_nvtx_range(message=self.name, category=int(category))
-            )
+
+            @parameter
+            if _nvtx_is_enabled_details():
+                self.event_id = int(
+                    _start_nvtx_range(
+                        message=self.name + "/" + self.detail,
+                        category=int(category),
+                    )
+                )
+            else:
+                self.event_id = int(
+                    _start_nvtx_range(message=self.name, category=int(category))
+                )
             return
 
         @parameter
