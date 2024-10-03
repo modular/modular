@@ -85,7 +85,7 @@ def parse_debug_settings(parser: argparse.ArgumentParser) -> DebugSettings:
 
 async def main() -> None:
     parser = argparse.ArgumentParser()
-    app = fastapi_app(parse_settings(parser), parse_debug_settings(parser))
+    app = fastapi_app(parse_settings(parser), parse_debug_settings(parser))  # type: ignore
     config = fastapi_config(app=app)
     server = Server(config)
     await server.serve()

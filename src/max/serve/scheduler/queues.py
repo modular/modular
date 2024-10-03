@@ -87,7 +87,7 @@ class BatchMultiplexQueue(Generic[BatchReqId, BatchReqInput, BatchReqOutput]):
     @contextlib.asynccontextmanager
     async def open_channel(self, req_id: BatchReqId, data: BatchReqInput):
         self.logger.debug("BatchOpen: %s", req_id)
-        self.out_queues[req_id] = state = asyncio.Queue()
+        self.out_queues[req_id] = state = asyncio.Queue()  # type: ignore
         await self.in_queue.put((req_id, data))
         try:
             yield state

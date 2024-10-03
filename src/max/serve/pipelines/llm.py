@@ -98,7 +98,7 @@ class TokenGeneratorPipelineConfig:
         return config
 
 
-class TokenGeneratorPipeline(Generic[TokenGeneratorContext]):
+class TokenGeneratorPipeline(Generic[TokenGeneratorContext]):  # type: ignore
     """Base class for LLM pipelines."""
 
     def __init__(
