@@ -1175,7 +1175,7 @@
     },
     "function-modifier": {
       "name": "storage.modifier",
-      "match": "(raises|capturing)"
+      "match": "\\b(raises|capturing)\\b"
     },
     "parameters": {
       "name": "meta.function.parameters.python",
