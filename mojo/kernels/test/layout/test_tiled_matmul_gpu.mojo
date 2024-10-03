@@ -7,7 +7,7 @@
 
 from buffer import NDBuffer
 from buffer.dimlist import DimList
-from gpu import AddressSpace
+from gpu.memory import AddressSpace
 from gpu.host import DeviceContext
 from gpu.id import BlockDim, BlockIdx, ThreadIdx
 from gpu.mma import mma
