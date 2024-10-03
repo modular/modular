@@ -7,6 +7,7 @@
 
 from smoke_test_utils import create_test_device_context
 from common_test_smoke import test_smoke
+from common_test_copies import test_copies
 from common_test_timing import test_timing
 
 
@@ -17,4 +18,5 @@ def main():
 
     # Execute cpu tests with the context
     test_smoke(ctx)
+    test_copies(ctx)
     test_timing(ctx)
