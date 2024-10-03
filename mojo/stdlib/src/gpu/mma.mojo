@@ -351,12 +351,11 @@ struct WGMMADescriptor[dtype: DType]:
 
     @staticmethod
     fn create[
-        shape: StaticIntTuple[2], swizzle_mode: Int = 0
+        stride_byte_offset: Int, leading_byte_offset: Int, swizzle_mode: Int = 0
     ](
         smem_ptr: UnsafePointer[
             Scalar[dtype], address_space = AddressSpace.SHARED
         ],
-        stride: StaticIntTuple[2],
     ) -> Self:
         @parameter
         fn insert_bit[start_bit: Int](target: Int64, val: Int64) -> Int64:
@@ -364,10 +363,8 @@ struct WGMMADescriptor[dtype: DType]:
 
         var swizzle = Int64(swizzle_mode)
         var offset = Int64(0)
-        ## FIXME(KERN-895): Figure out the correct values for stride_dim and lead_dim as
-        ## a function of the operand's shape and stride.
-        var stride_dim = Int64(8)
-        var lead_dim = Int64(0)
+        var stride_dim = Int64(stride_byte_offset)
+        var lead_dim = Int64(leading_byte_offset)
 
         var base_ptr = int(smem_ptr)
         var start_address = (base_ptr >> 4)
