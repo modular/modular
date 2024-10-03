@@ -573,23 +573,56 @@ struct DeviceContextV2:
     fn copy_to_device_sync[
         type: DType
     ](self, buf: DeviceBufferV2[type], ptr: UnsafePointer[Scalar[type]]) raises:
-        not_implemented_yet[
-            "##### UNIMPLEMENTED: DeviceContextV2.copy_to_device_sync"
-        ]()
+        # const char * AsyncRT_DeviceContext_HtoD_sync(const DeviceContext *ctx, const DeviceBuffer *dst, const void *src)
+        _checked(
+            external_call[
+                "AsyncRT_DeviceContext_HtoD_sync",
+                _CharPtr,
+                _DeviceContextPtr,
+                _DeviceBufferPtr,
+                UnsafePointer[Scalar[type]],
+            ](
+                self._handle,
+                buf._handle,
+                ptr,
+            )
+        )
 
     fn copy_from_device_sync[
         type: DType
     ](self, ptr: UnsafePointer[Scalar[type]], buf: DeviceBufferV2[type]) raises:
-        not_implemented_yet[
-            "##### UNIMPLEMENTED: DeviceContextV2.copy_from_device_sync"
-        ]()
+        # const char * AsyncRT_DeviceContext_DtoH_sync(const DeviceContext *ctx, void *dst, const DeviceBuffer *src)
+        _checked(
+            external_call[
+                "AsyncRT_DeviceContext_DtoH_sync",
+                _CharPtr,
+                _DeviceContextPtr,
+                UnsafePointer[Scalar[type]],
+                _DeviceBufferPtr,
+            ](
+                self._handle,
+                ptr,
+                buf._handle,
+            )
+        )
 
     fn copy_device_to_device_sync[
         type: DType
     ](self, dst: DeviceBufferV2[type], src: DeviceBufferV2[type]) raises:
-        not_implemented_yet[
-            "##### UNIMPLEMENTED: DeviceContextV2.copy_device_to_device_sync"
-        ]()
+        # const char * AsyncRT_DeviceContext_DtoD_sync(const DeviceContext *ctx, const DeviceBuffer *dst, const DeviceBuffer *src)
+        _checked(
+            external_call[
+                "AsyncRT_DeviceContext_DtoD_sync",
+                _CharPtr,
+                _DeviceContextPtr,
+                _DeviceBufferPtr,
+                _DeviceBufferPtr,
+            ](
+                self._handle,
+                dst._handle,
+                src._handle,
+            )
+        )
 
     fn memset[
         type: DType
