@@ -8,7 +8,7 @@ from math import ceildiv
 from sys import sizeof
 
 from gpu import WARP_SIZE
-from gpu.host.info import A100, _get_info_from_target
+from gpu.host.info import DEFAULT_GPU_ARCH, A100, _get_info_from_target
 from layout.tensor_core import (
     TensorCore,
     get_accum_type,
@@ -217,7 +217,7 @@ fn select_config[
     b_type: DType,
     c_type: DType,
     transpose_b: Bool = False,
-    target: StringLiteral = "cuda",
+    target: StringLiteral = DEFAULT_GPU_ARCH,
 ](M: Int, N: Int, K: Int) -> MatmulConfig[a_type, b_type, c_type, transpose_b]:
     # Select an optimal matmul config by heuristic.
     # The heuristic is to choose the parameters leading to min workload per SM.
