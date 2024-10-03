@@ -5,6 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 from __future__ import annotations
 
+from datetime import datetime
 from json import loads
 from typing import Any, Mapping
 
@@ -40,7 +41,9 @@ class Device:
     @property
     def stats(self) -> Mapping[str, Any]:
         """Returns utilization data for the device."""
-        return loads(self._device.stats)
+        stat = loads(self._device.stats)
+        stat["timestamp"] = datetime.now().isoformat()
+        return stat
 
     @classmethod
     def cpu(cls, id: int = -1) -> Device:
