@@ -90,7 +90,7 @@ class Value:
 
     @property
     def tensor(self) -> TensorValue:
-        """Returns the the Value as a ``TensorValue``.
+        """Returns the Value as a :obj:`TensorValue`.
 
         Raise an exception if the Value is not a TensorValue.
         """
