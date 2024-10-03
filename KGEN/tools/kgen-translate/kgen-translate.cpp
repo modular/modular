@@ -117,10 +117,10 @@ int main(int argc, char *argv[]) {
         // verify-parameters pass.
         mlir::PassManager pm(context);
         pm.addPass(createVerifyParameters());
-        // if (failed(pm.run(*output))) {
-        //   llvm::errs() << "mojo parser created invalid IR\n";
-        //   return {};
-        // }
+        if (failed(pm.run(*output))) {
+          llvm::errs() << "mojo parser created invalid IR\n";
+          return {};
+        }
 
         if (!parserBytecodeOutput.getValue().empty()) {
           std::string message;
