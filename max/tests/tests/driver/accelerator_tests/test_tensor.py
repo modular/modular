@@ -38,12 +38,12 @@ def test_host_device_copy():
 
 def test_device_device_copy():
     # We should be able to freely copy tensors between device and device.
-    cuda_device = CUDA()
+    cuda = CUDA()
 
     device_tensor1 = Tensor.from_numpy(np.array([1, 2, 3], dtype=np.int32)).to(
-        cuda_device
+        cuda
     )
-    device_tensor2 = device_tensor1.copy(cuda_device)
+    device_tensor2 = device_tensor1.copy(cuda)
     tensor = device_tensor2.copy(CPU())
 
     assert tensor.shape == device_tensor1.shape
@@ -145,8 +145,9 @@ def test_dlpack_device():
 
 def test_scalar():
     # We should be able to create scalar values on GPUs.
-    scalar = Tensor.scalar(5, DType.int32, device=CUDA())
-    assert scalar.device == CUDA()
+    cuda = CUDA()
+    scalar = Tensor.scalar(5, DType.int32, device=cuda)
+    assert scalar.device == cuda
 
     host_scalar = scalar.to(CPU())
     assert host_scalar.item() == 5
