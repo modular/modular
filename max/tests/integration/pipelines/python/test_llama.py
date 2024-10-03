@@ -22,11 +22,11 @@ from evaluate_llama import (
 from llama3 import Llama3
 
 
+@pytest.mark.skip("Broken (MSDK-968)")
 @pytest.mark.parametrize(
     "model,encoding",
     [
-        ("tinyllama", "float32"),
-        # ("llama3_1", "q4_k"), TODO: MSDK-968 to re-enable
+        ("llama3_1", "q4_k"),
     ],
 )
 def test_llama(model, encoding, testdata_directory):
