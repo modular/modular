@@ -283,10 +283,8 @@ fn multistage_mma[
 
         @parameter
         for k_tile_id in range(static_num_iters.get()):
-            var a_smem_iter_tmp = a_smem_iter.next_unsafe(k_tile_id)
             var b_smem_iter_tmp = b_smem_iter.next_unsafe(k_tile_id)
 
-            var a_warp_tile = a_smem_iter_tmp[].tile[WM, BK](int(warp_y), 0)
             var b_warp_tile = b_smem_iter_tmp[].tile[
                 b_wtile_dim0, b_wtile_dim1
             ](
@@ -303,10 +301,8 @@ fn multistage_mma[
 
                 @parameter
                 if k_mma == num_k_mmas - 1:
-                    var a_smem_next_tile = a_smem_iter_tmp.next_unsafe()[]
                     var b_smem_next_tile = b_smem_iter_tmp.next_unsafe()[]
 
-                    a_warp_tile = a_smem_next_tile.tile[WM, BK](int(warp_y), 0)
                     b_warp_tile = b_smem_next_tile.tile[
                         b_wtile_dim0, b_wtile_dim1
                     ](b_wtile_coord0, b_wtile_coord1)
