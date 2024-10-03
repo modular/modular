@@ -341,7 +341,7 @@ fn flash_attention[
         #       We'll just implement a flag on the cache object which is true
         #       when the batch contains all cache_lens == 0. Remove this when
         #       such flag (part of ContiguousKVCache) is implemented.
-        var is_context_encoding = k.is_context_encoding
+        var is_context_encoding = k.is_cache_empty
 
         # Get maximum cache valid length from the mask shape.
         # Reminder: mask is BSS or BHSS (depending on rank).
@@ -890,8 +890,12 @@ fn mha[
         num_heads if mask_rank == 4 else 1
     )
 
-    var k_nd_buffer = k.block(batch_idx, seq_len)
-    var v_nd_buffer = v.block(batch_idx, seq_len)
+    var k_nd_buffer = k.block[k_type, k.get_block_static_shape()](
+        batch_idx, seq_len
+    )
+    var v_nd_buffer = v.block[v_type, v.get_block_static_shape()](
+        batch_idx, seq_len
+    )
     var k_ptr = k_nd_buffer.data
     var v_ptr = v_nd_buffer.data
     var key_length = seq_len + k.cache_length(batch_idx)  # cache_length = 0, CE
@@ -1523,8 +1527,12 @@ fn mha_decoding[
         num_heads if mask_rank == 4 else 1
     )
 
-    var k_nd_buffer = k.block(batch_idx, seq_len)
-    var v_nd_buffer = v.block(batch_idx, seq_len)
+    var k_nd_buffer = k.block[k_type, k.get_block_static_shape()](
+        batch_idx, seq_len
+    )
+    var v_nd_buffer = v.block[v_type, v.get_block_static_shape()](
+        batch_idx, seq_len
+    )
     var k_ptr = k_nd_buffer.data
     var v_ptr = v_nd_buffer.data
 

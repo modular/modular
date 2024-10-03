@@ -519,9 +519,9 @@ fn _key_cache_for_layer[
 ](
     layer_idx: Int64,
     kv_collection: ContiguousKVCacheCollection[type, kv_params],
-) -> ContiguousKVCache[type, kv_params]:
+) -> ContiguousKVCache[type, kv_params] as result:
     """Retrieves the Key cache for the given layer."""
-    return kv_collection.get_key_cache(int(layer_idx))
+    return kv_collection.get_key_cache[__type_of(result)](int(layer_idx))
 
 
 @mogg_register("value_cache_for_layer_h8_d128_bshd_bf16")
@@ -730,9 +730,9 @@ fn _value_cache_for_layer[
 ](
     layer_idx: Int64,
     kv_collection: ContiguousKVCacheCollection[type, kv_params],
-) -> ContiguousKVCache[type, kv_params]:
+) -> ContiguousKVCache[type, kv_params] as result:
     """Retrieves the Value cache for the given layer."""
-    return kv_collection.get_value_cache(int(layer_idx))
+    return kv_collection.get_value_cache[__type_of(result)](int(layer_idx))
 
 
 @mogg_register("matmul_kv_cache_h6_d48_bshd")
@@ -1057,7 +1057,7 @@ fn _matmul_kv_cache_impl[
 
         var valid_len = cache.cache_length(b_idx)
         var cache_t_idx = t_idx + valid_len
-        cache.store[width](
+        cache.store(
             b_idx,
             h_idx,
             cache_t_idx,
@@ -1919,7 +1919,7 @@ fn _fused_qk_rope[
                 head_idx -= num_q_heads
 
                 var cache_seq_idx = seq_idx + k_cache.cache_length(bs_idx)
-                val = k_cache.load[width=width](
+                val = k_cache.load[type, width=width](
                     bs_idx, head_idx, cache_seq_idx, head_dim_idx
                 )
 
@@ -2290,7 +2290,7 @@ fn _flash_attention_kv_cache_cpu[
         var seq = idx[2]
         var head_d_idx = idx[3]
 
-        var retval = k.load[width=width](bs, head_idx, seq, head_d_idx)
+        var retval = k.load[type, width=width](bs, head_idx, seq, head_d_idx)
         return retval
 
     @parameter
@@ -2302,7 +2302,7 @@ fn _flash_attention_kv_cache_cpu[
         var head_idx = idx[1]
         var seq = idx[2]
         var head_d_idx = idx[3]
-        var retval = v.load[width=width](bs, head_idx, seq, head_d_idx)
+        var retval = v.load[type, width=width](bs, head_idx, seq, head_d_idx)
         return retval
 
     @parameter
