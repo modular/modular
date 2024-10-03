@@ -508,6 +508,8 @@ fn crd2idx(
         if is_tuple(shape):  # "int" tuple tuple
             if len(shape) != len(stride):
                 abort("Can't compute idx, shape != stride")
+            if len(shape) == 0:
+                return 0
             var result: Int = 0
             for i in range(len(shape) - 1):
                 result += crd2idx(

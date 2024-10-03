@@ -104,10 +104,8 @@ fn _project_on_axis[
     return p_t
 
 
-fn _get_index_type(layout: Layout, address_space: AddressSpace) -> DType:
-    if layout.cosize() < _int(max_finite[DType.int32]()):
-        return DType.int32
-    elif address_space in (
+fn _get_index_type(address_space: AddressSpace) -> DType:
+    if address_space in (
         _GPUAddressSpace.SHARED,
         _GPUAddressSpace.CONSTANT,
         _GPUAddressSpace.PARAM,
@@ -115,6 +113,25 @@ fn _get_index_type(layout: Layout, address_space: AddressSpace) -> DType:
         return DType.int32
     else:
         return DType.index
+
+
+fn _get_index_type(layout: Layout, address_space: AddressSpace) -> DType:
+    if layout.all_dims_known() and layout.cosize() < _int(
+        max_finite[DType.int32]()
+    ):
+        return DType.int32
+    else:
+        return _get_index_type(address_space)
+
+
+fn _get_unsigned_type(layout: Layout, address_space: AddressSpace) -> DType:
+    if layout.all_dims_known() and layout.cosize() < _int(
+        max_finite[DType.uint32]()
+    ):
+        return DType.uint32
+    else:
+        var dtype = _get_index_type(address_space)
+        return DType.uint32 if dtype is DType.int32 else DType.index
 
 
 alias _swizzle_signature = fn[type: DType] (Scalar[type]) -> Scalar[type]
@@ -3322,12 +3339,12 @@ struct LayoutTensorIter[
     """
 
     var ptr: UnsafePointer[Scalar[type], address_space, False, alignment]
-    var offset: UInt
-    var stride: UInt
-    var bound: UInt
+    var offset: Scalar[_get_unsigned_type(layout, address_space)]
+    var stride: Scalar[_get_unsigned_type(layout, address_space)]
+    var bound: Scalar[_get_unsigned_type(layout, address_space)]
     var runtime_layout: RuntimeLayout[layout]
-    var dim_bound: Int
-    var idx: Int
+    var dim_bound: Scalar[_get_unsigned_type(layout, address_space)]
+    var idx: Scalar[_get_unsigned_type(layout, address_space)]
 
     @always_inline
     fn __init__(inout self):
@@ -3352,12 +3369,14 @@ struct LayoutTensorIter[
     fn __init__(
         inout self,
         ptr: __type_of(self.ptr),
-        bound: Int,
-        stride: Int = layout.size() if layout.all_dims_known() else UNKNOWN_VALUE,
-        offset: Int = 0,
+        bound: __type_of(self.offset),
+        stride: __type_of(
+            self.stride
+        ) = layout.size() if layout.all_dims_known() else UNKNOWN_VALUE,
+        offset: __type_of(self.offset) = 0,
         runtime_layout: RuntimeLayout[layout] = RuntimeLayout[layout](),
-        dim_bound: Int = 0,
-        idx: Int = 0,
+        dim_bound: __type_of(self.offset) = 0,
+        idx: __type_of(self.offset) = 0,
     ):
         @parameter
         if axis:
@@ -3383,7 +3402,9 @@ struct LayoutTensorIter[
         """Return the layout tensor at current iterator."""
         # TODO: Use deref `[]` to be consistent with mojo feature.
 
-        return __type_of(result)(self.ptr + self.offset, self.runtime_layout)
+        return __type_of(result)(
+            self.ptr + int(self.offset), self.runtime_layout
+        )
 
     @always_inline
     fn __getitem__(
@@ -3409,9 +3430,9 @@ struct LayoutTensorIter[
         if __experimental_non_homogeneous_tile:
             new_shape = self.runtime_layout.shape
             var cur_dim = new_shape.value[axis.value()]
-            new_shape.value[axis.value()] = (
+            new_shape.value[axis.value()] = int(
                 cur_dim if self.idx * cur_dim + cur_dim
-                < self.dim_bound else self.dim_bound - (self.idx * cur_dim)
+                < int(self.dim_bound) else self.dim_bound - (self.idx * cur_dim)
             )
             self.runtime_layout = RuntimeLayout(
                 new_shape, self.runtime_layout.stride
@@ -3435,9 +3456,9 @@ struct LayoutTensorIter[
         if __experimental_non_homogeneous_tile:
             new_shape = self.runtime_layout.shape
             var cur_dim = new_shape.value[axis.value()]
-            new_shape.value[axis.value()] = (
+            new_shape.value[axis.value()] = int(
                 cur_dim if self.idx * cur_dim + cur_dim
-                < self.dim_bound else self.dim_bound - (self.idx * cur_dim)
+                < int(self.dim_bound) else self.dim_bound - (self.idx * cur_dim)
             )
             self.runtime_layout = RuntimeLayout(
                 new_shape, self.runtime_layout.stride
@@ -3469,14 +3490,14 @@ struct LayoutTensorIter[
 
         @parameter
         if axis:
-            next_idx = self.idx + int(rhs)
+            next_idx = int(self.idx) + int(rhs)
 
         @parameter
         if __experimental_non_homogeneous_tile:
             var cur_dim = new_shape.value[axis.value()]
-            new_shape.value[axis.value()] = (
+            new_shape.value[axis.value()] = int(
                 cur_dim if next_idx * cur_dim + cur_dim
-                < self.dim_bound else self.dim_bound - (next_idx * cur_dim)
+                < int(self.dim_bound) else self.dim_bound - (next_idx * cur_dim)
             )
 
         @parameter
@@ -3487,10 +3508,10 @@ struct LayoutTensorIter[
             self.ptr,
             self.bound,
             stride=self.stride,
-            offset=next_offset,
+            offset=int(next_offset),
             runtime_layout=RuntimeLayout(new_shape, self.runtime_layout.stride),
             dim_bound=self.dim_bound,
-            idx=next_idx,
+            idx=int(next_idx),
         )
 
     @always_inline
@@ -3508,14 +3529,14 @@ struct LayoutTensorIter[
 
         @parameter
         if axis:
-            next_idx = self.idx + int(rhs)
+            next_idx = int(self.idx) + int(rhs)
 
         @parameter
         if __experimental_non_homogeneous_tile:
             var cur_dim = new_shape.value[axis.value()]
-            new_shape.value[axis.value()] = (
+            new_shape.value[axis.value()] = int(
                 cur_dim if next_idx * cur_dim
-                < self.dim_bound else self.dim_bound - (self.idx * cur_dim)
+                < int(self.dim_bound) else self.dim_bound - (self.idx * cur_dim)
             )
 
         @parameter
@@ -3529,10 +3550,10 @@ struct LayoutTensorIter[
             self.ptr,
             self.bound,
             stride=self.stride,
-            offset=next_offset,
+            offset=int(next_offset),
             runtime_layout=self.runtime_layout,
             dim_bound=self.dim_bound,
-            idx=next_idx,
+            idx=int(next_idx),
         )
 
     @always_inline
@@ -3563,12 +3584,12 @@ struct LayoutTensorIter[
 
         return __type_of(result)(
             self.ptr,
-            self.bound,
-            self.stride,
-            self.offset,
-            runtime_layout=RuntimeLayout[dst_layout](),
-            dim_bound=self.dim_bound,
-            idx=self.idx,
+            int(self.bound),
+            int(self.stride),
+            int(self.offset),
+            RuntimeLayout[dst_layout](),
+            dim_bound=int(self.dim_bound),
+            idx=int(self.idx),
         )
 
     @always_inline
@@ -3588,10 +3609,10 @@ struct LayoutTensorIter[
             self.ptr.bitcast[
                 new_type, address_space=address_space, alignment=alignment
             ](),
-            self.bound,
-            self.stride,
-            self.offset,
+            int(self.bound),
+            int(self.stride),
+            int(self.offset),
             runtime_layout=self.runtime_layout,
-            dim_bound=self.dim_bound,
-            idx=self.idx,
+            dim_bound=int(self.dim_bound),
+            idx=int(self.idx),
         )
