@@ -52,12 +52,8 @@ fn wgmma_tf32_tf32_f32_fill_kernel[M: Int, N: Int, K: Int]():
 
     barrier()
 
-    var mat_a_desc = WGMMADescriptor.create[Index(M, N)](
-        smem_operand_a.ptr, Index(K, 1)
-    )
-    var mat_b_desc = WGMMADescriptor.create[Index(K, N)](
-        smem_operand_b.ptr, Index(K, 1)
-    )
+    var mat_a_desc = WGMMADescriptor.create[8, 64](smem_operand_a.ptr)
+    var mat_b_desc = WGMMADescriptor.create[8, 1](smem_operand_b.ptr)
 
     wgmma_fence_aligned()
     var c_reg = SIMD[DType.float32, 4](0)
