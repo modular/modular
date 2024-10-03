@@ -132,23 +132,9 @@ struct Person:
     var name: String
     var age: Int
 
-    @staticmethod
-    fn obj_init(self: UnsafePointer[Self]):
-        # Field ptrs
-        # TODO(MSTDL-950): Avoid get field ptrs through uninit reference.
-        var name_ptr = UnsafePointer.address_of(self[].name)
-        var age_ptr = UnsafePointer.address_of(self[].age)
-
-        name_ptr.init_pointee_move("John Smith")
-        age_ptr.init_pointee_move(123)
-
-    @staticmethod
-    fn obj_destroy(self: UnsafePointer[Self]):
-        # TODO(MSTDL-633):
-        #   Is this always safe? Wrap in GIL, because this could
-        #   evaluate arbitrary code?
-        # Destroy this `Person` instance.
-        self.destroy_pointee()
+    fn __init__(inout self):
+        self.name = "John Smith"
+        self.age = 123
 
     @staticmethod
     fn obj_name(
@@ -182,11 +168,9 @@ fn add_person_type(inout module: TypedPythonObject["Module"]):
     # ----------------------------------
 
     try:
-        var type_obj = PyMojoObject[Person].python_type_object[
-            "Person",
-            Person.obj_init,
-            Person.obj_destroy,
-        ](methods)
+        var type_obj = PyMojoObject[Person].python_type_object["Person"](
+            methods
+        )
 
         Python.add_object(module, "Person", type_obj)
     except e:
