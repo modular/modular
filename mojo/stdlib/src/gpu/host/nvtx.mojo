@@ -233,8 +233,15 @@ alias _nvtxRangePop = _dylib_function["nvtxRangePop", fn () -> Int32]
 # ===----------------------------------------------------------------------===#
 
 
+fn _is_enabled_details() -> Bool:
+    return env_get_int["KERNEL_E2E_GPU_PROFILING_DETAILED", 0]() == 1
+
+
 fn _is_enabled() -> Bool:
-    return env_get_int["KERNEL_E2E_GPU_PROFILING", 0]() == 1
+    return (
+        env_get_int["KERNEL_E2E_GPU_PROFILING", 0]() == 1
+        or _is_enabled_details()
+    )
 
 
 fn _is_disabled() -> Bool:
