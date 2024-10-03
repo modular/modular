@@ -11,6 +11,7 @@ from llama3 import SupportedEncodings
 from max.driver import CPU
 from max.serve.mocks.mock_api_requests import simple_openai_request
 from max.serve.schemas.openai import CreateChatCompletionResponse
+
 from .params import ModelParams
 
 
@@ -18,6 +19,7 @@ from .params import ModelParams
     "tinyllama_model",
     [
         ModelParams(
+            weight_path="tiny_llama.gguf",
             max_length=512,
             max_new_tokens=10,
             device=CPU(),

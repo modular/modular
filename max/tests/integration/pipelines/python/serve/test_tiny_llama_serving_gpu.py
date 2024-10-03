@@ -18,6 +18,7 @@ from params import ModelParams
     "tinyllama_model",
     [
         ModelParams(
+            weight_path="tiny_llama_bf16.gguf",
             max_length=512,
             max_new_tokens=10,
             device=CUDA(),

@@ -5,17 +5,8 @@
 # ===----------------------------------------------------------------------=== #
 """The fixtures for all tests in this directory."""
 
-from pathlib import Path
-
 import pytest
-from huggingface_hub import hf_hub_download
-from llama3 import (
-    InferenceConfig,
-    Llama3,
-    Llama3Context,
-    SupportedEncodings,
-    SupportedVersions,
-)
+from llama3 import InferenceConfig, Llama3, Llama3Context, SupportedVersions
 from max.serve.api_server import fastapi_app
 from max.serve.config import APIType, Settings
 from max.serve.debug import DebugSettings
@@ -48,7 +39,7 @@ def app(tinyllama_model):
 
 
 @pytest.fixture(scope="session")
-def tinyllama_model(tinyllama_path, request):
+def tinyllama_model(testdata_directory, request):
     """The tiny Llama 3 model that is being served.
 
     Note: Only one instance of a fixture is cached at a time.
@@ -57,7 +48,7 @@ def tinyllama_model(tinyllama_path, request):
     https://docs.pytest.org/en/stable/how-to/fixtures.html#fixture-scopes
     """
     config = InferenceConfig(
-        weight_path=tinyllama_path,
+        weight_path=testdata_directory / request.param.weight_path,
         version=SupportedVersions.llama3_1,
         max_length=request.param.max_length,
         max_new_tokens=request.param.max_new_tokens,
@@ -65,18 +56,5 @@ def tinyllama_model(tinyllama_path, request):
         device=request.param.device,
     )
 
-    if request.param.encoding == SupportedEncodings.bfloat16:
-        repo_id = f"modularai/llama-{config.version}"
-        config.weight_path = hf_hub_download(
-            repo_id=repo_id,
-            filename=config.quantization_encoding.hf_model_name(config.version),
-        )
-
     model = Llama3(config)
     return model
-
-
-@pytest.fixture(scope="session")
-def tinyllama_path(testdata_directory) -> Path:
-    """The path to the model's tiny weights."""
-    return testdata_directory / "tiny_llama.gguf"
