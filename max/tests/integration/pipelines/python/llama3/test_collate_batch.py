@@ -7,8 +7,36 @@
 import numpy as np
 import pytest
 from hypothesis import assume, given
+from hypothesis import strategies as st
 
-from llama3.collate_batch import PaddingDirection, collate_batch
+from llama3.collate_batch import (
+    PaddingDirection,
+    batch_padded_tokens_and_mask,
+    collate_batch,
+)
+
+# Shared batch size between start_pos and tokens.
+batch_size_strategy = st.shared(
+    st.integers(min_value=1, max_value=10), key="batch_size"
+)
+
+# Define start_pos_strategy using flatmap to get concrete batch_size.
+start_pos_strategy = batch_size_strategy.flatmap(
+    lambda batch_size: st.lists(
+        st.integers(min_value=0, max_value=100),
+        min_size=batch_size,
+        max_size=batch_size,
+    )
+)
+tokens_strategy = batch_size_strategy.flatmap(
+    lambda batch_size: st.lists(
+        st.lists(
+            st.integers(min_value=0, max_value=1000), min_size=1, max_size=20
+        ).map(lambda lst: np.array(lst, dtype=int)),
+        min_size=batch_size,
+        max_size=batch_size,
+    )
+)
 
 
 @given(arrays=..., pad_value=...)
@@ -55,3 +83,23 @@ def test_collate_batch__pad_right(arrays: list[list[int]], pad_value: int):
 def test_collate_batch__no_items(pad_value: int):
     with pytest.raises(ValueError):
         collate_batch([], pad_value=pad_value)
+
+
+@given(start_pos=start_pos_strategy, tokens=tokens_strategy)
+def test_collate_mask__tokens_and_mask_shapes_match(
+    start_pos: list[int], tokens: list[np.ndarray]
+) -> None:
+    assert len(start_pos) == len(
+        tokens
+    ), "start_pos and tokens must have the same length"
+
+    batched_tokens, attention_mask = batch_padded_tokens_and_mask(
+        start_pos, tokens
+    )
+
+    assert batched_tokens.shape[0] == len(
+        tokens
+    ), "Batch size of tokens does not match"
+    assert (
+        attention_mask.shape[:2] == batched_tokens.shape
+    ), "Attention mask shape mismatch"
