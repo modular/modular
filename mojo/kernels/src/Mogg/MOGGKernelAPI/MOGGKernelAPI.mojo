@@ -1485,7 +1485,6 @@ struct BroadcastTo:
 @compiler.view_kernel
 struct StaticReshape:
     @staticmethod
-    @staticmethod
     fn execute[
         synchronous: Bool,
         target: StringLiteral,
@@ -1524,6 +1523,78 @@ struct Reshape:
             managed_tensor_slice_to_ndbuffer(input),
             managed_tensor_slice_to_ndbuffer(shape),
         )
+
+
+@compiler.register("mo.transpose")
+@compiler.view_kernel
+struct Transpose:
+    @staticmethod
+    fn transpose_in_place(
+        input: ManagedTensorSlice,
+        permutations: ManagedTensorSlice[rank=1],
+    ) -> ManagedTensorSlice[type = input.type, rank = input.rank]:
+        var new_shape = StaticIntTuple[input.rank]()
+        var new_stride = StaticIntTuple[input.rank]()
+
+        @parameter
+        for i in range(input.rank):
+            var dim = int(permutations[i])
+            new_shape[i] = input.spec().shape[dim]
+            new_stride[i] = input._strides[dim]
+
+        return ManagedTensorSlice[type = input.type, rank = input.rank](
+            input._ptr, new_shape, new_stride
+        )
+
+    @staticmethod
+    fn execute[
+        synchronous: Bool,
+        target: StringLiteral,
+        type: DType,
+        rank: Int,
+    ](
+        output: ManagedTensorSlice[type=type, rank=rank],
+        input: ManagedTensorSlice[type=type, rank=rank],
+        permutations: ManagedTensorSlice[rank=1],
+    ):
+        view_copy_impl[synchronous, target](
+            output, Self.transpose_in_place(input, permutations)
+        )
+
+    # TODO(GRA-1033) Make it possible to have multiple raises.
+    @no_inline
+    @staticmethod
+    fn shape_impl(
+        input: ManagedTensorSlice,
+        permutations: ManagedTensorSlice[rank=1],
+    ) raises -> StaticIntTuple[input.rank]:
+        if permutations.spec().shape[0] != input.rank:
+            raise Error("[transpose] permutation size must match input rank")
+
+        @parameter
+        for i in range(input.rank):
+            var perm = int(permutations[i])
+            if perm < 0 or input.rank <= perm:
+                raise Error(
+                    "[transpose] each permutation must be within range [0,"
+                    " rank)"
+                )
+
+        var view_tensor = Self.transpose_in_place(input, permutations)
+        var out = StaticIntTuple[input.rank]()
+
+        @parameter
+        for i in range(input.rank):
+            out[i] = view_tensor.spec().shape[i]
+
+        return out
+
+    @staticmethod
+    fn shape(
+        input: ManagedTensorSlice,
+        permutations: ManagedTensorSlice[rank=1],
+    ) raises -> StaticIntTuple[input.rank]:
+        return Self.shape_impl(input, permutations)
 
 
 # ===----------------------------------------------------------------------===#

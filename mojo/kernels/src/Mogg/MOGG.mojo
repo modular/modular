@@ -2112,7 +2112,7 @@ fn transpose[
     return NDBuffer[type, rank](input.data, new_shape, new_stride)
 
 
-@mogg_register("transpose_shape")
+@mogg_register_shape_func("mo.transpose")
 @always_inline
 fn transpose_shape[
     rank: Int,
