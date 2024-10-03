@@ -24,6 +24,7 @@ py_binary(
     data = glob(["src/**/*.txt"]),
     imports = ["src"],
     main = "src/mblack/__main__.py",
+    tags = ["no-mypy"],  # mypy_extensions conflicts with builtin from mypy
     deps = [
         requirement("click"),
         requirement("mypy_extensions"),
