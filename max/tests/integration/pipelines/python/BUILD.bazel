@@ -130,6 +130,7 @@ modular_py_test(
     },
     requires_gpu = True,
     tags = [
+        "A100",
         "gpu",
         "requires-network",
     ],
