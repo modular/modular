@@ -23,7 +23,7 @@ fn _get_nvptx_target[
     target_arch: StringLiteral = DEFAULT_GPU_ARCH,
 ]() -> __mlir_type.`!kgen.target`:
     alias info = _get_info_from_target[target_arch]()
-    return info.target
+    return info.target()
 
 
 # ===----------------------------------------------------------------------===#
