@@ -5,13 +5,23 @@
 # ===----------------------------------------------------------------------=== #
 """Integration tests for mutable ops."""
 
+import os
+from pathlib import Path
+
 import numpy as np
 import pytest
 import torch
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import BufferType, Graph, TensorType
+from max.driver import Tensor
+from max.graph import ops
 from max.graph.ops import buffer_load, buffer_store
+
+
+@pytest.fixture
+def custom_ops_path() -> Path:
+    return Path(os.environ["CUSTOM_OPS_PATH"])
 
 
 def torch_add_n(x, n):
@@ -134,3 +144,26 @@ def test_store_slice_load_slice(
         + expected[: input_tensor.shape[0], : input_tensor.shape[1]]
     )
     assert np.allclose(input_buffer, expected)
+
+
+def test_inplace_user_supplied(custom_ops_path, session: InferenceSession):
+    bt = BufferType(DType.float32, [2, 2])
+
+    with Graph("basic", input_types=[bt]) as graph:
+        buffer: BufferValue = graph.inputs[0]
+
+        # this custom op is equivalent to buffer[0,0] += 1
+        ops.inplace_custom("mutable_test_op", values=[buffer])
+        ops.inplace_custom("mutable_test_op", values=[buffer])
+        buffer[...] = ops.negate(buffer[...])
+
+        graph.output()
+
+    rawbuffer = np.ones((2, 2), dtype=np.float32)
+
+    model = session.load(graph, custom_ops_path=custom_ops_path)
+    model.execute(Tensor.from_dlpack(rawbuffer))
+
+    actual = np.array([[3, 1], [1, 1]], dtype=np.float32) * -1
+
+    np.testing.assert_equal(rawbuffer, actual)
