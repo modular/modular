@@ -78,8 +78,7 @@ fn gemm_kernel[
     var b_reg = LayoutTensor[b_type, Layout(TN)].stack_allocation()
     var c_reg = LayoutTensor[
         c_type, Layout.row_major(TM, TN)
-    ].stack_allocation()
-    c_reg.fill(0)
+    ].stack_allocation().fill(0)
 
     alias warp_layout = Layout.row_major(8, 4)
 
