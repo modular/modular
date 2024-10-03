@@ -81,7 +81,15 @@ private:
 
 namespace float16 {
 struct float16_t {
+  static constexpr uint16_t MIN_BITS = 0xFBFF;
+  static constexpr uint16_t MAX_BITS = 0x7BFF;
+
   float16_t(float v) : bits(floatToF16Bits(v)) {}
+  explicit float16_t(uint16_t rawBits) : bits(rawBits) {}
+
+  static float16_t min() { return float16_t(MIN_BITS); }
+  static float16_t max() { return float16_t(MAX_BITS); }
+
   operator float() {
     // If the system is big-endian, reverse the byte order of the bits.
     if constexpr (!is_little_endian)
