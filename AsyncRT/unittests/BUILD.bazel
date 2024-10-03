@@ -45,7 +45,10 @@ modular_cc_test(
 modular_cc_test(
     name = "CUDADeviceContextTest",
     srcs = ["CUDADeviceContextTest.cpp"],
-    tags = ["gpu"],
+    tags = [
+        "A100",
+        "gpu",
+    ],
     deps = [
         "//AsyncRT:CUDADeviceContext",
         "//AsyncRT:DeviceContext",
