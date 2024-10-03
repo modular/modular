@@ -24,7 +24,8 @@ def test_load_on_gpu(gpu_session: InferenceSession, mo_model_path: Path):
 def test_execute_gpu(gpu_session: InferenceSession, mo_model_path: Path):
     """Validate that we can execute inputs on GPU."""
     model = gpu_session.load(mo_model_path)
-    input_tensor = Tensor.from_numpy(np.ones(5, dtype=np.float32)).to(CUDA())
+    cuda = model.device
+    input_tensor = Tensor.from_numpy(np.ones(5, dtype=np.float32)).to(cuda)
     outputs = model.execute(input_tensor)
     assert len(outputs) == 1
     output_tensor = outputs[0]
@@ -38,8 +39,10 @@ def test_execute_subtensor(gpu_session: InferenceSession, mo_model_path: Path):
     # of larger tensors. This will be important for things like our kv cache
     # implementation.
     model = gpu_session.load(mo_model_path)
+    cuda = model.device
+
     arr = np.arange(0, 20, dtype=np.float32).reshape((2, 10))
-    input_tensor = Tensor.from_numpy(arr).to(CUDA())[0, :5]
+    input_tensor = Tensor.from_numpy(arr).to(cuda)[0, :5]
     outputs = model.execute(input_tensor)
     assert len(outputs) == 1
     output_tensor = outputs[0]
@@ -54,7 +57,7 @@ def test_execute_subtensor(gpu_session: InferenceSession, mo_model_path: Path):
 
     # We need to also handle situations where we're creating tensors from numpy
     # arrays that have already been sliced.
-    presliced_input = Tensor.from_numpy(arr[0, ::2]).to(CUDA())
+    presliced_input = Tensor.from_numpy(arr[0, ::2]).to(cuda)
     presliced_output = model.execute(presliced_input)
     presliced_expected = [3.0, 3.0, -2.0, 8.0, 13.0]
     assert len(presliced_output) == 1
@@ -68,7 +71,8 @@ def test_execute_subtensor(gpu_session: InferenceSession, mo_model_path: Path):
 def test_scalar_inputs(gpu_session: InferenceSession, scalar_input_path: Path):
     # We should be able to execute models with scalar inputs.
     model = gpu_session.load(scalar_input_path)
-    scalar = Tensor.scalar(3, dtype=DType.int32, device=CUDA())
+    cuda = model.device
+    scalar = Tensor.scalar(3, dtype=DType.int32, device=cuda)
     vector = np.arange(1, 6, dtype=np.int32)
 
     cuda_output = model.execute(scalar, vector)[0]
@@ -130,29 +134,32 @@ def test_execute_external_weights_gpu(gpu_session: InferenceSession) -> None:
     )
 
     compiled = gpu_session.load(graph, weights_registry={"foo": weights})
+    cuda = compiled.device
     input_np = (
         np.random.default_rng(seed=42)
         .standard_normal(num_elems)
         .astype(np.float32)
     )
     output = compiled.execute(
-        Tensor.from_dlpack(input_np).to(CUDA()), copy_inputs_to_device=False
+        Tensor.from_dlpack(input_np).to(cuda),
+        copy_inputs_to_device=False,
     )[0].to(CPU())
     for idx, elt in enumerate(input_np + weights):
         assert isclose(output[idx].item(), elt)
 
 
-def test_execute_external_weights_gpu_resident(
-    gpu_session: InferenceSession,
-) -> None:
+def test_execute_external_weights_gpu_resident() -> None:
     """Executes a model with external weights already resident on device."""
+    cuda = CUDA()
+    gpu_session = InferenceSession(device=cuda)
+
     num_elems = 4096
     weights_np = np.arange(num_elems, dtype=np.float32)
-    weights = Tensor.from_dlpack(weights_np).to(CUDA())
+    weights = Tensor.from_dlpack(weights_np).to(cuda)
 
     graph = Graph(
         "external_weights_gpu_resident",
-        Model(num_elems, device=CUDA()),
+        Model(num_elems, device=cuda),
         input_types=(TensorType(DType.float32, (num_elems,)),),
     )
 
@@ -172,7 +179,7 @@ def test_execute_external_weights_gpu_resident(
         .standard_normal(num_elems)
         .astype(np.float32)
     )
-    output = compiled.execute(Tensor.from_dlpack(input_np).to(CUDA()))[0].to(
+    output = compiled.execute(Tensor.from_dlpack(input_np).to(cuda))[0].to(
         CPU()
     )
 
@@ -201,8 +208,10 @@ def test_aliasing_outputs(
     # The device tensor execution path should support models that return the
     # same tensor outputs more than once.
     model = gpu_session.load(aliasing_outputs_path)
+    cuda = model.device
+
     arr = np.arange(0, 5, dtype=np.int32)
-    input_tensor = Tensor.from_numpy(arr).to(CUDA())
+    input_tensor = Tensor.from_numpy(arr).to(cuda)
     outputs = model.execute(input_tensor)
     assert len(outputs) == 2
 
