@@ -37,6 +37,7 @@ modular_cc_library(
     srcs = [
         "lib/AlignedAlloc.cpp",
         "lib/Config.cpp",
+        "lib/Debugger.cpp",
         "lib/DynamicLibrary.cpp",
         "lib/Error.cpp",
         "lib/ErrorOr.cpp",
@@ -55,6 +56,7 @@ modular_cc_library(
         "include/Support/CommandLine.h",
         "include/Support/Config.h",
         "include/Support/Context.h",
+        "include/Support/Debugger.h",
         "include/Support/DynamicLibrary.h",
         "include/Support/Error.h",
         "include/Support/ErrorOr.h",
@@ -89,6 +91,7 @@ modular_cc_library(
     }),
     deps = [
         "//Config",
+        "@llvm-project//llvm:Support",
         "@llvm-project//mlir:Pass",
         "@llvm-project//mlir:Support",
     ],
