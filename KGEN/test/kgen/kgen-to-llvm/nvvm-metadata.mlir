@@ -1,12 +1,24 @@
-// RUN: kgen-opt %s -lower-kgen-to-llvm | kgen-translate -mlir-to-llvmir
+// RUN: kgen-opt %s -lower-kgen-to-llvm | kgen-translate -mlir-to-llvmir | FileCheck %s
 
 module attributes {M.target_info = #M.target<triple = "nvptx64-nvidia-cuda", arch = "sm_75", data_layout = "e-i64:64-i128:128-v16:16-v32:32-n16:32:64", simd_bit_width = 128>} {
-// CHECK: define void @kernel()
+// CHECK: void @kernel()
 kgen.func export @kernel() {
   kgen.return
 }
 
-// CHECK: !nvvm.annotations = !{!1}
-// CHECK: !1 = !{ptr @kernel, !"kernel", i32 1}
+// CHECK: void @kernel_grid_constant
+kgen.func export @kernel_grid_constant(%0: !kgen.pointer<none> borrow_in_mem, %1: !kgen.pointer<none> borrow_in_mem) attributes {
+  LLVMMetadata = { nvvm.grid_constant = #pop.array<1> : !pop.array<1, i32> }
+} {
+  kgen.return
+}
+
+// CHECK: !nvvm.annotations = !{![[GRID_CST:.+]], ![[KERNEL:.+]],
+
+// CHECK: ![[GRID_CST]] = !{ptr @kernel_grid_constant, !"grid_constant", ![[GRID_CST_ARGS:.+]]}
+// The following arg number is 2 because NVVM expects 1-based indices.
+// CHECK: ![[GRID_CST_ARGS]] = !{i32 2}
+
+// CHECK: ![[KERNEL]] = !{ptr @kernel, !"kernel", i32 1}
 
 }
