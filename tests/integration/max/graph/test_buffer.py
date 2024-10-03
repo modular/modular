@@ -17,6 +17,7 @@ from max.graph import BufferType, Graph, TensorType
 from max.driver import Tensor
 from max.graph import ops
 from max.graph.ops import buffer_load, buffer_store
+from max.graph.value import BufferValue
 
 
 @pytest.fixture
