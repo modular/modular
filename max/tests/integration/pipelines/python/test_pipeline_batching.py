@@ -4,17 +4,24 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from typing import Literal
-import pytest
-from dataclasses import dataclass
 
-from llama3.llama3 import Llama3
-from llama3.config import (
-    SupportedEncodings,
-    SupportedVersions,
-    InferenceConfig,
+from dataclasses import dataclass
+from typing import Literal
+
+import pytest
+from evaluate_llama import (
+    PROMPTS,
+    NumpyDecoder,
+    compare_values,
+    find_runtime_path,
+    golden_data_fname,
+    next_token_with_logits,
 )
-from evaluate_llama import hf_hub_download
+from huggingface_hub import hf_hub_download
+from llama3.config import InferenceConfig, SupportedEncodings, SupportedVersions
+from llama3.llama3 import Llama3
+from max.graph import TensorValue
+from nn.layer import add_layer_hook, clear_hooks
 
 
 @dataclass(frozen=True)
@@ -24,7 +31,12 @@ class PipelineModelParams:
     max_length: int
     max_new_tokens: int = -1
     max_batch_size: int = 1
-    version = SupportedVersions.llama3_1
+    version: SupportedVersions = SupportedVersions.llama3_1
+
+    add_print_hook: bool = False
+    """Whether to include a print hook. This is generally for debugging
+    purposes, but it's also helping to avoid a segfault in the heterogeneous
+    test."""
 
     def __str__(self):
         return f"{self.name}-{self.encoding}-{self.max_length}-{self.max_batch_size}"
@@ -47,6 +59,21 @@ def pipeline_model(testdata_directory, request):
             filename=weights_encoding_file,
         )
         print(f"- Downloaded: {weight_path}")
+    if model_params.add_print_hook:
+
+        def print_inputs_outputs(layer, args, kwargs, outputs):
+            layer_name = type(layer).__name__
+            for n, value in enumerate(args):
+                if isinstance(value, TensorValue):
+                    value.print(f"{layer_name}-input_{n}")
+            if isinstance(outputs, TensorValue):
+                outputs.print(f"{layer_name}-output")
+            elif isinstance(outputs, (list, tuple)):
+                for n, value in enumerate(outputs):
+                    if isinstance(value, TensorValue):
+                        value.print(f"{layer_name}-output{n}")
+
+        add_layer_hook(print_inputs_outputs)
     config = InferenceConfig(
         weight_path=weight_path,
         version=model_params.version,
@@ -60,6 +87,10 @@ def pipeline_model(testdata_directory, request):
         f" MaxNewTokens={config.max_new_tokens}, BatchSize={config.batch_size}"
     )
     model = Llama3(config)
+
+    if model_params.add_print_hook:
+        clear_hooks()
+
     return model
 
 
@@ -248,3 +279,76 @@ async def test_pipeline_dynamic_batch_same_prompt_same_output(
             f"Batch: {batch_size} - Completed with"
             f" {len(context.tokens)} tokens."
         )
+
+
+@pytest.mark.skip("Segfaults")
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "pipeline_model",
+    [
+        PipelineModelParams(
+            "tinyllama",
+            SupportedEncodings.float32,
+            512,
+            10,
+            4,
+            # Add a print hook to help avoid the segfault.
+            add_print_hook=True,
+        ),
+    ],
+    ids=PipelineModelParams.__str__,
+    indirect=True,
+)
+async def test_pipeline_heterogeneous_batch_logits(
+    pipeline_model, testdata_directory
+):
+    """Execute a batch with prompts with different lengths and validates the
+    logits.
+    """
+    golden_data_path = find_runtime_path(
+        golden_data_fname("tinyllama", "float32"), testdata_directory
+    )
+    expected_results = NumpyDecoder().decode(golden_data_path.read_text())
+
+    prompt_a = PROMPTS[0]
+    prompt_b = PROMPTS[1]
+    prompt_c = PROMPTS[2]
+
+    stored_logits = {"A": [], "B": [], "C": []}
+
+    # TODO(MSDK-1093): `reset_cache` must be manually called since we're not
+    # using `next_token`.
+    await pipeline_model.reset_cache()
+    # Send in A for context encoding.
+    context_a = await pipeline_model.new_context(prompt_a)
+    next_token_with_logits(pipeline_model, {"A": context_a}, stored_logits)
+
+    # Send in B for context encoding
+    context_b = await pipeline_model.new_context(prompt_b)
+    next_token_with_logits(pipeline_model, {"B": context_b}, stored_logits)
+
+    # Send in both A and B for token generation
+    next_token_with_logits(
+        pipeline_model, {"A": context_a, "B": context_b}, stored_logits
+    )
+
+    # Send in C for context encoding
+    context_c = await pipeline_model.new_context(prompt_c)
+    next_token_with_logits(pipeline_model, {"C": context_c}, stored_logits)
+
+    # This is expected to fail right now. When it stops failing it means
+    # we have fixed the bug, and the `pytest.raises` context should be removed.
+    with pytest.raises(ValueError):
+        # Send in both B and C for token generation
+        next_token_with_logits(
+            pipeline_model, {"B": context_b, "C": context_c}, stored_logits
+        )
+
+    compare_values(
+        [
+            {"prompt": prompt_a, "values": stored_logits["A"]},
+            {"prompt": prompt_b, "values": stored_logits["B"]},
+            {"prompt": prompt_c, "values": stored_logits["C"]},
+        ],
+        expected_results,
+    )

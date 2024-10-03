@@ -72,7 +72,7 @@ def test_tiny_llama(tinyllama_model):
         Path(os.environ.get("PIPELINES_TESTDATA", "")),
     )
     expected_results = NumpyDecoder().decode(golden_data_path.read_text())
-    actual = run_llama3(tinyllama_model)
+    actual = run_llama3(tinyllama_model, prompts=PROMPTS[:1])
     compare_values(actual, expected_results)
 
 
@@ -91,7 +91,7 @@ def test_tiny_llama_naive_kv_cache(
         Path(os.environ.get("PIPELINES_TESTDATA", "")),
     )
     expected_results = NumpyDecoder().decode(golden_data_path.read_text())
-    actual = run_llama3(tinyllama_model_naive_kv_cache)
+    actual = run_llama3(tinyllama_model_naive_kv_cache, prompts=PROMPTS[:1])
     compare_values(actual, expected_results)
 
 
@@ -100,7 +100,7 @@ def _prompt_to_test_id(prompt: str):
     return s[:16]
 
 
-@pytest.fixture(params=PROMPTS, ids=_prompt_to_test_id)
+@pytest.fixture(params=PROMPTS[:1], ids=_prompt_to_test_id)
 def prompt_fixture(request):
     return request.param
 
@@ -125,6 +125,7 @@ async def test_tinyllama_create_context(
 
     assert context.max_tokens == tinyllama_model.config.max_length
     assert context.next_tokens is not None
+    await tinyllama_model.release(context)
 
 
 @pytest.mark.asyncio

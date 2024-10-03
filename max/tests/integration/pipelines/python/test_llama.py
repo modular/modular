@@ -12,6 +12,7 @@ from pathlib import Path
 
 import pytest
 from evaluate_llama import (
+    PROMPTS,
     NumpyDecoder,
     build_config,
     compare_values,
@@ -42,5 +43,5 @@ def test_llama(model, encoding, testdata_directory):
     version = "llama3_1" if model == "tinyllama" else model
     config = build_config(version, weight_path, encoding)
 
-    actual = run_llama3(Llama3(config))
+    actual = run_llama3(Llama3(config), prompts=PROMPTS[:1])
     compare_values(actual, expected_results)

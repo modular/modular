@@ -99,6 +99,7 @@ modular_py_test(
         requirement("transformers"),
         requirement("pytest-asyncio"),
         requirement("pytest-mock"),
+        requirement("huggingface_hub"),
     ],
 )
 

@@ -16,20 +16,16 @@ import subprocess
 import uuid
 from json import JSONDecoder, JSONEncoder
 from pathlib import Path
+from typing import Any
 
 import click
 import numpy as np
 import numpy.typing as npt
 from cpuinfo import get_cpu_info
 from huggingface_hub import hf_hub_download
-from max.driver import CPU, CUDA, Device
-
-from llama3 import (
-    InferenceConfig,
-    Llama3,
-    SupportedEncodings,
-    SupportedVersions,
-)
+from llama3.config import InferenceConfig, SupportedEncodings, SupportedVersions
+from llama3.llama3 import Llama3, Llama3Context
+from max.driver import CPU, CUDA
 
 
 def find_runtime_path(fname: str, testdata_directory: Path) -> Path:
@@ -58,6 +54,8 @@ class NumpyEncoder(JSONEncoder):
                 "shape": obj.shape,
                 "dtype": str(obj.dtype),
             }
+        elif isinstance(obj, np.generic):
+            return obj.item()
         return JSONEncoder.default(self, obj)
 
 
@@ -99,40 +97,60 @@ PROMPTS = (
     * Use equivalent error testing as it applies to different domains’ best practices (e.g., input sanitizing, corner case testing).
     * Remove any unnecessary I/O (e.g., writing to file/screen for debug purposes) and keep only what is practically necessary — make sure you do so in a manner that code is not optimized out (see #6)!
     * Try to apply the same level of manual optimization (within reason) — if you write multi-threaded/vectorized code in Mojo, you should try to compare it to an equivalent implementation of the other language. There is a case to be made here, however, if the other language does not have such capabilities or they are so difficult to use that implementing them is beyond what one can reasonably do. This can highlight the programmability aspect of Mojo (or one language against another more generally), but this fact should be listed so that people can take the performance claims under this light.""",
-    # More can be added later, such as:
-    # "Tell me a story about a cat.",
-    # "def is_prime(x):\n",
+    "def is_prime(x):\n",
+    "The meaning of life is ",
+    """Translate the English text to Italian.
+    Text: Sometimes, I've believed as many as six impossible things before breakfast.
+    Translation:""",
 )
 
 
 def run_llama3(llama3: Llama3, prompts=PROMPTS, num_steps=NUM_STEPS):
     results = []
+    # Evaluate prompts individually (not batched).
     for prompt in prompts:
         asyncio.run(llama3.reset_cache())
         context = asyncio.run(llama3.new_context(prompt))
-        inference_results: list[dict[str, npt.NDArray]] = []
-
-        curr_req_id = uuid.uuid4()
+        curr_req_id = str(uuid.uuid4())
+        values: dict[str, list[Any]] = {curr_req_id: []}
         for _ in range(num_steps):
-            logits_dict = llama3._execute({curr_req_id: context})
-            for req_id, logits in logits_dict.items():
-                next_token = logits.argmax(axis=-1)[-1]
-                inference_results.append(
-                    {
-                        "next_token": next_token,
-                        "next_token_logits": logits[0, next_token],
-                        "logits": logits.reshape(-1),
-                    }
-                )
-
-                # Update the context for the next input.
-                context.next_tokens = next_token.reshape(-1)
-
-        results.append({"prompt": prompt, "values": inference_results})
+            next_token_with_logits(llama3, {curr_req_id: context}, values)
+        results.append({"prompt": prompt, "values": values[curr_req_id]})
+        asyncio.run(llama3.release(context))
     return results
 
 
-def compare_values(actual, expected):
+def next_token_with_logits(
+    llama3: Llama3,
+    req_to_context_dict: dict[str, Llama3Context],
+    update_values: dict[str, list[Any]],
+):
+    """Generates the next token and stores the logits.
+
+    This method runs llama3.execute, stores the logits, and updates the context
+    with the next token.
+
+    Args:
+        llama3: Llama3 model to execute.
+        req_to_context_dict: Dictionary of request ids to Llama3Context.
+        update_values: Dictionary of request ids to lists of next_token &
+            logits. These lists are updated in this method.
+    """
+    logits_dict = llama3._execute(req_to_context_dict)
+    for req_id, logits in logits_dict.items():
+        next_token = logits.argmax(axis=-1)[-1]
+        update_values[req_id].append(
+            {
+                "next_token": next_token,
+                "next_token_logits": logits[0, next_token],
+                "logits": logits.reshape(-1),
+            }
+        )
+        # Update the context for the next input.
+        req_to_context_dict[req_id].next_tokens = next_token.reshape(-1)
+
+
+def compare_values(actual, expected, rtol=1e-2, atol=1e-5):
     expected_prompts = {x["prompt"]: x["values"] for x in expected}
     actual_prompts = {x["prompt"]: x["values"] for x in actual}
 
@@ -163,8 +181,8 @@ def compare_values(actual, expected):
                 np.testing.assert_allclose(
                     value,
                     expected_value,
-                    rtol=1e-2,
-                    atol=1e-5,
+                    rtol=rtol,
+                    atol=atol,
                     err_msg=(
                         f"Got different values for the computed {key} on step"
                         f" {step}."

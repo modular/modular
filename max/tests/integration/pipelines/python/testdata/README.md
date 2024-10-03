@@ -70,30 +70,30 @@ add a file to this archive, you need to:
 
 1. Download the existing archive by `cat WORKSPACE.bazel | grep test_llama_golden`
 , finding the s3 URL (at time of writing this
-was `https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/test_llama_golden/1/bc9c5e599b005b20d8b176384c869808c6cf242f397b5fb5e694570dfe87dd0c/test_llama_golden.tar.gz`)
+was `https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/test_llama_golden/2/436cdfe1a31bd3e8fbdf356aaa1b0ccc788994c259bbbe2b13ab203982431908/test_llama_golden.tar.gz`)
 and downloading to your local machine (e.g., with wget).
 
 2. Untar the existing archive `tar -xvf test_llama_golden.tar.gz`.
 
 3. Add any additional files you want to register alongside.
 
-4. Run `./utils/upload-public-bazel-artifact.sh test_llama_golden 1 *golden.json`
-to package and upload the latest version.
+4. Run `./utils/upload-public-bazel-artifact.sh test_llama_golden 2 *golden.json`
+to package and upload the latest version (current version number is `2`).
 
 5. The result of ^ will be a snippet like:
 
    ```bash
-   http_archive(
-       name = "test_llama_golden",
-       build_file_content = """
-   filegroup(
-       name = "test_llama_golden",
-       srcs = glob(["**"]),
-       visibility = ["//visibility:public"],
-   )""",
-       sha256 = "bc9c5e599b005b20d8b176384c869808c6cf242f397b5fb5e694570dfe87dd0c",
-       url = "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/test_llama_golden/1/bc9c5e599b005b20d8b176384c869808c6cf242f397b5fb5e694570dfe87dd0c/test_llama_golden.tar.gz",
-   )
+    http_archive(
+        name = "test_llama_golden",
+        build_file_content = """
+    filegroup(
+        name = "test_llama_golden",
+        srcs = glob(["**"]),
+        visibility = ["//visibility:public"],
+    )""",
+        sha256 = "SOME_SHA",
+        url = "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/test_llama_golden/VERSION/SOME_SHA/test_llama_golden.tar.gz",
+    )
    ```
 
 6. Find the associated section in `WORKSPACE.bazel`, delete it, and replace
