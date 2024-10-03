@@ -29,6 +29,10 @@ std::vector<StringRef> getEnv();
 /// not available. Generally determined from the OS's reported resident
 /// page value, and may not very reliable.
 size_t getProcessPhysicalMemUsage();
+
+// Returns the full path to the current executable, or "<unkown>" if the path
+// cannot be obtained.
+std::string getProcessExecutablePath();
 } // namespace M
 
 #endif // SUPPORT_PROCESS_H

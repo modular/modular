@@ -7,6 +7,7 @@
 #include "Support/Process.h"
 #include "Support/LLVMForwardDecls.h"
 #include "llvm/ADT/StringRef.h"
+#include "llvm/Support/FileSystem.h"
 #include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/Process.h"
 
@@ -85,4 +86,11 @@ size_t M::getProcessPhysicalMemUsage() {
 #else
   return 0;
 #endif
+}
+
+std::string M::getProcessExecutablePath() {
+  std::string executable = llvm::sys::fs::getMainExecutable(nullptr, nullptr);
+  if (executable.empty())
+    return "<unkown>";
+  return executable;
 }

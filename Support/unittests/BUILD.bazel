@@ -25,6 +25,7 @@ modular_cc_test(
         "ErrorTest.cpp",
         "FunctionExtrasTest.cpp",
         "MathExtras.cpp",
+        "ProcessTest.cpp",
         "RandomTest.cpp",
         "VersionTest.cpp",
     ],
