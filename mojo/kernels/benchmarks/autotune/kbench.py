@@ -36,6 +36,17 @@ if not MOJO_BINARY:
 CURRENT_FILE = Path(__file__).resolve()
 LINE = 80 * "-"
 
+DEFAULT_GPU_ARCH = []
+try:
+    sh = run_shell_command(
+        ["cuda-query", "--arch"], check=False, capture_output=True
+    )
+    output = sh.stdout.decode().strip()
+    if "sm_" in output:
+        DEFAULT_GPU_ARCH = ["-D", f"DEFAULT_GPU_ARCH={output}"]
+except Exception as error:
+    pass
+
 
 @dataclass(repr=True)
 class Param:
@@ -109,6 +120,9 @@ class SpecInstance:
         cmd = [MOJO_BINARY]
         if build_opts:
             cmd.extend(build_opts)
+
+        cmd.extend(DEFAULT_GPU_ARCH)
+
         cmd.extend(
             [
                 *list(
