@@ -161,7 +161,6 @@ def test_attention(session, start_pos, seq_len):
             "seq_len": seq_len,
             "post_seq_len": start_pos + seq_len,
         },
-        hypothesis_settings=hypothesis.settings(deadline=None),
     )
     def test_correctness(execute, inputs, torch_inputs):
         inputs = list(inputs)

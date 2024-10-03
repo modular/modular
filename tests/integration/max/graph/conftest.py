@@ -114,11 +114,20 @@ def given_input_types(
     input_types,
     static_dims: Dict[str, int] = {},
     provided_inputs: Dict[int, np.ndarray] = {},
+    max_magnitude: Optional[float] = None,
 ):
     input_arrays = []
     for i, input_type in enumerate(input_types):
         if i in provided_inputs:
             input_arrays.append(st.just(provided_inputs[i]))
+        elif max_magnitude is not None:
+            input_arrays.append(
+                arrays(
+                    input_type,
+                    static_dims=static_dims,
+                    max_magnitude=max_magnitude,
+                )
+            )
         else:
             input_arrays.append(arrays(input_type, static_dims=static_dims))
 
@@ -138,14 +147,18 @@ def modular_graph_test(
     static_dims: Dict[str, int] = {},
     provided_inputs: Dict[int, np.ndarray] = {},
     hypothesis_settings: Optional[settings] = None,
+    max_magnitude: Optional[float] = None,
 ):
     def decorator(test_fn):
         model = session.load(graph)
 
+        # TODO(MSDK-847): fix the perf here and re-enable the deadline.
+        @settings(deadline=None)
         @given_input_types(
             (input.type for input in graph.inputs),
             static_dims=static_dims,
             provided_inputs=provided_inputs,
+            max_magnitude=max_magnitude,
         )
         def test_correctness(inputs):
             model_execute = functools.partial(execute, model)

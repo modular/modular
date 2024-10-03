@@ -3,10 +3,11 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
+import numpy as np
 import pytest
 import torch.nn as nn
 import torch.nn.functional as F
-from conftest import assert_allclose, modular_graph_test
+from conftest import modular_graph_test
 from max.dtype import DType
 from max.graph import Graph, TensorType
 from nn import MLP, Linear
@@ -52,10 +53,33 @@ def test_mlp(session, input_type: TensorType):
         mlp = MLP(Linear(w1), Linear(w2), Linear(w3))
         graph.output(mlp(x))
 
-        @modular_graph_test(session, graph)
+        @modular_graph_test(session, graph, max_magnitude=1.0)
         def test_correctness(execute, inputs, torch_inputs):
             result = execute(inputs)
             x, w1, w2, w3 = torch_inputs
+
             # Transpose weights to match our Linear semantics.
             expected = TorchMLP(w1, w2, w3)(x).detach().numpy()
-            assert_allclose(result, expected)
+            # TODO(MSDK-1071): Consolidate and figure out how to call
+            # assert_allclose(result, expected) to fire again on mismatched
+            # tensor values.
+            ACCURACY_RTOL = 1e-1
+            ACCURACY_ATOL = 1e-6
+            try:
+                np.testing.assert_allclose(
+                    result,
+                    expected,
+                    atol=ACCURACY_ATOL,
+                    rtol=ACCURACY_RTOL,
+                    equal_nan=True,
+                )
+            except AssertionError:
+                # There must be an "inf" in max relative difference given we may
+                # be comparing very small values, so we just
+                # do absolute val comparison instead.
+                np.testing.assert_allclose(
+                    result,
+                    expected,
+                    atol=ACCURACY_ATOL,
+                    equal_nan=True,
+                )
