@@ -8,11 +8,20 @@ copy_files(
     outs = ["__init__.py"],
 )
 
+copy_files(
+    name = "_mlir_pyi",
+    srcs = ["@llvm-project//mlir/python:IRPyIFiles"],
+    outs = [
+        "_mlir/__init__.pyi",
+        "_mlir/ir.pyi",
+    ],
+)
+
 py_library(
     name = "_mlir_libs",
     srcs = [":py_srcs"],
+    data = [":_mlir_pyi"],
     visibility = ["//visibility:public"],
-    deps = ["//SDK/lib/API/python/max/_mlir/_mlir_libs/_mlir"],
 )
 
 modular_pybind_extension(
