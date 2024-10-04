@@ -107,7 +107,7 @@ class TokenGeneratorPipeline(Generic[TokenGeneratorContext]):  # type: ignore
         model: TokenGenerator[TokenGeneratorContext],
         tokenizer: Optional[PreTrainedTokenizerBase] = None,
     ):
-        self.logger = logging.getLogger()
+        self.logger = logging.getLogger(__name__)
         self.model = model
         self.tokenizer = tokenizer
         self.config = config

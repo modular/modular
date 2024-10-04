@@ -8,37 +8,41 @@
 """
 MAX serving in Python prototype. Main API server thing.
 """
-
 import argparse
 import asyncio
 import logging
+import os
 from contextlib import AsyncExitStack, asynccontextmanager
 from functools import partial
 from typing import AsyncContextManager, Sequence
 
+from max.serve.telemetry.logger import configureLogging
+
+console_level = logging.INFO
+otlp_level = logging.INFO
+if "MAX_SERVE_LOGS_CONSOLE_LEVEL" in os.environ:
+    console_level = os.environ["MAX_SERVE_LOGS_CONSOLE_LEVEL"]
+if "MAX_SERVE_LOGS_OTLP_LEVEL" in os.environ:
+    otlp_level = os.environ["MAX_SERVE_LOGS_OTLP_LEVEL"]
+if "MAX_SERVE_DISABLE_TELEMETRY" in os.environ:
+    otlp_level = None
+configureLogging(console_level, otlp_level)
+
 from fastapi import FastAPI
+from max.serve.config import APIType, Settings, api_prefix
+from max.serve.debug import DebugSettings, register_debug
+from max.serve.request import register_request
+from max.serve.router import kserve_routes, openai_routes
 from pydantic_settings import CliSettingsSource
 from uvicorn import Config, Server
-
-from max.serve.config import APIType, Settings, api_prefix
-from max.serve.router import kserve_routes, openai_routes
-from max.serve.debug import register_debug, DebugSettings
-from max.serve.request import register_request
-
 
 ROUTES = {
     APIType.KSERVE: kserve_routes,
     APIType.OPENAI: openai_routes,
 }
 
-logging.basicConfig(
-    level=logging.INFO,
-    encoding="utf-8",
-    format="%(asctime)s %(levelname)s: %(name)s: %(message)s",
-    datefmt="%H:%M:%S",
-)
-logging.getLogger("sse_starlette.sse").setLevel(logging.INFO)
 logger = logging.getLogger(__name__)
+logging.getLogger("sse_starlette.sse").setLevel(logging.INFO)
 
 
 @asynccontextmanager
@@ -69,7 +73,7 @@ def fastapi_app(
 
 
 def fastapi_config(app: FastAPI) -> Config:
-    config = Config(app=app, host="0.0.0.0")
+    config = Config(app=app, host="0.0.0.0", log_config=None)
     return config
 
 

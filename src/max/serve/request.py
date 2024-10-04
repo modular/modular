@@ -5,10 +5,13 @@
 # ===----------------------------------------------------------------------=== #
 
 
-from typing import Callable
+import logging
 import uuid
+from typing import Callable
 
 from fastapi import FastAPI, Request
+
+logger = logging.getLogger(__name__)
 
 
 def register_request(app: FastAPI):
