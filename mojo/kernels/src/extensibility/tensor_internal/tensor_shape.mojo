@@ -16,6 +16,7 @@ from max.tensor import TensorShape
 
 from collections import List
 from sys.info import is_little_endian, sizeof
+from sys.intrinsics import _type_is_eq
 
 from memory import memcpy, memcmp, UnsafePointer
 
@@ -696,7 +697,7 @@ struct TensorShape(
         self._rep = _TensorShapeStorage()
 
     @always_inline
-    fn __init__(inout self, shapes: Tuple):
+    fn __init__[*Ts: CollectionElement](inout self, shapes: Tuple[*Ts]):
         """Initializes a TensorShape from the values provided.
 
         Args:
@@ -714,6 +715,11 @@ struct TensorShape(
 
         @parameter
         fn _fill[i: Int]():
+            alias T = Ts[i]
+
+            @parameter
+            if not _type_is_eq[T, Int]() and not _type_is_eq[T, UInt]():
+                constrained[False, "shape should consist of integer values"]()
             tuple[i] = rebind[Int](shapes[i])
 
         unroll[_fill, rank]()
