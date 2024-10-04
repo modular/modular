@@ -107,7 +107,7 @@ class TokenGeneratorPipeline(Generic[TokenGeneratorContext]):  # type: ignore
         model: TokenGenerator[TokenGeneratorContext],
         tokenizer: Optional[PreTrainedTokenizerBase] = None,
     ):
-        self.logger = logging.getLogger(__name__)
+        self.logger = logging.getLogger(self.__class__.__name__)
         self.model = model
         self.tokenizer = tokenizer
         self.config = config
@@ -134,18 +134,23 @@ class TokenGeneratorPipeline(Generic[TokenGeneratorContext]):  # type: ignore
         request: TokenGeneratorRequest,
     ) -> AsyncGenerator[str, None]:
         """Generates and streams tokens for the provided request."""
+        self.logger.debug("Started: %s", request.id)
         context = await self.model.new_context(
             request.prompt, max_new_tokens=request.max_new_tokens
         )
-        # Use a different queue for context encoding if specified.
-        # Otherwise, the same queue is used. And in case of dynamic batching,
-        # any new requests which require CE will be blocked until any active
-        # CE or TG requests being serviced by the dynamic-batching-queue are
-        # fully processed.
-        if self.context_queue:
-            await self.context_queue.submit(request.id, context)
-        async for token in self.tokens_queue.stream(request.id, context):
-            yield token
+        try:
+            # Use a different queue for context encoding if specified.
+            # Otherwise, the same queue is used. And in case of dynamic batching,
+            # any new requests which require CE will be blocked until any active
+            # CE or TG requests being serviced by the dynamic-batching-queue are
+            # fully processed.
+            if self.context_queue:
+                await self.context_queue.submit(request.id, context)
+            async for token in self.tokens_queue.stream(request.id, context):
+                yield token
+        finally:
+            await self.model.release(context)
+            self.logger.debug("Completed: %s", request.id)
 
     async def all_tokens(self, request: TokenGeneratorRequest) -> list[str]:
         """Generates all tokens for the provided request."""
