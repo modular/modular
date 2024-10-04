@@ -160,6 +160,10 @@ struct _DynamicTupleIter[
         return self.src[self.idx - 1]
 
     @always_inline
+    fn __hasmore__(self) -> Bool:
+        return self.__len__() > 0
+
+    @always_inline
     fn __len__(self) -> Int:
         return len(self.src) - self.idx
 
@@ -350,6 +354,10 @@ struct _ZipIter2[T: CollectionElement, D: ElementDelegate = DefaultDelegate]:
         )
 
     @always_inline
+    fn __hasmore__(self) -> Bool:
+        return self.__len__() > 0
+
+    @always_inline
     fn __len__(self) -> Int:
         return min(len(self.a), len(self.b)) - self.index
 
@@ -385,6 +393,10 @@ struct _ZipIter3[T: CollectionElement, D: ElementDelegate = DefaultDelegate]:
             self.b[self.index - 1],
             self.c[self.index - 1],
         )
+
+    @always_inline
+    fn __hasmore__(self) -> Bool:
+        return self.__len__() > 0
 
     @always_inline
     fn __len__(self) -> Int:
@@ -446,6 +458,10 @@ struct _ProductIter2[
         return res^
 
     @always_inline
+    fn __hasmore__(self) -> Bool:
+        return self.__len__() > 0
+
+    @always_inline
     fn __len__(self) -> Int:
         var len_a = len(self.a)
         var len_b = len(self.b)
@@ -499,6 +515,10 @@ struct _ProductIter3[
         return DynamicTuple[T, D](
             self.a[idx[0]], self.b[idx[1]], self.c[idx[2]]
         )
+
+    @always_inline
+    fn __hasmore__(self) -> Bool:
+        return self.__len__() > 0
 
     @always_inline
     fn __len__(self) -> Int:
@@ -579,6 +599,10 @@ struct _ProductIterN[
         for i in range(len(self.tuples_shape)):
             res.append(self.tuples[i][idx[i]])
         return res
+
+    @always_inline
+    fn __hasmore__(self) -> Bool:
+        return self.__len__() > 0
 
     @always_inline
     fn __len__(self) -> Int:

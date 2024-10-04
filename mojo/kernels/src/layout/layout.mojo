@@ -112,6 +112,10 @@ struct _LayoutIter:
             self.layout.stride[self.index - 1],
         )
 
+    @always_inline
+    fn __hasmore__(self) -> Bool:
+        return self.__len__() > 0
+
     fn __len__(self) -> Int:
         return len(self.layout.shape) - self.index
 
