@@ -20,8 +20,6 @@ from evaluate_llama import (
 from huggingface_hub import hf_hub_download
 from llama3.config import InferenceConfig, SupportedEncodings, SupportedVersions
 from llama3.llama3 import Llama3
-from max.graph import TensorValue
-from nn.layer import add_layer_hook, clear_hooks
 
 
 @dataclass(frozen=True)
@@ -33,7 +31,6 @@ class PipelineModelParams:
     max_batch_size: int = 1
     version: SupportedVersions = SupportedVersions.llama3_1
 
-    add_print_hook: bool = False
     """Whether to include a print hook. This is generally for debugging
     purposes, but it's also helping to avoid a segfault in the heterogeneous
     test."""
@@ -59,28 +56,14 @@ def pipeline_model(testdata_directory, request):
             filename=weights_encoding_file,
         )
         print(f"- Downloaded: {weight_path}")
-    if model_params.add_print_hook:
 
-        def print_inputs_outputs(layer, args, kwargs, outputs):
-            layer_name = type(layer).__name__
-            for n, value in enumerate(args):
-                if isinstance(value, TensorValue):
-                    value.print(f"{layer_name}-input_{n}")
-            if isinstance(outputs, TensorValue):
-                outputs.print(f"{layer_name}-output")
-            elif isinstance(outputs, (list, tuple)):
-                for n, value in enumerate(outputs):
-                    if isinstance(value, TensorValue):
-                        value.print(f"{layer_name}-output{n}")
-
-        add_layer_hook(print_inputs_outputs)
     config = InferenceConfig(
         weight_path=weight_path,
         version=model_params.version,
         quantization_encoding=model_encoding,
         max_length=model_params.max_length,
         max_new_tokens=model_params.max_new_tokens,
-        batch_size=model_params.max_batch_size,
+        max_cache_batch_size=model_params.max_batch_size,
     )
     print(
         f"- Using config: {config.version}, MaxLength={config.max_length},"
@@ -88,9 +71,6 @@ def pipeline_model(testdata_directory, request):
         f" MaxCacheSize={config.max_cache_batch_size}"
     )
     model = Llama3(config)
-
-    if model_params.add_print_hook:
-        clear_hooks()
 
     return model
 
@@ -282,7 +262,6 @@ async def test_pipeline_dynamic_batch_same_prompt_same_output(
         )
 
 
-@pytest.mark.skip("Segfaults")
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     "pipeline_model",
@@ -293,8 +272,6 @@ async def test_pipeline_dynamic_batch_same_prompt_same_output(
             512,
             10,
             4,
-            # Add a print hook to help avoid the segfault.
-            add_print_hook=True,
         ),
     ],
     ids=PipelineModelParams.__str__,
@@ -337,13 +314,10 @@ async def test_pipeline_heterogeneous_batch_logits(
     context_c = await pipeline_model.new_context(prompt_c)
     next_token_with_logits(pipeline_model, {"C": context_c}, stored_logits)
 
-    # This is expected to fail right now. When it stops failing it means
-    # we have fixed the bug, and the `pytest.raises` context should be removed.
-    with pytest.raises(ValueError):
-        # Send in both B and C for token generation
-        next_token_with_logits(
-            pipeline_model, {"B": context_b, "C": context_c}, stored_logits
-        )
+    # Send in both B and C for token generation
+    next_token_with_logits(
+        pipeline_model, {"B": context_b, "C": context_c}, stored_logits
+    )
 
     compare_values(
         [
@@ -353,3 +327,5 @@ async def test_pipeline_heterogeneous_batch_logits(
         ],
         expected_results,
     )
+
+    await pipeline_model.reset_cache()

@@ -149,6 +149,7 @@ modular_py_test(
         requirement("hypothesis"),
         requirement("transformers"),
         requirement("py-cpuinfo"),
+        requirement("pytest-asyncio"),
     ],
 )
 
