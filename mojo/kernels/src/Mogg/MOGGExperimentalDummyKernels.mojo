@@ -26,15 +26,15 @@ alias MAX_BENEFIT = 1000
 @export
 fn mo_matmul[
     out_shape: DimList,
-    transpose_in_1: Bool,
-    packed_in_1: Bool,
+    transpose_b: Bool,
+    packed_b: Bool,
     lambdas_have_fusion: Bool = False,
 ](x: Tensor, y: Tensor) -> Tensor[x.type, out_shape]:
     var shape = IntList[out_shape](x.shape[0], y.shape[1])
     var out = empty_tensor[x.type](shape)
 
-    print(transpose_in_1)
-    print(packed_in_1)
+    print(transpose_b)
+    print(packed_b)
     print(lambdas_have_fusion)
 
     x.shape.print()

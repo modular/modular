@@ -26,11 +26,15 @@ from algorithm import argmax, argmin, mean, product, sum
 from algorithm import max as reduce_max
 from algorithm import min as reduce_min
 from linalg.bmm import batched_matmul, batched_matmul_shape
+from linalg.matmul import matmul
 from linalg.bmm import (
     elementwise_epilogue_type as batched_matmul_elementwise_epilogue_type,
 )
 from linalg.matrix_solve import matrix_solve, matrix_solve_shape
 from linalg.matrix_band_part import matrix_band_part
+from linalg.utils import (
+    elementwise_epilogue_type as matmul_elementwise_epilogue_type,
+)
 from math import (
     ceil,
     cos,
@@ -2678,11 +2682,67 @@ struct NonMaximumSupression:
 # ===----------------------------------------------------------------------===#
 
 
+@compiler.register("mo.matmul")
+struct Matmul:
+    @compiler.enable_fusion_for("c")
+    @staticmethod
+    fn execute[
+        transpose_b: Bool,
+        packed_b: Bool,
+        lambdas_have_fusion: Bool,
+        synchronous: Bool,
+        target: StringLiteral = "cpu",
+    ](
+        c: ManagedTensorSlice[rank=2],
+        a: ManagedTensorSlice[rank=2],
+        b: ManagedTensorSlice[rank=2],
+        ctx: MojoCallContextPtr,
+    ):
+        constrained[
+            not (packed_b and transpose_b),
+            (
+                "transpose_b and b_packed cannot both be true because"
+                " pre-packing transposes B"
+            ),
+        ]()
+
+        alias transposed_a = False
+
+        var a_buffer = managed_tensor_slice_to_ndbuffer(a)
+        var b_buffer = managed_tensor_slice_to_ndbuffer(b)
+        var c_buffer = managed_tensor_slice_to_ndbuffer(c)
+
+        alias out_lambda = compiler.specsof[c.type, c.rank]("c").out_lambda
+
+        @parameter
+        @always_inline
+        fn output_fn[
+            _type: DType, _width: Int, *, alignment: Int = 1
+        ](coords: StaticIntTuple[2], val: SIMD[_type, _width]):
+            c._fused_store[width=_width](
+                rebind[StaticIntTuple[c.rank]](coords),
+                rebind[SIMD[c.type, _width]](val),
+            )
+
+        matmul[
+            transposed_a,
+            transpose_b,
+            packed_b,
+            OptionalReg[matmul_elementwise_epilogue_type](
+                output_fn
+            ) if lambdas_have_fusion else None,
+            saturated_vnni=False,
+            single_thread_blocking_override=synchronous,
+            target=target,
+        ](c_buffer, a_buffer, b_buffer, ctx)
+
+
 @compiler.register("mo.batch_matmul")
 struct BatchMatmul:
     @compiler.enable_fusion_for("c")
     @staticmethod
     fn execute[
+        lambdas_have_fusion: Bool,
         rank: Int,
         transpose_b: Bool,
         synchronous: Bool,
@@ -2693,7 +2753,7 @@ struct BatchMatmul:
         b: ManagedTensorSlice[rank=rank],
         ctx: MojoCallContextPtr,
     ):
-        alias transpose_a = False
+        alias transposed_a = False
 
         var a_buffer = managed_tensor_slice_to_ndbuffer(a)
         var b_buffer = managed_tensor_slice_to_ndbuffer(b)
@@ -2716,11 +2776,11 @@ struct BatchMatmul:
             a.type,
             b.type,
             c.type,
-            transpose_a,
+            transposed_a,
             transpose_b,
             OptionalReg[batched_matmul_elementwise_epilogue_type](
                 output_fn
-            ) if out_lambda else None,
+            ) if lambdas_have_fusion else None,
             saturated_vnni=False,
             single_thread_blocking_override=synchronous,
             target=target,

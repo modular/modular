@@ -2340,8 +2340,8 @@ fn matmul[
     c_type: DType,
     input_2_static_shape: DimList,
     alignment_2: Int,
-    transpose_in_1: Bool,  # matches name of MO attribute
-    packed_in_1: Bool,
+    transpose_b: Bool,  # matches name of MO attribute
+    packed_b: Bool,
     single_thread_blocking_override: Bool,
     lambdas_have_fusion: Bool,
     output_0_fn: fn[width: Int, rank: Int, element_alignment: Int] (
@@ -2357,13 +2357,11 @@ fn matmul[
     ctx: MojoCallContextPtr,
 ) raises:
     alias transpose_a = False
-    alias transpose_b = transpose_in_1
-    alias b_packed = packed_in_1
 
     constrained[
-        not (b_packed and transpose_b),
+        not (packed_b and transpose_b),
         (
-            "transpose_b and b_packed cannot both be true because pre-packing"
+            "transpose_b and packed_b cannot both be true because pre-packing"
             " transposes B"
         ),
     ]()
@@ -2380,7 +2378,7 @@ fn matmul[
     _matmul[
         transpose_a,
         transpose_b,
-        b_packed,
+        packed_b,
         OptionalReg[matmul_elementwise_epilogue_type](
             epilogue_wrapper
         ) if lambdas_have_fusion else None,
@@ -2403,7 +2401,7 @@ fn batched_matmul[
     a_type: DType,
     b_type: DType,
     c_type: DType,
-    transpose_in_1: Bool,
+    transpose_b: Bool,
     single_thread_blocking_override: Bool,
     lambdas_have_fusion: Bool,
     output_0_fn: fn[width: Int, rank: Int, element_alignment: Int] (
@@ -2417,7 +2415,6 @@ fn batched_matmul[
     ctx: MojoCallContextPtr,
 ):
     alias transpose_a = False
-    alias transpose_b = transpose_in_1
 
     @parameter
     @always_inline
