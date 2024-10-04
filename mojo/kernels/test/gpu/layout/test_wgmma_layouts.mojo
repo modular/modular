@@ -37,6 +37,9 @@ fn wgmma_tf32_tf32_f32_kernel[
     M: Int,
     N: Int,
     K: Int,
+    WMMA_M: Int,
+    WMMA_N: Int,
+    WMMA_K: Int,
     smem_operand_a_layout: Layout,
     smem_operand_b_layout: Layout,
 ](
@@ -56,32 +59,39 @@ fn wgmma_tf32_tf32_f32_kernel[
         address_space = AddressSpace.SHARED,
     ].stack_allocation()
 
-    if ThreadIdx.x() == 0:
-        smem_operand_a.copy_from(operand_a)
-        smem_operand_b.copy_from(operand_b)
-
-    barrier()
-
-    var mat_a_desc = WGMMADescriptor.create[8, 64](smem_operand_a.ptr)
-    var mat_b_desc = WGMMADescriptor.create[1, 8](smem_operand_b.ptr)
-
-    wgmma_fence_aligned()
     var c_reg = SIMD[DType.float32, 4](0)
-    c_reg = wgmma_async[
-        M,
-        N,
-        K,
-        a_type = DType.tensor_float32,
-        b_type = DType.tensor_float32,
-    ](mat_a_desc, mat_b_desc, c_reg)
-    wgmma_commit_group_sync()
-    wgmma_wait_group_sync()
-    threadfence()
-    wgmma_fence_aligned()
+
+    for k_i in range(K // WMMA_K):
+        var operand_a_tile = operand_a.tile[M, WMMA_K](0, k_i)
+        var operand_b_tile = operand_b.tile[WMMA_K, N](k_i, 0)
+        var operand_a_sm_tile = smem_operand_a.tile[M, WMMA_K](0, k_i)
+        var operand_b_sm_tile = smem_operand_b.tile[WMMA_K, N](k_i, 0)
+
+        if ThreadIdx.x() == 0:
+            operand_a_sm_tile.copy_from(operand_a_tile)
+            operand_b_sm_tile.copy_from(operand_b_tile)
+
+        barrier()
+
+        var mat_a_desc = WGMMADescriptor.create[8, 64](operand_a_sm_tile.ptr)
+        var mat_b_desc = WGMMADescriptor.create[1, 8](operand_b_sm_tile.ptr)
+
+        wgmma_fence_aligned()
+
+        c_reg = wgmma_async[
+            WMMA_M,
+            WMMA_N,
+            WMMA_K,
+            a_type = DType.tensor_float32,
+            b_type = DType.tensor_float32,
+        ](mat_a_desc, mat_b_desc, c_reg)
+        wgmma_commit_group_sync()
+        wgmma_wait_group_sync()
+        threadfence()
+        wgmma_fence_aligned()
 
     var warp_id = ThreadIdx.x() // 32
     var lan_id = ThreadIdx.x() % 32
-
     # Refer to this layout:
     # https://docs.nvidia.com/cuda/parallel-thread-execution/_images/wgmma-64N8-D.png
     # Each warp updates a 16x8 tile, and within each tile,
@@ -195,6 +205,132 @@ def wgmma_tf32_tf32_f32_64x8x8(ctx: DeviceContext):
         M,
         N,
         K,
+        64,
+        8,
+        8,
+        a_smem_layout,
+        b_smem_layout,
+    ]
+    var func = ctx.compile_function[
+        wgmma_tf32_tf32_f32_kernel_fn, target = _get_nvptx_target["sm_90"]()
+    ]()
+
+    ctx.enqueue_function(
+        func,
+        lhs.tensor,
+        rhs.tensor,
+        res.tensor,
+        grid_dim=(1, 1),
+        block_dim=(128),
+    )
+    ctx.synchronize()
+    print(res.tensor)
+
+
+# CHECK-LABEL: wgmma_tf32_tf32_f32_64x8x8_inst_64x8x8
+# CHECK: 9920.0 10040.0 10160.0 10280.0 10400.0 10520.0 10640.0 10760.0
+# CHECK: 25280.0 25656.0 26032.0 26408.0 26784.0 27160.0 27536.0 27912.0
+# CHECK: 40640.0 41272.0 41904.0 42536.0 43168.0 43800.0 44432.0 45064.0
+# CHECK: 56000.0 56888.0 57776.0 58664.0 59552.0 60440.0 61328.0 62216.0
+# CHECK: 71360.0 72504.0 73648.0 74792.0 75936.0 77080.0 78224.0 79368.0
+# CHECK: 86720.0 88120.0 89520.0 90920.0 92320.0 93720.0 95120.0 96520.0
+# CHECK: 102080.0 103736.0 105392.0 107048.0 108704.0 110360.0 112016.0 113672.0
+# CHECK: 117440.0 119352.0 121264.0 123176.0 125088.0 127000.0 128912.0 130824.0
+# CHECK: 132800.0 134968.0 137136.0 139304.0 141472.0 143640.0 145808.0 147976.0
+# CHECK: 148160.0 150584.0 153008.0 155432.0 157856.0 160280.0 162704.0 165128.0
+# CHECK: 163520.0 166200.0 168880.0 171560.0 174240.0 176920.0 179600.0 182280.0
+# CHECK: 178880.0 181816.0 184752.0 187688.0 190624.0 193560.0 196496.0 199432.0
+# CHECK: 194240.0 197432.0 200624.0 203816.0 207008.0 210200.0 213392.0 216584.0
+# CHECK: 209600.0 213048.0 216496.0 219944.0 223392.0 226840.0 230288.0 233736.0
+# CHECK: 224960.0 228664.0 232368.0 236072.0 239776.0 243480.0 247184.0 250888.0
+# CHECK: 240320.0 244280.0 248240.0 252200.0 256160.0 260120.0 264080.0 268040.0
+# CHECK: 255680.0 259896.0 264112.0 268328.0 272544.0 276760.0 280976.0 285192.0
+# CHECK: 271040.0 275512.0 279984.0 284456.0 288928.0 293400.0 297872.0 302344.0
+# CHECK: 286400.0 291128.0 295856.0 300584.0 305312.0 310040.0 314768.0 319496.0
+# CHECK: 301760.0 306744.0 311728.0 316712.0 321696.0 326680.0 331664.0 336648.0
+# CHECK: 317120.0 322360.0 327600.0 332840.0 338080.0 343320.0 348560.0 353800.0
+# CHECK: 332480.0 337976.0 343472.0 348968.0 354464.0 359960.0 365456.0 370952.0
+# CHECK: 347840.0 353592.0 359344.0 365096.0 370848.0 376600.0 382352.0 388104.0
+# CHECK: 363200.0 369208.0 375216.0 381224.0 387232.0 393240.0 399248.0 405256.0
+# CHECK: 378560.0 384824.0 391088.0 397352.0 403616.0 409880.0 416144.0 422408.0
+# CHECK: 393920.0 400440.0 406960.0 413480.0 420000.0 426520.0 433040.0 439560.0
+# CHECK: 409280.0 416056.0 422832.0 429608.0 436384.0 443160.0 449936.0 456712.0
+# CHECK: 424640.0 431672.0 438704.0 445736.0 452768.0 459800.0 466832.0 473864.0
+# CHECK: 440000.0 447288.0 454576.0 461864.0 469152.0 476440.0 483728.0 491016.0
+# CHECK: 455360.0 462904.0 470448.0 477992.0 485536.0 493080.0 500624.0 508168.0
+# CHECK: 470720.0 478520.0 486320.0 494120.0 501920.0 509720.0 517520.0 525320.0
+# CHECK: 486080.0 494136.0 502192.0 510248.0 518304.0 526360.0 534416.0 542472.0
+# CHECK: 501440.0 509752.0 518064.0 526376.0 534688.0 543000.0 551312.0 559624.0
+# CHECK: 516800.0 525368.0 533936.0 542504.0 551072.0 559640.0 568208.0 576776.0
+# CHECK: 532160.0 540984.0 549808.0 558632.0 567456.0 576280.0 585104.0 593928.0
+# CHECK: 547520.0 556600.0 565680.0 574760.0 583840.0 592920.0 602000.0 611080.0
+# CHECK: 562880.0 572216.0 581552.0 590888.0 600224.0 609560.0 618896.0 628232.0
+# CHECK: 578240.0 587832.0 597424.0 607016.0 616608.0 626200.0 635792.0 645384.0
+# CHECK: 593600.0 603448.0 613296.0 623144.0 632992.0 642840.0 652688.0 662536.0
+# CHECK: 608960.0 619064.0 629168.0 639272.0 649376.0 659480.0 669584.0 679688.0
+# CHECK: 624320.0 634680.0 645040.0 655400.0 665760.0 676120.0 686480.0 696840.0
+# CHECK: 639680.0 650296.0 660912.0 671528.0 682144.0 692760.0 703376.0 713992.0
+# CHECK: 655040.0 665912.0 676784.0 687656.0 698528.0 709400.0 720272.0 731144.0
+# CHECK: 670400.0 681528.0 692656.0 703784.0 714912.0 726040.0 737168.0 748296.0
+# CHECK: 685760.0 697144.0 708528.0 719912.0 731296.0 742680.0 754064.0 765448.0
+# CHECK: 701120.0 712760.0 724400.0 736040.0 747680.0 759320.0 770960.0 782600.0
+# CHECK: 716480.0 728376.0 740272.0 752168.0 764064.0 775960.0 787856.0 799752.0
+# CHECK: 731840.0 743992.0 756144.0 768296.0 780448.0 792600.0 804752.0 816904.0
+# CHECK: 747200.0 759608.0 772016.0 784424.0 796832.0 809240.0 821648.0 834056.0
+# CHECK: 762560.0 775224.0 787888.0 800552.0 813216.0 825880.0 838544.0 851208.0
+# CHECK: 777920.0 790840.0 803760.0 816680.0 829600.0 842520.0 855440.0 868360.0
+# CHECK: 793280.0 806456.0 819632.0 832808.0 845984.0 859160.0 872336.0 885512.0
+# CHECK: 808640.0 822072.0 835504.0 848936.0 862368.0 875800.0 889232.0 902664.0
+# CHECK: 824000.0 837688.0 851376.0 865064.0 878752.0 892440.0 906128.0 919816.0
+# CHECK: 839360.0 853304.0 867248.0 881192.0 895136.0 909080.0 923024.0 936968.0
+# CHECK: 854720.0 868920.0 883120.0 897320.0 911520.0 925720.0 939920.0 954120.0
+# CHECK: 870080.0 884536.0 898992.0 913448.0 927904.0 942360.0 956816.0 971272.0
+# CHECK: 885440.0 900152.0 914864.0 929576.0 944288.0 959000.0 973712.0 988424.0
+# CHECK: 900800.0 915768.0 930736.0 945704.0 960672.0 975640.0 990608.0 1005576.0
+# CHECK: 916160.0 931384.0 946608.0 961832.0 977056.0 992280.0 1007504.0 1022728.0
+# CHECK: 931520.0 947000.0 962480.0 977960.0 993440.0 1008920.0 1024400.0 1039880.0
+# CHECK: 946880.0 962616.0 978352.0 994088.0 1009824.0 1025560.0 1041296.0 1057032.0
+# CHECK: 962240.0 978232.0 994224.0 1010216.0 1026208.0 1042200.0 1058192.0 1074184.0
+# CHECK: 977600.0 993848.0 1010096.0 1026344.0 1042592.0 1058840.0 1075088.0 1091336.0
+
+
+def wgmma_tf32_tf32_f32_64x8x8_inst_64x8x8(ctx: DeviceContext):
+    print("== wgmma_tf32_tf32_f32_64x8x8_inst_64x8x8")
+    alias M = 64
+    alias N = 8
+    alias K = 16
+
+    var lhs = ManagedLayoutTensor[
+        DType.float32, Layout.row_major(M, K), gpu_managed_alloc, gpu_free
+    ]()
+    arange(lhs.tensor)
+
+    var rhs = ManagedLayoutTensor[
+        DType.float32, Layout.row_major(K, N), gpu_managed_alloc, gpu_free
+    ]()
+    arange(rhs.tensor)
+
+    var res = ManagedLayoutTensor[
+        DType.float32, Layout.row_major(M, N), gpu_managed_alloc, gpu_free
+    ]()
+
+    # https://docs.nvidia.com/cuda/parallel-thread-execution/_images/wgmma-64N8-core-matrices-A.png
+    alias a_smem_layout = Layout(
+        IntTuple(IntTuple(8, 8), IntTuple(4, 2)),
+        IntTuple(IntTuple(4, 32), IntTuple(1, 256)),
+    )
+
+    # https://docs.nvidia.com/cuda/parallel-thread-execution/_images/wgmma-64N8-core-matrices-B.png
+    alias b_smem_layout = Layout(
+        IntTuple(IntTuple(4, 2), 8), IntTuple(IntTuple(1, 32), 4)
+    )
+    alias wgmma_tf32_tf32_f32_kernel_fn = wgmma_tf32_tf32_f32_kernel[
+        M,
+        N,
+        K,
+        64,
+        8,
+        8,
         a_smem_layout,
         b_smem_layout,
     ]
@@ -217,3 +353,4 @@ def wgmma_tf32_tf32_f32_64x8x8(ctx: DeviceContext):
 def main():
     with DeviceContext() as ctx:
         wgmma_tf32_tf32_f32_64x8x8(ctx)
+        wgmma_tf32_tf32_f32_64x8x8_inst_64x8x8(ctx)
