@@ -3405,6 +3405,18 @@ fn return_error[
     raise Error("This is an error")
 
 
+@mogg_register("mo.test.failing_constraint")
+@always_inline
+@export
+fn kernel_with_failing_constraint[
+    type: DType, rank: Int
+](input: NDBuffer[type, rank], ctx: MojoCallContextPtr):
+    constrained[
+        1 == 2,
+        "Expected constraint failure for error message testing",
+    ]()
+
+
 @mogg_register("mo.test.abort")
 @always_inline
 @export
