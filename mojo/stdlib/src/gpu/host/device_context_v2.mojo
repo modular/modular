@@ -51,6 +51,11 @@ struct _DeviceTimer:
         )
 
 
+@value
+struct DeviceSyncMode:
+    var _is_sync: Bool
+
+
 struct DeviceBufferV2[type: DType](Sized):
     # _device_ptr must be the first word in the struct to enable passing of
     # DeviceBufferV2 to kernels. The first word is passed to the kernel and
@@ -58,31 +63,58 @@ struct DeviceBufferV2[type: DType](Sized):
     var _device_ptr: UnsafePointer[Scalar[type]]
     var _handle: _DeviceBufferPtr
 
-    fn __init__(inout self, ctx: DeviceContextV2, size: Int) raises:
+    fn __init__(
+        inout self,
+        ctx: DeviceContextV2,
+        size: Int,
+        sync_mode: DeviceSyncMode,
+    ) raises:
         """This init takes in a constructed DeviceContext and schedules an owned buffer allocation
         using the stream in the device context.
         """
-        # const char *AsyncRT_DeviceContext_createBuffer(const DeviceBuffer **result, void **device_ptr, const DeviceContext *ctx, size_t len, size_t elem_size)
         alias elem_size = sizeof[type]()
         var result = _DeviceBufferPtr()
         var device_ptr = UnsafePointer[Scalar[type]]()
-        _checked(
-            external_call[
-                "AsyncRT_DeviceContext_createBuffer",
-                _CharPtr,
-                UnsafePointer[_DeviceBufferPtr],
-                UnsafePointer[UnsafePointer[Scalar[type]]],
-                _DeviceContextPtr,
-                _SizeT,
-                _SizeT,
-            ](
-                UnsafePointer.address_of(result),
-                UnsafePointer.address_of(device_ptr),
-                ctx._handle,
-                size,
-                elem_size,
+
+        if sync_mode._is_sync:
+            # const char *AsyncRT_DeviceContext_createBuffer_sync(const DeviceBuffer **result, void **device_ptr, const DeviceContext *ctx, size_t len, size_t elem_size)
+            _checked(
+                external_call[
+                    "AsyncRT_DeviceContext_createBuffer_sync",
+                    _CharPtr,
+                    UnsafePointer[_DeviceBufferPtr],
+                    UnsafePointer[UnsafePointer[Scalar[type]]],
+                    _DeviceContextPtr,
+                    _SizeT,
+                    _SizeT,
+                ](
+                    UnsafePointer.address_of(result),
+                    UnsafePointer.address_of(device_ptr),
+                    ctx._handle,
+                    size,
+                    elem_size,
+                )
             )
-        )
+        else:
+            # const char *AsyncRT_DeviceContext_createBuffer_async(const DeviceBuffer **result, void **device_ptr, const DeviceContext *ctx, size_t len, size_t elem_size)
+            _checked(
+                external_call[
+                    "AsyncRT_DeviceContext_createBuffer_async",
+                    _CharPtr,
+                    UnsafePointer[_DeviceBufferPtr],
+                    UnsafePointer[UnsafePointer[Scalar[type]]],
+                    _DeviceContextPtr,
+                    _SizeT,
+                    _SizeT,
+                ](
+                    UnsafePointer.address_of(result),
+                    UnsafePointer.address_of(device_ptr),
+                    ctx._handle,
+                    size,
+                    elem_size,
+                )
+            )
+
         self._device_ptr = device_ptr
         self._handle = result
 
@@ -271,6 +303,9 @@ struct DeviceFunctionV2[
 struct DeviceContextV2:
     """DeviceContext backed by a C++ implementation."""
 
+    alias SYNC = DeviceSyncMode(True)
+    alias ASYNC = DeviceSyncMode(False)
+
     var _handle: _DeviceContextPtr
 
     fn __init__(
@@ -356,11 +391,19 @@ struct DeviceContextV2:
             )
         )
 
-    fn create_buffer[
+    fn enqueue_create_buffer[
         type: DType
     ](self, size: Int) raises -> DeviceBufferV2[type]:
-        """Creates a buffer using the DeviceBuffer constructor."""
-        return DeviceBufferV2[type](self, size)
+        """Enqueues a buffer creation using the DeviceBuffer constructor."""
+        return DeviceBufferV2[type](self, size, Self.ASYNC)
+
+    fn create_buffer_sync[
+        type: DType
+    ](self, size: Int) raises -> DeviceBufferV2[type]:
+        """Creates a buffer synchronously using the DeviceBuffer constructor."""
+        var result = DeviceBufferV2[type](self, size, Self.SYNC)
+        self.synchronize()
+        return result
 
     fn compile_function[
         func_type: AnyTrivialRegType, //,

@@ -98,7 +98,8 @@ struct DeviceBufferVariant[type: DType](Sized):
     fn __init__(inout self, ctx: DeviceContextVariant, size: Int) raises:
         @parameter
         if _device_ctx_v2():
-            self._impl = Self.V2(ctx.v2(), size)
+            # TODO(iposva): Should we expose the sync mode to the public API?
+            self._impl = Self.V2(ctx.v2(), size, DeviceContextV2.SYNC)
         else:
             self._impl = Self.V1(ctx.v1(), size)
 
@@ -224,14 +225,36 @@ struct DeviceContextVariant:
         else:
             self.v1().free_host[type](ptr)
 
+    fn enqueue_create_buffer[
+        type: DType
+    ](self, size: Int) raises -> DeviceBufferVariant[type]:
+        """Enqueues a buffer creation using the DeviceBuffer constructor."""
+
+        @parameter
+        if _device_ctx_v2():
+            return self.v2().enqueue_create_buffer[type](size)
+        else:
+            return self.v1().enqueue_create_buffer[type](size)
+
+    fn create_buffer_sync[
+        type: DType
+    ](self, size: Int) raises -> DeviceBufferVariant[type]:
+        """Creates a buffer synchronously using the DeviceBuffer constructor."""
+
+        @parameter
+        if _device_ctx_v2():
+            return self.v2().create_buffer_sync[type](size)
+        else:
+            return self.v1().create_buffer_sync[type](size)
+
     fn create_buffer[
         type: DType
     ](self, size: Int) raises -> DeviceBufferVariant[type]:
         @parameter
         if _device_ctx_v2():
-            return self.v2().create_buffer[type](size)
+            return self.v2().enqueue_create_buffer[type](size)
         else:
-            return self.v1().create_buffer[type](size)
+            return self.v1().enqueue_create_buffer[type](size)
 
     fn compile_function[
         func_type: AnyTrivialRegType, //,

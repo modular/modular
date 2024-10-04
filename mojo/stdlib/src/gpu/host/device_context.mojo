@@ -315,11 +315,19 @@ struct DeviceContextV1:
         """Frees memory allocated with malloc_host()."""
         self.cuda_context.free_host(ptr)
 
-    fn create_buffer[
+    fn enqueue_create_buffer[
         type: DType
     ](self, size: Int) raises -> DeviceBufferV1[type]:
-        """Creates a buffer using the DeviceBuffer constructor."""
+        """Enqueues a buffer creation using the DeviceBuffer constructor."""
         return DeviceBufferV1[type](self, size)
+
+    fn create_buffer_sync[
+        type: DType
+    ](self, size: Int) raises -> DeviceBufferV1[type]:
+        """Creates a buffer synchronously using the DeviceBuffer constructor."""
+        var result = DeviceBufferV1[type](self, size)
+        self.synchronize()
+        return result
 
     fn compile_function[
         func_type: AnyTrivialRegType, //,
