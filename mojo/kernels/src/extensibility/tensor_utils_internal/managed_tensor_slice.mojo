@@ -398,7 +398,7 @@ fn foreach[
         width: Int, rank: Int
     ](index: StaticIntTuple[rank]) capturing:
         var val = func[width](rebind[StaticIntTuple[tensor.rank]](index))
-        tensor.store(index, val)
+        tensor._fused_store(index, val)
 
     algorithm.functional.elementwise[
         elementwise_fn_wrapper,
