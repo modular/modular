@@ -61,7 +61,7 @@ async def run_batch_scenario(
         len(prompts),
     )
 
-    max_batch_size = model.config.batch_size
+    max_batch_size = model.config.max_cache_batch_size
     num_prompts = len(prompts)
 
     batch_sequence_index = 0

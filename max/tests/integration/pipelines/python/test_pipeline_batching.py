@@ -84,7 +84,8 @@ def pipeline_model(testdata_directory, request):
     )
     print(
         f"- Using config: {config.version}, MaxLength={config.max_length},"
-        f" MaxNewTokens={config.max_new_tokens}, BatchSize={config.batch_size}"
+        f" MaxNewTokens={config.max_new_tokens},"
+        f" MaxCacheSize={config.max_cache_batch_size}"
     )
     model = Llama3(config)
 
@@ -111,7 +112,7 @@ async def test_pipeline_static_batch_same_prompt_same_output(pipeline_model):
     All batches should complete at the same time.
     """
     prompt = "Repeat this sentence forever and forever."
-    batch_size = pipeline_model.config.batch_size
+    batch_size = pipeline_model.config.max_cache_batch_size
     context_batch = {}
     for i in range(batch_size):
         context = await pipeline_model.new_context(prompt)
@@ -158,7 +159,7 @@ async def test_pipeline_static_batch_same_prompt_different_max_new_tokens(
     We expect batches to complete one by one until the last one is done.
     """
     prompt = "Repeat this sentence forever and forever."
-    batch_size = pipeline_model.config.batch_size
+    batch_size = pipeline_model.config.max_cache_batch_size
     print(batch_size)
     context_batch = {}
     for i in range(batch_size):
@@ -235,7 +236,7 @@ async def test_pipeline_dynamic_batch_same_prompt_same_output(
     All batches should complete at the same time.
     """
     prompt = "Repeat this sentence forever and forever."
-    max_batch_size = pipeline_model.config.batch_size
+    max_batch_size = pipeline_model.config.max_cache_batch_size
     print(f"MaxBatchSize: {max_batch_size}")
 
     for batch_size in batch_sizes:

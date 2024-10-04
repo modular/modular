@@ -31,7 +31,7 @@ async def test_kv_cache_length() -> None:
     session = InferenceSession()
     kv_manager = load_kv_manager(
         params=kv_params,
-        max_cache_size=1,
+        max_cache_batch_size=1,
         max_seq_len=512,
         num_layers=32,
         session=session,
