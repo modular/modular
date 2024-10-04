@@ -96,7 +96,11 @@ struct _NestedLoopIter[n_loops: Int]:
 
         return cur
 
-    fn __len__(inout self) -> Int:
+    @always_inline
+    fn __hasmore__(self) -> Bool:
+        return self.__len__() > 0
+
+    fn __len__(self) -> Int:
         if self.cur[0] >= self._ub_loop(0) or self.early_stop:
             return 0
         else:
