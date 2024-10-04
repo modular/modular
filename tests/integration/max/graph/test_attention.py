@@ -27,6 +27,17 @@ class TorchAttention(nn.Module):
         self.seq_len = seq_len
 
     def forward(self, x, attention_mask, k_cache, v_cache, wq, wk, wv, wo):
+        # Unsqueeze from (batch, seq_len, post_seq_len) to
+        # (batch, nheads, seq_len, post_seq_len).
+        attention_mask = attention_mask.unsqueeze(1).tile(
+            (
+                1,
+                self.config.num_attention_heads,
+                1,
+                1,
+            )
+        )
+
         self.attention.load_state_dict(
             {
                 "q_proj.weight": wq,
@@ -82,7 +93,7 @@ def _attention_layer(config: LlamaConfig):
     input_dtype = DType.float32
     input_type = TensorType(input_dtype, ["batch_size", "seq_len", dim])
     attn_mask_type = TensorType(
-        DType.bool, ["batch_size", n_heads, "seq_len", "post_seq_len"]
+        DType.float32, ["batch_size", "seq_len", "post_seq_len"]
     )
     cache_type = TensorType(
         DType.float32,
