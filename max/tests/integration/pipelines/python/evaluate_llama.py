@@ -259,7 +259,7 @@ def golden_data_fname(model, encoding):
 
 SUPPORTED_PAIRS = [
     ("llama3_1", "bfloat16"),
-    # ("llama3_1", "q4_k"),
+    ("llama3_1", "q4_k"),
     ("tinyllama", "float32"),
 ]
 
