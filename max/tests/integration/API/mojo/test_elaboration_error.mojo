@@ -13,11 +13,9 @@ from max.engine import InferenceSession
 from pathlib import Path
 
 # CHECK: user_invalid.mojo:{{.*}} error: call expansion failed
-# CHECK-NEXT: constrained[False, "oops"]()
-# CHECK: constrained.mojo:{{.*}} note: constraint failed: oops
+# CHECK-NEXT: note: constraint failed: oops
 # CHECK: error: failed to run the pass manager
 # CHECK: model_invalid_op.mlir:{{.*}} error: KGEN elaboration failed
-# CHECK-NEXT: mo.graph @elaboration_error_in_kernel()
 
 
 def main():

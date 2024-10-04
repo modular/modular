@@ -44,6 +44,18 @@ def mo_custom_ops_model_path(modular_path: Path) -> Path:
 
 
 @pytest.fixture
+def mo_custom_op_failing_constraint_model_path(modular_path: Path) -> Path:
+    return (
+        modular_path
+        / "SDK"
+        / "integration-test"
+        / "EngineAPI"
+        / "c"
+        / "custom-op-failing-constraint.api"
+    )
+
+
+@pytest.fixture
 def sdk_test_inputs_path(modular_path: Path) -> Path:
     return modular_path / "SDK" / "integration-test" / "EngineAPI" / "Inputs"
 
@@ -396,6 +408,24 @@ def test_custom_ops(
         output[0].to_numpy(),
         np.array([4.0], dtype=np.float32),
     )
+
+
+def test_custom_op_failing_constraint(
+    session: InferenceSession,
+    mo_custom_op_failing_constraint_model_path: Path,
+    custom_ops_package_path: Path,
+):
+    with pytest.raises(
+        Exception,
+        match=(
+            "note: constraint failed: Expected constraint failure for error"
+            " message testing"
+        ),
+    ):
+        session.load(
+            mo_custom_op_failing_constraint_model_path,
+            custom_ops_path=str(custom_ops_package_path),
+        )
 
 
 def test_list_io(session: InferenceSession, mo_listio_model_path: Path):
