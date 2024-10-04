@@ -1,0 +1,74 @@
+//===----------------------------------------------------------------------===//
+//
+// This file is Modular Inc proprietary.
+//
+//===----------------------------------------------------------------------===//
+
+#include "Support/Diagnostics/FormatScopedDiagnosticHandler.h"
+
+#include "gtest/gtest.h"
+
+using namespace M;
+using namespace mlir;
+
+TEST(FormatScopedDiagnosticHandler, FormatsErrorMessage) {
+  MLIRContext context;
+  FormatScopedDiagnosticHandler diagnostics(&context);
+
+  mlir::emitError(mlir::FileLineColLoc::get(&context, "foo.cpp", 42, 12),
+                  "It was a bright cold day in April");
+
+  EXPECT_STREQ("foo.cpp:42:12: error: It was a bright cold day in April\n",
+               diagnostics.formatMessage().c_str());
+}
+
+TEST(FormatScopedDiagnosticHandler, FormatsWarningMessage) {
+  MLIRContext context;
+  FormatScopedDiagnosticHandler diagnostics(&context);
+
+  mlir::emitWarning(mlir::FileLineColLoc::get(&context, "foo.cpp", 42, 12),
+                    "It was a bright cold day in April");
+
+  EXPECT_STREQ("foo.cpp:42:12: warning: It was a bright cold day in April\n",
+               diagnostics.formatMessage().c_str());
+}
+
+TEST(FormatScopedDiagnosticHandler, FormatsRemarkMessage) {
+  MLIRContext context;
+  FormatScopedDiagnosticHandler diagnostics(&context);
+
+  mlir::emitRemark(mlir::FileLineColLoc::get(&context, "foo.cpp", 42, 12),
+                   "It was a bright cold day in April");
+
+  EXPECT_STREQ("foo.cpp:42:12: remark: It was a bright cold day in April\n",
+               diagnostics.formatMessage().c_str());
+}
+
+TEST(FormatScopedDiagnosticHandler, IgnoresCallSiteLocation) {
+  MLIRContext context;
+  FormatScopedDiagnosticHandler diagnostics(&context);
+
+  mlir::emitRemark(mlir::CallSiteLoc::get(
+                       mlir::FileLineColLoc::get(&context, "foo.cpp", 42, 12),
+                       mlir::FileLineColLoc::get(&context, "foo.cpp", 14, 8)),
+                   "It was a bright cold day in April");
+
+  EXPECT_STREQ("remark: It was a bright cold day in April\n",
+               diagnostics.formatMessage().c_str());
+}
+
+TEST(FormatScopedDiagnosticHandler, FormatsAttachedNotes) {
+  MLIRContext context;
+  FormatScopedDiagnosticHandler diagnostics(&context);
+
+  InFlightDiagnostic inFlightDiagnostic =
+      mlir::emitRemark(mlir::FileLineColLoc::get(&context, "foo.cpp", 42, 12),
+                       "It was a bright cold day in April");
+  inFlightDiagnostic.attachNote() << "and the clocks were striking thirteen";
+  context.getDiagEngine().emit(
+      std::move(*inFlightDiagnostic.getUnderlyingDiagnostic()));
+
+  EXPECT_STREQ("foo.cpp:42:12: remark: It was a bright cold day in April\n  "
+               "foo.cpp:42:12: note: and the clocks were striking thirteen\n",
+               diagnostics.formatMessage().c_str());
+}

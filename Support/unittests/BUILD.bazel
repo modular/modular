@@ -211,3 +211,9 @@ modular_cc_test(
     srcs = glob(["Metering/*.cpp"]),
     deps = ["//Support:Metering"],
 )
+
+modular_cc_test(
+    name = "DiagnosticsTests",
+    srcs = glob(["Diagnostics/*.cpp"]),
+    deps = ["//Support:Diagnostics"],
+)
