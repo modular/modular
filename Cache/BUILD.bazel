@@ -4,10 +4,6 @@ modular_cc_library(
     name = "Cache",
     srcs = glob(["lib/**/*.cpp"]),
     hdrs = glob(["include/Cache/**/*.h"]),
-    copts = [
-        # TODO(35394): This isn't what cmake is doing
-        '-DMODULAR_DERIVED_DIR=\\"/tmp/modularderived\\"',
-    ],
     deps = [
         "//AsyncRT:CompilerSupport",
         "//AsyncRT:Runtime",
