@@ -14,10 +14,6 @@ from sys.intrinsics import _type_is_eq
 from collections import Optional
 
 
-alias KEY_IDX = 0
-alias VALUE_IDX = 1
-
-
 @value
 @register_passable("trivial")
 struct KVCacheLayout(EqualityComparable):
@@ -494,6 +490,9 @@ struct ContinuousBatchingKVCache[
     THIS IS THE TYPE THAT IS PASSED TO KV PROJECTION AND FLASH ATTENTION KERNELS.
     """
 
+    alias KeyIdx = 0
+    alias ValueIdx = 1
+
     alias single_block_shape = DimList(
         Dim(), kv_params.num_heads, kv_params.head_size
     ) if kv_params.layout == KVCacheLayout.BSHD else DimList(
@@ -789,7 +788,7 @@ struct ContinuousBatchingKVCacheCollection[
                 self.lookup_table,
                 self.is_cache_empty,
                 layer_idx,
-                KEY_IDX,
+                Self.CacheType.KeyIdx,
             )
         )
 
@@ -802,7 +801,7 @@ struct ContinuousBatchingKVCacheCollection[
                 self.lookup_table,
                 self.is_cache_empty,
                 layer_idx,
-                VALUE_IDX,
+                Self.CacheType.ValueIdx,
             )
         )
 
