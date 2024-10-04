@@ -18,8 +18,6 @@ from kv_cache.types import (
     KVCacheLayout,
     ContinuousBatchingKVCache,
     KVCacheStaticParams,
-    KEY_IDX,
-    VALUE_IDX,
 )
 from nn.kv_cache import (
     _matmul_kv_cache_impl,
@@ -272,7 +270,10 @@ def execute_fused_qkv_matmul[
     alias kv_hidden_size = kv_params.num_heads * kv_params.head_size
     alias fused_hidden_size = (2 * kv_hidden_size) + hidden_size
     alias num_blocks = 32
-
+    alias CacheType = ContinuousBatchingKVCache[
+        type,
+        kv_params,
+    ]
     debug_assert(
         batch_size < num_blocks,
         "batch_size passed to unit test ("
@@ -416,37 +417,37 @@ def execute_fused_qkv_matmul[
         lookup_table_device.buffer, lookup_table_host.tensor.data
     )
 
-    var k_cache_device = ContinuousBatchingKVCache[type, kv_params,](
+    var k_cache_device = CacheType(
         kv_block_device.tensor,
         cache_lengths_dev.tensor,
         lookup_table_device.tensor,
         is_context_encoding,
         layer_idx,
-        KEY_IDX,
+        CacheType.KeyIdx,
     )
-    var k_cache_host = ContinuousBatchingKVCache[type, kv_params,](
+    var k_cache_host = CacheType(
         kv_block_host.tensor,
         cache_lengths_host.tensor,
         lookup_table_host.tensor,
         is_context_encoding,
         layer_idx,
-        KEY_IDX,
+        CacheType.KeyIdx,
     )
-    var v_cache_device = ContinuousBatchingKVCache[type, kv_params,](
+    var v_cache_device = CacheType(
         kv_block_device.tensor,
         cache_lengths_dev.tensor,
         lookup_table_device.tensor,
         is_context_encoding,
         layer_idx,
-        VALUE_IDX,
+        CacheType.ValueIdx,
     )
-    var v_cache_host = ContinuousBatchingKVCache[type, kv_params,](
+    var v_cache_host = CacheType(
         kv_block_host.tensor,
         cache_lengths_host.tensor,
         lookup_table_host.tensor,
         is_context_encoding,
         layer_idx,
-        VALUE_IDX,
+        CacheType.ValueIdx,
     )
     _fused_qkv_matmul_kv_cache_impl[target="cuda",](
         hidden_state_device.tensor,

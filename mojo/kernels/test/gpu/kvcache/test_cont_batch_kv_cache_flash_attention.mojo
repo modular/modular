@@ -18,8 +18,6 @@ from kv_cache.types import (
     KVCacheLayout,
     ContinuousBatchingKVCache,
     KVCacheStaticParams,
-    KEY_IDX,
-    VALUE_IDX,
 )
 from nn.mha import (
     flash_attention,
@@ -64,7 +62,10 @@ def execute_flash_attention[
     ctx: DeviceContext,
 ):
     alias num_blocks = 32
-
+    alias CacheType = ContinuousBatchingKVCache[
+        type,
+        kv_params,
+    ]
     debug_assert(
         batch_size < num_blocks,
         "batch_size passed to unit test ("
@@ -79,7 +80,6 @@ def execute_flash_attention[
     ).__int__()
 
     # initialize q tensor
-    # TODO parameterize to layout
     q_host = HostNDBuffer[
         type, 4, DimList(Dim(), Dim(), num_q_heads, kv_params.head_size)
     ](
@@ -89,9 +89,6 @@ def execute_flash_attention[
     )
 
     random(q_host.tensor)
-
-    # TODO: Do I need to zero-pad q_host_tensor beyond the valid_size of the
-    #       current batch's valid length? What to initialize with?
 
     valid_length_device = DeviceNDBuffer[DType.uint32, 1](
         StaticIntTuple[1](batch_size),
@@ -245,37 +242,37 @@ def execute_flash_attention[
         lookup_table_device.buffer, lookup_table_host.tensor.data
     )
 
-    var k_cache_device = ContinuousBatchingKVCache[type, kv_params,](
+    var k_cache_device = CacheType(
         kv_block_device.tensor,
         cache_lengths_device_nd,
         lookup_table_device.tensor,
         is_context_encoding,
         layer_idx,
-        KEY_IDX,
+        CacheType.KeyIdx,
     )
-    var k_cache_host = ContinuousBatchingKVCache[type, kv_params,](
+    var k_cache_host = CacheType(
         kv_block_host.tensor,
         cache_valid_length,
         lookup_table_host.tensor,
         is_context_encoding,
         layer_idx,
-        KEY_IDX,
+        CacheType.KeyIdx,
     )
-    var v_cache_device = ContinuousBatchingKVCache[type, kv_params,](
+    var v_cache_device = CacheType(
         kv_block_device.tensor,
         cache_lengths_device_nd,
         lookup_table_device.tensor,
         is_context_encoding,
         layer_idx,
-        VALUE_IDX,
+        CacheType.ValueIdx,
     )
-    var v_cache_host = ContinuousBatchingKVCache[type, kv_params,](
+    var v_cache_host = CacheType(
         kv_block_host.tensor,
         cache_valid_length,
         lookup_table_host.tensor,
         is_context_encoding,
         layer_idx,
-        VALUE_IDX,
+        CacheType.ValueIdx,
     )
 
     flash_attention[target="cuda"](
