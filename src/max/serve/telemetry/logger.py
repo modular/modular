@@ -6,9 +6,8 @@
 
 
 import logging
-import os
+from typing import Optional
 import uuid
-from typing import Any
 
 from opentelemetry._logs import set_logger_provider
 from opentelemetry.exporter.otlp.proto.http._log_exporter import OTLPLogExporter
@@ -19,21 +18,17 @@ from opentelemetry.sdk.resources import Resource
 
 # Configure logging to console and OTEL.  This should be called before any
 # 3rd party imports whose logging you wish to capture.
-def configureLogging(console_level, otlp_level):
-    # Create a log formatter
-    log_formatter = logging.Formatter(
-        "%(asctime)s %(levelname)s: %(name)s: %(message)s", "%H:%M:%S"
-    )
+def configureLogging(console_level: int, otlp_level: Optional[int] = None):
+    logging_handlers: list[logging.Handler] = []
 
     # Create a console handler
+    console_formatter = logging.Formatter(
+        "%(asctime)s %(levelname)s: %(name)s: %(message)s", datefmt="%H:%M:%S"
+    )
     console_handler = logging.StreamHandler()
-    console_handler.setFormatter(log_formatter)
+    console_handler.setFormatter(console_formatter)
     console_handler.setLevel(console_level)
-
-    # Configure the root logger, all children will bubble up
-    logger = logging.getLogger()
-    logger.addHandler(console_handler)
-    logger.setLevel(logging.NOTSET)
+    logging_handlers.append(console_handler)
 
     if otlp_level is not None:
         # Create an OTEL handler
@@ -55,11 +50,19 @@ def configureLogging(console_level, otlp_level):
         otlp_handler = LoggingHandler(
             level=otlp_level, logger_provider=logger_provider
         )
-        otlp_handler.setFormatter(log_formatter)
+        logging_handlers.append(otlp_handler)
 
-        logger.addHandler(otlp_handler)
-        logger.setLevel(otlp_level)
+    # Configure root logger level
+    logger_level = min(h.level for h in logging_handlers)
+    logger = logging.getLogger()
+    logger.setLevel(logger_level)
+    for handler in logging_handlers:
+        logger.addHandler(handler)
 
     # TODO use FastAPIInstrumentor once Motel supports traces.
     # For now, manually configure uvicorn.
     logging.getLogger("uvicorn").setLevel(console_level)
+    # Explicit levels to reduce noise
+    logging.getLogger("sse_starlette.sse").setLevel(
+        max(logger_level, logging.INFO)
+    )

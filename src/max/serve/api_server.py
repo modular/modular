@@ -14,12 +14,12 @@ import logging
 import os
 from contextlib import AsyncExitStack, asynccontextmanager
 from functools import partial
-from typing import AsyncContextManager, Sequence
+from typing import AsyncContextManager, Optional, Sequence
 
 from max.serve.telemetry.logger import configureLogging
 
-console_level = logging.INFO
-otlp_level: int | None = logging.INFO
+console_level: int = logging.INFO
+otlp_level: Optional[int] = logging.INFO
 if "MAX_SERVE_LOGS_CONSOLE_LEVEL" in os.environ:
     console_level = int(os.environ["MAX_SERVE_LOGS_CONSOLE_LEVEL"])
 if "MAX_SERVE_LOGS_OTLP_LEVEL" in os.environ:
@@ -42,7 +42,6 @@ ROUTES = {
 }
 
 logger = logging.getLogger(__name__)
-logging.getLogger("sse_starlette.sse").setLevel(logging.INFO)
 
 
 @asynccontextmanager
