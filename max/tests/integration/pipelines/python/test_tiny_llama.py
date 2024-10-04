@@ -138,7 +138,8 @@ async def test_tinyllama_context_exceeding_max_tokens_throws(
     prompt_len = len(encoded_prompt)
     assert prompt_len > tinyllama_model.config.max_length
     with pytest.raises(ValueError, match="max model context length"):
-        await tinyllama_model.new_context(prompt_fixture)
+        context = await tinyllama_model.new_context(prompt_fixture)
+        await tinyllama_model.release(context)
 
 
 @pytest.fixture(params=[None, 64, 256, 512, 555, 1024])

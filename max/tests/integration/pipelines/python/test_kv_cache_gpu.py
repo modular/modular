@@ -8,7 +8,7 @@ import asyncio
 from max.driver import CUDA
 from max.dtype import DType
 from max.engine import InferenceSession
-from nn.kv_cache import KVCacheParams, ContiguousKVCacheManager
+from nn.kv_cache import KVCacheParams, load_kv_manager
 
 
 def test_kv_cache_gpu():
@@ -24,7 +24,7 @@ async def _test_kv_cache_gpu():
         device=device,
     )
     session = InferenceSession(device=device)
-    kv_manager = ContiguousKVCacheManager(
+    kv_manager = load_kv_manager(
         params=kv_params,
         max_batch_size=1,
         max_seq_len=512,
@@ -32,7 +32,7 @@ async def _test_kv_cache_gpu():
         session=session,
         device=device,
     )
-    seq_id = await kv_manager.claim(batch_size=1)
+    seq_id = await kv_manager.claim(n=1)
     seq_id = seq_id[0]
     kv_collection = kv_manager.fetch([seq_id])
     assert kv_collection is not None
