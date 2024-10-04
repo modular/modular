@@ -16,6 +16,7 @@ from sys import llvm_intrinsic
 from sys.info import simdwidthof
 from tensor_utils import ManagedTensorSlice, foreach
 from utils import StaticIntTuple
+from utils.index import Index
 
 # ===----------------------------------------------------------------------===#
 # Kernel imports
@@ -68,7 +69,7 @@ from utils.numerics import isinf, isnan
 from nn.softmax import softmax, logsoftmax
 from nn.pad import pad_constant, pad_repeat, pad_reflect, pad_shape
 from nn.cumsum import cumsum
-
+from nn.conv import ConvInfoStatic, conv_nhwc_direct, conv_shape
 from nn.normalization import layer_norm, rms_norm
 
 # ===----------------------------------------------------------------------===#
@@ -3049,4 +3050,153 @@ struct CumSum:
 
         cumsum[rank, type, exclusive, reverse](
             output_buf, input_buf, int(normalize_neg_index(axis_val, rank))
+        )
+
+
+# ===----------------------------------------------------------------------===#
+# Convolution kernels
+# ===----------------------------------------------------------------------===#
+
+
+@compiler.register("mo.conv")
+struct Conv:
+    @staticmethod
+    fn execute[
+        filter_packed: Bool,
+        lambdas_have_fusion: Bool,
+        static_strides: DimList,
+        static_dilations: DimList,
+        static_padding: DimList,
+    ](
+        output: ManagedTensorSlice,
+        input: ManagedTensorSlice[rank = output.rank],
+        filter: ManagedTensorSlice,
+        strides: ManagedTensorSlice,
+        dilation: ManagedTensorSlice,
+        paddings: ManagedTensorSlice,
+        num_groups: Scalar,
+    ) raises:
+        @parameter
+        @always_inline
+        fn output_fn[
+            _type: DType, _rank: Int, _width: Int
+        ](coords: StaticIntTuple[_rank], val: SIMD[_type, _width]):
+            output.store[width=_width](
+                rebind[StaticIntTuple[output.rank]](coords),
+                rebind[SIMD[output.type, _width]](val),
+            )
+
+        alias input_static_shape = compiler.specsof[input.type, input.rank](
+            "input"
+        ).shape
+        alias filter_static_shape = compiler.specsof[filter.type, filter.rank](
+            "filter"
+        ).shape
+        alias output_static_shape = compiler.specsof[output.type, output.rank](
+            "output"
+        ).shape
+
+        constrained[
+            strides.type.is_integral() and dilation.type.is_integral(),
+            "stride and dilation must have integral type",
+        ]()
+
+        if strides.size() != input.rank - 2:
+            raise Error("$(input_rank-2) values expected in conv strides")
+
+        if dilation.size() != input.rank - 2:
+            raise Error("$(input_rank-2) values expected in conv dilation")
+
+        if paddings.size() != 2 * (input.rank - 2):
+            raise Error("$(2*(input_rank-2)) value expected in conv paddings")
+
+        var stride_tuple = StaticIntTuple[input.rank - 2](0)
+        var dilation_tuple = StaticIntTuple[input.rank - 2](0)
+
+        @parameter
+        for i in range(input.rank - 2):
+            stride_tuple[i] = int(strides._ptr[i])
+            dilation_tuple[i] = int(dilation._ptr[i])
+
+        if dilation_tuple != StaticIntTuple[input.rank - 2](1):
+            raise Error("Non-unit dilation is not supported yet.")
+
+        var pad_d_tuple = StaticIntTuple[2](0)
+        var pad_h_tuple = StaticIntTuple[2](0)
+        var pad_w_tuple = StaticIntTuple[2](0)
+
+        @parameter
+        if input.rank == 3:
+            pad_w_tuple = Index(paddings._ptr[0], paddings._ptr[1])
+        elif input.rank == 4:
+            pad_h_tuple = Index(paddings._ptr[0], paddings._ptr[1])
+            pad_w_tuple = Index(paddings._ptr[2], paddings._ptr[3])
+        elif input.rank == 5:
+            pad_d_tuple = Index(paddings._ptr[0], paddings._ptr[1])
+            pad_h_tuple = Index(paddings._ptr[2], paddings._ptr[3])
+            pad_w_tuple = Index(paddings._ptr[4], paddings._ptr[5])
+
+        alias conv_attr = ConvInfoStatic[input.rank - 2](
+            static_padding,
+            static_strides,
+            static_dilations,
+            input_static_shape.at[input.rank - 1](),  # input C, NHWC
+            filter_static_shape.at[
+                filter.rank - 2
+            ](),  # filter C, RSCF or FRSCf
+        )
+
+        var input_buf = managed_tensor_slice_to_ndbuffer[
+            static_shape=input_static_shape
+        ](input)
+        var filter_buf = managed_tensor_slice_to_ndbuffer[
+            static_shape=filter_static_shape
+        ](filter)
+        var output_buf = managed_tensor_slice_to_ndbuffer[
+            static_shape=output_static_shape
+        ](output)
+
+        conv_nhwc_direct[
+            input.rank,
+            filter.rank,
+            input_static_shape,  # input shape
+            filter_static_shape,  # filter shape
+            output_static_shape,  # output shape
+            input.type,
+            filter.type,
+            output.type,
+            filter_packed,
+            conv_attr,
+            lambdas_have_fusion,
+            output_fn,
+        ](
+            input_buf,
+            filter_buf,
+            output_buf,
+            stride_tuple,
+            dilation_tuple,
+            pad_d_tuple,
+            pad_h_tuple,
+            pad_w_tuple,
+            int(num_groups._ptr[0]),
+        )
+
+    @staticmethod
+    fn shape[
+        type: DType
+    ](
+        input: ManagedTensorSlice,
+        filter: ManagedTensorSlice,
+        strides: ManagedTensorSlice[rank=1],
+        dilations: ManagedTensorSlice[rank=1],
+        paddings: ManagedTensorSlice[rank=1],
+        num_groups: ManagedTensorSlice[rank=1],
+    ) raises -> StaticIntTuple[input.rank]:
+        return conv_shape[single_thread_blocking_override=True](
+            managed_tensor_slice_to_ndbuffer(input),
+            managed_tensor_slice_to_ndbuffer(filter),
+            managed_tensor_slice_to_ndbuffer(strides),
+            managed_tensor_slice_to_ndbuffer(dilations),
+            managed_tensor_slice_to_ndbuffer(paddings),
+            managed_tensor_slice_to_ndbuffer(num_groups),
         )
