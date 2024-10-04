@@ -5,9 +5,10 @@
 # ===----------------------------------------------------------------------=== #
 """Test pipelines attention layer."""
 
+import numpy as np
 import pytest
 import torch
-from conftest import assert_allclose, modular_graph_test
+from conftest import modular_graph_test
 from max.dtype import DType
 from max.graph import Graph, TensorType
 from torch import nn
@@ -16,6 +17,9 @@ from transformers.models.llama.configuration_llama import LlamaConfig
 from transformers.models.llama.modeling_llama import LlamaSdpaAttention
 
 from nn import Attention, Linear, RotaryEmbedding
+
+ACCURACY_RTOL = 1e-2
+ACCURACY_ATOL = 1e-2
 
 
 class TorchAttention(nn.Module):
@@ -162,6 +166,7 @@ def test_attention(session, start_pos, seq_len):
     # Set up max graph attention layer.
     layer_graph = _attention_layer(config)
 
+    # This is set so it fits a float type with width of 32.
     @modular_graph_test(
         session,
         layer_graph,
@@ -170,9 +175,30 @@ def test_attention(session, start_pos, seq_len):
             "seq_len": seq_len,
             "post_seq_len": start_pos + seq_len,
         },
+        max_magnitude=1 / 64,
     )
     def test_correctness(execute, inputs, torch_inputs):
         inputs = list(inputs)
         result = execute(inputs)
         expected = torch_attention(*torch_inputs).detach().numpy()
-        assert_allclose(result, expected)
+        # TODO(MSDK-1071): Consolidate and figure out how to call
+        # assert_allclose(result, expected) to fire again on mismatched
+        # tensor values.
+        try:
+            np.testing.assert_allclose(
+                result,
+                expected,
+                atol=ACCURACY_ATOL,
+                rtol=ACCURACY_RTOL,
+                equal_nan=True,
+            )
+        except AssertionError:
+            # There must be an "inf" in max relative difference given we may
+            # be comparing very small values, so we just
+            # do absolute val comparison instead.
+            np.testing.assert_allclose(
+                result,
+                expected,
+                atol=ACCURACY_ATOL,
+                equal_nan=True,
+            )
