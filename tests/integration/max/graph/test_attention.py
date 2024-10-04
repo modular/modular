@@ -5,19 +5,17 @@
 # ===----------------------------------------------------------------------=== #
 """Test pipelines attention layer."""
 
-from dataclasses import dataclass
-
-import hypothesis
 import pytest
 import torch
 from conftest import assert_allclose, modular_graph_test
 from max.dtype import DType
 from max.graph import Graph, TensorType
-from nn import Attention, Linear, RotaryEmbedding
 from torch import nn
 from transformers import StaticCache
 from transformers.models.llama.configuration_llama import LlamaConfig
 from transformers.models.llama.modeling_llama import LlamaSdpaAttention
+
+from nn import Attention, Linear, RotaryEmbedding
 
 
 class TorchAttention(nn.Module):
