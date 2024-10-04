@@ -14,14 +14,27 @@ checkpoint, use the `gen_tiny_llama` target:
 ```bash
 TESTDATA_DIR="$MODULAR_PATH/SDK/integration-test/pipelines/python/testdata"
 
+# Generate float32 checkpoint
 ./bazelw run //ModularFramework/utils:gen_tiny_llama --\
     --output=$TESTDATA_DIR/tiny_llama.gguf \
     --quantization-encoding=float32 \
     --n-layers=1 \
     --n-heads=1 \
     --n-kv-heads=1 \
-    --hidden-dim=10
+    --hidden-dim=16
+
+# Generate bfloat16 checkpoint
+./bazelw run //ModularFramework/utils:gen_tiny_llama --\
+    --output=$TESTDATA_DIR/tiny_llama_bf16.gguf \
+    --quantization-encoding=bfloat16 \
+    --n-layers=1 \
+    --n-heads=1 \
+    --n-kv-heads=1 \
+    --hidden-dim=16
 ```
+
+Note: Hidden dim must be a multiple of 8 (required for `fused_qkv_matmul` kernel
+alignment)
 
 Then, you can use `evaluate_llama` to generate the golden values. The
 CLI supports encoding (q4_k, float32, bfloat16) and model (tinyllama, llama3_1) parameters.
@@ -70,15 +83,15 @@ add a file to this archive, you need to:
 
 1. Download the existing archive by `cat WORKSPACE.bazel | grep test_llama_golden`
 , finding the s3 URL (at time of writing this
-was `https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/test_llama_golden/2/436cdfe1a31bd3e8fbdf356aaa1b0ccc788994c259bbbe2b13ab203982431908/test_llama_golden.tar.gz`)
+was `https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/test_llama_golden/3/a8f43e07e8eda111ff14cbe74f5f426d5895e22faf5066ec4760a7e7131f7305/test_llama_golden.tar.gz`)
 and downloading to your local machine (e.g., with wget).
 
 2. Untar the existing archive `tar -xvf test_llama_golden.tar.gz`.
 
 3. Add any additional files you want to register alongside.
 
-4. Run `./utils/upload-public-bazel-artifact.sh test_llama_golden 2 *golden.json`
-to package and upload the latest version (current version number is `2`).
+4. Run `./utils/upload-public-bazel-artifact.sh test_llama_golden 3 *golden.json`
+to package and upload the latest version (current version number is `3`).
 
 5. The result of ^ will be a snippet like:
 
