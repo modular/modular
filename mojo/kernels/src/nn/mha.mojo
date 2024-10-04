@@ -43,7 +43,7 @@ from linalg.transpose import transpose
 from memory import UnsafePointer, stack_allocation
 from memory.pointer import AddressSpace as _AddressSpace
 from memory.unsafe import bitcast
-from nn.mha_mask import MHAMask, NullMask
+from nn.mha_mask import MHAMask, NullMask, TileMaskStatus
 from runtime.asyncrt import MojoCallContextPtr
 
 from utils.index import Index, StaticIntTuple
@@ -1155,6 +1155,14 @@ fn mha_single_batch[
     var kv_offset = depth * (head_idx // group)
 
     for kv_tile_start_row in range(0, seq_len, BN):
+        if (
+            mask.status(
+                Index(q_tile_idx * BM, kv_tile_start_row), Index(BM, BN)
+            )
+            == TileMaskStatus.FULL_MASK
+        ):
+            continue
+
         var k_gmem_block = LayoutTensor[
             k_type,
             Layout(IntTuple(BN, depth), IntTuple(kv_num_heads * depth, 1)),
@@ -1284,27 +1292,42 @@ fn mha_single_batch[
                             )
 
                 else:
+                    if (
+                        mask.status(
+                            Index(q_tile_idx * BM, kv_tile_start_row),
+                            Index(BM, BN),
+                        )
+                        == TileMaskStatus.PARTIAL_MASK
+                    ):
 
-                    @parameter
-                    for i in range(2):
-                        # The row in score matrix of shape seq_len x num_keys.
-                        # Mask col is score col since we don't partition in col.
-                        var score_row = mask_block_row + mask_frag_row + i * MMA_M // 2
-                        var score_col = mask_frag_col
-                        p_reg_vec2[mma_id, i] = mask.mask(
-                            Index(
-                                int(BlockIdx.z()),
-                                int(BlockIdx.y()),
-                                int(score_row),
-                                int(score_col),
-                            ),
-                            p_reg_vec2[mma_id, i] * scale.cast[accum_type](),
-                        )
-                        p_reg_vec2[mma_id, i] = _kernel_mask(
-                            Index(score_row, score_col),
-                            Index(seq_len, seq_len),
-                            p_reg_vec2[mma_id, i],
-                        )
+                        @parameter
+                        for i in range(2):
+                            # The row in score matrix of shape seq_len x num_keys.
+                            # Mask col is score col since we don't partition in col.
+                            var score_row = mask_block_row + mask_frag_row + i * MMA_M // 2
+                            var score_col = mask_frag_col
+                            p_reg_vec2[mma_id, i] = mask.mask(
+                                Index(
+                                    int(BlockIdx.z()),
+                                    int(BlockIdx.y()),
+                                    int(score_row),
+                                    int(score_col),
+                                ),
+                                p_reg_vec2[mma_id, i]
+                                * scale.cast[accum_type](),
+                            )
+                            p_reg_vec2[mma_id, i] = _kernel_mask(
+                                Index(score_row, score_col),
+                                Index(seq_len, seq_len),
+                                p_reg_vec2[mma_id, i],
+                            )
+                    else:
+
+                        @parameter
+                        for i in range(2):
+                            p_reg_vec2[mma_id, i] = (
+                                p_reg_vec2[mma_id, i] * scale.cast[accum_type]()
+                            )
 
         # Increment mask to next BM x BN block.
         mask_warp_col += BN
