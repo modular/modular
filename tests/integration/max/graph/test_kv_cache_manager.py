@@ -22,7 +22,7 @@ async def test_step(session: InferenceSession):
 
     kv_manager = load_kv_manager(
         params=params,
-        max_cache_size=16,
+        max_cache_batch_size=16,
         max_seq_len=100,
         num_layers=10,
         session=session,
@@ -61,7 +61,7 @@ async def test_claim_and_release(session: InferenceSession):
 
     kv_manager = load_kv_manager(
         params=params,
-        max_cache_size=16,
+        max_cache_batch_size=16,
         max_seq_len=100,
         num_layers=10,
         session=session,
@@ -104,7 +104,7 @@ async def test_fetch_continuous(session: InferenceSession):
 
     kv_manager = load_kv_manager(
         params=params,
-        max_cache_size=16,
+        max_cache_batch_size=16,
         max_seq_len=100,
         num_layers=10,
         session=session,
@@ -137,7 +137,7 @@ async def test_fetch_contiguous(session: InferenceSession):
 
     kv_manager = load_kv_manager(
         params=params,
-        max_cache_size=16,
+        max_cache_batch_size=16,
         max_seq_len=100,
         num_layers=10,
         session=session,
