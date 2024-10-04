@@ -362,7 +362,7 @@ bool processStructExecuteFunc(ModuleOp moduleOp,
         return false;
       }
       argIdxsAttrs.push_back(builder.getIndexAttr(
-          std::distance(argIt, argSrcNamesAttr.getValue().begin())));
+          std::distance(argSrcNamesAttr.getValue().begin(), argIt)));
     }
 
     if (!argIdxsAttrs.empty()) {
