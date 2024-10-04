@@ -17,9 +17,6 @@ from collections import Optional
 alias KEY_IDX = 0
 alias VALUE_IDX = 1
 
-# TODO remove as a part of KERN-854
-alias _default_max_batch_size = 32
-
 
 @value
 @register_passable("trivial")
@@ -139,7 +136,6 @@ trait KVCacheT(CollectionElement):
 struct ContiguousKVCache[
     type: DType,
     kv_params: KVCacheStaticParams,
-    _max_batch_size: Int = _default_max_batch_size,
 ](KVCacheT):
     """Wrapper for the ContiguousKVCache of a given layer in the transformer model.
 
@@ -212,14 +208,6 @@ struct ContiguousKVCache[
         is_cache_empty: Bool,
         batch_size: Int,
     ):
-        debug_assert(
-            batch_size <= _max_batch_size,
-            "Expected batch_size (",
-            batch_size,
-            ") <= _max_batch_size (",
-            _max_batch_size,
-            ")",
-        )
         self._block = block
         self.cache_lengths = cache_lengths
         self.is_cache_empty = is_cache_empty
@@ -350,7 +338,6 @@ struct ContiguousKVCache[
 struct ContiguousKVCacheCollection[
     type: DType,
     kv_params: KVCacheStaticParams,
-    _max_batch_size: Int = _default_max_batch_size,
 ](KVCollectionT):
     """This is a "view" of the cache for the given sequences
     in the batch.
@@ -361,7 +348,7 @@ struct ContiguousKVCacheCollection[
     """
 
     # TODO outer should be list, inner can be Pointer?
-    alias CacheType = ContiguousKVCache[type, kv_params, _max_batch_size]
+    alias CacheType = ContiguousKVCache[type, kv_params]
     var key_cache: NDBuffer[type, 5]
     var value_cache: NDBuffer[type, 5]
     var cache_lengths: NDBuffer[DType.uint32, 1]
@@ -512,6 +499,10 @@ struct ContinuousBatchingKVCache[
     ) if kv_params.layout == KVCacheLayout.BSHD else DimList(
         kv_params.num_heads, Dim(), kv_params.head_size
     )
+
+    # shape is
+    # - BSHD: [num_blocks, 2, num_layers, max_seq_len, num_heads, head_size]
+    # - BHSD: [num_blocks, 2, num_layers, num_heads, max_seq_len, head_size]
     alias BlocksType = NDBuffer[type, 6]
     var blocks: Self.BlocksType
     var cache_lengths: NDBuffer[DType.uint32, 1]
