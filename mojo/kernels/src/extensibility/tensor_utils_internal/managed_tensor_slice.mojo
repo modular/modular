@@ -174,6 +174,21 @@ struct ManagedTensorSlice[
     fn dim_size(self, index: Int) -> Int:
         return self._spec.shape[index]
 
+    @always_inline
+    fn size(self) -> Int:
+        """Computes the tensor slice's number of elements.
+
+        Returns:
+            The total number of elements in the NDBuffer.
+        """
+        var product: Int = 1
+
+        @parameter
+        for i in range(rank):
+            product *= self.dim_size(i)
+
+        return product
+
     fn unsafe_ptr[__type: DType = type](self) -> UnsafePointer[Scalar[__type]]:
         return rebind[UnsafePointer[Scalar[__type]]](self._ptr)
 
