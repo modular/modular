@@ -18,7 +18,6 @@ from kv_cache.types import (
     KVCacheStaticParams,
     KVCacheLayout,
     KVCollectionT,
-    _default_max_batch_size,
 )
 
 from max.driver import (
@@ -61,7 +60,6 @@ trait KVCacheManagerT:
 struct ContiguousKVCacheManager[
     type: DType,
     kv_params: KVCacheStaticParams,
-    _max_batch_size: Int = _default_max_batch_size,
 ](KVCacheManagerT):
     """Manages a Batch-split KV cache across multiple user sessions.
 
@@ -79,9 +77,7 @@ struct ContiguousKVCacheManager[
     TODO this is not currently threadsafe, make it so
     """
 
-    alias CollectionType = ContiguousKVCacheCollection[
-        type, kv_params, _max_batch_size
-    ]
+    alias CollectionType = ContiguousKVCacheCollection[type, kv_params]
     var blocks_buf: Tensor[type, 6]
     var num_blocks: Int
     var max_batch_size: Int
@@ -145,10 +141,10 @@ struct ContiguousKVCacheManager[
         self.other_device = other_device
 
         self.cache_lengths_tensor_host = self.this_device.allocate(
-            TensorSpec(DType.uint32, (_max_batch_size))
+            TensorSpec(DType.uint32, (max_batch_size))
         )
         self.cache_lengths_tensor_dev = self.other_device.allocate(
-            TensorSpec(DType.uint32, (_max_batch_size))
+            TensorSpec(DType.uint32, (max_batch_size))
         )
 
     fn claim(inout self, batch_size: Int) raises -> List[Int]:
