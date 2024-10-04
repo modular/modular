@@ -1451,36 +1451,36 @@ struct ConvertPoPNVVMWGMAMMAAsync
       inputOperand =
           b.create<LLVM::InsertValueOp>(loc, inputOperand, element, i);
     }
-
-    auto instShape = NVVM::MMAShapeAttr::get(ctx, shapeM, shapeN, shapeK);
-
     // If we need to compute `(-1) * A * (-1) * B` or a non-accumulated version,
     // we will need to expose these attributes. Otherwise, we are currently
     // performing `D = A * B + C` , which covers 99%
     // of the use cases we care about, if not more.
-    NVVM::WGMMAScaleOutAttr scaleOutAttr =
+    auto scaleOutAttr =
         NVVM::WGMMAScaleOutAttr::get(ctx, NVVM::WGMMAScaleOut::one);
-    NVVM::WGMMAScaleInAttr scaleInAttr =
+    auto scaleInAttr =
         NVVM::WGMMAScaleInAttr::get(ctx, NVVM::WGMMAScaleIn::one);
     auto overflowAttr =
         NVVM::MMAIntOverflowAttr::get(ctx, NVVM::MMAIntOverflow::wrapped);
 
-    auto typeA = getMMAType(ctx, mmaOp.getTypeA());
-    auto typeB = getMMAType(ctx, mmaOp.getTypeB());
-    auto typeC = getMMAType(ctx, mmaOp.getTypeC());
+    FailureOr<NVVM::WGMMATypesAttr> typeA = getMMAType(ctx, mmaOp.getTypeA());
+    FailureOr<NVVM::WGMMATypesAttr> typeB = getMMAType(ctx, mmaOp.getTypeB());
+    FailureOr<NVVM::WGMMATypesAttr> typeC = getMMAType(ctx, mmaOp.getTypeC());
 
-    if (failed(typeA) || failed(typeB) || failed(typeC))
-      return mmaOp->emitError("Unsupported operand types");
+    assert((!failed(typeA) || !failed(typeB) || !failed(typeC)) &&
+           "Unsupported operand types");
 
-    auto layoutA = getMMALayout(ctx, cast<StringAttr>(adaptor.getLayoutA()));
-    auto layoutB = getMMALayout(ctx, cast<StringAttr>(adaptor.getLayoutB()));
+    FailureOr<NVVM::MMALayoutAttr> layoutA =
+        getMMALayout(ctx, cast<StringAttr>(adaptor.getLayoutA()));
+    FailureOr<NVVM::MMALayoutAttr> layoutB =
+        getMMALayout(ctx, cast<StringAttr>(adaptor.getLayoutB()));
 
-    if (failed(layoutA) || failed(layoutB))
-      return mmaOp->emitError("Unsupported operand layouts");
+    assert((!failed(layoutA) || !failed(layoutB)) &&
+           "Unsupported operand layouts");
 
     Value descA = mmaOp.getDescriptorA();
     Value descB = mmaOp.getDescriptorB();
 
+    auto instShape = NVVM::MMAShapeAttr::get(ctx, shapeM, shapeN, shapeK);
     Value resStruct = b.create<NVVM::WgmmaMmaAsyncOp>(
         mmaOp.getLoc(), inputOperand.getType(), inputOperand, descA, descB,
         instShape, typeA.value(), typeB.value(), typeC.value(), scaleOutAttr,

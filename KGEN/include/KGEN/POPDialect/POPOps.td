@@ -2364,6 +2364,7 @@ def POP_NVVMWGMAMMAAsyncOp : POPOp<"nvvm.wgmma.mma_async", [Pure]> {
     $descriptor_a $descriptor_b $reg_c $type_a $type_b $type_c
     attr-dict `:` type($reg_c) `->` type($res)
   }];
+  let hasVerifier = 1;
 }
 
 #endif // KGEN_POPDIALECT_POPOPS_TD
