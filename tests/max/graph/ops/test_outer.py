@@ -14,7 +14,8 @@ from max.graph import Graph, TensorType, ops
 
 shared_dtypes = st.shared(st.from_type(DType))
 tensor_types_1d = tensor_types(
-    dtypes=shared_dtypes, shapes=shapes(min_size=1, max_size=1)
+    dtypes=shared_dtypes,
+    shapes=shapes(min_rank=1, max_rank=1),
 )
 
 tensor_types_nd = tensor_types(dtypes=shared_dtypes, shapes=shapes())

@@ -15,7 +15,6 @@ from max.dtype import DType
 from max.graph import Graph, TensorType, ops
 from max.graph.type import Dim, Shape, StaticDim
 
-
 shared_dtypes = st.shared(st.from_type(DType))
 shared_shapes = st.shared(shapes())
 shared_tensor_types = st.shared(
@@ -123,7 +122,7 @@ def test_concat__different_ranks(
     type_b=shared_tensor_types.flatmap(
         lambda t: tensor_types(
             dtypes=shared_dtypes,
-            shapes=shapes(min_size=t.rank, max_size=t.rank),
+            shapes=shapes(min_rank=t.rank, max_rank=t.rank),
         )
     ),
     axis=axes(shared_tensor_types),

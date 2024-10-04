@@ -9,7 +9,14 @@ import math
 from collections.abc import Collection
 
 import pytest
-from conftest import axes, shapes, static_dims, symbolic_dims, tensor_types
+from conftest import (
+    MAX_INT64,
+    axes,
+    shapes,
+    static_dims,
+    symbolic_dims,
+    tensor_types,
+)
 from hypothesis import assume, given
 from hypothesis import strategies as st
 from max.dtype import DType
@@ -65,6 +72,7 @@ def negative_one_reshape(shapes):
 
 
 shared_shapes = st.shared(shapes())
+shared_static_shapes = st.shared(shapes(is_static=True))
 
 
 @given(
@@ -74,7 +82,7 @@ shared_shapes = st.shared(shapes())
 def test_reshape__can_permute_input_shape(
     input_type: TensorType, output_shape: list[Dim]
 ):
-    assume(static_known_shape_size(input_type.shape) < 2**63 - 1)
+    assert static_known_shape_size(input_type.shape) <= MAX_INT64
     with Graph("reshape", input_types=[input_type]) as graph:
         out = graph.inputs[0].reshape(output_shape)
         assert out.shape == output_shape
@@ -89,11 +97,11 @@ def test_reshape__can_permute_input_shape(
 def test_reshapes__can_replace_any_dims_with_negative_one(
     input_type: TensorType, reshape_shape: list[Dim]
 ):
-    assume(static_known_shape_size(input_type.shape) < 2**63 - 1)
+    assert static_known_shape_size(input_type.shape) <= MAX_INT64
     assume(0 not in input_type.shape)
 
     # TODO(GRA-864): Remove this assumption
-    assume(static_known_shape_size(input_type.shape) < 2**31 - 1)
+    assert static_known_shape_size(input_type.shape) <= MAX_INT64
     # TODO(MSDK-765): Support reshaping multiple dimensions
     assume(len(reshape_shape) == len(input_type.shape))
 
@@ -167,7 +175,7 @@ def test_reshape__fails_with_different_symoblic_dim(
     output_shape: list[Dim],
     dim: Dim,
 ):
-    assume(static_known_shape_size(input_type.shape) < 2**63 - 1)
+    assert static_known_shape_size(input_type.shape) <= MAX_INT64
     assume(0 not in input_type.shape)
     assume(dim not in input_type.shape)
     with Graph("reshape", input_types=[input_type]) as graph:
@@ -175,17 +183,23 @@ def test_reshape__fails_with_different_symoblic_dim(
 
 
 @given(
-    input_type=tensor_types(shapes=shared_shapes),
-    output_shape=shared_shapes.flatmap(st.permutations),
-    dim=static_dims,
+    input_type=tensor_types(shapes=shared_static_shapes),
+    output_shape=shared_static_shapes.flatmap(st.permutations),
+    dim=shared_static_shapes.flatmap(
+        # Draw a dim such that the new shape's dim product fits in an int64.
+        lambda shape: st.integers(
+            min_value=1,
+            max_value=MAX_INT64 // static_known_shape_size(shape),
+        )
+    ),
 )
 def test_reshape__fails_with_different_number_of_elements(
     input_type: TensorType,
     output_shape: list[Dim],
     dim: Dim,
 ):
-    assume(static_known_shape_size([*input_type.shape, dim]) < 2**63 - 1)
-    assume(all(isinstance(d, StaticDim) for d in input_type.shape))
+    assert static_known_shape_size([*input_type.shape, dim]) <= MAX_INT64
+    assert all(isinstance(d, StaticDim) for d in input_type.shape)
     assume(0 not in input_type.shape)
     assume(dim > 1)  # 0 and 1 should both work
     with Graph("reshape", input_types=[input_type]) as graph:

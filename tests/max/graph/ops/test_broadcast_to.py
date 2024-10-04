@@ -44,7 +44,7 @@ def test_broadcast_to_shape_attr(input_shapes: list[ShapeLike]) -> None:
 
 # Set a max rank so that the test doesn't time out.
 max_rank = 10
-shared_shapes = st.shared(shapes(min_size=0, max_size=max_rank))
+shared_shapes = st.shared(shapes(max_rank=max_rank))
 
 
 @given(

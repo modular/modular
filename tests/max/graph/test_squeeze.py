@@ -12,7 +12,6 @@ from hypothesis import strategies as st
 from max.graph import Graph, TensorType, ops
 from max.graph.type import Shape
 
-
 shared_squeeze_shape = st.shared(shapes(include_dims=[1]))
 
 

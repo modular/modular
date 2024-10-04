@@ -25,7 +25,7 @@ from max.graph import (
 
 shared_dtypes = st.shared(st.from_type(DType))
 shared_shapes = st.shared(
-    shapes(min_size=1, max_size=100).filter(lambda shape: 0 not in shape)
+    shapes(min_rank=1, max_rank=100).filter(lambda shape: 0 not in shape)
 )
 tensor_type = tensor_types(shapes=shared_shapes, dtypes=shared_dtypes)
 buffer_type = buffer_types(shapes=shared_shapes, dtypes=shared_dtypes)

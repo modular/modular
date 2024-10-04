@@ -7,11 +7,14 @@
 from __future__ import annotations
 
 import itertools
+import operator
 import os
 import random
+from functools import reduce
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Sequence
 
+import numpy as np
 import pytest
 from hypothesis import assume
 from hypothesis import strategies as st
@@ -19,6 +22,8 @@ from max import _graph, mlir
 from max.dtype import DType
 from max.graph import BufferType, Graph, TensorType
 from max.graph.type import Dim, Shape, StaticDim, SymbolicDim
+
+MAX_INT64 = np.iinfo(np.int64).max
 
 dtypes = st.sampled_from([d for d in DType if d is not DType._unknown])
 static_dims = st.builds(
@@ -37,18 +42,58 @@ static_positive_dims = st.builds(
 dims = st.one_of(static_dims, symbolic_dims)
 
 
-def shapes(min_size=0, max_size=None, include_dims=()):
-    return (
-        st.lists(
-            dims,
-            min_size=max(0, min_size - len(include_dims)),
-            max_size=None if max_size
-            is None else max(0, max_size - len(include_dims)),
-        )
-        .map(lambda shape: (*shape, *include_dims))
-        .flatmap(st.permutations)
-        .map(Shape)
+@st.composite
+def shapes(
+    draw,
+    min_rank: int = 1,
+    max_rank: int = 10,
+    include_dims: Sequence = (),
+    is_static: bool = False,
+) -> Shape:
+    """A strategy to produce shapes whose product fits within an int64.
+
+    This strategy simplifies downstream tests, which otherwise would all have
+    to check for overflow themselves.
+
+    Returns:
+        A shape containing a mix of static and symbolic dims.
+        The product of static dims in the shape is guaranteed to fit within an
+        int64.
+    """
+    dims = list(include_dims)
+    cumulative_product = reduce(
+        operator.mul,
+        [dim.dim for dim in dims if isinstance(dim, StaticDim)],
+        1,
     )
+
+    # Draw a random shape size.
+    remaining_rank = draw(
+        st.integers(
+            min_value=max(0, min_rank - len(dims)),
+            max_value=max_rank - len(dims),
+        )
+    )
+    for _ in range(remaining_rank):
+        # Decide whether to insert a symbolic dimension.
+        if not is_static and draw(st.booleans()):
+            dim = draw(symbolic_dims)
+            dims.append(dim)
+        else:
+            # Compute a max dim value to ensure the product fits in an int64.
+            max_dim_value = MAX_INT64 // max(1, cumulative_product)
+            if max_dim_value == 0:
+                # If the product is exactly MAX_INT64, then stop.
+                break
+            dim_value = draw(st.integers(min_value=1, max_value=max_dim_value))
+            if (dim_value * cumulative_product) > MAX_INT64:
+                # Skip if the new dim product wouldn't fit in an int64.
+                continue
+
+            dims.append(StaticDim(dim_value))
+            cumulative_product *= dim_value
+
+    return Shape(dims)
 
 
 def valid_broadcast_rank(shape_st, max_size: int | None = None):
