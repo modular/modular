@@ -53,7 +53,8 @@ def test_mlp(session, input_type: TensorType):
         mlp = MLP(Linear(w1), Linear(w2), Linear(w3))
         graph.output(mlp(x))
 
-        @modular_graph_test(session, graph, max_magnitude=1.0)
+        # This is set so it fits a float type with width of 32.
+        @modular_graph_test(session, graph, max_magnitude=1 / 64)
         def test_correctness(execute, inputs, torch_inputs):
             result = execute(inputs)
             x, w1, w2, w3 = torch_inputs
