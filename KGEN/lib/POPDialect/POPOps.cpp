@@ -778,6 +778,46 @@ LogicalResult UnionUnwrapOp::verify() {
 }
 
 //===----------------------------------------------------------------------===//
+// NVVMWGMAMMAAsyncOp
+//===----------------------------------------------------------------------===//
+
+static bool isValidInputOperandType(Type type) {
+  if (type.isTF32() || type.isBF16() || type.isF16())
+    return true;
+  return false;
+}
+
+static bool isValidOutputOperandType(Type type) {
+  if (type.isF32() || type.isBF16() || type.isF16())
+    return true;
+  return false;
+}
+
+static bool isValidLayout(TypedAttr layoutAttr) {
+  auto layout = dyn_cast<StringAttr>(layoutAttr);
+  if (!layout)
+    return true;
+  if (layout == "row" || layout == "col")
+    return true;
+  return false;
+}
+
+LogicalResult NVVMWGMAMMAAsyncOp::verify() {
+  if (!isValidInputOperandType(getTypeA()) ||
+      !isValidInputOperandType(getTypeB()) ||
+      !isValidOutputOperandType(getTypeC()))
+    return emitOpError("Unsupported operand type");
+
+  if (!isValidLayout(getLayoutAAttr()))
+    return emitOpError("Unsupported layout for operandA");
+
+  if (!isValidLayout(getLayoutBAttr()))
+    return emitOpError("Unsupported layout for operandB");
+
+  return success();
+}
+
+//===----------------------------------------------------------------------===//
 // TableGen generated logic.
 //===----------------------------------------------------------------------===//
 
