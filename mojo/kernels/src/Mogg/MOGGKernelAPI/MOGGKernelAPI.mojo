@@ -24,6 +24,7 @@ from algorithm import argmax, argmin, mean, product, sum
 from algorithm import max as reduce_max
 from algorithm import min as reduce_min
 from linalg.matrix_solve import matrix_solve, matrix_solve_shape
+from linalg.matrix_band_part import matrix_band_part
 from math import (
     ceil,
     cos,
@@ -2558,6 +2559,53 @@ struct LinalgSolve:
         return matrix_solve_shape[single_thread_blocking_override=True](
             managed_tensor_slice_to_ndbuffer(a),
             managed_tensor_slice_to_ndbuffer(b),
+        )
+
+
+@compiler.register("mo.linalg.band_part")
+struct LinalgBandPart:
+    @compiler.enable_fusion_for("input")
+    @staticmethod
+    fn execute[
+        synchronous: Bool,
+        target: StringLiteral,
+        type: DType,
+        int_type: DType,
+        rank: Int,
+    ](
+        output: ManagedTensorSlice[type=type, rank=rank],
+        input: ManagedTensorSlice[type=type, rank=rank],
+        num_lower: ManagedTensorSlice[type=int_type, rank=1],
+        num_upper: ManagedTensorSlice[type=int_type, rank=1],
+        exclude: ManagedTensorSlice[rank=1],
+        ctx: MojoCallContextPtr,
+    ) raises:
+        @parameter
+        @always_inline
+        fn input_fn[
+            width: Int, _rank: Int
+        ](coords: StaticIntTuple[_rank]) -> SIMD[output.type, width]:
+            return input._fused_load[width=width](
+                rebind[StaticIntTuple[input.rank]](coords)
+            )
+
+        var num_lower_buf = managed_tensor_slice_to_ndbuffer(num_lower)
+        var num_upper_buf = managed_tensor_slice_to_ndbuffer(num_upper)
+        var exclude_buf = managed_tensor_slice_to_ndbuffer(exclude)
+        var output_buf = managed_tensor_slice_to_ndbuffer(output)
+
+        matrix_band_part[
+            input_0_fn=input_fn,
+            simd_width = simdwidthof[type](),
+            single_thread_blocking_override=synchronous,
+            target=target,
+        ](
+            input.get_static_spec().shape,
+            num_lower_buf,
+            num_upper_buf,
+            exclude_buf,
+            output_buf,
+            ctx,
         )
 
 
