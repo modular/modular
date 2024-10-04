@@ -221,12 +221,12 @@ class GGUFWeights:
             shape_match = weight_unpacked_shape == expected_shape
         if dtype is not None:
             dtype_match = dtype == weight.dtype
-
         if not (shape_match and dtype_match):
             raise ValueError(
-                "Did not get expected weight shape and/or dtype.\n\tExpected"
-                f" dtype: {dtype}, got: {weight.dtype}\n\tExpected shape:"
-                f" {expected_shape}, got: {weight_unpacked_shape}"
+                "Did not get expected shape and/or dtype for weight"
+                f" {self._prefix}.\n\tExpected dtype: {dtype}, got:"
+                f" {weight.dtype}\n\tExpected shape: {expected_shape}, got:"
+                f" {weight_unpacked_shape}"
             )
 
         # GGUF checkpoints can be mixed precision, so we don't check if the
