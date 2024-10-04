@@ -535,11 +535,7 @@ getVersionedFilesystemBackend(const std::filesystem::path &cacheDir,
               "failed to get absolute path to directory specified by " + *path +
               ec.message());
       } else {
-        auto derivedPath = std::filesystem::path(MODULAR_DERIVED_DIR);
-        if (std::filesystem::exists(derivedPath, ec) && !ec)
-          base = std::filesystem::absolute(derivedPath, ec) / cacheDir;
-        else
-          base = std::filesystem::temp_directory_path(ec) / cacheDir;
+        base = std::filesystem::temp_directory_path(ec) / cacheDir;
         if (ec)
           return Error("failed to get absolute path to derived dir: " +
                        ec.message());
