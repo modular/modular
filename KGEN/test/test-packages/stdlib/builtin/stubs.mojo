@@ -381,8 +381,8 @@ struct _VariadicListMemIter[
         while True:
             pass
 
-    fn __len__(self) -> Int:
-        return Int()
+    fn __hasmore__(self) -> Bool:
+        return False
 
 
 struct VariadicListMem[
@@ -619,6 +619,10 @@ struct _StridedRangeIterator:
     var step: Int
 
     @always_inline
+    fn __hasmore__(self) -> Bool:
+        return self.__len__() > 0
+
+    @always_inline
     fn __len__(self) -> Int:
         if self.step > 0 and self.start < self.end:
             return self.end - self.start
@@ -645,7 +649,7 @@ trait _IntNext(Copyable):
 
 
 trait _IntIter(_IntNext):
-    fn __len__(self) -> Int:
+    fn __hasmore__(self) -> Bool:
         ...
 
 
@@ -690,15 +694,15 @@ fn parameter_for_generator[
 fn _generator[
     IteratorT: _IntIter
 ](it: IteratorT) -> _ParamForIterator[IteratorT]:
-    if it.__len__() == 0:
-        return _ParamForIterator[IteratorT](
-            __mlir_attr[`#kgen.unknown : !kgen.paramref<`, IteratorT, `>`],
-            0,
-            True,
-        )
-    var next_it = it
-    var value = next_it.__next__()
-    return _ParamForIterator(next_it, value, False)
+    if it.__hasmore__():
+        var next_it = it
+        var value = next_it.__next__()
+        return _ParamForIterator(next_it, value, False)
+    return _ParamForIterator[IteratorT](
+        __mlir_attr[`#kgen.unknown : !kgen.paramref<`, IteratorT, `>`],
+        0,
+        True,
+    )
 
 
 struct Optional[T: CollectionElement]:
