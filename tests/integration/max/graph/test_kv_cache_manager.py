@@ -5,25 +5,22 @@
 # ===----------------------------------------------------------------------=== #
 
 import pytest
-import asyncio
-from nn.kv_cache import KVCacheParams, ContinuousBatchingKVCacheManager
+from nn.kv_cache import KVCacheParams, KVCacheType, load_kv_manager
 from max.engine import InferenceSession
 from max.driver import CPU
 from max.dtype import DType
 
 
-def test_step(session: InferenceSession):
-    asyncio.run(_test_step(session))
-
-
-async def _test_step(session: InferenceSession):
+@pytest.mark.asyncio
+async def test_step(session: InferenceSession):
     # Initialize llama like params
+    # Step is cache_type agnostic, so we can test with contiguous
     device = CPU()
     params = KVCacheParams(
         dtype=DType.float32, n_kv_heads=8, head_dim=128, device=device
     )
 
-    kv_manager = ContinuousBatchingKVCacheManager(
+    kv_manager = load_kv_manager(
         params=params,
         max_cache_size=16,
         max_seq_len=100,
@@ -52,18 +49,17 @@ async def _test_step(session: InferenceSession):
             assert kv_manager.cache_lengths[seq_id] == values[i] * (j + 1)
 
 
-def test_claim_and_release(session: InferenceSession):
-    asyncio.run(_test_claim_and_release(session))
-
-
-async def _test_claim_and_release(session: InferenceSession):
+@pytest.mark.asyncio
+async def test_claim_and_release(session: InferenceSession):
     # Initialize llama like params
+    # claim and release are both cache_type independent,
+    # so we can test with the KVCacheType.CONTIGUOUS default
     device = CPU()
     params = KVCacheParams(
         dtype=DType.float32, n_kv_heads=8, head_dim=128, device=device
     )
 
-    kv_manager = ContinuousBatchingKVCacheManager(
+    kv_manager = load_kv_manager(
         params=params,
         max_cache_size=16,
         max_seq_len=100,
@@ -94,19 +90,52 @@ async def _test_claim_and_release(session: InferenceSession):
         assert kv_manager.slots_remaining == outstanding + i + 1
 
 
-@pytest.mark.skip("MSDK-1079: Implement Fetch")
-def test_fetch(session: InferenceSession):
-    asyncio.run(_test_fetch(session))
-
-
-async def _test_fetch(session: InferenceSession):
+@pytest.mark.asyncio
+async def test_fetch_continuous(session: InferenceSession):
     # Initialize llama like params
     device = CPU()
     params = KVCacheParams(
-        dtype=DType.float32, n_kv_heads=8, head_dim=128, device=device
+        dtype=DType.float32,
+        n_kv_heads=8,
+        head_dim=128,
+        device=device,
+        cache_type=KVCacheType.CONTINUOUS,
     )
 
-    kv_manager = ContinuousBatchingKVCacheManager(
+    kv_manager = load_kv_manager(
+        params=params,
+        max_cache_size=16,
+        max_seq_len=100,
+        num_layers=10,
+        session=session,
+        device=device,
+    )
+
+    # Raise on fetch when nothing has been claimed
+    with pytest.raises(ValueError):
+        kv_collection = kv_manager.fetch(seq_ids=[0])
+
+    # Claim 5 items
+    seq_ids = await kv_manager.claim(n=5)
+
+    # Fetch 3 of the 5 ids
+    kv_collection = kv_manager.fetch(seq_ids[:3])
+    assert kv_collection is not None
+
+
+@pytest.mark.asyncio
+async def test_fetch_contiguous(session: InferenceSession):
+    # Initialize llama like params
+    device = CPU()
+    params = KVCacheParams(
+        dtype=DType.float32,
+        n_kv_heads=8,
+        head_dim=128,
+        device=device,
+        cache_type=KVCacheType.CONTIGUOUS,
+    )
+
+    kv_manager = load_kv_manager(
         params=params,
         max_cache_size=16,
         max_seq_len=100,
