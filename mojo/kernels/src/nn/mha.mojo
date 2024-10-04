@@ -24,7 +24,7 @@ from gpu import (
 )
 from gpu.host import DeviceContext, FuncAttribute
 from gpu.memory import AddressSpace, external_memory
-from kv_cache.types import ContiguousKVCache, KVCacheStaticParams
+from kv_cache.types import ContiguousKVCache, KVCacheStaticParams, KVCacheT
 from layout.int_tuple import IntTuple
 from layout.layout import *
 from layout.layout_tensor import (
@@ -267,15 +267,16 @@ fn flash_attention[
 # Entry point for flash_attention with batch_size > 1.
 @always_inline
 fn flash_attention[
-    rank: Int, //,
+    rank: Int,
+    cache_t: KVCacheT, //,
     add_attn_mask: Bool = True,
     target: StringLiteral = "cuda",
     use_tensor_core: Bool = True,
 ](
     output: NDBuffer[_, rank, *_],
     q: NDBuffer[_, rank, *_],
-    k: ContiguousKVCache[_, *_],
-    v: ContiguousKVCache[_, *_],
+    k: cache_t,
+    v: cache_t,
     mask: NDBuffer,
     valid_length: NDBuffer[DType.uint32, 1],
     scale: Float32,
@@ -309,7 +310,7 @@ fn flash_attention[
     constrained[rank == 4, "only support rank 4 inputs."]()
     constrained[mask.rank in (3, 4), "only support rank 3 or 4 mask."]()
     constrained[
-        q.type == k.type == v.type == output.type,
+        q.type == k.get_type() == v.get_type() == output.type,
         "Q, K, V, output should have same type.",
     ]()
     constrained[
@@ -324,8 +325,6 @@ fn flash_attention[
         return String(";").join(
             "use_tensor_core=" + str(use_tensor_core),
             trace_arg("q", q),
-            trace_arg("k", k._block),
-            trace_arg("v", v._block),
             trace_arg("output", output),
         )
 
@@ -341,7 +340,7 @@ fn flash_attention[
         #       We'll just implement a flag on the cache object which is true
         #       when the batch contains all cache_lens == 0. Remove this when
         #       such flag (part of ContiguousKVCache) is implemented.
-        var is_context_encoding = k.is_cache_empty
+        var is_context_encoding = k.empty_cache()
 
         # Get maximum cache valid length from the mask shape.
         # Reminder: mask is BSS or BHSS (depending on rank).
@@ -355,7 +354,7 @@ fn flash_attention[
         # Whether head and depth are static. With BSHD, B and S are dynamic.
         # H and D are always known.
         # fmt: off
-        alias head_depth_known = q.shape.all_known[2, 4]() and k._internal_block_shape.has_value[2]()
+        alias head_depth_known = q.shape.all_known[2, 4]() and k.get_block_static_shape().has_value[1]()
         # Current impl has only been verified for depth = 128.
         alias flash_attention_applicable = head_depth_known and q.shape.get[3]() == 128 and use_tensor_core
         alias q_half_float = q.type in (DType.float16, DType.bfloat16)
@@ -365,7 +364,7 @@ fn flash_attention[
         if flash_attention_applicable:
             alias depth = q.shape.get[3]()
             alias num_heads = q.shape.get[2]()
-            alias kv_num_heads = k._internal_block_shape.get[2]()
+            alias kv_num_heads = k.get_kv_params().num_heads
             alias group = num_heads // kv_num_heads
 
             # Attention impl only supports even sequence length. Need to pad the
@@ -384,11 +383,9 @@ fn flash_attention[
                     mha[
                         mask.rank,
                         q.type,
-                        k.type,
-                        v.type,
+                        __type_of(k),
                         mask.type,
                         output.type,
-                        k.kv_params,
                         BM=BM,
                         BN=BN,
                         BK=BK,
@@ -440,11 +437,9 @@ fn flash_attention[
                     mha_decoding[
                         mask.rank,
                         q.type,
-                        k.type,
-                        v.type,
+                        __type_of(k),
                         mask.type,
                         output.type,
-                        k.kv_params,
                         BM=BM,
                         BN=BN,
                         BK=BK,
@@ -500,7 +495,7 @@ fn flash_attention[
             # Assumes BSHD.
             var depth = q.dim[3]()
             alias num_heads = q.shape.get[2]()
-            alias kv_num_heads = k._internal_block_shape.get[2]()
+            alias kv_num_heads = k.get_kv_params().num_heads
             alias group = num_heads // kv_num_heads
 
             mha_gpu_naive[mask.rank, rank](
@@ -857,11 +852,9 @@ fn _copy_frag_to_smem[
 fn mha[
     mask_rank: Int,
     q_type: DType,
-    k_type: DType,
-    v_type: DType,
+    cache_t: KVCacheT,
     mask_type: DType,
     output_type: DType,
-    kv_params: KVCacheStaticParams,
     BM: Int,  # number of queries per block
     BN: Int,  # number of keys per block
     BK: Int,  # tile size in depth dimension
@@ -874,8 +867,8 @@ fn mha[
     group: Int = 1,
 ](
     q_ptr: UnsafePointer[Scalar[q_type]],
-    k: ContiguousKVCache[k_type, kv_params],
-    v: ContiguousKVCache[v_type, kv_params],
+    k: cache_t,
+    v: cache_t,
     mask_ptr: UnsafePointer[Scalar[mask_type]],
     output_ptr: UnsafePointer[Scalar[output_type]],
     scale: Float32,
@@ -890,10 +883,10 @@ fn mha[
         num_heads if mask_rank == 4 else 1
     )
 
-    var k_nd_buffer = k.block[k_type, k.get_block_static_shape()](
+    var k_nd_buffer = k.block[k.get_type(), k.get_block_static_shape()](
         batch_idx, seq_len
     )
-    var v_nd_buffer = v.block[v_type, v.get_block_static_shape()](
+    var v_nd_buffer = v.block[v.get_type(), v.get_block_static_shape()](
         batch_idx, seq_len
     )
     var k_ptr = k_nd_buffer.data
@@ -1484,11 +1477,9 @@ fn _kernel_mask[
 fn mha_decoding[
     mask_rank: Int,
     q_type: DType,
-    k_type: DType,
-    v_type: DType,
+    cache_t: KVCacheT,
     mask_type: DType,
     output_type: DType,
-    kv_params: KVCacheStaticParams,
     BM: UInt,  # number of queries per block
     BN: UInt,  # number of keys per block
     BK: UInt,  # tile size in depth dimension
@@ -1501,8 +1492,8 @@ fn mha_decoding[
     group: UInt = 1,
 ](
     q_ptr: UnsafePointer[Scalar[q_type]],
-    k: ContiguousKVCache[k_type, kv_params],
-    v: ContiguousKVCache[v_type, kv_params],
+    k: cache_t,
+    v: cache_t,
     mask_ptr: UnsafePointer[Scalar[mask_type]],
     output_ptr: UnsafePointer[Scalar[output_type]],
     scale: Float32,
@@ -1527,10 +1518,10 @@ fn mha_decoding[
         num_heads if mask_rank == 4 else 1
     )
 
-    var k_nd_buffer = k.block[k_type, k.get_block_static_shape()](
+    var k_nd_buffer = k.block[k.get_type(), k.get_block_static_shape()](
         batch_idx, seq_len
     )
-    var v_nd_buffer = v.block[v_type, v.get_block_static_shape()](
+    var v_nd_buffer = v.block[v.get_type(), v.get_block_static_shape()](
         batch_idx, seq_len
     )
     var k_ptr = k_nd_buffer.data
@@ -2032,13 +2023,14 @@ fn mha_decoding_single_batch[
 
 fn mha_gpu_naive[
     mask_type: DType,
-    output_type: DType, //,
+    output_type: DType,
+    cache_t: KVCacheT, //,
     mask_rank: Int,
     rank: Int,
 ](
     q: NDBuffer[_, rank, *_],
-    k: ContiguousKVCache[_, *_],
-    v: ContiguousKVCache[_, *_],
+    k: cache_t,
+    v: cache_t,
     mask_ptr: UnsafePointer[Scalar[mask_type], *_],
     output_ptr: UnsafePointer[Scalar[output_type], *_],
     valid_length: NDBuffer[DType.uint32, 1],
@@ -2052,8 +2044,8 @@ fn mha_gpu_naive[
     ctx: DeviceContext,
 ) raises:
     alias q_type = q.type
-    alias k_type = k.type
-    alias v_type = v.type
+    alias k_type = k.get_type()
+    alias v_type = v.get_type()
 
     var num_keys = max_prompt_len + max_cache_size
     alias p_type = get_accum_type[q_type]()
@@ -2070,12 +2062,11 @@ fn mha_gpu_naive[
 
     var bmm0_func = ctx.compile_function[
         _bmm0_bs[
+            __type_of(k),
             mask_rank,
             q_type,
-            k_type,
             p_type,
             mask_type,
-            k.kv_params,
         ]
     ]()
     ctx.enqueue_function(
@@ -2118,10 +2109,9 @@ fn mha_gpu_naive[
 
     var bmm1_func = ctx.compile_function[
         _bmm1_bs[
+            __type_of(v),
             p_type,
-            v_type,
             output_type,
-            v.kv_params,
         ]
     ]()
 
@@ -2149,16 +2139,15 @@ fn mha_gpu_naive[
 
 @always_inline
 fn _bmm0_bs[
+    cache_t: KVCacheT,
     mask_rank: Int,
     q_type: DType,
-    k_type: DType,
     p_type: DType,
     mask_type: DType,
-    kv_params: KVCacheStaticParams,
 ](
     p_ptr: UnsafePointer[Scalar[p_type]],
     q_ptr: UnsafePointer[Scalar[q_type]],
-    k_cache: ContiguousKVCache[k_type, kv_params],
+    k_cache: cache_t,
     mask_ptr: UnsafePointer[Scalar[mask_type]],
     valid_length: NDBuffer[DType.uint32, 1],
     scale: Float32,
@@ -2172,8 +2161,8 @@ fn _bmm0_bs[
     var x = BlockIdx.x() * BlockDim.x() + ThreadIdx.x()
     var y = BlockIdx.y() * BlockDim.y() + ThreadIdx.y()
 
-    var k_ptr = k_cache._block.data
-    var max_kv_block_len = k_cache._block.dim[1]()
+    alias k_type = k_cache.get_type()
+    alias kv_num_heads = k_cache.get_kv_params().num_heads
 
     var num_keys = max_prompt_len + max_cache_size
     var batch_head = BlockIdx.z()
@@ -2189,12 +2178,10 @@ fn _bmm0_bs[
     var q_offset = int(depth * (head + num_heads * max_prompt_len * batch))
     var q = q_ptr + q_offset
 
-    var kv_num_heads = num_heads // group
-    # For kv_offset we need to use the max_kv_block_len in support of bs>1.
-    var kv_offset = int(
-        depth * (head // group + kv_num_heads * max_kv_block_len * batch)
-    )
-    var k = k_ptr + kv_offset
+    var kv_head = int(head // group)
+    var k = k_cache.block[k_type, k_cache.get_block_static_shape()](
+        batch, 0
+    )._offset((0, kv_head, 0))
 
     var p_offset = batch_head * max_prompt_len * num_keys
     var p = p_ptr + Int(p_offset)
@@ -2223,14 +2210,13 @@ fn _bmm0_bs[
 
 @always_inline
 fn _bmm1_bs[
+    cache_t: KVCacheT,
     p_type: DType,
-    v_type: DType,
     output_type: DType,
-    kv_params: KVCacheStaticParams,
 ](
     output_ptr: UnsafePointer[Scalar[output_type]],
     p_ptr: UnsafePointer[Scalar[p_type]],
-    v_cache: ContiguousKVCache[v_type, kv_params],
+    v_cache: cache_t,
     valid_length: NDBuffer[DType.uint32, 1],
     max_prompt_len: Int,
     max_cache_size: Int,
@@ -2238,11 +2224,11 @@ fn _bmm1_bs[
     depth: Int,
     group: Int,
 ):
+    alias v_type = v_cache.get_type()
+    alias kv_num_heads = v_cache.get_kv_params().num_heads
+
     var x = BlockIdx.x() * BlockDim.x() + ThreadIdx.x()
     var y = BlockIdx.y() * BlockDim.y() + ThreadIdx.y()
-
-    var v_ptr = v_cache._block.data
-    var max_kv_block_len = v_cache._block.dim[1]()
 
     var num_keys = max_prompt_len + max_cache_size
 
@@ -2259,12 +2245,10 @@ fn _bmm1_bs[
     var p_offset = batch_head * max_prompt_len * num_keys
     var p = p_ptr + p_offset
 
-    var kv_num_heads = num_heads // group
-    # For kv_offset we need to use the max_kv_block_len in support of bs>1.
-    var kv_offset = int(
-        depth * (head // group + kv_num_heads * max_kv_block_len * batch)
-    )
-    var v = v_ptr + kv_offset
+    var kv_head = int(head // group)
+    var v = v_cache.block[v_type, v_cache.get_block_static_shape()](
+        batch, 0
+    )._offset((0, kv_head, 0))
 
     var output_offset = depth * (head + num_heads * max_prompt_len * batch)
     var output = output_ptr + Int(output_offset)
