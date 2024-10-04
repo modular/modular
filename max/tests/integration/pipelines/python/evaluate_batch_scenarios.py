@@ -244,6 +244,7 @@ async def run_batch_scenario(
                         "Completed: [%s]", ",".join(completed_batch_ids)
                     )
                     for batch_id in completed_batch_ids:
+                        await model.release(token_gen_batch[batch_id])
                         del token_gen_batch[batch_id]
 
             step += 1
