@@ -1173,14 +1173,15 @@ PValue ExprEmitter::emitMetaTypeToTraitConversion(ASTExprAnd<CValue> value,
   // If the struct (e.g. List[T]) has an alias that uses an input parameter,
   // (e.g. `alias element_type = T`), then this will help us interpret that
   // alias value while filling the above traitAliasReplacer.
-  auto implBindings = ParamBindings::getForDeclaredType(
-      getScopeInfo(), ASTType(typeValue), value.expr);
+  // FIXME: We need to reject accessing aliases of a partially bound type, until
+  // ParameterizedType is a thing!
   ParserParamEvaluator implGenericsReplacer(
       getDeclResolver(), structParamDecls,
       ASTType(typeValue).getParamBindings());
 
   // Bind each trait requirement into vtable entries.
   SmallVector<VTableEntryAttr> vtable;
+  TraitSelfBinder selfBinder(typeValue);
   for (auto &[name, requirementDecls] : traitDecl->getDeclsInScope()) {
     // Each entry can have multiple overloads in 'decls'.
     if (requirementDecls.empty())
@@ -1199,7 +1200,7 @@ PValue ExprEmitter::emitMetaTypeToTraitConversion(ASTExprAnd<CValue> value,
       // conforms because we called `doesNominalTypeConformsTo` above.
       assert(structMatchingMembers.size() == 1);
       auto implAlias = cast<LIT::AliasDeclOp>(structMatchingMembers.front());
-      assert(implAlias.getValueAttr() && "Struct's alias should have value");
+      assert(implAlias.getValueAttr() && "struct's alias should have value");
 
       auto newValue = implAlias.getValueAttr();
       newValue = implGenericsReplacer.replace(newValue);
@@ -1239,7 +1240,7 @@ PValue ExprEmitter::emitMetaTypeToTraitConversion(ASTExprAnd<CValue> value,
       // changes the metatype of the value.  To support this, we use a custom
       // replacer.
       LITSignatureType requirementSig =
-          TraitSelfBinder(typeValue).replace(requirementFn.getFullSignature());
+          selfBinder.replace(requirementFn.getFullSignature());
 
       // If the trait method mentions an associated alias (`alias N: Int`) then
       // replace it with the alias from the struct.
@@ -1252,21 +1253,18 @@ PValue ExprEmitter::emitMetaTypeToTraitConversion(ASTExprAnd<CValue> value,
       // Bind the implicit T parameter on trait members to something with the
       // right metatype to keep the remapper happy.  We already replaced all
       // uses of the attr with TraitSelfBinder.
-      SmallVector<TypedAttr> requirementParams;
-      requirementParams.push_back(
-          // NOTE: This is an UnknownAttr not an UnboundAttr.
+      // NOTE: This is an UnknownAttr not an UnboundAttr.
+      ParserParamEvaluator evaluator(getDeclResolver());
+      evaluator.addInputValue(
           UnknownAttr::get(requirementSig.getParamTypes()[0]));
 
-      ParserParamEvaluator evaluator(getDeclResolver(), requirementParams);
       for (Type type : requirementSig.getParamTypes().drop_front()) {
         auto unbound = UnboundAttr::get(evaluator.getReboundType(type));
-        requirementParams.push_back(unbound);
         evaluator.addInputValue(unbound);
         implBindings.addPrechecked(value.expr, unbound);
       }
-      requirementSig = requirementSig.getSpecializedSignature(
-          requirementParams, value.expr->getLocation(*this));
-      assert(requirementSig && "internal error substituting trait type");
+      requirementSig =
+          requirementSig.getSpecializedSignature(evaluator.getInputParams());
 
       // Grab the matching function.
       OverloadSet ov(name, implFuncs, std::move(implBindings), value.expr,
