@@ -254,6 +254,7 @@ struct MatmulFuseOut:
     fn execute[
         synchronous: Bool,
         target: StringLiteral,
+        lambdas_have_fusion: Bool,
     ](
         c: ManagedTensorSlice,
         a: ManagedTensorSlice,
@@ -276,6 +277,8 @@ struct MatmulFuseOut:
             type: DType, width: Int, *, alignment: Int = 1
         ](idx: StaticIntTuple[2], val: SIMD[type, width]):
             c._fused_store(idx, rebind[SIMD[c.type, width]](val))
+
+        print("lambdas_have_fusion =", lambdas_have_fusion)
 
         _matmul[
             False,
