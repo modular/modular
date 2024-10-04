@@ -10,6 +10,7 @@
 from buffer import NDBuffer
 from buffer.dimlist import DimList
 from builtin.simd import _pow
+from collections import OptionalReg
 import compiler_internal as compiler
 from runtime.asyncrt import MojoCallContextPtr
 from sys import llvm_intrinsic
@@ -24,6 +25,10 @@ from utils.index import Index
 from algorithm import argmax, argmin, mean, product, sum
 from algorithm import max as reduce_max
 from algorithm import min as reduce_min
+from linalg.bmm import batched_matmul, batched_matmul_shape
+from linalg.bmm import (
+    elementwise_epilogue_type as batched_matmul_elementwise_epilogue_type,
+)
 from linalg.matrix_solve import matrix_solve, matrix_solve_shape
 from linalg.matrix_band_part import matrix_band_part
 from math import (
@@ -2671,6 +2676,70 @@ struct NonMaximumSupression:
 # ===----------------------------------------------------------------------===#
 # Linalg kernels
 # ===----------------------------------------------------------------------===#
+
+
+@compiler.register("mo.batch_matmul")
+struct BatchMatmul:
+    @compiler.enable_fusion_for("c")
+    @staticmethod
+    fn execute[
+        rank: Int,
+        transpose_b: Bool,
+        synchronous: Bool,
+        target: StringLiteral = "cpu",
+    ](
+        c: ManagedTensorSlice[rank=rank],
+        a: ManagedTensorSlice[rank=rank],
+        b: ManagedTensorSlice[rank=rank],
+        ctx: MojoCallContextPtr,
+    ):
+        alias transpose_a = False
+
+        var a_buffer = managed_tensor_slice_to_ndbuffer(a)
+        var b_buffer = managed_tensor_slice_to_ndbuffer(b)
+        var c_buffer = managed_tensor_slice_to_ndbuffer(c)
+
+        alias out_lambda = compiler.specsof[c.type, c.rank]("c").out_lambda
+
+        @parameter
+        @always_inline
+        fn output_fn[
+            _type: DType, _width: Int, _rank: Int, *, alignment: Int = 1
+        ](coords: StaticIntTuple[_rank], val: SIMD[_type, _width]):
+            c._fused_store[width=_width](
+                rebind[StaticIntTuple[c.rank]](coords),
+                rebind[SIMD[c.type, _width]](val),
+            )
+
+        batched_matmul[
+            c.rank,
+            a.type,
+            b.type,
+            c.type,
+            transpose_a,
+            transpose_b,
+            OptionalReg[batched_matmul_elementwise_epilogue_type](
+                output_fn
+            ) if out_lambda else None,
+            saturated_vnni=False,
+            single_thread_blocking_override=synchronous,
+            target=target,
+        ](c_buffer, a_buffer, b_buffer, context=ctx)
+
+    @staticmethod
+    fn shape[
+        rank: Int,
+        a_type: DType,
+        b_type: DType,
+    ](
+        a: ManagedTensorSlice[a_type, rank],
+        b: ManagedTensorSlice[b_type, rank],
+    ) raises -> StaticIntTuple[rank]:
+        var a_buffer = managed_tensor_slice_to_ndbuffer(a)
+        var b_buffer = managed_tensor_slice_to_ndbuffer(b)
+        return batched_matmul_shape[single_thread_blocking_override=True](
+            a_buffer, b_buffer
+        )
 
 
 @compiler.register("mo.linalg.solve")
