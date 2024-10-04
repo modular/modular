@@ -258,7 +258,7 @@ fn chris_lifetime_example(a: Bool, b: Bool):
             if a:
                 # CHECK: __init__{{.*}}(%x)
                 x = MemExample()
-                
+
                 # CHECK: lit.try.raise
                 raise Error()
         # CHECK: except
@@ -417,6 +417,10 @@ struct TrivialRange:
 
     fn __next__(inout self) -> Int:
         return 1
+
+    @always_inline
+    fn __hasmore__(self) -> Bool:
+        return self.__len__() > 0
 
     fn __len__(self) -> Int:
         return 1

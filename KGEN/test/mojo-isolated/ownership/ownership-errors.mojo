@@ -417,6 +417,10 @@ struct TrivialRange:
     fn __next__(inout self) -> Int:
         return 1
 
+    @always_inline
+    fn __hasmore__(self) -> Bool:
+        return self.__len__() > 0
+
     fn __len__(self) -> Int:
         return 1
 
@@ -483,7 +487,7 @@ fn test38421():
 # Computed LValues
 # ===----------------------------------------------------------------------=== #
 
-fn get_inout_ref(inout x: String) -> ref [x] String:  
+fn get_inout_ref(inout x: String) -> ref [x] String:
     return x
 
 struct StrArray:
