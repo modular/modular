@@ -4,10 +4,10 @@
 #
 # ===----------------------------------------------------------------------=== #
 
+"""MAX serving in Python prototype. Main API server thing."""
 
-"""
-MAX serving in Python prototype. Main API server thing.
-"""
+from __future__ import annotations
+
 import argparse
 import asyncio
 import logging
@@ -19,11 +19,11 @@ from typing import AsyncContextManager, Sequence
 from max.serve.telemetry.logger import configureLogging
 
 console_level = logging.INFO
-otlp_level = logging.INFO
+otlp_level: int | None = logging.INFO
 if "MAX_SERVE_LOGS_CONSOLE_LEVEL" in os.environ:
-    console_level = os.environ["MAX_SERVE_LOGS_CONSOLE_LEVEL"]
+    console_level = int(os.environ["MAX_SERVE_LOGS_CONSOLE_LEVEL"])
 if "MAX_SERVE_LOGS_OTLP_LEVEL" in os.environ:
-    otlp_level = os.environ["MAX_SERVE_LOGS_OTLP_LEVEL"]
+    otlp_level = int(os.environ["MAX_SERVE_LOGS_OTLP_LEVEL"])
 if "MAX_SERVE_DISABLE_TELEMETRY" in os.environ:
     otlp_level = None
 configureLogging(console_level, otlp_level)
