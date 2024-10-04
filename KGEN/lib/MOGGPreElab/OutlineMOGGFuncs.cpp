@@ -207,6 +207,14 @@ private:
     // inlined later when loaded by MOGG.
     outlinedFunction->setAttr(outlinedAttrName, builder.getUnitAttr());
 
+    // Add all the old attributes (except the execute related attrs).
+    for (NamedAttribute attr : gen->getDialectAttrs())
+      if (attr.getName() == kMOGGSynchronousLabel ||
+          attr.getName() == kMOGGTargetLabel ||
+          attr.getName() == kMOGGLambdasHaveFusionLabel) {
+        outlinedFunction->setAttr(attr.getName(), attr.getValue());
+      }
+
     Block &block = outlinedFunction.getCallableRegion()->emplaceBlock();
     builder.setInsertionPointToStart(&block);
 
