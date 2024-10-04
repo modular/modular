@@ -49,7 +49,7 @@ from nn.pool import avg_pool, max_pool, pool_shape, pool_shape_ceil
 from nn.reshape import reshape, reshape_shape
 from nn.resize import resize_nearest_neighbor, resize_linear
 from nn.roi_align import roi_align_nhwc
-from nn.slice import slice_as_view, slice_shape
+from nn.slice import slice_as_view, slice_shape, slice_dim_as_view
 from nn.tile import tile, tile_shape
 from nn.topk import top_k, top_k_shape_impl
 from nn.gather_scatter import (
@@ -1644,6 +1644,37 @@ struct Slice:
             managed_tensor_slice_to_ndbuffer(stops),
             managed_tensor_slice_to_ndbuffer(steps),
         )
+
+
+@compiler.register("mo.slice_dim")
+@compiler.view_kernel
+struct SliceDim:
+    @staticmethod
+    fn execute[
+        synchronous: Bool,
+        target: StringLiteral,
+        type: DType,
+        rank: Int,
+        axis: Int,
+    ](
+        output: ManagedTensorSlice[type=type, rank=rank],
+        input: ManagedTensorSlice[type=type, rank=rank],
+        starts: Scalar,
+        stops: Scalar,
+        steps: Scalar,
+    ):
+        var view_buffer = slice_dim_as_view[dim=axis](
+            managed_tensor_slice_to_ndbuffer(input),
+            int(starts[0]),
+            int(stops[0]),
+            int(steps[0]),
+        )
+        var view_tensor = ManagedTensorSlice[type, rank](
+            view_buffer.data,
+            view_buffer.get_shape(),
+            view_buffer.dynamic_stride,
+        )
+        view_copy_impl[synchronous, target](output, view_tensor)
 
 
 # ===----------------------------------------------------------------------===#
