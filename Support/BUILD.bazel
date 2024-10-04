@@ -912,3 +912,10 @@ modular_cc_library(
         ":Telemetry",
     ],
 )
+
+modular_cc_library(
+    name = "Diagnostics",
+    srcs = glob(["lib/Diagnostics/**/*.cpp"]),
+    hdrs = glob(["include/Support/Diagnostics/**/*.h"]),
+    deps = ["@llvm-project//mlir:IR"],
+)
