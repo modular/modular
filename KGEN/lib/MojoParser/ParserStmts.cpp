@@ -1181,13 +1181,25 @@ ParseResult StmtParser::parseForElse(size_t curIndent, ExprNode *seqExpr,
     (void)parseLocalScopeSuite(curIndent, indvarScopeDecl);
   });
 
-  // retrieve the iterator object from the sequence expression
+  // We desugar
+  //
+  //   for e in iterable:
+  //     <BODY>
+  //
+  // into
+  //
+  //   var it = iterable.__iter__()
+  //   while not it.__isatend__():
+  //       var e = it.__next__()
+  //       <BODY>
+
+  // Emit the expression for the iterable.
   ASTExprAnd<AnyValue> loadedSeq = {
       getEmitter().emitExpr(seqExpr, EC_ForIterator), seqExpr};
   if (!loadedSeq.ir)
     return {};
 
-  // Emit a call to __iter__ into a var with an inferred type.
+  // Get an iterator into the iterable by emitting a call to `__iter__`.
   VarDeclOp rangeRef = getEmitter().emitVarDecl(
       "$RANGE", getUnresolvedType(), forLoc, VarDeclKind::Synthesized);
   ValueDest rangeDest(rangeRef, EC_ForIterator);
@@ -1209,23 +1221,19 @@ ParseResult StmtParser::parseForElse(size_t curIndent, ExprNode *seqExpr,
   // Create the condition region.
   builder = OpBuilder::atBlockEnd(condBlock);
 
-  // For Loop condition: if the length of the range is greater than zero,
-  // continue. Otherwise break
   ValueDest lengthDest(EC_ForIterator);
-  AnyValue currentLength = getEmitter().emitNamedMethodCall(
-      "__len__", CallOperands({{MLValue(rangeRef), seqExpr}}), lengthDest,
+  CValue hasMoreBool = getEmitter().emitNamedMethodCall(
+      "__hasmore__", CallOperands({{MLValue(rangeRef), seqExpr}}), lengthDest,
       CallSyntax::kImplicitConvert, seqExpr);
-  CValue lengthIndex =
-      getEmitter().emitMLIRIndex({currentLength, seqExpr}, EC_ForIterator);
-  if (!lengthIndex)
+  if (!hasMoreBool)
     return {};
-  SRValue length =
-      getEmitter().emitSRValue({lengthIndex, seqExpr}, EC_ForIterator);
-  if (!length)
+  CValue hasMore = getEmitter().emitI1({hasMoreBool, seqExpr}, EC_ForIterator);
+  if (!hasMore)
     return {};
-  Value shouldContinue = builder.create<mlir::index::CmpOp>(
-      forLoc, mlir::index::IndexCmpPredicate::SGT, length,
-      builder.create<mlir::index::ConstantOp>(forLoc, 0));
+  SRValue shouldContinue =
+      getEmitter().emitSRValue({hasMore, seqExpr}, EC_ForIterator);
+  if (!shouldContinue)
+    return {};
   builder.create<LIT::LoopConditionOp>(forLoc, shouldContinue);
 
   // Create the body. Add Target element to the continue block by calling next
