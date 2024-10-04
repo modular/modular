@@ -126,7 +126,7 @@ trait KVCacheT(CollectionElement):
         ...
 
     fn empty_cache(self) -> Bool:
-        """Returns true if the cache_lenghts for all requests is 0,
+        """Returns true if the cache_lengths for all requests is 0,
         false otherwise."""
         ...
 
@@ -673,8 +673,18 @@ struct ContinuousBatchingKVCache[
             batch_idx < self.batch_size,
             "KVCache::store batch_size out of range",
         )
+        var block_idx = int(self.lookup_table[batch_idx])
+        var full_block_idx = self._get_idx_tuple(block_idx, 0, 0, 0)
+        var block_pointer = self.blocks._offset(full_block_idx).bitcast[type_]()
+        var block_dynamic_shape = StaticIntTuple[3](
+            self.blocks.dim[3](),
+            self.blocks.dim[4](),
+            self.blocks.dim[5](),
+        )
 
-        return rebind[NDBuffer[type_, 3, block_shape]](self.blocks[batch_idx])
+        return NDBuffer[type_, 3, block_shape](
+            block_pointer, block_dynamic_shape
+        )
 
     fn incr_cache_length(inout self, batch_idx: Int, inc: Int):
         debug_assert(
@@ -683,7 +693,7 @@ struct ContinuousBatchingKVCache[
         self.cache_lengths[batch_idx] += inc
 
     fn empty_cache(self) -> Bool:
-        """Returns true if the cache_lenghts for all requests is 0,
+        """Returns true if the cache_lengths for all requests is 0,
         false otherwise."""
         return self.is_cache_empty
 
