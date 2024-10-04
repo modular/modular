@@ -53,6 +53,17 @@ def execute_flash_attention[
     cache_valid_length: NDBuffer[DType.uint32, 1],
     ctx: DeviceContext,
 ):
+    alias max_batch_size = 32
+
+    debug_assert(
+        batch_size < max_batch_size,
+        "batch_size passed to unit test ("
+        + str(batch_size)
+        + ") is larger than configured max_batch_size ("
+        + str(max_batch_size)
+        + ")",
+    )
+
     var max_cache_valid_length = max(
         Buffer[DType.uint32](cache_valid_length.data, batch_size)
     ).__int__()
@@ -165,7 +176,6 @@ def execute_flash_attention[
 
     # initialize our KVCache
     var is_context_encoding = True
-    alias max_batch_size = ContiguousKVCache[type, kv_params]._max_batch_size
     var valid_lengths_host_ptr = UnsafePointer[UInt32].alloc(max_batch_size)
     for i in range(max_batch_size):
         valid_lengths_host_ptr[i] = -1

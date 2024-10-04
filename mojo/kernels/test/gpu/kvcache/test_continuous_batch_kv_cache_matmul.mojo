@@ -7,12 +7,20 @@
 # RUN: %mojo-no-debug %s -t | FileCheck %s
 # CHECK-NOT: CUDA ERROR
 
+from collections import Set
+from random import random_ui64, seed
 from gpu.host import DeviceContext
 from runtime.asyncrt import (
     MojoCallContextPtr,
 )
 from buffer import NDBuffer, Dim, DimList
-from kv_cache.types import KVCacheLayout, ContiguousKVCache, KVCacheStaticParams
+from kv_cache.types import (
+    KVCacheLayout,
+    ContinuousBatchingKVCache,
+    KVCacheStaticParams,
+    KEY_IDX,
+    VALUE_IDX,
+)
 from nn.kv_cache import (
     _matmul_kv_cache_impl,
     _fused_qkv_matmul_kv_cache_impl,
@@ -47,20 +55,26 @@ def execute_matmul[
     batch_size: Int,
     prompt_len: Int,
     max_seq_len: Int,
-    cache_size: Int,
+    cache_sizes: List[Int],
+    num_layers: Int,
+    layer_idx: Int,
     ctx: DeviceContext,
 ):
     alias hidden_size = num_q_heads * kv_params.head_size
     alias kv_hidden_size = kv_params.num_heads * kv_params.head_size
-    alias max_batch_size = 32
+    alias num_blocks = 32
 
     debug_assert(
-        batch_size < max_batch_size,
+        batch_size < num_blocks,
         "batch_size passed to unit test ("
         + str(batch_size)
-        + ") is larger than configured max_batch_size ("
-        + str(max_batch_size)
+        + ") is larger than configured num_blocks ("
+        + str(num_blocks)
         + ")",
+    )
+    debug_assert(
+        len(cache_sizes) == batch_size,
+        "number of cache_size entries do not equal batch_size",
     )
     # initialize hidden state
     hidden_state_host = HostNDBuffer[
@@ -114,58 +128,84 @@ def execute_matmul[
 
     # initialize our KVCache
     var is_context_encoding = True
-    var valid_lengths_host_ptr = UnsafePointer[UInt32].alloc(max_batch_size)
-    for i in range(max_batch_size):
-        valid_lengths_host_ptr[i] = -1
+    var cache_lengths_host = HostNDBuffer[DType.uint32, 1]((batch_size,))
     for i in range(batch_size):
-        if valid_lengths_host_ptr[i] != 0:
+        cache_lengths_host.tensor[i] = cache_sizes[i]
+        if cache_lengths_host.tensor[i] != 0:
             is_context_encoding = False
-        valid_lengths_host_ptr[i] = cache_size
-    var valid_lengths_dev = ctx.create_buffer[DType.uint32](max_batch_size)
-    ctx.enqueue_copy_to_device(valid_lengths_dev, valid_lengths_host_ptr)
-    var valid_lengths_host = NDBuffer[DType.uint32, 1](
-        valid_lengths_host_ptr, batch_size
+
+    var cache_lengths_dev = DeviceNDBuffer[DType.uint32, 1](
+        (batch_size,), ctx=ctx
     )
-    var valid_lengths = NDBuffer[DType.uint32, 1](
-        valid_lengths_dev.ptr, batch_size
+    ctx.enqueue_copy_to_device(
+        cache_lengths_dev.buffer, cache_lengths_host.tensor.data
     )
 
-    kv_block_host = HostNDBuffer[
-        type,
-        4,
-        ContiguousKVCache[
-            type,
-            kv_params,
-        ]._internal_block_shape,
-    ](
-        StaticIntTuple[4](
-            batch_size, max_seq_len, kv_params.num_heads, kv_params.head_size
+    kv_block_host = HostNDBuffer[type, 6,](
+        StaticIntTuple[6](
+            num_blocks,
+            2,
+            num_layers,
+            max_seq_len,
+            kv_params.num_heads,
+            kv_params.head_size,
         ),
     )
-    kv_block_device = DeviceNDBuffer[
-        type,
-        4,
-        ContiguousKVCache[
-            type,
-            kv_params,
-        ]._internal_block_shape,
-    ](
-        StaticIntTuple[4](
-            batch_size, max_seq_len, kv_params.num_heads, kv_params.head_size
+    kv_block_device = DeviceNDBuffer[type, 6,](
+        StaticIntTuple[6](
+            num_blocks,
+            2,
+            num_layers,
+            max_seq_len,
+            kv_params.num_heads,
+            kv_params.head_size,
         ),
         ctx=ctx,
     )
-    var cache_device = ContiguousKVCache[type, kv_params,](
-        kv_block_device.tensor,
-        valid_lengths,
-        is_context_encoding,
-        batch_size,
+
+    var lookup_table_host = HostNDBuffer[DType.uint32, 1,](
+        StaticIntTuple[1](
+            batch_size,
+        ),
     )
-    var cache_host = ContiguousKVCache[type, kv_params,](
-        kv_block_host.tensor,
-        valid_lengths_host,
+
+    var lookup_table_device = DeviceNDBuffer[DType.uint32, 1,](
+        StaticIntTuple[1](
+            batch_size,
+        ),
+        ctx=ctx,
+    )
+
+    # hacky way to get random block indices
+    var block_idx_set = Set[Int]()
+    var idx = 0
+    while len(block_idx_set) < batch_size:
+        var randval = int(random_ui64(0, num_blocks - 1))
+        if randval in block_idx_set:
+            continue
+        block_idx_set.add(randval)
+        lookup_table_host.tensor[idx] = UInt32(randval)
+        idx += 1
+
+    ctx.enqueue_copy_to_device(
+        lookup_table_device.buffer, lookup_table_host.tensor.data
+    )
+
+    var cache_device = ContinuousBatchingKVCache[type, kv_params,](
+        kv_block_device.tensor,
+        cache_lengths_dev.tensor,
+        lookup_table_device.tensor,
         is_context_encoding,
-        batch_size,
+        layer_idx,
+        1,
+    )
+    var cache_host = ContinuousBatchingKVCache[type, kv_params,](
+        kv_block_host.tensor,
+        cache_lengths_host.tensor,
+        lookup_table_host.tensor,
+        is_context_encoding,
+        layer_idx,
+        1,
     )
 
     # execute reference
@@ -199,7 +239,7 @@ def execute_matmul[
                             h * kv_params.head_size + hd,
                         ],
                         cache_host.load[type, width=1](
-                            bs, h, cache_size + s, hd
+                            bs, h, cache_sizes[bs] + s, hd
                         ),
                     )
 
@@ -211,8 +251,10 @@ def execute_matmul[
     _ = ref_output_host^
     _ = kv_block_device^
     _ = kv_block_host^
-    _ = valid_lengths_dev^
-    valid_lengths_host_ptr.free()
+    _ = lookup_table_host^
+    _ = lookup_table_device^
+    _ = cache_lengths_dev^
+    _ = cache_lengths_host^
 
 
 def execute_fused_qkv_matmul[
@@ -221,20 +263,22 @@ def execute_fused_qkv_matmul[
     batch_size: Int,
     prompt_len: Int,
     max_seq_len: Int,
-    cache_size: Int,
+    cache_sizes: List[Int],
+    num_layers: Int,
+    layer_idx: Int,
     ctx: DeviceContext,
 ):
     alias hidden_size = num_q_heads * kv_params.head_size
     alias kv_hidden_size = kv_params.num_heads * kv_params.head_size
     alias fused_hidden_size = (2 * kv_hidden_size) + hidden_size
-    alias max_batch_size = 32
+    alias num_blocks = 32
 
     debug_assert(
-        batch_size < max_batch_size,
+        batch_size < num_blocks,
         "batch_size passed to unit test ("
         + str(batch_size)
         + ") is larger than configured max_batch_size ("
-        + str(max_batch_size)
+        + str(num_blocks)
         + ")",
     )
     # initialize hidden state
@@ -309,98 +353,101 @@ def execute_fused_qkv_matmul[
 
     # initialize our KVCache
     var is_context_encoding = True
-    var valid_lengths_host_ptr = UnsafePointer[UInt32].alloc(max_batch_size)
-    for i in range(max_batch_size):
-        valid_lengths_host_ptr[i] = -1
+    var cache_lengths_host = HostNDBuffer[DType.uint32, 1]((batch_size,))
     for i in range(batch_size):
-        if valid_lengths_host_ptr[i] != 0:
+        cache_lengths_host.tensor[i] = cache_sizes[i]
+        if cache_lengths_host.tensor[i] != 0:
             is_context_encoding = False
-        valid_lengths_host_ptr[i] = cache_size
-    var valid_lengths_dev = ctx.create_buffer[DType.uint32](max_batch_size)
-    ctx.enqueue_copy_to_device(valid_lengths_dev, valid_lengths_host_ptr)
-    var valid_lengths_host = NDBuffer[DType.uint32, 1](
-        valid_lengths_host_ptr, batch_size
+
+    var cache_lengths_dev = DeviceNDBuffer[DType.uint32, 1](
+        (batch_size,), ctx=ctx
     )
-    var valid_lengths = NDBuffer[DType.uint32, 1](
-        valid_lengths_dev.ptr, batch_size
+    ctx.enqueue_copy_to_device(
+        cache_lengths_dev.buffer, cache_lengths_host.tensor.data
     )
 
-    k_block_host = HostNDBuffer[
-        type,
-        4,
-        ContiguousKVCache[
-            type,
-            kv_params,
-        ]._internal_block_shape,
-    ](
-        StaticIntTuple[4](
-            batch_size, max_seq_len, kv_params.num_heads, kv_params.head_size
+    kv_block_host = HostNDBuffer[type, 6,](
+        StaticIntTuple[6](
+            num_blocks,
+            2,
+            num_layers,
+            max_seq_len,
+            kv_params.num_heads,
+            kv_params.head_size,
         ),
     )
-    k_block_device = DeviceNDBuffer[
-        type,
-        4,
-        ContiguousKVCache[
-            type,
-            kv_params,
-        ]._internal_block_shape,
-    ](
-        StaticIntTuple[4](
-            batch_size, max_seq_len, kv_params.num_heads, kv_params.head_size
+    kv_block_device = DeviceNDBuffer[type, 6,](
+        StaticIntTuple[6](
+            num_blocks,
+            2,
+            num_layers,
+            max_seq_len,
+            kv_params.num_heads,
+            kv_params.head_size,
         ),
         ctx=ctx,
     )
-    var k_cache_device = ContiguousKVCache[type, kv_params,](
-        k_block_device.tensor,
-        valid_lengths,
-        is_context_encoding,
-        batch_size,
-    )
-    var k_cache_host = ContiguousKVCache[type, kv_params,](
-        k_block_host.tensor,
-        valid_lengths_host,
-        is_context_encoding,
-        batch_size,
-    )
 
-    v_block_host = HostNDBuffer[
-        type,
-        4,
-        ContiguousKVCache[
-            type,
-            kv_params,
-        ]._internal_block_shape,
-    ](
-        StaticIntTuple[4](
-            batch_size, max_seq_len, kv_params.num_heads, kv_params.head_size
+    var lookup_table_host = HostNDBuffer[DType.uint32, 1,](
+        StaticIntTuple[1](
+            batch_size,
         ),
     )
-    v_block_device = DeviceNDBuffer[
-        type,
-        4,
-        ContiguousKVCache[
-            type,
-            kv_params,
-        ]._internal_block_shape,
-    ](
-        StaticIntTuple[4](
-            batch_size, max_seq_len, kv_params.num_heads, kv_params.head_size
+
+    var lookup_table_device = DeviceNDBuffer[DType.uint32, 1,](
+        StaticIntTuple[1](
+            batch_size,
         ),
         ctx=ctx,
     )
-    v_cache_device = ContiguousKVCache[type, kv_params,](
-        v_block_device.tensor,
-        valid_lengths,
-        is_context_encoding,
-        batch_size,
-    )
-    var v_cache_host = ContiguousKVCache[type, kv_params,](
-        v_block_host.tensor,
-        valid_lengths_host,
-        is_context_encoding,
-        batch_size,
+
+    # hacky way to get random block indices
+    var block_idx_set = Set[Int]()
+    var idx = 0
+    while len(block_idx_set) < batch_size:
+        var randval = int(random_ui64(0, num_blocks - 1))
+        if randval in block_idx_set:
+            continue
+        block_idx_set.add(randval)
+        lookup_table_host.tensor[idx] = UInt32(randval)
+        idx += 1
+
+    ctx.enqueue_copy_to_device(
+        lookup_table_device.buffer, lookup_table_host.tensor.data
     )
 
+    var k_cache_device = ContinuousBatchingKVCache[type, kv_params,](
+        kv_block_device.tensor,
+        cache_lengths_dev.tensor,
+        lookup_table_device.tensor,
+        is_context_encoding,
+        layer_idx,
+        KEY_IDX,
+    )
+    var k_cache_host = ContinuousBatchingKVCache[type, kv_params,](
+        kv_block_host.tensor,
+        cache_lengths_host.tensor,
+        lookup_table_host.tensor,
+        is_context_encoding,
+        layer_idx,
+        KEY_IDX,
+    )
+    var v_cache_device = ContinuousBatchingKVCache[type, kv_params,](
+        kv_block_device.tensor,
+        cache_lengths_dev.tensor,
+        lookup_table_device.tensor,
+        is_context_encoding,
+        layer_idx,
+        VALUE_IDX,
+    )
+    var v_cache_host = ContinuousBatchingKVCache[type, kv_params,](
+        kv_block_host.tensor,
+        cache_lengths_host.tensor,
+        lookup_table_host.tensor,
+        is_context_encoding,
+        layer_idx,
+        VALUE_IDX,
+    )
     _fused_qkv_matmul_kv_cache_impl[target="cuda",](
         hidden_state_device.tensor,
         weight_device.tensor,
@@ -418,10 +465,7 @@ def execute_fused_qkv_matmul[
     )
 
     ctx.enqueue_copy_from_device(
-        k_block_host.tensor.data, k_block_device.buffer
-    )
-    ctx.enqueue_copy_from_device(
-        v_block_host.tensor.data, v_block_device.buffer
+        kv_block_host.tensor.data, kv_block_device.buffer
     )
     ctx.enqueue_copy_from_device(
         test_output_host.tensor.data, test_output_device.buffer
@@ -455,7 +499,7 @@ def execute_fused_qkv_matmul[
                     k_cache_host.load[type, width=1](
                         bs,
                         head_idx,
-                        cache_size + s,
+                        cache_sizes[bs] + s,
                         head_dim_idx,
                     ),
                 )
@@ -471,7 +515,7 @@ def execute_fused_qkv_matmul[
                     v_cache_host.load[type, width=1](
                         bs,
                         head_idx,
-                        cache_size + s,
+                        cache_sizes[bs] + s,
                         head_dim_idx,
                     ),
                 )
@@ -484,12 +528,12 @@ def execute_fused_qkv_matmul[
     _ = ref_output_host^
     _ = test_output_device^
     _ = test_output_host^
-    _ = v_block_device^
-    _ = v_block_host^
-    _ = k_block_device^
-    _ = k_block_host^
-    _ = valid_lengths_dev^
-    valid_lengths_host_ptr.free()
+    _ = kv_block_device^
+    _ = kv_block_host^
+    _ = lookup_table_device^
+    _ = lookup_table_host^
+    _ = cache_lengths_dev^
+    _ = cache_lengths_host^
 
 
 def execute_matmul_suite(ctx: DeviceContext):
@@ -500,41 +544,31 @@ def execute_matmul_suite(ctx: DeviceContext):
         alias type = types.get[type_idx, DType]()
         for bs_ref in List[Int](1, 16):
             bs = bs_ref[]
-
-            # Replit context encoding
-            execute_matmul[replit_num_q_heads, type, kv_params_replit](
-                bs, 128, 1024, 0, ctx
-            )
-
-            execute_matmul[replit_num_q_heads, type, kv_params_replit](
-                bs, 512, 1024, 0, ctx
-            )
-
-            # Replit token gen
-            execute_matmul[replit_num_q_heads, type, kv_params_replit](
-                bs, 1, 1024, 10, ctx
-            )
-
-            execute_matmul[replit_num_q_heads, type, kv_params_replit](
-                bs, 1, 1024, 128, ctx
-            )
+            ce_cache_sizes = List[Int]()
+            tg_cache_sizes = List[Int]()
+            for i in range(bs):
+                tg_cache_sizes.append(int(random_ui64(0, 100)))
+                ce_cache_sizes.append(0)
 
             # llama3 context encoding
             execute_matmul[llama_num_q_heads, type, kv_params_llama3](
-                bs, 128, 1024, 0, ctx
+                bs, 128, 1024, ce_cache_sizes, 4, 1, ctx
             )
 
             execute_matmul[llama_num_q_heads, type, kv_params_llama3](
-                bs, 512, 1024, 0, ctx
+                bs, 512, 1024, ce_cache_sizes, 4, 1, ctx
             )
 
             # llama3 token gen
             execute_matmul[llama_num_q_heads, type, kv_params_llama3](
-                bs, 1, 1024, 10, ctx
+                bs, 1, 1024, tg_cache_sizes, 4, 0, ctx
             )
 
             execute_matmul[llama_num_q_heads, type, kv_params_llama3](
-                bs, 1, 1024, 128, ctx
+                bs, 1, 1024, tg_cache_sizes, 4, 1, ctx
+            )
+            execute_matmul[replit_num_q_heads, type, kv_params_replit](
+                bs, 1, 1024, tg_cache_sizes, 4, 1, ctx
             )
 
 
@@ -546,45 +580,33 @@ def execute_fused_matmul_suite(ctx: DeviceContext):
         alias type = types.get[type_idx, DType]()
         for bs_ref in List[Int](1, 16):
             bs = bs_ref[]
-
-            # Replit context encoding
-            execute_fused_qkv_matmul[
-                replit_num_q_heads, type, kv_params_replit
-            ](bs, 128, 1024, 0, ctx)
-
-            execute_fused_qkv_matmul[
-                replit_num_q_heads, type, kv_params_replit
-            ](bs, 512, 1024, 0, ctx)
-
-            # Replit token gen
-            execute_fused_qkv_matmul[
-                replit_num_q_heads, type, kv_params_replit
-            ](bs, 1, 1024, 10, ctx)
-
-            execute_fused_qkv_matmul[
-                replit_num_q_heads, type, kv_params_replit
-            ](bs, 1, 1024, 128, ctx)
+            ce_cache_sizes = List[Int]()
+            tg_cache_sizes = List[Int]()
+            for i in range(bs):
+                tg_cache_sizes.append(int(random_ui64(0, 100)))
+                ce_cache_sizes.append(0)
 
             # llama3 context encoding
             execute_fused_qkv_matmul[llama_num_q_heads, type, kv_params_llama3](
-                bs, 128, 1024, 0, ctx
+                bs, 128, 1024, ce_cache_sizes, 4, 1, ctx
             )
 
             execute_fused_qkv_matmul[llama_num_q_heads, type, kv_params_llama3](
-                bs, 512, 1024, 0, ctx
+                bs, 512, 1024, ce_cache_sizes, 4, 0, ctx
             )
 
             # llama3 token gen
             execute_fused_qkv_matmul[llama_num_q_heads, type, kv_params_llama3](
-                bs, 1, 1024, 10, ctx
+                bs, 1, 1024, tg_cache_sizes, 4, 3, ctx
             )
 
             execute_fused_qkv_matmul[llama_num_q_heads, type, kv_params_llama3](
-                bs, 1, 1024, 128, ctx
+                bs, 1, 1024, tg_cache_sizes, 4, 0, ctx
             )
 
 
 def main():
+    seed(42)
     try:
         with DeviceContext() as ctx:
             execute_matmul_suite(ctx)

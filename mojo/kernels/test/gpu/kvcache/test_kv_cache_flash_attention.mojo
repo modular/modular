@@ -51,7 +51,16 @@ def execute_flash_attention[
     alias hidden_size = num_q_heads * kv_params.head_size
     alias kv_hidden_size = kv_params.num_heads * kv_params.head_size
     alias fused_hidden_size = (2 * kv_hidden_size) + hidden_size
+    alias max_batch_size = 32
 
+    debug_assert(
+        batch_size < max_batch_size,
+        "batch_size passed to unit test ("
+        + str(batch_size)
+        + ") is larger than configured max_batch_size ("
+        + str(max_batch_size)
+        + ")",
+    )
     # initialize q tensor
     # TODO parameterize to layout
     q_host = HostNDBuffer[
@@ -133,7 +142,6 @@ def execute_flash_attention[
 
     # initialize our KVCache
     var is_context_encoding = True
-    alias max_batch_size = ContiguousKVCache[type, kv_params]._max_batch_size
     var valid_lengths_host_ptr = UnsafePointer[UInt32].alloc(max_batch_size)
     for i in range(max_batch_size):
         valid_lengths_host_ptr[i] = -1
