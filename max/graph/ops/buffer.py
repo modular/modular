@@ -73,18 +73,18 @@ def buffer_store_slice(
 ) -> None:
     """Stores the input tensor to into a slice in the input buffer.
 
-    It stores the immutable input tensor `x` in the mutable tensor `y`.
-    This is semantically equivalent to a copy from `x` tensor to a slice in the
-    `y` buffer at index specified by `indices`.
+    It stores the immutable input tensor `source` in the mutable tensor `destination`.
+    This is semantically equivalent to a copy from `source` tensor to a slice in the
+    `destination` buffer at index specified by `indices`.
 
     Args:
-        x: The tensor to be stored in the buffer.
-        y: The buffer to store the tensor in.
+        destination: The buffer to store the tensor in.
+        source: The tensor to be stored in the buffer.
         indices: The index in the buffer where the tensor should be stored
     """
     in_chain = Graph.current._current_chain
 
-    starts, stops, steps, _ = _slice_and_output_tensors(source, indices)  # type: ignore
+    starts, stops, steps, _ = _slice_and_output_tensors(destination, indices)  # type: ignore
 
     output_chain = Graph.current._add_op(
         rmo.mo_mutable_store_slice,

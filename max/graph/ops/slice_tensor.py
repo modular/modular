@@ -24,7 +24,7 @@ from max.dtype import DType
 from max.mlir.dialects import rmo
 
 from ..graph import Graph
-from ..value import TensorValue
+from ..value import BufferValue, TensorValue
 from ..type import Dim, DimLike, Shape, StaticDim, TensorType
 from .constant import constant
 from .select import select
@@ -109,7 +109,9 @@ def _has_no_ellipsis(indices: SliceIndices) -> TypeGuard[list[SliceIndex]]:
     return not any(index is Ellipsis for index in indices)
 
 
-def _slice_and_output_tensors(x: TensorValue, indices: SliceIndices):
+def _slice_and_output_tensors(
+    x: Union[BufferValue, TensorValue], indices: SliceIndices
+):
     if not x.shape:
         raise ValueError("Slicing does not support scalar inputs")
 
