@@ -53,6 +53,10 @@ struct TensorNamesIterator(Sized):
         self.current += 1
         return next
 
+    @always_inline
+    fn __hasmore__(self) -> Bool:
+        return self.__len__() > 0
+
     fn __len__(self) -> Int:
         if self.current == self.length:
             return 0
