@@ -69,6 +69,7 @@ from nn.softmax import softmax, logsoftmax
 from nn.pad import pad_constant, pad_repeat, pad_reflect, pad_shape
 from nn.cumsum import cumsum
 
+from nn.normalization import layer_norm, rms_norm
 
 # ===----------------------------------------------------------------------===#
 # Helpers
@@ -2386,6 +2387,114 @@ struct GatherSum:
         gather_reduce[output.type, 0, 1, simdwidthof[output.type](), add](
             output_ndbuffer, input_ndbuffer, indices_ndbuffer, 0
         )
+
+
+# ===----------------------------------------------------------------------===#
+# Normalization kernels
+# ===----------------------------------------------------------------------===#
+
+
+@compiler.register("mo.layer_norm")
+struct LayerNorm:
+    @compiler.enable_fusion_for("input", "gamma")
+    @staticmethod
+    fn execute[
+        type: DType,
+        rank: Int,
+        target: StringLiteral,
+    ](
+        output: ManagedTensorSlice[type=type, rank=rank],
+        input: ManagedTensorSlice[type=type, rank=rank],
+        gamma: ManagedTensorSlice[type=type, rank=1],
+        beta: ManagedTensorSlice[type=type, rank=1],
+        epsilon: Scalar[type=type],
+        ctx: MojoCallContextPtr,
+    ) raises:
+        @parameter
+        @always_inline
+        fn input_fn[
+            width: Int, _rank: Int
+        ](coords: StaticIntTuple[_rank]) -> SIMD[type, width]:
+            return input._fused_load[width=width](
+                rebind[StaticIntTuple[input.rank]](coords)
+            )
+
+        @parameter
+        @always_inline
+        fn gamma_fn[
+            width: Int, _rank: Int
+        ](coords: StaticIntTuple[_rank]) -> SIMD[type, width]:
+            return gamma._fused_load[width=width](
+                rebind[StaticIntTuple[1]](coords)
+            )
+
+        var beta_buf = managed_tensor_slice_to_ndbuffer(beta)
+        var epsilon_val = epsilon._ptr.load(0)
+        var output_buf = managed_tensor_slice_to_ndbuffer(output)
+
+        layer_norm[type, rank, input_fn, gamma_fn, target=target,](
+            input._spec.shape,
+            gamma._spec.shape,
+            beta_buf,
+            epsilon_val,
+            output_buf,
+            ctx,
+        )
+
+    @staticmethod
+    fn shape[
+        type: DType,
+        rank: Int,
+    ](
+        input: ManagedTensorSlice[type=type, rank=rank],
+        gamma: ManagedTensorSlice[type=type, rank=1],
+        beta: ManagedTensorSlice[type=type, rank=1],
+        epsilon: Scalar[type=type],
+    ) -> StaticIntTuple[rank]:
+        return input._spec.shape
+
+
+@compiler.register("rms_norm")
+struct RMSNorm:
+    @staticmethod
+    fn execute[
+        type: DType,
+        rank: Int,
+        target: StringLiteral,
+    ](
+        output: ManagedTensorSlice[type=type, rank=rank],
+        input: ManagedTensorSlice[type=type, rank=rank],
+        gamma: ManagedTensorSlice[type=type, rank=1],
+        epsilon: Scalar[type=type],
+        ctx: MojoCallContextPtr,
+    ) raises:
+        @parameter
+        @always_inline
+        fn input_fn[
+            width: Int, _rank: Int
+        ](coords: StaticIntTuple[_rank]) -> SIMD[type, width]:
+            return input.load[width=width](
+                rebind[StaticIntTuple[input.rank]](coords)
+            )
+
+        var gamma_buf = managed_tensor_slice_to_ndbuffer(gamma)
+        var epsilon_val = epsilon._ptr.load(0)
+        var output_buf = managed_tensor_slice_to_ndbuffer(output)
+
+        rms_norm[type, rank, input_fn, target=target](
+            input._spec.shape, gamma_buf, epsilon_val, output_buf, ctx
+        )
+
+    @staticmethod
+    fn shape[
+        type: DType,
+        rank: Int,
+    ](
+        input: ManagedTensorSlice[type=type, rank=rank],
+        gamma: ManagedTensorSlice[type=type, rank=1],
+        epsilon: Scalar[type=type],
+    ) -> StaticIntTuple[rank]:
+        return input._spec.shape
 
 
 # ===----------------------------------------------------------------------===#
