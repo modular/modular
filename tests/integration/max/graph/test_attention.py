@@ -11,12 +11,11 @@ import torch
 from conftest import modular_graph_test
 from max.dtype import DType
 from max.graph import Graph, TensorType
+from nn import Attention, Linear, RotaryEmbedding
 from torch import nn
 from transformers import StaticCache
 from transformers.models.llama.configuration_llama import LlamaConfig
 from transformers.models.llama.modeling_llama import LlamaSdpaAttention
-
-from nn import Attention, Linear, RotaryEmbedding
 
 ACCURACY_RTOL = 1e-2
 ACCURACY_ATOL = 1e-2

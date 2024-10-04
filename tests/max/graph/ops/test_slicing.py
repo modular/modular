@@ -5,6 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 """Test the max.graph Python bindings."""
 
+import random
 from functools import reduce
 
 from conftest import broadcast_shapes, broadcastable_tensor_types, tensor_types
@@ -12,7 +13,7 @@ from hypothesis import assume, given
 from hypothesis import strategies as st
 from max.dtype import DType
 from max.graph import Graph, TensorType, ops
-from max.graph.type import Dim
+from max.graph.type import Dim, StaticDim
 
 
 @given(input_types=broadcastable_tensor_types(3))
@@ -104,6 +105,8 @@ def expected_slice_shape(shape, index):
             return dim
         elif isinstance(dim_index, int):
             return 1
+        elif isinstance(dim_index, slice):
+            return len(range(*dim_index.indices(dim.dim)))
         # support more slicing cases
         raise NotImplementedError
 
@@ -117,6 +120,41 @@ def expected_slice_shape(shape, index):
 def test_slice_valid_ints(tensor_type: TensorType, index):
     assume(tensor_type.shape)
     assume(0 not in tensor_type.shape)
+
+    with Graph("slice", input_types=[tensor_type]) as graph:
+        out = ops.slice_tensor(graph.inputs[0], index)
+        assert out.shape == expected_slice_shape(tensor_type.shape, index)
+        graph.output(out)
+
+
+def gen_slice(n):
+    rand = random.Random()
+    start = rand.randint(-1 * n, n - 1)
+    step = rand.randint(-1 * n, n) or 1
+    stop = rand.randint(-1 * n, n)
+
+    if rand.randint(0, 1):
+        start = None
+    if rand.randint(0, 1):
+        stop = None
+    if rand.randint(0, 1):
+        step = None
+    return slice(start, stop, step)
+
+
+static_tensor_type = tensor_types(
+    shapes=st.shared(st.from_type(list[StaticDim]))
+)
+
+
+@given(
+    tensor_type=static_tensor_type,
+)
+def test_slice_static_dims(tensor_type: TensorType):
+    assume(tensor_type.shape)
+    assume(0 not in tensor_type.shape)
+
+    index = [gen_slice(d.dim) for d in tensor_type.shape]
 
     with Graph("slice", input_types=[tensor_type]) as graph:
         out = ops.slice_tensor(graph.inputs[0], index)

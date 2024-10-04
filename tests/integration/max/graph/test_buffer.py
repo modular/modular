@@ -11,11 +11,10 @@ from pathlib import Path
 import numpy as np
 import pytest
 import torch
+from max.driver import Tensor
 from max.dtype import DType
 from max.engine import InferenceSession
-from max.graph import BufferType, Graph, TensorType
-from max.driver import Tensor
-from max.graph import ops
+from max.graph import BufferType, BufferValue, Graph, TensorType, ops
 from max.graph.ops import buffer_load, buffer_store
 from max.graph.value import BufferValue
 

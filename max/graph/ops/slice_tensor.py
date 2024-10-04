@@ -19,17 +19,15 @@ if TYPE_CHECKING:
     from types import EllipsisType  # type: ignore
 
 import numpy as np
-
 from max.dtype import DType
 from max.mlir.dialects import rmo
 
 from ..graph import Graph
-from ..value import BufferValue, TensorValue
 from ..type import Dim, DimLike, Shape, StaticDim, TensorType
+from ..value import BufferValue, TensorValue
 from .constant import constant
 from .select import select
 from .stack import stack_scalars
-
 
 # Currently slicing does not have any shape inference in RMO. Instead, it is
 # done in python.
@@ -39,6 +37,70 @@ from .stack import stack_scalars
 
 SliceIndex = Union[TensorValue, int, slice, tuple[slice, DimLike]]
 SliceIndices = list[Union[SliceIndex, "EllipsisType"]]
+
+
+def _concrete_static_slice(n: int, index: slice) -> slice:
+    """Replaces None/-ve indices in the slice with numerical non -ve indices.
+
+    Normalizes -ve indices and replaces None indices with numerical values
+    bounded by the length of the sequence.
+
+    Args:
+        n: The size of the static dimension. Should bound the slice's indices.
+        index: the slice index.
+
+    Returns:
+        Returns the slice with numerical indices.
+    """
+    start, step, stop = index.start, index.step, index.stop
+
+    if step is None:
+        step = 1
+    if start is None:
+        start = 0 if step >= 0 else n - 1
+    if stop is None:
+        stop = n if step >= 0 else -1
+
+    if step == 0:
+        raise ValueError(f"Index.step in index {index} can't be 0")
+    if not -n <= start < n:
+        raise IndexError(f"Index.start {start} out of range of dim {n}")
+    if not -n <= stop <= n:
+        raise IndexError(f"Index.start {stop} out of range of dim {n}")
+
+    if start < 0:
+        start = n + start
+    if stop < 0 and not index.stop is None:
+        stop = n + stop
+    return slice(start, stop, step)
+
+
+def _static_slice(n: int, index: slice) -> tuple[slice, DimLike]:
+    """Calculates the output shape of the slice.
+
+    Args:
+        n: The size of the static dimension. Should bound the slice's indices.
+        index: the slice index.
+
+    Returns:
+        Returns the slice with numerical indices and calculated output shape.
+    """
+    concrete_slice = _concrete_static_slice(n, index)
+    start, stop, step = (
+        concrete_slice.start,
+        concrete_slice.stop,
+        concrete_slice.step,
+    )
+
+    # Calculate the size of slice assuming index is static.
+    # Assume an arithmetic set where a0 == start, d == step, an == stop
+    # stop = start + (n-1)step, ceil to return an int, return 0 if -ve length
+    output_shape = max(
+        0,
+        (stop - start + (step - (1 if step > 0 else -1))) // step,
+    )
+
+    return (concrete_slice, output_shape)
 
 
 def _slice_index_and_output(
@@ -65,7 +127,7 @@ def _slice_index_and_output(
             raise ValueError(
                 f"Slice index value must be a scalar, had shape {index.shape}"
             )
-        return (
+        return (  # Same as int index.
             slice(
                 index,
                 select(index == -1, int64_max, constant(0, DType.int64)),
@@ -77,12 +139,20 @@ def _slice_index_and_output(
         if index.start is None and index.stop is None and index.step is None:
             return (slice(0, int64_max, 1), dim)
 
-        raise NotImplementedError(
-            "Can't yet support slicing with calculated output size. Please use"
-            ' a tuple like (slice(0, 10), "out_dim") to specify the output'
-            " dimensions."
-        )
-    elif (  # slice is a tuple of elements: e.g. (slice(start, stop), "out_dim")
+        if (  # index is a slice [start:stop:step]
+            (index.start is None or isinstance(index.start, (int)))
+            and (index.stop is None or isinstance(index.stop, (int)))
+            and (index.step is None or isinstance(index.step, (int)))
+        ):
+            if isinstance(dim, StaticDim):
+                return _static_slice(dim.dim, index)
+            else:  # TODO() support dynamic dim if length calculation is possible
+                raise NotImplementedError(
+                    "Can't yet support slicing with calculated output size for"
+                    " dynamic dims. Please use a tuple like (slice(0, 10),"
+                    ' "out_dim") to specify the output dimensions.'
+                )
+    elif (  # index is a tuple (slice(start, stop, step), "out_dim")
         isinstance(index, tuple)
         and len(index) == 2
         and isinstance(index[0], slice)
@@ -92,14 +162,12 @@ def _slice_index_and_output(
         stop = index[0].stop
         step = index[0].step
         zero = constant(0, DType.int64)
-
         if step is None:
             step = 1
         if start is None:
             start = select(step >= zero, zero, int64_max)
         if stop is None:
             stop = select(step >= zero, int64_max, zero)
-
         return (slice(start, stop, step), index[1])
 
     raise ValueError(f"Unsupported slice inputs {dim=}, {index=}")
