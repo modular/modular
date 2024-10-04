@@ -67,6 +67,7 @@ from random import randn, seed
 from utils.numerics import isinf, isnan
 from nn.softmax import softmax, logsoftmax
 from nn.pad import pad_constant, pad_repeat, pad_reflect, pad_shape
+from nn.cumsum import cumsum
 
 
 # ===----------------------------------------------------------------------===#
@@ -2912,3 +2913,31 @@ struct LogSoftmax:
             static_shape,
             input_fn,
         ](output.get_static_spec().shape, output_ndbuffer, output.rank - 1)
+
+
+# ===----------------------------------------------------------------------===#
+# Cumsum kernels
+# ===----------------------------------------------------------------------===#
+
+
+@compiler.register("mo.cumsum")
+struct CumSum:
+    @staticmethod
+    fn execute[
+        type: DType,
+        rank: Int,
+        exclusive: Int,
+        reverse: Int,
+    ](
+        output: ManagedTensorSlice[type=type, rank=rank],
+        input: ManagedTensorSlice[type=type, rank=rank],
+        axis: Scalar,
+        ctx: MojoCallContextPtr,
+    ):
+        var output_buf = managed_tensor_slice_to_ndbuffer(output)
+        var input_buf = managed_tensor_slice_to_ndbuffer(input)
+        var axis_val = axis._ptr.load(0)
+
+        cumsum[rank, type, exclusive, reverse](
+            output_buf, input_buf, int(normalize_neg_index(axis_val, rank))
+        )
