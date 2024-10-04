@@ -339,6 +339,9 @@ struct ContinuousBatchingKVCacheManager[
         kv_params,
     ]
 
+    # blocks_buf shape is
+    # - BSHD: [num_blocks, 2, num_layers, max_seq_len, num_heads, head_size]
+    # - BHSD: [num_blocks, 2, num_layers, num_heads, max_seq_len, head_size]
     var blocks_buf: Tensor[type, 6]
     alias BlocksType = Self.CollectionType.CacheType.BlocksType
     var blocks_nd_buf: Self.BlocksType
