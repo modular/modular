@@ -29,7 +29,11 @@ struct my_iter:
         self.start += 1
         return self.list[result]
 
-    fn __len__(inout self: my_iter) -> Int:
+    @always_inline
+    fn __hasmore__(self) -> Bool:
+        return self.__len__() > 0
+
+    fn __len__(self: my_iter) -> Int:
         if self.start < self.end:
             return self.end - self.start
         return 0
