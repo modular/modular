@@ -655,7 +655,7 @@ fn layer_norm[
             constrained[False, "unsupported target " + target]()
 
 
-@mogg_register("layer_norm_shape")
+@mogg_register_shape_func("mo.layer_norm")
 @always_inline
 fn layer_norm_shape[
     type: DType,
