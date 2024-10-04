@@ -28,8 +28,8 @@ fn run_elementwise[type: DType](ctx: DeviceContext) raises:
 
     var in_host = ctx.malloc_host[Scalar[type]](length)
     var out_host = ctx.malloc_host[Scalar[type]](length)
-    var in_dev = ctx.create_buffer[type](length)
-    var out_dev = ctx.create_buffer[type](length)
+    var in_dev = ctx.enqueue_create_buffer[type](length)
+    var out_dev = ctx.enqueue_create_buffer[type](length)
 
     # Initialize the input and outputs with known values.
     for i in range(length):

@@ -31,7 +31,7 @@ fn _run_ownership_transfer(ctx: DeviceContextVariant) raises:
     var ctx_copy = _ownership_helper(ctx)
     print("ctx_copy: " + ctx_copy.name())
 
-    var buf = ctx.create_buffer[DType.float32](32)
+    var buf = ctx.create_buffer_sync[DType.float32](32)
     print("buf: " + str(len(buf)))
     var buf_copy = _ownership_helper_buf(buf)
     print("buf_copy: " + str(len(buf_copy)))

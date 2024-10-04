@@ -33,9 +33,9 @@ fn run_captured_func(ctx: DeviceContextVariant, captured: Float32) raises:
     var in0_host = ctx.malloc_host[Float32](length)
     var in1_host = ctx.malloc_host[Float32](length)
     var out_host = ctx.malloc_host[Float32](length)
-    var in0_dev = ctx.create_buffer[DType.float32](length)
-    var in1_dev = ctx.create_buffer[DType.float32](length)
-    var out_dev = ctx.create_buffer[DType.float32](length)
+    var in0_dev = ctx.enqueue_create_buffer[DType.float32](length)
+    var in1_dev = ctx.enqueue_create_buffer[DType.float32](length)
+    var out_dev = ctx.enqueue_create_buffer[DType.float32](length)
 
     # Initialize the input and outputs with known values.
     for i in range(length):

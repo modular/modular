@@ -14,8 +14,8 @@ fn _timed_iter_func(context: DeviceContextVariant, iter: Int) raises:
 
     var in_host = context.malloc_host[Float32](length)
     var out_host = context.malloc_host[Float32](length)
-    var in_dev = context.create_buffer[DType.float32](length)
-    var out_dev = context.create_buffer[DType.float32](length)
+    var in_dev = context.enqueue_create_buffer[DType.float32](length)
+    var out_dev = context.enqueue_create_buffer[DType.float32](length)
 
     # Initialize the input and outputs with known values.
     for i in range(length):
