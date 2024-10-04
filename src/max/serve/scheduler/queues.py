@@ -10,7 +10,6 @@ import contextlib
 from enum import Enum
 import logging
 from time import monotonic
-from asyncio import Queue
 from dataclasses import dataclass, field
 from typing import (
     AsyncGenerator,
@@ -19,6 +18,7 @@ from typing import (
     Mapping,
     TypeVar,
     Awaitable,
+    Union,
 )
 
 
@@ -78,7 +78,7 @@ class BatchMultiplexQueue(Generic[BatchReqId, BatchReqInput, BatchReqOutput]):
     config: BatchQueueConfig
     executor_fn: BatchRequestExecutorFn
     completed_fn: BatchRequestCompletedFn
-    in_queue: Queue = field(default_factory=asyncio.Queue)
+    in_queue: asyncio.Queue = field(default_factory=asyncio.Queue)
     out_queues: dict[BatchReqId, asyncio.Queue] = field(default_factory=dict)
 
     # TODO@gaz: We can't use __class__ here because this is currently setup as a dataclass
@@ -132,27 +132,22 @@ class BatchMultiplexQueue(Generic[BatchReqId, BatchReqInput, BatchReqOutput]):
                         self.in_queue.get(), timeout=remaining
                     )
                     batch[request_id] = item
-                except asyncio.QueueEmpty:
-                    # TODO@gaz: Why would this trigger?
-                    # async queue.get() waits until there is an item.
-                    if timeout_s > 0 and remaining <= 0:
-                        return
                 except asyncio.TimeoutError:
                     return
 
     async def respond(
-        self, batch_responses: dict[BatchReqId, BatchReqOutput]
-    ) -> set[BatchReqId]:
-        # Responses which no longer have an output queue are assumed cancelled.
-        cancelled = batch_responses.keys() - self.out_queues.keys()
+        self, batch_responses: dict[BatchReqId, Union[BatchReqOutput, object]]
+    ):
+        """Writes provided responses to available output queues.
+        Output queues can be closed upstream upon disconnection events.
+        """
         await asyncio.gather(
             *(
                 self.out_queues[id].put(response)
                 for id, response in batch_responses.items()
-                if id not in cancelled
+                if id in self.out_queues
             ),
         )
-        return cancelled
 
     async def dynamic_batching_worker(self):
         self.logger.info("DynamicBatcher: Started: %s", self.config)
@@ -171,18 +166,19 @@ class BatchMultiplexQueue(Generic[BatchReqId, BatchReqInput, BatchReqOutput]):
                     while batch:
                         results = await self.executor_fn(batch)
                         await self.respond(results)
+
                         completed = self.completed_fn(batch, results)
                         if completed:
-                            for req_id in completed:
-                                if req_id in self.out_queues:
-                                    # Signal completion to to upstream consumers
-                                    self.logger.debug(
-                                        "DynamicBatcher: Completed request: %s",
-                                        req_id,
-                                    )
-                                    self.out_queues[req_id].put_nowait(
-                                        STOP_STREAM
-                                    )
+                            self.logger.debug(
+                                "DynamicBatcher: Completed %d items (%s)",
+                                len(completed),
+                                completed,
+                            )
+                            completed_results = {
+                                req_id: STOP_STREAM for req_id in completed
+                            }
+                            await self.respond(completed_results)
+
                             # In dynamic batching, execution of a batch completes only when
                             # each request in the batch is determined to be completed.
                             if completed == batch.keys():
@@ -216,32 +212,40 @@ class BatchMultiplexQueue(Generic[BatchReqId, BatchReqInput, BatchReqOutput]):
                             new_req_ids,
                         )
                     next_result = await self.executor_fn(batch)
-                    cancelled = await self.respond(next_result)
+                    await self.respond(next_result)
+
                     completed = self.completed_fn(batch, next_result)
-                    if cancelled or completed:
+                    if completed:
+                        # Completed requests are terminated with STOP_STREAM sentinels
+                        self.logger.debug(
+                            "ContinuousBatcher: Completed %d items (%s)",
+                            len(completed),
+                            completed,
+                        )
+                        completed_results = {
+                            req_id: STOP_STREAM for req_id in completed
+                        }
+                        await self.respond(completed_results)
+
+                    cancelled = next_result.keys() - self.out_queues.keys()
+                    if cancelled:
+                        self.logger.debug(
+                            "ContinuousBatcher: Cancelled %d items (%s)",
+                            len(cancelled),
+                            cancelled,
+                        )
+                    for req_id in cancelled | completed:
                         # Remove batches which meet one of the following criteria.
                         # 1. Cancelled: Batches which no longer have a output queue.
-                        # Output queues can be removed by consumers when the connection
+                        # Output queues are removed by consumers when the connection
                         # closes or when they are no longer interested in more outputs.
                         # 2. Completed: Batches with results which are deemed complete.
-                        # The pipeline signals to the server that the request is complete
-                        # by not returning a result for it. We immediately remove it from
-                        # the batch so there are no more executions.
-                        if cancelled:
-                            self.logger.debug(
-                                "ContinuousBatcher: Cancelled %d items (%s)",
-                                len(cancelled),
-                                cancelled,
-                            )
-                        if completed:
-                            self.logger.debug(
-                                "ContinuousBatcher: Completed %d items (%s)",
-                                len(completed),
-                                completed,
-                            )
-                        for req_id in cancelled | completed:
-                            self.out_queues[req_id].put_nowait(STOP_STREAM)
-                            del batch[req_id]
+                        # We have terminated them by emitting a STOP_STEAM event above
+                        # and can immediately remove them from the batch.
+                        self.logger.info(
+                            "ContinuousBatcher: Deleting %s", req_id
+                        )
+                        del batch[req_id]
                 await asyncio.sleep(0)
         except asyncio.CancelledError:
             self.logger.info("ContinuousBatcher: Cancelled: %s", self.config)
