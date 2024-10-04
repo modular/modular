@@ -47,6 +47,7 @@ from nn.pool import avg_pool, max_pool, pool_shape, pool_shape_ceil
 from nn.reshape import reshape, reshape_shape
 from nn.resize import resize_nearest_neighbor, resize_linear
 from nn.roi_align import roi_align_nhwc
+from nn.slice import slice_as_view, slice_shape
 from nn.tile import tile, tile_shape
 from nn.topk import top_k, top_k_shape_impl
 from nn.gather_scatter import (
@@ -1595,6 +1596,50 @@ struct Transpose:
         permutations: ManagedTensorSlice[rank=1],
     ) raises -> StaticIntTuple[input.rank]:
         return Self.shape_impl(input, permutations)
+
+
+@compiler.register("mo.slice")
+@compiler.view_kernel
+struct Slice:
+    @staticmethod
+    fn execute[
+        synchronous: Bool,
+        target: StringLiteral,
+        type: DType,
+        rank: Int,
+    ](
+        output: ManagedTensorSlice[type=type, rank=rank],
+        input: ManagedTensorSlice[type=type, rank=rank],
+        starts: ManagedTensorSlice[rank=1],
+        stops: ManagedTensorSlice[rank=1],
+        steps: ManagedTensorSlice[rank=1],
+    ):
+        var view_buffer = slice_as_view(
+            managed_tensor_slice_to_ndbuffer(input),
+            managed_tensor_slice_to_ndbuffer(starts),
+            managed_tensor_slice_to_ndbuffer(stops),
+            managed_tensor_slice_to_ndbuffer(steps),
+        )
+        var view_tensor = ManagedTensorSlice[type, rank](
+            view_buffer.data,
+            view_buffer.get_shape(),
+            view_buffer.dynamic_stride,
+        )
+        view_copy_impl[synchronous, target](output, view_tensor)
+
+    @staticmethod
+    fn shape(
+        input: ManagedTensorSlice,
+        starts: ManagedTensorSlice[rank=1],
+        stops: ManagedTensorSlice[rank=1],
+        steps: ManagedTensorSlice[rank=1],
+    ) raises -> StaticIntTuple[input.rank]:
+        return slice_shape[single_thread_blocking_override=True](
+            managed_tensor_slice_to_ndbuffer(input),
+            managed_tensor_slice_to_ndbuffer(starts),
+            managed_tensor_slice_to_ndbuffer(stops),
+            managed_tensor_slice_to_ndbuffer(steps),
+        )
 
 
 # ===----------------------------------------------------------------------===#
