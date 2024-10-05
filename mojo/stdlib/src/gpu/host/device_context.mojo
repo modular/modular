@@ -546,10 +546,6 @@ struct DeviceContextV1:
         self.cuda_context.set_current()
         _memset_async[type](dst.ptr, val, dst.size, self.cuda_stream)
 
-    fn get_memory_info(self) raises -> (c_size_t, c_size_t):
-        self.cuda_context.set_current()
-        return self.cuda_context.get_memory_info()
-
     fn synchronize(self) raises:
         self.cuda_context.set_current()
         self.cuda_stream.synchronize()
@@ -604,3 +600,7 @@ struct DeviceContextV1:
         ) * 10 + self.cuda_context.device._query(
             DeviceAttribute.COMPUTE_CAPABILITY_MINOR
         )
+
+    fn get_memory_info(self) raises -> (c_size_t, c_size_t):
+        self.cuda_context.set_current()
+        return self.cuda_context.get_memory_info()

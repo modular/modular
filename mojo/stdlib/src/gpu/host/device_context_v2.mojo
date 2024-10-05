@@ -20,7 +20,7 @@ alias _DeviceFunctionPtr = UnsafePointer[NoneType]
 alias _DeviceTimerPtr = UnsafePointer[NoneType]
 alias _CharPtr = UnsafePointer[UInt8]
 alias _VoidPtr = UnsafePointer[NoneType]
-alias _SizeT = UInt64
+alias _SizeT = UInt
 
 # Define helper methods to call AsyncRT bindings.
 
@@ -684,23 +684,6 @@ struct DeviceContextV2:
             )
         )
 
-    fn get_memory_info(self) raises -> (c_size_t, c_size_t):
-        var free = c_size_t(0)
-        var total = c_size_t(0)
-        _checked(
-            external_call[
-                "AsyncRT_DeviceContext_getMemoryInfo",
-                _CharPtr,
-                UnsafePointer[c_size_t],
-                UnsafePointer[c_size_t],
-            ](
-                UnsafePointer.address_of(free),
-                UnsafePointer.address_of(total),
-            )
-        )
-
-        return (free, total)
-
     fn print_kernel_timing_info(self):
         """Print profiling info associated with this DeviceContext."""
         not_implemented_yet[
@@ -729,3 +712,24 @@ struct DeviceContextV2:
             "##### UNIMPLEMENTED: DeviceContextV2.compute_capability"
         ]()
         return 0  # FIXME
+
+    fn get_memory_info(self) raises -> (_SizeT, _SizeT):
+        var free = _SizeT(0)
+        var total = _SizeT(0)
+        print("Calling AsyncRT_DeviceContext_getMemoryInfo")
+        # const char *AsyncRT_DeviceContext_getMemoryInfo(const DeviceContext *ctx, size_t *free, size_t *total)
+        _checked(
+            external_call[
+                "AsyncRT_DeviceContext_getMemoryInfo",
+                _CharPtr,
+                _DeviceContextPtr,
+                UnsafePointer[_SizeT],
+                UnsafePointer[_SizeT],
+            ](
+                self._handle,
+                UnsafePointer.address_of(free),
+                UnsafePointer.address_of(total),
+            )
+        )
+
+        return (free, total)
