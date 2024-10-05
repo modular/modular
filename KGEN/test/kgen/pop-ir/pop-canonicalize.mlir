@@ -687,6 +687,18 @@ kgen.func @simd_insertelement() -> (!pop.simd<2, si8>) {
   kgen.return %2 : !pop.simd<2, si8>
 }
 
+// CHECK-LABEL: @simd_insertelement2
+kgen.func @simd_insertelement2() -> (!pop.simd<2, si8>) {
+  // CHECK-NEXT: <30, 0>
+  %idx0 = index.constant 0
+
+  // Start from unknown/undef instead of constant.
+  %0 = kgen.param.constant: simd<2, si8> = <#kgen.unknown : !pop.simd<2, si8>>
+  %1 = kgen.param.constant: scalar<si8> = <30>
+  %2 = pop.simd.insertelement %1, %0[%idx0] : !pop.simd<2, si8>
+  kgen.return %2 : !pop.simd<2, si8>
+}
+
 // CHECK-LABEL: @simd_shuffle
 kgen.func @simd_shuffle() -> !pop.simd<2, si8> {
   // CHECK-NEXT: <3, 2>

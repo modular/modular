@@ -296,6 +296,34 @@ SIMDAttr SIMDAttr::get(uint64_t intVal, SIMDType type) {
   return SIMDAttr::get(scalarVal, type);
 }
 
+/// Create a "zero" value initialized to 0, 0.0, false, etc.  NOTE: This can
+/// return null if the SIMD type is parametric or we don't know how to make a
+/// zero value of the specified dtype.
+SIMDAttr SIMDAttr::getZeroValue(SIMDType type) {
+  auto optDT = type.getResolvedDType();
+  auto optSize = type.getResolvedSize();
+  if (!optDT || !optSize)
+    return {};
+  auto dtype = optDT.value();
+
+  std::optional<DTypeValue> zeroValue;
+  if (dtype.isBool())
+    zeroValue = DTypeValue(false, optDT.value());
+  else if (dtype.isInt()) {
+    APSInt aps(dtype.getIntegerWidthInBits(), /*isUnsigned=*/dtype.isUInt());
+    zeroValue = DTypeValue(aps, dtype);
+  } else if (DTypeValue::isValidFloatDType(dtype)) {
+    auto apf = APFloat::getZero(DTypeValue::getFloatSemantics(dtype));
+    zeroValue = DTypeValue(apf, dtype);
+  }
+
+  if (!zeroValue)
+    return {};
+
+  SmallVector<DTypeValue> elements(optSize.value(), zeroValue.value());
+  return SIMDAttr::get(elements, type);
+}
+
 //===----------------------------------------------------------------------===//
 // custom<DTypeValues>
 //===----------------------------------------------------------------------===//
