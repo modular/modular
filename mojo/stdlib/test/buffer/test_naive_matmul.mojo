@@ -63,7 +63,7 @@ from sys.info import sizeof
 from buffer import NDBuffer
 from buffer.dimlist import DimList
 
-from utils.index import StaticIntTuple
+from utils.index import IndexList
 
 
 fn test_my_naive_matmul[
@@ -85,7 +85,7 @@ fn test_my_naive_matmul[
             var c_val: Scalar[type] = 0
             for k in range(a.dim[1]()):
                 c_val += a[m, k] * b[k, n]
-            c[StaticIntTuple[2](m, n)] = c_val
+            c[IndexList[2](m, n)] = c_val
 
 
 fn fill_a[size: Int](buf: NDBuffer[DType.float32, 2, DimList(size, size)]):
@@ -94,7 +94,7 @@ fn fill_a[size: Int](buf: NDBuffer[DType.float32, 2, DimList(size, size)]):
     for i in range(size):
         for j in range(size):
             var val = Float32(i + 2 * j)
-            buf[StaticIntTuple[2](i, j)] = val
+            buf[IndexList[2](i, j)] = val
 
 
 fn fill_b[size: Int](buf: NDBuffer[DType.float32, 2, DimList(size, size)]):
@@ -103,7 +103,7 @@ fn fill_b[size: Int](buf: NDBuffer[DType.float32, 2, DimList(size, size)]):
     for i in range(size):
         for j in range(size):
             var val = Float32(i // (j + 1) + j)
-            buf[StaticIntTuple[2](i, j)] = val
+            buf[IndexList[2](i, j)] = val
 
 
 fn print_matrix[

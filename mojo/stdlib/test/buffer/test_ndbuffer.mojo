@@ -15,7 +15,7 @@ from buffer.dimlist import DimList
 from memory import memcmp, memset_zero
 from testing import assert_equal
 
-from utils.index import Index, StaticIntTuple
+from utils.index import Index, IndexList
 
 
 # CHECK-LABEL: test_ndbuffer
@@ -32,31 +32,31 @@ fn test_ndbuffer():
         DimList(4, 4),
     ].stack_allocation()
 
-    matrix[StaticIntTuple[2](0, 0)] = 0
-    matrix[StaticIntTuple[2](0, 1)] = 1
-    matrix[StaticIntTuple[2](0, 2)] = 2
-    matrix[StaticIntTuple[2](0, 3)] = 3
-    matrix[StaticIntTuple[2](1, 0)] = 4
-    matrix[StaticIntTuple[2](1, 1)] = 5
-    matrix[StaticIntTuple[2](1, 2)] = 6
-    matrix[StaticIntTuple[2](1, 3)] = 7
-    matrix[StaticIntTuple[2](2, 0)] = 8
-    matrix[StaticIntTuple[2](2, 1)] = 9
-    matrix[StaticIntTuple[2](2, 2)] = 10
-    matrix[StaticIntTuple[2](2, 3)] = 11
-    matrix[StaticIntTuple[2](3, 0)] = 12
-    matrix[StaticIntTuple[2](3, 1)] = 13
-    matrix[StaticIntTuple[2](3, 2)] = 14
-    matrix[StaticIntTuple[2](3, 3)] = 15
+    matrix[IndexList[2](0, 0)] = 0
+    matrix[IndexList[2](0, 1)] = 1
+    matrix[IndexList[2](0, 2)] = 2
+    matrix[IndexList[2](0, 3)] = 3
+    matrix[IndexList[2](1, 0)] = 4
+    matrix[IndexList[2](1, 1)] = 5
+    matrix[IndexList[2](1, 2)] = 6
+    matrix[IndexList[2](1, 3)] = 7
+    matrix[IndexList[2](2, 0)] = 8
+    matrix[IndexList[2](2, 1)] = 9
+    matrix[IndexList[2](2, 2)] = 10
+    matrix[IndexList[2](2, 3)] = 11
+    matrix[IndexList[2](3, 0)] = 12
+    matrix[IndexList[2](3, 1)] = 13
+    matrix[IndexList[2](3, 2)] = 14
+    matrix[IndexList[2](3, 3)] = 15
 
     # CHECK: 11
-    print(_compute_ndbuffer_offset(matrix, StaticIntTuple[2](2, 3)))
+    print(_compute_ndbuffer_offset(matrix, IndexList[2](2, 3)))
 
     # CHECK: 14
-    print(_compute_ndbuffer_offset(matrix, StaticIntTuple[2](3, 2)))
+    print(_compute_ndbuffer_offset(matrix, IndexList[2](3, 2)))
 
     # CHECK: 15
-    print(_compute_ndbuffer_offset(matrix, StaticIntTuple[2](3, 3)))
+    print(_compute_ndbuffer_offset(matrix, IndexList[2](3, 3)))
 
     # CHECK: 2
     print(matrix.get_rank())
@@ -122,15 +122,15 @@ fn test_fill():
         2,
         DimList(3, 3),
     ].stack_allocation()
-    buf[StaticIntTuple[2](0, 0)] = 1
-    buf[StaticIntTuple[2](0, 1)] = 1
-    buf[StaticIntTuple[2](0, 2)] = 1
-    buf[StaticIntTuple[2](1, 0)] = 1
-    buf[StaticIntTuple[2](1, 1)] = 1
-    buf[StaticIntTuple[2](1, 2)] = 1
-    buf[StaticIntTuple[2](2, 0)] = 1
-    buf[StaticIntTuple[2](2, 1)] = 1
-    buf[StaticIntTuple[2](2, 2)] = 1
+    buf[IndexList[2](0, 0)] = 1
+    buf[IndexList[2](0, 1)] = 1
+    buf[IndexList[2](0, 2)] = 1
+    buf[IndexList[2](1, 0)] = 1
+    buf[IndexList[2](1, 1)] = 1
+    buf[IndexList[2](1, 2)] = 1
+    buf[IndexList[2](2, 0)] = 1
+    buf[IndexList[2](2, 1)] = 1
+    buf[IndexList[2](2, 2)] = 1
 
     var filled = NDBuffer[
         DType.index,

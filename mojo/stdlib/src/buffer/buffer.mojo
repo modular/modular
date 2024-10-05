@@ -22,7 +22,7 @@ from memory import UnsafePointer, memset_zero, stack_allocation
 from memory.pointer import AddressSpace, _GPUAddressSpace
 
 from utils._serialize import _serialize
-from utils.index import StaticIntTuple
+from utils.index import IndexList
 from utils.index import product as tuple_product
 from utils.loop import unroll
 from utils.static_tuple import StaticTuple
@@ -304,7 +304,7 @@ struct Buffer[
 
 
 @always_inline
-fn _compute_nd_index(buf: NDBuffer, index: Int) -> StaticIntTuple[buf.rank]:
+fn _compute_nd_index(buf: NDBuffer, index: Int) -> IndexList[buf.rank]:
     """Computes the NDBuffer's offset using the index positions provided.
 
     Args:
@@ -317,9 +317,9 @@ fn _compute_nd_index(buf: NDBuffer, index: Int) -> StaticIntTuple[buf.rank]:
 
     @parameter
     if buf.rank == 0:
-        return StaticIntTuple[buf.rank](0)
+        return IndexList[buf.rank](0)
 
-    var result = StaticIntTuple[buf.rank]()
+    var result = IndexList[buf.rank]()
 
     var curr_index = index
 
@@ -422,7 +422,7 @@ fn _compute_ndbuffer_offset(
 @always_inline
 fn _compute_ndbuffer_offset(
     buf: NDBuffer,
-    idx: StaticIntTuple[buf.rank, **_],
+    idx: IndexList[buf.rank, **_],
 ) -> Int:
     """Computes the NDBuffer's offset using the index positions provided.
 
@@ -439,7 +439,7 @@ fn _compute_ndbuffer_offset(
 @always_inline
 fn _compute_ndbuffer_stride[
     rank: Int
-](shape: StaticIntTuple[rank, **_]) -> __type_of(shape):
+](shape: IndexList[rank, **_]) -> __type_of(shape):
     """Computes the NDBuffer's default dynamic strides using the input shape.
     The default strides correspond to contiguous memory layout.
 
@@ -505,9 +505,9 @@ struct NDBuffer[
     var data: UnsafePointer[Scalar[type], address_space]
     """The underlying data for the buffer. The pointer is not owned by the
     NDBuffer."""
-    var dynamic_shape: StaticIntTuple[rank]
+    var dynamic_shape: IndexList[rank]
     """The dynamic value of the shape."""
-    var dynamic_stride: StaticIntTuple[rank]
+    var dynamic_stride: IndexList[rank]
     """The dynamic stride of the buffer."""
 
     @staticmethod
@@ -521,8 +521,8 @@ struct NDBuffer[
         """
 
         self.data = UnsafePointer[Scalar[type], address_space]()
-        self.dynamic_shape = StaticIntTuple[rank]()
-        self.dynamic_stride = StaticIntTuple[rank]()
+        self.dynamic_shape = IndexList[rank]()
+        self.dynamic_stride = IndexList[rank]()
 
     @always_inline
     fn __init__(
@@ -555,7 +555,7 @@ struct NDBuffer[
         ptr: UnsafePointer[
             __mlir_type[`!pop.scalar<`, type.value, `>`], address_space
         ],
-        dynamic_shape: StaticIntTuple[rank],
+        dynamic_shape: IndexList[rank],
     ):
         """Constructs an NDBuffer with statically known rank, but dynamic
         shapes and type.
@@ -575,7 +575,7 @@ struct NDBuffer[
     fn __init__(
         inout self,
         ptr: UnsafePointer[Scalar[type], address_space],
-        dynamic_shape: StaticIntTuple[rank],
+        dynamic_shape: IndexList[rank],
     ):
         """Constructs an NDBuffer with statically known rank, but dynamic
         shapes and type.
@@ -613,8 +613,8 @@ struct NDBuffer[
     fn __init__(
         inout self,
         ptr: UnsafePointer[Scalar[type], address_space],
-        dynamic_shape: StaticIntTuple[rank],
-        dynamic_stride: StaticIntTuple[rank],
+        dynamic_shape: IndexList[rank],
+        dynamic_stride: IndexList[rank],
     ):
         """Constructs a strided NDBuffer with statically known rank, but
         dynamic shapes and type.
@@ -636,7 +636,7 @@ struct NDBuffer[
         inout self,
         ptr: UnsafePointer[Scalar[type], address_space],
         dynamic_shape: DimList,
-        dynamic_stride: StaticIntTuple[rank],
+        dynamic_stride: IndexList[rank],
     ):
         """Constructs a strided NDBuffer with statically known rank, but
         dynamic shapes and type.
@@ -665,13 +665,13 @@ struct NDBuffer[
         return rank
 
     @always_inline
-    fn get_shape(self) -> StaticIntTuple[rank]:
+    fn get_shape(self) -> IndexList[rank]:
         """Returns the shapes of the buffer.
 
         Returns:
             A static tuple of size 'rank' representing shapes of the NDBuffer.
         """
-        var res = StaticIntTuple[rank]()
+        var res = IndexList[rank]()
 
         @parameter
         for i in range(rank):
@@ -679,7 +679,7 @@ struct NDBuffer[
         return res
 
     @always_inline
-    fn get_nd_index(self, idx: Int) -> StaticIntTuple[rank]:
+    fn get_nd_index(self, idx: Int) -> IndexList[rank]:
         """Computes the NDBuffer's ND-index based on the flat index.
 
         Args:
@@ -781,7 +781,7 @@ struct NDBuffer[
 
     @always_inline
     fn _offset(
-        self, idx: StaticIntTuple[rank, **_]
+        self, idx: IndexList[rank, **_]
     ) -> UnsafePointer[Scalar[type], address_space]:
         constrained[rank <= _MAX_RANK]()
         return self.data.offset(_compute_ndbuffer_offset(self, idx))
@@ -814,7 +814,7 @@ struct NDBuffer[
         return self.load[width=1](idx)
 
     @always_inline
-    fn __getitem__(self, idx: StaticIntTuple[rank]) -> Scalar[type]:
+    fn __getitem__(self, idx: IndexList[rank]) -> Scalar[type]:
         """Gets an element from the buffer from the specified index.
 
         Args:
@@ -828,7 +828,7 @@ struct NDBuffer[
     @always_inline
     fn tile[
         *tile_sizes: Dim
-    ](self, tile_coords: StaticIntTuple[rank]) -> NDBuffer[
+    ](self, tile_coords: IndexList[rank]) -> NDBuffer[
         type, rank, DimList(tile_sizes), address_space=address_space
     ]:
         """Returns an n-d tile "slice" of the buffer of size tile_sizes at
@@ -859,7 +859,7 @@ struct NDBuffer[
         ]()
 
         var offset = 0
-        var shape = StaticIntTuple[rank]()
+        var shape = IndexList[rank]()
 
         @parameter
         for i in range(rank):
@@ -936,7 +936,7 @@ struct NDBuffer[
     @always_inline
     fn load[
         *, width: Int = 1, alignment: Int = Self._default_alignment[width]()
-    ](self, idx: StaticIntTuple[rank]) -> SIMD[type, width]:
+    ](self, idx: IndexList[rank]) -> SIMD[type, width]:
         """Loads a simd value from the buffer at the specified index.
 
         Constraints:
@@ -982,7 +982,7 @@ struct NDBuffer[
         return self._offset(idx).load[width=width, alignment=alignment]()
 
     @always_inline
-    fn __setitem__(self, idx: StaticIntTuple[rank], val: Scalar[type]):
+    fn __setitem__(self, idx: IndexList[rank], val: Scalar[type]):
         """Stores a single value into the buffer at the specified index.
 
         Args:
@@ -999,12 +999,12 @@ struct NDBuffer[
             idx: Index of the element to retrieve.
             val: The value to store.
         """
-        self.store[width=1](StaticIntTuple[rank](idx), val)
+        self.store[width=1](IndexList[rank](idx), val)
 
     @always_inline
     fn store[
         *, width: Int = 1, alignment: Int = Self._default_alignment[width]()
-    ](self, idx: StaticIntTuple[rank, **_], val: SIMD[type, width]):
+    ](self, idx: IndexList[rank, **_], val: SIMD[type, width]):
         """Stores a simd value into the buffer at the specified index.
 
         Constraints:
@@ -1251,7 +1251,7 @@ struct NDBuffer[
         prefetch[params](self._offset(idx))
 
     @always_inline
-    fn prefetch[params: PrefetchOptions](self, indices: StaticIntTuple[rank]):
+    fn prefetch[params: PrefetchOptions](self, indices: IndexList[rank]):
         """Prefetches the data at the given index.
 
         Parameters:
@@ -1567,7 +1567,7 @@ struct DynamicRankBuffer:
     """The pointer to the buffer."""
     var rank: Int
     """The buffer rank. Has a max value of `_MAX_RANK`."""
-    var shape: StaticIntTuple[_MAX_RANK]
+    var shape: IndexList[_MAX_RANK]
     """The dynamic shape of the buffer."""
     var type: DType
     """The dynamic dtype of the buffer."""
@@ -1577,7 +1577,7 @@ struct DynamicRankBuffer:
         inout self,
         data: UnsafePointer[NoneType],
         rank: Int,
-        shape: StaticIntTuple[_MAX_RANK],
+        shape: IndexList[_MAX_RANK],
         type: DType,
     ):
         """Construct DynamicRankBuffer.
@@ -1636,7 +1636,7 @@ struct DynamicRankBuffer:
     @always_inline
     fn to_ndbuffer[
         type: DType, rank: Int
-    ](self, stride: StaticIntTuple[rank]) -> NDBuffer[type, rank]:
+    ](self, stride: IndexList[rank]) -> NDBuffer[type, rank]:
         """Casts the buffer to NDBuffer.
 
         Constraints:
@@ -1721,7 +1721,7 @@ struct DynamicRankBuffer:
         return tuple_product(self.shape, self.rank)
 
     @always_inline
-    fn get_shape[rank: Int](self) -> StaticIntTuple[rank]:
+    fn get_shape[rank: Int](self) -> IndexList[rank]:
         """Gets a static tuple representing the buffer shape.
 
         Parameters:
@@ -1746,8 +1746,8 @@ struct DynamicRankBuffer:
         return self.shape[idx]
 
     @always_inline
-    fn _shape_to_static_tuple[rank: Int](self) -> StaticIntTuple[rank]:
-        var result = StaticIntTuple[rank]()
+    fn _shape_to_static_tuple[rank: Int](self) -> IndexList[rank]:
+        var result = IndexList[rank]()
 
         @parameter
         for idx in range(rank):
@@ -1773,7 +1773,7 @@ fn _collapse_batch_dim(input: DynamicRankBuffer) -> DynamicRankBuffer:
     var batch_size = 1
     for i in range(0, input.rank - 2):
         batch_size *= input.shape[i]
-    var collapsed_shape = StaticIntTuple[_MAX_RANK]()
+    var collapsed_shape = IndexList[_MAX_RANK]()
     collapsed_shape[0] = batch_size
     collapsed_shape[1] = input.shape[input.rank - 2]
     collapsed_shape[2] = input.shape[input.rank - 1]

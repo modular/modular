@@ -13,7 +13,7 @@ from buffer import Dim
 ```
 """
 
-from utils import StaticIntTuple, StaticTuple, unroll
+from utils import IndexList, StaticTuple, unroll
 
 # ===----------------------------------------------------------------------===#
 # Dim
@@ -545,7 +545,7 @@ struct DimList(
 
 
 @always_inline
-fn _make_tuple[size: Int](values: DimList) -> StaticIntTuple[size] as result:
+fn _make_tuple[size: Int](values: DimList) -> IndexList[size] as result:
     """Creates a tuple constant using the specified values.
 
     Args:

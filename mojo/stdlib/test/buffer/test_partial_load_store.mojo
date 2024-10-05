@@ -16,7 +16,7 @@ from buffer.buffer import (
 from buffer.dimlist import DimList
 from memory import stack_allocation
 
-from utils.index import StaticIntTuple
+from utils.index import IndexList
 
 
 # CHECK-LABEL: test_partial_load_store
@@ -89,7 +89,7 @@ fn test_partial_load_store():
 
     # Test partial load:
     var nd_partial_load_data = partial_simd_load[4](
-        read_nd_buffer._offset(StaticIntTuple[2](3, 2)),
+        read_nd_buffer._offset(IndexList[2](3, 2)),
         0,
         2,
         123,  # lbound  # rbound  # pad value
@@ -99,13 +99,13 @@ fn test_partial_load_store():
 
     # Test partial store
     partial_simd_store[4](
-        write_nd_buffer._offset(StaticIntTuple[2](3, 1)),
+        write_nd_buffer._offset(IndexList[2](3, 1)),
         0,  # lbound
         3,  # rbound
         nd_partial_load_data,  # value
     )
     var nd_partial_store_data = write_nd_buffer.load[width=4](
-        StaticIntTuple[2](3, 0)
+        IndexList[2](3, 0)
     )
 
     # CHECK: [0, 14, 15, 123]
