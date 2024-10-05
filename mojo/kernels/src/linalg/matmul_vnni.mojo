@@ -19,7 +19,7 @@ from buffer.dimlist import DimList
 from memory import UnsafePointer, stack_allocation
 from memory.unsafe import bitcast
 
-from utils.index import Index, StaticIntTuple
+from utils.index import Index, IndexList
 from utils.loop import unroll
 
 from .accumulate import _Accumulator
@@ -49,8 +49,8 @@ struct Inner_matmul_vnni[saturated_vnni: Bool](InnerMatmulKernel):
             _, kernel_rows, kernel_cols // simd_size, simd_size
         ],
         global_offset: GemmShape,
-        tile_n_k_idx: StaticIntTuple[2],
-        tile_n_k: StaticIntTuple[2],
+        tile_n_k_idx: IndexList[2],
+        tile_n_k: IndexList[2],
     ):
         """Utility function on the inner loop. Launch one tile of fma on the
         local accumulation buffer while processing a single column of A.
@@ -166,7 +166,7 @@ struct Inner_matmul_vnni[saturated_vnni: Bool](InnerMatmulKernel):
         b_packed: NDBuffer[_, 3, _],
         global_offset: GemmShape,
         global_bound: GemmShape,
-        tile_n_k: StaticIntTuple[2],
+        tile_n_k: IndexList[2],
         skip_boundary_check: Bool,
     ):
         """Utility function on the inner loop. Run the inner kernel on the whole

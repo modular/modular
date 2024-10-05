@@ -15,7 +15,7 @@ from buffer.dimlist import DimList
 from memory import UnsafePointer, memcpy
 from runtime.asyncrt import parallelism_level
 
-from utils.index import StaticIntTuple, StaticTuple
+from utils.index import IndexList, StaticTuple
 from utils.loop import unroll
 
 
@@ -34,10 +34,10 @@ fn _transpose_inplace_4x4[
         ],
     ](bufloat0)
 
-    var row0 = buf.load[width=4](StaticIntTuple[2](0, 0))
-    var row1 = buf.load[width=4](StaticIntTuple[2](1, 0))
-    var row2 = buf.load[width=4](StaticIntTuple[2](2, 0))
-    var row3 = buf.load[width=4](StaticIntTuple[2](3, 0))
+    var row0 = buf.load[width=4](IndexList[2](0, 0))
+    var row1 = buf.load[width=4](IndexList[2](1, 0))
+    var row2 = buf.load[width=4](IndexList[2](2, 0))
+    var row3 = buf.load[width=4](IndexList[2](3, 0))
 
     var tmp0 = row0.shuffle[0, 1, 4, 5](row1)
     var tmp1 = row2.shuffle[0, 1, 4, 5](row3)
@@ -49,10 +49,10 @@ fn _transpose_inplace_4x4[
     var r2 = tmp2.shuffle[0, 2, 4, 6](tmp3)
     var r3 = tmp2.shuffle[1, 3, 5, 7](tmp3)
 
-    buf.store[width=4](StaticIntTuple[2](0, 0), r0)
-    buf.store[width=4](StaticIntTuple[2](1, 0), r1)
-    buf.store[width=4](StaticIntTuple[2](2, 0), r2)
-    buf.store[width=4](StaticIntTuple[2](3, 0), r3)
+    buf.store[width=4](IndexList[2](0, 0), r0)
+    buf.store[width=4](IndexList[2](1, 0), r1)
+    buf.store[width=4](IndexList[2](2, 0), r2)
+    buf.store[width=4](IndexList[2](3, 0), r3)
 
 
 fn _transpose_inplace_8x8[
@@ -70,14 +70,14 @@ fn _transpose_inplace_8x8[
         ],
     ](bufloat0)
 
-    var row0 = buf.load[width=8](StaticIntTuple[2](0, 0))
-    var row1 = buf.load[width=8](StaticIntTuple[2](1, 0))
-    var row2 = buf.load[width=8](StaticIntTuple[2](2, 0))
-    var row3 = buf.load[width=8](StaticIntTuple[2](3, 0))
-    var row4 = buf.load[width=8](StaticIntTuple[2](4, 0))
-    var row5 = buf.load[width=8](StaticIntTuple[2](5, 0))
-    var row6 = buf.load[width=8](StaticIntTuple[2](6, 0))
-    var row7 = buf.load[width=8](StaticIntTuple[2](7, 0))
+    var row0 = buf.load[width=8](IndexList[2](0, 0))
+    var row1 = buf.load[width=8](IndexList[2](1, 0))
+    var row2 = buf.load[width=8](IndexList[2](2, 0))
+    var row3 = buf.load[width=8](IndexList[2](3, 0))
+    var row4 = buf.load[width=8](IndexList[2](4, 0))
+    var row5 = buf.load[width=8](IndexList[2](5, 0))
+    var row6 = buf.load[width=8](IndexList[2](6, 0))
+    var row7 = buf.load[width=8](IndexList[2](7, 0))
 
     @parameter
     fn _apply_permute_0(
@@ -142,14 +142,14 @@ fn _transpose_inplace_8x8[
     var r6 = _apply_permute_5(k130, k570)
     var r7 = _apply_permute_5(k131, k571)
 
-    buf.store[width=8](StaticIntTuple[2](0, 0), r0)
-    buf.store[width=8](StaticIntTuple[2](1, 0), r1)
-    buf.store[width=8](StaticIntTuple[2](2, 0), r2)
-    buf.store[width=8](StaticIntTuple[2](3, 0), r3)
-    buf.store[width=8](StaticIntTuple[2](4, 0), r4)
-    buf.store[width=8](StaticIntTuple[2](5, 0), r5)
-    buf.store[width=8](StaticIntTuple[2](6, 0), r6)
-    buf.store[width=8](StaticIntTuple[2](7, 0), r7)
+    buf.store[width=8](IndexList[2](0, 0), r0)
+    buf.store[width=8](IndexList[2](1, 0), r1)
+    buf.store[width=8](IndexList[2](2, 0), r2)
+    buf.store[width=8](IndexList[2](3, 0), r3)
+    buf.store[width=8](IndexList[2](4, 0), r4)
+    buf.store[width=8](IndexList[2](5, 0), r5)
+    buf.store[width=8](IndexList[2](6, 0), r6)
+    buf.store[width=8](IndexList[2](7, 0), r7)
 
 
 fn _transpose_inplace_16x16[
@@ -231,22 +231,22 @@ fn _transpose_inplace_16x16[
             4, 5, 6, 7, 12, 13, 14, 15, 20, 21, 22, 23, 28, 29, 30, 31
         ](other)
 
-    var row00 = buf.load[width=16](StaticIntTuple[2](0, 0))
-    var row01 = buf.load[width=16](StaticIntTuple[2](1, 0))
-    var row02 = buf.load[width=16](StaticIntTuple[2](2, 0))
-    var row03 = buf.load[width=16](StaticIntTuple[2](3, 0))
-    var row04 = buf.load[width=16](StaticIntTuple[2](4, 0))
-    var row05 = buf.load[width=16](StaticIntTuple[2](5, 0))
-    var row06 = buf.load[width=16](StaticIntTuple[2](6, 0))
-    var row07 = buf.load[width=16](StaticIntTuple[2](7, 0))
-    var row08 = buf.load[width=16](StaticIntTuple[2](8, 0))
-    var row09 = buf.load[width=16](StaticIntTuple[2](9, 0))
-    var row10 = buf.load[width=16](StaticIntTuple[2](10, 0))
-    var row11 = buf.load[width=16](StaticIntTuple[2](11, 0))
-    var row12 = buf.load[width=16](StaticIntTuple[2](12, 0))
-    var row13 = buf.load[width=16](StaticIntTuple[2](13, 0))
-    var row14 = buf.load[width=16](StaticIntTuple[2](14, 0))
-    var row15 = buf.load[width=16](StaticIntTuple[2](15, 0))
+    var row00 = buf.load[width=16](IndexList[2](0, 0))
+    var row01 = buf.load[width=16](IndexList[2](1, 0))
+    var row02 = buf.load[width=16](IndexList[2](2, 0))
+    var row03 = buf.load[width=16](IndexList[2](3, 0))
+    var row04 = buf.load[width=16](IndexList[2](4, 0))
+    var row05 = buf.load[width=16](IndexList[2](5, 0))
+    var row06 = buf.load[width=16](IndexList[2](6, 0))
+    var row07 = buf.load[width=16](IndexList[2](7, 0))
+    var row08 = buf.load[width=16](IndexList[2](8, 0))
+    var row09 = buf.load[width=16](IndexList[2](9, 0))
+    var row10 = buf.load[width=16](IndexList[2](10, 0))
+    var row11 = buf.load[width=16](IndexList[2](11, 0))
+    var row12 = buf.load[width=16](IndexList[2](12, 0))
+    var row13 = buf.load[width=16](IndexList[2](13, 0))
+    var row14 = buf.load[width=16](IndexList[2](14, 0))
+    var row15 = buf.load[width=16](IndexList[2](15, 0))
 
     var k00 = _apply_permute_0(row00, row01)
     var k01 = _apply_permute_1(row00, row01)
@@ -316,22 +316,22 @@ fn _transpose_inplace_16x16[
     var r14 = _apply_permute_7(t06, t14)
     var r15 = _apply_permute_7(t07, t15)
 
-    buf.store[width=16](StaticIntTuple[2](0, 0), r00)
-    buf.store[width=16](StaticIntTuple[2](1, 0), r01)
-    buf.store[width=16](StaticIntTuple[2](2, 0), r02)
-    buf.store[width=16](StaticIntTuple[2](3, 0), r03)
-    buf.store[width=16](StaticIntTuple[2](4, 0), r04)
-    buf.store[width=16](StaticIntTuple[2](5, 0), r05)
-    buf.store[width=16](StaticIntTuple[2](6, 0), r06)
-    buf.store[width=16](StaticIntTuple[2](7, 0), r07)
-    buf.store[width=16](StaticIntTuple[2](8, 0), r08)
-    buf.store[width=16](StaticIntTuple[2](9, 0), r09)
-    buf.store[width=16](StaticIntTuple[2](10, 0), r10)
-    buf.store[width=16](StaticIntTuple[2](11, 0), r11)
-    buf.store[width=16](StaticIntTuple[2](12, 0), r12)
-    buf.store[width=16](StaticIntTuple[2](13, 0), r13)
-    buf.store[width=16](StaticIntTuple[2](14, 0), r14)
-    buf.store[width=16](StaticIntTuple[2](15, 0), r15)
+    buf.store[width=16](IndexList[2](0, 0), r00)
+    buf.store[width=16](IndexList[2](1, 0), r01)
+    buf.store[width=16](IndexList[2](2, 0), r02)
+    buf.store[width=16](IndexList[2](3, 0), r03)
+    buf.store[width=16](IndexList[2](4, 0), r04)
+    buf.store[width=16](IndexList[2](5, 0), r05)
+    buf.store[width=16](IndexList[2](6, 0), r06)
+    buf.store[width=16](IndexList[2](7, 0), r07)
+    buf.store[width=16](IndexList[2](8, 0), r08)
+    buf.store[width=16](IndexList[2](9, 0), r09)
+    buf.store[width=16](IndexList[2](10, 0), r10)
+    buf.store[width=16](IndexList[2](11, 0), r11)
+    buf.store[width=16](IndexList[2](12, 0), r12)
+    buf.store[width=16](IndexList[2](13, 0), r13)
+    buf.store[width=16](IndexList[2](14, 0), r14)
+    buf.store[width=16](IndexList[2](15, 0), r15)
 
 
 fn _transpose_inplace_naive[
@@ -342,8 +342,8 @@ fn _transpose_inplace_naive[
     for i in range(rows):
         for j in range(i + 1, cols):
             var tmp = buf[i, j]
-            buf[StaticIntTuple[2](i, j)] = buf[j, i]
-            buf[StaticIntTuple[2](j, i)] = tmp
+            buf[IndexList[2](i, j)] = buf[j, i]
+            buf[IndexList[2](j, i)] = tmp
 
 
 fn transpose_inplace[
@@ -431,8 +431,8 @@ fn _fill_strides[
 fn _collapse_unpermuted_dims[
     rank: Int, tuple_size: Int
 ](
-    inout simplified_shape: StaticIntTuple[tuple_size],
-    inout simplified_perms: StaticIntTuple[tuple_size],
+    inout simplified_shape: IndexList[tuple_size],
+    inout simplified_perms: IndexList[tuple_size],
     dim: Int,
 ):
     var merged_dim = simplified_perms[dim]
@@ -456,8 +456,8 @@ fn _collapse_unpermuted_dims[
 fn _devare_size_1_dim[
     rank: Int, tuple_size: Int
 ](
-    inout simplified_shape: StaticIntTuple[tuple_size],
-    inout simplified_perms: StaticIntTuple[tuple_size],
+    inout simplified_shape: IndexList[tuple_size],
+    inout simplified_perms: IndexList[tuple_size],
     dim: Int,
 ):
     for i in range(dim, rank - 1):
@@ -481,8 +481,8 @@ fn _simplify_transpose_perms_impl[
     rank: Int, tuple_size: Int
 ](
     inout simplified_rank: Int,
-    inout simplified_shape: StaticIntTuple[tuple_size],
-    inout simplified_perms: StaticIntTuple[tuple_size],
+    inout simplified_shape: IndexList[tuple_size],
+    inout simplified_perms: IndexList[tuple_size],
 ):
     @parameter
     if rank < 2:
@@ -513,8 +513,8 @@ fn _simplify_transpose_perms[
     rank: Int
 ](
     inout simplified_rank: Int,
-    inout simplified_shape: StaticIntTuple[rank],
-    inout simplified_perms: StaticIntTuple[rank],
+    inout simplified_shape: IndexList[rank],
+    inout simplified_perms: IndexList[rank],
 ):
     """Simplify the given permutation pattern.
 
@@ -537,8 +537,8 @@ fn _simplify_transpose_perms[
 @always_inline
 fn _convert_transpose_perms_to_static_int_tuple[
     rank: Int
-](perms: UnsafePointer[Scalar[DType.index]]) -> StaticIntTuple[rank]:
-    var simplified_perms = StaticIntTuple[rank]()
+](perms: UnsafePointer[Scalar[DType.index]]) -> IndexList[rank]:
+    var simplified_perms = IndexList[rank]()
     # TODO: unroll
     for j in range(rank):
         simplified_perms[j] = perms.load(j)[0].value
@@ -589,7 +589,7 @@ fn _transpose_2d_serial_tiled[
     output: NDBuffer[type, rank, _],
     input: NDBuffer[type, rank, _],
     perms: UnsafePointer[Scalar[DType.index]],
-    simplified_input_shape: StaticIntTuple[rank],
+    simplified_input_shape: IndexList[rank],
     simplified_rank: Int,
     offset: Int,
 ):
@@ -653,7 +653,7 @@ fn _transpose_2d_parallel_tiled[
     output: NDBuffer[type, rank, _],
     input: NDBuffer[type, rank, _],
     perms: UnsafePointer[Scalar[DType.index]],
-    simplified_input_shape: StaticIntTuple[rank],
+    simplified_input_shape: IndexList[rank],
     simplified_rank: Int,
     offset: Int,
 ):
@@ -718,7 +718,7 @@ fn transpose_2d[
     output: NDBuffer[type, rank, output_shape],
     input: NDBuffer[type, rank, input_shape],
     perms: UnsafePointer[Scalar[DType.index]],
-    simplified_input_shape: StaticIntTuple[rank],
+    simplified_input_shape: IndexList[rank],
     simplified_rank: Int,
     offset: Int,
 ):
@@ -826,7 +826,7 @@ fn transpose_4d_swap_middle[
     output: NDBuffer[type, rank, _],
     input: NDBuffer[type, rank, _],
     perms: UnsafePointer[Scalar[DType.index]],
-    simplified_input_shape: StaticIntTuple[rank],
+    simplified_input_shape: IndexList[rank],
     simplified_rank: Int,
 ):
     @parameter
@@ -853,7 +853,7 @@ fn transpose_3d_swap_outer[
     output: NDBuffer[type, rank, output_shape],
     input: NDBuffer[type, rank, input_shape],
     perms: UnsafePointer[Scalar[DType.index]],
-    simplified_input_shape: StaticIntTuple[rank],
+    simplified_input_shape: IndexList[rank],
     simplified_rank: Int,
 ):
     @parameter
@@ -878,7 +878,7 @@ fn transpose_3d_swap_inner[
     output: NDBuffer[type, rank, _],
     input: NDBuffer[type, rank, _],
     perms: UnsafePointer[Scalar[DType.index]],
-    simplified_input_shape: StaticIntTuple[rank],
+    simplified_input_shape: IndexList[rank],
     simplified_rank: Int,
 ):
     @parameter

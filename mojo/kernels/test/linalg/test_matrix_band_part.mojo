@@ -11,7 +11,7 @@ from linalg.matrix_band_part import matrix_band_part as _matrix_band_part
 from runtime.asyncrt import MojoCallContextPtr
 from testing import assert_equal
 
-from utils import StaticIntTuple
+from utils import IndexList
 
 
 def matrix_band_part[
@@ -39,8 +39,8 @@ def matrix_band_part[
     fn input_fn[
         width: Int,
         _rank: Int,
-    ](coords: StaticIntTuple[_rank]) -> SIMD[type, width]:
-        return input.load[width=width](rebind[StaticIntTuple[rank]](coords))
+    ](coords: IndexList[_rank]) -> SIMD[type, width]:
+        return input.load[width=width](rebind[IndexList[rank]](coords))
 
     _matrix_band_part[
         type,

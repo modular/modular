@@ -23,7 +23,7 @@ from linalg.packing import (
 from memory import UnsafePointer
 from testing import assert_almost_equal, assert_equal
 
-from utils.index import Index, StaticIntTuple
+from utils.index import Index, IndexList
 
 alias alignment = 64
 
@@ -59,7 +59,7 @@ def test_matmul[
     var b_ptr = UnsafePointer[Scalar[b_type], alignment=alignment].alloc(k * n)
     var b = NDBuffer[b_type, 2, b_shape](b_ptr, Index(k, n))
 
-    var padded_n_k = StaticIntTuple[2]()
+    var padded_n_k = IndexList[2]()
     if kernel_type_m != 0:
         padded_n_k = _pack_matmul_b_shape_func_impl[
             a_type,
@@ -107,21 +107,21 @@ def test_matmul[
     for i in range(m):
         for p in range(k):
             # uint8 but limited to [0,127]
-            a[StaticIntTuple[2]((i, p))] = cnt % vnni_range
+            a[IndexList[2]((i, p))] = cnt % vnni_range
             cnt += 1
 
     cnt = 0
     for p in range(k):
         for j in range(n):
             # int8 [-128, 127]
-            b[StaticIntTuple[2]((p, j))] = cnt % 256 - 128
-            bp[StaticIntTuple[2]((p, j))] = b[StaticIntTuple[2]((p, j))]
+            b[IndexList[2]((p, j))] = cnt % 256 - 128
+            bp[IndexList[2]((p, j))] = b[IndexList[2]((p, j))]
             cnt += 1
 
     for i in range(m):
         for j in range(n):
-            c[StaticIntTuple[2]((i, j))] = 0
-            golden[StaticIntTuple[2]((i, j))] = c[StaticIntTuple[2]((i, j))]
+            c[IndexList[2]((i, j))] = 0
+            golden[IndexList[2]((i, j))] = c[IndexList[2]((i, j))]
 
     @parameter
     if b_packed:

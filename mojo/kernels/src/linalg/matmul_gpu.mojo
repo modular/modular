@@ -48,7 +48,7 @@ from layout.nd_buffer_stub import (
 )
 from memory import UnsafePointer, bitcast, stack_allocation, memset_zero
 
-from utils import StaticIntTuple
+from utils import IndexList
 from utils.index import Index
 from utils.numerics import get_accum_type
 from utils.static_tuple import StaticTuple
@@ -425,8 +425,8 @@ fn split_k_reduce[
     @always_inline
     @__copy_capture(A, B, N)
     @parameter
-    fn _reduce[simd_width: Int, rank: Int](idx0: StaticIntTuple[rank]):
-        var idx = rebind[StaticIntTuple[2]](idx0)
+    fn _reduce[simd_width: Int, rank: Int](idx0: IndexList[rank]):
+        var idx = rebind[IndexList[2]](idx0)
         var i = idx[0]
         var j = idx[1]
 
@@ -435,7 +435,7 @@ fn split_k_reduce[
             vec += B.load[width=simd_width](i, j + k * N)
         A.store[width=simd_width](idx, vec)
 
-    elementwise[_reduce, pack_size, target="cuda"](StaticIntTuple[2](M, N), ctx)
+    elementwise[_reduce, pack_size, target="cuda"](IndexList[2](M, N), ctx)
 
 
 @always_inline
@@ -458,7 +458,7 @@ fn split_k_reduce[
     @always_inline
     @__copy_capture(c, work_space, num_partitions)
     @parameter
-    fn _reduce[simd_width: Int, rank: Int](c_coord: StaticIntTuple[rank]):
+    fn _reduce[simd_width: Int, rank: Int](c_coord: IndexList[rank]):
         var idx = Index(0, c_coord[0], c_coord[1])
         var vec = work_space.load[width=simd_width](idx)
         for k in range(1, num_partitions):
@@ -469,10 +469,10 @@ fn split_k_reduce[
         @parameter
         if elementwise_lambda_fn:
             alias epilogue = elementwise_lambda_fn.value()
-            epilogue(rebind[StaticIntTuple[2]](c_coord), vec.cast[c_type]())
+            epilogue(rebind[IndexList[2]](c_coord), vec.cast[c_type]())
         else:
             c.store[width=simd_width](
-                rebind[StaticIntTuple[2]](c_coord), vec.cast[c_type]()
+                rebind[IndexList[2]](c_coord), vec.cast[c_type]()
             )
 
     elementwise[_reduce, simd_width, target="cuda"](Index(M, N), ctx)

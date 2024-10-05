@@ -26,7 +26,7 @@ from linalg.utils import (
     use_vnni_fn,
 )
 
-from utils import StaticIntTuple
+from utils import IndexList
 from utils.index import Index
 
 alias M: Int = 64
@@ -45,7 +45,7 @@ fn _matmul_inner_loop[
     b_packed: NDBuffer[_, 3, _],
     global_offset: GemmShape,
     global_bound: GemmShape,
-    tile_n_k: StaticIntTuple[2],
+    tile_n_k: IndexList[2],
     skip_boundary_check: Bool,
 ):
     alias kernel_id = select_inner_kernel[a.type, b_packed.type, c.type]()

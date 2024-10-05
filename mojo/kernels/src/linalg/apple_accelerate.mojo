@@ -21,7 +21,7 @@ from algorithm.functional import (
 from buffer.buffer import NDBuffer
 from buffer.dimlist import DimList
 
-from utils import StaticIntTuple
+from utils import IndexList
 from utils.index import Index
 
 from .bmm import _reshape_nd_buffer_with_batch_to_3d
@@ -316,7 +316,7 @@ fn apple_gemv[
     # TODO: Experiment with this.
     alias parallelism_grain_size = 16
     parallelize_over_rows[process_rows](
-        StaticIntTuple[2](N, K), 1, parallelism_grain_size
+        IndexList[2](N, K), 1, parallelism_grain_size
     )
 
     transposed_b_ptr.free()
@@ -373,14 +373,12 @@ fn apple_matmul[
             @parameter
             fn epilogue_on_col_chunk[
                 simd_width: Int, rank: Int
-            ](idx: StaticIntTuple[rank]):
+            ](idx: IndexList[rank]):
                 var c_coord = (idx[0], idx[1])
                 var c_val = c.load[width=simd_width](c_coord)
                 epilogue[c.type, simd_width](c_coord, c_val)
 
-            elementwise[epilogue_on_col_chunk, simd_size](
-                StaticIntTuple[2](m, n)
-            )
+            elementwise[epilogue_on_col_chunk, simd_size](IndexList[2](m, n))
         return
 
     constrained[False, "unsupported type in apple accelerate"]()
@@ -443,14 +441,14 @@ fn apple_batched_matmul[
 
         alias rank = c.rank
         var batch_coords = _get_start_indices_of_nth_subvolume[2](
-            batch, rebind[StaticIntTuple[rank]](c.get_shape())
+            batch, rebind[IndexList[rank]](c.get_shape())
         )
 
         @parameter
         @__copy_capture(batch_coords)
         fn elementwise_lambda_2d[
             c_type: DType, width: Int, *, alignment: Int = 1
-        ](out_coords: StaticIntTuple[2], out_val: SIMD[c_type, width]):
+        ](out_coords: IndexList[2], out_val: SIMD[c_type, width]):
             var local_batch_coords = batch_coords
             local_batch_coords[rank - 1] = out_coords[1]
             local_batch_coords[rank - 2] = out_coords[0]

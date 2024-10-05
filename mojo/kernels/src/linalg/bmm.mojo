@@ -25,7 +25,7 @@ from register import mogg_register, mogg_register_shape_func
 from runtime.asyncrt import MojoCallContextPtr, parallelism_level
 from runtime.tracing import Trace, TraceLevel, trace_arg
 
-from utils.index import StaticIntTuple
+from utils.index import IndexList
 from utils.numerics import get_accum_type
 
 from .apple_accelerate import apple_batched_matmul, use_apple_accelerate_lib
@@ -44,7 +44,7 @@ from .utils import (
 
 alias elementwise_epilogue_type = fn[
     c_type: DType, width: Int, rank: Int, *, alignment: Int = 1
-] (StaticIntTuple[rank], SIMD[c_type, width]) capturing -> None
+] (IndexList[rank], SIMD[c_type, width]) capturing -> None
 
 
 # Similar to _get_start_indices_of_nth_subvolume but returns only the batch
@@ -52,8 +52,8 @@ alias elementwise_epilogue_type = fn[
 @always_inline
 fn _get_batch_dims[
     rank: Int
-](flat_index: Int, shape: StaticIntTuple[rank]) -> StaticIntTuple[rank]:
-    var out = StaticIntTuple[rank]()
+](flat_index: Int, shape: IndexList[rank]) -> IndexList[rank]:
+    var out = IndexList[rank]()
     var curr_index = flat_index
 
     @parameter
@@ -80,7 +80,7 @@ fn _reshape_nd_buffer_with_batch_to_3d(
     for i in range(rank - 2):
         batch_size *= buffer.dim[i]()
 
-    var matrix_shape = StaticIntTuple[3](
+    var matrix_shape = IndexList[3](
         batch_size, buffer.dim[rank - 2](), buffer.dim[rank - 1]()
     )
 
@@ -127,7 +127,7 @@ fn _small_batched_matmul[
             @parameter
             fn input_fn[
                 type: DType, width: Int, rank: Int
-            ](idx: StaticIntTuple[rank]) -> SIMD[type, width]:
+            ](idx: IndexList[rank]) -> SIMD[type, width]:
                 return (
                     a_view.load[width=width](idx[0]).cast[type]()
                     * b_view.load[width=width](idx[0]).cast[type]()
@@ -137,7 +137,7 @@ fn _small_batched_matmul[
             @parameter
             fn output_fn[
                 out_type: DType, width: Int, r: Int
-            ](i: StaticIntTuple[r], value: SIMD[out_type, width]):
+            ](i: IndexList[r], value: SIMD[out_type, width]):
                 @parameter
                 if elementwise_epilogue_fn:
                     alias func = elementwise_epilogue_fn.value()
@@ -386,11 +386,11 @@ fn _batched_matmul_cpu[
             # Get a 2D view of the 3D Tensor.
             var c_view = NDBuffer[c_type, 2](
                 c.data.offset(batch * c_stride_between_batches),
-                StaticIntTuple[2](c.dim[1](), c.dim[2]()),
+                IndexList[2](c.dim[1](), c.dim[2]()),
             )
             var a_view = NDBuffer[a_type, 2](
                 a.data.offset(batch * a_stride_between_batches),
-                StaticIntTuple[2](a.dim[1](), a.dim[2]()),
+                IndexList[2](a.dim[1](), a.dim[2]()),
             )
 
             alias config = get_kernel_config[a_type, b_type, c_type]()
@@ -411,7 +411,7 @@ fn _batched_matmul_cpu[
 
             var b_view = NDBuffer[b_type, 2](
                 b.data.offset(batch * b_stride_between_batches),
-                StaticIntTuple[2](b.dim[1](), b.dim[2]()),
+                IndexList[2](b.dim[1](), b.dim[2]()),
             )
 
             var batch_coords = _get_start_indices_of_nth_subvolume_uint[2](
@@ -421,7 +421,7 @@ fn _batched_matmul_cpu[
             @parameter
             fn elementwise_lambda_2d[
                 c_type: DType, width: Int, *, alignment: Int = 1
-            ](out_coords: StaticIntTuple[2], out_val: SIMD[c_type, width]):
+            ](out_coords: IndexList[2], out_val: SIMD[c_type, width]):
                 # the caller provided the elementwise epilogue fn over the original
                 # buffer rank, not the collapsed buffer rank
                 # so un-collapse the batch dims here
@@ -477,7 +477,7 @@ fn batched_matmul_kernel[
     c_buff: NDBuffer[c_type, 3, c_shape],
     a_buff: NDBuffer[a_type, 3, a_shape],
     b_buff: NDBuffer[b_type, 3, b_shape],
-    c_buff_nd_shape: StaticIntTuple[rank],
+    c_buff_nd_shape: IndexList[rank],
 ) -> None:
     var batch_size: UInt = c_buff.dim(0)
     var m: UInt = c_buff.dim(1)
@@ -618,7 +618,7 @@ fn batched_matmul_shape[
 ](
     a_buff: NDBuffer[a_type, rank],
     b_buff: NDBuffer[b_type, rank],
-) raises -> StaticIntTuple[rank]:
+) raises -> IndexList[rank]:
     """
     Compute the output shape of a `batch_matmul` operation, and assert the
     inputs are compatible.

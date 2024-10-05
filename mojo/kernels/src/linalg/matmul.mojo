@@ -13,7 +13,7 @@ from buffer.dimlist import Dim, DimList
 from memory import UnsafePointer, memset_zero
 from runtime.asyncrt import MojoCallContextPtr, parallelism_level
 
-from utils.index import Index, StaticIntTuple
+from utils.index import Index, IndexList
 
 from .apple_accelerate import apple_gemv, apple_matmul, use_apple_accelerate_lib
 from .gemv import gemv
@@ -58,7 +58,7 @@ trait InnerMatmulKernel(Copyable):
         b_packed: NDBuffer[_, 3, _],
         global_offset: GemmShape,
         global_bound: GemmShape,
-        tile_n_k: StaticIntTuple[2],
+        tile_n_k: IndexList[2],
         skip_boundary_check: Bool,
     ):
         ...
@@ -69,7 +69,7 @@ fn elementwise_epilogue_c_tile[
     type: DType,
     c_shape: DimList,
     func: fn[type: DType, width: Int, *, alignment: Int = 1] (
-        StaticIntTuple[2], SIMD[type, width]
+        IndexList[2], SIMD[type, width]
     ) capturing [_] -> None,
 ](offset: GemmShape, tile_len: GemmShape, c: NDBuffer[type, 2, c_shape]):
     @always_inline
@@ -176,7 +176,7 @@ struct TiledMatmul[
     var a: NDBuffer[a_type, 2, a_shape]
     var b: NDBuffer[b_type, 2, b_shape]
     # Dynamic tile parameter.
-    var tile_n_k: StaticIntTuple[2]
+    var tile_n_k: IndexList[2]
 
     # Tile starting points on the (M,N,K) coordinates.
     var global_tile_offset: GemmShape
@@ -428,7 +428,7 @@ fn _small_matmul[
         @always_inline
         fn normal_update[
             inner_type: DType, width: Int
-        ](coords: StaticIntTuple[2], val: SIMD[inner_type, width]):
+        ](coords: IndexList[2], val: SIMD[inner_type, width]):
             c.store[width=width](
                 Index(coords[0], coords[1]), rebind[SIMD[c.type, width]](val)
             )
@@ -437,7 +437,7 @@ fn _small_matmul[
         @always_inline
         fn last_update[
             _type: DType, width: Int
-        ](coords: StaticIntTuple[2], val: SIMD[_type, width]):
+        ](coords: IndexList[2], val: SIMD[_type, width]):
             @parameter
             if epilogue_wrapper:
                 alias func = epilogue_wrapper.value()
@@ -449,7 +449,7 @@ fn _small_matmul[
         @parameter
         fn accum_out_row[
             output_func: fn[type: DType, width: Int] (
-                StaticIntTuple[2], SIMD[type, width]
+                IndexList[2], SIMD[type, width]
             ) capturing [_] -> None,
         ](m: Int, k: Int):
             var a_val = a[m, k].cast[c.type]()
@@ -761,9 +761,9 @@ fn matmul[
         var shape = GemmShape.get[transpose_b](c, a, b)
         return String(";").join(
             str(target),
-            trace_arg("A", StaticIntTuple[2](shape.M, shape.K), a_type),
-            trace_arg("B", StaticIntTuple[2](shape.K, shape.N), b_type),
-            trace_arg("C", StaticIntTuple[2](shape.M, shape.N), c_type),
+            trace_arg("A", IndexList[2](shape.M, shape.K), a_type),
+            trace_arg("B", IndexList[2](shape.K, shape.N), b_type),
+            trace_arg("C", IndexList[2](shape.M, shape.N), c_type),
             "transpose_a=" + str(transpose_a),
             "transpose_b=" + str(transpose_b),
             "b_packed=" + str(b_packed),

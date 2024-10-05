@@ -13,7 +13,7 @@ from linalg.apple_accelerate import apple_batched_matmul, apple_matmul
 from memory import UnsafePointer
 from testing import *
 
-from utils.index import Index, StaticIntTuple
+from utils.index import Index, IndexList
 
 alias alignment = 64
 

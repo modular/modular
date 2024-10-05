@@ -17,7 +17,7 @@ from buffer.dimlist import DimList
 from linalg.apple_amx_intrinsics import *
 from testing import *
 
-from utils.index import StaticIntTuple
+from utils.index import IndexList
 
 
 fn fill_a(buf: NDBuffer):

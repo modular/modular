@@ -11,7 +11,7 @@ from algorithm.reduction import _reduce_generator
 from buffer import Buffer, NDBuffer
 from buffer.dimlist import Dim, DimList
 
-from utils import StaticIntTuple
+from utils import IndexList
 from utils.index import Index
 
 from .utils import elementwise_epilogue_type
@@ -61,7 +61,7 @@ struct GEMVAlgorithm:
 
 
 @always_inline
-fn reverse_idx[transpose: Bool](x: Int, y: Int) -> StaticIntTuple[2]:
+fn reverse_idx[transpose: Bool](x: Int, y: Int) -> IndexList[2]:
     @parameter
     if transpose:
         return Index(y, x)
@@ -807,7 +807,7 @@ fn gemv[
     @parameter
     fn input_fn[
         type: DType, width: Int, rank: Int
-    ](idx: StaticIntTuple[rank]) -> SIMD[type, width]:
+    ](idx: IndexList[rank]) -> SIMD[type, width]:
         return (
             a_buf.load[width=width]((idx[0], idx[1])).cast[type]()
             * b_buf.load[width=width](idx[1]).cast[type]()
@@ -817,7 +817,7 @@ fn gemv[
     @parameter
     fn output_fn[
         out_type: DType, width: Int, rank: Int
-    ](idx: StaticIntTuple[rank], value: SIMD[out_type, width]):
+    ](idx: IndexList[rank], value: SIMD[out_type, width]):
         @parameter
         if elementwise_lambda_fn:
             alias func = elementwise_lambda_fn.value()

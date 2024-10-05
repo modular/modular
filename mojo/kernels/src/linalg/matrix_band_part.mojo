@@ -12,7 +12,7 @@ from register import mogg_register
 from runtime.asyncrt import MojoCallContextPtr
 from runtime.tracing import TraceLevel
 
-from utils.index import Index, StaticIntTuple
+from utils.index import Index, IndexList
 
 
 @mogg_register("mo.linalg.band_part")
@@ -22,14 +22,14 @@ fn matrix_band_part[
     int_type: DType,
     cond_type: DType,
     rank: Int,
-    input_0_fn: fn[width: Int, rank: Int] (StaticIntTuple[rank]) capturing [
+    input_0_fn: fn[width: Int, rank: Int] (IndexList[rank]) capturing [
         _
     ] -> SIMD[type, width],
     simd_width: Int,
     single_thread_blocking_override: Bool,
     target: StringLiteral = "cpu",
 ](
-    input_shape: StaticIntTuple[rank],
+    input_shape: IndexList[rank],
     num_lower: NDBuffer[int_type, 1],
     num_upper: NDBuffer[int_type, 1],
     exclude_buf: NDBuffer[cond_type, 1],
@@ -65,7 +65,7 @@ fn _matrix_band_part_impl[
     int_type: DType,
     cond_type: DType,
     rank: Int,
-    input_0_fn: fn[width: Int, rank: Int] (StaticIntTuple[rank]) capturing [
+    input_0_fn: fn[width: Int, rank: Int] (IndexList[rank]) capturing [
         _
     ] -> SIMD[type, width],
     simd_width: Int,
@@ -73,7 +73,7 @@ fn _matrix_band_part_impl[
     exclude: Bool,
     target: StringLiteral = "cpu",
 ](
-    input_shape: StaticIntTuple[rank],
+    input_shape: IndexList[rank],
     lower_diagonal_index: Int,
     upper_diagonal_index: Int,
     output: NDBuffer[type, rank],
@@ -84,10 +84,8 @@ fn _matrix_band_part_impl[
     @__copy_capture(lower_diagonal_index, upper_diagonal_index, output)
     @parameter
     @always_inline
-    fn func[
-        simd_width: Int, inner_rank: Int
-    ](index: StaticIntTuple[inner_rank]):
-        var idx = rebind[StaticIntTuple[rank]](index)
+    fn func[simd_width: Int, inner_rank: Int](index: IndexList[inner_rank]):
+        var idx = rebind[IndexList[rank]](index)
 
         var row = idx[rank - 2]
         var col = idx[rank - 1]

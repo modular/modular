@@ -13,7 +13,7 @@ from linalg.transpose import (
     transpose_inplace,
 )
 
-from utils.index import Index, StaticIntTuple
+from utils.index import Index, IndexList
 
 
 # CHECK-LABEL: test_transpose_4x4
@@ -31,22 +31,22 @@ fn test_transpose_4x4():
         DimList(4, 4),
     ].stack_allocation()
 
-    matrix[StaticIntTuple[2](0, 0)] = 0
-    matrix[StaticIntTuple[2](0, 1)] = 1
-    matrix[StaticIntTuple[2](0, 2)] = 2
-    matrix[StaticIntTuple[2](0, 3)] = 3
-    matrix[StaticIntTuple[2](1, 0)] = 4
-    matrix[StaticIntTuple[2](1, 1)] = 5
-    matrix[StaticIntTuple[2](1, 2)] = 6
-    matrix[StaticIntTuple[2](1, 3)] = 7
-    matrix[StaticIntTuple[2](2, 0)] = 8
-    matrix[StaticIntTuple[2](2, 1)] = 9
-    matrix[StaticIntTuple[2](2, 2)] = 10
-    matrix[StaticIntTuple[2](2, 3)] = 11
-    matrix[StaticIntTuple[2](3, 0)] = 12
-    matrix[StaticIntTuple[2](3, 1)] = 13
-    matrix[StaticIntTuple[2](3, 2)] = 14
-    matrix[StaticIntTuple[2](3, 3)] = 15
+    matrix[IndexList[2](0, 0)] = 0
+    matrix[IndexList[2](0, 1)] = 1
+    matrix[IndexList[2](0, 2)] = 2
+    matrix[IndexList[2](0, 3)] = 3
+    matrix[IndexList[2](1, 0)] = 4
+    matrix[IndexList[2](1, 1)] = 5
+    matrix[IndexList[2](1, 2)] = 6
+    matrix[IndexList[2](1, 3)] = 7
+    matrix[IndexList[2](2, 0)] = 8
+    matrix[IndexList[2](2, 1)] = 9
+    matrix[IndexList[2](2, 2)] = 10
+    matrix[IndexList[2](2, 3)] = 11
+    matrix[IndexList[2](3, 0)] = 12
+    matrix[IndexList[2](3, 1)] = 13
+    matrix[IndexList[2](3, 2)] = 14
+    matrix[IndexList[2](3, 3)] = 15
 
     transpose_inplace[4, 4, DType.index](matrix)
 
@@ -115,7 +115,7 @@ fn test_transpose_8x8():
     for i in range(num_rows):
         for j in range(num_cols):
             var val = i * num_cols + j
-            matrix[StaticIntTuple[2](i, j)] = val
+            matrix[IndexList[2](i, j)] = val
 
     transpose_inplace[num_rows, num_cols, DType.index](matrix)
 
@@ -144,7 +144,7 @@ fn test_transpose_16x16():
     for i in range(num_rows):
         for j in range(num_cols):
             var val = i * num_cols + j
-            matrix[StaticIntTuple[2](i, j)] = val
+            matrix[IndexList[2](i, j)] = val
 
     transpose_inplace[num_rows, num_cols, DType.index](matrix)
 
@@ -167,15 +167,15 @@ fn test_transpose_2d_identity() raises:
     #  [4, 5, 6],
     #  [7, 8, 9]]
     var input = NDBuffer[DType.index, 2, in_shape].stack_allocation()
-    input[StaticIntTuple[2](0, 0)] = 1
-    input[StaticIntTuple[2](0, 1)] = 2
-    input[StaticIntTuple[2](0, 2)] = 3
-    input[StaticIntTuple[2](1, 0)] = 4
-    input[StaticIntTuple[2](1, 1)] = 5
-    input[StaticIntTuple[2](1, 2)] = 6
-    input[StaticIntTuple[2](2, 0)] = 7
-    input[StaticIntTuple[2](2, 1)] = 8
-    input[StaticIntTuple[2](2, 2)] = 9
+    input[IndexList[2](0, 0)] = 1
+    input[IndexList[2](0, 1)] = 2
+    input[IndexList[2](0, 2)] = 3
+    input[IndexList[2](1, 0)] = 4
+    input[IndexList[2](1, 1)] = 5
+    input[IndexList[2](1, 2)] = 6
+    input[IndexList[2](2, 0)] = 7
+    input[IndexList[2](2, 1)] = 8
+    input[IndexList[2](2, 2)] = 9
 
     # Create an identity permutation array of the form
     # [0, 1]
@@ -229,15 +229,15 @@ fn test_transpose_2d() raises:
     #  [4, 5, 6],
     #  [7, 8, 9]]
     var input = NDBuffer[DType.index, 2, in_shape].stack_allocation()
-    input[StaticIntTuple[2](0, 0)] = 1
-    input[StaticIntTuple[2](0, 1)] = 2
-    input[StaticIntTuple[2](0, 2)] = 3
-    input[StaticIntTuple[2](1, 0)] = 4
-    input[StaticIntTuple[2](1, 1)] = 5
-    input[StaticIntTuple[2](1, 2)] = 6
-    input[StaticIntTuple[2](2, 0)] = 7
-    input[StaticIntTuple[2](2, 1)] = 8
-    input[StaticIntTuple[2](2, 2)] = 9
+    input[IndexList[2](0, 0)] = 1
+    input[IndexList[2](0, 1)] = 2
+    input[IndexList[2](0, 2)] = 3
+    input[IndexList[2](1, 0)] = 4
+    input[IndexList[2](1, 1)] = 5
+    input[IndexList[2](1, 2)] = 6
+    input[IndexList[2](2, 0)] = 7
+    input[IndexList[2](2, 1)] = 8
+    input[IndexList[2](2, 2)] = 9
 
     # Create a permutation array of the form
     # [1, 0]
@@ -292,18 +292,18 @@ fn test_transpose_3d_identity() raises:
     #  [[7, 8, 9],
     #   [10, 11, 12]]]
     var input = NDBuffer[DType.index, 3, in_shape].stack_allocation()
-    input[StaticIntTuple[3](0, 0, 0)] = 1
-    input[StaticIntTuple[3](0, 0, 1)] = 2
-    input[StaticIntTuple[3](0, 0, 2)] = 3
-    input[StaticIntTuple[3](0, 1, 0)] = 4
-    input[StaticIntTuple[3](0, 1, 1)] = 5
-    input[StaticIntTuple[3](0, 1, 2)] = 6
-    input[StaticIntTuple[3](1, 0, 0)] = 7
-    input[StaticIntTuple[3](1, 0, 1)] = 8
-    input[StaticIntTuple[3](1, 0, 2)] = 9
-    input[StaticIntTuple[3](1, 1, 0)] = 10
-    input[StaticIntTuple[3](1, 1, 1)] = 11
-    input[StaticIntTuple[3](1, 1, 2)] = 12
+    input[IndexList[3](0, 0, 0)] = 1
+    input[IndexList[3](0, 0, 1)] = 2
+    input[IndexList[3](0, 0, 2)] = 3
+    input[IndexList[3](0, 1, 0)] = 4
+    input[IndexList[3](0, 1, 1)] = 5
+    input[IndexList[3](0, 1, 2)] = 6
+    input[IndexList[3](1, 0, 0)] = 7
+    input[IndexList[3](1, 0, 1)] = 8
+    input[IndexList[3](1, 0, 2)] = 9
+    input[IndexList[3](1, 1, 0)] = 10
+    input[IndexList[3](1, 1, 1)] = 11
+    input[IndexList[3](1, 1, 2)] = 12
 
     # Create an identity permutation array of the form
     # [0, 1, 2]
@@ -367,18 +367,18 @@ fn test_transpose_3d() raises:
     #  [[7, 8, 9],
     #   [10, 11, 12]]]
     var input = NDBuffer[DType.index, 3, in_shape].stack_allocation()
-    input[StaticIntTuple[3](0, 0, 0)] = 1
-    input[StaticIntTuple[3](0, 0, 1)] = 2
-    input[StaticIntTuple[3](0, 0, 2)] = 3
-    input[StaticIntTuple[3](0, 1, 0)] = 4
-    input[StaticIntTuple[3](0, 1, 1)] = 5
-    input[StaticIntTuple[3](0, 1, 2)] = 6
-    input[StaticIntTuple[3](1, 0, 0)] = 7
-    input[StaticIntTuple[3](1, 0, 1)] = 8
-    input[StaticIntTuple[3](1, 0, 2)] = 9
-    input[StaticIntTuple[3](1, 1, 0)] = 10
-    input[StaticIntTuple[3](1, 1, 1)] = 11
-    input[StaticIntTuple[3](1, 1, 2)] = 12
+    input[IndexList[3](0, 0, 0)] = 1
+    input[IndexList[3](0, 0, 1)] = 2
+    input[IndexList[3](0, 0, 2)] = 3
+    input[IndexList[3](0, 1, 0)] = 4
+    input[IndexList[3](0, 1, 1)] = 5
+    input[IndexList[3](0, 1, 2)] = 6
+    input[IndexList[3](1, 0, 0)] = 7
+    input[IndexList[3](1, 0, 1)] = 8
+    input[IndexList[3](1, 0, 2)] = 9
+    input[IndexList[3](1, 1, 0)] = 10
+    input[IndexList[3](1, 1, 1)] = 11
+    input[IndexList[3](1, 1, 2)] = 12
 
     # Create a identity permutation array of the form
     # [2, 0, 1]
@@ -444,18 +444,18 @@ fn test_transpose_si64() raises:
     #  [[7, 8, 9],
     #   [10, 11, 12]]]
     var input = NDBuffer[DType.int64, 3, in_shape].stack_allocation()
-    input[StaticIntTuple[3](0, 0, 0)] = 1
-    input[StaticIntTuple[3](0, 0, 1)] = 2
-    input[StaticIntTuple[3](0, 0, 2)] = 3
-    input[StaticIntTuple[3](0, 1, 0)] = 4
-    input[StaticIntTuple[3](0, 1, 1)] = 5
-    input[StaticIntTuple[3](0, 1, 2)] = 6
-    input[StaticIntTuple[3](1, 0, 0)] = 7
-    input[StaticIntTuple[3](1, 0, 1)] = 8
-    input[StaticIntTuple[3](1, 0, 2)] = 9
-    input[StaticIntTuple[3](1, 1, 0)] = 10
-    input[StaticIntTuple[3](1, 1, 1)] = 11
-    input[StaticIntTuple[3](1, 1, 2)] = 12
+    input[IndexList[3](0, 0, 0)] = 1
+    input[IndexList[3](0, 0, 1)] = 2
+    input[IndexList[3](0, 0, 2)] = 3
+    input[IndexList[3](0, 1, 0)] = 4
+    input[IndexList[3](0, 1, 1)] = 5
+    input[IndexList[3](0, 1, 2)] = 6
+    input[IndexList[3](1, 0, 0)] = 7
+    input[IndexList[3](1, 0, 1)] = 8
+    input[IndexList[3](1, 0, 2)] = 9
+    input[IndexList[3](1, 1, 0)] = 10
+    input[IndexList[3](1, 1, 1)] = 11
+    input[IndexList[3](1, 1, 2)] = 12
 
     # Create a identity permutation array of the form
     # [2, 1, 0]
@@ -513,8 +513,8 @@ fn test_transpose_si64() raises:
 # CHECK-LABEL: test_simplify_perm
 fn test_simplify_perm():
     print("== test_simplify_perm")
-    var perm = StaticIntTuple[4](0, 2, 3, 1)
-    var shape = StaticIntTuple[4](8, 3, 200, 200)
+    var perm = IndexList[4](0, 2, 3, 1)
+    var shape = IndexList[4](8, 3, 200, 200)
     var rank = 4
     _simplify_transpose_perms[4](rank, shape, perm)
     # CHECK: 0, 2, 1
@@ -525,8 +525,8 @@ fn test_simplify_perm():
     print(rank)
 
     rank = 4
-    perm = StaticIntTuple[4](0, 2, 3, 1)
-    shape = StaticIntTuple[4](1, 3, 200, 200)
+    perm = IndexList[4](0, 2, 3, 1)
+    shape = IndexList[4](1, 3, 200, 200)
     _simplify_transpose_perms[4](rank, shape, perm)
     # CHECK: 1, 0
     print(perm)
@@ -536,8 +536,8 @@ fn test_simplify_perm():
     print(rank)
 
     rank = 4
-    perm = StaticIntTuple[4](0, 2, 1, 3)
-    shape = StaticIntTuple[4](8, 3, 200, 200)
+    perm = IndexList[4](0, 2, 1, 3)
+    shape = IndexList[4](8, 3, 200, 200)
     _simplify_transpose_perms[4](rank, shape, perm)
     # CHECK: 0, 2, 1, 3
     print(perm)
@@ -547,8 +547,8 @@ fn test_simplify_perm():
     print(rank)
 
     rank = 4
-    perm = StaticIntTuple[4](0, 2, 1, 3)
-    shape = StaticIntTuple[4](1, 3, 200, 200)
+    perm = IndexList[4](0, 2, 1, 3)
+    shape = IndexList[4](1, 3, 200, 200)
     _simplify_transpose_perms[4](rank, shape, perm)
     # CHECK: 1, 0, 2
     print(perm)
@@ -558,8 +558,8 @@ fn test_simplify_perm():
     print(rank)
 
     rank = 4
-    perm = StaticIntTuple[4](2, 1, 0, 3)
-    shape = StaticIntTuple[4](1, 3, 200, 200)
+    perm = IndexList[4](2, 1, 0, 3)
+    shape = IndexList[4](1, 3, 200, 200)
     _simplify_transpose_perms[4](rank, shape, perm)
     # CHECK: 1, 0, 2
     print(perm)
@@ -569,8 +569,8 @@ fn test_simplify_perm():
     print(rank)
 
     rank = 4
-    perm = StaticIntTuple[4](3, 2, 1, 0)
-    shape = StaticIntTuple[4](1, 3, 200, 200)
+    perm = IndexList[4](3, 2, 1, 0)
+    shape = IndexList[4](1, 3, 200, 200)
     _simplify_transpose_perms[4](rank, shape, perm)
     # CHECK: 2, 1, 0
     print(perm)
@@ -580,8 +580,8 @@ fn test_simplify_perm():
     print(rank)
 
     rank = 4
-    perm = StaticIntTuple[4](0, 2, 1, 3)
-    shape = StaticIntTuple[4](1, 3, 1, 200)
+    perm = IndexList[4](0, 2, 1, 3)
+    shape = IndexList[4](1, 3, 1, 200)
     _simplify_transpose_perms[4](rank, shape, perm)
     # CHECK: 0
     print(perm)
@@ -591,8 +591,8 @@ fn test_simplify_perm():
     print(rank)
 
     rank = 4
-    perm = StaticIntTuple[4](0, 3, 1, 2)
-    shape = StaticIntTuple[4](9, 1, 2, 3)
+    perm = IndexList[4](0, 3, 1, 2)
+    shape = IndexList[4](9, 1, 2, 3)
     _simplify_transpose_perms[4](rank, shape, perm)
     # CHECK: 0, 2, 1
     print(perm)
@@ -602,8 +602,8 @@ fn test_simplify_perm():
     print(rank)
 
     rank = 2
-    var perm2 = StaticIntTuple[2](0, 1)
-    var shape2 = StaticIntTuple[2](20, 30)
+    var perm2 = IndexList[2](0, 1)
+    var shape2 = IndexList[2](20, 30)
     _simplify_transpose_perms[2](rank, shape2, perm2)
     # CHECK: 0
     print(perm2)
@@ -613,8 +613,8 @@ fn test_simplify_perm():
     print(rank)
 
     rank = 2
-    perm2 = StaticIntTuple[2](1, 0)
-    shape2 = StaticIntTuple[2](20, 30)
+    perm2 = IndexList[2](1, 0)
+    shape2 = IndexList[2](20, 30)
     _simplify_transpose_perms[2](rank, shape2, perm2)
     # CHECK: 1, 0
     print(perm2)
@@ -624,8 +624,8 @@ fn test_simplify_perm():
     print(rank)
 
     rank = 2
-    perm2 = StaticIntTuple[2](1, 0)
-    shape2 = StaticIntTuple[2](20, 1)
+    perm2 = IndexList[2](1, 0)
+    shape2 = IndexList[2](20, 1)
     _simplify_transpose_perms[2](rank, shape2, perm2)
     # CHECK: 0
     print(perm2)

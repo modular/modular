@@ -14,7 +14,7 @@ from buffer.dimlist import DimList
 from memory import memcpy, stack_allocation, UnsafePointer
 from register import mogg_register
 
-from utils.index import Index, StaticIntTuple
+from utils.index import Index, IndexList
 from utils.loop import unroll
 
 from .apple_accelerate import use_apple_accelerate_lib
@@ -54,14 +54,14 @@ struct PackMatrixRows[
     # original matrix:
     var original_matrix: NDBuffer[type, 2, original_shape]
     # offsets in original matrix
-    var global_offset: StaticIntTuple[2]
+    var global_offset: IndexList[2]
     # number of Row and Col to pack.
     #  in [Row, Col]
-    var pack_tile_dim: StaticIntTuple[2]
+    var pack_tile_dim: IndexList[2]
     # valid data bound within the tile.
-    var valid_data_dim: StaticIntTuple[2]
+    var valid_data_dim: IndexList[2]
     # valid multiple-of-simd data bound within the tile.
-    var valid_simd_dim: StaticIntTuple[2]
+    var valid_simd_dim: IndexList[2]
 
     # Interface method:
     #  run the packing and store to the given buffer.
@@ -69,9 +69,9 @@ struct PackMatrixRows[
     fn run(
         packed_matrix: NDBuffer[type, 3, packed_shape],
         original_matrix: NDBuffer[type, 2, original_shape],
-        global_offset: StaticIntTuple[2],
-        pack_tile_dim: StaticIntTuple[2],
-        valid_data_dim: StaticIntTuple[2],
+        global_offset: IndexList[2],
+        pack_tile_dim: IndexList[2],
+        valid_data_dim: IndexList[2],
     ):
         """Interface function to run the packing routine.
         Args:
@@ -79,11 +79,11 @@ struct PackMatrixRows[
                 data.
             original_matrix(NDBuffer): data buffer containing the original matrix
                 to pack.
-            global_offset(StaticIntTuple): offset to use when indexing the
+            global_offset(IndexList): offset to use when indexing the
                 original matrix.
-            pack_tile_dim(StaticIntTuple): 2D dimension tuple describing the
+            pack_tile_dim(IndexList): 2D dimension tuple describing the
                 size of the packed tile.
-            valid_data_dim(StaticIntTuple): 2D dimension tuple describing the
+            valid_data_dim(IndexList): 2D dimension tuple describing the
                 amount of valid data on the global buffer starting from the
                 offset.
         """
@@ -125,7 +125,7 @@ struct PackMatrixRows[
             2,
             DimList(simd_size, simd_size),
         ],
-        local_off_set: StaticIntTuple[2],
+        local_off_set: IndexList[2],
     ):
         """Helper function: transpose packs a [simd_size, simd_size] subtile of
         matrix, with bound checking and zero-filling. Bound checking can be
@@ -137,7 +137,7 @@ struct PackMatrixRows[
                    skpped if true.
                transpose_buffer(NDBuffer): pre-allocated work space to hold
                    transposed temporary data.
-               local_offset(StaticIntTuple): offset of the subtile to work on
+               local_offset(IndexList): offset of the subtile to work on
                    within the whole tile of data to pack.
         """
         # Calculate the remaining bound from the local offset.
@@ -291,21 +291,21 @@ struct PackMatrixCols[
     # original matrix:
     var original_matrix: NDBuffer[type, 2, original_shape]
     # offsets in original matrix:
-    var global_offset: StaticIntTuple[2]
+    var global_offset: IndexList[2]
     # number of Row and Col to pack.
     #  in [Row, Col]
-    var pack_tile_dim: StaticIntTuple[2]
+    var pack_tile_dim: IndexList[2]
     # valid data bound within the tile.
-    var valid_data_dim: StaticIntTuple[2]
+    var valid_data_dim: IndexList[2]
 
     # Interface function:
     @staticmethod
     fn run(
         packed_matrix: NDBuffer[type, 3, packed_shape],
         original_matrix: NDBuffer[type, 2, original_shape],
-        global_offset: StaticIntTuple[2],
-        pack_tile_dim: StaticIntTuple[2],
-        valid_data_dim: StaticIntTuple[2],
+        global_offset: IndexList[2],
+        pack_tile_dim: IndexList[2],
+        valid_data_dim: IndexList[2],
     ):
         """Interface function to run the packing routine.
         Args:
@@ -313,11 +313,11 @@ struct PackMatrixCols[
                 data.
             original_matrix(NDBuffer): data buffer containing the original matrix
                 to pack.
-            global_offset(StaticIntTuple): offset to use when indexing the
+            global_offset(IndexList): offset to use when indexing the
                 original matrix.
-            pack_tile_dim(StaticIntTuple): 2D dimension tuple describing the
+            pack_tile_dim(IndexList): 2D dimension tuple describing the
                 size of the packed tile.
-            valid_data_dim(StaticIntTuple): 2D dimension tuple describing the
+            valid_data_dim(IndexList): 2D dimension tuple describing the
                 amount of valid data on the global buffer starting from the
                 offset.
         """
@@ -514,20 +514,20 @@ fn _pack_matmul_b_shape_func_impl[
     c_shape: DimList,
     transpose_in_0: Bool,
     single_thread_blocking_override: Bool,
-](
-    b_input: NDBuffer[b_type, 2, b_shape], kernel_type_m: Int = 0
-) -> StaticIntTuple[2]:
+](b_input: NDBuffer[b_type, 2, b_shape], kernel_type_m: Int = 0) -> IndexList[
+    2
+]:
     """Sets in shape_ref the shape required by `pack_b`'s `b_packed_ref`
     argument.
 
     If transpose_b is True, this returns the un-transposed shape, since pack_b
     will un-transpose `b_ref` as part of the packing layout transformation."""
 
-    var output = StaticIntTuple[2]()
+    var output = IndexList[2]()
 
     var n = b_input.dim(0) if transpose_in_0 else b_input.dim(1)
     var k = b_input.dim(1) if transpose_in_0 else b_input.dim(0)
-    var tile_n_k = StaticIntTuple[2]()
+    var tile_n_k = IndexList[2]()
 
     @parameter
     @always_inline
@@ -583,7 +583,7 @@ fn pack_matmul_b_shape_func[
     c_shape: DimList,
     transpose_in_0: Bool,
     single_thread_blocking_override: Bool,
-](b_input: NDBuffer[b_type, 2, b_shape]) -> StaticIntTuple[2]:
+](b_input: NDBuffer[b_type, 2, b_shape]) -> IndexList[2]:
     # NOTE `get_kernel_type` expects `m == 0` for dynamic M.
     var kernel_type_m = 0
 
@@ -875,13 +875,13 @@ struct BTileGenerator[
 
     var b: NDBuffer[b_type, 2, shape]  # packed layout if b_packed is True
     var b_tile_stack_ptr: UnsafePointer[Scalar[b_type]]
-    var tile_n_k: StaticIntTuple[2]
+    var tile_n_k: IndexList[2]
 
     # needs to be always_inline so b_tile_stack_ptr gets allocated on caller's stack
     @always_inline
     @staticmethod
     fn get(
-        b: NDBuffer[b_type, 2, shape], tile_n_k: StaticIntTuple[2]
+        b: NDBuffer[b_type, 2, shape], tile_n_k: IndexList[2]
     ) -> BTileGenerator[
         config, a_type, b_type, c_type, shape, transpose_b, b_packed
     ]:
@@ -909,8 +909,8 @@ struct BTileGenerator[
     ](
         self,
         global_offset: GemmShape,
-        tile_dim_nk: StaticIntTuple[2],
-        valid_data_dim_nk: StaticIntTuple[2],
+        tile_dim_nk: IndexList[2],
+        valid_data_dim_nk: IndexList[2],
     ) -> NDBuffer[b_type, 3, config.packed_shape]:
         """Get a packed matrix (B) tile.
 

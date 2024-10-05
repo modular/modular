@@ -14,7 +14,7 @@ from algorithm.functional import tile
 from buffer.buffer import Buffer, partial_simd_load, partial_simd_store
 from memory import UnsafePointer, stack_allocation
 
-from utils import StaticIntTuple
+from utils import IndexList
 
 
 # ===----------------------------------------------------------------------===#
@@ -135,7 +135,7 @@ struct _Accumulator[
         c_ptr: UnsafePointer[Scalar[type]],
         c_stride: Int,
         tile_n_idx: Int,
-        c_bound: StaticIntTuple[2],
+        c_bound: IndexList[2],
         skip_boundary_check: Bool = False,
     ):
         self._transfer[True](
@@ -148,7 +148,7 @@ struct _Accumulator[
         c_ptr: UnsafePointer[Scalar[type]],
         c_stride: Int,
         tile_n_idx: Int,
-        c_bound: StaticIntTuple[2],
+        c_bound: IndexList[2],
         skip_boundary_check: Bool = False,
     ):
         self._transfer[False](
@@ -163,7 +163,7 @@ struct _Accumulator[
         c_ptr: UnsafePointer[Scalar[type]],
         c_stride: Int,
         tile_n_idx: Int,
-        c_bound: StaticIntTuple[2],
+        c_bound: IndexList[2],
         skip_boundary_check: Bool,
     ):
         var c_ptr_loc = c_ptr.offset(tile_n_idx)

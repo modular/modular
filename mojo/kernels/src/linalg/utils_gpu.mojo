@@ -15,7 +15,7 @@ from layout.tensor_core import (
     get_fragment_size,
     get_mma_shape,
 )
-from utils.index import Index, StaticIntTuple
+from utils.index import Index, IndexList
 
 # ===------------------------------------------------------------------===#
 # GPU Matmul Block Swizzling
@@ -24,17 +24,15 @@ from utils.index import Index, StaticIntTuple
 
 @always_inline
 fn block_swizzle(
-    block_idx: StaticIntTuple[2], grid_dim: StaticIntTuple[2]
-) -> StaticIntTuple[2]:
+    block_idx: IndexList[2], grid_dim: IndexList[2]
+) -> IndexList[2]:
     return _block_swizzle_by_scale[3](block_idx, grid_dim)
 
 
 @always_inline
 fn _block_swizzle_by_scale[
     scale0: Int
-](block_idx: StaticIntTuple[2], grid_dim: StaticIntTuple[2]) -> StaticIntTuple[
-    2
-]:
+](block_idx: IndexList[2], grid_dim: IndexList[2]) -> IndexList[2]:
     """
     Block swizzling based on https://github.com/NVIDIA/cutlass/blob/main/include/cutlass/gemm/threadblock/threadblock_swizzle.h
 
@@ -74,9 +72,9 @@ struct MatmulConfig[
 ](Stringable, Formattable):
     """Static configuration of GPU matmul."""
 
-    var block_tile_shape: StaticIntTuple[3]
+    var block_tile_shape: IndexList[3]
 
-    var warp_tile_shape: StaticIntTuple[3]
+    var warp_tile_shape: IndexList[3]
 
     var num_pipeline_stages: UInt
 
@@ -94,8 +92,8 @@ struct MatmulConfig[
 
     fn __init__(
         inout self,
-        block_tile_shape: StaticIntTuple[3] = Index(128, 128, 32),
-        warp_tile_shape: StaticIntTuple[3] = Index(64, 64, 32),
+        block_tile_shape: IndexList[3] = Index(128, 128, 32),
+        warp_tile_shape: IndexList[3] = Index(64, 64, 32),
         num_pipeline_stages: UInt = 4,
         num_k_partitions: UInt = 1,
     ):
@@ -118,14 +116,14 @@ struct MatmulConfig[
             self.block_tile_shape, self.num_pipeline_stages
         )
 
-    fn grid_dim(self, m: UInt, n: UInt) -> StaticIntTuple[3]:
+    fn grid_dim(self, m: UInt, n: UInt) -> IndexList[3]:
         return Index(
             int(ceildiv(n, self.block_tile_shape[1])),
             int(ceildiv(m, self.block_tile_shape[0])),
             int(self.num_k_partitions),
         )
 
-    fn block_dim(self) -> StaticIntTuple[3]:
+    fn block_dim(self) -> IndexList[3]:
         return Index(int(self.num_threads()), 1, 1)
 
     fn work_space_size(self, M: UInt, N: UInt) -> UInt:
@@ -172,7 +170,7 @@ fn _bk_base[type: DType]() -> Int:
 @always_inline
 fn _shared_memory_usage[
     a_type: DType, b_type: DType, c_type: DType
-](block_mnk: StaticIntTuple[3], num_pipeline_stages: Int) -> UInt:
+](block_mnk: IndexList[3], num_pipeline_stages: Int) -> UInt:
     # fmt: off
     var a_usage = block_mnk[0] * block_mnk[2] * num_pipeline_stages * sizeof[a_type]()
     var b_usage = block_mnk[1] * block_mnk[2] * num_pipeline_stages * sizeof[b_type]()
@@ -252,7 +250,7 @@ fn select_config[
     # sm_80 is present in target.
     alias _256x128_3 = Index(
         128, 256, 2 * _bk_base[a_type](), 3
-    ) if "sm_80" in target else StaticIntTuple[4](1024)
+    ) if "sm_80" in target else IndexList[4](1024)
 
     for bmnk_stage in List(_128x128_4, _256x64_4, _256x128_3):
         var bm = bmnk_stage[][0]

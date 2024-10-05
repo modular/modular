@@ -11,7 +11,7 @@ from buffer import Buffer, NDBuffer
 from buffer.dimlist import Dim, DimList
 from linalg.packing import pack_b
 
-from utils.index import StaticIntTuple
+from utils.index import IndexList
 
 
 # CHECK-LABEL: test_prepack
@@ -261,7 +261,7 @@ fn test_prepack():
 
     for i in range(dst_buf.dim[0]()):
         for j in range(dst_buf.dim[1]()):
-            print(dst_buf[StaticIntTuple[2](i, j)])
+            print(dst_buf[IndexList[2](i, j)])
 
 
 fn main():

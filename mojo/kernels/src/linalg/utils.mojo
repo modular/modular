@@ -31,11 +31,11 @@ from buffer.dimlist import DimList
 from layout.layout import *
 from layout.layout_tensor import LayoutTensor
 
-from utils.index import Index, StaticIntTuple
+from utils.index import Index, IndexList
 
 alias elementwise_epilogue_type = fn[
     type: DType, width: Int, *, alignment: Int = 1
-] (StaticIntTuple[2], SIMD[type, width]) capturing -> None
+] (IndexList[2], SIMD[type, width]) capturing -> None
 
 
 struct KernelConfig:
@@ -125,7 +125,7 @@ struct GemmShape:
             a.dim(1),
         )
 
-    # TODO: re-enable using StaticIntTuple.
+    # TODO: re-enable using IndexList.
     @always_inline
     fn __getitem__(self, idx: Int) -> Int:
         if idx == 0:
@@ -145,7 +145,7 @@ struct GemmShape:
             self.K = value
             return
 
-    fn __init__(inout self, index: StaticIntTuple[3]):
+    fn __init__(inout self, index: IndexList[3]):
         """Constructor of a gemm shape record from a index tuple.
 
         Args:
@@ -155,7 +155,7 @@ struct GemmShape:
         self.N = index[1]
         self.K = index[2]
 
-    fn as_index(self) -> StaticIntTuple[3]:
+    fn as_index(self) -> IndexList[3]:
         """Utility to convert the underlying data to an index tuple. So that the
         utilities such as elementwise add can be used.
 
@@ -189,7 +189,7 @@ fn calculate_tile_n_k[
     b_type: DType,
     c_type: DType,
     kernel_cols: Int,
-](n: Int, k: Int) -> StaticIntTuple[2]:
+](n: Int, k: Int) -> IndexList[2]:
     """Helper heuristic function to decide on tile size to partition the matmul
     given the cache size and desired data layout.
 
@@ -236,7 +236,7 @@ fn calculate_tile_n_k[
     b_type: DType,
     c_type: DType,
     kernel_cols: Int,
-](global_tile_shape: GemmShape) -> StaticIntTuple[2]:
+](global_tile_shape: GemmShape) -> IndexList[2]:
     return calculate_tile_n_k[a_type, b_type, c_type, kernel_cols](
         global_tile_shape.N, global_tile_shape.K
     )
@@ -249,8 +249,8 @@ fn _get_tile_n_k[
     c_type: DType,
     kernel_cols: Int,
     transpose_b: Bool,
-](b: NDBuffer[_, 2, _]) -> StaticIntTuple[2]:
-    var tile_n_k: StaticIntTuple[2]
+](b: NDBuffer[_, 2, _]) -> IndexList[2]:
+    var tile_n_k: IndexList[2]
 
     @parameter
     if not transpose_b:
@@ -389,10 +389,10 @@ struct SubMatmulConfig:
     """Static configuration of sub-matrices in parallel matmul."""
 
     # Starting Indices of sub-matrices.
-    var offset: StaticIntTuple[3]
+    var offset: IndexList[3]
 
     # Dimension of sub-matrices.
-    var shape: StaticIntTuple[3]
+    var shape: IndexList[3]
 
     @always_inline
     fn is_valid(self) -> Bool:
@@ -404,7 +404,7 @@ struct SubMatmulConfig:
 @always_inline
 fn partition_work(
     task_id: Int, num_tasks: Int, work: Int, work_block_size: Int
-) -> StaticIntTuple[2]:
+) -> IndexList[2]:
     var num_work_blocks = ceildiv(work, work_block_size)
     var blocks_per_task = num_work_blocks // num_tasks
     var blocks_per_task_extra = num_work_blocks % num_tasks
@@ -417,9 +417,9 @@ fn partition_work(
     if task_id < blocks_per_task_extra:
         work_per_task = (blocks_per_task + 1) * work_block_size
         work_id = task_id * work_per_task
-        return StaticIntTuple[2](work_id, min(work - work_id, work_per_task))
+        return IndexList[2](work_id, min(work - work_id, work_per_task))
 
-    return StaticIntTuple[2](work_id, min(work - work_id, work_per_task))
+    return IndexList[2](work_id, min(work - work_id, work_per_task))
 
 
 fn get_partitioned_matmul[
@@ -478,7 +478,7 @@ fn get_partitioned_matmul_mojo_shape[
     kernel_rows: Int,
     kernel_cols: Int,
     use_i8mm: Bool,
-](m: Int, n: Int, k: Int, num_tasks: Int) -> StaticIntTuple[2]:
+](m: Int, n: Int, k: Int, num_tasks: Int) -> IndexList[2]:
     var num_row_tasks = 1
     var num_col_tasks = 1
 

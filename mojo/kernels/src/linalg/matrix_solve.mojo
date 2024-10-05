@@ -10,7 +10,7 @@ from buffer.dimlist import DimList
 from register import mogg_register_shape_func
 from runtime.tracing import Trace, TraceLevel
 
-from utils.index import StaticIntTuple, Index
+from utils.index import IndexList, Index
 
 
 @always_inline
@@ -137,7 +137,7 @@ fn matrix_solve_shape[
 ](
     a_buff: NDBuffer[type, rank],
     b_buff: NDBuffer[type, rank],
-) raises -> StaticIntTuple[rank]:
+) raises -> IndexList[rank]:
     """
     Compute the output shape of a matrix solve operation (i.e., given A and B
     from AX = B, compute X), and assert the inputs are compatible.

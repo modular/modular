@@ -28,7 +28,7 @@ from linalg.utils import elementwise_epilogue_type
 from memory import UnsafePointer
 from testing import assert_almost_equal, assert_true
 
-from utils.index import Index, StaticIntTuple
+from utils.index import Index, IndexList
 
 alias alignment = 64
 alias some_constant = 20
@@ -90,7 +90,7 @@ def test_matmul[
     var golden = NDBuffer[c_type, 2, c_shape](c1_ptr, Index(m, n))
     for i in range(m):
         for j in range(n):
-            golden[StaticIntTuple[2]((i, j))] = 0
+            golden[IndexList[2]((i, j))] = 0
 
     if b_packed:
         if not transpose_b:
@@ -227,7 +227,7 @@ def test_matmul[
         b_ptr, Index(n, k) if transpose_b else Index(k, n)
     )
 
-    var padded_n_k = StaticIntTuple[2]()
+    var padded_n_k = IndexList[2]()
     if kernel_type_m != 0:
         padded_n_k = _pack_matmul_b_shape_func_impl[
             a_type,
@@ -273,26 +273,26 @@ def test_matmul[
 
     for i in range(m):
         for p in range(k):
-            a[StaticIntTuple[2]((i, p))] = Scalar[a_type](0.001) * i
+            a[IndexList[2]((i, p))] = Scalar[a_type](0.001) * i
 
     for p in range(n if transpose_b else k):
         for j in range(k if transpose_b else n):
-            b[StaticIntTuple[2]((p, j))] = Scalar[b_type](0.002) * p
+            b[IndexList[2]((p, j))] = Scalar[b_type](0.002) * p
             if b_packed and not transpose_b:
-                bp[StaticIntTuple[2]((j, p))] = b[StaticIntTuple[2]((p, j))]
+                bp[IndexList[2]((j, p))] = b[IndexList[2]((p, j))]
             else:
-                bp[StaticIntTuple[2]((p, j))] = b[StaticIntTuple[2]((p, j))]
+                bp[IndexList[2]((p, j))] = b[IndexList[2]((p, j))]
 
     for i in range(m):
         for j in range(n):
-            c[StaticIntTuple[2]((i, j))] = 0
+            c[IndexList[2]((i, j))] = 0
 
     @parameter
     @always_inline
     @__copy_capture(c)
     fn epilogue_fn[
         _type: DType, width: Int, *, alignment: Int = 1
-    ](coords: StaticIntTuple[2], val: SIMD[_type, width]) -> None:
+    ](coords: IndexList[2], val: SIMD[_type, width]) -> None:
         c.store(coords, rebind[SIMD[c_type, width]](val + some_constant))
 
     @parameter
@@ -494,9 +494,9 @@ def test_batched_matmul[
     @__copy_capture(c)
     fn epilogue_fn[
         _type: DType, width: Int, rank: Int, *, alignment: Int = 1
-    ](coords: StaticIntTuple[rank], val: SIMD[_type, width]) -> None:
+    ](coords: IndexList[rank], val: SIMD[_type, width]) -> None:
         c.store(
-            rebind[StaticIntTuple[3]](coords),
+            rebind[IndexList[3]](coords),
             rebind[SIMD[c.type, width]](val + some_constant),
         )
 
