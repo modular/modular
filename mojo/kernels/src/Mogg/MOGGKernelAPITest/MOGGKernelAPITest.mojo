@@ -9,7 +9,7 @@ from buffer import NDBuffer
 from buffer.dimlist import DimList
 from nn.mha import fused_attention as cpu_fused_attention_impl
 from tensor_utils import ManagedTensorSlice, foreach
-from utils import StaticIntTuple
+from utils import IndexList
 from linalg.matmul import matmul as _matmul
 from runtime.asyncrt import MojoCallContextPtr
 
@@ -48,8 +48,8 @@ struct OpaqueAddToTensor:
         out[0] = rebind[Scalar[out.type]](scalar_x + scalar_y)
 
     @staticmethod
-    fn shape(x: MyCustomScalarReg, y: MyCustomScalarReg) -> StaticIntTuple[1]:
-        return StaticIntTuple[1](1)
+    fn shape(x: MyCustomScalarReg, y: MyCustomScalarReg) -> IndexList[1]:
+        return IndexList[1](1)
 
 
 @compiler.register("imposter_add")
@@ -61,7 +61,7 @@ struct Foo:
     ](z: ManagedTensorSlice, x: ManagedTensorSlice, y: ManagedTensorSlice):
         @parameter
         @always_inline
-        fn func[width: Int](idx: StaticIntTuple[z.rank]) -> SIMD[z.type, width]:
+        fn func[width: Int](idx: IndexList[z.rank]) -> SIMD[z.type, width]:
             return rebind[SIMD[z.type, width]](x.load[width](idx)) + rebind[
                 SIMD[z.type, width]
             ](y.load[width](idx))
@@ -69,9 +69,7 @@ struct Foo:
         foreach[func](z)
 
     @staticmethod
-    fn shape(
-        x: ManagedTensorSlice, y: ManagedTensorSlice
-    ) -> StaticIntTuple[x.rank]:
+    fn shape(x: ManagedTensorSlice, y: ManagedTensorSlice) -> IndexList[x.rank]:
         return x.get_static_spec().shape
 
 
@@ -150,7 +148,7 @@ struct ImposterMHANoMask:
         k: ManagedTensorSlice,
         v: ManagedTensorSlice,
         scale: ManagedTensorSlice,
-    ) -> StaticIntTuple[q.rank]:
+    ) -> IndexList[q.rank]:
         return q.get_static_spec().shape
 
 
@@ -195,10 +193,10 @@ struct ImposterMatmul:
     fn shape(
         a: ManagedTensorSlice,
         b: ManagedTensorSlice,
-    ) -> StaticIntTuple[2]:
+    ) -> IndexList[2]:
         var shape = a.get_static_spec().shape
         shape[1] = b.get_static_spec().shape[1]
-        return rebind[StaticIntTuple[2]](shape)
+        return rebind[IndexList[2]](shape)
 
 
 @compiler.register("print_shape_strides")
@@ -216,15 +214,13 @@ struct PrintShapeStridesOp:
 
         @parameter
         @always_inline
-        fn func[
-            width: Int
-        ](idx: StaticIntTuple[out.rank]) -> SIMD[out.type, width]:
+        fn func[width: Int](idx: IndexList[out.rank]) -> SIMD[out.type, width]:
             return rebind[SIMD[out.type, width]](x.load[width](idx))
 
         foreach[func](out)
 
     @staticmethod
-    fn shape(x: ManagedTensorSlice) -> StaticIntTuple[x.rank]:
+    fn shape(x: ManagedTensorSlice) -> IndexList[x.rank]:
         return x.get_static_spec().shape
 
 
@@ -238,7 +234,7 @@ struct AddElementwise:
     ](z: ManagedTensorSlice, x: ManagedTensorSlice, y: ManagedTensorSlice):
         @parameter
         @always_inline
-        fn func[width: Int](idx: StaticIntTuple[z.rank]) -> SIMD[z.type, width]:
+        fn func[width: Int](idx: IndexList[z.rank]) -> SIMD[z.type, width]:
             return rebind[SIMD[z.type, width]](
                 x._fused_load[width](idx)
             ) + rebind[SIMD[z.type, width]](y._fused_load[width](idx))
@@ -275,7 +271,7 @@ struct MatmulFuseOut:
         @always_inline
         fn out_func[
             type: DType, width: Int, *, alignment: Int = 1
-        ](idx: StaticIntTuple[2], val: SIMD[type, width]):
+        ](idx: IndexList[2], val: SIMD[type, width]):
             c._fused_store(idx, rebind[SIMD[c.type, width]](val))
 
         print("lambdas_have_fusion =", lambdas_have_fusion)
@@ -299,10 +295,10 @@ struct MatmulFuseOut:
     fn shape(
         a: ManagedTensorSlice,
         b: ManagedTensorSlice,
-    ) -> StaticIntTuple[2]:
+    ) -> IndexList[2]:
         var shape = a.get_static_spec().shape
         shape[1] = b.get_static_spec().shape[1]
-        return rebind[StaticIntTuple[2]](shape)
+        return rebind[IndexList[2]](shape)
 
 
 @compiler.register("op_with_synchronous")

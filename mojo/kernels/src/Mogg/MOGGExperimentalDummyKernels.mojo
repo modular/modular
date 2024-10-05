@@ -11,7 +11,7 @@ from MOGGTensor import Tensor
 from nn.activations import relu
 from register import *
 
-from utils import StaticIntTuple, unroll
+from utils import IndexList, unroll
 
 # Dummy kernels to test fundamental mechanisms without overwriting the normal
 # kernels. We duplicate some of the kernels here, allowing FileCheck tests to
@@ -160,7 +160,7 @@ fn mo_abs(
 fn broadcast[
     rank: Int,
     out_static_strides: DimList,
-](x: Tensor, shape: StaticIntTuple[rank]) -> Tensor[
+](x: Tensor, shape: IndexList[rank]) -> Tensor[
     x.type, DimList.create_unknown[shape.size](), out_static_strides
 ]:
     var new_shape = IntList[DimList.create_unknown[shape.size]()]()

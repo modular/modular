@@ -254,7 +254,7 @@ from tensor_utils_internal import ManagedTensorSlice
 from compiler_internal import StaticTensorSpec
 
 from utils import StaticTuple
-from utils.index import Index, StaticIntTuple, product
+from utils.index import Index, IndexList, product
 from utils.loop import unroll
 from utils.numerics import isinf, isnan
 from bit import is_power_of_two
@@ -551,9 +551,7 @@ fn SimdTypeDef[
 
 
 @mogg_register("indices")
-fn TensorIndicesTypeDef[
-    rank: Int
-](ty: StaticIntTuple[rank]) -> StaticIntTuple[rank]:
+fn TensorIndicesTypeDef[rank: Int](ty: IndexList[rank]) -> IndexList[rank]:
     return ty
 
 
@@ -606,9 +604,9 @@ fn to_buffer[
     type, rank
 ]:
     var shape_ptr = shape
-    var shape_tuple = StaticIntTuple[rank]()
+    var shape_tuple = IndexList[rank]()
 
-    var stride_tuple = StaticIntTuple[rank]()
+    var stride_tuple = IndexList[rank]()
     var stride: Int = 1
 
     @parameter
@@ -623,9 +621,9 @@ fn to_buffer[
 
 @mogg_register("to_shape")
 @always_inline
-fn to_shape[rank: Int](shape: UnsafePointer[Int]) -> StaticIntTuple[rank]:
+fn to_shape[rank: Int](shape: UnsafePointer[Int]) -> IndexList[rank]:
     var shape_ptr = shape
-    var shape_tuple = StaticIntTuple[rank]()
+    var shape_tuple = IndexList[rank]()
 
     @parameter
     for i in range(rank):
@@ -640,8 +638,8 @@ fn to_shape[rank: Int](shape: UnsafePointer[Int]) -> StaticIntTuple[rank]:
 fn tensor_to_shape[
     type: DType,
     rank: Int,
-](tensor: NDBuffer[type, 1]) -> StaticIntTuple[rank]:
-    var out = StaticIntTuple[rank]()
+](tensor: NDBuffer[type, 1]) -> IndexList[rank]:
+    var out = IndexList[rank]()
 
     @parameter
     for i in range(rank):
@@ -665,7 +663,7 @@ fn get_scalar_from_ndbuffer[
 @always_inline
 fn get_int_from_shape[
     param_index: Int, rank: Int
-](shape: StaticIntTuple[rank]) -> Int:
+](shape: IndexList[rank]) -> Int:
     return shape[param_index]
 
 
@@ -673,7 +671,7 @@ fn get_int_from_shape[
 @always_inline
 fn shape_to_ndbuffer[
     shape_rank: Int, buf_rank: Int, type: DType
-](shape: StaticIntTuple[shape_rank], buf: NDBuffer[type, buf_rank]):
+](shape: IndexList[shape_rank], buf: NDBuffer[type, buf_rank]):
     @parameter
     for i in range(shape_rank):
         buf[i] = shape[i]
@@ -684,12 +682,12 @@ fn shape_to_ndbuffer[
 fn shape_to_managed_tensor_slice[
     shape_rank: Int, buf_rank: Int, type: DType
 ](
-    shape: StaticIntTuple[shape_rank],
+    shape: IndexList[shape_rank],
     inout tensor: ManagedTensorSlice[type, buf_rank],
 ):
     @parameter
     for i in range(shape_rank):
-        tensor.store[width=1](StaticIntTuple[1](i), shape[i])
+        tensor.store[width=1](IndexList[1](i), shape[i])
 
 
 @mogg_register("to_buffer_list")
@@ -742,7 +740,7 @@ fn elementwise_wrapper[
     rank: Int,
     single_thread_blocking_override: Bool,
     func: fn[width: Int, rank: Int, element_alignment: Int] (
-        StaticIntTuple[rank]
+        IndexList[rank]
     ) capturing -> None,
     /,
     shape: DimList,
@@ -840,7 +838,7 @@ fn to_managed_tensor_slice[
     data: UnsafePointer[Scalar[type]],
     shape: UnsafePointer[Int],
 ) -> ManagedTensorSlice[type, rank]:
-    var shape_tuple = StaticIntTuple[rank]()
+    var shape_tuple = IndexList[rank]()
 
     @parameter
     for i in reversed(range(rank)):
@@ -855,7 +853,7 @@ fn to_managed_tensor_slice[
 @mogg_register("shape_from_kgen")
 @always_inline
 @export
-fn get_static_shape(shape: IntList) -> StaticIntTuple[shape._safe_len]:
+fn get_static_shape(shape: IntList) -> IndexList[shape._safe_len]:
     return shape.stack_alloc_data
 
 
@@ -882,7 +880,7 @@ fn simd_load[
     simd_width: Int
 ](
     buffer: NDBuffer,
-    index: StaticIntTuple[buffer.rank],
+    index: IndexList[buffer.rank],
 ) -> SIMD[
     buffer.type, simd_width
 ]:
@@ -911,7 +909,7 @@ fn simd_store[
     simd_width: Int, element_alignment: Int
 ](
     buffer: NDBuffer,
-    index: StaticIntTuple[buffer.rank],
+    index: IndexList[buffer.rank],
     val: SIMD[buffer.type, simd_width],
 ):
     var flat_index = _compute_ndbuffer_offset(buffer, index)
@@ -1016,10 +1014,10 @@ fn broadcast_shape_shape[
     lhs_buf: NDBuffer[lhs_type, 1],
     rhs_buf: NDBuffer[rhs_type, 1],
     ctx: MojoCallContextPtr,
-) -> StaticIntTuple[1]:
+) -> IndexList[1]:
     var lhs_dim = lhs_buf.dim(0)
     var rhs_dim = rhs_buf.dim(0)
-    return StaticIntTuple[1](max(lhs_dim, rhs_dim))
+    return IndexList[1](max(lhs_dim, rhs_dim))
 
 
 @mogg_register("mo.static.broadcast_to")
@@ -1034,10 +1032,10 @@ fn broadcast_to_tensor[
     target: StringLiteral = "cpu",
 ](
     original: NDBuffer[type, original_rank],
-    target_shape: StaticIntTuple[target_rank],
+    target_shape: IndexList[target_rank],
 ) -> NDBuffer[type, output_rank]:
-    var shape = StaticIntTuple[output_rank]()
-    var stride = StaticIntTuple[output_rank]()
+    var shape = IndexList[output_rank]()
+    var stride = IndexList[output_rank]()
 
     # The offset from where the implicit new dimensions end. I.E broadcasting
     # <1, 1> to <40,40,40,40> the two dimensions at the start are new
@@ -1120,7 +1118,7 @@ fn broadcast_to_shape[
 ](
     input_buf: NDBuffer[input_type, input_rank],
     target_shape_buf: NDBuffer[target_shape_type, 1],
-) raises -> StaticIntTuple[output_rank]:
+) raises -> IndexList[output_rank]:
     if output_rank != target_shape_buf.dim(0):
         raise Error(
             "[broadcast_to] requires (len(target_shape) == output_rank)"
@@ -1129,7 +1127,7 @@ fn broadcast_to_shape[
         raise Error("[broadcast_to] requires (input_rank <= output_rank)")
 
     # move the output shape from buffer into a static int tuple
-    var output_shape = StaticIntTuple[output_rank]()
+    var output_shape = IndexList[output_rank]()
 
     for axis in range(output_rank):
         output_shape[axis] = int(target_shape_buf[axis])
@@ -1290,7 +1288,7 @@ fn concat[
     single_thread_blocking_override: Bool,
     lambdas_have_fusion: Bool,
     output_0_fn: fn[width: Int, rank: Int, element_alignment: Int] (
-        StaticIntTuple[rank], SIMD[type, width]
+        IndexList[rank], SIMD[type, width]
     ) capturing -> None,
     target: StringLiteral = "cpu",
 ](
@@ -1303,9 +1301,9 @@ fn concat[
     @parameter
     fn epilogue_wrapper[
         _type: DType, _rank: Int, width: Int, *, alignment: Int = 1
-    ](indices: StaticIntTuple[_rank], value: SIMD[_type, width]):
+    ](indices: IndexList[_rank], value: SIMD[_type, width]):
         output_0_fn[width, rank, alignment](
-            rebind[StaticIntTuple[rank]](indices),
+            rebind[IndexList[rank]](indices),
             rebind[SIMD[type, width]](value),
         )
 
@@ -1331,7 +1329,7 @@ fn concat_shape[
 ](
     axis0: Scalar,
     *input_bufs: NDBuffer[input_type, input_rank],
-) raises -> StaticIntTuple[input_rank]:
+) raises -> IndexList[input_rank]:
     # TODO we should refactor this with `concat_from_list_shape`, but this
     # variadic input version has more static info (we _always_ know how many
     # input buffers there'll be for each invocation), thereby yielding simpler
@@ -1348,7 +1346,7 @@ fn concat_shape[
     @parameter
     @always_inline
     fn shape_equal_ignore_axis(
-        s1: StaticIntTuple[input_rank], s2: StaticIntTuple[input_rank]
+        s1: IndexList[input_rank], s2: IndexList[input_rank]
     ) -> Bool:
         for i in range(input_rank):
             if i != axis and s1[i] != s2[i]:
@@ -1592,18 +1590,18 @@ fn mean[
     type: DType,
     rank: Int,
     single_thread_blocking_override: Bool,
-    input_0_fn: fn[width: Int, rank: Int] (
-        StaticIntTuple[rank]
-    ) capturing -> SIMD[type, width],
+    input_0_fn: fn[width: Int, rank: Int] (IndexList[rank]) capturing -> SIMD[
+        type, width
+    ],
     output_0_fn: fn[width: Int, rank: Int, element_alignment: Int] (
-        StaticIntTuple[rank], SIMD[type, width]
+        IndexList[rank], SIMD[type, width]
     ) capturing -> None,
     /,
     target: StringLiteral = "cpu",
 ](
-    input_shape: StaticIntTuple[rank],
+    input_shape: IndexList[rank],
     axis: Scalar,
-    output_shape: StaticIntTuple[rank],
+    output_shape: IndexList[rank],
     ctx: MojoCallContextPtr,
 ) raises:
     _mean[
@@ -1725,7 +1723,7 @@ fn reduce_shape[
 ](
     input_buf: NDBuffer[input_type, input_rank],
     axis0: Scalar,
-) raises -> StaticIntTuple[input_rank]:
+) raises -> IndexList[input_rank]:
     """
     Compute the output shape of a `reduce` operation, and assert the inputs are
     compatible.
@@ -1764,31 +1762,31 @@ fn reduce_add[
     type: DType,
     rank: Int,
     single_thread_blocking_override: Bool,
-    input_0_fn: fn[width: Int, rank: Int] (
-        StaticIntTuple[rank]
-    ) capturing -> SIMD[type, width],
+    input_0_fn: fn[width: Int, rank: Int] (IndexList[rank]) capturing -> SIMD[
+        type, width
+    ],
     output_0_fn: fn[width: Int, rank: Int, element_alignment: Int] (
-        StaticIntTuple[rank], SIMD[type, width]
+        IndexList[rank], SIMD[type, width]
     ) capturing -> None,
     target: StringLiteral = "cpu",
 ](
-    input_shape: StaticIntTuple[rank],
+    input_shape: IndexList[rank],
     axis: Scalar,
-    output_shape: StaticIntTuple[rank],
+    output_shape: IndexList[rank],
     ctx: MojoCallContextPtr,
 ) raises:
     @always_inline
     @parameter
     fn input_0_fn_wrapper[
         _type: DType, width: Int, rank: Int
-    ](idx: StaticIntTuple[rank]) -> SIMD[_type, width]:
+    ](idx: IndexList[rank]) -> SIMD[_type, width]:
         return rebind[SIMD[_type, width]](input_0_fn[width, rank](idx))
 
     @always_inline
     @parameter
     fn output_0_fn_wrapper[
         _type: DType, width: Int, rank: Int
-    ](indices: StaticIntTuple[rank], value: SIMD[_type, width]):
+    ](indices: IndexList[rank], value: SIMD[_type, width]):
         output_0_fn[width, rank, element_alignment=1](
             indices, rebind[SIMD[type, width]](value)
         )
@@ -1817,31 +1815,31 @@ fn reduce_max[
     type: DType,
     rank: Int,
     single_thread_blocking_override: Bool,
-    input_0_fn: fn[width: Int, rank: Int] (
-        StaticIntTuple[rank]
-    ) capturing -> SIMD[type, width],
+    input_0_fn: fn[width: Int, rank: Int] (IndexList[rank]) capturing -> SIMD[
+        type, width
+    ],
     output_0_fn: fn[width: Int, rank: Int, element_alignment: Int] (
-        StaticIntTuple[rank], SIMD[type, width]
+        IndexList[rank], SIMD[type, width]
     ) capturing -> None,
     target: StringLiteral = "cpu",
 ](
-    input_shape: StaticIntTuple[rank],
+    input_shape: IndexList[rank],
     axis: Scalar,
-    output_shape: StaticIntTuple[rank],
+    output_shape: IndexList[rank],
     ctx: MojoCallContextPtr,
 ) raises:
     @always_inline
     @parameter
     fn input_0_fn_wrapper[
         _type: DType, width: Int, rank: Int
-    ](idx: StaticIntTuple[rank]) -> SIMD[_type, width]:
+    ](idx: IndexList[rank]) -> SIMD[_type, width]:
         return rebind[SIMD[_type, width]](input_0_fn[width, rank](idx))
 
     @always_inline
     @parameter
     fn output_0_fn_wrapper[
         _type: DType, width: Int, rank: Int
-    ](indices: StaticIntTuple[rank], value: SIMD[_type, width]):
+    ](indices: IndexList[rank], value: SIMD[_type, width]):
         output_0_fn[width, rank, element_alignment=1](
             indices, rebind[SIMD[type, width]](value)
         )
@@ -1870,31 +1868,31 @@ fn reduce_min[
     type: DType,
     rank: Int,
     single_thread_blocking_override: Bool,
-    input_0_fn: fn[width: Int, rank: Int] (
-        StaticIntTuple[rank]
-    ) capturing -> SIMD[type, width],
+    input_0_fn: fn[width: Int, rank: Int] (IndexList[rank]) capturing -> SIMD[
+        type, width
+    ],
     output_0_fn: fn[width: Int, rank: Int, element_alignment: Int] (
-        StaticIntTuple[rank], SIMD[type, width]
+        IndexList[rank], SIMD[type, width]
     ) capturing -> None,
     target: StringLiteral = "cpu",
 ](
-    input_shape: StaticIntTuple[rank],
+    input_shape: IndexList[rank],
     axis: Scalar,
-    output_shape: StaticIntTuple[rank],
+    output_shape: IndexList[rank],
     ctx: MojoCallContextPtr,
 ) raises:
     @always_inline
     @parameter
     fn input_0_fn_wrapper[
         _type: DType, width: Int, rank: Int
-    ](idx: StaticIntTuple[rank]) -> SIMD[_type, width]:
+    ](idx: IndexList[rank]) -> SIMD[_type, width]:
         return rebind[SIMD[_type, width]](input_0_fn[width, rank](idx))
 
     @always_inline
     @parameter
     fn output_0_fn_wrapper[
         _type: DType, width: Int, rank: Int
-    ](indices: StaticIntTuple[rank], value: SIMD[_type, width]):
+    ](indices: IndexList[rank], value: SIMD[_type, width]):
         output_0_fn[width, rank, element_alignment=1](
             indices, rebind[SIMD[type, width]](value)
         )
@@ -1923,31 +1921,31 @@ fn reduce_mul[
     type: DType,
     rank: Int,
     single_thread_blocking_override: Bool,
-    input_0_fn: fn[width: Int, rank: Int] (
-        StaticIntTuple[rank]
-    ) capturing -> SIMD[type, width],
+    input_0_fn: fn[width: Int, rank: Int] (IndexList[rank]) capturing -> SIMD[
+        type, width
+    ],
     output_0_fn: fn[width: Int, rank: Int, element_alignment: Int] (
-        StaticIntTuple[rank], SIMD[type, width]
+        IndexList[rank], SIMD[type, width]
     ) capturing -> None,
     target: StringLiteral = "cpu",
 ](
-    input_shape: StaticIntTuple[rank],
+    input_shape: IndexList[rank],
     axis: Scalar,
-    output_shape: StaticIntTuple[rank],
+    output_shape: IndexList[rank],
     ctx: MojoCallContextPtr,
 ) raises:
     @always_inline
     @parameter
     fn input_0_fn_wrapper[
         _type: DType, width: Int, rank: Int
-    ](idx: StaticIntTuple[rank]) -> SIMD[_type, width]:
+    ](idx: IndexList[rank]) -> SIMD[_type, width]:
         return rebind[SIMD[_type, width]](input_0_fn[width, rank](idx))
 
     @always_inline
     @parameter
     fn output_0_fn_wrapper[
         _type: DType, width: Int, rank: Int
-    ](indices: StaticIntTuple[rank], value: SIMD[_type, width]):
+    ](indices: IndexList[rank], value: SIMD[_type, width]):
         output_0_fn[width, rank, element_alignment=1](
             indices, rebind[SIMD[type, width]](value)
         )
@@ -2049,7 +2047,7 @@ fn calculate_squeeze_shape[
         num_input_dims <= MAX_VECTOR_LIMIT,
         "Only support shape vectors up to rank-12.",
     )
-    var input_shape_copy = StaticIntTuple[MAX_VECTOR_LIMIT]()
+    var input_shape_copy = IndexList[MAX_VECTOR_LIMIT]()
     for i in range(num_input_dims):
         input_shape_copy[i] = int(input_shape[i])
 
@@ -2078,7 +2076,7 @@ fn squeeze_shape_shape[
 ](
     input_shape: NDBuffer[type, 1],
     remove_indices: NDBuffer[indices_type, 1],
-) raises -> StaticIntTuple[1]:
+) raises -> IndexList[1]:
     var out_dim = input_shape.dim(0) - remove_indices.dim(0)
 
     if out_dim < 0:
@@ -2086,7 +2084,7 @@ fn squeeze_shape_shape[
             "[squeeze_shape] cannot remove more dimensions than there exists"
         )
 
-    return StaticIntTuple[1](out_dim)
+    return IndexList[1](out_dim)
 
 
 # ===----------------------------------------------------------------------===#
@@ -2156,9 +2154,9 @@ fn unsqueeze_shape_shape[
 ](
     input_shape: NDBuffer[type, 1],
     padding_indices: NDBuffer[indices_type, 1],
-) -> StaticIntTuple[1]:
+) -> IndexList[1]:
     var out_dim = input_shape.dim(0) + padding_indices.dim(0)
-    return StaticIntTuple[1](out_dim)
+    return IndexList[1](out_dim)
 
 
 # ===----------------------------------------------------------------------===#
@@ -2181,8 +2179,8 @@ fn transpose[
     perms: NDBuffer[int_type, 1],
     ctx: MojoCallContextPtr,
 ) -> NDBuffer[type, rank]:
-    var new_shape = StaticIntTuple[rank]()
-    var new_stride = StaticIntTuple[rank]()
+    var new_shape = IndexList[rank]()
+    var new_stride = IndexList[rank]()
 
     @parameter
     for i in range(rank):
@@ -2204,7 +2202,7 @@ fn transpose_shape[
 ](
     input: NDBuffer[type, rank],
     perms: NDBuffer[int_type, 1],
-) raises -> StaticIntTuple[rank]:
+) raises -> IndexList[rank]:
     if perms.dim(0) != rank:
         raise Error("[transpose] permutation size must match input rank")
 
@@ -2272,18 +2270,18 @@ fn gather[
     output_rank: Int,
     simd_width: Int,
     single_thread_blocking_override: Bool,
-    input_0_fn: fn[width: Int, rank: Int] (
-        StaticIntTuple[rank]
-    ) capturing -> SIMD[type, width],
+    input_0_fn: fn[width: Int, rank: Int] (IndexList[rank]) capturing -> SIMD[
+        type, width
+    ],
     output_0_fn: fn[width: Int, rank: Int, element_alignment: Int] (
-        StaticIntTuple[rank], SIMD[type, width]
+        IndexList[rank], SIMD[type, width]
     ) capturing -> None,
     target: StringLiteral = "cpu",
 ](
-    input_shape: StaticIntTuple[in_rank],
+    input_shape: IndexList[in_rank],
     indices: NDBuffer[indices_type, indices_rank],
     axis: Scalar,
-    output_shape: StaticIntTuple[output_rank],
+    output_shape: IndexList[output_rank],
     ctx: MojoCallContextPtr,
 ) raises:
     # TODO: This is disabled as if we make this a shape without a spec we have
@@ -2292,9 +2290,9 @@ fn gather[
     @always_inline
     fn load_indices[
         width: Int, _rank: Int
-    ](coords: StaticIntTuple[_rank]) -> SIMD[indices_type, width]:
+    ](coords: IndexList[_rank]) -> SIMD[indices_type, width]:
         return indices.load[width=width](
-            rebind[StaticIntTuple[indices_rank]](coords)
+            rebind[IndexList[indices_rank]](coords)
         )
 
     # FIXME(#26008): async raising functions are temporarily disabled.
@@ -2347,7 +2345,7 @@ fn matmul[
     single_thread_blocking_override: Bool,
     lambdas_have_fusion: Bool,
     output_0_fn: fn[width: Int, rank: Int, element_alignment: Int] (
-        StaticIntTuple[rank], SIMD[c_type, width]
+        IndexList[rank], SIMD[c_type, width]
     ) capturing -> None,
     /,
     trace_description: StringLiteral,
@@ -2372,7 +2370,7 @@ fn matmul[
     @always_inline
     fn epilogue_wrapper[
         _type: DType, width: Int, *, alignment: Int = 1
-    ](coords: StaticIntTuple[2], val: SIMD[_type, width]):
+    ](coords: IndexList[2], val: SIMD[_type, width]):
         output_0_fn[width, 2, alignment](
             coords, rebind[SIMD[c_type, width]](val)
         )
@@ -2407,7 +2405,7 @@ fn batched_matmul[
     single_thread_blocking_override: Bool,
     lambdas_have_fusion: Bool,
     output_0_fn: fn[width: Int, rank: Int, element_alignment: Int] (
-        StaticIntTuple[rank], SIMD[c_type, width]
+        IndexList[rank], SIMD[c_type, width]
     ) capturing -> None,
     target: StringLiteral = "cpu",
 ](
@@ -2422,7 +2420,7 @@ fn batched_matmul[
     @always_inline
     fn epilogue_wrapper[
         _type: DType, width: Int, rank: Int, *, alignment: Int = 1
-    ](coords: StaticIntTuple[rank], val: SIMD[_type, width]):
+    ](coords: IndexList[rank], val: SIMD[_type, width]):
         output_0_fn[width, rank, alignment](
             coords, rebind[SIMD[c_type, width]](val)
         )
@@ -2793,11 +2791,11 @@ fn softmax[
     rank: Int,
     type: DType,
     input_0_fn: fn[_simd_width: Int, _rank: Int] (
-        StaticIntTuple[_rank]
+        IndexList[_rank]
     ) capturing -> SIMD[type, _simd_width],
     target: StringLiteral = "cpu",
 ](
-    shape: StaticIntTuple[rank],
+    shape: IndexList[rank],
     output: NDBuffer[type, rank],
     ctx: MojoCallContextPtr,
 ) raises:
@@ -2819,10 +2817,10 @@ fn logsoftmax[
     rank: Int,
     type: DType,
     input_0_fn: fn[_simd_width: Int, _rank: Int] (
-        StaticIntTuple[_rank]
+        IndexList[_rank]
     ) capturing -> SIMD[type, _simd_width],
 ](
-    shape: StaticIntTuple[rank],
+    shape: IndexList[rank],
     output: NDBuffer[type, rank],
     ctx: MojoCallContextPtr,
 ) raises:
@@ -2877,7 +2875,7 @@ fn non_maximum_suppression_shape_func[
     max_output_boxes_per_class: NDBuffer[DType.int64, 1, DimList(1)],
     iou_threshold: NDBuffer[DType.float32, 1, DimList(1)],
     score_threshold: NDBuffer[DType.float32, 1, DimList(1)],
-) -> StaticIntTuple[2]:
+) -> IndexList[2]:
     var max_output_boxes_int = int(max_output_boxes_per_class[0])
     var iou_threshold_float = iou_threshold[0]
     var score_threshold_float = score_threshold[0]
@@ -2956,8 +2954,8 @@ fn random_shape[
     shapeType: DType,
     rank: Int,
     single_thread_blocking_override: Bool,
-](shape: NDBuffer[shapeType, 1, DimList(rank)],) -> StaticIntTuple[rank]:
-    var unrolledShape = StaticIntTuple[rank]()
+](shape: NDBuffer[shapeType, 1, DimList(rank)],) -> IndexList[rank]:
+    var unrolledShape = IndexList[rank]()
 
     for i in range(rank):
         unrolledShape[i] = int(shape[i])
@@ -3019,8 +3017,8 @@ fn resize_nearest_shape[
 ](
     input: NDBuffer[inpType, rank],
     size: NDBuffer[sizeType, 1, DimList(rank)],
-) -> StaticIntTuple[rank]:
-    var shape = StaticIntTuple[rank]()
+) -> IndexList[rank]:
+    var shape = IndexList[rank]()
 
     for i in range(rank):
         shape[i] = int(size[i])
@@ -3037,8 +3035,8 @@ fn resize_linear_shape[
 ](
     input: NDBuffer[inpType, rank],
     size: NDBuffer[sizeType, 1, DimList(rank)],
-) -> StaticIntTuple[rank]:
-    var shape = StaticIntTuple[rank]()
+) -> IndexList[rank]:
+    var shape = IndexList[rank]()
 
     for i in range(rank):
         shape[i] = int(size[i])
@@ -3086,8 +3084,8 @@ fn roi_align_shape[
     rois: NDBuffer[roisTy, 2],
     output_height: NDBuffer[DType.int64, 1],
     output_width: NDBuffer[DType.int64, 1],
-) -> StaticIntTuple[4]:
-    var shape = StaticIntTuple[4]()
+) -> IndexList[4]:
+    var shape = IndexList[4]()
 
     # input shape is [N, H, W, C]
     # rois shape is [M, 5]
@@ -3118,7 +3116,7 @@ fn split_ith_output_shape[
     input_buf: NDBuffer[input_type, rank],
     split_sizes_buf: NDBuffer[split_size_type, 1],
     split_axis_buf: NDBuffer[axis_type, 1],
-) raises -> StaticIntTuple[rank]:
+) raises -> IndexList[rank]:
     # extract relevant hyper parameters
     if output_idx < 0 or split_sizes_buf.size() <= output_idx:
         raise Error(
@@ -3171,7 +3169,7 @@ fn conv[
     static_dilations: DimList,
     static_padding: DimList,
     output_0_fn: fn[width: Int, rank: Int, element_alignment: Int] (
-        StaticIntTuple[rank], SIMD[output_type, width]
+        IndexList[rank], SIMD[output_type, width]
     ) capturing -> None,
 ](
     input: NDBuffer[input_type, input_rank, input_0_static_shape],
@@ -3185,7 +3183,7 @@ fn conv[
 ) raises:
     """Including this function in MOGG.mojo since it is intended to be a temporary
     wrapper around the Stdlib conv. Currently the strides and dilation are NDBuffers,
-    but eventually they will be StaticIntTuple parameters (along with padding).
+    but eventually they will be IndexList parameters (along with padding).
     """
     constrained[
         strides_type.is_integral() and dilation_type.is_integral(),
@@ -3205,20 +3203,20 @@ fn conv[
     var dilation_flat = dilation.flatten()
     var padding_flat = paddings.flatten()
 
-    var stride_tuple = StaticIntTuple[input_rank - 2](0)
-    var dilation_tuple = StaticIntTuple[input_rank - 2](0)
+    var stride_tuple = IndexList[input_rank - 2](0)
+    var dilation_tuple = IndexList[input_rank - 2](0)
 
     @parameter
     for i in range(input_rank - 2):
         stride_tuple[i] = int(stride_flat[i])
         dilation_tuple[i] = int(dilation_flat[i])
 
-    if dilation_tuple != StaticIntTuple[input_rank - 2](1):
+    if dilation_tuple != IndexList[input_rank - 2](1):
         raise Error("Non-unit dilation is not supported yet.")
 
-    var pad_d_tuple = StaticIntTuple[2](0)
-    var pad_h_tuple = StaticIntTuple[2](0)
-    var pad_w_tuple = StaticIntTuple[2](0)
+    var pad_d_tuple = IndexList[2](0)
+    var pad_h_tuple = IndexList[2](0)
+    var pad_w_tuple = IndexList[2](0)
 
     @parameter
     if input_rank == 3:
@@ -3246,7 +3244,7 @@ fn conv[
     @always_inline
     fn epilogue_wrapper[
         _type: DType, _rank: Int, _width: Int
-    ](coords: StaticIntTuple[_rank], val: SIMD[_type, _width]):
+    ](coords: IndexList[_rank], val: SIMD[_type, _width]):
         output_0_fn[_width, _rank, element_alignment=1](
             coords, rebind[SIMD[output_type, _width]](val)
         )
@@ -3293,7 +3291,7 @@ fn conv_transpose[
     lambdas_have_fusion: Bool,
     filter_packed: Bool,
     output_0_fn: fn[width: Int, rank: Int, element_alignment: Int] (
-        StaticIntTuple[rank], SIMD[output_type, width]
+        IndexList[rank], SIMD[output_type, width]
     ) capturing -> None,
 ](
     input: NDBuffer[input_type, input_rank],
@@ -3327,17 +3325,17 @@ fn conv_transpose[
             "$(2*(input_rank-2)) value expected in convTranspose paddings"
         )
 
-    var stride_tuple = StaticIntTuple[input_rank - 2](0)
-    var dilation_tuple = StaticIntTuple[input_rank - 2](0)
+    var stride_tuple = IndexList[input_rank - 2](0)
+    var dilation_tuple = IndexList[input_rank - 2](0)
 
     @parameter
     for i in range(input_rank - 2):
         stride_tuple[i] = int(strides[i])
         dilation_tuple[i] = int(dilation[i])
 
-    var pad_d = StaticIntTuple[2](0)
-    var pad_h = StaticIntTuple[2](0)
-    var pad_w = StaticIntTuple[2](0)
+    var pad_d = IndexList[2](0)
+    var pad_h = IndexList[2](0)
+    var pad_w = IndexList[2](0)
 
     @parameter
     if input_rank == 3:
@@ -3354,7 +3352,7 @@ fn conv_transpose[
     @always_inline
     fn epilogue_wrapper[
         _type: DType, _rank: Int, _width: Int
-    ](coords: StaticIntTuple[_rank], val: SIMD[_type, _width]):
+    ](coords: IndexList[_rank], val: SIMD[_type, _width]):
         output_0_fn[_width, _rank, element_alignment=1](
             coords, rebind[SIMD[output_type, _width]](val)
         )
@@ -3583,7 +3581,7 @@ fn pack_conv_filter_shape[
     paddings: DimList,
     num_groups: Int,
     single_thread_blocking_override: Bool,
-](filter_buf: NDBuffer[filter_type, rank]) -> StaticIntTuple[rank + 1]:
+](filter_buf: NDBuffer[filter_type, rank]) -> IndexList[rank + 1]:
     """
     Compute the output shape of convolution filter packing.
 
@@ -3626,7 +3624,7 @@ fn pack_conv_transpose_filter_shape[
     rank: Int,
     filter_type: DType,
     single_thread_blocking_override: Bool,
-](filter_buf: NDBuffer[filter_type, rank]) -> StaticIntTuple[rank + 1]:
+](filter_buf: NDBuffer[filter_type, rank]) -> IndexList[rank + 1]:
     return _pack_conv_transpose_filter_shape(filter_buf, 1)
 
 
@@ -3831,17 +3829,17 @@ fn reduce_min_and_max[
     type: DType,
     rank: Int,
     single_thread_blocking_override: Bool,
-    input_0_fn: fn[width: Int, rank: Int] (
-        StaticIntTuple[rank]
-    ) capturing -> SIMD[type, width],
+    input_0_fn: fn[width: Int, rank: Int] (IndexList[rank]) capturing -> SIMD[
+        type, width
+    ],
     output_0_fn: fn[width: Int, rank: Int, element_alignment: Int] (
-        StaticIntTuple[rank], SIMD[type, width]
+        IndexList[rank], SIMD[type, width]
     ) capturing -> None,
     target: StringLiteral = "cpu",
 ](
-    input_shape: StaticIntTuple[rank],
+    input_shape: IndexList[rank],
     axis0: Scalar,
-    output_shape: StaticIntTuple[rank],
+    output_shape: IndexList[rank],
     ctx: MojoCallContextPtr,
 ) raises:
     """Given a tensor of shape [A, B, C, D] and reducing along dimension 'C'
@@ -3856,7 +3854,7 @@ fn reduce_min_and_max[
     @parameter
     fn input_0_fn_wrapper[
         _type: DType, width: Int, rank: Int
-    ](idx: StaticIntTuple[rank]) -> SIMD[_type, width]:
+    ](idx: IndexList[rank]) -> SIMD[_type, width]:
         return rebind[SIMD[_type, width]](input_0_fn[width, rank](idx))
 
     @always_inline
@@ -3864,7 +3862,7 @@ fn reduce_min_and_max[
     fn output_0_fn_wrapper[
         _type: DType, width: Int, rank: Int
     ](
-        indices: StaticIntTuple[rank],
+        indices: IndexList[rank],
         val: StaticTuple[SIMD[_type, width], num_reductions],
     ):
         # TODO: once we support multiple outputs, change this to route to
@@ -3923,7 +3921,7 @@ fn reduce_min_and_max_shape_func[
 ](
     data: NDBuffer[type, rank, DimList.create_unknown[rank]()],
     axis0: Scalar,
-) -> StaticIntTuple[rank]:
+) -> IndexList[rank]:
     var new_shape = data.get_shape()
     var axis = int(normalize_neg_index(axis0, rank))
     new_shape[axis] = 2
@@ -4141,18 +4139,18 @@ fn no_mask_flash_attention_cpu[
     type: DType,
     rank: Int,
     input_1_fn: fn[simd_width: Int, rank: Int] (
-        StaticIntTuple[rank]
+        IndexList[rank]
     ) capturing -> SIMD[type, simd_width],
     input_2_fn: fn[simd_width: Int, rank: Int] (
-        StaticIntTuple[rank]
+        IndexList[rank]
     ) capturing -> SIMD[type, simd_width],
     input_4_static_shape: DimList,
     single_thread_blocking_override: Bool,
     target: StringLiteral = "cpu",
 ](
     q: NDBuffer[type, rank],
-    input_1_shape: StaticIntTuple[rank],
-    input_2_shape: StaticIntTuple[rank],
+    input_1_shape: IndexList[rank],
+    input_2_shape: IndexList[rank],
     scale: Scalar[type],
     output: NDBuffer[type, rank, input_4_static_shape],
     ctx: MojoCallContextPtr,
@@ -4163,7 +4161,7 @@ fn no_mask_flash_attention_cpu[
     @always_inline
     fn mask_fn[
         simd_width: Int, _rank: Int
-    ](idx: StaticIntTuple[_rank]) -> SIMD[type, simd_width]:
+    ](idx: IndexList[_rank]) -> SIMD[type, simd_width]:
         return SIMD[type, simd_width](0)
 
     nn_flash_attention[input_1_fn, input_2_fn, mask_fn](
@@ -4182,30 +4180,30 @@ fn with_mask_flash_attention_split_kv_cache_cpu[
     type: DType,
     rank: Int, //,
     input_1_fn: fn[simd_width: Int, rank: Int] (
-        StaticIntTuple[rank]
+        IndexList[rank]
     ) capturing -> SIMD[type, simd_width],
     input_2_fn: fn[simd_width: Int, rank: Int] (
-        StaticIntTuple[rank]
+        IndexList[rank]
     ) capturing -> SIMD[type, simd_width],
     input_3_fn: fn[simd_width: Int, rank: Int] (
-        StaticIntTuple[rank]
+        IndexList[rank]
     ) capturing -> SIMD[type, simd_width],
     input_4_fn: fn[simd_width: Int, rank: Int] (
-        StaticIntTuple[rank]
+        IndexList[rank]
     ) capturing -> SIMD[type, simd_width],
     input_5_fn: fn[simd_width: Int, rank: Int] (
-        StaticIntTuple[rank]
+        IndexList[rank]
     ) capturing -> SIMD[type, simd_width],
     input_7_static_shape: DimList,
     single_thread_blocking_override: Bool,
     target: StringLiteral = "cpu",
 ](
     q: NDBuffer[type, rank, *_],
-    input_1_shape: StaticIntTuple[rank],
-    input_2_shape: StaticIntTuple[rank],
-    input_3_shape: StaticIntTuple[rank + 1],
-    input_4_shape: StaticIntTuple[rank + 1],
-    input_5_shape: StaticIntTuple[rank],
+    input_1_shape: IndexList[rank],
+    input_2_shape: IndexList[rank],
+    input_3_shape: IndexList[rank + 1],
+    input_4_shape: IndexList[rank + 1],
+    input_5_shape: IndexList[rank],
     scale: Scalar[type],
     output: NDBuffer[type, rank, input_7_static_shape],
     ctx: MojoCallContextPtr,
@@ -4251,7 +4249,7 @@ fn with_mask_flash_attention_split_kv_cache_cpu[
 @export
 fn with_mask_flash_attention_split_kv_cpu_shape_func[
     type: DType, rank: Int, single_thread_blocking_override: Bool
-](q: NDBuffer[type, rank]) -> StaticIntTuple[rank]:
+](q: NDBuffer[type, rank]) -> IndexList[rank]:
     return q.get_shape()
     # TODO(#37702): The following shape function incurs a KV cache copy:
     # Take the `softmax(Q @ K^T) @ V` product's channel dimension from `V`.
@@ -4268,22 +4266,22 @@ fn with_mask_flash_attention_cpu[
     type: DType,
     rank: Int,
     input_1_fn: fn[simd_width: Int, rank: Int] (
-        StaticIntTuple[rank]
+        IndexList[rank]
     ) capturing -> SIMD[type, simd_width],
     input_2_fn: fn[simd_width: Int, rank: Int] (
-        StaticIntTuple[rank]
+        IndexList[rank]
     ) capturing -> SIMD[type, simd_width],
     input_3_fn: fn[simd_width: Int, rank: Int] (
-        StaticIntTuple[rank]
+        IndexList[rank]
     ) capturing -> SIMD[type, simd_width],
     input_5_static_shape: DimList,
     single_thread_blocking_override: Bool,
     target: StringLiteral = "cpu",
 ](
     q: NDBuffer[type, rank],
-    input_1_shape: StaticIntTuple[rank],
-    input_2_shape: StaticIntTuple[rank],
-    input_3_shape: StaticIntTuple[rank],
+    input_1_shape: IndexList[rank],
+    input_2_shape: IndexList[rank],
+    input_3_shape: IndexList[rank],
     scale: Scalar[type],
     output: NDBuffer[type, rank, input_5_static_shape],
     ctx: MojoCallContextPtr,
@@ -4373,16 +4371,14 @@ fn vroom_q4_0_matmul(
 @export
 fn vroom_q4_0_matmul_shape_func[
     single_thread_blocking_override: Bool
-](a: NDBuffer[DType.float32, 2], b: NDBuffer[DType.uint8, 2]) -> StaticIntTuple[
-    2
-]:
+](a: NDBuffer[DType.float32, 2], b: NDBuffer[DType.uint8, 2]) -> IndexList[2]:
     constrained[
         a.type.is_floating_point(), "expected float inputs and outputs"
     ]()
     constrained[b.type is DType.uint8, "expected uint8 input b"]()
     constrained[a.rank == b.rank == 2, "expected rank to be 2"]()
 
-    return StaticIntTuple[2](a.dim[0](), b.dim[0]())
+    return IndexList[2](a.dim[0](), b.dim[0]())
 
 
 @mogg_register_override("vroom_q4_0_repack_weights", 1)
@@ -4401,7 +4397,7 @@ fn vroom_q4_0_repack_weights(
 @export
 fn vroom_q4_0_repack_weights_shape_func[
     single_thread_blocking_override: Bool
-](b: NDBuffer[DType.uint8, 2]) -> StaticIntTuple[2]:
+](b: NDBuffer[DType.uint8, 2]) -> IndexList[2]:
     return b.get_shape()
 
 
@@ -4424,7 +4420,7 @@ fn ggml_q4_0_dequantize(
 @export
 fn ggml_q4_0_dequantize_shape_func[
     single_thread_blocking_override: Bool
-](input: NDBuffer[DType.uint8, 2]) -> StaticIntTuple[2]:
+](input: NDBuffer[DType.uint8, 2]) -> IndexList[2]:
     constrained[input.type is DType.uint8, "expected uint8 input"]()
 
     alias block_nbytes = sizeof[Q4sym[group_size=32]]()
@@ -4460,10 +4456,8 @@ fn vroom_q4_k_matmul(
 @export
 fn vroom_q4_k_matmul_shape_func[
     single_thread_blocking_override: Bool
-](a: NDBuffer[DType.float32, 2], b: NDBuffer[DType.uint8, 2]) -> StaticIntTuple[
-    2
-]:
-    return StaticIntTuple[2](a.dim[0](), b.dim[0]())
+](a: NDBuffer[DType.float32, 2], b: NDBuffer[DType.uint8, 2]) -> IndexList[2]:
+    return IndexList[2](a.dim[0](), b.dim[0]())
 
 
 @mogg_register_override("vroom_q4_k_repack_weights", 1)
@@ -4482,7 +4476,7 @@ fn vroom_q4_k_repack_weights(
 @export
 fn vroom_q4_k_repack_weights_shape_func[
     single_thread_blocking_override: Bool
-](b: NDBuffer[DType.uint8, 2]) -> StaticIntTuple[2]:
+](b: NDBuffer[DType.uint8, 2]) -> IndexList[2]:
     return b.get_shape()
 
 
@@ -4503,7 +4497,7 @@ fn ggml_q4_k_dequantize(
 @export
 fn ggml_q4_k_dequantize_shape_func[
     single_thread_blocking_override: Bool
-](input: NDBuffer[DType.uint8, 2]) -> StaticIntTuple[2]:
+](input: NDBuffer[DType.uint8, 2]) -> IndexList[2]:
     alias block_nbytes = sizeof[block_Q4_K]()
     alias elements_per_block = block_QK_K.quantized_k
 
@@ -4537,10 +4531,8 @@ fn vroom_q6_k_matmul(
 @export
 fn vroom_q6_k_matmul_shape_func[
     single_thread_blocking_override: Bool
-](a: NDBuffer[DType.float32, 2], b: NDBuffer[DType.uint8, 2]) -> StaticIntTuple[
-    2
-]:
-    return StaticIntTuple[2](a.dim[0](), b.dim[0]())
+](a: NDBuffer[DType.float32, 2], b: NDBuffer[DType.uint8, 2]) -> IndexList[2]:
+    return IndexList[2](a.dim[0](), b.dim[0]())
 
 
 @mogg_register_override("vroom_q6_k_repack_weights", 1)
@@ -4559,7 +4551,7 @@ fn vroom_q6_k_repack_weights(
 @export
 fn vroom_q6_k_repack_weights_shape_func[
     single_thread_blocking_override: Bool
-](b: NDBuffer[DType.uint8, 2]) -> StaticIntTuple[2]:
+](b: NDBuffer[DType.uint8, 2]) -> IndexList[2]:
     return b.get_shape()
 
 
@@ -4580,7 +4572,7 @@ fn ggml_q6_k_dequantize(
 @export
 fn ggml_q6_k_dequantize_shape_func[
     single_thread_blocking_override: Bool
-](input: NDBuffer[DType.uint8, 2]) -> StaticIntTuple[2]:
+](input: NDBuffer[DType.uint8, 2]) -> IndexList[2]:
     alias block_nbytes = sizeof[block_Q6_K]()
     alias elements_per_block = block_QK_K.quantized_k
 
@@ -4818,7 +4810,7 @@ fn avg_pool_shape[
     strides_buf: NDBuffer[strides_type, 1],
     dilations_buf: NDBuffer[dilations_type, 1],
     paddings_buf: NDBuffer[paddings_type, 1],
-) raises -> StaticIntTuple[input_rank]:
+) raises -> IndexList[input_rank]:
     return pool_shape[
         input_rank,
         input_type,
@@ -4847,7 +4839,7 @@ fn avg_pool_ceil_mode_true_shape[
     strides_buf: NDBuffer[strides_type, 1],
     dilations_buf: NDBuffer[dilations_type, 1],
     paddings_buf: NDBuffer[paddings_type, 1],
-) raises -> StaticIntTuple[input_rank]:
+) raises -> IndexList[input_rank]:
     return pool_shape_ceil[
         input_rank,
         input_type,
@@ -4876,7 +4868,7 @@ fn max_pool_shape[
     strides_buf: NDBuffer[strides_type, 1],
     dilations_buf: NDBuffer[dilations_type, 1],
     paddings_buf: NDBuffer[paddings_type, 1],
-) raises -> StaticIntTuple[input_rank]:
+) raises -> IndexList[input_rank]:
     return pool_shape[
         input_rank,
         input_type,
@@ -4905,7 +4897,7 @@ fn max_pool_ceil_mode_true_shape[
     strides_buf: NDBuffer[strides_type, 1],
     dilations_buf: NDBuffer[dilations_type, 1],
     paddings_buf: NDBuffer[paddings_type, 1],
-) raises -> StaticIntTuple[input_rank]:
+) raises -> IndexList[input_rank]:
     return pool_shape_ceil[
         input_rank,
         input_type,
@@ -4927,7 +4919,7 @@ fn pad_constant_shape[
 ](
     input_buf: NDBuffer[input_type, input_rank],
     paddings_buf: NDBuffer[paddings_type, 1],
-) raises -> StaticIntTuple[input_rank]:
+) raises -> IndexList[input_rank]:
     return pad_shape[
         single_thread_blocking_override=single_thread_blocking_override
     ](input_buf, paddings_buf)
@@ -4943,7 +4935,7 @@ fn pad_repeat_shape[
 ](
     input_buf: NDBuffer[input_type, input_rank],
     paddings_buf: NDBuffer[paddings_type, 1],
-) raises -> StaticIntTuple[input_rank]:
+) raises -> IndexList[input_rank]:
     return pad_shape[
         single_thread_blocking_override=single_thread_blocking_override
     ](input_buf, paddings_buf)
@@ -4959,7 +4951,7 @@ fn pad_reflect_shape[
 ](
     input_buf: NDBuffer[input_type, input_rank],
     paddings_buf: NDBuffer[paddings_type, 1],
-) raises -> StaticIntTuple[input_rank]:
+) raises -> IndexList[input_rank]:
     return pad_shape[
         single_thread_blocking_override=single_thread_blocking_override
     ](input_buf, paddings_buf)

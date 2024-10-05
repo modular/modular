@@ -16,7 +16,7 @@ from runtime.asyncrt import MojoCallContextPtr
 from sys import llvm_intrinsic
 from sys.info import simdwidthof
 from tensor_utils import ManagedTensorSlice, foreach
-from utils import StaticIntTuple
+from utils import IndexList
 from utils.index import Index
 
 # ===----------------------------------------------------------------------===#
@@ -108,7 +108,7 @@ fn reduce_shape[
 ](
     input_buf: ManagedTensorSlice[input_type, input_rank],
     axis0: Scalar,
-) raises -> StaticIntTuple[input_rank]:
+) raises -> IndexList[input_rank]:
     """
     Compute the output shape of a `reduce` operation, and assert the inputs are
     compatible.
@@ -161,7 +161,7 @@ struct Range:
     ):
         @parameter
         @always_inline
-        fn func[width: Int](idx: StaticIntTuple[1]) -> SIMD[type, width]:
+        fn func[width: Int](idx: IndexList[1]) -> SIMD[type, width]:
             return start[0] + step[0] * (iota[type, width](idx[0]))
 
         foreach[func, synchronous, target](output, ctx)
@@ -173,7 +173,7 @@ struct Range:
         start: Scalar[type=type],
         stop: Scalar[type=type],
         step: Scalar[type=type],
-    ) raises -> StaticIntTuple[1]:
+    ) raises -> IndexList[1]:
         return arange_shape[single_thread_blocking_override=True](
             managed_tensor_slice_to_ndbuffer(start),
             managed_tensor_slice_to_ndbuffer(stop),
@@ -201,7 +201,7 @@ struct Add:
     ):
         @parameter
         @always_inline
-        fn func[width: Int](idx: StaticIntTuple[z.rank]) -> SIMD[z.type, width]:
+        fn func[width: Int](idx: IndexList[z.rank]) -> SIMD[z.type, width]:
             var lhs = rebind[SIMD[z.type, width]](x._fused_load[width](idx))
             var rhs = rebind[SIMD[z.type, width]](y._fused_load[width](idx))
             return lhs + rhs
@@ -224,7 +224,7 @@ struct Sub:
     ):
         @parameter
         @always_inline
-        fn func[width: Int](idx: StaticIntTuple[z.rank]) -> SIMD[z.type, width]:
+        fn func[width: Int](idx: IndexList[z.rank]) -> SIMD[z.type, width]:
             var lhs = rebind[SIMD[z.type, width]](x._fused_load[width](idx))
             var rhs = rebind[SIMD[z.type, width]](y._fused_load[width](idx))
             return lhs - rhs
@@ -247,7 +247,7 @@ struct Mul:
     ):
         @parameter
         @always_inline
-        fn func[width: Int](idx: StaticIntTuple[z.rank]) -> SIMD[z.type, width]:
+        fn func[width: Int](idx: IndexList[z.rank]) -> SIMD[z.type, width]:
             var lhs = rebind[SIMD[z.type, width]](x._fused_load[width](idx))
             var rhs = rebind[SIMD[z.type, width]](y._fused_load[width](idx))
             return lhs * rhs
@@ -270,7 +270,7 @@ struct Div:
     ):
         @parameter
         @always_inline
-        fn func[width: Int](idx: StaticIntTuple[z.rank]) -> SIMD[z.type, width]:
+        fn func[width: Int](idx: IndexList[z.rank]) -> SIMD[z.type, width]:
             var lhs = rebind[SIMD[z.type, width]](x._fused_load[width](idx))
             var rhs = rebind[SIMD[z.type, width]](y._fused_load[width](idx))
             return lhs / rhs
@@ -293,7 +293,7 @@ struct Mod:
     ):
         @parameter
         @always_inline
-        fn func[width: Int](idx: StaticIntTuple[z.rank]) -> SIMD[z.type, width]:
+        fn func[width: Int](idx: IndexList[z.rank]) -> SIMD[z.type, width]:
             var lhs = rebind[SIMD[z.type, width]](x._fused_load[width](idx))
             var rhs = rebind[SIMD[z.type, width]](y._fused_load[width](idx))
             return lhs % rhs
@@ -316,7 +316,7 @@ struct Equal:
     ):
         @parameter
         @always_inline
-        fn func[width: Int](idx: StaticIntTuple[z.rank]) -> SIMD[z.type, width]:
+        fn func[width: Int](idx: IndexList[z.rank]) -> SIMD[z.type, width]:
             var lhs = rebind[SIMD[x.type, width]](x._fused_load[width](idx))
             var rhs = rebind[SIMD[x.type, width]](y._fused_load[width](idx))
             return rebind[SIMD[z.type, width]](lhs == rhs)
@@ -339,7 +339,7 @@ struct Greater:
     ):
         @parameter
         @always_inline
-        fn func[width: Int](idx: StaticIntTuple[z.rank]) -> SIMD[z.type, width]:
+        fn func[width: Int](idx: IndexList[z.rank]) -> SIMD[z.type, width]:
             var lhs = rebind[SIMD[x.type, width]](x._fused_load[width](idx))
             var rhs = rebind[SIMD[x.type, width]](y._fused_load[width](idx))
             return rebind[SIMD[z.type, width]](lhs > rhs)
@@ -362,7 +362,7 @@ struct GreaterEqual:
     ):
         @parameter
         @always_inline
-        fn func[width: Int](idx: StaticIntTuple[z.rank]) -> SIMD[z.type, width]:
+        fn func[width: Int](idx: IndexList[z.rank]) -> SIMD[z.type, width]:
             var lhs = rebind[SIMD[x.type, width]](x._fused_load[width](idx))
             var rhs = rebind[SIMD[x.type, width]](y._fused_load[width](idx))
             return rebind[SIMD[z.type, width]](lhs >= rhs)
@@ -385,7 +385,7 @@ struct NotEqual:
     ):
         @parameter
         @always_inline
-        fn func[width: Int](idx: StaticIntTuple[z.rank]) -> SIMD[z.type, width]:
+        fn func[width: Int](idx: IndexList[z.rank]) -> SIMD[z.type, width]:
             var lhs = rebind[SIMD[x.type, width]](x._fused_load[width](idx))
             var rhs = rebind[SIMD[x.type, width]](y._fused_load[width](idx))
             return rebind[SIMD[z.type, width]](lhs != rhs)
@@ -408,7 +408,7 @@ struct And:
     ):
         @parameter
         @always_inline
-        fn func[width: Int](idx: StaticIntTuple[z.rank]) -> SIMD[z.type, width]:
+        fn func[width: Int](idx: IndexList[z.rank]) -> SIMD[z.type, width]:
             var lhs = rebind[SIMD[DType.bool, width]](x._fused_load[width](idx))
             var rhs = rebind[SIMD[DType.bool, width]](y._fused_load[width](idx))
             return rebind[SIMD[z.type, width]](lhs & rhs)
@@ -431,7 +431,7 @@ struct Or:
     ):
         @parameter
         @always_inline
-        fn func[width: Int](idx: StaticIntTuple[z.rank]) -> SIMD[z.type, width]:
+        fn func[width: Int](idx: IndexList[z.rank]) -> SIMD[z.type, width]:
             var lhs = rebind[SIMD[DType.bool, width]](x._fused_load[width](idx))
             var rhs = rebind[SIMD[DType.bool, width]](y._fused_load[width](idx))
             return rebind[SIMD[z.type, width]](lhs | rhs)
@@ -454,7 +454,7 @@ struct Xor:
     ):
         @parameter
         @always_inline
-        fn func[width: Int](idx: StaticIntTuple[z.rank]) -> SIMD[z.type, width]:
+        fn func[width: Int](idx: IndexList[z.rank]) -> SIMD[z.type, width]:
             var lhs = rebind[SIMD[DType.bool, width]](x._fused_load[width](idx))
             var rhs = rebind[SIMD[DType.bool, width]](y._fused_load[width](idx))
             return rebind[SIMD[z.type, width]](lhs ^ rhs)
@@ -477,7 +477,7 @@ struct Pow:
     ):
         @parameter
         @always_inline
-        fn func[width: Int](idx: StaticIntTuple[z.rank]) -> SIMD[z.type, width]:
+        fn func[width: Int](idx: IndexList[z.rank]) -> SIMD[z.type, width]:
             var lhs = rebind[SIMD[z.type, width]](x._fused_load[width](idx))
             var rhs = y.load[width](idx)
             return _pow(lhs, rhs)
@@ -500,7 +500,7 @@ struct Max:
     ):
         @parameter
         @always_inline
-        fn func[width: Int](idx: StaticIntTuple[z.rank]) -> SIMD[z.type, width]:
+        fn func[width: Int](idx: IndexList[z.rank]) -> SIMD[z.type, width]:
             var lhs = rebind[SIMD[z.type, width]](x._fused_load[width](idx))
             var rhs = rebind[SIMD[z.type, width]](y._fused_load[width](idx))
             return max(lhs, rhs)
@@ -523,7 +523,7 @@ struct Min:
     ):
         @parameter
         @always_inline
-        fn func[width: Int](idx: StaticIntTuple[z.rank]) -> SIMD[z.type, width]:
+        fn func[width: Int](idx: IndexList[z.rank]) -> SIMD[z.type, width]:
             var lhs = rebind[SIMD[z.type, width]](x._fused_load[width](idx))
             var rhs = rebind[SIMD[z.type, width]](y._fused_load[width](idx))
             return min(lhs, rhs)
@@ -546,7 +546,7 @@ struct Cast:
     ](y: ManagedTensorSlice, x: ManagedTensorSlice, ctx: MojoCallContextPtr):
         @parameter
         @always_inline
-        fn func[width: Int](idx: StaticIntTuple[y.rank]) -> SIMD[y.type, width]:
+        fn func[width: Int](idx: IndexList[y.rank]) -> SIMD[y.type, width]:
             return rebind[SIMD[y.type, width]](
                 x._fused_load[width](idx).cast[y.type]()
             )
@@ -564,7 +564,7 @@ struct Negative:
     ](y: ManagedTensorSlice, x: ManagedTensorSlice, ctx: MojoCallContextPtr):
         @parameter
         @always_inline
-        fn func[width: Int](idx: StaticIntTuple[y.rank]) -> SIMD[y.type, width]:
+        fn func[width: Int](idx: IndexList[y.rank]) -> SIMD[y.type, width]:
             return rebind[SIMD[y.type, width]](-x._fused_load[width](idx))
 
         foreach[func, synchronous, target](y, ctx)
@@ -580,7 +580,7 @@ struct ReLU:
     ](y: ManagedTensorSlice, x: ManagedTensorSlice, ctx: MojoCallContextPtr):
         @parameter
         @always_inline
-        fn func[width: Int](idx: StaticIntTuple[y.rank]) -> SIMD[y.type, width]:
+        fn func[width: Int](idx: IndexList[y.rank]) -> SIMD[y.type, width]:
             return rebind[SIMD[y.type, width]](relu(x._fused_load[width](idx)))
 
         foreach[func, synchronous, target](y, ctx)
@@ -596,7 +596,7 @@ struct GeLU:
     ](y: ManagedTensorSlice, x: ManagedTensorSlice, ctx: MojoCallContextPtr):
         @parameter
         @always_inline
-        fn func[width: Int](idx: StaticIntTuple[y.rank]) -> SIMD[y.type, width]:
+        fn func[width: Int](idx: IndexList[y.rank]) -> SIMD[y.type, width]:
             return rebind[SIMD[y.type, width]](gelu(x._fused_load[width](idx)))
 
         foreach[func, synchronous, target](y, ctx)
@@ -612,7 +612,7 @@ struct Ceil:
     ](y: ManagedTensorSlice, x: ManagedTensorSlice, ctx: MojoCallContextPtr):
         @parameter
         @always_inline
-        fn func[width: Int](idx: StaticIntTuple[y.rank]) -> SIMD[y.type, width]:
+        fn func[width: Int](idx: IndexList[y.rank]) -> SIMD[y.type, width]:
             return rebind[SIMD[y.type, width]](ceil(x._fused_load[width](idx)))
 
         foreach[func, synchronous, target](y, ctx)
@@ -628,7 +628,7 @@ struct Floor:
     ](y: ManagedTensorSlice, x: ManagedTensorSlice, ctx: MojoCallContextPtr):
         @parameter
         @always_inline
-        fn func[width: Int](idx: StaticIntTuple[y.rank]) -> SIMD[y.type, width]:
+        fn func[width: Int](idx: IndexList[y.rank]) -> SIMD[y.type, width]:
             return rebind[SIMD[y.type, width]](floor(x._fused_load[width](idx)))
 
         foreach[func, synchronous, target](y, ctx)
@@ -644,7 +644,7 @@ struct Tanh:
     ](y: ManagedTensorSlice, x: ManagedTensorSlice, ctx: MojoCallContextPtr):
         @parameter
         @always_inline
-        fn func[width: Int](idx: StaticIntTuple[y.rank]) -> SIMD[y.type, width]:
+        fn func[width: Int](idx: IndexList[y.rank]) -> SIMD[y.type, width]:
             return rebind[SIMD[y.type, width]](tanh(x._fused_load[width](idx)))
 
         foreach[func, synchronous, target](y, ctx)
@@ -660,7 +660,7 @@ struct Cos:
     ](y: ManagedTensorSlice, x: ManagedTensorSlice, ctx: MojoCallContextPtr):
         @parameter
         @always_inline
-        fn func[width: Int](idx: StaticIntTuple[y.rank]) -> SIMD[y.type, width]:
+        fn func[width: Int](idx: IndexList[y.rank]) -> SIMD[y.type, width]:
             return rebind[SIMD[y.type, width]](cos(x._fused_load[width](idx)))
 
         foreach[func, synchronous, target](y, ctx)
@@ -676,7 +676,7 @@ struct Sin:
     ](y: ManagedTensorSlice, x: ManagedTensorSlice, ctx: MojoCallContextPtr):
         @parameter
         @always_inline
-        fn func[width: Int](idx: StaticIntTuple[y.rank]) -> SIMD[y.type, width]:
+        fn func[width: Int](idx: IndexList[y.rank]) -> SIMD[y.type, width]:
             return rebind[SIMD[y.type, width]](sin(x._fused_load[width](idx)))
 
         foreach[func, synchronous, target](y, ctx)
@@ -692,7 +692,7 @@ struct Erf:
     ](y: ManagedTensorSlice, x: ManagedTensorSlice, ctx: MojoCallContextPtr):
         @parameter
         @always_inline
-        fn func[width: Int](idx: StaticIntTuple[y.rank]) -> SIMD[y.type, width]:
+        fn func[width: Int](idx: IndexList[y.rank]) -> SIMD[y.type, width]:
             return rebind[SIMD[y.type, width]](erf(x._fused_load[width](idx)))
 
         foreach[func, synchronous, target](y, ctx)
@@ -708,7 +708,7 @@ struct Exp:
     ](y: ManagedTensorSlice, x: ManagedTensorSlice, ctx: MojoCallContextPtr):
         @parameter
         @always_inline
-        fn func[width: Int](idx: StaticIntTuple[y.rank]) -> SIMD[y.type, width]:
+        fn func[width: Int](idx: IndexList[y.rank]) -> SIMD[y.type, width]:
             return rebind[SIMD[y.type, width]](exp(x._fused_load[width](idx)))
 
         foreach[func, synchronous, target](y, ctx)
@@ -724,7 +724,7 @@ struct Round:
     ](y: ManagedTensorSlice, x: ManagedTensorSlice, ctx: MojoCallContextPtr):
         @parameter
         @always_inline
-        fn func[width: Int](idx: StaticIntTuple[y.rank]) -> SIMD[y.type, width]:
+        fn func[width: Int](idx: IndexList[y.rank]) -> SIMD[y.type, width]:
             return rebind[SIMD[y.type, width]](round(x._fused_load[width](idx)))
 
         foreach[func, synchronous, target](y, ctx)
@@ -740,7 +740,7 @@ struct RoundEven:
     ](y: ManagedTensorSlice, x: ManagedTensorSlice, ctx: MojoCallContextPtr):
         @parameter
         @always_inline
-        fn func[width: Int](idx: StaticIntTuple[y.rank]) -> SIMD[y.type, width]:
+        fn func[width: Int](idx: IndexList[y.rank]) -> SIMD[y.type, width]:
             return rebind[SIMD[y.type, width]](
                 x._fused_load[width](idx).roundeven()
             )
@@ -758,7 +758,7 @@ struct Sqrt:
     ](y: ManagedTensorSlice, x: ManagedTensorSlice, ctx: MojoCallContextPtr):
         @parameter
         @always_inline
-        fn func[width: Int](idx: StaticIntTuple[y.rank]) -> SIMD[y.type, width]:
+        fn func[width: Int](idx: IndexList[y.rank]) -> SIMD[y.type, width]:
             return rebind[SIMD[y.type, width]](sqrt(x._fused_load[width](idx)))
 
         foreach[func, synchronous, target](y, ctx)
@@ -774,7 +774,7 @@ struct Isqrt:
     ](y: ManagedTensorSlice, x: ManagedTensorSlice, ctx: MojoCallContextPtr):
         @parameter
         @always_inline
-        fn func[width: Int](idx: StaticIntTuple[y.rank]) -> SIMD[y.type, width]:
+        fn func[width: Int](idx: IndexList[y.rank]) -> SIMD[y.type, width]:
             return rebind[SIMD[y.type, width]](isqrt(x._fused_load[width](idx)))
 
         foreach[func, synchronous, target](y, ctx)
@@ -796,9 +796,7 @@ struct Select:
     ):
         @parameter
         @always_inline
-        fn func[
-            width: Int
-        ](idx: StaticIntTuple[out.rank]) -> SIMD[out.type, width]:
+        fn func[width: Int](idx: IndexList[out.rank]) -> SIMD[out.type, width]:
             var cond = condition._fused_load[width](idx)
             var tc = rebind[SIMD[out.type, width]](
                 true_case._fused_load[width](idx)
@@ -821,7 +819,7 @@ struct Trunc:
     ](y: ManagedTensorSlice, x: ManagedTensorSlice, ctx: MojoCallContextPtr):
         @parameter
         @always_inline
-        fn func[width: Int](idx: StaticIntTuple[y.rank]) -> SIMD[y.type, width]:
+        fn func[width: Int](idx: IndexList[y.rank]) -> SIMD[y.type, width]:
             var val = x._fused_load[width](idx)
             return rebind[SIMD[y.type, width]](
                 llvm_intrinsic[
@@ -842,7 +840,7 @@ struct Log:
     ](y: ManagedTensorSlice, x: ManagedTensorSlice, ctx: MojoCallContextPtr):
         @parameter
         @always_inline
-        fn func[width: Int](idx: StaticIntTuple[y.rank]) -> SIMD[y.type, width]:
+        fn func[width: Int](idx: IndexList[y.rank]) -> SIMD[y.type, width]:
             return rebind[SIMD[y.type, width]](log(x._fused_load[width](idx)))
 
         foreach[func, synchronous, target](y, ctx)
@@ -858,7 +856,7 @@ struct Log1p:
     ](y: ManagedTensorSlice, x: ManagedTensorSlice, ctx: MojoCallContextPtr):
         @parameter
         @always_inline
-        fn func[width: Int](idx: StaticIntTuple[y.rank]) -> SIMD[y.type, width]:
+        fn func[width: Int](idx: IndexList[y.rank]) -> SIMD[y.type, width]:
             return rebind[SIMD[y.type, width]](log1p(x._fused_load[width](idx)))
 
         foreach[func, synchronous, target](y, ctx)
@@ -874,7 +872,7 @@ struct IsNan:
     ](y: ManagedTensorSlice, x: ManagedTensorSlice, ctx: MojoCallContextPtr):
         @parameter
         @always_inline
-        fn func[width: Int](idx: StaticIntTuple[y.rank]) -> SIMD[y.type, width]:
+        fn func[width: Int](idx: IndexList[y.rank]) -> SIMD[y.type, width]:
             return rebind[SIMD[y.type, width]](isnan(x._fused_load[width](idx)))
 
         foreach[func, synchronous, target](y, ctx)
@@ -890,7 +888,7 @@ struct IsInf:
     ](y: ManagedTensorSlice, x: ManagedTensorSlice, ctx: MojoCallContextPtr):
         @parameter
         @always_inline
-        fn func[width: Int](idx: StaticIntTuple[y.rank]) -> SIMD[y.type, width]:
+        fn func[width: Int](idx: IndexList[y.rank]) -> SIMD[y.type, width]:
             return rebind[SIMD[y.type, width]](isinf(x._fused_load[width](idx)))
 
         foreach[func, synchronous, target](y, ctx)
@@ -906,7 +904,7 @@ struct Not:
     ](y: ManagedTensorSlice, x: ManagedTensorSlice, ctx: MojoCallContextPtr):
         @parameter
         @always_inline
-        fn func[width: Int](idx: StaticIntTuple[y.rank]) -> SIMD[y.type, width]:
+        fn func[width: Int](idx: IndexList[y.rank]) -> SIMD[y.type, width]:
             var val = rebind[SIMD[DType.bool, width]](x._fused_load[width](idx))
             return rebind[SIMD[y.type, width]](~val)
 
@@ -923,7 +921,7 @@ struct Abs:
     ](y: ManagedTensorSlice, x: ManagedTensorSlice, ctx: MojoCallContextPtr):
         @parameter
         @always_inline
-        fn func[width: Int](idx: StaticIntTuple[y.rank]) -> SIMD[y.type, width]:
+        fn func[width: Int](idx: IndexList[y.rank]) -> SIMD[y.type, width]:
             return rebind[SIMD[y.type, width]](abs(x._fused_load[width](idx)))
 
         foreach[func, synchronous, target](y, ctx)
@@ -1192,7 +1190,7 @@ struct Scatter:
         updates: ManagedTensorSlice[input.type, input.rank],
         indices: ManagedTensorSlice[rank = input.rank],
         axis: ManagedTensorSlice[rank=1],
-    ) raises -> StaticIntTuple[input.rank]:
+    ) raises -> IndexList[input.rank]:
         var input_ndbuffer = managed_tensor_slice_to_ndbuffer(input)
         var indices_ndbuffer = managed_tensor_slice_to_ndbuffer(indices)
         var updates_ndbuffer = managed_tensor_slice_to_ndbuffer(updates)
@@ -1248,7 +1246,7 @@ struct ScatterAdd:
         updates: ManagedTensorSlice[input.type, input.rank],
         indices: ManagedTensorSlice[rank = input.rank],
         axis: ManagedTensorSlice[rank=1],
-    ) raises -> StaticIntTuple[input.rank]:
+    ) raises -> IndexList[input.rank]:
         var input_ndbuffer = managed_tensor_slice_to_ndbuffer(input)
         var indices_ndbuffer = managed_tensor_slice_to_ndbuffer(indices)
         var updates_ndbuffer = managed_tensor_slice_to_ndbuffer(updates)
@@ -1304,7 +1302,7 @@ struct ScatterMax:
         updates: ManagedTensorSlice[input.type, input.rank],
         indices: ManagedTensorSlice[rank = input.rank],
         axis: ManagedTensorSlice[rank=1],
-    ) raises -> StaticIntTuple[input.rank]:
+    ) raises -> IndexList[input.rank]:
         var input_ndbuffer = managed_tensor_slice_to_ndbuffer(input)
         var indices_ndbuffer = managed_tensor_slice_to_ndbuffer(indices)
         var updates_ndbuffer = managed_tensor_slice_to_ndbuffer(updates)
@@ -1360,7 +1358,7 @@ struct ScatterMin:
         updates: ManagedTensorSlice[input.type, input.rank],
         indices: ManagedTensorSlice[rank = input.rank],
         axis: ManagedTensorSlice[rank=1],
-    ) raises -> StaticIntTuple[input.rank]:
+    ) raises -> IndexList[input.rank]:
         var input_ndbuffer = managed_tensor_slice_to_ndbuffer(input)
         var indices_ndbuffer = managed_tensor_slice_to_ndbuffer(indices)
         var updates_ndbuffer = managed_tensor_slice_to_ndbuffer(updates)
@@ -1416,7 +1414,7 @@ struct ScatterMul:
         updates: ManagedTensorSlice[input.type, input.rank],
         indices: ManagedTensorSlice[rank = input.rank],
         axis: ManagedTensorSlice[rank=1],
-    ) raises -> StaticIntTuple[input.rank]:
+    ) raises -> IndexList[input.rank]:
         var input_ndbuffer = managed_tensor_slice_to_ndbuffer(input)
         var indices_ndbuffer = managed_tensor_slice_to_ndbuffer(indices)
         var updates_ndbuffer = managed_tensor_slice_to_ndbuffer(updates)
@@ -1443,7 +1441,7 @@ fn view_copy_impl[
 ](z: ManagedTensorSlice[type, rank], x: ManagedTensorSlice[type, rank]):
     @parameter
     @always_inline
-    fn func[width: Int](idx: StaticIntTuple[z.rank]) -> SIMD[z.type, width]:
+    fn func[width: Int](idx: IndexList[z.rank]) -> SIMD[z.type, width]:
         return x._simd_load_internal[width](idx)
 
     foreach[func](z)
@@ -1459,9 +1457,9 @@ struct BroadcastTo:
         out_rank: Int,
     ](
         x: ManagedTensorSlice[type, in_rank],
-        output_shape: StaticIntTuple[out_rank],
+        output_shape: IndexList[out_rank],
     ) -> ManagedTensorSlice[type, out_rank]:
-        var new_strides = StaticIntTuple[out_rank]()
+        var new_strides = IndexList[out_rank]()
         alias delta = out_rank - in_rank
 
         @parameter
@@ -1487,7 +1485,7 @@ struct BroadcastTo:
     ](
         z: ManagedTensorSlice[type, out_rank],
         x: ManagedTensorSlice[type, in_rank],
-        output_shape: StaticIntTuple[out_rank],
+        output_shape: IndexList[out_rank],
     ):
         # We need the extra output_shape argument.
         # Using `z.shape` instead will prevent the compiler from fusing the kernels.
@@ -1507,7 +1505,7 @@ struct StaticReshape:
     ](
         output: ManagedTensorSlice[type=type, rank=output_rank],
         input: ManagedTensorSlice[type=type],
-        shape: StaticIntTuple[output_rank],
+        shape: IndexList[output_rank],
     ):
         var view_buffer = reshape(
             managed_tensor_slice_to_ndbuffer(input), shape
@@ -1530,7 +1528,7 @@ struct Reshape:
         output_rank: Int
     ](
         input: ManagedTensorSlice, shape: ManagedTensorSlice[rank=1]
-    ) raises -> StaticIntTuple[output_rank]:
+    ) raises -> IndexList[output_rank]:
         return reshape_shape[
             output_rank=output_rank, single_thread_blocking_override=True
         ](
@@ -1547,8 +1545,8 @@ struct Transpose:
         input: ManagedTensorSlice,
         permutations: ManagedTensorSlice[rank=1],
     ) -> ManagedTensorSlice[type = input.type, rank = input.rank]:
-        var new_shape = StaticIntTuple[input.rank]()
-        var new_stride = StaticIntTuple[input.rank]()
+        var new_shape = IndexList[input.rank]()
+        var new_stride = IndexList[input.rank]()
 
         @parameter
         for i in range(input.rank):
@@ -1581,7 +1579,7 @@ struct Transpose:
     fn shape_impl(
         input: ManagedTensorSlice,
         permutations: ManagedTensorSlice[rank=1],
-    ) raises -> StaticIntTuple[input.rank]:
+    ) raises -> IndexList[input.rank]:
         if permutations.spec().shape[0] != input.rank:
             raise Error("[transpose] permutation size must match input rank")
 
@@ -1595,7 +1593,7 @@ struct Transpose:
                 )
 
         var view_tensor = Self.transpose_in_place(input, permutations)
-        var out = StaticIntTuple[input.rank]()
+        var out = IndexList[input.rank]()
 
         @parameter
         for i in range(input.rank):
@@ -1607,7 +1605,7 @@ struct Transpose:
     fn shape(
         input: ManagedTensorSlice,
         permutations: ManagedTensorSlice[rank=1],
-    ) raises -> StaticIntTuple[input.rank]:
+    ) raises -> IndexList[input.rank]:
         return Self.shape_impl(input, permutations)
 
 
@@ -1646,7 +1644,7 @@ struct Slice:
         starts: ManagedTensorSlice[rank=1],
         stops: ManagedTensorSlice[rank=1],
         steps: ManagedTensorSlice[rank=1],
-    ) raises -> StaticIntTuple[input.rank]:
+    ) raises -> IndexList[input.rank]:
         return slice_shape[single_thread_blocking_override=True](
             managed_tensor_slice_to_ndbuffer(input),
             managed_tensor_slice_to_ndbuffer(starts),
@@ -1762,7 +1760,7 @@ struct ArgNonZero:
         arg_nonzero.arg_nonzero(in_ndbuffer, out_ndbuffer)
 
     @staticmethod
-    fn shape(input_buffer: ManagedTensorSlice) -> StaticIntTuple[2]:
+    fn shape(input_buffer: ManagedTensorSlice) -> IndexList[2]:
         return arg_nonzero.arg_nonzero_shape[
             single_thread_blocking_override=True
         ](managed_tensor_slice_to_ndbuffer(input_buffer))
@@ -1782,18 +1780,18 @@ struct Mean:
         @always_inline
         fn input_fn[
             width: Int, rank: Int
-        ](coords: StaticIntTuple[rank]) -> SIMD[input.type, width]:
+        ](coords: IndexList[rank]) -> SIMD[input.type, width]:
             return input.load[width=width](
-                rebind[StaticIntTuple[input.rank]](coords)
+                rebind[IndexList[input.rank]](coords)
             )
 
         @parameter
         @always_inline
         fn output_fn[
             width: Int, rank: Int
-        ](coords: StaticIntTuple[rank], val: SIMD[output.type, width]):
+        ](coords: IndexList[rank], val: SIMD[output.type, width]):
             output.store[width=width](
-                rebind[StaticIntTuple[output.rank]](coords),
+                rebind[IndexList[output.rank]](coords),
                 rebind[SIMD[output.type, width]](val),
             )
 
@@ -1814,7 +1812,7 @@ struct Mean:
     ](
         input: ManagedTensorSlice[input_type, input_rank],
         axis: Scalar,
-    ) raises -> StaticIntTuple[input_rank]:
+    ) raises -> IndexList[input_rank]:
         return reduce_shape[input_rank, input_type](input, axis)
 
 
@@ -1832,18 +1830,18 @@ struct ReduceAdd:
         @always_inline
         fn input_fn[
             width: Int, rank: Int
-        ](coords: StaticIntTuple[rank]) -> SIMD[input.type, width]:
+        ](coords: IndexList[rank]) -> SIMD[input.type, width]:
             return input.load[width=width](
-                rebind[StaticIntTuple[input.rank]](coords)
+                rebind[IndexList[input.rank]](coords)
             )
 
         @parameter
         @always_inline
         fn output_fn[
             width: Int, rank: Int
-        ](coords: StaticIntTuple[rank], val: SIMD[output.type, width]):
+        ](coords: IndexList[rank], val: SIMD[output.type, width]):
             output.store[width=width](
-                rebind[StaticIntTuple[output.rank]](coords),
+                rebind[IndexList[output.rank]](coords),
                 rebind[SIMD[output.type, width]](val),
             )
 
@@ -1864,7 +1862,7 @@ struct ReduceAdd:
     ](
         input: ManagedTensorSlice[input_type, input_rank],
         axis: Scalar,
-    ) raises -> StaticIntTuple[input_rank]:
+    ) raises -> IndexList[input_rank]:
         return reduce_shape[input_rank, input_type](input, axis)
 
 
@@ -1882,18 +1880,18 @@ struct ReduceMul:
         @always_inline
         fn input_fn[
             width: Int, rank: Int
-        ](coords: StaticIntTuple[rank]) -> SIMD[input.type, width]:
+        ](coords: IndexList[rank]) -> SIMD[input.type, width]:
             return input.load[width=width](
-                rebind[StaticIntTuple[input.rank]](coords)
+                rebind[IndexList[input.rank]](coords)
             )
 
         @parameter
         @always_inline
         fn output_fn[
             width: Int, rank: Int
-        ](coords: StaticIntTuple[rank], val: SIMD[output.type, width]):
+        ](coords: IndexList[rank], val: SIMD[output.type, width]):
             output.store[width=width](
-                rebind[StaticIntTuple[output.rank]](coords),
+                rebind[IndexList[output.rank]](coords),
                 rebind[SIMD[output.type, width]](val),
             )
 
@@ -1914,7 +1912,7 @@ struct ReduceMul:
     ](
         input: ManagedTensorSlice[input_type, input_rank],
         axis: Scalar,
-    ) raises -> StaticIntTuple[input_rank]:
+    ) raises -> IndexList[input_rank]:
         return reduce_shape[input_rank, input_type](input, axis)
 
 
@@ -1932,18 +1930,18 @@ struct ReduceMax:
         @always_inline
         fn input_fn[
             width: Int, rank: Int
-        ](coords: StaticIntTuple[rank]) -> SIMD[input.type, width]:
+        ](coords: IndexList[rank]) -> SIMD[input.type, width]:
             return input.load[width=width](
-                rebind[StaticIntTuple[input.rank]](coords)
+                rebind[IndexList[input.rank]](coords)
             )
 
         @parameter
         @always_inline
         fn output_fn[
             width: Int, rank: Int
-        ](coords: StaticIntTuple[rank], val: SIMD[output.type, width]):
+        ](coords: IndexList[rank], val: SIMD[output.type, width]):
             output.store[width=width](
-                rebind[StaticIntTuple[output.rank]](coords),
+                rebind[IndexList[output.rank]](coords),
                 rebind[SIMD[output.type, width]](val),
             )
 
@@ -1964,7 +1962,7 @@ struct ReduceMax:
     ](
         input: ManagedTensorSlice[input_type, input_rank],
         axis: Scalar,
-    ) raises -> StaticIntTuple[input_rank]:
+    ) raises -> IndexList[input_rank]:
         return reduce_shape[input_rank, input_type](input, axis)
 
 
@@ -1982,18 +1980,18 @@ struct ReduceMin:
         @always_inline
         fn input_fn[
             width: Int, rank: Int
-        ](coords: StaticIntTuple[rank]) -> SIMD[input.type, width]:
+        ](coords: IndexList[rank]) -> SIMD[input.type, width]:
             return input.load[width=width](
-                rebind[StaticIntTuple[input.rank]](coords)
+                rebind[IndexList[input.rank]](coords)
             )
 
         @parameter
         @always_inline
         fn output_fn[
             width: Int, rank: Int
-        ](coords: StaticIntTuple[rank], val: SIMD[output.type, width]):
+        ](coords: IndexList[rank], val: SIMD[output.type, width]):
             output.store[width=width](
-                rebind[StaticIntTuple[output.rank]](coords),
+                rebind[IndexList[output.rank]](coords),
                 rebind[SIMD[output.type, width]](val),
             )
 
@@ -2014,7 +2012,7 @@ struct ReduceMin:
     ](
         input: ManagedTensorSlice[input_type, input_rank],
         axis: Scalar,
-    ) raises -> StaticIntTuple[input_rank]:
+    ) raises -> IndexList[input_rank]:
         return reduce_shape[input_rank, input_type](input, axis)
 
 
@@ -2058,7 +2056,7 @@ struct AvgPool:
         strides: ManagedTensorSlice[int_type, 1],
         dilations: ManagedTensorSlice[int_type, 1],
         paddings: ManagedTensorSlice[int_type, 1],
-    ) raises -> StaticIntTuple[input.rank]:
+    ) raises -> IndexList[input.rank]:
         return pool_shape[single_thread_blocking_override=True](
             managed_tensor_slice_to_ndbuffer(input),
             managed_tensor_slice_to_ndbuffer(filter),
@@ -2104,7 +2102,7 @@ struct AvgPoolCeilModeTrue:
         dilations: ManagedTensorSlice[int_type, 1],
         paddings: ManagedTensorSlice[int_type, 1],
         ctx: MojoCallContextPtr,
-    ) raises -> StaticIntTuple[input.rank]:
+    ) raises -> IndexList[input.rank]:
         return pool_shape_ceil[single_thread_blocking_override=True](
             managed_tensor_slice_to_ndbuffer(input),
             managed_tensor_slice_to_ndbuffer(filter),
@@ -2148,7 +2146,7 @@ struct MaxPool:
         strides: ManagedTensorSlice[int_type, 1],
         dilations: ManagedTensorSlice[int_type, 1],
         paddings: ManagedTensorSlice[int_type, 1],
-    ) raises -> StaticIntTuple[input.rank]:
+    ) raises -> IndexList[input.rank]:
         return pool_shape[single_thread_blocking_override=True](
             managed_tensor_slice_to_ndbuffer(input),
             managed_tensor_slice_to_ndbuffer(filter),
@@ -2192,7 +2190,7 @@ struct MaxPoolCeilModeTrue:
         strides: ManagedTensorSlice[int_type, 1],
         dilations: ManagedTensorSlice[int_type, 1],
         paddings: ManagedTensorSlice[int_type, 1],
-    ) raises -> StaticIntTuple[input.rank]:
+    ) raises -> IndexList[input.rank]:
         return pool_shape_ceil[single_thread_blocking_override=True](
             managed_tensor_slice_to_ndbuffer(input),
             managed_tensor_slice_to_ndbuffer(filter),
@@ -2232,7 +2230,7 @@ struct PadConstant:
     ](
         input: ManagedTensorSlice[type=type, rank=rank],
         padding: ManagedTensorSlice[rank=1],
-    ) raises -> StaticIntTuple[rank]:
+    ) raises -> IndexList[rank]:
         return pad_shape[single_thread_blocking_override=True](
             managed_tensor_slice_to_ndbuffer(input),
             managed_tensor_slice_to_ndbuffer(padding),
@@ -2262,7 +2260,7 @@ struct PadRepeat:
     ](
         input: ManagedTensorSlice[type=type, rank=rank],
         padding: ManagedTensorSlice[rank=1],
-    ) raises -> StaticIntTuple[rank]:
+    ) raises -> IndexList[rank]:
         return pad_shape[single_thread_blocking_override=True](
             managed_tensor_slice_to_ndbuffer(input),
             managed_tensor_slice_to_ndbuffer(padding),
@@ -2292,7 +2290,7 @@ struct PadReflect:
     ](
         input: ManagedTensorSlice[type=type, rank=rank],
         padding: ManagedTensorSlice[rank=1],
-    ) raises -> StaticIntTuple[rank]:
+    ) raises -> IndexList[rank]:
         return pad_shape[single_thread_blocking_override=True](
             managed_tensor_slice_to_ndbuffer(input),
             managed_tensor_slice_to_ndbuffer(padding),
@@ -2342,27 +2340,27 @@ struct Gather:
         @always_inline
         fn input_fn[
             width: Int, _rank: Int
-        ](coords: StaticIntTuple[_rank]) -> SIMD[output.type, width]:
+        ](coords: IndexList[_rank]) -> SIMD[output.type, width]:
             return input.load[width=width](
-                rebind[StaticIntTuple[input.rank]](coords)
+                rebind[IndexList[input.rank]](coords)
             )
 
         @parameter
         @always_inline
         fn indices_fn[
             width: Int, _rank: Int
-        ](coords: StaticIntTuple[_rank]) -> SIMD[indices.type, width]:
+        ](coords: IndexList[_rank]) -> SIMD[indices.type, width]:
             return indices.load[width=width](
-                rebind[StaticIntTuple[indices.rank]](coords)
+                rebind[IndexList[indices.rank]](coords)
             )
 
         @parameter
         @always_inline
         fn output_fn[
             width: Int, _rank: Int
-        ](coords: StaticIntTuple[_rank], val: SIMD[output.type, width]):
+        ](coords: IndexList[_rank], val: SIMD[output.type, width]):
             output.store[width=width](
-                rebind[StaticIntTuple[output.rank]](coords),
+                rebind[IndexList[output.rank]](coords),
                 rebind[SIMD[output.type, width]](val),
             )
 
@@ -2394,7 +2392,7 @@ struct Gather:
         input: ManagedTensorSlice,
         indices: ManagedTensorSlice,
         axis: Scalar,
-    ) raises -> StaticIntTuple[output_rank]:
+    ) raises -> IndexList[output_rank]:
         return gather_shape[
             output_rank=output_rank,
             single_thread_blocking_override=True,
@@ -2455,19 +2453,17 @@ struct LayerNorm:
         @always_inline
         fn input_fn[
             width: Int, _rank: Int
-        ](coords: StaticIntTuple[_rank]) -> SIMD[type, width]:
+        ](coords: IndexList[_rank]) -> SIMD[type, width]:
             return input._fused_load[width=width](
-                rebind[StaticIntTuple[input.rank]](coords)
+                rebind[IndexList[input.rank]](coords)
             )
 
         @parameter
         @always_inline
         fn gamma_fn[
             width: Int, _rank: Int
-        ](coords: StaticIntTuple[_rank]) -> SIMD[type, width]:
-            return gamma._fused_load[width=width](
-                rebind[StaticIntTuple[1]](coords)
-            )
+        ](coords: IndexList[_rank]) -> SIMD[type, width]:
+            return gamma._fused_load[width=width](rebind[IndexList[1]](coords))
 
         var beta_buf = managed_tensor_slice_to_ndbuffer(beta)
         var epsilon_val = epsilon._ptr.load(0)
@@ -2491,7 +2487,7 @@ struct LayerNorm:
         gamma: ManagedTensorSlice[type=type, rank=1],
         beta: ManagedTensorSlice[type=type, rank=1],
         epsilon: Scalar[type=type],
-    ) -> StaticIntTuple[rank]:
+    ) -> IndexList[rank]:
         return input._spec.shape
 
 
@@ -2513,9 +2509,9 @@ struct RMSNorm:
         @always_inline
         fn input_fn[
             width: Int, _rank: Int
-        ](coords: StaticIntTuple[_rank]) -> SIMD[type, width]:
+        ](coords: IndexList[_rank]) -> SIMD[type, width]:
             return input.load[width=width](
-                rebind[StaticIntTuple[input.rank]](coords)
+                rebind[IndexList[input.rank]](coords)
             )
 
         var gamma_buf = managed_tensor_slice_to_ndbuffer(gamma)
@@ -2534,7 +2530,7 @@ struct RMSNorm:
         input: ManagedTensorSlice[type=type, rank=rank],
         gamma: ManagedTensorSlice[type=type, rank=1],
         epsilon: Scalar[type=type],
-    ) -> StaticIntTuple[rank]:
+    ) -> IndexList[rank]:
         return input._spec.shape
 
 
@@ -2575,7 +2571,7 @@ struct BottomK:
         k: Scalar[axis_type],
         axis: Scalar[axis_type],
         sorted: Scalar[type = DType.bool],
-    ) raises -> StaticIntTuple[input.rank]:
+    ) raises -> IndexList[input.rank]:
         return top_k_shape_impl[single_thread_blocking_override=True](
             managed_tensor_slice_to_ndbuffer(input),
             managed_tensor_slice_to_ndbuffer(k),
@@ -2615,7 +2611,7 @@ struct TopK:
         k: Scalar[axis_type],
         axis: Scalar[axis_type],
         sorted: Scalar[type = DType.bool],
-    ) raises -> StaticIntTuple[input.rank]:
+    ) raises -> IndexList[input.rank]:
         return top_k_shape_impl[single_thread_blocking_override=True](
             managed_tensor_slice_to_ndbuffer(input),
             managed_tensor_slice_to_ndbuffer(k),
@@ -2663,7 +2659,7 @@ struct NonMaximumSupression:
         max_output_boxes_per_class: Scalar[DType.int64],
         iou_threshold: Scalar[DType.float32],
         score_threshold: Scalar[DType.float32],
-    ) -> StaticIntTuple[2]:
+    ) -> IndexList[2]:
         var max_output_boxes_int = int(max_output_boxes_per_class[0])
         var iou_threshold_float = iou_threshold[0]
         var score_threshold_float = score_threshold[0]
@@ -2718,9 +2714,9 @@ struct Matmul:
         @always_inline
         fn output_fn[
             _type: DType, _width: Int, *, alignment: Int = 1
-        ](coords: StaticIntTuple[2], val: SIMD[_type, _width]):
+        ](coords: IndexList[2], val: SIMD[_type, _width]):
             c._fused_store[width=_width](
-                rebind[StaticIntTuple[c.rank]](coords),
+                rebind[IndexList[c.rank]](coords),
                 rebind[SIMD[c.type, _width]](val),
             )
 
@@ -2765,9 +2761,9 @@ struct BatchMatmul:
         @always_inline
         fn output_fn[
             _type: DType, _width: Int, _rank: Int, *, alignment: Int = 1
-        ](coords: StaticIntTuple[_rank], val: SIMD[_type, _width]):
+        ](coords: IndexList[_rank], val: SIMD[_type, _width]):
             c._fused_store[width=_width](
-                rebind[StaticIntTuple[c.rank]](coords),
+                rebind[IndexList[c.rank]](coords),
                 rebind[SIMD[c.type, _width]](val),
             )
 
@@ -2794,7 +2790,7 @@ struct BatchMatmul:
     ](
         a: ManagedTensorSlice[a_type, rank],
         b: ManagedTensorSlice[b_type, rank],
-    ) raises -> StaticIntTuple[rank]:
+    ) raises -> IndexList[rank]:
         var a_buffer = managed_tensor_slice_to_ndbuffer(a)
         var b_buffer = managed_tensor_slice_to_ndbuffer(b)
         return batched_matmul_shape[single_thread_blocking_override=True](
@@ -2826,7 +2822,7 @@ struct LinalgSolve:
     ](
         a: ManagedTensorSlice[type=type, rank=rank],
         b: ManagedTensorSlice[type=type, rank=rank],
-    ) raises -> StaticIntTuple[a.rank]:
+    ) raises -> IndexList[a.rank]:
         return matrix_solve_shape[single_thread_blocking_override=True](
             managed_tensor_slice_to_ndbuffer(a),
             managed_tensor_slice_to_ndbuffer(b),
@@ -2855,9 +2851,9 @@ struct LinalgBandPart:
         @always_inline
         fn input_fn[
             width: Int, _rank: Int
-        ](coords: StaticIntTuple[_rank]) -> SIMD[output.type, width]:
+        ](coords: IndexList[_rank]) -> SIMD[output.type, width]:
             return input._fused_load[width=width](
-                rebind[StaticIntTuple[input.rank]](coords)
+                rebind[IndexList[input.rank]](coords)
             )
 
         var num_lower_buf = managed_tensor_slice_to_ndbuffer(num_lower)
@@ -2909,8 +2905,8 @@ struct ResizeNearest:
     ](
         input: ManagedTensorSlice[rank=rank],
         size: ManagedTensorSlice[rank=1],
-    ) -> StaticIntTuple[rank]:
-        var shape = StaticIntTuple[rank]()
+    ) -> IndexList[rank]:
+        var shape = IndexList[rank]()
         for i in range(rank):
             shape[i] = int(size[i])
 
@@ -2941,8 +2937,8 @@ struct ResizeLinear:
     ](
         input: ManagedTensorSlice[rank=rank],
         size: ManagedTensorSlice[rank=1],
-    ) -> StaticIntTuple[rank]:
-        var shape = StaticIntTuple[rank]()
+    ) -> IndexList[rank]:
+        var shape = IndexList[rank]()
         for i in range(rank):
             shape[i] = int(size[i])
 
@@ -2988,8 +2984,8 @@ struct ROIAlign:
         output_width: Scalar[DType.int64],
         spatial_scale: Scalar,
         sampling_ratio: Scalar,
-    ) -> StaticIntTuple[4]:
-        var shape = StaticIntTuple[4]()
+    ) -> IndexList[4]:
+        var shape = IndexList[4]()
         # input shape is [N, H, W, C]
         # rois shape is [M, 5]
         # output shape is [M, output_height, output_width, C]
@@ -3026,7 +3022,7 @@ struct Tile:
     fn shape(
         input: ManagedTensorSlice,
         repeats: ManagedTensorSlice[rank=1],
-    ) raises -> StaticIntTuple[input.rank]:
+    ) raises -> IndexList[input.rank]:
         return tile_shape[single_thread_blocking_override=True](
             managed_tensor_slice_to_ndbuffer(input),
             managed_tensor_slice_to_ndbuffer(repeats),
@@ -3065,8 +3061,8 @@ struct RandomNormal:
     @staticmethod
     fn shape[
         output_rank: Int
-    ](shape: ManagedTensorSlice[rank=1]) -> StaticIntTuple[output_rank]:
-        var unrolled_shape = StaticIntTuple[output_rank]()
+    ](shape: ManagedTensorSlice[rank=1]) -> IndexList[output_rank]:
+        var unrolled_shape = IndexList[output_rank]()
         for i in range(output_rank):
             unrolled_shape[i] = int(shape[i])
 
@@ -3117,15 +3113,15 @@ struct Softmax:
         @always_inline
         fn input_fn[
             width: Int, _rank: Int
-        ](coords: StaticIntTuple[_rank]) -> SIMD[output.type, width]:
+        ](coords: IndexList[_rank]) -> SIMD[output.type, width]:
             @parameter
             if compiler.specsof[output.type, output.rank]("input").in_lambda:
                 return input._fused_load[width=width](
-                    rebind[StaticIntTuple[input.rank]](coords)
+                    rebind[IndexList[input.rank]](coords)
                 )
             else:
                 return input.load[width=width](
-                    rebind[StaticIntTuple[input.rank]](coords)
+                    rebind[IndexList[input.rank]](coords)
                 )
 
         softmax[
@@ -3165,15 +3161,15 @@ struct LogSoftmax:
         @always_inline
         fn input_fn[
             width: Int, _rank: Int
-        ](coords: StaticIntTuple[_rank]) -> SIMD[output.type, width]:
+        ](coords: IndexList[_rank]) -> SIMD[output.type, width]:
             @parameter
             if compiler.specsof[output.type, output.rank]("input").in_lambda:
                 return input._fused_load[width=width](
-                    rebind[StaticIntTuple[input.rank]](coords)
+                    rebind[IndexList[input.rank]](coords)
                 )
             else:
                 return input.load[width=width](
-                    rebind[StaticIntTuple[input.rank]](coords)
+                    rebind[IndexList[input.rank]](coords)
                 )
 
         logsoftmax[
@@ -3240,9 +3236,9 @@ struct Conv:
         @always_inline
         fn output_fn[
             _type: DType, _rank: Int, _width: Int
-        ](coords: StaticIntTuple[_rank], val: SIMD[_type, _width]):
+        ](coords: IndexList[_rank], val: SIMD[_type, _width]):
             output.store[width=_width](
-                rebind[StaticIntTuple[output.rank]](coords),
+                rebind[IndexList[output.rank]](coords),
                 rebind[SIMD[output.type, _width]](val),
             )
 
@@ -3270,20 +3266,20 @@ struct Conv:
         if paddings.size() != 2 * (input.rank - 2):
             raise Error("$(2*(input_rank-2)) value expected in conv paddings")
 
-        var stride_tuple = StaticIntTuple[input.rank - 2](0)
-        var dilation_tuple = StaticIntTuple[input.rank - 2](0)
+        var stride_tuple = IndexList[input.rank - 2](0)
+        var dilation_tuple = IndexList[input.rank - 2](0)
 
         @parameter
         for i in range(input.rank - 2):
             stride_tuple[i] = int(strides._ptr[i])
             dilation_tuple[i] = int(dilation._ptr[i])
 
-        if dilation_tuple != StaticIntTuple[input.rank - 2](1):
+        if dilation_tuple != IndexList[input.rank - 2](1):
             raise Error("Non-unit dilation is not supported yet.")
 
-        var pad_d_tuple = StaticIntTuple[2](0)
-        var pad_h_tuple = StaticIntTuple[2](0)
-        var pad_w_tuple = StaticIntTuple[2](0)
+        var pad_d_tuple = IndexList[2](0)
+        var pad_h_tuple = IndexList[2](0)
+        var pad_w_tuple = IndexList[2](0)
 
         @parameter
         if input.rank == 3:
@@ -3351,7 +3347,7 @@ struct Conv:
         dilations: ManagedTensorSlice[rank=1],
         paddings: ManagedTensorSlice[rank=1],
         num_groups: ManagedTensorSlice[rank=1],
-    ) raises -> StaticIntTuple[input.rank]:
+    ) raises -> IndexList[input.rank]:
         return conv_shape[single_thread_blocking_override=True](
             managed_tensor_slice_to_ndbuffer(input),
             managed_tensor_slice_to_ndbuffer(filter),

@@ -9,7 +9,7 @@
 from buffer.dimlist import DimList, _make_tuple
 from memory import UnsafePointer, memset_zero
 
-from utils.index import StaticIntTuple
+from utils.index import IndexList
 
 
 struct IntList[static_values: DimList = DimList()](Sized):
@@ -24,14 +24,14 @@ struct IntList[static_values: DimList = DimList()](Sized):
     ]()
 
     var data: UnsafePointer[Int]
-    var stack_alloc_data: StaticIntTuple[Self._safe_len]
+    var stack_alloc_data: IndexList[Self._safe_len]
     var length: Int
 
     @always_inline
     fn __init__(inout self):
         self.length = Self._length
         self.data = UnsafePointer[Int]()
-        self.stack_alloc_data = StaticIntTuple[Self._safe_len]()
+        self.stack_alloc_data = IndexList[Self._safe_len]()
 
     # Should not be copy constructable, i.e passed by value, but can be cloned.
     @always_inline
@@ -39,7 +39,7 @@ struct IntList[static_values: DimList = DimList()](Sized):
         var num_elements = len(other)
         self.length = Self._length
         self.data = UnsafePointer[Int]()
-        self.stack_alloc_data = StaticIntTuple[Self._safe_len]()
+        self.stack_alloc_data = IndexList[Self._safe_len]()
 
         @parameter
         if Self.is_fully_static():
@@ -59,7 +59,7 @@ struct IntList[static_values: DimList = DimList()](Sized):
             self.data = UnsafePointer[Int].alloc(num_elements)
             for i in range(num_elements):
                 self.data[i] = other[i]
-            self.stack_alloc_data = StaticIntTuple[Self._safe_len]()
+            self.stack_alloc_data = IndexList[Self._safe_len]()
 
     @always_inline
     fn __init__(inout self, *elems: Int):
@@ -67,7 +67,7 @@ struct IntList[static_values: DimList = DimList()](Sized):
 
         self.length = Self._length
         self.data = UnsafePointer[Int]()
-        self.stack_alloc_data = StaticIntTuple[Self._safe_len]()
+        self.stack_alloc_data = IndexList[Self._safe_len]()
 
         @parameter
         if Self.is_fully_static():
@@ -78,7 +78,7 @@ struct IntList[static_values: DimList = DimList()](Sized):
             # 2nd best case, we know the length but not all the values.
             # We can store the values in memory which doesn't need to be heap
             # allocated.
-            self.stack_alloc_data = StaticIntTuple[Self._safe_len]()
+            self.stack_alloc_data = IndexList[Self._safe_len]()
 
             @parameter
             for i in range(Self._length):
@@ -89,14 +89,14 @@ struct IntList[static_values: DimList = DimList()](Sized):
             self.data = UnsafePointer[Int].alloc(num_elements)
             for i in range(num_elements):
                 self.data[i] = elems[i]
-            self.stack_alloc_data = StaticIntTuple[Self._safe_len]()
+            self.stack_alloc_data = IndexList[Self._safe_len]()
 
     @always_inline
-    fn __init__[rank: Int](inout self, shape: StaticIntTuple[rank]):
+    fn __init__[rank: Int](inout self, shape: IndexList[rank]):
         constrained[rank == len(static_values)]()
         self.length = rank
         self.data = UnsafePointer[Int]()
-        self.stack_alloc_data = rebind[StaticIntTuple[Self._safe_len]](shape)
+        self.stack_alloc_data = rebind[IndexList[Self._safe_len]](shape)
 
     @always_inline
     fn __moveinit__(inout self, owned existing: Self):
@@ -162,7 +162,7 @@ struct IntList[static_values: DimList = DimList()](Sized):
         return Self._length != 0
 
     @always_inline
-    fn to_static_tuple(self) -> StaticIntTuple[Self._safe_len]:
+    fn to_static_tuple(self) -> IndexList[Self._safe_len]:
         constrained[
             Self.has_static_length(),
             (

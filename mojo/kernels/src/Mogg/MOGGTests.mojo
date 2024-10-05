@@ -13,7 +13,7 @@ from register import *
 from runtime.asyncrt import MojoCallContextPtr
 
 from utils import unroll
-from utils.index import StaticIntTuple
+from utils.index import IndexList
 
 # ===----------------------------------------------------------------------===#
 # Special test targets just for generation tests
@@ -82,11 +82,11 @@ fn mutable_test_op[
 fn test_3D_in_out_lambda[
     type: DType,
     simd_width: Int,
-    input_0_fn: fn[width: Int, rank: Int] (
-        StaticIntTuple[rank]
-    ) capturing -> SIMD[type, width],
+    input_0_fn: fn[width: Int, rank: Int] (IndexList[rank]) capturing -> SIMD[
+        type, width
+    ],
     output_0_fn: fn[width: Int, rank: Int, element_alignment: Int] (
-        StaticIntTuple[rank], SIMD[type, width]
+        IndexList[rank], SIMD[type, width]
     ) capturing -> None,
 ](tensor1: NDBuffer[type, 3], output: NDBuffer[type, 3],) -> NDBuffer[type, 3]:
     """
@@ -99,7 +99,7 @@ fn test_3D_in_out_lambda[
             @always_inline
             @parameter
             fn func_wrapper[simd_width: Int](idx: Int):
-                var indices = StaticIntTuple[3](x, y, idx)
+                var indices = IndexList[3](x, y, idx)
                 var result = input_0_fn[simd_width, 3](indices)
                 output_0_fn[simd_width, 3, element_alignment=1](indices, result)
 
@@ -195,8 +195,8 @@ fn test_static_shape_output[
     unroll[body, rank]()
     return NDBuffer[type, rank, output_0_static_shape](
         UnsafePointer[Scalar[type]](),
-        StaticIntTuple[rank](),
-        StaticIntTuple[rank](),
+        IndexList[rank](),
+        IndexList[rank](),
     )
 
 
@@ -224,15 +224,15 @@ fn test_unary_kernel[
     type: DType,
     rank: Int,
     simd_width: Int,
-    input_0_fn: fn[width: Int, rank: Int] (
-        StaticIntTuple[rank]
-    ) capturing -> SIMD[type, width],
+    input_0_fn: fn[width: Int, rank: Int] (IndexList[rank]) capturing -> SIMD[
+        type, width
+    ],
     output_0_fn: fn[width: Int, rank: Int, element_alignment: Int] (
-        StaticIntTuple[rank], SIMD[type, width]
+        IndexList[rank], SIMD[type, width]
     ) capturing -> None,
     single_thread_blocking_override: Bool,
     target: StringLiteral = "cpu",
-](input_shape: StaticIntTuple[rank], output_shape: StaticIntTuple[rank],):
+](input_shape: IndexList[rank], output_shape: IndexList[rank],):
     print("World!")
 
 
@@ -241,7 +241,7 @@ fn test_unary_kernel[
 @export
 fn test_unary_kernel_shape_func[
     type: DType, rank: Int, single_thread_blocking_override: Bool
-](data: NDBuffer[type, rank],) -> StaticIntTuple[rank]:
+](data: NDBuffer[type, rank],) -> IndexList[rank]:
     print("Hello")
 
     return data.get_shape()
@@ -270,19 +270,19 @@ fn test_custom_identity[
     type: DType,
     rank: Int,
     simd_width: Int,
-    input_0_fn: fn[width: Int, rank: Int] (
-        StaticIntTuple[rank]
-    ) capturing -> SIMD[type, width],
+    input_0_fn: fn[width: Int, rank: Int] (IndexList[rank]) capturing -> SIMD[
+        type, width
+    ],
     output_0_fn: fn[width: Int, rank: Int, element_alignment: Int] (
-        StaticIntTuple[rank], SIMD[type, width]
+        IndexList[rank], SIMD[type, width]
     ) capturing -> None,
     single_thread_blocking_override: Bool,
-](input_shape: StaticIntTuple[rank], output_shape: StaticIntTuple[rank],):
+](input_shape: IndexList[rank], output_shape: IndexList[rank],):
     print("The custom identity op is running!")
 
     @parameter
     @always_inline
-    fn identity[simd_width: Int, rank: Int](idx: StaticIntTuple[rank]):
+    fn identity[simd_width: Int, rank: Int](idx: IndexList[rank]):
         var x = input_0_fn[simd_width, rank](idx)
         output_0_fn[simd_width, rank, element_alignment=1](idx, x)
 
@@ -303,7 +303,7 @@ fn test_custom_identity[
 @export
 fn test_custom_identity_shape_func[
     type: DType, rank: Int, single_thread_blocking_override: Bool
-](data: NDBuffer[type, rank]) -> StaticIntTuple[rank]:
+](data: NDBuffer[type, rank]) -> IndexList[rank]:
     return data.get_shape()
 
 
@@ -327,7 +327,7 @@ fn reduce_shape_no_explicit_inline[
 ](
     input_buf: NDBuffer[input_type, input_rank],
     axis_buf: NDBuffer[axis_type, 1],
-) -> StaticIntTuple[input_rank]:
+) -> IndexList[input_rank]:
     # extract hyper parameter
     var axis = int(axis_buf[0])
     if axis < 0:
@@ -345,20 +345,20 @@ fn custom_op_that_raises[
     type: DType,
     rank: Int,
     simd_width: Int,
-    input_0_fn: fn[width: Int, rank: Int] (
-        StaticIntTuple[rank]
-    ) capturing -> SIMD[type, width],
+    input_0_fn: fn[width: Int, rank: Int] (IndexList[rank]) capturing -> SIMD[
+        type, width
+    ],
     output_0_fn: fn[width: Int, rank: Int, element_alignment: Int] (
-        StaticIntTuple[rank], SIMD[type, width]
+        IndexList[rank], SIMD[type, width]
     ) capturing -> None,
     single_thread_blocking_override: Bool,
-](input_shape: StaticIntTuple[rank], output_shape: StaticIntTuple[rank]) raises:
+](input_shape: IndexList[rank], output_shape: IndexList[rank]) raises:
     if input_shape[0] == 10:
         raise ("input_shape[0] == 10")
 
     @parameter
     @always_inline
-    fn identity[simd_width: Int, rank: Int](idx: StaticIntTuple[rank]):
+    fn identity[simd_width: Int, rank: Int](idx: IndexList[rank]):
         var x = input_0_fn[simd_width, rank](idx)
         output_0_fn[simd_width, rank, element_alignment=1](idx, x)
 
@@ -377,7 +377,7 @@ fn custom_op_that_raises[
 @export
 fn custom_shape_func_that_raises[
     type: DType, rank: Int, single_thread_blocking_override: Bool
-](data: NDBuffer[type, rank],) raises -> StaticIntTuple[rank]:
+](data: NDBuffer[type, rank],) raises -> IndexList[rank]:
     # This print ensures we won't symbolicize this shape function call, so we
     # can test its runtime execution.
     print("Hello")
@@ -507,11 +507,11 @@ fn scale_with_my_custom_scalar_ndbuff[
 ):
     @parameter
     @always_inline
-    fn func[simd_width: Int, fn_rank: Int](idx: StaticIntTuple[fn_rank]):
+    fn func[simd_width: Int, fn_rank: Int](idx: IndexList[fn_rank]):
         var val = x.load[width=simd_width](
-            rebind[StaticIntTuple[rank]](idx)
+            rebind[IndexList[rank]](idx)
         ) * scale.val
-        out.store[width=simd_width](rebind[StaticIntTuple[rank]](idx), val)
+        out.store[width=simd_width](rebind[IndexList[rank]](idx), val)
 
     elementwise[func, simd_width=1, use_blocking_impl=True, target="cpu"](
         x.get_shape(),
@@ -522,12 +522,7 @@ fn scale_with_my_custom_scalar_ndbuff[
 @export
 fn scale_with_my_custom_scalar_ndbuff_shape_func[
     type: DType, rank: Int, single_thread_blocking_override: Bool
-](
-    x: NDBuffer[type, rank],
-    scale: MyCustomScalar[type],
-) -> StaticIntTuple[
-    rank
-]:
+](x: NDBuffer[type, rank], scale: MyCustomScalar[type],) -> IndexList[rank]:
     return x.dynamic_shape
 
 

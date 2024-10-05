@@ -18,7 +18,7 @@ from memory.unsafe import bitcast
 from MOGGIntList import IntList
 from register import *
 
-from utils import StaticIntTuple, unroll
+from utils import IndexList, unroll
 from os.atomic import Atomic
 
 
@@ -314,7 +314,7 @@ struct Tensor[
 
     @always_inline
     fn store(
-        inout self, index: StaticIntTuple[Self.static_rank.value()], value: SIMD
+        inout self, index: IndexList[Self.static_rank.value()], value: SIMD
     ):
         self.store(
             IntList[DimList.create_unknown[Self.static_rank.value()]()](index),
@@ -374,7 +374,7 @@ struct Tensor[
     @always_inline
     fn simd_load[
         simd_width: Int,
-    ](self, index: StaticIntTuple[Self.static_rank.value()]) -> SIMD[
+    ](self, index: IndexList[Self.static_rank.value()]) -> SIMD[
         type, simd_width
     ]:
         return self.simd_load[simd_width](
@@ -460,8 +460,8 @@ struct Tensor[
     fn to_buffer[
         rank: Int
     ](self) -> NDBuffer[Self.type, rank, Self.static_shape]:
-        var shape = StaticIntTuple[rank]()
-        var strides = StaticIntTuple[rank]()
+        var shape = IndexList[rank]()
+        var strides = IndexList[rank]()
 
         @parameter
         for i in range(rank):
@@ -489,18 +489,16 @@ struct Tensor[
             @parameter
             fn elementwise_fn_wrapper[
                 width: Int, rank: Int
-            ](coords_static: StaticIntTuple[rank]) capturing:
+            ](coords_static: IndexList[rank]) capturing:
                 alias dims = DimList.create_unknown[Self.static_rank.value()]()
                 var coords = IntList[dims](
-                    rebind[StaticIntTuple[Self.static_rank.value()]](
-                        coords_static
-                    )
+                    rebind[IndexList[Self.static_rank.value()]](coords_static)
                 )
                 var val = func[width](coords)
                 self.store(coords, val)
 
             elementwise[elementwise_fn_wrapper, simd_width](
-                rebind[StaticIntTuple[Self.static_rank.value()]](
+                rebind[IndexList[Self.static_rank.value()]](
                     self.shape.to_static_tuple()
                 )
             )

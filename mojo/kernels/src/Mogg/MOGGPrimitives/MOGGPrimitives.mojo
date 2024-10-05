@@ -32,7 +32,7 @@ from register import *
 from runtime.asyncrt import MojoCallContextPtr
 from weights_registry import WeightsRegistry
 
-from utils import StaticIntTuple
+from utils import IndexList
 
 # ===----------------------------------------------------------------------===#
 # Helper Structures
@@ -42,14 +42,14 @@ from utils import StaticIntTuple
 @register_passable("trivial")
 struct StaticTensorSpec[rank: Int]():
     """Defines a static-rank tensor spec which - has a static-rank shape
-    in a StaticIntTuple and dtype. This is analagous to TensorSpec from
+    in a IndexList and dtype. This is analagous to TensorSpec from
     tensor_spec, but this is fully static and will not have any allocations."""
 
-    var shape: StaticIntTuple[rank]
+    var shape: IndexList[rank]
     var dType: DType
 
     @always_inline
-    fn __init__(inout self, shape: StaticIntTuple[rank], dType: DType):
+    fn __init__(inout self, shape: IndexList[rank], dType: DType):
         """Constructs a static tensor spec with a static rank shape and dType.
 
         Args:
@@ -132,7 +132,7 @@ fn byte_buffer_alloc[
     """Function will allocate a 1-D buffer with the specified size/alignment on device.
     """
     # This primitive has a byte-size input, so always assume a byte format
-    var shape = StaticIntTuple[1](byte_size)
+    var shape = IndexList[1](byte_size)
 
     @parameter
     if "cuda" in target:
@@ -413,7 +413,7 @@ fn unpack_buffer[
         "KGEN_CompilerRT_GetDataFromBuffer",
         UnsafePointer[NoneType],
     ](async_ptr, UnsafePointer.address_of(size))
-    var shape = StaticIntTuple[1](int(size))
+    var shape = IndexList[1](int(size))
     return NDBuffer[DType.uint8, 1](data_ptr.bitcast[UInt8](), shape)
 
 
@@ -428,7 +428,7 @@ fn unpack_tensor_spec[
         "KGEN_CompilerRT_GetTensorSpecFromAsync",
         UInt8,
     ](shape_ptr, rank, async_ptr)
-    var shape = StaticIntTuple[rank]()
+    var shape = IndexList[rank]()
     for i in range(rank):
         shape[i] = int(shape_ptr[i])
     shape_ptr.free()
@@ -756,7 +756,7 @@ fn mgp_tensor_spec_create[
 ](*runtimeDims: Int) -> StaticTensorSpec[aRawDimsRank]:
     var dType = DType._from_ui8(bRawDType.value)
     var static_shape = IntList[aRawDims]()
-    var shape = StaticIntTuple[aRawDimsRank]()
+    var shape = IndexList[aRawDimsRank]()
     var runtimeIndex = 0
     # Update Shape with runtime elements.
     for i in range(aRawDimsRank):

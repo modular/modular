@@ -16,7 +16,7 @@ from nn.activations import relu
 from register import *
 from runtime.tracing import Trace, TraceLevel
 
-from utils import StaticIntTuple, unroll
+from utils import IndexList, unroll
 from utils.numerics import isinf, isnan
 
 alias MAX_BENEFIT = 1000
@@ -225,7 +225,7 @@ fn view_like_custom_op_target[
 fn broadcast[
     rank: Int,
     out_static_strides: DimList,
-](x: Tensor, shape: StaticIntTuple[rank]) -> Tensor[
+](x: Tensor, shape: IndexList[rank]) -> Tensor[
     x.type, DimList.create_unknown[shape.size](), out_static_strides
 ]:
     var new_shape = IntList[DimList.create_unknown[shape.size]()]()
@@ -747,9 +747,9 @@ fn mo_range[
 
     @parameter
     if start.type.is_integral():
-        shape = StaticIntTuple[1](len(range(start_, stop_, step_)))
+        shape = IndexList[1](len(range(start_, stop_, step_)))
     else:
-        shape = StaticIntTuple[1](int(ceil(abs(stop_ - start_) / abs(step_))))
+        shape = IndexList[1](int(ceil(abs(stop_ - start_) / abs(step_))))
 
     var out = empty_tensor[out_type](shape)
 
@@ -818,10 +818,10 @@ fn _reduce_wrapper[
     @always_inline
     fn load_input[
         ty: DType, width: Int, rank: Int
-    ](coords: StaticIntTuple[rank]) -> SIMD[ty, width]:
+    ](coords: IndexList[rank]) -> SIMD[ty, width]:
         return rebind[SIMD[ty, width]](
             input.simd_load[width](
-                rebind[StaticIntTuple[input.static_rank.value()]](coords)
+                rebind[IndexList[input.static_rank.value()]](coords)
             )
         )
 
@@ -829,9 +829,9 @@ fn _reduce_wrapper[
     @always_inline
     fn store_output[
         ty: DType, width: Int, rank: Int
-    ](coords: StaticIntTuple[rank], val: SIMD[ty, width]) -> None:
+    ](coords: IndexList[rank], val: SIMD[ty, width]) -> None:
         output.store(
-            rebind[StaticIntTuple[output.static_rank.value()]](coords),
+            rebind[IndexList[output.static_rank.value()]](coords),
             rebind[SIMD[output.type, width]](val),
         )
 
