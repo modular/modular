@@ -14,6 +14,7 @@ from utils import StringRef
 from ._utils import _check_error, _human_memory
 from .cuda_instance import *
 from .dim import Dim
+from .info import _get_info_from_compute_capability
 
 # ===----------------------------------------------------------------------===#
 # Device Information
@@ -751,3 +752,8 @@ struct Device(StringableRaising):
         return self._query(
             DeviceAttribute.COMPUTE_CAPABILITY_MAJOR
         ) * 10 + self._query(DeviceAttribute.COMPUTE_CAPABILITY_MINOR)
+
+    fn arch_name(self) raises -> String:
+        """Returns the name of the device architecture."""
+        var compute_capability = self.compute_capability()
+        return _get_info_from_compute_capability(compute_capability).name

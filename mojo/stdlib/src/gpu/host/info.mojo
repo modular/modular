@@ -7,6 +7,7 @@
 
 from math import ceildiv, floor
 from sys import env_get_string
+from os import abort
 
 alias DEFAULT_GPU_ARCH = env_get_string["DEFAULT_GPU_ARCH", "sm_80"]()
 
@@ -529,6 +530,38 @@ struct Info:
 # ===----------------------------------------------------------------------===#
 # _get_info_from_target
 # ===----------------------------------------------------------------------===#
+
+
+@always_inline
+fn _get_info_from_compute_capability[compute_capability: Int]() -> Info:
+    constrained[
+        compute_capability in (80, 86, 89, 90), "invalid compute capability"
+    ]()
+
+    @parameter
+    if compute_capability == 80:
+        return A100
+    elif compute_capability == 86:
+        return A10
+    elif compute_capability == 89:
+        return L4
+    elif compute_capability == 90:
+        return H100
+    return abort[Info]("invalid compute capability")
+
+
+@always_inline
+fn _get_info_from_compute_capability(compute_capability: Int) raises -> Info:
+    if compute_capability == 80:
+        return _get_info_from_compute_capability[80]()
+    if compute_capability == 86:
+        return _get_info_from_compute_capability[86]()
+    if compute_capability == 89:
+        return _get_info_from_compute_capability[89]()
+    if compute_capability == 90:
+        return _get_info_from_compute_capability[90]()
+
+    raise "invalid compute capability"
 
 
 @always_inline
