@@ -12,7 +12,7 @@ from buffer import NDBuffer
 from buffer.dimlist import DimList
 from quantization import Q4sym
 
-from utils import StaticIntTuple
+from utils import IndexList
 
 
 fn _run_test_quant[group_size: Int, tolerance: FloatLiteral]() -> Bool:
@@ -168,13 +168,13 @@ fn _read_write_to_tensors[
     Q4sym[group_size, DType.float32].quantize_and_write_to_tensor[rank](
         rebound_data_matrix,
         rebound_packed_block,
-        StaticIntTuple[rank](num_elements),
+        IndexList[rank](num_elements),
     )
 
     Q4sym[group_size, DType.float32].dequantize_and_write_to_tensor[rank](
         rebound_packed_block,
         rebound_out_data_matrix,
-        StaticIntTuple[rank](num_elements),
+        IndexList[rank](num_elements),
     )
 
     var allClose: Bool = True

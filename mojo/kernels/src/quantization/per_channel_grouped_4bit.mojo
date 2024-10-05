@@ -12,7 +12,7 @@ from buffer import NDBuffer
 from buffer.buffer import prod_dims
 from memory import bitcast, memcpy, UnsafePointer
 
-from utils import Index, StaticIntTuple, StaticTuple
+from utils import Index, IndexList, StaticTuple
 
 
 @always_inline
@@ -266,7 +266,7 @@ struct Q4sym[
     ](
         input_tensor: NDBuffer[float_dtype, rank],
         output_tensor: NDBuffer[DType.uint8, rank],
-        input_shape: StaticIntTuple[rank],
+        input_shape: IndexList[rank],
     ):
         """
         Encodes the floating point numbers in `input_tensor` along the
@@ -329,7 +329,7 @@ struct Q4sym[
     ](
         input_tensor: NDBuffer[DType.uint8, rank],
         output_tensor: NDBuffer[float_dtype, rank],
-        output_shape: StaticIntTuple[rank],
+        output_shape: IndexList[rank],
     ):
         """
         Encodes the floating point numbers in `input_tensor` along the
@@ -509,7 +509,7 @@ struct block_Q6_K:
 fn q6_k_dequantize_impl(
     input_tensor: NDBuffer[DType.uint8, 2],
     output_tensor: NDBuffer[DType.float32, 2],
-    output_shape: StaticIntTuple[2],
+    output_shape: IndexList[2],
 ):
     alias group_nelems = block_Q6_K.group_size
     alias block_nelems = block_QK_K.quantized_k
