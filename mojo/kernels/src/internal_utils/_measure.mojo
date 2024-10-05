@@ -12,7 +12,7 @@ from algorithm import elementwise, mean, sum
 from buffer import Buffer
 from memory import UnsafePointer
 
-from utils import StaticIntTuple
+from utils import IndexList
 
 # ===----------------------------------------------------------------------=== #
 # kl_div
@@ -49,9 +49,7 @@ fn kl_div[
     len: Int,
 ):
     @parameter
-    fn kl_div_elementwise[
-        simd_width: Int, rank: Int
-    ](idx: StaticIntTuple[rank]):
+    fn kl_div_elementwise[simd_width: Int, rank: Int](idx: IndexList[rank]):
         out[idx[0]] = rebind[Scalar[type]](
             kl_div(
                 (x + idx[0]).load[width=simd_width](),
@@ -162,7 +160,7 @@ fn _sqrt[
     type: DType, //
 ](out: UnsafePointer[Scalar[type]], x: __type_of(out), len: Int):
     @parameter
-    fn apply_fn[simd_width: Int, rank: Int](idx: StaticIntTuple[rank]):
+    fn apply_fn[simd_width: Int, rank: Int](idx: IndexList[rank]):
         out[idx[0]] = rebind[Scalar[type]](
             sqrt((x + idx[0]).load[width=simd_width]())
         )
@@ -179,7 +177,7 @@ fn _mul[
     len: Int,
 ):
     @parameter
-    fn apply_fn[simd_width: Int, rank: Int](idx: StaticIntTuple[rank]):
+    fn apply_fn[simd_width: Int, rank: Int](idx: IndexList[rank]):
         out[idx[0]] = rebind[Scalar[type]](
             (x + idx[0]).load[width=simd_width]()
             * (y + idx[0]).load[width=simd_width]()
@@ -197,7 +195,7 @@ fn _div[
     len: Int,
 ):
     @parameter
-    fn apply_fn[simd_width: Int, rank: Int](idx: StaticIntTuple[rank]):
+    fn apply_fn[simd_width: Int, rank: Int](idx: IndexList[rank]):
         out[idx[0]] = (
             rebind[Scalar[type]]((x + idx[0]).load[width=simd_width]()) / c
         )
@@ -233,7 +231,7 @@ fn _dot[
     var accum_scalar = Scalar[type](0)
 
     @parameter
-    fn apply_fn[simd_width: Int, rank: Int](idx: StaticIntTuple[rank]):
+    fn apply_fn[simd_width: Int, rank: Int](idx: IndexList[rank]):
         var xi = (x + idx[0]).load[width=simd_width]()
         var yi = (y + idx[0]).load[width=simd_width]()
 

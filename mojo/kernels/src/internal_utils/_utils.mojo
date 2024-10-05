@@ -24,7 +24,7 @@ from compile import _internal_compile_code
 from gpu.host.device_context import DeviceBuffer, DeviceContext
 from testing import assert_almost_equal, assert_equal, assert_true
 
-from utils import StaticIntTuple
+from utils import IndexList
 from utils.index import product
 
 
@@ -54,7 +54,7 @@ struct HostNDBuffer[
     @always_inline
     fn __init__(
         inout self,
-        dynamic_shape: StaticIntTuple[rank] = _make_tuple[rank](shape),
+        dynamic_shape: IndexList[rank] = _make_tuple[rank](shape),
     ):
         self.tensor = NDBuffer[type, rank, shape](
             UnsafePointer[Scalar[type]].alloc(product(dynamic_shape, rank)),
@@ -86,7 +86,7 @@ struct DeviceNDBuffer[
     @always_inline
     fn __init__(
         inout self,
-        dynamic_shape: StaticIntTuple[rank] = _make_tuple[rank](shape),
+        dynamic_shape: IndexList[rank] = _make_tuple[rank](shape),
         *,
         ctx: DeviceContext,
     ) raises:
@@ -108,9 +108,9 @@ struct DeviceNDBuffer[
     @always_inline
     fn __init__(
         inout self,
-        dynamic_shape: StaticIntTuple[rank] = _make_tuple[rank](shape),
+        dynamic_shape: IndexList[rank] = _make_tuple[rank](shape),
         *,
-        stride: StaticIntTuple[rank],
+        stride: IndexList[rank],
         ctx: DeviceContext,
     ) raises:
         # FIXME: RUNP-356 Direct access to CUDA within DeviceContext
@@ -124,7 +124,7 @@ struct DeviceNDBuffer[
         inout self,
         dynamic_shape: DimList,
         *,
-        stride: StaticIntTuple[rank],
+        stride: IndexList[rank],
         ctx: DeviceContext,
     ) raises:
         self.__init__(_make_tuple[rank](dynamic_shape), stride=stride, ctx=ctx)
@@ -336,8 +336,8 @@ fn env_get_bool[name: StringLiteral, default: Bool = False]() -> Bool:
     return default
 
 
-fn int_list_to_tuple[x: List[Int]]() -> StaticIntTuple[len(x)]:
-    var t = StaticIntTuple[len(x)]()
+fn int_list_to_tuple[x: List[Int]]() -> IndexList[len(x)]:
+    var t = IndexList[len(x)]()
 
     @parameter
     for i in range(len(x)):
