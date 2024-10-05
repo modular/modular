@@ -8,7 +8,7 @@
 from layout import Layout, LayoutTensor, RuntimeLayout, RuntimeTuple
 from layout.layout_tensor import LayoutTensorIter
 from layout.int_tuple import UNKNOWN_VALUE, IntTuple
-from utils import StaticIntTuple
+from utils import IndexList
 from layout.fillers import arange, random
 from math import sqrt
 from memory import UnsafePointer
@@ -585,7 +585,7 @@ fn test_iterator():
     alias unknown_layout = Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)
     # alias layout = Layout.row_major(M, N)
     var runtime_layout = RuntimeLayout[unknown_layout].row_major(
-        StaticIntTuple[2](M, N)
+        IndexList[2](M, N)
     )
     var ptr1 = UnsafePointer[Scalar[type]].alloc(M * N)
 

@@ -8,7 +8,7 @@ from sys import alignof
 
 from memory import AddressSpace, UnsafePointer
 
-from utils import StaticIntTuple
+from utils import IndexList
 
 from . import Layout, RuntimeLayout
 from .int_tuple import UNKNOWN_VALUE
@@ -137,7 +137,7 @@ struct Element[dtype: DType, layout: Layout](Stringable, Formattable):
         address_space: AddressSpace, rank: Int
     ](
         ptr: UnsafePointer[Scalar[dtype], address_space],
-        element_bounds: StaticIntTuple[rank],
+        element_bounds: IndexList[rank],
         runtime_layout: RuntimeLayout[layout] = RuntimeLayout[layout](),
     ) -> Self:
         # TODO: Use partial_simd_load after closing KERN-729.
@@ -327,7 +327,7 @@ struct Element[dtype: DType, layout: Layout](Stringable, Formattable):
     ](
         self,
         ptr: UnsafePointer[Scalar[dtype], address_space],
-        element_bounds: StaticIntTuple[rank],
+        element_bounds: IndexList[rank],
     ):
         constrained[layout.rank() <= 2, "Only supports rank <= 2"]()
         constrained[

@@ -16,7 +16,7 @@ from layout.int_tuple import depth, to_int
 from layout.layout import make_layout
 from memory.pointer import AddressSpace, _GPUAddressSpace
 
-from utils import StaticIntTuple, StaticTuple
+from utils import IndexList, StaticTuple
 
 alias _swizzle_signature = fn[type: DType] (Scalar[type]) -> Scalar[type]
 
@@ -29,16 +29,16 @@ alias _swizzle_signature = fn[type: DType] (Scalar[type]) -> Scalar[type]
 @value
 struct TileMask[
     rank: Int,
-    element_size: StaticIntTuple[rank] = StaticIntTuple[rank](1),
-    element_stride: StaticIntTuple[rank] = StaticIntTuple[rank](1),
+    element_size: IndexList[rank] = IndexList[rank](1),
+    element_stride: IndexList[rank] = IndexList[rank](1),
 ]:
-    var max_dim: StaticIntTuple[rank]
-    var offset: StaticIntTuple[rank]
+    var max_dim: IndexList[rank]
+    var offset: IndexList[rank]
 
     fn __init__(
         inout self,
-        max_dim: StaticIntTuple[rank],
-        offset: StaticIntTuple[rank] = StaticIntTuple[rank](0),
+        max_dim: IndexList[rank],
+        offset: IndexList[rank] = IndexList[rank](0),
     ):
         self.max_dim = max_dim
         self.offset = offset
@@ -47,9 +47,7 @@ struct TileMask[
     # accessed at the given `point` at this axis.
     #
     @always_inline
-    fn access_mask(
-        self, point: StaticIntTuple[rank]
-    ) -> StaticTuple[Bool, rank]:
+    fn access_mask(self, point: IndexList[rank]) -> StaticTuple[Bool, rank]:
         var mask = StaticTuple[Bool, rank]()
 
         @parameter
@@ -73,9 +71,9 @@ struct TileMask[
     #
     @always_inline
     fn access_size(
-        self, point: StaticIntTuple[rank], dim_mask: StaticTuple[Bool, rank]
-    ) -> StaticIntTuple[rank]:
-        var size = StaticIntTuple[rank]()
+        self, point: IndexList[rank], dim_mask: StaticTuple[Bool, rank]
+    ) -> IndexList[rank]:
+        var size = IndexList[rank]()
 
         @parameter
         for i in range(rank):
@@ -96,12 +94,12 @@ struct TileMask[
 fn _tile_mask[
     *tile_sizes: Dim,
     rank: Int,
-    __sizes: StaticIntTuple[rank] = StaticIntTuple[rank](1),
-    __element_stride: StaticIntTuple[rank] = StaticIntTuple[rank](1),
-](shape: StaticIntTuple[rank], tile_coords: StaticIntTuple[rank]) -> TileMask[
+    __sizes: IndexList[rank] = IndexList[rank](1),
+    __element_stride: IndexList[rank] = IndexList[rank](1),
+](shape: IndexList[rank], tile_coords: IndexList[rank]) -> TileMask[
     rank, __sizes, __element_stride
 ]:
-    var tile_offset = StaticIntTuple[rank]()
+    var tile_offset = IndexList[rank]()
 
     @parameter
     for i in range(rank):
@@ -111,10 +109,8 @@ fn _tile_mask[
 
 
 @always_inline("nodebug")
-fn __to_static_tuple[
-    rank: Int
-](sizes: VariadicList[Int]) -> StaticIntTuple[rank]:
-    var res = StaticIntTuple[rank]()
+fn __to_static_tuple[rank: Int](sizes: VariadicList[Int]) -> IndexList[rank]:
+    var res = IndexList[rank]()
 
     @parameter
     for i in range(rank):
@@ -128,9 +124,9 @@ fn __to_static_tuple[
 @always_inline("nodebug")
 fn _vectorize_mask[
     rank: Int,
-    sizes: StaticIntTuple[rank],
-    element_stride: StaticIntTuple[rank],
-    mask_sizes: StaticIntTuple[rank],
+    sizes: IndexList[rank],
+    element_stride: IndexList[rank],
+    mask_sizes: IndexList[rank],
 ](mask: TileMask[rank, mask_sizes, element_stride]) -> TileMask[
     rank, sizes, element_stride
 ]:
@@ -143,8 +139,8 @@ fn _vectorize_mask[
 @always_inline("nodebug")
 fn __get_shape_as_tuple[
     rank: Int,
-](thread_layout: Layout) -> StaticIntTuple[rank]:
-    var res = StaticIntTuple[rank]()
+](thread_layout: Layout) -> IndexList[rank]:
+    var res = IndexList[rank]()
 
     @parameter
     for i in range(rank):
@@ -159,9 +155,9 @@ fn __get_shape_as_tuple[
 fn _distribute_mask[
     thread_layout: Layout,
     rank: Int,
-    element_size: StaticIntTuple[rank],
-    element_stride: StaticIntTuple[rank],
-    __element_stride: StaticIntTuple[rank] = __get_shape_as_tuple[rank](
+    element_size: IndexList[rank],
+    element_stride: IndexList[rank],
+    __element_stride: IndexList[rank] = __get_shape_as_tuple[rank](
         thread_layout
     ),
 ](
@@ -228,8 +224,8 @@ fn distribute[
         "distribute threads to NDBuffer only supports depth-1 thread layouts",
     ]()
 
-    var res_strides = StaticIntTuple[rank]()
-    var res_shape = StaticIntTuple[rank]()
+    var res_strides = IndexList[rank]()
+    var res_shape = IndexList[rank]()
 
     @parameter
     for i in range(rank):
@@ -301,8 +297,8 @@ fn __vectorize_shape[*sizes: Int](shape: DimList) -> DimList:
 
 
 @always_inline("nodebug")
-fn __to_static_tuple[*sizes: Int, rank: Int]() -> StaticIntTuple[rank]:
-    var vals = StaticIntTuple[rank]()
+fn __to_static_tuple[*sizes: Int, rank: Int]() -> IndexList[rank]:
+    var vals = IndexList[rank]()
 
     @parameter
     for i in range(rank):
@@ -313,15 +309,15 @@ fn __to_static_tuple[*sizes: Int, rank: Int]() -> StaticIntTuple[rank]:
 
 # Stores the layout of the vectorized buffer element.
 #
-struct ElementLayout[rank: Int, shape: StaticIntTuple[rank]](
+struct ElementLayout[rank: Int, shape: IndexList[rank]](
     CollectionElement,
     Stringable,
     Formattable,
 ):
-    var stride: StaticIntTuple[rank]
+    var stride: IndexList[rank]
 
     fn __init__(inout self):
-        self.stride = StaticIntTuple[rank]()
+        self.stride = IndexList[rank]()
 
     fn __init__(inout self, *, other: Self):
         """Explicitly construct a deep copy of the provided value.
@@ -353,7 +349,7 @@ fn _get_element_idx[
     rank: Int,
     dtype: DType,
     shape: DimList,
-    element_shape: StaticIntTuple[rank],
+    element_shape: IndexList[rank],
 ](
     linear_coord: Int,
     buff: NDBuffer[dtype, rank, shape],
@@ -398,7 +394,7 @@ fn _get_element_idx[
 @always_inline("nodebug")
 fn _get_element_idx[
     rank: Int,
-    element_shape: StaticIntTuple[rank],
+    element_shape: IndexList[rank],
 ](
     linear_coord: Int,
     element_layout: ElementLayout[rank, element_shape],
@@ -437,8 +433,8 @@ fn vectorize[
     ],
     ElementLayout[rank, __to_static_tuple[*sizes, rank=rank]()],
 ]:
-    var buff_shape = StaticIntTuple[rank]()
-    var buff_stride = StaticIntTuple[rank]()
+    var buff_shape = IndexList[rank]()
+    var buff_stride = IndexList[rank]()
 
     var element_layout = ElementLayout[
         rank, __to_static_tuple[*sizes, rank=rank]()
@@ -471,7 +467,7 @@ fn _copy_nd_buffer_to_layout_tensor[
     shape: DimList,
     dst_address_space: AddressSpace,
     tensor_element_layout: Layout,
-    buff_element_layout_shape: StaticIntTuple[src_rank],
+    buff_element_layout_shape: IndexList[src_rank],
     *,
     is_async: Bool = False,
     fill: Fill = Fill.NONE,
@@ -605,9 +601,9 @@ fn _copy_nd_buffer_to_layout_tensor_masked[
     shape: DimList,
     dst_address_space: AddressSpace,
     tensor_element_layout: Layout,
-    buff_element_layout_shape: StaticIntTuple[src_rank],
-    mask_element_size: StaticIntTuple[mask_rank],
-    mask_element_stride: StaticIntTuple[mask_rank],
+    buff_element_layout_shape: IndexList[src_rank],
+    mask_element_size: IndexList[mask_rank],
+    mask_element_stride: IndexList[mask_rank],
     *,
     is_async: Bool = False,
     fill: Fill = Fill.NONE,
@@ -760,7 +756,7 @@ fn _copy_layout_tensor_to_nd_buffer[
     shape: DimList,
     dst_address_space: AddressSpace,
     tensor_element_layout: Layout,
-    buff_element_layout_shape: StaticIntTuple[dst_rank],
+    buff_element_layout_shape: IndexList[dst_rank],
 ](
     dst: NDBuffer[dtype, dst_rank, shape],
     buff_element_layout: ElementLayout[dst_rank, buff_element_layout_shape],
@@ -856,9 +852,9 @@ fn _copy_layout_tensor_to_nd_buffer_masked[
     shape: DimList,
     dst_address_space: AddressSpace,
     tensor_element_layout: Layout,
-    buff_element_layout_shape: StaticIntTuple[dst_rank],
-    mask_element_size: StaticIntTuple[mask_rank],
-    mask_element_stride: StaticIntTuple[mask_rank],
+    buff_element_layout_shape: IndexList[dst_rank],
+    mask_element_size: IndexList[mask_rank],
+    mask_element_stride: IndexList[mask_rank],
 ](
     dst: NDBuffer[dtype, dst_rank, shape],
     buff_element_layout: ElementLayout[dst_rank, buff_element_layout_shape],

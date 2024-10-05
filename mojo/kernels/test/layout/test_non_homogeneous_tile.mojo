@@ -7,7 +7,7 @@
 
 from layout import LayoutTensor, Layout, RuntimeLayout, IntTuple
 from layout.layout import UNKNOWN_VALUE
-from utils import StaticIntTuple
+from utils import IndexList
 from math import ceildiv
 from layout.fillers import arange
 from layout._utils import ManagedLayoutTensor
@@ -23,9 +23,7 @@ def test_single_unknown_tile():
     alias BM0 = 4
     alias BN0 = 3
     alias layout0 = Layout.row_major(UNKNOWN_VALUE, N0)
-    var runtimelayout0 = RuntimeLayout[layout0].row_major(
-        StaticIntTuple[2](M0, N0)
-    )
+    var runtimelayout0 = RuntimeLayout[layout0].row_major(IndexList[2](M0, N0))
     var tensorUxN = ManagedLayoutTensor[
         type, layout0, __experimental_non_homogeneous_tile=True
     ](runtimelayout0)
@@ -70,9 +68,7 @@ def test_single_unknown_tile():
     alias BN1 = 4
 
     alias layout1 = Layout.row_major(M1, UNKNOWN_VALUE)
-    var runtimelayout1 = RuntimeLayout[layout1].row_major(
-        StaticIntTuple[2](M1, N1)
-    )
+    var runtimelayout1 = RuntimeLayout[layout1].row_major(IndexList[2](M1, N1))
     var tensorMxU = ManagedLayoutTensor[
         type, layout1, __experimental_non_homogeneous_tile=True
     ](runtimelayout1)
@@ -122,9 +118,7 @@ def test_non_homogeneous_copy_from():
     alias layout = Layout.row_major(UNKNOWN_VALUE, N)
     alias layout2x2 = Layout.row_major(2, 2)
 
-    var src_runtimelayout = RuntimeLayout[layout].row_major(
-        StaticIntTuple[2](M, N)
-    )
+    var src_runtimelayout = RuntimeLayout[layout].row_major(IndexList[2](M, N))
     var tensorUxN = ManagedLayoutTensor[
         type, layout, __experimental_non_homogeneous_tile=True
     ](src_runtimelayout)
@@ -232,9 +226,7 @@ def test_non_homogeneous_copy_from():
             print(tensor2x2)
 
     alias layoutMxU = Layout.row_major(M, UNKNOWN_VALUE)
-    var src_unknown = RuntimeLayout[layoutMxU].row_major(
-        StaticIntTuple[2](M, N)
-    )
+    var src_unknown = RuntimeLayout[layoutMxU].row_major(IndexList[2](M, N))
     var tensorMxU = ManagedLayoutTensor[
         type, layoutMxU, __experimental_non_homogeneous_tile=True
     ](src_unknown)
@@ -324,7 +316,7 @@ def test_non_homogeneous_distribute():
     alias layoutMxU = Layout.row_major(M, UNKNOWN_VALUE)
 
     var src_runtimelayout = RuntimeLayout[layoutMxU].row_major(
-        StaticIntTuple[2](M, N)
+        IndexList[2](M, N)
     )
     var tensorMxU = ManagedLayoutTensor[
         type, layoutMxU, __experimental_non_homogeneous_tile=True
@@ -419,7 +411,7 @@ def test_non_homogeneous_distribute():
         type,
         layout8xU,
         __experimental_non_homogeneous_tile=True,
-    ](RuntimeLayout[layout8xU].row_major(StaticIntTuple[2](8, 7)))
+    ](RuntimeLayout[layout8xU].row_major(IndexList[2](8, 7)))
     arange(tensor8xU.tensor)
 
     # CHECK: 0.0 1.0 2.0 3.0 4.0 5.0 6.0
@@ -461,7 +453,7 @@ def test_non_homogeneous_distribute():
         type,
         layoutUx8,
         __experimental_non_homogeneous_tile=True,
-    ](RuntimeLayout[layoutUx8].row_major(StaticIntTuple[2](7, 8)))
+    ](RuntimeLayout[layoutUx8].row_major(IndexList[2](7, 8)))
     arange(tensorUx8.tensor)
 
     # CHECK: 0.0 1.0 2.0 3.0 4.0 5.0 6.0 7.0
@@ -526,7 +518,7 @@ def test_non_homogeneous_tiled_iterator():
     alias layoutMxU = Layout.row_major(M, UNKNOWN_VALUE)
 
     var src_runtimelayout = RuntimeLayout[layoutMxU].row_major(
-        StaticIntTuple[2](M, N)
+        IndexList[2](M, N)
     )
     var tensorMxU = ManagedLayoutTensor[
         type, layoutMxU, __experimental_non_homogeneous_tile=True
@@ -576,7 +568,7 @@ def test_non_homogeneous_tiled_iterator():
     alias layoutUxN = Layout.row_major(UNKNOWN_VALUE, N1)
 
     var runtime_layoutUxN = RuntimeLayout[layoutUxN].row_major(
-        StaticIntTuple[2](M1, N1)
+        IndexList[2](M1, N1)
     )
     var tensorUxN = ManagedLayoutTensor[
         type, layoutUxN, __experimental_non_homogeneous_tile=True

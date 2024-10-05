@@ -12,7 +12,7 @@ from layout.int_tuple import idx2crd as idx2crd_int_tuple
 from layout.int_tuple import prefix_product as prefix_product_int_tuple
 from layout.int_tuple import shape_div as shape_div_int_tuple
 
-from utils import StaticIntTuple
+from utils import IndexList
 
 
 fn concat(owned lhs: IntTuple, rhs: IntTuple) -> IntTuple:
@@ -24,11 +24,11 @@ fn concat(owned lhs: IntTuple, rhs: IntTuple) -> IntTuple:
 @register_passable("trivial")
 struct RuntimeTuple[S: IntTuple = UNKNOWN_VALUE](Stringable, Sized):
     alias scalar_length = len(flatten(S))
-    var value: StaticIntTuple[Self.scalar_length]
+    var value: IndexList[Self.scalar_length]
 
     @always_inline
     fn __init__(inout self):
-        self.value = StaticIntTuple[Self.scalar_length]()
+        self.value = IndexList[Self.scalar_length]()
 
         alias f = flatten(S)
 
@@ -47,9 +47,9 @@ struct RuntimeTuple[S: IntTuple = UNKNOWN_VALUE](Stringable, Sized):
         self.value = values
 
     @always_inline
-    fn __init__[l: Int](inout self, values: StaticIntTuple[l]):
+    fn __init__[l: Int](inout self, values: IndexList[l]):
         constrained[Self.scalar_length == l, "Must use same tuple length"]()
-        self.value = rebind[StaticIntTuple[Self.scalar_length]](values)
+        self.value = rebind[IndexList[Self.scalar_length]](values)
 
     @staticmethod
     @always_inline

@@ -16,7 +16,7 @@ from layout.layout import *
 from layout.layout_tensor import LayoutTensor, _swizzle_signature
 from layout.swizzle import *
 from math import align_down
-from utils import StaticIntTuple
+from utils import IndexList
 from layout._utils import load_to_simd
 
 
@@ -25,17 +25,17 @@ fn num_matrix_reg[dim_1: Int, dim_2: Int]() -> Int:
 
 
 # shapes
-alias shape_null = StaticIntTuple[3](0, 0, 0)
-alias shape_16x8x4 = StaticIntTuple[3](16, 8, 4)
-alias shape_16x8x8 = StaticIntTuple[3](16, 8, 8)
-alias shape_16x8x16 = StaticIntTuple[3](16, 8, 16)
-alias shape_8x8x4 = StaticIntTuple[3](8, 8, 4)
+alias shape_null = IndexList[3](0, 0, 0)
+alias shape_16x8x4 = IndexList[3](16, 8, 4)
+alias shape_16x8x8 = IndexList[3](16, 8, 8)
+alias shape_16x8x16 = IndexList[3](16, 8, 16)
+alias shape_8x8x4 = IndexList[3](8, 8, 4)
 
 
 struct TensorCore[
     out_type: DType,
     in_type: DType,
-    shape: StaticIntTuple[3],
+    shape: IndexList[3],
     transpose_b: Bool = False,
 ]:
 
@@ -70,17 +70,17 @@ struct TensorCore[
         pass
 
     @staticmethod
-    fn get_shapes[out_type: DType, in_type: DType]() -> List[StaticIntTuple[3]]:
+    fn get_shapes[out_type: DType, in_type: DType]() -> List[IndexList[3]]:
         @parameter
         if out_type is DType.float32 and in_type is DType.float32:
-            return List[StaticIntTuple[3]](shape_16x8x4, shape_16x8x8)
+            return List[IndexList[3]](shape_16x8x4, shape_16x8x8)
         elif out_type is DType.float32 and in_type is DType.bfloat16:
-            return List[StaticIntTuple[3]](shape_16x8x8, shape_16x8x16)
+            return List[IndexList[3]](shape_16x8x8, shape_16x8x16)
         elif out_type is DType.float32 and in_type is DType.float16:
-            return List[StaticIntTuple[3]](shape_16x8x8, shape_8x8x4)
+            return List[IndexList[3]](shape_16x8x8, shape_8x8x4)
         else:
             constrained[False, "No valid shape of mma"]()
-            return List[StaticIntTuple[3]](shape_null)
+            return List[IndexList[3]](shape_null)
 
     # need always_inline, otherwise the stack allocated LayoutTensor will not be valid
     @always_inline
@@ -536,7 +536,7 @@ fn _load_matrix_frag[
 @always_inline
 fn get_mma_shape[
     input_type: DType, accum_type: DType, shape_id: Int = 0
-]() -> StaticIntTuple[3]:
+]() -> IndexList[3]:
     @parameter
     if accum_type is DType.float32 and input_type is DType.float32:
 
@@ -594,8 +594,8 @@ fn get_accum_type[
 
 
 @always_inline
-fn get_fragment_size[mma_shape: StaticIntTuple[3]]() -> StaticIntTuple[3]:
-    return StaticIntTuple[3](
+fn get_fragment_size[mma_shape: IndexList[3]]() -> IndexList[3]:
+    return IndexList[3](
         mma_shape[0] * mma_shape[2] // WARP_SIZE,
         mma_shape[1] * mma_shape[2] // WARP_SIZE,
         mma_shape[0] * mma_shape[1] // WARP_SIZE,

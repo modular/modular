@@ -18,7 +18,7 @@ from layout.element import Element
 from memory import UnsafePointer, memcpy, stack_allocation, memset_zero
 from memory.pointer import AddressSpace, _GPUAddressSpace
 
-from utils import StaticIntTuple, StaticTuple
+from utils import IndexList, StaticTuple
 from utils.numerics import max_finite
 
 from .int_tuple import (
@@ -154,7 +154,7 @@ fn _get_slice_size(layout: Layout, slc: Slice, dim: Int) -> Int:
 
 # Returns true if n isn't in `tuple`.
 #
-fn _not_in_tuple[n: Int, size: Int, tuple: StaticIntTuple[size]]() -> Bool:
+fn _not_in_tuple[n: Int, size: Int, tuple: IndexList[size]]() -> Bool:
     @parameter
     for i in range(size):
 
@@ -203,9 +203,9 @@ struct LayoutTensor[
     alias element_type = SIMD[dtype, Self.element_size]
 
     # An offset of the global coords.
-    var org_coords_offset: StaticIntTuple[rank]
+    var org_coords_offset: IndexList[rank]
     # The stride of the global coords.
-    var org_coords_stride: StaticIntTuple[rank]
+    var org_coords_stride: IndexList[rank]
 
     # ===------------------------------------------------------------------=== #
     # Life cycle methods
@@ -217,8 +217,8 @@ struct LayoutTensor[
         ptr: UnsafePointer[Scalar[dtype], address_space],
         /,
         *,
-        org_coords_offset: StaticIntTuple[rank] = StaticIntTuple[rank](0),
-        org_coords_stride: StaticIntTuple[rank] = StaticIntTuple[rank](1),
+        org_coords_offset: IndexList[rank] = IndexList[rank](0),
+        org_coords_stride: IndexList[rank] = IndexList[rank](1),
     ):
         """Create a LayoutTensor with an UnsafePointer. Expect layout to be
         fully static.
@@ -245,8 +245,8 @@ struct LayoutTensor[
         runtime_layout: RuntimeLayout[layout],
         /,
         *,
-        org_coords_offset: StaticIntTuple[rank] = StaticIntTuple[rank](0),
-        org_coords_stride: StaticIntTuple[rank] = StaticIntTuple[rank](1),
+        org_coords_offset: IndexList[rank] = IndexList[rank](0),
+        org_coords_stride: IndexList[rank] = IndexList[rank](1),
     ):
         """Create a LayoutTensor with an UnsafePointer. Expect element layout
         to be fully static.
@@ -277,8 +277,8 @@ struct LayoutTensor[
         element_runtime_layout: RuntimeLayout[element_layout],
         /,
         *,
-        org_coords_offset: StaticIntTuple[rank] = StaticIntTuple[rank](0),
-        org_coords_stride: StaticIntTuple[rank] = StaticIntTuple[rank](1),
+        org_coords_offset: IndexList[rank] = IndexList[rank](0),
+        org_coords_stride: IndexList[rank] = IndexList[rank](1),
     ):
         """Create a LayoutTensor with an UnsafePointer, a runtime layout of the
         Tensor, the runtime layout of each element.
@@ -977,8 +977,8 @@ struct LayoutTensor[
 
     @staticmethod
     @always_inline("nodebug")
-    fn _toStatic[t: IntTuple]() -> StaticIntTuple[len(t)]:
-        var st = StaticIntTuple[len(t)]()
+    fn _toStatic[t: IntTuple]() -> IndexList[len(t)]:
+        var st = IndexList[len(t)]()
 
         @parameter
         for i in range(len(t)):
@@ -989,7 +989,7 @@ struct LayoutTensor[
     @always_inline("nodebug")
     fn _getOffset[
         rank: Int
-    ](stride: StaticIntTuple[rank], vals: VariadicList[Int]) -> Int:
+    ](stride: IndexList[rank], vals: VariadicList[Int]) -> Int:
         var offset = 0
 
         @parameter
@@ -1001,7 +1001,7 @@ struct LayoutTensor[
     @always_inline("nodebug")
     fn _getOffset[
         rank_1: Int, rank_2: Int
-    ](stride: StaticIntTuple[rank_1], vals: StaticIntTuple[rank_2]) -> Int:
+    ](stride: IndexList[rank_1], vals: IndexList[rank_2]) -> Int:
         # In theory we should be able to verify this at compile time but it not happening now!
         constrained[
             rank_1 == rank_2, "shape and stride should be the same rank!"
@@ -1162,7 +1162,7 @@ struct LayoutTensor[
 
             return __type_of(result)(
                 self.ptr.offset(offset),
-                org_coords_offset=rebind[StaticIntTuple[result.layout.rank()]](
+                org_coords_offset=rebind[IndexList[result.layout.rank()]](
                     org_coords_offset
                 ),
             )
@@ -1195,8 +1195,8 @@ struct LayoutTensor[
     @always_inline
     fn _clamp_tile[
         *tile_sizes: Int
-    ](self, tile_coords: StaticIntTuple[rank]) -> StaticIntTuple[rank]:
-        var tile_shape = StaticIntTuple[rank]()
+    ](self, tile_coords: IndexList[rank]) -> IndexList[rank]:
+        var tile_shape = IndexList[rank]()
         var runtime_shape = self.runtime_layout.shape
 
         @parameter
@@ -1404,15 +1404,15 @@ struct LayoutTensor[
     @always_inline
     fn _clamp_distribute_shape[
         thread_layout: Layout
-    ](self, thread_id: UInt) -> StaticIntTuple[rank]:
+    ](self, thread_id: UInt) -> IndexList[rank]:
         constrained[
             len(flatten(thread_layout.shape)) <= 2
             and len(flatten(thread_layout.stride)) <= 2,
             "Only supporting rank-2 or less thread layout for dynamic tile.",
         ]()
 
-        # clamp staticinttuple using thread_id and thread_layout
-        var tile_shape = StaticIntTuple[rank]()
+        # clamp IndexList using thread_id and thread_layout
+        var tile_shape = IndexList[rank]()
         var runtime_shape = self.runtime_layout.shape
         alias thread_shape = thread_layout.shape
         alias thread_stride = thread_layout.stride
@@ -1474,8 +1474,8 @@ struct LayoutTensor[
         alias res_rank = result.layout.rank()
 
         # Update org_coords offset and stride according to thread_id.
-        var org_coords_offset = StaticIntTuple[res_rank]()
-        var org_coords_stride = StaticIntTuple[res_rank]()
+        var org_coords_offset = IndexList[res_rank]()
+        var org_coords_stride = IndexList[res_rank]()
 
         @parameter
         for i in range(res_rank):
@@ -1536,10 +1536,10 @@ struct LayoutTensor[
 
             return __type_of(result)(
                 self.ptr.offset(int(swizzled_offset)),
-                org_coords_offset=rebind[StaticIntTuple[result.layout.rank()]](
+                org_coords_offset=rebind[IndexList[result.layout.rank()]](
                     org_coords_offset
                 ),
-                org_coords_stride=rebind[StaticIntTuple[result.layout.rank()]](
+                org_coords_stride=rebind[IndexList[result.layout.rank()]](
                     org_coords_stride
                 ),
             )
@@ -1613,29 +1613,29 @@ struct LayoutTensor[
                 return __type_of(result)(
                     self.ptr.offset(int(swizzled_offset)),
                     RuntimeLayout(runtime_shape, runtime_stride),
-                    org_coords_offset=rebind[
-                        StaticIntTuple[result.layout.rank()]
-                    ](org_coords_offset),
-                    org_coords_stride=rebind[
-                        StaticIntTuple[result.layout.rank()]
-                    ](org_coords_stride),
+                    org_coords_offset=rebind[IndexList[result.layout.rank()]](
+                        org_coords_offset
+                    ),
+                    org_coords_stride=rebind[IndexList[result.layout.rank()]](
+                        org_coords_stride
+                    ),
                 )
             else:
                 return __type_of(result)(
                     self.ptr.offset(int(swizzled_offset)),
                     RuntimeLayout(runtime_shape, runtime_stride),
                     self.runtime_element_layout,
-                    org_coords_offset=rebind[
-                        StaticIntTuple[result.layout.rank()]
-                    ](org_coords_offset),
-                    org_coords_stride=rebind[
-                        StaticIntTuple[result.layout.rank()]
-                    ](org_coords_stride),
+                    org_coords_offset=rebind[IndexList[result.layout.rank()]](
+                        org_coords_offset
+                    ),
+                    org_coords_stride=rebind[IndexList[result.layout.rank()]](
+                        org_coords_stride
+                    ),
                 )
 
     # Returns the original coordiantes a specific tensor element at `idx`.
     @always_inline
-    fn element_coords[idx: Int](self) -> StaticIntTuple[rank]:
+    fn element_coords[idx: Int](self) -> IndexList[rank]:
         constrained[
             layout.known_shape(),
             "element_coords only support layouts of know shape",
@@ -1644,7 +1644,7 @@ struct LayoutTensor[
         alias coords = Self._toStatic[layout_coords.idx2crd(idx)]()
         return (
             self.org_coords_offset
-            + rebind[StaticIntTuple[rank]](coords) * self.org_coords_stride
+            + rebind[IndexList[rank]](coords) * self.org_coords_stride
         )
 
     @always_inline
@@ -1658,7 +1658,7 @@ struct LayoutTensor[
         __experimental_non_homogeneous_tile = self.__experimental_non_homogeneous_tile,
     ] as result:
         # Update element stride to account for vector shapes.
-        var org_coords_stride = StaticIntTuple[rank]()
+        var org_coords_stride = IndexList[rank]()
 
         @parameter
         @always_inline
@@ -1699,10 +1699,10 @@ struct LayoutTensor[
         if layout.all_dims_known():
             return __type_of(result)(
                 self.ptr,
-                org_coords_offset=rebind[StaticIntTuple[result.layout.rank()]](
+                org_coords_offset=rebind[IndexList[result.layout.rank()]](
                     self.org_coords_offset
                 ),
-                org_coords_stride=rebind[StaticIntTuple[result.layout.rank()]](
+                org_coords_stride=rebind[IndexList[result.layout.rank()]](
                     org_coords_stride
                 ),
             )
@@ -1739,7 +1739,7 @@ struct LayoutTensor[
                         runtime_element_layout_stride,
                     )
                 ),
-                org_coords_offset=rebind[StaticIntTuple[result.layout.rank()]](
+                org_coords_offset=rebind[IndexList[result.layout.rank()]](
                     self.org_coords_offset
                 ),
             )
@@ -1820,11 +1820,11 @@ struct LayoutTensor[
     fn slice[
         d0_slice: Slice,
         d1_slice: Slice,
-        slice_indices: StaticIntTuple[2],
+        slice_indices: IndexList[2],
         __offset_dims: Int = Self.rank - 2,
     ](
         self,
-        offsets: StaticIntTuple[__offset_dims],
+        offsets: IndexList[__offset_dims],
     ) -> LayoutTensor[
         dtype,
         Self.__compute_slice_layout(
@@ -1869,11 +1869,11 @@ struct LayoutTensor[
     @always_inline
     fn slice_1d[
         d0_slice: Slice,
-        slice_indices: StaticIntTuple[1],
+        slice_indices: IndexList[1],
         __offset_dims: Int = Self.rank - 1,
     ](
         self,
-        offsets: StaticIntTuple[__offset_dims],
+        offsets: IndexList[__offset_dims],
     ) -> LayoutTensor[
         dtype,
         Self.__compute_slice_layout(d0_slice, slice_indices[0]),
@@ -1982,8 +1982,8 @@ struct LayoutTensor[
 
     @always_inline
     fn copy_from[
-        dst_coords_bound: OptionalReg[StaticIntTuple[rank]] = None,
-        src_coords_bound: OptionalReg[StaticIntTuple[rank]] = None,
+        dst_coords_bound: OptionalReg[IndexList[rank]] = None,
+        src_coords_bound: OptionalReg[IndexList[rank]] = None,
     ](self, other: LayoutTensor):
         alias other_layout = other.layout
 
@@ -2024,7 +2024,7 @@ struct LayoutTensor[
         @always_inline
         fn __is_in_bound[
             rank: Int
-        ](coords: StaticIntTuple[rank], bounds: StaticIntTuple[rank]) -> Bool:
+        ](coords: IndexList[rank], bounds: IndexList[rank]) -> Bool:
             var in_bound = True
 
             @parameter
@@ -2036,10 +2036,8 @@ struct LayoutTensor[
         @always_inline
         fn __compute_element_bound[
             element_layout: Layout
-        ](
-            coords: StaticIntTuple[rank], bounds: StaticIntTuple[rank]
-        ) -> StaticIntTuple[rank]:
-            var element_bound = StaticIntTuple[rank]()
+        ](coords: IndexList[rank], bounds: IndexList[rank]) -> IndexList[rank]:
+            var element_bound = IndexList[rank]()
 
             @parameter
             for dim in range(rank):
@@ -2060,7 +2058,7 @@ struct LayoutTensor[
                 var element_bounds = __compute_element_bound[
                     other.element_layout
                 ](
-                    rebind[StaticIntTuple[rank]](other.element_coords[i]()),
+                    rebind[IndexList[rank]](other.element_coords[i]()),
                     src_coords_bound.value(),
                 )
                 return Element[dtype, other.element_layout].masked_load[
@@ -2126,7 +2124,7 @@ struct LayoutTensor[
                     if dst_coords_bound.__bool__() and src_element_size == 1:
                         if not __is_in_bound(
                             other.element_coords[i](),
-                            rebind[StaticIntTuple[other.rank]](
+                            rebind[IndexList[other.rank]](
                                 dst_coords_bound.value()
                             ),
                         ):

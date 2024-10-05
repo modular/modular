@@ -1038,8 +1038,8 @@ fn test_copy_subtiles_scalars():
             ].stack_allocation[alignment=16]().fill(0)
             tile_4x2_cache.copy_from[
                 dst_coords_bound = rebind[
-                    StaticIntTuple[tile_4x2_cache.layout.rank()]
-                ](StaticIntTuple[2](13, 7))
+                    IndexList[tile_4x2_cache.layout.rank()]
+                ](IndexList[2](13, 7))
             ](tile_4x2)
             print(tile_4x2_cache)
 
@@ -1203,8 +1203,8 @@ fn test_copy_distributed_subtiles_scalars():
             ].stack_allocation[alignment=16]().fill(0)
             tile_4x4_cache.copy_from[
                 dst_coords_bound = rebind[
-                    StaticIntTuple[tile_4x4_cache.layout.rank()]
-                ](StaticIntTuple[2](13, 7))
+                    IndexList[tile_4x4_cache.layout.rank()]
+                ](IndexList[2](13, 7))
             ](tile_4x4)
             print(tile_4x4_cache)
 
@@ -1218,8 +1218,8 @@ fn test_copy_distributed_subtiles_scalars():
                 ].stack_allocation[alignment=16]().fill(0)
                 tile_2x2_cache.copy_from[
                     dst_coords_bound = rebind[
-                        StaticIntTuple[tile_2x2_cache.layout.rank()]
-                    ](StaticIntTuple[2](13, 7))
+                        IndexList[tile_2x2_cache.layout.rank()]
+                    ](IndexList[2](13, 7))
                 ](tile_2x2)
                 print(tile_2x2_cache)
 
@@ -1713,9 +1713,7 @@ fn test_copy_from_bigger_tensor():
     arange(tensor_8x8)
 
     tensor_5x7.copy_from[
-        rebind[StaticIntTuple[tensor_5x7.layout.rank()]](
-            StaticIntTuple[2](5, 7)
-        )
+        rebind[IndexList[tensor_5x7.layout.rank()]](IndexList[2](5, 7))
     ](tensor_8x8)
     # CHECK: 0.0 1.0 2.0 3.0 4.0 5.0 6.0 0.0
     # CHECK: 8.0 9.0 10.0 11.0 12.0 13.0 14.0 0.0
@@ -1741,9 +1739,7 @@ fn test_copy_from_smaller_tensor():
     ].stack_allocation().fill(0)
 
     tensor_8x8.copy_from[
-        rebind[StaticIntTuple[tensor_8x8.layout.rank()]](
-            StaticIntTuple[2](5, 7)
-        )
+        rebind[IndexList[tensor_8x8.layout.rank()]](IndexList[2](5, 7))
     ](tensor_5x7)
     # CHECK: 0.0 1.0 2.0 3.0 4.0 5.0 6.0 0.0
     # CHECK: 8.0 9.0 10.0 11.0 12.0 13.0 14.0 0.0
@@ -1787,9 +1783,9 @@ fn test_copy_from_vectorized_masked_write():
 
     var tensor_1x5_v1_4 = tensor_1x5.vectorize[1, 4]()
     tensor_1x5_v1_4.copy_from[
-        dst_coords_bound = rebind[
-            StaticIntTuple[tensor_1x5_v1_4.layout.rank()]
-        ](StaticIntTuple[2](1, 5))
+        dst_coords_bound = rebind[IndexList[tensor_1x5_v1_4.layout.rank()]](
+            IndexList[2](1, 5)
+        )
     ](tensor_1x8.vectorize[1, 4]())
 
     # CHECK: write-1x5:
@@ -1812,9 +1808,9 @@ fn test_copy_from_vectorized_masked_write():
 
     var tensor_3x8_v_4_4 = tensor_3x8.vectorize[4, 4]()
     tensor_3x8_v_4_4.copy_from[
-        dst_coords_bound = rebind[
-            StaticIntTuple[tensor_3x8_v_4_4.layout.rank()]
-        ](StaticIntTuple[2](3, 8))
+        dst_coords_bound = rebind[IndexList[tensor_3x8_v_4_4.layout.rank()]](
+            IndexList[2](3, 8)
+        )
     ](tensor_4x8.vectorize[4, 4]())
 
     # CHECK: write-3x8:
@@ -1837,9 +1833,9 @@ fn test_copy_from_vectorized_masked_write():
 
     var tensor5x8_v_4_1 = tensor_5x8.vectorize[4, 1]()
     tensor5x8_v_4_1.copy_from[
-        dst_coords_bound = rebind[
-            StaticIntTuple[tensor5x8_v_4_1.layout.rank()]
-        ](StaticIntTuple[2](5, 8))
+        dst_coords_bound = rebind[IndexList[tensor5x8_v_4_1.layout.rank()]](
+            IndexList[2](5, 8)
+        )
     ](tensor_8x8.vectorize[4, 1]())
 
     # CHECK: write-5x8:
@@ -1868,9 +1864,9 @@ fn test_copy_from_vectorized_masked_read():
 
     var tensor_8x8_v_1_4 = tensor_8x8.vectorize[1, 4]()
     tensor_8x8_v_1_4.copy_from[
-        src_coords_bound = rebind[
-            StaticIntTuple[tensor_8x8_v_1_4.layout.rank()]
-        ](StaticIntTuple[2](8, 5))
+        src_coords_bound = rebind[IndexList[tensor_8x8_v_1_4.layout.rank()]](
+            IndexList[2](8, 5)
+        )
     ](tensor_8x5.vectorize[1, 4]())
 
     # CHECK: read-8x5:
@@ -1893,9 +1889,9 @@ fn test_copy_from_vectorized_masked_read():
     _ = tensor_8x8.fill(-1)
     var tensor_8x8_v_4_1 = tensor_8x8.vectorize[4, 1]()
     tensor_8x8_v_4_1.copy_from[
-        src_coords_bound = rebind[
-            StaticIntTuple[tensor_8x8_v_4_1.layout.rank()]
-        ](StaticIntTuple[2](5, 8))
+        src_coords_bound = rebind[IndexList[tensor_8x8_v_4_1.layout.rank()]](
+            IndexList[2](5, 8)
+        )
     ](tensor_5x8.vectorize[4, 1]())
 
     # CHECK: read-5x8:
@@ -1913,9 +1909,9 @@ fn test_copy_from_vectorized_masked_read():
     _ = tensor_8x8.fill(-1)
     var tensor_8x8_v_4_4 = tensor_8x8.vectorize[4, 4]()
     tensor_8x8_v_4_4.copy_from[
-        src_coords_bound = rebind[
-            StaticIntTuple[tensor_8x8_v_4_4.layout.rank()]
-        ](StaticIntTuple[2](5, 8))
+        src_coords_bound = rebind[IndexList[tensor_8x8_v_4_4.layout.rank()]](
+            IndexList[2](5, 8)
+        )
     ](tensor_5x8.vectorize[4, 4]())
 
     # CHECK: read-5x8_v_4_4:

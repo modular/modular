@@ -31,7 +31,7 @@ from layout.nd_buffer_stub import (
 )
 
 from memory import UnsafePointer
-from utils import Index, StaticIntTuple, StaticTuple
+from utils import Index, IndexList, StaticTuple
 from testing import assert_equal
 
 
@@ -72,7 +72,7 @@ fn print_tile_mask_with_size[*tile_sizes: Int](mask: TileMask):
 fn print_element[
     dtype: DType,
     rank: Int,
-    element_shape: StaticIntTuple[rank],
+    element_shape: IndexList[rank],
 ](
     element_ptr: UnsafePointer[Scalar[dtype]],
     element_layout: ElementLayout[rank, element_shape],
@@ -95,7 +95,7 @@ fn print_vectorized_buff[
     dtype: DType,
     rank: Int,
     shape: DimList,
-    element_shape: StaticIntTuple[rank],
+    element_shape: IndexList[rank],
 ](
     buff: NDBuffer[dtype, rank, shape],
     element_layout: ElementLayout[rank, element_shape],
@@ -701,7 +701,7 @@ fn test_tile_mask():
         for tile_j in range(math.ceildiv(15, 4)):
             print("---tile[", tile_i, tile_j, "]---")
             var tile_mas = _tile_mask[4, 4](
-                StaticIntTuple[2](11, 15), StaticIntTuple[2](tile_i, tile_j)
+                IndexList[2](11, 15), IndexList[2](tile_i, tile_j)
             )
             print_tile_mask[4, 4](tile_mas)
 
@@ -749,7 +749,7 @@ fn test_vectorize_mask():
         for tile_j in range(math.ceildiv(15, 4)):
             print("---tile[", tile_i, tile_j, "]---")
             var tile_mas = _tile_mask[4, 4](
-                StaticIntTuple[2](11, 15), StaticIntTuple[2](tile_i, tile_j)
+                IndexList[2](11, 15), IndexList[2](tile_i, tile_j)
             )
 
             var vec_mas = _vectorize_mask[sizes= (2, 2)](tile_mas)
@@ -942,7 +942,7 @@ fn test_composed_tile_vectorize_distribute():
         for tile_n in range(math.ceildiv(N, BN)):
             print("---tile[", tile_m, tile_n, "]---")
             var tile_mask = _tile_mask[BM, BN](
-                StaticIntTuple[2](M, N), StaticIntTuple[2](tile_m, tile_n)
+                IndexList[2](M, N), IndexList[2](tile_m, tile_n)
             )
             print_tile_mask[BM, BN](tile_mask)
             print("vectorized-access:")
@@ -1108,7 +1108,7 @@ fn test_composed_tile_vectorize_distribute_small():
         for tile_n in range(math.ceildiv(N, BN)):
             print("---tile[", tile_m, tile_n, "]---")
             var tile_mask = _tile_mask[BM, BN](
-                StaticIntTuple[2](M, N), StaticIntTuple[2](tile_m, tile_n)
+                IndexList[2](M, N), IndexList[2](tile_m, tile_n)
             )
             print_tile_mask[BM, BN](tile_mask)
             print("vectorized-access:")

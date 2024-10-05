@@ -33,7 +33,7 @@ from layout.layout_tensor import (
     copy_sram_to_dram,
 )
 from memory import UnsafePointer
-from utils import StaticIntTuple
+from utils import IndexList
 from testing import assert_almost_equal
 
 
@@ -65,9 +65,7 @@ fn test_async_copy[
 ](ctx: DeviceContext) raises:
     print("=== test_async_copy")
 
-    alias runtime_layout = RuntimeLayout[layout].row_major(
-        StaticIntTuple[2](M, N)
-    )
+    alias runtime_layout = RuntimeLayout[layout].row_major(IndexList[2](M, N))
 
     var input = ManagedLayoutTensor[
         DType.float32,
@@ -139,11 +137,11 @@ fn test_dynamic_async_copy[
     alias unknown_layout = Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)
 
     alias input_runtime_layout = RuntimeLayout[unknown_layout].row_major(
-        StaticIntTuple[2](M, N)
+        IndexList[2](M, N)
     )
 
     alias output_runtime_layout = RuntimeLayout[unknown_layout].row_major(
-        StaticIntTuple[2](M - skew_M, N - skew_N)
+        IndexList[2](M - skew_M, N - skew_N)
     )
 
     var input = ManagedLayoutTensor[
@@ -298,10 +296,10 @@ fn test_multistage_copy[
     ctx.enqueue_copy_to_device(a_device, a_host)
 
     alias a_runtime_layout = RuntimeLayout[a_layout].row_major(
-        StaticIntTuple[2](M, K)
+        IndexList[2](M, K)
     )
     alias b_runtime_layout = RuntimeLayout[b_layout].row_major(
-        StaticIntTuple[2](M, K)
+        IndexList[2](M, K)
     )
 
     var a_tensor = LayoutTensor[DType.float32, a_layout](
@@ -430,10 +428,10 @@ fn test_swizzle_copy[
     ctx.enqueue_copy_to_device(a_device, a_host)
 
     alias a_runtime_layout = RuntimeLayout[a_layout].row_major(
-        StaticIntTuple[2]((M - skew_M), K)
+        IndexList[2]((M - skew_M), K)
     )
     alias b_runtime_layout = RuntimeLayout[b_layout].row_major(
-        StaticIntTuple[2](M, K)
+        IndexList[2](M, K)
     )
 
     var a_tensor = LayoutTensor[DType.float32, a_layout](
@@ -511,9 +509,7 @@ fn test_masked_async_copy[
 
     # alias num_threads = thread_layout.size()
 
-    alias runtime_layout = RuntimeLayout[layout].row_major(
-        StaticIntTuple[2](M, N)
-    )
+    alias runtime_layout = RuntimeLayout[layout].row_major(IndexList[2](M, N))
 
     var input = ManagedLayoutTensor[
         DType.float32,
@@ -566,9 +562,7 @@ fn test_copy_sram_to_dram[
 ](ctx: DeviceContext) raises:
     print("=== test_copy_sram_to_dram")
 
-    alias runtime_layout = RuntimeLayout[layout].row_major(
-        StaticIntTuple[2](M, N)
-    )
+    alias runtime_layout = RuntimeLayout[layout].row_major(IndexList[2](M, N))
 
     var input = ManagedLayoutTensor[
         type,

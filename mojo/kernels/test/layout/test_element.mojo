@@ -14,7 +14,7 @@ from layout.int_tuple import UNKNOWN_VALUE
 from layout._utils import ManagedLayoutTensor
 from layout.fillers import arange
 from memory import UnsafePointer
-from utils import StaticIntTuple
+from utils import IndexList
 
 
 # CHECK-LABEL: test_element_load
@@ -194,7 +194,7 @@ fn test_element_dynamic_layout():
 
     alias layoutUx8 = Layout.row_major(UNKNOWN_VALUE, 8)
     var runtime_layoutUx8 = RuntimeLayout[layoutUx8].row_major(
-        StaticIntTuple[2](8, 8)
+        IndexList[2](8, 8)
     )
 
     var tensor_Ux8 = ManagedLayoutTensor[
@@ -227,7 +227,7 @@ fn test_element_dynamic_layout():
 
     alias layout8xU = Layout.row_major(8, UNKNOWN_VALUE)
     var runtime_layout8xU = RuntimeLayout[layout8xU].row_major(
-        StaticIntTuple[2](8, 2)
+        IndexList[2](8, 2)
     )
 
     var tensor_8xU = ManagedLayoutTensor[
@@ -270,7 +270,7 @@ fn test_element_masked_load():
     # CHECK: [0.0, 1.0, 2.0, 0.0]
     print(
         Element[tensor_1x3_v4.dtype, tensor_1x3_v4.element_layout].masked_load(
-            tensor_1x3_v4.ptr, StaticIntTuple[2](1, 3)
+            tensor_1x3_v4.ptr, IndexList[2](1, 3)
         )
     )
     # CHECK: [0.0, 4.0, 8.0, 0.0]
@@ -283,7 +283,7 @@ fn test_element_masked_load():
     # CHECK: [0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 0.0, 0.0, 0.0, 0.0]
     print(
         Element[tensor_3x1_v4.dtype, tensor_3x1_v4.element_layout].masked_load(
-            tensor_3x1_v4.ptr, StaticIntTuple[2](3, 1)
+            tensor_3x1_v4.ptr, IndexList[2](3, 1)
         )
     )
 
@@ -292,7 +292,7 @@ fn test_element_masked_load():
     print(
         Element[
             tensor_3x4_v4x4.dtype, tensor_3x4_v4x4.element_layout
-        ].masked_load(tensor_3x4_v4x4.ptr, StaticIntTuple[2](3, 4))
+        ].masked_load(tensor_3x4_v4x4.ptr, IndexList[2](3, 4))
     )
 
 
@@ -311,7 +311,7 @@ fn test_element_masked_store():
             tensor_4x4_vec_1_4.dtype, tensor_4x4_vec_1_4.element_layout.size()
         ](1)
     )
-    element_v_1_4.masked_store(tensor_4x4_vec_1_4.ptr, StaticIntTuple[2](1, 3))
+    element_v_1_4.masked_store(tensor_4x4_vec_1_4.ptr, IndexList[2](1, 3))
     # CHECK: vec_1x4:mask_1x3
     # CHECK: 1.0 1.0 1.0 -1.0
     # CHECK: -1.0 -1.0 -1.0 -1.0
@@ -329,7 +329,7 @@ fn test_element_masked_store():
             tensor_4x4_vec_4_1.dtype, tensor_4x4_vec_4_1.element_layout.size()
         ](1)
     )
-    element_v_4_1.masked_store(tensor_4x4_vec_4_1.ptr, StaticIntTuple[2](2, 1))
+    element_v_4_1.masked_store(tensor_4x4_vec_4_1.ptr, IndexList[2](2, 1))
     print("vec_4x1:mask_1x2")
     # CHECK: vec_4x1:mask_1x2
     # CHECK: 1.0 -1.0 -1.0 -1.0
@@ -347,7 +347,7 @@ fn test_element_masked_store():
             tensor_4x4_vec_4_4.dtype, tensor_4x4_vec_4_4.element_layout.size()
         ](1)
     )
-    element_v_4_4.masked_store(tensor_4x4_vec_4_4.ptr, StaticIntTuple[2](3, 2))
+    element_v_4_4.masked_store(tensor_4x4_vec_4_4.ptr, IndexList[2](3, 2))
     print("vec_4x4:mask_3x2")
     # CHECK: vec_4x4:mask_3x2
     # CHECK: 1.0 1.0 -1.0 -1.0

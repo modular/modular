@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 from layout import Layout, LayoutTensor
 from layout.layout_tensor import LayoutTensorIter
-from utils import StaticIntTuple, StaticTuple, Index
+from utils import IndexList, StaticTuple, Index
 from .int_tuple import UNKNOWN_VALUE
 from memory import UnsafePointer
 from memory.pointer import AddressSpace, _GPUAddressSpace
@@ -36,7 +36,7 @@ fn dynamic(d: Int) -> ValueOrUnknown:
     return ValueOrUnknown(d)
 
 
-fn _to_int_tuple[n: Int](static_tuple: StaticIntTuple[n]) -> IntTuple:
+fn _to_int_tuple[n: Int](static_tuple: IndexList[n]) -> IntTuple:
     var int_tuple = IntTuple()
 
     @parameter
@@ -254,7 +254,7 @@ struct LayoutTensorBuild[
         return __type_of(res)()
 
     fn layout[
-        rank: Int, shape: StaticIntTuple[rank], stride: StaticIntTuple[rank]
+        rank: Int, shape: IndexList[rank], stride: IndexList[rank]
     ](self) -> LayoutTensorBuild[
         dtype,
         __layout = Layout(_to_int_tuple(shape), _to_int_tuple(stride)),
@@ -265,7 +265,7 @@ struct LayoutTensorBuild[
     fn layout[
         rank: Int
     ](
-        self, shape: StaticIntTuple[rank], stride: StaticIntTuple[rank]
+        self, shape: IndexList[rank], stride: IndexList[rank]
     ) -> LayoutTensorBuild[
         dtype,
         __layout = Layout(

@@ -18,7 +18,7 @@ from layout.math import outer_product_acc
 from layout.nd_buffer_stub import copy_from_nd_buffer, copy_to_nd_buffer
 from layout.fillers import arange
 from memory import UnsafePointer
-from utils import StaticIntTuple
+from utils import IndexList
 from utils.index import Index
 
 
@@ -367,9 +367,7 @@ fn sram_blocked_matmul_dynamic_nd_buffer[
     ].stack_allocation()
 
     # Block the dst matrix with [BM, BN] tile size.
-    var dst_tile = dst.tile[BM, BN](
-        StaticIntTuple[2](BlockIdx.y(), BlockIdx.x())
-    )
+    var dst_tile = dst.tile[BM, BN](IndexList[2](BlockIdx.y(), BlockIdx.x()))
 
     # Distribute thread layout into a block of size [BM, BN], It repeats the
     # layout accross the BMxBN block, e.g row major layout will repeate as the
@@ -394,8 +392,8 @@ fn sram_blocked_matmul_dynamic_nd_buffer[
     # Loop over tiles in K dim.
     for k in range(lhs.dim(1) // BK):
         # Block both l.h.s and r.h.s DRAM tensors.
-        var lhs_tile = lhs.tile[BM, BK](StaticIntTuple[2](BlockIdx.y(), k))
-        var rhs_tile = rhs.tile[BK, BN](StaticIntTuple[2](k, BlockIdx.x()))
+        var lhs_tile = lhs.tile[BM, BK](IndexList[2](BlockIdx.y(), k))
+        var rhs_tile = rhs.tile[BK, BN](IndexList[2](k, BlockIdx.x()))
 
         # Distribute layout of threads into DRAM and SRAM to perform the copy.
         var lhs_sram_tile_local = lhs_sram_tile.distribute[thread_layout](

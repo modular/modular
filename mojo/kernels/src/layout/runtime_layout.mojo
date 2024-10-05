@@ -11,7 +11,7 @@ from .layout import composition as composition_layout
 from .layout import is_tuple
 from .layout import make_layout as make_layout_static
 from .runtime_tuple import RuntimeTuple, crd2idx, product
-from utils import StaticIntTuple
+from utils import IndexList
 
 # A `Layout` like type that uses RuntimeTuple as its storage instead of
 # IntTuple.
@@ -54,8 +54,8 @@ struct RuntimeLayout[layout: Layout](Stringable, Formattable):
     @staticmethod
     fn row_major[
         rank: Int, //
-    ](shape: StaticIntTuple[rank]) -> RuntimeLayout[layout]:
-        var stride = StaticIntTuple[rank]()
+    ](shape: IndexList[rank]) -> RuntimeLayout[layout]:
+        var stride = IndexList[rank]()
         var c_stride = 1
         stride[rank - 1] = c_stride
 
@@ -69,8 +69,8 @@ struct RuntimeLayout[layout: Layout](Stringable, Formattable):
     @staticmethod
     fn col_major[
         rank: Int, //
-    ](shape: StaticIntTuple[rank]) -> RuntimeLayout[layout]:
-        var stride = StaticIntTuple[rank]()
+    ](shape: IndexList[rank]) -> RuntimeLayout[layout]:
+        var stride = IndexList[rank]()
         var c_stride = 1
         stride[0] = c_stride
 
