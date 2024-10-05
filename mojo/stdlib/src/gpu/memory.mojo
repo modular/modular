@@ -16,7 +16,7 @@ from memory.pointer import _GPUAddressSpace
 from memory.pointer import AddressSpace as _AddressSpace
 from memory.unsafe import bitcast
 
-from utils import StaticTuple, StaticIntTuple
+from utils import StaticTuple, IndexList
 
 # ===----------------------------------------------------------------------===#
 # AddressSpace
@@ -278,7 +278,7 @@ fn cp_async_bulk_tensor_shared_cluster_global[
     dst_mem: UnsafePointer[dst_type, GPUAddressSpace.SHARED],
     tma_descriptor: UnsafePointer[NoneType],
     mem_bar: UnsafePointer[mbr_type, GPUAddressSpace.SHARED],
-    coords: StaticIntTuple[rank],
+    coords: IndexList[rank],
 ):
     """Initiates an asynchronous copy operation on the tensor data from global
     memory to shared memory.

@@ -412,10 +412,10 @@ fn create_tma_descriptor[
     dtype: DType, rank: Int
 ](
     global_ptr: UnsafePointer[Scalar[dtype]],
-    global_shape: StaticIntTuple[rank],
-    global_strides: StaticIntTuple[rank],
-    shared_mem_shape: StaticIntTuple[rank],
-    element_stride: StaticIntTuple[rank] = StaticIntTuple[rank](1),
+    global_shape: IndexList[rank],
+    global_strides: IndexList[rank],
+    shared_mem_shape: IndexList[rank],
+    element_stride: IndexList[rank] = IndexList[rank](1),
 ) raises -> UnsafePointer[NoneType]:
     """Create a tensor map descriptor object representing tiled memory region.
     """

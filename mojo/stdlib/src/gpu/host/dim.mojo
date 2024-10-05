@@ -5,13 +5,13 @@
 # ===----------------------------------------------------------------------=== #
 """This module implements the dim type."""
 
-from utils.index import Index, StaticIntTuple
+from utils.index import Index, IndexList
 
 
 @value
 @register_passable("trivial")
 struct Dim(Stringable):
-    var _value: StaticIntTuple[3]
+    var _value: IndexList[3]
 
     fn __init__(inout self, dims: (Int,)):
         self = Self(dims[0])
