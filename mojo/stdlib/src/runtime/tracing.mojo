@@ -16,7 +16,7 @@ from gpu.host.nvtx import (
     _is_enabled_details as _nvtx_is_enabled_details,
 )
 
-from utils import StaticIntTuple
+from utils import IndexList
 from buffer import NDBuffer
 
 
@@ -235,7 +235,7 @@ fn is_mojo_profiling_disabled[level: TraceLevel]() -> Bool:
 
 
 @always_inline
-fn trace_arg(name: String, shape: StaticIntTuple) -> String:
+fn trace_arg(name: String, shape: IndexList) -> String:
     """Helper to stringify the type and shape of a kernel argument for tracing.
     """
     var s = name + "="
@@ -247,7 +247,7 @@ fn trace_arg(name: String, shape: StaticIntTuple) -> String:
 
 
 @always_inline
-fn trace_arg(name: String, shape: StaticIntTuple, dtype: DType) -> String:
+fn trace_arg(name: String, shape: IndexList, dtype: DType) -> String:
     """Helper to stringify the type and shape of a kernel argument for tracing.
     """
     return trace_arg(name, shape) + "x" + str(dtype)
