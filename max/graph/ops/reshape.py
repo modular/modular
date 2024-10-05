@@ -5,11 +5,12 @@
 # ===----------------------------------------------------------------------=== #
 """Op implementation for reshape."""
 
+import numpy as np
 from max.mlir.dialects import rmo
 
 from ..graph import Graph
-from ..value import TensorValue, ValueLike
 from ..type import Shape, ShapeLike
+from ..value import TensorValue, ValueLike
 
 
 def reshape(x: ValueLike, shape: ShapeLike) -> TensorValue:
@@ -35,7 +36,26 @@ def reshape(x: ValueLike, shape: ShapeLike) -> TensorValue:
     Returns:
         A symbolic tensor with the same elements as the original tensor, but
         in a new shape. Its symbolic shape is the same as :code:`shape`.
+
+    Raises:
+        ValueError: if input and target shapes' number of elements mismatch.
     """
+    x = TensorValue(x)
+    shape = Shape(shape)
+
+    # TODO(GRA-1015): Remove once static dims are int64 in the Graph compiler.
+    if (
+        # Leave checking shapes with -1 or symbolic dims to param expr folding.
+        x.shape.is_static
+        and shape.is_static
+        and (np.prod(x.shape.static_dims) != np.prod(shape.static_dims))
+    ):
+        msg = (
+            f"expected shapes {x} and {shape} to have the same number of "
+            "elements"
+        )
+        raise ValueError(msg)
+
     return Graph.current._add_op(
         rmo.reshape, TensorValue(x), new_shape=Shape(shape).to_mlir()
     )[0].tensor

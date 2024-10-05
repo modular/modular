@@ -277,6 +277,9 @@ class AlgebraicDim(Dim):
             "attr", attr.attr if isinstance(attr, AlgebraicDim) else attr
         )
 
+    def is_static(self) -> bool:
+        return False
+
     def __eq__(self, other: Any) -> bool:
         return isinstance(other, AlgebraicDim) and self.attr == other.attr
 
@@ -326,7 +329,8 @@ class StaticDim(Dim):
         Returns:
             True if the dimension is static, false otherwise.
         """
-        return True
+        # Consider -1 a special dim that is not statically known.
+        return self.dim != -1
 
     def is_symbolic(self) -> bool:
         """Whether or not the dimension is a symbolic dimension.
@@ -380,6 +384,10 @@ class StaticDim(Dim):
         return StaticDim(_graph.static_dim_value(dim_attr))
 
 
+def _is_static_shape(dims: Shape) -> TypeGuard[StaticShape]:
+    return all(dim.is_static() for dim in dims)
+
+
 class Shape(list[Dim]):
     def __init__(self, dims: ShapeLike = ()):
         super().__init__(Dim(dim) for dim in dims)
@@ -393,15 +401,21 @@ class Shape(list[Dim]):
             mlir.Context.current, [dim.to_mlir() for dim in self]
         )
 
+    @property
+    def is_static(self) -> bool:
+        """Returns true if this is a static shape."""
+        return _is_static_shape(self)
+
+    @property
+    def static_dims(self) -> list[int]:
+        """Returns all static dims in the shape as a list of integers."""
+        return [StaticDim(d).dim for d in self if isinstance(d, StaticDim)]
+
 
 StaticShape = list[StaticDim]
 
 DimLike = Union[int, str, Dim, np.integer]
 ShapeLike = Iterable[DimLike]
-
-
-def _is_static_shape(dims: Shape) -> TypeGuard[StaticShape]:
-    return all(dim.is_static() for dim in dims)
 
 
 class Type:
