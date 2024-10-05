@@ -868,6 +868,13 @@ OpFoldResult SIMDExtractElementOp::fold(FoldAdaptor adaptor) {
 
 OpFoldResult SIMDInsertElementOp::fold(FoldAdaptor adaptor) {
   auto vec = dyn_cast_if_present<SIMDAttr>(adaptor.getVector());
+
+  // Treat insert into undef/unknownattr as being an insert into zero.
+  if (!vec) {
+    if (auto unknown = dyn_cast_if_present<UnknownAttr>(adaptor.getVector()))
+      vec = SIMDAttr::getZeroValue(getType());
+  }
+
   auto val = dyn_cast_if_present<SIMDAttr>(adaptor.getValue());
   auto idx = dyn_cast_if_present<IntegerAttr>(adaptor.getPosition());
   if (!vec || !val || !idx)

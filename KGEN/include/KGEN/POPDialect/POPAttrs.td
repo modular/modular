@@ -202,6 +202,14 @@ def POP_SIMDAttr : POP_Attr<"SIMD", "simd", [TypedAttrInterface,
     AttrBuilderWithInferredContext<(ins "uint64_t":$intVal, "SIMDType":$type)>
   ];
 
+
+  let extraClassDeclaration = [{ 
+    /// Create a "zero" value initialized to 0, 0.0, false, etc.  NOTE: This can
+    /// return null if the SIMD type is parametric or we don't know how to make
+    /// a zero value of the specified dtype.
+    static SIMDAttr getZeroValue(SIMDType type);
+  }];
+
   let genVerifyDecl = 1;
 
   /// Note: DTypeValue is not POD since APInt will allocate if its data exceeds
