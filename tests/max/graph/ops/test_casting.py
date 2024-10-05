@@ -17,11 +17,11 @@ from conftest import (
     symbolic_dims,
     tensor_types,
 )
-from hypothesis import assume, given
+from hypothesis import assume, example, given
 from hypothesis import strategies as st
 from max.dtype import DType
 from max.graph import Graph, TensorType
-from max.graph.type import Dim, Shape, StaticDim
+from max.graph.type import Dim, Shape, ShapeLike, StaticDim
 
 
 def test_reshape() -> None:
@@ -49,7 +49,7 @@ def test_reshape() -> None:
         )
 
 
-def static_known_shape_size(shape: Shape):
+def static_known_shape_size(shape: ShapeLike):
     """Returns the size of a shape only considering static dims"""
     return math.prod(dim.dim for dim in shape if isinstance(dim, StaticDim))
 
@@ -72,7 +72,8 @@ def negative_one_reshape(shapes):
 
 
 shared_shapes = st.shared(shapes())
-shared_static_shapes = st.shared(shapes(is_static=True))
+# Use a max rank of 4 to reduce the probability of drawing 1-dims.
+shared_static_shapes = st.shared(shapes(max_rank=4, is_static=True))
 
 
 @given(
@@ -170,7 +171,7 @@ def test_reshapes__squeeze(input_type: TensorType, reshape_shape: list[Dim]):
     output_shape=shared_shapes.flatmap(st.permutations),
     dim=symbolic_dims,
 )
-def test_reshape__fails_with_different_symoblic_dim(
+def test_reshape__fails_with_different_symbolic_dim(
     input_type: TensorType,
     output_shape: list[Dim],
     dim: Dim,
@@ -188,16 +189,27 @@ def test_reshape__fails_with_different_symoblic_dim(
     dim=shared_static_shapes.flatmap(
         # Draw a dim such that the new shape's dim product fits in an int64.
         lambda shape: st.integers(
-            min_value=1,
-            max_value=MAX_INT64 // static_known_shape_size(shape),
+            # Sample 1 only if >= 2 would lead to a dim prod > int64 max.
+            min_value=min(2, MAX_INT64 // static_known_shape_size(shape)),
+            max_value=min(128, MAX_INT64 // static_known_shape_size(shape)),
         )
     ),
 )
+@example(
+    # Specifically test an example whose dim product can be represented by an
+    # int64, but not by an int32.
+    input_type=TensorType(
+        DType.int8,
+        Shape([268435456]),
+    ),
+    output_shape=Shape([268435456]),
+    dim=17,
+)
 def test_reshape__fails_with_different_number_of_elements(
     input_type: TensorType,
-    output_shape: list[Dim],
-    dim: Dim,
-):
+    output_shape: Shape,
+    dim: int,
+) -> None:
     assert static_known_shape_size([*input_type.shape, dim]) <= MAX_INT64
     assert all(isinstance(d, StaticDim) for d in input_type.shape)
     assume(0 not in input_type.shape)

@@ -79,19 +79,26 @@ def shapes(
         if not is_static and draw(st.booleans()):
             dim = draw(symbolic_dims)
             dims.append(dim)
-        else:
-            # Compute a max dim value to ensure the product fits in an int64.
-            max_dim_value = MAX_INT64 // max(1, cumulative_product)
-            if max_dim_value == 0:
-                # If the product is exactly MAX_INT64, then stop.
-                break
-            dim_value = draw(st.integers(min_value=1, max_value=max_dim_value))
-            if (dim_value * cumulative_product) > MAX_INT64:
-                # Skip if the new dim product wouldn't fit in an int64.
-                continue
+            continue
 
-            dims.append(StaticDim(dim_value))
-            cumulative_product *= dim_value
+        # Draw a static dim.
+        max_value = MAX_INT64 // max(1, cumulative_product)
+        # Get the max exponent: bits needed to represent the max value,
+        # excluding sign and leading zeros.
+        max_exponent = max_value.bit_length()
+
+        # We want to draw from the range [2**e, 2**(e + 1) - 1).
+        # So draw the exponent from integers {0, 1, ..., max_exponent - 1}.
+        exponent = draw(st.integers(min_value=0, max_value=max_exponent - 1))
+        low = 2**exponent
+
+        # Ensure that the dim product fits in an int64.
+        high = min(2 ** (exponent + 1) - 1, max_value)
+        dim_value = draw(st.integers(min_value=low, max_value=high))
+        assert (dim_value * cumulative_product) <= MAX_INT64
+
+        dims.append(StaticDim(dim_value))
+        cumulative_product *= dim_value
 
     return Shape(dims)
 
