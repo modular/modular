@@ -26,7 +26,7 @@ fn _ownership_helper_buf[
 
 fn _run_ownership_transfer(ctx: DeviceContextVariant) raises:
     print("-")
-    print("run_ownership_transfer()")
+    print("_run_ownership_transfer()")
 
     var ctx_copy = _ownership_helper(ctx)
     print("ctx_copy: " + ctx_copy.name())
@@ -36,8 +36,32 @@ fn _run_ownership_transfer(ctx: DeviceContextVariant) raises:
     var buf_copy = _ownership_helper_buf(buf)
     print("buf_copy: " + str(len(buf_copy)))
 
+    # Make sure buf survives to the end of the test function.
     _ = buf
-    _ = ctx
+
+
+fn _run_device_info(ctx: DeviceContextVariant) raises:
+    print("-")
+    print("_run_device_info()")
+
+    (free_before, total_before) = ctx.get_memory_info()
+
+    var buf = ctx.create_buffer_sync[DType.float32](20 * 1024 * 1024)
+
+    (free_after, total_after) = ctx.get_memory_info()
+    print(
+        "Memory info (before -> after) - total: "
+        + str(total_before)
+        + " -> "
+        + str(total_after)
+        + " , free: "
+        + str(free_before)
+        + " -> "
+        + str(free_after)
+    )
+
+    # Make sure buf survives to the end of the test function.
+    _ = buf
 
 
 fn test_smoke(ctx: DeviceContextVariant) raises:
@@ -45,5 +69,6 @@ fn test_smoke(ctx: DeviceContextVariant) raises:
     print("Running test_smoke(" + ctx.name() + "):")
 
     _run_ownership_transfer(ctx)
+    _run_device_info(ctx)
 
     print("Done.")
