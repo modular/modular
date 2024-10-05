@@ -191,7 +191,7 @@ struct DeviceContextVariant:
         if _device_ctx_v2():
             self._impl = Self.V2(kind, gpu_id)
         else:
-            self._impl = Self.V1(gpu_id)
+            self._impl = Self.V1(kind, gpu_id)
 
     fn __copyinit__(inout self, existing: Self):
         self._impl = existing._impl
