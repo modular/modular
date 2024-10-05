@@ -126,6 +126,10 @@ struct DeviceBufferV1[type: DType](Sized):
     var size: Int
     var owning: Bool
 
+    @parameter
+    fn v1(self) -> ref [__lifetime_of(self)] Self:
+        return self
+
     fn __init__(inout self, ctx: DeviceContextV1, size: Int) raises:
         """This init takes in a constructed DeviceContext and schedules an owned buffer allocation
         using the stream in the device context.
@@ -233,6 +237,10 @@ struct DeviceFunctionV1[
     ]
     alias fn_name = _get_nvptx_fn_name[func]()
 
+    @parameter
+    fn v1(self) -> ref [__lifetime_of(self)] Self:
+        return self
+
     fn __init__(
         inout self,
         ctx: DeviceContextV1,
@@ -282,6 +290,10 @@ struct DeviceContextV1:
     # We only support CUDA versions 12.0 and above.
     alias MIN_DRIVER_VERSION = 12.0
 
+    @parameter
+    fn v1(self) -> ref [__lifetime_of(self)] Self:
+        return self
+
     # Default initializer for all existing cases outside MGP; this currently
     # includes tests, benchmarks, Driver API. The tests and benchmarks (all of
     # which, except the test_deviceContext_profiling.mojo) would have the
@@ -328,6 +340,12 @@ struct DeviceContextV1:
         var result = DeviceBufferV1[type](self, size)
         self.synchronize()
         return result
+
+    fn create_buffer[
+        type: DType
+    ](self, size: Int) raises -> DeviceBufferV1[type]:
+        """Enqueues a buffer creation using the DeviceBuffer constructor."""
+        return DeviceBufferV1[type](self, size)
 
     fn compile_function[
         func_type: AnyTrivialRegType, //,
