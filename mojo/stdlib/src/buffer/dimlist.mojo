@@ -545,7 +545,7 @@ struct DimList(
 
 
 @always_inline
-fn _make_tuple[size: Int](values: DimList) -> StaticIntTuple[size]:
+fn _make_tuple[size: Int](values: DimList) -> StaticIntTuple[size] as result:
     """Creates a tuple constant using the specified values.
 
     Args:
@@ -555,14 +555,18 @@ fn _make_tuple[size: Int](values: DimList) -> StaticIntTuple[size]:
         A tuple with the values filled in.
     """
     var array = __mlir_op.`pop.array.repeat`[
-        _type = __mlir_type[`!pop.array<`, size.value, `, `, Int, `>`]
-    ](Int(0))
+        _type = __mlir_type[
+            `!pop.array<`, size.value, `, `, result._int_type, `>`
+        ]
+    ](result._int_type(0))
 
     @parameter
     for idx in range(size):
         array = __mlir_op.`pop.array.replace`[
-            _type = __mlir_type[`!pop.array<`, size.value, `, `, Int, `>`],
+            _type = __mlir_type[
+                `!pop.array<`, size.value, `, `, result._int_type, `>`
+            ],
             index = idx.value,
-        ](values.at[idx]().get(), array)
+        ](result._int_type(values.at[idx]().get()), array)
 
-    return StaticIntTuple(StaticTuple[Int, size](array))
+    return array

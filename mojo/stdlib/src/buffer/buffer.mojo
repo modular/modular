@@ -422,7 +422,7 @@ fn _compute_ndbuffer_offset(
 @always_inline
 fn _compute_ndbuffer_offset(
     buf: NDBuffer,
-    idx: StaticIntTuple[buf.rank],
+    idx: StaticIntTuple[buf.rank, **_],
 ) -> Int:
     """Computes the NDBuffer's offset using the index positions provided.
 
@@ -439,7 +439,7 @@ fn _compute_ndbuffer_offset(
 @always_inline
 fn _compute_ndbuffer_stride[
     rank: Int
-](shape: StaticIntTuple[rank]) -> StaticIntTuple[rank]:
+](shape: StaticIntTuple[rank, **_]) -> __type_of(shape):
     """Computes the NDBuffer's default dynamic strides using the input shape.
     The default strides correspond to contiguous memory layout.
 
@@ -456,7 +456,7 @@ fn _compute_ndbuffer_stride[
 
     @parameter
     if rank == 1:
-        return StaticIntTuple[rank](1)
+        return __type_of(shape)(1)
 
     var stride = shape
     stride[rank - 1] = 1
@@ -781,9 +781,10 @@ struct NDBuffer[
 
     @always_inline
     fn _offset(
-        self, idx: StaticIntTuple[rank]
+        self, idx: StaticIntTuple[rank, **_]
     ) -> UnsafePointer[Scalar[type], address_space]:
-        return self._offset(idx.as_tuple())
+        constrained[rank <= _MAX_RANK]()
+        return self.data.offset(_compute_ndbuffer_offset(self, idx))
 
     @always_inline
     fn _offset(
@@ -1003,7 +1004,7 @@ struct NDBuffer[
     @always_inline
     fn store[
         *, width: Int = 1, alignment: Int = Self._default_alignment[width]()
-    ](self, idx: StaticIntTuple[rank], val: SIMD[type, width]):
+    ](self, idx: StaticIntTuple[rank, **_], val: SIMD[type, width]):
         """Stores a simd value into the buffer at the specified index.
 
         Constraints:
