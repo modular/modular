@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 """This module includes NVIDIA GPUs id operations."""
 
-from sys import llvm_intrinsic
+from sys import llvm_intrinsic, triple_is_nvidia_cuda
 
 # ===----------------------------------------------------------------------===#
 # ThreadIdx
@@ -15,6 +15,14 @@ from sys import llvm_intrinsic
 struct ThreadIdx:
     """ThreadIdx provides static methods for getting the x/y/z coordinates of
     a thread within a block."""
+
+    @always_inline
+    @staticmethod
+    fn _get_intrinsic_name[dim: StringLiteral]() -> StringLiteral:
+        if triple_is_nvidia_cuda():
+            return "llvm.nvvm.read.ptx.sreg.tid." + dim
+        else:
+            return "llvm.amdgcn.workitem.id." + dim
 
     @staticmethod
     @always_inline("nodebug")
@@ -27,7 +35,7 @@ struct ThreadIdx:
         return UInt(
             int(
                 llvm_intrinsic[
-                    "llvm.nvvm.read.ptx.sreg.tid.x",
+                    Self._get_intrinsic_name["x"](),
                     Int32,
                     has_side_effect=False,
                 ]()
@@ -45,7 +53,7 @@ struct ThreadIdx:
         return UInt(
             int(
                 llvm_intrinsic[
-                    "llvm.nvvm.read.ptx.sreg.tid.y",
+                    Self._get_intrinsic_name["y"](),
                     Int32,
                     has_side_effect=False,
                 ]()
@@ -63,7 +71,7 @@ struct ThreadIdx:
         return UInt(
             int(
                 llvm_intrinsic[
-                    "llvm.nvvm.read.ptx.sreg.tid.z",
+                    Self._get_intrinsic_name["z"](),
                     Int32,
                     has_side_effect=False,
                 ]()
@@ -80,6 +88,14 @@ struct BlockIdx:
     """BlockIdx provides static methods for getting the x/y/z coordinates of
     a block within a grid."""
 
+    @always_inline
+    @staticmethod
+    fn _get_intrinsic_name[dim: StringLiteral]() -> StringLiteral:
+        if triple_is_nvidia_cuda():
+            return "llvm.nvvm.read.ptx.sreg.ctaid." + dim
+        else:
+            return "llvm.amdgcn.workgroup.id." + dim
+
     @staticmethod
     @always_inline("nodebug")
     fn x() -> UInt:
@@ -91,7 +107,7 @@ struct BlockIdx:
         return UInt(
             int(
                 llvm_intrinsic[
-                    "llvm.nvvm.read.ptx.sreg.ctaid.x",
+                    Self._get_intrinsic_name["x"](),
                     Int32,
                     has_side_effect=False,
                 ]()
@@ -109,7 +125,7 @@ struct BlockIdx:
         return UInt(
             int(
                 llvm_intrinsic[
-                    "llvm.nvvm.read.ptx.sreg.ctaid.y",
+                    Self._get_intrinsic_name["y"](),
                     Int32,
                     has_side_effect=False,
                 ]()
@@ -127,7 +143,7 @@ struct BlockIdx:
         return UInt(
             int(
                 llvm_intrinsic[
-                    "llvm.nvvm.read.ptx.sreg.ctaid.z",
+                    Self._get_intrinsic_name["z"](),
                     Int32,
                     has_side_effect=False,
                 ]()

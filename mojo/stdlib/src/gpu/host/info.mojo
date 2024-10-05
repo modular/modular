@@ -24,6 +24,7 @@ alias DEFAULT_GPU_ARCH = env_get_string["DEFAULT_GPU_ARCH", "sm_80"]()
 
 
 fn _get_a100_target[index_bit_width: Int]() -> __mlir_type.`!kgen.target`:
+    @parameter
     if index_bit_width == 64:
         return __mlir_attr[
             `#kgen.target<triple = "nvptx64-nvidia-cuda", `,
@@ -74,6 +75,7 @@ alias A100 = Info(
 
 
 fn _get_a10_target[index_bit_width: Int]() -> __mlir_type.`!kgen.target`:
+    @parameter
     if index_bit_width == 64:
         return __mlir_attr[
             `#kgen.target<triple = "nvptx64-nvidia-cuda", `,
@@ -124,6 +126,7 @@ alias A10 = Info(
 
 
 fn _get_l4_target[index_bit_width: Int]() -> __mlir_type.`!kgen.target`:
+    @parameter
     if index_bit_width == 64:
         return __mlir_attr[
             `#kgen.target<triple = "nvptx64-nvidia-cuda", `,
@@ -174,6 +177,7 @@ alias L4 = Info(
 
 
 fn _get_h100_target[index_bit_width: Int]() -> __mlir_type.`!kgen.target`:
+    @parameter
     if index_bit_width == 64:
         return __mlir_attr[
             `#kgen.target<triple = "nvptx64-nvidia-cuda", `,
@@ -198,6 +202,50 @@ alias H100 = Info(
     name="H100",
     compute=9.0,
     version="sm_90a",
+    sm_count=114,
+    threads_per_sm=-1,
+    threads_per_warp=32,
+    warps_per_multiprocessor=64,
+    threads_per_multiprocessor=2048,
+    thread_blocks_per_multiprocessor=32,
+    shared_memory_per_multiprocessor=167936,
+    register_file_size=65536,
+    register_allocation_unit_size=256,
+    allocation_granularity="warp",
+    max_registers_per_thread=255,
+    max_registers_per_block=65536,
+    max_blocks_per_multiprocessor=32,
+    shared_memory_allocation_unit_size=128,
+    warp_allocation_granularity=4,
+    max_thread_block_size=1024,
+    flops=Flops(fp16=1979, i8=3958, i4=7916),
+)
+
+# ===----------------------------------------------------------------------===#
+# MI300x
+# ===----------------------------------------------------------------------===#
+
+
+fn _get_mi300x_target[index_bit_width: Int]() -> __mlir_type.`!kgen.target`:
+    @parameter
+    if index_bit_width == 64:
+        return __mlir_attr[
+            `#kgen.target<triple = "amdgcn-amd-amdhsa", `,
+            `arch = "gfx942", `,
+            `features = "", `,
+            `data_layout = "e-p:64:64-p1:64:64-p2:32:32-p3:32:32-p4:64:64-p5:32:32-p6:32:32-p7:160:256:256:32-p8:128:128-p9:192:256:256:32-i64:64-v16:16-v24:32-v32:32-v48:64-v96:128-v192:256-v256:256-v512:512-v1024:1024-v2048:2048-n32:64-S32-A5-G1-ni:7:8:9",`,
+            `index_bit_width = 64,`,
+            `simd_bit_width = 128> : !kgen.target`,
+        ]
+    constrained[False, "32bit width is not implemented for mi300x yet"]()
+    return _get_mi300x_target[64]()
+
+
+alias MI300x = Info(
+    name="MI300x",
+    compute=0.0,
+    version="CDNA3",
+    # TODO: Fill the stuff bellow (the arch is gfx942).
     sm_count=114,
     threads_per_sm=-1,
     threads_per_warp=32,
@@ -278,6 +326,8 @@ struct Info:
             return _get_l4_target[index_bit_width]()
         if self.name == "H100":
             return _get_h100_target[index_bit_width]()
+        if self.name == "MI300x":
+            return _get_mi300x_target[index_bit_width]()
         return _get_a100_target[index_bit_width]()
 
     @staticmethod
@@ -497,6 +547,7 @@ fn _get_info_from_target[target_arch: StringLiteral]() -> Info:
             "sm_89",
             "sm_90",
             "sm_90a",
+            "mi300x",
         )
     ]()
 
@@ -509,6 +560,8 @@ fn _get_info_from_target[target_arch: StringLiteral]() -> Info:
         return L4
     elif target_arch in ("cuda-sm_90", "cuda-sm_90a", "sm_90", "sm_90a"):
         return H100
+    elif target_arch in ("mi300x"):
+        return MI300x
 
     return _get_info_from_target[DEFAULT_GPU_ARCH]()
 
@@ -523,6 +576,8 @@ fn _get_compute(target_arch: String) -> Float32:
         return L4.compute
     elif target_arch in ("cuda-sm_90", "cuda-sm_90a", "sm_90", "sm_90a"):
         return H100.compute
+    elif target_arch in ("mi300x"):
+        return MI300x.compute
 
     return _get_info_from_target[DEFAULT_GPU_ARCH]().compute
 
