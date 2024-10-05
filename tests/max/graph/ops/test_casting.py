@@ -90,7 +90,6 @@ def test_reshape__can_permute_input_shape(
         graph.output(out)
 
 
-@pytest.mark.skip("MSDK-765")
 @given(
     input_type=tensor_types(shapes=shared_shapes),
     reshape_shape=negative_one_reshape(shared_shapes),
@@ -103,8 +102,6 @@ def test_reshapes__can_replace_any_dims_with_negative_one(
 
     # TODO(GRA-864): Remove this assumption
     assert static_known_shape_size(input_type.shape) <= MAX_INT64
-    # TODO(MSDK-765): Support reshaping multiple dimensions
-    assume(len(reshape_shape) == len(input_type.shape))
 
     with Graph("reshape", input_types=[input_type]) as graph:
         out = graph.inputs[0].reshape(reshape_shape)
