@@ -426,7 +426,9 @@ fn _reduce_generator[
     single_thread_blocking_override: Bool = False,
     target: StringLiteral = "cpu",
 ](
-    shape: StaticIntTuple[_, integer_bitwidth = bitwidthof[Int]()],
+    shape: StaticIntTuple[
+        _, element_bitwidth = bitwidthof[Int](), unsigned=False
+    ],
     init: StaticTuple[Scalar[init_type], num_reductions],
     reduce_dim: Int,
     context: MojoCallContextPtr = MojoCallContextPtr(),
@@ -491,7 +493,9 @@ fn _reduce_generator_gpu[
     /,
     single_thread_blocking_override: Bool = False,
 ](
-    shape: StaticIntTuple[_, integer_bitwidth = bitwidthof[Int]()],
+    shape: StaticIntTuple[
+        _, element_bitwidth = bitwidthof[Int](), unsigned=False
+    ],
     init: StaticTuple[Scalar[init_type], num_reductions],
     reduce_dim: Int,
     ctx: DeviceContext,
@@ -550,7 +554,9 @@ fn _reduce_generator_cpu[
     /,
     single_thread_blocking_override: Bool = False,
 ](
-    shape: StaticIntTuple[_, integer_bitwidth = bitwidthof[Int]()],
+    shape: StaticIntTuple[
+        _, element_bitwidth = bitwidthof[Int](), unsigned=False
+    ],
     init: StaticTuple[Scalar[init_type], num_reductions],
     reduce_dim: Int,
 ) raises:
@@ -627,7 +633,9 @@ fn _reduce_generator_wrapper[
     single_thread_blocking_override: Bool = False,
     target: StringLiteral = "cpu",
 ](
-    shape: StaticIntTuple[_, integer_bitwidth = bitwidthof[Int]()],
+    shape: StaticIntTuple[
+        _, element_bitwidth = bitwidthof[Int](), unsigned=False
+    ],
     init: Scalar,
     reduce_dim: Int,
     context: MojoCallContextPtr = MojoCallContextPtr(),
@@ -680,7 +688,9 @@ fn _reduce_generator[
     single_thread_blocking_override: Bool = False,
     target: StringLiteral = "cpu",
 ](
-    shape: StaticIntTuple[_, integer_bitwidth = bitwidthof[Int]()],
+    shape: StaticIntTuple[
+        _, element_bitwidth = bitwidthof[Int](), unsigned=False
+    ],
     init: Scalar,
     reduce_dim: Int,
     context: MojoCallContextPtr = MojoCallContextPtr(),
@@ -754,7 +764,9 @@ fn _reduce_along_inner_dimension[
     /,
     single_thread_blocking_override: Bool = False,
 ](
-    shape: StaticIntTuple[_, integer_bitwidth = bitwidthof[Int]()],
+    shape: StaticIntTuple[
+        _, element_bitwidth = bitwidthof[Int](), unsigned=False
+    ],
     init_value: StaticTuple[Scalar[init_type], num_reductions],
     reduce_dim: Int,
 ):
@@ -937,7 +949,9 @@ fn _reduce_along_outer_dimension[
     /,
     single_thread_blocking_override: Bool = False,
 ](
-    shape: StaticIntTuple[_, integer_bitwidth = bitwidthof[Int]()],
+    shape: StaticIntTuple[
+        _, element_bitwidth = bitwidthof[Int](), unsigned=False
+    ],
     init: StaticTuple[Scalar[init_type], num_reductions],
     reduce_dim: Int,
 ):
@@ -1112,7 +1126,9 @@ fn max[
     single_thread_blocking_override: Bool = False,
     target: StringLiteral = "cpu",
 ](
-    input_shape: StaticIntTuple[_, integer_bitwidth = bitwidthof[Int]()],
+    input_shape: StaticIntTuple[
+        _, element_bitwidth = bitwidthof[Int](), unsigned=False
+    ],
     reduce_dim: Int,
     context: MojoCallContextPtr = MojoCallContextPtr(),
 ) raises:
@@ -1217,7 +1233,9 @@ fn min[
     single_thread_blocking_override: Bool = False,
     target: StringLiteral = "cpu",
 ](
-    input_shape: StaticIntTuple[_, integer_bitwidth = bitwidthof[Int]()],
+    input_shape: StaticIntTuple[
+        _, element_bitwidth = bitwidthof[Int](), unsigned=False
+    ],
     reduce_dim: Int,
     context: MojoCallContextPtr = MojoCallContextPtr(),
 ) raises:
@@ -1322,7 +1340,9 @@ fn sum[
     single_thread_blocking_override: Bool = False,
     target: StringLiteral = "cpu",
 ](
-    input_shape: StaticIntTuple[_, integer_bitwidth = bitwidthof[Int]()],
+    input_shape: StaticIntTuple[
+        _, element_bitwidth = bitwidthof[Int](), unsigned=False
+    ],
     reduce_dim: Int,
     context: MojoCallContextPtr = MojoCallContextPtr(),
 ) raises:
@@ -1429,7 +1449,9 @@ fn product[
     single_thread_blocking_override: Bool = False,
     target: StringLiteral = "cpu",
 ](
-    input_shape: StaticIntTuple[_, integer_bitwidth = bitwidthof[Int]()],
+    input_shape: StaticIntTuple[
+        _, element_bitwidth = bitwidthof[Int](), unsigned=False
+    ],
     reduce_dim: Int,
     context: MojoCallContextPtr = MojoCallContextPtr(),
 ) raises:
@@ -1549,7 +1571,9 @@ fn mean[
     single_thread_blocking_override: Bool = False,
     target: StringLiteral = "cpu",
 ](
-    input_shape: StaticIntTuple[_, integer_bitwidth = bitwidthof[Int]()],
+    input_shape: StaticIntTuple[
+        _, element_bitwidth = bitwidthof[Int](), unsigned=False
+    ],
     reduce_dim: Int,
     output_shape: __type_of(input_shape),
     context: MojoCallContextPtr = MojoCallContextPtr(),
