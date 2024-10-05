@@ -15,7 +15,7 @@ from algorithm import map_reduce
 from collections import OptionalReg
 from math import align_down, ceildiv, iota
 from os import abort
-from sys.info import simdwidthof, sizeof, triple_is_nvidia_cuda
+from sys.info import simdwidthof, sizeof, bitwidthof, triple_is_nvidia_cuda
 
 from algorithm import sync_parallelize, vectorize
 from algorithm.functional import _get_num_workers
@@ -40,11 +40,9 @@ from ._gpu.reduction import reduce_launch
 
 
 @always_inline
-fn _get_nd_indices_from_flat_index[
-    rank: Int
-](
-    flat_index: Int, shape: StaticIntTuple[rank], skip_dim: Int
-) -> StaticIntTuple[rank]:
+fn _get_nd_indices_from_flat_index(
+    flat_index: Int, shape: StaticIntTuple, skip_dim: Int
+) -> __type_of(shape):
     """Converts a flat index into ND indices but skip over one of the dimensons.
 
     The ND indices will iterate from right to left. I.E
@@ -58,8 +56,6 @@ fn _get_nd_indices_from_flat_index[
     We ignore the Nth dimension to allow that to be traversed in the elementwise
     function.
 
-    Parameters:
-        rank: The rank of the ND index.
     Args:
         flat_index: The flat index to convert.
         shape: The shape of the ND space we are converting into.
@@ -72,17 +68,17 @@ fn _get_nd_indices_from_flat_index[
     # The inner dimensions ([outer, outer, inner]) are not traversed if
     # drop last is set.
     @parameter
-    if rank == 2:
+    if shape.size == 2:
         if skip_dim == 1:
-            return StaticIntTuple[rank](flat_index, 0)
+            return __type_of(shape)(flat_index, 0)
         else:
-            return StaticIntTuple[rank](0, flat_index)
+            return __type_of(shape)(0, flat_index)
 
-    var out = StaticIntTuple[rank]()
+    var out = __type_of(shape)()
     var curr_index = flat_index
 
     @parameter
-    for i in reversed(range(rank)):
+    for i in reversed(range(shape.size)):
         # There is one dimension we skip, this represents the inner loop that
         # is being traversed.
         if i == skip_dim:
@@ -430,7 +426,7 @@ fn _reduce_generator[
     single_thread_blocking_override: Bool = False,
     target: StringLiteral = "cpu",
 ](
-    shape: StaticIntTuple,
+    shape: StaticIntTuple[_, integer_bitwidth = bitwidthof[Int]()],
     init: StaticTuple[Scalar[init_type], num_reductions],
     reduce_dim: Int,
     context: MojoCallContextPtr = MojoCallContextPtr(),
@@ -495,7 +491,7 @@ fn _reduce_generator_gpu[
     /,
     single_thread_blocking_override: Bool = False,
 ](
-    shape: StaticIntTuple,
+    shape: StaticIntTuple[_, integer_bitwidth = bitwidthof[Int]()],
     init: StaticTuple[Scalar[init_type], num_reductions],
     reduce_dim: Int,
     ctx: DeviceContext,
@@ -554,7 +550,7 @@ fn _reduce_generator_cpu[
     /,
     single_thread_blocking_override: Bool = False,
 ](
-    shape: StaticIntTuple,
+    shape: StaticIntTuple[_, integer_bitwidth = bitwidthof[Int]()],
     init: StaticTuple[Scalar[init_type], num_reductions],
     reduce_dim: Int,
 ) raises:
@@ -631,7 +627,7 @@ fn _reduce_generator_wrapper[
     single_thread_blocking_override: Bool = False,
     target: StringLiteral = "cpu",
 ](
-    shape: StaticIntTuple,
+    shape: StaticIntTuple[_, integer_bitwidth = bitwidthof[Int]()],
     init: Scalar,
     reduce_dim: Int,
     context: MojoCallContextPtr = MojoCallContextPtr(),
@@ -684,7 +680,7 @@ fn _reduce_generator[
     single_thread_blocking_override: Bool = False,
     target: StringLiteral = "cpu",
 ](
-    shape: StaticIntTuple,
+    shape: StaticIntTuple[_, integer_bitwidth = bitwidthof[Int]()],
     init: Scalar,
     reduce_dim: Int,
     context: MojoCallContextPtr = MojoCallContextPtr(),
@@ -758,7 +754,7 @@ fn _reduce_along_inner_dimension[
     /,
     single_thread_blocking_override: Bool = False,
 ](
-    shape: StaticIntTuple,
+    shape: StaticIntTuple[_, integer_bitwidth = bitwidthof[Int]()],
     init_value: StaticTuple[Scalar[init_type], num_reductions],
     reduce_dim: Int,
 ):
@@ -843,9 +839,7 @@ fn _reduce_along_inner_dimension[
                 var acc = init
                 for idx in range(start, finish, width):
                     indices[reduce_dim] = idx
-                    var load_value = input_0_fn[init_type, width, shape.size](
-                        indices
-                    )
+                    var load_value = input_0_fn[init_type, width](indices)
 
                     @parameter
                     for i in range(num_reductions):
@@ -902,7 +896,7 @@ fn _reduce_along_inner_dimension[
 
             # Store the result back to the output.
             indices[reduce_dim] = 0
-            output_0_fn[init_type, 1, shape.size](indices, acc_scalar_tup)
+            output_0_fn(indices, acc_scalar_tup)
 
     @always_inline
     @parameter
@@ -943,7 +937,7 @@ fn _reduce_along_outer_dimension[
     /,
     single_thread_blocking_override: Bool = False,
 ](
-    shape: StaticIntTuple,
+    shape: StaticIntTuple[_, integer_bitwidth = bitwidthof[Int]()],
     init: StaticTuple[Scalar[init_type], num_reductions],
     reduce_dim: Int,
 ):
@@ -1118,7 +1112,7 @@ fn max[
     single_thread_blocking_override: Bool = False,
     target: StringLiteral = "cpu",
 ](
-    input_shape: StaticIntTuple,
+    input_shape: StaticIntTuple[_, integer_bitwidth = bitwidthof[Int]()],
     reduce_dim: Int,
     context: MojoCallContextPtr = MojoCallContextPtr(),
 ) raises:
@@ -1223,7 +1217,7 @@ fn min[
     single_thread_blocking_override: Bool = False,
     target: StringLiteral = "cpu",
 ](
-    input_shape: StaticIntTuple,
+    input_shape: StaticIntTuple[_, integer_bitwidth = bitwidthof[Int]()],
     reduce_dim: Int,
     context: MojoCallContextPtr = MojoCallContextPtr(),
 ) raises:
@@ -1328,7 +1322,7 @@ fn sum[
     single_thread_blocking_override: Bool = False,
     target: StringLiteral = "cpu",
 ](
-    input_shape: StaticIntTuple,
+    input_shape: StaticIntTuple[_, integer_bitwidth = bitwidthof[Int]()],
     reduce_dim: Int,
     context: MojoCallContextPtr = MojoCallContextPtr(),
 ) raises:
@@ -1435,7 +1429,7 @@ fn product[
     single_thread_blocking_override: Bool = False,
     target: StringLiteral = "cpu",
 ](
-    input_shape: StaticIntTuple,
+    input_shape: StaticIntTuple[_, integer_bitwidth = bitwidthof[Int]()],
     reduce_dim: Int,
     context: MojoCallContextPtr = MojoCallContextPtr(),
 ) raises:
@@ -1555,9 +1549,9 @@ fn mean[
     single_thread_blocking_override: Bool = False,
     target: StringLiteral = "cpu",
 ](
-    input_shape: StaticIntTuple,
+    input_shape: StaticIntTuple[_, integer_bitwidth = bitwidthof[Int]()],
     reduce_dim: Int,
-    output_shape: StaticIntTuple[input_shape.size],
+    output_shape: __type_of(input_shape),
     context: MojoCallContextPtr = MojoCallContextPtr(),
 ) raises:
     """Computes the mean across the input and output shape.

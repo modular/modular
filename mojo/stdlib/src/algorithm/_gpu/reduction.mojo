@@ -295,7 +295,7 @@ fn reduce_kernel[
     # grid stride loop over rows
     # each block reduces a row, which requires no partial reductions
     for row_idx in range(BlockIdx.x(), UInt(num_rows.value), GridDim.x()):
-        var row_coords = _get_nd_indices_from_flat_index[rank](
+        var row_coords = _get_nd_indices_from_flat_index(
             int(row_idx), shape, axis
         )
 
