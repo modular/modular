@@ -83,13 +83,13 @@ fn _transpose_inplace_8x8[
     fn _apply_permute_0(
         vec: SIMD[type, 8], other: SIMD[type, 8]
     ) -> SIMD[type, 8]:
-        return vec._shuffle_list[0, 8, 1, 9, 4, 12, 5, 13](other)
+        return vec.shuffle[0, 8, 1, 9, 4, 12, 5, 13](other)
 
     @parameter
     fn _apply_permute_1(
         vec: SIMD[type, 8], other: SIMD[type, 8]
     ) -> SIMD[type, 8]:
-        return vec._shuffle_list[2, 10, 3, 11, 6, 14, 7, 15](other)
+        return vec.shuffle[2, 10, 3, 11, 6, 14, 7, 15](other)
 
     var k0 = _apply_permute_0(row0, row1)
     var k1 = _apply_permute_1(row0, row1)
@@ -104,13 +104,13 @@ fn _transpose_inplace_8x8[
     fn _apply_permute_2(
         vec: SIMD[type, 8], other: SIMD[type, 8]
     ) -> SIMD[type, 8]:
-        return vec._shuffle_list[0, 1, 8, 9, 4, 5, 12, 13](other)
+        return vec.shuffle[0, 1, 8, 9, 4, 5, 12, 13](other)
 
     @parameter
     fn _apply_permute_3(
         vec: SIMD[type, 8], other: SIMD[type, 8]
     ) -> SIMD[type, 8]:
-        return vec._shuffle_list[2, 3, 10, 11, 6, 7, 14, 15](other)
+        return vec.shuffle[2, 3, 10, 11, 6, 7, 14, 15](other)
 
     var k020 = _apply_permute_2(k0, k2)
     var k021 = _apply_permute_3(k0, k2)
@@ -125,13 +125,13 @@ fn _transpose_inplace_8x8[
     fn _apply_permute_4(
         vec: SIMD[type, 8], other: SIMD[type, 8]
     ) -> SIMD[type, 8]:
-        return vec._shuffle_list[0, 1, 2, 3, 8, 9, 10, 11](other)
+        return vec.shuffle[0, 1, 2, 3, 8, 9, 10, 11](other)
 
     @parameter
     fn _apply_permute_5(
         vec: SIMD[type, 8], other: SIMD[type, 8]
     ) -> SIMD[type, 8]:
-        return vec._shuffle_list[4, 5, 6, 7, 12, 13, 14, 15](other)
+        return vec.shuffle[4, 5, 6, 7, 12, 13, 14, 15](other)
 
     var r0 = _apply_permute_4(k020, k460)
     var r1 = _apply_permute_4(k021, k461)
@@ -171,7 +171,7 @@ fn _transpose_inplace_16x16[
     fn _apply_permute_0(
         vec: SIMD[type, 16], other: SIMD[type, 16]
     ) -> SIMD[type, 16]:
-        return vec._shuffle_list[
+        return vec.shuffle[
             0, 16, 1, 17, 4, 20, 5, 21, 8, 24, 9, 25, 12, 28, 13, 29
         ](other)
 
@@ -179,7 +179,7 @@ fn _transpose_inplace_16x16[
     fn _apply_permute_1(
         vec: SIMD[type, 16], other: SIMD[type, 16]
     ) -> SIMD[type, 16]:
-        return vec._shuffle_list[
+        return vec.shuffle[
             2, 18, 3, 19, 6, 22, 7, 23, 10, 26, 11, 27, 14, 30, 15, 31
         ](other)
 
@@ -187,7 +187,7 @@ fn _transpose_inplace_16x16[
     fn _apply_permute_2(
         vec: SIMD[type, 16], other: SIMD[type, 16]
     ) -> SIMD[type, 16]:
-        return vec._shuffle_list[
+        return vec.shuffle[
             0, 1, 16, 17, 4, 5, 20, 21, 8, 9, 24, 25, 12, 13, 28, 29
         ](other)
 
@@ -195,7 +195,7 @@ fn _transpose_inplace_16x16[
     fn _apply_permute_3(
         vec: SIMD[type, 16], other: SIMD[type, 16]
     ) -> SIMD[type, 16]:
-        return vec._shuffle_list[
+        return vec.shuffle[
             2, 3, 18, 19, 6, 7, 22, 23, 10, 11, 26, 27, 14, 15, 30, 31
         ](other)
 
@@ -203,7 +203,7 @@ fn _transpose_inplace_16x16[
     fn _apply_permute_4(
         vec: SIMD[type, 16], other: SIMD[type, 16]
     ) -> SIMD[type, 16]:
-        return vec._shuffle_list[
+        return vec.shuffle[
             0, 1, 2, 3, 8, 9, 10, 11, 16, 17, 18, 19, 24, 25, 26, 27
         ](other)
 
@@ -211,7 +211,7 @@ fn _transpose_inplace_16x16[
     fn _apply_permute_5(
         vec: SIMD[type, 16], other: SIMD[type, 16]
     ) -> SIMD[type, 16]:
-        return vec._shuffle_list[
+        return vec.shuffle[
             4, 5, 6, 7, 12, 13, 14, 15, 20, 21, 22, 23, 28, 29, 30, 31
         ](other)
 
@@ -219,7 +219,7 @@ fn _transpose_inplace_16x16[
     fn _apply_permute_6(
         vec: SIMD[type, 16], other: SIMD[type, 16]
     ) -> SIMD[type, 16]:
-        return vec._shuffle_list[
+        return vec.shuffle[
             0, 1, 2, 3, 8, 9, 10, 11, 16, 17, 18, 19, 24, 25, 26, 27
         ](other)
 
@@ -227,7 +227,7 @@ fn _transpose_inplace_16x16[
     fn _apply_permute_7(
         vec: SIMD[type, 16], other: SIMD[type, 16]
     ) -> SIMD[type, 16]:
-        return vec._shuffle_list[
+        return vec.shuffle[
             4, 5, 6, 7, 12, 13, 14, 15, 20, 21, 22, 23, 28, 29, 30, 31
         ](other)
 

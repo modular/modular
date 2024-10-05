@@ -10,7 +10,7 @@ from buffer.dimlist import DimList
 from register import mogg_register_shape_func
 from runtime.tracing import Trace, TraceLevel
 
-from utils.index import StaticIntTuple
+from utils.index import StaticIntTuple, Index
 
 
 @always_inline
@@ -60,13 +60,13 @@ fn matrix_solve_tiny[
 
     # Update solution.
     X.store[width=N](
-        (0, 0), rdet_A * B2.fma(A_inv02, B1.fma(A_inv01, A_inv00 * B0))
+        Index(0, 0), rdet_A * B2.fma(A_inv02, B1.fma(A_inv01, A_inv00 * B0))
     )
     X.store[width=N](
-        (1, 0), rdet_A * B2.fma(A_inv12, B1.fma(A_inv11, A_inv10 * B0))
+        Index(1, 0), rdet_A * B2.fma(A_inv12, B1.fma(A_inv11, A_inv10 * B0))
     )
     X.store[width=N](
-        (2, 0), rdet_A * B2.fma(A_inv22, B1.fma(A_inv21, A_inv20 * B0))
+        Index(2, 0), rdet_A * B2.fma(A_inv22, B1.fma(A_inv21, A_inv20 * B0))
     )
 
 

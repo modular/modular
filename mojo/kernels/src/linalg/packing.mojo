@@ -156,7 +156,7 @@ struct PackMatrixRows[
             alias inner_row_idx = idx
             # Check that the current row has valid data.
             if skip_row_bound or (inner_row_idx < read_bound[0]):
-                var row_global_index = (
+                var row_global_index = Index(
                     start_idx_global[0] + inner_row_idx,
                     start_idx_global[1],
                 )
@@ -181,12 +181,12 @@ struct PackMatrixRows[
                     )
 
                 transpose_buffer.store[width=simd_size](
-                    (inner_row_idx, 0), row_data
+                    Index(inner_row_idx, 0), row_data
                 )
             else:
                 # Row out of defined bound, fill the transpose buffer with zero
                 transpose_buffer.store[width=simd_size](
-                    (inner_row_idx, 0), SIMD[type, simd_size](0)
+                    Index(inner_row_idx, 0), SIMD[type, simd_size](0)
                 )
 
         # Transpose the buffered data
@@ -205,7 +205,7 @@ struct PackMatrixRows[
 
             if skip_col_bound or (idx < write_bound[1]):
                 self.packed_matrix.store[width=simd_size](
-                    (
+                    Index(
                         _row_outer,
                         local_off_set[1] + idx,
                         _row_inner,
@@ -376,7 +376,7 @@ struct PackMatrixCols[
             var col_idx_outer = col_idx // column_inner_size
             var col_idx_inner = col_idx % column_inner_size
             self.packed_matrix.store[width=simd_size](
-                (col_idx_outer, row_idx, col_idx_inner),
+                Index(col_idx_outer, row_idx, col_idx_inner),
                 data,
             )
 
@@ -434,7 +434,7 @@ struct PackMatrixCols[
                             self.global_offset + local_idx
                         ]
                         self.packed_matrix.store(
-                            (j, i // vnni_cols, vnni_cols * p + l),
+                            Index(j, i // vnni_cols, vnni_cols * p + l),
                             val,
                         )
 
