@@ -11,7 +11,7 @@ from gpu.host import DeviceContext
 from gpu.host._compile import _get_nvptx_target
 from smoke_test_utils import expect_eq
 from sys import simdwidthof
-from utils import StaticIntTuple
+from utils import IndexList
 from utils.index import Index
 
 
@@ -47,15 +47,15 @@ fn run_elementwise[type: DType](ctx: DeviceContext) raises:
     @always_inline
     @__copy_capture(in_buffer, out_buffer)
     @parameter
-    fn func[simd_width: Int, rank: Int](idx0: StaticIntTuple[rank]):
-        var idx = rebind[StaticIntTuple[2]](idx0)
+    fn func[simd_width: Int, rank: Int](idx0: IndexList[rank]):
+        var idx = rebind[IndexList[2]](idx0)
         out_buffer.store(
             idx,
             in_buffer.load[width=simd_width](idx) + 42,
         )
 
     elementwise[func, pack_size, target="cuda"](
-        StaticIntTuple[2](2, 8),
+        IndexList[2](2, 8),
         ctx,
     )
 
