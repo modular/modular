@@ -201,6 +201,7 @@ modular_py_test(
         "conftest.py",
         "serve/__init__.py",
         "serve/conftest.py",
+        "serve/params.py",
         "serve/test_tiny_llama_serving_gpu.py",
     ],
     data = [
