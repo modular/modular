@@ -8,7 +8,7 @@ from sys import triple_is_nvidia_cuda
 from buffer import NDBuffer, DimList, Dim
 from memory import UnsafePointer
 from os import abort
-from utils import StaticIntTuple
+from utils import IndexList
 from sys import triple_is_nvidia_cuda
 from sys.intrinsics import _type_is_eq
 from collections import Optional
@@ -160,7 +160,7 @@ struct ContiguousKVCache[
     @always_inline
     fn _get_idx_tuple(
         self, bs_idx: Int, head_idx: Int, tok_idx: Int, head_dim_idx: Int
-    ) -> StaticIntTuple[4]:
+    ) -> IndexList[4]:
         debug_assert(
             bs_idx < self.batch_size, "KVCache batch_size out of range"
         )
@@ -195,7 +195,7 @@ struct ContiguousKVCache[
             )
         else:
             constrained[False, "unsupported layout"]()
-            return StaticIntTuple[4]()
+            return IndexList[4]()
 
     fn __init__(
         inout self,
@@ -297,8 +297,8 @@ struct ContiguousKVCache[
         ]()
         var idx = self._get_idx_tuple(batch_idx, 0, 0, 0)
         var offset_ptr = self._block._offset(idx)
-        var ret_shape: StaticIntTuple[3]
-        var ret_strides = StaticIntTuple[3](
+        var ret_shape: IndexList[3]
+        var ret_strides = IndexList[3](
             self._block.dynamic_stride[1],
             self._block.dynamic_stride[2],
             self._block.dynamic_stride[3],
@@ -306,20 +306,20 @@ struct ContiguousKVCache[
 
         @parameter
         if kv_params.layout == KVCacheLayout.BSHD:
-            ret_shape = StaticIntTuple[3](
+            ret_shape = IndexList[3](
                 self.cache_length(batch_idx) + new_seq_len,
                 kv_params.num_heads,
                 kv_params.head_size,
             )
         elif kv_params.layout == KVCacheLayout.BHSD:
-            ret_shape = StaticIntTuple[3](
+            ret_shape = IndexList[3](
                 kv_params.num_heads,
                 self.cache_length(batch_idx) + new_seq_len,
                 kv_params.head_size,
             )
         else:
             constrained[False, "Unsupported layout"]()
-            ret_shape = StaticIntTuple[3](0)
+            ret_shape = IndexList[3](0)
 
         return NDBuffer[type_, 3, block_shape](
             rebind[UnsafePointer[Scalar[type_]]](offset_ptr),
@@ -422,7 +422,7 @@ struct ContiguousKVCacheCollection[
     fn get_key_cache[cache_t: KVCacheT](self, layer_idx: Int) -> cache_t:
         constrained[_type_is_eq[cache_t, self.CacheType]()]()
         var layer_size = self.batch_size * kv_params.num_heads * self.max_seq_len * kv_params.head_size
-        var k_shape = StaticIntTuple[4](
+        var k_shape = IndexList[4](
             self.key_cache.dim[1](),
             self.key_cache.dim[2](),
             self.key_cache.dim[3](),
@@ -443,7 +443,7 @@ struct ContiguousKVCacheCollection[
 
     fn get_value_cache[cache_t: KVCacheT](self, layer_idx: Int) -> cache_t:
         var layer_size = self.batch_size * kv_params.num_heads * self.max_seq_len * kv_params.head_size
-        var v_shape = StaticIntTuple[4](
+        var v_shape = IndexList[4](
             self.value_cache.dim[1](),
             self.value_cache.dim[2](),
             self.value_cache.dim[3](),
@@ -514,7 +514,7 @@ struct ContinuousBatchingKVCache[
     @always_inline
     fn _get_idx_tuple(
         self, block_idx: Int, head_idx: Int, tok_idx: Int, head_dim_idx: Int
-    ) -> StaticIntTuple[6]:
+    ) -> IndexList[6]:
         debug_assert(
             head_idx < kv_params.num_heads, "KVCache head_idx out of range"
         )
@@ -529,7 +529,7 @@ struct ContinuousBatchingKVCache[
                 tok_idx < self.blocks.dim[4](),
                 "KVCache tok_idx out of range",
             )
-            return StaticIntTuple[6](
+            return IndexList[6](
                 block_idx,
                 self.kv_idx,
                 self.layer_idx,
@@ -542,7 +542,7 @@ struct ContinuousBatchingKVCache[
                 tok_idx < self.blocks.dim[3](),
                 "KVCache tok_idx out of range",
             )
-            return StaticIntTuple[6](
+            return IndexList[6](
                 block_idx,
                 self.kv_idx,
                 self.layer_idx,
@@ -552,7 +552,7 @@ struct ContinuousBatchingKVCache[
             )
         else:
             constrained[False, "unsupported layout"]()
-            return StaticIntTuple[6]()
+            return IndexList[6]()
 
     fn __init__(
         inout self,
@@ -675,7 +675,7 @@ struct ContinuousBatchingKVCache[
         var block_idx = int(self.lookup_table[batch_idx])
         var full_block_idx = self._get_idx_tuple(block_idx, 0, 0, 0)
         var block_pointer = self.blocks._offset(full_block_idx).bitcast[type_]()
-        var block_dynamic_shape = StaticIntTuple[3](
+        var block_dynamic_shape = IndexList[3](
             self.blocks.dim[3](),
             self.blocks.dim[4](),
             self.blocks.dim[5](),
