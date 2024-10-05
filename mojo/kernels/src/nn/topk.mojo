@@ -160,9 +160,7 @@ fn _top_k[
         )
 
         for row_idx in range(start_row, end_row):
-            var indices = _get_nd_indices_from_flat_index[rank](
-                row_idx, shape, axis
-            )
+            var indices = _get_nd_indices_from_flat_index(row_idx, shape, axis)
             iota(idxs)
 
             @parameter

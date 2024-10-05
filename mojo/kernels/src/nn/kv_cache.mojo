@@ -2140,7 +2140,7 @@ fn _fused_qkv_matmul_kv_cache_impl[
         var t_idx = bs_and_seq[1]
         if idx[1] < q_dim:
             output.store[width=width, alignment=alignment](
-                (b_idx, t_idx, idx[1]), rebind[SIMD[type, width]](val)
+                Index(b_idx, t_idx, idx[1]), rebind[SIMD[type, width]](val)
             )
             return
 

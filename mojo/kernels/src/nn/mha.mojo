@@ -2204,7 +2204,7 @@ fn _bmm0_bs[
     var kv_head = int(head // group)
     var k = k_cache.block[k_type, k_cache.get_block_static_shape()](
         batch, 0
-    )._offset((0, kv_head, 0))
+    )._offset(Index(0, kv_head, 0))
 
     var p_offset = batch_head * max_prompt_len * num_keys
     var p = p_ptr + Int(p_offset)
@@ -2271,7 +2271,7 @@ fn _bmm1_bs[
     var kv_head = int(head // group)
     var v = v_cache.block[v_type, v_cache.get_block_static_shape()](
         batch, 0
-    )._offset((0, kv_head, 0))
+    )._offset(Index(0, kv_head, 0))
 
     var output_offset = depth * (head + num_heads * max_prompt_len * batch)
     var output = output_ptr + Int(output_offset)

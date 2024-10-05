@@ -538,9 +538,7 @@ fn logsoftmax[
             var output_buffer_view = Buffer[type](
                 output.data.offset(buffer_offset), inner_dim
             )
-            var indices = _get_nd_indices_from_flat_index[rank](
-                i, shape, rank - 1
-            )
+            var indices = _get_nd_indices_from_flat_index(i, shape, rank - 1)
 
             @parameter
             @always_inline
@@ -623,9 +621,7 @@ fn _softmax_cpu[
             var output_buffer_view = Buffer[type](
                 output.data.offset(buffer_offset), inner_dim
             )
-            var indices = _get_nd_indices_from_flat_index[rank](
-                i, shape, rank - 1
-            )
+            var indices = _get_nd_indices_from_flat_index(i, shape, rank - 1)
 
             @parameter
             @always_inline
