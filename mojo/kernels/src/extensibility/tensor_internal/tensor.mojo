@@ -18,7 +18,7 @@ from buffer import Buffer, NDBuffer
 from buffer.dimlist import Dim
 from memory import memset_zero, memcpy, memcmp, UnsafePointer, bitcast
 
-from utils import StaticIntTuple
+from utils import IndexList
 from utils._serialize import _serialize
 from utils.index import Index
 from utils.loop import unroll
@@ -45,7 +45,7 @@ fn _elementwise[
 
     @__copy_capture(result_buffer, buffer)
     @parameter
-    fn func[width: Int, rank: Int](indices: StaticIntTuple[rank]):
+    fn func[width: Int, rank: Int](indices: IndexList[rank]):
         var idx = indices[0]
         result_buffer.store(idx, op[type, width](buffer.load[width=width](idx)))
 
@@ -68,7 +68,7 @@ fn _elementwise[
 
     @__copy_capture(result_buffer, a_buffer, b_buffer)
     @parameter
-    fn func[width: Int, rank: Int](indices: StaticIntTuple[rank]):
+    fn func[width: Int, rank: Int](indices: IndexList[rank]):
         var idx = indices[0]
         result_buffer.store(
             idx,
@@ -95,7 +95,7 @@ fn _elementwise[
 
     @__copy_capture(result_buffer, a_buffer)
     @parameter
-    fn func[width: Int, rank: Int](indices: StaticIntTuple[rank]):
+    fn func[width: Int, rank: Int](indices: IndexList[rank]):
         var idx = indices[0]
         result_buffer.store(
             idx,
@@ -124,7 +124,7 @@ fn _elementwise[
 
     @__copy_capture(result_buffer, b_buffer)
     @parameter
-    fn func[width: Int, rank: Int](indices: StaticIntTuple[rank]):
+    fn func[width: Int, rank: Int](indices: IndexList[rank]):
         var idx = indices[0]
         result_buffer.store(
             idx,
@@ -705,7 +705,7 @@ struct Tensor[type: DType](
         # Define an elementwise pow that captures and modifies `buffer`.
         @__copy_capture(buffer)
         @parameter
-        fn _pow[width: Int, rank: Int](indices: StaticIntTuple[rank]) -> None:
+        fn _pow[width: Int, rank: Int](indices: IndexList[rank]) -> None:
             var idx = indices[0]
             var val = buffer.load[width=width](idx)
             var res = pow(val, exp)
@@ -734,7 +734,7 @@ struct Tensor[type: DType](
 
         @__copy_capture(result_buffer, buffer)
         @parameter
-        fn func[width: Int, rank: Int](indices: StaticIntTuple[rank]):
+        fn func[width: Int, rank: Int](indices: IndexList[rank]):
             var idx = indices[0]
             result_buffer.store(
                 idx, buffer.load[width=width](idx).cast[new_type]()
@@ -766,7 +766,7 @@ struct Tensor[type: DType](
         var result_buffer = result._to_buffer()
 
         @parameter
-        fn func[width: Int, rank: Int](indices: StaticIntTuple[rank]):
+        fn func[width: Int, rank: Int](indices: IndexList[rank]):
             var idx = indices[0]
             result_buffer.store(
                 idx,
@@ -935,9 +935,7 @@ struct Tensor[type: DType](
         return self.load[width=1](indices)
 
     @always_inline
-    fn __getitem__[
-        len: Int
-    ](self, indices: StaticIntTuple[len]) -> Scalar[type]:
+    fn __getitem__[len: Int](self, indices: IndexList[len]) -> Scalar[type]:
         """Gets the SIMD value at the specified indices.
 
         Parameters:
@@ -1003,7 +1001,7 @@ struct Tensor[type: DType](
     @always_inline
     fn load[
         len: Int, /, *, width: Int = 1
-    ](self, indices: StaticIntTuple[len]) -> SIMD[type, width]:
+    ](self, indices: IndexList[len]) -> SIMD[type, width]:
         """Gets the SIMD value at the specified indices.
 
         Parameters:
@@ -1043,7 +1041,7 @@ struct Tensor[type: DType](
     @always_inline
     fn __setitem__[
         len: Int
-    ](inout self, indices: StaticIntTuple[len], val: Scalar[type]):
+    ](inout self, indices: IndexList[len], val: Scalar[type]):
         """Sets the value at the specified indices.
 
         Parameters:
@@ -1088,7 +1086,7 @@ struct Tensor[type: DType](
     @always_inline
     fn store[
         len: Int, /, *, width: Int = 1
-    ](inout self, indices: StaticIntTuple[len], val: SIMD[type, width]):
+    ](inout self, indices: IndexList[len], val: SIMD[type, width]):
         """Sets the SIMD value at the specified indices.
 
         Parameters:
@@ -1103,9 +1101,7 @@ struct Tensor[type: DType](
         self._ptr.store(self._compute_linear_offset(indices), val)
 
     @always_inline
-    fn _compute_linear_offset[
-        rank: Int
-    ](self, indices: StaticIntTuple[rank]) -> Int:
+    fn _compute_linear_offset[rank: Int](self, indices: IndexList[rank]) -> Int:
         """Computes the linear offset into the tensor from the indices provided.
 
         Parameters:
@@ -1157,7 +1153,7 @@ struct Tensor[type: DType](
         debug_assert(
             rank == self.rank(), "to_ndbuffer rank must match Tensor rank"
         )
-        var shape = StaticIntTuple[rank](0)
+        var shape = IndexList[rank](0)
 
         @parameter
         for i in range(rank):

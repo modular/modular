@@ -15,7 +15,7 @@ from max.tensor import TensorSpec
 
 from collections import List
 from memory import UnsafePointer
-from utils import StaticIntTuple
+from utils import IndexList
 from .tensor_shape import TensorShape, _as_rep16
 
 # ===----------------------------------------------------------------------===#
@@ -239,7 +239,7 @@ struct TensorSpec(
 @value
 @register_passable
 struct StaticTensorSpec[type: DType, rank: Int]:
-    var shape: StaticIntTuple[rank]
+    var shape: IndexList[rank]
 
     fn __init__(inout self, spec: TensorSpec):
         """Construct from TensorSpec.
@@ -249,7 +249,7 @@ struct StaticTensorSpec[type: DType, rank: Int]:
         """
         debug_assert(spec.rank() == rank, "rank mismatch")
         debug_assert(spec.dtype() == type, "dtype mismatch")
-        self.shape = StaticIntTuple[rank]()
+        self.shape = IndexList[rank]()
 
         for i in range(rank):
             self.shape[i] = spec[i]

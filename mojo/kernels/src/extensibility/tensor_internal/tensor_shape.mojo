@@ -20,7 +20,7 @@ from sys.intrinsics import _type_is_eq
 
 from memory import memcpy, memcmp, UnsafePointer
 
-from utils.index import StaticIntTuple
+from utils.index import IndexList
 from utils.loop import unroll
 from utils.static_tuple import StaticTuple
 
@@ -711,7 +711,7 @@ struct TensorShape(
             return __mlir_op.`pop.variadic.size`(x)
 
         alias rank = variadic_size(shapes.element_types)
-        var tuple = StaticIntTuple[rank]()
+        var tuple = IndexList[rank]()
 
         @parameter
         fn _fill[i: Int]():
@@ -832,7 +832,7 @@ struct TensorShape(
         self._rep = rep
 
     @always_inline
-    fn __init__[rank: Int](inout self, shapes: StaticIntTuple[rank]):
+    fn __init__[rank: Int](inout self, shapes: IndexList[rank]):
         """Initializes a TensorShape from the values provided.
 
         Parameters:

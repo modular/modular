@@ -10,7 +10,7 @@ from .tensor_like import TensorLike
 from tensor_internal import TensorSpec, StaticTensorSpec
 
 from collections import InlineArray, OptionalReg
-from utils import StaticIntTuple
+from utils import IndexList
 from memory import UnsafePointer
 from math import ceil
 from sys import simdwidthof
@@ -43,7 +43,7 @@ struct ManagedTensorSlice[
     var _ptr: UnsafePointer[Scalar[type]]
     var _spec: StaticTensorSpec[type, rank]
     var _start_offset: Int
-    var _strides: StaticIntTuple[rank]
+    var _strides: IndexList[rank]
 
     fn __init__(
         inout self,
@@ -67,7 +67,7 @@ struct ManagedTensorSlice[
         var stop = _slice_to_tuple[stop_fn](slices)
         var step = _slice_to_tuple[step_fn](slices)
 
-        var adjusted_shape = StaticIntTuple[rank]()
+        var adjusted_shape = IndexList[rank]()
         for i in range(rank):
             adjusted_shape[i] = int(ceil((stop[i] - start[i]) / step[i]))
         var slice_spec = StaticTensorSpec[type](adjusted_shape)
@@ -75,7 +75,7 @@ struct ManagedTensorSlice[
         var slicer_strides = _row_major_strides(slicer_spec)
         var start_offset = _dot_prod(start, slicer_strides)
 
-        var strides = StaticIntTuple[rank]()
+        var strides = IndexList[rank]()
 
         @parameter
         for i in range(rank):
@@ -86,7 +86,7 @@ struct ManagedTensorSlice[
     fn __init__(
         inout self,
         ptr: UnsafePointer[Scalar[type]],
-        shape: StaticIntTuple[rank],
+        shape: IndexList[rank],
     ):
         self._ptr = ptr
         self._spec = StaticTensorSpec[type, rank](shape)
@@ -96,8 +96,8 @@ struct ManagedTensorSlice[
     fn __init__(
         inout self,
         ptr: UnsafePointer[Scalar[type]],
-        shape: StaticIntTuple[rank],
-        strides: StaticIntTuple[rank],
+        shape: IndexList[rank],
+        strides: IndexList[rank],
     ):
         self = Self(
             ptr,
@@ -115,7 +115,7 @@ struct ManagedTensorSlice[
         return self._spec
 
     @always_inline
-    fn __getitem__(self, indices: StaticIntTuple[rank]) -> Scalar[type]:
+    fn __getitem__(self, indices: IndexList[rank]) -> Scalar[type]:
         """Gets the value at the specified indices.
 
         Args:
@@ -157,7 +157,7 @@ struct ManagedTensorSlice[
         self[indices] = val
 
     @always_inline
-    fn __setitem__(self, indices: StaticIntTuple[rank], val: Scalar[type]):
+    fn __setitem__(self, indices: IndexList[rank], val: Scalar[type]):
         """Stores the value at the specified indices.
 
         Args:
@@ -197,9 +197,9 @@ struct ManagedTensorSlice[
         width: Int,
         # Necessary to make it simpler on the call site.
         _rank: Int,
-    ](self, index: StaticIntTuple[_rank]) -> SIMD[type, width]:
+    ](self, index: IndexList[_rank]) -> SIMD[type, width]:
         constrained[_rank == rank]()
-        var ridx = rebind[StaticIntTuple[rank]](index)
+        var ridx = rebind[IndexList[rank]](index)
         return self._simd_load_internal[width](ridx)
 
     @always_inline
@@ -207,12 +207,12 @@ struct ManagedTensorSlice[
         width: Int,
         # Necessary to make it simpler on the call site.
         _rank: Int,
-    ](self, index: StaticIntTuple[_rank]) -> SIMD[type, width]:
+    ](self, index: IndexList[_rank]) -> SIMD[type, width]:
         # Nop function to preserve symbols from DCE.
         self._input_fusion_hook[CompilerTensorSpec[type, rank]()]()
 
         constrained[_rank == rank]()
-        var ridx = rebind[StaticIntTuple[rank]](index)
+        var ridx = rebind[IndexList[rank]](index)
 
         alias in_lambda = specsof[type, rank]("self").in_lambda
 
@@ -226,7 +226,7 @@ struct ManagedTensorSlice[
     @always_inline
     fn _simd_load_internal[
         width: Int,
-    ](self, index: StaticIntTuple[rank]) -> SIMD[type, width]:
+    ](self, index: IndexList[rank]) -> SIMD[type, width]:
         var flat_index = _dot_prod(index, self._strides)
         var stride = self._strides[rank - 1]
 
@@ -259,9 +259,9 @@ struct ManagedTensorSlice[
         width: Int,
         # Necessary to make it simpler on the call site.
         _rank: Int,
-    ](self, index: StaticIntTuple[_rank], val: SIMD[type, width]):
+    ](self, index: IndexList[_rank], val: SIMD[type, width]):
         constrained[_rank == rank]()
-        var ridx = rebind[StaticIntTuple[rank]](index)
+        var ridx = rebind[IndexList[rank]](index)
         self._simd_store_internal[width](ridx, val)
 
     @always_inline
@@ -269,12 +269,12 @@ struct ManagedTensorSlice[
         width: Int,
         # Necessary to make it simpler on the call site.
         _rank: Int,
-    ](self, index: StaticIntTuple[_rank], val: SIMD[type, width]):
+    ](self, index: IndexList[_rank], val: SIMD[type, width]):
         # Nop function to preserve symbols from DCE.
         self._output_fusion_hook[CompilerTensorSpec[type, rank]()]()
 
         constrained[_rank == rank]()
-        var ridx = rebind[StaticIntTuple[rank]](index)
+        var ridx = rebind[IndexList[rank]](index)
 
         alias out_lambda = specsof[type, rank]("self").out_lambda
 
@@ -288,7 +288,7 @@ struct ManagedTensorSlice[
     @always_inline
     fn _simd_store_internal[
         width: Int,
-    ](self, index: StaticIntTuple[rank], val: SIMD[type, width]):
+    ](self, index: IndexList[rank], val: SIMD[type, width]):
         var flat_index = _dot_prod(index, self._strides)
 
         var stride = self._strides[rank - 1]
@@ -326,7 +326,7 @@ struct ManagedTensorSlice[
     fn _input_fusion_hook[spec: CompilerTensorSpec[type, rank]](self):
         @always_inline
         @parameter
-        fn _input_lambda[_w: Int](i: StaticIntTuple[rank]) -> SIMD[type, _w]:
+        fn _input_lambda[_w: Int](i: IndexList[rank]) -> SIMD[type, _w]:
             return rebind[SIMD[type, _w]](self._simd_load_internal[_w](i))
 
         self._extract_new_spec[
@@ -341,7 +341,7 @@ struct ManagedTensorSlice[
     fn _output_fusion_hook[spec: CompilerTensorSpec[type, rank]](self):
         @always_inline
         @parameter
-        fn _output_lambda[_w: Int](i: StaticIntTuple[rank], v: SIMD[type, _w]):
+        fn _output_lambda[_w: Int](i: IndexList[rank], v: SIMD[type, _w]):
             self._simd_store_internal(i, rebind[SIMD[type, _w]](v))
 
         self._extract_new_spec[
@@ -361,7 +361,7 @@ struct ManagedTensorSlice[
 fn foreach[
     type: DType,
     rank: Int, //,
-    func: fn[width: Int] (StaticIntTuple[rank]) capturing -> SIMD[type, width],
+    func: fn[width: Int] (IndexList[rank]) capturing -> SIMD[type, width],
     synchronous: Bool = False,
     target: StringLiteral = "cpu",
 ](tensor: ManagedTensorSlice[type, rank]):
@@ -370,8 +370,8 @@ fn foreach[
     @parameter
     fn elementwise_fn_wrapper[
         width: Int, rank: Int
-    ](index: StaticIntTuple[rank]) capturing:
-        var val = func[width](rebind[StaticIntTuple[tensor.rank]](index))
+    ](index: IndexList[rank]) capturing:
+        var val = func[width](rebind[IndexList[tensor.rank]](index))
         tensor._fused_store(index, val)
 
     algorithm.functional.elementwise[
@@ -387,7 +387,7 @@ fn foreach[
 fn foreach[
     type: DType,
     rank: Int, //,
-    func: fn[width: Int] (StaticIntTuple[rank]) capturing -> SIMD[type, width],
+    func: fn[width: Int] (IndexList[rank]) capturing -> SIMD[type, width],
     synchronous: Bool = False,
     target: StringLiteral = "cpu",
 ](tensor: ManagedTensorSlice[type, rank], ctx: MojoCallContextPtr):
@@ -396,8 +396,8 @@ fn foreach[
     @parameter
     fn elementwise_fn_wrapper[
         width: Int, rank: Int
-    ](index: StaticIntTuple[rank]) capturing:
-        var val = func[width](rebind[StaticIntTuple[tensor.rank]](index))
+    ](index: IndexList[rank]) capturing:
+        var val = func[width](rebind[IndexList[tensor.rank]](index))
         tensor._fused_store(index, val)
 
     algorithm.functional.elementwise[

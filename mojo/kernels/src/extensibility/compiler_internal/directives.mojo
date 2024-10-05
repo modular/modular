@@ -6,7 +6,7 @@
 
 from collections import OptionalReg
 from buffer.dimlist import DimList
-from utils import StaticIntTuple
+from utils import IndexList
 
 
 fn __mogg_intrinsic_attr(intrin: StringLiteral):
@@ -40,11 +40,11 @@ fn view_kernel():
 # Compile time Tensor informations
 struct StaticTensorSpec[type: DType, rank: Int]:
     # Represents the DimList type (not accessible from KGEN tests).
-    alias in_lambda_t = fn[simd_width: Int] (
-        StaticIntTuple[rank]
-    ) capturing -> SIMD[type, simd_width]
+    alias in_lambda_t = fn[simd_width: Int] (IndexList[rank]) capturing -> SIMD[
+        type, simd_width
+    ]
     alias out_lambda_t = fn[simd_width: Int] (
-        StaticIntTuple[rank], SIMD[type, simd_width]
+        IndexList[rank], SIMD[type, simd_width]
     ) capturing -> None
 
     var shape: DimList
