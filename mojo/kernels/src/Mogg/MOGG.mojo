@@ -642,6 +642,8 @@ fn tensor_to_shape[
     rank: Int,
 ](tensor: NDBuffer[type, 1]) -> StaticIntTuple[rank]:
     var out = StaticIntTuple[rank]()
+
+    @parameter
     for i in range(rank):
         out[i] = int(tensor[i])
 
