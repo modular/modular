@@ -15,7 +15,7 @@ from testing import assert_equal
 from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
 from memory import UnsafePointer
 
-from utils import StaticIntTuple, StaticTuple
+from utils import IndexList, StaticTuple
 from utils.index import product
 from internal_utils import DeviceNDBuffer
 from buffer.dimlist import DimList, _make_tuple
@@ -35,7 +35,7 @@ fn run_reduce[
     type: DType,
     rank: Int,
     num_reductions: Int = 1,
-](inout m: Bench, shape: StaticIntTuple[rank], ctx: DeviceContext,) raises:
+](inout m: Bench, shape: IndexList[rank], ctx: DeviceContext,) raises:
     print("run_reduce", shape)
     var axis = rank - 1
     var out_shape = shape
@@ -82,11 +82,9 @@ fn run_reduce[
         type: DType,
         width: Int,
         _rank: Int,
-    ](coords: StaticIntTuple[_rank]) -> SIMD[type, width]:
+    ](coords: IndexList[_rank]) -> SIMD[type, width]:
         return rebind[SIMD[type, width]](
-            input_buf_device.load[width=width](
-                rebind[StaticIntTuple[rank]](coords)
-            )
+            input_buf_device.load[width=width](rebind[IndexList[rank]](coords))
         )
 
     @__copy_capture(output_buf_device)
@@ -94,10 +92,10 @@ fn run_reduce[
     fn output_fn[
         _type: DType, width: Int, _rank: Int
     ](
-        coords: StaticIntTuple[_rank],
+        coords: IndexList[_rank],
         val: StaticTuple[SIMD[_type, width], num_reductions],
     ):
-        output_buf_device[rebind[StaticIntTuple[rank]](coords)] = rebind[
+        output_buf_device[rebind[IndexList[rank]](coords)] = rebind[
             Scalar[type]
         ](val[0])
 
@@ -151,7 +149,7 @@ def main():
     var m = Bench()
     try:
         with DeviceContext() as ctx:
-            alias dims = StaticIntTuple[3](M, N, K)
+            alias dims = IndexList[3](M, N, K)
             run_reduce[reduce_add, dtype](
                 m,
                 dims,

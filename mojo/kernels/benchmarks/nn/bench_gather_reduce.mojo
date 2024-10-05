@@ -16,7 +16,7 @@ from benchmark import Bench, BenchConfig, Bencher, BenchId
 from buffer import NDBuffer
 from nn.gather_scatter import gather_reduce
 
-from utils import Index, StaticIntTuple
+from utils import Index, IndexList
 
 
 @always_inline
@@ -35,9 +35,9 @@ fn bench_gather_reduce(inout b: Bencher):
     var num_indices = clear_size // (
         sizeof[type]() * embedding_dim * multi_hot_dim
     )
-    var input_shape = StaticIntTuple[2](num_rows, embedding_dim)
-    var output_shape = StaticIntTuple[2](num_indices, embedding_dim)
-    var indices_shape = StaticIntTuple[2](num_indices, multi_hot_dim)
+    var input_shape = IndexList[2](num_rows, embedding_dim)
+    var output_shape = IndexList[2](num_indices, embedding_dim)
+    var indices_shape = IndexList[2](num_indices, multi_hot_dim)
     var input_storage = UnsafePointer[Scalar[type]].alloc(
         input_shape.flattened_length()
     )

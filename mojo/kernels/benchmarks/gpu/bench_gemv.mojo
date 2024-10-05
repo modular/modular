@@ -11,7 +11,7 @@ from buffer import Dim, DimList, NDBuffer
 from gpu.host.device_context import DeviceBuffer, DeviceContext
 from linalg.matmul_gpu import _matmul_gpu, matmul_kernel_naive
 from internal_utils import DeviceNDBuffer
-from utils import StaticIntTuple
+from utils import IndexList
 
 
 fn _get_run_name[
@@ -22,9 +22,9 @@ fn _get_run_name[
     shape_b: DimList,
 ](
     name: String,
-    shape_c_dim: StaticIntTuple[2],
-    shape_a_dim: StaticIntTuple[2],
-    shape_b_dim: StaticIntTuple[2],
+    shape_c_dim: IndexList[2],
+    shape_a_dim: IndexList[2],
+    shape_b_dim: IndexList[2],
 ) -> String:
     var str = name
     str += "("
@@ -46,9 +46,9 @@ fn bench_matmul[
 ](
     ctx: DeviceContext,
     inout h: Bench,
-    shape_c_dim: StaticIntTuple[2],
-    shape_a_dim: StaticIntTuple[2],
-    shape_b_dim: StaticIntTuple[2],
+    shape_c_dim: IndexList[2],
+    shape_a_dim: IndexList[2],
+    shape_b_dim: IndexList[2],
 ) raises:
     var mat_c = DeviceNDBuffer[dtype, 2, shape_c](shape_c_dim, ctx=ctx)
     var mat_a = DeviceNDBuffer[dtype, 2, shape_a](shape_a_dim, ctx=ctx)
@@ -92,9 +92,9 @@ fn bench_matmul_transpose[
 ](
     ctx: DeviceContext,
     inout h: Bench,
-    shape_c_dim: StaticIntTuple[2],
-    shape_a_dim: StaticIntTuple[2],
-    shape_b_dim: StaticIntTuple[2],
+    shape_c_dim: IndexList[2],
+    shape_a_dim: IndexList[2],
+    shape_b_dim: IndexList[2],
 ) raises:
     var mat_c = DeviceNDBuffer[dtype, 2, shape_c](shape_c_dim, ctx=ctx)
     var mat_a = DeviceNDBuffer[dtype, 2, shape_a](shape_a_dim, ctx=ctx)
@@ -138,9 +138,9 @@ fn bench_matmul_naive[
 ](
     ctx: DeviceContext,
     inout h: Bench,
-    shape_c_dim: StaticIntTuple[2],
-    shape_a_dim: StaticIntTuple[2],
-    shape_b_dim: StaticIntTuple[2],
+    shape_c_dim: IndexList[2],
+    shape_a_dim: IndexList[2],
+    shape_b_dim: IndexList[2],
 ) raises:
     var mat_c = DeviceNDBuffer[dtype, 2, shape_c](shape_c_dim, ctx=ctx)
     var mat_a = DeviceNDBuffer[dtype, 2, shape_a](shape_a_dim, ctx=ctx)
@@ -267,17 +267,17 @@ fn create_matmul_bench_n[
 fn main() raises:
     var h = Bench()
     with DeviceContext() as ctx:
-        var shape_list = List[StaticIntTuple[3]](
-            StaticIntTuple[3](1, 5120, 3072),
-            StaticIntTuple[3](1, 3072, 5120),
-            StaticIntTuple[3](1, 3072, 12288),
-            StaticIntTuple[3](1, 12288, 3072),
-            StaticIntTuple[3](1, 3072, 3072),
-            StaticIntTuple[3](1, 3072, 32768),
-            StaticIntTuple[3](1, 32768, 3072),
-            StaticIntTuple[3](1, 5120, 5120),
-            StaticIntTuple[3](1, 32000, 4096),
-            StaticIntTuple[3](1, 4096, 32000),
+        var shape_list = List[IndexList[3]](
+            IndexList[3](1, 5120, 3072),
+            IndexList[3](1, 3072, 5120),
+            IndexList[3](1, 3072, 12288),
+            IndexList[3](1, 12288, 3072),
+            IndexList[3](1, 3072, 3072),
+            IndexList[3](1, 3072, 32768),
+            IndexList[3](1, 32768, 3072),
+            IndexList[3](1, 5120, 5120),
+            IndexList[3](1, 32000, 4096),
+            IndexList[3](1, 4096, 32000),
         )
 
         for s in range(len(shape_list)):

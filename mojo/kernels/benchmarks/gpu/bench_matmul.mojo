@@ -13,7 +13,7 @@ from gpu.host.device_context import DeviceBuffer, DeviceContext
 from linalg.matmul_gpu import _matmul_gpu
 from internal_utils import DeviceNDBuffer, env_get_dtype
 from internal_utils._utils import static, dynamic, ValOrDim
-from utils import StaticIntTuple
+from utils import IndexList
 from sys import env_get_int, sizeof
 from math import align_up
 from memory import UnsafePointer
@@ -36,9 +36,9 @@ fn _get_run_name[
     cache_busting: Bool,
     use_cublas: Bool,
 ](
-    shape_c_dim: StaticIntTuple[2],
-    shape_a_dim: StaticIntTuple[2],
-    shape_b_dim: StaticIntTuple[2],
+    shape_c_dim: IndexList[2],
+    shape_a_dim: IndexList[2],
+    shape_b_dim: IndexList[2],
 ) -> String:
     var name = String("cublas_matmul" if use_cublas else "matmul") + "("
     name += str(type)
@@ -77,14 +77,14 @@ fn bench_matmul[
 ](
     ctx: DeviceContext,
     inout b: Bench,
-    shape_c_dim: StaticIntTuple[2],
-    shape_a_dim: StaticIntTuple[2],
-    shape_b_dim: StaticIntTuple[2],
+    shape_c_dim: IndexList[2],
+    shape_a_dim: IndexList[2],
+    shape_b_dim: IndexList[2],
 ) raises:
     # Choose a size larger than the two times the L2 cache
     # 128 MiB is larger that twice the L2 cache on the A100, A10, and L4.
     @always_inline
-    fn get_size(shape: StaticIntTuple[2]) -> Int:
+    fn get_size(shape: IndexList[2]) -> Int:
         return shape[0] * shape[1]
 
     alias simd_size = 4

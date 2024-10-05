@@ -24,7 +24,7 @@ from gpu.host._compile import _get_nvptx_target
 from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
 from internal_utils import DeviceNDBuffer
 from memory import UnsafePointer
-from utils import StaticIntTuple
+from utils import IndexList
 from utils.index import product
 from sys.intrinsics import strided_load
 from buffer.buffer import _compute_ndbuffer_offset
@@ -59,7 +59,7 @@ fn simd_load[
     simd_width: Int
 ](
     buffer: NDBuffer,
-    index: StaticIntTuple[buffer.rank],
+    index: IndexList[buffer.rank],
 ) -> SIMD[
     buffer.type, simd_width
 ]:
@@ -86,7 +86,7 @@ fn simd_store[
     simd_width: Int
 ](
     buffer: NDBuffer,
-    index: StaticIntTuple[buffer.rank],
+    index: IndexList[buffer.rank],
     val: SIMD[buffer.type, simd_width],
 ):
     var flat_index = _compute_ndbuffer_offset(buffer, index)
@@ -114,7 +114,7 @@ fn run_elementwise[
 ](
     inout m: Bench,
     fn_name: String,
-    dims: StaticIntTuple[rank],
+    dims: IndexList[rank],
     *,
     name: String,
     ctx: DeviceContext,
@@ -166,8 +166,8 @@ fn run_elementwise[
             @always_inline
             @__copy_capture(in_tensor, out_tensor)
             @parameter
-            fn func[simd_width: Int, rank_: Int](idx0: StaticIntTuple[rank_]):
-                var idx = rebind[StaticIntTuple[rank]](idx0)
+            fn func[simd_width: Int, rank_: Int](idx0: IndexList[rank_]):
+                var idx = rebind[IndexList[rank]](idx0)
 
                 @parameter
                 if emulate_graph_compiler:
@@ -222,8 +222,8 @@ fn run_elementwise[
     out_host_ptr.free()
 
 
-fn list_to_static_tuple[x: List[Int]]() -> StaticIntTuple[len(x)]:
-    var t = StaticIntTuple[len(x)]()
+fn list_to_static_tuple[x: List[Int]]() -> IndexList[len(x)]:
+    var t = IndexList[len(x)]()
 
     @parameter
     for i in range(len(x)):

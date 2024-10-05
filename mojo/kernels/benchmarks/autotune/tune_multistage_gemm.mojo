@@ -60,7 +60,7 @@ from memory import UnsafePointer
 from random import rand
 from testing import assert_almost_equal
 
-from utils.index import Index, StaticIntTuple
+from utils.index import Index, IndexList
 
 
 @always_inline

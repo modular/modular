@@ -18,7 +18,7 @@ from internal_utils import (
 )
 from buffer import NDBuffer
 from memory import UnsafePointer
-from utils.index import StaticTuple, StaticIntTuple, Index
+from utils.index import StaticTuple, IndexList, Index
 from sys import env_get_int
 
 
@@ -28,7 +28,7 @@ fn bench_layer_norm_gpu[
     ctx: DeviceContext,
     inout b: Bench,
     fn_name: String,
-    shape: StaticIntTuple[rank],
+    shape: IndexList[rank],
 ) raises:
     var cols = shape[rank - 1]
     var rows = shape.flattened_length() // cols
@@ -50,7 +50,7 @@ fn bench_layer_norm_gpu[
     var gamma_d = ctx.create_buffer[type](cols)
     var beta_d = ctx.create_buffer[type](cols)
 
-    var param_shape = StaticIntTuple[1](cols)
+    var param_shape = IndexList[1](cols)
 
     var data_buf = NDBuffer[type, rank](data_d.ptr, shape)
     var gamma = NDBuffer[type, 1](gamma_d.ptr, param_shape)
@@ -66,15 +66,15 @@ fn bench_layer_norm_gpu[
     @parameter
     fn input_fn[
         width: Int, _rank: Int
-    ](idx: StaticIntTuple[_rank]) -> SIMD[type, width]:
-        return data_buf.load[width=width](rebind[StaticIntTuple[rank]](idx))
+    ](idx: IndexList[_rank]) -> SIMD[type, width]:
+        return data_buf.load[width=width](rebind[IndexList[rank]](idx))
 
     @__copy_capture(gamma)
     @always_inline
     @parameter
     fn gamma_fn[
         width: Int, rank: Int
-    ](idx: StaticIntTuple[rank]) -> SIMD[type, width]:
+    ](idx: IndexList[rank]) -> SIMD[type, width]:
         return gamma.load[width=width](idx[0])
 
     @always_inline
@@ -114,7 +114,7 @@ fn bench_rms_norm_gpu[
     ctx: DeviceContext,
     inout b: Bench,
     fn_name: String,
-    shape: StaticIntTuple[rank],
+    shape: IndexList[rank],
 ) raises:
     var cols = shape[rank - 1]
     var rows = shape.flattened_length() // cols
@@ -133,7 +133,7 @@ fn bench_rms_norm_gpu[
     var data_d = ctx.create_buffer[type](rows * cols)
     var gamma_d = ctx.create_buffer[type](cols)
 
-    var param_shape = StaticIntTuple[1](cols)
+    var param_shape = IndexList[1](cols)
 
     var data_buf = NDBuffer[type, rank](data_d.ptr, shape)
     var gamma = NDBuffer[type, 1](gamma_d.ptr, param_shape)
@@ -147,8 +147,8 @@ fn bench_rms_norm_gpu[
     @parameter
     fn input_fn[
         width: Int, _rank: Int
-    ](idx: StaticIntTuple[_rank]) -> SIMD[type, width]:
-        return data_buf.load[width=width](rebind[StaticIntTuple[rank]](idx))
+    ](idx: IndexList[_rank]) -> SIMD[type, width]:
+        return data_buf.load[width=width](rebind[IndexList[rank]](idx))
 
     @always_inline
     @__copy_capture(shape, gamma, epsilon, data_buf)

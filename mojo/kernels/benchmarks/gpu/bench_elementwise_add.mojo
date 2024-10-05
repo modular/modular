@@ -14,12 +14,12 @@ from buffer import NDBuffer
 from buffer.dimlist import DimList
 from gpu.host.device_context import DeviceContext
 from memory import UnsafePointer
-from utils import StaticIntTuple
+from utils import IndexList
 
 
 fn bench_add[
     unroll_by: Int, rank: Int
-](inout b: Bench, shape: StaticIntTuple[rank], ctx: DeviceContext) raises:
+](inout b: Bench, shape: IndexList[rank], ctx: DeviceContext) raises:
     alias type = DType.float32
     var size = shape.flattened_length()
     var input0_ptr = ctx.create_buffer[type](size)
@@ -42,8 +42,8 @@ fn bench_add[
     @parameter
     @always_inline
     @__copy_capture(input0, input1, output)
-    fn add[simd_width: Int, _rank: Int](out_index: StaticIntTuple[_rank]):
-        var idx = rebind[StaticIntTuple[rank]](out_index)
+    fn add[simd_width: Int, _rank: Int](out_index: IndexList[_rank]):
+        var idx = rebind[IndexList[rank]](out_index)
         var val = input0.load[width=simd_width](idx) + input1.load[
             width=simd_width
         ](idx)
@@ -51,7 +51,7 @@ fn bench_add[
 
     @parameter
     @always_inline
-    fn bench_func(inout b: Bencher, shape: StaticIntTuple[rank]):
+    fn bench_func(inout b: Bencher, shape: IndexList[rank]):
         @parameter
         @always_inline
         fn kernel_launch(ctx: DeviceContext) raises:
@@ -85,6 +85,6 @@ fn bench_add[
 fn main() raises:
     var b = Bench()
     with DeviceContext() as ctx:
-        bench_add[unroll_by=4](b, StaticIntTuple[4](2, 4, 1024, 1024), ctx)
-        bench_add[unroll_by=1](b, StaticIntTuple[4](2, 4, 1024, 1024), ctx)
+        bench_add[unroll_by=4](b, IndexList[4](2, 4, 1024, 1024), ctx)
+        bench_add[unroll_by=1](b, IndexList[4](2, 4, 1024, 1024), ctx)
         b.dump_report()

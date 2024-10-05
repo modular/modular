@@ -16,7 +16,7 @@ from buffer.dimlist import Dim, DimList
 from nn.flash_attention import flash_attention
 from nn.mha import fused_attention
 
-from utils import StaticIntTuple
+from utils import IndexList
 from utils.index import Index
 
 
@@ -79,22 +79,22 @@ def bench_attention[
     @always_inline
     fn input_k_fn[
         simd_width: Int, _rank: Int
-    ](idx: StaticIntTuple[_rank]) -> SIMD[type, simd_width]:
-        return k.load[width=simd_width](rebind[StaticIntTuple[3]](idx))
+    ](idx: IndexList[_rank]) -> SIMD[type, simd_width]:
+        return k.load[width=simd_width](rebind[IndexList[3]](idx))
 
     @parameter
     @always_inline
     fn input_v_fn[
         simd_width: Int, _rank: Int
-    ](idx: StaticIntTuple[_rank]) -> SIMD[type, simd_width]:
-        return v.load[width=simd_width](rebind[StaticIntTuple[3]](idx))
+    ](idx: IndexList[_rank]) -> SIMD[type, simd_width]:
+        return v.load[width=simd_width](rebind[IndexList[3]](idx))
 
     @parameter
     @always_inline
     fn mask_fn[
         simd_width: Int, _rank: Int
-    ](idx: StaticIntTuple[_rank]) -> SIMD[type, simd_width]:
-        return mask.load[width=simd_width](rebind[StaticIntTuple[3]](idx))
+    ](idx: IndexList[_rank]) -> SIMD[type, simd_width]:
+        return mask.load[width=simd_width](rebind[IndexList[3]](idx))
 
     alias scale = 0.25
 

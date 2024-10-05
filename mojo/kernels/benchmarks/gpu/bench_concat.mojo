@@ -17,14 +17,14 @@ from gpu.host.device_context import DeviceContext, DeviceBuffer
 from memory import UnsafePointer
 from nn.concat import _concat_gpu_elementwise
 
-from utils import StaticTuple, StaticIntTuple
+from utils import StaticTuple, IndexList
 
 
 fn bench_concat[
     num_inputs: Int, rank: Int
 ](
     inout b: Bench,
-    shapes: List[StaticIntTuple[rank]],
+    shapes: List[IndexList[rank]],
     ctx: DeviceContext,
     axis: Int,
 ) raises:
@@ -75,7 +75,7 @@ fn bench_concat[
 
     @parameter
     @always_inline
-    fn bench_func(inout b: Bencher, shape: StaticIntTuple[rank]):
+    fn bench_func(inout b: Bencher, shape: IndexList[rank]):
         @parameter
         @always_inline
         fn kernel_launch(ctx: DeviceContext) raises:
@@ -83,7 +83,7 @@ fn bench_concat[
 
         b.iter_custom[kernel_launch](ctx)
 
-    b.bench_with_input[StaticIntTuple[rank], bench_func](
+    b.bench_with_input[IndexList[rank], bench_func](
         BenchId("concat", name),
         out_shape,
         # TODO: Pick relevant benchmetric.
@@ -100,12 +100,12 @@ fn bench_concat[
         var input = inputs_host[i]
 
         @parameter
-        fn check[width: Int, _rank: Int](coords: StaticIntTuple[_rank]):
+        fn check[width: Int, _rank: Int](coords: IndexList[_rank]):
             var out_coords = coords
             out_coords[axis] += offset
             if (
-                output_host[rebind[StaticIntTuple[rank]](out_coords)]
-                != input[rebind[StaticIntTuple[rank]](coords)]
+                output_host[rebind[IndexList[rank]](out_coords)]
+                != input[rebind[IndexList[rank]](coords)]
             ):
                 abort("mismatch at coords " + str(out_coords))
 
@@ -136,8 +136,8 @@ fn main() raises:
             bench_concat[num_inputs=num_inputs](
                 b,
                 List(
-                    StaticIntTuple[4](W0, X0, Y0, Z0),
-                    StaticIntTuple[4](W1, X1, Y1, Z1),
+                    IndexList[4](W0, X0, Y0, Z0),
+                    IndexList[4](W1, X1, Y1, Z1),
                 ),
                 ctx,
                 axis=axis,

@@ -19,7 +19,7 @@ from linalg.matmul import matmul
 from linalg.packing import pack_b_ndbuffer, pack_matmul_b_shape_func
 from testing import assert_almost_equal
 
-from utils import StaticIntTuple
+from utils import IndexList
 from utils.index import Index
 
 
@@ -90,7 +90,7 @@ fn bench_matmul[
     rand[b_type](b_ptr, len(b))
     c.zero()
 
-    var padded_n_k = StaticIntTuple[2]()
+    var padded_n_k = IndexList[2]()
     padded_n_k = pack_matmul_b_shape_func[
         a_type,
         DimList.create_unknown[2](),

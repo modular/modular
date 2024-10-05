@@ -24,7 +24,7 @@ from nn.conv_utils import (
     get_direct_conv_micro_kernel_width,
 )
 
-from utils import StaticIntTuple
+from utils import IndexList
 from utils.index import Index
 
 
@@ -45,7 +45,7 @@ fn bench_conv(inout m: Bench, spec: ConvSpec) raises:
 
     var f_per_group = spec.f // spec.num_groups
 
-    var output_dims = StaticIntTuple[spec.static_info.rank](1)
+    var output_dims = IndexList[spec.static_info.rank](1)
 
     @parameter
     for i in range(spec.static_info.rank):
@@ -57,7 +57,7 @@ fn bench_conv(inout m: Bench, spec: ConvSpec) raises:
             - 1
         ) // spec.stride[i] + 1
 
-    var packed_filter_shape = StaticIntTuple[spec.static_info.rank + 3](1)
+    var packed_filter_shape = IndexList[spec.static_info.rank + 3](1)
 
     @parameter
     for i in range(spec.static_info.rank):
@@ -101,9 +101,9 @@ fn bench_conv(inout m: Bench, spec: ConvSpec) raises:
     rand[input_type](input_ptr, num_copies * input_alloc_size)
     rand[filter_type](filter_ptr, num_copies * filter_alloc_size)
 
-    var pad_d = StaticIntTuple[2](0)
-    var pad_h = StaticIntTuple[2](0)
-    var pad_w = StaticIntTuple[2](0)
+    var pad_d = IndexList[2](0)
+    var pad_h = IndexList[2](0)
+    var pad_w = IndexList[2](0)
 
     @parameter
     if spec.static_info.rank == 1:
@@ -210,13 +210,13 @@ struct ConvSpecStatic:
 @value
 struct ConvSpec[static_info: ConvSpecStatic](Stringable):
     var n: Int
-    var input_dims: StaticIntTuple[static_info.rank]
+    var input_dims: IndexList[static_info.rank]
     var c: Int
-    var filter_dims: StaticIntTuple[static_info.rank]
+    var filter_dims: IndexList[static_info.rank]
     var f: Int
-    var stride: StaticIntTuple[static_info.rank]
-    var dilation: StaticIntTuple[static_info.rank]
-    var pad: StaticIntTuple[2 * static_info.rank]
+    var stride: IndexList[static_info.rank]
+    var dilation: IndexList[static_info.rank]
+    var pad: IndexList[2 * static_info.rank]
     var num_groups: Int
 
     @no_inline
@@ -234,7 +234,7 @@ struct ConvSpec[static_info: ConvSpecStatic](Stringable):
         # fmt: on
 
     fn flops(self) -> Int:
-        var output_dims = StaticIntTuple[static_info.rank](1)
+        var output_dims = IndexList[static_info.rank](1)
 
         @parameter
         for i in range(static_info.rank):
@@ -267,17 +267,17 @@ def main():
     )
 
     @always_inline
-    fn rebind1d(idx: StaticIntTuple[1]) -> StaticIntTuple[fp32_1d.rank]:
-        return rebind[StaticIntTuple[fp32_1d.rank]](idx)
+    fn rebind1d(idx: IndexList[1]) -> IndexList[fp32_1d.rank]:
+        return rebind[IndexList[fp32_1d.rank]](idx)
 
     @always_inline
-    fn rebind1d_pad(idx: StaticIntTuple[2]) -> StaticIntTuple[2 * fp32_1d.rank]:
-        return rebind[StaticIntTuple[2 * fp32_1d.rank]](idx)
+    fn rebind1d_pad(idx: IndexList[2]) -> IndexList[2 * fp32_1d.rank]:
+        return rebind[IndexList[2 * fp32_1d.rank]](idx)
 
     # fmt: off
     @always_inline
     fn spec1d(N: Int, W: Int, C: Int, S: Int, F: Int, st: Int, di: Int, \
-        pa: StaticIntTuple[2], ng: Int
+        pa: IndexList[2], ng: Int
     ) -> ConvSpec[fp32_1d]:
         return (
             ConvSpec[fp32_1d](
@@ -302,12 +302,12 @@ def main():
     )
 
     @always_inline
-    fn rebind2d(idx: StaticIntTuple[2]) -> StaticIntTuple[fp32_2d.rank]:
-        return rebind[StaticIntTuple[fp32_2d.rank]](idx)
+    fn rebind2d(idx: IndexList[2]) -> IndexList[fp32_2d.rank]:
+        return rebind[IndexList[fp32_2d.rank]](idx)
 
     @always_inline
-    fn rebind2d_pad(idx: StaticIntTuple[4]) -> StaticIntTuple[2 * fp32_2d.rank]:
-        return rebind[StaticIntTuple[2 * fp32_2d.rank]](idx)
+    fn rebind2d_pad(idx: IndexList[4]) -> IndexList[2 * fp32_2d.rank]:
+        return rebind[IndexList[2 * fp32_2d.rank]](idx)
 
     @always_inline
     fn spec2d(
@@ -318,9 +318,9 @@ def main():
         R: Int,
         S: Int,
         F: Int,
-        st: StaticIntTuple[2],
-        di: StaticIntTuple[2],
-        pa: StaticIntTuple[4],
+        st: IndexList[2],
+        di: IndexList[2],
+        pa: IndexList[4],
         ng: Int,
     ) -> ConvSpec[fp32_2d]:
         return ConvSpec[fp32_2d](
@@ -343,12 +343,12 @@ def main():
     )
 
     @always_inline
-    fn rebind3d(idx: StaticIntTuple[3]) -> StaticIntTuple[fp32_3d.rank]:
-        return rebind[StaticIntTuple[fp32_3d.rank]](idx)
+    fn rebind3d(idx: IndexList[3]) -> IndexList[fp32_3d.rank]:
+        return rebind[IndexList[fp32_3d.rank]](idx)
 
     @always_inline
-    fn rebind3d_pad(idx: StaticIntTuple[6]) -> StaticIntTuple[3 * fp32_3d.rank]:
-        return rebind[StaticIntTuple[3 * fp32_3d.rank]](idx)
+    fn rebind3d_pad(idx: IndexList[6]) -> IndexList[3 * fp32_3d.rank]:
+        return rebind[IndexList[3 * fp32_3d.rank]](idx)
 
     # 1D benchmarks for wavlm
     @parameter
