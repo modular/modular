@@ -6,7 +6,7 @@
 
 from buffer import NDBuffer
 from register import mogg_register
-from utils.index import StaticIntTuple
+from utils.index import IndexList
 from buffer import NDBuffer
 from buffer.dimlist import DimList
 from python.python import _get_global_python_itf
