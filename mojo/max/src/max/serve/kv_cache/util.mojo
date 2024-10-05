@@ -6,7 +6,7 @@
 from buffer import NDBuffer
 from max.driver import Tensor
 from max.tensor import TensorShape
-from utils import StaticIntTuple
+from utils import IndexList
 
 
 def ndbuffer_view_from_tensor[
@@ -24,7 +24,7 @@ def ndbuffer_view_from_tensor_with_tensor_shape[
     offset: Int,
     out_shape: TensorShape,
 ) -> NDBuffer[type, out_rank]:
-    var cvt_shape = StaticIntTuple[out_rank]()
+    var cvt_shape = IndexList[out_rank]()
 
     for i in range(out_rank):
         cvt_shape[i] = out_shape[i]
@@ -37,7 +37,7 @@ def ndbuffer_view_from_tensor[
 ](
     tensor: Tensor[type, in_rank],
     offset: Int,
-    out_shape: StaticIntTuple[out_rank],
+    out_shape: IndexList[out_rank],
 ) -> NDBuffer[type, out_rank]:
     var ptr = tensor._ptr + offset
     return NDBuffer[type, out_rank](ptr, out_shape)

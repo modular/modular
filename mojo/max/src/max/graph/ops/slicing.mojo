@@ -8,7 +8,7 @@
 from builtin._location import __call_location, _SourceLocation
 from collections.optional import Optional
 from utils.numerics import max_finite
-from utils import StaticIntTuple
+from utils import IndexList
 
 from _mlir.ir import Attribute, Identifier, NamedAttribute
 from ..error import error
@@ -393,7 +393,7 @@ def slice(
 
 def split[
     n: Int
-](input: Symbol, sizes: StaticIntTuple[n], axis: Int = 0) -> List[Symbol]:
+](input: Symbol, sizes: IndexList[n], axis: Int = 0) -> List[Symbol]:
     """Splits a symbolic tensor into specified bucket sizes along the axis.
 
     Parameters:

@@ -21,7 +21,7 @@ from max.driver import (
 from max.tensor import TensorSpec, TensorShape
 from max.tensor import Tensor as OldTensor
 from testing import assert_equal, assert_raises, assert_true
-from utils import Index, StaticIntTuple
+from utils import Index, IndexList
 
 
 def test_tensor():
@@ -314,11 +314,11 @@ def test_unsafe_slice_simd():
             val += 1
 
     var unsafe_slice = tensor.unsafe_slice(slice(0, 5, 1), slice(0, 8, 2))
-    var value = unsafe_slice.load[4](StaticIntTuple[2](0, 1))
+    var value = unsafe_slice.load[4](IndexList[2](0, 1))
     assert_equal(value, SIMD[DType.float32, 4](3, 5, 7, 9))
 
-    unsafe_slice.store(StaticIntTuple[2](0, 1), SIMD[DType.float32, 4](0))
-    value = unsafe_slice.load[4](StaticIntTuple[2](0, 1))
+    unsafe_slice.store(IndexList[2](0, 1), SIMD[DType.float32, 4](0))
+    value = unsafe_slice.load[4](IndexList[2](0, 1))
     assert_equal(value, SIMD[DType.float32, 4](0))
 
     _ = tensor^

@@ -10,7 +10,7 @@ from max.driver import cpu_device, ManagedTensorSlice, Tensor
 from utils import Index
 from max.tensor import TensorSpec, TensorShape
 from testing import assert_equal
-from utils import StaticIntTuple
+from utils import IndexList
 
 
 # CHECK-LABEL: == test_foreach
@@ -33,7 +33,7 @@ fn test_foreach() raises:
     @parameter
     fn set_to_one[
         simd_width: Int
-    ](idx: StaticIntTuple[2]) -> SIMD[DType.float32, simd_width]:
+    ](idx: IndexList[2]) -> SIMD[DType.float32, simd_width]:
         return SIMD[DType.float32, simd_width](1)
 
     foreach[set_to_one](unsafe_slice1)
@@ -48,7 +48,7 @@ fn test_foreach() raises:
     @parameter
     fn double_it[
         simd_width: Int
-    ](idx: StaticIntTuple[2]) -> SIMD[DType.float32, simd_width]:
+    ](idx: IndexList[2]) -> SIMD[DType.float32, simd_width]:
         return 2 * unsafe_slice1.load[simd_width](idx)
 
     foreach[double_it](unsafe_slice2)

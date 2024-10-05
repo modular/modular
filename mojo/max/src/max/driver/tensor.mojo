@@ -31,7 +31,7 @@ from max._tensor_utils import (
 from builtin._documentation import doc_private
 from collections import Optional, InlineArray
 from memory import UnsafePointer
-from utils import StaticIntTuple
+from utils import IndexList
 from utils._serialize import _serialize
 from ._utils import _convert_from
 
@@ -41,7 +41,7 @@ struct Tensor[type: DType, rank: Int](CollectionElement, TensorLike):
 
     var _ptr: UnsafePointer[Scalar[type]]
     var _spec: StaticTensorSpec[type, rank]
-    var _strides: StaticIntTuple[rank]
+    var _strides: IndexList[rank]
     var _device: Device
     var name: Optional[String]
 
@@ -56,8 +56,8 @@ struct Tensor[type: DType, rank: Int](CollectionElement, TensorLike):
         constructed tensor is undefined behavior.
         """
         self._ptr = UnsafePointer[Scalar[type]]()
-        self._spec = StaticTensorSpec[type, rank](StaticIntTuple[rank]())
-        self._strides = StaticIntTuple[rank]()
+        self._spec = StaticTensorSpec[type, rank](IndexList[rank]())
+        self._strides = IndexList[rank]()
         self._device = Device()
         self.name = None
         self._device_memory_impl_ptr = UnsafePointer[NoneType]()
