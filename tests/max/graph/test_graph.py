@@ -12,7 +12,7 @@ from hypothesis import assume, given
 from hypothesis import strategies as st
 from max import mlir
 from max.dtype import DType
-from max.graph import Graph, TensorValue, TensorType, graph, ops
+from max.graph import Graph, TensorType, TensorValue, graph, ops
 from max.graph.type import Dim
 
 empty_graphs = st.builds(
@@ -36,12 +36,6 @@ def test_mlir_module_create() -> None:
         _ = mlir.Module.create()
 
 
-@pytest.mark.skip(
-    reason=(
-        "Implicit conversions from Python builtins not implemented yet"
-        " (MSDK-640)."
-    )
-)
 def test_elementwise_add_graph() -> None:
     """Builds a simple graph with an elementwise addition and checks the IR."""
     with Graph(
