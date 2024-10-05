@@ -12,7 +12,7 @@ from buffer.dimlist import DimList
 from memory import UnsafePointer
 from nn.normalization import *
 from testing import assert_almost_equal
-from utils.index import Index, StaticIntTuple
+from utils.index import Index, IndexList
 
 
 fn compute_rms[
@@ -26,7 +26,7 @@ fn compute_rms[
 
 fn run_rms_norm_cpu[
     type: DType, rank: Int
-](shape: StaticIntTuple[rank], rtol: Scalar[type] = 0.001) raises:
+](shape: IndexList[rank], rtol: Scalar[type] = 0.001) raises:
     var cols = shape[rank - 1]
     var rows = shape.flattened_length() // cols
 
@@ -53,8 +53,8 @@ fn run_rms_norm_cpu[
     @parameter
     fn input_fn[
         width: Int, _rank: Int
-    ](idx: StaticIntTuple[_rank]) -> SIMD[type, width]:
-        return input_buf.load[width=width](rebind[StaticIntTuple[rank]](idx))
+    ](idx: IndexList[_rank]) -> SIMD[type, width]:
+        return input_buf.load[width=width](rebind[IndexList[rank]](idx))
 
     rms_norm_cpu[input_fn](shape, gamma, epsilon, output_buf)
 

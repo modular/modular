@@ -10,7 +10,7 @@ from buffer.dimlist import DimList
 from nn.pad import pad_constant, pad_reflect, pad_repeat
 
 from memory import UnsafePointer
-from utils.index import StaticIntTuple
+from utils.index import IndexList
 
 
 # CHECK-LABEL: test_pad_1d
@@ -23,9 +23,9 @@ fn test_pad_1d():
     # Create an input matrix of the form
     # [1, 2, 3]
     var input = NDBuffer[DType.index, 1, in_shape].stack_allocation()
-    input[StaticIntTuple[1](0)] = 1
-    input[StaticIntTuple[1](1)] = 2
-    input[StaticIntTuple[1](2)] = 3
+    input[IndexList[1](0)] = 1
+    input[IndexList[1](1)] = 2
+    input[IndexList[1](2)] = 3
 
     # Create a padding array of the form
     # [1, 2]
@@ -70,9 +70,9 @@ fn test_pad_reflect_1d():
     # Create an input matrix of the form
     # [1, 2, 3]
     var input = NDBuffer[DType.index, 1, in_shape].stack_allocation()
-    input[StaticIntTuple[1](0)] = 1
-    input[StaticIntTuple[1](1)] = 2
-    input[StaticIntTuple[1](2)] = 3
+    input[IndexList[1](0)] = 1
+    input[IndexList[1](1)] = 2
+    input[IndexList[1](2)] = 3
 
     # Create an output matrix of the form
     # [0, 0, 0, 0, 0, 0, 0, 0]
@@ -119,9 +119,9 @@ fn test_pad_repeat_1d():
     # Create an input matrix of the form
     # [1, 2, 3]
     var input = NDBuffer[DType.index, 1, in_shape].stack_allocation()
-    input[StaticIntTuple[1](0)] = 1
-    input[StaticIntTuple[1](1)] = 2
-    input[StaticIntTuple[1](2)] = 3
+    input[IndexList[1](0)] = 1
+    input[IndexList[1](1)] = 2
+    input[IndexList[1](2)] = 3
 
     # Create an output matrix of the form
     # [0, 0, 0, 0, 0, 0, 0, 0]
@@ -169,10 +169,10 @@ fn test_pad_2d():
     # [[1, 2],
     #  [3, 4]]
     var input = NDBuffer[DType.index, 2, in_shape].stack_allocation()
-    input[StaticIntTuple[2](0, 0)] = 1
-    input[StaticIntTuple[2](0, 1)] = 2
-    input[StaticIntTuple[2](1, 0)] = 3
-    input[StaticIntTuple[2](1, 1)] = 4
+    input[IndexList[2](0, 0)] = 1
+    input[IndexList[2](0, 1)] = 2
+    input[IndexList[2](1, 0)] = 3
+    input[IndexList[2](1, 1)] = 4
 
     # Create a padding array of the form
     # [1, 0, 1, 1]
@@ -236,10 +236,10 @@ fn test_pad_reflect_2d():
     # [[1, 2],
     #  [3, 4]]
     var input = NDBuffer[DType.index, 2, in_shape].stack_allocation()
-    input[StaticIntTuple[2](0, 0)] = 1
-    input[StaticIntTuple[2](0, 1)] = 2
-    input[StaticIntTuple[2](1, 0)] = 3
-    input[StaticIntTuple[2](1, 1)] = 4
+    input[IndexList[2](0, 0)] = 1
+    input[IndexList[2](0, 1)] = 2
+    input[IndexList[2](1, 0)] = 3
+    input[IndexList[2](1, 1)] = 4
 
     # Create a padding array of the form
     # [2, 2, 1, 0]
@@ -319,10 +319,10 @@ fn test_pad_repeat_2d():
     # [[1, 2],
     #  [3, 4]]
     var input = NDBuffer[DType.index, 2, in_shape].stack_allocation()
-    input[StaticIntTuple[2](0, 0)] = 1
-    input[StaticIntTuple[2](0, 1)] = 2
-    input[StaticIntTuple[2](1, 0)] = 3
-    input[StaticIntTuple[2](1, 1)] = 4
+    input[IndexList[2](0, 0)] = 1
+    input[IndexList[2](0, 1)] = 2
+    input[IndexList[2](1, 0)] = 3
+    input[IndexList[2](1, 1)] = 4
 
     # Create a padding array of the form
     # [2, 2, 1, 0]
@@ -402,10 +402,10 @@ fn test_pad_3d():
     # [[[1, 2],
     #   [3, 4]]]
     var input = NDBuffer[DType.index, 3, in_shape].stack_allocation()
-    input[StaticIntTuple[3](0, 0, 0)] = 1
-    input[StaticIntTuple[3](0, 0, 1)] = 2
-    input[StaticIntTuple[3](0, 1, 0)] = 3
-    input[StaticIntTuple[3](0, 1, 1)] = 4
+    input[IndexList[3](0, 0, 0)] = 1
+    input[IndexList[3](0, 0, 1)] = 2
+    input[IndexList[3](0, 1, 0)] = 3
+    input[IndexList[3](0, 1, 1)] = 4
 
     # Create a padding array of the form
     # [1, 0, 0, 1, 1, 0]
@@ -490,14 +490,14 @@ fn test_pad_reflect_3d():
     #  [[1, 2],
     #   [3 ,4]]]
     var input = NDBuffer[DType.index, 3, in_shape].stack_allocation()
-    input[StaticIntTuple[3](0, 0, 0)] = 1
-    input[StaticIntTuple[3](0, 0, 1)] = 2
-    input[StaticIntTuple[3](0, 1, 0)] = 3
-    input[StaticIntTuple[3](0, 1, 1)] = 4
-    input[StaticIntTuple[3](1, 0, 0)] = 1
-    input[StaticIntTuple[3](1, 0, 1)] = 2
-    input[StaticIntTuple[3](1, 1, 0)] = 3
-    input[StaticIntTuple[3](1, 1, 1)] = 4
+    input[IndexList[3](0, 0, 0)] = 1
+    input[IndexList[3](0, 0, 1)] = 2
+    input[IndexList[3](0, 1, 0)] = 3
+    input[IndexList[3](0, 1, 1)] = 4
+    input[IndexList[3](1, 0, 0)] = 1
+    input[IndexList[3](1, 0, 1)] = 2
+    input[IndexList[3](1, 1, 0)] = 3
+    input[IndexList[3](1, 1, 1)] = 4
 
     # Create a padding array of the form
     # [1, 1, 0, 1, 1, 0]
@@ -625,7 +625,7 @@ fn test_pad_reflect_3d_singleton():
     # Create an input matrix of the form
     # [[[1]]]
     var input = NDBuffer[DType.index, 3, in_shape].stack_allocation()
-    input[StaticIntTuple[3](0, 0, 0)] = 1
+    input[IndexList[3](0, 0, 0)] = 1
 
     # Create a padding array of the form
     # [1, 0, 0, 1, 2, 2]
@@ -749,14 +749,14 @@ fn test_pad_repeat_3d():
     #  [[1, 2],
     #   [3 ,4]]]
     var input = NDBuffer[DType.index, 3, in_shape].stack_allocation()
-    input[StaticIntTuple[3](0, 0, 0)] = 1
-    input[StaticIntTuple[3](0, 0, 1)] = 2
-    input[StaticIntTuple[3](0, 1, 0)] = 3
-    input[StaticIntTuple[3](0, 1, 1)] = 4
-    input[StaticIntTuple[3](1, 0, 0)] = 1
-    input[StaticIntTuple[3](1, 0, 1)] = 2
-    input[StaticIntTuple[3](1, 1, 0)] = 3
-    input[StaticIntTuple[3](1, 1, 1)] = 4
+    input[IndexList[3](0, 0, 0)] = 1
+    input[IndexList[3](0, 0, 1)] = 2
+    input[IndexList[3](0, 1, 0)] = 3
+    input[IndexList[3](0, 1, 1)] = 4
+    input[IndexList[3](1, 0, 0)] = 1
+    input[IndexList[3](1, 0, 1)] = 2
+    input[IndexList[3](1, 1, 0)] = 3
+    input[IndexList[3](1, 1, 1)] = 4
 
     # Create a padding array of the form
     # [1, 1, 0, 1, 1, 0]

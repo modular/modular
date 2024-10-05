@@ -25,7 +25,7 @@ from linalg.utils import partition_work
 from memory import UnsafePointer, memset_zero, stack_allocation
 from runtime.asyncrt import parallelism_level
 
-from utils import Index, StaticIntTuple
+from utils import Index, IndexList
 from runtime.tracing import Trace, TraceLevel, trace_arg
 
 
@@ -519,13 +519,13 @@ struct _FlashAttention[
     output_static_shape: DimList, //,
     simd_width: Int,
     input_k_fn: fn[simd_width: Int, rank: Int] (
-        StaticIntTuple[rank]
+        IndexList[rank]
     ) capturing -> SIMD[type, simd_width],
     input_v_fn: fn[simd_width: Int, rank: Int] (
-        StaticIntTuple[rank]
+        IndexList[rank]
     ) capturing -> SIMD[type, simd_width],
     input_mask_fn: fn[simd_width: Int, rank: Int] (
-        StaticIntTuple[rank]
+        IndexList[rank]
     ) capturing -> SIMD[type, simd_width],
     *,
     transpose_k: Bool = False,
@@ -621,8 +621,8 @@ struct _FlashAttention[
     @staticmethod
     fn run(
         q: NDBuffer[type, rank, *_],
-        k_shape: StaticIntTuple[rank],
-        v_shape: StaticIntTuple[rank],
+        k_shape: IndexList[rank],
+        v_shape: IndexList[rank],
         output: NDBuffer[type, rank, output_static_shape, *_],
         scale: Float32,
     ):
@@ -702,14 +702,14 @@ struct _FlashAttention[
                 @always_inline
                 fn get_nd_index[
                     is_kv: Bool = False
-                ](x: Int, y: Int) -> StaticIntTuple[rank]:
+                ](x: Int, y: Int) -> IndexList[rank]:
                     @parameter
                     if rank == 4:
-                        return StaticIntTuple[rank](
+                        return IndexList[rank](
                             batch, kv_head if is_kv else head, x, y
                         )
                     else:
-                        return StaticIntTuple[rank](batch_head, x, y)
+                        return IndexList[rank](batch_head, x, y)
 
                 var count_m = min(Self._config.block_m, seq_len - m)
                 var count_n = min(Self._config.o_block_n, depth_dim - n)
@@ -825,20 +825,20 @@ fn flash_attention[
     type: DType,
     rank: Int, //,
     input_k_fn: fn[simd_width: Int, rank: Int] (
-        StaticIntTuple[rank]
+        IndexList[rank]
     ) capturing -> SIMD[type, simd_width],
     input_v_fn: fn[simd_width: Int, rank: Int] (
-        StaticIntTuple[rank]
+        IndexList[rank]
     ) capturing -> SIMD[type, simd_width],
     input_mask_fn: fn[simd_width: Int, rank: Int] (
-        StaticIntTuple[rank]
+        IndexList[rank]
     ) capturing -> SIMD[type, simd_width],
     *,
     transpose_k: Bool = False,
 ](
     q: NDBuffer[type, rank, *_],
-    k_shape: StaticIntTuple[rank],
-    v_shape: StaticIntTuple[rank],
+    k_shape: IndexList[rank],
+    v_shape: IndexList[rank],
     output: NDBuffer[type, rank, *_],
     scale: Float32,
 ):
@@ -855,27 +855,27 @@ fn flash_attention_split_kv[
     type: DType,
     rank: Int, //,
     input_k_fn: fn[simd_width: Int, rank: Int] (
-        StaticIntTuple[rank]
+        IndexList[rank]
     ) capturing -> SIMD[type, simd_width],
     input_v_fn: fn[simd_width: Int, rank: Int] (
-        StaticIntTuple[rank]
+        IndexList[rank]
     ) capturing -> SIMD[type, simd_width],
     input_k_cache_fn: fn[simd_width: Int, rank: Int] (
-        StaticIntTuple[rank]
+        IndexList[rank]
     ) capturing -> SIMD[type, simd_width],
     input_v_cache_fn: fn[simd_width: Int, rank: Int] (
-        StaticIntTuple[rank]
+        IndexList[rank]
     ) capturing -> SIMD[type, simd_width],
     input_mask_fn: fn[simd_width: Int, rank: Int] (
-        StaticIntTuple[rank]
+        IndexList[rank]
     ) capturing -> SIMD[type, simd_width],
 ](
     q: NDBuffer[type, rank, *_],
-    k_shape: StaticIntTuple[rank],
-    v_shape: StaticIntTuple[rank],
+    k_shape: IndexList[rank],
+    v_shape: IndexList[rank],
     # {k,v}_cache_shape are rank + 1 because reshape in MO IR prevents fusion.
-    k_cache_shape: StaticIntTuple[rank + 1],
-    v_cache_shape: StaticIntTuple[rank + 1],
+    k_cache_shape: IndexList[rank + 1],
+    v_cache_shape: IndexList[rank + 1],
     output: NDBuffer[type, rank, *_],
     scale: Float32,
 ):
@@ -923,34 +923,32 @@ fn flash_attention_split_kv[
 
         # Wrap `input_{k,v}_cache_fn` with lambdas that operate on indices of
         # rank 4, as expected by `_FlashAttention.run()`.
-        var k_shape_new = StaticIntTuple[rank](
+        var k_shape_new = IndexList[rank](
             num_batches, num_heads, prev_seq_len + seq_len, depth_dim
         )
-        var v_shape_new = StaticIntTuple[rank](
+        var v_shape_new = IndexList[rank](
             num_batches, num_heads, prev_seq_len + seq_len, depth_dim
         )
 
         @always_inline
         @parameter
-        fn kv_index[
-            rank: Int
-        ](idx: StaticIntTuple[rank]) -> StaticIntTuple[kv_rank]:
+        fn kv_index[rank: Int](idx: IndexList[rank]) -> IndexList[kv_rank]:
             # Index into the previous kv_cache by unsqueezing dim 0.
-            return StaticIntTuple[kv_rank](0, idx[0], idx[1], idx[2], idx[3])
+            return IndexList[kv_rank](0, idx[0], idx[1], idx[2], idx[3])
 
         @always_inline
         @__copy_capture(prev_seq_len)
         @parameter
         fn load_from_split_cache[
             curr_fn: fn[simd_width: Int, rank: Int] (
-                StaticIntTuple[rank]
+                IndexList[rank]
             ) capturing -> SIMD[type, simd_width],
             cache_fn: fn[simd_width: Int, rank: Int] (
-                StaticIntTuple[rank]
+                IndexList[rank]
             ) capturing -> SIMD[type, simd_width],
             rank: Int,
             simd_width: Int,
-        ](idx: StaticIntTuple[rank]) -> SIMD[type, simd_width]:
+        ](idx: IndexList[rank]) -> SIMD[type, simd_width]:
             # Load directly from either `curr_fn` or `cache_fn` depending on the
             # sequence index.
             # Boundary condition handling is done by the caller since
@@ -959,7 +957,7 @@ fn flash_attention_split_kv[
 
             if seq_idx >= prev_seq_len:
                 return curr_fn[simd_width, rank](
-                    StaticIntTuple[rank](
+                    IndexList[rank](
                         idx[0], idx[1], seq_idx - prev_seq_len, idx[3]
                     )
                 )
@@ -971,7 +969,7 @@ fn flash_attention_split_kv[
         fn input_k_cache_fn_wrapper[
             simd_width: Int,
             rank: Int,
-        ](idx: StaticIntTuple[rank]) -> SIMD[type, simd_width]:
+        ](idx: IndexList[rank]) -> SIMD[type, simd_width]:
             return load_from_split_cache[
                 input_k_fn, input_k_cache_fn, rank, simd_width
             ](idx)
@@ -981,7 +979,7 @@ fn flash_attention_split_kv[
         fn input_v_cache_fn_wrapper[
             simd_width: Int,
             rank: Int,
-        ](idx: StaticIntTuple[rank]) -> SIMD[type, simd_width]:
+        ](idx: IndexList[rank]) -> SIMD[type, simd_width]:
             return load_from_split_cache[
                 input_v_fn, input_v_cache_fn, rank, simd_width
             ](idx)

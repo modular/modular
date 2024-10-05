@@ -10,7 +10,7 @@ from memory import UnsafePointer
 
 from buffer import NDBuffer
 
-from utils import Span, StaticIntTuple
+from utils import Span, IndexList
 from utils.index import Index
 
 
@@ -104,7 +104,7 @@ fn non_max_suppression_shape_func[
     max_output_boxes_per_class: Int,
     iou_threshold: Float32,
     score_threshold: Float32,
-) -> StaticIntTuple[2]:
+) -> IndexList[2]:
     """Overload to compute the output shape. Can be removed once the graph compiler
     supports value semantic kernels that allocate their own output."""
     var box_pred_count: Int64 = 0
@@ -122,7 +122,7 @@ fn non_max_suppression_shape_func[
         score_threshold,
     )
 
-    return StaticIntTuple[2](int(box_pred_count), 3)
+    return IndexList[2](int(box_pred_count), 3)
 
 
 fn non_max_suppression[

@@ -22,7 +22,7 @@ from nn.concat import (
     elementwise_epilogue_type,
 )
 
-from utils import StaticTuple, StaticIntTuple
+from utils import StaticTuple, IndexList
 
 
 fn _create_buffer_host[
@@ -108,9 +108,9 @@ fn test_concat_4_inputs_rank5[test_epilogue: Bool](ctx: DeviceContext) raises:
     @__copy_capture(output_device_ref)
     fn epilogue_plus_one[
         c_type: DType, _rank: Int, width: Int, *, alignment: Int
-    ](indices: StaticIntTuple[_rank], val: SIMD[c_type, width]):
+    ](indices: IndexList[_rank], val: SIMD[c_type, width]):
         output_device_ref.store[width=width](
-            rebind[StaticIntTuple[rank]](indices),
+            rebind[IndexList[rank]](indices),
             rebind[SIMD[dtype, width]](val + 1),
         )
 

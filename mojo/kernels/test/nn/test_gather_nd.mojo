@@ -10,7 +10,7 @@ from buffer.dimlist import DimList
 from memory import stack_allocation
 from nn.gather_scatter import gather_nd, gather_nd_shape
 
-from utils import StaticIntTuple
+from utils import IndexList
 
 
 # CHECK-LABEL: test_gather_nd
@@ -31,20 +31,20 @@ fn main():
             data_type, data_rank, DimList(2, 2)
         ]().stack_allocation()
 
-        data[StaticIntTuple[data_rank](0, 0)] = 0
-        data[StaticIntTuple[data_rank](0, 1)] = 1
-        data[StaticIntTuple[data_rank](1, 0)] = 2
-        data[StaticIntTuple[data_rank](1, 1)] = 3
+        data[IndexList[data_rank](0, 0)] = 0
+        data[IndexList[data_rank](0, 1)] = 1
+        data[IndexList[data_rank](1, 0)] = 2
+        data[IndexList[data_rank](1, 1)] = 3
 
         alias indices_rank = 2
         var indices = NDBuffer[
             DType.int64, indices_rank, DimList(2, 2)
         ]().stack_allocation()
 
-        indices[StaticIntTuple[indices_rank](0, 0)] = 0
-        indices[StaticIntTuple[indices_rank](0, 1)] = 0
-        indices[StaticIntTuple[indices_rank](1, 0)] = 1
-        indices[StaticIntTuple[indices_rank](1, 1)] = 1
+        indices[IndexList[indices_rank](0, 0)] = 0
+        indices[IndexList[indices_rank](0, 1)] = 0
+        indices[IndexList[indices_rank](1, 0)] = 1
+        indices[IndexList[indices_rank](1, 1)] = 1
 
         alias output_rank = 1
         var output_shape = gather_nd_shape[
@@ -86,18 +86,18 @@ fn main():
             data_type, data_rank, DimList(2, 2)
         ]().stack_allocation()
 
-        data[StaticIntTuple[data_rank](0, 0)] = 0
-        data[StaticIntTuple[data_rank](0, 1)] = 1
-        data[StaticIntTuple[data_rank](1, 0)] = 2
-        data[StaticIntTuple[data_rank](1, 1)] = 3
+        data[IndexList[data_rank](0, 0)] = 0
+        data[IndexList[data_rank](0, 1)] = 1
+        data[IndexList[data_rank](1, 0)] = 2
+        data[IndexList[data_rank](1, 1)] = 3
 
         alias indices_rank = 2
         var indices = NDBuffer[
             DType.int64, indices_rank, DimList(2, 1)
         ]().stack_allocation()
 
-        indices[StaticIntTuple[indices_rank](0, 0)] = 1
-        indices[StaticIntTuple[indices_rank](1, 0)] = 0
+        indices[IndexList[indices_rank](0, 0)] = 1
+        indices[IndexList[indices_rank](1, 0)] = 0
 
         alias output_rank = 2
         var output_shape = gather_nd_shape[
@@ -146,24 +146,24 @@ fn main():
             data_type, data_rank, DimList(2, 2, 2)
         ]().stack_allocation()
 
-        data[StaticIntTuple[data_rank](0, 0, 0)] = 0
-        data[StaticIntTuple[data_rank](0, 0, 1)] = 1
-        data[StaticIntTuple[data_rank](0, 1, 0)] = 2
-        data[StaticIntTuple[data_rank](0, 1, 1)] = 3
-        data[StaticIntTuple[data_rank](1, 0, 0)] = 4
-        data[StaticIntTuple[data_rank](1, 0, 1)] = 5
-        data[StaticIntTuple[data_rank](1, 1, 0)] = 6
-        data[StaticIntTuple[data_rank](1, 1, 1)] = 7
+        data[IndexList[data_rank](0, 0, 0)] = 0
+        data[IndexList[data_rank](0, 0, 1)] = 1
+        data[IndexList[data_rank](0, 1, 0)] = 2
+        data[IndexList[data_rank](0, 1, 1)] = 3
+        data[IndexList[data_rank](1, 0, 0)] = 4
+        data[IndexList[data_rank](1, 0, 1)] = 5
+        data[IndexList[data_rank](1, 1, 0)] = 6
+        data[IndexList[data_rank](1, 1, 1)] = 7
 
         alias indices_rank = 2
         var indices = NDBuffer[
             DType.int64, indices_rank, DimList(2, 2)
         ]().stack_allocation()
 
-        indices[StaticIntTuple[indices_rank](0, 0)] = 0
-        indices[StaticIntTuple[indices_rank](0, 1)] = 1
-        indices[StaticIntTuple[indices_rank](1, 0)] = 1
-        indices[StaticIntTuple[indices_rank](1, 1)] = 0
+        indices[IndexList[indices_rank](0, 0)] = 0
+        indices[IndexList[indices_rank](0, 1)] = 1
+        indices[IndexList[indices_rank](1, 0)] = 1
+        indices[IndexList[indices_rank](1, 1)] = 0
 
         alias output_rank = 2
         var output_shape = gather_nd_shape[
@@ -212,24 +212,24 @@ fn main():
             data_type, data_rank, DimList(2, 2, 2)
         ]().stack_allocation()
 
-        data[StaticIntTuple[data_rank](0, 0, 0)] = 0
-        data[StaticIntTuple[data_rank](0, 0, 1)] = 1
-        data[StaticIntTuple[data_rank](0, 1, 0)] = 2
-        data[StaticIntTuple[data_rank](0, 1, 1)] = 3
-        data[StaticIntTuple[data_rank](1, 0, 0)] = 4
-        data[StaticIntTuple[data_rank](1, 0, 1)] = 5
-        data[StaticIntTuple[data_rank](1, 1, 0)] = 6
-        data[StaticIntTuple[data_rank](1, 1, 1)] = 7
+        data[IndexList[data_rank](0, 0, 0)] = 0
+        data[IndexList[data_rank](0, 0, 1)] = 1
+        data[IndexList[data_rank](0, 1, 0)] = 2
+        data[IndexList[data_rank](0, 1, 1)] = 3
+        data[IndexList[data_rank](1, 0, 0)] = 4
+        data[IndexList[data_rank](1, 0, 1)] = 5
+        data[IndexList[data_rank](1, 1, 0)] = 6
+        data[IndexList[data_rank](1, 1, 1)] = 7
 
         alias indices_rank = 3
         var indices = NDBuffer[
             DType.int64, indices_rank, DimList(2, 1, 2)
         ]().stack_allocation()
 
-        indices[StaticIntTuple[indices_rank](0, 0, 0)] = 0
-        indices[StaticIntTuple[indices_rank](0, 0, 1)] = 1
-        indices[StaticIntTuple[indices_rank](1, 0, 0)] = 1
-        indices[StaticIntTuple[indices_rank](1, 0, 1)] = 0
+        indices[IndexList[indices_rank](0, 0, 0)] = 0
+        indices[IndexList[indices_rank](0, 0, 1)] = 1
+        indices[IndexList[indices_rank](1, 0, 0)] = 1
+        indices[IndexList[indices_rank](1, 0, 1)] = 0
 
         alias output_rank = 3
         var output_shape = gather_nd_shape[
@@ -278,22 +278,22 @@ fn main():
             data_type, data_rank, DimList(2, 2, 2)
         ]().stack_allocation()
 
-        data[StaticIntTuple[data_rank](0, 0, 0)] = 0
-        data[StaticIntTuple[data_rank](0, 0, 1)] = 1
-        data[StaticIntTuple[data_rank](0, 1, 0)] = 2
-        data[StaticIntTuple[data_rank](0, 1, 1)] = 3
-        data[StaticIntTuple[data_rank](1, 0, 0)] = 4
-        data[StaticIntTuple[data_rank](1, 0, 1)] = 5
-        data[StaticIntTuple[data_rank](1, 1, 0)] = 6
-        data[StaticIntTuple[data_rank](1, 1, 1)] = 7
+        data[IndexList[data_rank](0, 0, 0)] = 0
+        data[IndexList[data_rank](0, 0, 1)] = 1
+        data[IndexList[data_rank](0, 1, 0)] = 2
+        data[IndexList[data_rank](0, 1, 1)] = 3
+        data[IndexList[data_rank](1, 0, 0)] = 4
+        data[IndexList[data_rank](1, 0, 1)] = 5
+        data[IndexList[data_rank](1, 1, 0)] = 6
+        data[IndexList[data_rank](1, 1, 1)] = 7
 
         alias indices_rank = 2
         var indices = NDBuffer[
             DType.int64, indices_rank, DimList(2, 1)
         ]().stack_allocation()
 
-        indices[StaticIntTuple[indices_rank](0, 0)] = 1
-        indices[StaticIntTuple[indices_rank](1, 0)] = 0
+        indices[IndexList[indices_rank](0, 0)] = 1
+        indices[IndexList[indices_rank](1, 0)] = 0
 
         alias output_rank = 2
         var output_shape = gather_nd_shape[
@@ -342,47 +342,47 @@ fn main():
             data_type, data_rank, DimList(2, 3, 4)
         ]().stack_allocation()
 
-        data[StaticIntTuple[data_rank](0, 0, 0)] = 1
-        data[StaticIntTuple[data_rank](0, 0, 1)] = 2
-        data[StaticIntTuple[data_rank](0, 0, 2)] = 3
-        data[StaticIntTuple[data_rank](0, 0, 3)] = 4
+        data[IndexList[data_rank](0, 0, 0)] = 1
+        data[IndexList[data_rank](0, 0, 1)] = 2
+        data[IndexList[data_rank](0, 0, 2)] = 3
+        data[IndexList[data_rank](0, 0, 3)] = 4
 
-        data[StaticIntTuple[data_rank](0, 1, 0)] = 5
-        data[StaticIntTuple[data_rank](0, 1, 1)] = 6
-        data[StaticIntTuple[data_rank](0, 1, 2)] = 7
-        data[StaticIntTuple[data_rank](0, 1, 3)] = 8
+        data[IndexList[data_rank](0, 1, 0)] = 5
+        data[IndexList[data_rank](0, 1, 1)] = 6
+        data[IndexList[data_rank](0, 1, 2)] = 7
+        data[IndexList[data_rank](0, 1, 3)] = 8
 
-        data[StaticIntTuple[data_rank](0, 2, 0)] = 9
-        data[StaticIntTuple[data_rank](0, 2, 1)] = 10
-        data[StaticIntTuple[data_rank](0, 2, 2)] = 11
-        data[StaticIntTuple[data_rank](0, 2, 3)] = 12
+        data[IndexList[data_rank](0, 2, 0)] = 9
+        data[IndexList[data_rank](0, 2, 1)] = 10
+        data[IndexList[data_rank](0, 2, 2)] = 11
+        data[IndexList[data_rank](0, 2, 3)] = 12
 
-        data[StaticIntTuple[data_rank](1, 0, 0)] = 13
-        data[StaticIntTuple[data_rank](1, 0, 1)] = 14
-        data[StaticIntTuple[data_rank](1, 0, 2)] = 15
-        data[StaticIntTuple[data_rank](1, 0, 3)] = 16
+        data[IndexList[data_rank](1, 0, 0)] = 13
+        data[IndexList[data_rank](1, 0, 1)] = 14
+        data[IndexList[data_rank](1, 0, 2)] = 15
+        data[IndexList[data_rank](1, 0, 3)] = 16
 
-        data[StaticIntTuple[data_rank](1, 1, 0)] = 17
-        data[StaticIntTuple[data_rank](1, 1, 1)] = 18
-        data[StaticIntTuple[data_rank](1, 1, 2)] = 19
-        data[StaticIntTuple[data_rank](1, 1, 3)] = 20
+        data[IndexList[data_rank](1, 1, 0)] = 17
+        data[IndexList[data_rank](1, 1, 1)] = 18
+        data[IndexList[data_rank](1, 1, 2)] = 19
+        data[IndexList[data_rank](1, 1, 3)] = 20
 
-        data[StaticIntTuple[data_rank](1, 2, 0)] = 21
-        data[StaticIntTuple[data_rank](1, 2, 1)] = 22
-        data[StaticIntTuple[data_rank](1, 2, 2)] = 23
-        data[StaticIntTuple[data_rank](1, 2, 3)] = 24
+        data[IndexList[data_rank](1, 2, 0)] = 21
+        data[IndexList[data_rank](1, 2, 1)] = 22
+        data[IndexList[data_rank](1, 2, 2)] = 23
+        data[IndexList[data_rank](1, 2, 3)] = 24
 
         alias indices_rank = 4
         var indices = NDBuffer[
             DType.int64, indices_rank, DimList(2, 3, 1, 1)
         ]().stack_allocation()
 
-        indices[StaticIntTuple[indices_rank](0, 0, 0, 0)] = 1
-        indices[StaticIntTuple[indices_rank](0, 1, 0, 0)] = 0
-        indices[StaticIntTuple[indices_rank](0, 2, 0, 0)] = 2
-        indices[StaticIntTuple[indices_rank](1, 0, 0, 0)] = 0
-        indices[StaticIntTuple[indices_rank](1, 1, 0, 0)] = 2
-        indices[StaticIntTuple[indices_rank](1, 2, 0, 0)] = 2
+        indices[IndexList[indices_rank](0, 0, 0, 0)] = 1
+        indices[IndexList[indices_rank](0, 1, 0, 0)] = 0
+        indices[IndexList[indices_rank](0, 2, 0, 0)] = 2
+        indices[IndexList[indices_rank](1, 0, 0, 0)] = 0
+        indices[IndexList[indices_rank](1, 1, 0, 0)] = 2
+        indices[IndexList[indices_rank](1, 2, 0, 0)] = 2
 
         alias output_rank = 3
         var output_shape = gather_nd_shape[
@@ -435,22 +435,22 @@ fn main():
             data_type, data_rank, DimList(2, 2, 2)
         ]().stack_allocation()
 
-        data[StaticIntTuple[data_rank](0, 0, 0)] = 0
-        data[StaticIntTuple[data_rank](0, 0, 1)] = 1
-        data[StaticIntTuple[data_rank](0, 1, 0)] = 2
-        data[StaticIntTuple[data_rank](0, 1, 1)] = 3
-        data[StaticIntTuple[data_rank](1, 0, 0)] = 4
-        data[StaticIntTuple[data_rank](1, 0, 1)] = 5
-        data[StaticIntTuple[data_rank](1, 1, 0)] = 6
-        data[StaticIntTuple[data_rank](1, 1, 1)] = 7
+        data[IndexList[data_rank](0, 0, 0)] = 0
+        data[IndexList[data_rank](0, 0, 1)] = 1
+        data[IndexList[data_rank](0, 1, 0)] = 2
+        data[IndexList[data_rank](0, 1, 1)] = 3
+        data[IndexList[data_rank](1, 0, 0)] = 4
+        data[IndexList[data_rank](1, 0, 1)] = 5
+        data[IndexList[data_rank](1, 1, 0)] = 6
+        data[IndexList[data_rank](1, 1, 1)] = 7
 
         alias indices_rank = 3
         var indices = NDBuffer[
             DType.int64, indices_rank, DimList(2, 1, 1)
         ]().stack_allocation()
 
-        indices[StaticIntTuple[indices_rank](0, 0, 0)] = 0
-        indices[StaticIntTuple[indices_rank](1, 0, 0)] = 1
+        indices[IndexList[indices_rank](0, 0, 0)] = 0
+        indices[IndexList[indices_rank](1, 0, 0)] = 1
 
         alias output_rank = 4
         var output_shape = gather_nd_shape[
@@ -508,20 +508,20 @@ fn main():
             data_type, data_rank, DimList(2, 3)
         ]().stack_allocation()
 
-        data[StaticIntTuple[data_rank](0, 0)] = 0
-        data[StaticIntTuple[data_rank](0, 1)] = 1
-        data[StaticIntTuple[data_rank](0, 2)] = 2
-        data[StaticIntTuple[data_rank](1, 0)] = 3
-        data[StaticIntTuple[data_rank](1, 1)] = 4
-        data[StaticIntTuple[data_rank](1, 2)] = 5
+        data[IndexList[data_rank](0, 0)] = 0
+        data[IndexList[data_rank](0, 1)] = 1
+        data[IndexList[data_rank](0, 2)] = 2
+        data[IndexList[data_rank](1, 0)] = 3
+        data[IndexList[data_rank](1, 1)] = 4
+        data[IndexList[data_rank](1, 2)] = 5
 
         alias indices_rank = 2
         var indices = NDBuffer[
             DType.int64, indices_rank, DimList(2, 1)
         ]().stack_allocation()
 
-        indices[StaticIntTuple[indices_rank](0, 0)] = 1
-        indices[StaticIntTuple[indices_rank](1, 0)] = 0
+        indices[IndexList[indices_rank](0, 0)] = 1
+        indices[IndexList[indices_rank](1, 0)] = 0
 
         alias output_rank = 2
         var output_shape = gather_nd_shape[

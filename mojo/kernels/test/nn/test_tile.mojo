@@ -9,7 +9,7 @@ from buffer import NDBuffer
 from buffer.dimlist import DimList
 from nn.tile import tile
 
-from utils import StaticIntTuple
+from utils import IndexList
 
 
 # CHECK-LABEL: test_tile_eg1
@@ -28,10 +28,10 @@ fn test_tile_eg1() raises:
         DimList(2, 2),
     ].stack_allocation()
 
-    input[StaticIntTuple[rank](0, 0)] = 0
-    input[StaticIntTuple[rank](0, 1)] = 1
-    input[StaticIntTuple[rank](1, 0)] = 2
-    input[StaticIntTuple[rank](1, 1)] = 3
+    input[IndexList[rank](0, 0)] = 0
+    input[IndexList[rank](0, 1)] = 1
+    input[IndexList[rank](1, 0)] = 2
+    input[IndexList[rank](1, 1)] = 3
 
     # rank_repeats is always 1
     alias rank_repeats = 1
@@ -44,8 +44,8 @@ fn test_tile_eg1() raises:
         DimList(2),
     ].stack_allocation()
 
-    repeats[StaticIntTuple[rank_repeats](0)] = 2
-    repeats[StaticIntTuple[rank_repeats](1)] = 2
+    repeats[IndexList[rank_repeats](0)] = 2
+    repeats[IndexList[rank_repeats](1)] = 2
 
     # Output rank = input rank
     # output_dim[i] = input_dim[i] * repeats[i]
@@ -87,10 +87,10 @@ fn test_tile_eg2() raises:
         DimList(2, 2),
     ].stack_allocation()
 
-    input[StaticIntTuple[rank](0, 0)] = 0
-    input[StaticIntTuple[rank](0, 1)] = 1
-    input[StaticIntTuple[rank](1, 0)] = 2
-    input[StaticIntTuple[rank](1, 1)] = 3
+    input[IndexList[rank](0, 0)] = 0
+    input[IndexList[rank](0, 1)] = 1
+    input[IndexList[rank](1, 0)] = 2
+    input[IndexList[rank](1, 1)] = 3
 
     # rank_repeats is always 1
     alias rank_repeats = 1
@@ -103,8 +103,8 @@ fn test_tile_eg2() raises:
         DimList(2),
     ].stack_allocation()
 
-    repeats[StaticIntTuple[rank_repeats](0)] = 3
-    repeats[StaticIntTuple[rank_repeats](1)] = 2
+    repeats[IndexList[rank_repeats](0)] = 3
+    repeats[IndexList[rank_repeats](1)] = 2
 
     # Output rank = input rank
     # output_dim[i] = input_dim[i] * repeats[i]
@@ -144,10 +144,10 @@ fn test_tile_eg3() raises:
         DimList(2, 2),
     ].stack_allocation()
 
-    input[StaticIntTuple[rank](0, 0)] = 0
-    input[StaticIntTuple[rank](0, 1)] = 1
-    input[StaticIntTuple[rank](1, 0)] = 2
-    input[StaticIntTuple[rank](1, 1)] = 3
+    input[IndexList[rank](0, 0)] = 0
+    input[IndexList[rank](0, 1)] = 1
+    input[IndexList[rank](1, 0)] = 2
+    input[IndexList[rank](1, 1)] = 3
 
     # rank_repeats is always 1
     alias rank_repeats = 1
@@ -160,8 +160,8 @@ fn test_tile_eg3() raises:
         DimList(2),
     ].stack_allocation()
 
-    repeats[StaticIntTuple[rank_repeats](0)] = 2
-    repeats[StaticIntTuple[rank_repeats](1)] = 3
+    repeats[IndexList[rank_repeats](0)] = 2
+    repeats[IndexList[rank_repeats](1)] = 3
 
     # Output rank = input rank
     # output_dim[i] = input_dim[i] * repeats[i]
@@ -205,15 +205,15 @@ fn test_tile_eg4() raises:
         DimList(2, 2, 2),
     ].stack_allocation()
 
-    input[StaticIntTuple[rank](0, 0, 0)] = 0
-    input[StaticIntTuple[rank](0, 0, 1)] = 1
-    input[StaticIntTuple[rank](0, 1, 0)] = 2
-    input[StaticIntTuple[rank](0, 1, 1)] = 3
+    input[IndexList[rank](0, 0, 0)] = 0
+    input[IndexList[rank](0, 0, 1)] = 1
+    input[IndexList[rank](0, 1, 0)] = 2
+    input[IndexList[rank](0, 1, 1)] = 3
 
-    input[StaticIntTuple[rank](1, 0, 0)] = 4
-    input[StaticIntTuple[rank](1, 0, 1)] = 5
-    input[StaticIntTuple[rank](1, 1, 0)] = 6
-    input[StaticIntTuple[rank](1, 1, 1)] = 7
+    input[IndexList[rank](1, 0, 0)] = 4
+    input[IndexList[rank](1, 0, 1)] = 5
+    input[IndexList[rank](1, 1, 0)] = 6
+    input[IndexList[rank](1, 1, 1)] = 7
 
     # rank_repeats is always 1
     alias rank_repeats = 1
@@ -226,9 +226,9 @@ fn test_tile_eg4() raises:
         DimList(3),
     ].stack_allocation()
 
-    repeats[StaticIntTuple[rank_repeats](0)] = 2
-    repeats[StaticIntTuple[rank_repeats](1)] = 1
-    repeats[StaticIntTuple[rank_repeats](2)] = 1
+    repeats[IndexList[rank_repeats](0)] = 2
+    repeats[IndexList[rank_repeats](1)] = 1
+    repeats[IndexList[rank_repeats](2)] = 1
 
     # Output rank = input rank
     # output_dim[i] = input_dim[i] * repeats[i]
@@ -274,15 +274,15 @@ fn test_tile_eg5() raises:
         DimList(2, 2, 2),
     ].stack_allocation()
 
-    input[StaticIntTuple[rank](0, 0, 0)] = 0
-    input[StaticIntTuple[rank](0, 0, 1)] = 1
-    input[StaticIntTuple[rank](0, 1, 0)] = 2
-    input[StaticIntTuple[rank](0, 1, 1)] = 3
+    input[IndexList[rank](0, 0, 0)] = 0
+    input[IndexList[rank](0, 0, 1)] = 1
+    input[IndexList[rank](0, 1, 0)] = 2
+    input[IndexList[rank](0, 1, 1)] = 3
 
-    input[StaticIntTuple[rank](1, 0, 0)] = 4
-    input[StaticIntTuple[rank](1, 0, 1)] = 5
-    input[StaticIntTuple[rank](1, 1, 0)] = 6
-    input[StaticIntTuple[rank](1, 1, 1)] = 7
+    input[IndexList[rank](1, 0, 0)] = 4
+    input[IndexList[rank](1, 0, 1)] = 5
+    input[IndexList[rank](1, 1, 0)] = 6
+    input[IndexList[rank](1, 1, 1)] = 7
 
     # rank_repeats is always 1
     alias rank_repeats = 1
@@ -295,9 +295,9 @@ fn test_tile_eg5() raises:
         DimList(3),
     ].stack_allocation()
 
-    repeats[StaticIntTuple[rank_repeats](0)] = 2
-    repeats[StaticIntTuple[rank_repeats](1)] = 1
-    repeats[StaticIntTuple[rank_repeats](2)] = 2
+    repeats[IndexList[rank_repeats](0)] = 2
+    repeats[IndexList[rank_repeats](1)] = 1
+    repeats[IndexList[rank_repeats](2)] = 2
 
     # Output rank = input rank
     # output_dim[i] = input_dim[i] * repeats[i]
@@ -337,10 +337,10 @@ fn test_tile_eg6() raises:
         DimList(2, 2),
     ].stack_allocation()
 
-    input[StaticIntTuple[rank](0, 0)] = 1
-    input[StaticIntTuple[rank](0, 1)] = 2
-    input[StaticIntTuple[rank](1, 0)] = 3
-    input[StaticIntTuple[rank](1, 1)] = 4
+    input[IndexList[rank](0, 0)] = 1
+    input[IndexList[rank](0, 1)] = 2
+    input[IndexList[rank](1, 0)] = 3
+    input[IndexList[rank](1, 1)] = 4
 
     # rank_repeats is always 1
     alias rank_repeats = 1
@@ -353,8 +353,8 @@ fn test_tile_eg6() raises:
         DimList(2),
     ].stack_allocation()
 
-    repeats[StaticIntTuple[rank_repeats](0)] = 1
-    repeats[StaticIntTuple[rank_repeats](1)] = 2
+    repeats[IndexList[rank_repeats](0)] = 1
+    repeats[IndexList[rank_repeats](1)] = 2
 
     # Output rank = input rank
     # output_dim[i] = input_dim[i] * repeats[i]
@@ -394,10 +394,10 @@ fn test_tile_eg7() raises:
         DimList(2, 2),
     ].stack_allocation()
 
-    input[StaticIntTuple[rank](0, 0)] = 1
-    input[StaticIntTuple[rank](0, 1)] = 2
-    input[StaticIntTuple[rank](1, 0)] = 3
-    input[StaticIntTuple[rank](1, 1)] = 4
+    input[IndexList[rank](0, 0)] = 1
+    input[IndexList[rank](0, 1)] = 2
+    input[IndexList[rank](1, 0)] = 3
+    input[IndexList[rank](1, 1)] = 4
 
     # rank_repeats is always 1
     alias rank_repeats = 1
@@ -410,8 +410,8 @@ fn test_tile_eg7() raises:
         DimList(2),
     ].stack_allocation()
 
-    repeats[StaticIntTuple[rank_repeats](0)] = 2
-    repeats[StaticIntTuple[rank_repeats](1)] = 1
+    repeats[IndexList[rank_repeats](0)] = 2
+    repeats[IndexList[rank_repeats](1)] = 1
 
     # Output rank = input rank
     # output_dim[i] = input_dim[i] * repeats[i]
@@ -451,10 +451,10 @@ fn test_tile_eg8() raises:
         DimList(1, 4),
     ].stack_allocation()
 
-    input[StaticIntTuple[rank](0, 0)] = 1
-    input[StaticIntTuple[rank](0, 1)] = 2
-    input[StaticIntTuple[rank](0, 2)] = 3
-    input[StaticIntTuple[rank](0, 3)] = 4
+    input[IndexList[rank](0, 0)] = 1
+    input[IndexList[rank](0, 1)] = 2
+    input[IndexList[rank](0, 2)] = 3
+    input[IndexList[rank](0, 3)] = 4
 
     # rank_repeats is always 1
     alias rank_repeats = 1
@@ -467,8 +467,8 @@ fn test_tile_eg8() raises:
         DimList(2),
     ].stack_allocation()
 
-    repeats[StaticIntTuple[rank_repeats](0)] = 4
-    repeats[StaticIntTuple[rank_repeats](1)] = 1
+    repeats[IndexList[rank_repeats](0)] = 4
+    repeats[IndexList[rank_repeats](1)] = 1
 
     # Output rank = input rank
     # output_dim[i] = input_dim[i] * repeats[i]
@@ -480,7 +480,7 @@ fn test_tile_eg8() raises:
 
     for i in range(4):
         for j in range(4):
-            output[StaticIntTuple[rank](i, j)] = 0
+            output[IndexList[rank](i, j)] = 0
 
     tile[rank, type, rank_repeats, type_repeats](
         input.make_dims_unknown(),
@@ -524,15 +524,15 @@ fn test_tile_eg9() raises:
         DimList(2, 2, 2),
     ].stack_allocation()
 
-    input[StaticIntTuple[rank](0, 0, 0)] = 0
-    input[StaticIntTuple[rank](0, 0, 1)] = 1
-    input[StaticIntTuple[rank](0, 1, 0)] = 2
-    input[StaticIntTuple[rank](0, 1, 1)] = 3
+    input[IndexList[rank](0, 0, 0)] = 0
+    input[IndexList[rank](0, 0, 1)] = 1
+    input[IndexList[rank](0, 1, 0)] = 2
+    input[IndexList[rank](0, 1, 1)] = 3
 
-    input[StaticIntTuple[rank](1, 0, 0)] = 4
-    input[StaticIntTuple[rank](1, 0, 1)] = 5
-    input[StaticIntTuple[rank](1, 1, 0)] = 6
-    input[StaticIntTuple[rank](1, 1, 1)] = 7
+    input[IndexList[rank](1, 0, 0)] = 4
+    input[IndexList[rank](1, 0, 1)] = 5
+    input[IndexList[rank](1, 1, 0)] = 6
+    input[IndexList[rank](1, 1, 1)] = 7
 
     # rank_repeats is always 1
     alias rank_repeats = 1
@@ -545,9 +545,9 @@ fn test_tile_eg9() raises:
         DimList(3),
     ].stack_allocation()
 
-    repeats[StaticIntTuple[rank_repeats](0)] = 2
-    repeats[StaticIntTuple[rank_repeats](1)] = 2
-    repeats[StaticIntTuple[rank_repeats](2)] = 1
+    repeats[IndexList[rank_repeats](0)] = 2
+    repeats[IndexList[rank_repeats](1)] = 2
+    repeats[IndexList[rank_repeats](2)] = 1
 
     # Output rank = input rank
     # output_dim[i] = input_dim[i] * repeats[i]
@@ -560,7 +560,7 @@ fn test_tile_eg9() raises:
     for i in range(4):
         for j in range(4):
             for k in range(2):
-                output[StaticIntTuple[rank](i, j, k)] = 0
+                output[IndexList[rank](i, j, k)] = 0
 
     tile[rank, type, rank_repeats, type_repeats](
         input.make_dims_unknown(),
@@ -614,15 +614,15 @@ fn test_tile_eg10() raises:
         DimList(2, 2, 2),
     ].stack_allocation()
 
-    input[StaticIntTuple[rank](0, 0, 0)] = 0
-    input[StaticIntTuple[rank](0, 0, 1)] = 1
-    input[StaticIntTuple[rank](0, 1, 0)] = 2
-    input[StaticIntTuple[rank](0, 1, 1)] = 3
+    input[IndexList[rank](0, 0, 0)] = 0
+    input[IndexList[rank](0, 0, 1)] = 1
+    input[IndexList[rank](0, 1, 0)] = 2
+    input[IndexList[rank](0, 1, 1)] = 3
 
-    input[StaticIntTuple[rank](1, 0, 0)] = 4
-    input[StaticIntTuple[rank](1, 0, 1)] = 5
-    input[StaticIntTuple[rank](1, 1, 0)] = 6
-    input[StaticIntTuple[rank](1, 1, 1)] = 7
+    input[IndexList[rank](1, 0, 0)] = 4
+    input[IndexList[rank](1, 0, 1)] = 5
+    input[IndexList[rank](1, 1, 0)] = 6
+    input[IndexList[rank](1, 1, 1)] = 7
 
     # rank_repeats is always 1
     alias rank_repeats = 1
@@ -635,9 +635,9 @@ fn test_tile_eg10() raises:
         DimList(3),
     ].stack_allocation()
 
-    repeats[StaticIntTuple[rank_repeats](0)] = 3
-    repeats[StaticIntTuple[rank_repeats](1)] = 2
-    repeats[StaticIntTuple[rank_repeats](2)] = 3
+    repeats[IndexList[rank_repeats](0)] = 3
+    repeats[IndexList[rank_repeats](1)] = 2
+    repeats[IndexList[rank_repeats](2)] = 3
 
     # Output rank = input rank
     # output_dim[i] = input_dim[i] * repeats[i]
@@ -711,20 +711,20 @@ fn test_tile_eg11() raises:
         DimList(3, 2, 2),
     ].stack_allocation()
 
-    input[StaticIntTuple[rank](0, 0, 0)] = 0
-    input[StaticIntTuple[rank](0, 0, 1)] = 1
-    input[StaticIntTuple[rank](0, 1, 0)] = 2
-    input[StaticIntTuple[rank](0, 1, 1)] = 3
+    input[IndexList[rank](0, 0, 0)] = 0
+    input[IndexList[rank](0, 0, 1)] = 1
+    input[IndexList[rank](0, 1, 0)] = 2
+    input[IndexList[rank](0, 1, 1)] = 3
 
-    input[StaticIntTuple[rank](1, 0, 0)] = 4
-    input[StaticIntTuple[rank](1, 0, 1)] = 5
-    input[StaticIntTuple[rank](1, 1, 0)] = 6
-    input[StaticIntTuple[rank](1, 1, 1)] = 7
+    input[IndexList[rank](1, 0, 0)] = 4
+    input[IndexList[rank](1, 0, 1)] = 5
+    input[IndexList[rank](1, 1, 0)] = 6
+    input[IndexList[rank](1, 1, 1)] = 7
 
-    input[StaticIntTuple[rank](2, 0, 0)] = 8
-    input[StaticIntTuple[rank](2, 0, 1)] = 9
-    input[StaticIntTuple[rank](2, 1, 0)] = 10
-    input[StaticIntTuple[rank](2, 1, 1)] = 11
+    input[IndexList[rank](2, 0, 0)] = 8
+    input[IndexList[rank](2, 0, 1)] = 9
+    input[IndexList[rank](2, 1, 0)] = 10
+    input[IndexList[rank](2, 1, 1)] = 11
 
     # rank_repeats is always 1
     alias rank_repeats = 1
@@ -737,9 +737,9 @@ fn test_tile_eg11() raises:
         DimList(3),
     ].stack_allocation()
 
-    repeats[StaticIntTuple[rank_repeats](0)] = 2
-    repeats[StaticIntTuple[rank_repeats](1)] = 3
-    repeats[StaticIntTuple[rank_repeats](2)] = 1
+    repeats[IndexList[rank_repeats](0)] = 2
+    repeats[IndexList[rank_repeats](1)] = 3
+    repeats[IndexList[rank_repeats](2)] = 1
 
     # Output rank = input rank
     # output_dim[i] = input_dim[i] * repeats[i]
@@ -752,7 +752,7 @@ fn test_tile_eg11() raises:
     for i in range(6):
         for j in range(6):
             for k in range(2):
-                output[StaticIntTuple[rank](i, j, k)] = 0
+                output[IndexList[rank](i, j, k)] = 0
 
     tile[rank, type, rank_repeats, type_repeats](
         input.make_dims_unknown(),
@@ -786,10 +786,10 @@ fn test_tile_eg12() raises:
         DimList(1, 1, 2, 2),
     ].stack_allocation()
 
-    input[StaticIntTuple[rank](0, 0, 0, 0)] = 0
-    input[StaticIntTuple[rank](0, 0, 0, 1)] = 1
-    input[StaticIntTuple[rank](0, 0, 1, 0)] = 2
-    input[StaticIntTuple[rank](0, 0, 1, 1)] = 3
+    input[IndexList[rank](0, 0, 0, 0)] = 0
+    input[IndexList[rank](0, 0, 0, 1)] = 1
+    input[IndexList[rank](0, 0, 1, 0)] = 2
+    input[IndexList[rank](0, 0, 1, 1)] = 3
 
     # rank_repeats is always 1
     alias rank_repeats = 1
@@ -802,10 +802,10 @@ fn test_tile_eg12() raises:
         DimList(4),
     ].stack_allocation()
 
-    repeats[StaticIntTuple[rank_repeats](0)] = 1
-    repeats[StaticIntTuple[rank_repeats](1)] = 1
-    repeats[StaticIntTuple[rank_repeats](2)] = 2
-    repeats[StaticIntTuple[rank_repeats](3)] = 3
+    repeats[IndexList[rank_repeats](0)] = 1
+    repeats[IndexList[rank_repeats](1)] = 1
+    repeats[IndexList[rank_repeats](2)] = 2
+    repeats[IndexList[rank_repeats](3)] = 3
 
     # Output rank = input rank
     # output_dim[i] = input_dim[i] * repeats[i]
@@ -819,7 +819,7 @@ fn test_tile_eg12() raises:
         for j in range(1):
             for k in range(4):
                 for l in range(6):
-                    output[StaticIntTuple[rank](i, j, k, l)] = 0
+                    output[IndexList[rank](i, j, k, l)] = 0
 
     tile[rank, type, rank_repeats, type_repeats](
         input.make_dims_unknown(),
@@ -867,25 +867,25 @@ fn test_tile_eg13() raises:
         DimList(2, 2, 2, 2),
     ].stack_allocation()
 
-    input[StaticIntTuple[rank](0, 0, 0, 0)] = 0
-    input[StaticIntTuple[rank](0, 0, 0, 1)] = 1
-    input[StaticIntTuple[rank](0, 0, 1, 0)] = 2
-    input[StaticIntTuple[rank](0, 0, 1, 1)] = 3
+    input[IndexList[rank](0, 0, 0, 0)] = 0
+    input[IndexList[rank](0, 0, 0, 1)] = 1
+    input[IndexList[rank](0, 0, 1, 0)] = 2
+    input[IndexList[rank](0, 0, 1, 1)] = 3
 
-    input[StaticIntTuple[rank](0, 1, 0, 0)] = 4
-    input[StaticIntTuple[rank](0, 1, 0, 1)] = 5
-    input[StaticIntTuple[rank](0, 1, 1, 0)] = 6
-    input[StaticIntTuple[rank](0, 1, 1, 1)] = 7
+    input[IndexList[rank](0, 1, 0, 0)] = 4
+    input[IndexList[rank](0, 1, 0, 1)] = 5
+    input[IndexList[rank](0, 1, 1, 0)] = 6
+    input[IndexList[rank](0, 1, 1, 1)] = 7
 
-    input[StaticIntTuple[rank](1, 0, 0, 0)] = 8
-    input[StaticIntTuple[rank](1, 0, 0, 1)] = 9
-    input[StaticIntTuple[rank](1, 0, 1, 0)] = 10
-    input[StaticIntTuple[rank](1, 0, 1, 1)] = 11
+    input[IndexList[rank](1, 0, 0, 0)] = 8
+    input[IndexList[rank](1, 0, 0, 1)] = 9
+    input[IndexList[rank](1, 0, 1, 0)] = 10
+    input[IndexList[rank](1, 0, 1, 1)] = 11
 
-    input[StaticIntTuple[rank](1, 1, 0, 0)] = 12
-    input[StaticIntTuple[rank](1, 1, 0, 1)] = 13
-    input[StaticIntTuple[rank](1, 1, 1, 0)] = 14
-    input[StaticIntTuple[rank](1, 1, 1, 1)] = 15
+    input[IndexList[rank](1, 1, 0, 0)] = 12
+    input[IndexList[rank](1, 1, 0, 1)] = 13
+    input[IndexList[rank](1, 1, 1, 0)] = 14
+    input[IndexList[rank](1, 1, 1, 1)] = 15
 
     # rank_repeats is always 1
     alias rank_repeats = 1
@@ -898,10 +898,10 @@ fn test_tile_eg13() raises:
         DimList(4),
     ].stack_allocation()
 
-    repeats[StaticIntTuple[rank_repeats](0)] = 1
-    repeats[StaticIntTuple[rank_repeats](1)] = 2
-    repeats[StaticIntTuple[rank_repeats](2)] = 2
-    repeats[StaticIntTuple[rank_repeats](3)] = 3
+    repeats[IndexList[rank_repeats](0)] = 1
+    repeats[IndexList[rank_repeats](1)] = 2
+    repeats[IndexList[rank_repeats](2)] = 2
+    repeats[IndexList[rank_repeats](3)] = 3
 
     # Output rank = input rank
     # output_dim[i] = input_dim[i] * repeats[i]
@@ -915,7 +915,7 @@ fn test_tile_eg13() raises:
         for j in range(4):
             for k in range(4):
                 for l in range(6):
-                    output[StaticIntTuple[rank](i, j, k, l)] = 0
+                    output[IndexList[rank](i, j, k, l)] = 0
 
     tile[rank, type, rank_repeats, type_repeats](
         input.make_dims_unknown(),
@@ -979,25 +979,25 @@ fn test_tile_eg14() raises:
         DimList(2, 2, 2, 2),
     ].stack_allocation()
 
-    input[StaticIntTuple[rank](0, 0, 0, 0)] = 0
-    input[StaticIntTuple[rank](0, 0, 0, 1)] = 1
-    input[StaticIntTuple[rank](0, 0, 1, 0)] = 2
-    input[StaticIntTuple[rank](0, 0, 1, 1)] = 3
+    input[IndexList[rank](0, 0, 0, 0)] = 0
+    input[IndexList[rank](0, 0, 0, 1)] = 1
+    input[IndexList[rank](0, 0, 1, 0)] = 2
+    input[IndexList[rank](0, 0, 1, 1)] = 3
 
-    input[StaticIntTuple[rank](0, 1, 0, 0)] = 4
-    input[StaticIntTuple[rank](0, 1, 0, 1)] = 5
-    input[StaticIntTuple[rank](0, 1, 1, 0)] = 6
-    input[StaticIntTuple[rank](0, 1, 1, 1)] = 7
+    input[IndexList[rank](0, 1, 0, 0)] = 4
+    input[IndexList[rank](0, 1, 0, 1)] = 5
+    input[IndexList[rank](0, 1, 1, 0)] = 6
+    input[IndexList[rank](0, 1, 1, 1)] = 7
 
-    input[StaticIntTuple[rank](1, 0, 0, 0)] = 8
-    input[StaticIntTuple[rank](1, 0, 0, 1)] = 9
-    input[StaticIntTuple[rank](1, 0, 1, 0)] = 10
-    input[StaticIntTuple[rank](1, 0, 1, 1)] = 11
+    input[IndexList[rank](1, 0, 0, 0)] = 8
+    input[IndexList[rank](1, 0, 0, 1)] = 9
+    input[IndexList[rank](1, 0, 1, 0)] = 10
+    input[IndexList[rank](1, 0, 1, 1)] = 11
 
-    input[StaticIntTuple[rank](1, 1, 0, 0)] = 12
-    input[StaticIntTuple[rank](1, 1, 0, 1)] = 13
-    input[StaticIntTuple[rank](1, 1, 1, 0)] = 14
-    input[StaticIntTuple[rank](1, 1, 1, 1)] = 15
+    input[IndexList[rank](1, 1, 0, 0)] = 12
+    input[IndexList[rank](1, 1, 0, 1)] = 13
+    input[IndexList[rank](1, 1, 1, 0)] = 14
+    input[IndexList[rank](1, 1, 1, 1)] = 15
 
     # rank_repeats is always 1
     alias rank_repeats = 1
@@ -1010,10 +1010,10 @@ fn test_tile_eg14() raises:
         DimList(4),
     ].stack_allocation()
 
-    repeats[StaticIntTuple[rank_repeats](0)] = 2
-    repeats[StaticIntTuple[rank_repeats](1)] = 2
-    repeats[StaticIntTuple[rank_repeats](2)] = 2
-    repeats[StaticIntTuple[rank_repeats](3)] = 3
+    repeats[IndexList[rank_repeats](0)] = 2
+    repeats[IndexList[rank_repeats](1)] = 2
+    repeats[IndexList[rank_repeats](2)] = 2
+    repeats[IndexList[rank_repeats](3)] = 3
 
     # Output rank = input rank
     # output_dim[i] = input_dim[i] * repeats[i]
@@ -1027,7 +1027,7 @@ fn test_tile_eg14() raises:
         for j in range(4):
             for k in range(4):
                 for l in range(6):
-                    output[StaticIntTuple[rank](i, j, k, l)] = 0
+                    output[IndexList[rank](i, j, k, l)] = 0
 
     tile[rank, type, rank_repeats, type_repeats](
         input.make_dims_unknown(),

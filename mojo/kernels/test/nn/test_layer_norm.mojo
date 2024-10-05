@@ -14,12 +14,12 @@ from buffer.dimlist import DimList
 from memory import UnsafePointer
 from nn.normalization import *
 from testing import assert_almost_equal
-from utils.index import Index, StaticIntTuple
+from utils.index import Index, IndexList
 
 
 fn run_layer_norm_cpu[
     type: DType, rank: Int
-](shape: StaticIntTuple[rank], rtol: Scalar[type] = 0.01) raises:
+](shape: IndexList[rank], rtol: Scalar[type] = 0.01) raises:
     var cols = shape[rank - 1]
     var rows = shape.flattened_length() // cols
 
@@ -36,7 +36,7 @@ fn run_layer_norm_cpu[
         gamma_ptr[i] = ((i + cols) / cols).cast[type]()
         beta_ptr[i] = (i / cols).cast[type]()
 
-    var param_shape = StaticIntTuple[1](cols)
+    var param_shape = IndexList[1](cols)
 
     var input_buf = NDBuffer[type, rank](input_ptr, shape)
     var output_buf = NDBuffer[type, rank](output_ptr, shape)
@@ -49,15 +49,15 @@ fn run_layer_norm_cpu[
     @parameter
     fn input_fn[
         width: Int, _rank: Int
-    ](idx: StaticIntTuple[_rank]) -> SIMD[type, width]:
-        return input_buf.load[width=width](rebind[StaticIntTuple[rank]](idx))
+    ](idx: IndexList[_rank]) -> SIMD[type, width]:
+        return input_buf.load[width=width](rebind[IndexList[rank]](idx))
 
     @__copy_capture(gamma)
     @always_inline
     @parameter
     fn gamma_fn[
         width: Int, rank: Int
-    ](idx: StaticIntTuple[rank]) -> SIMD[type, width]:
+    ](idx: IndexList[rank]) -> SIMD[type, width]:
         return gamma.load[width=width](idx[0])
 
     layer_norm_cpu[input_fn, gamma_fn](shape, beta, epsilon, output_buf)

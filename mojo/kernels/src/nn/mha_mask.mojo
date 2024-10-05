@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from math import iota
-from utils.index import StaticIntTuple
+from utils.index import IndexList
 from utils.numerics import min_or_neg_inf
 
 
@@ -34,7 +34,7 @@ trait MHAMask:
 
     fn mask[
         type: DType, width: Int
-    ](self, coord: StaticIntTuple[4], score_vec: SIMD[type, width]) -> SIMD[
+    ](self, coord: IndexList[4], score_vec: SIMD[type, width]) -> SIMD[
         type, width
     ]:
         """Return mask vector at given coordinates.
@@ -49,8 +49,8 @@ trait MHAMask:
 
     fn status(
         self,
-        tile_offset: StaticIntTuple[2],
-        tile_size: StaticIntTuple[2],
+        tile_offset: IndexList[2],
+        tile_size: IndexList[2],
     ) -> TileMaskStatus:
         """Given a tile' index range, return its masking status."""
         ...
@@ -64,7 +64,7 @@ struct CausalMask(MHAMask):
     @always_inline
     fn mask[
         type: DType, width: Int
-    ](self, coord: StaticIntTuple[4], score_vec: SIMD[type, width]) -> SIMD[
+    ](self, coord: IndexList[4], score_vec: SIMD[type, width]) -> SIMD[
         type, width
     ]:
         var masked_score_vec = score_vec
@@ -86,8 +86,8 @@ struct CausalMask(MHAMask):
     @always_inline
     fn status(
         self,
-        tile_offset: StaticIntTuple[2],
-        tile_size: StaticIntTuple[2],
+        tile_offset: IndexList[2],
+        tile_size: IndexList[2],
     ) -> TileMaskStatus:
         # If false, the tile is not masked.
         var min_q_lt_max_k = UInt(
@@ -114,7 +114,7 @@ struct NullMask(MHAMask):
     @always_inline
     fn mask[
         type: DType, width: Int
-    ](self, coord: StaticIntTuple[4], score_vec: SIMD[type, width]) -> SIMD[
+    ](self, coord: IndexList[4], score_vec: SIMD[type, width]) -> SIMD[
         type, width
     ]:
         return score_vec
@@ -122,8 +122,8 @@ struct NullMask(MHAMask):
     @always_inline
     fn status(
         self,
-        tile_offset: StaticIntTuple[2],
-        tile_size: StaticIntTuple[2],
+        tile_offset: IndexList[2],
+        tile_size: IndexList[2],
     ) -> TileMaskStatus:
         # no mask
         return TileMaskStatus(0)

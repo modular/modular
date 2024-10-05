@@ -13,14 +13,14 @@ from memory import UnsafePointer
 from buffer import NDBuffer
 from nn.topk import _top_k
 
-from utils import StaticIntTuple
+from utils import IndexList
 
 
 struct TestTensor[rank: Int, type: DType]:
     var storage: List[Scalar[type]]
-    var shape: StaticIntTuple[rank]
+    var shape: IndexList[rank]
 
-    fn __init__(inout self, shape: StaticIntTuple[rank]):
+    fn __init__(inout self, shape: IndexList[rank]):
         self.storage = List[Scalar[type]](capacity=shape.flattened_length())
         self.storage.resize(shape.flattened_length(), 0)
         self.shape = shape
@@ -46,7 +46,7 @@ fn test_case[
 ](
     K: Int,
     axis: Int,
-    input_shape: StaticIntTuple[rank],
+    input_shape: IndexList[rank],
     largest: Bool = True,
     sorted: Bool = True,
 ):
@@ -91,7 +91,7 @@ fn main():
     fn test_1d_sorted():
         print("== test_1d_sorted")
         test_case[1, DType.float32, fill_iota](
-            5, 0, StaticIntTuple[1](10), sorted=True
+            5, 0, IndexList[1](10), sorted=True
         )
 
     # CHECK-LABEL: test_1d_sorted
@@ -102,7 +102,7 @@ fn main():
     fn test_1d_notsorted():
         print("== test_1d_notsorted")
         test_case[1, DType.float32, fill_iota](
-            5, 0, StaticIntTuple[1](10), sorted=False
+            5, 0, IndexList[1](10), sorted=False
         )
 
     # CHECK-LABEL: test_1d_notsorted
@@ -113,7 +113,7 @@ fn main():
     fn test_axis_1():
         print("== test_axis_1")
         test_case[2, DType.float32, fill_iota](
-            2, 1, StaticIntTuple[2](4, 4), sorted=True
+            2, 1, IndexList[2](4, 4), sorted=True
         )
 
     # CHECK-LABEL: test_axis_1
@@ -124,7 +124,7 @@ fn main():
     fn test_axis_1_notsorted():
         print("== test_axis_1_notsorted")
         test_case[2, DType.float32, fill_iota](
-            2, 1, StaticIntTuple[2](4, 4), sorted=False
+            2, 1, IndexList[2](4, 4), sorted=False
         )
 
     # CHECK-LABEL: test_axis_1_notsorted
@@ -134,9 +134,7 @@ fn main():
 
     fn test_smallest():
         print("== test_smallest")
-        test_case[2, DType.float32, fill_iota](
-            2, 1, StaticIntTuple[2](4, 4), False
-        )
+        test_case[2, DType.float32, fill_iota](2, 1, IndexList[2](4, 4), False)
 
     # CHECK-LABEL: test_smallest
     # CHECK: 0.0,1.0,4.0,5.0,8.0,9.0,12.0,13.0,
@@ -145,7 +143,7 @@ fn main():
 
     fn test_axis_0():
         print("== test_axis_0")
-        test_case[2, DType.float32, fill_iota](2, 0, StaticIntTuple[2](4, 4))
+        test_case[2, DType.float32, fill_iota](2, 0, IndexList[2](4, 4))
 
     # CHECK-LABEL: test_axis_0
     # CHECK: 12.0,13.0,14.0,15.0,8.0,9.0,10.0,11.0,
@@ -158,9 +156,7 @@ fn main():
 
     fn test_identical():
         print("== test_identical")
-        test_case[2, DType.float32, fill_identical](
-            3, 0, StaticIntTuple[2](4, 4)
-        )
+        test_case[2, DType.float32, fill_identical](3, 0, IndexList[2](4, 4))
 
     # CHECK-LABEL: test_identical
     # CHECK: 1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,
@@ -169,9 +165,7 @@ fn main():
 
     fn test_identical_large():
         print("== test_identical_large")
-        test_case[2, DType.float32, fill_identical](
-            3, 0, StaticIntTuple[2](33, 33)
-        )
+        test_case[2, DType.float32, fill_identical](3, 0, IndexList[2](33, 33))
 
     # CHECK-LABEL: test_identical_large
     # CHECK: 1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,
@@ -180,7 +174,7 @@ fn main():
 
     fn test_max_k():
         print("== test_max_k")
-        test_case[2, DType.float32, fill_iota](3, 0, StaticIntTuple[2](3, 4))
+        test_case[2, DType.float32, fill_iota](3, 0, IndexList[2](3, 4))
 
     # CHECK-LABEL: test_max_k
     # CHECK: 8.0,9.0,10.0,11.0,4.0,5.0,6.0,7.0,0.0,1.0,2.0,3.0,
@@ -197,7 +191,7 @@ fn main():
     fn test_5d():
         print("== test_5d")
         test_case[5, DType.float32, fill_custom](
-            1, 1, StaticIntTuple[5](1, 4, 3, 2, 1)
+            1, 1, IndexList[5](1, 4, 3, 2, 1)
         )
 
     # CHECK-LABEL: == test_5d

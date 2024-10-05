@@ -20,7 +20,7 @@ from register import mogg_register, mogg_register_shape_func
 from runtime.asyncrt import MojoCallContextPtr, parallelism_level
 from runtime.tracing import Trace, TraceLevel
 
-from utils import StaticIntTuple, StaticTuple, unroll
+from utils import IndexList, StaticTuple, unroll
 
 from .reshape import reshape
 
@@ -135,7 +135,7 @@ fn gather_reduce[
 
     var out_vecs_per_thread = ceildiv(indices.dim[0](), num_tasks)
 
-    var output_2d_dims = StaticIntTuple[2](output.dim[0](), output.dim[1]())
+    var output_2d_dims = IndexList[2](output.dim[0](), output.dim[1]())
 
     @parameter
     if output_rank == 3:
@@ -232,7 +232,7 @@ fn gather_reduce[
                         StaticTuple[SIMD[type, simd_width], 1](accum), j
                     )[0]
 
-                var out_idx = StaticIntTuple[2](i, k)
+                var out_idx = IndexList[2](i, k)
                 output.store[width=simd_width](out_idx, accum)
 
             tile[
@@ -274,14 +274,12 @@ fn gather[
     fn prefetch_fn[
         _input_rank: Int, _indices_rank: Int
     ](
-        _input_coords: StaticIntTuple[_input_rank],
-        _indices_coords: StaticIntTuple[_indices_rank],
+        _input_coords: IndexList[_input_rank],
+        _indices_coords: IndexList[_indices_rank],
     ):
         var __input_coords = _input_coords
-        var input_coords = rebind[StaticIntTuple[input_rank]](__input_coords)
-        var indices_coords = rebind[StaticIntTuple[indices_rank]](
-            _indices_coords
-        )
+        var input_coords = rebind[IndexList[input_rank]](__input_coords)
+        var indices_coords = rebind[IndexList[indices_rank]](_indices_coords)
 
         @parameter
         if prefetch_offset > 0:
@@ -307,27 +305,25 @@ fn gather[
     @always_inline
     fn input_fn[
         width: Int, _rank: Int
-    ](coords: StaticIntTuple[_rank]) -> SIMD[type, width]:
-        return input.load[width=width](
-            rebind[StaticIntTuple[input_rank]](coords)
-        )
+    ](coords: IndexList[_rank]) -> SIMD[type, width]:
+        return input.load[width=width](rebind[IndexList[input_rank]](coords))
 
     @parameter
     @always_inline
     fn indices_fn[
         width: Int, _rank: Int
-    ](coords: StaticIntTuple[_rank]) -> SIMD[indices_type, width]:
+    ](coords: IndexList[_rank]) -> SIMD[indices_type, width]:
         return indices.load[width=width](
-            rebind[StaticIntTuple[indices_rank]](coords)
+            rebind[IndexList[indices_rank]](coords)
         )
 
     @parameter
     @always_inline
     fn output_fn[
         width: Int, _rank: Int
-    ](coords: StaticIntTuple[_rank], val: SIMD[type, width]):
+    ](coords: IndexList[_rank], val: SIMD[type, width]):
         output.store[width=width](
-            rebind[StaticIntTuple[output_rank]](coords),
+            rebind[IndexList[output_rank]](coords),
             rebind[SIMD[type, width]](val),
         )
 
@@ -378,14 +374,12 @@ fn gather[
     fn prefetch_fn[
         _input_rank: Int, _indices_rank: Int
     ](
-        _input_coords: StaticIntTuple[_input_rank],
-        _indices_coords: StaticIntTuple[_indices_rank],
+        _input_coords: IndexList[_input_rank],
+        _indices_coords: IndexList[_indices_rank],
     ):
         var __input_coords = _input_coords
-        var input_coords = rebind[StaticIntTuple[input_rank]](__input_coords)
-        var indices_coords = rebind[StaticIntTuple[indices_rank]](
-            _indices_coords
-        )
+        var input_coords = rebind[IndexList[input_rank]](__input_coords)
+        var indices_coords = rebind[IndexList[indices_rank]](_indices_coords)
 
         @parameter
         if prefetch_offset > 0:
@@ -411,27 +405,25 @@ fn gather[
     @always_inline
     fn input_fn[
         width: Int, _rank: Int
-    ](coords: StaticIntTuple[_rank]) -> SIMD[type, width]:
-        return input.load[width=width](
-            rebind[StaticIntTuple[input_rank]](coords)
-        )
+    ](coords: IndexList[_rank]) -> SIMD[type, width]:
+        return input.load[width=width](rebind[IndexList[input_rank]](coords))
 
     @parameter
     @always_inline
     fn indices_fn[
         width: Int, _rank: Int
-    ](coords: StaticIntTuple[_rank]) -> SIMD[indices_type, width]:
+    ](coords: IndexList[_rank]) -> SIMD[indices_type, width]:
         return indices.load[width=width](
-            rebind[StaticIntTuple[indices_rank]](coords)
+            rebind[IndexList[indices_rank]](coords)
         )
 
     @parameter
     @always_inline
     fn output_fn[
         width: Int, _rank: Int
-    ](coords: StaticIntTuple[_rank], val: SIMD[type, width]):
+    ](coords: IndexList[_rank], val: SIMD[type, width]):
         output.store[width=width](
-            rebind[StaticIntTuple[output_rank]](coords),
+            rebind[IndexList[output_rank]](coords),
             rebind[SIMD[type, width]](val),
         )
 
@@ -456,9 +448,9 @@ fn gather_guards[
     input_rank: Int, indices_rank: Int, output_rank: Int
 ](
     axis: Axis,
-    input_shape: StaticIntTuple[input_rank],
-    indices_shape: StaticIntTuple[indices_rank],
-    output_shape: StaticIntTuple[output_rank],
+    input_shape: IndexList[input_rank],
+    indices_shape: IndexList[indices_rank],
+    output_shape: IndexList[output_rank],
 ) raises -> None:
     if int(axis) < 0:
         raise Error("gather kernel does not support negative axis")
@@ -491,43 +483,39 @@ fn gather_elementwise_fn_wrapper[
     indices_type: DType,
     indices_rank: Int,
     output_rank: Int,
-    input_fn: fn[width: Int, rank: Int] (
-        StaticIntTuple[rank]
-    ) capturing -> SIMD[type, width],
-    indices_fn: fn[width: Int, rank: Int] (
-        StaticIntTuple[rank]
-    ) capturing -> SIMD[indices_type, width],
+    input_fn: fn[width: Int, rank: Int] (IndexList[rank]) capturing -> SIMD[
+        type, width
+    ],
+    indices_fn: fn[width: Int, rank: Int] (IndexList[rank]) capturing -> SIMD[
+        indices_type, width
+    ],
     output_fn: fn[width: Int, rank: Int] (
-        StaticIntTuple[rank], SIMD[type, width]
+        IndexList[rank], SIMD[type, width]
     ) capturing -> None,
     coords_rank: Int,
     simd_width: Int,
     prefetch_fn: OptionalReg[
         fn[
             input_rank: Int, indices_rank: Int
-        ] (
-            StaticIntTuple[input_rank], StaticIntTuple[indices_rank]
-        ) capturing -> None
+        ] (IndexList[input_rank], IndexList[indices_rank]) capturing -> None
     ] = None,
 ](
     axis: Axis,
-    input_shape: StaticIntTuple[input_rank],
-    indices_shape: StaticIntTuple[indices_rank],
-    output_shape: StaticIntTuple[output_rank],
-    coords: StaticIntTuple[coords_rank],
+    input_shape: IndexList[input_rank],
+    indices_shape: IndexList[indices_rank],
+    output_shape: IndexList[output_rank],
+    coords: IndexList[coords_rank],
 ):
     @parameter
     @always_inline
-    fn gather_elementwise_fn[
-        simd_width: Int, rank: Int
-    ](idx: StaticIntTuple[rank]):
+    fn gather_elementwise_fn[simd_width: Int, rank: Int](idx: IndexList[rank]):
         # out_coords consists of 3 chunks:
         #   out_coords[0:axis] = input coords[0:axis]
         #   out_coords[axis:axis+indices_rank] = indices_coords
         #   out_coords[axis + indices_rank:] = input_coords[axis + 1:]
         # and input_coords[axis] = indices[indices_coords]
         # Get the gather indices.
-        var indices_index = StaticIntTuple[indices_rank]()
+        var indices_index = IndexList[indices_rank]()
 
         # Get the indices of the index.
         @parameter
@@ -538,7 +526,7 @@ fn gather_elementwise_fn_wrapper[
         var data_index = indices_fn[1, indices_rank](indices_index)
 
         # Update the indices with the new data index.
-        var data_indices = StaticIntTuple[input_rank]()
+        var data_indices = IndexList[input_rank]()
 
         var skip_factor = indices_rank - 1
 
@@ -574,14 +562,14 @@ fn gather_elementwise_fn_wrapper[
 fn gather[
     type: DType,
     indices_type: DType,
-    input_fn: fn[width: Int, rank: Int] (
-        StaticIntTuple[rank]
-    ) capturing -> SIMD[type, width],
-    indices_fn: fn[width: Int, rank: Int] (
-        StaticIntTuple[rank]
-    ) capturing -> SIMD[indices_type, width],
+    input_fn: fn[width: Int, rank: Int] (IndexList[rank]) capturing -> SIMD[
+        type, width
+    ],
+    indices_fn: fn[width: Int, rank: Int] (IndexList[rank]) capturing -> SIMD[
+        indices_type, width
+    ],
     output_fn: fn[width: Int, rank: Int] (
-        StaticIntTuple[rank], SIMD[type, width]
+        IndexList[rank], SIMD[type, width]
     ) capturing -> None,
     input_rank: Int,
     indices_rank: Int,
@@ -589,17 +577,15 @@ fn gather[
     prefetch_fn: OptionalReg[
         fn[
             input_rank: Int, indices_rank: Int
-        ] (
-            StaticIntTuple[input_rank], StaticIntTuple[indices_rank]
-        ) capturing -> None
+        ] (IndexList[input_rank], IndexList[indices_rank]) capturing -> None
     ] = None,
     target: StringLiteral = "cpu",
     single_thread_blocking_override: Bool = False,
 ](
     axis: Axis,
-    input_shape: StaticIntTuple[input_rank],
-    indices_shape: StaticIntTuple[indices_rank],
-    output_shape: StaticIntTuple[output_rank],
+    input_shape: IndexList[input_rank],
+    indices_shape: IndexList[indices_rank],
+    output_shape: IndexList[output_rank],
     context: DeviceContext,
 ) raises:
     """Gather operation as defined in https://github.com/onnx/onnx/blob/main/docs/Operators.md#Gather.
@@ -619,7 +605,7 @@ fn gather[
         @always_inline
         fn gather_elementwise_fn[
             simd_width: Int, rank: Int
-        ](idx: StaticIntTuple[rank]):
+        ](idx: IndexList[rank]):
             gather_elementwise_fn_wrapper[
                 type,
                 input_rank,
@@ -654,14 +640,14 @@ fn gather[
 fn gather[
     type: DType,
     indices_type: DType,
-    input_fn: fn[width: Int, rank: Int] (
-        StaticIntTuple[rank]
-    ) capturing -> SIMD[type, width],
-    indices_fn: fn[width: Int, rank: Int] (
-        StaticIntTuple[rank]
-    ) capturing -> SIMD[indices_type, width],
+    input_fn: fn[width: Int, rank: Int] (IndexList[rank]) capturing -> SIMD[
+        type, width
+    ],
+    indices_fn: fn[width: Int, rank: Int] (IndexList[rank]) capturing -> SIMD[
+        indices_type, width
+    ],
     output_fn: fn[width: Int, rank: Int] (
-        StaticIntTuple[rank], SIMD[type, width]
+        IndexList[rank], SIMD[type, width]
     ) capturing -> None,
     input_rank: Int,
     indices_rank: Int,
@@ -669,17 +655,15 @@ fn gather[
     prefetch_fn: OptionalReg[
         fn[
             input_rank: Int, indices_rank: Int
-        ] (
-            StaticIntTuple[input_rank], StaticIntTuple[indices_rank]
-        ) capturing -> None
+        ] (IndexList[input_rank], IndexList[indices_rank]) capturing -> None
     ] = None,
     target: StringLiteral = "cpu",
     single_thread_blocking_override: Bool = False,
 ](
     axis: Axis,
-    input_shape: StaticIntTuple[input_rank],
-    indices_shape: StaticIntTuple[indices_rank],
-    output_shape: StaticIntTuple[output_rank],
+    input_shape: IndexList[input_rank],
+    indices_shape: IndexList[indices_rank],
+    output_shape: IndexList[output_rank],
     context: MojoCallContextPtr = MojoCallContextPtr(),
 ) raises:
     """Gather operation as defined in https://github.com/onnx/onnx/blob/main/docs/Operators.md#Gather.
@@ -699,7 +683,7 @@ fn gather[
         @always_inline
         fn gather_elementwise_fn[
             simd_width: Int, rank: Int
-        ](idx: StaticIntTuple[rank]):
+        ](idx: IndexList[rank]):
             gather_elementwise_fn_wrapper[
                 type,
                 input_rank,
@@ -843,21 +827,21 @@ fn scatter_nd_generator[
     @parameter
     fn update_func[
         simd_width: Int, _rank: Int
-    ](_indices_coords: StaticIntTuple[_rank]):
+    ](_indices_coords: IndexList[_rank]):
         # Calculate how many elements to copy (this is from the innermost
         # dimensions, and is continuous memory locations).
         var count_copy = 1
         for i in range(r_minus_m):
             count_copy = count_copy * data_shape[data_rank - 1 - i]
-        var indices_coords = rebind[StaticIntTuple[_rank]](_indices_coords)
+        var indices_coords = rebind[IndexList[_rank]](_indices_coords)
 
         # Stores the full index on output, where to copy updates to.
         # Zeroing here to avoid doing it selectively within the nested loop below.
-        var output_index_tensor = StaticIntTuple[data_rank](0)
+        var output_index_tensor = IndexList[data_rank](0)
 
         # Stores the full index on updates, where to copy from.
         # Zeroing here to avoid doing it selectively within the nested loop below.
-        var updates_index_tensor = StaticIntTuple[updates_rank](0)
+        var updates_index_tensor = IndexList[updates_rank](0)
 
         # Construct the full index on updates tensor, i.e., where to copy from.
         for dim in range(_rank):
@@ -868,7 +852,7 @@ fn scatter_nd_generator[
         # As part of that we need to construct the indices_index, which is the
         # index to the indices tensor, where we get the elements for the
         # output_index_tensor from.
-        var indices_index = StaticIntTuple[indices_rank]()
+        var indices_index = IndexList[indices_rank]()
         for dim in range(last_shape_of_indices):
             # Size of current dimension on data.
             # Used to compare to index on this dimension (idx_on_axis).
@@ -919,7 +903,7 @@ fn scatter_nd_generator[
                 ]
 
     # TODO: SEE: simd_width > 1
-    var iter_shape = StaticIntTuple[indices_rank - 1]()
+    var iter_shape = IndexList[indices_rank - 1]()
     for i in range(len(indices.get_shape()) - 1):
         iter_shape[i] = indices.get_shape()[i]
 
@@ -974,7 +958,7 @@ fn scatter_nd_shape[
     input: NDBuffer[input_type, input_rank],
     updates: NDBuffer[input_type, updates_rank],
     indices: NDBuffer[indices_type, indices_rank],
-) raises -> StaticIntTuple[input_rank]:
+) raises -> IndexList[input_rank]:
     """
     Compute the output shape of a `scatter_nd` operation, and assert the
     inputs are compatible.
@@ -1049,7 +1033,7 @@ fn gather_shape[
     input_buf: NDBuffer[input_type, input_rank],
     indices_buf: NDBuffer[indices_type, indices_rank],
     axis_buf: NDBuffer[axis_type, 1],
-) raises -> StaticIntTuple[output_rank]:
+) raises -> IndexList[output_rank]:
     """
     Compute the output shape of a `gather` operation, and assert the inputs are
     compatible.
@@ -1087,7 +1071,7 @@ fn gather_shape[
         )
 
     # compute and return the output shape
-    var output_shape = StaticIntTuple[output_rank]()
+    var output_shape = IndexList[output_rank]()
 
     var input_shape = input_buf.get_shape()
     var indices_shape = indices_buf.get_shape()
@@ -1161,8 +1145,8 @@ fn scatter_elements[
     @parameter
     fn update_func[
         simd_width: Int, _rank: Int
-    ](_indices_coords: StaticIntTuple[_rank]):
-        var indices_coords = rebind[StaticIntTuple[rank]](_indices_coords)
+    ](_indices_coords: IndexList[_rank]):
+        var indices_coords = rebind[IndexList[rank]](_indices_coords)
         var idx_on_axis = indices[indices_coords]
         var output_coords = indices_coords
         output_coords[axis] = int(
@@ -1194,7 +1178,7 @@ fn scatter_elements_shape[
     updates: NDBuffer[input_type, rank],
     indices: NDBuffer[indices_type, rank],
     axis: NDBuffer[axis_type, 1],
-) raises -> StaticIntTuple[rank]:
+) raises -> IndexList[rank]:
     """
     Compute the output shape of a `scatter_elements` operation, and assert the
     inputs are compatible.
@@ -1287,8 +1271,8 @@ fn gather_elements[
     @parameter
     fn gather_func[
         simd_width: Int, _rank: Int
-    ](_output_coords: StaticIntTuple[_rank]):
-        var output_coords = rebind[StaticIntTuple[rank]](_output_coords)
+    ](_output_coords: IndexList[_rank]):
+        var output_coords = rebind[IndexList[rank]](_output_coords)
         var idx_on_axis = indices[output_coords]
         var input_coords = output_coords
         input_coords[axis] = int(normalize_neg_index(idx_on_axis, input_ax_dim))
@@ -1316,7 +1300,7 @@ fn gather_nd_shape[
 ](
     input_buf: NDBuffer[input_type, input_rank],
     indices_buf: NDBuffer[indices_type, indices_rank],
-) raises -> StaticIntTuple[output_rank]:
+) raises -> IndexList[output_rank]:
     """
     Compute the output shape of a `gather` operation, and assert the inputs are
     compatible.
@@ -1352,7 +1336,7 @@ fn gather_nd_shape[
         raise Error("[gather_nd] requires (batch_dims < indices_rank)")
 
     # compute and return the output shape
-    var output_shape = StaticIntTuple[output_rank]()
+    var output_shape = IndexList[output_rank]()
     var next_out_dim = 0
 
     var input_shape = input_buf.get_shape()
@@ -1440,7 +1424,7 @@ fn gather_nd[
     # reshaped_indices = indices.reshape(batch_dims_size, -1, indices.shape[-1])
     var reshaped_indices = reshape[3](
         indices.make_dims_unknown(),
-        StaticIntTuple[3](
+        IndexList[3](
             batch_dims_size,
             num_elems // (batch_dims_size * last_shape_of_indices),
             last_shape_of_indices,
@@ -1452,7 +1436,7 @@ fn gather_nd[
 
     # Flatten data to array of shape (batch_dim_size, data.shape[batch_dims:])
     alias reshaped_data_rank = data_rank + 1 - batch_dims
-    var reshaped_data_tuple = StaticIntTuple[reshaped_data_rank]()
+    var reshaped_data_tuple = IndexList[reshaped_data_rank]()
     # Calculate the dimensions of reshaped_data.
     reshaped_data_tuple[0] = batch_dims_size
     var counter = 1

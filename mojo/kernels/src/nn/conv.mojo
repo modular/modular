@@ -29,7 +29,7 @@ from memory import UnsafePointer, stack_allocation
 from register import mogg_register_shape_func
 from runtime.asyncrt import parallelism_level
 
-from utils.index import Index, StaticIntTuple
+from utils.index import Index, IndexList
 from utils.loop import unroll
 
 from .conv_utils import (
@@ -63,31 +63,31 @@ struct Naive2dConvolution[
     var output: UnsafePointer[Scalar[output_type]]
     var input: UnsafePointer[Scalar[input_type]]
     var filter: UnsafePointer[Scalar[filter_type]]
-    var pad_d: StaticIntTuple[2]
-    var pad_h: StaticIntTuple[2]
-    var pad_w: StaticIntTuple[2]
-    var stride: StaticIntTuple[3]
-    var dilation: StaticIntTuple[3]
+    var pad_d: IndexList[2]
+    var pad_h: IndexList[2]
+    var pad_w: IndexList[2]
+    var stride: IndexList[3]
+    var dilation: IndexList[3]
     var num_groups: Int
 
     # Derived params.
-    var output_shape: StaticIntTuple[5]  # NDHWC layout.
-    var input_shape: StaticIntTuple[5]  # NDHWC layout.
-    var filter_shape: StaticIntTuple[5]  # QRSCF layout.
+    var output_shape: IndexList[5]  # NDHWC layout.
+    var input_shape: IndexList[5]  # NDHWC layout.
+    var filter_shape: IndexList[5]  # QRSCF layout.
 
     @staticmethod
     fn run(
         output: UnsafePointer[Scalar[output_type]],
         input: UnsafePointer[Scalar[input_type]],
         filter: UnsafePointer[Scalar[filter_type]],
-        output_shape: StaticIntTuple[5],
-        input_shape: StaticIntTuple[5],
-        filter_shape: StaticIntTuple[5],
-        pad_d: StaticIntTuple[2],
-        pad_h: StaticIntTuple[2],
-        pad_w: StaticIntTuple[2],
-        stride: StaticIntTuple[3],
-        dilation: StaticIntTuple[3],
+        output_shape: IndexList[5],
+        input_shape: IndexList[5],
+        filter_shape: IndexList[5],
+        pad_d: IndexList[2],
+        pad_h: IndexList[2],
+        pad_w: IndexList[2],
+        stride: IndexList[3],
+        dilation: IndexList[3],
         num_groups: Int,
     ):
         # Create an instance of the convolution op.
@@ -116,14 +116,14 @@ struct Naive2dConvolution[
         output: UnsafePointer[Scalar[output_type]],
         input: UnsafePointer[Scalar[input_type]],
         filter: UnsafePointer[Scalar[filter_type]],
-        output_shape: StaticIntTuple[5],
-        input_shape: StaticIntTuple[5],
-        filter_shape: StaticIntTuple[5],
-        pad_d: StaticIntTuple[2],
-        pad_h: StaticIntTuple[2],
-        pad_w: StaticIntTuple[2],
-        stride: StaticIntTuple[3],
-        dilation: StaticIntTuple[3],
+        output_shape: IndexList[5],
+        input_shape: IndexList[5],
+        filter_shape: IndexList[5],
+        pad_d: IndexList[2],
+        pad_h: IndexList[2],
+        pad_w: IndexList[2],
+        stride: IndexList[3],
+        dilation: IndexList[3],
         num_groups: Int,
     ):
         self.output = output
@@ -236,14 +236,14 @@ struct Naive2dConvolution[
 
 
 @always_inline
-fn _m_to_n_ho_wo_nhwc(m: Int, HO: Int, WO: Int) -> StaticIntTuple[3]:
+fn _m_to_n_ho_wo_nhwc(m: Int, HO: Int, WO: Int) -> IndexList[3]:
     """Converts post-im2col m dimension index to pre-im2col coordinates on
     (N, Hout, Wout) dimensions.
         Args:
             m (Int): Index on M dimension.
             conv_shape (ConvShape): convolution dimension description.
 
-        Returns (StaticIntTuple):
+        Returns (IndexList):
             The translated 3d indices in (N, Hout, Wout) format.
     TODO(Fixel): This utility should be generalized into a im2col util
     class with some additional layout agnostic logic.
@@ -264,7 +264,7 @@ fn _reduce_output[
     scratch: UnsafePointer[Scalar[type]],
     output: UnsafePointer[Scalar[type]],
     N: Int,
-    output_space_dims: StaticIntTuple,
+    output_space_dims: IndexList,
     F: Int,
     num_partitions: Int,
     num_threads: Int,
@@ -350,7 +350,7 @@ struct ConvDirectNHWC[
     # padded, only ho is partitioned for now.
     var partition: ConvPartition
 
-    var cf_tile_size: StaticIntTuple[2]
+    var cf_tile_size: IndexList[2]
 
     # If shapes and attributes are known at compile time
     alias packed_and_fully_static = conv_attr.all_known() and input_shape.all_known[
@@ -2061,18 +2061,18 @@ fn accumulate_wo_tile_2d[
     filter_dt: DType,
 ](
     c_tile_size: Int,
-    RS: StaticIntTuple[2],
+    RS: IndexList[2],
     inout acc: _Accumulator,
     input: UnsafePointer[Scalar[input_dt]],
     input_stride: Int,
-    input_stride_to_nbr: StaticIntTuple[2],
+    input_stride_to_nbr: IndexList[2],
     filter: UnsafePointer[Scalar[filter_dt]],
     filter_stride: Int,
-    filter_stride_to_nbr: StaticIntTuple[2],
+    filter_stride_to_nbr: IndexList[2],
     partial_load_filter_size: Int,
-    hw: StaticIntTuple[2],
-    HW: StaticIntTuple[2],
-    dilation: StaticIntTuple[2],
+    hw: IndexList[2],
+    HW: IndexList[2],
+    dilation: IndexList[2],
 ):
     for r in range(RS[0]):
         # Skip the row if it falls into padding.
@@ -2128,7 +2128,7 @@ fn conv2d_update_wo_tile[
     f_tile_size: Int,
     conv_shape: ConvShape[2],
     n: Int,
-    howo: StaticIntTuple[2],
+    howo: IndexList[2],
 ):
     alias micro_kernel_f_size = micro_kernel_width * simd_size
 
@@ -2244,18 +2244,18 @@ fn accumulate_wo_tile_3d[
     filter_dt: DType,
 ](
     c_tile_size: Int,
-    QRS: StaticIntTuple[3],
+    QRS: IndexList[3],
     inout acc: _Accumulator,
     input: UnsafePointer[Scalar[input_dt]],
     input_stride: Int,
-    input_stride_to_nbr: StaticIntTuple[3],
+    input_stride_to_nbr: IndexList[3],
     filter: UnsafePointer[Scalar[filter_dt]],
     filter_stride: Int,
-    filter_stride_to_nbr: StaticIntTuple[3],
+    filter_stride_to_nbr: IndexList[3],
     partial_load_filter_size: Int,
-    dhw: StaticIntTuple[3],
-    DHW: StaticIntTuple[3],
-    dilation: StaticIntTuple[3],
+    dhw: IndexList[3],
+    DHW: IndexList[3],
+    dilation: IndexList[3],
 ):
     for q in range(QRS[0]):
         var d_nbr = dhw[0] + q * dilation[0]
@@ -2310,7 +2310,7 @@ fn conv3d_update_wo_tile[
     f_tile_size: Int,
     conv_shape: ConvShape[3],
     n: Int,
-    dohowo: StaticIntTuple[3],
+    dohowo: IndexList[3],
 ):
     alias micro_kernel_f_size = micro_kernel_width * simd_size
 
@@ -2419,7 +2419,7 @@ fn conv3d_update_wo_tile[
 @always_inline
 fn pack_filter_shape_impl[
     filter_type: DType
-](Q: Int, R: Int, S: Int, C: Int, F: Int, num_groups: Int) -> StaticIntTuple[6]:
+](Q: Int, R: Int, S: Int, C: Int, F: Int, num_groups: Int) -> IndexList[6]:
     """
     Compute the shape of packed filter. The packed layout is FRSCf.
     shape_ref should be allocated with size 5 outside this kernel.
@@ -2445,7 +2445,7 @@ fn pack_filter_shape_impl[
     )
     var F_per_group = F // num_groups
 
-    var output_shape = StaticIntTuple[6]()
+    var output_shape = IndexList[6]()
     output_shape[0] = num_groups * ceildiv(F_per_group, micro_kernel_f_size)
     output_shape[1] = Q
     output_shape[2] = R
@@ -2459,7 +2459,7 @@ fn pack_filter_shape_impl[
 @always_inline
 fn pack_conv_filter_shape[
     single_thread_blocking_override: Bool,
-](filter: NDBuffer, num_groups: Int) -> StaticIntTuple[filter.rank + 1]:
+](filter: NDBuffer, num_groups: Int) -> IndexList[filter.rank + 1]:
     """
     Compute the output shape of convolution filter packing.
 
@@ -2489,7 +2489,7 @@ fn pack_conv_filter_shape[
     var F_per_group = F // num_groups
 
     # FRSCf layout.
-    var packed_shape = StaticIntTuple[filter.rank + 1]()
+    var packed_shape = IndexList[filter.rank + 1]()
     packed_shape[0] = num_groups * ceildiv(F_per_group, micro_kernel_f_size)
     packed_shape[filter.rank] = micro_kernel_f_size
 
@@ -2511,7 +2511,7 @@ fn pack_filter_shape[
     paddings: DimList,
     num_groups: Int,
     single_thread_blocking_override: Bool,
-](filter: NDBuffer) -> StaticIntTuple[filter.rank + 1]:
+](filter: NDBuffer) -> IndexList[filter.rank + 1]:
     """
     Compute the shape of packed filter. The packed layout is FRSCf.
     shape_ref should be allocated with size 5 outside this kernel.
@@ -2550,7 +2550,7 @@ fn pack_filter_shape[
     alias micro_kernel_f_size = micro_kernel_width * simd_size
 
     # FSCf/FRSCf/FQRSCf layout.
-    var packed_shape = StaticIntTuple[filter.rank + 1]()
+    var packed_shape = IndexList[filter.rank + 1]()
     packed_shape[0] = num_groups * ceildiv(F_per_group, micro_kernel_f_size)
     packed_shape[filter.rank] = micro_kernel_f_size
 
@@ -2750,7 +2750,7 @@ fn conv_shape[
     dilations_buf: NDBuffer[dilations_type, 1],
     paddings_buf: NDBuffer[paddings_type, 1],
     num_groups_buf: NDBuffer[num_groups_type, 1],
-) raises -> StaticIntTuple[input_rank]:
+) raises -> IndexList[input_rank]:
     """
     Compute the output shape of a `conv` operation, and assert the inputs are
     compatible.
@@ -2815,7 +2815,7 @@ fn conv_shape[
             "[convolution] output_channels must be divisible by num_groups"
         )
 
-    var output_shape = StaticIntTuple[input_rank]()
+    var output_shape = IndexList[input_rank]()
     output_shape[0] = batch_size
     output_shape[input_rank - 1] = output_channels
 
@@ -2853,17 +2853,17 @@ fn conv_nhwc_direct[
     conv_info_static: ConvInfoStatic[input_rank - 2],
     lambdas_have_fusion: Bool,
     elementwise_lambda: fn[type: DType, rank: Int, width: Int] (
-        StaticIntTuple[rank], SIMD[type, width]
+        IndexList[rank], SIMD[type, width]
     ) capturing -> None,
 ](
     input: NDBuffer[input_type, input_rank, input_shape],
     filter: NDBuffer[filter_type, filter_rank, filter_shape],
     output: NDBuffer[output_type, input_rank, output_shape],
-    stride: StaticIntTuple[input_rank - 2],
-    dilation: StaticIntTuple[input_rank - 2],
-    pad_d: StaticIntTuple[2],
-    pad_h: StaticIntTuple[2],
-    pad_w: StaticIntTuple[2],
+    stride: IndexList[input_rank - 2],
+    dilation: IndexList[input_rank - 2],
+    pad_d: IndexList[2],
+    pad_h: IndexList[2],
+    pad_w: IndexList[2],
     num_groups: Int,
 ) raises:
     constrained[
@@ -2910,14 +2910,14 @@ fn conv_nhwc_direct[
         @parameter
         fn elementwise_epilogue[
             rank: Int
-        ](coords: StaticIntTuple[rank], f_size: Int,):
+        ](coords: IndexList[rank], f_size: Int,):
             alias simd_size = simdwidthof[output_type]()
 
             @always_inline
             @parameter
             fn body[width: Int](idx: Int):
                 # Cooridates of the current index.
-                var curr_coords = rebind[StaticIntTuple[input_rank]](coords)
+                var curr_coords = rebind[IndexList[input_rank]](coords)
                 curr_coords[input_rank - 1] += idx
 
                 var vec = output.load[width=width](curr_coords)

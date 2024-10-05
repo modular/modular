@@ -11,7 +11,7 @@ from buffer.dimlist import Dim, DimList
 from memory import stack_allocation
 from nn.slice import slice_as_copy, slice_as_view
 
-from utils.index import Index, StaticIntTuple
+from utils.index import Index, IndexList
 
 
 fn print_elements[type: DType, in_rank: Int](tensor: NDBuffer[type, in_rank]):
@@ -20,10 +20,8 @@ fn print_elements[type: DType, in_rank: Int](tensor: NDBuffer[type, in_rank]):
 
     @always_inline
     @parameter
-    fn print_elements_lambda[
-        simd_width: Int, rank: Int
-    ](idx: StaticIntTuple[rank]):
-        var index = rebind[StaticIntTuple[in_rank]](idx)
+    fn print_elements_lambda[simd_width: Int, rank: Int](idx: IndexList[rank]):
+        var index = rebind[IndexList[in_rank]](idx)
         print(tensor[index])
 
     elementwise[print_elements_lambda, 1](tensor.dynamic_shape)
@@ -34,9 +32,9 @@ fn test_slice[
     dtype: DType, numelems: Int, outer_rank: Int, static_shape: DimList
 ](
     dims: DimList,
-    starts: StaticIntTuple[outer_rank],
-    stops: StaticIntTuple[outer_rank],
-    steps: StaticIntTuple[outer_rank],
+    starts: IndexList[outer_rank],
+    stops: IndexList[outer_rank],
+    steps: IndexList[outer_rank],
     use_copy: Bool,
 ):
     # Isn't always used but is used for the output buffer if we copy.
@@ -54,17 +52,17 @@ fn test_slice[
 
     var start_tensor_mem = stack_allocation[outer_rank, DType.index, 1]()
     var start_tensor = NDBuffer[DType.index, 1](
-        start_tensor_mem, StaticIntTuple[1](outer_rank)
+        start_tensor_mem, IndexList[1](outer_rank)
     )
 
     var end_tensor_mem = stack_allocation[outer_rank, DType.index, 1]()
     var end_tensor = NDBuffer[DType.index, 1](
-        end_tensor_mem, StaticIntTuple[1](outer_rank)
+        end_tensor_mem, IndexList[1](outer_rank)
     )
 
     var step_tensor_mem = stack_allocation[outer_rank, DType.index, 1]()
     var step_tensor = NDBuffer[DType.index, 1](
-        step_tensor_mem, StaticIntTuple[1](outer_rank)
+        step_tensor_mem, IndexList[1](outer_rank)
     )
 
     for dim in range(outer_rank):
@@ -94,7 +92,7 @@ fn test_slice[
             rebind[DimList](static_shape),
         ](
             output_mem,
-            rebind[StaticIntTuple[outer_rank]](sliced.dynamic_shape),
+            rebind[IndexList[outer_rank]](sliced.dynamic_shape),
         )
 
         slice_as_copy[dtype, DType.index, outer_rank](

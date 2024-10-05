@@ -11,7 +11,7 @@ from buffer.dimlist import Dim, DimList
 from memory import stack_allocation
 from nn.slice import slice_dim_as_view
 
-from utils.index import Index, StaticIntTuple
+from utils.index import Index, IndexList
 
 
 fn print_elements[type: DType, in_rank: Int](tensor: NDBuffer[type, in_rank]):
@@ -20,10 +20,8 @@ fn print_elements[type: DType, in_rank: Int](tensor: NDBuffer[type, in_rank]):
 
     @always_inline
     @parameter
-    fn print_elements_lambda[
-        simd_width: Int, rank: Int
-    ](idx: StaticIntTuple[rank]):
-        var index = rebind[StaticIntTuple[in_rank]](idx)
+    fn print_elements_lambda[simd_width: Int, rank: Int](idx: IndexList[rank]):
+        var index = rebind[IndexList[in_rank]](idx)
         print(tensor[index])
 
     elementwise[print_elements_lambda, 1](tensor.dynamic_shape)

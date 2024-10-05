@@ -26,7 +26,7 @@ from nn.conv_utils import (
     get_direct_conv_micro_kernel_width,
 )
 
-from utils.index import Index, StaticIntTuple
+from utils.index import Index, IndexList
 
 alias input_type = DType.uint8
 alias filter_type = DType.int8
@@ -48,10 +48,10 @@ fn test[
     R: Int,
     S: Int,
     F: Int,
-    stride: StaticIntTuple[2],
-    dilation: StaticIntTuple[2],
-    pad_h: StaticIntTuple[2],
-    pad_w: StaticIntTuple[2],
+    stride: IndexList[2],
+    dilation: IndexList[2],
+    pad_h: IndexList[2],
+    pad_w: IndexList[2],
 ) raises:
     print("== test_direct_conv")
 

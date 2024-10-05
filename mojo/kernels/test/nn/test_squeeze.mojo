@@ -10,7 +10,7 @@ from buffer.dimlist import DimList
 from memory import UnsafePointer, stack_allocation
 from MOGG import calculate_squeeze_shape, to_buffer
 
-from utils.index import StaticIntTuple
+from utils.index import IndexList
 
 
 # CHECK-LABEL: test_calculate_squeeze_shape
@@ -22,14 +22,14 @@ fn test_calculate_squeeze_shape():
         1,
         DimList(8),
     ].stack_allocation()
-    data_matrix[StaticIntTuple[1](0)] = 1
-    data_matrix[StaticIntTuple[1](1)] = 10
-    data_matrix[StaticIntTuple[1](2)] = 1
-    data_matrix[StaticIntTuple[1](3)] = 11
-    data_matrix[StaticIntTuple[1](4)] = 1
-    data_matrix[StaticIntTuple[1](5)] = 12
-    data_matrix[StaticIntTuple[1](6)] = 13
-    data_matrix[StaticIntTuple[1](7)] = 1
+    data_matrix[IndexList[1](0)] = 1
+    data_matrix[IndexList[1](1)] = 10
+    data_matrix[IndexList[1](2)] = 1
+    data_matrix[IndexList[1](3)] = 11
+    data_matrix[IndexList[1](4)] = 1
+    data_matrix[IndexList[1](5)] = 12
+    data_matrix[IndexList[1](6)] = 13
+    data_matrix[IndexList[1](7)] = 1
 
     # Main thing is indices not sorted.
     var remove_indices = NDBuffer[
@@ -37,9 +37,9 @@ fn test_calculate_squeeze_shape():
         1,
         DimList(3),
     ].stack_allocation()
-    remove_indices[StaticIntTuple[1](0)] = 0
-    remove_indices[StaticIntTuple[1](1)] = -1  # same as index 7
-    remove_indices[StaticIntTuple[1](2)] = 4
+    remove_indices[IndexList[1](0)] = 0
+    remove_indices[IndexList[1](1)] = -1  # same as index 7
+    remove_indices[IndexList[1](2)] = 4
 
     var final_shape = NDBuffer[
         DType.index,

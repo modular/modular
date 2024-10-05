@@ -27,7 +27,7 @@ from memory import stack_allocation, UnsafePointer
 from runtime.asyncrt import MojoCallContextPtr, parallelism_level
 from runtime.tracing import Trace, TraceLevel, trace_arg
 
-from utils import StaticIntTuple, StaticTuple
+from utils import IndexList, StaticTuple
 from utils.index import Index, product
 from utils.numerics import get_accum_type, min_or_neg_inf
 
@@ -350,7 +350,7 @@ fn _softmax_3_pass_base[
     @always_inline
     fn input_fn[
         _type: DType, _width: Int, _rank: Int
-    ](coords: StaticIntTuple[_rank]) -> SIMD[_type, _width]:
+    ](coords: IndexList[_rank]) -> SIMD[_type, _width]:
         constrained[_rank == 1]()
         return rebind[SIMD[_type, _width]](input_fn_1d[_width](coords[0]))
 
@@ -359,7 +359,7 @@ fn _softmax_3_pass_base[
     @always_inline
     fn output_fn[
         _type: DType, _width: Int, _rank: Int
-    ](coords: StaticIntTuple[_rank], val: SIMD[_type, _width]):
+    ](coords: IndexList[_rank], val: SIMD[_type, _width]):
         constrained[_rank == 1]()
         max_buff[0] = val.reduce_max().cast[type]()
 
@@ -371,7 +371,7 @@ fn _softmax_3_pass_base[
             reduce_impl,
             single_thread_blocking_override=True,
         ](
-            StaticIntTuple[1](len(output)),
+            IndexList[1](len(output)),
             init=Scalar[type].MIN,
             reduce_dim=0,
         )
@@ -506,11 +506,11 @@ fn logsoftmax[
     simd_width: Int,
     rank: Int,
     static_shape: DimList,
-    input_fn: fn[_simd_width: Int, _rank: Int] (
-        StaticIntTuple[_rank]
-    ) capturing [_] -> SIMD[type, _simd_width],
+    input_fn: fn[_simd_width: Int, _rank: Int] (IndexList[_rank]) capturing [
+        _
+    ] -> SIMD[type, _simd_width],
 ](
-    shape: StaticIntTuple[rank],
+    shape: IndexList[rank],
     output: NDBuffer[type, rank, static_shape],
     axis: Int,
 ) raises:
@@ -569,10 +569,8 @@ fn logsoftmax[
     @always_inline
     fn input_fn[
         _simd_width: Int, _rank: Int
-    ](coords: StaticIntTuple[_rank]) -> SIMD[type, _simd_width]:
-        return input.load[width=_simd_width](
-            rebind[StaticIntTuple[rank]](coords)
-        )
+    ](coords: IndexList[_rank]) -> SIMD[type, _simd_width]:
+        return input.load[width=_simd_width](rebind[IndexList[rank]](coords))
 
     logsoftmax[type, simd_width, rank, static_shape, input_fn](
         input.get_shape(), output, axis
@@ -589,11 +587,11 @@ fn _softmax_cpu[
     simd_width: Int,
     rank: Int,
     static_shape: DimList,
-    input_fn: fn[_simd_width: Int, _rank: Int] (
-        StaticIntTuple[_rank]
-    ) capturing [_] -> SIMD[type, _simd_width],
+    input_fn: fn[_simd_width: Int, _rank: Int] (IndexList[_rank]) capturing [
+        _
+    ] -> SIMD[type, _simd_width],
 ](
-    shape: StaticIntTuple[rank],
+    shape: IndexList[rank],
     output: NDBuffer[type, rank, static_shape],
     axis: Int,
 ) raises:
@@ -655,10 +653,8 @@ fn softmax[
     @always_inline
     fn input_fn[
         _simd_width: Int, _rank: Int
-    ](coords: StaticIntTuple[_rank]) -> SIMD[type, _simd_width]:
-        return input.load[width=_simd_width](
-            rebind[StaticIntTuple[rank]](coords)
-        )
+    ](coords: IndexList[_rank]) -> SIMD[type, _simd_width]:
+        return input.load[width=_simd_width](rebind[IndexList[rank]](coords))
 
     softmax[type, simd_width, rank, static_shape, input_fn](
         input.get_shape(), output, axis
@@ -668,12 +664,12 @@ fn softmax[
 fn softmax_kernel[
     BLOCK_SIZE: Int,
     input_fn: fn[_type: DType, _simd_width: Int, _rank: Int] (
-        StaticIntTuple[_rank]
+        IndexList[_rank]
     ) capturing [_] -> SIMD[_type, _simd_width],
     type: DType,
     rank: Int,
     accum_type: DType = get_accum_type[type](),
-](shape: StaticIntTuple[rank], output: NDBuffer[type, rank], axis: Int,):
+](shape: IndexList[rank], output: NDBuffer[type, rank], axis: Int,):
     var row_size = _temp_uint_from_int(shape[axis])
     var num_rows = _temp_uint_from_int(shape.flattened_length()) // row_size
 
@@ -771,11 +767,11 @@ fn _softmax_gpu[
     simd_width: Int,
     rank: Int,
     static_shape: DimList,
-    input_fn: fn[_simd_width: Int, _rank: Int] (
-        StaticIntTuple[_rank]
-    ) capturing [_] -> SIMD[type, _simd_width],
+    input_fn: fn[_simd_width: Int, _rank: Int] (IndexList[_rank]) capturing [
+        _
+    ] -> SIMD[type, _simd_width],
 ](
-    shape: StaticIntTuple[rank],
+    shape: IndexList[rank],
     output: NDBuffer[type, rank, static_shape],
     axis: Int,
     ctx: DeviceContext,
@@ -787,7 +783,7 @@ fn _softmax_gpu[
     @parameter
     fn input_fn_wrapper[
         _type: DType, width: Int, rank: Int
-    ](idx: StaticIntTuple[rank]) -> SIMD[_type, width]:
+    ](idx: IndexList[rank]) -> SIMD[_type, width]:
         return rebind[SIMD[_type, width]](input_fn[width, rank](idx))
 
     alias BLOCK_SIZE = 128
@@ -820,12 +816,12 @@ fn softmax[
     simd_width: Int,
     rank: Int,
     static_shape: DimList,
-    input_fn: fn[_simd_width: Int, _rank: Int] (
-        StaticIntTuple[_rank]
-    ) capturing [_] -> SIMD[type, _simd_width],
+    input_fn: fn[_simd_width: Int, _rank: Int] (IndexList[_rank]) capturing [
+        _
+    ] -> SIMD[type, _simd_width],
     target: StringLiteral = "cpu",
 ](
-    shape: StaticIntTuple[rank],
+    shape: IndexList[rank],
     output: NDBuffer[type, rank, static_shape],
     axis: Int,
     context: MojoCallContextPtr = MojoCallContextPtr(),
@@ -868,7 +864,7 @@ fn _online_softmax_kernel[
 ](input: LayoutTensor[type, layout], output: LayoutTensor[type, layout]):
     """This is only for online softmax validation, NOT a general kernel."""
 
-    alias mma_shape = StaticIntTuple[3](16, 8, 8)
+    alias mma_shape = IndexList[3](16, 8, 8)
     alias num_seqs = input.shape[0]()
     alias seqlen = input.shape[1]()
 
@@ -979,7 +975,7 @@ fn _online_softmax_iter_for_mma_output[
     num_m_mmas: Int,
     num_n_mmas: Int,
     num_rowwise_warps: Int,
-    mma_shape: StaticIntTuple[3],
+    mma_shape: IndexList[3],
     type: DType,
     # not used but to work around weird parameter deduction
     _layout0: Layout,

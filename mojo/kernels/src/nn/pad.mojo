@@ -19,7 +19,7 @@ from linalg.transpose import _fill_strides
 from memory import UnsafePointer, memcpy
 from register import mogg_register
 
-from utils import StaticIntTuple, StaticTuple, unroll
+from utils import IndexList, StaticTuple, unroll
 
 
 @always_inline
@@ -41,9 +41,9 @@ struct _NestedLoopIter[n_loops: Int]:
              .....
     """
 
-    var cur: StaticIntTuple[n_loops]
+    var cur: IndexList[n_loops]
 
-    alias LoopBoundSpec = InlinedFixedVector[StaticIntTuple[2], n_loops]
+    alias LoopBoundSpec = InlinedFixedVector[IndexList[2], n_loops]
     var loop_bounds: Self.LoopBoundSpec
     var early_stop: Bool
 
@@ -58,7 +58,7 @@ struct _NestedLoopIter[n_loops: Int]:
 
         self.loop_bounds = InlinedFixedVector(loop_bounds)
 
-        self.cur = StaticIntTuple[n_loops]()
+        self.cur = IndexList[n_loops]()
         self.early_stop = False
 
         for i in range(n_loops):
@@ -84,7 +84,7 @@ struct _NestedLoopIter[n_loops: Int]:
     fn __iter__(inout self: Self) -> Self:
         return self
 
-    fn __next__(inout self) -> StaticIntTuple[n_loops]:
+    fn __next__(inout self) -> IndexList[n_loops]:
         var cur = self.cur
 
         self.cur[len(self.cur) - 1] += 1
@@ -148,7 +148,7 @@ fn pad_constant[
         output: UnsafePointer[Scalar[type]],
         input: UnsafePointer[Scalar[type]],
         paddings: UnsafePointer[Scalar[paddings_type]],
-        output_shape: StaticIntTuple[rank],
+        output_shape: IndexList[rank],
         output_strides: UnsafePointer[Scalar[DType.index]],
         input_strides: UnsafePointer[Scalar[DType.index]],
     ):
@@ -211,7 +211,7 @@ fn pad_reflect[
         output: UnsafePointer[Scalar[type]],
         input: UnsafePointer[Scalar[type]],
         paddings: UnsafePointer[Scalar[paddings_type]],
-        output_shape: StaticIntTuple[rank],
+        output_shape: IndexList[rank],
         output_strides: UnsafePointer[Scalar[DType.index]],
         input_strides: UnsafePointer[Scalar[DType.index]],
     ):
@@ -238,7 +238,7 @@ fn pad_shape[
 ](
     input_buf: NDBuffer[input_type, input_rank],
     paddings_buf: NDBuffer[paddings_type, 1],
-) raises -> StaticIntTuple[input_rank]:
+) raises -> IndexList[input_rank]:
     """
     Compute the output shape of a `pad` operation, and assert the inputs are
     compatible.
@@ -264,7 +264,7 @@ fn pad_shape[
         raise Error("[pad] paddings shape must be (2 * input_rank)")
 
     # compute and return the output shape
-    var output_shape = StaticIntTuple[input_rank]()
+    var output_shape = IndexList[input_rank]()
 
     for axis in range(input_rank):
         var pre_pad = int(paddings_buf[2 * axis])
@@ -284,7 +284,7 @@ fn _do_pad[
         UnsafePointer[Scalar[type]],
         UnsafePointer[Scalar[type]],
         UnsafePointer[Scalar[paddings_type]],
-        StaticIntTuple[rank],
+        IndexList[rank],
         UnsafePointer[Scalar[DType.index]],
         UnsafePointer[Scalar[DType.index]],
     ) capturing [_] -> None,
@@ -333,7 +333,7 @@ struct _AxisParams[rank: Int, type: DType, paddings_type: DType](
         inout self: Self,
         axis: Int,
         paddings: UnsafePointer[Scalar[paddings_type]],
-        output_shape: StaticIntTuple[rank],
+        output_shape: IndexList[rank],
     ):
         var axis_dim = output_shape[axis]
         var pre_pad = int(paddings[2 * axis])
@@ -406,7 +406,7 @@ fn _pad_constant_axis[
     output: UnsafePointer[Scalar[type]],
     input: UnsafePointer[Scalar[type]],
     constant: Scalar[type],
-    output_shape: StaticIntTuple[rank],
+    output_shape: IndexList[rank],
     output_strides: UnsafePointer[Scalar[DType.index]],
     input_strides: UnsafePointer[Scalar[DType.index]],
     owned axis_params: StaticTuple[
@@ -447,7 +447,7 @@ fn _pad_constant_impl[
     input: UnsafePointer[Scalar[type]],
     paddings: UnsafePointer[Scalar[paddings_type]],
     constant: Scalar[type],
-    output_shape: StaticIntTuple[rank],
+    output_shape: IndexList[rank],
     output_strides: UnsafePointer[Scalar[DType.index]],
     input_strides: UnsafePointer[Scalar[DType.index]],
 ):
@@ -566,7 +566,7 @@ struct _AxisParamsReflect[rank: Int, type: DType, paddings_type: DType](
         inout self: Self,
         axis: Int,
         paddings: UnsafePointer[Scalar[paddings_type]],
-        output_shape: StaticIntTuple[rank],
+        output_shape: IndexList[rank],
     ):
         var axis_dim = output_shape[axis]
         var pre_pad = int(paddings[2 * axis])
@@ -697,7 +697,7 @@ fn _pad_reflect_impl[
     output: UnsafePointer[Scalar[type]],
     input: UnsafePointer[Scalar[type]],
     paddings: UnsafePointer[Scalar[paddings_type]],
-    output_shape: StaticIntTuple[rank],
+    output_shape: IndexList[rank],
     output_strides: UnsafePointer[Scalar[DType.index]],
     input_strides: UnsafePointer[Scalar[DType.index]],
 ):
@@ -771,8 +771,8 @@ fn pad_repeat[
     """
     var padding_ndbuf = NDBuffer[paddings_type, 2, DimList(rank, 2)](paddings)
 
-    var pre_pads = StaticIntTuple[rank]()
-    var post_pads = StaticIntTuple[rank]()
+    var pre_pads = IndexList[rank]()
+    var post_pads = IndexList[rank]()
 
     for axis in range(rank):
         pre_pads[axis] = int(paddings[2 * axis])
@@ -781,7 +781,7 @@ fn pad_repeat[
     var loop_bounds = _NestedLoopIter[rank].LoopBoundSpec(rank)
 
     for i in range(rank):
-        loop_bounds.append(StaticIntTuple[2](0, input.dim(i)))
+        loop_bounds.append(IndexList[2](0, input.dim(i)))
 
     var non_pad_iter = _NestedLoopIter[rank](loop_bounds)
 
@@ -794,18 +794,18 @@ fn pad_repeat[
         var post_pad = post_pads[axis]
 
         for i in range(axis):
-            loop_bounds[i] = StaticIntTuple[2](
+            loop_bounds[i] = IndexList[2](
                 pre_pads[i], pre_pads[i] + input.dim(i)
             )
 
         for i in range(axis + 1, rank):
-            loop_bounds[i] = StaticIntTuple[2](0, output.dim(i))
+            loop_bounds[i] = IndexList[2](0, output.dim(i))
 
         # handle pre-padding of the axis
         var pre_lower = 0
         var pre_upper = pre_pads[axis]
 
-        loop_bounds[axis] = StaticIntTuple[2](pre_lower, pre_upper)
+        loop_bounds[axis] = IndexList[2](pre_lower, pre_upper)
 
         var pre_pad_iter = _NestedLoopIter[rank](loop_bounds)
 
@@ -820,7 +820,7 @@ fn pad_repeat[
         var post_lower = pre_pads[axis] + input.dim(axis)
         var post_upper = output.dim(axis)
 
-        loop_bounds[axis] = StaticIntTuple[2](post_lower, post_upper)
+        loop_bounds[axis] = IndexList[2](post_lower, post_upper)
 
         var post_pad_iter = _NestedLoopIter[rank](loop_bounds)
 

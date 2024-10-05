@@ -16,7 +16,7 @@ from buffer import NDBuffer
 from buffer.dimlist import DimList
 from nn.gather_scatter import gather
 
-from utils.index import StaticIntTuple
+from utils.index import IndexList
 
 
 # CHECK-LABEL: test_gather
@@ -38,7 +38,7 @@ fn test_gather() raises:
 
         for i in range(num_rows):
             for j in range(row_size):
-                input[StaticIntTuple[2](i, j)] = Float32(i).value
+                input[IndexList[2](i, j)] = Float32(i).value
 
         # Setup indices.
         alias num_indices = 16
@@ -49,7 +49,7 @@ fn test_gather() raises:
         ].stack_allocation[alignment=64]()
 
         for i in range(num_indices):
-            indices[StaticIntTuple[1](i)] = i // 2
+            indices[IndexList[1](i)] = i // 2
         indices[0] = -1
         indices[1] = -num_rows
 
@@ -69,11 +69,11 @@ fn test_gather() raises:
             indices.make_dims_unknown(),
         )
 
-        print(output[StaticIntTuple[2](0, 0)])
-        print(output[StaticIntTuple[2](1, 0)])
-        print(output[StaticIntTuple[2](2, 0)])
-        print(output[StaticIntTuple[2](6, 0)])
-        print(output[StaticIntTuple[2](15, 0)])
+        print(output[IndexList[2](0, 0)])
+        print(output[IndexList[2](1, 0)])
+        print(output[IndexList[2](2, 0)])
+        print(output[IndexList[2](6, 0)])
+        print(output[IndexList[2](15, 0)])
 
     # CHECK: 15.0
     # CHECK: 0.0
@@ -106,7 +106,7 @@ fn test_gather_3d() raises:
 
         for i in range(num_rows):
             for j in range(row_size):
-                input[StaticIntTuple[3](i, j, 0)] = Float32(i).value
+                input[IndexList[3](i, j, 0)] = Float32(i).value
 
         # Setup indices.
         alias num_indices = 16
@@ -117,7 +117,7 @@ fn test_gather_3d() raises:
         ].stack_allocation[alignment=64]()
 
         for i in range(num_indices):
-            indices[StaticIntTuple[2](i, 0)] = i // 2
+            indices[IndexList[2](i, 0)] = i // 2
 
         # create output
         var output = NDBuffer[
@@ -135,10 +135,10 @@ fn test_gather_3d() raises:
             indices.make_dims_unknown(),
         )
 
-        print(output[StaticIntTuple[4](0, 0, 0, 0)])
-        print(output[StaticIntTuple[4](2, 0, 0, 0)])
-        print(output[StaticIntTuple[4](6, 0, 0, 0)])
-        print(output[StaticIntTuple[4](15, 0, 0, 0)])
+        print(output[IndexList[4](0, 0, 0, 0)])
+        print(output[IndexList[4](2, 0, 0, 0)])
+        print(output[IndexList[4](6, 0, 0, 0)])
+        print(output[IndexList[4](15, 0, 0, 0)])
 
     # CHECK: 0.0
     # CHECK-NEXT: 1.0
@@ -175,7 +175,7 @@ fn test_gather_empty_indices() raises:
 
         for i in range(num_rows):
             for j in range(row_size):
-                input[StaticIntTuple[2](i, j)] = Float32(i).value
+                input[IndexList[2](i, j)] = Float32(i).value
 
         # Setup indices.
         var indices = NDBuffer[
@@ -185,7 +185,7 @@ fn test_gather_empty_indices() raises:
         ].stack_allocation()
 
         for i in range(num_indices):
-            indices[StaticIntTuple[1](i)] = i // 2
+            indices[IndexList[1](i)] = i // 2
 
         # create output
         var output = NDBuffer[

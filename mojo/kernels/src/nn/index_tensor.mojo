@@ -13,7 +13,7 @@ from memory import memcpy, memset_zero, UnsafePointer
 from nn.gather_scatter import normalize_neg_index
 from runtime.asyncrt import parallelism_level
 
-from utils import StaticIntTuple
+from utils import IndexList
 
 
 @always_inline
@@ -28,7 +28,7 @@ fn index_tensor_shape[
 ](
     input_buf: NDBuffer[input_type, input_rank],
     indices_buf: NDBuffer[indices_type, indices_rank],
-) raises -> StaticIntTuple[output_rank]:
+) raises -> IndexList[output_rank]:
     """
     Compute the output shape of a `index_tensor` operation, and assert the
     inputs are compatible.
@@ -63,7 +63,7 @@ fn index_tensor_shape[
     # not need to be materialized), we need to construct the indices_shape as
     # follows for the purposes of calculating the index.tensor shape:
     alias combined_indices_rank = batch_dims + indices_rank
-    var indices_shape = StaticIntTuple[combined_indices_rank]()
+    var indices_shape = IndexList[combined_indices_rank]()
 
     @parameter
     for i in range(batch_dims):
@@ -87,7 +87,7 @@ fn index_tensor_shape[
         )
 
     # compute and return the output shape
-    var output_shape = StaticIntTuple[output_rank]()
+    var output_shape = IndexList[output_rank]()
     var next_out_dim = 0
 
     var input_shape = input_buf.get_shape()
@@ -171,7 +171,7 @@ fn index_tensor_1d[
 
     # Flatten data to array of shape (batch_dim_size, data.shape[batch_dims:])
     alias reshaped_data_rank = data_rank - batch_dims + 1
-    var reshaped_data_tuple = StaticIntTuple[reshaped_data_rank]()
+    var reshaped_data_tuple = IndexList[reshaped_data_rank]()
 
     reshaped_data_tuple[0] = batch_volume
     var counter = 1
@@ -205,7 +205,7 @@ fn index_tensor_1d[
 
         for i in range(work_start, work_end):
             for j in range(indices.get_shape()[0]):
-                var data_coord = StaticIntTuple[reshaped_data_rank]()
+                var data_coord = IndexList[reshaped_data_rank]()
                 data_coord[0] = i
                 for k in range(last_index_dim):
                     data_coord[k + 1] = int(indices[(j, k)])
@@ -259,7 +259,7 @@ fn index_tensor[
     # not need to be materialized), we need to construct the indices_shape as
     # follows for the purposes of calculating the index.tensor shape:
     alias combined_indices_rank = batch_dims + indices_rank
-    var indices_shape = StaticIntTuple[combined_indices_rank]()
+    var indices_shape = IndexList[combined_indices_rank]()
 
     @parameter
     for i in range(batch_dims):
@@ -298,7 +298,7 @@ fn index_tensor[
     #       with the shape below. In the case of index_tensor, we don't need to
     #       it since the first batch_dims dimensions are the same and we don't
     #       want to waste memory.
-    var reshaped_indices_shape = StaticIntTuple[3](
+    var reshaped_indices_shape = IndexList[3](
         batch_dims_size,
         num_elems // (batch_dims_size * last_shape_of_indices),
         last_shape_of_indices,
@@ -308,7 +308,7 @@ fn index_tensor[
 
     # Flatten data to array of shape (batch_dim_size, data.shape[batch_dims:])
     alias reshaped_data_rank = data_rank - batch_dims + 1
-    var reshaped_data_tuple = StaticIntTuple[reshaped_data_rank]()
+    var reshaped_data_tuple = IndexList[reshaped_data_rank]()
     # Calculate the dimensions of reshaped_data.
     reshaped_data_tuple[0] = batch_dims_size
     var counter = 1

@@ -11,7 +11,7 @@ from memory import UnsafePointer
 from buffer import NDBuffer
 from nn.nms import non_max_suppression, non_max_suppression_shape_func
 
-from utils import StaticIntTuple
+from utils import IndexList
 from utils.index import Index
 
 
@@ -41,12 +41,12 @@ fn fill_boxes[
     type, 3
 ]:
     var num_boxes = len(box_list) // batch_size
-    var shape = StaticIntTuple[3](batch_size, num_boxes, 4)
+    var shape = IndexList[3](batch_size, num_boxes, 4)
     var storage = UnsafePointer[Scalar[type]].alloc(shape.flattened_length())
     var boxes = NDBuffer[type, 3](storage, shape)
     for i in range(len(box_list)):
         var coords = linear_offset_to_coords(
-            i, StaticIntTuple[2](batch_size, num_boxes)
+            i, IndexList[2](batch_size, num_boxes)
         )
         boxes[Index(coords[0], coords[1], 0)] = box_list[i].y1
         boxes[Index(coords[0], coords[1], 1)] = box_list[i].x1
@@ -58,8 +58,8 @@ fn fill_boxes[
 
 fn linear_offset_to_coords[
     rank: Int
-](idx: Int, shape: StaticIntTuple[rank]) -> StaticIntTuple[rank]:
-    var output = StaticIntTuple[rank](0)
+](idx: Int, shape: IndexList[rank]) -> IndexList[rank]:
+    var output = IndexList[rank](0)
     var curr_idx = idx
     for i in reversed(range(rank)):
         output[i] = curr_idx % shape[i]
@@ -75,7 +75,7 @@ fn fill_scores[
 ) -> NDBuffer[type, 3]:
     var num_boxes = len(scores_list) // batch_size // num_classes
 
-    var shape = StaticIntTuple[3](batch_size, num_classes, num_boxes)
+    var shape = IndexList[3](batch_size, num_classes, num_boxes)
     var storage = UnsafePointer[Scalar[type]].alloc(shape.flattened_length())
     var scores = NDBuffer[type, 3](storage, shape)
     for i in range(len(scores_list)):
@@ -107,7 +107,7 @@ fn test_case[
         iou_threshold,
         score_threshold,
     )
-    var idxs_shape = StaticIntTuple[2](shape[0], shape[1])
+    var idxs_shape = IndexList[2](shape[0], shape[1])
     var idxs_storage = UnsafePointer[Int64].alloc(idxs_shape.flattened_length())
     var selected_idxs = NDBuffer[DType.int64, 2](idxs_storage, idxs_shape)
     non_max_suppression(

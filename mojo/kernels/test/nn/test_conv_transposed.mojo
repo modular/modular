@@ -28,7 +28,7 @@ from nn.conv_utils import (
     get_direct_conv_micro_kernel_width,
 )
 
-from utils.index import Index, StaticIntTuple
+from utils.index import Index, IndexList
 
 alias simd_size: Int = simdwidthof[DType.float32]()
 alias type = DType.float32
@@ -37,8 +37,8 @@ alias type = DType.float32
 @always_inline
 fn extend_shape_5d[
     rank: Int
-](in_shape: StaticIntTuple[rank], first: Int, last: Int) -> StaticIntTuple[5]:
-    var out_shape = StaticIntTuple[5](1)
+](in_shape: IndexList[rank], first: Int, last: Int) -> IndexList[5]:
+    var out_shape = IndexList[5](1)
     out_shape[0] = first
     out_shape[4] = last
 
@@ -57,10 +57,8 @@ fn extend_shape_5d[
 
 
 @always_inline
-fn extend_shape_3d[
-    rank: Int
-](in_shape: StaticIntTuple[rank]) -> StaticIntTuple[3]:
-    var out_shape = StaticIntTuple[3](1)
+fn extend_shape_3d[rank: Int](in_shape: IndexList[rank]) -> IndexList[3]:
+    var out_shape = IndexList[3](1)
 
     @parameter
     for i in range(rank):
@@ -72,8 +70,8 @@ fn extend_shape_3d[
 @always_inline
 fn append_shape_5d[
     rank: Int
-](in_shape: StaticIntTuple[rank], last2nd: Int, last: Int) -> StaticIntTuple[5]:
-    var out_shape = StaticIntTuple[5](1)
+](in_shape: IndexList[rank], last2nd: Int, last: Int) -> IndexList[5]:
+    var out_shape = IndexList[5](1)
     out_shape[3] = last2nd
     out_shape[4] = last
 
@@ -95,18 +93,18 @@ fn test_conv_transposed[
     type: DType, rank: Int
 ](
     N: Int,
-    input_dims: StaticIntTuple[rank],
+    input_dims: IndexList[rank],
     C: Int,
-    filter_dims: StaticIntTuple[rank],
+    filter_dims: IndexList[rank],
     F: Int,
-    stride: StaticIntTuple[rank],
-    dilation: StaticIntTuple[rank],
-    pad: StaticIntTuple[2 * rank],
+    stride: IndexList[rank],
+    dilation: IndexList[rank],
+    pad: IndexList[2 * rank],
     num_groups: Int,
 ) raises:
     print("test_conv_transposed")
 
-    var output_dims = StaticIntTuple[rank](1)
+    var output_dims = IndexList[rank](1)
 
     @parameter
     for i in range(rank):
@@ -118,9 +116,9 @@ fn test_conv_transposed[
             + 1
         )
 
-    var pad_d = StaticIntTuple[2](0)
-    var pad_h = StaticIntTuple[2](0)
-    var pad_w = StaticIntTuple[2](0)
+    var pad_d = IndexList[2](0)
+    var pad_h = IndexList[2](0)
+    var pad_w = IndexList[2](0)
 
     @parameter
     if rank == 1:
@@ -189,7 +187,7 @@ fn test_conv_transposed[
         packed_filter_shape.flattened_length()
     )
     var packed_filter = NDBuffer[type, rank + 3](
-        packed_filter_ptr, rebind[StaticIntTuple[rank + 3]](packed_filter_shape)
+        packed_filter_ptr, rebind[IndexList[rank + 3]](packed_filter_shape)
     )
 
     var output_shape = extend_shape(output_dims, N, F)
@@ -246,11 +244,11 @@ fn test_conv_transposed[
     @always_inline
     @__copy_capture(output, bias_ptr)
     @parameter
-    fn epilogue[_rank: Int](coords: StaticIntTuple[_rank], f_size: Int):
+    fn epilogue[_rank: Int](coords: IndexList[_rank], f_size: Int):
         @always_inline
         @parameter
         fn body1[width: Int](idx: Int):
-            var curr_coords = rebind[StaticIntTuple[rank + 2]](coords)
+            var curr_coords = rebind[IndexList[rank + 2]](coords)
             curr_coords[rank + 1] += idx
 
             var vec = output.load[width=width](curr_coords)
@@ -369,7 +367,7 @@ fn main() raises:
         2,  # F
         Index(1, 3, 2),  # stride
         Index(1, 1, 1),  # dilation
-        StaticIntTuple[6](0),  # pad
+        IndexList[6](0),  # pad
         1,  # num_groups
     )
 
@@ -381,7 +379,7 @@ fn main() raises:
         2,  # F
         Index(2, 1, 2),  # stride
         Index(1, 1, 2),  # dilation
-        StaticIntTuple[6](0),  # pad
+        IndexList[6](0),  # pad
         1,  # num_groups
     )
 
@@ -393,7 +391,7 @@ fn main() raises:
         2,  # F
         Index(1, 3, 2),  # stride
         Index(1, 1, 1),  # dilation
-        StaticIntTuple[6](1, 0, 2, 1, 0, 1),  # pad
+        IndexList[6](1, 0, 2, 1, 0, 1),  # pad
         1,  # num_groups
     )
 
@@ -405,7 +403,7 @@ fn main() raises:
         2,  # F
         Index(1, 3, 2),  # stride
         Index(2, 3, 1),  # dilation
-        StaticIntTuple[6](2, 2, 1, 1, 1, 1),  # pad
+        IndexList[6](2, 2, 1, 1, 1, 1),  # pad
         1,  # num_groups
     )
 
@@ -417,7 +415,7 @@ fn main() raises:
         8,  # F
         Index(1, 1, 1),  # stride
         Index(1, 1, 1),  # dilation
-        StaticIntTuple[6](0, 0, 0, 0, 0, 0),  # pad
+        IndexList[6](0, 0, 0, 0, 0, 0),  # pad
         1,  # num_groups
     )
 
@@ -457,7 +455,7 @@ fn main() raises:
     #     320,  # F
     #     Index(2, 2, 2),  # stride
     #     Index(1, 1, 1),  # dilation
-    #     StaticIntTuple[6](0),  # pad
+    #     IndexList[6](0),  # pad
     #     1,  # num_groups
     # )
 
@@ -469,7 +467,7 @@ fn main() raises:
     #     256,  # F
     #     Index(2, 2, 2),  # stride
     #     Index(1, 1, 1),  # dilation
-    #     StaticIntTuple[6](0),  # pad
+    #     IndexList[6](0),  # pad
     #     1,  # num_groups
     # )
 
@@ -481,7 +479,7 @@ fn main() raises:
     #     128,  # F
     #     Index(2, 2, 2),  # stride
     #     Index(1, 1, 1),  # dilation
-    #     StaticIntTuple[6](0),  # pad
+    #     IndexList[6](0),  # pad
     #     1,  # num_groups
     # )
 
@@ -493,7 +491,7 @@ fn main() raises:
     #     64,  # F
     #     Index(2, 2, 2),  # stride
     #     Index(1, 1, 1),  # dilation
-    #     StaticIntTuple[6](0),  # pad
+    #     IndexList[6](0),  # pad
     #     1,  # num_groups
     # )
 
@@ -505,6 +503,6 @@ fn main() raises:
     #     32,  # F
     #     Index(2, 2, 2),  # stride
     #     Index(1, 1, 1),  # dilation
-    #     StaticIntTuple[6](0),  # pad
+    #     IndexList[6](0),  # pad
     #     1,  # num_groups
     # )

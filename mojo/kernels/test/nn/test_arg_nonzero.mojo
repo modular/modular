@@ -10,7 +10,7 @@ from buffer.dimlist import DimList
 from nn.arg_nonzero import arg_nonzero, arg_nonzero_shape
 from testing import assert_equal
 
-from utils import StaticIntTuple
+from utils import IndexList
 
 
 # CHECK-LABEL: test_where_size
@@ -23,12 +23,12 @@ def test_where_size():
         DimList(3, 2, 1),
     ].stack_allocation()
 
-    values[StaticIntTuple[rank](0, 0, 0)] = 1.0
-    values[StaticIntTuple[rank](0, 1, 0)] = 2.0
-    values[StaticIntTuple[rank](1, 0, 0)] = 0.0
-    values[StaticIntTuple[rank](1, 1, 0)] = 0.0
-    values[StaticIntTuple[rank](2, 0, 0)] = 0.0
-    values[StaticIntTuple[rank](2, 1, 0)] = -3.0
+    values[IndexList[rank](0, 0, 0)] = 1.0
+    values[IndexList[rank](0, 1, 0)] = 2.0
+    values[IndexList[rank](1, 0, 0)] = 0.0
+    values[IndexList[rank](1, 1, 0)] = 0.0
+    values[IndexList[rank](2, 0, 0)] = 0.0
+    values[IndexList[rank](2, 1, 0)] = -3.0
 
     var output_shape = arg_nonzero_shape[DType.float32, rank, True](
         values.make_dims_unknown()
@@ -48,12 +48,12 @@ def test_where_size_bool():
         DimList(3, 2, 1),
     ].stack_allocation()
 
-    values[StaticIntTuple[rank](0, 0, 0)] = True
-    values[StaticIntTuple[rank](0, 1, 0)] = True
-    values[StaticIntTuple[rank](1, 0, 0)] = False
-    values[StaticIntTuple[rank](1, 1, 0)] = False
-    values[StaticIntTuple[rank](2, 0, 0)] = False
-    values[StaticIntTuple[rank](2, 1, 0)] = True
+    values[IndexList[rank](0, 0, 0)] = True
+    values[IndexList[rank](0, 1, 0)] = True
+    values[IndexList[rank](1, 0, 0)] = False
+    values[IndexList[rank](1, 1, 0)] = False
+    values[IndexList[rank](2, 0, 0)] = False
+    values[IndexList[rank](2, 1, 0)] = True
 
     var output_shape = arg_nonzero_shape[DType.bool, rank, True](
         values.make_dims_unknown()
@@ -73,12 +73,12 @@ def test_where():
         DimList(3, 2, 1),
     ].stack_allocation()
 
-    values[StaticIntTuple[rank](0, 0, 0)] = 1.0
-    values[StaticIntTuple[rank](0, 1, 0)] = 2.0
-    values[StaticIntTuple[rank](1, 0, 0)] = 0.0
-    values[StaticIntTuple[rank](1, 1, 0)] = 0.0
-    values[StaticIntTuple[rank](2, 0, 0)] = 0.0
-    values[StaticIntTuple[rank](2, 1, 0)] = -3.0
+    values[IndexList[rank](0, 0, 0)] = 1.0
+    values[IndexList[rank](0, 1, 0)] = 2.0
+    values[IndexList[rank](1, 0, 0)] = 0.0
+    values[IndexList[rank](1, 1, 0)] = 0.0
+    values[IndexList[rank](2, 0, 0)] = 0.0
+    values[IndexList[rank](2, 1, 0)] = -3.0
 
     var computed_outputs = NDBuffer[
         DType.index,
@@ -92,15 +92,15 @@ def test_where():
         DimList(3, 3),
     ].stack_allocation()
 
-    golden_outputs[StaticIntTuple[2](0, 0)] = 0
-    golden_outputs[StaticIntTuple[2](0, 1)] = 0
-    golden_outputs[StaticIntTuple[2](0, 2)] = 0
-    golden_outputs[StaticIntTuple[2](1, 0)] = 0
-    golden_outputs[StaticIntTuple[2](1, 1)] = 1
-    golden_outputs[StaticIntTuple[2](1, 2)] = 0
-    golden_outputs[StaticIntTuple[2](2, 0)] = 2
-    golden_outputs[StaticIntTuple[2](2, 1)] = 1
-    golden_outputs[StaticIntTuple[2](2, 2)] = 0
+    golden_outputs[IndexList[2](0, 0)] = 0
+    golden_outputs[IndexList[2](0, 1)] = 0
+    golden_outputs[IndexList[2](0, 2)] = 0
+    golden_outputs[IndexList[2](1, 0)] = 0
+    golden_outputs[IndexList[2](1, 1)] = 1
+    golden_outputs[IndexList[2](1, 2)] = 0
+    golden_outputs[IndexList[2](2, 0)] = 2
+    golden_outputs[IndexList[2](2, 1)] = 1
+    golden_outputs[IndexList[2](2, 2)] = 0
 
     arg_nonzero(
         values.make_dims_unknown(), computed_outputs.make_dims_unknown()
@@ -173,12 +173,12 @@ def test_where_bool():
         DimList(3, 2, 1),
     ].stack_allocation()
 
-    values[StaticIntTuple[rank](0, 0, 0)] = True
-    values[StaticIntTuple[rank](0, 1, 0)] = True
-    values[StaticIntTuple[rank](1, 0, 0)] = False
-    values[StaticIntTuple[rank](1, 1, 0)] = False
-    values[StaticIntTuple[rank](2, 0, 0)] = False
-    values[StaticIntTuple[rank](2, 1, 0)] = True
+    values[IndexList[rank](0, 0, 0)] = True
+    values[IndexList[rank](0, 1, 0)] = True
+    values[IndexList[rank](1, 0, 0)] = False
+    values[IndexList[rank](1, 1, 0)] = False
+    values[IndexList[rank](2, 0, 0)] = False
+    values[IndexList[rank](2, 1, 0)] = True
 
     var computed_outputs = NDBuffer[
         DType.index,
@@ -192,15 +192,15 @@ def test_where_bool():
         DimList(3, 3),
     ].stack_allocation()
 
-    golden_outputs[StaticIntTuple[2](0, 0)] = 0
-    golden_outputs[StaticIntTuple[2](0, 1)] = 0
-    golden_outputs[StaticIntTuple[2](0, 2)] = 0
-    golden_outputs[StaticIntTuple[2](1, 0)] = 0
-    golden_outputs[StaticIntTuple[2](1, 1)] = 1
-    golden_outputs[StaticIntTuple[2](1, 2)] = 0
-    golden_outputs[StaticIntTuple[2](2, 0)] = 2
-    golden_outputs[StaticIntTuple[2](2, 1)] = 1
-    golden_outputs[StaticIntTuple[2](2, 2)] = 0
+    golden_outputs[IndexList[2](0, 0)] = 0
+    golden_outputs[IndexList[2](0, 1)] = 0
+    golden_outputs[IndexList[2](0, 2)] = 0
+    golden_outputs[IndexList[2](1, 0)] = 0
+    golden_outputs[IndexList[2](1, 1)] = 1
+    golden_outputs[IndexList[2](1, 2)] = 0
+    golden_outputs[IndexList[2](2, 0)] = 2
+    golden_outputs[IndexList[2](2, 1)] = 1
+    golden_outputs[IndexList[2](2, 2)] = 0
 
     arg_nonzero(
         values.make_dims_unknown(), computed_outputs.make_dims_unknown()

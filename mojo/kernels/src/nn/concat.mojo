@@ -24,12 +24,12 @@ from memory import UnsafePointer, memcpy
 from register import mogg_register
 from runtime.asyncrt import MojoCallContextPtr
 
-from utils import StaticIntTuple, StaticTuple, product
+from utils import IndexList, StaticTuple, product
 from runtime.tracing import Trace, TraceLevel
 
 alias elementwise_epilogue_type = fn[
     c_type: DType, rank: Int, width: Int = 1, *, alignment: Int = 1
-] (StaticIntTuple[rank], SIMD[c_type, width]) capturing -> None
+] (IndexList[rank], SIMD[c_type, width]) capturing -> None
 
 
 # ===----------------------------------------------------------------------===#
@@ -59,7 +59,7 @@ fn memcpy_or_fuse[
     out_byte_offset: Int,
     src_data: __type_of(dest_data),
     n: Int,
-    out_shape: StaticIntTuple[rank],
+    out_shape: IndexList[rank],
 ):
     @parameter
     if not epilogue_fn:
@@ -76,7 +76,7 @@ fn memcpy_or_fuse[
         )
 
         # Cast
-        var shape_1d = StaticIntTuple[1](typed_len)
+        var shape_1d = IndexList[1](typed_len)
         var typed_src = src_data.bitcast[type]()
         var input = NDBuffer[type, 1](
             typed_src,
@@ -87,7 +87,7 @@ fn memcpy_or_fuse[
         @always_inline
         fn epilogue_wrapper[
             simd_width: Int, _rank: Int
-        ](index: StaticIntTuple[_rank]):
+        ](index: IndexList[_rank]):
             var load = rebind[NDBuffer[type, _rank]](input).load[
                 width=simd_width
             ](index)
@@ -432,9 +432,7 @@ fn _concat_small[
 
     @parameter
     @always_inline
-    fn concat_lambda[
-        simd_width: Int, rank: Int
-    ](out_index: StaticIntTuple[rank]):
+    fn concat_lambda[simd_width: Int, rank: Int](out_index: IndexList[rank]):
         # Concating [:, 10, :], [:, 20, :], [:, 30, :] results in shape
         # [:, 60, :] so when the target dim is:
         #   0 >= target_dim < 10: We are loading from first input.
@@ -536,7 +534,7 @@ fn concat_shape[
 ](
     input_bufs: InlinedFixedVector[NDBuffer[input_type, input_rank]],
     axis_buf: NDBuffer[axis_type, 1],
-) raises -> StaticIntTuple[input_rank]:
+) raises -> IndexList[input_rank]:
     """
     Compute the output shape of a `pad` operation, and assert the inputs are
     compatible.
@@ -569,7 +567,7 @@ fn concat_shape[
     @parameter
     @always_inline
     fn shape_equal_ignore_axis(
-        s1: StaticIntTuple[input_rank], s2: StaticIntTuple[input_rank]
+        s1: IndexList[input_rank], s2: IndexList[input_rank]
     ) -> Bool:
         for i in range(input_rank):
             if i != axis and s1[i] != s2[i]:
@@ -1481,7 +1479,7 @@ fn _concat_gpu_elementwise[
     @always_inline
     fn per_output_elem[
         simd_width: Int, _rank: Int
-    ](out_index: StaticIntTuple[_rank]):
+    ](out_index: IndexList[_rank]):
         var in_index = out_index
         in_index[axis] = out_index[axis]
 
@@ -1500,8 +1498,8 @@ fn _concat_gpu_elementwise[
                         rebind[NDBuffer[type, _rank]](input)[in_index],
                     )
                 else:
-                    output[rebind[StaticIntTuple[rank]](out_index)] = input[
-                        rebind[StaticIntTuple[rank]](in_index)
+                    output[rebind[IndexList[rank]](out_index)] = input[
+                        rebind[IndexList[rank]](in_index)
                     ]
                 return
 

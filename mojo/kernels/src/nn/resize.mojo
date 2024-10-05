@@ -12,7 +12,7 @@ from algorithm.reduction import _get_nd_indices_from_flat_index
 from buffer import NDBuffer
 from memory import memcpy, UnsafePointer
 
-from utils import StaticIntTuple, StaticTuple, unroll
+from utils import IndexList, StaticTuple, unroll
 
 
 @value
@@ -145,8 +145,8 @@ fn resize_nearest_neighbor[
     @parameter
     fn nn_interpolate[
         simd_width: Int, _rank: Int
-    ](out_coords: StaticIntTuple[_rank]):
-        var in_coords = StaticIntTuple[rank](0)
+    ](out_coords: IndexList[_rank]):
+        var in_coords = IndexList[rank](0)
 
         @parameter
         for i in range(rank):
@@ -164,7 +164,7 @@ fn resize_nearest_neighbor[
                 input.dim(i) - 1,
             )
 
-        output[rebind[StaticIntTuple[rank]](out_coords)] = input[in_coords]
+        output[rebind[IndexList[rank]](out_coords)] = input[in_coords]
 
     # TODO (#21439): can use memcpy when scale on inner dimension is 1
     elementwise[nn_interpolate, 1](output.get_shape())
@@ -198,7 +198,7 @@ fn interpolate_point_1d[
 ](
     interpolator: Interpolator[interpolation_mode],
     dim: Int,
-    out_coords: StaticIntTuple[rank],
+    out_coords: IndexList[rank],
     scale: Float32,
     input: NDBuffer[type, rank],
     output: NDBuffer[type, rank],
@@ -265,7 +265,7 @@ fn _resize[
         return memcpy(output.data, input.data, input.size())
     var scales = StaticTuple[Float32, rank]()
     var resize_dims = InlinedFixedVector[Int, size=rank](rank)
-    var tmp_dims = StaticIntTuple[rank](0)
+    var tmp_dims = IndexList[rank](0)
     for i in range(rank):
         # need to consider output dims when upsampling and input dims when downsampling
         tmp_dims[i] = max(input.dim(i), output.dim(i))

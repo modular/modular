@@ -25,7 +25,7 @@ from nn.conv_utils import (
     get_direct_conv_micro_kernel_width,
 )
 
-from utils.index import Index, StaticIntTuple
+from utils.index import Index, IndexList
 
 alias simd_size: Int = simdwidthof[DType.float32]()
 
@@ -35,15 +35,15 @@ fn test[
     type: DType, filter_packed: Bool
 ](
     N: Int,
-    DHW: StaticIntTuple[3],
+    DHW: IndexList[3],
     C: Int,
-    QRS: StaticIntTuple[3],
+    QRS: IndexList[3],
     F: Int,
-    stride: StaticIntTuple[3],
-    dilation: StaticIntTuple[3],
-    pad_d: StaticIntTuple[2],
-    pad_h: StaticIntTuple[2],
-    pad_w: StaticIntTuple[2],
+    stride: IndexList[3],
+    dilation: IndexList[3],
+    pad_d: IndexList[2],
+    pad_h: IndexList[2],
+    pad_w: IndexList[2],
     num_groups: Int,
 ) raises:
     print("== test_conv3d")

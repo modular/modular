@@ -9,7 +9,7 @@ from sys.info import simdwidthof
 from algorithm import stencil
 from buffer import NDBuffer
 
-from utils.index import StaticIntTuple
+from utils.index import IndexList
 from utils.numerics import min_or_neg_inf
 
 from .shapes import get_sliding_window_out_dim
@@ -47,7 +47,7 @@ fn pool_shape_ceil[
     strides_buf: NDBuffer[strides_type, 1],
     dilations_buf: NDBuffer[dilations_type, 1],
     paddings_buf: NDBuffer[paddings_type, 1],
-) raises -> StaticIntTuple[input_rank]:
+) raises -> IndexList[input_rank]:
     return pool_shape_impl[
         input_rank,
         input_type,
@@ -75,7 +75,7 @@ fn pool_shape[
     strides_buf: NDBuffer[strides_type, 1],
     dilations_buf: NDBuffer[dilations_type, 1],
     paddings_buf: NDBuffer[paddings_type, 1],
-) raises -> StaticIntTuple[input_rank]:
+) raises -> IndexList[input_rank]:
     return pool_shape_impl[
         input_rank,
         input_type,
@@ -104,7 +104,7 @@ fn pool_shape_impl[
     strides_buf: NDBuffer[strides_type, 1],
     dilations_buf: NDBuffer[dilations_type, 1],
     paddings_buf: NDBuffer[paddings_type, 1],
-) raises -> StaticIntTuple[input_rank]:
+) raises -> IndexList[input_rank]:
     """
     Compute the output shape of a pooling operation, and assert the inputs are
     compatible. Works for 2D pool operations only in the NHWC format.
@@ -151,7 +151,7 @@ fn pool_shape_impl[
     # Assume input has layout NHWC
     var batch_size = input_buf.dim(0)
     var input_channels = input_buf.dim(3)
-    var output_shape = StaticIntTuple[input_rank]()
+    var output_shape = IndexList[input_rank]()
     output_shape[0] = batch_size
     output_shape[input_rank - 1] = input_channels
 
@@ -226,7 +226,7 @@ fn max_pool[
     var dilation_w = int(dilations[1])
 
     alias stencil_rank = 2
-    alias stencil_axis = StaticIntTuple[stencil_rank](1, 2)
+    alias stencil_axis = IndexList[stencil_rank](1, 2)
 
     @always_inline
     @__copy_capture(
@@ -242,15 +242,15 @@ fn max_pool[
     @parameter
     fn map_fn[
         rank: Int
-    ](point: StaticIntTuple[stencil_rank]) -> (
-        StaticIntTuple[stencil_rank],
-        StaticIntTuple[stencil_rank],
+    ](point: IndexList[stencil_rank]) -> (
+        IndexList[stencil_rank],
+        IndexList[stencil_rank],
     ):
-        var lower_bound = StaticIntTuple[stencil_rank](
+        var lower_bound = IndexList[stencil_rank](
             point[0] * stride_h - padding_h_low,
             point[1] * stride_w - padding_w_low,
         )
-        var upper_bound = StaticIntTuple[stencil_rank](
+        var upper_bound = IndexList[stencil_rank](
             lower_bound[0] + pool_window_h * dilation_h,
             lower_bound[1] + pool_window_w * dilation_w,
         )
@@ -260,7 +260,7 @@ fn max_pool[
     @parameter
     fn load_fn[
         simd_width: Int, type: DType
-    ](point: StaticIntTuple[rank]) -> SIMD[type, simd_width]:
+    ](point: IndexList[rank]) -> SIMD[type, simd_width]:
         return rebind[SIMD[type, simd_width]](
             input.load[width=simd_width](point)
         )
@@ -275,7 +275,7 @@ fn max_pool[
     fn max_pool_compute[
         simd_width: Int
     ](
-        point: StaticIntTuple[rank],
+        point: IndexList[rank],
         val: SIMD[type, simd_width],
         result: SIMD[type, simd_width],
     ) -> SIMD[type, simd_width]:
@@ -285,7 +285,7 @@ fn max_pool[
     @parameter
     fn max_pool_compute_finalize[
         simd_width: Int
-    ](point: StaticIntTuple[rank], val: SIMD[type, simd_width]):
+    ](point: IndexList[rank], val: SIMD[type, simd_width]):
         output.store(point, val)
 
     @always_inline
@@ -407,7 +407,7 @@ fn avg_pool[
     var dilation_w = int(dilations[1])
 
     alias stencil_rank = 2
-    alias stencil_axis = StaticIntTuple[stencil_rank](1, 2)
+    alias stencil_axis = IndexList[stencil_rank](1, 2)
 
     @always_inline
     @__copy_capture(
@@ -424,15 +424,15 @@ fn avg_pool[
     @parameter
     fn map_fn[
         rank: Int
-    ](point: StaticIntTuple[stencil_rank]) -> (
-        StaticIntTuple[stencil_rank],
-        StaticIntTuple[stencil_rank],
+    ](point: IndexList[stencil_rank]) -> (
+        IndexList[stencil_rank],
+        IndexList[stencil_rank],
     ):
-        var lower_bound = StaticIntTuple[stencil_rank](
+        var lower_bound = IndexList[stencil_rank](
             point[0] * stride_h - padding_h_low,
             point[1] * stride_w - padding_w_low,
         )
-        var upper_bound = StaticIntTuple[stencil_rank](
+        var upper_bound = IndexList[stencil_rank](
             lower_bound[0] + pool_window_h * dilation_h,
             lower_bound[1] + pool_window_w * dilation_w,
         )
@@ -442,7 +442,7 @@ fn avg_pool[
     @parameter
     fn load_fn[
         simd_width: Int, type: DType
-    ](point: StaticIntTuple[rank]) -> SIMD[type, simd_width]:
+    ](point: IndexList[rank]) -> SIMD[type, simd_width]:
         return rebind[SIMD[type, simd_width]](
             input.load[width=simd_width](point)
         )
@@ -457,7 +457,7 @@ fn avg_pool[
     fn avg_pool_compute[
         simd_width: Int
     ](
-        point: StaticIntTuple[rank],
+        point: IndexList[rank],
         val: SIMD[type, simd_width],
         result: SIMD[type, simd_width],
     ) -> SIMD[type, simd_width]:
@@ -490,7 +490,7 @@ fn avg_pool[
     @parameter
     fn avg_pool_compute_finalize_exclude_boundary[
         simd_width: Int
-    ](point: StaticIntTuple[rank], val: SIMD[type, simd_width]):
+    ](point: IndexList[rank], val: SIMD[type, simd_width]):
         var window_h = pool_dim_size(
             point[1],
             output_height,
@@ -509,7 +509,7 @@ fn avg_pool[
     @parameter
     fn avg_pool_compute_finalize[
         simd_width: Int
-    ](point: StaticIntTuple[rank], val: SIMD[type, simd_width]):
+    ](point: IndexList[rank], val: SIMD[type, simd_width]):
         var res = val / (pool_window_h * pool_window_w)
         output.store(point, res)
 

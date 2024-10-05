@@ -8,7 +8,7 @@ from buffer import NDBuffer
 from buffer.dimlist import DimList
 from register import mogg_register, mogg_register_shape_func, mogg_view_op
 
-from utils.index import StaticIntTuple
+from utils.index import IndexList
 from utils.loop import unroll
 
 
@@ -24,9 +24,9 @@ fn reshape[
     single_thread_blocking_override: Bool = True,
 ](
     input: NDBuffer[type, rank, *_],
-    new_shape: StaticIntTuple[output_rank],
+    new_shape: IndexList[output_rank],
 ) -> NDBuffer[type, output_rank]:
-    var stride_tuple = StaticIntTuple[output_rank]()
+    var stride_tuple = IndexList[output_rank]()
     var stride: Int = 1
 
     # Create contiguous strides.
@@ -50,8 +50,10 @@ fn ndbuffer_reshape[
     single_thread_blocking_override: Bool,
 ](
     input: NDBuffer[type, rank],
-    new_shape: StaticIntTuple[output_rank],
-) -> NDBuffer[type, output_rank]:
+    new_shape: IndexList[output_rank],
+) -> NDBuffer[
+    type, output_rank
+]:
     return reshape[
         output_rank,
         single_thread_blocking_override=single_thread_blocking_override,
@@ -69,13 +71,13 @@ fn reshape_shape[
 ](
     input_buf: NDBuffer[input_type, input_rank],
     target_shape_buf: NDBuffer[target_shape_type, 1],
-) raises -> StaticIntTuple[output_rank]:
+) raises -> IndexList[output_rank]:
     if output_rank != target_shape_buf.dim(0):
         raise Error("[reshape] requires (len(target_shape) == output_rank)")
 
     # move the target shape from buffer into a static int tuple; also check and
     # record if there's any to-be-inferred dimension (-1).
-    var target_shape = StaticIntTuple[output_rank]()
+    var target_shape = IndexList[output_rank]()
     var to_be_inferred_axis = -1
     var non_negative_dim_product = 1
     for axis in range(output_rank):

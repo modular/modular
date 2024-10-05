@@ -11,7 +11,7 @@ from buffer import NDBuffer
 from register import mogg_register_shape_func
 
 from utils._select import _select_register_value as select
-from utils.index import StaticIntTuple
+from utils.index import IndexList
 
 
 @always_inline("nodebug")
@@ -84,8 +84,8 @@ fn slice_as_view[
     ends: NDBuffer[end_type, 1],
     steps: NDBuffer[step_type, 1],
 ) -> NDBuffer[type, rank]:
-    var new_shape = StaticIntTuple[rank]()
-    var new_stride = StaticIntTuple[rank]()
+    var new_shape = IndexList[rank]()
+    var new_stride = IndexList[rank]()
 
     # The data does not change however we will be addressing a different
     # offset of the data.
@@ -140,8 +140,8 @@ fn slice_as_copy[
     @always_inline
     @__copy_capture(sliced)
     @parameter
-    fn copy[simd_width: Int, rank: Int](idx: StaticIntTuple[rank]):
-        var index = rebind[StaticIntTuple[in_rank]](idx)
+    fn copy[simd_width: Int, rank: Int](idx: IndexList[rank]):
+        var index = rebind[IndexList[in_rank]](idx)
         output.store[width=simd_width](
             index, sliced.load[width=simd_width](index)
         )
@@ -169,7 +169,7 @@ fn slice_shape[
     start_buf: NDBuffer[start_type, 1],
     stop_buf: NDBuffer[stop_type, 1],
     step_buf: NDBuffer[step_type, 1],
-) raises -> StaticIntTuple[input_rank]:
+) raises -> IndexList[input_rank]:
     if input_rank != start_buf.dim(0):
         raise Error("[slice] start indices size must equal input rank")
     if input_rank != stop_buf.dim(0):
@@ -181,7 +181,7 @@ fn slice_shape[
         if step_buf[axis] == 0:
             raise Error("[slice] step must be non-zero")
 
-    var output_shape = StaticIntTuple[input_rank]()
+    var output_shape = IndexList[input_rank]()
 
     for i in range(input_rank):
         var start = int(start_buf[i])

@@ -14,7 +14,7 @@ from buffer.dimlist import Dim, DimList
 from nn.flash_attention import flash_attention, flash_attention_split_kv
 from testing import assert_equal
 
-from utils import StaticIntTuple
+from utils import IndexList
 from utils.index import Index
 
 
@@ -138,7 +138,7 @@ struct TestCaseConfig[batch_rank: Int]:
     alias rank = batch_rank + 2
     alias kv_cache_rank = Self.rank + 1
 
-    var batch_dims: StaticIntTuple[batch_rank]
+    var batch_dims: IndexList[batch_rank]
     var seq_len: Int
     var kv_num_heads: Int
     var kv_seq_len: Int
@@ -154,8 +154,8 @@ struct TestCaseConfig[batch_rank: Int]:
     @always_inline
     fn build_shape[
         *, shape_rank: Int = Self.rank, is_kv: Bool = False
-    ](self, x: Int, y: Int) -> StaticIntTuple[shape_rank]:
-        var shape = StaticIntTuple[shape_rank]()
+    ](self, x: Int, y: Int) -> IndexList[shape_rank]:
+        var shape = IndexList[shape_rank]()
 
         @parameter
         if shape_rank == self.kv_cache_rank:
@@ -223,7 +223,7 @@ def build_ndbuffer[
     rank: Int,
     *,
     static_shape: DimList = DimList.create_unknown[rank](),
-](shape: StaticIntTuple[rank]) -> NDBuffer[type, rank, static_shape]:
+](shape: IndexList[rank]) -> NDBuffer[type, rank, static_shape]:
     var ptr = UnsafePointer[Scalar[type]].alloc(shape.flattened_length())
     rand(ptr, shape.flattened_length())
     return NDBuffer[type, rank, static_shape](ptr, shape)
@@ -271,24 +271,22 @@ def test_case[
     @always_inline
     fn input_k_fn[
         simd_width: Int, _rank: Int
-    ](idx: StaticIntTuple[_rank]) -> SIMD[type, simd_width]:
-        return k.load[width=simd_width](rebind[StaticIntTuple[k.rank]](idx))
+    ](idx: IndexList[_rank]) -> SIMD[type, simd_width]:
+        return k.load[width=simd_width](rebind[IndexList[k.rank]](idx))
 
     @parameter
     @always_inline
     fn input_v_fn[
         simd_width: Int, _rank: Int
-    ](idx: StaticIntTuple[_rank]) -> SIMD[type, simd_width]:
-        return v.load[width=simd_width](rebind[StaticIntTuple[v.rank]](idx))
+    ](idx: IndexList[_rank]) -> SIMD[type, simd_width]:
+        return v.load[width=simd_width](rebind[IndexList[v.rank]](idx))
 
     @parameter
     @always_inline
     fn mask_fn[
         simd_width: Int, _rank: Int
-    ](idx: StaticIntTuple[_rank]) -> SIMD[type, simd_width]:
-        return mask.load[width=simd_width](
-            rebind[StaticIntTuple[mask.rank]](idx)
-        )
+    ](idx: IndexList[_rank]) -> SIMD[type, simd_width]:
+        return mask.load[width=simd_width](rebind[IndexList[mask.rank]](idx))
 
     flash_attention[
         input_k_fn,
@@ -428,9 +426,9 @@ def test_case_split_kv[
     @always_inline
     fn input_k_fn[
         simd_width: Int, _rank: Int
-    ](idx: StaticIntTuple[_rank]) -> SIMD[type, simd_width]:
+    ](idx: IndexList[_rank]) -> SIMD[type, simd_width]:
         return k.load[width=simd_width](
-            StaticIntTuple[k.rank](
+            IndexList[k.rank](
                 idx[0], idx[1], idx[2] + cfg.prev_seq_len(), idx[3]
             )
         )
@@ -439,9 +437,9 @@ def test_case_split_kv[
     @always_inline
     fn input_v_fn[
         simd_width: Int, _rank: Int
-    ](idx: StaticIntTuple[_rank]) -> SIMD[type, simd_width]:
+    ](idx: IndexList[_rank]) -> SIMD[type, simd_width]:
         return v.load[width=simd_width](
-            StaticIntTuple[v.rank](
+            IndexList[v.rank](
                 idx[0], idx[1], idx[2] + cfg.prev_seq_len(), idx[3]
             )
         )
@@ -450,28 +448,26 @@ def test_case_split_kv[
     @always_inline
     fn input_k_cache_fn[
         simd_width: Int, _rank: Int
-    ](idx: StaticIntTuple[_rank]) -> SIMD[type, simd_width]:
+    ](idx: IndexList[_rank]) -> SIMD[type, simd_width]:
         return k.load[width=simd_width](
-            StaticIntTuple[k.rank](idx[1], idx[2], idx[3], idx[4])
+            IndexList[k.rank](idx[1], idx[2], idx[3], idx[4])
         )
 
     @parameter
     @always_inline
     fn input_v_cache_fn[
         simd_width: Int, _rank: Int
-    ](idx: StaticIntTuple[_rank]) -> SIMD[type, simd_width]:
+    ](idx: IndexList[_rank]) -> SIMD[type, simd_width]:
         return v.load[width=simd_width](
-            StaticIntTuple[v.rank](idx[1], idx[2], idx[3], idx[4])
+            IndexList[v.rank](idx[1], idx[2], idx[3], idx[4])
         )
 
     @parameter
     @always_inline
     fn mask_fn[
         simd_width: Int, _rank: Int
-    ](idx: StaticIntTuple[_rank]) -> SIMD[type, simd_width]:
-        return mask.load[width=simd_width](
-            rebind[StaticIntTuple[mask.rank]](idx)
-        )
+    ](idx: IndexList[_rank]) -> SIMD[type, simd_width]:
+        return mask.load[width=simd_width](rebind[IndexList[mask.rank]](idx))
 
     var kv_present_shape = cfg.build_shape[is_kv=True](
         cfg.seq_len, cfg.depth_dim
@@ -486,8 +482,8 @@ def test_case_split_kv[
         q,
         kv_present_shape,
         kv_present_shape,
-        rebind[StaticIntTuple[cfg.rank + 1]](kv_past_shape),
-        rebind[StaticIntTuple[cfg.rank + 1]](kv_past_shape),
+        rebind[IndexList[cfg.rank + 1]](kv_past_shape),
+        rebind[IndexList[cfg.rank + 1]](kv_past_shape),
         output,
         cfg.scale,
     )

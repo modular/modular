@@ -9,7 +9,7 @@ from math import ceil
 from buffer import NDBuffer
 from buffer.dimlist import DimList
 
-from utils import StaticIntTuple
+from utils import IndexList
 from utils.numerics import min_or_neg_inf
 
 
@@ -275,6 +275,6 @@ fn roi_align_nhwc[
                                 pool_val,
                                 p4.w * input[roi_batch_idx, p4.y, p4.x, c],
                             )
-                    output[StaticIntTuple[4](ri, ph, pw, c)] = reduce_fn(
+                    output[IndexList[4](ri, ph, pw, c)] = reduce_fn(
                         pool_val, pool_elemn_num
                     )

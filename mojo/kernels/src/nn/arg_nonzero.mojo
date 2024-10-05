@@ -11,7 +11,7 @@ from buffer.dimlist import Dim, DimList
 from register import mogg_register
 from runtime.tracing import Trace, TraceLevel
 
-from utils.index import StaticIntTuple
+from utils.index import IndexList
 
 # ===----------------------------------------------------------------------===#
 # arg_nonzero
@@ -49,7 +49,7 @@ fn arg_nonzero[
                 i, input_buffer.dynamic_shape
             )
             if input_buffer[indices]:
-                var out_indices = StaticIntTuple[2]()
+                var out_indices = IndexList[2]()
                 out_indices[0] = j
                 j += 1
 
@@ -67,7 +67,7 @@ fn arg_nonzero_shape[
     type: DType,
     rank: Int,
     single_thread_blocking_override: Bool,
-](input_buffer: NDBuffer[type, rank],) -> StaticIntTuple[2]:
+](input_buffer: NDBuffer[type, rank],) -> IndexList[2]:
     """Return [NumNonZeros, InputRank] where NumNonZeros are the number of
     non-zero elements in the input.
 
@@ -83,7 +83,7 @@ fn arg_nonzero_shape[
         Shape of the arg_nonzero kernel for this input [NumNonZeros, InputRank].
     """
 
-    var shape = StaticIntTuple[2]()
+    var shape = IndexList[2]()
     shape[1] = rank
 
     var numel = input_buffer.dynamic_shape.flattened_length()

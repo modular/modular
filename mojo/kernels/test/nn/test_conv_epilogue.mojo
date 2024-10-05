@@ -27,7 +27,7 @@ from nn.conv_utils import (
     get_direct_conv_micro_kernel_width,
 )
 
-from utils.index import Index, StaticIntTuple
+from utils.index import Index, IndexList
 
 alias simd_size: Int = simdwidthof[DType.float32]()
 alias type = DType.float32
@@ -38,18 +38,18 @@ fn test[
     rank: Int, type: DType, filter_packed: Bool
 ](
     N: Int,
-    input_dims: StaticIntTuple[rank],
+    input_dims: IndexList[rank],
     C: Int,
-    filter_dims: StaticIntTuple[rank],
+    filter_dims: IndexList[rank],
     F: Int,
-    stride: StaticIntTuple[rank],
-    dilation: StaticIntTuple[rank],
-    pad: StaticIntTuple[2 * rank],  # pad in d, h, w
+    stride: IndexList[rank],
+    dilation: IndexList[rank],
+    pad: IndexList[2 * rank],  # pad in d, h, w
     num_groups: Int,
 ) raises:
     print("== test_conv_epilogue")
 
-    var output_dims = StaticIntTuple[rank](1)
+    var output_dims = IndexList[rank](1)
 
     @parameter
     for i in range(rank):
@@ -61,9 +61,9 @@ fn test[
             - 1
         ) // stride[i] + 1
 
-    var pad_d = StaticIntTuple[2](0)
-    var pad_h = StaticIntTuple[2](0)
-    var pad_w = StaticIntTuple[2](0)
+    var pad_d = IndexList[2](0)
+    var pad_h = IndexList[2](0)
+    var pad_w = IndexList[2](0)
 
     @parameter
     if rank == 1:
@@ -129,7 +129,7 @@ fn test[
         packed_filter_shape.flattened_length()
     )
     var packed_filter = NDBuffer[type, rank + 3](
-        packed_filter_ptr, rebind[StaticIntTuple[rank + 3]](packed_filter_shape)
+        packed_filter_ptr, rebind[IndexList[rank + 3]](packed_filter_shape)
     )
 
     var output_shape = extend_shape(output_dims, N, F)
@@ -144,7 +144,7 @@ fn test[
 
     @always_inline
     @parameter
-    fn null_epilogue[rank: Int](coords: StaticIntTuple[rank], f_size: Int):
+    fn null_epilogue[rank: Int](coords: IndexList[rank], f_size: Int):
         pass
 
     @parameter
@@ -215,11 +215,11 @@ fn test[
     # Test epilogue
     @always_inline
     @parameter
-    fn epilogue[_rank: Int](coords: StaticIntTuple[_rank], f_size: Int):
+    fn epilogue[_rank: Int](coords: IndexList[_rank], f_size: Int):
         @always_inline
         @parameter
         fn body1[width: Int](idx: Int):
-            var curr_coords = rebind[StaticIntTuple[rank + 2]](coords)
+            var curr_coords = rebind[IndexList[rank + 2]](coords)
             curr_coords[rank + 1] += idx
 
             var vec = output.load[width=width](curr_coords)
@@ -329,7 +329,7 @@ fn main() raises:
         64,  # F
         Index(1, 1, 2),  # stride
         Index(1, 1, 1),  # dilation
-        StaticIntTuple[6](0),  # pad_d, pad_h, pad_w
+        IndexList[6](0),  # pad_d, pad_h, pad_w
         1,  # num_groups
     )
 
@@ -367,7 +367,7 @@ fn main() raises:
         64,  # F
         Index(2, 2, 2),  # stride
         Index(1, 1, 1),  # dilation
-        StaticIntTuple[6](0),  # pad_h, pad_w
+        IndexList[6](0),  # pad_h, pad_w
         1,  # num_groups
     )
 
@@ -405,7 +405,7 @@ fn main() raises:
         6,  # F
         Index(3, 2, 3),  # stride
         Index(1, 1, 1),  # dilation
-        StaticIntTuple[6](1, 0, 2, 1, 1, 1),
+        IndexList[6](1, 0, 2, 1, 1, 1),
         1,  # num_groups
     )
 
@@ -442,7 +442,7 @@ fn main() raises:
         42,  # F
         Index(2, 2, 2),  # stride
         Index(1, 1, 1),  # dilation
-        StaticIntTuple[6](2, 1, 1, 1, 1, 1),
+        IndexList[6](2, 1, 1, 1, 1, 1),
         1,  # num_groups
     )
 

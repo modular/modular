@@ -15,7 +15,7 @@ from builtin.sort import _quicksort
 from memory import UnsafePointer
 from register import mogg_register_shape_func
 
-from utils import Span, StaticIntTuple
+from utils import Span, IndexList
 
 
 @always_inline
@@ -28,7 +28,7 @@ fn top_k_shape_impl[
     input: NDBuffer[type, rank],
     k_buf: NDBuffer[axis_type, 1],
     axis_buf: NDBuffer[axis_type, 1],
-) raises -> StaticIntTuple[rank]:
+) raises -> IndexList[rank]:
     """
     Compute the output shape of a  top/bottom k operation.
 
@@ -71,7 +71,7 @@ fn top_k_shape[
     input: NDBuffer[type, rank],
     k_buf: NDBuffer[axis_type, 1],
     axis_buf: NDBuffer[axis_type, 1],
-) raises -> StaticIntTuple[rank]:
+) raises -> IndexList[rank]:
     return top_k_shape_impl[
         single_thread_blocking_override=single_thread_blocking_override
     ](input, k_buf, axis_buf)
@@ -88,7 +88,7 @@ fn bottom_k_shape[
     input: NDBuffer[type, rank],
     k_buf: NDBuffer[axis_type, 1],
     axis_buf: NDBuffer[axis_type, 1],
-) raises -> StaticIntTuple[rank]:
+) raises -> IndexList[rank]:
     return top_k_shape_impl[
         single_thread_blocking_override=single_thread_blocking_override
     ](input, k_buf, axis_buf)

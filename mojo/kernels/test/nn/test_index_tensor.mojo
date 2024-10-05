@@ -13,7 +13,7 @@ from memory import stack_allocation
 from nn.gather_scatter import gather, gather_nd, gather_nd_shape, gather_shape
 from nn.index_tensor import index_tensor, index_tensor_1d, index_tensor_shape
 
-from utils import StaticIntTuple
+from utils import IndexList
 from utils.index import Index
 
 
@@ -74,8 +74,8 @@ fn test_index_tensor_DLRM() raises:
     ].stack_allocation()
     for i in range(input.dim(0)):
         for j in range(index_a.dim(0)):
-            ref_output[StaticIntTuple[output_rank](i, j)] = input[
-                StaticIntTuple[input_rank](
+            ref_output[IndexList[output_rank](i, j)] = input[
+                IndexList[input_rank](
                     i, index_a[j].__int__(), index_b[j].__int__()
                 )
             ]
@@ -87,8 +87,8 @@ fn test_index_tensor_DLRM() raises:
         DType.uint64, indices_rank, DimList(index_len, 2)
     ].stack_allocation()
     for i in range(index_len):
-        indices[StaticIntTuple[indices_rank](i, 0)] = index_a[i]
-        indices[StaticIntTuple[indices_rank](i, 1)] = index_b[i]
+        indices[IndexList[indices_rank](i, 0)] = index_a[i]
+        indices[IndexList[indices_rank](i, 1)] = index_b[i]
 
     var output_shape = index_tensor_shape[
         input_rank,
@@ -120,8 +120,8 @@ fn test_index_tensor_DLRM() raises:
     for i in range(input.dim(0)):
         for j in range(index_a.dim(0)):
             if (
-                output_data_buffer[StaticIntTuple[output_rank](i, j)]
-                != ref_output[StaticIntTuple[output_rank](i, j)]
+                output_data_buffer[IndexList[output_rank](i, j)]
+                != ref_output[IndexList[output_rank](i, j)]
             ):
                 print("Results mismatch")
                 return
@@ -191,8 +191,8 @@ fn test_index_tensor_DLRM_batch() raises:
     for i in range(input.dim(0)):
         for j in range(input.dim(1)):
             for k in range(index_a.dim(0)):
-                ref_output[StaticIntTuple[output_rank](i, j, k)] = input[
-                    StaticIntTuple[input_rank](
+                ref_output[IndexList[output_rank](i, j, k)] = input[
+                    IndexList[input_rank](
                         i, j, index_a[k].__int__(), index_b[k].__int__()
                     )
                 ]
@@ -203,8 +203,8 @@ fn test_index_tensor_DLRM_batch() raises:
         DType.uint64, indices_rank, DimList(index_len, 2)
     ].stack_allocation()
     for i in range(index_len):
-        indices[StaticIntTuple[indices_rank](i, 0)] = index_a[i]
-        indices[StaticIntTuple[indices_rank](i, 1)] = index_b[i]
+        indices[IndexList[indices_rank](i, 0)] = index_a[i]
+        indices[IndexList[indices_rank](i, 1)] = index_b[i]
 
     var output_shape = index_tensor_shape[
         input_rank,
@@ -239,8 +239,8 @@ fn test_index_tensor_DLRM_batch() raises:
         for j in range(input.dim(1)):
             for k in range(index_a.dim(0)):
                 if (
-                    output_data_buffer[StaticIntTuple[output_rank](i, j, k)]
-                    != ref_output[StaticIntTuple[output_rank](i, j, k)]
+                    output_data_buffer[IndexList[output_rank](i, j, k)]
+                    != ref_output[IndexList[output_rank](i, j, k)]
                 ):
                     print("Results mismatch")
                     return
@@ -299,16 +299,12 @@ fn test_index_tensor_CLIPVIT() raises:
     ].stack_allocation()
 
     for j in range(dim_2):
-        ref_output[StaticIntTuple[output_rank](0, j)] = input[
-            StaticIntTuple[input_rank](
-                index_a[0].__int__(), index_a[1].__int__(), j
-            )
+        ref_output[IndexList[output_rank](0, j)] = input[
+            IndexList[input_rank](index_a[0].__int__(), index_a[1].__int__(), j)
         ]
     for j in range(dim_2):
-        ref_output[StaticIntTuple[output_rank](1, j)] = input[
-            StaticIntTuple[input_rank](
-                index_b[0].__int__(), index_b[1].__int__(), j
-            )
+        ref_output[IndexList[output_rank](1, j)] = input[
+            IndexList[input_rank](index_b[0].__int__(), index_b[1].__int__(), j)
         ]
 
     # TODO:
@@ -321,10 +317,10 @@ fn test_index_tensor_CLIPVIT() raises:
     var indices = NDBuffer[
         DType.uint64, indices_rank, DimList(index_len, 2)
     ].stack_allocation()
-    indices[StaticIntTuple[indices_rank](0, 0)] = index_a[0]
-    indices[StaticIntTuple[indices_rank](0, 1)] = index_b[0]
-    indices[StaticIntTuple[indices_rank](1, 0)] = index_a[1]
-    indices[StaticIntTuple[indices_rank](1, 1)] = index_b[1]
+    indices[IndexList[indices_rank](0, 0)] = index_a[0]
+    indices[IndexList[indices_rank](0, 1)] = index_b[0]
+    indices[IndexList[indices_rank](1, 0)] = index_a[1]
+    indices[IndexList[indices_rank](1, 1)] = index_b[1]
     # TODO: Or index_a[0], index_a[1] and index_b[0], index_b[1]???
 
     var output_shape = gather_nd_shape[
@@ -358,8 +354,8 @@ fn test_index_tensor_CLIPVIT() raises:
     for i in range(dim_0):
         for j in range(dim_2):
             if (
-                output_data_buffer[StaticIntTuple[output_rank](i, j)]
-                != ref_output[StaticIntTuple[output_rank](i, j)]
+                output_data_buffer[IndexList[output_rank](i, j)]
+                != ref_output[IndexList[output_rank](i, j)]
             ):
                 print("Results mismatch")
                 return
@@ -402,7 +398,7 @@ fn test_index_tensor_llama2_mistral() raises:
     # Initialize with one.
     for i in range(index_dim_0):
         for j in range(index_dim_1):
-            index_a[StaticIntTuple[index_rank](i, j)] = 1
+            index_a[IndexList[index_rank](i, j)] = 1
 
     # This is effectively a gather operation.
 
@@ -413,8 +409,8 @@ fn test_index_tensor_llama2_mistral() raises:
     for i in range(index_dim_0):
         for j in range(index_dim_1):
             for k in range(dim_1):
-                ref_output[StaticIntTuple[output_rank](i, j, k)] = input[
-                    StaticIntTuple[input_rank](index_a[i, j].__int__(), k)
+                ref_output[IndexList[output_rank](i, j, k)] = input[
+                    IndexList[input_rank](index_a[i, j].__int__(), k)
                 ]
 
     alias axis_type = DType.int64
@@ -451,8 +447,8 @@ fn test_index_tensor_llama2_mistral() raises:
         for j in range(index_dim_1):
             for k in range(dim_1):
                 if (
-                    output_data_buffer[StaticIntTuple[output_rank](i, j, k)]
-                    != ref_output[StaticIntTuple[output_rank](i, j, k)]
+                    output_data_buffer[IndexList[output_rank](i, j, k)]
+                    != ref_output[IndexList[output_rank](i, j, k)]
                 ):
                     print("Results mismatch")
 

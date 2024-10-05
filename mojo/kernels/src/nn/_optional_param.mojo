@@ -6,7 +6,7 @@
 
 from buffer.dimlist import Dim, DimList, _make_tuple
 
-from utils.index import StaticIntTuple
+from utils.index import IndexList
 
 
 @value
@@ -59,12 +59,12 @@ struct OptionalParamInts[rank: Int, dim_list_parametric: DimList](
         dim_list_parametric: The list of optional Ints.
     """
 
-    var dim_list_dynamic: StaticIntTuple[rank]
+    var dim_list_dynamic: IndexList[rank]
 
     @always_inline("nodebug")
     fn __init__(
         inout self,
-        dim_list_dynamic: StaticIntTuple[rank],
+        dim_list_dynamic: IndexList[rank],
     ):
         self.dim_list_dynamic = dim_list_dynamic
 
@@ -85,7 +85,7 @@ struct OptionalParamInts[rank: Int, dim_list_parametric: DimList](
         return not self == rhs
 
     @always_inline("nodebug")
-    fn get(self) -> StaticIntTuple[rank]:
+    fn get(self) -> IndexList[rank]:
         @parameter
         if dim_list_parametric.all_known[rank]():
             return _make_tuple[rank](dim_list_parametric)

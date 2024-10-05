@@ -9,7 +9,7 @@ from math import ceil, iota
 from buffer import NDBuffer
 from register import *
 
-from utils.index import StaticIntTuple
+from utils.index import IndexList
 
 # ===----------------------------------------------------------------------===#
 # Arange op
@@ -26,7 +26,7 @@ fn arange[
     start_buf: NDBuffer[type, 1],
     stop_buf: NDBuffer[type, 1],
     step_buf: NDBuffer[type, 1],
-    index: StaticIntTuple[1],
+    index: IndexList[1],
 ) -> SIMD[type, simd_width]:
     return start_buf[0] + (iota[type, simd_width](index[0]) * step_buf[0])
 
@@ -40,7 +40,7 @@ fn arange_shape[
     start_buf: NDBuffer[type, 1],
     stop_buf: NDBuffer[type, 1],
     step_buf: NDBuffer[type, 1],
-) raises -> StaticIntTuple[1]:
+) raises -> IndexList[1]:
     var start: Scalar[type] = start_buf[0]
     var stop: Scalar[type] = stop_buf[0]
     var step: Scalar[type] = step_buf[0]
@@ -55,6 +55,6 @@ fn arange_shape[
         if step < 0 and start < stop:
             raise Error("[range] requires (stop <= start) for negative step")
 
-        return StaticIntTuple[1](len(range(start, stop, step)))
+        return IndexList[1](len(range(start, stop, step)))
     else:
-        return StaticIntTuple[1](int(ceil(abs(stop - start) / abs(step))))
+        return IndexList[1](int(ceil(abs(stop - start) / abs(step))))

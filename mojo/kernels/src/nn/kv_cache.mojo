@@ -26,7 +26,7 @@ from register import mogg_register
 from runtime.asyncrt import (
     MojoCallContextPtr,
 )
-from utils import StaticIntTuple
+from utils import IndexList
 
 from kv_cache.types import (
     ContiguousKVCache,
@@ -1467,7 +1467,7 @@ fn _matmul_kv_cache_impl[
     @always_inline
     fn write_to_cache_common[
         type_: DType, cache_t: KVCacheT, width: Int
-    ](cache: cache_t, idx: StaticIntTuple[2], val: SIMD[type_, width]):
+    ](cache: cache_t, idx: IndexList[2], val: SIMD[type_, width]):
         b_idx, t_idx = divmod(idx[0], SEQ_LEN)
         h_idx, hd_idx = divmod(idx[1], kv_params.head_size)
 
@@ -1492,7 +1492,7 @@ fn _matmul_kv_cache_impl[
         @__copy_capture(cache_reg)
         fn write_to_cache_contig[
             type_: DType, width: Int, *, alignment: Int = 1
-        ](idx: StaticIntTuple[2], val: SIMD[type_, width]):
+        ](idx: IndexList[2], val: SIMD[type_, width]):
             write_to_cache_common(cache_reg, idx, val)
 
         _matmul_common[
@@ -1508,7 +1508,7 @@ fn _matmul_kv_cache_impl[
         @__copy_capture(cache_reg)
         fn write_to_cache_continuous[
             type_: DType, width: Int, *, alignment: Int = 1
-        ](idx: StaticIntTuple[2], val: SIMD[type_, width]):
+        ](idx: IndexList[2], val: SIMD[type_, width]):
             write_to_cache_common(cache_reg, idx, val)
 
         _matmul_common[
@@ -1777,7 +1777,7 @@ fn fused_qkv_matmul_kv_cache_h1_d16_bhsd[
 
 
 alias embed_fn_type = fn[type: DType, width: Int] (
-    StaticIntTuple[4], SIMD[type, width]
+    IndexList[4], SIMD[type, width]
 ) capturing -> SIMD[type, width]
 
 
@@ -2132,7 +2132,7 @@ fn _fused_qkv_matmul_kv_cache_impl[
     ](
         k_cache: cache_t_,
         v_cache: cache_t_,
-        idx: StaticIntTuple[2],
+        idx: IndexList[2],
         val: SIMD[type_, width],
     ):
         var bs_and_seq = divmod(idx[0], SEQ_LEN)
@@ -2182,7 +2182,7 @@ fn _fused_qkv_matmul_kv_cache_impl[
         @__copy_capture(k_cache_reg, v_cache_reg)
         fn write_to_cache_contig[
             type_: DType, width: Int, *, alignment: Int = 1
-        ](idx: StaticIntTuple[2], val: SIMD[type_, width]):
+        ](idx: IndexList[2], val: SIMD[type_, width]):
             write_to_cache_common[alignment=alignment,](
                 k_cache_reg, v_cache_reg, idx, val
             )
@@ -2203,7 +2203,7 @@ fn _fused_qkv_matmul_kv_cache_impl[
         @__copy_capture(k_cache_reg, v_cache_reg)
         fn write_to_cache_continuous[
             type_: DType, width: Int, *, alignment: Int = 1
-        ](idx: StaticIntTuple[2], val: SIMD[type_, width]):
+        ](idx: IndexList[2], val: SIMD[type_, width]):
             write_to_cache_common[alignment=alignment,](
                 k_cache_reg, v_cache_reg, idx, val
             )
@@ -2233,7 +2233,7 @@ fn _matmul_common[
         type, 2, DimList(Dim(), hidden_state.shape.get[2]())
     ](
         hidden_state.data,
-        StaticIntTuple[2](BS * SEQ_LEN, K),
+        IndexList[2](BS * SEQ_LEN, K),
     )
 
     var c_nd: NDBuffer[type, 2, DimList(Dim(), N)]
@@ -2244,12 +2244,12 @@ fn _matmul_common[
 
         c_nd = NDBuffer[type, 2, DimList(Dim(), N)](
             c_ptr,
-            StaticIntTuple[2](BS * SEQ_LEN, N),
+            IndexList[2](BS * SEQ_LEN, N),
         )
     else:
         c_nd = NDBuffer[type, 2, DimList(Dim(), N)](
             UnsafePointer[Scalar[type]](),
-            StaticIntTuple[2](BS * SEQ_LEN, N),
+            IndexList[2](BS * SEQ_LEN, N),
         )
 
     # TODO unify with other matmul
@@ -2716,7 +2716,7 @@ fn _fused_qk_rope[
         rank: Int,
         cache_t_: KVCacheT, //,
         width: Int,
-    ](k_cache: cache_t_, idx_arg: StaticIntTuple[rank]):
+    ](k_cache: cache_t_, idx_arg: IndexList[rank]):
         constrained[rank == 4, "Invalid rank passed to rope kernel"]()
 
         @parameter
@@ -2724,7 +2724,7 @@ fn _fused_qk_rope[
             print("ROPE KERNEL CALLED WITH SINGLE VALUE, EXPECTED AT LEAST 2")
             return
         else:
-            var idx = rebind[StaticIntTuple[4]](idx_arg)
+            var idx = rebind[IndexList[4]](idx_arg)
             var bs_idx = idx[0]
             var seq_idx = idx[1]
             var head_idx = idx[2]
@@ -2749,7 +2749,7 @@ fn _fused_qk_rope[
             var x_re = x_c[0]
             var x_im = x_c[1]
 
-            var f_idx = StaticIntTuple[2](seq_idx, head_dim_idx)
+            var f_idx = IndexList[2](seq_idx, head_dim_idx)
             var f_c_temp = freqs_cis.load[width=width](f_idx)
 
             var f_c = f_c_temp.deinterleave()
@@ -2773,7 +2773,7 @@ fn _fused_qk_rope[
     alias kernel_simd_width = gcd(target_simd_width, kv_params.head_size)
     constrained[kernel_simd_width >= 2, "invalid simd_width and head size"]()
 
-    var launch_shape = StaticIntTuple[4](
+    var launch_shape = IndexList[4](
         batch_size,
         new_seq_len,
         num_q_heads + num_k_heads,  # concat q and k along head dim
@@ -2792,7 +2792,7 @@ fn _fused_qk_rope[
         fn rope_fn_contig[
             width: Int,
             rank: Int,
-        ](idx: StaticIntTuple[rank]):
+        ](idx: IndexList[rank]):
             rope_fn_common[width](k_cache_reg, idx)
 
         elementwise[
@@ -2809,7 +2809,7 @@ fn _fused_qk_rope[
         fn rope_fn_continuous[
             width: Int,
             rank: Int,
-        ](idx: StaticIntTuple[rank]):
+        ](idx: IndexList[rank]):
             rope_fn_common[width](k_cache_reg, idx)
 
         elementwise[
@@ -3250,7 +3250,7 @@ fn _flash_attention_kv_cache_cpu[
     @parameter
     fn input_k_fn[
         width: Int, rank: Int
-    ](idx: StaticIntTuple[rank]) -> SIMD[type, width]:
+    ](idx: IndexList[rank]) -> SIMD[type, width]:
         var bs = idx[0]
         var head_idx = idx[1]
         var seq = idx[2]
@@ -3262,7 +3262,7 @@ fn _flash_attention_kv_cache_cpu[
     @parameter
     fn input_v_fn[
         width: Int, rank: Int
-    ](idx: StaticIntTuple[rank]) -> SIMD[type, width]:
+    ](idx: IndexList[rank]) -> SIMD[type, width]:
         var bs = idx[0]
         var head_idx = idx[1]
         var seq = idx[2]
@@ -3274,12 +3274,10 @@ fn _flash_attention_kv_cache_cpu[
     @__copy_capture(mask)
     fn input_mask_fn[
         width: Int, rank: Int
-    ](idx: StaticIntTuple[rank]) -> SIMD[type, width]:
+    ](idx: IndexList[rank]) -> SIMD[type, width]:
         @parameter
         if mask.rank == 4:
-            return mask.load[width=width](
-                rebind[StaticIntTuple[mask.rank]](idx)
-            )
+            return mask.load[width=width](rebind[IndexList[mask.rank]](idx))
         elif mask.rank == 3:
             return mask.load[width=width]((idx[0], idx[2], idx[3]))
         else:
@@ -3290,10 +3288,10 @@ fn _flash_attention_kv_cache_cpu[
     var new_seq_len = q.dim[2]()
     var cache_seq_len = int(k.cache_length(0))
     var seq_len = new_seq_len + cache_seq_len
-    var fa_k_shape = StaticIntTuple[4](
+    var fa_k_shape = IndexList[4](
         batch_size, kv_params.num_heads, seq_len, depth
     )
-    var fa_v_shape = StaticIntTuple[4](
+    var fa_v_shape = IndexList[4](
         batch_size, kv_params.num_heads, seq_len, depth
     )
 
@@ -3345,7 +3343,7 @@ fn _flash_attention_kv_cache_gpu[
             DimList.create_unknown[wrapped_mask_rank](),
         ](
             mask.data,
-            StaticIntTuple[wrapped_mask_rank](
+            IndexList[wrapped_mask_rank](
                 q.dim[0](), mask.dim[0](), mask.dim[1]()
             ),
         )

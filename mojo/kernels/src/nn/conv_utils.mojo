@@ -20,7 +20,7 @@ from buffer import NDBuffer
 from buffer.dimlist import Dim, DimList
 from linalg.utils import partition_work
 
-from utils.index import Index, StaticIntTuple
+from utils.index import Index, IndexList
 
 from .image import Image2DLayout
 
@@ -31,7 +31,7 @@ from .image import Image2DLayout
 
 # Elementwise epilogue signature
 alias elementwise_epilogue_type = fn[rank: Int] (
-    coords: StaticIntTuple[rank],
+    coords: IndexList[rank],
     f_size: Int,
 ) capturing -> None
 
@@ -47,23 +47,23 @@ struct ConvShape[rank: Int]:
 
     var n: Int  # Input batch size.
 
-    var input_dims: StaticIntTuple[rank]  # Ex H and W for 2D
-    var output_dims: StaticIntTuple[rank]  # Ex HO and WO for 2D.
-    var filter_dims: StaticIntTuple[rank]  # Ex R and S for 2D.
+    var input_dims: IndexList[rank]  # Ex H and W for 2D
+    var output_dims: IndexList[rank]  # Ex HO and WO for 2D.
+    var filter_dims: IndexList[rank]  # Ex R and S for 2D.
 
     var c: Int  # Input channel.
     var f: Int  # Output channel.
 
-    var stride: StaticIntTuple[rank]
+    var stride: IndexList[rank]
 
-    var dilation: StaticIntTuple[rank]
+    var dilation: IndexList[rank]
 
     # TODO: change paddings to
-    # pad_lower: StaticIntTuple[rank]
-    # pad_upper: StaticIntTuple[rank]
-    var pad_d: StaticIntTuple[2]
-    var pad_h: StaticIntTuple[2]
-    var pad_w: StaticIntTuple[2]
+    # pad_lower: IndexList[rank]
+    # pad_upper: IndexList[rank]
+    var pad_d: IndexList[2]
+    var pad_h: IndexList[2]
+    var pad_w: IndexList[2]
 
     var num_groups: Int
 
@@ -155,7 +155,7 @@ struct ConvShape[rank: Int]:
         return self.output_dims.flattened_length()
 
     @always_inline
-    fn output_space_dims(self) -> StaticIntTuple[rank]:
+    fn output_space_dims(self) -> IndexList[rank]:
         return self.output_dims
 
     @always_inline
@@ -269,16 +269,16 @@ fn get_conv_shape[
     output: NDBuffer,
     input: NDBuffer,
     filter: NDBuffer,
-    stride: StaticIntTuple[rank],
-    dilation: StaticIntTuple[rank],
-    pad_d: StaticIntTuple[2],
-    pad_h: StaticIntTuple[2],
-    pad_w: StaticIntTuple[2],
+    stride: IndexList[rank],
+    dilation: IndexList[rank],
+    pad_d: IndexList[2],
+    pad_h: IndexList[2],
+    pad_w: IndexList[2],
     num_groups: Int,
 ) -> ConvShape[rank]:
-    var output_dims = StaticIntTuple[rank](0)
-    var input_dims = StaticIntTuple[rank](0)
-    var filter_dims = StaticIntTuple[rank](0)
+    var output_dims = IndexList[rank](0)
+    var input_dims = IndexList[rank](0)
+    var filter_dims = IndexList[rank](0)
 
     @parameter
     for i in range(rank):
@@ -318,10 +318,10 @@ fn get_conv2d_shape[
     output: NDBuffer[type, 4, output_shape],
     input: NDBuffer[type, 4, input_shape],
     filter: NDBuffer[type, 4, filter_shape],
-    pad_h: StaticIntTuple[2],
-    pad_w: StaticIntTuple[2],
-    stride: StaticIntTuple[2],
-    dilation: StaticIntTuple[2],
+    pad_h: IndexList[2],
+    pad_w: IndexList[2],
+    stride: IndexList[2],
+    dilation: IndexList[2],
     num_groups: Int,
 ) -> ConvShape[2]:
     constrained[
@@ -358,10 +358,10 @@ fn get_conv2d_shape[
     output: NDBuffer[type, 4, output_shape],
     input: NDBuffer[type, 4, input_shape],
     filter: NDBuffer[type, filter_rank, filter_shape],
-    pad_h: StaticIntTuple[2],
-    pad_w: StaticIntTuple[2],
-    stride: StaticIntTuple[2],
-    dilation: StaticIntTuple[2],
+    pad_h: IndexList[2],
+    pad_w: IndexList[2],
+    stride: IndexList[2],
+    dilation: IndexList[2],
     num_groups: Int,
 ) -> ConvShape[2]:
     constrained[data_layout == Image2DLayout.NHWC]()
@@ -370,7 +370,7 @@ fn get_conv2d_shape[
         or (filter_rank == 5 and filter_layout == Image2DLayout.FRSCf)
     ]()
 
-    var filter_dims: StaticIntTuple[2]
+    var filter_dims: IndexList[2]
 
     @parameter
     if filter_rank == 4 and filter_layout == Image2DLayout.RSCF:
@@ -423,13 +423,7 @@ fn get_conv_tile_size[type: DType]() -> Int:
 @always_inline
 fn get_conv_tile_shape[
     type: DType,
-](
-    c: Int,
-    filter_window_size: Int,
-    micro_kernel_width: Int,
-) -> StaticIntTuple[
-    2
-]:
+](c: Int, filter_window_size: Int, micro_kernel_width: Int,) -> IndexList[2]:
     """Compute the (c, f) tile shape in L2.
     Assume NHWC layout, the tile shape is (R, S, c_tile, f_tile). R and S are
     by default fully covered. The heuristic tried to block in C as much as
@@ -460,11 +454,9 @@ fn get_conv_tile_shape[
 @always_inline
 fn extend_shape[
     rank: Int
-](in_shape: StaticIntTuple[rank], first: Int, last: Int) -> StaticIntTuple[
-    rank + 2
-]:
+](in_shape: IndexList[rank], first: Int, last: Int) -> IndexList[rank + 2]:
     """Extend input shape by inserting `first` and `last` at both ends."""
-    var out_shape = StaticIntTuple[rank + 2](0)
+    var out_shape = IndexList[rank + 2](0)
     out_shape[0] = first
     out_shape[rank + 1] = last
 
@@ -478,11 +470,9 @@ fn extend_shape[
 @always_inline
 fn append_shape[
     rank: Int
-](in_shape: StaticIntTuple[rank], last2nd: Int, last: Int) -> StaticIntTuple[
-    rank + 2
-]:
+](in_shape: IndexList[rank], last2nd: Int, last: Int) -> IndexList[rank + 2]:
     """Append input shape by inserting `last2nd` and `last` at the end."""
-    var out_shape = StaticIntTuple[rank + 2](0)
+    var out_shape = IndexList[rank + 2](0)
     out_shape[rank] = last2nd
     out_shape[rank + 1] = last
 
@@ -580,11 +570,11 @@ struct ConvInfoStatic[rank: Int]:
         return self.pad.get[0]()
 
     @always_inline
-    fn strides(self) -> StaticIntTuple[2]:
+    fn strides(self) -> IndexList[2]:
         return Index(self.stride.get[0](), self.stride.get[1]())
 
     @always_inline
-    fn dilations(self) -> StaticIntTuple[2]:
+    fn dilations(self) -> IndexList[2]:
         return Index(self.dilation.get[0](), self.dilation.get[1]())
 
 
@@ -612,7 +602,7 @@ fn get_direct_conv_micro_kernel_width() -> Int:
 
 fn get_micro_kernel_shape[
     rank: Int, WO: Dim, F: Dim, conv_attr: ConvInfoStatic[rank], simd_size: Int
-]() -> StaticIntTuple[2]:
+]() -> IndexList[2]:
     alias optimize_static_shapes = WO.has_value() and F.has_value() and conv_attr.all_known()
 
     # Number of named simd registers for each architecture.
@@ -756,7 +746,7 @@ fn get_conv_num_tasks(num_threads: Int, conv_shape: ConvShape) -> Int:
 
 fn get_conv_num_partitions[
     micro_kernel_w: Int, micro_kernel_f: Int
-](num_threads: Int, conv_shape: ConvShape) -> StaticIntTuple[4]:
+](num_threads: Int, conv_shape: ConvShape) -> IndexList[4]:
     """Partition the worload in (batch, C, F, HOWO) dimensions.
     HOWO is the combination of HO and WO dimensions.
     The actual number of tasks are the product of return num_partitions.
@@ -850,7 +840,7 @@ fn get_conv_num_partitions[
 @always_inline
 fn get_partition(
     task_id: Int,
-    num_partitions: StaticIntTuple[4],
+    num_partitions: IndexList[4],
     conv_shape: ConvShape,
     micro_kernel_height: Int,
     micro_kernel_f_size: Int,

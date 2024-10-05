@@ -17,7 +17,7 @@ from nn.concat import (
     elementwise_epilogue_type,
 )
 
-from utils.index import StaticIntTuple
+from utils.index import IndexList
 
 
 fn test_concat() raises:
@@ -52,9 +52,9 @@ fn test_concat() raises:
     @always_inline
     fn epilogue_plus_one[
         c_type: DType, _rank: Int, width: Int, *, alignment: Int
-    ](indices: StaticIntTuple[_rank], val: SIMD[c_type, width]):
+    ](indices: IndexList[_rank], val: SIMD[c_type, width]):
         output.store[width=width](
-            rebind[StaticIntTuple[rank]](indices),
+            rebind[IndexList[rank]](indices),
             rebind[SIMD[type, width]](val + 1),
         )
 
@@ -109,9 +109,9 @@ fn test_concat_parallel():
     @always_inline
     fn epilogue_plus_one[
         c_type: DType, _rank: Int, width: Int, *, alignment: Int
-    ](indices: StaticIntTuple[_rank], val: SIMD[c_type, width]):
+    ](indices: IndexList[_rank], val: SIMD[c_type, width]):
         output.store[width=width](
-            rebind[StaticIntTuple[rank]](indices),
+            rebind[IndexList[rank]](indices),
             rebind[SIMD[type, width]](val + 1),
         )
 
@@ -169,9 +169,9 @@ fn test_concat_inner():
     @always_inline
     fn epilogue_plus_one[
         c_type: DType, _rank: Int, width: Int, *, alignment: Int
-    ](indices: StaticIntTuple[_rank], val: SIMD[c_type, width]):
+    ](indices: IndexList[_rank], val: SIMD[c_type, width]):
         output.store[width=width](
-            rebind[StaticIntTuple[rank]](indices),
+            rebind[IndexList[rank]](indices),
             rebind[SIMD[type, width]](val + 1),
         )
 

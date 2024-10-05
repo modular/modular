@@ -9,7 +9,7 @@ from buffer.dimlist import Dim, DimList
 from nn._optional_param import OptionalParamInt, OptionalParamInts
 from testing import *
 
-from utils import StaticIntTuple
+from utils import IndexList
 
 
 # CHECK-LABEL: test_opt_param_int
@@ -28,14 +28,14 @@ fn test_opt_param_int():
 fn test_opt_param_ints():
     print("=== test_opt_param_ints")
     alias dp0 = DimList(0, 0)
-    var d0 = OptionalParamInts[2, dp0](StaticIntTuple[2](1, 1))
+    var d0 = OptionalParamInts[2, dp0](IndexList[2](1, 1))
     # CHECK: 0
     print(d0.at[0]())
     # CHECK: 0
     print(d0.at[1]())
 
     alias dp1 = DimList(Dim(), 0)
-    var d1 = OptionalParamInts[2, dp1](StaticIntTuple[2](1, 1))
+    var d1 = OptionalParamInts[2, dp1](IndexList[2](1, 1))
     # CHECK: 1
     print(d1.at[0]())
     # CHECK: 0

@@ -12,7 +12,7 @@ from memory import stack_allocation
 from nn.arange import arange, arange_shape
 from nn.slice import slice_as_copy, slice_as_view
 
-from utils.index import Index, StaticIntTuple
+from utils.index import Index, IndexList
 
 
 fn print_elements[type: DType, in_rank: Int](tensor: NDBuffer[type, in_rank]):
@@ -21,10 +21,8 @@ fn print_elements[type: DType, in_rank: Int](tensor: NDBuffer[type, in_rank]):
 
     @always_inline
     @parameter
-    fn print_elements_lambda[
-        simd_width: Int, rank: Int
-    ](idx: StaticIntTuple[rank]):
-        var index = rebind[StaticIntTuple[in_rank]](idx)
+    fn print_elements_lambda[simd_width: Int, rank: Int](idx: IndexList[rank]):
+        var index = rebind[IndexList[in_rank]](idx)
         print(tensor[index])
 
     elementwise[print_elements_lambda, 1](tensor.dynamic_shape)
@@ -35,18 +33,18 @@ fn test_arange[
     dtype: DType,
 ](start: Int, stop: Int, step: Int):
     var memory1 = stack_allocation[1, dtype, 1]()
-    var start_tensor = NDBuffer[dtype, 1](memory1, StaticIntTuple[1](1))
+    var start_tensor = NDBuffer[dtype, 1](memory1, IndexList[1](1))
     start_tensor[0] = start
 
     var memory2 = stack_allocation[1, dtype, 1]()
-    var stop_tensor = NDBuffer[dtype, 1](memory2, StaticIntTuple[1](1))
+    var stop_tensor = NDBuffer[dtype, 1](memory2, IndexList[1](1))
     stop_tensor[0] = stop
 
     var memory3 = stack_allocation[1, dtype, 1]()
-    var step_tensor = NDBuffer[dtype, 1](memory3, StaticIntTuple[1](1))
+    var step_tensor = NDBuffer[dtype, 1](memory3, IndexList[1](1))
     step_tensor[0] = step
 
-    var outshape = StaticIntTuple[1]()
+    var outshape = IndexList[1]()
     try:
         outshape = arange_shape[dtype, True](
             start_tensor, stop_tensor, step_tensor
@@ -68,15 +66,15 @@ fn test_arange[
     @always_inline
     @__copy_capture(out_tensor, step_tensor, start_tensor, stop_tensor)
     @parameter
-    fn arange_lambda[simd_width: Int, rank: Int](idx: StaticIntTuple[rank]):
-        var index = rebind[StaticIntTuple[1]](idx)
+    fn arange_lambda[simd_width: Int, rank: Int](idx: IndexList[rank]):
+        var index = rebind[IndexList[1]](idx)
         var range_val = arange[dtype, simd_width](
             start_tensor, stop_tensor, step_tensor, index
         )
         out_tensor.store[width=simd_width](index, range_val)
 
     elementwise[arange_lambda, 1](
-        rebind[StaticIntTuple[1]](out_tensor.dynamic_shape),
+        rebind[IndexList[1]](out_tensor.dynamic_shape),
     )
 
     print_elements[dtype, 1](out_tensor)

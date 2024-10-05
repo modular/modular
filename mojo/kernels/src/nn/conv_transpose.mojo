@@ -22,7 +22,7 @@ from memory import UnsafePointer
 from register import mogg_register
 from runtime.asyncrt import parallelism_level
 
-from utils.index import Index, StaticIntTuple
+from utils.index import Index, IndexList
 from utils.loop import unroll
 
 from .conv_utils import (
@@ -63,11 +63,11 @@ fn conv_transpose_naive[
     output: NDBuffer[type, 5],
     input: NDBuffer[type, 5],
     filter: NDBuffer[type, 5],
-    stride: StaticIntTuple[3],
-    dilation: StaticIntTuple[3],
-    pad_d: StaticIntTuple[2],
-    pad_h: StaticIntTuple[2],
-    pad_w: StaticIntTuple[2],
+    stride: IndexList[3],
+    dilation: IndexList[3],
+    pad_d: IndexList[2],
+    pad_h: IndexList[2],
+    pad_w: IndexList[2],
 ):
     """
     Implements the ConvTranspose operator from the MO spec.
@@ -167,7 +167,7 @@ fn conv_transpose_shape[
     dilations: NDBuffer[dilations_type, 1],
     pads: NDBuffer[pads_type, 1],
     output_pads: NDBuffer[output_pads_type, 1],
-) raises -> StaticIntTuple[input_rank]:
+) raises -> IndexList[input_rank]:
     """
     Compute the output shape of a `conv-transpose` operation, and assert the
     inputs are compatible.
@@ -211,7 +211,7 @@ fn conv_transpose_shape[
 
     # Assume input has channel last layout, NHWC or NDHWC.
     var batch_size = input.dim(0)
-    var output_shape = StaticIntTuple[input_rank]()
+    var output_shape = IndexList[input_rank]()
     # Assume kernel has layout RSFC or QRSFC. The output channel is F because
     # this is a convolution transpose shape function (inverse of regular
     # convolution).
@@ -280,7 +280,7 @@ fn conv_transpose_shape[
 
 fn get_num_partitions[
     micro_kernel_height: Int, micro_kernel_f_size: Int
-](num_threads: Int, conv_shape: ConvShape) -> StaticIntTuple[4]:
+](num_threads: Int, conv_shape: ConvShape) -> IndexList[4]:
     """Partition the worload in (batch&group, C, F, H) dimensions.
     HOWO is the combination of HO and WO dimensions.
     The actual number of tasks are the product of return num_partitions.
@@ -292,7 +292,7 @@ fn get_num_partitions[
 
     var max_f_tasks = ceildiv(conv_shape.f, micro_kernel_f_size)
 
-    var num_partitions = StaticIntTuple[4](1)
+    var num_partitions = IndexList[4](1)
 
     num_partitions[0] = min(max_num_tasks, num_batches_and_groups)
     num_partitions[2] = min(max_f_tasks, max_num_tasks // num_partitions[0])
@@ -302,7 +302,7 @@ fn get_num_partitions[
 
 fn get_partition(
     task_id: Int,
-    num_partitions: StaticIntTuple[4],
+    num_partitions: IndexList[4],
     conv_shape: ConvShape,
     micro_kernel_height: Int,
     micro_kernel_f_size: Int,
@@ -372,7 +372,7 @@ struct ConvTransposedPacked[
     # padded, only ho is partitioned for now.
     var partition: ConvPartition
 
-    var cf_tile_size: StaticIntTuple[2]
+    var cf_tile_size: IndexList[2]
 
     @staticmethod
     fn run(
@@ -910,7 +910,7 @@ fn update_w_tile_2d[
     f_tile_size: Int,
     conv_shape: ConvShape[2],
     n: Int,
-    hw: StaticIntTuple[2],
+    hw: IndexList[2],
 ):
     alias micro_kernel_f_size = micro_kernel_width * simd_size
 
@@ -995,7 +995,7 @@ fn update_w_tile_3d[
     f_tile_size: Int,
     conv_shape: ConvShape[3],
     n: Int,
-    hw: StaticIntTuple[3],
+    hw: IndexList[3],
 ):
     alias micro_kernel_f_size = micro_kernel_width * simd_size
 
@@ -1131,7 +1131,7 @@ fn _get_group_filter_base(
 @always_inline
 fn pack_filter_shape(
     filter: NDBuffer, num_groups: Int
-) -> StaticIntTuple[filter.rank + 1]:
+) -> IndexList[filter.rank + 1]:
     """
     Compute the output shape of transposed convolution filter packing.
 
@@ -1157,7 +1157,7 @@ fn pack_filter_shape(
     var F_per_group = F // num_groups
 
     # FRSCf layout.
-    var packed_shape = StaticIntTuple[filter.rank + 1]()
+    var packed_shape = IndexList[filter.rank + 1]()
     packed_shape[0] = num_groups * ceildiv(F_per_group, micro_kernel_f_size)
     packed_shape[filter.rank] = micro_kernel_f_size
     # Input channel
@@ -1284,17 +1284,17 @@ fn conv_transposed[
     filter_packed: Bool,
     lambdas_have_fusion: Bool,
     elementwise_lambda: fn[type: DType, rank: Int, width: Int] (
-        StaticIntTuple[rank], SIMD[type, width]
+        IndexList[rank], SIMD[type, width]
     ) capturing -> None,
 ](
     output: NDBuffer[output_type, input_rank, output_shape],
     input: NDBuffer[input_type, input_rank, input_shape],
     filter: NDBuffer[filter_type, filter_rank, filter_shape],
-    stride: StaticIntTuple[input_rank - 2],
-    dilation: StaticIntTuple[input_rank - 2],
-    pad_d: StaticIntTuple[2],
-    pad_h: StaticIntTuple[2],
-    pad_w: StaticIntTuple[2],
+    stride: IndexList[input_rank - 2],
+    dilation: IndexList[input_rank - 2],
+    pad_d: IndexList[2],
+    pad_h: IndexList[2],
+    pad_w: IndexList[2],
 ) raises:
     @always_inline
     @parameter
@@ -1317,20 +1317,20 @@ fn conv_transposed[
         alias packed_filter_rank = filter_rank if filter_packed else filter_rank + 1
 
         var packed_filter_ptr = filter.data
-        var packed_filter_shape = StaticIntTuple[packed_filter_rank](1)
+        var packed_filter_shape = IndexList[packed_filter_rank](1)
 
         # If filter is not packed, we have to pack it before the kernel.
         @parameter
         if not filter_packed:
             # Only support single group.
-            packed_filter_shape = rebind[StaticIntTuple[packed_filter_rank]](
+            packed_filter_shape = rebind[IndexList[packed_filter_rank]](
                 pack_filter_shape(filter, 1)
             )
             packed_filter_ptr = UnsafePointer[Scalar[filter.type]].alloc(
                 packed_filter_shape.flattened_length()
             )
         else:
-            packed_filter_shape = rebind[StaticIntTuple[packed_filter_rank]](
+            packed_filter_shape = rebind[IndexList[packed_filter_rank]](
                 filter.dynamic_shape
             )
 
@@ -1361,14 +1361,14 @@ fn conv_transposed[
         @parameter
         fn elementwise_epilogue[
             rank: Int
-        ](coords: StaticIntTuple[rank], f_size: Int,):
+        ](coords: IndexList[rank], f_size: Int,):
             alias simd_size = simdwidthof[output_type]()
 
             @always_inline
             @parameter
             fn body[width: Int](idx: Int):
                 # Cooridates of the current index.
-                var curr_coords = rebind[StaticIntTuple[input_rank]](coords)
+                var curr_coords = rebind[IndexList[input_rank]](coords)
                 curr_coords[input_rank - 1] += idx
 
                 var vec = output.load[width=width](curr_coords)

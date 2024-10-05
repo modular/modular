@@ -8,7 +8,7 @@ from buffer import NDBuffer
 from memory import memcpy
 from register import mogg_register, mogg_register_shape_func
 
-from utils import StaticIntTuple
+from utils import IndexList
 
 # TODO: This implementation supports up to 4 dimensions.
 
@@ -210,7 +210,7 @@ fn tile_shape[
 ](
     input_buf: NDBuffer[input_type, input_rank],
     repeats_buf: NDBuffer[repeats_type, 1],
-) raises -> StaticIntTuple[input_rank]:
+) raises -> IndexList[input_rank]:
     """
     Compute the output shape of a `tile` operation, and assert the inputs are
     compatible.
@@ -236,7 +236,7 @@ fn tile_shape[
         raise Error("[tile] requires (len(repeats) == input_rank)")
 
     # Compute and return the output shape.
-    var output_shape = StaticIntTuple[input_rank]()
+    var output_shape = IndexList[input_rank]()
 
     for i in range(input_rank):
         output_shape[i] = input_buf.dim(i) * int(repeats_buf[i])

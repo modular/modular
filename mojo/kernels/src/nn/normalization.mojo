@@ -37,7 +37,7 @@ from register import mogg_register, mogg_register_shape_func
 from runtime.asyncrt import MojoCallContextPtr, parallelism_level
 from runtime.tracing import Trace, TraceLevel, trace_arg
 
-from utils.index import Index, StaticIntTuple
+from utils.index import Index, IndexList
 from utils.numerics import get_accum_type
 
 from .reshape import reshape
@@ -242,9 +242,9 @@ fn layer_norm_gpu_warp_tiling[
     input_fn: fn[width: Int] (row: Int, col: Int) capturing -> SIMD[
         type, width
     ],
-    gamma_fn: fn[width: Int, rank: Int] (
-        StaticIntTuple[rank]
-    ) capturing -> SIMD[type, width],
+    gamma_fn: fn[width: Int, rank: Int] (IndexList[rank]) capturing -> SIMD[
+        type, width
+    ],
 ](output: NDBuffer[type, 2], beta: NDBuffer[type, 1], epsilon: Scalar[type]):
     alias align = alignof[SIMD[type, simd_width]]()
     alias accum_type = get_accum_type[type]()
@@ -297,9 +297,9 @@ fn layer_norm_gpu_block[
     input_fn: fn[width: Int] (row: Int, col: Int) capturing -> SIMD[
         type, width
     ],
-    gamma_fn: fn[width: Int, rank: Int] (
-        StaticIntTuple[rank]
-    ) capturing -> SIMD[type, width],
+    gamma_fn: fn[width: Int, rank: Int] (IndexList[rank]) capturing -> SIMD[
+        type, width
+    ],
 ](output: NDBuffer[type, 2], beta: NDBuffer[type, 1], epsilon: Scalar[type]):
     alias align = alignof[SIMD[type, simd_width]]()
     alias accum_type = get_accum_type[type]()
@@ -361,7 +361,7 @@ fn layer_norm_gpu_block[
 fn layer_norm_reshape[
     type: DType, rank: Int, //, output_rank: Int
 ](
-    shape: StaticIntTuple[rank],
+    shape: IndexList[rank],
     buf: NDBuffer[type, rank, *_],
 ) -> NDBuffer[
     type, output_rank
@@ -372,7 +372,7 @@ fn layer_norm_reshape[
 
     var last_dim = shape[rank - 1]
     var prod_all_but_last_dim = shape.flattened_length() // last_dim
-    var new_shape = StaticIntTuple[output_rank](prod_all_but_last_dim, last_dim)
+    var new_shape = IndexList[output_rank](prod_all_but_last_dim, last_dim)
     var output_rs = reshape[output_rank](buf, new_shape)
     return output_rs
 
@@ -380,14 +380,14 @@ fn layer_norm_reshape[
 fn layer_norm_gpu[
     type: DType,
     rank: Int, //,
-    input_fn: fn[width: Int, rank: Int] (
-        StaticIntTuple[rank]
-    ) capturing -> SIMD[type, width],
-    gamma_fn: fn[width: Int, rank: Int] (
-        StaticIntTuple[rank]
-    ) capturing -> SIMD[type, width],
+    input_fn: fn[width: Int, rank: Int] (IndexList[rank]) capturing -> SIMD[
+        type, width
+    ],
+    gamma_fn: fn[width: Int, rank: Int] (IndexList[rank]) capturing -> SIMD[
+        type, width
+    ],
 ](
-    shape: StaticIntTuple[rank],
+    shape: IndexList[rank],
     beta: NDBuffer[type, 1],
     epsilon: Scalar[type],
     output: NDBuffer[type, rank, *_],
@@ -478,9 +478,9 @@ fn _sum_to_mean[type: DType, //](sum_val: Scalar[type], n: Int) -> Scalar[type]:
 fn layer_norm_cpu[
     type: DType, //,
     input_fn: fn[width: Int] (Int, Int) capturing -> SIMD[type, width],
-    gamma_fn: fn[width: Int, rank: Int] (
-        StaticIntTuple[rank]
-    ) capturing -> SIMD[type, width],
+    gamma_fn: fn[width: Int, rank: Int] (IndexList[rank]) capturing -> SIMD[
+        type, width
+    ],
 ](
     out_buf: NDBuffer[type, 2, _],
     beta: NDBuffer[type, 1],
@@ -549,14 +549,14 @@ fn layer_norm_cpu[
 fn layer_norm_cpu[
     type: DType,
     rank: Int, //,
-    input_fn: fn[width: Int, rank: Int] (
-        StaticIntTuple[rank]
-    ) capturing -> SIMD[type, width],
-    gamma_fn: fn[width: Int, rank: Int] (
-        StaticIntTuple[rank]
-    ) capturing -> SIMD[type, width],
+    input_fn: fn[width: Int, rank: Int] (IndexList[rank]) capturing -> SIMD[
+        type, width
+    ],
+    gamma_fn: fn[width: Int, rank: Int] (IndexList[rank]) capturing -> SIMD[
+        type, width
+    ],
 ](
-    shape: StaticIntTuple[rank],
+    shape: IndexList[rank],
     beta: NDBuffer[type, 1],
     epsilon: Scalar[type],
     output: NDBuffer[type, rank, *_],
@@ -609,16 +609,16 @@ fn layer_norm[
     type: DType,
     rank: Int,
     input_0_fn: fn[_width: Int, _rank: Int] (
-        StaticIntTuple[_rank]
+        IndexList[_rank]
     ) capturing -> SIMD[type, _width],
     input_1_fn: fn[_width: Int, _rank: Int] (
-        StaticIntTuple[_rank]
+        IndexList[_rank]
     ) capturing -> SIMD[type, _width],
     /,
     target: StringLiteral = "cpu",
 ](
-    shape: StaticIntTuple[rank],
-    gamma_shape: StaticIntTuple[1],
+    shape: IndexList[rank],
+    gamma_shape: IndexList[1],
     beta: NDBuffer[type, 1],
     epsilon: Scalar[type],
     output: NDBuffer[type, rank, *_],
@@ -666,7 +666,7 @@ fn layer_norm_shape[
     gamma: NDBuffer[type, 1, DimList(1)],
     beta: NDBuffer[type, 1, DimList(1)],
     epsilon: Scalar[type],
-) -> StaticIntTuple[rank]:
+) -> IndexList[rank]:
     """
     Compute the output shape of a `layer_norm` operation.
 
@@ -769,11 +769,11 @@ fn rms_norm_gpu_block[
 fn rms_norm_gpu[
     type: DType,
     rank: Int, //,
-    input_fn: fn[width: Int, rank: Int] (
-        StaticIntTuple[rank]
-    ) capturing -> SIMD[type, width],
+    input_fn: fn[width: Int, rank: Int] (IndexList[rank]) capturing -> SIMD[
+        type, width
+    ],
 ](
-    shape: StaticIntTuple[rank],
+    shape: IndexList[rank],
     gamma: NDBuffer[type, 1],
     epsilon: Scalar[type],
     output: NDBuffer[type, rank, *_],
@@ -894,11 +894,11 @@ fn rms_norm_cpu[
 fn rms_norm_cpu[
     type: DType,
     rank: Int, //,
-    input_fn: fn[width: Int, rank: Int] (
-        StaticIntTuple[rank]
-    ) capturing -> SIMD[type, width],
+    input_fn: fn[width: Int, rank: Int] (IndexList[rank]) capturing -> SIMD[
+        type, width
+    ],
 ](
-    shape: StaticIntTuple[rank],
+    shape: IndexList[rank],
     gamma: NDBuffer[type, 1],
     epsilon: Scalar[type],
     output: NDBuffer[type, rank, *_],
@@ -951,13 +951,13 @@ fn rms_norm_cpu[
 fn rms_norm[
     type: DType,
     rank: Int,
-    input_0_fn: fn[width: Int, rank: Int] (
-        StaticIntTuple[rank]
-    ) capturing -> SIMD[type, width],
+    input_0_fn: fn[width: Int, rank: Int] (IndexList[rank]) capturing -> SIMD[
+        type, width
+    ],
     /,
     target: StringLiteral = "cpu",
 ](
-    shape: StaticIntTuple[rank],
+    shape: IndexList[rank],
     gamma: NDBuffer[type, 1],
     epsilon: Scalar[type],
     output: NDBuffer[type, rank],
@@ -1001,5 +1001,5 @@ fn rms_norm_shape[
     input: NDBuffer[type, rank],
     gamma: NDBuffer[type, 1],
     epsilon: Scalar[type],
-) -> StaticIntTuple[rank]:
+) -> IndexList[rank]:
     return input.get_shape()

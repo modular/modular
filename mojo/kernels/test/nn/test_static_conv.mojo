@@ -19,7 +19,7 @@ from nn.conv_utils import (
     get_micro_kernel_shape,
 )
 
-from utils.index import Index, StaticIntTuple
+from utils.index import Index, IndexList
 
 
 fn test[
@@ -30,10 +30,10 @@ fn test[
     R: Int,
     S: Int,
     F: Int,
-    stride: StaticIntTuple[2],
-    dilation: StaticIntTuple[2],
-    pad_h: StaticIntTuple[2],
-    pad_w: StaticIntTuple[2],
+    stride: IndexList[2],
+    dilation: IndexList[2],
+    pad_h: IndexList[2],
+    pad_w: IndexList[2],
 ]() raises:
     # Output Shape.
     # fmt: off

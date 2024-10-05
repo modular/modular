@@ -46,7 +46,7 @@ from memory.unsafe import bitcast
 from nn.mha_mask import MHAMask, NullMask, TileMaskStatus
 from runtime.asyncrt import MojoCallContextPtr
 
-from utils.index import Index, StaticIntTuple
+from utils.index import Index, IndexList
 from utils.numerics import min_or_neg_inf, neg_inf
 from utils.static_tuple import StaticTuple
 
@@ -131,15 +131,15 @@ fn fused_attention[
         alias score_type = output_type
         var score_ptr = UnsafePointer[Scalar[score_type]].alloc(score_size)
 
-        var score_shape: StaticIntTuple[rank]
+        var score_shape: IndexList[rank]
 
         @parameter
         if rank == 4:
-            score_shape = rebind[StaticIntTuple[rank]](
+            score_shape = rebind[IndexList[rank]](
                 Index(q.dim[0](), q.dim[1](), M, N)
             )
         else:
-            score_shape = rebind[StaticIntTuple[rank]](Index(q.dim[0](), M, N))
+            score_shape = rebind[IndexList[rank]](Index(q.dim[0](), M, N))
         # fmt: on
         var score = NDBuffer[score_type, rank](score_ptr, score_shape)
 
@@ -148,7 +148,7 @@ fn fused_attention[
         @always_inline
         fn fuse_elementwise_fn[
             inner_type: DType, width: Int, _rank: Int, *, alignment: Int = 1
-        ](_out_coords: StaticIntTuple[_rank], out_val: SIMD[inner_type, width]):
+        ](_out_coords: IndexList[_rank], out_val: SIMD[inner_type, width]):
             var seq_offset = M - N
             var fused_val = out_val
 
@@ -171,11 +171,11 @@ fn fused_attention[
 
             @parameter
             if add_attn_mask:
-                var idx = rebind[StaticIntTuple[rank]](_out_coords)
+                var idx = rebind[IndexList[rank]](_out_coords)
                 fused_val += mask.load[width=width](idx).cast[inner_type]()
 
             score.store[width=width](
-                rebind[StaticIntTuple[rank]](_out_coords),
+                rebind[IndexList[rank]](_out_coords),
                 fused_val.cast[score_type](),
             )
 
@@ -1474,9 +1474,9 @@ fn mha_single_batch[
 @always_inline
 fn _kernel_mask[
     type: DType, width: Int
-](
-    coord: StaticIntTuple[2], bound: StaticIntTuple[2], vec: SIMD[type, width]
-) -> SIMD[type, width]:
+](coord: IndexList[2], bound: IndexList[2], vec: SIMD[type, width]) -> SIMD[
+    type, width
+]:
     var masked_vec = SIMD[type, width]()
 
     # TODO: use `select` to see if it generates the same code.
@@ -2118,10 +2118,8 @@ fn mha_gpu_naive[
     @__copy_capture(p_buffer)
     fn input_fn_device[
         _simd_width: Int, _rank: Int
-    ](coords: StaticIntTuple[_rank]) -> SIMD[p_type, _simd_width]:
-        return p_buffer.load[width=_simd_width](
-            rebind[StaticIntTuple[3]](coords)
-        )
+    ](coords: IndexList[_rank]) -> SIMD[p_type, _simd_width]:
+        return p_buffer.load[width=_simd_width](rebind[IndexList[3]](coords))
 
     _softmax_gpu[p_type, 1, 3, DimList.create_unknown[3](), input_fn_device](
         Index(batch_size * num_heads, max_prompt_len, num_keys),
@@ -2351,10 +2349,8 @@ fn mha_gpu_naive[
     @__copy_capture(p_buffer)
     fn input_fn_device[
         _simd_width: Int, _rank: Int
-    ](coords: StaticIntTuple[_rank]) -> SIMD[p_type, _simd_width]:
-        return p_buffer.load[width=_simd_width](
-            rebind[StaticIntTuple[3]](coords)
-        )
+    ](coords: IndexList[_rank]) -> SIMD[p_type, _simd_width]:
+        return p_buffer.load[width=_simd_width](rebind[IndexList[3]](coords))
 
     _softmax_gpu[p_type, 1, 3, DimList.create_unknown[3](), input_fn_device](
         Index(batch_size * num_heads, seq_len, num_keys),
@@ -2637,13 +2633,13 @@ fn _naive_attention[
     @__copy_capture(score)
     @parameter
     @always_inline
-    fn scale_and_mask[width: Int, _rank: Int](coords: StaticIntTuple[_rank]):
-        var vec = score.load[width=width](rebind[StaticIntTuple[4]](coords))
+    fn scale_and_mask[width: Int, _rank: Int](coords: IndexList[_rank]):
+        var vec = score.load[width=width](rebind[IndexList[4]](coords))
         vec = vec * scale.cast[type]()
         vec = vec + mask.load[width=width](
             Index(coords[_rank - 2], coords[_rank - 1])
         )
-        score.store[width=width](rebind[StaticIntTuple[4]](coords), vec)
+        score.store[width=width](rebind[IndexList[4]](coords), vec)
 
     elementwise[scale_and_mask, simd_size](score.dynamic_shape)
 

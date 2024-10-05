@@ -10,7 +10,7 @@ from buffer.dimlist import DimList
 from nn.roi_align import roi_align_nhwc
 from testing import *
 
-from utils import StaticIntTuple
+from utils import IndexList
 
 
 def test_roi_align_avg[scale_type: DType]():
@@ -26,13 +26,13 @@ def test_roi_align_avg[scale_type: DType]():
 
     for i in range(10):
         for j in range(10):
-            input[StaticIntTuple[4](0, i, j, 0)] = i * 10 + j
+            input[IndexList[4](0, i, j, 0)] = i * 10 + j
 
-    rois[StaticIntTuple[2](0, 0)] = 0
-    rois[StaticIntTuple[2](0, 1)] = 0
-    rois[StaticIntTuple[2](0, 2)] = 0
-    rois[StaticIntTuple[2](0, 3)] = 4
-    rois[StaticIntTuple[2](0, 4)] = 4
+    rois[IndexList[2](0, 0)] = 0
+    rois[IndexList[2](0, 1)] = 0
+    rois[IndexList[2](0, 2)] = 0
+    rois[IndexList[2](0, 3)] = 4
+    rois[IndexList[2](0, 4)] = 4
 
     roi_align_nhwc[aligned=False](
         output.make_dims_unknown(),
@@ -88,13 +88,13 @@ def test_roi_align_max():
 
     for i in range(10):
         for j in range(10):
-            input[StaticIntTuple[4](0, i, j, 0)] = i * 10 + j
+            input[IndexList[4](0, i, j, 0)] = i * 10 + j
 
-    rois[StaticIntTuple[2](0, 0)] = 0
-    rois[StaticIntTuple[2](0, 1)] = 0
-    rois[StaticIntTuple[2](0, 2)] = 0
-    rois[StaticIntTuple[2](0, 3)] = 4
-    rois[StaticIntTuple[2](0, 4)] = 4
+    rois[IndexList[2](0, 0)] = 0
+    rois[IndexList[2](0, 1)] = 0
+    rois[IndexList[2](0, 2)] = 0
+    rois[IndexList[2](0, 3)] = 4
+    rois[IndexList[2](0, 4)] = 4
 
     roi_align_nhwc[aligned=False, mode="MAX"](
         output.make_dims_unknown(),
@@ -150,13 +150,13 @@ def test_roi_align_KERN_692():
 
     for i in range(6):
         for j in range(6):
-            input[StaticIntTuple[4](0, i, j, 0)] = i * 6 + j + 1
+            input[IndexList[4](0, i, j, 0)] = i * 6 + j + 1
 
-    rois[StaticIntTuple[2](0, 0)] = 0
-    rois[StaticIntTuple[2](0, 1)] = -2
-    rois[StaticIntTuple[2](0, 2)] = -2
-    rois[StaticIntTuple[2](0, 3)] = 22
-    rois[StaticIntTuple[2](0, 4)] = 22
+    rois[IndexList[2](0, 0)] = 0
+    rois[IndexList[2](0, 1)] = -2
+    rois[IndexList[2](0, 2)] = -2
+    rois[IndexList[2](0, 3)] = 22
+    rois[IndexList[2](0, 4)] = 22
 
     roi_align_nhwc[aligned=False](
         output.make_dims_unknown(),

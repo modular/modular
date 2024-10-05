@@ -17,7 +17,7 @@ from nn.pad import _AxisParams, _do_pad, _fill, pad_constant, pad_reflect
 from python import Python
 from testing import assert_true
 
-from utils import StaticIntTuple, StaticTuple, unroll
+from utils import IndexList, StaticTuple, unroll
 
 
 @always_inline
@@ -67,7 +67,7 @@ fn pad_constant_dispatch[
             output: UnsafePointer[Scalar[type]],
             input: UnsafePointer[Scalar[type]],
             paddings: UnsafePointer[Scalar[paddings_type]],
-            output_shape: StaticIntTuple[rank],
+            output_shape: IndexList[rank],
             output_strides: UnsafePointer[Scalar[DType.index]],
             input_strides: UnsafePointer[Scalar[DType.index]],
         ):
@@ -107,7 +107,7 @@ fn _pad_constant_impl_rec[
     input: UnsafePointer[Scalar[type]],
     paddings: UnsafePointer[Scalar[paddings_type]],
     constant: Scalar[type],
-    output_shape: StaticIntTuple[rank],
+    output_shape: IndexList[rank],
     output_strides: UnsafePointer[Scalar[DType.index]],
     input_strides: UnsafePointer[Scalar[DType.index]],
     output_offset: Int,
@@ -229,7 +229,7 @@ fn pad_reflect_dispatch[
             output: UnsafePointer[Scalar[type]],
             input: UnsafePointer[Scalar[type]],
             paddings: UnsafePointer[Scalar[paddings_type]],
-            output_shape: StaticIntTuple[rank],
+            output_shape: IndexList[rank],
             output_strides: UnsafePointer[Scalar[DType.index]],
             input_strides: UnsafePointer[Scalar[DType.index]],
         ):
@@ -320,7 +320,7 @@ fn _pad_reflect_impl_rec[
     output: UnsafePointer[Scalar[type]],
     input: UnsafePointer[Scalar[type]],
     paddings: UnsafePointer[Scalar[paddings_type]],
-    output_shape: StaticIntTuple[rank],
+    output_shape: IndexList[rank],
     output_strides: UnsafePointer[Scalar[DType.index]],
     input_strides: UnsafePointer[Scalar[DType.index]],
     output_offset: Int,

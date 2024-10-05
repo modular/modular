@@ -10,7 +10,7 @@ from buffer.dimlist import DimList
 from memory import UnsafePointer, stack_allocation
 from MOGG import calculate_unsqueeze_shape, to_buffer
 
-from utils.index import StaticIntTuple
+from utils.index import IndexList
 
 
 # CHECK-LABEL: test_calculate_unsqueeze_shape
@@ -22,8 +22,8 @@ fn test_calculate_unsqueeze_shape():
         1,
         DimList(2),
     ].stack_allocation()
-    data_matrix[StaticIntTuple[1](0)] = 10
-    data_matrix[StaticIntTuple[1](1)] = 11
+    data_matrix[IndexList[1](0)] = 10
+    data_matrix[IndexList[1](1)] = 11
 
     # Main thing is indices not sorted.
     # Final shape should be [1, 1, 10, 1, 11, 1]
@@ -32,10 +32,10 @@ fn test_calculate_unsqueeze_shape():
         1,
         DimList(4),
     ].stack_allocation()
-    padding_indices[StaticIntTuple[1](0)] = 3
-    padding_indices[StaticIntTuple[1](1)] = 1
-    padding_indices[StaticIntTuple[1](2)] = -6  # same as index 0
-    padding_indices[StaticIntTuple[1](3)] = 5
+    padding_indices[IndexList[1](0)] = 3
+    padding_indices[IndexList[1](1)] = 1
+    padding_indices[IndexList[1](2)] = -6  # same as index 0
+    padding_indices[IndexList[1](3)] = 5
 
     var final_shape = NDBuffer[
         DType.index,

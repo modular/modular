@@ -7,7 +7,7 @@
 from buffer import NDBuffer
 from buffer.dimlist import DimList
 
-from utils.index import StaticIntTuple
+from utils.index import IndexList
 
 
 # Padding handling method.
@@ -100,7 +100,7 @@ struct ImageData[
             return self.dynamic_layout
         return static_layout
 
-    fn _get_index(self, n: Int, c: Int, h: Int, w: Int) -> StaticIntTuple[4]:
+    fn _get_index(self, n: Int, c: Int, h: Int, w: Int) -> IndexList[4]:
         """Converts the general index to the actual index into the underlying
         data based on the tensor layout.
 
@@ -111,14 +111,14 @@ struct ImageData[
             w: Index on the width dimension.
 
         Returns:
-            A StaticIntTuple containing the index based on the underlying
+            A IndexList containing the index based on the underlying
             data layout.
         """
         if self.get_layout() == Image2DLayout.NCHW:
-            return StaticIntTuple[4](n, c, h, w)
+            return IndexList[4](n, c, h, w)
         if self.get_layout() == Image2DLayout.RSCF:
-            return StaticIntTuple[4](h, w, c, n)
-        return StaticIntTuple[4](n, h, w, c)
+            return IndexList[4](h, w, c, n)
+        return IndexList[4](n, h, w, c)
 
     fn get_flat_index(self, n: Int, c: Int, h: Int, w: Int) -> Int:
         """Converts the dimension index to the flat index of the underlying
@@ -168,7 +168,7 @@ struct ImageData[
         debug_assert(False, "Invalid layout")
         return 0
 
-    fn get_tuple_index(self, idx: Int) -> StaticIntTuple[4]:
+    fn get_tuple_index(self, idx: Int) -> IndexList[4]:
         """Converts the flat index to the dimension index of the underlying
         data based on the tensor layout.
 
@@ -176,7 +176,7 @@ struct ImageData[
             idx: Flat index.
 
         Returns:
-            A StaticIntTuple containing the index in NCHW order.
+            A IndexList containing the index in NCHW order.
         """
 
         var image_shape = ImageShape(self)
@@ -184,7 +184,7 @@ struct ImageData[
         @always_inline
         @__copy_capture(image_shape)
         @parameter
-        fn _compute_index_nchw() -> StaticIntTuple[4]:
+        fn _compute_index_nchw() -> IndexList[4]:
             # Index [N,C,H,W]
             var lidx = idx
             var w_idx = lidx % image_shape.W
@@ -194,12 +194,12 @@ struct ImageData[
             var c_idx = lidx % image_shape.C
             lidx = lidx // image_shape.C
             var n_idx = lidx
-            return StaticIntTuple[4](n_idx, c_idx, h_idx, w_idx)
+            return IndexList[4](n_idx, c_idx, h_idx, w_idx)
 
         @always_inline
         @__copy_capture(image_shape)
         @parameter
-        fn _compute_index_nhwc() -> StaticIntTuple[4]:
+        fn _compute_index_nhwc() -> IndexList[4]:
             # Index [N,H,W,C]
             var lidx = idx
             var c_idx = lidx % image_shape.C
@@ -209,7 +209,7 @@ struct ImageData[
             var h_idx = lidx % image_shape.H
             lidx = lidx // image_shape.H
             var n_idx = lidx
-            return StaticIntTuple[4](n_idx, c_idx, h_idx, w_idx)
+            return IndexList[4](n_idx, c_idx, h_idx, w_idx)
 
         @parameter
         if static_layout == Image2DLayout.NCHW:

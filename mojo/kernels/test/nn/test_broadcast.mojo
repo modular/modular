@@ -9,7 +9,7 @@ from buffer import NDBuffer
 from buffer.dimlist import DimList
 from nn.broadcast import broadcast
 
-from utils.index import StaticIntTuple
+from utils.index import IndexList
 
 
 # CHECK-LABEL: test_broadcast_empty_shape
@@ -56,8 +56,8 @@ fn test_broadcast_same_shape():
         3,
         input_shape,
     ].stack_allocation()
-    input[StaticIntTuple[3](0, 0, 0)] = 1
-    input[StaticIntTuple[3](0, 1, 0)] = 2
+    input[IndexList[3](0, 0, 0)] = 1
+    input[IndexList[3](0, 1, 0)] = 2
 
     # Create a 3D tensor of shape (1, 2, 1)
     var output = NDBuffer[DType.index, 3, output_shape].stack_allocation()
@@ -94,8 +94,8 @@ fn test_broadcast_single_axis():
         input_shape,
     ].stack_allocation()
 
-    input[StaticIntTuple[2](0, 0)] = 1
-    input[StaticIntTuple[2](0, 1)] = 2
+    input[IndexList[2](0, 0)] = 1
+    input[IndexList[2](0, 1)] = 2
 
     # Create a 2D tensor of shape (3, 2)
     var output = NDBuffer[DType.index, 2, output_shape].stack_allocation()
@@ -140,8 +140,8 @@ fn test_broadcast_multi_axes():
         input_shape,
     ].stack_allocation()
 
-    input[StaticIntTuple[3](0, 0, 0)] = 1
-    input[StaticIntTuple[3](0, 1, 0)] = 2
+    input[IndexList[3](0, 0, 0)] = 1
+    input[IndexList[3](0, 1, 0)] = 2
 
     # Create a 3D tensor of shape (2, 2, 3)
     var output = NDBuffer[DType.index, 3, output_shape].stack_allocation()
@@ -196,14 +196,14 @@ fn test_broadcast_multi_axes_nested():
         input_shape,
     ].stack_allocation()
 
-    input[StaticIntTuple[5](0, 0, 0, 0, 0)] = 1
-    input[StaticIntTuple[5](0, 0, 0, 0, 1)] = 2
-    input[StaticIntTuple[5](0, 0, 1, 0, 0)] = 3
-    input[StaticIntTuple[5](0, 0, 1, 0, 1)] = 4
-    input[StaticIntTuple[5](1, 0, 0, 0, 0)] = 5
-    input[StaticIntTuple[5](1, 0, 0, 0, 1)] = 6
-    input[StaticIntTuple[5](1, 0, 1, 0, 0)] = 7
-    input[StaticIntTuple[5](1, 0, 1, 0, 1)] = 8
+    input[IndexList[5](0, 0, 0, 0, 0)] = 1
+    input[IndexList[5](0, 0, 0, 0, 1)] = 2
+    input[IndexList[5](0, 0, 1, 0, 0)] = 3
+    input[IndexList[5](0, 0, 1, 0, 1)] = 4
+    input[IndexList[5](1, 0, 0, 0, 0)] = 5
+    input[IndexList[5](1, 0, 0, 0, 1)] = 6
+    input[IndexList[5](1, 0, 1, 0, 0)] = 7
+    input[IndexList[5](1, 0, 1, 0, 1)] = 8
 
     # Create a 5D tensor of shape (2, 2, 2, 2, 2)
     var output = NDBuffer[DType.index, 5, output_shape].stack_allocation()
