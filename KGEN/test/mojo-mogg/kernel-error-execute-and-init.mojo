@@ -8,7 +8,7 @@
 
 from compiler.directives import register, specsof
 from tensor_utils.managed_tensor_slice import ManagedTensorSlice
-from utils import StaticIntTuple
+from utils import IndexList
 
 
 # CHECK: Struct based extensibility cannot have execute and initialize_output op!
@@ -25,5 +25,5 @@ struct MyKernel:
     @staticmethod
     fn initialize_output(
         a: ManagedTensorSlice, b: ManagedTensorSlice
-    ) -> StaticIntTuple[2]:
-        return StaticIntTuple[2]()
+    ) -> IndexList[2]:
+        return IndexList[2]()

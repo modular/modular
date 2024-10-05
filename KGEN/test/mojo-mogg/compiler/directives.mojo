@@ -6,7 +6,7 @@
 
 from tensor_utils.tensor_spec import StaticTensorSpec
 from tensor_utils.managed_tensor_slice import ManagedTensorSlice
-from utils import StaticIntTuple
+from utils import IndexList
 
 
 fn __mogg_intrinsic_attr(intrin: StringLiteral):
@@ -40,8 +40,6 @@ fn specsof[
 fn for_each[
     type: DType,
     rank: Int,
-    func: fn[_width: Int] (StaticIntTuple[rank]) capturing -> SIMD[
-        type, _width
-    ],
+    func: fn[_width: Int] (IndexList[rank]) capturing -> SIMD[type, _width],
 ](arr: ManagedTensorSlice[type, rank]):
     pass

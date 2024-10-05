@@ -550,23 +550,23 @@ lit.func @call_takes_life_explicit<val: !pop.simd<4, f32>>[mut lt](%__result__: 
 // -----
 
 !Int = !lit.struct<@Int>
-#StaticIntTuple = #lit<symbol@StaticIntTuple>
+#IndexList = #lit<symbol@IndexList>
 lit.struct.decl @Int {
   lit.struct.field value : index
 }
 
-lit.struct.decl @StaticIntTuple<size: !Int> {
-  lit.func @getitem(%self[*""]: !lit.struct<@StaticIntTuple<:!Int size>>) -> !Int {
+lit.struct.decl @IndexList<size: !Int> {
+  lit.func @getitem(%self[*""]: !lit.struct<@IndexList<:!Int size>>) -> !Int {
     kgen.unreachable
   }
 }
 
 // CHECK-LABEL: kgen.generator @paramReplacement
-// CHECK-SAME: callee: (!lit.struct<@StaticIntTuple<:@Int apply(:(!lit.struct<@StaticIntTuple<:@Int _1>>) -> !lit.struct<@Int> @"StaticIntTuple::getitem"<:@Int _1>, _2)>>) -> ()>
+// CHECK-SAME: callee: (!lit.struct<@IndexList<:@Int apply(:(!lit.struct<@IndexList<:@Int _1>>) -> !lit.struct<@Int> @"IndexList::getitem"<:@Int _1>, _2)>>) -> ()>
 lit.func @paramReplacement<
     _1: !Int,
-    _2: @StaticIntTuple<:!Int _1>,
-    callee: !lit.signature<[1](!lit.struct<#StaticIntTuple <:!Int apply(:!lit.signature<(!lit.struct<#StaticIntTuple <:!Int _1>>) -> !Int> @StaticIntTuple::@getitem<:!Int _1>, _2)>>) -> ()>>(){
+    _2: @IndexList<:!Int _1>,
+    callee: !lit.signature<[1](!lit.struct<#IndexList <:!Int apply(:!lit.signature<(!lit.struct<#IndexList <:!Int _1>>) -> !Int> @IndexList::@getitem<:!Int _1>, _2)>>) -> ()>>(){
   kgen.unreachable
 }
 

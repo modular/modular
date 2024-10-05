@@ -24,7 +24,7 @@ TEST(DefinitionTest, testModule) {
 TEST(DefinitionTest, testTypes) {
   Document doc("test:///foo.mojo",
                R"(
-from utils.index import StaticIntTuple # skip
+from utils.index import IndexList # skip
 from utils.static_tuple import StaticTuple # skip
 import builtin
 import builtin.dtype
@@ -40,8 +40,8 @@ fn functionWithBuiltins(x: Bool) -> Bool:
     return copy
 
 
-fn functionWithParametrizedArgument(x: StaticIntTuple[2]) -> StaticIntTuple[2]:
-    var copy: StaticIntTuple[2] = x
+fn functionWithParametrizedArgument(x: IndexList[2]) -> IndexList[2]:
+    var copy: IndexList[2] = x
     return copy
 
 
@@ -64,11 +64,11 @@ fn parametrizedFunction[
              [&](const lsp::Hover &hover) {
                EXPECT_TRUE(StringRef(hover.contents.value).contains("struct"));
              })
-      .definition(doc, *doc.findLastPos("StaticIntTuple"),
+      .definition(doc, *doc.findLastPos("IndexList"),
                   [&](const std::vector<lsp::Location> &locations) {
                     EXPECT_EQ((int)locations.size(), 1);
                   })
-      .hover(doc, *doc.findLastPos("StaticIntTuple"),
+      .hover(doc, *doc.findLastPos("IndexList"),
              [&](const lsp::Hover &hover) {
                EXPECT_TRUE(StringRef(hover.contents.value).contains("struct"));
              })
