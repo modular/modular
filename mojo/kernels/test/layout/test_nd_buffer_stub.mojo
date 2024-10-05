@@ -102,7 +102,7 @@ fn print_vectorized_buff[
 ):
     for m in range(buff.dim(0)):
         for n in range(buff.dim(1)):
-            print_element(buff._offset((m, n)), element_layout)
+            print_element(buff._offset(VariadicList[Int](m, n)), element_layout)
         print("")
 
 
