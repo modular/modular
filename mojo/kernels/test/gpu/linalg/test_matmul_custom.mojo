@@ -16,7 +16,7 @@ from linalg.matmul_gpu import _matmul_gpu, matmul_kernel_naive
 from memory import UnsafePointer
 from testing import assert_almost_equal
 
-from utils import StaticIntTuple
+from utils import IndexList
 from utils.index import Index
 
 
@@ -439,7 +439,7 @@ fn run_batched_matmul(
     @parameter
     fn elementwise_epilogue_fn1[
         c_type: DType, width: Int, rank: Int, *, alignment: Int = 1
-    ](idx: StaticIntTuple[rank], val: SIMD[c_type, width]) -> None:
+    ](idx: IndexList[rank], val: SIMD[c_type, width]) -> None:
         c_buf[(idx[0], idx[1], idx[2])] = rebind[BFloat16](val) + BFloat16(2.0)
 
     _batched_matmul_gpu[
@@ -461,7 +461,7 @@ fn run_batched_matmul(
     @parameter
     fn elementwise_epilogue_fn2[
         c_type: DType, width: Int, rank: Int, *, alignment: Int = 1
-    ](idx: StaticIntTuple[rank], val: SIMD[c_type, width]) -> None:
+    ](idx: IndexList[rank], val: SIMD[c_type, width]) -> None:
         c_buf_n[(idx[0], idx[1], idx[2])] = rebind[Float32](val) + 2.0
 
     _batched_matmul_gpu[

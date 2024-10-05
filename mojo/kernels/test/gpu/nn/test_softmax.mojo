@@ -18,7 +18,7 @@ from nn.softmax import _online_softmax_kernel, _softmax_cpu, _softmax_gpu
 from memory import UnsafePointer
 from testing import assert_almost_equal
 
-from utils import StaticIntTuple
+from utils import IndexList
 
 
 # CHECK-LABEL: test_gpu_softmax
@@ -27,7 +27,7 @@ fn test_gpu_softmax(ctx: DeviceContext) raises:
 
     alias type = DType.float32
     alias rank = 3
-    var shape = StaticIntTuple[rank](3, 5, 515)
+    var shape = IndexList[rank](3, 5, 515)
     var in_host_ptr = UnsafePointer[Scalar[type]].alloc(
         shape.flattened_length()
     )
@@ -52,19 +52,17 @@ fn test_gpu_softmax(ctx: DeviceContext) raises:
     @__copy_capture(in_device)
     fn input_fn_device[
         _simd_width: Int, _rank: Int
-    ](coords: StaticIntTuple[_rank]) -> SIMD[type, _simd_width]:
+    ](coords: IndexList[_rank]) -> SIMD[type, _simd_width]:
         return in_device.load[width=_simd_width](
-            rebind[StaticIntTuple[rank]](coords)
+            rebind[IndexList[rank]](coords)
         )
 
     @parameter
     @__copy_capture(in_host)
     fn input_fn_host[
         _simd_width: Int, _rank: Int
-    ](coords: StaticIntTuple[_rank]) -> SIMD[type, _simd_width]:
-        return in_host.load[width=_simd_width](
-            rebind[StaticIntTuple[rank]](coords)
-        )
+    ](coords: IndexList[_rank]) -> SIMD[type, _simd_width]:
+        return in_host.load[width=_simd_width](rebind[IndexList[rank]](coords))
 
     _softmax_gpu[
         type, 1, rank, DimList.create_unknown[rank](), input_fn_device
@@ -110,7 +108,7 @@ def test_gpu_softmax_half[test_type: DType](ctx: DeviceContext):
     alias ref_type = DType.float32
     alias rank = 3
 
-    var shape = StaticIntTuple[rank](3, 5, 515)
+    var shape = IndexList[rank](3, 5, 515)
     var length = shape.flattened_length()
 
     var in_host_ref_ptr = UnsafePointer[Scalar[ref_type]].alloc(length)
@@ -149,15 +147,15 @@ def test_gpu_softmax_half[test_type: DType](ctx: DeviceContext):
     @__copy_capture(in_device_ref)
     fn input_fn_ref[
         _simd_width: Int, _rank: Int
-    ](coords: StaticIntTuple[_rank]) -> SIMD[ref_type, _simd_width]:
-        return in_device_ref[rebind[StaticIntTuple[rank]](coords)]
+    ](coords: IndexList[_rank]) -> SIMD[ref_type, _simd_width]:
+        return in_device_ref[rebind[IndexList[rank]](coords)]
 
     @parameter
     @__copy_capture(in_device_test)
     fn input_fn_test[
         _simd_width: Int, _rank: Int
-    ](coords: StaticIntTuple[_rank]) -> SIMD[test_type, _simd_width]:
-        return in_device_test[rebind[StaticIntTuple[rank]](coords)]
+    ](coords: IndexList[_rank]) -> SIMD[test_type, _simd_width]:
+        return in_device_test[rebind[IndexList[rank]](coords)]
 
     _softmax_gpu[
         ref_type,
@@ -199,7 +197,7 @@ fn test_gpu_online_softmax[WM: Int, WN: Int](ctx: DeviceContext) raises:
 
     # For testing purpose, call online softmax twice and each time updates half
     # seq_len. Limit to WM rows and arrange warps in N dim.
-    alias shape = StaticIntTuple[rank](1, WM, seqlen)
+    alias shape = IndexList[rank](1, WM, seqlen)
     alias num_warps = seqlen // (2 * WN)
     alias num_threads = num_warps * WARP_SIZE
 
@@ -246,10 +244,8 @@ fn test_gpu_online_softmax[WM: Int, WN: Int](ctx: DeviceContext) raises:
     @__copy_capture(in_host)
     fn input_fn_host[
         _simd_width: Int, _rank: Int
-    ](coords: StaticIntTuple[_rank]) -> SIMD[type, _simd_width]:
-        return in_host.load[width=_simd_width](
-            rebind[StaticIntTuple[rank]](coords)
-        )
+    ](coords: IndexList[_rank]) -> SIMD[type, _simd_width]:
+        return in_host.load[width=_simd_width](rebind[IndexList[rank]](coords))
 
     _softmax_cpu[
         type,

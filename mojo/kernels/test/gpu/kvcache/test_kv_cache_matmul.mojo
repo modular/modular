@@ -18,7 +18,7 @@ from nn.kv_cache import (
     _fused_qkv_matmul_kv_cache_impl,
 )
 from linalg.matmul_gpu import _matmul_gpu
-from utils import StaticIntTuple
+from utils import IndexList
 from internal_utils import (
     HostNDBuffer,
     DeviceNDBuffer,
@@ -65,30 +65,30 @@ def execute_matmul[
     # initialize hidden state
     hidden_state_host = HostNDBuffer[
         type, 3, DimList(Dim(), Dim(), hidden_size)
-    ](StaticIntTuple[3](batch_size, prompt_len, hidden_size))
+    ](IndexList[3](batch_size, prompt_len, hidden_size))
 
     random(hidden_state_host.tensor)
 
     hidden_state_device = DeviceNDBuffer[
         type, 3, DimList(Dim(), Dim(), hidden_size)
-    ](StaticIntTuple[3](batch_size, prompt_len, hidden_size), ctx=ctx)
+    ](IndexList[3](batch_size, prompt_len, hidden_size), ctx=ctx)
     ctx.enqueue_copy_to_device(
         hidden_state_device.buffer, hidden_state_host.tensor.data
     )
     hidden_state_device_2d = NDBuffer[type, 2, DimList(Dim(), hidden_size)](
         hidden_state_device.buffer.ptr,
-        StaticIntTuple[2](batch_size * prompt_len, hidden_size),
+        IndexList[2](batch_size * prompt_len, hidden_size),
     )
 
     # initialize the weights
     weight_host = HostNDBuffer[type, 2, DimList(kv_hidden_size, hidden_size)](
-        StaticIntTuple[2](kv_hidden_size, hidden_size)
+        IndexList[2](kv_hidden_size, hidden_size)
     )
     random(weight_host.tensor)
 
     weight_device = DeviceNDBuffer[
         type, 2, DimList(kv_hidden_size, hidden_size)
-    ](StaticIntTuple[2](kv_hidden_size, hidden_size), ctx=ctx)
+    ](IndexList[2](kv_hidden_size, hidden_size), ctx=ctx)
     ctx.enqueue_copy_to_device(weight_device.buffer, weight_host.tensor.data)
 
     # initialize reference output
@@ -97,7 +97,7 @@ def execute_matmul[
         2,
         DimList(Dim(), kv_params.num_heads * kv_params.head_size),
     ](
-        StaticIntTuple[2](
+        IndexList[2](
             batch_size * prompt_len, kv_params.num_heads * kv_params.head_size
         ),
     )
@@ -106,7 +106,7 @@ def execute_matmul[
         2,
         DimList(Dim(), kv_params.num_heads * kv_params.head_size),
     ](
-        StaticIntTuple[2](
+        IndexList[2](
             batch_size * prompt_len, kv_params.num_heads * kv_params.head_size
         ),
         ctx=ctx,
@@ -138,7 +138,7 @@ def execute_matmul[
             kv_params,
         ]._internal_block_shape,
     ](
-        StaticIntTuple[4](
+        IndexList[4](
             batch_size, max_seq_len, kv_params.num_heads, kv_params.head_size
         ),
     )
@@ -150,7 +150,7 @@ def execute_matmul[
             kv_params,
         ]._internal_block_shape,
     ](
-        StaticIntTuple[4](
+        IndexList[4](
             batch_size, max_seq_len, kv_params.num_heads, kv_params.head_size
         ),
         ctx=ctx,
@@ -240,19 +240,19 @@ def execute_fused_qkv_matmul[
     # initialize hidden state
     hidden_state_host = HostNDBuffer[
         type, 3, DimList(Dim(), Dim(), hidden_size)
-    ](StaticIntTuple[3](batch_size, prompt_len, hidden_size))
+    ](IndexList[3](batch_size, prompt_len, hidden_size))
 
     random(hidden_state_host.tensor)
 
     hidden_state_device = DeviceNDBuffer[
         type, 3, DimList(Dim(), Dim(), hidden_size)
-    ](StaticIntTuple[3](batch_size, prompt_len, hidden_size), ctx=ctx)
+    ](IndexList[3](batch_size, prompt_len, hidden_size), ctx=ctx)
     ctx.enqueue_copy_to_device(
         hidden_state_device.buffer, hidden_state_host.tensor.data
     )
     hidden_state_device_2d = NDBuffer[type, 2, DimList(Dim(), hidden_size)](
         hidden_state_device.buffer.ptr,
-        StaticIntTuple[2](batch_size * prompt_len, hidden_size),
+        IndexList[2](batch_size * prompt_len, hidden_size),
     )
 
     # initialize the weights
@@ -260,7 +260,7 @@ def execute_fused_qkv_matmul[
         type,
         2,
         DimList(fused_hidden_size, hidden_size),
-    ](StaticIntTuple[2](fused_hidden_size, hidden_size))
+    ](IndexList[2](fused_hidden_size, hidden_size))
     random(weight_host.tensor)
 
     weight_device = DeviceNDBuffer[
@@ -268,14 +268,14 @@ def execute_fused_qkv_matmul[
         2,
         DimList(fused_hidden_size, hidden_size),
     ](
-        StaticIntTuple[2](fused_hidden_size, hidden_size),
+        IndexList[2](fused_hidden_size, hidden_size),
         ctx=ctx,
     )
     ctx.enqueue_copy_to_device(weight_device.buffer, weight_host.tensor.data)
 
     # initialize reference output
     ref_output_host = HostNDBuffer[type, 2, DimList(Dim(), fused_hidden_size),](
-        StaticIntTuple[2](
+        IndexList[2](
             batch_size * prompt_len,
             fused_hidden_size,
         ),
@@ -285,7 +285,7 @@ def execute_fused_qkv_matmul[
         2,
         DimList(Dim(), fused_hidden_size),
     ](
-        StaticIntTuple[2](
+        IndexList[2](
             batch_size * prompt_len,
             fused_hidden_size,
         ),
@@ -296,14 +296,14 @@ def execute_fused_qkv_matmul[
         3,
         DimList(Dim(), Dim(), hidden_size),
     ](
-        StaticIntTuple[3](batch_size, prompt_len, hidden_size),
+        IndexList[3](batch_size, prompt_len, hidden_size),
     )
     test_output_device = DeviceNDBuffer[
         type,
         3,
         DimList(Dim(), Dim(), hidden_size),
     ](
-        StaticIntTuple[3](batch_size, prompt_len, hidden_size),
+        IndexList[3](batch_size, prompt_len, hidden_size),
         ctx=ctx,
     )
 
@@ -333,7 +333,7 @@ def execute_fused_qkv_matmul[
             kv_params,
         ]._internal_block_shape,
     ](
-        StaticIntTuple[4](
+        IndexList[4](
             batch_size, max_seq_len, kv_params.num_heads, kv_params.head_size
         ),
     )
@@ -345,7 +345,7 @@ def execute_fused_qkv_matmul[
             kv_params,
         ]._internal_block_shape,
     ](
-        StaticIntTuple[4](
+        IndexList[4](
             batch_size, max_seq_len, kv_params.num_heads, kv_params.head_size
         ),
         ctx=ctx,
@@ -371,7 +371,7 @@ def execute_fused_qkv_matmul[
             kv_params,
         ]._internal_block_shape,
     ](
-        StaticIntTuple[4](
+        IndexList[4](
             batch_size, max_seq_len, kv_params.num_heads, kv_params.head_size
         ),
     )
@@ -383,7 +383,7 @@ def execute_fused_qkv_matmul[
             kv_params,
         ]._internal_block_shape,
     ](
-        StaticIntTuple[4](
+        IndexList[4](
             batch_size, max_seq_len, kv_params.num_heads, kv_params.head_size
         ),
         ctx=ctx,

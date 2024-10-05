@@ -19,7 +19,7 @@ from linalg.gemv import (
 from linalg.matmul_gpu import matmul_kernel, matmul_kernel_naive
 from memory import UnsafePointer
 
-from utils import StaticIntTuple
+from utils import IndexList
 from utils.index import Index
 from utils.numerics import isnan
 
@@ -240,7 +240,7 @@ fn test_gevm_with_epilogue_fn[
     @__copy_capture(c_device_nd)
     fn epilogue_fn[
         type: DType, width: Int, *, alignment: Int = 1
-    ](idx: StaticIntTuple[2], val: SIMD[type, width]):
+    ](idx: IndexList[2], val: SIMD[type, width]):
         c_device_nd.store[width=width](
             idx, rebind[SIMD[DType.float32, width]](val + 4.0)
         )

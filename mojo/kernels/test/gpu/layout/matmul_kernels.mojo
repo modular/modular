@@ -24,7 +24,7 @@ from layout.int_tuple import IntTuple
 from layout.runtime_tuple import RuntimeTuple
 from layout.runtime_layout import RuntimeLayout, UNKNOWN_VALUE
 from layout.tensor_builder import LayoutTensorBuild as tb
-from utils import StaticIntTuple
+from utils import IndexList
 from builtin.io import _printf
 from gpu.cublas.cublas import (
     check_cublas_error,

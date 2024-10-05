@@ -19,7 +19,7 @@ from nn.kv_cache import (
 from math import isqrt
 from nn.mha import mha_gpu_naive
 
-from utils import StaticIntTuple
+from utils import IndexList
 from internal_utils import (
     HostNDBuffer,
     DeviceNDBuffer,
@@ -65,20 +65,14 @@ def execute_flash_attention[
     # TODO parameterize to layout
     q_host = HostNDBuffer[
         type, 4, DimList(Dim(), Dim(), num_q_heads, kv_params.head_size)
-    ](
-        StaticIntTuple[4](
-            batch_size, prompt_len, num_q_heads, kv_params.head_size
-        )
-    )
+    ](IndexList[4](batch_size, prompt_len, num_q_heads, kv_params.head_size))
 
     random(q_host.tensor)
 
     q_device = DeviceNDBuffer[
         type, 4, DimList(Dim(), Dim(), num_q_heads, kv_params.head_size)
     ](
-        StaticIntTuple[4](
-            batch_size, prompt_len, num_q_heads, kv_params.head_size
-        ),
+        IndexList[4](batch_size, prompt_len, num_q_heads, kv_params.head_size),
         ctx=ctx,
     )
     ctx.enqueue_copy_to_device(q_device.buffer, q_host.tensor.data)
@@ -89,7 +83,7 @@ def execute_flash_attention[
     mask_host = HostNDBuffer[
         type, 4, DimList(Dim(), num_q_heads, Dim(), Dim())
     ](
-        StaticIntTuple[4](
+        IndexList[4](
             batch_size, num_q_heads, prompt_len, prompt_len + cache_size
         )
     )
@@ -99,7 +93,7 @@ def execute_flash_attention[
     mask_device = DeviceNDBuffer[
         type, 4, DimList(Dim(), num_q_heads, Dim(), Dim())
     ](
-        StaticIntTuple[4](
+        IndexList[4](
             batch_size, num_q_heads, prompt_len, prompt_len + cache_size
         ),
         ctx=ctx,
@@ -110,16 +104,12 @@ def execute_flash_attention[
     ref_output_host = HostNDBuffer[
         type, 4, DimList(Dim(), Dim(), num_q_heads, kv_params.head_size)
     ](
-        StaticIntTuple[4](
-            batch_size, prompt_len, num_q_heads, kv_params.head_size
-        ),
+        IndexList[4](batch_size, prompt_len, num_q_heads, kv_params.head_size),
     )
     ref_output_device = DeviceNDBuffer[
         type, 4, DimList(Dim(), Dim(), num_q_heads, kv_params.head_size)
     ](
-        StaticIntTuple[4](
-            batch_size, prompt_len, num_q_heads, kv_params.head_size
-        ),
+        IndexList[4](batch_size, prompt_len, num_q_heads, kv_params.head_size),
         ctx=ctx,
     )
 
@@ -127,16 +117,12 @@ def execute_flash_attention[
     test_output_host = HostNDBuffer[
         type, 4, DimList(Dim(), Dim(), num_q_heads, kv_params.head_size)
     ](
-        StaticIntTuple[4](
-            batch_size, prompt_len, num_q_heads, kv_params.head_size
-        ),
+        IndexList[4](batch_size, prompt_len, num_q_heads, kv_params.head_size),
     )
     test_output_device = DeviceNDBuffer[
         type, 4, DimList(Dim(), Dim(), num_q_heads, kv_params.head_size)
     ](
-        StaticIntTuple[4](
-            batch_size, prompt_len, num_q_heads, kv_params.head_size
-        ),
+        IndexList[4](batch_size, prompt_len, num_q_heads, kv_params.head_size),
         ctx=ctx,
     )
 
@@ -163,7 +149,7 @@ def execute_flash_attention[
             kv_params,
         ]._internal_block_shape,
     ](
-        StaticIntTuple[4](
+        IndexList[4](
             batch_size, max_seq_len, kv_params.num_heads, kv_params.head_size
         ),
     )
@@ -176,7 +162,7 @@ def execute_flash_attention[
             kv_params,
         ]._internal_block_shape,
     ](
-        StaticIntTuple[4](
+        IndexList[4](
             batch_size, max_seq_len, kv_params.num_heads, kv_params.head_size
         ),
         ctx=ctx,
@@ -198,7 +184,7 @@ def execute_flash_attention[
             kv_params,
         ]._internal_block_shape,
     ](
-        StaticIntTuple[4](
+        IndexList[4](
             batch_size, max_seq_len, kv_params.num_heads, kv_params.head_size
         ),
     )
@@ -211,7 +197,7 @@ def execute_flash_attention[
             kv_params,
         ]._internal_block_shape,
     ](
-        StaticIntTuple[4](
+        IndexList[4](
             batch_size, max_seq_len, kv_params.num_heads, kv_params.head_size
         ),
         ctx=ctx,
@@ -226,12 +212,12 @@ def execute_flash_attention[
     )
 
     valid_lengths_host = HostNDBuffer[DType.uint32, 1](
-        StaticIntTuple[1](
+        IndexList[1](
             batch_size,
         )
     )
     valid_lengths_device = DeviceNDBuffer[DType.uint32, 1](
-        StaticIntTuple[1](
+        IndexList[1](
             batch_size,
         ),
         ctx=ctx,

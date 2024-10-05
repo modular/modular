@@ -15,10 +15,10 @@ from linalg.matmul_gpu import split_k_reduce
 from memory import memcpy, UnsafePointer
 from testing import assert_almost_equal
 
-from utils import StaticIntTuple
+from utils import IndexList
 
 
-fn _size[rank: Int](dims: StaticIntTuple[rank]) -> Int:
+fn _size[rank: Int](dims: IndexList[rank]) -> Int:
     var size = 1
 
     @parameter
@@ -29,7 +29,7 @@ fn _size[rank: Int](dims: StaticIntTuple[rank]) -> Int:
 
 fn _create_device_buffer[
     dtype: DType, rank: Int, shape: DimList
-](ctx: DeviceContext, dynamic_shape: StaticIntTuple[rank]) raises -> Tuple[
+](ctx: DeviceContext, dynamic_shape: IndexList[rank]) raises -> Tuple[
     DeviceBuffer[dtype], NDBuffer[dtype, rank, shape]
 ]:
     var storage = ctx.create_buffer[dtype](_size(dynamic_shape))
@@ -41,7 +41,7 @@ fn _create_device_buffer[
 
 fn _create_host_buffer[
     dtype: DType, rank: Int, shape: DimList
-](dynamic_shape: StaticIntTuple[rank]) raises -> NDBuffer[dtype, rank, shape]:
+](dynamic_shape: IndexList[rank]) raises -> NDBuffer[dtype, rank, shape]:
     var storage_ptr = UnsafePointer[Scalar[dtype]].alloc(_size(dynamic_shape))
     return NDBuffer[dtype, rank, shape](
         storage_ptr, dynamic_shape=dynamic_shape
@@ -50,7 +50,7 @@ fn _create_host_buffer[
 
 fn _get_test_name[
     type: DType, shape_a: DimList, shape_b: DimList
-](shape_a_dim: StaticIntTuple[2], shape_b_dim: StaticIntTuple[2],) -> String:
+](shape_a_dim: IndexList[2], shape_b_dim: IndexList[2],) -> String:
     var test_str = String("test-case(")
     test_str += str(type)
     test_str += ") : "
@@ -71,7 +71,7 @@ fn _split_k_reduce_verify[
 
     for i in range(M):
         for j in range(N):
-            var idx = StaticIntTuple[2]((i, j))
+            var idx = IndexList[2]((i, j))
             var vec = A[idx]
             for k in range(num_partition):
                 vec += B[i, j + k * N]
@@ -81,8 +81,8 @@ fn _split_k_reduce_verify[
 fn split_k_reduce_test_case[
     dtype: DType, shape_a: DimList, shape_b: DimList, num_partition: UInt
 ](
-    shape_a_dim: StaticIntTuple[2],
-    shape_b_dim: StaticIntTuple[2],
+    shape_a_dim: IndexList[2],
+    shape_b_dim: IndexList[2],
     ctx: DeviceContext,
 ) raises:
     print(_get_test_name[dtype, shape_a, shape_b](shape_a_dim, shape_b_dim))
@@ -182,7 +182,7 @@ def test_split_k_reduce_rank3[
     @__copy_capture(c, epilogue_buffer)
     fn epilogue_fn[
         _type: DType, _width: Int, *, alignment: Int = 1
-    ](idx: StaticIntTuple[2], val: SIMD[_type, _width]) capturing -> None:
+    ](idx: IndexList[2], val: SIMD[_type, _width]) capturing -> None:
         var another_val = rebind[SIMD[_type, _width]](
             epilogue_buffer.load[width=_width](idx)
         )
@@ -244,7 +244,7 @@ def main():
             DimList(16, 8),
             DimList(16, 8 * num_part2),
             num_part2,
-        ](StaticIntTuple[2](16, 8), StaticIntTuple[2](16, 8 * num_part2), ctx)
+        ](IndexList[2](16, 8), IndexList[2](16, 8 * num_part2), ctx)
 
         # Rank-3 work space.
         test_split_k_reduce_rank3[DType.bfloat16, DType.bfloat16](

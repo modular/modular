@@ -13,7 +13,7 @@ from gpu.host.device_context import DeviceContext
 from nn.gather_scatter import gather
 from memory import UnsafePointer
 
-from utils.index import Index, StaticIntTuple
+from utils.index import Index, IndexList
 
 
 # CHECK-LABEL: test_gather

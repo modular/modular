@@ -29,7 +29,7 @@ from nn.mha import mha_gpu_naive
 from buffer import Buffer
 from algorithm import max
 
-from utils import StaticIntTuple
+from utils import IndexList
 from internal_utils import (
     HostNDBuffer,
     DeviceNDBuffer,
@@ -83,7 +83,7 @@ def execute_flash_attention[
     q_host = HostNDBuffer[
         type, 4, DimList(Dim(), Dim(), num_q_heads, kv_params.head_size)
     ](
-        StaticIntTuple[4](
+        IndexList[4](
             batch_size, max_prompt_len, num_q_heads, kv_params.head_size
         )
     )
@@ -91,7 +91,7 @@ def execute_flash_attention[
     random(q_host.tensor)
 
     valid_length_device = DeviceNDBuffer[DType.uint32, 1](
-        StaticIntTuple[1](batch_size),
+        IndexList[1](batch_size),
         ctx=ctx,
     )
     ctx.enqueue_copy_to_device(valid_length_device.buffer, valid_length.data)
@@ -99,7 +99,7 @@ def execute_flash_attention[
     q_device = DeviceNDBuffer[
         type, 4, DimList(Dim(), Dim(), num_q_heads, kv_params.head_size)
     ](
-        StaticIntTuple[4](
+        IndexList[4](
             batch_size, max_prompt_len, num_q_heads, kv_params.head_size
         ),
         ctx=ctx,
@@ -112,7 +112,7 @@ def execute_flash_attention[
     mask_host = HostNDBuffer[
         type, 4, DimList(Dim(), num_q_heads, Dim(), Dim())
     ](
-        StaticIntTuple[4](
+        IndexList[4](
             batch_size,
             num_q_heads,
             max_prompt_len,
@@ -125,7 +125,7 @@ def execute_flash_attention[
     mask_device = DeviceNDBuffer[
         type, 4, DimList(Dim(), num_q_heads, Dim(), Dim())
     ](
-        StaticIntTuple[4](
+        IndexList[4](
             batch_size,
             num_q_heads,
             max_prompt_len,
@@ -136,13 +136,11 @@ def execute_flash_attention[
     ctx.enqueue_copy_to_device(mask_device.buffer, mask_host.tensor.data)
 
     # initialize scale tensor
-    scale_host = HostNDBuffer[DType.float32, 1, DimList(1)](
-        StaticIntTuple[1](1)
-    )
+    scale_host = HostNDBuffer[DType.float32, 1, DimList(1)](IndexList[1](1))
 
     scale_host.tensor[0] = isqrt(Float32(kv_params.head_size))
     scale_device = DeviceNDBuffer[DType.float32, 1, DimList(1)](
-        StaticIntTuple[1](1),
+        IndexList[1](1),
         ctx=ctx,
     )
     ctx.enqueue_copy_to_device(scale_device.buffer, scale_host.tensor.data)
@@ -151,14 +149,14 @@ def execute_flash_attention[
     ref_output_host = HostNDBuffer[
         type, 4, DimList(Dim(), Dim(), num_q_heads, kv_params.head_size)
     ](
-        StaticIntTuple[4](
+        IndexList[4](
             batch_size, max_prompt_len, num_q_heads, kv_params.head_size
         ),
     )
     ref_output_device = DeviceNDBuffer[
         type, 4, DimList(Dim(), Dim(), num_q_heads, kv_params.head_size)
     ](
-        StaticIntTuple[4](
+        IndexList[4](
             batch_size, max_prompt_len, num_q_heads, kv_params.head_size
         ),
         ctx=ctx,
@@ -168,14 +166,14 @@ def execute_flash_attention[
     test_output_host = HostNDBuffer[
         type, 4, DimList(Dim(), Dim(), num_q_heads, kv_params.head_size)
     ](
-        StaticIntTuple[4](
+        IndexList[4](
             batch_size, max_prompt_len, num_q_heads, kv_params.head_size
         ),
     )
     test_output_device = DeviceNDBuffer[
         type, 4, DimList(Dim(), Dim(), num_q_heads, kv_params.head_size)
     ](
-        StaticIntTuple[4](
+        IndexList[4](
             batch_size, max_prompt_len, num_q_heads, kv_params.head_size
         ),
         ctx=ctx,
@@ -193,7 +191,7 @@ def execute_flash_attention[
         cache_lengths_dev.ptr, batch_size
     )
     kv_block_host = HostNDBuffer[type, 6,](
-        StaticIntTuple[6](
+        IndexList[6](
             num_blocks,
             2,
             num_layers,
@@ -203,7 +201,7 @@ def execute_flash_attention[
         ),
     )
     kv_block_device = DeviceNDBuffer[type, 6,](
-        StaticIntTuple[6](
+        IndexList[6](
             num_blocks,
             2,
             num_layers,
@@ -215,13 +213,13 @@ def execute_flash_attention[
     )
 
     var lookup_table_host = HostNDBuffer[DType.uint32, 1,](
-        StaticIntTuple[1](
+        IndexList[1](
             batch_size,
         ),
     )
 
     var lookup_table_device = DeviceNDBuffer[DType.uint32, 1,](
-        StaticIntTuple[1](
+        IndexList[1](
             batch_size,
         ),
         ctx=ctx,

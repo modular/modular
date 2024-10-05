@@ -18,7 +18,7 @@ from memory import UnsafePointer
 from nn.normalization import *
 from testing import assert_almost_equal
 
-from utils.index import Index, StaticIntTuple
+from utils.index import Index, IndexList
 
 
 fn run_layer_norm_block[
@@ -68,7 +68,7 @@ fn run_layer_norm_block[
     @parameter
     fn gamma_fn[
         width: Int, rank: Int
-    ](idx: StaticIntTuple[rank]) -> SIMD[type, width]:
+    ](idx: IndexList[rank]) -> SIMD[type, width]:
         return gamma.load[width=width](idx[0])
 
     var func_ln = ctx.compile_function[
@@ -122,9 +122,7 @@ fn run_layer_norm_block[
 
 fn run_layer_norm_gpu[
     type: DType, rank: Int
-](
-    ctx: DeviceContext, shape: StaticIntTuple[rank], rtol: Scalar[type] = 0.01
-) raises:
+](ctx: DeviceContext, shape: IndexList[rank], rtol: Scalar[type] = 0.01) raises:
     print("== run_layer_norm_gpu")
 
     var cols = shape[rank - 1]
@@ -163,15 +161,15 @@ fn run_layer_norm_gpu[
     @parameter
     fn input_fn[
         width: Int, _rank: Int
-    ](idx: StaticIntTuple[_rank]) -> SIMD[type, width]:
-        return data_buf.load[width=width](rebind[StaticIntTuple[rank]](idx))
+    ](idx: IndexList[_rank]) -> SIMD[type, width]:
+        return data_buf.load[width=width](rebind[IndexList[rank]](idx))
 
     @__copy_capture(gamma)
     @always_inline
     @parameter
     fn gamma_fn[
         width: Int, rank: Int
-    ](idx: StaticIntTuple[rank]) -> SIMD[type, width]:
+    ](idx: IndexList[rank]) -> SIMD[type, width]:
         return gamma.load[width=width](idx[0])
 
     layer_norm_gpu[input_fn, gamma_fn](shape, beta, epsilon, data_buf, ctx)
@@ -247,7 +245,7 @@ fn run_layer_norm_warp_tiling[
     @parameter
     fn gamma_fn[
         width: Int, rank: Int
-    ](idx: StaticIntTuple[rank]) -> SIMD[type, width]:
+    ](idx: IndexList[rank]) -> SIMD[type, width]:
         return gamma.load[width=width](idx[0])
 
     var func_ln = ctx.compile_function[

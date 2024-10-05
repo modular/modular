@@ -21,7 +21,7 @@ from gpu.host import DeviceContext
 from gpu.id import ThreadIdx
 from gpu import barrier, lane_id
 from gpu.memory import _GPUAddressSpace as AddressSpace
-from utils.index import StaticIntTuple, Index
+from utils.index import IndexList, Index
 
 
 fn mma_load_and_multiply[
@@ -29,7 +29,7 @@ fn mma_load_and_multiply[
     dtype: DType,
     lhs_layout: Layout,
     rhs_layout: Layout,
-    inst_shape: StaticIntTuple[3],
+    inst_shape: IndexList[3],
     transpose_b: Bool = False,
 ](lhs: LayoutTensor[dtype, lhs_layout], rhs: LayoutTensor[dtype, rhs_layout]):
     var mma = TensorCore[dst_dtype, dtype, inst_shape, transpose_b]()
@@ -102,7 +102,7 @@ fn mma_write_operand_kernel[
     dst_dtype: DType,
     dtype: DType,
     layout: Layout,
-    inst_shape: StaticIntTuple[3],
+    inst_shape: IndexList[3],
 ](out: LayoutTensor[dst_dtype, layout]):
     var mma = TensorCore[dst_dtype, dtype, inst_shape]()
     var thread_reg_tile = mma.c_reg_tile_type.stack_allocation()
@@ -116,7 +116,7 @@ fn mma_write_operand_kernel[
 def test_load_and_mma_and_multiply_operands[
     dst_dtype: DType,
     dtype: DType,
-    shape: StaticIntTuple[3],
+    shape: IndexList[3],
     transpose_b: Bool = False,
 ](ctx: DeviceContext):
     alias M = shape[0]
@@ -142,7 +142,7 @@ def test_load_and_mma_and_multiply_operands[
 
 
 def test_write_res_operand[
-    dst_dtype: DType, dtype: DType, shape: StaticIntTuple[3]
+    dst_dtype: DType, dtype: DType, shape: IndexList[3]
 ](ctx: DeviceContext):
     alias M = shape[0]
     alias N = shape[1]
@@ -373,7 +373,7 @@ fn mma_load_and_print_operands_kernel_ldmatrix[
     dtype: DType,
     lhs_layout: Layout,
     rhs_layout: Layout,
-    inst_shape: StaticIntTuple[3],
+    inst_shape: IndexList[3],
     transpose_b: Bool = False,
 ](lhs: LayoutTensor[dtype, lhs_layout], rhs: LayoutTensor[dtype, rhs_layout]):
     var mma = TensorCore[dst_dtype, dtype, inst_shape, transpose_b]()
@@ -448,7 +448,7 @@ fn mma_load_and_print_operands_kernel_ldmatrix[
 def test_load_operands_ldmatrix[
     dst_dtype: DType,
     dtype: DType,
-    shape: StaticIntTuple[3],
+    shape: IndexList[3],
     transpose_b: Bool = False,
 ](ctx: DeviceContext):
     alias M = shape[0]

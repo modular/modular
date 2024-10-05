@@ -16,10 +16,10 @@ from linalg.matmul_gpu import _matmul_gpu
 from runtime.asyncrt import MojoCallContextPtr
 from testing import assert_almost_equal
 
-from utils import StaticIntTuple
+from utils import IndexList
 
 
-fn _size[rank: Int](dims: StaticIntTuple[rank]) -> Int:
+fn _size[rank: Int](dims: IndexList[rank]) -> Int:
     var size = 1
 
     @parameter
@@ -30,7 +30,7 @@ fn _size[rank: Int](dims: StaticIntTuple[rank]) -> Int:
 
 fn _create_device_buffer[
     dtype: DType, rank: Int, shape: DimList
-](ctx: DeviceContext, dynamic_shape: StaticIntTuple[rank]) raises -> Tuple[
+](ctx: DeviceContext, dynamic_shape: IndexList[rank]) raises -> Tuple[
     DeviceBuffer[dtype], NDBuffer[dtype, rank, shape]
 ]:
     var storage = ctx.create_buffer[dtype](_size(dynamic_shape))
@@ -42,7 +42,7 @@ fn _create_device_buffer[
 
 fn _create_host_buffer[
     dtype: DType, rank: Int, shape: DimList
-](dynamic_shape: StaticIntTuple[rank]) raises -> NDBuffer[dtype, rank, shape]:
+](dynamic_shape: IndexList[rank]) raises -> NDBuffer[dtype, rank, shape]:
     var storage_ptr = UnsafePointer[Scalar[dtype]].alloc(_size(dynamic_shape))
     return NDBuffer[dtype, rank, shape](
         storage_ptr, dynamic_shape=dynamic_shape
@@ -65,9 +65,9 @@ fn _create_host_buffer_like[
 fn _get_test_name[
     type: DType, shape_c: DimList, shape_a: DimList, shape_b: DimList
 ](
-    shape_c_dim: StaticIntTuple[2],
-    shape_a_dim: StaticIntTuple[2],
-    shape_b_dim: StaticIntTuple[2],
+    shape_c_dim: IndexList[2],
+    shape_a_dim: IndexList[2],
+    shape_b_dim: IndexList[2],
 ) -> String:
     var str = String("test-case(")
     str += type.__str__()
@@ -96,9 +96,9 @@ fn matmul_test_case[
     shape_a: DimList,
     shape_b: DimList,
 ](
-    shape_c_dim: StaticIntTuple[2],
-    shape_a_dim: StaticIntTuple[2],
-    shape_b_dim: StaticIntTuple[2],
+    shape_c_dim: IndexList[2],
+    shape_a_dim: IndexList[2],
+    shape_b_dim: IndexList[2],
     ctx: DeviceContext,
 ) raises:
     print(

@@ -27,7 +27,7 @@ from gpu.memory import AddressSpace
 from memory import UnsafePointer, memset_zero, stack_allocation
 from testing import *
 
-from utils.index import StaticIntTuple
+from utils.index import IndexList
 
 # ===----------------------------------------------------------------------===#
 # Check parameterization
@@ -108,7 +108,7 @@ fn erf_elementwise(buf: UnsafePointer[Float32], len: Int, ctx: DeviceContext):
     @always_inline
     @__copy_capture(tid)
     @parameter
-    fn func[simd_width: Int, rank: Int](idx: StaticIntTuple[rank]):
+    fn func[simd_width: Int, rank: Int](idx: IndexList[rank]):
         var offset = tid + idx[0]
         if offset >= len:
             return

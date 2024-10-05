@@ -14,7 +14,7 @@ from gpu.host.device_context import DeviceBuffer, DeviceContext
 from nn.normalization import *
 from memory import UnsafePointer
 from testing import assert_almost_equal
-from utils.index import Index, StaticIntTuple
+from utils.index import Index, IndexList
 
 
 fn compute_rms[
@@ -28,9 +28,7 @@ fn compute_rms[
 
 fn run_rms_norm_gpu[
     type: DType, rank: Int
-](
-    ctx: DeviceContext, shape: StaticIntTuple[rank], rtol: Scalar[type] = 0.01
-) raises:
+](ctx: DeviceContext, shape: IndexList[rank], rtol: Scalar[type] = 0.01) raises:
     print("== run_rms_norm_gpu")
 
     var cols = shape[rank - 1]
@@ -65,8 +63,8 @@ fn run_rms_norm_gpu[
     @parameter
     fn input_fn[
         width: Int, _rank: Int
-    ](idx: StaticIntTuple[_rank]) -> SIMD[type, width]:
-        return data_buf.load[width=width](rebind[StaticIntTuple[rank]](idx))
+    ](idx: IndexList[_rank]) -> SIMD[type, width]:
+        return data_buf.load[width=width](rebind[IndexList[rank]](idx))
 
     rms_norm_gpu[input_fn](shape, gamma, epsilon, data_buf, ctx)
     ctx.enqueue_copy_from_device(res, data_d)

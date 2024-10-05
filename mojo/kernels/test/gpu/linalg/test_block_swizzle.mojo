@@ -7,7 +7,7 @@
 
 from linalg.utils_gpu import block_swizzle
 
-from utils.index import Index, StaticIntTuple
+from utils.index import Index, IndexList
 
 
 # CHECK-LABEL: test_block_swizzle

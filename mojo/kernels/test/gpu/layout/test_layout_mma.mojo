@@ -28,7 +28,7 @@ from testing import *
 fn mma_layout_tc[
     out_type: DType,
     in_type: DType,
-    shape: StaticIntTuple[3],
+    shape: IndexList[3],
     layout_c: Layout,
     layout_a: Layout,
     layout_b: Layout,
@@ -75,7 +75,7 @@ fn matmul_naive[
 fn test_layout_mma[
     out_type: DType,
     in_type: DType,
-    shape: StaticIntTuple[3],
+    shape: IndexList[3],
     M: Int,
     N: Int,
     K: Int,
@@ -179,9 +179,9 @@ fn test_layout_mma[
 
 
 def main():
-    alias shape_1684 = StaticIntTuple[3](16, 8, 4)
-    alias shape_1688 = StaticIntTuple[3](16, 8, 8)
-    alias shape_16816 = StaticIntTuple[3](16, 8, 16)
+    alias shape_1684 = IndexList[3](16, 8, 4)
+    alias shape_1688 = IndexList[3](16, 8, 8)
+    alias shape_16816 = IndexList[3](16, 8, 16)
 
     with DeviceContext() as ctx:
         test_layout_mma[DType.float32, DType.float32, shape_1684, 16, 8, 4](

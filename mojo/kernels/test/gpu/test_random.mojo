@@ -40,8 +40,8 @@ def run_elementwise[type: DType](ctx: DeviceContext):
     @always_inline
     @__copy_capture(out_buffer, in_buffer)
     @parameter
-    fn func[simd_width: Int, rank: Int](idx0: StaticIntTuple[rank]):
-        var idx = rebind[StaticIntTuple[1]](idx0)
+    fn func[simd_width: Int, rank: Int](idx0: IndexList[rank]):
+        var idx = rebind[IndexList[1]](idx0)
 
         var rng_state = Random(seed=idx0[0])
         var rng = rng_state.step_uniform()

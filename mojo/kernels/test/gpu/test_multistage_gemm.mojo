@@ -52,7 +52,7 @@ from linalg.utils_gpu import block_swizzle
 from memory import UnsafePointer
 from testing import assert_almost_equal
 
-from utils.index import Index, StaticIntTuple
+from utils.index import Index, IndexList
 
 
 fn is_benchmark() -> Bool:

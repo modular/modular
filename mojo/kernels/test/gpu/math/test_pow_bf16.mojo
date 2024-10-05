@@ -43,8 +43,8 @@ def run_elementwise[do_bfloat_exp: Bool](exponent: Int, ctx: DeviceContext):
     @always_inline
     @__copy_capture(out_buffer, in_buffer, exponent)
     @parameter
-    fn func[simd_width: Int, rank: Int](idx0: StaticIntTuple[rank]):
-        var idx = rebind[StaticIntTuple[1]](idx0)
+    fn func[simd_width: Int, rank: Int](idx0: IndexList[rank]):
+        var idx = rebind[IndexList[1]](idx0)
 
         var val = in_buffer.load[width=simd_width](idx).cast[DType.bfloat16]()
         var result: SIMD[DType.bfloat16, simd_width]
@@ -56,7 +56,7 @@ def run_elementwise[do_bfloat_exp: Bool](exponent: Int, ctx: DeviceContext):
             result = val**exponent
         out_buffer.store[width=simd_width](idx, result.cast[DType.float32]())
 
-    elementwise[func, pack_size, target="cuda"](StaticIntTuple[1](length), ctx)
+    elementwise[func, pack_size, target="cuda"](IndexList[1](length), ctx)
 
     ctx.enqueue_copy_from_device(out_host.data, out_device)
     ctx.synchronize()

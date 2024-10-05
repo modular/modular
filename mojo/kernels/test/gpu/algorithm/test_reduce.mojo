@@ -11,7 +11,7 @@ from gpu.host.device_context import DeviceContext
 from memory import UnsafePointer
 from testing import assert_equal
 
-from utils import StaticIntTuple, StaticTuple
+from utils import IndexList, StaticTuple
 
 alias num_reductions = 2
 
@@ -23,7 +23,7 @@ fn fused_reduce_inner_test[
     rank: Int,
     type: DType,
 ](
-    shape: StaticIntTuple[rank],
+    shape: IndexList[rank],
     init: StaticTuple[Scalar[type], num_reductions],
     expected_vals0: List[Float32],
     expected_vals1: List[Float32],
@@ -67,11 +67,9 @@ fn fused_reduce_inner_test[
         type: DType,
         width: Int,
         _rank: Int,
-    ](coords: StaticIntTuple[_rank]) -> SIMD[type, width]:
+    ](coords: IndexList[_rank]) -> SIMD[type, width]:
         return rebind[SIMD[type, width]](
-            input_buf_device.load[width=width](
-                rebind[StaticIntTuple[rank]](coords)
-            )
+            input_buf_device.load[width=width](rebind[IndexList[rank]](coords))
         )
 
     @__copy_capture(output_buf_device0, output_buf_device1)
@@ -79,14 +77,14 @@ fn fused_reduce_inner_test[
     fn output_fn[
         _type: DType, width: Int, _rank: Int
     ](
-        coords: StaticIntTuple[_rank],
+        coords: IndexList[_rank],
         val: StaticTuple[SIMD[_type, width], num_reductions],
     ):
         output_buf_device0.__setitem__(
-            rebind[StaticIntTuple[rank]](coords), rebind[Scalar[type]](val[0])
+            rebind[IndexList[rank]](coords), rebind[Scalar[type]](val[0])
         )
         output_buf_device1.__setitem__(
-            rebind[StaticIntTuple[rank]](coords), rebind[Scalar[type]](val[1])
+            rebind[IndexList[rank]](coords), rebind[Scalar[type]](val[1])
         )
 
     reduce_launch[num_reductions, input_fn, output_fn, reduce_fn, rank, type](
@@ -119,7 +117,7 @@ fn reduce_inner_test[
     rank: Int,
     type: DType,
 ](
-    shape: StaticIntTuple[rank],
+    shape: IndexList[rank],
     init: Scalar[type],
     expected_vals: List[Float32],
     ctx: DeviceContext,
@@ -164,11 +162,9 @@ fn reduce_inner_test[
         type: DType,
         width: Int,
         _rank: Int,
-    ](coords: StaticIntTuple[_rank]) -> SIMD[type, width]:
+    ](coords: IndexList[_rank]) -> SIMD[type, width]:
         return rebind[SIMD[type, width]](
-            input_buf_device.load[width=width](
-                rebind[StaticIntTuple[rank]](coords)
-            )
+            input_buf_device.load[width=width](rebind[IndexList[rank]](coords))
         )
 
     @__copy_capture(output_buf_device)
@@ -176,11 +172,11 @@ fn reduce_inner_test[
     fn output_fn[
         _type: DType, width: Int, _rank: Int
     ](
-        coords: StaticIntTuple[_rank],
+        coords: IndexList[_rank],
         val: StaticTuple[SIMD[_type, width], num_reductions],
     ):
         output_buf_device.__setitem__(
-            rebind[StaticIntTuple[rank]](coords), rebind[Scalar[type]](val[0])
+            rebind[IndexList[rank]](coords), rebind[Scalar[type]](val[0])
         )
 
     reduce_launch[
@@ -228,21 +224,21 @@ def main():
 
     with DeviceContext() as ctx:
         reduce_inner_test[reduce_add](
-            StaticIntTuple[3](2, 3, 257),
+            IndexList[3](2, 3, 257),
             Float32(0),
             List[Float32](257.0, 514.0, 771.0, 1028.0, 1285.0, 1542.0),
             ctx,
         )
 
         reduce_inner_test[reduce_add](
-            StaticIntTuple[2](5, 257),
+            IndexList[2](5, 257),
             Float32(0),
             List[Float32](257.0, 514.0, 771.0, 1028.0, 1285.0),
             ctx,
         )
 
         reduce_inner_test[reduce_add](
-            StaticIntTuple[4](2, 2, 2, 1029),
+            IndexList[4](2, 2, 2, 1029),
             Float32(0),
             List[Float32](
                 1029.0,
@@ -258,14 +254,14 @@ def main():
         )
 
         reduce_inner_test[reduce_max](
-            StaticIntTuple[2](5, 3),
+            IndexList[2](5, 3),
             Scalar[DType.float32].MIN,
             List[Float32](1.0, 2.0, 3.0, 4.0, 5.0),
             ctx,
         )
 
         fused_reduce_inner_test[fused_reduce_add_max, 2, DType.float32](
-            StaticIntTuple[2](5, 3),
+            IndexList[2](5, 3),
             StaticTuple[Scalar[DType.float32], 2](
                 Scalar[DType.float32].MIN, 0.0
             ),
@@ -276,14 +272,14 @@ def main():
 
         # bf16 tests
         reduce_inner_test[reduce_max](
-            StaticIntTuple[2](5, 5),
+            IndexList[2](5, 5),
             BFloat16.MIN,
             List[Float32](1.0, 2.0, 3.0, 4.0, 5.0),
             ctx,
         )
 
         fused_reduce_inner_test[fused_reduce_add_max, 2, DType.bfloat16](
-            StaticIntTuple[2](5, 3),
+            IndexList[2](5, 3),
             StaticTuple[BFloat16, 2](BFloat16.MIN, 0.0),
             List[Float32](1.0, 2.0, 3.0, 4.0, 5.0),
             List[Float32](3.0, 6.0, 9.0, 12.0, 15.0),
@@ -292,14 +288,14 @@ def main():
 
         # fp16 tests
         reduce_inner_test[reduce_max](
-            StaticIntTuple[2](5, 5),
+            IndexList[2](5, 5),
             Float16.MIN,
             List[Float32](1.0, 2.0, 3.0, 4.0, 5.0),
             ctx,
         )
 
         fused_reduce_inner_test[fused_reduce_add_max, 2, DType.float16](
-            StaticIntTuple[2](5, 3),
+            IndexList[2](5, 3),
             StaticTuple[Float16, 2](Float16.MIN, 0.0),
             List[Float32](1.0, 2.0, 3.0, 4.0, 5.0),
             List[Float32](3.0, 6.0, 9.0, 12.0, 15.0),

@@ -39,7 +39,7 @@ from memory.pointer import _GPUAddressSpace as GPUAddressSpace
 from testing import assert_equal as assert_equal_val
 
 
-from utils import StaticIntTuple
+from utils import IndexList
 from internal_utils import linspace
 from linalg.utils import elementwise_epilogue_type
 from utils.index import Index
@@ -48,7 +48,7 @@ from internal_utils._utils import ValOrDim, dynamic, static
 alias init_fn_type = fn (buff: NDBuffer) capturing -> None
 
 alias epilogue_func_type = fn[type: DType, width: Int, *, alignment: Int = 1] (
-    StaticIntTuple[2], StaticIntTuple[2], SIMD[type, width]
+    IndexList[2], IndexList[2], SIMD[type, width]
 ) capturing -> SIMD[type, width]
 
 
@@ -57,10 +57,12 @@ alias epilogue_func_type = fn[type: DType, width: Int, *, alignment: Int = 1] (
 fn epilogue_test_fn[
     type: DType, width: Int, *, alignment: Int = 1
 ](
-    idx: StaticIntTuple[2],
-    dim_space: StaticIntTuple[2],
+    idx: IndexList[2],
+    dim_space: IndexList[2],
     val: SIMD[type, width],
-) -> SIMD[type, width]:
+) -> SIMD[
+    type, width
+]:
     var bias = SIMD[type, width](0)
 
     @parameter
@@ -156,7 +158,7 @@ fn test[
     @__copy_capture(c_tensor, M, N)
     fn epilogue_fn[
         _type: DType, width: Int, *, alignment: Int = 1
-    ](idx: StaticIntTuple[2], val: SIMD[_type, width]) capturing -> None:
+    ](idx: IndexList[2], val: SIMD[_type, width]) capturing -> None:
         var update_val: SIMD[_type, width] = val
 
         @parameter
@@ -207,8 +209,8 @@ fn test[
     @always_inline
     @__copy_capture(c_ref_tensor, M, N)
     @parameter
-    fn func[simd_width: Int, rank: Int](idx0: StaticIntTuple[rank]):
-        var idx = rebind[StaticIntTuple[2]](idx0)
+    fn func[simd_width: Int, rank: Int](idx0: IndexList[rank]):
+        var idx = rebind[IndexList[2]](idx0)
 
         var val = c_ref_tensor.load[width=simd_width](idx)
 
@@ -227,7 +229,7 @@ fn test[
     @parameter
     if lambda_fn:
         elementwise[func, pack_size, target="cuda"](
-            StaticIntTuple[2](M, int(N)),
+            IndexList[2](M, int(N)),
             ctx,
         )
     ctx.synchronize()

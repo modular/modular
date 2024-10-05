@@ -10,7 +10,7 @@ from buffer import DimList, NDBuffer
 from gpu.host.device_context import DeviceContext
 from linalg.bmm import _batched_matmul_gpu
 
-from utils.index import Index, StaticIntTuple
+from utils.index import Index, IndexList
 
 
 # CHECK-LABEL: test_batched_matmul
@@ -69,7 +69,7 @@ fn test_batched_matmul(ctx: DeviceContext) raises:
     @parameter
     fn elementwise_epilogue_empty_fn[
         c_type: DType, width: Int, rank: Int, *, alignment: Int = 1
-    ](idx: StaticIntTuple[rank], val: SIMD[c_type, width]) -> None:
+    ](idx: IndexList[rank], val: SIMD[c_type, width]) -> None:
         dst_buffer[(idx[0], idx[1], idx[2])] = rebind[Float32](val) + 2.0
 
     _batched_matmul_gpu[

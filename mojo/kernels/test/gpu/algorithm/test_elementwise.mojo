@@ -14,7 +14,7 @@ from gpu.host._compile import _get_nvptx_target
 from gpu.host.device_context import DeviceContext
 from testing import assert_equal
 
-from utils import StaticIntTuple
+from utils import IndexList
 from utils.index import Index
 
 
@@ -40,15 +40,15 @@ fn run_elementwise[type: DType](ctx: DeviceContext) raises:
     @always_inline
     @__copy_capture(in_buffer, out_buffer)
     @parameter
-    fn func[simd_width: Int, rank: Int](idx0: StaticIntTuple[rank]):
-        var idx = rebind[StaticIntTuple[2]](idx0)
+    fn func[simd_width: Int, rank: Int](idx0: IndexList[rank]):
+        var idx = rebind[IndexList[2]](idx0)
         out_buffer.store(
             idx,
             in_buffer.load[width=simd_width](idx) + 42,
         )
 
     elementwise[func, pack_size, target="cuda"](
-        StaticIntTuple[2](2, 8),
+        IndexList[2](2, 8),
         ctx,
     )
 
@@ -106,8 +106,8 @@ fn run_elementwise_uneven_simd[type: DType](ctx: DeviceContext) raises:
     @always_inline
     @__copy_capture(in_buffer, out_buffer)
     @parameter
-    fn func[simd_width: Int, rank: Int](idx0: StaticIntTuple[rank]):
-        var idx = rebind[StaticIntTuple[2]](idx0)
+    fn func[simd_width: Int, rank: Int](idx0: IndexList[rank]):
+        var idx = rebind[IndexList[2]](idx0)
 
         out_buffer.store(
             idx,
@@ -115,7 +115,7 @@ fn run_elementwise_uneven_simd[type: DType](ctx: DeviceContext) raises:
         )
 
     elementwise[func, pack_size, target="cuda"](
-        StaticIntTuple[2](3, 3),
+        IndexList[2](3, 3),
         ctx,
     )
     ctx.synchronize()
@@ -159,8 +159,8 @@ fn run_elementwise_transpose_copy[type: DType](ctx: DeviceContext) raises:
     @always_inline
     @__copy_capture(in_buffer_transposed, out_buffer)
     @parameter
-    fn func[simd_width: Int, rank: Int](idx0: StaticIntTuple[rank]):
-        var idx = rebind[StaticIntTuple[3]](idx0)
+    fn func[simd_width: Int, rank: Int](idx0: IndexList[rank]):
+        var idx = rebind[IndexList[3]](idx0)
 
         # We need to perform unaligned loads because the non-uniform strides
         # being used for in_buffer.
@@ -169,7 +169,7 @@ fn run_elementwise_transpose_copy[type: DType](ctx: DeviceContext) raises:
         )
 
     elementwise[func, 1, target="cuda"](
-        StaticIntTuple[3](4, 2, 5),
+        IndexList[3](4, 2, 5),
         ctx,
     )
 

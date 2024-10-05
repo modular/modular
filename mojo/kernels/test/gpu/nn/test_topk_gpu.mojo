@@ -15,7 +15,7 @@ from nn.topk_gpu import _topk_gpu
 from buffer.dimlist import DimList
 
 from internal_utils import HostNDBuffer, DeviceNDBuffer
-from utils import StaticIntTuple
+from utils import IndexList
 from random import random_float64
 from gpu.host import DeviceContext
 
@@ -35,7 +35,7 @@ fn test_case[
     K: Int,
     axis: Int = -1,  # TODO (low prio) need to add support for axis != -1
     block_size: Int = 256,
-    # input_shape: StaticIntTuple[rank] = StaticIntTuple[rank](N), # TODO
+    # input_shape: IndexList[rank] = IndexList[rank](N), # TODO
 ) raises:
     # Instantiate data in host memory
     var in_buffer = HostNDBuffer[type, 1](DimList(N))
