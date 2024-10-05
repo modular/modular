@@ -22,7 +22,7 @@ from gpu.host import Device, DeviceAttribute, DeviceContext
 from gpu.memory import AddressSpace
 from memory import stack_allocation
 
-from utils import StaticIntTuple
+from utils import IndexList
 from utils.numerics import get_accum_type
 from utils.static_tuple import StaticTuple
 
@@ -158,7 +158,7 @@ fn block_reduce[
 fn row_reduce[
     BLOCK_SIZE: Int,
     input_fn: fn[type: DType, width: Int, rank: Int] (
-        StaticIntTuple[rank]
+        IndexList[rank]
     ) capturing [_] -> SIMD[type, width],
     reduce_fn: fn[type: DType, width: Int] (
         SIMD[type, width], SIMD[type, width]
@@ -168,7 +168,7 @@ fn row_reduce[
     rank: Int,
     accum_type: DType = get_accum_type[type](),
 ](
-    inout row_coords: StaticIntTuple[rank],
+    inout row_coords: IndexList[rank],
     axis: Int,
     init: Scalar[type],
     row_size: Int,
@@ -202,7 +202,7 @@ fn row_reduce[
     BLOCK_SIZE: Int,
     num_reductions: Int,
     input_fn: fn[type: DType, width: Int, rank: Int] (
-        StaticIntTuple[rank]
+        IndexList[rank]
     ) capturing [_] -> SIMD[type, width],
     reduce_fn: fn[type: DType, width: Int, reduction_idx: Int] (
         SIMD[type, width], SIMD[type, width]
@@ -212,7 +212,7 @@ fn row_reduce[
     rank: Int,
     accum_type: DType = get_accum_type[type](),
 ](
-    inout row_coords: StaticIntTuple[rank],
+    inout row_coords: IndexList[rank],
     axis: Int,
     init: StaticTuple[Scalar[type], num_reductions],
     row_size: Int,
@@ -273,10 +273,10 @@ fn reduce_kernel[
     num_reductions: Int,
     BLOCK_SIZE: Int,
     input_fn: fn[type: DType, width: Int, rank: Int] (
-        StaticIntTuple[rank]
+        IndexList[rank]
     ) capturing [_] -> SIMD[type, width],
     output_fn: fn[type: DType, width: Int, rank: Int] (
-        StaticIntTuple[rank], StaticTuple[SIMD[type, width], num_reductions]
+        IndexList[rank], StaticTuple[SIMD[type, width], num_reductions]
     ) capturing [_] -> None,
     reduce_fn: fn[ty: DType, width: Int, reduction_idx: Int] (
         SIMD[ty, width], SIMD[ty, width]
@@ -285,7 +285,7 @@ fn reduce_kernel[
     simd_width: Int,
     accum_type: DType = get_accum_type[type](),
 ](
-    shape: StaticIntTuple[rank],
+    shape: IndexList[rank],
     axis: Int,
     init: StaticTuple[Scalar[type], num_reductions],
 ):
@@ -324,10 +324,10 @@ fn reduce_kernel[
 fn reduce_launch[
     num_reductions: Int,
     input_fn: fn[type: DType, width: Int, rank: Int] (
-        StaticIntTuple[rank]
+        IndexList[rank]
     ) capturing [_] -> SIMD[type, width],
     output_fn: fn[type: DType, width: Int, rank: Int] (
-        StaticIntTuple[rank], StaticTuple[SIMD[type, width], num_reductions]
+        IndexList[rank], StaticTuple[SIMD[type, width], num_reductions]
     ) capturing [_] -> None,
     reduce_fn: fn[ty: DType, width: Int, reduction_idx: Int] (
         SIMD[ty, width], SIMD[ty, width]
@@ -335,7 +335,7 @@ fn reduce_launch[
     rank: Int,
     type: DType,
 ](
-    shape: StaticIntTuple[rank],
+    shape: IndexList[rank],
     axis: Int,
     init: StaticTuple[Scalar[type], num_reductions],
     ctx: DeviceContext,

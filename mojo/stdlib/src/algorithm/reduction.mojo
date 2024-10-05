@@ -28,7 +28,7 @@ from gpu.host import DeviceContext
 from memory.unsafe import bitcast
 from runtime.asyncrt import MojoCallContextPtr
 
-from utils.index import Index, StaticIntTuple, StaticTuple
+from utils.index import Index, IndexList, StaticTuple
 from utils.loop import unroll
 from runtime.tracing import Trace, TraceLevel, trace_arg
 
@@ -41,7 +41,7 @@ from ._gpu.reduction import reduce_launch
 
 @always_inline
 fn _get_nd_indices_from_flat_index(
-    flat_index: Int, shape: StaticIntTuple, skip_dim: Int
+    flat_index: Int, shape: IndexList, skip_dim: Int
 ) -> __type_of(shape):
     """Converts a flat index into ND indices but skip over one of the dimensons.
 
@@ -190,7 +190,7 @@ fn reduce[
     @parameter
     fn input_fn[
         _type: DType, width: Int, rank: Int
-    ](idx: StaticIntTuple[rank]) -> SIMD[_type, width]:
+    ](idx: IndexList[rank]) -> SIMD[_type, width]:
         return rebind[SIMD[_type, width]](src.load[width=width](idx[0]))
 
     var out: Scalar[init.element_type] = 0
@@ -199,7 +199,7 @@ fn reduce[
     @parameter
     fn output_fn[
         _type: DType, width: Int, rank: Int
-    ](indices: StaticIntTuple[rank], value: SIMD[_type, width]):
+    ](indices: IndexList[rank], value: SIMD[_type, width]):
         out = rebind[Scalar[init.element_type]](value)
 
     @always_inline
@@ -301,12 +301,12 @@ fn _reduce_3D[
             alias sz = src.shape.at[1]()
             # TODO: parallelize
             for i in range(h):
-                var offset = src._offset(StaticIntTuple[src.rank](i, 0, 0))
+                var offset = src._offset(IndexList[src.rank](i, 0, 0))
                 var input = Buffer[
                     src.type, sz, address_space = src.address_space
                 ](offset, w)
                 var val = reduce[map_fn](input, init)
-                dst[StaticIntTuple[dst.rank](i, 0)] = val
+                dst[IndexList[dst.rank](i, 0)] = val
 
         reduce_inner_axis()
         return
@@ -334,10 +334,10 @@ fn _reduce_3D[
             var accum = SIMD[init.element_type, simd_width](init)
             for j in range(w):
                 var chunk = src.load[width=simd_width](
-                    StaticIntTuple[src.rank](i, j, idx)
+                    IndexList[src.rank](i, j, idx)
                 )
                 accum = map_fn(accum, chunk)
-            dst.store(StaticIntTuple[dst.rank](i, idx), accum)
+            dst.store(IndexList[dst.rank](i, idx), accum)
 
         vectorize[reduce_w_chunked, usimd_width](c)
 
@@ -414,10 +414,10 @@ fn _reduce_generator[
     num_reductions: Int,
     init_type: DType,
     input_0_fn: fn[type: DType, width: Int, rank: Int] (
-        StaticIntTuple[rank]
+        IndexList[rank]
     ) capturing [_] -> SIMD[type, width],
     output_0_fn: fn[type: DType, width: Int, rank: Int] (
-        StaticIntTuple[rank], StaticTuple[SIMD[type, width], num_reductions]
+        IndexList[rank], StaticTuple[SIMD[type, width], num_reductions]
     ) capturing [_] -> None,
     reduce_function: fn[ty: DType, width: Int, reduction_idx: Int] (
         SIMD[ty, width], SIMD[ty, width]
@@ -426,9 +426,7 @@ fn _reduce_generator[
     single_thread_blocking_override: Bool = False,
     target: StringLiteral = "cpu",
 ](
-    shape: StaticIntTuple[
-        _, element_bitwidth = bitwidthof[Int](), unsigned=False
-    ],
+    shape: IndexList[_, element_bitwidth = bitwidthof[Int](), unsigned=False],
     init: StaticTuple[Scalar[init_type], num_reductions],
     reduce_dim: Int,
     context: MojoCallContextPtr = MojoCallContextPtr(),
@@ -482,10 +480,10 @@ fn _reduce_generator_gpu[
     num_reductions: Int,
     init_type: DType,
     input_0_fn: fn[type: DType, width: Int, rank: Int] (
-        StaticIntTuple[rank]
+        IndexList[rank]
     ) capturing [_] -> SIMD[type, width],
     output_0_fn: fn[type: DType, width: Int, rank: Int] (
-        StaticIntTuple[rank], StaticTuple[SIMD[type, width], num_reductions]
+        IndexList[rank], StaticTuple[SIMD[type, width], num_reductions]
     ) capturing [_] -> None,
     reduce_function: fn[ty: DType, width: Int, reduction_idx: Int] (
         SIMD[ty, width], SIMD[ty, width]
@@ -493,9 +491,7 @@ fn _reduce_generator_gpu[
     /,
     single_thread_blocking_override: Bool = False,
 ](
-    shape: StaticIntTuple[
-        _, element_bitwidth = bitwidthof[Int](), unsigned=False
-    ],
+    shape: IndexList[_, element_bitwidth = bitwidthof[Int](), unsigned=False],
     init: StaticTuple[Scalar[init_type], num_reductions],
     reduce_dim: Int,
     ctx: DeviceContext,
@@ -543,10 +539,10 @@ fn _reduce_generator_cpu[
     num_reductions: Int,
     init_type: DType,
     input_0_fn: fn[type: DType, width: Int, rank: Int] (
-        StaticIntTuple[rank]
+        IndexList[rank]
     ) capturing [_] -> SIMD[type, width],
     output_0_fn: fn[type: DType, width: Int, rank: Int] (
-        StaticIntTuple[rank], StaticTuple[SIMD[type, width], num_reductions]
+        IndexList[rank], StaticTuple[SIMD[type, width], num_reductions]
     ) capturing [_] -> None,
     reduce_function: fn[ty: DType, width: Int, reduction_idx: Int] (
         SIMD[ty, width], SIMD[ty, width]
@@ -554,9 +550,7 @@ fn _reduce_generator_cpu[
     /,
     single_thread_blocking_override: Bool = False,
 ](
-    shape: StaticIntTuple[
-        _, element_bitwidth = bitwidthof[Int](), unsigned=False
-    ],
+    shape: IndexList[_, element_bitwidth = bitwidthof[Int](), unsigned=False],
     init: StaticTuple[Scalar[init_type], num_reductions],
     reduce_dim: Int,
 ) raises:
@@ -620,11 +614,11 @@ fn _reduce_generator_cpu[
 @always_inline
 fn _reduce_generator_wrapper[
     type: DType,
-    input_fn: fn[width: Int, rank: Int] (StaticIntTuple[rank]) capturing [
-        _
-    ] -> SIMD[type, width],
+    input_fn: fn[width: Int, rank: Int] (IndexList[rank]) capturing [_] -> SIMD[
+        type, width
+    ],
     output_fn: fn[width: Int, rank: Int] (
-        StaticIntTuple[rank], SIMD[type, width]
+        IndexList[rank], SIMD[type, width]
     ) capturing [_] -> None,
     reduce_function: fn[width: Int] (
         SIMD[type, width], SIMD[type, width]
@@ -633,9 +627,7 @@ fn _reduce_generator_wrapper[
     single_thread_blocking_override: Bool = False,
     target: StringLiteral = "cpu",
 ](
-    shape: StaticIntTuple[
-        _, element_bitwidth = bitwidthof[Int](), unsigned=False
-    ],
+    shape: IndexList[_, element_bitwidth = bitwidthof[Int](), unsigned=False],
     init: Scalar,
     reduce_dim: Int,
     context: MojoCallContextPtr = MojoCallContextPtr(),
@@ -644,7 +636,7 @@ fn _reduce_generator_wrapper[
     @parameter
     fn input_fn_wrapper[
         _type: DType, width: Int, rank: Int
-    ](idx: StaticIntTuple[rank]) -> SIMD[_type, width]:
+    ](idx: IndexList[rank]) -> SIMD[_type, width]:
         return rebind[SIMD[_type, width]](input_fn[width, rank](idx))
 
     @always_inline
@@ -653,7 +645,7 @@ fn _reduce_generator_wrapper[
         _type: DType,
         width: Int,
         rank: Int,
-    ](indices: StaticIntTuple[rank], value: SIMD[_type, width]):
+    ](indices: IndexList[rank], value: SIMD[_type, width]):
         output_fn[width, rank](indices, rebind[SIMD[type, width]](value))
 
     @always_inline
@@ -676,10 +668,10 @@ fn _reduce_generator_wrapper[
 @always_inline
 fn _reduce_generator[
     input_0_fn: fn[type: DType, width: Int, rank: Int] (
-        StaticIntTuple[rank]
+        IndexList[rank]
     ) capturing [_] -> SIMD[type, width],
     output_0_fn: fn[type: DType, width: Int, rank: Int] (
-        StaticIntTuple[rank], SIMD[type, width]
+        IndexList[rank], SIMD[type, width]
     ) capturing [_] -> None,
     reduce_function: fn[ty: DType, width: Int] (
         SIMD[ty, width], SIMD[ty, width]
@@ -688,9 +680,7 @@ fn _reduce_generator[
     single_thread_blocking_override: Bool = False,
     target: StringLiteral = "cpu",
 ](
-    shape: StaticIntTuple[
-        _, element_bitwidth = bitwidthof[Int](), unsigned=False
-    ],
+    shape: IndexList[_, element_bitwidth = bitwidthof[Int](), unsigned=False],
     init: Scalar,
     reduce_dim: Int,
     context: MojoCallContextPtr = MojoCallContextPtr(),
@@ -722,7 +712,7 @@ fn _reduce_generator[
     fn output_fn_wrapper[
         type: DType, width: Int, rank: Int
     ](
-        indices: StaticIntTuple[rank],
+        indices: IndexList[rank],
         val: StaticTuple[SIMD[type, width], num_reductions],
     ):
         output_0_fn[type, width, rank](indices, val[0])
@@ -753,10 +743,10 @@ fn _reduce_along_inner_dimension[
     num_reductions: Int,
     init_type: DType,
     input_0_fn: fn[type: DType, width: Int, rank: Int] (
-        StaticIntTuple[rank]
+        IndexList[rank]
     ) capturing [_] -> SIMD[type, width],
     output_0_fn: fn[type: DType, width: Int, rank: Int] (
-        StaticIntTuple[rank], StaticTuple[SIMD[type, width], num_reductions]
+        IndexList[rank], StaticTuple[SIMD[type, width], num_reductions]
     ) capturing [_] -> None,
     reduce_function: fn[ty: DType, width: Int, reduction_idx: Int] (
         SIMD[ty, width], SIMD[ty, width]
@@ -764,9 +754,7 @@ fn _reduce_along_inner_dimension[
     /,
     single_thread_blocking_override: Bool = False,
 ](
-    shape: StaticIntTuple[
-        _, element_bitwidth = bitwidthof[Int](), unsigned=False
-    ],
+    shape: IndexList[_, element_bitwidth = bitwidthof[Int](), unsigned=False],
     init_value: StaticTuple[Scalar[init_type], num_reductions],
     reduce_dim: Int,
 ):
@@ -938,10 +926,10 @@ fn _reduce_along_outer_dimension[
     num_reductions: Int,
     init_type: DType,
     input_0_fn: fn[type: DType, width: Int, rank: Int] (
-        StaticIntTuple[rank]
+        IndexList[rank]
     ) capturing [_] -> SIMD[type, width],
     output_0_fn: fn[type: DType, width: Int, rank: Int] (
-        StaticIntTuple[rank], StaticTuple[SIMD[type, width], num_reductions]
+        IndexList[rank], StaticTuple[SIMD[type, width], num_reductions]
     ) capturing [_] -> None,
     reduce_function: fn[ty: DType, width: Int, reduction_idx: Int] (
         SIMD[ty, width], SIMD[ty, width]
@@ -949,9 +937,7 @@ fn _reduce_along_outer_dimension[
     /,
     single_thread_blocking_override: Bool = False,
 ](
-    shape: StaticIntTuple[
-        _, element_bitwidth = bitwidthof[Int](), unsigned=False
-    ],
+    shape: IndexList[_, element_bitwidth = bitwidthof[Int](), unsigned=False],
     init: StaticTuple[Scalar[init_type], num_reductions],
     reduce_dim: Int,
 ):
@@ -1116,17 +1102,17 @@ fn max[reduce_axis: Int](src: NDBuffer, dst: NDBuffer[src.type, src.rank, _]):
 
 fn max[
     type: DType,
-    input_fn: fn[width: Int, rank: Int] (StaticIntTuple[rank]) capturing [
-        _
-    ] -> SIMD[type, width],
+    input_fn: fn[width: Int, rank: Int] (IndexList[rank]) capturing [_] -> SIMD[
+        type, width
+    ],
     output_fn: fn[width: Int, rank: Int] (
-        StaticIntTuple[rank], SIMD[type, width]
+        IndexList[rank], SIMD[type, width]
     ) capturing [_] -> None,
     /,
     single_thread_blocking_override: Bool = False,
     target: StringLiteral = "cpu",
 ](
-    input_shape: StaticIntTuple[
+    input_shape: IndexList[
         _, element_bitwidth = bitwidthof[Int](), unsigned=False
     ],
     reduce_dim: Int,
@@ -1223,17 +1209,17 @@ fn min[reduce_axis: Int](src: NDBuffer, dst: NDBuffer[src.type, src.rank, _]):
 
 fn min[
     type: DType,
-    input_fn: fn[width: Int, rank: Int] (StaticIntTuple[rank]) capturing [
-        _
-    ] -> SIMD[type, width],
+    input_fn: fn[width: Int, rank: Int] (IndexList[rank]) capturing [_] -> SIMD[
+        type, width
+    ],
     output_fn: fn[width: Int, rank: Int] (
-        StaticIntTuple[rank], SIMD[type, width]
+        IndexList[rank], SIMD[type, width]
     ) capturing [_] -> None,
     /,
     single_thread_blocking_override: Bool = False,
     target: StringLiteral = "cpu",
 ](
-    input_shape: StaticIntTuple[
+    input_shape: IndexList[
         _, element_bitwidth = bitwidthof[Int](), unsigned=False
     ],
     reduce_dim: Int,
@@ -1330,17 +1316,17 @@ fn sum[reduce_axis: Int](src: NDBuffer, dst: NDBuffer[src.type, src.rank, _]):
 
 fn sum[
     type: DType,
-    input_fn: fn[width: Int, rank: Int] (StaticIntTuple[rank]) capturing [
-        _
-    ] -> SIMD[type, width],
+    input_fn: fn[width: Int, rank: Int] (IndexList[rank]) capturing [_] -> SIMD[
+        type, width
+    ],
     output_fn: fn[width: Int, rank: Int] (
-        StaticIntTuple[rank], SIMD[type, width]
+        IndexList[rank], SIMD[type, width]
     ) capturing [_] -> None,
     /,
     single_thread_blocking_override: Bool = False,
     target: StringLiteral = "cpu",
 ](
-    input_shape: StaticIntTuple[
+    input_shape: IndexList[
         _, element_bitwidth = bitwidthof[Int](), unsigned=False
     ],
     reduce_dim: Int,
@@ -1439,17 +1425,17 @@ fn product[
 
 fn product[
     type: DType,
-    input_fn: fn[width: Int, rank: Int] (StaticIntTuple[rank]) capturing [
-        _
-    ] -> SIMD[type, width],
+    input_fn: fn[width: Int, rank: Int] (IndexList[rank]) capturing [_] -> SIMD[
+        type, width
+    ],
     output_fn: fn[width: Int, rank: Int] (
-        StaticIntTuple[rank], SIMD[type, width]
+        IndexList[rank], SIMD[type, width]
     ) capturing [_] -> None,
     /,
     single_thread_blocking_override: Bool = False,
     target: StringLiteral = "cpu",
 ](
-    input_shape: StaticIntTuple[
+    input_shape: IndexList[
         _, element_bitwidth = bitwidthof[Int](), unsigned=False
     ],
     reduce_dim: Int,
@@ -1561,17 +1547,17 @@ fn mean[reduce_axis: Int](src: NDBuffer, dst: NDBuffer[src.type, src.rank, _]):
 
 fn mean[
     type: DType,
-    input_fn: fn[width: Int, rank: Int] (StaticIntTuple[rank]) capturing [
-        _
-    ] -> SIMD[type, width],
+    input_fn: fn[width: Int, rank: Int] (IndexList[rank]) capturing [_] -> SIMD[
+        type, width
+    ],
     output_fn: fn[width: Int, rank: Int] (
-        StaticIntTuple[rank], SIMD[type, width]
+        IndexList[rank], SIMD[type, width]
     ) capturing [_] -> None,
     /,
     single_thread_blocking_override: Bool = False,
     target: StringLiteral = "cpu",
 ](
-    input_shape: StaticIntTuple[
+    input_shape: IndexList[
         _, element_bitwidth = bitwidthof[Int](), unsigned=False
     ],
     reduce_dim: Int,
@@ -1622,7 +1608,7 @@ fn mean[
         @parameter
         fn input_fn_wrapper[
             _type: DType, width: Int, rank: Int
-        ](idx: StaticIntTuple[rank]) -> SIMD[_type, width]:
+        ](idx: IndexList[rank]) -> SIMD[_type, width]:
             return rebind[SIMD[_type, width]](input_fn[width, rank](idx))
 
         # For floats apply the reciprocal as a multiply.
@@ -1636,7 +1622,7 @@ fn mean[
             @parameter
             fn wrapped_output_mul[
                 _type: DType, width: Int, rank: Int
-            ](indices: StaticIntTuple[rank], value: SIMD[_type, width]):
+            ](indices: IndexList[rank], value: SIMD[_type, width]):
                 var mean_val = value * reciprocal.cast[_type]()
                 output_fn[width, rank](
                     indices, rebind[SIMD[type, width]](mean_val)
@@ -1664,7 +1650,7 @@ fn mean[
             @parameter
             fn wrapped_output_div[
                 _type: DType, width: Int, rank: Int
-            ](indices: StaticIntTuple[rank], value: SIMD[_type, width]):
+            ](indices: IndexList[rank], value: SIMD[_type, width]):
                 var mean_val = value / dim_size
                 output_fn[width, rank](
                     indices, rebind[SIMD[type, width]](mean_val)
@@ -1715,7 +1701,7 @@ fn variance(
     @parameter
     fn input_fn[
         _type: DType, width: Int, rank: Int
-    ](idx: StaticIntTuple[rank]) -> SIMD[_type, width]:
+    ](idx: IndexList[rank]) -> SIMD[_type, width]:
         var mean_simd = SIMD[mean_value.type, width](mean_value).cast[_type]()
         var x = src.load[width=width](idx[0])
         var diff = x.cast[_type]() - mean_simd
@@ -1727,7 +1713,7 @@ fn variance(
     @parameter
     fn output_fn[
         _type: DType, width: Int, rank: Int
-    ](indices: StaticIntTuple[rank], value: SIMD[_type, width]):
+    ](indices: IndexList[rank], value: SIMD[_type, width]):
         out = rebind[Scalar[src.type]](value)
 
     @always_inline
@@ -1737,7 +1723,7 @@ fn variance(
     ](acc: SIMD[type, width], val: SIMD[type, width]) -> SIMD[type, width]:
         return acc + val
 
-    var shape = StaticIntTuple[1](len(src))
+    var shape = IndexList[1](len(src))
 
     try:
         _reduce_generator[

@@ -24,7 +24,7 @@ from builtin.math import max as _max
 from builtin.math import min as _min
 from memory import UnsafePointer
 
-from utils.index import Index, StaticIntTuple, StaticTuple
+from utils.index import Index, IndexList, StaticTuple
 
 
 # CHECK-LABEL: test_reductions
@@ -67,7 +67,7 @@ fn test_fused_reductions_inner() raises:
     @parameter
     fn input_fn[
         type: DType, width: Int, rank: Int
-    ](indices: StaticIntTuple[rank]) -> SIMD[type, width]:
+    ](indices: IndexList[rank]) -> SIMD[type, width]:
         var loaded_val = vector.load[width=width](indices[0])
         return rebind[SIMD[type, width]](loaded_val)
 
@@ -78,7 +78,7 @@ fn test_fused_reductions_inner() raises:
     fn output_fn[
         type: DType, width: Int, rank: Int
     ](
-        indices: StaticIntTuple[rank],
+        indices: IndexList[rank],
         val: StaticTuple[SIMD[type, width], num_reductions],
     ):
         constrained[
@@ -151,7 +151,7 @@ fn test_fused_reductions_outer() raises:
     @parameter
     fn input_fn[
         type: DType, width: Int, rank: Int
-    ](indices: StaticIntTuple[rank]) -> SIMD[type, width]:
+    ](indices: IndexList[rank]) -> SIMD[type, width]:
         var loaded_val = vector.load[width=width](indices[0] * 2 + indices[1])
         return rebind[SIMD[type, width]](loaded_val)
 
@@ -180,14 +180,14 @@ fn test_fused_reductions_outer() raises:
     var init = StaticTuple[Scalar[test_type], num_reductions](
         init_min, init_max, 0
     )
-    var shape = StaticIntTuple[2](50, 2)
+    var shape = IndexList[2](50, 2)
 
     @always_inline
     @parameter
     fn output_fn[
         type: DType, width: Int, rank: Int
     ](
-        indices: StaticIntTuple[rank],
+        indices: IndexList[rank],
         val: StaticTuple[SIMD[type, width], num_reductions],
     ):
         # CHECK: Column: 0  min:  1.0  max:  99.0  sum:  2500.0

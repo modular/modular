@@ -10,15 +10,15 @@ from algorithm.functional import stencil
 from buffer import NDBuffer
 from buffer.dimlist import DimList
 
-from utils import StaticIntTuple
+from utils import IndexList
 from utils.numerics import min_or_neg_inf
 
-alias _map_fn_type = fn[rank: Int] (StaticIntTuple[rank]) capturing -> (
-    StaticIntTuple[rank],
-    StaticIntTuple[rank],
+alias _map_fn_type = fn[rank: Int] (IndexList[rank]) capturing -> (
+    IndexList[rank],
+    IndexList[rank],
 )
 alias load_fn_type = fn[dtype: DType, rank: Int, simd_width: Int] (
-    StaticIntTuple[rank]
+    IndexList[rank]
 ) capturing -> SIMD[dtype, simd_width]
 
 
@@ -68,12 +68,12 @@ fn test_stencil_avg_pool():
     @parameter
     fn map_fn[
         rank: Int
-    ](point: StaticIntTuple[stencil_rank]) -> (
-        StaticIntTuple[stencil_rank],
-        StaticIntTuple[stencil_rank],
+    ](point: IndexList[stencil_rank]) -> (
+        IndexList[stencil_rank],
+        IndexList[stencil_rank],
     ):
-        var lower_bound = StaticIntTuple[stencil_rank](point[0], point[1])
-        var upper_bound = StaticIntTuple[stencil_rank](
+        var lower_bound = IndexList[stencil_rank](point[0], point[1])
+        var upper_bound = IndexList[stencil_rank](
             point[0] + pool_window_h, point[1] + pool_window_w
         )
         return lower_bound, upper_bound
@@ -83,7 +83,7 @@ fn test_stencil_avg_pool():
     @parameter
     fn load_fn[
         simd_width: Int, dtype: DType
-    ](point: StaticIntTuple[rank]) -> SIMD[dtype, simd_width]:
+    ](point: IndexList[rank]) -> SIMD[dtype, simd_width]:
         return rebind[SIMD[dtype, simd_width]](
             input.load[width=simd_width](point)
         )
@@ -98,7 +98,7 @@ fn test_stencil_avg_pool():
     fn avg_pool_compute[
         simd_width: Int
     ](
-        point: StaticIntTuple[rank],
+        point: IndexList[rank],
         val: SIMD[dtype, simd_width],
         result: SIMD[dtype, simd_width],
     ) -> SIMD[dtype, simd_width]:
@@ -114,11 +114,11 @@ fn test_stencil_avg_pool():
     @parameter
     fn avg_pool_compute_finalize[
         simd_width: Int
-    ](point: StaticIntTuple[rank], val: SIMD[dtype, simd_width]):
+    ](point: IndexList[rank], val: SIMD[dtype, simd_width]):
         var res = val / (pool_window_h * pool_window_w)
         output.store(point, res)
 
-    alias stencil_axis = StaticIntTuple[stencil_rank](1, 2)
+    alias stencil_axis = IndexList[stencil_rank](1, 2)
     stencil[
         rank,
         stencil_rank,
@@ -178,14 +178,14 @@ fn test_stencil_avg_pool_padded():
     @parameter
     fn map_fn[
         rank: Int
-    ](point: StaticIntTuple[stencil_rank]) -> (
-        StaticIntTuple[stencil_rank],
-        StaticIntTuple[stencil_rank],
+    ](point: IndexList[stencil_rank]) -> (
+        IndexList[stencil_rank],
+        IndexList[stencil_rank],
     ):
-        var lower_bound = StaticIntTuple[stencil_rank](
+        var lower_bound = IndexList[stencil_rank](
             point[0] - pad_h, point[1] - pad_w
         )
-        var upper_bound = StaticIntTuple[stencil_rank](
+        var upper_bound = IndexList[stencil_rank](
             point[0] + pool_window_h - pad_h, point[1] + pool_window_w - pad_w
         )
         return lower_bound, upper_bound
@@ -195,7 +195,7 @@ fn test_stencil_avg_pool_padded():
     @parameter
     fn load_fn[
         simd_width: Int, dtype: DType
-    ](point: StaticIntTuple[rank]) -> SIMD[dtype, simd_width]:
+    ](point: IndexList[rank]) -> SIMD[dtype, simd_width]:
         return rebind[SIMD[dtype, simd_width]](
             input.load[width=simd_width](point)
         )
@@ -210,7 +210,7 @@ fn test_stencil_avg_pool_padded():
     fn avg_pool_compute[
         simd_width: Int
     ](
-        point: StaticIntTuple[rank],
+        point: IndexList[rank],
         val: SIMD[dtype, simd_width],
         result: SIMD[dtype, simd_width],
     ) -> SIMD[dtype, simd_width]:
@@ -221,7 +221,7 @@ fn test_stencil_avg_pool_padded():
     @parameter
     fn avg_pool_compute_finalize[
         simd_width: Int
-    ](point: StaticIntTuple[rank], val: SIMD[dtype, simd_width]):
+    ](point: IndexList[rank], val: SIMD[dtype, simd_width]):
         var res = val / (pool_window_h * pool_window_w)
         output.store(point, res)
 
@@ -230,7 +230,7 @@ fn test_stencil_avg_pool_padded():
     fn dilation_fn(dim: Int) -> Int:
         return 1
 
-    alias stencil_axis = StaticIntTuple[stencil_rank](1, 2)
+    alias stencil_axis = IndexList[stencil_rank](1, 2)
     stencil[
         rank,
         stencil_rank,
@@ -290,14 +290,14 @@ fn test_stencil_avg_pool_stride_2():
     @parameter
     fn map_fn[
         rank: Int
-    ](point: StaticIntTuple[stencil_rank]) -> (
-        StaticIntTuple[stencil_rank],
-        StaticIntTuple[stencil_rank],
+    ](point: IndexList[stencil_rank]) -> (
+        IndexList[stencil_rank],
+        IndexList[stencil_rank],
     ):
-        var lower_bound = StaticIntTuple[stencil_rank](
+        var lower_bound = IndexList[stencil_rank](
             point[0] * stride, point[1] * stride
         )
-        var upper_bound = StaticIntTuple[stencil_rank](
+        var upper_bound = IndexList[stencil_rank](
             (point[0] * stride + pool_window_h),
             (point[1] * stride + pool_window_w),
         )
@@ -308,7 +308,7 @@ fn test_stencil_avg_pool_stride_2():
     @parameter
     fn load_fn[
         simd_width: Int, dtype: DType
-    ](point: StaticIntTuple[rank]) -> SIMD[dtype, simd_width]:
+    ](point: IndexList[rank]) -> SIMD[dtype, simd_width]:
         return rebind[SIMD[dtype, simd_width]](
             input.load[width=simd_width](point)
         )
@@ -323,7 +323,7 @@ fn test_stencil_avg_pool_stride_2():
     fn avg_pool_compute[
         simd_width: Int
     ](
-        point: StaticIntTuple[rank],
+        point: IndexList[rank],
         val: SIMD[dtype, simd_width],
         result: SIMD[dtype, simd_width],
     ) -> SIMD[dtype, simd_width]:
@@ -334,7 +334,7 @@ fn test_stencil_avg_pool_stride_2():
     @parameter
     fn avg_pool_compute_finalize[
         simd_width: Int
-    ](point: StaticIntTuple[rank], val: SIMD[dtype, simd_width]):
+    ](point: IndexList[rank], val: SIMD[dtype, simd_width]):
         var res = val / (pool_window_h * pool_window_w)
         output.store(point, res)
 
@@ -343,7 +343,7 @@ fn test_stencil_avg_pool_stride_2():
     fn dilation_fn(dim: Int) -> Int:
         return 1
 
-    alias stencil_axis = StaticIntTuple[stencil_rank](1, 2)
+    alias stencil_axis = IndexList[stencil_rank](1, 2)
     stencil[
         rank,
         stencil_rank,
@@ -405,14 +405,14 @@ fn test_stencil_max_pool_dilation_2():
     @parameter
     fn map_fn[
         rank: Int
-    ](point: StaticIntTuple[stencil_rank]) -> (
-        StaticIntTuple[stencil_rank],
-        StaticIntTuple[stencil_rank],
+    ](point: IndexList[stencil_rank]) -> (
+        IndexList[stencil_rank],
+        IndexList[stencil_rank],
     ):
-        var lower_bound = StaticIntTuple[stencil_rank](
+        var lower_bound = IndexList[stencil_rank](
             point[0] * stride, point[1] * stride
         )
-        var upper_bound = StaticIntTuple[stencil_rank](
+        var upper_bound = IndexList[stencil_rank](
             (point[0] * stride + pool_window_h * dilation),
             (point[1] * stride + pool_window_w * dilation),
         )
@@ -423,7 +423,7 @@ fn test_stencil_max_pool_dilation_2():
     @parameter
     fn load_fn[
         simd_width: Int, dtype: DType
-    ](point: StaticIntTuple[rank]) -> SIMD[dtype, simd_width]:
+    ](point: IndexList[rank]) -> SIMD[dtype, simd_width]:
         return rebind[SIMD[dtype, simd_width]](
             input.load[width=simd_width](point)
         )
@@ -438,7 +438,7 @@ fn test_stencil_max_pool_dilation_2():
     fn max_pool_compute[
         simd_width: Int
     ](
-        point: StaticIntTuple[rank],
+        point: IndexList[rank],
         val: SIMD[dtype, simd_width],
         result: SIMD[dtype, simd_width],
     ) -> SIMD[dtype, simd_width]:
@@ -449,7 +449,7 @@ fn test_stencil_max_pool_dilation_2():
     @parameter
     fn max_pool_compute_finalize[
         simd_width: Int
-    ](point: StaticIntTuple[rank], val: SIMD[dtype, simd_width]):
+    ](point: IndexList[rank], val: SIMD[dtype, simd_width]):
         output.store(point, val)
 
     @always_inline
@@ -457,7 +457,7 @@ fn test_stencil_max_pool_dilation_2():
     fn dilation_fn(dim: Int) -> Int:
         return dilation
 
-    alias stencil_axis = StaticIntTuple[stencil_rank](1, 2)
+    alias stencil_axis = IndexList[stencil_rank](1, 2)
     stencil[
         rank,
         stencil_rank,

@@ -12,7 +12,7 @@ from algorithm import (
     unswitch,
 )
 
-from utils.index import Index, StaticIntTuple
+from utils.index import Index, IndexList
 
 
 # Helper workgroup function to test dynamic workgroup tiling.
@@ -157,7 +157,7 @@ fn test_unswitched_2d_tile():
     @always_inline
     fn switched_tile[
         tile_size_x: Int, tile_size_y: Int
-    ](start: StaticIntTuple[2], bound: StaticIntTuple[2]):
+    ](start: IndexList[2], bound: IndexList[2]):
         var tile_size = Index(tile_size_x, tile_size_y)
 
         # Inside each unit there's either a per-element check or a unswitched

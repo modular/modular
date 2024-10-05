@@ -13,7 +13,7 @@ from buffer import Buffer, NDBuffer
 from buffer.dimlist import Dim, DimList
 from memory import stack_allocation
 
-from utils.index import Index, StaticIntTuple
+from utils.index import Index, IndexList
 
 
 fn test_elementwise[
@@ -37,14 +37,14 @@ fn test_elementwise[
 
     @always_inline
     @parameter
-    fn func[simd_width: Int, rank: Int](idx: StaticIntTuple[rank]):
-        var index = rebind[StaticIntTuple[outer_rank]](idx)
+    fn func[simd_width: Int, rank: Int](idx: IndexList[rank]):
+        var index = rebind[IndexList[outer_rank]](idx)
         var in1 = buffer1.load[width=simd_width](index)
         var in2 = buffer2.load[width=simd_width](index)
         out_buffer.store[width=simd_width](index, in1 * in2)
 
     elementwise[func, simd_width=1, use_blocking_impl=is_blocking](
-        rebind[StaticIntTuple[outer_rank]](out_buffer.dynamic_shape),
+        rebind[IndexList[outer_rank]](out_buffer.dynamic_shape),
     )
 
     for i2 in range(min(numelems, 64)):
@@ -61,7 +61,7 @@ fn test_elementwise_implicit_runtime():
 
     @always_inline
     @parameter
-    fn func[simd_width: Int, rank: Int](idx: StaticIntTuple[rank]):
+    fn func[simd_width: Int, rank: Int](idx: IndexList[rank]):
         vector[idx[0]] = 42
 
     elementwise[func, simd_width=1](20)
@@ -76,7 +76,7 @@ fn test_elementwise_implicit_runtime():
 
 fn test_indices_conversion():
     print("== Testing indices conversion:")
-    var shape = StaticIntTuple[4](3, 4, 5, 6)
+    var shape = IndexList[4](3, 4, 5, 6)
     print(_get_start_indices_of_nth_subvolume[0](10, shape))
     print(_get_start_indices_of_nth_subvolume[1](10, shape))
     print(_get_start_indices_of_nth_subvolume[2](10, shape))

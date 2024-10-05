@@ -24,7 +24,7 @@ from runtime import tracing
 from runtime.asyncrt import MojoCallContextPtr, TaskGroup, parallelism_level
 from runtime.tracing import Trace, TraceLevel, trace_arg
 
-from utils.index import Index, StaticIntTuple
+from utils.index import Index, IndexList
 from utils.numerics import FlushDenormals
 from utils.static_tuple import StaticTuple
 from runtime.asyncrt import MojoCallContextPtr
@@ -1047,7 +1047,7 @@ fn _get_num_workers(problem_size: Int, grain_size: Int = 32768) -> Int:
 @always_inline
 fn _get_start_indices_of_nth_subvolume[
     rank: Int, //, subvolume_rank: Int = 1
-](n: Int, shape: StaticIntTuple[rank]) -> StaticIntTuple[rank]:
+](n: Int, shape: IndexList[rank]) -> IndexList[rank]:
     """Converts a flat index into the starting ND indices of the nth subvolume
     with rank `subvolume_rank`.
 
@@ -1088,19 +1088,19 @@ fn _get_start_indices_of_nth_subvolume[
     # fast impls for common cases
     @parameter
     if rank == 2 and subvolume_rank == 1:
-        return StaticIntTuple[rank](n, 0)
+        return IndexList[rank](n, 0)
 
     @parameter
     if rank - 1 == subvolume_rank:
-        var out = StaticIntTuple[rank](0)
+        var out = IndexList[rank](0)
         out[0] = n
         return out
 
     @parameter
     if rank == subvolume_rank:
-        return StaticIntTuple[rank](0)
+        return IndexList[rank](0)
 
-    var out = StaticIntTuple[rank]()
+    var out = IndexList[rank]()
     var curr_index = n
 
     @parameter
@@ -1117,7 +1117,7 @@ fn _get_start_indices_of_nth_subvolume[
 fn _get_start_indices_of_nth_subvolume_uint[
     rank: Int, //,
     subvolume_rank: UInt = 1,
-](n: UInt, shape: StaticIntTuple[rank]) -> StaticIntTuple[rank]:
+](n: UInt, shape: IndexList[rank]) -> IndexList[rank]:
     """Converts a flat index into the starting ND indices of the nth subvolume
     with rank `subvolume_rank`.
 
@@ -1160,9 +1160,7 @@ fn _get_start_indices_of_nth_subvolume_uint[
 
 @always_inline
 fn elementwise[
-    func: fn[width: Int, rank: Int] (StaticIntTuple[rank]) capturing [
-        _
-    ] -> None,
+    func: fn[width: Int, rank: Int] (IndexList[rank]) capturing [_] -> None,
     simd_width: Int,
     *,
     use_blocking_impl: Bool = False,
@@ -1196,15 +1194,13 @@ fn elementwise[
 @always_inline
 fn elementwise[
     rank: Int, //,
-    func: fn[width: Int, rank: Int] (StaticIntTuple[rank]) capturing [
-        _
-    ] -> None,
+    func: fn[width: Int, rank: Int] (IndexList[rank]) capturing [_] -> None,
     simd_width: Int,
     *,
     use_blocking_impl: Bool = False,
     target: StringLiteral = "cpu",
     trace_description: StringLiteral = "",
-](shape: StaticIntTuple[rank]):
+](shape: IndexList[rank]):
     """Executes `func[width, rank](indices)`, possibly as sub-tasks, for a
     suitable combination of width and indices so as to cover shape. Returns when
     all sub-tasks have completed.
@@ -1236,9 +1232,7 @@ fn elementwise[
 
 @always_inline
 fn elementwise[
-    func: fn[width: Int, rank: Int] (StaticIntTuple[rank]) capturing [
-        _
-    ] -> None,
+    func: fn[width: Int, rank: Int] (IndexList[rank]) capturing [_] -> None,
     simd_width: Int,
     *,
     use_blocking_impl: Bool = False,
@@ -1272,15 +1266,13 @@ fn elementwise[
 @always_inline
 fn elementwise[
     rank: Int, //,
-    func: fn[width: Int, rank: Int] (StaticIntTuple[rank]) capturing [
-        _
-    ] -> None,
+    func: fn[width: Int, rank: Int] (IndexList[rank]) capturing [_] -> None,
     simd_width: Int,
     *,
     use_blocking_impl: Bool = False,
     target: StringLiteral = "cpu",
     trace_description: StringLiteral = "",
-](shape: StaticIntTuple[rank], context: DeviceContext):
+](shape: IndexList[rank], context: DeviceContext):
     """Executes `func[width, rank](indices)`, possibly as sub-tasks, for a
     suitable combination of width and indices so as to cover shape. Returns when
     all sub-tasks have completed.
@@ -1306,15 +1298,13 @@ fn elementwise[
 @always_inline
 fn elementwise[
     rank: Int, //,
-    func: fn[width: Int, rank: Int] (StaticIntTuple[rank]) capturing [
-        _
-    ] -> None,
+    func: fn[width: Int, rank: Int] (IndexList[rank]) capturing [_] -> None,
     simd_width: Int,
     *,
     use_blocking_impl: Bool = False,
     target: StringLiteral = "cpu",
     trace_description: StringLiteral = "",
-](shape: StaticIntTuple[rank], context: MojoCallContextPtr):
+](shape: IndexList[rank], context: MojoCallContextPtr):
     """Executes `func[width, rank](indices)`, possibly as sub-tasks, for a
     suitable combination of width and indices so as to cover shape. Returns when
     all sub-tasks have completed.
@@ -1367,15 +1357,13 @@ fn elementwise[
 @always_inline
 fn _elementwise_impl[
     rank: Int, //,
-    func: fn[width: Int, rank: Int] (StaticIntTuple[rank]) capturing [
-        _
-    ] -> None,
+    func: fn[width: Int, rank: Int] (IndexList[rank]) capturing [_] -> None,
     simd_width: Int,
     /,
     *,
     use_blocking_impl: Bool = False,
     target: StringLiteral = "cpu",
-](shape: StaticIntTuple[rank], context: DeviceContext):
+](shape: IndexList[rank], context: DeviceContext):
     @parameter
     if "cuda" in target:
         _elementwise_impl_gpu[func, simd_width, target=target](
@@ -1391,14 +1379,12 @@ fn _elementwise_impl[
 @always_inline
 fn _elementwise_impl_cpu[
     rank: Int, //,
-    func: fn[width: Int, rank: Int] (StaticIntTuple[rank]) capturing [
-        _
-    ] -> None,
+    func: fn[width: Int, rank: Int] (IndexList[rank]) capturing [_] -> None,
     simd_width: Int,
     /,
     *,
     use_blocking_impl: Bool = False,
-](shape: StaticIntTuple[rank]):
+](shape: IndexList[rank]):
     alias impl = _elementwise_impl_cpu_1d if rank == 1 else _elementwise_impl_cpu_nd
     impl[func, simd_width, use_blocking_impl=use_blocking_impl](shape)
 
@@ -1406,13 +1392,11 @@ fn _elementwise_impl_cpu[
 @always_inline
 fn _elementwise_impl_cpu_1d[
     rank: Int, //,
-    func: fn[width: Int, rank: Int] (StaticIntTuple[rank]) capturing [
-        _
-    ] -> None,
+    func: fn[width: Int, rank: Int] (IndexList[rank]) capturing [_] -> None,
     simd_width: Int,
     *,
     use_blocking_impl: Bool,
-](shape: StaticIntTuple[rank]):
+](shape: IndexList[rank]):
     """Executes `func[width, rank](indices)`, possibly using sub-tasks, for a
     suitable combination of width and indices so as to cover shape. Returns when
     all sub-tasks have completed.
@@ -1469,13 +1453,11 @@ fn _elementwise_impl_cpu_1d[
 @always_inline
 fn _elementwise_impl_cpu_nd[
     rank: Int, //,
-    func: fn[width: Int, rank: Int] (StaticIntTuple[rank]) capturing [
-        _
-    ] -> None,
+    func: fn[width: Int, rank: Int] (IndexList[rank]) capturing [_] -> None,
     simd_width: Int,
     *,
     use_blocking_impl: Bool,
-](shape: StaticIntTuple[rank]):
+](shape: IndexList[rank]):
     """Executes `func[width, rank](indices)`, possibly using sub-tasks, for a
     suitable combination of width and indices so as to cover shape. Returns
     when all sub-tasks have completed.
@@ -1566,13 +1548,11 @@ fn _elementwise_impl_cpu_nd[
 @always_inline
 fn _elementwise_impl_gpu[
     rank: Int, //,
-    func: fn[width: Int, rank: Int] (StaticIntTuple[rank]) capturing [
-        _
-    ] -> None,
+    func: fn[width: Int, rank: Int] (IndexList[rank]) capturing [_] -> None,
     simd_width: UInt,
     *,
     target: StringLiteral,
-](shape: StaticIntTuple[rank], ctx: DeviceContext):
+](shape: IndexList[rank], ctx: DeviceContext):
     """Executes `func[width, rank](indices)` as sub-tasks for a suitable
     combination of width and indices so as to cover shape on the GPU.
 
@@ -1692,7 +1672,7 @@ fn _elementwise_impl_gpu[
 
 fn parallelize_over_rows[
     func: fn (Int, Int) capturing [_] -> None
-](shape: StaticIntTuple, axis: Int, grain_size: Int):
+](shape: IndexList, axis: Int, grain_size: Int):
     """Parallelize func over non-axis dims of shape.
 
     Parameters:
@@ -1731,27 +1711,27 @@ fn parallelize_over_rows[
 fn stencil[
     rank: Int,
     stencil_rank: Int,
-    stencil_axis: StaticIntTuple[stencil_rank],
+    stencil_axis: IndexList[stencil_rank],
     simd_width: Int,
     type: DType,
-    map_fn: fn (StaticIntTuple[stencil_rank]) capturing [_] -> (
-        StaticIntTuple[stencil_rank],
-        StaticIntTuple[stencil_rank],
+    map_fn: fn (IndexList[stencil_rank]) capturing [_] -> (
+        IndexList[stencil_rank],
+        IndexList[stencil_rank],
     ),
     map_strides: fn (dim: Int) capturing [_] -> Int,
-    load_fn: fn[simd_width: Int, type: DType] (StaticIntTuple[rank]) capturing [
+    load_fn: fn[simd_width: Int, type: DType] (IndexList[rank]) capturing [
         _
     ] -> SIMD[type, simd_width],
     compute_init_fn: fn[simd_width: Int] () capturing [_] -> SIMD[
         type, simd_width
     ],
     compute_fn: fn[simd_width: Int] (
-        StaticIntTuple[rank], SIMD[type, simd_width], SIMD[type, simd_width]
+        IndexList[rank], SIMD[type, simd_width], SIMD[type, simd_width]
     ) capturing [_] -> SIMD[type, simd_width],
     compute_finalize_fn: fn[simd_width: Int] (
-        StaticIntTuple[rank], SIMD[type, simd_width]
+        IndexList[rank], SIMD[type, simd_width]
     ) capturing [_] -> None,
-](shape: StaticIntTuple[rank], input_shape: StaticIntTuple[rank]):
+](shape: IndexList[rank], input_shape: IndexList[rank]):
     """Computes stencil operation in parallel.
 
     Computes output as a function that processes input stencils, stencils are
@@ -1812,7 +1792,7 @@ fn stencil[
             @parameter
             fn func_wrapper[simd_width: Int](idx: Int):
                 indices[rank - 1] = idx
-                var stencil_indices = StaticIntTuple[stencil_rank](
+                var stencil_indices = IndexList[stencil_rank](
                     indices[stencil_axis[0]], indices[stencil_axis[1]]
                 )
                 var bounds = map_fn(stencil_indices)
@@ -1871,7 +1851,7 @@ fn stencil[
                         min(input_width, upper_bound[1]),
                         step_j,
                     ):
-                        var point_idx = StaticIntTuple[rank](
+                        var point_idx = IndexList[rank](
                             indices[0], i, j, indices[3]
                         )
 
