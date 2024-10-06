@@ -8,10 +8,10 @@
 import math
 
 from buffer import NDBuffer
-from buffer.dimlist import DimList, Dim
+from buffer.dimlist import Dim, DimList
 from layout import IntTuple, Layout, LayoutTensor
-from layout.layout import LayoutList
 from layout.fillers import arange
+from layout.layout import LayoutList
 from layout.nd_buffer_stub import (
     ElementLayout,
     TileMask,
@@ -25,14 +25,14 @@ from layout.nd_buffer_stub import (
     copy_from_nd_buffer_masked,
     copy_to_nd_buffer,
     copy_to_nd_buffer_masked,
-    from_ndbuffer_row_major,
     distribute,
+    from_ndbuffer_row_major,
     vectorize,
 )
-
 from memory import UnsafePointer
-from utils import Index, IndexList, StaticTuple
 from testing import assert_equal
+
+from utils import Index, IndexList, StaticTuple
 
 
 fn linspace_fill[

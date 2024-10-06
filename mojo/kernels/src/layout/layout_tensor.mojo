@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from collections import Optional, OptionalReg
-from math import ceildiv, align_up
+from math import align_up, ceildiv
 from os import abort
 from sys import alignof, prefetch, simdwidthof, sizeof, triple_is_nvidia_cuda
 from sys.intrinsics import PrefetchOptions
@@ -15,27 +15,20 @@ from builtin.int import int as _int
 from gpu.id import ThreadIdx
 from gpu.memory import Fill, async_copy
 from layout.element import Element
-from memory import UnsafePointer, memcpy, stack_allocation, memset_zero
+from memory import UnsafePointer, memcpy, memset_zero, stack_allocation
 from memory.pointer import AddressSpace, _GPUAddressSpace
 
 from utils import IndexList, StaticTuple
 from utils.numerics import max_finite
 
-from .int_tuple import (
-    fill_like,
-    flatten,
-    idx2crd,
-    product,
-    to_int,
-    depth,
-)
+from .fillers import arange
+from .int_tuple import depth, fill_like, flatten, idx2crd, product, to_int
 from .layout import *
 from .runtime_layout import RuntimeLayout
 from .runtime_layout import coalesce as runtime_coalesce
 from .runtime_layout import make_layout as make_runtime_layout
 from .runtime_tuple import RuntimeTuple
 from .swizzle import Swizzle, make_ldmatrix_swizzle
-from .fillers import arange
 
 
 fn _compute_distribute_layout[

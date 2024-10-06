@@ -7,17 +7,18 @@
 
 from buffer import NDBuffer
 from buffer.dimlist import DimList
-from gpu.memory import AddressSpace
 from gpu.host import DeviceContext
 from gpu.id import BlockDim, BlockIdx, ThreadIdx
+from gpu.memory import AddressSpace
 from gpu.mma import mma
 from gpu.sync import barrier
 from layout import *
 from layout._utils import ManagedLayoutTensor, gpu_free, gpu_managed_alloc
+from layout.fillers import arange
 from layout.math import outer_product_acc
 from layout.nd_buffer_stub import copy_from_nd_buffer, copy_to_nd_buffer
-from layout.fillers import arange
 from memory import UnsafePointer
+
 from utils import IndexList
 from utils.index import Index
 

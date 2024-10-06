@@ -7,8 +7,10 @@
 from collections import InlineArray
 from collections.string import _calc_initial_buffer_size_int32
 from os import abort
-from utils import Formattable, Formatter
+
 from buffer.dimlist import DimList
+
+from utils import Formattable, Formatter
 
 from .dynamic_tuple import *
 from .int_tuple import (
@@ -24,12 +26,12 @@ from .int_tuple import (
     mul,
     prefix_product,
     product,
+    propagate_unknown,
     reverse,
     shape_div,
     sorted,
     to_int,
     to_unknown,
-    propagate_unknown,
     tuple_min,
     zip,
 )

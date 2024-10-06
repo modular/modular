@@ -3,13 +3,16 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
+from sys import triple_is_nvidia_cuda
+
 from layout import Layout, LayoutTensor
 from layout.layout_tensor import LayoutTensorIter
-from utils import IndexList, StaticTuple, Index
-from .int_tuple import UNKNOWN_VALUE
 from memory import UnsafePointer
 from memory.pointer import AddressSpace, _GPUAddressSpace
-from sys import triple_is_nvidia_cuda
+
+from utils import Index, IndexList, StaticTuple
+
+from .int_tuple import UNKNOWN_VALUE
 
 
 struct ValueOrUnknown[dim: Int = UNKNOWN_VALUE]:

@@ -14,8 +14,8 @@ from gpu.memory import (
     async_copy_wait_group,
 )
 from layout._utils import ManagedLayoutGPUTensor
-from layout.layout_tensor import Layout, LayoutTensor
 from layout.fillers import arange
+from layout.layout_tensor import Layout, LayoutTensor
 from memory import UnsafePointer
 from testing import assert_true
 

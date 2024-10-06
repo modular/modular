@@ -6,8 +6,8 @@
 # RUN: %mojo-no-debug %s | FileCheck %s
 
 from layout import Layout, LayoutTensor, stack_allocation_like
-from layout.math import exp, max, sum
 from layout.fillers import arange
+from layout.math import exp, max, sum
 
 
 # CHECK-LABEL: test_reduce_sum

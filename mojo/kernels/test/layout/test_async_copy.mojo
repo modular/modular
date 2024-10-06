@@ -33,8 +33,9 @@ from layout.layout_tensor import (
     copy_sram_to_dram,
 )
 from memory import UnsafePointer
-from utils import IndexList
 from testing import assert_almost_equal
+
+from utils import IndexList
 
 
 fn async_copy_kernel[

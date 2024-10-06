@@ -4,6 +4,8 @@
 #
 # ===----------------------------------------------------------------------=== #
 
+from utils import IndexList
+
 from . import IntTuple, Layout
 from .int_tuple import UNKNOWN_VALUE, flatten, to_int
 from .layout import coalesce as coalesce_layout
@@ -11,7 +13,6 @@ from .layout import composition as composition_layout
 from .layout import is_tuple
 from .layout import make_layout as make_layout_static
 from .runtime_tuple import RuntimeTuple, crd2idx, product
-from utils import IndexList
 
 # A `Layout` like type that uses RuntimeTuple as its storage instead of
 # IntTuple.

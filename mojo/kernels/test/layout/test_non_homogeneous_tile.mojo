@@ -5,12 +5,14 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo-no-debug %s | FileCheck %s
 
-from layout import LayoutTensor, Layout, RuntimeLayout, IntTuple
-from layout.layout import UNKNOWN_VALUE
-from utils import IndexList
 from math import ceildiv
-from layout.fillers import arange
+
+from layout import IntTuple, Layout, LayoutTensor, RuntimeLayout
 from layout._utils import ManagedLayoutTensor
+from layout.fillers import arange
+from layout.layout import UNKNOWN_VALUE
+
+from utils import IndexList
 
 
 # CHECK-LABEL: test_single_unknown_tile

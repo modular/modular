@@ -5,13 +5,15 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo-no-debug %s | FileCheck %s
 
-from layout import Layout, LayoutTensor, RuntimeLayout, RuntimeTuple
-from layout.layout_tensor import LayoutTensorIter
-from layout.int_tuple import UNKNOWN_VALUE, IntTuple
-from utils import IndexList
-from layout.fillers import arange, random
 from math import sqrt
+
+from layout import Layout, LayoutTensor, RuntimeLayout, RuntimeTuple
+from layout.fillers import arange, random
+from layout.int_tuple import UNKNOWN_VALUE, IntTuple
+from layout.layout_tensor import LayoutTensorIter
 from memory import UnsafePointer
+
+from utils import IndexList
 
 
 #  CHECK-LABEL: test_fill_and_print

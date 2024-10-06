@@ -5,20 +5,22 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo-no-debug %s
 
-import benchmark
-from layout import Layout, RuntimeLayout, RuntimeTuple
-from layout.int_tuple import size, IntTuple, UNKNOWN_VALUE
-from layout.layout import expand_modes_alike, flatten, coalesce
-from layout.layout_tensor import LayoutTensor
-from layout.math import outer_product_acc
 from math import fma, isclose
-from memory import UnsafePointer, memset_zero, stack_allocation, memcpy
 from os import abort
 from random import rand
-from sys import argv, sizeof, has_avx512f, is_x86, simdwidthof
-from testing import assert_false
-from utils import StaticTuple
+from sys import argv, has_avx512f, is_x86, simdwidthof, sizeof
+
+import benchmark
 from algorithm.functional import vectorize
+from layout import Layout, RuntimeLayout, RuntimeTuple
+from layout.int_tuple import UNKNOWN_VALUE, IntTuple, size
+from layout.layout import coalesce, expand_modes_alike, flatten
+from layout.layout_tensor import LayoutTensor
+from layout.math import outer_product_acc
+from memory import UnsafePointer, memcpy, memset_zero, stack_allocation
+from testing import assert_false
+
+from utils import StaticTuple
 
 
 fn matmul_naive[

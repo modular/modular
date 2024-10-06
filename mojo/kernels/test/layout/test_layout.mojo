@@ -14,13 +14,13 @@ from layout.layout import (
     complement,
     composition,
     cosize,
+    expand_modes_alike,
     format_layout,
     logical_divide,
     logical_product,
     print_layout,
     size,
     sublayout,
-    expand_modes_alike,
     zipped_divide,
 )
 from testing import assert_equal, assert_not_equal
