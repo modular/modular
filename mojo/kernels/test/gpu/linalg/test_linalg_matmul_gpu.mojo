@@ -19,7 +19,7 @@ from testing import assert_almost_equal
 from utils import IndexList
 
 
-fn _size[rank: Int](dims: IndexList[rank]) -> Int:
+fn _size[rank: Int](dims: IndexList[rank, **_]) -> Int:
     var size = 1
 
     @parameter
@@ -42,7 +42,7 @@ fn _create_device_buffer[
 
 fn _create_host_buffer[
     dtype: DType, rank: Int, shape: DimList
-](dynamic_shape: IndexList[rank]) raises -> NDBuffer[dtype, rank, shape]:
+](dynamic_shape: IndexList[rank, **_]) raises -> NDBuffer[dtype, rank, shape]:
     var storage_ptr = UnsafePointer[Scalar[dtype]].alloc(_size(dynamic_shape))
     return NDBuffer[dtype, rank, shape](
         storage_ptr, dynamic_shape=dynamic_shape

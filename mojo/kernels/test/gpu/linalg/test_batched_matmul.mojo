@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo-no-debug %s | FileCheck %s
 
-
+from sys import bitwidthof
 from buffer import DimList, NDBuffer
 from gpu.host.device_context import DeviceContext
 from linalg.bmm import _batched_matmul_gpu
@@ -68,15 +68,15 @@ fn test_batched_matmul(ctx: DeviceContext) raises:
     @__copy_capture(dst_buffer)
     @parameter
     fn elementwise_epilogue_empty_fn[
-        c_type: DType, width: Int, rank: Int, *, alignment: Int = 1
-    ](idx: IndexList[rank], val: SIMD[c_type, width]) -> None:
-        dst_buffer[(idx[0], idx[1], idx[2])] = rebind[Float32](val) + 2.0
+        c_type: DType,
+        width: Int,
+        rank: Int,
+        *,
+        alignment: Int = 1,
+    ](idx: IndexList[rank], val: SIMD[c_type, width],) -> None:
+        dst_buffer[idx[0], idx[1], idx[2]] = rebind[Float32](val) + 2.0
 
     _batched_matmul_gpu[
-        rank=3,
-        a_type = DType.float32,
-        b_type = DType.float32,
-        c_type = DType.float32,
         transpose_b=False,
         elementwise_epilogue_fn=elementwise_epilogue_empty_fn,
     ](dst_buffer, lhs_buffer, rhs_buffer, ctx)

@@ -7,6 +7,7 @@
 # RUN: %mojo-no-debug %s -t | FileCheck %s
 # CHECK-NOT: CUDA ERROR
 
+from utils import Index
 from gpu.host import DeviceContext
 from runtime.asyncrt import (
     MojoCallContextPtr,
@@ -124,10 +125,10 @@ def execute_matmul[
     var valid_lengths_dev = ctx.create_buffer[DType.uint32](max_batch_size)
     ctx.enqueue_copy_to_device(valid_lengths_dev, valid_lengths_host_ptr)
     var valid_lengths_host = NDBuffer[DType.uint32, 1](
-        valid_lengths_host_ptr, batch_size
+        valid_lengths_host_ptr, Index(batch_size)
     )
     var valid_lengths = NDBuffer[DType.uint32, 1](
-        valid_lengths_dev.ptr, batch_size
+        valid_lengths_dev.ptr, Index(batch_size)
     )
 
     kv_block_host = HostNDBuffer[
@@ -319,10 +320,10 @@ def execute_fused_qkv_matmul[
     var valid_lengths_dev = ctx.create_buffer[DType.uint32](max_batch_size)
     ctx.enqueue_copy_to_device(valid_lengths_dev, valid_lengths_host_ptr)
     var valid_lengths_host = NDBuffer[DType.uint32, 1](
-        valid_lengths_host_ptr, batch_size
+        valid_lengths_host_ptr, Index(batch_size)
     )
     var valid_lengths = NDBuffer[DType.uint32, 1](
-        valid_lengths_dev.ptr, batch_size
+        valid_lengths_dev.ptr, Index(batch_size)
     )
 
     k_block_host = HostNDBuffer[

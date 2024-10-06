@@ -13,6 +13,7 @@ from gpu import *
 from gpu.host._compile import _get_nvptx_target
 from gpu.host.device_context import DeviceContext
 from testing import assert_almost_equal
+from utils import Index
 
 alias type = DType.float32
 
@@ -37,8 +38,8 @@ def run_elementwise(exponent: BFloat16, ctx: DeviceContext):
 
     ctx.enqueue_copy_to_device(in_device, in_host.data)
 
-    var in_buffer = NDBuffer[type, 1](in_device.ptr, (length))
-    var out_buffer = NDBuffer[type, 1](out_device.ptr, (length))
+    var in_buffer = NDBuffer[type, 1](in_device.ptr, Index(length))
+    var out_buffer = NDBuffer[type, 1](out_device.ptr, Index(length))
 
     @always_inline
     @__copy_capture(out_buffer, in_buffer, exponent)

@@ -172,7 +172,9 @@ fn run_layer_norm_gpu[
     ](idx: IndexList[rank]) -> SIMD[type, width]:
         return gamma.load[width=width](idx[0])
 
-    layer_norm_gpu[input_fn, gamma_fn](shape, beta, epsilon, data_buf, ctx)
+    layer_norm_gpu[input_fn, gamma_fn](
+        shape, beta, epsilon, data_buf, context=ctx
+    )
     ctx.enqueue_copy_from_device(res, data_d)
     ctx.synchronize()
 

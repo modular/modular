@@ -19,7 +19,7 @@ from nn.kv_cache import (
 from math import isqrt
 from nn.mha import mha_gpu_naive
 
-from utils import IndexList
+from utils import IndexList, Index
 from internal_utils import (
     HostNDBuffer,
     DeviceNDBuffer,
@@ -138,7 +138,7 @@ def execute_flash_attention[
     var valid_lengths_dev = ctx.create_buffer[DType.uint32](max_batch_size)
     ctx.enqueue_copy_to_device(valid_lengths_dev, valid_lengths_host_ptr)
     var valid_lengths = NDBuffer[DType.uint32, 1](
-        valid_lengths_dev.ptr, batch_size
+        valid_lengths_dev.ptr, Index(batch_size)
     )
 
     k_block_host = HostNDBuffer[
@@ -149,7 +149,7 @@ def execute_flash_attention[
             kv_params,
         ]._internal_block_shape,
     ](
-        IndexList[4](
+        Index(
             batch_size, max_seq_len, kv_params.num_heads, kv_params.head_size
         ),
     )
@@ -162,7 +162,7 @@ def execute_flash_attention[
             kv_params,
         ]._internal_block_shape,
     ](
-        IndexList[4](
+        Index(
             batch_size, max_seq_len, kv_params.num_heads, kv_params.head_size
         ),
         ctx=ctx,
@@ -184,7 +184,7 @@ def execute_flash_attention[
             kv_params,
         ]._internal_block_shape,
     ](
-        IndexList[4](
+        Index(
             batch_size, max_seq_len, kv_params.num_heads, kv_params.head_size
         ),
     )
@@ -197,7 +197,7 @@ def execute_flash_attention[
             kv_params,
         ]._internal_block_shape,
     ](
-        IndexList[4](
+        Index(
             batch_size, max_seq_len, kv_params.num_heads, kv_params.head_size
         ),
         ctx=ctx,
@@ -211,15 +211,9 @@ def execute_flash_attention[
         batch_size,
     )
 
-    valid_lengths_host = HostNDBuffer[DType.uint32, 1](
-        IndexList[1](
-            batch_size,
-        )
-    )
+    valid_lengths_host = HostNDBuffer[DType.uint32, 1](Index(batch_size))
     valid_lengths_device = DeviceNDBuffer[DType.uint32, 1](
-        IndexList[1](
-            batch_size,
-        ),
+        Index(batch_size),
         ctx=ctx,
     )
     for i in range(batch_size):

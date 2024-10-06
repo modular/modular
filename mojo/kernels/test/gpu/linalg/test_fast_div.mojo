@@ -27,8 +27,10 @@ def run_elementwise[type: DType](ctx: DeviceContext):
     var out_divisors = ctx.create_buffer[type](length)
     var out_remainders = ctx.create_buffer[type](length)
 
-    var out_divisors_buffer = NDBuffer[type, 1](out_divisors.ptr, (length))
-    var out_remainders_buffer = NDBuffer[type, 1](out_remainders.ptr, (length))
+    var out_divisors_buffer = NDBuffer[type, 1](out_divisors.ptr, Index(length))
+    var out_remainders_buffer = NDBuffer[type, 1](
+        out_remainders.ptr, Index(length)
+    )
 
     @always_inline
     @__copy_capture(out_divisors_buffer, out_remainders_buffer)

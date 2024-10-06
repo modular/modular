@@ -34,8 +34,8 @@ def run_elementwise[type: DType](ctx: DeviceContext):
 
     ctx.enqueue_copy_to_device(in_device, in_host.data)
 
-    var in_buffer = NDBuffer[type, 1](in_device.ptr, (length))
-    var out_buffer = NDBuffer[type, 1](out_device.ptr, (length))
+    var in_buffer = NDBuffer[type, 1](in_device.ptr, Index(length))
+    var out_buffer = NDBuffer[type, 1](out_device.ptr, Index(length))
 
     @always_inline
     @__copy_capture(out_buffer, in_buffer)

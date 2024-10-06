@@ -16,8 +16,8 @@ from linalg.matmul_gpu import _matmul_gpu, matmul_kernel_naive
 from memory import UnsafePointer
 from testing import assert_almost_equal
 
-from utils import IndexList
-from utils.index import Index
+from utils import IndexList, Index
+from sys import bitwidthof
 
 
 fn run_matmul_naive(ctx: DeviceContext, M: Int, N: Int, K: Int) raises:
@@ -438,18 +438,17 @@ fn run_batched_matmul(
     @__copy_capture(c_buf)
     @parameter
     fn elementwise_epilogue_fn1[
-        c_type: DType, width: Int, rank: Int, *, alignment: Int = 1
-    ](idx: IndexList[rank], val: SIMD[c_type, width]) -> None:
-        c_buf[(idx[0], idx[1], idx[2])] = rebind[BFloat16](val) + BFloat16(2.0)
+        c_type: DType,
+        width: Int,
+        rank: Int,
+        *,
+        alignment: Int = 1,
+    ](idx: IndexList[rank], val: SIMD[c_type, width],) -> None:
+        c_buf[idx[0], idx[1], idx[2]] = rebind[BFloat16](val) + BFloat16(2.0)
 
-    _batched_matmul_gpu[
-        rank=3,
-        a_type = DType.bfloat16,
-        b_type = DType.bfloat16,
-        c_type = DType.bfloat16,
-        transpose_b=False,
-        elementwise_epilogue_fn=elementwise_epilogue_fn1,
-    ](c_buf, a_buf, b_buf, ctx)
+    _batched_matmul_gpu[elementwise_epilogue_fn=elementwise_epilogue_fn1](
+        c_buf, a_buf, b_buf, ctx
+    )
 
     ctx.enqueue_copy_from_device(c_host, c_device)
 
@@ -460,18 +459,17 @@ fn run_batched_matmul(
     @__copy_capture(c_buf_n)
     @parameter
     fn elementwise_epilogue_fn2[
-        c_type: DType, width: Int, rank: Int, *, alignment: Int = 1
-    ](idx: IndexList[rank], val: SIMD[c_type, width]) -> None:
-        c_buf_n[(idx[0], idx[1], idx[2])] = rebind[Float32](val) + 2.0
+        c_type: DType,
+        width: Int,
+        rank: Int,
+        *,
+        alignment: Int = 1,
+    ](idx: IndexList[rank], val: SIMD[c_type, width],) -> None:
+        c_buf_n[idx[0], idx[1], idx[2]] = rebind[Float32](val) + 2.0
 
-    _batched_matmul_gpu[
-        rank=3,
-        a_type = DType.float32,
-        b_type = DType.float32,
-        c_type = DType.float32,
-        transpose_b=False,
-        elementwise_epilogue_fn=elementwise_epilogue_fn2,
-    ](c_buf_n, a_buf_n, b_buf_n, ctx)
+    _batched_matmul_gpu[elementwise_epilogue_fn=elementwise_epilogue_fn2](
+        c_buf_n, a_buf_n, b_buf_n, ctx
+    )
 
     ctx.enqueue_copy_from_device(c_host_n, c_device_n)
     ctx.synchronize()

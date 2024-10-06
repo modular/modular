@@ -83,7 +83,7 @@ fn gemm_kernel[
     alias warp_layout = Layout.row_major(8, 4)
 
     for k_i in range(ceildiv(K, BK)):
-        var a_tile_dram = mat_a.tile[BM, BK]((Int(BlockIdx.y()), k_i))
+        var a_tile_dram = mat_a.tile[BM, BK](Index(Int(BlockIdx.y()), k_i))
         var a_tile_sram_local = a_tile_sram.distribute[
             Layout.row_major(NUM_THREADS // BK, BK)
         ](ThreadIdx.x())
@@ -92,7 +92,7 @@ fn gemm_kernel[
             is_async=True,
         ](a_tile_sram_local, a_tile_dram, ThreadIdx.x())
 
-        var b_tile_dram = mat_b.tile[BK, BN]((k_i, Int(BlockIdx.x())))
+        var b_tile_dram = mat_b.tile[BK, BN](Index(k_i, Int(BlockIdx.x())))
         var b_tile_sram_local = b_tile_sram.distribute[
             Layout.row_major(NUM_THREADS // BN, BN)
         ](ThreadIdx.x())
@@ -124,8 +124,8 @@ fn gemm_kernel[
         barrier()
 
     var c_warp_tile = mat_c.tile[BM, BN](
-        (Int(BlockIdx.y()), Int(BlockIdx.x()))
-    ).tile[WM, WN]((warp_m, warp_n))
+        Index(Int(BlockIdx.y()), Int(BlockIdx.x()))
+    ).tile[WM, WN](Index(warp_m, warp_n))
 
     copy_to_nd_buffer[thread_layout=warp_layout](
         c_warp_tile, c_reg, ThreadIdx.x()
