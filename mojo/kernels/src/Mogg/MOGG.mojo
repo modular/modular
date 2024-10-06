@@ -11,156 +11,26 @@ from math import cos, erf, exp
 from math import floor as _floor
 from math import fma, isqrt, log, log1p, sin, sqrt
 from math import tanh as _tanh
+from os import abort
 from random import randn, seed
-from sys import external_call, llvm_intrinsic, alignof
-from sys.info import simdwidthof, bitwidthof, sizeof
+from sys import alignof, external_call, llvm_intrinsic
+from sys.info import bitwidthof, simdwidthof, sizeof
 from sys.intrinsics import strided_load
 from sys.param_env import is_defined
-from os import abort
 
 from algorithm import argmax as _argmax
 from algorithm import argmin as _argmin
 from algorithm import sync_parallelize, vectorize
 from algorithm.functional import elementwise
-from algorithm.reduction import (
-    _reduce_generator,
-    _reduce_generator_cpu,
-)
+from algorithm.reduction import _reduce_generator, _reduce_generator_cpu
 from algorithm.reduction import mean as _mean
+from bit import is_power_of_two
 from buffer import NDBuffer
-from buffer.dimlist import _make_tuple
 from buffer.buffer import _compute_ndbuffer_offset
-from runtime.tracing import Trace, TraceLevel, trace_arg
-from buffer.dimlist import Dim, DimList
+from buffer.dimlist import Dim, DimList, _make_tuple
 from builtin.simd import Int64, UInt8, UInt64, _pow
+from compiler_internal import StaticTensorSpec
 from gpu.host._compile import _get_nvptx_target
-from runtime.tracing import Trace, TraceLevel, trace_arg
-
-from nn.kv_cache import (
-    kv_cache_length_h8_d128_bshd_bf16,
-    kv_cache_length_h8_d128_bhsd_bf16,
-    kv_cache_length_h6_d48_bshd_f32,
-    kv_cache_length_h6_d48_bhsd_f32,
-    kv_cache_length_h8_d128_bshd_f32,
-    kv_cache_length_h8_d128_bhsd_f32,
-    kv_cache_length_h1_d16_bhsd_f32,
-    kv_cache_length_h1_d16_bshd_f32,
-    kv_cache_length_h1_d16_bhsd_bf16,
-    kv_cache_length_h1_d16_bshd_bf16,
-    kv_cache_length_h8_d64_bhsd_f32,
-    kv_cache_length_h8_d64_bshd_f32,
-    kv_cache_length_h8_d64_bhsd_bf16,
-    kv_cache_length_h8_d64_bshd_bf16,
-    kv_cache_length_h8_d128_bhsd_f32_continuous_batch,
-    kv_cache_length_h8_d128_bshd_f32_continuous_batch,
-    kv_cache_length_h8_d128_bhsd_bf16_continuous_batch,
-    kv_cache_length_h8_d128_bshd_bf16_continuous_batch,
-    kv_cache_length_h8_d64_bhsd_f32_continuous_batch,
-    kv_cache_length_h8_d64_bshd_f32_continuous_batch,
-    kv_cache_length_h8_d64_bhsd_bf16_continuous_batch,
-    kv_cache_length_h8_d64_bshd_bf16_continuous_batch,
-    key_cache_for_layer_h8_d128_bhsd_bf16,
-    key_cache_for_layer_h8_d128_bshd_bf16,
-    key_cache_for_layer_h6_d48_bshd_f32,
-    key_cache_for_layer_h6_d48_bhsd_f32,
-    key_cache_for_layer_h8_d128_bshd_f32,
-    key_cache_for_layer_h8_d128_bhsd_f32,
-    key_cache_for_layer_h1_d16_bhsd_f32,
-    key_cache_for_layer_h1_d16_bshd_f32,
-    key_cache_for_layer_h1_d16_bhsd_bf16,
-    key_cache_for_layer_h1_d16_bshd_bf16,
-    key_cache_for_layer_h8_d64_bhsd_f32,
-    key_cache_for_layer_h8_d64_bshd_f32,
-    key_cache_for_layer_h8_d64_bhsd_bf16,
-    key_cache_for_layer_h8_d64_bshd_bf16,
-    key_cache_for_layer_h8_d128_bhsd_f32_continuous_batch,
-    key_cache_for_layer_h8_d128_bshd_f32_continuous_batch,
-    key_cache_for_layer_h8_d128_bhsd_bf16_continuous_batch,
-    key_cache_for_layer_h8_d128_bshd_bf16_continuous_batch,
-    key_cache_for_layer_h8_d64_bhsd_f32_continuous_batch,
-    key_cache_for_layer_h8_d64_bshd_f32_continuous_batch,
-    key_cache_for_layer_h8_d64_bhsd_bf16_continuous_batch,
-    key_cache_for_layer_h8_d64_bshd_bf16_continuous_batch,
-    value_cache_for_layer_h8_d128_bshd_bf16,
-    value_cache_for_layer_h8_d128_bhsd_bf16,
-    value_cache_for_layer_h6_d48_bshd_f32,
-    value_cache_for_layer_h6_d48_bhsd_f32,
-    value_cache_for_layer_h8_d128_bshd_f32,
-    value_cache_for_layer_h8_d128_bhsd_f32,
-    value_cache_for_layer_h1_d16_bhsd_f32,
-    value_cache_for_layer_h1_d16_bshd_f32,
-    value_cache_for_layer_h1_d16_bhsd_bf16,
-    value_cache_for_layer_h1_d16_bshd_bf16,
-    value_cache_for_layer_h8_d64_bshd_f32,
-    value_cache_for_layer_h8_d64_bhsd_f32,
-    value_cache_for_layer_h8_d64_bshd_bf16,
-    value_cache_for_layer_h8_d64_bhsd_bf16,
-    value_cache_for_layer_h8_d128_bshd_f32_continuous_batch,
-    value_cache_for_layer_h8_d128_bhsd_f32_continuous_batch,
-    value_cache_for_layer_h8_d128_bshd_bf16_continuous_batch,
-    value_cache_for_layer_h8_d128_bhsd_bf16_continuous_batch,
-    value_cache_for_layer_h8_d64_bshd_f32_continuous_batch,
-    value_cache_for_layer_h8_d64_bhsd_f32_continuous_batch,
-    value_cache_for_layer_h8_d64_bshd_bf16_continuous_batch,
-    value_cache_for_layer_h8_d64_bhsd_bf16_continuous_batch,
-    matmul_kv_cache_h6_d48_bshd,
-    matmul_kv_cache_h6_d48_bhsd,
-    matmul_kv_cache_h8_d128_bshd,
-    matmul_kv_cache_h8_d128_bhsd,
-    matmul_kv_cache_h1_d16_bhsd,
-    matmul_kv_cache_h1_d16_bshd,
-    matmul_kv_cache_h8_d64_bshd,
-    matmul_kv_cache_h8_d64_bhsd,
-    fused_qkv_matmul_kv_cache_h6_d48_bshd,
-    fused_qkv_matmul_kv_cache_h6_d48_bhsd,
-    fused_qkv_matmul_kv_cache_h8_d128_bshd,
-    fused_qkv_matmul_kv_cache_h8_d128_bhsd,
-    fused_qkv_matmul_kv_cache_h1_d16_bshd,
-    fused_qkv_matmul_kv_cache_h1_d16_bhsd,
-    fused_qkv_matmul_kv_cache_h8_d64_bshd,
-    fused_qkv_matmul_kv_cache_h8_d64_bhsd,
-    fused_qkv_matmul_kv_cache_h8_d128_bshd_continuous_batch,
-    fused_qkv_matmul_kv_cache_h8_d128_bhsd_continuous_batch,
-    fused_qkv_matmul_kv_cache_h8_d64_bshd_continuous_batch,
-    fused_qkv_matmul_kv_cache_h8_d64_bhsd_continuous_batch,
-    fused_qk_rope_h6_d48_bshd,
-    fused_qk_rope_h6_d48_bhsd,
-    fused_qk_rope_h8_d128_bshd,
-    fused_qk_rope_h8_d128_bhsd,
-    fused_qk_rope_h1_d16_bshd,
-    fused_qk_rope_h1_d16_bhsd,
-    fused_qk_rope_h8_d64_bshd,
-    fused_qk_rope_h8_d64_bhsd,
-    fused_qk_rope_h8_d128_bshd_continuous_batch,
-    fused_qk_rope_h8_d128_bhsd_continuous_batch,
-    fused_qk_rope_h8_d64_bshd_continuous_batch,
-    fused_qk_rope_h8_d64_bhsd_continuous_batch,
-    flash_attention_kv_cache_h6_d48_bshd,
-    flash_attention_kv_cache_h6_d48_bhsd,
-    flash_attention_kv_cache_h8_d128_bshd,
-    flash_attention_kv_cache_h8_d128_bhsd,
-    flash_attention_kv_cache_h1_d16_bhsd,
-    flash_attention_kv_cache_h1_d16_bshd,
-    flash_attention_kv_cache_h8_d64_bshd,
-    flash_attention_kv_cache_h8_d64_bhsd,
-    flash_attention_kv_cache_h8_d128_bshd_continuous_batch,
-    flash_attention_kv_cache_h8_d128_bhsd_continuous_batch,
-    flash_attention_kv_cache_h8_d64_bshd_continuous_batch,
-    flash_attention_kv_cache_h8_d64_bhsd_continuous_batch,
-    contiguous_kv_cache_collection_h6_d48_bshd,
-    contiguous_kv_cache_collection_h6_d48_bhsd,
-    contiguous_kv_cache_collection_h8_d128_bshd,
-    contiguous_kv_cache_collection_h8_d128_bhsd,
-    contiguous_kv_cache_collection_h1_d16_bshd,
-    contiguous_kv_cache_collection_h1_d16_bhsd,
-    contiguous_kv_cache_collection_h8_d64_bshd,
-    contiguous_kv_cache_collection_h8_d64_bhsd,
-    continuous_batching_kv_cache_collection_h8_d128_bshd,
-    continuous_batching_kv_cache_collection_h8_d128_bhsd,
-    continuous_batching_kv_cache_collection_h8_d64_bshd,
-    continuous_batching_kv_cache_collection_h8_d64_bhsd,
-)
-
 from linalg.bmm import batched_matmul as _batched_matmul
 from linalg.bmm import batched_matmul_shape
 from linalg.matmul import matmul as _matmul
@@ -172,7 +42,7 @@ from linalg.packing import (
     pack_transposed_b_ndbuffer,
 )
 from linalg.utils import GemmShape
-from memory import AddressSpace, UnsafePointer, memset_zero, memcpy
+from memory import AddressSpace, UnsafePointer, memcpy, memset_zero
 from memory.unsafe import bitcast
 from MOGGIntList import IntList
 from MOGGTensor import Tensor
@@ -193,6 +63,8 @@ from nn.conv_transpose import (
     pack_filter_shape as _pack_conv_transpose_filter_shape,
 )
 from nn.cumsum import cumsum as _cumsum
+from nn.flash_attention import flash_attention as nn_flash_attention
+from nn.flash_attention import flash_attention_split_kv
 from nn.gather_scatter import Axis
 from nn.gather_scatter import gather as _gather
 from nn.gather_scatter import gather_nd as _gather_nd
@@ -207,13 +79,139 @@ from nn.gather_scatter import scatter_elements_shape as scatter_shape
 from nn.gather_scatter import scatter_nd as _scatter_nd
 from nn.gather_scatter import scatter_nd_generator, scatter_nd_shape
 from nn.index_tensor import index_tensor_1d as _index_tensor
+from nn.kv_cache import (
+    contiguous_kv_cache_collection_h1_d16_bhsd,
+    contiguous_kv_cache_collection_h1_d16_bshd,
+    contiguous_kv_cache_collection_h6_d48_bhsd,
+    contiguous_kv_cache_collection_h6_d48_bshd,
+    contiguous_kv_cache_collection_h8_d64_bhsd,
+    contiguous_kv_cache_collection_h8_d64_bshd,
+    contiguous_kv_cache_collection_h8_d128_bhsd,
+    contiguous_kv_cache_collection_h8_d128_bshd,
+    continuous_batching_kv_cache_collection_h8_d64_bhsd,
+    continuous_batching_kv_cache_collection_h8_d64_bshd,
+    continuous_batching_kv_cache_collection_h8_d128_bhsd,
+    continuous_batching_kv_cache_collection_h8_d128_bshd,
+    flash_attention_kv_cache_h1_d16_bhsd,
+    flash_attention_kv_cache_h1_d16_bshd,
+    flash_attention_kv_cache_h6_d48_bhsd,
+    flash_attention_kv_cache_h6_d48_bshd,
+    flash_attention_kv_cache_h8_d64_bhsd,
+    flash_attention_kv_cache_h8_d64_bhsd_continuous_batch,
+    flash_attention_kv_cache_h8_d64_bshd,
+    flash_attention_kv_cache_h8_d64_bshd_continuous_batch,
+    flash_attention_kv_cache_h8_d128_bhsd,
+    flash_attention_kv_cache_h8_d128_bhsd_continuous_batch,
+    flash_attention_kv_cache_h8_d128_bshd,
+    flash_attention_kv_cache_h8_d128_bshd_continuous_batch,
+    fused_qk_rope_h1_d16_bhsd,
+    fused_qk_rope_h1_d16_bshd,
+    fused_qk_rope_h6_d48_bhsd,
+    fused_qk_rope_h6_d48_bshd,
+    fused_qk_rope_h8_d64_bhsd,
+    fused_qk_rope_h8_d64_bhsd_continuous_batch,
+    fused_qk_rope_h8_d64_bshd,
+    fused_qk_rope_h8_d64_bshd_continuous_batch,
+    fused_qk_rope_h8_d128_bhsd,
+    fused_qk_rope_h8_d128_bhsd_continuous_batch,
+    fused_qk_rope_h8_d128_bshd,
+    fused_qk_rope_h8_d128_bshd_continuous_batch,
+    fused_qkv_matmul_kv_cache_h1_d16_bhsd,
+    fused_qkv_matmul_kv_cache_h1_d16_bshd,
+    fused_qkv_matmul_kv_cache_h6_d48_bhsd,
+    fused_qkv_matmul_kv_cache_h6_d48_bshd,
+    fused_qkv_matmul_kv_cache_h8_d64_bhsd,
+    fused_qkv_matmul_kv_cache_h8_d64_bhsd_continuous_batch,
+    fused_qkv_matmul_kv_cache_h8_d64_bshd,
+    fused_qkv_matmul_kv_cache_h8_d64_bshd_continuous_batch,
+    fused_qkv_matmul_kv_cache_h8_d128_bhsd,
+    fused_qkv_matmul_kv_cache_h8_d128_bhsd_continuous_batch,
+    fused_qkv_matmul_kv_cache_h8_d128_bshd,
+    fused_qkv_matmul_kv_cache_h8_d128_bshd_continuous_batch,
+    key_cache_for_layer_h1_d16_bhsd_bf16,
+    key_cache_for_layer_h1_d16_bhsd_f32,
+    key_cache_for_layer_h1_d16_bshd_bf16,
+    key_cache_for_layer_h1_d16_bshd_f32,
+    key_cache_for_layer_h6_d48_bhsd_f32,
+    key_cache_for_layer_h6_d48_bshd_f32,
+    key_cache_for_layer_h8_d64_bhsd_bf16,
+    key_cache_for_layer_h8_d64_bhsd_bf16_continuous_batch,
+    key_cache_for_layer_h8_d64_bhsd_f32,
+    key_cache_for_layer_h8_d64_bhsd_f32_continuous_batch,
+    key_cache_for_layer_h8_d64_bshd_bf16,
+    key_cache_for_layer_h8_d64_bshd_bf16_continuous_batch,
+    key_cache_for_layer_h8_d64_bshd_f32,
+    key_cache_for_layer_h8_d64_bshd_f32_continuous_batch,
+    key_cache_for_layer_h8_d128_bhsd_bf16,
+    key_cache_for_layer_h8_d128_bhsd_bf16_continuous_batch,
+    key_cache_for_layer_h8_d128_bhsd_f32,
+    key_cache_for_layer_h8_d128_bhsd_f32_continuous_batch,
+    key_cache_for_layer_h8_d128_bshd_bf16,
+    key_cache_for_layer_h8_d128_bshd_bf16_continuous_batch,
+    key_cache_for_layer_h8_d128_bshd_f32,
+    key_cache_for_layer_h8_d128_bshd_f32_continuous_batch,
+    kv_cache_length_h1_d16_bhsd_bf16,
+    kv_cache_length_h1_d16_bhsd_f32,
+    kv_cache_length_h1_d16_bshd_bf16,
+    kv_cache_length_h1_d16_bshd_f32,
+    kv_cache_length_h6_d48_bhsd_f32,
+    kv_cache_length_h6_d48_bshd_f32,
+    kv_cache_length_h8_d64_bhsd_bf16,
+    kv_cache_length_h8_d64_bhsd_bf16_continuous_batch,
+    kv_cache_length_h8_d64_bhsd_f32,
+    kv_cache_length_h8_d64_bhsd_f32_continuous_batch,
+    kv_cache_length_h8_d64_bshd_bf16,
+    kv_cache_length_h8_d64_bshd_bf16_continuous_batch,
+    kv_cache_length_h8_d64_bshd_f32,
+    kv_cache_length_h8_d64_bshd_f32_continuous_batch,
+    kv_cache_length_h8_d128_bhsd_bf16,
+    kv_cache_length_h8_d128_bhsd_bf16_continuous_batch,
+    kv_cache_length_h8_d128_bhsd_f32,
+    kv_cache_length_h8_d128_bhsd_f32_continuous_batch,
+    kv_cache_length_h8_d128_bshd_bf16,
+    kv_cache_length_h8_d128_bshd_bf16_continuous_batch,
+    kv_cache_length_h8_d128_bshd_f32,
+    kv_cache_length_h8_d128_bshd_f32_continuous_batch,
+    matmul_kv_cache_h1_d16_bhsd,
+    matmul_kv_cache_h1_d16_bshd,
+    matmul_kv_cache_h6_d48_bhsd,
+    matmul_kv_cache_h6_d48_bshd,
+    matmul_kv_cache_h8_d64_bhsd,
+    matmul_kv_cache_h8_d64_bshd,
+    matmul_kv_cache_h8_d128_bhsd,
+    matmul_kv_cache_h8_d128_bshd,
+    value_cache_for_layer_h1_d16_bhsd_bf16,
+    value_cache_for_layer_h1_d16_bhsd_f32,
+    value_cache_for_layer_h1_d16_bshd_bf16,
+    value_cache_for_layer_h1_d16_bshd_f32,
+    value_cache_for_layer_h6_d48_bhsd_f32,
+    value_cache_for_layer_h6_d48_bshd_f32,
+    value_cache_for_layer_h8_d64_bhsd_bf16,
+    value_cache_for_layer_h8_d64_bhsd_bf16_continuous_batch,
+    value_cache_for_layer_h8_d64_bhsd_f32,
+    value_cache_for_layer_h8_d64_bhsd_f32_continuous_batch,
+    value_cache_for_layer_h8_d64_bshd_bf16,
+    value_cache_for_layer_h8_d64_bshd_bf16_continuous_batch,
+    value_cache_for_layer_h8_d64_bshd_f32,
+    value_cache_for_layer_h8_d64_bshd_f32_continuous_batch,
+    value_cache_for_layer_h8_d128_bhsd_bf16,
+    value_cache_for_layer_h8_d128_bhsd_bf16_continuous_batch,
+    value_cache_for_layer_h8_d128_bhsd_f32,
+    value_cache_for_layer_h8_d128_bhsd_f32_continuous_batch,
+    value_cache_for_layer_h8_d128_bshd_bf16,
+    value_cache_for_layer_h8_d128_bshd_bf16_continuous_batch,
+    value_cache_for_layer_h8_d128_bshd_f32,
+    value_cache_for_layer_h8_d128_bshd_f32_continuous_batch,
+)
 from nn.mha import flash_attention
-from nn.flash_attention import flash_attention as nn_flash_attention
 from nn.mha import fused_attention as cpu_fused_attention_impl
-from nn.flash_attention import flash_attention_split_kv
 from nn.nms import non_max_suppression, non_max_suppression_shape_func
-from nn.normalization import layer_norm, layer_norm_shape
-from nn.normalization import rms_norm, rms_norm_shape
+from nn.normalization import (
+    layer_norm,
+    layer_norm_shape,
+    rms_norm,
+    rms_norm_shape,
+)
 from nn.pad import pad_constant as _pad_constant
 from nn.pad import pad_reflect as _pad_reflect
 from nn.pad import pad_repeat as _pad_repeat
@@ -250,14 +248,13 @@ from quantization.qmatmul_k import (
 )
 from register import *
 from runtime.asyncrt import MojoCallContextPtr
+from runtime.tracing import Trace, TraceLevel, trace_arg
 from tensor_utils_internal import ManagedTensorSlice
-from compiler_internal import StaticTensorSpec
 
 from utils import StaticTuple
 from utils.index import Index, IndexList, product
 from utils.loop import unroll
 from utils.numerics import isinf, isnan
-from bit import is_power_of_two
 
 
 # Prevent these functions from being DCE'd by explicitly exporting them.

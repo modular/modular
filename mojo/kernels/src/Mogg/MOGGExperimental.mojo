@@ -6,10 +6,10 @@
 
 from collections import OptionalReg
 from math import ceil, erf, exp, floor, iota, isqrt, log, log1p, sqrt, tanh
-from memory import UnsafePointer
 
 from algorithm.reduction import _reduce_generator
 from buffer.dimlist import DimList
+from memory import UnsafePointer
 from MOGGIntList import IntList
 from MOGGTensor import Tensor
 from nn.activations import relu

@@ -7,11 +7,12 @@
 import compiler_internal as compiler
 from buffer import NDBuffer
 from buffer.dimlist import DimList
-from nn.mha import fused_attention as cpu_fused_attention_impl
-from tensor_utils import ManagedTensorSlice, foreach
-from utils import IndexList
 from linalg.matmul import matmul as _matmul
+from nn.mha import fused_attention as cpu_fused_attention_impl
 from runtime.asyncrt import MojoCallContextPtr
+from tensor_utils import ManagedTensorSlice, foreach
+
+from utils import IndexList
 
 
 @value

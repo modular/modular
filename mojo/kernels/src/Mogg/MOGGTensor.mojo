@@ -7,6 +7,7 @@
 
 from collections import OptionalReg
 from math import fma
+from os.atomic import Atomic
 from sys.info import simdwidthof
 from sys.intrinsics import strided_load
 
@@ -19,7 +20,6 @@ from MOGGIntList import IntList
 from register import *
 
 from utils import IndexList, unroll
-from os.atomic import Atomic
 
 
 @value

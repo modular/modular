@@ -4,37 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-# ===----------------------------------------------------------------------===#
-# General imports
-# ===----------------------------------------------------------------------===#
-from buffer import NDBuffer
-from buffer.dimlist import DimList
-from builtin.simd import _pow
 from collections import OptionalReg
-import compiler_internal as compiler
-from runtime.asyncrt import MojoCallContextPtr
-from sys import llvm_intrinsic
-from sys.info import simdwidthof
-from tensor_utils import ManagedTensorSlice, foreach
-from utils import IndexList
-from utils.index import Index
-
-# ===----------------------------------------------------------------------===#
-# Kernel imports
-# ===----------------------------------------------------------------------===#
-from algorithm import argmax, argmin, mean, product, sum
-from algorithm import max as reduce_max
-from algorithm import min as reduce_min
-from linalg.bmm import batched_matmul, batched_matmul_shape
-from linalg.matmul import matmul
-from linalg.bmm import (
-    elementwise_epilogue_type as batched_matmul_elementwise_epilogue_type,
-)
-from linalg.matrix_solve import matrix_solve, matrix_solve_shape
-from linalg.matrix_band_part import matrix_band_part
-from linalg.utils import (
-    elementwise_epilogue_type as matmul_elementwise_epilogue_type,
-)
 from math import (
     ceil,
     cos,
@@ -50,36 +20,71 @@ from math import (
     sqrt,
     tanh,
 )
+from random import randn, seed
+from sys import llvm_intrinsic
+from sys.info import simdwidthof
+
+import compiler_internal as compiler
+
+# ===----------------------------------------------------------------------===#
+# Kernel imports
+# ===----------------------------------------------------------------------===#
+from algorithm import argmax, argmin
+from algorithm import max as reduce_max
+from algorithm import mean
+from algorithm import min as reduce_min
+from algorithm import product, sum
+
+# ===----------------------------------------------------------------------===#
+# General imports
+# ===----------------------------------------------------------------------===#
+from buffer import NDBuffer
+from buffer.dimlist import DimList
+from builtin.simd import _pow
+from linalg.bmm import batched_matmul, batched_matmul_shape
+from linalg.bmm import (
+    elementwise_epilogue_type as batched_matmul_elementwise_epilogue_type,
+)
+from linalg.matmul import matmul
+from linalg.matrix_band_part import matrix_band_part
+from linalg.matrix_solve import matrix_solve, matrix_solve_shape
+from linalg.utils import (
+    elementwise_epilogue_type as matmul_elementwise_epilogue_type,
+)
 from nn import arg_nonzero
-from nn.activations import relu, gelu
+from nn.activations import gelu, relu
 from nn.arange import arange, arange_shape
-from nn.nms import non_max_suppression, non_max_suppression_shape_func
-from nn.pool import avg_pool, max_pool, pool_shape, pool_shape_ceil
-from nn.reshape import reshape, reshape_shape
-from nn.resize import resize_nearest_neighbor, resize_linear
-from nn.roi_align import roi_align_nhwc
-from nn.slice import slice_as_view, slice_shape, slice_dim_as_view
-from nn.tile import tile, tile_shape
-from nn.topk import top_k, top_k_shape_impl
+from nn.conv import ConvInfoStatic, conv_nhwc_direct, conv_shape
+from nn.cumsum import cumsum
 from nn.gather_scatter import (
+    Axis,
+    gather,
+    gather_nd,
+    gather_reduce,
+    gather_shape,
+    normalize_neg_index,
+    scatter_elements,
+    scatter_elements_shape,
     scatter_nd,
     scatter_nd_generator,
-    gather_nd,
-    gather_shape,
-    gather,
-    gather_reduce,
-    Axis,
-    scatter_elements,
-    normalize_neg_index,
-    scatter_elements_shape,
 )
-from random import randn, seed
-from utils.numerics import isinf, isnan
-from nn.softmax import softmax, logsoftmax
-from nn.pad import pad_constant, pad_repeat, pad_reflect, pad_shape
-from nn.cumsum import cumsum
-from nn.conv import ConvInfoStatic, conv_nhwc_direct, conv_shape
+from nn.nms import non_max_suppression, non_max_suppression_shape_func
 from nn.normalization import layer_norm, rms_norm
+from nn.pad import pad_constant, pad_reflect, pad_repeat, pad_shape
+from nn.pool import avg_pool, max_pool, pool_shape, pool_shape_ceil
+from nn.reshape import reshape, reshape_shape
+from nn.resize import resize_linear, resize_nearest_neighbor
+from nn.roi_align import roi_align_nhwc
+from nn.slice import slice_as_view, slice_dim_as_view, slice_shape
+from nn.softmax import logsoftmax, softmax
+from nn.tile import tile, tile_shape
+from nn.topk import top_k, top_k_shape_impl
+from runtime.asyncrt import MojoCallContextPtr
+from tensor_utils import ManagedTensorSlice, foreach
+
+from utils import IndexList
+from utils.index import Index
+from utils.numerics import isinf, isnan
 
 # ===----------------------------------------------------------------------===#
 # Helpers
