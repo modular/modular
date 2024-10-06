@@ -14,7 +14,12 @@ from algorithm import map
 
 from math import align_down, ceildiv
 from os import abort
-from sys import num_physical_cores, simdwidthof, triple_is_nvidia_cuda
+from sys import (
+    num_physical_cores,
+    simdwidthof,
+    bitwidthof,
+    triple_is_nvidia_cuda,
+)
 
 from bit import is_power_of_two
 from gpu import BlockIdx, GridDim, ThreadIdx
@@ -1047,7 +1052,7 @@ fn _get_num_workers(problem_size: Int, grain_size: Int = 32768) -> Int:
 @always_inline
 fn _get_start_indices_of_nth_subvolume[
     rank: Int, //, subvolume_rank: Int = 1
-](n: Int, shape: IndexList[rank]) -> IndexList[rank]:
+](n: Int, shape: IndexList[rank, **_]) -> __type_of(shape):
     """Converts a flat index into the starting ND indices of the nth subvolume
     with rank `subvolume_rank`.
 
@@ -1088,19 +1093,19 @@ fn _get_start_indices_of_nth_subvolume[
     # fast impls for common cases
     @parameter
     if rank == 2 and subvolume_rank == 1:
-        return IndexList[rank](n, 0)
+        return __type_of(shape)(n, 0)
 
     @parameter
     if rank - 1 == subvolume_rank:
-        var out = IndexList[rank](0)
+        var out = __type_of(shape)(0)
         out[0] = n
         return out
 
     @parameter
     if rank == subvolume_rank:
-        return IndexList[rank](0)
+        return __type_of(shape)(0)
 
-    var out = IndexList[rank]()
+    var out = __type_of(shape)()
     var curr_index = n
 
     @parameter
@@ -1117,7 +1122,7 @@ fn _get_start_indices_of_nth_subvolume[
 fn _get_start_indices_of_nth_subvolume_uint[
     rank: Int, //,
     subvolume_rank: UInt = 1,
-](n: UInt, shape: IndexList[rank]) -> IndexList[rank]:
+](n: UInt, shape: IndexList[rank, **_]) -> __type_of(shape):
     """Converts a flat index into the starting ND indices of the nth subvolume
     with rank `subvolume_rank`.
 
@@ -1200,7 +1205,7 @@ fn elementwise[
     use_blocking_impl: Bool = False,
     target: StringLiteral = "cpu",
     trace_description: StringLiteral = "",
-](shape: IndexList[rank]):
+](shape: IndexList[rank, **_]):
     """Executes `func[width, rank](indices)`, possibly as sub-tasks, for a
     suitable combination of width and indices so as to cover shape. Returns when
     all sub-tasks have completed.
@@ -1272,7 +1277,7 @@ fn elementwise[
     use_blocking_impl: Bool = False,
     target: StringLiteral = "cpu",
     trace_description: StringLiteral = "",
-](shape: IndexList[rank], context: DeviceContext):
+](shape: IndexList[rank, **_], context: DeviceContext):
     """Executes `func[width, rank](indices)`, possibly as sub-tasks, for a
     suitable combination of width and indices so as to cover shape. Returns when
     all sub-tasks have completed.
@@ -1304,7 +1309,7 @@ fn elementwise[
     use_blocking_impl: Bool = False,
     target: StringLiteral = "cpu",
     trace_description: StringLiteral = "",
-](shape: IndexList[rank], context: MojoCallContextPtr):
+](shape: IndexList[rank, **_], context: MojoCallContextPtr):
     """Executes `func[width, rank](indices)`, possibly as sub-tasks, for a
     suitable combination of width and indices so as to cover shape. Returns when
     all sub-tasks have completed.
@@ -1363,7 +1368,7 @@ fn _elementwise_impl[
     *,
     use_blocking_impl: Bool = False,
     target: StringLiteral = "cpu",
-](shape: IndexList[rank], context: DeviceContext):
+](shape: IndexList[rank, **_], context: DeviceContext):
     @parameter
     if "cuda" in target:
         _elementwise_impl_gpu[func, simd_width, target=target](
@@ -1384,7 +1389,7 @@ fn _elementwise_impl_cpu[
     /,
     *,
     use_blocking_impl: Bool = False,
-](shape: IndexList[rank]):
+](shape: IndexList[rank, **_]):
     alias impl = _elementwise_impl_cpu_1d if rank == 1 else _elementwise_impl_cpu_nd
     impl[func, simd_width, use_blocking_impl=use_blocking_impl](shape)
 
@@ -1396,7 +1401,7 @@ fn _elementwise_impl_cpu_1d[
     simd_width: Int,
     *,
     use_blocking_impl: Bool,
-](shape: IndexList[rank]):
+](shape: IndexList[rank, **_]):
     """Executes `func[width, rank](indices)`, possibly using sub-tasks, for a
     suitable combination of width and indices so as to cover shape. Returns when
     all sub-tasks have completed.
@@ -1457,7 +1462,7 @@ fn _elementwise_impl_cpu_nd[
     simd_width: Int,
     *,
     use_blocking_impl: Bool,
-](shape: IndexList[rank]):
+](shape: IndexList[rank, **_]):
     """Executes `func[width, rank](indices)`, possibly using sub-tasks, for a
     suitable combination of width and indices so as to cover shape. Returns
     when all sub-tasks have completed.
@@ -1497,7 +1502,7 @@ fn _elementwise_impl_cpu_nd[
                 # The inner most dimension is vectorized, so we set it
                 # to the index offset.
                 indices[rank - 1] = idx
-                func[simd_width, rank](indices)
+                func[simd_width, rank](indices.canonicalize())
 
             # We vectorize over the innermost dimension.
             vectorize[func_wrapper, simd_width, unroll_factor=unroll_factor](
@@ -1535,7 +1540,7 @@ fn _elementwise_impl_cpu_nd[
                 # The inner most dimension is vectorized, so we set it
                 # to the index offset.
                 indices[rank - 1] = idx
-                func[simd_width, rank](indices)
+                func[simd_width, rank](indices.canonicalize())
 
             # We vectorize over the innermost dimension.
             vectorize[func_wrapper, simd_width, unroll_factor=unroll_factor](
@@ -1552,7 +1557,7 @@ fn _elementwise_impl_gpu[
     simd_width: UInt,
     *,
     target: StringLiteral,
-](shape: IndexList[rank], ctx: DeviceContext):
+](shape: IndexList[rank, **_], ctx: DeviceContext):
     """Executes `func[width, rank](indices)` as sub-tasks for a suitable
     combination of width and indices so as to cover shape on the GPU.
 
@@ -1625,18 +1630,18 @@ fn _elementwise_impl_gpu[
                             _get_start_indices_of_nth_subvolume_uint[0](
                                 idx * simd_width + off,
                                 shape,
-                            )
+                            ).canonicalize()
                         )
                 else:
-                    func[simd_width, rank](start_indices)
+                    func[simd_width, rank](start_indices.canonicalize())
             else:
-                func[simd_width, rank](start_indices)
+                func[simd_width, rank](start_indices.canonicalize())
 
         # process the tail region
         if tid < unpacked_tail_length:
             var index_tup = _get_start_indices_of_nth_subvolume_uint[0](
                 packed_region_length + tid, shape
-            )
+            ).canonicalize()
             func[1, rank](index_tup)
 
     try:

@@ -44,7 +44,7 @@ fn test_elementwise[
         out_buffer.store[width=simd_width](index, in1 * in2)
 
     elementwise[func, simd_width=1, use_blocking_impl=is_blocking](
-        rebind[IndexList[outer_rank]](out_buffer.dynamic_shape),
+        rebind[IndexList[outer_rank]](out_buffer.get_shape()),
     )
 
     for i2 in range(min(numelems, 64)):

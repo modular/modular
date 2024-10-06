@@ -1919,7 +1919,7 @@ fn _argn[is_max: Bool](input: NDBuffer, axis: Int, output: NDBuffer) raises:
 
         # don't over-schedule if parallel_size < _get_num_workers output
         var num_workers = _min(
-            _get_num_workers(input.dynamic_shape.flattened_length()),
+            _get_num_workers(input.get_shape().flattened_length()),
             parallel_size,
         )
         chunk_size = ceildiv(parallel_size, num_workers)
