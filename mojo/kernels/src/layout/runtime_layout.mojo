@@ -54,8 +54,8 @@ struct RuntimeLayout[layout: Layout](Stringable, Formattable):
     @staticmethod
     fn row_major[
         rank: Int, //
-    ](shape: IndexList[rank]) -> RuntimeLayout[layout]:
-        var stride = IndexList[rank]()
+    ](shape: IndexList[rank, **_]) -> RuntimeLayout[layout]:
+        var stride = __type_of(shape)()
         var c_stride = 1
         stride[rank - 1] = c_stride
 
@@ -69,8 +69,8 @@ struct RuntimeLayout[layout: Layout](Stringable, Formattable):
     @staticmethod
     fn col_major[
         rank: Int, //
-    ](shape: IndexList[rank]) -> RuntimeLayout[layout]:
-        var stride = IndexList[rank]()
+    ](shape: IndexList[rank, **_]) -> RuntimeLayout[layout]:
+        var stride = __type_of(shape)()
         var c_stride = 1
         stride[0] = c_stride
 

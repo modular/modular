@@ -418,7 +418,7 @@ fn test_tile_and_distribute():
     # CHECK: 61.0 63.0
     for tile_i in range(2):
         for tile_j in range(2):
-            var tile_4x4 = buff.tile[4, 4]((tile_i, tile_j))
+            var tile_4x4 = buff.tile[4, 4](Index(tile_i, tile_j))
             print("----tile-data[", tile_i, ",", tile_j, "]----")
             print_buff(tile_4x4)
             for th_i in range(4):
@@ -1179,12 +1179,12 @@ fn test_copy_nd_buffer_to_layout_tensor_masked_scalar():
         for tile_n in range(3):
             print("--tile[", tile_m, ",", tile_n, "]---")
 
-            var buff_tile_4x4 = buff_7x9.tile[4, 4]((tile_m, tile_n))
+            var buff_tile_4x4 = buff_7x9.tile[4, 4](Index(tile_m, tile_n))
 
             var tensor_tile_4x4 = dst_tensor_8x12.tile[4, 4](tile_m, tile_n)
 
             var tile_mask = _tile_mask[4, 4](
-                buff_7x9.dynamic_shape, (tile_m, tile_n)
+                buff_7x9.get_shape(), Index(tile_m, tile_n)
             )
 
             alias thread_layout = Layout.row_major(2, 2)
@@ -1253,12 +1253,12 @@ fn test_copy_from_nd_buffer_masked_scalar():
     for tile_m in range(2):
         for tile_n in range(3):
             print("--tile[", tile_m, ",", tile_n, "]---")
-            var buff_tile_4x4 = buff_7x9.tile[4, 4]((tile_m, tile_n))
+            var buff_tile_4x4 = buff_7x9.tile[4, 4](Index(tile_m, tile_n))
 
             var tensor_tile_4x4 = dst_tensor_8x12.tile[4, 4](tile_m, tile_n)
 
             var tile_mask = _tile_mask[4, 4](
-                buff_7x9.dynamic_shape, (tile_m, tile_n)
+                buff_7x9.get_shape(), Index(tile_m, tile_n)
             )
 
             alias thread_layout = Layout.row_major(2, 2)
@@ -1287,12 +1287,12 @@ fn test_copy_to_nd_buffer_masked_scalar():
 
     for tile_m in range(2):
         for tile_n in range(3):
-            var buff_tile_4x4 = buff_7x9.tile[4, 4]((tile_m, tile_n))
+            var buff_tile_4x4 = buff_7x9.tile[4, 4](Index(tile_m, tile_n))
 
             var tensor_tile_4x4 = dst_tensor_8x12.tile[4, 4](tile_m, tile_n)
 
             var tile_mask = _tile_mask[4, 4](
-                buff_7x9.dynamic_shape, (tile_m, tile_n)
+                buff_7x9.get_shape(), Index(tile_m, tile_n)
             )
 
             alias thread_layout = Layout.row_major(2, 2)

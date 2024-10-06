@@ -98,14 +98,14 @@ fn _tile_mask[
     __element_stride: IndexList[rank] = IndexList[rank](1),
 ](shape: IndexList[rank], tile_coords: IndexList[rank]) -> TileMask[
     rank, __sizes, __element_stride
-]:
+] as result:
     var tile_offset = IndexList[rank]()
 
     @parameter
     for i in range(rank):
         tile_offset[i] = tile_sizes[i].get() * tile_coords[i]
 
-    return TileMask[rank, __sizes, __element_stride](shape, tile_offset)
+    return __type_of(result)(shape, tile_offset)
 
 
 @always_inline("nodebug")
@@ -230,7 +230,7 @@ fn distribute[
     @parameter
     for i in range(rank):
         alias thread_shape_i = to_int(thread_layout.shape[i])
-        res_shape[i] = buff.dynamic_shape[i] // thread_shape_i
+        res_shape[i] = buff.dim[i]() // thread_shape_i
         res_strides[i] = buff.stride[i]() * thread_shape_i
 
     var thread_offset: Scalar[DType.int32] = 0
@@ -369,8 +369,8 @@ fn _get_element_idx[
 
     @parameter
     for i in range(rank):
-        result += (curr_linear_crd % buff.dynamic_shape[i]) * buff.stride[i]()
-        curr_linear_crd = curr_linear_crd // buff.dynamic_shape[i]
+        result += (curr_linear_crd % buff.dim[i]()) * buff.stride[i]()
+        curr_linear_crd = curr_linear_crd // buff.dim[i]()
 
     return result
 
@@ -386,8 +386,8 @@ fn _get_element_idx[
 
     @parameter
     for i in range(rank):
-        result += (curr_linear_crd % buff.dynamic_shape[i]) * buff.stride[i]()
-        curr_linear_crd = curr_linear_crd // buff.dynamic_shape[i]
+        result += (curr_linear_crd % buff.dim[i]()) * buff.stride[i]()
+        curr_linear_crd = curr_linear_crd // buff.dim[i]()
     return result
 
 
@@ -443,7 +443,7 @@ fn vectorize[
     @parameter
     for i in range(rank):
         element_layout.stride[i] = buff.stride[i]()
-        buff_shape[i] = buff.dynamic_shape[i] // sizes[i]
+        buff_shape[i] = buff.dim[i]() // sizes[i]
         buff_stride[i] = buff.stride[i]() * sizes[i]
 
     return Tuple(
@@ -1335,7 +1335,7 @@ fn from_ndbuffer_row_major(
     """
     var runtime_layout = RuntimeLayout[
         Layout.row_major[buffer.rank](buffer.shape)
-    ].row_major[buffer.rank](buffer.dynamic_shape)
+    ].row_major[buffer.rank](buffer.get_shape())
     return LayoutTensor[
         buffer.type,
         Layout.row_major[buffer.rank](buffer.shape),

@@ -47,9 +47,14 @@ struct RuntimeTuple[S: IntTuple = UNKNOWN_VALUE](Stringable, Sized):
         self.value = values
 
     @always_inline
-    fn __init__[l: Int](inout self, values: IndexList[l]):
+    fn __init__[l: Int](inout self, values: IndexList[l, **_]):
         constrained[Self.scalar_length == l, "Must use same tuple length"]()
-        self.value = rebind[IndexList[Self.scalar_length]](values)
+        self.value = rebind[__type_of(self.value)](
+            values.cast[
+                element_bitwidth = __type_of(self.value).element_bitwidth,
+                unsigned = __type_of(self.value).unsigned,
+            ]()
+        )
 
     @staticmethod
     @always_inline
