@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo-no-debug %s
 
-from compile import compile_info, _internal_compile_code
+from compile import _internal_compile_code, compile_info
 from testing import *
 
 
