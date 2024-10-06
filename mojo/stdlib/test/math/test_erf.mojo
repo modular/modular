@@ -9,10 +9,10 @@
 
 from collections import InlineArray
 from math import erf
-from memory import UnsafePointer
 from random import randn, seed
 
 from internal_utils import compare
+from memory import UnsafePointer
 from test_utils import libm_call
 from testing import assert_almost_equal, assert_equal
 

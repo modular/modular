@@ -7,11 +7,11 @@
 # RUN: %mojo-no-debug %s
 
 from math import tanh
-from memory import UnsafePointer
 from random import randn, seed
 
 from buffer import Buffer
 from internal_utils import compare
+from memory import UnsafePointer
 from test_utils import libm_call
 from testing import assert_almost_equal
 
