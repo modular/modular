@@ -24,14 +24,14 @@ fn fill_a(buf: NDBuffer):
     # Fills the A matrix with the following values row + 2*col
     for i in range(buf.dim[0]()):
         for j in range(buf.dim[1]()):
-            buf[(i, j)] = Scalar[buf.type](i // (j + 1) + j)
+            buf[i, j] = Scalar[buf.type](i // (j + 1) + j)
 
 
 fn fill_b(buf: NDBuffer):
     # Fills the A matrix with the following values row/(col + 1) + col
     for i in range(buf.dim[0]()):
         for j in range(buf.dim[1]()):
-            buf[(i, j)] = Scalar[buf.type](i // (j + 1) + j)
+            buf[i, j] = Scalar[buf.type](i // (j + 1) + j)
 
 
 fn clear_c(buf: NDBuffer):

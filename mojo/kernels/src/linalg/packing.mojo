@@ -197,7 +197,7 @@ struct PackMatrixRows[
         @parameter
         for idx in range(simd_size):
             var transposed_data = transpose_buffer.load[width=simd_size](
-                (idx, 0)
+                Index(idx, 0)
             )
             # compute the packed index
             var _row_outer = local_off_set[0] // row_inner_size

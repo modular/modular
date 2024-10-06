@@ -809,7 +809,7 @@ fn gemv[
         type: DType, width: Int, rank: Int
     ](idx: IndexList[rank]) -> SIMD[type, width]:
         return (
-            a_buf.load[width=width]((idx[0], idx[1])).cast[type]()
+            a_buf.load[width=width](Index(idx[0], idx[1])).cast[type]()
             * b_buf.load[width=width](idx[1]).cast[type]()
         ).cast[type]()
 

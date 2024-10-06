@@ -41,7 +41,7 @@ fn gemm_naive[](
             for j in range(n):
                 var a_val = a[i, p].cast[c.type]()
                 var b_val = b[p, j].cast[c.type]()
-                c[(i, j)] += a_val * b_val
+                c[i, j] += a_val * b_val
 
 
 def test_matmul[

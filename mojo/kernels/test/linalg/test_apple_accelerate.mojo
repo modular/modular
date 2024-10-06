@@ -36,7 +36,7 @@ fn gemm_naive(
             for j in range(n):
                 var a_val = a[i, p].cast[c.type]()
                 var b_val = b[p, j].cast[c.type]()
-                c[(i, j)] += a_val * b_val
+                c[i, j] += a_val * b_val
 
 
 def test_matmul(c: NDBuffer, a: NDBuffer, b: NDBuffer, m: Int, n: Int, k: Int):
@@ -51,16 +51,16 @@ def test_matmul(c: NDBuffer, a: NDBuffer, b: NDBuffer, m: Int, n: Int, k: Int):
 
     for i in range(m):
         for j in range(k):
-            a[(i, j)] = (i + j) * Scalar[a.type](0.001)
+            a[i, j] = (i + j) * Scalar[a.type](0.001)
 
     for i in range(k):
         for j in range(n):
-            b[(i, j)] = (i + k) * Scalar[b.type](0.001)
+            b[i, j] = (i + k) * Scalar[b.type](0.001)
 
     for i in range(m):
         for j in range(n):
-            c[(i, j)] = 0
-            golden[(i, j)] = 0
+            c[i, j] = 0
+            golden[i, j] = 0
 
     apple_matmul(c, a, b)
     gemm_naive(golden, a, b, m, n, k)
@@ -130,7 +130,7 @@ fn bmm_naive(
                 for j in range(n):
                     var a_val = a[batch, i, p].cast[c.type]()
                     var b_val = b[batch, p, j].cast[c.type]()
-                    c[(batch, i, j)] += a_val * b_val
+                    c[batch, i, j] += a_val * b_val
 
 
 def test_batched_matmul(
@@ -148,18 +148,18 @@ def test_batched_matmul(
     for batch in range(batches):
         for i in range(m):
             for j in range(k):
-                a[(batch, i, j)] = (i + j) * Scalar[a.type](0.001)
+                a[batch, i, j] = (i + j) * Scalar[a.type](0.001)
 
     for batch in range(batches):
         for i in range(k):
             for j in range(n):
-                b[(batch, i, j)] = (i + k) * Scalar[b.type](0.001)
+                b[batch, i, j] = (i + k) * Scalar[b.type](0.001)
 
     for batch in range(batches):
         for i in range(m):
             for j in range(n):
-                c[(batch, i, j)] = 0
-                golden[(batch, i, j)] = 0
+                c[batch, i, j] = 0
+                golden[batch, i, j] = 0
 
     apple_batched_matmul(c, a, b)
     bmm_naive(golden, a, b, batches, m, n, k)

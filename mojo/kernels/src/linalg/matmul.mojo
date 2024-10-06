@@ -78,7 +78,7 @@ fn elementwise_epilogue_c_tile[
         var n_coord = idx_n + offset.N
         for idx_m in range(tile_len.M):
             var m_coord = idx_m + offset.M
-            var c_coord = (m_coord, n_coord)
+            var c_coord = Index(m_coord, n_coord)
             var c_val = c.load[width=col_chunk_size](c_coord)
             func[type, col_chunk_size](c_coord, c_val)
 

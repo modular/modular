@@ -54,9 +54,9 @@ fn matrix_solve_tiny[
     var A_inv22 = A01 * A10 - A00 * A11
 
     # Rows in B.
-    var B0 = B.load[width=N]((0, 0))
-    var B1 = B.load[width=N]((1, 0))
-    var B2 = B.load[width=N]((2, 0))
+    var B0 = B.load[width=N](Index(0, 0))
+    var B1 = B.load[width=N](Index(1, 0))
+    var B2 = B.load[width=N](Index(2, 0))
 
     # Update solution.
     X.store[width=N](

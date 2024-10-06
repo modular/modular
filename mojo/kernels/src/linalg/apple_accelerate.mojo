@@ -374,7 +374,7 @@ fn apple_matmul[
             fn epilogue_on_col_chunk[
                 simd_width: Int, rank: Int
             ](idx: IndexList[rank]):
-                var c_coord = (idx[0], idx[1])
+                var c_coord = IndexList[2](idx[0], idx[1])
                 var c_val = c.load[width=simd_width](c_coord)
                 epilogue[c.type, simd_width](c_coord, c_val)
 

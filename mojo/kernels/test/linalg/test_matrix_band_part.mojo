@@ -68,15 +68,15 @@ def test_matrix_band_part():
     var input = NDBuffer[type, rank, shape].stack_allocation()
     var output = NDBuffer[type, rank, shape].stack_allocation()
 
-    input[(0, 0)] = 1
-    input[(0, 1)] = 2
-    input[(0, 2)] = 3
-    input[(1, 0)] = 4
-    input[(1, 1)] = 5
-    input[(1, 2)] = 6
-    input[(2, 0)] = 7
-    input[(2, 1)] = 8
-    input[(2, 2)] = 9
+    input[0, 0] = 1
+    input[0, 1] = 2
+    input[0, 2] = 3
+    input[1, 0] = 4
+    input[1, 1] = 5
+    input[1, 2] = 6
+    input[2, 0] = 7
+    input[2, 1] = 8
+    input[2, 2] = 9
 
     matrix_band_part(
         input.make_dims_unknown(),
@@ -86,15 +86,15 @@ def test_matrix_band_part():
         exclude=False,
     )
 
-    assert_equal(output[(0, 0)], 1)
-    assert_equal(output[(0, 1)], 2)
-    assert_equal(output[(0, 2)], 3)
-    assert_equal(output[(1, 0)], 0)
-    assert_equal(output[(1, 1)], 5)
-    assert_equal(output[(1, 2)], 6)
-    assert_equal(output[(2, 0)], 0)
-    assert_equal(output[(2, 1)], 0)
-    assert_equal(output[(2, 2)], 9)
+    assert_equal(output[0, 0], 1)
+    assert_equal(output[0, 1], 2)
+    assert_equal(output[0, 2], 3)
+    assert_equal(output[1, 0], 0)
+    assert_equal(output[1, 1], 5)
+    assert_equal(output[1, 2], 6)
+    assert_equal(output[2, 0], 0)
+    assert_equal(output[2, 1], 0)
+    assert_equal(output[2, 2], 9)
 
     matrix_band_part(
         input.make_dims_unknown(),
@@ -104,15 +104,15 @@ def test_matrix_band_part():
         exclude=True,
     )
 
-    assert_equal(output[(0, 0)], 0)
-    assert_equal(output[(0, 1)], 0)
-    assert_equal(output[(0, 2)], 0)
-    assert_equal(output[(1, 0)], 4)
-    assert_equal(output[(1, 1)], 0)
-    assert_equal(output[(1, 2)], 0)
-    assert_equal(output[(2, 0)], 7)
-    assert_equal(output[(2, 1)], 8)
-    assert_equal(output[(2, 2)], 0)
+    assert_equal(output[0, 0], 0)
+    assert_equal(output[0, 1], 0)
+    assert_equal(output[0, 2], 0)
+    assert_equal(output[1, 0], 4)
+    assert_equal(output[1, 1], 0)
+    assert_equal(output[1, 2], 0)
+    assert_equal(output[2, 0], 7)
+    assert_equal(output[2, 1], 8)
+    assert_equal(output[2, 2], 0)
 
 
 def main():

@@ -10,7 +10,7 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo-no-debug %s
 from collections import OptionalReg
-from sys.info import os_is_macos
+from sys.info import os_is_macos, bitwidthof
 
 import benchmark
 from buffer import NDBuffer
@@ -47,8 +47,12 @@ fn gemm_naive[
         for p in range(k):
             for j in range(n):
                 var a_val = a[i, p].cast[c.type]()
-                var b_val = b[(j, p) if transpose_b else (p, j)].cast[c.type]()
-                c[(i, j)] += a_val * b_val
+                var b_val = b[
+                    IndexList[b.rank](j, p) if transpose_b else IndexList[
+                        b.rank
+                    ](p, j)
+                ].cast[c.type]()
+                c[i, j] += a_val * b_val
 
 
 fn gemm_naive_elementwise[
@@ -58,12 +62,16 @@ fn gemm_naive_elementwise[
         for p in range(k):
             for j in range(n):
                 var a_val = a[i, p].cast[c.type]()
-                var b_val = b[(j, p) if transpose_b else (p, j)].cast[c.type]()
-                c[(i, j)] += a_val * b_val
+                var b_val = b[
+                    IndexList[b.rank](j, p) if transpose_b else IndexList[
+                        b.rank
+                    ](p, j)
+                ].cast[c.type]()
+                c[i, j] += a_val * b_val
 
     for i in range(m):
         for j in range(n):
-            c[(i, j)] += val
+            c[i, j] += val
 
 
 def test_matmul[
@@ -443,14 +451,16 @@ fn bmm_naive(
                 for j in range(n):
                     var a_val = a[batch, i, p].cast[c.type]()
                     var b_val = b[
-                        (batch, j, p) if transpose_b else (batch, p, j)
+                        IndexList[b.rank](
+                            batch, j, p
+                        ) if transpose_b else IndexList[b.rank](batch, p, j)
                     ].cast[c.type]()
-                    c[(batch, i, j)] += a_val * b_val
+                    c[batch, i, j] += a_val * b_val
 
     for batch in range(batches):
         for i in range(m):
             for j in range(n):
-                c[(batch, i, j)] += val
+                c[batch, i, j] += val
 
 
 def test_batched_matmul[
@@ -476,25 +486,29 @@ def test_batched_matmul[
     for batch in range(batches):
         for i in range(m):
             for j in range(k):
-                a[(batch, i, j)] = (i + j) * Scalar[a.type](0.001)
+                a[batch, i, j] = (i + j) * Scalar[a.type](0.001)
 
     for batch in range(batches):
         for i in range(k):
             for j in range(n):
-                b[(batch, i, j)] = (i + k) * Scalar[b.type](0.001)
+                b[batch, i, j] = (i + k) * Scalar[b.type](0.001)
 
     for batch in range(batches):
         for i in range(m):
             for j in range(n):
-                c[(batch, i, j)] = 0
-                golden[(batch, i, j)] = 0
+                c[batch, i, j] = 0
+                golden[batch, i, j] = 0
 
     @parameter
     @always_inline
     @__copy_capture(c)
     fn epilogue_fn[
-        _type: DType, width: Int, rank: Int, *, alignment: Int = 1
-    ](coords: IndexList[rank], val: SIMD[_type, width]) -> None:
+        _type: DType,
+        width: Int,
+        rank: Int,
+        *,
+        alignment: Int = 1,
+    ](coords: IndexList[rank], val: SIMD[_type, width],) -> None:
         c.store(
             rebind[IndexList[3]](coords),
             rebind[SIMD[c.type, width]](val + some_constant),
@@ -507,22 +521,14 @@ def test_batched_matmul[
         @parameter
         if has_lambda:
             batched_matmul[
-                c.rank,
-                a.type,
-                b.type,
-                c.type,
-                False,
-                False,
-                epilogue_fn,
+                transpose_a=False,
+                transpose_b=False,
+                elementwise_epilogue_fn=epilogue_fn,
             ](c, a, b)
         else:
             batched_matmul[
-                c.rank,
-                a.type,
-                b.type,
-                c.type,
-                False,
-                False,
+                transpose_a=False,
+                transpose_b=False,
             ](c, a, b)
 
     bench_fn_batched_matmul()

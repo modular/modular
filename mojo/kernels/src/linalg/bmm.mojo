@@ -8,7 +8,7 @@ from collections import OptionalReg
 from math import align_up, ceildiv, gcd
 from os import abort
 from sys import alignof
-from sys.info import simdwidthof
+from sys.info import simdwidthof, bitwidthof
 
 from algorithm import sync_parallelize, vectorize
 from algorithm.functional import (
@@ -25,7 +25,7 @@ from register import mogg_register, mogg_register_shape_func
 from runtime.asyncrt import MojoCallContextPtr, parallelism_level
 from runtime.tracing import Trace, TraceLevel, trace_arg
 
-from utils.index import IndexList
+from utils.index import IndexList, Index
 from utils.numerics import get_accum_type
 
 from .apple_accelerate import apple_batched_matmul, use_apple_accelerate_lib
@@ -43,8 +43,15 @@ from .utils import (
 )
 
 alias elementwise_epilogue_type = fn[
-    c_type: DType, width: Int, rank: Int, *, alignment: Int = 1
-] (IndexList[rank], SIMD[c_type, width]) capturing -> None
+    c_type: DType,
+    width: Int,
+    rank: Int,
+    *,
+    alignment: Int = 1,
+] (
+    IndexList[rank],
+    SIMD[c_type, width],
+) capturing -> None
 
 
 # Similar to _get_start_indices_of_nth_subvolume but returns only the batch
@@ -52,8 +59,8 @@ alias elementwise_epilogue_type = fn[
 @always_inline
 fn _get_batch_dims[
     rank: Int
-](flat_index: Int, shape: IndexList[rank]) -> IndexList[rank]:
-    var out = IndexList[rank]()
+](flat_index: Int, shape: IndexList[rank, **_]) -> __type_of(shape):
+    var out = __type_of(shape)()
     var curr_index = flat_index
 
     @parameter
@@ -104,7 +111,7 @@ fn _small_batched_matmul[
     alias simd_width = simdwidthof[c_type]()
 
     # Get the flattened batch.
-    var batch_shape = c_buf.dynamic_shape
+    var batch_shape = c_buf.get_shape()
     batch_shape[rank - 2] = 1
     batch_shape[rank - 1] = 1
     var B = batch_shape.flattened_length()
@@ -117,10 +124,10 @@ fn _small_batched_matmul[
         for batch in range(B):
             # Get the indices as (B1, B2, ..., BN, 0, 0) where B is
             # each trailing batch dimension.
-            var indices = _get_batch_dims[rank](batch, c_buf.dynamic_shape)
+            var indices = _get_batch_dims[rank](batch, c_buf.get_shape())
 
-            var a_view = NDBuffer[a_type, 1](a_buf.data + batch * K, K)
-            var b_view = NDBuffer[b_type, 1](b_buf.data + batch * K, K)
+            var a_view = NDBuffer[a_type, 1](a_buf.data + batch * K, Index(K))
+            var b_view = NDBuffer[b_type, 1](b_buf.data + batch * K, Index(K))
 
             @always_inline
             @__copy_capture(a_view, b_view)
@@ -141,7 +148,7 @@ fn _small_batched_matmul[
                 @parameter
                 if elementwise_epilogue_fn:
                     alias func = elementwise_epilogue_fn.value()
-                    func[out_type, width, rank](indices, value)
+                    func[out_type, width, rank](indices.canonicalize(), value)
                 else:
                     # This will store only once as it is a 1D reduction.
                     # Just use the original [B, B1,...,BN, 0, 0] indices.
@@ -160,7 +167,11 @@ fn _small_batched_matmul[
                     output_fn,
                     reduce_impl,
                     single_thread_blocking_override=True,
-                ](a_view.dynamic_shape, init=Scalar[c_type](0), reduce_dim=0)
+                ](
+                    a_view.get_shape().canonicalize(),
+                    init=Scalar[c_type](0),
+                    reduce_dim=0,
+                )
             except e:
                 abort(e)
             _ = indices
@@ -171,7 +182,7 @@ fn _small_batched_matmul[
         for batch in range(B):
             # Get the indices as (B1, B2, ..., BN, 0, 0) where B is
             # each trailing batch dimension.
-            var indices = _get_batch_dims[rank](batch, c_buf.dynamic_shape)
+            var indices = _get_batch_dims[rank](batch, c_buf.get_shape())
             var b_buf_index = indices
 
             memset_zero(c_buf.data + batch * M * N, M * N)
@@ -211,7 +222,9 @@ fn _small_batched_matmul[
                         indices[rank - 1] = n
                         var val = c_buf.load[width=width](indices)
                         alias func = elementwise_epilogue_fn.value()
-                        func[c_type, width, rank](indices, val)
+                        func[c_type, width, rank](
+                            indices.cast[unsigned=False](), val
+                        )
 
                     vectorize[apply_epilogue, simd_width](N)
 
@@ -223,7 +236,8 @@ fn batched_matmul[
     rank: Int,
     a_type: DType,
     b_type: DType,
-    c_type: DType,
+    c_type: DType, //,
+    *,
     transpose_a: Bool,
     transpose_b: Bool,
     elementwise_epilogue_fn: OptionalReg[elementwise_epilogue_type] = None,
@@ -234,6 +248,7 @@ fn batched_matmul[
     c_buf: NDBuffer[c_type, rank],
     a_buf: NDBuffer[a_type, rank],
     b_buf: NDBuffer[b_type, rank],
+    *,
     context: MojoCallContextPtr = MojoCallContextPtr(),
 ):
     constrained[not transpose_a, "transpose_a not yet supported"]()
@@ -271,15 +286,11 @@ fn batched_matmul[
             ](c_buf, a_buf, b_buf)
 
         batched_matmul[
-            rank,
-            a_type,
-            b_type,
-            c_type,
-            transpose_b,
-            elementwise_epilogue_fn,
+            transpose_b=transpose_b,
+            elementwise_epilogue_fn=elementwise_epilogue_fn,
             saturated_vnni=saturated_vnni,
             target=target,
-        ](c_buf, a_buf, b_buf, context)
+        ](c_buf, a_buf, b_buf, context=context)
 
 
 @always_inline
@@ -287,7 +298,8 @@ fn _batched_matmul_cpu[
     rank: Int,
     a_type: DType,
     b_type: DType,
-    c_type: DType,
+    c_type: DType, //,
+    *,
     transpose_b: Bool,
     elementwise_epilogue_fn: OptionalReg[elementwise_epilogue_type] = None,
     saturated_vnni: Bool = False,
@@ -507,7 +519,7 @@ fn batched_matmul_kernel[
         nd_corrds[rank - 2] = y
         elementwise_lambda[c_type, 1, rank](nd_corrds, val.cast[c_type]())
     else:
-        c_buff[(Int(z), Int(y), Int(x))] = val.cast[c_type]()
+        c_buff[Index(int(z), int(y), int(x))] = val.cast[c_type]()
 
 
 @always_inline
@@ -515,10 +527,10 @@ fn _batched_matmul_gpu[
     rank: Int,
     a_type: DType,
     b_type: DType,
-    c_type: DType,
-    transpose_b: Bool,
+    c_type: DType, //,
+    *,
+    transpose_b: Bool = False,
     elementwise_epilogue_fn: OptionalReg[elementwise_epilogue_type] = None,
-    saturated_vnni: Bool = False,
 ](
     c_buf: NDBuffer[c_type, rank],
     a_buf: NDBuffer[a_type, rank],
@@ -533,10 +545,9 @@ fn _batched_matmul_gpu[
     alias BLOCK_DIM = 16
     alias unkown_shape = DimList.create_unknown[3]()
 
-    var batch_size = a_buf_reshaped.dim(0)
-    var m = a_buf_reshaped.dim(1)
-    var k = a_buf_reshaped.dim(2)
-    var n = b_buf_reshaped.dim(2)
+    var batch_size = a_buf_reshaped.dim[0]()
+    var m = a_buf_reshaped.dim[1]()
+    var n = b_buf_reshaped.dim[2]()
 
     try:
         alias bmm = batched_matmul_kernel[
@@ -555,7 +566,7 @@ fn _batched_matmul_gpu[
             c_buf_reshaped,
             a_buf_reshaped,
             b_buf_reshaped,
-            c_buf.dynamic_shape,
+            c_buf.get_shape(),
             grid_dim=(
                 ceildiv(n, BLOCK_DIM),
                 ceildiv(m, BLOCK_DIM),
@@ -572,7 +583,8 @@ fn batched_matmul[
     rank: Int,
     a_type: DType,
     b_type: DType,
-    c_type: DType,
+    c_type: DType, //,
+    *,
     transpose_b: Bool,
     elementwise_epilogue_fn: OptionalReg[elementwise_epilogue_type] = None,
     saturated_vnni: Bool = False,
@@ -581,6 +593,7 @@ fn batched_matmul[
     c_buf: NDBuffer[c_type, rank],
     a_buf: NDBuffer[a_type, rank],
     b_buf: NDBuffer[b_type, rank],
+    *,
     context: MojoCallContextPtr = MojoCallContextPtr(),
 ):
     constrained[target == "cpu" or "cuda" in target, "unsupported target"]()
@@ -588,23 +601,18 @@ fn batched_matmul[
     @parameter
     if target == "cpu":
         _batched_matmul_cpu[
-            rank,
-            a_type,
-            b_type,
-            c_type,
-            transpose_b,
-            elementwise_epilogue_fn,
-            saturated_vnni,
+            transpose_b=transpose_b,
+            elementwise_epilogue_fn=elementwise_epilogue_fn,
+            saturated_vnni=saturated_vnni,
         ](c_buf, a_buf, b_buf)
     else:
+        constrained[
+            saturated_vnni == False,
+            "saturated_vnni is not applicable on the gpu",
+        ]()
         _batched_matmul_gpu[
-            rank,
-            a_type,
-            b_type,
-            c_type,
-            transpose_b,
-            elementwise_epilogue_fn,
-            saturated_vnni,
+            transpose_b=transpose_b,
+            elementwise_epilogue_fn=elementwise_epilogue_fn,
         ](c_buf, a_buf, b_buf, context.get_device_context())
 
 
