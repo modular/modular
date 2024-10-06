@@ -4,9 +4,11 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from tensor_internal import StaticTensorSpec
-from utils import IndexList
 from collections import InlineArray
+
+from tensor_internal import StaticTensorSpec
+
+from utils import IndexList
 
 
 @always_inline

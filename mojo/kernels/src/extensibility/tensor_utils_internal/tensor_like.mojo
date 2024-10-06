@@ -4,8 +4,8 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from tensor_internal import TensorSpec
 from memory import UnsafePointer
+from tensor_internal import TensorSpec
 
 
 trait TensorLike:

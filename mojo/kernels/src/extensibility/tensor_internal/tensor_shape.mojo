@@ -18,7 +18,7 @@ from collections import List
 from sys.info import is_little_endian, sizeof
 from sys.intrinsics import _type_is_eq
 
-from memory import memcpy, memcmp, UnsafePointer
+from memory import UnsafePointer, memcmp, memcpy
 
 from utils.index import IndexList
 from utils.loop import unroll

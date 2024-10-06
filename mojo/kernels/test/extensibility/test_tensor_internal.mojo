@@ -6,7 +6,8 @@
 # RUN: %mojo-no-debug %s
 
 from sys import sizeof
-from tensor_internal.tensor import _serialize_as_tensor, TensorSpec
+
+from tensor_internal.tensor import TensorSpec, _serialize_as_tensor
 
 
 # CHECK: test_serialize

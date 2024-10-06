@@ -4,22 +4,22 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from .indexing import _dot_prod, _slice_to_tuple, _row_major_strides
-from .tensor_like import TensorLike
-
-from tensor_internal import TensorSpec, StaticTensorSpec
-
 from collections import InlineArray, OptionalReg
-from utils import IndexList
-from memory import UnsafePointer
 from math import ceil
 from sys import simdwidthof
 from sys.intrinsics import strided_load, strided_store
-import algorithm
-from runtime.asyncrt import MojoCallContextPtr
 
-from compiler_internal.directives import __mogg_intrinsic_attr, specsof
+import algorithm
 from compiler_internal.directives import StaticTensorSpec as CompilerTensorSpec
+from compiler_internal.directives import __mogg_intrinsic_attr, specsof
+from memory import UnsafePointer
+from runtime.asyncrt import MojoCallContextPtr
+from tensor_internal import StaticTensorSpec, TensorSpec
+
+from utils import IndexList
+
+from .indexing import _dot_prod, _row_major_strides, _slice_to_tuple
+from .tensor_like import TensorLike
 
 
 @value

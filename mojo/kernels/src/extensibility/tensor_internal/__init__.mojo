@@ -7,4 +7,4 @@
 
 from .tensor import Tensor
 from .tensor_shape import TensorShape
-from .tensor_spec import TensorSpec, StaticTensorSpec
+from .tensor_spec import StaticTensorSpec, TensorSpec

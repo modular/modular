@@ -5,10 +5,10 @@
 # ===----------------------------------------------------------------------=== #
 
 from .directives import (
-    register,
+    StaticTensorSpec,
     elementwise,
     enable_fusion_for,
-    view_kernel,
+    register,
     specsof,
-    StaticTensorSpec,
+    view_kernel,
 )

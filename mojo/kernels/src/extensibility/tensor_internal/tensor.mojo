@@ -10,13 +10,13 @@ Implements the `Tensor` type.
 from collections import List
 from pathlib import Path
 from random import rand, randn
-from sys import sizeof, simdwidthof
+from sys import simdwidthof, sizeof
 
 from algorithm.functional import elementwise, vectorize
 from algorithm.reduction import argmax, argmin
 from buffer import Buffer, NDBuffer
 from buffer.dimlist import Dim
-from memory import memset_zero, memcpy, memcmp, UnsafePointer, bitcast
+from memory import UnsafePointer, bitcast, memcmp, memcpy, memset_zero
 
 from utils import IndexList
 from utils._serialize import _serialize
