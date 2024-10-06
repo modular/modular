@@ -15,7 +15,7 @@ from algorithm import parallel_memcpy
 
 from math import ceildiv
 
-from memory import memcpy, UnsafePointer
+from memory import UnsafePointer, memcpy
 from runtime.asyncrt import parallelism_level
 
 

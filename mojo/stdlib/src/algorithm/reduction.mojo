@@ -15,7 +15,7 @@ from algorithm import map_reduce
 from collections import OptionalReg
 from math import align_down, ceildiv, iota
 from os import abort
-from sys.info import simdwidthof, sizeof, bitwidthof, triple_is_nvidia_cuda
+from sys.info import bitwidthof, simdwidthof, sizeof, triple_is_nvidia_cuda
 
 from algorithm import sync_parallelize, vectorize
 from algorithm.functional import _get_num_workers
@@ -27,10 +27,10 @@ from builtin.math import min as _min
 from gpu.host import DeviceContext
 from memory.unsafe import bitcast
 from runtime.asyncrt import MojoCallContextPtr
+from runtime.tracing import Trace, TraceLevel, trace_arg
 
 from utils.index import Index, IndexList, StaticTuple
 from utils.loop import unroll
-from runtime.tracing import Trace, TraceLevel, trace_arg
 
 from ._gpu.reduction import reduce_launch
 

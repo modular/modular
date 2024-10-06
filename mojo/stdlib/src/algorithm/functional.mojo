@@ -15,13 +15,14 @@ from algorithm import map
 from math import align_down, ceildiv
 from os import abort
 from sys import (
+    bitwidthof,
     num_physical_cores,
     simdwidthof,
-    bitwidthof,
     triple_is_nvidia_cuda,
 )
 
 from bit import is_power_of_two
+from buffer import NDBuffer
 from gpu import BlockIdx, GridDim, ThreadIdx
 from gpu.host import Device, DeviceContext
 from gpu.host.info import Info
@@ -32,9 +33,6 @@ from runtime.tracing import Trace, TraceLevel, trace_arg
 from utils.index import Index, IndexList
 from utils.numerics import FlushDenormals
 from utils.static_tuple import StaticTuple
-from runtime.asyncrt import MojoCallContextPtr
-from runtime.tracing import Trace, TraceLevel
-from buffer import NDBuffer
 
 # ===----------------------------------------------------------------------===#
 # Map
