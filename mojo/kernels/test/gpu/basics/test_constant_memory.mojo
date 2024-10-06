@@ -5,16 +5,16 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo-no-debug %s
 
-from gpu.host import DeviceContext, FuncAttribute, ConstantMemoryMapping
-from gpu.id import ThreadIdx
-from gpu.memory import external_memory, AddressSpace
-from gpu.sync import barrier
 from sys import sizeof
-from memory import stack_allocation
+
+from gpu.host import ConstantMemoryMapping, DeviceContext, FuncAttribute
 from gpu.host._compile import _compile_code_asm
-from memory import stack_allocation, UnsafePointer
+from gpu.id import ThreadIdx
+from gpu.memory import AddressSpace, external_memory
+from gpu.sync import barrier
+from memory import UnsafePointer, stack_allocation
 from memory.pointer import _GPUAddressSpace
-from testing import assert_true, assert_equal
+from testing import assert_equal, assert_true
 
 
 def test_constant_memory_compile(ctx: DeviceContext):

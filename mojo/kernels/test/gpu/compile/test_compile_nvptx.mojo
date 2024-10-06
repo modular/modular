@@ -5,13 +5,13 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo-no-debug %s | FileCheck %s
 
-from sys._assembly import inlined_assembly
-from memory import UnsafePointer
 from pathlib import Path
+from sys._assembly import inlined_assembly
 
 from gpu import ThreadIdx
 from gpu.host import DeviceContext
 from gpu.host._compile import _compile_code_asm
+from memory import UnsafePointer
 
 
 fn kernel(x: Int) -> Int:

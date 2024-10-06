@@ -6,11 +6,11 @@
 # RUN: %mojo-no-debug %s | FileCheck %s
 
 from math import iota
-from memory import UnsafePointer
 
 from gpu.host import DeviceContext
 from gpu.host.memory import _free, _malloc_managed, _memset, _memset_async
 from gpu.host.stream import Stream
+from memory import UnsafePointer
 
 
 # CHECK-LABEL: test_malloc_managed

@@ -7,8 +7,8 @@
 
 from pathlib import Path
 from sys._assembly import inlined_assembly
-from gpu.host import DeviceContext
 
+from gpu.host import DeviceContext
 
 alias ptxas_path = Path("/usr/local/cuda/bin/ptxas")
 alias nvdisasm_path = Path("/usr/local/cuda/bin/nvdisasm")

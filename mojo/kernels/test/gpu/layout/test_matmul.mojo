@@ -5,54 +5,43 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo-no-debug %s
 
-from math import ceildiv
-from memory import UnsafePointer
+import time
 from collections.optional import OptionalReg
-from utils.numerics import FlushDenormals
-from gpu import BlockDim, BlockIdx, ThreadIdx, barrier
-from gpu.host._compile import _get_nvptx_target
-from algorithm.functional import _elementwise_impl_gpu
-from gpu.host.device_context import DeviceContext, DeviceBuffer
-from linalg.matmul_gpu import _matmul_gpu, matmul_kernel_naive
+from math import ceildiv
 
-# from memory import memset_zero, stack_allocation
-from memory.pointer import _GPUAddressSpace as GPUAddressSpace
+from algorithm.functional import _elementwise_impl_gpu
+from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
+from buffer.dimlist import DimList, _make_tuple
+from gpu import BlockDim, BlockIdx, ThreadIdx, barrier
 from gpu.cublas.cublas import (
     check_cublas_error,
     cublasContext,
     cublasCreate,
     cublasDestroy,
 )
-from buffer.dimlist import DimList
-
-import time
-from linalg.cublas import cublas_matmul
-from utils import IndexList
-from utils.index import Index
+from gpu.host._compile import _get_nvptx_target
+from gpu.host.device_context import DeviceBuffer, DeviceContext
 from internal_utils import (
-    HostNDBuffer,
     DeviceNDBuffer,
+    HostNDBuffer,
+    assert_almost_equal,
+    assert_equal,
     fill,
-    zero,
     linspace,
     random,
-    assert_equal,
-    assert_almost_equal,
+    zero,
 )
-from layout.int_tuple import IntTuple, UNKNOWN_VALUE
-
+from layout.int_tuple import UNKNOWN_VALUE, IntTuple
 from layout.layout_tensor import (
-    LayoutTensor,
     Layout,
-    RuntimeTuple,
+    LayoutTensor,
     RuntimeLayout,
+    RuntimeTuple,
 )
-
-
-from buffer.dimlist import _make_tuple
-from testing import assert_equal as assert_equal_val
-
+from linalg.cublas import cublas_matmul
+from linalg.matmul_gpu import _matmul_gpu, matmul_kernel_naive
 from matmul_kernels import (
+    run_cublas,
     run_gemm_kernel_1,
     run_gemm_kernel_2,
     run_gemm_kernel_3,
@@ -60,10 +49,16 @@ from matmul_kernels import (
     run_gemm_kernel_5,
     run_gemm_kernel_6,
     run_gemm_kernel_tc,
-    run_cublas,
 )
+from memory import UnsafePointer
 
-from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
+# from memory import memset_zero, stack_allocation
+from memory.pointer import _GPUAddressSpace as GPUAddressSpace
+from testing import assert_equal as assert_equal_val
+
+from utils import IndexList
+from utils.index import Index
+from utils.numerics import FlushDenormals
 
 alias run_gemm_kernel_type = fn (
     inout m: Bench,

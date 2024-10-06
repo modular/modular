@@ -5,27 +5,18 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo-no-debug %s
 
-from linalg._multistage_gemm_gpu import multistage_gemm_kernel
-from linalg.utils_gpu import MatmulKernels
-from layout import Layout, RuntimeLayout, LayoutTensor, RuntimeTuple, IntTuple
-from layout.layout import UNKNOWN_VALUE
-
-from gpu.host import FuncAttribute
-from gpu.host.device_context import DeviceBuffer, DeviceContext
-from buffer import NDBuffer
-from buffer.dimlist import DimList, Dim
-from memory import UnsafePointer
-from utils import IndexList
 from random import rand
 
-from linalg.cublas import cublas_matmul
+from buffer import NDBuffer
+from buffer.dimlist import Dim, DimList
 from gpu.cublas.cublas import (
     check_cublas_error,
     cublasContext,
     cublasCreate,
     cublasDestroy,
 )
-
+from gpu.host import FuncAttribute
+from gpu.host.device_context import DeviceBuffer, DeviceContext
 from internal_utils import (
     DeviceNDBuffer,
     HostNDBuffer,
@@ -36,6 +27,14 @@ from internal_utils import (
     random,
     zero,
 )
+from layout import IntTuple, Layout, LayoutTensor, RuntimeLayout, RuntimeTuple
+from layout.layout import UNKNOWN_VALUE
+from linalg._multistage_gemm_gpu import multistage_gemm_kernel
+from linalg.cublas import cublas_matmul
+from linalg.utils_gpu import MatmulKernels
+from memory import UnsafePointer
+
+from utils import IndexList
 
 
 # TODO: try not to copy into submatrices.

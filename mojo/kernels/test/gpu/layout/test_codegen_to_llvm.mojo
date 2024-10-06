@@ -5,11 +5,10 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo-no-debug %s | FileCheck %s
 
-from layout import LayoutTensor, Layout
-from layout.int_tuple import UNKNOWN_VALUE
-
 from compile import _internal_compile_code
 from gpu.host._compile import _get_nvptx_target
+from layout import Layout, LayoutTensor
+from layout.int_tuple import UNKNOWN_VALUE
 
 
 # CHECK-LABEL: test_no_alloca_fill

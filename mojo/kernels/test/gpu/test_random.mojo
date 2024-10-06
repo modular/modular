@@ -7,14 +7,16 @@
 
 from math import isqrt, sqrt
 from sys import has_neon, simdwidthof
-from utils.index import Index
+
 from algorithm.functional import elementwise
 from buffer import DimList, NDBuffer
 from gpu import *
-from gpu.random import Random
 from gpu.host import DeviceContext
 from gpu.host._compile import _get_nvptx_target
+from gpu.random import Random
 from testing import *
+
+from utils.index import Index
 
 
 def run_elementwise[type: DType](ctx: DeviceContext):

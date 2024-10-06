@@ -6,11 +6,11 @@
 # RUN: %mojo-no-debug %s
 
 from collections import OptionalReg
-from memory import UnsafePointer
 
 from compile import Info
 from gpu.host._compile import _compile_code_asm
 from gpu.memory import CacheEviction, CacheOperation, load
+from memory import UnsafePointer
 from testing import assert_equal, assert_true
 
 

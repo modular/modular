@@ -15,14 +15,13 @@ from buffer import NDBuffer
 from buffer.dimlist import DimList
 from gpu import WARP_SIZE, BlockDim, BlockIdx, ThreadIdx, barrier
 from gpu.host.device_context import DeviceContext
-from memory import UnsafePointer, stack_allocation, memset_zero
-from collections import OptionalReg
 from gpu.memory import AddressSpace
-
-from utils.index import Index
-from linalg.utils import elementwise_epilogue_type
 from linalg.matmul_gpu import __nvvm_ldg_f4
+from linalg.utils import elementwise_epilogue_type
+from memory import UnsafePointer, memset_zero, stack_allocation
+
 from utils import StaticTuple
+from utils.index import Index
 from utils.numerics import isnan
 
 alias BLOCK_DIM = 8

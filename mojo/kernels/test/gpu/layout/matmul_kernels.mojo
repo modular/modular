@@ -3,42 +3,41 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-from layout.layout_tensor import (
-    Layout,
-    LayoutTensor,
-    copy_dram_to_sram,
-    copy_dram_to_sram_async,
-)
-from buffer import NDBuffer
-from buffer.dimlist import DimList
-from layout.math import outer_product_acc
-from layout.tensor_core import TensorCore
-from gpu import ThreadIdx, BlockIdx, BlockDim, barrier, WARP_SIZE
-from gpu.host import DeviceContext, DeviceBuffer
 import time
 from math import ceildiv
-from gpu.memory import async_copy_wait_all
-from memory.pointer import _GPUAddressSpace as AddressSpace
-from memory import UnsafePointer
-from layout.int_tuple import IntTuple
-from layout.runtime_tuple import RuntimeTuple
-from layout.runtime_layout import RuntimeLayout, UNKNOWN_VALUE
-from layout.tensor_builder import LayoutTensorBuild as tb
-from utils import IndexList
+from sys.info import simdwidthof
+
+from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
+from buffer import NDBuffer
+from buffer.dimlist import DimList
 from builtin.io import _printf
+from gpu import WARP_SIZE, BlockDim, BlockIdx, ThreadIdx, barrier
 from gpu.cublas.cublas import (
     check_cublas_error,
     cublasContext,
     cublasCreate,
     cublasDestroy,
 )
+from gpu.host import DeviceBuffer, DeviceContext
+from gpu.memory import async_copy_wait_all
+from layout.int_tuple import IntTuple
+from layout.layout_tensor import (
+    Layout,
+    LayoutTensor,
+    copy_dram_to_sram,
+    copy_dram_to_sram_async,
+)
+from layout.math import outer_product_acc
+from layout.runtime_layout import UNKNOWN_VALUE, RuntimeLayout
+from layout.runtime_tuple import RuntimeTuple
+from layout.tensor_builder import LayoutTensorBuild as tb
+from layout.tensor_core import TensorCore
 from linalg.cublas import cublas_matmul
-from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
+from memory import UnsafePointer
+from memory.pointer import _GPUAddressSpace as AddressSpace
 
+from utils import IndexList
 from utils.index import Index
-
-from sys.info import simdwidthof
-
 
 alias NWARMUP = 1
 alias NRUN = 1

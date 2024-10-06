@@ -14,6 +14,7 @@ from gpu import *
 from gpu.host import DeviceContext
 from gpu.host._compile import _get_nvptx_target
 from testing import *
+
 from utils import Index
 
 

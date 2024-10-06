@@ -9,32 +9,29 @@
 
 from collections import Set
 from random import random_ui64, seed
+
+from buffer import Dim, DimList, NDBuffer
 from gpu.host import DeviceContext
-from runtime.asyncrt import (
-    MojoCallContextPtr,
-)
-from buffer import NDBuffer, Dim, DimList
-from kv_cache.types import (
-    KVCacheLayout,
-    ContinuousBatchingKVCache,
-    KVCacheStaticParams,
-)
-from nn.kv_cache import (
-    _matmul_kv_cache_impl,
-    _fused_qkv_matmul_kv_cache_impl,
-)
-from linalg.matmul_gpu import _matmul_gpu
-from utils import IndexList
 from internal_utils import (
-    HostNDBuffer,
     DeviceNDBuffer,
+    HostNDBuffer,
     fill,
-    zero,
     linspace,
     random,
+    zero,
 )
-from testing import assert_almost_equal
+from kv_cache.types import (
+    ContinuousBatchingKVCache,
+    KVCacheLayout,
+    KVCacheStaticParams,
+)
+from linalg.matmul_gpu import _matmul_gpu
 from memory import UnsafePointer
+from nn.kv_cache import _fused_qkv_matmul_kv_cache_impl, _matmul_kv_cache_impl
+from runtime.asyncrt import MojoCallContextPtr
+from testing import assert_almost_equal
+
+from utils import IndexList
 
 alias kv_params_replit = KVCacheStaticParams(
     num_heads=8, head_size=128, layout=KVCacheLayout.BSHD

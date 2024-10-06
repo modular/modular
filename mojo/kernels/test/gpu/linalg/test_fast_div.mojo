@@ -11,10 +11,11 @@ from sys import has_neon, simdwidthof
 from algorithm.functional import elementwise
 from buffer import DimList, NDBuffer
 from gpu import *
-from linalg.fast_div import FastDiv
 from gpu.host import DeviceContext
 from gpu.host._compile import _get_nvptx_target
+from linalg.fast_div import FastDiv
 from testing import *
+
 from utils.index import Index
 
 

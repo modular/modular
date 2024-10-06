@@ -6,7 +6,6 @@
 # RUN: %mojo-no-debug %s
 
 from math import ceildiv, isclose
-from memory import UnsafePointer
 from sys import argv
 
 from buffer import DimList, NDBuffer
@@ -21,6 +20,7 @@ from layout.layout_tensor import copy_sram_to_local
 from layout.math import outer_product_acc
 from layout.nd_buffer_stub import copy_from_nd_buffer, copy_to_nd_buffer
 from linalg.matmul_gpu import matmul_kernel_naive
+from memory import UnsafePointer
 from testing import assert_almost_equal
 
 from utils import Index

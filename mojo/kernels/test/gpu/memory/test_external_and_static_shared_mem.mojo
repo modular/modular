@@ -6,12 +6,12 @@
 # RUN: %mojo-no-debug %s
 
 from sys.info import alignof, simdwidthof
+
 from gpu.host import DeviceContext, FuncAttribute
 from gpu.id import ThreadIdx
-from gpu.memory import external_memory, AddressSpace
+from gpu.memory import AddressSpace, external_memory
 from gpu.sync import barrier
-from memory import stack_allocation
-from memory import UnsafePointer
+from memory import UnsafePointer, stack_allocation
 from testing import assert_equal
 
 

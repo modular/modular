@@ -7,6 +7,7 @@
 
 from math import ceildiv, isclose
 from random import random_float64
+from sys import bitwidthof
 
 from buffer import NDBuffer
 from buffer.dimlist import DimList
@@ -16,8 +17,7 @@ from linalg.matmul_gpu import _matmul_gpu, matmul_kernel_naive
 from memory import UnsafePointer
 from testing import assert_almost_equal
 
-from utils import IndexList, Index
-from sys import bitwidthof
+from utils import Index, IndexList
 
 
 fn run_matmul_naive(ctx: DeviceContext, M: Int, N: Int, K: Int) raises:

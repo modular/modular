@@ -11,7 +11,7 @@ from buffer import NDBuffer
 from buffer.dimlist import DimList
 from gpu import BlockDim, BlockIdx, ThreadIdx
 from gpu.host.device_context import DeviceContext
-from memory import memcpy, UnsafePointer
+from memory import UnsafePointer, memcpy
 
 from utils.index import Index
 

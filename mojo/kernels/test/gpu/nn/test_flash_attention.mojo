@@ -10,7 +10,7 @@ from random import rand
 from sys import argv
 
 from buffer import NDBuffer
-from buffer.dimlist import DimList, Dim
+from buffer.dimlist import Dim, DimList
 from gpu import *
 from gpu.host import DeviceContext, FuncAttribute
 from gpu.host.event import time_function

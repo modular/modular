@@ -7,15 +7,15 @@
 
 from math import isclose
 from random import rand
-from utils.index import Index
 
 from buffer import Dim, DimList, NDBuffer
 from gpu.host.device_context import DeviceBuffer, DeviceContext
 from linalg.matmul_gpu import split_k_reduce
-from memory import memcpy, UnsafePointer
+from memory import UnsafePointer, memcpy
 from testing import assert_almost_equal
 
 from utils import IndexList
+from utils.index import Index
 
 
 fn _size[rank: Int](dims: IndexList[rank]) -> Int:

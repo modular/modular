@@ -5,14 +5,13 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo-no-debug %s | FileCheck %s
 
-from sys._assembly import inlined_assembly
-from memory import UnsafePointer
 from pathlib import Path
+from sys._assembly import inlined_assembly
 
 from gpu import ThreadIdx
 from gpu.host import DeviceContext
 from gpu.host._compile import _compile_code_asm, _get_nvptx_target
-
+from memory import UnsafePointer
 
 alias MI300X_TARGET = _get_nvptx_target["mi300x"]()
 

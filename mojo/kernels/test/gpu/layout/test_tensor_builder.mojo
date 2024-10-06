@@ -5,12 +5,13 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo-no-debug %s | FileCheck %s
 
+from gpu.host import DeviceContext
+from layout import Layout, LayoutTensor
+from layout.fillers import *
 from layout.tensor_builder import LayoutTensorBuild as tb
 from layout.tensor_builder import static
-from layout import LayoutTensor, Layout
-from layout.fillers import *
+
 from utils.index import Index
-from gpu.host import DeviceContext
 
 
 fn print_tensor_info[gpu: Bool = False](tensor: LayoutTensor):

@@ -7,9 +7,9 @@
 
 
 from pathlib import Path, _dir_of_current_file
-from memory import UnsafePointer
 
 from gpu.host import DeviceContext, Function, Module, Stream
+from memory import UnsafePointer
 
 
 # CHECK-LABEL: run_cuda_mem_ops

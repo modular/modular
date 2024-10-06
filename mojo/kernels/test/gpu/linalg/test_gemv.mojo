@@ -11,11 +11,7 @@ from random import randn, seed
 from buffer import NDBuffer
 from gpu import WARP_SIZE
 from gpu.host import DeviceContext
-from linalg.gemv import (
-    gemv_kernel,
-    gevm_kernel,
-    ReductionMethod,
-)
+from linalg.gemv import ReductionMethod, gemv_kernel, gevm_kernel
 from linalg.matmul_gpu import matmul_kernel, matmul_kernel_naive
 from memory import UnsafePointer
 

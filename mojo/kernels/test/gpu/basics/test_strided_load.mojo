@@ -6,10 +6,10 @@
 # RUN: %mojo-no-debug %s
 
 from collections import OptionalReg
-from memory import UnsafePointer
 from sys.intrinsics import strided_load
 
 from gpu.host._compile import _compile_code_asm
+from memory import UnsafePointer
 from memory.pointer import _GPUAddressSpace
 from testing import assert_equal, assert_true
 

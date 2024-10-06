@@ -8,7 +8,7 @@
 
 from gpu import ThreadIdx
 from gpu.host._compile import _compile_code_asm
-from gpu.memory import external_memory, AddressSpace
+from gpu.memory import AddressSpace, external_memory
 
 
 # CHECK-LABEL: tese_cse_thread_id

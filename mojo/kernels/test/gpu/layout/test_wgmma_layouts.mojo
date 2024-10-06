@@ -6,31 +6,25 @@
 # DISABLED:: %mojo-no-debug %s | FileCheck %s
 # RUN: true
 
-from layout import LayoutTensor, Layout
-from layout.layout import print_layout
-
-from gpu.memory import AddressSpace
-from gpu.id import ThreadIdx
+from builtin.io import _printf
 from gpu import barrier
 from gpu.host import DeviceContext
-
-from layout import IntTuple
-from layout.int_tuple import to_int
-from layout._utils import ManagedLayoutTensor, gpu_free, gpu_managed_alloc
-from layout.fillers import arange
-
-
+from gpu.host._compile import _get_nvptx_target
+from gpu.id import ThreadIdx
+from gpu.intrinsics import threadfence
+from gpu.memory import AddressSpace
 from gpu.mma import (
+    WGMMADescriptor,
     wgmma_async,
     wgmma_commit_group_sync,
-    wgmma_wait_group_sync,
     wgmma_fence_aligned,
-    WGMMADescriptor,
+    wgmma_wait_group_sync,
 )
-
-from gpu.intrinsics import threadfence
-from gpu.host._compile import _get_nvptx_target
-from builtin.io import _printf
+from layout import IntTuple, Layout, LayoutTensor
+from layout._utils import ManagedLayoutTensor, gpu_free, gpu_managed_alloc
+from layout.fillers import arange
+from layout.int_tuple import to_int
+from layout.layout import print_layout
 
 
 fn wgmma_tf32_tf32_f32_kernel[

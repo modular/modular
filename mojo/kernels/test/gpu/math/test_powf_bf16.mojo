@@ -13,6 +13,7 @@ from gpu import *
 from gpu.host._compile import _get_nvptx_target
 from gpu.host.device_context import DeviceContext
 from testing import assert_almost_equal
+
 from utils import Index
 
 alias type = DType.float32

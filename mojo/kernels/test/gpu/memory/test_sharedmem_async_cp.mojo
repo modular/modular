@@ -10,7 +10,7 @@ import time
 import builtin
 from gpu import AddressSpace, ThreadIdx, memory, sync
 from gpu.host import DeviceContext
-from memory import stack_allocation, UnsafePointer
+from memory import UnsafePointer, stack_allocation
 
 
 fn copy_via_shared(

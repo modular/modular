@@ -6,10 +6,11 @@
 # RUN: %mojo-no-debug %s | FileCheck %s
 
 from builtin.io import _printf
-
-from layout import LayoutTensor, Layout
-from layout.layout_tensor import copy_dram_to_sram
-from layout.tensor_core import TensorCore
+from gpu import barrier, lane_id
+from gpu.host import DeviceContext
+from gpu.id import ThreadIdx
+from gpu.memory import _GPUAddressSpace as AddressSpace
+from layout import Layout, LayoutTensor
 from layout._utils import (
     ManagedLayoutTensor,
     gpu_free,
@@ -17,11 +18,10 @@ from layout._utils import (
     load_to_simd,
 )
 from layout.fillers import arange
-from gpu.host import DeviceContext
-from gpu.id import ThreadIdx
-from gpu import barrier, lane_id
-from gpu.memory import _GPUAddressSpace as AddressSpace
-from utils.index import IndexList, Index
+from layout.layout_tensor import copy_dram_to_sram
+from layout.tensor_core import TensorCore
+
+from utils.index import Index, IndexList
 
 
 fn mma_load_and_multiply[

@@ -6,7 +6,6 @@
 # RUN: %mojo-no-debug %s | FileCheck %s
 
 from math import ceildiv
-from memory import UnsafePointer
 from random import random_si64
 
 from gpu import WARP_SIZE, BlockIdx
@@ -14,6 +13,7 @@ from gpu.host import DeviceContext
 from gpu.mma import mma
 from gpu.mma_util import load_matrix_a, load_matrix_b, store_matrix_d
 from linalg.matmul_gpu import matmul_kernel_naive
+from memory import UnsafePointer
 
 from utils.numerics import isnan
 

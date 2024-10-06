@@ -22,7 +22,7 @@ from nn.concat import (
     elementwise_epilogue_type,
 )
 
-from utils import StaticTuple, IndexList
+from utils import IndexList, StaticTuple
 
 
 fn _create_buffer_host[

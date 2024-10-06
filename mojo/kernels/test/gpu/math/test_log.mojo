@@ -7,7 +7,6 @@
 
 from math import log, log2, log10
 from sys import simdwidthof
-from utils import Index
 
 from algorithm.functional import elementwise
 from buffer import DimList, NDBuffer
@@ -15,6 +14,8 @@ from gpu import *
 from gpu.host._compile import _get_nvptx_target
 from gpu.host.device_context import DeviceContext
 from testing import assert_almost_equal
+
+from utils import Index
 
 
 def run_elementwise[

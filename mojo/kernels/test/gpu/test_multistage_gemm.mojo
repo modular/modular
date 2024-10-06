@@ -23,10 +23,10 @@ from gpu.cublas.cublas import (
 from gpu.host import DeviceContext, FuncAttribute
 from gpu.host.event import time_function
 from gpu.memory import (
+    AddressSpace,
     async_copy_commit_group,
     async_copy_wait_group,
     external_memory,
-    AddressSpace,
 )
 from gpu.mma import ld_matrix, mma
 from layout.int_tuple import IntTuple

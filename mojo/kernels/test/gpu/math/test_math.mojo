@@ -7,10 +7,10 @@
 # RUN: %mojo-no-debug %s
 
 from math import *
-from memory import UnsafePointer
 from pathlib import Path
 
 from gpu.host import DeviceContext
+from memory import UnsafePointer
 from testing import assert_true
 
 

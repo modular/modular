@@ -7,7 +7,7 @@
 
 from gpu.host import DeviceContext, FuncAttribute
 from gpu.id import ThreadIdx
-from gpu.memory import external_memory, AddressSpace
+from gpu.memory import AddressSpace, external_memory
 from gpu.sync import barrier
 from memory import UnsafePointer
 

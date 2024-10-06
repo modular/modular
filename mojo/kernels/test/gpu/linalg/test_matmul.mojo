@@ -11,7 +11,7 @@ from sys import simdwidthof
 
 from algorithm.functional import elementwise
 from buffer import NDBuffer
-from buffer.dimlist import DimList, Dim, _make_tuple
+from buffer.dimlist import Dim, DimList, _make_tuple
 from gpu import BlockDim, BlockIdx, ThreadIdx, barrier
 from gpu.cublas.cublas import (
     check_cublas_error,
@@ -32,18 +32,16 @@ from internal_utils import (
     random,
     zero,
 )
+from internal_utils._utils import ValOrDim, dynamic, static
 from linalg.cublas import cublas_matmul
 from linalg.matmul_gpu import _matmul_gpu, matmul_kernel_naive
-from memory import memset_zero, stack_allocation, UnsafePointer
+from linalg.utils import elementwise_epilogue_type
+from memory import UnsafePointer, memset_zero, stack_allocation
 from memory.pointer import _GPUAddressSpace as GPUAddressSpace
 from testing import assert_equal as assert_equal_val
 
-
 from utils import IndexList
-from internal_utils import linspace
-from linalg.utils import elementwise_epilogue_type
 from utils.index import Index
-from internal_utils._utils import ValOrDim, dynamic, static
 
 alias init_fn_type = fn (buff: NDBuffer) capturing -> None
 
