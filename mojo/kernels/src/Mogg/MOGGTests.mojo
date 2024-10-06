@@ -422,7 +422,7 @@ fn test_type_parameter_deduction[
 @export
 fn print_tensor_test[type: DType, rank: Int](buffer: NDBuffer[type, rank]):
     print("Rank:", rank)
-    print("Shape:", buffer.dynamic_shape)
+    print("Shape:", buffer.get_shape())
     for i in range(buffer.num_elements()):
         print(buffer.data.load(i))
 
@@ -523,7 +523,7 @@ fn scale_with_my_custom_scalar_ndbuff[
 fn scale_with_my_custom_scalar_ndbuff_shape_func[
     type: DType, rank: Int, single_thread_blocking_override: Bool
 ](x: NDBuffer[type, rank], scale: MyCustomScalar[type],) -> IndexList[rank]:
-    return x.dynamic_shape
+    return x.get_shape()
 
 
 # Invalid kernel: owned custom types not supported

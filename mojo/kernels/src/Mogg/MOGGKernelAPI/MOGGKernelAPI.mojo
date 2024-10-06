@@ -1511,7 +1511,7 @@ struct StaticReshape:
             managed_tensor_slice_to_ndbuffer(input), shape
         )
         var view_tensor = ManagedTensorSlice[type, output_rank](
-            view_buffer.data, shape, view_buffer.dynamic_stride
+            view_buffer.data, shape, view_buffer.get_strides()
         )
         view_copy_impl[synchronous, target](output, view_tensor)
 
@@ -1634,7 +1634,7 @@ struct Slice:
         var view_tensor = ManagedTensorSlice[type, rank](
             view_buffer.data,
             view_buffer.get_shape(),
-            view_buffer.dynamic_stride,
+            view_buffer.get_strides(),
         )
         view_copy_impl[synchronous, target](output, view_tensor)
 
@@ -1679,7 +1679,7 @@ struct SliceDim:
         var view_tensor = ManagedTensorSlice[type, rank](
             view_buffer.data,
             view_buffer.get_shape(),
-            view_buffer.dynamic_stride,
+            view_buffer.get_strides(),
         )
         view_copy_impl[synchronous, target](output, view_tensor)
 
@@ -2372,9 +2372,6 @@ struct Gather:
             input_fn=input_fn,
             indices_fn=indices_fn,
             output_fn=output_fn,
-            input_rank = input.rank,
-            indices_rank = indices.rank,
-            output_rank = output.rank,
             target=target,
             single_thread_blocking_override=synchronous,
         ](
@@ -2382,7 +2379,7 @@ struct Gather:
             input._spec.shape,
             indices._spec.shape,
             output._spec.shape,
-            ctx,
+            context=ctx,
         )
 
     @staticmethod
@@ -2749,7 +2746,7 @@ struct BatchMatmul:
         b: ManagedTensorSlice[rank=rank],
         ctx: MojoCallContextPtr,
     ):
-        alias transposed_a = False
+        alias transpose_a = False
 
         var a_buffer = managed_tensor_slice_to_ndbuffer(a)
         var b_buffer = managed_tensor_slice_to_ndbuffer(b)
@@ -2768,15 +2765,11 @@ struct BatchMatmul:
             )
 
         batched_matmul[
-            c.rank,
-            a.type,
-            b.type,
-            c.type,
-            transposed_a,
-            transpose_b,
-            OptionalReg[batched_matmul_elementwise_epilogue_type](
-                output_fn
-            ) if lambdas_have_fusion else None,
+            transpose_a=transpose_a,
+            transpose_b=transpose_b,
+            elementwise_epilogue_fn = OptionalReg[
+                batched_matmul_elementwise_epilogue_type
+            ](output_fn) if lambdas_have_fusion else None,
             saturated_vnni=False,
             single_thread_blocking_override=synchronous,
             target=target,

@@ -32,7 +32,7 @@ from register import *
 from runtime.asyncrt import MojoCallContextPtr
 from weights_registry import WeightsRegistry
 
-from utils import IndexList
+from utils import IndexList, Index
 
 # ===----------------------------------------------------------------------===#
 # Helper Structures
@@ -606,7 +606,7 @@ fn mgp_buffer_to_index(
 fn mgp_buffer_slice(
     buffer: NDBuffer[DType.uint8, 1], offset: Int, size: Int
 ) -> NDBuffer[DType.uint8, 1]:
-    return NDBuffer[DType.uint8, 1](buffer.data.offset(offset), size)
+    return NDBuffer[DType.uint8, 1](buffer.data.offset(offset), Index(size))
 
 
 @mogg_register("mgp.buffer.concat")

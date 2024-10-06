@@ -13,7 +13,7 @@ from math import fma, isqrt, log, log1p, sin, sqrt
 from math import tanh as _tanh
 from random import randn, seed
 from sys import external_call, llvm_intrinsic, alignof
-from sys.info import simdwidthof, sizeof
+from sys.info import simdwidthof, bitwidthof, sizeof
 from sys.intrinsics import strided_load
 from sys.param_env import is_defined
 from os import abort
@@ -753,9 +753,11 @@ fn elementwise_wrapper[
         target=target,
         trace_description=trace_description,
     ](
-        _make_tuple[buffer.rank](buffer.shape) if buffer.shape.all_known[
+        _make_tuple[buffer.rank](
+            buffer.shape
+        ).canonicalize() if buffer.shape.all_known[
             buffer.rank
-        ]() else buffer.dynamic_shape,
+        ]() else buffer.get_shape(),
         context=ctx,
     )
 
@@ -2214,11 +2216,9 @@ fn transpose_shape[
             )
 
     # NOTE this assumes `transpose` can handle input with null data pointer
-    var out = transpose[rank, type, int_type, single_thread_blocking_override](
+    return transpose[rank, type, int_type, single_thread_blocking_override](
         input, perms, MojoCallContextPtr()
-    ).dynamic_shape
-
-    return out
+    ).get_shape()
 
 
 # ===----------------------------------------------------------------------===#
@@ -2297,11 +2297,11 @@ fn gather[
 
     # FIXME(#26008): async raising functions are temporarily disabled.
     _gather[
-        type,
-        indices_type,
-        input_0_fn,
-        load_indices,
-        output_0_fn[element_alignment=1],
+        type=type,
+        indices_type=indices_type,
+        input_fn=input_0_fn,
+        indices_fn=load_indices,
+        output_fn = output_0_fn[element_alignment=1],
         target=target,
         single_thread_blocking_override=single_thread_blocking_override,
     ](
@@ -2419,22 +2419,22 @@ fn batched_matmul[
     @parameter
     @always_inline
     fn epilogue_wrapper[
-        _type: DType, width: Int, rank: Int, *, alignment: Int = 1
-    ](coords: IndexList[rank], val: SIMD[_type, width]):
+        _type: DType,
+        width: Int,
+        rank: Int,
+        *,
+        alignment: Int = 1,
+    ](coords: IndexList[rank], val: SIMD[_type, width],):
         output_0_fn[width, rank, alignment](
-            coords, rebind[SIMD[c_type, width]](val)
+            coords.canonicalize(), rebind[SIMD[c_type, width]](val)
         )
 
     _batched_matmul[
-        rank,
-        a_type,
-        b_type,
-        c_type,
-        transpose_a,
-        transpose_b,
-        OptionalReg[batched_matmul_elementwise_epilogue_type](
-            epilogue_wrapper
-        ) if lambdas_have_fusion else None,
+        transpose_a=transpose_a,
+        transpose_b=transpose_b,
+        elementwise_epilogue_fn = OptionalReg[
+            batched_matmul_elementwise_epilogue_type
+        ](epilogue_wrapper) if lambdas_have_fusion else None,
         saturated_vnni=False,
         single_thread_blocking_override=single_thread_blocking_override,
         target=target,
@@ -3391,8 +3391,8 @@ fn conv_transpose[
 @export
 fn print_buffer_info[type: DType, rank: Int](buffer: NDBuffer[type, rank]):
     print("Rank:", rank)
-    print("Shape:", buffer.dynamic_shape)
-    print("Strides:", buffer.dynamic_stride)
+    print("Shape:", buffer.get_shape())
+    print("Strides:", buffer.get_strides())
 
 
 # Test helper to throw an error
@@ -4410,8 +4410,8 @@ fn ggml_q4_0_dequantize(
     ctx: MojoCallContextPtr,
 ) raises:
     with Trace[TraceLevel.OP, target="cpu"]("ggml_q4_0_dequantize"):
-        Q4sym[group_size=32].dequantize_and_write_to_tensor[rank=2](
-            input, output, output.dynamic_shape
+        Q4sym[group_size=32].dequantize_and_write_to_tensor(
+            input, output, output.get_shape()
         )
 
 
@@ -4426,11 +4426,9 @@ fn ggml_q4_0_dequantize_shape_func[
     alias block_nbytes = sizeof[Q4sym[group_size=32]]()
     alias quants_per_block = 32
 
-    var num_block_per_batch = (
-        input.size() // input.dynamic_shape[0]
-    ) // block_nbytes
+    var num_block_per_batch = (input.size() // input.dim[0]()) // block_nbytes
 
-    return (input.dynamic_shape[0], quants_per_block * num_block_per_batch)
+    return (input.dim[0](), quants_per_block * num_block_per_batch)
 
 
 ######
@@ -4564,7 +4562,7 @@ fn ggml_q6_k_dequantize(
     ctx: MojoCallContextPtr,
 ) raises:
     with Trace[TraceLevel.OP, target="cpu"]("ggml_q6_k_dequantize"):
-        q6_k_dequantize_impl(input, output, output.dynamic_shape)
+        q6_k_dequantize_impl(input, output, output.get_shape())
 
 
 @mogg_register_shape_func("ggml_q6_k_dequantize")
