@@ -299,9 +299,9 @@ struct ContiguousKVCache[
         var offset_ptr = self._block._offset(idx)
         var ret_shape: IndexList[3]
         var ret_strides = IndexList[3](
-            self._block.dynamic_stride[1],
-            self._block.dynamic_stride[2],
-            self._block.dynamic_stride[3],
+            self._block.stride[1](),
+            self._block.stride[2](),
+            self._block.stride[3](),
         )
 
         @parameter
