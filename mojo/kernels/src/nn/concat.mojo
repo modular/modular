@@ -9,7 +9,7 @@ from collections.vector import InlinedFixedVector
 from math import align_down, align_up, ceildiv
 from os import abort
 from sys._build import is_debug_build
-from sys.info import simdwidthof, sizeof
+from sys.info import simdwidthof, sizeof, bitwidthof
 
 from algorithm.functional import (
     elementwise,
@@ -59,7 +59,7 @@ fn memcpy_or_fuse[
     out_byte_offset: Int,
     src_data: __type_of(dest_data),
     n: Int,
-    out_shape: IndexList[rank],
+    out_shape: IndexList[rank, **_],
 ):
     @parameter
     if not epilogue_fn:
@@ -99,7 +99,12 @@ fn memcpy_or_fuse[
                 out_shape,
             )
 
-            func[type, rank, simd_width](out_index, load)
+            func[type, rank, simd_width](
+                out_index.cast[
+                    element_bitwidth = bitwidthof[Int](), unsigned=False
+                ](),
+                load,
+            )
             return
 
         # We must run scalar to be conservative. This is because the fused
@@ -1437,7 +1442,7 @@ fn _concat_inner_most_single_dim[
         @parameter
         if epilogue_fn:
             alias func = epilogue_fn.value()
-            func[type, rank, 1](out_index, inputs[i][index])
+            func[type, rank, 1](out_index.canonicalize(), inputs[i][index])
         else:
             output[out_index] = inputs[i][index]
 

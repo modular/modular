@@ -38,8 +38,8 @@ fn slice_dim_as_view[
 ](tensor: NDBuffer[type, rank], start: Int, end: Int, step: Int) -> NDBuffer[
     type, rank
 ]:
-    var new_shape = tensor.dynamic_shape
-    var new_stride = tensor.dynamic_stride
+    var new_shape = tensor.get_shape()
+    var new_stride = tensor.get_strides()
 
     var dim_i = tensor.dim(dim)
     var old_stride = tensor.stride(dim)

@@ -3279,9 +3279,9 @@ fn _flash_attention_kv_cache_cpu[
         if mask.rank == 4:
             return mask.load[width=width](rebind[IndexList[mask.rank]](idx))
         elif mask.rank == 3:
-            return mask.load[width=width]((idx[0], idx[2], idx[3]))
+            return mask.load[width=width](Index(idx[0], idx[2], idx[3]))
         else:
-            return mask.load[width=width]((idx[2], idx[3]))
+            return mask.load[width=width](Index(idx[2], idx[3]))
 
     var batch_size = q.dim[0]()
     var depth = q.dim[3]()

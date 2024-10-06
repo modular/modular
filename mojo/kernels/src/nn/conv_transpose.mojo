@@ -1331,7 +1331,7 @@ fn conv_transposed[
             )
         else:
             packed_filter_shape = rebind[IndexList[packed_filter_rank]](
-                filter.dynamic_shape
+                filter.get_shape()
             )
 
         var packed_filter = NDBuffer[filter_type, packed_filter_rank](

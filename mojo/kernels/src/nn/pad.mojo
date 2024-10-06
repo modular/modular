@@ -302,7 +302,7 @@ fn _do_pad[
         output.data,
         input.data,
         paddings,
-        output.dynamic_shape,
+        output.get_shape(),
         output_strides_buf.data,
         input_strides_buf.data,
     )

@@ -38,8 +38,7 @@ fn is_ndbuffer_close[
         Returns True if they are within tolerance.
     """
     debug_assert(
-        a.dynamic_shape == b.dynamic_shape
-        and a.dynamic_stride == b.dynamic_stride,
+        a.get_shape() == b.get_shape() and a.get_strides() == b.get_strides(),
         "Input buffers must have the same shape and stride.",
     )
 

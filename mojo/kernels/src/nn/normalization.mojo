@@ -361,7 +361,7 @@ fn layer_norm_gpu_block[
 fn layer_norm_reshape[
     type: DType, rank: Int, //, output_rank: Int
 ](
-    shape: IndexList[rank],
+    shape: IndexList[rank, **_],
     buf: NDBuffer[type, rank, *_],
 ) -> NDBuffer[
     type, output_rank
@@ -387,11 +387,12 @@ fn layer_norm_gpu[
         type, width
     ],
 ](
-    shape: IndexList[rank],
+    shape: IndexList[rank, **_],
     beta: NDBuffer[type, 1],
     epsilon: Scalar[type],
     output: NDBuffer[type, rank, *_],
-    ctx: DeviceContext,
+    *,
+    context: DeviceContext,
 ) raises:
     if rank == 0:
         return
@@ -414,7 +415,7 @@ fn layer_norm_gpu[
         # Translate given 2d index back to original Nd tensor
         var indices = _get_start_indices_of_nth_subvolume(row, shape)
         indices[rank - 1] = col
-        return input_fn[simd_width](indices)
+        return input_fn[simd_width](indices.canonicalize())
 
     alias simd_width = simdwidthof[type, target = _get_nvptx_target()]()
     alias max_warps_per_block = 32
@@ -430,10 +431,10 @@ fn layer_norm_gpu[
         # registers we do warp tiling which is a single pass to do mean/var
         # computation and normalization.
         if cols <= (WARP_SIZE * simd_width * max_warps_per_block):
-            var gpu_func = ctx.compile_function[
+            var gpu_func = context.compile_function[
                 layer_norm_gpu_warp_tiling[simd_width, input_fn_2d, gamma_fn]
             ]()
-            ctx.enqueue_function(
+            context.enqueue_function(
                 gpu_func,
                 output_rs,
                 beta,
@@ -442,10 +443,10 @@ fn layer_norm_gpu[
                 block_dim=block_dim,
             )
         else:
-            var gpu_func = ctx.compile_function[
+            var gpu_func = context.compile_function[
                 layer_norm_gpu_block[simd_width, input_fn_2d, gamma_fn]
             ]()
-            ctx.enqueue_function(
+            context.enqueue_function(
                 gpu_func,
                 output_rs,
                 beta,
@@ -454,10 +455,10 @@ fn layer_norm_gpu[
                 block_dim=block_dim,
             )
     else:
-        var gpu_func = ctx.compile_function[
+        var gpu_func = context.compile_function[
             layer_norm_gpu_block[1, input_fn_2d, gamma_fn]
         ]()
-        ctx.enqueue_function(
+        context.enqueue_function(
             gpu_func,
             output_rs,
             beta,
@@ -556,7 +557,7 @@ fn layer_norm_cpu[
         type, width
     ],
 ](
-    shape: IndexList[rank],
+    shape: IndexList[rank, **_],
     beta: NDBuffer[type, 1],
     epsilon: Scalar[type],
     output: NDBuffer[type, rank, *_],
@@ -596,7 +597,7 @@ fn layer_norm_cpu[
                 row_idx + row, shape
             )
             indices[rank - 1] = col
-            return input_fn[simd_width](indices)
+            return input_fn[simd_width](indices.canonicalize())
 
         layer_norm_cpu[input_fn_2d, gamma_fn](output_buf_view, beta, epsilon)
 
@@ -631,7 +632,7 @@ fn layer_norm[
     if beta.dynamic_shape[0] != shape[rank - 1]:
         raise Error("Beta size does not match dimension of reduction.")
 
-    if output.dynamic_shape != shape:
+    if output.dynamic_shape.canonicalize() != shape.canonicalize():
         raise Error("Input and output buffers are not same shape")
 
     @always_inline
@@ -646,10 +647,16 @@ fn layer_norm[
 
         @parameter
         if target == "cpu":
-            layer_norm_cpu[input_0_fn, input_1_fn](shape, beta, epsilon, output)
+            layer_norm_cpu[input_0_fn, input_1_fn](
+                shape.canonicalize(), beta, epsilon, output
+            )
         elif "cuda" in target:
             layer_norm_gpu[input_0_fn, input_1_fn](
-                shape, beta, epsilon, output, ctx.get_device_context()
+                shape.canonicalize(),
+                beta,
+                epsilon,
+                output,
+                context=ctx.get_device_context(),
             )
         else:
             constrained[False, "unsupported target " + target]()
@@ -773,7 +780,7 @@ fn rms_norm_gpu[
         type, width
     ],
 ](
-    shape: IndexList[rank],
+    shape: IndexList[rank, **_],
     gamma: NDBuffer[type, 1],
     epsilon: Scalar[type],
     output: NDBuffer[type, rank, *_],
@@ -800,7 +807,7 @@ fn rms_norm_gpu[
         # Translate given 2d index back to original Nd tensor
         var indices = _get_start_indices_of_nth_subvolume(row, shape)
         indices[rank - 1] = col
-        return input_fn[simd_width](indices)
+        return input_fn[simd_width](indices.canonicalize())
 
     alias simd_width = simdwidthof[type, target = _get_nvptx_target()]()
     alias max_warps_per_block = 32
@@ -967,7 +974,7 @@ fn rms_norm[
     if gamma.dynamic_shape[0] != shape[rank - 1]:
         raise Error("Gamma size does not match dimension of reduction.")
 
-    if output.dynamic_shape != shape:
+    if output.dynamic_shape.canonicalize() != shape.canonicalize():
         raise Error("Input and output buffers are not same shape")
 
     @always_inline

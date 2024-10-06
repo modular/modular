@@ -15,8 +15,8 @@ from utils.index import Index, IndexList
 
 
 fn print_elements[type: DType, in_rank: Int](tensor: NDBuffer[type, in_rank]):
-    print("New shape:", tensor.dynamic_shape)
-    print("New strides:", tensor.dynamic_stride)
+    print("New shape:", tensor.get_shape())
+    print("New strides:", tensor.get_strides())
 
     @always_inline
     @parameter
@@ -24,7 +24,7 @@ fn print_elements[type: DType, in_rank: Int](tensor: NDBuffer[type, in_rank]):
         var index = rebind[IndexList[in_rank]](idx)
         print(tensor[index])
 
-    elementwise[print_elements_lambda, 1](tensor.dynamic_shape)
+    elementwise[print_elements_lambda, 1](tensor.get_shape())
 
 
 # slice_dim
@@ -40,8 +40,8 @@ fn test_slice_dim[
         outer_rank,
     ](memory1, dims)
 
-    print("In shape:", in_tensor.dynamic_shape)
-    print("In strides:", in_tensor.dynamic_stride)
+    print("In shape:", in_tensor.get_shape())
+    print("In strides:", in_tensor.get_strides())
 
     for i in range(numelems):
         in_tensor.data[i] = i

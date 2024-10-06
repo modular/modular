@@ -8,7 +8,7 @@
 from collections import OptionalReg
 from math import align_down, ceildiv, exp, iota, recip
 from os import abort
-from sys import alignof, simdwidthof
+from sys import alignof, simdwidthof, bitwidthof
 
 from algorithm import elementwise
 from buffer import Buffer, NDBuffer
@@ -147,8 +147,12 @@ fn fused_attention[
         @parameter
         @always_inline
         fn fuse_elementwise_fn[
-            inner_type: DType, width: Int, _rank: Int, *, alignment: Int = 1
-        ](_out_coords: IndexList[_rank], out_val: SIMD[inner_type, width]):
+            inner_type: DType,
+            width: Int,
+            _rank: Int,
+            *,
+            alignment: Int = 1,
+        ](_out_coords: IndexList[_rank], out_val: SIMD[inner_type, width],):
             var seq_offset = M - N
             var fused_val = out_val
 
@@ -183,12 +187,8 @@ fn fused_attention[
         # e.x. 1x128x12x64 -> 1x12x128x64, which batched_matmul can't handle.
         # They are properly transposed before this kernel.
         batched_matmul[
-            rank,
-            q_type,
-            k_type,
-            score_type,
-            transpose_k,
-            fuse_elementwise_fn,
+            transpose_b=transpose_k,
+            elementwise_epilogue_fn=fuse_elementwise_fn,
         ](
             score.make_dims_unknown(),
             q.make_dims_unknown(),
@@ -198,9 +198,7 @@ fn fused_attention[
         softmax[score_type, simd_size, rank](score, score, rank - 1)
 
         # NOTE: synchronous, so the stack allocated score_mem is safe.
-        batched_matmul[
-            rank, score_type, v_type, output_type, transpose_b=False
-        ](
+        batched_matmul[transpose_b=False](
             output.make_dims_unknown(),
             score.make_dims_unknown(),
             v.make_dims_unknown(),
@@ -2504,7 +2502,7 @@ fn _naive_attention_with_transpose[
     v: NDBuffer[type, 4],
     mask: NDBuffer[type, 2],
     scale: Float32,
-):
+) raises:
     """This kernel provides reference values for flash attention in llama 2.
     It can't be used in any model.
     Layouts:
@@ -2570,27 +2568,13 @@ fn _naive_attention_with_transpose[
     o_perm[2] = 1
     o_perm[3] = 3
 
-    try:
-        transpose(qt, q, q_perm.data)
-    except e:
-        abort(e)
-
-    try:
-        transpose(kt, k, k_perm.data)
-    except e:
-        abort(e)
-
-    try:
-        transpose(vt, v, q_perm.data)
-    except e:
-        abort(e)
+    transpose(qt, q, q_perm.data)
+    transpose(kt, k, k_perm.data)
+    transpose(vt, v, q_perm.data)
 
     _naive_attention[type, transpose_k](ot, qt, kt, vt, mask, scale)
 
-    try:
-        transpose(output, ot, o_perm.data)
-    except e:
-        abort(e)
+    transpose(output, ot, o_perm.data)
 
     qt_ptr.free()
     kt_ptr.free()
@@ -2609,7 +2593,7 @@ fn _naive_attention[
     v: NDBuffer[type, 4],
     mask: NDBuffer[type, 2],
     scale: Float32,
-):
+) raises:
     """This kernel provides reference values for flash attention in llama 2.
     It can't be used in any model.
     """
@@ -2619,7 +2603,6 @@ fn _naive_attention[
     var num_heads = q.dim[1]()
     var seq_len = q.dim[2]()
     var num_keys = v.dim[2]()
-    var depth = q.dim[3]()
 
     # Allocate intermediate memory buffer.
     var score_size = batch_size * num_heads * seq_len * num_keys
@@ -2628,7 +2611,7 @@ fn _naive_attention[
         score_ptr, Index(batch_size, num_heads, seq_len, num_keys)
     )
 
-    batched_matmul[4, type, type, type, transpose_k](score, q, k)
+    batched_matmul[transpose_b=transpose_k](score, q, k)
 
     @__copy_capture(score)
     @parameter
@@ -2641,17 +2624,14 @@ fn _naive_attention[
         )
         score.store[width=width](rebind[IndexList[4]](coords), vec)
 
-    elementwise[scale_and_mask, simd_size](score.dynamic_shape)
+    elementwise[scale_and_mask, simd_size](score.get_shape())
 
-    try:
-        softmax[type, simd_size, 4](
-            score,
-            score,
-            axis=3,
-        )
-    except e:
-        abort(e)
+    softmax[type, simd_size, 4](
+        score,
+        score,
+        axis=3,
+    )
 
-    batched_matmul[4, type, type, type, transpose_b=False](output, score, v)
+    batched_matmul[transpose_b=False](output, score, v)
 
     score_ptr.free()

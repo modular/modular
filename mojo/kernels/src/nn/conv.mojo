@@ -447,7 +447,7 @@ struct ConvDirectNHWC[
             var task_id_c = (task_id // num_partitions[2]) % num_partitions[1]
             var task_output = NDBuffer[output_type, output_rank, output_shape](
                 output_scratch.data.offset(task_id_c * output_size),
-                output.dynamic_shape,
+                output.get_shape(),
             )
 
             var instance = ConvDirectNHWC[

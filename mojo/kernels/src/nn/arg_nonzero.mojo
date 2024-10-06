@@ -39,14 +39,14 @@ fn arg_nonzero[
     """
 
     with Trace[TraceLevel.OP, target="cpu"]("arg_nonzero"):
-        var numel = input_buffer.dynamic_shape.flattened_length()
+        var numel = input_buffer.get_shape().flattened_length()
         if numel == 0:
             return
 
         var j: Int = 0
         for i in range(numel):
             var indices = _get_start_indices_of_nth_subvolume[0](
-                i, input_buffer.dynamic_shape
+                i, input_buffer.get_shape()
             )
             if input_buffer[indices]:
                 var out_indices = IndexList[2]()
@@ -86,12 +86,12 @@ fn arg_nonzero_shape[
     var shape = IndexList[2]()
     shape[1] = rank
 
-    var numel = input_buffer.dynamic_shape.flattened_length()
+    var numel = input_buffer.get_shape().flattened_length()
 
     var j: Int = 0
     for i in range(numel):
         var indices = _get_start_indices_of_nth_subvolume[0](
-            i, input_buffer.dynamic_shape
+            i, input_buffer.get_shape()
         )
         if input_buffer[indices]:
             j += 1

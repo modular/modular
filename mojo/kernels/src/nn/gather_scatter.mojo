@@ -20,7 +20,7 @@ from register import mogg_register, mogg_register_shape_func
 from runtime.asyncrt import MojoCallContextPtr, parallelism_level
 from runtime.tracing import Trace, TraceLevel
 
-from utils import IndexList, StaticTuple, unroll
+from utils import IndexList, StaticTuple, Index, unroll
 
 from .reshape import reshape
 
@@ -245,17 +245,16 @@ fn gather_reduce[
 
 # TODO: Delete / for testing purposes (test_gather.mojo)
 fn gather[
-    axis: Int,
-    output_rank: Int,
-    input_rank: Int,
-    indices_rank: Int,
     type: DType,
-    indices_type: DType,
+    indices_type: DType, //,
+    *,
+    axis: Int,
     target: StringLiteral = "cpu",
 ](
-    output: NDBuffer[type, output_rank],
-    input: NDBuffer[type, input_rank],
-    indices: NDBuffer[indices_type, indices_rank],
+    output: NDBuffer[type, *_],
+    input: NDBuffer[type, *_],
+    indices: NDBuffer[indices_type, *_],
+    *,
     context: DeviceContext,
 ) raises:
     """Gather operation as defined in https://github.com/onnx/onnx/blob/main/docs/Operators.md#Gather.
@@ -278,8 +277,8 @@ fn gather[
         _indices_coords: IndexList[_indices_rank],
     ):
         var __input_coords = _input_coords
-        var input_coords = rebind[IndexList[input_rank]](__input_coords)
-        var indices_coords = rebind[IndexList[indices_rank]](_indices_coords)
+        var input_coords = rebind[IndexList[input.rank]](__input_coords)
+        var indices_coords = rebind[IndexList[indices.rank]](_indices_coords)
 
         @parameter
         if prefetch_offset > 0:
@@ -306,7 +305,7 @@ fn gather[
     fn input_fn[
         width: Int, _rank: Int
     ](coords: IndexList[_rank]) -> SIMD[type, width]:
-        return input.load[width=width](rebind[IndexList[input_rank]](coords))
+        return input.load[width=width](rebind[IndexList[input.rank]](coords))
 
     @parameter
     @always_inline
@@ -314,7 +313,7 @@ fn gather[
         width: Int, _rank: Int
     ](coords: IndexList[_rank]) -> SIMD[indices_type, width]:
         return indices.load[width=width](
-            rebind[IndexList[indices_rank]](coords)
+            rebind[IndexList[indices.rank]](coords)
         )
 
     @parameter
@@ -323,39 +322,38 @@ fn gather[
         width: Int, _rank: Int
     ](coords: IndexList[_rank], val: SIMD[type, width]):
         output.store[width=width](
-            rebind[IndexList[output_rank]](coords),
+            rebind[IndexList[output.rank]](coords),
             rebind[SIMD[type, width]](val),
         )
 
     gather[
-        type,
-        indices_type,
-        input_fn,
-        indices_fn,
-        output_fn,
+        type=type,
+        indices_type=indices_type,
+        input_fn=input_fn,
+        indices_fn=indices_fn,
+        output_fn=output_fn,
         prefetch_fn=prefetch_fn,
         target=target,
     ](
         axis,
-        input.dynamic_shape,
-        indices.dynamic_shape,
-        output.dynamic_shape,
+        input.get_shape(),
+        indices.get_shape(),
+        output.get_shape(),
         context=context,
     )
 
 
 fn gather[
-    axis: Int,
-    output_rank: Int,
-    input_rank: Int,
-    indices_rank: Int,
     type: DType,
-    indices_type: DType,
+    indices_type: DType, //,
+    *,
+    axis: Int,
     target: StringLiteral = "cpu",
 ](
-    output: NDBuffer[type, output_rank],
-    input: NDBuffer[type, input_rank],
-    indices: NDBuffer[indices_type, indices_rank],
+    output: NDBuffer[type, *_],
+    input: NDBuffer[type, *_],
+    indices: NDBuffer[indices_type, *_],
+    *,
     context: MojoCallContextPtr = MojoCallContextPtr(),
 ) raises:
     """Gather operation as defined in https://github.com/onnx/onnx/blob/main/docs/Operators.md#Gather.
@@ -378,8 +376,8 @@ fn gather[
         _indices_coords: IndexList[_indices_rank],
     ):
         var __input_coords = _input_coords
-        var input_coords = rebind[IndexList[input_rank]](__input_coords)
-        var indices_coords = rebind[IndexList[indices_rank]](_indices_coords)
+        var input_coords = rebind[IndexList[input.rank]](__input_coords)
+        var indices_coords = rebind[IndexList[indices.rank]](_indices_coords)
 
         @parameter
         if prefetch_offset > 0:
@@ -406,7 +404,7 @@ fn gather[
     fn input_fn[
         width: Int, _rank: Int
     ](coords: IndexList[_rank]) -> SIMD[type, width]:
-        return input.load[width=width](rebind[IndexList[input_rank]](coords))
+        return input.load[width=width](rebind[IndexList[input.rank]](coords))
 
     @parameter
     @always_inline
@@ -414,7 +412,7 @@ fn gather[
         width: Int, _rank: Int
     ](coords: IndexList[_rank]) -> SIMD[indices_type, width]:
         return indices.load[width=width](
-            rebind[IndexList[indices_rank]](coords)
+            rebind[IndexList[indices.rank]](coords)
         )
 
     @parameter
@@ -423,34 +421,32 @@ fn gather[
         width: Int, _rank: Int
     ](coords: IndexList[_rank], val: SIMD[type, width]):
         output.store[width=width](
-            rebind[IndexList[output_rank]](coords),
+            rebind[IndexList[output.rank]](coords),
             rebind[SIMD[type, width]](val),
         )
 
     gather[
-        type,
-        indices_type,
-        input_fn,
-        indices_fn,
-        output_fn,
+        type=type,
+        indices_type=indices_type,
+        input_fn=input_fn,
+        indices_fn=indices_fn,
+        output_fn=output_fn,
         prefetch_fn=prefetch_fn,
         target=target,
     ](
         axis,
-        input.dynamic_shape,
-        indices.dynamic_shape,
-        output.dynamic_shape,
+        input.get_shape(),
+        indices.get_shape(),
+        output.get_shape(),
         context=context,
     )
 
 
-fn gather_guards[
-    input_rank: Int, indices_rank: Int, output_rank: Int
-](
+fn gather_guards(
     axis: Axis,
-    input_shape: IndexList[input_rank],
-    indices_shape: IndexList[indices_rank],
-    output_shape: IndexList[output_rank],
+    input_shape: IndexList,
+    indices_shape: IndexList,
+    output_shape: IndexList,
 ) raises -> None:
     if int(axis) < 0:
         raise Error("gather kernel does not support negative axis")
@@ -460,29 +456,27 @@ fn gather_guards[
                 "gather: output_shape[0:axis] does not match"
                 " input_shape[0:axis]"
             )
-    for i in range(axis, int(axis) + indices_rank):
+    for i in range(axis, int(axis) + indices_shape.size):
         if output_shape[i] != indices_shape[i - int(axis)]:
             raise Error(
                 "gather: output_shape[axis:axis+indices_rank] does not"
                 " match indices_shape"
             )
-    for i in range(int(axis) + indices_rank, output_rank):
-        if output_shape[i] != input_shape[i - indices_rank + 1]:
+    for i in range(int(axis) + indices_shape.size, output_shape.size):
+        if output_shape[i] != input_shape[i - indices_shape.size + 1]:
             raise Error(
                 "gather: output_shape[axis + indices_rank:] does not match"
                 " input_shape[axis:]"
             )
-    if int(axis) >= input_rank:
+    if int(axis) >= input_shape.size:
         raise Error("gather: axis must be less than input rank")
 
 
 @always_inline
 fn gather_elementwise_fn_wrapper[
+    *,
     type: DType,
-    input_rank: Int,
     indices_type: DType,
-    indices_rank: Int,
-    output_rank: Int,
     input_fn: fn[width: Int, rank: Int] (IndexList[rank]) capturing -> SIMD[
         type, width
     ],
@@ -492,7 +486,6 @@ fn gather_elementwise_fn_wrapper[
     output_fn: fn[width: Int, rank: Int] (
         IndexList[rank], SIMD[type, width]
     ) capturing -> None,
-    coords_rank: Int,
     simd_width: Int,
     prefetch_fn: OptionalReg[
         fn[
@@ -501,39 +494,41 @@ fn gather_elementwise_fn_wrapper[
     ] = None,
 ](
     axis: Axis,
-    input_shape: IndexList[input_rank],
-    indices_shape: IndexList[indices_rank],
-    output_shape: IndexList[output_rank],
-    coords: IndexList[coords_rank],
+    input_shape: IndexList,
+    indices_shape: IndexList,
+    output_shape: IndexList,
+    coords: IndexList,
 ):
     @parameter
     @always_inline
-    fn gather_elementwise_fn[simd_width: Int, rank: Int](idx: IndexList[rank]):
+    fn gather_elementwise_fn[
+        simd_width: Int, rank: Int
+    ](idx: IndexList[rank, **_]):
         # out_coords consists of 3 chunks:
         #   out_coords[0:axis] = input coords[0:axis]
         #   out_coords[axis:axis+indices_rank] = indices_coords
         #   out_coords[axis + indices_rank:] = input_coords[axis + 1:]
         # and input_coords[axis] = indices[indices_coords]
         # Get the gather indices.
-        var indices_index = IndexList[indices_rank]()
+        var indices_index = IndexList[indices_shape.size]()
 
         # Get the indices of the index.
         @parameter
-        for i in range(indices_rank):
+        for i in range(indices_shape.size):
             indices_index[i] = idx[i + int(axis)]
 
         # The index we are gathering.
-        var data_index = indices_fn[1, indices_rank](indices_index)
+        var data_index = indices_fn[1, indices_shape.size](indices_index)
 
         # Update the indices with the new data index.
-        var data_indices = IndexList[input_rank]()
+        var data_indices = IndexList[input_shape.size]()
 
-        var skip_factor = indices_rank - 1
+        var skip_factor = indices_shape.size - 1
 
         # Build the indices for the input. We have replaced in index in 'axis'
         # with an index from the indices tensor.
         @parameter
-        for i in range(input_rank):
+        for i in range(input_shape.size):
             if i == int(axis):
                 data_indices[i] = int(
                     normalize_neg_index(data_index, input_shape[axis])
@@ -548,11 +543,13 @@ fn gather_elementwise_fn_wrapper[
         @parameter
         if prefetch_fn:
             alias func = prefetch_fn.value()
-            func[input_rank, indices_rank](data_indices, indices_index)
-        var data = input_fn[simd_width, input_rank](data_indices)
+            func[input_shape.size, indices_shape.size](
+                data_indices, indices_index
+            )
+        var data = input_fn[simd_width, input_shape.size](data_indices)
 
         # Store it to the original index.
-        output_fn[simd_width, rank](idx, data)
+        output_fn[simd_width, rank](idx.canonicalize(), data)
 
     gather_elementwise_fn[simd_width](coords)
 
@@ -560,6 +557,7 @@ fn gather_elementwise_fn_wrapper[
 # TODO: Delete / for testing purposes (test_gather.mojo)
 @always_inline
 fn gather[
+    *,
     type: DType,
     indices_type: DType,
     input_fn: fn[width: Int, rank: Int] (IndexList[rank]) capturing -> SIMD[
@@ -571,9 +569,6 @@ fn gather[
     output_fn: fn[width: Int, rank: Int] (
         IndexList[rank], SIMD[type, width]
     ) capturing -> None,
-    input_rank: Int,
-    indices_rank: Int,
-    output_rank: Int,
     prefetch_fn: OptionalReg[
         fn[
             input_rank: Int, indices_rank: Int
@@ -583,9 +578,10 @@ fn gather[
     single_thread_blocking_override: Bool = False,
 ](
     axis: Axis,
-    input_shape: IndexList[input_rank],
-    indices_shape: IndexList[indices_rank],
-    output_shape: IndexList[output_rank],
+    input_shape: IndexList,
+    indices_shape: IndexList,
+    output_shape: IndexList,
+    *,
     context: DeviceContext,
 ) raises:
     """Gather operation as defined in https://github.com/onnx/onnx/blob/main/docs/Operators.md#Gather.
@@ -607,20 +603,23 @@ fn gather[
             simd_width: Int, rank: Int
         ](idx: IndexList[rank]):
             gather_elementwise_fn_wrapper[
-                type,
-                input_rank,
-                indices_type,
-                indices_rank,
-                output_rank,
-                input_fn,
-                indices_fn,
-                output_fn,
+                type=type,
+                indices_type=indices_type,
+                input_fn=input_fn,
+                indices_fn=indices_fn,
+                output_fn=output_fn,
                 simd_width=simd_width,
                 prefetch_fn=prefetch_fn,
-            ](axis, input_shape, indices_shape, output_shape, idx)
+            ](
+                axis,
+                input_shape.canonicalize(),
+                indices_shape.canonicalize(),
+                output_shape.canonicalize(),
+                idx,
+            )
 
         # If we are gathering on the last dimension then we have to be scalar.
-        if int(axis) == input_rank - 1:
+        if int(axis) == input_shape.size - 1:
             elementwise[
                 gather_elementwise_fn,
                 simd_width=1,
@@ -638,6 +637,7 @@ fn gather[
 
 @always_inline
 fn gather[
+    *,
     type: DType,
     indices_type: DType,
     input_fn: fn[width: Int, rank: Int] (IndexList[rank]) capturing -> SIMD[
@@ -649,9 +649,6 @@ fn gather[
     output_fn: fn[width: Int, rank: Int] (
         IndexList[rank], SIMD[type, width]
     ) capturing -> None,
-    input_rank: Int,
-    indices_rank: Int,
-    output_rank: Int,
     prefetch_fn: OptionalReg[
         fn[
             input_rank: Int, indices_rank: Int
@@ -661,9 +658,10 @@ fn gather[
     single_thread_blocking_override: Bool = False,
 ](
     axis: Axis,
-    input_shape: IndexList[input_rank],
-    indices_shape: IndexList[indices_rank],
-    output_shape: IndexList[output_rank],
+    input_shape: IndexList,
+    indices_shape: IndexList,
+    output_shape: IndexList,
+    *,
     context: MojoCallContextPtr = MojoCallContextPtr(),
 ) raises:
     """Gather operation as defined in https://github.com/onnx/onnx/blob/main/docs/Operators.md#Gather.
@@ -685,20 +683,23 @@ fn gather[
             simd_width: Int, rank: Int
         ](idx: IndexList[rank]):
             gather_elementwise_fn_wrapper[
-                type,
-                input_rank,
-                indices_type,
-                indices_rank,
-                output_rank,
-                input_fn,
-                indices_fn,
-                output_fn,
+                type=type,
+                indices_type=indices_type,
+                input_fn=input_fn,
+                indices_fn=indices_fn,
+                output_fn=output_fn,
                 simd_width=simd_width,
                 prefetch_fn=prefetch_fn,
-            ](axis, input_shape, indices_shape, output_shape, idx)
+            ](
+                axis,
+                input_shape.canonicalize(),
+                indices_shape.canonicalize(),
+                output_shape.canonicalize(),
+                idx,
+            )
 
         # If we are gathering on the last dimension then we have to be scalar.
-        if int(axis) == input_rank - 1:
+        if int(axis) == input_shape.size - 1:
             elementwise[
                 gather_elementwise_fn,
                 simd_width=1,
@@ -1454,7 +1455,9 @@ fn gather_nd[
     var idx_ptr = UnsafePointer[Scalar[DType.index]].alloc(
         reshaped_indices_shape[2]
     )
-    var idx = NDBuffer[DType.index, 1](idx_ptr, reshaped_indices_shape[2])
+    var idx = NDBuffer[DType.index, 1](
+        idx_ptr, Index(reshaped_indices_shape[2])
+    )
 
     # Depending on r_minus_m = data_rank - last_shape_of_indices - batch_dims,
     # we will be copying (gather):

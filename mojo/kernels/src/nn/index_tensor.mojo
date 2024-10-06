@@ -13,7 +13,7 @@ from memory import memcpy, memset_zero, UnsafePointer
 from nn.gather_scatter import normalize_neg_index
 from runtime.asyncrt import parallelism_level
 
-from utils import IndexList
+from utils import IndexList, Index
 
 
 @always_inline
@@ -208,7 +208,9 @@ fn index_tensor_1d[
                 var data_coord = IndexList[reshaped_data_rank]()
                 data_coord[0] = i
                 for k in range(last_index_dim):
-                    data_coord[k + 1] = int(indices[(j, k)])
+                    data_coord[k + 1] = int(
+                        indices[IndexList[indices_rank](j, k)]
+                    )
 
                 output.data[i * indices.get_shape()[0] + j] = reshaped_data[
                     data_coord
@@ -326,7 +328,9 @@ fn index_tensor[
     var idx_ptr = UnsafePointer[Scalar[DType.index]].alloc(
         reshaped_indices_shape[2]
     )
-    var idx = NDBuffer[DType.index, 1](idx_ptr, reshaped_indices_shape[2])
+    var idx = NDBuffer[DType.index, 1](
+        idx_ptr, Index(reshaped_indices_shape[2])
+    )
 
     # Depending on r_minus_m = data_rank - last_shape_of_indices - batch_dims,
     # we will be copying (gather):
