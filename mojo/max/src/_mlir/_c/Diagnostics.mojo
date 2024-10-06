@@ -13,10 +13,13 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from .ffi import MLIR_func
-from utils import StringRef
 from memory import UnsafePointer
 
+from utils import StringRef
+
+from .ffi import MLIR_func
+from .IR import *
+from .Support import *
 
 # ===-- mlir-c/Diagnostics.h - MLIR Diagnostic subsystem C API ----*- C -*-===//
 #
@@ -30,9 +33,6 @@ from memory import UnsafePointer
 #  This header declares the C APIs accessing MLIR Diagnostics subsystem.
 #
 # ===----------------------------------------------------------------------===//
-
-from .IR import *
-from .Support import *
 
 
 @register_passable("trivial")

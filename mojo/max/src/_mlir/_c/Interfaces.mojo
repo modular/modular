@@ -13,10 +13,13 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from .ffi import MLIR_func
-from utils import StringRef
 from memory import UnsafePointer
 
+from utils import StringRef
+
+from .ffi import MLIR_func
+from .IR import *
+from .Support import *
 
 # ===-- mlir-c/Interfaces.h - C API to Core MLIR IR interfaces ----*- C -*-===//
 #
@@ -31,9 +34,6 @@ from memory import UnsafePointer
 #  intended to contain interfaces defined in lib/Interfaces.
 #
 # ===----------------------------------------------------------------------===//
-
-from .IR import *
-from .Support import *
 
 
 fn mlirOperationImplementsInterface(

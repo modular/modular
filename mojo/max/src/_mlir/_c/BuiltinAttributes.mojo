@@ -13,10 +13,15 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from .ffi import MLIR_func
-from utils import StringRef
 from memory import UnsafePointer
 
+from utils import StringRef
+
+from .AffineMap import *
+from .ffi import MLIR_func
+from .IntegerSet import *
+from .IR import *
+from .Support import *
 
 # ===-- mlir-c/BuiltinAttributes.h - C API for Builtin Attributes -*- C -*-===//
 #
@@ -30,11 +35,6 @@ from memory import UnsafePointer
 #  This header declares the C interface to MLIR Builtin attributes.
 #
 # ===----------------------------------------------------------------------===//
-
-from .AffineMap import *
-from .IR import *
-from .IntegerSet import *
-from .Support import *
 
 
 fn mlirAttributeGetNull() -> MlirAttribute:

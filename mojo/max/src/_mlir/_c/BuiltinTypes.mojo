@@ -13,10 +13,13 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from .ffi import MLIR_func
-from utils import StringRef
 from memory import UnsafePointer
 
+from utils import StringRef
+
+from .AffineMap import *
+from .ffi import MLIR_func
+from .IR import *
 
 # ===-- mlir-c/BuiltinTypes.h - C API for MLIR Builtin types ------*- C -*-===//
 #
@@ -27,8 +30,6 @@ from memory import UnsafePointer
 #
 # ===----------------------------------------------------------------------===//
 
-from .AffineMap import *
-from .IR import *
 
 # ===----------------------------------------------------------------------===//
 #  Integer types.

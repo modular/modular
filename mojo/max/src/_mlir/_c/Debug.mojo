@@ -13,10 +13,12 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from .ffi import MLIR_func
-from utils import StringRef
 from memory import UnsafePointer
 
+from utils import StringRef
+
+from .ffi import MLIR_func
+from .Support import *
 
 # ===-- mlir-c/Debug.h - C API for MLIR/LLVM debugging functions --*- C -*-===//
 #
@@ -26,8 +28,6 @@ from memory import UnsafePointer
 #  SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 #
 # ===----------------------------------------------------------------------===//
-
-from .Support import *
 
 
 fn mlirEnableGlobalDebug(enable: Bool) -> None:

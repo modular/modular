@@ -6,8 +6,7 @@
 
 import ._c
 import ._c.IR
-from .ir import Context
-from .ir import Operation, Block, Region, Value, Type, Location
+from .ir import Block, Context, Location, Operation, Region, Type, Value
 
 
 @register_passable

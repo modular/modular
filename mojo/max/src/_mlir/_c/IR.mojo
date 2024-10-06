@@ -13,10 +13,12 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from .ffi import MLIR_func
-from utils import StringRef
 from memory import UnsafePointer
 
+from utils import StringRef
+
+from .ffi import MLIR_func
+from .Support import *
 
 # ===-- mlir-c/IR.h - C API to Core MLIR IR classes ---------------*- C -*-===//
 #
@@ -35,7 +37,6 @@ from memory import UnsafePointer
 #
 # ===----------------------------------------------------------------------===//
 
-from .Support import *
 
 # ===----------------------------------------------------------------------===//
 #  Opaque type declarations.

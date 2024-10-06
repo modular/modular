@@ -13,10 +13,13 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from .ffi import MLIR_func
-from utils import StringRef
 from memory import UnsafePointer
 
+from utils import StringRef
+
+from .ffi import MLIR_func
+from .IR import *
+from .Support import *
 
 # ===-- mlir-c/Rewrite.h - Helpers for C API to Rewrites ----------*- C -*-===//
 #
@@ -32,8 +35,6 @@ from memory import UnsafePointer
 #
 # ===----------------------------------------------------------------------===//
 
-from .IR import *
-from .Support import *
 
 # ===----------------------------------------------------------------------===//
 #  Opaque type declarations (see mlir-c/IR.h for more details).

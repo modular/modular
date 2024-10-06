@@ -13,10 +13,12 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from .ffi import MLIR_func
-from utils import StringRef
 from memory import UnsafePointer
 
+from utils import StringRef
+
+from .ffi import MLIR_func
+from .Support import *
 
 # ===-- mlir-c/Conversion.h - Conversion passes initialization ----*- C -*-===//
 #
@@ -31,5 +33,3 @@ from memory import UnsafePointer
 #  passes.
 #
 # ===----------------------------------------------------------------------===//
-
-from .Support import *

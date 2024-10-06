@@ -13,10 +13,12 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from .ffi import MLIR_func
-from utils import StringRef
 from memory import UnsafePointer
 
+from utils import StringRef
+
+from .ffi import MLIR_func
+from .IR import *
 
 # ===-- mlir-c/RegisterEverything.h - Register all MLIR entities --*- C -*-===//
 #
@@ -32,8 +34,6 @@ from memory import UnsafePointer
 #  to the entire set of upstream facilities. For those that do care, they
 #  should use registration functions specific to their project.
 # ===----------------------------------------------------------------------===//
-
-from .IR import *
 
 
 fn mlirRegisterAllDialects(registry: MlirDialectRegistry) -> None:

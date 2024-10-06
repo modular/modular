@@ -13,10 +13,13 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from .ffi import MLIR_func
-from utils import StringRef
 from memory import UnsafePointer
 
+from utils import StringRef
+
+from .ffi import MLIR_func
+from .IR import *
+from .Support import *
 
 # ===-- mlir-c/ExecutionEngine.h - Execution engine management ---*- C -*-====//
 #
@@ -31,9 +34,6 @@ from memory import UnsafePointer
 #  experimental at the moment.
 #
 # ===----------------------------------------------------------------------===//
-
-from .IR import *
-from .Support import *
 
 
 @register_passable("trivial")

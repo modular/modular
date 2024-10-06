@@ -13,10 +13,12 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from .ffi import MLIR_func
-from utils import StringRef
 from memory import UnsafePointer
 
+from utils import StringRef
+
+from .AffineExpr import *
+from .ffi import MLIR_func
 
 # ===-- mlir-c/IntegerSet.h - C API for MLIR Affine maps ----------*- C -*-===//
 #
@@ -27,7 +29,6 @@ from memory import UnsafePointer
 #
 # ===----------------------------------------------------------------------===//
 
-from .AffineExpr import *
 
 # ===----------------------------------------------------------------------===//
 #  Opaque type declarations.

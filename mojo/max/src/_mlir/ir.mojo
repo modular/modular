@@ -6,8 +6,10 @@
 
 
 from collections.optional import Optional
+
 from memory import UnsafePointer
-from utils import Variant, StringRef
+
+from utils import StringRef, Variant
 
 import ._c
 import ._c.IR
