@@ -43,7 +43,12 @@ CmpOpInterpretInterface::interpret(mlir::index::CmpOp cmpOp,
                                    InterpreterState &state) {
   assert(operands.size() == 2 && "cmp expected two operands");
   IntegerAttr lhs = dyn_cast_if_present<mlir::IntegerAttr>(operands[0]);
+  if (!lhs)
+    return ErrorTree(cmpOp.getLoc(), "non-constant lhs input");
   IntegerAttr rhs = dyn_cast_if_present<mlir::IntegerAttr>(operands[1]);
+  if (!rhs)
+    return ErrorTree(cmpOp.getLoc(), "non-constant rhs input");
+
   uint64_t targetBitwidth = state.getTarget().resolveIndexBitWidth();
   auto result =
       BoolAttr::get(cmpOp.getContext(),
@@ -67,8 +72,8 @@ SubOpInterpretInterface::interpret(mlir::index::SubOp subOp,
   bool overflow;
   APInt difference = lhs.ssub_ov(rhs, overflow);
   if (overflow)
-    return ErrorTreeOrSuccess(ErrorTree(
-        subOp->getLoc(), Error("subtraction failed due to overflow")));
+    return ErrorTree(subOp.getLoc(),
+                     Error("subtraction failed due to overflow"));
 
   state.mapResults(
       IntegerAttr::get(IndexType::get(subOp.getContext()),
