@@ -4,14 +4,15 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from sys import triple_is_nvidia_cuda
-from buffer import NDBuffer, DimList, Dim
-from memory import UnsafePointer
+from collections import Optional
 from os import abort
-from utils import IndexList
 from sys import triple_is_nvidia_cuda
 from sys.intrinsics import _type_is_eq
-from collections import Optional
+
+from buffer import Dim, DimList, NDBuffer
+from memory import UnsafePointer
+
+from utils import IndexList
 
 
 @value
