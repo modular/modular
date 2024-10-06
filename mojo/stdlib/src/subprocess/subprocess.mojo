@@ -6,11 +6,11 @@
 """Implements the subprocess package."""
 
 
+import sys._libc as libc
 from sys import external_call
+from sys._libc import FILE_ptr, pclose, popen
 from sys.ffi import c_char
 from sys.info import os_is_windows
-from sys._libc import popen, pclose, FILE_ptr
-import sys._libc as libc
 
 from memory import UnsafePointer
 
