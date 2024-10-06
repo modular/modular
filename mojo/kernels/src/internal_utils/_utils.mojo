@@ -5,10 +5,9 @@
 # ===----------------------------------------------------------------------=== #
 
 from collections import InlineArray
-from memory import UnsafePointer
 from random import rand
-from sys.info import alignof
 from sys import env_get_string, is_defined
+from sys.info import alignof
 
 from benchmark import (
     Bench,
@@ -22,9 +21,10 @@ from buffer import Dim, DimList, NDBuffer
 from buffer.dimlist import _make_tuple
 from compile import _internal_compile_code
 from gpu.host.device_context import DeviceBuffer, DeviceContext
+from memory import UnsafePointer
 from testing import assert_almost_equal, assert_equal, assert_true
 
-from utils import IndexList, Index
+from utils import Index, IndexList
 from utils.index import product
 
 
