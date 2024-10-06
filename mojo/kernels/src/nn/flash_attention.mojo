@@ -529,6 +529,7 @@ struct _FlashAttention[
     ) capturing -> SIMD[type, simd_width],
     *,
     transpose_k: Bool = False,
+    layout_bshd: Bool = False,
 ]:
     alias _matmul = _Matmul[type, simd_width]
     alias _config = _FlashAttentionConfig[
@@ -626,13 +627,16 @@ struct _FlashAttention[
         output: NDBuffer[type, rank, output_static_shape, *_],
         scale: Float32,
     ):
-        var num_batches = output.dim[0]()
-        var num_heads = output.dim[1]() if rank == 4 else 1
-        var seq_len = output.dim[rank - 2]()
-        var depth_dim = output.dim[rank - 1]()
-        var kv_seq_len = v_shape[rank - 2]
+        alias seq_dim_index = 1 if layout_bshd else rank - 2
+        alias head_dim_index = rank - 2 if layout_bshd else 1
 
-        var num_kv_heads = k_shape[1] if rank == 4 else 1
+        var num_batches = output.dim[0]()
+        var num_heads = output.dim[head_dim_index]() if rank == 4 else 1
+        var seq_len = output.dim[seq_dim_index]()
+        var depth_dim = output.dim[rank - 1]()
+        var kv_seq_len = v_shape[seq_dim_index]
+
+        var num_kv_heads = k_shape[head_dim_index] if rank == 4 else 1
         var kv_group_count = num_heads // num_kv_heads
 
         # Compute the maximum size in elements for the common packed buffer.
@@ -684,6 +688,8 @@ struct _FlashAttention[
             if seq_len != 1:
                 packed_ptr = packed_ptr.alloc(packed_size)
 
+            var q_seq_stride = num_heads * depth_dim if layout_bshd else depth_dim
+
             var block_range = partition_work(
                 task_id, num_threads, work_count, 1
             )
@@ -705,9 +711,26 @@ struct _FlashAttention[
                 ](x: Int, y: Int) -> IndexList[rank]:
                     @parameter
                     if rank == 4:
-                        return IndexList[rank](
-                            batch, kv_head if is_kv else head, x, y
-                        )
+
+                        @parameter
+                        if layout_bshd:
+                            return IndexList[rank](
+                                batch, x, kv_head if is_kv else head, y
+                            )
+                        else:
+                            return IndexList[rank](
+                                batch, kv_head if is_kv else head, x, y
+                            )
+                    else:
+                        return IndexList[rank](batch_head, x, y)
+
+                @parameter
+                @__copy_capture(batch, batch_head, head)
+                @always_inline
+                fn get_mask_nd_index(x: Int, y: Int) -> IndexList[rank]:
+                    @parameter
+                    if rank == 4:
+                        return IndexList[rank](batch, head, x, y)
                     else:
                         return IndexList[rank](batch_head, x, y)
 
@@ -749,7 +772,7 @@ struct _FlashAttention[
                         kv_seq_cnt,
                         depth_dim,
                         q_ptr,
-                        depth_dim,
+                        q_seq_stride,
                         packed_ptr,
                         qk_block_ptr,
                         Self._config.qk_block_n,
@@ -761,7 +784,7 @@ struct _FlashAttention[
                         _simd_width: Int
                     ](_m: Int, _n: Int) -> SIMD[type, _simd_width]:
                         return input_mask_fn[_simd_width, rank](
-                            get_nd_index(_m + m, _n + kv_seq_idx)
+                            get_mask_nd_index(_m + m, _n + kv_seq_idx)
                         )
 
                     Self._online_softmax[input_mask_2d_fn](
@@ -812,7 +835,7 @@ struct _FlashAttention[
 
                     vectorize[do_final, simd_width, unroll_factor=4](count_n)
 
-                    o_ptr += depth_dim
+                    o_ptr += q_seq_stride
                     oz_ptr += Self._config.o_block_n
 
             if packed_ptr:
@@ -913,28 +936,24 @@ fn flash_attention_split_kv[
         Trace[TraceLevel.OP]._get_detail_str[description_fn](),
     ):
         alias kv_rank = rank + 1
-        alias simd_width = simdwidthof[type]()
 
         var num_batches = v_cache_shape[1]
         var num_heads = v_cache_shape[2]
         var prev_seq_len = v_cache_shape[3]
         var depth_dim = v_cache_shape[4]
-        var seq_len = v_shape[rank - 2]
+        var seq_len = v_shape[1]
 
         # Wrap `input_{k,v}_cache_fn` with lambdas that operate on indices of
         # rank 4, as expected by `_FlashAttention.run()`.
-        var k_shape_new = IndexList[rank](
-            num_batches, num_heads, prev_seq_len + seq_len, depth_dim
-        )
-        var v_shape_new = IndexList[rank](
-            num_batches, num_heads, prev_seq_len + seq_len, depth_dim
+        var kv_shape_new = IndexList[rank](
+            num_batches, prev_seq_len + seq_len, num_heads, depth_dim
         )
 
         @always_inline
         @parameter
         fn kv_index[rank: Int](idx: IndexList[rank]) -> IndexList[kv_rank]:
             # Index into the previous kv_cache by unsqueezing dim 0.
-            return IndexList[kv_rank](0, idx[0], idx[1], idx[2], idx[3])
+            return IndexList[kv_rank](0, idx[0], idx[2], idx[1], idx[3])
 
         @always_inline
         @__copy_capture(prev_seq_len)
@@ -953,12 +972,12 @@ fn flash_attention_split_kv[
             # sequence index.
             # Boundary condition handling is done by the caller since
             # the last dim `depth_dim` is contiguous.
-            var seq_idx = idx[2]
+            var seq_idx = idx[1]
 
             if seq_idx >= prev_seq_len:
                 return curr_fn[simd_width, rank](
                     IndexList[rank](
-                        idx[0], idx[1], seq_idx - prev_seq_len, idx[3]
+                        idx[0], seq_idx - prev_seq_len, idx[2], idx[3]
                     )
                 )
 
@@ -990,4 +1009,5 @@ fn flash_attention_split_kv[
             input_v_cache_fn_wrapper,
             input_mask_fn,
             transpose_k=True,
-        ].run(q, k_shape_new, v_shape_new, output, scale)
+            layout_bshd=True,
+        ].run(q, kv_shape_new, kv_shape_new, output, scale)
