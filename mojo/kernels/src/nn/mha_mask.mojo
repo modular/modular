@@ -5,6 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from math import iota
+
 from utils.index import IndexList
 from utils.numerics import min_or_neg_inf
 

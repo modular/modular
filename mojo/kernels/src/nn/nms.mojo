@@ -6,11 +6,11 @@
 
 from collections import List
 from math import iota
-from memory import UnsafePointer
 
 from buffer import NDBuffer
+from memory import UnsafePointer
 
-from utils import Span, IndexList
+from utils import IndexList, Span
 from utils.index import Index
 
 

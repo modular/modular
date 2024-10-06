@@ -15,12 +15,12 @@ from algorithm.functional import tile
 from buffer import NDBuffer
 from buffer.dimlist import DimList
 from gpu.host import DeviceBuffer, DeviceContext
-from memory import memcpy, memset_zero, stack_allocation, UnsafePointer
+from memory import UnsafePointer, memcpy, memset_zero, stack_allocation
 from register import mogg_register, mogg_register_shape_func
 from runtime.asyncrt import MojoCallContextPtr, parallelism_level
 from runtime.tracing import Trace, TraceLevel
 
-from utils import IndexList, StaticTuple, Index, unroll
+from utils import Index, IndexList, StaticTuple, unroll
 
 from .reshape import reshape
 

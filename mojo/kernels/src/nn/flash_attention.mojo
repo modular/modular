@@ -24,9 +24,9 @@ from linalg.transpose import transpose_inplace
 from linalg.utils import partition_work
 from memory import UnsafePointer, memset_zero, stack_allocation
 from runtime.asyncrt import parallelism_level
+from runtime.tracing import Trace, TraceLevel, trace_arg
 
 from utils import Index, IndexList
-from runtime.tracing import Trace, TraceLevel, trace_arg
 
 
 struct _MatmulConfig:

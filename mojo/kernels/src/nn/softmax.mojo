@@ -23,7 +23,7 @@ from gpu.shuffle import shuffle_up, shuffle_xor
 from layout.layout import Layout
 from layout.layout_tensor import LayoutTensor
 from layout.tensor_core import get_fragment_size
-from memory import stack_allocation, UnsafePointer
+from memory import UnsafePointer, stack_allocation
 from runtime.asyncrt import MojoCallContextPtr, parallelism_level
 from runtime.tracing import Trace, TraceLevel, trace_arg
 

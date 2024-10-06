@@ -15,7 +15,7 @@ from builtin.sort import _quicksort
 from memory import UnsafePointer
 from register import mogg_register_shape_func
 
-from utils import Span, IndexList
+from utils import IndexList, Span
 
 
 @always_inline

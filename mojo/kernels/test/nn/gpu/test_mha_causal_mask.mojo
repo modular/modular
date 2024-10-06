@@ -5,21 +5,22 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo-no-debug %s
 
-from buffer import NDBuffer
-from buffer.dimlist import DimList, Dim
 from math import ceildiv, isclose, isqrt
-from memory import UnsafePointer
 from random import rand
 from sys import argv
-from testing import assert_almost_equal
-from utils.index import Index
-from utils.numerics import min_or_neg_inf
 
+from buffer import NDBuffer
+from buffer.dimlist import Dim, DimList
 from gpu import *
 from gpu.host import DeviceContext, FuncAttribute
 from gpu.host.event import time_function
+from memory import UnsafePointer
 from nn.mha import flash_attention, mha_gpu_naive
-from nn.mha_mask import NullMask, CausalMask
+from nn.mha_mask import CausalMask, NullMask
+from testing import assert_almost_equal
+
+from utils.index import Index
+from utils.numerics import min_or_neg_inf
 
 
 fn is_benchmark() -> Bool:

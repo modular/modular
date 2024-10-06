@@ -8,9 +8,9 @@
 
 from collections import List
 from math import iota
-from memory import UnsafePointer
 
 from buffer import NDBuffer
+from memory import UnsafePointer
 from nn.topk import _top_k
 
 from utils import IndexList

@@ -3,31 +3,16 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-from buffer import DimList, NDBuffer, Dim
+from collections import InlineArray, Optional, OptionalReg
 from math import gcd, isqrt
-from memory import UnsafePointer
-from collections import Optional, OptionalReg, InlineArray
+from os import abort
 from sys.info import _current_target, simdwidthof
 from sys.intrinsics import _type_is_eq
-from utils import Index
-from utils.numerics import min_finite, isnan
-from os import abort
-from memory import memcpy
 
 from algorithm.functional import elementwise
-from gpu.host import Stream, DeviceContext, DeviceBuffer
+from buffer import Dim, DimList, NDBuffer
+from gpu.host import DeviceBuffer, DeviceContext, Stream
 from gpu.host._compile import _get_nvptx_target
-from linalg import transpose
-from linalg.matmul_gpu import _matmul_gpu
-from linalg.matmul import _matmul_cpu, elementwise_epilogue_type
-from nn.flash_attention import flash_attention as cpu_flash_attention
-from nn.mha import flash_attention as gpu_flash_attention
-from register import mogg_register
-from runtime.asyncrt import (
-    MojoCallContextPtr,
-)
-from utils import IndexList
-
 from kv_cache.types import (
     ContiguousKVCache,
     ContiguousKVCacheCollection,
@@ -35,10 +20,21 @@ from kv_cache.types import (
     ContinuousBatchingKVCacheCollection,
     KVCacheLayout,
     KVCacheStaticParams,
-    KVCollectionT,
     KVCacheT,
+    KVCollectionT,
 )
+from linalg import transpose
+from linalg.matmul import _matmul_cpu, elementwise_epilogue_type
+from linalg.matmul_gpu import _matmul_gpu
+from memory import UnsafePointer, memcpy
+from nn.flash_attention import flash_attention as cpu_flash_attention
+from nn.mha import flash_attention as gpu_flash_attention
+from register import mogg_register
+from runtime.asyncrt import MojoCallContextPtr
 from runtime.tracing import Trace, TraceLevel
+
+from utils import Index, IndexList
+from utils.numerics import isnan, min_finite
 
 
 @mogg_register("kv_cache_length_h8_d128_bshd_bf16")

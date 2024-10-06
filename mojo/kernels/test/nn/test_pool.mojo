@@ -6,13 +6,12 @@
 # RUN: %mojo-no-debug %s | FileCheck %s
 
 from sys import simdwidthof
-from memory import UnsafePointer
 
 import builtin
 from buffer import Buffer, NDBuffer
 from buffer.dimlist import DimList
 from internal_utils import TestTensor
-from memory import stack_allocation
+from memory import UnsafePointer, stack_allocation
 from nn.image import Image2DLayout, ImageData, ImageShape
 from nn.pool import PoolMethod, avg_pool, max_pool, pool_shape_impl
 

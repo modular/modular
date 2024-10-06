@@ -13,10 +13,7 @@ from algorithm.functional import (
     _get_start_indices_of_nth_subvolume,
     sync_parallelize,
 )
-from algorithm.reduction import (
-    _simd_sum,
-    _simd_sum_elementwise,
-)
+from algorithm.reduction import _simd_sum, _simd_sum_elementwise
 from buffer import Buffer, NDBuffer
 from buffer.dimlist import DimList
 from gpu import (

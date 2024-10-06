@@ -5,11 +5,11 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo-no-debug %s
 
+from nn.mha_mask import CausalMask, TileMaskStatus
 from testing import assert_equal, assert_true
+
 from utils.index import Index
 from utils.numerics import min_or_neg_inf
-
-from nn.mha_mask import CausalMask, TileMaskStatus
 
 
 def test_causal_mask():

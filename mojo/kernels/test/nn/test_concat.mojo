@@ -6,6 +6,7 @@
 # RUN: %mojo-no-debug %s | FileCheck %s
 
 from collections import OptionalReg
+
 from buffer import Buffer, NDBuffer
 from buffer.dimlist import Dim, DimList
 from memory import UnsafePointer
@@ -13,8 +14,8 @@ from nn.concat import (
     _concat_parallel,
     _concat_serial,
     concat,
-    variadic_list_to_vector,
     elementwise_epilogue_type,
+    variadic_list_to_vector,
 )
 
 from utils.index import IndexList

@@ -28,6 +28,7 @@ from linalg.utils import partition_work
 from memory import UnsafePointer, stack_allocation
 from register import mogg_register_shape_func
 from runtime.asyncrt import parallelism_level
+from runtime.tracing import Trace, TraceLevel, trace_arg
 
 from utils.index import Index, IndexList
 from utils.loop import unroll
@@ -48,7 +49,6 @@ from .conv_utils import (
     reorder_padding,
 )
 from .shapes import get_sliding_window_out_dim
-from runtime.tracing import Trace, TraceLevel, trace_arg
 
 
 @value

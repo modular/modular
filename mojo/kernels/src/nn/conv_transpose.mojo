@@ -21,6 +21,7 @@ from linalg.utils import partition_work
 from memory import UnsafePointer
 from register import mogg_register
 from runtime.asyncrt import parallelism_level
+from runtime.tracing import Trace, TraceLevel, trace_arg
 
 from utils.index import Index, IndexList
 from utils.loop import unroll
@@ -38,7 +39,6 @@ from .conv_utils import (
     get_direct_conv_micro_kernel_width,
     get_micro_kernel_shape,
 )
-from runtime.tracing import Trace, TraceLevel, trace_arg
 
 # TODO: All attributes, except for groups and auto_pad, are supported.
 #       - Kernel assumes groups = 1.

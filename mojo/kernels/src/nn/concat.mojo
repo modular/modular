@@ -9,12 +9,12 @@ from collections.vector import InlinedFixedVector
 from math import align_down, align_up, ceildiv
 from os import abort
 from sys._build import is_debug_build
-from sys.info import simdwidthof, sizeof, bitwidthof
+from sys.info import bitwidthof, simdwidthof, sizeof
 
 from algorithm.functional import (
-    elementwise,
     _get_start_indices_of_nth_subvolume,
     _get_start_indices_of_nth_subvolume_uint,
+    elementwise,
     sync_parallelize,
 )
 from buffer import NDBuffer
@@ -23,9 +23,9 @@ from gpu.host import DeviceBuffer, DeviceContext
 from memory import UnsafePointer, memcpy
 from register import mogg_register
 from runtime.asyncrt import MojoCallContextPtr
+from runtime.tracing import Trace, TraceLevel
 
 from utils import IndexList, StaticTuple, product
-from runtime.tracing import Trace, TraceLevel
 
 alias elementwise_epilogue_type = fn[
     c_type: DType, rank: Int, width: Int = 1, *, alignment: Int = 1

@@ -8,7 +8,7 @@
 from collections import OptionalReg
 from math import align_down, ceildiv, exp, iota, recip
 from os import abort
-from sys import alignof, simdwidthof, bitwidthof
+from sys import alignof, bitwidthof, simdwidthof
 
 from algorithm import elementwise
 from buffer import Buffer, NDBuffer
@@ -45,14 +45,13 @@ from memory.pointer import AddressSpace as _AddressSpace
 from memory.unsafe import bitcast
 from nn.mha_mask import MHAMask, NullMask, TileMaskStatus
 from runtime.asyncrt import MojoCallContextPtr
+from runtime.tracing import Trace, TraceLevel, trace_arg
 
 from utils.index import Index, IndexList
 from utils.numerics import min_or_neg_inf, neg_inf
 from utils.static_tuple import StaticTuple
 
 from .softmax import _online_softmax_iter_for_mma_output, _softmax_gpu, softmax
-from runtime.tracing import Trace, TraceLevel, trace_arg
-
 
 # ===----------------------------------------------------------------------===#
 # Multi-Head Attention

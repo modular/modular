@@ -6,18 +6,18 @@
 # RUN: %mojo-no-debug %s
 
 
+from math import ceildiv, iota
 from os import abort
-from math import iota, ceildiv
-from memory import UnsafePointer
+from random import random_float64
 
 from buffer import NDBuffer
-from nn.topk_gpu import _topk_gpu
 from buffer.dimlist import DimList
-
-from internal_utils import HostNDBuffer, DeviceNDBuffer
-from utils import IndexList
-from random import random_float64
 from gpu.host import DeviceContext
+from internal_utils import DeviceNDBuffer, HostNDBuffer
+from memory import UnsafePointer
+from nn.topk_gpu import _topk_gpu
+
+from utils import IndexList
 
 alias idx_t = DType.index  # bad practice (matches the idx_t in the topk_gpu kernel)
 

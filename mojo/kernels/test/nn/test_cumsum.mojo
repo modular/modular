@@ -6,10 +6,10 @@
 # RUN: %mojo-no-debug %s | FileCheck %s
 
 from math import iota
-from memory import UnsafePointer
 
 from buffer import NDBuffer
 from buffer.dimlist import DimList
+from memory import UnsafePointer
 from nn.cumsum import cumsum
 
 

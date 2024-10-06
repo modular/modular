@@ -7,10 +7,10 @@
 # RUN: %mojo-no-debug %s | FileCheck %s
 
 from math import iota
-from memory import UnsafePointer
 from random import randn, seed
 
 from internal_utils import compare
+from memory import UnsafePointer
 from nn.activations import elu, gelu, gelu_approximate, relu, relu_n1
 from test_utils import libm_call
 

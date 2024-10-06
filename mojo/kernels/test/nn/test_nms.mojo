@@ -6,9 +6,9 @@
 # RUN: %mojo-no-debug %s | FileCheck %s
 
 from collections import List
-from memory import UnsafePointer
 
 from buffer import NDBuffer
+from memory import UnsafePointer
 from nn.nms import non_max_suppression, non_max_suppression_shape_func
 
 from utils import IndexList

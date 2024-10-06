@@ -5,13 +5,12 @@
 # ===----------------------------------------------------------------------=== #
 
 
-from sys import simdwidthof, sizeof, alignof
-from buffer import NDBuffer, Buffer
-from memory import stack_allocation
 from math import ceildiv, exp
-from memory import UnsafePointer
-from utils.numerics import min_or_neg_inf
+from sys import alignof, simdwidthof, sizeof
+
+from buffer import Buffer, NDBuffer
 from buffer.dimlist import DimList
+from builtin.io import _printf
 from gpu import (
     WARP_SIZE,
     BlockDim,
@@ -24,10 +23,12 @@ from gpu import (
 )
 from gpu.host import DeviceContext, FuncAttribute
 from gpu.host.dim import Dim
-from gpu.random import Random
 from gpu.memory import AddressSpace, external_memory
-from gpu.shuffle import warp_reduce, _floorlog2, _static_log2
-from builtin.io import _printf
+from gpu.random import Random
+from gpu.shuffle import _floorlog2, _static_log2, warp_reduce
+from memory import UnsafePointer, stack_allocation
+
+from utils.numerics import min_or_neg_inf
 
 alias idx_t = DType.index
 alias SEED = 0

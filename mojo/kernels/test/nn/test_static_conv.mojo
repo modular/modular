@@ -7,11 +7,11 @@
 
 from math import ceildiv, isclose
 from random import rand
-from memory import UnsafePointer
 from sys.info import simdwidthof
 
 from buffer import NDBuffer
 from buffer.dimlist import Dim, DimList
+from memory import UnsafePointer
 from nn.conv import ConvDirectNHWC, ConvInfoStatic, pack_filter
 from nn.conv_utils import (
     ConvShape,
