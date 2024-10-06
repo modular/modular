@@ -24,7 +24,7 @@ from compile import _internal_compile_code
 from gpu.host.device_context import DeviceBuffer, DeviceContext
 from testing import assert_almost_equal, assert_equal, assert_true
 
-from utils import IndexList
+from utils import IndexList, Index
 from utils.index import product
 
 
@@ -174,7 +174,7 @@ struct TestTensor[type: DType, rank: Int]:
 fn linspace(buffer: NDBuffer):
     for i in range(buffer.dim[0]()):
         for j in range(buffer.dim[1]()):
-            buffer[(i, j)] = i * buffer.dim[1]() + j
+            buffer[IndexList[buffer.rank](i, j)] = i * buffer.dim[1]() + j
 
 
 fn random(buffer: NDBuffer, min: Float64 = 0, max: Float64 = 1):
@@ -184,13 +184,13 @@ fn random(buffer: NDBuffer, min: Float64 = 0, max: Float64 = 1):
 fn zero(buffer: NDBuffer):
     for i in range(buffer.dim[0]()):
         for j in range(buffer.dim[1]()):
-            buffer[(i, j)] = 0
+            buffer[IndexList[buffer.rank](i, j)] = 0
 
 
 fn fill[type: DType](buffer: NDBuffer, val: Scalar[type]):
     for i in range(buffer.dim[0]()):
         for j in range(buffer.dim[1]()):
-            buffer[(i, j)] = val.cast[buffer.type]()
+            buffer[IndexList[buffer.rank](i, j)] = val.cast[buffer.type]()
 
 
 fn bench_compile_time[
