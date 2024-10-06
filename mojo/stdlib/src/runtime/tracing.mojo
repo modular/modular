@@ -8,16 +8,15 @@
 from collections.optional import OptionalReg
 from sys import external_call
 from sys.param_env import env_get_int, is_defined
+
 import gpu.host.nvtx
-from gpu.host.nvtx import (
-    _start_range as _start_nvtx_range,
-    _end_range as _end_nvtx_range,
-    _is_enabled as _nvtx_is_enabled,
-    _is_enabled_details as _nvtx_is_enabled_details,
-)
+from buffer import NDBuffer
+from gpu.host.nvtx import _end_range as _end_nvtx_range
+from gpu.host.nvtx import _is_enabled as _nvtx_is_enabled
+from gpu.host.nvtx import _is_enabled_details as _nvtx_is_enabled_details
+from gpu.host.nvtx import _start_range as _start_nvtx_range
 
 from utils import IndexList
-from buffer import NDBuffer
 
 
 fn _build_info_asyncrt_max_profiling_level() -> OptionalReg[Int]:
