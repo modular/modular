@@ -10,7 +10,7 @@ from sys.info import sizeof
 from bit import is_power_of_two
 from buffer import NDBuffer
 from buffer.buffer import prod_dims
-from memory import bitcast, memcpy, UnsafePointer
+from memory import UnsafePointer, bitcast, memcpy
 
 from utils import Index, IndexList, StaticTuple
 

@@ -7,14 +7,13 @@
 
 from collections import InlineArray
 from math import ceildiv, isclose
-from memory import UnsafePointer
 from random import rand, random_float64
 from sys import sizeof
 
 from algorithm import sync_parallelize
 from buffer import NDBuffer
 from buffer.dimlist import DimList
-from memory import stack_allocation
+from memory import UnsafePointer, stack_allocation
 from quantization.qmatmul import matmul_qint4, matmul_qint4_pack_b
 from quantization.qmatmul_k import (
     _block_Q4_K,
