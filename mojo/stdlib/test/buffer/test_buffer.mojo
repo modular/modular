@@ -7,10 +7,10 @@
 
 from pathlib import Path
 from tempfile import NamedTemporaryFile
-from memory import UnsafePointer
 
 from buffer import Buffer
 from buffer.dimlist import Dim
+from memory import UnsafePointer
 
 
 # CHECK-LABEL: test_buffer
