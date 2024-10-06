@@ -7,11 +7,11 @@
 # RUN: mojo %s --tabular --no-progress| FileCheck %s
 
 import math
-from memory import UnsafePointer
 from random import randint
 from time import sleep
 
 from benchmark import BenchId, BenchMetric, QuickBench, ThroughputMeasure
+from memory import UnsafePointer
 
 
 fn vec_reduce[
