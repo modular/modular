@@ -6,18 +6,18 @@
 from collections import InlineArray, OptionalReg
 from math import align_down, align_up, ceildiv
 from os import abort
-from sys import alignof, llvm_intrinsic, simdwidthof, bitwidthof
+from sys import alignof, bitwidthof, llvm_intrinsic, simdwidthof
 
 from algorithm.functional import elementwise, tile_and_unswitch
 from buffer.buffer import NDBuffer
 from buffer.dimlist import DimList
 from gpu import WARP_SIZE, BlockDim, BlockIdx, ThreadIdx, barrier, lane_id
 from gpu.host import (
+    AccessPolicyWindow,
+    AccessProperty,
     DeviceContext,
     FuncAttribute,
     LaunchAttribute,
-    AccessPolicyWindow,
-    AccessProperty,
 )
 from gpu.host._compile import _get_nvptx_target
 from gpu.memory import (
@@ -43,10 +43,10 @@ from layout.math import outer_product_acc
 from layout.nd_buffer_stub import (
     copy_from_nd_buffer,
     distribute,
-    vectorize,
     from_ndbuffer_row_major,
+    vectorize,
 )
-from memory import UnsafePointer, bitcast, stack_allocation, memset_zero
+from memory import UnsafePointer, bitcast, memset_zero, stack_allocation
 
 from utils import IndexList
 from utils.index import Index
@@ -57,9 +57,9 @@ from ._multistage_gemm_gpu import (
     multistage_gemm_kernel,
     multistage_gemm_split_k_kernel,
 )
-from .utils import GemmShape, apply_epilogue, elementwise_epilogue_type
 from .gemv import gemv_gpu
-from .utils_gpu import MatmulKernels, MatmulConfig, select_config
+from .utils import GemmShape, apply_epilogue, elementwise_epilogue_type
+from .utils_gpu import MatmulConfig, MatmulKernels, select_config
 
 
 @always_inline

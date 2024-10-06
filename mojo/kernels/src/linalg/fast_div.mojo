@@ -11,6 +11,7 @@ multiplications, significantly optimizing division performance.
 """
 
 from sys import bitwidthof, triple_is_nvidia_cuda
+
 from builtin.dtype import _uint_type_of_width
 from gpu.intrinsics import mulhi
 

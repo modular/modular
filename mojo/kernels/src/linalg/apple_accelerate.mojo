@@ -6,7 +6,6 @@
 
 from collections import OptionalReg
 from math import fma
-from memory import UnsafePointer
 from os import abort
 from pathlib import Path
 from sys import os_is_macos, simdwidthof
@@ -20,6 +19,7 @@ from algorithm.functional import (
 )
 from buffer.buffer import NDBuffer
 from buffer.dimlist import DimList
+from memory import UnsafePointer
 
 from utils import IndexList
 from utils.index import Index

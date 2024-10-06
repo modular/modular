@@ -8,13 +8,14 @@ from math import ceildiv
 from sys import sizeof
 
 from gpu import WARP_SIZE
-from gpu.host.info import DEFAULT_GPU_ARCH, A100, _get_info_from_target
+from gpu.host.info import A100, DEFAULT_GPU_ARCH, _get_info_from_target
 from layout.tensor_core import (
     TensorCore,
     get_accum_type,
     get_fragment_size,
     get_mma_shape,
 )
+
 from utils.index import Index, IndexList
 
 # ===------------------------------------------------------------------===#

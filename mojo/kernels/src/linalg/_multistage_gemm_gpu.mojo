@@ -31,9 +31,10 @@ from layout.layout_tensor import (
     copy_local_to_sram,
     copy_sram_to_dram,
 )
-from layout.swizzle import Swizzle, make_swizzle
 from layout.runtime_layout import RuntimeLayout
 from layout.runtime_tuple import RuntimeTuple
+from layout.swizzle import Swizzle, make_swizzle
+from layout.tensor_builder import LayoutTensorBuild as tb
 from layout.tensor_core import (
     TensorCore,
     get_accum_type,
@@ -47,8 +48,7 @@ from utils.index import Index
 
 from .matmul_gpu import matmul_kernel_naive
 from .utils import apply_epilogue, elementwise_epilogue_type
-from .utils_gpu import block_swizzle, MatmulConfig, MatmulKernels
-from layout.tensor_builder import LayoutTensorBuild as tb
+from .utils_gpu import MatmulConfig, MatmulKernels, block_swizzle
 
 
 @always_inline

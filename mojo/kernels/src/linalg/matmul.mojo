@@ -12,6 +12,7 @@ from buffer.buffer import Buffer, NDBuffer
 from buffer.dimlist import Dim, DimList
 from memory import UnsafePointer, memset_zero
 from runtime.asyncrt import MojoCallContextPtr, parallelism_level
+from runtime.tracing import Trace, TraceLevel, trace_arg
 
 from utils.index import Index, IndexList
 
@@ -36,7 +37,6 @@ from .utils import (
     packA_i8mm,
     select_inner_kernel,
 )
-from runtime.tracing import Trace, TraceLevel, trace_arg
 
 # Define a trait that defines the common functions across all existing
 # microkernels:

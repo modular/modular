@@ -8,7 +8,7 @@ from collections import OptionalReg
 from math import align_up, ceildiv, gcd
 from os import abort
 from sys import alignof
-from sys.info import simdwidthof, bitwidthof
+from sys.info import bitwidthof, simdwidthof
 
 from algorithm import sync_parallelize, vectorize
 from algorithm.functional import (
@@ -20,12 +20,12 @@ from buffer import NDBuffer
 from buffer.dimlist import DimList
 from gpu import BlockDim, BlockIdx, ThreadIdx
 from gpu.host import DeviceContext
-from memory import memset_zero, UnsafePointer
+from memory import UnsafePointer, memset_zero
 from register import mogg_register, mogg_register_shape_func
 from runtime.asyncrt import MojoCallContextPtr, parallelism_level
 from runtime.tracing import Trace, TraceLevel, trace_arg
 
-from utils.index import IndexList, Index
+from utils.index import Index, IndexList
 from utils.numerics import get_accum_type
 
 from .apple_accelerate import apple_batched_matmul, use_apple_accelerate_lib

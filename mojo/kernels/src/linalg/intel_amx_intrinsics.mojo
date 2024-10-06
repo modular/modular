@@ -15,7 +15,7 @@ from buffer import NDBuffer
 from buffer.dimlist import DimList
 from memory import UnsafePointer
 
-from utils import StaticTuple, Index
+from utils import Index, StaticTuple
 
 alias void = DType.invalid.value
 

@@ -5,34 +5,33 @@
 # ===----------------------------------------------------------------------=== #
 
 from collections import OptionalReg
+from math import align_down, align_up, ceildiv
 from os import abort
-from sys import alignof, llvm_intrinsic, simdwidthof, bitwidthof
+from sys import alignof, bitwidthof, llvm_intrinsic, simdwidthof
+
 from algorithm.reduction import _reduce_generator
 from buffer import Buffer, NDBuffer
 from buffer.dimlist import Dim, DimList
-
-from utils import IndexList
-from utils.index import Index
-
-from .utils import elementwise_epilogue_type
-from .matmul_gpu import matmul_kernel_naive
-from math import align_down, align_up, ceildiv
 from gpu import WARP_SIZE, BlockDim, BlockIdx, ThreadIdx, barrier, lane_id
 from gpu.host import (
+    AccessPolicyWindow,
+    AccessProperty,
     DeviceContext,
     FuncAttribute,
     LaunchAttribute,
-    AccessPolicyWindow,
-    AccessProperty,
 )
+from gpu.host._compile import _get_nvptx_target
 from gpu.memory import AddressSpace, CacheOperation, load
-from gpu.shuffle import warp_sum, block_sum, ReductionMethod
+from gpu.shuffle import ReductionMethod, block_sum, warp_sum
 from gpu.tensor_ops import tc_reduce_gevm_4x, tc_reduce_gevm_8x
+from memory import UnsafePointer, bitcast, memset_zero, stack_allocation
 
-from memory import UnsafePointer, bitcast, stack_allocation, memset_zero
+from utils import IndexList
+from utils.index import Index
 from utils.numerics import get_accum_type
 from utils.static_tuple import StaticTuple
-from gpu.host._compile import _get_nvptx_target
+
+from .matmul_gpu import matmul_kernel_naive
 from .utils import GemmShape, apply_epilogue, elementwise_epilogue_type
 
 

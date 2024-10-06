@@ -10,7 +10,7 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo-no-debug %s
 from collections import OptionalReg
-from sys.info import os_is_macos, bitwidthof
+from sys.info import bitwidthof, os_is_macos
 
 import benchmark
 from buffer import NDBuffer

@@ -7,7 +7,6 @@
 # RUN: %mojo-no-debug %s | FileCheck %s
 
 from math import align_up
-from memory import UnsafePointer
 from sys import alignof, has_neon, has_vnni
 
 from buffer import NDBuffer
@@ -25,6 +24,7 @@ from linalg.utils import (
     use_i8mm_fn,
     use_vnni_fn,
 )
+from memory import UnsafePointer
 
 from utils import IndexList
 from utils.index import Index

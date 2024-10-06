@@ -10,7 +10,7 @@ from buffer.dimlist import DimList
 from register import mogg_register_shape_func
 from runtime.tracing import Trace, TraceLevel
 
-from utils.index import IndexList, Index
+from utils.index import Index, IndexList
 
 
 @always_inline
