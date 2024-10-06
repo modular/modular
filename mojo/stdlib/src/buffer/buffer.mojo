@@ -505,9 +505,9 @@ struct NDBuffer[
     var data: UnsafePointer[Scalar[type], address_space]
     """The underlying data for the buffer. The pointer is not owned by the
     NDBuffer."""
-    var dynamic_shape: IndexList[rank]
+    var dynamic_shape: IndexList[rank, unsigned=True]
     """The dynamic value of the shape."""
-    var dynamic_stride: IndexList[rank]
+    var dynamic_stride: IndexList[rank, unsigned=True]
     """The dynamic stride of the buffer."""
 
     @staticmethod
@@ -521,8 +521,8 @@ struct NDBuffer[
         """
 
         self.data = UnsafePointer[Scalar[type], address_space]()
-        self.dynamic_shape = IndexList[rank]()
-        self.dynamic_stride = IndexList[rank]()
+        self.dynamic_shape = __type_of(self.dynamic_shape)()
+        self.dynamic_stride = __type_of(self.dynamic_stride)()
 
     @always_inline
     fn __init__(
@@ -544,10 +544,8 @@ struct NDBuffer[
         ]()
 
         self.data = ptr
-        self.dynamic_shape = _make_tuple[rank](shape)
-        self.dynamic_stride = _compute_ndbuffer_stride[rank](
-            _make_tuple[rank](shape)
-        )
+        self.dynamic_shape = _make_tuple[rank, unsigned=True](shape)
+        self.dynamic_stride = _compute_ndbuffer_stride[rank](self.dynamic_shape)
 
     @always_inline
     fn __init__(
@@ -555,7 +553,7 @@ struct NDBuffer[
         ptr: UnsafePointer[
             __mlir_type[`!pop.scalar<`, type.value, `>`], address_space
         ],
-        dynamic_shape: IndexList[rank],
+        dynamic_shape: IndexList[rank, **_],
     ):
         """Constructs an NDBuffer with statically known rank, but dynamic
         shapes and type.
@@ -568,14 +566,21 @@ struct NDBuffer[
             dynamic_shape: A static tuple of size 'rank' representing shapes.
         """
         self.data = ptr.bitcast[Scalar[type]]()
-        self.dynamic_shape = dynamic_shape
-        self.dynamic_stride = _compute_ndbuffer_stride[rank](dynamic_shape)
+        self.dynamic_shape = rebind[__type_of(self.dynamic_shape)](
+            dynamic_shape.cast[
+                element_bitwidth = __type_of(
+                    self.dynamic_shape
+                ).element_bitwidth,
+                unsigned = __type_of(self.dynamic_shape).unsigned,
+            ]()
+        )
+        self.dynamic_stride = _compute_ndbuffer_stride[rank](self.dynamic_shape)
 
     @always_inline
     fn __init__(
         inout self,
         ptr: UnsafePointer[Scalar[type], address_space],
-        dynamic_shape: IndexList[rank],
+        dynamic_shape: IndexList[rank, **_],
     ):
         """Constructs an NDBuffer with statically known rank, but dynamic
         shapes and type.
@@ -588,8 +593,15 @@ struct NDBuffer[
             dynamic_shape: A static tuple of size 'rank' representing shapes.
         """
         self.data = ptr
-        self.dynamic_shape = dynamic_shape
-        self.dynamic_stride = _compute_ndbuffer_stride[rank](dynamic_shape)
+        self.dynamic_shape = rebind[__type_of(self.dynamic_shape)](
+            dynamic_shape.cast[
+                element_bitwidth = __type_of(
+                    self.dynamic_shape
+                ).element_bitwidth,
+                unsigned = __type_of(self.dynamic_shape).unsigned,
+            ]()
+        )
+        self.dynamic_stride = _compute_ndbuffer_stride[rank](self.dynamic_shape)
 
     @always_inline
     fn __init__(
@@ -613,8 +625,8 @@ struct NDBuffer[
     fn __init__(
         inout self,
         ptr: UnsafePointer[Scalar[type], address_space],
-        dynamic_shape: IndexList[rank],
-        dynamic_stride: IndexList[rank],
+        dynamic_shape: IndexList[rank, **_],
+        dynamic_stride: IndexList[rank, **_],
     ):
         """Constructs a strided NDBuffer with statically known rank, but
         dynamic shapes and type.
@@ -628,15 +640,29 @@ struct NDBuffer[
             dynamic_stride: A static tuple of size 'rank' representing strides.
         """
         self.data = ptr
-        self.dynamic_shape = dynamic_shape
-        self.dynamic_stride = dynamic_stride
+        self.dynamic_shape = rebind[__type_of(self.dynamic_shape)](
+            dynamic_shape.cast[
+                element_bitwidth = __type_of(
+                    self.dynamic_shape
+                ).element_bitwidth,
+                unsigned = __type_of(self.dynamic_shape).unsigned,
+            ]()
+        )
+        self.dynamic_stride = rebind[__type_of(self.dynamic_stride)](
+            dynamic_stride.cast[
+                element_bitwidth = __type_of(
+                    self.dynamic_stride
+                ).element_bitwidth,
+                unsigned = __type_of(self.dynamic_stride).unsigned,
+            ]()
+        )
 
     @always_inline
     fn __init__(
         inout self,
         ptr: UnsafePointer[Scalar[type], address_space],
         dynamic_shape: DimList,
-        dynamic_stride: IndexList[rank],
+        dynamic_stride: IndexList[rank, **_],
     ):
         """Constructs a strided NDBuffer with statically known rank, but
         dynamic shapes and type.
@@ -676,6 +702,20 @@ struct NDBuffer[
         @parameter
         for i in range(rank):
             res[i] = self.dim[i]()
+        return res
+
+    @always_inline
+    fn get_strides(self) -> IndexList[rank]:
+        """Returns the strides of the buffer.
+
+        Returns:
+            A static tuple of size 'rank' representing strides of the NDBuffer.
+        """
+        var res = IndexList[rank]()
+
+        @parameter
+        for i in range(rank):
+            res[i] = self.stride[i]()
         return res
 
     @always_inline
@@ -814,7 +854,7 @@ struct NDBuffer[
         return self.load[width=1](idx)
 
     @always_inline
-    fn __getitem__(self, idx: IndexList[rank]) -> Scalar[type]:
+    fn __getitem__(self, idx: IndexList[rank, **_]) -> Scalar[type]:
         """Gets an element from the buffer from the specified index.
 
         Args:
@@ -828,7 +868,7 @@ struct NDBuffer[
     @always_inline
     fn tile[
         *tile_sizes: Dim
-    ](self, tile_coords: IndexList[rank]) -> NDBuffer[
+    ](self, tile_coords: IndexList[rank, **_]) -> NDBuffer[
         type, rank, DimList(tile_sizes), address_space=address_space
     ]:
         """Returns an n-d tile "slice" of the buffer of size tile_sizes at
@@ -936,7 +976,7 @@ struct NDBuffer[
     @always_inline
     fn load[
         *, width: Int = 1, alignment: Int = Self._default_alignment[width]()
-    ](self, idx: IndexList[rank]) -> SIMD[type, width]:
+    ](self, idx: IndexList) -> SIMD[type, width]:
         """Loads a simd value from the buffer at the specified index.
 
         Constraints:
@@ -953,7 +993,16 @@ struct NDBuffer[
             The simd value starting at the `idx` position and ending at
             `idx+width`.
         """
-        return self.load[width=width, alignment=alignment](idx.as_tuple())
+        constrained[idx.size == rank, "invalid index size"]()
+        return self.load[width=width, alignment=alignment](
+            rebind[
+                IndexList[
+                    rank,
+                    element_bitwidth = idx.element_bitwidth,
+                    unsigned = idx.unsigned,
+                ]
+            ](idx).as_tuple()
+        )
 
     @always_inline
     fn load[
@@ -982,7 +1031,7 @@ struct NDBuffer[
         return self._offset(idx).load[width=width, alignment=alignment]()
 
     @always_inline
-    fn __setitem__(self, idx: IndexList[rank], val: Scalar[type]):
+    fn __setitem__(self, idx: IndexList[rank, **_], val: Scalar[type]):
         """Stores a single value into the buffer at the specified index.
 
         Args:

@@ -319,7 +319,7 @@ def test_ndbuffer_tile():
     fn linspace(buffer: NDBuffer):
         for i in range(buffer.dim[0]()):
             for j in range(buffer.dim[1]()):
-                buffer[(i, j)] = i * buffer.dim[1]() + j
+                buffer[i, j] = i * buffer.dim[1]() + j
 
     fn print_buffer(buffer: NDBuffer):
         for i in range(buffer.dim[0]()):
@@ -430,7 +430,7 @@ def test_ndbuffer_tile():
         for tile_j in range(N // n0_tile_size):
             print("tile-0[", tile_i, tile_j, "]")
             var tile_4x4 = buff.tile[m0_tile_size, n0_tile_size](
-                tile_coords=(tile_i, tile_j)
+                tile_coords=Index(tile_i, tile_j)
             )
             print_buffer(tile_4x4)
             print("----------->")
@@ -438,7 +438,7 @@ def test_ndbuffer_tile():
                 for tile_jj in range(n0_tile_size // n1_tile_size):
                     print("tile-1[", tile_ii, tile_jj, "]")
                     var tile_2x2 = tile_4x4.tile[m1_tile_size, n1_tile_size](
-                        tile_coords=(tile_ii, tile_jj)
+                        tile_coords=Index(tile_ii, tile_jj)
                     )
                     print_buffer(tile_2x2)
                     print("------")
