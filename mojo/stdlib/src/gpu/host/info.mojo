@@ -6,8 +6,8 @@
 """Contains information about the GPUs."""
 
 from math import ceildiv, floor
-from sys import env_get_string
 from os import abort
+from sys import env_get_string
 
 alias DEFAULT_GPU_ARCH = env_get_string["DEFAULT_GPU_ARCH", "sm_80"]()
 

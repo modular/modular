@@ -8,10 +8,11 @@
 Implementation of a CTA-wide semaphore for inter-CTA synchronization.
 """
 
-from memory import UnsafePointer
-from sys import triple_is_nvidia_cuda
-from sys import llvm_intrinsic
+from sys import llvm_intrinsic, triple_is_nvidia_cuda
 from sys._assembly import inlined_assembly
+
+from memory import UnsafePointer
+
 from .sync import barrier
 
 

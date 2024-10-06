@@ -6,11 +6,11 @@
 """This module includes intrinsics for NVIDIA GPUs shuffle instructions."""
 
 from sys import llvm_intrinsic
-from .tensor_ops import tc_reduce
 
 from memory import bitcast
 
 from .globals import WARP_SIZE
+from .tensor_ops import tc_reduce
 
 # TODO (#24457): support shuffles with width != 32
 alias _WIDTH_MASK = WARP_SIZE - 1

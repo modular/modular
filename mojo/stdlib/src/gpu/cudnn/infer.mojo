@@ -4,15 +4,17 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from memory import UnsafePointer
 from os import abort
 from pathlib import Path
 from sys.ffi import DLHandle
 from sys.ffi import _get_dylib_function as _ffi_get_dylib_function
-from .backend import *
-from ..host import Stream
+
+from memory import UnsafePointer
+
 from utils import StaticTuple
 
+from ..host import Stream
+from .backend import *
 
 # ===----------------------------------------------------------------------===#
 # Library Load

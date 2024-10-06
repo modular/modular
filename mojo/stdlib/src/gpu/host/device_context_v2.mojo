@@ -7,12 +7,9 @@
 # Implementation of the C++ backed DeviceContext in Mojo
 # WIP, just stubs for now
 
-from ._compile import (
-    _compile_code,
-    _get_nvptx_target,
-)
 from memory import stack_allocation
 
+from ._compile import _compile_code, _get_nvptx_target
 
 alias _DeviceContextPtr = UnsafePointer[NoneType]
 alias _DeviceBufferPtr = UnsafePointer[NoneType]

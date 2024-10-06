@@ -5,12 +5,14 @@
 # ===----------------------------------------------------------------------=== #
 """Implements CUDA compilation operations."""
 
-from os import abort
 import subprocess
 import tempfile
+from os import abort
 from pathlib import Path
+
 from compile import Info, compile_info, get_linkage_name
-from .info import _get_info_from_target, DEFAULT_GPU_ARCH
+
+from .info import DEFAULT_GPU_ARCH, _get_info_from_target
 
 # ===----------------------------------------------------------------------===#
 # Targets

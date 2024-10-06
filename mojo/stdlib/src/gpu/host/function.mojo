@@ -8,8 +8,8 @@
 from collections import Dict, List, OptionalReg
 from math.math import align_up
 from pathlib import Path
-from sys.intrinsics import _mlirtype_is_eq
 from sys import is_defined
+from sys.intrinsics import _mlirtype_is_eq
 
 from builtin._location import __call_location
 from gpu.host.device_context import DeviceBuffer
@@ -23,8 +23,8 @@ from ._compile import (
     _compile_code_asm,
     _get_nvptx_fn_name,
     _get_nvptx_target,
-    _to_sass,
     _ptxas_compile,
+    _to_sass,
 )
 from ._utils import (
     CudaHandle,

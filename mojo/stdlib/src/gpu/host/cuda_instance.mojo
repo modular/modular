@@ -6,6 +6,8 @@
 
 from sys.ffi import c_char, c_size_t
 
+from utils.static_tuple import StaticTuple
+
 from ._utils import (
     _check_error,
     _ContextHandle,
@@ -17,8 +19,7 @@ from ._utils import (
 )
 from .device import Device
 from .event import Flag
-from .function import _FunctionHandle, CacheConfig
-from utils.static_tuple import StaticTuple
+from .function import CacheConfig, _FunctionHandle
 
 
 @register_passable("trivial")

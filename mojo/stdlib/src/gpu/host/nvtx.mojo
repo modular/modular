@@ -7,11 +7,12 @@
 from collections import List, Optional
 from os import abort
 from pathlib import Path
-from sys.ffi import c_char, DLHandle
+from sys.ffi import DLHandle
 from sys.ffi import _get_dylib_function as _ffi_get_dylib_function
+from sys.ffi import c_char
+from sys.param_env import env_get_int
 
 from memory import UnsafePointer, stack_allocation
-from sys.param_env import env_get_int
 
 # ===----------------------------------------------------------------------===#
 # Library Load

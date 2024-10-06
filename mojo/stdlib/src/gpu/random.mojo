@@ -8,8 +8,9 @@
 Implements a basic RNG using the Philox algorithm.
 """
 
-from .intrinsics import mulwide
 from memory import bitcast
+
+from .intrinsics import mulwide
 
 
 fn _mulhilow(a: UInt32, b: UInt32) -> SIMD[DType.uint32, 2]:

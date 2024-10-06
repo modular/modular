@@ -5,8 +5,9 @@
 # ===----------------------------------------------------------------------=== #
 """This module includes utilities for getting NVIDIA GPUs features."""
 
-from gpu.host.info import Info
 from sys.info import _current_arch, _current_target
+
+from gpu.host.info import Info
 
 
 @always_inline("nodebug")

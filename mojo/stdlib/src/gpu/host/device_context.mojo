@@ -6,9 +6,9 @@
 
 from collections import List, Optional
 from os import abort
-from sys import sizeof, external_call
-from sys.param_env import env_get_int, is_defined
+from sys import external_call, sizeof
 from sys.ffi import c_size_t
+from sys.param_env import env_get_int, is_defined
 
 from gpu.host._compile import _get_nvptx_target
 from gpu.host.context import Context
@@ -19,6 +19,9 @@ from gpu.host.function import Function
 from gpu.host.memory import _memset_async
 from gpu.host.stream import Stream
 
+from ._compile import _get_nvptx_fn_name
+from ._utils import _check_error, _StreamHandle
+
 # In device_context.mojo we define Device{Context,Buffer,Function}V1, the old
 # Mojo versions. The C++ versions Device{Context,Buffer,Function}V2 are in
 # device_context_v2.mojo. Finally, device_context_variant.mojo defines
@@ -26,10 +29,7 @@ from gpu.host.stream import Stream
 # command-line flag. Import them here so users can continue to import from
 # gpu.host.device_context. Eventually, device_context_v2.mojo will be renamed to
 # replace this file.
-from .device_context_variant import DeviceContext, DeviceBuffer, DeviceFunction
-
-from ._compile import _get_nvptx_fn_name
-from ._utils import _check_error, _StreamHandle
+from .device_context_variant import DeviceBuffer, DeviceContext, DeviceFunction
 
 
 # TODO: Figure a way to resolve circular dependency between the gpu and runtime

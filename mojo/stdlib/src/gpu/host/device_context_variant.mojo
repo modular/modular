@@ -5,6 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 from sys.ffi import c_size_t
 from sys.param_env import is_defined
+
 from gpu.host._compile import _get_nvptx_target
 
 # The structs in this file are thin wrappers that delegate to either
