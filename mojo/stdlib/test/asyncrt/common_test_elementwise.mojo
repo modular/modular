@@ -4,13 +4,15 @@
 #
 # ===----------------------------------------------------------------------=== #
 
+from sys import simdwidthof
+
 from algorithm.functional import elementwise
 from buffer import NDBuffer
 from gpu import *
 from gpu.host import DeviceContext
 from gpu.host._compile import _get_nvptx_target
 from smoke_test_utils import expect_eq
-from sys import simdwidthof
+
 from utils import IndexList
 from utils.index import Index
 

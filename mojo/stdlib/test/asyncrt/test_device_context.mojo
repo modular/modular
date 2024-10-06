@@ -5,12 +5,12 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo-no-debug %s
 
-from gpu.host import DeviceContext
-from common_test_smoke import test_smoke
 from common_test_copies import test_copies
-from common_test_function import test_function
-from common_test_timing import test_timing
 from common_test_elementwise import test_elementwise
+from common_test_function import test_function
+from common_test_smoke import test_smoke
+from common_test_timing import test_timing
+from gpu.host import DeviceContext
 
 
 def main():

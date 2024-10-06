@@ -4,8 +4,9 @@
 #
 # ===----------------------------------------------------------------------=== #
 
+from sys.param_env import env_get_string, is_defined
+
 from gpu.host import DeviceContextVariant
-from sys.param_env import is_defined, env_get_string
 
 
 fn expect_eq[

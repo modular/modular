@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from gpu.host import DeviceContextVariant, DeviceBufferVariant
+from gpu.host import DeviceBufferVariant, DeviceContextVariant
 from smoke_test_utils import expect_eq
 
 
