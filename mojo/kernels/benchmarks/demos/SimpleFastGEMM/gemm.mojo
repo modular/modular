@@ -56,7 +56,7 @@ fn gemm_naive(
     for i in range(m):
         for p in range(k):
             for j in range(n):
-                c[(i, j)] += a[i, p] * b[p, j]
+                c[i, j] += a[i, p] * b[p, j]
 
 
 fn kernel(

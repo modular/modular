@@ -34,7 +34,7 @@ fn gemm_naive(a: NDBuffer, b: NDBuffer, c: NDBuffer):
             for j in range(n):
                 var a_val = a[i, p].cast[c.type]()
                 var b_val = b[p, j].cast[c.type]()
-                c[(i, j)] += a_val * b_val
+                c[i, j] += a_val * b_val
 
 
 fn verify(a: NDBuffer, b: NDBuffer, c: NDBuffer):
@@ -48,7 +48,7 @@ fn verify(a: NDBuffer, b: NDBuffer, c: NDBuffer):
     for i in range(m):
         for j in range(n):
             try:
-                assert_almost_equal(c[(i, j)], c_ref[(i, j)])
+                assert_almost_equal(c[i, j], c_ref[i, j])
             except e:
                 abort(e)  # this function should raise, blocked by #31795
     c_ref_ptr.free()
