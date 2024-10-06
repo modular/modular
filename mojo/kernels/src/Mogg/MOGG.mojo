@@ -4215,11 +4215,11 @@ fn with_mask_flash_attention_split_kv_cache_cpu[
     the output shape.
 
     Arguments have the following shapes:
-        q: BHSD
-        input_1_fn (k): BHSD
-        input_2_fn (v): BHSD
+        q: BSHD
+        input_1_fn (k): BSHD
+        input_2_fn (v): BSHD
         input_3_fn (k_cache): 1BHSD
-        input_4_fn (v_cache: 1BHSD
+        input_4_fn (v_cache): 1BHSD
     """
 
     constrained[target == "cpu"]()
