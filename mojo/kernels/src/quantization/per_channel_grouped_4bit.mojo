@@ -325,7 +325,7 @@ struct Q4sym[
 
     @staticmethod
     fn dequantize_and_write_to_tensor[
-        rank: Int,
+        rank: Int, //
     ](
         input_tensor: NDBuffer[DType.uint8, rank],
         output_tensor: NDBuffer[float_dtype, rank],

@@ -171,7 +171,7 @@ fn _read_write_to_tensors[
         IndexList[rank](num_elements),
     )
 
-    Q4sym[group_size, DType.float32].dequantize_and_write_to_tensor[rank](
+    Q4sym[group_size, DType.float32].dequantize_and_write_to_tensor(
         rebound_packed_block,
         rebound_out_data_matrix,
         IndexList[rank](num_elements),
