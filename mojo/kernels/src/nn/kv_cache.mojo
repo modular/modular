@@ -2297,9 +2297,13 @@ fn fused_qk_rope_h6_d48_bshd[
     kernels in the graph definition. Here we fuse the RoPE kernel applied to
     Q_proj with K_proj, so K_proj RoPE is only excuted after QKV completes.
     """
+    # Pass device context only on GPU.
+    var dev_ctx = Optional[
+        DeviceContext
+    ]() if target == "cpu" else context.get_device_context()
     with Trace[TraceLevel.OP, target=target]("fused_qk_rope_h6_d48_bshd"):
         fused_qk_rope[target=target](
-            q_proj, k_cache, freqs_cis, output, context
+            q_proj, k_cache, freqs_cis, output, dev_ctx
         )
 
 
@@ -2331,9 +2335,13 @@ fn fused_qk_rope_h6_d48_bhsd[
     kernels in the graph definition. Here we fuse the RoPE kernel applied to
     Q_proj with K_proj, so K_proj RoPE is only excuted after QKV completes.
     """
+    # Pass device context only on GPU.
+    var dev_ctx = Optional[
+        DeviceContext
+    ]() if target == "cpu" else context.get_device_context()
     with Trace[TraceLevel.OP, target=target]("fused_qk_rope_h6_d48_bhsd"):
         fused_qk_rope[target=target](
-            q_proj, k_cache, freqs_cis, output, context
+            q_proj, k_cache, freqs_cis, output, dev_ctx
         )
 
 
@@ -2365,9 +2373,13 @@ fn fused_qk_rope_h8_d128_bshd[
     kernels in the graph definition. Here we fuse the RoPE kernel applied to
     Q_proj with K_proj, so K_proj RoPE is only excuted after QKV completes.
     """
+    # Pass device context only on GPU.
+    var dev_ctx = Optional[
+        DeviceContext
+    ]() if target == "cpu" else context.get_device_context()
     with Trace[TraceLevel.OP, target=target]("fused_qk_rope_h8_d128_bshd"):
         fused_qk_rope[target=target](
-            q_proj, k_cache, freqs_cis, output, context
+            q_proj, k_cache, freqs_cis, output, dev_ctx
         )
 
 
@@ -2399,9 +2411,13 @@ fn fused_qk_rope_h8_d128_bhsd[
     kernels in the graph definition. Here we fuse the RoPE kernel applied to
     Q_proj with K_proj, so K_proj RoPE is only excuted after QKV completes.
     """
+    # Pass device context only on GPU.
+    var dev_ctx = Optional[
+        DeviceContext
+    ]() if target == "cpu" else context.get_device_context()
     with Trace[TraceLevel.OP, target=target]("fused_qk_rope_h8_d128_bhsd"):
         fused_qk_rope[target=target](
-            q_proj, k_cache, freqs_cis, output, context
+            q_proj, k_cache, freqs_cis, output, dev_ctx
         )
 
 
@@ -2433,9 +2449,13 @@ fn fused_qk_rope_h1_d16_bshd[
     kernels in the graph definition. Here we fuse the RoPE kernel applied to
     Q_proj with K_proj, so K_proj RoPE is only excuted after QKV completes.
     """
+    # Pass device context only on GPU.
+    var dev_ctx = Optional[
+        DeviceContext
+    ]() if target == "cpu" else context.get_device_context()
     with Trace[TraceLevel.OP, target=target]("fused_qk_rope_h1_d16_bshd"):
         fused_qk_rope[target=target](
-            q_proj, k_cache, freqs_cis, output, context
+            q_proj, k_cache, freqs_cis, output, dev_ctx
         )
 
 
@@ -2467,9 +2487,13 @@ fn fused_qk_rope_h1_d16_bhsd[
     kernels in the graph definition. Here we fuse the RoPE kernel applied to
     Q_proj with K_proj, so K_proj RoPE is only excuted after QKV completes.
     """
+    # Pass device context only on GPU.
+    var dev_ctx = Optional[
+        DeviceContext
+    ]() if target == "cpu" else context.get_device_context()
     with Trace[TraceLevel.OP, target=target]("fused_qk_rope_h1_d16_bhsd"):
         fused_qk_rope[target=target](
-            q_proj, k_cache, freqs_cis, output, context
+            q_proj, k_cache, freqs_cis, output, dev_ctx
         )
 
 
@@ -2501,9 +2525,13 @@ fn fused_qk_rope_h8_d64_bshd[
     kernels in the graph definition. Here we fuse the RoPE kernel applied to
     Q_proj with K_proj, so K_proj RoPE is only excuted after QKV completes.
     """
+    # Pass device context only on GPU.
+    var dev_ctx = Optional[
+        DeviceContext
+    ]() if target == "cpu" else context.get_device_context()
     with Trace[TraceLevel.OP, target=target]("fused_qk_rope_h8_d64_bshd"):
         fused_qk_rope[target=target](
-            q_proj, k_cache, freqs_cis, output, context
+            q_proj, k_cache, freqs_cis, output, dev_ctx
         )
 
 
@@ -2535,9 +2563,13 @@ fn fused_qk_rope_h8_d64_bhsd[
     kernels in the graph definition. Here we fuse the RoPE kernel applied to
     Q_proj with K_proj, so K_proj RoPE is only excuted after QKV completes.
     """
+    # Pass device context only on GPU.
+    var dev_ctx = Optional[
+        DeviceContext
+    ]() if target == "cpu" else context.get_device_context()
     with Trace[TraceLevel.OP, target=target]("fused_qk_rope_h8_d64_bhsd"):
         fused_qk_rope[target=target](
-            q_proj, k_cache, freqs_cis, output, context
+            q_proj, k_cache, freqs_cis, output, dev_ctx
         )
 
 
@@ -2569,11 +2601,15 @@ fn fused_qk_rope_h8_d128_bshd_continuous_batch[
     kernels in the graph definition. Here we fuse the RoPE kernel applied to
     Q_proj with K_proj, so K_proj RoPE is only excuted after QKV completes.
     """
+    # Pass device context only on GPU.
+    var dev_ctx = Optional[
+        DeviceContext
+    ]() if target == "cpu" else context.get_device_context()
     with Trace[TraceLevel.OP, target=target](
         "fused_qk_rope_h8_d128_bshd_continuous_batch"
     ):
         fused_qk_rope[target=target](
-            q_proj, k_cache, freqs_cis, output, context
+            q_proj, k_cache, freqs_cis, output, dev_ctx
         )
 
 
@@ -2605,11 +2641,15 @@ fn fused_qk_rope_h8_d128_bhsd_continuous_batch[
     kernels in the graph definition. Here we fuse the RoPE kernel applied to
     Q_proj with K_proj, so K_proj RoPE is only excuted after QKV completes.
     """
+    # Pass device context only on GPU.
+    var dev_ctx = Optional[
+        DeviceContext
+    ]() if target == "cpu" else context.get_device_context()
     with Trace[TraceLevel.OP, target=target](
         "fused_qk_rope_h8_d128_bhsd_continuous_batch"
     ):
         fused_qk_rope[target=target](
-            q_proj, k_cache, freqs_cis, output, context
+            q_proj, k_cache, freqs_cis, output, dev_ctx
         )
 
 
@@ -2641,11 +2681,15 @@ fn fused_qk_rope_h8_d64_bshd_continuous_batch[
     kernels in the graph definition. Here we fuse the RoPE kernel applied to
     Q_proj with K_proj, so K_proj RoPE is only excuted after QKV completes.
     """
+    # Pass device context only on GPU.
+    var dev_ctx = Optional[
+        DeviceContext
+    ]() if target == "cpu" else context.get_device_context()
     with Trace[TraceLevel.OP, target=target](
         "fused_qk_rope_h8_d64_bshd_continuous_batch"
     ):
         fused_qk_rope[target=target](
-            q_proj, k_cache, freqs_cis, output, context
+            q_proj, k_cache, freqs_cis, output, dev_ctx
         )
 
 
@@ -2677,11 +2721,15 @@ fn fused_qk_rope_h8_d64_bhsd_continuous_batch[
     kernels in the graph definition. Here we fuse the RoPE kernel applied to
     Q_proj with K_proj, so K_proj RoPE is only excuted after QKV completes.
     """
+    # Pass device context only on GPU.
+    var dev_ctx = Optional[
+        DeviceContext
+    ]() if target == "cpu" else context.get_device_context()
     with Trace[TraceLevel.OP, target=target](
         "fused_qk_rope_h8_d64_bhsd_continuous_batch"
     ):
         fused_qk_rope[target=target](
-            q_proj, k_cache, freqs_cis, output, context
+            q_proj, k_cache, freqs_cis, output, dev_ctx
         )
 
 

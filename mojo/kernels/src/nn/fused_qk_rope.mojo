@@ -4,12 +4,14 @@
 #
 # ===----------------------------------------------------------------------=== #
 
+from collections import Optional
 from math import gcd
 from sys.info import _current_target, simdwidthof
 from sys.intrinsics import _type_is_eq
 
 from algorithm.functional import elementwise
 from buffer import NDBuffer
+from gpu.host import DeviceContext
 from gpu.host._compile import _get_nvptx_target
 from kv_cache.types import (
     ContiguousKVCache,
@@ -33,7 +35,7 @@ fn fused_qk_rope[
     k_cache: cache_t,
     freqs_cis: NDBuffer[type, 2, *_],
     output: NDBuffer[type, 4, *_],
-    context: MojoCallContextPtr,
+    context: Optional[DeviceContext],
 ):
     alias kv_params = cache_t.get_kv_params()
 
@@ -129,9 +131,15 @@ fn fused_qk_rope[
         ](idx: IndexList[rank]):
             rope_fn_common[width](k_cache_reg, idx)
 
-        elementwise[
-            func=rope_fn_contig, simd_width=kernel_simd_width, target=target
-        ](launch_shape, context.get_device_context())
+        @parameter
+        if target == "cpu":
+            elementwise[
+                func=rope_fn_contig, simd_width=kernel_simd_width, target=target
+            ](launch_shape)
+        else:
+            elementwise[
+                func=rope_fn_contig, simd_width=kernel_simd_width, target=target
+            ](launch_shape, context.value())
     elif _type_is_eq[cache_t, ContinuousBatchingKVCache[type, kv_params]]():
         # cast to a register passable type so the function closure works on GPU
         var k_cache_reg = rebind[ContinuousBatchingKVCache[type, kv_params]](
@@ -146,6 +154,16 @@ fn fused_qk_rope[
         ](idx: IndexList[rank]):
             rope_fn_common[width](k_cache_reg, idx)
 
-        elementwise[
-            func=rope_fn_continuous, simd_width=kernel_simd_width, target=target
-        ](launch_shape, context.get_device_context())
+        @parameter
+        if target == "cpu":
+            elementwise[
+                func=rope_fn_continuous,
+                simd_width=kernel_simd_width,
+                target=target,
+            ](launch_shape)
+        else:
+            elementwise[
+                func=rope_fn_continuous,
+                simd_width=kernel_simd_width,
+                target=target,
+            ](launch_shape, context.value())
