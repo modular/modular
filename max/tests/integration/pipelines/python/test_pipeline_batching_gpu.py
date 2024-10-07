@@ -69,14 +69,14 @@ def pipeline_model(testdata_directory, request):
     )
     print(
         f"- Using config: {config.version}, MaxLength={config.max_length},"
-        f" MaxNewTokens={config.max_new_tokens}, BatchSize={config.batch_size}"
+        f" MaxNewTokens={config.max_new_tokens},"
+        f" BatchSize={config.max_cache_batch_size}"
     )
     model = Llama3(config)
 
     return model
 
 
-@pytest.mark.skip("Fails compare_values")
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     "pipeline_model",
@@ -134,14 +134,15 @@ async def test_pipeline_heterogeneous_batch_logits(
         pipeline_model, {"B": context_b, "C": context_c}, stored_logits
     )
 
-    compare_values(
-        [
-            {"prompt": prompt_a, "values": stored_logits["A"]},
-            {"prompt": prompt_b, "values": stored_logits["B"]},
-            {"prompt": prompt_c, "values": stored_logits["C"]},
-        ],
-        expected_results,
-        rtol=1e-4,
-    )
+    with pytest.raises(AssertionError):
+        compare_values(
+            [
+                {"prompt": prompt_a, "values": stored_logits["A"]},
+                {"prompt": prompt_b, "values": stored_logits["B"]},
+                {"prompt": prompt_c, "values": stored_logits["C"]},
+            ],
+            expected_results,
+            rtol=1e-4,
+        )
 
     await pipeline_model.reset_cache()
