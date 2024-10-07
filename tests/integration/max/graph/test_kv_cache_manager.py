@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 
 import pytest
-from nn.kv_cache import KVCacheParams, KVCacheType, load_kv_manager
+from nn.kv_cache import KVCacheParams, KVCacheStrategy, load_kv_manager
 from max.engine import InferenceSession
 from max.driver import CPU
 from max.dtype import DType
@@ -99,7 +99,7 @@ async def test_fetch_continuous(session: InferenceSession):
         n_kv_heads=8,
         head_dim=128,
         device=device,
-        cache_type=KVCacheType.CONTINUOUS,
+        cache_strategy=KVCacheStrategy.CONTINUOUS,
     )
 
     kv_manager = load_kv_manager(
@@ -132,7 +132,7 @@ async def test_fetch_contiguous(session: InferenceSession):
         n_kv_heads=8,
         head_dim=128,
         device=device,
-        cache_type=KVCacheType.CONTIGUOUS,
+        cache_strategy=KVCacheStrategy.CONTIGUOUS,
     )
 
     kv_manager = load_kv_manager(
