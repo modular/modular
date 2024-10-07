@@ -28,7 +28,7 @@ class KVCacheModel:
     ) -> ContiguousKVCacheCollectionType:
         """Constructs an initial ContiguousKVCacheCollection for use downstream.
         """
-        op_name = f"contiguous_kv_cache_collection_h{self.kv_params.n_kv_heads}_d{self.kv_params.head_dim}_bhsd"
+        op_name = f"contiguous_kv_cache_collection_h{self.kv_params.n_kv_heads}_d{self.kv_params.head_dim}_bshd"
         return ops.custom(
             op_name,
             values=[
