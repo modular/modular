@@ -24,6 +24,7 @@ from evaluate_llama import (
 )
 
 from llama3.llama3 import Llama3
+from nn.kv_cache import KVCacheStrategy
 
 
 @pytest.fixture(scope="session")
@@ -52,7 +53,7 @@ def tinyllama_model_naive_kv_cache(tinyllama_path, request):
         tinyllama_path,
         max_length=max_length,
         max_new_tokens=max_new_tokens,
-        force_naive_kv_cache=True,
+        cache_strategy=KVCacheStrategy.NAIVE,
     )
     return model
 

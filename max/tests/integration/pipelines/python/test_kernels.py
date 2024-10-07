@@ -12,7 +12,7 @@ from max.graph import Graph
 from nn.kernels import kv_cache_length
 from nn.kv_cache import (
     KVCacheParams,
-    KVCacheType,
+    KVCacheStrategy,
     ContiguousKVCacheCollectionType,
     load_kv_manager,
 )
@@ -26,7 +26,7 @@ async def test_kv_cache_length() -> None:
         n_kv_heads=8,
         head_dim=128,
         device=CPU(),
-        cache_type=KVCacheType.CONTIGUOUS,
+        cache_strategy=KVCacheStrategy.CONTIGUOUS,
     )
     session = InferenceSession()
     kv_manager = load_kv_manager(
