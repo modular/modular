@@ -324,8 +324,8 @@ fn warp_reduce[
 
     @parameter
     for i in reversed(range(limit)):
-        alias mask = 1 << i
-        res = func(res, shuffle(res, mask))
+        alias offset = 1 << i
+        res = func(res, shuffle(res, offset))
 
     return res
 
