@@ -6,36 +6,63 @@
 
 import asyncio
 import logging
-
 from collections import defaultdict
-from typing import Any, Optional, TextIO
 from contextlib import ExitStack
+from dataclasses import dataclass
+
+# from functools import cmp_to_key
 from pathlib import Path
+from typing import Any, List, Optional, TextIO
 
 import click
 from huggingface_hub import hf_hub_download
-
+from llama3 import InferenceConfig, Llama3
 from max.driver import CPU
 from max.pipelines import TokenGenerator
+from max.serve.pipelines.echo_gen import EchoTokenGenerator
 
-from llama3 import (
-    InferenceConfig,
-    Llama3,
-)
 from utils import config_to_flag
 
-"""
-Batch Sequence
-start-time, max-new-tokens
-"""
-REQUEST_SEQUENCE = [
-    [0, 16],
-    [0, 24],
-    [0, 32],
-    [8, 16],  # Added to TokenGenBatch after ContextEncoding
-    [8, 32],  # Stays in TokenGenQueue until first completes
-    [16, 16],  # Stays in TokenGenQueue until second completes
-]
+
+@dataclass(order=True)
+class RequestInstance:
+    req_id: str
+    max_token_len: int
+    arrival_time: float
+
+
+def generate_batch_requests(num_requests: int = 8) -> List[RequestInstance]:
+    request_list = []
+    for i in range(num_requests):
+        request_list.append(
+            RequestInstance(req_id=f"req_{i}", max_token_len=10, arrival_time=0)
+        )
+    return request_list
+
+
+def generate_simple_requests() -> List[RequestInstance]:
+    _REQUEST_SEQUENCE = [
+        [0, 16],
+        [0, 24],
+        [0, 32],
+        [8, 16],  # Added to TokenGenBatch after ContextEncoding
+        [8, 32],  # Stays in TokenGenQueue until first completes
+        [16, 16],  # Stays in TokenGenQueue until second completes
+    ]
+    request_list = []
+    for i, entry in enumerate(_REQUEST_SEQUENCE):
+        request_list.append(
+            RequestInstance(
+                req_id=f"req_{i}",
+                max_token_len=entry[1],
+                arrival_time=entry[0],
+            )
+        )
+    print(f"Incoming request_list : {request_list}")
+    request_list = sorted(request_list, key=lambda x: x.arrival_time)
+    print(f"Sorted request_list : {request_list}")
+    return request_list
+
 
 # As opposed to continuous batching
 # When set - the batch is executed until ALL items of the batch are completed.
@@ -46,6 +73,8 @@ async def run_batch_scenario(
     model: TokenGenerator,
     prompts: list[str],
     output_path: str,
+    request_list: list[RequestInstance],
+    max_batch_size=4,
 ):
     logging.basicConfig(
         level=logging.INFO,
@@ -57,15 +86,14 @@ async def run_batch_scenario(
     logger = logging.getLogger(__name__)
     logger.info(
         "Starting scenario with %d batches and %d prompts",
-        len(REQUEST_SEQUENCE),
+        len(request_list),
         len(prompts),
     )
 
-    max_batch_size = model.config.max_cache_batch_size
     num_prompts = len(prompts)
-
     batch_sequence_index = 0
-    step = 0
+    TOKEN_GEN_TIME: float = 1.0
+    current_step: float = 0
 
     context_encoding_queue: list[tuple[str, str, int]] = []
     token_gen_queue: list[tuple[str, Any]] = []  # Queued batched
@@ -92,11 +120,11 @@ async def run_batch_scenario(
 
     with exit_stack:
         while True:
-            step_logger = logger.getChild(str(step))
+            step_logger = logger.getChild(str(current_step))
             step_logger.info("")
 
             if (
-                (batch_sequence_index == len(REQUEST_SEQUENCE))
+                (batch_sequence_index == len(request_list))
                 and (not context_encoding_queue)
                 and (not token_gen_queue)
                 and (not token_gen_batch)
@@ -105,13 +133,15 @@ async def run_batch_scenario(
                 break
 
             # Check if we have new batches available.
-            while (batch_sequence_index < len(REQUEST_SEQUENCE)) and (
-                step == REQUEST_SEQUENCE[batch_sequence_index][0]
+            while (batch_sequence_index < len(request_list)) and (
+                current_step >= request_list[batch_sequence_index].arrival_time
             ):
                 # Reuse prompts as needed
                 batch_id = str(batch_sequence_index)
-                prompt = prompts[batch_sequence_index % num_prompts]
-                max_new_tokens = REQUEST_SEQUENCE[batch_sequence_index][1]
+                prompt = prompts[batch_sequence_index % max(num_prompts, 1)]
+                max_new_tokens = request_list[
+                    batch_sequence_index
+                ].max_token_len
                 batch_configs[batch_id] = (prompt, max_new_tokens)
                 step_logger.info(
                     "Received: Batch %s, '%s', %d",
@@ -247,7 +277,7 @@ async def run_batch_scenario(
                         await model.release(token_gen_batch[batch_id])
                         del token_gen_batch[batch_id]
 
-            step += 1
+            current_step += TOKEN_GEN_TIME  # assumes that token generation takes one time step.
 
     summary_text = ""
     for batch_id, batch_completion in batch_completions.items():
@@ -280,10 +310,17 @@ async def run_batch_scenario(
     default="",
     help="Optional path to write outputs for batching scenario.",
 )
+@click.option(
+    "--model-name",
+    type=click.Choice(["toy-llama", "rev-echo"]),
+    default="rev-echo",
+    help="the model to use for evaluation",
+)
 def main(
     prompt: str,
     prompt_count: int,
     output_path: str,
+    model_name: str,
     **config_kwargs,
 ):
     config_kwargs.update({"device": CPU()})
@@ -309,15 +346,17 @@ def main(
             repo_id=repo_id,
             filename=weight_filename,
         )
-
-    model = Llama3(config)
+    if model_name == "rev-echo":
+        model = EchoTokenGenerator()
+    elif model_name == "toy-llama":
+        model = Llama3(config)
+    else:
+        raise ValueError("invalid model name")
     print("Starting batch demo")
     prompts = [prompt.format(i + 1) for i in range(prompt_count)]
     asyncio.run(
         run_batch_scenario(
-            model,
-            prompts,
-            output_path,
+            model, prompts, output_path, generate_simple_requests()
         )
     )
 
