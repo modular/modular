@@ -3329,7 +3329,7 @@ struct LayoutTensorIter[
     The returned layout tensor is NOT vectorized. User should explicitly vectorize.
     """
 
-    var ptr: UnsafePointer[Scalar[type], address_space, False, alignment]
+    var ptr: UnsafePointer[Scalar[type], address_space, alignment]
     var offset: Scalar[_get_unsigned_type(layout, address_space)]
     var stride: Scalar[_get_unsigned_type(layout, address_space)]
     var bound: Scalar[_get_unsigned_type(layout, address_space)]
