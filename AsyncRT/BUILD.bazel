@@ -16,6 +16,7 @@ modular_cc_library(
     hdrs = glob([
         "include/AsyncRT/CompilerSupport/*.h",
     ]),
+    tags = ["no-clang-tidy-headers"],
     visibility = ["//Support:__subpackages__"],
     deps = [
         ":Runtime.headers",
@@ -42,6 +43,7 @@ modular_cc_library(
     ]) + [
         "include/AsyncRT/ForwardDecls.h",
     ],
+    tags = ["no-clang-tidy-headers"],
     visibility = ["//visibility:private"],
     deps = [
         ":Support.headers",
@@ -52,6 +54,7 @@ modular_cc_library(
 modular_cc_library(
     name = "Support.headers",
     hdrs = glob(["include/AsyncRT/Support/*.h"]),
+    tags = ["no-clang-tidy-headers"],
     visibility = ["//visibility:private"],
 )
 
@@ -59,6 +62,7 @@ modular_cc_library(
     name = "CompilerSupport",
     srcs = glob(["lib/CompilerSupport/*.cpp"]),
     hdrs = glob(["include/AsyncRT/CompilerSupport/*.h"]),
+    tags = ["no-clang-tidy-headers"],
     deps = [
         ":Runtime",
     ],
@@ -152,6 +156,7 @@ modular_cc_library(
         "@platforms//os:linux": ["MODULAR_HAVE_SEM_TIMEDWAIT"],
         "//conditions:default": [],
     }),
+    tags = ["no-clang-tidy-headers"],
     deps = [
         "//Support:MArchTarget",
         "//Support:Threading",
