@@ -516,6 +516,7 @@ struct _FlashAttentionConfig[
 struct _FlashAttention[
     type: DType,
     rank: Int,
+    mask_rank: Int,
     output_static_shape: DimList, //,
     simd_width: Int,
     input_k_fn: fn[simd_width: Int, rank: Int] (
@@ -524,8 +525,8 @@ struct _FlashAttention[
     input_v_fn: fn[simd_width: Int, rank: Int] (
         IndexList[rank]
     ) capturing -> SIMD[type, simd_width],
-    input_mask_fn: fn[simd_width: Int, rank: Int] (
-        IndexList[rank]
+    input_mask_fn: fn[simd_width: Int, mask_rank: Int] (
+        IndexList[mask_rank]
     ) capturing -> SIMD[type, simd_width],
     *,
     transpose_k: Bool = False,
@@ -624,6 +625,7 @@ struct _FlashAttention[
         q: NDBuffer[type, rank, *_],
         k_shape: IndexList[rank],
         v_shape: IndexList[rank],
+        mask_shape: IndexList[mask_rank],
         output: NDBuffer[type, rank, output_static_shape, *_],
         scale: Float32,
     ):
@@ -722,17 +724,22 @@ struct _FlashAttention[
                                 batch, kv_head if is_kv else head, x, y
                             )
                     else:
-                        return IndexList[rank](batch_head, x, y)
+                        return IndexList[rank](batch, x, y)
 
                 @parameter
-                @__copy_capture(batch, batch_head, head)
+                @__copy_capture(batch, head)
                 @always_inline
-                fn get_mask_nd_index(x: Int, y: Int) -> IndexList[rank]:
+                fn get_mask_nd_index(x: Int, y: Int) -> IndexList[mask_rank]:
                     @parameter
-                    if rank == 4:
-                        return IndexList[rank](batch, head, x, y)
+                    if mask_rank == 4:
+                        return IndexList[mask_rank](batch, head, x, y)
+                    elif mask_rank == 3:
+                        return IndexList[mask_rank](batch, x, y)
+                    elif mask_rank == 2:
+                        return IndexList[mask_rank](x, y)
                     else:
-                        return IndexList[rank](batch_head, x, y)
+                        return IndexList[mask_rank]()
+                    constrained[False, "unsupported mask rank"]()
 
                 var count_m = min(Self._config.block_m, seq_len - m)
                 var count_n = min(Self._config.o_block_n, depth_dim - n)
@@ -783,7 +790,7 @@ struct _FlashAttention[
                     fn input_mask_2d_fn[
                         _simd_width: Int
                     ](_m: Int, _n: Int) -> SIMD[type, _simd_width]:
-                        return input_mask_fn[_simd_width, rank](
+                        return input_mask_fn[_simd_width, mask_rank](
                             get_mask_nd_index(_m + m, _n + kv_seq_idx)
                         )
 
@@ -846,15 +853,16 @@ struct _FlashAttention[
 
 fn flash_attention[
     type: DType,
-    rank: Int, //,
+    rank: Int,
+    mask_rank: Int, //,
     input_k_fn: fn[simd_width: Int, rank: Int] (
         IndexList[rank]
     ) capturing -> SIMD[type, simd_width],
     input_v_fn: fn[simd_width: Int, rank: Int] (
         IndexList[rank]
     ) capturing -> SIMD[type, simd_width],
-    input_mask_fn: fn[simd_width: Int, rank: Int] (
-        IndexList[rank]
+    input_mask_fn: fn[simd_width: Int, mask_rank: Int] (
+        IndexList[mask_rank]
     ) capturing -> SIMD[type, simd_width],
     *,
     transpose_k: Bool = False,
@@ -862,6 +870,7 @@ fn flash_attention[
     q: NDBuffer[type, rank, *_],
     k_shape: IndexList[rank],
     v_shape: IndexList[rank],
+    mask_shape: IndexList[mask_rank],
     output: NDBuffer[type, rank, *_],
     scale: Float32,
 ):
@@ -871,12 +880,13 @@ fn flash_attention[
         input_v_fn,
         input_mask_fn,
         transpose_k=transpose_k,
-    ].run(q, k_shape, v_shape, output, scale)
+    ].run(q, k_shape, v_shape, mask_shape, output, scale)
 
 
 fn flash_attention_split_kv[
     type: DType,
-    rank: Int, //,
+    rank: Int,
+    mask_rank: Int, //,
     input_k_fn: fn[simd_width: Int, rank: Int] (
         IndexList[rank]
     ) capturing -> SIMD[type, simd_width],
@@ -889,8 +899,8 @@ fn flash_attention_split_kv[
     input_v_cache_fn: fn[simd_width: Int, rank: Int] (
         IndexList[rank]
     ) capturing -> SIMD[type, simd_width],
-    input_mask_fn: fn[simd_width: Int, rank: Int] (
-        IndexList[rank]
+    input_mask_fn: fn[simd_width: Int, mask_rank: Int] (
+        IndexList[mask_rank]
     ) capturing -> SIMD[type, simd_width],
 ](
     q: NDBuffer[type, rank, *_],
@@ -899,6 +909,7 @@ fn flash_attention_split_kv[
     # {k,v}_cache_shape are rank + 1 because reshape in MO IR prevents fusion.
     k_cache_shape: IndexList[rank + 1],
     v_cache_shape: IndexList[rank + 1],
+    mask_shape: IndexList[mask_rank],
     output: NDBuffer[type, rank, *_],
     scale: Float32,
 ):
@@ -1010,4 +1021,4 @@ fn flash_attention_split_kv[
             input_mask_fn,
             transpose_k=True,
             layout_bshd=True,
-        ].run(q, kv_shape_new, kv_shape_new, output, scale)
+        ].run(q, kv_shape_new, kv_shape_new, mask_shape, output, scale)

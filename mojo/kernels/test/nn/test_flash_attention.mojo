@@ -435,7 +435,7 @@ def test_case[
         input_v_fn,
         mask_fn,
         transpose_k=transpose_k,
-    ](q, k.get_shape(), v.get_shape(), output, cfg.scale)
+    ](q, k.get_shape(), v.get_shape(), mask.get_shape(), output, cfg.scale)
 
     verify_output(output.make_dims_unknown(), ref_output, cfg)
 
@@ -626,6 +626,7 @@ def test_case_split_kv[
         kv_present_shape,
         rebind[IndexList[cfg.rank + 1]](kv_past_shape),
         rebind[IndexList[cfg.rank + 1]](kv_past_shape),
+        mask.get_shape(),
         output,
         cfg.scale,
     )

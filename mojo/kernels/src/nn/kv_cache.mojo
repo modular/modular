@@ -3267,29 +3267,17 @@ fn _flash_attention_kv_cache_cpu[
         return retval
 
     @parameter
-    @__copy_capture(mask)
     fn input_mask_fn[
         width: Int, rank: Int
     ](idx: IndexList[rank]) -> SIMD[type, width]:
-        @parameter
-        if mask.rank == 4:
-            return mask.load[width=width](rebind[IndexList[mask.rank]](idx))
-        elif mask.rank == 3:
-            return mask.load[width=width](Index(idx[0], idx[2], idx[3]))
-        else:
-            return mask.load[width=width](Index(idx[2], idx[3]))
+        return mask.load[width=width](rebind[IndexList[mask.rank]](idx))
 
     var batch_size = q.dim[0]()
     var depth = q.dim[3]()
     var new_seq_len = q.dim[2]()
     var cache_seq_len = int(k.cache_length(0))
     var seq_len = new_seq_len + cache_seq_len
-    var fa_k_shape = IndexList[4](
-        batch_size, kv_params.num_heads, seq_len, depth
-    )
-    var fa_v_shape = IndexList[4](
-        batch_size, kv_params.num_heads, seq_len, depth
-    )
+    var fa_kv_shape = Index(batch_size, kv_params.num_heads, seq_len, depth)
 
     cpu_flash_attention[
         input_k_fn,
@@ -3298,8 +3286,9 @@ fn _flash_attention_kv_cache_cpu[
         transpose_k=True,
     ](
         q.make_dims_unknown(),
-        fa_k_shape,
-        fa_v_shape,
+        fa_kv_shape,
+        fa_kv_shape,
+        mask.get_shape(),
         output,
         scale,
     )
