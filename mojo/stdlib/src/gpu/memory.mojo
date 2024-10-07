@@ -169,7 +169,7 @@ fn external_memory[
     address_space: _AddressSpace,
     alignment: Int,
     name: StringLiteral = "extern_ptr_syml",
-]() -> UnsafePointer[type, address_space, False, alignment]:
+]() -> UnsafePointer[type, address_space, alignment]:
     """Gets a pointer to dynamic shared memory.
 
     Parameters:
@@ -182,11 +182,11 @@ fn external_memory[
         A pointer to dynamic shared memory.
     """
     var extern_ptr_symbol = UnsafePointer[
-        StaticTuple[type, 0], address_space, False, alignment
+        StaticTuple[type, 0], address_space, alignment
     ](
         __mlir_op.`pop.extern_ptr_symbol`[
             _type = UnsafePointer[
-                StaticTuple[type, 0], address_space, False, alignment
+                StaticTuple[type, 0], address_space, alignment
             ]._mlir_type,
             name = name.value,
             alignment = alignment.value,
