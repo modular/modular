@@ -110,16 +110,7 @@ struct ContiguousKVCacheManager[
         var blocks_shape: IndexList[6]
 
         @parameter
-        if kv_params.layout == KVCacheLayout.BHSD:
-            blocks_shape = IndexList[6](
-                2,
-                num_layers,
-                max_batch_size,
-                kv_params.num_heads,
-                max_seq_len,
-                kv_params.head_size,
-            )
-        elif kv_params.layout == KVCacheLayout.BSHD:
+        if kv_params.layout == KVCacheLayout.BSHD:
             blocks_shape = IndexList[6](
                 2,
                 num_layers,
@@ -209,16 +200,7 @@ struct ContiguousKVCacheManager[
         var k_cache_shape: IndexList[5]
 
         @parameter
-        if kv_params.layout == KVCacheLayout.BHSD:
-            v_cache_shape = IndexList[5](
-                self.num_layers,
-                batch_size,
-                kv_params.num_heads,
-                self.max_seq_len,
-                kv_params.head_size,
-            )
-            k_cache_shape = v_cache_shape
-        elif kv_params.layout == KVCacheLayout.BSHD:
+        if kv_params.layout == KVCacheLayout.BSHD:
             v_cache_shape = IndexList[5](
                 self.num_layers,
                 batch_size,
@@ -341,7 +323,6 @@ struct ContinuousBatchingKVCacheManager[
 
     # blocks_buf shape is
     # - BSHD: [num_blocks, 2, num_layers, max_seq_len, num_heads, head_size]
-    # - BHSD: [num_blocks, 2, num_layers, num_heads, max_seq_len, head_size]
     var blocks_buf: Tensor[type, 6]
     alias BlocksType = Self.CollectionType.CacheType.BlocksType
     var blocks_nd_buf: Self.BlocksType
@@ -373,16 +354,7 @@ struct ContinuousBatchingKVCacheManager[
         var block_buf_shape: IndexList[6]
 
         @parameter
-        if kv_params.layout == KVCacheLayout.BHSD:
-            block_buf_shape = IndexList[6](
-                self.num_blocks,
-                2,  # key and value cache
-                self.num_layers,
-                kv_params.num_heads,
-                self.max_seq_len,
-                kv_params.head_size,
-            )
-        elif kv_params.layout == KVCacheLayout.BSHD:
+        if kv_params.layout == KVCacheLayout.BSHD:
             block_buf_shape = IndexList[6](
                 self.num_blocks,
                 2,  # key and value cache
