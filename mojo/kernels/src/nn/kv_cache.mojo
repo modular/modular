@@ -28,6 +28,7 @@ from linalg.matmul import _matmul_cpu, elementwise_epilogue_type
 from linalg.matmul_gpu import _matmul_gpu
 from memory import UnsafePointer, memcpy
 from nn.flash_attention import flash_attention as cpu_flash_attention
+from nn.fused_qk_rope import fused_qk_rope
 from nn.mha import flash_attention as gpu_flash_attention
 from register import mogg_register
 from runtime.asyncrt import MojoCallContextPtr
@@ -2297,7 +2298,7 @@ fn fused_qk_rope_h6_d48_bshd[
     Q_proj with K_proj, so K_proj RoPE is only excuted after QKV completes.
     """
     with Trace[TraceLevel.OP, target=target]("fused_qk_rope_h6_d48_bshd"):
-        _fused_qk_rope[target=target](
+        fused_qk_rope[target=target](
             q_proj, k_cache, freqs_cis, output, context
         )
 
@@ -2331,7 +2332,7 @@ fn fused_qk_rope_h6_d48_bhsd[
     Q_proj with K_proj, so K_proj RoPE is only excuted after QKV completes.
     """
     with Trace[TraceLevel.OP, target=target]("fused_qk_rope_h6_d48_bhsd"):
-        _fused_qk_rope[target=target](
+        fused_qk_rope[target=target](
             q_proj, k_cache, freqs_cis, output, context
         )
 
@@ -2365,7 +2366,7 @@ fn fused_qk_rope_h8_d128_bshd[
     Q_proj with K_proj, so K_proj RoPE is only excuted after QKV completes.
     """
     with Trace[TraceLevel.OP, target=target]("fused_qk_rope_h8_d128_bshd"):
-        _fused_qk_rope[target=target](
+        fused_qk_rope[target=target](
             q_proj, k_cache, freqs_cis, output, context
         )
 
@@ -2399,7 +2400,7 @@ fn fused_qk_rope_h8_d128_bhsd[
     Q_proj with K_proj, so K_proj RoPE is only excuted after QKV completes.
     """
     with Trace[TraceLevel.OP, target=target]("fused_qk_rope_h8_d128_bhsd"):
-        _fused_qk_rope[target=target](
+        fused_qk_rope[target=target](
             q_proj, k_cache, freqs_cis, output, context
         )
 
@@ -2433,7 +2434,7 @@ fn fused_qk_rope_h1_d16_bshd[
     Q_proj with K_proj, so K_proj RoPE is only excuted after QKV completes.
     """
     with Trace[TraceLevel.OP, target=target]("fused_qk_rope_h1_d16_bshd"):
-        _fused_qk_rope[target=target](
+        fused_qk_rope[target=target](
             q_proj, k_cache, freqs_cis, output, context
         )
 
@@ -2467,7 +2468,7 @@ fn fused_qk_rope_h1_d16_bhsd[
     Q_proj with K_proj, so K_proj RoPE is only excuted after QKV completes.
     """
     with Trace[TraceLevel.OP, target=target]("fused_qk_rope_h1_d16_bhsd"):
-        _fused_qk_rope[target=target](
+        fused_qk_rope[target=target](
             q_proj, k_cache, freqs_cis, output, context
         )
 
@@ -2501,7 +2502,7 @@ fn fused_qk_rope_h8_d64_bshd[
     Q_proj with K_proj, so K_proj RoPE is only excuted after QKV completes.
     """
     with Trace[TraceLevel.OP, target=target]("fused_qk_rope_h8_d64_bshd"):
-        _fused_qk_rope[target=target](
+        fused_qk_rope[target=target](
             q_proj, k_cache, freqs_cis, output, context
         )
 
@@ -2535,7 +2536,7 @@ fn fused_qk_rope_h8_d64_bhsd[
     Q_proj with K_proj, so K_proj RoPE is only excuted after QKV completes.
     """
     with Trace[TraceLevel.OP, target=target]("fused_qk_rope_h8_d64_bhsd"):
-        _fused_qk_rope[target=target](
+        fused_qk_rope[target=target](
             q_proj, k_cache, freqs_cis, output, context
         )
 
@@ -2571,7 +2572,7 @@ fn fused_qk_rope_h8_d128_bshd_continuous_batch[
     with Trace[TraceLevel.OP, target=target](
         "fused_qk_rope_h8_d128_bshd_continuous_batch"
     ):
-        _fused_qk_rope[target=target](
+        fused_qk_rope[target=target](
             q_proj, k_cache, freqs_cis, output, context
         )
 
@@ -2607,7 +2608,7 @@ fn fused_qk_rope_h8_d128_bhsd_continuous_batch[
     with Trace[TraceLevel.OP, target=target](
         "fused_qk_rope_h8_d128_bhsd_continuous_batch"
     ):
-        _fused_qk_rope[target=target](
+        fused_qk_rope[target=target](
             q_proj, k_cache, freqs_cis, output, context
         )
 
@@ -2643,7 +2644,7 @@ fn fused_qk_rope_h8_d64_bshd_continuous_batch[
     with Trace[TraceLevel.OP, target=target](
         "fused_qk_rope_h8_d64_bshd_continuous_batch"
     ):
-        _fused_qk_rope[target=target](
+        fused_qk_rope[target=target](
             q_proj, k_cache, freqs_cis, output, context
         )
 
@@ -2679,138 +2680,9 @@ fn fused_qk_rope_h8_d64_bhsd_continuous_batch[
     with Trace[TraceLevel.OP, target=target](
         "fused_qk_rope_h8_d64_bhsd_continuous_batch"
     ):
-        _fused_qk_rope[target=target](
+        fused_qk_rope[target=target](
             q_proj, k_cache, freqs_cis, output, context
         )
-
-
-@always_inline
-fn _fused_qk_rope[
-    type: DType,
-    cache_t: KVCacheT, //,
-    *,
-    target: StringLiteral,
-](
-    q_proj: NDBuffer[type, 4, *_],
-    k_cache: cache_t,
-    freqs_cis: NDBuffer[type, 2, *_],
-    output: NDBuffer[type, 4, *_],
-    context: MojoCallContextPtr,
-):
-    alias kv_params = cache_t.get_kv_params()
-
-    var batch_size = q_proj.dim[0]()
-    var new_seq_len = q_proj.dim[1]()
-    alias num_q_heads = q_proj.shape.get[2]()
-    alias num_k_heads = kv_params.num_heads
-    alias head_size = q_proj.shape.get[3]()
-
-    @always_inline
-    @parameter
-    @__copy_capture(freqs_cis, q_proj, output)
-    fn rope_fn_common[
-        rank: Int,
-        cache_t_: KVCacheT, //,
-        width: Int,
-    ](k_cache: cache_t_, idx_arg: IndexList[rank]):
-        constrained[rank == 4, "Invalid rank passed to rope kernel"]()
-
-        @parameter
-        if width == 1:
-            print("ROPE KERNEL CALLED WITH SINGLE VALUE, EXPECTED AT LEAST 2")
-            return
-        else:
-            var idx = rebind[IndexList[4]](idx_arg)
-            var bs_idx = idx[0]
-            var seq_idx = idx[1]
-            var head_idx = idx[2]
-            var head_dim_idx = idx[3]
-
-            # WARN assumes head_size % simd_width == 0
-            # guarded by constrained statement below
-            var is_q_proj = head_idx < num_q_heads
-            var val: SIMD[type, width]
-
-            if is_q_proj:
-                val = q_proj.load[width=width](idx)
-            else:
-                head_idx -= num_q_heads
-
-                var cache_seq_idx = seq_idx + k_cache.cache_length(bs_idx)
-                val = k_cache.load[type, width=width](
-                    bs_idx, head_idx, cache_seq_idx, head_dim_idx
-                )
-
-            var x_c = val.deinterleave()
-            var x_re = x_c[0]
-            var x_im = x_c[1]
-
-            var f_idx = IndexList[2](seq_idx, head_dim_idx)
-            var f_c_temp = freqs_cis.load[width=width](f_idx)
-
-            var f_c = f_c_temp.deinterleave()
-            var f_re = f_c[0]
-            var f_im = f_c[1]
-
-            var r_re = (x_re * f_re) - (x_im * f_im)
-            var r_im = (x_re * f_im) + (x_im * f_re)
-
-            var result = r_re.interleave(r_im)
-            if is_q_proj:
-                output.store(idx, result)
-            else:
-                var cache_seq_idx = seq_idx + k_cache.cache_length(bs_idx)
-                k_cache.store(
-                    bs_idx, head_idx, cache_seq_idx, head_dim_idx, result
-                )
-
-    alias compile_target = _current_target() if target == "cpu" else _get_nvptx_target()
-    alias target_simd_width = simdwidthof[type, target=compile_target]()
-    alias kernel_simd_width = gcd(target_simd_width, kv_params.head_size)
-    constrained[kernel_simd_width >= 2, "invalid simd_width and head size"]()
-
-    var launch_shape = IndexList[4](
-        batch_size,
-        new_seq_len,
-        num_q_heads + num_k_heads,  # concat q and k along head dim
-        head_size,
-    )
-
-    # TODO this is necessary due to traits not having a notion of being register_passable
-    # remove this forking after MOCO-1205 (or after we get rid of mo.opaque)
-    @parameter
-    if _type_is_eq[cache_t, ContiguousKVCache[type, kv_params]]():
-        # cast to a register passable type so the function closure works on GPU
-        var k_cache_reg = rebind[ContiguousKVCache[type, kv_params]](k_cache)
-
-        @parameter
-        @__copy_capture(k_cache_reg)
-        fn rope_fn_contig[
-            width: Int,
-            rank: Int,
-        ](idx: IndexList[rank]):
-            rope_fn_common[width](k_cache_reg, idx)
-
-        elementwise[
-            func=rope_fn_contig, simd_width=kernel_simd_width, target=target
-        ](launch_shape, context.get_device_context())
-    elif _type_is_eq[cache_t, ContinuousBatchingKVCache[type, kv_params]]():
-        # cast to a register passable type so the function closure works on GPU
-        var k_cache_reg = rebind[ContinuousBatchingKVCache[type, kv_params]](
-            k_cache
-        )
-
-        @parameter
-        @__copy_capture(k_cache_reg)
-        fn rope_fn_continuous[
-            width: Int,
-            rank: Int,
-        ](idx: IndexList[rank]):
-            rope_fn_common[width](k_cache_reg, idx)
-
-        elementwise[
-            func=rope_fn_continuous, simd_width=kernel_simd_width, target=target
-        ](launch_shape, context.get_device_context())
 
 
 @mogg_register("flash_attention_kv_cache_h6_d48_bshd")
