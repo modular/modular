@@ -57,6 +57,8 @@ from nn.arange import arange, arange_shape
 from nn.conv import ConvInfoStatic, conv_nhwc_direct, conv_shape
 from nn.conv_transpose import conv_transpose_shape, conv_transposed
 from nn.cumsum import cumsum
+from nn.flash_attention import flash_attention as nn_flash_attention
+from nn.flash_attention import flash_attention_split_kv
 from nn.gather_scatter import (
     Axis,
     gather,
@@ -69,6 +71,7 @@ from nn.gather_scatter import (
     scatter_nd,
     scatter_nd_generator,
 )
+from nn.mha import flash_attention, fused_attention
 from nn.nms import non_max_suppression, non_max_suppression_shape_func
 from nn.normalization import layer_norm, rms_norm
 from nn.pad import pad_constant, pad_reflect, pad_repeat, pad_shape
@@ -3493,4 +3496,393 @@ struct ConvTranspose:
             managed_tensor_slice_to_ndbuffer(dilations),
             managed_tensor_slice_to_ndbuffer(paddings),
             managed_tensor_slice_to_ndbuffer(output_paddings),
+        )
+
+
+# ===----------------------------------------------------------------------===#
+# Attention kernels
+# ===----------------------------------------------------------------------===#
+
+
+@compiler.register("masked_flash_attention_gpu")
+struct MaskedFlashAttentionGPU:
+    @staticmethod
+    fn execute[
+        target: StringLiteral, rank: Int
+    ](
+        output: ManagedTensorSlice[rank=rank],
+        q: ManagedTensorSlice[rank=rank],
+        k: ManagedTensorSlice[rank=rank],
+        v: ManagedTensorSlice[rank=rank],
+        mask: ManagedTensorSlice,
+        scale: Scalar[type = DType.float32],
+        ctx: MojoCallContextPtr,
+    ) raises:
+        """`masked_flash_attention_gpu` is a hand-fused operator which does
+        something analogous to the following list of operations.
+
+        **Step 0:
+        Transpose:
+        query_processed = transpose(query) # BSHD --> BHSD
+        key_processed = transpose(key)     # BSHD --> BHDS
+        value_processed = transpose(value) # BSHD --> BHSD
+
+        **Step 1:
+        attentionMatrix = query_processed @ key_processed
+
+        **Step 2:
+        norm = broadcast_to(normScalar, shape_of(attentionMatrix))
+
+        **Step 3:
+        # Normalize and apply masking
+        attentionMatrixNorm = attentionMatrix * scale
+
+        # Note attention_mask is HSS and auto-broadcasts
+        attentionMatrixNormMasked = attentionMatrixNorm + attention_mask
+
+        **Step 4:
+        # Apply softmax and reproject result
+        attentionMatrixSoftMax = softmax(attentionMatrixNormMasked)
+        answer = attentionMatrixSoftMax @ value_processed
+        answer = transpose(answer) # BHSD --> BSHD
+
+        Compared to the CPU patterns the notable differences are:
+        1. The mask is rank 3 and is of shape BSS
+        2. The transposes are part of the kernel itself
+
+        Finally, this pattern supports grouped attention patterns. That is if we
+        have G groups, then let h = H / G. Key and value are allowed to be BShD
+        in these scenarios. Both key and value must be BShD if one is. If this is
+        true the following is equivalently run before Step 0:
+
+        ** Step -1:
+        key = concat(key, ...) # concat BShD --> BSHD
+        value = concat(value, ...) # concat BShD --> BSHD
+
+        The underlying fusion follows ideas taken from the 2022 FlashAttention paper
+        by Tri Dao et al.
+        """
+        constrained["cuda" in target, "only valid on CUDA GPUs"]()
+
+        flash_attention[
+            add_attn_mask=True, target=target, use_tensor_core=True
+        ](
+            managed_tensor_slice_to_ndbuffer(output),
+            managed_tensor_slice_to_ndbuffer(q),
+            managed_tensor_slice_to_ndbuffer(k),
+            managed_tensor_slice_to_ndbuffer(v),
+            managed_tensor_slice_to_ndbuffer(mask),
+            scale[0],
+            context=ctx,
+        )
+
+
+@compiler.register("no_mask_fused_attention_cpu")
+struct NoMaskFusedAttentionCPU:
+    @staticmethod
+    fn execute[
+        rank: Int
+    ](
+        output: ManagedTensorSlice[rank=rank],
+        q: ManagedTensorSlice[rank=rank],
+        k: ManagedTensorSlice[rank=rank],
+        v: ManagedTensorSlice[rank=rank],
+        scale: Scalar[type = DType.float32],
+    ) raises:
+        alias q_shape = compiler.specsof[q.type, q.rank]("q").shape
+        alias k_shape = compiler.specsof[k.type, q.rank]("k").shape
+        alias v_shape = compiler.specsof[v.type, q.rank]("v").shape
+        alias output_shape = compiler.specsof[output.type, output.rank](
+            "output"
+        ).shape
+
+        # TODO:
+        # - no attention mask
+        # - no causaul mask
+
+        # Dimension names:
+        #     - (B)atch
+        #     - Attention (H)ead
+        #     - (S)equence
+        #     - Embedding (D)imension
+        #
+        # layouts:
+        # q -- BHSD
+        # k -- BHDS (we assume transpose = true for now)
+        # v -- BHSD
+        # output: BHSD
+
+        alias mask_shape = DimList()
+        alias mask_type = DType.float32
+        var mask = NDBuffer[mask_type, rank, mask_shape]()
+        var scale_f32 = scale[0].cast[DType.float32]()
+        var causal_mask: Float32 = 0
+
+        fused_attention[
+            rank,
+            q_shape,
+            k_shape,
+            v_shape,
+            mask_shape,
+            output_shape,
+            q.type,
+            k.type,
+            v.type,
+            mask.type,
+            output.type,
+            transpose_k=False,
+            add_attn_mask=False,
+            add_causal_mask=False,
+        ](
+            managed_tensor_slice_to_ndbuffer[static_shape=output_shape](output),
+            managed_tensor_slice_to_ndbuffer[static_shape=q_shape](q),
+            managed_tensor_slice_to_ndbuffer[static_shape=k_shape](k),
+            managed_tensor_slice_to_ndbuffer[static_shape=v_shape](v),
+            mask,
+            scale_f32,
+            causal_mask,
+        )
+
+
+@compiler.register("with_mask_fused_attention_cpu")
+struct WithMAskFusedAttentionCPU:
+    @staticmethod
+    fn execute[
+        rank: Int
+    ](
+        output: ManagedTensorSlice[rank=rank],
+        q: ManagedTensorSlice[rank=rank],
+        k: ManagedTensorSlice[rank=rank],
+        v: ManagedTensorSlice[rank=rank],
+        mask: ManagedTensorSlice[rank=rank],
+        scale: Scalar[type = DType.float32],
+    ) raises:
+        alias q_shape = compiler.specsof[q.type, q.rank]("q").shape
+        alias k_shape = compiler.specsof[k.type, q.rank]("k").shape
+        alias v_shape = compiler.specsof[v.type, q.rank]("v").shape
+        alias mask_shape = compiler.specsof[mask.type, mask.rank]("mask").shape
+        alias output_shape = compiler.specsof[output.type, output.rank](
+            "output"
+        ).shape
+
+        # TODO:
+        # - no attention mask
+        # - no causaul mask
+
+        # Dimension names:
+        #     - (B)atch
+        #     - Attention (H)ead
+        #     - (S)equence
+        #     - Embedding (D)imension
+        #
+        # layouts:
+        # q -- BHSD
+        # k -- BHDS (we assume transpose = true for now)
+        # v -- BHSD
+        # output: BHSD
+        # TODO: Unimplemented and not used
+        var scale_f32 = scale[0].cast[DType.float32]()
+        var causal_mask: Float32 = 0
+
+        fused_attention[
+            rank,
+            q_shape,
+            k_shape,
+            v_shape,
+            mask_shape,
+            output_shape,
+            q.type,
+            k.type,
+            v.type,
+            mask.type,
+            output.type,
+            transpose_k=False,
+            add_attn_mask=True,
+            add_causal_mask=False,
+        ](
+            managed_tensor_slice_to_ndbuffer[static_shape=output_shape](output),
+            managed_tensor_slice_to_ndbuffer[static_shape=q_shape](q),
+            managed_tensor_slice_to_ndbuffer[static_shape=k_shape](k),
+            managed_tensor_slice_to_ndbuffer[static_shape=v_shape](v),
+            managed_tensor_slice_to_ndbuffer[static_shape=mask_shape](mask),
+            scale_f32,
+            causal_mask,
+        )
+
+
+@compiler.register("no_mask_flash_attention_cpu")
+struct NoMaskFlashAttentionCPU:
+    @staticmethod
+    fn execute[
+        type: DType,
+        rank: Int,
+    ](
+        output: ManagedTensorSlice[type=type, rank=rank],
+        q: ManagedTensorSlice[type=type, rank=rank],
+        k: ManagedTensorSlice[type=type, rank=rank],
+        v: ManagedTensorSlice[type=type, rank=rank],
+        scale: Scalar[type = DType.float32],
+    ) raises:
+        alias output_shape = compiler.specsof[output.type, output.rank](
+            "output"
+        ).shape
+
+        @parameter
+        @always_inline
+        fn k_input_fn[
+            width: Int, rank: Int
+        ](coords: IndexList[rank]) -> SIMD[k.type, width]:
+            return k.load[width=width](rebind[IndexList[k.rank]](coords))
+
+        @parameter
+        @always_inline
+        fn v_input_fn[
+            width: Int, rank: Int
+        ](coords: IndexList[rank]) -> SIMD[v.type, width]:
+            return v.load[width=width](rebind[IndexList[v.rank]](coords))
+
+        @parameter
+        @always_inline
+        fn mask_fn[
+            width: Int, _rank: Int
+        ](idx: IndexList[_rank]) -> SIMD[type, width]:
+            return SIMD[type, width](0)
+
+        nn_flash_attention[k_input_fn, v_input_fn, mask_fn,](
+            managed_tensor_slice_to_ndbuffer(q),
+            k.get_static_spec().shape,
+            v.get_static_spec().shape,
+            IndexList[0](),
+            managed_tensor_slice_to_ndbuffer[static_shape=output_shape](output),
+            scale[0].cast[DType.float32](),
+        )
+
+
+@compiler.register("with_mask_flash_attention_split_kv_cpu")
+struct WithMaskFlashAttentionSplitKVCPU:
+    @staticmethod
+    fn execute[
+        type: DType,
+        rank: Int,
+    ](
+        output: ManagedTensorSlice[type=type, rank=rank],
+        q: ManagedTensorSlice[type=type, rank=rank],
+        k: ManagedTensorSlice[type=type, rank=rank],
+        v: ManagedTensorSlice[type=type, rank=rank],
+        k_cache: ManagedTensorSlice[type=type, rank = rank + 1],
+        v_cache: ManagedTensorSlice[type=type, rank = rank + 1],
+        mask: ManagedTensorSlice[type=type],
+        scale: Scalar[type = DType.float32],
+    ) raises:
+        alias output_shape = compiler.specsof[output.type, output.rank](
+            "output"
+        ).shape
+
+        @parameter
+        @always_inline
+        fn k_input_fn[
+            width: Int, rank: Int
+        ](coords: IndexList[rank]) -> SIMD[k.type, width]:
+            return k.load[width=width](rebind[IndexList[k.rank]](coords))
+
+        @parameter
+        @always_inline
+        fn v_input_fn[
+            width: Int, rank: Int
+        ](coords: IndexList[rank]) -> SIMD[v.type, width]:
+            return v.load[width=width](rebind[IndexList[v.rank]](coords))
+
+        @parameter
+        @always_inline
+        fn k_cache_input_fn[
+            width: Int, rank: Int
+        ](coords: IndexList[rank]) -> SIMD[k_cache.type, width]:
+            return k_cache.load[width=width](
+                rebind[IndexList[k_cache.rank]](coords)
+            )
+
+        @parameter
+        @always_inline
+        fn v_cache_input_fn[
+            width: Int, rank: Int
+        ](coords: IndexList[rank]) -> SIMD[v_cache.type, width]:
+            return v_cache.load[width=width](
+                rebind[IndexList[v_cache.rank]](coords)
+            )
+
+        @parameter
+        @always_inline
+        fn mask_input_fn[
+            width: Int, rank: Int
+        ](coords: IndexList[rank]) -> SIMD[mask.type, width]:
+            return mask.load[width=width](rebind[IndexList[mask.rank]](coords))
+
+        flash_attention_split_kv[
+            k_input_fn,
+            v_input_fn,
+            k_cache_input_fn,
+            v_cache_input_fn,
+            mask_input_fn,
+        ](
+            managed_tensor_slice_to_ndbuffer(q),
+            k.get_static_spec().shape,
+            v.get_static_spec().shape,
+            k_cache.get_static_spec().shape,
+            v_cache.get_static_spec().shape,
+            mask.get_static_spec().shape,
+            managed_tensor_slice_to_ndbuffer[static_shape=output_shape](output),
+            scale[0].cast[DType.float32](),
+        )
+
+    @staticmethod
+    fn shape(q: ManagedTensorSlice) -> IndexList[q.rank]:
+        return q.get_static_spec().shape
+
+
+@compiler.register("with_mask_flash_attention_cpu")
+struct WithMaskFlashAttentionCPU:
+    @staticmethod
+    fn execute[
+        type: DType,
+        rank: Int,
+    ](
+        output: ManagedTensorSlice[type=type, rank=rank],
+        q: ManagedTensorSlice[type=type, rank=rank],
+        k: ManagedTensorSlice[type=type, rank=rank],
+        v: ManagedTensorSlice[type=type, rank=rank],
+        mask: ManagedTensorSlice[type=type],
+        scale: Scalar[type = DType.float32],
+    ) raises:
+        alias output_shape = compiler.specsof[output.type, output.rank](
+            "output"
+        ).shape
+
+        @parameter
+        @always_inline
+        fn k_input_fn[
+            width: Int, rank: Int
+        ](coords: IndexList[rank]) -> SIMD[k.type, width]:
+            return k.load[width=width](rebind[IndexList[k.rank]](coords))
+
+        @parameter
+        @always_inline
+        fn v_input_fn[
+            width: Int, rank: Int
+        ](coords: IndexList[rank]) -> SIMD[v.type, width]:
+            return v.load[width=width](rebind[IndexList[v.rank]](coords))
+
+        @parameter
+        @always_inline
+        fn mask_input_fn[
+            width: Int, rank: Int
+        ](coords: IndexList[rank]) -> SIMD[mask.type, width]:
+            return mask.load[width=width](rebind[IndexList[mask.rank]](coords))
+
+        nn_flash_attention[k_input_fn, v_input_fn, mask_input_fn,](
+            managed_tensor_slice_to_ndbuffer(q),
+            k.get_static_spec().shape,
+            v.get_static_spec().shape,
+            mask.get_static_spec().shape,
+            managed_tensor_slice_to_ndbuffer[static_shape=output_shape](output),
+            scale[0].cast[DType.float32](),
         )
