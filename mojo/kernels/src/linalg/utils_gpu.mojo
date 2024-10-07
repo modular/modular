@@ -17,6 +17,7 @@ from layout.tensor_core import (
 )
 
 from utils.index import Index, IndexList
+from sys import env_get_string, env_get_int
 
 # ===------------------------------------------------------------------===#
 # GPU Matmul Block Swizzling
@@ -210,6 +211,20 @@ struct MatmulKernels[
         num_pipeline_stages=3,
     )
 
+    alias tuning_config = MatmulConfig[a_type, b_type, c_type, transpose_b](
+        block_tile_shape=Index(
+            env_get_int["TUNE_BM", 128](),
+            env_get_int["TUNE_BN", 128](),
+            env_get_int["TUNE_BK", 32](),
+        ),
+        warp_tile_shape=Index(
+            env_get_int["TUNE_WM", 64](),
+            env_get_int["TUNE_WN", 64](),
+            env_get_int["TUNE_WK", 32](),
+        ),
+        num_pipeline_stages=env_get_int["TUNE_NUM_STAGES", 4](),
+    )
+
 
 fn select_config[
     a_type: DType,
@@ -253,7 +268,19 @@ fn select_config[
         128, 256, 2 * _bk_base[a_type](), 3
     ) if "sm_80" in target else IndexList[4](1024)
 
-    for bmnk_stage in List(_128x128_4, _256x64_4, _256x128_3):
+    alias enable_tuning = env_get_int["ENABLE_TUNE", 0]()
+    alias tune_opt = Index(
+        env_get_int["TUNE_BM", 128](),
+        env_get_int["TUNE_BN", 128](),
+        env_get_int["TUNE_BK", 32](),
+        env_get_int["TUNE_NUM_STAGES", 4](),
+    )
+
+    alias opt_list = List(tune_opt) if enable_tuning else List(
+        _128x128_4, _256x64_4, _256x128_3
+    )
+
+    for bmnk_stage in opt_list:
         var bm = bmnk_stage[][0]
         var bn = bmnk_stage[][1]
         var bk = bmnk_stage[][2]

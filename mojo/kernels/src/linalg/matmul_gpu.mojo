@@ -6,7 +6,7 @@
 from collections import InlineArray, OptionalReg
 from math import align_down, align_up, ceildiv
 from os import abort
-from sys import alignof, bitwidthof, llvm_intrinsic, simdwidthof
+from sys import alignof, llvm_intrinsic, simdwidthof, bitwidthof, env_get_int
 
 from algorithm.functional import elementwise, tile_and_unswitch
 from buffer.buffer import NDBuffer
@@ -311,6 +311,30 @@ fn _matmul_gpu[
                 var best_config = select_config[
                     a_type, b_type, c_type, transpose_b, target
                 ](m, n, k)
+
+                alias enable_tune = env_get_int["ENABLE_TUNE", 0]()
+
+                @parameter
+                if enable_tune == 1:
+                    alias opt_config = kernels.tuning_config
+                    multistage_gemm[
+                        c_type,
+                        c_shape,
+                        a_type,
+                        a_shape,
+                        b_type,
+                        b_shape,
+                        transpose_b,
+                        opt_config,
+                        elementwise_lambda_fn,
+                    ](
+                        rebind[NDBuffer[c_type, 2, c_shape]](c),
+                        rebind[NDBuffer[a_type, 2, a_shape]](a),
+                        rebind[NDBuffer[b_type, 2, b_shape]](b),
+                        best_config,
+                        ctx,
+                    )
+                    return
 
                 if best_config == kernels.ampere_256x64_4:
                     alias config = kernels.ampere_256x64_4
