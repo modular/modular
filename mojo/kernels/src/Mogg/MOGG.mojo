@@ -4165,6 +4165,7 @@ fn no_mask_flash_attention_cpu[
         q,
         input_1_shape,
         input_2_shape,
+        IndexList[0](),
         output,
         scale[0].cast[DType.float32](),
     )
@@ -4175,7 +4176,8 @@ fn no_mask_flash_attention_cpu[
 @export
 fn with_mask_flash_attention_split_kv_cache_cpu[
     type: DType,
-    rank: Int, //,
+    rank: Int,
+    mask_rank: Int,
     input_1_fn: fn[simd_width: Int, rank: Int] (
         IndexList[rank]
     ) capturing -> SIMD[type, simd_width],
@@ -4200,7 +4202,7 @@ fn with_mask_flash_attention_split_kv_cache_cpu[
     input_2_shape: IndexList[rank],
     input_3_shape: IndexList[rank + 1],
     input_4_shape: IndexList[rank + 1],
-    input_5_shape: IndexList[rank],
+    input_5_shape: IndexList[mask_rank],
     scale: Scalar[type],
     output: NDBuffer[type, rank, input_7_static_shape],
     ctx: MojoCallContextPtr,
@@ -4236,6 +4238,7 @@ fn with_mask_flash_attention_split_kv_cache_cpu[
         input_2_shape,
         input_3_shape,
         input_4_shape,
+        input_5_shape,
         output,
         scale[0].cast[DType.float32](),
     )
@@ -4248,12 +4251,6 @@ fn with_mask_flash_attention_split_kv_cpu_shape_func[
     type: DType, rank: Int, single_thread_blocking_override: Bool
 ](q: NDBuffer[type, rank]) -> IndexList[rank]:
     return q.get_shape()
-    # TODO(#37702): The following shape function incurs a KV cache copy:
-    # Take the `softmax(Q @ K^T) @ V` product's channel dimension from `V`.
-    # var new_shape = q.get_shape()
-    # new_shape[rank - 1] = v.get_shape()[rank]
-
-    # return new_shape
 
 
 @mogg_register("with_mask_flash_attention_cpu")
@@ -4262,6 +4259,7 @@ fn with_mask_flash_attention_split_kv_cpu_shape_func[
 fn with_mask_flash_attention_cpu[
     type: DType,
     rank: Int,
+    mask_rank: Int,
     input_1_fn: fn[simd_width: Int, rank: Int] (
         IndexList[rank]
     ) capturing -> SIMD[type, simd_width],
@@ -4278,7 +4276,7 @@ fn with_mask_flash_attention_cpu[
     q: NDBuffer[type, rank],
     input_1_shape: IndexList[rank],
     input_2_shape: IndexList[rank],
-    input_3_shape: IndexList[rank],
+    input_3_shape: IndexList[mask_rank],
     scale: Scalar[type],
     output: NDBuffer[type, rank, input_5_static_shape],
     ctx: MojoCallContextPtr,
@@ -4289,6 +4287,7 @@ fn with_mask_flash_attention_cpu[
         q,
         input_1_shape,
         input_2_shape,
+        input_3_shape,
         output,
         scale[0].cast[DType.float32](),
     )
