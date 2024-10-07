@@ -114,6 +114,7 @@ def bench_attention[
                 q.make_dims_unknown(),
                 k.get_shape(),
                 v.get_shape(),
+                mask.get_shape(),
                 rebind[NDBuffer[type, 3, output_static_shape]](output),
                 scale=scale,
             )
