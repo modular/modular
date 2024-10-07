@@ -3099,7 +3099,7 @@ fn _flash_attention_kv_cache_impl[
 
 
 @always_inline
-fn _flash_attention_kv_cache_cpu[
+fn _flash_attention_kv_cache_cpu_bhsd[
     type: DType, cache_t: KVCacheT, //
 ](
     q: NDBuffer[type, 4, *_],
@@ -3123,7 +3123,6 @@ fn _flash_attention_kv_cache_cpu[
         var head_idx = idx[1]
         var seq = idx[2]
         var head_d_idx = idx[3]
-
         var retval = k.load[type, width=width](bs, head_idx, seq, head_d_idx)
         return retval
 
@@ -3164,6 +3163,94 @@ fn _flash_attention_kv_cache_cpu[
         output,
         scale,
     )
+
+
+@always_inline
+fn _flash_attention_kv_cache_cpu_bshd[
+    type: DType, cache_t: KVCacheT, //
+](
+    q: NDBuffer[type, 4, *_],
+    k: cache_t,
+    v: cache_t,
+    mask: NDBuffer[type, *_],
+    scale: Float32,
+    output: NDBuffer[type, 4, *_],
+):
+    alias kv_params = cache_t.get_kv_params()
+    constrained[
+        kv_params.layout == KVCacheLayout.BSHD,
+        "CPU flash attention only supports BSHD layout",
+    ]()
+
+    @parameter
+    fn input_k_fn[
+        width: Int, rank: Int
+    ](idx: IndexList[rank]) -> SIMD[type, width]:
+        var bs = idx[0]
+        var head_idx = idx[2]
+        var seq = idx[1]
+        var head_d_idx = idx[3]
+        var retval = k.load[type, width=width](bs, head_idx, seq, head_d_idx)
+        return retval
+
+    @parameter
+    fn input_v_fn[
+        width: Int, rank: Int
+    ](idx: IndexList[rank]) -> SIMD[type, width]:
+        var bs = idx[0]
+        var head_idx = idx[2]
+        var seq = idx[1]
+        var head_d_idx = idx[3]
+        var retval = v.load[type, width=width](bs, head_idx, seq, head_d_idx)
+        return retval
+
+    @parameter
+    fn input_mask_fn[
+        width: Int, rank: Int
+    ](idx: IndexList[rank]) -> SIMD[type, width]:
+        return mask.load[width=width](rebind[IndexList[mask.rank]](idx))
+
+    var batch_size = q.dim[0]()
+    var depth = q.dim[3]()
+    var new_seq_len = q.dim[1]()
+    var cache_seq_len = int(k.cache_length(0))
+    var seq_len = new_seq_len + cache_seq_len
+    var fa_kv_shape = Index(batch_size, seq_len, kv_params.num_heads, depth)
+
+    cpu_flash_attention[
+        input_k_fn,
+        input_v_fn,
+        input_mask_fn,
+        transpose_k=True,
+        layout_bshd=True,
+    ](
+        q.make_dims_unknown(),
+        fa_kv_shape,
+        fa_kv_shape,
+        mask.get_shape(),
+        output,
+        scale,
+    )
+
+
+@always_inline
+fn _flash_attention_kv_cache_cpu[
+    type: DType, cache_t: KVCacheT, //
+](
+    q: NDBuffer[type, 4, *_],
+    k: cache_t,
+    v: cache_t,
+    mask: NDBuffer[type, *_],
+    scale: Float32,
+    output: NDBuffer[type, 4, *_],
+):
+    alias kv_params = cache_t.get_kv_params()
+
+    @parameter
+    if kv_params.layout == KVCacheLayout.BHSD:
+        _flash_attention_kv_cache_cpu_bhsd(q, k, v, mask, scale, output)
+    else:
+        _flash_attention_kv_cache_cpu_bshd(q, k, v, mask, scale, output)
 
 
 @always_inline

@@ -866,6 +866,7 @@ fn flash_attention[
     ) capturing -> SIMD[type, simd_width],
     *,
     transpose_k: Bool = False,
+    layout_bshd: Bool = False,
 ](
     q: NDBuffer[type, rank, *_],
     k_shape: IndexList[rank],
@@ -880,6 +881,7 @@ fn flash_attention[
         input_v_fn,
         input_mask_fn,
         transpose_k=transpose_k,
+        layout_bshd=layout_bshd,
     ].run(q, k_shape, v_shape, mask_shape, output, scale)
 
 
@@ -923,9 +925,9 @@ fn flash_attention_split_kv[
     the KV cache, and current KV elements from tensors `k` and `v`.
     """
     # This expects the following layouts:
-    # q: BHSD
-    # k (input_k_fn): BHSD
-    # v (input_v_fn): BHSD
+    # q: BSHD
+    # k (input_k_fn): BSHD
+    # v (input_v_fn): BSHD
     # k_cache (input_k_cache_fn): 1BHS'D
     # v_cache (input_v_cache_fn): 1BHS'D
     constrained[rank == 4]()
