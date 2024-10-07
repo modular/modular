@@ -55,6 +55,7 @@ from nn import arg_nonzero
 from nn.activations import gelu, relu
 from nn.arange import arange, arange_shape
 from nn.conv import ConvInfoStatic, conv_nhwc_direct, conv_shape
+from nn.conv_transpose import conv_transpose_shape, conv_transposed
 from nn.cumsum import cumsum
 from nn.gather_scatter import (
     Axis,
@@ -3353,4 +3354,143 @@ struct Conv:
             managed_tensor_slice_to_ndbuffer(dilations),
             managed_tensor_slice_to_ndbuffer(paddings),
             managed_tensor_slice_to_ndbuffer(num_groups),
+        )
+
+
+@compiler.register("mo.conv_transpose")
+struct ConvTranspose:
+    @staticmethod
+    fn execute[
+        filter_packed: Bool,
+        lambdas_have_fusion: Bool,
+    ](
+        output: ManagedTensorSlice,
+        input: ManagedTensorSlice[rank = output.rank],
+        filter: ManagedTensorSlice,
+        strides: ManagedTensorSlice[rank=1],
+        dilation: ManagedTensorSlice[rank=1],
+        paddings: ManagedTensorSlice[rank=1],
+        output_paddings: ManagedTensorSlice[rank=1],
+    ) raises:
+        constrained[
+            strides.type.is_integral()
+            and dilation.type.is_integral()
+            and output_paddings.type.is_integral()
+        ]()
+
+        alias input_static_shape = compiler.specsof[input.type, input.rank](
+            "input"
+        ).shape
+        alias filter_static_shape = compiler.specsof[filter.type, filter.rank](
+            "filter"
+        ).shape
+        alias output_static_shape = compiler.specsof[output.type, output.rank](
+            "output"
+        ).shape
+
+        if strides.size() != input.rank - 2:
+            raise Error(
+                "$(input_rank-2) values expected in convTranspose stride"
+            )
+
+        if dilation.size() != input.rank - 2:
+            raise Error(
+                "$(input_rank-2) values expected in convTranspose dilation"
+            )
+
+        if output_paddings.size() != input.rank - 2:
+            raise Error(
+                "$(input_rank-2) values expected in convTranspose output"
+                " paddings"
+            )
+
+        if paddings.size() != 2 * (input.rank - 2):
+            raise Error(
+                "$(2*(input_rank-2)) value expected in convTranspose paddings"
+            )
+
+        var stride_tuple = IndexList[input.rank - 2](0)
+        var dilation_tuple = IndexList[input.rank - 2](0)
+
+        @parameter
+        for i in range(input.rank - 2):
+            stride_tuple[i] = int(strides._ptr[i])
+            dilation_tuple[i] = int(dilation._ptr[i])
+
+        var pad_d = IndexList[2](0)
+        var pad_h = IndexList[2](0)
+        var pad_w = IndexList[2](0)
+
+        @parameter
+        if input.rank == 3:
+            pad_w = Index(paddings[0], paddings[1])
+        elif input.rank == 4:
+            pad_h = Index(paddings[0], paddings[1])
+            pad_w = Index(paddings[2], paddings[3])
+        elif input.rank == 5:
+            pad_d = Index(paddings[0], paddings[1])
+            pad_h = Index(paddings[2], paddings[3])
+            pad_w = Index(paddings[4], paddings[5])
+
+        @parameter
+        @always_inline
+        fn output_fn[
+            _type: DType, _rank: Int, _width: Int
+        ](coords: IndexList[_rank], val: SIMD[_type, _width]):
+            output._fused_store[width=_width](
+                rebind[IndexList[output.rank]](coords),
+                rebind[SIMD[output.type, _width]](val),
+            )
+
+        var input_buf = managed_tensor_slice_to_ndbuffer[
+            static_shape=input_static_shape
+        ](input)
+        var filter_buf = managed_tensor_slice_to_ndbuffer[
+            static_shape=filter_static_shape
+        ](filter)
+        var output_buf = managed_tensor_slice_to_ndbuffer[
+            static_shape=output_static_shape
+        ](output)
+
+        conv_transposed[
+            input.rank,
+            filter.rank,
+            input_static_shape,  # Input shape.
+            filter_static_shape,  # Filter shape.
+            output_static_shape,  # Output shape.
+            input.type,
+            filter.type,  # Filter type.
+            output.type,  # Output type.
+            filter_packed,
+            lambdas_have_fusion,
+            output_fn,
+        ](
+            output_buf,
+            input_buf,
+            filter_buf,
+            stride_tuple,
+            dilation_tuple,
+            pad_d,
+            pad_h,
+            pad_w,
+        )
+
+    @staticmethod
+    fn shape[
+        type: DType
+    ](
+        input: ManagedTensorSlice[type],
+        filter: ManagedTensorSlice[type],
+        strides: ManagedTensorSlice[rank=1],
+        dilations: ManagedTensorSlice[rank=1],
+        paddings: ManagedTensorSlice[rank=1],
+        output_paddings: ManagedTensorSlice[rank=1],
+    ) raises -> IndexList[input.rank]:
+        return conv_transpose_shape[single_thread_blocking_override=True](
+            managed_tensor_slice_to_ndbuffer(input),
+            managed_tensor_slice_to_ndbuffer(filter),
+            managed_tensor_slice_to_ndbuffer(strides),
+            managed_tensor_slice_to_ndbuffer(dilations),
+            managed_tensor_slice_to_ndbuffer(paddings),
+            managed_tensor_slice_to_ndbuffer(output_paddings),
         )
