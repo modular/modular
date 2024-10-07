@@ -707,6 +707,7 @@ modular_cc_library(
         "include/KGEN/LITDialect/*.h",
         "include/KGEN/LITDialect/*.def",
     ]),
+    tags = ["no-clang-tidy-headers"],
     deps = [
         ":CODialect",
         ":CODialectIncGen",
@@ -853,6 +854,7 @@ modular_cc_library(
 modular_cc_library(
     name = "KGENDialect.headers",
     hdrs = glob(["include/KGEN/KGENDialect/*.h"]),
+    tags = ["no-clang-tidy-headers"],
     visibility = ["//visibility:private"],
     deps = [
         ":KGENAttrInterfacesIncGen",
@@ -899,6 +901,7 @@ modular_cc_library(
 modular_cc_library(
     name = "ToolCommon.headers",
     hdrs = glob(["include/KGEN/ToolCommon/*.h"]),
+    tags = ["no-clang-tidy-headers"],
     visibility = ["//visibility:private"],
     deps = [
         ":KGENPassesIncGen",
@@ -909,6 +912,7 @@ modular_cc_library(
 modular_cc_library(
     name = "Compiler.headers",
     hdrs = glob(["include/KGEN/Compiler/*.h"]),
+    tags = ["no-clang-tidy-headers"],
     deps = [
         ":ExecutionEngine.headers",
     ],
@@ -1024,7 +1028,10 @@ modular_cc_test(
         ":gen_link_test",
     ],
     linkopts = ["-lz"],
-    deps = [":CompilerRT.distributable"],
+    deps = [
+        ":CompilerRT.distributable",
+        "//Support:Base",
+    ],
 )
 
 modular_shared_library(
@@ -1081,6 +1088,7 @@ modular_cc_library(
         "//conditions:default": [],
     }),
     local_defines = CONFIG_SECTION_LOCAL_DEFINES,
+    tags = ["no-clang-tidy-headers"],
     deps = [
         "//AsyncRT:Support",
         "//Support:Base",
@@ -1102,6 +1110,7 @@ modular_cc_library(
     hdrs = [
         "include/KGEN/Support/ForceLinkMLIRC.h",
     ],
+    tags = ["no-clang-tidy-headers"],
     deps = [
         "@llvm-project//llvm:Support",
         "@llvm-project//mlir:CAPIIR",
@@ -1197,6 +1206,7 @@ modular_cc_library(
     name = "TransformUtils",
     srcs = glob(["lib/TransformUtils/*.cpp"]),
     hdrs = glob(["include/KGEN/TransformUtils/*.h"]),
+    tags = ["no-clang-tidy-headers"],
     deps = [
         ":HLCFDialect",
         ":Support",
@@ -1208,6 +1218,7 @@ modular_cc_library(
 modular_cc_library(
     name = "ObjectCompiler.headers",
     srcs = glob(["lib/Compiler/ObjectCompiler/*.h"]),
+    tags = ["no-clang-tidy-headers"],
     visibility = ["//visibility:private"],
 )
 
@@ -1237,6 +1248,7 @@ modular_cc_library(
         "include/KGEN/MojoParser/*.h",
         "include/KGEN/MojoParser/*.def",
     ]),
+    tags = ["no-clang-tidy-headers"],
     deps = [
         ":Compiler",
         ":ToolCommon",
@@ -1270,6 +1282,7 @@ modular_cc_library(
 modular_cc_library(
     name = "ExecutionEngine.headers",
     hdrs = glob(["include/KGEN/ExecutionEngine/*.h"]),
+    tags = ["no-clang-tidy-headers"],
 )
 
 modular_cc_library(
@@ -1363,6 +1376,7 @@ alias(
 modular_cc_library(
     name = "MojoLLDBPublicHeaders",
     hdrs = glob(["include/KGEN/MojoLLDB/*.h"]),
+    tags = ["no-clang-tidy-headers"],
 )
 
 modular_shared_library(

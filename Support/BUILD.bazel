@@ -89,6 +89,7 @@ modular_cc_library(
         "@platforms//os:macos": ["SHARED_LIBRARY_SUFFIX='\".dylib\"'"],
         "@platforms//os:linux": ["SHARED_LIBRARY_SUFFIX='\".so\"'"],
     }),
+    tags = ["no-clang-tidy-headers"],
     deps = [
         "//Config",
         "@llvm-project//llvm:Support",
@@ -170,6 +171,7 @@ modular_cc_library(
         "include/Support/Driver/*.h",
         "include/Support/Driver/*.inc",
     ]),
+    tags = ["no-clang-tidy-headers"],
     deps = [
         ":Base",
         ":Filesystem",
@@ -363,6 +365,7 @@ modular_cc_library(
     name = "Threading",
     srcs = glob(["lib/Threading/*.cpp"]),
     hdrs = glob(["include/Support/Threading/*.h"]),
+    tags = ["no-clang-tidy-headers"],
     deps = [":Base"],
 )
 
@@ -448,6 +451,7 @@ modular_cc_library(
     name = "Compiler",
     srcs = glob(["lib/Compiler/*.cpp"]),
     hdrs = glob(["include/Support/Compiler/*.h"]),
+    tags = ["no-clang-tidy-headers"],
     deps = [
         ":ADT",
         ":Base",
@@ -486,6 +490,7 @@ modular_cc_library(
             'MODULAR_TELEMETRY_URL=\\"https://telemetry-dev.modular.com:443\\"',
         ],
     }),
+    tags = ["no-clang-tidy-headers"],
     deps = [
         ":Base",
         ":Configuration",
