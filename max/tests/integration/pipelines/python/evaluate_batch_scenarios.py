@@ -10,18 +10,20 @@ from collections import defaultdict
 from contextlib import ExitStack
 from dataclasses import dataclass
 
-# from functools import cmp_to_key
 from pathlib import Path
 from typing import Any, List, Optional, TextIO
 
 import click
 from huggingface_hub import hf_hub_download
-from llama3 import InferenceConfig, Llama3
-from max.driver import CPU
+from llama3 import InferenceConfig, Llama3, SupportedEncodings
+from max.driver import CPU, CUDA
 from max.pipelines import TokenGenerator
 from max.serve.pipelines.echo_gen import EchoTokenGenerator
 
 from utils import config_to_flag
+
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(order=True)
@@ -64,41 +66,34 @@ def generate_simple_requests() -> List[RequestInstance]:
     return request_list
 
 
-# As opposed to continuous batching
-# When set - the batch is executed until ALL items of the batch are completed.
-FORCE_DYNAMIC_BATCHING = False
-
-
 async def run_batch_scenario(
     model: TokenGenerator,
     prompts: list[str],
+    batch_mode: str,
+    batch_max_size: int,
     output_path: str,
     request_list: list[RequestInstance],
-    max_batch_size=4,
 ):
-    logging.basicConfig(
-        level=logging.INFO,
-        encoding="utf-8",
-        format="%(asctime)s %(levelname)s: %(name)s: %(message)s",
-        datefmt="%H:%M:%S",
-        force=True,
-    )
-    logger = logging.getLogger(__name__)
     logger.info(
-        "Starting scenario with %d batches and %d prompts",
+        "Starting %s batching scenario with %d batches and %d prompts",
+        batch_mode,
         len(request_list),
         len(prompts),
     )
 
     num_prompts = len(prompts)
     batch_sequence_index = 0
-    TOKEN_GEN_TIME: float = 1.0
-    current_step: float = 0
+
+    step_current: int = 0
+    step_duration: int = 1
 
     context_encoding_queue: list[tuple[str, str, int]] = []
     token_gen_queue: list[tuple[str, Any]] = []  # Queued batched
     token_gen_batch: dict[str, Any] = {}  # Active batch
 
+    # Simulates dynamic batching. When set, the batch continues to be
+    # executed until ALL items of the batch are completed.
+    batch_mode_dynamic = batch_mode == "dynamic"
     batch_configs: dict[str, tuple[str, int]] = {}
     batch_completions: dict[str, str] = defaultdict(str)
     batch_output_files: dict[str, TextIO] = {}
@@ -120,7 +115,7 @@ async def run_batch_scenario(
 
     with exit_stack:
         while True:
-            step_logger = logger.getChild(str(current_step))
+            step_logger = logger.getChild(str(step_current))
             step_logger.info("")
 
             if (
@@ -134,7 +129,7 @@ async def run_batch_scenario(
 
             # Check if we have new batches available.
             while (batch_sequence_index < len(request_list)) and (
-                current_step >= request_list[batch_sequence_index].arrival_time
+                step_current >= request_list[batch_sequence_index].arrival_time
             ):
                 # Reuse prompts as needed
                 batch_id = str(batch_sequence_index)
@@ -157,7 +152,7 @@ async def run_batch_scenario(
             # Perform context encoding for new batches
             if context_encoding_queue:
                 # When set, defer context encoding until there are no active token generation batches
-                if not FORCE_DYNAMIC_BATCHING or not token_gen_batch:
+                if not batch_mode_dynamic or not token_gen_batch:
                     step_logger.info(
                         (
                             "Encoding Started: %d batches queued [%s], token"
@@ -173,7 +168,7 @@ async def run_batch_scenario(
                         context_encoding_batch = {}  # type: ignore
                         while (
                             context_encoding_queue
-                            and len(context_encoding_batch) < max_batch_size
+                            and len(context_encoding_batch) < batch_max_size
                         ):
                             batch_id, prompt, max_new_tokens = (
                                 context_encoding_queue.pop(0)
@@ -206,7 +201,7 @@ async def run_batch_scenario(
                             assert token is not None
                             batch_completions[batch_id] = token
                             batch_context = context_encoding_batch[batch_id]
-                            step_logger.info(
+                            step_logger.debug(
                                 "Encoded: %s, %d/%d, Completion:\n%s",
                                 batch_id,
                                 len(batch_context.tokens),
@@ -230,10 +225,10 @@ async def run_batch_scenario(
                     )
 
             # When set, only add new batches when there are no other ones active.
-            if not FORCE_DYNAMIC_BATCHING or not token_gen_batch:
+            if not batch_mode_dynamic or not token_gen_batch:
                 # Add queued batches to active batch when there is capacity
                 while token_gen_queue and (
-                    len(token_gen_batch) - max_batch_size
+                    len(token_gen_batch) - batch_max_size
                 ):
                     batch = token_gen_queue.pop(0)
                     batch_id, batch_context = batch
@@ -247,7 +242,7 @@ async def run_batch_scenario(
 
             # Run token generation on active batches
             if token_gen_batch:
-                step_logger.info(
+                step_logger.debug(
                     "Executing: Active-Batch: [%s]",
                     ",".join(token_gen_batch.keys()),
                 )
@@ -256,7 +251,7 @@ async def run_batch_scenario(
                 for batch_id, token in results.items():
                     assert token is not None
                     batch_completions[batch_id] += token
-                    step_logger.info(
+                    step_logger.debug(
                         "Executed: %s, %d/%d - Completion:\n%s",
                         batch_id,
                         len(batch_context.tokens),
@@ -277,7 +272,7 @@ async def run_batch_scenario(
                         await model.release(token_gen_batch[batch_id])
                         del token_gen_batch[batch_id]
 
-            current_step += TOKEN_GEN_TIME  # assumes that token generation takes one time step.
+            step_current += step_duration  # assumes that token generation takes one time step.
 
     summary_text = ""
     for batch_id, batch_completion in batch_completions.items():
@@ -301,8 +296,27 @@ async def run_batch_scenario(
 @click.option(
     "--prompt-count",
     type=int,
-    default=0,
+    default=4,
     help="Set to 1 or more to run a batching scenario.",
+)
+@click.option(
+    "--use-gpu",
+    is_flag=True,
+    show_default=True,
+    default=False,
+    help="Whether to run the model on the available GPU.",
+)
+@click.option(
+    "--model-name",
+    type=click.Choice(["llama3", "rev-echo"]),
+    default="rev-echo",
+    help="the model to use for evaluation",
+)
+@click.option(
+    "--batch-mode",
+    type=click.Choice(["dynamic", "continuous"]),
+    default="dynamic",
+    help="Configures the servers batching scheme",
 )
 @click.option(
     "--output-path",
@@ -310,20 +324,32 @@ async def run_batch_scenario(
     default="",
     help="Optional path to write outputs for batching scenario.",
 )
-@click.option(
-    "--model-name",
-    type=click.Choice(["toy-llama", "rev-echo"]),
-    default="rev-echo",
-    help="the model to use for evaluation",
-)
 def main(
     prompt: str,
     prompt_count: int,
-    output_path: str,
+    use_gpu: bool,
     model_name: str,
+    batch_mode: str,
+    output_path: str,
     **config_kwargs,
 ):
-    config_kwargs.update({"device": CPU()})
+    logging.basicConfig(
+        level=logging.INFO,
+        encoding="utf-8",
+        format="%(asctime)s %(levelname)s: %(name)s: %(message)s",
+        datefmt="%H:%M:%S",
+        force=True,
+    )
+
+    if use_gpu:
+        config_kwargs.update(
+            {
+                "device": CUDA(),
+                "quantization_encoding": SupportedEncodings.bfloat16,
+            }
+        )
+    else:
+        config_kwargs.update({"device": CPU()})
     config = InferenceConfig(**config_kwargs)
     # By default, use the Modular HF repository as a reference for tokenizer
     # configuration, etc. when no repository is specified.
@@ -346,20 +372,66 @@ def main(
             repo_id=repo_id,
             filename=weight_filename,
         )
+
+    batch_max_size = 4
     if model_name == "rev-echo":
         model = EchoTokenGenerator()
-    elif model_name == "toy-llama":
+    elif model_name == "llama3":
         model = Llama3(config)
+        batch_max_size = config.max_cache_batch_size
     else:
         raise ValueError("invalid model name")
-    print("Starting batch demo")
+
+    logger.info(
+        "Loaded model %s, %s on %s",
+        config.version,
+        config.quantization_encoding,
+        config.device,
+    )
+    logger.info(
+        "- Using weights %s, %s", config.weight_path, config.huggingface_weights
+    )
+    logger.info(
+        "- MaxLength %d, MaxNewTokens %d",
+        config.max_length,
+        config.max_new_tokens,
+    )
+    logger.info(
+        "- KVCache %s, MaxSize %d",
+        config.cache_strategy,
+        config.max_cache_batch_size,
+    )
+
+    logger.info("Starting batch demo")
     prompts = [prompt.format(i + 1) for i in range(prompt_count)]
     asyncio.run(
         run_batch_scenario(
-            model, prompts, output_path, generate_simple_requests()
+            model,
+            prompts,
+            batch_mode,
+            batch_max_size,
+            output_path,
+            generate_simple_requests(),
         )
     )
 
 
 if __name__ == "__main__":
+    """README
+    ** Dynamic Batching Simulation **
+    CPU
+        Produces valid outputs until the first request in the batch completes - then garbage.
+        bazelw run //SDK/integration-test/pipelines/python:evaluate_batch_scenarios -- --batch-mode dynamic --max-cache-batch-size 4 --model-name llama3 --quantization-encoding q4_k
+    GPU
+        Produces valid outputs until the first request in the batch completes - then garbage.
+        bazelw run //SDK/integration-test/pipelines/python:evaluate_batch_scenarios -- --batch-mode dynamic --max-cache-batch-size 4 --model-name llama3 --use-gpu
+
+    ** Continuous Batching Simulation **
+    CPU
+        Produces total garbage.
+        bazelw run //SDK/integration-test/pipelines/python:evaluate_batch_scenarios -- --batch-mode continuous --max-cache-batch-size 4 --model-name llama3 --quantization-encoding q4_k
+    GPU
+        Hangs
+        bazelw run //SDK/integration-test/pipelines/python:evaluate_batch_scenarios -- --batch-mode continuous --max-cache-batch-size 4 --model-name llama3 --use-gpu
+    """
     main()

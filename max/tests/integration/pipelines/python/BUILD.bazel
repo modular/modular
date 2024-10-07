@@ -46,6 +46,7 @@ py_binary(
     visibility = ["//visibility:public"],
     deps = [
         "//SDK/lib/API/python/max/pipelines",
+        "//SDK/lib/API/python/max/serve",
         "//SDK/public/max-repo/pipelines/python/llama3",
         "//SDK/public/max-repo/pipelines/python/utils",
         requirement("click"),
