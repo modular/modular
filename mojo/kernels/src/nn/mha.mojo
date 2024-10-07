@@ -11,6 +11,7 @@ from os import abort
 from sys import alignof, bitwidthof, simdwidthof
 
 from algorithm import elementwise
+from algorithm.functional import unswitch
 from buffer import Buffer, NDBuffer
 from buffer.dimlist import DimList
 from gpu import (
@@ -1234,26 +1235,27 @@ fn mha_single_batch[
         # Vectorize by 2.
         var p_reg_vec2 = p_reg_tile.vectorize[1, p_frag_simdwidth]()
 
-        # TODO: Construct mask tensor with runtime layout.
         @parameter
-        for m_mma in range(num_m_mmas):
-
+        if use_mask_tensor:
+            # TODO: Construct mask tensor with runtime layout.
             @parameter
-            for n_mma in range(num_n_mmas):
-                alias mma_id = n_mma * num_m_mmas + m_mma
-
-                # Coordinates in mask for current mma tile.
-                var mask_frag_row = mask_warp_row + m_mma * MMA_M
-                var mask_frag_col = mask_warp_col + n_mma * MMA_N
-
-                # Offset to current thread's fragment
-                mask_frag_row += lane // (MMA_N // p_frag_simdwidth)
-                mask_frag_col += lane * p_frag_simdwidth % MMA_N
-
-                alias mask_align = alignof[SIMD[mask_type, p_frag_simdwidth]]()
+            for m_mma in range(num_m_mmas):
 
                 @parameter
-                if use_mask_tensor:
+                for n_mma in range(num_n_mmas):
+                    alias mma_id = n_mma * num_m_mmas + m_mma
+
+                    # Coordinates in mask for current mma tile.
+                    var mask_frag_row = mask_warp_row + m_mma * MMA_M
+                    var mask_frag_col = mask_warp_col + n_mma * MMA_N
+
+                    # Offset to current thread's fragment
+                    mask_frag_row += lane // (MMA_N // p_frag_simdwidth)
+                    mask_frag_col += lane * p_frag_simdwidth % MMA_N
+
+                    alias mask_align = alignof[
+                        SIMD[mask_type, p_frag_simdwidth]
+                    ]()
 
                     @parameter
                     for i in range(2):
@@ -1288,43 +1290,61 @@ fn mha_single_batch[
                                 )
                             )
 
-                else:
-                    if (
-                        mask.status(
-                            Index(q_tile_idx * BM, kv_tile_start_row),
-                            Index(BM, BN),
-                        )
-                        == TileMaskStatus.PARTIAL_MASK
-                    ):
+        else:
+
+            @parameter
+            fn _apply_mask[masked: Bool]():
+                @parameter
+                for m_mma in range(num_m_mmas):
+
+                    @parameter
+                    for n_mma in range(num_n_mmas):
+                        alias mma_id = n_mma * num_m_mmas + m_mma
+
+                        # Coordinates in mask for current mma tile.
+                        var mask_frag_row = mask_warp_row + m_mma * MMA_M
+                        var mask_frag_col = mask_warp_col + n_mma * MMA_N
+
+                        # Offset to current thread's fragment
+                        mask_frag_row += lane // (MMA_N // p_frag_simdwidth)
+                        mask_frag_col += lane * p_frag_simdwidth % MMA_N
 
                         @parameter
                         for i in range(2):
                             # The row in score matrix of shape seq_len x num_keys.
                             # Mask col is score col since we don't partition in col.
-                            var score_row = mask_block_row + mask_frag_row + i * MMA_M // 2
-                            var score_col = mask_frag_col
-                            p_reg_vec2[mma_id, i] = mask.mask(
-                                Index(
-                                    int(BlockIdx.z()),
-                                    int(BlockIdx.y()),
-                                    int(score_row),
-                                    int(score_col),
-                                ),
-                                p_reg_vec2[mma_id, i]
-                                * scale.cast[accum_type](),
-                            )
-                            p_reg_vec2[mma_id, i] = _kernel_mask(
-                                Index(score_row, score_col),
-                                Index(seq_len, seq_len),
-                                p_reg_vec2[mma_id, i],
-                            )
-                    else:
+                            @parameter
+                            if masked:
+                                var score_row = mask_block_row + mask_frag_row + i * MMA_M // 2
+                                var score_col = mask_frag_col
+                                p_reg_vec2[mma_id, i] = mask.mask(
+                                    Index(
+                                        int(BlockIdx.z()),
+                                        int(BlockIdx.y()),
+                                        int(score_row),
+                                        int(score_col),
+                                    ),
+                                    p_reg_vec2[mma_id, i]
+                                    * scale.cast[accum_type](),
+                                )
+                                p_reg_vec2[mma_id, i] = _kernel_mask(
+                                    Index(score_row, score_col),
+                                    Index(seq_len, seq_len),
+                                    p_reg_vec2[mma_id, i],
+                                )
+                            else:
+                                p_reg_vec2[mma_id, i] = (
+                                    p_reg_vec2[mma_id, i]
+                                    * scale.cast[accum_type]()
+                                )
 
-                        @parameter
-                        for i in range(2):
-                            p_reg_vec2[mma_id, i] = (
-                                p_reg_vec2[mma_id, i] * scale.cast[accum_type]()
-                            )
+            unswitch[_apply_mask](
+                mask.status(
+                    Index(q_tile_idx * BM, kv_tile_start_row),
+                    Index(BM, BN),
+                )
+                == TileMaskStatus.PARTIAL_MASK
+            )
 
         # Increment mask to next BM x BN block.
         mask_warp_col += BN
