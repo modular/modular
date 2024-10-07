@@ -158,6 +158,42 @@ struct ContiguousKVCache[
     var cache_lengths: NDBuffer[DType.uint32, 1]
     var batch_size: Int
 
+    fn __init__(
+        inout self,
+        block: Self.BlockType,
+        cache_lengths: NDBuffer[DType.uint32, 1],
+        is_cache_empty: Bool,
+        batch_size: Int,
+    ):
+        self._block = block
+        self.cache_lengths = cache_lengths
+        self.is_cache_empty = is_cache_empty
+        self.batch_size = batch_size
+
+    @staticmethod
+    fn id() -> String:
+        return (
+            "ContiguousKVCache+"
+            + str(type)
+            + "+"
+            + str(kv_params.num_heads)
+            + "+"
+            + str(kv_params.head_size)
+        )
+
+    @staticmethod
+    fn get_block_static_shape() -> DimList:
+        return Self.single_block_shape
+
+    @staticmethod
+    fn get_kv_params() -> KVCacheStaticParams:
+        return kv_params
+
+    @staticmethod
+    fn get_type() -> DType:
+        """Helper method to retrieve the type of the underlying KVCache."""
+        return type
+
     @always_inline
     fn _get_idx_tuple(
         self, bs_idx: Int, head_idx: Int, tok_idx: Int, head_dim_idx: Int
@@ -197,42 +233,6 @@ struct ContiguousKVCache[
         else:
             constrained[False, "unsupported layout"]()
             return IndexList[4]()
-
-    fn __init__(
-        inout self,
-        block: Self.BlockType,
-        cache_lengths: NDBuffer[DType.uint32, 1],
-        is_cache_empty: Bool,
-        batch_size: Int,
-    ):
-        self._block = block
-        self.cache_lengths = cache_lengths
-        self.is_cache_empty = is_cache_empty
-        self.batch_size = batch_size
-
-    @staticmethod
-    fn id() -> String:
-        return (
-            "ContiguousKVCache+"
-            + str(type)
-            + "+"
-            + str(kv_params.num_heads)
-            + "+"
-            + str(kv_params.head_size)
-        )
-
-    @staticmethod
-    fn get_block_static_shape() -> DimList:
-        return Self.single_block_shape
-
-    @staticmethod
-    fn get_kv_params() -> KVCacheStaticParams:
-        return kv_params
-
-    @staticmethod
-    fn get_type() -> DType:
-        """Helper method to retrieve the type of the underlying KVCache."""
-        return type
 
     @always_inline
     fn cache_length(self, batch_idx: Int) -> Int:
