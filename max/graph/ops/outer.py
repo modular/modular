@@ -6,11 +6,11 @@
 """Op implementation for outer."""
 
 from .. import dtype_promotion
-from ..value import TensorValue, ValueLike
+from ..value import TensorValue, TensorValueLike
 from .reshape import reshape
 
 
-def outer(lhs: ValueLike, rhs: ValueLike) -> TensorValue:
+def outer(lhs: TensorValueLike, rhs: TensorValueLike) -> TensorValue:
     """Computes the outer product of two symbolic vectors.
 
     Args:

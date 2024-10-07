@@ -9,12 +9,12 @@ import numpy as np
 from max.dtype import DType
 from max.mlir.dialects import rmo
 
-from .constant import constant
 from ..graph import Graph
-from ..value import TensorValue, TensorType, ValueLike
+from ..value import TensorType, TensorValue, TensorValueLike
+from .constant import constant
 
 
-def transpose(x: ValueLike, dim_1: int, dim_2: int) -> TensorValue:
+def transpose(x: TensorValueLike, dim_1: int, dim_2: int) -> TensorValue:
     """Transposes two dimensions of a symbolic tensor.
 
     Args:

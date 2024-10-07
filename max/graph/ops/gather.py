@@ -10,12 +10,14 @@ from max.dtype import DType
 from max.mlir.dialects import rmo
 
 from ..graph import Graph
-from ..value import TensorValue, ValueLike
 from ..type import TensorType
+from ..value import TensorValue, TensorValueLike
 from .constant import constant
 
 
-def gather(input: ValueLike, indices: ValueLike, axis: int = -1) -> TensorValue:
+def gather(
+    input: TensorValueLike, indices: TensorValueLike, axis: int = -1
+) -> TensorValue:
     """
     Selects elements out of an input tensor by index.
 

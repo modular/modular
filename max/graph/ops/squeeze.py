@@ -5,13 +5,12 @@
 # ===----------------------------------------------------------------------=== #
 """Op implementation for squeeze."""
 
-from ..value import TensorValue, ValueLike
 from ..type import Shape
-
+from ..value import TensorValue, TensorValueLike
 from .reshape import reshape
 
 
-def squeeze(x: ValueLike, axis: int) -> TensorValue:
+def squeeze(x: TensorValueLike, axis: int) -> TensorValue:
     """Removes a size-1 dimension from a symbolic tensor.
 
     Args:

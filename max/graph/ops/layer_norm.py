@@ -9,13 +9,16 @@ import numpy as np
 from max.mlir.dialects import mo
 
 from .. import dtype_promotion
-from .constant import constant
 from ..graph import Graph
-from ..value import TensorValue, ValueLike
+from ..value import TensorValue, TensorValueLike
+from .constant import constant
 
 
 def layer_norm(
-    input: TensorValue, gamma: ValueLike, beta: ValueLike, epsilon: float
+    input: TensorValue,
+    gamma: TensorValueLike,
+    beta: TensorValueLike,
+    epsilon: float,
 ) -> TensorValue:
     """Performs layer normalization.
 

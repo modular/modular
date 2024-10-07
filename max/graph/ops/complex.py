@@ -5,12 +5,12 @@
 # ===----------------------------------------------------------------------=== #
 """Complex ops."""
 
-from ..value import TensorValue, ValueLike
 from ..type import StaticDim
+from ..value import TensorValue, TensorValueLike
 from .reshape import reshape
 
 
-def as_interleaved_complex(x: ValueLike) -> TensorValue:
+def as_interleaved_complex(x: TensorValueLike) -> TensorValue:
     """Reshapes the input symbolic tensor as complex from alternating (real, imag).
 
     Args:

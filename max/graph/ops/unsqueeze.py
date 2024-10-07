@@ -5,11 +5,11 @@
 # ===----------------------------------------------------------------------=== #
 """Op implementation for squeeze."""
 
-from ..value import TensorValue, ValueLike
+from ..value import TensorValue, TensorValueLike
 from .reshape import reshape
 
 
-def unsqueeze(x: ValueLike, axis: int) -> TensorValue:
+def unsqueeze(x: TensorValueLike, axis: int) -> TensorValue:
     """Inserts a size-1 dimension into a symbolic tensor.
 
     Args:

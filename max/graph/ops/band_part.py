@@ -9,12 +9,12 @@ from max.dtype import DType
 from max.mlir.dialects import rmo
 
 from ..graph import Graph
-from ..value import TensorValue, ValueLike
+from ..value import TensorValue, TensorValueLike
 from .constant import constant
 
 
 def band_part(
-    x: ValueLike, num_lower: int, num_upper: int, exclude: bool = False
+    x: TensorValueLike, num_lower: int, num_upper: int, exclude: bool = False
 ) -> TensorValue:
     """Masks out everything except a diagonal band of an input matrix.
 

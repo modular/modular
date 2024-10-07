@@ -13,13 +13,13 @@ from max.dtype import DType
 from max.mlir.dialects import rmo
 
 from .. import dtype_promotion
-from .constant import constant
 from ..graph import Graph
 from ..type import Shape, StaticDim, SymbolicDim, TensorType
-from ..value import TensorValue, ValueLike
+from ..value import TensorValue, TensorValueLike
+from .constant import constant
 
 
-def tile(x: ValueLike, repeats: Iterable[int]):
+def tile(x: TensorValueLike, repeats: Iterable[int]):
     """
     Returns a new Tensor as the result of copying the input tensor N_i times
     on each dimension, where N_i = repeats[i].

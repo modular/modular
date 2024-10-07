@@ -11,12 +11,12 @@ from max import mlir
 from max.mlir.dialects import rmo
 
 from ..graph import Graph
-from ..value import TensorValue, ValueLike
+from ..value import TensorValue, TensorValueLike
 from .concat import concat
 from .unsqueeze import unsqueeze
 
 
-def stack(vals: Iterable[ValueLike], axis: int = 0) -> TensorValue:
+def stack(vals: Iterable[TensorValueLike], axis: int = 0) -> TensorValue:
     """Stacks a list of tensors along a new axis.
 
     Args:

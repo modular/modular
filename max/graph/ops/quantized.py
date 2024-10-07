@@ -9,10 +9,9 @@ from typing import Callable, Dict
 
 from max.dtype import DType
 
-from ..value import TensorValue
 from ..quantization import QuantizationEncoding
 from ..type import StaticDim, TensorType
-
+from ..value import TensorValue
 from .custom import custom
 
 

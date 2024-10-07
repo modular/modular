@@ -31,10 +31,10 @@ import numpy as np
 from max.dtype import DType
 
 from . import ops
-from .value import TensorValue, ValueLike, _strong_value_like
+from .value import TensorValue, TensorValueLike, _strong_tensor_value_like
 
 
-def _restrict_to_strong_dtypes(value: ValueLike) -> TensorValue:
+def _restrict_to_strong_dtypes(value: TensorValueLike) -> TensorValue:
     """Converts strong dtype values to TensorValue.
 
     Raise an error if the input dtype is weak.
@@ -57,9 +57,9 @@ def _restrict_to_strong_dtypes(value: ValueLike) -> TensorValue:
 
 
 def _promote_weak_dtypes(
-    x: ValueLike, y: ValueLike
+    x: TensorValueLike, y: TensorValueLike
 ) -> tuple[TensorValue, TensorValue]:
-    """Promotes weak dtypes on ValueLike objects.
+    """Promotes weak dtypes on TensorValueLike objects.
 
     Most of dtype promotion is dealt with in RMO.
     This function specifically deals with promotion of non-max objects.
@@ -85,7 +85,7 @@ def _promote_weak_dtypes(
         return (_promote_to(x, max_value.dtype), max_value)
 
 
-def _promote_to(value: ValueLike, out_dtype: DType) -> TensorValue:
+def _promote_to(value: TensorValueLike, out_dtype: DType) -> TensorValue:
     if isinstance(value, (int, np.integer)):
         min, max = _DTYPE_MIN_AND_MAX_FULL_PRECISION[out_dtype]
         if min <= value <= max:
@@ -125,13 +125,13 @@ def _promote_to(value: ValueLike, out_dtype: DType) -> TensorValue:
 
     else:
         raise TypeError(
-            "_promote_weak_dtypes() argument must be a ValueLike, not"
+            "_promote_weak_dtypes() argument must be a TensorValueLike, not"
             f" '{type(value).__name__}'"
         )
 
 
-def _is_strong(value: ValueLike) -> bool:
-    return isinstance(value, _strong_value_like)
+def _is_strong(value: TensorValueLike) -> bool:
+    return isinstance(value, _strong_tensor_value_like)
 
 
 # For each DType, this is the range of values where a conversion would not lose precision.

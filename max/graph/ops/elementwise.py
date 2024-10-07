@@ -9,7 +9,7 @@ from max.mlir.dialects import rmo
 
 from .. import dtype_promotion
 from ..graph import Graph
-from ..value import TensorValue, ValueLike
+from ..value import TensorValue, TensorValueLike
 
 # ===----------------------------------------------------------------------=== #
 # Binary Ops
@@ -18,7 +18,9 @@ from ..value import TensorValue, ValueLike
 
 
 def _elementwise_binary(op):
-    def elementwise_op(lhs: ValueLike, rhs: ValueLike) -> TensorValue:
+    def elementwise_op(
+        lhs: TensorValueLike, rhs: TensorValueLike
+    ) -> TensorValue:
         lhs, rhs = dtype_promotion._promote_weak_dtypes(lhs, rhs)
         return Graph.current._add_op(op, lhs, rhs)[0].tensor
 
@@ -372,7 +374,7 @@ Raises:
 
 
 def _elementwise_unary(op):
-    def elementwise_op(x: ValueLike) -> TensorValue:
+    def elementwise_op(x: TensorValueLike) -> TensorValue:
         x = dtype_promotion._restrict_to_strong_dtypes(x)
         return Graph.current._add_op(op, x._mlir_value.type, x)[0].tensor
 

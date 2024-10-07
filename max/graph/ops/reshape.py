@@ -10,10 +10,10 @@ from max.mlir.dialects import rmo
 
 from ..graph import Graph
 from ..type import Shape, ShapeLike
-from ..value import TensorValue, ValueLike
+from ..value import TensorValue, TensorValueLike
 
 
-def reshape(x: ValueLike, shape: ShapeLike) -> TensorValue:
+def reshape(x: TensorValueLike, shape: ShapeLike) -> TensorValue:
     """Reshapes a symbolic tensor.
 
     The number and order of the elements in the tensor is unchanged.

@@ -11,12 +11,12 @@ from max import mlir
 from max.mlir.dialects import rmo
 
 from ..graph import Graph
-from ..value import TensorValue, ValueLike
 from ..type import Dim, DimLike, Shape
+from ..value import TensorValue, TensorValueLike
 
 
 def concat(
-    original_vals: Iterable[ValueLike],
+    original_vals: Iterable[TensorValueLike],
     axis: int = 0,
     new_dim: Optional[DimLike] = None,
 ) -> TensorValue:

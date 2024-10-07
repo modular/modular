@@ -334,58 +334,62 @@ class TensorValue(Value):
     def __le__(self, rhs: Any) -> TensorValue:
         return ops.logical_not(self > rhs)
 
-    def __add__(self, rhs: ValueLike) -> TensorValue:
+    def __add__(self, rhs: TensorValueLike) -> TensorValue:
         return ops.add(self, rhs)
 
-    def __radd__(self, lhs: ValueLike) -> TensorValue:
+    def __radd__(self, lhs: TensorValueLike) -> TensorValue:
         return ops.add(lhs, self)
 
-    def __sub__(self, rhs: ValueLike) -> TensorValue:
+    def __sub__(self, rhs: TensorValueLike) -> TensorValue:
         return ops.sub(self, rhs)
 
-    def __rsub__(self, lhs: ValueLike) -> TensorValue:
+    def __rsub__(self, lhs: TensorValueLike) -> TensorValue:
         return ops.sub(lhs, self)
 
-    def __mul__(self, rhs: ValueLike) -> TensorValue:
+    def __mul__(self, rhs: TensorValueLike) -> TensorValue:
         return ops.mul(self, rhs)
 
-    def __rmul__(self, lhs: ValueLike) -> TensorValue:
+    def __rmul__(self, lhs: TensorValueLike) -> TensorValue:
         return ops.mul(lhs, self)
 
-    def __truediv__(self, rhs: ValueLike) -> TensorValue:
+    def __truediv__(self, rhs: TensorValueLike) -> TensorValue:
         return ops.div(self, rhs)
 
-    def __rtruediv__(self, lhs: ValueLike) -> TensorValue:
+    def __rtruediv__(self, lhs: TensorValueLike) -> TensorValue:
         return ops.div(lhs, self)
 
-    def __floordiv__(self, rhs: ValueLike) -> TensorValue:
+    def __floordiv__(self, rhs: TensorValueLike) -> TensorValue:
         return ops.floor(ops.div(self, rhs))
 
-    def __rfloordiv__(self, lhs: ValueLike) -> TensorValue:
+    def __rfloordiv__(self, lhs: TensorValueLike) -> TensorValue:
         return ops.floor(ops.div(lhs, self))
 
-    def __mod__(self, rhs: ValueLike) -> TensorValue:
+    def __mod__(self, rhs: TensorValueLike) -> TensorValue:
         return ops.mod(self, rhs)
 
-    def __rmod__(self, lhs: ValueLike) -> TensorValue:
+    def __rmod__(self, lhs: TensorValueLike) -> TensorValue:
         return ops.mod(lhs, self)
 
-    def __divmod__(self, rhs: ValueLike) -> tuple[TensorValue, TensorValue]:
+    def __divmod__(
+        self, rhs: TensorValueLike
+    ) -> tuple[TensorValue, TensorValue]:
         return (self // rhs, self % rhs)
 
-    def __rdivmod__(self, lhs: ValueLike) -> tuple[TensorValue, TensorValue]:
+    def __rdivmod__(
+        self, lhs: TensorValueLike
+    ) -> tuple[TensorValue, TensorValue]:
         return (lhs // self, lhs % self)
 
-    def __matmul__(self, rhs: ValueLike) -> TensorValue:
+    def __matmul__(self, rhs: TensorValueLike) -> TensorValue:
         return ops.matmul(self, rhs)
 
-    def __rmatmul__(self, lhs: ValueLike) -> TensorValue:
+    def __rmatmul__(self, lhs: TensorValueLike) -> TensorValue:
         return ops.matmul(lhs, self)
 
-    def __pow__(self, rhs: ValueLike) -> TensorValue:
+    def __pow__(self, rhs: TensorValueLike) -> TensorValue:
         return ops.pow(self, rhs)
 
-    def __rpow__(self, lhs: ValueLike) -> TensorValue:
+    def __rpow__(self, lhs: TensorValueLike) -> TensorValue:
         return ops.pow(lhs, self)
 
 
@@ -393,11 +397,22 @@ StrongValueLike = Union[mlir.Value, Value, Weight]
 Numeric = Union[int, float, np.integer, np.floating, np.ndarray]
 ValueLike = Union[StrongValueLike, Numeric]
 
+StrongTensorValueLike = Union[mlir.Value, TensorValue, Weight]
+TensorValueLike = Union[StrongTensorValueLike, Numeric]
+
+
 # This is needed for python 3.9 compatibility.
 # `isinstance` only works with tuples and not unions in 3.9.
 _strong_value_like = (mlir.Value, Value, Weight)
 _numeric = (int, float, np.integer, np.floating, np.ndarray)
 _value_like = _strong_value_like + _numeric
+
+_strong_tensor_value_like = (mlir.Value, TensorValue, Weight)
+_tensor_value_like = _strong_tensor_value_like + _numeric
+
+
+def _is_tensor_value_like(obj: Any) -> TypeGuard[TensorValueLike]:
+    return isinstance(obj, _tensor_value_like)
 
 
 def _is_value_like(obj: Any) -> TypeGuard[ValueLike]:

@@ -9,10 +9,12 @@ from max.mlir.dialects import rmo
 
 from .. import dtype_promotion
 from ..graph import Graph
-from ..value import TensorValue, ValueLike
+from ..value import TensorValue, TensorValueLike
 
 
-def select(cond: ValueLike, x: ValueLike, y: ValueLike) -> TensorValue:
+def select(
+    cond: TensorValueLike, x: TensorValueLike, y: TensorValueLike
+) -> TensorValue:
     """
     Returns ``condition ? x : y`` (element-wise), where ``cond``, ``x`` and ``y``
     are input tensors.

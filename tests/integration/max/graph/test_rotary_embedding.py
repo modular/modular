@@ -12,7 +12,7 @@ import torch
 from conftest import modular_graph_test
 from hypothesis import assume
 from max.dtype import DType
-from max.graph import Graph, TensorType, ValueLike
+from max.graph import Graph, TensorType, TensorValueLike
 from max.graph.type import Dim
 from nn import RotaryEmbedding
 
@@ -83,7 +83,7 @@ def test_freqs_cis(session, dtype: DType, params: RopeParams):
 
 
 class CannedRotaryEmbedding(RotaryEmbedding):
-    def __init__(self, freqs_cis: ValueLike):
+    def __init__(self, freqs_cis: TensorValueLike):
         self._freqs_cis = freqs_cis
 
 

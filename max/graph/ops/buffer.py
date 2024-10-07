@@ -11,12 +11,10 @@ from max import mlir
 from max.dtype import DType
 from max.mlir.dialects import rmo
 
-from ..graph import Graph, location
+from ..graph import Graph
 from ..type import TensorType, _ChainType
-from ..value import BufferValue, TensorValue, ValueLike
-from .constant import constant
+from ..value import BufferValue, TensorValue
 from .slice_tensor import SliceIndices, _slice_and_output_tensors
-from .stack import stack_scalars
 
 
 def buffer_load(
@@ -69,7 +67,7 @@ def buffer_store(destination: BufferValue, source: TensorValue) -> None:
 
 
 def buffer_store_slice(
-    destination: BufferValue, source: ValueLike, indices: SliceIndices
+    destination: BufferValue, source: TensorValue, indices: SliceIndices
 ) -> None:
     """Stores the input tensor to into a slice in the input buffer.
 

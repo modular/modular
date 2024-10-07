@@ -9,11 +9,11 @@ from max import mlir
 from max.mlir.dialects import rmo
 
 from ..graph import Graph
-from ..value import TensorValue, TensorType, ValueLike
 from ..type import Shape, ShapeLike
+from ..value import TensorType, TensorValue, TensorValueLike
 
 
-def rebind(x: ValueLike, shape: ShapeLike, message: str) -> TensorValue:
+def rebind(x: TensorValueLike, shape: ShapeLike, message: str) -> TensorValue:
     """Rebinds a symbolic tensor to a specified set of dimensions.
 
     This does not mutate the symbolic tensor passed in, but instead adds a

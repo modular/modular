@@ -8,12 +8,12 @@
 from max.dtype import DType
 from max.mlir.dialects import mo
 
-from .constant import constant
 from ..graph import Graph
-from ..value import TensorValue, ValueLike, _strong_value_like
+from ..value import TensorValue, TensorValueLike, _strong_tensor_value_like
+from .constant import constant
 
 
-def cast(x: ValueLike, dtype: DType) -> TensorValue:
+def cast(x: TensorValueLike, dtype: DType) -> TensorValue:
     """Casts a symbolic tensor to a different data type.
 
     Args:
@@ -24,11 +24,11 @@ def cast(x: ValueLike, dtype: DType) -> TensorValue:
         A new symbolic tensor with the same shape as the input and the
         specified dtype.
     """
-    if not isinstance(x, _strong_value_like):
+    if not isinstance(x, _strong_tensor_value_like):
         # This is a weak value. Cast has an explicit target dtype, just create a constant of that dtype.
         return constant(x, dtype)
 
-    # We have a strong valuelike. Actually load and cast it.
+    # We have a strong TensorValueLike. Actually load and cast it.
     gv = TensorValue(x)
     if gv.dtype == dtype:
         return gv

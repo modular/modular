@@ -6,16 +6,16 @@
 """Reduction ops."""
 
 import numpy as np
-from max.mlir.dialects import rmo
 from max.dtype import DType
+from max.mlir.dialects import rmo
 
-from .constant import constant
 from ..graph import Graph
-from ..value import TensorValue, ValueLike
 from ..type import Dim, Shape, TensorType
+from ..value import TensorValue, TensorValueLike
+from .constant import constant
 
 
-def mean(x: ValueLike, axis=-1) -> TensorValue:
+def mean(x: TensorValueLike, axis=-1) -> TensorValue:
     """
     Reduces a symbolic tensor using a mean operation.
 
