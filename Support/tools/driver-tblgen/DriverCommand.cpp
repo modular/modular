@@ -63,7 +63,7 @@ getValueAsOptionalIndex(const llvm::Record *record) {
 static bool isRecordHidden(const llvm::Record *record) {
   return llvm::any_of(
       record->getValueAsListOfDefs("Flags"),
-      [](llvm::Record *flag) { return flag->getName() == "HelpHidden"; });
+      [](const llvm::Record *flag) { return flag->getName() == "HelpHidden"; });
 }
 
 //===----------------------------------------------------------------------===//
@@ -146,7 +146,8 @@ M::CommandDescription::get(const llvm::RecordKeeper &records) {
       invalid |= printError(record->getLoc(),
                             "command description should end with a period");
 
-    std::vector<llvm::Record *> usages = record->getValueAsListOfDefs("usages");
+    std::vector<const llvm::Record *> usages =
+        record->getValueAsListOfDefs("usages");
     if (usages.empty())
       invalid |= printError(record->getLoc(),
                             "command should include at least one usage");
@@ -237,7 +238,7 @@ M::CommandOptionGroup::getAll(const llvm::RecordKeeper &records) {
       groupOptions;
   llvm::SmallSet<int64_t, 4> groupIndices;
   for (const llvm::Record *option : records.getAllDerivedDefinitions("Option"))
-    if (llvm::Record *group = option->getValueAsOptionalDef("Group"))
+    if (const llvm::Record *group = option->getValueAsOptionalDef("Group"))
       groupOptions[group].push_back(option);
 
   // Then, add each group record's options to their (sorted) lists.
@@ -247,7 +248,8 @@ M::CommandOptionGroup::getAll(const llvm::RecordKeeper &records) {
     for (const llvm::Record *option : groupOptions[group.getGroup()]) {
       // If the option is an alias, don't add it to the group, add it to its
       // aliased option.
-      if (llvm::Record *aliased = option->getValueAsOptionalDef("Alias")) {
+      if (const llvm::Record *aliased =
+              option->getValueAsOptionalDef("Alias")) {
         ErrorOr<CommandOption &> aliasedOption =
             group.findOrCreateOption(aliased);
         if (failed(aliasedOption)) {

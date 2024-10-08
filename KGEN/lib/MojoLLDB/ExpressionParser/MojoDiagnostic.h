@@ -18,8 +18,9 @@ class MojoDiagnostic : public lldb_private::Diagnostic {
 public:
   MojoDiagnostic(StringRef message, lldb::Severity severity,
                  bool hadFixitsAttached)
-      : Diagnostic(message, severity, lldb_private::eDiagnosticOriginLLVM,
-                   kMojoCompilerID),
+      : Diagnostic(lldb_private::eDiagnosticOriginLLVM, kMojoCompilerID,
+                   lldb_private::DiagnosticDetail{
+                       {}, severity, message.str(), message.str()}),
         hadFixitsAttached(hadFixitsAttached) {}
 
   static bool classof(const Diagnostic *diag) {

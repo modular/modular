@@ -92,7 +92,7 @@ public:
     return record->getValueAsString("description");
   }
 
-  std::vector<llvm::Record *> getUsages() const {
+  std::vector<const llvm::Record *> getUsages() const {
     return record->getValueAsListOfDefs("usages");
   }
 

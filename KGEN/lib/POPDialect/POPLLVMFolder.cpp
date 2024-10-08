@@ -92,7 +92,7 @@ ErrorTreeOrSuccess CallLLVMIntrinsicOp::interpret(ArrayRef<Attribute> operands,
     return ErrorTree(getLoc(), "unknown intrinsic opcode");
 
   // See if LLVM knows what this is.
-  llvm::Intrinsic::ID id = llvm::Function::lookupIntrinsicID(name.strref());
+  llvm::Intrinsic::ID id = llvm::Intrinsic::lookupIntrinsicID(name.strref());
   if (!id)
     return ErrorTree(getLoc(),
                      "could not find LLVM intrinsic: '" + name.str() + "'");
