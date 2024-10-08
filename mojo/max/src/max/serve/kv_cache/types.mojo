@@ -16,7 +16,6 @@ from kv_cache.types import (
     ContinuousBatchingKVCache,
     ContinuousBatchingKVCacheCollection,
     KVCacheStaticParams,
-    KVCacheLayout,
     KVCollectionT,
 )
 
@@ -107,21 +106,15 @@ struct ContiguousKVCacheManager[
 
         # TODO make a different argument for the number of blocks.
         self.num_blocks = self.max_batch_size
-        var blocks_shape: IndexList[6]
 
-        @parameter
-        if kv_params.layout == KVCacheLayout.BSHD:
-            blocks_shape = IndexList[6](
-                2,
-                num_layers,
-                max_batch_size,
-                max_seq_len,
-                kv_params.num_heads,
-                kv_params.head_size,
-            )
-        else:
-            constrained[False, "unsupported layout"]()
-            raise "failure"
+        var blocks_shape = IndexList[6](
+            2,
+            num_layers,
+            max_batch_size,
+            max_seq_len,
+            kv_params.num_heads,
+            kv_params.head_size,
+        )
 
         self.blocks_buf = Tensor[type, 6](blocks_shape, other_device)
         self.active_seq_ids = List[Int]()
@@ -196,22 +189,15 @@ struct ContiguousKVCacheManager[
         self.cache_lengths_tensor_host.copy_into(self.cache_lengths_tensor_dev)
 
         var block_size = self.num_layers * batch_size * kv_params.num_heads * self.max_seq_len * kv_params.head_size
-        var v_cache_shape: IndexList[5]
-        var k_cache_shape: IndexList[5]
 
-        @parameter
-        if kv_params.layout == KVCacheLayout.BSHD:
-            v_cache_shape = IndexList[5](
-                self.num_layers,
-                batch_size,
-                self.max_seq_len,
-                kv_params.num_heads,
-                kv_params.head_size,
-            )
-            k_cache_shape = v_cache_shape
-        else:
-            constrained[False, "unsupported layout"]()
-            raise "failure"
+        var v_cache_shape = IndexList[5](
+            self.num_layers,
+            batch_size,
+            self.max_seq_len,
+            kv_params.num_heads,
+            kv_params.head_size,
+        )
+        var k_cache_shape = v_cache_shape
 
         var key_cache = NDBuffer[type, 5](
             self.blocks_buf.unsafe_ptr(),
@@ -351,21 +337,15 @@ struct ContinuousBatchingKVCacheManager[
 
         # TODO make a different argument for the number of blocks.
         self.num_blocks = self.max_batch_size
-        var block_buf_shape: IndexList[6]
 
-        @parameter
-        if kv_params.layout == KVCacheLayout.BSHD:
-            block_buf_shape = IndexList[6](
-                self.num_blocks,
-                2,  # key and value cache
-                self.num_layers,
-                self.max_seq_len,
-                kv_params.num_heads,
-                kv_params.head_size,
-            )
-        else:
-            constrained[False, "Invalid KVCacheLayout"]()
-            block_buf_shape = IndexList[6]()
+        var block_buf_shape = IndexList[6](
+            self.num_blocks,
+            2,  # key and value cache
+            self.num_layers,
+            self.max_seq_len,
+            kv_params.num_heads,
+            kv_params.head_size,
+        )
 
         self.blocks_buf = other_device.allocate(
             TensorSpec(

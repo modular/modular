@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from kv_cache.types import KVCacheStaticParams, KVCacheLayout
+from kv_cache.types import KVCacheStaticParams
 
 
 @value
@@ -23,7 +23,7 @@ fn _kv_cache_kernel_names[
 ]() -> KVCacheKernelNames:
     @parameter
     if type == DType.float32 and params == KVCacheStaticParams(
-        num_heads=6, head_size=48, layout=KVCacheLayout.BSHD
+        num_heads=6, head_size=48
     ):
         return KVCacheKernelNames(
             matmul_kernel="matmul_kv_cache_h6_d48_bshd",
@@ -37,7 +37,7 @@ fn _kv_cache_kernel_names[
             fused_qk_rope_kernel="fused_qk_rope_h6_d48_bshd",
         )
     elif type == DType.float32 and params == KVCacheStaticParams(
-        num_heads=8, head_size=128, layout=KVCacheLayout.BSHD
+        num_heads=8, head_size=128
     ):
         return KVCacheKernelNames(
             matmul_kernel="matmul_kv_cache_h8_d128_bshd",
@@ -51,7 +51,7 @@ fn _kv_cache_kernel_names[
             fused_qk_rope_kernel="fused_qk_rope_h8_d128_bshd",
         )
     elif type == DType.bfloat16 and params == KVCacheStaticParams(
-        num_heads=8, head_size=128, layout=KVCacheLayout.BSHD
+        num_heads=8, head_size=128
     ):
         return KVCacheKernelNames(
             matmul_kernel="matmul_kv_cache_h8_d128_bshd",
