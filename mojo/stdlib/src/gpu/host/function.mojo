@@ -230,11 +230,13 @@ struct FuncAttribute(CollectionElement, EqualityComparable):
 
     @always_inline
     @staticmethod
-    fn MAX_DYNAMIC_SHARED_SIZE_BYTES(val: Int32) -> FuncAttribute:
+    fn MAX_DYNAMIC_SHARED_SIZE_BYTES(val: UInt32) -> FuncAttribute:
         """The maximum size in bytes of dynamically-allocated shared memory that
         can be used by this function. If the user-specified dynamic shared memory
         size is larger than this value, the launch will fail."""
-        return FuncAttribute(Attribute.MAX_DYNAMIC_SHARED_SIZE_BYTES, val)
+        return FuncAttribute(
+            Attribute.MAX_DYNAMIC_SHARED_SIZE_BYTES, val.cast[DType.int32]()
+        )
 
     @always_inline
     @staticmethod
@@ -500,7 +502,7 @@ struct Function[
         block_dim: Dim,
         stream: Stream,
         cluster_dim: OptionalReg[Dim] = None,
-        shared_mem_bytes: Int = 0,
+        shared_mem_bytes: OptionalReg[Int] = None,
         owned attributes: List[LaunchAttribute] = List[LaunchAttribute](),
         owned constant_memory: List[ConstantMemoryMapping] = List[
             ConstantMemoryMapping
@@ -528,7 +530,7 @@ struct Function[
         block_dim: Dim,
         stream: Stream,
         cluster_dim: OptionalReg[Dim] = None,
-        shared_mem_bytes: Int = 0,
+        shared_mem_bytes: OptionalReg[Int] = None,
         owned attributes: List[LaunchAttribute] = List[LaunchAttribute](),
         owned constant_memory: List[ConstantMemoryMapping] = List[
             ConstantMemoryMapping
@@ -572,7 +574,7 @@ struct Function[
         block_dim: Dim,
         stream: Stream,
         cluster_dim: OptionalReg[Dim] = None,
-        shared_mem_bytes: Int = 0,
+        shared_mem_bytes: OptionalReg[Int] = None,
         owned attributes: List[LaunchAttribute] = List[LaunchAttribute](),
         owned constant_memory: List[ConstantMemoryMapping] = List[
             ConstantMemoryMapping
@@ -611,7 +613,7 @@ struct Function[
             block_dim_x=block_dim.x(),
             block_dim_y=block_dim.y(),
             block_dim_z=block_dim.z(),
-            shared_mem_bytes=shared_mem_bytes,
+            shared_mem_bytes=shared_mem_bytes.or_else(0),
             stream=stream.stream,
             attrs=attributes.unsafe_ptr(),
             num_attrs=len(attributes),

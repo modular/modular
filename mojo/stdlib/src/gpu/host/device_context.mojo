@@ -395,7 +395,7 @@ struct DeviceContextV1:
         grid_dim: Dim,
         block_dim: Dim,
         cluster_dim: OptionalReg[Dim] = None,
-        shared_mem_bytes: Int = 0,
+        shared_mem_bytes: OptionalReg[Int] = None,
         owned attributes: List[LaunchAttribute] = List[LaunchAttribute](),
         owned constant_memory: List[ConstantMemoryMapping] = List[
             ConstantMemoryMapping
@@ -422,7 +422,7 @@ struct DeviceContextV1:
         grid_dim: Dim,
         block_dim: Dim,
         cluster_dim: OptionalReg[Dim] = None,
-        shared_mem_bytes: Int = 0,
+        shared_mem_bytes: OptionalReg[Int] = None,
         owned attributes: List[LaunchAttribute] = List[LaunchAttribute](),
         owned constant_memory: List[ConstantMemoryMapping] = List[
             ConstantMemoryMapping
