@@ -553,7 +553,9 @@ def run(
         try:
             df = pd.read_csv(output_path_list[i], index_col=None, header=0)
             df.insert(0, "mesh_idx", i)
+            df.insert(len(df.columns), "spec", str(spec.instances[i]))
             valid_specs.append(df)
+
         except:
             df = None
 
