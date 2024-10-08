@@ -8,7 +8,7 @@ import asyncio
 from max.driver import CUDA
 from max.dtype import DType
 from max.engine import InferenceSession
-from nn.kv_cache import KVCacheParams, load_kv_manager
+from nn.kv_cache import KVCacheParams, KVCacheStrategy, load_kv_manager
 
 
 def test_kv_cache_gpu():
@@ -22,6 +22,7 @@ async def _test_kv_cache_gpu():
         head_dim=128,
         dtype=DType.bfloat16,
         device=device,
+        cache_strategy=KVCacheStrategy.CONTINUOUS,
     )
     session = InferenceSession(device=device)
     kv_manager = load_kv_manager(
