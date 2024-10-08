@@ -135,6 +135,8 @@ const char *LIT::getContextMessage(ExprContext context) {
     return " in lifetime specifier";
   case EC_TypeOf:
     return " in __type_of";
+  case EC_PyBindGen:
+    return " in Python binding generation";
   }
   llvm_unreachable("invalid expr context");
 }

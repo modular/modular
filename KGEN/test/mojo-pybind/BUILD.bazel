@@ -1,0 +1,27 @@
+load("//bazel:api.bzl", "lit_tests")
+
+lit_tests(
+    name = "test",
+    srcs = glob(
+        [
+            "*.mojo",
+        ],
+    ),
+    data = [
+        "//KGEN:CompilerRT",
+        "//KGEN:CompilerRT.distributable",
+        "@llvm-project//compiler-rt:orc_rt",
+    ],
+    mojo_deps = [
+        "//open-source/mojo/stdlib/stdlib",
+    ],
+    target_compatible_with = select({
+        "//:tsan": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    tools = [
+        "//KGEN/tools/kgen",
+        "//KGEN/tools/kgen-translate",
+        "//KGEN/tools/mojo",
+    ],
+)

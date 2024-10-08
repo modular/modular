@@ -1141,6 +1141,12 @@ ArrayRef<ASTDecl *> SharedState::getBuiltinFunction(ASTDecl &context,
                                                     StringRef fnName,
                                                     llvm::SMLoc loc) {
   ASTDecl &module = importModule(moduleName, /*currentPackage=*/nullptr, loc);
+  return getBuiltinFunction(module, fnName, loc);
+}
+
+ArrayRef<ASTDecl *> SharedState::getBuiltinFunction(ASTDecl &module,
+                                                    StringRef fnName,
+                                                    llvm::SMLoc loc) {
   LookupResult result =
       lookupAndResolveDecl(fnName, loc, module, /*searchParentScopes=*/false);
   if (!result.isSuccess() || result.getIfSuccess().empty()) {
