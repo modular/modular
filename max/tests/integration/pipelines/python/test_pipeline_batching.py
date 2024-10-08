@@ -20,6 +20,7 @@ from evaluate_llama import (
 from huggingface_hub import hf_hub_download
 from llama3.config import InferenceConfig, SupportedEncodings, SupportedVersions
 from llama3.llama3 import Llama3
+from nn.kv_cache import KVCacheStrategy
 
 
 @dataclass(frozen=True)
@@ -57,6 +58,16 @@ def pipeline_model(testdata_directory, request):
         )
         print(f"- Downloaded: {weight_path}")
 
+    if model_encoding in [
+        SupportedEncodings.float32,
+        SupportedEncodings.bfloat16,
+    ]:
+        print("using continuous batching caching strategy")
+        cache_strategy = KVCacheStrategy.CONTIGUOUS
+    else:
+        print("using naive caching strategy")
+        cache_strategy = KVCacheStrategy.NAIVE
+
     config = InferenceConfig(
         weight_path=weight_path,
         version=model_params.version,
@@ -64,6 +75,7 @@ def pipeline_model(testdata_directory, request):
         max_length=model_params.max_length,
         max_new_tokens=model_params.max_new_tokens,
         max_cache_batch_size=model_params.max_batch_size,
+        cache_strategy=cache_strategy,
     )
     print(
         f"- Using config: {config.version}, MaxLength={config.max_length},"
@@ -75,7 +87,6 @@ def pipeline_model(testdata_directory, request):
     return model
 
 
-@pytest.mark.skip("Expensive")
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     "pipeline_model",
@@ -90,6 +101,10 @@ async def test_pipeline_static_batch_same_prompt_same_output(pipeline_model):
     """Execute a batch which matches the batch-size of the model
     Expects tokens to be generated for all contexts in lock-step
     All batches should complete at the same time.
+
+    This should be expected to run with both the naive cache and the continuous
+    batching cache.
+
     """
     prompt = "Repeat this sentence forever and forever."
     batch_size = pipeline_model.config.max_cache_batch_size
@@ -118,14 +133,22 @@ async def test_pipeline_static_batch_same_prompt_same_output(pipeline_model):
     last = await pipeline_model.next_token(context_batch)
     assert not last
 
+    # We should be resetting the cache
+    for context in context_batch.values():
+        pipeline_model.release(context)
 
-@pytest.mark.skip("ExpensiveAndFails")
+
+@pytest.mark.skip("build issues with tinyllama")
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     "pipeline_model",
     [
-        PipelineModelParams("llama3_1", SupportedEncodings.q4_k, 128, -1, 2),
-        PipelineModelParams("llama3_1", SupportedEncodings.q4_k, 128, -1, 4),
+        PipelineModelParams(
+            "tinyllama", SupportedEncodings.float32, 128, -1, 2
+        ),
+        PipelineModelParams(
+            "tinyllama", SupportedEncodings.float32, 128, -1, 4
+        ),
     ],
     ids=PipelineModelParams.__str__,
     indirect=True,
@@ -137,6 +160,9 @@ async def test_pipeline_static_batch_same_prompt_different_max_new_tokens(
     HOWEVER, we set different max-new-tokens for each batch
     For N batches, Batch1 = MaxTokens / N, BatchN = MaxTokens
     We expect batches to complete one by one until the last one is done.
+
+    This should not be expected to run with the naive cache. As such, the only
+    encodings we should expect this test to run with is tinyllama/fp32.
     """
     prompt = "Repeat this sentence forever and forever."
     batch_size = pipeline_model.config.max_cache_batch_size
@@ -181,13 +207,15 @@ async def test_pipeline_static_batch_same_prompt_different_max_new_tokens(
     last = await pipeline_model.next_token(context_batch)
     assert not last
 
+    for context in context_batch.values():
+        pipeline_model.release(context)
+
 
 @pytest.fixture(scope="session")
 def batch_sizes(request):
     return request.param
 
 
-@pytest.mark.skip("Expensive")
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     "pipeline_model, batch_sizes",
@@ -214,6 +242,9 @@ async def test_pipeline_dynamic_batch_same_prompt_same_output(
     """Execute a batch which matches the batch-size of the model
     Expects tokens to be generated for all contexts in lock-step
     All batches should complete at the same time.
+
+    This should be expected to run for both naive and continuous
+    batching.
     """
     prompt = "Repeat this sentence forever and forever."
     max_batch_size = pipeline_model.config.max_cache_batch_size
@@ -282,6 +313,9 @@ async def test_pipeline_heterogeneous_batch_logits(
 ):
     """Execute a batch with prompts with different lengths and validates the
     logits.
+
+    This should only be expected to run with the continuous batching kv cache.
+    As such, it should only work with tinyllama/fp32 on CPU.
     """
     golden_data_path = find_runtime_path(
         golden_data_fname("tinyllama", "float32"), testdata_directory
@@ -294,9 +328,6 @@ async def test_pipeline_heterogeneous_batch_logits(
 
     stored_logits = {"A": [], "B": [], "C": []}
 
-    # TODO(MSDK-1093): `reset_cache` must be manually called since we're not
-    # using `next_token`.
-    await pipeline_model.reset_cache()
     # Send in A for context encoding.
     context_a = await pipeline_model.new_context(prompt_a)
     next_token_with_logits(pipeline_model, {"A": context_a}, stored_logits)
@@ -329,4 +360,6 @@ async def test_pipeline_heterogeneous_batch_logits(
             expected_results,
         )
 
-    await pipeline_model.reset_cache()
+    await pipeline_model.release(context_a)
+    await pipeline_model.release(context_b)
+    await pipeline_model.release(context_c)

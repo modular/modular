@@ -21,6 +21,7 @@ from huggingface_hub import hf_hub_download
 from llama3.config import InferenceConfig, SupportedEncodings, SupportedVersions
 from llama3.llama3 import Llama3
 from max.driver import CPU, CUDA
+from nn.kv_cache import KVCacheStrategy
 
 
 @dataclass(frozen=True)
@@ -58,6 +59,14 @@ def pipeline_model(testdata_directory, request):
         )
         print(f"- Downloaded: {weight_path}")
 
+    if model_encoding in [
+        SupportedEncodings.float32,
+        SupportedEncodings.bfloat16,
+    ]:
+        cache_strategy = KVCacheStrategy.CONTINUOUS
+    else:
+        cache_strategy = KVCacheStrategy.NAIVE
+
     config = InferenceConfig(
         weight_path=weight_path,
         version=model_params.version,
@@ -66,6 +75,7 @@ def pipeline_model(testdata_directory, request):
         max_new_tokens=model_params.max_new_tokens,
         max_cache_batch_size=model_params.max_batch_size,
         device=CUDA() if model_encoding == "bfloat16" else CPU(),
+        cache_strategy=cache_strategy,
     )
     print(
         f"- Using config: {config.version}, MaxLength={config.max_length},"
@@ -109,9 +119,6 @@ async def test_pipeline_heterogeneous_batch_logits(
 
     stored_logits = {"A": [], "B": [], "C": []}
 
-    # TODO(MSDK-1093): `reset_cache` must be manually called since we're not
-    # using `next_token`.
-    await pipeline_model.reset_cache()
     # Send in A for context encoding.
     context_a = await pipeline_model.new_context(prompt_a)
     next_token_with_logits(pipeline_model, {"A": context_a}, stored_logits)
@@ -145,4 +152,6 @@ async def test_pipeline_heterogeneous_batch_logits(
             rtol=1e-4,
         )
 
-    await pipeline_model.reset_cache()
+    await pipeline_model.release(context_a)
+    await pipeline_model.release(context_b)
+    await pipeline_model.release(context_c)
