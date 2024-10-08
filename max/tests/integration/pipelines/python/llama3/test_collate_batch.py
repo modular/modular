@@ -47,7 +47,9 @@ def test_collate_batch(arrays: list[list[int]], pad_value: int):
     assume(all(-(2**63) <= v < 2**63 for a in arrays for v in a))
 
     result, unpadded_last_token_indices = collate_batch(
-        [np.array(a) for a in arrays], pad_value=pad_value
+        [np.array(a) for a in arrays],
+        direction=PaddingDirection.LEFT,
+        pad_value=pad_value,
     )
     batch_size, length = result.shape
     assert batch_size == len(arrays)
