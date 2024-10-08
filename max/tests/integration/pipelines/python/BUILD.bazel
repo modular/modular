@@ -192,6 +192,7 @@ modular_py_test(
         ":params",
         "//SDK/lib/API/python/max/serve",
         "//SDK/public/max-repo/pipelines/python/llama3",
+        requirement("pytest-asyncio"),
     ],
 )
 
@@ -225,5 +226,7 @@ modular_py_test(
         "//SDK/lib/API/python/max/engine",
         "//SDK/lib/API/python/max/serve",
         "//SDK/public/max-repo/pipelines/python/llama3",
+        requirement("pytest-asyncio"),
+        requirement("asgi-lifespan"),
     ],
 )
