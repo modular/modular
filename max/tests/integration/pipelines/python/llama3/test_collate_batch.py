@@ -46,10 +46,17 @@ def test_collate_batch(arrays: list[list[int]], pad_value: int):
     assume(-(2**63) <= pad_value < 2**63)
     assume(all(-(2**63) <= v < 2**63 for a in arrays for v in a))
 
-    result = collate_batch([np.array(a) for a in arrays], pad_value=pad_value)
+    result, unpadded_last_token_indices = collate_batch(
+        [np.array(a) for a in arrays], pad_value=pad_value
+    )
     batch_size, length = result.shape
     assert batch_size == len(arrays)
     assert length == max(len(a) for a in arrays)
+
+    assert len(unpadded_last_token_indices) == batch_size
+    # Padding left means the last token index should always just be the overall
+    # last index.
+    assert unpadded_last_token_indices == [-1] * len(arrays)
 
     for array, padded in zip(arrays, result):
         # Use pad_len rather than len(array) since slicing from -0 doesn't do what you want.
@@ -65,7 +72,7 @@ def test_collate_batch__pad_right(arrays: list[list[int]], pad_value: int):
     assume(-(2**63) <= pad_value < 2**63)
     assume(all(-(2**63) <= v < 2**63 for a in arrays for v in a))
 
-    result = collate_batch(
+    result, unpadded_last_token_indices = collate_batch(
         [np.array(a) for a in arrays],
         pad_value=pad_value,
         direction=PaddingDirection.RIGHT,
@@ -73,6 +80,10 @@ def test_collate_batch__pad_right(arrays: list[list[int]], pad_value: int):
     batch_size, length = result.shape
     assert batch_size == len(arrays)
     assert length == max(len(a) for a in arrays)
+
+    assert len(unpadded_last_token_indices) == batch_size
+    # Padding right means the last index should always just be token length - 1.
+    assert unpadded_last_token_indices == [len(a) - 1 for a in arrays]
 
     for array, padded in zip(arrays, result):
         np.testing.assert_array_equal(np.array(array), padded[: len(array)])
@@ -93,13 +104,16 @@ def test_collate_mask__tokens_and_mask_shapes_match(
         tokens
     ), "start_pos and tokens must have the same length"
 
-    batched_tokens, attention_mask = batch_padded_tokens_and_mask(
-        start_pos, tokens
+    batched_tokens, unpadded_last_token_index, attention_mask = (
+        batch_padded_tokens_and_mask(start_pos, tokens)
     )
 
     assert batched_tokens.shape[0] == len(
         tokens
     ), "Batch size of tokens does not match"
+    assert len(unpadded_last_token_index) == len(
+        tokens
+    ), "Length of unpadded last tokens do not match"
     assert (
         attention_mask.shape[:2] == batched_tokens.shape
     ), "Attention mask shape mismatch"

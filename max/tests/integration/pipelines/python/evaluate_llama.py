@@ -136,9 +136,11 @@ def next_token_with_logits(
         update_values: Dictionary of request ids to lists of next_token &
             logits. These lists are updated in this method.
     """
-    logits_dict = llama3._execute(req_to_context_dict)
+    logits_dict, unpadded_last_token_index = llama3._execute(
+        req_to_context_dict
+    )
     for req_id, logits in logits_dict.items():
-        next_token = logits.argmax(axis=-1)[-1]
+        next_token = logits.argmax(axis=-1)[unpadded_last_token_index[req_id]]
         update_values[req_id].append(
             {
                 "next_token": next_token,
