@@ -23,9 +23,10 @@ import numpy as np
 import numpy.typing as npt
 from cpuinfo import get_cpu_info
 from huggingface_hub import hf_hub_download
+from max.driver import CPU, CUDA
+
 from llama3.config import InferenceConfig, SupportedEncodings, SupportedVersions
 from llama3.llama3 import Llama3, Llama3Context
-from max.driver import CPU, CUDA
 
 
 def find_runtime_path(fname: str, testdata_directory: Path) -> Path:
@@ -136,11 +137,9 @@ def next_token_with_logits(
         update_values: Dictionary of request ids to lists of next_token &
             logits. These lists are updated in this method.
     """
-    logits_dict, unpadded_last_token_index = llama3._execute(
-        req_to_context_dict
-    )
+    logits_dict, _ = llama3._execute(req_to_context_dict)
     for req_id, logits in logits_dict.items():
-        next_token = logits.argmax(axis=-1)[unpadded_last_token_index[req_id]]
+        next_token = logits.argmax(axis=-1)[-1]
         update_values[req_id].append(
             {
                 "next_token": next_token,
