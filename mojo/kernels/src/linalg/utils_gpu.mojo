@@ -266,7 +266,7 @@ fn select_config[
     # sm_80 is present in target.
     alias _256x128_3 = Index(
         128, 256, 2 * _bk_base[a_type](), 3
-    ) if "sm_80" in target else IndexList[4](1024)
+    ) if "sm_80" in target else Index(1024, 1024, 1024, 1024)
 
     alias enable_tuning = env_get_int["ENABLE_TUNE", 0]()
     alias tune_opt = Index(
