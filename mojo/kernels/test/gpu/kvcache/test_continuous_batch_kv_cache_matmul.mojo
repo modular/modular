@@ -4,8 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-# RUN: %mojo-no-debug %s -t | FileCheck %s
-# CHECK-NOT: CUDA ERROR
+# RUN: %mojo-no-debug %s
 
 from collections import Set
 from random import random_ui64, seed
@@ -605,11 +604,6 @@ def execute_fused_matmul_suite(ctx: DeviceContext):
 
 def main():
     seed(42)
-    try:
-        with DeviceContext() as ctx:
-            execute_matmul_suite(ctx)
-            execute_fused_matmul_suite(ctx)
-
-        print("Success!")
-    except e:
-        print("CUDA ERROR:", str(e))
+    with DeviceContext() as ctx:
+        execute_matmul_suite(ctx)
+        execute_fused_matmul_suite(ctx)

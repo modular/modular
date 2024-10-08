@@ -88,19 +88,16 @@ fn run_rms_norm_gpu[
     gamma_h.free()
 
 
-fn main():
-    try:
-        with DeviceContext() as ctx:
-            run_rms_norm_gpu[DType.float32](ctx, Index(0))
-            run_rms_norm_gpu[DType.float32](ctx, Index(5))
-            run_rms_norm_gpu[DType.float32](ctx, Index(3, 4, 10, 20, 8))
-            run_rms_norm_gpu[DType.float32](ctx, Index(1, 5, 6, 10, 128))
-            run_rms_norm_gpu[DType.float32](ctx, Index(2, 5))
-            run_rms_norm_gpu[DType.float32](ctx, Index(2, 55))
-            run_rms_norm_gpu[DType.float32](ctx, Index(7, 557))
-            run_rms_norm_gpu[DType.float32](ctx, Index(2, 8191))
-            run_rms_norm_gpu[DType.float32](ctx, Index(2, 8192))
-            run_rms_norm_gpu[DType.float32](ctx, Index(2, 16384))
-            run_rms_norm_gpu[DType.float32](ctx, Index(2, 16385))
-    except e:
-        print("CUDA ERROR:", str(e))
+def main():
+    with DeviceContext() as ctx:
+        run_rms_norm_gpu[DType.float32](ctx, Index(0))
+        run_rms_norm_gpu[DType.float32](ctx, Index(5))
+        run_rms_norm_gpu[DType.float32](ctx, Index(3, 4, 10, 20, 8))
+        run_rms_norm_gpu[DType.float32](ctx, Index(1, 5, 6, 10, 128))
+        run_rms_norm_gpu[DType.float32](ctx, Index(2, 5))
+        run_rms_norm_gpu[DType.float32](ctx, Index(2, 55))
+        run_rms_norm_gpu[DType.float32](ctx, Index(7, 557))
+        run_rms_norm_gpu[DType.float32](ctx, Index(2, 8191))
+        run_rms_norm_gpu[DType.float32](ctx, Index(2, 8192))
+        run_rms_norm_gpu[DType.float32](ctx, Index(2, 16384))
+        run_rms_norm_gpu[DType.float32](ctx, Index(2, 16385))

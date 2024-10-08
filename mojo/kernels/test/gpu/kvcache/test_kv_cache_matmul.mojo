@@ -4,8 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-# RUN: %mojo-no-debug %s -t | FileCheck %s
-# CHECK-NOT: CUDA ERROR
+# RUN: %mojo-no-debug %s
 
 from buffer import Dim, DimList, NDBuffer
 from gpu.host import DeviceContext
@@ -581,11 +580,6 @@ def execute_fused_matmul_suite(ctx: DeviceContext):
 
 
 def main():
-    try:
-        with DeviceContext() as ctx:
-            execute_matmul_suite(ctx)
-            execute_fused_matmul_suite(ctx)
-
-        print("Success!")
-    except e:
-        print("CUDA ERROR:", str(e))
+    with DeviceContext() as ctx:
+        execute_matmul_suite(ctx)
+        execute_fused_matmul_suite(ctx)

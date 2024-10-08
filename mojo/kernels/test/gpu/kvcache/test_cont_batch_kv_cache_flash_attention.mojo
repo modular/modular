@@ -4,8 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-# RUN: %mojo-no-debug %s -t | FileCheck %s
-# CHECK-NOT: CUDA ERROR
+# RUN: %mojo-no-debug %s
 
 from collections import Set
 from math import isqrt
@@ -383,10 +382,5 @@ def execute_flash_attention_suite(ctx: DeviceContext):
 
 def main():
     seed(42)
-    try:
-        with DeviceContext() as ctx:
-            execute_flash_attention_suite(ctx)
-
-        print("Success!")
-    except e:
-        print("CUDA ERROR:", str(e))
+    with DeviceContext() as ctx:
+        execute_flash_attention_suite(ctx)
