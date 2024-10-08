@@ -16,7 +16,7 @@ from internal_utils import (
     random,
     zero,
 )
-from kv_cache.types import ContiguousKVCache, KVCacheLayout, KVCacheStaticParams
+from kv_cache.types import ContiguousKVCache, KVCacheStaticParams
 from linalg.matmul_gpu import _matmul_gpu
 from memory import UnsafePointer
 from nn.kv_cache import _fused_qkv_matmul_kv_cache_impl, _matmul_kv_cache_impl
@@ -25,14 +25,10 @@ from testing import assert_almost_equal
 
 from utils import Index, IndexList
 
-alias kv_params_replit = KVCacheStaticParams(
-    num_heads=8, head_size=128, layout=KVCacheLayout.BSHD
-)
+alias kv_params_replit = KVCacheStaticParams(num_heads=8, head_size=128)
 alias replit_num_q_heads = 24
 
-alias kv_params_llama3 = KVCacheStaticParams(
-    num_heads=8, head_size=128, layout=KVCacheLayout.BSHD
-)
+alias kv_params_llama3 = KVCacheStaticParams(num_heads=8, head_size=128)
 alias llama_num_q_heads = 32
 
 

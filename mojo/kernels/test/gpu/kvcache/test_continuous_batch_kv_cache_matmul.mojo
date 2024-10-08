@@ -21,7 +21,6 @@ from internal_utils import (
 )
 from kv_cache.types import (
     ContinuousBatchingKVCache,
-    KVCacheLayout,
     KVCacheStaticParams,
 )
 from linalg.matmul_gpu import _matmul_gpu
@@ -32,14 +31,10 @@ from testing import assert_almost_equal
 
 from utils import IndexList
 
-alias kv_params_replit = KVCacheStaticParams(
-    num_heads=8, head_size=128, layout=KVCacheLayout.BSHD
-)
+alias kv_params_replit = KVCacheStaticParams(num_heads=8, head_size=128)
 alias replit_num_q_heads = 24
 
-alias kv_params_llama3 = KVCacheStaticParams(
-    num_heads=8, head_size=128, layout=KVCacheLayout.BSHD
-)
+alias kv_params_llama3 = KVCacheStaticParams(num_heads=8, head_size=128)
 alias llama_num_q_heads = 32
 
 

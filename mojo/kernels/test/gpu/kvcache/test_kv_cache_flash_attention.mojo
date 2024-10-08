@@ -11,7 +11,7 @@ from math import isqrt
 from buffer import Dim, DimList, NDBuffer
 from gpu.host import DeviceContext
 from internal_utils import DeviceNDBuffer, HostNDBuffer, random
-from kv_cache.types import ContiguousKVCache, KVCacheLayout, KVCacheStaticParams
+from kv_cache.types import ContiguousKVCache, KVCacheStaticParams
 from memory import UnsafePointer
 from nn.kv_cache import _flash_attention_kv_cache_impl
 from nn.mha import mha_gpu_naive
@@ -20,14 +20,10 @@ from testing import assert_almost_equal
 
 from utils import Index, IndexList
 
-alias kv_params_replit = KVCacheStaticParams(
-    num_heads=8, head_size=128, layout=KVCacheLayout.BSHD
-)
+alias kv_params_replit = KVCacheStaticParams(num_heads=8, head_size=128)
 alias replit_num_q_heads = 24
 
-alias kv_params_llama3 = KVCacheStaticParams(
-    num_heads=8, head_size=128, layout=KVCacheLayout.BSHD
-)
+alias kv_params_llama3 = KVCacheStaticParams(num_heads=8, head_size=128)
 alias llama_num_q_heads = 32
 
 

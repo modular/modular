@@ -12,7 +12,7 @@ from algorithm import max
 from buffer import Buffer, Dim, DimList, NDBuffer
 from gpu.host import DeviceContext
 from internal_utils import DeviceNDBuffer, HostNDBuffer, random
-from kv_cache.types import ContiguousKVCache, KVCacheLayout, KVCacheStaticParams
+from kv_cache.types import ContiguousKVCache, KVCacheStaticParams
 from memory import UnsafePointer
 from nn.mha import flash_attention, mha_gpu_naive
 from runtime.asyncrt import MojoCallContextPtr
@@ -21,14 +21,10 @@ from testing import assert_almost_equal
 from utils import IndexList
 from utils.index import Index
 
-alias kv_params_replit = KVCacheStaticParams(
-    num_heads=8, head_size=128, layout=KVCacheLayout.BSHD
-)
+alias kv_params_replit = KVCacheStaticParams(num_heads=8, head_size=128)
 alias replit_num_q_heads = 24
 
-alias kv_params_llama3 = KVCacheStaticParams(
-    num_heads=8, head_size=128, layout=KVCacheLayout.BSHD
-)
+alias kv_params_llama3 = KVCacheStaticParams(num_heads=8, head_size=128)
 alias llama_num_q_heads = 32
 
 
