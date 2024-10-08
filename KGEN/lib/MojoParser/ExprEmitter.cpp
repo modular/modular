@@ -1343,8 +1343,8 @@ bool ExprEmitter::canImplicitlyConvertToType(
   // Lifetimes and lifetime sets can convert between each other.
   // FIXME: This seems wrong, why isn't it checking for inclusion and
   // compatibility??
-  if (isa<LifetimeType, LifetimeSetType>(rvType) &&
-      isa<LifetimeType, LifetimeSetType>(requiredType))
+  if ((isa<LifetimeType>(rvType) && isa<LifetimeSetType>(requiredType)) ||
+      (isa<LifetimeSetType>(rvType) && isa<LifetimeType>(requiredType)))
     return true;
 
   // Check to see if we already cached this convertibility check.
@@ -1495,17 +1495,19 @@ AnyValue ExprEmitter::emitResult(AnyValue value, const ExprNode *expr,
       }
 
       // Handle conversions between lifetimes and lifetime sets.
-      if (isa<LifetimeType, LifetimeSetType>(rvType) &&
-          isa<LifetimeType, LifetimeSetType>(requiredType)) {
+      if (isa<LifetimeType>(rvType) && isa<LifetimeSetType>(requiredType)) {
         // This can only be done in the parameter domain.
         if (TypedAttr value = cValue.getIfPValue()) {
-          if (isa<LifetimeType>(rvType)) {
-            value = LifetimeSetAttr::get(value,
-                                         cast<LifetimeSetType>(requiredType));
-          } else {
-            value = LifetimeSetUnionAttr::get(value,
-                                              cast<LifetimeType>(requiredType));
-          }
+          value =
+              LifetimeSetAttr::get(value, cast<LifetimeSetType>(requiredType));
+          return emitResult(value, expr, dest);
+        }
+      }
+      if (isa<LifetimeSetType>(rvType) && isa<LifetimeType>(requiredType)) {
+        // This can only be done in the parameter domain.
+        if (TypedAttr value = cValue.getIfPValue()) {
+          value = LifetimeSetUnionAttr::get(value,
+                                            cast<LifetimeType>(requiredType));
           return emitResult(value, expr, dest);
         }
       }
