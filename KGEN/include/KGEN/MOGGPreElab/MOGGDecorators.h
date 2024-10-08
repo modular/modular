@@ -127,6 +127,7 @@ constexpr MOGGDecorator OUTPUT_FUSION{"mogg_output_fusion_hook",
 // DPS Tensor API definitions
 //===----------------------------------------------------------------------===//
 
+// Supported static methods under the registered structs.
 static constexpr StringLiteral kMOGGExecuteFunctionLabel = "mogg.execute";
 static constexpr StringLiteral kMOGGShapeFunctionLabel = "mogg.shape";
 static constexpr StringLiteral kMOGGInitializeOutputFunctionLabel =
@@ -134,23 +135,55 @@ static constexpr StringLiteral kMOGGInitializeOutputFunctionLabel =
 static constexpr StringLiteral kMOGGPyTorchFallbackFunctionLabel =
     "mogg.pytorch_fallback";
 
+// An array of attributes, each of which correspond to an input argument type.
+//
+// If the associated argument is a parameterized tensor type, the attribute will
+// be a dictionary attribute mapping the name of the unbound parameter
+// (e.g. dtype) to the associated KGEN parameter decl ref.
+//
+// If the associated argument is not a supported tensor type, it will be the
+// unit attribute.
 static constexpr StringLiteral kKernelTensorParameterAttrName =
     "mogg.tensor_params";
+
+// An array of StringAttr corresponding to each input argument type.
+//
+// If the associated string is non-empty, it refers to the name of the
+// tensor spec parameter. This is often added by a specialized Mojo pass
+// like autoparameterization.
 static constexpr StringLiteral kKernelTensorSpecParameterAttrName =
     "mogg.tensor_spec_params";
-static constexpr StringLiteral kMOGGSynchronousParameterName = "synchronous";
+
+// The generator level label for operations which take in the special
+// synchronous parameter. This is a hint that the runtime is running in
+// synchronous mode. Often times this means the work done is trivial and
+// the kernel may want to consider single-threading.
 static constexpr StringLiteral kMOGGSynchronousLabel = "mogg.synchronous";
-static constexpr StringLiteral kMOGGTargetParameterName = "target";
+static constexpr StringLiteral kMOGGSynchronousParameterName = "synchronous";
+
+// The generator level label for the target device for the kernel, e.g. cpu.
 static constexpr StringLiteral kMOGGTargetLabel = "mogg.target";
+static constexpr StringLiteral kMOGGTargetParameterName = "target";
+
+// The name of the output_rank parameter which we support lowering specially.
+static constexpr StringLiteral kMOGGOutputRankParameterName = "output_rank";
+
+// Generator level annotations for fusion.
 static constexpr StringLiteral kMOGGElementFunction = "mogg.elementwise";
 static constexpr StringLiteral kMOGGViewKernel = "mogg.view_kernel";
-static constexpr StringLiteral kMOGGOutputRankParameterName = "output_rank";
-static constexpr StringLiteral kMOGGLambdasHaveFusionParameterName =
-    "lambdas_have_fusion";
+
+// Annotations which indicate whether a fusion lambda is present. Needed for
+// accumulation-type ops like matmul and conv where only the last store should
+// be to the lambda.
 static constexpr StringLiteral kMOGGLambdasHaveFusionLabel =
     "mogg.lambdas_have_fusion";
+static constexpr StringLiteral kMOGGLambdasHaveFusionParameterName =
+    "lambdas_have_fusion";
 
+// An ArrayAttr of indices which correspond which operands have fusion enabled.
 static constexpr StringLiteral kMOGGFusableArgs = "mogg.fusable_args";
+
+// Fusion interface implementation details.
 static constexpr StringLiteral kMOGGInputLambdas = "_in_lambdas";
 static constexpr StringLiteral kMOGGOutputLambdas = "_out_lambdas";
 static constexpr StringLiteral kMOGGElementwiseLambda = "_elementwise_lambda";
