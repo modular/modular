@@ -168,7 +168,12 @@ async def run_batch_scenario(
                         context_encoding_batch = {}  # type: ignore
                         while (
                             context_encoding_queue
-                            and len(context_encoding_batch) < batch_max_size
+                            and (
+                                len(context_encoding_batch)
+                                + len(token_gen_queue)
+                                + len(token_gen_batch)
+                            )
+                            < batch_max_size
                         ):
                             batch_id, prompt, max_new_tokens = (
                                 context_encoding_queue.pop(0)
@@ -181,6 +186,9 @@ async def run_batch_scenario(
                             if batch_out_file:
                                 batch_output_files[batch_id] = batch_out_file
                                 batch_out_file.write(context.prompt)
+
+                        if not context_encoding_batch:
+                            break
 
                         step_logger.info(
                             "Encoding Batched: %d batches [%s], %d remaining",
@@ -201,7 +209,7 @@ async def run_batch_scenario(
                             assert token is not None
                             batch_completions[batch_id] = token
                             batch_context = context_encoding_batch[batch_id]
-                            step_logger.debug(
+                            step_logger.info(
                                 "Encoded: %s, %d/%d, Completion:\n%s",
                                 batch_id,
                                 len(batch_context.tokens),
@@ -242,7 +250,7 @@ async def run_batch_scenario(
 
             # Run token generation on active batches
             if token_gen_batch:
-                step_logger.debug(
+                step_logger.info(
                     "Executing: Active-Batch: [%s]",
                     ",".join(token_gen_batch.keys()),
                 )
@@ -251,7 +259,7 @@ async def run_batch_scenario(
                 for batch_id, token in results.items():
                     assert token is not None
                     batch_completions[batch_id] += token
-                    step_logger.debug(
+                    step_logger.info(
                         "Executed: %s, %d/%d - Completion:\n%s",
                         batch_id,
                         len(batch_context.tokens),
