@@ -67,9 +67,6 @@ public:
   /// Return the path to the kgen-compiler-rt library.
   StringRef getCompilerRTPath();
 
-  /// Return the path to the static kgen-compiler-rt library.
-  StringRef getStaticCompilerRTPath();
-
   /// Return the path to the orc-rt library.
   StringRef getOrcRTPath();
 
@@ -104,6 +101,10 @@ public:
   /// Return the system libraries to link with Mojo when building a standalone
   /// binary.
   void getSystemLibraryLinkArgs(SmallVectorImpl<StringRef> &libs);
+
+  /// Return the shared library arguments to link with Mojo when building a
+  /// standalone binary.
+  void getSharedLibraryLinkArgs(SmallVectorImpl<StringRef> &args);
 
   /// Return the section used for this mojo build.
   StringRef getMojoConfigSection();

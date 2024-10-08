@@ -940,6 +940,11 @@ modular_cc_library(
     ],
 )
 
+# Build a fully static version of CompilerRT.
+# Unused, retained only for local development and testing.
+# If you link with this, your binary must be fully static. Dynamically loaded
+# libraries may depend on the shared version of CompilerRT, which will duplicate
+# global and thread-local variables!
 cc_distributable_static_library(
     name = "CompilerRT.distributable",
     library_name = "libKGENCompilerRT-static.a",
