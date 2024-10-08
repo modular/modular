@@ -560,11 +560,23 @@ struct DeviceContextV1:
         )
         self.synchronize()
 
-    fn memset[
+    fn enqueue_memset[
         type: DType
     ](self, dst: DeviceBufferV1[type], val: Scalar[type]) raises:
         self.cuda_context.set_current()
         _memset_async[type](dst.ptr, val, dst.size, self.cuda_stream)
+
+    fn memset_sync[
+        type: DType
+    ](self, dst: DeviceBufferV1[type], val: Scalar[type]) raises:
+        self.cuda_context.set_current()
+        _memset_async[type](dst.ptr, val, dst.size, self.cuda_stream)
+        self.synchronize()
+
+    fn memset[
+        type: DType
+    ](self, dst: DeviceBufferV1[type], val: Scalar[type]) raises:
+        self.enqueue_memset[type](dst, val)
 
     fn synchronize(self) raises:
         self.cuda_context.set_current()

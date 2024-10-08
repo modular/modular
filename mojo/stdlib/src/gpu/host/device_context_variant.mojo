@@ -515,14 +515,32 @@ struct DeviceContextVariant:
         else:
             self.v1().copy_device_to_device_sync(dst.v1(), src.v1())
 
+    fn enqueue_memset[
+        type: DType
+    ](self, dst: DeviceBufferVariant[type], val: Scalar[type]) raises:
+        @parameter
+        if _device_ctx_v2():
+            self.v2().enqueue_memset[type](dst.v2(), val)
+        else:
+            self.v1().enqueue_memset[type](dst.v1(), val)
+
+    fn memset_sync[
+        type: DType
+    ](self, dst: DeviceBufferVariant[type], val: Scalar[type]) raises:
+        @parameter
+        if _device_ctx_v2():
+            self.v2().memset_sync[type](dst.v2(), val)
+        else:
+            self.v1().memset_sync[type](dst.v1(), val)
+
     fn memset[
         type: DType
     ](self, dst: DeviceBufferVariant[type], val: Scalar[type]) raises:
         @parameter
         if _device_ctx_v2():
-            self.v2().memset[type](dst.v2(), val)
+            self.v2().enqueue_memset[type](dst.v2(), val)
         else:
-            self.v1().memset[type](dst.v1(), val)
+            self.v1().enqueue_memset[type](dst.v1(), val)
 
     fn synchronize(self) raises:
         @parameter

@@ -664,10 +664,80 @@ struct DeviceContextV2:
             )
         )
 
+    fn enqueue_memset[
+        type: DType
+    ](self, dst: DeviceBufferV2[type], val: Scalar[type]) raises:
+        alias bitwidth = bitwidthof[type]()
+        constrained[
+            bitwidth == 8 or bitwidth == 16 or bitwidth == 32,
+            "bitwidth of memset type must be one of [8,16,32]",
+        ]()
+        var value: UInt32
+
+        @parameter
+        if bitwidth == 8:
+            value = UInt32(int(bitcast[DType.uint8, 1](val)))
+        elif bitwidth == 16:
+            value = UInt32(int(bitcast[DType.uint16, 1](val)))
+        else:
+            value = bitcast[DType.uint32, 1](val)
+
+        # const char *AsyncRT_DeviceContext_setMemory_async(const DeviceContext *ctx, const DeviceBuffer *dst, uint32_t val, size_t elem_size)
+        _checked(
+            external_call[
+                "AsyncRT_DeviceContext_setMemory_async",
+                _CharPtr,
+                _DeviceContextPtr,
+                _DeviceBufferPtr,
+                UInt32,
+                _SizeT,
+            ](
+                self._handle,
+                dst._handle,
+                value,
+                sizeof[type](),
+            )
+        )
+
+    fn memset_sync[
+        type: DType
+    ](self, dst: DeviceBufferV2[type], val: Scalar[type]) raises:
+        alias bitwidth = bitwidthof[type]()
+        constrained[
+            bitwidth == 8 or bitwidth == 16 or bitwidth == 32,
+            "bitwidth of memset type must be one of [8,16,32]",
+        ]()
+        var value: UInt32
+
+        @parameter
+        if bitwidth == 8:
+            value = UInt32(int(bitcast[DType.uint8, 1](val)))
+        elif bitwidth == 16:
+            value = UInt32(int(bitcast[DType.uint16, 1](val)))
+        else:
+            value = bitcast[DType.uint32, 1](val)
+
+        # const char *AsyncRT_DeviceContext_setMemory_sync(const DeviceContext *ctx, const DeviceBuffer *dst, uint32_t val, size_t elem_size)
+        _checked(
+            external_call[
+                "AsyncRT_DeviceContext_setMemory_sync",
+                _CharPtr,
+                _DeviceContextPtr,
+                _DeviceBufferPtr,
+                UInt32,
+                _SizeT,
+            ](
+                self._handle,
+                dst._handle,
+                value,
+                sizeof[type](),
+            )
+        )
+
     fn memset[
         type: DType
     ](self, dst: DeviceBufferV2[type], val: Scalar[type]) raises:
-        not_implemented_yet["##### UNIMPLEMENTED: DeviceContextV2.memset"]()
+        self.enqueue_memset[type](dst, val)
 
     fn synchronize(self) raises:
         # const char * AsyncRT_DeviceContext_synchronize(const DeviceContext *ctx)
