@@ -14,6 +14,8 @@
 # CHECK-NEXT: call {{.*}}create_pybind_module{{.*}}"pybind"{{.*}}(%error, [[MODULE]])
 # CHECK-NEXT: [[SR:%.*]] = lit.load.consume [[MODULE]]
 # CHECK-NEXT: call {{.*}}PythonObject::@"__init__{{.*}}(%result, [[SR]])
+# CHECK-NEXT: [[NONE_DEST:%.*]] = lit.var.decl
+# CHECK-NEXT: call {{.*}}gen_pytype_wrapper{{.*}}<:!AnyType #Int{{[0-9]}}, :!StringLiteral {:string "Int"}>(%result, %error, [[NONE_DEST]])
 # CHECK-NEXT: [[FALSE:%.*]] = kgen.param.constant: i1 = <0>
 # CHECK-NEXT: return [[FALSE]]
 
@@ -31,3 +33,7 @@
 # CHECK-NEXT:   return [[NULL]]
 # CHECK:      [[SR:%.*]] = lit.load.consume %module
 # CHECK-NEXT: return [[SR]]
+
+
+fn arg_reg_trivial_borrowed(arg: Int):
+    pass

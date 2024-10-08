@@ -337,6 +337,23 @@ void LIT::markRegionUnreachable(Region *deadRegion, Location unreachableLoc) {
       .create<UnreachableOp>(unreachableLoc);
 }
 
+ASTType LIT::getFunctionArgumentRValueType(ASTType type, ArgConvention conv) {
+  switch (conv) {
+  case ArgConvention::ByRefError:
+  case ArgConvention::ByRefResult:
+  case ArgConvention::InitSelf:
+  case ArgConvention::MutRef:
+  case ArgConvention::Ref:
+  case ArgConvention::InOut:
+  case ArgConvention::BorrowedInMem:
+  case ArgConvention::OwnedInMem:
+    return type.getReferenceElementType();
+  case ArgConvention::OwnedInReg:
+  case ArgConvention::BorrowedInReg:
+    return type;
+  }
+}
+
 //===----------------------------------------------------------------------===//
 // Diagnostic utilities
 //===----------------------------------------------------------------------===//

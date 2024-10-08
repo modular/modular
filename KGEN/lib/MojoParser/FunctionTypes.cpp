@@ -8,6 +8,7 @@
 #include "CallEmission.h"
 #include "ExprEmitter.h"
 #include "ExprNodes.h"
+#include "MojoUtils.h"
 #include "StructEmitter.h"
 
 #include "KGEN/KGENDialect/KGENOps.h"
@@ -68,12 +69,6 @@ bool LIT::canConvertFunctionTypes(LITSignatureType actual,
   // Function types are compatible if the arguments only differ in passing
   // conventions due to register-passibility.
   // TODO: Handle variadics and packs.
-  auto getRValueType = [](ASTType type, ArgConvention conv) {
-    if (llvm::is_contained(
-            {ArgConvention::BorrowedInReg, ArgConvention::OwnedInReg}, conv))
-      return type;
-    return type.getReferenceElementType();
-  };
   for (auto [actualConv, expectedConv, actualType, expectedType] :
        llvm::zip(actual.getArgConventions().drop_back(actualMemResult),
                  expected.getArgConventions().drop_back(expectedMemResult),
@@ -110,8 +105,8 @@ bool LIT::canConvertFunctionTypes(LITSignatureType actual,
               {ArgConvention::BorrowedInMem, ArgConvention::BorrowedInReg},
               actualConv))
         return false;
-      lhs = getRValueType(actualType, actualConv);
-      rhs = getRValueType(expectedType, expectedConv);
+      lhs = getFunctionArgumentRValueType(actualType, actualConv);
+      rhs = getFunctionArgumentRValueType(expectedType, expectedConv);
       break;
 
     case ArgConvention::OwnedInMem:
@@ -120,8 +115,8 @@ bool LIT::canConvertFunctionTypes(LITSignatureType actual,
               {ArgConvention::OwnedInMem, ArgConvention::OwnedInReg},
               actualConv))
         return false;
-      lhs = getRValueType(actualType, actualConv);
-      rhs = getRValueType(expectedType, expectedConv);
+      lhs = getFunctionArgumentRValueType(actualType, actualConv);
+      rhs = getFunctionArgumentRValueType(expectedType, expectedConv);
       break;
 
     case ArgConvention::ByRefResult:

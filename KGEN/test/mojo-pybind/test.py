@@ -29,6 +29,9 @@ class TestMojoPythonInterop(unittest.TestCase):
     def test_pyinit(self):
         self.assertTrue(module)
 
+    def test_pytype_reg_trivial(self):
+        self.assertEqual(module.Int.__name__, "Int")
+
 
 if __name__ == "__main__":
     unittest.main()

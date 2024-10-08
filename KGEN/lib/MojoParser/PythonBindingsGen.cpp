@@ -13,6 +13,7 @@
 #include "CallEmission.h"
 #include "ExprEmitter.h"
 #include "ExprNodes.h"
+#include "MojoUtils.h"
 #include "StructEmitter.h"
 
 #include "KGEN/KGENDialect/KGENOps.h"
@@ -32,12 +33,13 @@ public:
   BindingGenerator(SharedState &shared, ASTDecl &moduleDecl);
 
   LogicalResult genPyInitImplFunc();
+  void finalizePyInit();
   LogicalResult genPyInitHook();
   void genModuleBinding();
 
 private:
   ErrorOrSuccess genFunctionBinding(ASTDecl &funcDecl, LIT::FuncOp func);
-  ErrorOrSuccess genTypeBinding(ASTDecl &typeDecl, StructDeclOp type);
+  ErrorOrSuccess genTypeBinding(ASTType type);
 
   OverloadSet lookupPyBindFunction(StringRef name, ASTDecl &scope,
                                    const SyntheticNode &node);
@@ -70,6 +72,11 @@ private:
   LIT::FuncOp pyInitFunc;
   /// The ASTDecl of the init function.
   ASTDecl *pyInitDecl;
+  /// The mutable Python module reference.
+  MLValue pyModule;
+
+  /// The type decls for which Python bindings have been generated so far.
+  DenseMap<Type, ErrorOrSuccess> generatedTypeBindings;
 };
 } // namespace
 
@@ -91,7 +98,7 @@ LogicalResult BindingGenerator::genPyInitImplFunc() {
 
   // Create a function in the form:
   //
-  //   fn PyInit_impl_<MODULE_NAME>() raises -> PythonObject:
+  //   fn PyInit_impl_<MODULE_NAME>() raises -> PythonObject as module:
   //       module = create_pybind_module["<MODULE_NAME>"]()
   //
 
@@ -115,18 +122,20 @@ LogicalResult BindingGenerator::genPyInitImplFunc() {
 
   // Emit the call into the result slot.
   createModuleOv.paramBindings.add(node, getMLIRString(moduleName));
-  ValueDest moduleDest(MLValue(pyInitFunc.getArgument(1)), EC_PyBindGen);
-  CValue moduleValue =
-      createModuleOv.emitCall(CallOperands(), moduleDest, emitter);
-  if (!moduleValue)
+  pyModule = MLValue(pyInitFunc.getArgument(1));
+  ValueDest moduleDest(pyModule, EC_PyBindGen);
+  if (!createModuleOv.emitCall(CallOperands(), moduleDest, emitter))
     return failure();
 
+  return success();
+}
+
+void BindingGenerator::finalizePyInit() {
   // Emit the terminator for the function.
-  b.setInsertionPointToEnd(pyInitFunc.getBody());
+  ImplicitLocOpBuilder b(pyInitFunc.getLoc(),
+                         OpBuilder::atBlockEnd(pyInitFunc.getBody()));
   b.create<KGEN::ReturnOp>(
       Value(b.create<ParamConstantOp>(b.getBoolAttr(false))));
-
-  return success();
 }
 
 LogicalResult BindingGenerator::genPyInitHook() {
@@ -270,11 +279,24 @@ ErrorOrSuccess BindingGenerator::genFunctionBinding(ASTDecl &funcDecl,
                                                     LIT::FuncOp func) {
   // First, generate type bindings for each of the function argument and result
   // types.
+  LITSignatureType sig = func.getSignature();
+  for (auto [type, conv] :
+       llvm::zip(func.getArgumentTypes(), sig.getArgConventions())) {
+    ASTType rvType = getFunctionArgumentRValueType(type, conv);
+
+    // Check if bindings or errors were already generated for this type.
+    auto it = generatedTypeBindings.find(rvType);
+    if (it == generatedTypeBindings.end()) {
+      ErrorOrSuccess err = genTypeBinding(rvType);
+      it = generatedTypeBindings.insert({rvType, std::move(err)}).first;
+    }
+    if (auto err = it->second.copy())
+      return err.takeError();
+  }
   return success();
 }
 
-ErrorOrSuccess BindingGenerator::genTypeBinding(ASTDecl &typeDecl,
-                                                StructDeclOp type) {
+ErrorOrSuccess BindingGenerator::genTypeBinding(ASTType type) {
   // TODO(MOCO-1301, MOCO-1302, MOCO-1303, MOCO-1304, MOCO-1305): Only basic
   // wrappers are generated for the types right now.
   // FIXME(MOCO-1300): Generating Python typedefs for all transitively used
@@ -296,6 +318,31 @@ ErrorOrSuccess BindingGenerator::genTypeBinding(ASTDecl &typeDecl,
   //
   // Binding generation needs to be on a per-module basis, and (as an
   // optimiation) not perform duplicate work.
+  ASTDecl *typeDecl = type.getDecl(shared);
+  auto structDecl = dyn_cast_or_null<StructDeclOp>(typeDecl);
+  if (!structDecl)
+    return Error("TODO: type binding generation only supported for structs");
+
+  // Use the location of the current type for better error reporting.
+  SyntheticNode node(typeDecl->getLoc());
+  OverloadSet pyTypeOv =
+      lookupPyBindFunction("gen_pytype_wrapper", *pyInitDecl, node);
+
+  // Bind the type and name parameters. Since parametric functions are
+  // forbidden, the type and its parameters will be concrete.
+  // FIXME(MOCO-1306): The name parameter should not be required.
+  pyTypeOv.paramBindings.add(node, PValue(type));
+  // TODO: Figure out if the name needs to be globally unique.
+  auto typeName = StringAttr::get(
+      type.getAsString(/*forDiag=*/true, /*demangleParam=*/true),
+      StringType::get(ctx));
+  pyTypeOv.paramBindings.add(node, typeName);
+
+  ExprEmitter emitter(shared, *pyInitDecl,
+                      OpBuilder::atBlockEnd(pyInitFunc.getBody()));
+  ValueDest noneDest(EC_PyBindGen);
+  pyTypeOv.emitCall(CallOperands({{pyModule, node}}), noneDest, emitter);
+
   return success();
 }
 
@@ -390,6 +437,7 @@ LogicalResult LIT::generatePythonBindings(SharedState &shared,
   if (failed(gen.genPyInitHook()))
     return failure();
   gen.genModuleBinding();
+  gen.finalizePyInit();
 
   return success();
 }
