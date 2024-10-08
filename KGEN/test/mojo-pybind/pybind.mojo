@@ -24,5 +24,10 @@
 # CHECK-NEXT: %error = lit.var.decl {{.*}}!Error
 # CHECK-NEXT: lit.try %error
 # CHECK-NEXT:   call @pybind::@"PyInit_impl_pybind{{.*}}(%error, %module)
+# CHECK-NEXT:   lit.try.yield
+# CHECK-NEXT: except
+# CHECK-NEXT:   [[ERR:%.*]] = lit.load.consume %error
+# CHECK-NEXT:   [[NULL:%.*]] = lit.call {{.*}}fail_initialization{{.*}}([[ERR]])
+# CHECK-NEXT:   return [[NULL]]
 # CHECK:      [[SR:%.*]] = lit.load.consume %module
 # CHECK-NEXT: return [[SR]]

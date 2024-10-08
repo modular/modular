@@ -109,11 +109,11 @@ LogicalResult BindingGenerator::genPyInitImplFunc() {
   // Generate the module object.
   ExprEmitter emitter(shared, *pyInitDecl,
                       OpBuilder::atBlockEnd(pyInitFunc.getBody()));
+  SyntheticNode node(loc);
   OverloadSet createModuleOv =
-      lookupPyBindFunction("create_pybind_module", *pyInitDecl, loc);
+      lookupPyBindFunction("create_pybind_module", *pyInitDecl, node);
 
   // Emit the call into the result slot.
-  SyntheticNode node(loc);
   createModuleOv.paramBindings.add(node, getMLIRString(moduleName));
   ValueDest moduleDest(MLValue(pyInitFunc.getArgument(1)), EC_PyBindGen);
   CValue moduleValue =
@@ -197,14 +197,27 @@ LogicalResult BindingGenerator::genPyInitHook() {
   b.create<TryYieldOp>();
 
   // Emit the error handling logic.
-  b.createBlock(&tryOp.getExceptRegion());
-  // TODO(MOCO-1297): Propagate the error through CPython.
-  b.create<TryYieldOp>();
+  Block *exceptBlock = b.createBlock(&tryOp.getExceptRegion());
+  OverloadSet errOv =
+      lookupPyBindFunction("fail_initialization", *pyInitHookDecl, node);
+  ValueDest errDest(EC_PyBindGen);
+  emitter.builder = b;
+  CValue nullResult = errOv.emitCall(CallOperands({{MRValue(errDecl), &node}}),
+                                     errDest, emitter);
+  if (!nullResult)
+    return failure();
+  SRValue nullResultSR = emitter.emitSRValue({nullResult, &node}, EC_PyBindGen);
+  if (!nullResultSR)
+    return failure();
+  b.setInsertionPointToEnd(exceptBlock);
+  b.create<KGEN::ReturnOp>(nullResultSR);
 
   b.setInsertionPointAfter(tryOp);
   emitter.builder = b;
   SRValue result =
       emitter.emitSRValue({MRValue(moduleDecl), node}, EC_PyBindGen);
+  if (!result)
+    return failure();
   b.setInsertionPointToEnd(pyInitHook.getBody());
   b.create<KGEN::ReturnOp>(result);
   return success();
