@@ -30,7 +30,7 @@ fn test_concat_dim_0_inputs_lambda_tuple[
     # TODO: Do we need two flags? one for input, one for output?
     lambdas_have_fusion: Bool,
     # A tuple of callbacks, one per input.
-    input_fns: StaticTuple[
+    input_1_fn_tuple: StaticTuple[
         fn[
             width: Int, rank: Int
         ] (IndexList[rank]) capturing -> SIMD[type, width], *_
@@ -43,7 +43,7 @@ fn test_concat_dim_0_inputs_lambda_tuple[
     # `StaticTuple[IndexList[rank], inputs_fns.size]`. Graph compiler does
     # not know how to handle a tuple of shapes currently.
     axis: Scalar,
-    input_shapes: StaticTuple[IndexList[rank], input_fns.size],
+    input_shapes: StaticTuple[IndexList[rank], input_1_fn_tuple.size],
     output: NDBuffer[type, rank],
     ctx: MojoCallContextPtr,
 ) raises:
@@ -51,8 +51,8 @@ fn test_concat_dim_0_inputs_lambda_tuple[
     var offset = 0
 
     @parameter
-    for i in range(input_fns.size):
-        alias input_i_fn = input_fns[i]
+    for i in range(input_1_fn_tuple.size):
+        alias input_i_fn = input_1_fn_tuple[i]
         var input_shape = input_shapes[i]
 
         @parameter
