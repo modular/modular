@@ -145,11 +145,14 @@ fn clock64() -> UInt:
 
 
 @always_inline
-fn lop[lut: Int](a: Int32, b: Int32, c: Int32) -> Int32:
+fn lop[lut: Int32](a: Int32, b: Int32, c: Int32) -> Int32:
     """Performs arbitrary logical operation on 3 inputs."""
 
     return inlined_assembly[
-        "lop3.b32", Int32, constraints="=r,r,r,r,n", has_side_effect=False
+        "lop3.b32 $0, $1, $2, $3, $4;",
+        Int32,
+        constraints="=r,r,n,n,n",
+        has_side_effect=False,
     ](a, b, c, Int32(lut))
 
 
