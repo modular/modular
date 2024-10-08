@@ -4,9 +4,6 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from collections import Optional
-from os import abort
-from sys import triple_is_nvidia_cuda
 from sys.intrinsics import _type_is_eq
 
 from buffer import Dim, DimList, NDBuffer
@@ -17,34 +14,14 @@ from utils import IndexList
 
 @value
 @register_passable("trivial")
-struct KVCacheLayout(EqualityComparable):
-    var _val: Int
-
-    alias BHSD = KVCacheLayout(0)
-    alias BSHD = KVCacheLayout(1)
-
-    @always_inline("nodebug")
-    fn __eq__(self, rhs: KVCacheLayout) -> Bool:
-        return self._val == rhs._val
-
-    @always_inline("nodebug")
-    fn __ne__(self, rhs: KVCacheLayout) -> Bool:
-        return not (self == rhs)
-
-
-@value
-@register_passable("trivial")
 struct KVCacheStaticParams(EqualityComparable):
     var num_heads: Int
     var head_size: Int
-    var layout: KVCacheLayout
 
     @always_inline("nodebug")
     fn __eq__(self, rhs: KVCacheStaticParams) -> Bool:
         return (
-            self.num_heads == rhs.num_heads
-            and self.head_size == rhs.head_size
-            and self.layout == rhs.layout
+            self.num_heads == rhs.num_heads and self.head_size == rhs.head_size
         )
 
     @always_inline("nodebug")
@@ -69,7 +46,7 @@ trait KVCacheT(CollectionElement):
     @staticmethod
     fn get_kv_params() -> KVCacheStaticParams:
         """Helper method to get the static parameters for the KVCache, like
-        layout, num_heads, and head_size.
+        num_heads and head_size.
         """
         ...
 
@@ -144,8 +121,6 @@ struct ContiguousKVCache[
 
     alias _internal_block_shape = DimList(
         Dim(), Dim(), kv_params.num_heads, kv_params.head_size
-    ) if kv_params.layout == KVCacheLayout.BSHD else DimList(
-        Dim(), kv_params.num_heads, Dim(), kv_params.head_size
     )
     alias single_block_shape = DimList(
         Self._internal_block_shape.get[1](),
@@ -208,31 +183,15 @@ struct ContiguousKVCache[
             head_dim_idx < kv_params.head_size,
             "KVCache head_dim_idx is out of range",
         )
-
-        @parameter
-        if kv_params.layout == KVCacheLayout.BHSD:
-            debug_assert(
-                tok_idx < self._block.dim[2](), "KVCache tok_idx out of range"
-            )
-            return (
-                bs_idx,
-                head_idx,
-                tok_idx,
-                head_dim_idx,
-            )
-        elif kv_params.layout == KVCacheLayout.BSHD:
-            debug_assert(
-                tok_idx < self._block.dim[1](), "KVCache tok_idx out of range"
-            )
-            return (
-                bs_idx,
-                tok_idx,
-                head_idx,
-                head_dim_idx,
-            )
-        else:
-            constrained[False, "unsupported layout"]()
-            return IndexList[4]()
+        debug_assert(
+            tok_idx < self._block.dim[1](), "KVCache tok_idx out of range"
+        )
+        return (
+            bs_idx,
+            tok_idx,
+            head_idx,
+            head_dim_idx,
+        )
 
     @always_inline
     fn cache_length(self, batch_idx: Int) -> Int:
@@ -298,29 +257,16 @@ struct ContiguousKVCache[
         ]()
         var idx = self._get_idx_tuple(batch_idx, 0, 0, 0)
         var offset_ptr = self._block._offset(idx)
-        var ret_shape: IndexList[3]
         var ret_strides = IndexList[3](
             self._block.stride[1](),
             self._block.stride[2](),
             self._block.stride[3](),
         )
-
-        @parameter
-        if kv_params.layout == KVCacheLayout.BSHD:
-            ret_shape = IndexList[3](
-                self.cache_length(batch_idx) + new_seq_len,
-                kv_params.num_heads,
-                kv_params.head_size,
-            )
-        elif kv_params.layout == KVCacheLayout.BHSD:
-            ret_shape = IndexList[3](
-                kv_params.num_heads,
-                self.cache_length(batch_idx) + new_seq_len,
-                kv_params.head_size,
-            )
-        else:
-            constrained[False, "Unsupported layout"]()
-            ret_shape = IndexList[3](0)
+        var ret_shape = IndexList[3](
+            self.cache_length(batch_idx) + new_seq_len,
+            kv_params.num_heads,
+            kv_params.head_size,
+        )
 
         return NDBuffer[type_, 3, block_shape](
             rebind[UnsafePointer[Scalar[type_]]](offset_ptr),
@@ -376,14 +322,7 @@ struct ContiguousKVCacheCollection[
 
         self.num_layers = num_layers
         self.batch_size = batch_size
-
-        @parameter
-        if kv_params.layout == KVCacheLayout.BHSD:
-            self.max_seq_len = key_cache.dim[3]()
-        elif kv_params.layout == KVCacheLayout.BSHD:
-            self.max_seq_len = key_cache.dim[2]()
-        else:
-            self.max_seq_len = abort[Int]("unsupported layout")
+        self.max_seq_len = key_cache.dim[2]()
 
         self.cache_lengths = cache_lengths
         self.is_context_encoding = is_context_encoding
@@ -496,8 +435,6 @@ struct ContinuousBatchingKVCache[
 
     alias single_block_shape = DimList(
         Dim(), kv_params.num_heads, kv_params.head_size
-    ) if kv_params.layout == KVCacheLayout.BSHD else DimList(
-        kv_params.num_heads, Dim(), kv_params.head_size
     )
 
     # shape is
@@ -523,37 +460,18 @@ struct ContinuousBatchingKVCache[
             head_dim_idx < kv_params.head_size,
             "KVCache head_dim_idx is out of range",
         )
-
-        @parameter
-        if kv_params.layout == KVCacheLayout.BHSD:
-            debug_assert(
-                tok_idx < self.blocks.dim[4](),
-                "KVCache tok_idx out of range",
-            )
-            return IndexList[6](
-                block_idx,
-                self.kv_idx,
-                self.layer_idx,
-                head_idx,
-                tok_idx,
-                head_dim_idx,
-            )
-        elif kv_params.layout == KVCacheLayout.BSHD:
-            debug_assert(
-                tok_idx < self.blocks.dim[3](),
-                "KVCache tok_idx out of range",
-            )
-            return IndexList[6](
-                block_idx,
-                self.kv_idx,
-                self.layer_idx,
-                tok_idx,
-                head_idx,
-                head_dim_idx,
-            )
-        else:
-            constrained[False, "unsupported layout"]()
-            return IndexList[6]()
+        debug_assert(
+            tok_idx < self.blocks.dim[3](),
+            "KVCache tok_idx out of range",
+        )
+        return IndexList[6](
+            block_idx,
+            self.kv_idx,
+            self.layer_idx,
+            tok_idx,
+            head_idx,
+            head_dim_idx,
+        )
 
     fn __init__(
         inout self,
