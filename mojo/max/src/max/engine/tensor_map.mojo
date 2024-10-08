@@ -318,7 +318,7 @@ struct TensorMap(CollectionElement, SizedRaising, Stringable):
         var size: Int64 = 0
         var keys_arr = self._ptr.keys(UnsafePointer.address_of(size), self._lib)
         var keys = List[String](capacity=int(size))
-        for i in range(size):
+        for i in range(int(size)):
             keys.append(str(keys_arr[i]))
 
         call_dylib_func[NoneType](

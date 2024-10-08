@@ -767,7 +767,7 @@ struct Graph(CollectionElement, Stringable, Formattable):
                 self.scalar[dtype](stop),
                 self.scalar[dtype](step),
             ),
-            TensorType(dtype, len(range(start, stop, step))),
+            TensorType(dtype, len(range(int(start), int(stop), int(step)))),
         )
 
     fn range(

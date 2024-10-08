@@ -116,7 +116,7 @@ def save[PathLike: PathLike](tensor_dict: TensorDict, path: PathLike):
             _write_int(dtype, f)
             var rank: UInt8 = spec.rank()
             _write_int(rank, f)
-            for d in range(rank):
+            for d in range(int(rank)):
                 var dim: UInt32 = spec.shape[d]
                 _write_int(dim, f)
 
