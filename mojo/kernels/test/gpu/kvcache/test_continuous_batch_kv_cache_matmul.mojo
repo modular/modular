@@ -544,7 +544,7 @@ def execute_matmul_suite(ctx: DeviceContext):
             bs = bs_ref[]
             ce_cache_sizes = List[Int]()
             tg_cache_sizes = List[Int]()
-            for i in range(bs):
+            for _ in range(bs):
                 tg_cache_sizes.append(int(random_ui64(0, 100)))
                 ce_cache_sizes.append(0)
 
@@ -580,7 +580,7 @@ def execute_fused_matmul_suite(ctx: DeviceContext):
             bs = bs_ref[]
             ce_cache_sizes = List[Int]()
             tg_cache_sizes = List[Int]()
-            for i in range(bs):
+            for _ in range(bs):
                 tg_cache_sizes.append(int(random_ui64(0, 100)))
                 ce_cache_sizes.append(0)
 
