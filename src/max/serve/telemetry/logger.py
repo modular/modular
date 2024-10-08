@@ -6,8 +6,8 @@
 
 
 import logging
-from typing import Optional
 import uuid
+from typing import Optional
 
 from opentelemetry._logs import set_logger_provider
 from opentelemetry.exporter.otlp.proto.http._log_exporter import OTLPLogExporter
@@ -18,17 +18,30 @@ from opentelemetry.sdk.resources import Resource
 
 # Configure logging to console and OTEL.  This should be called before any
 # 3rd party imports whose logging you wish to capture.
-def configureLogging(console_level: int, otlp_level: Optional[int] = None):
+def configureLogging(
+    console_level: int,
+    file_path: str,
+    file_level: Optional[int] = None,
+    otlp_level: Optional[int] = None,
+):
     logging_handlers: list[logging.Handler] = []
 
-    # Create a console handler
-    console_formatter = logging.Formatter(
+    logs_formatter = logging.Formatter(
         "%(asctime)s %(levelname)s: %(name)s: %(message)s", datefmt="%H:%M:%S"
     )
+
+    # Create a console handler
     console_handler = logging.StreamHandler()
-    console_handler.setFormatter(console_formatter)
+    console_handler.setFormatter(logs_formatter)
     console_handler.setLevel(console_level)
     logging_handlers.append(console_handler)
+
+    if file_level is not None:
+        # Create a file handler
+        file_handler = logging.FileHandler(file_path)
+        file_handler.setFormatter(logs_formatter)
+        file_handler.setLevel(file_level)
+        logging_handlers.append(file_handler)
 
     if otlp_level is not None:
         # Create an OTEL handler

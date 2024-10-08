@@ -19,14 +19,19 @@ from typing import AsyncContextManager, Optional, Sequence
 from max.serve.telemetry.logger import configureLogging
 
 console_level: int = logging.INFO
+file_path: str = ""
+file_level: Optional[int] = None
 otlp_level: Optional[int] = logging.INFO
 if "MAX_SERVE_LOGS_CONSOLE_LEVEL" in os.environ:
     console_level = int(os.environ["MAX_SERVE_LOGS_CONSOLE_LEVEL"])
 if "MAX_SERVE_LOGS_OTLP_LEVEL" in os.environ:
     otlp_level = int(os.environ["MAX_SERVE_LOGS_OTLP_LEVEL"])
+if "MAX_SERVE_LOGS_FILE_PATH" in os.environ:
+    file_path = os.environ["MAX_SERVE_LOGS_FILE_PATH"]
+    file_level = int(os.environ.get("MAX_SERVE_LOGS_FILE_LEVEL", logging.DEBUG))
 if "MAX_SERVE_DISABLE_TELEMETRY" in os.environ:
     otlp_level = None
-configureLogging(console_level, otlp_level)
+configureLogging(console_level, file_path, file_level, otlp_level)
 
 from fastapi import FastAPI
 from max.serve.config import APIType, Settings, api_prefix
