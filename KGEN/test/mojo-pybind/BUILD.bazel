@@ -2,12 +2,13 @@ load("//bazel:api.bzl", "lit_tests")
 
 lit_tests(
     name = "test",
-    srcs = glob(
-        [
-            "*.mojo",
-        ],
-    ),
+    size = "large",
+    srcs = [
+        "pybind.mojo",
+        "test.py",
+    ],
     data = [
+        "module.mojo",
         "//KGEN:CompilerRT",
         "//KGEN:CompilerRT.distributable",
         "@llvm-project//compiler-rt:orc_rt",
@@ -16,6 +17,7 @@ lit_tests(
         "//open-source/mojo/stdlib/stdlib",
     ],
     target_compatible_with = select({
+        "//:asan": ["@platforms//:incompatible"],
         "//:tsan": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),
@@ -23,5 +25,10 @@ lit_tests(
         "//KGEN/tools/kgen",
         "//KGEN/tools/kgen-translate",
         "//KGEN/tools/mojo",
+    ],
+    deps = [
+        # Adds path/to/mojo-pybind/.. to the PYTHONPATH so we can invoke it as:
+        #   RUN: python3 -m mojo-pybind.main
+        "//KGEN/MojoBindings/mojo-pybind",
     ],
 )

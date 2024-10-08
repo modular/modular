@@ -16,6 +16,7 @@ py_binary(
     # massively unstable, and unlike our desired final end state.
     visibility = [
         ":__subpackages__",
+        "//KGEN:__subpackages__",
         "//open-source/mojo/integration-test:__subpackages__",
     ],
     deps = [
