@@ -41,6 +41,7 @@
 #include "llvm/Option/ArgList.h"
 #include "llvm/Option/OptTable.h"
 #include "llvm/Option/Option.h"
+#include "llvm/Support/Debug.h"
 #include "llvm/Support/FormatVariadic.h"
 #include "llvm/Support/Process.h"
 #include "llvm/Support/Program.h"
@@ -51,6 +52,8 @@
 using namespace M;
 using namespace KGEN;
 using namespace mlir;
+
+#define DEBUG_TYPE "mojo-build"
 
 //===----------------------------------------------------------------------===//
 // Command line argument parsing
@@ -341,9 +344,9 @@ static int linkExecutable(const State &state,
   config.getSystemLibraryLinkArgs(linkerArgs);
 
   for (auto arg : linkerArgs) {
-    llvm::errs() << arg << " ";
+    LLVM_DEBUG(llvm::errs() << arg << " ");
   }
-  llvm::errs() << "\n";
+  LLVM_DEBUG(llvm::errs() << "\n");
 
   std::string errorMsg;
   int linkExitCode = llvm::sys::ExecuteAndWait(
