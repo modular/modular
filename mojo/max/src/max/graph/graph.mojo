@@ -166,7 +166,7 @@ struct Graph(CollectionElement, Stringable, Formattable):
 
     You can't call a `Graph` directly from Mojo. You must compile it and
     execute it with MAX Engine. For more detail, see the tutorial about how to
-    [build a graph with MAX Graph](/max/graph/get-started).
+    [build a graph with MAX Graph](/max/tutorials/get-started-with-max-graph).
     """
 
     var _graph: _GraphRef

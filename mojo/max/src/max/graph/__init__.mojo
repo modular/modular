@@ -43,7 +43,7 @@ You can then load the `Graph` into MAX Engine with
 [`InferenceSession.load()`](/max/api/mojo/engine/session/InferenceSession#load).
 
 For more detail, see the tutorial about how to [build a graph with MAX
-Graph](/max/graph/get-started).
+Graph](/max/tutorials/get-started-with-max-graph).
 
 """
 
