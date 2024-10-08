@@ -19,6 +19,7 @@ class InflightDiag;
 } // namespace M
 
 namespace M::KGEN {
+enum class ArgConvention : uint32_t;
 class ParamDeclAttr;
 class SignatureType;
 } // namespace M::KGEN
@@ -78,6 +79,10 @@ bool canSynthesizeIfMissing(StringRef name, bool rpTrivial, bool regPassable);
 /// Helper to delete code in a region and mark it as unreachable when it's
 /// determined to be dead code.
 void markRegionUnreachable(Region *deadRegion, Location unreachableLoc);
+
+/// Given a function argument type and the argument's convention, get the RValue
+/// type of the argument.
+ASTType getFunctionArgumentRValueType(ASTType type, ArgConvention conv);
 
 //===----------------------------------------------------------------------===//
 // Diagnostic utilities

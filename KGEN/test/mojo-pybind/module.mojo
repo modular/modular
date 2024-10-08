@@ -3,3 +3,7 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
+
+
+fn arg_reg_trivial_borrowed(arg: Int):
+    pass

@@ -54,7 +54,7 @@ get_build_alias() {
     elif [ "$1" = "check-kgen" ]; then
         echo "KGEN/test/kgen/..."
     elif [ "$1" = "check-mojo-integration" ]; then
-        echo "KGEN/test/mojo-integration/..."
+        echo "KGEN/test/mojo-integration/... KGEN/test/mojo-pybind/..."
     elif [ "$1" = "check-mojo-isolated" ]; then
         echo "KGEN/test/mojo-isolated/..."
     elif [ "$1" = "check-mojo-parser" ]; then
