@@ -1169,10 +1169,10 @@ fn concat[
     ) capturing -> None,
     target: StringLiteral = "cpu",
 ](
-    output: NDBuffer[type, rank],
     axis: Scalar,
+    inputs: StaticTuple[NDBuffer[type, rank], *_],
+    output: NDBuffer[type, rank],
     ctx: MojoCallContextPtr,
-    *variadic_ins: NDBuffer[type, rank],
 ) raises:
     @always_inline
     @parameter
@@ -1184,7 +1184,13 @@ fn concat[
             rebind[SIMD[type, width]](value),
         )
 
-    var ins = variadic_list_to_vector(variadic_ins)
+    # TODO: we don't really need to convert to vector anymore.
+    var ins = InlinedFixedVector[NDBuffer[type, rank]](inputs.size)
+
+    @parameter
+    for i in range(inputs.size):
+        ins.append(inputs[i])
+
     _concat[
         rank,
         type,
