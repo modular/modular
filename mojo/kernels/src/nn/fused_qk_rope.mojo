@@ -62,7 +62,9 @@ fn fused_qk_rope[
         else:
             var idx = rebind[IndexList[4]](idx_arg)
             var bs_idx = idx[0]
-            var seq_idx = idx[1]
+            # post_seq_idx: sum of start_pos (cache_lengths[batch_idx]) and
+            # seq_idx (idx[1]).
+            var post_seq_idx = k_cache.cache_length(bs_idx) + idx[1]
             var head_idx = idx[2]
             var head_dim_idx = idx[3]
 
@@ -76,16 +78,15 @@ fn fused_qk_rope[
             else:
                 head_idx -= num_q_heads
 
-                var cache_seq_idx = seq_idx + k_cache.cache_length(bs_idx)
                 val = k_cache.load[type, width=width](
-                    bs_idx, head_idx, cache_seq_idx, head_dim_idx
+                    bs_idx, head_idx, post_seq_idx, head_dim_idx
                 )
 
             var x_c = val.deinterleave()
             var x_re = x_c[0]
             var x_im = x_c[1]
 
-            var f_idx = IndexList[2](seq_idx, head_dim_idx)
+            var f_idx = IndexList[2](post_seq_idx, head_dim_idx)
             var f_c_temp = freqs_cis.load[width=width](f_idx)
 
             var f_c = f_c_temp.deinterleave()
@@ -99,9 +100,8 @@ fn fused_qk_rope[
             if is_q_proj:
                 output.store(idx, result)
             else:
-                var cache_seq_idx = seq_idx + k_cache.cache_length(bs_idx)
                 k_cache.store(
-                    bs_idx, head_idx, cache_seq_idx, head_dim_idx, result
+                    bs_idx, head_idx, post_seq_idx, head_dim_idx, result
                 )
 
     alias compile_target = _current_target() if target == "cpu" else _get_nvptx_target()

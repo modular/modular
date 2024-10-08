@@ -145,21 +145,22 @@ def test_fused_qk_rope[type: DType]() -> None:
 
     # Compare output and expected query tensors.
     assert_almost_equal(
-        q_out.data,
-        expected_q_out.data,
-        # Check only the first element in the batch until fused_qk_rope takes
-        # start_pos.
-        expected_q_out.num_elements() // batch_size,
+        q_out.data, expected_q_out.data, expected_q_out.num_elements()
     )
 
     # Compare output and expected key cache buffers.
-    assert_almost_equal(
-        k_cache_block_buffer.data,
-        expected_k_out_buffer.data,
-        # Check only the first batch element.
-        # This only works because start_pos = 0 for batch index 0.
-        expected_k_out_buffer.size // batch_size,
-    )
+    for batch_idx in range(batch_size):
+        assert_almost_equal(
+            (
+                k_cache_block_buffer.data
+                + (batch_idx * max_seq_len * dim)
+                # Account for the start_pos (cache_length) for this batch item.
+                + int(start_positions[batch_idx] * dim)
+            ),
+            expected_k_out_buffer.data + (batch_idx * seq_len * dim),
+            # Number of elements in one batch item.
+            expected_k_out_buffer.size // batch_size,
+        )
 
     _ = q_out_buffer^
     _ = expected_q_out_buffer^
