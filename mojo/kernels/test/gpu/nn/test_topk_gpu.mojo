@@ -10,8 +10,12 @@ from math import ceildiv, iota
 from os import abort
 from random import random_float64
 
+from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
 from buffer import NDBuffer
 from buffer.dimlist import DimList
+from collections import OptionalReg
+from internal_utils import HostNDBuffer, DeviceNDBuffer
+from random import random_float64
 from gpu.host import DeviceContext
 from internal_utils import DeviceNDBuffer, HostNDBuffer
 from memory import UnsafePointer
@@ -20,50 +24,98 @@ from nn.topk_gpu import _topk_gpu
 from utils import IndexList
 
 alias idx_t = DType.index  # bad practice (matches the idx_t in the topk_gpu kernel)
+alias DEBUG_BENCH = False
 
 
-fn test_case[
+fn time_kernel[
+    func: fn (DeviceContext) raises capturing -> None
+](inout m: Bench, ctx: DeviceContext, kernel_name: String) raises:
+    @parameter
+    @always_inline
+    fn bench_func(inout m: Bencher):
+        @parameter
+        @always_inline
+        fn kernel_launch(ctx: DeviceContext, iteration: Int) raises:
+            func(ctx)
+
+        m.iter_custom[kernel_launch](ctx)
+
+    m.bench_function[bench_func](
+        BenchId(
+            kernel_name
+        ),  # ThroughputMeasure(BenchMetric.elements, 2 * size)
+    )
+
+
+fn test_case_batched[
     type: DType,
     fill_fn: fn[rank: Int, type: DType] (inout NDBuffer[type, rank]) capturing [
         _
     ] -> None,
     sampling: Bool = True,
-    rank: Int = 1,  # TODO (KERN-1016) support higher rank tensors
-](
-    ctx: DeviceContext,
-    N: Int,
-    K: Int,
-    axis: Int = -1,  # TODO (low prio) need to add support for axis != -1
-    block_size: Int = 256,
-    # input_shape: IndexList[rank] = IndexList[rank](N), # TODO
-) raises:
+    rank: Int = 2,
+](ctx: DeviceContext, test_case: TestCase) raises:
+    # Fetch arguments
+    var batch_size = test_case.batch_size
+    var N = test_case.N
+    var K = test_case.K
+    var block_size = test_case.block_size
+    var num_blocks_per_input = test_case.num_blocks_per_input
     # Instantiate data in host memory
-    var in_buffer = HostNDBuffer[type, 1](DimList(N))
-    var topk_vals = HostNDBuffer[type, 1](DimList(K))
-    var topk_idxs = HostNDBuffer[idx_t, 1](DimList(K))
+    var in_buffer = HostNDBuffer[type, rank](DimList(batch_size, N))
+    var topk_vals = HostNDBuffer[type, rank](DimList(batch_size, K))
+    var topk_idxs = HostNDBuffer[idx_t, rank](DimList(batch_size, K))
 
     # Fill the buffer with consecutive values
-    fill_fn[1, type](in_buffer.tensor)
-    print("Input buffer: ", in_buffer.tensor)
+    fill_fn(in_buffer.tensor)
+    # print("Input buffer: ", in_buffer.tensor)
 
     # Run the Top-K kernel
-    alias topk_kernel = _topk_gpu[type, sampling= (sampling)]
+    alias topk_kernel = _topk_gpu[type, rank=rank, sampling=sampling]
 
     # Move data to device
-    var device_in = DeviceNDBuffer[type, 1](DimList(N), ctx=ctx)
-    var device_out_vals = DeviceNDBuffer[type, 1](DimList(K), ctx=ctx)
-    var device_out_idxs = DeviceNDBuffer[idx_t, 1](DimList(K), ctx=ctx)
+    var device_in = DeviceNDBuffer[type, rank](DimList(batch_size, N), ctx=ctx)
+    var device_out_vals = DeviceNDBuffer[type, rank](
+        DimList(batch_size, K), ctx=ctx
+    )
+    var device_out_idxs = DeviceNDBuffer[idx_t, rank](
+        DimList(batch_size, K), ctx=ctx
+    )
 
     var num_blocks_stg1 = ceildiv(in_buffer.tensor.num_elements(), block_size)
-    var device_local_topk_vals = DeviceNDBuffer[type, 1](
-        DimList(num_blocks_stg1 * K), ctx=ctx
+    var device_local_topk_vals = DeviceNDBuffer[type, rank](
+        DimList(batch_size, num_blocks_stg1 * K), ctx=ctx
     )
-    var device_local_topk_idxs = DeviceNDBuffer[idx_t, 1](
-        DimList(num_blocks_stg1 * K), ctx=ctx
+    var device_local_topk_idxs = DeviceNDBuffer[idx_t, rank](
+        DimList(batch_size, num_blocks_stg1 * K), ctx=ctx
     )
 
     ctx.enqueue_copy_to_device(device_in.buffer, in_buffer.tensor.data)
     ctx.synchronize()
+
+    @parameter
+    if DEBUG_BENCH:
+        var m = Bench()
+
+        @always_inline
+        @parameter
+        fn run_func(ctx: DeviceContext) raises:
+            topk_kernel(
+                ctx,
+                K,
+                device_in.tensor,
+                device_local_topk_vals.tensor,
+                device_local_topk_idxs.tensor,
+                device_out_vals.tensor,
+                device_out_idxs.tensor,
+                block_size=block_size,
+                num_blocks_per_input=num_blocks_per_input,
+            )
+            ctx.synchronize()
+
+        alias msg = "tk-smpl" if sampling else "tk"
+        time_kernel[run_func](m, ctx, msg)
+        m.dump_report()
 
     topk_kernel(
         ctx,
@@ -74,6 +126,7 @@ fn test_case[
         device_out_vals.tensor,
         device_out_idxs.tensor,
         block_size=block_size,
+        num_blocks_per_input=num_blocks_per_input,
     )
     ctx.synchronize()
 
@@ -87,9 +140,20 @@ fn test_case[
 
     @parameter
     if sampling:
-        # For some reason printing the tensor directly with sampling leads to
-        # a segfault in the print function so this is the current workaround
-        print(_msg2, topk_idxs.tensor.data[0])
+        print("Sample token index: ", end="")
+        for i in range(batch_size):
+            print(topk_idxs.tensor.data[i * K], " ", end="")
+            break  # Since all batch vectors are the same
+        print()
+
+        # @parameter
+        # if DEBUG:
+        #     print("Max logit prob: ", end="")
+        #     for k in range(batch_size):
+        #         for i in range(K):
+        #             print(topk_vals.tensor.data[K * k + i], "  ", end="")
+        #         print()
+        #     print()
     else:
         print(_msg1, topk_vals.tensor)
         print(_msg2, topk_idxs.tensor)
@@ -121,23 +185,251 @@ fn fill_iota[rank: Int, type: DType](inout buf: NDBuffer[type, rank]):
     iota(buf.data, buf.get_shape().flattened_length())
 
 
+@value
+struct TestCase[_sampling: Bool]:
+    alias sampling = _sampling
+    var N: Int
+    var K: Int
+    var block_size: Int
+    var batch_size: Int
+    var num_blocks_per_input: OptionalReg[Int]
+
+    fn __init__(
+        inout self,
+        N: Int,
+        K: Int,
+        block_size: Int,
+        batch_size: Int,
+    ):
+        self.N = N
+        self.K = K
+        self.block_size = block_size
+        self.batch_size = batch_size
+        self.num_blocks_per_input = None
+
+
+fn print_test_case(test_case: TestCase):
+    var num_blocks_per_in_msg = str("auto")
+    if test_case.num_blocks_per_input:
+        num_blocks_per_in_msg = str(test_case.num_blocks_per_input.value())
+    print(
+        "==== Running Top-K sampling=",
+        test_case.sampling,
+        ", N=",
+        test_case.N,
+        ", K=",
+        test_case.K,
+        ", block_size=",
+        test_case.block_size,
+        ", batch_size=",
+        test_case.batch_size,
+        ", num_blocks_per_input=",
+        num_blocks_per_in_msg,
+    )
+
+
 fn main() raises:
+    alias llama3_vocab_size = 128256
     with DeviceContext() as ctx:
-        var N: Int = 4096 * 4
-        var K: Int = 5
-        var block_size = 256
         alias type = DType.float32
+        var N: Int
+        var K: Int
+        var block_size: Int
+        var batch_size: Int
+        var sampling: Bool
+        var num_blocks_per_input: Int = 0
 
-        print("==== Running Top-K without sampling")
-        test_case[
+        # var test_cases: [TestCase] = []
+        # var N_values = [1024, 32000, 128256]
+        # var K_values = [1, 5, 10]
+        # var block_size_values = [256, 512, 1024]
+        # var batch_size_values = [1, 16, 64, 256]
+        # var _samplingvalues = [False, True]
+
+        alias test_case1 = TestCase[_sampling=False](
+            N=1024,
+            K=1,
+            block_size=256,
+            batch_size=1,
+        )
+        print_test_case(test_case1)
+        test_case_batched[
             type,
             fill_iota,
-            sampling=False,
-        ](ctx, N, K, block_size=block_size)
+            sampling = test_case1.sampling,
+        ](ctx, test_case1)
 
-        print("==== Running Top-K sampling")
-        test_case[
+        alias test_case2 = TestCase[_sampling=False](
+            N=32000,
+            K=5,
+            block_size=512,
+            batch_size=16,
+            num_blocks_per_input=8,
+        )
+        print_test_case(test_case2)
+        test_case_batched[type, fill_iota, sampling = test_case2.sampling](
+            ctx, test_case2
+        )
+
+        alias test_case3 = TestCase[_sampling=False](
+            N=llama3_vocab_size,
+            K=10,
+            block_size=1024,
+            batch_size=64,
+            num_blocks_per_input=6,
+        )
+        print_test_case(test_case3)
+        test_case_batched[type, fill_iota, sampling = test_case3.sampling](
+            ctx, test_case3
+        )
+
+        alias test_case4 = TestCase[_sampling=True](
+            N=1024,
+            K=1,
+            block_size=256,
+            batch_size=1,
+        )
+        print_test_case(test_case4)
+        test_case_batched[
             type,
             fill_iota,
-            sampling=True,
-        ](ctx, N, K, block_size=block_size)
+            sampling = test_case4.sampling,
+        ](ctx, test_case4)
+
+        alias test_case5 = TestCase[_sampling=True](
+            N=32000,
+            K=5,
+            block_size=512,
+            batch_size=16,
+            num_blocks_per_input=8,
+        )
+        print_test_case(test_case5)
+        test_case_batched[type, fill_iota, sampling = test_case5.sampling](
+            ctx, test_case5
+        )
+
+        alias test_case6 = TestCase[_sampling=True](
+            N=llama3_vocab_size,
+            K=10,
+            block_size=1024,
+            batch_size=64,
+            num_blocks_per_input=6,
+        )
+        print_test_case(test_case6)
+        test_case_batched[type, fill_iota, sampling = test_case6.sampling](
+            ctx, test_case6
+        )
+
+        alias test_case7 = TestCase[_sampling=False](
+            N=1024,
+            K=5,
+            block_size=256,
+            batch_size=16,
+        )
+        print_test_case(test_case7)
+        test_case_batched[type, fill_iota, sampling = test_case7.sampling](
+            ctx, test_case7
+        )
+
+        alias test_case8 = TestCase[_sampling=False](
+            N=32000,
+            K=10,
+            block_size=512,
+            batch_size=64,
+            num_blocks_per_input=4,
+        )
+        print_test_case(test_case8)
+        test_case_batched[type, fill_iota, sampling = test_case8.sampling](
+            ctx, test_case8
+        )
+
+        alias test_case9 = TestCase[_sampling=False](
+            N=llama3_vocab_size,
+            K=1,
+            block_size=1024,
+            batch_size=256,
+            num_blocks_per_input=8,
+        )
+        print_test_case(test_case9)
+        test_case_batched[type, fill_iota, sampling = test_case9.sampling](
+            ctx, test_case9
+        )
+
+        alias test_case10 = TestCase[_sampling=True](
+            N=1024,
+            K=10,
+            block_size=256,
+            batch_size=64,
+        )
+        print_test_case(test_case10)
+        test_case_batched[type, fill_iota, sampling = test_case10.sampling](
+            ctx, test_case10
+        )
+
+        alias test_case11 = TestCase[_sampling=True](
+            N=32000,
+            K=1,
+            block_size=512,
+            batch_size=256,
+            num_blocks_per_input=8,
+        )
+        print_test_case(test_case11)
+        test_case_batched[type, fill_iota, sampling = test_case11.sampling](
+            ctx, test_case11
+        )
+
+        alias test_case12 = TestCase[_sampling=True](
+            N=llama3_vocab_size,
+            K=5,
+            block_size=1024,
+            batch_size=1,
+        )
+        print_test_case(test_case12)
+        test_case_batched[type, fill_iota, sampling = test_case12.sampling](
+            ctx, test_case12
+        )
+
+        alias test_case13 = TestCase[_sampling=False](
+            N=1024,
+            K=10,
+            block_size=1024,
+            batch_size=256,
+        )
+        print_test_case(test_case13)
+        test_case_batched[type, fill_iota, sampling = test_case13.sampling](
+            ctx, test_case13
+        )
+
+        alias test_case14 = TestCase[_sampling=False](
+            N=32000,
+            K=1,
+            block_size=512,
+            batch_size=1,
+        )
+        print_test_case(test_case14)
+        test_case_batched[type, fill_iota, sampling = test_case14.sampling](
+            ctx, test_case14
+        )
+
+        alias test_case15 = TestCase[_sampling=True](
+            N=llama3_vocab_size,
+            K=5,
+            block_size=1024,
+            batch_size=16,
+            num_blocks_per_input=8,
+        )
+        print_test_case(test_case15)
+        test_case_batched[type, fill_iota, sampling = test_case15.sampling](
+            ctx, test_case15
+        )
+
+        alias test_case16 = TestCase[_sampling=True](
+            N=1024,
+            K=5,
+            block_size=256,
+            batch_size=64,
+        )
+        print_test_case(test_case16)
+        test_case_batched[type, fill_iota, sampling = test_case16.sampling](
+            ctx, test_case16
+        )
