@@ -63,7 +63,8 @@ int main(int argc, char **argv) {
 
   return llvm::TableGenMain(
       argv[0],
-      [&backend](llvm::raw_ostream &os, llvm::RecordKeeper &records) -> bool {
+      [&backend](llvm::raw_ostream &os,
+                 const llvm::RecordKeeper &records) -> bool {
         // If no backend was selected, print records and exit successfully.
         if (!backend) {
           os << records;
