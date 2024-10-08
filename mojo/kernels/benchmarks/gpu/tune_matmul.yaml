@@ -11,9 +11,9 @@ params:
 
 # tune parameters for multi-stage-gemm
 - M: [1024] #, 64, 100, 200, 500, 1000, 2048, 4096, 8192]
-  N: 4096 
+  N: 4096
   K: 4096
-  ENABLE_TUNE: 1
+  AUTOTUNING_MODE: True
   TUNE_BM: [64, 128, 256]
   TUNE_BN: [64, 128, 256]
   TUNE_BK: [32, 64]
