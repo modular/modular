@@ -747,7 +747,7 @@ fn mo_range[
 
     @parameter
     if start.type.is_integral():
-        shape = IndexList[1](len(range(start_, stop_, step_)))
+        shape = IndexList[1](len(range(int(start_), int(stop_), int(step_))))
     else:
         shape = IndexList[1](int(ceil(abs(stop_ - start_) / abs(step_))))
 
