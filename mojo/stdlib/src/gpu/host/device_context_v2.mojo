@@ -179,8 +179,16 @@ struct DeviceBufferV2[type: DType](Sized):
         not_implemented_yet["##### UNIMPLEMENTED: DeviceBufferV2.take_ptr"]()
         return UnsafePointer[Scalar[type]]()  # FIXME
 
-    fn ptr(self) -> UnsafePointer[Scalar[type]]:
+    fn get_ptr(self) -> UnsafePointer[Scalar[type]]:
         return self._device_ptr
+
+    fn __getattr__[name: StringLiteral](self) -> UnsafePointer[Scalar[type]]:
+        @parameter
+        if name == "ptr":
+            return self.get_ptr()
+
+        abort("Unsupported attr for DeviceBufferV2: " + name)
+        return UnsafePointer[Scalar[type]]()
 
 
 @value

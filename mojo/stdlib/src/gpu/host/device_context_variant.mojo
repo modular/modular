@@ -163,7 +163,7 @@ struct DeviceBufferVariant[type: DType](Sized):
 
             @parameter
             if _device_ctx_v2():
-                return self.v2().ptr()
+                return self.v2().get_ptr()
             else:
                 return self.v1().ptr
 
