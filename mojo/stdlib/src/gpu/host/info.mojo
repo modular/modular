@@ -227,7 +227,7 @@ alias H100 = Info(
 )
 
 # ===----------------------------------------------------------------------===#
-# MI300x
+# MI300X
 # ===----------------------------------------------------------------------===#
 
 
@@ -246,8 +246,8 @@ fn _get_mi300x_target[index_bit_width: Int]() -> __mlir_type.`!kgen.target`:
     return _get_mi300x_target[64]()
 
 
-alias MI300x = Info(
-    name="MI300x",
+alias MI300X = Info(
+    name="MI300X",
     arch_name="mi300x",
     compute=0.0,
     version="CDNA3",
@@ -333,7 +333,7 @@ struct Info:
             return _get_l4_target[index_bit_width]()
         if self.name == "H100":
             return _get_h100_target[index_bit_width]()
-        if self.name == "MI300x":
+        if self.name == "MI300X":
             return _get_mi300x_target[index_bit_width]()
         return _get_a100_target[index_bit_width]()
 
@@ -601,7 +601,7 @@ fn _get_info_from_target[target_arch: StringLiteral]() -> Info:
     elif target_arch in ("cuda-sm_90", "cuda-sm_90a", "sm_90", "sm_90a"):
         return H100
     elif target_arch in ("mi300x"):
-        return MI300x
+        return MI300X
 
     return _get_info_from_target[DEFAULT_GPU_ARCH]()
 
@@ -617,7 +617,7 @@ fn _get_compute(target_arch: String) -> Float32:
     elif target_arch in ("cuda-sm_90", "cuda-sm_90a", "sm_90", "sm_90a"):
         return H100.compute
     elif target_arch in ("mi300x"):
-        return MI300x.compute
+        return MI300X.compute
 
     return _get_info_from_target[DEFAULT_GPU_ARCH]().compute
 
