@@ -151,7 +151,7 @@ fn test_custom_metrics() raises:
 
     @parameter
     fn HistogramTest[T: DType](inout histogram: Histogram[T]):
-        for i in range(rand_val):
+        for i in range(int(rand_val)):
             var v = Int64(i).cast[T]()
             histogram.record(v)
 
@@ -194,11 +194,11 @@ fn test_custom_metrics() raises:
     @parameter
     fn GaugeTest[T: DType](inout gauge: Gauge[T]):
         # we want to test both adds and subs, so we add i, and then sub 1.
-        for i in range(rand_val):
+        for i in range(int(rand_val)):
             var v = Int64(i).cast[T]()
             gauge.add(v)
         # sub 1
-        for _ in range(rand_val):
+        for _ in range(int(rand_val)):
             var v = Int64(-1).cast[T]()
             gauge.add(v)
 
