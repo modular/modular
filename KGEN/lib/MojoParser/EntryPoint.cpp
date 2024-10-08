@@ -8,6 +8,7 @@
 #include "KGEN/MojoParser/ASTDecl.h"
 #include "KGEN/MojoParser/DeclResolver.h"
 #include "KGEN/MojoParser/SharedState.h"
+#include "PythonBindingsGen.h"
 
 #include "AsyncRT/Runtime/Runtime.h"
 #include "KGEN/KGENDialect/KGENOps.h"
@@ -231,12 +232,11 @@ static void eraseUnreachableDecls(Operation *declOp, ModuleOp module) {
 /// Parse a mojo module or package into the specified MLIR context. Returns the
 /// resultant IR, and the decl for the module or package. This abstracts away
 /// the shared setup between module and package parsing.
-static std::tuple<OwningOpRef<mlir::ModuleOp>, ASTDecl *>
-importMojoImpl(AsyncRT::Runtime &runtime, StringRef moduleIdentifier,
-               SourceMgr &sourceMgr, SharedState &sharedState,
-               mlir::TimingScope &ts,
-               SmallVectorImpl<std::string> *includedFiles,
-               function_ref<ASTDecl &(ModuleOp)> buildDeclFn) {
+static std::tuple<OwningOpRef<mlir::ModuleOp>, ASTDecl *> importMojoImpl(
+    AsyncRT::Runtime &runtime, StringRef moduleIdentifier, SourceMgr &sourceMgr,
+    SharedState &sharedState, mlir::TimingScope &ts,
+    SmallVectorImpl<std::string> *includedFiles, bool genPythonBindings,
+    function_ref<ASTDecl &(ModuleOp)> buildDeclFn) {
   MLIRContext *context = sharedState.getContext();
   auto fileLoc =
       FileLineColLoc::get(context, moduleIdentifier, /*line=*/1, /*column=*/1);
@@ -255,6 +255,13 @@ importMojoImpl(AsyncRT::Runtime &runtime, StringRef moduleIdentifier,
 
   // Resolve everything within the main input module.
   sharedState.declResolver->resolveAllReferencedFrom(moduleDecl);
+
+  // Generate python bindings into the module if requested.
+  if (genPythonBindings) {
+    (void)generatePythonBindings(sharedState, moduleDecl);
+    // Resolve everything again.
+    sharedState.declResolver->resolveAllReferencedFrom(moduleDecl);
+  }
 
   // Finalize the imported bytecode now that we've resolved everything. This
   // will drop bytecode operations that never got referenced.
@@ -291,14 +298,15 @@ importMojoImpl(AsyncRT::Runtime &runtime, StringRef moduleIdentifier,
 static std::tuple<OwningOpRef<mlir::ModuleOp>, ASTDecl *>
 importMojoFileImpl(AsyncRT::Runtime &runtime, SourceMgr &sourceMgr,
                    SharedState &sharedState, mlir::TimingScope &ts,
-                   SmallVectorImpl<std::string> *includedFiles = nullptr) {
+                   SmallVectorImpl<std::string> *includedFiles,
+                   bool genPythonBindings) {
   auto sourceBuf = sourceMgr.getMemoryBuffer(sourceMgr.getMainFileID());
   StringRef bufName = sourceBuf->getBufferIdentifier();
   DebugInfo::DIBuilder::ScopeGuard fileGuard;
 
   return importMojoImpl(
       runtime, bufName, sourceMgr, sharedState, ts, includedFiles,
-      [&](ModuleOp module) -> ASTDecl & {
+      genPythonBindings, [&](ModuleOp module) -> ASTDecl & {
         Lexer lexer(sharedState.diags, sourceBuf);
         auto startSMLoc = lexer.getToken().getLoc();
 
@@ -343,7 +351,8 @@ LIT::importMojoPackage(AsyncRT::Runtime &runtime, StringRef path,
 
   auto [module, packageDecl] = importMojoImpl(
       runtime, path, sourceMgr, sharedState, ts, includedFiles,
-      [&](ModuleOp module) -> ASTDecl & {
+      // TODO(MOCO-1295): Generate Python bindings for Mojo packages.
+      /*genPythonBindings=*/false, [&](ModuleOp module) -> ASTDecl & {
         // Create the top-level outer decl, which will contain all things we
         // parse.
         ASTDecl &topLevelDecl = sharedState.declResolver->addDecl(
@@ -472,10 +481,11 @@ OwningOpRef<ModuleOp> LIT::importStandaloneMojoBinaryPackage(
 OwningOpRef<mlir::ModuleOp>
 LIT::importMojoFile(AsyncRT::Runtime &runtime, llvm::SourceMgr &sourceMgr,
                     ParserConfig &config, mlir::TimingScope &ts,
-                    SmallVectorImpl<std::string> *includedFiles) {
+                    SmallVectorImpl<std::string> *includedFiles,
+                    bool genPythonBindings) {
   SharedState sharedState(sourceMgr, config);
-  auto [module, topLevelDecl] =
-      importMojoFileImpl(runtime, sourceMgr, sharedState, ts, includedFiles);
+  auto [module, topLevelDecl] = importMojoFileImpl(
+      runtime, sourceMgr, sharedState, ts, includedFiles, genPythonBindings);
   return std::move(module);
 }
 

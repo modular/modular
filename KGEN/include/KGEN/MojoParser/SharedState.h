@@ -436,6 +436,8 @@ public:
   /// Lookup a builtin special function overload set.
   ArrayRef<ASTDecl *> getBuiltinFunction(ASTDecl &context, StringRef moduleName,
                                          StringRef fnName, llvm::SMLoc loc);
+  ArrayRef<ASTDecl *> getBuiltinFunction(ASTDecl &module, StringRef fnName,
+                                         llvm::SMLoc loc);
 
   struct Impl;
   Impl &getImpl() const { return *impl; }

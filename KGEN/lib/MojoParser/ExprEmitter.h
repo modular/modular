@@ -81,6 +81,7 @@ enum ExprContext {
   EC_Closure,               // closure formation
   EC_Lifetime,              // lifetime specifier
   EC_TypeOf,                // __type_of(x)
+  EC_PyBindGen,             // within Python binding generation
 };
 const char *getContextMessage(ExprContext context);
 

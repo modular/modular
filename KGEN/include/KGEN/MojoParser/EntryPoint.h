@@ -97,7 +97,8 @@ struct ParserConfig {
 OwningOpRef<ModuleOp>
 importMojoFile(AsyncRT::Runtime &runtime, llvm::SourceMgr &sourceMgr,
                ParserConfig &config, mlir::TimingScope &ts,
-               SmallVectorImpl<std::string> *includedFiles = nullptr);
+               SmallVectorImpl<std::string> *includedFiles = nullptr,
+               bool genPythonBindings = false);
 
 /// Parse the directory at the given path as a Mojo package. Returns a module op
 /// that contains the package, represented as a `lit.package` op, as well as the
