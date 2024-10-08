@@ -14,10 +14,64 @@ from runtime.asyncrt import MojoCallContextPtr
 
 from utils import unroll
 from utils.index import IndexList
+from utils import unroll, StaticTuple
+
 
 # ===----------------------------------------------------------------------===#
 # Special test targets just for generation tests
 # ===----------------------------------------------------------------------===#
+
+
+@mogg_register_override("mo.concat", 1)
+@always_inline
+fn test_concat_dim_0_inputs_lambda_tuple[
+    type: DType,
+    rank: Int,
+    # TODO: Do we need two flags? one for input, one for output?
+    lambdas_have_fusion: Bool,
+    # A tuple of callbacks, one per input.
+    input_fns: StaticTuple[
+        fn[
+            width: Int, rank: Int
+        ] (IndexList[rank]) capturing -> SIMD[type, width], *_
+    ],
+    output_0_fn: fn[width: Int, rank: Int, element_alignment: Int] (
+        IndexList[rank], SIMD[type, width]
+    ) capturing -> None,
+](
+    # TODO: We should switch the variadic inputs to
+    # `StaticTuple[IndexList[rank], inputs_fns.size]`. Graph compiler does
+    # not know how to handle a tuple of shapes currently.
+    axis: Scalar,
+    input_shapes: StaticTuple[IndexList[rank], input_fns.size],
+    output: NDBuffer[type, rank],
+    ctx: MojoCallContextPtr,
+) raises:
+    print("In override concat.")
+    var offset = 0
+
+    @parameter
+    for i in range(input_fns.size):
+        alias input_i_fn = input_fns[i]
+        var input_shape = input_shapes[i]
+
+        @parameter
+        @always_inline
+        fn elementwise_wrapper[width: Int, rank: Int](indices: IndexList[rank]):
+            # get data from input through lambda.
+            var value = input_i_fn[width, rank](indices)
+            var c = IndexList[rank]()
+
+            # Transform the indices
+            @parameter
+            for i in range(rank):
+                c[i] = indices[i] + (offset if i == 0 else 0)
+
+            # call the output lambda
+            output_0_fn[width, rank, 1](c, value)
+
+        elementwise[elementwise_wrapper, 1](input_shape, ctx)
+        offset = offset + input_shape[0]
 
 
 @mogg_register("test_many_ranks_and_types")
