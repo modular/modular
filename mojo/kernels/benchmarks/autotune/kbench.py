@@ -17,7 +17,7 @@ from enum import Enum
 from itertools import chain, product
 from pathlib import Path
 from time import sleep, time
-from typing import Dict, List, Optional, Sequence, Set, Tuple, Union
+from typing import Dict, List, Optional, Sequence, Set, Tuple, TypeVar, Union
 
 import click
 import numpy as np
@@ -53,7 +53,7 @@ class Param:
     name: str
     value: object
 
-    def define(self) -> str:
+    def define(self) -> list[str]:
         return ["-D", f"{self.name}={self.value}"]
 
 
@@ -66,7 +66,7 @@ def flatten(value) -> List[object]:
         return [value]
     if isinstance(value, list):
         res = functools.reduce(operator.concat, [value])
-        return res if isinstance(res, Iterable) else [res]
+        return res if isinstance(res, Iterable) else [res]  # type: ignore
     if isinstance(value, dict):
         return flatten(value.values())
     if isinstance(value, tuple):
@@ -106,16 +106,14 @@ class SpecInstance:
     ) -> Path:
         if not output_file:
             output_file = Path(tempfile.gettempdir()) / Path(
-                next(tempfile._get_candidate_names())
+                next(tempfile._get_candidate_names())  # type: ignore
             )
 
         # substitute env variables in the path
-        file_abs_path = Path(string.Template(self.file).substitute(os.environ))
-        try:
-            assert file_abs_path.exists()
-        except:
-            print(f"ERROR: [{self.file}] doesn't exist!")
-            return
+        file_abs_path = Path(
+            string.Template(str(self.file)).substitute(os.environ)
+        )
+        assert file_abs_path.exists()
 
         cmd = [MOJO_BINARY]
         if build_opts:
@@ -130,7 +128,7 @@ class SpecInstance:
                         [param.define() for param in self.params]
                     ).flatten()
                 ),
-                file_abs_path,
+                str(file_abs_path),
             ]
         )
         if not build_opts:
@@ -166,7 +164,7 @@ class SpecInstance:
 
         return output_file
 
-    def to_obj(self) -> str:
+    def to_obj(self) -> dict[str, object]:
         obj = {}
         for param in self.params:
             obj[param.name] = param.value
@@ -183,7 +181,7 @@ class SpecInstance:
 class Spec:
     name: str
     file: Path
-    params: List[object] = field(default_factory=list)
+    params: list[object] = field(default_factory=list)
     mesh_idx: int = 0
     mesh_size: int = 0
     instances: List[SpecInstance] = field(default_factory=list)
@@ -210,7 +208,7 @@ class Spec:
 
     @staticmethod
     def load_yaml_list(yaml_path_list: List[str]) -> "Spec":
-        spec = None
+        spec: "Spec" = None  # type: ignore
         for i, yaml_path in enumerate(yaml_path_list):
             spec_ld = Spec.load_yaml(Path(yaml_path))
             if i == 0:
@@ -220,7 +218,7 @@ class Spec:
         return spec
 
     @staticmethod
-    def parse_params(param_list):
+    def parse_params(param_list: list[str]):
         """
         Parse the parameters as (key,value) dictionary.
         The parameters can be defined as follows:
@@ -236,6 +234,8 @@ class Spec:
         d = {}
         IFS = ":"
         for p in param_list:
+            name = ""
+            val = ""
             if IFS in p:
                 name, val = p.split(IFS)
                 break
@@ -724,6 +724,7 @@ def cli(
         dryrun=dryrun,
         verbose=verbose,
     )
+    return True
 
 
 def main():
