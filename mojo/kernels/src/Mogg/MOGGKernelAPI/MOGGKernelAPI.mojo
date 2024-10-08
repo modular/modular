@@ -2754,7 +2754,7 @@ struct BatchMatmul:
         a: ManagedTensorSlice[rank=rank],
         b: ManagedTensorSlice[rank=rank],
         ctx: MojoCallContextPtr,
-    ):
+    ) raises:
         alias transpose_a = False
 
         var a_buffer = managed_tensor_slice_to_ndbuffer(a)

@@ -2288,7 +2288,7 @@ fn batched_matmul[
     b: NDBuffer[b_type, rank],
     c: NDBuffer[c_type, rank],
     ctx: MojoCallContextPtr,
-):
+) raises:
     alias transpose_a = False
 
     @parameter
