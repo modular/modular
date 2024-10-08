@@ -49,6 +49,7 @@ fn _get_a100_target[index_bit_width: Int]() -> __mlir_type.`!kgen.target`:
 
 alias A100 = Info(
     name="A100",
+    arch_name="ampere",
     compute=8.0,
     version="sm_80",
     sm_count=108,
@@ -100,6 +101,7 @@ fn _get_a10_target[index_bit_width: Int]() -> __mlir_type.`!kgen.target`:
 
 alias A10 = Info(
     name="A10",
+    arch_name="ampere",
     compute=8.6,
     version="sm_86",
     sm_count=72,
@@ -151,6 +153,7 @@ fn _get_l4_target[index_bit_width: Int]() -> __mlir_type.`!kgen.target`:
 
 alias L4 = Info(
     name="L4",
+    arch_name="ada",
     compute=8.9,
     version="sm_89",
     sm_count=58,
@@ -201,6 +204,7 @@ fn _get_h100_target[index_bit_width: Int]() -> __mlir_type.`!kgen.target`:
 
 alias H100 = Info(
     name="H100",
+    arch_name="hopper",
     compute=9.0,
     version="sm_90a",
     sm_count=114,
@@ -244,6 +248,7 @@ fn _get_mi300x_target[index_bit_width: Int]() -> __mlir_type.`!kgen.target`:
 
 alias MI300x = Info(
     name="MI300x",
+    arch_name="mi300x",
     compute=0.0,
     version="CDNA3",
     # TODO: Fill the stuff bellow (the arch is gfx942).
@@ -298,6 +303,7 @@ struct Flops:
 @register_passable
 struct Info:
     var name: StringLiteral
+    var arch_name: StringLiteral
     var compute: Float32
     var version: StringLiteral
     var sm_count: Int
@@ -460,6 +466,7 @@ struct Info:
     @no_inline
     fn format_to(self, inout writer: Formatter):
         writer.write("name: ", self.name, "\n")
+        writer.write("arch_name: ", self.arch_name, "\n")
         writer.write("compute: ", self.compute, "\n")
         writer.write("version: ", self.version, "\n")
         writer.write("sm_count: ", self.sm_count, "\n")
