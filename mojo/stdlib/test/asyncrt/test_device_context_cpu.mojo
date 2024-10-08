@@ -5,10 +5,12 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo-no-debug -D MODULAR_ASYNCRT_DEVICE_CONTEXT_V2=cpu %s
 
+from smoke_test_utils import create_test_device_context
+
 from common_test_copies import test_copies
+from common_test_memset import test_memset
 from common_test_smoke import test_smoke
 from common_test_timing import test_timing
-from smoke_test_utils import create_test_device_context
 
 
 def main():
@@ -19,4 +21,5 @@ def main():
     # Execute cpu tests with the context
     test_smoke(ctx)
     test_copies(ctx)
+    test_memset(ctx)
     test_timing(ctx)
