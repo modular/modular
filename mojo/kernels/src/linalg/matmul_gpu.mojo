@@ -318,15 +318,9 @@ fn _matmul_gpu[
                 if enable_tune == 1:
                     alias opt_config = kernels.tuning_config
                     multistage_gemm[
-                        c_type,
-                        c_shape,
-                        a_type,
-                        a_shape,
-                        b_type,
-                        b_shape,
-                        transpose_b,
-                        opt_config,
-                        elementwise_lambda_fn,
+                        transpose_b=transpose_b,
+                        config=opt_config,
+                        elementwise_lambda_fn=elementwise_lambda_fn,
                     ](
                         rebind[NDBuffer[c_type, 2, c_shape]](c),
                         rebind[NDBuffer[a_type, 2, a_shape]](a),
@@ -339,15 +333,9 @@ fn _matmul_gpu[
                 if best_config == kernels.ampere_256x64_4:
                     alias config = kernels.ampere_256x64_4
                     multistage_gemm[
-                        c_type,
-                        c_shape,
-                        a_type,
-                        a_shape,
-                        b_type,
-                        b_shape,
-                        transpose_b,
-                        config,
-                        elementwise_lambda_fn,
+                        transpose_b=transpose_b,
+                        config=config,
+                        elementwise_lambda_fn=elementwise_lambda_fn,
                     ](
                         rebind[NDBuffer[c_type, 2, c_shape]](c),
                         rebind[NDBuffer[a_type, 2, a_shape]](a),
@@ -358,15 +346,9 @@ fn _matmul_gpu[
 
                 elif best_config == kernels.ampere_256x128_3:
                     multistage_gemm[
-                        c_type,
-                        c_shape,
-                        a_type,
-                        a_shape,
-                        b_type,
-                        b_shape,
-                        transpose_b,
-                        kernels.ampere_256x128_3,
-                        elementwise_lambda_fn,
+                        transpose_b=transpose_b,
+                        config = kernels.ampere_256x128_3,
+                        elementwise_lambda_fn=elementwise_lambda_fn,
                     ](
                         rebind[NDBuffer[c_type, 2, c_shape]](c),
                         rebind[NDBuffer[a_type, 2, a_shape]](a),
@@ -376,17 +358,10 @@ fn _matmul_gpu[
                     )
 
                 else:  # Default kernel 128x128_4
-                    alias config = kernels.ampere_128x128_4
                     multistage_gemm[
-                        c_type,
-                        c_shape,
-                        a_type,
-                        a_shape,
-                        b_type,
-                        b_shape,
-                        transpose_b,
-                        config,
-                        elementwise_lambda_fn,
+                        transpose_b=transpose_b,
+                        config = kernels.ampere_128x128_4,
+                        elementwise_lambda_fn=elementwise_lambda_fn,
                     ](
                         rebind[NDBuffer[c_type, 2, c_shape]](c),
                         rebind[NDBuffer[a_type, 2, a_shape]](a),
@@ -502,13 +477,14 @@ fn split_k_reduce[
     elementwise[_reduce, simd_width, target="cuda"](Index(M, N), ctx)
 
 
-def multistage_gemm[
+fn multistage_gemm[
     c_type: DType,
     c_shape: DimList,
     a_type: DType,
     a_shape: DimList,
     b_type: DType,
-    b_shape: DimList,
+    b_shape: DimList, //,
+    *,
     transpose_b: Bool,
     config: MatmulConfig[a_type, b_type, c_type, transpose_b],
     elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
@@ -518,7 +494,7 @@ def multistage_gemm[
     b: NDBuffer[b_type, 2, b_shape],
     runtime_config: MatmulConfig[a_type, b_type, c_type, transpose_b],
     ctx: DeviceContext,
-):
+) raises:
     var M = c.dim[0]()
     var N = c.dim[1]()
 
