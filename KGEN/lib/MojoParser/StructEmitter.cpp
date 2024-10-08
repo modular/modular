@@ -34,7 +34,7 @@ LIT::FuncOp StructEmitter::createFunction(
     ArrayRef<ArgConvention> argConventions, PogListAttr argListAttrs,
     Type resultType, SpecialFunctionKind specialFnID, SMLoc loc,
     ImplicitLocOpBuilder &builder, FnEffects fnEffects, StringRef suffix,
-    bool synthetic) {
+    bool synthetic, InlineLevel inlineLevel) {
   MLIRContext *ctx = getContext();
 
   // Figure out the implicit lifetimes.
@@ -123,6 +123,8 @@ LIT::FuncOp StructEmitter::createFunction(
   }
   attrs.set(funcOp.getIsSyntheticAttrName(), UnitAttr::get(ctx));
   attrs.set(funcOp.getFunctionTypeAttrName(), TypeAttr::get(functionType));
+  attrs.set(funcOp.getInlineLevelAttrName(),
+            InlineLevelAttr::get(ctx, inlineLevel));
   funcOp->setAttrs(attrs.getDictionary(ctx));
 
   // Generate a debug subprogram for this function.
@@ -156,24 +158,37 @@ std::pair<LIT::FuncOp, ASTDecl *> StructEmitter::synthesizeMethodInStruct(
   StructDeclOp structOp = cast<StructDeclOp>(structDecl);
   ImplicitLocOpBuilder builder = ImplicitLocOpBuilder::atBlockEnd(
       structOp.getLoc(), &structOp.getFields().front());
+  InlineLevel inlineLevel = InlineLevel::Automatic;
+  // If the struct is register_passable("trivial"), make this
+  // @always_inline("nodebug").
+  if (structOp.getConvention() == TypeConvention::RegisterPassableTrivial)
+    inlineLevel = InlineLevel::AlwaysNoDebug;
+  return synthesizeFunction(structDecl, name, params, paramListAttrs, argTypes,
+                            argConventions, argListAttrs, resultType,
+                            specialFnID, loc, builder, fnEffects, suffix,
+                            synthetic, inlineLevel);
+}
+
+std::pair<LIT::FuncOp, ASTDecl *> StructEmitter::synthesizeFunction(
+    ASTDecl &parent, StringRef name, ArrayRef<ParamDeclAttr> params,
+    PogListAttr paramListAttrs, ArrayRef<Type> argTypes,
+    ArrayRef<ArgConvention> argConventions, PogListAttr argListAttrs,
+    Type resultType, SpecialFunctionKind specialFnID, SMLoc loc,
+    ImplicitLocOpBuilder &builder, FnEffects fnEffects, StringRef suffix,
+    bool synthetic, InlineLevel inlineLevel) {
   LIT::FuncOp funcOp =
-      createFunction(structDecl, name, params, paramListAttrs, argTypes,
+      createFunction(parent, name, params, paramListAttrs, argTypes,
                      argConventions, argListAttrs, resultType, specialFnID, loc,
-                     builder, fnEffects, suffix, synthetic);
+                     builder, fnEffects, suffix, synthetic, inlineLevel);
 
   // Return null if the function already exists with the same signature.
   if (!funcOp)
     return {nullptr, nullptr};
 
-  // If the struct is register_passable("trivial"), make this
-  // @always_inline("nodebug").
-  if (structOp.getConvention() == TypeConvention::RegisterPassableTrivial)
-    funcOp.setInlineLevel(InlineLevel::AlwaysNoDebug);
-
   // Register the method in the struct.
   ASTDecl &funcDecl = shared.declResolver->addFullyResolvedDecl(
-      funcOp.getOperation(), StringAttr::get(shared.getContext(), name),
-      structDecl.getLoc(), &structDecl);
+      funcOp.getOperation(), StringAttr::get(shared.getContext(), name), loc,
+      &parent);
 
   // Set the symbol and notice if we are redeclaring something.
   [[maybe_unused]] Operation *existing =
