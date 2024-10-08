@@ -11,7 +11,6 @@ lit_tests(
     ),
     data = glob(["inputs/**/*.mojo"]) + [
         "//KGEN:CompilerRT",
-        "//KGEN:CompilerRT.distributable",
         "@llvm-project//compiler-rt:orc_rt",
     ],
     mojo_deps = [

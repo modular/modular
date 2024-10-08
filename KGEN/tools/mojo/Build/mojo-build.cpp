@@ -220,7 +220,8 @@ static int linkExecutable(const State &state,
 
   // Resolve the path to the CompilerRT library.
   std::error_code ec;
-  StringRef compilerRTPath = config.getStaticCompilerRTPath();
+  StringRef compilerRTPath = config.getCompilerRTPath();
+
   if (!std::filesystem::exists(compilerRTPath.str(), ec) || ec)
     return state.reportError("unable to locate Mojo CompilerRT library");
 
@@ -272,6 +273,9 @@ static int linkExecutable(const State &state,
 
   // Invoke the linker command.
   SmallVector<StringRef> linkerArgs = {*linker, archivePath, compilerRTPath};
+
+  // Add other shared libs
+  config.getSharedLibraryLinkArgs(linkerArgs);
 
 #ifdef _WIN32
   std::string outputArg = ("/out:" + outputName).str();
@@ -335,6 +339,11 @@ static int linkExecutable(const State &state,
 
   // Add any necessary system libraries.
   config.getSystemLibraryLinkArgs(linkerArgs);
+
+  for (auto arg : linkerArgs) {
+    llvm::errs() << arg << " ";
+  }
+  llvm::errs() << "\n";
 
   std::string errorMsg;
   int linkExitCode = llvm::sys::ExecuteAndWait(

@@ -24,7 +24,6 @@ modular_cc_test(
         "inputs/*.mojo",
     ]) + [
         "//KGEN:CompilerRT",
-        "//KGEN:CompilerRT.distributable",
         "//KGEN:MojoLLDB",
         "//KGEN:gdb-server",
         "//KGEN/tools/mojo",
@@ -33,6 +32,9 @@ modular_cc_test(
         "@llvm-project//compiler-rt:orc_rt",
     ],
     env = {
+        # HACK: This test invokes "mojo build" in a subprocess, but it can't see modular.cfg, so we need to
+        # provide the run path here to find CompilerRT.
+        "MODULAR_MOJO_MAX_SHARED_LIBS": "-Xlinker,-rpath,-Xlinker,KGEN",
         "MODULAR_MOJO_MAX_IMPORT_PATH": "open-source/mojo/stdlib/stdlib",
         "MODULAR_PATH": ".",
     },

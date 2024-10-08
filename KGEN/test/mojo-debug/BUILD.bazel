@@ -13,7 +13,6 @@ lit_tests(
     },
     data = glob(["Inputs/*.mojo"]) + [
         "//KGEN:CompilerRT",
-        "//KGEN:CompilerRT.distributable",
         "//KGEN:MojoLLDB",
         "//KGEN:gdb-server",
         "//KGEN:mojo-lldb",

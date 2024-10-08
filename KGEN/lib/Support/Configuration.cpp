@@ -77,10 +77,6 @@ StringRef MojoConfig::getCompilerRTPath() {
   return getValue(STRINGIFY_MOJO_CONFIG(".compilerrt_path"));
 }
 
-StringRef MojoConfig::getStaticCompilerRTPath() {
-  return getValue(STRINGIFY_MOJO_CONFIG(".compilerrt_static_path"));
-}
-
 StringRef MojoConfig::getOrcRTPath() {
   return getValue(STRINGIFY_MOJO_CONFIG(".orcrt_path"));
 }
@@ -123,6 +119,11 @@ StringRef MojoConfig::getLinkerDriver() {
 void MojoConfig::getSystemLibraryLinkArgs(SmallVectorImpl<StringRef> &libs) {
   StringRef systemLibsArg = getValue(STRINGIFY_MOJO_CONFIG(".system_libs"));
   systemLibsArg.split(libs, ',', /*MaxSplit=*/-1, /*KeepEmpty=*/false);
+}
+
+void MojoConfig::getSharedLibraryLinkArgs(SmallVectorImpl<StringRef> &args) {
+  StringRef sharedLibsArg = getValue(STRINGIFY_MOJO_CONFIG(".shared_libs"));
+  sharedLibsArg.split(args, ',', /*MaxSplit=*/-1, /*KeepEmpty=*/false);
 }
 
 StringRef MojoConfig::getMojoConfigSection() {
