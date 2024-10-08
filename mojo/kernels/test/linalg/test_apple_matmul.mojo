@@ -36,7 +36,9 @@ alias do_benchmarking = False
 
 
 @parameter
-fn bench_run[func: fn () capturing [_] -> None]() raises -> benchmark.Report:
+fn bench_run[
+    func: fn () raises capturing [_] -> None
+]() raises -> benchmark.Report:
     return benchmark.run[func](2, 1_000_000, 1, 3)
 
 
@@ -145,7 +147,7 @@ def test_matmul[
     @always_inline
     @__copy_capture(c, a, bp)
     @parameter
-    fn bench_fn_matmul():
+    fn bench_fn_matmul() raises:
         if kernel_type_m != 0:
             _matmul_cpu[
                 transpose_b=transpose_b,
@@ -517,7 +519,7 @@ def test_batched_matmul[
     @always_inline
     @__copy_capture(c, a, b)
     @parameter
-    fn bench_fn_batched_matmul():
+    fn bench_fn_batched_matmul() raises:
         @parameter
         if has_lambda:
             batched_matmul[

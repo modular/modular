@@ -107,7 +107,7 @@ fn _small_batched_matmul[
     c_buf: NDBuffer[c_type, rank],
     a_buf: NDBuffer[a_type, rank],
     b_buf: NDBuffer[b_type, rank],
-):
+) raises:
     alias simd_width = simdwidthof[c_type]()
 
     # Get the flattened batch.
@@ -161,19 +161,17 @@ fn _small_batched_matmul[
             ](v1: SIMD[ty, width], v2: SIMD[ty, width]) -> SIMD[ty, width]:
                 return v1 + v2
 
-            try:
-                _reduce_generator[
-                    input_fn,
-                    output_fn,
-                    reduce_impl,
-                    single_thread_blocking_override=True,
-                ](
-                    a_view.get_shape().canonicalize(),
-                    init=Scalar[c_type](0),
-                    reduce_dim=0,
-                )
-            except e:
-                abort(e)
+            _reduce_generator[
+                input_fn,
+                output_fn,
+                reduce_impl,
+                single_thread_blocking_override=True,
+            ](
+                a_view.get_shape().canonicalize(),
+                init=Scalar[c_type](0),
+                reduce_dim=0,
+            )
+
             _ = indices
             _ = a_view
             _ = b_view
@@ -250,7 +248,7 @@ fn batched_matmul[
     b_buf: NDBuffer[b_type, rank],
     *,
     context: MojoCallContextPtr = MojoCallContextPtr(),
-):
+) raises:
     constrained[not transpose_a, "transpose_a not yet supported"]()
 
     @always_inline
@@ -307,7 +305,7 @@ fn _batched_matmul_cpu[
     c_buf: NDBuffer[c_type, rank],
     a_buf: NDBuffer[a_type, rank],
     b_buf: NDBuffer[b_type, rank],
-):
+) raises:
     constrained[rank < 5, "max rank for batched matmul is currently 4"]()
 
     # Batched matmul calls for MacOS >= 13.0.0 and a, b, c of type Float32 are
@@ -536,7 +534,7 @@ fn _batched_matmul_gpu[
     a_buf: NDBuffer[a_type, rank],
     b_buf: NDBuffer[b_type, rank],
     ctx: DeviceContext,
-):
+) raises:
     constrained[not transpose_b, "transpose_b not supported on GPU yet"]()
     var a_buf_reshaped = _reshape_nd_buffer_with_batch_to_3d(a_buf)
     var b_buf_reshaped = _reshape_nd_buffer_with_batch_to_3d(b_buf)
@@ -549,33 +547,30 @@ fn _batched_matmul_gpu[
     var m = a_buf_reshaped.dim[1]()
     var n = b_buf_reshaped.dim[2]()
 
-    try:
-        alias bmm = batched_matmul_kernel[
-            rank,
-            c_type,
-            unkown_shape,
-            a_type,
-            unkown_shape,
-            b_type,
-            unkown_shape,
-            elementwise_epilogue_fn,
-        ]
-        var gpu_func = ctx.compile_function[bmm]()
-        ctx.enqueue_function(
-            gpu_func,
-            c_buf_reshaped,
-            a_buf_reshaped,
-            b_buf_reshaped,
-            c_buf.get_shape(),
-            grid_dim=(
-                ceildiv(n, BLOCK_DIM),
-                ceildiv(m, BLOCK_DIM),
-                batch_size,
-            ),
-            block_dim=(BLOCK_DIM, BLOCK_DIM, 1),
-        )
-    except e:
-        abort(e)
+    alias bmm = batched_matmul_kernel[
+        rank,
+        c_type,
+        unkown_shape,
+        a_type,
+        unkown_shape,
+        b_type,
+        unkown_shape,
+        elementwise_epilogue_fn,
+    ]
+    var gpu_func = ctx.compile_function[bmm]()
+    ctx.enqueue_function(
+        gpu_func,
+        c_buf_reshaped,
+        a_buf_reshaped,
+        b_buf_reshaped,
+        c_buf.get_shape(),
+        grid_dim=(
+            ceildiv(n, BLOCK_DIM),
+            ceildiv(m, BLOCK_DIM),
+            batch_size,
+        ),
+        block_dim=(BLOCK_DIM, BLOCK_DIM, 1),
+    )
 
 
 @always_inline
@@ -595,7 +590,7 @@ fn batched_matmul[
     b_buf: NDBuffer[b_type, rank],
     *,
     context: MojoCallContextPtr = MojoCallContextPtr(),
-):
+) raises:
     constrained[target == "cpu" or "cuda" in target, "unsupported target"]()
 
     @parameter
