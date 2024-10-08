@@ -15,7 +15,6 @@ from internal_utils import assert_almost_equal
 from nn.fused_qk_rope import fused_qk_rope
 from nn.kv_cache import (
     ContiguousKVCache,
-    KVCacheLayout,
     KVCacheStaticParams,
     KVCacheT,
 )
@@ -58,7 +57,7 @@ def test_fused_qk_rope[type: DType]() -> None:
 
     # Create aliases for KV cache parameters.
     alias kv_params = KVCacheStaticParams(
-        num_heads=num_heads, head_size=head_dim, layout=KVCacheLayout.BSHD
+        num_heads=num_heads, head_size=head_dim
     )
     alias block_shape = IndexList[4](
         batch_size, max_seq_len, num_heads, head_dim
