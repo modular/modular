@@ -729,7 +729,7 @@ ErrorOr<BufferRef> ObjectCompiler::emitArchive(ModuleOp module) {
       andThenSyncMoving(
           cacheResults, [moduleName = std::move(moduleName), op,
                          buf = buf.copy(), output = output.copy(), emitAssembly,
-                         isJIT = isJIT, options = options](
+                         isJIT = isJIT, options = options, symbolLinkageTypes](
                             MutableArrayRef<AnyAsyncValueRef> values) mutable {
 
 #ifdef MODULAR_ENABLE_TELEMETRY
@@ -763,7 +763,8 @@ ErrorOr<BufferRef> ObjectCompiler::emitArchive(ModuleOp module) {
               symbolAndMCInfos.emplace_back(&symbolAndMCInfo);
             }
 
-            MCLinker mcLinker(symbolAndMCInfos, **machineOr, options);
+            MCLinker mcLinker(symbolAndMCInfos, **machineOr, options,
+                              symbolLinkageTypes);
             ErrorOr<WriteableBufferRef> mcLinkResult =
                 mcLinker.linkAndPrint(moduleName, emitAssembly);
             if (mcLinkResult.isError()) {

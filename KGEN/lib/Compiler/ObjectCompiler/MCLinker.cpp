@@ -24,11 +24,13 @@ void SymbolAndMCInfo::clear() {
   mcInfos.clear();
 }
 
-MCLinker::MCLinker(SmallVectorImpl<SymbolAndMCInfo *> &symbolAndMCInfos,
-                   llvm::TargetMachine &targetMachine,
-                   CompilationOptions options)
+MCLinker::MCLinker(
+    SmallVectorImpl<SymbolAndMCInfo *> &symbolAndMCInfos,
+    llvm::TargetMachine &targetMachine, CompilationOptions options,
+    llvm::StringMap<llvm::GlobalValue::LinkageTypes> symbolLinkageTypes)
     : symbolAndMCInfos(symbolAndMCInfos), targetMachine(targetMachine),
-      options(std::move(options)) {
+      options(std::move(options)),
+      symbolLinkageTypes(std::move(symbolLinkageTypes)) {
 
   llvm::LLVMTargetMachine &llvmTargetMachine =
       static_cast<llvm::LLVMTargetMachine &>(targetMachine);

@@ -99,7 +99,8 @@ struct SymbolAndMCInfo {
 class MCLinker {
 public:
   MCLinker(SmallVectorImpl<SymbolAndMCInfo *> &symbolAndMCInfos,
-           llvm::TargetMachine &targetMachine, CompilationOptions options);
+           llvm::TargetMachine &targetMachine, CompilationOptions options,
+           llvm::StringMap<llvm::GlobalValue::LinkageTypes> symbolLinkageTypes);
 
   /// Link multiple MC results and AsmPrint into one .o file.
   ErrorOr<WriteableBufferRef> linkAndPrint(StringRef moduleName,
