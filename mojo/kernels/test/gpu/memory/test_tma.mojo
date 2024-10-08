@@ -3,8 +3,8 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-# DISABLED: %mojo-no-debug %s | FileCheck %s
-# RUN: true
+# REQUIRES: GPU-H100
+# RUN: %mojo-no-debug %s | FileCheck %s
 
 from gpu.host import DeviceContext
 from gpu.host.memory import _free, _malloc_managed, create_tma_descriptor

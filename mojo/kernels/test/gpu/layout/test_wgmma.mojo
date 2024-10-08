@@ -3,9 +3,8 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-
-# DISABLED:: %mojo-no-debug %s | FileCheck %s
-# RUN: true
+# REQUIRES: GPU-H100
+# RUN: %mojo-no-debug %s | FileCheck %s
 
 from builtin.io import _printf
 from gpu import barrier, lane_id
