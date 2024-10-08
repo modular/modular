@@ -113,7 +113,7 @@ struct MatmulConfig[
     fn num_threads(self) -> UInt:
         return self.num_warps_m() * self.num_warps_n() * WARP_SIZE
 
-    fn shared_mem_usage(self) -> UInt:
+    fn shared_mem_usage(self) -> Int:
         return _shared_memory_usage[a_type, b_type, c_type](
             self.block_tile_shape, self.num_pipeline_stages
         )
