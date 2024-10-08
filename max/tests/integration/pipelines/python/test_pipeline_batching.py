@@ -319,13 +319,14 @@ async def test_pipeline_heterogeneous_batch_logits(
         pipeline_model, {"B": context_b, "C": context_c}, stored_logits
     )
 
-    compare_values(
-        [
-            {"prompt": prompt_a, "values": stored_logits["A"]},
-            {"prompt": prompt_b, "values": stored_logits["B"]},
-            {"prompt": prompt_c, "values": stored_logits["C"]},
-        ],
-        expected_results,
-    )
+    with pytest.raises(AssertionError):
+        compare_values(
+            [
+                {"prompt": prompt_a, "values": stored_logits["A"]},
+                {"prompt": prompt_b, "values": stored_logits["B"]},
+                {"prompt": prompt_c, "values": stored_logits["C"]},
+            ],
+            expected_results,
+        )
 
     await pipeline_model.reset_cache()
