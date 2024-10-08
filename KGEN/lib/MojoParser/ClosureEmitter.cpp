@@ -170,15 +170,13 @@ void ClosureEmitter::synthesizeWrapperFnPtrCtor(ASTDecl &decl, ASTType selfType,
       &cast<StructDeclOp>(decl).getFields().front());
   auto argListAttrs = PogListAttr::get(
       ctx, {selfName, otherName}, {PassingKind::PosOrKw, PassingKind::PosOrKw});
-  LIT::FuncOp func = createFunction(
-      decl, "__init__", /*params=*/{},
-      /*paramListAttrs=*/PogListAttr::get(ctx),
+  auto [func, _] = synthesizeFunction(
+      decl, "__init__", /*params=*/{}, /*paramListAttrs=*/PogListAttr::get(ctx),
       {selfType.getRefForArgument("self", /*isMut=*/true), fnPtrType},
       {ArgConvention::InitSelf, ArgConvention::BorrowedInReg}, argListAttrs,
       noneType, SpecialFunctionKind::kInit, decl.getLoc(), b);
   func.setInlineLevel(InlineLevel::Always);
-  shared.declResolver->addFullyResolvedDecl(&*func, "__init__", decl.getLoc(),
-                                            &decl);
+
   Value self = func.getArgument(0);
   b = ImplicitLocOpBuilder::atBlockBegin(func.getLoc(), func.getBody());
 
@@ -206,7 +204,7 @@ void ClosureEmitter::synthesizeWrapperFnPtrCtor(ASTDecl &decl, ASTType selfType,
   LITSignatureType callImplType = addClosureSelfArgToFunctionSignature(
       opaquePtrType, ArgConvention::BorrowedInReg, fnPtrType);
   StringAttr lambdaName = b.getStringAttr("call_impl");
-  LIT::FuncOp callImpl = createFunction(
+  auto [callImpl, callDecl] = synthesizeFunction(
       decl, lambdaName, /*params=*/{}, callImplType.getParamListAttrs(),
       callImplType.getArguments(), callImplType.getArgConventions(),
       callImplType.getArgListAttrs(), fnPtrType.getResultType(),
@@ -883,7 +881,7 @@ ClosureEmitter::createWrapperInitWithImpl(StructDeclOp closureWrapper,
       PogListAttr::get(ctx, {otherName}, {PassingKind::PosOnly});
   builder = ImplicitLocOpBuilder::atBlockEnd(
       fileModuleOp.getLoc(), &fileModuleOp.getBodyRegion().front());
-  LIT::FuncOp topLevelCopyInit = createFunction(
+  auto [topLevelCopyInit, _] = synthesizeFunction(
       moduleDecl, generateName("_copyinit_"), topLevelParams, paramListAttrs,
       {opaquePtrType}, {ArgConvention::BorrowedInReg}, argListAttrs,
       opaquePtrType, SpecialFunctionKind::kNormal, loc, builder);
@@ -939,7 +937,7 @@ ClosureEmitter::createWrapperInitWithImpl(StructDeclOp closureWrapper,
   // Create top level destructor.
   builder = ImplicitLocOpBuilder::atBlockEnd(
       fileModuleOp.getLoc(), &fileModuleOp.getBodyRegion().front());
-  LIT::FuncOp topLevelDtor = createFunction(
+  auto [topLevelDtor, dtorDecl] = synthesizeFunction(
       moduleDecl, generateName("_dtor_"), topLevelParams, paramListAttrs,
       opaquePtrType, ArgConvention::BorrowedInReg,
       PogListAttr::get(ctx, {selfName}, {PassingKind::PosOnly}), noneType,
@@ -994,7 +992,7 @@ ClosureEmitter::createWrapperInitWithImpl(StructDeclOp closureWrapper,
 
   builder = ImplicitLocOpBuilder::atBlockEnd(
       fileModuleOp.getLoc(), &fileModuleOp.getBodyRegion().front());
-  LIT::FuncOp topLevelCall = createFunction(
+  auto [topLevelCall, callDecl] = synthesizeFunction(
       moduleDecl, generateName("_call_"), topLevelParams, paramListAttrs,
       closureSignature.getArguments(), closureSignature.getArgConventions(),
       closureSignature.getArgListAttrs(), resultType,

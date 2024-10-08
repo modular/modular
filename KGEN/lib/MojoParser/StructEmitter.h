@@ -102,14 +102,16 @@ public:
 
   /// Emit an emtpy function stub at the specified location. The block arguments
   /// are added to the body of the function but no ops are added to the body.
-  /// `suffix` is appended to the mangled function name.
-  LIT::FuncOp createFunction(
+  /// `suffix` is appended to the mangled function name. This adds the
+  /// declaration to `parent`.
+  std::pair<LIT::FuncOp, ASTDecl *> synthesizeFunction(
       ASTDecl &parent, StringRef name, ArrayRef<ParamDeclAttr> params,
       PogListAttr paramListAttrs, ArrayRef<Type> argTypes,
       ArrayRef<ArgConvention> argConventions, PogListAttr argListAttrs,
       Type resultType, SpecialFunctionKind specialFnID, SMLoc loc,
       ImplicitLocOpBuilder &builder, FnEffects fnEffects = FnEffects(),
-      StringRef suffix = "", bool synthetic = true);
+      StringRef suffix = "", bool synthetic = true,
+      InlineLevel inlineLevel = InlineLevel::Automatic);
 
   /// This synthesizes an __init__ method that accepts values for every field of
   /// a struct, making it easy for external clients to initialize it.
@@ -150,6 +152,15 @@ public:
   /// This adds a default return (lit.return of None, potentially converted
   /// to a variant) and emits a EndFuncOp.
   void appendDefaultReturnAndEndOp(ASTDecl &funcDecl);
+
+private:
+  LIT::FuncOp createFunction(
+      ASTDecl &parent, StringRef name, ArrayRef<ParamDeclAttr> params,
+      PogListAttr paramListAttrs, ArrayRef<Type> argTypes,
+      ArrayRef<ArgConvention> argConventions, PogListAttr argListAttrs,
+      Type resultType, SpecialFunctionKind specialFnID, SMLoc loc,
+      ImplicitLocOpBuilder &builder, FnEffects fnEffects, StringRef suffix,
+      bool synthetic, InlineLevel inlineLevel);
 
 protected:
   Type noneType;

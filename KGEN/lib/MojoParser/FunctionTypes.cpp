@@ -228,7 +228,7 @@ LIT::FuncOp LIT::generateConversionThunk(Attribute key, ASTDecl &moduleDecl,
   // Declare the function at the bottom of the decl.
   b = ImplicitLocOpBuilder(mlirLoc, moduleDecl.getDeclEndBuilder());
   StructEmitter structEmitter(shared);
-  LIT::FuncOp thunk = structEmitter.createFunction(
+  auto [thunk, thunkDecl] = structEmitter.synthesizeFunction(
       moduleDecl, name, paramDecls,
       PogListAttr::get(ctx, expected.getNumParams() + 1), types.getInputs(),
       expected.getArgConventions(),
@@ -248,17 +248,13 @@ LIT::FuncOp LIT::generateConversionThunk(Attribute key, ASTDecl &moduleDecl,
   // Set the attributes.
   thunk->setAttrs(attrs.getDictionary(ctx));
 
-  // Register the function as an ASTDecl to emit code inside it.
-  ASTDecl &thunkDecl = shared.declResolver->addFullyResolvedDecl(
-      &*thunk, thunk.getSymNameAttr(), moduleDecl.getLoc(), &moduleDecl);
-
   // Now prepare to emit the call.
   b = ImplicitLocOpBuilder::atBlockBegin(mlirLoc, thunk.getBody());
-  ExprEmitter emitter(shared, thunkDecl, b);
+  ExprEmitter emitter(shared, *thunkDecl, b);
 
   // Construct the call operands from the function block arguments.
   CallOperands operands;
-  SyntheticNode node(thunkDecl.getLoc());
+  SyntheticNode node(thunkDecl->getLoc());
 
   for (auto [arg, conv] :
        llvm::zip(thunk.getArguments(), expected.getArgConventions())) {
