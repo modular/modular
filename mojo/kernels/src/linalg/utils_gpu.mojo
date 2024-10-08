@@ -17,7 +17,7 @@ from layout.tensor_core import (
 )
 
 from utils.index import Index, IndexList
-from sys import env_get_string, env_get_int
+from sys import env_get_string, env_get_int, env_get_bool
 
 # ===------------------------------------------------------------------===#
 # GPU Matmul Block Swizzling
@@ -268,7 +268,7 @@ fn select_config[
         128, 256, 2 * _bk_base[a_type](), 3
     ) if "sm_80" in target else Index(1024, 1024, 1024, 1024)
 
-    alias enable_tuning = env_get_int["ENABLE_TUNE", 0]()
+    alias autotuning_mode = env_get_bool["AUTOTUNING_MODE", 0]()
     alias tune_opt = Index(
         env_get_int["TUNE_BM", 128](),
         env_get_int["TUNE_BN", 128](),
@@ -276,7 +276,7 @@ fn select_config[
         env_get_int["TUNE_NUM_STAGES", 4](),
     )
 
-    alias opt_list = List(tune_opt) if enable_tuning else List(
+    alias opt_list = List(tune_opt) if autotuning_mode else List(
         _128x128_4, _256x64_4, _256x128_3
     )
 
