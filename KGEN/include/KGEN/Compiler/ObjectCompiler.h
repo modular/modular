@@ -91,6 +91,22 @@ private:
       llvm::unique_function<LLVMModuleAndContext()> produceModule, Location loc,
       bool parLLC, std::optional<size_t> moduleIdx, unsigned numFunctionsBase);
 
+  /// Split llvm module and compile them in parallel towards the end of codegen
+  /// but stop before AsmPrint. Return the MC compilation results.
+  SmallVector<AsyncRT::AnyAsyncValueRef> emitArchiveParallelCompilation(
+      LLVMModuleAndContext llvmModule, Operation *op,
+      llvm::StringMap<llvm::GlobalValue::LinkageTypes> &symbolLinkageTypes);
+
+  /// Link parallel compilation results and call AsmPrint to generate one object
+  /// file.
+  ErrorOr<WriteableBufferRef> emitArchiveMCLinking(
+      MutableArrayRef<AnyAsyncValueRef> values, StringRef moduleName,
+      bool emitAssembly,
+      llvm::StringMap<llvm::GlobalValue::LinkageTypes> &symbolLinkageTypes);
+
+  /// Generate saveTempsPrefix files.
+  ErrorOrSuccess emitArchiveSaveTemps(ModuleOp module, StringRef moduleName);
+
   /// The caches needed for compilation.
   RCRef<Cache::TransformCache> transformCache;
 
