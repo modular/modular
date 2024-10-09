@@ -87,13 +87,12 @@ def pipeline_model(testdata_directory, request):
     return model
 
 
-@pytest.mark.skip("flaky")
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     "pipeline_model",
     [
-        PipelineModelParams("llama3_1", SupportedEncodings.q4_k, 128, -1, 2),
-        PipelineModelParams("llama3_1", SupportedEncodings.q4_k, 128, -1, 4),
+        PipelineModelParams("llama3_1", SupportedEncodings.q4_k, 10, -1, 2),
+        PipelineModelParams("llama3_1", SupportedEncodings.q4_k, 10, -1, 4),
     ],
     ids=PipelineModelParams.__str__,
     indirect=True,
@@ -136,20 +135,16 @@ async def test_pipeline_static_batch_same_prompt_same_output(pipeline_model):
 
     # We should be resetting the cache
     for context in context_batch.values():
-        pipeline_model.release(context)
+        await pipeline_model.release(context)
 
 
-@pytest.mark.skip("build issues with tinyllama")
+@pytest.mark.skip("wont work until continuous batching is implemented.")
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     "pipeline_model",
     [
-        PipelineModelParams(
-            "tinyllama", SupportedEncodings.float32, 128, -1, 2
-        ),
-        PipelineModelParams(
-            "tinyllama", SupportedEncodings.float32, 128, -1, 4
-        ),
+        PipelineModelParams("tinyllama", SupportedEncodings.float32, 12, -1, 2),
+        PipelineModelParams("tinyllama", SupportedEncodings.float32, 12, -1, 4),
     ],
     ids=PipelineModelParams.__str__,
     indirect=True,
@@ -162,7 +157,7 @@ async def test_pipeline_static_batch_same_prompt_different_max_new_tokens(
     For N batches, Batch1 = MaxTokens / N, BatchN = MaxTokens
     We expect batches to complete one by one until the last one is done.
 
-    This should not be expected to run with the naive cache. As such, the only
+    This should not be expected to run with the naive/contiguous cache. As such, the only
     encodings we should expect this test to run with is tinyllama/fp32.
     """
     prompt = "Repeat this sentence forever and forever."
@@ -209,7 +204,7 @@ async def test_pipeline_static_batch_same_prompt_different_max_new_tokens(
     assert not last
 
     for context in context_batch.values():
-        pipeline_model.release(context)
+        await pipeline_model.release(context)
 
 
 @pytest.fixture(scope="session")
@@ -222,15 +217,11 @@ def batch_sizes(request):
     "pipeline_model, batch_sizes",
     [
         (
-            PipelineModelParams(
-                "llama3_1", SupportedEncodings.q4_k, 128, -1, 4
-            ),
+            PipelineModelParams("llama3_1", SupportedEncodings.q4_k, 12, -1, 4),
             [3, 1, 2, 4],
         ),
         (
-            PipelineModelParams(
-                "llama3_1", SupportedEncodings.q4_k, 128, -1, 8
-            ),
+            PipelineModelParams("llama3_1", SupportedEncodings.q4_k, 12, -1, 8),
             [4, 7, 1, 8],
         ),
     ],
@@ -292,6 +283,9 @@ async def test_pipeline_dynamic_batch_same_prompt_same_output(
             f"Batch: {batch_size} - Completed with"
             f" {len(context.tokens)} tokens."
         )
+
+        for context in context_batch.values():
+            await pipeline_model.release(context)
 
 
 @pytest.mark.asyncio
