@@ -1,11 +1,10 @@
 load("@pip_deps//:requirements.bzl", "requirement")
 load("@rules_pkg//pkg:mappings.bzl", "pkg_files", "strip_prefix")
-load("@rules_python//python:defs.bzl", "py_library")
-load("//bazel:api.bzl", "modular_py_test")
+load("//bazel:api.bzl", "modular_py_library", "modular_py_test")
 
 exports_files(["pyproject.toml"])
 
-py_library(
+modular_py_library(
     name = "support",
     srcs = glob(["modular/**/*.py"]),
     data = ["modular/utils/debuglib/py.typed"],
