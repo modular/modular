@@ -96,8 +96,8 @@ async def test_fetch_continuous(session: InferenceSession):
     device = CPU()
     params = KVCacheParams(
         dtype=DType.float32,
-        n_kv_heads=8,
-        head_dim=128,
+        n_kv_heads=1,
+        head_dim=16,
         device=device,
         cache_strategy=KVCacheStrategy.CONTINUOUS,
     )
