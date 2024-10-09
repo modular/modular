@@ -14,6 +14,7 @@ from memory import UnsafePointer
 from memory.unsafe import bitcast
 
 from .sys import is_sm_greater_equal
+from .memory import _int_to_str, AddressSpace
 
 # ===----------------------------------------------------------------------===#
 # ldg
@@ -341,3 +342,66 @@ fn threadfence[level: ThreadFenceLevel = ThreadFenceLevel.NONE]():
     accesses."""
 
     llvm_intrinsic["llvm.nvvm.membar." + level._mnemonic(), NoneType]()
+
+
+# ===----------------------------------------------------------------------===#
+# release / acquire
+# ===----------------------------------------------------------------------===#
+
+
+fn _get_type_suffix[type: DType]() -> StringLiteral:
+    alias str = "u" + _int_to_str[bitwidthof[type]()]()
+    return str
+
+
+fn _get_register_constraint[type: DType]() -> StringLiteral:
+    if type is DType.bool:
+        return "b"
+    if type.is_half_float():
+        return "h"
+    if type.is_integral():
+        alias width = bitwidthof[type]()
+        if width == 16:
+            return "c"
+        if width == 32:
+            return "r"
+        if width == 64:
+            return "l"
+    if type is DType.float32:
+        return "f"
+    if type is DType.float64:
+        return "d"
+
+    return "<<unknown_register_constraint>>"
+
+
+fn _get_pointer_constraint() -> StringLiteral:
+    return _get_register_constraint[DType.index]()
+
+
+@always_inline
+fn store_release[
+    type: DType, //, memory: Bool = True
+](ptr: UnsafePointer[Scalar[type], *_, **_], value: Scalar[type]):
+    alias constraints = _get_register_constraint[
+        type
+    ]() + "," + _get_pointer_constraint() + (",~{memory}" if memory else "")
+    inlined_assembly[
+        "st.release.sys.global." + _get_type_suffix[type]() + " [$0], $1;",
+        NoneType,
+        constraints=constraints,
+    ](ptr.bitcast[address_space = AddressSpace.GENERIC](), value)
+
+
+@always_inline
+fn load_acquire[
+    type: DType, //, memory: Bool = True
+](ptr: UnsafePointer[Scalar[type], *_, **_]) -> Scalar[type]:
+    alias constraints = "=" + _get_register_constraint[
+        type
+    ]() + "," + _get_pointer_constraint() + (",~{memory}" if memory else "")
+    return inlined_assembly[
+        "ld.acquire.sys.global." + _get_type_suffix[type]() + " $0, [$1];",
+        Scalar[type],
+        constraints=constraints,
+    ](ptr.bitcast[address_space = AddressSpace.GENERIC]())
