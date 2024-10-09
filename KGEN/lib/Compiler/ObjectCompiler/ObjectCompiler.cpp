@@ -604,6 +604,26 @@ createPassManager(const std::optional<std::string> &operationName,
   return {context};
 }
 
+static std::unique_ptr<llvm::Module>
+translateModuleToLLVMIR(llvm::LLVMContext &ctx, ModuleOp module,
+                        const CompilationOptions &options) {
+  // Use the input filename for the module name if possible.
+  StringRef moduleName = "LLVMDialectModule";
+  if (auto moduleLoc = module.getLoc()->findInstanceOf<FileLineColLoc>())
+    moduleName = llvm::sys::path::filename(moduleLoc.getFilename());
+
+  // Translate the operation into an LLVM module.
+  CompilerTimeTraceScope mlirScope("mlir-to-llvmir");
+  std::unique_ptr<llvm::Module> llvmModule =
+      mlir::translateModuleToLLVMIR(module, ctx, moduleName);
+  if (!llvmModule)
+    return nullptr;
+
+  // Attach any necessary instrumentation to the module.
+  attachInstrumentationAttributes(*llvmModule, options);
+  return llvmModule;
+}
+
 ErrorOr<std::unique_ptr<llvm::Module>>
 ObjectCompiler::lowerAllFuncsToLLVM(llvm::LLVMContext &ctx, ModuleOp module) {
   CompilerTimeTraceScope traceScope("lower-to-llvm");
@@ -629,22 +649,159 @@ ObjectCompiler::lowerAllFuncsToLLVM(llvm::LLVMContext &ctx, ModuleOp module) {
   if (failed(mgr.run(module)))
     return Error("run LowerToLLVMPipeline failed");
 
-  // Use the input filename for the module name if possible.
-  StringRef moduleName = "LLVMDialectModule";
-  if (auto moduleLoc = module.getLoc()->findInstanceOf<FileLineColLoc>())
-    moduleName = llvm::sys::path::filename(moduleLoc.getFilename());
-
   // Translate the operation into an LLVM module.
-  CompilerTimeTraceScope mlirScope("mlir-to-llvmir");
   std::unique_ptr<llvm::Module> llvmModule =
-      mlir::translateModuleToLLVMIR(module, ctx, moduleName);
+      translateModuleToLLVMIR(ctx, module, options);
   if (!llvmModule)
     return Error("translate module to LLVMIR failed");
 
-  // Attach any necessary instrumentation to the module.
-  attachInstrumentationAttributes(*llvmModule, options);
-
   return llvmModule;
+}
+
+static LogicalResult writeBufToTemp(const std::string &saveTempsPrefix,
+                                    const std::string &fileType,
+                                    const WriteableBufferRef &buf) {
+  if (saveTempsPrefix.empty())
+    return success();
+
+  std::string outPath = saveTempsPrefix + fileType;
+
+  auto outFile = mlir::openOutputFile(outPath);
+  if (!outFile)
+    return failure();
+  outFile->os() << buf->Buffer::getBuffer();
+  outFile->keep();
+  return success();
+}
+
+SmallVector<AsyncRT::AnyAsyncValueRef>
+ObjectCompiler::emitArchiveParallelCompilation(
+    LLVMModuleAndContext llvmModule, Operation *op,
+    llvm::StringMap<llvm::GlobalValue::LinkageTypes> &symbolLinkageTypes) {
+  CompilerTimeTraceScope traceScope("split-input-module");
+
+  std::string moduleName = llvmModule->getName().str();
+
+  bool noSplitting = runtime.getWorkQueue()->getParallelismLevel() < 2;
+  bool parLLC = runtime.getWorkQueue()->getParallelismLevel() >= 2 &&
+                options.enableParallelLLC;
+
+  SmallVector<AsyncRT::AnyAsyncValueRef> cacheResults;
+
+  if (noSplitting) {
+    cacheResults.push_back(lowerLLVMModuleToObjects(
+        forwardModule(std::move(llvmModule)), op->getLoc(), parLLC,
+        std::nullopt, /*numFunctionsBase=*/0));
+  } else {
+    (void)writeTempModule("pre-split", options.saveTempsPrefix, *llvmModule);
+
+    auto handleSplit =
+        [&](llvm::unique_function<LLVMModuleAndContext()> produceModule,
+            std::optional<int64_t> idx, unsigned numFunctionsBase) {
+          cacheResults.push_back(lowerLLVMModuleToObjects(
+              std::move(produceModule), op->getLoc(),
+              !options.enableLLVMPerFunctionSplitting && parLLC, idx,
+              numFunctionsBase));
+        };
+    if (options.enableLLVMPerFunctionSplitting)
+      splitPerFunction(std::move(llvmModule), handleSplit, symbolLinkageTypes);
+    else
+      splitPerExported(std::move(llvmModule), handleSplit);
+  }
+  return cacheResults;
+}
+
+ErrorOr<WriteableBufferRef> ObjectCompiler::emitArchiveMCLinking(
+    MutableArrayRef<AnyAsyncValueRef> values, StringRef moduleName,
+    bool emitAssembly,
+    llvm::StringMap<llvm::GlobalValue::LinkageTypes> &symbolLinkageTypes) {
+  // If any of the cache results failed, propagate the error.
+  for (auto &result : values) {
+    if (result.isError())
+      return Error(result.takeDiagnostic().getMessage().get());
+  }
+  CompilerTimeTraceScope traceScope("concatenate-object-files");
+
+  // Link MC before printing.
+  auto machineOr = createTargetMachine(options, /*isJIT=*/isJIT);
+  if (failed(machineOr)) {
+    return Error("failed to create TargetMachine");
+  }
+
+  SmallVector<SymbolAndMCInfo *> symbolAndMCInfos;
+  symbolAndMCInfos.reserve(values.size());
+
+  for (auto [i, result] : llvm::enumerate(values)) {
+    auto &symbolAndMCInfo = result.get<SymbolAndMCInfo>();
+    symbolAndMCInfos.emplace_back(&symbolAndMCInfo);
+  }
+
+  MCLinker mcLinker(symbolAndMCInfos, **machineOr, options, symbolLinkageTypes);
+  ErrorOr<WriteableBufferRef> mcLinkResult =
+      mcLinker.linkAndPrint(moduleName, emitAssembly);
+  if (mcLinkResult.isError()) {
+    return Error(mcLinkResult.getError());
+  }
+
+  return *mcLinkResult;
+}
+
+ErrorOrSuccess ObjectCompiler::emitArchiveSaveTemps(ModuleOp module,
+                                                    StringRef moduleName) {
+  // Generate saveTempsPrefix file for the assembly result of compilation.
+  // This is expensive to do because  we need to go through llvm compilation
+  // from the top so that AsmPrint can codegen properly for assembly output.
+  // We can't use the compilation for AsmPrint with binary here because
+  // AsmPrint writes back to the MC results such as SymbolTables etc. which
+  // is not reusable for a second run of AsmPrint.
+  auto output = AsyncRT::AsyncValueRef<BufferRef>::allocate(runtime);
+  LLVMModuleAndContext llvmModule;
+  if (auto err = llvmModule.create([&](llvm::LLVMContext &ctx) {
+        return translateModuleToLLVMIR(ctx, module, options);
+      })) {
+    return Error(
+        Twine("failed to lower module to LLVM IR for archive compilation, ") +
+        err.getError());
+  }
+
+  llvm::StringMap<llvm::GlobalValue::LinkageTypes> symbolLinkageTypes;
+
+  SmallVector<AsyncRT::AnyAsyncValueRef> cachedResults =
+      emitArchiveParallelCompilation(std::move(llvmModule),
+                                     module.getOperation(), symbolLinkageTypes);
+
+  andThenSyncMoving(
+      cachedResults,
+      [this, moduleName, module, output = output.copy(), options = options,
+       symbolLinkageTypes = std::move(symbolLinkageTypes)](
+          MutableArrayRef<AnyAsyncValueRef> values) mutable {
+        // If any of the cache results failed, propagate the error.
+        for (auto &result : values) {
+          if (result.isError())
+            return std::move(output).setToError(result.takeDiagnostic());
+        }
+
+        ErrorOr<WriteableBufferRef> mcLinkResult = emitArchiveMCLinking(
+            values, moduleName, /*emitAssembly=*/true, symbolLinkageTypes);
+
+        if (mcLinkResult.isError()) {
+          return std::move(output).setToError(AsyncRT::getMLIRDiagnostic(
+              Error(mcLinkResult.getError()), module->getLoc()));
+        }
+
+        WriteableBufferRef linkedObj = *mcLinkResult;
+        if (failed(
+                writeBufToTemp(options.saveTempsPrefix, ".asm", linkedObj))) {
+          return std::move(output).setToError(AsyncRT::getMLIRDiagnostic(
+              "failed to save asm to saveTempsPrefix", module->getLoc()));
+        }
+        std::move(output).emplace(linkedObj.copy());
+      });
+  await(output);
+  if (output.isError())
+    return Error(output.takeDiagnostic().getMessage().get());
+
+  return {};
 }
 
 //===----------------------------------------------------------------------===//
@@ -693,44 +850,18 @@ ErrorOr<BufferRef> ObjectCompiler::emitArchive(ModuleOp module) {
       std::string moduleName = llvmModule->getName().str();
 
       // Split the module into multiple slices and compile each in parallel.
-      // HACK HACK HACK https://github.com/modularml/modular/issues/22959
-      // HACK: If we are generating PTX we don't want to split.
       bool emitAssembly = llvm::Triple(options.targetTriple).isNVPTX();
-      bool noSplitting = runtime.getWorkQueue()->getParallelismLevel() < 2;
-      bool parLLC = runtime.getWorkQueue()->getParallelismLevel() >= 2 &&
-                    options.enableParallelLLC;
 
-      SmallVector<AsyncRT::AnyAsyncValueRef> cacheResults;
       llvm::StringMap<llvm::GlobalValue::LinkageTypes> symbolLinkageTypes;
-
-      if (noSplitting) {
-        cacheResults.push_back(lowerLLVMModuleToObjects(
-            forwardModule(std::move(llvmModule)), op->getLoc(), parLLC,
-            std::nullopt, /*numFunctionsBase=*/0));
-      } else {
-        (void)writeTempModule("pre-split", options.saveTempsPrefix,
-                              *llvmModule);
-
-        auto handleSplit =
-            [&](llvm::unique_function<LLVMModuleAndContext()> produceModule,
-                std::optional<int64_t> idx, unsigned numFunctionsBase) {
-              cacheResults.push_back(lowerLLVMModuleToObjects(
-                  std::move(produceModule), op->getLoc(),
-                  !options.enableLLVMPerFunctionSplitting && parLLC, idx,
-                  numFunctionsBase));
-            };
-        if (options.enableLLVMPerFunctionSplitting)
-          splitPerFunction(std::move(llvmModule), handleSplit,
-                           symbolLinkageTypes);
-        else
-          splitPerExported(std::move(llvmModule), handleSplit);
-      }
+      SmallVector<AsyncRT::AnyAsyncValueRef> cachedResults =
+          emitArchiveParallelCompilation(std::move(llvmModule), op,
+                                         symbolLinkageTypes);
 
       andThenSyncMoving(
-          cacheResults, [moduleName = std::move(moduleName), op,
-                         buf = buf.copy(), output = output.copy(), emitAssembly,
-                         isJIT = isJIT, options = options, symbolLinkageTypes](
-                            MutableArrayRef<AnyAsyncValueRef> values) mutable {
+          cachedResults, [this, moduleName = std::move(moduleName), op,
+                          buf = buf.copy(), output = output.copy(),
+                          emitAssembly, options = options, symbolLinkageTypes](
+                             MutableArrayRef<AnyAsyncValueRef> values) mutable {
 
 #ifdef MODULAR_ENABLE_TELEMETRY
             [[maybe_unused]] auto timeScope =
@@ -741,39 +872,21 @@ ErrorOr<BufferRef> ObjectCompiler::emitArchive(ModuleOp module) {
                         {{"pipeline", "ObjectCompiler::emitArchive"}});
 #endif
 
-            // If any of the cache results failed, propagate the error.
-            for (auto &result : values) {
-              if (result.isError())
-                return std::move(output).setToError(result.takeDiagnostic());
-            }
-            CompilerTimeTraceScope traceScope("concatenate-object-files");
-
-            // Link MC before printing.
-            auto machineOr = createTargetMachine(options, /*isJIT=*/isJIT);
-            if (failed(machineOr)) {
-              return std::move(output).setToError(AsyncRT::getMLIRDiagnostic(
-                  "failed to create TargetMachine", op->getLoc()));
-            }
-
-            SmallVector<SymbolAndMCInfo *> symbolAndMCInfos;
-            symbolAndMCInfos.reserve(values.size());
-
-            for (auto [i, result] : llvm::enumerate(values)) {
-              auto &symbolAndMCInfo = result.get<SymbolAndMCInfo>();
-              symbolAndMCInfos.emplace_back(&symbolAndMCInfo);
-            }
-
-            MCLinker mcLinker(symbolAndMCInfos, **machineOr, options,
-                              symbolLinkageTypes);
-            ErrorOr<WriteableBufferRef> mcLinkResult =
-                mcLinker.linkAndPrint(moduleName, emitAssembly);
+            ErrorOr<WriteableBufferRef> mcLinkResult = emitArchiveMCLinking(
+                values, moduleName, emitAssembly, symbolLinkageTypes);
             if (mcLinkResult.isError()) {
+
               return std::move(output).setToError(AsyncRT::getMLIRDiagnostic(
                   Error(mcLinkResult.getError()), op->getLoc()));
             }
 
             WriteableBufferRef linkedObj = *mcLinkResult;
             if (emitAssembly) {
+              if (failed(writeBufToTemp(options.saveTempsPrefix, ".asm",
+                                        linkedObj))) {
+                return std::move(output).setToError(AsyncRT::getMLIRDiagnostic(
+                    "failed to save asm to saveTempsPrefix", op->getLoc()));
+              }
               *buf << linkedObj->Buffer::getBuffer();
               std::move(output).emplace(buf.copy());
               return;
@@ -801,6 +914,16 @@ ErrorOr<BufferRef> ObjectCompiler::emitArchive(ModuleOp module) {
               return std::move(output).setToError(AsyncRT::getMLIRDiagnostic(
                   "failed to concatenate object files into archive",
                   op->getLoc()));
+            }
+
+            // Print assembly for saveTemps if needed.
+            if (!options.saveTempsPrefix.empty()) {
+              ErrorOrSuccess saveTempsResult =
+                  emitArchiveSaveTemps(cast<ModuleOp>(op), moduleName);
+              if (saveTempsResult.isError()) {
+                return std::move(output).setToError(AsyncRT::getMLIRDiagnostic(
+                    saveTempsResult.takeError(), op->getLoc()));
+              }
             }
 
             // Copy the result into the output buffer.
