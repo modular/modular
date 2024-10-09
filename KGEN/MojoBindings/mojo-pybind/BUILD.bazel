@@ -1,6 +1,7 @@
 load("@pip_deps//:requirements.bzl", "requirement")
+load("//bazel:api.bzl", "modular_py_binary")
 
-py_binary(
+modular_py_binary(
     name = "mojo-pybind",
     srcs = ["main.py"] + glob(["src/*.py"]),
     imports = [

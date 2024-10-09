@@ -8,6 +8,7 @@ load(
     "gentbl_modular_passes",
     "modular_cc_library",
     "modular_cc_test",
+    "modular_py_binary",
     "modular_shared_library",
     "td_library",
 )
@@ -1431,7 +1432,7 @@ EOF
 """,
 )
 
-py_binary(
+modular_py_binary(
     name = "gen_maptlotlib_initialization_tool",
     srcs = [":gen_maptlotlib_initialization_script"],
 )
