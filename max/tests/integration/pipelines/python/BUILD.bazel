@@ -1,7 +1,7 @@
 load("@pip_deps//:requirements.bzl", "requirement")
-load("//bazel:api.bzl", "modular_py_test")
+load("//bazel:api.bzl", "modular_py_binary", "modular_py_test")
 
-py_binary(
+modular_py_binary(
     name = "evaluate_llama",
     srcs = ["evaluate_llama.py"],
     data = [
@@ -26,7 +26,7 @@ py_binary(
     ],
 )
 
-py_binary(
+modular_py_binary(
     name = "evaluate_batch_scenarios",
     srcs = ["evaluate_batch_scenarios.py"],
     data = [
