@@ -207,6 +207,8 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
   ctx->appendDialectRegistry(registry);
 
   CompilationOptions options = clOptions.getCompilationOptions();
+  if (clOptions.saveTemps)
+    options.saveTempsPrefix = clOptions.tempsDir;
 
   OwningOpRef<ModuleOp> theModule;
   auto inputFileName = llvm::StringRef(clOptions.inputFilename);

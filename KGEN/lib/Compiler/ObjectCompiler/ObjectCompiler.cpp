@@ -790,8 +790,7 @@ ErrorOrSuccess ObjectCompiler::emitArchiveSaveTemps(ModuleOp module,
         }
 
         WriteableBufferRef linkedObj = *mcLinkResult;
-        if (failed(
-                writeBufToTemp(options.saveTempsPrefix, ".asm", linkedObj))) {
+        if (failed(writeBufToTemp(options.saveTempsPrefix, ".s", linkedObj))) {
           return std::move(output).setToError(AsyncRT::getMLIRDiagnostic(
               "failed to save asm to saveTempsPrefix", module->getLoc()));
         }
@@ -882,7 +881,7 @@ ErrorOr<BufferRef> ObjectCompiler::emitArchive(ModuleOp module) {
 
             WriteableBufferRef linkedObj = *mcLinkResult;
             if (emitAssembly) {
-              if (failed(writeBufToTemp(options.saveTempsPrefix, ".asm",
+              if (failed(writeBufToTemp(options.saveTempsPrefix, ".s",
                                         linkedObj))) {
                 return std::move(output).setToError(AsyncRT::getMLIRDiagnostic(
                     "failed to save asm to saveTempsPrefix", op->getLoc()));
