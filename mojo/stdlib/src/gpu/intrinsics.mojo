@@ -315,12 +315,22 @@ fn mulwide(a: Int32, b: Int32) -> Int64:
 
 
 @value
-struct ThreadFenceLevel:
+struct Scope:
     var _value: Int
 
     alias NONE = Self(0)
-    alias BLOCK = Self(1)
-    alias SYSTEM = Self(1)
+    alias THREAD = Self(1)
+    alias WARP = Self(2)
+    alias BLOCK = Self(3)
+    alias CLUSTER = Self(4)
+    alias GPU = Self(5)
+    alias SYSTEM = Self(6)
+
+    fn __eq__(self, other: Self) -> Bool:
+        return self is other
+
+    fn __ne__(self, other: Self) -> Bool:
+        return self is not other
 
     fn __is__(self, other: Self) -> Bool:
         return self._value == other._value
@@ -329,19 +339,27 @@ struct ThreadFenceLevel:
         return not (self is other)
 
     fn _mnemonic(self) -> StringLiteral:
-        if self is Self.NONE:
-            return "gl"
+        if self in (Self.NONE, Self.THREAD, Self.WARP):
+            return ""
         if self is Self.BLOCK:
             return "cta"
+        if self is Self.CLUSTER:
+            return "cluster"
+        if self is Self.GPU:
+            return "gpu"
         return "sys"
 
 
 @always_inline
-fn threadfence[level: ThreadFenceLevel = ThreadFenceLevel.NONE]():
+fn threadfence[scope: Scope = Scope.GPU]():
     """Memory fence functions can be used to enforce some ordering on memory
     accesses."""
-
-    llvm_intrinsic["llvm.nvvm.membar." + level._mnemonic(), NoneType]()
+    constrained[
+        scope in (Scope.GPU, Scope.BLOCK, Scope.SYSTEM),
+        "invalid threadfence scope",
+    ]()
+    alias suffix = "gl" if scope is Scope.GPU else scope._mnemonic()
+    llvm_intrinsic["llvm.nvvm.membar." + suffix, NoneType]()
 
 
 # ===----------------------------------------------------------------------===#
