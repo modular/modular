@@ -6,7 +6,14 @@
 from collections import InlineArray, OptionalReg
 from math import align_down, align_up, ceildiv
 from os import abort
-from sys import alignof, llvm_intrinsic, simdwidthof, bitwidthof, env_get_int
+from sys import (
+    alignof,
+    llvm_intrinsic,
+    simdwidthof,
+    bitwidthof,
+    env_get_int,
+    env_get_bool,
+)
 
 from algorithm.functional import elementwise, tile_and_unswitch
 from buffer.buffer import NDBuffer
@@ -312,14 +319,15 @@ fn _matmul_gpu[
                     a_type, b_type, c_type, transpose_b, target
                 ](m, n, k)
 
-                alias enable_tune = env_get_int["ENABLE_TUNE", 0]()
+                alias autotuning_mode = env_get_bool["AUTOTUNING_MODE", False]()
 
                 @parameter
-                if enable_tune == 1:
-                    alias opt_config = kernels.tuning_config
+                if autotuning_mode:
+                    print("AUTOTUNING MODE ENABLED")
+                    print(kernels.tuning_config)
                     multistage_gemm[
                         transpose_b=transpose_b,
-                        config=opt_config,
+                        config = kernels.tuning_config,
                         elementwise_lambda_fn=elementwise_lambda_fn,
                     ](
                         rebind[NDBuffer[c_type, 2, c_shape]](c),

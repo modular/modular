@@ -223,6 +223,7 @@ struct MatmulKernels[
             env_get_int["TUNE_BK", 32](),
         ),
         num_pipeline_stages=env_get_int["TUNE_NUM_STAGES", 4](),
+        num_k_partitions=env_get_int["TUNE_NUM_K_PARTITIONS", 1](),
     )
 
 
@@ -268,17 +269,7 @@ fn select_config[
         128, 256, 2 * _bk_base[a_type](), 3
     ) if "sm_80" in target else Index(1024, 1024, 1024, 1024)
 
-    alias autotuning_mode = env_get_bool["AUTOTUNING_MODE", 0]()
-    alias tune_opt = Index(
-        env_get_int["TUNE_BM", 128](),
-        env_get_int["TUNE_BN", 128](),
-        env_get_int["TUNE_BK", 32](),
-        env_get_int["TUNE_NUM_STAGES", 4](),
-    )
-
-    alias opt_list = List(tune_opt) if autotuning_mode else List(
-        _128x128_4, _256x64_4, _256x128_3
-    )
+    alias opt_list = List(_128x128_4, _256x64_4, _256x128_3)
 
     for bmnk_stage in opt_list:
         var bm = bmnk_stage[][0]
