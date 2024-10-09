@@ -395,6 +395,24 @@ class TensorValue(Value):
     def __rpow__(self, lhs: TensorValueLike) -> TensorValue:
         return ops.pow(lhs, self)
 
+    def __and__(self, rhs: TensorValueLike) -> TensorValue:
+        return ops.logical_and(self, rhs)
+
+    def __rand__(self, lhs: TensorValueLike) -> TensorValue:
+        return ops.logical_and(lhs, self)
+
+    def __or__(self, rhs: TensorValueLike) -> TensorValue:
+        return ops.logical_or(self, rhs)
+
+    def __ror__(self, lhs: TensorValueLike) -> TensorValue:
+        return ops.logical_or(lhs, self)
+
+    def __xor__(self, rhs: TensorValueLike) -> TensorValue:
+        return ops.logical_xor(self, rhs)
+
+    def __rxor__(self, lhs: TensorValueLike) -> TensorValue:
+        return ops.logical_xor(lhs, self)
+
 
 StrongValueLike = Union[mlir.Value, Value, Weight]
 Numeric = Union[int, float, np.integer, np.floating, np.ndarray]
