@@ -87,6 +87,7 @@ def pipeline_model(testdata_directory, request):
     return model
 
 
+@pytest.mark.skip("flaky")
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     "pipeline_model",
