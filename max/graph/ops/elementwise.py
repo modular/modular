@@ -367,6 +367,76 @@ Raises:
     Error: If the two symbols are parts of different graphs.
 """
 
+logical_and = _elementwise_binary(rmo.and_)
+"""
+Computes the logical and between two symbolic tensors.
+
+Only supports boolean inputs. If ``lhs`` and ``rhs`` have different shapes,
+they will be broadcast to the same shape according to broadcasting rules
+before the operation.
+
+Args:
+    lhs: The symbol to use as left side of the logical and.
+    rhs: The symbol to use as right side of the logical and.
+
+Returns:
+    A symbolic tensor value representing the output of the and operation.
+    The result will be a boolean tensor with the shape determined by
+    broadcasting the two input shapes.
+
+Raises:
+    Error: If the input values' shapes are not compatible for broadcasting.
+    Error: If one of the input values has an unsupported dtype.
+    Error: If the two symbols are parts of different graphs.
+"""
+
+logical_or = _elementwise_binary(rmo.or_)
+"""
+Computes the logical or between two symbolic tensors.
+
+Only supports boolean inputs. If ``lhs`` and ``rhs`` have different shapes,
+they will be broadcast to the same shape according to broadcasting rules
+before the operation.
+
+Args:
+    lhs: The symbol to use as left side of the logical or.
+    rhs: The symbol to use as right side of the logical or.
+
+Returns:
+    A symbolic tensor value representing the output of the or operation.
+    The result will be a boolean tensor with the shape determined by
+    broadcasting the two input shapes.
+
+Raises:
+    Error: If the input values' shapes are not compatible for broadcasting.
+    Error: If one of the input values has an unsupported dtype.
+    Error: If the two symbols are parts of different graphs.
+"""
+
+logical_xor = _elementwise_binary(rmo.xor)
+"""
+Computes the logical xor between two symbolic tensors.
+
+Only supports boolean inputs. If ``lhs`` and ``rhs`` have different shapes,
+they will be broadcast to the same shape according to broadcasting rules
+before the operation.
+
+Args:
+    lhs: The symbol to use as left side of the logical xor.
+    rhs: The symbol to use as right side of the logical xor.
+
+Returns:
+    A symbolic tensor value representing the output of the xor operation.
+    The result will be a boolean tensor with the shape determined by
+    broadcasting the two input shapes.
+
+Raises:
+    Error: If the input values' shapes are not compatible for broadcasting.
+    Error: If one of the input values has an unsupported dtype.
+    Error: If the two symbols are parts of different graphs.
+"""
+
+
 # ===----------------------------------------------------------------------=== #
 # Unary  Ops
 # ===----------------------------------------------------------------------=== #

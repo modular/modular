@@ -185,7 +185,9 @@ def broadcast_shapes(s1: list[Dim], s2: list[Dim]) -> list[Dim]:
             return d2
         if d2 is None:
             return d1
-        assert d1 == d2 or d1 == StaticDim(1) or d2 == StaticDim(1)
+        valid = d1 == d2 or d1 == StaticDim(1) or d2 == StaticDim(1)
+        if not valid:
+            raise ValueError(f"Invalid broadcast: {s1}, {s2}")
         return d1 if d2 == StaticDim(1) else d2
 
     return list(
