@@ -432,27 +432,27 @@ fn _topk_gpu[
 
     Parameters:
         type: DType - The data type of the input tensor.
-        rank: Int - The rank of the input tensor (default is 1).
+        rank: Int - The rank of the input tensor (must be 2 right now, first dim is batch size).
         sampling: Bool - Whether to return token samples from topK dist (default is True).
 
     Args:
         ctx: DeviceContext
             The context for GPU execution.
         K: Int - The number of top elements to keep.
-        input_buf: NDBuffer[type, rank, DimList(N)]
+        input_buf: NDBuffer[type, rank, DimList(batch_size,N)]
             Input tensor as a device NDBuffer.
-        device_local_topk_vals: NDBuffer[type, 1, DimList(num_blocks_1 * K)]
+        device_local_topk_vals: NDBuffer[type, 1, DimList(batch_size, num_blocks_per_input * K)]
             Temporary buffer for locally reduced top-K values from stage 1.
-        device_local_topk_idxs: NDBuffer[idx_t, 1, DimList(num_blocks_1 * K)]
+        device_local_topk_idxs: NDBuffer[idx_t, 1, DimList(batch_size, num_blocks_per_input * K)]
             Temporary buffer for locally reduced top-K indices from stage 1.
-        out_vals: NDBuffer[type, 1, DimList(K)]
+        out_vals: NDBuffer[type, 1, DimList(batch_size, K)]
             Output buffer on device for the K largest values.
-        out_idxs: NDBuffer[idx_t, 1, DimList(K)]
+        out_idxs: NDBuffer[idx_t, 1, DimList(batch_size, K)]
             Output buffer on device for the indices of the K largest values.
         block_size: Int
             The number of threads per block (default is 256 from TRT and empirical testing).
-        num_blocks_per_input: Int
-            Number of blocks per input (default is 0, computed from input size and block size).
+        num_blocks_per_input: OptionalReg[Int]
+            Number of blocks per input (default computed from input size and block size).
             This is the equivalent of "BLOCKS_PER_BEAM" in TRT-LLM kernel allowing for much larger
             batch sizes through packing several elements per thread in the first stage.
 
