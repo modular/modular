@@ -436,10 +436,8 @@ if __name__ == "__main__":
 
     ** Continuous Batching Simulation **
     CPU
-        Produces total garbage.
-        bazelw run //SDK/integration-test/pipelines/python:evaluate_batch_scenarios -- --batch-mode continuous --max-cache-batch-size 4 --model-name llama3 --quantization-encoding float32
+        bazelw run //SDK/integration-test/pipelines/python:evaluate_batch_scenarios -- --batch-mode continuous --max-cache-batch-size 4 --model-name llama3 --quantization-encoding float32 --cache-strategy continuous
     GPU
-        Hangs
-        bazelw run //SDK/integration-test/pipelines/python:evaluate_batch_scenarios -- --batch-mode continuous --max-cache-batch-size 4 --model-name llama3 --use-gpu
+        bazelw run //SDK/integration-test/pipelines/python:evaluate_batch_scenarios -- --batch-mode continuous --max-cache-batch-size 4 --model-name llama3 --use-gpu --cache-strategy continuous
     """
     main()
