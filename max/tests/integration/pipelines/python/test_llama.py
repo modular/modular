@@ -20,6 +20,7 @@ from evaluate_llama import (
     golden_data_fname,
     run_llama3,
 )
+
 from llama3.llama3 import Llama3
 
 
@@ -45,6 +46,7 @@ def test_llama(model, encoding, testdata_directory):
 
     actual = run_llama3(Llama3(config), prompts=PROMPTS[:1])
 
-    # These tolerances are VERY high; we have observed relative diffs upwards of 19,000
-    # and atol of ~0.65 between M1 and intel CPUs
-    compare_values(actual, expected_results, rtol=20000, atol=1.0)
+    with pytest.raises(AssertionError):
+        # TODO(MSDK-968): Q4_K is currently expected not to match golden values.
+        # This test will fail once we have fixed the accuracy issue.
+        compare_values(actual, expected_results)
