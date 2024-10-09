@@ -1,4 +1,5 @@
 load("@pip_deps//:requirements.bzl", "requirement")
+load("//bazel:api.bzl", "modular_py_binary")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -10,7 +11,7 @@ filegroup(
     ),
 )
 
-py_binary(
+modular_py_binary(
     name = "gen_external_checkpoints",
     srcs = ["gen_external_checkpoints.py"],
     deps = [
