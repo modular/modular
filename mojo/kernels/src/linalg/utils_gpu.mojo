@@ -220,7 +220,7 @@ struct MatmulKernels[
         warp_tile_shape=Index(
             env_get_int["TUNE_WM", 64](),
             env_get_int["TUNE_WN", 64](),
-            env_get_int["TUNE_WK", 32](),
+            env_get_int["TUNE_BK", 32](),
         ),
         num_pipeline_stages=env_get_int["TUNE_NUM_STAGES", 4](),
     )
