@@ -33,15 +33,6 @@ class RequestInstance:
     arrival_time: float
 
 
-def generate_batch_requests(num_requests: int = 8) -> List[RequestInstance]:
-    request_list = []
-    for i in range(num_requests):
-        request_list.append(
-            RequestInstance(req_id=f"req_{i}", max_token_len=10, arrival_time=0)
-        )
-    return request_list
-
-
 def generate_simple_requests() -> List[RequestInstance]:
     _REQUEST_SEQUENCE = [
         [0, 16],
