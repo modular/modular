@@ -89,8 +89,8 @@ class ParamSpace:
 @dataclass(frozen=True, repr=True)
 class SpecInstance:
     name: str
-    executor: Optional[str]
     file: Path
+    executor: Optional[str] = None
     params: List[Param] = field(default_factory=list)
 
     @functools.cached_property
