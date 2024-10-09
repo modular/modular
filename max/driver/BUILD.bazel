@@ -1,6 +1,7 @@
 load("@pip_deps//:requirements.bzl", "requirement")
+load("//bazel:api.bzl", "modular_py_library")
 
-py_library(
+modular_py_library(
     name = "driver",
     srcs = glob(["**/*.py"]),
     imports = ["../.."],

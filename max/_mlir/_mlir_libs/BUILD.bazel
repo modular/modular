@@ -1,4 +1,4 @@
-load("//bazel:api.bzl", "copy_files", "modular_pybind_extension")
+load("//bazel:api.bzl", "copy_files", "modular_py_library", "modular_pybind_extension")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -17,7 +17,7 @@ copy_files(
     ],
 )
 
-py_library(
+modular_py_library(
     name = "_mlir_libs",
     srcs = [":py_srcs"],
     data = [":_mlir_pyi"],

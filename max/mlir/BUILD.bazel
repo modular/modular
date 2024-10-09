@@ -1,4 +1,6 @@
-py_library(
+load("//bazel:api.bzl", "modular_py_library")
+
+modular_py_library(
     name = "mlir",
     srcs = glob(["**/*.py"]),
     visibility = ["//visibility:public"],

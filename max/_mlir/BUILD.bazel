@@ -1,4 +1,4 @@
-load("//bazel:api.bzl", "copy_files", "modular_pybind_py_library")
+load("//bazel:api.bzl", "copy_files", "modular_py_library", "modular_pybind_py_library")
 
 copy_files(
     name = "ir_py",
@@ -13,7 +13,7 @@ modular_pybind_py_library(
     visibility = ["//visibility:public"],
 )
 
-py_library(
+modular_py_library(
     name = "_mlir",
     srcs = [
         ":ir_py",
