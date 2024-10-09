@@ -172,6 +172,36 @@ fn kv_cache_length_h8_d128_bshd_f32_continuous_batch[
     return _kv_cache_length[target=target](kv_collection, output, ctx)
 
 
+@mogg_register("kv_cache_length_h1_d16_bshd_bf16_continuous_batch")
+@export
+fn kv_cache_length_h1_d16_bshd_bf16_continuous_batch[
+    target: StringLiteral = "cpu"
+](
+    kv_collection: ContinuousBatchingKVCacheCollection[
+        DType.bfloat16,
+        KVCacheStaticParams(num_heads=1, head_size=16),
+    ],
+    output: NDBuffer[DType.uint32, 1],
+    ctx: MojoCallContextPtr,
+):
+    return _kv_cache_length[target=target](kv_collection, output, ctx)
+
+
+@mogg_register("kv_cache_length_h1_d16_bshd_f32_continuous_batch")
+@export
+fn kv_cache_length_h1_d16_bshd_f32_continuous_batch[
+    target: StringLiteral = "cpu"
+](
+    kv_collection: ContinuousBatchingKVCacheCollection[
+        DType.float32,
+        KVCacheStaticParams(num_heads=1, head_size=16),
+    ],
+    output: NDBuffer[DType.uint32, 1],
+    ctx: MojoCallContextPtr,
+):
+    return _kv_cache_length[target=target](kv_collection, output, ctx)
+
+
 @mogg_register("kv_cache_length_h8_d64_bshd_bf16_continuous_batch")
 @export
 fn kv_cache_length_h8_d64_bshd_bf16_continuous_batch[
@@ -347,6 +377,34 @@ fn key_cache_for_layer_h8_d128_bshd_f32_continuous_batch(
     return _key_cache_for_layer[__type_of(result)](layer_idx, kv_collection)
 
 
+@mogg_register("key_cache_for_layer_h1_d16_bshd_bf16_continuous_batch")
+@export
+fn key_cache_for_layer_h1_d16_bshd_bf16_continuous_batch(
+    layer_idx: Int64,
+    kv_collection: ContinuousBatchingKVCacheCollection[
+        DType.bfloat16,
+        KVCacheStaticParams(num_heads=1, head_size=16),
+    ],
+) -> ContinuousBatchingKVCache[
+    kv_collection.type, kv_collection.kv_params
+] as result:
+    return _key_cache_for_layer[__type_of(result)](layer_idx, kv_collection)
+
+
+@mogg_register("key_cache_for_layer_h1_d16_bshd_f32_continuous_batch")
+@export
+fn key_cache_for_layer_h1_d16_bshd_f32_continuous_batch(
+    layer_idx: Int64,
+    kv_collection: ContinuousBatchingKVCacheCollection[
+        DType.float32,
+        KVCacheStaticParams(num_heads=1, head_size=16),
+    ],
+) -> ContinuousBatchingKVCache[
+    kv_collection.type, kv_collection.kv_params
+] as result:
+    return _key_cache_for_layer[__type_of(result)](layer_idx, kv_collection)
+
+
 @mogg_register("key_cache_for_layer_h8_d64_bshd_bf16_continuous_batch")
 @export
 fn key_cache_for_layer_h8_d64_bshd_bf16_continuous_batch(
@@ -490,6 +548,34 @@ fn value_cache_for_layer_h8_d128_bshd_f32_continuous_batch(
     kv_collection: ContinuousBatchingKVCacheCollection[
         DType.float32,
         KVCacheStaticParams(num_heads=8, head_size=128),
+    ],
+) -> ContinuousBatchingKVCache[
+    kv_collection.type, kv_collection.kv_params
+] as result:
+    return _value_cache_for_layer[__type_of(result)](layer_idx, kv_collection)
+
+
+@mogg_register("value_cache_for_layer_h1_d16_bshd_bf16_continuous_batch")
+@export
+fn value_cache_for_layer_h1_d16_bshd_bf16_continuous_batch(
+    layer_idx: Int64,
+    kv_collection: ContinuousBatchingKVCacheCollection[
+        DType.bfloat16,
+        KVCacheStaticParams(num_heads=1, head_size=16),
+    ],
+) -> ContinuousBatchingKVCache[
+    kv_collection.type, kv_collection.kv_params
+] as result:
+    return _value_cache_for_layer[__type_of(result)](layer_idx, kv_collection)
+
+
+@mogg_register("value_cache_for_layer_h1_d16_bshd_f32_continuous_batch")
+@export
+fn value_cache_for_layer_h1_d16_bshd_f32_continuous_batch(
+    layer_idx: Int64,
+    kv_collection: ContinuousBatchingKVCacheCollection[
+        DType.float32,
+        KVCacheStaticParams(num_heads=1, head_size=16),
     ],
 ) -> ContinuousBatchingKVCache[
     kv_collection.type, kv_collection.kv_params
@@ -1010,6 +1096,47 @@ fn fused_qkv_matmul_kv_cache_h8_d128_bshd_continuous_batch[
         )
 
 
+@mogg_register("fused_qkv_matmul_kv_cache_h1_d16_bshd_continuous_batch")
+@export
+fn fused_qkv_matmul_kv_cache_h1_d16_bshd_continuous_batch[
+    type: DType,
+    hidden_state_shape: DimList,
+    weight_shape: DimList,
+    output_shape: DimList,
+    target: StringLiteral = "cpu",
+](
+    hidden_state: NDBuffer[type, 3, hidden_state_shape],
+    weight: NDBuffer[type, 2, weight_shape],
+    k_cache: ContinuousBatchingKVCache[
+        type,
+        KVCacheStaticParams(num_heads=1, head_size=16),
+    ],
+    v_cache: ContinuousBatchingKVCache[type, k_cache.kv_params],
+    output: NDBuffer[type, 3, output_shape],
+    ctx: MojoCallContextPtr,
+):
+    """Performs a fused QKV matmul. Q outputs are written to the output argument
+    while K and V outputs are written in-place into k_cache and v_cache.
+
+    Args:
+        hidden_state: Tensor with shape (batch_size, seq_len, num_heads * head_size).
+        weight: Tensor with shape (num_heads * head_size, num_kv_heads * head_size).
+        k_cache: The historical ContiguousKVCache for keys, with logical shape:
+            (batch_size, max_seq_len, num_kv_heads, head_size).
+        v_cache: The historical ContiguousKVCache for values, with logical shape:
+            (batch_size, max_seq_len, num_kv_heads, head_size).
+        output: The pre-allocated output buffer for Q projections. K and V
+            projections are written in-place to k_cache and v_cache.
+        ctx: The call context pointer, passed by the graph compiler.
+    """
+    with Trace[TraceLevel.OP, target=target](
+        "fused_qkv_matmul_kv_cache_h1_d16_bshd_continuous_batch"
+    ):
+        return _fused_qkv_matmul_kv_cache[target=target](
+            hidden_state, weight, k_cache, v_cache, output, ctx
+        )
+
+
 @mogg_register("fused_qkv_matmul_kv_cache_h8_d64_bshd_continuous_batch")
 @export
 fn fused_qkv_matmul_kv_cache_h8_d64_bshd_continuous_batch[
@@ -1466,6 +1593,44 @@ fn fused_qk_rope_h8_d128_bshd_continuous_batch[
         )
 
 
+@mogg_register("fused_qk_rope_h1_d16_bshd_continuous_batch")
+fn fused_qk_rope_h1_d16_bshd_continuous_batch[
+    type: DType, //,
+    *,
+    target: StringLiteral,
+](
+    q_proj: NDBuffer[type, 4, *_],
+    k_cache: ContinuousBatchingKVCache[
+        type,
+        KVCacheStaticParams(num_heads=1, head_size=16),
+    ],
+    freqs_cis: NDBuffer[type, 2, *_],
+    output: NDBuffer[type, 4, *_],
+    context: MojoCallContextPtr = MojoCallContextPtr(),
+):
+    """Performs a fused RoPE projection for Q and K projections.
+
+    We have a manually fused QKV projection with mo.opaque types in our Llama model.
+    Due to a limitation in custom op definitions, we can't declare both a tensor
+    and opaque type as output from a custom kernel. This requires us to only note
+    Q_proj as an output from the QKV projection. If we immediately follow the
+    QKV proj kernel with a RoPE kernel applied to K, we'll get a race condition
+    because the graph compiler doesn't know about the dependency between these
+    kernels in the graph definition. Here we fuse the RoPE kernel applied to
+    Q_proj with K_proj, so K_proj RoPE is only excuted after QKV completes.
+    """
+    # Pass device context only on GPU.
+    var dev_ctx = Optional[
+        DeviceContext
+    ]() if target == "cpu" else context.get_device_context()
+    with Trace[TraceLevel.OP, target=target](
+        "fused_qk_rope_h1_d16_bshd_continuous_batch"
+    ):
+        fused_qk_rope[target=target](
+            q_proj, k_cache, freqs_cis, output, dev_ctx
+        )
+
+
 @mogg_register("fused_qk_rope_h8_d64_bshd_continuous_batch")
 fn fused_qk_rope_h8_d64_bshd_continuous_batch[
     type: DType, //,
@@ -1628,6 +1793,32 @@ fn flash_attention_kv_cache_h8_d128_bshd_continuous_batch[
 ):
     with Trace[TraceLevel.OP, target=target](
         "flash_attention_kv_cache_h8_d128_bshd_continuous_batch"
+    ):
+        return _flash_attention_kv_cache[target=target](
+            q, k, v, mask, valid_lengths, scale, output, context
+        )
+
+
+@mogg_register("flash_attention_kv_cache_h1_d16_bshd_continuous_batch")
+@export
+fn flash_attention_kv_cache_h1_d16_bshd_continuous_batch[
+    type: DType, //,
+    target: StringLiteral = "cpu",
+](
+    q: NDBuffer[type, 4, *_],
+    k: ContinuousBatchingKVCache[
+        type,
+        KVCacheStaticParams(num_heads=1, head_size=16),
+    ],
+    v: ContinuousBatchingKVCache[type, k.kv_params],
+    mask: NDBuffer[type, *_],
+    valid_lengths: NDBuffer[DType.uint32, 1],
+    scale: Float32,
+    output: NDBuffer[type, 4, *_],
+    context: MojoCallContextPtr,
+):
+    with Trace[TraceLevel.OP, target=target](
+        "flash_attention_kv_cache_h1_d16_bshd_continuous_batch"
     ):
         return _flash_attention_kv_cache[target=target](
             q, k, v, mask, valid_lengths, scale, output, context
@@ -2072,6 +2263,29 @@ fn continuous_batching_kv_cache_collection_h8_d64_bshd[
     kv_params_h8_d64_bshd,
 ]:
     return _continuous_batch_kv_cache_collection[kv_params_h8_d64_bshd](
+        blocks,
+        cache_lengths,
+        lookup_table,
+        is_cache_empty,
+        seq_ids,
+    )
+
+
+@mogg_register("continuous_batching_kv_cache_collection_h1_d16_bshd")
+@export
+fn continuous_batching_kv_cache_collection_h1_d16_bshd[
+    type: DType, //, target: StringLiteral
+](
+    blocks: NDBuffer[type, 6],
+    cache_lengths: NDBuffer[DType.uint32, 1],
+    lookup_table: NDBuffer[DType.uint32, 1],
+    is_cache_empty: NDBuffer[DType.bool, 1],
+    seq_ids: NDBuffer[DType.int32, 1],
+) -> ContinuousBatchingKVCacheCollection[
+    type,
+    kv_params_h1_d16_bshd,
+]:
+    return _continuous_batch_kv_cache_collection[kv_params_h1_d16_bshd](
         blocks,
         cache_lengths,
         lookup_table,
