@@ -63,7 +63,7 @@ def pipeline_model(testdata_directory, request):
         SupportedEncodings.bfloat16,
     ]:
         print("using continuous batching caching strategy")
-        cache_strategy = KVCacheStrategy.CONTIGUOUS
+        cache_strategy = KVCacheStrategy.CONTINUOUS
     else:
         print("using naive caching strategy")
         cache_strategy = KVCacheStrategy.NAIVE
@@ -138,13 +138,17 @@ async def test_pipeline_static_batch_same_prompt_same_output(pipeline_model):
         await pipeline_model.release(context)
 
 
-@pytest.mark.skip("wont work until continuous batching is implemented.")
+@pytest.mark.skip("flaky")
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     "pipeline_model",
     [
-        PipelineModelParams("tinyllama", SupportedEncodings.float32, 12, -1, 2),
-        PipelineModelParams("tinyllama", SupportedEncodings.float32, 12, -1, 4),
+        PipelineModelParams(
+            "tinyllama", SupportedEncodings.float32, 128, -1, 2
+        ),
+        PipelineModelParams(
+            "tinyllama", SupportedEncodings.float32, 128, -1, 4
+        ),
     ],
     ids=PipelineModelParams.__str__,
     indirect=True,
@@ -162,6 +166,7 @@ async def test_pipeline_static_batch_same_prompt_different_max_new_tokens(
     """
     prompt = "Repeat this sentence forever and forever."
     batch_size = pipeline_model.config.max_cache_batch_size
+
     print(batch_size)
     context_batch = {}
     for i in range(batch_size):
@@ -345,15 +350,14 @@ async def test_pipeline_heterogeneous_batch_logits(
         pipeline_model, {"B": context_b, "C": context_c}, stored_logits
     )
 
-    with pytest.raises(AssertionError):
-        compare_values(
-            [
-                {"prompt": prompt_a, "values": stored_logits["A"]},
-                {"prompt": prompt_b, "values": stored_logits["B"]},
-                {"prompt": prompt_c, "values": stored_logits["C"]},
-            ],
-            expected_results,
-        )
+    compare_values(
+        [
+            {"prompt": prompt_a, "values": stored_logits["A"]},
+            {"prompt": prompt_b, "values": stored_logits["B"]},
+            {"prompt": prompt_c, "values": stored_logits["C"]},
+        ],
+        expected_results,
+    )
 
     await pipeline_model.release(context_a)
     await pipeline_model.release(context_b)
