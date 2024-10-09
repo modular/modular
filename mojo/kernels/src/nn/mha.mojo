@@ -1679,53 +1679,28 @@ fn scale_and_mask_helper[
     if lane >= 4:
         return
 
-    # Use vector load for mask if the entire warp fit in valid context length.
-    # Also num_keys should be aligned for vector load.
-    if (warp + 1) * WN <= bound and num_keys % simd_width == 0:
-        # Vectorize by 2.
-        var p_reg_vec2 = p_reg_tile.vectorize[1, simd_width]()
+    var warp_offset = warp * WN
+
+    @parameter
+    for n_mma in range(Int(num_n_mmas)):
+        # offset in fragment
+        var frag_offset = n_mma * MMA_N
+        # Current thread's offset mapped in num_keys dim
+        var key_offset = warp_offset + frag_offset
+        # Current thread's index in current mma tile, e.g. T1 is 2 in 16x8 mma output.
+        var frag_lane_col = int(lane * simd_width)
+
+        var mask_frag_ptr = mask_warp_ptr + frag_offset
 
         @parameter
-        for n_mma in range(Int(num_n_mmas)):
-            var frag_offset = n_mma * MMA_N
-            var mask_frag_ptr = mask_warp_ptr + frag_offset
-
-            var frag_lane_col = int(lane * simd_width)
-
-            alias mask_align = alignof[SIMD[mask_type, simd_width]]()
-
-            var mask_vec = (mask_frag_ptr + frag_lane_col).load[
-                width=simd_width, alignment=mask_align
-            ]()
-
-            p_reg_vec2[n_mma, 0] = p_reg_vec2[n_mma, 0] * scale.cast[
-                p_type
-            ]() + rebind[p_reg_vec2.element_type](mask_vec.cast[p_type]())
-
-    # Use scalar load for mask and manually mask out padded elements.
-    else:
-        var warp_offset = warp * WN
-
-        @parameter
-        for n_mma in range(Int(num_n_mmas)):
-            # offset in fragment
-            var frag_offset = n_mma * MMA_N
-            # Current thread's offset mapped in num_keys dim
-            var key_offset = warp_offset + frag_offset
-            # Current thread's index in current mma tile, e.g. T1 is 2 in 16x8 mma output.
-            var frag_lane_col = int(lane * simd_width)
-
-            var mask_frag_ptr = mask_warp_ptr + frag_offset
-
-            @parameter
-            for i in range(simd_width):
-                if key_offset + frag_lane_col + i < bound:
-                    p_reg_tile[n_mma, i] = (
-                        p_reg_tile[n_mma, i] * scale.cast[p_type]()
-                        + mask_frag_ptr[frag_lane_col + i].cast[p_type]()
-                    )
-                else:
-                    p_reg_tile[n_mma, i] = min_or_neg_inf[p_type]()
+        for i in range(simd_width):
+            if key_offset + frag_lane_col + i < bound:
+                p_reg_tile[n_mma, i] = (
+                    p_reg_tile[n_mma, i] * scale.cast[p_type]()
+                    + mask_frag_ptr[frag_lane_col + i].cast[p_type]()
+                )
+            else:
+                p_reg_tile[n_mma, i] = min_or_neg_inf[p_type]()
 
 
 fn mha_decoding_single_batch[
