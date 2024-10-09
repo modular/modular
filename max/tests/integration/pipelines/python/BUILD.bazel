@@ -1,5 +1,5 @@
 load("@pip_deps//:requirements.bzl", "requirement")
-load("//bazel:api.bzl", "modular_py_binary", "modular_py_test")
+load("//bazel:api.bzl", "modular_py_binary", "modular_py_library", "modular_py_test")
 
 modular_py_binary(
     name = "evaluate_llama",
@@ -164,7 +164,7 @@ modular_py_test(
 # Serve
 # - - - - -
 
-py_library(
+modular_py_library(
     name = "params",
     testonly = True,
     srcs = ["serve/params.py"],
