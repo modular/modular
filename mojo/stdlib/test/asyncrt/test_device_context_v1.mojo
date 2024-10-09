@@ -3,7 +3,9 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-# RUN: %mojo-no-debug %s
+# RUN: %mojo-no-debug -D MODULAR_ASYNCRT_DEVICE_CONTEXT_V1=cuda %s
+
+from smoke_test_utils import create_test_device_context
 
 from smoke_test_utils import create_test_device_context
 
