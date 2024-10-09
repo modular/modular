@@ -14,7 +14,7 @@ from linalg.matmul_gpu import _matmul_gpu
 from internal_utils import DeviceNDBuffer, env_get_dtype
 from internal_utils._utils import static, dynamic, ValOrDim
 from utils import IndexList
-from sys import env_get_int, sizeof
+from sys import env_get_int, sizeof, env_get_bool
 from math import align_up
 from memory import UnsafePointer
 from gpu.cublas.cublas import (
@@ -213,8 +213,9 @@ fn main() raises:
     alias N = env_get_int["N", 1]()
     alias K = env_get_int["K", 1]()
 
-    alias cache_busting = env_get_int["cache_busting", True]()
-    alias transpose_b = env_get_int["transpose_b", True]()
+    alias cache_busting = env_get_bool["cache_busting", True]()
+    alias transpose_b = env_get_bool["transpose_b", True]()
+    alias use_cublas = env_get_bool["use_cublas", False]()
 
     var m = Bench()
     try:
@@ -224,20 +225,7 @@ fn main() raises:
                 dtype,
                 transpose_b=transpose_b,
                 cache_busting=cache_busting,
-                use_cublas=False,
-            ](
-                ctx,
-                m,
-                dynamic(M),
-                static[N](),
-                static[K](),
-            )
-
-            create_matmul_bench[
-                dtype,
-                transpose_b=transpose_b,
-                cache_busting=cache_busting,
-                use_cublas=True,
+                use_cublas=use_cublas,
             ](
                 ctx,
                 m,

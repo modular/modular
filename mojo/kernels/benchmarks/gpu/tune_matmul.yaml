@@ -19,5 +19,5 @@ params:
   TUNE_BK: [32, 64]
   TUNE_WM: [64]
   TUNE_WN: [64]
-  TUNE_WK: [32, 64]
   TUNE_NUM_STAGES: [3, 4]
+  use_cublas: [False]
