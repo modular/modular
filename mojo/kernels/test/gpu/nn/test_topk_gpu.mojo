@@ -82,12 +82,14 @@ fn test_case_batched[
         DimList(batch_size, K), ctx=ctx
     )
 
-    var num_blocks_stg1 = ceildiv(in_buffer.tensor.num_elements(), block_size)
+    var num_blocks_per_input_: Int = ceildiv(
+        in_buffer.tensor.num_elements(), block_size
+    ) if not num_blocks_per_input else num_blocks_per_input.value()
     var device_local_topk_vals = DeviceNDBuffer[type, rank](
-        DimList(batch_size, num_blocks_stg1 * K), ctx=ctx
+        DimList(batch_size, num_blocks_per_input_ * K), ctx=ctx
     )
     var device_local_topk_idxs = DeviceNDBuffer[idx_t, rank](
-        DimList(batch_size, num_blocks_stg1 * K), ctx=ctx
+        DimList(batch_size, num_blocks_per_input_ * K), ctx=ctx
     )
 
     ctx.enqueue_copy_to_device(device_in.buffer, in_buffer.tensor.data)
