@@ -29,10 +29,6 @@ from modular.utils import logging
 from modular.utils.subprocess import list2cmdline, run_shell_command
 from modular.utils.yaml import YAML
 
-MOJO_BINARY = shutil.which("mojo")
-if not MOJO_BINARY:
-    raise Exception(f"Could not find the `mojo` binary.")
-
 CURRENT_FILE = Path(__file__).resolve()
 LINE = 80 * "-"
 
@@ -93,8 +89,22 @@ class ParamSpace:
 @dataclass(frozen=True, repr=True)
 class SpecInstance:
     name: str
+    executor: Optional[str]
     file: Path
     params: List[Param] = field(default_factory=list)
+
+    @functools.cached_property
+    def mojo_binary(self) -> str:
+        mojo = shutil.which("mojo")
+        if not mojo:
+            raise Exception(f"Could not find the `mojo` binary.")
+        return mojo
+
+    def get_executor(self) -> list[str]:
+        if self.executor:
+            return self.executor.split(" ")
+
+        return [self.mojo_binary]
 
     def compile(
         self,
@@ -115,7 +125,7 @@ class SpecInstance:
         )
         assert file_abs_path.exists()
 
-        cmd = [MOJO_BINARY]
+        cmd = self.get_executor()
         if build_opts:
             cmd.extend(build_opts)
 

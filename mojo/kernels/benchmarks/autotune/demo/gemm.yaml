@@ -5,7 +5,7 @@
 ##===----------------------------------------------------------------------===##
 
 name: multistage_gemm
-file: ../tune_multistage_gemm.mojo
+file: $KERNEL_BENCHMARKS_ROOT/gpu/bench_matmul.mojo
 params:
   M: [8192]
   N: [8192]
@@ -16,5 +16,3 @@ params:
   WN: [32, 64]
   NUM_STAGES: [4]
   TRANSPOSE_B: ["True", "False"]
-
-
