@@ -240,7 +240,7 @@ struct TensorSpec(
 
 
 @value
-@register_passable
+@register_passable("trivial")
 struct StaticTensorSpec[type: DType, rank: Int]:
     var shape: IndexList[rank]
 

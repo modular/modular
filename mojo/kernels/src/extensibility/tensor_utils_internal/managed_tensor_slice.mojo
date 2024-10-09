@@ -23,7 +23,7 @@ from .tensor_like import TensorLike
 
 
 @value
-@register_passable
+@register_passable("trivial")
 struct ManagedTensorSlice[
     type: DType,
     rank: Int,
