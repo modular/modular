@@ -6,6 +6,8 @@
 
 
 import logging
+import os
+import platform
 import uuid
 from typing import Optional
 
@@ -14,6 +16,22 @@ from opentelemetry.exporter.otlp.proto.http._log_exporter import OTLPLogExporter
 from opentelemetry.sdk._logs import LoggerProvider, LoggingHandler
 from opentelemetry.sdk._logs.export import BatchLogRecordProcessor
 from opentelemetry.sdk.resources import Resource
+
+
+def _getCloudProvider() -> str:
+    providers = ["amazon", "google", "microsoft", "oracle"]
+    path = "/sys/class/dmi/id/"
+    if os.path.isdir(path):
+        for idFile in os.listdir(path):
+            try:
+                with open(idFile, "r") as file:
+                    contents = file.read().lower()
+                    for provider in providers:
+                        if provider in contents:
+                            return provider
+            except:
+                pass
+    return ""
 
 
 # Configure logging to console and OTEL.  This should be called before any
@@ -50,6 +68,12 @@ def configureLogging(
                 {
                     "event.domain": "serve",
                     "telemetry.session": uuid.uuid4().hex,
+                    "enduser.id": "",
+                    "os.type": platform.system(),
+                    "os.version": platform.release(),
+                    "cpu.description": platform.processor(),
+                    "cpu.arch": platform.architecture()[0],
+                    "system.cloud": _getCloudProvider(),
                 }
             ),
         )
