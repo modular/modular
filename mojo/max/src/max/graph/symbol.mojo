@@ -805,7 +805,7 @@ struct Symbol(CollectionElement, Stringable, Formattable):
     fn print(self, label: String = "debug_tensor") raises:
         """Prints this `Symbol`'s value at runtime.
 
-        This uses `mo.debug.tensor.print` to enable printing the runtime value
+        This uses `mo.debug.tensor.unsafe.print` to enable printing the runtime value
         that this `Symbol` represents, at grpah execution time.
 
         Args:
@@ -814,8 +814,11 @@ struct Symbol(CollectionElement, Stringable, Formattable):
         var g = self.graph()
         var layer = g.current_layer()
         var label_prefix = (layer + ": ") if layer else ""
+        # TODO(MSDK-1160): As with the Python implementation of debug printing
+        # this should instead use the standard mo.debug.tensor.print which has
+        # a chain as input and output enabling proper sequencing of prints.
         _ = g.nvop(
-            "mo.debug.tensor.print",
+            "mo.debug.tensor.unsafe.print",
             self,
             List[Type](),
             _string_attr(g._context(), "label", label_prefix + label),
