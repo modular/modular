@@ -10,7 +10,7 @@ from .graph import Graph
 from .type import BufferType, DimLike, ShapeLike, TensorType, Type
 from .type import _ChainType as ChainType
 from .type import _OpaqueType as OpaqueType
-from .value import BufferValue, TensorValue, TensorValueLike, Value, ValueLike
+from .value import BufferValue, TensorValue, TensorValueLike, Value
 from .value import _ChainValue as ChainValue
 from .value import _OpaqueValue as OpaqueValue
 from .weight import Weight

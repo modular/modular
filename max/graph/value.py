@@ -43,7 +43,7 @@ class Value:
 
     _mlir_value: mlir.Value
 
-    def __new__(cls, value: ValueLike):
+    def __new__(cls, value: Union[Value, mlir.Value, TensorValueLike]):
         # If a subclass is being requested, let the subclass `__init__` deal with everything.
         # Note, we can't use `issubclass` here cause `Value` is a subclass of `Value` according to python.
         if cls is not Value:
@@ -71,8 +71,8 @@ class Value:
             # Value(x) where x is an instance of a subclass of Value.
             # Return the correct subclass based on the type of value.
             return super().__new__(type(value))
-        elif isinstance(value, _numeric + (Weight,)):
-            # Value(x) where x is a numeric or Weight.
+        elif isinstance(value, _tensor_value_like):
+            # Value(x) where x is a TensorValueLike.
             # Explicitly tell the user to call `TensorValue` if that is what they wanted.
             raise TypeError(
                 "Value() can not be created directly from a"
@@ -103,7 +103,7 @@ class Value:
 
 
 class _ChainValue(Value):
-    def __init__(self, value: ValueLike):
+    def __init__(self, value: Union[Value, mlir.Value]):
         if isinstance(value, mlir.Value) and _graph.type_is_chain(value.type):
             self._mlir_value = value
         elif isinstance(value, _ChainValue):
@@ -123,7 +123,7 @@ class _ChainValue(Value):
 class _OpaqueValue(Value):
     """Represents an opaque value within a `Graph`."""
 
-    def __init__(self, value: ValueLike) -> None:
+    def __init__(self, value: Union[Value, mlir.Value]) -> None:
         if isinstance(value, mlir.Value) and _graph.type_is_opaque(value.type):
             self._mlir_value = value
         elif isinstance(value, _OpaqueValue):
@@ -138,7 +138,7 @@ class _OpaqueValue(Value):
 class BufferValue(Value):
     """Represents a mutable semantic tensor within a `Graph`."""
 
-    def __init__(self, value: ValueLike) -> None:
+    def __init__(self, value: Union[Value, mlir.Value]) -> None:
         if isinstance(value, mlir.Value) and _graph.type_is_buffer(value.type):
             self._mlir_value = value
         elif isinstance(value, BufferValue):
@@ -200,7 +200,7 @@ class BufferValue(Value):
 class TensorValue(Value):
     """Represents a value semantic tensor within a `Graph`."""
 
-    def __init__(self, value: ValueLike) -> None:
+    def __init__(self, value: TensorValueLike) -> None:
         if isinstance(value, mlir.Value) and _graph.type_is_tensor(value.type):
             self._mlir_value = value
         elif isinstance(value, TensorValue):
@@ -293,7 +293,7 @@ class TensorValue(Value):
         )
 
     def __eq__(self, rhs: Any) -> TensorValue:  # type: ignore[override]
-        if _is_value_like(rhs):
+        if _is_tensor_value_like(rhs):
             return ops.equal(self, rhs)
         else:
             raise TypeError(
@@ -305,7 +305,7 @@ class TensorValue(Value):
         return ops.negate(self)
 
     def __ne__(self, rhs: Any) -> TensorValue:  # type: ignore[override]
-        if _is_value_like(rhs):
+        if _is_tensor_value_like(rhs):
             return ops.not_equal(self, rhs)
         else:
             raise TypeError(
@@ -314,7 +314,7 @@ class TensorValue(Value):
             )
 
     def __ge__(self, rhs: Any) -> TensorValue:
-        if _is_value_like(rhs):
+        if _is_tensor_value_like(rhs):
             return ops.greater_equal(self, rhs)
         else:
             raise TypeError(
@@ -323,7 +323,7 @@ class TensorValue(Value):
             )
 
     def __gt__(self, rhs: Any) -> TensorValue:
-        if _is_value_like(rhs):
+        if _is_tensor_value_like(rhs):
             return ops.greater(self, rhs)
         else:
             raise TypeError(
@@ -414,27 +414,16 @@ class TensorValue(Value):
         return ops.logical_xor(lhs, self)
 
 
-StrongValueLike = Union[mlir.Value, Value, Weight]
 Numeric = Union[int, float, np.integer, np.floating, np.ndarray]
-ValueLike = Union[StrongValueLike, Numeric]
-
 StrongTensorValueLike = Union[mlir.Value, TensorValue, Weight]
 TensorValueLike = Union[StrongTensorValueLike, Numeric]
 
-
 # This is needed for python 3.9 compatibility.
 # `isinstance` only works with tuples and not unions in 3.9.
-_strong_value_like = (mlir.Value, Value, Weight)
 _numeric = (int, float, np.integer, np.floating, np.ndarray)
-_value_like = _strong_value_like + _numeric
-
 _strong_tensor_value_like = (mlir.Value, TensorValue, Weight)
 _tensor_value_like = _strong_tensor_value_like + _numeric
 
 
 def _is_tensor_value_like(obj: Any) -> TypeGuard[TensorValueLike]:
     return isinstance(obj, _tensor_value_like)
-
-
-def _is_value_like(obj: Any) -> TypeGuard[ValueLike]:
-    return isinstance(obj, _value_like)
