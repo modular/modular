@@ -7,6 +7,7 @@
 #ifndef KGEN_MOJOPARSER_PARAMBINDINGS_H
 #define KGEN_MOJOPARSER_PARAMBINDINGS_H
 
+#include "KGEN/LITDialect/LITAttrs.h"
 #include "KGEN/MojoParser/CallOperands.h"
 
 namespace M::KGEN {
@@ -194,11 +195,20 @@ private:
 
   /// A list of all default parameter values declared for a type, if these are
   /// bindings for an overload set on a method.
-  ArrayRef<TypedAttr> defaultTypeParams;
+  /// FIXME: When parameterization is rebuilt remove these two fields.
+  ArrayRef<TypedAttr> defaultPosTypeParams;
+  ArrayRef<TypedAttr> defaultKwTypeParams;
 
+  /// FIXME: When parameterization is rebuilt remove this field.
+  /// Store the passing kind of the original parameter so we can search the
+  /// corresponding defaults array.
+  SmallVector<PogMetadataAttr> ctadPogs;
+
+  /// FIXME: When parameterization is rebuilt remove this field.
   /// The number of parameters declared for a type, if these are bindings for an
   /// overload set on a method.
-  size_t numCtadParams = 0;
+  size_t numPosCtadParams = 0;
+  size_t numKwOnlyCtadParams = 0;
 
   /// The number of pre-type-checked positional arguments.
   /// FIXME: Remove this, why is this needed?
