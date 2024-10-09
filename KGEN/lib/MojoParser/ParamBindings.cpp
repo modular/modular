@@ -33,8 +33,11 @@ using namespace M::KGEN::LIT;
 /// because we have
 void ParamBindings::operator=(ParamBindings &&other) {
   parameters = std::move(other.parameters);
-  defaultTypeParams = other.defaultTypeParams;
-  numCtadParams = other.numCtadParams;
+  defaultPosTypeParams = other.defaultPosTypeParams;
+  defaultKwTypeParams = other.defaultKwTypeParams;
+  ctadPogs = other.ctadPogs;
+  numKwOnlyCtadParams = other.numKwOnlyCtadParams;
+  numPosCtadParams = other.numPosCtadParams;
   numPreTypeChecked = other.numPreTypeChecked;
 }
 
@@ -45,14 +48,25 @@ ParamBindings
 ParamBindings::getForDeclaredType(const TypeCheckScopeInfo &scopeInfo,
                                   ASTType type, const ExprNode *expr) {
   ParamBindings paramBindings(scopeInfo);
-  paramBindings.numCtadParams = type.getParamBindings().size();
+  // TODO: this will not work with arbitrary parametric ancestors.
   // Default params need to come from the original declaration, instead of
   // TypeSignatureType, as the latter won't contain the full defaults list if
   // any have been bound already (when `type` is partially specified).
   Operation *decl = type.getDecl(scopeInfo.shared)->getIfOperation();
-  if (auto structDecl = dyn_cast<StructDeclOp>(decl))
-    paramBindings.defaultTypeParams =
+  if (auto structDecl = dyn_cast<StructDeclOp>(decl)) {
+    paramBindings.defaultPosTypeParams =
         structDecl.getSignature().getDefaultPosParams();
+    paramBindings.defaultKwTypeParams =
+        structDecl.getSignature().getDefaultKwOnlyParams();
+    llvm::append_range(paramBindings.ctadPogs,
+                       structDecl.getSignature().getParamListAttrs().getPogs());
+    for (auto pog : paramBindings.ctadPogs) {
+      if (pog.getPassingKind() == PassingKind::KwOnly)
+        paramBindings.numKwOnlyCtadParams++;
+      else
+        paramBindings.numPosCtadParams++;
+    }
+  }
 
   // When binding a trait function, add the self type bindings.
   if (auto trait = dyn_cast_or_null<TraitType>(type.getMetaType()))
@@ -265,11 +279,28 @@ ParamBindings::verifyBindingsImpl(
       return evaluator.getReboundAttribute(defaultOr);
     }
 
-    // Determine if we can use a default parameter for CTAD.
-    size_t defaultStartIdx = numCtadParams - defaultTypeParams.size();
-    if (idx < numCtadParams && idx >= defaultStartIdx) {
+    // Determine if we can use a default parameter for CTAD
+    if (ctadPogs.size() <= idx)
+      return {};
+
+    PassingKind passingKind = ctadPogs[idx].getPassingKind();
+    ArrayRef<TypedAttr> defaults;
+    unsigned numCtadParams;
+    unsigned normalizedIdx;
+    if (passingKind == PassingKind::KwOnly) {
+      defaults = defaultKwTypeParams;
+      numCtadParams = numKwOnlyCtadParams;
+      normalizedIdx = idx - numPosCtadParams;
+    } else {
+      defaults = defaultPosTypeParams;
+      numCtadParams = numPosCtadParams;
+      normalizedIdx = idx;
+    }
+
+    size_t defaultStartIdx = numCtadParams - defaults.size();
+    if (normalizedIdx < numCtadParams && normalizedIdx >= defaultStartIdx) {
       return cast<TypedAttr>(evaluator.getReboundAttribute(
-          defaultTypeParams[idx - defaultStartIdx]));
+          defaults[normalizedIdx - defaultStartIdx]));
     }
 
     return {};
