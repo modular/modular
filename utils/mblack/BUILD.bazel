@@ -1,6 +1,6 @@
 load("@pip_deps//:requirements.bzl", "requirement")
 load("@rules_pkg//pkg:mappings.bzl", "pkg_files", "strip_prefix")
-load("@rules_python//python:defs.bzl", "py_binary")
+load("//bazel:api.bzl", "modular_py_binary")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -9,7 +9,7 @@ exports_files([
     "shim.py",
 ])
 
-py_binary(
+modular_py_binary(
     name = "mblack_main",
     srcs = ["src/mblack/__main__.py"],
     main = "src/mblack/__main__.py",
@@ -18,7 +18,7 @@ py_binary(
     ],
 )
 
-py_binary(
+modular_py_binary(
     name = "mblack",
     srcs = glob(["src/**/*.py"]),
     data = glob(["src/**/*.txt"]),

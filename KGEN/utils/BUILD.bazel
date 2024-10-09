@@ -1,6 +1,7 @@
 load("@pip_deps//:requirements.bzl", "requirement")
+load("//bazel:api.bzl", "modular_py_binary")
 
-py_binary(
+modular_py_binary(
     name = "mojodoc_json_to_markdown",
     srcs = ["mojodoc_json_to_markdown.py"],
     data = glob(["mojodoc-templates/*.md"]),
