@@ -509,6 +509,10 @@ LogicalResult KGEN::compileLLVMToAssembly(LLVMModuleAndContext module,
     return failure();
 
   if (!options.saveTempsPrefix.empty()) {
+    // use `.asm` here so that this won't overwritten by those dump
+    // in emitArchive which is `.s`.
+    // This not a perfect solution for overwriting because calling this
+    // function multiple times will still overwrite.
     std::string outPath = options.saveTempsPrefix + ".asm";
     auto outFile = mlir::openOutputFile(outPath);
     if (!outFile)
