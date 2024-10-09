@@ -218,7 +218,36 @@ struct DeviceFunctionV2[
         cache_config: OptionalReg[CacheConfig] = None,
         func_attribute: OptionalReg[FuncAttribute] = None,
     ) raises:
-        # const char *AsyncRT_DeviceContext_compileFunction(const DeviceFunction **result, const DeviceContext *ctx, const char *function_name, const void *data)
+        if max_registers:
+            print(
+                "DeviceFunctionV2.__init__: max_registers = "
+                + str(max_registers.value())
+            )
+            not_implemented_yet["DeviceFunctionV2.__init__: max_registers"]()
+
+        var max_dynamic_shared_size_bytes: Int32 = -1
+        if func_attribute:
+            if (
+                func_attribute.value().attribute
+                == Attribute.MAX_DYNAMIC_SHARED_SIZE_BYTES
+            ):
+                max_dynamic_shared_size_bytes = func_attribute.value().value
+            else:
+                print(
+                    "DeviceFunctionV2.__init__: func_attribute = ["
+                    + str(func_attribute.value().attribute.code)
+                    + ", "
+                    + str(func_attribute.value().value)
+                    + "]"
+                )
+                not_implemented_yet[
+                    "DeviceFunctionV2.__init__: func_attribute"
+                ]()
+
+        # const char *AsyncRT_DeviceContext_compileFunction(const DeviceFunction **result, const DeviceContext *ctx,
+        #                                                   const char *function_name, const void *data,
+        #                                                   int32_t max_registers, int32_t threads_per_block,
+        #                                                   int32_t cache_mode, int32_t cache_config, int32_t max_dynamic_shared_bytes)
         var result = _DeviceFunctionPtr()
         _checked(
             external_call[
@@ -228,11 +257,21 @@ struct DeviceFunctionV2[
                 _DeviceContextPtr,
                 _CharPtr,
                 _CharPtr,
+                Int32,
+                Int32,
+                Int32,
+                Int32,
+                Int32,
             ](
                 UnsafePointer.address_of(result),
                 ctx._handle,
                 self._func_impl.function_name.unsafe_ptr(),
                 self._func_impl.asm.unsafe_ptr(),
+                max_registers.or_else(-1),
+                threads_per_block.or_else(-1),
+                int(cache_mode.or_else(-1)),
+                cache_config.or_else(CacheConfig(-1)).code,
+                max_dynamic_shared_size_bytes,
             )
         )
         self._handle = result
@@ -275,15 +314,32 @@ struct DeviceFunctionV2[
             var first_word_addr = UnsafePointer.address_of(args[i])
             dense_args_addrs[arg_offset] = first_word_addr.bitcast[NoneType]()
 
+        if cluster_dim:
+            not_implemented_yet[
+                "DeviceFunctionV2._call_with_pack: cluster_dim"
+            ]()
+
+        if len(attributes) != 0:
+            not_implemented_yet[
+                "DeviceFunctionV2._call_with_pack: attributes"
+            ]()
+
+        if len(constant_memory) != 0:
+            not_implemented_yet[
+                "DeviceFunctionV2._call_with_pack: constant_memory"
+            ]()
+
         # const char *AsyncRT_DeviceContext_enqueueFunctionDirect(const DeviceContext *ctx, const DeviceFunction *func,
         #                                                         uint32_t gridX, uint32_t gridY, uint32_t gridZ,
-        #                                                         uint32_t blockX, uint32_t blockY, uint32_t blockZ, void **args)
+        #                                                         uint32_t blockX, uint32_t blockY, uint32_t blockZ,
+        #                                                         uint32_t sharedMemBytes, void **args)
         _checked(
             external_call[
                 "AsyncRT_DeviceContext_enqueueFunctionDirect",
                 _CharPtr,
                 _DeviceContextPtr,
                 _DeviceFunctionPtr,
+                UInt32,
                 UInt32,
                 UInt32,
                 UInt32,
@@ -300,6 +356,7 @@ struct DeviceFunctionV2[
                 block_dim.x(),
                 block_dim.y(),
                 block_dim.z(),
+                shared_mem_bytes.or_else(0),
                 dense_args_addrs,
             )
         )
@@ -410,6 +467,12 @@ struct DeviceContextV2:
         self.synchronize()
         return result
 
+    fn create_buffer[
+        type: DType
+    ](self, size: Int) raises -> DeviceBufferV2[type]:
+        """Enqueues a buffer creation using the DeviceBuffer constructor."""
+        return DeviceBufferV2[type](self, size, Self.ASYNC)
+
     fn compile_function[
         func_type: AnyTrivialRegType, //,
         func: func_type,
@@ -462,9 +525,16 @@ struct DeviceContextV2:
             ConstantMemoryMapping
         ](),
     ) raises:
-        not_implemented_yet[
-            "##### UNIMPLEMENTED: DeviceContextV2.enqueue_function"
-        ]()
+        self._enqueue_function(
+            f,
+            args,
+            grid_dim=grid_dim,
+            block_dim=block_dim,
+            cluster_dim=cluster_dim,
+            shared_mem_bytes=shared_mem_bytes,
+            attributes=attributes^,
+            constant_memory=constant_memory^,
+        )
 
     @parameter
     fn _enqueue_function[
