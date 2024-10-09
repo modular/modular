@@ -23,6 +23,7 @@ from max.dtype import DType
 from max.graph import BufferType, Graph, TensorType
 from max.graph.type import Dim, Shape, StaticDim, SymbolicDim
 
+MAX_INT32 = np.iinfo(np.int32).max
 MAX_INT64 = np.iinfo(np.int64).max
 
 dtypes = st.sampled_from([d for d in DType if d is not DType._unknown])

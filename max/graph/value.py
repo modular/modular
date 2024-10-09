@@ -269,6 +269,9 @@ class TensorValue(Value):
     def reshape(self, shape: ShapeLike) -> TensorValue:
         return ops.reshape(self, shape)
 
+    def broadcast_to(self, shape: ShapeLike) -> TensorValue:
+        return ops.broadcast_to(self, shape)
+
     def cast(self, dtype: DType) -> TensorValue:
         return ops.cast(self, dtype)
 

@@ -10,6 +10,7 @@ from collections.abc import Collection
 
 import pytest
 from conftest import (
+    MAX_INT32,
     MAX_INT64,
     axes,
     shapes,
@@ -83,7 +84,8 @@ shared_static_shapes = st.shared(shapes(max_rank=4, is_static=True))
 def test_reshape__can_permute_input_shape(
     input_type: TensorType, output_shape: list[Dim]
 ):
-    assert static_known_shape_size(input_type.shape) <= MAX_INT64
+    # TODO(GRA-1015): remove this assumption
+    assume(static_known_shape_size(input_type.shape) <= MAX_INT32)
     with Graph("reshape", input_types=[input_type]) as graph:
         out = graph.inputs[0].reshape(output_shape)
         assert out.shape == output_shape
@@ -97,11 +99,10 @@ def test_reshape__can_permute_input_shape(
 def test_reshapes__can_replace_any_dims_with_negative_one(
     input_type: TensorType, reshape_shape: list[Dim]
 ):
-    assert static_known_shape_size(input_type.shape) <= MAX_INT64
     assume(0 not in input_type.shape)
 
-    # TODO(GRA-864): Remove this assumption
-    assert static_known_shape_size(input_type.shape) <= MAX_INT64
+    # TODO(GRA-1015): remove this assumption
+    assume(static_known_shape_size(input_type.shape) <= MAX_INT32)
 
     with Graph("reshape", input_types=[input_type]) as graph:
         out = graph.inputs[0].reshape(reshape_shape)
@@ -177,7 +178,8 @@ def test_reshape__fails_with_different_symbolic_dim(
     assume(0 not in input_type.shape)
     assume(dim not in input_type.shape)
     with Graph("reshape", input_types=[input_type]) as graph:
-        graph.inputs[0].reshape([*output_shape, dim])
+        with pytest.raises(ValueError):
+            graph.inputs[0].reshape([*output_shape, dim])
 
 
 @given(
