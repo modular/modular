@@ -11,4 +11,8 @@ from ..value import TensorValue
 
 
 def print(value: TensorValue, label: str = "debug_tensor"):
-    Graph.current._add_op(mo.debug_tensor_print, value, label=label)
+    in_chain = Graph.current._current_chain
+    output = Graph.current._add_op(
+        mo.debug_tensor_print, in_chain, value, label=label
+    )[0]
+    Graph.current._update_chain(output)
