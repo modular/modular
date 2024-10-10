@@ -8,7 +8,7 @@ from algorithm import sync_parallelize
 from algorithm.functional import _get_start_indices_of_nth_subvolume
 from buffer import NDBuffer
 from buffer.dimlist import Dim, DimList
-from register import mogg_register
+from register import mogg_register, mogg_register_shape_func
 from runtime.tracing import Trace, TraceLevel
 
 from utils.index import IndexList
@@ -61,7 +61,7 @@ fn arg_nonzero[
 
 
 # Where has the shape 2D shape [NumNonZeros, InputRank]
-@mogg_register("arg_nonzero_shape")
+@mogg_register_shape_func("mo.arg_nonzero")
 @always_inline
 fn arg_nonzero_shape[
     type: DType,
