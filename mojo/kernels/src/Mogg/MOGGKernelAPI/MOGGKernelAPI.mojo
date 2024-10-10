@@ -34,6 +34,7 @@ from algorithm import max as reduce_max
 from algorithm import mean
 from algorithm import min as reduce_min
 from algorithm import product, sum
+from algorithm.reduction import _reduce_generator, _reduce_generator_cpu
 
 # ===----------------------------------------------------------------------===#
 # General imports
@@ -84,9 +85,10 @@ from nn.softmax import logsoftmax, softmax
 from nn.tile import tile, tile_shape
 from nn.topk import top_k, top_k_shape_impl
 from runtime.asyncrt import MojoCallContextPtr
+from runtime.tracing import Trace, TraceLevel, trace_arg
 from tensor_utils import ManagedTensorSlice, foreach
 
-from utils import IndexList
+from utils import IndexList, StaticTuple
 from utils.index import Index
 from utils.numerics import isinf, isnan
 
@@ -95,7 +97,7 @@ from utils.numerics import isinf, isnan
 # ===----------------------------------------------------------------------===#
 
 # TODO(GRA-914): Properly support scalars.
-alias Scalar = ManagedTensorSlice[rank=1]
+alias ScalarTensor = ManagedTensorSlice[rank=1]
 
 
 # Until the kernel translation is complete, this is copied from MOGG.mojo.
@@ -116,7 +118,7 @@ fn reduce_shape[
     input_type: DType,
 ](
     input_buf: ManagedTensorSlice[input_type, input_rank],
-    axis0: Scalar,
+    axis0: ScalarTensor,
 ) raises -> IndexList[input_rank]:
     """
     Compute the output shape of a `reduce` operation, and assert the inputs are
@@ -163,9 +165,9 @@ struct Range:
         target: StringLiteral,
     ](
         output: ManagedTensorSlice[type=type, rank=1],
-        start: Scalar[type=type],
-        stop: Scalar[type=type],
-        step: Scalar[type=type],
+        start: ScalarTensor[type=type],
+        stop: ScalarTensor[type=type],
+        step: ScalarTensor[type=type],
         ctx: MojoCallContextPtr,
     ):
         @parameter
@@ -179,9 +181,9 @@ struct Range:
     fn shape[
         type: DType
     ](
-        start: Scalar[type=type],
-        stop: Scalar[type=type],
-        step: Scalar[type=type],
+        start: ScalarTensor[type=type],
+        stop: ScalarTensor[type=type],
+        step: ScalarTensor[type=type],
     ) raises -> IndexList[1]:
         return arange_shape[single_thread_blocking_override=True](
             managed_tensor_slice_to_ndbuffer(start),
@@ -1675,9 +1677,9 @@ struct SliceDim:
     ](
         output: ManagedTensorSlice[type=type, rank=rank],
         input: ManagedTensorSlice[type=type, rank=rank],
-        starts: Scalar,
-        stops: Scalar,
-        steps: Scalar,
+        starts: ScalarTensor,
+        stops: ScalarTensor,
+        steps: ScalarTensor,
     ):
         var view_buffer = slice_dim_as_view[dim=axis](
             managed_tensor_slice_to_ndbuffer(input),
@@ -1783,7 +1785,7 @@ struct Mean:
     ](
         output: ManagedTensorSlice,
         input: ManagedTensorSlice[type = output.type, rank = output.rank],
-        axis: Scalar,
+        axis: ScalarTensor,
     ) raises:
         @parameter
         @always_inline
@@ -1820,7 +1822,7 @@ struct Mean:
         input_type: DType,
     ](
         input: ManagedTensorSlice[input_type, input_rank],
-        axis: Scalar,
+        axis: ScalarTensor,
     ) raises -> IndexList[input_rank]:
         return reduce_shape[input_rank, input_type](input, axis)
 
@@ -1833,7 +1835,7 @@ struct ReduceAdd:
     ](
         output: ManagedTensorSlice,
         input: ManagedTensorSlice[type = output.type, rank = output.rank],
-        axis: Scalar,
+        axis: ScalarTensor,
     ) raises:
         @parameter
         @always_inline
@@ -1870,7 +1872,7 @@ struct ReduceAdd:
         input_type: DType,
     ](
         input: ManagedTensorSlice[input_type, input_rank],
-        axis: Scalar,
+        axis: ScalarTensor,
     ) raises -> IndexList[input_rank]:
         return reduce_shape[input_rank, input_type](input, axis)
 
@@ -1883,7 +1885,7 @@ struct ReduceMul:
     ](
         output: ManagedTensorSlice,
         input: ManagedTensorSlice[type = output.type, rank = output.rank],
-        axis: Scalar,
+        axis: ScalarTensor,
     ) raises:
         @parameter
         @always_inline
@@ -1920,7 +1922,7 @@ struct ReduceMul:
         input_type: DType,
     ](
         input: ManagedTensorSlice[input_type, input_rank],
-        axis: Scalar,
+        axis: ScalarTensor,
     ) raises -> IndexList[input_rank]:
         return reduce_shape[input_rank, input_type](input, axis)
 
@@ -1933,7 +1935,7 @@ struct ReduceMax:
     ](
         output: ManagedTensorSlice,
         input: ManagedTensorSlice[type = output.type, rank = output.rank],
-        axis: Scalar,
+        axis: ScalarTensor,
     ) raises:
         @parameter
         @always_inline
@@ -1970,7 +1972,7 @@ struct ReduceMax:
         input_type: DType,
     ](
         input: ManagedTensorSlice[input_type, input_rank],
-        axis: Scalar,
+        axis: ScalarTensor,
     ) raises -> IndexList[input_rank]:
         return reduce_shape[input_rank, input_type](input, axis)
 
@@ -1983,7 +1985,7 @@ struct ReduceMin:
     ](
         output: ManagedTensorSlice,
         input: ManagedTensorSlice[type = output.type, rank = output.rank],
-        axis: Scalar,
+        axis: ScalarTensor,
     ) raises:
         @parameter
         @always_inline
@@ -2020,9 +2022,126 @@ struct ReduceMin:
         input_type: DType,
     ](
         input: ManagedTensorSlice[input_type, input_rank],
-        axis: Scalar,
+        axis: ScalarTensor,
     ) raises -> IndexList[input_rank]:
         return reduce_shape[input_rank, input_type](input, axis)
+
+
+@compiler.register("mo.reduce_min_and_max")
+struct ReduceMinMax:
+    @staticmethod
+    fn execute[
+        synchronous: Bool,
+        target: StringLiteral,
+        type: DType,
+        rank: Int,
+    ](
+        output: ManagedTensorSlice[type=type, rank=rank],
+        input: ManagedTensorSlice[type=type, rank=rank],
+        axis0: ScalarTensor,
+        ctx: MojoCallContextPtr,
+    ) raises:
+        """Given a tensor of shape [A, B, C, D] and reducing along dimension 'C'
+        writes to a tensor of shape [A, B, 2, D] where [:, :, 0, :] contains
+        the minimum reduction and [:, :, 1, :] contains the maximum reduction.
+        """
+
+        alias num_reductions = 2
+        var axis = int(normalize_neg_index(axis0[0], rank))
+
+        @parameter
+        @always_inline
+        fn input_0_fn[
+            width: Int, rank: Int
+        ](coords: IndexList[rank]) -> SIMD[input.type, width]:
+            return input.load[width=width](
+                rebind[IndexList[input.rank]](coords)
+            )
+
+        @parameter
+        @always_inline
+        fn output_0_fn[
+            width: Int, rank: Int
+        ](coords: IndexList[rank], val: SIMD[output.type, width]):
+            output.store[width=width](
+                rebind[IndexList[output.rank]](coords),
+                rebind[SIMD[output.type, width]](val),
+            )
+
+        @always_inline
+        @parameter
+        fn input_0_fn_wrapper[
+            _type: DType, width: Int, rank: Int
+        ](idx: IndexList[rank]) -> SIMD[_type, width]:
+            return rebind[SIMD[_type, width]](input_0_fn[width, rank](idx))
+
+        @always_inline
+        @parameter
+        fn output_0_fn_wrapper[
+            _type: DType, width: Int, rank: Int
+        ](
+            indices: IndexList[rank],
+            val: StaticTuple[SIMD[_type, width], num_reductions],
+        ):
+            # TODO: once we support multiple outputs, change this to route to
+            # TODO: multiple output tensors.
+            var indices_min = indices
+            indices_min[axis] = 0
+            output_0_fn[width, rank](
+                indices_min, rebind[SIMD[type, width]](val[0])
+            )
+
+            var indices_max = indices
+            indices_max[axis] = 1
+            output_0_fn[width, rank](
+                indices_max, rebind[SIMD[type, width]](val[1])
+            )
+
+        @always_inline
+        @parameter
+        fn reduce_fn[
+            ty: DType,
+            width: Int,
+            reduction_idx: Int,
+        ](left: SIMD[ty, width], right: SIMD[ty, width]) -> SIMD[ty, width]:
+            constrained[reduction_idx < num_reductions, "reduction_idx OOB"]()
+
+            @parameter
+            if reduction_idx == 0:
+                return min(left, right)
+            else:
+                return max(left, right)
+
+        var init_min = Scalar[type].MAX
+        var init_max = Scalar[type].MIN
+        var init = StaticTuple[Scalar[type], num_reductions](init_min, init_max)
+
+        with Trace[TraceLevel.OP, target=target]("reduce_min_and_max"):
+            _reduce_generator[
+                num_reductions,
+                type,
+                input_0_fn_wrapper,
+                output_0_fn_wrapper,
+                reduce_fn,
+                single_thread_blocking_override=synchronous,
+                target=target,
+            ](
+                input.get_static_spec().shape,
+                init=init,
+                reduce_dim=axis,
+                context=ctx,
+            )
+        _ = axis
+
+    @staticmethod
+    fn shape(
+        input: ManagedTensorSlice, axis0: ScalarTensor
+    ) -> IndexList[input.rank]:
+        var new_shape = input.get_static_spec().shape
+        var axis = int(normalize_neg_index(axis0[0], input.rank))
+        new_shape[axis] = 2
+
+        return new_shape
 
 
 # ===----------------------------------------------------------------------===#
@@ -2342,7 +2461,7 @@ struct Gather:
         output: ManagedTensorSlice,
         input: ManagedTensorSlice[output.type, *_],
         indices: ManagedTensorSlice,
-        axis: Scalar,
+        axis: ScalarTensor,
         ctx: MojoCallContextPtr,
     ) raises:
         @parameter
@@ -2397,7 +2516,7 @@ struct Gather:
     ](
         input: ManagedTensorSlice,
         indices: ManagedTensorSlice,
-        axis: Scalar,
+        axis: ScalarTensor,
     ) raises -> IndexList[output_rank]:
         return gather_shape[
             output_rank=output_rank,
@@ -2452,7 +2571,7 @@ struct LayerNorm:
         input: ManagedTensorSlice[type=type, rank=rank],
         gamma: ManagedTensorSlice[type=type, rank=1],
         beta: ManagedTensorSlice[type=type, rank=1],
-        epsilon: Scalar[type=type],
+        epsilon: ScalarTensor[type=type],
         ctx: MojoCallContextPtr,
     ) raises:
         @parameter
@@ -2492,7 +2611,7 @@ struct LayerNorm:
         input: ManagedTensorSlice[type=type, rank=rank],
         gamma: ManagedTensorSlice[type=type, rank=1],
         beta: ManagedTensorSlice[type=type, rank=1],
-        epsilon: Scalar[type=type],
+        epsilon: ScalarTensor[type=type],
     ) -> IndexList[rank]:
         return input._spec.shape
 
@@ -2508,7 +2627,7 @@ struct RMSNorm:
         output: ManagedTensorSlice[type=type, rank=rank],
         input: ManagedTensorSlice[type=type, rank=rank],
         gamma: ManagedTensorSlice[type=type, rank=1],
-        epsilon: Scalar[type=type],
+        epsilon: ScalarTensor[type=type],
         ctx: MojoCallContextPtr,
     ) raises:
         @parameter
@@ -2535,7 +2654,7 @@ struct RMSNorm:
     ](
         input: ManagedTensorSlice[type=type, rank=rank],
         gamma: ManagedTensorSlice[type=type, rank=1],
-        epsilon: Scalar[type=type],
+        epsilon: ScalarTensor[type=type],
     ) -> IndexList[rank]:
         return input._spec.shape
 
@@ -2555,9 +2674,9 @@ struct BottomK:
         values: ManagedTensorSlice[type=type, rank=rank],
         indices: ManagedTensorSlice[type = DType.int64, rank=rank],
         input: ManagedTensorSlice[type=type, rank=rank],
-        k: Scalar,
-        axis: Scalar,
-        sorted: Scalar[type = DType.bool],
+        k: ScalarTensor,
+        axis: ScalarTensor,
+        sorted: ScalarTensor[type = DType.bool],
     ):
         top_k(
             managed_tensor_slice_to_ndbuffer(input),
@@ -2574,9 +2693,9 @@ struct BottomK:
         axis_type: DType
     ](
         input: ManagedTensorSlice,
-        k: Scalar[axis_type],
-        axis: Scalar[axis_type],
-        sorted: Scalar[type = DType.bool],
+        k: ScalarTensor[axis_type],
+        axis: ScalarTensor[axis_type],
+        sorted: ScalarTensor[type = DType.bool],
     ) raises -> IndexList[input.rank]:
         return top_k_shape_impl[single_thread_blocking_override=True](
             managed_tensor_slice_to_ndbuffer(input),
@@ -2595,9 +2714,9 @@ struct TopK:
         values: ManagedTensorSlice[type=type, rank=rank],
         indices: ManagedTensorSlice[type = DType.int64, rank=rank],
         input: ManagedTensorSlice[type=type, rank=rank],
-        k: Scalar,
-        axis: Scalar,
-        sorted: Scalar[type = DType.bool],
+        k: ScalarTensor,
+        axis: ScalarTensor,
+        sorted: ScalarTensor[type = DType.bool],
     ):
         top_k(
             managed_tensor_slice_to_ndbuffer(input),
@@ -2614,9 +2733,9 @@ struct TopK:
         axis_type: DType
     ](
         input: ManagedTensorSlice,
-        k: Scalar[axis_type],
-        axis: Scalar[axis_type],
-        sorted: Scalar[type = DType.bool],
+        k: ScalarTensor[axis_type],
+        axis: ScalarTensor[axis_type],
+        sorted: ScalarTensor[type = DType.bool],
     ) raises -> IndexList[input.rank]:
         return top_k_shape_impl[single_thread_blocking_override=True](
             managed_tensor_slice_to_ndbuffer(input),
@@ -2639,9 +2758,9 @@ struct NonMaximumSupression:
         output: ManagedTensorSlice[type = DType.int64, rank=2],
         boxes: ManagedTensorSlice[type=type, rank=3],
         scores: ManagedTensorSlice[type, rank=3],
-        max_output_boxes_per_class: Scalar[DType.int64],
-        iou_threshold: Scalar[DType.float32],
-        score_threshold: Scalar[DType.float32],
+        max_output_boxes_per_class: ScalarTensor[DType.int64],
+        iou_threshold: ScalarTensor[DType.float32],
+        score_threshold: ScalarTensor[DType.float32],
     ):
         var max_output_boxes_int = int(max_output_boxes_per_class[0])
         var iou_threshold_float = iou_threshold[0]
@@ -2662,9 +2781,9 @@ struct NonMaximumSupression:
     ](
         boxes: ManagedTensorSlice[type=type, rank=3],
         scores: ManagedTensorSlice[type=type, rank=3],
-        max_output_boxes_per_class: Scalar[DType.int64],
-        iou_threshold: Scalar[DType.float32],
-        score_threshold: Scalar[DType.float32],
+        max_output_boxes_per_class: ScalarTensor[DType.int64],
+        iou_threshold: ScalarTensor[DType.float32],
+        score_threshold: ScalarTensor[DType.float32],
     ) -> IndexList[2]:
         var max_output_boxes_int = int(max_output_boxes_per_class[0])
         var iou_threshold_float = iou_threshold[0]
@@ -2963,10 +3082,10 @@ struct ROIAlign:
         output: ManagedTensorSlice[type=type, rank=4],
         input: ManagedTensorSlice[type=type, rank=4],
         rois: ManagedTensorSlice[type=type, rank=2],
-        output_height: Scalar[DType.int64],
-        output_width: Scalar[DType.int64],
-        spatial_scale: Scalar,
-        sampling_ratio: Scalar,
+        output_height: ScalarTensor[DType.int64],
+        output_width: ScalarTensor[DType.int64],
+        spatial_scale: ScalarTensor,
+        sampling_ratio: ScalarTensor,
     ):
         roi_align_nhwc[aligned, mode](
             managed_tensor_slice_to_ndbuffer(output),
@@ -2982,10 +3101,10 @@ struct ROIAlign:
     fn shape(
         input: ManagedTensorSlice[rank=4],
         rois: ManagedTensorSlice[rank=2],
-        output_height: Scalar[DType.int64],
-        output_width: Scalar[DType.int64],
-        spatial_scale: Scalar,
-        sampling_ratio: Scalar,
+        output_height: ScalarTensor[DType.int64],
+        output_width: ScalarTensor[DType.int64],
+        spatial_scale: ScalarTensor,
+        sampling_ratio: ScalarTensor,
     ) -> IndexList[4]:
         var shape = IndexList[4]()
         # input shape is [N, H, W, C]
@@ -3044,9 +3163,9 @@ struct RandomNormal:
     ](
         output: ManagedTensorSlice,
         shape: ManagedTensorSlice[rank=1],
-        mean: Scalar,
-        variance: Scalar,
-        seed_value: Scalar,
+        mean: ScalarTensor,
+        variance: ScalarTensor,
+        seed_value: ScalarTensor,
     ):
         seed(int(seed_value[0]))
         var num_elements = 1
@@ -3078,9 +3197,9 @@ struct StaticRandomNormal:
         mean_var_type: DType
     ](
         output: ManagedTensorSlice,
-        mean: Scalar,
-        variance: Scalar,
-        seed_value: Scalar,
+        mean: ScalarTensor,
+        variance: ScalarTensor,
+        seed_value: ScalarTensor,
     ):
         seed(int(seed_value[0]))
         var num_elements = output.spec().shape.num_elements()
@@ -3199,7 +3318,7 @@ struct CumSum:
     ](
         output: ManagedTensorSlice[type=type, rank=rank],
         input: ManagedTensorSlice[type=type, rank=rank],
-        axis: Scalar,
+        axis: ScalarTensor,
         ctx: MojoCallContextPtr,
     ):
         var output_buf = managed_tensor_slice_to_ndbuffer(output)
@@ -3232,7 +3351,7 @@ struct Conv:
         strides: ManagedTensorSlice,
         dilation: ManagedTensorSlice,
         paddings: ManagedTensorSlice,
-        num_groups: Scalar,
+        num_groups: ScalarTensor,
     ) raises:
         @parameter
         @always_inline
@@ -3515,7 +3634,7 @@ struct MaskedFlashAttentionGPU:
         k: ManagedTensorSlice[rank=rank],
         v: ManagedTensorSlice[rank=rank],
         mask: ManagedTensorSlice,
-        scale: Scalar[type = DType.float32],
+        scale: ScalarTensor[type = DType.float32],
         ctx: MojoCallContextPtr,
     ) raises:
         """`masked_flash_attention_gpu` is a hand-fused operator which does
@@ -3531,7 +3650,7 @@ struct MaskedFlashAttentionGPU:
         attentionMatrix = query_processed @ key_processed
 
         **Step 2:
-        norm = broadcast_to(normScalar, shape_of(attentionMatrix))
+        norm = broadcast_to(normScalarTensor, shape_of(attentionMatrix))
 
         **Step 3:
         # Normalize and apply masking
@@ -3587,7 +3706,7 @@ struct NoMaskFusedAttentionCPU:
         q: ManagedTensorSlice[rank=rank],
         k: ManagedTensorSlice[rank=rank],
         v: ManagedTensorSlice[rank=rank],
-        scale: Scalar[type = DType.float32],
+        scale: ScalarTensor[type = DType.float32],
     ) raises:
         alias q_shape = compiler.specsof[q.type, q.rank]("q").shape
         alias k_shape = compiler.specsof[k.type, q.rank]("k").shape
@@ -3655,7 +3774,7 @@ struct WithMAskFusedAttentionCPU:
         k: ManagedTensorSlice[rank=rank],
         v: ManagedTensorSlice[rank=rank],
         mask: ManagedTensorSlice[rank=rank],
-        scale: Scalar[type = DType.float32],
+        scale: ScalarTensor[type = DType.float32],
     ) raises:
         alias q_shape = compiler.specsof[q.type, q.rank]("q").shape
         alias k_shape = compiler.specsof[k.type, q.rank]("k").shape
@@ -3721,7 +3840,7 @@ struct NoMaskFlashAttentionCPU:
         q: ManagedTensorSlice[type=type, rank=rank],
         k: ManagedTensorSlice[type=type, rank=rank],
         v: ManagedTensorSlice[type=type, rank=rank],
-        scale: Scalar[type = DType.float32],
+        scale: ScalarTensor[type = DType.float32],
     ) raises:
         alias output_shape = compiler.specsof[output.type, output.rank](
             "output"
@@ -3772,7 +3891,7 @@ struct WithMaskFlashAttentionSplitKVCPU:
         k_cache: ManagedTensorSlice[type=type, rank = rank + 1],
         v_cache: ManagedTensorSlice[type=type, rank = rank + 1],
         mask: ManagedTensorSlice[type=type],
-        scale: Scalar[type = DType.float32],
+        scale: ScalarTensor[type = DType.float32],
     ) raises:
         alias output_shape = compiler.specsof[output.type, output.rank](
             "output"
@@ -3851,7 +3970,7 @@ struct WithMaskFlashAttentionCPU:
         k: ManagedTensorSlice[type=type, rank=rank],
         v: ManagedTensorSlice[type=type, rank=rank],
         mask: ManagedTensorSlice[type=type],
-        scale: Scalar[type = DType.float32],
+        scale: ScalarTensor[type = DType.float32],
     ) raises:
         alias output_shape = compiler.specsof[output.type, output.rank](
             "output"
