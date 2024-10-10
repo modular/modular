@@ -37,6 +37,7 @@ fn async_copy[
     fill: Fill = Fill.NONE,
     bypass_L1_16B: Bool = True,
     l2_prefetch: OptionalReg[Int] = None,
+    eviction_policy: CacheEviction = CacheEviction.EVICT_NORMAL,
 ](
     src: UnsafePointer[type, AddressSpace.GLOBAL],
     dst: UnsafePointer[type, AddressSpace.SHARED],
@@ -50,6 +51,7 @@ fn async_copy[
         fill: The fill to use for initializing the data.
         bypass_L1_16B: Bypass the L1 cache for 16 bypes copy.
         l2_prefetch: Enable L2 prefetching and specify the size.
+        eviction_policy: Specifies the eviction policy to use.
 
     Args:
         src: Global memory pointer.
@@ -77,19 +79,43 @@ fn async_copy[
 
     @parameter
     if l2_prefetch:
+        var cache_policy = UInt64(0)
+
+        @parameter
+        if eviction_policy is not CacheEviction.EVICT_NORMAL:
+            inlined_assembly[
+                "createpolicy.fractional.L2::evict_first.b64 $0, 1.0;",
+                NoneType,
+                constraints="=l",
+            ](cache_policy)
+
         alias asm = "cp.async." + cache_op + ".shared.global.L2::" + _int_to_str[
             l2_prefetch.value()
         ]() + "B [$0], [$1], $2"
 
         @parameter
         if fill is Fill.ZERO:
-            inlined_assembly[asm + ", $3;", NoneType, constraints="r,l,n,r"](
-                Int32(int(dst)), src, Int32(size), Int32(size)
-            )
+
+            @parameter
+            if eviction_policy is CacheEviction.EVICT_NORMAL:
+                inlined_assembly[
+                    asm + ", $3;", NoneType, constraints="r,l,n,r"
+                ](Int32(int(dst)), src, Int32(size), Int32(size))
+            else:
+                inlined_assembly[
+                    asm + ", $3, $4;", NoneType, constraints="r,l,n,r,l"
+                ](Int32(int(dst)), src, Int32(size), Int32(size), cache_policy)
         else:
-            inlined_assembly[asm + ";", NoneType, constraints="r,l,n"](
-                Int32(int(dst)), src, Int32(size)
-            )
+
+            @parameter
+            if eviction_policy is CacheEviction.EVICT_NORMAL:
+                inlined_assembly[asm + ";", NoneType, constraints="r,l,n"](
+                    Int32(int(dst)), src, Int32(size)
+                )
+            else:
+                inlined_assembly[
+                    asm + ", $3;", NoneType, constraints="r,l,n,l"
+                ](Int32(int(dst)), src, Int32(size), cache_policy)
     else:
         constrained[
             fill is Fill.NONE, "fill is only implemented with l2_prefetch"
