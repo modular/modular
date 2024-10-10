@@ -4,13 +4,14 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "KGEN/CompilerRT/Registration.h"
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/Hashing.h"
 #include "llvm/ADT/MapVector.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/ADT/Twine.h"
+
+#include "Support/SymbolExport.h"
 
 #include <mutex>
 
@@ -110,20 +111,4 @@ KGEN_CompilerRT_DestroyGlobals() {
   for (auto entry : llvm::reverse(globalTable))
     entry.second.destroy();
   globalTable.clear();
-}
-
-//===----------------------------------------------------------------------===//
-// CompilerRT Registration
-//===----------------------------------------------------------------------===//
-
-void M::KGEN::registerGlobals(
-    std::vector<std::pair<llvm::StringLiteral, void *>> &funcs) {
-  funcs.push_back({"KGEN_CompilerRT_GetGlobalOrCreate",
-                   (void *)&KGEN_CompilerRT_GetGlobalOrCreate});
-  funcs.push_back({"KGEN_CompilerRT_GetGlobalOrNull",
-                   (void *)&KGEN_CompilerRT_GetGlobalOrNull});
-  funcs.push_back(
-      {"KGEN_CompilerRT_InsertGlobal", (void *)&KGEN_CompilerRT_InsertGlobal});
-  funcs.push_back({"KGEN_CompilerRT_DestroyGlobals",
-                   (void *)&KGEN_CompilerRT_DestroyGlobals});
 }

@@ -4,7 +4,6 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "KGEN/CompilerRT/Registration.h"
 #include "Support/Profiling/TimeProfiler.h"
 #include "Support/SymbolExport.h"
 
@@ -57,20 +56,4 @@ COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void
 KGEN_CompilerRT_TimeTraceProfilerSetCurrentId(size_t id) {
   // NOTE: Must be always enabled.
   ProfilerEntry<true, Trace::kMojo>(id).setAsCurrentId();
-}
-
-void M::KGEN::registerTracing(
-    std::vector<std::pair<llvm::StringLiteral, void *>> &funcs) {
-  funcs.push_back({"KGEN_CompilerRT_TimeTraceProfilerBegin",
-                   (void *)&KGEN_CompilerRT_TimeTraceProfilerBegin});
-  funcs.push_back({"KGEN_CompilerRT_TimeTraceProfilerBeginDetail",
-                   (void *)&KGEN_CompilerRT_TimeTraceProfilerBeginDetail});
-  funcs.push_back({"KGEN_CompilerRT_TimeTraceProfilerBeginTask",
-                   (void *)&KGEN_CompilerRT_TimeTraceProfilerBeginTask});
-  funcs.push_back({"KGEN_CompilerRT_TimeTraceProfilerEnd",
-                   (void *)&KGEN_CompilerRT_TimeTraceProfilerEnd});
-  funcs.push_back({"KGEN_CompilerRT_TimeTraceProfilerGetCurrentId",
-                   (void *)&KGEN_CompilerRT_TimeTraceProfilerGetCurrentId});
-  funcs.push_back({"KGEN_CompilerRT_TimeTraceProfilerSetCurrentId",
-                   (void *)&KGEN_CompilerRT_TimeTraceProfilerSetCurrentId});
 }

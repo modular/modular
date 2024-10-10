@@ -4,7 +4,6 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "KGEN/CompilerRT/Registration.h"
 #include "Support/MathExtras.h"
 #include "Support/SymbolExport.h"
 #include "llvm/ADT/StringRef.h"
@@ -43,20 +42,4 @@ COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT double
 KGEN_CompilerRT_NormalDouble(double mean, double var) {
   std::normal_distribution<double> dist{mean, var};
   return dist(*(std::default_random_engine *)KGEN_CompilerRT_GetRandomState());
-}
-
-void M::KGEN::registerRandom(
-    std::vector<std::pair<llvm::StringLiteral, void *>> &funcs) {
-  funcs.push_back({"KGEN_CompilerRT_GetRandomState",
-                   (void *)&KGEN_CompilerRT_GetRandomState});
-  funcs.push_back({"KGEN_CompilerRT_SetRandomStateSeed",
-                   (void *)&KGEN_CompilerRT_SetRandomStateSeed});
-  funcs.push_back(
-      {"KGEN_CompilerRT_RandomDouble", (void *)&KGEN_CompilerRT_RandomDouble});
-  funcs.push_back(
-      {"KGEN_CompilerRT_RandomSInt64", (void *)&KGEN_CompilerRT_RandomSInt64});
-  funcs.push_back(
-      {"KGEN_CompilerRT_RandomUInt64", (void *)&KGEN_CompilerRT_RandomUInt64});
-  funcs.push_back(
-      {"KGEN_CompilerRT_NormalDouble", (void *)&KGEN_CompilerRT_NormalDouble});
 }
