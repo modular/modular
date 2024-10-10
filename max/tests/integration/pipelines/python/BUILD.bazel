@@ -6,14 +6,14 @@ modular_py_binary(
     srcs = ["evaluate_llama.py"],
     data = [
         "//KGEN:CompilerRT",
-        "//Kernels/tools/cuda-query",
+        "//Kernels/tools/gpu-query",
         "//Support/tools/system-info",
         "@llvm-project//compiler-rt:orc_rt",
     ],
     env = {
         "MODULAR_MOJO_MAX_ORCRT_PATH": "$(location @llvm-project//compiler-rt:orc_rt)",
         "MODULAR_MOJO_MAX_COMPILERRT_PATH": "$(location //KGEN:CompilerRT)",
-        "MODULAR_CUDA_QUERY_PATH": "$(location //Kernels/tools/cuda-query)",
+        "MODULAR_CUDA_QUERY_PATH": "$(location //Kernels/tools/gpu-query)",
         "MODULAR_SYSTEM_INFO_PATH": "$(location //Support/tools/system-info)",
         "PIPELINES_TESTDATA": "SDK/integration-test/pipelines/python/testdata",
     },
@@ -31,14 +31,14 @@ modular_py_binary(
     srcs = ["evaluate_batch_scenarios.py"],
     data = [
         "//KGEN:CompilerRT",
-        "//Kernels/tools/cuda-query",
+        "//Kernels/tools/gpu-query",
         "//Support/tools/system-info",
         "@llvm-project//compiler-rt:orc_rt",
     ],
     env = {
         "MODULAR_MOJO_MAX_ORCRT_PATH": "$(location @llvm-project//compiler-rt:orc_rt)",
         "MODULAR_MOJO_MAX_COMPILERRT_PATH": "$(location //KGEN:CompilerRT)",
-        "MODULAR_CUDA_QUERY_PATH": "$(location //Kernels/tools/cuda-query)",
+        "MODULAR_CUDA_QUERY_PATH": "$(location //Kernels/tools/gpu-query)",
         "MODULAR_SYSTEM_INFO_PATH": "$(location //Support/tools/system-info)",
         "PIPELINES_TESTDATA": "SDK/integration-test/pipelines/python/testdata",
     },
@@ -121,7 +121,7 @@ modular_py_test(
     ],
     data = [
         "//KGEN:CompilerRT",
-        "//Kernels/tools/cuda-query",
+        "//Kernels/tools/gpu-query",
         "//ModularFramework/tools/mof",
         "//SDK/integration-test/pipelines/python/testdata",
         "//Support/tools/system-info",
@@ -130,7 +130,7 @@ modular_py_test(
     ],
     env = {
         "BAZEL": "true",
-        "MODULAR_CUDA_QUERY_PATH": "$(location //Kernels/tools/cuda-query)",
+        "MODULAR_CUDA_QUERY_PATH": "$(location //Kernels/tools/gpu-query)",
         "MODULAR_SYSTEM_INFO_PATH": "$(location //Support/tools/system-info)",
         "MODULAR_PATH": ".",
         "PIPELINES_TESTDATA": "SDK/integration-test/pipelines/python/testdata",
