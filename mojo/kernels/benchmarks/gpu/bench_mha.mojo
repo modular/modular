@@ -157,6 +157,26 @@ fn run_mha[
 
         b.iter_custom[_kernel_launch](ctx)
 
+    fn compute_flops() -> Int:
+        var flops = 0
+        alias q_rank = q.rank
+        # first batched matmul
+        flops += 2 * q.num_elements() * k.dim[q_rank - 1]()
+        # scale, ignore the rsqrt
+        var batch_and_head_size = q.dim[0]() if q_rank == 3 else q.dim[
+            0
+        ]() * q.dim[1]()
+        var inter_output_size = batch_and_head_size * q.dim[
+            q_rank - 1
+        ]() * k.dim[q_rank - 1]()
+        flops += inter_output_size
+        # softmax, this is lower than actual flop
+        # The absolute GFlops value doesn't matter. We care about relative speedup.
+        flops += 3 * inter_output_size
+        # last batched matmul
+        flops += 2 * q.size() * v.dim[q_rank - 1]()
+        return flops
+
     m.bench_function[bench_func](
         BenchId(
             "mha",
@@ -169,7 +189,7 @@ fn run_mha[
             + "/num_keys="
             + str(num_keys),
         ),
-        ThroughputMeasure(BenchMetric.elements, 1),
+        ThroughputMeasure(BenchMetric.flops, compute_flops()),
     )
 
     ctx.synchronize()
