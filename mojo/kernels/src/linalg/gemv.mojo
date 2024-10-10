@@ -796,7 +796,7 @@ fn gemv[
     c_buf: Buffer[c_type, c_size],
     a_buf: NDBuffer[a_type, 2, a_shape],
     b_buf: Buffer[b_type, b_size],
-):
+) raises:
     alias simd_width = simdwidthof[c_type]()
 
     var M = a_buf.dim[0]()
@@ -834,20 +834,16 @@ fn gemv[
     ](v1: SIMD[ty, width], v2: SIMD[ty, width]) -> SIMD[ty, width]:
         return v1 + v2
 
-    try:
-        _reduce_generator[
-            input_fn,
-            output_fn,
-            reduce_impl,
-            single_thread_blocking_override = not parallelize,
-        ](
-            Index(M, K),
-            init=Scalar[c_type](0),
-            reduce_dim=1,
-        )
-
-    except e:
-        abort(e)
+    _reduce_generator[
+        input_fn,
+        output_fn,
+        reduce_impl,
+        single_thread_blocking_override = not parallelize,
+    ](
+        Index(M, K),
+        init=Scalar[c_type](0),
+        reduce_dim=1,
+    )
 
 
 fn naive_gemv[

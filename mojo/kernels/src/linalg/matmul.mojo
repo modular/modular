@@ -487,7 +487,7 @@ fn _matmul_cpu_impl[
     a: NDBuffer[_, 2, _],
     b: NDBuffer[_, 2, _],
     num_threads: Int = -1,
-):
+) raises:
     @parameter
     if (
         single_thread_blocking_override
@@ -647,12 +647,12 @@ fn _matmul_cpu[
     b: NDBuffer[_, 2, _],
     kernel_type_m: Int,
     num_threads: Int = -1,
-):
+) raises:
     alias kernel_id = select_inner_kernel[a.type, b.type, c.type]()
 
     @parameter
     @always_inline
-    fn dispatch_on_kernel_type[kernel_type: Bool]():
+    fn dispatch_on_kernel_type[kernel_type: Bool]() raises:
         alias config = get_kernel_config[
             a.type,
             b.type,
@@ -751,7 +751,7 @@ fn matmul[
     a: NDBuffer[a_type, 2, a_shape],
     b: NDBuffer[b_type, 2, b_shape],
     ctx: MojoCallContextPtr = MojoCallContextPtr(),
-):
+) raises:
     constrained[target == "cpu" or "cuda" in target, "unsupported target"]()
     constrained[not transpose_a, "transpose_a not yet supported"]()
 

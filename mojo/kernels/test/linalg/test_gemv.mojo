@@ -22,7 +22,9 @@ alias alignment = 64
 
 
 @parameter
-fn bench_run[func: fn () capturing [_] -> None]() raises -> benchmark.Report:
+fn bench_run[
+    func: fn () raises capturing [_] -> None
+]() raises -> benchmark.Report:
     return benchmark.run[func](2, 1_000_000, 1, 3)
 
 
@@ -105,7 +107,7 @@ def test_gemv():
     @always_inline
     @__copy_capture(out, rhs, lhs)
     @parameter
-    fn bench_fn_serial():
+    fn bench_fn_serial() raises:
         gemv[parallelize=False](out, lhs, rhs)
 
     var serial_perf = bench_run[bench_fn_serial]()
@@ -124,7 +126,7 @@ def test_gemv():
     @always_inline
     @__copy_capture(out, rhs, lhs)
     @parameter
-    fn bench_fn_parallel():
+    fn bench_fn_parallel() raises:
         gemv[parallelize=True](out, lhs, rhs)
 
     var par_perf = bench_run[bench_fn_parallel]()
@@ -153,7 +155,7 @@ def test_gemv():
     @always_inline
     @__copy_capture(out_mat, rhs_mat, lhs)
     @parameter
-    fn bench_fn_matmul():
+    fn bench_fn_matmul() raises:
         matmul(out_mat, lhs, rhs_mat)
 
     bench_fn_matmul()
