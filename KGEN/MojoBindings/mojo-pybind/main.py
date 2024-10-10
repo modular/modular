@@ -24,9 +24,20 @@ from src.utils import eprint
         " generation."
     ),
 )
+@click.option(
+    "--raw-bindings",
+    is_flag=True,
+    help=(
+        'Whether the specified Mojo source file contains "raw" bindings, and'
+        " that automatic binding generation should be skipped.\n"
+        "\n"
+        "When this flag is specified only linking is performed."
+    ),
+)
 def main(
     mojo_file: click.Path,
     verbose: bool,
+    raw_bindings: bool,
 ):
     # Set working directory if this script was from by Bazel
     if directory := os.getenv("BUILD_WORKING_DIRECTORY"):
@@ -34,7 +45,11 @@ def main(
 
     absolute_path = os.path.abspath(str(mojo_file))
 
-    generate_mojo_extension_module(absolute_path, verbose=verbose)
+    generate_mojo_extension_module(
+        absolute_path,
+        raw_bindings=raw_bindings,
+        verbose=verbose,
+    )
 
 
 # ==========================================================
