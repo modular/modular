@@ -5,7 +5,8 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo-no-debug %s | FileCheck %s
 
-from collections import OptionalReg
+from collections import OptionalReg, InlinedFixedVector
+
 
 from buffer import Buffer, NDBuffer
 from buffer.dimlist import Dim, DimList
@@ -15,10 +16,18 @@ from nn.concat import (
     _concat_serial,
     concat,
     elementwise_epilogue_type,
-    variadic_list_to_vector,
 )
 
-from utils.index import IndexList
+from utils import IndexList, StaticTuple
+
+
+fn tuple_to_vector[
+    type: AnyTrivialRegType
+](elems: StaticTuple[type, *_]) -> InlinedFixedVector[type]:
+    var vector = InlinedFixedVector[type](len(elems))
+    for i in range(len(elems)):
+        vector.append(elems[i])
+    return InlinedFixedVector(vector)
 
 
 fn test_concat() raises:
@@ -47,7 +56,9 @@ fn test_concat() raises:
     output.fill(-1)
     var output_dyn = NDBuffer[type, rank](output.data, out_shape)
 
-    var input_list = VariadicList[NDBuffer[type, rank]](x1_dyn, x2_dyn, x3_dyn)
+    var input_tuple = StaticTuple[NDBuffer[type, rank], 3](
+        x1_dyn, x2_dyn, x3_dyn
+    )
 
     @parameter
     @always_inline
@@ -59,9 +70,8 @@ fn test_concat() raises:
             rebind[SIMD[type, width]](val + 1),
         )
 
-    var input_vec = variadic_list_to_vector(input_list)
     concat[rank, type, False, epilogue_fn=epilogue_plus_one](
-        output_dyn, concat_axis, input_vec
+        output_dyn, concat_axis, input_tuple
     )
 
     # CHECK: == test_concat
@@ -104,7 +114,9 @@ fn test_concat_parallel():
     output.fill(-1)
     var output_dyn = NDBuffer[type, rank](output.data, out_shape)
 
-    var input_list = VariadicList[NDBuffer[type, rank]](x1_dyn, x2_dyn, x3_dyn)
+    var input_list = StaticTuple[NDBuffer[type, rank], 3](
+        x1_dyn, x2_dyn, x3_dyn
+    )
 
     @parameter
     @always_inline
@@ -116,7 +128,7 @@ fn test_concat_parallel():
             rebind[SIMD[type, width]](val + 1),
         )
 
-    var input_vec = variadic_list_to_vector(input_list)
+    var input_vec = tuple_to_vector(input_list)
     _concat_parallel[rank, type, epilogue_plus_one](
         output_dyn, concat_axis, input_vec
     )
@@ -162,9 +174,11 @@ fn test_concat_inner():
     output.fill(-1)
     var output_dyn = NDBuffer[type, rank](output.data, out_shape)
 
-    var input_list = VariadicList[NDBuffer[type, rank]](x1_dyn, x2_dyn, x3_dyn)
+    var input_list = StaticTuple[NDBuffer[type, rank], 3](
+        x1_dyn, x2_dyn, x3_dyn
+    )
 
-    var input_vec = variadic_list_to_vector(input_list)
+    var input_vec = tuple_to_vector(input_list)
 
     @parameter
     @always_inline
