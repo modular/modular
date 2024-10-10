@@ -403,9 +403,11 @@ fn _get_pointer_constraint() -> StringLiteral:
 fn store_release[
     type: DType, //, scope: Scope = Scope.SYSTEM, memory: Bool = True
 ](ptr: UnsafePointer[Scalar[type], *_, **_], value: Scalar[type]):
-    alias constraints = _get_register_constraint[
+    alias constraints = _get_pointer_constraint() + "," + _get_register_constraint[
         type
-    ]() + "," + _get_pointer_constraint() + (",~{memory}" if memory else "")
+    ]() + (
+        ",~{memory}" if memory else ""
+    )
     alias scope_str = scope._mnemonic()
     inlined_assembly[
         "st.release."
