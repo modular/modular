@@ -333,7 +333,7 @@ fn _matmul_gpu[
                         rebind[NDBuffer[c_type, 2, c_shape]](c),
                         rebind[NDBuffer[a_type, 2, a_shape]](a),
                         rebind[NDBuffer[b_type, 2, b_shape]](b),
-                        best_config,
+                        kernels.tuning_config,
                         ctx,
                     )
                     return
