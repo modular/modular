@@ -20,7 +20,15 @@ from max import _graph, mlir
 from max.dtype import DType
 
 from . import graph, ops
-from .type import BufferType, DimLike, Shape, ShapeLike, TensorType, _ChainType
+from .type import (
+    BufferType,
+    Dim,
+    DimLike,
+    Shape,
+    ShapeLike,
+    TensorType,
+    _ChainType,
+)
 from .weight import Weight
 
 
@@ -207,6 +215,10 @@ class TensorValue(Value):
             self._mlir_value = value._mlir_value
         elif isinstance(value, Weight):
             self._mlir_value = graph.Graph.current.add_weight(value)._mlir_value
+        elif isinstance(value, Dim):
+            self._mlir_value = TensorValue.from_dim(value)._mlir_value
+        elif isinstance(value, Shape):
+            self._mlir_value = TensorValue.from_shape(value)._mlir_value
         elif isinstance(value, _numeric):
             raise TypeError(
                 "TensorValue() can not be created directly from a"
@@ -220,7 +232,6 @@ class TensorValue(Value):
                 f" '{type(value).__name__}'"
             )
 
-    # TODO(MSDK-662): Should both DimLike and ShapeLike be considered ValueLike now?
     @staticmethod
     def from_dim(dim: DimLike) -> TensorValue:
         return ops.shape_to_tensor([dim]).reshape(())
@@ -415,13 +426,13 @@ class TensorValue(Value):
 
 
 Numeric = Union[int, float, np.integer, np.floating, np.ndarray]
-StrongTensorValueLike = Union[mlir.Value, TensorValue, Weight]
+StrongTensorValueLike = Union[mlir.Value, TensorValue, Weight, Shape, Dim]
 TensorValueLike = Union[StrongTensorValueLike, Numeric]
 
 # This is needed for python 3.9 compatibility.
 # `isinstance` only works with tuples and not unions in 3.9.
 _numeric = (int, float, np.integer, np.floating, np.ndarray)
-_strong_tensor_value_like = (mlir.Value, TensorValue, Weight)
+_strong_tensor_value_like = (mlir.Value, TensorValue, Weight, Shape, Dim)
 _tensor_value_like = _strong_tensor_value_like + _numeric
 
 
