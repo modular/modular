@@ -18,13 +18,13 @@ class InlinedSubprogramScoped;
 /// region.
 bool shouldMaterializeConstantsInto(Region &region);
 
-namespace impl {
+namespace Impl {
 LogicalResult verifySubprogramScoped(SubprogramScoped op);
 
 Location getLocNoInlined(InlinedSubprogramScoped iss);
 LocationAttr getCallLocAttr(InlinedSubprogramScoped iss);
 void setCallLocAttr(InlinedSubprogramScoped iss, LocationAttr attr);
-} // namespace impl
+} // namespace Impl
 } // namespace M::DebugInfo
 
 #include "Support/DebugInfoDialect/IR/DebugInfoInterfaces.h.inc"

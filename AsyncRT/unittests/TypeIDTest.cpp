@@ -33,7 +33,7 @@ using FooBar = DoubleClassTemplate<SingleClassTemplate<int>, bool>;
 struct Baz {};
 struct Foo {};
 
-namespace ns1::ns2 {
+namespace NS1::NS2 {
 struct bar;
 }
 
@@ -53,7 +53,7 @@ TEST(TypeID, typeName) {
   static_assert("int **"sv == typeNameFor<int **>());
   static_assert("int &&"sv == typeNameFor<int &&>());
 
-  static_assert("ns1::ns2::bar"sv == typeNameFor<ns1::ns2::bar>());
+  static_assert("NS1::NS2::bar"sv == typeNameFor<NS1::NS2::bar>());
 
   static_assert("SingleClassTemplate<void>"sv ==
                 typeNameFor<SingleClassTemplate<void>>());
@@ -77,7 +77,7 @@ TEST(TypeID, typeName) {
   static_assert("int**"sv == typeNameFor<int **>());
   static_assert("int&&"sv == typeNameFor<int &&>());
 
-  static_assert("ns1::ns2::bar"sv == typeNameFor<ns1::ns2::bar>());
+  static_assert("NS1::NS2::bar"sv == typeNameFor<NS1::NS2::bar>());
 
   static_assert("SingleClassTemplate<void>"sv ==
                 typeNameFor<SingleClassTemplate<void>>());
