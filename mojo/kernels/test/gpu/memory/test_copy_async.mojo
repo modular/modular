@@ -6,7 +6,7 @@
 # RUN: %mojo-no-debug %s
 
 from gpu.host._compile import _compile_code_asm, _get_nvptx_target
-from gpu.memory import AddressSpace, Fill, async_copy
+from gpu.memory import AddressSpace, Fill, async_copy, CacheEviction
 from gpu.sync import mbarrier, mbarrier_init, mbarrier_test_wait
 from memory import UnsafePointer, stack_allocation
 from testing import *
@@ -184,6 +184,40 @@ def test_async_copy_with_zero_fill():
     _verify_test_async_copy_with_zero_fill(asm)
 
 
+fn test_async_copy_with_eviction(
+    src: UnsafePointer[Float32, AddressSpace.GLOBAL]
+):
+    var shared_mem = stack_allocation[
+        4, DType.float32, address_space = AddressSpace.SHARED
+    ]()
+    async_copy[4, eviction_policy = CacheEviction.EVICT_FIRST, l2_prefetch=128](
+        src, shared_mem
+    )
+    async_copy[16, eviction_policy = CacheEviction.EVICT_FIRST, l2_prefetch=64](
+        src, shared_mem
+    )
+
+
+fn _verify_async_copy_with_eviction(asm: String) raises -> None:
+    assert_true("createpolicy.fractional.L2::evict_first.b64" in asm)
+    assert_true("cp.async.ca.shared.global.L2::128B" in asm)
+    assert_true("cp.async.ca.shared.global.L2::64B" in asm)
+
+
+def test_async_copy_with_eviction_sm80():
+    alias asm = _compile_code_asm[
+        test_async_copy_l2_prefetch, target = _get_nvptx_target()
+    ]()
+    _verify_async_copy_l2_prefetch(asm)
+
+
+def test_async_copy_with_eviction_sm90():
+    alias asm = _compile_code_asm[
+        test_async_copy_l2_prefetch, target = _get_nvptx_target["sm_90"]()
+    ]()
+    _verify_async_copy_l2_prefetch(asm)
+
+
 def main():
     test_mbarrier_sm80()
     test_mbarrier_sm90()
@@ -196,3 +230,5 @@ def main():
     test_async_copy_l2_prefetch_sm80()
     test_async_copy_l2_prefetch__sm90()
     test_async_copy_with_zero_fill()
+    test_async_copy_with_eviction_sm80()
+    test_async_copy_with_eviction_sm90()
