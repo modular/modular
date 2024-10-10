@@ -586,6 +586,11 @@ fn _matmul_cpu_impl[
                 config.kernel_rows,
                 config.kernel_cols,
             ](m, 1, k, task_id, num_tasks)
+            if (
+                sub_matmul_config.shape[0] <= 0
+                or sub_matmul_config.shape[1] <= 0
+            ):
+                return
             var t0 = sub_matmul_config.offset[0]
             var t1 = t0 + sub_matmul_config.shape[0]
             packA_i8mm[a.type](t0, t1, k, a.data, a_packed_ptr)
