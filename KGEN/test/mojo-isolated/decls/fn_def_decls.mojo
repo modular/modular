@@ -81,14 +81,14 @@ fn variadic_param_after_default[
 # CHECK-LABEL: lit.func @"inferred_params
 # CHECK-SAME: <x, y, +>
 fn inferred_params[x: int, y: int, //]():
-    # CHECK-NEXT: !lit.signature<<"x": index, "y": index, +>() -> !kgen.none> = <@"
+    # CHECK-NEXT: !lit.signature<<"x": index, "y": index, +>() -> !kgen.none> = <@
     alias fn_type: fn[x: int, y: int, //] () -> None = inferred_params
 
 
 # CHECK-LABEL: lit.func @"inferred_params_regular
 # CHECK-SAME: <x, +, y>
 fn inferred_params_regular[x: int, //, y: int]():
-    # CHECK-NEXT: !lit.signature<<"x": index, +, "y": index>() -> !kgen.none> = <@"
+    # CHECK-NEXT: !lit.signature<<"x": index, +, "y": index>() -> !kgen.none> = <@
     alias fn_type: fn[x: int, //, y: int] () -> None = inferred_params_regular
 
 
@@ -216,7 +216,7 @@ def use_ref_result():
     # CHECK-NEXT: lit.ref.store [[TMP]], [[REF]]
 
     # CHECK-NEXT: %__call_result_tmp__ = lit.var.decl
-    # CHECK-NEXT: lit.call {{.*}}decls"::@"def_ref_result{{.*}}(%a, %__error__, %__call_result_tmp__)
+    # CHECK-NEXT: lit.call {{.*}}decls::@"def_ref_result{{.*}}(%a, %__error__, %__call_result_tmp__)
     # CHECK-NEXT: [[REF:%.*]] = lit.load.consume %__call_result_tmp__
     # CHECK-NEXT: [[TMP:%.*]] = kgen.param.materialize: !MemoryOnly = <{}>
     # CHECK-NEXT: lit.ref.store [[TMP]], [[REF]]

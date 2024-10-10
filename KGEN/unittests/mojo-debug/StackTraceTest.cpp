@@ -27,7 +27,7 @@ TEST(StackTraceTest, testStackTraceFormat) {
 
   // TODO(25048): Include argument types in functions.
 
-  StopContext ctx = buildAndLaunch("stack-trace.mojo");
+  StopContext ctx = buildAndLaunch("stack_trace.mojo");
 
   std::vector<std::string> frameDescs;
   for (size_t i = 0; i < 4; ++i) {
@@ -37,19 +37,19 @@ TEST(StackTraceTest, testStackTraceFormat) {
   }
 
   EXPECT_THAT(frameDescs[0],
-              ContainsRegex(R"(stack-trace.Foo\[...\].getParametrized\[...\])"
+              ContainsRegex(R"(stack_trace.Foo\[...\].getParametrized\[...\])"
                             R"(.nested_function\(z=\(\[0\] = 105.25\)\) at)"
-                            R"( stack-trace.mojo:15:13)"));
+                            R"( stack_trace.mojo:15:13)"));
   EXPECT_THAT(
       frameDescs[1],
-      ContainsRegex(R"(stack-trace.Foo\[index, index\])"
+      ContainsRegex(R"(stack_trace.Foo\[index, index\])"
                     R"(.getParametrized\[scalar<f32>\]\(self=.* @ 0x.*,)"
-                    R"( val=\(\[0] = 105.25\)\) at stack-trace.mojo:17:31)"));
+                    R"( val=\(\[0] = 105.25\)\) at stack_trace.mojo:17:31)"));
   EXPECT_THAT(
       frameDescs[2],
-      ContainsRegex(R"(stack-trace.Foo\[index, index\])"
+      ContainsRegex(R"(stack_trace.Foo\[index, index\])"
                     R"(.getFloat\(self=.* @ 0x.*, x=\(\[0\] = 1.125\), y=100\))"
-                    R"( at stack-trace.mojo:20:45)"));
+                    R"( at stack_trace.mojo:20:45)"));
   EXPECT_THAT(frameDescs[3],
-              HasSubstr("stack-trace.main() at stack-trace.mojo:24:35"));
+              HasSubstr("stack_trace.main() at stack_trace.mojo:24:35"));
 }

@@ -10,13 +10,13 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-# RUN: rm default-output-name || true
+# RUN: rm default_output_name || true
 # RUN: %mojo-build %s
-# RUN: test -x default-output-name
+# RUN: test -x default_output_name
 
-# RUN: rm default-output-name-2 || true
-# RUN: %mojo-build %S/inputs/default-output-name-2.mojo
-# RUN: test -x default-output-name-2
+# RUN: rm default_output_name_2 || true
+# RUN: %mojo-build %S/inputs/default_output_name_2.mojo
+# RUN: test -x default_output_name_2
 
 
 fn main():

@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %parse-mojo-isolated %s | FileCheck %s
 
-# CHECK: lit.file_module @"[[F:.*]]"
+# CHECK: lit.file_module @[[F:.*]] {
 
 # CHECK-COUNT-2: lit.struct.decl @"`_CI_
 

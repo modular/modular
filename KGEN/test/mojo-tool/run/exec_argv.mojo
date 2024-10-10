@@ -11,9 +11,9 @@ from sys import argv
 
 
 def main():
-    # NO_ARGS: exec-argv.mojo
+    # NO_ARGS: exec_argv.mojo
 
-    # ARGS: exec-argv.mojo
+    # ARGS: exec_argv.mojo
     # ARGS: --arg1
     # ARGS: --arg2=10
     # ARGS: --arg3=arg3

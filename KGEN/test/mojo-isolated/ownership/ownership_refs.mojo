@@ -243,14 +243,14 @@ fn testLifetimeOf2(a: MemExample) -> Pointer[MemExample, __lifetime_of(a)]._mlir
 
 # CHECK-LABEL: lit.func @"callByRefResultLifetime
 fn callByRefResultLifetime(inout x: MemExample, inout y: MemExample, z: MemExample):
-  # CHECK: lit.var.decl "l1" var : !lit.ref<@"ownership-refs"::@OneLifetime<:lifetime<0> (mutcast mut *"x`")>
+  # CHECK: lit.var.decl "l1" var : !lit.ref<@ownership_refs::@OneLifetime<:lifetime<0> (mutcast mut *"x`")>
   var l1 = returnOneArgLifetime(x)
 
-  # CHECK: lit.var.decl "l2" var : !lit.ref<@"ownership-refs"::@TwoLifetimes<:lifetime<0> (mutcast mut *"x`"), :lifetime<0> (mutcast mut *"y`1")>
+  # CHECK: lit.var.decl "l2" var : !lit.ref<@ownership_refs::@TwoLifetimes<:lifetime<0> (mutcast mut *"x`"), :lifetime<0> (mutcast mut *"y`1")>
   var l2 = returnTwoArgLifetimes(x, y)
-  # CHECK: %l3 = lit.var.decl "l3" var : !lit.ref<@"ownership-refs"::@TwoLifetimes<:lifetime<0> (mutcast mut *"x`"), :lifetime<0> (mutcast mut *"x`")>
+  # CHECK: %l3 = lit.var.decl "l3" var : !lit.ref<@ownership_refs::@TwoLifetimes<:lifetime<0> (mutcast mut *"x`"), :lifetime<0> (mutcast mut *"x`")>
   var l3 = returnTwoArgLifetimes(x, x)
-  # CHECK: %l4 = lit.var.decl "l4" var : !lit.ref<@"ownership-refs"::@TwoLifetimes<:lifetime<0> *"z`2", :lifetime<0> *"z`2">
+  # CHECK: %l4 = lit.var.decl "l4" var : !lit.ref<@ownership_refs::@TwoLifetimes<:lifetime<0> *"z`2", :lifetime<0> *"z`2">
   var l4 = returnTwoArgLifetimes(z, z)
 
 fn returnOneArgLifetime(a: MemExample)

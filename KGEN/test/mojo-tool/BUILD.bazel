@@ -11,7 +11,7 @@ lit_tests(
             "**/inputs/**",
             "package/test_package/**/*.mojo",
             "package/test_package_with_main/**/*.mojo",
-            "package/test-package-moco-773/**/*.mojo",
+            "package/test_package_moco_773/**/*.mojo",
         ],
     ),
     data = [
@@ -27,7 +27,7 @@ lit_tests(
         "**/inputs/**",
         "package/test_package/**/*.mojo",
         "package/test_package_with_main/**/*.mojo",
-        "package/test-package-moco-773/**/*.mojo",
+        "package/test_package_moco_773/**/*.mojo",
         "build/inputs/**/*.mojo",
         "test/inputs/**/*.mojo",
         "test/inputs/**/*.🔥",

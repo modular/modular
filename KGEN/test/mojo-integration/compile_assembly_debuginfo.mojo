@@ -26,8 +26,8 @@ fn main():
     print(myAsm)
 
 
-# CHECK: define {{.*}} @"compile-assembly-debuginfo::compiled_fn{{.*}} !dbg ![[SP:[0-9]+]]
-# CHECK-NOT @"compile-assembly-debuginfo::compiled_fn
+# CHECK: define {{.*}} @"compile_assembly_debuginfo::compiled_fn{{.*}} !dbg ![[SP:[0-9]+]]
+# CHECK-NOT @"compile_assembly_debuginfo::compiled_fn
 # CHECK: ![[SP]] = distinct !DISubprogram({{.*}}type: ![[SUBROUTINE:[0-9]+]]
 # CHECK: ![[SUBROUTINE]] = !DISubroutineType({{.*}}types: ![[FUNCTION_TYPE:[0-9]+]]
 # CHECK: ![[FUNCTION_TYPE]] = !{!{{[0-9]+}}, ![[ARG_TYPE:[0-9]+]]}

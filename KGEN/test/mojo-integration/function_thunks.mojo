@@ -18,7 +18,7 @@
 from func_package_foo.module import foo
 from func_package_bar.module import bar
 
-# CHECK-LABEL: lit.file_module @"function-thunks"
+# CHECK-LABEL: lit.file_module @function_thunks
 
 
 fn thunk[T: AnyType](x: T):

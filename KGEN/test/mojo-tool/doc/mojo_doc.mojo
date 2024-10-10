@@ -536,7 +536,7 @@ fn deprecated_function():
 
 
 # CHECK:  "kind": "module",
-# CHECK:  "name": "mojo-doc",
+# CHECK:  "name": "mojo_doc",
 
 # CHECK:  "structs": [
 
