@@ -21,4 +21,5 @@ params:
   TUNE_WN: [64]
   TUNE_NUM_STAGES: [3, 4]
   use_cublas: [False]
-  TUNE_NUM_K_PARTITIONS: [1,4]
+  TUNE_NUM_K_PARTITIONS: [1,2,3,4]
+  

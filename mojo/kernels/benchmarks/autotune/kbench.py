@@ -86,6 +86,12 @@ class ParamSpace:
         self.length = len(self.value_set)
 
 
+@dataclass(repr=True)
+class ProcessOutput:
+    stdout: str = None
+    stderr: str = None
+
+
 @dataclass(frozen=True, repr=True)
 class SpecInstance:
     name: str
@@ -113,7 +119,7 @@ class SpecInstance:
         build_opts: List[str] = [],
         dryrun: bool = False,
         verbose: bool = False,
-    ) -> Path:
+    ) -> ProcessOutput:
         if not output_file:
             output_file = Path(tempfile.gettempdir()) / Path(
                 next(tempfile._get_candidate_names())  # type: ignore
@@ -166,13 +172,16 @@ class SpecInstance:
                 output = run_shell_command(
                     cmd, check=False, capture_output=True
                 )
+                return ProcessOutput(
+                    output.stdout.decode("utf-8"), output.stderr.decode("utf-8")
+                )
 
         except Exception as exc:
             raise Exception(
                 f"Unable to run the command {list2cmdline(cmd)}"
             ) from exc
 
-        return output_file
+        return ProcessOutput(None, None)
 
     def to_obj(self) -> dict[str, object]:
         obj = {}
@@ -489,6 +498,7 @@ def run(
         print(spec)
 
     output_path_list: Dict[int, Path] = {}
+    output_msg_list: Dict[int, ProcessOutput] = {}
     spec_list: Dict[int, SpecInstance] = {}
     elapsed_time_list: Dict[int, float] = {}
 
@@ -522,7 +532,7 @@ def run(
                 output_file = output_dir / "output.csv"
                 t_start_item = time()
 
-                s.compile(
+                output_msg = s.compile(
                     output_file=output_file,
                     build_opts=build_opts,
                     dryrun=dryrun,
@@ -531,6 +541,7 @@ def run(
                 elapsed_time_list[i] = (time() - t_start_item) * 1e3
                 spec_list[i] = s
                 output_path_list[i] = output_file
+                output_msg_list[i] = output_msg
 
             except Exception as e:
                 if e == KeyboardInterrupt:
@@ -552,13 +563,15 @@ def run(
     build_df.insert(len(build_df.columns), "iters", 1)
     build_df["met (ms)"] = build_df["met (ms)"].fillna(0)
 
-    output_lines += [LINE]
-    output_lines += ["Build time stats:"]
-    output_lines += [build_df.to_string(index=False)]
+    if verbose:
+        output_lines += [LINE]
+        output_lines += ["Build time stats:"]
+        output_lines += [build_df.to_string(index=False)]
 
     ########################################################
     # Retrieve, sort, and pick top choices
     valid_specs = []
+    invalid_specs = []
     for i in spec_list.keys():
         try:
             df = pd.read_csv(output_path_list[i], index_col=None, header=0)
@@ -567,10 +580,19 @@ def run(
             valid_specs.append(df)
 
         except:
-            df = None
+            invalid_specs.append([i, output_msg_list[i]])
 
     output_lines += [LINE]
     output_lines += [f"Running [{spec.name}] from [{spec.file}]"]
+
+    if invalid_specs:
+        output_lines += [LINE]
+        output_lines += [f"Number of invalid specs: {len(invalid_specs)}"]
+        for idx, msg in invalid_specs:
+            output_lines += [LINE]
+            output_lines += [f"mesh_idx: [{idx}][{spec_list[idx].to_obj()}]"]
+            output_lines += [msg.stdout, msg.stderr]
+
     output_lines += [LINE]
     output_lines += [f"Number of valid executed specs: {len(valid_specs)}"]
 
