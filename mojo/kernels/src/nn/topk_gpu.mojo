@@ -293,7 +293,7 @@ fn topk_stage2[
         local_topk_vals: Pointer to local Top-K values from stage 1 (size: batch_size * num_blocks_per_input * K).
         local_topk_idxs: Pointer to local Top-K indices from stage 1 (size: batch_size * num_blocks_per_input * K).
         global_topk_vals: Pointer to store the final global Top-K values (size: batch_size * K).
-        global_topk_idxs: Pointer to store the final global Top-K indices (size: batch_size * K).
+        global_topk_idxs: Pointer to store the final global Top-K indices (size: batch_size * (1 if sampling else K)).
 
     The function uses shared memory to store and process the local Top-K results,
     and performs a block-level reduction to find the global Top-K elements.
@@ -306,7 +306,7 @@ fn topk_stage2[
     # assert (BlockIdx.x() == 0)
     # assert (GridDim.x() == 1)
     var batch_i_topk_vals = global_topk_vals + batch_id * K
-    var batch_i_topk_idxs = global_topk_idxs + batch_id * K
+    var batch_i_topk_idxs = global_topk_idxs + batch_id * (1 if sampling else K)
     var _local_topk_vals = local_topk_vals + batch_id * num_elem_reduced
     var _local_topk_idxs = local_topk_idxs + batch_id * num_elem_reduced
 
@@ -371,6 +371,7 @@ fn topk_stage2[
 
             @parameter
             if sampling:
+                batch_i_topk_vals[k] = total.u
                 s_id[k] = total.p
                 total.u = exp(total.u - max_logit)
                 s_val2[k] = total.u
@@ -447,8 +448,8 @@ fn _topk_gpu[
             Temporary buffer for locally reduced top-K indices from stage 1.
         out_vals: NDBuffer[type, 1, DimList(batch_size, K)]
             Output buffer on device for the K largest values.
-        out_idxs: NDBuffer[idx_t, 1, DimList(batch_size, K)]
-            Output buffer on device for the indices of the K largest values.
+        out_idxs: NDBuffer[idx_t, 1, DimList(batch_size, 1 if sampling else K)]
+            Output buffer on device for the indices of the K largest values, or sampled token indices.
         block_size: Int
             The number of threads per block (default is 256 from TRT and empirical testing).
         num_blocks_per_input: OptionalReg[Int]
@@ -464,6 +465,7 @@ fn _topk_gpu[
 
     Note: Currently supports only 1D tensors. Higher rank tensor support is planned shortly.
     """
+    constrained[rank == 2, "rank must be 2"]()
     # Use max number of threads per block
     var batch_size = input_buf.get_shape()[0] if rank == 2 else 1
     var N = input_buf.get_shape()[1] if rank == 2 else input_buf.get_shape()[0]
