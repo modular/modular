@@ -29,7 +29,7 @@ fn bench1(inout b: Bencher):
 
 
 @parameter
-fn bench2(inout b: Bencher, mystr: String):
+fn bench2(inout b: Bencher, mystr: String) raises:
     @parameter
     fn to_bench():
         print(mystr)

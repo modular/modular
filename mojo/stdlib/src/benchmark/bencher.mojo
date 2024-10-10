@@ -528,7 +528,7 @@ struct Bench:
 
     fn bench_with_input[
         T: AnyType,
-        bench_fn: fn (inout Bencher, T) capturing [_] -> None,
+        bench_fn: fn (inout Bencher, T) raises capturing [_] -> None,
     ](
         inout self,
         bench_id: BenchId,
@@ -548,7 +548,7 @@ struct Bench:
         """
 
         @parameter
-        fn input_closure(inout b: Bencher):
+        fn input_closure(inout b: Bencher) raises:
             """Executes benchmark for a target function.
 
             Args:
@@ -561,7 +561,7 @@ struct Bench:
 
     fn bench_with_input[
         T: AnyType,
-        bench_fn: fn (inout Bencher, T) capturing [_] -> None,
+        bench_fn: fn (inout Bencher, T) raises capturing [_] -> None,
     ](
         inout self,
         bench_id: BenchId,
@@ -586,7 +586,7 @@ struct Bench:
 
     fn bench_with_input[
         T: AnyTrivialRegType,
-        bench_fn: fn (inout Bencher, T) capturing [_] -> None,
+        bench_fn: fn (inout Bencher, T) raises capturing [_] -> None,
     ](
         inout self,
         bench_id: BenchId,
@@ -606,7 +606,7 @@ struct Bench:
         """
 
         @parameter
-        fn input_closure(inout b: Bencher):
+        fn input_closure(inout b: Bencher) raises:
             """Executes benchmark for a target function.
 
             Args:
@@ -619,7 +619,7 @@ struct Bench:
 
     fn bench_with_input[
         T: AnyTrivialRegType,
-        bench_fn: fn (inout Bencher, T) capturing [_] -> None,
+        bench_fn: fn (inout Bencher, T) raises capturing [_] -> None,
     ](
         inout self,
         bench_id: BenchId,
