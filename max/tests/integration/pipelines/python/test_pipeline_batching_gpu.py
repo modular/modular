@@ -12,15 +12,13 @@ import pytest
 from evaluate_llama import (
     PROMPTS,
     NumpyDecoder,
+    SupportedTestModels,
     compare_values,
     find_runtime_path,
-    golden_data_fname,
     next_token_with_logits,
 )
-from huggingface_hub import hf_hub_download
-from llama3.config import InferenceConfig, SupportedEncodings, SupportedVersions
+from llama3.config import SupportedEncodings, SupportedVersions
 from llama3.llama3 import Llama3
-from max.driver import CPU, CUDA
 from nn.kv_cache import KVCacheStrategy
 
 
@@ -45,38 +43,24 @@ class PipelineModelParams:
 def pipeline_model(testdata_directory, request):
     model_params: PipelineModelParams = request.param
     print(f"\nPipelineModel: {model_params}")
-    model_encoding = model_params.encoding
-    if model_params.name == "tinyllama":
-        weight_path = testdata_directory / "tiny_llama_bf16.gguf"
-    else:
-        weights_repo_id = f"modularai/llama-{model_params.version}"
-        weights_encoding_file = model_encoding.hf_model_name(
-            model_params.version
-        )
-        weight_path = hf_hub_download(
-            repo_id=weights_repo_id,
-            filename=weights_encoding_file,
-        )
-        print(f"- Downloaded: {weight_path}")
+    encoding = model_params.encoding
+    test_model = SupportedTestModels.get(
+        model_params.name, encoding, strict=False
+    )
 
-    if model_encoding in [
-        SupportedEncodings.float32,
-        SupportedEncodings.bfloat16,
-    ]:
+    if encoding in [SupportedEncodings.float32, SupportedEncodings.bfloat16]:
         cache_strategy = KVCacheStrategy.CONTINUOUS
     else:
         cache_strategy = KVCacheStrategy.NAIVE
 
-    config = InferenceConfig(
-        weight_path=weight_path,
-        version=model_params.version,
-        quantization_encoding=model_encoding,
+    config = test_model.build_config(
+        testdata_directory=testdata_directory,
         max_length=model_params.max_length,
         max_new_tokens=model_params.max_new_tokens,
         max_cache_batch_size=model_params.max_batch_size,
-        device=CUDA() if model_encoding == "bfloat16" else CPU(),
         cache_strategy=cache_strategy,
     )
+
     print(
         f"- Using config: {config.version}, MaxLength={config.max_length},"
         f" MaxNewTokens={config.max_new_tokens},"
@@ -109,7 +93,8 @@ async def test_pipeline_heterogeneous_batch_logits(
     logits.
     """
     golden_data_path = find_runtime_path(
-        golden_data_fname("tinyllama", "bfloat16"), testdata_directory
+        SupportedTestModels.TINY_LLAMA_BF16.golden_data_fname(),
+        testdata_directory,
     )
     expected_results = NumpyDecoder().decode(golden_data_path.read_text())
 

@@ -7,16 +7,16 @@
 
 Can also be used as a standalone binary to save out the golden values as a JSON.
 """
-
 import asyncio
 import base64
 import itertools
 import os
 import subprocess
 import uuid
+from dataclasses import dataclass
 from json import JSONDecoder, JSONEncoder
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
 
 import click
 import numpy as np
@@ -73,17 +73,6 @@ class NumpyDecoder(JSONDecoder):
                 base64.b64decode(dct["__np__"]), dtype=dtype
             ).reshape(shape)
         return dct
-
-
-def load_llama3(weight_path: str, **kwargs):
-    config = InferenceConfig(
-        weight_path=weight_path,
-        version=SupportedVersions.llama3_1,
-        quantization_encoding=SupportedEncodings.float32,
-        **kwargs,
-    )
-    llama3 = Llama3(config)
-    return llama3
 
 
 NUM_STEPS = 10
@@ -191,28 +180,94 @@ def compare_values(actual, expected, rtol=1e-2, atol=1e-5):
                 )
 
 
-def build_config(version, weight_path, encoding):
-    if encoding == "bfloat16":
-        device = CUDA()
-    else:
-        device = CPU()
+@dataclass(frozen=True)
+class _SupportedModelEncoding:
+    """Standardizes config and golden filename based on the model and encoding.
 
-    config = InferenceConfig(
-        weight_path=weight_path,
-        device=device,
-        version=SupportedVersions[version],
-        quantization_encoding=SupportedEncodings[encoding],
-        max_new_tokens=10,
-    )
+    This class should not be used directly, instead use SupportedTestModel.
+    """
 
-    if weight_path is None:
-        repo_id = f"modularai/llama-{config.version}"
-        config.weight_path = hf_hub_download(
-            repo_id=repo_id,
-            filename=config.quantization_encoding.hf_model_name(config.version),
+    model: str
+    encoding: SupportedEncodings
+
+    @classmethod
+    def init(cls, model, encoding):
+        """Initialize with type cast."""
+        return cls(model, SupportedEncodings[encoding])
+
+    def _tiny_llama_weights(self, testdata_directory: Optional[Path]) -> Path:
+        if not testdata_directory:
+            raise ValueError("Please pass `testdata_directory`")
+        if self.encoding == SupportedEncodings.float32:
+            return testdata_directory / "tiny_llama.gguf"
+        elif self.encoding == SupportedEncodings.bfloat16:
+            return testdata_directory / "tiny_llama_bf16.gguf"
+        else:
+            raise ValueError(
+                f"Could not find tiny llama checkpoint for {self.encoding=}."
+            )
+
+    def build_config(
+        self,
+        testdata_directory: Optional[Path] = None,
+        **config_kwargs,
+    ) -> InferenceConfig:
+        if self.model == "tinyllama":
+            version = SupportedVersions.llama3_1
+            if "weight_path" not in config_kwargs:
+                config_kwargs["weight_path"] = self._tiny_llama_weights(
+                    testdata_directory
+                )
+        else:
+            version = SupportedVersions[self.model]
+        if "device" not in config_kwargs:
+            config_kwargs["device"] = (
+                CUDA() if self.encoding == "bfloat16" else CPU()
+            )
+        if (
+            "max_new_tokens" not in config_kwargs
+            and "max_tokens" not in config_kwargs
+        ):
+            config_kwargs["max_new_tokens"] = 10
+
+        if "weight_path" not in config_kwargs:
+            repo_id = f"modularai/llama-{version}"
+            config_kwargs["weight_path"] = hf_hub_download(
+                repo_id=repo_id,
+                filename=self.encoding.hf_model_name(version),
+            )
+
+        return InferenceConfig(
+            version=version,
+            quantization_encoding=self.encoding,
+            **config_kwargs,
         )
 
-    return config
+    def golden_data_fname(self):
+        # TODO(MSDK-948): Actually support a distinction between device and encoding
+        # instead of letting bfloat16 _imply_ GPU as is done multiple times in this file
+        if self.encoding == "bfloat16":
+            result = subprocess.run(
+                [os.environ["MODULAR_CUDA_QUERY_PATH"]], stdout=subprocess.PIPE
+            )
+            hardware = (
+                result.stdout.decode()
+                .split("name:")[1]
+                .split("\n")[0]
+                .strip()
+                .replace(" ", "")
+            )
+        else:
+            # TODO: MSDK-968 address the hardware variance that makes
+            # this untenable
+            # info = _system_info()
+            # hardware = info["arch"]
+            hardware = "all"
+
+        # This becomes a file path
+        hardware = hardware.replace(" ", "")
+
+        return f"{self.model}_{self.encoding}_{hardware}_golden.json"
 
 
 def _system_info():
@@ -230,39 +285,63 @@ def _system_info():
     return system_info
 
 
-def golden_data_fname(model, encoding):
-    # TODO(MSDK-948): Actually support a distinction between device and encoding
-    # instead of letting bfloat16 _imply_ GPU as is done multiple times in this file
-    if encoding == "bfloat16":
-        result = subprocess.run(
-            [os.environ["MODULAR_CUDA_QUERY_PATH"]], stdout=subprocess.PIPE
-        )
-        hardware = (
-            result.stdout.decode()
-            .split("name:")[1]
-            .split("\n")[0]
-            .strip()
-            .replace(" ", "")
-        )
-    else:
-        # TODO: MSDK-968 address the hardware variance that makes
-        # this untenable
-        # info = _system_info()
-        # hardware = info["arch"]
-        hardware = "all"
+class SupportedTestModels:
+    """Models with supported golden data files.
 
-    # This becomes a file path
-    hardware = hardware.replace(" ", "")
+    Usage: `SupportedTestModels.TINY_LLAMA_F32.golden_data_fname()`
 
-    return f"{model}_{encoding}_{hardware}_golden.json"
+    Also works with parametrized tests:
+
+    ```
+    @pytest.mark.parametrize(...)
+    def test_model(model, encoding):
+        test_model = SupportedTestModels.get(model, encoding)
+        config = test_model.build_config()
+        golden_file = test_model.golden_data_fname()
+    ```
+
+    """
+
+    LLAMA_3_1_BF16 = _SupportedModelEncoding.init("llama3_1", "bfloat16")
+    LLAMA_3_1_Q4_K = _SupportedModelEncoding.init("llama3_1", "q4_k")
+    TINY_LLAMA_F32 = _SupportedModelEncoding.init("tinyllama", "float32")
+    TINY_LLAMA_BF16 = _SupportedModelEncoding.init("tinyllama", "bfloat16")
+
+    _supported_pairs: dict[tuple[str, str], _SupportedModelEncoding] = {}
+
+    @staticmethod
+    def get(model, encoding, strict=True):
+        """Returns the supported model encoding object.
+
+        Args:
+            model: Name of model ("tinyllama" or "llama3_1")
+            encoding: A SupportedEncoding or str ("float32", "bfloat16", etc.).
+            strict: When strict mode is enabled, an error if the model and
+                encoding isn't in the pre-defined pairs. You can disable this
+                error by setting this option to False.
+
+        Returns:
+            A model encoding object that can be used to construct an
+            InferenceConfig or get the golden data filename.
+        """
+        try:
+            return SupportedTestModels._supported_pairs[(model, encoding)]
+        except IndexError:
+            if not strict:
+                return _SupportedModelEncoding.init(model, encoding)
+            raise ValueError(
+                f"{model=} {encoding=} does not have golden values. If you're "
+                "sure, please set `strict=False` when calling "
+                "`SupportedTestModels.get`."
+            )
 
 
-SUPPORTED_PAIRS = [
-    ("llama3_1", "bfloat16"),
-    ("llama3_1", "q4_k"),
-    ("tinyllama", "float32"),
-    ("tinyllama", "bfloat16"),
-]
+for attr in dir(SupportedTestModels):
+    value = getattr(SupportedTestModels, attr)
+    if isinstance(value, _SupportedModelEncoding):
+        SupportedTestModels._supported_pairs[
+            (value.model, value.encoding)
+        ] = value
 
 
 @click.command
@@ -278,7 +357,7 @@ SUPPORTED_PAIRS = [
     default="all",
 )
 def main(model, modular_path, encoding):
-    testdata_path = modular_path / Path(os.getenv("PIPELINES_TESTDATA"))
+    testdata_directory = modular_path / Path(os.getenv("PIPELINES_TESTDATA"))
 
     # There must be a slicker way to do this expansion
     encodings = [encoding]
@@ -289,34 +368,29 @@ def main(model, modular_path, encoding):
         models = ["llama3_1", "tinyllama"]
 
     for encoding, model in itertools.product(encodings, models):
-        if (model, encoding) in SUPPORTED_PAIRS:
-            weight_path = (
-                testdata_path / "tiny_llama.gguf" if model
-                == "tinyllama" else None
+        try:
+            model_encoding = SupportedTestModels.get(model, encoding)
+        except:
+            print(
+                "Skipping golden generation for"
+                f" {model=} {encoding=} (combination not supported)."
             )
-            version = "llama3_1" if model == "tinyllama" else model
-            try:
-                config = build_config(version, weight_path, encoding)
+            continue
 
-                encoding = config.quantization_encoding.value
-                llama3 = Llama3(config)
-                results = run_llama3(llama3, PROMPTS)
-                encoder = NumpyEncoder()
-
-                output_full_path = testdata_path / golden_data_fname(
-                    model, encoding
-                )
-
-                with open(output_full_path, "w") as f:
-                    f.write(encoder.encode(results))
-
-                print("Golden file written to", output_full_path)
-            except Exception as e:
-                print(
-                    "Failed to generate golden data for"
-                    f" {model}_{encoding}: {e}"
-                )
-                raise e
+        try:
+            config = model_encoding.build_config(testdata_directory)
+            llama3 = Llama3(config)
+            results = run_llama3(llama3, PROMPTS)
+            encoder = NumpyEncoder()
+            output_full_path = (
+                testdata_directory / model_encoding.golden_data_fname()
+            )
+            with open(output_full_path, "w") as f:
+                f.write(encoder.encode(results))
+            print("Golden file written to", output_full_path)
+        except Exception as e:
+            print(f"Failed to generate golden data for {model}_{encoding}: {e}")
+            raise e
 
 
 if __name__ == "__main__":

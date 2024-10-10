@@ -16,19 +16,17 @@ import pytest
 from evaluate_llama import (
     PROMPTS,
     NumpyDecoder,
+    SupportedTestModels,
     compare_values,
     find_runtime_path,
-    golden_data_fname,
-    load_llama3,
     run_llama3,
 )
-
 from llama3.llama3 import Llama3
 from nn.kv_cache import KVCacheStrategy
 
 
 @pytest.fixture(scope="session")
-def tinyllama_model(tinyllama_path, request):
+def tinyllama_model(testdata_directory, request):
     """Note: when using this fixture in a test, you must pytest.mark.parametrize
     with the max_length and max_new_tokens pairs (see usage examples below)!
     This is because only one instance of a fixture is cached at a time.
@@ -38,39 +36,34 @@ def tinyllama_model(tinyllama_path, request):
     """
     max_length = request.param[0]
     max_new_tokens = request.param[1]
-    model = load_llama3(
-        tinyllama_path, max_length=max_length, max_new_tokens=max_new_tokens
+    config = SupportedTestModels.TINY_LLAMA_F32.build_config(
+        testdata_directory, max_length=max_length, max_new_tokens=max_new_tokens
     )
-    return model
+    return Llama3(config)
 
 
 @pytest.fixture(scope="session")
-def tinyllama_model_naive_kv_cache(tinyllama_path, request):
+def tinyllama_model_naive_kv_cache(testdata_directory, request):
     """Same as tinyllama_model, except forces the naive KV cache."""
     max_length = request.param[0]
     max_new_tokens = request.param[1]
-    model = load_llama3(
-        tinyllama_path,
+    config = SupportedTestModels.TINY_LLAMA_F32.build_config(
+        testdata_directory,
         max_length=max_length,
         max_new_tokens=max_new_tokens,
         cache_strategy=KVCacheStrategy.NAIVE,
     )
-    return model
-
-
-@pytest.fixture(scope="session")
-def tinyllama_path(testdata_directory) -> Path:
-    return testdata_directory / "tiny_llama.gguf"
+    return Llama3(config)
 
 
 @pytest.mark.parametrize("tinyllama_model", [(2048, -1)], indirect=True)
-def test_tiny_llama(tinyllama_model):
+def test_tiny_llama(tinyllama_model, testdata_directory):
     """Runs Llama3.1 on a tiny checkpoint and compares it to previously generated
     golden values.
     """
     golden_data_path = find_runtime_path(
-        golden_data_fname("tinyllama", "float32"),
-        Path(os.environ.get("PIPELINES_TESTDATA", "")),
+        SupportedTestModels.TINY_LLAMA_F32.golden_data_fname(),
+        testdata_directory,
     )
     expected_results = NumpyDecoder().decode(golden_data_path.read_text())
     actual = run_llama3(tinyllama_model, prompts=PROMPTS[:1])
@@ -81,15 +74,15 @@ def test_tiny_llama(tinyllama_model):
     "tinyllama_model_naive_kv_cache", [(2048, -1)], indirect=True
 )
 def test_tiny_llama_naive_kv_cache(
-    tinyllama_model_naive_kv_cache: Llama3,
+    tinyllama_model_naive_kv_cache: Llama3, testdata_directory: Path
 ) -> None:
     """Runs tiny Llama with naive KV cache and checks output."""
     # Check that we indeed have a naive KV cache Llama model.
     assert not tinyllama_model_naive_kv_cache.params.use_opaque
 
     golden_data_path = find_runtime_path(
-        golden_data_fname("tinyllama", "float32"),
-        Path(os.environ.get("PIPELINES_TESTDATA", "")),
+        SupportedTestModels.TINY_LLAMA_F32.golden_data_fname(),
+        testdata_directory,
     )
     expected_results = NumpyDecoder().decode(golden_data_path.read_text())
     actual = run_llama3(tinyllama_model_naive_kv_cache, prompts=PROMPTS[:1])

@@ -12,9 +12,9 @@ import pytest
 from evaluate_llama import (
     PROMPTS,
     NumpyDecoder,
+    SupportedTestModels,
     compare_values,
     find_runtime_path,
-    golden_data_fname,
     next_token_with_logits,
 )
 from huggingface_hub import hf_hub_download
@@ -44,34 +44,20 @@ class PipelineModelParams:
 def pipeline_model(testdata_directory, request):
     model_params: PipelineModelParams = request.param
     print(f"\nPipelineModel: {model_params}")
-    model_encoding = model_params.encoding
-    if model_params.name == "tinyllama":
-        weight_path = testdata_directory / "tiny_llama.gguf"
-    else:
-        weights_repo_id = f"modularai/llama-{model_params.version}"
-        weights_encoding_file = model_encoding.hf_model_name(
-            model_params.version
-        )
-        weight_path = hf_hub_download(
-            repo_id=weights_repo_id,
-            filename=weights_encoding_file,
-        )
-        print(f"- Downloaded: {weight_path}")
+    encoding = model_params.encoding
+    test_model = SupportedTestModels.get(
+        model_params.name, encoding, strict=False
+    )
 
-    if model_encoding in [
-        SupportedEncodings.float32,
-        SupportedEncodings.bfloat16,
-    ]:
+    if encoding in [SupportedEncodings.float32, SupportedEncodings.bfloat16]:
         print("using continuous batching caching strategy")
         cache_strategy = KVCacheStrategy.CONTINUOUS
     else:
         print("using naive caching strategy")
         cache_strategy = KVCacheStrategy.NAIVE
 
-    config = InferenceConfig(
-        weight_path=weight_path,
-        version=model_params.version,
-        quantization_encoding=model_encoding,
+    config = test_model.build_config(
+        testdata_directory=testdata_directory,
         max_length=model_params.max_length,
         max_new_tokens=model_params.max_new_tokens,
         max_cache_batch_size=model_params.max_batch_size,
@@ -318,7 +304,8 @@ async def test_pipeline_heterogeneous_batch_logits(
     As such, it should only work with tinyllama/fp32 on CPU.
     """
     golden_data_path = find_runtime_path(
-        golden_data_fname("tinyllama", "float32"), testdata_directory
+        SupportedTestModels.TINY_LLAMA_F32.golden_data_fname(),
+        testdata_directory,
     )
     expected_results = NumpyDecoder().decode(golden_data_path.read_text())
 

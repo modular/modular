@@ -14,13 +14,11 @@ import pytest
 from evaluate_llama import (
     PROMPTS,
     NumpyDecoder,
-    build_config,
+    SupportedTestModels,
     compare_values,
     find_runtime_path,
-    golden_data_fname,
     run_llama3,
 )
-
 from llama3.llama3 import Llama3
 
 
@@ -31,21 +29,15 @@ from llama3.llama3 import Llama3
     ],
 )
 def test_llama(model, encoding, testdata_directory):
-    golden_data_path = find_runtime_path(
-        golden_data_fname(model, encoding), testdata_directory
-    )
-    expected_results = NumpyDecoder().decode(golden_data_path.read_text())
-
-    # Download weights if not using tiny llama, which is in tree
-    weight_path = (
-        testdata_directory / "tiny_llama.gguf" if model == "tinyllama" else None
-    )
-    version = "llama3_1" if model == "tinyllama" else model
-    config = build_config(version, weight_path, encoding)
-    config.force_naive_kv_cache = True
+    test_model = SupportedTestModels.get(model, encoding)
+    config = test_model.build_config()
 
     actual = run_llama3(Llama3(config), prompts=PROMPTS[:1])
 
+    golden_data_path = find_runtime_path(
+        test_model.golden_data_fname(), testdata_directory
+    )
+    expected_results = NumpyDecoder().decode(golden_data_path.read_text())
     with pytest.raises(AssertionError):
         # TODO(MSDK-968): Q4_K is currently expected not to match golden values.
         # This test will fail once we have fixed the accuracy issue.
