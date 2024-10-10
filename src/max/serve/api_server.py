@@ -23,12 +23,16 @@ file_path: str = ""
 file_level: Optional[int] = None
 otlp_level: Optional[int] = logging.INFO
 if "MAX_SERVE_LOGS_CONSOLE_LEVEL" in os.environ:
-    console_level = int(os.environ["MAX_SERVE_LOGS_CONSOLE_LEVEL"])
+    console_level = logging.getLevelName(
+        os.environ["MAX_SERVE_LOGS_CONSOLE_LEVEL"]
+    )
 if "MAX_SERVE_LOGS_OTLP_LEVEL" in os.environ:
-    otlp_level = int(os.environ["MAX_SERVE_LOGS_OTLP_LEVEL"])
+    otlp_level = logging.getLevelName(os.environ["MAX_SERVE_LOGS_OTLP_LEVEL"])
 if "MAX_SERVE_LOGS_FILE_PATH" in os.environ:
     file_path = os.environ["MAX_SERVE_LOGS_FILE_PATH"]
-    file_level = int(os.environ.get("MAX_SERVE_LOGS_FILE_LEVEL", logging.DEBUG))
+    file_level = logging.getLevelName(
+        os.environ.get("MAX_SERVE_LOGS_FILE_LEVEL", "DEBUG")
+    )
 if "MAX_SERVE_DISABLE_TELEMETRY" in os.environ:
     otlp_level = None
 configureLogging(console_level, file_path, file_level, otlp_level)
