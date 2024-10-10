@@ -9,7 +9,6 @@ import logging
 from collections import defaultdict
 from contextlib import ExitStack
 from dataclasses import dataclass
-
 from pathlib import Path
 from typing import Any, List, Optional, TextIO
 
@@ -22,7 +21,6 @@ from max.serve.pipelines.echo_gen import EchoTokenGenerator
 
 from utils import config_to_flag
 
-
 logger = logging.getLogger(__name__)
 
 
@@ -33,7 +31,62 @@ class RequestInstance:
     arrival_time: float
 
 
+class BatchExecutionLog:
+    """A utility container to log which requests were executed at each time step
+    and print them out in a tabular form to validate manually."""
+
+    time_to_request: list = []
+
+    def append(self, timestamp: int, req_ids):
+        """Append a set of request ids at a given time step."""
+        self.time_to_request.append([timestamp, req_ids])
+
+    def dump(self):
+        """Dump the execution steps."""
+        for t, r in self.time_to_request:
+            req_list = ",".join(e for e in r)
+            print(f"{t},{req_list}")
+
+
+def generate_continuous_batch_requests(
+    num_requests: int = 8,
+) -> List[RequestInstance]:
+    """Generates a sequence where the first request is much longer, and
+    all the following requests are different lengths arriving at different times.
+    We can measure this to make sure that the requests are being executed in
+    a continuous batching manner.
+    """
+    request_list = []
+    for i in range(num_requests):
+        request_list.append(
+            RequestInstance(
+                req_id=f"req_{i}",
+                max_token_len=20 if i == 0 else (i * 2),
+                arrival_time=i * 2,
+            )
+        )
+    return request_list
+
+
+def generate_batch_requests(num_requests: int = 8) -> List[RequestInstance]:
+    """Generates a set of request that have the arrive at the same time (t=0),
+    and have the same max-token-length (10). Combined with prompt, we can get
+    different execution behaviors.
+    """
+    request_list = []
+    for i in range(num_requests):
+        request_list.append(
+            RequestInstance(req_id=f"req_{i}", max_token_len=10, arrival_time=0)
+        )
+    return request_list
+
+
 def generate_simple_requests() -> List[RequestInstance]:
+    """Generates a sequence of requests where 3 arrive at the same time but have
+    different max-lengths, with one having a very long request (max-length). The
+    second sequence of requests should overlap with this long request for
+    continuous batching, otherwise it will wait for the first batch to complete.
+    """
     _REQUEST_SEQUENCE = [
         [0, 16],
         [0, 24],
@@ -51,9 +104,6 @@ def generate_simple_requests() -> List[RequestInstance]:
                 arrival_time=entry[0],
             )
         )
-    print(f"Incoming request_list : {request_list}")
-    request_list = sorted(request_list, key=lambda x: x.arrival_time)
-    print(f"Sorted request_list : {request_list}")
     return request_list
 
 
@@ -71,12 +121,19 @@ async def run_batch_scenario(
         len(request_list),
         len(prompts),
     )
+    for r in request_list:
+        logger.info("Request  : %s", r)
 
     num_prompts = len(prompts)
     batch_sequence_index = 0
 
+    # Sort the entries by arrival time.
+    ordered_request_list = request_list
+    ordered_request_list.sort(key=lambda x: x.arrival_time)
+
     step_current: int = 0
     step_duration: int = 1
+    batch_log = BatchExecutionLog()
 
     context_encoding_queue: list[tuple[str, str, int]] = []
     token_gen_queue: list[tuple[str, Any]] = []  # Queued batched
@@ -110,24 +167,25 @@ async def run_batch_scenario(
             step_logger.info("")
 
             if (
-                (batch_sequence_index == len(request_list))
+                (not ordered_request_list)
                 and (not context_encoding_queue)
                 and (not token_gen_queue)
                 and (not token_gen_batch)
             ):
+                # all queues are empty and all batches have been processed
                 logger.info("Completed scenario")
                 break
 
             # Check if we have new batches available.
-            while (batch_sequence_index < len(request_list)) and (
-                step_current >= request_list[batch_sequence_index].arrival_time
+            while (
+                ordered_request_list
+                and step_current >= ordered_request_list[0].arrival_time
             ):
+                current_request = ordered_request_list.pop(0)
                 # Reuse prompts as needed
-                batch_id = str(batch_sequence_index)
+                batch_id = current_request.req_id
                 prompt = prompts[batch_sequence_index % max(num_prompts, 1)]
-                max_new_tokens = request_list[
-                    batch_sequence_index
-                ].max_token_len
+                max_new_tokens = current_request.max_token_len
                 batch_configs[batch_id] = (prompt, max_new_tokens)
                 step_logger.info(
                     "Received: Batch %s, '%s', %d",
@@ -245,7 +303,7 @@ async def run_batch_scenario(
                     "Executing: Active-Batch: [%s]",
                     ",".join(token_gen_batch.keys()),
                 )
-
+                batch_log.append(step_current, [x for x in token_gen_batch])
                 results = await model.next_token(token_gen_batch)
                 for batch_id, token in results.items():
                     assert token is not None
@@ -282,6 +340,8 @@ async def run_batch_scenario(
             f" {batch_prompt}\nCompletion:\n{batch_completion}\n\n"
         )
     logger.info("\n%s", summary_text)
+    logger.info("COMPLETED_AT %s", step_current)
+    batch_log.dump()
 
 
 @click.command
@@ -323,6 +383,15 @@ async def run_batch_scenario(
     default="",
     help="Optional path to write outputs for batching scenario.",
 )
+@click.option(
+    "--scenario",
+    type=click.Choice(["A", "B", "C"]),
+    default="A",
+    help=(
+        "Request scenarios. A=simple_requests, B=batch_requests,"
+        " C=continuous_batch_requests"
+    ),
+)
 def main(
     prompt: str,
     prompt_count: int,
@@ -330,6 +399,7 @@ def main(
     model_name: str,
     batch_mode: str,
     output_path: str,
+    scenario: str,
     **config_kwargs,
 ):
     logging.basicConfig(
@@ -403,14 +473,20 @@ def main(
 
     logger.info("Starting batch demo")
     prompts = [prompt.format(i + 1) for i in range(prompt_count)]
+    requests: list = []
+
+    if scenario == "A":
+        requests = generate_simple_requests()
+    elif scenario == "B":
+        requests = generate_batch_requests()
+    elif scenario == "C":
+        requests = generate_continuous_batch_requests()
+    else:
+        raise ValueError("Invalid scenario specified")
+
     asyncio.run(
         run_batch_scenario(
-            model,
-            prompts,
-            batch_mode,
-            batch_max_size,
-            output_path,
-            generate_simple_requests(),
+            model, prompts, batch_mode, batch_max_size, output_path, requests
         )
     )
 
