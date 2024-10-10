@@ -590,24 +590,6 @@ private:
 };
 
 //===----------------------------------------------------------------------===//
-// ConvertKGENUndef
-//===----------------------------------------------------------------------===//
-
-struct ConvertKGENUndef : public ConvertPOPToLLVMPattern<UndefOp> {
-  using ConvertPOPToLLVMPattern::ConvertPOPToLLVMPattern;
-
-  LogicalResult
-  matchAndRewrite(UndefOp op, UndefOpAdaptor adaptor,
-                  ConversionPatternRewriter &rewriter) const override {
-    Type type = getTypeConverter()->convertType(op.getType());
-    if (!type)
-      return emitError(op->getLoc(), "failed to convert result type");
-    rewriter.replaceOpWithNewOp<LLVM::UndefOp>(op, type);
-    return success();
-  }
-};
-
-//===----------------------------------------------------------------------===//
 // ConvertKGENRebind
 //===----------------------------------------------------------------------===//
 
@@ -756,8 +738,7 @@ static void populateKGENToLLVMPatterns(mlir::LLVMTypeConverter &typeConverter,
       ConvertKGENStructReplace,
       ConvertKGENRebind,
       ConvertKGENReturn,
-      ConvertKGENUnreachable,
-      ConvertKGENUndef
+      ConvertKGENUnreachable
       // clang-format on
       >(typeConverter);
   patterns.insert<ConvertKGENFunc>(typeConverter, symtab, ids);
