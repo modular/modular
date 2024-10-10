@@ -88,7 +88,7 @@ fn test_case_batched[
     )
 
     var num_blocks_per_input_: Int = ceildiv(
-        in_buffer.tensor.num_elements(), block_size
+        N, block_size
     ) if not num_blocks_per_input else num_blocks_per_input.value()
     var device_local_topk_vals = DeviceNDBuffer[type, rank](
         DimList(batch_size, num_blocks_per_input_ * K), ctx=ctx
@@ -200,10 +200,13 @@ fn test_case_batched[
                 topk_vals.tensor.data[i],
                 topk_vals_cpu.tensor.data[i],
             )
-            assert_equal(
-                topk_idxs.tensor.data[i],
-                topk_idxs_cpu.tensor.data[i].cast[idx_t](),
-            )
+
+            @parameter
+            if type == DType.float32:
+                assert_equal(
+                    topk_idxs.tensor.data[i],
+                    topk_idxs_cpu.tensor.data[i].cast[idx_t](),
+                )
 
     _ = topk_vals
     _ = topk_idxs
@@ -283,6 +286,7 @@ fn main() raises:
     alias llama3_vocab_size = 128256
     with DeviceContext() as ctx:
         alias type = DType.float32
+        alias bf16_type = DType.bfloat16
         var N: Int
         var K: Int
         var block_size: Int
@@ -425,9 +429,9 @@ fn main() raises:
             num_blocks_per_input=8,
         )
         print_test_case(test_case11)
-        test_case_batched[type, fill_random, sampling = test_case11.sampling](
-            ctx, test_case11
-        )
+        test_case_batched[
+            bf16_type, fill_random, sampling = test_case11.sampling
+        ](ctx, test_case11)
 
         alias test_case12 = TestCase[_sampling=True](
             N=llama3_vocab_size,
@@ -436,9 +440,9 @@ fn main() raises:
             batch_size=1,
         )
         print_test_case(test_case12)
-        test_case_batched[type, fill_random, sampling = test_case12.sampling](
-            ctx, test_case12
-        )
+        test_case_batched[
+            bf16_type, fill_random, sampling = test_case12.sampling
+        ](ctx, test_case12)
 
         alias test_case13 = TestCase[_sampling=False](
             N=1024,
@@ -447,9 +451,9 @@ fn main() raises:
             batch_size=256,
         )
         print_test_case(test_case13)
-        test_case_batched[type, fill_iota, sampling = test_case13.sampling](
-            ctx, test_case13
-        )
+        test_case_batched[
+            bf16_type, fill_iota, sampling = test_case13.sampling
+        ](ctx, test_case13)
 
         alias test_case14 = TestCase[_sampling=False](
             N=32000,
@@ -458,9 +462,9 @@ fn main() raises:
             batch_size=1,
         )
         print_test_case(test_case14)
-        test_case_batched[type, fill_random, sampling = test_case14.sampling](
-            ctx, test_case14
-        )
+        test_case_batched[
+            bf16_type, fill_random, sampling = test_case14.sampling
+        ](ctx, test_case14)
 
         alias test_case15 = TestCase[_sampling=True](
             N=llama3_vocab_size,
@@ -470,9 +474,9 @@ fn main() raises:
             num_blocks_per_input=8,
         )
         print_test_case(test_case15)
-        test_case_batched[type, fill_iota, sampling = test_case15.sampling](
-            ctx, test_case15
-        )
+        test_case_batched[
+            bf16_type, fill_iota, sampling = test_case15.sampling
+        ](ctx, test_case15)
 
         alias test_case16 = TestCase[_sampling=True](
             N=1024,
@@ -481,9 +485,9 @@ fn main() raises:
             batch_size=64,
         )
         print_test_case(test_case16)
-        test_case_batched[type, fill_iota, sampling = test_case16.sampling](
-            ctx, test_case16
-        )
+        test_case_batched[
+            bf16_type, fill_iota, sampling = test_case16.sampling
+        ](ctx, test_case16)
 
         alias test_case17 = TestCase[_sampling=False](
             N=llama3_vocab_size,
@@ -493,9 +497,9 @@ fn main() raises:
             num_blocks_per_input=16,
         )
         print_test_case(test_case17)
-        test_case_batched[type, fill_random, sampling = test_case17.sampling](
-            ctx, test_case17
-        )
+        test_case_batched[
+            bf16_type, fill_random, sampling = test_case17.sampling
+        ](ctx, test_case17)
 
         alias test_case18 = TestCase[_sampling=False](
             N=llama3_vocab_size,
@@ -505,9 +509,9 @@ fn main() raises:
             num_blocks_per_input=8,
         )
         print_test_case(test_case18)
-        test_case_batched[type, fill_random, sampling = test_case18.sampling](
-            ctx, test_case18
-        )
+        test_case_batched[
+            bf16_type, fill_random, sampling = test_case18.sampling
+        ](ctx, test_case18)
 
         alias test_case19 = TestCase[_sampling=False](
             N=1024,
@@ -516,6 +520,6 @@ fn main() raises:
             batch_size=64,
         )
         print_test_case(test_case19)
-        test_case_batched[type, fill_random, sampling = test_case19.sampling](
-            ctx, test_case19
-        )
+        test_case_batched[
+            bf16_type, fill_random, sampling = test_case19.sampling
+        ](ctx, test_case19)

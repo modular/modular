@@ -31,7 +31,6 @@ from memory import UnsafePointer, stack_allocation
 
 from utils.numerics import min_or_neg_inf
 
-alias idx_t = DType.index
 alias SEED = 0
 alias DEBUG_FILE = False
 
@@ -131,13 +130,13 @@ fn block_reduce_max[
     ]()
 
     # Calculate sizes for shared memory allocation
-    alias p_width = simdwidthof[idx_t]()
+    alias p_width = simdwidthof[DType.index]()
     alias u_width = simdwidthof[Scalar[T]]()
 
     # Allocate shared memory for indices and values
     var p_sram = stack_allocation[
         (BLOCK_SIZE // WARP_SIZE) * p_width,
-        Scalar[idx_t],
+        Scalar[DType.index],
         address_space = AddressSpace.SHARED,
     ]()
     var u_sram = stack_allocation[
@@ -156,7 +155,7 @@ fn block_reduce_max[
     # Store warp-level results in shared memory
     if lane_id() == 0 and warp < num_warps_needed:
         # Note: Potential bank conflict for sub 4 byte data elements
-        p_sram[int(warp) * p_width] = Scalar[idx_t](warp_accum.p)
+        p_sram[int(warp) * p_width] = Scalar[DType.index](warp_accum.p)
         u_sram[int(warp) * u_width] = warp_accum.u
     barrier()
 
@@ -331,8 +330,10 @@ fn topk_stage2[
     # var s_val2: UnsafePointer[Scalar[T], address_space = AddressSpace.SHARED]
     # var s_id: UnsafePointer[Int, address_space = AddressSpace.SHARED]
     # Storing the top-K logits in shmem for sampling
-    s_val2 = (idxs_sram + vals_smem_size).bitcast[Scalar[T]]()
-    s_id = (s_val2 + 2 * K).bitcast[Int]()  # 2* for warp align safety
+    s_id = (idxs_sram + vals_smem_size).bitcast[
+        Int
+    ]()  # 2* for warp align safety
+    s_val2 = (s_id + 2 * K).bitcast[Scalar[T]]()
     # [end] TODO Make this ONLY for sampling
 
     var s_sum = stack_allocation[
@@ -419,9 +420,9 @@ fn _topk_gpu[
     K: Int,  # num top elements to keep
     input_buf: NDBuffer[type, rank],
     device_local_topk_vals: NDBuffer[type, rank],
-    device_local_topk_idxs: NDBuffer[idx_t, rank],
+    device_local_topk_idxs: NDBuffer[DType.index, rank],
     out_vals: NDBuffer[type, rank],
-    out_idxs: NDBuffer[idx_t, rank],
+    out_idxs: NDBuffer[DType.index, rank],
     block_size: Int = 256,
     num_blocks_per_input: OptionalReg[Int] = None,
 ) raises:
@@ -444,11 +445,11 @@ fn _topk_gpu[
             Input tensor as a device NDBuffer.
         device_local_topk_vals: NDBuffer[type, 1, DimList(batch_size, num_blocks_per_input * K)]
             Temporary buffer for locally reduced top-K values from stage 1.
-        device_local_topk_idxs: NDBuffer[idx_t, 1, DimList(batch_size, num_blocks_per_input * K)]
+        device_local_topk_idxs: NDBuffer[DType.index, 1, DimList(batch_size, num_blocks_per_input * K)]
             Temporary buffer for locally reduced top-K indices from stage 1.
         out_vals: NDBuffer[type, 1, DimList(batch_size, K)]
             Output buffer on device for the K largest values.
-        out_idxs: NDBuffer[idx_t, 1, DimList(batch_size, 1 if sampling else K)]
+        out_idxs: NDBuffer[DType.index, 1, DimList(batch_size, 1 if sampling else K)]
             Output buffer on device for the indices of the K largest values, or sampled token indices.
         block_size: Int
             The number of threads per block (default is 256 from TRT and empirical testing).
@@ -514,9 +515,11 @@ fn _topk_gpu[
     var num_elem_reduced = ceildiv(
         batch_size * num_blocks_per_input_ * K, WARP_SIZE
     ) * WARP_SIZE
-    var num_bytes_sample_cache = K * (sizeof[Scalar[type]]() + sizeof[idx_t]())
+    var num_bytes_sample_cache = K * (
+        sizeof[Scalar[type]]() + sizeof[DType.index]()
+    )
     var shared_mem_bytes_2 = num_elem_reduced * (
-        sizeof[Scalar[type]]() + sizeof[idx_t]()
+        sizeof[Scalar[type]]() + sizeof[DType.index]()
     ) + num_bytes_sample_cache
     shared_mem_bytes_2 = int(
         ceildiv(shared_mem_bytes_2, WARP_SIZE) * WARP_SIZE
@@ -539,7 +542,7 @@ fn _topk_gpu[
         )
         _printf["[DEBUG] stg2 grid_dim: %d\n"](griddim_stage2)
         _printf["[DEBUG] stg2 block_dim: %d\n"](blockdim_stage2)
-        _printf["[DEBUG] stg2 shared_mem_bytes: %d, %d\n"](shared_mem_bytes_2)
+        _printf["[DEBUG] stg2 shared_mem_bytes: %d\n"](shared_mem_bytes_2)
 
     # Enqueue the second kernel (stage 2)
     ctx.enqueue_function(
