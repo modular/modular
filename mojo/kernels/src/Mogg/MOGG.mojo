@@ -49,6 +49,7 @@ from MOGGTensor import Tensor
 from nn._optional_param import OptionalParamInt
 from nn.activations import gelu, relu
 from nn.arange import arange, arange_shape
+from nn.argmax_gpu import argmax_gpu as _argmax_gpu
 from nn.arg_nonzero import arg_nonzero, arg_nonzero_shape
 from nn.concat import concat as _concat, _concat_cpu
 from nn.concat import concat_shape as concat_from_list_shape
@@ -1088,19 +1089,40 @@ fn abs_wrapped[
 @export
 fn argmax_wrapped[
     type: DType,
-    axis_type: DType,
     input_0_static_shape: DimList,
-    input_1_static_shape: DimList,
     out_type: DType,
     input_2_static_shape: DimList,
     rank: Int,
+    target: StringLiteral = "cpu",
 ](
     input: NDBuffer[type, rank, input_0_static_shape],
-    axis_buf: NDBuffer[axis_type, 1, input_1_static_shape],
+    axis: Scalar,
     output: NDBuffer[out_type, rank, input_2_static_shape],
     ctx: MojoCallContextPtr,
 ) raises:
-    _argmax(input, axis_buf, output)
+    constrained[target == "cpu" or "cuda" in target, "not a valid target"]()
+
+    @parameter
+    if target == "cpu":
+        _argmax(input, int(axis), output)
+    else:
+        constrained[
+            out_type == DType.index or out_type == DType.int64,
+            "output type must be a valid index type",
+        ]()
+
+        var axis = int(normalize_neg_index(axis, rank))
+        if axis != rank - 1:
+            raise Error("axis other than -1 not supported on GPU")
+
+        # NOTE: out_type must be rebindable to DType.index (i.e. Int64)
+        # TODO(KERN-1045): Add support for taking advantage of static_shapes
+        var cuda_ctx = ctx.get_device_context()
+        _argmax_gpu(
+            cuda_ctx,
+            rebind[NDBuffer[type, rank]](input),
+            rebind[NDBuffer[DType.index, rank]](output),
+        )
 
 
 # ===----------------------------------------------------------------------===#
