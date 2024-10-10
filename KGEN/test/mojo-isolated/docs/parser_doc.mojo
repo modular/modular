@@ -20,7 +20,7 @@ from docs_package import documented_method_defined_in_init
 # CHECK: #[[PACKAGE_DOC:.*]] = #lit.doc.string<"This is a test package."
 # CHECK: #[[IMPORTED_FUNC_DOC:.*]] = #lit.doc.string<"This is an imported method."
 
-# CHECK: lit.file_module @"parser-doc"{{.*}}docString = #[[MODULE_DOC]]
+# CHECK: lit.file_module @parser_doc{{.*}}docString = #[[MODULE_DOC]]
 # CHECK: lit.alias.decl {{.*}}AliasType{{.*}}docString = #[[ALIAS_DOC]]
 # CHECK: lit.globalvar.decl @value{{.*}}docString = #[[GLOBAL_VAR_DOC]]
 # CHECK: lit.struct.decl @Struct{{.*}}docString = #[[STRUCT_DOC]]

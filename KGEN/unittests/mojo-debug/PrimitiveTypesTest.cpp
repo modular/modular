@@ -118,7 +118,7 @@ TEST(PrimitiveTypesTest, testStructFieldOffset) {
 TEST(PrimitiveTypesTest, testRecursiveStruct) {
   /// Make sure pointer to self type can be seen and doesn't crash.
 
-  StopContext ctx = buildAndLaunch("recursive-struct.mojo");
+  StopContext ctx = buildAndLaunch("recursive_struct.mojo");
 
   SBValue strct = ctx.frame.FindVariable("f2");
   ASSERT_EQ((int)strct.GetNumChildren(), 2);
@@ -150,7 +150,7 @@ TEST(PrimitiveTypesTest, testTupleAndSIMD) {
 }
 
 TEST(PrimitiveTypesTest, testPointerToClosure) {
-  StopContext ctx = buildAndLaunch("pointer-to-closure.mojo");
+  StopContext ctx = buildAndLaunch("pointer_to_closure.mojo");
   SBValue callback =
       ctx.frame.FindVariable("self").GetChildMemberWithName("callback");
   EXPECT_STREQ(callback.GetTypeName(),
@@ -159,7 +159,7 @@ TEST(PrimitiveTypesTest, testPointerToClosure) {
 }
 
 TEST(PrimitiveTypesTest, testBuiltinTypes) {
-  StopContext ctx = buildAndLaunch("builtin-types.mojo");
+  StopContext ctx = buildAndLaunch("builtin_types.mojo");
   EXPECT_EQ(ctx.runCommand("v a_var_index").output,
             "(index) a_var_index = 48\n");
   EXPECT_EQ(ctx.runCommand("v a_register_passable_struct").output,

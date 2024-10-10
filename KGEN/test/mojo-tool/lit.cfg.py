@@ -28,7 +28,7 @@ config.excludes = [
     "test_package",
     "test_package_with_main",
     "inputs",
-    "test-package-moco-773",
+    "test_package_moco_773",
 ]
 
 tool_dirs = [

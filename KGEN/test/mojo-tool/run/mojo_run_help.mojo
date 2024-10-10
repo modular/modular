@@ -23,7 +23,7 @@ from sys import argv
 
 
 fn main() -> None:
-    # CHECK-ARGV: mojo-run-help.mojo
+    # CHECK-ARGV: mojo_run_help.mojo
     # CHECK-ARGV: --help
     print(argv()[0])
     print(argv()[1])

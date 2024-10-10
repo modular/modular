@@ -39,7 +39,7 @@ suite('LSP', () => {
     openModularRoot();
     await vscode.workspace.openTextDocument(
       vscode.Uri.file(
-        path.join(repoConfig.fixtures, 'dangling-file', 'dangling-file.mojo')
+        path.join(repoConfig.fixtures, 'dangling-file', 'dangling_file.mojo')
       )
     );
 

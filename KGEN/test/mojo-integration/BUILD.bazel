@@ -61,10 +61,10 @@ lit_tests(
 pkg_files(
     name = "test_python",
     srcs = [
-        "mojo-build-python.mojo",
+        "mojo_build_python.mojo",
     ],
     renames = {
-        "mojo-build-python.mojo": "test_python.mojo",
+        "mojo_build_python.mojo": "test_python.mojo",
     },
     visibility = ["//visibility:public"],
 )
