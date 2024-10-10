@@ -183,6 +183,12 @@ convertLLVMMetadata(LLVM::LLVMFuncOp func, SignatureType sig,
                    << "arguments)";
 
           argAttrLists[argIndex].set(attr.getName(), b.getUnitAttr());
+          // FIXME(MOCO-1342): Remove this, once we are able to explicitly pass
+          // alignment.
+          argAttrLists[argIndex].set(
+              StringAttr::get(func->getContext(),
+                              LLVM::LLVMDialect::getAlignAttrName()),
+              IntegerAttr::get(b.getI32Type(), 64));
         }
         continue;
       }
