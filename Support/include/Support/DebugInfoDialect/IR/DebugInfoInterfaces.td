@@ -57,7 +57,7 @@ def DebugInfo_SubprogramScoped : OpInterface<
   }];
 
   let verify = [{
-    return impl::verifySubprogramScoped(cast<SubprogramScoped>($_op));
+    return Impl::verifySubprogramScoped(cast<SubprogramScoped>($_op));
   }];
 }
 
@@ -104,12 +104,12 @@ def DebugInfo_InlinedSubprogramScoped : OpInterface<
 
   let extraSharedClassDeclaration = [{
     /// Return the location of the op after removing any encoded callLoc info.
-    Location getLocNoInlined() { return impl::getLocNoInlined($_op); }
+    Location getLocNoInlined() { return Impl::getLocNoInlined($_op); }
     /// Return any callLoc info encoded in the location.
-    LocationAttr getCallLocAttr() { return impl::getCallLocAttr($_op); }
+    LocationAttr getCallLocAttr() { return Impl::getCallLocAttr($_op); }
     /// Adjust location info to encode the callLoc info.
     void setCallLocAttr(LocationAttr callLoc) {
-      impl::setCallLocAttr($_op, callLoc);
+      Impl::setCallLocAttr($_op, callLoc);
     }
   }];
 }

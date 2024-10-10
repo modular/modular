@@ -109,7 +109,7 @@ static LogicalResult verifyScope(InlinedSubprogramScoped inlined,
   return inlined->emitOpError("must have callsite location");
 }
 
-LogicalResult impl::verifySubprogramScoped(SubprogramScoped op) {
+LogicalResult Impl::verifySubprogramScoped(SubprogramScoped op) {
 
   auto verifyNormal = [&](Location loc) -> LogicalResult {
     if (!isa<FileLineColLoc>(loc)) {
@@ -186,7 +186,7 @@ LogicalResult impl::verifySubprogramScoped(SubprogramScoped op) {
   return failure(res.wasInterrupted());
 }
 
-Location impl::getLocNoInlined(InlinedSubprogramScoped iss) {
+Location Impl::getLocNoInlined(InlinedSubprogramScoped iss) {
   if (auto fusedCallLoc =
           dyn_cast<mlir::FusedLocWith<DebugInfo::DICallLocAttr>>(
               iss.getLoc())) {
@@ -212,7 +212,7 @@ Location impl::getLocNoInlined(InlinedSubprogramScoped iss) {
   return iss.getLoc();
 }
 
-LocationAttr impl::getCallLocAttr(InlinedSubprogramScoped iss) {
+LocationAttr Impl::getCallLocAttr(InlinedSubprogramScoped iss) {
   if (auto fusedImmediate =
           dyn_cast<mlir::FusedLocWith<DebugInfo::DICallLocAttr>>(iss.getLoc()))
     return fusedImmediate.getMetadata().getCallLoc();
@@ -232,7 +232,7 @@ LocationAttr impl::getCallLocAttr(InlinedSubprogramScoped iss) {
     return {};
 }
 
-void impl::setCallLocAttr(InlinedSubprogramScoped iss, LocationAttr callLoc) {
+void Impl::setCallLocAttr(InlinedSubprogramScoped iss, LocationAttr callLoc) {
   Location callLocStripped = iss.getLocNoInlined();
   if (auto fusedLoc = dyn_cast<mlir::FusedLocWith<DebugInfo::DIScopeAttr>>(
           callLocStripped)) {

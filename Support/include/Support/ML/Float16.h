@@ -56,7 +56,7 @@ constexpr bool is_little_endian =
 
 } // namespace
 
-namespace bfloat {
+namespace Bfloat {
 
 struct bfloat16_t {
   bfloat16_t(float v) : bits(floatToBf16Bits(v)) {}
@@ -77,9 +77,9 @@ private:
   uint16_t bits;
 };
 
-} // namespace bfloat
+} // namespace Bfloat
 
-namespace float16 {
+namespace Float16 {
 struct float16_t {
   static constexpr uint16_t MIN_BITS = 0xFBFF;
   static constexpr uint16_t MAX_BITS = 0x7BFF;
@@ -124,7 +124,7 @@ private:
   uint16_t bits;
 };
 
-} // namespace float16
+} // namespace Float16
 
 } // namespace M
 

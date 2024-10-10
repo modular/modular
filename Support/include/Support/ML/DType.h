@@ -376,8 +376,8 @@ DECLARE_TYPE_MAPPING(si32, int32_t);
 DECLARE_TYPE_MAPPING(ui32, uint32_t);
 DECLARE_TYPE_MAPPING(si64, int64_t);
 DECLARE_TYPE_MAPPING(ui64, uint64_t);
-DECLARE_TYPE_MAPPING(bf16, M::bfloat::bfloat16_t);
-DECLARE_TYPE_MAPPING(f16, M::float16::float16_t);
+DECLARE_TYPE_MAPPING(bf16, M::Bfloat::bfloat16_t);
+DECLARE_TYPE_MAPPING(f16, M::Float16::float16_t);
 DECLARE_TYPE_MAPPING(f32, float);
 DECLARE_TYPE_MAPPING(f64, double);
 /// TODO: Add long double when sizeof(long double) != sizeof(double).
