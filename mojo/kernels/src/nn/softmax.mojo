@@ -313,7 +313,7 @@ fn _softmax_3_pass_base[
     step3_accum_apply_func: fn[type: DType, width: Int] (
         SIMD[type, width], SIMD[type, width]
     ) -> SIMD[type, width],
-](output: Buffer[type, buffer_size]):
+](output: Buffer[type, buffer_size]) raises:
     """Performs an unbatched three-pass softmax. The actual behavior of each
     step can be different between the (regular) softmax and logsoftmax.
 
@@ -364,19 +364,16 @@ fn _softmax_3_pass_base[
         max_buff[0] = val.reduce_max().cast[type]()
 
     # Generate fused input-reduction
-    try:
-        _reduce_generator[
-            input_fn,
-            output_fn,
-            reduce_impl,
-            single_thread_blocking_override=True,
-        ](
-            IndexList[1](len(output)),
-            init=Scalar[type].MIN,
-            reduce_dim=0,
-        )
-    except e:
-        abort(e)
+    _reduce_generator[
+        input_fn,
+        output_fn,
+        reduce_impl,
+        single_thread_blocking_override=True,
+    ](
+        IndexList[1](len(output)),
+        init=Scalar[type].MIN,
+        reduce_dim=0,
+    )
 
     var max_val = max_buff[0]
 
@@ -410,7 +407,7 @@ fn softmax_3_pass[
     input_fn_1d: fn[_simd_width: Int] (Int) capturing [_] -> SIMD[
         type, _simd_width
     ],
-](output: Buffer[type, buffer_size]):
+](output: Buffer[type, buffer_size]) raises:
     """Performs an unbatched softmax on an input tensor using the three-pass
     algorithm.
 
@@ -465,7 +462,7 @@ fn logsoftmax[
     input_fn_1d: fn[_simd_width: Int] (Int) capturing [_] -> SIMD[
         type, _simd_width
     ],
-](output: Buffer[type, buffer_size]):
+](output: Buffer[type, buffer_size]) raises:
     """Performs an unbatched logsoftmax on an input tensor using the three-pass
     algorithm.
 
@@ -530,7 +527,7 @@ fn logsoftmax[
     @parameter
     @__copy_capture(chunk_size, outer_dim, inner_dim)
     @always_inline
-    fn task_func(task_id: Int):
+    fn task_func(task_id: Int) raises:
         var start_offset = task_id * chunk_size
         var end_offset = min((task_id + 1) * chunk_size, outer_dim)
         for i in range(start_offset, end_offset):
@@ -611,7 +608,7 @@ fn _softmax_cpu[
     @__copy_capture(chunk_size, inner_dim, outer_dim)
     @parameter
     @always_inline
-    fn task_func(task_id: Int):
+    fn task_func(task_id: Int) raises:
         var start_offset = task_id * chunk_size
         var end_offset = min((task_id + 1) * chunk_size, outer_dim)
         for i in range(start_offset, end_offset):
