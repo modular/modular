@@ -257,7 +257,6 @@ class Spec:
             val = ""
             if IFS in p:
                 name, val = p.split(IFS)
-                break
 
             if name not in d.keys():
                 d[name] = []
