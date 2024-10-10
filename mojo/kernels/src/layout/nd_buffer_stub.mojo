@@ -10,7 +10,7 @@ from sys import alignof, sizeof
 from buffer import NDBuffer
 from buffer.dimlist import Dim, DimList
 from gpu.id import ThreadIdx
-from gpu.memory import Fill, async_copy
+from gpu.memory import Fill, CacheEviction, async_copy
 from layout import Layout, LayoutTensor
 from layout.int_tuple import depth, to_int
 from layout.layout import make_layout
@@ -471,6 +471,7 @@ fn _copy_nd_buffer_to_layout_tensor[
     *,
     is_async: Bool = False,
     fill: Fill = Fill.NONE,
+    eviction_policy: CacheEviction = CacheEviction.EVICT_NORMAL,
 ](
     dst: LayoutTensor[
         dtype,
@@ -519,9 +520,11 @@ fn _copy_nd_buffer_to_layout_tensor[
                 var dst_ptr = dst.ptr.bitcast[
                     address_space = _GPUAddressSpace.SHARED
                 ]()
-                async_copy[element_size_bytes, fill=fill](
-                    src_ptr + src_idx, dst_ptr + dst_idx
-                )
+                async_copy[
+                    element_size_bytes,
+                    fill=fill,
+                    eviction_policy=eviction_policy,
+                ](src_ptr + src_idx, dst_ptr + dst_idx)
             else:
                 var src_element = src.data.offset(src_idx).load[
                     width=vec_size, alignment=alignment
@@ -557,9 +560,11 @@ fn _copy_nd_buffer_to_layout_tensor[
                     var dst_ptr = dst.ptr.bitcast[
                         address_space = _GPUAddressSpace.SHARED
                     ]()
-                    async_copy[element_size_bytes, fill=fill](
-                        src_ptr + src_idx, dst_ptr + dst_idx
-                    )
+                    async_copy[
+                        element_size_bytes,
+                        fill=fill,
+                        eviction_policy=eviction_policy,
+                    ](src_ptr + src_idx, dst_ptr + dst_idx)
                 else:
                     var src_vec = src.data.load[
                         width=vec_width,
@@ -586,7 +591,9 @@ fn _copy_nd_buffer_to_layout_tensor[
                 var dst_ptr = dst.ptr.bitcast[
                     address_space = _GPUAddressSpace.SHARED
                 ]()
-                async_copy[4, fill=fill](src_ptr + src_idx, dst_ptr + dst_idx)
+                async_copy[4, fill=fill, eviction_policy=eviction_policy](
+                    src_ptr + src_idx, dst_ptr + dst_idx
+                )
             else:
                 dst.ptr[dst_idx] = src.data[src_idx]
 
@@ -607,6 +614,7 @@ fn _copy_nd_buffer_to_layout_tensor_masked[
     *,
     is_async: Bool = False,
     fill: Fill = Fill.NONE,
+    eviction_policy: CacheEviction = CacheEviction.EVICT_NORMAL,
 ](
     dst: LayoutTensor[
         dtype,
@@ -666,9 +674,11 @@ fn _copy_nd_buffer_to_layout_tensor_masked[
                 var dst_ptr = dst.ptr.bitcast[
                     address_space = _GPUAddressSpace.SHARED
                 ]()
-                async_copy[element_size_bytes, fill=fill](
-                    src_ptr + src_idx, dst_ptr + dst_idx
-                )
+                async_copy[
+                    element_size_bytes,
+                    fill=fill,
+                    eviction_policy=eviction_policy,
+                ](src_ptr + src_idx, dst_ptr + dst_idx)
             else:
                 var src_element = src.data.offset(src_idx).load[
                     width=vec_size, alignment=alignment
@@ -704,9 +714,11 @@ fn _copy_nd_buffer_to_layout_tensor_masked[
                     var dst_ptr = dst.ptr.bitcast[
                         address_space = _GPUAddressSpace.SHARED
                     ]()
-                    async_copy[element_size_bytes, fill=fill](
-                        src_ptr + src_idx, dst_ptr + dst_idx
-                    )
+                    async_copy[
+                        element_size_bytes,
+                        fill=fill,
+                        eviction_policy=eviction_policy,
+                    ](src_ptr + src_idx, dst_ptr + dst_idx)
                 else:
                     var src_vec = src.data.load[
                         width=vec_width,
@@ -742,7 +754,9 @@ fn _copy_nd_buffer_to_layout_tensor_masked[
                 var dst_ptr = dst.ptr.bitcast[
                     address_space = _GPUAddressSpace.SHARED
                 ]()
-                async_copy[4, fill=fill](src_ptr + src_idx, dst_ptr + dst_idx)
+                async_copy[4, fill=fill, eviction_policy=eviction_policy](
+                    src_ptr + src_idx, dst_ptr + dst_idx
+                )
             else:
                 dst.ptr[dst_idx] = src.data[src_idx]
 

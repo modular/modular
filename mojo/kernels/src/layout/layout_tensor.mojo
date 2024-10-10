@@ -13,7 +13,7 @@ from sys.intrinsics import PrefetchOptions
 from algorithm import vectorize
 from builtin.int import int as _int
 from gpu.id import ThreadIdx
-from gpu.memory import Fill, async_copy
+from gpu.memory import Fill, CacheEviction, async_copy
 from layout.element import Element
 from memory import UnsafePointer, memcpy, memset_zero, stack_allocation
 from memory.pointer import AddressSpace, _GPUAddressSpace
@@ -2233,6 +2233,7 @@ struct LayoutTensor[
         masked: Bool = False,
         swizzle: OptionalReg[Swizzle] = None,
         fill: Fill = Fill.NONE,
+        eviction_policy: CacheEviction = CacheEviction.EVICT_NORMAL,
     ](
         self,
         src: LayoutTensor[
@@ -2352,15 +2353,21 @@ struct LayoutTensor[
                         @parameter
                         if masked:
                             var src_copy_size = element_size_bytes if src_idx < src_idx_bound else 0
-                            async_copy[element_size_bytes, fill=fill](
+                            async_copy[
+                                element_size_bytes,
+                                fill=fill,
+                                eviction_policy=eviction_policy,
+                            ](
                                 src_ptr + src_idx,
                                 dst_ptr + dst_idx,
                                 src_copy_size,
                             )
                         else:
-                            async_copy[element_size_bytes, fill=fill](
-                                src_ptr + src_idx, dst_ptr + dst_idx
-                            )
+                            async_copy[
+                                element_size_bytes,
+                                fill=fill,
+                                eviction_policy=eviction_policy,
+                            ](src_ptr + src_idx, dst_ptr + dst_idx)
             else:
                 alias is_rank2 = src.rank == 2 and self.rank == 2
                 constrained[
@@ -2405,7 +2412,11 @@ struct LayoutTensor[
 
                         var dst_idx = swizzled_offset + dst_distance
 
-                        async_copy[element_size_bytes, fill=fill](
+                        async_copy[
+                            element_size_bytes,
+                            fill=fill,
+                            eviction_policy=eviction_policy,
+                        ](
                             src_ptr + src_idx,
                             dst_ptr + dst_idx,
                             element_size_bytes,
@@ -2438,7 +2449,7 @@ struct LayoutTensor[
                             src.runtime_element_layout, src.runtime_layout
                         )(i)
 
-                    async_copy[4, fill=fill](
+                    async_copy[4, fill=fill, eviction_policy=eviction_policy](
                         src_ptr + src_idx, dst_ptr + dst_idx
                     )
             else:
@@ -2472,7 +2483,7 @@ struct LayoutTensor[
                         self.runtime_element_layout, dst_runtime_layout
                     )(i)
 
-                    async_copy[4, fill=fill](
+                    async_copy[4, fill=fill, eviction_policy=eviction_policy](
                         src_ptr + src_idx, dst_ptr + dst_idx
                     )
 
@@ -2483,6 +2494,7 @@ struct LayoutTensor[
         src_element_layout: Layout,
         *,
         fill: Fill = Fill.NONE,
+        eviction_policy: CacheEviction = CacheEviction.EVICT_NORMAL,
         swizzle: OptionalReg[Swizzle] = None,
     ](
         self,
@@ -2587,9 +2599,11 @@ struct LayoutTensor[
                     var dst_idx = swizzled_offset + dst_distance
 
                     if offset + src_idx < rows * cols:
-                        async_copy[element_size_bytes, fill=fill](
-                            src_ptr + src_idx, dst_ptr + dst_idx
-                        )
+                        async_copy[
+                            element_size_bytes,
+                            fill=fill,
+                            eviction_policy=eviction_policy,
+                        ](src_ptr + src_idx, dst_ptr + dst_idx)
         else:
 
             @parameter
@@ -2610,7 +2624,7 @@ struct LayoutTensor[
                     )(i)
 
                 if offset + src_idx < rows * cols:
-                    async_copy[4, fill=fill](
+                    async_copy[4, fill=fill, eviction_policy=eviction_policy](
                         src_ptr + src_idx, dst_ptr + dst_idx
                     )
 
