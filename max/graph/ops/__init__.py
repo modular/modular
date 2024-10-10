@@ -38,7 +38,7 @@ from .outer import outer
 from .quantized import dequantize, qmatmul
 from .range import range
 from .rebind import rebind
-from .reduction import mean
+from .reduction import argmax, mean
 from .reshape import reshape
 from .select import select
 from .shape_to_tensor import shape_to_tensor

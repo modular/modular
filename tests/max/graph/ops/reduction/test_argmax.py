@@ -1,0 +1,33 @@
+# ===----------------------------------------------------------------------=== #
+#
+# This file is Modular Inc proprietary.
+#
+# ===----------------------------------------------------------------------=== #
+"""ops.argmax tests."""
+
+from conftest import axes, tensor_types
+from hypothesis import assume, given, strategies as st
+import pytest
+
+from max.dtype import DType
+from max.graph import Graph, TensorType, ops
+
+input_types = st.shared(tensor_types())
+
+
+@given(input_type=input_types, axis=axes(input_types))
+def test_argmax(input_type: TensorType, axis: int):
+    with Graph("argmax", input_types=[input_type]) as graph:
+        out = ops.argmax(graph.inputs[0], axis=axis)
+        assert out.dtype == DType.uint64
+        expected_shape = list(input_type.shape)
+        expected_shape[axis] = 1
+        assert out.shape == expected_shape
+
+
+@given(input_type=input_types, axis=...)
+def test_argmax__invalid_axis(input_type: TensorType, axis: int):
+    assume(not -input_type.rank <= axis < input_type.rank)
+    with Graph("argmax", input_types=[input_type]) as graph:
+        with pytest.raises(ValueError):
+            ops.argmax(graph.inputs[0], axis=axis)
