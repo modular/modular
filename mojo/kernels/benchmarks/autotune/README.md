@@ -64,13 +64,13 @@ autotuning problem, so let’s just lean into building something simple.
     For simply running all the configs in the YAML file:
 
     ```bash
-    $MODULAR_PYTHON kbench.py --yaml YAML_FILE --output OUTPUT_PATH
+    $MODULAR_PYTHON kbench.py YAML_FILE --output OUTPUT_PATH
     ```
 
     For finding the best measured elapsed time add `--tune`:
 
     ```bash
-    $MODULAR_PYTHON kbench.py --yaml YAML_FILE --output OUTPUT_PATH --tune
+    $MODULAR_PYTHON kbench.py YAML_FILE --output OUTPUT_PATH --tune
     ```
 
 ## Example

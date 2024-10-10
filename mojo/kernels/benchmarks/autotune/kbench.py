@@ -5,6 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 import csv
 import functools
+import glob
 import operator
 import os
 import shutil
@@ -12,22 +13,31 @@ import string
 import sys
 import tempfile
 from collections.abc import Iterable
-from dataclasses import InitVar, dataclass, field
+from dataclasses import dataclass, field
 from enum import Enum
 from itertools import chain, product
 from pathlib import Path
 from time import sleep, time
-from typing import Dict, List, Optional, Sequence, Set, Tuple, TypeVar, Union
+from typing import Dict, List, Optional, Set
 
 import click
 import numpy as np
 import pandas as pd
+import rich
+from model.utils.common_cli_options import CommonOptions
+from model.utils.exceptions import CLIException, pretty_exception_handler
 from model.utils.logging import CONSOLE
+from rich import print, traceback
+from rich.console import Console
+from rich.logging import RichHandler
 from rich.progress import MofNCompleteColumn, Progress
 
-from modular.utils import logging
+from modular.utils import logging, yaml
 from modular.utils.subprocess import list2cmdline, run_shell_command
 from modular.utils.yaml import YAML
+
+CONSOLE = Console()
+
 
 CURRENT_FILE = Path(__file__).resolve()
 LINE = 80 * "-"
@@ -42,6 +52,37 @@ try:
         DEFAULT_GPU_ARCH = ["-D", f"DEFAULT_GPU_ARCH={output}"]
 except Exception as error:
     pass
+
+
+def configure_logging(
+    quiet: bool = False, verbose: bool = False, pretty_output: bool = True
+) -> Console:
+    global CONSOLE
+    if pretty_output:
+        debug_handler = RichHandler(
+            show_path=False, show_time=False, console=CONSOLE
+        )
+        logging.basicConfig(format="%(message)s", handlers=[debug_handler])
+    else:
+        logging.basicConfig(format="%(levelname)s: %(message)s")
+        CONSOLE = Console(force_terminal=False, color_system=None)
+
+    if verbose:
+        # Set logging level for this module's logger instance
+        logging.getLogger().setLevel(logging.DEBUG)
+
+        logging.debug("Enabled Verbose logging")
+        if pretty_output:
+            # Add the name of any module that we want to exclude
+            # from traceback. This will reduce noise.
+            traceback.install(suppress=[click, yaml, rich])
+    else:
+        # Set logging level for this module's logger instance
+        level = logging.WARNING if quiet else logging.INFO
+        logging.getLogger().setLevel(level)
+        if pretty_output:
+            sys.excepthook = pretty_exception_handler
+    return CONSOLE
 
 
 @dataclass(repr=True)
@@ -103,7 +144,7 @@ class SpecInstance:
     def mojo_binary(self) -> str:
         mojo = shutil.which("mojo")
         if not mojo:
-            raise Exception(f"Could not find the `mojo` binary.")
+            raise FileNotFoundError(f"Could not find the `mojo` binary.")
         return mojo
 
     def get_executor(self) -> list[str]:
@@ -161,14 +202,13 @@ class SpecInstance:
         # )
 
         if verbose:
-            print(f"[output_file: {output_file}")
+            logging.info(f"[output_file: {output_file}")
         try:
             if dryrun:
                 print(list2cmdline(cmd))
             else:
                 # TODO: needs better error handling and error messages.
-                if verbose:
-                    print(list2cmdline(cmd))
+                logging.debug(list2cmdline(cmd))
                 output = run_shell_command(
                     cmd, check=False, capture_output=True
                 )
@@ -177,7 +217,7 @@ class SpecInstance:
                 )
 
         except Exception as exc:
-            raise Exception(
+            raise CLIException(
                 f"Unable to run the command {list2cmdline(cmd)}"
             ) from exc
 
@@ -223,7 +263,7 @@ class Spec:
         try:
             return Spec.loads(file.read_text())
         except Exception as exc:
-            raise Exception(f"Could not load spec from {file}") from exc
+            raise ValueError(f"Could not load spec from {file}")
 
     @staticmethod
     def load_yaml_list(yaml_path_list: List[str]) -> "Spec":
@@ -468,7 +508,6 @@ def _get_tmp_path(file_path):
 
 def run(
     yaml_path_list,
-    yaml_rewrite_path=None,
     output_path=None,
     mode=KBENCH_MODE.RUN,
     param_list=None,
@@ -488,10 +527,6 @@ def run(
     # Apply the filters, if any.
     if filter_list:
         spec.filter(filter_list)
-
-    # Rewrite the specs to yaml_rewrite_path, if any defined.
-    if yaml_rewrite_path:
-        spec.dump_yaml(Path(yaml_rewrite_path))
 
     if verbose:
         print(spec)
@@ -514,6 +549,7 @@ def run(
         *Progress.get_default_columns(),
         MofNCompleteColumn(),
         console=CONSOLE,
+        expand=True,
     ) as progress:
         bench_progress = progress.add_task(
             spec.name,
@@ -526,6 +562,9 @@ def run(
             if os.path.exists(output_dir) and os.path.isdir(output_dir):
                 shutil.rmtree(output_dir)
             os.makedirs(output_dir, exist_ok=False)
+
+            progress.update(bench_progress, description=s)
+
             # Check for the failure here.
             try:
                 output_file = output_dir / "output.csv"
@@ -546,9 +585,10 @@ def run(
                 if e == KeyboardInterrupt:
                     sys.exit(0)
                 else:
-                    print(e)
+                    raise e
 
-            # When a benchmark is completed for one combination of parameters we advance progress by 1
+            # When a benchmark is completed for one combination of parameters
+            # we advance progress by 1
             progress.update(bench_progress, advance=1)
 
     t_elapsed_total = time() - t_start_total
@@ -640,12 +680,30 @@ def run(
         print(f"wrote results to [{output_path}]")
 
 
+@functools.cache
+def get_nvidia_smi():
+    return shutil.which("nvidia-smi")
+
+
+def reset_gpu():
+    nvidia_smi = get_nvidia_smi()
+    if not nvidia_smi:
+        return
+    run_shell_command([nvidia_smi, "-r"])
+
+
 def check_gpu_clock():
-    nvidia_smi = shutil.which("nvidia-smi")
+    nvidia_smi = get_nvidia_smi()
     if not nvidia_smi:
         return
     output = run_shell_command(
-        [nvidia_smi, "--query-gpu", "persistence_mode", "--format", "csv"],
+        [
+            nvidia_smi,
+            "--query-gpu",
+            "persistence_mode",
+            "--format",
+            "csv",
+        ],
         check=False,
         capture_output=True,
     )
@@ -662,23 +720,29 @@ def check_gpu_clock():
         )
 
 
+class FileGlobArg:
+    def __init__(self, file: str) -> None:
+        self._files = glob.glob(file)
+        if not self._files:
+            raise ValueError(
+                f"Could not find any file that satisfies the glob {file}."
+                " Check to ensure that the file exist or the glob matches one"
+                " or more file."
+            )
+
+    def __iter__(self):
+        return (Path(file).resolve() for file in self._files)
+
+    def __len__(self):
+        return len(self._files)
+
+
 help_str = (
     "Grid-search all the params for a mojo benchmark and pick the top value"
 )
 
 
 @click.command(help=help_str, no_args_is_help=True)
-@click.option(
-    "--yaml",
-    "yaml_path",
-    help="Path to a config yaml (can have multiple ones).",
-    multiple=True,
-)
-@click.option(
-    "--yaml-rewrite",
-    "yaml_rewrite_path",
-    help="Path to a rewrite the valid specs as a YAML file",
-)
 @click.option(
     "--filter",
     "filter",
@@ -722,9 +786,9 @@ help_str = (
 @click.option(
     "--verbose", "-v", is_flag=True, default=False, help="Verbose printing."
 )
+@click.argument("files", type=FileGlobArg)
 def cli(
-    yaml_path,
-    yaml_rewrite_path,
+    files: FileGlobArg,
     filter,
     output_path,
     tune,
@@ -734,6 +798,8 @@ def cli(
     dryrun,
     verbose,
 ) -> bool:
+    configure_logging(verbose=verbose)
+
     if not verbose:
         sys.tracebacklimit = 1
 
@@ -748,8 +814,7 @@ def cli(
     check_gpu_clock()
 
     run(
-        yaml_path_list=yaml_path,
-        yaml_rewrite_path=yaml_rewrite_path,
+        yaml_path_list=files,
         output_path=output_path,
         mode=mode,
         param_list=param,
@@ -761,7 +826,10 @@ def cli(
 
 
 def main():
-    cli()
+    try:
+        cli()
+    except Exception:
+        CONSOLE.print_exception(suppress=[click, yaml, rich])
 
 
 if __name__ == "__main__":
