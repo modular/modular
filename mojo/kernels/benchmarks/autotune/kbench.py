@@ -721,8 +721,8 @@ def check_gpu_clock():
 
 
 class FileGlobArg:
-    def __init__(self, file: str) -> None:
-        self._files = glob.glob(file)
+    def __init__(self, file: List[str]) -> None:
+        self._files = file
         if not self._files:
             raise ValueError(
                 f"Could not find any file that satisfies the glob {file}."
@@ -786,9 +786,9 @@ help_str = (
 @click.option(
     "--verbose", "-v", is_flag=True, default=False, help="Verbose printing."
 )
-@click.argument("files", type=FileGlobArg)
+@click.argument("files", nargs=-1, type=click.UNPROCESSED)
 def cli(
-    files: FileGlobArg,
+    files: click.UNPROCESSED,
     filter,
     output_path,
     tune,
@@ -814,7 +814,7 @@ def cli(
     check_gpu_clock()
 
     run(
-        yaml_path_list=files,
+        yaml_path_list=FileGlobArg(files),
         output_path=output_path,
         mode=mode,
         param_list=param,
