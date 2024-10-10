@@ -8,7 +8,7 @@
 from pathlib import Path
 from sys._assembly import inlined_assembly
 
-from gpu import ThreadIdx
+from gpu import ThreadIdx, BlockDim, GridDim
 from gpu.host import DeviceContext
 from gpu.host._compile import _compile_code_asm, _get_nvptx_target
 from memory import UnsafePointer
@@ -22,6 +22,14 @@ fn kernel(x: Int) -> Int:
 
 fn parametric[f: fn (Int) -> Int]() -> Int:
     return f(42)
+
+
+# from https://rocm.blogs.amd.com/software-tools-optimization/amdgcn-isa/README.html#naive-load-and-store
+fn load_store(
+    n: Int, input: UnsafePointer[Float32], output: UnsafePointer[Float32]
+):
+    var tid = ThreadIdx.x() + BlockDim.x() * GridDim.x()
+    output[tid] = input[tid]
 
 
 # CHECK-LABEL: test_compile_code
@@ -43,6 +51,18 @@ def test_compile_code():
             emission_kind="llvm",
         ]()
     )
+
+    # CHECK-LABEL: test_compile_gcn::load_store
+    # CHECK: llvm.amdgcn.workitem.id.x
+    # CHECK: %[[VAR:.*]] = tail call ptr addrspace(4) @llvm.amdgcn.implicitarg.ptr()
+    # CHECK: getelementptr i8, ptr addrspace(4) %[[VAR]], i64 12
+    print(
+        _compile_code_asm[
+            load_store, target=MI300X_TARGET, emission_kind="llvm-opt"
+        ]()
+    )
+
+    print(_compile_code_asm[load_store, target=MI300X_TARGET]())
 
 
 def main():
