@@ -11,18 +11,17 @@
 #include "AsyncRT/Runtime/WorkQueue.h"
 #include "AsyncRT/Support/TimerHeap.h"
 #include "AsyncRT/Support/UnknownLocationDecoder.h"
-#include "KGEN/CompilerRT/Registration.h"
 #include "Runtime/MojoCallContext.h"
 #include "Runtime/MojoValue.h"
 #include "Runtime/Tensor/StateContext.h"
 #include "Runtime/Tensor/TensorBufferRef.h"
+#include "Support/LLVMForwardDecls.h"
 #include "Support/ML/TensorSpec.h"
 #include "Support/SymbolExport.h"
 #include "llvm/ADT/StringRef.h"
 
 using namespace M;
 using namespace M::AsyncRT;
-using namespace M::KGEN;
 
 //===----------------------------------------------------------------------===//
 // Helpers
@@ -540,85 +539,4 @@ KGEN_CompilerRT_AsyncRT_SpinWaiter_Wait(AsyncRTSpinWaiterRef waiter) {
 COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void
 KGEN_CompilerRT_AsyncRT_DestroySpinWaiter(AsyncRTSpinWaiterRef waiter) {
   delete (SpinWaiter<true> *)(waiter.ptr);
-}
-
-//===----------------------------------------------------------------------===//
-// Strings
-//===----------------------------------------------------------------------===//
-
-void M::KGEN::registerAsyncRT(
-    std::vector<std::pair<llvm::StringLiteral, void *>> &funcs) {
-  funcs.push_back({"KGEN_CompilerRT_AsyncRT_InitializeChain",
-                   (void *)&KGEN_CompilerRT_AsyncRT_InitializeChain});
-  funcs.push_back({"KGEN_CompilerRT_AsyncRT_DestroyChain",
-                   (void *)&KGEN_CompilerRT_AsyncRT_DestroyChain});
-  funcs.push_back({"KGEN_CompilerRT_AsyncRT_Complete",
-                   (void *)&KGEN_CompilerRT_AsyncRT_Complete});
-  funcs.push_back(
-      {"KGEN_CompilerRT_AsyncRT_Wait", (void *)&KGEN_CompilerRT_AsyncRT_Wait});
-  funcs.push_back({"KGEN_CompilerRT_AsyncRT_Wait_Timeout",
-                   (void *)&KGEN_CompilerRT_AsyncRT_Wait_Timeout});
-
-  funcs.push_back({"KGEN_CompilerRT_AsyncRT_Execute",
-                   (void *)&KGEN_CompilerRT_AsyncRT_Execute});
-  funcs.push_back({"KGEN_CompilerRT_AsyncRT_AndThen",
-                   (void *)&KGEN_CompilerRT_AsyncRT_AndThen});
-  funcs.push_back({"KGEN_CompilerRT_AsyncRT_ExecuteAndWait",
-                   (void *)&KGEN_CompilerRT_AsyncRT_ExecuteAndWait});
-  funcs.push_back({"KGEN_CompilerRT_AsyncRT_ExecuteAndResume",
-                   (void *)&KGEN_CompilerRT_AsyncRT_ExecuteAndResume});
-
-  funcs.push_back({"KGEN_CompilerRT_AsyncRT_GetCurrentRuntime",
-                   (void *)&KGEN_CompilerRT_AsyncRT_GetCurrentRuntime});
-  funcs.push_back({"KGEN_CompilerRT_AsyncRT_CreateRuntime",
-                   (void *)&KGEN_CompilerRT_AsyncRT_CreateRuntime});
-  funcs.push_back({"KGEN_CompilerRT_AsyncRT_DestroyRuntime",
-                   (void *)&KGEN_CompilerRT_AsyncRT_DestroyRuntime});
-  funcs.push_back({"KGEN_CompilerRT_AsyncRT_ParallelismLevel",
-                   (void *)&KGEN_CompilerRT_AsyncRT_ParallelismLevel});
-
-  funcs.push_back({"KGEN_CompilerRT_AsyncRT_CreateAsyncs_Error",
-                   (void *)&KGEN_CompilerRT_AsyncRT_CreateAsyncs_Error});
-  funcs.push_back({"KGEN_CompilerRT_CreateAsync_ssizet",
-                   (void *)&KGEN_CompilerRT_CreateAsync_ssizet});
-  funcs.push_back({"KGEN_CompilerRT_CreateAsync_chain",
-                   (void *)&KGEN_CompilerRT_CreateAsync_chain});
-  funcs.push_back({"KGEN_CompilerRT_CreateAsync_bool",
-                   (void *)&KGEN_CompilerRT_CreateAsync_bool});
-  funcs.push_back({"KGEN_CompilerRT_CreateAsyncBufferRef",
-                   (void *)&KGEN_CompilerRT_CreateAsyncBufferRef});
-  funcs.push_back({"KGEN_CompilerRT_CreateAsyncBufferWithBorrow",
-                   (void *)&KGEN_CompilerRT_CreateAsyncBufferWithBorrow});
-  funcs.push_back({"KGEN_CompilerRT_CreateAsyncTensorSpec",
-                   (void *)&KGEN_CompilerRT_CreateAsyncTensorSpec});
-  funcs.push_back({"KGEN_CompilerRT_CreateOwnedAsyncMojoValue",
-                   (void *)&KGEN_CompilerRT_CreateOwnedAsyncMojoValue});
-  funcs.push_back({"KGEN_CompilerRT_CreateOwnedAsyncPythonMojoValue",
-                   (void *)&KGEN_CompilerRT_CreateOwnedAsyncPythonMojoValue});
-  funcs.push_back({"KGEN_CompilerRT_MojoValueAllocateBuffer",
-                   (void *)&KGEN_CompilerRT_MojoValueAllocateBuffer});
-  funcs.push_back({"KGEN_CompilerRT_MojoValueFreeBuffer",
-                   (void *)&KGEN_CompilerRT_MojoValueFreeBuffer});
-  funcs.push_back({"KGEN_CompilerRT_GetValueFromAsync",
-                   (void *)&KGEN_CompilerRT_GetValueFromAsync});
-  funcs.push_back({"KGEN_CompilerRT_GetTensorSpecFromAsync",
-                   (void *)&KGEN_CompilerRT_GetTensorSpecFromAsync});
-  funcs.push_back({"KGEN_CompilerRT_GetContextPayloadPtr",
-                   (void *)&KGEN_CompilerRT_GetContextPayloadPtr});
-  funcs.push_back({"KGEN_CompilerRT_GetContextAndSizeFromAsync",
-                   (void *)&KGEN_CompilerRT_GetContextAndSizeFromAsync});
-  funcs.push_back({"KGEN_CompilerRT_AsyncRT_MojoCallContext_Complete",
-                   (void *)&KGEN_CompilerRT_AsyncRT_MojoCallContext_Complete});
-  funcs.push_back({"KGEN_CompilerRT_AsyncRT_MojoCallContext_Allocate",
-                   (void *)&KGEN_CompilerRT_AsyncRT_MojoCallContext_Allocate});
-
-  funcs.push_back({"KGEN_CompilerRT_CreateAsyncMojoValueBufferRef",
-                   (void *)&KGEN_CompilerRT_CreateAsyncMojoValueBufferRef});
-
-  funcs.push_back({"KGEN_CompilerRT_AsyncRT_InitializeSpinWaiter",
-                   (void *)&KGEN_CompilerRT_AsyncRT_InitializeSpinWaiter});
-  funcs.push_back({"KGEN_CompilerRT_AsyncRT_SpinWaiter_Wait",
-                   (void *)&KGEN_CompilerRT_AsyncRT_SpinWaiter_Wait});
-  funcs.push_back({"KGEN_CompilerRT_AsyncRT_DestroySpinWaiter",
-                   (void *)&KGEN_CompilerRT_AsyncRT_DestroySpinWaiter});
 }

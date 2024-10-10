@@ -4,7 +4,7 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "KGEN/CompilerRT/Registration.h"
+#include "Support/SymbolExport.h"
 #include "llvm/ADT/StringRef.h"
 
 #include <cmath>
@@ -67,10 +67,4 @@ __truncdfbf2(double d) {
   // This does a double rounding step, but it's precise enough for our use
   // cases.
   return __truncsfbf2(static_cast<float>(d));
-}
-
-void M::KGEN::registerSupport(
-    std::vector<std::pair<llvm::StringLiteral, void *>> &funcs) {
-  funcs.push_back({"__truncsfbf2", (void *)&__truncsfbf2});
-  funcs.push_back({"__truncdfbf2", (void *)&__truncdfbf2});
 }

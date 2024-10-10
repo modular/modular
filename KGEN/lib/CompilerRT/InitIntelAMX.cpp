@@ -4,7 +4,6 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "KGEN/CompilerRT/Registration.h"
 #include "llvm/ADT/StringRef.h"
 
 #if defined(__x86_64__) && defined(__linux__)
@@ -46,12 +45,3 @@ KGEN_CompilerRT_Init_Intel_AMX() {
   return true;
 }
 #endif
-
-/// Register the intel AMX functions.
-void M::KGEN::registerIntelAMX(
-    std::vector<std::pair<llvm::StringLiteral, void *>> &funcs) {
-#if defined(__x86_64__) && defined(__linux__)
-  funcs.push_back({"KGEN_CompilerRT_Init_Intel_AMX",
-                   (void *)&KGEN_CompilerRT_Init_Intel_AMX});
-#endif
-}

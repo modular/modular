@@ -4,7 +4,6 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "KGEN/CompilerRT/Registration.h"
 #include "Support/SymbolExport.h"
 #include "Support/Threading/HWInfo.h"
 #include "llvm/ADT/StringRef.h"
@@ -92,24 +91,4 @@ COMPILERRT_VISIBILITY_EXPORT void KGEN_CompilerRT_SetArgV(int argc,
   argVList.argStrings.resize(argc);
   for (int i = 0; i < argc; ++i)
     argVList.args[i] = argVList.argStrings[i] = argv[i];
-}
-
-//===----------------------------------------------------------------------===//
-// CompilerRT Registration
-//===----------------------------------------------------------------------===//
-
-void M::KGEN::registerSystem(
-    std::vector<std::pair<llvm::StringLiteral, void *>> &funcs) {
-  funcs.push_back({"KGEN_CompilerRT_NumPhysicalCores",
-                   (void *)&KGEN_CompilerRT_NumPhysicalCores});
-  funcs.push_back({"KGEN_CompilerRT_NumLogicalCores",
-                   (void *)&KGEN_CompilerRT_NumLogicalCores});
-  funcs.push_back({"KGEN_CompilerRT_NumPerformanceCores",
-                   (void *)&KGEN_CompilerRT_NumPerformanceCores});
-  funcs.push_back(
-      {"KGEN_CompilerRT_GetArgV", (void *)&KGEN_CompilerRT_GetArgV});
-  funcs.push_back(
-      {"KGEN_CompilerRT_SetArgV", (void *)&KGEN_CompilerRT_SetArgV});
-  funcs.push_back(
-      {"KGEN_CompilerRT_fprintf", (void *)&KGEN_CompilerRT_fprintf});
 }

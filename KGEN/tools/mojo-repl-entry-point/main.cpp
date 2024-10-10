@@ -35,25 +35,6 @@ static void forceLinkExportedSymbols() {
 }
 
 //===----------------------------------------------------------------------===//
-// CompilerRT
-//===----------------------------------------------------------------------===//
-
-/// Forcibly link in the compiler-rt runtime functions. This allows Mojo code
-/// running in the repl to use the compiler-rt runtime functions.
-static void forceLinkCompilerRT() {
-  llvm::nulls() << (void *)&KGEN::registerConfig
-                << (void *)&KGEN::registerGlobals
-                << (void *)&KGEN::registerIntelAMX << (void *)&KGEN::registerIO
-                << (void *)&KGEN::registerAsyncRT
-                << (void *)&KGEN::registerPython
-                << (void *)&KGEN::registerMemory
-                << (void *)&KGEN::registerRandom
-                << (void *)&KGEN::registerSupport
-                << (void *)&KGEN::registerSystem
-                << (void *)&KGEN::registerTracing;
-}
-
-//===----------------------------------------------------------------------===//
 // Entry Point
 //===----------------------------------------------------------------------===//
 
@@ -64,7 +45,6 @@ int WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine,
 int main() {
 #endif
   forceLinkExportedSymbols();
-  forceLinkCompilerRT();
   KGEN_CompilerRT_Python_SetPythonPath();
 
   // Create our context for execution.

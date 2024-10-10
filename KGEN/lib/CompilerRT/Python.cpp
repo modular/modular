@@ -4,8 +4,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "KGEN/CompilerRT/Registration.h"
 #include "Support/Process.h"
+#include "Support/SymbolExport.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Support/Process.h"
 #include "llvm/Support/Program.h"
@@ -91,14 +91,4 @@ KGEN_CompilerRT_Python_SetPythonPath() {
     return "cannot set `MOJO_PYTHON_LIBRARY`";
 
   return "";
-}
-
-//===----------------------------------------------------------------------===//
-// CompilerRT Registration
-//===----------------------------------------------------------------------===//
-
-void KGEN::registerPython(
-    std::vector<std::pair<llvm::StringLiteral, void *>> &funcs) {
-  funcs.push_back({"KGEN_CompilerRT_Python_SetPythonPath",
-                   (void *)&KGEN_CompilerRT_Python_SetPythonPath});
 }

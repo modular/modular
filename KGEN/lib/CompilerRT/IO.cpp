@@ -4,9 +4,9 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "KGEN/CompilerRT/Registration.h"
 #include "Memory.h"
 #include "Support/AlignedAlloc.h"
+#include "Support/LLVMForwardDecls.h"
 #include "llvm/Support/FileSystem.h"
 #include "llvm/Support/raw_ostream.h"
 #include <filesystem>
@@ -304,32 +304,4 @@ COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void
 KGEN_CompilerRT_IO_FileWrite(FileHandleWrapper file, const char *data,
                              uint64_t size, llvm::StringRef *errMsg) {
   unwrap(file)->write(llvm::StringRef(data, size), errMsg);
-}
-
-void M::KGEN::registerIO(
-    std::vector<std::pair<llvm::StringLiteral, void *>> &funcs) {
-  funcs.emplace_back(
-      std::pair{llvm::StringLiteral("KGEN_CompilerRT_IO_FileOpen"),
-                (void *)&KGEN_CompilerRT_IO_FileOpen});
-  funcs.emplace_back(
-      std::pair{llvm::StringLiteral("KGEN_CompilerRT_IO_FileClose"),
-                (void *)&KGEN_CompilerRT_IO_FileClose});
-  funcs.emplace_back(
-      std::pair{llvm::StringLiteral("KGEN_CompilerRT_IO_FileSize"),
-                (void *)&KGEN_CompilerRT_IO_FileSize});
-  funcs.emplace_back(
-      std::pair{llvm::StringLiteral("KGEN_CompilerRT_IO_FileSeek"),
-                (void *)&KGEN_CompilerRT_IO_FileSeek});
-  funcs.emplace_back(
-      std::pair{llvm::StringLiteral("KGEN_CompilerRT_IO_FileRead"),
-                (void *)&KGEN_CompilerRT_IO_FileRead});
-  funcs.emplace_back(
-      std::pair{llvm::StringLiteral("KGEN_CompilerRT_IO_FileWrite"),
-                (void *)&KGEN_CompilerRT_IO_FileWrite});
-  funcs.emplace_back(
-      std::pair{llvm::StringLiteral("KGEN_CompilerRT_IO_FileReadBytes"),
-                (void *)&KGEN_CompilerRT_IO_FileReadBytes});
-  funcs.emplace_back(
-      std::pair{llvm::StringLiteral("KGEN_CompilerRT_IO_FileReadToAddress"),
-                (void *)&KGEN_CompilerRT_IO_FileReadToAddress});
 }

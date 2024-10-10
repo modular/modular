@@ -7,7 +7,6 @@
 #include "./Memory.h"
 #include "AsyncRT/Runtime/Globals/Globals.h"
 #include "AsyncRT/Runtime/Runtime.h"
-#include "KGEN/CompilerRT/Registration.h"
 #include "Support/SymbolExport.h"
 
 using namespace M;
@@ -25,12 +24,4 @@ KGEN_CompilerRT_AlignedAlloc(ssize_t alignment, ssize_t size) {
 COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void
 KGEN_CompilerRT_AlignedFree(void *ptr) {
   return AsyncRT::TCMallocGlobals::tc_delete(ptr);
-}
-
-void M::KGEN::registerMemory(
-    std::vector<std::pair<llvm::StringLiteral, void *>> &funcs) {
-  funcs.push_back(
-      {"KGEN_CompilerRT_AlignedAlloc", (void *)&KGEN_CompilerRT_AlignedAlloc});
-  funcs.push_back(
-      {"KGEN_CompilerRT_AlignedFree", (void *)&KGEN_CompilerRT_AlignedFree});
 }

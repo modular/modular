@@ -4,7 +4,6 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "KGEN/CompilerRT/Registration.h"
 #include "Memory.h"
 #include "Support/AlignedAlloc.h"
 #include "Support/Configuration.h"
@@ -30,11 +29,4 @@ KGEN_CompilerRT_getMAXConfigValue(const char *key) {
   strncpy(res, value.str().c_str(), value.size());
   res[value.size()] = 0;
   return res;
-}
-
-void M::KGEN::registerConfig(
-    std::vector<std::pair<llvm::StringLiteral, void *>> &funcs) {
-  funcs.emplace_back(
-      std::pair{llvm::StringLiteral("KGEN_CompilerRT_getMAXConfigValue"),
-                (void *)&KGEN_CompilerRT_getMAXConfigValue});
 }
