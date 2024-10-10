@@ -108,7 +108,7 @@ struct Tensor[type: DType, rank: Int](CollectionElement, TensorLike):
             existing: Instance to move from.
         """
         self._ptr = existing._ptr
-        self._spec = existing._spec^
+        self._spec = existing._spec
         self._strides = existing._strides
         self._device = existing._device^
         self.name = existing.name^
