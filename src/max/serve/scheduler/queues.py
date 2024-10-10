@@ -29,14 +29,26 @@ BatchReqOutput = TypeVar("BatchReqOutput")
 
 class BatchingStrategy(Enum):
     DYNAMIC = "dynamic"
+    """ Constructs a dynamic batch of no more than N=config.size requests.
+    Execution of the batch is started at the same time and requests are removed
+    from the batch as they are completed.
+    """
+    DNYAMIC_IMMUTABLE = "dynamic_immutable"
+    """ Constructs a dynamic batch of no more than N=config.size requests.
+    The batch executes with all requests until each request in the batch is
+    completed. Necessary to support the naive KV cache manager.
+    """
     CONTINUOUS = "continuous"
+    """ Requests are added or removed from the batch as they arrive or
+    are completed. The batch never exceeds N=config.size requests.
+    """
 
 
 @dataclass(frozen=True)
 class BatchQueueConfig:
     strategy: BatchingStrategy
     size: int
-    timeout: float = 0.0
+    timeout: float = 0.0  # Wait for upto timeout seconds if queue is empty.
 
     def __str__(self):
         txt = f"{self.strategy}, Max:{self.size}, Timeout: {self.timeout:0.2f}"
@@ -159,7 +171,7 @@ class BatchMultiplexQueue(Generic[BatchReqId, BatchReqInput, BatchReqOutput]):
                 )
                 if batch:
                     self.logger.debug(
-                        "DynamicBatcher: Starting batch %d, [%s]",
+                        "DynamicBatcher: Dequeued %d, (%s)",
                         len(batch),
                         batch.keys(),
                     )
@@ -168,26 +180,30 @@ class BatchMultiplexQueue(Generic[BatchReqId, BatchReqInput, BatchReqOutput]):
                         await self.respond(results)
 
                         completed = self.completed_fn(batch, results)
-                        if completed:
+                        if completed or (
+                            self.config.strategy
+                            == BatchingStrategy.DNYAMIC_IMMUTABLE
+                            and completed == batch.keys()
+                        ):
                             self.logger.debug(
-                                "DynamicBatcher: Completed %d items (%s)",
+                                "DynamicBatcher: Completed %d (%s)",
                                 len(completed),
                                 completed,
                             )
+
                             completed_results = {
                                 req_id: STOP_STREAM for req_id in completed
                             }
                             await self.respond(completed_results)
 
-                            # In dynamic batching, execution of a batch completes only when
-                            # each request in the batch is determined to be completed.
-                            if completed == batch.keys():
+                            for req_id in completed:
+                                del batch[req_id]
                                 self.logger.debug(
-                                    "DynamicBatcher: Completed batch %d, [%s]",
+                                    "DynamicBatcher: Deleted %s, %d remaining",
+                                    req_id,
                                     len(batch),
-                                    batch.keys(),
                                 )
-                                batch.clear()
+
                 await asyncio.sleep(0)
         except asyncio.CancelledError:
             self.logger.info("DynamicBatcher: Cancelled: %s", self.config)
@@ -206,7 +222,7 @@ class BatchMultiplexQueue(Generic[BatchReqId, BatchReqInput, BatchReqOutput]):
                     new_req_ids = batch.keys() - req_ids_before_deque
                     if new_req_ids:
                         self.logger.debug(
-                            "ContinuousBatcher: Total: %d, Dequeued %d (%s)",
+                            "ContinuousBatcher: Dequeued %d, Total %d, (%s)",
                             len(batch),
                             len(new_req_ids),
                             new_req_ids,
@@ -218,7 +234,7 @@ class BatchMultiplexQueue(Generic[BatchReqId, BatchReqInput, BatchReqOutput]):
                     if completed:
                         # Completed requests are terminated with STOP_STREAM sentinels
                         self.logger.debug(
-                            "ContinuousBatcher: Completed %d items (%s)",
+                            "ContinuousBatcher: Completed %d (%s)",
                             len(completed),
                             completed,
                         )
@@ -230,7 +246,7 @@ class BatchMultiplexQueue(Generic[BatchReqId, BatchReqInput, BatchReqOutput]):
                     cancelled = next_result.keys() - self.out_queues.keys()
                     if cancelled:
                         self.logger.debug(
-                            "ContinuousBatcher: Cancelled %d items (%s)",
+                            "ContinuousBatcher: Cancelled %d (%s)",
                             len(cancelled),
                             cancelled,
                         )
@@ -242,10 +258,12 @@ class BatchMultiplexQueue(Generic[BatchReqId, BatchReqInput, BatchReqOutput]):
                         # 2. Completed: Batches with results which are deemed complete.
                         # We have terminated them by emitting a STOP_STEAM event above
                         # and can immediately remove them from the batch.
-                        self.logger.info(
-                            "ContinuousBatcher: Deleting %s", req_id
-                        )
                         del batch[req_id]
+                        self.logger.debug(
+                            "ContinuousBatcher: Deleted %s, %d remaining",
+                            req_id,
+                            len(batch),
+                        )
                 await asyncio.sleep(0)
         except asyncio.CancelledError:
             self.logger.info("ContinuousBatcher: Cancelled: %s", self.config)
