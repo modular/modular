@@ -21,8 +21,7 @@ from conftest import (
 from hypothesis import assume, example, given
 from hypothesis import strategies as st
 from max.dtype import DType
-from max.graph import Graph, TensorType
-from max.graph.type import Dim, Shape, ShapeLike, StaticDim
+from max.graph import Dim, Graph, Shape, ShapeLike, StaticDim, TensorType
 
 
 def test_reshape() -> None:

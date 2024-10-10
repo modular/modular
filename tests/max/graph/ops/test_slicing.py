@@ -13,8 +13,7 @@ from conftest import broadcast_shapes, broadcastable_tensor_types, tensor_types
 from hypothesis import assume, given
 from hypothesis import strategies as st
 from max.dtype import DType
-from max.graph import Graph, TensorType, ops
-from max.graph.type import Dim, StaticDim
+from max.graph import Dim, Graph, StaticDim, TensorType, ops
 
 
 @given(input_types=broadcastable_tensor_types(3))

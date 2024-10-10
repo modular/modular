@@ -5,12 +5,30 @@
 # ===----------------------------------------------------------------------=== #
 """APIs to build inference graphs for MAX."""
 
+# Types must be imported first to avoid circular dependencies.
+from .type import (
+    AlgebraicDim,
+    BufferType,
+    Dim,
+    DimLike,
+    Shape,
+    ShapeLike,
+    StaticDim,
+    SymbolicDim,
+    TensorType,
+    Type,
+    _ChainType,
+    _OpaqueType,
+)
+
 from . import dtype_promotion, ops
 from .graph import Graph
-from .type import BufferType, DimLike, ShapeLike, TensorType, Type
-from .type import _ChainType as ChainType
-from .type import _OpaqueType as OpaqueType
-from .value import BufferValue, TensorValue, TensorValueLike, Value
-from .value import _ChainValue as ChainValue
-from .value import _OpaqueValue as OpaqueValue
+from .value import (
+    BufferValue,
+    TensorValue,
+    TensorValueLike,
+    Value,
+    _ChainValue,
+    _OpaqueValue,
+)
 from .weight import Weight

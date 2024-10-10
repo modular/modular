@@ -11,9 +11,7 @@ import pytest
 from max.driver import Tensor
 from max.dtype import DType
 from max.engine import InferenceSession, Model
-from max.graph import Graph, ops
-from max.graph.type import TensorType
-from max.graph.type import _OpaqueType as OpaqueType
+from max.graph import Graph, ops, TensorType, _OpaqueType
 
 
 @pytest.fixture
@@ -23,7 +21,7 @@ def counter_ops_path() -> Path:
 
 @pytest.fixture
 def maker_model(session: InferenceSession, counter_ops_path: Path) -> Model:
-    counter_type = OpaqueType("Counter")
+    counter_type = _OpaqueType("Counter")
     maker_graph = Graph("maker", input_types=[], output_types=[counter_type])
     with maker_graph:
         maker_graph.output(ops.custom("make_counter", [], [counter_type])[0])
@@ -35,7 +33,7 @@ def maker_model(session: InferenceSession, counter_ops_path: Path) -> Model:
 
 @pytest.fixture
 def bumper_model(session: InferenceSession, counter_ops_path: Path) -> Model:
-    counter_type = OpaqueType("Counter")
+    counter_type = _OpaqueType("Counter")
     bumper_graph = Graph("bumper", input_types=[counter_type], output_types=[])
     with bumper_graph:
         # TODO(MSDK-950): Avoid DCE in the graph compiler and remove return value.
@@ -53,7 +51,7 @@ def bumper_model(session: InferenceSession, counter_ops_path: Path) -> Model:
 
 @pytest.fixture
 def reader_model(session: InferenceSession, counter_ops_path: Path) -> Model:
-    counter_type = OpaqueType("Counter")
+    counter_type = _OpaqueType("Counter")
     reader_graph = Graph("reader", input_types=[counter_type], output_types=[])
     with reader_graph:
         c = ops.custom(
@@ -83,7 +81,7 @@ def test_opaque_driver_constructor(
     session: InferenceSession, counter_ops_path: Path
 ) -> None:
     """Tests constructing a Counter using the driver API."""
-    counter_type = OpaqueType("Counter")
+    counter_type = _OpaqueType("Counter")
 
     maker_graph = Graph(
         "maker",
@@ -142,7 +140,7 @@ def test_pyobject_opaque(
     session: InferenceSession, counter_ops_path: Path
 ) -> None:
     session = InferenceSession()
-    python_type = OpaqueType("PythonObject")
+    python_type = _OpaqueType("PythonObject")
 
     bumper_graph = Graph(
         "bumper", input_types=[python_type], output_types=[python_type]

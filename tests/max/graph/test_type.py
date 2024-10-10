@@ -12,7 +12,7 @@ from hypothesis import HealthCheck, assume, given, settings
 from hypothesis import strategies as st
 from max import _graph
 from max.dtype import DType
-from max.graph.type import (
+from max.graph import (
     BufferType,
     Dim,
     StaticDim,

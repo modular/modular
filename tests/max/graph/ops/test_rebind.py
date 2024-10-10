@@ -8,8 +8,7 @@
 import pytest
 from hypothesis import assume, given
 from max.dtype import DType
-from max.graph import Graph, TensorType
-from max.graph.type import Shape
+from max.graph import Graph, Shape, TensorType
 
 
 def test_rebind() -> None:

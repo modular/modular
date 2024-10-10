@@ -12,8 +12,7 @@ import torch
 from conftest import modular_graph_test
 from hypothesis import assume
 from max.dtype import DType
-from max.graph import Graph, TensorType, TensorValueLike
-from max.graph.type import Dim
+from max.graph import Dim, Graph, TensorType, TensorValueLike
 from nn import RotaryEmbedding
 
 MAX_SEQ_LEN = 2**16

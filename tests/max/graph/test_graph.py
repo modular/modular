@@ -12,8 +12,7 @@ from hypothesis import assume, given
 from hypothesis import strategies as st
 from max import mlir
 from max.dtype import DType
-from max.graph import Graph, TensorType, TensorValue, graph, ops
-from max.graph.type import Dim
+from max.graph import Dim, Graph, TensorType, TensorValue, graph, ops
 
 empty_graphs = st.builds(
     Graph, st.text(), input_types=st.lists(st.from_type(TensorType))

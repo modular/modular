@@ -10,9 +10,8 @@ from hypothesis import assume, given, reject, strategies as st
 import pytest
 
 from max.dtype import DType
-from max.graph import Graph
+from max.graph import Graph, Shape, TensorType
 from max.graph.ops import logical_or
-from max.graph.type import Shape, TensorType
 
 
 @given(tensor_type=tensor_types(dtypes=st.just(DType.bool)))

@@ -6,11 +6,13 @@
 """Operations for invoking user-defined operations."""
 
 from typing import Iterable
-from max.graph.graph import Graph
-from max.graph.type import Type, _ChainType
-from max.graph.value import Value, BufferValue
+
 from max.mlir import StringAttr
 from max.mlir.dialects import mo
+
+from ..graph import Graph
+from ..type import Type, _ChainType
+from ..value import BufferValue, Value
 
 
 def custom(

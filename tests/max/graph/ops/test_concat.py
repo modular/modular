@@ -12,8 +12,7 @@ from conftest import axes, shapes, tensor_types
 from hypothesis import assume, given, settings
 from hypothesis import strategies as st
 from max.dtype import DType
-from max.graph import Graph, TensorType, ops
-from max.graph.type import Dim, Shape, StaticDim
+from max.graph import Dim, Graph, Shape, StaticDim, TensorType, ops
 
 shared_dtypes = st.shared(st.from_type(DType))
 shared_shapes = st.shared(shapes())

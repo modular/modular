@@ -9,8 +9,7 @@ import pytest
 from conftest import axes, shapes, tensor_types
 from hypothesis import assume, given
 from hypothesis import strategies as st
-from max.graph import Graph, TensorType, ops
-from max.graph.type import Shape
+from max.graph import Graph, Shape, TensorType, ops
 
 shared_squeeze_shape = st.shared(shapes(include_dims=[1]))
 

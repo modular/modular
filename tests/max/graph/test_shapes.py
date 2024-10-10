@@ -7,7 +7,7 @@
 
 from conftest import MAX_INT64, shapes
 from hypothesis import given
-from max.graph.type import StaticDim
+from max.graph import StaticDim
 
 
 @given(shape=shapes())

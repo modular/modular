@@ -9,8 +9,7 @@ from conftest import tensor_types
 from hypothesis import assume, given, strategies as st
 
 from max.dtype import DType
-from max.graph import Graph, TensorType, ops
-from max.graph.type import Shape
+from max.graph import Graph, Shape, TensorType, ops
 
 
 @given(input_type=...)

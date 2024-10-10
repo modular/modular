@@ -8,9 +8,8 @@
 from conftest import broadcast_shapes, broadcastable_tensor_types
 from hypothesis import assume, event, given
 from max.dtype import DType
-from max.graph import Graph
+from max.graph import Dim, Graph, TensorType
 from max.graph.ops import sub
-from max.graph.type import Dim, TensorType
 
 
 @given(tensor_type=...)

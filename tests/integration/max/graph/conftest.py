@@ -17,8 +17,7 @@ from hypothesis import strategies as st
 from hypothesis.extra import numpy as nps
 from max.driver import Tensor
 from max.engine import InferenceSession
-from max.graph import TensorType
-from max.graph.type import Dim, StaticDim, SymbolicDim
+from max.graph import Dim, StaticDim, SymbolicDim, TensorType
 
 MAX_INPUT_MAGNITUDE = 1e5
 MIN_SHAPE_DIM = 1

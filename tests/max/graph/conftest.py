@@ -20,8 +20,15 @@ from hypothesis import assume
 from hypothesis import strategies as st
 from max import _graph, mlir
 from max.dtype import DType
-from max.graph import BufferType, Graph, TensorType
-from max.graph.type import Dim, Shape, StaticDim, SymbolicDim
+from max.graph import (
+    BufferType,
+    Dim,
+    Graph,
+    Shape,
+    StaticDim,
+    SymbolicDim,
+    TensorType,
+)
 
 MAX_INT32 = np.iinfo(np.int32).max
 MAX_INT64 = np.iinfo(np.int64).max
