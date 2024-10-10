@@ -272,146 +272,138 @@ fn _matmul_gpu[
     a: NDBuffer[_, 2, _],
     b: NDBuffer[_, 2, _],
     ctx: DeviceContext,
-):
-    try:
-        alias a_type = a.type
-        alias b_type = b.type
-        alias c_type = c.type
-        alias a_shape = a.shape
-        alias b_shape = b.shape
-        alias c_shape = c.shape
-        var shape = GemmShape.get[transpose_b=False](c, a, b)
-        var m = shape.M
-        var n = shape.N
-        var k = shape.K
-        alias s_type = DType.float32 if (
-            a_type == DType.bfloat16 or a_type == DType.float16
-        ) else c_type
-        alias matmul_supported_format = (
-            a_type in (DType.float32, DType.bfloat16)
-            and b_type in (DType.float32, DType.bfloat16)
-            and c_type in (DType.float32, DType.bfloat16)
-        )
-        # NOTE: k has to be a multiple of BK * num_stages. Hard coded this condition to 128 for now.
-        # TODO: Need to find a better dispatch strategy.
-        var multi_gemm_cond = (
-            m > 1 and n % 128 == 0 and k % 32 == 0 and k >= 128
-        )
-        # fmt: off
-        # Require Static K, N in A, B, C
-        alias multistage_gemm_supported_shape = b_shape.all_known[2]() \
-        and a_shape.has_value[1]() \
-        and c_shape.has_value[1]()
-        # fmt: on
+) raises:
+    alias a_type = a.type
+    alias b_type = b.type
+    alias c_type = c.type
+    alias a_shape = a.shape
+    alias b_shape = b.shape
+    alias c_shape = c.shape
+    var shape = GemmShape.get[transpose_b=False](c, a, b)
+    var m = shape.M
+    var n = shape.N
+    var k = shape.K
+    alias s_type = DType.float32 if (
+        a_type == DType.bfloat16 or a_type == DType.float16
+    ) else c_type
+    alias matmul_supported_format = (
+        a_type in (DType.float32, DType.bfloat16)
+        and b_type in (DType.float32, DType.bfloat16)
+        and c_type in (DType.float32, DType.bfloat16)
+    )
+    # NOTE: k has to be a multiple of BK * num_stages. Hard coded this condition to 128 for now.
+    # TODO: Need to find a better dispatch strategy.
+    var multi_gemm_cond = (m > 1 and n % 128 == 0 and k % 32 == 0 and k >= 128)
+    # fmt: off
+    # Require Static K, N in A, B, C
+    alias multistage_gemm_supported_shape = b_shape.all_known[2]() \
+    and a_shape.has_value[1]() \
+    and c_shape.has_value[1]()
+    # fmt: on
 
-        @parameter
-        if (
-            matmul_supported_format
-            and use_tensor_core
-            and multistage_gemm_supported_shape
-        ):
-            if multi_gemm_cond:
-                alias kernels = MatmulKernels[
-                    a_type, b_type, c_type, transpose_b
-                ]()
+    @parameter
+    if (
+        matmul_supported_format
+        and use_tensor_core
+        and multistage_gemm_supported_shape
+    ):
+        if multi_gemm_cond:
+            alias kernels = MatmulKernels[a_type, b_type, c_type, transpose_b]()
 
-                var best_config = select_config[
-                    a_type, b_type, c_type, transpose_b, target
-                ](m, n, k)
+            var best_config = select_config[
+                a_type, b_type, c_type, transpose_b, target
+            ](m, n, k)
 
-                alias autotuning_mode = env_get_bool["AUTOTUNING_MODE", False]()
+            alias autotuning_mode = env_get_bool["AUTOTUNING_MODE", False]()
 
-                @parameter
-                if autotuning_mode:
-                    print("AUTOTUNING MODE ENABLED")
-                    print(kernels.tuning_config)
-                    multistage_gemm[
-                        transpose_b=transpose_b,
-                        config = kernels.tuning_config,
-                        elementwise_lambda_fn=elementwise_lambda_fn,
-                    ](
-                        rebind[NDBuffer[c_type, 2, c_shape]](c),
-                        rebind[NDBuffer[a_type, 2, a_shape]](a),
-                        rebind[NDBuffer[b_type, 2, b_shape]](b),
-                        kernels.tuning_config,
-                        ctx,
-                    )
-                    return
-
-                if best_config == kernels.ampere_256x64_4:
-                    alias config = kernels.ampere_256x64_4
-                    multistage_gemm[
-                        transpose_b=transpose_b,
-                        config=config,
-                        elementwise_lambda_fn=elementwise_lambda_fn,
-                    ](
-                        rebind[NDBuffer[c_type, 2, c_shape]](c),
-                        rebind[NDBuffer[a_type, 2, a_shape]](a),
-                        rebind[NDBuffer[b_type, 2, b_shape]](b),
-                        best_config,
-                        ctx,
-                    )
-
-                elif best_config == kernels.ampere_256x128_3:
-                    multistage_gemm[
-                        transpose_b=transpose_b,
-                        config = kernels.ampere_256x128_3,
-                        elementwise_lambda_fn=elementwise_lambda_fn,
-                    ](
-                        rebind[NDBuffer[c_type, 2, c_shape]](c),
-                        rebind[NDBuffer[a_type, 2, a_shape]](a),
-                        rebind[NDBuffer[b_type, 2, b_shape]](b),
-                        best_config,
-                        ctx,
-                    )
-
-                else:  # Default kernel 128x128_4
-                    multistage_gemm[
-                        transpose_b=transpose_b,
-                        config = kernels.ampere_128x128_4,
-                        elementwise_lambda_fn=elementwise_lambda_fn,
-                    ](
-                        rebind[NDBuffer[c_type, 2, c_shape]](c),
-                        rebind[NDBuffer[a_type, 2, a_shape]](a),
-                        rebind[NDBuffer[b_type, 2, b_shape]](b),
-                        best_config,
-                        ctx,
-                    )
-
+            @parameter
+            if autotuning_mode:
+                print("AUTOTUNING MODE ENABLED")
+                print(kernels.tuning_config)
+                multistage_gemm[
+                    transpose_b=transpose_b,
+                    config = kernels.tuning_config,
+                    elementwise_lambda_fn=elementwise_lambda_fn,
+                ](
+                    rebind[NDBuffer[c_type, 2, c_shape]](c),
+                    rebind[NDBuffer[a_type, 2, a_shape]](a),
+                    rebind[NDBuffer[b_type, 2, b_shape]](b),
+                    kernels.tuning_config,
+                    ctx,
+                )
                 return
 
-        if m == 1 or n == 1:
-            gemv_gpu[
-                transpose_b=transpose_b,
-                elementwise_lambda_fn=elementwise_lambda_fn,
-            ](c, a, b, ctx)
+            if best_config == kernels.ampere_256x64_4:
+                alias config = kernels.ampere_256x64_4
+                multistage_gemm[
+                    transpose_b=transpose_b,
+                    config=config,
+                    elementwise_lambda_fn=elementwise_lambda_fn,
+                ](
+                    rebind[NDBuffer[c_type, 2, c_shape]](c),
+                    rebind[NDBuffer[a_type, 2, a_shape]](a),
+                    rebind[NDBuffer[b_type, 2, b_shape]](b),
+                    best_config,
+                    ctx,
+                )
+
+            elif best_config == kernels.ampere_256x128_3:
+                multistage_gemm[
+                    transpose_b=transpose_b,
+                    config = kernels.ampere_256x128_3,
+                    elementwise_lambda_fn=elementwise_lambda_fn,
+                ](
+                    rebind[NDBuffer[c_type, 2, c_shape]](c),
+                    rebind[NDBuffer[a_type, 2, a_shape]](a),
+                    rebind[NDBuffer[b_type, 2, b_shape]](b),
+                    best_config,
+                    ctx,
+                )
+
+            else:  # Default kernel 128x128_4
+                multistage_gemm[
+                    transpose_b=transpose_b,
+                    config = kernels.ampere_128x128_4,
+                    elementwise_lambda_fn=elementwise_lambda_fn,
+                ](
+                    rebind[NDBuffer[c_type, 2, c_shape]](c),
+                    rebind[NDBuffer[a_type, 2, a_shape]](a),
+                    rebind[NDBuffer[b_type, 2, b_shape]](b),
+                    best_config,
+                    ctx,
+                )
+
             return
 
-        alias BLOCK_DIM = 16
-        var gpu_func = ctx.compile_function[
-            matmul_kernel_naive[
-                a_type,
-                b_type,
-                c_type,
-                BLOCK_DIM,
-                transpose_b,
-                elementwise_lambda_fn=elementwise_lambda_fn,
-            ]
-        ]()
-        ctx.enqueue_function(
-            gpu_func,
-            c.data,
-            a.data,
-            b.data,
-            m,
-            n,
-            k,
-            grid_dim=(ceildiv(m, BLOCK_DIM), ceildiv(n, BLOCK_DIM)),
-            block_dim=(BLOCK_DIM, BLOCK_DIM),
-        )
+    if m == 1 or n == 1:
+        gemv_gpu[
+            transpose_b=transpose_b,
+            elementwise_lambda_fn=elementwise_lambda_fn,
+        ](c, a, b, ctx)
+        return
 
-    except e:
-        abort(e)
+    alias BLOCK_DIM = 16
+    var gpu_func = ctx.compile_function[
+        matmul_kernel_naive[
+            a_type,
+            b_type,
+            c_type,
+            BLOCK_DIM,
+            transpose_b,
+            elementwise_lambda_fn=elementwise_lambda_fn,
+        ]
+    ]()
+    ctx.enqueue_function(
+        gpu_func,
+        c.data,
+        a.data,
+        b.data,
+        m,
+        n,
+        k,
+        grid_dim=(ceildiv(m, BLOCK_DIM), ceildiv(n, BLOCK_DIM)),
+        block_dim=(BLOCK_DIM, BLOCK_DIM),
+    )
 
 
 @always_inline
