@@ -83,7 +83,7 @@ add a file to this archive, you need to:
 
 1. Download the existing archive by `cat WORKSPACE.bazel | grep test_llama_golden`
 , finding the s3 URL (at time of writing this
-was `https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/test_llama_golden/3/5d277608706960cbcea481c859e903a1319fce060203d510b8c11e91cbe21083/test_llama_golden.tar.gz`)
+was `https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/test_llama_golden/3/90811d3fff2b4d88390fb193bb545651529126729c6af2626c68341640c2d62b/test_llama_golden.tar.gz`)
 and downloading to your local machine (e.g., with wget).
 
 2. Untar the existing archive `tar -xvf test_llama_golden.tar.gz`.

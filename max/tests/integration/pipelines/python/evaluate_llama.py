@@ -23,10 +23,9 @@ import numpy as np
 import numpy.typing as npt
 from cpuinfo import get_cpu_info
 from huggingface_hub import hf_hub_download
-from max.driver import CPU, CUDA
-
 from llama3.config import InferenceConfig, SupportedEncodings, SupportedVersions
 from llama3.llama3 import Llama3, Llama3Context
+from max.driver import CPU, CUDA
 
 
 def find_runtime_path(fname: str, testdata_directory: Path) -> Path:
@@ -262,6 +261,7 @@ SUPPORTED_PAIRS = [
     ("llama3_1", "bfloat16"),
     ("llama3_1", "q4_k"),
     ("tinyllama", "float32"),
+    ("tinyllama", "bfloat16"),
 ]
 
 
