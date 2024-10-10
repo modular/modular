@@ -6,16 +6,12 @@
 
 
 import logging
-from datetime import datetime
-from typing import Annotated, AsyncGenerator, Literal, Optional, cast, List
 from abc import ABC, abstractmethod
-
-from pydantic import BaseModel, Field
+from datetime import datetime
+from typing import Annotated, AsyncGenerator, List, Literal, Optional, cast
 
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import JSONResponse, Response
-from sse_starlette.sse import EventSourceResponse
-
 from max.serve.pipelines.deps import token_pipeline
 from max.serve.pipelines.llm import (
     TokenGeneratorPipeline,
@@ -26,22 +22,27 @@ from max.serve.schemas.openai import (
     ChatCompletionRequestMessageContentPartText,
     ChatCompletionResponseMessage,
     ChatCompletionStreamResponseDelta,
+    Choice,
     Choice1,
     Choice3,
+    CompletionUsage,
     CreateChatCompletionRequest,
     CreateChatCompletionResponse,
     CreateChatCompletionStreamResponse,
-    Logprobs,
-    Logprobs2,
     CreateCompletionRequest,
     CreateCompletionResponse,
-    Choice,
-    CompletionUsage,
+    Logprobs,
+    Logprobs2,
 )
-
+from prometheus_async.aio import time
+from prometheus_client import Histogram
+from pydantic import BaseModel, Field
+from sse_starlette.sse import EventSourceResponse
 
 router = APIRouter(prefix="/v1")
 logger = logging.getLogger(__name__)
+
+REQ_TIME = Histogram("req_time_seconds", "time spent in requests")
 
 
 class OpenAIResponseGenerator(ABC):
@@ -166,6 +167,7 @@ def openai_get_content_from_message(message: ChatCompletionRequestMessage):
 
 
 @router.post("/chat/completions")
+@time(REQ_TIME)
 async def openai_create_chat_completion(
     request: Request,
     pipeline: Annotated[TokenGeneratorPipeline, Depends(token_pipeline)],

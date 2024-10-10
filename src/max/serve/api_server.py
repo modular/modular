@@ -42,6 +42,7 @@ from max.serve.config import APIType, Settings, api_prefix
 from max.serve.debug import DebugSettings, register_debug
 from max.serve.request import register_request
 from max.serve.router import kserve_routes, openai_routes
+from prometheus_client import CollectorRegistry, make_asgi_app, multiprocess
 from pydantic_settings import CliSettingsSource
 from uvicorn import Config, Server
 
@@ -73,6 +74,8 @@ def fastapi_app(
             ROUTES[api_type].router, prefix=api_prefix(settings, api_type)
         )
 
+    app.mount("/metrics", make_metrics_app())
+
     register_debug(app, debug_settings)
     register_request(app)
     app.state.settings = settings
@@ -93,6 +96,16 @@ def parse_settings(parser: argparse.ArgumentParser) -> Settings:
 def parse_debug_settings(parser: argparse.ArgumentParser) -> DebugSettings:
     cli_settings = CliSettingsSource(DebugSettings, root_parser=parser)  # type: ignore
     return DebugSettings(_cli_settings_source=cli_settings(args=True))  # type: ignore
+
+
+def make_metrics_app():
+    # if PROMETHEUS_MULTIPROC_DIR is set we use multiprocess setup
+    if os.getenv("PROMETHEUS_MULTIPROC_DIR") is not None:
+        registry = CollectorRegistry()
+        multiprocess.MultiProcessCollector(registry)
+        return make_asgi_app(registry=registry)
+    else:
+        return make_asgi_app()
 
 
 async def main() -> None:
