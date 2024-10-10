@@ -2709,23 +2709,24 @@ fn copy_dram_to_sram[
     src_layout: Layout,
     dst_layout: Layout,
     dtype: DType,
-    src_thread_layout: Layout,
-    dst_thread_layout: Layout,
     src_element_layout: Layout,
-    dst_element_layout: Layout,
+    dst_element_layout: Layout, //,
+    *,
+    src_thread_layout: Layout,
+    dst_thread_layout: Layout = src_thread_layout,
     swizzle: OptionalReg[Swizzle] = None,
 ](
     dst: LayoutTensor[
         dtype,
         dst_layout,
         address_space = _GPUAddressSpace.SHARED,
-        element_layout=dst_element_layout,
+        element_layout=dst_element_layout, **_,
     ],
     src: LayoutTensor[
         dtype,
         src_layout,
         address_space = _GPUAddressSpace.GENERIC,
-        element_layout=src_element_layout,
+        element_layout=src_element_layout, **_,
     ],
 ):
     var src_fragments = src.distribute[src_thread_layout](ThreadIdx.x())
@@ -2742,33 +2743,29 @@ fn copy_dram_to_sram[
     src_layout: Layout,
     dst_layout: Layout,
     dtype: DType,
-    thread_layout: Layout,
     src_element_layout: Layout,
-    dst_element_layout: Layout,
+    dst_element_layout: Layout, //,
+    *,
+    thread_layout: Layout,
     swizzle: OptionalReg[Swizzle] = None,
 ](
     dst: LayoutTensor[
         dtype,
         dst_layout,
         address_space = _GPUAddressSpace.SHARED,
-        element_layout=dst_element_layout,
+        element_layout=dst_element_layout, **_,
     ],
     src: LayoutTensor[
         dtype,
         src_layout,
         address_space = _GPUAddressSpace.GENERIC,
-        element_layout=src_element_layout,
+        element_layout=src_element_layout, **_,
     ],
 ):
     copy_dram_to_sram[
-        src_layout,
-        dst_layout,
-        dtype,
-        thread_layout,
-        thread_layout,
-        src_element_layout,
-        dst_element_layout,
-        swizzle,
+        src_thread_layout=thread_layout,
+        dst_thread_layout=thread_layout,
+        swizzle=swizzle,
     ](dst, src)
 
 
@@ -2779,12 +2776,15 @@ fn copy_dram_to_sram_async[
     src_layout: Layout,
     dst_layout: Layout,
     dtype: DType,
+    src_element_layout: Layout,
+    dst_element_layout: Layout, //,
+    *,
     src_thread_layout: Layout,
     dst_thread_layout: Layout,
-    src_element_layout: Layout,
-    dst_element_layout: Layout,
     swizzle: Bool = False,
     masked: Bool = False,
+    fill: Fill = Fill.NONE,
+    eviction_policy: CacheEviction = CacheEviction.EVICT_NORMAL,
 ](
     dst: LayoutTensor[
         dtype,
@@ -2831,9 +2831,9 @@ fn copy_dram_to_sram_async[
 
     @parameter
     if not masked:
-        dst_fragments.copy_from_async[swizzle=swizzle_option](
-            src_fragments, base_offset=dst_frag_offset
-        )
+        dst_fragments.copy_from_async[
+            swizzle=swizzle_option, fill=fill, eviction_policy=eviction_policy
+        ](src_fragments, base_offset=dst_frag_offset)
     else:
         constrained[
             src_layout.stride[1].value() == src.element_size
@@ -2843,7 +2843,12 @@ fn copy_dram_to_sram_async[
         var src_frag_offset = src_fragments.distance(src.ptr)
         alias stride = src_layout.stride[0].value()
         var src_idx_bound = num_rows * stride - src_frag_offset
-        dst_fragments.copy_from_async[masked=True, swizzle=swizzle_option](
+        dst_fragments.copy_from_async[
+            masked=True,
+            swizzle=swizzle_option,
+            fill=fill,
+            eviction_policy=eviction_policy,
+        ](
             src_fragments,
             src_idx_bound=src_idx_bound,
             base_offset=dst_frag_offset,
@@ -2857,11 +2862,14 @@ fn copy_dram_to_sram_async[
     src_layout: Layout,
     dst_layout: Layout,
     dtype: DType,
-    thread_layout: Layout,
     src_element_layout: Layout,
-    dst_element_layout: Layout,
+    dst_element_layout: Layout, //,
+    *,
+    thread_layout: Layout,
     swizzle: Bool = False,
     masked: Bool = False,
+    fill: Fill = Fill.NONE,
+    eviction_policy: CacheEviction = CacheEviction.EVICT_NORMAL,
 ](
     dst: LayoutTensor[
         dtype,
@@ -2878,15 +2886,12 @@ fn copy_dram_to_sram_async[
     num_rows: Int = UNKNOWN_VALUE,
 ):
     copy_dram_to_sram_async[
-        src_layout,
-        dst_layout,
-        dtype,
-        thread_layout,
-        thread_layout,
-        src_element_layout,
-        dst_element_layout,
-        swizzle,
-        masked,
+        src_thread_layout=thread_layout,
+        dst_thread_layout=thread_layout,
+        swizzle=swizzle,
+        masked=masked,
+        fill=fill,
+        eviction_policy=eviction_policy,
     ](dst, src, num_rows)
 
 
