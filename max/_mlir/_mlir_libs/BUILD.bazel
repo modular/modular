@@ -34,6 +34,7 @@ modular_pybind_extension(
     pybind_deps = [
         "//:MLIRBindingsPythonHeaders",
     ],
+    tags = ["no-clang-tidy-headers"],
     deps = [
         "//ModularFramework/tools/mof",
     ],
