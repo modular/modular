@@ -14,7 +14,7 @@ from python._cpython import PyMethodDef, PyObjectPtr
 
 
 @export
-fn PyInit_bindings() -> PythonObject:
+fn PyInit_mojo_module() -> PythonObject:
     # ----------------------------------
     # Create a Python module
     # ----------------------------------

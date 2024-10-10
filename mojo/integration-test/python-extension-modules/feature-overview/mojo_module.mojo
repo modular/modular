@@ -23,7 +23,7 @@ from python._cpython import (
 
 
 @export
-fn PyInit_feature_overview() -> PythonObject:
+fn PyInit_mojo_module() -> PythonObject:
     # ----------------------------------
     # Create a Python module
     # ----------------------------------

@@ -5,14 +5,14 @@
 # ===----------------------------------------------------------------------=== #
 # TODO(MSTDL-894): Support running this test on Linux
 # REQUIRES: system-darwin
-# RUN: python3 -m mojo-pybind.main %S/bindings.mojo
+# RUN: python3 -m mojo-pybind.main --raw-bindings %S/mojo_module.mojo
 # RUN: python3 %s
 
 import sys
 import os
 from pathlib import Path
 
-# Put the current directory (containing bindings.so) on the Python module lookup
+# Put the current directory (containing module.so) on the Python module lookup
 # path.
 sys.path.insert(0, "")
 
@@ -20,13 +20,13 @@ sys.path.insert(0, "")
 # process.
 os.environ["MOJO_PYTHON_LIBRARY"] = sys.executable
 
-# Imports from 'bindings.so'
-import bindings
+# Imports from 'mojo_module.so'
+import mojo_module
 
 if __name__ == "__main__":
     pass
 
-    result = bindings.mojo_count_args(1, 2)
+    result = mojo_module.mojo_count_args(1, 2)
 
     assert result == 2
 

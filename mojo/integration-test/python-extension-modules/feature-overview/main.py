@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 # TODO(MSTDL-894): Support running this test on Linux
 # REQUIRES: system-darwin
-# RUN: python3 -m mojo-pybind.main %S/feature_overview.mojo
+# RUN: python3 -m mojo-pybind.main --raw-bindings %S/mojo_module.mojo
 # RUN: python3 %s
 
 import sys
@@ -19,8 +19,8 @@ sys.path.insert(0, "")
 # process.
 os.environ["MOJO_PYTHON_LIBRARY"] = sys.executable
 
-# Imports from 'feature_overview.so'
-import feature_overview
+# Imports from 'mojo_module.so'
+import mojo_module as feature_overview
 
 
 class TestMojoPythonInterop(unittest.TestCase):

@@ -25,35 +25,35 @@ Python.
 The initial contents are:
 
 ```text
-basic
-├── bindings.mojo
-└── use_bindings.py
+basic-raw
+├── mojo_module.mojo
+└── main.py
 ```
 
 Build manually using:
 
 ```shell
-mojo-pybind bindings.mojo
+mojo-pybind --raw-bindings mojo_module.mojo
 ```
 
-Which will result in a `bindings.so` being built and placed alongside the
+Which will result in a `mojo_module.so` being built and placed alongside the
 existing files:
 
 ```text
 basic
-├── bindings.a
-├── bindings.mojo
-├── bindings.so
-└── use_bindings.py
+├── mojo_module.a
+├── mojo_module.mojo
+├── mojo_module.so
+└── main.py
 ```
 
-(The bindings.a file is an intermediate artifact that can be deleted.)
+(The mojo_module.a file is an intermediate artifact that can be deleted.)
 
-Running the Python `use_bindings.py` code will load and run compiled Mojo code
-from `bindings.so`:
+Running the Python `main.py` code will load and run compiled Mojo code
+from `mojo_module.so`:
 
 ```shell
-% python use_bindings.py
+% python main.py
 Result from Mojo 🔥: 2
 ```
 
