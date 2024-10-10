@@ -50,7 +50,7 @@
 
 // CHECK-LABEL: @mem2reg_valueop_no_undef
 kgen.func @mem2reg_valueop_no_undef(%arg0: index, %arg1: index) {
-  // CHECK-NOT: kgen.undef : index
+  // CHECK-NOT: kgen.param.constant = <*?>
   // CHECK: debuginfo.value #[[VAR]] #[[REFOF_EXPR]] = %arg0 : index loc(#[[LOC1:.*]])
   // CHECK: debuginfo.value #[[VAR]] #[[REFOF_EXPR]] = %arg1 : index loc(#[[LOC2:.*]])
   %0 = pop.stack_allocation 1 x index loc(#loc0)
@@ -62,7 +62,7 @@ kgen.func @mem2reg_valueop_no_undef(%arg0: index, %arg1: index) {
 
 // CHECK-LABEL: @mem2reg_valueop_with_initial_undef
 kgen.func @mem2reg_valueop_with_initial_undef(%arg0: index, %arg1: index) -> index {
-  // CHECK: %[[UNDEF_VAL:.*]] = kgen.undef : index loc(#[[LOC3:.*]])
+  // CHECK: %[[UNDEF_VAL:.*]] = kgen.param.constant = <*?> loc(#[[LOC3:.*]])
   // CHECK: debuginfo.value #[[VAR]] #[[REFOF_EXPR]] = %[[UNDEF_VAL]] : index loc(#[[LOC3]])
   // CHECK: debuginfo.value #[[VAR]] #[[REFOF_EXPR]] = %arg0 : index loc(#[[LOC1]])
   // CHECK: debuginfo.value #[[VAR]] #[[REFOF_EXPR]] = %arg1 : index loc(#[[LOC2]])

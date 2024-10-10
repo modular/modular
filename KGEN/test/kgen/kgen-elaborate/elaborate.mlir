@@ -1510,7 +1510,7 @@ kgen.generator export @top() {
 // CHECK-LABEL: kgen.func @"pass_paramref
 // CHECK-SAME: () -> !kgen.signature<<index>() -> !pop.simd<apply(:(index) -> index @some_func, *(0,0)), f32>>
 kgen.generator @pass_paramref<T: type>() -> !kgen.paramref<T> {
-  %0 = kgen.undef : !kgen.paramref<T>
+  %0 = kgen.param.constant : !kgen.paramref<T> = <#kgen.unknown : !kgen.paramref<T>>
   // CHECK: return %0 : !kgen.signature<<index>() -> !pop.simd<apply(:(index) -> index @some_func, *(0,0)), f32>>
   kgen.return %0 : !kgen.paramref<T>
 }

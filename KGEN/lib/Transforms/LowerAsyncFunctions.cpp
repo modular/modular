@@ -745,7 +745,8 @@ void LowerAsyncBuildContext::populateHotResumeFrom(FuncOp original,
         if (isa<HLCF::ControlFlowTerminator>(op)) {
           builder.setInsertionPoint(op);
           for (auto [index, type] : llvm::enumerate(op->getOperandTypes()))
-            op->setOperand(index, builder.create<UndefOp>(type));
+            op->setOperand(
+                index, builder.create<ParamConstantOp>(UnknownAttr::get(type)));
         } else if (!isa<SuspendOp, SuspendEndOp>(op)) {
           opsToRemove.push_back(op);
         }
@@ -770,7 +771,8 @@ void LowerAsyncBuildContext::populateHotResumeFrom(FuncOp original,
 
       builder.setInsertionPoint(parent);
       for (auto [index, operand] : llvm::enumerate(parent->getOperands()))
-        parent->setOperand(index, builder.create<UndefOp>(operand.getType()));
+        parent->setOperand(index, builder.create<ParamConstantOp>(
+                                      UnknownAttr::get(operand.getType())));
     }
   }
 
