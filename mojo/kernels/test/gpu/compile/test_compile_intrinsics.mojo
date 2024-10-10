@@ -13,8 +13,8 @@ from gpu.intrinsics import *
 fn kernel[
     type: DType, memory: Bool = True
 ](ptr: UnsafePointer[Scalar[type]], val: Scalar[type]) -> Scalar[type]:
-    store_release[memory](ptr, val)
-    return load_acquire[memory](ptr)
+    store_release[memory=memory](ptr, val)
+    return load_acquire[memory=memory](ptr)
 
 
 # CHECK-LABEL: test_compile_code
