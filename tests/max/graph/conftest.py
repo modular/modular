@@ -27,9 +27,12 @@ MAX_INT32 = np.iinfo(np.int32).max
 MAX_INT64 = np.iinfo(np.int64).max
 
 dtypes = st.sampled_from([d for d in DType if d is not DType._unknown])
-static_dims = st.builds(
-    StaticDim, st.integers(min_value=0, max_value=2**63 - 1)
-)
+
+
+def static_dims(min: int = 0, max: int = 2**63 - 1):
+    return st.builds(StaticDim, st.integers(min_value=min, max_value=max))
+
+
 symbolic_dims = st.builds(
     SymbolicDim,
     st.one_of(
@@ -40,7 +43,7 @@ symbolic_dims = st.builds(
 static_positive_dims = st.builds(
     StaticDim, st.integers(min_value=1, max_value=2**63 - 1)
 )
-dims = st.one_of(static_dims, symbolic_dims)
+dims = st.one_of(static_dims(), symbolic_dims)
 
 
 @st.composite
@@ -140,7 +143,7 @@ def new_axes(shapes):
 st.register_type_strategy(DType, dtypes)
 st.register_type_strategy(Dim, dims)
 st.register_type_strategy(Shape, shapes())
-st.register_type_strategy(StaticDim, static_dims)
+st.register_type_strategy(StaticDim, static_dims())
 st.register_type_strategy(SymbolicDim, symbolic_dims)
 st.register_type_strategy(TensorType, tensor_types())
 st.register_type_strategy(BufferType, buffer_types())
