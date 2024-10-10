@@ -330,7 +330,7 @@ struct Scope:
         return self is other
 
     fn __ne__(self, other: Self) -> Bool:
-        return self is not other
+        return not (self == other)
 
     fn __is__(self, other: Self) -> Bool:
         return self._value == other._value
@@ -347,7 +347,9 @@ struct Scope:
             return "cluster"
         if self is Self.GPU:
             return "gpu"
-        return "sys"
+        if self is Self.SYSTEM:
+            return "sys"
+        return "<<invalid scope>>"
 
 
 @always_inline
@@ -399,13 +401,18 @@ fn _get_pointer_constraint() -> StringLiteral:
 
 @always_inline
 fn store_release[
-    type: DType, //, memory: Bool = True
+    type: DType, //, scope: Scope = Scope.SYSTEM, memory: Bool = True
 ](ptr: UnsafePointer[Scalar[type], *_, **_], value: Scalar[type]):
     alias constraints = _get_register_constraint[
         type
     ]() + "," + _get_pointer_constraint() + (",~{memory}" if memory else "")
+    alias scope_str = scope._mnemonic()
     inlined_assembly[
-        "st.release.sys.global." + _get_type_suffix[type]() + " [$0], $1;",
+        "st.release."
+        + scope_str
+        + ".global."
+        + _get_type_suffix[type]()
+        + " [$0], $1;",
         NoneType,
         constraints=constraints,
     ](ptr.bitcast[address_space = AddressSpace.GENERIC](), value)
@@ -413,13 +420,18 @@ fn store_release[
 
 @always_inline
 fn load_acquire[
-    type: DType, //, memory: Bool = True
+    type: DType, //, *, scope: Scope = Scope.SYSTEM, memory: Bool = True
 ](ptr: UnsafePointer[Scalar[type], *_, **_]) -> Scalar[type]:
     alias constraints = "=" + _get_register_constraint[
         type
     ]() + "," + _get_pointer_constraint() + (",~{memory}" if memory else "")
+    alias scope_str = scope._mnemonic()
     return inlined_assembly[
-        "ld.acquire.sys.global." + _get_type_suffix[type]() + " $0, [$1];",
+        "ld.acquire."
+        + scope_str
+        + ".global."
+        + _get_type_suffix[type]()
+        + " $0, [$1];",
         Scalar[type],
         constraints=constraints,
     ](ptr.bitcast[address_space = AddressSpace.GENERIC]())

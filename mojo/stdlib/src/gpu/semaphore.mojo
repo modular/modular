@@ -12,6 +12,7 @@ from sys import llvm_intrinsic, triple_is_nvidia_cuda
 from sys._assembly import inlined_assembly
 
 from memory import UnsafePointer
+from .intrinsics import store_release, load_acquire, Scope
 
 from .sync import barrier
 
@@ -32,9 +33,7 @@ struct Semaphore:
     @always_inline
     fn fetch(inout self):
         if self._wait_thread:
-            self._state = inlined_assembly[
-                "ld.global.acquire.gpu.b32 $0, [$1];", Int32, constraints="=r,l"
-            ](self._lock)
+            self._state = load_acquire[scope = Scope.GPU](self._lock)
 
     @always_inline
     fn state(self) -> Int32:
@@ -52,8 +51,4 @@ struct Semaphore:
     fn release(inout self, status: Int32 = 0):
         barrier()
         if self._wait_thread:
-            inlined_assembly[
-                "ld.global.release.gpu.b32 $0, [$1];",
-                NoneType,
-                constraints="=l,r",
-            ](self._lock, status)
+            store_release[scope = Scope.GPU](self._lock, status)
