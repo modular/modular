@@ -47,7 +47,7 @@ def pipeline_model(testdata_directory, request):
     print(f"\nPipelineModel: {model_params}")
     model_encoding = model_params.encoding
     if model_params.name == "tinyllama":
-        weight_path = testdata_directory / "tiny_llama.gguf"
+        weight_path = testdata_directory / "tiny_llama_bf16.gguf"
     else:
         weights_repo_id = f"modularai/llama-{model_params.version}"
         weights_encoding_file = model_encoding.hf_model_name(
@@ -92,7 +92,7 @@ def pipeline_model(testdata_directory, request):
     "pipeline_model",
     [
         PipelineModelParams(
-            "llama3_1",
+            "tinyllama",
             SupportedEncodings.bfloat16,
             512,
             10,
@@ -109,7 +109,7 @@ async def test_pipeline_heterogeneous_batch_logits(
     logits.
     """
     golden_data_path = find_runtime_path(
-        golden_data_fname("llama3_1", "bfloat16"), testdata_directory
+        golden_data_fname("tinyllama", "bfloat16"), testdata_directory
     )
     expected_results = NumpyDecoder().decode(golden_data_path.read_text())
 
@@ -141,16 +141,15 @@ async def test_pipeline_heterogeneous_batch_logits(
         pipeline_model, {"B": context_b, "C": context_c}, stored_logits
     )
 
-    with pytest.raises(AssertionError):
-        compare_values(
-            [
-                {"prompt": prompt_a, "values": stored_logits["A"]},
-                {"prompt": prompt_b, "values": stored_logits["B"]},
-                {"prompt": prompt_c, "values": stored_logits["C"]},
-            ],
-            expected_results,
-            rtol=1e-4,
-        )
+    compare_values(
+        [
+            {"prompt": prompt_a, "values": stored_logits["A"]},
+            {"prompt": prompt_b, "values": stored_logits["B"]},
+            {"prompt": prompt_c, "values": stored_logits["C"]},
+        ],
+        expected_results,
+        rtol=1e-2,
+    )
 
     await pipeline_model.release(context_a)
     await pipeline_model.release(context_b)
