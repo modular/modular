@@ -139,12 +139,12 @@ def next_token_with_logits(
     """
     logits_dict, _ = llama3._execute(req_to_context_dict)
     for req_id, logits in logits_dict.items():
-        next_token = logits.argmax(axis=-1)[-1]
+        next_token = logits.argmax(axis=-1)
         update_values[req_id].append(
             {
                 "next_token": next_token,
-                "next_token_logits": logits[0, next_token],
-                "logits": logits.reshape(-1),
+                "next_token_logits": logits[next_token],
+                "logits": logits,
             }
         )
         # Update the context for the next input.
