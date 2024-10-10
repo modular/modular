@@ -632,7 +632,7 @@ fn matmul_kv_cache_h6_d48_bshd[
         KVCacheStaticParams(num_heads=6, head_size=48),
     ],
     ctx: MojoCallContextPtr,
-) -> ContiguousKVCache[cache.type, cache.kv_params]:
+) raises -> ContiguousKVCache[cache.type, cache.kv_params]:
     """Performs a matmul, writing the output into a mutable ContiguousKVCache object.
 
     Args:
@@ -661,7 +661,7 @@ fn matmul_kv_cache_h8_d128_bshd[
         KVCacheStaticParams(num_heads=8, head_size=128),
     ],
     ctx: MojoCallContextPtr,
-) -> ContiguousKVCache[type, cache.kv_params]:
+) raises -> ContiguousKVCache[type, cache.kv_params]:
     """Performs a matmul, writing the output into a mutable ContiguousKVCache object.
 
     Args:
@@ -690,7 +690,7 @@ fn matmul_kv_cache_h1_d16_bshd[
         KVCacheStaticParams(num_heads=1, head_size=16),
     ],
     ctx: MojoCallContextPtr,
-) -> ContiguousKVCache[type, cache.kv_params]:
+) raises -> ContiguousKVCache[type, cache.kv_params]:
     """Performs a matmul, writing the output into a mutable ContiguousKVCache object.
 
     Args:
@@ -719,7 +719,7 @@ fn matmul_kv_cache_h8_d64_bshd[
         KVCacheStaticParams(num_heads=8, head_size=64),
     ],
     ctx: MojoCallContextPtr,
-) -> ContiguousKVCache[type, cache.kv_params]:
+) raises -> ContiguousKVCache[type, cache.kv_params]:
     """Performs a matmul, writing the output into a mutable ContiguousKVCache object.
 
     Args:
@@ -748,7 +748,7 @@ fn matmul_kv_cache_h8_d128_bshd_continuous_batch[
         KVCacheStaticParams(num_heads=8, head_size=128),
     ],
     ctx: MojoCallContextPtr,
-) -> ContinuousBatchingKVCache[type, cache.kv_params]:
+) raises -> ContinuousBatchingKVCache[type, cache.kv_params]:
     """Performs a matmul, writing the output into a mutable ContiguousKVCache object.
 
     Args:
@@ -775,7 +775,7 @@ fn _matmul_kv_cache[
     weight: NDBuffer[type, 2, _],
     cache: cache_t,
     context: MojoCallContextPtr,
-) -> cache_t:
+) raises -> cache_t:
     """Helper for performing matmul with custom ContiguousKVCache types.
 
     Parameters:
@@ -811,7 +811,7 @@ fn _matmul_kv_cache_impl[
     weight: NDBuffer[type, 2, _],
     cache: cache_t,
     ctx: Optional[DeviceContext],
-) -> cache_t:
+) raises -> cache_t:
     """Helper for performing matmul with custom ContiguousKVCache types.
 
     Parameters:
@@ -904,7 +904,7 @@ fn fused_qkv_matmul_kv_cache_h6_d48_bshd[
     v_cache: ContiguousKVCache[type, k_cache.kv_params],
     output: NDBuffer[type, 3, output_shape],
     ctx: MojoCallContextPtr,
-):
+) raises:
     """Performs a fused QKV matmul. Q outputs are written to the output argument
     while K and V outputs are written in-place into k_cache and v_cache.
 
@@ -945,7 +945,7 @@ fn fused_qkv_matmul_kv_cache_h8_d128_bshd[
     v_cache: ContiguousKVCache[type, k_cache.kv_params],
     output: NDBuffer[type, 3, output_shape],
     ctx: MojoCallContextPtr,
-):
+) raises:
     """Performs a fused QKV matmul. Q outputs are written to the output argument
     while K and V outputs are written in-place into k_cache and v_cache.
 
@@ -986,7 +986,7 @@ fn fused_qkv_matmul_kv_cache_h1_d16_bshd[
     v_cache: ContiguousKVCache[type, k_cache.kv_params],
     output: NDBuffer[type, 3, output_shape],
     ctx: MojoCallContextPtr,
-):
+) raises:
     """Performs a fused QKV matmul. Q outputs are written to the output argument
     while K and V outputs are written in-place into k_cache and v_cache.
 
@@ -1032,7 +1032,7 @@ fn fused_qkv_matmul_kv_cache_h8_d64_bshd[
     v_cache: ContiguousKVCache[type, k_cache.kv_params],
     output: NDBuffer[type, 3, output_shape],
     ctx: MojoCallContextPtr,
-):
+) raises:
     """Performs a fused QKV matmul. Q outputs are written to the output argument
     while K and V outputs are written in-place into k_cache and v_cache.
 
@@ -1073,7 +1073,7 @@ fn fused_qkv_matmul_kv_cache_h8_d128_bshd_continuous_batch[
     v_cache: ContinuousBatchingKVCache[type, k_cache.kv_params],
     output: NDBuffer[type, 3, output_shape],
     ctx: MojoCallContextPtr,
-):
+) raises:
     """Performs a fused QKV matmul. Q outputs are written to the output argument
     while K and V outputs are written in-place into k_cache and v_cache.
 
@@ -1114,7 +1114,7 @@ fn fused_qkv_matmul_kv_cache_h1_d16_bshd_continuous_batch[
     v_cache: ContinuousBatchingKVCache[type, k_cache.kv_params],
     output: NDBuffer[type, 3, output_shape],
     ctx: MojoCallContextPtr,
-):
+) raises:
     """Performs a fused QKV matmul. Q outputs are written to the output argument
     while K and V outputs are written in-place into k_cache and v_cache.
 
@@ -1155,7 +1155,7 @@ fn fused_qkv_matmul_kv_cache_h8_d64_bshd_continuous_batch[
     v_cache: ContinuousBatchingKVCache[type, k_cache.kv_params],
     output: NDBuffer[type, 3, output_shape],
     ctx: MojoCallContextPtr,
-):
+) raises:
     """Performs a fused QKV matmul. Q outputs are written to the output argument
     while K and V outputs are written in-place into k_cache and v_cache.
 
@@ -1194,7 +1194,7 @@ fn _fused_qkv_matmul_kv_cache[
     v_cache: cache_t,
     output: NDBuffer[type, 3, output_shape],
     context: MojoCallContextPtr,
-):
+) raises:
     """Performs a fused QKV matmul. Q outputs are written to the output argument
     while K and V outputs are written in-place into k_cache and v_cache.
 
@@ -1238,7 +1238,7 @@ fn _fused_qkv_matmul_kv_cache_impl[
     v_cache: cache_t,
     output: NDBuffer[type, 3, output_shape],
     context: Optional[DeviceContext],
-):
+) raises:
     """Performs a fused QKV matmul. Q outputs are written to the output argument
     while K and V outputs are written in-place into k_cache and v_cache.
 
@@ -1362,7 +1362,7 @@ fn _matmul_common[
     hidden_state: NDBuffer[type, 3, _],
     weight: NDBuffer[type, 2, _],
     context: Optional[DeviceContext],
-):
+) raises:
     var BS = hidden_state.dim[0]()
     var SEQ_LEN = hidden_state.dim[1]()
     alias N = weight.shape.get[0]()
