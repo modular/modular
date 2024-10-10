@@ -2818,7 +2818,7 @@ struct Matmul:
         a: ManagedTensorSlice[rank=2],
         b: ManagedTensorSlice[rank=2],
         ctx: MojoCallContextPtr,
-    ):
+    ) raises:
         constrained[
             not (packed_b and transpose_b),
             (

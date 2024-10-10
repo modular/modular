@@ -165,7 +165,7 @@ struct ImposterMatmul:
         a: ManagedTensorSlice,
         b: ManagedTensorSlice,
         ctx: MojoCallContextPtr,
-    ):
+    ) raises:
         alias rank = a.rank
         alias a_dtype = a.type
         alias b_dtype = b.type
@@ -257,7 +257,7 @@ struct MatmulFuseOut:
         a: ManagedTensorSlice,
         b: ManagedTensorSlice,
         ctx: MojoCallContextPtr,
-    ):
+    ) raises:
         alias rank = a.rank
         alias a_dtype = a.type
         alias b_dtype = b.type
