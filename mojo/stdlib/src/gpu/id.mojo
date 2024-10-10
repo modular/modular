@@ -24,6 +24,14 @@ struct ThreadIdx:
         else:
             return "llvm.amdgcn.workitem.id." + dim
 
+    @always_inline
+    @staticmethod
+    fn _dispatch[dim: StringLiteral]() -> UInt:
+        alias intrinsic_name = Self._get_intrinsic_name[dim]()
+        return UInt(
+            int(llvm_intrinsic[intrinsic_name, Int32, has_side_effect=False]())
+        )
+
     @staticmethod
     @always_inline("nodebug")
     fn x() -> UInt:
@@ -32,15 +40,7 @@ struct ThreadIdx:
         Returns:
             The `x` coordinate within the block.
         """
-        return UInt(
-            int(
-                llvm_intrinsic[
-                    Self._get_intrinsic_name["x"](),
-                    Int32,
-                    has_side_effect=False,
-                ]()
-            )
-        )
+        return Self._dispatch["x"]()
 
     @staticmethod
     @always_inline("nodebug")
@@ -50,15 +50,7 @@ struct ThreadIdx:
         Returns:
             The `y` coordinate within the block.
         """
-        return UInt(
-            int(
-                llvm_intrinsic[
-                    Self._get_intrinsic_name["y"](),
-                    Int32,
-                    has_side_effect=False,
-                ]()
-            )
-        )
+        return Self._dispatch["y"]()
 
     @staticmethod
     @always_inline("nodebug")
@@ -68,15 +60,7 @@ struct ThreadIdx:
         Returns:
             The `z` coordinate within the block.
         """
-        return UInt(
-            int(
-                llvm_intrinsic[
-                    Self._get_intrinsic_name["z"](),
-                    Int32,
-                    has_side_effect=False,
-                ]()
-            )
-        )
+        return Self._dispatch["z"]()
 
 
 # ===----------------------------------------------------------------------===#
@@ -96,6 +80,14 @@ struct BlockIdx:
         else:
             return "llvm.amdgcn.workgroup.id." + dim
 
+    @always_inline
+    @staticmethod
+    fn _dispatch[dim: StringLiteral]() -> UInt:
+        alias intrinsic_name = Self._get_intrinsic_name[dim]()
+        return UInt(
+            int(llvm_intrinsic[intrinsic_name, Int32, has_side_effect=False]())
+        )
+
     @staticmethod
     @always_inline("nodebug")
     fn x() -> UInt:
@@ -104,15 +96,7 @@ struct BlockIdx:
         Returns:
             The `x` coordinate within the grid.
         """
-        return UInt(
-            int(
-                llvm_intrinsic[
-                    Self._get_intrinsic_name["x"](),
-                    Int32,
-                    has_side_effect=False,
-                ]()
-            )
-        )
+        return Self._dispatch["x"]()
 
     @staticmethod
     @always_inline("nodebug")
@@ -122,15 +106,7 @@ struct BlockIdx:
         Returns:
             The `y` coordinate within the grid.
         """
-        return UInt(
-            int(
-                llvm_intrinsic[
-                    Self._get_intrinsic_name["y"](),
-                    Int32,
-                    has_side_effect=False,
-                ]()
-            )
-        )
+        return Self._dispatch["y"]()
 
     @staticmethod
     @always_inline("nodebug")
@@ -140,15 +116,7 @@ struct BlockIdx:
         Returns:
             The `z` coordinate within the grid.
         """
-        return UInt(
-            int(
-                llvm_intrinsic[
-                    Self._get_intrinsic_name["z"](),
-                    Int32,
-                    has_side_effect=False,
-                ]()
-            )
-        )
+        return Self._dispatch["z"]()
 
 
 # ===----------------------------------------------------------------------===#
@@ -156,9 +124,46 @@ struct BlockIdx:
 # ===----------------------------------------------------------------------===#
 
 
+fn _get_gcn_idx[offset: Int]() -> UInt:
+    var ptr = llvm_intrinsic[
+        "llvm.amdgcn.implicitarg.ptr",
+        UnsafePointer[Int16, address_space=4],
+        has_side_effect=False,
+    ]()
+    return UInt(int(ptr.load[alignment=4](offset)))
+
+
 struct BlockDim:
     """BlockDim provides static methods for getting the x/y/z dimension of a
     block."""
+
+    @always_inline
+    @staticmethod
+    fn _dispatch[dim: StringLiteral]() -> UInt:
+        @parameter
+        if triple_is_nvidia_cuda():
+            alias intrinsic_name = "llvm.nvvm.read.ptx.sreg.ntid." + dim
+            return UInt(
+                int(
+                    llvm_intrinsic[
+                        intrinsic_name, Int32, has_side_effect=False
+                    ]()
+                )
+            )
+        else:
+
+            @parameter
+            fn _get_offset() -> Int:
+                @parameter
+                if dim == "x":
+                    return 6
+                elif dim == "y":
+                    return 7
+                else:
+                    constrained[dim == "z"]()
+                    return 8
+
+            return _get_gcn_idx[_get_offset()]()
 
     @staticmethod
     @always_inline("nodebug")
@@ -168,15 +173,7 @@ struct BlockDim:
         Returns:
             The `x` dimension of the block.
         """
-        return UInt(
-            int(
-                llvm_intrinsic[
-                    "llvm.nvvm.read.ptx.sreg.ntid.x",
-                    Int32,
-                    has_side_effect=False,
-                ]()
-            )
-        )
+        return Self._dispatch["x"]()
 
     @staticmethod
     @always_inline("nodebug")
@@ -186,15 +183,7 @@ struct BlockDim:
         Returns:
             The `y` dimension of the block.
         """
-        return UInt(
-            int(
-                llvm_intrinsic[
-                    "llvm.nvvm.read.ptx.sreg.ntid.y",
-                    Int32,
-                    has_side_effect=False,
-                ]()
-            )
-        )
+        return Self._dispatch["y"]()
 
     @staticmethod
     @always_inline("nodebug")
@@ -204,15 +193,7 @@ struct BlockDim:
         Returns:
             The `z` dimension of the block.
         """
-        return UInt(
-            int(
-                llvm_intrinsic[
-                    "llvm.nvvm.read.ptx.sreg.ntid.z",
-                    Int32,
-                    has_side_effect=False,
-                ]()
-            )
-        )
+        return Self._dispatch["z"]()
 
 
 # ===----------------------------------------------------------------------===#
@@ -224,6 +205,34 @@ struct GridDim:
     """GridDim provides static methods for getting the x/y/z dimension of a
     grid."""
 
+    @always_inline
+    @staticmethod
+    fn _dispatch[dim: StringLiteral]() -> UInt:
+        @parameter
+        if triple_is_nvidia_cuda():
+            alias intrinsic_name = "llvm.nvvm.read.ptx.sreg.nctaid." + dim
+            return UInt(
+                int(
+                    llvm_intrinsic[
+                        intrinsic_name, Int32, has_side_effect=False
+                    ]()
+                )
+            )
+        else:
+
+            @parameter
+            fn _get_offset() -> Int:
+                @parameter
+                if dim == "x":
+                    return 0
+                elif dim == "y":
+                    return 1
+                else:
+                    constrained[dim == "z"]()
+                    return 2
+
+            return _get_gcn_idx[_get_offset()]()
+
     @staticmethod
     @always_inline("nodebug")
     fn x() -> UInt:
@@ -232,15 +241,7 @@ struct GridDim:
         Returns:
             The `x` dimension of the grid.
         """
-        return UInt(
-            int(
-                llvm_intrinsic[
-                    "llvm.nvvm.read.ptx.sreg.nctaid.x",
-                    Int32,
-                    has_side_effect=False,
-                ]()
-            )
-        )
+        return Self._dispatch["x"]()
 
     @staticmethod
     @always_inline("nodebug")
@@ -250,15 +251,7 @@ struct GridDim:
         Returns:
             The `y` dimension of the grid.
         """
-        return UInt(
-            int(
-                llvm_intrinsic[
-                    "llvm.nvvm.read.ptx.sreg.nctaid.y",
-                    Int32,
-                    has_side_effect=False,
-                ]()
-            )
-        )
+        return Self._dispatch["y"]()
 
     @staticmethod
     @always_inline("nodebug")
@@ -268,15 +261,7 @@ struct GridDim:
         Returns:
             The `z` dimension of the grid.
         """
-        return UInt(
-            int(
-                llvm_intrinsic[
-                    "llvm.nvvm.read.ptx.sreg.nctaid.z",
-                    Int32,
-                    has_side_effect=False,
-                ]()
-            )
-        )
+        return Self._dispatch["z"]()
 
 
 # ===----------------------------------------------------------------------===#
