@@ -75,7 +75,7 @@ fn bench_concat[
 
     @parameter
     @always_inline
-    fn bench_func(inout b: Bencher, shape: IndexList[rank]):
+    fn bench_func(inout b: Bencher, shape: IndexList[rank]) raises:
         @parameter
         @always_inline
         fn kernel_launch(ctx: DeviceContext) raises:

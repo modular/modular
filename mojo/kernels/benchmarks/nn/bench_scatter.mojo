@@ -22,7 +22,9 @@ from utils.index import Index
 fn bench_scatter(inout m: Bench, spec: ScatterSpec) raises:
     @parameter
     @always_inline
-    fn bench_scatter_wrapper(inout b: Bencher, concrete_spec: ScatterSpec):
+    fn bench_scatter_wrapper(
+        inout b: Bencher, concrete_spec: ScatterSpec
+    ) raises:
         bench_scatter(b, concrete_spec)
 
     m.bench_with_input[ScatterSpec, bench_scatter_wrapper](

@@ -135,7 +135,7 @@ fn bench_conv(inout m: Bench, spec: ConvSpec) raises:
     @always_inline
     fn bench_conv_wrapper(
         inout b: Bencher, concrete_spec: ConvSpec[spec.static_info]
-    ):
+    ) raises:
         # Count the iteration to decide which input copy to use.
         var counter = 0
 

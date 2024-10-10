@@ -68,7 +68,7 @@ fn bench_matmul_spec(inout m: Bench, spec: MatmulSpec) raises:
 
 fn bench_matmul[
     static: MatmulSpecStatic
-](inout bencher: Bencher, spec: MatmulSpec[static]) capturing:
+](inout bencher: Bencher, spec: MatmulSpec[static]) raises capturing:
     alias a_type = spec.static_info.a_type
     alias b_type = spec.static_info.b_type
     alias c_type = spec.static_info.c_type
@@ -122,7 +122,7 @@ fn bench_matmul[
 
     @always_inline
     @parameter
-    fn bench_fn():
+    fn bench_fn() raises:
         matmul[
             transpose_b=False,
             b_packed=b_packed,

@@ -22,7 +22,7 @@ from utils.index import Index
 fn bench_gather(inout m: Bench, spec: GatherSpec) raises:
     @parameter
     @always_inline
-    fn bench_gather_wrapper(inout b: Bencher, concrete_spec: GatherSpec):
+    fn bench_gather_wrapper(inout b: Bencher, concrete_spec: GatherSpec) raises:
         bench_gather(b, concrete_spec)
 
     m.bench_with_input[GatherSpec, bench_gather_wrapper](

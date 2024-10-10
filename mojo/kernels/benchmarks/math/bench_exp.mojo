@@ -66,7 +66,7 @@ def bench_unary[
         input_ptr[i] = f
 
     @parameter
-    fn bench(inout b: Bencher, size: Int):
+    fn bench(inout b: Bencher, size: Int) raises:
         @parameter
         fn iter_fn():
             apply[func](
