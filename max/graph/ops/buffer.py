@@ -82,13 +82,21 @@ def buffer_store_slice(
     """
     in_chain = Graph.current._current_chain
 
-    starts, stops, steps, _ = _slice_and_output_tensors(destination, indices)  # type: ignore
+    starts, stops, steps, unsqueezed_shape, squeezed_shape = (
+        _slice_and_output_tensors(destination, indices)
+    )
+
+    if source.shape != squeezed_shape:
+        raise ValueError(
+            f"expected source to have shape {squeezed_shape}, but source had"
+            f" shape {source.shape}"
+        )
 
     output_chain = Graph.current._add_op(
         rmo.mo_mutable_store_slice,
         in_chain,
         destination,
-        source,
+        source.reshape(unsqueezed_shape),
         starts,
         stops,
         steps,

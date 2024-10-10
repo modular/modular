@@ -51,17 +51,17 @@ class TorchAttention(nn.Module):
         )
         cache = StaticCache(
             self.config,
-            max_batch_size=k_cache.shape[2],
+            max_batch_size=k_cache.shape[1],
             max_cache_len=k_cache.shape[0],
             device=torch.get_default_device(),
         )
 
-        # MAX KV cache has shape:
-        #   [start_pos, n_layers, batch_size, n_kv_heads, head_dim]
+        # MAX KV cache slice has shape:
+        #   [start_pos, batch_size, n_kv_heads, head_dim]
         # Torch cache stores it as:
         #   [max_batch_size, n_kv_heads, max_cache_len, head_dim] per layer
-        k_cache = k_cache[:, 0, ...].movedim(0, 2)
-        v_cache = v_cache[:, 0, ...].movedim(0, 2)
+        k_cache = k_cache.movedim(0, 2)
+        v_cache = v_cache.movedim(0, 2)
 
         cache.update(
             k_cache,
@@ -102,7 +102,6 @@ def _attention_layer(config: LlamaConfig):
         DType.float32,
         shape=[
             "start_pos",
-            1,
             "batch_size",
             n_kv_heads,
             head_dim,

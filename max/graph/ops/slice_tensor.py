@@ -6,7 +6,7 @@
 """Op implementation for slice_tensor."""
 
 import sys
-from typing import TYPE_CHECKING, Union
+from typing import TYPE_CHECKING, Union, Optional
 
 if sys.version_info >= (3, 10):
     from typing import TypeGuard
@@ -105,7 +105,7 @@ def _static_slice(n: int, index: slice) -> tuple[slice, DimLike]:
 
 def _slice_index_and_output(
     dim: Dim, index: SliceIndex
-) -> tuple[slice, DimLike]:
+) -> tuple[slice, Optional[DimLike]]:
     # These are values within an index which contains at least one
     # shape. The returned values will be used as `start, stop, step`
     # values in a mo.slice op. slices can therefore be forwarded
@@ -121,7 +121,7 @@ def _slice_index_and_output(
             if not -dim.dim <= index < dim.dim:
                 raise IndexError(f"Index {index} out of range of dim {dim.dim}")
         stop = int64_max if index == -1 else index + 1
-        return (slice(index, stop, 1), 1)
+        return (slice(index, stop, 1), None)
     elif isinstance(index, TensorValue):
         if index.type.num_elements() != 1:
             raise ValueError(
@@ -133,7 +133,7 @@ def _slice_index_and_output(
                 select(index == -1, int64_max, constant(0, DType.int64)),
                 1,
             ),
-            1,
+            None,
         )
     elif isinstance(index, slice):
         if index.start is None and index.stop is None and index.step is None:
@@ -210,7 +210,10 @@ def _slice_and_output_tensors(
         for dim, index in zip(x.shape, full_index)
     ]
     slices = [s for s, _ in slices_and_outputs]
-    output_shape = Shape(d for _, d in slices_and_outputs)
+    unsqueezed_shape = Shape(
+        d if d is not None else 1 for _, d in slices_and_outputs
+    )
+    squeezed_shape = Shape(d for _, d in slices_and_outputs if d is not None)
 
     # If type(dim,int), convert to an int constant TensorValue.
     def value(dim: Union[TensorValue, int]) -> TensorValue:
@@ -224,14 +227,15 @@ def _slice_and_output_tensors(
     stops = stack_scalars(value(s.stop) for s in slices)
     steps = stack_scalars(value(s.step) for s in slices)
 
-    output_type = TensorType(x.dtype, output_shape)
-
-    return starts, stops, steps, output_type
+    return starts, stops, steps, unsqueezed_shape, squeezed_shape
 
 
 def slice_tensor(x: TensorValue, indices: SliceIndices) -> TensorValue:
-    starts, stops, steps, output_type = _slice_and_output_tensors(x, indices)
+    starts, stops, steps, unsqueezed_shape, squeezed_shape = (
+        _slice_and_output_tensors(x, indices)
+    )
 
+    unsqueezed_type = TensorType(x.dtype, unsqueezed_shape)
     return Graph.current._add_op(
-        rmo.mo_slice, output_type.to_mlir(), x, starts, stops, steps
-    )[0].tensor
+        rmo.mo_slice, unsqueezed_type.to_mlir(), x, starts, stops, steps
+    )[0].tensor.reshape(squeezed_shape)
