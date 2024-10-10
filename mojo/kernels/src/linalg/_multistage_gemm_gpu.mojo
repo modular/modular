@@ -12,11 +12,12 @@ from buffer import NDBuffer
 from buffer.dimlist import Dim, DimList
 from gpu import WARP_SIZE, BlockIdx, GridDim, ThreadIdx, barrier, lane_id
 from gpu.host import Context, FuncAttribute, Function, Stream, synchronize
-from gpu.host.memory import _copy_device_to_host, _copy_host_to_device
 from gpu.memory import (
     async_copy_commit_group,
     async_copy_wait_group,
     external_memory,
+    Fill,
+    CacheEviction,
 )
 from gpu.mma import ld_matrix, mma
 from layout.int_tuple import UNKNOWN_VALUE, IntTuple
@@ -137,7 +138,11 @@ fn multistage_mma[
     @always_inline
     @parameter
     fn _copy_dram_to_sram_async_a[
-        tile_layout: Layout, masked: Bool = False
+        tile_layout: Layout, //,
+        *,
+        masked: Bool = False,
+        fill: Fill = Fill.NONE,
+        eviction_policy: CacheEviction = CacheEviction.EVICT_NORMAL,
     ](
         a_tile: LayoutTensor[
             a_type,
@@ -151,6 +156,8 @@ fn multistage_mma[
             thread_layout=async_copy_a_layout,
             swizzle=swizzle_a,
             masked=masked,
+            fill=fill,
+            eviction_policy=eviction_policy,
         ](
             a_tile.vectorize[1, simd_size](),
             a_iter[]
@@ -162,7 +169,11 @@ fn multistage_mma[
     @always_inline
     @parameter
     fn _copy_dram_to_sram_async_b[
-        tile_layout: Layout, masked: Bool = False
+        tile_layout: Layout, //,
+        *,
+        masked: Bool = False,
+        fill: Fill = Fill.NONE,
+        eviction_policy: CacheEviction = CacheEviction.EVICT_NORMAL,
     ](
         b_tile: LayoutTensor[
             b_type,
@@ -176,6 +187,8 @@ fn multistage_mma[
             thread_layout=async_copy_b_layout,
             swizzle=swizzle_b,
             masked=masked,
+            fill=fill,
+            eviction_policy=eviction_policy,
         ](
             b_tile.vectorize[1, simd_size](),
             b_iter[]
