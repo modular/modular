@@ -28,6 +28,6 @@ config.excludes.add("packages")
 config.excludes.add("autotune")
 
 tool_dirs = [config.modular_tools_dir]
-tools = ["mojo", "cuda-query"]
+tools = ["mojo", "gpu-query"]
 
 llvm_config.add_tool_substitutions(tools, tool_dirs)

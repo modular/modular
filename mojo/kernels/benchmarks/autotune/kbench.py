@@ -45,7 +45,7 @@ LINE = 80 * "-"
 DEFAULT_GPU_ARCH = []
 try:
     sh = run_shell_command(
-        ["cuda-query", "--arch"], check=False, capture_output=True
+        ["gpu-query", "--arch"], check=False, capture_output=True
     )
     output = sh.stdout.decode().strip()
     if "sm_" in output:
