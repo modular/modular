@@ -27,7 +27,7 @@ from gpu.host.memory import _free, _malloc
 from memory import UnsafePointer, memcpy
 from memory.memory import _malloc as _malloc_cpu
 from MOGGIntList import IntList
-from nn.concat import concat, variadic_list_to_vector
+from nn.concat import concat
 from register import *
 from runtime.asyncrt import MojoCallContextPtr
 from weights_registry import WeightsRegistry
@@ -617,18 +617,16 @@ fn mgp_buffer_concat[
     dummy_chain: Int,
     ctx: StateContext,
     output: NDBuffer[DType.uint8, 1],
+    inputs: StaticTuple[NDBuffer[DType.uint8, 1], *_],
     call_ctx: MojoCallContextPtr,
-    *variadic_ins: NDBuffer[DType.uint8, 1],
 ) raises -> Int:
-    var ins = variadic_list_to_vector(variadic_ins)
-
     if len(output) < 4096:
         concat[1, DType.uint8, True, bDevice, None](
-            output, 0, ins, context=call_ctx
+            output, 0, inputs, context=call_ctx
         )
     else:
         concat[1, DType.uint8, False, bDevice, None](
-            output, 0, ins, context=call_ctx
+            output, 0, inputs, context=call_ctx
         )
 
     return 0

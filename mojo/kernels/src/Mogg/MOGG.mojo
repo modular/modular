@@ -50,9 +50,8 @@ from nn._optional_param import OptionalParamInt
 from nn.activations import gelu, relu
 from nn.arange import arange, arange_shape
 from nn.arg_nonzero import arg_nonzero, arg_nonzero_shape
-from nn.concat import concat as _concat
+from nn.concat import concat as _concat, _concat_cpu
 from nn.concat import concat_shape as concat_from_list_shape
-from nn.concat import variadic_list_to_vector
 from nn.conv import ConvInfoStatic, conv_nhwc_direct, conv_shape
 from nn.conv import pack_filter as _pack_conv_filter
 from nn.conv import pack_filter_shape as _pack_conv_filter_shape
@@ -1169,11 +1168,10 @@ fn concat_from_list[
     output: NDBuffer[input_type, input_rank],
     ctx: MojoCallContextPtr,
 ) raises:
-    _concat[input_rank, input_type, single_thread_blocking_override](
+    _concat_cpu[input_rank, input_type, None, single_thread_blocking_override](
         output,
         int(normalize_neg_index(axis, input_rank)),
         inputs,
-        context=ctx,
     )
 
 
@@ -1204,13 +1202,6 @@ fn concat[
             rebind[SIMD[type, width]](value),
         )
 
-    # TODO: we don't really need to convert to vector anymore.
-    var ins = InlinedFixedVector[NDBuffer[type, rank]](inputs.size)
-
-    @parameter
-    for i in range(inputs.size):
-        ins.append(inputs[i])
-
     _concat[
         rank,
         type,
@@ -1219,7 +1210,7 @@ fn concat[
         OptionalReg[concat_elementwise_epilogue_type](
             epilogue_wrapper
         ) if lambdas_have_fusion else None,
-    ](output, int(normalize_neg_index(axis, rank)), ins, context=ctx)
+    ](output, int(normalize_neg_index(axis, rank)), inputs, context=ctx)
 
 
 @mogg_register("concat_shape")
