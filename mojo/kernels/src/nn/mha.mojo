@@ -367,9 +367,9 @@ fn flash_attention[
             alias kv_num_heads = k.get_kv_params().num_heads
             alias group = num_heads // kv_num_heads
 
-            # Attention impl only supports even sequence length. Need to pad the
-            # input outside the model.
-            if is_context_encoding and seq_len % 2 == 0:
+            # Attention mask tensor needs to be aligned to even length. This
+            # is not needed when computing mask on the fly.
+            if is_context_encoding and (seq_len % 2 == 0 or not add_attn_mask):
                 # Choose matmul parameters based on dtype.
                 alias BM = 32 if q.type is DType.float32 else 64
                 alias BN = depth

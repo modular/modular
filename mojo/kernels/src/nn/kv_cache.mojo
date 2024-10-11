@@ -2004,39 +2004,14 @@ fn _flash_attention_kv_cache_causal_mask_gpu[
     q: NDBuffer[type, 4, *_],
     k: cache_t,
     v: cache_t,
-    mask: NDBuffer[type, *_],
     valid_lengths: NDBuffer[DType.uint32, 1],
     scale: Float32,
     output: NDBuffer[type, 4, *_],
     context: DeviceContext,
 ) raises:
-    alias wrapped_mask_rank = mask.rank if mask.rank == 4 else 3
-    var mask_nd: NDBuffer[
-        type,
-        wrapped_mask_rank,
-        DimList.create_unknown[wrapped_mask_rank](),
-    ]
-
-    @parameter
-    if mask.rank == 2:
-        mask_nd = NDBuffer[
-            type,
-            wrapped_mask_rank,
-            DimList.create_unknown[wrapped_mask_rank](),
-        ](
-            mask.data,
-            IndexList[wrapped_mask_rank](
-                q.dim[0](), mask.dim[0](), mask.dim[1]()
-            ),
-        )
-    else:
-        mask_nd = rebind[
-            NDBuffer[
-                type,
-                wrapped_mask_rank,
-                DimList.create_unknown[wrapped_mask_rank](),
-            ]
-        ](mask)
+    var mask_nd = NDBuffer[type, 4, DimList.create_unknown[4]()](
+        UnsafePointer[Scalar[type]](), IndexList[4]()
+    )
 
     # GPU flash attention kernel gets the cache length from the k tensor shape
     # TODO remove this an instead pass in explicit KVCache lengths to the GPU kernel.
