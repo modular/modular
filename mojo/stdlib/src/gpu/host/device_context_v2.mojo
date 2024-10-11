@@ -304,6 +304,27 @@ struct DeviceFunctionV2[
         )
         self._handle = result
 
+    fn _copy_to_constant_memory(
+        self, borrowed mapping: ConstantMemoryMapping
+    ) raises:
+        # const char *AsyncRT_DeviceFunction_copyToConstantMemory(const DeviceFunction *func, const char *name,
+        #                                                         const void *data, size_t byte_size)
+        _checked(
+            external_call[
+                "AsyncRT_DeviceFunction_copyToConstantMemory",
+                _CharPtr,
+                _DeviceFunctionPtr,
+                _CharPtr,
+                _VoidPtr,
+                _SizeT,
+            ](
+                self._handle,
+                mapping.name.unsafe_cstr_ptr().bitcast[UInt8](),
+                mapping.ptr,
+                mapping.byte_count,
+            )
+        )
+
     fn _call_with_pack[
         *Ts: AnyType
     ](
@@ -352,10 +373,9 @@ struct DeviceFunctionV2[
                 "DeviceFunctionV2._call_with_pack: attributes"
             ]()
 
-        if len(constant_memory) != 0:
-            not_implemented_yet[
-                "DeviceFunctionV2._call_with_pack: constant_memory"
-            ]()
+        if constant_memory:
+            for i in range(len(constant_memory)):
+                self._copy_to_constant_memory(constant_memory[i])
 
         # const char *AsyncRT_DeviceContext_enqueueFunctionDirect(const DeviceContext *ctx, const DeviceFunction *func,
         #                                                         uint32_t gridX, uint32_t gridY, uint32_t gridZ,
