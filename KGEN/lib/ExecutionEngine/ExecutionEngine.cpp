@@ -67,12 +67,25 @@ setUnixPlatform(llvm::orc::JITDylib &platformStdlib,
   if (orcRuntimeArchiveGenerator.isError())
     return orcRuntimeArchiveGenerator.takeError();
 
-  auto platformOr = toModularErrorOr(
-      T::Create(session, cast<llvm::orc::ObjectLinkingLayer>(objLinkingLayer),
-                platformStdlib, std::move(*orcRuntimeArchiveGenerator)));
-  if (platformOr.isError())
-    return platformOr.takeError();
-  session.setPlatform(std::move(*platformOr));
+  // MachOPlatform::Create() does not require an ExecutionSession arg, but
+  // the other platforms do so we need a compile-time branch on the platform
+  // factory here.
+  if constexpr (std::is_same<T, llvm::orc::MachOPlatform>::value) {
+    auto platformOr = toModularErrorOr(
+        T::Create(cast<llvm::orc::ObjectLinkingLayer>(objLinkingLayer),
+                  platformStdlib, std::move(*orcRuntimeArchiveGenerator)));
+    if (platformOr.isError())
+      return platformOr.takeError();
+    session.setPlatform(std::move(*platformOr));
+  } else {
+    auto platformOr = toModularErrorOr(
+        T::Create(session, cast<llvm::orc::ObjectLinkingLayer>(objLinkingLayer),
+                  platformStdlib, std::move(*orcRuntimeArchiveGenerator)));
+    if (platformOr.isError())
+      return platformOr.takeError();
+    session.setPlatform(std::move(*platformOr));
+  }
+
   return success();
 }
 

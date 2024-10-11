@@ -143,7 +143,7 @@ MetadataConverter::convertAttrImpl(DISubprogramAttr attr) {
       attr.getName().encode(), attr.getLinkageName(),
       convertAttr(attr.getFile()), attr.getLine(), attr.getScopeLine(),
       static_cast<LLVM::DISubprogramFlags>(attr.getSubprogramFlags()),
-      convertType(attr.getType()), /*retainedNodes=*/{});
+      convertType(attr.getType()), /*retainedNodes=*/{}, /*annotations=*/{});
 }
 
 LocationAttr MetadataConverter::convertAttrImpl(DICallLocAttr attr) {
