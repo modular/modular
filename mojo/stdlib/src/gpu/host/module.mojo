@@ -385,6 +385,7 @@ struct Module:
         """
 
         alias debug_level = env_get_string["DEBUG_LEVEL", "none"]()
+        alias optimization_level = env_get_int["OPTIMIZATION_LEVEL", 4]()
         self.cuda_dll = cuda_dll
         self.module = _ModuleHandle()
         if (
@@ -392,6 +393,7 @@ struct Module:
             or max_registers
             or threads_per_block
             or cache_mode
+            or optimization_level < 3
         ):
             alias max_num_options = 10
             var num_options = 0
@@ -416,9 +418,9 @@ struct Module:
             # important setting, though, is to set optimization level to 0 when
             # ours is at 0.
             @parameter
-            if env_get_int["OPTIMIZATION_LEVEL", 4]() == 0:
+            if optimization_level < 3:
                 opts[num_options] = JitOptions.OPTIMIZATION_LEVEL
-                option_vals[num_options] = env_get_int["OPTIMIZATION_LEVEL"]()
+                option_vals[num_options] = optimization_level
                 num_options += 1
 
             if max_registers:
