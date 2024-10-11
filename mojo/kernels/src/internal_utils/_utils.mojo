@@ -54,7 +54,7 @@ struct HostNDBuffer[
     @always_inline
     fn __init__(
         inout self,
-        dynamic_shape: IndexList[rank] = _make_tuple[rank](shape),
+        dynamic_shape: IndexList[rank, *_] = _make_tuple[rank](shape),
     ):
         self.tensor = NDBuffer[type, rank, shape](
             UnsafePointer[Scalar[type]].alloc(product(dynamic_shape, rank)),
