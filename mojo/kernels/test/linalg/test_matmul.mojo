@@ -7,7 +7,7 @@
 # Checks x86 int8 matmul C = A*B with prepacked B
 #
 # ===----------------------------------------------------------------------=== #
-# RUN: %bare-mojo %s
+# RUN: %mojo %s
 
 from sys.info import has_avx2, has_neon_int8_matmul, os_is_macos
 

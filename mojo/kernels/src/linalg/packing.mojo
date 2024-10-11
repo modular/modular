@@ -641,10 +641,6 @@ fn pack_b[
         var n_out = dst.dim[1]()
 
         debug_assert(
-            k_out % tile_k == 0,
-            "K dimension of output must be padded to tile_k",
-        )
-        debug_assert(
             n_out % tile_n == 0,
             "N dimension of output must be padded to tile_n",
         )
@@ -689,10 +685,6 @@ fn pack_b[
         var k_out_t = dst.dim[0]()
         var n_out_t = dst.dim[1]()
 
-        debug_assert(
-            k_out_t % tile_k == 0,
-            "K dimension of output must be padded to tile_k",
-        )
         debug_assert(
             n_out_t % tile_n == 0,
             "N dimension of output must be padded to tile_n",
