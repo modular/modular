@@ -266,7 +266,8 @@ fn flash_attention[
 @always_inline
 fn flash_attention[
     rank: Int,
-    cache_t: KVCacheT, //,
+    cache_t: KVCacheT,
+    mask_t: MHAMask, //,
     add_attn_mask: Bool = True,
     target: StringLiteral = "cuda",
     use_tensor_core: Bool = True,
@@ -276,6 +277,7 @@ fn flash_attention[
     k: cache_t,
     v: cache_t,
     mask: NDBuffer,
+    mask_functor: mask_t,
     valid_length: NDBuffer[DType.uint32, 1],
     scale: Float32,
     ctx: DeviceContext,
@@ -384,6 +386,7 @@ fn flash_attention[
                         __type_of(k),
                         mask.type,
                         output.type,
+                        mask_t,
                         BM=BM,
                         BN=BN,
                         BK=BK,
@@ -394,6 +397,7 @@ fn flash_attention[
                         num_threads=num_threads,
                         num_pipeline_stages=4,
                         group=group,
+                        use_mask_tensor=add_attn_mask,
                     ]
                 ](
                     # TODO: Avoid hard coding shared memory needed. KERN-747
@@ -412,6 +416,7 @@ fn flash_attention[
                     batch_size,
                     seq_len,
                     valid_length,
+                    mask_functor,
                     grid_dim=(
                         ceildiv(seq_len, BM),
                         num_heads,
@@ -430,7 +435,6 @@ fn flash_attention[
                 alias WN = 32
                 # num warps in M and N, multipled by warp size.
                 alias num_threads = (BM // WM) * (BN // WN) * WARP_SIZE
-
                 var func = ctx.compile_function[
                     mha_decoding[
                         mask.rank,
@@ -438,6 +442,7 @@ fn flash_attention[
                         __type_of(k),
                         mask.type,
                         output.type,
+                        mask_t,
                         BM=BM,
                         BN=BN,
                         BK=BK,
@@ -448,6 +453,7 @@ fn flash_attention[
                         num_threads=num_threads,
                         num_pipeline_stages=4,
                         group=group,
+                        use_mask_tensor=add_attn_mask,
                     ]
                 ](
                     # TODO: Avoid hard coding shared memory needed.
@@ -467,6 +473,7 @@ fn flash_attention[
                     batch_size,
                     max_cache_valid_length,
                     valid_length,
+                    mask_functor,
                     grid_dim=(1, num_heads, batch_size),
                     block_dim=(num_threads, 1, 1),
                     shared_mem_bytes=80 * 1024,
@@ -678,6 +685,7 @@ fn flash_attention[
                         v.type,
                         mask.type,
                         output.type,
+                        mask_t,
                         BM=BM,
                         BN=BN,
                         BK=BK,
@@ -688,6 +696,7 @@ fn flash_attention[
                         num_threads=num_threads,
                         num_pipeline_stages=4,
                         group=group,
+                        use_mask_tensor=add_attn_mask,
                     ]
                 ](
                     # TODO: Avoid hard coding shared memory needed.
@@ -706,6 +715,7 @@ fn flash_attention[
                     scale,
                     batch_size,
                     num_keys,
+                    mask_functor,
                     grid_dim=(1, num_heads, batch_size),
                     block_dim=(num_threads, 1, 1),
                     shared_mem_bytes=80 * 1024,
@@ -853,6 +863,7 @@ fn mha[
     cache_t: KVCacheT,
     mask_type: DType,
     output_type: DType,
+    mask_t: MHAMask,
     BM: Int,  # number of queries per block
     BN: Int,  # number of keys per block
     BK: Int,  # tile size in depth dimension
@@ -863,6 +874,7 @@ fn mha[
     num_threads: Int,
     num_pipeline_stages: Int,
     group: Int = 1,
+    use_mask_tensor: Bool = True,
 ](
     q_ptr: UnsafePointer[Scalar[q_type]],
     k: cache_t,
@@ -873,9 +885,10 @@ fn mha[
     batch_size: Int,
     max_seq_len: Int,  # max query length (i.e., padded query)
     valid_length: NDBuffer[DType.uint32, 1],  # valid length per batch
+    mask: mask_t,
 ):
     var batch_idx = BlockIdx.z()
-    var seq_len: Int = valid_length[batch_idx].__int__()
+    var seq_len: Int = int(valid_length[batch_idx])
     var q_batch_offset = depth * num_heads * max_seq_len * batch_idx
     var mask_batch_offset = batch_idx * max_seq_len * max_seq_len * (
         num_heads if mask_rank == 4 else 1
@@ -903,6 +916,7 @@ fn mha[
         num_threads=num_threads,
         num_pipeline_stages=num_pipeline_stages,
         group=group,
+        use_mask_tensor=use_mask_tensor,
     ](
         q_ptr.offset(q_batch_offset),
         k_ptr,
@@ -912,7 +926,7 @@ fn mha[
         scale,
         key_length,
         max_seq_len,
-        NullMask(),
+        mask,
     )
 
 
@@ -1520,6 +1534,7 @@ fn mha_decoding[
     cache_t: KVCacheT,
     mask_type: DType,
     output_type: DType,
+    mask_t: MHAMask,
     BM: UInt,  # number of queries per block
     BN: UInt,  # number of keys per block
     BK: UInt,  # tile size in depth dimension
@@ -1530,6 +1545,7 @@ fn mha_decoding[
     num_threads: UInt,
     num_pipeline_stages: UInt,
     group: UInt = 1,
+    use_mask_tensor: Bool = True,
 ](
     q_ptr: UnsafePointer[Scalar[q_type]],
     k: cache_t,
@@ -1540,12 +1556,11 @@ fn mha_decoding[
     batch_size: Int,
     max_cache_valid_length: Int,  # longest KV cache entry
     valid_length: NDBuffer[DType.uint32, 1],  # valid length per batch
+    mask: mask_t,
 ):
     var batch_idx = BlockIdx.z()
 
-    var seq_len: Int = valid_length[
-        batch_idx
-    ].__int__()  # Always 1 for decoding
+    var seq_len: Int = int(valid_length[batch_idx])  # Always 1 for decoding
     var num_keys = seq_len + k.cache_length(batch_idx)
 
     var q_batch_offset = depth * num_heads * batch_idx
@@ -1579,6 +1594,7 @@ fn mha_decoding[
         num_threads=num_threads,
         num_pipeline_stages=num_pipeline_stages,
         group=group,
+        use_mask_tensor=use_mask_tensor,
     ](
         q_ptr.offset(q_batch_offset),
         k_ptr,
@@ -1588,6 +1604,7 @@ fn mha_decoding[
         scale,
         num_keys,
         max_cache_valid_length,
+        mask,
     )
 
 
@@ -1599,6 +1616,7 @@ fn mha_decoding[
     v_type: DType,
     mask_type: DType,
     output_type: DType,
+    mask_t: MHAMask,
     BM: UInt,  # number of queries per block
     BN: UInt,  # number of keys per block
     BK: UInt,  # tile size in depth dimension
@@ -1609,6 +1627,7 @@ fn mha_decoding[
     num_threads: UInt,
     num_pipeline_stages: UInt,
     group: UInt = 1,
+    use_mask_tensor: Bool = True,
 ](
     q_ptr: UnsafePointer[Scalar[q_type]],
     k_ptr: UnsafePointer[Scalar[k_type]],
@@ -1618,6 +1637,7 @@ fn mha_decoding[
     scale: Float32,
     batch_size: Int,
     num_keys: Int,
+    mask: mask_t,
 ):
     var batch_idx = BlockIdx.z()
     var q_batch_offset = depth * num_heads * batch_idx
@@ -1638,6 +1658,7 @@ fn mha_decoding[
         num_threads=num_threads,
         num_pipeline_stages=num_pipeline_stages,
         group=group,
+        use_mask_tensor=use_mask_tensor,
     ](
         q_ptr.offset(q_batch_offset),
         k_ptr.offset(kv_batch_offset),
@@ -1647,6 +1668,7 @@ fn mha_decoding[
         scale,
         num_keys,
         num_keys,
+        mask,
     )
 
 
@@ -1655,10 +1677,12 @@ fn scale_and_mask_helper[
     p_type: DType,
     p_layout: Layout,
     mask_type: DType,
+    mask_t: MHAMask,
     num_n_mmas: Int,
     WN: Int,
     MMA_N: Int,
     simd_width: Int,
+    use_mask_tensor: Bool = True,
 ](
     p_reg_tile: LayoutTensor[
         p_type, p_layout, address_space = AddressSpace.LOCAL
@@ -1669,6 +1693,8 @@ fn scale_and_mask_helper[
     bound: UInt,
     lane: UInt,
     warp: UInt,
+    mask: mask_t,
+    kv_tile_start_row: Int,
 ):
     # Apply mask and scale to mma result. Only the first row (lane 0-3) has
     # meaningful data, other fragments are zero. The mask is an 1D vector.
@@ -1679,6 +1705,7 @@ fn scale_and_mask_helper[
     if lane >= 4:
         return
 
+    var batch_cache_valid_length = num_keys - 1
     var warp_offset = warp * WN
 
     @parameter
@@ -1693,14 +1720,40 @@ fn scale_and_mask_helper[
         var mask_frag_ptr = mask_warp_ptr + frag_offset
 
         @parameter
-        for i in range(simd_width):
-            if key_offset + frag_lane_col + i < bound:
-                p_reg_tile[n_mma, i] = (
-                    p_reg_tile[n_mma, i] * scale.cast[p_type]()
-                    + mask_frag_ptr[frag_lane_col + i].cast[p_type]()
+        if use_mask_tensor:
+
+            @parameter
+            for i in range(simd_width):
+                if key_offset + frag_lane_col + i < bound:
+                    p_reg_tile[n_mma, i] = (
+                        p_reg_tile[n_mma, i] * scale.cast[p_type]()
+                        + mask_frag_ptr[frag_lane_col + i].cast[p_type]()
+                    )
+                else:
+                    p_reg_tile[n_mma, i] = min_or_neg_inf[p_type]()
+        else:
+
+            @parameter
+            for i in range(simd_width):
+                var score_row = batch_cache_valid_length
+                var score_col = kv_tile_start_row + key_offset + frag_lane_col + i
+                p_reg_tile[n_mma, i] = mask.mask(
+                    Index(
+                        int(BlockIdx.z()),
+                        int(BlockIdx.y()),
+                        int(score_row),
+                        int(score_col),
+                    ),
+                    p_reg_tile[n_mma, i] * scale.cast[p_type](),
                 )
-            else:
-                p_reg_tile[n_mma, i] = min_or_neg_inf[p_type]()
+                p_reg_tile[n_mma, i] = _kernel_mask(
+                    Index(score_row, score_col),
+                    Index(
+                        batch_cache_valid_length + 1,
+                        batch_cache_valid_length + 1,
+                    ),
+                    p_reg_tile[n_mma, i],
+                )
 
 
 fn mha_decoding_single_batch[
@@ -1710,6 +1763,7 @@ fn mha_decoding_single_batch[
     v_type: DType,
     mask_type: DType,
     output_type: DType,
+    mask_t: MHAMask,
     *,
     BM: UInt,  # number of queries per block
     BN: UInt,  # number of keys per block
@@ -1721,6 +1775,7 @@ fn mha_decoding_single_batch[
     num_threads: UInt,
     num_pipeline_stages: UInt,
     group: UInt = 1,
+    use_mask_tensor: Bool = True,
 ](
     q_ptr: UnsafePointer[Scalar[q_type]],
     k_ptr: UnsafePointer[Scalar[k_type]],
@@ -1730,6 +1785,7 @@ fn mha_decoding_single_batch[
     scale: Float32,
     num_keys: UInt,
     max_cache_valid_length: UInt,  # longest KV cache entry
+    mask: mask_t,
 ):
     """Flash attention v2 algorithm."""
     constrained[q_type == k_type and k_type == v_type]()
@@ -1930,6 +1986,7 @@ fn mha_decoding_single_batch[
             WN=WN,
             MMA_N=MMA_N,
             simd_width=p_frag_simdwidth,
+            use_mask_tensor=use_mask_tensor,
         ](
             p_reg_tile,
             mask_warp_ptr,
@@ -1938,6 +1995,8 @@ fn mha_decoding_single_batch[
             kv_tile_num_rows,
             lane,
             warp_id,
+            mask,
+            kv_tile_start_row,
         )
         # Increment mask to next BM x BN block.
         mask_warp_ptr += BN
@@ -2183,7 +2242,7 @@ fn _bmm0_bs[
     var head: UInt
     batch, head = divmod(batch_head, UInt(num_heads))
 
-    var cur_query_len = valid_length[batch].__int__()
+    var cur_query_len = int(valid_length[batch])
 
     if x >= max_prompt_len + max_cache_size or y >= max_prompt_len:
         return
@@ -2250,7 +2309,7 @@ fn _bmm1_bs[
     var head: UInt
     batch, head = divmod(batch_head, UInt(num_heads))
 
-    var cur_query_len = valid_length[batch].__int__()
+    var cur_query_len = int(valid_length[batch])
 
     if x >= depth or y >= cur_query_len:
         return

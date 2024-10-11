@@ -29,6 +29,7 @@ from memory import UnsafePointer, memcpy
 from nn.flash_attention import flash_attention as cpu_flash_attention
 from nn.fused_qk_rope import fused_qk_rope
 from nn.mha import flash_attention as gpu_flash_attention
+from nn.mha_mask import NullMask, CausalMask
 from register import mogg_register
 from runtime.asyncrt import MojoCallContextPtr
 from runtime.tracing import Trace, TraceLevel
@@ -1992,6 +1993,71 @@ fn _flash_attention_kv_cache_cpu[
     )
 
 
+# TODO: Change this as needed when plumbed with pipelines.
+#       This is a copy of _flash_attention_kv_cache_gpu with the difference that
+#       it calls gpu_flash_attention with the option to use mask tensor and
+#       passing CausalMask().
+@always_inline
+fn _flash_attention_kv_cache_causal_mask_gpu[
+    type: DType, cache_t: KVCacheT, //, *, target: StringLiteral
+](
+    q: NDBuffer[type, 4, *_],
+    k: cache_t,
+    v: cache_t,
+    mask: NDBuffer[type, *_],
+    valid_lengths: NDBuffer[DType.uint32, 1],
+    scale: Float32,
+    output: NDBuffer[type, 4, *_],
+    context: DeviceContext,
+) raises:
+    alias wrapped_mask_rank = mask.rank if mask.rank == 4 else 3
+    var mask_nd: NDBuffer[
+        type,
+        wrapped_mask_rank,
+        DimList.create_unknown[wrapped_mask_rank](),
+    ]
+
+    @parameter
+    if mask.rank == 2:
+        mask_nd = NDBuffer[
+            type,
+            wrapped_mask_rank,
+            DimList.create_unknown[wrapped_mask_rank](),
+        ](
+            mask.data,
+            IndexList[wrapped_mask_rank](
+                q.dim[0](), mask.dim[0](), mask.dim[1]()
+            ),
+        )
+    else:
+        mask_nd = rebind[
+            NDBuffer[
+                type,
+                wrapped_mask_rank,
+                DimList.create_unknown[wrapped_mask_rank](),
+            ]
+        ](mask)
+
+    # GPU flash attention kernel gets the cache length from the k tensor shape
+    # TODO remove this an instead pass in explicit KVCache lengths to the GPU kernel.
+    # KERN-725
+    gpu_flash_attention[
+        add_attn_mask=False,
+        use_tensor_core=True,
+        target=target,
+    ](
+        output,
+        q,
+        k,
+        v,
+        mask_nd,
+        CausalMask(),
+        valid_lengths,
+        scale,
+        context,
+    )
+
+
 @always_inline
 fn _flash_attention_kv_cache_gpu[
     type: DType, cache_t: KVCacheT, //, *, target: StringLiteral
@@ -2047,6 +2113,7 @@ fn _flash_attention_kv_cache_gpu[
             k,
             v,
             mask_nd,
+            NullMask(),
             valid_lengths,
             scale,
             context,
