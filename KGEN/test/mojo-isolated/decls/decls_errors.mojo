@@ -136,6 +136,8 @@ fn noDefaultVariadics(*a: Int = 42): pass
 # expected-note @+1 {{function declared here}}
 fn exampleVariadic(a: FloatLiteral, *b: Int): pass
 # expected-note @+1 {{function declared here}}
+fn exampleVariadicAndKeyword(*a: Int, b: Int): pass
+# expected-note @+1 {{function declared here}}
 fn exampleByRefVariadic(a: FloatLiteral, inout *b: Int): pass
 # expected-note @+1 {{function declared here}}
 fn parameterizedVariadic[T: __mlir_type.`!kgen.type`](*args: T): pass
@@ -162,6 +164,8 @@ fn badCalls(arg: Int):
   exampleVariadic(1.0, 1.0)
   # expected-error @+1 {{argument #3 cannot be converted from 'FloatLiteral' to 'Int'}}
   exampleVariadic(1.0, 1, 2, 1.0)
+  # expected-error @+1 {{argument #3 cannot be converted from 'FloatLiteral' to 'Int'}}
+  exampleVariadicAndKeyword(1, 2, 3, b=4.0)
 
   var x: Int
   var y: FloatLiteral

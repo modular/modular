@@ -962,8 +962,8 @@ OverloadFitness OverloadFitness::evaluate(LITSignatureType signature,
   size_t posOperandIdx = 0;
 
   // Type check a single argument.  When operandIdx is -1, the operand number is
-  // looked up from the operand list by name.
-  auto checkAnOperand = [&](const OperandValue &operand, ssize_t operandIdx,
+  // looked up from the operand list by name, and the operandIdx is assigned.
+  auto checkAnOperand = [&](const OperandValue &operand, ssize_t &operandIdx,
                             ArgConvention expectedConvention,
                             ASTType expectedType) {
     // If the caller didn't know the operand index, recompute it.  The operand
@@ -1014,11 +1014,11 @@ OverloadFitness OverloadFitness::evaluate(LITSignatureType signature,
         // happens to just work, until we rectify this. Right now the reason the
         // value type cannot be a reference type is because `Reference` does not
         // (and in fact cannot) conform to `CollectionElement`.
-        auto [kind, ty] =
-            checkAnOperand(operand, /*findByName=*/-1,
-                           ArgConvention::OwnedInReg, expectedType);
+        ssize_t operandIdx = -1;
+        auto [kind, ty] = checkAnOperand(
+            operand, operandIdx, ArgConvention::OwnedInReg, expectedType);
         if (kind != kValidType)
-          return emitDiagFor.argTypeMismatch(kind, ty, operand, expectedArgIdx);
+          return emitDiagFor.argTypeMismatch(kind, ty, operand, operandIdx);
       }
       // This comes after all the positionals.
       posOperandIdx = numOperands;
@@ -1052,11 +1052,12 @@ OverloadFitness OverloadFitness::evaluate(LITSignatureType signature,
       // Check if the argument was passed as a keyword operand.
       if (const OperandValue *kwOperandOr = operands.findKwArg(argName)) {
         // If we found a keyword argument, we check it normally.
-        auto [kind, ty] = checkAnOperand(*kwOperandOr, /*findByName=*/-1,
+        ssize_t operandIdx = -1;
+        auto [kind, ty] = checkAnOperand(*kwOperandOr, operandIdx,
                                          expectedConvention, expectedType);
         if (kind != kValidType) {
           return emitDiagFor.argTypeMismatch(kind, ty, *kwOperandOr,
-                                             expectedArgIdx);
+                                             operandIdx);
         }
         continue;
       }
@@ -1074,8 +1075,9 @@ OverloadFitness OverloadFitness::evaluate(LITSignatureType signature,
         [&](ASTType expectedType,
             ArgConvention conv) -> std::optional<InflightDiag> {
       auto &operand = operands[posOperandIdx];
+      ssize_t localOperandIdx = posOperandIdx;
       auto [kind, ty] =
-          checkAnOperand(operand, posOperandIdx, conv, expectedType);
+          checkAnOperand(operand, localOperandIdx, conv, expectedType);
       if (kind != kValidType)
         return emitDiagFor.argTypeMismatch(kind, ty, operand, posOperandIdx);
       ++posOperandIdx;
