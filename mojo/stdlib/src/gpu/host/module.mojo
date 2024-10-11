@@ -414,9 +414,17 @@ struct Module:
                 num_options += 1
 
             # Note that NVidia's optimization level goes up to (and defaults to)
-            # 4, while ours only goes up to (and defaults to) 3.  The most
-            # important setting, though, is to set optimization level to 0 when
-            # ours is at 0.
+            # 4, while ours only goes up to (and defaults to) 3.
+            # Note that the PTX compiler complains if debug_level=full and
+            # optimization level is something other than 0 or default.
+            constrained[
+                not (debug_level == "full" and optimization_level in (1, 2)),
+                (
+                    "PTX backend with debug_level=full must have"
+                    " optimization_level equal to zero or 3"
+                ),
+            ]()
+
             @parameter
             if optimization_level < 3:
                 opts[num_options] = JitOptions.OPTIMIZATION_LEVEL
