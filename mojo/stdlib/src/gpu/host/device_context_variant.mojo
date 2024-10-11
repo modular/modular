@@ -13,10 +13,9 @@ from gpu.host._compile import _get_nvptx_target
 # C++ backed implementation).
 # We don't have polymorphism in Mojo (yet!) so we need to wrap each method.
 
-# RUNP-457: Revert back to V1 directly for now
-alias DeviceFunction = DeviceFunctionV1
-alias DeviceBuffer = DeviceBufferV1
-alias DeviceContext = DeviceContextV1
+alias DeviceFunction = DeviceFunctionVariant
+alias DeviceBuffer = DeviceBufferVariant
+alias DeviceContext = DeviceContextVariant
 
 
 # Runtime switch to select Device context V1 (mojo) or V2 (C++)
