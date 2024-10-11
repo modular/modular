@@ -10,7 +10,7 @@ import pytest
 import torch
 from conftest import modular_graph_test
 from max.dtype import DType
-from max.graph import Graph, TensorType
+from max.graph import BufferType, Graph, TensorType, TensorValue, ops
 from nn import Attention, Linear, RotaryEmbedding
 from torch import nn
 from transformers import StaticCache
@@ -51,17 +51,17 @@ class TorchAttention(nn.Module):
         )
         cache = StaticCache(
             self.config,
-            max_batch_size=k_cache.shape[1],
+            max_batch_size=k_cache.shape[2],
             max_cache_len=k_cache.shape[0],
             device=torch.get_default_device(),
         )
 
-        # MAX KV cache slice has shape:
-        #   [start_pos, batch_size, n_kv_heads, head_dim]
+        # MAX KV cache has shape:
+        #   [max_cache_len, n_layers, batch_size, n_kv_heads, head_dim]
         # Torch cache stores it as:
         #   [max_batch_size, n_kv_heads, max_cache_len, head_dim] per layer
-        k_cache = k_cache.movedim(0, 2)
-        v_cache = v_cache.movedim(0, 2)
+        k_cache = k_cache[:, 0].movedim(0, 2)
+        v_cache = v_cache[:, 0].movedim(0, 2)
 
         cache.update(
             k_cache,
@@ -85,7 +85,7 @@ class TorchAttention(nn.Module):
         )[0]
 
 
-def _attention_layer(config: LlamaConfig):
+def _attention_layer(config: LlamaConfig, start_pos: int):
     dim = config.hidden_size
     n_heads = config.num_attention_heads
     n_kv_heads = config.num_key_value_heads
@@ -98,10 +98,11 @@ def _attention_layer(config: LlamaConfig):
     attn_mask_type = TensorType(
         DType.float32, ["batch_size", "seq_len", "post_seq_len"]
     )
-    cache_type = TensorType(
+    cache_type = BufferType(
         DType.float32,
         shape=[
-            "start_pos",
+            max_seq_len,
+            1,
             "batch_size",
             n_kv_heads,
             head_dim,
@@ -120,6 +121,7 @@ def _attention_layer(config: LlamaConfig):
         input_types=attn_input_types + weight_types,
     )
 
+    layer_index = 0
     with graph:
         x, attn_mask, k_cache, v_cache, wq, wk, wv, wo = graph.inputs
         graph.output(
@@ -139,7 +141,14 @@ def _attention_layer(config: LlamaConfig):
                     max_seq_len=max_seq_len,
                     rope_scaling=None,
                 ),
-            )(x, attn_mask, k_cache, v_cache)[0]
+            )(
+                x,
+                attn_mask,
+                k_cache,
+                v_cache,
+                ops.constant(start_pos, DType.int64),
+                layer_index,
+            )
         )
     return graph
 
@@ -162,14 +171,13 @@ def test_attention(session, start_pos, seq_len):
     torch_attention = TorchAttention(config, start_pos, seq_len)
 
     # Set up max graph attention layer.
-    layer_graph = _attention_layer(config)
+    layer_graph = _attention_layer(config, start_pos)
 
     # This is set so it fits a float type with width of 32.
     @modular_graph_test(
         session,
         layer_graph,
         static_dims={
-            "start_pos": start_pos,
             "seq_len": seq_len,
             "post_seq_len": start_pos + seq_len,
         },

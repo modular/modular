@@ -12,7 +12,7 @@ import torch
 from conftest import modular_graph_test
 from hypothesis import assume
 from max.dtype import DType
-from max.graph import Dim, Graph, TensorType, TensorValueLike
+from max.graph import Dim, Graph, TensorType, TensorValue, TensorValueLike
 from nn import RotaryEmbedding
 
 MAX_SEQ_LEN = 2**16
@@ -122,7 +122,7 @@ def test_rope(session, input_type: TensorType, start_pos: Dim):
     ) as graph:
         x, freqs_cis, cache = graph.inputs
         freqs_cis = freqs_cis.reshape((MAX_SEQ_LEN, -1, 2))  # as complex
-        start_pos = cache.shape[0]
+        start_pos = TensorValue(cache.shape[0])
         seq_len = x.shape[1]
         rope = CannedRotaryEmbedding(freqs_cis)
         graph.output(rope(x, start_pos, seq_len))
