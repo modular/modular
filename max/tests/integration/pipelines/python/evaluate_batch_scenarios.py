@@ -349,7 +349,8 @@ async def run_batch_scenario(
 @click.option(
     "--prompt",
     type=str,
-    default="I believe the meaning of life is",
+    multiple=True,
+    default=["I believe the meaning of life is"],
     help="The text prompt to use for further generation.",
 )
 @click.option(
@@ -393,7 +394,7 @@ async def run_batch_scenario(
     ),
 )
 def main(
-    prompt: str,
+    prompt: List[str],
     prompt_count: int,
     use_gpu: bool,
     model_name: str,
@@ -472,7 +473,6 @@ def main(
     )
 
     logger.info("Starting batch demo")
-    prompts = [prompt.format(i + 1) for i in range(prompt_count)]
     requests: list = []
 
     if scenario == "A":
@@ -486,7 +486,7 @@ def main(
 
     asyncio.run(
         run_batch_scenario(
-            model, prompts, batch_mode, batch_max_size, output_path, requests
+            model, prompt, batch_mode, batch_max_size, output_path, requests
         )
     )
 
