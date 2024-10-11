@@ -339,11 +339,12 @@ fn multistage_mma[
 
                 @parameter
                 if k_mma + 2 == num_k_mmas:
-                    var prefetch_tile_id = k_tile_id + num_pipeline_stages - 1
+                    alias prefetch_tile_id = k_tile_id + num_pipeline_stages - 1
 
                     # Prefetch one k tile (if valid) from global memory to current
                     # shared memory buffer.
-                    if prefetch_tile_id < num_iters:
+                    @parameter
+                    if prefetch_tile_id < static_num_iters.get():
 
                         @parameter
                         if b_iter.address_space == AddressSpace.GENERIC:
