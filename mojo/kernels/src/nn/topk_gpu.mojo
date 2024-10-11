@@ -259,6 +259,7 @@ fn topk_stage1[
 
 fn topk_stage2[
     T: DType,
+    out_idx_type: DType,
     sampling: Bool = True,
 ](
     K: Int,
@@ -273,7 +274,7 @@ fn topk_stage2[
         Scalar[T]
     ],  # sampling ? undefined : output array of size K
     global_topk_idxs: UnsafePointer[
-        Int
+        Scalar[out_idx_type]
     ],  # sampling ? sampled token : Output array of size K
 ):
     """
@@ -284,6 +285,7 @@ fn topk_stage2[
 
     Parameters:
         T: Data type of the elements.
+        out_idx_type: DType - The data type of the output indices.
         sampling: Bool - Whether to sample a token from the top-K distribution.
 
     Args:
@@ -313,7 +315,10 @@ fn topk_stage2[
     if num_blocks_per_input == 1:
         if tid < K and not sampling:
             batch_i_topk_vals[tid] = _local_topk_vals[tid]
-            batch_i_topk_idxs[tid] = _local_topk_idxs[tid]
+            # cast to out_idx_type
+            batch_i_topk_idxs[tid] = Scalar[DType.index](
+                _local_topk_idxs[tid]
+            ).cast[out_idx_type]()
             return
 
     # Allocate shared memory for values and indices
@@ -380,7 +385,9 @@ fn topk_stage2[
             else:
                 # Store the global top-K values and indices
                 batch_i_topk_vals[k] = total.u
-                batch_i_topk_idxs[k] = _local_topk_idxs[total.p]
+                batch_i_topk_idxs[k] = Scalar[DType.index](
+                    _local_topk_idxs[total.p]
+                ).cast[out_idx_type]()
 
             # Early exit if no valid index
             if total.p == -1:
@@ -407,13 +414,16 @@ fn topk_stage2[
                     # uncomment below to return prob of max logit
                     # batch_i_topk_vals[0] = exp_logit / softmax_norm
                     var idx: Int = s_id[ki]
-                    batch_i_topk_idxs[0] = _local_topk_idxs[idx]
+                    batch_i_topk_idxs[0] = Scalar[DType.index](
+                        _local_topk_idxs[idx]
+                    ).cast[out_idx_type]()
                     break
 
 
 fn _topk_gpu[
     type: DType,
     rank: Int,
+    out_idx_type: DType = DType.index,
     sampling: Bool = True,
 ](
     ctx: DeviceContext,
@@ -422,7 +432,7 @@ fn _topk_gpu[
     device_local_topk_vals: NDBuffer[type, rank],
     device_local_topk_idxs: NDBuffer[DType.index, rank],
     out_vals: NDBuffer[type, rank],
-    out_idxs: NDBuffer[DType.index, rank],
+    out_idxs: NDBuffer[out_idx_type, rank],
     block_size: Int = 256,
     num_blocks_per_input: OptionalReg[Int] = None,
 ) raises:
@@ -435,6 +445,7 @@ fn _topk_gpu[
     Parameters:
         type: DType - The data type of the input tensor.
         rank: Int - The rank of the input tensor (must be 2 right now, first dim is batch size).
+        out_idx_type: DType - The data type of the output indices (default is DType.index).
         sampling: Bool - Whether to return token samples from topK dist (default is True).
 
     Args:
@@ -526,7 +537,7 @@ fn _topk_gpu[
     )  # align to warp size
 
     var gpu_fn_stage2 = ctx.compile_function[
-        topk_stage2[type, sampling], dump_ptx=False
+        topk_stage2[type, out_idx_type, sampling], dump_ptx=False
     ]()
 
     # Define grid and block dimensions for stage 2

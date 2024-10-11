@@ -25,7 +25,6 @@ from testing import assert_almost_equal, assert_equal
 
 from utils import IndexList
 
-alias idx_t = DType.index  # bad practice (matches the idx_t in the topk_gpu kernel)
 alias DEBUG_BENCH = False
 
 
@@ -54,6 +53,7 @@ fn test_case_batched[
     fill_fn: fn[rank: Int, type: DType] (inout NDBuffer[type, rank]) capturing [
         _
     ] -> None,
+    out_idx_type: DType = DType.index,
     sampling: Bool = True,
     rank: Int = 2,
 ](ctx: DeviceContext, test_case: TestCase) raises:
@@ -69,21 +69,25 @@ fn test_case_batched[
 
     var in_buffer = HostNDBuffer[type, rank](DimList(batch_size, N))
     var topk_vals = HostNDBuffer[type, rank](DimList(batch_size, K))
-    var topk_idxs = HostNDBuffer[idx_t, rank](DimList(batch_size, out_idx_len))
+    var topk_idxs = HostNDBuffer[out_idx_type, rank](
+        DimList(batch_size, out_idx_len)
+    )
 
     # Fill the buffer with consecutive values
     fill_fn(in_buffer.tensor)
     # print("Input buffer: ", in_buffer.tensor)
 
     # Run the Top-K kernel
-    alias topk_kernel = _topk_gpu[type, rank=rank, sampling=sampling]
+    alias topk_kernel = _topk_gpu[
+        type, rank=rank, out_idx_type=out_idx_type, sampling=sampling
+    ]
 
     # Move data to device
     var device_in = DeviceNDBuffer[type, rank](DimList(batch_size, N), ctx=ctx)
     var device_out_vals = DeviceNDBuffer[type, rank](
         DimList(batch_size, K), ctx=ctx
     )
-    var device_out_idxs = DeviceNDBuffer[idx_t, rank](
+    var device_out_idxs = DeviceNDBuffer[out_idx_type, rank](
         DimList(batch_size, out_idx_len), ctx=ctx
     )
 
@@ -93,7 +97,7 @@ fn test_case_batched[
     var device_local_topk_vals = DeviceNDBuffer[type, rank](
         DimList(batch_size, num_blocks_per_input_ * K), ctx=ctx
     )
-    var device_local_topk_idxs = DeviceNDBuffer[idx_t, rank](
+    var device_local_topk_idxs = DeviceNDBuffer[DType.index, rank](
         DimList(batch_size, num_blocks_per_input_ * K), ctx=ctx
     )
 
@@ -205,7 +209,7 @@ fn test_case_batched[
             if type == DType.float32:
                 assert_equal(
                     topk_idxs.tensor.data[i],
-                    topk_idxs_cpu.tensor.data[i].cast[idx_t](),
+                    topk_idxs_cpu.tensor.data[i].cast[out_idx_type](),
                 )
 
     _ = topk_vals
@@ -311,6 +315,7 @@ fn main() raises:
         test_case_batched[
             type,
             fill_iota,
+            out_idx_type = DType.uint64,
             sampling = test_case1.sampling,
         ](ctx, test_case1)
 
@@ -371,9 +376,12 @@ fn main() raises:
             num_blocks_per_input=6,
         )
         print_test_case(test_case6)
-        test_case_batched[type, fill_random, sampling = test_case6.sampling](
-            ctx, test_case6
-        )
+        test_case_batched[
+            type,
+            fill_random,
+            out_idx_type = DType.int32,
+            sampling = test_case6.sampling,
+        ](ctx, test_case6)
 
         alias test_case7 = TestCase[_sampling=False](
             N=1024,
@@ -452,7 +460,10 @@ fn main() raises:
         )
         print_test_case(test_case13)
         test_case_batched[
-            bf16_type, fill_iota, sampling = test_case13.sampling
+            bf16_type,
+            fill_iota,
+            out_idx_type = DType.uint64,
+            sampling = test_case13.sampling,
         ](ctx, test_case13)
 
         alias test_case14 = TestCase[_sampling=False](
@@ -486,7 +497,10 @@ fn main() raises:
         )
         print_test_case(test_case16)
         test_case_batched[
-            bf16_type, fill_iota, sampling = test_case16.sampling
+            bf16_type,
+            fill_iota,
+            out_idx_type = DType.int64,
+            sampling = test_case16.sampling,
         ](ctx, test_case16)
 
         alias test_case17 = TestCase[_sampling=False](

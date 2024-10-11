@@ -16,11 +16,11 @@ from utils import IndexList
 
 
 fn argmax_gpu[
-    type: DType, rank: Int
+    type: DType, output_type: DType, rank: Int
 ](
     ctx: DeviceContext,
     input: NDBuffer[type, rank],
-    output: NDBuffer[DType.index, rank],
+    output: NDBuffer[output_type, rank],
 ) raises:
     """
     Wraps the Top-K GPU kernel with K=1 to perform argmax on the inner-most
@@ -28,6 +28,7 @@ fn argmax_gpu[
 
     Parameters:
         type: DType - The data type of the input tensor.
+        output_type: DType - The data type of the output tensor.
         rank: Int - The rank of the input tensor.
 
     Args:
@@ -37,7 +38,7 @@ fn argmax_gpu[
     """
     constrained[rank > 0, "Input rank must be positive"]()
     alias K = 1
-    alias topk_kernel = _topk_gpu[sampling=False]
+    alias topk_kernel = _topk_gpu[out_idx_type=output_type, sampling=False]
     var orig_in_shape: IndexList[rank] = input.get_shape()
     var orig_out_shape: IndexList[rank] = output.get_shape()
     var N = orig_in_shape[rank - 1]
@@ -57,7 +58,7 @@ fn argmax_gpu[
     var internal_in_shape: IndexList[internal_rank]
     var internal_out_shape: IndexList[internal_rank]
     var internal_input: NDBuffer[type, internal_rank]
-    var internal_output: NDBuffer[DType.index, internal_rank]
+    var internal_output: NDBuffer[output_type, internal_rank]
 
     @parameter
     if rank == 1:
@@ -75,7 +76,7 @@ fn argmax_gpu[
         internal_input = rebind[NDBuffer[type, internal_rank]](
             input
         )  # Already in correct shape
-        internal_output = rebind[NDBuffer[DType.index, internal_rank]](output)
+        internal_output = rebind[NDBuffer[output_type, internal_rank]](output)
     else:  # rank > 2
         var _last_dim = orig_in_shape[rank - 1]
         internal_bs = int(orig_in_shape.flattened_length() / _last_dim)
@@ -87,6 +88,7 @@ fn argmax_gpu[
 
     var num_blocks_per_input_: Int = min(ceildiv(N, block_size_), 8)
     var internal_cache_shape = DimList(internal_bs, num_blocks_per_input_ * K)
+
     var internal_vals_buf = ctx.create_buffer[type](
         int(internal_cache_shape.product())
     )
