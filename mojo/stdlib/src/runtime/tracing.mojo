@@ -222,6 +222,17 @@ fn _is_nvtx_enabled[type: TraceCategory, level: TraceLevel]() -> Bool:
 
 
 @always_inline
+fn _is_nvtx_detailed_enabled[type: TraceCategory, level: TraceLevel]() -> Bool:
+    """Returns True if the e2e detailed kernel profiling is enabled. Note that
+    we always prefer to use llcl profiling if they are enabled."""
+    return (
+        is_profiling_disabled[type, level]()
+        and level <= TraceLevel.OP
+        and _nvtx_is_enabled_details()
+    )
+
+
+@always_inline
 fn is_mojo_profiling_enabled[level: TraceLevel]() -> Bool:
     """Returns whether Mojo profiling is enabled for the specified level."""
     return is_profiling_enabled[TraceCategory.MAX, level]()
@@ -301,7 +312,12 @@ struct Trace[
         @parameter
         if _is_nvtx_enabled[category, level]():
             self.name = name
-            self.detail = ""
+
+            @parameter
+            if _nvtx_is_enabled_details():
+                self.detail = detail
+            else:
+                self.detail = ""
             self.int_payload = None
         elif is_profiling_enabled[category, level]():
             self.name = name
@@ -379,7 +395,8 @@ struct Trace[
             if _nvtx_is_enabled_details():
                 self.event_id = int(
                     _start_nvtx_range(
-                        message=self.name + "/" + self.detail,
+                        message=self.name
+                        + (("/" + self.detail) if self.detail else ""),
                         category=int(category),
                     )
                 )
@@ -463,7 +480,10 @@ struct Trace[
         """
 
         @parameter
-        if is_profiling_enabled[category, level]():
+        if (
+            is_profiling_enabled[category, level]()
+            or _is_nvtx_detailed_enabled[category, level]()
+        ):
             return detail_fn()
         else:
             return ""
