@@ -45,7 +45,8 @@ def configureLogging(
     logging_handlers: list[logging.Handler] = []
 
     logs_formatter = logging.Formatter(
-        "%(asctime)s %(levelname)s: %(name)s: %(message)s", datefmt="%H:%M:%S"
+        "%(asctime)s.%(msecs)03d %(levelname)s: %(name)s: %(message)s",
+        datefmt="%H:%M:%S",
     )
 
     # Create a console handler
