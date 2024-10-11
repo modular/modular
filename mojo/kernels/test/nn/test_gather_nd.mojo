@@ -8,8 +8,7 @@
 from buffer import NDBuffer
 from buffer.dimlist import DimList
 from memory import stack_allocation
-from nn.gather_scatter import gather_nd, gather_nd_shape
-
+from nn.gather_scatter import _gather_nd_impl, gather_nd_shape
 from utils import IndexList
 
 
@@ -61,14 +60,7 @@ fn main():
         var output_data_buffer = NDBuffer[data_type, output_rank](
             output_data_data, output_shape
         )
-        gather_nd[
-            data_type,
-            DType.int64,
-            data_rank,
-            indices_rank,
-            output_rank,
-            batch_dims,
-        ](
+        _gather_nd_impl[batch_dims,](
             data.make_dims_unknown(),
             indices.make_dims_unknown(),
             output_data_buffer,
@@ -114,14 +106,7 @@ fn main():
         var output_data_buffer = NDBuffer[data_type, output_rank](
             output_data_data, output_shape
         )
-        gather_nd[
-            data_type,
-            DType.int64,
-            data_rank,
-            indices_rank,
-            output_rank,
-            batch_dims,
-        ](
+        _gather_nd_impl[batch_dims,](
             data.make_dims_unknown(),
             indices.make_dims_unknown(),
             output_data_buffer,
@@ -180,14 +165,7 @@ fn main():
         var output_data_buffer = NDBuffer[data_type, output_rank](
             output_data_data, output_shape
         )
-        gather_nd[
-            data_type,
-            DType.int64,
-            data_rank,
-            indices_rank,
-            output_rank,
-            batch_dims,
-        ](
+        _gather_nd_impl[batch_dims,](
             data.make_dims_unknown(),
             indices.make_dims_unknown(),
             output_data_buffer,
@@ -246,14 +224,7 @@ fn main():
         var output_data_buffer = NDBuffer[data_type, output_rank](
             output_data_data, output_shape
         )
-        gather_nd[
-            data_type,
-            DType.int64,
-            data_rank,
-            indices_rank,
-            output_rank,
-            batch_dims,
-        ](
+        _gather_nd_impl[batch_dims,](
             data.make_dims_unknown(),
             indices.make_dims_unknown(),
             output_data_buffer,
@@ -310,14 +281,7 @@ fn main():
         var output_data_buffer = NDBuffer[data_type, output_rank](
             output_data_data, output_shape
         )
-        gather_nd[
-            data_type,
-            DType.int64,
-            data_rank,
-            indices_rank,
-            output_rank,
-            batch_dims,
-        ](
+        _gather_nd_impl[batch_dims,](
             data.make_dims_unknown(),
             indices.make_dims_unknown(),
             output_data_buffer,
@@ -399,14 +363,7 @@ fn main():
         var output_data_buffer = NDBuffer[data_type, output_rank](
             output_data_data, output_shape
         )
-        gather_nd[
-            data_type,
-            DType.int64,
-            data_rank,
-            indices_rank,
-            output_rank,
-            batch_dims,
-        ](
+        _gather_nd_impl[batch_dims,](
             data.make_dims_unknown(),
             indices.make_dims_unknown(),
             output_data_buffer,
@@ -467,14 +424,7 @@ fn main():
         var output_data_buffer = NDBuffer[data_type, output_rank](
             output_data_data, output_shape
         )
-        gather_nd[
-            data_type,
-            DType.int64,
-            data_rank,
-            indices_rank,
-            output_rank,
-            batch_dims,
-        ](
+        _gather_nd_impl[batch_dims,](
             data.make_dims_unknown(),
             indices.make_dims_unknown(),
             output_data_buffer,
@@ -538,14 +488,7 @@ fn main():
         var output_data_buffer = NDBuffer[data_type, output_rank](
             output_data_data, output_shape
         )
-        gather_nd[
-            data_type,
-            DType.int64,
-            data_rank,
-            indices_rank,
-            output_rank,
-            batch_dims,
-        ](
+        _gather_nd_impl[batch_dims,](
             data.make_dims_unknown(),
             indices.make_dims_unknown(),
             output_data_buffer,

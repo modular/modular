@@ -12,6 +12,7 @@ from buffer.dimlist import DimList
 from memory import stack_allocation
 from nn.gather_scatter import gather, gather_nd, gather_nd_shape, gather_shape
 from nn.index_tensor import index_tensor, index_tensor_1d, index_tensor_shape
+from runtime.asyncrt import MojoCallContextPtr
 
 from utils import IndexList
 from utils.index import Index
@@ -345,10 +346,12 @@ fn test_index_tensor_CLIPVIT() raises:
         indices_rank,
         output_rank,
         batch_dims,
+        target="cpu",
     ](
         input.make_dims_unknown(),
         indices.make_dims_unknown(),
         output_data_buffer,
+        MojoCallContextPtr(),
     )
 
     for i in range(dim_0):

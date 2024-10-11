@@ -4,17 +4,19 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from collections import OptionalReg
+from collections import OptionalReg, Optional
 from math import align_down, ceildiv
 from os import abort
 from sys import has_neon, simdwidthof, sizeof
 from sys.intrinsics import PrefetchOptions
+from sys.info import _current_target
 
 from algorithm import elementwise, parallel_memcpy, sync_parallelize
 from algorithm.functional import tile
 from buffer import NDBuffer
 from buffer.dimlist import DimList
 from gpu.host import DeviceBuffer, DeviceContext
+from gpu.host._compile import _get_nvptx_target
 from memory import UnsafePointer, memcpy, memset_zero, stack_allocation
 from register import mogg_register, mogg_register_shape_func
 from runtime.asyncrt import MojoCallContextPtr, parallelism_level
@@ -1367,10 +1369,13 @@ fn gather_nd[
     indices_rank: Int,
     output_rank: Int,
     batch_dims: Int,
+    target: StringLiteral = "cpu",
+    single_thread_blocking_override: Bool = False,
 ](
     data: NDBuffer[type, data_rank],
     indices: NDBuffer[indices_type, indices_rank],
     output: NDBuffer[type, output_rank],
+    ctx: MojoCallContextPtr,
 ):
     """
     GatherND operation as defined in https://github.com/onnx/onnx/blob/main/docs/Operators.md#GatherND.
@@ -1384,6 +1389,9 @@ fn gather_nd[
         output_rank: Rank of output tensor.
         batch_dims: Number of batch dimensions. The gather of indexing
                     starts from dimension of data[batch_dims:].
+        target: The target architecture to execute on.
+        single_thread_blocking_override: If True, then the operation is run
+          synchronously using a single thread.
 
     Args:
         data: Tensor of rank data_rank >= 1.
@@ -1391,9 +1399,40 @@ fn gather_nd[
                  to be within bounds [-s, s-1] along axis of size s. It is an
                  error if any of the index values are out of bounds.
         output: Tensor of rank data_rank + indices_rank - indices_shape[-1] - 1 - b.
+        ctx: The MojoCallContextPtr as prepared by the graph compiler.
 
     """
 
+    @parameter
+    if target == "cpu":
+        return _gather_nd_impl[
+            batch_dims,
+            target=target,
+            single_thread_blocking_override=single_thread_blocking_override,
+        ](data, indices, output)
+    else:
+        return _gather_nd_impl[
+            batch_dims,
+            target=target,
+            single_thread_blocking_override=single_thread_blocking_override,
+        ](data, indices, output, ctx.get_device_context())
+
+
+fn _gather_nd_impl[
+    type: DType,
+    indices_type: DType,
+    data_rank: Int,
+    indices_rank: Int,
+    output_rank: Int, //,
+    batch_dims: Int,
+    target: StringLiteral = "cpu",
+    single_thread_blocking_override: Bool = False,
+](
+    data: NDBuffer[type, data_rank],
+    indices: NDBuffer[indices_type, indices_rank],
+    output: NDBuffer[type, output_rank],
+    ctx: Optional[DeviceContext] = None,
+):
     constrained[
         data_rank >= 1 and indices_rank >= 1,
         "Constraint: data_rank >= 1 and indices_rank >= 1",
@@ -1405,116 +1444,89 @@ fn gather_nd[
         "Constraint: 1 <= indices_shape[-1] <= data_rank - batch_dims",
     )
 
-    # The number of elements in the batch_dims for data/indices array.
-    # E.g., if batch_dims = 2 (always is the outermost dimensions), and the
-    #       dimensions of data are [2,3,...], then batch_dims_size = 6
-    var batch_dims_size = 1
-    for i in range(batch_dims):
-        batch_dims_size = batch_dims_size * indices_shape[i]
+    # This is modeled as an elementwise function mapping an index in the
+    # output to an index in the input
+    @parameter
+    fn gather_nd_elementwise_fn[
+        simd_width: Int, rank: Int
+    ](output_idx_arg: IndexList[rank]) capturing -> None:
+        var output_idx = rebind[IndexList[output_rank]](output_idx_arg)
+        var data_idx = IndexList[data_rank]()
+        var indices_idx = IndexList[indices_rank]()
+        var indices_last_dim = indices.dim[indices_rank - 1]()
 
-    var last_shape_of_indices = indices_shape[indices_rank - 1]
-    var num_elems = indices.num_elements()
-    # Reshape indices array, as 3D array. All batch_dims_size elements go to the
-    # outermost dimension, and elements of amount equal to indices.shape[-1] go
-    # to the innermost.
-    # Equivalent to numpy:
-    # reshaped_indices = indices.reshape(batch_dims_size, -1, indices.shape[-1])
-    var reshaped_indices = reshape[3](
-        indices.make_dims_unknown(),
-        IndexList[3](
-            batch_dims_size,
-            num_elems // (batch_dims_size * last_shape_of_indices),
-            last_shape_of_indices,
-        ),
-    )
+        # Fill in the known dimensions in our batch_dim
+        @parameter
+        for i in range(batch_dims):
+            data_idx[i] = output_idx[i]
 
-    var reshaped_indices_shape = reshaped_indices.get_shape()
-    var data_shape = data.get_shape()
+        # Start filling in the index into the indices buffer
+        @parameter
+        for i in range(0, indices_rank - 1):
+            indices_idx[i] = output_idx[i]
 
-    # Flatten data to array of shape (batch_dim_size, data.shape[batch_dims:])
-    alias reshaped_data_rank = data_rank + 1 - batch_dims
-    var reshaped_data_tuple = IndexList[reshaped_data_rank]()
-    # Calculate the dimensions of reshaped_data.
-    reshaped_data_tuple[0] = batch_dims_size
-    var counter = 1
-    for i in range(batch_dims, data_rank):
-        reshaped_data_tuple[counter] = data_shape[i]
-        counter += 1
-    # Do the actual reshaping.
-    var reshaped_data = reshape[reshaped_data_rank](
-        data.make_dims_unknown(), reshaped_data_tuple
-    )
+        # walk the last dimensions, which are the slices we're gathering
+        for i in range(indices_last_dim):
+            indices_idx[indices_rank - 1] = i
+            data_idx[batch_dims + i] = int(indices[indices_idx])
 
-    var reshaped_data_shape = reshaped_data.get_shape()
+        # fill in the last slices in the input
+        num_tail_elems = data_rank - batch_dims - indices_last_dim
+        output_start = output_rank - num_tail_elems
+        src_start = indices_last_dim + batch_dims
+        for i in range(0, num_tail_elems):
+            data_idx[src_start + i] = output_idx[output_start + i]
 
-    # idx[] stores the index from where to gather the requested elements.
-    var idx_ptr = UnsafePointer[Scalar[DType.index]].alloc(
-        reshaped_indices_shape[2]
-    )
-    var idx = NDBuffer[DType.index, 1](
-        idx_ptr, Index(reshaped_indices_shape[2])
-    )
-
-    # Depending on r_minus_m = data_rank - last_shape_of_indices - batch_dims,
-    # we will be copying (gather):
-    #   element (r_minus_m = 0),
-    #   row (r_minus_m = 1),
-    #   sheet (r_minus_m = 2),
-    #   cuboid (r_minus_m = 3), etc.
-    var r_minus_m = data_rank - last_shape_of_indices - batch_dims
-    # Calculate how many elements to copy (this is from the innermost
-    # dimensions, and is continuous memory locations).
-    var count_copy = 1
-    for i in range(r_minus_m):
-        count_copy = (
-            count_copy * reshaped_data_shape[reshaped_data_rank - 1 - i]
+        output.store[width=simd_width](
+            output_idx, data.load[width=simd_width](data_idx)
         )
 
-    # Stores the full index on reshaped_data, where to copy from.
-    # It is constructed within the nested loop below.
-    var start_tensor = NDBuffer[
-        DType.index,
-        1,
-        DimList(reshaped_data_rank),
-    ]().stack_allocation()
-    # Zeroing here to avoid doing it selectively within the nested loop below.
-    memset_zero(start_tensor.data, reshaped_data_rank)
+    alias compile_target = _current_target() if target == "cpu" else _get_nvptx_target()
+    alias target_simd_width = simdwidthof[type, target=compile_target]()
 
-    var output_buffer_copy_ind = 0
-    for batch_dim in range(reshaped_indices_shape[0]):
-        for outer_dim in range(reshaped_indices_shape[1]):
-            # Construct the tuple (all dimensions except outermost, which is
-            # the batches dimension - recall all batch dimensions are reshaped
-            # into one - the outermost).
-            for constr in range(reshaped_indices_shape[2]):
-                var input_ax_dim = reshaped_data.get_shape()[constr + 1]
-                var idx_on_axis = reshaped_indices[batch_dim, outer_dim, constr]
-                idx[constr] = int(
-                    normalize_neg_index(idx_on_axis, input_ax_dim)
-                )
+    # Only use SIMD if:
+    #   - the input data is contiguous
+    #   - the slices at the end of the input are not scalars
+    #   - the last dimension of the slices are evenly divisible by simd_width
+    var slice_rank = data_rank - batch_dims - indices.dim[indices_rank - 1]()
+    var slice_last_dim = output.dim[output_rank - 1]() if slice_rank > 0 else 1
 
-            # Construct the full index on reshaped_data, where to copy from.
-            start_tensor[0] = batch_dim
-            var start_index = 1
-            for dim in range(len(idx)):
-                start_tensor[start_index] = idx[dim]
-                start_index = start_index + 1
+    var use_simd = data.stride[data_rank - 1]() == 1 and (
+        slice_last_dim % target_simd_width
+    ) == 0
 
-            # Calculate the input_offset from where to copy the data.
-            var input_offset = 0
-            for i in range(reshaped_data_rank):
-                input_offset = input_offset + reshaped_data.stride(i) * int(
-                    start_tensor[i]
-                )
-
-            # Calculate the output_offset where to copy the data.
-            var output_offset = output_buffer_copy_ind * (count_copy)
-            output_buffer_copy_ind = output_buffer_copy_ind + 1
-
-            # Perform the actual copy of element/slice/sheet/cuboid/etc.
-            memcpy(
-                output.data + output_offset,
-                reshaped_data.data + input_offset,
-                count_copy,
-            )
-    idx_ptr.free()
+    @parameter
+    if target == "cpu":
+        if use_simd:
+            elementwise[
+                gather_nd_elementwise_fn,
+                target_simd_width,
+                use_blocking_impl=single_thread_blocking_override,
+                target=target,
+            ](output.get_shape())
+        else:
+            elementwise[
+                gather_nd_elementwise_fn,
+                1,
+                use_blocking_impl=single_thread_blocking_override,
+                target=target,
+            ](output.get_shape())
+    else:
+        debug_assert(
+            bool(ctx), "Must provide DeviceContext if executing on GPU."
+        )
+        var cuda_ctx = ctx.value()
+        if use_simd:
+            elementwise[
+                gather_nd_elementwise_fn,
+                target_simd_width,
+                use_blocking_impl=single_thread_blocking_override,
+                target=target,
+            ](output.get_shape(), cuda_ctx)
+        else:
+            elementwise[
+                gather_nd_elementwise_fn,
+                1,
+                use_blocking_impl=single_thread_blocking_override,
+                target=target,
+            ](output.get_shape(), cuda_ctx)
