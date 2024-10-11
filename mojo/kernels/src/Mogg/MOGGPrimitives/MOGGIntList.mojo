@@ -12,6 +12,7 @@ from memory import UnsafePointer, memset_zero
 from utils.index import IndexList
 
 
+@value
 struct IntList[static_values: DimList = DimList()](Sized):
     # Array must be >= 1 length, so we clamp to that if we have unknown
     # length shape. DimList of size 0 represents a dynamically ranked list.
@@ -97,13 +98,6 @@ struct IntList[static_values: DimList = DimList()](Sized):
         self.length = rank
         self.data = UnsafePointer[Int]()
         self.stack_alloc_data = rebind[IndexList[Self._safe_len]](shape)
-
-    @always_inline
-    fn __moveinit__(inout self, owned existing: Self):
-        self.data = existing.data
-        self.stack_alloc_data = existing.stack_alloc_data
-        self.length = existing.length
-        existing.data = UnsafePointer[Int]()
 
     @always_inline
     fn __copyinit__(inout self, existing: Self):
