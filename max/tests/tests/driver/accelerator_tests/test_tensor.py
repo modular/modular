@@ -4,7 +4,10 @@
 #
 # ===----------------------------------------------------------------------=== #
 
+import re
+
 import numpy as np
+import pytest
 import torch
 from max.driver import CPU, CUDA, Tensor
 from max.dtype import DType
@@ -151,3 +154,14 @@ def test_scalar():
 
     host_scalar = scalar.to(CPU())
     assert host_scalar.item() == 5
+
+
+def test_gpu_to_numpy():
+    cuda = CUDA()
+    tensor = Tensor.zeros((3, 3), DType.int32, device=cuda)
+
+    with pytest.raises(
+        RuntimeError,
+        match=re.escape(f"Cannot convert tensor on {cuda} to numpy"),
+    ):
+        tensor.to_numpy()
