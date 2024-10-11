@@ -74,7 +74,7 @@ fn correlation[
     *,
     w: OptionalReg[__type_of(u)] = None,
     centered: Bool = True,
-) -> Scalar[type]:
+) raises -> Scalar[type]:
     """Compute the correlation distance between two 1-D arrays.
 
     The correlation distance between `u` and `v`, is
@@ -134,7 +134,7 @@ fn cosine[
     len: Int,
     *,
     w: OptionalReg[__type_of(u)] = None,
-) -> Scalar[type]:
+) raises -> Scalar[type]:
     """Compute the Cosine distance between 1-D arrays.
 
     The Cosine distance between `u` and `v`, is defined as
@@ -205,7 +205,7 @@ fn _div[
 
 fn _sum[
     type: DType, //
-](src: UnsafePointer[Scalar[type]], len: Int) -> Scalar[type]:
+](src: UnsafePointer[Scalar[type]], len: Int) raises -> Scalar[type]:
     return sum(
         Buffer[type, address_space = src.address_space](
             UnsafePointer[_, _, False, *_](src), len
@@ -215,7 +215,7 @@ fn _sum[
 
 fn _mean[
     type: DType, //
-](src: UnsafePointer[Scalar[type]], len: Int) -> Scalar[type]:
+](src: UnsafePointer[Scalar[type]], len: Int) raises -> Scalar[type]:
     return mean(
         Buffer[type, address_space = src.address_space](
             UnsafePointer[_, _, False, *_](src), len
