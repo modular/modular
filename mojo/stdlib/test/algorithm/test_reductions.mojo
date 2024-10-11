@@ -28,7 +28,7 @@ from utils.index import Index, IndexList, StaticTuple
 
 
 # CHECK-LABEL: test_reductions
-fn test_reductions():
+fn test_reductions() raises:
     print("== test_reductions")
 
     alias simd_width = 4
@@ -214,7 +214,7 @@ fn test_fused_reductions_outer() raises:
 
 # We use a smaller vector so that we do not overflow
 # CHECK-LABEL: test_product
-fn test_product():
+fn test_product() raises:
     print("== test_product")
 
     alias simd_width = 4
@@ -231,7 +231,7 @@ fn test_product():
 
 
 # CHECK-LABEL: test_mean_variance
-fn test_mean_variance():
+fn test_mean_variance() raises:
     print("== test_mean_variance")
 
     alias simd_width = 4
@@ -256,7 +256,7 @@ fn _test_3d_reductions[
     input_shape: DimList,
     output_shape: DimList,
     reduce_axis: Int,
-]():
+]() raises:
     print("== test_3d_reductions reduce_axis=", reduce_axis)
     alias simd_width = 4
     var input = NDBuffer[DType.float32, 3, input_shape].stack_allocation()
@@ -273,7 +273,7 @@ fn _test_3d_reductions[
 
 
 # CHECK-LABEL: test_3d_reductions reduce_axis= 0
-fn test_3d_reductions_axis_0():
+fn test_3d_reductions_axis_0() raises:
     # CHECK: 8.0
     # CHECK-NEXT: 10.0
     # CHECK-NEXT: 12.0
@@ -290,7 +290,7 @@ fn test_3d_reductions_axis_0():
 
 
 # CHECK-LABEL: test_3d_reductions reduce_axis= 1
-fn test_3d_reductions_axis_1():
+fn test_3d_reductions_axis_1() raises:
     # CHECK: 4.0
     # CHECK-NEXT: 6.0
     # CHECK-NEXT: 8.0
@@ -307,7 +307,7 @@ fn test_3d_reductions_axis_1():
 
 
 # CHECK-LABEL: test_3d_reductions reduce_axis= 2
-fn test_3d_reductions_axis_2():
+fn test_3d_reductions_axis_2() raises:
     # CHECK: 6.0
     # CHECK-NEXT: 22.0
     # CHECK-NEXT: 38.0

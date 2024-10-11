@@ -172,7 +172,7 @@ fn reduce[
     reduce_fn: fn[acc_type: DType, type: DType, width: Int] (
         SIMD[acc_type, width], SIMD[type, width]
     ) capturing [_] -> SIMD[acc_type, width]
-](src: Buffer, init: Scalar) -> Scalar[init.element_type]:
+](src: Buffer, init: Scalar) raises -> Scalar[init.element_type]:
     """Computes a custom reduction of buffer elements.
 
     Parameters:
@@ -211,15 +211,13 @@ fn reduce[
 
     var shape = Index(len(src))
 
-    try:
-        _reduce_generator[
-            input_fn,
-            output_fn,
-            reduce_fn_wrapper,
-            single_thread_blocking_override=True,
-        ](shape, init=init, reduce_dim=0)
-    except e:
-        abort(e)
+    _reduce_generator[
+        input_fn,
+        output_fn,
+        reduce_fn_wrapper,
+        single_thread_blocking_override=True,
+    ](shape, init=init, reduce_dim=0)
+
     return out
 
 
@@ -282,7 +280,7 @@ fn _reduce_3D[
         SIMD[acc_type, width], SIMD[type, width]
     ) capturing [_] -> SIMD[acc_type, width],
     reduce_fn: fn[type: DType, width: Int] (SIMD[type, width]) -> Scalar[type],
-](src: NDBuffer, dst: NDBuffer, init: Scalar[dst.type]):
+](src: NDBuffer, dst: NDBuffer, init: Scalar[dst.type]) raises:
     """Performs a reduction across axis 1 of a 3D input buffer."""
 
     alias simd_width = simdwidthof[dst.type]()
@@ -297,7 +295,7 @@ fn _reduce_3D[
 
         @__copy_capture(h, w)
         @parameter
-        fn reduce_inner_axis():
+        fn reduce_inner_axis() raises:
             alias sz = src.shape.at[1]()
             # TODO: parallelize
             for i in range(h):
@@ -349,7 +347,7 @@ fn reduce[
     ) capturing [_] -> SIMD[acc_type, width],
     reduce_fn: fn[type: DType, width: Int] (SIMD[type, width]) -> Scalar[type],
     reduce_axis: Int,
-](src: NDBuffer, dst: NDBuffer, init: Scalar[dst.type]):
+](src: NDBuffer, dst: NDBuffer, init: Scalar[dst.type]) raises:
     """Performs a reduction across reduce_axis of an NDBuffer (src) and stores
     the result in an NDBuffer (dst).
 
@@ -1073,7 +1071,7 @@ fn _simd_max_elementwise[
     return _max(x, y.cast[acc_type]())
 
 
-fn max(src: Buffer) -> Scalar[src.type]:
+fn max(src: Buffer) raises -> Scalar[src.type]:
     """Computes the max element in a buffer.
 
     Args:
@@ -1085,7 +1083,9 @@ fn max(src: Buffer) -> Scalar[src.type]:
     return reduce[_simd_max_elementwise](src, Scalar[src.type].MIN)
 
 
-fn max[reduce_axis: Int](src: NDBuffer, dst: NDBuffer[src.type, src.rank, _]):
+fn max[
+    reduce_axis: Int
+](src: NDBuffer, dst: NDBuffer[src.type, src.rank, _]) raises:
     """Computes the max across reduce_axis of an NDBuffer.
 
     Parameters:
@@ -1180,7 +1180,7 @@ fn _simd_min_elementwise[
     return _min(x, y.cast[acc_type]())
 
 
-fn min(src: Buffer) -> Scalar[src.type]:
+fn min(src: Buffer) raises -> Scalar[src.type]:
     """Computes the min element in a buffer.
 
     Args:
@@ -1192,7 +1192,9 @@ fn min(src: Buffer) -> Scalar[src.type]:
     return reduce[_simd_min_elementwise](src, Scalar[src.type].MAX)
 
 
-fn min[reduce_axis: Int](src: NDBuffer, dst: NDBuffer[src.type, src.rank, _]):
+fn min[
+    reduce_axis: Int
+](src: NDBuffer, dst: NDBuffer[src.type, src.rank, _]) raises:
     """Computes the min across reduce_axis of an NDBuffer.
 
     Parameters:
@@ -1287,7 +1289,7 @@ fn _simd_sum_elementwise[
     return x + y.cast[acc_type]()
 
 
-fn sum(src: Buffer) -> Scalar[src.type]:
+fn sum(src: Buffer) raises -> Scalar[src.type]:
     """Computes the sum of buffer elements.
 
     Args:
@@ -1299,7 +1301,9 @@ fn sum(src: Buffer) -> Scalar[src.type]:
     return reduce[_simd_sum_elementwise](src, Scalar[src.type](0))
 
 
-fn sum[reduce_axis: Int](src: NDBuffer, dst: NDBuffer[src.type, src.rank, _]):
+fn sum[
+    reduce_axis: Int
+](src: NDBuffer, dst: NDBuffer[src.type, src.rank, _]) raises:
     """Computes the sum across reduce_axis of an NDBuffer.
 
     Parameters:
@@ -1394,7 +1398,7 @@ fn _simd_product_elementwise[
     return x * y.cast[acc_type]()
 
 
-fn product(src: Buffer) -> Scalar[src.type]:
+fn product(src: Buffer) raises -> Scalar[src.type]:
     """Computes the product of the buffer elements.
 
     Args:
@@ -1408,7 +1412,7 @@ fn product(src: Buffer) -> Scalar[src.type]:
 
 fn product[
     reduce_axis: Int
-](src: NDBuffer, dst: NDBuffer[src.type, src.rank, _]):
+](src: NDBuffer, dst: NDBuffer[src.type, src.rank, _]) raises:
     """Computes the product across reduce_axis of an NDBuffer.
 
     Parameters:
@@ -1481,7 +1485,7 @@ fn product[
 # ===----------------------------------------------------------------------===#
 
 
-fn mean(src: Buffer) -> Scalar[src.type]:
+fn mean(src: Buffer) raises -> Scalar[src.type]:
     """Computes the mean value of the elements in a buffer.
 
     Args:
@@ -1503,7 +1507,9 @@ fn mean(src: Buffer) -> Scalar[src.type]:
         return total / buffer_len
 
 
-fn mean[reduce_axis: Int](src: NDBuffer, dst: NDBuffer[src.type, src.rank, _]):
+fn mean[
+    reduce_axis: Int
+](src: NDBuffer, dst: NDBuffer[src.type, src.rank, _]) raises:
     """Computes the mean across reduce_axis of an NDBuffer.
 
     Parameters:
@@ -1677,7 +1683,7 @@ fn mean[
 
 fn variance(
     src: Buffer, mean_value: Scalar[src.type], correction: Int = 1
-) -> Scalar[src.type]:
+) raises -> Scalar[src.type]:
     """Given a mean, computes the variance of elements in a buffer.
 
     The mean value is used to avoid a second pass over the data:
@@ -1725,23 +1731,21 @@ fn variance(
 
     var shape = IndexList[1](len(src))
 
-    try:
-        _reduce_generator[
-            input_fn,
-            output_fn,
-            reduce_fn_wrapper,
-            single_thread_blocking_override=True,
-        ](
-            shape,
-            init=Scalar[mean_value.type](0),
-            reduce_dim=0,
-        )
-    except e:
-        abort(e)
+    _reduce_generator[
+        input_fn,
+        output_fn,
+        reduce_fn_wrapper,
+        single_thread_blocking_override=True,
+    ](
+        shape,
+        init=Scalar[mean_value.type](0),
+        reduce_dim=0,
+    )
+
     return out / (len(src) - correction)
 
 
-fn variance(src: Buffer, correction: Int = 1) -> Scalar[src.type]:
+fn variance(src: Buffer, correction: Int = 1) raises -> Scalar[src.type]:
     """Computes the variance value of the elements in a buffer.
 
     ```
