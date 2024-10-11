@@ -28,6 +28,7 @@ trait Instrument(Movable):
         ...
 
 
+@value
 struct Counter[T: DType](Instrument):
     var ptr: UnsafePointer[NoneType]
     var lib: DLHandle
@@ -66,24 +67,6 @@ struct Counter[T: DType](Instrument):
         ]()
         self.ptr = ptr
         self.lib = lib
-
-    fn __moveinit__(inout self: Self, owned existing: Self):
-        """Move initializes a counter instance from an existing instance.
-
-        Args:
-            existing: The existing counter instanace.
-        """
-        self.lib = existing.lib
-        self.ptr = existing.ptr
-
-    fn __copyinit__(inout self: Self, existing: Self):
-        """[summary].
-
-        Args:
-            existing: [description].
-        """
-        self.lib = existing.lib
-        self.ptr = existing.ptr
 
     fn add[type: AnyTrivialRegType](inout self: Self, val: type):
         """Increments the counter with a given value.
