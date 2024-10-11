@@ -310,7 +310,8 @@ struct LayoutTensor[
         layout,
         address_space=address_space,
         element_layout=element_layout,
-    ]:
+        __experimental_non_homogeneous_tile=__experimental_non_homogeneous_tile,
+    ] as result:
         """Bitcast the underlying pointer to a new data type.
 
         Parameters:
@@ -318,12 +319,10 @@ struct LayoutTensor[
             address_space: The address space of the returned LayoutTensor.
             element_layout: The element layout of the returned LayoutTensor.
         """
-        return LayoutTensor[
-            new_type,
-            layout,
-            address_space=address_space,
-            element_layout=element_layout,
-        ](self.ptr.bitcast[new_type, address_space=address_space]())
+        return __type_of(result)(
+            self.ptr.bitcast[new_type, address_space=address_space](),
+            self.runtime_layout,
+        )
 
     @always_inline
     fn _offset(self, m: Int, n: Int) -> Int:
@@ -1251,7 +1250,13 @@ struct LayoutTensor[
             # fmt: on
 
             return __type_of(result)(
-                self.ptr + ptr_offset, bound, stride=stride
+                self.ptr + ptr_offset,
+                bound,
+                stride=stride,
+                offset=0,
+                runtime_layout=RuntimeLayout[result.layout](),
+                dim_bound=self.runtime_layout.shape[axis].get_int(),
+                idx=tile_coords[axis],
             )
 
         else:
@@ -1298,6 +1303,7 @@ struct LayoutTensor[
             ]()[0],
             address_space=address_space,
             element_layout=element_layout,
+            __experimental_non_homogeneous_tile=__experimental_non_homogeneous_tile,
         ],
         count,
     ] as result:
@@ -1336,6 +1342,7 @@ struct LayoutTensor[
                 ]()[0],
                 address_space=address_space,
                 element_layout=element_layout,
+                __experimental_non_homogeneous_tile=__experimental_non_homogeneous_tile,
             ](self.ptr.offset(i * tile_size * stride))
 
         return tiles
@@ -1911,6 +1918,7 @@ struct LayoutTensor[
         ),
         address_space=address_space,
         element_layout=element_layout,
+        __experimental_non_homogeneous_tile=__experimental_non_homogeneous_tile,
     ] as result:
         return __type_of(result)(self.ptr)
 
@@ -1922,6 +1930,7 @@ struct LayoutTensor[
         dst_layout,
         address_space=address_space,
         element_layout=element_layout,
+        __experimental_non_homogeneous_tile=__experimental_non_homogeneous_tile,
     ] as result:
         return __type_of(result)(self.ptr)
 
@@ -2138,17 +2147,10 @@ struct LayoutTensor[
                 other.runtime_layout.stride,
             )
 
-            var dst_element_size = self.runtime_element_layout.size()
-            var src_element_size = other.runtime_element_layout.size()
+            for i in range(dst_layout.size()):
+                var dst_idx = dst_layout(i)
 
-            for i in range(d0 * d1):
-                var dst_idx = make_runtime_layout(
-                    self.runtime_element_layout, dst_layout
-                )(i * dst_element_size)
-
-                var src_idx = make_runtime_layout(
-                    other.runtime_element_layout, src_layout
-                )(i * src_element_size)
+                var src_idx = src_layout(i)
 
                 var src_element = Element[dtype, other.element_layout].load[
                     other.address_space
@@ -2428,7 +2430,7 @@ struct LayoutTensor[
             constrained[not swizzle, "Should not swizzle scalar copy."]()
 
             @parameter
-            if not __experimental_non_homogeneous_tile:
+            if not src.__experimental_non_homogeneous_tile:
 
                 @parameter
                 for i in range(dst_size * dst_element_size):
@@ -2916,7 +2918,7 @@ fn copy_sram_to_dram[
         src_type,
         src_layout,
         address_space = _GPUAddressSpace.SHARED,
-        element_layout=src_element_layout,
+        element_layout=src_element_layout, **_,
     ],
 ):
     constrained[
@@ -3034,13 +3036,13 @@ fn copy_sram_to_dram[
         dst_type,
         dst_layout,
         address_space = _GPUAddressSpace.GENERIC,
-        element_layout=dst_element_layout,
+        element_layout=dst_element_layout, **_,
     ],
     src: LayoutTensor[
         src_type,
         src_layout,
         address_space = _GPUAddressSpace.SHARED,
-        element_layout=src_element_layout,
+        element_layout=src_element_layout, **_,
     ],
     offset: Int,
     rows: Int,
@@ -3161,13 +3163,13 @@ fn copy_local_to_dram[
         dtype,
         dst_layout,
         address_space = _GPUAddressSpace.GENERIC,
-        element_layout=dst_element_layout,
+        element_layout=dst_element_layout, **_,
     ],
     src: LayoutTensor[
         dtype,
         src_layout,
         address_space=src_addr_space,
-        element_layout=src_element_layout,
+        element_layout=src_element_layout, **_,
     ],
 ):
     var dst_fragments = dst.distribute[dst_thread_layout](ThreadIdx.x())
@@ -3190,13 +3192,13 @@ fn copy_local_to_dram[
         dtype,
         dst_layout,
         address_space = _GPUAddressSpace.GENERIC,
-        element_layout=dst_element_layout,
+        element_layout=dst_element_layout, **_,
     ],
     src: LayoutTensor[
         dtype,
         src_layout,
         address_space=src_addr_space,
-        element_layout=src_element_layout,
+        element_layout=src_element_layout, **_,
     ],
     offset: Int,
     rows: Int,
@@ -3223,13 +3225,13 @@ fn copy_local_to_sram[
         dst_type,
         dst_layout,
         address_space = _GPUAddressSpace.SHARED,
-        element_layout=dst_element_layout,
+        element_layout=dst_element_layout, **_,
     ],
     src: LayoutTensor[
         src_type,
         src_layout,
         address_space=src_addr_space,
-        element_layout=src_element_layout,
+        element_layout=src_element_layout, **_,
     ],
 ):
     var dst_frag = dst.distribute[thread_layout](ThreadIdx.x())
@@ -3300,9 +3302,9 @@ fn copy_local_to_local[
         dst_type,
         dst_layout,
         address_space = _GPUAddressSpace.LOCAL,
-        element_layout=dst_element_layout,
+        element_layout=dst_element_layout, **_,
     ],
-    src: LayoutTensor[src_type, src_layout, address_space=src_addr_space],
+    src: LayoutTensor[src_type, src_layout, address_space=src_addr_space, **_],
 ):
     constrained[
         dst.dtype.is_half_float() and src.dtype == DType.float32,
@@ -3442,7 +3444,12 @@ struct LayoutTensorIter[
     @always_inline
     fn get(
         self,
-    ) -> LayoutTensor[type, layout, address_space=address_space] as result:
+    ) -> LayoutTensor[
+        type,
+        layout,
+        address_space=address_space,
+        __experimental_non_homogeneous_tile=__experimental_non_homogeneous_tile,
+    ] as result:
         """Return the layout tensor at current iterator."""
         # TODO: Use deref `[]` to be consistent with mojo feature.
 
@@ -3453,7 +3460,12 @@ struct LayoutTensorIter[
     @always_inline
     fn __getitem__(
         self,
-    ) -> LayoutTensor[type, layout, address_space=address_space]:
+    ) -> LayoutTensor[
+        type,
+        layout,
+        address_space=address_space,
+        __experimental_non_homogeneous_tile=__experimental_non_homogeneous_tile,
+    ]:
         """Return the layout tensor at current iterator."""
         return self.get()
 

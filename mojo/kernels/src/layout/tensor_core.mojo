@@ -251,13 +251,13 @@ struct TensorCore[
             type0,
             layout0,
             address_space = AddressSpace.SHARED,
-            element_layout=element_layout0,
+            element_layout=element_layout0, **_,
         ],
         fragments: LayoutTensor[
             type1,
             layout1,
             element_layout=element_layout1,
-            address_space = AddressSpace.LOCAL,
+            address_space = AddressSpace.LOCAL, **_,
         ],
         mma_tile_coordk: Int = 0,  # the k corrdinate of mma tile
     ):
@@ -290,13 +290,13 @@ struct TensorCore[
             type0,
             layout0,
             address_space = AddressSpace.SHARED,
-            element_layout=element_layout0,
+            element_layout=element_layout0, **_,
         ],
         fragments: LayoutTensor[
             type0,
             layout1,
             element_layout=element_layout1,
-            address_space = AddressSpace.LOCAL,
+            address_space = AddressSpace.LOCAL, **_,
         ],
         mma_tile_coordk: Int = 0,  # the k corrdinate of mma tile
         warp_tile_coordn: Int = 0,  # n coordiante of warp tile
@@ -468,9 +468,7 @@ fn _load_matrix_frag[
     __output_width: Int = num_matrices * __register_width // sizeof[__type](),
 ](
     mma_tile: LayoutTensor[
-        __type,
-        __layout,
-        address_space = AddressSpace.SHARED,
+        __type, __layout, address_space = AddressSpace.SHARED, **_
     ],
     offset: Int,
 ) -> SIMD[mma_tile.dtype, __output_width]:
