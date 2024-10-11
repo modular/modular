@@ -2910,7 +2910,7 @@ fn copy_sram_to_dram[
         dst_type,
         dst_layout,
         address_space = _GPUAddressSpace.GENERIC,
-        element_layout=dst_element_layout,
+        element_layout=dst_element_layout, **_,
     ],
     src: LayoutTensor[
         src_type,
@@ -2944,45 +2944,79 @@ fn copy_sram_to_dram[
             "Only FP32 -> half precision downcast for vectorized copy.",
         ]()
 
-        alias num_stores_per_thread = dst_fragments.layout.size()
         alias src_align = alignof[SIMD[src_type, simdwidthof[src_type]()]]()
         alias dst_align = alignof[SIMD[dst_type, simd_size]]()
 
         var src_frag_offset = src_fragments.distance(src.ptr)
 
         @parameter
-        for i in range(num_stores_per_thread):
-            var dst_idx = 0
-
-            alias src_idx = src_fragments.layout(i)
-            alias dst_static_idx = dst_fragments.layout(i)
-
-            @parameter
-            if dst_fragments.layout.all_dims_known():
-                dst_idx = dst_static_idx
-            else:
-                dst_idx = dst_fragments.runtime_layout(i)
-
-            var swizzled_idx = src_frag_offset + src_idx
+        if (
+            not dst.__experimental_non_homogeneous_tile
+            or dst_fragments.layout.known_shape()
+        ):
+            alias num_stores_per_thread = dst_fragments.layout.size()
 
             @parameter
-            if swizzle:
-                alias swizzle_fn = swizzle.value()
-                alias src_idx_base = src_idx % swizzle_fn.size()
-                alias src_idx_diff = src_idx - src_idx_base
-                # `src_frag_offset + src_idx_base` should be a value already seen
-                # in the unrolled loop. Hopefully compiler can eleminate the duplicated
-                # xor computation.
-                swizzled_idx = (
-                    swizzle_fn(src_frag_offset + src_idx_base) + src_idx_diff
+            for i in range(num_stores_per_thread):
+                var dst_idx = 0
+
+                alias src_idx = src_fragments.layout(i)
+                alias dst_static_idx = dst_fragments.layout(i)
+
+                @parameter
+                if dst_fragments.layout.all_dims_known():
+                    dst_idx = dst_static_idx
+                else:
+                    dst_idx = dst_fragments.runtime_layout(i)
+
+                var swizzled_idx = src_frag_offset + src_idx
+
+                @parameter
+                if swizzle:
+                    alias swizzle_fn = swizzle.value()
+                    alias src_idx_base = src_idx % swizzle_fn.size()
+                    alias src_idx_diff = src_idx - src_idx_base
+                    # `src_frag_offset + src_idx_base` should be a value already seen
+                    # in the unrolled loop. Hopefully compiler can eleminate the duplicated
+                    # xor computation.
+                    swizzled_idx = (
+                        swizzle_fn(src_frag_offset + src_idx_base)
+                        + src_idx_diff
+                    )
+
+                var src_vec = src.ptr.load[
+                    width=simd_size, alignment=src_align
+                ](swizzled_idx)
+                dst_fragments.ptr.store[alignment=dst_align](
+                    dst_idx, src_vec.cast[dst_type]()
                 )
+        else:
+            var num_stores_per_thread = dst_fragments.runtime_layout.size()
+            for i in range(num_stores_per_thread):
+                var src_idx = src_fragments.runtime_layout(i)
+                var dst_idx = dst_fragments.runtime_layout(i)
 
-            var src_vec = (src.ptr + swizzled_idx).load[
-                width=simd_size, alignment=src_align
-            ]()
-            (dst_fragments.ptr + dst_idx).store[alignment=dst_align](
-                src_vec.cast[dst_type]()
-            )
+                var swizzled_idx = src_frag_offset + src_idx
+
+                @parameter
+                if swizzle:
+                    alias swizzle_fn = swizzle.value()
+                    var src_idx_base = src_idx % swizzle_fn.size()
+                    var src_idx_diff = src_idx - src_idx_base
+                    # `src_frag_offset + src_idx_base` should be a value already seen
+                    # in the unrolled loop. Hopefully compiler can eleminate the duplicated
+                    # xor computation.
+                    swizzled_idx = (
+                        swizzle_fn(src_frag_offset + src_idx_base)
+                        + src_idx_diff
+                    )
+
+                var src_vec = src.ptr.load[
+                    width=simd_size, alignment=src_align
+                ](swizzled_idx)
+                dst_fragments.ptr.store[alignment=dst_align](
+                    dst_idx, src_vec.cast[dst_type]()
+                )
 
 
 @always_inline
@@ -3067,9 +3101,9 @@ fn copy_sram_to_dram[
                 )
 
             if thread_offset + dst_idx < rows * cols:
-                var src_vec = (src.ptr + swizzled_idx).load[
+                var src_vec = (src.ptr).load[
                     width=simd_size, alignment=src_align
-                ]()
+                ](swizzled_idx)
                 dst_fragments.ptr.store[alignment=dst_align](
                     dst_idx, src_vec.cast[dst_type]()
                 )
