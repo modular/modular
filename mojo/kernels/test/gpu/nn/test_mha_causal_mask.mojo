@@ -93,7 +93,8 @@ fn test[
                 for k_idx in range(num_keys):
                     mask.store(
                         Index(b, h, q_idx, k_idx),
-                        0 if q_idx >= k_idx else min_or_neg_inf[mask_type](),
+                        0 if q_idx + num_keys - seq_len
+                        >= k_idx else min_or_neg_inf[mask_type](),
                     )
 
     # Device pointers
@@ -283,3 +284,49 @@ def main():
             128,
             1,
         ](528, 528, ctx)
+
+        # BF16 token gen
+        test[
+            DType.bfloat16,
+            DType.bfloat16,
+            128,
+            11,
+        ](1, 256, ctx)
+
+        test[
+            DType.bfloat16,
+            DType.float32,
+            128,
+            1,
+        ](1, 11, ctx)
+
+        test[
+            DType.bfloat16,
+            DType.bfloat16,
+            128,
+            2,
+        ](1, 523, ctx)
+
+        test[
+            DType.bfloat16,
+            DType.float32,
+            128,
+            24,
+            group=3,
+        ](1, 29, ctx)
+
+        test[
+            DType.bfloat16,
+            DType.bfloat16,
+            128,
+            3,
+            group=3,
+        ](1, 156, ctx)
+
+        test[
+            DType.bfloat16,
+            DType.bfloat16,
+            128,
+            3,
+            group=3,
+        ](1, 208, ctx)

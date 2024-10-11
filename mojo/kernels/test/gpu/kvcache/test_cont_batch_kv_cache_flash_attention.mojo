@@ -20,6 +20,7 @@ from kv_cache.types import (
 )
 from memory import UnsafePointer
 from nn.mha import flash_attention, mha_gpu_naive
+from nn.mha_mask import NullMask
 from runtime.asyncrt import MojoCallContextPtr
 from testing import assert_almost_equal
 
@@ -59,9 +60,9 @@ def execute_flash_attention[
         + ")",
     )
 
-    var max_cache_valid_length = max(
-        Buffer[DType.uint32](cache_valid_length.data, batch_size)
-    ).__int__()
+    var max_cache_valid_length = int(
+        max(Buffer[DType.uint32](cache_valid_length.data, batch_size))
+    )
 
     # initialize q tensor
     q_host = HostNDBuffer[
@@ -263,6 +264,7 @@ def execute_flash_attention[
         k_cache_device,
         v_cache_device,
         mask_device.tensor,
+        NullMask(),
         valid_length_device.tensor,
         isqrt(Float32(kv_params.head_size)),
         ctx,

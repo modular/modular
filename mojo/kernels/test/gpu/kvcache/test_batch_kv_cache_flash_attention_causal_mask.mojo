@@ -4,23 +4,30 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-# RUN: %mojo-no-debug %s
-
-from math import isqrt
+# RUN: %mojo-no-debug %s -t | FileCheck %s
+# CHECK-NOT: CUDA ERROR
 
 from algorithm import max
-from buffer import Buffer, Dim, DimList, NDBuffer
+from buffer import Buffer, NDBuffer, Dim, DimList
 from gpu.host import DeviceContext
-from internal_utils import DeviceNDBuffer, HostNDBuffer, random
 from kv_cache.types import ContiguousKVCache, KVCacheStaticParams
+from math import isqrt, isclose
 from memory import UnsafePointer
-from nn.mha import flash_attention, mha_gpu_naive
-from nn.mha_mask import NullMask
-from runtime.asyncrt import MojoCallContextPtr
+from nn.mha import mha_gpu_naive, flash_attention
+from nn.mha_mask import NullMask, CausalMask
+from internal_utils import (
+    HostNDBuffer,
+    DeviceNDBuffer,
+    random,
+)
+from runtime.asyncrt import (
+    MojoCallContextPtr,
+)
 from testing import assert_almost_equal
-
 from utils import IndexList
 from utils.index import Index
+from utils.numerics import min_or_neg_inf
+
 
 alias kv_params_replit = KVCacheStaticParams(num_heads=8, head_size=128)
 alias replit_num_q_heads = 24
@@ -50,9 +57,9 @@ def execute_flash_attention[
         + ")",
     )
 
-    var max_cache_valid_length = max(
-        Buffer[DType.uint32](cache_valid_length.data, batch_size)
-    ).__int__()
+    var max_cache_valid_length = int(
+        max(Buffer[DType.uint32](cache_valid_length.data, batch_size))
+    )
 
     # initialize q tensor
     # TODO parameterize to layout
@@ -99,7 +106,17 @@ def execute_flash_attention[
         )
     )
 
-    random(mask_host.tensor)
+    # random(mask_host.tensor)
+    # Initialize causal mask.
+    for b in range(batch_size):
+        for h in range(num_q_heads):
+            for q_idx in range(max_prompt_len):
+                for k_idx in range(max_prompt_len + max_cache_valid_length):
+                    mask_host.tensor.store(
+                        Index(b, h, q_idx, k_idx),
+                        0 if q_idx + max_cache_valid_length
+                        >= k_idx else min_or_neg_inf[type](),
+                    )
 
     mask_device = DeviceNDBuffer[
         type, 4, DimList(Dim(), num_q_heads, Dim(), Dim())
@@ -240,8 +257,21 @@ def execute_flash_attention[
         batch_size,
     )
 
-    flash_attention[target="cuda"](
+    flash_attention[target="cuda", add_attn_mask=False](
         test_output_device.tensor,
+        q_device.tensor,
+        k_cache_device,
+        v_cache_device,
+        mask_device.tensor,
+        CausalMask(),
+        valid_length_device.tensor,
+        # TODO take scale from argument GRA-750
+        isqrt(Float32(kv_params.head_size)),
+        ctx,
+    )
+
+    flash_attention[target="cuda", add_attn_mask=True](
+        ref_output_device.tensor,
         q_device.tensor,
         k_cache_device,
         v_cache_device,
@@ -253,23 +283,6 @@ def execute_flash_attention[
         ctx,
     )
 
-    mha_gpu_naive[4, 4](
-        q_device.tensor,
-        k_cache_device,
-        v_cache_device,
-        mask_device.buffer.ptr,
-        ref_output_device.buffer.ptr,
-        valid_length_device.tensor,
-        scale_host.tensor.data[0],
-        batch_size,
-        max_prompt_len,
-        max_cache_valid_length,
-        num_q_heads,  # TODO fix this for GQA
-        kv_params.head_size,
-        num_q_heads // kv_params.num_heads,
-        ctx,
-    )
-
     ctx.enqueue_copy_from_device(
         test_output_host.tensor.data, test_output_device.buffer
     )
@@ -278,15 +291,20 @@ def execute_flash_attention[
     )
     ctx.synchronize()
 
-    ref_out = ref_output_host.tensor
-    test_out = test_output_host.tensor
-    for bs in range(int(batch_size)):
-        for s in range(int(valid_length[bs])):
-            for h in range(int(kv_params.num_heads)):
-                for hd in range(int(kv_params.head_size)):
+    var ref_out = ref_output_host.tensor
+    var test_out = test_output_host.tensor
+    for bs in range(batch_size):
+        for s in range(valid_length[bs]):
+            for h in range(kv_params.num_heads):
+                for hd in range(kv_params.head_size):
+                    # print(bs, s, h, hd, test_out[bs, s, h, hd])
+                    var expect = ref_out[Index(bs, s, h, hd)]
+                    var actual = test_out[Index(bs, s, h, hd)]
+                    if not isclose(actual, expect, atol=1e-5, rtol=8e-3):
+                        print(bs, s, h, hd, actual, expect)
                     assert_almost_equal(
-                        ref_out[bs, s, h, hd],
-                        test_out[bs, s, h, hd],
+                        expect,
+                        actual,
                         atol=1e-5,
                         rtol=8e-3,
                     )
@@ -306,6 +324,8 @@ def execute_flash_attention[
     _ = mask_host^
     _ = mask_device^
     _ = cache_lengths_dev^
+    _ = valid_length_device^
+    _ = valid_length
 
 
 def execute_flash_attention_suite(ctx: DeviceContext):
@@ -363,5 +383,10 @@ def execute_flash_attention_suite(ctx: DeviceContext):
 
 
 def main():
-    with DeviceContext() as ctx:
-        execute_flash_attention_suite(ctx)
+    try:
+        with DeviceContext() as ctx:
+            execute_flash_attention_suite(ctx)
+
+        print("Success!")
+    except e:
+        print("CUDA ERROR:", str(e))
