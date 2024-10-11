@@ -2435,19 +2435,21 @@ struct GatherND:
     @staticmethod
     fn execute[
         batchDims: Int,
+        synchronous: Bool,
+        target: StringLiteral,
     ](
         output: ManagedTensorSlice,
         data: ManagedTensorSlice[output.type, *_],
         indices: ManagedTensorSlice,
+        ctx: MojoCallContextPtr,
     ) raises:
         # Existing implementations do not require static shape information
         var output_ndbuffer = managed_tensor_slice_to_ndbuffer(output)
         var data_ndbuffer = managed_tensor_slice_to_ndbuffer(data)
         var indices_ndbuffer = managed_tensor_slice_to_ndbuffer(indices)
-        gather_nd[batch_dims=batchDims,](
-            data_ndbuffer,
-            indices_ndbuffer,
-            output_ndbuffer,
+
+        gather_nd[batch_dims=batchDims](
+            data_ndbuffer, indices_ndbuffer, output_ndbuffer, ctx
         )
 
 

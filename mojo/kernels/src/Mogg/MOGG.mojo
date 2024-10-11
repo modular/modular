@@ -3407,6 +3407,7 @@ fn gather_nd[
     output_rank: Int,
     batch_dims: Int,
     single_thread_blocking_override: Bool,
+    target: StringLiteral = "cpu",
 ](
     data: NDBuffer[type, data_rank],
     indices: NDBuffer[indices_type, indices_rank],
@@ -3414,8 +3415,14 @@ fn gather_nd[
     ctx: MojoCallContextPtr,
 ):
     _gather_nd[
-        type, indices_type, data_rank, indices_rank, output_rank, batch_dims
-    ](data, indices, output)
+        type,
+        indices_type,
+        data_rank,
+        indices_rank,
+        output_rank,
+        batch_dims,
+        target=target,
+    ](data, indices, output, ctx)
 
 
 # Note: this is not a "real" index_tensor op that covers all cases, but rather
