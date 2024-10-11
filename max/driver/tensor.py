@@ -227,8 +227,19 @@ class Tensor(DLPackArray):
         return cls.from_dlpack(np.ascontiguousarray(arr))
 
     def to_numpy(self) -> np.ndarray:
-        """Converts the tensor to a numpy array."""
-        return np.from_dlpack(self)  # type: ignore
+        """Converts the tensor to a numpy array.
+
+        If the tensor is not on the host, an exception is raised.
+        """
+        try:
+            return np.from_dlpack(self)  # type: ignore
+        except RuntimeError as e:
+            if str(e).startswith("Unsupported device in DLTensor"):
+                raise RuntimeError(
+                    f"Cannot convert tensor on {self.device} to numpy; move to"
+                    " the host using `Tensor.to`"
+                ) from e
+            raise
 
     def __dlpack_device__(self) -> Tuple[int, int]:
         """Implements part of the dlpack contract."""
