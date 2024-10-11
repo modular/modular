@@ -4,9 +4,10 @@
 #
 # ===----------------------------------------------------------------------=== #
 
+import asyncio
 from dataclasses import dataclass
 from time import sleep, time
-from typing import List, Literal, Optional
+from typing import Literal, Optional
 
 from transformers import AutoTokenizer
 
@@ -41,14 +42,26 @@ class PerformanceFakingTokenGenerator:
     # padding mode for context encoding
     tg_padding: bool = False
 
+    # our pipelines are well behaved asyncio citizen and offload
+    # expensive work to the asyncio threadpool
+    use_executor: bool = True
+
     # whether to busy wait or to sleep
-    busy_wait: bool = True
+    # the model execute call in our pipelines does release the GIL
+    busy_wait: bool = False
 
     async def new_context(
         self, prompt: str, max_new_tokens: Optional[int] = None
     ) -> PerformanceFakingContext:
         if self._tokenizer:
-            prompt_length = len(self._tokenizer.encode(prompt))
+            if self.use_executor:
+                loop = asyncio.get_running_loop()
+                encoded = await loop.run_in_executor(
+                    None, self._tokenizer.encode, prompt
+                )
+            else:
+                encoded = self._tokenizer.encode(prompt)
+            prompt_length = len(encoded)
         else:
             prompt_length = len(prompt)
         num_tokens = max_new_tokens or prompt_length
@@ -72,7 +85,11 @@ class PerformanceFakingTokenGenerator:
                 ctx.context_len += 1
 
         # actually wait here
-        self._wait(wait_time)
+        if self.use_executor:
+            loop = asyncio.get_running_loop()
+            await loop.run_in_executor(None, self._wait, wait_time)
+        else:
+            self._wait(wait_time)
 
         # We return the reversed prompt, repeated as many times necessary
         # to satisfy the max_tokens
