@@ -309,6 +309,7 @@ fn __to_static_tuple[*sizes: Int, rank: Int]() -> IndexList[rank]:
 
 # Stores the layout of the vectorized buffer element.
 #
+@value
 struct ElementLayout[rank: Int, shape: IndexList[rank]](
     CollectionElement,
     Stringable,
@@ -326,12 +327,6 @@ struct ElementLayout[rank: Int, shape: IndexList[rank]](
             other: The value to copy.
         """
         self = other
-
-    fn __copyinit__(inout self, exisiting: Self):
-        self.stride = exisiting.stride
-
-    fn __moveinit__(inout self, owned exisiting: Self):
-        self.stride = exisiting.stride
 
     @no_inline
     fn __str__(self) -> String:
