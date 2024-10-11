@@ -18,6 +18,8 @@ from memory.unsafe import bitcast
 
 from utils import IndexList, StaticTuple
 
+from ._utils import to_llvm_ptr, to_llvm_shared_mem_ptr, to_i32
+
 # ===----------------------------------------------------------------------===#
 # AddressSpace
 # ===----------------------------------------------------------------------===#
@@ -262,55 +264,6 @@ fn fence_proxy_tensormap_generic_sys_release():
 
 
 @always_inline
-fn __to_llvm_shared_mem_ptr[
-    type: AnyType
-](
-    ptr: UnsafePointer[type, GPUAddressSpace.SHARED, *_]
-) -> __mlir_type.`!llvm.ptr<3>`:
-    """Cast shared memory pointer to LLVMPointer Type.
-
-    Args:
-        ptr: Shared memory pointer.
-
-    Returns:
-        A pointer of type !llvm.ptr<3>.
-    """
-    return __mlir_op.`builtin.unrealized_conversion_cast`[
-        _type = __mlir_type.`!llvm.ptr<3>`
-    ](ptr)
-
-
-@always_inline
-fn __to_llvm_ptr[
-    type: AnyType
-](ptr: UnsafePointer[type]) -> __mlir_type.`!llvm.ptr`:
-    """Cast a pointer to LLVMPointer Type.
-
-    Args:
-        ptr: A pointer.
-
-    Returns:
-        A pointer of type !llvm.ptr.
-    """
-    return __mlir_op.`builtin.unrealized_conversion_cast`[
-        _type = __mlir_type.`!llvm.ptr`
-    ](ptr)
-
-
-@always_inline
-fn __to_i32(val: Int32) -> __mlir_type.i32:
-    """Cast Scalar I32 value into MLIR i32.
-
-    Args:
-        val: Scalar I32 value.
-
-    Returns:
-       Input casted to MLIR i32 value.
-    """
-    return __mlir_op.`pop.cast_to_builtin`[_type = __mlir_type.`i32`](val.value)
-
-
-@always_inline
 fn cp_async_bulk_tensor_shared_cluster_global[
     dst_type: AnyType, mbr_type: AnyType, rank: Int
 ](
@@ -335,20 +288,20 @@ fn cp_async_bulk_tensor_shared_cluster_global[
         __mlir_op.`nvvm.cp.async.bulk.tensor.shared.cluster.global`[
             _properties = __mlir_attr.`{operandSegmentSizes = array<i32: 1,1,2,1,0,0,0,0>}`
         ](
-            __to_llvm_shared_mem_ptr(dst_mem),
-            __to_llvm_ptr(tma_descriptor),
-            __to_i32(coords[0]),
-            __to_i32(coords[1]),
-            __to_llvm_shared_mem_ptr(mem_bar),
+            to_llvm_shared_mem_ptr(dst_mem),
+            to_llvm_ptr(tma_descriptor),
+            to_i32(coords[0]),
+            to_i32(coords[1]),
+            to_llvm_shared_mem_ptr(mem_bar),
         )
     else:
         __mlir_op.`nvvm.cp.async.bulk.tensor.shared.cluster.global`[
             _properties = __mlir_attr.`{operandSegmentSizes = array<i32: 1,1,1,1,0,0,0,0>}`
         ](
-            __to_llvm_shared_mem_ptr(dst_mem),
-            __to_llvm_ptr(tma_descriptor),
-            __to_i32(coords[0]),
-            __to_llvm_shared_mem_ptr(mem_bar),
+            to_llvm_shared_mem_ptr(dst_mem),
+            to_llvm_ptr(tma_descriptor),
+            to_i32(coords[0]),
+            to_llvm_shared_mem_ptr(mem_bar),
         )
 
 

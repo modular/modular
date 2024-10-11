@@ -327,17 +327,17 @@ struct TensorMapDataType:
 
     alias UINT8 = Self(0)
     alias UINT16 = Self(1)
-    alias UINT32 = Self(3)
-    alias INT32 = Self(4)
-    alias UINT64 = Self(5)
-    alias INT64 = Self(6)
-    alias FLOAT16 = Self(7)
-    alias FLOAT32 = Self(8)
-    alias FLOAT64 = Self(9)
-    alias BFLOAT16 = Self(10)
-    alias FLOAT32_FTZ = Self(11)
-    alias TFLOAT32 = Self(12)
-    alias TFLOAT32_FTZ = Self(13)
+    alias UINT32 = Self(2)
+    alias INT32 = Self(3)
+    alias UINT64 = Self(4)
+    alias INT64 = Self(5)
+    alias FLOAT16 = Self(6)
+    alias FLOAT32 = Self(7)
+    alias FLOAT64 = Self(8)
+    alias BFLOAT16 = Self(9)
+    alias FLOAT32_FTZ = Self(10)
+    alias TFLOAT32 = Self(11)
+    alias TFLOAT32_FTZ = Self(12)
 
     fn __init__(inout self, value: Int32):
         self._value = value
@@ -408,6 +408,17 @@ struct TensorMapFloatOOBFill:
         self._value = value
 
 
+# The TMA descriptor is a 128-byte opaque object filled by the driver API.
+# It should be 64-byte aligned both on the host and the device (if passed to constant memory).
+struct TMADescriptor:
+    var data: StaticTuple[UInt8, 128]
+
+    @always_inline
+    fn __copyinit__(inout self, other: Self):
+        self.data = other.data
+
+
+@always_inline
 fn create_tma_descriptor[
     dtype: DType, rank: Int
 ](
@@ -416,13 +427,14 @@ fn create_tma_descriptor[
     global_strides: IndexList[rank],
     shared_mem_shape: IndexList[rank],
     element_stride: IndexList[rank] = IndexList[rank](1),
-) raises -> UnsafePointer[NoneType]:
+) raises -> TMADescriptor:
     """Create a tensor map descriptor object representing tiled memory region.
     """
-
-    var tensor_map_ptr = UnsafePointer[Int].alloc(32).bitcast[
+    # Enforces host-side aligment
+    var tma_descriptor = stack_allocation[1, TMADescriptor, alignment=64]()[0]
+    var tensor_map_ptr = UnsafePointer.address_of(tma_descriptor).bitcast[
         NoneType
-    ]()  # size the sizeof(TensorMap{})
+    ]()
 
     var global_dim_arg = stack_allocation[rank, Int64]()
     var global_strides_arg = stack_allocation[rank - 1, Int64]()
@@ -438,7 +450,6 @@ fn create_tma_descriptor[
     @parameter
     for i in range(rank - 1):
         global_strides_arg[i] = global_strides[rank - i - 2] * sizeof[dtype]()
-
     _check_error(
         _get_dylib_function[
             "cuTensorMapEncodeTiled",
@@ -457,7 +468,7 @@ fn create_tma_descriptor[
                 Int32,  # oobFill
             ) -> Result,
         ]()(
-            tensor_map_ptr.bitcast[NoneType](),
+            tensor_map_ptr,
             TensorMapDataType.from_dtype[dtype]()._value,
             rank,
             global_ptr.bitcast[NoneType](),
@@ -471,7 +482,7 @@ fn create_tma_descriptor[
             TensorMapFloatOOBFill.NONE._value,
         )
     )
-    return tensor_map_ptr.bitcast[NoneType]()
+    return tma_descriptor
 
 
 # ===----------------------------------------------------------------------===#

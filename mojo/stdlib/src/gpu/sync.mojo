@@ -12,6 +12,8 @@ from memory.pointer import AddressSpace
 
 from .memory import AddressSpace as GPUAddressSpace
 
+from ._utils import to_llvm_shared_mem_ptr, to_i32
+
 # ===----------------------------------------------------------------------===#
 # barrier
 # ===----------------------------------------------------------------------===#
@@ -140,4 +142,43 @@ fn mbarrier_test_wait[
     """
     return llvm_intrinsic["llvm.nvvm.mbarrier.test.wait.shared", Bool](
         shared_mem, state
+    )
+
+
+@always_inline("nodebug")
+fn mbarrier_arrive_expect_tx_shared[
+    type: AnyType
+](addr: UnsafePointer[type, GPUAddressSpace.SHARED, *_], tx_count: Int32):
+    """Performs an expect-tx operation on shared memory barrier.
+
+    This makes the current phase of the mbarrier object to expect and
+    track the completion of additional asynchronous transactions.
+
+    Args:
+        addr: Shared memory barrier address.
+        tx_count: Number of element to the expect-tx operatio.
+    """
+    __mlir_op.`nvvm.mbarrier.arrive.expect_tx.shared`(
+        to_llvm_shared_mem_ptr(addr), to_i32(tx_count)
+    )
+
+
+@always_inline("nodebug")
+fn mbarrier_try_wait_parity_shared[
+    type: AnyType
+](
+    addr: UnsafePointer[type, GPUAddressSpace.SHARED, *_],
+    phase: Int32,
+    ticks: Int32,
+):
+    """Waits for shared memory barrier till the completion of the phase
+    or ticks expires.
+
+    Args:
+        addr: Shared memory barrier.
+        phase: Phase number.
+        ticks: Time in nano seconds.
+    """
+    __mlir_op.`nvvm.mbarrier.try_wait.parity.shared`(
+        to_llvm_shared_mem_ptr(addr), to_i32(phase), to_i32(ticks)
     )
