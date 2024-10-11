@@ -1106,22 +1106,16 @@ fn argmax_wrapped[
     if target == "cpu":
         _argmax(input, int(axis), output)
     else:
-        constrained[
-            out_type == DType.index or out_type == DType.int64,
-            "output type must be a valid index type",
-        ]()
-
         var axis = int(normalize_neg_index(axis, rank))
         if axis != rank - 1:
             raise Error("axis other than -1 not supported on GPU")
 
-        # NOTE: out_type must be rebindable to DType.index (i.e. Int64)
         # TODO(KERN-1045): Add support for taking advantage of static_shapes
         var cuda_ctx = ctx.get_device_context()
         _argmax_gpu(
             cuda_ctx,
             rebind[NDBuffer[type, rank]](input),
-            rebind[NDBuffer[DType.index, rank]](output),
+            rebind[NDBuffer[out_type, rank]](output),
         )
 
 
