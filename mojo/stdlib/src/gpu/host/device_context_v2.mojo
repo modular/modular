@@ -70,7 +70,7 @@ struct DeviceBufferV2[type: DType](Sized):
         using the stream in the device context.
         """
         alias elem_size = sizeof[type]()
-        var result = _DeviceBufferPtr()
+        var cpp_handle = _DeviceBufferPtr()
         var device_ptr = UnsafePointer[Scalar[type]]()
 
         if sync_mode._is_sync:
@@ -85,7 +85,7 @@ struct DeviceBufferV2[type: DType](Sized):
                     _SizeT,
                     _SizeT,
                 ](
-                    UnsafePointer.address_of(result),
+                    UnsafePointer.address_of(cpp_handle),
                     UnsafePointer.address_of(device_ptr),
                     ctx._handle,
                     size,
@@ -104,7 +104,7 @@ struct DeviceBufferV2[type: DType](Sized):
                     _SizeT,
                     _SizeT,
                 ](
-                    UnsafePointer.address_of(result),
+                    UnsafePointer.address_of(cpp_handle),
                     UnsafePointer.address_of(device_ptr),
                     ctx._handle,
                     size,
@@ -113,7 +113,15 @@ struct DeviceBufferV2[type: DType](Sized):
             )
 
         self._device_ptr = device_ptr
-        self._handle = result
+        self._handle = cpp_handle
+
+    fn __init__(
+        inout self,
+        handle: _DeviceBufferPtr,
+        device_ptr: UnsafePointer[Scalar[type]],
+    ):
+        self._device_ptr = device_ptr
+        self._handle = handle
 
     fn __init__(
         inout self,
@@ -170,10 +178,30 @@ struct DeviceBufferV2[type: DType](Sized):
     fn create_sub_buffer[
         view_type: DType
     ](self, offset: Int, size: Int) raises -> DeviceBufferV2[view_type]:
-        not_implemented_yet[
-            "##### UNIMPLEMENTED: DeviceBufferV2.create_sub_buffer"
-        ]()
-        return DeviceBufferV2[view_type]()  # FIXME
+        alias elem_size = sizeof[view_type]()
+        var cpp_handle = _DeviceBufferPtr()
+        var device_ptr = UnsafePointer[Scalar[view_type]]()
+        # const char *AsyncRT_DeviceBuffer_createSubBuffer(const DeviceBuffer **result, void **device_ptr, const DeviceBuffer *buf, size_t offset, size_t len, size_t elem_size)
+        _checked(
+            external_call[
+                "AsyncRT_DeviceBuffer_createSubBuffer",
+                _CharPtr,
+                UnsafePointer[_DeviceBufferPtr],
+                UnsafePointer[UnsafePointer[Scalar[view_type]]],
+                _DeviceBufferPtr,
+                _SizeT,
+                _SizeT,
+                _SizeT,
+            ](
+                UnsafePointer.address_of(cpp_handle),
+                UnsafePointer.address_of(device_ptr),
+                self._handle,
+                offset,
+                size,
+                elem_size,
+            )
+        )
+        return DeviceBufferV2[view_type](cpp_handle, device_ptr)
 
     fn take_ptr(owned self) -> UnsafePointer[Scalar[type]]:
         not_implemented_yet["##### UNIMPLEMENTED: DeviceBufferV2.take_ptr"]()
