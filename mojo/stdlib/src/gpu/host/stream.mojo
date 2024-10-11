@@ -14,6 +14,7 @@ from ._utils import _check_error, _StreamHandle
 # ===----------------------------------------------------------------------===#
 
 
+@value
 struct Stream(CollectionElement):
     var stream: _StreamHandle
     var owning: Bool
@@ -64,14 +65,6 @@ struct Stream(CollectionElement):
         self.stream = existing.stream
         self.owning = False
         self.cuda_dll = existing.cuda_dll
-
-    fn __moveinit__(inout self, owned existing: Self):
-        self.stream = existing.stream
-        self.owning = existing.owning
-        self.cuda_dll = existing.cuda_dll
-        existing.stream = _StreamHandle()
-        existing.owning = False
-        existing.cuda_dll = CudaDLL()
 
     fn synchronize(self) raises:
         """Wait until a CUDA stream's tasks are completed."""
