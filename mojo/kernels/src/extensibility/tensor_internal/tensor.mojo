@@ -160,6 +160,7 @@ fn _sub(x: SIMD[*_], y: __type_of(x)) -> __type_of(x):
     return x - y
 
 
+@value
 struct Tensor[type: DType](
     Stringable,
     Formattable,
@@ -378,17 +379,6 @@ struct Tensor[type: DType](
         self._spec = other._spec
         self._ptr = UnsafePointer[Scalar[type]].alloc(num_elements)
         memcpy(self._ptr, other._ptr, num_elements)
-
-    fn __moveinit__(inout self, owned existing: Self):
-        """Move initializer for the tensor.
-
-        Args:
-            existing: The tensor to move.
-        """
-        self._spec = existing._spec^
-        self._ptr = existing._ptr
-        existing._spec = TensorSpec()
-        existing._ptr = UnsafePointer[Scalar[type]]()
 
     @staticmethod
     fn rand(owned shape: TensorShape) -> Tensor[type]:

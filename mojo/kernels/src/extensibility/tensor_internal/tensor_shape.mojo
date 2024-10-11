@@ -682,6 +682,7 @@ fn _as_rep_out_of_line(rep0: _Rep32) -> _RepOutOfLine:
 # ===----------------------------------------------------------------------===#
 
 
+@value
 struct TensorShape(
     Stringable, Formattable, CollectionElement, EqualityComparable
 ):
@@ -897,16 +898,6 @@ struct TensorShape(
             )
         else:
             self._rep = _TensorShapeStorage(_as_rep16(other._rep))
-
-    @always_inline
-    fn __moveinit__(inout self, owned existing: Self):
-        """Move initializer for the shape.
-
-        Args:
-            existing: The shape to move.
-        """
-        self._rep = existing._rep
-        existing._rep = _TensorShapeStorage()
 
     @always_inline
     fn __del__(owned self):

@@ -26,6 +26,7 @@ from .tensor_shape import TensorShape, _as_rep16
 # ===----------------------------------------------------------------------===#
 
 
+@value
 struct TensorSpec(
     Stringable,
     Formattable,
@@ -99,25 +100,6 @@ struct TensorSpec(
 
         self.shape = TensorShape()
         self.shape._rep = rep
-
-    @always_inline
-    fn __copyinit__(inout self, other: Self):
-        """Creates a deep copy of an existing spec.
-
-        Args:
-            other: The spec to copy.
-        """
-        self.shape = other.shape
-
-    @always_inline
-    fn __moveinit__(inout self, owned existing: Self):
-        """Move initializer for the spec.
-
-        Args:
-            existing: The spec to move.
-        """
-        self.shape = existing.shape^
-        existing.shape = TensorShape()
 
     @always_inline
     fn __eq__(self, other: Self) -> Bool:
