@@ -6,7 +6,7 @@
 """Test serving a Llama 3 model on the CPU."""
 
 import pytest
-from fastapi.testclient import TestClient
+from async_asgi_testclient import TestClient
 from llama3 import SupportedEncodings
 from max.driver import CPU
 from max.serve.mocks.mock_api_requests import simple_openai_request
@@ -28,8 +28,8 @@ from .params import ModelParams
     ],
     indirect=True,
 )
-def test_tinyllama_serve_cpu(app):
-    with TestClient(app) as client:
+async def test_tinyllama_serve_cpu(app):
+    async with TestClient(app) as client:
         raw_response = client.post(
             "/v1/chat/completions", json=simple_openai_request()
         )
