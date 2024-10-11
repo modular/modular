@@ -89,7 +89,7 @@ fn multistage_mma[
     b_next_smem_layout: Layout = Layout(),
     next_op_b_iter_alignment: Int = alignof[b_type](),
 ](
-    c: LayoutTensor[c_type, c_layout, address_space = AddressSpace.LOCAL],
+    c: LayoutTensor[c_type, c_layout, address_space = AddressSpace.LOCAL, **_],
     a_iter_arg: LayoutTensorIter[_, a_layout, **_],
     b_iter_arg: LayoutTensorIter[b_type, b_layout, **_],
     a_smem_iter_arg: LayoutTensorIter[
@@ -148,7 +148,7 @@ fn multistage_mma[
             a_type,
             tile_layout,
             address_space = AddressSpace.SHARED,
-            element_layout=_,
+            element_layout=_, **_,
         ],
         num_rows: Int = UNKNOWN_VALUE,
     ):
@@ -179,7 +179,7 @@ fn multistage_mma[
             b_type,
             tile_layout,
             address_space = AddressSpace.SHARED,
-            element_layout=_,
+            element_layout=_, **_,
         ],
         num_rows: Int = UNKNOWN_VALUE,
     ):
