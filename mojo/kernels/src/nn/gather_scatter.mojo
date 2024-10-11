@@ -797,26 +797,22 @@ fn scatter_nd_generator[
 
     @parameter
     if "cuda" in target:
-        try:
-            # TODO: Does it matter if output.data or output_flat.data (and data)?
-            var ctx = context.get_device_context()
-            # TODO: Owning = True or False?
-            var outp = DeviceBuffer(
-                ctx,
-                output.data,
-                data.num_elements(),
-                owning=False,
-            )
-            var inp = DeviceBuffer(
-                ctx, data.data, data.num_elements(), owning=False
-            )
-            ctx.enqueue_copy_device_to_device(
-                outp,
-                inp,
-            )
-
-        except e:
-            abort(e)
+        # TODO: Does it matter if output.data or output_flat.data (and data)?
+        var ctx = context.get_device_context()
+        # TODO: Owning = True or False?
+        var outp = DeviceBuffer(
+            ctx,
+            output.data,
+            data.num_elements(),
+            owning=False,
+        )
+        var inp = DeviceBuffer(
+            ctx, data.data, data.num_elements(), owning=False
+        )
+        ctx.enqueue_copy_device_to_device(
+            outp,
+            inp,
+        )
 
     @parameter
     if "cuda" not in target:

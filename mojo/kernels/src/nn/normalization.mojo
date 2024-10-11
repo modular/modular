@@ -483,7 +483,7 @@ fn layer_norm_cpu[
     out_buf: NDBuffer[type, 2, _],
     beta: NDBuffer[type, 1],
     epsilon: Scalar[type],
-):
+) raises:
     """Computes layernorm(elementwise_fn(x)) across the last dimension of x, where layernorm is
     defined as $(x-mean(x))/(sqrt(var(x)+eps)*gamma_fn + beta$.
 
@@ -572,7 +572,7 @@ fn layer_norm_cpu[
         chunk_size, prod_all_but_last_dim, last_dim, output_buf, epsilon
     )
     @parameter
-    fn task_func(thread_id: Int):
+    fn task_func(thread_id: Int) raises:
         var num_rows = min(
             chunk_size, prod_all_but_last_dim - thread_id * chunk_size
         )
