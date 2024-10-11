@@ -11,6 +11,7 @@ from sys import (
     llvm_intrinsic,
     simdwidthof,
     bitwidthof,
+    is_defined,
     env_get_int,
     env_get_bool,
 )
@@ -310,16 +311,8 @@ fn _matmul_gpu[
         if multi_gemm_cond:
             alias kernels = MatmulKernels[a_type, b_type, c_type, transpose_b]()
 
-            var best_config = select_config[
-                a_type, b_type, c_type, transpose_b, target
-            ](m, n, k)
-
-            alias autotuning_mode = env_get_bool["AUTOTUNING_MODE", False]()
-
             @parameter
-            if autotuning_mode:
-                print("AUTOTUNING MODE ENABLED")
-                print(kernels.tuning_config)
+            if is_defined["AUTOTUNING_MODE"]():
                 multistage_gemm[
                     transpose_b=transpose_b,
                     config = kernels.tuning_config,
@@ -332,6 +325,10 @@ fn _matmul_gpu[
                     ctx,
                 )
                 return
+
+            var best_config = select_config[
+                a_type, b_type, c_type, transpose_b, target
+            ](m, n, k)
 
             if best_config == kernels.ampere_256x64_4:
                 alias config = kernels.ampere_256x64_4
