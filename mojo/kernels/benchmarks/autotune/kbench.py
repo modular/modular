@@ -205,7 +205,8 @@ class SpecInstance:
             logging.info(f"[output_file: {output_file}")
         try:
             if dryrun:
-                print(list2cmdline(cmd))
+                if verbose:
+                    print(list2cmdline(cmd))
             else:
                 # TODO: needs better error handling and error messages.
                 logging.debug(list2cmdline(cmd))
@@ -236,6 +237,46 @@ class SpecInstance:
         return "/".join(tokens)
 
 
+class GridSearchStrategy:
+    def __init__(self, name, file, params):
+        self.instances = []
+
+        # params
+        for cfg in params:
+            name_list = [p.name for p in cfg]
+            param_list = [p.value_set for p in cfg]
+            param_mesh = list(product(*param_list))
+            num_params = len(cfg)
+            for idx in range(len(param_mesh)):
+                s = SpecInstance(
+                    name=name,
+                    file=file,
+                    params=[
+                        Param(name=name_list[i], value=param_mesh[idx][i])
+                        for i in range(num_params)
+                    ],
+                )
+                self.instances.append(s)
+
+    def __iter__(self):
+        self.offset = 0
+        return self
+
+    def __next__(self):
+        res = self.instances[self.offset]
+        self.offset += 1
+        return res
+
+    def __getitem__(self, i):
+        return self.instances[i]
+
+    def __len__(self):
+        return len(self.instances)
+
+    def extend(self, other):
+        self.instances.extend(other.instances)
+
+
 @dataclass(repr=True)
 class Spec:
     name: str
@@ -243,7 +284,7 @@ class Spec:
     params: list[object] = field(default_factory=list)
     mesh_idx: int = 0
     mesh_size: int = 0
-    instances: List[SpecInstance] = field(default_factory=list)
+    mesh: List[SpecInstance] = field(default_factory=list)
 
     @staticmethod
     def load_yaml(file: Path) -> "Spec":
@@ -319,7 +360,8 @@ class Spec:
         # Expand with CLI params
         extra_params = self.parse_params(param_list)
 
-        # For all params in each config either, update the exisiting `value_set`` with the new param value(s).
+        # For all params in each config either, update the exisiting `value_set``
+        # with the new param value(s).
         for cfg in self.params:
             for k, v in extra_params.items():
                 found = False
@@ -334,15 +376,15 @@ class Spec:
         self.setup_mesh()
 
     def dump_yaml(self, out_path: Path):
-        assert self.instances, "There are no instances to write to YAML!"
+        assert self.mesh, "There are no instances to write to YAML!"
         obj = {
             "name": self.name,
             "file": self.file,
-            "params": [s.to_obj() for s in self.instances],
+            "params": [s.to_obj() for s in self.mesh],
         }
         with open(out_path, "w") as f:
             YAML(typ="safe").dump(obj, f, sort=False)
-        print(f"dumped {len(self.instances)} instances to [{out_path}]")
+        logging.debug(f"dumped {len(self.mesh)} instances to [{out_path}]")
 
     @staticmethod
     def loads(yaml_str: str) -> "Spec":
@@ -374,7 +416,7 @@ class Spec:
         )
 
     def __len__(self):
-        assert self.instances
+        assert self.mesh
         return self.mesh_size
 
     def __post_init__(self):
@@ -400,34 +442,9 @@ class Spec:
 
         Return the total size of mesh.
         """
+        self.mesh = GridSearchStrategy(self.name, self.file, self.params)
 
-        # clear instances just in case it is already populated
-        # TODO: better way to separate post_init and mesh_Gen
-        self.instances = []  # field(default_factory=list)
-
-        # params
-        for cfg in self.params:
-            name_list = [p.name for p in cfg]
-            param_list = [p.value_set for p in cfg]
-            param_mesh = list(product(*param_list))
-            num_params = len(cfg)
-            for idx in range(len(param_mesh)):
-                s = SpecInstance(
-                    name=self.name,
-                    file=self.file,
-                    params=[
-                        Param(name=name_list[i], value=param_mesh[idx][i])
-                        for i in range(num_params)
-                    ],
-                )
-                self.instances.append(s)
-        self.mesh_idx = 0
-        self.mesh_size = len(self.instances)
-
-        return self.mesh_size
-
-    def __iter__(self):
-        return self
+        return len(self.mesh)
 
     def join(self, other: "Spec"):
         assert self.name == other.name
@@ -437,7 +454,7 @@ class Spec:
         self.mesh_idx = 0
         self.mesh_size += other.mesh_size
         self.params.extend(other.params)
-        self.instances.extend(other.instances)
+        self.mesh.extend(other.mesh)
 
     def filter(self, filter_list: List):
         filters = {}
@@ -456,40 +473,43 @@ class Spec:
 
         # Count the number of valid filters in each instance.
         # If the count==num_filters then add the instance to the result.
-        valid_cnt = np.zeros(len(self.instances), dtype=np.int32)
+        valid_cnt = np.zeros(len(self.mesh), dtype=np.int32)
         for k_filter, v_filter in filters.items():
-            for i, s in enumerate(self.instances):
+            for i, s in enumerate(self.mesh):
                 for p in s.params:
                     if p.name == k_filter and str(p.value) in v_filter:
                         valid_cnt[i] += 1
 
         for i, idx in enumerate(valid_cnt):
             if idx == num_filters:
-                filtered_insts.append(self.instances[i])
+                filtered_insts.append(self.mesh[i])
 
-        self.instances = filtered_insts[:]
+        self.mesh.instances = filtered_insts[:]
         self.mesh_idx = 0
-        self.mesh_size = len(self.instances)
+        self.mesh_size = len(self.mesh)
+
+    def __iter__(self):
+        self.iter_offset = 0
+        return self
 
     def __next__(self) -> "SpecInstance":
         assert (
-            self.instances != None
+            self.mesh != None
         ), "Should call self.init_mesh after loading or in postinit."
 
         # Stop condition
-        if self.mesh_idx == self.mesh_size:
-            self.mesh_idx = 0
+        if self.iter_offset == len(self.mesh):
             raise StopIteration
 
         # Retrieve and update self.mesh_idx
-        idx = self.mesh_idx
-        self.mesh_idx = self.mesh_idx + 1
-        return self.instances[idx]
+        idx = self.iter_offset
+        self.iter_offset += 1
+        return self.mesh[idx]
 
     def __repr__(self) -> str:
-        rs = [f"[{i}] {str(s)}" for i, s in enumerate(self.instances)]
+        rs = [f"[{i}] {str(s)}" for i, s in enumerate(self.mesh)]
         rs += [LINE]
-        rs += [f"Num Instances: {len(self.instances)}"]
+        rs += [f"Num Instances: {len(self.mesh)}"]
         rs += [LINE]
         return "\n".join(rs)
 
@@ -615,14 +635,14 @@ def run(
         try:
             df = pd.read_csv(output_path_list[i], index_col=None, header=0)
             df.insert(0, "mesh_idx", i)
-            df.insert(len(df.columns), "spec", str(spec.instances[i]))
+            df.insert(len(df.columns), "spec", str(spec.mesh[i]))
             valid_specs.append(df)
 
         except:
             invalid_specs.append([i, output_msg_list[i]])
 
     output_lines += [LINE]
-    output_lines += [f"Running [{spec.name}] from [{spec.file}]"]
+    output_lines += [f"Running {spec.name} from '{spec.file}'"]
 
     if invalid_specs:
         output_lines += [LINE]
@@ -630,7 +650,10 @@ def run(
         for idx, msg in invalid_specs:
             output_lines += [LINE]
             output_lines += [f"mesh_idx: [{idx}][{spec_list[idx].to_obj()}]"]
-            output_lines += [msg.stdout, msg.stderr]
+            if msg.stdout:
+                output_lines.append(msg.stdout)
+            if msg.stderr:
+                output_lines.append(msg.stderr)
 
     output_lines += [LINE]
     output_lines += [f"Number of valid executed specs: {len(valid_specs)}"]
