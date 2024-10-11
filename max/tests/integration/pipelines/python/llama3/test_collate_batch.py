@@ -4,6 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
+import math
 import numpy as np
 import pytest
 from hypothesis import assume, given
@@ -37,6 +38,8 @@ tokens_strategy = batch_size_strategy.flatmap(
         max_size=batch_size,
     )
 )
+
+PAD_MULTIPLES = [2, 1, 128]
 
 
 @given(arrays=..., pad_value=...)
@@ -74,22 +77,29 @@ def test_collate_batch__pad_right(arrays: list[list[int]], pad_value: int):
     assume(-(2**63) <= pad_value < 2**63)
     assume(all(-(2**63) <= v < 2**63 for a in arrays for v in a))
 
-    result, unpadded_last_token_indices = collate_batch(
-        [np.array(a) for a in arrays],
-        pad_value=pad_value,
-        direction=PaddingDirection.RIGHT,
-    )
-    batch_size, length = result.shape
-    assert batch_size == len(arrays)
-    assert length == max(len(a) for a in arrays)
+    for pad_to_multiple_of in PAD_MULTIPLES:
+        result, unpadded_last_token_indices = collate_batch(
+            [np.array(a) for a in arrays],
+            pad_value=pad_value,
+            direction=PaddingDirection.RIGHT,
+            pad_to_multiple_of=pad_to_multiple_of,
+        )
+        batch_size, length = result.shape
+        assert batch_size == len(arrays)
 
-    assert len(unpadded_last_token_indices) == batch_size
-    # Padding right means the last index should always just be token length - 1.
-    assert unpadded_last_token_indices == [len(a) - 1 for a in arrays]
+        padded_length = (
+            math.ceil(max(len(a) for a in arrays) / pad_to_multiple_of)
+            * pad_to_multiple_of
+        )
+        assert length == padded_length
 
-    for array, padded in zip(arrays, result):
-        np.testing.assert_array_equal(np.array(array), padded[: len(array)])
-        assert np.all(padded[len(array) :] == pad_value)
+        assert len(unpadded_last_token_indices) == batch_size
+        # Padding right means the last index should always just be token length - 1.
+        assert unpadded_last_token_indices == [len(a) - 1 for a in arrays]
+
+        for array, padded in zip(arrays, result):
+            np.testing.assert_array_equal(np.array(array), padded[: len(array)])
+            assert np.all(padded[len(array) :] == pad_value)
 
 
 @given(pad_value=...)
@@ -106,16 +116,19 @@ def test_collate_mask__tokens_and_mask_shapes_match(
         tokens
     ), "start_pos and tokens must have the same length"
 
-    batched_tokens, unpadded_last_token_index, attention_mask = (
-        batch_padded_tokens_and_mask(start_pos, tokens)
-    )
+    for pad_to_multiple_of in PAD_MULTIPLES:
+        batched_tokens, unpadded_last_token_index, attention_mask = (
+            batch_padded_tokens_and_mask(
+                start_pos, tokens, pad_to_multiple_of=pad_to_multiple_of
+            )
+        )
 
-    assert batched_tokens.shape[0] == len(
-        tokens
-    ), "Batch size of tokens does not match"
-    assert len(unpadded_last_token_index) == len(
-        tokens
-    ), "Length of unpadded last tokens do not match"
-    assert (
-        attention_mask.shape[:2] == batched_tokens.shape
-    ), "Attention mask shape mismatch"
+        assert batched_tokens.shape[0] == len(
+            tokens
+        ), "Batch size of tokens does not match"
+        assert len(unpadded_last_token_index) == len(
+            tokens
+        ), "Length of unpadded last tokens do not match"
+        assert (
+            attention_mask.shape[:2] == batched_tokens.shape
+        ), "Attention mask shape mismatch"
