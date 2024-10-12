@@ -33,7 +33,7 @@ class BatchingStrategy(Enum):
     Execution of the batch is started at the same time and requests are removed
     from the batch as they are completed.
     """
-    DNYAMIC_IMMUTABLE = "dynamic_immutable"
+    DYNAMIC_IMMUTABLE = "dynamic_immutable"
     """ Constructs a dynamic batch of no more than N=config.size requests.
     The batch executes with all requests until each request in the batch is
     completed. Necessary to support the naive KV cache manager.
@@ -182,7 +182,7 @@ class BatchMultiplexQueue(Generic[BatchReqId, BatchReqInput, BatchReqOutput]):
                         completed = self.completed_fn(batch, results)
                         if completed or (
                             self.config.strategy
-                            == BatchingStrategy.DNYAMIC_IMMUTABLE
+                            == BatchingStrategy.DYNAMIC_IMMUTABLE
                             and completed == batch.keys()
                         ):
                             self.logger.debug(

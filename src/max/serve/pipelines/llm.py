@@ -66,7 +66,7 @@ class TokenGeneratorPipelineConfig:
         executed until all requests are completed.
         """
         token_generation_config = BatchQueueConfig(
-            strategy=BatchingStrategy.DNYAMIC_IMMUTABLE,
+            strategy=BatchingStrategy.DYNAMIC_IMMUTABLE,
             size=batch_size,
             timeout=batch_timeout,
         )
@@ -183,7 +183,7 @@ class TokenGeneratorPipeline(Generic[TokenGeneratorContext]):  # type: ignore
             # TODO@gaz: Move to queue constructor once the queue has constructor.
             if (
                 queue.config.strategy == BatchingStrategy.DYNAMIC
-                or queue.config.strategy == BatchingStrategy.DNYAMIC_IMMUTABLE
+                or queue.config.strategy == BatchingStrategy.DYNAMIC_IMMUTABLE
             ):
                 queue_task = asyncio.create_task(
                     queue.dynamic_batching_worker()
