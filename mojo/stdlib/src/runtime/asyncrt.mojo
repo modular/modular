@@ -167,7 +167,7 @@ fn parallelism_level() -> Int:
 
 fn create_task(
     owned handle: Coroutine[*_],
-) -> Task[handle.type, handle.lifetimes] as task:
+) -> Task[handle.type, handle.origins] as task:
     """Run the coroutine as a task on the AsyncRT Runtime."""
     var ctx = handle._get_ctx[AsyncContext]()
     _init_asyncrt_chain(AsyncContext.get_chain(ctx))
@@ -217,11 +217,11 @@ fn run(owned handle: RaisingCoroutine[*_]) raises -> handle.type as out:
 # ===----------------------------------------------------------------------===#
 
 
-struct Task[type: AnyType, lifetimes: OriginSet]:
-    var _handle: Coroutine[type, lifetimes]
+struct Task[type: AnyType, origins: OriginSet]:
+    var _handle: Coroutine[type, origins]
     var _result: type
 
-    fn __init__(inout self, owned handle: Coroutine[type, lifetimes]):
+    fn __init__(inout self, owned handle: Coroutine[type, origins]):
         self._handle = handle^
         __mlir_op.`lit.ownership.mark_initialized`(
             __get_mvalue_as_litref(self._result)
@@ -353,8 +353,8 @@ struct TaskGroup:
         owned task: Coroutine[NoneType._mlir_type],
         desired_worker_id: Int = -1,
     ):
-        # TODO(MOCO-771): Enforce that `task.lifetimes` is a subset of
-        # `Self.lifetimes`.
+        # TODO(MOCO-771): Enforce that `task.origins` is a subset of
+        # `Self.origins`.
         self.counter += 1
         task._get_ctx[TaskGroupContext]()[] = TaskGroupContext {
             callback: Self._task_complete_callback,
@@ -377,7 +377,7 @@ struct TaskGroup:
 
         _suspend_async[await_body]()
 
-    fn wait[lifetimes: OriginSet = __origin_of()](inout self):
+    fn wait[origins: OriginSet = __origin_of()](inout self):
         self._task_complete()
         _async_wait(UnsafePointer[Chain].address_of(self.chain))
 
