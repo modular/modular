@@ -79,11 +79,6 @@
 #include <optional>
 #include <unordered_set>
 
-#ifdef MODULAR_PROFILING_NSIGHT
-#include <cuda.h>
-#include <nvtx3/nvToolsExt.h>
-#endif
-
 namespace llvm {
 class raw_pwrite_stream;
 namespace json {
@@ -611,10 +606,6 @@ struct TimeTraceThreadProfiler {
 #if TRACE_IN_REAL_TIME
     event.dump();
 #endif
-#ifdef MODULAR_PROFILING_NSIGHT
-    // record the nvtx id associated with this profiler event id
-    asyncrtToNvtx[id] = nvtxRangeStartA(event.name.toString().c_str());
-#endif
     return id;
   }
 
@@ -628,10 +619,6 @@ struct TimeTraceThreadProfiler {
 #if TRACE_IN_REAL_TIME
     event.dump();
 #endif
-#ifdef MODULAR_PROFILING_NSIGHT
-    // record the nvtx id associated with this profiler event id
-    asyncrtToNvtx[id] = nvtxRangeStartA(event.name.toString().c_str());
-#endif
     return id;
   }
 
@@ -643,11 +630,6 @@ struct TimeTraceThreadProfiler {
         endEvents.emplace_back(nextSeqNum++, id, std::forward<Args>(args)...);
 #if TRACE_IN_REAL_TIME
     event.dump();
-#endif
-#ifdef MODULAR_PROFILING_NSIGHT
-    // also end the nvtx process range
-    nvtxRangeEnd(asyncrtToNvtx[id]);
-    asyncrtToNvtx.erase(id);
 #endif
   }
 
@@ -727,10 +709,6 @@ struct TimeTraceThreadProfiler {
   EndEventList endEvents;
   SampleEventList sampleEvents;
   DebugEventList debugEvents;
-#ifdef MODULAR_PROFILING_NSIGHT
-  // store the nvtx ids associated with profile event ids
-  llvm::DenseMap<ProfilerEventId, nvtxRangeId_t> asyncrtToNvtx;
-#endif
 
   /// String arena.
   StringArena stringArena;
