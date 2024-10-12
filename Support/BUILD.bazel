@@ -379,8 +379,6 @@ modular_cc_library(
         ":Base",
         ":Globals.headers",
         ":MArchTargetMinimal",
-        "//third-party/nvidia-headers-cudart",
-        "//third-party/nvidia-headers-nvtx-3",
     ],
 )
 
@@ -392,8 +390,6 @@ modular_cc_library(
     visibility = ["//AsyncRT:__subpackages__"],
     deps = [
         ":Base",
-        "//third-party/nvidia-headers-cudart",
-        "//third-party/nvidia-headers-nvtx-3",
     ],
 )
 
