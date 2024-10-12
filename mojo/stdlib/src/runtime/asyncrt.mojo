@@ -217,7 +217,7 @@ fn run(owned handle: RaisingCoroutine[*_]) raises -> handle.type as out:
 # ===----------------------------------------------------------------------===#
 
 
-struct Task[type: AnyType, lifetimes: LifetimeSet]:
+struct Task[type: AnyType, lifetimes: OriginSet]:
     var _handle: Coroutine[type, lifetimes]
     var _result: type
 
@@ -377,7 +377,7 @@ struct TaskGroup:
 
         _suspend_async[await_body]()
 
-    fn wait[lifetimes: LifetimeSet = __lifetime_of()](inout self):
+    fn wait[lifetimes: OriginSet = __lifetime_of()](inout self):
         self._task_complete()
         _async_wait(UnsafePointer[Chain].address_of(self.chain))
 
@@ -416,10 +416,10 @@ struct MojoCallContextPtr:
         )
 
     @always_inline
-    fn get_device_context(self) -> ref [ImmutableAnyLifetime] DeviceContext:
+    fn get_device_context(self) -> ref [ImmutableAnyOrigin] DeviceContext:
         """Get the device context held by the MojoCallContext.
 
-        Note: it is safe to use ImmutableAnyLifetime here because get_device_context()
+        Note: it is safe to use ImmutableAnyOrigin here because get_device_context()
         is only used within kernels and the DeviceContext lifetime is managed by
         the graph compiler.
         """
