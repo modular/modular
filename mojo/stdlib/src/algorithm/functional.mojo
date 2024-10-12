@@ -41,12 +41,12 @@ from utils.static_tuple import StaticTuple
 
 @always_inline
 fn map[
-    lifetimes: OriginSet, //, func: fn (Int) capturing [lifetimes] -> None
+    origins: OriginSet, //, func: fn (Int) capturing [origins] -> None
 ](size: Int):
     """Maps a function over a range from 0 to size.
 
     Parameters:
-        lifetimes: The capture lifetimes.
+        origins: The capture origins.
         func: Function to map.
 
     Args:
@@ -63,8 +63,8 @@ fn map[
 
 @always_inline
 fn vectorize[
-    lifetimes: OriginSet, //,
-    func: fn[width: Int] (Int) capturing [lifetimes] -> None,
+    origins: OriginSet, //,
+    func: fn[width: Int] (Int) capturing [origins] -> None,
     simd_width: Int,
     /,
     *,
@@ -75,7 +75,7 @@ fn vectorize[
     `size % simd_width` will run in separate iterations.
 
     Parameters:
-        lifetimes: The capture lifetimes.
+        origins: The capture origins.
         func: The function that will be called in the loop body.
         simd_width: The SIMD vector width.
         unroll_factor: The unroll factor for the main loop (Default 1).
@@ -157,8 +157,8 @@ fn vectorize[
 
 @always_inline
 fn vectorize[
-    lifetimes: OriginSet, //,
-    func: fn[width: Int] (Int) capturing [lifetimes] -> None,
+    origins: OriginSet, //,
+    func: fn[width: Int] (Int) capturing [origins] -> None,
     simd_width: Int,
     /,
     *,
@@ -171,7 +171,7 @@ fn vectorize[
     2.
 
     Parameters:
-        lifetimes: The capture lifetimes.
+        origins: The capture origins.
         func: The function that will be called in the loop body.
         simd_width: The SIMD vector width.
         size: The upper limit for the loop.
@@ -273,8 +273,8 @@ fn vectorize[
 
 @always_inline
 fn _perfect_vectorized_impl[
-    lifetimes: OriginSet, //,
-    func: fn[width: Int] (Int) capturing [lifetimes] -> None,
+    origins: OriginSet, //,
+    func: fn[width: Int] (Int) capturing [origins] -> None,
     /,
     *,
     simd_width: Int,
@@ -311,13 +311,13 @@ fn _perfect_vectorized_impl[
 
 @always_inline
 fn sync_parallelize[
-    lifetimes: OriginSet, //, func: fn (Int) capturing [lifetimes] -> None
+    origins: OriginSet, //, func: fn (Int) capturing [origins] -> None
 ](num_work_items: Int):
     """Executes func(0) ... func(num_work_items-1) as parallel sub-tasks,
     and returns when all are complete.
 
     Parameters:
-        lifetimes: The capture lifetimes.
+        origins: The capture origins.
         func: The function to invoke.
 
     Args:
@@ -335,8 +335,8 @@ fn sync_parallelize[
 
 @always_inline
 fn sync_parallelize[
-    lifetimes: OriginSet, //,
-    func: fn (Int) raises capturing [lifetimes] -> None,
+    origins: OriginSet, //,
+    func: fn (Int) raises capturing [origins] -> None,
 ](num_work_items: Int):
     """Executes func(0) ... func(num_work_items-1) as parallel sub-tasks,
     and returns when all are complete.
@@ -345,7 +345,7 @@ fn sync_parallelize[
           be propagated back to the caller.
 
     Parameters:
-        lifetimes: The capture lifetimes.
+        origins: The capture origins.
         func: The function to invoke.
 
     Args:
@@ -409,13 +409,13 @@ fn sync_parallelize[
 
 @always_inline
 fn parallelize[
-    lifetimes: OriginSet, //, func: fn (Int) capturing [lifetimes] -> None
+    origins: OriginSet, //, func: fn (Int) capturing [origins] -> None
 ](num_work_items: Int):
     """Executes func(0) ... func(num_work_items-1) as sub-tasks in parallel, and
     returns when all are complete.
 
     Parameters:
-        lifetimes: The capture lifetimes.
+        origins: The capture origins.
         func: The function to invoke.
 
     Args:
@@ -427,13 +427,13 @@ fn parallelize[
 
 @always_inline
 fn parallelize[
-    lifetimes: OriginSet, //, func: fn (Int) capturing [lifetimes] -> None
+    origins: OriginSet, //, func: fn (Int) capturing [origins] -> None
 ](num_work_items: Int, num_workers: Int):
     """Executes func(0) ... func(num_work_items-1) as sub-tasks in parallel, and
     returns when all are complete.
 
     Parameters:
-        lifetimes: The capture lifetimes.
+        origins: The capture origins.
         func: The function to invoke.
 
     Args:
@@ -446,7 +446,7 @@ fn parallelize[
 
 @always_inline
 fn _parallelize_impl[
-    lifetimes: OriginSet, //, func: fn (Int) capturing [lifetimes] -> None
+    origins: OriginSet, //, func: fn (Int) capturing [origins] -> None
 ](num_work_items: Int, num_workers: Int):
     debug_assert(num_workers > 0, "Number of workers must be positive")
     # Calculate how many items are picked up by each worker.
