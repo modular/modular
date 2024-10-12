@@ -3,7 +3,7 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-"""Represents a sliced view of a tensor. The slice has lifetime same as that of the
+"""Represents a sliced view of a tensor. The slice has origin same as that of the
 tensor from which it is created.
 
 For example, you can create a TensorSlice and use it like this:
@@ -35,20 +35,20 @@ struct TensorSlice[
     is_mutable: Bool, //,
     type: DType,
     rank: Int,
-    lifetime: Origin[is_mutable].type,
+    origin: Origin[is_mutable].type,
 ]:
     """Sliced view of a tensor. This is safe to use even after the last use of
     tensor from which it is created. For creating a slice use the __getitem__
     method defined in tensor.
     """
 
-    var _ref: Pointer[Tensor[type, rank], lifetime]
+    var _ref: Pointer[Tensor[type, rank], origin]
     var _unsafe_slice: ManagedTensorSlice[type, rank]
 
     @doc_private
     fn __init__(
         inout self,
-        ref [lifetime]tensor: Tensor[type, rank],
+        ref [origin]tensor: Tensor[type, rank],
         slices: InlineArray[Slice, rank],
     ):
         self = Self(

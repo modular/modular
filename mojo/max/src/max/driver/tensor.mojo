@@ -183,7 +183,7 @@ struct Tensor[type: DType, rank: Int](CollectionElement, TensorLike):
     ) raises -> TensorSlice[type, rank, __origin_of(self)]:
         """Returns a view of the tensor conforming to given slices. If given
         a single slice `:` the view would point to the entire tensor. The
-        returned slice has the lifetime of tensor and will extend the lifetime
+        returned slice has the origin of tensor and will extend the lifetime
         of tensor accordingly.
 
         Args:
