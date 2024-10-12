@@ -126,7 +126,7 @@ def LIT_FuncOp : LITOp<"func", [
 
     /// Return a collection of the ParamDeclAttr's that are declared on this
     /// function and any enclosing unit, ordered as will be required by a call.
-    SmallVector<ParamDeclAttr> collectAllParams(bool includeImplLifetimes);
+    SmallVector<ParamDeclAttr> collectAllParams(bool includeImplOrigins);
 
     /// Return whether the function is compiler generated or not.
     bool isSynthetic();
@@ -174,14 +174,14 @@ def LIT_CallOp : LITOp<"call", [
 
   let arguments = (ins
     AttrOfType<LIT_SignatureType>:$callee,
-    KGEN_ParameterExprArrayAttr:$implicitLifetimes,
+    KGEN_ParameterExprArrayAttr:$implicitOrigins,
     Variadic<AnyType>:$operands
   );
   let results = (outs Variadic<AnyType>:$results);
   let hasVerifier = 1;
 
   let assemblyFormat = [{
-    `` custom<CallOp>($callee, $implicitLifetimes, $operands,
+    `` custom<CallOp>($callee, $implicitOrigins, $operands,
                       type($operands), type($results)) attr-dict
   }];
 
@@ -215,17 +215,17 @@ def LIT_CallIndirectOp : LITOp<"call_indirect"> {
 
   let arguments = (ins
     LIT_SignatureType:$callee,
-    KGEN_ParameterExprArrayAttr:$implicitLifetimes,
+    KGEN_ParameterExprArrayAttr:$implicitOrigins,
     Variadic<AnyType>:$arguments
   );
   let results = (outs Variadic<AnyType>:$results);
   let hasVerifier = 1;
 
   let assemblyFormat = [{
-    $callee `` custom<LifetimeParams>($implicitLifetimes) `(` $arguments `)` `:`
+    $callee `` custom<OriginParams>($implicitOrigins) `(` $arguments `)` `:`
     custom<Signature>(type($callee)) attr-dict ``
     custom<CallOpTypes>(type($arguments), type($results), ref(type($callee)),
-                        ref($implicitLifetimes))
+                        ref($implicitOrigins))
   }];
 
   let extraClassDeclaration = [{
@@ -828,7 +828,7 @@ def LIT_VarDeclOp : LITOp<"var.decl", [
 
   let builders = [
     OpBuilder<(ins "Type":$elementType, "StringRef":$name,
-                   "StringRef":$lifetimeName,
+                   "StringRef":$originName,
                    "VarDeclKind":$kind)>
   ];
   let extraClassDeclaration = [{
@@ -965,16 +965,16 @@ def LIT_AsyncCallOp : LITOp<"async.call", [
 
   let arguments = (ins
     AttrOfType<KGEN_SignatureType>:$callee,
-    KGEN_ParameterExprArrayAttr:$implicitLifetimes,
+    KGEN_ParameterExprArrayAttr:$implicitOrigins,
     Variadic<AnyType>:$operands
   );
   let results = (outs CoroutineType:$coroutine);
 
   let assemblyFormat = [{
     `` custom<ParametricCallee>($callee) ``
-    custom<LifetimeParams>($implicitLifetimes) ``
+    custom<OriginParams>($implicitOrigins) ``
     custom<AsyncCallOpTypes>(type($operands), ref($callee),
-                             ref($implicitLifetimes))
+                             ref($implicitOrigins))
     `(` $operands `)` attr-dict
   }];
 

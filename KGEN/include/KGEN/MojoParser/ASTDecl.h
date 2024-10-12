@@ -194,7 +194,7 @@ public:
   /// children will be inherited later by a decl being resolved.
   void takeDecls(ASTDecl &src);
 
-  /// Anonymous lifetimes, closure impl structs, and potentially other names are
+  /// Anonymous origins, closure impl structs, and potentially other names are
   /// uniqued to avoid collisions. This returns an ID that is unique to this
   /// ASTDecl instance and help generate such names.
   unsigned getNextUniqueID() { return counter++; }

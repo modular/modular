@@ -367,7 +367,7 @@ lit.func @f() -> !kgen.none {
 
 // -----
 
-// expected-error @below {{2 lifetimes specified, but signature expected 1}}
+// expected-error @below {{2 origins specified, but signature expected 1}}
 lit.call @calls[imm a, mut b]() : !lit.signature<[1]() -> ()>
 
 // -----

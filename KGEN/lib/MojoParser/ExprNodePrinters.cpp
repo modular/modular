@@ -73,7 +73,7 @@ static StringRef stringifyExprKind(ExprNode::Kind kind) {
   case ExprNode::kGetNearestErrorSlot:
     return "GetNearestErrorSlot";
   case ExprNode::kOriginOf:
-    return "LifetimeOf";
+    return "OriginOf";
   case ExprNode::kTypeOf:
     return "TypeOf";
   case ExprNode::kNeg:
@@ -454,8 +454,8 @@ void ParsedArgument::print(raw_indented_ostream &os) const {
   printNullableExpr(os, typeExpr);
   os << "initExpr: ";
   printNullableExpr(os, initExpr);
-  os << "refLifetimeExpr: ";
-  printNullableExpr(os, refLifetimeExpr);
+  os << "refOriginExpr: ";
+  printNullableExpr(os, refOriginExpr);
   os << "kwArgHandling: " << stringifyKWArgHandling() << "\n";
   os.unindent() << "}\n";
 }
@@ -488,8 +488,8 @@ void FunctionTypeNode::print(raw_indented_ostream &os) const {
   os.unindent() << "]\n";
 
   os << "effects: " << stringifyFnEffects(effects.getImpl()) << "\n";
-  os << "lifetimeExpr: ";
-  lifetimeExpr->print(os);
+  os << "originExpr: ";
+  originExpr->print(os);
 
   os.unindent() << "}\n";
 }

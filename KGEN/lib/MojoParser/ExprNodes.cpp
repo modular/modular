@@ -3123,7 +3123,7 @@ AnyValue FunctionTypeNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
 
   SpecialFunctionInfo fnInfo; // Not a named function.
   TypeCheckedFnSignature tcSignature(paramList, argList, resultArgs.front(),
-                                     lifetimeExpr, isDef, /*fnDecl=*/nullptr,
+                                     originExpr, isDef, /*fnDecl=*/nullptr,
                                      fnInfo);
 
   // Compute the signature of the function.
@@ -3136,10 +3136,10 @@ AnyValue FunctionTypeNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   dummyScope.setIRValue(PValue(signature));
 
   // The parsed SignatureType is set to the pretty type that includes implicit
-  // lifetimes, we strip off the named origin decl references and replace them
+  // origins, we strip off the named origin decl references and replace them
   // with indices.
   signature = signature.replaceImplicitOriginsWithIndexes(
-      tcSignature.implicitLifetimeDecls);
+      tcSignature.implicitOriginDecls);
 
   if (argList.effects.isEscaping()) {
     // Create a self contained signature type that represents the closure.
@@ -3166,7 +3166,7 @@ AnyValue FunctionTypeNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
 AnyValue MagicFunctionNode::emitIR(ValueDest &dest,
                                    ExprEmitter &emitter) const {
   if (kind == kOriginOf)
-    return emitLifetimeOf(dest, emitter);
+    return emitOriginOf(dest, emitter);
 
   // __get_nearest_error_slot returns an MLValue.
   if (kind == kGetNearestErrorSlot) {
@@ -3265,24 +3265,24 @@ AnyValue MagicFunctionNode::emitIR(ValueDest &dest,
   return emitter.emitResult(MLValue(exprVal), this, dest);
 }
 
-AnyValue MagicFunctionNode::emitLifetimeOf(ValueDest &dest,
-                                           ExprEmitter &emitter) const {
-  // Gather the lifetimes of each subexpression value. If any of the lifetimes
+AnyValue MagicFunctionNode::emitOriginOf(ValueDest &dest,
+                                         ExprEmitter &emitter) const {
+  // Gather the origins of each subexpression value. If any of the origins
   // are immutable, then we mutcast the rest to immutable.
-  SmallVector<TypedAttr> lifetimes;
+  SmallVector<TypedAttr> origins;
   for (ExprNode *subExpr : subExprs) {
     emitter.emitExpressionWithOutEvaluatingIt(
         subExpr, EC_Origin, [&](CValue result) {
           // We can only get the origin of an MValue.
           if (result.isMValue())
-            lifetimes.push_back(result.getMValueType().getOrigin());
+            origins.push_back(result.getMValueType().getOrigin());
           else
             emitter.emitError(subExpr->getLoc())
                 << "value doesn't have a memory type" << subExpr->getRange();
         });
   }
 
-  auto result = OriginUnionAttr::get(emitter.getContext(), lifetimes);
+  auto result = OriginUnionAttr::get(emitter.getContext(), origins);
   return emitter.emitResult(PValue(result), this, dest);
 }
 

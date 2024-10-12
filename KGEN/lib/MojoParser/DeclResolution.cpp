@@ -885,7 +885,7 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
   resultArg.loc = p.getToken().getLoc();
   if (p.consumeIf(Token::minus_greater)) {
     // Parse a result reference if present.
-    (void)p.parseRefSpecifier(resultArg.refLifetimeExpr);
+    (void)p.parseRefSpecifier(resultArg.refOriginExpr);
 
     // Parse the result type expression.
     // If this result parsing fails, then we just continue on as if none was
@@ -947,16 +947,16 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
   if (!signature)
     return failure();
 
-  // The implicitLifetimeDecls don't affect the signature, but they do get
+  // The implicitOriginDecls don't affect the signature, but they do get
   // prepended onto the paramDecls list.
   ParamDeclArrayAttr paramsArrayAttr;
-  if (tcSignature.implicitLifetimeDecls.empty()) {
+  if (tcSignature.implicitOriginDecls.empty()) {
     paramsArrayAttr =
         builder.getAttr<ParamDeclArrayAttr>(paramList.paramDeclAttrs);
   } else {
     SmallVector<ParamDeclAttr> mergedParams;
     llvm::append_range(mergedParams, paramList.paramDeclAttrs);
-    llvm::append_range(mergedParams, tcSignature.implicitLifetimeDecls);
+    llvm::append_range(mergedParams, tcSignature.implicitOriginDecls);
     paramsArrayAttr = builder.getAttr<ParamDeclArrayAttr>(mergedParams);
   }
 
@@ -965,10 +965,10 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
             TypeAttr::get(tcSignature.getFunctionType()));
 
   // Now that the FunctionType is set to the pretty type that includes implicit
-  // lifetimes, we strip off the named origin decl references and replace them
+  // origins, we strip off the named origin decl references and replace them
   // with indices.
   signature = signature.replaceImplicitOriginsWithIndexes(
-      tcSignature.implicitLifetimeDecls);
+      tcSignature.implicitOriginDecls);
   attrs.set(funcOp.getSignatureAttrName(), TypeAttr::get(signature));
 
   // Set the symbol to the mangled name and check for redefinition.
@@ -1057,7 +1057,7 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
   SmallVector<ParamDeclRefAttr> paramCaptures =
       graph.usesFromAbove.takeVector();
 
-  // If this is a `@parameter` closure, attach the capture lifetimes.
+  // If this is a `@parameter` closure, attach the capture origins.
   if (signature.isCapturing()) {
     SmallVector<Type> captureTypes;
     for (const Capture &cap : captures)
@@ -1065,11 +1065,11 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
     for (ParamDeclRefAttr param : paramCaptures)
       captureTypes.push_back(param.getType());
 
-    SmallVector<TypedAttr> lifetimes =
+    SmallVector<TypedAttr> origins =
         shared.cachedOriginFinder.findOriginsIn(captureTypes);
     signature =
         signature.getWithMetadata(signature.getMetadata().addCaptureOrigins(
-            OriginSetAttr::get(getContext(), lifetimes)));
+            OriginSetAttr::get(getContext(), origins)));
     funcOp.setSignature(signature);
 
     funcOp.setParamDeclAttr(

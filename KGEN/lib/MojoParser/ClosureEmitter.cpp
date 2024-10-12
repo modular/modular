@@ -222,13 +222,13 @@ void ClosureEmitter::synthesizeWrapperFnPtrCtor(ASTDecl &decl, ASTType selfType,
   b = ImplicitLocOpBuilder::atBlockBegin(callImpl.getLoc(), callImpl.getBody());
   Value fnPtr =
       b.create<POP::PointerBitcastOp>(fnPtrType, callImpl.getArgument(0));
-  SmallVector<TypedAttr> lifetimes;
-  for (ParamDeclAttr lifetimeDecl : callImpl.getParams())
-    lifetimes.push_back(ParamDeclRefAttr::get(lifetimeDecl));
+  SmallVector<TypedAttr> origins;
+  for (ParamDeclAttr originDecl : callImpl.getParams())
+    origins.push_back(ParamDeclRefAttr::get(originDecl));
   SmallVector<Value> callArgs;
   llvm::append_range(callArgs, callImpl.getArguments());
   auto callIndirect =
-      b.create<CallIndirectOp>(fnPtrType.getResultType(), fnPtr, lifetimes,
+      b.create<CallIndirectOp>(fnPtrType.getResultType(), fnPtr, origins,
                                ArrayRef(callArgs).drop_front());
   b.create<LIT::ReturnOp>(callIndirect.getResult(0));
   b.create<EndFuncOp>();
@@ -335,7 +335,7 @@ StructDeclOp ClosureEmitter::createClosureWrapperStructDecl(
     Value dtorImpl = loadField(b, dtorSelf, impl);
     Value callee = loadField(b, dtorSelf, dtor);
     b.create<CallIndirectOp>(noneType, callee,
-                             /*implicitLifetimes=*/ArrayRef<TypedAttr>(),
+                             /*implicitOrigins=*/ArrayRef<TypedAttr>(),
                              dtorImpl);
   }
 
@@ -359,7 +359,7 @@ StructDeclOp ClosureEmitter::createClosureWrapperStructDecl(
     Value existingImpl = loadField(b, copyExisting, impl);
     Value funcPtr = loadField(b, copySelf, copy);
     auto call = b.create<CallIndirectOp>(
-        opaquePtrType, funcPtr, /*implicitLifetimes=*/ArrayRef<TypedAttr>(),
+        opaquePtrType, funcPtr, /*implicitOrigins=*/ArrayRef<TypedAttr>(),
         existingImpl);
     storeField(b, copySelf, call.getResult(0), impl);
   }
@@ -417,14 +417,14 @@ StructDeclOp ClosureEmitter::createClosureWrapperStructDecl(
                        callMethod.getBody()->getArguments().drop_front());
     Value callMemberPtr = loadField(builder, callSelf, callMember);
 
-    SmallVector<TypedAttr> implicitLifetimes;
+    SmallVector<TypedAttr> implicitOrigins;
     auto calleeSig = cast<SignatureType>(callMemberPtr.getType());
     for (auto [arg, conv] : llvm::zip(arguments, calleeSig.getArgConventions()))
-      if (SignatureType::hasImplicitLifetime(conv))
-        implicitLifetimes.push_back(cast<RefType>(arg.getType()).getOrigin());
+      if (SignatureType::hasImplicitOrigin(conv))
+        implicitOrigins.push_back(cast<RefType>(arg.getType()).getOrigin());
 
     auto callResult = builder.create<CallIndirectOp>(
-        resultType, callMemberPtr, implicitLifetimes, arguments);
+        resultType, callMemberPtr, implicitOrigins, arguments);
     ExprEmitter::emitNormalReturn(builder, callResult.getResult(0), callMethod);
     builder.create<LIT::EndFuncOp>();
   }
@@ -676,7 +676,7 @@ StructDeclOp ClosureEmitter::replaceNestedFunctionWithClosureImplStructDecl(
 
     // If the reference types disagree, the cast to fix the origin.
     // FIXME: This isn't great.  We should really /replace/ the original
-    // lifetimes with the self origin.  For example, when rewriting something
+    // origins with the self origin.  For example, when rewriting something
     // like:
     //      fn outer(a: MemType):
     //         fn inner():
@@ -831,7 +831,7 @@ ClosureEmitter::createWrapperInitWithImpl(StructDeclOp closureWrapper,
   Value target = allocateHeapMemory(PointerType::get(closureImplType), builder);
   Value source = init.getBody()->getArgument(1);
 
-  // TODO(references): Move closures off pointers to correct lifetimes.
+  // TODO(references): Move closures off pointers to correct origins.
   auto immortal = builder.getAttr<AnyOriginAttr>(/*isMut=*/true);
   Value targetRef = builder.create<RefFromPointerOp>(target, immortal,
                                                      /*startUninit=*/true,
@@ -910,7 +910,7 @@ ClosureEmitter::createWrapperInitWithImpl(StructDeclOp closureWrapper,
     Value existingPtr = builder.create<POP::PointerBitcastOp>(
         closureImplTopLevelPtrType, body->getArgument(0));
 
-    // TODO(references): move closures to references and correct lifetimes.
+    // TODO(references): move closures to references and correct origins.
     auto immortal = builder.getAttr<AnyOriginAttr>(/*isMut=*/true);
     Value targetRef = builder.create<RefFromPointerOp>(target, immortal,
                                                        /*startUninit=*/true,
@@ -1034,14 +1034,14 @@ ClosureEmitter::createWrapperInitWithImpl(StructDeclOp closureWrapper,
 
     SymbolConstantAttr typedSymbol = createTypedSymbol(symbol, topLevelParams);
 
-    SmallVector<TypedAttr> implicitLifetimes;
+    SmallVector<TypedAttr> implicitOrigins;
     auto finalSig = cast<SignatureType>(typedSymbol.getType());
     for (auto [arg, conv] : llvm::zip(args, finalSig.getArgConventions()))
-      if (SignatureType::hasImplicitLifetime(conv))
-        implicitLifetimes.push_back(cast<RefType>(arg.getType()).getOrigin());
+      if (SignatureType::hasImplicitOrigin(conv))
+        implicitOrigins.push_back(cast<RefType>(arg.getType()).getOrigin());
 
     Value result =
-        builder.create<CallOp>(resultType, typedSymbol, implicitLifetimes, args)
+        builder.create<CallOp>(resultType, typedSymbol, implicitOrigins, args)
             .getResult(0);
     ExprEmitter::emitNormalReturn(builder, result, topLevelCall);
     builder.create<LIT::EndFuncOp>();

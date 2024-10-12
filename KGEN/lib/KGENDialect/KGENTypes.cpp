@@ -246,7 +246,7 @@ bool SignatureType::hasAddress(ArgConvention conv) {
     return false;
   case ArgConvention::Ref:
   case ArgConvention::MutRef:
-    // The conventions above differ from hasImplicitLifetime.
+    // The conventions above differ from hasImplicitOrigin.
   case ArgConvention::OwnedInMem:
   case ArgConvention::BorrowedInMem:
   case ArgConvention::InOut:
@@ -260,7 +260,7 @@ bool SignatureType::hasAddress(ArgConvention conv) {
 
 /// Determine whether an argument with the given input convention expects to
 /// have an implicit origin.
-bool SignatureType::hasImplicitLifetime(ArgConvention conv) {
+bool SignatureType::hasImplicitOrigin(ArgConvention conv) {
   switch (conv) {
   case ArgConvention::Ref:
   case ArgConvention::MutRef:

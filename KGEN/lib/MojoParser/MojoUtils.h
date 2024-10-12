@@ -45,7 +45,7 @@ inline const char *plural(size_t value, const char *one = "",
 /// `OriginSetAttr` consisting of the origin parameters accessible through
 /// the function parameters. For example, a function with the signature
 ///
-///   fn[lt: MutableLifetime, x: WeirdReference[lt]]() -> None
+///   fn[lt: MutableOrigin, x: WeirdReference[lt]]() -> None
 ///
 /// May access the origin set `{mut lt}` through its parameters. This function
 /// takes the param decls, which means it returns the named origin parameter
@@ -53,10 +53,10 @@ inline const char *plural(size_t value, const char *one = "",
 ///
 /// This function takes a `SharedState` instance to access the cached origin
 /// finder instance.
-TypedAttr getLifetimesAccessibleByParams(PogListAttr paramList,
-                                         ArrayRef<ParamDeclAttr> params,
-                                         SharedState &shared,
-                                         TypedAttr captureOrigins);
+TypedAttr getOriginsAccessibleByParams(PogListAttr paramList,
+                                       ArrayRef<ParamDeclAttr> params,
+                                       SharedState &shared,
+                                       TypedAttr captureOrigins);
 
 /// Returns if a value of the specified type can be coerced to the other type
 /// with a rebind.  This means that values of the two types have exactly the

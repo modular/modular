@@ -109,7 +109,7 @@ struct ParsedArgument {
   ExprNode *typeExpr = nullptr;
   ExprNode *initExpr = nullptr;
   // If this is a ref convention, this specifies the origin expression.
-  ExprNode *refLifetimeExpr = nullptr;
+  ExprNode *refOriginExpr = nullptr;
 
   /// This gets set to true when there is a /diagnosed/ error that should
   /// prevent subsequent references to this argument.
@@ -198,7 +198,7 @@ public:
   TypeCheckedFnSignature(TypeCheckedParamList &paramList,
                          ParsedArgumentList &argList,
                          const ParsedArgument &resultArg,
-                         const ExprNode *lifetimeExpr, bool isDef,
+                         const ExprNode *originExpr, bool isDef,
                          ASTDecl *fnDecl, SpecialFunctionInfo &fnInfo);
   TypeCheckedParamList &paramList;
   ParsedArgumentList &argList;
@@ -213,19 +213,19 @@ public:
   ASTType resultType;
 
   /// This is the type checked argument types with argument conventions and
-  /// lifetimes applied, e.g. "!lit.ref<String>" or "!kgen.variadic<Int>"
+  /// origins applied, e.g. "!lit.ref<String>" or "!kgen.variadic<Int>"
   SmallVector<Type> fullArgTypes;
-  SmallVector<ParamDeclAttr> implicitLifetimeDecls;
+  SmallVector<ParamDeclAttr> implicitOriginDecls;
 
   /// This is the result type + variant for throwing functions.  This is what
   /// finally gets treated as the ABI for the function.
   ASTType fullResultType;
 
-  /// This is an optional origin set parameter, representing the lifetimes of
+  /// This is an optional origin set parameter, representing the origins of
   /// the function captures.
   TypedAttr captureOrigins;
   /// Whether `@__unsafe_disable_nested_origin_exclusivity` was specified:
-  /// nested lifetimes are not considered in exclusivity checking.
+  /// nested origins are not considered in exclusivity checking.
   /// TODO: Generalize this to mutation sets.
   bool isNestedOriginExclusivityCheckingDisabled = false;
 

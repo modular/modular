@@ -463,7 +463,7 @@ auto OverloadFitness::checkOneOperand(ASTExprAnd<AnyValue> operand,
 
     // Otherwise, we are binding something like a PValue or SRValue to a
     // reference argument, which doesn't have a origin.  This is a problem
-    // because lifetimes can be propagated through the type system of the
+    // because origins can be propagated through the type system of the
     // function call to other arguments and they all need to line up.  We
     // handle this in two phases: during overload resolution we bind this to
     // an immortal origin, and then after the candidate is selected, we
@@ -476,8 +476,8 @@ auto OverloadFitness::checkOneOperand(ASTExprAnd<AnyValue> operand,
       return {kWrongType, expectedType};
 
     // Remember that this argument needs to be emitted.
-    argsNeedingLifetimes.resize(operandIdx + 1);
-    argsNeedingLifetimes[operandIdx] = true;
+    argsNeedingOrigins.resize(operandIdx + 1);
+    argsNeedingOrigins[operandIdx] = true;
 
     // Handle this like a normal memory argument, since the value can undergo
     // implicit conversions etc.

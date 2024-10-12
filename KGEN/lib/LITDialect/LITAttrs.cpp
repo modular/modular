@@ -256,20 +256,20 @@ PogListAttr::toPogs(ArrayRef<StringAttr> names,
 // FnMetadataAttr
 //===----------------------------------------------------------------------===//
 
-static ParseResult parseFnMetadataOrigins(AsmParser &p, TypedAttr &lifetimes) {
+static ParseResult parseFnMetadataOrigins(AsmParser &p, TypedAttr &origins) {
   auto type = OriginSetType::get(p.getContext());
   if (failed(p.parseOptionalComma())) {
-    lifetimes = OriginSetAttr::get({}, type);
+    origins = OriginSetAttr::get({}, type);
     return success();
   }
-  return parseParamValue(p, lifetimes, type);
+  return parseParamValue(p, origins, type);
 }
 
-static void printFnMetadataOrigins(AsmPrinter &p, TypedAttr lifetimes) {
-  if (isEmptyOriginSet(lifetimes))
+static void printFnMetadataOrigins(AsmPrinter &p, TypedAttr origins) {
+  if (isEmptyOriginSet(origins))
     return;
   p << ", ";
-  printParamValue(p, lifetimes);
+  printParamValue(p, origins);
 }
 
 FnMetadataAttr FnMetadataAttr::get(MLIRContext *context) {
@@ -506,14 +506,14 @@ LogicalResult FnMetadataAttr::verifySignature(
   return success();
 }
 
-FnMetadataAttr FnMetadataAttr::addCaptureOrigins(TypedAttr lifetimes) {
+FnMetadataAttr FnMetadataAttr::addCaptureOrigins(TypedAttr origins) {
   auto type = OriginType::get(getContext(), /*isMutable=*/true);
-  SmallVector<TypedAttr> lifetimeUnion{
+  SmallVector<TypedAttr> originUnion{
       OriginSetUnionAttr::get(getCaptureOrigins(), type),
-      OriginSetUnionAttr::get(lifetimes, type)};
+      OriginSetUnionAttr::get(origins, type)};
   return get(getArgListAttrs(), getParamListAttrs(),
              getNumImplicitOriginDecls(),
-             OriginSetAttr::get(getContext(), lifetimeUnion),
+             OriginSetAttr::get(getContext(), originUnion),
              getIsNestedOriginExclusivityCheckingDisabled());
 }
 
@@ -808,21 +808,20 @@ TypedAttr OriginUnionAttr::get(ArrayRef<TypedAttr> operandsIn,
   return OriginUnionAttr::Base::get(type.getContext(), operands, type);
 }
 
-TypedAttr OriginUnionAttr::get(MLIRContext *ctx,
-                               ArrayRef<TypedAttr> lifetimes) {
+TypedAttr OriginUnionAttr::get(MLIRContext *ctx, ArrayRef<TypedAttr> origins) {
   // In the empty case, the origin is immutable.
-  if (lifetimes.empty())
+  if (origins.empty())
     return OriginUnionAttr::get(OriginType::get(ctx, /*mutable=*/false));
 
   auto getMut = [](TypedAttr origin) {
     return ::cast<OriginType>(origin.getType()).getIsMutable();
   };
 
-  // If all the parametric mutabilities of the lifetimes are the same, then use
+  // If all the parametric mutabilities of the origins are the same, then use
   // that mutability. Otherwise, the overall origin is immutable.
-  TypedAttr mutability = getMut(lifetimes.front());
+  TypedAttr mutability = getMut(origins.front());
   bool needMutCast = false;
-  for (TypedAttr other : lifetimes.drop_front()) {
+  for (TypedAttr other : origins.drop_front()) {
     TypedAttr otherMut = getMut(other);
     if (otherMut == mutability)
       continue;
@@ -831,14 +830,14 @@ TypedAttr OriginUnionAttr::get(MLIRContext *ctx,
     break;
   }
 
-  SmallVector<TypedAttr> newLifetimes;
+  SmallVector<TypedAttr> newOrigins;
   if (needMutCast) {
-    for (TypedAttr origin : lifetimes)
-      newLifetimes.push_back(OriginMutCastAttr::get(origin, mutability));
-    lifetimes = newLifetimes;
+    for (TypedAttr origin : origins)
+      newOrigins.push_back(OriginMutCastAttr::get(origin, mutability));
+    origins = newOrigins;
   }
 
-  return OriginUnionAttr::get(lifetimes, OriginType::get(mutability));
+  return OriginUnionAttr::get(origins, OriginType::get(mutability));
 }
 
 //===----------------------------------------------------------------------===//
@@ -901,7 +900,7 @@ TypedAttr OriginFieldAttr::get(TypedAttr structOrigin, StringAttr field) {
 
   // If we have the global mutable origin, treat it conservatively by
   // returning the global mutable origin.  It isn't wise to try to derive
-  // information from something where lifetimes have been casted away.
+  // information from something where origins have been casted away.
   if (::isa<AnyOriginAttr>(structOrigin))
     return structOrigin;
 
@@ -979,7 +978,7 @@ TypedAttr OriginSetAttr::get(ArrayRef<TypedAttr> operands, OriginSetType type) {
   for (TypedAttr operand : operands) {
     // If we have the global mutable origin, treat it conservatively by
     // returning the global mutable origin.  It isn't wise to try to derive
-    // information from something where lifetimes have been casted away.
+    // information from something where origins have been casted away.
     if (::isa<AnyOriginAttr>(operand)) {
       newOperands.push_back(operand);
       continue;

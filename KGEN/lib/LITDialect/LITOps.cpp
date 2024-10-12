@@ -165,24 +165,24 @@ LogicalResult PackageOp::verify() {
 // CallOp
 //===----------------------------------------------------------------------===//
 
-static ParseResult
-parseLifetimeParams(AsmParser &p, ParameterExprArrayAttr &implicitLifetimes) {
+static ParseResult parseOriginParams(AsmParser &p,
+                                     ParameterExprArrayAttr &implicitOrigins) {
   SmallVector<TypedAttr> values;
   if (p.parseCommaSeparatedList(
           AsmParser::Delimiter::OptionalSquare, [&]() -> ParseResult {
             return parseOriginParamValue(p, values.emplace_back());
           }))
     return failure();
-  implicitLifetimes = ParameterExprArrayAttr::get(p.getContext(), values);
+  implicitOrigins = ParameterExprArrayAttr::get(p.getContext(), values);
   return success();
 }
 
-static void printLifetimeParams(AsmPrinter &p, Operation *op,
-                                ParameterExprArrayAttr implicitLifetimes) {
-  if (implicitLifetimes.empty())
+static void printOriginParams(AsmPrinter &p, Operation *op,
+                              ParameterExprArrayAttr implicitOrigins) {
+  if (implicitOrigins.empty())
     return;
   p << '[';
-  llvm::interleaveComma(implicitLifetimes, p, [&](TypedAttr value) {
+  llvm::interleaveComma(implicitOrigins, p, [&](TypedAttr value) {
     printOriginParamValue(p, value);
   });
   p << ']';
@@ -194,7 +194,7 @@ template <typename CalleeT>
 static ParseResult
 parseCallOpTypes(AsmParser &p, SmallVectorImpl<Type> &operandTypes,
                  SmallVectorImpl<Type> &resultTypes, CalleeT callee,
-                 ArrayRef<TypedAttr> implicitLifetimes) {
+                 ArrayRef<TypedAttr> implicitOrigins) {
   SignatureType calleeType;
   if constexpr (std::is_same_v<Type, CalleeT>)
     calleeType = cast<SignatureType>(callee);
@@ -202,20 +202,20 @@ parseCallOpTypes(AsmParser &p, SmallVectorImpl<Type> &operandTypes,
     calleeType = cast<SignatureType>(callee.getType());
 
   FunctionType values;
-  if (implicitLifetimes.empty()) {
+  if (implicitOrigins.empty()) {
     values = calleeType.getValues();
   } else {
     auto calleeLITType = dyn_cast<LITSignatureType>(calleeType);
     if (!calleeLITType)
       return p.emitError(p.getCurrentLocation(), "expected a `!lit.signature`");
-    if (calleeLITType.getNumImplicitOriginDecls() != implicitLifetimes.size())
+    if (calleeLITType.getNumImplicitOriginDecls() != implicitOrigins.size())
       return p.emitError(p.getNameLoc())
-             << implicitLifetimes.size()
-             << " lifetimes specified, but signature expected "
+             << implicitOrigins.size()
+             << " origins specified, but signature expected "
              << calleeLITType.getNumImplicitOriginDecls();
 
     values = calleeLITType.substituteImplicitOriginsIntoValues(
-        implicitLifetimes, [&] { return p.emitError(p.getNameLoc()); });
+        implicitOrigins, [&] { return p.emitError(p.getNameLoc()); });
     if (!values)
       return failure();
   }
@@ -234,7 +234,7 @@ static void printCallOpTypes(AsmPrinter &, Operation *, TypeRange, TypeRange,
 
 static ParseResult
 parseCallOp(OpAsmParser &p, TypedAttr &calleeAttr,
-            ParameterExprArrayAttr &implicitLifetimes,
+            ParameterExprArrayAttr &implicitOrigins,
             SmallVectorImpl<OpAsmParser::UnresolvedOperand> &operands,
             SmallVectorImpl<Type> &operandTypes,
             SmallVectorImpl<Type> &resultTypes) {
@@ -250,7 +250,7 @@ parseCallOp(OpAsmParser &p, TypedAttr &calleeAttr,
   }
 
   ParameterExprArrayAttr paramValues;
-  if (parseLifetimeParams(p, implicitLifetimes))
+  if (parseOriginParams(p, implicitOrigins))
     return failure();
   if (callee && parseParameterValues(p, paramValues))
     return failure();
@@ -265,13 +265,13 @@ parseCallOp(OpAsmParser &p, TypedAttr &calleeAttr,
     calleeAttr = SymbolConstantAttr::get(callee, signature, paramValues);
   }
   if (failed(parseCallOpTypes(p, operandTypes, resultTypes, calleeAttr,
-                              implicitLifetimes)))
+                              implicitOrigins)))
     return failure();
   return success();
 }
 
 static void printCallOp(OpAsmPrinter &p, Operation *op, TypedAttr calleeAttr,
-                        ParameterExprArrayAttr implicitLifetimes,
+                        ParameterExprArrayAttr implicitOrigins,
                         ValueRange operands, TypeRange operandTypes,
                         TypeRange resultTypes) {
   auto symbolCst = dyn_cast<SymbolConstantAttr>(calleeAttr);
@@ -281,7 +281,7 @@ static void printCallOp(OpAsmPrinter &p, Operation *op, TypedAttr calleeAttr,
     p << ' ' << symbolCst.getSymbol();
   else
     printParametricCallee(p, op, calleeAttr);
-  printLifetimeParams(p, op, implicitLifetimes);
+  printOriginParams(p, op, implicitOrigins);
   if (symbolCst)
     printParameterValues(p, symbolCst.getParamValues());
   p << '(';
@@ -296,9 +296,9 @@ static void printCallOp(OpAsmPrinter &p, Operation *op, TypedAttr calleeAttr,
 }
 
 template <typename OpT>
-static LogicalResult verifyLifetimeParams(OpT op, LITSignatureType sig) {
+static LogicalResult verifyOriginParams(OpT op, LITSignatureType sig) {
   size_t numImplicit = sig.getMetadata().getNumImplicitOriginDecls();
-  size_t numParams = op.getImplicitLifetimes().size();
+  size_t numParams = op.getImplicitOrigins().size();
   if (numParams == numImplicit)
     return success();
   return op->emitOpError("operation has ")
@@ -313,7 +313,7 @@ static LogicalResult verifyCallOp(OpT op, LITSignatureType sig,
                                   ValueRange operands,
                                   std::optional<TypeRange> results) {
   FunctionType values = sig.substituteImplicitOriginsIntoValues(
-      op.getImplicitLifetimes(), [&] { return op.emitOpError(); });
+      op.getImplicitOrigins(), [&] { return op.emitOpError(); });
   if (!values)
     return failure();
 
@@ -345,7 +345,7 @@ LogicalResult LIT::CallOp::verify() {
   auto sig = dyn_cast<LITSignatureType>(getCallee().getType());
   if (!sig)
     return emitOpError("callee type must be a `!lit.signature`");
-  if (failed(verifyLifetimeParams(*this, sig)))
+  if (failed(verifyOriginParams(*this, sig)))
     return failure();
   return verifyCallOp(*this, sig, getOperands(), getResultTypes());
 }
@@ -383,7 +383,7 @@ FailureOr<InlineResult> LIT::CallOp::prepInline(mlir::RewriterBase &b) {
 
 LogicalResult LIT::CallIndirectOp::verify() {
   auto sig = cast<LITSignatureType>(getCallee().getType());
-  if (failed(verifyLifetimeParams(*this, sig)))
+  if (failed(verifyOriginParams(*this, sig)))
     return failure();
   return verifyCallOp(*this, sig, getArguments(), getResultTypes());
 }
@@ -468,10 +468,10 @@ LIT::FuncOp::getBoundSymbolRef(ParameterExprArrayAttr bindings) {
 
 bool LIT::FuncOp::isSynthetic() { return getIsSynthetic(); }
 
-/// Parse a fixed mutability specifier that occurs for implicit lifetimes.
+/// Parse a fixed mutability specifier that occurs for implicit Origins.
 // Implicit origin params are always known immut or mut, never parametric.
-static ParseResult parseImplicitLifetimeMutability(AsmParser &p,
-                                                   bool &isMutable) {
+static ParseResult parseImplicitOriginMutability(AsmParser &p,
+                                                 bool &isMutable) {
   llvm::SMLoc loc;
   StringRef mutability;
   if (p.getCurrentLocation(&loc) || p.parseKeyword(&mutability))
@@ -482,9 +482,9 @@ static ParseResult parseImplicitLifetimeMutability(AsmParser &p,
   return success();
 }
 
-static void printImplicitLifetimeMutability(AsmPrinter &p, OriginType type) {
+static void printImplicitOriginMutability(AsmPrinter &p, OriginType type) {
   assert((type.isMutableKnown(true) || type.isMutableKnown(false)) &&
-         "Implicit lifetimes are always known mut or imm");
+         "Implicit Origins are always known mut or imm");
   p << (type.isMutableKnown(true) ? "mut " : "imm ");
 }
 
@@ -503,24 +503,23 @@ static ParseResult parseLITFunctionSignature(
   llvm::SMLoc startLoc = p.getCurrentLocation();
 
   TypedAttr captureOrigins;
-  auto lifetimeSet = OriginSetType::get(p.getContext());
+  auto originSet = OriginSetType::get(p.getContext());
   if (succeeded(p.parseOptionalColon())) {
-    if (parseParamValue(p, captureOrigins, lifetimeSet) || p.parseColon())
+    if (parseParamValue(p, captureOrigins, originSet) || p.parseColon())
       return failure();
   } else {
-    captureOrigins = OriginSetAttr::get({}, lifetimeSet);
+    captureOrigins = OriginSetAttr::get({}, originSet);
   }
   bool isNestedOriginExclusivityCheckingDisabled =
       succeeded(p.parseOptionalKeyword("no_nested_origin_exclusivity"));
 
-  SmallVector<ParamDeclAttr> lifetimeDecls;
-  auto parseLifetimeDecl = [&]() -> ParseResult {
+  SmallVector<ParamDeclAttr> originDecls;
+  auto parseOriginDecl = [&]() -> ParseResult {
     bool isMutable = false;
     StringAttr name;
-    if (parseImplicitLifetimeMutability(p, isMutable) ||
-        parseParamName(p, name))
+    if (parseImplicitOriginMutability(p, isMutable) || parseParamName(p, name))
       return failure();
-    lifetimeDecls.push_back(
+    originDecls.push_back(
         ParamDeclAttr::get(name, OriginType::get(p.getContext(), isMutable)));
     return success();
   };
@@ -531,7 +530,7 @@ static ParseResult parseLITFunctionSignature(
 
   // Parse implicit origin decls.
   if (p.parseCommaSeparatedList(AsmParser::Delimiter::OptionalSquare,
-                                parseLifetimeDecl))
+                                parseOriginDecl))
     return failure();
 
   SmallVector<StringAttr> argNames;
@@ -604,7 +603,7 @@ static ParseResult parseLITFunctionSignature(
       PogListAttr::get(p.getContext(), argNames, argPassingKinds,
                        defaultPosArgs, defaultKwOnlyArgs, argVariadicIndices,
                        argPackIndex, origArgPackConvention),
-      paramListAttr, lifetimeDecls.size(), captureOrigins,
+      paramListAttr, originDecls.size(), captureOrigins,
       isNestedOriginExclusivityCheckingDisabled);
   signature = SignatureType::remapToSignature(
       params, /*resultParams=*/{}, functionType, argConventions, effects,
@@ -614,13 +613,13 @@ static ParseResult parseLITFunctionSignature(
 
   // Replace named implicit origin parameter references with index-based
   // references in the signature.
-  signature = signature.replaceImplicitOriginsWithIndexes(lifetimeDecls);
+  signature = signature.replaceImplicitOriginsWithIndexes(originDecls);
 
   // The formal params are the declared params + the implicit origin decls.
   SmallVector<ParamDeclAttr> allParams;
-  allParams.reserve(params.size() + lifetimeDecls.size());
+  allParams.reserve(params.size() + originDecls.size());
   llvm::append_range(allParams, params);
-  llvm::append_range(allParams, lifetimeDecls);
+  llvm::append_range(allParams, originDecls);
   params = ParamDeclArrayAttr::get(p.getContext(), allParams);
   return success();
 }
@@ -629,7 +628,7 @@ static void printLITFunctionSignature(OpAsmPrinter &p, Region *region,
                                       ArrayRef<ParamDeclAttr> params,
                                       FunctionType functionType,
                                       LITSignatureType signature) {
-  ArrayRef<ParamDeclAttr> lifetimeDecls =
+  ArrayRef<ParamDeclAttr> originDecls =
       params.drop_front(signature.getNumParams());
 
   if (!isEmptyOriginSet(signature.getCaptureOrigins())) {
@@ -641,13 +640,13 @@ static void printLITFunctionSignature(OpAsmPrinter &p, Region *region,
     p << "no_nested_origin_exclusivity";
 
   ParameterEvaluator evaluator;
-  printOptionalParameterSpec(p, params.drop_back(lifetimeDecls.size()),
+  printOptionalParameterSpec(p, params.drop_back(originDecls.size()),
                              signature.getParamListAttrs(), evaluator);
 
-  if (!lifetimeDecls.empty()) {
+  if (!originDecls.empty()) {
     p << '[';
-    llvm::interleaveComma(lifetimeDecls, p, [&](ParamDeclAttr decl) {
-      printImplicitLifetimeMutability(p, cast<OriginType>(decl.getType()));
+    llvm::interleaveComma(originDecls, p, [&](ParamDeclAttr decl) {
+      printImplicitOriginMutability(p, cast<OriginType>(decl.getType()));
       printParamName(p, decl.getName());
     });
     p << ']';
@@ -831,7 +830,7 @@ LogicalResult LIT::FuncOp::verify() {
     return emitOpError("incorrect number of input params: have ")
            << getParams().size() << ", but expected "
            << getSignature().getNumImplicitOriginDecls()
-           << " implicit lifetimes and " << getSignature().getNumParams()
+           << " implicit origins and " << getSignature().getNumParams()
            << " input params";
   }
 
@@ -863,11 +862,11 @@ void LIT::FuncOp::collectParameterUses(function_ref<void(Attribute)> scanAttr,
                                        function_ref<void(Type)> scanType) {}
 
 SmallVector<ParamDeclAttr>
-LIT::FuncOp::collectAllParams(bool includeImplLifetimes) {
+LIT::FuncOp::collectAllParams(bool includeImplOrigins) {
   auto [_, result] = collectParametricAncestors(getOperation()->getParentOp());
 
   auto params = getParams();
-  if (!includeImplLifetimes)
+  if (!includeImplOrigins)
     params = params.drop_back(getSignature().getNumImplicitOriginDecls());
   llvm::append_range(result, params);
   return result;
@@ -1404,9 +1403,8 @@ RefType RefStructGEROp::getReboundFieldType(RefType structRefTy,
                                             StringAttr fieldName,
                                             Type reboundType) {
   // The origin of the struct reference incorporates field sensitivity.
-  auto fieldLifetime = OriginFieldAttr::get(structRefTy.getOrigin(), fieldName);
-  return RefType::get(reboundType, fieldLifetime,
-                      structRefTy.getAddressSpace());
+  auto fieldOrigin = OriginFieldAttr::get(structRefTy.getOrigin(), fieldName);
+  return RefType::get(reboundType, fieldOrigin, structRefTy.getAddressSpace());
 }
 
 RefType RefStructGEROp::getFieldType(RefType structRefTy, StructFieldOp field) {
@@ -1757,7 +1755,7 @@ LogicalResult AliasDeclOp::verify() {
 //===----------------------------------------------------------------------===//
 
 static ParseResult parseVarDeclType(AsmParser &p, Type &resultType,
-                                    ParamDeclAttr &lifetimeDecl) {
+                                    ParamDeclAttr &originDecl) {
   if (p.parseType(resultType))
     return failure();
   auto refType = dyn_cast<RefType>(resultType);
@@ -1770,7 +1768,7 @@ static ParseResult parseVarDeclType(AsmParser &p, Type &resultType,
   if (!origin)
     return p.emitError(p.getNameLoc(),
                        "expected a !lit.ref<> with named origin");
-  lifetimeDecl = ParamDeclAttr::get(origin);
+  originDecl = ParamDeclAttr::get(origin);
   return success();
 }
 
@@ -1790,14 +1788,13 @@ void VarDeclOp::walkDefinitions(
 }
 
 void VarDeclOp::build(OpBuilder &b, OperationState &state, Type elementType,
-                      StringRef name, StringRef lifetimeName,
-                      VarDeclKind kind) {
-  auto lifetimeType = b.getType<OriginType>(/*isMutable=*/true);
-  auto lifetimeNameAttr = b.getAttr<StringAttr>(lifetimeName);
-  auto lifetimeDecl = ParamDeclAttr::get(lifetimeNameAttr, lifetimeType);
+                      StringRef name, StringRef originName, VarDeclKind kind) {
+  auto originType = b.getType<OriginType>(/*isMutable=*/true);
+  auto originNameAttr = b.getAttr<StringAttr>(originName);
+  auto originDecl = ParamDeclAttr::get(originNameAttr, originType);
   auto resultType = RefType::get(
-      elementType, ParamDeclRefAttr::get(lifetimeNameAttr, lifetimeType));
-  build(b, state, resultType, name, kind, lifetimeDecl, /*argShadowIndex=*/{});
+      elementType, ParamDeclRefAttr::get(originNameAttr, originType));
+  build(b, state, resultType, name, kind, originDecl, /*argShadowIndex=*/{});
 }
 
 bool VarDeclOp::isSynthetic() { return getKind() == VarDeclKind::Synthesized; }
@@ -1872,12 +1869,13 @@ LogicalResult GlobalVarRefOp::verifySymbolUses(SymbolTableCollection &symtab) {
 //===----------------------------------------------------------------------===//
 
 /// Use the result types to form the coroutine type, inheriting the throws bit.
-static ParseResult
-parseAsyncCallOpTypes(AsmParser &p, SmallVectorImpl<Type> &operandTypes,
-                      TypedAttr callee, ArrayRef<TypedAttr> implicitLifetimes) {
+static ParseResult parseAsyncCallOpTypes(AsmParser &p,
+                                         SmallVectorImpl<Type> &operandTypes,
+                                         TypedAttr callee,
+                                         ArrayRef<TypedAttr> implicitOrigins) {
   SmallVector<Type> resultTypes;
   return parseCallOpTypes(p, operandTypes, resultTypes, callee,
-                          implicitLifetimes);
+                          implicitOrigins);
 }
 
 /// Nothing to do on print.
@@ -1889,7 +1887,7 @@ LogicalResult AsyncCallOp::verify() {
   if (!sig.isAsync())
     return emitOpError("callable must be 'async'");
   if (auto litSig = dyn_cast<LITSignatureType>(sig)) {
-    if (failed(verifyLifetimeParams(*this, litSig)) ||
+    if (failed(verifyOriginParams(*this, litSig)) ||
         failed(verifyCallOp(*this, litSig, getOperands(), /*results=*/{})))
       return failure();
   }

@@ -578,17 +578,17 @@ static void printDemangledParam(raw_ostream &os, TypedAttr param,
     return;
   }
 
-  if (auto lifetimeField = dyn_cast<OriginFieldAttr>(param)) {
-    if (isa<StaticOriginAttr>(lifetimeField.getStructOrigin())) {
-      if (lifetimeField.getField().str() == "__constants__" &&
-          lifetimeField.getType().isMutableKnown(false)) {
-        os << "StaticConstantLifetime";
+  if (auto originField = dyn_cast<OriginFieldAttr>(param)) {
+    if (isa<StaticOriginAttr>(originField.getStructOrigin())) {
+      if (originField.getField().str() == "__constants__" &&
+          originField.getType().isMutableKnown(false)) {
+        os << "StaticConstantOrigin";
         return;
       }
     }
 
-    printDemangledParam(os, lifetimeField.getStructOrigin(), forDiag);
-    os << '.' << lifetimeField.getField().str();
+    printDemangledParam(os, originField.getStructOrigin(), forDiag);
+    os << '.' << originField.getField().str();
     return;
   }
 
@@ -813,14 +813,14 @@ void ASTType::print(raw_ostream &os, bool forDiag, bool demangleParams) const {
       ASTType(type).print(os, forDiag, demangleParams);
     });
     os << ')';
-  } else if (auto lifetimeType = dyn_cast<OriginType>(type)) {
-    if (lifetimeType.isMutableKnown(true))
+  } else if (auto originType = dyn_cast<OriginType>(type)) {
+    if (originType.isMutableKnown(true))
       os << "MutableOrigin";
-    else if (lifetimeType.isMutableKnown(false))
+    else if (originType.isMutableKnown(false))
       os << "ImmutableOrigin";
     else {
       os << "Origin[";
-      printDemangledParam(os, lifetimeType.isMutable(), forDiag);
+      printDemangledParam(os, originType.isMutable(), forDiag);
       os << ']';
     }
   } else {
@@ -881,9 +881,9 @@ void ASTType::dump() const { llvm::errs() << getAsString() << '\n'; }
 
 RefType ASTType::getRefForArgument(const Twine &argName, bool isMut) {
   auto ctx = mlirType.getContext();
-  auto selfLifetime = ParamDeclRefAttr::get(StringAttr::get(ctx, argName + "`"),
-                                            OriginType::get(ctx, isMut));
-  return RefType::get(mlirType, selfLifetime, /*addressSpace=*/0);
+  auto selfOrigin = ParamDeclRefAttr::get(StringAttr::get(ctx, argName + "`"),
+                                          OriginType::get(ctx, isMut));
+  return RefType::get(mlirType, selfOrigin, /*addressSpace=*/0);
 }
 
 namespace {

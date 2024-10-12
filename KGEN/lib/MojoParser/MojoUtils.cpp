@@ -24,10 +24,10 @@ using namespace M;
 using namespace M::KGEN;
 using namespace M::KGEN::LIT;
 
-TypedAttr LIT::getLifetimesAccessibleByParams(PogListAttr paramList,
-                                              ArrayRef<ParamDeclAttr> params,
-                                              SharedState &shared,
-                                              TypedAttr captureOrigins) {
+TypedAttr LIT::getOriginsAccessibleByParams(PogListAttr paramList,
+                                            ArrayRef<ParamDeclAttr> params,
+                                            SharedState &shared,
+                                            TypedAttr captureOrigins) {
   // Implicit parameters are not accessible on the callee side, so we don't
   // consider their origin accesses.
   params = params.drop_back(countNumImplicitKinds(paramList));
@@ -35,12 +35,12 @@ TypedAttr LIT::getLifetimesAccessibleByParams(PogListAttr paramList,
   SmallVector<Type> types;
   for (ParamDeclAttr param : params)
     types.push_back(param.getType());
-  SmallVector<TypedAttr> lifetimes =
+  SmallVector<TypedAttr> origins =
       shared.cachedOriginFinder.findOriginsIn(types);
 
   // We also need to find all accessible origin sets, even if they are
-  // parametric, and union them with the found lifetimes. We don't need to
-  // recurse into any nested parameter lifetimes. Even if they contain origin
+  // parametric, and union them with the found origins. We don't need to
+  // recurse into any nested parameter origins. Even if they contain origin
   // set references, they may not be within the top-level parameter scope, and
   // also we know they can't be accessed by the current function. For example,
   //
@@ -53,7 +53,7 @@ TypedAttr LIT::getLifetimesAccessibleByParams(PogListAttr paramList,
   // We can union the sets together by wrapping them in a origin set union.
   // The mutability doesn't matter since it will get flattened.
   auto addOriginSet = [&](TypedAttr param) {
-    lifetimes.push_back(OriginSetUnionAttr::get(
+    origins.push_back(OriginSetUnionAttr::get(
         param, OriginType::get(shared.getContext(), /*isMutable=*/true)));
   };
 
@@ -63,7 +63,7 @@ TypedAttr LIT::getLifetimesAccessibleByParams(PogListAttr paramList,
   if (captureOrigins)
     addOriginSet(captureOrigins);
 
-  return OriginSetAttr::get(shared.getContext(), lifetimes);
+  return OriginSetAttr::get(shared.getContext(), origins);
 }
 
 /// Returns if a value of the specified type can be coerced to the other type
@@ -160,7 +160,7 @@ bool LIT::canConvertWithRebind(ASTType fromType, ASTType toType,
   }
 
   // Check origin downcasting.  The safe conversions are:
-  //   Lifetimes with identical mutability will be uniqued and already handled.
+  //   Origins with identical mutability will be uniqued and already handled.
   //   Conversion from any mutability to KNOWN immutable is fine.
   //   Conversion from KNOWN mutable to any mutability is fine.
   if (auto fromLife = dyn_cast<OriginType>(fromType))
@@ -206,13 +206,12 @@ bool LIT::canConvertWithRebind(ASTType fromType, ASTType toType,
       if (isa<AnyOriginAttr>(fromRef.getOrigin()))
         return true;
 
-      // We can convert origin subset to a lifetimes superset.
-      auto toLifetime = toRef.getOrigin();
-      auto lifetimeUnion = OriginUnionAttr::get(
-          {toLifetime,
-           OriginMutCastAttr::get(fromRef.getOrigin(), toOriginType)},
+      // We can convert origin subset to a origins superset.
+      auto toOrigin = toRef.getOrigin();
+      auto originUnion = OriginUnionAttr::get(
+          {toOrigin, OriginMutCastAttr::get(fromRef.getOrigin(), toOriginType)},
           toOriginType);
-      return toLifetime == lifetimeUnion;
+      return toOrigin == originUnion;
     }
   }
 
@@ -222,7 +221,7 @@ bool LIT::canConvertWithRebind(ASTType fromType, ASTType toType,
     return false;
 
   // Allow signature types to be converted for free if they differ only in
-  // argument names, parameter names, passing kinds, or implicit lifetimes.
+  // argument names, parameter names, passing kinds, or implicit origins.
   size_t fromNumArgs = from.getNumArguments();
   if (fromNumArgs != to.getNumArguments())
     return false;
@@ -238,12 +237,12 @@ bool LIT::canConvertWithRebind(ASTType fromType, ASTType toType,
       from.getFnEffects() != to.getFnEffects())
     return false;
 
-  // The input argument types may have different implicit lifetimes.
+  // The input argument types may have different implicit origins.
   for (auto [fromTy, toTy, conv] : llvm::zip(
            from.getArguments(), to.getArguments(), from.getArgConventions())) {
     Type fromTyCmp = fromTy;
     Type toTyCmp = toTy;
-    if (SignatureType::hasImplicitLifetime(conv)) {
+    if (SignatureType::hasImplicitOrigin(conv)) {
       fromTyCmp = ASTType(fromTyCmp).getReferenceElementType();
       toTyCmp = ASTType(toTyCmp).getReferenceElementType();
     }
@@ -273,7 +272,7 @@ static ASTType getZeroCostCommonTypeImpl(SharedState &shared, ASTType type1,
         return {};
 
       // If so, we can form a common type with a subset of their mutability and
-      // a union of their lifetimes.
+      // a union of their origins.
       auto isMutableAttr = ParamOperatorAttr::get(
           POC::And, type1Ref.isMutable(), type2Ref.isMutable());
 

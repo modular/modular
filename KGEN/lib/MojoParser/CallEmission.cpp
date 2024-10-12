@@ -445,19 +445,19 @@ PValue OverloadSet::filterOverloadSet(CallOperands &operands,
 
     // It is possible this candidate needs some arguments emitted as MValues
     // (from PValue or SValues) to be passed as 'ref' arguments.  If this
-    // happens, emit them now and then re-infer the correct lifetimes.  If not,
+    // happens, emit them now and then re-infer the correct origins.  If not,
     // we're done.
-    const auto &argsNeedingLifetimes = bestFitness->getArgsNeedingLifetimes();
-    if (!argsNeedingLifetimes.any() ||
-        // Parameter emission can always use immortal lifetimes.
+    const auto &argsNeedingOrigins = bestFitness->getArgsNeedingOrigins();
+    if (!argsNeedingOrigins.any() ||
+        // Parameter emission can always use immortal origins.
         !emitter.builder) {
       // No arguments need to be spilled to boxes.
       return boundFunction;
     }
 
     // Emit each of the arguments that needs a origin to an MValue.
-    for (size_t i = 0, e = argsNeedingLifetimes.size(); i != e; ++i) {
-      if (!argsNeedingLifetimes[i])
+    for (size_t i = 0, e = argsNeedingOrigins.size(); i != e; ++i) {
+      if (!argsNeedingOrigins[i])
         continue;
       // If the operand is a positional argument it will be in the normal
       // operand list, otherwise it will be in the kwargs list.
@@ -481,16 +481,16 @@ PValue OverloadSet::filterOverloadSet(CallOperands &operands,
     }
 
     // Now that we have the operands set, we re-evaluate the bindings, which
-    // will reinfer parameters, getting the correct lifetimes from the MValues
+    // will reinfer parameters, getting the correct origins from the MValues
     // that are required by this overload candidate.
     auto newFitness =
         OverloadFitness::evaluate(selectedFunc.getFullSignature(), selectedDecl,
                                   *this, operands, allowImplicitConversions);
 
     assert(newFitness.isValid() &&
-           "Re-emitting function to infer lifetimes didn't work");
-    assert(newFitness.getArgsNeedingLifetimes().none() &&
-           "Re-emitting function infer lifetimes shouldn't need more MValues "
+           "Re-emitting function to infer origins didn't work");
+    assert(newFitness.getArgsNeedingOrigins().none() &&
+           "Re-emitting function infer origins shouldn't need more MValues "
            "emitted");
 
     // Update boundFunction to include the newly inferred parameters.

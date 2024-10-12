@@ -1581,7 +1581,7 @@ ParseResult StmtParser::parseSingleWithStmt(size_t curIndent, SMLoc smLoc,
 
       // One error that people hit is defining a context manager with both an
       // owned enter method and an exit method.  This will generate a terrible
-      // error message in check lifetimes, so cut that off here.
+      // error message in CheckLifetimes, so cut that off here.
       if ((firstArgConvention == ArgConvention::OwnedInReg ||
            firstArgConvention == ArgConvention::OwnedInMem) &&
           hasExitMethod) {

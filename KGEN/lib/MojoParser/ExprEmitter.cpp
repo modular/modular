@@ -753,7 +753,7 @@ MBValue ExprEmitter::emitPValueToMLValue(ASTExprAnd<PValue> value, MLValue dest,
   if (emitErrorForMaterializingTypeValues(*this, value, context))
     return {};
 
-  // PValues don't have lifetimes and are immortal with respect to the compiler.
+  // PValues don't have origins and are immortal with respect to the compiler.
   // Emit a memcpy into the LValue. Creating an SSA value of the memory-only
   // type for the sake of memcpy is safe because the bulk store will ensure the
   // variable does not get promoted off the stack, and after struct lowering,
@@ -1342,7 +1342,7 @@ bool ExprEmitter::canImplicitlyConvertToType(
   if (canConvertWithRebind(rvType, requiredType, shared))
     return true;
 
-  // Lifetimes and origin sets can convert between each other.
+  // Origins and origin sets can convert between each other.
   // FIXME: This seems wrong, why isn't it checking for inclusion and
   // compatibility??
   if ((isa<OriginType>(rvType) && isa<OriginSetType>(requiredType)) ||
@@ -1495,7 +1495,7 @@ AnyValue ExprEmitter::emitResult(AnyValue value, const ExprNode *expr,
         return emitResult(value, expr, dest);
       }
 
-      // Handle conversions between lifetimes and origin sets.
+      // Handle conversions between origins and origin sets.
       if (isa<OriginType>(rvType) && isa<OriginSetType>(requiredType)) {
         // This can only be done in the parameter domain.
         if (TypedAttr value = cValue.getIfPValue()) {
@@ -2172,8 +2172,8 @@ VarDeclOp ExprEmitter::emitVarDecl(const Twine &name, Type type, Location loc,
     emitErrorForDynamicValueInParameter(loc);
     return {};
   }
-  StringAttr lifetimeAttr = declScope.mangleParamName(name);
-  return builder->create<VarDeclOp>(loc, type, name.str(), lifetimeAttr, kind);
+  StringAttr originAttr = declScope.mangleParamName(name);
+  return builder->create<VarDeclOp>(loc, type, name.str(), originAttr, kind);
 }
 
 VarDeclOp ExprEmitter::emitVarDecl(StringAttr name, Type type, Location loc,

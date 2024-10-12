@@ -65,7 +65,7 @@ static void synthesizeSpecialFunction(ASTDecl &structDecl, SharedState &shared,
   LIT::FuncOp func;
   if (kind == SpecialFunctionKind::kDel) {
     // Synthesize an empty destructor. Don't do anything special, because we
-    // want check lifetimes to insert a call to the real destructor here, if it
+    // want check origins to insert a call to the real destructor here, if it
     // has one.
     auto [dtor, _] = gen.synthesizeMethodInStruct(
         "__del__", selfRefType, ArgConvention::OwnedInMem,

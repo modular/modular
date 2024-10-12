@@ -87,8 +87,8 @@ public:
 
   /// Return the set of args that need to be emitted to MValues to select this
   /// candidate.
-  const llvm::SmallBitVector &getArgsNeedingLifetimes() const {
-    return argsNeedingLifetimes;
+  const llvm::SmallBitVector &getArgsNeedingOrigins() const {
+    return argsNeedingOrigins;
   }
 
 private:
@@ -101,7 +101,7 @@ private:
   /// SValue to an MValue) so a origin can be inferred, their corresponding
   /// argument # is tracked in this bitset.  If not, the bit will be zero or
   /// missing.
-  llvm::SmallBitVector argsNeedingLifetimes;
+  llvm::SmallBitVector argsNeedingOrigins;
 
   /// Describes the metrics that can be used to compare candidates.
   struct Payload {

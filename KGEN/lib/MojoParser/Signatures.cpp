@@ -31,10 +31,10 @@ using namespace LIT;
 
 /// Process the origin expression in a `ref [...] T` reference specifier.
 /// T is specified as 'type' and this returns the result !lit.ref type.
-static RefType processLifetimeSpecifier(const ExprNode *lifetimeExpr,
-                                        ASTType type, StringRef valueName,
-                                        TypeCheckedParamList &paramList,
-                                        bool isResult) {
+static RefType processOriginSpecifier(const ExprNode *originExpr, ASTType type,
+                                      StringRef valueName,
+                                      TypeCheckedParamList &paramList,
+                                      bool isResult) {
   SharedState &shared = paramList.shared;
 
   // For errors, return "RefType(TypeCheckErrorType)" to maintain the invariant
@@ -53,28 +53,28 @@ static RefType processLifetimeSpecifier(const ExprNode *lifetimeExpr,
   // If the origin expression is syntactically a 2-element tuple, then
   // take it apart into a origin and address space.
   ExprNode *addrSpaceExpr = nullptr;
-  if (auto *tuple = dyn_cast<TupleNode>(lifetimeExpr)) {
+  if (auto *tuple = dyn_cast<TupleNode>(originExpr)) {
     if (tuple->exprs.size() != 2) {
       emitter.emitError(tuple->getLoc())
           << "expected specifier with one origin or a origin and an "
              "address space"
-          << lifetimeExpr->getRange();
+          << originExpr->getRange();
       return hadError();
     }
 
-    lifetimeExpr = tuple->exprs[0];
+    originExpr = tuple->exprs[0];
     addrSpaceExpr = tuple->exprs[1];
   }
 
   // Emit the origin expression if it is a normal expression.
   PValue origin;
-  if (lifetimeExpr->kind != ExprNode::kDiscardLiteral) {
+  if (originExpr->kind != ExprNode::kDiscardLiteral) {
     // The origin expression may either be a MValue or a value of
     // !lit.origin type.  In the former case, we want to evaluate the
     // expression without evaluating it, because it may involve complex nested
     // expressions and we may be in a PValue expression.
     emitter.emitExpressionWithOutEvaluatingIt(
-        lifetimeExpr, EC_Origin, [&](CValue result) {
+        originExpr, EC_Origin, [&](CValue result) {
           // If this is a PValue of origin type, directly use it.
           if (isa<OriginType>(result.getRValueType()) && result.getIfPValue()) {
             origin = result.getIfPValue();
@@ -82,9 +82,9 @@ static RefType processLifetimeSpecifier(const ExprNode *lifetimeExpr,
             // We can get the origin of an MValue.
             origin = result.getMValueType().getOrigin();
           } else {
-            emitter.emitError(lifetimeExpr->getLoc())
+            emitter.emitError(originExpr->getLoc())
                 << "value of type " << result.getRValueType()
-                << " doesn't have a memory origin" << lifetimeExpr->getRange();
+                << " doesn't have a memory origin" << originExpr->getRange();
           }
         });
   } else {
@@ -100,9 +100,9 @@ static RefType processLifetimeSpecifier(const ExprNode *lifetimeExpr,
     };
 
     if (isResult) {
-      emitter.emitError(lifetimeExpr->getLoc())
+      emitter.emitError(originExpr->getLoc())
           << "cannot infer origin for a function result"
-          << lifetimeExpr->getRange();
+          << originExpr->getRange();
       return hadError();
     }
 
@@ -114,9 +114,9 @@ static RefType processLifetimeSpecifier(const ExprNode *lifetimeExpr,
     return hadError();
 
   if (!isa<OriginType>(origin.getType())) {
-    emitter.emitError(lifetimeExpr->getLoc())
+    emitter.emitError(originExpr->getLoc())
         << "result reference origin has unexpected type " << origin.getType()
-        << lifetimeExpr->getRange();
+        << originExpr->getRange();
     return hadError();
   }
 
@@ -136,9 +136,9 @@ static RefType processLifetimeSpecifier(const ExprNode *lifetimeExpr,
         emitter.emitPValue({addrSpaceCValue, addrSpaceExpr}, EC_Origin).get();
 
     if (addrSpace && !isa<IndexType>(addrSpace.getType())) {
-      emitter.emitError(lifetimeExpr->getLoc())
+      emitter.emitError(originExpr->getLoc())
           << "INTERNAL ERROR: __mlir_index didn't return a value of index type"
-          << addrSpace.getType() << lifetimeExpr->getRange();
+          << addrSpace.getType() << originExpr->getRange();
       return hadError();
     }
   }
@@ -166,7 +166,7 @@ ParseResult ParsedArgument::parse(ParserBase &p, KWArgMarkerInfo &markerInfo,
   else if (p.consumeIf(Token::kw_inout))
     convention = kConventionInOut;
   else if (p.getToken().is(Token::kw_ref)) {
-    if (succeeded(p.parseRefSpecifier(refLifetimeExpr)))
+    if (succeeded(p.parseRefSpecifier(refOriginExpr)))
       convention = kConventionRef;
   }
 
@@ -800,25 +800,25 @@ static RefType makeImplicitRefTypeForArg(const ParsedArgument &arg, size_t idx,
                                          TypeCheckedFnSignature &tcSignature) {
   ASTDecl &declScope = tcSignature.paramList.declScope;
 
-  StringAttr lifetimeName;
+  StringAttr originName;
   if (arg.name) {
-    lifetimeName = declScope.mangleParamName(arg.name.strref());
+    originName = declScope.mangleParamName(arg.name.strref());
   } else { // Used by function types, for example.
-    lifetimeName =
+    originName =
         declScope.mangleParamName(Twine(llvm::utostr(idx)) + "_unnamed");
   }
 
   // The reference is immutable when borrowing, mutable otherwise.
   bool isMutable = arg.convention != ParsedArgument::kConventionBorrowed &&
                    arg.convention != ParsedArgument::kConventionUnspec;
-  auto lifetimeDecl = ParamDeclAttr::get(
-      lifetimeName, OriginType::get(lifetimeName.getContext(), isMutable));
+  auto originDecl = ParamDeclAttr::get(
+      originName, OriginType::get(originName.getContext(), isMutable));
 
   // Tell the signature about the new origin decl.
-  tcSignature.implicitLifetimeDecls.push_back(lifetimeDecl);
+  tcSignature.implicitOriginDecls.push_back(originDecl);
 
-  return RefType::get(
-      type, ParamDeclRefAttr::get(lifetimeName, lifetimeDecl.getType()));
+  return RefType::get(type,
+                      ParamDeclRefAttr::get(originName, originDecl.getType()));
 }
 
 // If this argument is a pack vararg like "*args: *Ts" then the argument
@@ -1020,7 +1020,7 @@ static void typeCheckOneArgument(size_t idx, ASTType selfType, bool isDef,
     arg.kgenConvention = ArgConvention::OwnedInReg;
     break;
   case ParsedArgument::kConventionRef: {
-    assert(arg.refLifetimeExpr && "No origin expr for convention!");
+    assert(arg.refOriginExpr && "No origin expr for convention!");
     if (arg.vararg != VarArgKind::None) {
       // There should be no reason this isn't supportable.
       shared.emitError(
@@ -1028,8 +1028,8 @@ static void typeCheckOneArgument(size_t idx, ASTType selfType, bool isDef,
       arg.vararg = VarArgKind::None;
     }
     auto refType =
-        processLifetimeSpecifier(arg.refLifetimeExpr, type, arg.name,
-                                 tcSignature.paramList, /*isResult=*/false);
+        processOriginSpecifier(arg.refOriginExpr, type, arg.name,
+                               tcSignature.paramList, /*isResult=*/false);
     type = refType;
     if (refType.isMutableKnown(true))
       arg.kgenConvention = ArgConvention::MutRef;
@@ -1044,7 +1044,7 @@ static void typeCheckOneArgument(size_t idx, ASTType selfType, bool isDef,
     arg.kgenConvention = ArgConvention::BorrowedInMem;
     TypeConvention conv = type.getRegisterPassability(arg.loc, shared);
     // FIXME(MOCO-725): Borrows of non-trivial register-passable values don't
-    // have lifetimes and can't be correctly tracked if captured in an async
+    // have origins and can't be correctly tracked if captured in an async
     // function. Emit an error to avoid a footgun.
     if (arg.vararg != VarArgKind::PackVarArg &&
         conv == TypeConvention::RegisterPassable &&
@@ -1102,7 +1102,7 @@ static void typeCheckOneArgument(size_t idx, ASTType selfType, bool isDef,
   // Values passed by memory need an associated origin parameter, and need to
   // be passed by reference. For now, we don't use reference types in **kwargs.
   Type fullType;
-  if (SignatureType::hasImplicitLifetime(arg.kgenConvention) &&
+  if (SignatureType::hasImplicitOrigin(arg.kgenConvention) &&
       arg.vararg != VarArgKind::KWVarArg) {
     fullType = makeImplicitRefTypeForArg(arg, idx, type, tcSignature);
   } else {
@@ -1258,17 +1258,17 @@ static void typeCheckResult(ParsedArgument resultArg, bool isDef,
 
   // If a result origin is specified with `ref [life] Ty`, then form a ref
   // result.
-  if (resultArg.refLifetimeExpr) {
+  if (resultArg.refOriginExpr) {
     if (tcSignature.argList.effects.isAsync()) {
       // TODO(MOCO-787): Async functions don't support ref results yet. We need
       // to define a `CoroutineRef` or support perfect forwarding in generic
       // results.
-      shared.emitError(resultArg.refLifetimeExpr->getLoc())
+      shared.emitError(resultArg.refOriginExpr->getLoc())
           << "TODO: ref results aren't supported in async functions yet";
-      resultArg.refLifetimeExpr = nullptr;
+      resultArg.refOriginExpr = nullptr;
     } else {
-      resultType = processLifetimeSpecifier(
-          resultArg.refLifetimeExpr, resultType,
+      resultType = processOriginSpecifier(
+          resultArg.refOriginExpr, resultType,
           // TODO: Use the name of the return slot if present.
           "__result__", tcSignature.paramList, /*isResult*/ true);
       tcSignature.argList.effects.setRefResult(isa<RefType>(resultType));
@@ -1278,27 +1278,27 @@ static void typeCheckResult(ParsedArgument resultArg, bool isDef,
   // Remember the user-declared result type.
   tcSignature.resultType = resultType;
 
-  // Check to see if the result type has any embedded lifetimes that refer to
-  // in-memory argument lifetimes of generic type, e.g.:
+  // Check to see if the result type has any embedded origins that refer to
+  // in-memory argument origins of generic type, e.g.:
   //
-  //     fn get[T: AnyType](a: T) -> Reference[T, __lifetimeof(a)]:
-  //        return Reference(a)
+  //     fn get[T: AnyType](a: T) -> Pointer[T, __origin_of(a)]:
+  //        return Pointer(a)
   //
-  // These lifetimes are not allowed to be returned from the function, because
+  // These origins are not allowed to be returned from the function, because
   // when instantiated with a register-passable type, argument convention
   // lowering will turn them into:
   //
   //     fn get[T: AnyType](borrow_in_reg a: T)
-  //                             -> Reference[T, __lifetimeof(tmp)]:
+  //                             -> Pointer[T, __origin_of(tmp)]:
   //        var tmp = a
   //        return Reference(tmp)
   //
   // Note that we're now returning a reference to something that doesn't outlast
   // the function!
-  if (auto resultLifetimes =
+  if (auto resultOrigins =
           shared.cachedOriginFinder.findOriginsIn(resultType.mlirType);
-      !resultLifetimes.empty()) {
-    SmallDenseMap<TypedAttr, size_t, 8> possiblyRegisterPassableLifetimes;
+      !resultOrigins.empty()) {
+    SmallDenseMap<TypedAttr, size_t, 8> possiblyRegisterPassableOrigins;
     for (auto [idx, parsedArg, fullType] : llvm::enumerate(
              tcSignature.argList.parsedArgs, tcSignature.fullArgTypes)) {
 
@@ -1317,21 +1317,20 @@ static void typeCheckResult(ParsedArgument resultArg, bool isDef,
         continue;
 
       // Ok, this origin is a problem.
-      possiblyRegisterPassableLifetimes[refType.getOrigin()] = idx;
+      possiblyRegisterPassableOrigins[refType.getOrigin()] = idx;
     }
 
-    // Now that we know all the problematic lifetimes, check to see if any of
+    // Now that we know all the problematic origins, check to see if any of
     // them are referenced.
-    for (TypedAttr origin : resultLifetimes) {
+    for (TypedAttr origin : resultOrigins) {
       // Don't allow mutability dropping to interfere.
       origin = OriginMutCastAttr::strip(origin);
-      if (!possiblyRegisterPassableLifetimes.count(origin))
+      if (!possiblyRegisterPassableOrigins.count(origin))
         continue;
 
       // Oops, found a problem, report it and indicate the argument at fault.
-      assert(resultArg.typeExpr &&
-             "implicit result types can't have lifetimes");
-      size_t argIdx = possiblyRegisterPassableLifetimes[origin];
+      assert(resultArg.typeExpr && "implicit result types can't have origins");
+      size_t argIdx = possiblyRegisterPassableOrigins[origin];
       const ParsedArgument &badArg = tcSignature.argList.parsedArgs[argIdx];
       auto diag = shared.emitError(resultArg.typeExpr->getLoc());
       diag << "cannot return " << badArg.name << "s origin, because it ";
@@ -1438,7 +1437,7 @@ static void typeCheckResult(ParsedArgument resultArg, bool isDef,
 TypeCheckedFnSignature::TypeCheckedFnSignature(TypeCheckedParamList &paramList,
                                                ParsedArgumentList &argList,
                                                const ParsedArgument &resultArg,
-                                               const ExprNode *lifetimeExpr,
+                                               const ExprNode *originExpr,
                                                bool isDef, ASTDecl *fnDecl,
                                                SpecialFunctionInfo &fnInfo)
     : paramList(paramList), argList(argList), resultArg(resultArg) {
@@ -1540,15 +1539,15 @@ TypeCheckedFnSignature::TypeCheckedFnSignature(TypeCheckedParamList &paramList,
 
   // If a capture origin set was specified, emit it. It will be added to the
   // signature type later.
-  if (lifetimeExpr) {
+  if (originExpr) {
     // Special rule for `[_]` when specifying the capture origin set: the
     // set is unbound and will be autoparameterized.
     auto setType = OriginSetType::get(shared.getContext());
-    if (lifetimeExpr->kind == ExprNode::kDiscardLiteral) {
+    if (originExpr->kind == ExprNode::kDiscardLiteral) {
       captureOrigins = UnboundAttr::get(setType);
     } else {
       captureOrigins =
-          typeEmitter.emitExprPValue(lifetimeExpr, EC_Origin, setType);
+          typeEmitter.emitExprPValue(originExpr, EC_Origin, setType);
     }
   }
 }
@@ -1792,10 +1791,10 @@ LITSignatureType TypeCheckedFnSignature::getLITSignatureType() const {
   auto metadata = FnMetadataAttr::get(
       PogListAttr::get(ctx, argPogs, defaultPosArgs, defaultKwOnlyArgs,
                        argPackIndex, argPackOrigConvention),
-      paramList.getParamListAttr(), implicitLifetimeDecls.size(),
-      getLifetimesAccessibleByParams(paramList.getParamListAttr(),
-                                     paramList.paramDeclAttrs, paramList.shared,
-                                     captureOrigins),
+      paramList.getParamListAttr(), implicitOriginDecls.size(),
+      getOriginsAccessibleByParams(paramList.getParamListAttr(),
+                                   paramList.paramDeclAttrs, paramList.shared,
+                                   captureOrigins),
       isNestedOriginExclusivityCheckingDisabled);
 
   /// Silence internal verifier errors when constructing types from the parser.
