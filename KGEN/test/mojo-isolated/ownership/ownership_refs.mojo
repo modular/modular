@@ -23,11 +23,11 @@ struct MemExample:
   fn mutate(inout self): pass
 
 # CHECK-LABEL: lit.func @"borrow{{.*}}"<lt: lifetime<0>>(%a: !lit.ref<!MemExample, imm lt>)
-fn borrow[lt: ImmutableLifetime](a: Pointer[MemExample, lt]._mlir_type):
+fn borrow[lt: ImmutableOrigin](a: Pointer[MemExample, lt]._mlir_type):
   pass
 
 # CHECK-LABEL: lit.func @"mutate{{.*}}"<lt: lifetime<1>>(%a: !lit.ref<!MemExample, mut lt>)
-fn mutate[lt: MutableLifetime](a: Pointer[MemExample, lt]._mlir_type):
+fn mutate[lt: MutableOrigin](a: Pointer[MemExample, lt]._mlir_type):
   pass
 
 # CHECK-LABEL: lit.func @"implicit_borrow
@@ -47,7 +47,7 @@ fn implicit_owned(owned a: MemExample):
 # CHECK-SAME: (%a: !lit.ref<!MemExample, mut=#lit.struct.extract<:!Bool isMut, "value">, life>)
 # CHECK-SAME: -> !lit.ref<!MemExample, mut=#lit.struct.extract<:!Bool isMut, "value">, life>
 fn parametricMut[isMut: Bool,
-                 life: Lifetime[isMut].type](a: Pointer[MemExample, life]._mlir_type)
+                 life: Origin[isMut].type](a: Pointer[MemExample, life]._mlir_type)
    -> Pointer[MemExample, life]._mlir_type:
   return a
 
@@ -261,11 +261,11 @@ fn returnTwoArgLifetimes(a: MemExample, b: MemExample)
   -> TwoLifetimes[__lifetime_of(a), __lifetime_of(b)]:
   return TwoLifetimes[__lifetime_of(a), __lifetime_of(b)]()
 
-struct OneLifetime[a_lifetime: ImmutableLifetime]:
+struct OneLifetime[a_lifetime: ImmutableOrigin]:
   fn __init__(inout self): pass
 
-struct TwoLifetimes[a_lifetime: ImmutableLifetime,
-                    b_lifetime: ImmutableLifetime]:
+struct TwoLifetimes[a_lifetime: ImmutableOrigin,
+                    b_lifetime: ImmutableOrigin]:
   fn __init__(inout self): pass
 
 # Test that we can infer the type of 'T' in the func param invocation.
@@ -317,7 +317,7 @@ fn ref_copyability[*element_types: Copyable](*args: *element_types):
 
 # FIXME (Patch #48185): need to support implicit conversions to immutable reference.
 
-#fn thing_taking_immutable_ref[T: AnyType, value_lifetime: ImmutableLifetime](a: Pointer[T, value_lifetime]): pass
+#fn thing_taking_immutable_ref[T: AnyType, value_lifetime: ImmutableOrigin](a: Pointer[T, value_lifetime]): pass
 #fn test_passing_mutable_ref(inout i: String):
 #    thing_taking_immutable_ref(Pointer.address_of(i))
 
@@ -328,7 +328,7 @@ struct ThingWithFields:
 # CHECK-LABEL: lit.func @"parametric_mut_mbvalue
 fn parametric_mut_mbvalue[
     is_mutable: __mlir_type.i1,
-    lifetime: Lifetime[is_mutable].type,
+    lifetime: Origin[is_mutable].type,
  ](a: Pointer[ThingWithFields, lifetime])
    -> Pointer[Int, __lifetime_of(a[].field)]:
   # CHECK: lit.ref.struct.ger

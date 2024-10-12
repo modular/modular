@@ -139,7 +139,7 @@ def reuse_implicit(a: Int, cond: __mlir_type.i1):
   use_int(implicit)
 
 # CHECK-LABEL: lit.func @"addrSpaces
-fn addrSpaces[lt1: MutableLifetime, lt2: ImmutableLifetime, as1: AddressSpace]():
+fn addrSpaces[lt1: MutableOrigin, lt2: ImmutableOrigin, as1: AddressSpace]():
   # CHECK: lit.var.decl "ref1" {{.*}}!lit.ref<!MemExample, mut lt1, #lit.struct.extract<:!Int #lit.struct.extract<:!AddressSpace as1, "_value">, "value">>
   var ref1 : Pointer[MemExample, lt1, as1]._mlir_type
 

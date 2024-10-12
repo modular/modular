@@ -969,7 +969,7 @@ fn signature_inference[dt: DType, rank: Int]():
     implicit_signature[func]()
 
 
-struct ClosureParam[lt: MutableLifetime, f: fn () capturing [lt] -> None]:
+struct ClosureParam[lt: MutableOrigin, f: fn () capturing [lt] -> None]:
     fn __moveinit__(inout self, owned existing: Self):
         pass
 
@@ -1458,7 +1458,7 @@ fn tryCallingAThingReturningMOCO1144Bound():
 
 
 ##===----------------------------------------------------------------------===##
-# Lifetime Parameters
+# Origin Parameters
 ##===----------------------------------------------------------------------===##
 
 

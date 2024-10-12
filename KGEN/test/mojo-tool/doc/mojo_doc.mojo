@@ -426,9 +426,9 @@ fn variadic_pack[*Ts: AnyType](*vals: *Ts):
 # CHECK:     "args":
 # CHECK:         "name": "vals",
 # CHECK:         "passingKind": "pos_or_kw",
-# CHECK:         "type": "Variadic[ref [MutableAnyLifetime] element_type]"
+# CHECK:         "type": "Variadic[ref [ImmutableAnyOrigin] element_type]"
 
-# CHECK:     "signature": "variadic_arg_hack[element_type: AnyType](vals: Variadic[ref [MutableAnyLifetime] element_type])",
+# CHECK:     "signature": "variadic_arg_hack[element_type: AnyType](vals: Variadic[ref [ImmutableAnyOrigin] element_type])",
 
 
 fn variadic_arg_hack[
@@ -517,9 +517,9 @@ fn fn_with_anon_refs(
 
 
 # CHECK-LABEL: "name": "fn_with_named_refs",
-# CHECK:     "signature": "fn_with_named_refs[life: MutableLifetime](ref [life] ref_arg1: AnyTrivialRegType) -> ref [life] AnyTrivialRegType",
+# CHECK:     "signature": "fn_with_named_refs[life: MutableOrigin](ref [life] ref_arg1: AnyTrivialRegType) -> ref [life] AnyTrivialRegType",
 fn fn_with_named_refs[
-    life: MutableLifetime
+    life: MutableOrigin
 ](ref [life]ref_arg1: AnyTrivialRegType) -> ref [
     __lifetime_of(ref_arg1)
 ] AnyTrivialRegType:
@@ -547,10 +547,10 @@ struct HMyUnsafePointer[
     T: AnyType,
     address_space: AddressSpace = AddressSpace.GENERIC,
 ]:
-    # CHECK: "signature": "__getitem__(self: Self) -> ref [MutableAnyLifetime, address_space] T",
+    # CHECK: "signature": "__getitem__(self: Self) -> ref [MutableAnyOrigin, address_space] T",
     fn __getitem__(
         self,
-    ) -> ref [MutableAnyLifetime, address_space._value.value] T:
+    ) -> ref [MutableAnyOrigin, address_space._value.value] T:
         pass
 
     # CHECK: "signature": "address_of(ref [arg_is_lifetime, address_space] arg: T) -> Self",

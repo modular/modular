@@ -594,11 +594,11 @@ static void printDemangledParam(raw_ostream &os, TypedAttr param,
 
   if (auto anyLife = dyn_cast<AnyLifetimeAttr>(param)) {
     if (anyLife.getType().isMutableKnown(true))
-      os << "MutableAnyLifetime";
+      os << "MutableAnyOrigin";
     else if (anyLife.getType().isMutableKnown(false))
-      os << "MutableAnyLifetime";
+      os << "ImmutableAnyOrigin";
     else
-      os << "SomeAnyLifetime";
+      os << "SomeAnyOrigin";
     return;
   }
 
@@ -815,11 +815,11 @@ void ASTType::print(raw_ostream &os, bool forDiag, bool demangleParams) const {
     os << ')';
   } else if (auto lifetimeType = dyn_cast<LifetimeType>(type)) {
     if (lifetimeType.isMutableKnown(true))
-      os << "MutableLifetime";
+      os << "MutableOrigin";
     else if (lifetimeType.isMutableKnown(false))
-      os << "ImmutableLifetime";
+      os << "ImmutableOrigin";
     else {
-      os << "Lifetime[";
+      os << "Origin[";
       printDemangledParam(os, lifetimeType.isMutable(), forDiag);
       os << ']';
     }

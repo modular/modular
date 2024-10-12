@@ -165,22 +165,22 @@ struct ParametricMutability:
 
 
 fn test_ref[
-    is_mutable: Bool, lifetime: Lifetime[is_mutable].type
+    is_mutable: Bool, lifetime: Origin[is_mutable].type
 ](ref [lifetime]arg: String):
     pass
 
 
 fn call_test_ref(inout s: String):
-    # expected-error @+1 {{cannot use parameterized function of type 'fn[Bool, Lifetime[$0.value]](ref [$1] arg: String) -> None' without binding all its parameters}}
+    # expected-error @+1 {{cannot use parameterized function of type 'fn[Bool, Origin[$0.value]](ref [$1] arg: String) -> None' without binding all its parameters}}
     var f1 = test_ref
 
-    # expected-error @+1 {{cannot use parameterized function of type 'fn[MutableLifetime](ref [$0] arg: String) -> None' without binding all its parameters}}
+    # expected-error @+1 {{cannot use parameterized function of type 'fn[MutableOrigin](ref [$0] arg: String) -> None' without binding all its parameters}}
     var f2 = test_ref[True]
     f2(s)
 
 
 @value
-struct MyMutSpan[lifetime: MutableLifetime]:
+struct MyMutSpan[lifetime: MutableOrigin]:
     pass
 
 
@@ -196,7 +196,7 @@ struct MyStruct:
 
 
 fn exclusivity[
-    spanlife: MutableLifetime
+    spanlife: MutableOrigin
 ](inout x: MyStruct, span: MyMutSpan[spanlife]):
     # expected-error @below {{argument of implicit __copyinit__ call allows writing a memory location previously writable through another aliased argument}}
     # expected-note @below {{'x' value is passed through aliasing 'borrowed' argument}}
@@ -218,7 +218,7 @@ fn exclusivity[
 fn mutate_two[A: AnyType, B: AnyType](inout a: A, inout b: B):
     pass
 
-fn mutate_two_AnyLifetime(ref[MutableAnyLifetime] a: Int, ref[MutableAnyLifetime] b: Int):
+fn mutate_two_AnyLifetime(ref[MutableAnyOrigin] a: Int, ref[MutableAnyOrigin] b: Int):
     pass
 
 

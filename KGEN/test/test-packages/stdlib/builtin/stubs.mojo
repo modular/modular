@@ -9,11 +9,11 @@ alias string = __mlir_type.`!kgen.string`
 alias float = __mlir_type.`!pop.scalar<f64>`
 
 alias AnyTrivialRegType = __mlir_type.`!kgen.type`
-alias ImmutableLifetime = __mlir_type.`!lit.lifetime<0>`
-alias MutableLifetime = __mlir_type.`!lit.lifetime<1>`
-alias ImmutableAnyLifetime = __mlir_attr.`#lit.any.lifetime : !lit.lifetime<0>`
-alias MutableAnyLifetime = __mlir_attr.`#lit.any.lifetime<1>: !lit.lifetime<1>`
-alias LifetimeSet = __mlir_type.`!lit.lifetime.set`
+alias ImmutableOrigin = __mlir_type.`!lit.lifetime<0>`
+alias MutableOrigin = __mlir_type.`!lit.lifetime<1>`
+alias ImmutableAnyOrigin = __mlir_attr.`#lit.any.lifetime : !lit.lifetime<0>`
+alias MutableAnyOrigin = __mlir_attr.`#lit.any.lifetime<1>: !lit.lifetime<1>`
+alias OriginSet = __mlir_type.`!lit.lifetime.set`
 
 
 alias `0` = __mlir_attr.`0 : index`
@@ -33,7 +33,7 @@ alias `True` = __mlir_attr.`1 : i1`
 alias `False` = __mlir_attr.`0 : i1`
 
 
-struct Lifetime[is_mutable: Bool]:
+struct Origin[is_mutable: Bool]:
     """This represents a lifetime reference of potentially parametric type.
     TODO: This should be replaced with a parametric type alias.
 
@@ -49,7 +49,7 @@ struct Lifetime[is_mutable: Bool]:
 
 
 # Static constants are a named subset of the global lifetime.
-alias StaticConstantLifetime = __mlir_attr[
+alias StaticConstantOrigin = __mlir_attr[
     `#lit.lifetime.field<`,
     `#lit.static.lifetime : !lit.lifetime<0>`,
     `, "__constants__"> : !lit.lifetime<0>`,
@@ -326,8 +326,8 @@ struct VariadicList[type: AnyTrivialRegType]:
 # TODO: parametric aliases would be nice.
 struct _lit_lifetime_union[
     is_mutable: Bool, //,
-    a: Lifetime[is_mutable].type,
-    b: Lifetime[is_mutable].type,
+    a: Origin[is_mutable].type,
+    b: Origin[is_mutable].type,
 ]:
     alias result = __mlir_attr[
         `#lit.lifetime.union<`,
@@ -342,7 +342,7 @@ struct _lit_lifetime_union[
 
 struct _lit_mut_cast[
     is_mutable: Bool, //,
-    operand: Lifetime[is_mutable].type,
+    operand: Origin[is_mutable].type,
     result_mutable: Bool,
 ]:
     alias result = __mlir_attr[
@@ -358,8 +358,8 @@ struct _lit_mut_cast[
 struct _VariadicListMemIter[
     elt_is_mutable: Bool, //,
     elt_type: AnyType,
-    elt_lifetime: Lifetime[elt_is_mutable].type,
-    list_lifetime: ImmutableLifetime,
+    elt_lifetime: Origin[elt_is_mutable].type,
+    list_lifetime: ImmutableOrigin,
 ]:
     """Iterator for VariadicListMem.
 
@@ -525,7 +525,7 @@ struct AddressSpace:
 struct Pointer[
     is_mutable: Bool, //,
     type: AnyType,
-    lifetime: Lifetime[is_mutable].type,
+    lifetime: Origin[is_mutable].type,
     address_space: AddressSpace = AddressSpace.GENERIC,
 ]:
     alias _mlir_type = __mlir_type[
@@ -581,7 +581,7 @@ struct Tuple[*element_types: AnyType]:
 struct UnsafePointer[
     T: AnyType,
     address_space: AddressSpace = AddressSpace.GENERIC,
-    lifetime: Lifetime[True].type = MutableAnyLifetime,
+    lifetime: Origin[True].type = MutableAnyOrigin,
 ]:
     alias _mlir_type = __mlir_type[
         `!kgen.pointer<`, T, `,`, address_space._value.value, `>`

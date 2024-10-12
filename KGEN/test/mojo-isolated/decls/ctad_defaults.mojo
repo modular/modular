@@ -15,7 +15,7 @@ struct MyUnsafePointer[
     address_space: AddressSpace = AddressSpace.GENERIC,
     exclusive: Bool = False,
     alignment: Int = 1,
-    lifetime: Lifetime[True].type = MutableAnyLifetime]:
+    lifetime: Origin[True].type = MutableAnyOrigin]:
     alias _mlir_type = __mlir_type[
         `!kgen.pointer<`,
         type,
