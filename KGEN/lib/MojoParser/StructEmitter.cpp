@@ -37,11 +37,11 @@ LIT::FuncOp StructEmitter::createFunction(
     bool synthetic, InlineLevel inlineLevel) {
   MLIRContext *ctx = getContext();
 
-  // Figure out the implicit lifetimes.
-  SmallVector<ParamDeclAttr> implLifetimeParams;
+  // Figure out the implicit origins.
+  SmallVector<ParamDeclAttr> implOriginParams;
 
   // The caller specifies all the input types, which means that all the input
-  // reference types that carry implicit lifetimes will already have them
+  // reference types that carry implicit origins will already have them
   // specified with names, so dig those out and use them as parameters.
   // If the caller provided indexed inputs, rewrite them to named inputs as our
   // body will expect.
@@ -49,39 +49,39 @@ LIT::FuncOp StructEmitter::createFunction(
   for (auto [argNo, argType, argConv] :
        llvm::enumerate(argTypes, argConventions)) {
     adjustedArgTypes.push_back(argType);
-    if (!SignatureType::hasImplicitLifetime(argConv))
+    if (!SignatureType::hasImplicitOrigin(argConv))
       continue;
 
     // Dig out the origin decl.
     auto refArgType = cast<RefType>(argType);
-    auto lifetimeAttr = refArgType.getOrigin();
+    auto originAttr = refArgType.getOrigin();
     ParamDeclAttr decl;
     // If this is a reference to a named one already, just reuse the name.
-    if (auto lifetimeRef = dyn_cast<ParamDeclRefAttr>(
-            OriginMutCastAttr::strip(lifetimeAttr))) {
-      assert(isa<OriginType>(lifetimeRef.getType()) &&
-             "lifetimes should have OriginType");
+    if (auto originRef =
+            dyn_cast<ParamDeclRefAttr>(OriginMutCastAttr::strip(originAttr))) {
+      assert(isa<OriginType>(originRef.getType()) &&
+             "origins should have OriginType");
       // Look through a cast to get the name, but use the expected mutability of
       // the origin type.
-      decl = ParamDeclAttr::get(lifetimeRef.getName(), lifetimeAttr.getType());
+      decl = ParamDeclAttr::get(originRef.getName(), originAttr.getType());
     } else {
       // If this has an indexed value or something else, synthesize a decl.
-      auto lifetimeName =
+      auto originName =
           StringAttr::get(ctx, llvm::utostr(argNo) + "_unnamed" + "`");
-      decl = ParamDeclAttr::get(lifetimeName, lifetimeAttr.getType());
+      decl = ParamDeclAttr::get(originName, originAttr.getType());
 
       // Replace the argument type with a named reference.
-      auto newLifetime = ParamDeclRefAttr::get(lifetimeName, decl.getType());
-      adjustedArgTypes.back() = refArgType.getWithOrigin(newLifetime);
+      auto newOrigin = ParamDeclRefAttr::get(originName, decl.getType());
+      adjustedArgTypes.back() = refArgType.getWithOrigin(newOrigin);
     }
-    implLifetimeParams.push_back(decl);
+    implOriginParams.push_back(decl);
   }
-  size_t numImplicitOriginDecls = implLifetimeParams.size();
+  size_t numImplicitOriginDecls = implOriginParams.size();
 
   auto metadata = FnMetadataAttr::get(
       argListAttrs, paramListAttrs, numImplicitOriginDecls,
-      getLifetimesAccessibleByParams(paramListAttrs, params, shared,
-                                     /*captureOrigins=*/nullptr),
+      getOriginsAccessibleByParams(paramListAttrs, params, shared,
+                                   /*captureOrigins=*/nullptr),
       /*isNestedOriginExclusivityCheckingDisabled=*/false);
   FunctionType functionType =
       builder.getFunctionType(adjustedArgTypes, {resultType});
@@ -92,7 +92,7 @@ LIT::FuncOp StructEmitter::createFunction(
   // Strip off the named origin decl references and replace them with indices.
   // We keep the named parameters in the ParamDeclAttr list on the FuncOp and
   // in the BBArgs.
-  signature = signature.replaceImplicitOriginsWithIndexes(implLifetimeParams);
+  signature = signature.replaceImplicitOriginsWithIndexes(implOriginParams);
 
   StringAttr sourceName = builder.getStringAttr(name);
   StringAttr mangledName = builder.getStringAttr(
@@ -113,10 +113,10 @@ LIT::FuncOp StructEmitter::createFunction(
   NamedAttrList attrs = funcOp->getAttrDictionary();
 
   // Figure out the full set of parameter declarations, this is the explicit
-  // parameter declarations + implicit lifetimes.
+  // parameter declarations + implicit origins.
   SmallVector<ParamDeclAttr> fullParams;
   llvm::append_range(fullParams, params);
-  llvm::append_range(fullParams, implLifetimeParams);
+  llvm::append_range(fullParams, implOriginParams);
   if (!fullParams.empty()) {
     attrs.set(funcOp.getParamsAttrName(),
               builder.getAttr<ParamDeclArrayAttr>(fullParams));
@@ -614,7 +614,7 @@ std::optional<ValueInfo> ValueInfo::createValueInfo(ASTDecl &structDecl,
          llvm::zip(inputTypes, convs, structOp.getFieldDecls())) {
       // Strip the pointer type if present.
       Type argType = type;
-      if (SignatureType::hasImplicitLifetime(conv))
+      if (SignatureType::hasImplicitOrigin(conv))
         argType = ASTType(argType).getReferenceElementType();
       StructFieldOp op = field;
       if (argType != op.getType()) {

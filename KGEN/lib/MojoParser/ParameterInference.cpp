@@ -191,7 +191,7 @@ LogicalResult ParameterInferenceState::matchTypes(Type actualType,
               matchTypes(actual.getElementType(), expected.getElementType())))
         return failure();
       if (failed(matchParams(actual.getOrigin(), expected.getOrigin()))) {
-        // The lifetimes are allowed to mismatch due to mut->immut casts.
+        // The origins are allowed to mismatch due to mut->immut casts.
         if (!canConvertWithRebind(actual.getOriginType(),
                                   expected.getOriginType(), shared))
           return failure();
@@ -705,7 +705,7 @@ ParameterInferenceState::inferOneOperand(ASTExprAnd<AnyValue> operand,
       return matchTypes(valueRefType, expectedType);
 
     // Otherwise, we'll need to drop this value into a temporary.  For now, we
-    // infer it as AnyLifetime.  We bind the origin directly and then handle
+    // infer it as AnyOrigin.  We bind the origin directly and then handle
     // it like any other argument because we can support implicit conversions.
     valueRefType =
         RefType::getAnyOrigin(argVal.getRValueType(), /*isMut=*/false);
@@ -1180,7 +1180,7 @@ ParameterInferenceState::inferCTADParams(LITSignatureType signature,
   }
 
   // If passing self by reference, wrap the Self type with the RefType
-  // paraphernalia like lifetimes.
+  // paraphernalia like origins.
   if (SignatureType::hasAddress(selfConvention)) {
     auto selfRefType = cast<RefType>(signature.getArguments()[0]);
     selfType = selfRefType.getWithElement(selfType);

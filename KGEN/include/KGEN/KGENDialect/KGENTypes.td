@@ -277,7 +277,7 @@ def KGEN_SignatureType : KGENType<"Signature", "signature", [
 
     /// Determine whether an argument with the given input convention expects to
     /// have an implicit origin.
-    static bool hasImplicitLifetime(ArgConvention conv);
+    static bool hasImplicitOrigin(ArgConvention conv);
 
     /// Return true if this is an automatically generated result slot.
     static bool isResultSlot(ArgConvention conv);

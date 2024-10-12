@@ -568,17 +568,17 @@ struct FunctionTypeNode final : public ExprNode {
   FunctionTypeNode(SMLoc baseLoc, ArrayRef<ParsedArgument> parsedParams,
                    ArrayRef<ParsedArgument> parsedArgs,
                    ArrayRef<ParsedArgument> resultArgs, FnEffects effects,
-                   const ExprNode *lifetimeExpr, SMLoc endLoc, bool isDef)
+                   const ExprNode *originExpr, SMLoc endLoc, bool isDef)
       : ExprNode(kFunctionType), baseLoc(baseLoc), parsedParams(parsedParams),
         parsedArgs(parsedArgs), resultArgs(resultArgs), effects(effects),
-        lifetimeExpr(lifetimeExpr), endLoc(endLoc), isDef(isDef) {}
+        originExpr(originExpr), endLoc(endLoc), isDef(isDef) {}
 
   SMLoc baseLoc;
   ArrayRef<ParsedArgument> parsedParams; // Parameter list
   ArrayRef<ParsedArgument> parsedArgs;   // Argument list
   ArrayRef<ParsedArgument> resultArgs;   // Result list
   FnEffects effects;
-  const ExprNode *lifetimeExpr;
+  const ExprNode *originExpr;
   SMLoc endLoc;
   bool isDef;
 
@@ -615,7 +615,7 @@ struct MagicFunctionNode final : public ExprNode {
   AnyValue emitIR(ValueDest &dest, ExprEmitter &emitter) const override;
   void print(mlir::raw_indented_ostream &os) const override;
 
-  AnyValue emitLifetimeOf(ValueDest &dest, ExprEmitter &emitter) const;
+  AnyValue emitOriginOf(ValueDest &dest, ExprEmitter &emitter) const;
   AnyValue emitTypeOf(ValueDest &dest, ExprEmitter &emitter) const;
 };
 

@@ -4,7 +4,8 @@
 //
 //===----------------------------------------------------------------------===//
 //
-// This pass checks value lifetime invariants, e.g. that
+// This pass checks value lifetime invariants, e.g. that variables are defined
+// before use. This also inserts destructors for implicitly destroyed values.
 //
 //===----------------------------------------------------------------------===//
 
@@ -28,8 +29,7 @@ using namespace KGEN;
 using namespace LIT;
 using llvm::BitVector;
 
-static constexpr StringRef extraLifetimeUsesAttrName =
-    ".mojo.extra.origin.uses";
+static constexpr StringRef extraOriginUsesAttrName = ".mojo.extra.origin.uses";
 
 /// Find all the functions and types in the module.
 static std::tuple<std::vector<LIT::FuncOp>,
@@ -549,8 +549,8 @@ struct ValueSet {
   /// number of fields they have.
   TypeDeclInfo &typeDeclInfo;
 
-  /// This provides efficient lookup for lifetimes buried in MLIR types.
-  CachedOriginFinder &lifetimeFinder;
+  /// This provides efficient lookup for origins buried in MLIR types.
+  CachedOriginFinder &originFinder;
 
   /// Initialize the value set with one entry, so index #0 is always invalid and
   /// can be used as a sentinel, and so a null Value is always treated as
@@ -559,8 +559,8 @@ struct ValueSet {
   /// This sentinel is also used by DestructorInsertion as a marker for
   /// "unreachable" code to avoid unnecessary meets.
   ValueSet(TypeDeclInfo &typeDeclInfo, LIT::FuncOp func,
-           CachedOriginFinder &lifetimeFinder)
-      : typeDeclInfo(typeDeclInfo), lifetimeFinder(lifetimeFinder), func(func) {
+           CachedOriginFinder &originFinder)
+      : typeDeclInfo(typeDeclInfo), originFinder(originFinder), func(func) {
     addValue(Value(), OriginTrackable(Value()));
   }
 
@@ -588,13 +588,12 @@ struct ValueSet {
   /// Given a origin attribute, return the value ref that defines it, and the
   /// known type of that value.  This can return a null type if we don't have
   /// field sensitive information.
-  std::pair<ValueRef, Type>
-  getValueRefAndTypeForLifetime(TypedAttr lifetime) const;
+  std::pair<ValueRef, Type> getValueRefAndTypeForOrigin(TypedAttr origin) const;
 
   /// Look up all the value refs that an access with the specified Value and
   /// dereference bit touch.
   SmallVector<ValueRef> getValueRefsForAccess(Value val, bool isDeref);
-  SmallVector<ValueRef> getValueRefsForLifetime(TypedAttr lifetime);
+  SmallVector<ValueRef> getValueRefsForOrigin(TypedAttr origin);
 
   /// Given a tracked value that is being accessed by an operation, return
   /// the ValueRef for the object being tracked or null if untracked.
@@ -636,8 +635,8 @@ private:
   SmallVector<ValueInfo> valueInfos;
   /// This is a lookup from SSA values to the thing they are referencing.
   DenseMap<Value, unsigned> valueInfoIndex;
-  /// This is a mapping of lifetime attrs to the value index that defines them.
-  DenseMap<TypedAttr, unsigned> lifetimeToValueIndex;
+  /// This is a mapping of origin attrs to the value index that defines them.
+  DenseMap<TypedAttr, unsigned> originToValueIndex;
 };
 } // namespace
 
@@ -726,9 +725,9 @@ void ValueSet::dump() const {
 ///  * The bitrange it covers
 void ValueSet::addValue(Value val, const OriginTrackable &trackable,
                         DebugInfo::DILocalVariableAttr debugVariable) {
-  // Figure out how many bits to track for this value at the lifetime if mem.
+  // Figure out how many bits to track for this value at the value if mem.
   unsigned numValueBits;
-  TypedAttr valueLifetime;
+  TypedAttr valueOrigin;
   if (!val) {
     numValueBits = 1; // Nothing to do for the sentinel.
   } else if (trackable.isIndirect) {
@@ -743,9 +742,9 @@ void ValueSet::addValue(Value val, const OriginTrackable &trackable,
     Type valType = refType.getElementType();
     numValueBits = typeDeclInfo.getNumFieldsInType(valType);
 
-    // Remember the lifetime if not unknown.
+    // Remember the origin if not unknown.
     if (!isa<AnyOriginAttr>(refType.getOrigin()))
-      valueLifetime = refType.getOrigin();
+      valueOrigin = refType.getOrigin();
   } else {
     // We don't track trivial values of register type.
     if (typeDeclInfo.isRegisterPassableTrivial(val.getType()))
@@ -757,8 +756,8 @@ void ValueSet::addValue(Value val, const OriginTrackable &trackable,
 
   // Record this information in our tables.
   valueInfoIndex[val] = valueInfos.size();
-  if (valueLifetime)
-    lifetimeToValueIndex[valueLifetime] = valueInfos.size();
+  if (valueOrigin)
+    originToValueIndex[valueOrigin] = valueInfos.size();
 
   valueInfos.push_back({val, firstValueBit, firstValueBit + numValueBits,
                         trackable.startsUninit, trackable.endInitState,
@@ -775,22 +774,22 @@ void ValueSet::eraseValueInfo(Value value) {
   valueInfoIndex.erase(it);
 }
 
-/// Given a lifetime attribute, return the value ref that defines it, and the
+/// Given a origin attribute, return the value ref that defines it, and the
 /// known type of that value.  This can return a null type if we don't have
 /// field sensitive information.
 std::pair<ValueRef, Type>
-ValueSet::getValueRefAndTypeForLifetime(TypedAttr lifetime) const {
-  // The mutability of the lifetime access doesn't affect what ValueRef is
+ValueSet::getValueRefAndTypeForOrigin(TypedAttr origin) const {
+  // The mutability of the origin access doesn't affect what ValueRef is
   // accessed.
-  lifetime = OriginMutCastAttr::strip(lifetime);
+  origin = OriginMutCastAttr::strip(origin);
 
-  // If the lifetime has one or more field specifiers like 'a.x.y.z', find
+  // If the origin has one or more field specifiers like 'a.x.y.z', find
   // the ValueRef for the base and then refine it.
-  if (auto field = dyn_cast<OriginFieldAttr>(lifetime)) {
+  if (auto field = dyn_cast<OriginFieldAttr>(origin)) {
     auto [valueRef, type] =
-        getValueRefAndTypeForLifetime(field.getStructOrigin());
+        getValueRefAndTypeForOrigin(field.getStructOrigin());
     // If we don't have field sensitive information then we cannot refine the
-    // lifetime.  This also handles the null valueRef case.
+    // origin.  This also handles the null valueRef case.
     if (!type)
       return {valueRef, type};
 
@@ -798,7 +797,7 @@ ValueSet::getValueRefAndTypeForLifetime(TypedAttr lifetime) const {
     auto fieldName = field.getField();
 
     // FIXME: Field accesses can be compressed due to subtyping, and we don't
-    // keep track of where this happens in the lifetime, and we don't keep track
+    // keep track of where this happens in the origin, and we don't keep track
     // of the full struct+symbol name for fields.  *This is a bug*.  Until we
     // decide to fix this, this should work.
     auto containerType = dyn_cast<LIT::StructType>(type);
@@ -822,9 +821,9 @@ ValueSet::getValueRefAndTypeForLifetime(TypedAttr lifetime) const {
     return {valueRef, fieldType};
   }
 
-  // Otherwise look up the base lifetime value.
-  auto it = lifetimeToValueIndex.find(lifetime);
-  if (it == lifetimeToValueIndex.end())
+  // Otherwise look up the base origin value.
+  auto it = originToValueIndex.find(origin);
+  if (it == originToValueIndex.end())
     return {};
 
   const auto &entry = valueInfos[it->second];
@@ -895,14 +894,14 @@ ValueRef ValueSet::getDirectValueRef(Value value, bool isDeref) const {
   return ValueRef();
 }
 
-/// Look up all the value refs that an access to the specified lifetime could
+/// Look up all the value refs that an access to the specified origin could
 /// touch.
-SmallVector<ValueRef> ValueSet::getValueRefsForLifetime(TypedAttr lifetime) {
+SmallVector<ValueRef> ValueSet::getValueRefsForOrigin(TypedAttr origin) {
   SmallVector<ValueRef> result;
 
   // Look through imm cast and unions to find the underlying attrs.
-  processRawOrigin(lifetime, [&](TypedAttr raw) {
-    auto [valueRef, type] = getValueRefAndTypeForLifetime(raw);
+  processRawOrigin(origin, [&](TypedAttr raw) {
+    auto [valueRef, type] = getValueRefAndTypeForOrigin(raw);
     if (valueRef)
       result.push_back(valueRef);
   });
@@ -922,9 +921,9 @@ SmallVector<ValueRef> ValueSet::getValueRefsForAccess(Value value,
   }
 
   // Otherwise, if indirect, this is an reference to one or more
-  // lifetime-tracked values, figure out what they are.
+  // origin-tracked values, figure out what they are.
   if (isDeref)
-    return getValueRefsForLifetime(cast<RefType>(value.getType()).getOrigin());
+    return getValueRefsForOrigin(cast<RefType>(value.getType()).getOrigin());
 
   // Otherwise it is a trivial or untracked value.
   return {};
@@ -959,9 +958,8 @@ private:
   void checkDef(Value value, Operation &op, bool isDeref);
   void checkConsume(Value value, Operation &op, bool isDeref);
   void checkMarkDestroyed(Value value, Operation &op);
-  void checkLifetimeEffect(TypedAttr lifetime, Operation &op);
-  void handleAnyLifetimeUse(Operation &op,
-                            ArrayRef<TypedAttr> definedLifetimes);
+  void checkOriginEffect(TypedAttr origin, Operation &op);
+  void handleAnyOriginUse(Operation &op, ArrayRef<TypedAttr> definedOrigins);
 
   /// This is metadata about all the values we are tracking.
   ValueSet &valueSet;
@@ -1242,13 +1240,13 @@ void UninitializedValueScan::checkMarkDestroyed(Value value, Operation &op) {
   }
 }
 
-/// Check any unstructured lifetimes that are accessed by the operation.
-void UninitializedValueScan::checkLifetimeEffect(TypedAttr lifetime,
-                                                 Operation &op) {
-  // We assume this may mutate the lifetime unless we know it is read-only.
-  bool isMutate = !cast<OriginType>(lifetime.getType()).isMutableKnown(false);
+/// Check any unstructured origins that are accessed by the operation.
+void UninitializedValueScan::checkOriginEffect(TypedAttr origin,
+                                               Operation &op) {
+  // We assume this may mutate the origin unless we know it is read-only.
+  bool isMutate = !cast<OriginType>(origin.getType()).isMutableKnown(false);
 
-  SmallVector<ValueRef> accesses = valueSet.getValueRefsForLifetime(lifetime);
+  SmallVector<ValueRef> accesses = valueSet.getValueRefsForOrigin(origin);
   for (auto access : accesses) {
     // The referenced value fields must be live.
     if (!access.isAllPresent(liveValues))
@@ -1256,28 +1254,28 @@ void UninitializedValueScan::checkLifetimeEffect(TypedAttr lifetime,
   }
 }
 
-/// This function is called when an operation uses a #lit.any.origin lifetime.
+/// This function is called when an operation uses a #lit.any.origin origin.
 /// This happens when the operation accesses through (e.g.) an unbound
 /// UnsafePointer.  We don't know what objects may be touched by this access,
-/// but we want to ensure (for usability sake) that any lifetime-tracked values
+/// but we want to ensure (for usability sake) that any origin-tracked values
 /// are treated as a use, so they don't get destroyed too early.
 ///
 /// We handle this by learning which things need extension in this function,
 /// then attaching an attribute that destructor insertion pass will notice in
 /// the second pass.
-void UninitializedValueScan::handleAnyLifetimeUse(
-    Operation &op, ArrayRef<TypedAttr> definedLifetimes) {
-  // Turn the list of lifetimes (which might include unions, mutcasts, etc) into
-  // the raw underlying lifetimes of values.
-  SmallPtrSet<Attribute, 8> definedLifetimeSet;
-  for (auto elt : definedLifetimes) {
+void UninitializedValueScan::handleAnyOriginUse(
+    Operation &op, ArrayRef<TypedAttr> definedOrigins) {
+  // Turn the list of origins (which might include unions, mutcasts, etc) into
+  // the raw underlying origins of values.
+  SmallPtrSet<Attribute, 8> definedOriginSet;
+  for (auto elt : definedOrigins) {
     // Look through imm cast and unions to find the underlying attrs.
     processRawOrigin(elt, [&](TypedAttr raw) {
       // Ignore field sensitivity of the use: if we have a def of a subfield of
       // the value then we treat it as defining the value.
       while (auto field = dyn_cast<OriginFieldAttr>(raw))
         raw = field.getStructOrigin();
-      definedLifetimeSet.insert(raw);
+      definedOriginSet.insert(raw);
     });
   }
 
@@ -1287,7 +1285,7 @@ void UninitializedValueScan::handleAnyLifetimeUse(
   for (unsigned i = 0, e = valueSet.getValueInfos().size(); i != e; ++i) {
     auto &valueInfo = valueSet.getValueInfo(i);
     // Don't mess with things that are in SSA registers - they aren't
-    // addressable with a lifetime.
+    // addressable with a origin.
     if (!valueInfo.value || !valueInfo.isIndirect)
       continue;
 
@@ -1295,11 +1293,11 @@ void UninitializedValueScan::handleAnyLifetimeUse(
     if (!valueSet.getFullValueRef(i).isAllPresent(liveValues))
       continue;
 
-    // Check to see if the operation directly initializes this lifetime
+    // Check to see if the operation directly initializes this origin
     // (e.g. by initializing it). If so, we don't want to treat this as a
     // generalized use.
-    auto valueLifetime = cast<RefType>(valueInfo.value.getType()).getOrigin();
-    if (definedLifetimeSet.count(valueLifetime))
+    auto valueOrigin = cast<RefType>(valueInfo.value.getType()).getOrigin();
+    if (definedOriginSet.count(valueOrigin))
       continue;
 
     // Check to see if the value is dominated by this op.  It is possible for
@@ -1311,19 +1309,19 @@ void UninitializedValueScan::handleAnyLifetimeUse(
     //     else:
     //        return
     //     # Thing is fully initialized here but doesn't dominate.
-    //     use_any_lifetime(..)
+    //     use_any_origin(..)
     //
     if (!valueSet.domInfo.properlyDominates(valueInfo.value, &op))
       continue;
 
-    // This value might be accessed, so we want to extend its lifetime if
+    // This value might be accessed, so we want to extend its origin if
     // necessary.
     valueIdsToExtend.push_back(i);
   }
 
   if (valueIdsToExtend.empty())
     return;
-  op.setAttr(extraLifetimeUsesAttrName,
+  op.setAttr(extraOriginUsesAttrName,
              mlir::DenseI32ArrayAttr::get(op.getContext(), valueIdsToExtend));
 }
 
@@ -1353,16 +1351,15 @@ void UninitializedValueScan::scanFunction(LIT::FuncOp func) {
 void UninitializedValueScan::scanBlock(Block &block) {
   SmallVector<std::pair<Value, OperandEffect>> operandEffects;
   SmallVector<ResultEffect> resultEffects;
-  SmallVector<TypedAttr> lifetimeEffects;
-  SmallVector<TypedAttr> definedLifetimes;
+  SmallVector<TypedAttr> originEffects;
+  SmallVector<TypedAttr> definedOrigins;
   for (Operation &op : block) {
     operandEffects.clear();
     resultEffects.clear();
-    lifetimeEffects.clear();
-    definedLifetimes.clear();
-    auto overall =
-        getOperationEffects(op, operandEffects, resultEffects, lifetimeEffects,
-                            valueSet.lifetimeFinder);
+    originEffects.clear();
+    definedOrigins.clear();
+    auto overall = getOperationEffects(op, operandEffects, resultEffects,
+                                       originEffects, valueSet.originFinder);
     /// If the operation is unknown, ignore it.
     if (overall == OverallOpValueEffect::unknownOp) {
       // NOTE: Can log here when extending things.
@@ -1384,8 +1381,7 @@ void UninitializedValueScan::scanBlock(Block &block) {
         break;
       case OperandEffect::memStoreOwned:
         checkDef(operand, op, /*isDeref=*/true);
-        definedLifetimes.push_back(
-            cast<RefType>(operand.getType()).getOrigin());
+        definedOrigins.push_back(cast<RefType>(operand.getType()).getOrigin());
         break;
       case OperandEffect::memInOut:
         checkUse(operand, op, /*isDeref=*/true);
@@ -1456,23 +1452,23 @@ void UninitializedValueScan::scanBlock(Block &block) {
                "Origin trackable and CheckLifetimes disagree");
         // We consume on execution to provide Init -> Uninit behavior.
         checkDef(result, op, /*isDeref=*/true);
-        definedLifetimes.push_back(cast<RefType>(result.getType()).getOrigin());
+        definedOrigins.push_back(cast<RefType>(result.getType()).getOrigin());
         break;
       }
     }
 
-    // Process any indirect lifetimes accessed.
-    bool hasAnyLifetime = false;
-    for (auto lifetime : lifetimeEffects) {
-      checkLifetimeEffect(lifetime, op);
-      hasAnyLifetime |= isa<AnyOriginAttr>(lifetime);
+    // Process any indirect origins accessed.
+    bool hasAnyOrigin = false;
+    for (auto origin : originEffects) {
+      checkOriginEffect(origin, op);
+      hasAnyOrigin |= isa<AnyOriginAttr>(origin);
     }
 
     // If the operation used a #lit.any.origin value, then we treat it as an
     // implicit use of all tracked values.  This ensures that the values are
     // not destroyed too early.
-    if (hasAnyLifetime)
-      handleAnyLifetimeUse(op, definedLifetimes);
+    if (hasAnyOrigin)
+      handleAnyOriginUse(op, definedOrigins);
 
     // Finally, handle any other special per-operation behavior.
     switch (overall) {
@@ -1700,7 +1696,7 @@ void UninitializedValueScan::checkTryOp(LIT::TryOp tryOp) {
 // DestructorInserter
 //===----------------------------------------------------------------------===//
 
-/// Emit a lifetime end marker for a value that is being consumed.
+/// Emit a origin end marker for a value that is being consumed.
 static void emitLifetimeEnd(Value value, ImplicitLocOpBuilder &builder) {
   // RefLoadOp can only be used on register passable values.  See if this is
   // loading from a var box.
@@ -1970,15 +1966,15 @@ void DestructorInserter::emitDestructorCall(
       valueToDestroy = builder.create<RefLoadOp>(valueToDestroy);
 
   // If the dtor takes a reference, then this the dtor for a memory type.  Bind
-  // the implicit lifetime of __del__'s self to the lifetime of the reference we
+  // the implicit origin of __del__'s self to the origin of the reference we
   // have.
-  SmallVector<TypedAttr> implicitLifetimes;
+  SmallVector<TypedAttr> implicitOrigins;
   if (auto delSelfTy = dyn_cast<RefType>(signature.getArguments()[0])) {
     valueToDestroy =
         getMutableRefForPossiblyImmutValue(valueToDestroy, builder);
     auto argRef = cast<RefType>(valueToDestroy.getType());
     assert(delSelfTy.getElementType() == argRef.getElementType());
-    implicitLifetimes.push_back(argRef.getOrigin());
+    implicitOrigins.push_back(argRef.getOrigin());
 
     // Verify that the address space of the reference matches.  The __del__
     // method will have address space zero.  Attempts to delete other things
@@ -1994,8 +1990,8 @@ void DestructorInserter::emitDestructorCall(
   }
 
   // Emit the call to the destructor.
-  builder.create<LIT::CallOp>(signature.getResults()[0], dtor,
-                              implicitLifetimes, valueToDestroy);
+  builder.create<LIT::CallOp>(signature.getResults()[0], dtor, implicitOrigins,
+                              valueToDestroy);
   emitLifetimeEnd(value, builder);
 }
 
@@ -2142,7 +2138,7 @@ void DestructorInserter::elideCopyInitReg(LIT::CallOp copyInitCall,
   copyInitCall->dropAllReferences();
 
   /// Given a temporary used as the destination of a copyinit call, check if its
-  /// only user (ignoring lifetime markers) is a `lit.load.consume`. This
+  /// only user (ignoring origin markers) is a `lit.load.consume`. This
   /// function returns the load op if it is the only user.
   auto getOnlyLoadConsumeUser = [](VarDeclOp var) -> LoadConsumeOp {
     LoadConsumeOp consumer;
@@ -2185,7 +2181,7 @@ void DestructorInserter::elideCopyInitReg(LIT::CallOp copyInitCall,
 
 /// Return true if the specified 'p1' pointer could point at object or a
 /// subcomponent of 'p2'.  This should return true conservatively.
-// TODO: In the presence of returned references / lifetimes, we will
+// TODO: In the presence of returned references / origins, we will
 // need to be more careful here.
 static bool mightPointTo(Value p1, Value p2) {
   assert((isa<PointerType, RefType>(p2.getType())));
@@ -2246,7 +2242,7 @@ static bool canEntirelyElideMemoryTemporary(LIT::CallOp copyInitCall,
       if (user->getBlock() != tmpBlock)
         return false; // We don't handle control flow.
 
-      // If we see a lit.ref.immut or rebind of the lifetime, check all its uses
+      // If we see a lit.ref.immut or rebind of the origin, check all its uses
       // as well.
       if (isa<RefImmutOp, RebindOp>(user)) {
         valuesToCheck.push_back(user->getResult(0));
@@ -2330,19 +2326,19 @@ DestructorInserter::elideCopyInitMem(LIT::CallOp copyInitCall,
   if (VarDeclOp tmpDecl =
           copyInitCall.getOperand(0).getDefiningOp<VarDeclOp>()) {
     if (canEntirelyElideMemoryTemporary(copyInitCall, tmpDecl)) {
-      // Insert a declaration of the lifetime for the tmp we're eliding, we know
-      // that VarDeclOp's always declare a unique lifetime.
+      // Insert a declaration of the origin for the tmp we're eliding, we know
+      // that VarDeclOp's always declare a unique origin.
       auto refType = cast<RefType>(tmpDecl.getType());
       auto param = cast<ParamDeclRefAttr>(refType.getOrigin());
 
-      // The old reference type used a novel lifetime.  We need to declare it,
+      // The old reference type used a novel origin.  We need to declare it,
       // and coerce back to it with a rebind.
       builder.create<ParamDeclareOp>(ParamDeclAttr::get(param),
                                      AnyOriginAttr::get(param.getType()));
       auto refCasted = builder.create<RebindOp>(tmpDecl.getType(), copyInitSrc);
 
-      // Erase the lifetime start marker for the temporary. However, keep the
-      // lifetime end markers if the aliased value is a var decl, as they will
+      // Erase the origin start marker for the temporary. However, keep the
+      // origin end markers if the aliased value is a var decl, as they will
       // get "inherited" by the aliased value.
       Value value = OriginTrackable::findUnderlyingValueFromField(refCasted);
       for (Operation *user : llvm::make_early_inc_range(tmpDecl->getUsers())) {
@@ -2398,10 +2394,10 @@ DestructorInserter::elideCopyInitMem(LIT::CallOp copyInitCall,
   copyInitSrc = getMutableRefForPossiblyImmutValue(copyInitSrc, builder);
   srcRefType = cast<RefType>(copyInitSrc.getType());
 
-  // Switch the source operand, and update the lifetime associated with it.
+  // Switch the source operand, and update the origin associated with it.
   copyInitCall.setOperand(1, copyInitSrc);
-  copyInitCall.setImplicitLifetimes(
-      {copyInitCall.getImplicitLifetimes()[0], srcRefType.getOrigin()});
+  copyInitCall.setImplicitOrigins(
+      {copyInitCall.getImplicitOrigins()[0], srcRefType.getOrigin()});
 
   // Transform the copy into a move.
   copyInitCall.setCalleeAttr(moveCtor);
@@ -2457,8 +2453,7 @@ private:
   void checkUse(Value value, bool isDeref, DestructorInserter &dtorInserter);
   void checkDef(Value value, Operation &op, bool isDeref,
                 DestructorInserter &dtorInserter);
-  void checkLifetimeEffect(TypedAttr lifetime,
-                           DestructorInserter &dtorInserter);
+  void checkOriginEffect(TypedAttr origin, DestructorInserter &dtorInserter);
   void scheduleNeededDtors(Value value, ValueRef valueRef,
                            DestructorInserter &dtorInserter);
 
@@ -2574,7 +2569,7 @@ void DestructorInsertion::scanBlock(Block &block) {
   // Process each operation bottom-up in the block.
   SmallVector<std::pair<Value, OperandEffect>> operandEffects;
   SmallVector<ResultEffect> resultEffects;
-  SmallVector<TypedAttr> lifetimeEffects;
+  SmallVector<TypedAttr> originEffects;
 
   DestructorInserter dtorInserter(valueSet);
   SmallVector<Operation *> opsToRemove;
@@ -2582,10 +2577,9 @@ void DestructorInsertion::scanBlock(Block &block) {
   for (Operation &op : llvm::reverse(block)) {
     operandEffects.clear();
     resultEffects.clear();
-    lifetimeEffects.clear();
-    auto overall =
-        getOperationEffects(op, operandEffects, resultEffects, lifetimeEffects,
-                            valueSet.lifetimeFinder);
+    originEffects.clear();
+    auto overall = getOperationEffects(op, operandEffects, resultEffects,
+                                       originEffects, valueSet.originFinder);
     switch (overall) {
     case OverallOpValueEffect::unknownOp:
       // NOTE: Enable logging when debugging.
@@ -2681,17 +2675,17 @@ void DestructorInsertion::scanBlock(Block &block) {
       }
     }
 
-    // Process any other indirect lifetimes accessed.
-    for (auto lifetime : lifetimeEffects)
-      checkLifetimeEffect(lifetime, dtorInserter);
+    // Process any other indirect origins accessed.
+    for (auto origin : originEffects)
+      checkOriginEffect(origin, dtorInserter);
 
     // If the operation used a #lit.any.origin value, then we treat it as an
     // implicit use of all tracked values.  This ensures that the values are not
     // destroyed too early.  Uninit variable scan handles this by adding an
     // attribute with all the value ID's in question.
     if (auto extraUses = op.getAttrOfType<mlir::DenseI32ArrayAttr>(
-            extraLifetimeUsesAttrName)) {
-      op.removeAttr(extraLifetimeUsesAttrName);
+            extraOriginUsesAttrName)) {
+      op.removeAttr(extraOriginUsesAttrName);
 
       // Treat this op as using each of the indicated values, putting out a
       // destructor call if this is the last use.
@@ -2708,7 +2702,7 @@ void DestructorInsertion::scanBlock(Block &block) {
           else
             diag << "op";
 
-          diag << " extended with AnyLifetime usage extended lifetime of ";
+          diag << " extended with AnyOrigin usage extended lifetime of ";
           if (auto varDecl = info.value.getDefiningOp<VarDeclOp>())
             diag << "'" << varDecl.getName() << "'";
           else
@@ -3179,17 +3173,16 @@ void DestructorInsertion::checkUse(Value value, bool isDeref,
     return;
   }
 
-  // We are not tracking this value directly, but it is tied to a lifetime
+  // We are not tracking this value directly, but it is tied to a origin
   // declared by a value we do track. If this is the case, check these values
   // for destruction.
   if (isDeref) {
-    SmallVector<ValueRef> lifetimeRelatedValues =
-        valueSet.getValueRefsForLifetime(
-            cast<RefType>(value.getType()).getOrigin());
-    for (auto valueRef : lifetimeRelatedValues) {
+    SmallVector<ValueRef> originRelatedValues = valueSet.getValueRefsForOrigin(
+        cast<RefType>(value.getType()).getOrigin());
+    for (auto valueRef : originRelatedValues) {
       ValueInfo &valueInfo = valueSet.getValueInfos()[valueRef.valueId];
 
-      // We expand the lifetime use to be an access to the full value being
+      // We expand the origin use to be an access to the full value being
       // accessed, even if it we have field sensitivity.  The reason for this
       // is that we don't have the right Value to pass in to
       // scheduleNeededDtors.
@@ -3242,10 +3235,10 @@ void DestructorInsertion::checkDef(Value value, Operation &op, bool isDeref,
   }
 }
 
-/// Check any unstructured lifetimes that are accessed by the operation.
-void DestructorInsertion::checkLifetimeEffect(
-    TypedAttr lifetime, DestructorInserter &dtorInserter) {
-  SmallVector<ValueRef> accesses = valueSet.getValueRefsForLifetime(lifetime);
+/// Check any unstructured origins that are accessed by the operation.
+void DestructorInsertion::checkOriginEffect(TypedAttr origin,
+                                            DestructorInserter &dtorInserter) {
+  SmallVector<ValueRef> accesses = valueSet.getValueRefsForOrigin(origin);
   for (auto access : accesses) {
     // Iff this is the /last/ use of the value, emit a dtor for the value.
     ValueInfo &valueInfo = valueSet.getValueInfos()[access.valueId];
@@ -3496,30 +3489,30 @@ struct CheckLifetimes : impl::CheckLifetimesBase<CheckLifetimes> {
     // Process all the structs into TypeDeclInfo.
     TypeDeclInfo typeDeclInfo(std::move(structMap), std::move(funcMap),
                               std::move(traitMap));
-    CachedOriginFinder lifetimeFinder;
+    CachedOriginFinder originFinder;
 
     // TODO: Do in parallel, watch out for mutations of TypeDeclInfo and
-    // lifetimeFinder though!
+    // originFinder though!
     bool hadError = false;
     for (auto func : functionVector)
-      hadError |= failed(processFunction(func, typeDeclInfo, lifetimeFinder));
+      hadError |= failed(processFunction(func, typeDeclInfo, originFinder));
 
     if (hadError)
       return signalPassFailure();
   }
 
   LogicalResult processFunction(LIT::FuncOp func, TypeDeclInfo &typeDeclInfo,
-                                CachedOriginFinder &lifetimeFinder);
+                                CachedOriginFinder &originFinder);
 };
 } // namespace
 
 LogicalResult
 CheckLifetimes::processFunction(LIT::FuncOp func, TypeDeclInfo &typeDeclInfo,
-                                CachedOriginFinder &lifetimeFinder) {
+                                CachedOriginFinder &originFinder) {
 
   // Pass #1: Collect all of the values declared in the function that have
   // ownership to track, and number them.
-  ValueSet valueSet(typeDeclInfo, func, lifetimeFinder);
+  ValueSet valueSet(typeDeclInfo, func, originFinder);
 
   // Check if the local variables of this function need debug info.
   DebugInfo::DISubprogramAttr funcSpAttr = func.getSubprogramScope();

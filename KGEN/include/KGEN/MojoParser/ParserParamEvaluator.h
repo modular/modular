@@ -38,7 +38,7 @@ public:
                        ArrayRef<TypedAttr> paramValues = {});
 
   /// Try to dig out a direct callee, seeing through rebinds that are emitted
-  /// due to lifetimes.
+  /// due to origins.
   static SymbolConstantAttr findDirectCallee(TypedAttr callee);
 
   /// Attempt to evaluate a function call in a parameter context, using a cached

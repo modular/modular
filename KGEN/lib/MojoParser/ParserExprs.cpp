@@ -999,10 +999,10 @@ ParseResult ExprParser::parseFunctionType(ExprNode *&result) {
     return failure();
 
   // Parse the capture origin set if present.
-  ExprNode *lifetimeExpr = nullptr;
+  ExprNode *originExpr = nullptr;
   if (consumeIf(Token::l_square)) {
-    if (ParserBase::parseExpression(lifetimeExpr, stmtIndent) ||
-        parseToken(Token::r_square, "expected ']' in function lifetimes"))
+    if (ParserBase::parseExpression(originExpr, stmtIndent) ||
+        parseToken(Token::r_square, "expected ']' in function origins"))
       return failure();
   }
 
@@ -1015,7 +1015,7 @@ ParseResult ExprParser::parseFunctionType(ExprNode *&result) {
       return failure();
 
     // Parse a result reference if present.
-    if (parseRefSpecifier(resultArg.refLifetimeExpr) ||
+    if (parseRefSpecifier(resultArg.refOriginExpr) ||
         ParserBase::parseExpression(resultArg.typeExpr, stmtIndent))
       return failure();
 
@@ -1028,8 +1028,8 @@ ParseResult ExprParser::parseFunctionType(ExprNode *&result) {
   result = alloc<FunctionTypeNode>(
       baseLoc, copyArrayRef<ParsedArgument>(paramList.params),
       copyArrayRef<ParsedArgument>(fnSignature.parsedArgs),
-      copyArrayRef<ParsedArgument>(resultArg), fnSignature.effects,
-      lifetimeExpr, endLoc, isDef);
+      copyArrayRef<ParsedArgument>(resultArg), fnSignature.effects, originExpr,
+      endLoc, isDef);
   return success();
 }
 

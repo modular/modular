@@ -54,9 +54,9 @@ static FlatSymbolRefAttr flattenSymbolRefAttr(SymbolRefAttr ref) {
 
 /// This processes a `lit.func` and returns the param declarations for the
 /// normal input parameters, ignoring the origin parameters.
-static ArrayRef<ParamDeclAttr> extractImplicitLifetimeParams(LIT::FuncOp func) {
-  size_t numImplicitLifetimes = func.getSignature().getNumImplicitOriginDecls();
-  return func.getInputParams().drop_back(numImplicitLifetimes);
+static ArrayRef<ParamDeclAttr> extractImplicitOriginParams(LIT::FuncOp func) {
+  size_t numImplicitOrigins = func.getSignature().getNumImplicitOriginDecls();
+  return func.getInputParams().drop_back(numImplicitOrigins);
 }
 
 /// Check a list of parameter declarations to see if any of the parameters are
@@ -249,7 +249,7 @@ LITLowerer::lowerLITFunc(LIT::FuncOp func, Block::iterator symTableIt,
     signature = LITSignatureType::prependParams(signature, parentInputParams,
                                                 parentVariadicMask);
   }
-  llvm::append_range(inputParams, extractImplicitLifetimeParams(func));
+  llvm::append_range(inputParams, extractImplicitOriginParams(func));
 
   // Now that we have the full parameter list, remove any singleton parameters.
   // This ensures that the elaborator doesn't instantiate the function based on
@@ -300,7 +300,7 @@ void LITLowerer::lowerNestedFunction(LIT::FuncOp func) {
 
   // The new param.declare.region will drop implicit lifetimes.
   SmallVector<ParamDeclAttr> inputParams;
-  llvm::append_range(inputParams, extractImplicitLifetimeParams(func));
+  llvm::append_range(inputParams, extractImplicitOriginParams(func));
   removeSingletonParamDecls(inputParams);
 
   auto region = b.create<ParamDeclareRegionOp>(
