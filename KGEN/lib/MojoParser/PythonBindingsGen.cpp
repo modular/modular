@@ -371,7 +371,7 @@ BindingGenerator::createFunction(const Twine &name, ASTDecl &parent,
                          parent.getDeclEndBuilder());
 
   // Helper to make a `!lit.ref` type. `synthesizeFunction` will make the
-  // implicit lifetime declarations.
+  // implicit origin declarations.
   auto makeRefType = [&](ASTType type, const Twine &name, bool isMut) {
     return RefType::get(type,
                         ParamDeclRefAttr::get(b.getStringAttr(name),

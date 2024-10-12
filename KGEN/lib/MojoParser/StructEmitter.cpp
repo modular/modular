@@ -52,9 +52,9 @@ LIT::FuncOp StructEmitter::createFunction(
     if (!SignatureType::hasImplicitLifetime(argConv))
       continue;
 
-    // Dig out the lifetime decl.
+    // Dig out the origin decl.
     auto refArgType = cast<RefType>(argType);
-    auto lifetimeAttr = refArgType.getLifetime();
+    auto lifetimeAttr = refArgType.getOrigin();
     ParamDeclAttr decl;
     // If this is a reference to a named one already, just reuse the name.
     if (auto lifetimeRef = dyn_cast<ParamDeclRefAttr>(
@@ -62,7 +62,7 @@ LIT::FuncOp StructEmitter::createFunction(
       assert(isa<OriginType>(lifetimeRef.getType()) &&
              "lifetimes should have OriginType");
       // Look through a cast to get the name, but use the expected mutability of
-      // the lifetime type.
+      // the origin type.
       decl = ParamDeclAttr::get(lifetimeRef.getName(), lifetimeAttr.getType());
     } else {
       // If this has an indexed value or something else, synthesize a decl.
@@ -72,7 +72,7 @@ LIT::FuncOp StructEmitter::createFunction(
 
       // Replace the argument type with a named reference.
       auto newLifetime = ParamDeclRefAttr::get(lifetimeName, decl.getType());
-      adjustedArgTypes.back() = refArgType.getWithLifetime(newLifetime);
+      adjustedArgTypes.back() = refArgType.getWithOrigin(newLifetime);
     }
     implLifetimeParams.push_back(decl);
   }
@@ -89,10 +89,10 @@ LIT::FuncOp StructEmitter::createFunction(
   LITSignatureType signature = SignatureType::remapToSignature(
       params, {}, functionType, argConventions, fnEffects, metadata,
       [&] { return mlir::emitError(location); });
-  // Strip off the named lifetime decl references and replace them with indices.
+  // Strip off the named origin decl references and replace them with indices.
   // We keep the named parameters in the ParamDeclAttr list on the FuncOp and
   // in the BBArgs.
-  signature = signature.replaceImplicitLifetimesWithIndexes(implLifetimeParams);
+  signature = signature.replaceImplicitOriginsWithIndexes(implLifetimeParams);
 
   StringAttr sourceName = builder.getStringAttr(name);
   StringAttr mangledName = builder.getStringAttr(
@@ -485,7 +485,7 @@ LIT::FuncOp StructEmitter::synthesizeEmptyDtor(ASTDecl &structDecl) {
     diScopeGuard = shared.diBuilder->pushScopeGuard(funcOp.getLocScope());
 
   // We need to make a var box + store for register_passable values since that
-  // is what lifetime tracking expects.  It does not track the individual
+  // is what origin tracking expects.  It does not track the individual
   // fields of register passable values since they cannot be transferred and
   // cannot be lit.ownership.mark_destroyed.
   if (convention == ArgConvention::OwnedInReg) {

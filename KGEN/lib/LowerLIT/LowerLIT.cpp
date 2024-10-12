@@ -53,14 +53,14 @@ static FlatSymbolRefAttr flattenSymbolRefAttr(SymbolRefAttr ref) {
 }
 
 /// This processes a `lit.func` and returns the param declarations for the
-/// normal input parameters, ignoring the lifetime parameters.
+/// normal input parameters, ignoring the origin parameters.
 static ArrayRef<ParamDeclAttr> extractImplicitLifetimeParams(LIT::FuncOp func) {
   size_t numImplicitLifetimes = func.getSignature().getNumImplicitOriginDecls();
   return func.getInputParams().drop_back(numImplicitLifetimes);
 }
 
 /// Check a list of parameter declarations to see if any of the parameters are
-/// singletons like lifetime parameters.  If so, remove them from the list.
+/// singletons like origin parameters.  If so, remove them from the list.
 static void
 removeSingletonParamDecls(SmallVectorImpl<ParamDeclAttr> &paramDecls) {
   size_t numRemoved = 0;
@@ -69,7 +69,7 @@ removeSingletonParamDecls(SmallVectorImpl<ParamDeclAttr> &paramDecls) {
     if (isSingletonParameter(paramDecl.getType())) {
       // We can just remove the parameter without inserting a placeholder
       // in the body. This is safe because we unconditionally replace
-      // all attributes of lifetime type at the end of this pass with
+      // all attributes of origin type at the end of this pass with
       // #lit.any.origin, which will conveniently get all references to
       // this. That said, we need to remember the index so we can update
       // the signature.
@@ -437,7 +437,7 @@ LogicalResult LITLowerer::lowerModuleDecl(Block *moduleBody,
 //===----------------------------------------------------------------------===//
 
 /// Check to see if any of the parameters of the specified signature are
-/// singletons like lifetime parameters.  If so, bind them to a dummy value and
+/// singletons like origin parameters.  If so, bind them to a dummy value and
 /// return the updated signature without them.
 static SignatureType removeSingletonParams(SignatureType signature) {
   llvm::SmallVector<TypedAttr> paramsToBind;
@@ -452,7 +452,7 @@ static SignatureType removeSingletonParams(SignatureType signature) {
     if (!isSingletonParameter(adjParamType)) {
       // Any uses of this parameter in later replaced lifetimes needs to refer
       // to the appropriate index of the resultant parameter number, e.g. the
-      // bool in a lifetime may shift to a new index.
+      // bool in a origin may shift to a new index.
       auto idxValue = ParamIndexRefAttr::get(/*depth*/ -1, /*isResult*/ false,
                                              idx - numRemoved, adjParamType);
       evaluator.addInputValue(idxValue);
@@ -509,8 +509,8 @@ static void lowerAttributesAndTypes(
   });
 
   replacer.addReplacement([&](TypedAttr attr) -> TypedAttr {
-    // Remove all values of lifetime type.  This removes all references to
-    // lifetime parameters that have been dropped.
+    // Remove all values of origin type.  This removes all references to
+    // origin parameters that have been dropped.
     if (isSingletonParameter(attr.getType()))
       return getSingletonParameterValue(attr.getType());
 

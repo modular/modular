@@ -42,16 +42,16 @@ static CValue emitVariadicPackConstructor(
     std::function<CValue(RefPackType)> refPackBuilder) {
   RefPackType packType = variadicPackType.getVariadicPackInfo();
 
-  // If there was no lifetime specified, use an immortal one with the same
+  // If there was no origin specified, use an immortal one with the same
   // mutability.
   if (!lifetimeToUse)
-    lifetimeToUse = OriginUnionAttr::get(packType.getLifetime().getType());
+    lifetimeToUse = OriginUnionAttr::get(packType.getOrigin().getType());
 
-  // Rebind the !lit.ref.pack with the common lifetime.
+  // Rebind the !lit.ref.pack with the common origin.
   packType = RefPackType::get(packType.getVariadic(), lifetimeToUse,
                               packType.getAddressSpace());
 
-  // Build the !lit.ref.pack or #lit.ref.pack value with the adjusted lifetime.
+  // Build the !lit.ref.pack or #lit.ref.pack value with the adjusted origin.
   CValue refPackValue = refPackBuilder(packType);
 
   auto isOwned = declaredArgConvention == ArgConvention::OwnedInMem;
@@ -65,7 +65,7 @@ static CValue emitVariadicPackConstructor(
 
   ValueDest packDest(ExprContext::EC_PackArgument);
 
-  // Construct the pack type without parameters so we reinfer the lifetime which
+  // Construct the pack type without parameters so we reinfer the origin which
   // is different on the caller side (the union of the argument lifetimes) than
   // the declared callee side (a parameter).
   variadicPackType = variadicPackType.getWithoutParameters(emitter.shared);
@@ -164,7 +164,7 @@ private:
   LITSignatureType calleeSig;
 
   /// This struct accumulates information about IR to emit after the call, e.g.
-  /// writebacks for computed inout lvalues, and lifetime markers.
+  /// writebacks for computed inout lvalues, and origin markers.
   struct AfterCallActions {
     CallEmitter &callEmitter;
 
@@ -237,7 +237,7 @@ AnyValue CallEmitter::emitOneArgVal(ASTExprAnd<AnyValue> operand,
     // pack type resolved to a concrete list of types it is expecting.
     expectedType =
         ASTType(packType.getVariadicIfResolved().getValues()[sequenceIndex]);
-    // Get the !lit.ref with the lifetime and other paraphernalia.
+    // Get the !lit.ref with the origin and other paraphernalia.
     expectedType = packType.getElementRefTypeFor(expectedType);
     convention = calleeSig.getPackVarArgConvention(argIdx);
   }
@@ -285,12 +285,11 @@ AnyValue CallEmitter::emitOneArgVal(ASTExprAnd<AnyValue> operand,
     }
 
     // The lifetimes may disagree if we're converting a value to a
-    // superset lifetime, e.g. "immortal -> X" or "X -> X|y".
-    if (refValueType.getLifetime() != expectedRefType.getLifetime()) {
+    // superset origin, e.g. "immortal -> X" or "X -> X|y".
+    if (refValueType.getOrigin() != expectedRefType.getOrigin()) {
       refValue = emitter.builder->create<RebindOp>(
           operand.expr->getLocation(emitter),
-          refValueType.getWithLifetime(expectedRefType.getLifetime()),
-          refValue);
+          refValueType.getWithOrigin(expectedRefType.getOrigin()), refValue);
       refValueType = cast<RefType>(refValue.getType());
     }
     // The element types may disagree if we're dealing with ParamRef types
@@ -373,10 +372,10 @@ LogicalResult CallEmitter::emitRemainingPosOperands(
       assert(variadicPackType && "Unknown variadic argument kind");
       // Bundle them up into a VariadicPack instance.
       argValue = emitVariadicPackConstructor(
-          variadicPackType, convention, /*lifetime*/ {}, callExpr, emitter,
+          variadicPackType, convention, /*origin*/ {}, callExpr, emitter,
           [&](RefPackType adjustedPackType) -> CValue {
             // RefPack elements are passed through memory.  Use adjustedPackType
-            // to get the proper (immortal) lifetime installed.
+            // to get the proper (immortal) origin installed.
             for (TypedAttr &arg : args)
               arg = StoreToMemAttr::get(
                   arg, adjustedPackType.getElementRefTypeFor(arg.getType()));
@@ -405,7 +404,7 @@ LogicalResult CallEmitter::emitRemainingPosOperands(
 
     // Variadic and pack arguments are always passed through memory. An
     // exception was carved out for trivial register-passable values, which
-    // don't require lifetime tracking.
+    // don't require origin tracking.
     // TODO(MOCO-726): Make variadics always pass through memory.
     if (SignatureType::hasAddress(convention) ||
         ASTType(argVal.getType()).isTrivial(callExpr->getLoc(), emitter.shared))
@@ -421,7 +420,7 @@ LogicalResult CallEmitter::emitRemainingPosOperands(
     // If one arg is a reference, then they all are.
     SmallVector<TypedAttr> refLifetimes;
     for (auto arg : args)
-      refLifetimes.push_back(cast<RefType>(arg.getType()).getLifetime());
+      refLifetimes.push_back(cast<RefType>(arg.getType()).getOrigin());
 
     // All the lifetimes will have the same OriginType, indicating the
     // reference mutability that the callee expected.
@@ -433,32 +432,32 @@ LogicalResult CallEmitter::emitRemainingPosOperands(
     auto commonLifetime = OriginUnionAttr::get(refLifetimes, commonOriginType);
     for (auto &arg : args) {
       auto argType = cast<RefType>(arg.getType());
-      if (argType.getLifetime() == commonLifetime)
-        continue; // Already the right lifetime.
-      // Cast to common lifetime with a rebind.
+      if (argType.getOrigin() == commonLifetime)
+        continue; // Already the right origin.
+      // Cast to common origin with a rebind.
       arg = emitter.builder->create<RebindOp>(
-          loc, argType.getWithLifetime(commonLifetime), arg);
+          loc, argType.getWithOrigin(commonLifetime), arg);
     }
   }
 
   // Given a reference type for a variadic list of pack element, return the same
-  // type updated to the common lifetime of the elements.
+  // type updated to the common origin of the elements.
   auto getCommonLifetime = [&]() -> TypedAttr {
     if (!args.empty())
-      return cast<RefType>(args.back().getType()).getLifetime();
+      return cast<RefType>(args.back().getType()).getOrigin();
     return {};
   };
 
   CValue argVal;
   if (isPosVarArg) { // Positional homogenous varargs
-    // Rebind the lifetime of the argument to the expected lifetime if needed.
+    // Rebind the origin of the argument to the expected origin if needed.
     auto expectedVararg = cast<VariadicType>(expectedType);
     if (auto refType = dyn_cast<RefType>(expectedVararg.getElementType())) {
-      auto lifetime = getCommonLifetime();
-      if (!lifetime) // No arguments, use immortal with same mutability.
-        lifetime = OriginUnionAttr::get(refType.getLifetime().getType());
+      auto origin = getCommonLifetime();
+      if (!origin) // No arguments, use immortal with same mutability.
+        origin = OriginUnionAttr::get(refType.getOrigin().getType());
 
-      refType = refType.getWithLifetime(getCommonLifetime());
+      refType = refType.getWithOrigin(getCommonLifetime());
       expectedType = VariadicType::get(refType, expectedVararg.getConvention());
     }
 
@@ -600,7 +599,7 @@ CallEmitter::emitArgValues(const CallOperands &operands) {
       auto argConv = calleeSig.getPackVarArgConvention(argIdx);
       // Emit a VariadicPack constructor call.
       auto variadicPack = emitVariadicPackConstructor(
-          variadicPackType, argConv, /*lifetime*/ {}, callExpr, emitter,
+          variadicPackType, argConv, /*origin*/ {}, callExpr, emitter,
           [&](RefPackType adjustedPackType) -> CValue {
             return RefPackAttr::get(ArrayRef<TypedAttr>(), adjustedPackType);
           });
@@ -702,7 +701,7 @@ bool CallEmitter::isSafeToUseValueDestForDirectResult(
     return true;
 
   // If this is a throwing function, then we cannot write to a field of a
-  // lifetime tracked value.  Consider:
+  // origin tracked value.  Consider:
   //     x.f = foo()
   // The contract for the result slot is that 'x.f' has to be uninitialized
   // before the function call, so we would have to destroy any live value in the
@@ -757,31 +756,30 @@ bool CallEmitter::isSafeToUseValueDestForDirectResult(
   SmallPtrSet<Attribute, 2> destLifetimes;
 
   // We're not doing field sensitive comparisons below, so strip down to the
-  // base lifetime for comparisons.
+  // base origin for comparisons.
   // TODO: Make this more aggressive with field information.
-  processRawLifetime(cast<RefType>(destBuffer.getType()).getLifetime(),
-                     [&](TypedAttr lifetime) {
-                       while (auto fieldAttr =
-                                  dyn_cast<OriginFieldAttr>(lifetime))
-                         lifetime = fieldAttr.getStructOrigin();
-                       destLifetimes.insert(lifetime);
-                     });
+  processRawOrigin(cast<RefType>(destBuffer.getType()).getOrigin(),
+                   [&](TypedAttr origin) {
+                     while (auto fieldAttr = dyn_cast<OriginFieldAttr>(origin))
+                       origin = fieldAttr.getStructOrigin();
+                     destLifetimes.insert(origin);
+                   });
 
   // Check to see if any of the the lifetimes they may be accessing are the
-  // lifetime in question.  If any of them is a possible reference to the
+  // origin in question.  If any of them is a possible reference to the
   // destination slot, then we must fail.
   CachedOriginFinder &finder = emitter.shared.cachedOriginFinder;
-  for (TypedAttr lifetime :
-       finder.findLifetimesIn(argTypes, calleeSig.getCaptureOrigins())) {
-    // If an operand is reading from the lifetime, there will be an immcast in
+  for (TypedAttr origin :
+       finder.findOriginsIn(argTypes, calleeSig.getCaptureOrigins())) {
+    // If an operand is reading from the origin, there will be an immcast in
     // the way.  Look through it and any field sensitivity.
-    lifetime = OriginMutCastAttr::strip(lifetime);
-    while (auto fieldAttr = dyn_cast<OriginFieldAttr>(lifetime))
-      lifetime = fieldAttr.getStructOrigin();
+    origin = OriginMutCastAttr::strip(origin);
+    while (auto fieldAttr = dyn_cast<OriginFieldAttr>(origin))
+      origin = fieldAttr.getStructOrigin();
 
-    // If the destination set includes this lifetime, then we can't use the
+    // If the destination set includes this origin, then we can't use the
     // destination.
-    if (destLifetimes.count(lifetime))
+    if (destLifetimes.count(origin))
       return false;
   }
 
@@ -842,9 +840,9 @@ Value CallEmitter::emitPreemittedArgumentAsDynamicValue(
       emitter.builder->create<POP::StoreOp>(argLoc, sbValue, ptr);
       Value immRef = emitter.builder->create<RefImmutOp>(argLoc, tmp);
 
-      // Because the result of StackAllocationOp is not a lifetime trackable,
+      // Because the result of StackAllocationOp is not a origin trackable,
       // StoreOp will not transfer ownership and we must manually extend the
-      // lifetime of the SBValue.
+      // origin of the SBValue.
       afterCallActions.valuesToConsume.emplace_back(sbValue, tmp);
       return MBValue(immRef);
     }
@@ -1042,7 +1040,7 @@ TypedAttr CallEmitter::emitCallInParamContext(
   // references and rebind the callee.
   LITSignatureType boundSigType = calleeSig;
   if (calleeSig.getNumImplicitOriginDecls()) {
-    boundSigType = calleeSig.getWithImplicitLifetimesBoundNothing();
+    boundSigType = calleeSig.getWithImplicitOriginsBoundNothing();
     operands[0] =
         ParamOperatorAttr::get(POC::Rebind, operands[0], boundSigType);
   }
@@ -1114,7 +1112,7 @@ TypedAttr CallEmitter::emitCallInParamContext(
 /// type.
 static ASTType getBoundCoroutineType(const TypeCheckScopeInfo &scopeInfo,
                                      const ExprNode *expr, SignatureType sig,
-                                     TypedAttr lifetime) {
+                                     TypedAttr origin) {
   auto [declScope, shared] = scopeInfo;
   SMLoc loc = expr->getLoc();
   ASTDecl *decl = sig.isThrows() ? shared.getBuiltinRaisingCoroutineType(loc)
@@ -1130,7 +1128,7 @@ static ASTType getBoundCoroutineType(const TypeCheckScopeInfo &scopeInfo,
   // Bind the result type to the base coroutine type.
   ParamBindings paramBinds(scopeInfo);
   paramBinds.add(expr, PValue(resultType));
-  paramBinds.add(expr, lifetime);
+  paramBinds.add(expr, origin);
 
   auto structOp = cast<StructDeclOp>(decl);
   ASTType coroType = structOp.bindReference();
@@ -1211,61 +1209,61 @@ private:
   /// on the callee.
   bool isNestedOriginExclusivityCheckingDisabled = false;
 
-  /// For each lifetime that is referenced, we keep track of what argIdx it came
+  /// For each origin that is referenced, we keep track of what argIdx it came
   /// from, and whether it was potentially mutated.
   struct LifetimeInfo {
-    /// The argument that accessed this lifetime, or the capture set if null.
+    /// The argument that accessed this origin, or the capture set if null.
     std::optional<unsigned> argIdx;
     bool isImmut;
     /// True if this is the leaf of a nested access (e.g. "a.x.y.z"), false if
-    /// this is the parent lifetime of a leaf access (e.g. "a.x" from that
+    /// this is the parent origin of a leaf access (e.g. "a.x" from that
     /// reference).
     bool isLeaf;
   };
   SmallDenseMap<TypedAttr, LifetimeInfo, 8> lifetimeAccesses;
 
-  /// Look at the capture lifetime set on the callee and register uses of them.
+  /// Look at the capture origin set on the callee and register uses of them.
   /// The capture lifetimes are considered accessed as a single unit, so they
   /// never conflict with themselves, but they may conflict with argument
   /// accesses.
   void checkCaptureOrigins();
 
   void checkLifetimeAccess(Value val, std::optional<ArgConvention> convention,
-                           std::optional<unsigned> argIdx, TypedAttr lifetime);
+                           std::optional<unsigned> argIdx, TypedAttr origin);
 
   void diagViolation(Value val, ArgConvention convention, unsigned argIdx,
-                     TypedAttr lifetime, const LifetimeInfo &previousAccess);
+                     TypedAttr origin, const LifetimeInfo &previousAccess);
 };
 } // end anonymous namespace
 
 void ExclusivityChecker::checkCaptureOrigins() {
   TypedAttr captureOrigins =
       cast<LITSignatureType>(callee.getRValueType()).getCaptureOrigins();
-  for (TypedAttr lifetime : shared.cachedOriginFinder.findLifetimesIn(
+  for (TypedAttr origin : shared.cachedOriginFinder.findOriginsIn(
            /*types=*/{}, captureOrigins))
-    checkLifetimeAccess(Value(), /*convention=*/{}, /*argIdx=*/{}, lifetime);
+    checkLifetimeAccess(Value(), /*convention=*/{}, /*argIdx=*/{}, origin);
 }
 
 /// Given an argument value being passed with a specified convention, check to
-/// see if the following lifetime (which may be part of the argument convention,
+/// see if the following origin (which may be part of the argument convention,
 /// or buried in the type) is a legal access given the other things we've
 /// already seen.
 void ExclusivityChecker::checkLifetimeAccess(
     Value val, std::optional<ArgConvention> convention,
-    std::optional<unsigned> argIdx, TypedAttr lifetime) {
+    std::optional<unsigned> argIdx, TypedAttr origin) {
   // Determine whether the access was immutable.
-  bool isImmut = cast<OriginType>(lifetime.getType()).isMutableKnown(false);
+  bool isImmut = cast<OriginType>(origin.getType()).isMutableKnown(false);
 
-  // Look through immcasts to determine the accessed lifetime.
-  lifetime = OriginMutCastAttr::strip(lifetime);
+  // Look through immcasts to determine the accessed origin.
+  origin = OriginMutCastAttr::strip(origin);
 
-  // Accesses to the global lifetime never conflict.
-  if (isa<AnyOriginAttr>(lifetime))
+  // Accesses to the global origin never conflict.
+  if (isa<AnyOriginAttr>(origin))
     return;
 
-  // Determine whether we've seen this leaf lifetime before.
+  // Determine whether we've seen this leaf origin before.
   auto [it, isNew] =
-      lifetimeAccesses.insert({lifetime, {argIdx, isImmut, /*isLeaf=*/true}});
+      lifetimeAccesses.insert({origin, {argIdx, isImmut, /*isLeaf=*/true}});
   if (!isNew) {
     assert(val && "capture lifetimes cannot self-conflict");
     // If so, check to see if this access and the previous one were both
@@ -1273,11 +1271,11 @@ void ExclusivityChecker::checkLifetimeAccess(
     // are not.
     if (!it->second.isImmut || !isImmut) {
       // If not, we have a problem!
-      diagViolation(val, *convention, *argIdx, lifetime, it->second);
+      diagViolation(val, *convention, *argIdx, origin, it->second);
       return;
     }
 
-    // Ok, this is a read/read conflict.  If this lifetime was previously seen
+    // Ok, this is a read/read conflict.  If this origin was previously seen
     // as a non-leaf, upgrade it to a leaf access, so any subsequent subfield
     // modifications are known to conflict.
     it->second.isLeaf = true;
@@ -1285,12 +1283,12 @@ void ExclusivityChecker::checkLifetimeAccess(
 
   // Ok, there is no direct conflict: scan up the parent structs to see if there
   // are conflicts for them.
-  while (auto fieldAttr = dyn_cast<OriginFieldAttr>(lifetime)) {
-    lifetime = fieldAttr.getStructOrigin();
-    auto [it, isNew] = lifetimeAccesses.insert(
-        {lifetime, {argIdx, isImmut, /*isLeaf=*/false}});
+  while (auto fieldAttr = dyn_cast<OriginFieldAttr>(origin)) {
+    origin = fieldAttr.getStructOrigin();
+    auto [it, isNew] =
+        lifetimeAccesses.insert({origin, {argIdx, isImmut, /*isLeaf=*/false}});
 
-    // If we have seen this parent lifetime before, check to see if it is ok.
+    // If we have seen this parent origin before, check to see if it is ok.
     if (isNew)
       continue;
 
@@ -1298,7 +1296,7 @@ void ExclusivityChecker::checkLifetimeAccess(
     // the access conflicts if either is a store.
     if (it->second.isLeaf && (!isImmut || !it->second.isImmut)) {
       assert(val && "capture lifetimes cannot self-conflict");
-      diagViolation(val, *convention, *argIdx, lifetime, it->second);
+      diagViolation(val, *convention, *argIdx, origin, it->second);
       return;
     }
 
@@ -1316,11 +1314,11 @@ void ExclusivityChecker::checkLifetimeAccess(
 void ExclusivityChecker::checkArgument(Value val, ArgConvention convention,
                                        unsigned argIdx) {
   // We sometimes get rebinds for downcasts of lifetimes, e.g. to AnyLifetime.
-  // Ignore those so we can see the actual incoming value's lifetime.
+  // Ignore those so we can see the actual incoming value's origin.
   if (auto rebind = val.getDefiningOp<RebindOp>())
     val = rebind.getOperand();
 
-  // If this is a result argument, then we only look at the lifetime of the
+  // If this is a result argument, then we only look at the origin of the
   // destination that we're storing into, not any nested references that may
   // be in the result. This returned value is derived from the other arguments
   // passed to the function, it doesn't conflict with them.
@@ -1328,33 +1326,33 @@ void ExclusivityChecker::checkArgument(Value val, ArgConvention convention,
       convention == ArgConvention::ByRefResult ||
       convention == ArgConvention::ByRefError) {
     checkLifetimeAccess(val, convention, argIdx,
-                        cast<RefType>(val.getType()).getLifetime());
+                        cast<RefType>(val.getType()).getOrigin());
     return;
   }
 
   // Don't look at nested lifetimes if checking for them has been explicitly
   // disabled.
   if (isNestedOriginExclusivityCheckingDisabled) {
-    // DO check the lifetime of any in-memory arguments, we only ignore nested
+    // DO check the origin of any in-memory arguments, we only ignore nested
     // lifetimes.
     if (SignatureType::hasAddress(convention))
       checkLifetimeAccess(val, convention, argIdx,
-                          cast<RefType>(val.getType()).getLifetime());
+                          cast<RefType>(val.getType()).getOrigin());
     return;
   }
 
   // Find all the of the lifetimes that are buried in the specified type.
-  for (TypedAttr lifetime :
-       shared.cachedOriginFinder.findLifetimesIn(val.getType()))
-    checkLifetimeAccess(val, convention, argIdx, lifetime);
+  for (TypedAttr origin :
+       shared.cachedOriginFinder.findOriginsIn(val.getType()))
+    checkLifetimeAccess(val, convention, argIdx, origin);
 }
 
-/// Emit an error about an access to a conflicting lifetime after a previous
+/// Emit an error about an access to a conflicting origin after a previous
 /// access was seen.
 void ExclusivityChecker::diagViolation(Value val, ArgConvention convention,
-                                       unsigned argIdx, TypedAttr lifetime,
+                                       unsigned argIdx, TypedAttr origin,
                                        const LifetimeInfo &previousAccess) {
-  bool isImmut = cast<OriginType>(lifetime.getType()).isMutableKnown(false);
+  bool isImmut = cast<OriginType>(origin.getType()).isMutableKnown(false);
   InflightDiag diag = emitError(callExpr->getLoc());
 
   diag << "argument of ";
@@ -1405,15 +1403,15 @@ void ExclusivityChecker::diagViolation(Value val, ArgConvention convention,
 
   // Attach a note to explain what is going on in more detail.
   diag.attachNote(callExpr->getLoc());
-  lifetime = OriginMutCastAttr::strip(lifetime);
+  origin = OriginMutCastAttr::strip(origin);
 
-  // If the lifetime in question is because of the top-level ref binding, then
+  // If the origin in question is because of the top-level ref binding, then
   // we have a common problem where something is passed both mutable and
   // borrowed.
   if (SignatureType::hasAddress(convention) &&
-      OriginMutCastAttr::strip(cast<RefType>(val.getType()).getLifetime()) ==
-          lifetime) {
-    diag << lifetime << " value is passed through aliasing '"
+      OriginMutCastAttr::strip(cast<RefType>(val.getType()).getOrigin()) ==
+          origin) {
+    diag << origin << " value is passed through aliasing '"
          << getUserSyntax(convention) << "' argument"
          << argumentValues[argIdx].expr->getRange();
     return;
@@ -1423,9 +1421,9 @@ void ExclusivityChecker::diagViolation(Value val, ArgConvention convention,
   if (SignatureType::hasAddress(convention))
     argType = argType.getReferenceElementType();
 
-  // Otherwise, it is a more complicated buried lifetime in a type like a
+  // Otherwise, it is a more complicated buried origin in a type like a
   // Reference or Span.
-  diag << lifetime
+  diag << origin
        << " memory accessed through reference embedded in value of type "
        << argType;
 
@@ -1472,13 +1470,13 @@ static TypedAttr computeArgumentsLifetime(AsyncCallOp call,
   SmallVector<std::pair<Value, OperandEffect>> operands;
   SmallVector<ResultEffect> results;
   SmallVector<TypedAttr> lifetimes;
-  // Check lifetime accesses on the types. We need to forward this to the
+  // Check origin accesses on the types. We need to forward this to the
   // coroutine since it is a transitive capture.
   LIT::getOperationEffects(*call, operands, results, lifetimes, lifetimeFinder);
   // Collect the implicit lifetimes of the arguments.
   for (Value value : call.getOperands())
     if (auto ref = dyn_cast<RefType>(value.getType()))
-      lifetimes.push_back(ref.getLifetime());
+      lifetimes.push_back(ref.getOrigin());
   return OriginSetAttr::get(call.getContext(), lifetimes);
 }
 
@@ -1586,7 +1584,7 @@ CValue ExprEmitter::emitCallUnchecked(RValue callee,
         implicitLifetimes.push_back(
             AnyOriginAttr::get(getContext(), /*isMutable=*/true));
         FunctionType remappedCalleeType =
-            calleeSig.substituteImplicitLifetimesIntoValues(
+            calleeSig.substituteImplicitOriginsIntoValues(
                 implicitLifetimes, [&]() -> InFlightDiagnostic {
                   llvm_unreachable("substitution should always succeed");
                 });
@@ -1600,18 +1598,18 @@ CValue ExprEmitter::emitCallUnchecked(RValue callee,
     if (!arg)
       return {};
 
-    // See if we have an implicit lifetime bound for this argument.
+    // See if we have an implicit origin bound for this argument.
     if (SignatureType::hasImplicitLifetime(convention)) {
-      implicitLifetimes.push_back(cast<RefType>(arg.getType()).getLifetime());
+      implicitLifetimes.push_back(cast<RefType>(arg.getType()).getOrigin());
     } else if (calleeSig.isPosVarArg(argIdx)) {
       // If this is a variadic, it will have a wrapper around the ref.
       auto eltType = ASTType(arg.getType()).getVariadicElementType();
       if (auto refType = dyn_cast<RefType>(eltType))
-        implicitLifetimes.push_back(refType.getLifetime());
+        implicitLifetimes.push_back(refType.getOrigin());
     } else if (ASTType variadicPackType = calleeSig.getIfVariadicPack(argIdx)) {
-      // Use the union lifetime that covers all the values.
+      // Use the union origin that covers all the values.
       RefPackType packType = ASTType(arg.getType()).getVariadicPackInfo();
-      implicitLifetimes.push_back(packType.getLifetime());
+      implicitLifetimes.push_back(packType.getOrigin());
     }
 
     // If the address space of a by-ref argument mismatches, then we need to
@@ -1638,7 +1636,7 @@ CValue ExprEmitter::emitCallUnchecked(RValue callee,
   // Now that we have the lifetimes for the arguments, we can calculate what the
   // substituted signature should be.
   FunctionType expectedCalleeType =
-      calleeSig.substituteImplicitLifetimesIntoValues(
+      calleeSig.substituteImplicitOriginsIntoValues(
           implicitLifetimes, [&]() -> InFlightDiagnostic {
             llvm_unreachable("substitution should always succeed");
           });

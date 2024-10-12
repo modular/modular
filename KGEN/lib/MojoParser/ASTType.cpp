@@ -333,7 +333,7 @@ RefPackType ASTType::getVariadicPackInfo() const {
          "Not a VariadicPack struct?");
 
   return RefPackType::get(
-      /*variadicList*/ bindings[3], /*lifetime*/ bindings[1],
+      /*variadicList*/ bindings[3], /*origin*/ bindings[1],
       IntegerAttr::get(IndexType::get(bindings[1].getContext()), 0));
 }
 
@@ -653,10 +653,10 @@ void ASTType::print(raw_ostream &os, bool forDiag, bool demangleParams) const {
 
   auto printRef = [&](RefType refType) {
     os << "ref [";
-    printParam(os, refType.getLifetime(), forDiag, demangleParams);
+    printParam(os, refType.getOrigin(), forDiag, demangleParams);
     if (!refType.isDefaultAddrSpace()) {
       os << ", ";
-      printParam(os, refType.getLifetime(), forDiag, demangleParams);
+      printParam(os, refType.getOrigin(), forDiag, demangleParams);
     }
     os << "] ";
   };

@@ -118,36 +118,36 @@ def defTests() -> None:
   # expected-error @+1 {{expression must be mutable in assignment}}
   abc = 4
 
-# expected-error @+1 {{value of type 'IntLiteral' doesn't have a memory lifetime}}
+# expected-error @+1 {{value of type 'IntLiteral' doesn't have a memory origin}}
 fn ref_result_invalid1() -> ref [4] MemoryType:
     pass
 
 fn ref_result_invalid2(inout a: MemoryType) -> ref [a] Int:
-    # expected-error @+1 {{cannot return reference with incompatible lifetime: '*"anonymous*"' vs 'a'}}
+    # expected-error @+1 {{cannot return reference with incompatible origin: '*"anonymous*"' vs 'a'}}
     return 4
 
 fn ref_result_invalid3(inout a: MemoryType, inout b: MemoryType)
      -> ref [a] MemoryType:
-    # expected-error @+1 {{cannot return reference with incompatible lifetime: 'b' vs 'a'}}
+    # expected-error @+1 {{cannot return reference with incompatible origin: 'b' vs 'a'}}
     return b
 
 fn ref_result_invalid4(inout a: MemoryType, b: Int) -> ref [a] MemoryType:
     # expected-error @+1 {{cannot implicitly convert 'Int' value to 'MemoryType'}}
     return b
 
-# expected-error @+1 {{cannot return 'a's lifetime, because it might expand to a @register_passable type}}
+# expected-error @+1 {{cannot return 'a's origin, because it might expand to a @register_passable type}}
 fn ref_result_invalid5[T: AnyType](a: T) -> ref [a] T:
     return a
 
-# expected-error @+1 {{cannot return 'b's lifetime, because it has @register_passable type 'Int'}}
+# expected-error @+1 {{cannot return 'b's origin, because it has @register_passable type 'Int'}}
 fn ref_result_invalid6(inout a: MemoryType, inout b: Int) -> ref [b] Int:
     pass
 
-# expected-error @+1 {{cannot infer lifetime for a function result}}
+# expected-error @+1 {{cannot infer origin for a function result}}
 fn ref_result_invalid7() -> ref [_] MemoryType:
     pass
 
-# expected-error @+1 {{value of type 'Int' doesn't have a memory lifetime}}
+# expected-error @+1 {{value of type 'Int' doesn't have a memory origin}}
 fn ref_result_invalid8(a: Int) -> ref [a] MemoryType:
     pass
 

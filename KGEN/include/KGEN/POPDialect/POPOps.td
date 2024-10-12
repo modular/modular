@@ -1138,7 +1138,7 @@ def POP_StackAllocationOp : POPOp<"stack_allocation", [BytecodeOpInterface]> {
     ```
 
     If stack memory escapes the scope of its enclosing region, interacting with
-    the memory outside its lifetime is undefined behaviour.
+    the memory outside its origin is undefined behaviour.
 
     Example:
 
@@ -1200,7 +1200,7 @@ def POP_StackAllocLifetimeStartOp : POPOp<"stack_alloc.lifetime.start", [
   let summary = "Marks the start of stack allocated values lifetimes";
   let description = [{
     The `pop.stack_alloc.lifetime.start` operation marks the beginning of
-    the lifetime of a stack allocated value.
+    the origin of a stack allocated value.
 
     Example:
 
@@ -1227,7 +1227,7 @@ def POP_StackAllocLifetimeEndOp : POPOp<"stack_alloc.lifetime.end", [
   let summary = "Marks the end of stack allocated values lifetimes";
   let description = [{
     The `pop.stack_alloc.lifetime.end` operation marks the end of the
-    lifetime of a stack allocated value.
+    origin of a stack allocated value.
 
     Example:
 

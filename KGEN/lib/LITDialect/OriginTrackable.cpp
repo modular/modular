@@ -9,7 +9,7 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "KGEN/LITDialect/LifetimeTrackable.h"
+#include "KGEN/LITDialect/OriginTrackable.h"
 #include "KGEN/HLCFDialect/HLCFOps.h"
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/KGENDialect/ParameterEvaluator.h"
@@ -67,7 +67,7 @@ OriginTrackable::OriginTrackable(Value v) {
     return;
   }
 
-  // The lit.ref.from_pointer op takes an lifetime-tracked reference.  We
+  // The lit.ref.from_pointer op takes an origin-tracked reference.  We
   // unconditionally model this as same liveness on entry to the function as on
   // exit, because some control flow paths may never execute the operation.
   //
@@ -101,9 +101,9 @@ OriginTrackable::OriginTrackable(Value v) {
     // 2) an non-trivial register passable (e.g. Arc) which we need to track
     //    as being defined by the call and needing to be consumed before the
     //    function exit.
-    // 3) a ref-result type, which is tracked by lifetime tracking but isn't
+    // 3) a ref-result type, which is tracked by origin tracking but isn't
     //    owned.  We don't (and can't) track this, but CheckLifetimes will
-    //    notice the lifetime it contains.
+    //    notice the origin it contains.
 
     // If this is a ref result (#3) or a raw !lit.ref returned with
     // __mlir_type, we *can't* track it as an owned result, because this
@@ -244,7 +244,7 @@ Value OriginTrackable::findUnderlyingValueFromField(Value value) {
 ///
 /// TODO: We should eliminate this when/if we support more fine grain declared
 /// effects on function declarations.  We could then say that we consume the
-/// lifetimes for these values (in the owned case) instead of relying on this.
+/// origins for these values (in the owned case) instead of relying on this.
 static Value findRefPackCreate(Value val) {
   Value loadOperand;
   if (auto load = val.getDefiningOp<RefLoadOp>())
@@ -275,8 +275,8 @@ static Value findRefPackCreate(Value val) {
 /// interesting.
 static void getCallOpEffects(
     Operation &op, SmallVectorImpl<std::pair<Value, OperandEffect>> &operands,
-    SmallVectorImpl<ResultEffect> &results,
-    SmallVectorImpl<TypedAttr> &lifetimes, CachedOriginFinder &lifetimeFinder) {
+    SmallVectorImpl<ResultEffect> &results, SmallVectorImpl<TypedAttr> &origins,
+    CachedOriginFinder &originFinder) {
   LITSignatureType signature;
   OperandRange callArguments = op.getOperands();
   ArrayRef<ArgConvention> conventions;
@@ -346,23 +346,23 @@ static void getCallOpEffects(
     // passed reference) treat this as a field sensitive access so we can
     operands.push_back({arg, effect});
 
-    // If the caller doesn't want us to add type-based lifetime effects, don't.
+    // If the caller doesn't want us to add type-based origin effects, don't.
     if (noIndirect)
       return;
 
-    // Do not add type-based lifetime effects for result arguments.  They are
+    // Do not add type-based origin effects for result arguments.  They are
     // returned, not accessed and therefore don't conflict with the inputs.
     if (conv == ArgConvention::ByRefResult || conv == ArgConvention::ByRefError)
       return;
 
-    // If this is a memConsume or memStoreOwned, then the lifetime of the
+    // If this is a memConsume or memStoreOwned, then the origin of the
     // reference is handled directly, strip it off.  Otherwise handle borrowed,
     // inout, etc operands as just any-old reference use.
     if (SignatureType::hasAddress(conv))
       argType = cast<RefType>(argType).getElementType();
 
     // In addition to the direct (field-sensitive) effect of loading/storing
-    // the bits, the callee may do whatever it wants with lifetimes embedded
+    // the bits, the callee may do whatever it wants with origins embedded
     // in the type.  Collect all of these so we can process them.
     typesAccessibleByCallee.push_back(argType);
   };
@@ -376,16 +376,16 @@ static void getCallOpEffects(
 
     // As a special hack, we directly handle the effects and "see through" a
     // pop.variadic.create, so we can model the effects of the variadic.create
-    // instead of seeing abstract uses of the lifetimes.  This provides two
+    // instead of seeing abstract uses of the origins.  This provides two
     // benefits:
     //   1) given "direct" access information, it allows us to model 'owned'
-    //      argument conventions which consume the operand, something lifetime
+    //      argument conventions which consume the operand, something origin
     //      accesses cannot model (because it requires field sensitivity).
     //   2) it allows us to reason about the varargs uses field-sensitively,
     //      e.g. you can pass `a.x` through varargs and `a.y` through an inout
     //      without the compiler imagining a conflict on "a" just like other
     //      arguments.
-    // TODO(field-sensitive lifetimes): remove this hack.
+    // TODO(field-sensitive origins): remove this hack.
     if (auto vararg = arg.getDefiningOp<POP::VariadicCreateOp>()) {
       auto varargConvention = vararg.getType().getConvention();
       for (auto varOperand : vararg.getOperands())
@@ -397,7 +397,7 @@ static void getCallOpEffects(
     // arguments correctly.
     // TODO: It would be nice to handle more fine grain effects in a general way
     // on calls.  This is a hack.
-    // TODO(field-sensitive lifetimes): remove this hack.
+    // TODO(field-sensitive origins): remove this hack.
     if (signature.isPackVarArg(idx)) {
       auto packVal = findRefPackCreate(arg);
       assert(packVal && "couldn't decode variadic pack information!");
@@ -428,12 +428,11 @@ static void getCallOpEffects(
   }
 
   // Look at the types accessible by the callee to see if there are any
-  // lifetime accesses.
+  // origin accesses.
   {
-    SmallVector<TypedAttr> lifetimesUsedByTypes =
-        lifetimeFinder.findLifetimesIn(typesAccessibleByCallee,
-                                       signature.getCaptureOrigins());
-    lifetimes.append(lifetimesUsedByTypes.begin(), lifetimesUsedByTypes.end());
+    SmallVector<TypedAttr> originsUsedByTypes = originFinder.findOriginsIn(
+        typesAccessibleByCallee, signature.getCaptureOrigins());
+    origins.append(originsUsedByTypes.begin(), originsUsedByTypes.end());
   }
 
   // If the result is defining an owned register value, then we treat this as
@@ -450,8 +449,8 @@ static void getCallOpEffects(
 /// values. This information is used by both phases of CheckLifetimes.
 OverallOpValueEffect LIT::getOperationEffects(
     Operation &op, SmallVectorImpl<std::pair<Value, OperandEffect>> &operands,
-    SmallVectorImpl<ResultEffect> &results,
-    SmallVectorImpl<TypedAttr> &lifetimes, CachedOriginFinder &lifetimeFinder) {
+    SmallVectorImpl<ResultEffect> &results, SmallVectorImpl<TypedAttr> &origins,
+    CachedOriginFinder &originFinder) {
   // Debuginfo ops may reference values that aren't fully initialized, so we
   // skip over them.  These indexing operations are handled specially.
   if (isa<RefStructGEROp, RebindOp, RefImmutOp>(op) ||
@@ -508,7 +507,7 @@ OverallOpValueEffect LIT::getOperationEffects(
     return {};
   }
 
-  // RefFromPointerOp creates a new lifetime tracked value.  The
+  // RefFromPointerOp creates a new origin tracked value.  The
   // 'startsUninit' field impacts the execution of the operation (now), not
   // its modeling at start of the function.  We have to assume its liveness
   // at start of function is the same as its liveness at end of function
@@ -535,7 +534,7 @@ OverallOpValueEffect LIT::getOperationEffects(
   // If this is a call, investigate each of the operands along with the
   // argument convention effects.
   if (isa<LIT::CallIndirectOp, KGENCallOpInterface>(op)) {
-    getCallOpEffects(op, operands, results, lifetimes, lifetimeFinder);
+    getCallOpEffects(op, operands, results, origins, originFinder);
     return {};
   }
 
@@ -612,15 +611,15 @@ OverallOpValueEffect LIT::getOperationEffects(
 //===----------------------------------------------------------------------===//
 
 /// Unpack the specified value of OriginType into a set of referenced
-/// lifetimes. Returns true if any lifetimes were found.
-static bool handleLifetimeAttr(TypedAttr attr,
-                               SmallVectorImpl<TypedAttr> &results) {
+/// origins. Returns true if any origins were found.
+static bool handleOriginAttr(TypedAttr attr,
+                             SmallVectorImpl<TypedAttr> &results) {
   bool foundAny = false;
 
   // Look through unions to find the values referenced.
-  processRawLifetime(attr, [&](TypedAttr raw) {
-    // FIXME(lifetimes): This shouldn't happen; UncheckedCallEmission isn't
-    // forming captures correctly for async functions with implicit lifetime
+  processRawOrigin(attr, [&](TypedAttr raw) {
+    // FIXME(origins): This shouldn't happen; UncheckedCallEmission isn't
+    // forming captures correctly for async functions with implicit origin
     // refs.
     if (isa<ImplicitOriginRefAttr>(OriginMutCastAttr::strip(attr)))
       return;
@@ -632,26 +631,25 @@ static bool handleLifetimeAttr(TypedAttr attr,
 }
 
 template <typename TypeOrAttr>
-static bool
-scanForLifetimes(TypeOrAttr pvalue,
-                 DenseSet<const void *> &typesAndAttrsWithoutLifetimes,
-                 DenseMap<const void *, bool> &visited,
-                 SmallVectorImpl<TypedAttr> &results) {
+static bool scanForOrigins(TypeOrAttr pvalue,
+                           DenseSet<const void *> &typesAndAttrsWithoutOrigins,
+                           DenseMap<const void *, bool> &visited,
+                           SmallVectorImpl<TypedAttr> &results) {
   const void *pvaluePtr = pvalue.getAsOpaquePointer();
 
   // Ignore types we have already scanned.
-  if (typesAndAttrsWithoutLifetimes.contains(pvaluePtr))
+  if (typesAndAttrsWithoutOrigins.contains(pvaluePtr))
     return false;
   if (auto it = visited.find(pvaluePtr); it != visited.end())
     return it->second;
 
-  // If this has lifetime type, process it.
+  // If this has origin type, process it.
   bool handled = false;
-  bool hasLifetimes = false;
+  bool hasOrigin = false;
   if constexpr (std::is_base_of_v<Attribute, TypeOrAttr>)
     if (auto typedAttr = dyn_cast<TypedAttr>(pvalue))
       if (isa<OriginType>(typedAttr.getType())) {
-        hasLifetimes |= handleLifetimeAttr(typedAttr, results);
+        hasOrigin |= handleOriginAttr(typedAttr, results);
         handled = true;
       }
 
@@ -660,41 +658,41 @@ scanForLifetimes(TypeOrAttr pvalue,
     // function type, types like !pop.scalar<ty> etc.
     pvalue.walkImmediateSubElements(
         [&](Attribute attr) {
-          hasLifetimes |= scanForLifetimes(attr, typesAndAttrsWithoutLifetimes,
-                                           visited, results);
+          hasOrigin |= scanForOrigins(attr, typesAndAttrsWithoutOrigins,
+                                      visited, results);
         },
         [&](Type type) {
-          hasLifetimes |= scanForLifetimes(type, typesAndAttrsWithoutLifetimes,
-                                           visited, results);
+          hasOrigin |= scanForOrigins(type, typesAndAttrsWithoutOrigins,
+                                      visited, results);
         });
   }
 
-  // If we can prove that this subtree doesn't contain lifetimes, then remember
+  // If we can prove that this subtree doesn't contain origins, then remember
   // this so we don't revisit this type/attribute in the future.
-  if (!hasLifetimes)
-    typesAndAttrsWithoutLifetimes.insert(pvaluePtr);
+  if (!hasOrigin)
+    typesAndAttrsWithoutOrigins.insert(pvaluePtr);
   else
-    // We don't need to visit the same attribute more than once to find lifetime
+    // We don't need to visit the same attribute more than once to find origin
     // references. This is required to prevent splatting the parameter
     // expression tree.
-    visited.try_emplace(pvaluePtr, hasLifetimes);
-  return hasLifetimes;
+    visited.try_emplace(pvaluePtr, hasOrigin);
+  return hasOrigin;
 }
 
-/// This method finds all the lifetimes buried in the specified type,
+/// This method finds all the origins buried in the specified type,
 /// returning them as a list.  This typically will return ParamRefAttr's or
-/// ImmutCast(ParamRefAttr)'s if a mutable lifetime is accessed immutably.
+/// ImmutCast(ParamRefAttr)'s if a mutable origin is accessed immutably.
 SmallVector<TypedAttr>
-CachedOriginFinder::findLifetimesIn(ArrayRef<Type> types,
-                                    ArrayRef<TypedAttr> captures) {
+CachedOriginFinder::findOriginsIn(ArrayRef<Type> types,
+                                  ArrayRef<TypedAttr> captures) {
   SmallVector<TypedAttr> results;
 
   // Scan each type, accumulating the results; the set avoid revisiting nodes
-  // that we know cannot have lifetimes.
+  // that we know cannot have origins.
   DenseMap<const void *, bool> visited;
   for (Type type : types)
-    scanForLifetimes(type, typesAndAttrsWithoutLifetimes, visited, results);
+    scanForOrigins(type, typesAndAttrsWithoutOrigins, visited, results);
   for (TypedAttr capture : captures)
-    scanForLifetimes(capture, typesAndAttrsWithoutLifetimes, visited, results);
+    scanForOrigins(capture, typesAndAttrsWithoutOrigins, visited, results);
   return results;
 }

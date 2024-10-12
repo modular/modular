@@ -541,11 +541,11 @@ static void processVariablesForPersistence(MojoParserREPLListener &listener,
     // In order to use the pointer as a reference we force cast.
     // FIXME(references): switch AlignedAllocOp to use references
 
-    // Declare the lifetime as a placeholder, we're going to replace this,
-    // so we need to define the lifetime.
-    TypedAttr lifetime = varOp.getType().getLifetime();
+    // Declare the origin as a placeholder, we're going to replace this,
+    // so we need to define the origin.
+    TypedAttr origin = varOp.getType().getOrigin();
     builder.create<ParamDeclareOp>(varOp.getParamDecl(),
-                                   AnyOriginAttr::get(lifetime.getType()));
+                                   AnyOriginAttr::get(origin.getType()));
 
     // Create an untracked reference from this.
     // FIXME: this should really use RefFromPointerOp to make sure that

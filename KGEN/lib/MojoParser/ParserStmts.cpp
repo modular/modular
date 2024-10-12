@@ -768,20 +768,20 @@ ParseResult StmtParser::parseReturnStmt(size_t returnIndent) {
     }
     RefType argType = cast<RefType>(refValue.getType());
 
-    // We already checked the element type, check the lifetime and address
+    // We already checked the element type, check the origin and address
     // space.
     if (!userResultType.isEqualCanon(argType)) {
       if (!canConvertWithRebind(argType, userResultType, shared)) {
         auto expectedRefType = cast<RefType>(userResultType);
         auto diag = emitter.emitError(operandExpr->getLoc())
                     << "cannot return reference with incompatible ";
-        if (argType.getLifetime() != expectedRefType.getLifetime())
-          diag << "lifetime: " << argType.getLifetime() << " vs "
-               << expectedRefType.getLifetime();
+        if (argType.getOrigin() != expectedRefType.getOrigin())
+          diag << "origin: " << argType.getOrigin() << " vs "
+               << expectedRefType.getOrigin();
         else {
           assert(argType.getAddressSpace() !=
                      expectedRefType.getAddressSpace() &&
-                 "Only lifetime and address space can disagree given the "
+                 "Only origin and address space can disagree given the "
                  "element types agree");
           diag << "address space: " << argType.getAddressSpace() << " vs "
                << expectedRefType.getAddressSpace();
@@ -790,7 +790,7 @@ ParseResult StmtParser::parseReturnStmt(size_t returnIndent) {
         return {};
       }
       // Rebind to make the reference compatible, e.g. converting to a more
-      // general lifetime union.
+      // general origin union.
       refValue =
           emitter.rebindValue({SRValue(refValue), operandExpr}, userResultType)
               .getIfSRValue();
@@ -2484,7 +2484,7 @@ ParseResult StmtParser::parseVarStmt(LexerCursor startCursor,
     ExprContext exprContext = EC_VarInit;
     if (parsedType) {
       varOp.getResult().setType(
-          RefType::get(parsedType, varOp.getType().getLifetime()));
+          RefType::get(parsedType, varOp.getType().getOrigin()));
       dest = ValueDest(MLValue(varOp), exprContext);
     } else {
       // If we don't, we emit into the varOp itself, because this will infer the
@@ -2500,7 +2500,7 @@ ParseResult StmtParser::parseVarStmt(LexerCursor startCursor,
 
   } else if (parsedType) {
     varOp.getResult().setType(
-        RefType::get(parsedType, varOp.getType().getLifetime()));
+        RefType::get(parsedType, varOp.getType().getOrigin()));
   } else {
     // If there was neither a type or initializer, reject the var.
     emitError(varOp.getLoc(),

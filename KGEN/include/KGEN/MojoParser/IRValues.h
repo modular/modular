@@ -145,7 +145,7 @@ private:
   void check() const;
 };
 
-/// Instances of MBPValue model a reference with parametric lifetime, e.g.
+/// Instances of MBPValue model a reference with parametric origin, e.g.
 /// derived from a 'ref' argument, or the result of a call that returns a 'ref'.
 /// These values are BValue's because they cannot be stored into, but are not
 /// MBValue's because the parametric nature of their reference is meaningful

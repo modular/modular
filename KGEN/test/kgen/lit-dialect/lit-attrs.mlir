@@ -63,9 +63,9 @@ lit.struct.decl @Foo {
 // CHECK-SAME: #lit.struct<{foo = 5, bar: dtype = f32}>
 "struct.attr"() {a = #lit.struct<{foo = 5, bar: dtype = f32}> : !lit.struct<@Foo>} : () -> ()
 
-// CHECK-LABEL: "lifetime.attr"
+// CHECK-LABEL: "origin.attr"
 // CHECK: #lit.any.origin : !lit.origin<1>
-"lifetime.attr"() {a = #lit.any.origin : !lit.origin<1>} : () -> ()
+"origin.attr"() {a = #lit.any.origin : !lit.origin<1>} : () -> ()
 
 
 kgen.generator @lifetime_lower<p: !lit.origin<1>>(%a: !lit.origin<0>) {

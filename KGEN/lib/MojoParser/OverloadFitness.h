@@ -98,7 +98,7 @@ private:
   std::optional<InflightDiag> diag = std::nullopt;
 
   /// If this candidate requires any arguments to be emitted (from a PValue or
-  /// SValue to an MValue) so a lifetime can be inferred, their corresponding
+  /// SValue to an MValue) so a origin can be inferred, their corresponding
   /// argument # is tracked in this bitset.  If not, the bit will be zero or
   /// missing.
   llvm::SmallBitVector argsNeedingLifetimes;

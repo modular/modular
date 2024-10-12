@@ -14,7 +14,7 @@
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/KGENDialect/ParameterEvaluator.h"
 #include "KGEN/LITDialect/LITOps.h"
-#include "KGEN/LITDialect/LifetimeTrackable.h"
+#include "KGEN/LITDialect/OriginTrackable.h"
 #include "KGEN/LITDialect/SpecialFunctions.h"
 #include "Support/DebugInfoDialect/IR/DebugInfoOps.h"
 #include "mlir/IR/Dominance.h"
@@ -29,7 +29,7 @@ using namespace LIT;
 using llvm::BitVector;
 
 static constexpr StringRef extraLifetimeUsesAttrName =
-    ".mojo.extra.lifetime.uses";
+    ".mojo.extra.origin.uses";
 
 /// Find all the functions and types in the module.
 static std::tuple<std::vector<LIT::FuncOp>,
@@ -585,7 +585,7 @@ struct ValueSet {
     return valueInfos[valueId].getFullValueRef(valueId);
   }
 
-  /// Given a lifetime attribute, return the value ref that defines it, and the
+  /// Given a origin attribute, return the value ref that defines it, and the
   /// known type of that value.  This can return a null type if we don't have
   /// field sensitive information.
   std::pair<ValueRef, Type>
@@ -744,8 +744,8 @@ void ValueSet::addValue(Value val, const OriginTrackable &trackable,
     numValueBits = typeDeclInfo.getNumFieldsInType(valType);
 
     // Remember the lifetime if not unknown.
-    if (!isa<AnyOriginAttr>(refType.getLifetime()))
-      valueLifetime = refType.getLifetime();
+    if (!isa<AnyOriginAttr>(refType.getOrigin()))
+      valueLifetime = refType.getOrigin();
   } else {
     // We don't track trivial values of register type.
     if (typeDeclInfo.isRegisterPassableTrivial(val.getType()))
@@ -901,7 +901,7 @@ SmallVector<ValueRef> ValueSet::getValueRefsForLifetime(TypedAttr lifetime) {
   SmallVector<ValueRef> result;
 
   // Look through imm cast and unions to find the underlying attrs.
-  processRawLifetime(lifetime, [&](TypedAttr raw) {
+  processRawOrigin(lifetime, [&](TypedAttr raw) {
     auto [valueRef, type] = getValueRefAndTypeForLifetime(raw);
     if (valueRef)
       result.push_back(valueRef);
@@ -924,8 +924,7 @@ SmallVector<ValueRef> ValueSet::getValueRefsForAccess(Value value,
   // Otherwise, if indirect, this is an reference to one or more
   // lifetime-tracked values, figure out what they are.
   if (isDeref)
-    return getValueRefsForLifetime(
-        cast<RefType>(value.getType()).getLifetime());
+    return getValueRefsForLifetime(cast<RefType>(value.getType()).getOrigin());
 
   // Otherwise it is a trivial or untracked value.
   return {};
@@ -1273,7 +1272,7 @@ void UninitializedValueScan::handleAnyLifetimeUse(
   SmallPtrSet<Attribute, 8> definedLifetimeSet;
   for (auto elt : definedLifetimes) {
     // Look through imm cast and unions to find the underlying attrs.
-    processRawLifetime(elt, [&](TypedAttr raw) {
+    processRawOrigin(elt, [&](TypedAttr raw) {
       // Ignore field sensitivity of the use: if we have a def of a subfield of
       // the value then we treat it as defining the value.
       while (auto field = dyn_cast<OriginFieldAttr>(raw))
@@ -1299,7 +1298,7 @@ void UninitializedValueScan::handleAnyLifetimeUse(
     // Check to see if the operation directly initializes this lifetime
     // (e.g. by initializing it). If so, we don't want to treat this as a
     // generalized use.
-    auto valueLifetime = cast<RefType>(valueInfo.value.getType()).getLifetime();
+    auto valueLifetime = cast<RefType>(valueInfo.value.getType()).getOrigin();
     if (definedLifetimeSet.count(valueLifetime))
       continue;
 
@@ -1386,7 +1385,7 @@ void UninitializedValueScan::scanBlock(Block &block) {
       case OperandEffect::memStoreOwned:
         checkDef(operand, op, /*isDeref=*/true);
         definedLifetimes.push_back(
-            cast<RefType>(operand.getType()).getLifetime());
+            cast<RefType>(operand.getType()).getOrigin());
         break;
       case OperandEffect::memInOut:
         checkUse(operand, op, /*isDeref=*/true);
@@ -1425,40 +1424,39 @@ void UninitializedValueScan::scanBlock(Block &block) {
 
       switch (effect) {
       case ResultEffect::ignore:
-        assert(!trackable && "Lifetime trackable and CheckLifetimes disagree");
+        assert(!trackable && "Origin trackable and CheckLifetimes disagree");
         continue;
       case ResultEffect::regDefine:
         assert(trackable && !trackable.isIndirect && endsUninit &&
-               "Lifetime trackable and CheckLifetimes disagree");
+               "Origin trackable and CheckLifetimes disagree");
         checkDef(result, op, /*isDeref=*/false);
         break;
       case ResultEffect::memDefineUninitToInit:
         // The live-in behavior is modeled by OriginTrackable to match the
         // live-out behavior.
         assert(trackable && trackable.isIndirect && !endsUninit &&
-               "Lifetime trackable and CheckLifetimes disagree");
+               "Origin trackable and CheckLifetimes disagree");
         // We consume on execution to provide Uninit -> Init behavior.
         checkConsume(result, op, /*isDeref=*/true);
         break;
       case ResultEffect::memDefineUninitToUninit:
         assert(trackable && trackable.isIndirect && endsUninit &&
-               "Lifetime trackable and CheckLifetimes disagree");
+               "Origin trackable and CheckLifetimes disagree");
         // Nothing to do here.
         break;
       case ResultEffect::memDefineInitToInit:
         assert(trackable && trackable.isIndirect && !endsUninit &&
-               "Lifetime trackable and CheckLifetimes disagree");
+               "Origin trackable and CheckLifetimes disagree");
         // Nothing to do here.
         break;
       case ResultEffect::memDefineInitToUninit:
         // The live-in behavior is modeled by OriginTrackable to match the
         // live-out behavior.
         assert(trackable && trackable.isIndirect && endsUninit &&
-               "Lifetime trackable and CheckLifetimes disagree");
+               "Origin trackable and CheckLifetimes disagree");
         // We consume on execution to provide Init -> Uninit behavior.
         checkDef(result, op, /*isDeref=*/true);
-        definedLifetimes.push_back(
-            cast<RefType>(result.getType()).getLifetime());
+        definedLifetimes.push_back(cast<RefType>(result.getType()).getOrigin());
         break;
       }
     }
@@ -1980,7 +1978,7 @@ void DestructorInserter::emitDestructorCall(
         getMutableRefForPossiblyImmutValue(valueToDestroy, builder);
     auto argRef = cast<RefType>(valueToDestroy.getType());
     assert(delSelfTy.getElementType() == argRef.getElementType());
-    implicitLifetimes.push_back(argRef.getLifetime());
+    implicitLifetimes.push_back(argRef.getOrigin());
 
     // Verify that the address space of the reference matches.  The __del__
     // method will have address space zero.  Attempts to delete other things
@@ -2335,7 +2333,7 @@ DestructorInserter::elideCopyInitMem(LIT::CallOp copyInitCall,
       // Insert a declaration of the lifetime for the tmp we're eliding, we know
       // that VarDeclOp's always declare a unique lifetime.
       auto refType = cast<RefType>(tmpDecl.getType());
-      auto param = cast<ParamDeclRefAttr>(refType.getLifetime());
+      auto param = cast<ParamDeclRefAttr>(refType.getOrigin());
 
       // The old reference type used a novel lifetime.  We need to declare it,
       // and coerce back to it with a rebind.
@@ -2403,7 +2401,7 @@ DestructorInserter::elideCopyInitMem(LIT::CallOp copyInitCall,
   // Switch the source operand, and update the lifetime associated with it.
   copyInitCall.setOperand(1, copyInitSrc);
   copyInitCall.setImplicitLifetimes(
-      {copyInitCall.getImplicitLifetimes()[0], srcRefType.getLifetime()});
+      {copyInitCall.getImplicitLifetimes()[0], srcRefType.getOrigin()});
 
   // Transform the copy into a move.
   copyInitCall.setCalleeAttr(moveCtor);
@@ -3187,7 +3185,7 @@ void DestructorInsertion::checkUse(Value value, bool isDeref,
   if (isDeref) {
     SmallVector<ValueRef> lifetimeRelatedValues =
         valueSet.getValueRefsForLifetime(
-            cast<RefType>(value.getType()).getLifetime());
+            cast<RefType>(value.getType()).getOrigin());
     for (auto valueRef : lifetimeRelatedValues) {
       ValueInfo &valueInfo = valueSet.getValueInfos()[valueRef.valueId];
 

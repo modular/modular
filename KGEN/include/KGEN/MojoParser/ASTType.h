@@ -201,7 +201,7 @@ public:
                                       bool demangleParams);
 
   /// Create and return a reference type with 'this' as the underlying element
-  /// type an implicit lifetime reference with the specified arg name.
+  /// type an implicit origin reference with the specified arg name.
   RefType getRefForArgument(const Twine &argName, bool isMut);
 };
 raw_ostream &operator<<(raw_ostream &os, ASTType type);

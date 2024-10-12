@@ -528,7 +528,7 @@ lit.func @callLifetimes[mut lt](%arg0[*""]: !lit.ref<index, mut lt>) -> !lit.ref
 }
 
 
-// This should drop the explicit lifetime parameters since they are singletons.
+// This should drop the explicit origin parameters since they are singletons.
 
 // CHECK-LABEL: kgen.generator @takes_life_explicit<ismut: i1, size, val: simd<size, f32>>
 // CHECK-SAME: (%arg0: !lit.ref<@Mem, mut=ismut, #lit.any.origin> byref_result)

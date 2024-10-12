@@ -92,7 +92,7 @@ struct ParsedArgument {
     kConventionInOut = 1,          // inout x
     kConventionOwned = 2,          // owned x
     kConventionBorrowed = 3,       // borrowed x
-    kConventionRef = 4,            // ref [lifetime, addrspace] x
+    kConventionRef = 4,            // ref [origin, addrspace] x
     kConventionByRefResult = 5,    // No syntax: result slot
     kConventionInitSelfResult = 6, // No syntax: __init__(inout self) argument
   } convention = kConventionUnspec;
@@ -108,7 +108,7 @@ struct ParsedArgument {
   StringAttr name;
   ExprNode *typeExpr = nullptr;
   ExprNode *initExpr = nullptr;
-  // If this is a ref convention, this specifies the lifetime expression.
+  // If this is a ref convention, this specifies the origin expression.
   ExprNode *refLifetimeExpr = nullptr;
 
   /// This gets set to true when there is a /diagnosed/ error that should
@@ -221,7 +221,7 @@ public:
   /// finally gets treated as the ABI for the function.
   ASTType fullResultType;
 
-  /// This is an optional lifetime set parameter, representing the lifetimes of
+  /// This is an optional origin set parameter, representing the lifetimes of
   /// the function captures.
   TypedAttr captureOrigins;
   /// Whether `@__unsafe_disable_nested_lifetime_exclusivity` was specified:

@@ -68,7 +68,7 @@ fn test_owned_trait():
     # CHECK-NEXT: [[V2I:%.*]] = lit.ref.immut %value2
     # CHECK-NEXT: lit.call {{.*}}__copyinit__{{.*}}([[ANONSLOT]], [[V2I]])
 
-    # Coerce to common lifetime
+    # Coerce to common origin
     # CHECK-NEXT: [[V1C:%.*]] = kgen.rebind %value1 : !lit.ref<!SomeMem, mut *"value1`"> to !lit.ref<!SomeMem, mut {*"anonymous*`2", *"value1`"}>
     # CHECK-NEXT: [[V2C:%.*]] = kgen.rebind [[ANONSLOT]] : !lit.ref<!SomeMem, mut *"anonymous*`2"> to !lit.ref<!SomeMem, mut {*"anonymous*`2", *"value1`"}
 
@@ -92,7 +92,7 @@ fn test_owned_trait():
     # CHECK-NEXT: lit.ownership.use %value3
     # CHECK-NEXT: [[ANONSLOT:%.*]] = lit.var.decl "anonymous
     # CHECK-NEXT: lit.call {{.*}}__init__{{.*}}([[ANONSLOT]])
-    # Coerce to common lifetime
+    # Coerce to common origin
     # CHECK-NEXT: [[V3C:%.*]] = kgen.rebind %value3
     # CHECK-NEXT: [[V4C:%.*]] = kgen.rebind [[ANONSLOT]]
     # CHECK-NEXT: [[PACK:%.*]] = lit.ref.pack.create([[V3C]], [[V4C]])
@@ -122,7 +122,7 @@ fn test_inout():
     # CHECK-NEXT: %value2 = lit.var.decl
     var value2: SomeMem
 
-    # Coerce to common lifetime
+    # Coerce to common origin
     # CHECK-NEXT: [[V1C:%.*]] = kgen.rebind %value1 : !lit.ref<!SomeMem, mut *"value1`"> to !lit.ref<!SomeMem, mut {*"value1`", *"value2`1"}>
     # CHECK-NEXT: [[V2C:%.*]] = kgen.rebind %value2 : !lit.ref<!SomeMem, mut *"value2`1"> to !lit.ref<!SomeMem, mut {*"value1`", *"value2`1"}>
 
@@ -142,7 +142,7 @@ fn test_inout():
     # CHECK-NEXT: %value3 = lit.var.decl
     var value3: SomeReg
 
-    # Coerce to common lifetime
+    # Coerce to common origin
     # CHECK-NEXT: [[PACK:%.*]] = lit.ref.pack.create(%value3)
 
     # Create the VariadicPack
@@ -162,7 +162,7 @@ struct not_nested_struct[*Ts: AnyType]:
 
 # CHECK-LABEL: lit.func @"test_empty_pack
 fn test_empty_pack():
-    # Make sure we pass an immortal lifetime for the pack.
+    # Make sure we pass an immortal origin for the pack.
     # CHECK: lit.call {{.*}}VariadicPack::@"__init__{{.*}}:origin<1> {},
     var s1 = not_nested_struct()
 

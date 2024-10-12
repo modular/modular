@@ -123,13 +123,13 @@ enum class Variadicness : uint8_t;
 void printConventionAndVariadicness(AsmPrinter &p, ArgConvention convention,
                                     Variadicness variadicness);
 
-/// Parse and print a lifetime set.
+/// Parse and print a origin set.
 ParseResult parseOriginSet(AsmParser &p, SmallVectorImpl<TypedAttr> &lifetimes);
 OptionalParseResult
 parseOptionalOriginSet(AsmParser &p, SmallVectorImpl<TypedAttr> &lifetimes);
 void printOriginSet(AsmPrinter &p, ArrayRef<TypedAttr> lifetimes);
 
-/// Return true if the lifetime set parameter is an empty set.
+/// Return true if the origin set parameter is an empty set.
 bool isEmptyOriginSet(TypedAttr attr);
 
 //===----------------------------------------------------------------------===//

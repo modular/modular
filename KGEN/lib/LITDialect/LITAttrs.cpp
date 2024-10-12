@@ -773,7 +773,7 @@ TypedAttr OriginUnionAttr::get(ArrayRef<TypedAttr> operandsIn,
   // Preprocess operands.
   for (size_t i = 0, e = operands.size(); i != e; ++i) {
     assert(operands[i].getType() == type &&
-           "all members of a lifetime union must have matching type");
+           "all members of a origin union must have matching type");
     // Union{a, b, #lit.any.origin} => #lit.any.origin since #lit.origin
     // represents "possibly anything".
     if (::isa<AnyOriginAttr>(operands[i]))
@@ -810,16 +810,16 @@ TypedAttr OriginUnionAttr::get(ArrayRef<TypedAttr> operandsIn,
 
 TypedAttr OriginUnionAttr::get(MLIRContext *ctx,
                                ArrayRef<TypedAttr> lifetimes) {
-  // In the empty case, the lifetime is immutable.
+  // In the empty case, the origin is immutable.
   if (lifetimes.empty())
     return OriginUnionAttr::get(OriginType::get(ctx, /*mutable=*/false));
 
-  auto getMut = [](TypedAttr lifetime) {
-    return ::cast<OriginType>(lifetime.getType()).getIsMutable();
+  auto getMut = [](TypedAttr origin) {
+    return ::cast<OriginType>(origin.getType()).getIsMutable();
   };
 
   // If all the parametric mutabilities of the lifetimes are the same, then use
-  // that mutability. Otherwise, the overall lifetime is immutable.
+  // that mutability. Otherwise, the overall origin is immutable.
   TypedAttr mutability = getMut(lifetimes.front());
   bool needMutCast = false;
   for (TypedAttr other : lifetimes.drop_front()) {
@@ -833,8 +833,8 @@ TypedAttr OriginUnionAttr::get(MLIRContext *ctx,
 
   SmallVector<TypedAttr> newLifetimes;
   if (needMutCast) {
-    for (TypedAttr lifetime : lifetimes)
-      newLifetimes.push_back(OriginMutCastAttr::get(lifetime, mutability));
+    for (TypedAttr origin : lifetimes)
+      newLifetimes.push_back(OriginMutCastAttr::get(origin, mutability));
     lifetimes = newLifetimes;
   }
 
@@ -899,8 +899,8 @@ TypedAttr OriginMutCastAttr::get(TypedAttr operand, bool isMutable) {
 TypedAttr OriginFieldAttr::get(TypedAttr structOrigin, StringAttr field) {
   // Check to see if there are any permutations we can fold.
 
-  // If we have the global mutable lifetime, treat it conservatively by
-  // returning the global mutable lifetime.  It isn't wise to try to derive
+  // If we have the global mutable origin, treat it conservatively by
+  // returning the global mutable origin.  It isn't wise to try to derive
   // information from something where lifetimes have been casted away.
   if (::isa<AnyOriginAttr>(structOrigin))
     return structOrigin;
@@ -977,8 +977,8 @@ TypedAttr OriginSetAttr::get(MLIRContext *ctx, ArrayRef<TypedAttr> operands) {
 TypedAttr OriginSetAttr::get(ArrayRef<TypedAttr> operands, OriginSetType type) {
   SmallVector<TypedAttr> newOperands;
   for (TypedAttr operand : operands) {
-    // If we have the global mutable lifetime, treat it conservatively by
-    // returning the global mutable lifetime.  It isn't wise to try to derive
+    // If we have the global mutable origin, treat it conservatively by
+    // returning the global mutable origin.  It isn't wise to try to derive
     // information from something where lifetimes have been casted away.
     if (::isa<AnyOriginAttr>(operand)) {
       newOperands.push_back(operand);
@@ -986,8 +986,8 @@ TypedAttr OriginSetAttr::get(ArrayRef<TypedAttr> operands, OriginSetType type) {
     }
     // Break up unions into their constituents without mutcasts.
     if (auto unionAttr = ::dyn_cast<OriginUnionAttr>(operand)) {
-      for (TypedAttr lifetime : unionAttr.getOperands())
-        newOperands.push_back(OriginMutCastAttr::strip(lifetime));
+      for (TypedAttr origin : unionAttr.getOperands())
+        newOperands.push_back(OriginMutCastAttr::strip(origin));
       continue;
     }
     newOperands.push_back(OriginMutCastAttr::strip(operand));

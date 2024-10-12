@@ -12,7 +12,7 @@
 #ifndef KGEN_MOJOPARSER_SHAREDSTATE_H
 #define KGEN_MOJOPARSER_SHAREDSTATE_H
 
-#include "KGEN/LITDialect/LifetimeTrackable.h"
+#include "KGEN/LITDialect/OriginTrackable.h"
 #include "KGEN/MojoParser/IRValues.h"
 #include "Support/Compiler/Diags.h"
 #include "Support/DebugInfoDialect/IR/DIBuilder.h"

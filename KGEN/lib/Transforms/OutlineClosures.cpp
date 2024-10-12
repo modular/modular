@@ -196,7 +196,7 @@ void OutlineClosuresPass::runOnOperation() {
             b.getStringAttr(generator.getName() + "_context_var_" +
                             Twine(varCounter + idx)));
         // HACK: Because we don't track lifetimes of captured variables in
-        // parameter closures correctly, we might get erroneous lifetime markers
+        // parameter closures correctly, we might get erroneous origin markers
         // of captured stack allocations. Just clear them out for now.
         for (OpOperand &use : llvm::make_early_inc_range(capture.getUses())) {
           Operation *user = use.getOwner();

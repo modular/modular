@@ -1126,7 +1126,7 @@ async fn capture_byref(inout x: Awaitable, y: Awaitable):
 
 @value
 @register_passable
-struct LifetimeAccess[lifetime: __mlir_type.`!lit.origin<1>`]:
+struct LifetimeAccess[origin: __mlir_type.`!lit.origin<1>`]:
     pass
 
 
@@ -1507,7 +1507,7 @@ struct SomeType:
     pass
 
 
-# COM: An implicit lifetime is passed into a struct parameter inside a trait
+# COM: An implicit origin is passed into a struct parameter inside a trait
 # COM: binding. Ensure this passes `-verify-parameters`.
 # CHECK-LABEL: lit.func @"implicit_lifetime_as_param
 # CHECK-SAME: "__del__" : !lit.signature<[1]("self": !lit.ref<{{.*}}Match<:origin<0> *"arg`">, mut *[0,0]>

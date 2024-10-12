@@ -421,7 +421,7 @@ StructDeclOp ClosureEmitter::createClosureWrapperStructDecl(
     auto calleeSig = cast<SignatureType>(callMemberPtr.getType());
     for (auto [arg, conv] : llvm::zip(arguments, calleeSig.getArgConventions()))
       if (SignatureType::hasImplicitLifetime(conv))
-        implicitLifetimes.push_back(cast<RefType>(arg.getType()).getLifetime());
+        implicitLifetimes.push_back(cast<RefType>(arg.getType()).getOrigin());
 
     auto callResult = builder.create<CallIndirectOp>(
         resultType, callMemberPtr, implicitLifetimes, arguments);
@@ -674,19 +674,19 @@ StructDeclOp ClosureEmitter::replaceNestedFunctionWithClosureImplStructDecl(
     if (capture.getValue().isSValue())
       target = builder.create<RefLoadOp>(target);
 
-    // If the reference types disagree, the cast to fix the lifetime.
+    // If the reference types disagree, the cast to fix the origin.
     // FIXME: This isn't great.  We should really /replace/ the original
-    // lifetimes with the self lifetime.  For example, when rewriting something
+    // lifetimes with the self origin.  For example, when rewriting something
     // like:
     //      fn outer(a: MemType):
     //         fn inner():
     //           use(a)
-    // the capture will use 'a' with its own `a lifetime implicitly generated on
+    // the capture will use 'a' with its own `a origin implicitly generated on
     // the outer type.  However, after rewriting it to a struct, we get
     // something like this:
     //      fn closure(self: CaptureStruct):
     //        use(self.a)
-    // which now has the lifetime (and mutability) of 'self'.
+    // which now has the origin (and mutability) of 'self'.
     Value captureValue = capture.getValue().getMlirValue();
     if (captureValue.getType() != target.getType())
       target = builder.create<RebindOp>(captureValue.getType(), target);
@@ -1013,7 +1013,7 @@ ClosureEmitter::createWrapperInitWithImpl(StructDeclOp closureWrapper,
     Value implPtr = builder.create<POP::PointerBitcastOp>(
         closureImplTopLevelPtrType, closureArg);
 
-    // FIXME: Thread a lifetime through correctly.
+    // FIXME: Thread a origin through correctly.
 
     // TODO(references): Move closures off pointers.
     auto immortal = builder.getAttr<AnyOriginAttr>(/*isMut=*/false);
@@ -1038,7 +1038,7 @@ ClosureEmitter::createWrapperInitWithImpl(StructDeclOp closureWrapper,
     auto finalSig = cast<SignatureType>(typedSymbol.getType());
     for (auto [arg, conv] : llvm::zip(args, finalSig.getArgConventions()))
       if (SignatureType::hasImplicitLifetime(conv))
-        implicitLifetimes.push_back(cast<RefType>(arg.getType()).getLifetime());
+        implicitLifetimes.push_back(cast<RefType>(arg.getType()).getOrigin());
 
     Value result =
         builder.create<CallOp>(resultType, typedSymbol, implicitLifetimes, args)

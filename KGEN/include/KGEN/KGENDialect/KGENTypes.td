@@ -276,7 +276,7 @@ def KGEN_SignatureType : KGENType<"Signature", "signature", [
     static bool hasAddress(ArgConvention conv);
 
     /// Determine whether an argument with the given input convention expects to
-    /// have an implicit lifetime.
+    /// have an implicit origin.
     static bool hasImplicitLifetime(ArgConvention conv);
 
     /// Return true if this is an automatically generated result slot.

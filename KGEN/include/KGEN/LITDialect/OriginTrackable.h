@@ -4,8 +4,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef KGEN_LITDIALECT_LIFETIME_TRACKABLE_H
-#define KGEN_LITDIALECT_LIFETIME_TRACKABLE_H
+#ifndef KGEN_LITDIALECT_ORIGIN_TRACKABLE_H
+#define KGEN_LITDIALECT_ORIGIN_TRACKABLE_H
 
 #include "Support/LLVMCompilerForwardDecls.h"
 #include "mlir/IR/BuiltinAttributes.h"
@@ -16,20 +16,20 @@ namespace LIT {
 
 class CachedOriginFinder {
 public:
-  /// This method finds all the lifetimes buried in the specified type,
+  /// This method finds all the origins buried in the specified type,
   /// returning them as a list, possibly eliding duplicates. This typically will
-  /// return ParamRefAttr's or ImmutCast(ParamRefAttr)'s if a mutable lifetime
+  /// return ParamRefAttr's or ImmutCast(ParamRefAttr)'s if a mutable origin
   /// is accessed immutably.
-  SmallVector<TypedAttr> findLifetimesIn(ArrayRef<Type> types,
-                                         ArrayRef<TypedAttr> captures = {});
+  SmallVector<TypedAttr> findOriginsIn(ArrayRef<Type> types,
+                                       ArrayRef<TypedAttr> captures = {});
 
 private:
-  llvm::DenseSet<const void *> typesAndAttrsWithoutLifetimes;
+  llvm::DenseSet<const void *> typesAndAttrsWithoutOrigins;
 };
 
-/// This class provide an abstraction for analyzing lifetime-trackable values,
+/// This class provide an abstraction for analyzing origin-trackable values,
 /// e.g. variable definitions and owned arguments to functions.  This class can
-/// also be used to query whether something is lifetime trackable or not, by
+/// also be used to query whether something is origin trackable or not, by
 /// building a OriginTrackable and then querying it for null.
 struct OriginTrackable {
   /// This constructor checks to see if the value is trackable, and if so
@@ -42,7 +42,7 @@ struct OriginTrackable {
   static Value findUnderlyingValueFromField(Value value);
 
   /// This value feels true'y when it is initialized by something that can be
-  /// lifetime tracked.
+  /// origin tracked.
   operator bool() const { return !!name; }
 
   /// This is the user's declared name for the value declaration, or null if
@@ -174,14 +174,14 @@ enum class OverallOpValueEffect {
 };
 
 /// This computes the effects that an operation has on any operands, result
-/// values, and other declared lifetimes. This information is used by both
+/// values, and other declared origins. This information is used by both
 /// phases of CheckLifetimes.
 OverallOpValueEffect getOperationEffects(
     Operation &op, SmallVectorImpl<std::pair<Value, OperandEffect>> &operands,
-    SmallVectorImpl<ResultEffect> &results,
-    SmallVectorImpl<TypedAttr> &lifetimes, CachedOriginFinder &lifetimeFinder);
+    SmallVectorImpl<ResultEffect> &results, SmallVectorImpl<TypedAttr> &origins,
+    CachedOriginFinder &originFinder);
 
 } // namespace LIT
 } // namespace M::KGEN
 
-#endif // KGEN_LITDIALECT_LIFETIME_TRACKABLE_H
+#endif // KGEN_LITDIALECT_ORIGIN_TRACKABLE_H

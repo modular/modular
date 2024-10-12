@@ -597,7 +597,7 @@ fn transfer_diags[param: String](borrowed_arg: CopyAndInitMemType, obj: SomeNonT
   _ = param^
 
   # DLValue.
-  # expected-error @+1 {{expression does not designate a value with a lifetime}}
+  # expected-error @+1 {{expression does not designate a value with an origin}}
   _ = vararg[1]^
 
 # Issue #1708: https://github.com/modularml/mojo/issues/1708
@@ -619,7 +619,7 @@ fn get_ref_to_bad_argument[T: AnyType](a: T, *args: T):
   _ = Pointer.address_of(a)
   _ = __origin_of(a)
   _ = __get_mvalue_as_litref(a)
-  # This is okay. The VariadicListMem has a lifetime.
+  # This is okay. The VariadicListMem has a origin.
   _ = Pointer.address_of(args)
   _ = Pointer.address_of(args[0])
 
@@ -640,8 +640,8 @@ fn invalid_call_variadic_int(a: Int):
         pass
 
 fn test_bad_ref_errors[T: AnyType](a: Pointer[T, _], b: Pointer[T, _]):
-  # expected-error @below {{cannot implicitly convert 'T' value to 'Pointer[is_mutable, T, lifetime, 0]'}}
-  var x : Pointer[T, b.lifetime] = a[]
+  # expected-error @below {{cannot implicitly convert 'T' value to 'Pointer[is_mutable, T, origin, 0]'}}
+  var x : Pointer[T, b.origin] = a[]
 
   # expected-error @below {{cannot implicitly convert 'T' value to 'Pointer[1, T, MutableAnyOrigin, 0]'}}
   var y : Pointer[T,  __mlir_attr.`#lit.any.origin<1>: !lit.origin<1>`, a.address_space] = a[]
@@ -656,7 +656,7 @@ struct Addable:
     fn __add__(self, other: Self): pass # expected-note {{function declared here}}
 fn test(a: Pointer[Addable, _], b: Addable):
     # FIXME: This shouldn't mention is_mutable since it is an implicit parameter.
-    # expected-error @+1 {{invalid call to '__add__': right side cannot be converted from 'Pointer[is_mutable, Addable, lifetime, 0]' to 'Addable'}}
+    # expected-error @+1 {{invalid call to '__add__': right side cannot be converted from 'Pointer[is_mutable, Addable, origin, 0]' to 'Addable'}}
     _ = b+a
 
 
@@ -691,12 +691,12 @@ fn bad_named_return2() -> Int as output:
 
 
 fn unbound_function_type():
-  # expected-error @below {{function type missing required lifetime set parameter}}
+  # expected-error @below {{function type missing required origin set parameter}}
   var f: fn() [_] -> None
 
 
 
-# Crash converting mvalue of #lit.any.origin lifetime to Pointer with specific one.
+# Crash converting mvalue of #lit.any.origin origin to Pointer with specific one.
 # https://github.com/modularml/mojo/issues/1921
 struct SomeStruct:
   fn refBindingToImmortal(inout self, ptr: UnsafePointer[Int])

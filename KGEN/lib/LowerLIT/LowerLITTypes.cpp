@@ -145,7 +145,7 @@ void StructDecls::buildReplacer(mlir::AttrTypeReplacer &replacer,
         cast<TypedAttr>(replacer.replace(ref.getAddressSpace())));
   });
 
-  // Replace all lifetime attributes with empty structs. These attributes are
+  // Replace all origin attributes with empty structs. These attributes are
   // all terminal.
   addReplacement([=](AnyOriginAttr) { return emptyStruct; });
   addReplacement([=](StaticOriginAttr) { return emptyStruct; });

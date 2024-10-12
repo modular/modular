@@ -2,7 +2,7 @@
 
 lit.struct.decl @SomeStruct {
   // expected-error @+1 {{invalid use of parameter with no declaration "ty"}}
-  %size = lit.var.decl "size" var : !lit.ref<simd<1, ty>, mut lifetime>
+  %size = lit.var.decl "size" var : !lit.ref<simd<1, ty>, mut origin>
 }
 
 // -----
@@ -372,7 +372,7 @@ lit.call @calls[imm a, mut b]() : !lit.signature<[1]() -> ()>
 
 // -----
 
-// expected-error @+1 {{custom op 'lit.call' implicit lifetime reference at depth 0 has an out-of-range index: 1 >= 1}}
+// expected-error @+1 {{custom op 'lit.call' implicit origin reference at depth 0 has an out-of-range index: 1 >= 1}}
 lit.call @calls[mut a]() : !lit.signature<[1](!lit.ref<index, mut *[0,1]>) -> ()>
 
 // -----

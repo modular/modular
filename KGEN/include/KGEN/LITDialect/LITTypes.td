@@ -410,21 +410,21 @@ def LIT_RefType : LITType<"Ref", "ref",
     ```
   }];
 
-  let parameters = (ins "Type":$elementType, "TypedAttr":$lifetime,
+  let parameters = (ins "Type":$elementType, "TypedAttr":$origin,
                         DefaultValuedParameter<"TypedAttr",
                           "Builder($_ctxt).getIndexAttr(0)">:$addressSpace);
   let assemblyFormat = [{
     `<` custom<ParamType>($elementType) `,`
-        custom<OriginParamValue>($lifetime) ``
+        custom<OriginParamValue>($origin) ``
         (`,` custom<IndexParamValue>($addressSpace)^)? `>`
   }];
 
   let builders = [
     TypeBuilderWithInferredContext<(ins "Type":$elementType,
-                                        "TypedAttr":$lifetime,
+                                        "TypedAttr":$origin,
                                         CArg<"unsigned", "0">:$addressSpace)>,
     TypeBuilderWithInferredContext<(ins "Type":$elementType,
-                                        "TypedAttr":$lifetime,
+                                        "TypedAttr":$origin,
                                         "TypedAttr":$addressSpace)>,
   ];
 
@@ -434,14 +434,14 @@ def LIT_RefType : LITType<"Ref", "ref",
     ElTy getElementAs() { return llvm::cast<ElTy>(getElementType()); }
 
     /// Return the pointer type that corresponds to this reference type,
-    /// ignoring the lifetime and the mutability.
+    /// ignoring the origin and the mutability.
     PointerType getAsPointerType();
 
     /// Return this RefType but with a different element type.
     RefType getWithElement(Type newElement);
 
-    /// Return this RefType but with a different lifetime.
-    RefType getWithLifetime(TypedAttr newLifetime);
+    /// Return this RefType but with a different origin.
+    RefType getWithOrigin(TypedAttr newOrigin);
 
     /// Return this RefType but with a different mutability.
     RefType getWithMutability(bool isMut);
@@ -457,18 +457,18 @@ def LIT_RefType : LITType<"Ref", "ref",
     /// Classify the mutability into Mutable/Immutable/Parametric.
     OriginType::MutabilityClass getMutabilityClass();
 
-    /// Return the type of the lifetime reference, which is always a
+    /// Return the type of the origin reference, which is always a
     /// `!lit.origin<mutability>` type.
     OriginType getOriginType();
 
     /// Return true if this is in address space 0.
     bool isDefaultAddrSpace();
 
-    /// Return a reference to the specified element type and mutability with an
-    /// #lit.any.origin lifetime.
-    static RefType getAnyLifetime(Type elementType, bool isMut,
+    /// Return a reference to the specified element type and mutability with a
+    /// #lit.any.origin.
+    static RefType getAnyOrigin(Type elementType, bool isMut,
                                   unsigned addrSpace = 0);
-    static RefType getAnyLifetime(Type elementType, bool isMut,
+    static RefType getAnyOrigin(Type elementType, bool isMut,
                                   TypedAttr addrSpace);
   }];
 }
@@ -516,18 +516,18 @@ def LIT_RefPackType : LITType<"RefPack", "ref.pack",
     ```
   }];
 
-  let parameters = (ins "TypedAttr":$variadic,  "TypedAttr":$lifetime,
+  let parameters = (ins "TypedAttr":$variadic,  "TypedAttr":$origin,
                         DefaultValuedParameter<"TypedAttr",
                           "Builder($_ctxt).getIndexAttr(0)">:$addressSpace);
   let assemblyFormat = [{
     `<` custom<TypeParamValue>($variadic) `,`
-        custom<OriginParamValue>($lifetime) ``
+        custom<OriginParamValue>($origin) ``
         (`,` custom<IndexParamValue>($addressSpace)^)? `>`
   }];
 
   let builders = [
     TypeBuilderWithInferredContext<(ins "TypedAttr":$variadic,
-                                        "TypedAttr":$lifetime,
+                                        "TypedAttr":$origin,
                                         "TypedAttr":$addressSpace)>,
   ];
 

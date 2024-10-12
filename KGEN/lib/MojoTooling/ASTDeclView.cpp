@@ -87,13 +87,13 @@ static std::string generatePValueString(PValue value) {
   return os.str();
 }
 
-/// Unpack a lifetime into a printable name when it is uttered in a signature
+/// Unpack a origin into a printable name when it is uttered in a signature
 /// position.
-static std::string getSignatureLifetime(TypedAttr lifetime,
+static std::string getSignatureLifetime(TypedAttr origin,
                                         LITSignatureType signature) {
-  // Check to see if the lifetime is a parameter on this signature.  If so, it
+  // Check to see if the origin is a parameter on this signature.  If so, it
   // will have a depth of zero.
-  if (auto indexRef = dyn_cast<ParamIndexRefAttr>(lifetime);
+  if (auto indexRef = dyn_cast<ParamIndexRefAttr>(origin);
       indexRef && indexRef.getDepth() == 0 && signature) {
     PogListAttr paramListMetadata = signature.getParamListAttrs();
     if (paramListMetadata.getPassingKind(indexRef.getIndex()) ==
@@ -103,7 +103,7 @@ static std::string getSignatureLifetime(TypedAttr lifetime,
   }
 
   // Otherwise, just print as normal.
-  return generatePValueString(lifetime);
+  return generatePValueString(origin);
 }
 
 /// Unpack a "ref" argument or result type into a string that can be shown to
@@ -111,7 +111,7 @@ static std::string getSignatureLifetime(TypedAttr lifetime,
 static std::string getRefPrefixAsString(RefType refType,
                                         LITSignatureType signature) {
   std::string result =
-      "[" + getSignatureLifetime(refType.getLifetime(), signature);
+      "[" + getSignatureLifetime(refType.getOrigin(), signature);
 
   // Include the address space if it is non-default.
   if (!refType.isDefaultAddrSpace()) {

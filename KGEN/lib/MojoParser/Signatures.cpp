@@ -29,7 +29,7 @@ using namespace M;
 using namespace KGEN;
 using namespace LIT;
 
-/// Process the lifetime expression in a `ref [...] T` reference specifier.
+/// Process the origin expression in a `ref [...] T` reference specifier.
 /// T is specified as 'type' and this returns the result !lit.ref type.
 static RefType processLifetimeSpecifier(const ExprNode *lifetimeExpr,
                                         ASTType type, StringRef valueName,
@@ -40,23 +40,23 @@ static RefType processLifetimeSpecifier(const ExprNode *lifetimeExpr,
   // For errors, return "RefType(TypeCheckErrorType)" to maintain the invariant
   // that all "ref" values have RefType, but their RValue type is an error.
   auto hadError = [&]() -> RefType {
-    return RefType::getAnyLifetime(shared.getTypeCheckErrorType(),
-                                   /*isMut*/ true);
+    return RefType::getAnyOrigin(shared.getTypeCheckErrorType(),
+                                 /*isMut*/ true);
   };
 
   // Propagate already disgnosed errors.
   if (isa<TypeCheckErrorType>(type))
     return hadError();
 
-  ExprEmitter emitter(shared, paramList.declScope, EC_Lifetime);
+  ExprEmitter emitter(shared, paramList.declScope, EC_Origin);
 
-  // If the lifetime expression is syntactically a 2-element tuple, then
-  // take it apart into a lifetime and address space.
+  // If the origin expression is syntactically a 2-element tuple, then
+  // take it apart into a origin and address space.
   ExprNode *addrSpaceExpr = nullptr;
   if (auto *tuple = dyn_cast<TupleNode>(lifetimeExpr)) {
     if (tuple->exprs.size() != 2) {
       emitter.emitError(tuple->getLoc())
-          << "expected specifier with one lifetime or a lifetime and an "
+          << "expected specifier with one origin or a origin and an "
              "address space"
           << lifetimeExpr->getRange();
       return hadError();
@@ -66,31 +66,30 @@ static RefType processLifetimeSpecifier(const ExprNode *lifetimeExpr,
     addrSpaceExpr = tuple->exprs[1];
   }
 
-  // Emit the lifetime expression if it is a normal expression.
-  PValue lifetime;
+  // Emit the origin expression if it is a normal expression.
+  PValue origin;
   if (lifetimeExpr->kind != ExprNode::kDiscardLiteral) {
-    // The lifetime expression may either be a MValue or a value of
+    // The origin expression may either be a MValue or a value of
     // !lit.origin type.  In the former case, we want to evaluate the
     // expression without evaluating it, because it may involve complex nested
     // expressions and we may be in a PValue expression.
     emitter.emitExpressionWithOutEvaluatingIt(
-        lifetimeExpr, EC_Lifetime, [&](CValue result) {
-          // If this is a PValue of lifetime type, directly use it.
+        lifetimeExpr, EC_Origin, [&](CValue result) {
+          // If this is a PValue of origin type, directly use it.
           if (isa<OriginType>(result.getRValueType()) && result.getIfPValue()) {
-            lifetime = result.getIfPValue();
+            origin = result.getIfPValue();
           } else if (result.isMValue()) {
-            // We can get the lifetime of an MValue.
-            lifetime = result.getMValueType().getLifetime();
+            // We can get the origin of an MValue.
+            origin = result.getMValueType().getOrigin();
           } else {
             emitter.emitError(lifetimeExpr->getLoc())
                 << "value of type " << result.getRValueType()
-                << " doesn't have a memory lifetime"
-                << lifetimeExpr->getRange();
+                << " doesn't have a memory origin" << lifetimeExpr->getRange();
           }
         });
   } else {
     // We need to add two parameters to this function, one for the mutability
-    // of type Bool and one for the lifetime.
+    // of type Bool and one for the origin.
     auto addParam = [&](const Twine &name, Type type) -> TypedAttr {
       auto paramDecl =
           ParamDeclAttr::get(paramList.declScope.mangleParamName(name), type);
@@ -102,39 +101,39 @@ static RefType processLifetimeSpecifier(const ExprNode *lifetimeExpr,
 
     if (isResult) {
       emitter.emitError(lifetimeExpr->getLoc())
-          << "cannot infer lifetime for a function result"
+          << "cannot infer origin for a function result"
           << lifetimeExpr->getRange();
       return hadError();
     }
 
     auto isMut = addParam(valueName + "_is_mut",
                           IntegerType::get(shared.getContext(), 1));
-    lifetime = addParam(valueName + "_is_lifetime", OriginType::get(isMut));
+    origin = addParam(valueName + "_is_lifetime", OriginType::get(isMut));
   }
-  if (!lifetime)
+  if (!origin)
     return hadError();
 
-  if (!isa<OriginType>(lifetime.getType())) {
+  if (!isa<OriginType>(origin.getType())) {
     emitter.emitError(lifetimeExpr->getLoc())
-        << "result reference lifetime has unexpected type "
-        << lifetime.getType() << lifetimeExpr->getRange();
+        << "result reference origin has unexpected type " << origin.getType()
+        << lifetimeExpr->getRange();
     return hadError();
   }
 
   // If we have an address space, emit it.
   TypedAttr addrSpace;
   if (addrSpaceExpr) {
-    auto addrSpaceCValue = emitter.emitExprCValue(addrSpaceExpr, EC_Lifetime);
+    auto addrSpaceCValue = emitter.emitExprCValue(addrSpaceExpr, EC_Origin);
     // Invoke __mlir_index__ to get Int/AddressSpace to what we need.
     if (addrSpaceCValue && !isa<IndexType>(addrSpaceCValue.getRValueType())) {
-      ValueDest dest(EC_Lifetime);
+      ValueDest dest(EC_Origin);
       addrSpaceCValue = emitter.emitNamedMethodCall(
           "__mlir_index__", {{{addrSpaceCValue, addrSpaceExpr}}}, dest,
           CallSyntax::kMethodCall, addrSpaceExpr);
     }
 
     addrSpace =
-        emitter.emitPValue({addrSpaceCValue, addrSpaceExpr}, EC_Lifetime).get();
+        emitter.emitPValue({addrSpaceCValue, addrSpaceExpr}, EC_Origin).get();
 
     if (addrSpace && !isa<IndexType>(addrSpace.getType())) {
       emitter.emitError(lifetimeExpr->getLoc())
@@ -146,7 +145,7 @@ static RefType processLifetimeSpecifier(const ExprNode *lifetimeExpr,
   if (!addrSpace)
     addrSpace = IntegerAttr::get(IndexType::get(shared.getContext()), 0);
 
-  return RefType::get(type, lifetime, addrSpace);
+  return RefType::get(type, origin, addrSpace);
 }
 
 //===----------------------------------------------------------------------===//
@@ -572,9 +571,9 @@ emitDefaultIfPossible(const ParsedArgument &arg, ASTType type,
 /// parameter declaration to the function for each unbound struct parameter and
 /// binds the struct type to reference those parameters.
 ///
-/// For function types, if the capture lifetime set parameter is unbound, an
+/// For function types, if the capture origin set parameter is unbound, an
 /// implicit parameter for it is added, and a function type of the capture
-/// lifetime set parameter bound to it is returned.
+/// origin set parameter bound to it is returned.
 ///
 /// Parameters can be either added to the end of the parameter as `Implicit`
 /// passing-kind parameters if `append` is set (this is used for unbound
@@ -794,8 +793,8 @@ ParseResult ParsedArgumentList::parseArgumentListAndEffects(ParserBase &p,
   return success();
 }
 
-/// This function creates a new anonymous lifetime decl for the specified
-/// argument, and wraps the type with a RefType using that lifetime.
+/// This function creates a new anonymous origin decl for the specified
+/// argument, and wraps the type with a RefType using that origin.
 static RefType makeImplicitRefTypeForArg(const ParsedArgument &arg, size_t idx,
                                          Type type,
                                          TypeCheckedFnSignature &tcSignature) {
@@ -815,7 +814,7 @@ static RefType makeImplicitRefTypeForArg(const ParsedArgument &arg, size_t idx,
   auto lifetimeDecl = ParamDeclAttr::get(
       lifetimeName, OriginType::get(lifetimeName.getContext(), isMutable));
 
-  // Tell the signature about the new lifetime decl.
+  // Tell the signature about the new origin decl.
   tcSignature.implicitLifetimeDecls.push_back(lifetimeDecl);
 
   return RefType::get(
@@ -862,7 +861,7 @@ typeCheckVariadicPackTypeSpecifier(ParsedArgument &arg, size_t argIdx,
     return {};
   }
 
-  // Arguments passed by memory need an associated lifetime parameter, and need
+  // Arguments passed by memory need an associated origin parameter, and need
   // to be passed by reference.
   RefType refType =
       makeImplicitRefTypeForArg(arg, argIdx, elementType, tcSignature);
@@ -897,10 +896,10 @@ typeCheckVariadicPackTypeSpecifier(ParsedArgument &arg, size_t argIdx,
     elementTrait =
         ParamOperatorAttr::get(POC::Rebind, elementTrait, elementTraitParamTy);
 
-  // Bind the VariadicPack[isMutable, lifetime, element_trait, element_types]
+  // Bind the VariadicPack[isMutable, origin, element_trait, element_types]
   // parameters.
   return packStruct.bindReference(
-      {refType.isMutable(), refType.getLifetime(), elementTrait, param.get()});
+      {refType.isMutable(), refType.getOrigin(), elementTrait, param.get()});
 }
 
 /// Type check each argument in turn, resolving their type and default
@@ -1021,7 +1020,7 @@ static void typeCheckOneArgument(size_t idx, ASTType selfType, bool isDef,
     arg.kgenConvention = ArgConvention::OwnedInReg;
     break;
   case ParsedArgument::kConventionRef: {
-    assert(arg.refLifetimeExpr && "No lifetime expr for convention!");
+    assert(arg.refLifetimeExpr && "No origin expr for convention!");
     if (arg.vararg != VarArgKind::None) {
       // There should be no reason this isn't supportable.
       shared.emitError(
@@ -1100,7 +1099,7 @@ static void typeCheckOneArgument(size_t idx, ASTType selfType, bool isDef,
     }
   }
 
-  // Values passed by memory need an associated lifetime parameter, and need to
+  // Values passed by memory need an associated origin parameter, and need to
   // be passed by reference. For now, we don't use reference types in **kwargs.
   Type fullType;
   if (SignatureType::hasImplicitLifetime(arg.kgenConvention) &&
@@ -1257,7 +1256,7 @@ static void typeCheckResult(ParsedArgument resultArg, bool isDef,
       resultType = shared.getTypeCheckErrorType();
   }
 
-  // If a result lifetime is specified with `ref [life] Ty`, then form a ref
+  // If a result origin is specified with `ref [life] Ty`, then form a ref
   // result.
   if (resultArg.refLifetimeExpr) {
     if (tcSignature.argList.effects.isAsync()) {
@@ -1297,14 +1296,14 @@ static void typeCheckResult(ParsedArgument resultArg, bool isDef,
   // Note that we're now returning a reference to something that doesn't outlast
   // the function!
   if (auto resultLifetimes =
-          shared.cachedOriginFinder.findLifetimesIn(resultType.mlirType);
+          shared.cachedOriginFinder.findOriginsIn(resultType.mlirType);
       !resultLifetimes.empty()) {
     SmallDenseMap<TypedAttr, size_t, 8> possiblyRegisterPassableLifetimes;
     for (auto [idx, parsedArg, fullType] : llvm::enumerate(
              tcSignature.argList.parsedArgs, tcSignature.fullArgTypes)) {
 
       // Only look at inout, borrowed, owned arguments.  RegisterPassable args
-      // won't have a lifetime, and `ref` args are not lowered by-reg.
+      // won't have a origin, and `ref` args are not lowered by-reg.
       if (!SignatureType::hasAddress(parsedArg.kgenConvention) ||
           parsedArg.kgenConvention == ArgConvention::Ref ||
           parsedArg.kgenConvention == ArgConvention::MutRef)
@@ -1317,25 +1316,25 @@ static void typeCheckResult(ParsedArgument resultArg, bool isDef,
                .mightBeRegisterPassable(parsedArg.loc, shared))
         continue;
 
-      // Ok, this lifetime is a problem.
-      possiblyRegisterPassableLifetimes[refType.getLifetime()] = idx;
+      // Ok, this origin is a problem.
+      possiblyRegisterPassableLifetimes[refType.getOrigin()] = idx;
     }
 
     // Now that we know all the problematic lifetimes, check to see if any of
     // them are referenced.
-    for (TypedAttr lifetime : resultLifetimes) {
+    for (TypedAttr origin : resultLifetimes) {
       // Don't allow mutability dropping to interfere.
-      lifetime = OriginMutCastAttr::strip(lifetime);
-      if (!possiblyRegisterPassableLifetimes.count(lifetime))
+      origin = OriginMutCastAttr::strip(origin);
+      if (!possiblyRegisterPassableLifetimes.count(origin))
         continue;
 
       // Oops, found a problem, report it and indicate the argument at fault.
       assert(resultArg.typeExpr &&
              "implicit result types can't have lifetimes");
-      size_t argIdx = possiblyRegisterPassableLifetimes[lifetime];
+      size_t argIdx = possiblyRegisterPassableLifetimes[origin];
       const ParsedArgument &badArg = tcSignature.argList.parsedArgs[argIdx];
       auto diag = shared.emitError(resultArg.typeExpr->getLoc());
-      diag << "cannot return " << badArg.name << "s lifetime, because it ";
+      diag << "cannot return " << badArg.name << "s origin, because it ";
       ASTType argType =
           ASTType(tcSignature.fullArgTypes[argIdx]).getReferenceElementType();
       if (argType.isRegisterPassable(badArg.loc, shared))
@@ -1409,7 +1408,7 @@ static void typeCheckResult(ParsedArgument resultArg, bool isDef,
     tcSignature.argList.parsedArgs.push_back(resultArg);
     tcSignature.argTypes.push_back(resultType);
 
-    // Compute the RefType for this new argument with an implicit lifetime.
+    // Compute the RefType for this new argument with an implicit origin.
     RefType refType =
         makeImplicitRefTypeForArg(resultArg, 0, resultType, tcSignature);
     tcSignature.fullArgTypes.push_back(refType);
@@ -1539,17 +1538,17 @@ TypeCheckedFnSignature::TypeCheckedFnSignature(TypeCheckedParamList &paramList,
   // Compute the result type.
   typeCheckResult(resultArg, isDef, fnInfo, fnDecl, *this);
 
-  // If a capture lifetime set was specified, emit it. It will be added to the
+  // If a capture origin set was specified, emit it. It will be added to the
   // signature type later.
   if (lifetimeExpr) {
-    // Special rule for `[_]` when specifying the capture lifetime set: the
+    // Special rule for `[_]` when specifying the capture origin set: the
     // set is unbound and will be autoparameterized.
     auto setType = OriginSetType::get(shared.getContext());
     if (lifetimeExpr->kind == ExprNode::kDiscardLiteral) {
       captureOrigins = UnboundAttr::get(setType);
     } else {
       captureOrigins =
-          typeEmitter.emitExprPValue(lifetimeExpr, EC_Lifetime, setType);
+          typeEmitter.emitExprPValue(lifetimeExpr, EC_Origin, setType);
     }
   }
 }

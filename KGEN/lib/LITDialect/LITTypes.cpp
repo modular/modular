@@ -502,7 +502,7 @@ LogicalResult AnyTraitType::printValue(AsmPrinter &p, TypedAttr value) const {
 
 OptionalParseResult OriginType::parseValue(AsmParser &p,
                                            TypedAttr &result) const {
-  // If there are any postfix lifetime syntax (<whatever>.field1.field2), then
+  // If there are any postfix origin syntax (<whatever>.field1.field2), then
   // parse them into 'result'.
   auto processPostFix = [&]() -> OptionalParseResult {
     if (!result)
@@ -517,7 +517,7 @@ OptionalParseResult OriginType::parseValue(AsmParser &p,
     return mlir::success();
   };
 
-  // Parse |...| as lifetime set unions.
+  // Parse |...| as OriginSet and OriginSetUnion.
   if (succeeded(p.parseOptionalVerticalBar())) {
     TypedAttr set;
     if (parseParamValue(p, set, OriginSetType::get(p.getContext())) ||
@@ -547,7 +547,7 @@ OptionalParseResult OriginType::parseValue(AsmParser &p,
       return processPostFix();
     }
 
-    // *[x,y] is an implicit lifetime ref.
+    // *[x,y] is an ImplicitOriginRefAttr.
     size_t depth, index;
     if (succeeded(p.parseOptionalLSquare())) {
       if (p.parseInteger(depth) || p.parseComma() || p.parseInteger(index) ||
@@ -558,7 +558,7 @@ OptionalParseResult OriginType::parseValue(AsmParser &p,
     }
 
     // We don't support *?
-    p.emitError(p.getCurrentLocation(), "unknown lifetime value");
+    p.emitError(p.getCurrentLocation(), "unknown origin value");
     return failure();
   }
 
@@ -573,7 +573,7 @@ OptionalParseResult OriginType::parseValue(AsmParser &p,
                 elements.push_back({});
                 return KGEN::parseParamValue(p, elements.back(), *this);
               },
-              "in lifetime union") ||
+              "in origin union") ||
           p.parseRBrace())
         return failure();
     }
@@ -707,12 +707,12 @@ OriginType::MutabilityClass OriginType::getMutabilityClass() {
 
 OptionalParseResult OriginSetType::parseValue(AsmParser &p,
                                               TypedAttr &value) const {
-  SmallVector<TypedAttr> lifetimes;
-  OptionalParseResult result = parseOptionalOriginSet(p, lifetimes);
+  SmallVector<TypedAttr> origins;
+  OptionalParseResult result = parseOptionalOriginSet(p, origins);
   if (result.has_value()) {
     if (failed(*result))
       return failure();
-    value = OriginSetAttr::get(getContext(), lifetimes, *this);
+    value = OriginSetAttr::get(getContext(), origins, *this);
     return mlir::success();
   }
   return std::nullopt;
@@ -730,57 +730,56 @@ LogicalResult OriginSetType::printValue(AsmPrinter &p, TypedAttr value) const {
 // RefType
 //===----------------------------------------------------------------------===//
 
-RefType RefType::get(Type elementType, TypedAttr lifetime,
-                     TypedAttr addrSpace) {
-  assert(::isa<OriginType>(lifetime.getType()));
-  return get(lifetime.getContext(), elementType, lifetime, addrSpace);
+RefType RefType::get(Type elementType, TypedAttr origin, TypedAttr addrSpace) {
+  assert(::isa<OriginType>(origin.getType()));
+  return get(origin.getContext(), elementType, origin, addrSpace);
 }
 
-RefType RefType::get(Type elementType, TypedAttr lifetime, unsigned addrSpace) {
+RefType RefType::get(Type elementType, TypedAttr origin, unsigned addrSpace) {
   auto *ctx = elementType.getContext();
-  return get(elementType, lifetime,
+  return get(elementType, origin,
              IntegerAttr::get(IndexType::get(ctx), addrSpace));
 }
 
 /// Return the pointer type that corresponds to this reference type, ignoring
-/// the lifetime and the mutability.
+/// the origin and the mutability.
 PointerType RefType::getAsPointerType() {
   return PointerType::get(getElementType(), getAddressSpace());
 }
 
 /// Return this RefType but with a different element type.
 RefType RefType::getWithElement(Type newElement) {
-  return get(newElement, getLifetime(), getAddressSpace());
+  return get(newElement, getOrigin(), getAddressSpace());
 }
 
-/// Return this RefType but with a different lifetime.
-RefType RefType::getWithLifetime(TypedAttr newLifetime) {
-  return get(getElementType(), newLifetime, getAddressSpace());
+/// Return this RefType but with a different origin.
+RefType RefType::getWithOrigin(TypedAttr newOrigin) {
+  return get(getElementType(), newOrigin, getAddressSpace());
 }
 
 /// Return this RefType but with a different mutability.
 RefType RefType::getWithMutability(bool isMut) {
-  return get(getElementType(), OriginMutCastAttr::get(getLifetime(), isMut),
+  return get(getElementType(), OriginMutCastAttr::get(getOrigin(), isMut),
              getAddressSpace());
 }
 
-/// Return the type of the lifetime reference, which is always a
+/// Return the type of the origin reference, which is always a
 /// `!lit.origin<mutability>` type.
 OriginType RefType::getOriginType() {
-  return ::cast<OriginType>(getLifetime().getType());
+  return ::cast<OriginType>(getOrigin().getType());
 }
 
-/// Return a reference to the specified element type and mutability with an
-/// #lit.any.origin lifetime.
-RefType RefType::getAnyLifetime(Type elementType, bool isMut,
-                                TypedAttr addrSpace) {
+/// Return a reference to the specified element type and mutability with
+/// #lit.any.origin.
+RefType RefType::getAnyOrigin(Type elementType, bool isMut,
+                              TypedAttr addrSpace) {
   return get(elementType, AnyOriginAttr::get(elementType.getContext(), isMut),
              addrSpace);
 }
 
-RefType RefType::getAnyLifetime(Type elementType, bool isMut,
-                                unsigned addrSpace) {
-  return getAnyLifetime(
+RefType RefType::getAnyOrigin(Type elementType, bool isMut,
+                              unsigned addrSpace) {
+  return getAnyOrigin(
       elementType, isMut,
       IntegerAttr::get(IndexType::get(elementType.getContext()), addrSpace));
 }
@@ -788,18 +787,18 @@ RefType RefType::getAnyLifetime(Type elementType, bool isMut,
 /// Return true if the mutable attribute is known to be the specific
 /// constant.  This returns false if parametric or if the other value.
 bool RefType::isMutableKnown(bool value) {
-  return ::cast<OriginType>(getLifetime().getType()).isMutableKnown(value);
+  return ::cast<OriginType>(getOrigin().getType()).isMutableKnown(value);
 }
 
 /// Classify the mutability into Mutable/Immutable/Parametric.
 OriginType::MutabilityClass RefType::getMutabilityClass() {
-  return ::cast<OriginType>(getLifetime().getType()).getMutabilityClass();
+  return ::cast<OriginType>(getOrigin().getType()).getMutabilityClass();
 }
 
 /// Return a (possibly parameteric) specification for whether this reference
 /// is a mutation or a read.
 TypedAttr RefType::isMutable() {
-  return ::cast<OriginType>(getLifetime().getType()).isMutable();
+  return ::cast<OriginType>(getOrigin().getType()).isMutable();
 }
 
 /// Return true if this is in address space 0.
@@ -839,9 +838,9 @@ LogicalResult RefType::printValue(AsmPrinter &p, TypedAttr value) const {
 // RefPackType
 //===----------------------------------------------------------------------===//
 
-RefPackType RefPackType::get(TypedAttr variadic, TypedAttr lifetime,
+RefPackType RefPackType::get(TypedAttr variadic, TypedAttr origin,
                              TypedAttr addressSpace) {
-  return get(variadic.getContext(), variadic, lifetime, addressSpace);
+  return get(variadic.getContext(), variadic, origin, addressSpace);
 }
 
 VariadicAttr RefPackType::getVariadicIfResolved() const {
@@ -851,7 +850,7 @@ VariadicAttr RefPackType::getVariadicIfResolved() const {
 /// Return the effective type (always a reference) of each element given
 /// the type according to the type list.
 RefType RefPackType::getElementRefTypeFor(Type elementType) {
-  return RefType::get(elementType, getLifetime(), getAddressSpace());
+  return RefType::get(elementType, getOrigin(), getAddressSpace());
 }
 
 /// This returns the element type of the variadic list parameter, typically
@@ -883,21 +882,21 @@ REPLResultRefType REPLResultRefType::get(Type elementType) {
 static ParseResult parseLITSignature(AsmParser &p, Type &signature) {
   llvm::SMLoc startLoc = p.getCurrentLocation();
 
-  size_t numLifetimeDecls = 0;
+  size_t numOriginDecls = 0;
   if (succeeded(p.parseOptionalLSquare()))
-    if (p.parseInteger(numLifetimeDecls) || p.parseRSquare())
+    if (p.parseInteger(numOriginDecls) || p.parseRSquare())
       return failure();
 
   TypedAttr captureOrigins;
-  auto lifetimeSet = OriginSetType::get(p.getContext());
+  auto originSet = OriginSetType::get(p.getContext());
   if (succeeded(p.parseOptionalColon())) {
-    if (parseParamValue(p, captureOrigins, lifetimeSet) || p.parseColon())
+    if (parseParamValue(p, captureOrigins, originSet) || p.parseColon())
       return failure();
   } else {
-    captureOrigins = OriginSetAttr::get({}, lifetimeSet);
+    captureOrigins = OriginSetAttr::get({}, originSet);
   }
   bool isNestedOriginExclusivityCheckingDisabled =
-      succeeded(p.parseOptionalKeyword("no_nested_lifetime_exclusivity"));
+      succeeded(p.parseOptionalKeyword("no_nested_origin_exclusivity"));
 
   SmallVector<Type> inputParamTypes;
   PogListAttr paramListAttr;
@@ -961,7 +960,7 @@ static ParseResult parseLITSignature(AsmParser &p, Type &signature) {
       PogListAttr::get(ctx, argNames, argPassingKinds, defaultPosArgs,
                        defaultKwOnlyArgs, argVariadicIndices, argPackIndex,
                        origArgPackConvention),
-      paramListAttr, numLifetimeDecls, captureOrigins,
+      paramListAttr, numOriginDecls, captureOrigins,
       isNestedOriginExclusivityCheckingDisabled);
   signature = SignatureType::getChecked(
       [&] { return p.emitError(startLoc); }, functionType, inputParamTypes,
@@ -998,15 +997,15 @@ void FnMetadataAttr::printSignature(AsmPrinter &p, SignatureType sig) const {
   p << "!lit.signature<";
   auto signature = ::cast<LITSignatureType>(sig);
 
-  if (unsigned numLifetimeDecls = getNumImplicitOriginDecls())
-    p << '[' << numLifetimeDecls << ']';
+  if (unsigned numOriginDecls = getNumImplicitOriginDecls())
+    p << '[' << numOriginDecls << ']';
   if (!isEmptyOriginSet(getCaptureOrigins())) {
     p << ':';
     printParamValue(p, getCaptureOrigins());
     p << ':';
   }
   if (signature.getIsNestedOriginExclusivityCheckingDisabled())
-    p << "no_nested_lifetime_exclusivity";
+    p << "no_nested_origin_exclusivity";
 
   printOptionalParamSignature(p, signature.getParamTypes(),
                               signature.getParamListAttrs());
@@ -1100,7 +1099,7 @@ StringAttr LITSignatureType::getParamName(size_t idx) {
   return getParamListAttrs().getName(idx);
 }
 
-/// Get the number of implicit lifetime decls this function type carries.
+/// Get the number of implicit origin decls this function type carries.
 size_t LITSignatureType::getNumImplicitOriginDecls() {
   return getMetadata().getNumImplicitOriginDecls();
 }
@@ -1118,10 +1117,10 @@ LITSignatureType LITSignatureType::dropParamValues() {
                           getIsNestedOriginExclusivityCheckingDisabled()));
 }
 
-LITSignatureType LITSignatureType::getWithCaptureOrigins(TypedAttr lifetimes) {
+LITSignatureType LITSignatureType::getWithCaptureOrigins(TypedAttr origins) {
   return getWithMetadata(FnMetadataAttr::get(
       getArgListAttrs(), getParamListAttrs(), getNumImplicitOriginDecls(),
-      lifetimes, getIsNestedOriginExclusivityCheckingDisabled()));
+      origins, getIsNestedOriginExclusivityCheckingDisabled()));
 }
 
 bool LITSignatureType::isAnyVarArg(size_t index) {
@@ -1180,14 +1179,14 @@ unsigned LITSignatureType::getErrorSlotOffset() {
   return 1 + hasMemoryOnlyResult();
 }
 
-/// Substitute the specified implicit lifetime references into the specified
+/// Substitute the specified implicit origin references into the specified
 /// type, replacing them with `values` if they are at depth 0, or decrementing
 /// their depth if not.  This returns the resultant FunctionType on success,
 /// and invokes 'emitError'+returns null on error.
-FunctionType LITSignatureType::substituteImplicitLifetimesIntoValues(
+FunctionType LITSignatureType::substituteImplicitOriginsIntoValues(
     ArrayRef<TypedAttr> values, function_ref<InFlightDiagnostic()> emitError) {
   assert(values.size() == getNumImplicitOriginDecls() &&
-         "Incorrect # implicit lifetimes specified");
+         "Incorrect # implicit origins specified");
 
   struct Substitutor : IndexParameterReplacer<Substitutor> {
     Type tryReplace(Type, size_t) { return {}; }
@@ -1195,7 +1194,7 @@ FunctionType LITSignatureType::substituteImplicitLifetimesIntoValues(
       if (auto ref = ::dyn_cast<ImplicitOriginRefAttr>(attr);
           ref && ref.getDepth() == depth) {
         if (ref.getIndex() >= values.size()) {
-          emitError() << "implicit lifetime reference at depth " << depth
+          emitError() << "implicit origin reference at depth " << depth
                       << " has an out-of-range index: " << ref.getIndex()
                       << " >= " << values.size();
           hadError = true;
@@ -1216,16 +1215,16 @@ FunctionType LITSignatureType::substituteImplicitLifetimesIntoValues(
   return substitutor.hadError ? FunctionType() : result;
 }
 
-/// Get this signature with all the implicit lifetimes bound to the empty union
+/// Get this signature with all the implicit origins bound to the empty union
 /// and dropped from the signature.
-LITSignatureType LITSignatureType::getWithImplicitLifetimesBoundNothing() {
+LITSignatureType LITSignatureType::getWithImplicitOriginsBoundNothing() {
   // Avoid work if there is nothing to do.
   if (getNumImplicitOriginDecls() == 0)
     return *this;
 
-  // Replace the lifetimes with attrs of the right mutability.  We just scan
+  // Replace the origins with attrs of the right mutability.  We just scan
   // through the type to find the references to update.  We get implicit
-  // lifetimes in a range of places (e.g. buried in pack and variadic types etc)
+  // origins in a range of places (e.g. buried in pack and variadic types etc)
   // that make it difficult to "just know" the mutability of each one.
   struct Substitutor : IndexParameterReplacer<Substitutor> {
     Type tryReplace(Type, size_t) { return {}; }
@@ -1243,22 +1242,22 @@ LITSignatureType LITSignatureType::getWithImplicitLifetimesBoundNothing() {
                                getFnEffects(), getMetadata());
 }
 
-/// This method replaces direct uses of NAMED implicit lifetime declarations
-/// with index-based references.  lifetimeDecls specifies the names of the
-/// implicit lifetime decls to replace.
+/// This method replaces direct uses of NAMED implicit origin declarations
+/// with index-based references.  originDecls specifies the names of the
+/// implicit origin decls to replace.
 ///
 /// If indexOffset is subtracted from depth when set.
-Type LITSignatureType::replaceImplicitLifetimesWithIndexes(
-    Type origType, ArrayRef<ParamDeclAttr> lifetimeDecls, size_t indexOffset) {
+Type LITSignatureType::replaceImplicitOriginsWithIndexes(
+    Type origType, ArrayRef<ParamDeclAttr> originDecls, size_t indexOffset) {
 
-  // If there are no implicit lifetimes, then this is a noop.
-  if (lifetimeDecls.empty())
+  // If there are no implicit origins, then this is a noop.
+  if (originDecls.empty())
     return origType;
 
-  // Replace named implicit lifetime parameter references with index-based
+  // Replace named implicit origin parameter references with index-based
   // references in the signature.
-  struct LifetimeDeclRemapper : IndexParameterReplacer<LifetimeDeclRemapper> {
-    LifetimeDeclRemapper(size_t indexOffset) : indexOffset(indexOffset) {}
+  struct OriginDeclRemapper : IndexParameterReplacer<OriginDeclRemapper> {
+    OriginDeclRemapper(size_t indexOffset) : indexOffset(indexOffset) {}
 
     Type tryReplace(Type, size_t) { return {}; }
     Attribute tryReplace(Attribute attr, size_t depth) {
@@ -1277,20 +1276,20 @@ Type LITSignatureType::replaceImplicitLifetimesWithIndexes(
     size_t indexOffset;
     DenseMap<StringAttr, size_t> mapping;
   } remapper(indexOffset);
-  for (auto [i, decl] : llvm::enumerate(lifetimeDecls))
+  for (auto [i, decl] : llvm::enumerate(originDecls))
     remapper.mapping.try_emplace(decl.getName(), i);
   return remapper.replace(origType);
 }
 
-/// This method replaces direct uses of NAMED implicit lifetime declarations
-/// with index-based references corresponding to the signature. `lifetimeDecls`
-/// specifies the names of the implicit lifetime decls.
-LITSignatureType LITSignatureType::replaceImplicitLifetimesWithIndexes(
-    ArrayRef<ParamDeclAttr> lifetimeDecls) {
-  assert(lifetimeDecls.size() == getNumImplicitOriginDecls() &&
-         "Incorrect number of lifetime decls");
+/// This method replaces direct uses of NAMED implicit origin declarations
+/// with index-based references corresponding to the signature. `originDecls`
+/// specifies the names of the implicit origin decls.
+LITSignatureType LITSignatureType::replaceImplicitOriginsWithIndexes(
+    ArrayRef<ParamDeclAttr> originDecls) {
+  assert(originDecls.size() == getNumImplicitOriginDecls() &&
+         "Incorrect number of origin decls");
   return ::cast<LITSignatureType>(
-      replaceImplicitLifetimesWithIndexes(*this, lifetimeDecls, 1));
+      replaceImplicitOriginsWithIndexes(*this, originDecls, 1));
 }
 
 bool LITSignatureType::classof(SignatureType type) {
@@ -1303,9 +1302,9 @@ bool LITSignatureType::classof(Type type) {
   return false;
 }
 
-// Determine how many implicit lifetimes a signature with the specified input
+// Determine how many implicit origins a signature with the specified input
 // values should have.
-size_t LITSignatureType::countImplicitLifetimes(ArrayRef<ArgConvention> convs) {
+size_t LITSignatureType::countImplicitOrigins(ArrayRef<ArgConvention> convs) {
   size_t result = 0;
   for (auto conv : convs)
     if (SignatureType::hasAddress(conv))
@@ -1415,9 +1414,9 @@ LIT::getUnboundSpecializedSignature(LITSignatureType type,
 /// This returns the singleton value to use for a parameter value that
 /// `isSingletonParameter` returns true on. This aborts on non-singleton types.
 TypedAttr LIT::getSingletonParameterValue(Type type) {
-  // TODO: Could support structs of lifetimes.
-  if (auto lifetime = dyn_cast<OriginType>(type))
-    return AnyOriginAttr::get(lifetime);
+  // TODO: Could support structs of origins.
+  if (auto origin = dyn_cast<OriginType>(type))
+    return AnyOriginAttr::get(origin);
   if (auto set = dyn_cast<OriginSetType>(type))
     return OriginSetAttr::get(/*operands=*/{}, set);
   llvm_unreachable("isn't a singleton parameter");

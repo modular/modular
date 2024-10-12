@@ -998,7 +998,7 @@ ParseResult ExprParser::parseFunctionType(ExprNode *&result) {
                                               ArgListKind::kFnTypeArgList))
     return failure();
 
-  // Parse the capture lifetime set if present.
+  // Parse the capture origin set if present.
   ExprNode *lifetimeExpr = nullptr;
   if (consumeIf(Token::l_square)) {
     if (ParserBase::parseExpression(lifetimeExpr, stmtIndent) ||

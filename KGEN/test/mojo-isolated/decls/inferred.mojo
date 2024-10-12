@@ -145,7 +145,7 @@ struct DefBoxInference:
 
 @value
 struct DefBoxInferenceIter[
-    lifetime: ImmutableOrigin,
+    origin: ImmutableOrigin,
 ]:
-    fn __init__(inout self, regex: Pointer[DefBoxInference, lifetime]):
+    fn __init__(inout self, regex: Pointer[DefBoxInference, origin]):
         pass

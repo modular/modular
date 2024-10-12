@@ -42,16 +42,16 @@ inline const char *plural(size_t value, const char *one = "",
 }
 
 /// This function takes a list of function parameter types and returns a
-/// `OriginSetAttr` consisting of the lifetime parameters accessible through
+/// `OriginSetAttr` consisting of the origin parameters accessible through
 /// the function parameters. For example, a function with the signature
 ///
 ///   fn[lt: MutableLifetime, x: WeirdReference[lt]]() -> None
 ///
-/// May access the lifetime set `{mut lt}` through its parameters. This function
-/// takes the param decls, which means it returns the named lifetime parameter
+/// May access the origin set `{mut lt}` through its parameters. This function
+/// takes the param decls, which means it returns the named origin parameter
 /// references accessible through the type.
 ///
-/// This function takes a `SharedState` instance to access the cached lifetime
+/// This function takes a `SharedState` instance to access the cached origin
 /// finder instance.
 TypedAttr getLifetimesAccessibleByParams(PogListAttr paramList,
                                          ArrayRef<ParamDeclAttr> params,

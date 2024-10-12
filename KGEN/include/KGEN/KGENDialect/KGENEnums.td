@@ -175,7 +175,7 @@ def KGEN_ArgConvention : I32EnumAttr<"ArgConvention",
   I32EnumAttrCase<"InOut", 4, "inout">,
 
   /// This is used for ref arguments like:
-  ///   `fn x[lifetime: X](ref [lifetime, addrspace] T)`
+  ///   `fn x[origin: X](ref [origin, addrspace] T)`
   ///
   /// The MLIR type is always a LIT::RefType or PointerType, and the underlying
   /// type can be anything.  The value is initialized before entry to the

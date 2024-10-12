@@ -34,11 +34,11 @@ alias `False` = __mlir_attr.`0 : i1`
 
 
 struct Origin[is_mutable: Bool]:
-    """This represents a lifetime reference of potentially parametric type.
+    """This represents a origin reference of potentially parametric type.
     TODO: This should be replaced with a parametric type alias.
 
     Parameters:
-        is_mutable: Whether the lifetime reference is mutable.
+        is_mutable: Whether the origin reference is mutable.
     """
 
     alias type = __mlir_type[
@@ -48,7 +48,7 @@ struct Origin[is_mutable: Bool]:
     ]
 
 
-# Static constants are a named subset of the global lifetime.
+# Static constants are a named subset of the global origin.
 alias StaticConstantOrigin = __mlir_attr[
     `#lit.origin.field<`,
     `#lit.static.origin : !lit.origin<0>`,
@@ -366,8 +366,8 @@ struct _VariadicListMemIter[
     Parameters:
         elt_is_mutable: Whether the elements in the list are mutable.
         elt_type: The type of the elements in the list.
-        elt_lifetime: The lifetime of the elements.
-        list_lifetime: The lifetime of the VariadicListMem.
+        elt_lifetime: The origin of the elements.
+        list_lifetime: The origin of the VariadicListMem.
     """
 
     alias variadic_list_type = VariadicListMem[
@@ -388,13 +388,13 @@ struct _VariadicListMemIter[
 struct VariadicListMem[
     element_type: AnyType,
     elt_is_mutable: __mlir_type.i1,
-    lifetime: __mlir_type[`!lit.origin<`, elt_is_mutable, `>`],
+    origin: __mlir_type[`!lit.origin<`, elt_is_mutable, `>`],
 ]:
     alias _mlir_type = __mlir_type[
-        `!lit.ref<`, element_type, `, `, lifetime, `, 0>`
+        `!lit.ref<`, element_type, `, `, origin, `, 0>`
     ]
 
-    alias reference_type = Pointer[element_type, lifetime]
+    alias reference_type = Pointer[element_type, origin]
 
     fn __init__(
         inout self,
@@ -422,7 +422,7 @@ struct VariadicListMem[
         self, idx: Int
     ) -> ref [
         _lit_lifetime_union[
-            lifetime,
+            origin,
             # cast mutability of self to match the mutability of the element,
             # since that is what we want to use in the ultimate reference and
             # the union overall doesn't matter.
@@ -436,7 +436,7 @@ struct VariadicListMem[
 
     fn __iter__(
         self,
-    ) -> _VariadicListMemIter[element_type, lifetime, __origin_of(self),]:
+    ) -> _VariadicListMemIter[element_type, origin, __origin_of(self),]:
         """Iterate over the list.
 
         Returns:
@@ -444,7 +444,7 @@ struct VariadicListMem[
         """
         return _VariadicListMemIter[
             element_type,
-            lifetime,
+            origin,
             __origin_of(self),
         ](0, Pointer.address_of(self))
 
@@ -455,7 +455,7 @@ alias _AnyTypeMetaType = __mlir_type[`!lit.anytrait<`, AnyType, `>`]
 @register_passable
 struct VariadicPack[
     elt_is_mutable: __mlir_type.i1,
-    lifetime: __mlir_type[`!lit.origin<`, elt_is_mutable, `>`],
+    origin: __mlir_type[`!lit.origin<`, elt_is_mutable, `>`],
     element_trait: _AnyTypeMetaType,
     *element_types: element_trait,
 ]:
@@ -465,7 +465,7 @@ struct VariadicPack[
         `> `,
         element_types,
         `, `,
-        lifetime,
+        origin,
         `>`,
     ]
 
@@ -474,7 +474,7 @@ struct VariadicPack[
 
     fn __getitem__[
         index: Int
-    ](self) -> ref [Self.lifetime] element_types[index.value]:
+    ](self) -> ref [Self.origin] element_types[index.value]:
         while True:
             pass
 
@@ -525,14 +525,14 @@ struct AddressSpace:
 struct Pointer[
     is_mutable: Bool, //,
     type: AnyType,
-    lifetime: Origin[is_mutable].type,
+    origin: Origin[is_mutable].type,
     address_space: AddressSpace = AddressSpace.GENERIC,
 ]:
     alias _mlir_type = __mlir_type[
         `!lit.ref<`,
         type,
         `, `,
-        lifetime,
+        origin,
         `, `,
         address_space._value.value,
         `>`,
@@ -546,12 +546,10 @@ struct Pointer[
 
     @staticmethod
     @always_inline("nodebug")
-    fn address_of(
-        ref [lifetime, address_space._value.value]value: type
-    ) -> Self:
+    fn address_of(ref [origin, address_space._value.value]value: type) -> Self:
         return Pointer(_mlir_value=__get_mvalue_as_litref(value))
 
-    fn __getitem__(self) -> ref [lifetime, address_space._value.value] type:
+    fn __getitem__(self) -> ref [origin, address_space._value.value] type:
         return __get_litref_as_mvalue(self._value)
 
     @__unsafe_disable_nested_lifetime_exclusivity
@@ -581,7 +579,7 @@ struct Tuple[*element_types: AnyType]:
 struct UnsafePointer[
     T: AnyType,
     address_space: AddressSpace = AddressSpace.GENERIC,
-    lifetime: Origin[True].type = MutableAnyOrigin,
+    origin: Origin[True].type = MutableAnyOrigin,
 ]:
     alias _mlir_type = __mlir_type[
         `!kgen.pointer<`, T, `,`, address_space._value.value, `>`
@@ -600,13 +598,13 @@ struct UnsafePointer[
 
     fn __getitem__(
         self,
-    ) -> ref [Self.lifetime, address_space._value.value] T:
+    ) -> ref [Self.origin, address_space._value.value] T:
         while __mlir_attr.true:
             pass
 
     fn __getitem__(
         self, offset: Int
-    ) -> ref [Self.lifetime, address_space._value.value] T:
+    ) -> ref [Self.origin, address_space._value.value] T:
         while __mlir_attr.true:
             pass
 

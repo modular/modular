@@ -165,7 +165,7 @@ fn testUseConditionalReference(cond: __mlir_type.i1, imm: MemExample):
   # CHECK: lit.call @{{.*}}@Pointer::@"address_of{{.*}}(%a)
   var aref = Pointer.address_of(a)
   # CHECK: lit.alias.decl *"aLifetime{{.*}}": origin<1> = <*"a`1">
-  alias aLifetime =  aref.lifetime
+  alias aLifetime =  aref.origin
 
   # CHECK-NEXT: [[AR:%.*]] = lit.ref.load %aref
   # CHECK-NEXT: [[REF:%.*]] = lit.call {{.*}}__getitem__{{.*}}([[AR]])
@@ -202,10 +202,10 @@ fn testUseConditionalReference(cond: __mlir_type.i1, imm: MemExample):
   immref[].noop()
 
 # ===----------------------------------------------------------------------=== #
-# Test that we can bind self lifetime.
+# Test that we can bind self origin.
 # ===----------------------------------------------------------------------=== #
 
-# Need a way to get a lifetime of Self.
+# Need a way to get a origin of Self.
 # https://github.com/modularml/modular/issues/29069
 
 struct SelfRefTest:
@@ -291,18 +291,18 @@ struct CutDownVariadicPack[
        while True: pass
 
 # Test that you can implicitly convert an "any" mutable reference (as is returned
-# by UnsafePointer for example) to mortal reference with specified lifetime.
+# by UnsafePointer for example) to mortal reference with specified origin.
 # CHECK: lit.func @"test_immortal_to_mortal
 fn test_immortal_to_mortal(arg: Pointer[Int, _])
-    -> Pointer[Int, arg.lifetime]:
+    -> Pointer[Int, arg.origin]:
   # CHECK-NEXT: [[ARGREF:%.*]] = lit.call {{.*}}Pointer::@"__getitem__{{.*}}(%arg)
   # CHECK-NEXT: [[PTRVAL:%.*]] = lit.call {{.*}}UnsafePointer::@"address_of{{.*}}([[ARGREF]])
   # CHECK-NEXT: [[REF:%.*]] = lit.call {{.*}}UnsafePointer::@"__getitem__{{.*}}([[PTRVAL]])
 
-  # CHECK-NEXT: [[ADJREFVAL:%.*]] = kgen.rebind [[REF]] : !lit.ref<!Int, mut #lit.any.origin> to !lit.ref<!Int, mut=#lit.struct.extract<:!Bool *"is_mutable`", "value">, *"lifetime`1">
+  # CHECK-NEXT: [[ADJREFVAL:%.*]] = kgen.rebind [[REF]] : !lit.ref<!Int, mut #lit.any.origin> to !lit.ref<!Int, mut=#lit.struct.extract<:!Bool *"is_mutable`", "value">, *"origin`1">
   # CHECK-NEXT: [[RES:%.*]] = lit.call {{.*}}address_of{{.*}}([[ADJREFVAL]])
   # CHECK-NEXT: kgen.return [[RES]]
-  return Pointer[Int, arg.lifetime].address_of(UnsafePointer.address_of(arg[])[])
+  return Pointer[Int, arg.origin].address_of(UnsafePointer.address_of(arg[])[])
 
 
 # CHECK-LABEL: lit.func @"ref_copyability
@@ -328,8 +328,8 @@ struct ThingWithFields:
 # CHECK-LABEL: lit.func @"parametric_mut_mbvalue
 fn parametric_mut_mbvalue[
     is_mutable: __mlir_type.i1,
-    lifetime: Origin[is_mutable].type,
- ](a: Pointer[ThingWithFields, lifetime])
+    origin: Origin[is_mutable].type,
+ ](a: Pointer[ThingWithFields, origin])
    -> Pointer[Int, __origin_of(a[].field)]:
   # CHECK: lit.ref.struct.ger
   return Pointer.address_of(a[].field)
@@ -389,12 +389,12 @@ fn variadic_inout_mems_iter(inout *mems: MemExample):
 # CHECK-LABEL: lit.func @"test_pvalue_ref_formation
 fn test_pvalue_ref_formation[a: SelfRefTest]():
   # This is invoking a method (accepting a ref) on a pvalue.  This need to
-  # materialize into a temporary and use the lifetime of the temporary, not an
-  # immortal lifetime.
+  # materialize into a temporary and use the origin of the temporary, not an
+  # immortal origin.
 
   # CHECK: [[ANONTMP:%.*]] = lit.var.decl "anonymous*" {{.*}}!lit.ref<!SelfRefTest, mut *"anonymous*`1">
   var r = a.method()
-  # The result reference should have inferred the lifetime of the temp
+  # The result reference should have inferred the origin of the temp
   # CHECK: lit.ref.store {{.*}}, %r : {{.*}}#SelfRefTest1, :origin<0> (mutcast mut *"anonymous*`1"),
 
   # This use of the temp should keep it alive.

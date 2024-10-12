@@ -259,7 +259,7 @@ bool SignatureType::hasAddress(ArgConvention conv) {
 }
 
 /// Determine whether an argument with the given input convention expects to
-/// have an implicit lifetime.
+/// have an implicit origin.
 bool SignatureType::hasImplicitLifetime(ArgConvention conv) {
   switch (conv) {
   case ArgConvention::Ref:
