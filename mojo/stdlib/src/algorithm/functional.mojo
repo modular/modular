@@ -41,7 +41,7 @@ from utils.static_tuple import StaticTuple
 
 @always_inline
 fn map[
-    lifetimes: LifetimeSet, //, func: fn (Int) capturing [lifetimes] -> None
+    lifetimes: OriginSet, //, func: fn (Int) capturing [lifetimes] -> None
 ](size: Int):
     """Maps a function over a range from 0 to size.
 
@@ -63,7 +63,7 @@ fn map[
 
 @always_inline
 fn vectorize[
-    lifetimes: LifetimeSet, //,
+    lifetimes: OriginSet, //,
     func: fn[width: Int] (Int) capturing [lifetimes] -> None,
     simd_width: Int,
     /,
@@ -157,7 +157,7 @@ fn vectorize[
 
 @always_inline
 fn vectorize[
-    lifetimes: LifetimeSet, //,
+    lifetimes: OriginSet, //,
     func: fn[width: Int] (Int) capturing [lifetimes] -> None,
     simd_width: Int,
     /,
@@ -273,7 +273,7 @@ fn vectorize[
 
 @always_inline
 fn _perfect_vectorized_impl[
-    lifetimes: LifetimeSet, //,
+    lifetimes: OriginSet, //,
     func: fn[width: Int] (Int) capturing [lifetimes] -> None,
     /,
     *,
@@ -311,7 +311,7 @@ fn _perfect_vectorized_impl[
 
 @always_inline
 fn sync_parallelize[
-    lifetimes: LifetimeSet, //, func: fn (Int) capturing [lifetimes] -> None
+    lifetimes: OriginSet, //, func: fn (Int) capturing [lifetimes] -> None
 ](num_work_items: Int):
     """Executes func(0) ... func(num_work_items-1) as parallel sub-tasks,
     and returns when all are complete.
@@ -335,7 +335,7 @@ fn sync_parallelize[
 
 @always_inline
 fn sync_parallelize[
-    lifetimes: LifetimeSet, //,
+    lifetimes: OriginSet, //,
     func: fn (Int) raises capturing [lifetimes] -> None,
 ](num_work_items: Int):
     """Executes func(0) ... func(num_work_items-1) as parallel sub-tasks,
@@ -409,7 +409,7 @@ fn sync_parallelize[
 
 @always_inline
 fn parallelize[
-    lifetimes: LifetimeSet, //, func: fn (Int) capturing [lifetimes] -> None
+    lifetimes: OriginSet, //, func: fn (Int) capturing [lifetimes] -> None
 ](num_work_items: Int):
     """Executes func(0) ... func(num_work_items-1) as sub-tasks in parallel, and
     returns when all are complete.
@@ -427,7 +427,7 @@ fn parallelize[
 
 @always_inline
 fn parallelize[
-    lifetimes: LifetimeSet, //, func: fn (Int) capturing [lifetimes] -> None
+    lifetimes: OriginSet, //, func: fn (Int) capturing [lifetimes] -> None
 ](num_work_items: Int, num_workers: Int):
     """Executes func(0) ... func(num_work_items-1) as sub-tasks in parallel, and
     returns when all are complete.
@@ -446,7 +446,7 @@ fn parallelize[
 
 @always_inline
 fn _parallelize_impl[
-    lifetimes: LifetimeSet, //, func: fn (Int) capturing [lifetimes] -> None
+    lifetimes: OriginSet, //, func: fn (Int) capturing [lifetimes] -> None
 ](num_work_items: Int, num_workers: Int):
     debug_assert(num_workers > 0, "Number of workers must be positive")
     # Calculate how many items are picked up by each worker.
