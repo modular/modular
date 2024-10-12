@@ -258,16 +258,16 @@ PogListAttr::toPogs(ArrayRef<StringAttr> names,
 
 static ParseResult parseFnMetadataLifetimes(AsmParser &p,
                                             TypedAttr &lifetimes) {
-  auto type = LifetimeSetType::get(p.getContext());
+  auto type = OriginSetType::get(p.getContext());
   if (failed(p.parseOptionalComma())) {
-    lifetimes = LifetimeSetAttr::get({}, type);
+    lifetimes = OriginSetAttr::get({}, type);
     return success();
   }
   return parseParamValue(p, lifetimes, type);
 }
 
 static void printFnMetadataLifetimes(AsmPrinter &p, TypedAttr lifetimes) {
-  if (isEmptyLifetimeSet(lifetimes))
+  if (isEmptyOriginSet(lifetimes))
     return;
   p << ", ";
   printParamValue(p, lifetimes);
@@ -301,7 +301,7 @@ FnMetadataAttr FnMetadataAttr::get(PogListAttr argListAttrs,
                                    bool nestedLifetimeFlag) {
   MLIRContext *ctx = argListAttrs.getContext();
   if (!captureLifetimes)
-    captureLifetimes = LifetimeSetAttr::get(ctx, {});
+    captureLifetimes = OriginSetAttr::get(ctx, {});
   return get(ctx, argListAttrs, paramListAttrs, numImplicitLifetimeDecls,
              captureLifetimes, nestedLifetimeFlag);
 }
@@ -510,11 +510,11 @@ LogicalResult FnMetadataAttr::verifySignature(
 FnMetadataAttr FnMetadataAttr::addCaptureLifetimes(TypedAttr lifetimes) {
   auto type = LifetimeType::get(getContext(), /*isMutable=*/true);
   SmallVector<TypedAttr> lifetimeUnion{
-      LifetimeSetUnionAttr::get(getCaptureLifetimes(), type),
-      LifetimeSetUnionAttr::get(lifetimes, type)};
+      OriginSetUnionAttr::get(getCaptureLifetimes(), type),
+      OriginSetUnionAttr::get(lifetimes, type)};
   return get(getArgListAttrs(), getParamListAttrs(),
              getNumImplicitLifetimeDecls(),
-             LifetimeSetAttr::get(getContext(), lifetimeUnion),
+             OriginSetAttr::get(getContext(), lifetimeUnion),
              getIsNestedLifetimeExclusivityCheckingDisabled());
 }
 
@@ -959,25 +959,24 @@ ImplicitLifetimeRefAttr::replace(size_t depth, size_t index,
 }
 
 //===----------------------------------------------------------------------===//
-// LifetimeSetAttr
+// OriginSetAttr
 //===----------------------------------------------------------------------===//
 
-LifetimeSetAttr LifetimeSetAttr::getFromBytecode(ArrayRef<TypedAttr> operands,
-                                                 LifetimeSetType type) {
+OriginSetAttr OriginSetAttr::getFromBytecode(ArrayRef<TypedAttr> operands,
+                                             OriginSetType type) {
   return Base::get(type.getContext(), operands, type);
 }
 
-TypedAttr LifetimeSetAttr::get(MLIRContext *ctx, ArrayRef<TypedAttr> operands,
-                               LifetimeSetType type) {
+TypedAttr OriginSetAttr::get(MLIRContext *ctx, ArrayRef<TypedAttr> operands,
+                             OriginSetType type) {
   return get(operands, type);
 }
 
-TypedAttr LifetimeSetAttr::get(MLIRContext *ctx, ArrayRef<TypedAttr> operands) {
-  return get(operands, LifetimeSetType::get(ctx));
+TypedAttr OriginSetAttr::get(MLIRContext *ctx, ArrayRef<TypedAttr> operands) {
+  return get(operands, OriginSetType::get(ctx));
 }
 
-TypedAttr LifetimeSetAttr::get(ArrayRef<TypedAttr> operands,
-                               LifetimeSetType type) {
+TypedAttr OriginSetAttr::get(ArrayRef<TypedAttr> operands, OriginSetType type) {
   SmallVector<TypedAttr> newOperands;
   for (TypedAttr operand : operands) {
     // If we have the global mutable lifetime, treat it conservatively by
@@ -1010,24 +1009,24 @@ TypedAttr LifetimeSetAttr::get(ArrayRef<TypedAttr> operands,
 
   // If we find a set union and there is only one operand, collapse the union.
   if (newOperands.size() == 1)
-    if (auto setUnion = ::dyn_cast<LifetimeSetUnionAttr>(newOperands.front()))
+    if (auto setUnion = ::dyn_cast<OriginSetUnionAttr>(newOperands.front()))
       return setUnion.getValue();
 
   return Base::get(type.getContext(), newOperands, type);
 }
 
 //===----------------------------------------------------------------------===//
-// LifetimeSetUnionAttr
+// OriginSetUnionAttr
 //===----------------------------------------------------------------------===//
 
-LifetimeSetUnionAttr LifetimeSetUnionAttr::getFromBytecode(TypedAttr value,
-                                                           LifetimeType type) {
+OriginSetUnionAttr OriginSetUnionAttr::getFromBytecode(TypedAttr value,
+                                                       LifetimeType type) {
   return Base::get(type.getContext(), value, type);
 }
 
-TypedAttr LifetimeSetUnionAttr::get(TypedAttr value, LifetimeType type) {
+TypedAttr OriginSetUnionAttr::get(TypedAttr value, LifetimeType type) {
   // Fold `set.union(set) -> union`.
-  if (auto set = ::dyn_cast<LifetimeSetAttr>(value)) {
+  if (auto set = ::dyn_cast<OriginSetAttr>(value)) {
     return LifetimeMutCastAttr::get(
         LifetimeUnionAttr::get(type.getContext(), set.getOperands()), type);
   }

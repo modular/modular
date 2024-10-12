@@ -19,7 +19,7 @@ namespace LIT {
 class AnyStructType;
 class StructType;
 class LifetimeType;
-class LifetimeSetType;
+class OriginSetType;
 class RefPackType;
 class TraitType;
 class StructFieldOp;

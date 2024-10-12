@@ -701,64 +701,64 @@ def ImplicitLifetimeRefAttr
 }
 
 //===----------------------------------------------------------------------===//
-// LifetimeSetAttr
+// OriginSetAttr
 //===----------------------------------------------------------------------===//
 
-def LifetimeSetAttr : LITTypedAttr<"LifetimeSet", "lifetime.set"> {
-  let summary = "a set of lifetimes with different mutabilities";
+def OriginSetAttr : LITTypedAttr<"OriginSet", "origin.set"> {
+  let summary = "a set of origins with different mutabilities";
   let description = [{
-    The `#lit.lifetime.set` attribute contains a set of distinct lifetimes with
+    The `#lit.origin.set` attribute contains a set of distinct origins with
     distict mutabilities. This tracks the individual mutabilities of each
-    element and propagates them. It can be converted to a single lifetime value
-    via `#lit.lifetime.union`.
+    element and propagates them. It can be converted to a single origin value
+    via `#lit.origin.union`.
 
     Example:
 
     ```mlir
-    #lit.lifetime.set<{mut a, imm b, (is_mut) c}>
+    #lit.origin.set<{mut a, imm b, (is_mut) c}>
     ```
   }];
 
 
   let parameters = (ins ArrayRefParameter<"TypedAttr">:$operands,
-                        AttributeSelfTypeParameter<"", "LifetimeSetType">:$type);
-  let assemblyFormat = "`<` custom<LifetimeSet>($operands) `>`";
+                        AttributeSelfTypeParameter<"", "OriginSetType">:$type);
+  let assemblyFormat = "`<` custom<OriginSet>($operands) `>`";
 
   let skipDefaultBuilders = 1;
   let builders = [
     // Override the default builder used by the generated parser.
-    AttrBuilder<(ins "ArrayRef<TypedAttr>":$operands, "LifetimeSetType":$type),
+    AttrBuilder<(ins "ArrayRef<TypedAttr>":$operands, "OriginSetType":$type),
                 "", "TypedAttr">,
     AttrBuilderWithInferredContext<(ins "ArrayRef<TypedAttr>":$operands,
-                                        "LifetimeSetType":$type), "", "TypedAttr">,
+                                        "OriginSetType":$type), "", "TypedAttr">,
     AttrBuilder<(ins "ArrayRef<TypedAttr>":$operands), "", "TypedAttr">
   ];
 
   let extraClassDeclaration = [{
     /// A specific builder used to build the attribute from a bytecode context,
     /// providing a slightly different context from the normal builder.
-    static LifetimeSetAttr getFromBytecode(
-        ArrayRef<TypedAttr> operands, LifetimeSetType type);
+    static OriginSetAttr getFromBytecode(
+        ArrayRef<TypedAttr> operands, OriginSetType type);
   }];
 }
 
 //===----------------------------------------------------------------------===//
-// LifetimeSetUnionAttr
+// OriginSetUnionAttr
 //===----------------------------------------------------------------------===//
 
-def LifetimeSetUnionAttr : LITTypedAttr<"LifetimeSetUnion",
-                                        "lifetime.set.union"> {
-  let summary = "converts a lifetime set to a single coarse lifetime";
+def OriginSetUnionAttr : LITTypedAttr<"OriginSetUnion",
+                                      "origin.set.union"> {
+  let summary = "converts a lifetime set to a single coarse origin";
   let description = [{
-    The `#lit.lifetime.set.union` attribute converts a `!lit.lifetime.set` value
-    to a single coarse-grained lifetime value by converting passing the elements
-    into a `#lit.lifetime.union`.
+    The `#lit.origin.set.union` attribute converts a `!lit.origin.set` value
+    to a single coarse-grained origin value by converting passing the elements
+    into a `#lit.origin.union`.
   }];
 
   let parameters = (ins "TypedAttr":$value,
                         AttributeSelfTypeParameter<"", "LifetimeType">:$type);
   let assemblyFormat = [{
-    `<` custom<ParamValue>($value, "LifetimeSetType::get($_ctxt)") `>`
+    `<` custom<ParamValue>($value, "OriginSetType::get($_ctxt)") `>`
   }];
 
   let skipDefaultBuilders = 1;
@@ -775,7 +775,7 @@ def LifetimeSetUnionAttr : LITTypedAttr<"LifetimeSetUnion",
   let extraClassDeclaration = [{
     /// A specific builder used to build the attribute from a bytecode context,
     /// providing a slightly different context from the normal builder.
-    static LifetimeSetUnionAttr getFromBytecode(
+    static OriginSetUnionAttr getFromBytecode(
         TypedAttr value, LifetimeType type);
   }];
 }

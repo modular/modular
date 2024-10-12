@@ -483,17 +483,17 @@ ParseResult LIT::parseOptionalName(AsmParser &p, StringAttr &name) {
   return success();
 }
 
-ParseResult LIT::parseLifetimeSet(AsmParser &p,
-                                  SmallVectorImpl<TypedAttr> &lifetimes) {
-  OptionalParseResult result = parseOptionalLifetimeSet(p, lifetimes);
+ParseResult LIT::parseOriginSet(AsmParser &p,
+                                SmallVectorImpl<TypedAttr> &lifetimes) {
+  OptionalParseResult result = parseOptionalOriginSet(p, lifetimes);
   if (!result.has_value())
     return p.emitError(p.getCurrentLocation(), "expected a '{'");
   return *result;
 }
 
 OptionalParseResult
-LIT::parseOptionalLifetimeSet(AsmParser &p,
-                              SmallVectorImpl<TypedAttr> &lifetimes) {
+LIT::parseOptionalOriginSet(AsmParser &p,
+                            SmallVectorImpl<TypedAttr> &lifetimes) {
   if (failed(p.parseOptionalLBrace()))
     return std::nullopt;
   if (succeeded(p.parseOptionalRBrace()))
@@ -514,7 +514,7 @@ LIT::parseOptionalLifetimeSet(AsmParser &p,
   return p.parseRBrace();
 }
 
-void LIT::printLifetimeSet(AsmPrinter &p, ArrayRef<TypedAttr> lifetimes) {
+void LIT::printOriginSet(AsmPrinter &p, ArrayRef<TypedAttr> lifetimes) {
   p << '{';
   auto printLifetime = [&](TypedAttr lifetime) {
     auto type = cast<LifetimeType>(lifetime.getType());
@@ -535,8 +535,8 @@ void LIT::printLifetimeSet(AsmPrinter &p, ArrayRef<TypedAttr> lifetimes) {
   p << '}';
 }
 
-bool LIT::isEmptyLifetimeSet(TypedAttr attr) {
-  if (auto set = dyn_cast<LifetimeSetAttr>(attr))
+bool LIT::isEmptyOriginSet(TypedAttr attr) {
+  if (auto set = dyn_cast<OriginSetAttr>(attr))
     return set.getOperands().empty();
   return false;
 }

@@ -46,7 +46,7 @@ def LifetimeType : DialectType<(type
   TypedAttr:$isMutable
 )>;
 
-def LifetimeSetType : DialectType<(type)>;
+def OriginSetType : DialectType<(type)>;
 
 def RefType : DialectType<(type
   Type:$elementType,
@@ -80,7 +80,7 @@ def LITDialectTypes : DialectTypes<"lit"> {
     TraitType,
     AnyTraitType,
     LifetimeType,
-    LifetimeSetType,
+    OriginSetType,
     RefType,
     RefPackType,
     REPLResultRefType,
@@ -177,12 +177,12 @@ def ImplicitLifetimeRefAttr : DialectAttribute<(attr
   ConcreteType<"LifetimeType">:$type
 )>;
 
-def WrappedLifetimeSetAttr : DialectAttribute<(attr
+def WrappedOriginSetAttr : DialectAttribute<(attr
   TypedAttrArray:$operands,
-  ConcreteType<"LifetimeSetType">:$type
+  ConcreteType<"OriginSetType">:$type
 )>;
 
-def WrappedLifetimeSetUnionAttr : DialectAttribute<(attr
+def WrappedOriginSetUnionAttr : DialectAttribute<(attr
   TypedAttr:$value,
   ConcreteType<"LifetimeType">:$type
 )>;
@@ -252,8 +252,8 @@ def LITDialectAttributes : DialectAttributes<"lit"> {
     WrappedLifetimeMutCastAttr,
     WrappedLifetimeFieldAttr,
     ImplicitLifetimeRefAttr,
-    WrappedLifetimeSetAttr,
-    WrappedLifetimeSetUnionAttr,
+    WrappedOriginSetAttr,
+    WrappedOriginSetUnionAttr,
     UnresolvedAliasValueAttr,
     LITStructAttr,
     WrappedStructExtractAttr,

@@ -467,7 +467,7 @@ fn test_parameter_closure_captures(owned x: MemExample, owned y: MemExample):
   # CHECK-NEXT: lit.call {{.*}}MemExample::@"__del__{{.*}}(%y)
   capture()
 
-fn higher_order_function[lts: __mlir_type.`!lit.lifetime.set`, //, f: fn() capturing [lts] -> None]():
+fn higher_order_function[lts: __mlir_type.`!lit.origin.set`, //, f: fn() capturing [lts] -> None]():
   pass
 
 # CHECK-LABEL: lit.func @"test_higher_order_capture

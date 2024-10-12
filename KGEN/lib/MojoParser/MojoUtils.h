@@ -28,7 +28,7 @@ namespace M::KGEN::LIT {
 class AnyStructType;
 class ASTType;
 class LITSignatureType;
-class LifetimeSetAttr;
+class OriginSetAttr;
 class PogListAttr;
 class SharedState;
 enum class SpecialFunctionKind : uint8_t;
@@ -42,7 +42,7 @@ inline const char *plural(size_t value, const char *one = "",
 }
 
 /// This function takes a list of function parameter types and returns a
-/// `LifetimeSetAttr` consisting of the lifetime parameters accessible through
+/// `OriginSetAttr` consisting of the lifetime parameters accessible through
 /// the function parameters. For example, a function with the signature
 ///
 ///   fn[lt: MutableLifetime, x: WeirdReference[lt]]() -> None

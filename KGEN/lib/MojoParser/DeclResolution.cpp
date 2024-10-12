@@ -1070,7 +1070,7 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
         shared.cachedLifetimeFinder.findLifetimesIn(captureTypes);
     signature =
         signature.getWithMetadata(signature.getMetadata().addCaptureLifetimes(
-            LifetimeSetAttr::get(getContext(), lifetimes)));
+            OriginSetAttr::get(getContext(), lifetimes)));
     funcOp.setSignature(signature);
 
     funcOp.setParamDeclAttr(
