@@ -68,7 +68,7 @@ public:
     kGetAddressAsUninitLValue, // __get_address_as_uninit_lvalue(x)
     kGetAddressAsOwned,        // __get_address_as_owned_value(x)
     kGetNearestErrorSlot,      // __get_nearest_error_slot()
-    kLifetimeOf,               // __lifetime_of(x)
+    kOriginOf,                 // __origin_of(x)
     kTypeOf,                   // __type_of(x)
     kFirstMagicFunction = kGetMValueAsLitRef,
     kLastMagicFunction = kTypeOf,

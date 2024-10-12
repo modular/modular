@@ -504,7 +504,7 @@ public:
   ///
   /// On failure, an error is emitted and the callback is not invoked.
   ///
-  /// This is used for evaluating expressions like __lifetime_of(x) and
+  /// This is used for evaluating expressions like __origin_of(x) and
   /// __type_of(x) and `ref [x] T`.
   void emitExpressionWithOutEvaluatingIt(const ExprNode *expr,
                                          ExprContext exprContext,
