@@ -377,7 +377,7 @@ struct TaskGroup:
 
         _suspend_async[await_body]()
 
-    fn wait[lifetimes: OriginSet = __lifetime_of()](inout self):
+    fn wait[lifetimes: OriginSet = __origin_of()](inout self):
         self._task_complete()
         _async_wait(UnsafePointer[Chain].address_of(self.chain))
 

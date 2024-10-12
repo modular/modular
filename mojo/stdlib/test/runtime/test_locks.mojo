@@ -42,7 +42,7 @@ fn test_basic_lock() raises:
         for _ in range(0, maxI):
             for _ in range(0, maxJ):
                 tg.create_task(inc())
-        tg.wait[__lifetime_of(lock)]()
+        tg.wait[__origin_of(lock)]()
 
     var time_ns = time_function[test_atomic]()
     _ = lock^
