@@ -3165,7 +3165,7 @@ AnyValue FunctionTypeNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
 
 AnyValue MagicFunctionNode::emitIR(ValueDest &dest,
                                    ExprEmitter &emitter) const {
-  if (kind == kLifetimeOf)
+  if (kind == kOriginOf)
     return emitLifetimeOf(dest, emitter);
 
   // __get_nearest_error_slot returns an MLValue.

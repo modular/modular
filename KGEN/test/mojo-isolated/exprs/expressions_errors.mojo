@@ -617,7 +617,7 @@ fn testSomeThing(a: SomeThing):
 fn get_ref_to_bad_argument[T: AnyType](a: T, *args: T):
   # These are all fine since they are not returned.
   _ = Pointer.address_of(a)
-  _ = __lifetime_of(a)
+  _ = __origin_of(a)
   _ = __get_mvalue_as_litref(a)
   # This is okay. The VariadicListMem has a lifetime.
   _ = Pointer.address_of(args)
@@ -665,12 +665,12 @@ struct ThingWithFields:
   var field: Int
 
 fn field_sensitive_lifetimes(a: ThingWithFields)
-    -> Pointer[ThingWithFields, __lifetime_of(a.field)]:
+    -> Pointer[ThingWithFields, __origin_of(a.field)]:
 
   # expected-error @+1 {{'ThingWithFields' value has no attribute 'field_abc'}}
-  _ = __lifetime_of(a.field_abc)
+  _ = __origin_of(a.field_abc)
   # expected-error @+1 {{MLIR type 'index' has no attributes}}
-  _ = __lifetime_of(int.field_abc)
+  _ = __origin_of(int.field_abc)
 
   # expected-error @+1 {{cannot implicitly convert 'ThingWithFields' value to 'Pointer[0, ThingWithFields, a.field, 0]'}}
   return a
@@ -700,6 +700,6 @@ fn unbound_function_type():
 # https://github.com/modularml/mojo/issues/1921
 struct SomeStruct:
   fn refBindingToImmortal(inout self, ptr: UnsafePointer[Int])
-      -> Pointer[Int, __lifetime_of(self)]:
+      -> Pointer[Int, __origin_of(self)]:
     # expected-error @below {{cannot implicitly convert 'Pointer[1, Int, MutableAnyOrigin, 0]' value to 'Pointer[1, Int, self, 0]'}}
     return Pointer.address_of(ptr[])

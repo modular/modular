@@ -1148,7 +1148,7 @@ fn coroutine_lifetimes():
 
     # CHECK: lit.async.call[!lit.signature<[1]("x": !lit.struct<#LifetimeAccess <:lifetime<1> [[Y_LT]]>> owned, {{.*}}) async -> !kgen.none>: {{.*}}lifetime_access{{.*}}<:lifetime<1> [[Y_LT]]>]
     # CHECK: Coroutine<:!AnyType [none, {{.*}}], :lifetime.set {mut [[Y_LT]]}>
-    var access = lifetime_access(LifetimeAccess[__lifetime_of(y)]())
+    var access = lifetime_access(LifetimeAccess[__origin_of(y)]())
 
 
 # CHECK-LABEL: lit.func @"mem_result{{.*}}(?, %__result__: !lit.ref<!Awaitable, {{.*}}> byref_result) async -> !kgen.none
@@ -1513,7 +1513,7 @@ struct SomeType:
 # CHECK-SAME: "__del__" : !lit.signature<[1]("self": !lit.ref<{{.*}}Match<:lifetime<0> *"arg`">, mut *[0,0]>
 fn implicit_lifetime_as_param(
     arg: SomeType,
-) -> Bound[Match[__lifetime_of(arg)]]:
+) -> Bound[Match[__origin_of(arg)]]:
     pass
 
 

@@ -593,7 +593,7 @@ struct FunctionTypeNode final : public ExprNode {
 
 /// __get_value_from_rvalue(some_ref)      # returns LValue or BValue
 /// __get_address_as_owned_value(some_ptr) # returns RValue
-/// __lifetime_of(decl)                    # returns !lit.lifetime<mut>
+/// __origin_of(decl)                    # returns !lit.lifetime<mut>
 struct MagicFunctionNode final : public ExprNode {
   MagicFunctionNode(ExprNode::Kind kind, SMLoc baseLoc,
                     ArrayRef<ExprNode *> subExprs, SMLoc rparenLoc)

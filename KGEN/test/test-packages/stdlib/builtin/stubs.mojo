@@ -427,7 +427,7 @@ struct VariadicListMem[
             # since that is what we want to use in the ultimate reference and
             # the union overall doesn't matter.
             _lit_mut_cast[
-                __lifetime_of(self), Bool {value: elt_is_mutable}
+                __origin_of(self), Bool {value: elt_is_mutable}
             ].result,
         ].result
     ] element_type:
@@ -436,7 +436,7 @@ struct VariadicListMem[
 
     fn __iter__(
         self,
-    ) -> _VariadicListMemIter[element_type, lifetime, __lifetime_of(self),]:
+    ) -> _VariadicListMemIter[element_type, lifetime, __origin_of(self),]:
         """Iterate over the list.
 
         Returns:
@@ -445,7 +445,7 @@ struct VariadicListMem[
         return _VariadicListMemIter[
             element_type,
             lifetime,
-            __lifetime_of(self),
+            __origin_of(self),
         ](0, Pointer.address_of(self))
 
 

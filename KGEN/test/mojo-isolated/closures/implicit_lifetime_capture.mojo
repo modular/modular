@@ -24,7 +24,7 @@ fn use(y: Thing):
 
 
 # CHECK-LABEL: lit.func @"capture_implicit_lifetime
-fn capture_implicit_lifetime(owned x: Foo, y: Thing[__lifetime_of(x)]):
+fn capture_implicit_lifetime(owned x: Foo, y: Thing[__origin_of(x)]):
     # CHECK: lit.var.decl "anonymous*" synth : !lit.ref<{{.*}}<:lifetime<1> *"x`">
     fn capture_it():
         use(y)

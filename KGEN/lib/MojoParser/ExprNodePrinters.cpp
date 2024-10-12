@@ -72,7 +72,7 @@ static StringRef stringifyExprKind(ExprNode::Kind kind) {
     return "GetAddressAsOwned";
   case ExprNode::kGetNearestErrorSlot:
     return "GetNearestErrorSlot";
-  case ExprNode::kLifetimeOf:
+  case ExprNode::kOriginOf:
     return "LifetimeOf";
   case ExprNode::kTypeOf:
     return "TypeOf";
