@@ -377,7 +377,7 @@ lit.call @calls[mut a]() : !lit.signature<[1](!lit.ref<index, mut *[0,1]>) -> ()
 
 // -----
 
-lit.func @ref_immut<life: lifetime<0>>(%ref1: !lit.ref<index, imm life>) ->  !lit.ref<index, imm life> {
+lit.func @ref_immut<life: origin<0>>(%ref1: !lit.ref<index, imm life>) ->  !lit.ref<index, imm life> {
   %ref2 = lit.ref.immut %ref1: !lit.ref<index, imm life>
   kgen.return %ref2: !lit.ref<index, imm life>
 }

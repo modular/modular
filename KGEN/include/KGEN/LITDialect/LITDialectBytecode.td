@@ -42,7 +42,7 @@ def AnyTraitType : DialectType<(type
   ConcreteType<"TraitType">:$traitType
 )>;
 
-def LifetimeType : DialectType<(type
+def OriginType : DialectType<(type
   TypedAttr:$isMutable
 )>;
 
@@ -79,7 +79,7 @@ def LITDialectTypes : DialectTypes<"lit"> {
     AnyStructType,
     TraitType,
     AnyTraitType,
-    LifetimeType,
+    OriginType,
     OriginSetType,
     RefType,
     RefPackType,
@@ -152,29 +152,29 @@ def WrappedBindTypeAttr : DialectAttribute<(attr
 )>;
 
 def AnyOriginAttr : DialectAttribute<(attr
-  ConcreteType<"LifetimeType">:$type
+  ConcreteType<"OriginType">:$type
 )>;
 
 def WrappedOriginUnionAttr : DialectAttribute<(attr
   TypedAttrArray:$operands,
-  ConcreteType<"LifetimeType">:$type
+  ConcreteType<"OriginType">:$type
 )>;
 
 def WrappedOriginMutCastAttr : DialectAttribute<(attr
   TypedAttr:$operand,
-  ConcreteType<"LifetimeType">:$type
+  ConcreteType<"OriginType">:$type
 )>;
 
 def WrappedOriginFieldAttr : DialectAttribute<(attr
   TypedAttr:$structOrigin,
   StringAttr:$field,
-  ConcreteType<"LifetimeType">:$type
+  ConcreteType<"OriginType">:$type
 )>;
 
 def ImplicitOriginRefAttr : DialectAttribute<(attr
   VarInt:$depth,
   VarInt:$index,
-  ConcreteType<"LifetimeType">:$type
+  ConcreteType<"OriginType">:$type
 )>;
 
 def WrappedOriginSetAttr : DialectAttribute<(attr
@@ -184,7 +184,7 @@ def WrappedOriginSetAttr : DialectAttribute<(attr
 
 def WrappedOriginSetUnionAttr : DialectAttribute<(attr
   TypedAttr:$value,
-  ConcreteType<"LifetimeType">:$type
+  ConcreteType<"OriginType">:$type
 )>;
 
 def UnresolvedAliasValueAttr : DialectAttribute<(attr

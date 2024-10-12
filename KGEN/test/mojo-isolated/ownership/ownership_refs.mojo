@@ -22,11 +22,11 @@ struct MemExample:
   fn noop(self): pass
   fn mutate(inout self): pass
 
-# CHECK-LABEL: lit.func @"borrow{{.*}}"<lt: lifetime<0>>(%a: !lit.ref<!MemExample, imm lt>)
+# CHECK-LABEL: lit.func @"borrow{{.*}}"<lt: origin<0>>(%a: !lit.ref<!MemExample, imm lt>)
 fn borrow[lt: ImmutableOrigin](a: Pointer[MemExample, lt]._mlir_type):
   pass
 
-# CHECK-LABEL: lit.func @"mutate{{.*}}"<lt: lifetime<1>>(%a: !lit.ref<!MemExample, mut lt>)
+# CHECK-LABEL: lit.func @"mutate{{.*}}"<lt: origin<1>>(%a: !lit.ref<!MemExample, mut lt>)
 fn mutate[lt: MutableOrigin](a: Pointer[MemExample, lt]._mlir_type):
   pass
 
@@ -62,7 +62,7 @@ fn testParametricMut(i: MemExample, inout m: MemExample):
   _ = parametricMut(__get_mvalue_as_litref(m))
 
 ##===----------------------------------------------------------------------===##
-# Conditional lifetimes
+# Conditional origins
 ##===----------------------------------------------------------------------===##
 
 # CHECK-LABEL: lit.func @"testUseConditional
@@ -81,7 +81,7 @@ fn testUseConditional(cond: __mlir_type.i1):
   # CHECK: %cref = lit.var.decl "cref"
   var cref = aref if cond else bref
 
-  # This uses both A and B, so it needs to extend both of their lifetimes.
+  # This uses both A and B, so it needs to extend both of their origins.
   Pointer.address_of(__get_litref_as_mvalue(cref))[].noop()
   # CHECK: [[CR:%.*]] = lit.ref.load %cref
   # CHECK-NEXT: lit.var.lifetime.end %cref
@@ -139,7 +139,7 @@ fn testDefConditional(cond: __mlir_type.i1):
   # CHECK-NEXT: lifetime.end %shouldBeMovedFrom
 
   # The mutation above could either of A or B, so we needed to extend both of
-  # their lifetimes, but now we can say goodbye.
+  # their origins, but now we can say goodbye.
   # CHECK-NEXT: lit.call @{{.*}}__del__{{.*}}(%b)
   # CHECK-NEXT: lifetime.end %b
 
@@ -164,7 +164,7 @@ fn testUseConditionalReference(cond: __mlir_type.i1, imm: MemExample):
 
   # CHECK: lit.call @{{.*}}@Pointer::@"address_of{{.*}}(%a)
   var aref = Pointer.address_of(a)
-  # CHECK: lit.alias.decl *"aLifetime{{.*}}": lifetime<1> = <*"a`1">
+  # CHECK: lit.alias.decl *"aLifetime{{.*}}": origin<1> = <*"a`1">
   alias aLifetime =  aref.lifetime
 
   # CHECK-NEXT: [[AR:%.*]] = lit.ref.load %aref
@@ -219,17 +219,17 @@ struct SelfRefTest:
 # CHECK-LABEL: lit.func @"testSelfRef
 fn testSelfRef(a: SelfRefTest, inout b: SelfRefTest):
   # Bind immutably to a
-  # CHECK: = lit.call {{.*}}method{{.*}}<:!Bool {:i1 0}, :!AnyType #SelfRefTest1, :lifetime<0> *"a`"
+  # CHECK: = lit.call {{.*}}method{{.*}}<:!Bool {:i1 0}, :!AnyType #SelfRefTest1, :origin<0> *"a`"
   _ = a.method()
 
   # Bind mutably to b
-  # CHECK: = lit.call {{.*}}method{{.*}}<:!Bool {:i1 1}, :!AnyType #SelfRefTest1, :lifetime<1> *"b`1"
+  # CHECK: = lit.call {{.*}}method{{.*}}<:!Bool {:i1 1}, :!AnyType #SelfRefTest1, :origin<1> *"b`1"
   _ = b.method()
 
 
 # CHECK-LABEL: lit.func @"testLifetimeOf1
 # CHECK-SAME: (%a: !lit.ref<!MemExample, imm *"a`"> borrow_in_mem) ->
-# CHECK-SAME: Pointer <{{.*}}, :lifetime<0> *"a`", :!AddressSpace {_value: !Int = {0}}>>
+# CHECK-SAME: Pointer <{{.*}}, :origin<0> *"a`", :!AddressSpace {_value: !Int = {0}}>>
 fn testLifetimeOf1(a: MemExample) -> Pointer[MemExample, __origin_of(a)]:
   return Pointer.address_of(a)
 
@@ -243,14 +243,14 @@ fn testLifetimeOf2(a: MemExample) -> Pointer[MemExample, __origin_of(a)]._mlir_t
 
 # CHECK-LABEL: lit.func @"callByRefResultLifetime
 fn callByRefResultLifetime(inout x: MemExample, inout y: MemExample, z: MemExample):
-  # CHECK: lit.var.decl "l1" var : !lit.ref<@ownership_refs::@OneLifetime<:lifetime<0> (mutcast mut *"x`")>
+  # CHECK: lit.var.decl "l1" var : !lit.ref<@ownership_refs::@OneLifetime<:origin<0> (mutcast mut *"x`")>
   var l1 = returnOneArgLifetime(x)
 
-  # CHECK: lit.var.decl "l2" var : !lit.ref<@ownership_refs::@TwoLifetimes<:lifetime<0> (mutcast mut *"x`"), :lifetime<0> (mutcast mut *"y`1")>
+  # CHECK: lit.var.decl "l2" var : !lit.ref<@ownership_refs::@TwoLifetimes<:origin<0> (mutcast mut *"x`"), :origin<0> (mutcast mut *"y`1")>
   var l2 = returnTwoArgLifetimes(x, y)
-  # CHECK: %l3 = lit.var.decl "l3" var : !lit.ref<@ownership_refs::@TwoLifetimes<:lifetime<0> (mutcast mut *"x`"), :lifetime<0> (mutcast mut *"x`")>
+  # CHECK: %l3 = lit.var.decl "l3" var : !lit.ref<@ownership_refs::@TwoLifetimes<:origin<0> (mutcast mut *"x`"), :origin<0> (mutcast mut *"x`")>
   var l3 = returnTwoArgLifetimes(x, x)
-  # CHECK: %l4 = lit.var.decl "l4" var : !lit.ref<@ownership_refs::@TwoLifetimes<:lifetime<0> *"z`2", :lifetime<0> *"z`2">
+  # CHECK: %l4 = lit.var.decl "l4" var : !lit.ref<@ownership_refs::@TwoLifetimes<:origin<0> *"z`2", :origin<0> *"z`2">
   var l4 = returnTwoArgLifetimes(z, z)
 
 fn returnOneArgLifetime(a: MemExample)
@@ -313,7 +313,7 @@ fn ref_copyability[*element_types: Copyable](*args: *element_types):
 
   # CHECK-NEXT: lit.call[{{.*}}get_type_method(:!Copyable{{.*}}__del__{{.*}}(%x)
 
-# Issue #37659: Parameter inference doesn't work with force-immut lifetimes
+# Issue #37659: Parameter inference doesn't work with force-immut origins
 
 # FIXME (Patch #48185): need to support implicit conversions to immutable reference.
 
@@ -395,7 +395,7 @@ fn test_pvalue_ref_formation[a: SelfRefTest]():
   # CHECK: [[ANONTMP:%.*]] = lit.var.decl "anonymous*" {{.*}}!lit.ref<!SelfRefTest, mut *"anonymous*`1">
   var r = a.method()
   # The result reference should have inferred the lifetime of the temp
-  # CHECK: lit.ref.store {{.*}}, %r : {{.*}}#SelfRefTest1, :lifetime<0> (mutcast mut *"anonymous*`1"),
+  # CHECK: lit.ref.store {{.*}}, %r : {{.*}}#SelfRefTest1, :origin<0> (mutcast mut *"anonymous*`1"),
 
   # This use of the temp should keep it alive.
   # CHECK: [[REFERENCE:%.*]] = lit.ref.load %r
@@ -404,7 +404,7 @@ fn test_pvalue_ref_formation[a: SelfRefTest]():
   _ = r[].method()
   # CHECK-NEXT: lit.call {{.*}}SelfRefTest::@"__del__{{.*}}([[ANONTMP]])
 
-# MOCO-1025 - Need hierarchical lifetimes
+# MOCO-1025 - Need hierarchical origins
 struct FieldRefPropagation:
   var field1 : Optional[Int]
   var field2 : Int

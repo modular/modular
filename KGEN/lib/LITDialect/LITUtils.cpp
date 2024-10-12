@@ -69,14 +69,14 @@ Type LIT::impl::demangleIfNeeded(Type arg) { return demangleIfNeededImpl(arg); }
 /// forms are: "imm expr", "mut expr", "mut=<expr>, expr" and "muttoimm expr"
 /// without quotes.
 void LIT::printOriginParamValue(AsmPrinter &p, TypedAttr value) {
-  LifetimeType type = cast<LifetimeType>(value.getType());
+  OriginType type = cast<OriginType>(value.getType());
 
   // It is extremely common to have a OriginMutCastAttr cast from known
   // mutable lifetime to known immutable lifetime (this happens when borrowed
   // arguments are formed).  So much so that we sugar it.
   if (auto castVal = dyn_cast<OriginMutCastAttr>(value);
       castVal && type.isMutableKnown(false) &&
-      cast<LifetimeType>(castVal.getOperand().getType()).isMutableKnown(true)) {
+      cast<OriginType>(castVal.getOperand().getType()).isMutableKnown(true)) {
     p << "muttoimm ";
     value = castVal.getOperand();
   } else {
@@ -95,10 +95,10 @@ void LIT::printOriginParamValue(AsmPrinter &p, TypedAttr value) {
 }
 
 ParseResult LIT::parseOriginParamValue(AsmParser &p, TypedAttr &result) {
-  LifetimeType type;
+  OriginType type;
   // Parse the pretty type specifier if present.
   if (succeeded(p.parseOptionalKeyword("imm"))) {
-    type = LifetimeType::get(p.getContext(), false);
+    type = OriginType::get(p.getContext(), false);
   } else if (succeeded(p.parseOptionalKeyword("mut"))) {
     // !lit.ref<T, mut lifetime>    ==> mutable
     TypedAttr mutability;
@@ -109,11 +109,10 @@ ParseResult LIT::parseOriginParamValue(AsmParser &p, TypedAttr &result) {
       if (parseI1ParamValue(p, mutability) || p.parseComma())
         return failure();
     }
-    type = LifetimeType::get(mutability);
+    type = OriginType::get(mutability);
   } else if (succeeded(p.parseOptionalKeyword("muttoimm"))) {
     // Operand is mutable, casted to immutable.
-    if (KGEN::parseParamValue(p, result,
-                              LifetimeType::get(p.getContext(), true)))
+    if (KGEN::parseParamValue(p, result, OriginType::get(p.getContext(), true)))
       return failure();
     result = OriginMutCastAttr::get(result, false);
     return success();
@@ -507,7 +506,7 @@ LIT::parseOptionalOriginSet(AsmParser &p,
       mut = BoolAttr::get(p.getContext(), false);
     else if (p.parseLParen() || parseI1ParamValue(p, mut) || p.parseRParen())
       return failure();
-    return parseParamValue(p, lifetimes.emplace_back(), LifetimeType::get(mut));
+    return parseParamValue(p, lifetimes.emplace_back(), OriginType::get(mut));
   };
   if (p.parseCommaSeparatedList(parseLifetime))
     return failure();
@@ -517,7 +516,7 @@ LIT::parseOptionalOriginSet(AsmParser &p,
 void LIT::printOriginSet(AsmPrinter &p, ArrayRef<TypedAttr> lifetimes) {
   p << '{';
   auto printLifetime = [&](TypedAttr lifetime) {
-    auto type = cast<LifetimeType>(lifetime.getType());
+    auto type = cast<OriginType>(lifetime.getType());
     TypedAttr mut = type.isMutable();
     // If the mutability is known, pretty print it. Otherwise, print the
     // parametric mutability expression within parens.

@@ -423,15 +423,14 @@ LogicalResult CallEmitter::emitRemainingPosOperands(
     for (auto arg : args)
       refLifetimes.push_back(cast<RefType>(arg.getType()).getLifetime());
 
-    // All the lifetimes will have the same LifetimeType, indicating the
+    // All the lifetimes will have the same OriginType, indicating the
     // reference mutability that the callee expected.
-    LifetimeType commonLifetimeType =
-        cast<LifetimeType>(refLifetimes.back().getType());
+    OriginType commonOriginType =
+        cast<OriginType>(refLifetimes.back().getType());
 
     // If there is more than one element, they probably have different
     // lifetimes, and thus need to be rebound into a common union of them.
-    auto commonLifetime =
-        OriginUnionAttr::get(refLifetimes, commonLifetimeType);
+    auto commonLifetime = OriginUnionAttr::get(refLifetimes, commonOriginType);
     for (auto &arg : args) {
       auto argType = cast<RefType>(arg.getType());
       if (argType.getLifetime() == commonLifetime)
@@ -1255,7 +1254,7 @@ void ExclusivityChecker::checkLifetimeAccess(
     Value val, std::optional<ArgConvention> convention,
     std::optional<unsigned> argIdx, TypedAttr lifetime) {
   // Determine whether the access was immutable.
-  bool isImmut = cast<LifetimeType>(lifetime.getType()).isMutableKnown(false);
+  bool isImmut = cast<OriginType>(lifetime.getType()).isMutableKnown(false);
 
   // Look through immcasts to determine the accessed lifetime.
   lifetime = OriginMutCastAttr::strip(lifetime);
@@ -1355,7 +1354,7 @@ void ExclusivityChecker::checkArgument(Value val, ArgConvention convention,
 void ExclusivityChecker::diagViolation(Value val, ArgConvention convention,
                                        unsigned argIdx, TypedAttr lifetime,
                                        const LifetimeInfo &previousAccess) {
-  bool isImmut = cast<LifetimeType>(lifetime.getType()).isMutableKnown(false);
+  bool isImmut = cast<OriginType>(lifetime.getType()).isMutableKnown(false);
   InflightDiag diag = emitError(callExpr->getLoc());
 
   diag << "argument of ";

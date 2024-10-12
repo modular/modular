@@ -18,7 +18,7 @@ class NoneType;
 namespace LIT {
 class AnyStructType;
 class StructType;
-class LifetimeType;
+class OriginType;
 class OriginSetType;
 class RefPackType;
 class TraitType;

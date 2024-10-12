@@ -1345,8 +1345,8 @@ bool ExprEmitter::canImplicitlyConvertToType(
   // Lifetimes and lifetime sets can convert between each other.
   // FIXME: This seems wrong, why isn't it checking for inclusion and
   // compatibility??
-  if ((isa<LifetimeType>(rvType) && isa<OriginSetType>(requiredType)) ||
-      (isa<OriginSetType>(rvType) && isa<LifetimeType>(requiredType)))
+  if ((isa<OriginType>(rvType) && isa<OriginSetType>(requiredType)) ||
+      (isa<OriginSetType>(rvType) && isa<OriginType>(requiredType)))
     return true;
 
   // Check to see if we already cached this convertibility check.
@@ -1487,8 +1487,7 @@ AnyValue ExprEmitter::emitResult(AnyValue value, const ExprNode *expr,
           requiredType = cValue.getMValueType().getWithElement(requiredType);
 
         // PValues of lifetime type have a special conversion.
-        if (isa<LifetimeType>(requiredType) &&
-            isa<LifetimeType>(cValue.getType()))
+        if (isa<OriginType>(requiredType) && isa<OriginType>(cValue.getType()))
           if (auto pv = cValue.getIfPValue())
             value = OriginMutCastAttr::get(pv, requiredType);
 
@@ -1497,18 +1496,18 @@ AnyValue ExprEmitter::emitResult(AnyValue value, const ExprNode *expr,
       }
 
       // Handle conversions between lifetimes and lifetime sets.
-      if (isa<LifetimeType>(rvType) && isa<OriginSetType>(requiredType)) {
+      if (isa<OriginType>(rvType) && isa<OriginSetType>(requiredType)) {
         // This can only be done in the parameter domain.
         if (TypedAttr value = cValue.getIfPValue()) {
           value = OriginSetAttr::get(value, cast<OriginSetType>(requiredType));
           return emitResult(value, expr, dest);
         }
       }
-      if (isa<OriginSetType>(rvType) && isa<LifetimeType>(requiredType)) {
+      if (isa<OriginSetType>(rvType) && isa<OriginType>(requiredType)) {
         // This can only be done in the parameter domain.
         if (TypedAttr value = cValue.getIfPValue()) {
           value =
-              OriginSetUnionAttr::get(value, cast<LifetimeType>(requiredType));
+              OriginSetUnionAttr::get(value, cast<OriginType>(requiredType));
           return emitResult(value, expr, dest);
         }
       }

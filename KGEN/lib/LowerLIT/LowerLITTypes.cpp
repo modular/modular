@@ -154,8 +154,8 @@ void StructDecls::buildReplacer(mlir::AttrTypeReplacer &replacer,
   addReplacement([=](ImplicitOriginRefAttr) { return emptyStruct; });
   addReplacement([=](OriginSetAttr) { return emptyStruct; });
 
-  // !lit.lifetime -> !kgen.struct<()>
-  addReplacement([=](LifetimeType) { return emptyStructType; });
+  // !lit.origin -> !kgen.struct<()>
+  addReplacement([=](OriginType) { return emptyStructType; });
   addReplacement([=](OriginSetType) { return emptyStructType; });
 
   using AttrResult = std::pair<Attribute, WalkResult>;

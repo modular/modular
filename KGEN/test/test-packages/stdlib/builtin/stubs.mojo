@@ -9,10 +9,10 @@ alias string = __mlir_type.`!kgen.string`
 alias float = __mlir_type.`!pop.scalar<f64>`
 
 alias AnyTrivialRegType = __mlir_type.`!kgen.type`
-alias ImmutableOrigin = __mlir_type.`!lit.lifetime<0>`
-alias MutableOrigin = __mlir_type.`!lit.lifetime<1>`
-alias ImmutableAnyOrigin = __mlir_attr.`#lit.any.origin : !lit.lifetime<0>`
-alias MutableAnyOrigin = __mlir_attr.`#lit.any.origin<1>: !lit.lifetime<1>`
+alias ImmutableOrigin = __mlir_type.`!lit.origin<0>`
+alias MutableOrigin = __mlir_type.`!lit.origin<1>`
+alias ImmutableAnyOrigin = __mlir_attr.`#lit.any.origin : !lit.origin<0>`
+alias MutableAnyOrigin = __mlir_attr.`#lit.any.origin<1>: !lit.origin<1>`
 alias OriginSet = __mlir_type.`!lit.origin.set`
 
 
@@ -42,7 +42,7 @@ struct Origin[is_mutable: Bool]:
     """
 
     alias type = __mlir_type[
-        `!lit.lifetime<`,
+        `!lit.origin<`,
         is_mutable.value,
         `>`,
     ]
@@ -51,8 +51,8 @@ struct Origin[is_mutable: Bool]:
 # Static constants are a named subset of the global lifetime.
 alias StaticConstantOrigin = __mlir_attr[
     `#lit.origin.field<`,
-    `#lit.static.origin : !lit.lifetime<0>`,
-    `, "__constants__"> : !lit.lifetime<0>`,
+    `#lit.static.origin : !lit.origin<0>`,
+    `, "__constants__"> : !lit.origin<0>`,
 ]
 
 # ===----------------------------------------------------------------------=== #
@@ -322,7 +322,7 @@ struct VariadicList[type: AnyTrivialRegType]:
         return
 
 
-# Helper to compute the union of two lifetimes:
+# Helper to compute the union of two origins:
 # TODO: parametric aliases would be nice.
 struct _lit_lifetime_union[
     is_mutable: Bool, //,
@@ -334,7 +334,7 @@ struct _lit_lifetime_union[
         a,
         `,`,
         b,
-        `> : !lit.lifetime<`,
+        `> : !lit.origin<`,
         is_mutable.value,
         `>`,
     ]
@@ -348,7 +348,7 @@ struct _lit_mut_cast[
     alias result = __mlir_attr[
         `#lit.origin.mutcast<`,
         operand,
-        `> : !lit.lifetime<`,
+        `> : !lit.origin<`,
         +result_mutable.value,
         `>`,
     ]
@@ -388,7 +388,7 @@ struct _VariadicListMemIter[
 struct VariadicListMem[
     element_type: AnyType,
     elt_is_mutable: __mlir_type.i1,
-    lifetime: __mlir_type[`!lit.lifetime<`, elt_is_mutable, `>`],
+    lifetime: __mlir_type[`!lit.origin<`, elt_is_mutable, `>`],
 ]:
     alias _mlir_type = __mlir_type[
         `!lit.ref<`, element_type, `, `, lifetime, `, 0>`
@@ -455,7 +455,7 @@ alias _AnyTypeMetaType = __mlir_type[`!lit.anytrait<`, AnyType, `>`]
 @register_passable
 struct VariadicPack[
     elt_is_mutable: __mlir_type.i1,
-    lifetime: __mlir_type[`!lit.lifetime<`, elt_is_mutable, `>`],
+    lifetime: __mlir_type[`!lit.origin<`, elt_is_mutable, `>`],
     element_trait: _AnyTypeMetaType,
     *element_types: element_trait,
 ]:

@@ -223,8 +223,8 @@ static void diagnoseFailedRefTypeConversion(InflightDiag &diag,
                          << operandRefTy.getAddressSpace()
                          << " doesn't match expected address space "
                          << argType.getAddressSpace();
-  } else if (!canConvertWithRebind(operandRefTy.getLifetimeType(),
-                                   argType.getLifetimeType(), shared)) {
+  } else if (!canConvertWithRebind(operandRefTy.getOriginType(),
+                                   argType.getOriginType(), shared)) {
     diag.attachNote(loc) << "operand mutability " << operandRefTy.isMutable()
                          << " doesn't match expected mutability "
                          << argType.isMutable();

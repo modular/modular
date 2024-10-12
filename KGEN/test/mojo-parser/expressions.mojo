@@ -1117,7 +1117,7 @@ fn function_types[
   # CHECK-SAME: p1: {{.*}}<[2]<"a": !Int, "b": {{.*}}@ParamType<:!Int *(0,0)>>(?, "__error__": !lit.ref<!Error, mut *[0,0]> byref_error, "__result__": !lit.ref<none, mut *[0,1]> byref_result) throws -> i1
   p1: def[a: Int, b: ParamType[a]]() -> None,
 
-  # CHECK-SAME: p2: {{.*}}"Ts": variadic<!AnyType> var>(!lit.struct<#VariadicPack <:i1 0, :lifetime<0> *[0,0], :!lit.anytrait<!AnyType> !AnyType, :variadic<!AnyType> *(0,0)>> borrow_in_mem|pack, ?, "__result__": !lit.ref<none, mut *[0,1]> byref_result) async
+  # CHECK-SAME: p2: {{.*}}"Ts": variadic<!AnyType> var>(!lit.struct<#VariadicPack <:i1 0, :origin<0> *[0,0], :!lit.anytrait<!AnyType> !AnyType, :variadic<!AnyType> *(0,0)>> borrow_in_mem|pack, ?, "__result__": !lit.ref<none, mut *[0,1]> byref_result) async
   p2: async fn[*Ts: AnyType](* *Ts) -> None,
 ](
   # CHECK-SAME: %{{.*}}: {{.*}}(!Int, |) -> !Int
@@ -1362,7 +1362,7 @@ fn test_thing_taking_reference(inout x: String):
   # CHECK-NEXT: lit.call {{.*}}thing_taking_ref2{{.*}}(%x)
   thing_taking_ref2(x)
 # CHECK-NEXT: lit.call {{.*}}@Pointer::@"address_of
-# CHECK-SAME: <:!Bool {:i1 1}, :!AnyType #String{{.*}}, :lifetime<1> *"x`", :!AddressSpace {_value: !Int = {0}}>
+# CHECK-SAME: <:!Bool {:i1 1}, :!AnyType #String{{.*}}, :origin<1> *"x`", :!AddressSpace {_value: !Int = {0}}>
   thing_taking_pointer2(Pointer.address_of(x))
 
 struct StructWithStaticMethods:
@@ -1399,6 +1399,6 @@ struct ThingWithMethodReferenceSelf:
 fn testThingWithMethodReferenceSelf[a: ThingWithMethodReferenceSelf]():
     # CHECK-NEXT: lit.alias.decl *"sizzle`": none =
     # CHECK-SAME: <apply(:!lit.signature<("a": !lit.ref<!ThingWithMethodReferenceSelf,
-    # CHECK-SAME:     <:i1 0, :lifetime<0> #lit.any.origin>,
+    # CHECK-SAME:     <:i1 0, :origin<0> #lit.any.origin>,
     # CHECK-SAME:     rebind(:!lit.ref<!ThingWithMethodReferenceSelf, imm {}> store_to_mem(a)))>
     alias sizzle = a.method()

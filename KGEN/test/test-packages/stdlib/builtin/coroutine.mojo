@@ -9,7 +9,7 @@ alias AnyCoroutine = __mlir_type.`!co.routine`
 
 @value
 @register_passable
-struct Coroutine[T: AnyType, lifetimes: __mlir_type.`!lit.origin.set`]:
+struct Coroutine[T: AnyType, origins: __mlir_type.`!lit.origin.set`]:
     var value: __mlir_type.`!co.routine`
 
     fn __init__(inout self, handle: AnyCoroutine):
@@ -22,7 +22,7 @@ struct Coroutine[T: AnyType, lifetimes: __mlir_type.`!lit.origin.set`]:
 
 @value
 @register_passable
-struct RaisingCoroutine[T: AnyType, lifetimes: __mlir_type.`!lit.origin.set`]:
+struct RaisingCoroutine[T: AnyType, origins: __mlir_type.`!lit.origin.set`]:
     var value: __mlir_type.`!co.routine`
 
     fn __await__(owned self) raises -> T:

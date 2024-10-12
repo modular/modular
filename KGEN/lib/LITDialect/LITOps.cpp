@@ -482,7 +482,7 @@ static ParseResult parseImplicitLifetimeMutability(AsmParser &p,
   return success();
 }
 
-static void printImplicitLifetimeMutability(AsmPrinter &p, LifetimeType type) {
+static void printImplicitLifetimeMutability(AsmPrinter &p, OriginType type) {
   assert((type.isMutableKnown(true) || type.isMutableKnown(false)) &&
          "Implicit lifetimes are always known mut or imm");
   p << (type.isMutableKnown(true) ? "mut " : "imm ");
@@ -521,7 +521,7 @@ static ParseResult parseLITFunctionSignature(
         parseParamName(p, name))
       return failure();
     lifetimeDecls.push_back(
-        ParamDeclAttr::get(name, LifetimeType::get(p.getContext(), isMutable)));
+        ParamDeclAttr::get(name, OriginType::get(p.getContext(), isMutable)));
     return success();
   };
 
@@ -647,7 +647,7 @@ static void printLITFunctionSignature(OpAsmPrinter &p, Region *region,
   if (!lifetimeDecls.empty()) {
     p << '[';
     llvm::interleaveComma(lifetimeDecls, p, [&](ParamDeclAttr decl) {
-      printImplicitLifetimeMutability(p, cast<LifetimeType>(decl.getType()));
+      printImplicitLifetimeMutability(p, cast<OriginType>(decl.getType()));
       printParamName(p, decl.getName());
     });
     p << ']';
@@ -1793,7 +1793,7 @@ void VarDeclOp::walkDefinitions(
 void VarDeclOp::build(OpBuilder &b, OperationState &state, Type elementType,
                       StringRef name, StringRef lifetimeName,
                       VarDeclKind kind) {
-  auto lifetimeType = b.getType<LifetimeType>(/*isMutable=*/true);
+  auto lifetimeType = b.getType<OriginType>(/*isMutable=*/true);
   auto lifetimeNameAttr = b.getAttr<StringAttr>(lifetimeName);
   auto lifetimeDecl = ParamDeclAttr::get(lifetimeNameAttr, lifetimeType);
   auto resultType = RefType::get(

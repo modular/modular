@@ -287,7 +287,7 @@ void MBValue::check() const {
 void MBPValue::check() const {
   assert(::isa<RefType>(Value::getType()) &&
          ::cast<RefType>(Value::getType()).getMutabilityClass() ==
-             LifetimeType::Parametric &&
+             OriginType::Parametric &&
          "MBPValue can only be used for a parametric mutability reference");
 }
 
@@ -295,11 +295,11 @@ void MBPValue::check() const {
 /// depending on the mutability of the reference.
 CValue CValue::getMValueForRef(Value refValue) {
   switch (cast<RefType>(refValue.getType()).getMutabilityClass()) {
-  case LifetimeType::Mutable:
+  case OriginType::Mutable:
     return MLValue(refValue);
-  case LifetimeType::Immutable:
+  case OriginType::Immutable:
     return MBValue(refValue);
-  case LifetimeType::Parametric:
+  case OriginType::Parametric:
     return MBPValue(refValue);
   }
 }

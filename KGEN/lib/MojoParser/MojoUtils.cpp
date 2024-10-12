@@ -54,7 +54,7 @@ TypedAttr LIT::getLifetimesAccessibleByParams(PogListAttr paramList,
   // The mutability doesn't matter since it will get flattened.
   auto addOriginSet = [&](TypedAttr param) {
     lifetimes.push_back(OriginSetUnionAttr::get(
-        param, LifetimeType::get(shared.getContext(), /*isMutable=*/true)));
+        param, OriginType::get(shared.getContext(), /*isMutable=*/true)));
   };
 
   for (ParamDeclAttr param : params)
@@ -163,8 +163,8 @@ bool LIT::canConvertWithRebind(ASTType fromType, ASTType toType,
   //   Lifetimes with identical mutability will be uniqued and already handled.
   //   Conversion from any mutability to KNOWN immutable is fine.
   //   Conversion from KNOWN mutable to any mutability is fine.
-  if (auto fromLife = dyn_cast<LifetimeType>(fromType))
-    if (auto toLife = dyn_cast<LifetimeType>(toType))
+  if (auto fromLife = dyn_cast<OriginType>(fromType))
+    if (auto toLife = dyn_cast<OriginType>(toType))
       return toLife.isMutableKnown(false) || fromLife.isMutableKnown(true);
 
   // Check reference downcasting.  The only thing allowed to disagree is the
@@ -193,12 +193,11 @@ bool LIT::canConvertWithRebind(ASTType fromType, ASTType toType,
           return false;
       }
 
-      // Verify compatible LifetimeType(mutability).  This is checking the type
+      // Verify compatible OriginType(mutability).  This is checking the type
       // of the lifetime, which contains its mutability specifier.
-      auto toLifetimeType = toRef.getLifetimeType();
-      if (fromRef.getLifetimeType() != toLifetimeType &&
-          !canConvertWithRebind(fromRef.getLifetimeType(), toLifetimeType,
-                                shared))
+      auto toOriginType = toRef.getOriginType();
+      if (fromRef.getOriginType() != toOriginType &&
+          !canConvertWithRebind(fromRef.getOriginType(), toOriginType, shared))
         return false;
 
       // We allow converting an "any" lifetime to anything concrete.
@@ -211,8 +210,8 @@ bool LIT::canConvertWithRebind(ASTType fromType, ASTType toType,
       auto toLifetime = toRef.getLifetime();
       auto lifetimeUnion = OriginUnionAttr::get(
           {toLifetime,
-           OriginMutCastAttr::get(fromRef.getLifetime(), toLifetimeType)},
-          toLifetimeType);
+           OriginMutCastAttr::get(fromRef.getLifetime(), toOriginType)},
+          toOriginType);
       return toLifetime == lifetimeUnion;
     }
   }
@@ -282,7 +281,7 @@ static ASTType getZeroCostCommonTypeImpl(SharedState &shared, ASTType type1,
       auto l2 = OriginMutCastAttr::get(type2Ref.getLifetime(), isMutableAttr);
 
       auto lifetime =
-          OriginUnionAttr::get({l1, l2}, cast<LifetimeType>(l1.getType()));
+          OriginUnionAttr::get({l1, l2}, cast<OriginType>(l1.getType()));
       return RefType::get(eltType, lifetime, type1Ref.getAddressSpace());
     }
 

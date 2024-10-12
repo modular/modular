@@ -59,8 +59,8 @@ LIT::FuncOp StructEmitter::createFunction(
     // If this is a reference to a named one already, just reuse the name.
     if (auto lifetimeRef = dyn_cast<ParamDeclRefAttr>(
             OriginMutCastAttr::strip(lifetimeAttr))) {
-      assert(isa<LifetimeType>(lifetimeRef.getType()) &&
-             "lifetimes should have LifetimeType");
+      assert(isa<OriginType>(lifetimeRef.getType()) &&
+             "lifetimes should have OriginType");
       // Look through a cast to get the name, but use the expected mutability of
       // the lifetime type.
       decl = ParamDeclAttr::get(lifetimeRef.getName(), lifetimeAttr.getType());
