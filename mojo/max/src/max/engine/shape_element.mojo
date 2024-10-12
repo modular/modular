@@ -218,7 +218,7 @@ struct ShapeElement(CollectionElement, EqualityComparable):
         return self._static
 
     # N.B.: Returns a String rather than a StringRef for safety.  When Mojo
-    # supports richer lifetimes, we could return a StringRef instead.
+    # supports richer origins, we could return a StringRef instead.
     fn name(self) -> String:
         """Return name of this named dynamic shape element.
 
