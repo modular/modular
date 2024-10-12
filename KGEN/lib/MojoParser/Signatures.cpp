@@ -614,11 +614,11 @@ static ASTType addImplicitTypeParams(ASTType type,
   // First check for a function type.
   // FIXME: We need an AnyFunction metatype.
   if (auto sig = dyn_cast<LITSignatureType>(type)) {
-    TypedAttr lifetimes = sig.getCaptureLifetimes();
+    TypedAttr lifetimes = sig.getCaptureOrigins();
     if (!isa<UnboundAttr>(lifetimes))
       return type;
     declareAndAddParam(lifetimes.getType(), "__lifetimes__");
-    return sig.getWithCaptureLifetimes(paramValues.back());
+    return sig.getWithCaptureOrigins(paramValues.back());
   }
 
   // Check for a struct type.
@@ -1298,7 +1298,7 @@ static void typeCheckResult(ParsedArgument resultArg, bool isDef,
   // Note that we're now returning a reference to something that doesn't outlast
   // the function!
   if (auto resultLifetimes =
-          shared.cachedLifetimeFinder.findLifetimesIn(resultType.mlirType);
+          shared.cachedOriginFinder.findLifetimesIn(resultType.mlirType);
       !resultLifetimes.empty()) {
     SmallDenseMap<TypedAttr, size_t, 8> possiblyRegisterPassableLifetimes;
     for (auto [idx, parsedArg, fullType] : llvm::enumerate(
@@ -1326,7 +1326,7 @@ static void typeCheckResult(ParsedArgument resultArg, bool isDef,
     // them are referenced.
     for (TypedAttr lifetime : resultLifetimes) {
       // Don't allow mutability dropping to interfere.
-      lifetime = LifetimeMutCastAttr::strip(lifetime);
+      lifetime = OriginMutCastAttr::strip(lifetime);
       if (!possiblyRegisterPassableLifetimes.count(lifetime))
         continue;
 
@@ -1547,9 +1547,9 @@ TypeCheckedFnSignature::TypeCheckedFnSignature(TypeCheckedParamList &paramList,
     // set is unbound and will be autoparameterized.
     auto setType = OriginSetType::get(shared.getContext());
     if (lifetimeExpr->kind == ExprNode::kDiscardLiteral) {
-      captureLifetimes = UnboundAttr::get(setType);
+      captureOrigins = UnboundAttr::get(setType);
     } else {
-      captureLifetimes =
+      captureOrigins =
           typeEmitter.emitExprPValue(lifetimeExpr, EC_Lifetime, setType);
     }
   }
@@ -1797,8 +1797,8 @@ LITSignatureType TypeCheckedFnSignature::getLITSignatureType() const {
       paramList.getParamListAttr(), implicitLifetimeDecls.size(),
       getLifetimesAccessibleByParams(paramList.getParamListAttr(),
                                      paramList.paramDeclAttrs, paramList.shared,
-                                     captureLifetimes),
-      isNestedLifetimeExclusivityCheckingDisabled);
+                                     captureOrigins),
+      isNestedOriginExclusivityCheckingDisabled);
 
   /// Silence internal verifier errors when constructing types from the parser.
   /// We don't want to show these to the user.

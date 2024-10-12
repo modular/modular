@@ -27,10 +27,10 @@ static bool isTypeObviouslyTrivial(Type type) {
 }
 
 //===----------------------------------------------------------------------===//
-// LifetimeTrackable
+// OriginTrackable
 //===----------------------------------------------------------------------===//
 
-LifetimeTrackable::LifetimeTrackable(Value v) {
+OriginTrackable::OriginTrackable(Value v) {
   if (!v) // Null value isn't tracked.
     return;
 
@@ -198,7 +198,7 @@ LifetimeTrackable::LifetimeTrackable(Value v) {
 /// This constructor checks to see if the value is trackable or a field of a
 /// trackable.  If so it identifies the underlying object being referenced. If
 /// not, this returns a null value.
-Value LifetimeTrackable::findUnderlyingValueFromField(Value value) {
+Value OriginTrackable::findUnderlyingValueFromField(Value value) {
   // If there are any GEP operations into the struct, dig through them.
   bool hadGEP = false;
 
@@ -216,7 +216,7 @@ Value LifetimeTrackable::findUnderlyingValueFromField(Value value) {
   }
 
   // Check if there is a base value.
-  LifetimeTrackable result(value);
+  OriginTrackable result(value);
   // If we had a GEP of this value but it doesn't have indirect storage, then
   // we aren't actually tracking the pointers off this value field sensitively,
   // so we can't be confident about what is going on with it.
@@ -273,12 +273,10 @@ static Value findRefPackCreate(Value val) {
 
 /// This is a helper for LIT::getOperationEffects split out since calls are so
 /// interesting.
-static void
-getCallOpEffects(Operation &op,
-                 SmallVectorImpl<std::pair<Value, OperandEffect>> &operands,
-                 SmallVectorImpl<ResultEffect> &results,
-                 SmallVectorImpl<TypedAttr> &lifetimes,
-                 CachedLifetimeFinder &lifetimeFinder) {
+static void getCallOpEffects(
+    Operation &op, SmallVectorImpl<std::pair<Value, OperandEffect>> &operands,
+    SmallVectorImpl<ResultEffect> &results,
+    SmallVectorImpl<TypedAttr> &lifetimes, CachedOriginFinder &lifetimeFinder) {
   LITSignatureType signature;
   OperandRange callArguments = op.getOperands();
   ArrayRef<ArgConvention> conventions;
@@ -434,7 +432,7 @@ getCallOpEffects(Operation &op,
   {
     SmallVector<TypedAttr> lifetimesUsedByTypes =
         lifetimeFinder.findLifetimesIn(typesAccessibleByCallee,
-                                       signature.getCaptureLifetimes());
+                                       signature.getCaptureOrigins());
     lifetimes.append(lifetimesUsedByTypes.begin(), lifetimesUsedByTypes.end());
   }
 
@@ -453,8 +451,7 @@ getCallOpEffects(Operation &op,
 OverallOpValueEffect LIT::getOperationEffects(
     Operation &op, SmallVectorImpl<std::pair<Value, OperandEffect>> &operands,
     SmallVectorImpl<ResultEffect> &results,
-    SmallVectorImpl<TypedAttr> &lifetimes,
-    CachedLifetimeFinder &lifetimeFinder) {
+    SmallVectorImpl<TypedAttr> &lifetimes, CachedOriginFinder &lifetimeFinder) {
   // Debuginfo ops may reference values that aren't fully initialized, so we
   // skip over them.  These indexing operations are handled specially.
   if (isa<RefStructGEROp, RebindOp, RefImmutOp>(op) ||
@@ -611,7 +608,7 @@ OverallOpValueEffect LIT::getOperationEffects(
 }
 
 //===----------------------------------------------------------------------===//
-// CachedLifetimeFinder
+// CachedOriginFinder
 //===----------------------------------------------------------------------===//
 
 /// Unpack the specified value of LifetimeType into a set of referenced
@@ -625,7 +622,7 @@ static bool handleLifetimeAttr(TypedAttr attr,
     // FIXME(lifetimes): This shouldn't happen; UncheckedCallEmission isn't
     // forming captures correctly for async functions with implicit lifetime
     // refs.
-    if (isa<ImplicitLifetimeRefAttr>(LifetimeMutCastAttr::strip(attr)))
+    if (isa<ImplicitOriginRefAttr>(OriginMutCastAttr::strip(attr)))
       return;
 
     results.push_back(raw);
@@ -688,8 +685,8 @@ scanForLifetimes(TypeOrAttr pvalue,
 /// returning them as a list.  This typically will return ParamRefAttr's or
 /// ImmutCast(ParamRefAttr)'s if a mutable lifetime is accessed immutably.
 SmallVector<TypedAttr>
-CachedLifetimeFinder::findLifetimesIn(ArrayRef<Type> types,
-                                      ArrayRef<TypedAttr> captures) {
+CachedOriginFinder::findLifetimesIn(ArrayRef<Type> types,
+                                    ArrayRef<TypedAttr> captures) {
   SmallVector<TypedAttr> results;
 
   // Scan each type, accumulating the results; the set avoid revisiting nodes

@@ -117,11 +117,11 @@ struct LITOpAsmDialectInterface : public mlir::OpAsmDialectInterface {
 
 using WrappedBindTypeAttr = WrappedAttrType<BindTypeAttr>;
 using WrappedStructExtractAttr = WrappedAttrType<StructExtractAttr>;
-using WrappedLifetimeUnionAttr = WrappedAttrType<LifetimeUnionAttr>;
-using WrappedLifetimeMutCastAttr = WrappedAttrType<LifetimeMutCastAttr>;
+using WrappedOriginUnionAttr = WrappedAttrType<OriginUnionAttr>;
+using WrappedOriginMutCastAttr = WrappedAttrType<OriginMutCastAttr>;
 using WrappedOriginSetAttr = WrappedAttrType<OriginSetAttr>;
 using WrappedOriginSetUnionAttr = WrappedAttrType<OriginSetUnionAttr>;
-using WrappedLifetimeFieldAttr = WrappedAttrType<LifetimeFieldAttr>;
+using WrappedOriginFieldAttr = WrappedAttrType<OriginFieldAttr>;
 
 //===----------------------------------------------------------------------===//
 // Utilities

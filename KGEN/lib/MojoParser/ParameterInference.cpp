@@ -254,8 +254,8 @@ LogicalResult ParameterInferenceState::matchTypes(Type actualType,
           if (failed(matchTypes(actualResult, expectedResult)))
             return failure();
 
-        if (failed(matchParams(actual.getCaptureLifetimes(),
-                               expected.getCaptureLifetimes())))
+        if (failed(matchParams(actual.getCaptureOrigins(),
+                               expected.getCaptureOrigins())))
           return failure();
 
         --paramIndexRefDepth;

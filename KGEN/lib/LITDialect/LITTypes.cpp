@@ -511,8 +511,8 @@ OptionalParseResult LifetimeType::parseValue(AsmParser &p,
       StringRef fieldName;
       if (failed(p.parseKeyword(&fieldName)))
         return failure();
-      result = LifetimeFieldAttr::get(
-          result, StringAttr::get(p.getContext(), fieldName));
+      result = OriginFieldAttr::get(result,
+                                    StringAttr::get(p.getContext(), fieldName));
     }
     return mlir::success();
   };
@@ -553,7 +553,7 @@ OptionalParseResult LifetimeType::parseValue(AsmParser &p,
       if (p.parseInteger(depth) || p.parseComma() || p.parseInteger(index) ||
           p.parseRSquare())
         return failure();
-      result = ImplicitLifetimeRefAttr::get(depth, index, *this);
+      result = ImplicitOriginRefAttr::get(depth, index, *this);
       return processPostFix();
     }
 
@@ -577,17 +577,17 @@ OptionalParseResult LifetimeType::parseValue(AsmParser &p,
           p.parseRBrace())
         return failure();
     }
-    result = LifetimeUnionAttr::get(elements, *this);
+    result = OriginUnionAttr::get(elements, *this);
     return processPostFix();
   }
 
   // Handle mutability casts in parens.
   if (succeeded(p.parseOptionalLParen())) {
     TypedAttr operand;
-    if (p.parseKeyword("mutcast") || parseLifetimeParamValue(p, operand) ||
+    if (p.parseKeyword("mutcast") || parseOriginParamValue(p, operand) ||
         p.parseRParen())
       return failure();
-    result = LifetimeMutCastAttr::get(operand, *this);
+    result = OriginMutCastAttr::get(operand, *this);
     return processPostFix();
   }
 
@@ -636,12 +636,12 @@ LogicalResult LifetimeType::printValue(AsmPrinter &p, TypedAttr value) const {
     return success();
   }
 
-  if (auto ref = ::dyn_cast<ImplicitLifetimeRefAttr>(value)) {
+  if (auto ref = ::dyn_cast<ImplicitOriginRefAttr>(value)) {
     p << "*[" << ref.getDepth() << ',' << ref.getIndex() << ']';
     return success();
   }
 
-  if (auto unionAttr = ::dyn_cast<LifetimeUnionAttr>(value)) {
+  if (auto unionAttr = ::dyn_cast<OriginUnionAttr>(value)) {
     p << '{';
     if (unionAttr.getNumOperands()) {
       printParamValue(p, unionAttr.getOperand(0));
@@ -654,16 +654,16 @@ LogicalResult LifetimeType::printValue(AsmPrinter &p, TypedAttr value) const {
     return success();
   }
 
-  if (auto mutcast = ::dyn_cast<LifetimeMutCastAttr>(value)) {
+  if (auto mutcast = ::dyn_cast<OriginMutCastAttr>(value)) {
     p << "(mutcast ";
-    printLifetimeParamValue(p, mutcast.getOperand());
+    printOriginParamValue(p, mutcast.getOperand());
     p << ")";
     return success();
   }
 
   // Print field access with dot notation.
-  if (auto field = ::dyn_cast<LifetimeFieldAttr>(value)) {
-    if (failed(printValue(p, field.getStructLifetime())))
+  if (auto field = ::dyn_cast<OriginFieldAttr>(value)) {
+    if (failed(printValue(p, field.getStructOrigin())))
       return failure();
     // FIXME: This should use ".field" instead of "->field" but MLIR doesn't
     // make it easy to parse a dot.
@@ -760,7 +760,7 @@ RefType RefType::getWithLifetime(TypedAttr newLifetime) {
 
 /// Return this RefType but with a different mutability.
 RefType RefType::getWithMutability(bool isMut) {
-  return get(getElementType(), LifetimeMutCastAttr::get(getLifetime(), isMut),
+  return get(getElementType(), OriginMutCastAttr::get(getLifetime(), isMut),
              getAddressSpace());
 }
 
@@ -771,10 +771,10 @@ LifetimeType RefType::getLifetimeType() {
 }
 
 /// Return a reference to the specified element type and mutability with an
-/// #lit.any.lifetime lifetime.
+/// #lit.any.origin lifetime.
 RefType RefType::getAnyLifetime(Type elementType, bool isMut,
                                 TypedAttr addrSpace) {
-  return get(elementType, AnyLifetimeAttr::get(elementType.getContext(), isMut),
+  return get(elementType, AnyOriginAttr::get(elementType.getContext(), isMut),
              addrSpace);
 }
 
@@ -888,15 +888,15 @@ static ParseResult parseLITSignature(AsmParser &p, Type &signature) {
     if (p.parseInteger(numLifetimeDecls) || p.parseRSquare())
       return failure();
 
-  TypedAttr captureLifetimes;
+  TypedAttr captureOrigins;
   auto lifetimeSet = OriginSetType::get(p.getContext());
   if (succeeded(p.parseOptionalColon())) {
-    if (parseParamValue(p, captureLifetimes, lifetimeSet) || p.parseColon())
+    if (parseParamValue(p, captureOrigins, lifetimeSet) || p.parseColon())
       return failure();
   } else {
-    captureLifetimes = OriginSetAttr::get({}, lifetimeSet);
+    captureOrigins = OriginSetAttr::get({}, lifetimeSet);
   }
-  bool isNestedLifetimeExclusivityCheckingDisabled =
+  bool isNestedOriginExclusivityCheckingDisabled =
       succeeded(p.parseOptionalKeyword("no_nested_lifetime_exclusivity"));
 
   SmallVector<Type> inputParamTypes;
@@ -961,8 +961,8 @@ static ParseResult parseLITSignature(AsmParser &p, Type &signature) {
       PogListAttr::get(ctx, argNames, argPassingKinds, defaultPosArgs,
                        defaultKwOnlyArgs, argVariadicIndices, argPackIndex,
                        origArgPackConvention),
-      paramListAttr, numLifetimeDecls, captureLifetimes,
-      isNestedLifetimeExclusivityCheckingDisabled);
+      paramListAttr, numLifetimeDecls, captureOrigins,
+      isNestedOriginExclusivityCheckingDisabled);
   signature = SignatureType::getChecked(
       [&] { return p.emitError(startLoc); }, functionType, inputParamTypes,
       /*resultParamTypes=*/{}, argConventions, effects, metadata);
@@ -998,14 +998,14 @@ void FnMetadataAttr::printSignature(AsmPrinter &p, SignatureType sig) const {
   p << "!lit.signature<";
   auto signature = ::cast<LITSignatureType>(sig);
 
-  if (unsigned numLifetimeDecls = getNumImplicitLifetimeDecls())
+  if (unsigned numLifetimeDecls = getNumImplicitOriginDecls())
     p << '[' << numLifetimeDecls << ']';
-  if (!isEmptyOriginSet(getCaptureLifetimes())) {
+  if (!isEmptyOriginSet(getCaptureOrigins())) {
     p << ':';
-    printParamValue(p, getCaptureLifetimes());
+    printParamValue(p, getCaptureOrigins());
     p << ':';
   }
-  if (signature.getIsNestedLifetimeExclusivityCheckingDisabled())
+  if (signature.getIsNestedOriginExclusivityCheckingDisabled())
     p << "no_nested_lifetime_exclusivity";
 
   printOptionalParamSignature(p, signature.getParamTypes(),
@@ -1072,12 +1072,12 @@ StringAttr LITSignatureType::getArgName(size_t idx) {
   return getArgListAttrs().getName(idx);
 }
 
-TypedAttr LITSignatureType::getCaptureLifetimes() {
-  return getMetadata().getCaptureLifetimes();
+TypedAttr LITSignatureType::getCaptureOrigins() {
+  return getMetadata().getCaptureOrigins();
 }
 
-bool LITSignatureType::getIsNestedLifetimeExclusivityCheckingDisabled() {
-  return getMetadata().getIsNestedLifetimeExclusivityCheckingDisabled();
+bool LITSignatureType::getIsNestedOriginExclusivityCheckingDisabled() {
+  return getMetadata().getIsNestedOriginExclusivityCheckingDisabled();
 }
 
 ArrayRef<TypedAttr> LITSignatureType::getDefaultPosArgs() {
@@ -1101,8 +1101,8 @@ StringAttr LITSignatureType::getParamName(size_t idx) {
 }
 
 /// Get the number of implicit lifetime decls this function type carries.
-size_t LITSignatureType::getNumImplicitLifetimeDecls() {
-  return getMetadata().getNumImplicitLifetimeDecls();
+size_t LITSignatureType::getNumImplicitOriginDecls() {
+  return getMetadata().getNumImplicitOriginDecls();
 }
 
 Type LITSignatureType::getUserResultType() {
@@ -1114,15 +1114,14 @@ LITSignatureType LITSignatureType::dropParamValues() {
   return get(
       getValues(), /*paramTypes=*/{}, getArgConventions(), getFnEffects(),
       FnMetadataAttr::get(getArgListAttrs(), PogListAttr::get(getContext()),
-                          /*numImplicitLifetimeDecls=*/0, getCaptureLifetimes(),
-                          getIsNestedLifetimeExclusivityCheckingDisabled()));
+                          /*numImplicitOriginDecls=*/0, getCaptureOrigins(),
+                          getIsNestedOriginExclusivityCheckingDisabled()));
 }
 
-LITSignatureType
-LITSignatureType::getWithCaptureLifetimes(TypedAttr lifetimes) {
+LITSignatureType LITSignatureType::getWithCaptureOrigins(TypedAttr lifetimes) {
   return getWithMetadata(FnMetadataAttr::get(
-      getArgListAttrs(), getParamListAttrs(), getNumImplicitLifetimeDecls(),
-      lifetimes, getIsNestedLifetimeExclusivityCheckingDisabled()));
+      getArgListAttrs(), getParamListAttrs(), getNumImplicitOriginDecls(),
+      lifetimes, getIsNestedOriginExclusivityCheckingDisabled()));
 }
 
 bool LITSignatureType::isAnyVarArg(size_t index) {
@@ -1187,13 +1186,13 @@ unsigned LITSignatureType::getErrorSlotOffset() {
 /// and invokes 'emitError'+returns null on error.
 FunctionType LITSignatureType::substituteImplicitLifetimesIntoValues(
     ArrayRef<TypedAttr> values, function_ref<InFlightDiagnostic()> emitError) {
-  assert(values.size() == getNumImplicitLifetimeDecls() &&
+  assert(values.size() == getNumImplicitOriginDecls() &&
          "Incorrect # implicit lifetimes specified");
 
   struct Substitutor : IndexParameterReplacer<Substitutor> {
     Type tryReplace(Type, size_t) { return {}; }
     Attribute tryReplace(Attribute attr, size_t depth) {
-      if (auto ref = ::dyn_cast<ImplicitLifetimeRefAttr>(attr);
+      if (auto ref = ::dyn_cast<ImplicitOriginRefAttr>(attr);
           ref && ref.getDepth() == depth) {
         if (ref.getIndex() >= values.size()) {
           emitError() << "implicit lifetime reference at depth " << depth
@@ -1221,7 +1220,7 @@ FunctionType LITSignatureType::substituteImplicitLifetimesIntoValues(
 /// and dropped from the signature.
 LITSignatureType LITSignatureType::getWithImplicitLifetimesBoundNothing() {
   // Avoid work if there is nothing to do.
-  if (getNumImplicitLifetimeDecls() == 0)
+  if (getNumImplicitOriginDecls() == 0)
     return *this;
 
   // Replace the lifetimes with attrs of the right mutability.  We just scan
@@ -1232,10 +1231,10 @@ LITSignatureType LITSignatureType::getWithImplicitLifetimesBoundNothing() {
     Type tryReplace(Type, size_t) { return {}; }
     Attribute tryReplace(Attribute attr, size_t depth) {
       // If we are substituting the signature directly, subtract 1.
-      auto ref = ::dyn_cast<ImplicitLifetimeRefAttr>(attr);
+      auto ref = ::dyn_cast<ImplicitOriginRefAttr>(attr);
       if (!ref || ref.getDepth() != depth)
         return nullptr;
-      return LifetimeUnionAttr::get({}, ref.getType());
+      return OriginUnionAttr::get({}, ref.getType());
     }
   };
 
@@ -1268,8 +1267,8 @@ Type LITSignatureType::replaceImplicitLifetimesWithIndexes(
           // Subtract indexOffset because we may be replacing the signature
           // directly.
           size_t index = it->second;
-          return ImplicitLifetimeRefAttr::get(depth - indexOffset, index,
-                                              ref.getType());
+          return ImplicitOriginRefAttr::get(depth - indexOffset, index,
+                                            ref.getType());
         }
       }
       return nullptr;
@@ -1288,7 +1287,7 @@ Type LITSignatureType::replaceImplicitLifetimesWithIndexes(
 /// specifies the names of the implicit lifetime decls.
 LITSignatureType LITSignatureType::replaceImplicitLifetimesWithIndexes(
     ArrayRef<ParamDeclAttr> lifetimeDecls) {
-  assert(lifetimeDecls.size() == getNumImplicitLifetimeDecls() &&
+  assert(lifetimeDecls.size() == getNumImplicitOriginDecls() &&
          "Incorrect number of lifetime decls");
   return ::cast<LITSignatureType>(
       replaceImplicitLifetimesWithIndexes(*this, lifetimeDecls, 1));
@@ -1316,7 +1315,7 @@ size_t LITSignatureType::countImplicitLifetimes(ArrayRef<ArgConvention> convs) {
 
 LITSignatureType LITSignatureType::get(MLIRContext *ctx, TypeRange inputs,
                                        TypeRange results,
-                                       size_t numImplicitLifetimeDecls) {
+                                       size_t numImplicitOriginDecls) {
   auto funcType = FunctionType::get(ctx, inputs, results);
 
   size_t numInputs = funcType.getNumInputs();
@@ -1324,7 +1323,7 @@ LITSignatureType LITSignatureType::get(MLIRContext *ctx, TypeRange inputs,
       numInputs,
       PogMetadataAttr::get(StringAttr::get(ctx), PassingKind::PosOnly));
   auto metadata = FnMetadataAttr::get(PogListAttr::get(ctx, argPogs),
-                                      numImplicitLifetimeDecls);
+                                      numImplicitOriginDecls);
   return LITSignatureType::get(funcType, /*paramTypes=*/{},
                                /*convs=*/{}, /*effects=*/{}, metadata);
 }
@@ -1418,7 +1417,7 @@ LIT::getUnboundSpecializedSignature(LITSignatureType type,
 TypedAttr LIT::getSingletonParameterValue(Type type) {
   // TODO: Could support structs of lifetimes.
   if (auto lifetime = dyn_cast<LifetimeType>(type))
-    return AnyLifetimeAttr::get(lifetime);
+    return AnyOriginAttr::get(lifetime);
   if (auto set = dyn_cast<OriginSetType>(type))
     return OriginSetAttr::get(/*operands=*/{}, set);
   llvm_unreachable("isn't a singleton parameter");

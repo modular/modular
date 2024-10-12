@@ -578,8 +578,8 @@ static void printDemangledParam(raw_ostream &os, TypedAttr param,
     return;
   }
 
-  if (auto lifetimeField = dyn_cast<LifetimeFieldAttr>(param)) {
-    if (isa<StaticLifetimeAttr>(lifetimeField.getStructLifetime())) {
+  if (auto lifetimeField = dyn_cast<OriginFieldAttr>(param)) {
+    if (isa<StaticOriginAttr>(lifetimeField.getStructOrigin())) {
       if (lifetimeField.getField().str() == "__constants__" &&
           lifetimeField.getType().isMutableKnown(false)) {
         os << "StaticConstantLifetime";
@@ -587,12 +587,12 @@ static void printDemangledParam(raw_ostream &os, TypedAttr param,
       }
     }
 
-    printDemangledParam(os, lifetimeField.getStructLifetime(), forDiag);
+    printDemangledParam(os, lifetimeField.getStructOrigin(), forDiag);
     os << '.' << lifetimeField.getField().str();
     return;
   }
 
-  if (auto anyLife = dyn_cast<AnyLifetimeAttr>(param)) {
+  if (auto anyLife = dyn_cast<AnyOriginAttr>(param)) {
     if (anyLife.getType().isMutableKnown(true))
       os << "MutableAnyOrigin";
     else if (anyLife.getType().isMutableKnown(false))

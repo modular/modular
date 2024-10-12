@@ -50,13 +50,13 @@ static inline void processRawLifetime(TypedAttr lifetime, T &&fn) {
   // Expand lifetime unions into their members, we know they will canonicalize
   // nested unions into a single one.
   if (auto unionAttr =
-          dyn_cast<LifetimeUnionAttr>(LifetimeMutCastAttr::strip(lifetime))) {
+          dyn_cast<OriginUnionAttr>(OriginMutCastAttr::strip(lifetime))) {
     // If we stripped a MutCastAttr off the outer union, put it onto each
     // element we return.
     bool needsImmutCast = TypedAttr(unionAttr) != lifetime;
     for (auto elt : unionAttr.getOperands()) {
       if (needsImmutCast)
-        elt = LifetimeMutCastAttr::get(elt, lifetime.getType());
+        elt = OriginMutCastAttr::get(elt, lifetime.getType());
       fn(elt);
     }
     return;

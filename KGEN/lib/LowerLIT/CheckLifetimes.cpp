@@ -415,7 +415,7 @@ struct ValueInfo {
   /// lifetime.
   const bool startsUninit;
   /// Enum indicating whether the value is initalized at function exit.
-  const LifetimeTrackable::ExitInitState endInitState;
+  const OriginTrackable::ExitInitState endInitState;
 
   /// True if this value lives in memory, not a @register_passable SSA value.
   const bool isIndirect;
@@ -439,7 +439,7 @@ struct ValueInfo {
 
   StringAttr getName() const {
     assert(value && "cannot get name of null entry");
-    return LifetimeTrackable(value).name;
+    return OriginTrackable(value).name;
   }
 
   /// Return a ValueRef that covers this whole value.  The caller must provide
@@ -550,7 +550,7 @@ struct ValueSet {
   TypeDeclInfo &typeDeclInfo;
 
   /// This provides efficient lookup for lifetimes buried in MLIR types.
-  CachedLifetimeFinder &lifetimeFinder;
+  CachedOriginFinder &lifetimeFinder;
 
   /// Initialize the value set with one entry, so index #0 is always invalid and
   /// can be used as a sentinel, and so a null Value is always treated as
@@ -559,9 +559,9 @@ struct ValueSet {
   /// This sentinel is also used by DestructorInsertion as a marker for
   /// "unreachable" code to avoid unnecessary meets.
   ValueSet(TypeDeclInfo &typeDeclInfo, LIT::FuncOp func,
-           CachedLifetimeFinder &lifetimeFinder)
+           CachedOriginFinder &lifetimeFinder)
       : typeDeclInfo(typeDeclInfo), lifetimeFinder(lifetimeFinder), func(func) {
-    addValue(Value(), LifetimeTrackable(Value()));
+    addValue(Value(), OriginTrackable(Value()));
   }
 
   /// Return the number of values we are tracking.
@@ -573,7 +573,7 @@ struct ValueSet {
   ///  * the MLIR representation for the value itself
   ///  * whether the value is a by-ref to the underlying logical value
   ///  * The bitrange it covers
-  void addValue(Value val, const LifetimeTrackable &trackable,
+  void addValue(Value val, const OriginTrackable &trackable,
                 DebugInfo::DILocalVariableAttr debugVariable = {});
 
   /// Remove a tracked value from the valueset maps, and reset its ValueEntry to
@@ -683,15 +683,15 @@ void ValueSet::dump() const {
     if (!info.startsUninit)
       os << " SI";
     switch (info.endInitState) {
-    case LifetimeTrackable::EndsInit:
+    case OriginTrackable::EndsInit:
       break;
-    case LifetimeTrackable::EndsUninit:
+    case OriginTrackable::EndsUninit:
       os << " EI";
       break;
-    case LifetimeTrackable::InitOnNormal:
+    case OriginTrackable::InitOnNormal:
       os << " NR";
       break;
-    case LifetimeTrackable::InitOnError:
+    case OriginTrackable::InitOnError:
       os << " ER";
       break;
     }
@@ -724,7 +724,7 @@ void ValueSet::dump() const {
 ///  * the MLIR representation for the value itself
 ///  * whether the value is a by-ref to the underlying logical value
 ///  * The bitrange it covers
-void ValueSet::addValue(Value val, const LifetimeTrackable &trackable,
+void ValueSet::addValue(Value val, const OriginTrackable &trackable,
                         DebugInfo::DILocalVariableAttr debugVariable) {
   // Figure out how many bits to track for this value at the lifetime if mem.
   unsigned numValueBits;
@@ -744,7 +744,7 @@ void ValueSet::addValue(Value val, const LifetimeTrackable &trackable,
     numValueBits = typeDeclInfo.getNumFieldsInType(valType);
 
     // Remember the lifetime if not unknown.
-    if (!isa<AnyLifetimeAttr>(refType.getLifetime()))
+    if (!isa<AnyOriginAttr>(refType.getLifetime()))
       valueLifetime = refType.getLifetime();
   } else {
     // We don't track trivial values of register type.
@@ -782,13 +782,13 @@ std::pair<ValueRef, Type>
 ValueSet::getValueRefAndTypeForLifetime(TypedAttr lifetime) const {
   // The mutability of the lifetime access doesn't affect what ValueRef is
   // accessed.
-  lifetime = LifetimeMutCastAttr::strip(lifetime);
+  lifetime = OriginMutCastAttr::strip(lifetime);
 
   // If the lifetime has one or more field specifiers like 'a.x.y.z', find
   // the ValueRef for the base and then refine it.
-  if (auto field = dyn_cast<LifetimeFieldAttr>(lifetime)) {
+  if (auto field = dyn_cast<OriginFieldAttr>(lifetime)) {
     auto [valueRef, type] =
-        getValueRefAndTypeForLifetime(field.getStructLifetime());
+        getValueRefAndTypeForLifetime(field.getStructOrigin());
     // If we don't have field sensitive information then we cannot refine the
     // lifetime.  This also handles the null valueRef case.
     if (!type)
@@ -1257,7 +1257,7 @@ void UninitializedValueScan::checkLifetimeEffect(TypedAttr lifetime,
   }
 }
 
-/// This function is called when an operation uses a #lit.any.lifetime lifetime.
+/// This function is called when an operation uses a #lit.any.origin lifetime.
 /// This happens when the operation accesses through (e.g.) an unbound
 /// UnsafePointer.  We don't know what objects may be touched by this access,
 /// but we want to ensure (for usability sake) that any lifetime-tracked values
@@ -1276,8 +1276,8 @@ void UninitializedValueScan::handleAnyLifetimeUse(
     processRawLifetime(elt, [&](TypedAttr raw) {
       // Ignore field sensitivity of the use: if we have a def of a subfield of
       // the value then we treat it as defining the value.
-      while (auto field = dyn_cast<LifetimeFieldAttr>(raw))
-        raw = field.getStructLifetime();
+      while (auto field = dyn_cast<OriginFieldAttr>(raw))
+        raw = field.getStructOrigin();
       definedLifetimeSet.insert(raw);
     });
   }
@@ -1405,8 +1405,8 @@ void UninitializedValueScan::scanBlock(Block &block) {
            "getOperationEffects returned wrong # effects");
     for (auto [result, effect] : llvm::zip(op.getResults(), resultEffects)) {
 #ifndef NDEBUG
-      LifetimeTrackable trackable(result);
-      // Perform some general sanity checking of the LifetimeTrackable
+      OriginTrackable trackable(result);
+      // Perform some general sanity checking of the OriginTrackable
       // implementation.
 
       // Since this is an op result, the live in/out behavior must match each
@@ -1414,10 +1414,10 @@ void UninitializedValueScan::scanBlock(Block &block) {
       // the op could never be satisfied.
       bool endsUninit = false;
       if (trackable) {
-        assert((trackable.endInitState == LifetimeTrackable::EndsInit ||
-                trackable.endInitState == LifetimeTrackable::EndsUninit) &&
+        assert((trackable.endInitState == OriginTrackable::EndsInit ||
+                trackable.endInitState == OriginTrackable::EndsUninit) &&
                "invalid end init state for an op result");
-        endsUninit = trackable.endInitState == LifetimeTrackable::EndsUninit;
+        endsUninit = trackable.endInitState == OriginTrackable::EndsUninit;
         assert(trackable.startsUninit == endsUninit &&
                "op results must have same live in/out behavior");
       }
@@ -1433,7 +1433,7 @@ void UninitializedValueScan::scanBlock(Block &block) {
         checkDef(result, op, /*isDeref=*/false);
         break;
       case ResultEffect::memDefineUninitToInit:
-        // The live-in behavior is modeled by LifetimeTrackable to match the
+        // The live-in behavior is modeled by OriginTrackable to match the
         // live-out behavior.
         assert(trackable && trackable.isIndirect && !endsUninit &&
                "Lifetime trackable and CheckLifetimes disagree");
@@ -1451,7 +1451,7 @@ void UninitializedValueScan::scanBlock(Block &block) {
         // Nothing to do here.
         break;
       case ResultEffect::memDefineInitToUninit:
-        // The live-in behavior is modeled by LifetimeTrackable to match the
+        // The live-in behavior is modeled by OriginTrackable to match the
         // live-out behavior.
         assert(trackable && trackable.isIndirect && endsUninit &&
                "Lifetime trackable and CheckLifetimes disagree");
@@ -1467,10 +1467,10 @@ void UninitializedValueScan::scanBlock(Block &block) {
     bool hasAnyLifetime = false;
     for (auto lifetime : lifetimeEffects) {
       checkLifetimeEffect(lifetime, op);
-      hasAnyLifetime |= isa<AnyLifetimeAttr>(lifetime);
+      hasAnyLifetime |= isa<AnyOriginAttr>(lifetime);
     }
 
-    // If the operation used a #lit.any.lifetime value, then we treat it as an
+    // If the operation used a #lit.any.origin value, then we treat it as an
     // implicit use of all tracked values.  This ensures that the values are
     // not destroyed too early.
     if (hasAnyLifetime)
@@ -1508,13 +1508,13 @@ void UninitializedValueScan::scanBlock(Block &block) {
 /// function. A value may be always uninitialized or initialized, or it may be
 /// depending on the exit kind.
 static bool isUninitializedAtExit(const ValueInfo &valueInfo, Operation &exit) {
-  if (valueInfo.endInitState == LifetimeTrackable::EndsUninit)
+  if (valueInfo.endInitState == OriginTrackable::EndsUninit)
     return true;
 
-  if (valueInfo.endInitState == LifetimeTrackable::InitOnNormal)
+  if (valueInfo.endInitState == OriginTrackable::InitOnNormal)
     return isa<ErrorReturnOp>(exit);
 
-  if (valueInfo.endInitState == LifetimeTrackable::InitOnError)
+  if (valueInfo.endInitState == OriginTrackable::InitOnError)
     return isa<KGEN::ReturnOp>(exit);
   return false;
 }
@@ -2196,8 +2196,8 @@ static bool mightPointTo(Value p1, Value p2) {
   if (!isa<PointerType, RefType>(p1.getType()))
     return false;
 
-  Value underlyingP1 = LifetimeTrackable::findUnderlyingValueFromField(p1);
-  Value underlyingP2 = LifetimeTrackable::findUnderlyingValueFromField(p2);
+  Value underlyingP1 = OriginTrackable::findUnderlyingValueFromField(p1);
+  Value underlyingP2 = OriginTrackable::findUnderlyingValueFromField(p2);
   return !underlyingP1 || !underlyingP2 || underlyingP1 == underlyingP2;
 }
 
@@ -2340,13 +2340,13 @@ DestructorInserter::elideCopyInitMem(LIT::CallOp copyInitCall,
       // The old reference type used a novel lifetime.  We need to declare it,
       // and coerce back to it with a rebind.
       builder.create<ParamDeclareOp>(ParamDeclAttr::get(param),
-                                     AnyLifetimeAttr::get(param.getType()));
+                                     AnyOriginAttr::get(param.getType()));
       auto refCasted = builder.create<RebindOp>(tmpDecl.getType(), copyInitSrc);
 
       // Erase the lifetime start marker for the temporary. However, keep the
       // lifetime end markers if the aliased value is a var decl, as they will
       // get "inherited" by the aliased value.
-      Value value = LifetimeTrackable::findUnderlyingValueFromField(refCasted);
+      Value value = OriginTrackable::findUnderlyingValueFromField(refCasted);
       for (Operation *user : llvm::make_early_inc_range(tmpDecl->getUsers())) {
         if (isa<VarLifetimeStartOp>(user)) {
           user->erase();
@@ -2627,7 +2627,7 @@ void DestructorInsertion::scanBlock(Block &block) {
         checkDef(result, op, /*isDeref=*/false, dtorInserter);
         break;
       case ResultEffect::memDefineUninitToInit:
-        // The live-in behavior is modeled by LifetimeTrackable to match the
+        // The live-in behavior is modeled by OriginTrackable to match the
         // live-out behavior.
         // We consume on execution to provide Uninit -> Init behavior.
         checkConsume(result, op, /*isDeref=*/true, dtorInserter);
@@ -2687,7 +2687,7 @@ void DestructorInsertion::scanBlock(Block &block) {
     for (auto lifetime : lifetimeEffects)
       checkLifetimeEffect(lifetime, dtorInserter);
 
-    // If the operation used a #lit.any.lifetime value, then we treat it as an
+    // If the operation used a #lit.any.origin value, then we treat it as an
     // implicit use of all tracked values.  This ensures that the values are not
     // destroyed too early.  Uninit variable scan handles this by adding an
     // attribute with all the value ID's in question.
@@ -3498,7 +3498,7 @@ struct CheckLifetimes : impl::CheckLifetimesBase<CheckLifetimes> {
     // Process all the structs into TypeDeclInfo.
     TypeDeclInfo typeDeclInfo(std::move(structMap), std::move(funcMap),
                               std::move(traitMap));
-    CachedLifetimeFinder lifetimeFinder;
+    CachedOriginFinder lifetimeFinder;
 
     // TODO: Do in parallel, watch out for mutations of TypeDeclInfo and
     // lifetimeFinder though!
@@ -3511,13 +3511,13 @@ struct CheckLifetimes : impl::CheckLifetimesBase<CheckLifetimes> {
   }
 
   LogicalResult processFunction(LIT::FuncOp func, TypeDeclInfo &typeDeclInfo,
-                                CachedLifetimeFinder &lifetimeFinder);
+                                CachedOriginFinder &lifetimeFinder);
 };
 } // namespace
 
 LogicalResult
 CheckLifetimes::processFunction(LIT::FuncOp func, TypeDeclInfo &typeDeclInfo,
-                                CachedLifetimeFinder &lifetimeFinder) {
+                                CachedOriginFinder &lifetimeFinder) {
 
   // Pass #1: Collect all of the values declared in the function that have
   // ownership to track, and number them.
@@ -3541,7 +3541,7 @@ CheckLifetimes::processFunction(LIT::FuncOp func, TypeDeclInfo &typeDeclInfo,
         // All the ops that define trackable values have a single result.
         if (op->getNumResults() == 1) {
           Value result = op->getResult(0);
-          if (auto trackable = LifetimeTrackable(result)) {
+          if (auto trackable = OriginTrackable(result)) {
             // Generate debug info for VarDecls if needed.
             DebugInfo::DILocalVariableAttr debugVariable;
             if (genDebugInfo) {
@@ -3561,7 +3561,7 @@ CheckLifetimes::processFunction(LIT::FuncOp func, TypeDeclInfo &typeDeclInfo,
         for (auto &region : op->getRegions()) {
           for (auto &block : region)
             for (auto arg : block.getArguments())
-              if (auto trackable = LifetimeTrackable(arg))
+              if (auto trackable = OriginTrackable(arg))
                 valueSet.addValue(arg, trackable);
         }
 
@@ -3576,7 +3576,7 @@ CheckLifetimes::processFunction(LIT::FuncOp func, TypeDeclInfo &typeDeclInfo,
     if (genDebugInfo && !argShadowed[arg.getArgNumber()])
       debugVariable = insertDebugVariableForArg(debugBuilder, func, arg,
                                                 pogList, funcSpAttr);
-    if (auto trackable = LifetimeTrackable(arg))
+    if (auto trackable = OriginTrackable(arg))
       valueSet.addValue(arg, trackable, debugVariable);
   }
 

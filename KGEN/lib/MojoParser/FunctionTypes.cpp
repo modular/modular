@@ -148,8 +148,8 @@ static LITSignatureType getReducedFunctionType(LITSignatureType sig) {
   auto metadata = FnMetadataAttr::get(
       PogListAttr::get(ctx, names, passingKinds),
       PogListAttr::get(ctx, sig.getNumParams()),
-      sig.getNumImplicitLifetimeDecls(), sig.getCaptureLifetimes(),
-      sig.getIsNestedLifetimeExclusivityCheckingDisabled());
+      sig.getNumImplicitOriginDecls(), sig.getCaptureOrigins(),
+      sig.getIsNestedOriginExclusivityCheckingDisabled());
   return SignatureType::get(sig.getValues(), sig.getParamTypes(), {},
                             sig.getArgConventions(), sig.getFnEffects(),
                             metadata);
@@ -420,9 +420,9 @@ CValue LIT::convertFunctionValue(CValue value, const ExprNode *expr,
   auto reparamMetadata = FnMetadataAttr::get(
       reducedExpected.getArgListAttrs(),
       PogListAttr::get(ctx, paramTypes.size()),
-      reducedExpected.getNumImplicitLifetimeDecls(),
-      reducedExpected.getCaptureLifetimes(),
-      reducedExpected.getIsNestedLifetimeExclusivityCheckingDisabled());
+      reducedExpected.getNumImplicitOriginDecls(),
+      reducedExpected.getCaptureOrigins(),
+      reducedExpected.getIsNestedOriginExclusivityCheckingDisabled());
   auto reparamExpected = SignatureType::get(
       cast<FunctionType>(replacer.getReboundType(reducedExpected.getValues())),
       paramTypes, {}, reducedExpected.getArgConventions(),

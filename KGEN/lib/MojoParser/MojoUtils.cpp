@@ -27,7 +27,7 @@ using namespace M::KGEN::LIT;
 TypedAttr LIT::getLifetimesAccessibleByParams(PogListAttr paramList,
                                               ArrayRef<ParamDeclAttr> params,
                                               SharedState &shared,
-                                              TypedAttr captureLifetimes) {
+                                              TypedAttr captureOrigins) {
   // Implicit parameters are not accessible on the callee side, so we don't
   // consider their lifetime accesses.
   params = params.drop_back(countNumImplicitKinds(paramList));
@@ -36,7 +36,7 @@ TypedAttr LIT::getLifetimesAccessibleByParams(PogListAttr paramList,
   for (ParamDeclAttr param : params)
     types.push_back(param.getType());
   SmallVector<TypedAttr> lifetimes =
-      shared.cachedLifetimeFinder.findLifetimesIn(types);
+      shared.cachedOriginFinder.findLifetimesIn(types);
 
   // We also need to find all accessible lifetime sets, even if they are
   // parametric, and union them with the found lifetimes. We don't need to
@@ -60,8 +60,8 @@ TypedAttr LIT::getLifetimesAccessibleByParams(PogListAttr paramList,
   for (ParamDeclAttr param : params)
     if (isa<OriginSetType>(param.getType()))
       addOriginSet(ParamDeclRefAttr::get(param));
-  if (captureLifetimes)
-    addOriginSet(captureLifetimes);
+  if (captureOrigins)
+    addOriginSet(captureOrigins);
 
   return OriginSetAttr::get(shared.getContext(), lifetimes);
 }
@@ -204,14 +204,14 @@ bool LIT::canConvertWithRebind(ASTType fromType, ASTType toType,
       // We allow converting an "any" lifetime to anything concrete.
       // NOTE: This is not memory safe; we should make this an explicit
       // operation someday.
-      if (isa<AnyLifetimeAttr>(fromRef.getLifetime()))
+      if (isa<AnyOriginAttr>(fromRef.getLifetime()))
         return true;
 
       // We can convert lifetime subset to a lifetimes superset.
       auto toLifetime = toRef.getLifetime();
-      auto lifetimeUnion = LifetimeUnionAttr::get(
+      auto lifetimeUnion = OriginUnionAttr::get(
           {toLifetime,
-           LifetimeMutCastAttr::get(fromRef.getLifetime(), toLifetimeType)},
+           OriginMutCastAttr::get(fromRef.getLifetime(), toLifetimeType)},
           toLifetimeType);
       return toLifetime == lifetimeUnion;
     }
@@ -278,11 +278,11 @@ static ASTType getZeroCostCommonTypeImpl(SharedState &shared, ASTType type1,
       auto isMutableAttr = ParamOperatorAttr::get(
           POC::And, type1Ref.isMutable(), type2Ref.isMutable());
 
-      auto l1 = LifetimeMutCastAttr::get(type1Ref.getLifetime(), isMutableAttr);
-      auto l2 = LifetimeMutCastAttr::get(type2Ref.getLifetime(), isMutableAttr);
+      auto l1 = OriginMutCastAttr::get(type1Ref.getLifetime(), isMutableAttr);
+      auto l2 = OriginMutCastAttr::get(type2Ref.getLifetime(), isMutableAttr);
 
       auto lifetime =
-          LifetimeUnionAttr::get({l1, l2}, cast<LifetimeType>(l1.getType()));
+          OriginUnionAttr::get({l1, l2}, cast<LifetimeType>(l1.getType()));
       return RefType::get(eltType, lifetime, type1Ref.getAddressSpace());
     }
 

@@ -213,7 +213,7 @@ def LIT_FnMetadataAttr : LITAttr<"FnMetadata", "fn_metadata",
   let description = [{
     The `#lit.fn_metadata` attribute contains additional information about a
     function, such as the argument and parameter list metadata and the number of
-    implicit lifetime declarations.
+    implicit origin declarations.
 
     Example:
 
@@ -226,7 +226,7 @@ def LIT_FnMetadataAttr : LITAttr<"FnMetadata", "fn_metadata",
     // positional-only and positional-or-keyword passing kinds respectively, and
     // the latter has the default value `3.14`. The list of keyword-only default
     // parameter values is empty (since there are no keyword-only parameters).
-    // The signature has two implicit lifetime declarations.
+    // The signature has two implicit origin declarations.
     #lit.fn_metadata<
       <["someRef", "v", "kwargs"], [pos, kw], [13 : index], [17 : i64]>,
       <["someParam", "paramWithDefault"], [pos, pos_or_kw], [3.14: f32], []>,
@@ -238,29 +238,29 @@ def LIT_FnMetadataAttr : LITAttr<"FnMetadata", "fn_metadata",
   let parameters = (ins
     LIT_PogListAttr:$argListAttrs,
     LIT_PogListAttr:$paramListAttrs,
-    "size_t":$numImplicitLifetimeDecls,
-    "TypedAttr":$captureLifetimes,
-    // TODO: Generalize this to a set of lifetime parameters that are guaranteed
+    "size_t":$numImplicitOriginDecls,
+    "TypedAttr":$captureOrigins,
+    // TODO: Generalize this to a set of origin parameters that are guaranteed
     // to not be dereferenced.
-    OptionalParameter<"bool">:$isNestedLifetimeExclusivityCheckingDisabled
+    OptionalParameter<"bool">:$isNestedOriginExclusivityCheckingDisabled
   );
   let assemblyFormat = [{
-    `<` $argListAttrs `,` $paramListAttrs `,` $numImplicitLifetimeDecls
-    `` custom<FnMetadataLifetimes>($captureLifetimes)
-    (`,` $isNestedLifetimeExclusivityCheckingDisabled^)? `>`
+    `<` $argListAttrs `,` $paramListAttrs `,` $numImplicitOriginDecls
+    `` custom<FnMetadataOrigins>($captureOrigins)
+    (`,` $isNestedOriginExclusivityCheckingDisabled^)? `>`
   }];
 
   let builders = [
     AttrBuilder<(ins)>,
     AttrBuilder<(ins "size_t":$numParams, "size_t":$numArgs,
-                     CArg<"size_t", "0">:$numImplicitLifetimeDecls)>,
+                     CArg<"size_t", "0">:$numImplicitOriginDecls)>,
     AttrBuilderWithInferredContext<(ins
       "PogListAttr":$argListAttrs,
-      CArg<"size_t", "0">:$numImplicitLifetimeDecls)>,
+      CArg<"size_t", "0">:$numImplicitOriginDecls)>,
     AttrBuilderWithInferredContext<(ins
       "PogListAttr":$argListAttrs, "PogListAttr":$paramListAttrs,
-      "size_t":$numImplicitLifetimeDecls, "TypedAttr":$captureLifetimes,
-      "bool":$nestedLifetimeFlag)>,
+      "size_t":$numImplicitOriginDecls, "TypedAttr":$captureOrigins,
+      "bool":$nestedOriginFlag)>,
   ];
 
   let extraClassDeclaration = [{
@@ -278,9 +278,9 @@ def LIT_FnMetadataAttr : LITAttr<"FnMetadata", "fn_metadata",
       return getParamListAttrs().getDefaultKwOnly();
     }
 
-    /// Reconstruct the metadata with the union of the current capture lifetimes
-    /// with the new capture lifetimes.
-    FnMetadataAttr addCaptureLifetimes(TypedAttr lifetimes);
+    /// Reconstruct the metadata with the union of the current capture origins
+    /// with the new capture origins.
+    FnMetadataAttr addCaptureOrigins(TypedAttr origins);
 
     /// Return true if the signature has a variadic argument.
     bool hasVarArgs() const;
@@ -490,14 +490,14 @@ def BindTypeAttr : LITTypedAttr<"BindType", "bind_type"> {
 }
 
 //===----------------------------------------------------------------------===//
-// AnyLifetimeAttr
+// AnyOriginAttr
 //===----------------------------------------------------------------------===//
 
-def AnyLifetimeAttr : LITTypedAttr<"AnyLifetime", "any.lifetime"> {
+def AnyOriginAttr : LITTypedAttr<"AnyOrigin", "any.origin"> {
   let summary = "A !lit.lifetime<mut> value that could refer to anything";
   let description = [{
     This attribute is a singleton (for each mutability) which represents
-    lifetime that might alias anything.
+    origin that might alias anything.
   }];
 
   let parameters = (ins
@@ -520,14 +520,14 @@ def AnyLifetimeAttr : LITTypedAttr<"AnyLifetime", "any.lifetime"> {
 }
 
 //===----------------------------------------------------------------------===//
-// StaticLifetimeAttr
+// StaticOriginAttr
 //===----------------------------------------------------------------------===//
 
-def StaticLifetimeAttr : LITTypedAttr<"StaticLifetime", "static.lifetime"> {
+def StaticOriginAttr : LITTypedAttr<"StaticOrigin", "static.origin"> {
   let summary = "A !lit.lifetime<mut> value that refers to static memory";
   let description = [{
     This attribute is a singleton (for each mutability) which represents the
-    lifetime of global static memory, used for static strings and global
+    origin of global static memory, used for static strings and global
     variables.
   }];
 
@@ -539,13 +539,13 @@ def StaticLifetimeAttr : LITTypedAttr<"StaticLifetime", "static.lifetime"> {
 }
 
 //===----------------------------------------------------------------------===//
-// LifetimeUnionAttr
+// OriginUnionAttr
 //===----------------------------------------------------------------------===//
 
-def LifetimeUnionAttr : LITTypedAttr<"LifetimeUnion", "lifetime.union"> {
-  let summary = "A #lit.lifetime.union set";
+def OriginUnionAttr : LITTypedAttr<"OriginUnion", "origin.union"> {
+  let summary = "A #lit.origin.union set";
   let description = [{
-    This attribute represents a set of symbolic lifetime attributes.  It is
+    This attribute represents a union of symbolic origin attributes.  It is
     canonicalized on construction, and always has !lit.lifetime type.
   }];
 
@@ -580,19 +580,19 @@ def LifetimeUnionAttr : LITTypedAttr<"LifetimeUnion", "lifetime.union"> {
 
     /// A specific builder used to build the attribute from a bytecode context,
     /// providing a slightly different context from the normal builder.
-    static LifetimeUnionAttr getFromBytecode(
+    static OriginUnionAttr getFromBytecode(
         ArrayRef<TypedAttr> operands, LifetimeType type);
   }];
 }
 
 //===----------------------------------------------------------------------===//
-// LifetimeMutCastAttr
+// OriginMutCastAttr
 //===----------------------------------------------------------------------===//
 
-def LifetimeMutCastAttr : LITTypedAttr<"LifetimeMutCast", "lifetime.mutcast"> {
+def OriginMutCastAttr : LITTypedAttr<"OriginMutCast", "origin.mutcast"> {
   let summary = "Cast a !lit.lifetime value to a different mutability";
   let description = [{
-    This attribute is a cast of a lifetime value from one mutability to another.
+    This attribute is a cast of a origin value from one mutability to another.
     It is often folded away by the builder.
   }];
 
@@ -616,75 +616,74 @@ def LifetimeMutCastAttr : LITTypedAttr<"LifetimeMutCast", "lifetime.mutcast"> {
   ];
 
   let extraClassDeclaration = [{
-    /// If the specified value has a LifetimeMutCastAttr on it, return the
+    /// If the specified value has a OriginMutCastAttr on it, return the
     /// operand, otherwise return the value.
     static TypedAttr strip(TypedAttr value) {
-      if (auto castAttr = llvm::dyn_cast<LifetimeMutCastAttr>(value))
+      if (auto castAttr = llvm::dyn_cast<OriginMutCastAttr>(value))
         return castAttr.getOperand();
       return value;
     }
 
     /// A specific builder used to build the attribute from a bytecode context,
     /// providing a slightly different context from the normal builder.
-    static LifetimeMutCastAttr getFromBytecode(
+    static OriginMutCastAttr getFromBytecode(
         TypedAttr operand, LifetimeType type);
   }];
 }
 
 //===----------------------------------------------------------------------===//
-// LifetimeFieldAttr
+// OriginFieldAttr
 //===----------------------------------------------------------------------===//
 
-def LifetimeFieldAttr : LITTypedAttr<"LifetimeField", "lifetime.field"> {
-  let summary = "Get a field-sensitive subfield of another lifetime";
+def OriginFieldAttr : LITTypedAttr<"OriginField", "origin.field"> {
+  let summary = "Get a field-sensitive subfield of another origin";
   let description = [{
-    This attribute refines a larger lifetime to that of a subfield.  This
-    subfield is known to alias the larger lifetime, but not other sibling
-    lifetimes.
+    This attribute refines a larger origin to that of a subfield.  This
+    subfield is known to alias the larger origin, but not other sibling origins.
   }];
 
-  let parameters = (ins "TypedAttr":$structLifetime,
+  let parameters = (ins "TypedAttr":$structOrigin,
                         "StringAttr":$field,
                         AttributeSelfTypeParameter<"", "LifetimeType">:$type);
 
-  let assemblyFormat = "`<` $structLifetime `,` $field `>`";
+  let assemblyFormat = "`<` $structOrigin `,` $field `>`";
 
   let skipDefaultBuilders = 1;
   let builders = [
     // These builders fold the request automatically.
     AttrBuilderWithInferredContext<(ins
-      "TypedAttr":$structLifetime, "StringAttr":$field), "", "TypedAttr">,
-    AttrBuilder<(ins "TypedAttr":$structLifetime, "StringAttr":$field,
+      "TypedAttr":$structOrigin, "StringAttr":$field), "", "TypedAttr">,
+    AttrBuilder<(ins "TypedAttr":$structOrigin, "StringAttr":$field,
                 "LifetimeType":$type), [{
-      return get(structLifetime, field);
+      return get(structOrigin, field);
     }], "TypedAttr">,
   ];
 
   let extraClassDeclaration = [{
     /// A specific builder used to build the attribute from a bytecode context,
     /// providing a slightly different context from the normal builder.
-    static LifetimeFieldAttr getFromBytecode(TypedAttr structLifetime,
+    static OriginFieldAttr getFromBytecode(TypedAttr structOrigin,
         StringAttr field, LifetimeType type);
   }];
 }
 
 //===----------------------------------------------------------------------===//
-// ImplicitLifetimeRefAttr
+// ImplicitOriginRefAttr
 //===----------------------------------------------------------------------===//
 
-def ImplicitLifetimeRefAttr
-  : LITTypedAttr<"ImplicitLifetimeRef", "lifetime_ref", [
+def ImplicitOriginRefAttr
+  : LITTypedAttr<"ImplicitOriginRef", "origin.ref", [
     DeclareAttrInterfaceMethods<IndexRefAttrInterface>,
     DeclareAttrInterfaceMethods<ParameterAttrInterface, ["isLessThan"]>]> {
-  let summary = "Reference to an unbound implicit lifetime parameter.";
+  let summary = "Reference to an unbound implicit origin parameter.";
   let description = [{
-    The `#lit.lifetime_ref` attribute is a reference to an unbound implicit
-    lifetime parameter.
+    The `#lit.origin.ref` attribute is a reference to an unbound implicit
+    origin parameter.
 
     Example:
 
     ```mlir
-    #lit.lifetime_ref<0, 1>
+    #lit.origin.ref<0, 1>
     ```
   }];
 
@@ -748,7 +747,7 @@ def OriginSetAttr : LITTypedAttr<"OriginSet", "origin.set"> {
 
 def OriginSetUnionAttr : LITTypedAttr<"OriginSetUnion",
                                       "origin.set.union"> {
-  let summary = "converts a lifetime set to a single coarse origin";
+  let summary = "converts a origin set to a single coarse origin";
   let description = [{
     The `#lit.origin.set.union` attribute converts a `!lit.origin.set` value
     to a single coarse-grained origin value by converting passing the elements

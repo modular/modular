@@ -138,7 +138,7 @@ kgen.generator @use_struct_param(%arg0: !lit.struct<@StructParam<:@Struct #lit.s
 kgen.generator @lifetime_lower<p: !lit.lifetime<0>>(%a: !lit.lifetime<1>) {
 
   // CHECK: kgen.param.declare A: struct<()> = <{ }>
-  kgen.param.declare A: !lit.lifetime<1> = <#lit.any.lifetime>
+  kgen.param.declare A: !lit.lifetime<1> = <#lit.any.origin>
 
   // CHECK: kgen.param.declare B: struct<()> = <{ }>
   kgen.param.declare B: origin.set = <{imm p}>
@@ -148,9 +148,9 @@ kgen.generator @lifetime_lower<p: !lit.lifetime<0>>(%a: !lit.lifetime<1>) {
 // CHECK-LABEL: kgen.generator @call_lifetime_lower
 kgen.generator @call_lifetime_lower() {
   // CHECK: %struct = kgen.param.constant: struct<()> = <{ }>
-  %cst = kgen.param.constant: lifetime<1> = <#lit.any.lifetime>
+  %cst = kgen.param.constant: lifetime<1> = <#lit.any.origin>
   // CHECK: kgen.call @lifetime_lower<:struct<()> { }>(%struct) : (!kgen.struct<()>) -> ()
-  kgen.call @lifetime_lower<:lifetime<0> #lit.any.lifetime>(%cst) : (!lit.lifetime<1>) -> ()
+  kgen.call @lifetime_lower<:lifetime<0> #lit.any.origin>(%cst) : (!lit.lifetime<1>) -> ()
   kgen.return
 }
 

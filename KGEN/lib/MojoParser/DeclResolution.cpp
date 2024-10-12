@@ -427,7 +427,7 @@ LogicalResult FnDecorators::apply(ExprNode *decorator) {
       tcSignature.argList.effects.setCapturing();
     else if (declRef->spelling ==
              "__unsafe_disable_nested_lifetime_exclusivity")
-      tcSignature.isNestedLifetimeExclusivityCheckingDisabled = true;
+      tcSignature.isNestedOriginExclusivityCheckingDisabled = true;
     else if (declRef->spelling == "op")
       applyOp(/*patterns=*/nullptr);
     else
@@ -902,7 +902,7 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
   SpecialFunctionInfo fnInfo = SpecialFunctionInfo::get(baseName);
 
   TypeCheckedFnSignature tcSignature(paramList, fnSignature, resultArg,
-                                     /*captureLifetimes=*/nullptr, isDef, &decl,
+                                     /*captureOrigins=*/nullptr, isDef, &decl,
                                      fnInfo);
 
   // If any of the arguments had an error or if the result type is a type check
@@ -1067,9 +1067,9 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
       captureTypes.push_back(param.getType());
 
     SmallVector<TypedAttr> lifetimes =
-        shared.cachedLifetimeFinder.findLifetimesIn(captureTypes);
+        shared.cachedOriginFinder.findLifetimesIn(captureTypes);
     signature =
-        signature.getWithMetadata(signature.getMetadata().addCaptureLifetimes(
+        signature.getWithMetadata(signature.getMetadata().addCaptureOrigins(
             OriginSetAttr::get(getContext(), lifetimes)));
     funcOp.setSignature(signature);
 

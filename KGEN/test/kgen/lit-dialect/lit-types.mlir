@@ -136,8 +136,8 @@ kgen.generator @trait() {
 }
 
 // CHECK-LABEL: kgen.generator @ref_types
-// CHECK: %arg0: !lit.ref<index, imm #lit.any.lifetime, 4>
-kgen.generator @ref_types(%arg0: !lit.ref<index, imm #lit.any.lifetime, 4>) {
+// CHECK: %arg0: !lit.ref<index, imm #lit.any.origin, 4>
+kgen.generator @ref_types(%arg0: !lit.ref<index, imm #lit.any.origin, 4>) {
   kgen.unreachable
 }
 

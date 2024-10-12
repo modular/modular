@@ -14,7 +14,7 @@
 namespace M::KGEN {
 namespace LIT {
 
-class CachedLifetimeFinder {
+class CachedOriginFinder {
 public:
   /// This method finds all the lifetimes buried in the specified type,
   /// returning them as a list, possibly eliding duplicates. This typically will
@@ -30,11 +30,11 @@ private:
 /// This class provide an abstraction for analyzing lifetime-trackable values,
 /// e.g. variable definitions and owned arguments to functions.  This class can
 /// also be used to query whether something is lifetime trackable or not, by
-/// building a LifetimeTrackable and then querying it for null.
-struct LifetimeTrackable {
+/// building a OriginTrackable and then querying it for null.
+struct OriginTrackable {
   /// This constructor checks to see if the value is trackable, and if so
   /// identifies it.  If not, this returns a null value.
-  LifetimeTrackable(Value value);
+  OriginTrackable(Value value);
 
   /// This constructor checks to see if the value is trackable or a field of a
   /// trackable.  If so it identifies the underlying object being referenced. If
@@ -176,12 +176,10 @@ enum class OverallOpValueEffect {
 /// This computes the effects that an operation has on any operands, result
 /// values, and other declared lifetimes. This information is used by both
 /// phases of CheckLifetimes.
-OverallOpValueEffect
-getOperationEffects(Operation &op,
-                    SmallVectorImpl<std::pair<Value, OperandEffect>> &operands,
-                    SmallVectorImpl<ResultEffect> &results,
-                    SmallVectorImpl<TypedAttr> &lifetimes,
-                    CachedLifetimeFinder &lifetimeFinder);
+OverallOpValueEffect getOperationEffects(
+    Operation &op, SmallVectorImpl<std::pair<Value, OperandEffect>> &operands,
+    SmallVectorImpl<ResultEffect> &results,
+    SmallVectorImpl<TypedAttr> &lifetimes, CachedOriginFinder &lifetimeFinder);
 
 } // namespace LIT
 } // namespace M::KGEN
