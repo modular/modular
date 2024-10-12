@@ -218,6 +218,9 @@ fn exclusivity[
 fn mutate_two[A: AnyType, B: AnyType](inout a: A, inout b: B):
     pass
 
+fn mutate_two_AnyLifetime(ref[MutableAnyLifetime] a: Int, ref[MutableAnyLifetime] b: Int):
+    pass
+
 
 fn inout_ref_exclusivity(inout a: Int, inout b: Int, inout s: MyStruct):
     # This is ok.
@@ -243,6 +246,9 @@ fn inout_ref_exclusivity(inout a: Int, inout b: Int, inout s: MyStruct):
     # expected-note @below {{'s' memory accessed through reference embedded in value of type 'Int'}}
     mutate_two(s, s.a)
 
+    # expected-error @below {{argument of 'mutate_two_AnyLifetime' call allows writing a memory location previously writable through another aliased argument}}
+    # expected-note @below {{'a' value is passed through aliasing 'ref' argument}}
+    mutate_two_AnyLifetime(a, a)
 
 fn capture_exclusivity(owned x: MemExample):
     @parameter
