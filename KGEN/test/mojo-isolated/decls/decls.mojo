@@ -1226,7 +1226,7 @@ fn closureParameter[func: fn () capturing -> __mlir_type.index]():
 # CHECK-SAME: :*(0,0):
 # CHECK-SAME: func: !lit.signature<:lifetimes:() capturing -> !kgen.none>
 fn closureParameterCaptures[
-    lifetimes: LifetimeSet, //, func: fn () capturing [lifetimes] -> None
+    lifetimes: OriginSet, //, func: fn () capturing [lifetimes] -> None
 ]():
     pass
 
@@ -1243,13 +1243,13 @@ fn closureParameterInference[
 
 
 @register_passable("trivial")
-struct HasLifetimeParam[p: MutableLifetime]:
+struct HasLifetimeParam[p: MutableOrigin]:
     pass
 
 
 # CHECK-LABEL: lit.func @"explicitLifetime
 # CHECK-SAME: :{mut *(0,0)}:
-fn explicitLifetime[lt: MutableLifetime, //, arg: HasLifetimeParam[lt]]():
+fn explicitLifetime[lt: MutableOrigin, //, arg: HasLifetimeParam[lt]]():
     pass
 
 
@@ -1263,7 +1263,7 @@ fn inaccessibleImplicitLifetimeParam(arg: HasLifetimeParam):
 struct CapturingStruct[a: int]:
     @staticmethod
     fn takeClosure[
-        lifetimes: LifetimeSet, //,
+        lifetimes: OriginSet, //,
         f: fn () capturing [lifetimes] -> None,
     ]():
         pass
@@ -1273,7 +1273,7 @@ struct CapturingStruct[a: int]:
 trait CapturingTrait:
     # CHECK: lit.func @"takeClosure{{.*}}:*(0,0):
     fn takeClosure[
-        lifetimes: LifetimeSet, //,
+        lifetimes: OriginSet, //,
         f: fn () capturing [lifetimes] -> None,
     ](self):
         ...
@@ -1284,7 +1284,7 @@ trait CapturingTrait:
 struct CapturingStructTrait(CapturingTrait):
     # CHECK: lit.func @"takeClosure{{.*}}:*(0,0):
     fn takeClosure[
-        lifetimes: LifetimeSet, //,
+        lifetimes: OriginSet, //,
         f: fn () capturing [lifetimes] -> None,
     ](self):
         pass
@@ -1292,7 +1292,7 @@ struct CapturingStructTrait(CapturingTrait):
 
 # CHECK-LABEL: lit.func @"inferCaptureLifetimes
 fn inferCaptureLifetimes[
-    lt: MutableLifetime, param: HasLifetimeParam[lt]
+    lt: MutableOrigin, param: HasLifetimeParam[lt]
 ](inout x: int, inout y: int, arg: HasParam):
     @parameter
     fn bareFunc():
@@ -1329,7 +1329,7 @@ fn inferCaptureLifetimes[
     # CHECK-SAME: :{mut |*(0,0)|, mut *"y`{{.*}}"}:
     @parameter
     fn captureWithClosure[
-        lts: LifetimeSet, //, f: fn () capturing [lts] -> None
+        lts: OriginSet, //, f: fn () capturing [lts] -> None
     ]():
         _ = y
 
@@ -1499,7 +1499,7 @@ fn callThing() -> MyStruct:
 
 
 ##===----------------------------------------------------------------------===##
-# Implicit Lifetime Parameters
+# Implicit Origin Parameters
 ##===----------------------------------------------------------------------===##
 
 

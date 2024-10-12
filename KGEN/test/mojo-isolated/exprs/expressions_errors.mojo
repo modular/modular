@@ -643,7 +643,7 @@ fn test_bad_ref_errors[T: AnyType](a: Pointer[T, _], b: Pointer[T, _]):
   # expected-error @below {{cannot implicitly convert 'T' value to 'Pointer[is_mutable, T, lifetime, 0]'}}
   var x : Pointer[T, b.lifetime] = a[]
 
-  # expected-error @below {{cannot implicitly convert 'T' value to 'Pointer[1, T, MutableAnyLifetime, 0]'}}
+  # expected-error @below {{cannot implicitly convert 'T' value to 'Pointer[1, T, MutableAnyOrigin, 0]'}}
   var y : Pointer[T,  __mlir_attr.`#lit.any.lifetime<1>: !lit.lifetime<1>`, a.address_space] = a[]
 
 fn test_subscript_conflict(a: Int):
@@ -701,5 +701,5 @@ fn unbound_function_type():
 struct SomeStruct:
   fn refBindingToImmortal(inout self, ptr: UnsafePointer[Int])
       -> Pointer[Int, __lifetime_of(self)]:
-    # expected-error @below {{cannot implicitly convert 'Pointer[1, Int, MutableAnyLifetime, 0]' value to 'Pointer[1, Int, self, 0]'}}
+    # expected-error @below {{cannot implicitly convert 'Pointer[1, Int, MutableAnyOrigin, 0]' value to 'Pointer[1, Int, self, 0]'}}
     return Pointer.address_of(ptr[])
