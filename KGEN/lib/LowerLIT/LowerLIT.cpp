@@ -55,8 +55,7 @@ static FlatSymbolRefAttr flattenSymbolRefAttr(SymbolRefAttr ref) {
 /// This processes a `lit.func` and returns the param declarations for the
 /// normal input parameters, ignoring the lifetime parameters.
 static ArrayRef<ParamDeclAttr> extractImplicitLifetimeParams(LIT::FuncOp func) {
-  size_t numImplicitLifetimes =
-      func.getSignature().getNumImplicitLifetimeDecls();
+  size_t numImplicitLifetimes = func.getSignature().getNumImplicitOriginDecls();
   return func.getInputParams().drop_back(numImplicitLifetimes);
 }
 
@@ -71,7 +70,7 @@ removeSingletonParamDecls(SmallVectorImpl<ParamDeclAttr> &paramDecls) {
       // We can just remove the parameter without inserting a placeholder
       // in the body. This is safe because we unconditionally replace
       // all attributes of lifetime type at the end of this pass with
-      // #lit.any.lifetime, which will conveniently get all references to
+      // #lit.any.origin, which will conveniently get all references to
       // this. That said, we need to remember the index so we can update
       // the signature.
       ++numRemoved;
@@ -648,7 +647,7 @@ orderAndLowerGlobalVariables(ModuleOp module,
     // Outline the constructor and destructor into functions.
     auto sig = LITSignatureType::get(b.getContext(), /*inputs=*/TypeRange{},
                                      /*results=*/TypeRange{},
-                                     /*numImplicitLifetimeDecls=*/0);
+                                     /*numImplicitOriginDecls=*/0);
     auto makeXtor = [&](Location xtorLoc, StringAttr xtorName, Region &body) {
       b.setInsertionPoint(op);
       auto fn = b.create<LIT::FuncOp>(xtorLoc, xtorName, StringAttr(), sig);

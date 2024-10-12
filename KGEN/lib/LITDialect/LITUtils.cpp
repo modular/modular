@@ -68,13 +68,13 @@ Type LIT::impl::demangleIfNeeded(Type arg) { return demangleIfNeededImpl(arg); }
 /// Print a (potentially) parametric mutability specifier and then a value.  The
 /// forms are: "imm expr", "mut expr", "mut=<expr>, expr" and "muttoimm expr"
 /// without quotes.
-void LIT::printLifetimeParamValue(AsmPrinter &p, TypedAttr value) {
+void LIT::printOriginParamValue(AsmPrinter &p, TypedAttr value) {
   LifetimeType type = cast<LifetimeType>(value.getType());
 
-  // It is extremely common to have a LifetimeMutCastAttr cast from known
+  // It is extremely common to have a OriginMutCastAttr cast from known
   // mutable lifetime to known immutable lifetime (this happens when borrowed
   // arguments are formed).  So much so that we sugar it.
-  if (auto castVal = dyn_cast<LifetimeMutCastAttr>(value);
+  if (auto castVal = dyn_cast<OriginMutCastAttr>(value);
       castVal && type.isMutableKnown(false) &&
       cast<LifetimeType>(castVal.getOperand().getType()).isMutableKnown(true)) {
     p << "muttoimm ";
@@ -94,7 +94,7 @@ void LIT::printLifetimeParamValue(AsmPrinter &p, TypedAttr value) {
   printParamValue(p, value);
 }
 
-ParseResult LIT::parseLifetimeParamValue(AsmParser &p, TypedAttr &result) {
+ParseResult LIT::parseOriginParamValue(AsmParser &p, TypedAttr &result) {
   LifetimeType type;
   // Parse the pretty type specifier if present.
   if (succeeded(p.parseOptionalKeyword("imm"))) {
@@ -115,7 +115,7 @@ ParseResult LIT::parseLifetimeParamValue(AsmParser &p, TypedAttr &result) {
     if (KGEN::parseParamValue(p, result,
                               LifetimeType::get(p.getContext(), true)))
       return failure();
-    result = LifetimeMutCastAttr::get(result, false);
+    result = OriginMutCastAttr::get(result, false);
     return success();
   } else {
     // If none of "mut/imm/muttoimm" are specified, it may be an "ugly" style.

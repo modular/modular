@@ -644,7 +644,7 @@ fn test_bad_ref_errors[T: AnyType](a: Pointer[T, _], b: Pointer[T, _]):
   var x : Pointer[T, b.lifetime] = a[]
 
   # expected-error @below {{cannot implicitly convert 'T' value to 'Pointer[1, T, MutableAnyOrigin, 0]'}}
-  var y : Pointer[T,  __mlir_attr.`#lit.any.lifetime<1>: !lit.lifetime<1>`, a.address_space] = a[]
+  var y : Pointer[T,  __mlir_attr.`#lit.any.origin<1>: !lit.lifetime<1>`, a.address_space] = a[]
 
 fn test_subscript_conflict(a: Int):
   # expected-error @below {{duplicate keyword parameter 'idx'}}
@@ -696,7 +696,7 @@ fn unbound_function_type():
 
 
 
-# Crash converting mvalue of #lit.any.lifetime lifetime to Pointer with specific one.
+# Crash converting mvalue of #lit.any.origin lifetime to Pointer with specific one.
 # https://github.com/modularml/mojo/issues/1921
 struct SomeStruct:
   fn refBindingToImmortal(inout self, ptr: UnsafePointer[Int])

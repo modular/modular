@@ -42,7 +42,7 @@ class ParserInterpreterCache;
 class StructDeclOp;
 class CallOperands;
 struct ParserConfig;
-class CachedLifetimeFinder;
+class CachedOriginFinder;
 enum class CallSyntax : uint8_t;
 
 /// Capture represents a nested function value whose declaration is in the
@@ -104,8 +104,8 @@ public:
 
   const mlir::StringAttr bufferNameIdentifier;
 
-  /// This is used to efficiently walk MLIR types to find embedded lifetimes.
-  CachedLifetimeFinder cachedLifetimeFinder;
+  /// This is used to efficiently walk MLIR types to find embedded origins.
+  CachedOriginFinder cachedOriginFinder;
 
   llvm::SourceMgr &getSourceMgr() const { return diags.sourceMgr; }
   MLIRContext *getContext() const { return diags.context; }

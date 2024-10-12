@@ -1490,7 +1490,7 @@ AnyValue ExprEmitter::emitResult(AnyValue value, const ExprNode *expr,
         if (isa<LifetimeType>(requiredType) &&
             isa<LifetimeType>(cValue.getType()))
           if (auto pv = cValue.getIfPValue())
-            value = LifetimeMutCastAttr::get(pv, requiredType);
+            value = OriginMutCastAttr::get(pv, requiredType);
 
         value = rebindValue({value, expr}, requiredType);
         return emitResult(value, expr, dest);
@@ -1950,7 +1950,7 @@ ASTType ExprEmitter::emitExprType(const ExprNode *expr, bool allowUnbound) {
   // Check for a function type.
   if (auto sig = dyn_cast<LITSignatureType>(type)) {
     // For a fully bound type, require that the lifetime set is concrete.
-    if (isa<UnboundAttr>(sig.getCaptureLifetimes())) {
+    if (isa<UnboundAttr>(sig.getCaptureOrigins())) {
       emitError(expr->getLoc(),
                 "function type missing required lifetime set parameter")
           << expr->getRange();

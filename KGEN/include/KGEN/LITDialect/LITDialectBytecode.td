@@ -120,9 +120,9 @@ def PogListAttr : DialectAttribute<(attr
 def FnMetadataAttr : DialectAttribute<(attr
   ConcreteAttribute<"PogListAttr">:$argListAttrs,
   ConcreteAttribute<"PogListAttr">:$paramListAttrs,
-  VarInt:$numImplicitLifetimeDecls,
-  TypedAttr:$captureLifetimes,
-  Bool:$isNestedLifetimeExclusivityCheckingDisabled
+  VarInt:$numImplicitOriginDecls,
+  TypedAttr:$captureOrigins,
+  Bool:$isNestedOriginExclusivityCheckingDisabled
 )>;
 
 def DocStringAttr : DialectAttribute<(attr
@@ -151,27 +151,27 @@ def WrappedBindTypeAttr : DialectAttribute<(attr
   ConcreteType<"AnyStructType">:$type
 )>;
 
-def AnyLifetimeAttr : DialectAttribute<(attr
+def AnyOriginAttr : DialectAttribute<(attr
   ConcreteType<"LifetimeType">:$type
 )>;
 
-def WrappedLifetimeUnionAttr : DialectAttribute<(attr
+def WrappedOriginUnionAttr : DialectAttribute<(attr
   TypedAttrArray:$operands,
   ConcreteType<"LifetimeType">:$type
 )>;
 
-def WrappedLifetimeMutCastAttr : DialectAttribute<(attr
+def WrappedOriginMutCastAttr : DialectAttribute<(attr
   TypedAttr:$operand,
   ConcreteType<"LifetimeType">:$type
 )>;
 
-def WrappedLifetimeFieldAttr : DialectAttribute<(attr
-  TypedAttr:$structLifetime,
+def WrappedOriginFieldAttr : DialectAttribute<(attr
+  TypedAttr:$structOrigin,
   StringAttr:$field,
   ConcreteType<"LifetimeType">:$type
 )>;
 
-def ImplicitLifetimeRefAttr : DialectAttribute<(attr
+def ImplicitOriginRefAttr : DialectAttribute<(attr
   VarInt:$depth,
   VarInt:$index,
   ConcreteType<"LifetimeType">:$type
@@ -247,11 +247,11 @@ def LITDialectAttributes : DialectAttributes<"lit"> {
     UnpackedAttr,
     ModuleAttr,
     WrappedBindTypeAttr,
-    AnyLifetimeAttr,
-    WrappedLifetimeUnionAttr,
-    WrappedLifetimeMutCastAttr,
-    WrappedLifetimeFieldAttr,
-    ImplicitLifetimeRefAttr,
+    AnyOriginAttr,
+    WrappedOriginUnionAttr,
+    WrappedOriginMutCastAttr,
+    WrappedOriginFieldAttr,
+    ImplicitOriginRefAttr,
     WrappedOriginSetAttr,
     WrappedOriginSetUnionAttr,
     UnresolvedAliasValueAttr,

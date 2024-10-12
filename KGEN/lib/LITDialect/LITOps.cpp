@@ -170,7 +170,7 @@ parseLifetimeParams(AsmParser &p, ParameterExprArrayAttr &implicitLifetimes) {
   SmallVector<TypedAttr> values;
   if (p.parseCommaSeparatedList(
           AsmParser::Delimiter::OptionalSquare, [&]() -> ParseResult {
-            return parseLifetimeParamValue(p, values.emplace_back());
+            return parseOriginParamValue(p, values.emplace_back());
           }))
     return failure();
   implicitLifetimes = ParameterExprArrayAttr::get(p.getContext(), values);
@@ -183,7 +183,7 @@ static void printLifetimeParams(AsmPrinter &p, Operation *op,
     return;
   p << '[';
   llvm::interleaveComma(implicitLifetimes, p, [&](TypedAttr value) {
-    printLifetimeParamValue(p, value);
+    printOriginParamValue(p, value);
   });
   p << ']';
 }
@@ -208,11 +208,11 @@ parseCallOpTypes(AsmParser &p, SmallVectorImpl<Type> &operandTypes,
     auto calleeLITType = dyn_cast<LITSignatureType>(calleeType);
     if (!calleeLITType)
       return p.emitError(p.getCurrentLocation(), "expected a `!lit.signature`");
-    if (calleeLITType.getNumImplicitLifetimeDecls() != implicitLifetimes.size())
+    if (calleeLITType.getNumImplicitOriginDecls() != implicitLifetimes.size())
       return p.emitError(p.getNameLoc())
              << implicitLifetimes.size()
              << " lifetimes specified, but signature expected "
-             << calleeLITType.getNumImplicitLifetimeDecls();
+             << calleeLITType.getNumImplicitOriginDecls();
 
     values = calleeLITType.substituteImplicitLifetimesIntoValues(
         implicitLifetimes, [&] { return p.emitError(p.getNameLoc()); });
@@ -297,7 +297,7 @@ static void printCallOp(OpAsmPrinter &p, Operation *op, TypedAttr calleeAttr,
 
 template <typename OpT>
 static LogicalResult verifyLifetimeParams(OpT op, LITSignatureType sig) {
-  size_t numImplicit = sig.getMetadata().getNumImplicitLifetimeDecls();
+  size_t numImplicit = sig.getMetadata().getNumImplicitOriginDecls();
   size_t numParams = op.getImplicitLifetimes().size();
   if (numParams == numImplicit)
     return success();
@@ -502,15 +502,15 @@ static ParseResult parseLITFunctionSignature(
     LITSignatureType &signature) {
   llvm::SMLoc startLoc = p.getCurrentLocation();
 
-  TypedAttr captureLifetimes;
+  TypedAttr captureOrigins;
   auto lifetimeSet = OriginSetType::get(p.getContext());
   if (succeeded(p.parseOptionalColon())) {
-    if (parseParamValue(p, captureLifetimes, lifetimeSet) || p.parseColon())
+    if (parseParamValue(p, captureOrigins, lifetimeSet) || p.parseColon())
       return failure();
   } else {
-    captureLifetimes = OriginSetAttr::get({}, lifetimeSet);
+    captureOrigins = OriginSetAttr::get({}, lifetimeSet);
   }
-  bool isNestedLifetimeExclusivityCheckingDisabled =
+  bool isNestedOriginExclusivityCheckingDisabled =
       succeeded(p.parseOptionalKeyword("no_nested_lifetime_exclusivity"));
 
   SmallVector<ParamDeclAttr> lifetimeDecls;
@@ -604,8 +604,8 @@ static ParseResult parseLITFunctionSignature(
       PogListAttr::get(p.getContext(), argNames, argPassingKinds,
                        defaultPosArgs, defaultKwOnlyArgs, argVariadicIndices,
                        argPackIndex, origArgPackConvention),
-      paramListAttr, lifetimeDecls.size(), captureLifetimes,
-      isNestedLifetimeExclusivityCheckingDisabled);
+      paramListAttr, lifetimeDecls.size(), captureOrigins,
+      isNestedOriginExclusivityCheckingDisabled);
   signature = SignatureType::remapToSignature(
       params, /*resultParams=*/{}, functionType, argConventions, effects,
       metadata, [&] { return p.emitError(startLoc); });
@@ -632,12 +632,12 @@ static void printLITFunctionSignature(OpAsmPrinter &p, Region *region,
   ArrayRef<ParamDeclAttr> lifetimeDecls =
       params.drop_front(signature.getNumParams());
 
-  if (!isEmptyOriginSet(signature.getCaptureLifetimes())) {
+  if (!isEmptyOriginSet(signature.getCaptureOrigins())) {
     p << ':';
-    printParamValue(p, signature.getCaptureLifetimes());
+    printParamValue(p, signature.getCaptureOrigins());
     p << ':';
   }
-  if (signature.getIsNestedLifetimeExclusivityCheckingDisabled())
+  if (signature.getIsNestedOriginExclusivityCheckingDisabled())
     p << "no_nested_lifetime_exclusivity";
 
   ParameterEvaluator evaluator;
@@ -826,11 +826,11 @@ LogicalResult LIT::FuncOp::verify() {
 
   // Verify the correct number of parameters.
   if (getSignature().getNumParams() +
-          getSignature().getNumImplicitLifetimeDecls() !=
+          getSignature().getNumImplicitOriginDecls() !=
       getInputParams().size()) {
     return emitOpError("incorrect number of input params: have ")
            << getParams().size() << ", but expected "
-           << getSignature().getNumImplicitLifetimeDecls()
+           << getSignature().getNumImplicitOriginDecls()
            << " implicit lifetimes and " << getSignature().getNumParams()
            << " input params";
   }
@@ -868,7 +868,7 @@ LIT::FuncOp::collectAllParams(bool includeImplLifetimes) {
 
   auto params = getParams();
   if (!includeImplLifetimes)
-    params = params.drop_back(getSignature().getNumImplicitLifetimeDecls());
+    params = params.drop_back(getSignature().getNumImplicitOriginDecls());
   llvm::append_range(result, params);
   return result;
 }
@@ -886,7 +886,7 @@ void LIT::FuncOp::build(OpBuilder &builder, OperationState &result) {
   // invariants (that functions always have a single result).
   auto errorType = builder.getType<TypeCheckErrorType>();
   auto signatureType = LITSignatureType::get(ctx, ArrayRef<Type>(), {errorType},
-                                             /*numImplicitLifetimeDecls=*/0);
+                                             /*numImplicitOriginDecls=*/0);
 
   // NOTE: We set an attribute named 'sym_namex' here instead of setting
   // 'sym_name' because we don't /know/ the symbol name on construction and need
@@ -1405,7 +1405,7 @@ RefType RefStructGEROp::getReboundFieldType(RefType structRefTy,
                                             Type reboundType) {
   // The lifetime of the struct reference incorporates field sensitivity.
   auto fieldLifetime =
-      LifetimeFieldAttr::get(structRefTy.getLifetime(), fieldName);
+      OriginFieldAttr::get(structRefTy.getLifetime(), fieldName);
   return RefType::get(reboundType, fieldLifetime,
                       structRefTy.getAddressSpace());
 }

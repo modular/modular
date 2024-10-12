@@ -2738,7 +2738,7 @@ AnyValue UnaryOpNode::emitTransfer(AnyValue argValue, ValueDest &dest,
   // Lifetime checking needs to understand this value or field.
   Value trackableValue;
   if (value)
-    trackableValue = LifetimeTrackable::findUnderlyingValueFromField(value);
+    trackableValue = OriginTrackable::findUnderlyingValueFromField(value);
   if (!trackableValue) {
     emitter.emitError(loc,
                       "expression does not designate a value with a lifetime");
@@ -3250,7 +3250,7 @@ AnyValue MagicFunctionNode::emitIR(ValueDest &dest,
     return {};
 
   // TODO(references): if we keep these functions, they should take a lifetime.
-  auto immortal = emitter.builder->getAttr<AnyLifetimeAttr>(/*isMut=*/true);
+  auto immortal = emitter.builder->getAttr<AnyOriginAttr>(/*isMut=*/true);
   bool startsUninit = kind == ExprNode::kGetAddressAsUninitLValue;
   bool endsUninit = kind == ExprNode::kGetAddressAsOwned;
   exprVal = emitter.builder->create<RefFromPointerOp>(
@@ -3282,7 +3282,7 @@ AnyValue MagicFunctionNode::emitLifetimeOf(ValueDest &dest,
         });
   }
 
-  auto result = LifetimeUnionAttr::get(emitter.getContext(), lifetimes);
+  auto result = OriginUnionAttr::get(emitter.getContext(), lifetimes);
   return emitter.emitResult(PValue(result), this, dest);
 }
 

@@ -14,7 +14,7 @@ lit.struct.decl @S attributes {
   }
 }
 
-lit.func @print(%borrowMe: !lit.ref<@S, mut #lit.any.lifetime> borrow_in_mem) -> !kgen.none {
+lit.func @print(%borrowMe: !lit.ref<@S, mut #lit.any.origin> borrow_in_mem) -> !kgen.none {
     %none = kgen.param.constant: none = <#kgen.none>
     kgen.return %none : !kgen.none
 }
@@ -49,10 +49,10 @@ lit.struct.decl @Linear attributes {
 
 // CHECK-LABEL: lit.func @useLinear
 lit.func @useLinear(
-  %b: !lit.ref<@Linear, mut #lit.any.lifetime> owned_in_mem) {
+  %b: !lit.ref<@Linear, mut #lit.any.origin> owned_in_mem) {
  
 
   // expected-error @below {{'Linear' isn't implicit destructible, call the 'close' or 'explode' methods to explicitly destroy it}}
-  lit.ownership.use %b: !lit.ref<@Linear, mut #lit.any.lifetime> 
+  lit.ownership.use %b: !lit.ref<@Linear, mut #lit.any.origin> 
   kgen.return
 }

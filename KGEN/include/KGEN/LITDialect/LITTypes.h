@@ -60,10 +60,10 @@ public:
   StringAttr getArgName(size_t idx);
 
   /// Get the lifetime set of the capture lifetimes.
-  TypedAttr getCaptureLifetimes();
+  TypedAttr getCaptureOrigins();
 
   /// Get whether nested lifetimes are excluded from exclusivity checking.
-  bool getIsNestedLifetimeExclusivityCheckingDisabled();
+  bool getIsNestedOriginExclusivityCheckingDisabled();
 
   /// Get the function's default positional arguments.
   ArrayRef<TypedAttr> getDefaultPosArgs();
@@ -85,7 +85,7 @@ public:
   size_t getNumParams() { return getParamTypes().size(); }
 
   /// Get the number of implicit lifetime decls this function type carries.
-  size_t getNumImplicitLifetimeDecls();
+  size_t getNumImplicitOriginDecls();
 
   /// LIT-level signatures always have one result type.
   Type getResultType() { return getResults().front(); }
@@ -143,7 +143,7 @@ public:
   LITSignatureType dropParamValues();
 
   /// Return this signature with the specified capture lifetimes.
-  LITSignatureType getWithCaptureLifetimes(TypedAttr lifetimes);
+  LITSignatureType getWithCaptureOrigins(TypedAttr lifetimes);
 
   /// This method replaces direct uses of NAMED implicit lifetime declarations
   /// with index-based references corresponding to the signature.  lifetimeDecls
@@ -170,8 +170,7 @@ public:
   static bool classof(Type type);
 
   static LITSignatureType get(MLIRContext *ctx, TypeRange inputs,
-                              TypeRange results,
-                              size_t numImplicitLifetimeDecls);
+                              TypeRange results, size_t numImplicitOriginDecls);
   static LITSignatureType get(FunctionType values, ArrayRef<Type> paramTypes,
                               ArrayRef<ArgConvention> convs, FnEffects effects,
                               FnMetadataAttr metadata);
@@ -207,7 +206,7 @@ getUnboundSpecializedSignature(LITSignatureType type,
 
 /// This predicate returns true if a parameter of the specified type may only
 /// expand into one parameter value (e.g. `!lit.lifetime<x>` that only expands
-/// to a single #lit.any.lifetime value.  Such a parameter doesn't need
+/// to a single #lit.any.origin value.  Such a parameter doesn't need
 /// elaboration.
 static inline bool isSingletonParameter(Type type) {
   // TODO: Could support structs of lifetimes.

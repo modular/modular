@@ -11,8 +11,8 @@ alias float = __mlir_type.`!pop.scalar<f64>`
 alias AnyTrivialRegType = __mlir_type.`!kgen.type`
 alias ImmutableOrigin = __mlir_type.`!lit.lifetime<0>`
 alias MutableOrigin = __mlir_type.`!lit.lifetime<1>`
-alias ImmutableAnyOrigin = __mlir_attr.`#lit.any.lifetime : !lit.lifetime<0>`
-alias MutableAnyOrigin = __mlir_attr.`#lit.any.lifetime<1>: !lit.lifetime<1>`
+alias ImmutableAnyOrigin = __mlir_attr.`#lit.any.origin : !lit.lifetime<0>`
+alias MutableAnyOrigin = __mlir_attr.`#lit.any.origin<1>: !lit.lifetime<1>`
 alias OriginSet = __mlir_type.`!lit.origin.set`
 
 
@@ -50,8 +50,8 @@ struct Origin[is_mutable: Bool]:
 
 # Static constants are a named subset of the global lifetime.
 alias StaticConstantOrigin = __mlir_attr[
-    `#lit.lifetime.field<`,
-    `#lit.static.lifetime : !lit.lifetime<0>`,
+    `#lit.origin.field<`,
+    `#lit.static.origin : !lit.lifetime<0>`,
     `, "__constants__"> : !lit.lifetime<0>`,
 ]
 
@@ -330,7 +330,7 @@ struct _lit_lifetime_union[
     b: Origin[is_mutable].type,
 ]:
     alias result = __mlir_attr[
-        `#lit.lifetime.union<`,
+        `#lit.origin.union<`,
         a,
         `,`,
         b,
@@ -346,7 +346,7 @@ struct _lit_mut_cast[
     result_mutable: Bool,
 ]:
     alias result = __mlir_attr[
-        `#lit.lifetime.mutcast<`,
+        `#lit.origin.mutcast<`,
         operand,
         `> : !lit.lifetime<`,
         +result_mutable.value,

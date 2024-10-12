@@ -58,7 +58,7 @@ LIT::FuncOp StructEmitter::createFunction(
     ParamDeclAttr decl;
     // If this is a reference to a named one already, just reuse the name.
     if (auto lifetimeRef = dyn_cast<ParamDeclRefAttr>(
-            LifetimeMutCastAttr::strip(lifetimeAttr))) {
+            OriginMutCastAttr::strip(lifetimeAttr))) {
       assert(isa<LifetimeType>(lifetimeRef.getType()) &&
              "lifetimes should have LifetimeType");
       // Look through a cast to get the name, but use the expected mutability of
@@ -76,13 +76,13 @@ LIT::FuncOp StructEmitter::createFunction(
     }
     implLifetimeParams.push_back(decl);
   }
-  size_t numImplicitLifetimeDecls = implLifetimeParams.size();
+  size_t numImplicitOriginDecls = implLifetimeParams.size();
 
   auto metadata = FnMetadataAttr::get(
-      argListAttrs, paramListAttrs, numImplicitLifetimeDecls,
+      argListAttrs, paramListAttrs, numImplicitOriginDecls,
       getLifetimesAccessibleByParams(paramListAttrs, params, shared,
-                                     /*captureLifetimes=*/nullptr),
-      /*isNestedLifetimeExclusivityCheckingDisabled=*/false);
+                                     /*captureOrigins=*/nullptr),
+      /*isNestedOriginExclusivityCheckingDisabled=*/false);
   FunctionType functionType =
       builder.getFunctionType(adjustedArgTypes, {resultType});
   Location location = shared.translateLocation(loc);

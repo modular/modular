@@ -69,11 +69,10 @@ AttrOrType demangleIfNeeded(AttrOrType arg) {
 /// Print/Parse a (potentially) parametric mutability specifier and then a
 /// value.  The three forms are: "imm expr", "mut expr", "mut=<expr>, expr"
 /// without quotes.
-ParseResult parseLifetimeParamValue(AsmParser &p, TypedAttr &result);
-void printLifetimeParamValue(AsmPrinter &p, TypedAttr value);
-inline void printLifetimeParamValue(AsmPrinter &p, Operation *,
-                                    TypedAttr value) {
-  printLifetimeParamValue(p, value);
+ParseResult parseOriginParamValue(AsmParser &p, TypedAttr &result);
+void printOriginParamValue(AsmPrinter &p, TypedAttr value);
+inline void printOriginParamValue(AsmPrinter &p, Operation *, TypedAttr value) {
+  printOriginParamValue(p, value);
 }
 
 /// Pretty print a nested symbol reference to a name.

@@ -147,11 +147,11 @@ void StructDecls::buildReplacer(mlir::AttrTypeReplacer &replacer,
 
   // Replace all lifetime attributes with empty structs. These attributes are
   // all terminal.
-  addReplacement([=](AnyLifetimeAttr) { return emptyStruct; });
-  addReplacement([=](StaticLifetimeAttr) { return emptyStruct; });
-  addReplacement([=](LifetimeUnionAttr) { return emptyStruct; });
-  addReplacement([=](LifetimeMutCastAttr) { return emptyStruct; });
-  addReplacement([=](ImplicitLifetimeRefAttr) { return emptyStruct; });
+  addReplacement([=](AnyOriginAttr) { return emptyStruct; });
+  addReplacement([=](StaticOriginAttr) { return emptyStruct; });
+  addReplacement([=](OriginUnionAttr) { return emptyStruct; });
+  addReplacement([=](OriginMutCastAttr) { return emptyStruct; });
+  addReplacement([=](ImplicitOriginRefAttr) { return emptyStruct; });
   addReplacement([=](OriginSetAttr) { return emptyStruct; });
 
   // !lit.lifetime -> !kgen.struct<()>

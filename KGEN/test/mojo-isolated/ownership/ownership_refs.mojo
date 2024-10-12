@@ -299,7 +299,7 @@ fn test_immortal_to_mortal(arg: Pointer[Int, _])
   # CHECK-NEXT: [[PTRVAL:%.*]] = lit.call {{.*}}UnsafePointer::@"address_of{{.*}}([[ARGREF]])
   # CHECK-NEXT: [[REF:%.*]] = lit.call {{.*}}UnsafePointer::@"__getitem__{{.*}}([[PTRVAL]])
 
-  # CHECK-NEXT: [[ADJREFVAL:%.*]] = kgen.rebind [[REF]] : !lit.ref<!Int, mut #lit.any.lifetime> to !lit.ref<!Int, mut=#lit.struct.extract<:!Bool *"is_mutable`", "value">, *"lifetime`1">
+  # CHECK-NEXT: [[ADJREFVAL:%.*]] = kgen.rebind [[REF]] : !lit.ref<!Int, mut #lit.any.origin> to !lit.ref<!Int, mut=#lit.struct.extract<:!Bool *"is_mutable`", "value">, *"lifetime`1">
   # CHECK-NEXT: [[RES:%.*]] = lit.call {{.*}}address_of{{.*}}([[ADJREFVAL]])
   # CHECK-NEXT: kgen.return [[RES]]
   return Pointer[Int, arg.lifetime].address_of(UnsafePointer.address_of(arg[])[])

@@ -373,11 +373,11 @@ lit.func @async_fn() async {
   lit.end_func
 }
 
-lit.func @async_fn_byref_result(%res: !lit.ref<index, mut #lit.any.lifetime> byref_result) async {
+lit.func @async_fn_byref_result(%res: !lit.ref<index, mut #lit.any.origin> byref_result) async {
   lit.end_func
 }
 
-lit.func @async_fn_throws(%err: !lit.ref<index, mut #lit.any.lifetime> byref_error, %res: !lit.ref<index, mut #lit.any.lifetime> byref_result) async|throws {
+lit.func @async_fn_throws(%err: !lit.ref<index, mut #lit.any.origin> byref_error, %res: !lit.ref<index, mut #lit.any.origin> byref_result) async|throws {
   lit.end_func
 }
 
@@ -385,10 +385,10 @@ lit.func @async_fn_throws(%err: !lit.ref<index, mut #lit.any.lifetime> byref_err
 lit.func @call_async_fn() {
   // CHECK-NEXT: lit.async.call[!lit.signature<() async -> ()>: @async_fn]()
   lit.async.call[!lit.signature<() async -> ()>: @async_fn]()
-  // CHECK-NEXT: lit.async.call[!lit.signature<("res": !lit.ref<index, mut #lit.any.lifetime> byref_result) async -> ()>: @async_fn_byref_result]()
-  lit.async.call[!lit.signature<("res": !lit.ref<index, mut #lit.any.lifetime> byref_result) async -> ()>: @async_fn_byref_result]()
-  // CHECK-NEXT: lit.async.call[!lit.signature<("err": !lit.ref<index, mut #lit.any.lifetime> byref_error, "res": !lit.ref<index, mut #lit.any.lifetime> byref_result) throws|async -> ()>: @async_fn_throws]()
-  lit.async.call[!lit.signature<("err": !lit.ref<index, mut #lit.any.lifetime> byref_error, "res": !lit.ref<index, mut #lit.any.lifetime> byref_result) async|throws -> ()>: @async_fn_throws]()
+  // CHECK-NEXT: lit.async.call[!lit.signature<("res": !lit.ref<index, mut #lit.any.origin> byref_result) async -> ()>: @async_fn_byref_result]()
+  lit.async.call[!lit.signature<("res": !lit.ref<index, mut #lit.any.origin> byref_result) async -> ()>: @async_fn_byref_result]()
+  // CHECK-NEXT: lit.async.call[!lit.signature<("err": !lit.ref<index, mut #lit.any.origin> byref_error, "res": !lit.ref<index, mut #lit.any.origin> byref_result) throws|async -> ()>: @async_fn_throws]()
+  lit.async.call[!lit.signature<("err": !lit.ref<index, mut #lit.any.origin> byref_error, "res": !lit.ref<index, mut #lit.any.origin> byref_result) async|throws -> ()>: @async_fn_throws]()
   lit.end_func
 }
 
@@ -446,8 +446,8 @@ lit.func @throwing_func() throws -> i1 {
 
 // CHECK: lit.globalvar.decl @global_var : !lit.struct<@Error> {
 lit.globalvar.decl @global_var : !lit.struct<@Error> {
-  // CHECK-NEXT: lit.globalvar.ref @global_var : <@Error, mut #lit.any.lifetime>
-  %0 = lit.globalvar.ref @global_var : <@Error, mut #lit.any.lifetime>
+  // CHECK-NEXT: lit.globalvar.ref @global_var : <@Error, mut #lit.any.origin>
+  %0 = lit.globalvar.ref @global_var : <@Error, mut #lit.any.origin>
 // CHECK-NEXT: }, {
 }, {
 // CHECK-NEXT: }
@@ -494,7 +494,7 @@ lit.func @lit_loop() {
 
 // -----
 
-lit.func @load_consume(%arg0 : !lit.ref<index, mut #lit.any.lifetime>) -> index {
-  %0 = lit.load.consume %arg0 : !lit.ref<index, mut #lit.any.lifetime>
+lit.func @load_consume(%arg0 : !lit.ref<index, mut #lit.any.origin>) -> index {
+  %0 = lit.load.consume %arg0 : !lit.ref<index, mut #lit.any.origin>
   kgen.return %0 : index
 }

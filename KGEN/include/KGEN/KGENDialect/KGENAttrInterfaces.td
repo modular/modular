@@ -65,7 +65,7 @@ def IndexRefAttrInterface : AttrInterface<"IndexRefAttrInterface"> {
     scopes exist between the parameter being referenced and the reference
     itself. The index is simply the parameter number at the referenced scope.
 
-    This interace allows other kinds (see `LIT::ImplicitLifetimeRefAttr`) of
+    This interace allows other kinds (see `LIT::ImplicitOriginRefAttr`) of
     index-based references to interplay with parts of the KGEN parameter system.
   }];
 

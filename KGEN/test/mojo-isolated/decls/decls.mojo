@@ -1290,8 +1290,8 @@ struct CapturingStructTrait(CapturingTrait):
         pass
 
 
-# CHECK-LABEL: lit.func @"inferCaptureLifetimes
-fn inferCaptureLifetimes[
+# CHECK-LABEL: lit.func @"inferCaptureOrigins
+fn inferCaptureOrigins[
     lt: MutableOrigin, param: HasLifetimeParam[lt]
 ](inout x: int, inout y: int, arg: HasParam):
     @parameter
