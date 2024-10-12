@@ -31,7 +31,7 @@ struct CString:
 
     fn get_as_string_ref(self) -> StringRef:
         """
-        Get the `CString` as `StringRef`. Lifetime is tied to C API.
+        Get the `CString` as `StringRef`. Origin is tied to C API.
         For owning version use `__str__()`.
         """
         return StringRef(self.ptr)
