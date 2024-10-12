@@ -127,7 +127,7 @@ struct DeviceBufferV1[type: DType](Sized):
     var owning: Bool
 
     @parameter
-    fn v1(self) -> ref [__lifetime_of(self)] Self:
+    fn v1(self) -> ref [__origin_of(self)] Self:
         return self
 
     fn __init__(inout self, ctx: DeviceContextV1, size: Int) raises:
@@ -238,7 +238,7 @@ struct DeviceFunctionV1[
     alias fn_name = _get_nvptx_fn_name[func]()
 
     @parameter
-    fn v1(self) -> ref [__lifetime_of(self)] Self:
+    fn v1(self) -> ref [__origin_of(self)] Self:
         return self
 
     fn __init__(
@@ -291,7 +291,7 @@ struct DeviceContextV1:
     alias MIN_DRIVER_VERSION = 12.0
 
     @parameter
-    fn v1(self) -> ref [__lifetime_of(self)] Self:
+    fn v1(self) -> ref [__origin_of(self)] Self:
         return self
 
     # Default initializer for all existing cases outside MGP; this currently
