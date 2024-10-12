@@ -261,11 +261,11 @@ fn returnTwoArgLifetimes(a: MemExample, b: MemExample)
   -> TwoLifetimes[__origin_of(a), __origin_of(b)]:
   return TwoLifetimes[__origin_of(a), __origin_of(b)]()
 
-struct OneLifetime[a_lifetime: ImmutableOrigin]:
+struct OneLifetime[a_origin: ImmutableOrigin]:
   fn __init__(inout self): pass
 
-struct TwoLifetimes[a_lifetime: ImmutableOrigin,
-                    b_lifetime: ImmutableOrigin]:
+struct TwoLifetimes[a_origin: ImmutableOrigin,
+                    b_origin: ImmutableOrigin]:
   fn __init__(inout self): pass
 
 # Test that we can infer the type of 'T' in the func param invocation.
@@ -317,7 +317,7 @@ fn ref_copyability[*element_types: Copyable](*args: *element_types):
 
 # FIXME (Patch #48185): need to support implicit conversions to immutable reference.
 
-#fn thing_taking_immutable_ref[T: AnyType, value_lifetime: ImmutableOrigin](a: Pointer[T, value_lifetime]): pass
+#fn thing_taking_immutable_ref[T: AnyType, value_origin: ImmutableOrigin](a: Pointer[T, value_origin]): pass
 #fn test_passing_mutable_ref(inout i: String):
 #    thing_taking_immutable_ref(Pointer.address_of(i))
 

@@ -247,8 +247,8 @@ fn try_examples(cond: __mlir_type.i1, err: Error):
     # CHECK-NEXT: lifetime.end %d
 
 
-# CHECK-LABEL: lit.func @"chris_lifetime_example
-fn chris_lifetime_example(a: Bool, b: Bool):
+# CHECK-LABEL: lit.func @"chris_origin_example
+fn chris_origin_example(a: Bool, b: Bool):
     var x: MemExample
     # CHECK: lit.try
     try:

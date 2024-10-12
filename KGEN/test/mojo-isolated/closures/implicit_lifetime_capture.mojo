@@ -23,8 +23,8 @@ fn use(y: Thing):
 # referenced through a parameter of `y`.
 
 
-# CHECK-LABEL: lit.func @"capture_implicit_lifetime
-fn capture_implicit_lifetime(owned x: Foo, y: Thing[__origin_of(x)]):
+# CHECK-LABEL: lit.func @"capture_implicit_origin
+fn capture_implicit_origin(owned x: Foo, y: Thing[__origin_of(x)]):
     # CHECK: lit.var.decl "anonymous*" synth : !lit.ref<{{.*}}<:origin<1> *"x`">
     fn capture_it():
         use(y)

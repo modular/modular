@@ -1509,9 +1509,9 @@ struct SomeType:
 
 # COM: An implicit origin is passed into a struct parameter inside a trait
 # COM: binding. Ensure this passes `-verify-parameters`.
-# CHECK-LABEL: lit.func @"implicit_lifetime_as_param
+# CHECK-LABEL: lit.func @"implicit_origin_as_param
 # CHECK-SAME: "__del__" : !lit.signature<[1]("self": !lit.ref<{{.*}}Match<:origin<0> *"arg`">, mut *[0,0]>
-fn implicit_lifetime_as_param(
+fn implicit_origin_as_param(
     arg: SomeType,
 ) -> Bound[Match[__origin_of(arg)]]:
     pass

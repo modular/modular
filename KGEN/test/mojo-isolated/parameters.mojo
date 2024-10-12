@@ -326,7 +326,7 @@ fn nonprop_capture_set[f: fn[g: fn () capturing [_] -> None] () -> None]():
 
 
 # CHECK-LABEL: lit.func @"autoparam_param_vararg
-# CHECK-SAME: <[""]*"__lifetimes__`": origin.set, +, f: {{.*}}, x: variadic<index> var>
+# CHECK-SAME: <[""]*"__origins__`": origin.set, +, f: {{.*}}, x: variadic<index> var>
 fn autoparam_param_vararg[f: fn () [_] -> None, *x: int]():
     pass
 
@@ -1467,10 +1467,10 @@ struct SomeReference[lt: __mlir_type.`!lit.origin<0>`]:
     pass
 
 
-# CHECK-LABEL: lit.func @"unbound_lifetime
+# CHECK-LABEL: lit.func @"unbound_origin
 # CHECK-SAME: <?, [[R:.*]]: origin<0>>
 # CHECK-SAME: #SomeReference <:origin<0> [[R]]>
-fn unbound_lifetime(r: SomeReference[_]):
+fn unbound_origin(r: SomeReference[_]):
     pass
 
 # #33498: Variadics can't infer types for function pointers

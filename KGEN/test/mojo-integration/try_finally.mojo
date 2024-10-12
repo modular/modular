@@ -63,7 +63,7 @@ struct MemoryType:
         print("delete")
 
 
-fn chris_lifetime_example(a: Bool, b: Bool):
+fn chris_origin_example(a: Bool, b: Bool):
     print("start")
     var x: MemoryType
     try:
@@ -123,11 +123,11 @@ def main():
     # CHECK-NEXT: start
     # CHECK-NEXT: delete
     # CHECK-NEXT: normal
-    chris_lifetime_example(True, False)
+    chris_origin_example(True, False)
     # CHECK-NEXT: start
     # CHECK-NEXT: early
-    chris_lifetime_example(False, True)
+    chris_origin_example(False, True)
     # CHECK-NEXT: start
     # CHECK-NEXT: delete
     # CHECK-NEXT: early
-    chris_lifetime_example(True, True)
+    chris_origin_example(True, True)
