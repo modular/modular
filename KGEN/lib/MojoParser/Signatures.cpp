@@ -70,14 +70,13 @@ static RefType processLifetimeSpecifier(const ExprNode *lifetimeExpr,
   PValue lifetime;
   if (lifetimeExpr->kind != ExprNode::kDiscardLiteral) {
     // The lifetime expression may either be a MValue or a value of
-    // !lit.lifetime type.  In the former case, we want to evaluate the
+    // !lit.origin type.  In the former case, we want to evaluate the
     // expression without evaluating it, because it may involve complex nested
     // expressions and we may be in a PValue expression.
     emitter.emitExpressionWithOutEvaluatingIt(
         lifetimeExpr, EC_Lifetime, [&](CValue result) {
           // If this is a PValue of lifetime type, directly use it.
-          if (isa<LifetimeType>(result.getRValueType()) &&
-              result.getIfPValue()) {
+          if (isa<OriginType>(result.getRValueType()) && result.getIfPValue()) {
             lifetime = result.getIfPValue();
           } else if (result.isMValue()) {
             // We can get the lifetime of an MValue.
@@ -110,12 +109,12 @@ static RefType processLifetimeSpecifier(const ExprNode *lifetimeExpr,
 
     auto isMut = addParam(valueName + "_is_mut",
                           IntegerType::get(shared.getContext(), 1));
-    lifetime = addParam(valueName + "_is_lifetime", LifetimeType::get(isMut));
+    lifetime = addParam(valueName + "_is_lifetime", OriginType::get(isMut));
   }
   if (!lifetime)
     return hadError();
 
-  if (!isa<LifetimeType>(lifetime.getType())) {
+  if (!isa<OriginType>(lifetime.getType())) {
     emitter.emitError(lifetimeExpr->getLoc())
         << "result reference lifetime has unexpected type "
         << lifetime.getType() << lifetimeExpr->getRange();
@@ -814,7 +813,7 @@ static RefType makeImplicitRefTypeForArg(const ParsedArgument &arg, size_t idx,
   bool isMutable = arg.convention != ParsedArgument::kConventionBorrowed &&
                    arg.convention != ParsedArgument::kConventionUnspec;
   auto lifetimeDecl = ParamDeclAttr::get(
-      lifetimeName, LifetimeType::get(lifetimeName.getContext(), isMutable));
+      lifetimeName, OriginType::get(lifetimeName.getContext(), isMutable));
 
   // Tell the signature about the new lifetime decl.
   tcSignature.implicitLifetimeDecls.push_back(lifetimeDecl);
@@ -879,7 +878,7 @@ typeCheckVariadicPackTypeSpecifier(ParsedArgument &arg, size_t argIdx,
       variadicPackType.getDecl(emitter.shared));
   if (!packStruct || packStruct.getParams().size() != 4 ||
       !packStruct.getParams()[0].getType().isInteger(1) ||
-      !isa<LifetimeType>(packStruct.getParams()[1].getType()) ||
+      !isa<OriginType>(packStruct.getParams()[1].getType()) ||
       !isa<AnyTraitType>(packStruct.getParams()[2].getType()) ||
       !isa<VariadicType>(packStruct.getParams()[3].getType())) {
     emitter.emitError(arg.loc, "malformed VariadicPack");

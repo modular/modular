@@ -4,7 +4,7 @@
 //
 //===----------------------------------------------------------------------===//
 //
-// This file defines logic that reasons about value and memory object lifetimes:
+// This file defines logic that reasons about value and memory object origins:
 // what an operation defines and consumes.
 //
 //===----------------------------------------------------------------------===//
@@ -611,7 +611,7 @@ OverallOpValueEffect LIT::getOperationEffects(
 // CachedOriginFinder
 //===----------------------------------------------------------------------===//
 
-/// Unpack the specified value of LifetimeType into a set of referenced
+/// Unpack the specified value of OriginType into a set of referenced
 /// lifetimes. Returns true if any lifetimes were found.
 static bool handleLifetimeAttr(TypedAttr attr,
                                SmallVectorImpl<TypedAttr> &results) {
@@ -650,7 +650,7 @@ scanForLifetimes(TypeOrAttr pvalue,
   bool hasLifetimes = false;
   if constexpr (std::is_base_of_v<Attribute, TypeOrAttr>)
     if (auto typedAttr = dyn_cast<TypedAttr>(pvalue))
-      if (isa<LifetimeType>(typedAttr.getType())) {
+      if (isa<OriginType>(typedAttr.getType())) {
         hasLifetimes |= handleLifetimeAttr(typedAttr, results);
         handled = true;
       }

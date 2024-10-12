@@ -330,10 +330,10 @@ def LIT_AnyTraitType : LITType<"AnyTrait", "anytrait",
 }
 
 //===----------------------------------------------------------------------===//
-// LifetimeType
+// OriginType
 //===----------------------------------------------------------------------===//
 
-def LIT_LifetimeType : LITType<"Lifetime", "lifetime",
+def LIT_OriginType : LITType<"Origin", "origin",
     [DeclareTypeInterfaceMethods<ParameterTypeInterface>]> {
   let summary = "Origin type";
   let description = [{
@@ -455,11 +455,11 @@ def LIT_RefType : LITType<"Ref", "ref",
     TypedAttr isMutable();
 
     /// Classify the mutability into Mutable/Immutable/Parametric.
-    LifetimeType::MutabilityClass getMutabilityClass();
+    OriginType::MutabilityClass getMutabilityClass();
 
     /// Return the type of the lifetime reference, which is always a
-    /// `!lit.lifetime<mutability>` type.
-    LifetimeType getLifetimeType();
+    /// `!lit.origin<mutability>` type.
+    OriginType getOriginType();
 
     /// Return true if this is in address space 0.
     bool isDefaultAddrSpace();

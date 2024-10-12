@@ -1213,7 +1213,7 @@ lit.func @createConditionallyInitializedImmortalReferenceInRepl[mut topArg, mut 
   %4 = pop.aligned_alloc %index_4, %index_3 : <!PythonObject>
   pop.store %4, %3 : !kgen.pointer<pointer<!PythonObject>>
 
-  // CHECK:  kgen.param.declare LOCAL_LIFETIME2: lifetime<1> = <#lit.any.origin>
+  // CHECK:  kgen.param.declare LOCAL_LIFETIME2: origin<1> = <#lit.any.origin>
   // CHECK-NEXT:  %[[V3:.*]] = lit.ref.from_pointer.repl {{.*}} : <@PythonObject, mut LOCAL_LIFETIME2> {name = "np"}
   // CHECK-NEXT:  [[V4:%*.]] = lit.call @import_module[mut localError, mut LOCAL_LIFETIME2](%__error__, %[[V3]])
   // CHECK-NEXT:  hlcf.if [[V4]]
@@ -1224,7 +1224,7 @@ lit.func @createConditionallyInitializedImmortalReferenceInRepl[mut topArg, mut 
   // CHECK-NEXT:    mark_consumed %__error__
   // CHECK-NEXT:    yield
   // CHECK-NEXT:  }
-  kgen.param.declare LOCAL_LIFETIME2: lifetime<1> = <#lit.any.origin>
+  kgen.param.declare LOCAL_LIFETIME2: origin<1> = <#lit.any.origin>
   %5 = lit.ref.from_pointer.repl %4 : <!PythonObject, mut LOCAL_LIFETIME2> {name = "np"}
   %6 = lit.call @import_module[mut localError, mut LOCAL_LIFETIME2](%__error__, %5) : !lit.signature<[2](?, "__error__": !lit.ref<!Error, mut *[0,0]> byref_error, "__result__": !lit.ref<!PythonObject, mut *[0,1]> byref_result) throws -> i1>
   hlcf.if %6 {
@@ -1240,7 +1240,7 @@ lit.func @createConditionallyInitializedImmortalReferenceInRepl[mut topArg, mut 
   %13 = lit.ref.load %12 : <pointer<pointer<!PythonObject>>, mut topArg->__new_repl_var2>
   %14 = pop.aligned_alloc %index_4, %index_3 : <!PythonObject>
   pop.store %14, %13 : !kgen.pointer<pointer<!PythonObject>>
-  // CHECK:  kgen.param.declare LOCAL_LIFETIME3: lifetime<1> = <#lit.any.origin>
+  // CHECK:  kgen.param.declare LOCAL_LIFETIME3: origin<1> = <#lit.any.origin>
   // CHECK-NEXT:  %[[V8:.*]] = lit.ref.from_pointer.repl {{.*}} : <@PythonObject, mut LOCAL_LIFETIME3> {name = "np2"}
   // CHECK-NEXT:  %[[V9:.*]] = lit.call @import_module[mut localError, mut LOCAL_LIFETIME3](%__error__, %[[V8]])
   // CHECK-NEXT:  hlcf.if %[[V9]]
@@ -1252,7 +1252,7 @@ lit.func @createConditionallyInitializedImmortalReferenceInRepl[mut topArg, mut 
   // CHECK-NEXT:    mark_consumed %__error__
   // CHECK-NEXT:    yield
   // CHECK-NEXT:  }
-  kgen.param.declare LOCAL_LIFETIME3: lifetime<1> = <#lit.any.origin>
+  kgen.param.declare LOCAL_LIFETIME3: origin<1> = <#lit.any.origin>
   %15 = lit.ref.from_pointer.repl %14 : <!PythonObject, mut LOCAL_LIFETIME3> {name = "np2"}
   %16 = lit.call @import_module[mut localError, mut LOCAL_LIFETIME3](%__error__, %15) : !lit.signature<[2](?, "__error__": !lit.ref<!Error, mut *[0,0]> byref_error, "__result__": !lit.ref<!PythonObject, mut *[0,1]> byref_result) throws -> i1>
   hlcf.if %16 {

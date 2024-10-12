@@ -717,7 +717,7 @@ fn check_trait_conversion_bymem_result_alias_crash(
     return retMemory(x)
 
 
-# Calling functions with implicit lifetimes needs to cooperate.
+# Calling functions with implicit origins needs to cooperate.
 fn test[a: ABC]():
     _ = ABCOptionalParamInt[ABCDim(a)]()
 

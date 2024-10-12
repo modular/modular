@@ -327,7 +327,7 @@ ASTType ASTType::getVariadicElementType() const {
 RefPackType ASTType::getVariadicPackInfo() const {
   auto bindings = getParamBindings();
   assert(bindings.size() == 4 && bindings[0].getType().isInteger(1) &&
-         isa<LifetimeType>(bindings[1].getType()) &&
+         isa<OriginType>(bindings[1].getType()) &&
          isa<AnyTraitType>(bindings[2].getType()) &&
          isa<VariadicType>(bindings[3].getType()) &&
          "Not a VariadicPack struct?");
@@ -813,7 +813,7 @@ void ASTType::print(raw_ostream &os, bool forDiag, bool demangleParams) const {
       ASTType(type).print(os, forDiag, demangleParams);
     });
     os << ')';
-  } else if (auto lifetimeType = dyn_cast<LifetimeType>(type)) {
+  } else if (auto lifetimeType = dyn_cast<OriginType>(type)) {
     if (lifetimeType.isMutableKnown(true))
       os << "MutableOrigin";
     else if (lifetimeType.isMutableKnown(false))
@@ -882,7 +882,7 @@ void ASTType::dump() const { llvm::errs() << getAsString() << '\n'; }
 RefType ASTType::getRefForArgument(const Twine &argName, bool isMut) {
   auto ctx = mlirType.getContext();
   auto selfLifetime = ParamDeclRefAttr::get(StringAttr::get(ctx, argName + "`"),
-                                            LifetimeType::get(ctx, isMut));
+                                            OriginType::get(ctx, isMut));
   return RefType::get(mlirType, selfLifetime, /*addressSpace=*/0);
 }
 

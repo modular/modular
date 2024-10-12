@@ -976,7 +976,7 @@ struct ClosureParam[lt: MutableOrigin, f: fn () capturing [lt] -> None]:
 
 # CHECK-LABEL: lit.func @"infer_implicit_params
 fn infer_implicit_params(owned p: ClosureParam):
-    # CHECK: call {{.*}}ClosureParam::@"__moveinit__{{.*}}<:lifetime<1> *"lt`", :!lit.signature<:{mut *"lt`"}:() capturing -> !kgen.none> *"f`1">
+    # CHECK: call {{.*}}ClosureParam::@"__moveinit__{{.*}}<:origin<1> *"lt`", :!lit.signature<:{mut *"lt`"}:() capturing -> !kgen.none> *"f`1">
     var tmp = p^
     _ = tmp^
 
@@ -1463,13 +1463,13 @@ fn tryCallingAThingReturningMOCO1144Bound():
 
 
 @register_passable("trivial")
-struct SomeReference[lt: __mlir_type.`!lit.lifetime<0>`]:
+struct SomeReference[lt: __mlir_type.`!lit.origin<0>`]:
     pass
 
 
 # CHECK-LABEL: lit.func @"unbound_lifetime
-# CHECK-SAME: <?, [[R:.*]]: lifetime<0>>
-# CHECK-SAME: #SomeReference <:lifetime<0> [[R]]>
+# CHECK-SAME: <?, [[R:.*]]: origin<0>>
+# CHECK-SAME: #SomeReference <:origin<0> [[R]]>
 fn unbound_lifetime(r: SomeReference[_]):
     pass
 

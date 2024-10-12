@@ -375,7 +375,7 @@ BindingGenerator::createFunction(const Twine &name, ASTDecl &parent,
   auto makeRefType = [&](ASTType type, const Twine &name, bool isMut) {
     return RefType::get(type,
                         ParamDeclRefAttr::get(b.getStringAttr(name),
-                                              LifetimeType::get(ctx, isMut)));
+                                              OriginType::get(ctx, isMut)));
   };
 
   for (auto [idx, rvType, conv] : llvm::enumerate(argRValueTypes, convs)) {

@@ -507,7 +507,7 @@ LogicalResult FnMetadataAttr::verifySignature(
 }
 
 FnMetadataAttr FnMetadataAttr::addCaptureOrigins(TypedAttr lifetimes) {
-  auto type = LifetimeType::get(getContext(), /*isMutable=*/true);
+  auto type = OriginType::get(getContext(), /*isMutable=*/true);
   SmallVector<TypedAttr> lifetimeUnion{
       OriginSetUnionAttr::get(getCaptureOrigins(), type),
       OriginSetUnionAttr::get(lifetimes, type)};
@@ -741,7 +741,7 @@ TypedAttr BindTypeAttr::get(MLIRContext *context, TypedAttr typeValue,
 //===----------------------------------------------------------------------===//
 
 OriginUnionAttr OriginUnionAttr::getFromBytecode(ArrayRef<TypedAttr> operands,
-                                                 LifetimeType type) {
+                                                 OriginType type) {
   return Base::get(type.getContext(), operands, type);
 }
 
@@ -764,7 +764,7 @@ static void removeDuplicates(SmallVectorImpl<TypedAttr> &operands) {
 }
 
 TypedAttr OriginUnionAttr::get(ArrayRef<TypedAttr> operandsIn,
-                               LifetimeType type) {
+                               OriginType type) {
 
   // Canonicalize the operands, sorting by name/index and eliminating raw
   // #lit.any.origin members.
@@ -774,7 +774,7 @@ TypedAttr OriginUnionAttr::get(ArrayRef<TypedAttr> operandsIn,
   for (size_t i = 0, e = operands.size(); i != e; ++i) {
     assert(operands[i].getType() == type &&
            "all members of a lifetime union must have matching type");
-    // Union{a, b, #lit.any.origin} => #lit.any.origin since #lit.lifetime
+    // Union{a, b, #lit.any.origin} => #lit.any.origin since #lit.origin
     // represents "possibly anything".
     if (::isa<AnyOriginAttr>(operands[i]))
       return operands[i];
@@ -812,10 +812,10 @@ TypedAttr OriginUnionAttr::get(MLIRContext *ctx,
                                ArrayRef<TypedAttr> lifetimes) {
   // In the empty case, the lifetime is immutable.
   if (lifetimes.empty())
-    return OriginUnionAttr::get(LifetimeType::get(ctx, /*mutable=*/false));
+    return OriginUnionAttr::get(OriginType::get(ctx, /*mutable=*/false));
 
   auto getMut = [](TypedAttr lifetime) {
-    return ::cast<LifetimeType>(lifetime.getType()).getIsMutable();
+    return ::cast<OriginType>(lifetime.getType()).getIsMutable();
   };
 
   // If all the parametric mutabilities of the lifetimes are the same, then use
@@ -838,7 +838,7 @@ TypedAttr OriginUnionAttr::get(MLIRContext *ctx,
     lifetimes = newLifetimes;
   }
 
-  return OriginUnionAttr::get(lifetimes, LifetimeType::get(mutability));
+  return OriginUnionAttr::get(lifetimes, OriginType::get(mutability));
 }
 
 //===----------------------------------------------------------------------===//
@@ -846,12 +846,12 @@ TypedAttr OriginUnionAttr::get(MLIRContext *ctx,
 //===----------------------------------------------------------------------===//
 
 OriginMutCastAttr OriginMutCastAttr::getFromBytecode(TypedAttr operand,
-                                                     LifetimeType type) {
+                                                     OriginType type) {
   return Base::get(type.getContext(), operand, type);
 }
 
 TypedAttr OriginMutCastAttr::get(TypedAttr operand, TypedAttr isMutable) {
-  auto curTy = ::cast<LifetimeType>(operand.getType());
+  auto curTy = ::cast<OriginType>(operand.getType());
   if (curTy.isMutable() == isMutable)
     return operand;
 
@@ -869,24 +869,24 @@ TypedAttr OriginMutCastAttr::get(TypedAttr operand, TypedAttr isMutable) {
     SmallVector<TypedAttr> elts;
     for (auto elt : unionAttr.getOperands())
       elts.push_back(OriginMutCastAttr::get(elt, isMutable));
-    return OriginUnionAttr::get(elts, LifetimeType::get(isMutable));
+    return OriginUnionAttr::get(elts, OriginType::get(isMutable));
   }
 
   auto context = curTy.getContext();
   return OriginMutCastAttr::Base::get(context, operand,
-                                      LifetimeType::get(isMutable));
+                                      OriginType::get(isMutable));
 }
 
 TypedAttr OriginMutCastAttr::get(TypedAttr operand, Type type) {
-  assert(::isa<LifetimeType>(type) && ::isa<LifetimeType>(operand.getType()) &&
-         "#lit.origin.mutcast always has !lit.lifetime type");
+  assert(::isa<OriginType>(type) && ::isa<OriginType>(operand.getType()) &&
+         "#lit.origin.mutcast always has !lit.origin type");
   if (operand.getType() == type)
     return operand;
-  return get(operand, ::cast<LifetimeType>(type).isMutable());
+  return get(operand, ::cast<OriginType>(type).isMutable());
 }
 
 TypedAttr OriginMutCastAttr::get(TypedAttr operand, bool isMutable) {
-  auto operandType = ::cast<LifetimeType>(operand.getType());
+  auto operandType = ::cast<OriginType>(operand.getType());
   if (operandType.isMutableKnown(isMutable))
     return operand;
   return get(operand, BoolAttr::get(operand.getContext(), isMutable));
@@ -922,15 +922,15 @@ TypedAttr OriginFieldAttr::get(TypedAttr structOrigin, StringAttr field) {
     return OriginUnionAttr::get(elts, unionAttr.getType());
   }
 
-  // The structOriginRef must have a LifetimeType, which we propagate.
-  auto structLife = ::cast<LifetimeType>(structOrigin.getType());
+  // The structOriginRef must have a OriginType, which we propagate.
+  auto structLife = ::cast<OriginType>(structOrigin.getType());
   return OriginFieldAttr::Base::get(structOrigin.getContext(), structOrigin,
                                     field, structLife);
 }
 
 OriginFieldAttr OriginFieldAttr::getFromBytecode(TypedAttr structOrigin,
                                                  StringAttr field,
-                                                 LifetimeType type) {
+                                                 OriginType type) {
   return Base::get(type.getContext(), structOrigin, field, type);
 }
 
@@ -995,8 +995,8 @@ TypedAttr OriginSetAttr::get(ArrayRef<TypedAttr> operands, OriginSetType type) {
 
   // Now sort the operands by mutability and value.
   llvm::stable_sort(newOperands, [&](TypedAttr lhs, TypedAttr rhs) {
-    TypedAttr lhsMut = ::cast<LifetimeType>(lhs.getType()).isMutable();
-    TypedAttr rhsMut = ::cast<LifetimeType>(rhs.getType()).isMutable();
+    TypedAttr lhsMut = ::cast<OriginType>(lhs.getType()).isMutable();
+    TypedAttr rhsMut = ::cast<OriginType>(rhs.getType()).isMutable();
     if (ParameterAttr::compare(lhsMut, rhsMut))
       return true;
     if (ParameterAttr::compare(rhsMut, lhsMut))
@@ -1018,11 +1018,11 @@ TypedAttr OriginSetAttr::get(ArrayRef<TypedAttr> operands, OriginSetType type) {
 //===----------------------------------------------------------------------===//
 
 OriginSetUnionAttr OriginSetUnionAttr::getFromBytecode(TypedAttr value,
-                                                       LifetimeType type) {
+                                                       OriginType type) {
   return Base::get(type.getContext(), value, type);
 }
 
-TypedAttr OriginSetUnionAttr::get(TypedAttr value, LifetimeType type) {
+TypedAttr OriginSetUnionAttr::get(TypedAttr value, OriginType type) {
   // Fold `set.union(set) -> union`.
   if (auto set = ::dyn_cast<OriginSetAttr>(value)) {
     return OriginMutCastAttr::get(

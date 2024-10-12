@@ -71,7 +71,7 @@ fn variadic_trait_elt[T: Copyable](*xs: T):
 
 # CHECK-LABEL: lit.func @"trait_pack
 # CHECK-SAME: <{{.*}}, Ts:
-# CHECK-SAME: %rest: !lit.struct<#VariadicPack <:i1 0, :lifetime<0> *"rest`1", :!lit.anytrait<!AnyType> !Copyable, :variadic<!Copyable> Ts>> borrow_in_mem|pack)
+# CHECK-SAME: %rest: !lit.struct<#VariadicPack <:i1 0, :origin<0> *"rest`1", :!lit.anytrait<!AnyType> !Copyable, :variadic<!Copyable> Ts>> borrow_in_mem|pack)
 fn trait_pack[T: Copyable, *Ts: Copyable](first: T, *rest: *Ts):
     pass
 
@@ -1126,7 +1126,7 @@ async fn capture_byref(inout x: Awaitable, y: Awaitable):
 
 @value
 @register_passable
-struct LifetimeAccess[lifetime: __mlir_type.`!lit.lifetime<1>`]:
+struct LifetimeAccess[lifetime: __mlir_type.`!lit.origin<1>`]:
     pass
 
 
@@ -1134,8 +1134,8 @@ async fn lifetime_access(owned x: LifetimeAccess[_]):
     pass
 
 
-# CHECK-LABEL: lit.func @"coroutine_lifetimes
-fn coroutine_lifetimes():
+# CHECK-LABEL: lit.func @"coroutine_origins
+fn coroutine_origins():
     # CHECK: var.decl "x" var : {{.*}}mut [[X_LT:.*]]>
     var x: Awaitable
     # CHECK: var.decl "y" var : {{.*}}mut [[Y_LT:.*]]>
@@ -1146,7 +1146,7 @@ fn coroutine_lifetimes():
     # CHECK: lit.call {{.*}}Coroutine::@"__init__{{.*}}<:!AnyType [none, {{.*}}], :origin.set {mut [[X_LT]], mut [[Y_LT]]}>(%coro, [[CORO]])
     var coro = capture_byref(x, y)
 
-    # CHECK: lit.async.call[!lit.signature<[1]("x": !lit.struct<#LifetimeAccess <:lifetime<1> [[Y_LT]]>> owned, {{.*}}) async -> !kgen.none>: {{.*}}lifetime_access{{.*}}<:lifetime<1> [[Y_LT]]>]
+    # CHECK: lit.async.call[!lit.signature<[1]("x": !lit.struct<#LifetimeAccess <:origin<1> [[Y_LT]]>> owned, {{.*}}) async -> !kgen.none>: {{.*}}lifetime_access{{.*}}<:origin<1> [[Y_LT]]>]
     # CHECK: Coroutine<:!AnyType [none, {{.*}}], :origin.set {mut [[Y_LT]]}>
     var access = lifetime_access(LifetimeAccess[__origin_of(y)]())
 
@@ -1224,9 +1224,9 @@ fn closureParameter[func: fn () capturing -> __mlir_type.index]():
 
 # CHECK-LABEL: lit.func @"closureParameterCaptures
 # CHECK-SAME: :*(0,0):
-# CHECK-SAME: func: !lit.signature<:lifetimes:() capturing -> !kgen.none>
+# CHECK-SAME: func: !lit.signature<:origins:() capturing -> !kgen.none>
 fn closureParameterCaptures[
-    lifetimes: OriginSet, //, func: fn () capturing [lifetimes] -> None
+    origins: OriginSet, //, func: fn () capturing [origins] -> None
 ]():
     pass
 
@@ -1254,7 +1254,7 @@ fn explicitLifetime[lt: MutableOrigin, //, arg: HasLifetimeParam[lt]]():
 
 
 # CHECK-LABEL: lit.func @"inaccessibleImplicitLifetimeParam
-# CHECK-SAME: "<?, *"p`": lifetime<1>>(%arg:
+# CHECK-SAME: "<?, *"p`": origin<1>>(%arg:
 fn inaccessibleImplicitLifetimeParam(arg: HasLifetimeParam):
     pass
 
@@ -1263,8 +1263,8 @@ fn inaccessibleImplicitLifetimeParam(arg: HasLifetimeParam):
 struct CapturingStruct[a: int]:
     @staticmethod
     fn takeClosure[
-        lifetimes: OriginSet, //,
-        f: fn () capturing [lifetimes] -> None,
+        origins: OriginSet, //,
+        f: fn () capturing [origins] -> None,
     ]():
         pass
 
@@ -1273,8 +1273,8 @@ struct CapturingStruct[a: int]:
 trait CapturingTrait:
     # CHECK: lit.func @"takeClosure{{.*}}:*(0,0):
     fn takeClosure[
-        lifetimes: OriginSet, //,
-        f: fn () capturing [lifetimes] -> None,
+        origins: OriginSet, //,
+        f: fn () capturing [origins] -> None,
     ](self):
         ...
 
@@ -1284,8 +1284,8 @@ trait CapturingTrait:
 struct CapturingStructTrait(CapturingTrait):
     # CHECK: lit.func @"takeClosure{{.*}}:*(0,0):
     fn takeClosure[
-        lifetimes: OriginSet, //,
-        f: fn () capturing [lifetimes] -> None,
+        origins: OriginSet, //,
+        f: fn () capturing [origins] -> None,
     ](self):
         pass
 
@@ -1471,7 +1471,7 @@ alias deprecated_alias = 1
 
 
 ##===----------------------------------------------------------------------===##
-# Implicit lifetimes for result slots.
+# Implicit origins for result slots.
 ##===----------------------------------------------------------------------===##
 
 
@@ -1510,7 +1510,7 @@ struct SomeType:
 # COM: An implicit lifetime is passed into a struct parameter inside a trait
 # COM: binding. Ensure this passes `-verify-parameters`.
 # CHECK-LABEL: lit.func @"implicit_lifetime_as_param
-# CHECK-SAME: "__del__" : !lit.signature<[1]("self": !lit.ref<{{.*}}Match<:lifetime<0> *"arg`">, mut *[0,0]>
+# CHECK-SAME: "__del__" : !lit.signature<[1]("self": !lit.ref<{{.*}}Match<:origin<0> *"arg`">, mut *[0,0]>
 fn implicit_lifetime_as_param(
     arg: SomeType,
 ) -> Bound[Match[__origin_of(arg)]]:
@@ -1522,7 +1522,7 @@ struct Bound[T: AnyType]:
 
 
 @value
-struct Match[lt: __mlir_type.`!lit.lifetime<0>`]:
+struct Match[lt: __mlir_type.`!lit.origin<0>`]:
     pass
 
 

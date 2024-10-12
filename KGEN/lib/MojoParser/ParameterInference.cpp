@@ -192,17 +192,17 @@ LogicalResult ParameterInferenceState::matchTypes(Type actualType,
         return failure();
       if (failed(matchParams(actual.getLifetime(), expected.getLifetime()))) {
         // The lifetimes are allowed to mismatch due to mut->immut casts.
-        if (!canConvertWithRebind(actual.getLifetimeType(),
-                                  expected.getLifetimeType(), shared))
+        if (!canConvertWithRebind(actual.getOriginType(),
+                                  expected.getOriginType(), shared))
           return failure();
       }
       return matchSingleEltStruct(actual.getAddressSpace(),
                                   expected.getAddressSpace());
     }
 
-  // Handle LifetimeType.
-  if (auto actual = dyn_cast<LifetimeType>(actualType))
-    if (auto expected = dyn_cast<LifetimeType>(expectedType)) {
+  // Handle OriginType.
+  if (auto actual = dyn_cast<OriginType>(actualType))
+    if (auto expected = dyn_cast<OriginType>(expectedType)) {
       // Try to match up the types so we infer parameters properly.
       if (succeeded(
               matchSingleEltStruct(actual.isMutable(), expected.isMutable())))

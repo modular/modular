@@ -494,27 +494,27 @@ def BindTypeAttr : LITTypedAttr<"BindType", "bind_type"> {
 //===----------------------------------------------------------------------===//
 
 def AnyOriginAttr : LITTypedAttr<"AnyOrigin", "any.origin"> {
-  let summary = "A !lit.lifetime<mut> value that could refer to anything";
+  let summary = "A !lit.origin<mut> value that could refer to anything";
   let description = [{
     This attribute is a singleton (for each mutability) which represents
     origin that might alias anything.
   }];
 
   let parameters = (ins
-    AttributeSelfTypeParameter<"", "LifetimeType">:$type
+    AttributeSelfTypeParameter<"", "OriginType">:$type
   );
 
   let assemblyFormat = "";
 
   let builders = [
     AttrBuilderWithInferredContext<(ins "Type":$type), [{
-      return get(type.getContext(), ::cast<LifetimeType>(type));
+      return get(type.getContext(), ::cast<OriginType>(type));
     }]>,
     AttrBuilderWithInferredContext<(ins "TypedAttr":$isMutable), [{
-      return get(isMutable.getContext(), LifetimeType::get(isMutable));
+      return get(isMutable.getContext(), OriginType::get(isMutable));
     }]>,
     AttrBuilder<(ins "bool":$isMutable), [{
-      return get($_ctxt, LifetimeType::get($_ctxt, isMutable));
+      return get($_ctxt, OriginType::get($_ctxt, isMutable));
     }]>
  ];
 }
@@ -524,7 +524,7 @@ def AnyOriginAttr : LITTypedAttr<"AnyOrigin", "any.origin"> {
 //===----------------------------------------------------------------------===//
 
 def StaticOriginAttr : LITTypedAttr<"StaticOrigin", "static.origin"> {
-  let summary = "A !lit.lifetime<mut> value that refers to static memory";
+  let summary = "A !lit.origin<mut> value that refers to static memory";
   let description = [{
     This attribute is a singleton (for each mutability) which represents the
     origin of global static memory, used for static strings and global
@@ -532,7 +532,7 @@ def StaticOriginAttr : LITTypedAttr<"StaticOrigin", "static.origin"> {
   }];
 
   let parameters = (ins
-    AttributeSelfTypeParameter<"", "LifetimeType">:$type
+    AttributeSelfTypeParameter<"", "OriginType">:$type
   );
 
   let assemblyFormat = "";
@@ -546,11 +546,11 @@ def OriginUnionAttr : LITTypedAttr<"OriginUnion", "origin.union"> {
   let summary = "A #lit.origin.union set";
   let description = [{
     This attribute represents a union of symbolic origin attributes.  It is
-    canonicalized on construction, and always has !lit.lifetime type.
+    canonicalized on construction, and always has !lit.origin type.
   }];
 
   let parameters = (ins ArrayRefParameter<"TypedAttr">:$operands,
-                        AttributeSelfTypeParameter<"", "LifetimeType">:$type);
+                        AttributeSelfTypeParameter<"", "OriginType">:$type);
   let assemblyFormat = "`<` $operands `>`";
 
   let skipDefaultBuilders = 1;
@@ -558,15 +558,15 @@ def OriginUnionAttr : LITTypedAttr<"OriginUnion", "origin.union"> {
     // Override the default builder used by the generated parser.
     AttrBuilderWithInferredContext<(ins
       "ArrayRef<TypedAttr>":$operands,
-      "LifetimeType":$type
+      "OriginType":$type
     ), "", "TypedAttr">,
-    AttrBuilder<(ins "ArrayRef<TypedAttr>":$operands, "LifetimeType":$type), [{
+    AttrBuilder<(ins "ArrayRef<TypedAttr>":$operands, "OriginType":$type), [{
       return get(operands, type);
     }], "TypedAttr">,
     AttrBuilder<(ins CArg<"ArrayRef<TypedAttr>", "{}">:$operands),
                 [{}], "TypedAttr">,
     AttrBuilderWithInferredContext<(ins "Type":$type), [{
-      return get({}, ::cast<LifetimeType>(type));
+      return get({}, ::cast<OriginType>(type));
     }], "TypedAttr">,
   ];
 
@@ -581,7 +581,7 @@ def OriginUnionAttr : LITTypedAttr<"OriginUnion", "origin.union"> {
     /// A specific builder used to build the attribute from a bytecode context,
     /// providing a slightly different context from the normal builder.
     static OriginUnionAttr getFromBytecode(
-        ArrayRef<TypedAttr> operands, LifetimeType type);
+        ArrayRef<TypedAttr> operands, OriginType type);
   }];
 }
 
@@ -590,14 +590,14 @@ def OriginUnionAttr : LITTypedAttr<"OriginUnion", "origin.union"> {
 //===----------------------------------------------------------------------===//
 
 def OriginMutCastAttr : LITTypedAttr<"OriginMutCast", "origin.mutcast"> {
-  let summary = "Cast a !lit.lifetime value to a different mutability";
+  let summary = "Cast a !lit.origin value to a different mutability";
   let description = [{
     This attribute is a cast of a origin value from one mutability to another.
     It is often folded away by the builder.
   }];
 
   let parameters = (ins "TypedAttr":$operand,
-                        AttributeSelfTypeParameter<"", "LifetimeType">:$type);
+                        AttributeSelfTypeParameter<"", "OriginType">:$type);
 
   let assemblyFormat = "`<` $operand `>`";
 
@@ -610,7 +610,7 @@ def OriginMutCastAttr : LITTypedAttr<"OriginMutCast", "origin.mutcast"> {
       "TypedAttr":$operand, "Type":$type), "", "TypedAttr">,
     AttrBuilderWithInferredContext<(ins
       "TypedAttr":$operand, "bool":$isMutable), "", "TypedAttr">,
-    AttrBuilder<(ins "TypedAttr":$operand, "LifetimeType":$type), [{
+    AttrBuilder<(ins "TypedAttr":$operand, "OriginType":$type), [{
       return get(operand, type);
     }], "TypedAttr">,
   ];
@@ -627,7 +627,7 @@ def OriginMutCastAttr : LITTypedAttr<"OriginMutCast", "origin.mutcast"> {
     /// A specific builder used to build the attribute from a bytecode context,
     /// providing a slightly different context from the normal builder.
     static OriginMutCastAttr getFromBytecode(
-        TypedAttr operand, LifetimeType type);
+        TypedAttr operand, OriginType type);
   }];
 }
 
@@ -644,7 +644,7 @@ def OriginFieldAttr : LITTypedAttr<"OriginField", "origin.field"> {
 
   let parameters = (ins "TypedAttr":$structOrigin,
                         "StringAttr":$field,
-                        AttributeSelfTypeParameter<"", "LifetimeType">:$type);
+                        AttributeSelfTypeParameter<"", "OriginType">:$type);
 
   let assemblyFormat = "`<` $structOrigin `,` $field `>`";
 
@@ -654,7 +654,7 @@ def OriginFieldAttr : LITTypedAttr<"OriginField", "origin.field"> {
     AttrBuilderWithInferredContext<(ins
       "TypedAttr":$structOrigin, "StringAttr":$field), "", "TypedAttr">,
     AttrBuilder<(ins "TypedAttr":$structOrigin, "StringAttr":$field,
-                "LifetimeType":$type), [{
+                "OriginType":$type), [{
       return get(structOrigin, field);
     }], "TypedAttr">,
   ];
@@ -663,7 +663,7 @@ def OriginFieldAttr : LITTypedAttr<"OriginField", "origin.field"> {
     /// A specific builder used to build the attribute from a bytecode context,
     /// providing a slightly different context from the normal builder.
     static OriginFieldAttr getFromBytecode(TypedAttr structOrigin,
-        StringAttr field, LifetimeType type);
+        StringAttr field, OriginType type);
   }];
 }
 
@@ -688,13 +688,13 @@ def ImplicitOriginRefAttr
   }];
 
   let parameters = (ins "size_t":$depth, "size_t":$index,
-                        AttributeSelfTypeParameter<"", "LifetimeType">:$type);
+                        AttributeSelfTypeParameter<"", "OriginType">:$type);
   let assemblyFormat = "`<` $depth `,` $index `>`";
 
   let builders = [
     AttrBuilderWithInferredContext<(ins
       "size_t":$depth, "size_t":$index, "Type":$type), [{
-      return get(type.getContext(), depth, index, ::cast<LifetimeType>(type));
+      return get(type.getContext(), depth, index, ::cast<OriginType>(type));
     }]>
   ];
 }
@@ -755,7 +755,7 @@ def OriginSetUnionAttr : LITTypedAttr<"OriginSetUnion",
   }];
 
   let parameters = (ins "TypedAttr":$value,
-                        AttributeSelfTypeParameter<"", "LifetimeType">:$type);
+                        AttributeSelfTypeParameter<"", "OriginType">:$type);
   let assemblyFormat = [{
     `<` custom<ParamValue>($value, "OriginSetType::get($_ctxt)") `>`
   }];
@@ -763,11 +763,11 @@ def OriginSetUnionAttr : LITTypedAttr<"OriginSetUnion",
   let skipDefaultBuilders = 1;
   let builders = [
     // Override the default builder used by the generated parser.
-    AttrBuilder<(ins "TypedAttr":$value, "LifetimeType":$type), [{
+    AttrBuilder<(ins "TypedAttr":$value, "OriginType":$type), [{
       return get(value, type);
     }], "TypedAttr">,
     AttrBuilderWithInferredContext<(ins "TypedAttr":$value,
-                                        "LifetimeType":$type),
+                                        "OriginType":$type),
     [{}], "TypedAttr">
   ];
 
@@ -775,7 +775,7 @@ def OriginSetUnionAttr : LITTypedAttr<"OriginSetUnion",
     /// A specific builder used to build the attribute from a bytecode context,
     /// providing a slightly different context from the normal builder.
     static OriginSetUnionAttr getFromBytecode(
-        TypedAttr value, LifetimeType type);
+        TypedAttr value, OriginType type);
   }];
 }
 

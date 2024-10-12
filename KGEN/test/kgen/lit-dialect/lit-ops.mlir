@@ -125,7 +125,7 @@ lit.func @attributesAndDecorators()
   lit.end_func
 }
 
-lit.func @ref_immut<life: lifetime<1>>(%ref1: !lit.ref<@MyStruct, mut life>)
+lit.func @ref_immut<life: origin<1>>(%ref1: !lit.ref<@MyStruct, mut life>)
  -> !lit.ref<@MyStruct, muttoimm life> {
   // CHECK: %0 = lit.ref.immut %ref1 : <@MyStruct, mut life>
   %ref2 = lit.ref.immut %ref1: <@MyStruct, mut life>
@@ -133,7 +133,7 @@ lit.func @ref_immut<life: lifetime<1>>(%ref1: !lit.ref<@MyStruct, mut life>)
   kgen.return %ref2: !lit.ref<@MyStruct, muttoimm life>
 }
 
-lit.func @ref_pointer<life: lifetime<1>, ilife: lifetime<0>>
+lit.func @ref_pointer<life: origin<1>, ilife: origin<0>>
      (%ref1: !lit.ref<@MyStruct, mut life>) {
   // CHECK: %0 = lit.ref.to_pointer %ref1 : <@MyStruct, mut life>
   %ptr = lit.ref.to_pointer %ref1: <@MyStruct, mut life>
@@ -189,11 +189,11 @@ lit.func @main(%a: !lit.struct<@A>, %b: !lit.struct<@B>) {
   kgen.return
 }
 
-// CHECK-LABEL: lit.struct.decl @CrazyParams<*"m`": lifetime<0>> {
-lit.struct.decl @CrazyParams<*"m`": lifetime<0>> {
+// CHECK-LABEL: lit.struct.decl @CrazyParams<*"m`": origin<0>> {
+lit.struct.decl @CrazyParams<*"m`": origin<0>> {
 }
 
-lit.struct.decl @LifetimeRef<b: lifetime<0>> {
+lit.struct.decl @LifetimeRef<b: origin<0>> {
   lit.struct.field b : !lit.signature<(!lit.ref<@A, imm *(0,1)>) -> ()>
 }
 

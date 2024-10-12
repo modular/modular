@@ -33,7 +33,7 @@ void LITDialect::registerTypes() {
   auto *dialect = getContext()->getOrLoadDialect<KGENDialect>();
   dialect->registerMnemonicType<AnyStructType>();
   dialect->registerMnemonicType<TraitType>();
-  dialect->registerMnemonicType<LifetimeType>();
+  dialect->registerMnemonicType<OriginType>();
   dialect->registerMnemonicType<OriginSetType>();
 
   // Register the StructType parser.
@@ -497,11 +497,11 @@ LogicalResult AnyTraitType::printValue(AsmPrinter &p, TypedAttr value) const {
   return printTypeValue(p, value, *this);
 }
 //===----------------------------------------------------------------------===//
-// LifetimeType
+// OriginType
 //===----------------------------------------------------------------------===//
 
-OptionalParseResult LifetimeType::parseValue(AsmParser &p,
-                                             TypedAttr &result) const {
+OptionalParseResult OriginType::parseValue(AsmParser &p,
+                                           TypedAttr &result) const {
   // If there are any postfix lifetime syntax (<whatever>.field1.field2), then
   // parse them into 'result'.
   auto processPostFix = [&]() -> OptionalParseResult {
@@ -623,7 +623,7 @@ OptionalParseResult LifetimeType::parseValue(AsmParser &p,
   return {};
 }
 
-LogicalResult LifetimeType::printValue(AsmPrinter &p, TypedAttr value) const {
+LogicalResult OriginType::printValue(AsmPrinter &p, TypedAttr value) const {
   if (auto declRef = ::dyn_cast<ParamDeclRefAttr>(value)) {
     printParamName(p, declRef.getName(), /*isRef*/ false);
     return success();
@@ -675,26 +675,26 @@ LogicalResult LifetimeType::printValue(AsmPrinter &p, TypedAttr value) const {
   return failure();
 }
 
-LifetimeType LifetimeType::get(TypedAttr isMutable) {
+OriginType OriginType::get(TypedAttr isMutable) {
   assert(isMutable.getType().isSignlessInteger(1) &&
          "isMutable bit should be i1");
   return get(isMutable.getContext(), isMutable);
 }
 
-LifetimeType LifetimeType::get(MLIRContext *ctx, bool isMutable) {
+OriginType OriginType::get(MLIRContext *ctx, bool isMutable) {
   return get(ctx, BoolAttr::get(ctx, isMutable));
 }
 
 /// Return true if the mutable attribute is known to be the specific
 /// constant.  This returns false if parametric or if the other value.
-bool LifetimeType::isMutableKnown(bool value) {
+bool OriginType::isMutableKnown(bool value) {
   if (auto cst = ::dyn_cast<BoolAttr>(getIsMutable()))
     return cst.getValue() == value;
   return false;
 }
 
 /// Classify the mutability into Mutable/Immutable/Parametric.
-LifetimeType::MutabilityClass LifetimeType::getMutabilityClass() {
+OriginType::MutabilityClass OriginType::getMutabilityClass() {
   auto cst = ::dyn_cast<BoolAttr>(getIsMutable());
   if (!cst)
     return Parametric;
@@ -732,7 +732,7 @@ LogicalResult OriginSetType::printValue(AsmPrinter &p, TypedAttr value) const {
 
 RefType RefType::get(Type elementType, TypedAttr lifetime,
                      TypedAttr addrSpace) {
-  assert(::isa<LifetimeType>(lifetime.getType()));
+  assert(::isa<OriginType>(lifetime.getType()));
   return get(lifetime.getContext(), elementType, lifetime, addrSpace);
 }
 
@@ -765,9 +765,9 @@ RefType RefType::getWithMutability(bool isMut) {
 }
 
 /// Return the type of the lifetime reference, which is always a
-/// `!lit.lifetime<mutability>` type.
-LifetimeType RefType::getLifetimeType() {
-  return ::cast<LifetimeType>(getLifetime().getType());
+/// `!lit.origin<mutability>` type.
+OriginType RefType::getOriginType() {
+  return ::cast<OriginType>(getLifetime().getType());
 }
 
 /// Return a reference to the specified element type and mutability with an
@@ -788,18 +788,18 @@ RefType RefType::getAnyLifetime(Type elementType, bool isMut,
 /// Return true if the mutable attribute is known to be the specific
 /// constant.  This returns false if parametric or if the other value.
 bool RefType::isMutableKnown(bool value) {
-  return ::cast<LifetimeType>(getLifetime().getType()).isMutableKnown(value);
+  return ::cast<OriginType>(getLifetime().getType()).isMutableKnown(value);
 }
 
 /// Classify the mutability into Mutable/Immutable/Parametric.
-LifetimeType::MutabilityClass RefType::getMutabilityClass() {
-  return ::cast<LifetimeType>(getLifetime().getType()).getMutabilityClass();
+OriginType::MutabilityClass RefType::getMutabilityClass() {
+  return ::cast<OriginType>(getLifetime().getType()).getMutabilityClass();
 }
 
 /// Return a (possibly parameteric) specification for whether this reference
 /// is a mutation or a read.
 TypedAttr RefType::isMutable() {
-  return ::cast<LifetimeType>(getLifetime().getType()).isMutable();
+  return ::cast<OriginType>(getLifetime().getType()).isMutable();
 }
 
 /// Return true if this is in address space 0.
@@ -1416,7 +1416,7 @@ LIT::getUnboundSpecializedSignature(LITSignatureType type,
 /// `isSingletonParameter` returns true on. This aborts on non-singleton types.
 TypedAttr LIT::getSingletonParameterValue(Type type) {
   // TODO: Could support structs of lifetimes.
-  if (auto lifetime = dyn_cast<LifetimeType>(type))
+  if (auto lifetime = dyn_cast<OriginType>(type))
     return AnyOriginAttr::get(lifetime);
   if (auto set = dyn_cast<OriginSetType>(type))
     return OriginSetAttr::get(/*operands=*/{}, set);

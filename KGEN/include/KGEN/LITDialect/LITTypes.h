@@ -151,7 +151,7 @@ public:
   LITSignatureType
   replaceImplicitLifetimesWithIndexes(ArrayRef<ParamDeclAttr> lifetimeDecls);
 
-  /// Get this signature with all the implicit lifetimes bound to #lit.lifetime
+  /// Get this signature with all the implicit lifetimes bound to #lit.origin
   /// and dropped from the signature.
   LITSignatureType getWithImplicitLifetimesBoundNothing();
 
@@ -205,12 +205,12 @@ getUnboundSpecializedSignature(LITSignatureType type,
                                ParameterExprArrayAttr bindings);
 
 /// This predicate returns true if a parameter of the specified type may only
-/// expand into one parameter value (e.g. `!lit.lifetime<x>` that only expands
+/// expand into one parameter value (e.g. `!lit.origin<x>` that only expands
 /// to a single #lit.any.origin value.  Such a parameter doesn't need
 /// elaboration.
 static inline bool isSingletonParameter(Type type) {
   // TODO: Could support structs of lifetimes.
-  return isa<LifetimeType, OriginSetType>(type);
+  return isa<OriginType, OriginSetType>(type);
 }
 
 /// This returns the singleton value to use for a parameter value that

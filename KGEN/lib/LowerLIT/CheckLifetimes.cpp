@@ -1247,7 +1247,7 @@ void UninitializedValueScan::checkMarkDestroyed(Value value, Operation &op) {
 void UninitializedValueScan::checkLifetimeEffect(TypedAttr lifetime,
                                                  Operation &op) {
   // We assume this may mutate the lifetime unless we know it is read-only.
-  bool isMutate = !cast<LifetimeType>(lifetime.getType()).isMutableKnown(false);
+  bool isMutate = !cast<OriginType>(lifetime.getType()).isMutableKnown(false);
 
   SmallVector<ValueRef> accesses = valueSet.getValueRefsForLifetime(lifetime);
   for (auto access : accesses) {
