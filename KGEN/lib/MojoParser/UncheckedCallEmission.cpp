@@ -1316,6 +1316,10 @@ void ExclusivityChecker::checkLifetimeAccess(
 /// exclusivity violations.
 void ExclusivityChecker::checkArgument(Value val, ArgConvention convention,
                                        unsigned argIdx) {
+  // We sometimes get rebinds for downcasts of lifetimes, e.g. to AnyLifetime.
+  // Ignore those so we can see the actual incoming value's lifetime.
+  if (auto rebind = val.getDefiningOp<RebindOp>())
+    val = rebind.getOperand();
 
   // If this is a result argument, then we only look at the lifetime of the
   // destination that we're storing into, not any nested references that may
