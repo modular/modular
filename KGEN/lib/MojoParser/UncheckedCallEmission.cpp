@@ -1184,7 +1184,7 @@ struct ExclusivityChecker : public SharedStateUser {
         syntax(syntax), argumentValues(argumentValues),
         builder(emitter.builder) {
 
-    // Handle __unsafe_disable_nested_lifetime_exclusivity.
+    // Handle __unsafe_disable_nested_origin_exclusivity.
     isNestedOriginExclusivityCheckingDisabled =
         cast<LITSignatureType>(callee.getRValueType())
             .getIsNestedOriginExclusivityCheckingDisabled();
@@ -1205,7 +1205,7 @@ private:
   ArrayRef<ASTExprAnd<AnyValue>> argumentValues;
   std::optional<OpBuilder> builder;
 
-  /// True if the __unsafe_disable_nested_lifetime_exclusivity decorator is
+  /// True if the __unsafe_disable_nested_origin_exclusivity decorator is
   /// on the callee.
   bool isNestedOriginExclusivityCheckingDisabled = false;
 

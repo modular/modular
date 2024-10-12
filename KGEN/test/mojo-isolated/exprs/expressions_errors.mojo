@@ -664,7 +664,7 @@ fn test(a: Pointer[Addable, _], b: Addable):
 struct ThingWithFields:
   var field: Int
 
-fn field_sensitive_lifetimes(a: ThingWithFields)
+fn field_sensitive_origins(a: ThingWithFields)
     -> Pointer[ThingWithFields, __origin_of(a.field)]:
 
   # expected-error @+1 {{'ThingWithFields' value has no attribute 'field_abc'}}

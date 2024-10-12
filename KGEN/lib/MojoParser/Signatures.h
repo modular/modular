@@ -224,7 +224,7 @@ public:
   /// This is an optional origin set parameter, representing the lifetimes of
   /// the function captures.
   TypedAttr captureOrigins;
-  /// Whether `@__unsafe_disable_nested_lifetime_exclusivity` was specified:
+  /// Whether `@__unsafe_disable_nested_origin_exclusivity` was specified:
   /// nested lifetimes are not considered in exclusivity checking.
   /// TODO: Generalize this to mutation sets.
   bool isNestedOriginExclusivityCheckingDisabled = false;

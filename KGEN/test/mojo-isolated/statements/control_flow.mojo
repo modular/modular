@@ -457,9 +457,9 @@ fn for_range_loop():
 # This iterator returns elements by reference, using the mutability and origin
 # of the list.
 struct RefIter[list_mutability: Bool, //,
-               list_lifetime: Origin[list_mutability].type]:
+               list_origin: Origin[list_mutability].type]:
     fn __init__(inout self): pass
-    fn __next__(inout self) -> ref [list_lifetime] Int: pass
+    fn __next__(inout self) -> ref [list_origin] Int: pass
     fn __hasmore__(self) -> Bool: return False
 
 struct ListWithRefIter:

@@ -48,8 +48,8 @@ fn test_var_let_scopes(cond: Bool):
         var c = `123`
 
 
-# CHECK-LABEL: lit.func @"test_var_lifetime_mangling
-fn test_var_lifetime_mangling[x: int](c: Bool):
+# CHECK-LABEL: lit.func @"test_var_origin_mangling
+fn test_var_origin_mangling[x: int](c: Bool):
     # CHECK: hlcf.elif
     if c:
         # CHECK: lit.var.decl "y" var : !lit.ref<index, mut *"y`">
@@ -60,8 +60,8 @@ fn test_var_lifetime_mangling[x: int](c: Bool):
         var y = x
 
 
-# CHECK-LABEL: lit.func @"test_nested_var_lifetime_mangling
-fn test_nested_var_lifetime_mangling[x: int](c: Bool):
+# CHECK-LABEL: lit.func @"test_nested_var_origin_mangling
+fn test_nested_var_origin_mangling[x: int](c: Bool):
     # CHECK: hlcf.elif
     if c:
         # CHECK: lit.var.decl "y" var : !lit.ref<index, mut *"y`">

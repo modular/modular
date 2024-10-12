@@ -509,7 +509,7 @@ fn parameter_with_escaped_mlir_name[type: AnyType](value: type):
 # CHECK-NEXT:       "convention": "ref",
 
 
-# CHECK:     "signature": "fn_with_anon_refs(ref [ref_arg1_is_lifetime] ref_arg1: AnyTrivialRegType) -> ref [_] AnyTrivialRegType",
+# CHECK:     "signature": "fn_with_anon_refs(ref [ref_arg1_is_origin] ref_arg1: AnyTrivialRegType) -> ref [_] AnyTrivialRegType",
 fn fn_with_anon_refs(
     ref [_]ref_arg1: AnyTrivialRegType,
 ) -> ref [ref_arg1] AnyTrivialRegType:
@@ -553,14 +553,14 @@ struct HMyUnsafePointer[
     ) -> ref [MutableAnyOrigin, address_space._value.value] T:
         pass
 
-    # CHECK: "signature": "address_of(ref [arg_is_lifetime, address_space] arg: T) -> Self",
+    # CHECK: "signature": "address_of(ref [arg_is_origin, address_space] arg: T) -> Self",
     @staticmethod
     fn address_of(ref [_, address_space._value.value]arg: T) -> Self:
         pass
 
 
 struct HList[T: CollectionElement, hint_trivial_type: Bool = False]:
-    # CHECK: "signature": "__getitem__(ref [self_is_lifetime] self: Self, idx: Int) -> ref [_] T",
+    # CHECK: "signature": "__getitem__(ref [self_is_origin] self: Self, idx: Int) -> ref [_] T",
     fn __getitem__(ref [_]self, idx: Int) -> ref [self] T:
         pass
 

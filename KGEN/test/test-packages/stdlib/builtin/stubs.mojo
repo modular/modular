@@ -324,7 +324,7 @@ struct VariadicList[type: AnyTrivialRegType]:
 
 # Helper to compute the union of two origins:
 # TODO: parametric aliases would be nice.
-struct _lit_lifetime_union[
+struct _lit_origin_union[
     is_mutable: Bool, //,
     a: Origin[is_mutable].type,
     b: Origin[is_mutable].type,
@@ -358,24 +358,24 @@ struct _lit_mut_cast[
 struct _VariadicListMemIter[
     elt_is_mutable: Bool, //,
     elt_type: AnyType,
-    elt_lifetime: Origin[elt_is_mutable].type,
-    list_lifetime: ImmutableOrigin,
+    elt_origin: Origin[elt_is_mutable].type,
+    list_origin: ImmutableOrigin,
 ]:
     """Iterator for VariadicListMem.
 
     Parameters:
         elt_is_mutable: Whether the elements in the list are mutable.
         elt_type: The type of the elements in the list.
-        elt_lifetime: The origin of the elements.
-        list_lifetime: The origin of the VariadicListMem.
+        elt_origin: The origin of the elements.
+        list_origin: The origin of the VariadicListMem.
     """
 
     alias variadic_list_type = VariadicListMem[
-        elt_type, elt_is_mutable.value, elt_lifetime
+        elt_type, elt_is_mutable.value, elt_origin
     ]
 
     var index: Int
-    var src: Pointer[Self.variadic_list_type, list_lifetime]
+    var src: Pointer[Self.variadic_list_type, list_origin]
 
     fn __next__(inout self) -> Self.variadic_list_type.reference_type:
         while True:
@@ -421,7 +421,7 @@ struct VariadicListMem[
     fn __getitem__(
         self, idx: Int
     ) -> ref [
-        _lit_lifetime_union[
+        _lit_origin_union[
             origin,
             # cast mutability of self to match the mutability of the element,
             # since that is what we want to use in the ultimate reference and
@@ -552,7 +552,7 @@ struct Pointer[
     fn __getitem__(self) -> ref [origin, address_space._value.value] type:
         return __get_litref_as_mvalue(self._value)
 
-    @__unsafe_disable_nested_lifetime_exclusivity
+    @__unsafe_disable_nested_origin_exclusivity
     @always_inline("nodebug")
     fn __eq__(self, rhs: Pointer[type, _, address_space]) -> Bool:
         return True

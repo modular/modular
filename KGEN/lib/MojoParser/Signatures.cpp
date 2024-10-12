@@ -108,7 +108,7 @@ static RefType processLifetimeSpecifier(const ExprNode *lifetimeExpr,
 
     auto isMut = addParam(valueName + "_is_mut",
                           IntegerType::get(shared.getContext(), 1));
-    origin = addParam(valueName + "_is_lifetime", OriginType::get(isMut));
+    origin = addParam(valueName + "_is_origin", OriginType::get(isMut));
   }
   if (!origin)
     return hadError();
@@ -612,10 +612,10 @@ static ASTType addImplicitTypeParams(ASTType type,
   // First check for a function type.
   // FIXME: We need an AnyFunction metatype.
   if (auto sig = dyn_cast<LITSignatureType>(type)) {
-    TypedAttr lifetimes = sig.getCaptureOrigins();
-    if (!isa<UnboundAttr>(lifetimes))
+    TypedAttr origins = sig.getCaptureOrigins();
+    if (!isa<UnboundAttr>(origins))
       return type;
-    declareAndAddParam(lifetimes.getType(), "__lifetimes__");
+    declareAndAddParam(origins.getType(), "__origins__");
     return sig.getWithCaptureOrigins(paramValues.back());
   }
 
