@@ -39,30 +39,30 @@ namespace M::KGEN::LIT {
 /// The given operations must all implement DeclInterface.
 SmallVector<bool> getContextualVariadicMask(ArrayRef<Operation *> ops);
 
-/// This digs in and unpacks all of the lifetime references in the specified
+/// This digs in and unpacks all of the origin references in the specified
 /// TypedAttr unpacking unions, but maintaining mutability.  This typically
 /// will return ParamRefAttr's or ImmutCast(ParamRefAttr)'s if a mutable
-/// lifetime is accessed immutably.
+/// origin is accessed immutably.
 ///
-/// This invokes the specified closure on each lifetime element.
+/// This invokes the specified closure on each origin element.
 template <typename T>
-static inline void processRawLifetime(TypedAttr lifetime, T &&fn) {
-  // Expand lifetime unions into their members, we know they will canonicalize
+static inline void processRawOrigin(TypedAttr origin, T &&fn) {
+  // Expand origin unions into their members, we know they will canonicalize
   // nested unions into a single one.
   if (auto unionAttr =
-          dyn_cast<OriginUnionAttr>(OriginMutCastAttr::strip(lifetime))) {
+          dyn_cast<OriginUnionAttr>(OriginMutCastAttr::strip(origin))) {
     // If we stripped a MutCastAttr off the outer union, put it onto each
     // element we return.
-    bool needsImmutCast = TypedAttr(unionAttr) != lifetime;
+    bool needsImmutCast = TypedAttr(unionAttr) != origin;
     for (auto elt : unionAttr.getOperands()) {
       if (needsImmutCast)
-        elt = OriginMutCastAttr::get(elt, lifetime.getType());
+        elt = OriginMutCastAttr::get(elt, origin.getType());
       fn(elt);
     }
     return;
   }
 
-  fn(lifetime);
+  fn(origin);
 }
 
 } // namespace M::KGEN::LIT

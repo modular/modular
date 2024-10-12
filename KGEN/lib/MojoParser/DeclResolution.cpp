@@ -966,9 +966,9 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
             TypeAttr::get(tcSignature.getFunctionType()));
 
   // Now that the FunctionType is set to the pretty type that includes implicit
-  // lifetimes, we strip off the named lifetime decl references and replace them
+  // lifetimes, we strip off the named origin decl references and replace them
   // with indices.
-  signature = signature.replaceImplicitLifetimesWithIndexes(
+  signature = signature.replaceImplicitOriginsWithIndexes(
       tcSignature.implicitLifetimeDecls);
   attrs.set(funcOp.getSignatureAttrName(), TypeAttr::get(signature));
 
@@ -1067,7 +1067,7 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
       captureTypes.push_back(param.getType());
 
     SmallVector<TypedAttr> lifetimes =
-        shared.cachedOriginFinder.findLifetimesIn(captureTypes);
+        shared.cachedOriginFinder.findOriginsIn(captureTypes);
     signature =
         signature.getWithMetadata(signature.getMetadata().addCaptureOrigins(
             OriginSetAttr::get(getContext(), lifetimes)));
@@ -1117,7 +1117,7 @@ static VarDeclOp makeVarArgWrapper(SRValue argValue, StringAttr argName,
   if (varListType.isTypeCheckErrorType())
     return {};
 
-  // Emit a VarDeclOp: VaridicListMem needs a lifetime for its self accesses.
+  // Emit a VarDeclOp: VaridicListMem needs a origin for its self accesses.
   // This also provides a user name for the argument.
   auto mlirLoc = emitter.translateLocation(loc);
   VarDeclOp varDecl =

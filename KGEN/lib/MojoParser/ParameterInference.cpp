@@ -190,7 +190,7 @@ LogicalResult ParameterInferenceState::matchTypes(Type actualType,
       if (failed(
               matchTypes(actual.getElementType(), expected.getElementType())))
         return failure();
-      if (failed(matchParams(actual.getLifetime(), expected.getLifetime()))) {
+      if (failed(matchParams(actual.getOrigin(), expected.getOrigin()))) {
         // The lifetimes are allowed to mismatch due to mut->immut casts.
         if (!canConvertWithRebind(actual.getOriginType(),
                                   expected.getOriginType(), shared))
@@ -231,7 +231,7 @@ LogicalResult ParameterInferenceState::matchTypes(Type actualType,
   if (auto actual = dyn_cast<RefPackType>(actualType))
     if (auto expected = dyn_cast<RefPackType>(expectedType)) {
       if (failed(matchParams(actual.getVariadic(), expected.getVariadic())) ||
-          failed(matchParams(actual.getLifetime(), expected.getLifetime())))
+          failed(matchParams(actual.getOrigin(), expected.getOrigin())))
         return failure();
       return matchParams(actual.getAddressSpace(), expected.getAddressSpace());
     }
@@ -677,7 +677,7 @@ ParameterInferenceState::inferOneOperand(ASTExprAnd<AnyValue> operand,
 
   case ArgConvention::Ref:
   case ArgConvention::MutRef: {
-    // Infer the lifetime and address space before inferring the element type.
+    // Infer the origin and address space before inferring the element type.
     CValue argVal = resolveOperandCValue();
     if (!argVal)
       return failure();
@@ -705,13 +705,13 @@ ParameterInferenceState::inferOneOperand(ASTExprAnd<AnyValue> operand,
       return matchTypes(valueRefType, expectedType);
 
     // Otherwise, we'll need to drop this value into a temporary.  For now, we
-    // infer it as AnyLifetime.  We bind the lifetime directly and then handle
+    // infer it as AnyLifetime.  We bind the origin directly and then handle
     // it like any other argument because we can support implicit conversions.
     valueRefType =
-        RefType::getAnyLifetime(argVal.getRValueType(), /*isMut=*/false);
+        RefType::getAnyOrigin(argVal.getRValueType(), /*isMut=*/false);
     auto expectedRef = cast<RefType>(expectedType);
 
-    (void)matchParams(valueRefType.getLifetime(), expectedRef.getLifetime());
+    (void)matchParams(valueRefType.getOrigin(), expectedRef.getOrigin());
     (void)matchSingleEltStruct(valueRefType.getAddressSpace(),
                                expectedRef.getAddressSpace());
 
@@ -1003,7 +1003,7 @@ ParameterInferenceState::infer(LITSignatureType signature,
       Type valTy = ASTType(expectedType).getKwargsDictRefValueType();
       for (auto operand : variadicKwOperands) {
         // TODO: Passing OwnedInReg is a hack that is needed because the value
-        // type is not a reference type (and doesn't have a lifetime), but we
+        // type is not a reference type (and doesn't have a origin), but we
         // still want to type check it. So, passing it as if it was reg-passable
         // happens to just work, until we rectify this. Right now the reason the
         // value type cannot be a reference type is because `Reference` does not

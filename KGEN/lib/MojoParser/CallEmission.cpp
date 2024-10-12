@@ -455,7 +455,7 @@ PValue OverloadSet::filterOverloadSet(CallOperands &operands,
       return boundFunction;
     }
 
-    // Emit each of the arguments that needs a lifetime to an MValue.
+    // Emit each of the arguments that needs a origin to an MValue.
     for (size_t i = 0, e = argsNeedingLifetimes.size(); i != e; ++i) {
       if (!argsNeedingLifetimes[i])
         continue;
@@ -472,7 +472,7 @@ PValue OverloadSet::filterOverloadSet(CallOperands &operands,
 
       // We emit this as an MBValue instead of an MRValue specifically so we
       // do not infer mutability from the temporary.  We don't want ref's with
-      // parametric lifetime to bind to these values.
+      // parametric origin to bind to these values.
       auto newVal = emitter.emitMBValue(
           {operands[i]}, ExprContext::EC_CallRefArgValue, argType);
       if (!newVal)
@@ -876,7 +876,7 @@ CValue OverloadSet::emitAsCValue(ExprEmitter &emitter, ValueDest &dest) {
 CValue OverloadSet::emitCall(CallOperands &&operands, ValueDest &dest,
                              ExprEmitter &emitter) {
 
-  // Used in some cases below, lifetime needs to exist for this whole method.
+  // Used in some cases below, origin needs to exist for this whole method.
   SmallVector<ASTExprAnd<AnyValue>> posOperandsWithSelf;
 
   // If we have a bound self, add it to the operand list to simplify the logic
@@ -1093,7 +1093,7 @@ CValue ExprEmitter::emitConstructorCall(ASTType type,
   // Provide a self value so parameter inference can infer parameters from
   // typeof(self).
   assert(!callee.baseValue && "Shouldn't have a self value yet");
-  auto attr = UnknownAttr::get(RefType::getAnyLifetime(type, true));
+  auto attr = UnknownAttr::get(RefType::getAnyOrigin(type, true));
   callee.baseValue = {PValue(attr), expr};
 
   return callee.emitCall(std::move(callOperands), dest, *this);
@@ -1130,7 +1130,7 @@ FailureOr<PValue> OverloadSet::canConstructType(
   // because the selfexpr should really be an LValue.
   auto inferType =
       requiredType.getWithUnknownParametersReplaced(scopeInfo.shared);
-  auto attr = UnknownAttr::get(RefType::getAnyLifetime(inferType, true));
+  auto attr = UnknownAttr::get(RefType::getAnyOrigin(inferType, true));
   operands.addSelf({PValue(attr), expr});
 
   // Install the Self type parameters on the callee directly, since they cannot

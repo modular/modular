@@ -59,7 +59,7 @@ public:
   /// Return the name for the argument at the specified index.
   StringAttr getArgName(size_t idx);
 
-  /// Get the lifetime set of the capture lifetimes.
+  /// Get the origin set of the capture lifetimes.
   TypedAttr getCaptureOrigins();
 
   /// Get whether nested lifetimes are excluded from exclusivity checking.
@@ -84,7 +84,7 @@ public:
   ArrayRef<Type> getParamTypes() { return getInputParamTypes(); }
   size_t getNumParams() { return getParamTypes().size(); }
 
-  /// Get the number of implicit lifetime decls this function type carries.
+  /// Get the number of implicit origin decls this function type carries.
   size_t getNumImplicitOriginDecls();
 
   /// LIT-level signatures always have one result type.
@@ -132,11 +132,11 @@ public:
   /// list, if the signature is raising.
   unsigned getErrorSlotOffset();
 
-  /// Substitute the specified implicit lifetime references into the specified
+  /// Substitute the specified implicit origin references into the specified
   /// type, replacing them with `values` if they are at depth 0, or decrementing
   /// their depth if not.  This returns the resultant FunctionType on success,
   /// and invokes 'emitError'+returns null on error.
-  FunctionType substituteImplicitLifetimesIntoValues(
+  FunctionType substituteImplicitOriginsIntoValues(
       ArrayRef<TypedAttr> values, function_ref<InFlightDiagnostic()> emitError);
 
   /// Return this signature with the input parameters dropped.
@@ -145,25 +145,25 @@ public:
   /// Return this signature with the specified capture lifetimes.
   LITSignatureType getWithCaptureOrigins(TypedAttr lifetimes);
 
-  /// This method replaces direct uses of NAMED implicit lifetime declarations
+  /// This method replaces direct uses of NAMED implicit origin declarations
   /// with index-based references corresponding to the signature.  lifetimeDecls
-  /// specifies the names of the implicit lifetime decls.
+  /// specifies the names of the implicit origin decls.
   LITSignatureType
-  replaceImplicitLifetimesWithIndexes(ArrayRef<ParamDeclAttr> lifetimeDecls);
+  replaceImplicitOriginsWithIndexes(ArrayRef<ParamDeclAttr> lifetimeDecls);
 
   /// Get this signature with all the implicit lifetimes bound to #lit.origin
   /// and dropped from the signature.
-  LITSignatureType getWithImplicitLifetimesBoundNothing();
+  LITSignatureType getWithImplicitOriginsBoundNothing();
 
-  /// This method replaces direct uses of NAMED implicit lifetime declarations
+  /// This method replaces direct uses of NAMED implicit origin declarations
   /// with index-based references.  lifetimeDecls specifies the names of the
-  /// implicit lifetime decls to replace.
-  static Type replaceImplicitLifetimesWithIndexes(
+  /// implicit origin decls to replace.
+  static Type replaceImplicitOriginsWithIndexes(
       Type type, ArrayRef<ParamDeclAttr> lifetimeDecls, size_t indexOffset = 0);
 
   // Determine how many implicit lifetimes a signature with the specified input
   // values should have.
-  static size_t countImplicitLifetimes(ArrayRef<ArgConvention> convs);
+  static size_t countImplicitOrigins(ArrayRef<ArgConvention> convs);
 
   /// A `SignatureType` is a LIT signature if it contains function metadata.
   static bool classof(SignatureType type);

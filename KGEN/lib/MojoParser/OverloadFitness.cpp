@@ -229,9 +229,9 @@ static void diagnoseFailedRefTypeConversion(InflightDiag &diag,
                          << " doesn't match expected mutability "
                          << argType.isMutable();
   } else if (!canConvertWithRebind(operandRefTy, argType, shared)) {
-    diag.attachNote(loc) << "operand lifetime " << operandRefTy.getLifetime()
-                         << " doesn't match expected lifetime "
-                         << argType.getLifetime();
+    diag.attachNote(loc) << "operand origin " << operandRefTy.getOrigin()
+                         << " doesn't match expected origin "
+                         << argType.getOrigin();
   }
 }
 
@@ -462,11 +462,11 @@ auto OverloadFitness::checkOneOperand(ASTExprAnd<AnyValue> operand,
     }
 
     // Otherwise, we are binding something like a PValue or SRValue to a
-    // reference argument, which doesn't have a lifetime.  This is a problem
+    // reference argument, which doesn't have a origin.  This is a problem
     // because lifetimes can be propagated through the type system of the
     // function call to other arguments and they all need to line up.  We
     // handle this in two phases: during overload resolution we bind this to
-    // an immortal lifetime, and then after the candidate is selected, we
+    // an immortal origin, and then after the candidate is selected, we
     // re-emit these arguments to memory and re-infer all the parameters.
     //
     // One detail is how we do this: we bind these arguments to immutable
@@ -1009,7 +1009,7 @@ OverloadFitness OverloadFitness::evaluate(LITSignatureType signature,
 
       for (auto operand : variadicKwOperands) {
         // TODO: Passing OwnedInReg is a hack that is needed because the value
-        // type is not a reference type (and doesn't have a lifetime), but we
+        // type is not a reference type (and doesn't have a origin), but we
         // still want to type check it. So, passing it as if it was reg-passable
         // happens to just work, until we rectify this. Right now the reason the
         // value type cannot be a reference type is because `Reference` does not

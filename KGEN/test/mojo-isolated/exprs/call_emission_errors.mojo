@@ -165,8 +165,8 @@ struct ParametricMutability:
 
 
 fn test_ref[
-    is_mutable: Bool, lifetime: Origin[is_mutable].type
-](ref [lifetime]arg: String):
+    is_mutable: Bool, origin: Origin[is_mutable].type
+](ref [origin]arg: String):
     pass
 
 
@@ -180,7 +180,7 @@ fn call_test_ref(inout s: String):
 
 
 @value
-struct MyMutSpan[lifetime: MutableOrigin]:
+struct MyMutSpan[origin: MutableOrigin]:
     pass
 
 

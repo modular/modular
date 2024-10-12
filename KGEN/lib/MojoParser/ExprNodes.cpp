@@ -2705,7 +2705,7 @@ AnyValue UnaryOpNode::emitTransfer(AnyValue argValue, ValueDest &dest,
   }
 
   // We don't support transferring from trivial values, since this won't end the
-  // lifetime. CheckLifetimes doesn't and can't track these things because they
+  // origin. CheckLifetimes doesn't and can't track these things because they
   // don't have consume operators, move operators, etc.
   if (CValue argCValue = argValue.getIfCValue();
       argCValue && argCValue.getRValueType().isTrivial(loc, emitter.shared)) {
@@ -2716,7 +2716,7 @@ AnyValue UnaryOpNode::emitTransfer(AnyValue argValue, ValueDest &dest,
     return emitter.emitResult(argValue, this, dest);
   }
 
-  // The operand value must be in memory to have a lifetime.
+  // The operand value must be in memory to have a origin.
   if (!argValue.isMValue()) {
     if (argValue.getIfSBValue()) {
       emitter.emitError(loc, "expression is an immutable register value, "
@@ -2735,13 +2735,13 @@ AnyValue UnaryOpNode::emitTransfer(AnyValue argValue, ValueDest &dest,
   // can launder into an RValue.
   Value value = argValue.getMValueReference();
 
-  // Lifetime checking needs to understand this value or field.
+  // Origin checking needs to understand this value or field.
   Value trackableValue;
   if (value)
     trackableValue = OriginTrackable::findUnderlyingValueFromField(value);
   if (!trackableValue) {
     emitter.emitError(loc,
-                      "expression does not designate a value with a lifetime");
+                      "expression does not designate a value with an origin");
     return {};
   }
 
@@ -2751,8 +2751,8 @@ AnyValue UnaryOpNode::emitTransfer(AnyValue argValue, ValueDest &dest,
     return {};
   }
 
-  // Make sure the lifetime of the value is extended to at least here.  This
-  // is a use, and the `_ = x^` pattern to extend the lifetime of something is
+  // Make sure the origin of the value is extended to at least here.  This
+  // is a use, and the `_ = x^` pattern to extend the origin of something is
   // very common.
   emitter.builder->create<OwnershipUseOp>(getLocation(emitter), value);
 
@@ -3136,9 +3136,9 @@ AnyValue FunctionTypeNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   dummyScope.setIRValue(PValue(signature));
 
   // The parsed SignatureType is set to the pretty type that includes implicit
-  // lifetimes, we strip off the named lifetime decl references and replace them
+  // lifetimes, we strip off the named origin decl references and replace them
   // with indices.
-  signature = signature.replaceImplicitLifetimesWithIndexes(
+  signature = signature.replaceImplicitOriginsWithIndexes(
       tcSignature.implicitLifetimeDecls);
 
   if (argList.effects.isEscaping()) {
@@ -3249,7 +3249,7 @@ AnyValue MagicFunctionNode::emitIR(ValueDest &dest,
   if (!exprVal)
     return {};
 
-  // TODO(references): if we keep these functions, they should take a lifetime.
+  // TODO(references): if we keep these functions, they should take a origin.
   auto immortal = emitter.builder->getAttr<AnyOriginAttr>(/*isMut=*/true);
   bool startsUninit = kind == ExprNode::kGetAddressAsUninitLValue;
   bool endsUninit = kind == ExprNode::kGetAddressAsOwned;
@@ -3272,10 +3272,10 @@ AnyValue MagicFunctionNode::emitLifetimeOf(ValueDest &dest,
   SmallVector<TypedAttr> lifetimes;
   for (ExprNode *subExpr : subExprs) {
     emitter.emitExpressionWithOutEvaluatingIt(
-        subExpr, EC_Lifetime, [&](CValue result) {
-          // We can only get the lifetime of an MValue.
+        subExpr, EC_Origin, [&](CValue result) {
+          // We can only get the origin of an MValue.
           if (result.isMValue())
-            lifetimes.push_back(result.getMValueType().getLifetime());
+            lifetimes.push_back(result.getMValueType().getOrigin());
           else
             emitter.emitError(subExpr->getLoc())
                 << "value doesn't have a memory type" << subExpr->getRange();
@@ -3291,7 +3291,7 @@ AnyValue MagicFunctionNode::emitTypeOf(ValueDest &dest,
   // TypeOf can reference dynamic values even when in a parameter context.
   ASTType resultType;
   emitter.emitExpressionWithOutEvaluatingIt(
-      subExprs.front(), EC_Lifetime,
+      subExprs.front(), EC_Origin,
       [&](CValue result) { resultType = result.getRValueType(); });
 
   if (!resultType)

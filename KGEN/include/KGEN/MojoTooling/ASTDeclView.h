@@ -263,7 +263,7 @@ public:
   }
 
 private:
-  /// The prefix is the ref lifetime + addr space marker.
+  /// The prefix is the ref origin + addr space marker.
   std::string prefix;
   std::string type;
   KGEN::LIT::PassingKind passingKind;

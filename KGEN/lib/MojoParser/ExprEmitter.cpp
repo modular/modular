@@ -131,8 +131,8 @@ const char *LIT::getContextMessage(ExprContext context) {
     return " in trait conformance checking";
   case EC_Closure:
     return " in internal closure formation";
-  case EC_Lifetime:
-    return " in lifetime specifier";
+  case EC_Origin:
+    return " in origin specifier";
   case EC_TypeOf:
     return " in __type_of";
   case EC_PyBindGen:
@@ -336,7 +336,7 @@ LValue ValueDest::getLValueForResult(SMLoc loc, ASTType resultType,
       assert(isa<UnresolvedType>(varOp.getType().getElementType()) &&
              "Cannot resolve an already-resolved vardecl");
       varOp.getResult().setType(
-          RefType::get(materializedType, varOp.getType().getLifetime()));
+          RefType::get(materializedType, varOp.getType().getOrigin()));
       typedRef = varOp.getResult();
     } else {
       auto globalOp = cast<GlobalVarDeclOp>(opDest);
@@ -915,7 +915,7 @@ PValue ExprEmitter::emitPValue(ASTExprAnd<AnyValue> value, ExprContext context,
 Value ExprEmitter::emitRefValue(ASTExprAnd<AnyValue> value,
                                 ExprContext context) {
   // If this is an RValue (including PValue's), put it into a memory box so
-  // we can get its lifetime.
+  // we can get its origin.
   if (auto rv = value.ir.getIfRValue()) {
     value.ir = emitMRValue(value, context);
     if (!value.ir)
@@ -1342,7 +1342,7 @@ bool ExprEmitter::canImplicitlyConvertToType(
   if (canConvertWithRebind(rvType, requiredType, shared))
     return true;
 
-  // Lifetimes and lifetime sets can convert between each other.
+  // Lifetimes and origin sets can convert between each other.
   // FIXME: This seems wrong, why isn't it checking for inclusion and
   // compatibility??
   if ((isa<OriginType>(rvType) && isa<OriginSetType>(requiredType)) ||
@@ -1486,7 +1486,7 @@ AnyValue ExprEmitter::emitResult(AnyValue value, const ExprNode *expr,
         if (cValue.isMValue())
           requiredType = cValue.getMValueType().getWithElement(requiredType);
 
-        // PValues of lifetime type have a special conversion.
+        // PValues of origin type have a special conversion.
         if (isa<OriginType>(requiredType) && isa<OriginType>(cValue.getType()))
           if (auto pv = cValue.getIfPValue())
             value = OriginMutCastAttr::get(pv, requiredType);
@@ -1495,7 +1495,7 @@ AnyValue ExprEmitter::emitResult(AnyValue value, const ExprNode *expr,
         return emitResult(value, expr, dest);
       }
 
-      // Handle conversions between lifetimes and lifetime sets.
+      // Handle conversions between lifetimes and origin sets.
       if (isa<OriginType>(rvType) && isa<OriginSetType>(requiredType)) {
         // This can only be done in the parameter domain.
         if (TypedAttr value = cValue.getIfPValue()) {
@@ -1948,10 +1948,10 @@ ASTType ExprEmitter::emitExprType(const ExprNode *expr, bool allowUnbound) {
 
   // Check for a function type.
   if (auto sig = dyn_cast<LITSignatureType>(type)) {
-    // For a fully bound type, require that the lifetime set is concrete.
+    // For a fully bound type, require that the origin set is concrete.
     if (isa<UnboundAttr>(sig.getCaptureOrigins())) {
       emitError(expr->getLoc(),
-                "function type missing required lifetime set parameter")
+                "function type missing required origin set parameter")
           << expr->getRange();
       return {};
     }

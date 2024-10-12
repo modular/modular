@@ -79,7 +79,7 @@ enum ExprContext {
   EC_AutoDeref,             // dereference Reference x
   EC_Trait,                 // trait conformance checking for `T`
   EC_Closure,               // closure formation
-  EC_Lifetime,              // lifetime specifier
+  EC_Origin,                // origin specifier
   EC_TypeOf,                // __type_of(x)
   EC_PyBindGen,             // within Python binding generation
 };
@@ -559,7 +559,7 @@ public:
   //===--------------------------------------------------------------------===//
   // Var emission helpers.
 
-  /// Helper to emit a VarDeclOp with a uniquely generated lifetime name.
+  /// Helper to emit a VarDeclOp with a uniquely generated origin name.
   VarDeclOp emitVarDecl(const Twine &name, Type type, Location loc,
                         VarDeclKind kind);
   VarDeclOp emitVarDecl(StringAttr name, Type type, Location loc,

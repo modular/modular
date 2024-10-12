@@ -29,28 +29,28 @@ TypedAttr LIT::getLifetimesAccessibleByParams(PogListAttr paramList,
                                               SharedState &shared,
                                               TypedAttr captureOrigins) {
   // Implicit parameters are not accessible on the callee side, so we don't
-  // consider their lifetime accesses.
+  // consider their origin accesses.
   params = params.drop_back(countNumImplicitKinds(paramList));
 
   SmallVector<Type> types;
   for (ParamDeclAttr param : params)
     types.push_back(param.getType());
   SmallVector<TypedAttr> lifetimes =
-      shared.cachedOriginFinder.findLifetimesIn(types);
+      shared.cachedOriginFinder.findOriginsIn(types);
 
-  // We also need to find all accessible lifetime sets, even if they are
+  // We also need to find all accessible origin sets, even if they are
   // parametric, and union them with the found lifetimes. We don't need to
-  // recurse into any nested parameter lifetimes. Even if they contain lifetime
+  // recurse into any nested parameter lifetimes. Even if they contain origin
   // set references, they may not be within the top-level parameter scope, and
   // also we know they can't be accessed by the current function. For example,
   //
   //   fn foo[f: fn[g: fn() capturing [_] -> None] -> None]():
   //       pass
   //
-  // `foo` doesn't access the inner lifetime set of `g` through `f`, because
+  // `foo` doesn't access the inner origin set of `g` through `f`, because
   // `foo` cannot call `f` without constructing and passing a closure.
   //
-  // We can union the sets together by wrapping them in a lifetime set union.
+  // We can union the sets together by wrapping them in a origin set union.
   // The mutability doesn't matter since it will get flattened.
   auto addOriginSet = [&](TypedAttr param) {
     lifetimes.push_back(OriginSetUnionAttr::get(
@@ -159,7 +159,7 @@ bool LIT::canConvertWithRebind(ASTType fromType, ASTType toType,
     return false;
   }
 
-  // Check lifetime downcasting.  The safe conversions are:
+  // Check origin downcasting.  The safe conversions are:
   //   Lifetimes with identical mutability will be uniqued and already handled.
   //   Conversion from any mutability to KNOWN immutable is fine.
   //   Conversion from KNOWN mutable to any mutability is fine.
@@ -168,7 +168,7 @@ bool LIT::canConvertWithRebind(ASTType fromType, ASTType toType,
       return toLife.isMutableKnown(false) || fromLife.isMutableKnown(true);
 
   // Check reference downcasting.  The only thing allowed to disagree is the
-  // lifetime set / mutability.
+  // origin set / mutability.
   if (auto fromRef = dyn_cast<RefType>(fromType)) {
     if (auto toRef = dyn_cast<RefType>(toType)) {
       // Element types and address space have to be exactly equal.
@@ -194,23 +194,23 @@ bool LIT::canConvertWithRebind(ASTType fromType, ASTType toType,
       }
 
       // Verify compatible OriginType(mutability).  This is checking the type
-      // of the lifetime, which contains its mutability specifier.
+      // of the origin, which contains its mutability specifier.
       auto toOriginType = toRef.getOriginType();
       if (fromRef.getOriginType() != toOriginType &&
           !canConvertWithRebind(fromRef.getOriginType(), toOriginType, shared))
         return false;
 
-      // We allow converting an "any" lifetime to anything concrete.
+      // We allow converting an "any" origin to anything concrete.
       // NOTE: This is not memory safe; we should make this an explicit
       // operation someday.
-      if (isa<AnyOriginAttr>(fromRef.getLifetime()))
+      if (isa<AnyOriginAttr>(fromRef.getOrigin()))
         return true;
 
-      // We can convert lifetime subset to a lifetimes superset.
-      auto toLifetime = toRef.getLifetime();
+      // We can convert origin subset to a lifetimes superset.
+      auto toLifetime = toRef.getOrigin();
       auto lifetimeUnion = OriginUnionAttr::get(
           {toLifetime,
-           OriginMutCastAttr::get(fromRef.getLifetime(), toOriginType)},
+           OriginMutCastAttr::get(fromRef.getOrigin(), toOriginType)},
           toOriginType);
       return toLifetime == lifetimeUnion;
     }
@@ -277,12 +277,12 @@ static ASTType getZeroCostCommonTypeImpl(SharedState &shared, ASTType type1,
       auto isMutableAttr = ParamOperatorAttr::get(
           POC::And, type1Ref.isMutable(), type2Ref.isMutable());
 
-      auto l1 = OriginMutCastAttr::get(type1Ref.getLifetime(), isMutableAttr);
-      auto l2 = OriginMutCastAttr::get(type2Ref.getLifetime(), isMutableAttr);
+      auto l1 = OriginMutCastAttr::get(type1Ref.getOrigin(), isMutableAttr);
+      auto l2 = OriginMutCastAttr::get(type2Ref.getOrigin(), isMutableAttr);
 
-      auto lifetime =
+      auto origin =
           OriginUnionAttr::get({l1, l2}, cast<OriginType>(l1.getType()));
-      return RefType::get(eltType, lifetime, type1Ref.getAddressSpace());
+      return RefType::get(eltType, origin, type1Ref.getAddressSpace());
     }
 
   // No common type found.

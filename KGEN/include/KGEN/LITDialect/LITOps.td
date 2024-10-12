@@ -163,7 +163,7 @@ def LIT_CallOp : LITOp<"call", [
   let description = [{
     The `lit.call` operation is a static call to a `lit.func`. It references its
     callee via symbol constant. It contains optional parameter declarations for
-    any callee result parameters and bindings for implicit lifetime parameters.
+    any callee result parameters and bindings for implicit origin parameters.
 
     Example:
 
@@ -204,7 +204,7 @@ def LIT_CallIndirectOp : LITOp<"call_indirect"> {
   let description = [{
     The `lit.call_indirect` operation is an indirect call to a signature-typed
     dynamic callee. It references its callee via an SSA operand. It contains
-    optional bindings for implicit lifetime parameters.
+    optional bindings for implicit origin parameters.
 
     Example:
 
@@ -356,7 +356,7 @@ def LIT_StructDeclOp : LITOp<"struct.decl", [
     shouldn't be.
 
     This includes a 'destructor' field if the type has a non-trivial destructor,
-    allowing SSA passes to perform lifetime optimizations.  It includes a
+    allowing SSA passes to perform origin optimizations.  It includes a
     'moveInit' field if the type implements the `__moveinit__` special
     functions if present.
   }];
@@ -800,8 +800,8 @@ def LIT_VarDeclOp : LITOp<"var.decl", [
     This declaration is used for var declarations with an exposed
     address.  `kind` encodes how this declaration was created, either via
     explicit `var` expressions, implicitly declared, or internally
-    synthesized (which suppresses some warnings).  This type defines a lifetime
-    and returns a mutable reference to its result in that lifetime.
+    synthesized (which suppresses some warnings).  This type defines a origin
+    and returns a mutable reference to its result in that origin.
 
     For implicitly declared VarDecls, an optional `argShadowIndex` specifies
     which argument number this VarDecl was created to shadow.
@@ -1337,7 +1337,7 @@ def LIT_LoadConsumeOp : LITOp<"load.consume", [
     Example:
 
     ```mlir
-    %0 = lit.load.consume %ref : !lit.ref<scalar<f32>, #lifetime>
+    %0 = lit.load.consume %ref : !lit.ref<scalar<f32>, #origin>
     ```
   }];
 
@@ -1382,7 +1382,7 @@ def LIT_OwnershipMarkInitializedOp : LITOp<"ownership.mark_initialized"> {
     lit.ownership.mark_initialized %0 : !lit.ref<T, mut lt>
     ```
 
-    The argument must be an indirectly lifetime-tracked value, because
+    The argument must be an indirectly origin-tracked value, because
     CheckLifetimes isn't field sensitive for register passable values.
   }];
 
@@ -1404,7 +1404,7 @@ def LIT_OwnershipMarkConsumedOp : LITOp<"ownership.mark_consumed"> {
     lit.ownership.mark_consumed %0 : !somestring
     ```
 
-    The argument must be an indirectly lifetime-tracked value.
+    The argument must be an indirectly origin-tracked value.
   }];
 
   let arguments = (ins LIT_RefType:$value);
@@ -1427,7 +1427,7 @@ def LIT_OwnershipMarkDestroyedOp : LITOp<"ownership.mark_destroyed"> {
     lit.ownership.mark_destroyed %0 : !somestring
     ```
 
-    The argument must be an indirectly lifetime-tracked value, because
+    The argument must be an indirectly origin-tracked value, because
     CheckLifetimes isn't field sensitive for register passable values.
   }];
 
@@ -1506,7 +1506,7 @@ def LIT_RefFromPointerOp : LITOp<"ref.from_pointer",
   let summary = "Create an immortal reference from a pointer value";
   let description = [{
     This op converts a raw pointer to a reference with specified mutability and
-    lifetime.  When `startsUninit` is true, the reference is assumed to be
+    origin.  When `startsUninit` is true, the reference is assumed to be
     uninitialized but needs to be initialized before exit.  When false it is
     assumed to be initialized and must be initialized on exit.
 
@@ -1524,8 +1524,8 @@ def LIT_RefFromPointerOp : LITOp<"ref.from_pointer",
   }];
 
   let builders = [
-    // Create with a pointer and lifetime, to infer result type.
-    OpBuilder<(ins "Value":$pointer, "TypedAttr":$lifetime,
+    // Create with a pointer and origin, to infer result type.
+    OpBuilder<(ins "Value":$pointer, "TypedAttr":$origin,
                    "bool":$startsUninit, "bool":$endsUninit)>,
   ];
 }
@@ -1558,7 +1558,7 @@ def LIT_RefStructGEROp : LITOp<"ref.struct.ger", [Pure,
   let summary = "Get a reference to a struct field.";
   let description = [{
     The `lit.ref.struct.ger` operation computes a reference to a struct field by
-    name from a parametric struct.  The result has the same lifetime as the
+    name from a parametric struct.  The result has the same origin as the
     source value.
 
     Example:
@@ -1589,12 +1589,12 @@ def LIT_RefStructGEROp : LITOp<"ref.struct.ger", [Pure,
 
   let extraClassDeclaration = [{
     /// Given a reference to a struct, return the reference type to the
-    /// specified field, maintaining lifetime and mutability, and rebinding any
+    /// specified field, maintaining origin and mutability, and rebinding any
     /// generics from the base type through the field type.
     static RefType getFieldType(RefType structRefTy, StructFieldOp field);
 
     /// Given a reference to a struct, return the reference type to the
-    /// specified field, maintaining lifetime and mutability, assuming the type
+    /// specified field, maintaining origin and mutability, assuming the type
     /// is already rebound to its final type.
     static RefType getReboundFieldType(RefType structRefTy,
                                        StringAttr fieldName, Type reboundType);
@@ -1617,9 +1617,9 @@ def LIT_RefLoadOp : LITOp<"ref.load", [
     Example:
 
     ```mlir
-    %0 = lit.ref.load %ref0 : !lit.ref<scalar<f32>, lifetime>
-    %1 = lit.ref.load %ref1 : !lit.ref<simd<4, type>, lifetime>
-    %2 = lit.ref.load %ref0 : !lit.ref<scalar<f32>, mut lifetime>
+    %0 = lit.ref.load %ref0 : !lit.ref<scalar<f32>, origin>
+    %1 = lit.ref.load %ref1 : !lit.ref<simd<4, type>, origin>
+    %2 = lit.ref.load %ref0 : !lit.ref<scalar<f32>, mut origin>
     ```
   }];
 
@@ -1643,8 +1643,8 @@ def LIT_RefStoreOp : LITOp<"ref.store", [
     Example:
 
     ```mlir
-    lit.ref.store %0, %ref0 : !lit.ref<scalar<f32>, mut lifetime>
-    lit.ref.store %1, %ref1 : !lit.ref<simd<4, type>, mut lifetime>
+    lit.ref.store %0, %ref0 : !lit.ref<scalar<f32>, mut origin>
+    lit.ref.store %1, %ref1 : !lit.ref<simd<4, type>, mut origin>
     ```
   }];
 
@@ -1707,7 +1707,7 @@ def LIT_RefPackCreateOp : LITOp<"ref.pack.create", [Pure]> {
   let description = [{
     The `kgen.ref.pack.create` operation creates a value of `!lit.ref.pack`
     type, populated with the given SSA values.  The elements should all have
-    reference type with matching lifetime and address space.
+    reference type with matching origin and address space.
 
     Example:
 

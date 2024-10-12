@@ -189,7 +189,7 @@ static void printLifetimeParams(AsmPrinter &p, Operation *op,
 }
 
 /// Infer call operation operand and result types from the signature,
-/// substituting implicit lifetime parameters.
+/// substituting implicit origin parameters.
 template <typename CalleeT>
 static ParseResult
 parseCallOpTypes(AsmParser &p, SmallVectorImpl<Type> &operandTypes,
@@ -214,7 +214,7 @@ parseCallOpTypes(AsmParser &p, SmallVectorImpl<Type> &operandTypes,
              << " lifetimes specified, but signature expected "
              << calleeLITType.getNumImplicitOriginDecls();
 
-    values = calleeLITType.substituteImplicitLifetimesIntoValues(
+    values = calleeLITType.substituteImplicitOriginsIntoValues(
         implicitLifetimes, [&] { return p.emitError(p.getNameLoc()); });
     if (!values)
       return failure();
@@ -303,7 +303,7 @@ static LogicalResult verifyLifetimeParams(OpT op, LITSignatureType sig) {
     return success();
   return op->emitOpError("operation has ")
          << numParams
-         << " bindings for implicit lifetime parameters, but callee "
+         << " bindings for implicit origin parameters, but callee "
             "expected "
          << numImplicit;
 }
@@ -312,7 +312,7 @@ template <typename OpT>
 static LogicalResult verifyCallOp(OpT op, LITSignatureType sig,
                                   ValueRange operands,
                                   std::optional<TypeRange> results) {
-  FunctionType values = sig.substituteImplicitLifetimesIntoValues(
+  FunctionType values = sig.substituteImplicitOriginsIntoValues(
       op.getImplicitLifetimes(), [&] { return op.emitOpError(); });
   if (!values)
     return failure();
@@ -469,7 +469,7 @@ LIT::FuncOp::getBoundSymbolRef(ParameterExprArrayAttr bindings) {
 bool LIT::FuncOp::isSynthetic() { return getIsSynthetic(); }
 
 /// Parse a fixed mutability specifier that occurs for implicit lifetimes.
-// Implicit lifetime params are always known immut or mut, never parametric.
+// Implicit origin params are always known immut or mut, never parametric.
 static ParseResult parseImplicitLifetimeMutability(AsmParser &p,
                                                    bool &isMutable) {
   llvm::SMLoc loc;
@@ -511,7 +511,7 @@ static ParseResult parseLITFunctionSignature(
     captureOrigins = OriginSetAttr::get({}, lifetimeSet);
   }
   bool isNestedOriginExclusivityCheckingDisabled =
-      succeeded(p.parseOptionalKeyword("no_nested_lifetime_exclusivity"));
+      succeeded(p.parseOptionalKeyword("no_nested_origin_exclusivity"));
 
   SmallVector<ParamDeclAttr> lifetimeDecls;
   auto parseLifetimeDecl = [&]() -> ParseResult {
@@ -529,7 +529,7 @@ static ParseResult parseLITFunctionSignature(
   if (parseOptionalParameterSpec(p, params, paramListAttr))
     return failure();
 
-  // Parse implicit lifetime decls.
+  // Parse implicit origin decls.
   if (p.parseCommaSeparatedList(AsmParser::Delimiter::OptionalSquare,
                                 parseLifetimeDecl))
     return failure();
@@ -612,11 +612,11 @@ static ParseResult parseLITFunctionSignature(
   if (!signature)
     return failure();
 
-  // Replace named implicit lifetime parameter references with index-based
+  // Replace named implicit origin parameter references with index-based
   // references in the signature.
-  signature = signature.replaceImplicitLifetimesWithIndexes(lifetimeDecls);
+  signature = signature.replaceImplicitOriginsWithIndexes(lifetimeDecls);
 
-  // The formal params are the declared params + the implicit lifetime decls.
+  // The formal params are the declared params + the implicit origin decls.
   SmallVector<ParamDeclAttr> allParams;
   allParams.reserve(params.size() + lifetimeDecls.size());
   llvm::append_range(allParams, params);
@@ -638,7 +638,7 @@ static void printLITFunctionSignature(OpAsmPrinter &p, Region *region,
     p << ':';
   }
   if (signature.getIsNestedOriginExclusivityCheckingDisabled())
-    p << "no_nested_lifetime_exclusivity";
+    p << "no_nested_origin_exclusivity";
 
   ParameterEvaluator evaluator;
   printOptionalParameterSpec(p, params.drop_back(lifetimeDecls.size()),
@@ -1398,14 +1398,13 @@ OpFoldResult LIT::StructExtractOp::fold(FoldAdaptor adaptor) {
 //===----------------------------------------------------------------------===//
 
 /// Given a reference to a struct, return the reference type to the
-/// specified field, maintaining lifetime and mutability, assuming the type
+/// specified field, maintaining origin and mutability, assuming the type
 /// is already rebound to its final type.
 RefType RefStructGEROp::getReboundFieldType(RefType structRefTy,
                                             StringAttr fieldName,
                                             Type reboundType) {
-  // The lifetime of the struct reference incorporates field sensitivity.
-  auto fieldLifetime =
-      OriginFieldAttr::get(structRefTy.getLifetime(), fieldName);
+  // The origin of the struct reference incorporates field sensitivity.
+  auto fieldLifetime = OriginFieldAttr::get(structRefTy.getOrigin(), fieldName);
   return RefType::get(reboundType, fieldLifetime,
                       structRefTy.getAddressSpace());
 }
@@ -1433,7 +1432,7 @@ void RefStructGEROp::build(OpBuilder &builder, OperationState &result,
 LogicalResult RefStructGEROp::verify() {
   if (getType() != getReboundFieldType(getContainer().getType(), getFieldAttr(),
                                        getType().getElementType()))
-    return emitOpError("invalid lifetime or address space");
+    return emitOpError("invalid origin or address space");
   return success();
 }
 
@@ -1450,7 +1449,7 @@ static ParseResult parseStructGERTypes(AsmParser &p, Type &containerType,
   if (!containerRefType)
     return p.emitError(loc, "expected '!lit.ref' type in lit.ref.struct.ger");
 
-  // The field type gets wrapped with the same mutability and lifetime as
+  // The field type gets wrapped with the same mutability and origin as
   // the result element.
   fieldRefType = RefStructGEROp::getReboundFieldType(containerRefType,
                                                      fieldName, fieldType);
@@ -1593,11 +1592,11 @@ OpFoldResult RefImmutOp::fold(RefImmutOp::FoldAdaptor adaptor) {
 //===----------------------------------------------------------------------===//
 
 void RefFromPointerOp::build(OpBuilder &builder, OperationState &result,
-                             Value pointer, TypedAttr lifetime,
-                             bool startsUninit, bool endsUninit) {
+                             Value pointer, TypedAttr origin, bool startsUninit,
+                             bool endsUninit) {
   auto ptr = cast<PointerType>(pointer.getType());
   auto refType =
-      RefType::get(ptr.getElementType(), lifetime, ptr.getAddressSpace());
+      RefType::get(ptr.getElementType(), origin, ptr.getAddressSpace());
   build(builder, result, refType, pointer, startsUninit, endsUninit);
 }
 
@@ -1765,13 +1764,13 @@ static ParseResult parseVarDeclType(AsmParser &p, Type &resultType,
   if (!refType || !refType.isMutableKnown(true))
     return p.emitError(p.getNameLoc(),
                        "expected a mutable !lit.ref<> result type");
-  // The lifetime must be a simple name, which becomes the name we are
+  // The origin must be a simple name, which becomes the name we are
   // declaring.
-  auto lifetime = dyn_cast<ParamDeclRefAttr>(refType.getLifetime());
-  if (!lifetime)
+  auto origin = dyn_cast<ParamDeclRefAttr>(refType.getOrigin());
+  if (!origin)
     return p.emitError(p.getNameLoc(),
-                       "expected a !lit.ref<> with named lifetime");
-  lifetimeDecl = ParamDeclAttr::get(lifetime);
+                       "expected a !lit.ref<> with named origin");
+  lifetimeDecl = ParamDeclAttr::get(origin);
   return success();
 }
 
@@ -1855,7 +1854,7 @@ DebugInfo::DIScopeAttr GlobalVarDeclOp::getLocScope() {
 
 void GlobalVarRefOp::build(OpBuilder &builder, OperationState &state,
                            GlobalVarDeclOp op) {
-  build(builder, state, RefType::getAnyLifetime(op.getType(), /*isMut=*/true),
+  build(builder, state, RefType::getAnyOrigin(op.getType(), /*isMut=*/true),
         getFullyResolvedSymbolRef(op));
 }
 
@@ -2038,7 +2037,7 @@ static ParseResult parseRefPackCreateType(AsmParser &p, Type &resultType,
   }
 
   // The operands have the same type as the elements but wrapped in a reference
-  // with the specified lifetime and addr space.
+  // with the specified origin and addr space.
   ArrayRef<TypedAttr> values = variadic.getValues();
   for (TypedAttr value : values) {
     Type eltType = type.getElementRefTypeFor(ParamRefType::get(value));

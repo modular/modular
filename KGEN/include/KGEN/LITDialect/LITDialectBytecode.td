@@ -50,13 +50,13 @@ def OriginSetType : DialectType<(type)>;
 
 def RefType : DialectType<(type
   Type:$elementType,
-  TypedAttr:$lifetime,
+  TypedAttr:$origin,
   TypedAttr:$addressSpace
 )>;
 
 def RefPackType : DialectType<(type
   TypedAttr:$variadic,
-  TypedAttr:$lifetime,
+  TypedAttr:$origin,
   TypedAttr:$addressSpace
 )>;
 
