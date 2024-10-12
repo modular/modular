@@ -233,7 +233,7 @@ fn non_max_suppression[
                 # note we need to use num_boxes_curr_pred instead of num_boxes_remainig
                 # because num_boxes_remaining has been adjusted for the high IOU boxes above
                 sort[_greater_than](
-                    Span[box_idxs.T, __lifetime_of(box_idxs)](
+                    Span[box_idxs.T, __origin_of(box_idxs)](
                         unsafe_ptr=box_idxs.data + pred_idx,
                         len=num_boxes_curr_pred,
                     )

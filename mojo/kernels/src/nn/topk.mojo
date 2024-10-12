@@ -212,7 +212,7 @@ fn _top_k[
                     if num_equal > 1:
                         var ptr = idxs.data + i
                         sort(
-                            Span[idxs.T, __lifetime_of(idxs)](
+                            Span[idxs.T, __origin_of(idxs)](
                                 unsafe_ptr=ptr, len=num_equal
                             )
                         )
