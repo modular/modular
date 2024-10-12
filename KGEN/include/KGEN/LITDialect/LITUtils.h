@@ -125,14 +125,13 @@ void printConventionAndVariadicness(AsmPrinter &p, ArgConvention convention,
                                     Variadicness variadicness);
 
 /// Parse and print a lifetime set.
-ParseResult parseLifetimeSet(AsmParser &p,
-                             SmallVectorImpl<TypedAttr> &lifetimes);
+ParseResult parseOriginSet(AsmParser &p, SmallVectorImpl<TypedAttr> &lifetimes);
 OptionalParseResult
-parseOptionalLifetimeSet(AsmParser &p, SmallVectorImpl<TypedAttr> &lifetimes);
-void printLifetimeSet(AsmPrinter &p, ArrayRef<TypedAttr> lifetimes);
+parseOptionalOriginSet(AsmParser &p, SmallVectorImpl<TypedAttr> &lifetimes);
+void printOriginSet(AsmPrinter &p, ArrayRef<TypedAttr> lifetimes);
 
 /// Return true if the lifetime set parameter is an empty set.
-bool isEmptyLifetimeSet(TypedAttr attr);
+bool isEmptyOriginSet(TypedAttr attr);
 
 //===----------------------------------------------------------------------===//
 // Pog Utils

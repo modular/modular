@@ -13,7 +13,7 @@ alias ImmutableOrigin = __mlir_type.`!lit.lifetime<0>`
 alias MutableOrigin = __mlir_type.`!lit.lifetime<1>`
 alias ImmutableAnyOrigin = __mlir_attr.`#lit.any.lifetime : !lit.lifetime<0>`
 alias MutableAnyOrigin = __mlir_attr.`#lit.any.lifetime<1>: !lit.lifetime<1>`
-alias OriginSet = __mlir_type.`!lit.lifetime.set`
+alias OriginSet = __mlir_type.`!lit.origin.set`
 
 
 alias `0` = __mlir_attr.`0 : index`

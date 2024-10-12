@@ -211,7 +211,7 @@ getUnboundSpecializedSignature(LITSignatureType type,
 /// elaboration.
 static inline bool isSingletonParameter(Type type) {
   // TODO: Could support structs of lifetimes.
-  return isa<LifetimeType, LifetimeSetType>(type);
+  return isa<LifetimeType, OriginSetType>(type);
 }
 
 /// This returns the singleton value to use for a parameter value that

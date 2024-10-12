@@ -369,20 +369,20 @@ def LIT_LifetimeType : LITType<"Lifetime", "lifetime",
 }
 
 //===----------------------------------------------------------------------===//
-// LifetimeSetType
+// OriginSetType
 //===----------------------------------------------------------------------===//
 
-def LIT_LifetimeSetType : LITType<"LifetimeSet", "lifetime.set",
+def LIT_OriginSetType : LITType<"OriginSet", "origin.set",
     [DeclareTypeInterfaceMethods<ParameterTypeInterface>]> {
-  let summary = "a singleton type representing a lifetime set";
+  let summary = "a singleton type representing a origin set";
   let description = [{
-    The `!lit.lifetime.set` type is a singleton type that represents a lifetime
+    The `!lit.origin.set` type is a singleton type that represents a lifetime
     set. A lifetime set is a collection of different lifetimes.
 
     Example:
 
     ```mlir
-    !lit.lifetime.set
+    !lit.origin.set
     ```
   }];
 

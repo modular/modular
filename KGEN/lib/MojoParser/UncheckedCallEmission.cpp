@@ -1481,7 +1481,7 @@ computeArgumentsLifetime(AsyncCallOp call,
   for (Value value : call.getOperands())
     if (auto ref = dyn_cast<RefType>(value.getType()))
       lifetimes.push_back(ref.getLifetime());
-  return LifetimeSetAttr::get(call.getContext(), lifetimes);
+  return OriginSetAttr::get(call.getContext(), lifetimes);
 }
 
 CValue ExprEmitter::emitCallUnchecked(RValue callee,

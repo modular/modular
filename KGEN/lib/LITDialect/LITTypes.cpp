@@ -34,7 +34,7 @@ void LITDialect::registerTypes() {
   dialect->registerMnemonicType<AnyStructType>();
   dialect->registerMnemonicType<TraitType>();
   dialect->registerMnemonicType<LifetimeType>();
-  dialect->registerMnemonicType<LifetimeSetType>();
+  dialect->registerMnemonicType<OriginSetType>();
 
   // Register the StructType parser.
   getContext()->getLoadedDialect<KGENDialect>()->setSymbolTypeParser(
@@ -520,10 +520,10 @@ OptionalParseResult LifetimeType::parseValue(AsmParser &p,
   // Parse |...| as lifetime set unions.
   if (succeeded(p.parseOptionalVerticalBar())) {
     TypedAttr set;
-    if (parseParamValue(p, set, LifetimeSetType::get(p.getContext())) ||
+    if (parseParamValue(p, set, OriginSetType::get(p.getContext())) ||
         p.parseVerticalBar())
       return failure();
-    result = LifetimeSetUnionAttr::get(set, *this);
+    result = OriginSetUnionAttr::get(set, *this);
     return mlir::success();
   }
 
@@ -629,7 +629,7 @@ LogicalResult LifetimeType::printValue(AsmPrinter &p, TypedAttr value) const {
     return success();
   }
 
-  if (auto set = ::dyn_cast<LifetimeSetUnionAttr>(value)) {
+  if (auto set = ::dyn_cast<OriginSetUnionAttr>(value)) {
     p << '|';
     printParamValue(p, set.getValue());
     p << '|';
@@ -702,26 +702,25 @@ LifetimeType::MutabilityClass LifetimeType::getMutabilityClass() {
 }
 
 //===----------------------------------------------------------------------===//
-// LifetimeSetType
+// OriginSetType
 //===----------------------------------------------------------------------===//
 
-OptionalParseResult LifetimeSetType::parseValue(AsmParser &p,
-                                                TypedAttr &value) const {
+OptionalParseResult OriginSetType::parseValue(AsmParser &p,
+                                              TypedAttr &value) const {
   SmallVector<TypedAttr> lifetimes;
-  OptionalParseResult result = parseOptionalLifetimeSet(p, lifetimes);
+  OptionalParseResult result = parseOptionalOriginSet(p, lifetimes);
   if (result.has_value()) {
     if (failed(*result))
       return failure();
-    value = LifetimeSetAttr::get(getContext(), lifetimes, *this);
+    value = OriginSetAttr::get(getContext(), lifetimes, *this);
     return mlir::success();
   }
   return std::nullopt;
 }
 
-LogicalResult LifetimeSetType::printValue(AsmPrinter &p,
-                                          TypedAttr value) const {
-  if (auto set = ::dyn_cast<LifetimeSetAttr>(value)) {
-    printLifetimeSet(p, set.getOperands());
+LogicalResult OriginSetType::printValue(AsmPrinter &p, TypedAttr value) const {
+  if (auto set = ::dyn_cast<OriginSetAttr>(value)) {
+    printOriginSet(p, set.getOperands());
     return success();
   }
   return failure();
@@ -890,12 +889,12 @@ static ParseResult parseLITSignature(AsmParser &p, Type &signature) {
       return failure();
 
   TypedAttr captureLifetimes;
-  auto lifetimeSet = LifetimeSetType::get(p.getContext());
+  auto lifetimeSet = OriginSetType::get(p.getContext());
   if (succeeded(p.parseOptionalColon())) {
     if (parseParamValue(p, captureLifetimes, lifetimeSet) || p.parseColon())
       return failure();
   } else {
-    captureLifetimes = LifetimeSetAttr::get({}, lifetimeSet);
+    captureLifetimes = OriginSetAttr::get({}, lifetimeSet);
   }
   bool isNestedLifetimeExclusivityCheckingDisabled =
       succeeded(p.parseOptionalKeyword("no_nested_lifetime_exclusivity"));
@@ -1001,7 +1000,7 @@ void FnMetadataAttr::printSignature(AsmPrinter &p, SignatureType sig) const {
 
   if (unsigned numLifetimeDecls = getNumImplicitLifetimeDecls())
     p << '[' << numLifetimeDecls << ']';
-  if (!isEmptyLifetimeSet(getCaptureLifetimes())) {
+  if (!isEmptyOriginSet(getCaptureLifetimes())) {
     p << ':';
     printParamValue(p, getCaptureLifetimes());
     p << ':';
@@ -1420,7 +1419,7 @@ TypedAttr LIT::getSingletonParameterValue(Type type) {
   // TODO: Could support structs of lifetimes.
   if (auto lifetime = dyn_cast<LifetimeType>(type))
     return AnyLifetimeAttr::get(lifetime);
-  if (auto set = dyn_cast<LifetimeSetType>(type))
-    return LifetimeSetAttr::get(/*operands=*/{}, set);
+  if (auto set = dyn_cast<OriginSetType>(type))
+    return OriginSetAttr::get(/*operands=*/{}, set);
   llvm_unreachable("isn't a singleton parameter");
 }

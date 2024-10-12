@@ -306,7 +306,7 @@ fn autoparam_of_params[a: int, //, b: IndexParam, c: IndexParam[a]]():
 
 
 # CHECK-LABEL: lit.func @"function_autoparam
-# CHECK-SAME: :{mut |*(0,0)|, mut |*(0,1)|}:<[""][[G_LT:.*]]: lifetime.set, [""][[F_LT:.*]]: lifetime.set, +
+# CHECK-SAME: :{mut |*(0,0)|, mut |*(0,1)|}:<[""][[G_LT:.*]]: origin.set, [""][[F_LT:.*]]: origin.set, +
 # CHECK-SAME: f: !lit.signature<:[[F_LT]]:() capturing -> !kgen.none>
 # CHECK-SAME: g: !lit.signature<:[[G_LT]]:() capturing -> !kgen.none>
 fn function_autoparam[f: fn () capturing [_] -> None, g: fn () capturing [_] -> None]():
@@ -315,18 +315,18 @@ fn function_autoparam[f: fn () capturing [_] -> None, g: fn () capturing [_] -> 
         pass
 
     # CHECK: lit.alias.decl *"bind_one{{.*}}": !lit.signature<() capturing -> !kgen.none> =
-    # CHECK-SAME: <{{.*}}function_autoparam{{.*}}<:lifetime.set {}, :lifetime.set {}, :{{.*}} *"function()", :{{.*}} *"function()">
+    # CHECK-SAME: <{{.*}}function_autoparam{{.*}}<:origin.set {}, :origin.set {}, :{{.*}} *"function()", :{{.*}} *"function()">
     alias bind_one = function_autoparam[function, function]
 
 
 # CHECK-LABEL: lit.func @"nonprop_capture_set
-# CHECK-SAME: ()"<f: !lit.signature<:*(0,0):<lifetime.set, +, "g": !lit.signature<:*(1,0):() capturing -> !kgen.none>>() -> !kgen.none>>()
+# CHECK-SAME: ()"<f: !lit.signature<:*(0,0):<origin.set, +, "g": !lit.signature<:*(1,0):() capturing -> !kgen.none>>() -> !kgen.none>>()
 fn nonprop_capture_set[f: fn[g: fn () capturing [_] -> None] () -> None]():
     pass
 
 
 # CHECK-LABEL: lit.func @"autoparam_param_vararg
-# CHECK-SAME: <[""]*"__lifetimes__`": lifetime.set, +, f: {{.*}}, x: variadic<index> var>
+# CHECK-SAME: <[""]*"__lifetimes__`": origin.set, +, f: {{.*}}, x: variadic<index> var>
 fn autoparam_param_vararg[f: fn () [_] -> None, *x: int]():
     pass
 

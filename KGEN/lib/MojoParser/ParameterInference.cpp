@@ -428,8 +428,8 @@ LogicalResult ParameterInferenceState::matchParams(TypedAttr actualAttr,
     }
   }
 
-  if (auto actualSet = dyn_cast<LifetimeSetAttr>(actualAttr)) {
-    if (auto expectedSet = dyn_cast<LifetimeSetAttr>(expectedAttr)) {
+  if (auto actualSet = dyn_cast<OriginSetAttr>(actualAttr)) {
+    if (auto expectedSet = dyn_cast<OriginSetAttr>(expectedAttr)) {
       // HACK: To phase this in, permit implicitly downcasting to the empty set.
       // This will go away when the default capturing syntax is changed to the
       // any set.

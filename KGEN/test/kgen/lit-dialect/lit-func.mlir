@@ -235,7 +235,7 @@ lit.func @different_param_name() {
 }
 
 // CHECK-LABEL: lit.func @lifetime_set
-lit.func @lifetime_set<set: lifetime.set>[mut lt]() {
+lit.func @lifetime_set<set: origin.set>[mut lt]() {
   // CHECK-NEXT: f0: !lit.signature<:set:() capturing -> ()> = <?>
   kgen.param.declare f0: !lit.signature<:set:() capturing -> ()> = <?>
   // CHECK-NEXT: f1: !lit.signature<:{mut lt}:() capturing -> ()> = <?>
@@ -252,7 +252,7 @@ lit.func @lifetime_set<set: lifetime.set>[mut lt]() {
 }
 
 // CHECK-LABEL: lit.func @lambda_capture_lifetimes
-lit.func @lambda_capture_lifetimes<set: lifetime.set>[mut lt]() {
+lit.func @lambda_capture_lifetimes<set: origin.set>[mut lt]() {
   // CHECK: lit.func set_capture:set:<param>() capturing
   lit.func set_capture:set:<param>() capturing {
     kgen.return

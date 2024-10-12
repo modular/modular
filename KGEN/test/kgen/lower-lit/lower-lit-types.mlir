@@ -141,7 +141,7 @@ kgen.generator @lifetime_lower<p: !lit.lifetime<0>>(%a: !lit.lifetime<1>) {
   kgen.param.declare A: !lit.lifetime<1> = <#lit.any.lifetime>
 
   // CHECK: kgen.param.declare B: struct<()> = <{ }>
-  kgen.param.declare B: lifetime.set = <{imm p}>
+  kgen.param.declare B: origin.set = <{imm p}>
   kgen.return
 }
 

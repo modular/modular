@@ -1061,8 +1061,8 @@ async fn load(server_ptr: Container[__mlir_type.index]):
 # CHECK-LABEL: lit.func @"awaitSomething()"
 async fn awaitSomething():
     var ptr = Container[__mlir_type.index]()
-    # CHECK: lit.call {{.*}}@Coroutine::@"__init__{{.*}}<:!AnyType [{{.*}}], :lifetime.set {}>([[CORO:%.*]], %{{.*}}) :
-    # CHECK-SAME: !lit.signature<[1]({{.*}}@Coroutine<:!AnyType [{{.*}}], :lifetime.set {}>{{.*}}: !co.routine)
+    # CHECK: lit.call {{.*}}@Coroutine::@"__init__{{.*}}<:!AnyType [{{.*}}], :origin.set {}>([[CORO:%.*]], %{{.*}}) :
+    # CHECK-SAME: !lit.signature<[1]({{.*}}@Coroutine<:!AnyType [{{.*}}], :origin.set {}>{{.*}}: !co.routine)
     await load(ptr)
 
 
@@ -1079,7 +1079,7 @@ struct StructWithAsync:
     # CHECK-LABEL: lit.func @"do_something{{.*}}({{.*}}) async
     async fn do_something(self: StructWithAsync):
         # CHECK-NEXT: %[[CORO:.*]] = lit.async.call[!lit.signature<[1](?, "__result__": !lit.ref<!Int, mut *[0,0]> byref_result) async -> !kgen.none>: @decls::@"coroutine()"][imm {}]()
-        # CHECK: lit.call {{.*}}@Coroutine::@"__init__{{.*}}<:!AnyType [!Int, {{.*}}], :lifetime.set {}>({{.*}}, %[[CORO]])
+        # CHECK: lit.call {{.*}}@Coroutine::@"__init__{{.*}}<:!AnyType [!Int, {{.*}}], :origin.set {}>({{.*}}, %[[CORO]])
         _ = coroutine()
 
 
@@ -1143,11 +1143,11 @@ fn coroutine_lifetimes():
     # CHECK: [[Y_IMM:%.*]] = lit.ref.immut %y
     # CHECK: [[CORO:%.*]] = lit.async.call[!lit.signature<[3]("x": !lit.ref<!Awaitable, mut *[0,0]> inout, "y": !lit.ref<!Awaitable, imm *[0,1]> borrow_in_mem, ?, "__result__": !lit.ref<none, mut *[0,2]> byref_result) async -> !kgen.none>
     # CHECK-SAME: [mut [[X_LT]], muttoimm [[Y_LT]], imm {}](%x, [[Y_IMM]])
-    # CHECK: lit.call {{.*}}Coroutine::@"__init__{{.*}}<:!AnyType [none, {{.*}}], :lifetime.set {mut [[X_LT]], mut [[Y_LT]]}>(%coro, [[CORO]])
+    # CHECK: lit.call {{.*}}Coroutine::@"__init__{{.*}}<:!AnyType [none, {{.*}}], :origin.set {mut [[X_LT]], mut [[Y_LT]]}>(%coro, [[CORO]])
     var coro = capture_byref(x, y)
 
     # CHECK: lit.async.call[!lit.signature<[1]("x": !lit.struct<#LifetimeAccess <:lifetime<1> [[Y_LT]]>> owned, {{.*}}) async -> !kgen.none>: {{.*}}lifetime_access{{.*}}<:lifetime<1> [[Y_LT]]>]
-    # CHECK: Coroutine<:!AnyType [none, {{.*}}], :lifetime.set {mut [[Y_LT]]}>
+    # CHECK: Coroutine<:!AnyType [none, {{.*}}], :origin.set {mut [[Y_LT]]}>
     var access = lifetime_access(LifetimeAccess[__origin_of(y)]())
 
 
@@ -1302,10 +1302,10 @@ fn inferCaptureLifetimes[
     fn captureSomething():
         _ = x
 
-    # CHECK: call {{.*}}closureParameterCaptures{{.*}}<:lifetime.set {},
+    # CHECK: call {{.*}}closureParameterCaptures{{.*}}<:origin.set {},
     # CHECK-SAME: !lit.signature<() capturing -> !kgen.none>
     closureParameterCaptures[bareFunc]()
-    # CHECK: call {{.*}}closureParameterCaptures{{.*}}<:lifetime.set {mut *"x`"},
+    # CHECK: call {{.*}}closureParameterCaptures{{.*}}<:origin.set {mut *"x`"},
     # CHECK-SAME: !lit.signature<:{mut *"x`"}:() capturing -> !kgen.none>
     closureParameterCaptures[captureSomething]()
     # CHECK: call {{.*}}closureParameterInference{{.*}}<*"p`{{.*}}",

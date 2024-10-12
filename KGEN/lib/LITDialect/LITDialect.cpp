@@ -119,8 +119,8 @@ using WrappedBindTypeAttr = WrappedAttrType<BindTypeAttr>;
 using WrappedStructExtractAttr = WrappedAttrType<StructExtractAttr>;
 using WrappedLifetimeUnionAttr = WrappedAttrType<LifetimeUnionAttr>;
 using WrappedLifetimeMutCastAttr = WrappedAttrType<LifetimeMutCastAttr>;
-using WrappedLifetimeSetAttr = WrappedAttrType<LifetimeSetAttr>;
-using WrappedLifetimeSetUnionAttr = WrappedAttrType<LifetimeSetUnionAttr>;
+using WrappedOriginSetAttr = WrappedAttrType<OriginSetAttr>;
+using WrappedOriginSetUnionAttr = WrappedAttrType<OriginSetUnionAttr>;
 using WrappedLifetimeFieldAttr = WrappedAttrType<LifetimeFieldAttr>;
 
 //===----------------------------------------------------------------------===//

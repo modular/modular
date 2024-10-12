@@ -1545,7 +1545,7 @@ TypeCheckedFnSignature::TypeCheckedFnSignature(TypeCheckedParamList &paramList,
   if (lifetimeExpr) {
     // Special rule for `[_]` when specifying the capture lifetime set: the
     // set is unbound and will be autoparameterized.
-    auto setType = LifetimeSetType::get(shared.getContext());
+    auto setType = OriginSetType::get(shared.getContext());
     if (lifetimeExpr->kind == ExprNode::kDiscardLiteral) {
       captureLifetimes = UnboundAttr::get(setType);
     } else {

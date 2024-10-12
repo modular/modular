@@ -52,18 +52,18 @@ TypedAttr LIT::getLifetimesAccessibleByParams(PogListAttr paramList,
   //
   // We can union the sets together by wrapping them in a lifetime set union.
   // The mutability doesn't matter since it will get flattened.
-  auto addLifetimeSet = [&](TypedAttr param) {
-    lifetimes.push_back(LifetimeSetUnionAttr::get(
+  auto addOriginSet = [&](TypedAttr param) {
+    lifetimes.push_back(OriginSetUnionAttr::get(
         param, LifetimeType::get(shared.getContext(), /*isMutable=*/true)));
   };
 
   for (ParamDeclAttr param : params)
-    if (isa<LifetimeSetType>(param.getType()))
-      addLifetimeSet(ParamDeclRefAttr::get(param));
+    if (isa<OriginSetType>(param.getType()))
+      addOriginSet(ParamDeclRefAttr::get(param));
   if (captureLifetimes)
-    addLifetimeSet(captureLifetimes);
+    addOriginSet(captureLifetimes);
 
-  return LifetimeSetAttr::get(shared.getContext(), lifetimes);
+  return OriginSetAttr::get(shared.getContext(), lifetimes);
 }
 
 /// Returns if a value of the specified type can be coerced to the other type

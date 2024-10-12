@@ -503,12 +503,12 @@ static ParseResult parseLITFunctionSignature(
   llvm::SMLoc startLoc = p.getCurrentLocation();
 
   TypedAttr captureLifetimes;
-  auto lifetimeSet = LifetimeSetType::get(p.getContext());
+  auto lifetimeSet = OriginSetType::get(p.getContext());
   if (succeeded(p.parseOptionalColon())) {
     if (parseParamValue(p, captureLifetimes, lifetimeSet) || p.parseColon())
       return failure();
   } else {
-    captureLifetimes = LifetimeSetAttr::get({}, lifetimeSet);
+    captureLifetimes = OriginSetAttr::get({}, lifetimeSet);
   }
   bool isNestedLifetimeExclusivityCheckingDisabled =
       succeeded(p.parseOptionalKeyword("no_nested_lifetime_exclusivity"));
@@ -632,7 +632,7 @@ static void printLITFunctionSignature(OpAsmPrinter &p, Region *region,
   ArrayRef<ParamDeclAttr> lifetimeDecls =
       params.drop_front(signature.getNumParams());
 
-  if (!isEmptyLifetimeSet(signature.getCaptureLifetimes())) {
+  if (!isEmptyOriginSet(signature.getCaptureLifetimes())) {
     p << ':';
     printParamValue(p, signature.getCaptureLifetimes());
     p << ':';
