@@ -189,7 +189,7 @@ class SpecInstance:
             ]
         )
         if not build_opts:
-            cmd.extend(["-o", "%s" % (str(output_file))])
+            cmd.extend(["-o", str(output_file)])
 
         # TODO: refactor the following into a separate function call, or invoke alias directly.
         # mojo-clear-cache
