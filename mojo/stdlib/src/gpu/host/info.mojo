@@ -242,7 +242,7 @@ fn _get_mi300x_target[index_bit_width: Int]() -> __mlir_type.`!kgen.target`:
             `index_bit_width = 64,`,
             `simd_bit_width = 128> : !kgen.target`,
         ]
-    constrained[False, "32bit width is not implemented for mi300x yet"]()
+    debug_assert(False, "mi300x with 32bit config is not currently supported")
     return _get_mi300x_target[64]()
 
 
