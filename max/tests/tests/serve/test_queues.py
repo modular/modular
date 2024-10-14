@@ -95,7 +95,8 @@ async def test_continuous_batch_cancelled_requests(
         strategy=BatchingStrategy.CONTINUOUS, size=queue_size
     )
     queue = BatchMultiplexQueue(
-        queue_config,
+        name="test_queue",
+        config=queue_config,
         executor_fn=_batch_execute,
         completed_fn=_batch_get_completed,
     )
@@ -162,7 +163,10 @@ async def test_dynamic_batch_full(batch_size):
         return contexts.keys()
 
     queue = BatchMultiplexQueue(
-        config, executor_fn=execute_batch, completed_fn=completed_ids
+        name="test_queue",
+        config=config,
+        executor_fn=execute_batch,
+        completed_fn=completed_ids,
     )
     execute_in_queue = queue.in_queue
     assert execute_in_queue is not None
