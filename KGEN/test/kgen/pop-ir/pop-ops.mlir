@@ -552,10 +552,18 @@ kgen.generator @pop_load_store<DT: dtype>(%p0: !kgen.pointer<scalar<f32>>, %p1: 
   %0 = pop.load %p0 : !kgen.pointer<scalar<f32>>
   // CHECK: %[[V1:.*]] = pop.load %{{.*}} : !kgen.pointer<scalar<DT>>
   %1 = pop.load %p1 : !kgen.pointer<scalar<DT>>
+  // CHECK: %[[V2:.*]] = pop.load volatile %{{.*}} : !kgen.pointer<scalar<f32>>
+  %2 = pop.load volatile %p0 : !kgen.pointer<scalar<f32>>
+  // CHECK: %[[V3:.*]] = pop.load volatile %{{.*}} : !kgen.pointer<scalar<DT>>
+  %3 = pop.load volatile %p1 : !kgen.pointer<scalar<DT>>
   // CHECK: pop.store %[[V0]], %{{.*}} : !kgen.pointer<scalar<f32>>
   pop.store %0, %p0 : !kgen.pointer<scalar<f32>>
   // CHECK: pop.store %[[V1]], %{{.*}} : !kgen.pointer<scalar<DT>>
   pop.store %1, %p1 : !kgen.pointer<scalar<DT>>
+  // CHECK: pop.store volatile %[[V0]], %{{.*}} : !kgen.pointer<scalar<f32>>
+  pop.store volatile %0, %p0 : !kgen.pointer<scalar<f32>>
+  // CHECK: pop.store volatile %[[V1]], %{{.*}} : !kgen.pointer<scalar<DT>>
+  pop.store volatile %1, %p1 : !kgen.pointer<scalar<DT>>
   kgen.return
 }
 

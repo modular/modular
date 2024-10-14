@@ -1119,12 +1119,15 @@ kgen.func @load_bitcast_ptr_ptr(%arg0: !kgen.pointer<none>) -> !kgen.pointer<non
 }
 
 // CHECK-LABEL: @load_bitcast_func_ptr
-kgen.func @load_bitcast_func_ptr(%arg0: !kgen.signature<() -> ()>) -> !kgen.pointer<index> {
+kgen.func @load_bitcast_func_ptr(%arg0: !kgen.signature<() -> ()>) ->
+                                  (!kgen.pointer<index>,!kgen.pointer<index>) {
   // CHECK-NEXT: %0 = pop.pointer.bitcast %arg0
   %0 = pop.pointer.bitcast %arg0 : !kgen.signature<() -> ()> to !kgen.pointer<pointer<index>>
   // CHECK-NEXT: pop.load %0
   %1 = pop.load %0 : !kgen.pointer<pointer<index>>
-  kgen.return %1 : !kgen.pointer<index>
+  // CHECK-NEXT: pop.load volatile %0
+  %2 = pop.load volatile %0 : !kgen.pointer<pointer<index>>
+  kgen.return %1, %2 : !kgen.pointer<index>, !kgen.pointer<index>
 }
 
 // CHECK-LABEL: @store_bitcast
@@ -1133,6 +1136,9 @@ kgen.func @store_bitcast(%arg0: !kgen.pointer<index>, %arg1: !kgen.pointer<point
   %0 = pop.pointer.bitcast %arg1 : !kgen.pointer<pointer<none>> to !kgen.pointer<pointer<index>>
   // CHECK-NEXT: pop.store %0, %arg1 : !kgen.pointer<pointer<none>>
   pop.store %arg0, %0 : !kgen.pointer<pointer<index>>
+  // CHECK-NEXT: %1 = pop.pointer.bitcast %arg0 : !kgen.pointer<index> to !kgen.pointer<none>
+  // CHECK-NEXT: pop.store volatile %1, %arg1 : !kgen.pointer<pointer<none>>
+  pop.store volatile %arg0, %0 : !kgen.pointer<pointer<index>>
   kgen.return
 }
 

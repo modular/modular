@@ -201,8 +201,9 @@ LogicalResult SIMDSplatOp::verify() {
 //===----------------------------------------------------------------------===//
 
 void LoadOp::build(OpBuilder &b, OperationState &state, Value ptr,
-                   std::optional<unsigned> alignment) {
-  build(b, state, ptr, alignment ? b.getIndexAttr(*alignment) : TypedAttr());
+                   std::optional<unsigned> alignment, bool isVolatile) {
+  build(b, state, ptr, alignment ? b.getIndexAttr(*alignment) : TypedAttr(),
+        isVolatile);
 }
 
 //===----------------------------------------------------------------------===//
@@ -210,9 +211,9 @@ void LoadOp::build(OpBuilder &b, OperationState &state, Value ptr,
 //===----------------------------------------------------------------------===//
 
 void StoreOp::build(OpBuilder &b, OperationState &state, Value arg, Value ptr,
-                    std::optional<unsigned> alignment) {
+                    std::optional<unsigned> alignment, bool isVolatile) {
   build(b, state, arg, ptr,
-        alignment ? b.getIndexAttr(*alignment) : TypedAttr());
+        alignment ? b.getIndexAttr(*alignment) : TypedAttr(), isVolatile);
 }
 
 //===----------------------------------------------------------------------===//

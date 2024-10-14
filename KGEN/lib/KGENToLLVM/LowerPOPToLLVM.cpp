@@ -775,9 +775,9 @@ struct ConvertPOPLoad : ConvertPOPToLLVMPattern<LoadOp> {
     Type elementType = typeConverter->convertType(ptrType.getElementType());
     unsigned alignment =
         getAlignment(getTypeConverter(), ptrType, adaptor.getAlignmentAttr());
-    auto loadOp = rewriter.create<LLVM::LoadOp>(op.getLoc(), elementType,
-                                                adaptor.getPtr(), alignment);
-    rewriter.replaceOp(op, loadOp);
+    rewriter.replaceOpWithNewOp<LLVM::LoadOp>(
+        op, elementType, adaptor.getPtr(), /*alignment=*/alignment,
+        /*isVolatile=*/adaptor.getIsVolatile());
     return success();
   }
 };
@@ -796,9 +796,9 @@ struct ConvertPOPStore : ConvertPOPToLLVMPattern<StoreOp> {
     auto ptrType = cast<PointerType>(op.getPtr().getType());
     unsigned alignment =
         getAlignment(getTypeConverter(), ptrType, adaptor.getAlignmentAttr());
-    rewriter.replaceOpWithNewOp<LLVM::StoreOp>(op, adaptor.getArg(),
-                                               adaptor.getPtr(), alignment,
-                                               /*isVolatile=*/false);
+    rewriter.replaceOpWithNewOp<LLVM::StoreOp>(
+        op, adaptor.getArg(), adaptor.getPtr(), /*alignment=*/alignment,
+        /*isVolatile=*/adaptor.getIsVolatile());
     return success();
   }
 };

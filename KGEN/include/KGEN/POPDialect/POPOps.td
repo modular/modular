@@ -719,6 +719,9 @@ def POP_LoadOp : POPOp<"load", [PointerElementType<"ptr", "result">,
   let summary = "pointer load operation";
   let description = [{
     Loads the data at the given pointer. Returns a scalar of the element type.
+    An optional `alignment` attribute can be provided to specify the alignment of
+    the load. An optional `volatile` attribute can be provided to make the load
+    volatile.
 
     Example:
 
@@ -726,20 +729,24 @@ def POP_LoadOp : POPOp<"load", [PointerElementType<"ptr", "result">,
     %0 = pop.load %ptr0 : !kgen.pointer<scalar<f32>>
     %1 = pop.load %ptr1 : !kgen.pointer<simd<4, type>>
     %2 = pop.load %ptr0 align<8> : !kgen.pointer<scalar<f32>>
+    %2 = pop.load volatile %ptr0 align<8> : !kgen.pointer<scalar<f32>>
     ```
   }];
 
   let arguments = (ins Arg<PointerType, "", [MemRead]>:$ptr,
-                       OptionalAttr<AttrOfType<Index>>:$alignment);
+                       OptionalAttr<AttrOfType<Index>>:$alignment,
+                       UnitAttr:$isVolatile);
   let results = (outs AnyType:$result);
   let assemblyFormat = [{
-    $ptr (`align` `<` custom<IndexParamValue>($alignment)^ `>`)? attr-dict `:`
+    (`volatile` $isVolatile^)? $ptr
+    (`align` `<` custom<IndexParamValue>($alignment)^ `>`)? attr-dict `:`
     qualified(type($ptr))
   }];
 
   let builders = [
     OpBuilder<(ins "Value":$ptr,
-                   CArg<"std::optional<unsigned>", "{}">:$alignment)>,
+                   CArg<"std::optional<unsigned>", "{}">:$alignment,
+                   CArg<"bool", "false">:$isVolatile)>,
   ];
 
   let hasFolder = 1;
@@ -756,7 +763,8 @@ def POP_StoreOp : POPOp<"store", [PointerElementType<"ptr", "arg">,
   let description = [{
     Store the given value to the given pointer of the element type. An
     optional `alignment` attribute can be provided to specify the alignment of
-    the store.
+    the store. An optional `volatile` attribute can be provided to make the
+    store volatile.
 
     Example:
 
@@ -764,20 +772,24 @@ def POP_StoreOp : POPOp<"store", [PointerElementType<"ptr", "arg">,
     pop.store %0, %ptr0 : !kgen.pointer<scalar<f32>>
     pop.store %1, %ptr1 : !kgen.pointer<simd<4, type>>
     pop.store %1, %ptr1 align 8 : !kgen.pointer<simd<4, type>>
+    pop.store volatile %1, %ptr1 align 8: !kgen.pointer<simd<4, type>>
     ```
   }];
 
   let arguments = (ins AnyType:$arg,
                        Arg<PointerType, "", [MemWrite]>:$ptr,
-                       OptionalAttr<AttrOfType<Index>>:$alignment);
+                       OptionalAttr<AttrOfType<Index>>:$alignment,
+                       UnitAttr:$isVolatile);
   let assemblyFormat = [{
-    $arg `,` $ptr (`align` `<` custom<IndexParamValue>($alignment)^ `>`)?
+    (`volatile` $isVolatile^)? $arg `,` $ptr
+    (`align` `<` custom<IndexParamValue>($alignment)^ `>`)?
     attr-dict `:` qualified(type($ptr))
   }];
 
   let builders = [
     OpBuilder<(ins "Value":$arg, "Value":$ptr,
-                   CArg<"std::optional<unsigned>", "{}">:$alignment)>
+                   CArg<"std::optional<unsigned>", "{}">:$alignment,
+                   CArg<"bool", "false">:$isVolatile)>
   ];
 
   let hasCanonicalizeMethod = 1;
