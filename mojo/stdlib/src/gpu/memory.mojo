@@ -34,14 +34,16 @@ alias AddressSpace = _GPUAddressSpace
 @always_inline
 fn _mark_eviction[
     eviction_policy: CacheEviction = CacheEviction.EVICT_NORMAL
-](cache_policy: UInt64):
+]() -> UInt64:
     @parameter
-    if eviction_policy is not CacheEviction.EVICT_NORMAL:
-        inlined_assembly[
-            "createpolicy.fractional.L2::evict_first.b64 $0, 1.0;",
-            NoneType,
+    if eviction_policy is CacheEviction.EVICT_NORMAL:
+        return 0
+    else:
+        return inlined_assembly[
+            "createpolicy.fractional.L2::evict_first.b64 $0;",
+            UInt64,
             constraints="=l",
-        ](cache_policy)
+        ]()
 
 
 @always_inline
@@ -94,13 +96,13 @@ fn async_copy[
 
     @parameter
     if l2_prefetch:
-        var cache_policy = UInt64(0)
+        alias cache_hint = ".L2::cache_hint" if eviction_policy is not CacheEviction.EVICT_NORMAL else ""
 
-        _mark_eviction[eviction_policy](cache_policy)
-
-        alias asm = "cp.async." + cache_op + ".shared.global.L2::" + _int_to_str[
+        alias asm = "cp.async." + cache_op + ".shared.global" + cache_hint + ".L2::" + _int_to_str[
             l2_prefetch.value()
         ]() + "B [$0], [$1], $2"
+
+        var cache_policy = _mark_eviction[eviction_policy]()
 
         @parameter
         if fill is Fill.ZERO:
@@ -138,9 +140,7 @@ fn async_copy_sized[
     type: AnyType, //,
     size: Int,
     *,
-    fill: Fill = Fill.NONE,
     bypass_L1_16B: Bool = True,
-    eviction_policy: CacheEviction = CacheEviction.EVICT_NORMAL,
 ](
     src: UnsafePointer[type, AddressSpace.GLOBAL, *_],
     dst: UnsafePointer[type, AddressSpace.SHARED, *_],
@@ -152,9 +152,7 @@ fn async_copy_sized[
     Parameters:
         type: The pointer type.
         size: Number of bytes to copy.
-        fill: The fill to use for initializing the data.
         bypass_L1_16B: Bypass the L1 cache for 16 bypes copy.
-        eviction_policy: Specifies the eviction policy to use.
 
     Args:
         src: Global memory pointer.
@@ -165,11 +163,6 @@ fn async_copy_sized[
     """
     # TODO: Constrained on device capability.
     constrained[size == 4 or size == 8 or size == 16]()
-    constrained[fill is Fill.NONE, "only no fill is supported"]()
-    constrained[
-        eviction_policy == CacheEviction.EVICT_NORMAL,
-        "only normal eviction is supported",
-    ]()
 
     alias cache_op = CacheOperation.GLOBAL.mnemonic() if (
         bypass_L1_16B and size == 16
