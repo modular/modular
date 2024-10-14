@@ -179,8 +179,8 @@ struct DeviceBufferV2[type: DType](Sized):
         view_type: DType
     ](self, offset: Int, size: Int) raises -> DeviceBufferV2[view_type]:
         alias elem_size = sizeof[view_type]()
-        var cpp_handle = _DeviceBufferPtr()
-        var device_ptr = UnsafePointer[Scalar[view_type]]()
+        var new_handle = _DeviceBufferPtr()
+        var new_device_ptr = UnsafePointer[Scalar[view_type]]()
         # const char *AsyncRT_DeviceBuffer_createSubBuffer(const DeviceBuffer **result, void **device_ptr, const DeviceBuffer *buf, size_t offset, size_t len, size_t elem_size)
         _checked(
             external_call[
@@ -193,15 +193,15 @@ struct DeviceBufferV2[type: DType](Sized):
                 _SizeT,
                 _SizeT,
             ](
-                UnsafePointer.address_of(cpp_handle),
-                UnsafePointer.address_of(device_ptr),
+                UnsafePointer.address_of(new_handle),
+                UnsafePointer.address_of(new_device_ptr),
                 self._handle,
                 offset,
                 size,
                 elem_size,
             )
         )
-        return DeviceBufferV2[view_type](cpp_handle, device_ptr)
+        return DeviceBufferV2[view_type](new_handle, new_device_ptr)
 
     fn take_ptr(owned self) -> UnsafePointer[Scalar[type]]:
         not_implemented_yet["##### UNIMPLEMENTED: DeviceBufferV2.take_ptr"]()
