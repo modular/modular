@@ -33,8 +33,11 @@ static constexpr llvm::StringLiteral kInitializeOutputFuncName =
     "initialize_output";
 static constexpr llvm::StringLiteral kPyTorchFallbackFuncName =
     "pytorch_fallback";
+
 static constexpr std::array<StringLiteral, 3> kMaxManagedTensorSlice = {
     "tensor_utils", "managed_tensor_slice", "ManagedTensorSlice"};
+static constexpr std::array<StringLiteral, 4> kMaxStaticTuple = {
+    "stdlib", "utils", "static_tuple", "StaticTuple"};
 
 // Check if the decorator correspond to a function call:
 // eg @foo(arg)
@@ -176,33 +179,56 @@ static void labelTensorParamsInKernel(LIT::FuncOp funcOp) {
 
   SmallVector<Attribute> tensorSpecs;
   Attribute emptyAttr = builder.getUnitAttr();
+
   for (auto [i, litType] : llvm::enumerate(funcOp.getArgumentTypes())) {
     auto asStructType = getAsStructType(litType);
-    if (!asStructType ||
-        !symbolMatches(asStructType.getSymbol(), kMaxManagedTensorSlice)) {
+
+    if (!asStructType) {
       tensorSpecs.push_back(emptyAttr);
       continue;
     }
 
-    constexpr unsigned kDTypeIndex = 0;
-    constexpr unsigned kRankIndex = 1;
-    auto allParameters = litTypeToParams(asStructType);
-    assert(allParameters.size() >= 2);
-    auto dtype = allParameters[kDTypeIndex];
-    auto rank = allParameters[kRankIndex];
+    if (symbolMatches(asStructType.getSymbol(), kMaxManagedTensorSlice)) {
+      constexpr unsigned kDTypeIndex = 0;
+      constexpr unsigned kRankIndex = 1;
+      auto allParameters = litTypeToParams(asStructType);
+      assert(allParameters.size() >= 2);
+      auto dtype = allParameters[kDTypeIndex];
+      auto rank = allParameters[kRankIndex];
 
-    SmallVector<NamedAttribute> tensorSpecNamedAttrs;
-    // Sometimes, dtype or ranks are not present because the user expects
-    // specific values for those parameters (ex: dtype=float32 or rank=2).
-    if (dtype)
-      tensorSpecNamedAttrs.push_back(
-          NamedAttribute{builder.getStringAttr("dtype"), dtype});
-    if (rank)
-      tensorSpecNamedAttrs.push_back(
-          NamedAttribute{builder.getStringAttr("rank"), rank});
+      SmallVector<NamedAttribute> tensorSpecNamedAttrs;
+      // Sometimes, dtype or ranks are not present because the user expects
+      // specific values for those parameters (ex: dtype=float32 or rank=2).
+      if (dtype)
+        tensorSpecNamedAttrs.push_back(
+            NamedAttribute{builder.getStringAttr("dtype"), dtype});
+      if (rank)
+        tensorSpecNamedAttrs.push_back(
+            NamedAttribute{builder.getStringAttr("rank"), rank});
 
-    tensorSpecs.push_back(
-        DictionaryAttr::get(funcOp.getContext(), tensorSpecNamedAttrs));
+      tensorSpecs.push_back(
+          DictionaryAttr::get(funcOp.getContext(), tensorSpecNamedAttrs));
+    } else if (symbolMatches(asStructType.getSymbol(), kMaxStaticTuple)) {
+      // TODO(GRA-1126): consider a tuple which only contains tensors to
+      // simplify this
+      constexpr unsigned kElementType = 0;
+      constexpr unsigned kSizeIndex = 1;
+      auto allParameters = litTypeToParams(asStructType);
+      assert(allParameters.size() >= 2);
+      auto elementType = allParameters[kElementType];
+      assert(!elementType &&
+             "Element type must be defined and be equal to tensor");
+      auto size = allParameters[kSizeIndex];
+
+      SmallVector<NamedAttribute> tupleNamedAttrs;
+      if (size)
+        tupleNamedAttrs.push_back(
+            NamedAttribute{builder.getStringAttr("size"), size});
+      tensorSpecs.push_back(
+          DictionaryAttr::get(funcOp.getContext(), tupleNamedAttrs));
+    } else {
+      tensorSpecs.push_back(emptyAttr);
+    }
   }
   funcOp->setDiscardableAttr(kKernelTensorParameterAttrName,
                              builder.getArrayAttr(tensorSpecs));
