@@ -140,9 +140,9 @@ struct Person:
     fn obj_name(
         self_: PythonObject, args: TypedPythonObject["Tuple"]
     ) -> PythonObject:
-        var self0 = PyMojoObject[Person].unsafe_cast_obj(
-            self_.unsafe_as_py_object_ptr()
-        )
+        var self0 = self_.unsafe_as_py_object_ptr().unchecked_cast_to_mojo_value[
+            Person
+        ]()
 
         return PythonObject(self0[].name).steal_data()
 
