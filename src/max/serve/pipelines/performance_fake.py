@@ -5,6 +5,8 @@
 # ===----------------------------------------------------------------------=== #
 
 import asyncio
+import logging
+import threading
 from dataclasses import dataclass
 from time import sleep, time
 from typing import Literal, Optional
@@ -50,17 +52,36 @@ class PerformanceFakingTokenGenerator:
     # the model execute call in our pipelines does release the GIL
     busy_wait: bool = False
 
+    # TODO@gaz: We can't use __class__ here because this is currently setup as a dataclass
+    logger: logging.Logger = logging.getLogger(__name__)
+
+    # lock to prevent concurrent usage of the fake GPU
+    wait_lock = threading.Lock()
+    # amount of time waited in the fake GPU
+    wait_secs = 0
+    # number of times waited in the fake GPU
+    wait_count = 0
+    # amount of time spent in the tokenizer
+    tokenizer_secs = 0
+    # timestamp of the end of the last GPU wait
+    last_wait_end = None
+    # amount of time spent in between waiting
+    non_wait_secs = 0
+
     async def new_context(
         self, prompt: str, max_new_tokens: Optional[int] = None
     ) -> PerformanceFakingContext:
+        if self.last_wait_end is None:
+            self.last_wait_end = time()
+
         if self._tokenizer:
             if self.use_executor:
                 loop = asyncio.get_running_loop()
                 encoded = await loop.run_in_executor(
-                    None, self._tokenizer.encode, prompt
+                    None, self._tokenize, prompt
                 )
             else:
-                encoded = self._tokenizer.encode(prompt)
+                encoded = self._tokenize(prompt)
             prompt_length = len(encoded)
         else:
             prompt_length = len(prompt)
@@ -72,12 +93,18 @@ class PerformanceFakingTokenGenerator:
     ) -> dict[str, str]:
         context_lengths = [x.context_len for x in batch.values()]
         if sum(context_lengths) == 0:
+            self.logger.info(
+                f"PerformanceFake: CE with batch_size = {len(batch)}"
+            )
             # context encoding mode
             wait_time = self._ce_time_ms([x.prompt_len for x in batch.values()])
             for _, ctx in batch.items():
                 ctx.context_len += ctx.prompt_len
         else:
             # token generation mode
+            self.logger.info(
+                f"PerformanceFake: TG with batch_size = {len(batch)}"
+            )
             wait_time = self._tg_time_ms(
                 [x.context_len for x in batch.values()]
             )
@@ -103,12 +130,23 @@ class PerformanceFakingTokenGenerator:
         pass
 
     def _wait(self, wait_time_ms):
-        if self.busy_wait:
+        self.logger.debug(f"PerformanceFake: waiting {wait_time_ms} ms")
+        self.wait_secs += wait_time_ms * 0.001
+        self.wait_count += 1
+        with self.wait_lock:
             start = time()
-            while (time() - start) * 1000 < wait_time_ms:
-                pass
-        else:
-            sleep(wait_time_ms * 0.001)
+            if self.last_wait_end is not None:
+                self.logger.debug(
+                    "PerformanceFake: waiting after"
+                    f" {start - self.last_wait_end:.4f} sec"
+                )
+                self.non_wait_secs += start - self.last_wait_end
+            if self.busy_wait:
+                while (time() - start) * 1000 < wait_time_ms:
+                    pass
+            else:
+                sleep(wait_time_ms * 0.001)
+            self.last_wait_end = time()
 
     def _ce_time_ms(self, prompt_sizes):
         if self.ce_padding:
@@ -126,6 +164,30 @@ class PerformanceFakingTokenGenerator:
         return (
             max(self.tg_baseline, self.tg_rate_no_context * len(context_sizes))
             + N * self.tg_rate_per_context_token
+        )
+
+    def _tokenize(self, prompt):
+        if self._tokenizer is None:
+            return prompt
+        else:
+            start = time()
+            encoded = self._tokenizer.encode(prompt)
+            self.tokenizer_secs += time() - start
+            return encoded
+
+    def __del__(self):
+        # print the total wait time for benchmarking/debugging purposes
+        self.logger.info(
+            f"PerformanceFake: waited {self.wait_count} times for"
+            f" {self.wait_secs:.4f} sec total"
+        )
+        self.logger.info(
+            "PerformanceFake: tokenized for"
+            f" {self.tokenizer_secs:.4f} sec total"
+        )
+        self.logger.info(
+            "PerformanceFake: not waiting for"
+            f" {self.non_wait_secs:.4f} sec total"
         )
 
 
