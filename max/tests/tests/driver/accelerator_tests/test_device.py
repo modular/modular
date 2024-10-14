@@ -13,6 +13,12 @@ def test_cuda_device():
     assert not cuda.is_host
 
 
+def test_stress_cuda_device():
+    # We should be able to call CUDA() many times, and get cached outputs.
+    devices = [CUDA() for _ in range(64)]
+    assert len({id(cuda._device) for cuda in devices}) == 1
+
+
 def test_equality():
     # We should be able to test the equality of devices.
     cpu = CPU()
