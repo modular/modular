@@ -12,13 +12,11 @@ struct MemType:
         return MemType()
 
 
-# CHECK: lit.func @"__call__({{.*}}_CI_{{.*}}(%[[SELF:.*]][{{.*}}]: !lit.ref<{{.*}}> borrow_in_mem, |, %q: !Int owned, %ww: !Int)
+# CHECK: lit.func @"__call__({{.*}}_CI_{{.*}}(%[[SELF:.*]][{{.*}}]: !lit.ref<{{.*}}> borrow_in_mem, |, %q: !lit.ref<!Int
 # CHECK-NEXT: %[[V0:.*]] = lit.ref.struct.ger %[[SELF]][field0]
 # CHECK-NEXT: %[[V0REF:.*]] = kgen.rebind %[[V0]]
 # CHECK-NEXT: %[[V1:.*]] = lit.ref.struct.ger %[[SELF]][field1]
 # CHECK-NEXT: %[[V1REF:.*]] = kgen.rebind %[[V1]]
-# CHECK-NEXT: %q_0 = lit.var.decl "q" arg
-# CHECK-NEXT: lit.ref.store %q, %q_0
 # CHECK-NEXT: %[[V2:.*]] = lit.ref.load %[[V0REF]]
 # CHECK-NEXT: %[[V3:.*]] = lit.ref.load %[[V0REF]]
 # CHECK-NEXT: %[[V4:.*]] = lit.call @{{.*}}::@Int::@"__add__{{.*}}"(%[[V2]], %[[V3]])
