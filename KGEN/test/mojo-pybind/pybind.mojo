@@ -14,7 +14,7 @@
 # CHECK-NEXT: call {{.*}}create_pybind_module{{.*}}"pybind"{{.*}}(%error, [[MODULE]])
 # CHECK-NEXT: call {{.*}}PythonObject::@"__init__{{.*}}(%result, [[MODULE]])
 # CHECK-NEXT: [[NONE_DEST:%.*]] = lit.var.decl
-# CHECK-NEXT: call {{.*}}gen_pytype_wrapper{{.*}}<:!AnyType #Int{{[0-9]}}, :!StringLiteral {:string "Int"}>(%result, %error, [[NONE_DEST]])
+# CHECK-NEXT: call {{.*}}gen_pytype_wrapper{{.*}}<:!Pythonable #Int{{[0-9]}}, :!StringLiteral {:string "Int"}>(%result, %error, [[NONE_DEST]])
 # CHECK-NEXT: [[FALSE:%.*]] = kgen.param.constant: i1 = <0>
 # CHECK-NEXT: return [[FALSE]]
 
