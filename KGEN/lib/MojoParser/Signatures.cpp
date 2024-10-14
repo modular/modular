@@ -1011,12 +1011,10 @@ static void typeCheckOneArgument(size_t idx, ASTType selfType, bool isDef,
   case ParsedArgument::kConventionByRefResult:
     llvm_unreachable("shouldn't occur in an argument list");
   case ParsedArgument::kConventionOwned:
-    // Only trivial owned arguments may be lowered to register arguments in the
-    // parser.  Doing so prevents us from understanding exclusivity problems.
-    if (type.isTrivial(arg.loc, shared))
-      arg.kgenConvention = ArgConvention::OwnedInReg;
-    else
-      arg.kgenConvention = ArgConvention::OwnedInMem;
+    // Owned arguments are always passed in memory, allowing us to check for
+    // exclusivity and other requirements.  Register passable arguments are
+    // promoted to being passed in registers after elaboration.
+    arg.kgenConvention = ArgConvention::OwnedInMem;
     break;
   case ParsedArgument::kConventionRef: {
     assert(arg.refOriginExpr && "No origin expr for convention!");

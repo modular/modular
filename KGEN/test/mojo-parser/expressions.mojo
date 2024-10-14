@@ -557,9 +557,8 @@ fn initializers():
 
 # CHECK-LABEL: lit.func @"test_if_cond
 fn test_if_cond(owned cond: Bool, memCond: MemBoolish):
-    # CHECK: lit.ref.store %cond, %cond_0
     # CHECK: %i = lit.var.decl "i"
-    # CHECK: %[[COND:.*]] = lit.ref.load %cond_0
+    # CHECK: %[[COND:.*]] = lit.ref.load %cond
     # CHECK: %[[LIT_BOOLI1:.*]] = lit.call {{.*}}__mlir_i1__{{.*}}(%[[COND]])
     # CHECK-NEXT: %[[IF_RES:.*]] = hlcf.if %[[LIT_BOOLI1]]
     # CHECK-NEXT:   %[[INT_TWO:.*]] = kgen{{.*}}{2}
@@ -572,7 +571,7 @@ fn test_if_cond(owned cond: Bool, memCond: MemBoolish):
     var i: Int = 2 if cond else 3
 
     # CHECK: [[TRUEB:%.+]] = kgen{{.*}}{:i1 1}
-    # CHECK-NEXT: lit.ref.store [[TRUEB]], %cond_0
+    # CHECK-NEXT: lit.ref.store [[TRUEB]], %cond
     cond = True
     i += i
     if cond:     # 'if' stmt, not an 'if' expression.
