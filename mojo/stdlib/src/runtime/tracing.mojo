@@ -8,6 +8,7 @@
 from collections.optional import OptionalReg
 from sys import external_call
 from sys.param_env import env_get_int, is_defined
+from utils import IndexList, Variant
 
 import gpu.host.nvtx
 from buffer import NDBuffer
@@ -15,8 +16,6 @@ from gpu.host.nvtx import _end_range as _end_nvtx_range
 from gpu.host.nvtx import _is_enabled as _nvtx_is_enabled
 from gpu.host.nvtx import _is_enabled_details as _nvtx_is_enabled_details
 from gpu.host.nvtx import _start_range as _start_nvtx_range
-
-from utils import IndexList
 
 
 fn _build_info_asyncrt_max_profiling_level() -> OptionalReg[Int]:
@@ -284,7 +283,7 @@ struct Trace[
 ]:
     """An object representing a specific trace."""
 
-    var name: StringLiteral
+    var name: Variant[String, StringLiteral]
     var int_payload: OptionalReg[Int]
     var detail: String
     var event_id: Int
@@ -293,7 +292,7 @@ struct Trace[
     @always_inline
     fn __init__(
         inout self,
-        name: StringLiteral,
+        name: Variant[String, StringLiteral],
         detail: String = "",
         parent_id: Int = 0,
     ):
@@ -337,7 +336,7 @@ struct Trace[
     @always_inline
     fn __init__(
         inout self,
-        name: StringLiteral,
+        name: Variant[String, StringLiteral],
         task_id: Int,
         detail: String = "",
         parent_id: Int = 0,
@@ -390,19 +389,24 @@ struct Trace[
 
         @parameter
         if _is_nvtx_enabled[category, level]():
+            # Convert to String since nvtx range APIs copy messages anyway.
+            # TODO(KERN-1052): optimize by exposing explicit string registration.
+            message = str(self.name[StringLiteral]) if self.name.isa[
+                StringLiteral
+            ]() else self.name[String]
 
             @parameter
             if _nvtx_is_enabled_details():
                 self.event_id = int(
                     _start_nvtx_range(
-                        message=self.name
+                        message=message
                         + (("/" + self.detail) if self.detail else ""),
                         category=int(category),
                     )
                 )
             else:
                 self.event_id = int(
-                    _start_nvtx_range(message=self.name, category=int(category))
+                    _start_nvtx_range(message=message, category=int(category))
                 )
             return
 
@@ -421,8 +425,8 @@ struct Trace[
             self.event_id = external_call[
                 "KGEN_CompilerRT_TimeTraceProfilerBeginDetail", Int
             ](
-                self.name.unsafe_cstr_ptr(),
-                len(self.name),
+                self.name[StringLiteral].unsafe_cstr_ptr(),
+                len(self.name[StringLiteral]),
                 detail_strref.unsafe_ptr(),
                 len(detail_strref),
                 self.parent_id,
@@ -433,8 +437,8 @@ struct Trace[
             self.event_id = external_call[
                 "KGEN_CompilerRT_TimeTraceProfilerBeginTask", Int
             ](
-                self.name.unsafe_cstr_ptr(),
-                len(self.name),
+                self.name[StringLiteral].unsafe_cstr_ptr(),
+                len(self.name[StringLiteral]),
                 self.parent_id,
                 self.int_payload.value(),
             )
@@ -443,7 +447,11 @@ struct Trace[
             #    a profiler event without copying until explicit intern call.
             self.event_id = external_call[
                 "KGEN_CompilerRT_TimeTraceProfilerBegin", Int
-            ](self.name.unsafe_cstr_ptr(), len(self.name), self.parent_id)
+            ](
+                self.name[StringLiteral].unsafe_cstr_ptr(),
+                len(self.name[StringLiteral]),
+                self.parent_id,
+            )
         external_call[
             "KGEN_CompilerRT_TimeTraceProfilerSetCurrentId", NoneType
         ](self.event_id)
