@@ -14,7 +14,12 @@ from memory import UnsafePointer
 from os import abort
 
 from python import Python, PythonObject, TypedPythonObject
-from python._bindings import create_wrapper_function, PyMojoObject
+from python._bindings import (
+    create_wrapper_function,
+    PyMojoObject,
+    check_arguments_arity,
+    check_argument_type,
+)
 from python._cpython import (
     PyMethodDef,
     PyObject,
@@ -58,6 +63,10 @@ fn PyInit_mojo_module() -> PythonObject:
             create_wrapper_function[case_mojo_raise](),
             "case_mojo_raise",
         ](),
+        PyMethodDef.function[
+            create_wrapper_function[incr_int__wrapper](),
+            "incr_int",
+        ](),
     )
 
     try:
@@ -66,6 +75,7 @@ fn PyInit_mojo_module() -> PythonObject:
         abort("Error adding functions to PyModule: " + str(e))
 
     add_person_type(module)
+    add_int_type(module)
 
     return module
 
@@ -183,3 +193,47 @@ fn add_person_type(inout module: TypedPythonObject["Module"]):
         Python.add_object(module, "Person", type_obj)
     except e:
         abort("error adding object: " + str(e))
+
+
+# ===----------------------------------------------------------------------=== #
+# Recipe Book
+# ===----------------------------------------------------------------------=== #
+
+# ====================================
+# Recipe: Argument: Arity and argument type checking
+# ====================================
+
+
+fn add_int_type(inout module: TypedPythonObject["Module"]):
+    try:
+        var type_obj = PyMojoObject[Int].python_type_object["Int"](
+            methods=List[PyMethodDef]()
+        )
+
+        Python.add_object(module, "Int", type_obj)
+    except e:
+        abort("error adding object: " + str(e))
+
+
+fn incr_int(inout arg: Int):
+    arg += 1
+
+
+fn incr_int__wrapper(
+    py_self: PythonObject,
+    py_args: TypedPythonObject["Tuple"],
+) raises -> PythonObject:
+    check_arguments_arity("incr_int", 1, py_args)
+
+    var arg_0_obj = py_args[0]
+
+    var arg_0: UnsafePointer[Int] = check_argument_type[Int](
+        "incr_int",
+        "Int",
+        arg_0_obj,
+    )
+
+    # Note: Pass an `inout` reference to the wrapped function
+    incr_int(arg_0[])
+
+    return PythonObject(None)

@@ -73,6 +73,66 @@ class TestMojoPythonInterop(unittest.TestCase):
             ),
         )
 
+    def test_case_mutate_wrapped_object(self):
+        mojo_int = feature_overview.Int()
+        self.assertEqual(repr(mojo_int), "0")
+
+        feature_overview.incr_int(mojo_int)
+        self.assertEqual(repr(mojo_int), "1")
+
+        feature_overview.incr_int(mojo_int)
+        self.assertEqual(repr(mojo_int), "2")
+
+        # --------------------------------
+        # Test passing the wrong arguments
+        # --------------------------------
+
+        #
+        # Too few arguments
+        #
+
+        with self.assertRaises(Exception) as cm:
+            feature_overview.incr_int()
+
+        self.assertEqual(
+            cm.exception.args,
+            ("TypeError: incr_int() missing 1 required positional argument",),
+        )
+
+        #
+        # Too many arguments
+        #
+
+        with self.assertRaises(Exception) as cm:
+            feature_overview.incr_int(1, 2, 3)
+
+        self.assertEqual(
+            cm.exception.args,
+            (
+                (
+                    "TypeError: incr_int() takes 1 positional argument but 3"
+                    " were given"
+                ),
+            ),
+        )
+
+        #
+        # Wrong type of argument
+        #
+
+        with self.assertRaises(Exception) as cm:
+            feature_overview.incr_int("string")
+
+        self.assertEqual(
+            cm.exception.args,
+            (
+                (
+                    "TypeError: incr_int() expected Mojo 'Int' type argument,"
+                    " got 'str'"
+                ),
+            ),
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
