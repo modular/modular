@@ -2365,7 +2365,7 @@ struct LayoutTensor[
                                 element_size_bytes,
                                 fill=fill,
                                 bypass_L1_16B=False,
-                                l2_prefetch=256,
+                                l2_prefetch=128,
                                 eviction_policy=eviction_policy,
                             ](src_ptr + src_idx, dst_ptr + dst_idx)
             else:
