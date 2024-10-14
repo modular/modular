@@ -49,11 +49,8 @@ struct RegExample:
 
   fn noop(self): pass
   # CHECK-LABEL: lit.func @"__del__
-  # CHECK-NEXT: %self_0 = lit.var.decl "self" arg
-  # CHECK-NEXT: lifetime.start %self_0
-  # CHECK-NEXT: lit.ref.store %self, %self_0
   # CHECK-NEXT:  = kgen.param.constant{{.*}} <#kgen.none>
-  # CHECK-NEXT: lit.ownership.mark_destroyed %self_0
+  # CHECK-NEXT: lit.ownership.mark_destroyed %self
   # CHECK-NEXT: kgen.return
   fn __del__(owned self):
     pass
@@ -93,8 +90,7 @@ fn destructors(owned arg0: MemExample):
   # CHECK-NEXT: %reg = lit.var.decl "reg"
   # CHECK-NEXT: lifetime.start %reg
   # CHECK-NEXT: lit.call {{.*}}__init__{{.*}}(%reg)
-  # CHECK-NEXT: [[REG:%.*]] = lit.ref.load %reg
-  # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}([[REG]])
+  # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}(%reg)
   # CHECK-NEXT: lifetime.end
 
   mem2.noop()
@@ -140,7 +136,12 @@ fn destructors(owned arg0: MemExample):
 
   # CHECK-NEXT: [[REG:%.*]] = kgen.param.materialize: !RegExample
   # CHECK-NEXT: lit.call {{.*}}noop{{.*}}([[REG]])
-  # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}([[REG]])
+
+  # CHECK-NEXT: [[DTORTMP:%.*]] = lit.var.decl "__dtor_tmp__"
+  # CHECK-NEXT: lit.var.lifetime.start [[DTORTMP]]
+  # CHECK-NEXT: lit.ref.store [[REG]], [[DTORTMP]]
+  # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}([[DTORTMP]])
+  # CHECK-NEXT: lifetime.end [[DTORTMP]]
   RegExample{}.noop()
 
   # CHECK-NEXT: %localReg = lit.var.decl
@@ -154,9 +155,15 @@ fn destructors(owned arg0: MemExample):
   # CHECK-NEXT: lifetime.end %anonymous2A_0
   # CHECK-NEXT: [[REG:%.*]] = lit.ref.load %localReg
   # CHECK-NEXT: lifetime.end %localReg
-  # CHECK-NEXT: [[BIGREG:%.*]] = lit.struct.create(a=[[REG2C]], b=[[REG]])
-  # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}([[BIGREG]])
   var localReg = RegExample()
+
+  # CHECK-NEXT: [[BIGREG:%.*]] = lit.struct.create(a=[[REG2C]], b=[[REG]])
+
+  # CHECK-NEXT: [[DTORTMP:%.*]] = lit.var.decl "__dtor_tmp__"
+  # CHECK-NEXT: lit.var.lifetime.start [[DTORTMP]]
+  # CHECK-NEXT: lit.ref.store [[BIGREG]], [[DTORTMP]]
+  # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}([[DTORTMP]])
+  # CHECK-NEXT: lifetime.end [[DTORTMP]]
   _ = BigRegExample{a: localReg, b: localReg }
 
 # CHECK-LABEL: lit.func @"indirect_call
@@ -320,23 +327,16 @@ fn disableDtor(owned x: FieldSensitiveMemExample):
 
 # CHECK-LABEL: lit.func @"regpassable_owned_args_mutable
 fn regpassable_owned_args_mutable(owned x: RegExample):
-  # CHECK-NEXT: %x_0 = lit.var.decl "x" arg
-  # CHECK-NEXT: lifetime.start %x_0
-  # CHECK-NEXT: lit.ref.store %x, %x_0
-  # CHECK-NEXT: lit.call {{.*}}mutate{{.*}}(%x_0)
+  # CHECK-NEXT: lit.call {{.*}}mutate{{.*}}(%x)
   x.mutate()
 
-  # CHECK-NEXT: [[X:%.*]] = lit.ref.load %x_0
-  # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}([[X]])
-  # CHECK-NEXT: lifetime.end %x_0
-  # CHECK-NEXT: lifetime.start %x_0
-  # CHECK-NEXT: lit.call {{.*}}"__init__{{.*}}(%x_0)
+  # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}(%x)
+  # CHECK-NEXT: lit.call {{.*}}"__init__{{.*}}(%x)
   x = RegExample()
 
-  # CHECK-NEXT: lit.call {{.*}}mutate{{.*}}(%x_0)
+  # CHECK-NEXT: lit.call {{.*}}mutate{{.*}}(%x)
   x.mutate()
-  # CHECK-NEXT: [[X:%.*]] = lit.ref.load %x_0
-  # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}([[X]])
+  # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}(%x)
 
 # Result optimization cannot emit directly into a value that is passed as an
 # argument, because this forms a mutable reference to something immutably
@@ -518,18 +518,12 @@ struct BigRegExample:
     self.b = existing.b
 
   # CHECK-LABEL: lit.func @"__del__
-  # CHECK-NEXT: %self_0 = lit.var.decl "self" arg
-  # CHECK-NEXT: lifetime.start %self_0
-  # CHECK-NEXT: lit.ref.store %self, %self_0
-
-  # CHECK-NEXT: [[APTR:%.*]] = lit.ref.struct.ger %self_0[a]
-  # CHECK-NEXT: [[AVAL:%.*]] = lit.ref.load [[APTR]]
-  # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}([[AVAL]])
-  # CHECK-NEXT: [[BPTR:%.*]] = lit.ref.struct.ger %self_0[b]
-  # CHECK-NEXT: [[BVAL:%.*]] = lit.ref.load [[BPTR]]
-  # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}([[BVAL]])
+  # CHECK-NEXT: [[APTR:%.*]] = lit.ref.struct.ger %self[a]
+  # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}([[APTR]])
+  # CHECK-NEXT: [[BPTR:%.*]] = lit.ref.struct.ger %self[b]
+  # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}([[BPTR]])
   # CHECK-NEXT:  = kgen.param.constant{{.*}} <#kgen.none>
-  # CHECK-NEXT: lit.ownership.mark_destroyed %self_0
+  # CHECK-NEXT: lit.ownership.mark_destroyed %self
   # CHECK-NEXT: kgen.return
 
 
@@ -542,8 +536,7 @@ fn bigreg_test():
 
   # CHECK-NEXT: [[FIELD:%.*]] = lit.ref.struct.ger %varThing[a]
   # CHECK-NEXT: lit.ownership.use [[FIELD]]
-  # CHECK-NEXT: [[AVAL:%.*]] = lit.load.consume [[FIELD]]
-  # CHECK-NEXT: lit.call {{.*}}consume{{.*}}([[AVAL]])
+  # CHECK-NEXT: lit.call {{.*}}consume{{.*}}([[FIELD]])
   consume(varThing.a^)
 
   # CHECK-NEXT: [[BREF:%.*]] = lit.ref.struct.ger %varThing[b]
@@ -551,15 +544,13 @@ fn bigreg_test():
   # CHECK-NEXT: [[BVAL:%.*]] = lit.ref.load [[BREF]]
   # CHECK-NEXT: lifetime.start [[ANON]]
   # CHECK-NEXT: lit.call {{.*}}__copyinit__{{.*}}([[ANON]], [[BVAL]])
-  # CHECK-NEXT: [[BCOPY:%.*]] = lit.load.consume [[ANON]]
+  # CHECK-NEXT: lit.call {{.*}}consume{{.*}}([[ANON]])
   # CHECK-NEXT: lifetime.end [[ANON]]
-  # CHECK-NEXT: lit.call {{.*}}consume{{.*}}([[BCOPY]])
   consume(varThing.b)
 
   # CHECK-NEXT: [[AREF:%.*]] = lit.ref.struct.ger %varThing[a]
   # CHECK-NEXT: lit.call {{.*}}__init__{{.*}}([[AREF]])
-  # CHECK-NEXT: [[OLDVAL:%.*]] = lit.ref.load %varThing
-  # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}([[OLDVAL]])
+  # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}(%varThing)
   # CHECK-NEXT: lifetime.end %varThing
   varThing.a = RegExample()
 
@@ -574,41 +565,34 @@ struct ExoticDelExample:
 
  # CHECK-LABEL: lit.func @"__del__
   fn __del__(owned self):
-    # CHECK-NEXT: %self_0 = lit.var.decl "self" arg
-    # CHECK-NEXT: lifetime.start %self_0
-    # CHECK-NEXT: lit.ref.store %self, %self_0
-
     # self.b gets destroyed ASAP since it isn't used.
-    # CHECK-NEXT: [[BPTR:%.*]] = lit.ref.struct.ger %self_0[b]
-    # CHECK-NEXT: [[BVAL:%.*]] = lit.ref.load [[BPTR]]
-    # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}([[BVAL]])
+    # CHECK-NEXT: [[BPTR:%.*]] = lit.ref.struct.ger %self[b]
+    # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}([[BPTR]])
 
     # Test the condition
     # CHECK-NEXT: hlcf.elif
-    # CHECK-NEXT: [[CONDPTR:%.*]] = lit.ref.struct.ger %self_0[cond]
+    # CHECK-NEXT: [[CONDPTR:%.*]] = lit.ref.struct.ger %self[cond]
     # CHECK-NEXT: [[CONDVAL:%.*]] = lit.ref.load [[CONDPTR]]
     # CHECK-NEXT: hlcf.elif.yield [[CONDVAL]]
     # CHECK-NEXT: } then {
     if self.cond:
       # This side we manually consume for c.
 
-      # CHECK-NEXT: [[CREF:%.*]] = lit.ref.struct.ger %self_0[c]
+      # CHECK-NEXT: [[CREF:%.*]] = lit.ref.struct.ger %self[c]
       # CHECK-NEXT: lit.ownership.use [[CREF]]
-      # CHECK-NEXT: [[CVAL:%.*]] = lit.load.consume [[CREF]]
-      # CHECK-NEXT: lit.call {{.*}}consume{{.*}}([[CVAL]])
+      # CHECK-NEXT: lit.call {{.*}}consume{{.*}}([[CREF]])
       # CHECK-NEXT: hlcf.yield
       consume(self.c^)
 
     # CHECK-NEXT: } else {
     # Destroy C automatically on the else side.
-    # CHECK-NEXT:  [[CPTR:%.*]] = lit.ref.struct.ger %self_0[c]
-    # CHECK-NEXT:  [[CVAL:%.*]] = lit.ref.load [[CPTR]]
-    # CHECK-NEXT:  lit.call {{.*}}__del__{{.*}}([[CVAL]])
+    # CHECK-NEXT:  [[CPTR:%.*]] = lit.ref.struct.ger %self[c]
+    # CHECK-NEXT:  lit.call {{.*}}__del__{{.*}}([[CPTR]])
     # CHECK-NEXT:  hlcf.yield
     # CHECK-NEXT:}
 
     # CHECK-NEXT: = kgen.param.constant: none = <#kgen.none>
-    # CHECK-NEXT:lit.ownership.mark_destroyed %self_0
+    # CHECK-NEXT:lit.ownership.mark_destroyed %self
     # CHECK-NEXT:kgen.return
 
 
@@ -692,12 +676,11 @@ struct RegExampleValue:
     self.x = RegExample()
 
   # Make sure the synthesized dtor is taken register style.
-  # CHECK: lit.func @"__del__{{.*}}(%self: !RegExampleValue owned, |)
-  # CHECK-NEXT: %self_0 = lit.var.decl "self"
-  # CHECK-NEXT: lifetime.start %self_0
-  # CHECK-NEXT: lit.ref.store %self, %self_0
-  # CHECK: kgen.param.constant: none
-  # CHECK: lit.ownership.mark_destroyed %self_0
+  # CHECK: lit.func @"__del__{{.*}}(%self: !lit.ref<!RegExampleValue 
+  # CHECK-NEXT: lit.ref.struct.ger %self[x] 
+  # CHECK-NEXT: lit.call {{.*}}__del__
+  # CHECK-NEXT: kgen.param.constant: none
+  # CHECK: lit.ownership.mark_destroyed %self
 
 # [Bug] __result__ is uninitialized
 # https://github.com/modularml/modular/issues/27792
@@ -885,8 +868,7 @@ struct HasMemExample:
       # here.
 
       # CHECK-NEXT: if
-      # CHECK-NEXT:   lit.ref.load %__try_error__
-      # CHECK-NEXT:   lit.call {{.*}}Error::@"__del__
+      # CHECK-NEXT:   lit.call {{.*}}Error::@"__del__{{.*}}(%__try_error__)
       # CHECK-NEXT:   lifetime.end %__try_error__
       # CHECK-NEXT:   mark_consumed %__call_result_tmp__
       # CHECK-NEXT:   lifetime.end %__call_result_tmp__
@@ -894,7 +876,7 @@ struct HasMemExample:
       # CHECK-NEXT: } else {
 
       # On success, we overwrite the field.
-      # CHECK-NEXT:   [[FIELD2:%.*]] = lit.ref.struct.ger %self[fh]
+      # CHECK-NEXT:   [[FIELD2:%.*]] = lit.ref.struct.ger 
       # CHECK-NEXT:   lit.call {{.*}}__del__{{.*}}([[FIELD2]])
       # CHECK-NEXT:   mark_consumed %__try_error__
       # CHECK-NEXT:   lifetime.end %__try_error__
@@ -974,28 +956,14 @@ fn overwrite(y: MemExample, x: Bool) raises:
 # MOCO-721: Test that ownership is transfered and all the move optimizations are
 # done.
 fn test_if_ownership(x: Bool, owned a: RegExample, owned b: RegExample) -> RegExample:
-    # CHECK-NEXT: %a_0 = lit.var.decl
-    # CHECK-NEXT: lifetime.start %a_0
-    # CHECK-NEXT: lit.ref.store %a, %a_0
-    # CHECK-NEXT: %b_1 = lit.var.decl
-    # CHECK-NEXT: lifetime.start %b_1
-    # CHECK-NEXT: lit.ref.store %b, %b_1
-
-
     # CHECK-NEXT: lit.call {{.*}}__mlir_i1__
     # CHECK-NEXT: [[RES:%.*]] = hlcf.if
-    # CHECK-NEXT:    [[B:%.*]] = lit.ref.load %b_1
-    # CHECK-NEXT:    lit.call {{.*}}__del__{{.*}}([[B]])
-    # CHECK-NEXT:    lifetime.end %b_1
-    # CHECK-NEXT:    [[A:%.*]] = lit.ref.load %a_0
-    # CHECK-NEXT:    lifetime.end %a_0
+    # CHECK-NEXT:    lit.call {{.*}}__del__{{.*}}(%b)
+    # CHECK-NEXT:    [[A:%.*]] = lit.ref.load %a
     # CHECK-NEXT:    hlcf.yield [[A]]
     # CHECK-NEXT:  } else {
-    # CHECK-NEXT:    [[A:%.*]] = lit.ref.load %a_0
-    # CHECK-NEXT:    lit.call {{.*}}__del__{{.*}}([[A]])
-    # CHECK-NEXT:    lifetime.end %a_0
-    # CHECK-NEXT:    [[B:%.*]] = lit.ref.load %b_1
-    # CHECK-NEXT:    lifetime.end %b_1
+    # CHECK-NEXT:    lit.call {{.*}}__del__{{.*}}(%a)
+    # CHECK-NEXT:    [[B:%.*]] = lit.ref.load %b
     # CHECK-NEXT:    hlcf.yield [[B]]
     # CHECK-NEXT:  }
     # CHECK-NEXT:  kgen.return [[RES]]
@@ -1059,8 +1027,7 @@ fn caught_eh_cleanup():
       # Check for the error and handle it.
       # CHECK-NEXT: hlcf.if [[RAISE]] {
       # EH is never used, so it can be immediately released.
-      # CHECK-NEXT:    [[EH1:%.*]] = lit.ref.load %eh1
-      # CHECK-NEXT:    lit.call {{.*}}__del__{{.*}}([[EH1]])
+      # CHECK-NEXT:    lit.call {{.*}}__del__{{.*}}(%eh1)
       # CHECK-NEXT:    lit.var.lifetime.end %eh1
 
       # Normal result is never used
@@ -1093,7 +1060,11 @@ fn caught_eh_cleanup():
       # CHECK-NEXT: lit.call {{.*}}use{{.*}}([[EH2]])
       eh2.use()
 
-      # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}([[EH2]])
+    # CHECK-NEXT: [[DTORTMP:%.*]] = lit.var.decl "__dtor_tmp__"
+    # CHECK-NEXT: lit.var.lifetime.start [[DTORTMP]]
+    # CHECK-NEXT: lit.ref.store [[EH2]], [[DTORTMP]]
+    # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}([[DTORTMP]])
+    # CHECK-NEXT: lifetime.end [[DTORTMP]]
 
 # CHECK-LABEL: lit.func @"test_ref_field
 # https://linear.app/modularml/issue/MOCO-1251

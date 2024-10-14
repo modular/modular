@@ -734,7 +734,7 @@ struct Outer34551: # expected-error {{all members of '@register_passable' struct
         self._inner = NotRegisterPassable()
     # The key point of this test is that these errors break an invariant needed
     # for emission, so previously it would crash while emitting this __del__.
-    fn __del__(owned self): # expected-error {{cannot transfer value into destination, because 'Outer34551' doesn't implement `__moveinit__`}}
+    fn __del__(owned self): 
         _ = self._inner ^
 
 ##===----------------------------------------------------------------------===##

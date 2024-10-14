@@ -226,25 +226,6 @@ lit.func @global_ref_no_use() {
 
 // -----
 
-lit.struct.decl @MyRegStruct attributes {destructor = #kgen.symbol.constant<@MyRegStruct::@__del__> : !lit.signature<(!lit.struct<@MyRegStruct>) -> !kgen.none>} {
-  lit.struct.field a : index
-}
-
-lit.globalvar.decl @y : !lit.struct<@MyRegStruct> {}, {}
-
-// CHECK-LABEL: lit.func @global_ref_reg_store
-lit.func @global_ref_reg_store(%x: !lit.struct<@MyRegStruct> owned) {
-  // CHECK-NEXT: %0 = lit.globalvar.ref @y
-  %0 = lit.globalvar.ref @y : <@MyRegStruct, mut #lit.any.origin>
-  // CHECK-NEXT: %1 = lit.ref.load %0
-  // CHECK-NEXT: call @MyRegStruct::@__del__(%1)
-  // CHECK-NEXT: lit.ref.store %x, %0
-  lit.ref.store %x, %0 :  <@MyRegStruct, mut #lit.any.origin>
-  kgen.return
-}
-
-// -----
-
 // COM: debuginfo.value ops may reference values that are not initialized (e.g.
 // COM: init_self arguments in __init__ functions). We check here that this does
 // COM: not cause an error in the pass.
@@ -363,41 +344,6 @@ lit.func @conditional_consumption_4(%c: i1, %value: !Error) {
     lit.call @consume_err(%value) : !lit.signature<(!Error) -> ()>
     hlcf.break
   }
-  kgen.return
-}
-
-// -----
-
-// COM: Copy-del elision of register-passable value, where the argument is an
-// COM: owned register-passable letreg decl.
-
-!Reg = !lit.struct<@Reg>
-lit.struct.decl @Reg register_passable attributes {
-    copyInit = #kgen.symbol.constant<@Reg::@__copyinit__> : !lit.signature<(!Reg) -> !Reg>,
-    destructor = #kgen.symbol.constant<@Reg::@__del__> : !lit.signature<(!Reg) -> !kgen.none>
-} {
-  lit.func @__del__(%self: !Reg, |) {
-    kgen.return
-  }
-  // FIXME: Wrong copyinit signature.
-  lit.func @__copyinit__(%other: !Reg owned) -> !Reg attributes {specialFnKind = 7 : i8} {
-    kgen.return %other : !Reg
-  }
-}
-
-// CHECK-LABEL: lit.func @copy_del_reg_value
-lit.func @copy_del_reg_value() {
-  %0 = kgen.param.materialize: !Reg = <#lit.struct<{}>>
-
-  %x = lit.var.decl "x" var : !lit.ref<!Reg, mut a>
-  lit.ref.store %0, %x : !lit.ref<!Reg, mut a>
-  %load = lit.ref.load %x : !lit.ref<!Reg, mut a>
-  // CHECK: lit.ref.store
-  // CHECK: [[LOAD:%.*]] = lit.ref.load %x
-  // CHECK: [[COPY:%.*]] = lit.call @Reg::@__copyinit__([[LOAD]])
-  %1 = lit.call @Reg::@__copyinit__(%load) : !lit.signature<(!Reg, |) -> !Reg>
-  // CHECK: call @Reg::@__del__([[COPY]])
-  // CHECK: call @Reg::@__del__([[LOAD]])
   kgen.return
 }
 

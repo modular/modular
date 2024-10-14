@@ -2137,25 +2137,9 @@ void ExprEmitter::emitNormalReturn(ImplicitLocOpBuilder &builder, Value value,
 
   if (markLastArgDestroyed) {
     Value argToDestroy = func.getBody()->getArguments().back();
-    // If this is a @register_passable type, the value must be stored
-    // in a box and we want to treat the box as the thing that we track.
-    // CheckLifetimes doesn't track register values field sensitively, so there
-    // is no way to say that the full object bit is dead in a SRValue.
-    if (func.getSignature().getArgConventions().back() ==
-        ArgConvention::OwnedInReg) {
-      // Find the single thing that got stored to, ignoring debug.value ops.
-      Value storedMem;
-      for (auto user : argToDestroy.getUsers()) {
-        if (isa<DebugInfo::ValueOp>(user))
-          continue;
-        assert(!storedMem && "Should only have a single store");
-        storedMem = cast<LIT::RefStoreOp>(user).getRef();
-      }
-      // If we found it, then ownership has already transfered to the memory
-      // object, so track it instead of the argument.
-      assert(storedMem && "local value box for OwnedInReg self not found");
-      argToDestroy = storedMem;
-    }
+    assert(func.getSignature().getArgConventions().back() !=
+               ArgConvention::OwnedInReg &&
+           "Mojo parser doesn't use owned_in_reg for non-trivial types");
     builder.create<LIT::OwnershipMarkDestroyedOp>(argToDestroy);
   }
 

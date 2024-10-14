@@ -137,49 +137,35 @@ struct RegMovableCopyable:
 
 # CHECK-LABEL: lit.func @"result_reg1
 fn result_reg1(owned a: RegUniqueMovable) -> RegUniqueMovable:
-    # CHECK-NEXT: %a_0 = lit.var.decl "a" arg
-    # CHECK-NEXT: lifetime.start %a_0
-    # CHECK-NEXT: lit.ref.store %a, %a_0
-    # CHECK-NEXT: lit.ownership.use %a_0
-    # CHECK-NEXT: [[AVAL:%.*]] = lit.load.consume %a_0
-    # CHECK-NEXT: lifetime.end %a_0
+    # CHECK-NEXT: lit.ownership.use %a
+    # CHECK-NEXT: [[AVAL:%.*]] = lit.load.consume %a
     # CHECK-NEXT: kgen.return [[AVAL]]
     return a^
 
 
 # CHECK-LABEL: lit.func @"result_reg2
 fn result_reg2(owned a: RegMovableCopyable) -> RegMovableCopyable:
-    # CHECK-NEXT: %a_0 = lit.var.decl "a" arg
-    # CHECK-NEXT: lifetime.start %a_0
-    # CHECK-NEXT: lit.ref.store %a, %a_0
-    # CHECK-NEXT: [[A:%.*]] = lit.ref.load %a_0
-    # CHECK-NEXT: lifetime.end %a_0
+    # FIXME: Should rewrite this to lit.ref.load.consume technically, but
+    # nothing after CheckLifetimes cares.
+
+    # CHECK-NEXT: [[A:%.*]] = lit.ref.load %a
     # CHECK-NEXT: kgen.return [[A]]
     return a
 
 
 # CHECK-LABEL: lit.func @"result_reg3
 fn result_reg3(owned a: RegMovableCopyable) -> RegMovableCopyable:
-    # CHECK-NEXT: %a_0 = lit.var.decl "a" arg
-    # CHECK-NEXT: lifetime.start %a_0
-    # CHECK-NEXT: lit.ref.store %a, %a_0
-    # CHECK-NEXT: lit.ownership.use %a_0
-    # CHECK-NEXT: [[A:%.*]] = lit.load.consume %a_0
-    # CHECK-NEXT: lifetime.end %a_0
+    # CHECK-NEXT: lit.ownership.use %a
+    # CHECK-NEXT: [[A:%.*]] = lit.load.consume %a
     # CHECK-NEXT: kgen.return [[A]]
     return a^
 
 
 # CHECK-LABEL: lit.func @"result_reg4
 fn result_reg4(owned a: RegMovableCopyable) -> RegMovableCopyable:
-    # CHECK-NEXT: %a_0 = lit.var.decl "a" arg
-    # CHECK-NEXT: lifetime.start %a_0
-    # CHECK-NEXT: lit.ref.store %a, %a_0
-
     # CHECK-NEXT: %x = lit.var.decl "x"
-    # CHECK-NEXT: lit.ownership.use %a_0
-    # CHECK-NEXT: [[A:%.*]] = lit.load.consume %a_0
-    # CHECK-NEXT: lifetime.end %a_0
+    # CHECK-NEXT: lit.ownership.use %a
+    # CHECK-NEXT: [[A:%.*]] = lit.load.consume %a
     # CHECK-NEXT: lifetime.start %x
     # CHECK-NEXT: lit.ref.store [[A]], %x
     var x = a^
@@ -235,12 +221,16 @@ fn optimizeCopyElision():
     # CHECK-NEXT: [[A:%.*]] = lit.ref.load %a
     # CHECK-NEXT: lifetime.start [[ANON]]
     # CHECK-NEXT: lit.call {{.*}}__copyinit__{{.*}}([[ANON]], [[A]])
-    # CHECK-NEXT: [[A:%.*]] = lit.ref.load %a
-    # CHECK-NEXT: lifetime.end %a
-    # CHECK-NEXT: [[ACOPY:%.*]] = lit.load.consume [[ANON]]
-    # CHECK-NEXT: lifetime.end [[ANON]]
-    # CHECK-NEXT: lit.call {{.*}}takeTwo{{.*}}([[ACOPY]], [[A]])
+
+    # CHECK-NEXT: [[ANON2:%.*]] = lit.var.decl "anonymous*"
+    # CHECK-NEXT: [[ATMP:%.*]] = lit.ref.load %a
+    # CHECK-NEXT: lit.var.lifetime.end %a
+    # CHECK-NEXT: lit.var.lifetime.start [[ANON2]]
+    # CHECK-NEXT: lit.ref.store [[ATMP]], [[ANON2]]
+    # CHECK-NEXT: lit.call {{.*}}takeTwo{{.*}}([[ANON]], [[ANON2]])
     takeTwo(a, a)
+    # CHECK-NEXT: lifetime.end [[ANON2]]
+    # CHECK-NEXT: lifetime.end [[ANON]]
 
     # CHECK-NEXT: %x = lit.var.decl "x"
     # CHECK-NEXT: lifetime.start %x
@@ -342,8 +332,11 @@ fn optimizeCopyToMove():
     # CHECK-NEXT: [[R3:%.*]] = lit.ref.load %r3
     # CHECK-NEXT: lit.call {{.*}}noop{{.*}}([[R3]])
     r3.noop()
-    # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}([[R3]])
-    # CHECK-NEXT: lifetime.end %r3
+    # CHECK-NEXT: %__dtor_tmp__ = lit.var.decl
+    # CHECK-NEXT: lit.var.lifetime.start %__dtor_tmp__
+    # CHECK-NEXT: lit.ref.store [[R3]], %__dtor_tmp__
+    # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}(%__dtor_tmp__)
+    # CHECK-NEXT: lifetime.end %__dtor_tmp__
 
     # CHECK-NEXT: %v1 = lit.var.decl
     # CHECK-NEXT: lifetime.start %v1
@@ -373,8 +366,11 @@ fn optimizeCopyToMove():
     # CHECK-NEXT: lit.call {{.*}}noop{{.*}}([[TMP]])
     v3.noop()
 
-    # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}([[TMP]])
-    # CHECK-NEXT: lifetime.end %v3
+    # CHECK-NEXT: [[DTORTMP:%.*]] = lit.var.decl "__dtor_tmp__"
+    # CHECK-NEXT: lit.var.lifetime.start [[DTORTMP]]
+    # CHECK-NEXT: lit.ref.store [[TMP]], [[DTORTMP]]
+    # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}([[DTORTMP]])
+    # CHECK-NEXT: lifetime.end [[DTORTMP]]
     # CHECK-NEXT: kgen.param.constant: none
 
 

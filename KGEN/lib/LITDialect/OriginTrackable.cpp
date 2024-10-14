@@ -260,7 +260,9 @@ static Value findRefPackCreate(Value val) {
 
   for (Operation *user : varDecl.getResult().getUsers()) {
     auto call = dyn_cast<LIT::CallOp>(user);
-    if (!call)
+    if (!call ||
+        // Ignore calls to __del__
+        call.getNumOperands() == 1)
       continue;
     // Make sure any change to the API forces this code to get updated.
     assert(call.getNumOperands() == 3 &&
