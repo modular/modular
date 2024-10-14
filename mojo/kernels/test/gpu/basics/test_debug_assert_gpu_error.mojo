@@ -26,3 +26,5 @@ def main():
             grid_dim=(2, 1, 1),
             block_dim=(2, 1, 1),
         )
+
+        ctx.synchronize()
