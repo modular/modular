@@ -2355,11 +2355,7 @@ struct LayoutTensor[
                         @parameter
                         if masked:
                             var src_copy_size = element_size_bytes if src_idx < src_idx_bound else 0
-                            async_copy_sized[
-                                element_size_bytes,
-                                fill=fill,
-                                eviction_policy=eviction_policy,
-                            ](
+                            async_copy_sized[element_size_bytes](
                                 src_ptr + src_idx,
                                 dst_ptr + dst_idx,
                                 src_copy_size,
@@ -2416,11 +2412,7 @@ struct LayoutTensor[
 
                         var dst_idx = swizzled_offset + dst_distance
 
-                        async_copy_sized[
-                            element_size_bytes,
-                            fill=fill,
-                            eviction_policy=eviction_policy,
-                        ](
+                        async_copy_sized[element_size_bytes](
                             src_ptr + src_idx,
                             dst_ptr + dst_idx,
                             element_size_bytes,
