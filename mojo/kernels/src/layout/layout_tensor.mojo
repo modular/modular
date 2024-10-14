@@ -13,7 +13,7 @@ from sys.intrinsics import PrefetchOptions
 from algorithm import vectorize
 from builtin.int import int as _int
 from gpu.id import ThreadIdx
-from gpu.memory import Fill, CacheEviction, async_copy
+from gpu.memory import Fill, CacheEviction, async_copy, async_copy_sized
 from layout.element import Element
 from memory import UnsafePointer, memcpy, memset_zero, stack_allocation
 from memory.pointer import AddressSpace, _GPUAddressSpace
@@ -2355,7 +2355,7 @@ struct LayoutTensor[
                         @parameter
                         if masked:
                             var src_copy_size = element_size_bytes if src_idx < src_idx_bound else 0
-                            async_copy[
+                            async_copy_sized[
                                 element_size_bytes,
                                 fill=fill,
                                 eviction_policy=eviction_policy,
@@ -2368,6 +2368,8 @@ struct LayoutTensor[
                             async_copy[
                                 element_size_bytes,
                                 fill=fill,
+                                bypass_L1_16B=False,
+                                l2_prefetch=256,
                                 eviction_policy=eviction_policy,
                             ](src_ptr + src_idx, dst_ptr + dst_idx)
             else:
@@ -2414,7 +2416,7 @@ struct LayoutTensor[
 
                         var dst_idx = swizzled_offset + dst_distance
 
-                        async_copy[
+                        async_copy_sized[
                             element_size_bytes,
                             fill=fill,
                             eviction_policy=eviction_policy,
