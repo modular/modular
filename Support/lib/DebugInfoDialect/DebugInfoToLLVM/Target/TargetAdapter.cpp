@@ -28,10 +28,12 @@ TargetAdapter DebugInfo::getTargetAdapter(M::TargetInfoAttr target,
 }
 
 TargetAdapter DebugInfo::getFallbackAdapter(bool tradeoffPerfForVariableDI) {
-  return TargetAdapter{populateFallbackConversionPatterns,
-                       (void (*)(ModuleOp))sinkDebugKills,
-                       tradeoffPerfForVariableDI ? convertDbgValueToDeclare
-                                                 : [](ModuleOp module) {}};
+  return TargetAdapter{
+      populateFallbackConversionPatterns, (void (*)(ModuleOp))sinkDebugKills,
+      tradeoffPerfForVariableDI
+          ? [](ModuleOp
+                   module) { convertDbgValueToDeclare(module, /*isGPU=*/false); }
+          : [](ModuleOp module) {}};
 }
 
 //===----------------------------------------------------------------------===//
@@ -345,7 +347,7 @@ filterAndSummarizeDebugVariables(mlir::FunctionOpInterface func) {
   return summary;
 }
 
-void DebugInfo::convertDbgValueToDeclare(ModuleOp module) {
+void DebugInfo::convertDbgValueToDeclare(ModuleOp module, bool isGPU) {
   for (auto func : module.getOps<mlir::FunctionOpInterface>()) {
     DebugVariableSummary debugVariableSummary =
         filterAndSummarizeDebugVariables(func);
@@ -386,6 +388,13 @@ void DebugInfo::convertDbgValueToDeclare(ModuleOp module) {
       // SSA values, we still make stack allocations for this case to ensure
       // that variables are in memory for GPU debugging.
       bool useDbgValueMode = !(useDerefMode || declareDirectMode);
+
+      // TODO - Our upstream register work has enabled register debugging for
+      // all but this case. The blocker here is related to plumbing the
+      // address_class through not yet working in all cases.  Once that is
+      // fixed, this whole conversion can be deleted.
+      if (isGPU && !useDerefMode)
+        continue;
 
       // The LLVM docs say that alignment=1 is always safe.  NVIDIA GPUs have
       // had issues with using alignment=0.  If we continue to do this

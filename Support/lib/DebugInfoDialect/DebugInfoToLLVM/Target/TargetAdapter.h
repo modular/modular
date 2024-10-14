@@ -64,7 +64,7 @@ void sinkDebugKills(mlir::Operation *op);
 ///
 /// TODO: As we grow support we may want to consider making this optional
 /// depending on the debug mode.
-void convertDbgValueToDeclare(mlir::ModuleOp module);
+void convertDbgValueToDeclare(mlir::ModuleOp module, bool isGPU);
 } // namespace M::DebugInfo
 
 #endif // SUPPORT_DEBUGINFODIALECT_DEBUGINFOTOLLVM_TARGET_TARGETADAPTER_H
