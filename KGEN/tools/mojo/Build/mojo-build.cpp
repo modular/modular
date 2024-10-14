@@ -343,10 +343,13 @@ static int linkExecutable(const State &state,
   // Add any necessary system libraries.
   config.getSystemLibraryLinkArgs(linkerArgs);
 
-  for (auto arg : linkerArgs) {
-    LLVM_DEBUG(llvm::errs() << arg << " ");
-  }
-  LLVM_DEBUG(llvm::errs() << "\n");
+  // Print linker arguments for debugging
+  LLVM_DEBUG({
+    for (auto arg : linkerArgs) {
+      llvm::errs() << arg << " ";
+    }
+    llvm::errs() << "\n";
+  });
 
   std::string errorMsg;
   int linkExitCode = llvm::sys::ExecuteAndWait(
