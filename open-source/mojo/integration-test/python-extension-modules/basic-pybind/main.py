@@ -31,6 +31,13 @@ class TestMojoPythonInterop(unittest.TestCase):
     def test_pytype_reg_trivial(self):
         self.assertEqual(mojo_module.Int.__name__, "Int")
 
+    def test_pytype_empty_init(self):
+        # Tests that calling the default constructor on a wrapped Mojo type
+        # is possible.
+        mojo_int = mojo_module.Int()
+
+        self.assertEqual(type(mojo_int), mojo_module.Int)
+
 
 if __name__ == "__main__":
     unittest.main()
