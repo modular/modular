@@ -61,6 +61,14 @@ fn distance[
 
 @always_inline
 fn multistage_mma[
+    c_type: DType,
+    c_layout: Layout,
+    a_type: DType,
+    a_layout: Layout,
+    a_smem_layout: Layout,
+    b_type: DType,
+    b_layout: Layout,
+    b_smem_layout: Layout, //,
     BM: Int,
     BN: Int,
     BK: Int,
@@ -69,14 +77,6 @@ fn multistage_mma[
     num_threads: Int,
     num_pipeline_stages: Int,
     transpose_b: Bool,
-    c_type: DType,
-    c_layout: Layout,
-    a_type: DType,
-    a_layout: Layout,
-    a_smem_layout: Layout,
-    b_type: DType,
-    b_layout: Layout,
-    b_smem_layout: Layout,
     # Hack:
     /,
     *,
@@ -173,7 +173,7 @@ fn multistage_mma[
         *,
         masked: Bool = False,
         fill: Fill = Fill.NONE,
-        eviction_policy: CacheEviction = CacheEviction.EVICT_NORMAL,
+        eviction_policy: CacheEviction = CacheEviction.EVICT_LAST,
     ](
         b_tile: LayoutTensor[
             b_type,
@@ -243,7 +243,7 @@ fn multistage_mma[
     alias MMA_M = mma_shape[0]
     alias MMA_N = mma_shape[1]
     alias MMA_K = mma_shape[2]
-    alias num_k_mmas = BK // MMA_K
+    alias num_k_mmas: UInt = BK // MMA_K
     alias num_m_mmas = WM // MMA_M
     alias num_n_mmas = WN // MMA_N
 
@@ -308,7 +308,8 @@ fn multistage_mma[
             # Perform prefetch registers and mma until current shared memory tile's
             # data has all been loaded to registers.
             @parameter
-            for k_mma in range(num_k_mmas):
+            for k_mma0 in range(int(num_k_mmas)):
+                alias k_mma = UInt32(k_mma0)
                 var current = k_mma % 2
                 var next = (k_mma + 1) % 2
 
@@ -321,19 +322,19 @@ fn multistage_mma[
                     ](b_wtile_coord0, b_wtile_coord1)
 
                 # Assume input is the 16x8 output of 16x8x16 or 16x8x8 mma.
-                copy_local_to_local(a_reg_tiles[next], a_iter[])
+                copy_local_to_local(a_reg_tiles[int(next)], a_iter[])
                 a_iter._incr()
 
                 mma_op.load_b(
                     b_warp_tile,
-                    b_reg_tiles[next],
-                    (k_mma + 1) % num_k_mmas,
+                    b_reg_tiles[int(next)],
+                    int((k_mma + 1) % num_k_mmas),
                     int(warp_x),
                 )
 
                 mma_op.mma(
-                    a_reg_tiles[current].vectorize[1, a_frag_size](),
-                    b_reg_tiles[current],
+                    a_reg_tiles[int(current)].vectorize[1, a_frag_size](),
+                    b_reg_tiles[int(current)],
                     c.vectorize[1, c_frag_size](),
                 )
 
@@ -383,7 +384,8 @@ fn multistage_mma[
         # Perform prefetch registers and mma until current shared memory tile's
         # data has all been loaded to registers.
         @parameter
-        for k_mma in range(num_k_mmas):
+        for k_mma0 in range(int(num_k_mmas)):
+            alias k_mma = UInt(k_mma0)
             var current = k_mma % 2
             var next = (k_mma + 1) % 2
 
@@ -491,8 +493,6 @@ fn multistage_mma[
                         )
 
                         next_b_iter._incr()
-
-                    pass
 
                 async_copy_commit_group()
 
