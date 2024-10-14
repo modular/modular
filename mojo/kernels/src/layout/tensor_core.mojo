@@ -259,7 +259,7 @@ struct TensorCore[
             element_layout=element_layout1,
             address_space = AddressSpace.LOCAL, **_,
         ],
-        mma_tile_coordk: Int = 0,  # the k corrdinate of mma tile
+        mma_tile_coordk: UInt = 0,  # the k corrdinate of mma tile
     ):
         constrained[self.supported_fp32 or self.supported_half]()
 
@@ -298,8 +298,8 @@ struct TensorCore[
             element_layout=element_layout1,
             address_space = AddressSpace.LOCAL, **_,
         ],
-        mma_tile_coordk: Int = 0,  # the k corrdinate of mma tile
-        warp_tile_coordn: Int = 0,  # n coordiante of warp tile
+        mma_tile_coordk: UInt = 0,  # the k corrdinate of mma tile
+        warp_tile_coordn: UInt = 0,  # n coordiante of warp tile
     ):
         constrained[self.supported_fp32 or self.supported_half]()
 
