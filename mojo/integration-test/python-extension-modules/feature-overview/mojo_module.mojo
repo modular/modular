@@ -136,6 +136,16 @@ struct Person:
         self.name = "John Smith"
         self.age = 123
 
+    # Required by Pythonable
+    fn __repr__(self) -> String:
+        return String.format_sequence(
+            "Person(",
+            repr(self.name),
+            ", ",
+            repr(self.age),
+            ")",
+        )
+
     @staticmethod
     fn obj_name(
         self_: PythonObject, args: TypedPythonObject["Tuple"]
@@ -148,8 +158,6 @@ struct Person:
 
 
 fn add_person_type(inout module: TypedPythonObject["Module"]):
-    var cpython = Python().impl.cpython()
-
     # ----------------------------------------------
     # Construct a 'type' object describing `Person`
     # ----------------------------------------------

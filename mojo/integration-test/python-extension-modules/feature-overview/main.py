@@ -56,6 +56,8 @@ class TestMojoPythonInterop(unittest.TestCase):
 
         self.assertEqual(person.name(), "John Smith")
 
+        self.assertEqual(repr(person), "Person('John Smith', 123)")
+
         # Test that an error is raised if passing any arguments to the initalizer
 
         with self.assertRaises(ValueError) as cm:
