@@ -87,6 +87,7 @@ class BatchMultiplexQueue(Generic[BatchReqId, BatchReqInput, BatchReqOutput]):
         with the queues directly.
     """
 
+    name: str
     config: BatchQueueConfig
     executor_fn: BatchRequestExecutorFn
     completed_fn: BatchRequestCompletedFn
@@ -98,14 +99,14 @@ class BatchMultiplexQueue(Generic[BatchReqId, BatchReqInput, BatchReqOutput]):
 
     @contextlib.asynccontextmanager
     async def open_channel(self, req_id: BatchReqId, data: BatchReqInput):
-        self.logger.debug("BatchOpen: %s", req_id)
+        self.logger.debug("BatchOpen(%s): %s", self.name, req_id)
         self.out_queues[req_id] = state = asyncio.Queue()  # type: ignore
         await self.in_queue.put((req_id, data))
         try:
             yield state
         finally:
             del self.out_queues[req_id]
-            self.logger.debug("BatchClose: %s", req_id)
+            self.logger.debug("BatchClose(%s): %s", self.name, req_id)
 
     async def submit(
         self, req_id: BatchReqId, data: BatchReqInput
@@ -162,7 +163,9 @@ class BatchMultiplexQueue(Generic[BatchReqId, BatchReqInput, BatchReqOutput]):
         )
 
     async def dynamic_batching_worker(self):
-        self.logger.info("DynamicBatcher: Started: %s", self.config)
+        self.logger.info(
+            "DynamicBatcher(%s): Started: %s", self.name, self.config
+        )
         try:
             while True:
                 batch: dict[BatchReqId, BatchReqInput] = {}
@@ -171,7 +174,8 @@ class BatchMultiplexQueue(Generic[BatchReqId, BatchReqInput, BatchReqOutput]):
                 )
                 if batch:
                     self.logger.debug(
-                        "DynamicBatcher: Dequeued %d, (%s)",
+                        "DynamicBatcher(%s): Dequeued %d, (%s)",
+                        self.name,
                         len(batch),
                         batch.keys(),
                     )
@@ -186,7 +190,8 @@ class BatchMultiplexQueue(Generic[BatchReqId, BatchReqInput, BatchReqOutput]):
                             and completed == batch.keys()
                         ):
                             self.logger.debug(
-                                "DynamicBatcher: Completed %d (%s)",
+                                "DynamicBatcher(%s): Completed %d (%s)",
+                                self.name,
                                 len(completed),
                                 completed,
                             )
@@ -199,18 +204,26 @@ class BatchMultiplexQueue(Generic[BatchReqId, BatchReqInput, BatchReqOutput]):
                             for req_id in completed:
                                 del batch[req_id]
                                 self.logger.debug(
-                                    "DynamicBatcher: Deleted %s, %d remaining",
+                                    (
+                                        "DynamicBatcher(%s): Deleted %s, %d"
+                                        " remaining"
+                                    ),
+                                    self.name,
                                     req_id,
                                     len(batch),
                                 )
 
                 await asyncio.sleep(0)
         except asyncio.CancelledError:
-            self.logger.info("DynamicBatcher: Cancelled: %s", self.config)
+            self.logger.info(
+                "DynamicBatcher(%s): Cancelled: %s", self.name, self.config
+            )
             raise
 
     async def continuous_batching_worker(self):
-        self.logger.info("ContinuousBatcher: Started: %s", self.config)
+        self.logger.info(
+            "ContinuousBatcher(%s): Started: %s", self.name, self.config
+        )
         batch: dict[BatchReqId, BatchReqInput] = {}
         try:
             while True:
@@ -222,7 +235,11 @@ class BatchMultiplexQueue(Generic[BatchReqId, BatchReqInput, BatchReqOutput]):
                     new_req_ids = batch.keys() - req_ids_before_deque
                     if new_req_ids:
                         self.logger.debug(
-                            "ContinuousBatcher: Dequeued %d, Total %d, (%s)",
+                            (
+                                "ContinuousBatcher(%s): Dequeued %d, Total %d,"
+                                " (%s)"
+                            ),
+                            self.name,
                             len(batch),
                             len(new_req_ids),
                             new_req_ids,
@@ -234,7 +251,8 @@ class BatchMultiplexQueue(Generic[BatchReqId, BatchReqInput, BatchReqOutput]):
                     if completed:
                         # Completed requests are terminated with STOP_STREAM sentinels
                         self.logger.debug(
-                            "ContinuousBatcher: Completed %d (%s)",
+                            "ContinuousBatcher(%s): Completed %d (%s)",
+                            self.name,
                             len(completed),
                             completed,
                         )
@@ -246,7 +264,8 @@ class BatchMultiplexQueue(Generic[BatchReqId, BatchReqInput, BatchReqOutput]):
                     cancelled = next_result.keys() - self.out_queues.keys()
                     if cancelled:
                         self.logger.debug(
-                            "ContinuousBatcher: Cancelled %d (%s)",
+                            "ContinuousBatcher(%s): Cancelled %d (%s)",
+                            self.name,
                             len(cancelled),
                             cancelled,
                         )
@@ -260,11 +279,14 @@ class BatchMultiplexQueue(Generic[BatchReqId, BatchReqInput, BatchReqOutput]):
                         # and can immediately remove them from the batch.
                         del batch[req_id]
                         self.logger.debug(
-                            "ContinuousBatcher: Deleted %s, %d remaining",
+                            "ContinuousBatcher(%s): Deleted %s, %d remaining",
+                            self.name,
                             req_id,
                             len(batch),
                         )
                 await asyncio.sleep(0)
         except asyncio.CancelledError:
-            self.logger.info("ContinuousBatcher: Cancelled: %s", self.config)
+            self.logger.info(
+                "ContinuousBatcher(%s): Cancelled: %s", self.name, self.config
+            )
             raise

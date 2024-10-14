@@ -12,6 +12,7 @@ import os
 import signal
 
 from dataclasses import dataclass
+from time import time_ns
 from typing import AsyncGenerator, Generic, Mapping, Optional
 from transformers import PreTrainedTokenizerBase
 from max.pipelines import TokenGenerator, TokenGeneratorContext
@@ -113,21 +114,23 @@ class TokenGeneratorPipeline(Generic[TokenGeneratorContext]):  # type: ignore
         self.config = config
         self.queues: list[BatchMultiplexQueue] = []
         self._background_tasks: set[asyncio.Task] = set()
-        self.tokens_queue = BatchMultiplexQueue(
+        self.token_gen_queue = BatchMultiplexQueue(
+            "token_generation",
             config.token_generation,
             self.model.next_token,
             completed_fn=TokenGeneratorPipeline.completed_token_generation_requests,
         )
-        self.queues.append(self.tokens_queue)
+        self.queues.append(self.token_gen_queue)
         # Create a context-encoding queue if specified.
-        self.context_queue: Optional[BatchMultiplexQueue] = None
+        self.context_enc_queue: Optional[BatchMultiplexQueue] = None
         if config.context_encoding:
-            self.context_queue = BatchMultiplexQueue(
+            self.context_enc_queue = BatchMultiplexQueue(
+                name="context_encoding",
                 config=config.context_encoding,
                 executor_fn=self.model.next_token,
                 completed_fn=TokenGeneratorPipeline.completed_context_encoding_requests,
             )
-            self.queues.append(self.context_queue)
+            self.queues.append(self.context_enc_queue)
 
     async def next_token(
         self,
@@ -135,8 +138,14 @@ class TokenGeneratorPipeline(Generic[TokenGeneratorContext]):  # type: ignore
     ) -> AsyncGenerator[str, None]:
         """Generates and streams tokens for the provided request."""
         self.logger.debug("Started: %s", request.id)
+        start_time = time_ns()
         context = await self.model.new_context(
             request.prompt, max_new_tokens=request.max_new_tokens
+        )
+        self.logger.debug(
+            "Context allocation for %s completed in %s",
+            request.id,
+            time_ns() - start_time,
         )
         try:
             # Use a different queue for context encoding if specified.
@@ -144,9 +153,15 @@ class TokenGeneratorPipeline(Generic[TokenGeneratorContext]):  # type: ignore
             # any new requests which require CE will be blocked until any active
             # CE or TG requests being serviced by the dynamic-batching-queue are
             # fully processed.
-            if self.context_queue:
-                await self.context_queue.submit(request.id, context)
-            async for token in self.tokens_queue.stream(request.id, context):
+            if self.context_enc_queue:
+                start_time = time_ns()
+                await self.context_enc_queue.submit(request.id, context)
+                self.logger.debug(
+                    "Context encoding for %s completed in %s",
+                    request.id,
+                    time_ns() - start_time,
+                )
+            async for token in self.token_gen_queue.stream(request.id, context):
                 yield token
         finally:
             await self.model.release(context)
