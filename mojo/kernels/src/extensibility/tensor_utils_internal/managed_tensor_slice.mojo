@@ -179,7 +179,7 @@ struct ManagedTensorSlice[
         """Computes the tensor slice's number of elements.
 
         Returns:
-            The total number of elements in the NDBuffer.
+            The total number of elements in the ManagedTensorSlice.
         """
         var product: Int = 1
 
