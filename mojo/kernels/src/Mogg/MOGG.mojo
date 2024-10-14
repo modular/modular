@@ -1102,21 +1102,23 @@ fn argmax_wrapped[
 ) raises:
     constrained[target == "cpu" or "cuda" in target, "not a valid target"]()
 
-    @parameter
-    if target == "cpu":
-        _argmax(input, int(axis), output)
-    else:
-        var axis = int(normalize_neg_index(axis, rank))
-        if axis != rank - 1:
-            raise Error("axis other than -1 not supported on GPU")
+    with Trace[TraceLevel.OP, target=target]("argmax"):
 
-        # TODO(KERN-1045): Add support for taking advantage of static_shapes
-        var cuda_ctx = ctx.get_device_context()
-        _argmax_gpu(
-            cuda_ctx,
-            rebind[NDBuffer[type, rank]](input),
-            rebind[NDBuffer[out_type, rank]](output),
-        )
+        @parameter
+        if target == "cpu":
+            _argmax(input, int(axis), output)
+        else:
+            var axis = int(normalize_neg_index(axis, rank))
+            if axis != rank - 1:
+                raise Error("axis other than -1 not supported on GPU")
+
+            # TODO(KERN-1045): Add support for taking advantage of static_shapes
+            var cuda_ctx = ctx.get_device_context()
+            _argmax_gpu(
+                cuda_ctx,
+                rebind[NDBuffer[type, rank]](input),
+                rebind[NDBuffer[out_type, rank]](output),
+            )
 
 
 # ===----------------------------------------------------------------------===#
@@ -1142,7 +1144,8 @@ fn argmin_wrapped[
     output: NDBuffer[out_type, rank, input_2_static_shape],
     ctx: MojoCallContextPtr,
 ) raises:
-    _argmin(input, axis_buf, output)
+    with Trace[TraceLevel.OP, target="cpu"]("argmin"):
+        _argmin(input, axis_buf, output)
 
 
 # ===----------------------------------------------------------------------===#
