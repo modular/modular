@@ -65,9 +65,8 @@ fn run_binary_add(ctx: DeviceContext, capture: Float32) raises:
         grid_dim=(length // block_dim),
         block_dim=(block_dim),
     )
-    # FIXME: RUNP-356 Direct access to CUDA within DeviceContext
     # CHECK: number of captures: 1
-    print("number of captures:", func.v1().cuda_function._impl.num_captures)
+    print("number of captures:", func.test_only_num_captures())
     ctx.synchronize()
 
     ctx.enqueue_copy_from_device(out_host, out_device)
