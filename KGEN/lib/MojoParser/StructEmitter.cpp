@@ -457,11 +457,11 @@ LIT::FuncOp StructEmitter::synthesizeEmptyDtor(ASTDecl &structDecl) {
       structOp.getLoc(), &structOp.getFields().front());
 
   // Figure out the type of the 'self' argument.  It is the struct's `Self`
-  // type for register passable things, or indirect for a memory-only type.
+  // type for @register_passable("trivial") things, or indirect for other types.
   ASTType selfType = structDecl.getTypeDeclSelf();
   // The argument is always owned.
   ArgConvention convention = ArgConvention::OwnedInReg;
-  if (!selfType.isRegisterPassable(structDecl.getLoc(), shared)) {
+  if (!selfType.isTrivial(structDecl.getLoc(), shared)) {
     selfType = selfType.getRefForArgument("self", /*isMut*/ true);
     convention = ArgConvention::OwnedInMem;
   }
@@ -510,15 +510,13 @@ static LIT::FuncOp synthesizeEmptyMoveOrCopyInit(StructEmitter &emitter,
   Builder b(ctx);
   StringAttr existingName = b.getStringAttr("other");
 
-  // If the type is register passable, the 'existing' value will be passed as
-  // a register, otherwise a reference.
+  // If the type is register passable for a copy, the 'existing' value will be
+  // passed as a register, otherwise a reference.
   Type existingArgType;
   ArgConvention existingConv;
-
-  if (cast<StructDeclOp>(structDecl).isRegisterPassable()) {
+  if (cast<StructDeclOp>(structDecl).isRegisterPassable() && !isMove) {
     existingArgType = selfType;
-    existingConv =
-        isMove ? ArgConvention::OwnedInReg : ArgConvention::BorrowedInReg;
+    existingConv = ArgConvention::BorrowedInReg;
   } else {
     existingArgType = selfType.getRefForArgument("existing", isMove);
     existingConv =

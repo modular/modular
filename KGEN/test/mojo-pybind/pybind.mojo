@@ -12,8 +12,7 @@
 # CHECK-SAME: (?, %error: !lit.ref<!Error, {{.*}}, %result: !lit.ref<!PythonObject, {{.*}}) throws -> i1
 # CHECK-NEXT: [[MODULE:%.*]] = lit.var.decl {{.*}}TypedPythonObject{{.*}}Module
 # CHECK-NEXT: call {{.*}}create_pybind_module{{.*}}"pybind"{{.*}}(%error, [[MODULE]])
-# CHECK-NEXT: [[SR:%.*]] = lit.load.consume [[MODULE]]
-# CHECK-NEXT: call {{.*}}PythonObject::@"__init__{{.*}}(%result, [[SR]])
+# CHECK-NEXT: call {{.*}}PythonObject::@"__init__{{.*}}(%result, [[MODULE]])
 # CHECK-NEXT: [[NONE_DEST:%.*]] = lit.var.decl
 # CHECK-NEXT: call {{.*}}gen_pytype_wrapper{{.*}}<:!AnyType #Int{{[0-9]}}, :!StringLiteral {:string "Int"}>(%result, %error, [[NONE_DEST]])
 # CHECK-NEXT: [[FALSE:%.*]] = kgen.param.constant: i1 = <0>
@@ -28,8 +27,7 @@
 # CHECK-NEXT:   call @pybind::@"PyInit_impl_pybind{{.*}}(%error, %module)
 # CHECK-NEXT:   lit.try.yield
 # CHECK-NEXT: except
-# CHECK-NEXT:   [[ERR:%.*]] = lit.load.consume %error
-# CHECK-NEXT:   [[NULL:%.*]] = lit.call {{.*}}fail_initialization{{.*}}([[ERR]])
+# CHECK-NEXT:   [[NULL:%.*]] = lit.call {{.*}}fail_initialization{{.*}}(%error)
 # CHECK-NEXT:   return [[NULL]]
 # CHECK:      [[SR:%.*]] = lit.load.consume %module
 # CHECK-NEXT: return [[SR]]

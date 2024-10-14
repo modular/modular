@@ -380,7 +380,7 @@ struct RPStructWithInitTrivial:
 
 
 # CHECK-LABEL: lit.func @"ownedConventionReg
-# CHECK-SAME: (%a: !RPStructWithInit owned,
+# CHECK-SAME: (%a: !lit.ref<!RPStructWithInit, mut *"a`"> owned_in_mem,
 # CHECK-SAME:  %b: !RPStructWithInit,
 # CHECK-SAME:  %triv: !RPStructWithInitTrivial)
 fn ownedConventionReg(
@@ -388,16 +388,13 @@ fn ownedConventionReg(
     b: RPStructWithInit,
     triv: RPStructWithInitTrivial,
 ):
-    # CHECK: %a_0 = lit.var.decl "a" arg
-    # CHECK: lit.ref.store %a, %a_0
-
-    # CHECK: [[AX:%.*]] = lit.ref.struct.ger %a_0[x]
+    # CHECK: [[AX:%.*]] = lit.ref.struct.ger %a[x]
     # CHECK:  = lit.ref.load [[AX]]
     _ = a.x
     # CHECK: [[BY:%.*]] = lit.struct.extract %b[y]
     _ = b.y
 
-    # CHECK: [[AX:%.*]] = lit.ref.struct.ger %a_0[x]
+    # CHECK: [[AX:%.*]] = lit.ref.struct.ger %a[x]
     # CHECK: [[ONE:%.*]]  = kgen.param.constant: !Int = <{1}>
     # CHECK: lit.ref.store [[ONE]], [[AX]]
     a.x = 1
@@ -1114,8 +1111,7 @@ async fn inline_async() -> Int:
 # CHECK-LABEL: lit.func @"use_inline_async()"
 async fn use_inline_async() -> Int:
     # CHECK: [[ASYNC_RESULT:%.*]] = lit.async.call{{.*}}inline_async
-    # CHECK: lit.call {{.*}}Coroutine{{.*}}__init__{{.*}}([[TMP:%.*]], [[ASYNC_RESULT]])
-    # CHECK: [[CORO:%.*]] = lit.load.consume [[TMP]]
+    # CHECK: lit.call {{.*}}Coroutine{{.*}}__init__{{.*}}([[CORO:%.*]], [[ASYNC_RESULT]])
     # CHECK: lit.call {{.*}}Coroutine{{.*}}__await__{{.*}}([[CORO]], %__result__)
     return await inline_async()
 
@@ -1146,8 +1142,9 @@ fn coroutine_origins():
     # CHECK: lit.call {{.*}}Coroutine::@"__init__{{.*}}<:!AnyType [none, {{.*}}], :origin.set {mut [[X_LT]], mut [[Y_LT]]}>(%coro, [[CORO]])
     var coro = capture_byref(x, y)
 
-    # CHECK: lit.async.call[!lit.signature<[1]("x": !lit.struct<#LifetimeAccess <:origin<1> [[Y_LT]]>> owned, {{.*}}) async -> !kgen.none>: {{.*}}lifetime_access{{.*}}<:origin<1> [[Y_LT]]>]
-    # CHECK: Coroutine<:!AnyType [none, {{.*}}], :origin.set {mut [[Y_LT]]}>
+    # CHECK: lit.async.call[!lit.signature<[2]("x": !lit.ref<@decls::@LifetimeAccess<:origin<1> [[Y_LT]]>,
+    # CHECK-SAME: mut *[0,0]{{.*}}) async -> !kgen.none>: {{.*}}lifetime_access{{.*}}<:origin<1> [[Y_LT]]>]  
+    # CHECK: Coroutine<:!AnyType [none, {{.*}}], :origin.set {{{.*}}, mut [[Y_LT]]}>
     var access = lifetime_access(LifetimeAccess[__origin_of(y)]())
 
 

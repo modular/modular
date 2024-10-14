@@ -53,8 +53,7 @@ struct RegType:
 # CHECK-NEXT: lit.ref.store %[[VAL]], %[[REF]]
 # CHECK: }, {
 # CHECK-NEXT: %[[REF:.*]] = lit.globalvar.ref {{.*}}@reg_global
-# CHECK-NEXT: %[[CONSUMED:.*]] = lit.load.consume %[[REF]]
-# CHECK-NEXT: lit.call {{.*}}__del__{{.*}}(%[[CONSUMED]])
+# CHECK-NEXT: lit.call {{.*}}__del__{{.*}}(%[[REF]])
 var reg_global: RegType = RegType()
 
 # CHECK-LABEL: lit.globalvar.decl @reg_global_implicit : !RegType

@@ -151,8 +151,7 @@ fn finally_may_raise() raises:
         # CHECK-NEXT:   lifetime.start [[RESULT]]
         # CHECK-NEXT:   [[IS_ERR:%.*]] = lit.call {{.*}}somethingThatRaises{{.*}}(%__finally_error__, [[RESULT]])
         # CHECK-NEXT:   if [[IS_ERR]]
-        # CHECK-NEXT:     [[ERR:%.*]] = lit.ref.load %__error__
-        # CHECK-NEXT:     call {{.*}}__del__{{.*}}([[ERR]])
+        # CHECK-NEXT:     call {{.*}}__del__{{.*}}(%__error__)
         # CHECK-NEXT:     mark_consumed [[RESULT]]
         # CHECK:      except
         # CHECK-NEXT:   [[MOVE:%.*]] = lit.load.consume %__finally_error__
@@ -197,8 +196,7 @@ fn context_mgr_exit_raises() raises:
     # CHECK-NEXT:     call {{.*}}__del__{{.*}}(%$CONTEXTMGR)
     # CHECK-NEXT:     lifetime.end %$CONTEXTMGR
     # CHECK-NEXT:     if [[IS_ERR]]
-    # CHECK-NEXT:       [[ERR:%.*]] = lit.ref.load %__error__
-    # CHECK-NEXT:       call {{.*}}__del__{{.*}}([[ERR]])
+    # CHECK-NEXT:       call {{.*}}__del__{{.*}}(%__error__)
     # CHECK-NEXT:       mark_consumed [[BOOL]]
     # CHECK-NEXT:       lifetime.end [[BOOL]]
     # CHECK:          else
@@ -233,8 +231,7 @@ fn propagate_reg_error() raises:
     # CHECK:        lifetime.end [[RESULT]]
     # CHECK:        lit.error_return
     # CHECK-NEXT: } else {
-    # CHECK-NEXT:   [[VALUE:%.*]] = lit.ref.load [[RESULT]]
-    # CHECK-NEXT:   lit.call {{.*}}@RegExample::@"__del__{{.*}}([[VALUE]])
+    # CHECK-NEXT:   lit.call {{.*}}@RegExample::@"__del__{{.*}}([[RESULT]])
     # CHECK-NEXT:   lifetime.end [[RESULT]]
     # CHECK-NEXT:   mark_consumed %__error__
     # CHECK-NEXT:   yield
@@ -366,8 +363,7 @@ fn raising_use(owned value: MemExample):
         # CHECK-NEXT: [[IS_ERR:%.*]] = lit.call {{.*}}borrow_and_return{{.*}}([[BORROW]], %__try_error__, [[VAL]])
         # CHECK-NEXT: call {{.*}}@MemExample::@"__del__{{.*}}(%value)
         # CHECK-NEXT: if [[IS_ERR]]
-        # CHECK-NEXT:   [[ERR:%.*]] = lit.ref.load %__try_error__
-        # CHECK-NEXT:   call {{.*}}@Error::@"__del__{{.*}}([[ERR]])
+        # CHECK-NEXT:   call {{.*}}@Error::@"__del__{{.*}}(%__try_error__)
         # CHECK-NEXT:   lifetime.end %__try_error__
         # CHECK-NEXT:   mark_consumed [[VAL]]
         # CHECK-NEXT:   lifetime.end [[VAL]]

@@ -1764,6 +1764,7 @@ public:
 
 private:
   ValueSet &valueSet;
+  size_t nextAnonOriginNumber = 0;
 
   /// During the core op-processing loop, this is the set of values that need to
   /// be destroyed.
@@ -1780,9 +1781,9 @@ private:
 
   void destroyValueIfNeeded(Value v, ValueRef valueRef,
                             const BitVector &consumedValues,
-                            ImplicitLocOpBuilder &builder) const;
+                            ImplicitLocOpBuilder &builder);
   void emitDestructorCall(Value value, bool isIndirect,
-                          ImplicitLocOpBuilder &builder) const;
+                          ImplicitLocOpBuilder &builder);
   DtorEmissionResult optimizeCopyDestroys(Operation *opWithUse);
   void elideCopyInitReg(LIT::CallOp copyInitCall, RefLoadOp loadOp);
 
@@ -1829,9 +1830,9 @@ DestructorInserter::emitDestructors(ImplicitLocOpBuilder &builder,
 /// We need to destroy the specified value, which could destroyed as a single
 /// destructor call, or could need fieldwise destruction.  Emit the necessary
 /// element accesses and calls.
-void DestructorInserter::destroyValueIfNeeded(
-    Value value, ValueRef valueRef, const BitVector &consumedValues,
-    ImplicitLocOpBuilder &builder) const {
+void DestructorInserter::destroyValueIfNeeded(Value value, ValueRef valueRef,
+                                              const BitVector &consumedValues,
+                                              ImplicitLocOpBuilder &builder) {
 
   // If we've recursed down to a field that is already fully destroyed, then
   // we're done without further investigation.
@@ -1935,8 +1936,8 @@ static Value getMutableRefForPossiblyImmutValue(Value value,
 ///
 /// The 'opWithUse' value, if present, is the operation using the overall value
 /// being destroyed.  This allows us to perform copy ctor+temp elision.
-void DestructorInserter::emitDestructorCall(
-    Value value, bool isIndirect, ImplicitLocOpBuilder &builder) const {
+void DestructorInserter::emitDestructorCall(Value value, bool isIndirect,
+                                            ImplicitLocOpBuilder &builder) {
 
   Type destroyedType =
       ValueRef::getDereferencedType(value.getType(), isIndirect);
@@ -1958,40 +1959,47 @@ void DestructorInserter::emitDestructorCall(
          "dtor should have one result (none type)");
   assert(signature.getNumArguments() == 1 && "dtor should have one operand");
 
-  // We may have a @register_passable value indirect (e.g. because it is in a
-  // var).  If so, it needs to be loaded to invoke the destructor.
-  Value valueToDestroy = value;
-  if (auto ref = dyn_cast<RefType>(valueToDestroy.getType()))
-    if (signature.getArguments()[0] == ref.getElementType())
-      valueToDestroy = builder.create<RefLoadOp>(valueToDestroy);
+  // We may have a @register_passable value direct (e.g. because it is not in a
+  // var).  If so, it needs to be stored into a temporary to invoke the
+  // destructor, because it takes it by-ref.
+  if (!isa<RefType>(value.getType())) {
+    StringAttr originAttr =
+        builder.getStringAttr("__dtor_tmp__`" + Twine(nextAnonOriginNumber++));
+    auto tmpVar = builder.create<VarDeclOp>(
+        value.getType(), builder.getStringAttr("__dtor_tmp__"), originAttr,
+        VarDeclKind::Implicit);
+    builder.create<VarLifetimeStartOp>(tmpVar);
+    builder.create<RefStoreOp>(value, tmpVar);
+    value = tmpVar;
+  }
 
-  // If the dtor takes a reference, then this the dtor for a memory type.  Bind
-  // the implicit origin of __del__'s self to the origin of the reference we
-  // have.
+  // The dtor must take a reference:  Bind the implicit origin of __del__'s self
+  // to the origin of the reference we have.
   SmallVector<TypedAttr> implicitOrigins;
-  if (auto delSelfTy = dyn_cast<RefType>(signature.getArguments()[0])) {
-    valueToDestroy =
-        getMutableRefForPossiblyImmutValue(valueToDestroy, builder);
-    auto argRef = cast<RefType>(valueToDestroy.getType());
-    assert(delSelfTy.getElementType() == argRef.getElementType());
-    implicitOrigins.push_back(argRef.getOrigin());
+  auto delSelfTy = dyn_cast<RefType>(signature.getArguments()[0]);
+  if (!delSelfTy) {
+    mlir::emitError(builder.getLoc())
+        << "invalid __del__ that doesn't take register by-ref";
+    return;
+  }
 
-    // Verify that the address space of the reference matches.  The __del__
-    // method will have address space zero.  Attempts to delete other things
-    // should not explode the compiler.
-    if (delSelfTy.getAddressSpace() != argRef.getAddressSpace()) {
-      mlir::emitError(builder.getLoc())
-          << "cannot destroy value in non-default address space";
-      return;
-    }
+  value = getMutableRefForPossiblyImmutValue(value, builder);
+  auto argRef = cast<RefType>(value.getType());
+  assert(delSelfTy.getElementType() == argRef.getElementType());
+  implicitOrigins.push_back(argRef.getOrigin());
 
-  } else {
-    assert(signature.getArguments()[0] == valueToDestroy.getType());
+  // Verify that the address space of the reference matches.  The __del__
+  // method will have address space zero.  Attempts to delete other things
+  // should not explode the compiler.
+  if (delSelfTy.getAddressSpace() != argRef.getAddressSpace()) {
+    mlir::emitError(builder.getLoc())
+        << "cannot destroy value in non-default address space";
+    return;
   }
 
   // Emit the call to the destructor.
   builder.create<LIT::CallOp>(signature.getResults()[0], dtor, implicitOrigins,
-                              valueToDestroy);
+                              value);
   emitLifetimeEnd(value, builder);
 }
 
@@ -2117,7 +2125,7 @@ DestructorInserter::optimizeCopyDestroys(Operation *opWithUse) {
 ///   ==> destroy %src
 /// Then we can locally optimize this into:
 ///   %tmp = lit.var.decl "anonymous"
-///   %srcReg = lit.ref.load %src
+///   %srcReg = lit.ref.load.consume %src
 ///   lit.ref.store %srcReg -> %tmp
 /// And if the only other operation using '%tmp' is a lit.load.consume:
 ///   %tmp = lit.var.decl "anonymous"
@@ -2127,7 +2135,7 @@ DestructorInserter::optimizeCopyDestroys(Operation *opWithUse) {
 ///   ...
 ///   %xyz = lit.load.consume %tmp
 /// Then we can optimize this into:
-///   %srcReg = lit.ref.load %src
+///   %srcReg = lit.ref.load.consume %src
 ///   ...
 ///   %xyz = %srcReg
 void DestructorInserter::elideCopyInitReg(LIT::CallOp copyInitCall,
@@ -2150,6 +2158,9 @@ void DestructorInserter::elideCopyInitReg(LIT::CallOp copyInitCall,
     }
     return consumer;
   };
+
+  // FIXME: We should turn 'loadOp' into a consuming load, but we don't update
+  // the upwards consumption mask correctly.
 
   // If the operation right after the call is a consuming load from a
   // varDecl, then we can squash the vardecl and the consuming load and

@@ -1011,13 +1011,12 @@ static void typeCheckOneArgument(size_t idx, ASTType selfType, bool isDef,
   case ParsedArgument::kConventionByRefResult:
     llvm_unreachable("shouldn't occur in an argument list");
   case ParsedArgument::kConventionOwned:
-    if (!type.isRegisterPassable(arg.loc, shared) ||
-        // VariadicListInMem supports owned, but VariadicList does not.
-        arg.vararg == VarArgKind::VarArg) {
+    // Only trivial owned arguments may be lowered to register arguments in the
+    // parser.  Doing so prevents us from understanding exclusivity problems.
+    if (type.isTrivial(arg.loc, shared))
+      arg.kgenConvention = ArgConvention::OwnedInReg;
+    else
       arg.kgenConvention = ArgConvention::OwnedInMem;
-      break;
-    }
-    arg.kgenConvention = ArgConvention::OwnedInReg;
     break;
   case ParsedArgument::kConventionRef: {
     assert(arg.refOriginExpr && "No origin expr for convention!");

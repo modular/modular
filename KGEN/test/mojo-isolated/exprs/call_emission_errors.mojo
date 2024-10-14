@@ -258,3 +258,25 @@ fn capture_exclusivity(owned x: MemExample):
     # expected-error @below {{argument of call allows writing a memory location previously writable through implicit closure captures}}
     # expected-note @below {{'x' value is passed through aliasing 'borrowed' argument}}
     capture_and_read(x)
+
+
+@value
+@register_passable
+struct MyRPStruct:
+    var a: Int
+    fn __del__(owned self):
+       pass
+
+@value
+@register_passable
+struct MyRPStruct2:
+    var b: MyRPStruct
+    fn __del__(owned self):
+       pass
+
+fn take_owned_and_mutate_rp(owned a: MyRPStruct2, inout b: MyRPStruct2): pass
+
+fn rp_exclusivity(inout x: MyRPStruct2):
+    # expected-error @below {{argument of 'take_owned_and_mutate_rp' call allows writing a memory location previously writable through another aliased argument}}
+    # expected-note @below {{'x' value is passed through aliasing 'inout' argument}}
+    take_owned_and_mutate_rp(x^, x)
