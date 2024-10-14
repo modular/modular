@@ -532,6 +532,7 @@ def run(
     mode=KBENCH_MODE.RUN,
     param_list=None,
     filter_list=None,
+    debug_level=None,
     dryrun=False,
     verbose=False,
     tmp_path=None,
@@ -561,7 +562,11 @@ def run(
         tmp_path = _get_tmp_path(spec.file)
     tmp_dir = Path(tmp_path)
 
-    build_opts = ["build"] if mode == KBENCH_MODE.BUILD else []
+    build_opts = []
+    if mode is KBENCH_MODE.BUILD:
+        build_opts = ["build"]
+        if debug_level:
+            build_opts.extend(["--debug-level", debug_level])
 
     # Run the code over the mesh of param/values
     t_start_total = time()
@@ -798,6 +803,9 @@ help_str = (
 @click.option(
     "--param", default=(), help="Set extra params from CLI.", multiple=True
 )
+@click.option(
+    "--debug-level", default=None, help="The debug level used during the build."
+)
 @click.option("--force", "-f", is_flag=True, default=False, help="Force.")
 @click.option(
     "--dryrun",
@@ -817,6 +825,7 @@ def cli(
     tune,
     build,
     param,
+    debug_level,
     force,
     dryrun,
     verbose,
@@ -842,6 +851,7 @@ def cli(
         mode=mode,
         param_list=param,
         filter_list=filter,
+        debug_level=debug_level,
         dryrun=dryrun,
         verbose=verbose,
     )
