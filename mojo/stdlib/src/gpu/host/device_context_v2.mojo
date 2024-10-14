@@ -409,6 +409,9 @@ struct DeviceFunctionV2[
             )
         )
 
+    fn test_only_num_captures(self) -> Int:
+        return self._func_impl.num_captures
+
 
 struct DeviceContextV2:
     """DeviceContext backed by a C++ implementation."""

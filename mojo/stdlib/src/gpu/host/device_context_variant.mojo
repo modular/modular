@@ -75,6 +75,13 @@ struct DeviceFunctionVariant[
     fn __moveinit__(inout self, owned existing: Self):
         self._impl = existing._impl^
 
+    fn test_only_num_captures(self) -> Int:
+        @parameter
+        if _device_ctx_v2():
+            return self.v2().test_only_num_captures()
+        else:
+            return self.v1().cuda_function._impl.num_captures
+
 
 struct DeviceBufferVariant[type: DType](Sized):
     alias V1 = DeviceBufferV1[type]
