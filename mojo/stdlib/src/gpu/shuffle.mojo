@@ -30,8 +30,8 @@ fn _shuffle[
     type: DType,
     simd_width: Int,
     *,
-    WIDTH_MASK: Int,
-](mask: Int, val: SIMD[type, simd_width], offset: Int) -> SIMD[
+    WIDTH_MASK: Int32,
+](mask: Int, val: SIMD[type, simd_width], offset: UInt32) -> SIMD[
     type, simd_width
 ]:
     constrained[
@@ -43,11 +43,11 @@ fn _shuffle[
     if type is DType.float32:
         return llvm_intrinsic[
             "llvm.nvvm.shfl.sync." + mnemonic + ".f32", Scalar[type]
-        ](Int32(mask), val, UInt32(offset), Int32(WIDTH_MASK))
+        ](Int32(mask), val, offset, WIDTH_MASK)
     elif type is DType.int32:
         return llvm_intrinsic[
             "llvm.nvvm.shfl.sync." + mnemonic + ".i32", Scalar[type]
-        ](Int32(mask), val, UInt32(offset), Int32(WIDTH_MASK))
+        ](Int32(mask), val, offset, WIDTH_MASK)
     elif type.is_half_float():
 
         @parameter
@@ -78,8 +78,8 @@ fn _shuffle[
 
 @always_inline("nodebug")
 fn shuffle_idx[
-    type: DType, simd_width: Int
-](val: SIMD[type, simd_width], offset: Int) -> SIMD[type, simd_width]:
+    type: DType, simd_width: Int, //
+](val: SIMD[type, simd_width], offset: UInt32) -> SIMD[type, simd_width]:
     """Copies a value from a source lane to other lanes in a warp.
 
     Broadcasts a value from a source thread in a warp to all the participating
@@ -101,8 +101,8 @@ fn shuffle_idx[
 
 @always_inline("nodebug")
 fn shuffle_idx[
-    type: DType, simd_width: Int
-](mask: Int, val: SIMD[type, simd_width], offset: Int) -> SIMD[
+    type: DType, simd_width: Int, //
+](mask: Int, val: SIMD[type, simd_width], offset: UInt32) -> SIMD[
     type, simd_width
 ]:
     """Copies a value from a source lane to other lanes in a warp.
@@ -135,8 +135,8 @@ fn shuffle_idx[
 
 @always_inline("nodebug")
 fn shuffle_up[
-    type: DType, simd_width: Int
-](val: SIMD[type, simd_width], offset: Int) -> SIMD[type, simd_width]:
+    type: DType, simd_width: Int, //
+](val: SIMD[type, simd_width], offset: UInt32) -> SIMD[type, simd_width]:
     """Copies values from other lanes in the warp.
 
     Exchange a value between threads within a warp by copying from a thread with
@@ -158,8 +158,8 @@ fn shuffle_up[
 
 @always_inline("nodebug")
 fn shuffle_up[
-    type: DType, simd_width: Int
-](mask: Int, val: SIMD[type, simd_width], offset: Int) -> SIMD[
+    type: DType, simd_width: Int, //
+](mask: Int, val: SIMD[type, simd_width], offset: UInt32) -> SIMD[
     type, simd_width
 ]:
     """Copies values from other lanes in the warp.
@@ -189,8 +189,8 @@ fn shuffle_up[
 
 @always_inline("nodebug")
 fn shuffle_down[
-    type: DType, simd_width: Int
-](val: SIMD[type, simd_width], offset: Int) -> SIMD[type, simd_width]:
+    type: DType, simd_width: Int, //
+](val: SIMD[type, simd_width], offset: UInt32) -> SIMD[type, simd_width]:
     """Copies values from other lanes in the warp.
 
     Exchange a value between threads within a warp by copying from a thread with
@@ -212,8 +212,8 @@ fn shuffle_down[
 
 @always_inline("nodebug")
 fn shuffle_down[
-    type: DType, simd_width: Int
-](mask: Int, val: SIMD[type, simd_width], offset: Int) -> SIMD[
+    type: DType, simd_width: Int, //
+](mask: Int, val: SIMD[type, simd_width], offset: UInt32) -> SIMD[
     type, simd_width
 ]:
     """Copies values from other lanes in the warp.
@@ -243,8 +243,8 @@ fn shuffle_down[
 
 @always_inline("nodebug")
 fn shuffle_xor[
-    type: DType, simd_width: Int
-](val: SIMD[type, simd_width], offset: Int,) -> SIMD[type, simd_width]:
+    type: DType, simd_width: Int, //
+](val: SIMD[type, simd_width], offset: UInt32) -> SIMD[type, simd_width]:
     """Copies values from between lanes (butterfly pattern).
 
     Exchange a value between threads within a warp by copying from a thread
@@ -266,8 +266,8 @@ fn shuffle_xor[
 
 @always_inline("nodebug")
 fn shuffle_xor[
-    type: DType, simd_width: Int
-](mask: Int, val: SIMD[type, simd_width], offset: Int) -> SIMD[
+    type: DType, simd_width: Int, //
+](mask: Int, val: SIMD[type, simd_width], offset: UInt32) -> SIMD[
     type, simd_width
 ]:
     """Copies values from between lanes (butterfly pattern).
@@ -308,7 +308,7 @@ fn _static_log2[n: Int]() -> Int:
 @always_inline("nodebug")
 fn warp_reduce[
     shuffle: fn[type: DType, simd_width: Int] (
-        val: SIMD[type, simd_width], offset: Int
+        val: SIMD[type, simd_width], offset: UInt32
     ) -> SIMD[type, simd_width],
     func: fn[type: DType, width: Int] (
         SIMD[type, width], SIMD[type, width]
