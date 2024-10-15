@@ -49,7 +49,7 @@ fn kv_cache_length_h8_d128_bshd_bf16[
     ],
     output: NDBuffer[DType.uint32, 1],
     ctx: MojoCallContextPtr,
-):
+) raises:
     return _kv_cache_length[target=target](kv_collection, output, ctx)
 
 
@@ -64,7 +64,7 @@ fn kv_cache_length_h6_d48_bshd_f32[
     ],
     output: NDBuffer[DType.uint32, 1],
     ctx: MojoCallContextPtr,
-):
+) raises:
     return _kv_cache_length[target=target](kv_collection, output, ctx)
 
 
@@ -79,7 +79,7 @@ fn kv_cache_length_h8_d128_bshd_f32[
     ],
     output: NDBuffer[DType.uint32, 1],
     ctx: MojoCallContextPtr,
-):
+) raises:
     return _kv_cache_length[target=target](kv_collection, output, ctx)
 
 
@@ -94,7 +94,7 @@ fn kv_cache_length_h1_d16_bshd_f32[
     ],
     output: NDBuffer[DType.uint32, 1],
     ctx: MojoCallContextPtr,
-):
+) raises:
     return _kv_cache_length[target=target](kv_collection, output, ctx)
 
 
@@ -109,7 +109,7 @@ fn kv_cache_length_h1_d16_bshd_bf16[
     ],
     output: NDBuffer[DType.uint32, 1],
     ctx: MojoCallContextPtr,
-):
+) raises:
     return _kv_cache_length[target=target](kv_collection, output, ctx)
 
 
@@ -124,7 +124,7 @@ fn kv_cache_length_h8_d64_bshd_bf16[
     ],
     output: NDBuffer[DType.uint32, 1],
     ctx: MojoCallContextPtr,
-):
+) raises:
     return _kv_cache_length[target=target](kv_collection, output, ctx)
 
 
@@ -139,7 +139,7 @@ fn kv_cache_length_h8_d64_bshd_f32[
     ],
     output: NDBuffer[DType.uint32, 1],
     ctx: MojoCallContextPtr,
-):
+) raises:
     return _kv_cache_length[target=target](kv_collection, output, ctx)
 
 
@@ -154,7 +154,7 @@ fn kv_cache_length_h8_d128_bshd_bf16_continuous_batch[
     ],
     output: NDBuffer[DType.uint32, 1],
     ctx: MojoCallContextPtr,
-):
+) raises:
     return _kv_cache_length[target=target](kv_collection, output, ctx)
 
 
@@ -169,7 +169,7 @@ fn kv_cache_length_h8_d128_bshd_f32_continuous_batch[
     ],
     output: NDBuffer[DType.uint32, 1],
     ctx: MojoCallContextPtr,
-):
+) raises:
     return _kv_cache_length[target=target](kv_collection, output, ctx)
 
 
@@ -184,7 +184,7 @@ fn kv_cache_length_h1_d16_bshd_bf16_continuous_batch[
     ],
     output: NDBuffer[DType.uint32, 1],
     ctx: MojoCallContextPtr,
-):
+) raises:
     return _kv_cache_length[target=target](kv_collection, output, ctx)
 
 
@@ -199,7 +199,7 @@ fn kv_cache_length_h1_d16_bshd_f32_continuous_batch[
     ],
     output: NDBuffer[DType.uint32, 1],
     ctx: MojoCallContextPtr,
-):
+) raises:
     return _kv_cache_length[target=target](kv_collection, output, ctx)
 
 
@@ -214,7 +214,7 @@ fn kv_cache_length_h8_d64_bshd_bf16_continuous_batch[
     ],
     output: NDBuffer[DType.uint32, 1],
     ctx: MojoCallContextPtr,
-):
+) raises:
     return _kv_cache_length[target=target](kv_collection, output, ctx)
 
 
@@ -229,7 +229,7 @@ fn kv_cache_length_h8_d64_bshd_f32_continuous_batch[
     ],
     output: NDBuffer[DType.uint32, 1],
     ctx: MojoCallContextPtr,
-):
+) raises:
     return _kv_cache_length[target=target](kv_collection, output, ctx)
 
 
@@ -240,21 +240,18 @@ fn _kv_cache_length[
     kv_collection: collection_t,
     output: NDBuffer[DType.uint32, 1],
     ctx: MojoCallContextPtr,
-):
+) raises:
     """Returns the size of the cache in a ContiguousKVCacheCollection mo.opaque object.
     """
 
     @parameter
     if target != "cpu":
         var cuda_ctx = ctx.get_device_context()
-        try:
-            cuda_ctx.enqueue_copy_device_to_device(
-                output.data,
-                kv_collection.cache_length_nd().data,
-                output.dim[0](),
-            )
-        except e:
-            abort("Failed to enqueue device_to_device copy:" + str(e))
+        cuda_ctx.enqueue_copy_device_to_device(
+            output.data,
+            kv_collection.cache_length_nd().data,
+            output.dim[0](),
+        )
     else:
         memcpy(
             output.data,
@@ -1684,7 +1681,7 @@ fn flash_attention_kv_cache_h6_d48_bshd[
     scale: Float32,
     output: NDBuffer[type, 4, *_],
     context: MojoCallContextPtr,
-):
+) raises:
     with Trace[TraceLevel.OP, target=target](
         "flash_attention_kv_cache_h6_d48_bshd"
     ):
@@ -1710,7 +1707,7 @@ fn flash_attention_kv_cache_h8_d128_bshd[
     scale: Float32,
     output: NDBuffer[type, 4, *_],
     context: MojoCallContextPtr,
-):
+) raises:
     with Trace[TraceLevel.OP, target=target](
         "flash_attention_kv_cache_h8_d128_bshd"
     ):
@@ -1736,7 +1733,7 @@ fn flash_attention_kv_cache_h1_d16_bshd[
     scale: Float32,
     output: NDBuffer[type, 4, *_],
     context: MojoCallContextPtr,
-):
+) raises:
     with Trace[TraceLevel.OP, target=target](
         "flash_attention_kv_cache_h1_d16_bshd"
     ):
@@ -1762,7 +1759,7 @@ fn flash_attention_kv_cache_h8_d64_bshd[
     scale: Float32,
     output: NDBuffer[type, 4, *_],
     context: MojoCallContextPtr,
-):
+) raises:
     with Trace[TraceLevel.OP, target=target](
         "flash_attention_kv_cache_h8_d64_bshd"
     ):
@@ -1788,7 +1785,7 @@ fn flash_attention_kv_cache_h8_d128_bshd_continuous_batch[
     scale: Float32,
     output: NDBuffer[type, 4, *_],
     context: MojoCallContextPtr,
-):
+) raises:
     with Trace[TraceLevel.OP, target=target](
         "flash_attention_kv_cache_h8_d128_bshd_continuous_batch"
     ):
@@ -1814,7 +1811,7 @@ fn flash_attention_kv_cache_h1_d16_bshd_continuous_batch[
     scale: Float32,
     output: NDBuffer[type, 4, *_],
     context: MojoCallContextPtr,
-):
+) raises:
     with Trace[TraceLevel.OP, target=target](
         "flash_attention_kv_cache_h1_d16_bshd_continuous_batch"
     ):
@@ -1840,7 +1837,7 @@ fn flash_attention_kv_cache_h8_d64_bshd_continuous_batch[
     scale: Float32,
     output: NDBuffer[type, 4, *_],
     context: MojoCallContextPtr,
-):
+) raises:
     with Trace[TraceLevel.OP, target=target](
         "flash_attention_kv_cache_h8_d64_bshd_continuous_batch"
     ):
@@ -1863,7 +1860,7 @@ fn _flash_attention_kv_cache[
     scale: Float32,
     output: NDBuffer[type, 4, *_],
     context: MojoCallContextPtr,
-):
+) raises:
     """Performs flash attention using k and v caches from ContiguousKVCache custom types.
 
     Args:
@@ -1902,7 +1899,7 @@ fn _flash_attention_kv_cache_impl[
     scale: Float32,
     output: NDBuffer[type, 4, *_],
     context: Optional[DeviceContext],
-):
+) raises:
     """Performs flash attention using k and v caches from ContiguousKVCache custom types.
 
     Args:
@@ -2044,7 +2041,7 @@ fn _flash_attention_kv_cache_gpu[
     scale: Float32,
     output: NDBuffer[type, 4, *_],
     context: DeviceContext,
-):
+) raises:
     alias wrapped_mask_rank = mask.rank if mask.rank == 4 else 3
     var mask_nd: NDBuffer[
         type,
@@ -2076,24 +2073,21 @@ fn _flash_attention_kv_cache_gpu[
     # GPU flash attention kernel gets the cache length from the k tensor shape
     # TODO remove this an instead pass in explicit KVCache lengths to the GPU kernel.
     # KERN-725
-    try:
-        gpu_flash_attention[
-            add_attn_mask=True,
-            use_tensor_core=True,
-            target=target,
-        ](
-            output,
-            q,
-            k,
-            v,
-            mask_nd,
-            NullMask(),
-            valid_lengths,
-            scale,
-            context,
-        )
-    except e:
-        print("Error in GPU Flash Attention:", e)
+    gpu_flash_attention[
+        add_attn_mask=True,
+        use_tensor_core=True,
+        target=target,
+    ](
+        output,
+        q,
+        k,
+        v,
+        mask_nd,
+        NullMask(),
+        valid_lengths,
+        scale,
+        context,
+    )
 
 
 fn _contiguous_kv_cache_collection[
