@@ -1012,7 +1012,7 @@ fn _online_softmax_iter_for_mma_output[
     alias MMA_M = mma_shape[0]
     alias MMA_N = mma_shape[1]
     alias p_frag_simdwidth = 2
-    alias p_frag_size = p_reg_tile.shape[1]()
+    alias p_frag_size: UInt = p_reg_tile.shape[1]()
 
     # Sum of fragment elements in the same row.
     # MMA output has two sub-matrices. Each thread's fragments are on two rows.
@@ -1040,7 +1040,7 @@ fn _online_softmax_iter_for_mma_output[
         for n_mma in range(num_n_mmas):
 
             @parameter
-            for i in range(p_frag_size // 2):
+            for i in range(int(p_frag_size // 2)):
                 var curr = SIMD[type, 2](
                     rebind[Scalar[type]](
                         p_reg_tile[n_mma * num_m_mmas + m_mma, i]
@@ -1082,7 +1082,8 @@ fn _online_softmax_iter_for_mma_output[
         if lane % 4 == 0:
 
             @parameter
-            for m_mma in range(num_m_mmas):
+            for m_mma0 in range(num_m_mmas):
+                alias m_mma = UInt(m_mma0)
                 # Each thread handle two rows in the mma output.
                 var row0 = m_mma * MMA_M + lane // (MMA_N // p_frag_simdwidth)
                 var row1 = row0 + MMA_M // 2
@@ -1148,7 +1149,7 @@ fn _online_softmax_iter_for_mma_output[
         for n_mma in range(num_n_mmas):
 
             @parameter
-            for i in range(p_frag_size // 2):
+            for i in range(int(p_frag_size // 2)):
                 p_reg_tile[n_mma * num_m_mmas + m_mma, i] = exp(
                     p_reg_tile[n_mma * num_m_mmas + m_mma, i]
                     - p_frag_rowmax[2 * m_mma]
@@ -1169,7 +1170,7 @@ fn _online_softmax_iter_for_mma_output[
         for n_mma in range(num_n_mmas):
 
             @parameter
-            for i in range(p_frag_size // 2):
+            for i in range(int(p_frag_size // 2)):
                 p_frag_rowsum[2 * m_mma] += rebind[Scalar[type]](
                     p_reg_tile[n_mma * num_m_mmas + m_mma, i]
                 )
@@ -1193,7 +1194,8 @@ fn _online_softmax_iter_for_mma_output[
         if lane % 4 == 0:
 
             @parameter
-            for m_mma in range(num_m_mmas):
+            for m_mma0 in range(num_m_mmas):
+                alias m_mma = UInt(m_mma0)
                 # Each thread handle two rows in the mma output.
                 var row0 = m_mma * MMA_M + lane // (MMA_N // p_frag_simdwidth)
                 var row1 = row0 + MMA_M // 2
@@ -1210,7 +1212,8 @@ fn _online_softmax_iter_for_mma_output[
         if lane % 4 == 0:
 
             @parameter
-            for m_mma in range(num_m_mmas):
+            for m_mma0 in range(num_m_mmas):
+                alias m_mma = UInt(m_mma0)
                 var row0 = m_mma * MMA_M + lane // (MMA_N // p_frag_simdwidth)
                 var row1 = row0 + MMA_M // 2
                 p_frag_rowsum[2 * m_mma] = 0.0
@@ -1250,7 +1253,7 @@ fn _online_softmax_iter_for_mma_output[
         for n_mma in range(num_n_mmas):
 
             @parameter
-            for i in range(p_frag_size // 2):
+            for i in range(int(p_frag_size // 2)):
                 output_reg_tile[n_mma * num_m_mmas + m_mma, i] *= correction[
                     2 * m_mma
                 ]
