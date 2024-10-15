@@ -5,8 +5,8 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo-no-debug %s
 
-from algorithm.reduction import argmax
-from nn.argmax_gpu import argmax_gpu
+from algorithm.reduction import argmax, argmin
+from nn.argmaxmin_gpu import argmax_gpu, argmin_gpu
 from buffer import NDBuffer
 from buffer.dimlist import DimList
 from gpu.host.device_context import DeviceContext
@@ -16,12 +16,13 @@ from random import random_float64
 from internal_utils import HostNDBuffer, DeviceNDBuffer
 
 
-fn test_argmax_gpu[
+fn test_argmaxmin_gpu[
     type: DType,
     output_type: DType,
     fill_fn: fn[rank: Int, type: DType] (inout NDBuffer[type, rank]) capturing [
         _
     ] -> None,
+    largest: Bool = True,
     rank: Int = 2,
 ](
     ctx: DeviceContext, N: Int, batch_size: Int = 12, num_batches: Int = 6
@@ -54,14 +55,23 @@ fn test_argmax_gpu[
 
     ctx.enqueue_copy_to_device(device_in.buffer, in_buffer.tensor.data)
 
-    argmax_gpu(ctx, device_in.tensor, device_out_idxs.tensor)
+    @parameter
+    if largest:
+        argmax_gpu(ctx, device_in.tensor, device_out_idxs.tensor)
+    else:
+        argmin_gpu(ctx, device_in.tensor, device_out_idxs.tensor)
 
     ctx.enqueue_copy_from_device(out_idxs.tensor.data, device_out_idxs.buffer)
     ctx.synchronize()
 
     # Test for correctness against CPU reference
     var out_idxs_cpu = HostNDBuffer[DType.int64, rank](out_shape)
-    argmax(in_buffer.tensor, rank - 1, out_idxs_cpu.tensor)
+
+    @parameter
+    if largest:
+        argmax(in_buffer.tensor, rank - 1, out_idxs_cpu.tensor)
+    else:
+        argmin(in_buffer.tensor, rank - 1, out_idxs_cpu.tensor)
 
     for i in range(out_idxs_cpu.tensor.num_elements()):
         assert_equal(
@@ -71,6 +81,37 @@ fn test_argmax_gpu[
 
     _ = device_in
     _ = device_out_idxs
+
+
+fn _test_argmaxmin_gpu_helper_2[
+    idx_type: DType,
+    fill_fn: fn[rank: Int, type: DType] (inout NDBuffer[type, rank]) capturing [
+        _
+    ] -> None,
+    largest: Bool,
+](ctx: DeviceContext) raises:
+    test_argmaxmin_gpu[
+        DType.float32, idx_type, fill_fn, largest=largest, rank=1
+    ](ctx, N=102_400)
+    test_argmaxmin_gpu[
+        DType.float32, idx_type, fill_fn, largest=largest, rank=2
+    ](ctx, N=16_384, batch_size=32)
+    test_argmaxmin_gpu[
+        DType.float32, idx_type, fill_fn, largest=largest, rank=3
+    ](ctx, N=1024, batch_size=12, num_batches=10)
+
+
+fn test_argmaxmin_gpu_helper[
+    idx_type: DType,
+    fill_fn: fn[rank: Int, type: DType] (inout NDBuffer[type, rank]) capturing [
+        _
+    ] -> None,
+](ctx: DeviceContext) raises:
+    # argmax
+    _test_argmaxmin_gpu_helper_2[idx_type, fill_fn, largest=True](ctx)
+
+    # argmin
+    _test_argmaxmin_gpu_helper_2[idx_type, fill_fn, largest=False](ctx)
 
 
 def main():
@@ -87,45 +128,13 @@ def main():
 
     with DeviceContext() as ctx:  # argmax tests
         # index
-        test_argmax_gpu[DType.float32, DType.index, fill_random, rank=1](
-            ctx, N=102_400
-        )
-        test_argmax_gpu[DType.float32, DType.index, fill_random, rank=2](
-            ctx, N=16_384, batch_size=32
-        )
-        test_argmax_gpu[DType.float32, DType.index, fill_random, rank=3](
-            ctx, N=1024, batch_size=12, num_batches=10
-        )
+        test_argmaxmin_gpu_helper[DType.index, fill_random](ctx)
 
         # int64
-        test_argmax_gpu[DType.float32, DType.int64, fill_random, rank=1](
-            ctx, N=102_400
-        )
-        test_argmax_gpu[DType.float32, DType.int64, fill_random, rank=2](
-            ctx, N=16_384, batch_size=32
-        )
-        test_argmax_gpu[DType.float32, DType.int64, fill_random, rank=3](
-            ctx, N=1024, batch_size=12, num_batches=10
-        )
+        test_argmaxmin_gpu_helper[DType.int64, fill_random](ctx)
 
         # int32
-        test_argmax_gpu[DType.float32, DType.int32, fill_random, rank=1](
-            ctx, N=102_400
-        )
-        test_argmax_gpu[DType.float32, DType.int32, fill_random, rank=2](
-            ctx, N=16_384, batch_size=32
-        )
-        test_argmax_gpu[DType.float32, DType.int32, fill_random, rank=3](
-            ctx, N=1024, batch_size=12, num_batches=10
-        )
+        test_argmaxmin_gpu_helper[DType.int32, fill_random](ctx)
 
         # uint64
-        test_argmax_gpu[DType.float32, DType.uint64, fill_random, rank=1](
-            ctx, N=102_400
-        )
-        test_argmax_gpu[DType.float32, DType.uint64, fill_random, rank=2](
-            ctx, N=16_384, batch_size=32
-        )
-        test_argmax_gpu[DType.float32, DType.uint64, fill_random, rank=3](
-            ctx, N=1024, batch_size=12, num_batches=10
-        )
+        test_argmaxmin_gpu_helper[DType.uint64, fill_random](ctx)
