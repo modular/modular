@@ -50,14 +50,47 @@ fn kl_div[
 ):
     @parameter
     fn kl_div_elementwise[simd_width: Int, rank: Int](idx: IndexList[rank]):
-        out[idx[0]] = rebind[Scalar[type]](
+        out.store(
+            idx[0],
             kl_div(
-                (x + idx[0]).load[width=simd_width](),
-                (y + idx[0]).load[width=simd_width](),
-            )
+                x.load[width=simd_width](idx[0]),
+                y.load[width=simd_width](idx[0]),
+            ),
         )
 
     elementwise[kl_div_elementwise, simdwidthof[type]()](len)
+
+
+fn kl_div[
+    type: DType, //, out_type: DType = DType.float64
+](
+    x: UnsafePointer[Scalar[type]],
+    y: __type_of(x),
+    len: Int,
+) -> Scalar[
+    out_type
+]:
+    alias simd_width = simdwidthof[type]()
+    var accum_simd = SIMD[out_type, simd_width](0)
+    var accum_scalar = Scalar[out_type](0)
+
+    @parameter
+    fn kl_div_elementwise[simd_width: Int](idx: Int):
+        var xi = x.load[width=simd_width](idx).cast[out_type]()
+        var yi = y.load[width=simd_width](idx).cast[out_type]()
+        var kl = kl_div(xi, yi)
+
+        # TODO: should use VDPBF16PS when applicable
+        # (i.e., host has avx512_bf16, type = bf16, out_type = float32)
+        @parameter
+        if simd_width == 1:
+            accum_scalar += kl[0]
+        else:
+            accum_simd += rebind[__type_of(accum_simd)](kl)
+
+    vectorize[kl_div_elementwise, simd_width](len)
+
+    return accum_simd.reduce_add() + accum_scalar
 
 
 # ===----------------------------------------------------------------------=== #
