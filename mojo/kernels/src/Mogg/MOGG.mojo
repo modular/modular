@@ -4293,23 +4293,6 @@ fn mogg_matrix_solve[
     )
 
 
-# NOTE we don't inline this because `SymbolicizeFallbackShapeFunctions` pass
-# needs to pattern match for this call to figure out where mojo raises happen
-# inside the shape functions.
-@mogg_register("set_ctx_error_and_destruct_error")
-@no_inline
-@export
-fn set_ctx_error_and_destruct_error(
-    ctx: MojoCallContextPtr, owned error: Error
-):
-    # The function is only used by shape symbolization (which never actually
-    # execute the code but only interpret it). Besides,
-    # `SymbolicizeFallbackShapeFunctions` was deprecated.
-    # TODO: delete the code when `SymbolicizeFallbackShapeFunctions` is removed.
-    debug_assert(False, "calling dead code")
-    # mojo lowering will insert destructor call for `error`
-
-
 @mogg_register("pytorch_operator_custom_test")
 @export
 fn pytorch_test_custom[
