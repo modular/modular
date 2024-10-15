@@ -12,6 +12,7 @@ from buffer import Buffer, NDBuffer
 from buffer.buffer import DynamicRankBuffer
 from buffer.dimlist import Dim, DimList
 from memory import memcpy
+from utils import StaticTuple
 
 from utils.index import product
 
@@ -49,6 +50,13 @@ struct _NDBufferVector[type: DType, rank: Int](Sized):
         self.storage = Self.StorageType(len(input_list))
         for i in range(len(input_list)):
             self.storage.append(input_list[i])
+
+    fn __init__(inout self, inputs: StaticTuple[NDBuffer[type, rank]]):
+        self.storage = Self.StorageType(inputs.size)
+
+        @parameter
+        for i in range(inputs.size):
+            self.storage.append(inputs[i])
 
     @always_inline
     fn __getitem__(self, idx: Int) -> NDBuffer[type, rank]:
