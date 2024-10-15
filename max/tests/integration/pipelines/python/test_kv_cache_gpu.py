@@ -35,5 +35,6 @@ async def _test_kv_cache_gpu():
     )
     seq_id = await kv_manager.claim(n=1)
     seq_id = seq_id[0]
-    kv_collection = kv_manager.fetch([seq_id])
-    assert kv_collection is not None
+    kv_tuple = kv_manager.fetch([seq_id])
+    assert isinstance(kv_tuple, tuple)
+    assert len(kv_tuple) == 4

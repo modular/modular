@@ -14,10 +14,17 @@ from nn.kv_cache import (
     KVCacheParams,
     KVCacheStrategy,
     ContiguousKVCacheCollectionType,
+    ContinuousBatchingKVCacheCollectionType,
     load_kv_manager,
+    FetchContiguousKVCacheCollection,
+    FetchContinuousBatchingKVCacheCollection,
 )
 
 
+@pytest.mark.skip(
+    "we don't use kv_cache_length anywhere aside from this test, will clean up"
+    " as a part of MSDK-1176"
+)
 @pytest.mark.asyncio
 async def test_kv_cache_length() -> None:
     """Tests that KV cache collections return the expected cache length."""
