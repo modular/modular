@@ -6,7 +6,7 @@
 
 from sys.param_env import env_get_string, is_defined
 
-from gpu.host import DeviceContextVariant
+from gpu.host import DeviceContext
 
 
 fn expect_eq[
@@ -16,21 +16,17 @@ fn expect_eq[
         raise Error("expect_eq failed: " + msg)
 
 
-fn create_test_device_context() raises -> DeviceContextVariant:
-    # Create an instance of the DeviceContextVariant
-    var test_ctx: DeviceContextVariant
+fn create_test_device_context() raises -> DeviceContext:
+    # Create an instance of the DeviceContext
+    var test_ctx: DeviceContext
 
     @parameter
     if is_defined["MODULAR_ASYNCRT_DEVICE_CONTEXT_V2"]():
         var kind = env_get_string["MODULAR_ASYNCRT_DEVICE_CONTEXT_V2"]()
-        print("Using DeviceContextVariant: V2 - " + kind)
-        test_ctx = DeviceContextVariant(kind)
-    elif is_defined["MODULAR_ASYNCRT_DEVICE_CONTEXT_V1"]():
-        var kind = env_get_string["MODULAR_ASYNCRT_DEVICE_CONTEXT_V1"]()
-        print("Using DeviceContextVariant: V1 - " + kind)
-        test_ctx = DeviceContextVariant(kind)
+        print("Using DeviceContext: V2 - " + kind)
+        test_ctx = DeviceContext(kind)
     else:
-        print("Using DeviceContextVariant: default")
-        test_ctx = DeviceContextVariant()
+        print("Using DeviceContext: default")
+        test_ctx = DeviceContext()
 
     return test_ctx

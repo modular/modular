@@ -4,12 +4,19 @@
 #
 # ===----------------------------------------------------------------------=== #
 
+# RUN: %mojo-no-debug -D MODULAR_ASYNCRT_DEVICE_CONTEXT_V1 %s
+# COM: Note: CPU function compilation not supported
+# COM: %mojo-no-debug -D MODULAR_ASYNCRT_DEVICE_CONTEXT_V2=cpu %s
+# RUN: %mojo-no-debug -D MODULAR_ASYNCRT_DEVICE_CONTEXT_V2=cuda %s
+
 from gpu import *
-from gpu.host import DeviceContextVariant
-from smoke_test_utils import expect_eq
+from gpu.host import DeviceContext
+from test_utils import create_test_device_context, expect_eq
 
 
-fn vec_func(
+fn vec_func[
+    op: fn (Float32, Float32) capturing [_] -> Float32
+](
     in0: UnsafePointer[Float32],
     in1: UnsafePointer[Float32],
     out: UnsafePointer[Float32],
@@ -18,12 +25,13 @@ fn vec_func(
     var tid = ThreadIdx.x() + BlockDim.x() * BlockIdx.x()
     if tid >= len:
         return
-    out[tid] = in0[tid] + in1[tid]  # breakpoint1
+    out[tid] = op(in0[tid], in1[tid])
 
 
-fn test_function(ctx: DeviceContextVariant) raises:
-    print("-------")
-    print("Running test_function(" + ctx.name() + "):")
+@no_inline
+fn run_captured_func(ctx: DeviceContext, captured: Float32) raises:
+    print("-")
+    print("run_captured_func(" + str(captured) + "):")
 
     alias length = 1024
 
@@ -46,7 +54,11 @@ fn test_function(ctx: DeviceContextVariant) raises:
     # Write known bad values to out_dev.
     ctx.enqueue_copy_to_device(out_dev, out_host)
 
-    var func = ctx.compile_function[vec_func]()
+    @parameter
+    fn add_with_captured(left: Float32, right: Float32) -> Float32:
+        return left + right + captured
+
+    var func = ctx.compile_function[vec_func[add_with_captured]]()
 
     var block_dim = 32
 
@@ -70,12 +82,21 @@ fn test_function(ctx: DeviceContextVariant) raises:
             print("at index", i, "the value is", out_host[i])
         expect_eq(
             out_host[i],
-            i + 2,
+            i + 2 + captured,
             "at index " + str(i) + " the value is " + str(out_host[i]),
         )
 
     ctx.free_host(out_host)
     ctx.free_host(in1_host)
     ctx.free_host(in0_host)
+
+
+fn main() raises:
+    var ctx = create_test_device_context()
+    print("-------")
+    print("Running test_capture(" + ctx.name() + "):")
+
+    run_captured_func(ctx, 2.5)
+    run_captured_func(ctx, -1.5)
 
     print("Done.")

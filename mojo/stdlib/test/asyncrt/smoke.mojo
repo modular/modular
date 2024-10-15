@@ -4,13 +4,18 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from gpu.host import DeviceBufferVariant, DeviceContextVariant
-from smoke_test_utils import expect_eq
+# RUN: %mojo-no-debug -D MODULAR_ASYNCRT_DEVICE_CONTEXT_V1 %s
+# RUN: %mojo-no-debug -D MODULAR_ASYNCRT_DEVICE_CONTEXT_V2=cpu %s
+# RUN: %mojo-no-debug -D MODULAR_ASYNCRT_DEVICE_CONTEXT_V2=cuda %s
+
+from test_utils import create_test_device_context, expect_eq
+
+from gpu.host import DeviceBuffer, DeviceContext
 
 
 fn _ownership_helper(
-    owned ctx: DeviceContextVariant,
-) raises -> DeviceContextVariant:
+    owned ctx: DeviceContext,
+) raises -> DeviceContext:
     var ctx_copy = ctx
     print("local ctx_copy: " + ctx_copy.name())
     return ctx_copy
@@ -18,13 +23,13 @@ fn _ownership_helper(
 
 fn _ownership_helper_buf[
     type: DType
-](owned buf: DeviceBufferVariant[type]) raises -> DeviceBufferVariant[type]:
+](owned buf: DeviceBuffer[type]) raises -> DeviceBuffer[type]:
     var buf_copy = buf
     print("local buf_copy: " + str(len(buf)))
     return buf_copy
 
 
-fn _run_ownership_transfer(ctx: DeviceContextVariant) raises:
+fn _run_ownership_transfer(ctx: DeviceContext) raises:
     print("-")
     print("_run_ownership_transfer()")
 
@@ -40,7 +45,7 @@ fn _run_ownership_transfer(ctx: DeviceContextVariant) raises:
     _ = buf
 
 
-fn _run_device_info(ctx: DeviceContextVariant) raises:
+fn _run_device_info(ctx: DeviceContext) raises:
     print("-")
     print("_run_device_info()")
 
@@ -64,7 +69,8 @@ fn _run_device_info(ctx: DeviceContextVariant) raises:
     _ = buf
 
 
-fn test_smoke(ctx: DeviceContextVariant) raises:
+fn main() raises:
+    var ctx = create_test_device_context()
     print("-------")
     print("Running test_smoke(" + ctx.name() + "):")
 

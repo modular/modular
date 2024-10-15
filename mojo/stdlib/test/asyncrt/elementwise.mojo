@@ -4,6 +4,12 @@
 #
 # ===----------------------------------------------------------------------=== #
 
+# RUN: %mojo-no-debug -D MODULAR_ASYNCRT_DEVICE_CONTEXT_V1 %s
+# COM: Note: CPU function compilation not supported
+# COM: %mojo-no-debug -D MODULAR_ASYNCRT_DEVICE_CONTEXT_V2=cpu %s
+# RUN: %mojo-no-debug -D MODULAR_ASYNCRT_DEVICE_CONTEXT_V2=cuda %s
+
+
 from sys import simdwidthof
 
 from algorithm.functional import elementwise
@@ -11,7 +17,7 @@ from buffer import NDBuffer
 from gpu import *
 from gpu.host import DeviceContext
 from gpu.host._compile import _get_nvptx_target
-from smoke_test_utils import expect_eq
+from test_utils import create_test_device_context, expect_eq
 
 from utils import IndexList
 from utils.index import Index
@@ -81,7 +87,8 @@ fn run_elementwise[type: DType](ctx: DeviceContext) raises:
     print()
 
 
-fn test_elementwise(ctx: DeviceContext) raises:
+fn main() raises:
+    var ctx = create_test_device_context()
     print("-------")
     # TODO(iposva): Reenable printing of name.
     # print("Running test_elementwise(" + ctx.name() + "):")

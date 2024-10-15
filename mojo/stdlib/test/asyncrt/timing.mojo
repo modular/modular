@@ -4,12 +4,16 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from gpu.host import DeviceContextVariant
-from smoke_test_utils import expect_eq
+# RUN: %mojo-no-debug -D MODULAR_ASYNCRT_DEVICE_CONTEXT_V1 %s
+# RUN: %mojo-no-debug -D MODULAR_ASYNCRT_DEVICE_CONTEXT_V2=cpu %s
+# RUN: %mojo-no-debug -D MODULAR_ASYNCRT_DEVICE_CONTEXT_V2=cuda %s
+
+from test_utils import create_test_device_context, expect_eq
+from gpu.host import DeviceContext
 
 
 @parameter
-fn _timed_iter_func(context: DeviceContextVariant, iter: Int) raises:
+fn _timed_iter_func(context: DeviceContext, iter: Int) raises:
     alias length = 64
 
     var in_host = context.malloc_host[Float32](length)
@@ -42,12 +46,12 @@ fn _timed_iter_func(context: DeviceContextVariant, iter: Int) raises:
 
 
 @parameter
-fn _timed_func(context: DeviceContextVariant) raises:
+fn _timed_func(context: DeviceContext) raises:
     _timed_iter_func(context, 2)
 
 
-fn test_timing(ctx: DeviceContextVariant) raises:
-    print("-------")
+fn main() raises:
+    var ctx = create_test_device_context()
     print("Running test_timing(" + ctx.name() + "):")
 
     # Measure the time to run the function 100 times.

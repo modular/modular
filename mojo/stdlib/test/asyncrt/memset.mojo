@@ -4,13 +4,17 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from gpu.host import DeviceContextVariant, DeviceBufferVariant
-from smoke_test_utils import expect_eq
+# RUN: %mojo-no-debug -D MODULAR_ASYNCRT_DEVICE_CONTEXT_V1 %s
+# RUN: %mojo-no-debug -D MODULAR_ASYNCRT_DEVICE_CONTEXT_V2=cpu %s
+# RUN: %mojo-no-debug -D MODULAR_ASYNCRT_DEVICE_CONTEXT_V2=cuda %s
+
+from test_utils import create_test_device_context, expect_eq
+from gpu.host import DeviceContext, DeviceBuffer
 
 
 fn _run_memset[
     type: DType
-](ctx: DeviceContextVariant, length: Int, val: Scalar[type]) raises:
+](ctx: DeviceContext, length: Int, val: Scalar[type]) raises:
     print("-")
     print("_run_memset(" + str(length) + ", " + str(val) + ")")
 
@@ -43,7 +47,7 @@ fn _run_memset[
 
 fn _run_memset_async[
     type: DType
-](ctx: DeviceContextVariant, length: Int, val: Scalar[type]) raises:
+](ctx: DeviceContext, length: Int, val: Scalar[type]) raises:
     print("-")
     print("_run_memset_async(" + str(length) + ", " + str(val) + ")")
 
@@ -77,7 +81,9 @@ fn _run_memset_async[
     ctx.free_host(in_host)
 
 
-fn test_memset(ctx: DeviceContextVariant) raises:
+fn main() raises:
+    var ctx = create_test_device_context()
+
     print("-------")
     print("Running test_memset(" + ctx.name() + "):")
 
