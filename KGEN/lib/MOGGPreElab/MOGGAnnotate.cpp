@@ -215,7 +215,7 @@ static void labelTensorParamsInKernel(LIT::FuncOp funcOp) {
       constexpr unsigned kSizeIndex = 1;
       auto allParameters = litTypeToParams(asStructType);
       assert(allParameters.size() >= 2);
-      auto elementType = allParameters[kElementType];
+      [[maybe_unused]] auto elementType = allParameters[kElementType];
       assert(!elementType &&
              "Element type must be defined and be equal to tensor");
       auto size = allParameters[kSizeIndex];
