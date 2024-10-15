@@ -730,7 +730,7 @@ fn _pack_b_ndbuffer_impl[
     b_input: NDBuffer[b_type, 2, b_shape],
     output_buffer: NDBuffer[b_type, 2],
     kernel_type_m: Int,
-):
+) raises:
     """Performs the layout transformation on `b_input` expected by
     `matmul_dynamic_tile` when `b_packed` is True and stores the result in
     `output_buffer`.
@@ -760,10 +760,8 @@ fn _pack_b_ndbuffer_impl[
                 perm[0] = 1
                 perm[1] = 0
 
-                try:
-                    transpose(output_buffer, b_input, perm.data)
-                except e:
-                    abort(e)
+                transpose(output_buffer, b_input, perm.data)
+
             else:
                 memcpy(output_buffer.data, b_input.data, n * k)
             return
@@ -805,7 +803,10 @@ fn pack_b_ndbuffer[
     b_shape: DimList,
     c_type: DType,
     c_shape: DimList,
-](b_input: NDBuffer[b_type, 2, b_shape], output_buffer: NDBuffer[b_type, 2],):
+](
+    b_input: NDBuffer[b_type, 2, b_shape],
+    output_buffer: NDBuffer[b_type, 2],
+) raises:
     # NOTE `get_kernel_type` expects `m == 0` for dynamic M.
     var kernel_type_m = 0
 
@@ -831,7 +832,10 @@ fn pack_transposed_b_ndbuffer[
     b_shape: DimList,
     c_type: DType,
     c_shape: DimList,
-](b_input: NDBuffer[b_type, 2, b_shape], output_buffer: NDBuffer[b_type, 2],):
+](
+    b_input: NDBuffer[b_type, 2, b_shape],
+    output_buffer: NDBuffer[b_type, 2],
+) raises:
     # NOTE `get_kernel_type` expects `m == 0` for dynamic M.
     var kernel_type_m = 0
 

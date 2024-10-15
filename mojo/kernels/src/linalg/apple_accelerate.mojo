@@ -227,7 +227,7 @@ fn apple_gemv[
     b_packed: Bool,
     transpose_b: Bool = False,
     elementwise_lambda_fn: OptionalReg[matmul_elementwise_epilogue_type] = None,
-](c: NDBuffer[_, 2, _], a: NDBuffer[_, 2, _], b: NDBuffer[_, 2, _]):
+](c: NDBuffer[_, 2, _], a: NDBuffer[_, 2, _], b: NDBuffer[_, 2, _]) raises:
     # Recall:
     # if b_packed=True, this will be called AFTER pack shape and actual packing
     # function (in MatmulPack.mojo), which will TRANSPOSE the input.
