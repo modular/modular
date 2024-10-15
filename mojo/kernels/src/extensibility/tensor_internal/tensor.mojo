@@ -15,7 +15,6 @@ from sys import simdwidthof, sizeof
 from algorithm.functional import elementwise, vectorize
 from buffer import Buffer, NDBuffer
 from buffer.dimlist import Dim
-from nn.argmaxmin import argmax, argmin
 from memory import UnsafePointer, bitcast, memcmp, memcpy, memset_zero
 
 from utils import IndexList
@@ -1154,101 +1153,6 @@ struct Tensor[type: DType](
     @always_inline
     fn _to_buffer(self) -> Buffer[type]:
         return Buffer[type](self._ptr, self.num_elements())
-
-    fn _truncate_axis_dim(
-        self, axis: Int, keep_dims: Bool = True
-    ) -> List[Int, hint_trivial_type=True]:
-        var output_shape = List[Int, hint_trivial_type=True](
-            capacity=self.rank()
-        )
-        for i in range(self.rank()):
-            if i == axis or i == axis + self.rank():
-                if keep_dims:
-                    output_shape.append(1)
-                else:
-                    pass
-            else:
-                output_shape.append(self.dim(i))
-        return output_shape^
-
-    fn argmax(self, *, axis: Int = -1) raises -> Tensor[DType.index]:
-        """
-        Finds the indices of the maximum element along the specified axis.
-
-        Args:
-            axis: The axis.
-
-        Returns:
-            A new tensor containing the indices of the maximum elements along axis.
-
-        Raises:
-            Error if this Tensor's rank is larger than the maximum supported
-            rank for argmax.
-        """
-
-        alias ARGMAX_MAX_TENSOR_RANK = 8
-
-        if self.rank() > ARGMAX_MAX_TENSOR_RANK:
-            raise "unsupported tensor rank. The tensor rank must be at most " + str(
-                ARGMAX_MAX_TENSOR_RANK
-            )
-
-        var output_shape = self._truncate_axis_dim(axis)
-        var output = Tensor[DType.index](output_shape)
-
-        @parameter
-        for rank in range(1, ARGMAX_MAX_TENSOR_RANK):
-            if rank == self.rank():
-                argmax(
-                    self._to_ndbuffer[rank](),
-                    axis,
-                    output._to_ndbuffer[rank](),
-                )
-
-                output.ireshape(
-                    TensorShape(self._truncate_axis_dim(axis, keep_dims=False))
-                )
-
-                return output
-
-        return output
-
-    fn argmin(self, *, axis: Int = -1) raises -> Tensor[DType.index]:
-        """
-        Finds the indices of the minimum element along the specified axis.
-
-        Args:
-            axis: The axis.
-
-        Returns:
-            A new tensor containing the indices of the minimum elements along axis.
-        """
-        alias ARGMIN_MAX_TENSOR_RANK = 8
-
-        if self.rank() > ARGMIN_MAX_TENSOR_RANK:
-            raise "unsupported tensor rank. The tensor rank must be at most " + str(
-                ARGMIN_MAX_TENSOR_RANK
-            )
-
-        var output_shape = self._truncate_axis_dim(axis)
-        var output = Tensor[DType.index](output_shape)
-
-        @parameter
-        for rank in range(1, ARGMIN_MAX_TENSOR_RANK):
-            if rank == self.rank():
-                argmin(
-                    self._to_ndbuffer[rank](),
-                    axis,
-                    output._to_ndbuffer[rank](),
-                )
-
-                output.ireshape(
-                    TensorShape(self._truncate_axis_dim(axis, keep_dims=False))
-                )
-
-                return output
-
-        return output
 
     @always_inline
     fn tofile(self, path: Path) raises:
