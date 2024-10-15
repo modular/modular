@@ -10,7 +10,7 @@ from abc import ABC, abstractmethod
 from datetime import datetime
 from typing import Annotated, AsyncGenerator, List, Literal, Optional, cast
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import JSONResponse, Response
 from max.serve.pipelines.deps import token_pipeline
 from max.serve.pipelines.llm import (
@@ -215,7 +215,13 @@ async def openai_create_chat_completion(
     if completion_request.stream:
         return EventSourceResponse(response_generator.stream())
 
-    response = await response_generator.complete()
+    try:
+        response = await response_generator.complete()
+    except ValueError as e:
+        raise HTTPException(
+            status_code=400, detail="Failed to complete response."
+        )
+
     return JSONResponse(response.model_dump_json())
 
 
