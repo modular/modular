@@ -1005,6 +1005,49 @@ fn broadcast_to_tensor[
     return out
 
 
+@mogg_register("reshape_contiguous_buffer")
+@always_inline
+fn reshape_contiguous_buffer[
+    type: DType, old_rank: Int, new_rank: Int
+](buffer: NDBuffer[type, old_rank], shape: IndexList[new_rank]) -> NDBuffer[
+    type, new_rank
+]:
+    # Reshape a contigious buffer, as we know the strides don't have to change.
+    var stride_tuple = IndexList[new_rank]()
+    var stride: Int = 1
+
+    @parameter
+    for i in reversed(range(new_rank)):
+        # Start from the back so we can accumulate the strides.
+        stride_tuple[i] = stride
+        stride *= shape[i]
+
+    return NDBuffer[type, new_rank](buffer.data, shape, stride_tuple)
+
+
+@mogg_register("insert_index")
+@mogg_view_op
+@always_inline
+fn insert_index[
+    rank: Int, axis: Int, value: Int
+](indices: IndexList[rank]) -> IndexList[rank + 1]:
+    var out = IndexList[rank + 1]()
+
+    @always_inline
+    @parameter
+    fn add_dim[i: Int]():
+        @parameter
+        if i < axis:
+            out[i] = indices[i]
+        elif i > axis:
+            out[i] = indices[i - 1]
+        else:
+            out[i] = value
+
+    unroll[add_dim, rank + 1]()
+    return out
+
+
 @mogg_register("broadcast_to_shape")
 @always_inline
 fn broadcast_to_shape[

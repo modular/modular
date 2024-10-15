@@ -464,6 +464,12 @@ fn print_index(i: Int):
     print("index = ", i)
 
 
+@mogg_register("print_indices")
+@export
+fn print_indices[rank: Int](i: IndexList[rank]):
+    print(i)
+
+
 @mogg_register("test_type_parameter_deduction")
 @export
 fn test_type_parameter_deduction[
@@ -479,6 +485,14 @@ fn print_tensor_test[type: DType, rank: Int](buffer: NDBuffer[type, rank]):
     print("Shape:", buffer.get_shape())
     for i in range(buffer.num_elements()):
         print(buffer.data.load(i))
+
+
+@mogg_register("print_tensor_shape")
+@export
+fn print_tensor_shape[type: DType, rank: Int](buffer: NDBuffer[type, rank]):
+    print("Rank:", rank)
+    print("Shape:", buffer.get_shape())
+    print("Stride:", buffer.get_strides())
 
 
 struct MyCustomInt(Movable):
