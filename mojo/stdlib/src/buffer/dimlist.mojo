@@ -51,6 +51,18 @@ struct Dim(Intable, Stringable, Formattable, ImplicitlyBoolable):
         self._value_or_missing = int(value)
 
     @always_inline("nodebug")
+    fn __init__[type: IntLike](inout self, value: type):
+        """Creates a statically-known dimension.
+
+        Parameters:
+            type: The Intable type.
+
+        Args:
+            value: The static dimension value.
+        """
+        self = Dim(value.__mlir_index__())
+
+    @always_inline("nodebug")
     fn __init__(inout self, value: __mlir_type.index):
         """Creates a statically-known dimension.
 
