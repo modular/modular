@@ -24,13 +24,11 @@ async def _test_kv_cache_gpu():
         device=device,
         cache_strategy=KVCacheStrategy.CONTINUOUS,
     )
-    session = InferenceSession(device=device)
     kv_manager = load_kv_manager(
         params=kv_params,
         max_cache_batch_size=1,
         max_seq_len=512,
         num_layers=32,
-        session=session,
         device=device,
     )
     seq_id = await kv_manager.claim(n=1)
