@@ -13,9 +13,9 @@ from random import rand, randn
 from sys import simdwidthof, sizeof
 
 from algorithm.functional import elementwise, vectorize
-from algorithm.reduction import argmax, argmin
 from buffer import Buffer, NDBuffer
 from buffer.dimlist import Dim
+from nn.argmaxmin import argmax, argmin
 from memory import UnsafePointer, bitcast, memcmp, memcpy, memset_zero
 
 from utils import IndexList
