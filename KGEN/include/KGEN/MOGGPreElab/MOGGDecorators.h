@@ -143,8 +143,8 @@ static constexpr StringLiteral kMOGGPyTorchFallbackFunctionLabel =
 //
 // If the associated argument is not a supported tensor type, it will be the
 // unit attribute.
-static constexpr StringLiteral kKernelTensorParameterAttrName =
-    "mogg.tensor_params";
+static constexpr StringLiteral kKernelValueParameterAttrName =
+    "mogg.value_params";
 
 // An array of StringAttr corresponding to each input argument type.
 //
