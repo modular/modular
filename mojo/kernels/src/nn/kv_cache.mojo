@@ -2097,7 +2097,6 @@ fn _contiguous_kv_cache_collection[
     value_cache: NDBuffer[type, 5],
     cache_lengths: NDBuffer[DType.uint32, 1],
     is_cache_empty: NDBuffer[DType.bool, 1],
-    seq_ids: NDBuffer[DType.int32, 1],
     # Note that num_layers and batch_size are scalars.
     num_layers: NDBuffer[DType.int32, 1],
     batch_size: NDBuffer[DType.int32, 1],
@@ -2106,8 +2105,11 @@ fn _contiguous_kv_cache_collection[
     # ContiguousKVCacheCollection constructor.
 
     seq_ids_list = List[Int]()
-    for id in range(seq_ids.size()):
-        seq_ids_list.append(id)
+    for _ in range(int(batch_size[0])):
+        # seq_ids are only used in Mojo for this type,
+        # but this op is only used by Python.
+        # Just fill it with dummy values.
+        seq_ids_list.append(-1)
 
     return __type_of(result)(
         key_cache,
@@ -2127,14 +2129,16 @@ fn _continuous_batch_kv_cache_collection[
     cache_lengths: NDBuffer[DType.uint32, 1],
     lookup_table: NDBuffer[DType.uint32, 1],
     is_cache_empty: NDBuffer[DType.bool, 1],
-    seq_ids: NDBuffer[DType.int32, 1],
 ) -> ContinuousBatchingKVCacheCollection[type, kv_params] as result:
     # Marshal NDBuffers into arguments expected by the
     # ContiguousKVCacheCollection constructor.
-
+    batch_size = lookup_table.dim[0]()
     seq_ids_list = List[Int]()
-    for id in range(seq_ids.size()):
-        seq_ids_list.append(id)
+    for _ in range(batch_size):
+        # seq_ids are only used in Mojo for this type,
+        # but this op is only used by Python.
+        # Just fill it with dummy values.
+        seq_ids_list.append(-1)
 
     return __type_of(result)(
         blocks,
@@ -2161,7 +2165,6 @@ fn contiguous_kv_cache_collection_h6_d48_bshd[
     value_cache: NDBuffer[type, 5],
     cache_lengths: NDBuffer[DType.uint32, 1],
     is_cache_empty: NDBuffer[DType.bool, 1],
-    seq_ids: NDBuffer[DType.int32, 1],
     num_layers: NDBuffer[DType.int32, 1],
     batch_size: NDBuffer[DType.int32, 1],
 ) -> ContiguousKVCacheCollection[
@@ -2173,7 +2176,6 @@ fn contiguous_kv_cache_collection_h6_d48_bshd[
         value_cache,
         cache_lengths,
         is_cache_empty,
-        seq_ids,
         num_layers,
         batch_size,
     )
@@ -2188,7 +2190,6 @@ fn contiguous_kv_cache_collection_h8_d128_bshd[
     value_cache: NDBuffer[type, 5],
     cache_lengths: NDBuffer[DType.uint32, 1],
     is_cache_empty: NDBuffer[DType.bool, 1],
-    seq_ids: NDBuffer[DType.int32, 1],
     num_layers: NDBuffer[DType.int32, 1],
     batch_size: NDBuffer[DType.int32, 1],
 ) -> ContiguousKVCacheCollection[
@@ -2200,7 +2201,6 @@ fn contiguous_kv_cache_collection_h8_d128_bshd[
         value_cache,
         cache_lengths,
         is_cache_empty,
-        seq_ids,
         num_layers,
         batch_size,
     )
@@ -2215,7 +2215,6 @@ fn contiguous_kv_cache_collection_h1_d16_bshd[
     value_cache: NDBuffer[type, 5],
     cache_lengths: NDBuffer[DType.uint32, 1],
     is_cache_empty: NDBuffer[DType.bool, 1],
-    seq_ids: NDBuffer[DType.int32, 1],
     num_layers: NDBuffer[DType.int32, 1],
     batch_size: NDBuffer[DType.int32, 1],
 ) -> ContiguousKVCacheCollection[
@@ -2227,7 +2226,6 @@ fn contiguous_kv_cache_collection_h1_d16_bshd[
         value_cache,
         cache_lengths,
         is_cache_empty,
-        seq_ids,
         num_layers,
         batch_size,
     )
@@ -2242,7 +2240,6 @@ fn contiguous_kv_cache_collection_h8_d64_bshd[
     value_cache: NDBuffer[type, 5],
     cache_lengths: NDBuffer[DType.uint32, 1],
     is_cache_empty: NDBuffer[DType.bool, 1],
-    seq_ids: NDBuffer[DType.int32, 1],
     num_layers: NDBuffer[DType.int32, 1],
     batch_size: NDBuffer[DType.int32, 1],
 ) -> ContiguousKVCacheCollection[
@@ -2254,7 +2251,6 @@ fn contiguous_kv_cache_collection_h8_d64_bshd[
         value_cache,
         cache_lengths,
         is_cache_empty,
-        seq_ids,
         num_layers,
         batch_size,
     )
@@ -2269,7 +2265,6 @@ fn continuous_batching_kv_cache_collection_h8_d128_bshd[
     cache_lengths: NDBuffer[DType.uint32, 1],
     lookup_table: NDBuffer[DType.uint32, 1],
     is_cache_empty: NDBuffer[DType.bool, 1],
-    seq_ids: NDBuffer[DType.int32, 1],
 ) -> ContinuousBatchingKVCacheCollection[
     type,
     kv_params_h8_d128_bshd,
@@ -2279,7 +2274,6 @@ fn continuous_batching_kv_cache_collection_h8_d128_bshd[
         cache_lengths,
         lookup_table,
         is_cache_empty,
-        seq_ids,
     )
 
 
@@ -2292,7 +2286,6 @@ fn continuous_batching_kv_cache_collection_h8_d64_bshd[
     cache_lengths: NDBuffer[DType.uint32, 1],
     lookup_table: NDBuffer[DType.uint32, 1],
     is_cache_empty: NDBuffer[DType.bool, 1],
-    seq_ids: NDBuffer[DType.int32, 1],
 ) -> ContinuousBatchingKVCacheCollection[
     type,
     kv_params_h8_d64_bshd,
@@ -2302,7 +2295,6 @@ fn continuous_batching_kv_cache_collection_h8_d64_bshd[
         cache_lengths,
         lookup_table,
         is_cache_empty,
-        seq_ids,
     )
 
 
@@ -2315,7 +2307,6 @@ fn continuous_batching_kv_cache_collection_h1_d16_bshd[
     cache_lengths: NDBuffer[DType.uint32, 1],
     lookup_table: NDBuffer[DType.uint32, 1],
     is_cache_empty: NDBuffer[DType.bool, 1],
-    seq_ids: NDBuffer[DType.int32, 1],
 ) -> ContinuousBatchingKVCacheCollection[
     type,
     kv_params_h1_d16_bshd,
@@ -2325,5 +2316,4 @@ fn continuous_batching_kv_cache_collection_h1_d16_bshd[
         cache_lengths,
         lookup_table,
         is_cache_empty,
-        seq_ids,
     )
