@@ -31,8 +31,6 @@ from .memory import parallel_memcpy
 from .reduction import (
     all_true,
     any_true,
-    argmax,
-    argmin,
     cumsum,
     map_reduce,
     max,
