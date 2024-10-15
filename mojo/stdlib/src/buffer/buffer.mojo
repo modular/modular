@@ -46,6 +46,7 @@ struct Buffer[
     size: Dim = Dim(),
     *,
     address_space: AddressSpace = AddressSpace.GENERIC,
+    origin: Origin[True].type = MutableAnyOrigin,
 ](Sized):
     """Defines a Buffer which can be parametrized on a static size and Dtype.
 
@@ -55,9 +56,10 @@ struct Buffer[
       type: The element type of the Buffer.
       size: The static size (if known) of the Buffer.
       address_space: The address space of the Buffer.
+      origin: The origin of the memory being addressed.
     """
 
-    var data: UnsafePointer[Scalar[type], address_space]
+    var data: UnsafePointer[Scalar[type], address_space, origin=origin]
     """The underlying data pointer of the data."""
     var dynamic_size: Int
     """The dynamic size of the buffer."""
