@@ -549,9 +549,11 @@ fn multistage_gemm_kernel[
     # NOTE: the condition ( not (N // BN & 1)) is for a temporary solution
     # for solving mismatches in some shapes
     var block_idx = block_swizzle(
-        (int(BlockIdx.x()), int(BlockIdx.y())),
-        (int(GridDim.x()), int(GridDim.y())),
-    ) if swizzle_block else Index(int(BlockIdx.x()), int(BlockIdx.y()))
+        Index[element_bitwidth=32, unsigned=True](BlockIdx.x(), BlockIdx.y()),
+        Index[element_bitwidth=32, unsigned=True](GridDim.x(), GridDim.y()),
+    ) if swizzle_block else Index[element_bitwidth=32, unsigned=True](
+        BlockIdx.x(), BlockIdx.y()
+    )
 
     # Coordinates of the current warp.
     warp_y, warp_x = divmod(tid // WARP_SIZE, num_warps_n)
