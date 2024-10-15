@@ -29,7 +29,7 @@ def _getCloudProvider() -> str:
                     for provider in providers:
                         if provider in contents:
                             return provider
-            except:
+            except Exception:
                 pass
     return ""
 
@@ -44,21 +44,30 @@ def configureLogging(
 ):
     logging_handlers: list[logging.Handler] = []
 
-    logs_formatter = logging.Formatter(
-        "%(asctime)s.%(msecs)03d %(levelname)s: %(name)s: %(message)s",
-        datefmt="%H:%M:%S",
-    )
-
     # Create a console handler
     console_handler = logging.StreamHandler()
-    console_handler.setFormatter(logs_formatter)
+    console_formatter = logging.Formatter(
+        (
+            "%(asctime)s.%(msecs)03d %(levelname)s: %(threadName)s: %(name)s:"
+            " %(message)s"
+        ),
+        datefmt="%H:%M:%S",
+    )
+    console_handler.setFormatter(console_formatter)
     console_handler.setLevel(console_level)
     logging_handlers.append(console_handler)
 
     if file_level is not None:
         # Create a file handler
         file_handler = logging.FileHandler(file_path)
-        file_handler.setFormatter(logs_formatter)
+        file_formatter = logging.Formatter(
+            (
+                "%(asctime)s.%(msecs)03d %(levelname)s: %(threadName)s:"
+                " %(name)s: %(message)s"
+            ),
+            datefmt="%y:%m:%d-%H:%M:%S",
+        )
+        file_handler.setFormatter(file_formatter)
         file_handler.setLevel(file_level)
         logging_handlers.append(file_handler)
 

@@ -11,11 +11,11 @@ import logging
 import os
 import signal
 
-from dataclasses import dataclass
-from time import time_ns
+from dataclasses import dataclass, field
 from typing import AsyncGenerator, Generic, Mapping, Optional
 from transformers import PreTrainedTokenizerBase
 from max.pipelines import TokenGenerator, TokenGeneratorContext
+from max.serve.telemetry.stopwatch import StopWatch
 
 from max.serve.scheduler.queues import (
     BatchMultiplexQueue,
@@ -25,10 +25,20 @@ from max.serve.scheduler.queues import (
 
 
 @dataclass(frozen=True)
+class TokenGeneratorTimers:
+    context_creation: StopWatch = field(default_factory=StopWatch)
+    context_encoding: StopWatch = field(default_factory=StopWatch)
+    token_generation: StopWatch = field(default_factory=StopWatch)
+    # Started on creation
+    total: StopWatch = field(default_factory=StopWatch.start)
+
+
+@dataclass(frozen=True)
 class TokenGeneratorRequest:
     id: str
     prompt: str
     max_new_tokens: Optional[int] = None
+    timers: TokenGeneratorTimers = field(default_factory=TokenGeneratorTimers)
 
     def __str__(self):
         txt = f"Id: {self.id}, Prompt: [{self.prompt[:40]}]"
@@ -137,15 +147,21 @@ class TokenGeneratorPipeline(Generic[TokenGeneratorContext]):  # type: ignore
         request: TokenGeneratorRequest,
     ) -> AsyncGenerator[str, None]:
         """Generates and streams tokens for the provided request."""
-        self.logger.debug("Started: %s", request.id)
-        start_time = time_ns()
-        context = await self.model.new_context(
-            request.prompt, max_new_tokens=request.max_new_tokens
-        )
+        timers = request.timers
         self.logger.debug(
-            "Context allocation for %s completed in %s",
+            "%s: Started: Elapsed: %0.2f ms",
             request.id,
-            time_ns() - start_time,
+            timers.total.elapsed_ms,
+        )
+        with timers.context_creation:
+            context = await self.model.new_context(
+                request.prompt, max_new_tokens=request.max_new_tokens
+            )
+        self.logger.debug(
+            "%s: Context-Creation: %0.2f ms, Elapsed: %0.2f ms",
+            request.id,
+            timers.context_creation.elapsed_ms,
+            timers.total.elapsed_ms,
         )
         try:
             # Use a different queue for context encoding if specified.
@@ -154,18 +170,32 @@ class TokenGeneratorPipeline(Generic[TokenGeneratorContext]):  # type: ignore
             # CE or TG requests being serviced by the dynamic-batching-queue are
             # fully processed.
             if self.context_enc_queue:
-                start_time = time_ns()
-                await self.context_enc_queue.submit(request.id, context)
+                with timers.context_encoding:
+                    await self.context_enc_queue.submit(request.id, context)
                 self.logger.debug(
-                    "Context encoding for %s completed in %s",
+                    "%s: Context-Encoding: %0.2f ms, Elapsed: %0.2f ms",
                     request.id,
-                    time_ns() - start_time,
+                    timers.context_encoding.elapsed_ms,
+                    timers.total.elapsed_ms,
                 )
-            async for token in self.token_gen_queue.stream(request.id, context):
-                yield token
+            with timers.token_generation:
+                async for token in self.token_gen_queue.stream(
+                    request.id, context
+                ):
+                    yield token
+            self.logger.debug(
+                "%s: Token-Generation: %0.2f ms, Elapsed: %0.2f ms",
+                request.id,
+                timers.token_generation.elapsed_ms,
+                timers.total.elapsed_ms,
+            )
         finally:
             await self.model.release(context)
-            self.logger.debug("Completed: %s", request.id)
+            self.logger.debug(
+                "%s: Completed: Elapsed: %0.2f ms",
+                request.id,
+                timers.total.elapsed_ms,
+            )
 
     async def all_tokens(self, request: TokenGeneratorRequest) -> list[str]:
         """Generates all tokens for the provided request."""
