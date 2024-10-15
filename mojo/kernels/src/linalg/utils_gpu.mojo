@@ -32,7 +32,7 @@ fn block_swizzle(
 
 @always_inline
 fn _block_swizzle_by_scale[
-    scale0: Int
+    scale0: UInt
 ](block_idx: IndexList[2, **_], grid_dim: __type_of(block_idx)) -> __type_of(
     block_idx
 ):
@@ -56,7 +56,7 @@ fn _block_swizzle_by_scale[
         num_partitions = 1 << scale
 
     var bx = block_idx.data[0] >> scale
-    var by = (block_idx[1] << scale) + (
+    var by = (block_idx.data[1] << scale) + (
         (block_idx.data[0]) & ((1 << scale) - 1)
     )
     bx = bx + by // grid_dim.data[1] * (grid_dim.data[0] >> scale)
