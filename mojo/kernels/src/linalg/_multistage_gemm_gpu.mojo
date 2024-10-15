@@ -358,7 +358,7 @@ fn multistage_mma[
                                     0,
                                     num_b_rows.value() - prefetch_tile_id * BK,
                                 )
-                                _copy_dram_to_sram_async_b[masked=True,](
+                                _copy_dram_to_sram_async_b[masked=True](
                                     b_smem_prefetch_tile,
                                     num_rows_bound,
                                 )
