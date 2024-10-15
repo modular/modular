@@ -1064,20 +1064,15 @@ fn _online_softmax_iter_for_mma_output[
         # Every four threads have elements on the same row.
         # Reduce max for T0-T3, T4-T7, etc
         # TODO: Consider using 2 registers instead of 2 * m_mma.
-        p_frag_rowmax[2 * m_mma] = max(
-            p_frag_rowmax[2 * m_mma], shuffle_xor(p_frag_rowmax[2 * m_mma], 2)
-        )
-        p_frag_rowmax[2 * m_mma] = max(
-            p_frag_rowmax[2 * m_mma], shuffle_xor(p_frag_rowmax[2 * m_mma], 1)
-        )
-        p_frag_rowmax[2 * m_mma + 1] = max(
-            p_frag_rowmax[2 * m_mma + 1],
-            shuffle_xor(p_frag_rowmax[2 * m_mma + 1], 2),
-        )
-        p_frag_rowmax[2 * m_mma + 1] = max(
-            p_frag_rowmax[2 * m_mma + 1],
-            shuffle_xor(p_frag_rowmax[2 * m_mma + 1], 1),
-        )
+        @parameter
+        for i in range(2):
+
+            @parameter
+            for j in reversed(range(1, 3)):
+                p_frag_rowmax[2 * m_mma + i] = max(
+                    p_frag_rowmax[2 * m_mma + i],
+                    shuffle_xor(p_frag_rowmax[2 * m_mma + i], j),
+                )
 
     # If a row is split across multiple warps, communicate via shared memory
     # to achieve the rowwise max.
