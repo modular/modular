@@ -15,7 +15,7 @@ from gpu import *
 from gpu.host.event import time_function
 from memory import UnsafePointer
 from nn.mha import flash_attention, mha_gpu_naive
-from nn.mha_mask import NullMask
+from nn.mha_mask import CausalMask
 from benchmark import (
     Bench,
     Bencher,
@@ -26,6 +26,7 @@ from benchmark import (
     BenchConfig,
 )
 from utils.index import Index
+from utils.numerics import min_or_neg_inf
 from testing import assert_almost_equal
 
 from gpu.host.device_context import DeviceContext
@@ -33,7 +34,6 @@ from internal_utils import bench_compile_time, env_get_dtype
 
 
 fn run_mha[
-    mask_rank: Int,
     qkv_type: DType,
     mask_type: DType,
     depth: Int,
@@ -41,8 +41,6 @@ fn run_mha[
     group: Int = 1,
     batch_size: Int = 1,
 ](inout m: Bench, seq_len: Int, num_keys: Int, ctx: DeviceContext,) raises:
-    constrained[mask_rank in (3, 4), "mha only support rank 3 or 4."]()
-
     # Query, key, value dimensions.
     alias scale = Float32(0.125)  # isqrt[type, 1](Float32(depth))
     alias kv_num_heads = num_heads // group
@@ -52,7 +50,7 @@ fn run_mha[
     var k_size = batch_size * kv_num_heads * num_keys * depth
     var v_size = k_size
     var o_size = q_size
-    var mask_size = (num_heads if mask_rank == 4 else 1) * seq_len * num_keys
+    var mask_size = num_heads * seq_len * num_keys
 
     # Allocate memory for all variables.
     var q_ptr = UnsafePointer[Scalar[qkv_type]].alloc(q_size)
@@ -66,22 +64,20 @@ fn run_mha[
     rand[qkv_type](q_ptr, q_size)
     rand[qkv_type](k_ptr, k_size)
     rand[qkv_type](v_ptr, v_size)
-    rand[mask_type](mask_ptr, mask_size)
 
-    # Contruct buffers.
-    var q = NDBuffer[qkv_type, 4](
-        q_ptr, Index(batch_size, seq_len, num_heads, depth)
+    # Initialize causal mask
+    var mask = NDBuffer[mask_type, 4](
+        mask_ptr, Index(batch_size, num_heads, seq_len, num_keys)
     )
-    var k = NDBuffer[qkv_type, 4](
-        k_ptr, Index(batch_size, num_keys, kv_num_heads, depth)
-    )
-    var v = NDBuffer[qkv_type, 4](
-        v_ptr, Index(batch_size, num_keys, kv_num_heads, depth)
-    )
-    var mask = NDBuffer[mask_type, 2](mask_ptr, Index(seq_len, num_keys))
-    var output = NDBuffer[qkv_type, 4](
-        output_ptr, Index(batch_size, seq_len, num_heads, depth)
-    )
+    for b in range(batch_size):
+        for h in range(num_heads):
+            for q_idx in range(seq_len):
+                for k_idx in range(num_keys):
+                    mask.store(
+                        Index(b, h, q_idx, k_idx),
+                        0 if q_idx + num_keys - seq_len
+                        >= k_idx else min_or_neg_inf[mask_type](),
+                    )
 
     # Device pointers
     var q_device_ptr = ctx.create_buffer[qkv_type](q_size)
@@ -106,9 +102,6 @@ fn run_mha[
     var v_device = NDBuffer[
         qkv_type, 4, DimList(Dim(), Dim(), kv_num_heads, depth)
     ](v_device_ptr.ptr, Index(batch_size, num_keys, kv_num_heads, depth))
-    var mask3d = NDBuffer[mask_type, 3, DimList.create_unknown[3]()](
-        mask_device_ptr.ptr, Index(batch_size, seq_len, num_keys)
-    )
     var mask4d = NDBuffer[mask_type, 4, DimList.create_unknown[4]()](
         mask_device_ptr.ptr, Index(batch_size, num_heads, seq_len, num_keys)
     )
@@ -121,31 +114,18 @@ fn run_mha[
 
     @parameter
     @always_inline
-    @__copy_capture(q_device, k_device, v_device, mask3d, mask4d, output_device)
+    @__copy_capture(q_device, k_device, v_device, mask4d, output_device)
     fn kernel_launch(ctx: DeviceContext) raises:
-        @parameter
-        if mask_rank == 3:
-            flash_attention(
-                output_device,
-                q_device,
-                k_device,
-                v_device,
-                mask3d,
-                NullMask(),
-                scale,
-                ctx,
-            )
-        else:
-            flash_attention(
-                output_device,
-                q_device,
-                k_device,
-                v_device,
-                mask4d,
-                NullMask(),
-                scale,
-                ctx,
-            )
+        flash_attention[add_attn_mask=False](
+            output_device,
+            q_device,
+            k_device,
+            v_device,
+            mask4d,
+            CausalMask(),
+            scale,
+            ctx,
+        )
 
     @parameter
     @always_inline
@@ -158,24 +138,7 @@ fn run_mha[
         b.iter_custom[_kernel_launch](ctx)
 
     fn compute_flops() -> Int:
-        var flops = 0
-        alias q_rank = q.rank
-        # first batched matmul
-        flops += 2 * q.num_elements() * k.dim[q_rank - 1]()
-        # scale, ignore the rsqrt
-        var batch_and_head_size = q.dim[0]() if q_rank == 3 else q.dim[
-            0
-        ]() * q.dim[1]()
-        var inter_output_size = batch_and_head_size * q.dim[
-            q_rank - 1
-        ]() * k.dim[q_rank - 1]()
-        flops += inter_output_size
-        # softmax, this is lower than actual flop
-        # The absolute GFlops value doesn't matter. We care about relative speedup.
-        flops += 3 * inter_output_size
-        # last batched matmul
-        flops += 2 * q.size() * v.dim[q_rank - 1]()
-        return flops
+        return 4 * batch_size * num_heads * seq_len * num_keys * depth
 
     m.bench_function[bench_func](
         BenchId(
@@ -198,7 +161,7 @@ fn run_mha[
     var output_ref_device_ptr = ctx.create_buffer[qkv_type](o_size)
     ctx.enqueue_copy_to_device(output_ref_device_ptr, output_ptr)
 
-    mha_gpu_naive[mask_rank](
+    mha_gpu_naive[4](
         q_device_ptr.ptr,
         k_device_ptr.ptr,
         v_device_ptr.ptr,
@@ -247,7 +210,6 @@ fn run_mha[
 @value
 struct MHA_cfg:
     # params
-    var mask_rank: Int
     var qkv_type: DType
     var mask_type: DType
     var depth: Int
@@ -260,10 +222,7 @@ struct MHA_cfg:
     @no_inline
     fn __str__(self) -> String:
         return (
-            "mask_rank="
-            + str(self.mask_rank)
-            + "/"
-            + "qkv_type="
+            "qkv_type="
             + str(self.qkv_type)
             + "/"
             + "mask_type="
@@ -281,7 +240,6 @@ struct MHA_cfg:
 
 
 fn main() raises:
-    alias mask_rank = env_get_int["mask_rank", 4]()
     alias qkv_type = env_get_dtype["qkv_type", DType.bfloat16]()
     alias mask_type = env_get_dtype["mask_type", DType.float32]()
     alias depth = env_get_int["depth", 128]()
@@ -292,7 +250,6 @@ fn main() raises:
     alias batch_size = env_get_int["batch_size", 1]()
 
     alias cfg = MHA_cfg(
-        mask_rank=mask_rank,
         qkv_type=qkv_type,
         mask_type=mask_type,
         depth=depth,
@@ -307,7 +264,6 @@ fn main() raises:
     try:
         with DeviceContext() as ctx:
             run_mha[
-                cfg.mask_rank,
                 cfg.qkv_type,
                 cfg.mask_type,
                 cfg.depth,
@@ -318,7 +274,6 @@ fn main() raises:
 
             bench_compile_time[
                 run_mha[
-                    cfg.mask_rank,
                     cfg.qkv_type,
                     cfg.mask_type,
                     cfg.depth,
