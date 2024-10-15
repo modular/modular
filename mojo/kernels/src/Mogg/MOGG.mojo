@@ -1249,7 +1249,7 @@ fn concat[
     ](output, int(normalize_neg_index(axis, rank)), inputs, context=ctx)
 
 
-@mogg_register("concat_shape")
+@mogg_register_shape_func("mo.concat")
 @always_inline
 fn concat_shape[
     input_type: DType,

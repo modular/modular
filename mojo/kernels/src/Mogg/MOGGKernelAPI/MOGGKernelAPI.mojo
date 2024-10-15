@@ -20,11 +20,12 @@ from math import (
     sqrt,
     tanh,
 )
+from nn.concat import concat
 from random import randn, seed
 from sys import llvm_intrinsic
 from sys.info import simdwidthof
-
 import compiler_internal as compiler
+from collections.vector import InlinedFixedVector
 
 # ===----------------------------------------------------------------------===#
 # Kernel imports
@@ -34,6 +35,7 @@ from algorithm import mean
 from algorithm import min as reduce_min
 from algorithm import product, sum
 from algorithm.reduction import _reduce_generator, _reduce_generator_cpu
+from utils import StaticTuple
 
 # ===----------------------------------------------------------------------===#
 # General imports
@@ -3330,6 +3332,84 @@ struct CumSum:
         cumsum[rank, type, exclusive, reverse](
             output_buf, input_buf, int(normalize_neg_index(axis_val, rank))
         )
+
+
+# ===----------------------------------------------------------------------===#
+# Concat kernels
+# ===----------------------------------------------------------------------===#
+
+
+@compiler.register("mo.concat")
+struct Concat:
+    @staticmethod
+    fn execute[
+        type: DType,
+        rank: Int,
+        synchronous: Bool,
+        target: StringLiteral,
+        # TODO(GRA-1116): Support input fusion for concat
+        # lambdas_have_fusion: Bool,
+    ](
+        output: ManagedTensorSlice[type=type, rank=rank],
+        axis: ManagedTensorSlice[rank=1],
+        inputs: StaticTuple[ManagedTensorSlice[type, rank], *_],
+        ctx: MojoCallContextPtr,
+    ) raises:
+        var output_buf = managed_tensor_slice_to_ndbuffer(output)
+        var axis_val = axis._ptr.load(0)
+        var input_bufs = StaticTuple[NDBuffer[type, rank], inputs.size]()
+
+        @parameter
+        for i in range(inputs.size):
+            input_bufs[i] = managed_tensor_slice_to_ndbuffer(inputs[i])
+
+        alias fusion = None
+        concat[rank, type, synchronous, target, fusion](
+            output_buf,
+            int(normalize_neg_index(axis_val, rank)),
+            input_bufs,
+            context=ctx,
+        )
+
+    @staticmethod
+    fn shape[
+        type: DType,
+        rank: Int,
+        synchronous: Bool,
+    ](
+        axis_buf: ManagedTensorSlice[rank=1],
+        inputs: StaticTuple[ManagedTensorSlice[type, rank], *_],
+    ) raises -> IndexList[rank]:
+        var axis_val = axis_buf._ptr.load(0)
+        var axis = int(normalize_neg_index(axis_val, rank))
+        if axis < 0 or rank <= axis:
+            raise ("[concat] normalized axis must be within range [0, rank)")
+
+        @parameter
+        @always_inline
+        fn shape_equal_ignore_axis(
+            s1: IndexList[rank], s2: IndexList[rank]
+        ) -> Bool:
+            for i in range(rank):
+                if i != axis and s1[i] != s2[i]:
+                    return False
+            return True
+
+        var concat_axis_dim_sum = 0
+        for i in range(len(inputs)):
+            concat_axis_dim_sum += inputs[i].dim_size(axis)
+            if not shape_equal_ignore_axis(
+                inputs[0].get_static_spec().shape,
+                inputs[i].get_static_spec().shape,
+            ):
+                raise Error(
+                    "[concat] input shapes must match except at concat axis"
+                )
+
+        # compute and return the output shape
+        var output_shape = inputs[0].get_static_spec().shape
+        output_shape[axis] = concat_axis_dim_sum
+        return output_shape
 
 
 # ===----------------------------------------------------------------------===#
