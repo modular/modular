@@ -18,8 +18,6 @@ from sys.info import bitwidthof, simdwidthof, sizeof
 from sys.intrinsics import strided_load
 from sys.param_env import is_defined
 
-from algorithm import argmax as _argmax
-from algorithm import argmin as _argmin
 from algorithm import sync_parallelize, vectorize
 from algorithm.functional import elementwise
 from algorithm.reduction import _reduce_generator, _reduce_generator_cpu
@@ -49,6 +47,8 @@ from MOGGTensor import Tensor
 from nn._optional_param import OptionalParamInt
 from nn.activations import gelu, relu
 from nn.arange import arange, arange_shape
+from nn.argmaxmin import argmax as _argmax
+from nn.argmaxmin import argmin as _argmin
 from nn.argmaxmin_gpu import argmax_gpu as _argmax_gpu
 from nn.argmaxmin_gpu import argmin_gpu as _argmin_gpu
 from nn.arg_nonzero import arg_nonzero, arg_nonzero_shape

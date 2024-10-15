@@ -29,7 +29,6 @@ import compiler_internal as compiler
 # ===----------------------------------------------------------------------===#
 # Kernel imports
 # ===----------------------------------------------------------------------===#
-from algorithm import argmax, argmin
 from algorithm import max as reduce_max
 from algorithm import mean
 from algorithm import min as reduce_min
@@ -53,6 +52,7 @@ from linalg.utils import (
     elementwise_epilogue_type as matmul_elementwise_epilogue_type,
 )
 from nn import arg_nonzero
+from nn.argmaxmin import argmax, argmin
 from nn.activations import gelu, relu
 from nn.arange import arange, arange_shape
 from nn.conv import ConvInfoStatic, conv_nhwc_direct, conv_shape
