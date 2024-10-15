@@ -911,8 +911,13 @@ fn _online_softmax_kernel[
         address_space = AddressSpace.LOCAL,
     ].stack_allocation().fill(0.0)
 
-    var rowmax = stack_allocation[num_m_mmas * 2, type]()
-    var rowsum = stack_allocation[num_m_mmas * 2, type]()
+    alias row_alignment = alignof[SIMD[type, simdwidthof[type]()]]()
+    var rowmax = stack_allocation[
+        num_m_mmas * 2, type, alignment=row_alignment
+    ]()
+    var rowsum = stack_allocation[
+        num_m_mmas * 2, type, alignment=row_alignment
+    ]()
 
     var warp_scratch = LayoutTensor[
         type,
@@ -921,9 +926,9 @@ fn _online_softmax_kernel[
     ].stack_allocation()
 
     @parameter
-    for i in range(num_m_mmas * 2):
-        rowmax[i] = min_or_neg_inf[type]()
-        rowsum[i] = 0.0
+    for i in range(0, 2 * num_m_mmas, 2):
+        rowmax.store(i, SIMD[type, 2](min_or_neg_inf[type]()))
+        rowsum.store(i, SIMD[type, 2](0))
 
     _online_softmax_iter_for_mma_output[
         num_m_mmas, num_n_mmas, num_rowwise_warps, mma_shape, type
@@ -1002,7 +1007,7 @@ fn _online_softmax_iter_for_mma_output[
 
     var tid = ThreadIdx.x()
     var lane = lane_id()
-    var warp_x = (tid // WARP_SIZE) % num_rowwise_warps.value
+    var warp_x = (tid // WARP_SIZE) % UInt(num_rowwise_warps)
 
     alias MMA_M = mma_shape[0]
     alias MMA_N = mma_shape[1]
@@ -1023,9 +1028,9 @@ fn _online_softmax_iter_for_mma_output[
     ]()
 
     @parameter
-    for i in range(2 * num_m_mmas):
-        p_frag_rowmax[i] = rowmax[i]
-        p_frag_rowsum[i] = 0.0
+    for i in range(0, 2 * num_m_mmas, 2):
+        p_frag_rowmax.store(i, rowmax.load[width=2]())
+        p_frag_rowsum.store(i, SIMD[type, 2](0))
 
     # Online softmax
     @parameter
@@ -1036,18 +1041,23 @@ fn _online_softmax_iter_for_mma_output[
 
             @parameter
             for i in range(p_frag_size // 2):
-                p_frag_rowmax[2 * m_mma] = max(
-                    p_frag_rowmax[2 * m_mma],
+                var curr = SIMD[type, 2](
                     rebind[Scalar[type]](
                         p_reg_tile[n_mma * num_m_mmas + m_mma, i]
                     ),
-                )
-                p_frag_rowmax[2 * m_mma + 1] = max(
-                    p_frag_rowmax[2 * m_mma + 1],
                     rebind[Scalar[type]](
                         p_reg_tile[
                             n_mma * num_m_mmas + m_mma, i + p_frag_size // 2
                         ]
+                    ),
+                )
+                p_frag_rowmax.store[alignment = p_frag_rowmax.alignment](
+                    2 * m_mma,
+                    max(
+                        p_frag_rowmax.load[
+                            width=2, alignment = p_frag_rowmax.alignment
+                        ](2 * m_mma),
+                        curr,
                     ),
                 )
 
@@ -1097,13 +1107,18 @@ fn _online_softmax_iter_for_mma_output[
                 # Reduce rowmax. Warps in the same row do the same reduction.
                 @parameter
                 for w in range(num_rowwise_warps):
-                    p_frag_rowmax[2 * m_mma] = max(
-                        p_frag_rowmax[2 * m_mma],
+                    var curr = SIMD[type, 2](
                         rebind[Scalar[type]](warp_scratch[w, row0]),
-                    )
-                    p_frag_rowmax[2 * m_mma + 1] = max(
-                        p_frag_rowmax[2 * m_mma + 1],
                         rebind[Scalar[type]](warp_scratch[w, row1]),
+                    )
+                    p_frag_rowmax.store(
+                        2 * m_mma,
+                        max(
+                            p_frag_rowmax.load[
+                                width=2, alignment = p_frag_rowmax.alignment
+                            ](2 * m_mma),
+                            curr,
+                        ),
                     )
 
     @parameter
@@ -1114,21 +1129,23 @@ fn _online_softmax_iter_for_mma_output[
 
             @parameter
             for shift in range(1, 3):
-                p_frag_rowmax[2 * m_mma] = max(
-                    p_frag_rowmax[2 * m_mma],
-                    shuffle_xor(p_frag_rowmax[2 * m_mma], shift),
-                )
-                p_frag_rowmax[2 * m_mma + 1] = max(
-                    p_frag_rowmax[2 * m_mma + 1],
-                    shuffle_xor(p_frag_rowmax[2 * m_mma + 1], shift),
-                )
+
+                @parameter
+                for i in range(2):
+                    p_frag_rowmax[2 * m_mma + i] = max(
+                        p_frag_rowmax[2 * m_mma + i],
+                        shuffle_xor(p_frag_rowmax[2 * m_mma + i], shift),
+                    )
 
         # Corrention since previous max may be updated.
-        correction[2 * m_mma] = exp(
-            rowmax[2 * m_mma] - p_frag_rowmax[2 * m_mma]
-        )
-        correction[2 * m_mma + 1] = exp(
-            rowmax[2 * m_mma + 1] - p_frag_rowmax[2 * m_mma + 1]
+        correction.store[alignment = correction.alignment](
+            2 * m_mma,
+            exp(
+                rowmax.load[width=2, alignment = rowmax.alignment](2 * m_mma)
+                - p_frag_rowmax.load[width=2, alignment = rowmax.alignment](
+                    2 * m_mma
+                )
+            ),
         )
 
         # Softmax numerator based on mma results.
@@ -1148,8 +1165,9 @@ fn _online_softmax_iter_for_mma_output[
                     - p_frag_rowmax[2 * m_mma + 1]
                 )
 
-        p_frag_rowsum[2 * m_mma] = 0.0
-        p_frag_rowsum[2 * m_mma + 1] = 0.0
+        p_frag_rowsum.store[alignment = p_frag_rowsum.alignment](
+            2 * m_mma, SIMD[type, 2](0.0)
+        )
 
         # Sum softmax numerator from a thread's fragments.
         @parameter
@@ -1167,12 +1185,12 @@ fn _online_softmax_iter_for_mma_output[
         # Sum numerator within a warp.
         @parameter
         for shift in range(1, 3):
-            p_frag_rowsum[2 * m_mma] += shuffle_xor(
-                p_frag_rowsum[2 * m_mma], shift
-            )
-            p_frag_rowsum[2 * m_mma + 1] += shuffle_xor(
-                p_frag_rowsum[2 * m_mma + 1], shift
-            )
+
+            @parameter
+            for i in range(2):
+                p_frag_rowsum[2 * m_mma + i] += shuffle_xor(
+                    p_frag_rowsum[2 * m_mma + i], shift
+                )
 
     @parameter
     if num_rowwise_warps > 1:
@@ -1221,14 +1239,13 @@ fn _online_softmax_iter_for_mma_output[
             # Broadcast to 4 threads in the same row.
             @parameter
             for shift in range(1, 3):
-                p_frag_rowsum[2 * m_mma] = max(
-                    p_frag_rowsum[2 * m_mma],
-                    shuffle_xor(p_frag_rowsum[2 * m_mma], shift),
-                )
-                p_frag_rowsum[2 * m_mma + 1] = max(
-                    p_frag_rowsum[2 * m_mma + 1],
-                    shuffle_xor(p_frag_rowsum[2 * m_mma + 1], shift),
-                )
+
+                @parameter
+                for i in range(2):
+                    p_frag_rowsum[2 * m_mma + i] = max(
+                        p_frag_rowsum[2 * m_mma + i],
+                        shuffle_xor(p_frag_rowsum[2 * m_mma + i], shift),
+                    )
 
     # Correct previous result
     @parameter

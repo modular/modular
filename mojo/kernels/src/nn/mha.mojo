@@ -1136,9 +1136,9 @@ fn mha_single_batch[
     var rowsum = stack_allocation[WM, accum_type, alignment=row_alignment]()
 
     @parameter
-    for i in range(WM):
-        rowmax[i] = min_or_neg_inf[accum_type]()
-        rowsum[i] = 0.0
+    for i in range(0, WM, 2):
+        rowmax.store(i, SIMD[accum_type, 2](min_or_neg_inf[accum_type]()))
+        rowsum.store(i, SIMD[accum_type, 2](0))
 
     # Shared memory for P = Q * K^t
     # This overlaps key tile but are used at the same time i.e. no race condition.
