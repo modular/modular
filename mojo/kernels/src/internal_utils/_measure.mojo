@@ -10,6 +10,7 @@ from sys import simdwidthof
 
 from algorithm import elementwise, mean, sum, vectorize
 from buffer import Buffer
+from algorithm.functional import unswitch
 from memory import UnsafePointer
 
 from utils import IndexList
@@ -121,37 +122,69 @@ fn correlation[
     where $`\\bar{u}`$ is the mean of the elements of `u`
     and $`x \\cdot y`$ is the dot product of $x$ and $y$.
     """
-    var vw = __type_of(u)()
-    var uw = __type_of(u)()
-    var umu = Scalar[type]()
-    var vmu = Scalar[type]()
+    var umu = Scalar[out_type]()
+    var vmu = Scalar[out_type]()
     var w_val = __type_of(u)()
     if w:
         w_val = __type_of(u).alloc(len)
         _div(w_val, w.value(), _sum(w.value(), len), len)
     if centered:
         if w:
-            umu = _dot(u, w_val, len)
-            vmu = _dot(v, w_val, len)
+            umu = _dot[out_type=out_type](u, w_val, len)
+            vmu = _dot[out_type=out_type](v, w_val, len)
         else:
-            umu = _mean(u, len)
-            vmu = _mean(v, len)
+            umu = _mean(u, len).cast[out_type]()
+            vmu = _mean(v, len).cast[out_type]()
+
+    var uv = Scalar[out_type]()
+    var uu = Scalar[out_type]()
+    var vv = Scalar[out_type]()
+
+    alias simd_width = simdwidthof[type]()
+    var uv_simd = SIMD[out_type, simd_width]()
+    var uu_simd = SIMD[out_type, simd_width]()
+    var vv_simd = SIMD[out_type, simd_width]()
+
+    @parameter
+    fn accumulate[weighted: Bool]():
+        @parameter
+        fn apply_wfn[simd_width: Int](idx: Int):
+            var ui = u.load[width=simd_width](idx).cast[out_type]() - umu
+            var vi = v.load[width=simd_width](idx).cast[out_type]() - vmu
+            var uw = ui
+            var vw = vi
+
+            @parameter
+            if weighted:
+                var wi = w_val.load[width=simd_width](idx).cast[out_type]()
+                uw *= wi
+                vw *= wi
+
+            var uvw = ui * vw
+            var uuw = ui * uw
+            var vvw = vi * vw
+
+            @parameter
+            if simd_width == 1:
+                uv += uvw[0]
+                uu += uuw[0]
+                vv += vvw[0]
+            else:
+                uv_simd += rebind[__type_of(uv_simd)](uvw)
+                uu_simd += rebind[__type_of(uu_simd)](uuw)
+                vv_simd += rebind[__type_of(vv_simd)](vvw)
+
+        vectorize[apply_wfn, simd_width](len)
+
+    unswitch[accumulate](w.__bool__())
+
+    uv += uv_simd.reduce_add()
+    uu += uu_simd.reduce_add()
+    vv += vv_simd.reduce_add()
     if w:
-        vw = __type_of(u).alloc(len)
-        uw = __type_of(u).alloc(len)
-        _mul(vw, v, w.value(), len)
-        _mul(uw, u, w.value(), len)
-    else:
-        vw, uw = v, u
-    var uv = _dot[out_type=out_type](u, vw, len)
-    var uu = _dot[out_type=out_type](u, uw, len)
-    var vv = _dot[out_type=out_type](v, vw, len)
-    var dist = 1 - uv / sqrt(uu * vv)
-    if w:
-        vw.free()
-        uw.free()
         w_val.free()
-    return dist.clamp(0, 2)
+
+    return (uv / sqrt(uu * vv)).clamp(-1, 1)
 
 
 fn uncentered_unweighted_correlation[
@@ -181,8 +214,7 @@ fn uncentered_unweighted_correlation[
     var uv = _dot[out_type=out_type](u, v, len)
     var uu = _dot[out_type=out_type](u, u, len)
     var vv = _dot[out_type=out_type](v, v, len)
-    var dist = 1 - uv / sqrt(uu * vv)
-    return dist.clamp(0, 2)
+    return (uv / sqrt(uu * vv)).clamp(-1, 1)
 
 
 # ===----------------------------------------------------------------------=== #
@@ -206,7 +238,7 @@ fn cosine[
     The cosine distance is also referred to as 'uncentered correlation',
     or 'reflective correlation'.
     """
-    return uncentered_unweighted_correlation[out_type = DType.float64](
+    return 1 - uncentered_unweighted_correlation[out_type = DType.float64](
         u, v, len
     )
 
