@@ -21,6 +21,8 @@ from testing import assert_almost_equal
 
 from utils.index import Index
 from utils.numerics import min_or_neg_inf
+from mha_warp_shuffle import mha_decoding_cpu, mha_decoding_gpu
+from memory import memset, memset_zero
 
 
 fn is_benchmark() -> Bool:
@@ -36,6 +38,7 @@ fn test[
     depth: Int,
     num_heads: Int,
     group: Int = 1,
+    fast_mha: Bool = False,
 ](
     seq_len: Int,
     num_keys: Int,
@@ -43,12 +46,12 @@ fn test[
     is_benchmark: Bool = False,
 ) raises:
     print("test_mha_causal_mask")
-
+    debug_assert(seq_len == 1)
     # Query, key, value dimensions.
     alias batch_size = 1
     alias scale = Float32(0.125)  # rsqrt[type, 1](Float32(depth))
     alias kv_num_heads = num_heads // group
-
+    alias mask_rank = 3
     # Q, K, V shapes.
     var q_size = batch_size * num_heads * seq_len * depth
     var k_size = batch_size * kv_num_heads * num_keys * depth
@@ -61,8 +64,9 @@ fn test[
     var k_ptr = UnsafePointer[Scalar[qkv_type]].alloc(k_size)
     var v_ptr = UnsafePointer[Scalar[qkv_type]].alloc(v_size)
     var mask_ptr = UnsafePointer[Scalar[mask_type]].alloc(mask_size)
+    var output_ref_ptr = UnsafePointer[Scalar[qkv_type]].alloc(o_size)
     var output_ptr = UnsafePointer[Scalar[qkv_type]].alloc(o_size)
-    var flash_output_ptr = UnsafePointer[Scalar[qkv_type]].alloc(o_size)
+    var output_ptr_cpu = UnsafePointer[Scalar[qkv_type]].alloc(o_size)
 
     # Contruct buffers.
     var q = NDBuffer[qkv_type, 4](
@@ -103,6 +107,7 @@ fn test[
     var v_device_ptr = ctx.create_buffer[qkv_type](v_size)
     var mask_device_ptr = ctx.create_buffer[mask_type](mask_size)
     var output_device_ptr = ctx.create_buffer[qkv_type](o_size)
+    var output_device_ref_ptr = ctx.create_buffer[qkv_type](o_size)
 
     # Copy from host to device
     ctx.enqueue_copy_to_device(q_device_ptr, q_ptr)
@@ -123,23 +128,25 @@ fn test[
     var mask4d = NDBuffer[mask_type, 4, DimList.create_unknown[4]()](
         mask_device_ptr.ptr, Index(batch_size, num_heads, seq_len, num_keys)
     )
-    var output_device = NDBuffer[
+    var output_device_ref = NDBuffer[
         qkv_type, 4, DimList(Dim(), Dim(), num_heads, depth)
-    ](output_device_ptr.ptr, Index(batch_size, seq_len, num_heads, depth))
+    ](output_device_ref_ptr.ptr, Index(batch_size, seq_len, num_heads, depth))
 
     @parameter
     @always_inline
-    @__copy_capture(q_device, k_device, v_device, mask4d, output_device)
+    @__copy_capture(q_device, k_device, v_device, output_device_ptr)
     fn kernel_launch(ctx: DeviceContext) raises:
-        flash_attention[add_attn_mask=False](
-            output_device,
-            q_device,
-            k_device,
-            v_device,
-            mask4d,
-            CausalMask(),
-            scale,
+        mha_decoding_gpu[
+            mask_rank, head_size=depth, num_heads=num_heads, group=group
+        ](
             ctx,
+            q_device_ptr.ptr,
+            k_device_ptr.ptr,
+            v_device_ptr.ptr,
+            output_device_ptr.ptr,
+            scale,
+            num_keys,
+            batch_size,
         )
 
     if is_benchmark:
@@ -155,138 +162,77 @@ fn test[
     else:
         kernel_launch(ctx)
 
-    ctx.synchronize()
+    mha_decoding_cpu[
+        mask_rank, head_size=depth, num_heads=num_heads, group=group
+    ](
+        q_ptr,
+        k_ptr,
+        v_ptr,
+        output_ptr_cpu,
+        scale,
+        num_keys,
+        batch_size,
+    )
 
-    ctx.enqueue_copy_from_device(flash_output_ptr, output_device_ptr)
-
-    var output_ref_device_ptr = ctx.create_buffer[qkv_type](o_size)
-    ctx.enqueue_copy_to_device(output_ref_device_ptr, output_ptr)
-
-    var output_device_ref = NDBuffer[
-        qkv_type, 4, DimList(Dim(), Dim(), num_heads, depth)
-    ](output_ref_device_ptr.ptr, Index(batch_size, seq_len, num_heads, depth))
-
-    flash_attention(
+    flash_attention[add_attn_mask=False](
         output_device_ref,
         q_device,
         k_device,
         v_device,
         mask4d,
-        NullMask(),
+        CausalMask(),
         scale,
         ctx,
     )
 
+    ctx.enqueue_copy_from_device(output_ref_ptr, output_device_ref_ptr)
+    ctx.enqueue_copy_from_device(output_ptr, output_device_ptr)
     ctx.synchronize()
-    ctx.enqueue_copy_from_device(output_ptr, output_ref_device_ptr)
-    _ = output_ref_device_ptr
 
-    for h in range(num_heads):
-        for s in range(seq_len):
-            for d in range(depth):
-                var expect = output_ptr.load(d + depth * (h + s * num_heads))
-                var actual = flash_output_ptr.load(
-                    d + depth * (h + s * num_heads)
-                )
-                if not isclose(actual, expect, atol=1e-5, rtol=1e-4):
-                    var rerr = abs((actual - expect) / expect)
-                    print(h, s, d, actual, expect, rerr)
-                assert_almost_equal(actual, expect, atol=1e-5, rtol=1e-4)
+    fn verify_results(
+        ptr: __type_of(output_ptr_cpu),
+        name: String,
+        atol: Scalar[qkv_type],
+        rtol: Scalar[qkv_type],
+    ) raises:
+        for h in range(num_heads):
+            for s in range(seq_len):
+                for d in range(depth):
+                    var expect = output_ref_ptr.load(
+                        d + depth * (h + s * num_heads)
+                    )
+                    var actual = ptr.load(d + depth * (h + s * num_heads))
+                    if not isclose(actual, expect, atol=atol, rtol=rtol):
+                        var rerr = abs((actual - expect) / expect)
+                        print(name, h, s, d, actual, expect, rerr)
+                    assert_almost_equal(actual, expect, atol=atol, rtol=rtol)
+
+    var atol = Scalar[qkv_type](1e-5)
+    var rtol = Scalar[qkv_type](1e-4)
+    if qkv_type == DType.bfloat16:
+        atol = 1e-3
+        rtol = 8e-3
+    verify_results(output_ptr_cpu, "cpu", atol, rtol)
+    verify_results(output_ptr, "gpu", atol, rtol)
 
     _ = q_device_ptr
     _ = k_device_ptr
     _ = v_device_ptr
     _ = mask_device_ptr
     _ = output_device_ptr
-
+    _ = output_device_ref_ptr
     q_ptr.free()
     k_ptr.free()
     v_ptr.free()
     mask_ptr.free()
+    output_ref_ptr.free()
     output_ptr.free()
-    flash_output_ptr.free()
+    output_ptr_cpu.free()
 
 
 def main():
     with DeviceContext() as ctx:
-        # fp32 depth == 128, tf32-fp32 mma, llama2 shape.
-        test[
-            DType.float32,
-            DType.float32,
-            128,
-            1,
-        ](128, 128, ctx, is_benchmark())
-
-        test[
-            DType.float32,
-            DType.float32,
-            128,
-            3,
-        ](14, 14, ctx, is_benchmark())
-
-        test[
-            DType.float32,
-            DType.float32,
-            128,
-            1,
-        ](178, 178, ctx, is_benchmark())
-
-        # bf16 depth == 128, bf16-fp32 mma
-        test[
-            DType.bfloat16,
-            DType.bfloat16,
-            depth=128,
-            num_heads=1,
-        ](128, 128, ctx)
-
-        test[
-            DType.bfloat16,
-            DType.float32,
-            depth=128,
-            num_heads=1,
-        ](384, 384, ctx)
-
-        test[
-            DType.bfloat16,
-            DType.float32,
-            128,
-            24,
-            group=3,
-        ](1024, 1024, ctx)
-
-        # BF16 with sequence length not multiple of 128
-        test[
-            DType.bfloat16,
-            DType.float32,
-            128,
-            3,
-            group=3,
-        ](64, 64, ctx)
-
-        test[
-            DType.bfloat16,
-            DType.bfloat16,
-            128,
-            3,
-            group=3,
-        ](102, 102, ctx)
-
-        test[
-            DType.bfloat16,
-            DType.float32,
-            128,
-            1,
-        ](14, 14, ctx)
-
-        test[
-            DType.bfloat16,
-            DType.bfloat16,
-            128,
-            1,
-        ](528, 528, ctx)
-
         # BF16 token gen
-
         test[
             DType.bfloat16,
             DType.bfloat16,
@@ -299,21 +245,21 @@ def main():
             DType.bfloat16,
             128,
             11,
-        ](1, 256, ctx)
+        ](1, 256, ctx, is_benchmark())
 
         test[
             DType.bfloat16,
             DType.float32,
             128,
             1,
-        ](1, 11, ctx)
+        ](1, 11, ctx, is_benchmark())
 
         test[
             DType.bfloat16,
             DType.bfloat16,
             128,
             2,
-        ](1, 523, ctx)
+        ](1, 523, ctx, is_benchmark())
 
         test[
             DType.bfloat16,
@@ -321,7 +267,7 @@ def main():
             128,
             24,
             group=3,
-        ](1, 29, ctx)
+        ](1, 29, ctx, is_benchmark())
 
         test[
             DType.bfloat16,
@@ -329,7 +275,7 @@ def main():
             128,
             3,
             group=3,
-        ](1, 156, ctx)
+        ](1, 156, ctx, is_benchmark())
 
         test[
             DType.bfloat16,
@@ -337,4 +283,4 @@ def main():
             128,
             3,
             group=3,
-        ](1, 208, ctx)
+        ](1, 208, ctx, is_benchmark())
