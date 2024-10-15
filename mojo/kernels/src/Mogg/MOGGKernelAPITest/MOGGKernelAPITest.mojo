@@ -12,7 +12,7 @@ from nn.mha import fused_attention as cpu_fused_attention_impl
 from runtime.asyncrt import MojoCallContextPtr
 from tensor_utils import ManagedTensorSlice, foreach
 
-from utils import IndexList
+from utils import IndexList, StaticTuple
 
 
 @value
@@ -316,3 +316,25 @@ struct WithoutSynchronous:
     @staticmethod
     fn execute(out: ManagedTensorSlice, input: ManagedTensorSlice):
         print("what up")
+
+
+# Simple, expects variadics to have the same size, and simply copies the first
+# number from the associated inputs to outputs, plus a bias
+@compiler.register("variadic_input_to_output")
+struct VariadicInputToOutput:
+    @staticmethod
+    fn execute[
+        type: DType,
+        synchronous: Bool,
+        size: Int,
+        target: StringLiteral,
+    ](
+        output: StaticTuple[ManagedTensorSlice[type, rank=1], size],
+        bias: ManagedTensorSlice[type, rank=1],
+        input: StaticTuple[ManagedTensorSlice[type, rank=1], size],
+    ):
+        @parameter
+        for i in range(size):
+            for j in range(input[i].size()):
+                output[i][j] = input[i][j]
+            output[i][0] += bias[0]
