@@ -59,6 +59,7 @@ def pipeline_model(testdata_directory, request):
         max_new_tokens=model_params.max_new_tokens,
         max_cache_batch_size=model_params.max_batch_size,
         cache_strategy=cache_strategy,
+        pad_to_multiple_of=2,
     )
 
     print(
