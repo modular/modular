@@ -7,7 +7,7 @@
 
 from max.tensor import Tensor, TensorShape
 
-from algorithm.reduction import argmax
+from nn.argmaxmin import argmax
 from testing import assert_equal
 
 
