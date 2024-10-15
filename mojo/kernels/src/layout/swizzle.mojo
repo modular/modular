@@ -408,7 +408,7 @@ fn eval_composed[
     # Need to pass concrete types for LayoutTrait otherwise compose_layout's
     # type is not complete. However, this limits the usage to a single comb.
     composed_layout: ComposedLayout[Layout, Swizzle]
-](idx: Int, offset: Int = 0) -> Int:
+](idx: UInt, offset: UInt = 0) -> UInt:
     var a_idx = idx
     var b_idx = 0
 
