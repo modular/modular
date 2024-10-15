@@ -1249,12 +1249,10 @@ fn _online_softmax_iter_for_mma_output[
     # Save current rowmax and rowsum
     @parameter
     for m_mma in range(num_m_mmas):
-        rowmax[2 * m_mma] = p_frag_rowmax[2 * m_mma]
-        rowmax[2 * m_mma + 1] = p_frag_rowmax[2 * m_mma + 1]
-        rowsum[2 * m_mma] = (
-            rowsum[2 * m_mma] * correction[2 * m_mma] + p_frag_rowsum[2 * m_mma]
-        )
-        rowsum[2 * m_mma + 1] = (
-            rowsum[2 * m_mma + 1] * correction[2 * m_mma + 1]
-            + p_frag_rowsum[2 * m_mma + 1]
+        rowmax.store(2 * m_mma, p_frag_rowmax.load[width=2](2 * m_mma))
+        rowsum.store(
+            2 * m_mma,
+            rowsum.load[width=2](2 * m_mma)
+            * correction.load[width=2](2 * m_mma)
+            + p_frag_rowsum.load[width=2](2 * m_mma),
         )
