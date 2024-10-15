@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo-no-debug %s
 
-from collections.optional import Optional
+from collections.optional import Optional, OptionalReg
 from math import ceildiv
 from sys import simdwidthof
 
@@ -25,8 +25,7 @@ from gpu.host.memory import _memset
 from internal_utils import (
     DeviceNDBuffer,
     HostNDBuffer,
-    assert_almost_equal,
-    assert_equal,
+    assert_with_measure,
     fill,
     linspace,
     random,
@@ -38,10 +37,16 @@ from linalg.matmul_gpu import _matmul_gpu, matmul_kernel_naive
 from linalg.utils import elementwise_epilogue_type
 from memory import UnsafePointer, memset_zero, stack_allocation
 from memory.pointer import _GPUAddressSpace as GPUAddressSpace
-from testing import assert_equal as assert_equal_val
 
 from utils import IndexList
 from utils.index import Index
+
+from builtin._location import __source_location
+from internal_utils._measure import cosine
+
+from math import exp2
+from utils.numerics import FPUtils
+from testing import assert_equal
 
 alias init_fn_type = fn (buff: NDBuffer) capturing -> None
 
@@ -83,7 +88,13 @@ fn test[
     init_a: Optional[init_fn_type] = None,
     init_b: Optional[init_fn_type] = None,
     lambda_fn: Optional[epilogue_func_type] = None,
-](ctx: DeviceContext, m: ValOrDim, n: ValOrDim, k: ValOrDim) raises:
+](
+    ctx: DeviceContext,
+    m: ValOrDim,
+    n: ValOrDim,
+    k: ValOrDim,
+    threshold: OptionalReg[Float64] = None,
+) raises:
     constrained[
         int(n.dim) > 0 and int(k.dim) > 0,
         "This test currently requires static N and K.",
@@ -235,13 +246,10 @@ fn test[
     ctx.enqueue_copy_from_device(c_host.tensor.data, c_device.buffer)
     ctx.enqueue_copy_from_device(c_host_ref.tensor.data, c_device_ref.buffer)
     ctx.synchronize()
-
-    assert_almost_equal(
-        c_host.tensor,
-        c_host_ref.tensor,
-        atol=0.0001,
-        rtol=0.02,
+    assert_with_measure[cosine](
+        c_host.tensor, c_host_ref.tensor, threshold=threshold
     )
+
     _ = c_device
     _ = c_device_ref
     _ = a_host
@@ -254,6 +262,11 @@ fn test[
 
 def main():
     with DeviceContext() as ctx:
+        test[
+            DType.float32,
+            init_a=linspace,
+            init_b=linspace,
+        ](ctx, dynamic(512), static[12288](), static[4096]())
         print("===> tfloat32-float32 mma")
         test[DType.float32, init_a=linspace](
             ctx, dynamic(256), static[384](), static[128]()
