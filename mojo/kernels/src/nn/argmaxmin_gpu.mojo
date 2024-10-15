@@ -15,8 +15,8 @@ from gpu.host import DeviceContext
 from utils import IndexList
 
 
-fn argmax_gpu[
-    type: DType, output_type: DType, rank: Int
+fn argmaxmin_gpu[
+    type: DType, output_type: DType, rank: Int, largest: Bool
 ](
     ctx: DeviceContext,
     input: NDBuffer[type, rank],
@@ -30,7 +30,7 @@ fn argmax_gpu[
         type: DType - The data type of the input tensor.
         output_type: DType - The data type of the output tensor.
         rank: Int - The rank of the input tensor.
-
+        largest: Bool - Whether to perform argmax or argmin.
     Args:
         ctx: DeviceContext - The device context.
         input: NDBuffer[type, rank] - The input tensor allocated on the device.
@@ -38,7 +38,9 @@ fn argmax_gpu[
     """
     constrained[rank > 0, "Input rank must be positive"]()
     alias K = 1
-    alias topk_kernel = _topk_gpu[out_idx_type=output_type, sampling=False]
+    alias topk_kernel = _topk_gpu[
+        out_idx_type=output_type, sampling=False, largest=largest
+    ]
     var orig_in_shape: IndexList[rank] = input.get_shape()
     var orig_out_shape: IndexList[rank] = output.get_shape()
     var N = orig_in_shape[rank - 1]
@@ -125,3 +127,23 @@ fn argmax_gpu[
     _ = internal_vals_buf^
     _ = internal_idxs_buf^
     _ = out_vals_buf^
+
+
+fn argmax_gpu[
+    type: DType, output_type: DType, rank: Int
+](
+    ctx: DeviceContext,
+    input: NDBuffer[type, rank],
+    output: NDBuffer[output_type, rank],
+) raises:
+    argmaxmin_gpu[largest=True](ctx, input, output)
+
+
+fn argmin_gpu[
+    type: DType, output_type: DType, rank: Int
+](
+    ctx: DeviceContext,
+    input: NDBuffer[type, rank],
+    output: NDBuffer[output_type, rank],
+) raises:
+    argmaxmin_gpu[largest=False](ctx, input, output)

@@ -29,33 +29,50 @@ from gpu.random import Random
 from gpu.shuffle import _floorlog2, _static_log2, warp_reduce
 from memory import UnsafePointer, stack_allocation
 
-from utils.numerics import min_or_neg_inf
+from utils.numerics import min_or_neg_inf, max_or_inf
 
 alias SEED = 0
 alias DEBUG_FILE = False
 
 
+@always_inline("nodebug")
+fn _topk_dead_val[T: DType, largest: Bool = True]() -> Scalar[T]:
+    @parameter
+    if largest:
+        return min_or_neg_inf[T]()
+    else:
+        return max_or_inf[T]()
+
+
 # Define the TopK_2 structure to keep track of the top element per thread
 @value
 @register_passable("trivial")
-struct TopK_2[T: DType]:
+struct TopK_2[T: DType, largest: Bool = True]:
     var p: Int  # flattened index of the element
     var u: Scalar[T]  # value of the element
 
     fn __init__(inout self):
         self.p = -1
-        self.u = min_or_neg_inf[T]()
+        self.u = _topk_dead_val[T, largest]()
 
     fn insert(inout self, elem: Scalar[T], elem_id: Int):
-        if elem > self.u:
-            self.u = elem
-            self.p = elem_id
+        @parameter
+        if largest:
+            if elem > self.u:
+                self.u = elem
+                self.p = elem_id
+        else:
+            if elem < self.u:
+                self.u = elem
+                self.p = elem_id
 
 
 # Function to perform warp-level reduction to find the maximum TopK_2
 @always_inline
 @parameter
-fn warp_reduce_topk_max[T: DType](val: TopK_2[T]) -> TopK_2[T]:
+fn warp_reduce_topk[
+    T: DType, largest: Bool
+](val: TopK_2[T, largest]) -> TopK_2[T, largest]:
     """
     Performs warp-level reduction to find the maximum TopK_2 element.
     Uses shuffle down operations to efficiently compute the warp-wide
@@ -63,19 +80,22 @@ fn warp_reduce_topk_max[T: DType](val: TopK_2[T]) -> TopK_2[T]:
 
     Parameters:
         T: DType - Data type of the values being compared.
+        largest: Bool - Whether to find the maximum or minimum value.
 
     Arguments:
-        val: TopK_2[T] - TopK_2 value from each thread to be reduced.
+        val: TopK_2[T, largest] - TopK_2 value from each thread to be reduced.
 
     Returns:
-        TopK_2[T] - Maximum TopK_2 value across the warp.
+        TopK_2[T, largest] - Maximum TopK_2 value across the warp.
     """
     var res = val
 
     # Shuffle down function for TopK_2 structure
     @parameter
-    fn shuffle_down_topk2(v: TopK_2[T], offset: Int) -> TopK_2[T]:
-        return TopK_2(
+    fn shuffle_down_topk2(
+        v: TopK_2[T, largest], offset: Int
+    ) -> TopK_2[T, largest]:
+        return TopK_2[T, largest](
             u=shuffle_down(v.u, offset),  # u is the value
             p=int(
                 shuffle_down(Scalar[DType.int32](v.p), offset)
@@ -83,8 +103,14 @@ fn warp_reduce_topk_max[T: DType](val: TopK_2[T]) -> TopK_2[T]:
         )
 
     @parameter
-    fn reduce_fn(a: TopK_2[T], b: TopK_2[T]) -> TopK_2[T]:
-        return a if a.u > b.u else b
+    fn reduce_fn(
+        a: TopK_2[T, largest], b: TopK_2[T, largest]
+    ) -> TopK_2[T, largest]:
+        @parameter
+        if largest:
+            return a if a.u > b.u else b
+        else:
+            return a if a.u < b.u else b
 
     # Reimplement `warp_reduce` for TopK_2 reduce and shuffle function
     alias limit = _static_log2[WARP_SIZE]()
@@ -99,9 +125,9 @@ fn warp_reduce_topk_max[T: DType](val: TopK_2[T]) -> TopK_2[T]:
 
 # Function to perform block-level reduction to find the maximum TopK_2
 @always_inline
-fn block_reduce_max[
-    T: DType, BLOCK_SIZE: Int = 1024
-](val: TopK_2[T]) -> TopK_2[T]:
+fn block_reduce_topk[
+    T: DType, largest: Bool
+](val: TopK_2[T, largest]) -> TopK_2[T, largest]:
     """
     Performs a block-level reduction to find the maximum TopK_2 element.
 
@@ -111,21 +137,22 @@ fn block_reduce_max[
 
     Parameters:
         T: DType - The data type of the values being compared.
-        BLOCK_SIZE: Int - The number of threads in the block. Default to max (1024).
+        largest: Bool - Whether to find the maximum or minimum value.
 
     Arguments:
-        val: TopK_2[T] - The TopK_2 value from each thread to be reduced.
+        val: TopK_2[T, largest] - The TopK_2 value from each thread to be reduced.
 
     Returns:
-        TopK_2[T] - The maximum TopK_2 value across all threads in the block.
+        TopK_2[T, largest] - The maximum TopK_2 value across all threads in the block.
 
     Note:
     This function assumes that BLOCK_SIZE is a multiple of WARP_SIZE.
     It uses shared memory to store intermediate results and performs
     a final warp-level reduction to compute the block-wide maximum.
     """
+    alias MAX_BLOCK_SIZE = 1024
     constrained[
-        BLOCK_SIZE % WARP_SIZE == 0,
+        MAX_BLOCK_SIZE % WARP_SIZE == 0,
         "block size must be a multiple of the warp size",
     ]()
 
@@ -135,22 +162,22 @@ fn block_reduce_max[
 
     # Allocate shared memory for indices and values
     var p_sram = stack_allocation[
-        (BLOCK_SIZE // WARP_SIZE) * p_width,
+        (MAX_BLOCK_SIZE // WARP_SIZE) * p_width,
         Scalar[DType.index],
         address_space = AddressSpace.SHARED,
     ]()
     var u_sram = stack_allocation[
-        (BLOCK_SIZE // WARP_SIZE) * u_width,
+        (MAX_BLOCK_SIZE // WARP_SIZE) * u_width,
         Scalar[T],
         address_space = AddressSpace.SHARED,
     ]()
 
     # Calculate warp id and thread information
     var warp: UInt = ThreadIdx.x() // WARP_SIZE
-    alias num_warps_needed = BLOCK_SIZE // WARP_SIZE
+    alias num_warps_needed = MAX_BLOCK_SIZE // WARP_SIZE
 
     # Each warp reduces its own TopK_2 value
-    var warp_accum: TopK_2[T] = warp_reduce_topk_max[T](val)
+    var warp_accum: TopK_2[T, largest] = warp_reduce_topk[T, largest](val)
 
     # Store warp-level results in shared memory
     if lane_id() == 0 and warp < num_warps_needed:
@@ -160,24 +187,25 @@ fn block_reduce_max[
     barrier()
 
     # Load warp results into final warp for block-level reduction
-    var block_accum = TopK_2[T]()
+    var block_accum = TopK_2[T, largest]()
     var thread_in_final_warp = ThreadIdx.x() < (BlockDim.x() // WARP_SIZE)
     if thread_in_final_warp:
         var p_idx = p_sram[lane_id() * p_width]  # loaded value is a scalar
-        block_accum = TopK_2[T](
+        block_accum = TopK_2[T, largest](
             p=int(p_idx), u=u_sram[lane_id() * u_width]  # Convert back to int
         )
     else:
         # Initialize unused threads with dummy values
         block_accum.p = -1
-        block_accum.u = min_or_neg_inf[T]()
+        block_accum.u = _topk_dead_val[T, largest]()
 
     # Perform final warp-level reduction for block result
-    return warp_reduce_topk_max[T](block_accum)
+    return warp_reduce_topk[T, largest](block_accum)
 
 
 fn topk_stage1[
     T: DType,
+    largest: Bool = True,
 ](
     K: Int,
     num_elements: Int,
@@ -199,6 +227,7 @@ fn topk_stage1[
 
     Parameters:
         T: Data type of the elements.
+        largest: Bool - Whether to find the maximum or minimum value.
 
     Args:
         K: Number of top elements to select per block.
@@ -222,15 +251,15 @@ fn topk_stage1[
 
     # # Allocate shared memory for the values and indices
     var topk_sram = external_memory[
-        TopK_2[T],
+        TopK_2[T, largest],
         address_space = AddressSpace.SHARED,
-        alignment = alignof[TopK_2[T]](),
+        alignment = alignof[TopK_2[T, largest]](),
     ]()
 
     # Pack the topk_vals and topk_idxs into shared memory
     var block_offset = block_lane * block_size
     var stride = block_size * num_blocks_per_input
-    topk_sram[tid] = TopK_2[T]()
+    topk_sram[tid] = TopK_2[T, largest]()
     for i in range(tid + block_offset, num_elements, stride):
         topk_sram[tid].insert(_in_buffer[i], i)
 
@@ -242,7 +271,7 @@ fn topk_stage1[
         var partial = topk_sram[tid]
 
         # Perform block-level reduction to find the maximum TopK_2
-        var total = block_reduce_max[T](partial)
+        var total = block_reduce_topk[T, largest](partial)
 
         if tid == 0:
             # Store the local top-K values and indices in global memory
@@ -252,7 +281,7 @@ fn topk_stage1[
 
             # Remove the found maximum from consideration in the next iteration
             var orig_tid = (vector_idx - block_offset) % stride
-            topk_sram[orig_tid].u = min_or_neg_inf[T]()
+            topk_sram[orig_tid].u = _topk_dead_val[T, largest]()
 
         barrier()
 
@@ -261,6 +290,7 @@ fn topk_stage2[
     T: DType,
     out_idx_type: DType,
     sampling: Bool = True,
+    largest: Bool = True,
 ](
     K: Int,
     num_blocks_per_input: Int,
@@ -287,6 +317,7 @@ fn topk_stage2[
         T: Data type of the elements.
         out_idx_type: DType - The data type of the output indices.
         sampling: Bool - Whether to sample a token from the top-K distribution.
+        largest: Bool - Whether to find the maximum or minimum value.
 
     Args:
         K: Number of top elements to select.
@@ -355,14 +386,14 @@ fn topk_stage2[
 
     for k in range(K):
         # Re-initialize partial for each thread
-        var partial = TopK_2[T]()
+        var partial = TopK_2[T, largest]()
         # TODO: unroll this
         for i in range(tid, num_elem_reduced, BlockDim.x()):
             partial.insert(vals_sram[i], i)
 
         barrier()
         # Perform block-level reduction to find the maximum TopK_2
-        var total: TopK_2[T] = block_reduce_max[T](partial)
+        var total: TopK_2[T, largest] = block_reduce_topk[T, largest](partial)
 
         if tid == 0:
 
@@ -373,7 +404,7 @@ fn topk_stage2[
 
             # Remove the found maximum from consideration in the next iteration
             idxs_sram[total.p] = -1
-            vals_sram[total.p] = min_or_neg_inf[T]()
+            vals_sram[total.p] = _topk_dead_val[T, largest]()
 
             @parameter
             if sampling:
@@ -405,13 +436,13 @@ fn topk_stage2[
             for ki in range(K):
                 var exp_logit = s_val2[ki]
 
-                # TMP (debug - store prob of max logit)
+                # TMP (debug - store prob of largest logit)
                 @parameter
                 if DEBUG_FILE:
                     batch_i_topk_vals[ki] = exp_logit / softmax_norm
                 r -= exp_logit
                 if r <= 0.0 or ki == K - 1:
-                    # uncomment below to return prob of max logit
+                    # uncomment below to return prob of largest logit
                     # batch_i_topk_vals[0] = exp_logit / softmax_norm
                     var idx: Int = s_id[ki]
                     batch_i_topk_idxs[0] = Scalar[DType.index](
@@ -425,6 +456,7 @@ fn _topk_gpu[
     rank: Int,
     out_idx_type: DType = DType.index,
     sampling: Bool = True,
+    largest: Bool = True,
 ](
     ctx: DeviceContext,
     K: Int,  # num top elements to keep
@@ -447,6 +479,7 @@ fn _topk_gpu[
         rank: Int - The rank of the input tensor (must be 2 right now, first dim is batch size).
         out_idx_type: DType - The data type of the output indices (default is DType.index).
         sampling: Bool - Whether to return token samples from topK dist (default is True).
+        largest: Bool - Whether to find the maximum or minimum value.
 
     Args:
         ctx: DeviceContext
@@ -478,14 +511,18 @@ fn _topk_gpu[
     Note: Currently supports only 1D tensors. Higher rank tensor support is planned shortly.
     """
     constrained[rank == 2, "rank must be 2"]()
-    # Use max number of threads per block
+    constrained[
+        not (sampling and not largest),
+        "sampling not supported for largest=False",
+    ]()
+    # Use largest number of threads per block
     var batch_size = input_buf.get_shape()[0] if rank == 2 else 1
     var N = input_buf.get_shape()[1] if rank == 2 else input_buf.get_shape()[0]
     # Define the number of blocks per grid
     var num_blocks_per_input_: Int = ceildiv(
         N, block_size
     ) if not num_blocks_per_input else num_blocks_per_input.value()
-    # Calculate max num bytes of shmem for each stage
+    # Calculate largest num bytes of shmem for each stage
     if block_size % WARP_SIZE != 0:
         # TODO: Need to pad in this case
         raise Error("block_size must be a multiple of WARP_SIZE")
@@ -494,7 +531,7 @@ fn _topk_gpu[
 
     # Compile the kernels
     var gpu_fn_stage1 = ctx.compile_function[
-        topk_stage1[type], dump_ptx=False
+        topk_stage1[type, largest], dump_ptx=False
     ]()
     # Define grid and block dimensions for stage 1
     var griddim_stage1 = Dim(num_blocks_per_input_ * batch_size)
@@ -537,7 +574,7 @@ fn _topk_gpu[
     )  # align to warp size
 
     var gpu_fn_stage2 = ctx.compile_function[
-        topk_stage2[type, out_idx_type, sampling], dump_ptx=False
+        topk_stage2[type, out_idx_type, sampling, largest], dump_ptx=False
     ]()
 
     # Define grid and block dimensions for stage 2
