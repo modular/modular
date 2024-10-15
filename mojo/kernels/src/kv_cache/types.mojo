@@ -15,8 +15,8 @@ from utils import IndexList
 @value
 @register_passable("trivial")
 struct KVCacheStaticParams(EqualityComparable):
-    var num_heads: Int
-    var head_size: Int
+    var num_heads: UInt
+    var head_size: UInt
 
     @always_inline("nodebug")
     fn __eq__(self, rhs: KVCacheStaticParams) -> Bool:
@@ -120,7 +120,7 @@ struct ContiguousKVCache[
     """
 
     alias _internal_block_shape = DimList(
-        Dim(), Dim(), kv_params.num_heads, kv_params.head_size
+        Dim(), Dim(), int(kv_params.num_heads), kv_params.head_size
     )
     alias single_block_shape = DimList(
         Self._internal_block_shape.get[1](),
@@ -434,7 +434,7 @@ struct ContinuousBatchingKVCache[
     alias ValueIdx = 1
 
     alias single_block_shape = DimList(
-        Dim(), kv_params.num_heads, kv_params.head_size
+        Dim(), int(kv_params.num_heads), kv_params.head_size
     )
 
     # shape is
