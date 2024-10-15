@@ -14,17 +14,16 @@ def test_assert_with_custom_measure():
     var t0 = TestTensor[DType.float32, 1](DimList(100), List[Float32](1))
     var t1 = TestTensor[DType.float32, 1](DimList(100), List[Float32](1))
 
-    @parameter
-    fn always_true[
+    fn always_zero[
         type: DType
     ](
         lhs: UnsafePointer[Scalar[type]],
         rhs: UnsafePointer[Scalar[type]],
         n: Int,
-    ) -> Bool:
-        return True
+    ) -> Float64:
+        return 0
 
-    assert_with_measure[always_true](t0, t1)
+    assert_with_measure[always_zero](t0, t1)
 
     _ = t0^
     _ = t1^

@@ -10,8 +10,10 @@ from collections import OptionalReg
 import testing
 from buffer import NDBuffer
 from builtin._location import __call_location, _SourceLocation
+from math import exp2
 from memory import UnsafePointer
 from testing.testing import _assert_cmp_error
+from utils.numerics import FPUtils
 
 from ._utils import HostNDBuffer, TestTensor
 
@@ -177,7 +179,7 @@ fn _assert_with_measure_impl[
     type: DType, //,
     measure: fn[type: DType] (
         UnsafePointer[Scalar[type]], UnsafePointer[Scalar[type]], Int
-    ) capturing [_] -> Bool,
+    ) -> Float64,
 ](
     x: UnsafePointer[Scalar[type], *_],
     y: __type_of(x),
@@ -185,14 +187,20 @@ fn _assert_with_measure_impl[
     msg: String = "",
     *,
     location: OptionalReg[_SourceLocation] = None,
+    threshold: OptionalReg[Float64] = None,
 ) raises:
-    if not measure(
+    alias sqrt_eps = exp2(-0.5 * FPUtils[type].mantissa_width()).cast[
+        DType.float64
+    ]()
+    var m = measure(
         x.bitcast[address_space = AddressSpace.GENERIC](),
         y.bitcast[address_space = AddressSpace.GENERIC](),
         n,
-    ):
-        raise _assert_cmp_error["`left == right` comparison"](
-            str(x), str(y), msg=msg, loc=location.or_else(__call_location())
+    )
+    var t = threshold.or_else(sqrt_eps)
+    if m > t:
+        raise _assert_cmp_error["`left > right`, left = measure"](
+            str(m), str(t), msg=msg, loc=location.or_else(__call_location())
         )
 
 
@@ -200,13 +208,14 @@ fn _assert_with_measure_impl[
 fn assert_with_measure[
     measure: fn[type: DType] (
         UnsafePointer[Scalar[type]], UnsafePointer[Scalar[type]], Int
-    ) capturing [_] -> Bool
+    ) -> Float64,
 ](
     x: NDBuffer,
     y: __type_of(x),
     msg: String = "",
     *,
     location: OptionalReg[_SourceLocation] = None,
+    threshold: OptionalReg[Float64] = None,
 ) raises:
     _assert_with_measure_impl[measure](
         x.data,
@@ -214,6 +223,7 @@ fn assert_with_measure[
         x.num_elements(),
         msg=msg,
         location=location.or_else(__call_location()),
+        threshold=threshold,
     )
 
 
@@ -221,13 +231,14 @@ fn assert_with_measure[
 fn assert_with_measure[
     measure: fn[type: DType] (
         UnsafePointer[Scalar[type]], UnsafePointer[Scalar[type]], Int
-    ) capturing [_] -> Bool
+    ) -> Float64,
 ](
     x: HostNDBuffer,
     y: __type_of(x),
     msg: String = "",
     *,
     location: OptionalReg[_SourceLocation] = None,
+    threshold: OptionalReg[Float64] = None,
 ) raises:
     _assert_with_measure_impl[measure](
         x.tensor.data,
@@ -235,6 +246,7 @@ fn assert_with_measure[
         x.tensor.num_elements(),
         msg=msg,
         location=location.or_else(__call_location()),
+        threshold=threshold,
     )
 
 
@@ -242,19 +254,21 @@ fn assert_with_measure[
 fn assert_with_measure[
     measure: fn[type: DType] (
         UnsafePointer[Scalar[type]], UnsafePointer[Scalar[type]], Int
-    ) capturing [_] -> Bool
+    ) -> Float64,
 ](
     x: TestTensor,
     y: __type_of(x),
     msg: String = "",
     *,
     location: OptionalReg[_SourceLocation] = None,
+    threshold: OptionalReg[Float64] = None,
 ) raises:
     return assert_with_measure[measure](
         x.ndbuffer,
         y.ndbuffer,
         msg=msg,
         location=location.or_else(__call_location()),
+        threshold=threshold,
     )
 
 
