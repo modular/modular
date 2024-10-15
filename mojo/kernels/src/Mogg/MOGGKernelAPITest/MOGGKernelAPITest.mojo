@@ -99,7 +99,7 @@ struct ImposterMHANoMask:
         k: ManagedTensorSlice,
         v: ManagedTensorSlice,
         scale: ManagedTensorSlice,
-    ):
+    ) raises:
         alias qkv_rank = q.rank
         alias qkv_dtype = q.type
 
@@ -115,33 +115,30 @@ struct ImposterMHANoMask:
         var scale_f32 = scale_buffer[0].cast[DType.float32]()
         var causal_mask: Float32 = 0
 
-        try:
-            cpu_fused_attention_impl[
-                qkv_rank,
-                q_buffer.shape,
-                k_buffer.shape,
-                v_buffer.shape,
-                mask_shape,
-                DimList.create_unknown[qkv_rank](),
-                qkv_dtype,
-                qkv_dtype,
-                qkv_dtype,
-                qkv_dtype,
-                qkv_dtype,
-                transpose_k=False,
-                add_attn_mask=False,
-                add_causal_mask=False,
-            ](
-                output_buffer,
-                q_buffer,
-                k_buffer,
-                v_buffer,
-                mask,
-                scale_f32,
-                causal_mask,
-            )
-        except e:
-            e = Error("Something went wrong!")
+        cpu_fused_attention_impl[
+            qkv_rank,
+            q_buffer.shape,
+            k_buffer.shape,
+            v_buffer.shape,
+            mask_shape,
+            DimList.create_unknown[qkv_rank](),
+            qkv_dtype,
+            qkv_dtype,
+            qkv_dtype,
+            qkv_dtype,
+            qkv_dtype,
+            transpose_k=False,
+            add_attn_mask=False,
+            add_causal_mask=False,
+        ](
+            output_buffer,
+            q_buffer,
+            k_buffer,
+            v_buffer,
+            mask,
+            scale_f32,
+            causal_mask,
+        )
 
     @staticmethod
     fn shape(

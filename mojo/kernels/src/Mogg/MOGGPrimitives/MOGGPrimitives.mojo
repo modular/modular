@@ -868,12 +868,9 @@ fn mgp_device_context_profile_end[
     ctx: StateContext,
     dev_ctx: UnsafePointer[DeviceContext],
     call_ctx: MojoCallContextPtr,
-) -> Int:
+) raises -> Int:
     # Call into device_context here....
-    try:
-        dev_ctx[].dump_kernel_timing_info()
-    except e:
-        abort(e)
+    dev_ctx[].dump_kernel_timing_info()
     return 1
 
 

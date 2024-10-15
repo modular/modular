@@ -801,7 +801,9 @@ fn _reduce_wrapper[
     /,
     single_thread_blocking_override: Bool = False,
     target: StringLiteral = "cpu",
-](input: Tensor, inout output: Tensor, init: Scalar[type], ax: Int) -> None:
+](
+    input: Tensor, inout output: Tensor, init: Scalar[type], ax: Int
+) raises -> None:
     constrained[
         input.static_rank.__bool__(),
         "reduce kernel does not support dynamic rank inputs",
@@ -835,21 +837,18 @@ fn _reduce_wrapper[
             rebind[SIMD[output.type, width]](val),
         )
 
-    try:
-        with Trace[TraceLevel.OP, target="cpu"]("reduce"):
-            _reduce_generator[
-                load_input,
-                store_output,
-                reduce_impl,
-                target=target,
-                single_thread_blocking_override=single_thread_blocking_override,
-            ](
-                input.shape.to_static_tuple(),
-                init,
-                ax,
-            )
-    except e:
-        print(e)
+    with Trace[TraceLevel.OP, target="cpu"]("reduce"):
+        _reduce_generator[
+            load_input,
+            store_output,
+            reduce_impl,
+            target=target,
+            single_thread_blocking_override=single_thread_blocking_override,
+        ](
+            input.shape.to_static_tuple(),
+            init,
+            ax,
+        )
 
 
 @mogg_register_override("mo.reduce_add", priority=MAX_BENEFIT)
@@ -861,7 +860,7 @@ fn reduce_add[
 ](
     input: Tensor,
     axis: Tensor,
-) -> Tensor[
+) raises -> Tensor[
     input.type,
     DimList.create_unknown[input.static_rank.value()](),
 ]:
@@ -896,7 +895,7 @@ fn reduce_max[
 ](
     input: Tensor,
     axis: Tensor,
-) -> Tensor[
+) raises -> Tensor[
     input.type,
     DimList.create_unknown[input.static_rank.value()](),
 ]:
@@ -931,7 +930,7 @@ fn reduce_min[
 ](
     input: Tensor,
     axis: Tensor,
-) -> Tensor[
+) raises -> Tensor[
     input.type,
     DimList.create_unknown[input.static_rank.value()](),
 ]:
@@ -966,7 +965,7 @@ fn reduce_mul[
 ](
     input: Tensor,
     axis: Tensor,
-) -> Tensor[
+) raises -> Tensor[
     input.type,
     DimList.create_unknown[input.static_rank.value()](),
 ]:
