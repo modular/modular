@@ -24,17 +24,18 @@ from sys import env_get_string, env_get_int, env_get_bool
 # ===------------------------------------------------------------------===#
 
 
-@always_inline
 fn block_swizzle(
-    block_idx: IndexList[2], grid_dim: IndexList[2]
-) -> IndexList[2]:
+    block_idx: IndexList[2, **_], grid_dim: __type_of(block_idx)
+) -> __type_of(block_idx):
     return _block_swizzle_by_scale[3](block_idx, grid_dim)
 
 
 @always_inline
 fn _block_swizzle_by_scale[
     scale0: Int
-](block_idx: IndexList[2], grid_dim: IndexList[2]) -> IndexList[2]:
+](block_idx: IndexList[2, **_], grid_dim: __type_of(block_idx)) -> __type_of(
+    block_idx
+):
     """
     Block swizzling based on https://github.com/NVIDIA/cutlass/blob/main/include/cutlass/gemm/threadblock/threadblock_swizzle.h
 
@@ -50,16 +51,18 @@ fn _block_swizzle_by_scale[
     """
     var scale = scale0
     var num_partitions = (1 << scale)
-    while (grid_dim[0] & (num_partitions - 1)) and scale > 0:
+    while (grid_dim.data[0] & (num_partitions - 1)) and scale > 0:
         scale -= 1
         num_partitions = 1 << scale
 
-    var bx = block_idx[0] >> scale
-    var by = (block_idx[1] << scale) + ((block_idx[0]) & ((1 << scale) - 1))
-    bx = bx + by // grid_dim[1] * (grid_dim[0] >> scale)
-    by = by % grid_dim[1]
+    var bx = block_idx.data[0] >> scale
+    var by = (block_idx[1] << scale) + (
+        (block_idx.data[0]) & ((1 << scale) - 1)
+    )
+    bx = bx + by // grid_dim.data[1] * (grid_dim.data[0] >> scale)
+    by = by % grid_dim.data[1]
 
-    return Index(bx, by)
+    return __type_of(block_idx)(int(bx), int(by))
 
 
 # ===------------------------------------------------------------------===#
