@@ -1803,7 +1803,7 @@ struct LayoutTensor[
         element_layout=element_layout,
     ] as result:
         constrained[
-            d0_slice.step == 1 and d1_slice.step == 1,
+            d0_slice.step.or_else(1) == 1 and d1_slice.step.or_else(1) == 1,
             "Slice should have no gaps",
         ]()
         alias stride_m = to_int(result.layout.stride[0])
@@ -1834,7 +1834,7 @@ struct LayoutTensor[
         element_layout=element_layout,
     ] as result:
         constrained[
-            d0_slice.step == 1 and d1_slice.step == 1,
+            d0_slice.step.or_else(1) == 1 and d1_slice.step.or_else(1) == 1,
             "Slice should have no gaps",
         ]()
         constrained[
@@ -1881,7 +1881,7 @@ struct LayoutTensor[
         element_layout=element_layout,
     ] as result:
         constrained[
-            d0_slice.step == 1,
+            d0_slice.step.or_else(1) == 1,
             "Slice should have no gaps",
         ]()
 
