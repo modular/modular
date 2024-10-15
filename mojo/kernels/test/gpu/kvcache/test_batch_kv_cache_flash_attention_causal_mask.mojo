@@ -298,8 +298,8 @@ def execute_flash_attention[
             for h in range(kv_params.num_heads):
                 for hd in range(kv_params.head_size):
                     # print(bs, s, h, hd, test_out[bs, s, h, hd])
-                    var expect = ref_out[Index(bs, s, h, hd)]
-                    var actual = test_out[Index(bs, s, h, hd)]
+                    var expect = ref_out[Index(bs, s, int(h), int(hd))]
+                    var actual = test_out[Index(bs, s, int(h), int(hd))]
                     if not isclose(actual, expect, atol=1e-5, rtol=8e-3):
                         print(bs, s, h, hd, actual, expect)
                     assert_almost_equal(

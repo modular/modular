@@ -138,7 +138,10 @@ def execute_flash_attention[
         ]._internal_block_shape,
     ](
         Index(
-            batch_size, max_seq_len, kv_params.num_heads, kv_params.head_size
+            batch_size,
+            max_seq_len,
+            int(kv_params.num_heads),
+            int(kv_params.head_size),
         ),
     )
     random(k_block_host.tensor)
@@ -151,7 +154,10 @@ def execute_flash_attention[
         ]._internal_block_shape,
     ](
         Index(
-            batch_size, max_seq_len, kv_params.num_heads, kv_params.head_size
+            batch_size,
+            max_seq_len,
+            int(kv_params.num_heads),
+            int(kv_params.head_size),
         ),
         ctx=ctx,
     )
@@ -173,7 +179,10 @@ def execute_flash_attention[
         ]._internal_block_shape,
     ](
         Index(
-            batch_size, max_seq_len, kv_params.num_heads, kv_params.head_size
+            batch_size,
+            max_seq_len,
+            int(kv_params.num_heads),
+            int(kv_params.head_size),
         ),
     )
     random(v_block_host.tensor)
@@ -186,7 +195,10 @@ def execute_flash_attention[
         ]._internal_block_shape,
     ](
         Index(
-            batch_size, max_seq_len, kv_params.num_heads, kv_params.head_size
+            batch_size,
+            max_seq_len,
+            int(kv_params.num_heads),
+            int(kv_params.head_size),
         ),
         ctx=ctx,
     )

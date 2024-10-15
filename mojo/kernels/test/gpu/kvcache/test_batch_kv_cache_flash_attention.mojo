@@ -283,7 +283,7 @@ def execute_flash_attention[
     for bs in range(int(batch_size)):
         for s in range(int(valid_length[bs])):
             for h in range(int(kv_params.num_heads)):
-                for hd in range(int(kv_params.head_size)):
+                for hd in range(kv_params.head_size):
                     assert_almost_equal(
                         ref_out[bs, s, h, hd],
                         test_out[bs, s, h, hd],
