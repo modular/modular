@@ -864,12 +864,13 @@ struct ValueMem:
 # CHECK: lit.func @"__init__(
 # CHECK-SAME:  %[[SELF:.*]][*""]: !lit.ref<!ValueMem, mut {{.*}}> init_self,
 # CHECK-SAME:  %a: !Int,
-# CHECK-SAME:  %b: !StructExample
+# CHECK-SAME:  %b: !lit.ref<!StructExample, mut *"b`"> owned_in_mem
 # CHECK-SAME: ) -> !kgen.none always_inline_no_debug attributes {isSynthetic, sourceName = "__init__", specialFnKind = 2 : i8} {
 # CHECK-NEXT: %[[PA:.*]] = lit.ref.struct.ger %[[SELF]][a]
 # CHECK-NEXT: lit.ref.store %a, %[[PA]]
 # CHECK-NEXT: %[[PB:.*]] = lit.ref.struct.ger %[[SELF]][b]
-# CHECK-NEXT: lit.ref.store %b, %[[PB]]
+# CHECK-NEXT: [[TMP:%.*]] = lit.load.consume %b
+# CHECK-NEXT: lit.ref.store [[TMP]], %[[PB]]
 
 
 # CHECK-LABEL: lit.struct.decl @ValueMemHasCopy(!AnyType, !Copyable, !Movable)
@@ -940,12 +941,13 @@ struct ValueReg:
 # CHECK: lit.func @"__init__(
 # CHECK-SAME:  (%0[*""]: !lit.ref<!ValueReg, mut *"self`"> init_self,
 # CHECK-SAME:  %a: !Int,
-# CHECK-SAME:  %b: !StructExample
+# CHECK-SAME:  %b: !lit.ref<!StructExample, mut *"b`"> owned_in_mem
 # CHECK-SAME: )
 # CHECK-NEXT: %1 = lit.ref.struct.ger %0[a]
 # CHECK-NEXT: lit.ref.store %a, %1
 # CHECK-NEXT: %2 = lit.ref.struct.ger %0[b]
-# CHECK-NEXT: lit.ref.store %b, %2
+# CHECK-NEXT: %3 =  lit.load.consume %b
+# CHECK-NEXT: lit.ref.store %3, %2
 
 
 # COM: Ensure that "self" is a valid field name.
