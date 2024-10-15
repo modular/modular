@@ -24,6 +24,7 @@ from nn.concat import concat
 from random import randn, seed
 from sys import llvm_intrinsic
 from sys.info import simdwidthof
+from nn.split import split
 import compiler_internal as compiler
 from collections.vector import InlinedFixedVector
 
@@ -3410,6 +3411,41 @@ struct Concat:
         var output_shape = inputs[0].get_static_spec().shape
         output_shape[axis] = concat_axis_dim_sum
         return output_shape
+
+
+# ===----------------------------------------------------------------------===#
+# Split kernels
+# ===----------------------------------------------------------------------===#
+
+
+# TODO(GRA-1127): the shape function for split is special and there is special
+# handling in the graph compiler to make things work.
+@compiler.register("mo.split")
+struct Split:
+    @staticmethod
+    fn execute[
+        type: DType,
+        rank: Int,
+        synchronous: Bool,
+        target: StringLiteral,
+    ](
+        output: StaticTuple[ManagedTensorSlice[type, rank], *_],
+        input: ManagedTensorSlice[type, rank],
+        split_sizes: ManagedTensorSlice[rank=1],
+        axis: ManagedTensorSlice[rank=1],
+        ctx: MojoCallContextPtr,
+    ) raises:
+        var input_buf = managed_tensor_slice_to_ndbuffer(input)
+        var axis_val = axis._ptr.load(0)
+        var output_bufs = StaticTuple[NDBuffer[type, rank], output.size]()
+
+        @parameter
+        for i in range(output.size):
+            output_bufs[i] = managed_tensor_slice_to_ndbuffer(output[i])
+
+        split[type, rank](
+            input_buf, int(normalize_neg_index(axis_val, rank)), output_bufs
+        )
 
 
 # ===----------------------------------------------------------------------===#
