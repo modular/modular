@@ -15,7 +15,7 @@ from utils.numerics import min_or_neg_inf
 struct TileMaskStatus:
     """A tile's masking status."""
 
-    var status: UInt
+    var status: UInt8
 
     # No element is masked.
     alias NO_MASK = Self(0)
