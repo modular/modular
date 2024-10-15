@@ -306,6 +306,32 @@ fn _static_log2[n: Int]() -> Int:
 
 
 @always_inline("nodebug")
+fn lane_group_reduce[
+    shuffle: fn[type: DType, simd_width: Int] (
+        val: SIMD[type, simd_width], offset: UInt32
+    ) -> SIMD[type, simd_width],
+    func: fn[type: DType, width: Int] (
+        SIMD[type, width], SIMD[type, width]
+    ) capturing -> SIMD[type, width],
+    val_type: DType,
+    simd_width: Int,
+    nthreads: Int,
+](val: SIMD[val_type, simd_width]) -> SIMD[val_type, simd_width]:
+    """Takes in an input function to computes warp shuffle based reduction operation.
+    """
+    var res = val
+
+    alias limit = _static_log2[nthreads]()
+
+    @parameter
+    for i in reversed(range(limit)):
+        alias offset = 1 << i
+        res = func(res, shuffle(res, offset))
+
+    return res
+
+
+@always_inline("nodebug")
 fn warp_reduce[
     shuffle: fn[type: DType, simd_width: Int] (
         val: SIMD[type, simd_width], offset: UInt32
@@ -318,16 +344,9 @@ fn warp_reduce[
 ](val: SIMD[val_type, simd_width]) -> SIMD[val_type, simd_width]:
     """Takes in an input function to computes warp shuffle based reduction operation.
     """
-    var res = val
-
-    alias limit = _static_log2[WARP_SIZE]()
-
-    @parameter
-    for i in reversed(range(limit)):
-        alias offset = 1 << i
-        res = func(res, shuffle(res, offset))
-
-    return res
+    return lane_group_reduce[
+        shuffle, func, val_type, simd_width, nthreads=WARP_SIZE
+    ](val)
 
 
 # ===----------------------------------------------------------------------===#
@@ -336,15 +355,43 @@ fn warp_reduce[
 
 
 @always_inline("nodebug")
-fn warp_sum[
+fn lane_group_sum[
     val_type: DType,
     simd_width: Int,
+    nthreads: Int,
 ](val: SIMD[val_type, simd_width]) -> SIMD[val_type, simd_width]:
     @parameter
     fn _reduce_add(x: SIMD, y: __type_of(x)) -> __type_of(x):
         return x + y
 
-    return warp_reduce[shuffle_down, _reduce_add](val)
+    return lane_group_reduce[shuffle_down, _reduce_add, nthreads=nthreads](val)
+
+
+@always_inline("nodebug")
+fn lane_group_max[
+    val_type: DType,
+    simd_width: Int,
+    nthreads: Int,
+](val: SIMD[val_type, simd_width]) -> SIMD[val_type, simd_width]:
+    @parameter
+    fn _reduce_max(x: SIMD, y: __type_of(x)) -> __type_of(x):
+        return max(x, y)
+
+    return lane_group_reduce[shuffle_down, _reduce_max, nthreads=nthreads](val)
+
+
+@always_inline("nodebug")
+fn warp_sum[
+    val_type: DType, simd_width: Int
+](val: SIMD[val_type, simd_width]) -> SIMD[val_type, simd_width]:
+    return lane_group_sum[nthreads=WARP_SIZE](val)
+
+
+@always_inline("nodebug")
+fn warp_max[
+    val_type: DType, simd_width: Int
+](val: SIMD[val_type, simd_width]) -> SIMD[val_type, simd_width]:
+    return lane_group_max[nthreads=WARP_SIZE](val)
 
 
 # ===----------------------------------------------------------------------===#
