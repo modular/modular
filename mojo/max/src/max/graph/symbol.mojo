@@ -891,4 +891,4 @@ struct SymbolicSlice(CollectionElement):
         if s.end:
             self.stop = g.scalar(Int64(s.end.value()))
         if s.step:
-            self.step = g.scalar(Int64(s.step))
+            self.step = g.scalar(Int64(s.step.value()))

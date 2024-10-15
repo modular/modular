@@ -196,7 +196,7 @@ def _slice_size(s: Slice, length: Optional[Int64]) -> Optional[Int]:
     else:
         startval = (s.start or 0).value()
         if s.end and sign(startval) == sign(s.end.value()):
-            return len(range(startval, s.end.value(), s.step))
+            return len(range(startval, s.end.value(), s.step.or_else(1)))
     return None
 
 
