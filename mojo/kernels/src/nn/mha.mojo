@@ -11,7 +11,7 @@ from os import abort
 from sys import alignof, bitwidthof, simdwidthof
 
 from algorithm import elementwise
-from algorithm.functional import unswitch
+from algorithm.functional import unswitch, vectorize
 from buffer import Buffer, NDBuffer
 from buffer.dimlist import DimList
 from gpu import (
@@ -2266,11 +2266,27 @@ fn _bmm0_bs[
     var accum = SIMD[p_type, 1](0.0)
 
     if x < cur_query_len + k_cache.cache_length(batch) and y < cur_query_len:
-        for d in range(UInt(depth)):
-            accum += (
-                q[y * num_heads * depth + d].cast[k_type]()
-                * k[x * kv_num_heads * depth + d]
-            ).cast[p_type]()
+        var accum_vec = SIMD[p_type, simdwidthof[p_type]()](0)
+
+        @parameter
+        fn accum_fn[width: Int](offset: Int):
+            alias alignment = alignof[SIMD[p_type, width]]()
+            var q_val = q.load[width=width, alignment=alignment](
+                y * num_heads * depth + offset
+            ).cast[k_type]()
+            var k_val = k.load[width=width, alignment=alignment](
+                x * kv_num_heads * depth + offset
+            )
+            var qk_val = (q_val * k_val).cast[p_type]()
+
+            @parameter
+            if width == 1:
+                accum += rebind[__type_of(accum)](qk_val)
+            else:
+                accum_vec += rebind[__type_of(accum_vec)](qk_val)
+
+        vectorize[accum_fn, simdwidthof[p_type]()](depth)
+        accum += accum_vec.reduce_add()
 
     p[y * num_keys + x] = (
         accum * scale.cast[p_type]() + mask[y * num_keys + x].cast[p_type]()
@@ -2481,7 +2497,6 @@ fn _bmm0[
     var mask = mask_ptr + Int(mask_offset)
 
     var accum = SIMD[p_type, 1](0.0)
-
     for d in range(UInt(depth)):
         accum += (
             q[y * num_heads * depth + d].cast[k_type]()
