@@ -16,7 +16,6 @@ from ._utils import (
     HostNDBuffer,
     TestTensor,
     bench_compile_time,
-    env_get_bool,
     env_get_dtype,
     env_get_shape,
     fill,
