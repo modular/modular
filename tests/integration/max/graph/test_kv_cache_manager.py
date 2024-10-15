@@ -12,7 +12,7 @@ from max.dtype import DType
 
 
 @pytest.mark.asyncio
-async def test_step(session: InferenceSession):
+async def test_step():
     # Initialize llama like params
     # Step is cache_type agnostic, so we can test with contiguous
     device = CPU()
@@ -25,7 +25,6 @@ async def test_step(session: InferenceSession):
         max_cache_batch_size=16,
         max_seq_len=100,
         num_layers=10,
-        session=session,
         device=device,
     )
 
@@ -50,7 +49,7 @@ async def test_step(session: InferenceSession):
 
 
 @pytest.mark.asyncio
-async def test_claim_and_release(session: InferenceSession):
+async def test_claim_and_release():
     # Initialize llama like params
     # claim and release are both cache_type independent,
     # so we can test with the KVCacheType.CONTIGUOUS default
@@ -64,7 +63,6 @@ async def test_claim_and_release(session: InferenceSession):
         max_cache_batch_size=16,
         max_seq_len=100,
         num_layers=10,
-        session=session,
         device=device,
     )
 
@@ -91,7 +89,7 @@ async def test_claim_and_release(session: InferenceSession):
 
 
 @pytest.mark.asyncio
-async def test_fetch_continuous(session: InferenceSession):
+async def test_fetch_continuous():
     # Initialize llama like params
     device = CPU()
     params = KVCacheParams(
@@ -107,7 +105,6 @@ async def test_fetch_continuous(session: InferenceSession):
         max_cache_batch_size=16,
         max_seq_len=100,
         num_layers=10,
-        session=session,
         device=device,
     )
 
@@ -124,7 +121,7 @@ async def test_fetch_continuous(session: InferenceSession):
 
 
 @pytest.mark.asyncio
-async def test_fetch_contiguous(session: InferenceSession):
+async def test_fetch_contiguous():
     # Initialize llama like params
     device = CPU()
     params = KVCacheParams(
@@ -140,7 +137,6 @@ async def test_fetch_contiguous(session: InferenceSession):
         max_cache_batch_size=16,
         max_seq_len=100,
         num_layers=10,
-        session=session,
         device=device,
     )
 

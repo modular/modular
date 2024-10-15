@@ -23,7 +23,7 @@ from nn.kv_cache import (
 
 
 @pytest.mark.asyncio
-async def test_kv_cache_length_contiguous() -> None:
+async def test_kv_collection_constructor_contiguous() -> None:
     """Tests that KV cache collections return the expected cache length."""
     kv_params = KVCacheParams(
         dtype=DType.float32,
@@ -38,7 +38,6 @@ async def test_kv_cache_length_contiguous() -> None:
         max_cache_batch_size=1,
         max_seq_len=512,
         num_layers=32,
-        session=session,
         device=CPU(),
     )
 
@@ -57,34 +56,7 @@ async def test_kv_cache_length_contiguous() -> None:
     graph = Graph(
         "create_collection",
         FetchContiguousKVCacheCollection(kv_params),
-        input_types=[
-            # key_cache
-            TensorType(
-                kv_params.dtype,
-                shape=[
-                    "num_layers",
-                    "batch_size",
-                    "max_seq_len",
-                    "num_kv_heads",
-                    "head_dim",
-                ],
-            ),
-            # value_cache
-            TensorType(
-                kv_params.dtype,
-                shape=[
-                    "num_layers",
-                    "batch_size",
-                    "max_seq_len",
-                    "num_kv_heads",
-                    "head_dim",
-                ],
-            ),
-            # cache_lengths
-            TensorType(DType.uint32, shape=["batch_size"]),
-            # is_cache_empty
-            TensorType(DType.bool, shape=[1]),
-        ],
+        input_types=kv_manager.input_symbols(),
     )
 
     outputs = session.load(graph).execute(*kv_tuple)
@@ -93,7 +65,7 @@ async def test_kv_cache_length_contiguous() -> None:
 
 
 @pytest.mark.asyncio
-async def test_kv_cache_length_continuous() -> None:
+async def test_kv_collection_constructor_continuous() -> None:
     """Tests that KV cache collections return the expected cache length."""
     kv_params = KVCacheParams(
         dtype=DType.float32,
@@ -108,7 +80,6 @@ async def test_kv_cache_length_continuous() -> None:
         max_cache_batch_size=1,
         max_seq_len=512,
         num_layers=32,
-        session=session,
         device=CPU(),
     )
 
@@ -127,26 +98,7 @@ async def test_kv_cache_length_continuous() -> None:
     graph = Graph(
         "create_collection",
         FetchContinuousBatchingKVCacheCollection(kv_params),
-        input_types=[
-            # kv_blocks
-            TensorType(
-                kv_params.dtype,
-                shape=[
-                    "num_blocks",
-                    2,
-                    "num_layers",
-                    "max_seq_len",
-                    "num_kv_heads",
-                    "head_dim",
-                ],
-            ),
-            # cache_lengths
-            TensorType(DType.uint32, shape=["batch_size"]),
-            # lookup_table
-            TensorType(DType.uint32, shape=["batch_size"]),
-            # is_cache_empty
-            TensorType(DType.bool, shape=[1]),
-        ],
+        input_types=kv_manager.input_symbols(),
     )
 
     outputs = session.load(graph).execute(*kv_tuple)
