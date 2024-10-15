@@ -39,12 +39,17 @@ def test_causal_mask__shape(start_pos: list[int], seq_len: list[int]):
         mask = causal_attention_mask(start_pos, seq_len, pad_to_multiple_of)
         assert len(mask.shape) == 3
         assert mask.shape[0] == len(start_pos)
-        assert mask.shape[1] % pad_to_multiple_of == 0
-        assert mask.shape[1] >= pad_to_multiple_of
 
-        padded_length = (
-            math.ceil(max(seq_len) / pad_to_multiple_of) * pad_to_multiple_of
-        )
+        if max(seq_len) == 1:
+            padded_length = 1
+        else:
+            padded_length = (
+                math.ceil(max(seq_len) / pad_to_multiple_of)
+                * pad_to_multiple_of
+            )
+            assert mask.shape[1] % pad_to_multiple_of == 0
+            assert mask.shape[1] >= pad_to_multiple_of
+
         post_seq_len = max([(pos + padded_length) for pos in start_pos])
         assert mask.shape[2] == post_seq_len
 

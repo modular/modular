@@ -87,10 +87,13 @@ def test_collate_batch__pad_right(arrays: list[list[int]], pad_value: int):
         batch_size, length = result.shape
         assert batch_size == len(arrays)
 
-        padded_length = (
-            math.ceil(max(len(a) for a in arrays) / pad_to_multiple_of)
-            * pad_to_multiple_of
-        )
+        max_length = max(len(a) for a in arrays)
+        if max_length == 1:
+            padded_length = 1
+        else:
+            padded_length = (
+                math.ceil(max_length / pad_to_multiple_of) * pad_to_multiple_of
+            )
         assert length == padded_length
 
         assert len(unpadded_last_token_indices) == batch_size
