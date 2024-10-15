@@ -230,7 +230,7 @@ static void labelTensorParamsInKernel(LIT::FuncOp funcOp) {
       tensorSpecs.push_back(emptyAttr);
     }
   }
-  funcOp->setDiscardableAttr(kKernelTensorParameterAttrName,
+  funcOp->setDiscardableAttr(kKernelValueParameterAttrName,
                              builder.getArrayAttr(tensorSpecs));
 }
 
