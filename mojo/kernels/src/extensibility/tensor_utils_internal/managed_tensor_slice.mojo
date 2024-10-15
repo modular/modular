@@ -61,7 +61,7 @@ struct ManagedTensorSlice[
 
         @parameter
         fn step_fn(slice: Slice) -> Int:
-            return slice.step
+            return slice.step.or_else(1)
 
         var start = _slice_to_tuple[start_fn](slices)
         var stop = _slice_to_tuple[stop_fn](slices)
