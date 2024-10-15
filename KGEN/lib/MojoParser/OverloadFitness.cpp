@@ -1008,15 +1008,16 @@ OverloadFitness OverloadFitness::evaluate(LITSignatureType signature,
       expectedType = ASTType(expectedType).getKwargsDictRefValueType();
 
       for (auto operand : variadicKwOperands) {
-        // TODO: Passing OwnedInReg is a hack that is needed because the value
+        // TODO: Passing OwnedInMem is a hack that is needed because the value
         // type is not a reference type (and doesn't have a origin), but we
         // still want to type check it. So, passing it as if it was reg-passable
         // happens to just work, until we rectify this. Right now the reason the
         // value type cannot be a reference type is because `Reference` does not
         // (and in fact cannot) conform to `CollectionElement`.
+        auto refExpType = RefType::getAnyOrigin(expectedType, /*isMut=*/true);
         ssize_t operandIdx = -1;
-        auto [kind, ty] = checkAnOperand(
-            operand, operandIdx, ArgConvention::OwnedInReg, expectedType);
+        auto [kind, ty] = checkAnOperand(operand, operandIdx,
+                                         ArgConvention::OwnedInMem, refExpType);
         if (kind != kValidType)
           return emitDiagFor.argTypeMismatch(kind, ty, operand, operandIdx);
       }
