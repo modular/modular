@@ -826,9 +826,9 @@ fn _matmul_kv_cache_impl[
         cache: The ContiguousKVCache, with shape determined by `kv_params.layout`
         ctx: Pointer containing the runtime context for the target device.
     """
-    var SEQ_LEN = hidden_state.dim[1]()
-    alias N = weight.shape.get[0]()
-    alias K = weight.shape.get[1]()
+    var SEQ_LEN: UInt = hidden_state.dim[1]()
+    alias N: UInt = weight.shape.get[0]()
+    alias K: UInt = weight.shape.get[1]()
     alias kv_params = cache_t.get_kv_params()
 
     @parameter
@@ -837,8 +837,8 @@ fn _matmul_kv_cache_impl[
     fn write_to_cache_common[
         type_: DType, cache_t: KVCacheT, width: Int
     ](cache: cache_t, idx: IndexList[2], val: SIMD[type_, width]):
-        b_idx, t_idx = divmod(idx[0], SEQ_LEN)
-        h_idx, hd_idx = divmod(idx[1], kv_params.head_size)
+        b_idx, t_idx = divmod(UInt(idx[0]), SEQ_LEN)
+        h_idx, hd_idx = divmod(UInt(idx[1]), UInt(kv_params.head_size))
 
         var valid_len = cache.cache_length(b_idx)
         var cache_t_idx = t_idx + valid_len
@@ -1258,8 +1258,8 @@ fn _fused_qkv_matmul_kv_cache_impl[
     alias N = weight_shape.get[0]()
     alias K = weight_shape.get[1]()
 
-    var BS = hidden_state.dim[0]()
-    var SEQ_LEN = hidden_state.dim[1]()
+    var BS: UInt = hidden_state.dim[0]()
+    var SEQ_LEN: UInt = hidden_state.dim[1]()
 
     var q_dim = output.dim[2]()
     var k_dim = kv_params.head_size * kv_params.num_heads
@@ -1275,30 +1275,27 @@ fn _fused_qkv_matmul_kv_cache_impl[
         idx: IndexList[2],
         val: SIMD[type_, width],
     ):
-        var bs_and_seq = divmod(idx[0], SEQ_LEN)
-        var b_idx = bs_and_seq[0]
-        var t_idx = bs_and_seq[1]
+        b_idx, t_idx = divmod(UInt(idx[0]), SEQ_LEN)
         if idx[1] < q_dim:
             output.store[width=width, alignment=alignment](
-                Index(b_idx, t_idx, idx[1]), rebind[SIMD[type, width]](val)
+                Index(int(b_idx), int(t_idx), idx[1]),
+                rebind[SIMD[type, width]](val),
             )
             return
 
-        var h_idx: Int
-        var hd_idx: Int
+        var h_idx: UInt
+        var hd_idx: UInt
         var cache: cache_t_
         var output_val = val
         if idx[1] < qk_offset:
-            var head_and_dim = divmod(idx[1] - q_dim, kv_params.head_size)
-            h_idx = head_and_dim[0]
-            hd_idx = head_and_dim[1]
             cache = k_cache
+            h_idx, hd_idx = divmod(UInt(idx[1]) - q_dim, kv_params.head_size)
 
         else:
             cache = v_cache
-            var head_and_dim = divmod(idx[1] - qk_offset, kv_params.head_size)
-            h_idx = head_and_dim[0]
-            hd_idx = head_and_dim[1]
+            h_idx, hd_idx = divmod(
+                UInt(idx[1]) - qk_offset, kv_params.head_size
+            )
 
         var valid_len = cache.cache_length(b_idx)
         var cache_t_idx = t_idx + valid_len
@@ -1975,7 +1972,9 @@ fn _flash_attention_kv_cache_cpu[
     var new_seq_len = q.dim[1]()
     var cache_seq_len = int(k.cache_length(0))
     var seq_len = new_seq_len + cache_seq_len
-    var fa_kv_shape = Index(batch_size, seq_len, kv_params.num_heads, depth)
+    var fa_kv_shape = Index(
+        batch_size, seq_len, int(kv_params.num_heads), depth
+    )
 
     cpu_flash_attention[
         input_k_fn,
