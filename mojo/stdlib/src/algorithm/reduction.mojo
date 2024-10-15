@@ -1880,13 +1880,13 @@ fn _static_log2[n: Int]() -> Int:
 
 
 @always_inline
-fn _cumsum_small(dst: Buffer, src: __type_of(dst)):
+fn _cumsum_small(dst: Buffer, src: Buffer[dst.type, *_]):
     dst[0] = src[0]
     for i in range(1, len(dst)):
         dst[i] = src[i] + dst[i - 1]
 
 
-fn cumsum(dst: Buffer, src: __type_of(dst)):
+fn cumsum(dst: Buffer, src: Buffer[dst.type, *_]):
     """Computes the cumulative sum of all elements in a buffer.
        dst[i] = src[i] + src[i-1] + ... + src[0].
 
