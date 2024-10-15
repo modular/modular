@@ -1131,8 +1131,9 @@ fn mha_single_batch[
     ].stack_allocation().fill(0)
 
     # Rowwise max and sum for online softmax
-    var rowmax = stack_allocation[WM, accum_type]()
-    var rowsum = stack_allocation[WM, accum_type]()
+    alias row_alignment = alignof[SIMD[accum_type, simdwidthof[accum_type]()]]()
+    var rowmax = stack_allocation[WM, accum_type, alignment=row_alignment]()
+    var rowsum = stack_allocation[WM, accum_type, alignment=row_alignment]()
 
     @parameter
     for i in range(WM):

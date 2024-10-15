@@ -6,6 +6,7 @@
 
 from math import align_down, align_up, ceildiv, exp, log
 from os import abort
+from sys import alignof, simdwidthof
 
 from algorithm import sync_parallelize, vectorize
 from algorithm._gpu.reduction import block_reduce, row_reduce
@@ -994,8 +995,8 @@ fn _online_softmax_iter_for_mma_output[
         _layout2,
         address_space = AddressSpace.SHARED,
     ],
-    rowmax: UnsafePointer[Scalar[type]],
-    rowsum: UnsafePointer[Scalar[type]],
+    rowmax: UnsafePointer[Scalar[type], *_, **_],
+    rowsum: UnsafePointer[Scalar[type], *_, **_],
 ):
     constrained[num_m_mmas * num_n_mmas == p_reg_tile.shape[0]()]()
 
@@ -1010,9 +1011,16 @@ fn _online_softmax_iter_for_mma_output[
 
     # Sum of fragment elements in the same row.
     # MMA output has two sub-matrices. Each thread's fragments are on two rows.
-    var p_frag_rowmax = stack_allocation[num_m_mmas * 2, type]()
-    var p_frag_rowsum = stack_allocation[num_m_mmas * 2, type]()
-    var correction = stack_allocation[num_m_mmas * 2, type]()
+    alias frag_alignment = alignof[SIMD[type, simdwidthof[type]()]]()
+    var p_frag_rowmax = stack_allocation[
+        num_m_mmas * 2, type, alignment=frag_alignment
+    ]()
+    var p_frag_rowsum = stack_allocation[
+        num_m_mmas * 2, type, alignment=frag_alignment
+    ]()
+    var correction = stack_allocation[
+        num_m_mmas * 2, type, alignment=frag_alignment
+    ]()
 
     @parameter
     for i in range(2 * num_m_mmas):
