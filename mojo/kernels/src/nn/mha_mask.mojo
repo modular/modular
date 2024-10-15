@@ -74,13 +74,11 @@ struct CausalMask(MHAMask):
         var q_idx = SIMD[DType.index, width](coord[2])
         var k_idx = SIMD[DType.index, width](coord[3])
 
-        @parameter
-        for i in range(width):
-            # coords[2] >= coords[3] ensures the current tokens is only affected by
-            # itself and previous tokens.
-            masked_score_vec = (
-                q_idx >= (k_idx + iota[DType.index, width]())
-            ).select(score_vec, min_or_neg_inf[type]())
+        # coords[2] >= coords[3] ensures the current tokens is only affected by
+        # itself and previous tokens.
+        masked_score_vec = (
+            q_idx >= (k_idx + iota[DType.index, width]())
+        ).select(score_vec, min_or_neg_inf[type]())
 
         return masked_score_vec
 
