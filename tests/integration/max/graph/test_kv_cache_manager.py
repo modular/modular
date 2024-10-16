@@ -17,7 +17,9 @@ async def test_step():
     # Step is cache_type agnostic, so we can test with contiguous
     device = CPU()
     params = KVCacheParams(
-        dtype=DType.float32, n_kv_heads=8, head_dim=128, device=device
+        dtype=DType.float32,
+        n_kv_heads=8,
+        head_dim=128,
     )
 
     kv_manager = load_kv_manager(
@@ -55,7 +57,9 @@ async def test_claim_and_release():
     # so we can test with the KVCacheType.CONTINUOUS default
     device = CPU()
     params = KVCacheParams(
-        dtype=DType.float32, n_kv_heads=8, head_dim=128, device=device
+        dtype=DType.float32,
+        n_kv_heads=8,
+        head_dim=128,
     )
 
     kv_manager = load_kv_manager(
@@ -96,7 +100,6 @@ async def test_fetch_continuous():
         dtype=DType.float32,
         n_kv_heads=1,
         head_dim=16,
-        device=device,
         cache_strategy=KVCacheStrategy.CONTINUOUS,
     )
 

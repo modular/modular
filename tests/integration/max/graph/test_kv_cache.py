@@ -28,7 +28,6 @@ async def test_kv_collection_constructor_continuous() -> None:
         dtype=DType.float32,
         n_kv_heads=8,
         head_dim=128,
-        device=CPU(),
         cache_strategy=KVCacheStrategy.CONTINUOUS,
     )
     session = InferenceSession()
