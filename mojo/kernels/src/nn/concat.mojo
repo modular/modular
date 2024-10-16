@@ -805,3 +805,237 @@ fn _concat_gpu[
             )
 
     _concat_gpu_elementwise[epilogue_fn=epilogue_fn](output, axis, inputs, ctx)
+
+
+@always_inline
+fn _fused_concat_cpu[
+    rank: Int,
+    type: DType,
+    single_thread_blocking_override: Bool,
+    input_1_fn_tuple: StaticTuple[
+        fn[
+            width: Int, rank: Int
+        ] (IndexList[rank]) capturing -> SIMD[type, width], *_
+    ],
+    output_0_fn: elementwise_epilogue_type,
+](
+    axis: Int,
+    input_shapes: StaticTuple[IndexList[rank], input_1_fn_tuple.size],
+    output: NDBuffer[type, rank],
+    ctx: MojoCallContextPtr,
+) raises:
+    var offset = 0
+
+    @parameter
+    for i in range(input_1_fn_tuple.size):
+        alias input_i_fn = input_1_fn_tuple[i]
+        var input_shape = input_shapes[i]
+
+        @parameter
+        @always_inline
+        fn elementwise_wrapper[
+            _width: Int, rank: Int
+        ](indices: IndexList[rank]):
+            var c = indices
+            c[axis] += offset
+
+            # Call the input/output lambda for fused concat kernel.
+            output_0_fn[type, rank, width=_width, alignment=1](
+                c, input_i_fn[_width, rank](indices)
+            )
+
+        # TODO: we can use simd_width > 0 if all inputs are aligned.
+        elementwise[
+            elementwise_wrapper,
+            1,
+            use_blocking_impl=single_thread_blocking_override,
+        ](input_shape, ctx)
+        offset = offset + input_shape[axis]
+
+
+@always_inline
+fn _fused_concat_inner_most_single_dim[
+    rank: Int,
+    type: DType,
+    block_size: Int,
+    input_1_fn_tuple: StaticTuple[
+        fn[
+            width: Int, rank: Int
+        ] (IndexList[rank]) capturing -> SIMD[type, width], *_
+    ],
+    output_0_fn: elementwise_epilogue_type,
+](
+    input_shapes: StaticTuple[IndexList[rank], input_1_fn_tuple.size],
+    output: NDBuffer[type, rank],
+):
+    alias num_inputs = input_1_fn_tuple.size
+
+    var idx = BlockIdx.x() * block_size + ThreadIdx.x()
+    if idx >= product(input_shapes[0], rank):
+        return
+
+    var index = _get_start_indices_of_nth_subvolume_uint[1](
+        idx, output.dynamic_shape
+    )
+
+    @parameter
+    for i in range(num_inputs):
+        alias input_i_fn = input_1_fn_tuple[i]
+        var out_index = index
+        out_index[rank - 1] = i
+
+        output_0_fn[type, rank, width=1](
+            out_index.canonicalize(),
+            input_i_fn[1, rank](index.canonicalize()),
+        )
+
+
+@always_inline
+fn _fused_concat_gpu_elementwise[
+    axis: Int,
+    rank: Int,
+    type: DType,
+    input_1_fn_tuple: StaticTuple[
+        fn[
+            width: Int, rank: Int
+        ] (IndexList[rank]) capturing -> SIMD[type, width], *_
+    ],
+    output_0_fn: elementwise_epilogue_type,
+](
+    input_shapes: StaticTuple[IndexList[rank], input_1_fn_tuple.size],
+    output: NDBuffer[type, rank],
+    ctx: DeviceContext,
+) raises:
+    alias num_inputs = input_1_fn_tuple.size
+
+    @parameter
+    @always_inline
+    fn per_output_elem[
+        simd_width: Int, _rank: Int
+    ](out_index: IndexList[_rank]):
+        var in_index = out_index
+        in_index[axis] = out_index[axis]
+
+        @parameter
+        for i in range(num_inputs):
+            var input_shape = input_shapes[i]
+            alias input_fn = input_1_fn_tuple[i]
+
+            if in_index[axis] < input_shape[axis]:
+                output_0_fn[type, _rank, width=simd_width, alignment=1](
+                    out_index,
+                    input_fn[simd_width, _rank](in_index),
+                )
+                return
+
+            in_index[axis] -= input_shape[axis]
+
+    # Can picture output reshaped to 3D: output_reshape = reshape(output, dims=[-1, concat_dim, -1])
+    # where concat_dim = inputs[0][axis] + ... + inputs[n-1][axis].
+    # Slices of the innermost dim of output_reshape are contiguous in the corresponding input.
+    # Because the inner dim is contiguous we will get coalesced memory access
+    # using the elementwise generator with simd_width=1.
+    elementwise[per_output_elem, 1, target="cuda"](output.get_shape(), ctx)
+
+
+@always_inline
+fn _fused_concat_gpu[
+    rank: Int,
+    type: DType,
+    input_1_fn_tuple: StaticTuple[
+        fn[
+            width: Int, rank: Int
+        ] (IndexList[rank]) capturing -> SIMD[type, width], *_
+    ],
+    output_0_fn: elementwise_epilogue_type,
+](
+    axis: Int,
+    input_shapes: StaticTuple[IndexList[rank], input_1_fn_tuple.size],
+    output: NDBuffer[type, rank],
+    ctx: DeviceContext,
+) raises:
+    alias num_inputs = input_1_fn_tuple.size
+
+    if axis == rank - 1:
+        var inner_most_unit_dim = True
+        for i in range(num_inputs):
+            if (
+                input_shapes[i][axis] != 1
+                or not input_shapes[i] == input_shapes[0]
+            ):
+                inner_most_unit_dim = False
+                break
+
+        if inner_most_unit_dim:
+            alias block_size = 32
+            var func = ctx.compile_function[
+                _fused_concat_inner_most_single_dim[
+                    rank,
+                    type,
+                    block_size,
+                    input_1_fn_tuple,
+                    output_0_fn,
+                ]
+            ]()
+
+            return ctx.enqueue_function(
+                func,
+                input_shapes,
+                output,
+                grid_dim=(
+                    ceildiv(
+                        product(input_shapes[0], input_shapes[0].size),
+                        block_size,
+                    )
+                ),
+                block_dim=(block_size),
+            )
+
+    # Without parameter dispatch there are 2 extra stack allocations in the GPU kernel
+    @parameter
+    for i in range(rank):
+        if i == axis:
+            return _fused_concat_gpu_elementwise[
+                i,
+                rank,
+                type,
+                input_1_fn_tuple,
+                output_0_fn,
+            ](input_shapes, output, ctx)
+
+
+@always_inline
+fn test_concat_fusion[
+    type: DType,
+    rank: Int,
+    single_thread_blocking_override: Bool,
+    input_1_fn_tuple: StaticTuple[
+        fn[
+            width: Int, rank: Int
+        ] (IndexList[rank]) capturing -> SIMD[type, width], *_
+    ],
+    output_0_fn: elementwise_epilogue_type,
+    target: StringLiteral = "cpu",
+](
+    axis: Int,
+    input_shapes: StaticTuple[IndexList[rank], input_1_fn_tuple.size],
+    output: NDBuffer[type, rank],
+    ctx: MojoCallContextPtr,
+) raises:
+    constrained[target == "cpu" or "cuda" in target, "not a valid target"]()
+
+    with Trace[TraceLevel.OP, target=target]("concat"):
+
+        @parameter
+        if target == "cpu":
+            return _fused_concat_cpu[
+                rank,
+                type,
+                single_thread_blocking_override,
+                input_1_fn_tuple,
+                output_0_fn,
+            ](axis, input_shapes, output, ctx)
+        else:
+            return _fused_concat_gpu[rank, type, input_1_fn_tuple, output_0_fn](
+                axis, input_shapes, output, ctx.get_device_context()
+            )
